@@ -275,7 +275,12 @@ const ECRANS: Ecran[] = [
   { nom: 'CotisationsTab', fichier: 'pages/dossier/CotisationsTab.tsx', rendre: () => <Dossier1><CotisationsTab dossierId="d1" modele={{ mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }} /></Dossier1> },
   { nom: 'DocumentsTab', fichier: 'pages/dossier/DocumentsTab.tsx', rendre: () => <Dossier1><DocumentsTab dossierId="d1" /></Dossier1> },
   { nom: 'EcrituresTab', fichier: 'pages/dossier/EcrituresTab.tsx', rendre: () => (
-    <Dossier1><EcrituresTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} assujettiTva={false} modele={TRESORERIE} onModeleUpdated={rien} /></Dossier1>
+    <Dossier1><EcrituresTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} assujettiTva={false} modele={TRESORERIE} ventesParLesFactures={false} onModeleUpdated={rien} /></Dossier1>
+  ) },
+  // Un dossier qui a BASCULÉ (étape VF4c1) : l'onglet lit aussi ses ventes facturées, et la section qui les écrit n'offre
+  // aucun geste avant que le brouillon et elles soient revenus en entier.
+  { nom: 'EcrituresTab (ventes facturées)', fichier: 'pages/dossier/EcrituresTab.tsx', rendre: () => (
+    <Dossier1><EcrituresTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} assujettiTva={false} modele={TRESORERIE} ventesParLesFactures onModeleUpdated={rien} /></Dossier1>
   ) },
   { nom: 'EncaissementsFactureModal', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
     <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture()} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
@@ -479,6 +484,7 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'context/AuthContext.tsx': 'pas un écran : tant qu’il lit la session, App ne montre que « Chargement… »',
   'pages/TuilesVentesClient.tsx': 'ne lit plus (étape A6b2) : reçoit la lecture des ventes de l’accueil (AccueilVentesClient, montée ici) et ne fait que compter ses pastilles ; n’écrit rien',
   'pages/dossier/ExemplaireDeLaFacture.tsx': 'reçoit de la fiche d’une pièce (FichePiece, montée ici, que PiecesTab ouvre) les factures émises validées et le gel de la pièce, « en cours » tant qu’ils ne sont pas revenus ; ne désigne et ne défait qu’au clic confirmé, et seulement sur des factures lues en entier (ExemplaireDeLaFacture.test.tsx)',
+  'pages/dossier/VentesFactureesEcritures.tsx': 'reçoit de l’onglet Écritures (monté ici, et basculé dans « EcrituresTab (ventes facturées) ») les états des ventes facturées, nuls tant que le brouillon et les ventes facturées ne sont pas revenus en entier ; n’écrit, ne retire et ne choisit un compte qu’au clic confirmé (EcrituresTab.ventesFacturees.test.tsx)',
   'pages/dossier/EnvoisDuClient.tsx': 'reçoit les envois du client et les accès de BanqueTab (monté ici), « en cours » tant qu’ils ne sont pas revenus ; n’ouvre un justificatif, n’écarte une proposition et ne supprime un message que sur un clic confirmé, et seulement sur des envois lus en entier',
 }
 

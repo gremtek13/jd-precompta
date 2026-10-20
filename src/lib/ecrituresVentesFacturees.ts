@@ -1,6 +1,7 @@
 import { referenceDuReleve } from './affectationBanque'
 import { auxiliaireDuTiers, type CompteAuxiliaire } from './engagement'
 import { centimesExacts, ecartDeFrais, justifieSonMouvement } from './encaissementsFactures'
+import { formatDate } from './format'
 import type { PlanComptable } from './planComptable'
 import type { EcritureBrouillon, JournalCode, LigneBancaire, ModeComptable, SensEcriture } from './types'
 import {
@@ -271,14 +272,14 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
     }
     if (e.ligne_bancaire_id != null) {
       const m = mouvements.get(e.ligne_bancaire_id)
-      if (!m) return { refus: 'mouvement_inconnu', detail: `encaissement du ${e.date_encaissement}` }
+      if (!m) return { refus: 'mouvement_inconnu', detail: `encaissement du ${formatDate(e.date_encaissement)}` }
       if (m.date === e.date_encaissement) return { compte: plan.banque, ligneBancaireId: m.id }
       return { compte: e.moyen === 'especes' ? plan.caisse : plan.valeurs_a_l_encaissement, ligneBancaireId: null }
     }
     if (e.moyen === 'especes') return { compte: plan.caisse, ligneBancaireId: null }
     if (e.moyen === 'compensation' || e.moyen === 'autre') {
       const choisi = entrees.comptesDeContrepartie.get(e.id)
-      if (choisi == null) return { refus: 'compte_a_choisir', detail: `encaissement du ${e.date_encaissement}` }
+      if (choisi == null) return { refus: 'compte_a_choisir', detail: `encaissement du ${formatDate(e.date_encaissement)}` }
       const refus = refusCompteDeContrepartie(choisi, plan)
       if (refus) return { refus: 'compte_refuse', detail: `${choisi} : ${refus}` }
       return { compte: choisi, ligneBancaireId: null }
@@ -379,11 +380,11 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
     const lignes = solde.lignes()
     if (lignes.length === 0) continue
     if (!m.encaissements_de_factures) {
-      nonEcrite(source, 'mouvement_non_classe', `mouvement du ${m.date}`)
+      nonEcrite(source, 'mouvement_non_classe', `mouvement du ${formatDate(m.date)}`)
       continue
     }
     if (frais < 0 || !ecartDeFrais(frais, Math.abs(total))) {
-      nonEcrite(source, 'mouvement_ecart', `mouvement du ${m.date}`)
+      nonEcrite(source, 'mouvement_ecart', `mouvement du ${formatDate(m.date)}`)
       continue
     }
     enCours.set(cleFecMouvementEncaissements(m.id), {

@@ -4,6 +4,7 @@ import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobi
 import { mouvementsSurUnCompteDeBilanDesynchronises } from './compteDeBilan'
 import { piecesMontantIntrouvableEnBanque } from './appariementBanque'
 import { rupturesPisteAudit } from './pisteAudit'
+import { ligneDUneVenteFacturee, mouvementsClassesParEncaissements } from './ecrituresVentesFactureesEcran'
 import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux } from './affectationBanque'
 import { virementsPersonnelsAEcrire } from './virementPersonnel'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from './echeanceEmprunt'
@@ -204,7 +205,13 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // Les mouvements du relevé affectés à une catégorie sans justificatif (ligne 26.6) : leur écriture n'a
   // pas de pièce, par construction, et n'est pas une rupture de la piste d'audit.
   const affectes = mouvementsAffectes(lignes, categories, assujettiTva)
-  const ruptures = rupturesPisteAudit(ecritures, idsMouvementsJustifiesParLeReleve(lignes))
+  // Les écritures d'une VENTE FACTURÉE (étape VF4c1) n'ont pas de pièce par construction : leur justification est leur
+  // facture, leur encaissement, ou le mouvement que ses encaissements classent. L'onglet Écritures, où ce point renvoie, ne
+  // les compte pas parmi les ruptures — ce point non plus, sur la même règle (lib/ecrituresVentesFactureesEcran.ts).
+  const mouvementsDesVentes = mouvementsClassesParEncaissements(lignes)
+  const ruptures = rupturesPisteAudit(
+    ecritures.filter((e) => !ligneDUneVenteFacturee(e, mouvementsDesVentes)), idsMouvementsJustifiesParLeReleve(lignes),
+  )
   // L'écriture d'un mouvement affecté que son affectation ne produirait plus — la catégorie a changé de
   // compte depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore sa TVA. Même
   // famille que les pièces « à régénérer », invisible de la même façon.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
-import type { DeclarationTva, InformationsDossier, LigneBancaire } from './types'
+import type { DeclarationTva, EcritureBrouillon, InformationsDossier, LigneBancaire } from './types'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // Les points de la Vue d'ensemble, sortis de ChecklistTab (ligne 41, étape R3) : `ChecklistTab.test.tsx` garde ce que
@@ -50,6 +50,27 @@ function declaration(o: Partial<DeclarationTva>): DeclarationTva {
 }
 
 describe('pointsDeLaChecklist', () => {
+  it('la piste rompue ne compte pas les écritures d’une vente facturée, comme l’onglet Écritures où elle renvoie (VF4c1)', () => {
+    const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
+      id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date: '2026-03-10', compte: '411000', libelle: 'Vente facturée',
+      montant: 120, sens: 'debit', statut: 'proposee', created_at: '2026-03-10T10:00:00Z', immobilisation_id: null, vehicule_id: null,
+      declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, valide_le: null, journal_code: null,
+      numero_ecriture: null, piece_ref: null, piece_date: null, compte_lib: null, comp_aux_num: null, comp_aux_lib: null, ...o,
+    })
+    const ecritures = [
+      ecriture({ id: 'v1', facture_id: 'f1' }),
+      ecriture({ id: 'v2', compte: '512000', ligne_bancaire_id: 'm1', encaissement_id: 'e1' }),
+      ecriture({ id: 'v3', compte: '512000', ligne_bancaire_id: 'm2' }),
+      ecriture({ id: 'v4', compte: '511000', sens: 'credit', ligne_bancaire_id: 'm2' }),
+    ]
+    const lignes = [ligne({ id: 'm1', statut: 'rapprochee', encaissements_de_factures: true }), ligne({ id: 'm2', statut: 'rapprochee', encaissements_de_factures: true })]
+    const piste = (d: Partial<DonneesDeLaChecklist>) => pointsDeLaChecklist(donnees(d), CONTEXTE).tousLesPointsATraiter.find((p) => p.id === 'piste-rompue')?.nb
+    expect(piste({ ecritures, lignes })).toBe(0)
+    // Une ligne sans pièce ni source, et celles d'un mouvement déclassé, restent des ruptures.
+    const declasse = [lignes[0], ligne({ id: 'm2', statut: 'non_rapprochee', encaissements_de_factures: false })]
+    expect(piste({ ecritures: [...ecritures, ecriture({ id: 'o', compte: '606100' })], lignes: declasse })).toBe(3)
+  })
+
   it('nomme le justificatif que coche un document attendu, sans en faire le geste', () => {
     const { documentsAttendus } = pointsDeLaChecklist(
       donnees({ info: informations({ tickets_restaurant: true, cheques_vacances: true, justificatif_cheques_vacances_recu: true }) }),

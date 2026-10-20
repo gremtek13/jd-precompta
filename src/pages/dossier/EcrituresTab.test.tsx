@@ -299,6 +299,7 @@ function Onglet({ assujettiTva, modeleInitial, annee, valides }: {
       <EcrituresTab
         dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234" assujettiTva={assujettiTva}
         modele={modele}
+        ventesParLesFactures={false}
         onModeleUpdated={(m) => setModele((avant) => ({
           mode: m.mode_comptable ?? avant.mode, compteNotesDeFrais: m.compte_notes_de_frais ?? avant.compteNotesDeFrais, plan: avant.plan,
         }))}
