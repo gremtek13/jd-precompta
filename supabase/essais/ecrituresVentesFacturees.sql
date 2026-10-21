@@ -4,7 +4,8 @@
 -- `choisir_compte_contrepartie`, la règle du cumul (`prorata_arrondi`, `calcul_vente_facturee`), la recomposition
 -- (`ecriture_attendue_vente_facturee`, `refus_compte_de_contrepartie`), les deux gardes (`garder_lignes_de_la_vente_facturee`,
 -- `garder_encaissement_facture`), `ecritures_brouillon` et ses déclencheurs, `encaissements_factures`, la frontière de la
--- validation, `compte_du_role` et le catalogue des rôles, `admin_du_dossier`.
+-- validation, `compte_du_role` et le catalogue des rôles, `admin_du_dossier`, et les dix-huit fonctions du relevé qui
+-- classent ou déclassent un mouvement (le lot de R1, migration `lignes_propres_au_mouvement` : 95, 96, 130 à 139, 155).
 --
 -- Ce qui se prouve ici — chaque refus jugé à son code ET à ses mots, ceux de la migration, que
 -- src/lib/ecritureVenteFacturee.test.ts confronte à ses listes ; chaque recomposition confrontée au MODULE, que ce même test
@@ -33,22 +34,32 @@
 --     validation d'un exercice ; une écriture ordinaire passe comme hier ;
 --   - LES AUTRES CHEMINS (90 à 96) : sur un mouvement classé par ses encaissements, déjà écrit, ils butent sur leurs
 --     propres refus ou sur G1 et G2, sous leurs mots d'hier, avant toute écriture (90 à 94). Sur un mouvement que rien ne
---     classe mais qui porte encore les lignes d'une vente facturée dont il n'est pas la source, ils échouent FERMÉS sur
---     G5 (R1, 95 et 96) : le mouvement déclassé, puis l'encaissement du même jour contre-passé sans mouvement, celui-ci
---     ne justifie plus son mouvement, que G2 libère ; ses lignes et celles de sa contre-passation (le [T] : la banque, sur
---     ce mouvement) y restent, légitimement, puisque la base les recompose encore ; le compte de bilan, qui supprime
---     d'abord les lignes sans pièce du mouvement, lève 42501 sous les mots de G5, et rien n'est écrit ni retiré (95) ; le
---     mouvement déclassé, puis l'encaissement retiré, ses lignes périmées retiennent le mouvement jusqu'à
---     `retirer_ecriture_vente_facturee`, après quoi le compte de bilan passe (96). Les dix-huit chemins du relevé qui
---     classent ou déclassent un mouvement suppriment ainsi ses lignes ; le rapprochement d'une pièce passe, mais son
---     retrait en engagement, par le navigateur, bute sur G5 après avoir délié le mouvement (une suppression directe, qui
---     ne se joue que sur la réplique) : ce qui lèvera ce blocage — aligner ces dix-neuf suppressions sur les lignes
---     propres au mouvement, toutes colonnes de source nulles, comme le retrait d'un mouvement de la migration — est un
---     lot à part, avant toute bascule ;
+--     classe mais qui porte encore les lignes d'une vente facturée dont il n'est pas la source, ils passent, et ces
+--     lignes restent (le lot de R1, migration `lignes_propres_au_mouvement` : les dix-huit fonctions du relevé ne
+--     suppriment, ne jugent et ne vérifient que les lignes propres au mouvement, jamais une ligne qui porte une facture ou
+--     un encaissement) : le mouvement déclassé, puis l'encaissement du même jour contre-passé sans mouvement, celui-ci ne
+--     justifie plus son mouvement, que G2 libère ; ses lignes et celles de sa contre-passation (le [T] : la banque, sur ce
+--     mouvement) y restent, légitimement, puisque la base les recompose encore ; le compte de bilan s'écrit à côté
+--     d'elles (95) ; le mouvement déclassé, puis l'encaissement retiré, il s'écrit de même, et les lignes périmées de
+--     l'encaissement restent jusqu'à `retirer_ecriture_vente_facturee`, qui les retire sans toucher au compte de bilan
+--     (96). Hier, ces deux chemins butaient sur G5 en 42501, rien d'écrit ni de retiré ;
+--   - R1, LES DIX-HUIT FONCTIONS DU RELEVÉ SUR LE MOUVEMENT LIBÉRÉ (130 à 139) : la même préparation (la macro PR1 — le
+--     mouvement 401 déclassé, l'encaissement 501 contre-passé sans mouvement, ses lignes et celles de sa contre-passation
+--     écrites —, et deux lignes posées par la validation sur ce mouvement, VALIDÉES : une ligne de la facture 101, que la
+--     composition ne pose jamais sur un mouvement mais qu'une restauration peut porter, et une de l'encaissement 501) ;
+--     puis chaque mécanisme classe le mouvement et le déclasse, par ses deux fonctions — l'affectation, le virement
+--     personnel, le compte de bilan, la ventilation, le règlement groupé, l'emprunt, l'échéance de cotisation (retirée,
+--     puis supprimée), la déclaration de TVA (son paiement retiré, puis la déclaration) : chacune passe, ses lignes propres
+--     écrites puis retirées, les lignes de la vente facturée intactes. Les deux lignes validées et déséquilibrées font
+--     de chaque filtre oublié un refus visible — une suppression qui les toucherait, une écriture validée qui retiendrait
+--     le mouvement, un équilibre qui les compterait ; le retrait d'une pièce rapprochée en engagement, par le navigateur
+--     (une suppression directe), ne se joue que sur la réplique ;
 --   - LE COMPTE DE CONTREPARTIE (100 à 119) : ses refus à leur rang, la fonction qui le pose et le remplace, la garde des
 --     encaissements qui ne le laisse naître qu'à la restauration et changer que sous son réglage ;
---   - LE CATALOGUE (150 à 154) ; LES MUTATIONS (160 à 166) : chacune rejoue un contrôle avec une cible ou un profil
---     délibérément juste, et doit passer ; et que RIEN ne reste en base (199).
+--   - LE CATALOGUE (150 à 155 ; 155, les quatre contraintes qui font, sur une ligne qui porte un mouvement, des quatre
+--     autres colonnes de source des colonnes nulles : ce que le filtre de R1 suppose) ; LES MUTATIONS (160 à 166) :
+--     chacune rejoue un contrôle avec une cible ou un profil délibérément juste, et doit passer ; et que RIEN ne reste en
+--     base (199).
 --
 -- Ce qui ne se joue PAS ici, faute de pouvoir supprimer en production : G5 refuse la suppression directe d'une écriture de
 -- vente facturée, et laisse passer la cascade d'un dossier qu'on supprime — joué sur la réplique seulement.
@@ -78,6 +89,15 @@
 -- remplacement ou un retrait qui emporterait les écritures validées d'une facture (la garde des écritures validées le
 -- refuse) ou les lignes d'un encaissement passées sur un mouvement (G5 le refuse), et un retrait qui refuserait à tort
 -- une source aux écritures à la fois validées et proposées.
+--
+-- REJOUÉ LE 21/10/2026 SUR UNE RÉPLIQUE, PAS EN PRODUCTION, AVEC LE LOT DE R1 (`signature.sql` : les neuf familles
+-- égales à la production relevée le jour même, et ses 143 migrations ; la migration `lignes_propres_au_mouvement`
+-- collée comme le cabinet le fera, et appliquée comme l'outil l'aurait fait : même signature) : 175 contrôles, 0 en
+-- faute, rien n'est resté ; sans la migration, 12 en faute — 95, 96 et 130 à 139, les chemins qui butaient hier ; le
+-- texte sans ses lignes de commentaire, envoyé en une requête comme le fait l'outil, rend les mêmes verdicts (77 712
+-- caractères reçus, empreinte ed45d71df8da3bce60ca0332d7cb5aef). Les mutations de la migration — chacune des
+-- quarante-trois clauses rendue à son texte d'hier, puis privée de l'un ou l'autre de ses deux filtres : 129 — sont
+-- toutes tuées par cet essai.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -90,7 +110,8 @@ declare
   cle text; valeur text; s text; attendu text; n bigint;
   tables text[] := array['dossiers', 'factures_emises', 'facture_lignes', 'lignes_bancaires', 'encaissements_factures',
     'encaissements_factures_taux', 'ecritures_brouillon', 'exercices_valides', 'cabinet_admins', 'dossier_assignations', 'memberships',
-    'transmissions_factures', 'transmissions_encaissements'];
+    'transmissions_factures', 'transmissions_encaissements', 'categories', 'pieces', 'ventilations_bancaires', 'reglements_groupes',
+    'emprunts', 'cotisations_declarees', 'declarations_tva'];
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
   verdicts jsonb := '[]'::jsonb;
@@ -151,7 +172,29 @@ begin
     'BAN', $m$Un encaissement par la banque, par chèque ou en espèces se dit par son moyen de paiement, qui choisit son compte.$m$,
     'FOR', $m$Un compte de contrepartie est un compte de bilan, de classe 1 à 5, de six à dix chiffres.$m$,
     'AUC', $m$Cette source n'a aucune écriture proposée à retirer.$m$,
-    'CLA', $m$Ce mouvement est classé par ses encaissements : il ne reçoit aucun autre classement — le cabinet retire d'abord celui-ci.$m$);
+    'CLA', $m$Ce mouvement est classé par ses encaissements : il ne reçoit aucun autre classement — le cabinet retire d'abord celui-ci.$m$)
+    -- R1 (130 à 139). Écrites EN CLAIR, sans marque : une marque se remplace dans l'ordre où jsonb range ses clés (les plus
+    -- courtes d'abord), si bien qu'une marque glissée dans la valeur d'une autre ne se remplacerait pas toujours.
+    -- PR1 : le mouvement 401 libéré qui porte encore les lignes d'une vente facturée — l'encaissement 501 écrit, le
+    -- mouvement déclassé, l'encaissement déclaré puis contre-passé sans mouvement, la contre-passation écrite ([T]) ; puis
+    -- deux lignes VALIDÉES posées sous le réglage de la validation : une de la facture 101 sur ce mouvement, que la
+    -- composition ne pose jamais mais qu'une restauration peut porter, et une de l'encaissement 501. LPR : ses lignes
+    -- propres ; LVF : ses lignes de vente facturée, avec leur statut.
+    || jsonb_build_object(
+    'PR1', $m$select set_config('request.jwt.claims', '{"sub":"bd6bd047-0ef0-4c9d-a319-1b642aaf2162","role":"authenticated"}', true);
+    select ecrire_vente_facturee('5f4b0000-0000-4000-8000-000000000001', 'encaissement', '5f4b0000-0000-4000-8000-000000000501', (select coalesce(jsonb_agg(jsonb_build_object('date', split_part(a, '|', 1), 'compte', split_part(a, '|', 2), 'sens', split_part(a, '|', 3), 'montant', round(split_part(a, '|', 4)::numeric / 100, 2), 'ligne_bancaire_id', nullif(split_part(a, '|', 5), ''), 'libelle', 'ESSAI')), '[]') from unnest((ecriture_attendue_vente_facturee('5f4b0000-0000-4000-8000-000000000001', 'encaissement', '5f4b0000-0000-4000-8000-000000000501')).lignes) a));
+    select retirer_classement_par_encaissements('5f4b0000-0000-4000-8000-000000000001', '5f4b0000-0000-4000-8000-000000000401');
+    insert into transmissions_factures (dossier_id, facture_id, canal, hote, flux_id, sha256, etat) values ('5f4b0000-0000-4000-8000-000000000001', '5f4b0000-0000-4000-8000-000000000101', 'plateforme', 'p.fr', 'x', repeat('0', 64), 'accepte');
+    insert into transmissions_encaissements (dossier_id, encaissement_id, facture_id, canal, hote, etat) values ('5f4b0000-0000-4000-8000-000000000001', '5f4b0000-0000-4000-8000-000000000501', '5f4b0000-0000-4000-8000-000000000101', 'manuel', 'p.fr', 'depose');
+    select set_config('essai.cp', (select id from annuler_encaissement('5f4b0000-0000-4000-8000-000000000001', '5f4b0000-0000-4000-8000-000000000501', '2026-03-03', 'ESSAI', null))::text, true);
+    select ecrire_vente_facturee('5f4b0000-0000-4000-8000-000000000001', 'encaissement', current_setting('essai.cp')::uuid, (select coalesce(jsonb_agg(jsonb_build_object('date', split_part(a, '|', 1), 'compte', split_part(a, '|', 2), 'sens', split_part(a, '|', 3), 'montant', round(split_part(a, '|', 4)::numeric / 100, 2), 'ligne_bancaire_id', nullif(split_part(a, '|', 5), ''), 'libelle', 'ESSAI')), '[]') from unnest((ecriture_attendue_vente_facturee('5f4b0000-0000-4000-8000-000000000001', 'encaissement', current_setting('essai.cp')::uuid)).lignes) a));
+    select set_config('jd.validation_exercice', '5f4b0000-0000-4000-8000-000000000001', true);
+    insert into ecritures_brouillon (dossier_id, ligne_bancaire_id, date, compte, libelle, montant, sens, statut, facture_id, encaissement_id, valide_le, journal_code, numero_ecriture, piece_ref, piece_date, compte_lib) values
+      ('5f4b0000-0000-4000-8000-000000000001', '5f4b0000-0000-4000-8000-000000000401', '2026-03-04', '411000', 'ESSAI', 1, 'debit', 'validee', '5f4b0000-0000-4000-8000-000000000101', null, now(), 'VE', 901, 'R1', '2026-03-04', 'ESSAI'),
+      ('5f4b0000-0000-4000-8000-000000000001', '5f4b0000-0000-4000-8000-000000000401', '2026-03-04', '512000', 'ESSAI', 0.5, 'debit', 'validee', null, '5f4b0000-0000-4000-8000-000000000501', now(), 'BQ', 902, 'R1', '2026-03-04', 'ESSAI');
+    select set_config('jd.validation_exercice', '', true);$m$,
+    'LPR', $m$coalesce((select string_agg(to_char(b.date, 'MM-DD') || ' ' || b.compte || case b.sens when 'debit' then '+' else '-' end || (b.montant * 100)::bigint, ' ' order by b.date, b.compte, b.sens, b.montant) from ecritures_brouillon b where b.ligne_bancaire_id = '5f4b0000-0000-4000-8000-000000000401' and b.facture_id is null and b.encaissement_id is null), '∅')$m$,
+    'LVF', $m$(select string_agg(to_char(b.date, 'MM-DD') || ' ' || b.compte || case b.sens when 'debit' then '+' else '-' end || (b.montant * 100)::bigint || ' ' || b.statut || coalesce(' f' || right(b.facture_id::text, 3), '') || case when b.encaissement_id = '5f4b0000-0000-4000-8000-000000000501' then ' e501' when b.encaissement_id is not null then ' cp' else '' end, ' ' order by b.date, b.compte, b.sens, b.montant, b.statut) from ecritures_brouillon b where b.ligne_bancaire_id = '5f4b0000-0000-4000-8000-000000000401' and (b.facture_id is not null or b.encaissement_id is not null))$m$);
 
   foreach cle in array tables loop
     execute format('select count(*) from %I', cle) into n;
@@ -357,25 +400,105 @@ begin
   array['controle', '89. … et dans un dossier qui n''a pas basculé', 'chef_simple',$q$insert into ecritures_brouillon (id, dossier_id, ligne_bancaire_id, date, compte, libelle, montant, sens) values ('{X}', '{D3}', '{U}02401', '2026-03-02', '512000', 'ESSAI', 120, 'debit'); update ecritures_brouillon set libelle = 'ESSAI 2' where id = '{X}'$q$, 'OK', ''],
 
   -- ══ 90 à 96. Les autres chemins : sur un mouvement classé et écrit, leurs refus d'hier d'abord ; sur un mouvement
-  -- libéré qui porte encore des lignes de vente facturée, G5, sans rien écrire ni retirer (R1) ══════════
+  -- libéré qui porte encore des lignes de vente facturée, ils passent, et ces lignes restent (R1) ══════════
   array['controle', '90. la policy du cabinet', 'chef', $q$update lignes_bancaires set compte_bilan = '467000' where id = '{U}00402'$q$, '23514', '{CLA}'],
   array['controle', '91. le compte de bilan', 'chef', $q$select ecrire_mouvement_compte_bilan('{U}00402', '467000', '[{"compte":"512000","sens":"debit","montant":1005.15},{"compte":"467000","sens":"credit","montant":1005.15}]')$q$, '23514', '{CLA}'],
   array['controle', '92. l''affectation à une catégorie', 'chef', $q$insert into categories (id, dossier_id, code, libelle, ordre, compte_comptable, poste_2035) values ('{X}', '{D1}', 'essai', 'ESSAI', 999, '627000', 'Frais financiers'); select affecter_mouvement_bancaire('{U}00402', '{X}', '[{"compte":"512000","sens":"debit","montant":1005.15},{"compte":"627000","sens":"credit","montant":1005.15}]')$q$, '23514', '{CLA}'],
   array['controle', '93. le virement personnel', 'chef', $q$select classer_virement_personnel('{U}00402', '[{"compte":"512000","sens":"debit","montant":1005.15},{"compte":"108000","sens":"credit","montant":1005.15}]')$q$, '23514', '{CLA}'],
   array['controle', '94. le retrait d''une affectation', 'chef', $q$select retirer_affectation_mouvement_bancaire('{U}00402')$q$, '22023', 'Ce mouvement n''est affecté à aucune catégorie.'],
-  array['lecture', '95. R1 : déclassé puis contre-passé sans mouvement, le mouvement libre bute sur G5', 'postgres', $q${JWT} {WE}'{PA}'); select retirer_classement_par_encaissements('{D1}', '{U}00401');
+  array['lecture', '95. R1 : déclassé puis contre-passé sans mouvement, le mouvement libre se classe ; les lignes de la vente facturée restent', 'postgres', $q${JWT} {WE}'{PA}'); select retirer_classement_par_encaissements('{D1}', '{U}00401');
     insert into transmissions_factures (dossier_id, facture_id, canal, hote, flux_id, sha256, etat) values ('{D1}', '{U}00101', 'plateforme', 'p.fr', 'x', repeat('0', 64), 'accepte');
     insert into transmissions_encaissements (dossier_id, encaissement_id, facture_id, canal, hote, etat) values ('{D1}', '{U}00501', '{U}00101', 'manuel', 'p.fr', 'depose');
     {N}(select id from annuler_encaissement('{D1}', '{U}00501', '2026-03-03', 'ESSAI', null))::text, true);
     select {W}'{D1}', 'encaissement', current_setting('essai.n')::uuid, {PRO}'{D1}', 'encaissement', current_setting('essai.n')::uuid{ORP});
     {TRY}{CBF}{YRT} {TRY}{W}'{D1}', 'mouvement', '{U}00401', '[]'){YRT} {TRY}{R}'{D1}', 'mouvement', '{U}00401'){YRT}
-    select current_setting('essai.e') || '|' || {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00401') || '|' || (select statut || coalesce(compte_bilan, '') from lignes_bancaires where id = '{U}00401')
+    select current_setting('essai.e') || '|' || {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00401' and b.encaissement_id is null)
+      || '|' || {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00401' and b.encaissement_id is not null) || '|' || (select statut || coalesce(compte_bilan, '') from lignes_bancaires where id = '{U}00401')
       || '|' || coalesce((ecriture_attendue_vente_facturee('{D1}', 'mouvement', '{U}00401')).motif, '-')$q$, '',
-    '|42501 Une écriture de vente facturée ne se ret|22023 Ce mouvement ne justifie aucun encaissem|22023 Cette source n''a aucune écriture proposé|03-02 512000+12000@401 03-03 512000-12000@401|non_rapprochee|-'],
-  array['lecture', '96. … déclassé puis retiré : G5 jusqu''au retrait de ses lignes, puis il passe', 'chef', $q${WE}'{PA}'); select retirer_classement_par_encaissements('{D1}', '{U}00401'); select retirer_encaissement('{D1}', '{U}00501');
+    '|passé|22023 Ce mouvement ne justifie aucun encaissem|22023 Ce mouvement est classé autrement que pa|03-02 467000-12000@401 03-02 512000+12000@401|03-02 512000+12000@401 03-03 512000-12000@401|rapprochee467000|-'],
+  array['lecture', '96. … déclassé puis retiré : il se classe, les lignes périmées de l''encaissement restent jusqu''à leur retrait', 'chef', $q${WE}'{PA}'); select retirer_classement_par_encaissements('{D1}', '{U}00401'); select retirer_encaissement('{D1}', '{U}00501');
     {TRY}{CBF}{YRT} {TRY}{W}'{D1}', 'mouvement', '{U}00401', '[]'){YRT}
-    select {R}'{D1}', 'encaissement', '{U}00501'); {N}{CBF}::text, true); select current_setting('essai.e') || '|' || current_setting('essai.n') || '|' || {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00401')$q$, '',
-    '|42501 Une écriture de vente facturée ne se ret|22023 Ce mouvement ne justifie aucun encaissem|2|03-02 467000-12000@401 03-02 512000+12000@401'],
+    select set_config('essai.o', {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00401' and b.encaissement_id is null) || ' / ' || {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00401' and b.encaissement_id is not null), true);
+    {N}{R}'{D1}', 'encaissement', '{U}00501')::text, true); select current_setting('essai.e') || '|' || current_setting('essai.o') || '|' || current_setting('essai.n') || '|' || {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00401')$q$, '',
+    '|passé|22023 Ce mouvement ne justifie aucun encaissem|03-02 467000-12000@401 03-02 512000+12000@401 / 03-02 512000+12000@401|3|03-02 467000-12000@401 03-02 512000+12000@401'],
+
+  -- ══ 130 à 139. R1 : les dix-huit fonctions du relevé sur le mouvement libéré (PR1), chacune par son mécanisme — ce que
+  -- la fonction qui classe rend, ce que celle qui déclasse rend, les lignes propres après le classement, puis après le
+  -- déclassement, les lignes de la vente facturée (intactes : celles que PR1 a posées), l'état du mouvement et le nombre de
+  -- ses liens ══════════
+  array['lecture', '130. R1 : l''affectation, puis son retrait', 'postgres', $q${PR1}
+    insert into categories (id, dossier_id, code, libelle, ordre, compte_comptable, poste_2035) values ('{X}', '{D1}', 'essai', 'ESSAI', 999, '627000', 'Frais financiers');
+    {N}affecter_mouvement_bancaire('{U}00401', '{X}', '[{"compte":"512000","sens":"debit","montant":120},{"compte":"627000","sens":"credit","montant":120}]')::text, true);
+    select set_config('essai.o', {LPR}, true);
+    {N}current_setting('essai.n') || '|' || retirer_affectation_mouvement_bancaire('{U}00401')::text, true);
+    select current_setting('essai.n') || '|' || current_setting('essai.o') || '|' || {LPR} || '|' || {LVF} || '|' || (select statut || ':' || num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, nullif(ventilee, false), nullif(reglement_groupe, false), nullif(prelevement_personnel, false)) from lignes_bancaires where id = '{U}00401')$q$, '',
+    '2|2|03-02 512000+12000 03-02 627000-12000|∅|03-02 512000+12000 proposee e501 03-03 512000-12000 proposee cp 03-04 411000+100 validee f101 03-04 512000+50 validee e501|non_rapprochee:0'],
+  array['lecture', '131. … le virement personnel, puis son retrait', 'postgres', $q${PR1}
+    {N}classer_virement_personnel('{U}00401', '[{"compte":"512000","sens":"debit","montant":120},{"compte":"108000","sens":"credit","montant":120}]')::text, true);
+    select set_config('essai.o', {LPR}, true);
+    {N}current_setting('essai.n') || '|' || retirer_virement_personnel('{U}00401')::text, true);
+    select current_setting('essai.n') || '|' || current_setting('essai.o') || '|' || {LPR} || '|' || {LVF} || '|' || (select statut || ':' || num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, nullif(ventilee, false), nullif(reglement_groupe, false), nullif(prelevement_personnel, false)) from lignes_bancaires where id = '{U}00401')$q$, '',
+    '2|2|03-02 108000-12000 03-02 512000+12000|∅|03-02 512000+12000 proposee e501 03-03 512000-12000 proposee cp 03-04 411000+100 validee f101 03-04 512000+50 validee e501|non_rapprochee:0'],
+  array['lecture', '132. … le compte de bilan, puis son retrait', 'postgres', $q${PR1}
+    {N}{CBF}::text, true);
+    select set_config('essai.o', {LPR}, true);
+    {N}current_setting('essai.n') || '|' || retirer_mouvement_compte_bilan('{U}00401')::text, true);
+    select current_setting('essai.n') || '|' || current_setting('essai.o') || '|' || {LPR} || '|' || {LVF} || '|' || (select statut || ':' || num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, nullif(ventilee, false), nullif(reglement_groupe, false), nullif(prelevement_personnel, false)) from lignes_bancaires where id = '{U}00401')$q$, '',
+    '2|2|03-02 467000-12000 03-02 512000+12000|∅|03-02 512000+12000 proposee e501 03-03 512000-12000 proposee cp 03-04 411000+100 validee f101 03-04 512000+50 validee e501|non_rapprochee:0'],
+  array['lecture', '133. … la ventilation, puis son retrait', 'postgres', $q${PR1}
+    insert into categories (id, dossier_id, code, libelle, ordre, compte_comptable, poste_2035) values ('{X}', '{D1}', 'essai', 'ESSAI', 999, '627000', 'Frais financiers');
+    {N}ventiler_mouvement_bancaire('{U}00401', '[{"categorie_id":"{X}","montant":100},{"part_personnelle":true,"montant":20}]', '[{"compte":"512000","sens":"debit","montant":120},{"compte":"627000","sens":"credit","montant":100},{"compte":"108000","sens":"credit","montant":20}]')::text, true);
+    select set_config('essai.o', {LPR}, true);
+    {N}current_setting('essai.n') || '|' || retirer_ventilation_mouvement_bancaire('{U}00401')::text, true);
+    select current_setting('essai.n') || '|' || current_setting('essai.o') || '|' || {LPR} || '|' || {LVF} || '|' || (select statut || ':' || num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, nullif(ventilee, false), nullif(reglement_groupe, false), nullif(prelevement_personnel, false)) from lignes_bancaires where id = '{U}00401')$q$, '',
+    '3|3|03-02 108000-2000 03-02 512000+12000 03-02 627000-10000|∅|03-02 512000+12000 proposee e501 03-03 512000-12000 proposee cp 03-04 411000+100 validee f101 03-04 512000+50 validee e501|non_rapprochee:0'],
+  array['lecture', '134. … le règlement groupé (il retire aussi les lignes de ses pièces), puis son retrait', 'postgres', $q${PR1}
+    insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, date_piece, montant_ttc) values
+      ('{U}00901', '{D1}', '{D1}/r1-a.pdf', 'r1-a.pdf', 'vente', 'a_valider', '2026-03-01', 70), ('{U}00902', '{D1}', '{D1}/r1-b.pdf', 'r1-b.pdf', 'vente', 'a_valider', '2026-03-01', 50);
+    insert into ecritures_brouillon (dossier_id, piece_id, ligne_bancaire_id, date, compte, libelle, montant, sens) values ('{D1}', '{U}00901', '{U}00401', '2026-03-02', '512000', 'ESSAI', 70, 'debit');
+    {N}regler_pieces_par_mouvement('{U}00401', '[{"piece_id":"{U}00901","montant":70},{"piece_id":"{U}00902","montant":50}]')::text, true);
+    select set_config('essai.o', {LPR}, true);
+    insert into ecritures_brouillon (dossier_id, piece_id, ligne_bancaire_id, date, compte, libelle, montant, sens) values
+      ('{D1}', '{U}00901', '{U}00401', '2026-03-02', '512000', 'ESSAI', 70, 'debit'), ('{D1}', '{U}00902', '{U}00401', '2026-03-02', '512000', 'ESSAI', 50, 'debit');
+    {N}current_setting('essai.n') || '|' || retirer_reglement_groupe('{U}00401')::text, true);
+    select current_setting('essai.n') || '|' || current_setting('essai.o') || '|' || {LPR} || '|' || {LVF} || '|' || (select statut || ':' || num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, nullif(ventilee, false), nullif(reglement_groupe, false), nullif(prelevement_personnel, false)) from lignes_bancaires where id = '{U}00401')$q$, '',
+    '2|2|∅|∅|03-02 512000+12000 proposee e501 03-03 512000-12000 proposee cp 03-04 411000+100 validee f101 03-04 512000+50 validee e501|non_rapprochee:0'],
+  array['lecture', '135. … le déblocage d''un emprunt, puis son retrait', 'postgres', $q${PR1}
+    insert into emprunts (id, dossier_id, nom, capital_initial, taux_annuel, date_debut, duree_mois) values ('{U}00904', '{D1}', 'ESSAI', 1000, 2, '2026-03-01', 24);
+    {N}rapprocher_echeance_emprunt('{U}00401', '{U}00904', null, 0, 0, '[{"compte":"512000","sens":"debit","montant":120},{"compte":"164000","sens":"credit","montant":120}]')::text, true);
+    select set_config('essai.o', {LPR}, true);
+    {N}current_setting('essai.n') || '|' || retirer_echeance_emprunt('{U}00401')::text, true);
+    select current_setting('essai.n') || '|' || current_setting('essai.o') || '|' || {LPR} || '|' || {LVF} || '|' || (select statut || ':' || num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, nullif(ventilee, false), nullif(reglement_groupe, false), nullif(prelevement_personnel, false)) from lignes_bancaires where id = '{U}00401')$q$, '',
+    '2|2|03-02 164000-12000 03-02 512000+12000|∅|03-02 512000+12000 proposee e501 03-03 512000-12000 proposee cp 03-04 411000+100 validee f101 03-04 512000+50 validee e501|non_rapprochee:0'],
+  array['lecture', '136. … le remboursement d''une échéance de cotisation, puis son retrait', 'postgres', $q${PR1}
+    insert into cotisations_declarees (id, dossier_id, echeance, montant_appele) values ('{U}00903', '{D1}', '2026-03-01', -120);
+    {N}rapprocher_cotisation('{U}00401', '{U}00903', '[{"compte":"512000","sens":"debit","montant":120},{"compte":"646000","sens":"credit","montant":120}]')::text, true);
+    select set_config('essai.o', {LPR}, true);
+    {N}current_setting('essai.n') || '|' || retirer_rapprochement_cotisation('{U}00401')::text, true);
+    select current_setting('essai.n') || '|' || current_setting('essai.o') || '|' || {LPR} || '|' || {LVF} || '|' || (select statut || ':' || num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, nullif(ventilee, false), nullif(reglement_groupe, false), nullif(prelevement_personnel, false)) from lignes_bancaires where id = '{U}00401')$q$, '',
+    '2|2|03-02 512000+12000 03-02 646000-12000|∅|03-02 512000+12000 proposee e501 03-03 512000-12000 proposee cp 03-04 411000+100 validee f101 03-04 512000+50 validee e501|non_rapprochee:0'],
+  array['lecture', '137. … puis l''échéance supprimée par sa fonction', 'postgres', $q${PR1}
+    insert into cotisations_declarees (id, dossier_id, echeance, montant_appele) values ('{U}00903', '{D1}', '2026-03-01', -120);
+    {N}rapprocher_cotisation('{U}00401', '{U}00903', '[{"compte":"512000","sens":"debit","montant":120},{"compte":"646000","sens":"credit","montant":120}]')::text, true);
+    select set_config('essai.o', {LPR}, true);
+    {N}current_setting('essai.n') || '|' || supprimer_echeance_cotisation('{U}00903')::text, true);
+    select current_setting('essai.n') || '|' || current_setting('essai.o') || '|' || {LPR} || '|' || {LVF} || '|' || (select statut || ':' || num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, nullif(ventilee, false), nullif(reglement_groupe, false), nullif(prelevement_personnel, false)) from lignes_bancaires where id = '{U}00401')$q$, '',
+    '2|1|03-02 512000+12000 03-02 646000-12000|∅|03-02 512000+12000 proposee e501 03-03 512000-12000 proposee cp 03-04 411000+100 validee f101 03-04 512000+50 validee e501|non_rapprochee:0'],
+  array['lecture', '138. … le remboursement d''un crédit de TVA, puis son retrait', 'postgres', $q${PR1}
+    insert into declarations_tva (id, dossier_id, periode_debut, periode_fin, tva_declaree, remboursement_demande) values ('{U}00905', '{D1}', '2026-01-01', '2026-01-31', -120, 120);
+    {N}rapprocher_declaration_tva('{U}00401', '{U}00905', '[{"compte":"512000","sens":"debit","montant":120},{"compte":"445830","sens":"credit","montant":120}]')::text, true);
+    select set_config('essai.o', {LPR}, true);
+    {N}current_setting('essai.n') || '|' || retirer_rapprochement_declaration_tva('{U}00401')::text, true);
+    select current_setting('essai.n') || '|' || current_setting('essai.o') || '|' || {LPR} || '|' || {LVF} || '|' || (select statut || ':' || num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, nullif(ventilee, false), nullif(reglement_groupe, false), nullif(prelevement_personnel, false)) from lignes_bancaires where id = '{U}00401')$q$, '',
+    '2|2|03-02 445830-12000 03-02 512000+12000|∅|03-02 512000+12000 proposee e501 03-03 512000-12000 proposee cp 03-04 411000+100 validee f101 03-04 512000+50 validee e501|non_rapprochee:0'],
+  array['lecture', '139. … puis la déclaration retirée par sa fonction', 'postgres', $q${PR1}
+    insert into declarations_tva (id, dossier_id, periode_debut, periode_fin, tva_declaree, remboursement_demande) values ('{U}00905', '{D1}', '2026-01-01', '2026-01-31', -120, 120);
+    {N}rapprocher_declaration_tva('{U}00401', '{U}00905', '[{"compte":"512000","sens":"debit","montant":120},{"compte":"445830","sens":"credit","montant":120}]')::text, true);
+    select set_config('essai.o', {LPR}, true);
+    {N}current_setting('essai.n') || '|' || retirer_declaration_tva('{U}00905')::text, true);
+    select current_setting('essai.n') || '|' || current_setting('essai.o') || '|' || {LPR} || '|' || {LVF} || '|' || (select statut || ':' || num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, nullif(ventilee, false), nullif(reglement_groupe, false), nullif(prelevement_personnel, false)) from lignes_bancaires where id = '{U}00401')
+      || '|' || (select count(*) from declarations_tva where id = '{U}00905')$q$, '',
+    '2|1|03-02 445830-12000 03-02 512000+12000|∅|03-02 512000+12000 proposee e501 03-03 512000-12000 proposee cp 03-04 411000+100 validee f101 03-04 512000+50 validee e501|non_rapprochee:0|0'],
 
   -- ══ 100 à 119. Le compte de contrepartie ══════════
   array['controle', '100. rang 1 : le client « Ventes »', 'client_vb', $q${C1}00518', '467100')$q$, '42501', '{ACC}'],
@@ -418,6 +541,10 @@ begin
     'choisir_compte_contrepartie(p_dossier_id uuid, p_encaissement_id uuid, p_compte text) ecrire_vente_facturee(p_dossier_id uuid, p_source text, p_source_id uuid, p_lignes jsonb) retirer_ecriture_vente_facturee(p_dossier_id uuid, p_source text, p_source_id uuid)'],
   array['valeur', '154. qui nomme les deux réglages', 'postgres', $q$select string_agg(r || ':' || (select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc like '%' || r || '%'), ' | ' order by r) from unnest(array['jd.contrepartie_encaissement', 'jd.ecriture_vente_facturee']) r$q$, '',
     'jd.contrepartie_encaissement:choisir_compte_contrepartie,garder_encaissement_facture | jd.ecriture_vente_facturee:ecrire_vente_facturee,garder_ecriture_vente_facturee,garder_lignes_de_la_vente_facturee,retirer_ecriture_vente_facturee'],
+  -- Le filtre de R1 ne nomme, parmi les colonnes de source, que la pièce, la facture et l'encaissement : sur une ligne qui
+  -- porte un mouvement, ces quatre contraintes font des quatre autres des colonnes nulles. L'une relâchée, le filtre se revoit.
+  array['valeur', '155. les quatre autres colonnes de source, nulles sur une ligne qui porte un mouvement', 'postgres', $q$select string_agg(conname || ' ' || pg_get_constraintdef(oid), ' | ' order by conname) from pg_constraint where conrelid = 'public.ecritures_brouillon'::regclass and conname in ('ecritures_brouillon_cotisation_sans_autre_source', 'ecritures_brouillon_dotation_sans_piece_ni_mouvement', 'ecritures_brouillon_forfait_sans_piece_ni_mouvement', 'ecritures_brouillon_liquidation_sans_autre_source')$q$, '',
+    'ecritures_brouillon_cotisation_sans_autre_source CHECK (((cotisation_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL) AND (vehicule_id IS NULL) AND (declaration_tva_id IS NULL)))) | ecritures_brouillon_dotation_sans_piece_ni_mouvement CHECK (((immobilisation_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL)))) | ecritures_brouillon_forfait_sans_piece_ni_mouvement CHECK (((vehicule_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL)))) | ecritures_brouillon_liquidation_sans_autre_source CHECK (((declaration_tva_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL) AND (vehicule_id IS NULL))))'],
 
   -- ══ 160 à 166. Les mutations : chacune doit MORDRE ══════════
   array['controle', '161. MUTATION de 52c : au centime juste', 'chef', $q${WE}jsonb_set('{PA}', '{0,montant}', '20.00'))$q$, 'OK', ''],

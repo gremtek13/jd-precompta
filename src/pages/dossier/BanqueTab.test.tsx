@@ -115,7 +115,7 @@ vi.mock('../../lib/depot', () => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatIn, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn, predicatIs, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     let operation = 'select'
     let idFiltre: unknown = null
@@ -140,6 +140,8 @@ vi.mock('../../lib/supabase', async () => {
         return c
       },
       neq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}!=${valeur}`); return c },
+      // Le retrait d'un règlement en engagement écarte les lignes d'une vente facturée (R1) : `.is(colonne, null)`.
+      is: (colonne: string, valeur: unknown) => { filtres.push(`${colonne} is ${valeur}`); predicats.push(predicatIs(colonne, valeur)); return c },
       not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       order: () => c,
@@ -1412,7 +1414,8 @@ describe('BanqueTab — en engagement', () => {
     await act(async () => { within(volet()).getByRole('button', { name: 'Annuler le rapprochement' }).click() })
     await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
 
-    expect(faux.suppressionsEcritures).toEqual([['ligne_bancaire_id=ligne-1']])
+    // Les lignes propres du mouvement seulement, jamais celles d'une vente facturée (R1, `retirerContrepartieBanque`).
+    expect(faux.suppressionsEcritures).toEqual([['ligne_bancaire_id=ligne-1', 'facture_id is null', 'encaissement_id is null']])
     expect(faux.updatesEcritures).toEqual([])
   })
 })

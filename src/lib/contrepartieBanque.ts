@@ -133,11 +133,19 @@ export async function synchroniserContrepartieBanque(
 //
 // EN ENGAGEMENT, elle retire le RÈGLEMENT de CE mouvement, ses deux lignes, et rien d'autre : la
 // facture reste à sa date, et les règlements des autres paiements de la pièce restent en place.
+//
+// Les lignes PROPRES au mouvement, jamais une ligne qui porte une facture ou un encaissement (le lot de R1, migration
+// `lignes_propres_au_mouvement`, comme les dix-huit fonctions du relevé) : un mouvement libéré peut porter encore les
+// lignes d'une vente facturée — la banque d'un encaissement contre-passé sans mouvement, et celle de sa contre-passation —,
+// qui ne se retirent que par leur fonction ; les emporter, G5 le refuserait, APRÈS que l'écran a délié le mouvement, et
+// le règlement de la pièce resterait au brouillon. En trésorerie, le filtre de la pièce suffit : aucune ligne d'une vente
+// facturée ne porte de pièce (`ecrire_vente_facturee` les écrit sans pièce, et G5 refuse qu'une autre écriture les change).
 export async function retirerContrepartieBanque(
   ligneId: string, pieceId: string, piece: Pick<Piece, 'date_piece' | 'created_at'> | null, modele: ModeleComptable,
 ) {
   if (modele.mode === 'engagement') {
     const { error } = await supabase.from('ecritures_brouillon').delete().eq('ligne_bancaire_id', ligneId)
+      .is('facture_id', null).is('encaissement_id', null)
     if (error) throw error
     return
   }
