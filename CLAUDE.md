@@ -421,12 +421,16 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `retirer_ecriture_vente_facturee`), la garde G5 et le compte d'une compensation, en base — une migration collée par le
   cabinet —, et `lib/ecritureVenteFacturee.ts`, qui redit leurs refus → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN BASE ».
   VF4c1 le 20/10/2026, neutre : l'onglet Écritures écrit, réécrit et retire ces écritures, source par source, et le
-  cabinet y choisit le compte d'une compensation → « L'ONGLET ÉCRITURES ÉCRIT LES VENTES FACTURÉES ». Restent le lot de
-  R1 (les dix-neuf retraits des lignes d'un mouvement, que G5 refuse sur un mouvement libéré qui porte encore des lignes
-  d'un encaissement : fermé du côté sûr, à aligner avant toute bascule), VF4c2 (le FEC, la piste d'audit, le lettrage,
-  la concordance ; les refus qui attendent VF4 tombent ; VF4C1-Q1, changer le compte d'une compensation déjà choisi,
-  ouverte), puis VF5 à VF9 — se conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ;
-  qui a désigné, et quand : à VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
+  cabinet y choisit le compte d'une compensation → « L'ONGLET ÉCRITURES ÉCRIT LES VENTES FACTURÉES ». VF4c2 le
+  21/10/2026 : le FEC, la piste d'audit et le lettrage lisent ces écritures, et le 706000 et le 627000 prennent le nom
+  du plan comptable général (VF4A-Q1) ; neutre hors de ce nom, qu'aucune ligne de la production ne porte → « LE FEC, LA
+  PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES ». Restent le lot de R1 (les dix-neuf retraits des lignes
+  d'un mouvement, que G5 refuse sur un mouvement libéré qui porte encore des lignes d'un encaissement : fermé du côté
+  sûr, à aligner avant toute bascule), VF4c3 (la concordance de la 2035 et la CA3 lisent ces écritures, leurs refus
+  tombent ; VF4C1-Q1, changer le compte d'une compensation déjà choisi, et VF4C2-Q1, le nom des quatre autres comptes,
+  ouvertes), puis VF5 à VF9 — se conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font
+  compter ; qui a désigné, et quand : à VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce
+  ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -688,10 +692,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Le plan comptable se cite dans sa numérotation du 1er janvier 2026** (le 108 passe au 101) ; une migration appliquée
   garde l'ancien numéro ; le 468 se traitera comme le 467 (Q12) → « LE PLAN COMPTABLE A CHANGÉ DE NUMÉROTATION ». **Le
   plan d'un dossier** : un rôle sans ligne prend le défaut du catalogue (`roles_comptables`), trente-deux rôles depuis
-  VF4a, dont les six de la vente facturée, au libellé hors de `LIBELLES_COMPTES`, celui du plan comptable général à VF4c
-  (VF4A-Q1) ; aucune policy d'écriture avant PC4 ; catalogue hors sauvegarde (`PARENTS_HORS_PLAN_VOULUS`) ; la base et
-  l'application le lisent — plan absent ou incomplet, aucun onglet ne se monte —, jamais un compte de rôle en dur
-  (`comptesEnDur.test.ts`, `compositionsAuPlan.test.ts`) → « L'APPLICATION LIT LE PLAN ».
+  VF4a, dont les six de la vente facturée — le 706000 et le 627000 au nom du plan comptable général dans
+  `LIBELLES_COMPTES` depuis VF4c2 (VF4A-Q1), les quatre autres hors de cette table (VF4C2-Q1) ; aucune policy d'écriture
+  avant PC4 ; catalogue hors sauvegarde (`PARENTS_HORS_PLAN_VOULUS`) ; la base et l'application le lisent — plan absent
+  ou incomplet, aucun onglet ne se monte —, jamais un compte de rôle en dur (`comptesEnDur.test.ts`,
+  `compositionsAuPlan.test.ts`) → « L'APPLICATION LIT LE PLAN ».
 - **Montant retenu** : HT pour un assujetti, TTC pour un exonéré (`lib/montantRetenu.ts`) → « HT OU TTC ». **La 2035
   compte une pièce à la date de son PAIEMENT** (`paiementsDesPieces`, entrées obligatoires) → « LA 2035 COMPTE UNE PIÈCE
   À LA DATE DE SON PAIEMENT ». **La CA3** : exigibilité à l'encaissement ou au paiement, arrondi fiscal par ligne,
@@ -778,7 +783,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   moteurs la lisent par `lib/ventesFacturees.ts`, une SECONDE forme (la CA3 n'y lit pas les événements de la 2035), en
   paramètre obligatoire : la TVA d'un paiement partiel au cumul, l'exigibilité selon le régime figé sur la facture →
   « LES VENTES FACTURÉES, EN MODULE ». La 2035 la lit depuis VF3b1, la CA3 depuis VF3b2, la situation et l'estimation
-  depuis VF3b3 ; jusqu'à VF4c2, ni la concordance ni la CA3 ne lisent ses écritures : la concordance la dit à part
+  depuis VF3b3 ; jusqu'à VF4c3, ni la concordance ni la CA3 ne lisent ses écritures : la concordance la dit à part
   (`vente_facturee_non_ecrite`), et une période qui en porte ne s'enregistre pas (`REFUS_VENTES_FACTUREES_NON_ECRITES`).
   L'estimation la reçoit en total hors taxe par mois, ou « non comptées », un état que l'appelant choisit et que son
   écran dit (« Ma simulation », jusqu'à VF8) → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES
@@ -793,8 +798,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   un dossier basculé : l'état de chaque source (à écrire, à jour, à réécrire, à retirer, validée, ne s'écrit pas) se
   calcule dans `lib/ecrituresVentesFactureesEcran.ts`, sur des lectures faites en entier dans la même relecture que le
   brouillon ; ces lignes ne sont pas des ruptures de la piste d'audit, dans l'onglet comme dans la Checklist
-  (`ligneDUneVenteFacturee`) → « L'ONGLET ÉCRITURES ÉCRIT LES VENTES FACTURÉES ». **Connexion bancaire** : 90 jours sans
-  nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
+  (`ligneDUneVenteFacturee`) → « L'ONGLET ÉCRITURES ÉCRIT LES VENTES FACTURÉES ». Le FEC, la piste d'audit et le
+  lettrage les lisent depuis VF4c2 : chaque ligne retrouve son écriture composée par sa SOURCE et sa DATE, jamais par un
+  montant ni un libellé, et seulement si les lignes de la source à cette date SONT cette écriture
+  (`rattachementDesVentes`, `lib/ventesFactureesDesExports.ts`), dont elle prend le journal, la pièce et l'auxiliaire du
+  411 ; une ligne qui ne se rattache plus reste hors du FEC, et le badge le dit ; un dossier basculé dont les ventes ne
+  sont pas lues en entier n'exporte rien ; la piste d'audit cite la facture et l'empreinte de son exemplaire ou du CII
+  transmis, le registre, le relevé ; le 411 se lettre par facture ; jusqu'à VF7, un exercice qui porte ces lignes ne se
+  valide pas → « LE FEC, LA PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES ». **Connexion bancaire** : 90
+  jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 - **Les ventes du client** : les essais exigent un client d'essai SANS « Ventes » → « LES VENTES DU CLIENT, EN BASE ».
   **Les devis** : `devis.sql` est la RÉFÉRENCE des refus tant que l'export ne porte pas leurs migrations. **Articles,
   contacts, paramètres** : une ligne, un client de facture gardent leur COPIE ; rien ne se supprime (un contact

@@ -30230,3 +30230,114 @@ arbitrages : VF4C1-Q1, changer le compte d'une compensation déjà choisi, tant 
 - La phrase de la carte « piste d'audit rompue » (« la pièce ou le relevé supprimé ») ne dit pas la cause d'une ligne
   d'un mouvement déclassé.
 - Un encaissement retiré dans un exercice validé ne se juge que par ses lignes validées (« validée »).
+
+**LA MISE EN LIGNE.** Demande #199, ouverte sur `aee8fe9` après la barrière locale sous Node 22.23.3 sur le commit du
+code (`tsc -b` ; lint, 0 erreur et les 63 avertissements d'avant ; 434 fichiers et 13 202 tests sous Paris, UTC, New
+York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de 17 h 17 à 17 h 35
+UTC) ; fusionnée en « Rebase and merge » le 20/10/2026 à 17 h 36 UTC (`ffcedc7`, `438f998`), `main` linéaire, son arbre
+égal à celui de la branche ; le déploiement vert à 17 h 42, et le site sert `index-CW-OHNCT.js`, le bundle du build
+local ; la ligne 28.6 de la feuille de route mise à jour, puis relue par empreinte (10 077 positions) ; les barres
+d'avancement inchangées ; la question VF4C1-Q1 dans la page des arbitrages ; la copie de travail de l'agent retirée, son
+travail entier dans `main`.
+
+### 21/10/2026 — LE FEC, LA PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES — CHANTIER EC-Q3, ÉTAPE VF4c2 (LIGNE 28.6)
+
+(Écrite par l'agent architecte de VF4c2 sur `438f998`, en six commits que la session a relus puis réunis en un. Fichiers
+nouveaux : `src/lib/ventesFactureesDesExports.ts`, `src/lib/justificatifsDesVentesLecture.ts` et leurs tests,
+`src/lib/libellesVf4aQ1.test.ts`, `src/test/dossierBascule.ts`, `src/test/fecDgfip.ts`. Modifiés : `fec.ts`,
+`pisteAudit.ts`, `lettrage.ts`, `lettragesLecture.ts`, `comptes.ts`, `planComptable.ts`, `prealablesValidation.ts`,
+`EcrituresTab.tsx`, `VentesFactureesEcritures.tsx`, `StatistiquesTab.tsx`, `ComptesDeTiersCard.tsx`,
+`outils/captures/fauxSupabase.ts`, `src/test/ventesFacturees.ts`, et leurs tests. Ni base, ni migration, ni Edge
+Function ; aucun appel à la production par l'agent.)
+
+**LA DÉLIMITATION.** VF4c se fait en trois lots : VF4c1, en ligne — l'onglet Écritures écrit ces écritures ; VF4c2, ici
+— le FEC, la piste d'audit exportée et le lettrage les lisent, et le 706000 et le 627000 prennent le nom du plan
+comptable général (VF4A-Q1) ; VF4c3 — la concordance de la 2035 et la CA3 les lisent (leurs refus tombent), et « Changer
+le compte » d'une compensation (VF4C1-Q1). NEUTRE pour un dossier qui n'a pas basculé, hors du nom des deux comptes.
+Mesuré en production par la session le 21/10/2026, en lecture seule : aucune écriture du brouillon ne porte le 706000 ni
+le 627000 ; les deux catégories communes « Ventes / prestations » et « Frais bancaires » sont les seules sur ces
+comptes, aucune catégorie propre à un dossier.
+
+**LE RATTACHEMENT** (`ventesFactureesDesExports.ts`, pur, que le FEC, la piste et le lettrage partagent). La base ne
+range d'une ligne d'une vente facturée que sa date, son compte, son sens, son montant, son libellé, son mouvement et sa
+source ; le journal, la pièce et le client de l'auxiliaire sont ceux de la composition (VF4a). Une ligne retrouve son
+écriture composée par la clé de sa SOURCE et de sa DATE — `facture|<document>|<date>`,
+`encaissement|<encaissement>|<date>`, `mouvement-encaissements|<mouvement>` (une ligne sans pièce ni autre source, d'un
+mouvement que la composition rend : la forme de G5) —, jamais par un montant ni un libellé ; et le groupe n'est rattaché
+que s'il EST l'écriture composée (`memeEcritureQueLeBrouillon`, la comparaison de la fonction de VF4b et de l'état « à
+jour »). Les lignes d'une source « à réécrire » ou « à retirer » ne le sont pas.
+
+**LE FEC** (`numeroterFec`, `genererFec` : la composition en paramètre OBLIGATOIRE). Une ligne rattachée prend le
+journal (VE pour la facture, l'avoir et l'encaissement de trésorerie ; BQ pour le règlement d'engagement et le
+mouvement), PieceRef, PieceDate, la clé et l'auxiliaire du 411 de la composition ; EcritureLib reste le libellé de la
+ligne, celui que la composition lui a donné, pour que le FEC d'avant la validation et celui d'après ne diffèrent que par
+ValidDate et le lettrage. Une ligne non rattachée reste hors du fichier, avec le reste d'une pièce supprimée, et le
+badge de l'onglet la compte à part (« dont N d'une vente facturée, à réécrire ou à retirer »). Un dossier basculé dont
+les ventes ne sont pas lues en entier, ou se lisent incohérentes, n'exporte ni FEC ni piste d'audit (les boutons grisés,
+la raison en infobulle). Les contrôles de l'outil de la DGFiP (`anomaliesDgfip`, `desequilibresDgfip`, sortis de
+`fec.test.ts` vers `src/test/fecDgfip.ts`) ne relèvent rien sur un dossier basculé — deux modèles comptables, deux
+plans, ventes facturées et pièces mêlées —, ni avec une ligne périmée laissée hors du fichier. Le FEC d'un exercice
+validé ne change pas (`numerotationValidee`). Les préalables de la validation reçoivent une composition VIDE jusqu'à
+VF7 : une ligne d'une vente facturée y reste une « écriture que rien ne rattache », et la validation d'un exercice qui
+en porte se refuse — fermée du côté sûr, comme la base.
+
+**LA PISTE D'AUDIT** (`pisteAudit`, `JustificatifsDesVentes` obligatoire). D'une facture ou d'un avoir, le document —
+son numéro, son client, sa date, son TTC — et pour preuve l'empreinte de son exemplaire désigné, à défaut celle du CII
+déposé ou accepté (`transmissions_factures.sha256`), sinon la colonne VIDE ; d'un encaissement ou d'une
+contre-passation, son registre et son mouvement ; d'un mouvement que ses encaissements classent, le relevé. Une ligne
+rattachée n'a rien de « manquant » ; une ligne non rattachée le dit, son justificatif nommé quand même. L'exemplaire
+d'une facture source n'est plus dit « sans écriture » : la vente est comptée par la facture. Les preuves se lisent au
+clic de l'export (`justificatifsDesVentesLecture.ts`), tout ou rien, gardées par dossier.
+
+**LE LETTRAGE** (`lettrage.ts`). En engagement, le 411 d'une facture source — la facture, ses avoirs, ses encaissements
+et leurs contre-passations — reçoit un code quand ses lignes se soldent ET sont toutes rattachées, dans la suite des
+codes du compte ; une facture qui se solderait sur deux comptes n'en reçoit aucun, comme une pièce. Ce qui ne se lettre
+pas se dit sous chaque facture de la section « Ventes facturées » (`lettragesDesFactures`, `phraseDuLettrage` : un reste
+au brouillon, ou une écriture à reprendre), et dans les comptes de tiers de l'onglet Statistiques, où la facture se
+range chez son client avec son état, sans case à cocher (`lettrer_pieces` ne connaît que des pièces) ; ses factures et
+son registre s'y lisent en entier, en engagement seulement et si le brouillon porte une telle ligne. Rien en trésorerie.
+
+**LES LIBELLÉS (VF4A-Q1).** Le 706000 (« Prestations de services ») et le 627000 (« Services bancaires et assimilés »)
+entrent dans `LIBELLES_COMPTES` : ils passent avant le nom d'une catégorie dans la balance, le FEC et la revue
+analytique, pour tout dossier — les lignes des catégories « Ventes / prestations » et « Frais bancaires », et de toute
+catégorie sur ces comptes, changent de nom. La révision et le lettrage ne nomment que des comptes de bilan et de tiers ;
+le libellé figé d'une écriture validée ne bouge pas. Rien d'autre ne change de nom (`libellesVf4aQ1.test.ts`).
+
+**LE BANC.** Le faux Supabase versionné applique la jointure `factures_emises.*` des lignes de facture (le correctif
+préparé à VF4c1). Sans elle, la passe « 1280 sans, barre maxi » expirait sur « Vérifier l'empreinte » (contre-épreuve
+rejouée) ; avec elle, elle aboutit. `debordements.mjs` rend 0 aux quatre largeurs de référence, à 720 px et aux volets
+extrêmes, avec et sans un dossier basculé provisoirement (hors commit), sauf `factures/clients-soins` à la passe « 1280
+sans barre » : le même débordement se voit sur `438f998` avec la seule jointure, il est d'avant ce lot.
+
+**LES PREUVES.** 61 tests de plus (13 202 avant, 13 263 après ; 437 fichiers), comparés test par test : aucun verdict
+changé, un test renommé. Les assertions d'existants changées, une par une. Pour VF4A-Q1 : le CompteLib du 706000 dans
+`fec.test.ts` (« 706000 » devient « Prestations de services ») ; son nom dans la balance de `reportDesSoldes.test.ts`
+(« Honoraires » devient « Prestations de services ») ; le compte de `comptesEnDur.test.ts` (61 emplois dans
+`comptes.ts`, 65 désormais) ; les clés de `LIBELLES_COMPTES` dans `planComptable.test.ts`, et son test « HORS de
+LIBELLES_COMPTES », réécrit et renommé. Pour la fin de l'état transitoire de VF4c1 : la phrase de la section sur le
+FEC ; le badge (« 9 écritures » devient « 4 … dont 4 d'une vente facturée ») ; l'inventaire du scanner de
+`ecrituresVentesFactureesControles.test.ts`, qui ne compte plus le NOM d'une propriété (un test neuf prouve que sa
+valeur reste comptée). Mutations : 72, dont 69 tuées ; des trois survivantes, l'une est équivalente, les deux autres
+inatteignables (une facture soldée sur deux comptes de tiers, quand la composition n'écrit que le 411). La barrière
+locale sous Node 22.23.3 sur le commit du code (`54e8554`) : `tsc -b` 0, son cache écarté d'abord ; lint 0 erreur (les
+63 avertissements d'avant) ; 437 fichiers et 13 263 tests sous les quatre fuseaux ; le build (`index-C9ih9VLa.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** La session a relu le code et l'a réuni en un commit ; la mesure de
+production, que la consigne interdisait à l'agent, est la sienne. Une question entre dans la page des arbitrages :
+VF4C2-Q1, donner aussi le nom du plan comptable général au 707000, au 511000, au 445800 et au 530000 (recommandé : oui,
+à VF4c3). La recommandation de VF4C1-Q1 passe de VF4c2 à VF4c3.
+
+**À REVOIR.**
+- L'auxiliaire du 411 d'une vente facturée se tire du nom du client par la clé d'identité des pièces (`cleFournisseur` :
+  le premier mot d'au moins quatre lettres qui n'est pas générique) : deux clients dont le nom commence par le même mot
+  le partagent, dans le FEC comme dans la balance âgée (deux clients du banc). Le même défaut vaut, d'avant ce lot, pour
+  les pièces en engagement. À reprendre avec A7 : le contact figé sur la facture donnerait un auxiliaire stable.
+- Sous un plan réglé (PC4), les comptes lettrables et les auxiliaires restent indexés par les numéros par défaut (hérité
+  de PC3a) : le 411 d'un plan décalé ne se lettrerait pas et n'aurait pas d'auxiliaire.
+- En trésorerie, rien ne se lettre, pas même le 411 d'une TVA due avant l'encaissement (biens, option sur les débits).
+- EcritureLib vient de la ligne, que la base ne compare pas : un libellé envoyé autrement par un appel direct à
+  `ecrire_vente_facturee` partirait tel quel.
+- Pour VF7 : numéroter et figer ces lignes à la validation, les préalables du § 11, et le message « écritures
+  orphelines » (« le reste d'une pièce supprimée »), qui n'est pas leur cause.
+- Pour VF4c3 : la concordance de la 2035, la CA3 (`REFUS_VENTES_FACTUREES_NON_ECRITES`), « Changer le compte »
+  (VF4C1-Q1), et VF4C2-Q1.
