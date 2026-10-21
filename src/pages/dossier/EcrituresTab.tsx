@@ -9,7 +9,7 @@ import type { EcritureSansObjet, MotifSansObjet, SuiteDansUnExerciceValide } fro
 import { comptesDuDirigeant, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { formaterFec, genererFec, nomFichierFec, numerotationValidee, telechargerTexte } from '../../lib/fec'
-import { etatsDesLettragesManuels, lettrages, piecesLettreesALaMain } from '../../lib/lettrage'
+import { etatsDesLettragesManuels, lettrages, lettragesDesFactures, phraseDuLettrage, piecesLettreesALaMain } from '../../lib/lettrage'
 import { estFigee } from '../../lib/validationExercice'
 import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
@@ -46,7 +46,13 @@ import {
   etatsDesVentesFacturees, ligneDUneVenteFacturee, mouvementsClassesParEncaissements,
 } from '../../lib/ecrituresVentesFactureesEcran'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
+import { rattachementDesVentes, type VentesFactureesDesExports } from '../../lib/ventesFactureesDesExports'
+import { lireLesJustificatifsDesVentes } from '../../lib/justificatifsDesVentesLecture'
 import VentesFactureesEcritures from './VentesFactureesEcritures'
+
+// Aucune vente facturée : un dossier qui n'a pas basculé (la base refuse d'en écrire), ou dont les ventes ne sont pas lues —
+// alors le FEC et la piste d'audit ne s'exportent pas, et le lettrage du journal ne porte que celui des pièces.
+const SANS_VENTE_FACTUREE: VentesFactureesDesExports = { ecritures: [], factures: [], encaissements: [] }
 
 // Ce qui a changé sur la pièce, et ce que le cabinet doit faire — jamais corrigé d'office :
 // retirer une écriture est un arbitrage comptable, et les trois derniers motifs se réparent en
@@ -490,6 +496,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // lus par l'onglet avec le relevé — la règle même du point « piste rompue » de la Checklist, qui renvoie ici. Les lignes
   // d'un mouvement DÉCLASSÉ (R3) restent des ruptures : rien ne les justifie plus, et la section les dit « à retirer ».
   const mouvementsDesVentes = mouvementsClassesParEncaissements(lignesBancaires)
+  // CE QUE LE FEC, LA PISTE D'AUDIT ET LE LETTRAGE LISENT DES VENTES FACTURÉES (étape VF4c2 ; lib/ventesFactureesDesExports.ts) :
+  // la composition, les factures et le registre des encaissements, sur les lectures mêmes des états ci-dessus. Un dossier
+  // qui n'a pas basculé n'en a aucune — la base refuse d'en écrire. Un dossier qui a basculé et dont ces lectures ne sont
+  // pas toutes revenues en entier, ou ne se tiennent pas, n'exporte RIEN : ses écritures de vente sortiraient du FEC sans
+  // que le fichier puisse le dire (`ventesIndisponibles`).
+  const ventesDesExports: VentesFactureesDesExports | null = !ventesParLesFactures
+    ? SANS_VENTE_FACTUREE
+    : etatsVentes?.etat === 'lus' && lectureVentesDuDossier?.etat === 'lue'
+      ? {
+        ecritures: etatsVentes.contexte.composition.ecritures,
+        factures: lectureVentesDuDossier.sources.factures,
+        encaissements: lectureVentesDuDossier.sources.encaissements,
+      }
+      : null
+  const ventesIndisponibles = ventesDesExports !== null ? null
+    : motifVentesIncompletes ?? (etatsVentes?.etat === 'incoherent' ? etatsVentes.motif : 'pas encore lues')
 
   // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
   // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
@@ -512,19 +534,34 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // une facture de décembre réglée en janvier porte le même code dans les deux FEC. Il ne se fige pas avec l'exercice —
   // il dit l'état des comptes de tiers au jour de l'export, le FEC validé compris. Les lettrages faits à la main y
   // prennent leur place quand ils tiennent encore, revérifiés sur les pièces que le FEC lit : celles qui sont validées.
-  const lettrage = lettrages(ecritures, piecesValidees, lettragesManuels, modele.mode)
+  // Le 411 d'une vente facturée s'y lettre par facture (étape VF4c2) ; et ce qui ne se lettre pas se dit dans la section des
+  // ventes facturées, facture par facture.
+  const lettrage = lettrages(ecritures, piecesValidees, lettragesManuels, modele.mode, ventesDesExports ?? SANS_VENTE_FACTUREE)
+  const lettrageDesFactures = new Map([...lettragesDesFactures(ecritures, ventesDesExports ?? SANS_VENTE_FACTUREE, modele.mode, lettrage)]
+    .map(([id, l]) => [id, phraseDuLettrage(l)]))
   // En engagement seulement : en trésorerie, rien ne se lettre, et une lecture ratée de ces lignes ne change rien.
   const lettragesManquants = modele.mode === 'engagement' ? lettragesIncomplets : null
   // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé. Pour un exercice
   // validé, ce que sa numérotation figée ne porte pas — qui ne peut pas exister, la base refusant la validation tant
   // qu'une écriture de l'exercice reste proposée, et qui se voit donc plutôt que de se cacher.
+  //
+  // Les lignes d'une vente facturée que le FEC RATTACHE à leur écriture composée y sont ; les autres — une source « à
+  // réécrire » ou « à retirer », que la section des ventes facturées dit — restent hors du fichier, et le badge les compte à
+  // part (`ventesHorsFec`) : un chiffre seul enverrait chercher une pièce supprimée qui n'existe pas.
+  // Les lignes d'une vente facturée, ici, sont aussi celles d'un mouvement que la section liste comme source — un mouvement
+  // déclassé qui garde ses lignes (R3), qu'elle dit « à retirer » : le badge les compte avec elle.
+  const ventesRattachees = rattachementDesVentes(ecrituresFiltrees, ventesDesExports?.ecritures ?? [])
+  const mouvementsDesSources = new Set([...mouvementsDesVentes, ...(etatsVentes?.etat === 'lus'
+    ? etatsVentes.sources.flatMap((x) => (x.source.genre === 'mouvement' ? [x.source.ligneBancaireId] : [])) : [])])
+  const ventesHorsFec = fecValide ? 0
+    : ecrituresFiltrees.filter((e) => ligneDUneVenteFacturee(e, mouvementsDesSources) && !ventesRattachees.has(e.id)).length
   const horsFec = fecValide
     ? {
       nb: fecValide.horsFec.length,
       debit: fecValide.horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
       credit: fecValide.horsFec.filter((e) => e.sens === 'credit').reduce((somme, e) => somme + e.montant, 0),
     }
-    : absenceFec(ecrituresFiltrees, idsJustifies)
+    : absenceFec(ecrituresFiltrees.filter((e) => !ventesRattachees.has(e.id)), idsJustifies)
   // Les mouvements affectés dont l'écriture n'est plus celle que leur catégorie produirait — le compte
   // de la catégorie a changé depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore
   // sa TVA (voir lib/affectationBanque.ts).
@@ -557,7 +594,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // mouvements affectés ont besoin), et une piste d'audit bâtie sur un jeu restreint annoncerait des
   // mouvements manquants qui existent.
   async function exporterPisteAudit() {
-    if (typeof anneeFilter !== 'number') return
+    if (typeof anneeFilter !== 'number' || ventesDesExports === null) return
     setExportPiste(true)
     setError(null)
     try {
@@ -601,9 +638,24 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       })
       // Les factures d'acquisition se cherchent parmi TOUTES les pièces validées : un bien acheté un autre
       // exercice s'amortit dans celui-ci, et sa facture est la preuve de sa dotation.
+      // Les preuves des factures d'un dossier qui a basculé (étape VF4c2) : l'empreinte de l'exemplaire désigné, ou du CII
+      // transmis, que la piste cite pour chaque ligne d'une facture. Lues sur ce clic, comme le relevé ; lues en partie,
+      // l'export se refuse — une empreinte non lue passerait pour absente.
+      const preuves = ventesParLesFactures
+        ? await lireLesJustificatifsDesVentes(dossierId)
+        : { etat: 'lue' as const, exemplaires: [], transmissions: [] }
+      if (preuves.etat !== 'lue') {
+        throw new Error(
+          `Les preuves des factures n'ont pas pu être lues en entier (${preuves.motif}). ` +
+          "L'export est annulé : une piste d'audit dirait absente l'empreinte d'un exemplaire qu'elle n'a pas lu.",
+        )
+      }
       const contenu = genererPisteAuditCsv(pisteAudit(
         ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice,
-        { immobilisations, factures: piecesValidees, vehicules: vehicules.lignes },
+        {
+          immobilisations, factures: piecesValidees, vehicules: vehicules.lignes,
+          ventes: { ...ventesDesExports, exemplaires: preuves.exemplaires, transmissions: preuves.transmissions },
+        },
       ))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
     } catch (err) {
@@ -974,6 +1026,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           motifIncomplet={lectureVentesDuDossier === null ? null : motifVentesIncompletes}
           relecture={loading}
           relire={load}
+          lettrageDesFactures={lettrageDesFactures}
         />
       )}
 
@@ -1698,6 +1751,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                 sur l'alerte qui dit ce que le fichier fiscal ne contiendra pas. */}
             {horsFec.nb} écriture{horsFec.nb > 1 ? 's' : ''} ne {horsFec.nb > 1 ? 'seront' : 'sera'} pas dans ce FEC
             {' '}({formatMoney(horsFec.debit - horsFec.credit)})
+            {ventesHorsFec > 0 && ` — dont ${ventesHorsFec} d’une vente facturée, à réécrire ou à retirer (Ventes facturées)`}
           </span>
         )}
         <button
@@ -1705,7 +1759,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           disabled={
             typeof anneeFilter !== 'number' || (ecrituresFiltrees.length === 0 && aNouveauxExercice.length === 0)
             || brouillonIncomplet !== null || aNouveauxIncomplets !== null || reportesIncomplets !== null
-            || lettragesManquants !== null
+            || lettragesManquants !== null || ventesIndisponibles !== null
           }
           title={
             brouillonIncomplet
@@ -1716,15 +1770,20 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               ? `Soldes reportés lus incomplètement (${reportesIncomplets}) — le FEC s'ouvrirait sur une ouverture amputée.`
               : lettragesManquants
               ? `Lettrages faits à la main lus incomplètement (${lettragesManquants}) — une facture lettrée paraîtrait ouverte dans le FEC.`
+              : ventesIndisponibles
+              ? `Ventes facturées non lues en entier (${ventesIndisponibles}) — leurs écritures sortiraient du FEC sans qu’il puisse le dire.`
               : typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice."
               : fecValide ? 'Exercice validé : son FEC se relit tel que la validation l’a figé — journal, numéros et libellés ne changent plus.'
               : undefined
           }
           onClick={() => {
-            if (typeof anneeFilter !== 'number') return
+            if (typeof anneeFilter !== 'number' || ventesDesExports === null) return
             const contenu = fecValide
               ? formaterFec(fecValide, lettrage)
-              : genererFec(ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode, lignesBancaires, lettrage)
+              : genererFec(
+                ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode, lignesBancaires, lettrage,
+                ventesDesExports.ecritures,
+              )
             telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
           }}
         >
@@ -1736,7 +1795,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           // presque vide, et qui a l'air complet.
           disabled={
             loading || typeof anneeFilter !== 'number' || exportPiste || brouillonIncomplet !== null || aNouveauxIncomplets !== null
-            || reportesIncomplets !== null
+            || reportesIncomplets !== null || ventesIndisponibles !== null
           }
           title={
             brouillonIncomplet
@@ -1745,6 +1804,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — une piste d'audit partielle est pire qu'absente.`
               : reportesIncomplets
               ? `Soldes reportés lus incomplètement (${reportesIncomplets}) — une piste d'audit partielle est pire qu'absente.`
+              : ventesIndisponibles
+              ? `Ventes facturées non lues en entier (${ventesIndisponibles}) — une piste d'audit partielle est pire qu'absente.`
               : typeof anneeFilter !== 'number'
               ? "Sélectionne une année ci-dessus — une piste d'audit se produit par exercice."
               : "Chaque écriture avec son justificatif (tiers, date, montant, fichier, empreinte SHA-256) et l'opération bancaire réelle, plus les justificatifs validés que rien ne comptabilise."

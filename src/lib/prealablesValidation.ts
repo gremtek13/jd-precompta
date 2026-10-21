@@ -293,9 +293,13 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
 
   // ── La numérotation de l'exercice : celle que la validation enverra. ────────────────────────────────────
   const ecrituresDeLExercice = d.ecritures.filter((e) => dansLExercice(e.date))
+  // SANS LES VENTES FACTURÉES, jusqu'à l'étape VF7 (chantier EC-Q3) : la validation qui numérotera leurs écritures et les
+  // préalables qui les diront (§ 11 de la conception) sont à elle. Jusque-là, une écriture d'une vente facturée reste hors
+  // de cette numérotation et compte parmi les écritures que rien ne rattache : la validation d'un exercice qui en porte se
+  // refuse — fermée du côté sûr, comme la base, qui refuse une numérotation qui ne couvre pas toutes les écritures.
   const numerotation = numeroterFec(
     ecrituresDeLExercice, d.piecesValidees, [...d.categories], ouvertureDeLExercice(d.aNouveaux, d.soldesReportes, d.annee),
-    d.modele.mode, d.lignes,
+    d.modele.mode, d.lignes, [],
   )
   bloque({
     id: 'ecritures-orphelines', nb: numerotation.horsFec.length, cible: 'ecritures',

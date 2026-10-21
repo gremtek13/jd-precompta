@@ -137,7 +137,7 @@ export default function ComptesDeTiersCard({
         <div className="skeleton skeleton-widget" style={{ height: 120 }} />
       ) : lectureIncomplete ? (
         <p className="error-text" style={{ margin: 0 }}>
-          Les écritures du brouillon, les à-nouveaux ou les lettrages faits à la main n’ont pas pu être lus en entier
+          Les écritures du brouillon, les à-nouveaux, les factures des ventes facturées ou les lettrages faits à la main n’ont pas pu être lus en entier
           ({lectureIncomplete}). Les comptes de tiers ne peuvent pas être dits : une facture réglée ou lettrée paraîtrait
           ouverte, ou un tiers soldé alors qu’il doit encore. Recharge la page.
         </p>
@@ -401,10 +401,13 @@ function PiecesOuvertes({ pieces, cochables, occupe, cochees, onBasculer }: {
                 {cochables && (
                   <td className="col-checkbox" data-libelle="Lettrer">
                     {/* Une pièce déjà dans un lettrage fait à la main, ou d'un tiers sans nom (compte « divers »), ne se
-                        coche pas : la base refuserait la première, et rien ne dit que la seconde est du même tiers. */}
+                        coche pas : la base refuserait la première, et rien ne dit que la seconde est du même tiers. Une facture
+                        source de sa vente non plus (étape VF4c2) : elle se lettre par ses encaissements, et `lettrer_pieces` ne
+                        connaît que des pièces. */}
                     <input
                       type="checkbox" aria-label={`Cocher ${p.libelle}`} checked={cochees.includes(p.pieceId)}
-                      disabled={occupe || p.lettrageManuel !== null || (tiers.auxiliaire !== null && estDivers(tiers.compte, tiers.auxiliaire))}
+                      disabled={occupe || p.lettrageManuel !== null || p.factureId !== undefined
+                        || (tiers.auxiliaire !== null && estDivers(tiers.compte, tiers.auxiliaire))}
                       onChange={() => onBasculer(p.pieceId)}
                     />
                   </td>
@@ -419,6 +422,9 @@ function PiecesOuvertes({ pieces, cochables, occupe, cochees, onBasculer }: {
                 <td data-libelle="État">
                   {LIBELLES_ETATS[p.etat]}
                   {p.lettrageManuel !== null && <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>dans un lettrage fait à la main</span>}
+                  {p.factureId !== undefined && (
+                    <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>facture de l’application : se lettre par ses encaissements</span>
+                  )}
                 </td>
               </tr>
             ))}

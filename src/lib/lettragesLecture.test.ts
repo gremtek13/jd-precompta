@@ -13,6 +13,10 @@ const faux = vi.hoisted(() => ({
   // Le serveur qui cesse de rendre au-delà de N lignes d'une table tout en annonçant le vrai total : une lecture INCOMPLÈTE.
   muet: {} as Record<string, number>,
   erreur: {} as Record<string, string>,
+  // Les autres tables (étape VF4c2 : les factures et le registre des encaissements), et un serveur qui ignorerait le
+  // filtre du dossier — une lecture qui fuit.
+  autres: {} as Record<string, unknown[]>,
+  ignorerDossier: false,
 }))
 
 vi.mock('./supabase', async () => {
@@ -27,7 +31,11 @@ vi.mock('./supabase', async () => {
         const c: Record<string, unknown> = {}
         Object.assign(c, {
           select: () => c,
-          eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); filtres.push(`${colonne}=${String(valeur)}`); return c },
+          eq: (colonne: string, valeur: unknown) => {
+            if (!(faux.ignorerDossier && colonne === 'dossier_id')) predicats.push(predicatEq(colonne, valeur))
+            filtres.push(`${colonne}=${String(valeur)}`)
+            return c
+          },
           in: (colonne: string, valeurs: unknown[]) => {
             predicats.push(predicatIn(colonne, valeurs))
             filtres.push(`${colonne} in ${[...valeurs].map(String).sort().join(',')}`)
@@ -38,7 +46,8 @@ vi.mock('./supabase', async () => {
           then: (suite: (r: unknown) => unknown) => {
             faux.lectures.push({ table, filtres: [...filtres] })
             if (faux.erreur[table]) return Promise.resolve({ data: null, error: { message: faux.erreur[table] }, count: null }).then(suite)
-            const source = table === 'lettrages_manuels' ? faux.lettrages : table === 'ecritures_brouillon' ? faux.brouillon : []
+            const source = table === 'lettrages_manuels' ? faux.lettrages : table === 'ecritures_brouillon' ? faux.brouillon
+              : faux.autres[table] ?? []
             const toutes = filtrer(source, predicats)
             const limite = faux.muet[table] ?? Number.MAX_SAFE_INTEGER
             return Promise.resolve({ data: toutes.slice(debut, Math.min(fin + 1, limite)), error: null, count: toutes.length }).then(suite)
@@ -50,7 +59,7 @@ vi.mock('./supabase', async () => {
   }
 })
 
-const { AUCUN_LETTRAGE_MANUEL, lireLettragesManuels } = await import('./lettragesLecture')
+const { AUCUN_LETTRAGE_MANUEL, lireLesFacturesDesLignes, lireLettragesManuels } = await import('./lettragesLecture')
 
 function ligne(id: string, dossier: string, pieceId: string, compte: string, sens: 'debit' | 'credit', montant: number): EcritureBrouillon {
   return {
@@ -107,6 +116,8 @@ beforeEach(() => {
   faux.lectures = []
   faux.muet = {}
   faux.erreur = {}
+  faux.autres = {}
+  faux.ignorerDossier = false
 })
 
 describe('lireLettragesManuels', () => {
@@ -167,5 +178,54 @@ describe('lireLettragesManuels', () => {
     faux.erreur = { ecritures_brouillon: 'permission denied for table ecritures_brouillon' }
     const lecture = await lireLettragesManuels('d1')
     expect(lecture.motif).toMatch(/permission denied/)
+  })
+
+  // Étape VF4c2 : le 411 d'une vente facturée se lettre par facture, jamais à la main. Ses lignes, sans pièce, sont lues avec
+  // les comptes de tiers, et ne changent rien à ce que l'onglet Banque tire des lettrages faits à la main.
+  it('les lignes d’une vente facturée, lues avec les comptes de tiers, ne changent aucun état', async () => {
+    const avant = etatsDesLettragesManuels((await lireLettragesManuels('d1')).ecritures, PIECES, LETTRAGES.slice(0, 6), 'engagement')
+    faux.brouillon = [
+      ...BROUILLON,
+      { ...ligne('v1', 'd1', 'x', '411000', 'debit', 120), piece_id: null, facture_id: 'f-source' },
+      { ...ligne('v2', 'd1', 'x', '411000', 'credit', 120), piece_id: null, encaissement_id: 'e-source' },
+    ]
+    const lecture = await lireLettragesManuels('d1')
+    expect(lecture.ecritures.map((e) => e.id)).toContain('v1')
+    expect(etatsDesLettragesManuels(lecture.ecritures, PIECES, lecture.lettrages, 'engagement')).toEqual(avant)
+  })
+})
+
+describe('lireLesFacturesDesLignes — les factures d’où viennent les lignes d’une vente facturée (étape VF4c2)', () => {
+  const FACTURES = [
+    { id: 'f1', dossier_id: 'd1', type: 'facture', numero: 'F2025-0001', tiers_nom: 'Client fictif', date_emission: '2025-11-10',
+      montant_ttc: 120, facture_origine_id: null, source_de_la_vente: true },
+    { id: 'f-d2', dossier_id: 'd2', type: 'facture', numero: 'F2025-0900', tiers_nom: 'Autre', date_emission: '2025-11-10',
+      montant_ttc: 50, facture_origine_id: null, source_de_la_vente: true },
+  ]
+  const ENCAISSEMENTS = [
+    { id: 'e1', dossier_id: 'd1', facture_id: 'f1', date_encaissement: '2025-11-20', montant: 120, moyen: 'virement',
+      ligne_bancaire_id: null, annule_id: null },
+  ]
+  beforeEach(() => { faux.autres = { factures_emises: FACTURES, encaissements_factures: ENCAISSEMENTS } })
+
+  it('lit les factures et le registre du dossier, en entier', async () => {
+    expect(await lireLesFacturesDesLignes('d1')).toEqual({ etat: 'lue', ventes: { factures: [FACTURES[0]], encaissements: ENCAISSEMENTS } })
+    expect(faux.lectures.map((l) => [l.table, l.filtres])).toEqual([
+      ['factures_emises', ['dossier_id=d1']], ['encaissements_factures', ['dossier_id=d1']],
+    ])
+  })
+
+  it('l’une lue en partie, ou refusée : rien n’est rendu, et le motif le dit', async () => {
+    faux.muet = { factures_emises: 0 }
+    expect(await lireLesFacturesDesLignes('d1')).toEqual({ etat: 'incomplete', motif: expect.stringMatching(/^les factures : /) })
+    faux.muet = {}
+    faux.erreur = { encaissements_factures: 'permission refusée' }
+    expect(await lireLesFacturesDesLignes('d1')).toEqual({ etat: 'incomplete', motif: expect.stringContaining('permission refusée') })
+  })
+
+  it('une ligne d’un autre dossier rendue : rien n’est rendu', async () => {
+    faux.autres = { factures_emises: FACTURES.map((f) => ({ ...f, dossier_id: 'd1' })).concat([{ ...FACTURES[1] }]), encaissements_factures: [] }
+    faux.ignorerDossier = true
+    expect(await lireLesFacturesDesLignes('d1')).toEqual({ etat: 'incomplete', motif: 'une ligne rendue n’est pas de ce dossier' })
   })
 })

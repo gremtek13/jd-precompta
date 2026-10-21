@@ -49,11 +49,12 @@ export interface DefinitionRoleComptable {
 // qui le tiennent, EC3-Q6b), qu'aucune autre racine ne commence. planComptable.test.ts les confronte au texte de la
 // migration, à l'empreinte du catalogue vivant que planComptable.sql exige, et aux règles du catalogue.
 //
-// LEUR LIBELLÉ N'ENTRE PAS DANS `LIBELLES_COMPTES` (lib/comptes.ts), et c'est voulu : deux des six comptes par défaut, le
-// 706000 et le 627000, sont aussi ceux de deux CATÉGORIES COMMUNES (« Ventes / prestations », « Frais bancaires »), et un
-// libellé de l'application y passerait avant le leur dans la balance, le FEC, la révision et le lettrage
-// (`libelleCompteTenu`) — un changement pour tout dossier qui les emploie. Leur libellé vit dans le catalogue et dans
-// `LIBELLES_DE_LA_VENTE_FACTUREE` ; celui que le FEC leur donnera se tranche avec leurs premières écritures (VF4c).
+// LEUR LIBELLÉ vit dans le catalogue et dans `LIBELLES_DE_LA_VENTE_FACTUREE` (lib/comptes.ts). Deux des six comptes par
+// défaut, le 706000 et le 627000, sont aussi ceux de deux CATÉGORIES COMMUNES (« Ventes / prestations », « Frais
+// bancaires ») : la décision du cabinet du 20/10/2026 (VF4A-Q1) leur donne le nom du plan comptable général pour tout
+// dossier, et ils entrent dans `LIBELLES_COMPTES` à l'étape VF4c2, avec le FEC qui porte leurs écritures — leur libellé y
+// passe avant celui de la catégorie dans la balance, le FEC, la révision, la revue analytique et le lettrage
+// (`libelleCompteTenu`). Les quatre autres en restent hors : rien d'autre ne change de nom.
 export const ROLES_DE_LA_VENTE_FACTUREE = [
   { role: 'prestations_de_services', racines: ['706'], compteDefaut: '706000', libelleDefaut: 'Prestations de services', prefixeAuxiliaireDefaut: null, ordre: 270 },
   { role: 'ventes_de_biens', racines: ['701', '707'], compteDefaut: '707000', libelleDefaut: 'Ventes de marchandises', prefixeAuxiliaireDefaut: null, ordre: 280 },

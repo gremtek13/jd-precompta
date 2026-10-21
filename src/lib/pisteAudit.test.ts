@@ -14,13 +14,14 @@ import { analyserEcritures } from './ecritures'
 import type { ModeleComptable } from './engagement'
 import type { ANouveau, Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
+import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // Le lettrage d'un fichier (lib/lettrage.ts) : vide, sauf dans les tests qui le calculent comme l'écran.
 const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
 
 // Sans registre : la plupart de ces cas n'ont pas de dotation, donc rien à y chercher.
-const SANS_REGISTRE: RegistreAudit = { immobilisations: [], factures: [], vehicules: [] }
+const SANS_REGISTRE: RegistreAudit = { immobilisations: [], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE }
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
@@ -108,7 +109,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est absente du FEC', () => {
     const categories: Categorie[] = []
-    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], 'tresorerie', [], SANS_LETTRAGE).split('\r\n').filter(Boolean)
+    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE).split('\r\n').filter(Boolean)
     // En-tête + la seule écriture justifiée : l'orpheline n'y est pas.
     expect(lignes).toHaveLength(2)
     expect(lignes.join('\n')).not.toContain('199,99')
@@ -442,7 +443,7 @@ describe('pisteAudit — les dotations aux amortissements', () => {
   it('donnent le tableau d’amortissement pour justificatif, et la facture d’acquisition pour preuve', () => {
     // La facture elle-même reste une ligne à part — un justificatif qu'aucune écriture ne cite tant que
     // l'acquisition ne s'écrit pas (ligne 26.6, étape b3).
-    const lignes = pisteAudit([dotation()], [facture], [], [], { immobilisations: [ordinateur], factures: [facture], vehicules: [] })
+    const lignes = pisteAudit([dotation()], [facture], [], [], { immobilisations: [ordinateur], factures: [facture], vehicules: [], ventes: SANS_VENTE_FACTUREE })
     expect(lignes.map((l) => [l.ecritureId, l.manque])).toEqual([[null, ['écriture']], ['dot-d', []]])
     const ligne = lignes.find((l) => l.ecritureId === 'dot-d')!
     expect([ligne.pieceFichier, ligne.pieceEmpreinte, ligne.pieceTiers, ligne.pieceDate, ligne.mouvementDate, ligne.manque]).toEqual([
@@ -451,12 +452,12 @@ describe('pisteAudit — les dotations aux amortissements', () => {
   })
 
   it('disent la facture d’acquisition manquante quand le bien l’a perdue', () => {
-    const [ligne] = pisteAudit([dotation()], [], [], [], { immobilisations: [{ ...ordinateur, piece_id: null }], factures: [facture], vehicules: [] })
+    const [ligne] = pisteAudit([dotation()], [], [], [], { immobilisations: [{ ...ordinateur, piece_id: null }], factures: [facture], vehicules: [], ventes: SANS_VENTE_FACTUREE })
     expect([ligne.pieceFichier, ligne.pieceEmpreinte, ligne.manque]).toEqual(["Tableau d'amortissement : Ordinateur", null, ['facture d’acquisition']])
   })
 
   it('distinguent un lien rompu d’une ligne absente du jeu chargé', () => {
-    expect(pisteAudit([dotation()], [], [], [], { immobilisations: [ordinateur], factures: [], vehicules: [] })[0].manque)
+    expect(pisteAudit([dotation()], [], [], [], { immobilisations: [ordinateur], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE })[0].manque)
       .toEqual(['facture d’acquisition hors du jeu chargé'])
     expect(pisteAudit([dotation()], [], [], [], SANS_REGISTRE)[0].manque).toEqual(['bien hors du jeu chargé'])
   })
@@ -464,7 +465,7 @@ describe('pisteAudit — les dotations aux amortissements', () => {
   it('trouvent la facture d’un bien acheté un autre exercice, sans la compter parmi les justificatifs de celui-ci', () => {
     // Le défaut que le registre corrige : cherchée parmi les pièces de l'EXERCICE, la facture d'un bien de 2025
     // manquait à chacune de ses dotations suivantes. Elle n'est pas pour autant un justificatif de 2026.
-    const lignes = pisteAudit([dotation()], [], [], [], { immobilisations: [ordinateur], factures: [facture], vehicules: [] })
+    const lignes = pisteAudit([dotation()], [], [], [], { immobilisations: [ordinateur], factures: [facture], vehicules: [], ventes: SANS_VENTE_FACTUREE })
     expect(lignes.map((l) => [l.ecritureId, l.pieceFichier, l.manque])).toEqual([
       ['dot-d', "Tableau d'amortissement : Ordinateur — facture facture-ordinateur.pdf", []],
     ])
@@ -494,7 +495,7 @@ describe('pisteAudit — les forfaits kilométriques', () => {
   })
 
   it('donnent le barème, le véhicule et le kilométrage pour justificatif, sans empreinte', () => {
-    const [ligne] = pisteAudit([forfait()], [], [], [], { immobilisations: [], factures: [], vehicules: [zoe] })
+    const [ligne] = pisteAudit([forfait()], [], [], [], { immobilisations: [], factures: [], vehicules: [zoe], ventes: SANS_VENTE_FACTUREE })
     expect([ligne.pieceFichier, ligne.pieceEmpreinte, ligne.pieceDate, ligne.pieceId, ligne.mouvementDate, ligne.manque]).toEqual([
       'Barème kilométrique 2026 : Zoé, 20\u202f000 km professionnels', null, '2026-12-31', null, null, [],
     ])
@@ -556,7 +557,7 @@ describe('pisteAudit — l’échéance payée depuis le compte personnel', () =
     expect(rupturesPisteAudit(lignes, new Set())).toEqual([])
     expect(absenceFec(lignes, new Set())).toEqual({ nb: 0, debit: 0, credit: 0 })
     // L'en-tête et les deux lignes de l'écriture.
-    expect(genererFec(lignes, [], [], [], 'tresorerie', [], SANS_LETTRAGE).split('\r\n').filter((l) => l !== '')).toHaveLength(3)
+    expect(genererFec(lignes, [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE).split('\r\n').filter((l) => l !== '')).toHaveLength(3)
     // Le garde symétrique : la même écriture sans son échéance est bien une rupture, et hors du FEC.
     expect(rupturesPisteAudit([paiement({ cotisation_id: null })], new Set()).map((r) => r.motif)).toEqual(['sans_justificatif'])
     expect(absenceFec([paiement({ cotisation_id: null })], new Set()).nb).toBe(1)

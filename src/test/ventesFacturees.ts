@@ -1,6 +1,8 @@
 import type { LigneDeFacture } from '../lib/encaissementsFactures'
 import type { EncaissementVendu, FactureVendue, PartVendue, VentesFacturees } from '../lib/ventesFacturees'
 import type { RecettesFacturees } from '../lib/estimation'
+import type { EcritureVenteFacturee } from '../lib/ecrituresVentesFacturees'
+import type { JustificatifsDesVentes } from '../lib/pisteAudit'
 
 // LES VENTES FACTURÉES DES TESTS (ligne 28.6, chantier EC-Q3, étape VF3b1). Les moteurs reçoivent les ventes facturées en
 // paramètre OBLIGATOIRE, sans valeur par défaut (lib/declaration2035.ts) : le code de production n'en fabrique aucune, et
@@ -10,6 +12,17 @@ import type { RecettesFacturees } from '../lib/estimation'
 // Et de quoi en bâtir de vraies : les lignes de la base telles que la lecture les rend (lib/ventesFactureesLecture.ts),
 // que les tests passent au module pur (`ventesFacturees`) plutôt que d'écrire ses parts à la main — une part écrite à la
 // main ne prouverait rien de ce que le module rend. Données FICTIVES.
+
+/**
+ * Aucune écriture d'une vente facturée composée (étape VF4c2) : ce que le FEC reçoit d'un dossier qui n'a pas basculé, ou
+ * d'un jeu d'essai qui ne parle pas des ventes facturées (lib/fec.ts, `numeroterFec`).
+ */
+export const SANS_ECRITURE_DE_VENTE: readonly EcritureVenteFacturee[] = []
+
+/** Aucune vente facturée, ni preuve d'une facture : ce que la piste d'audit reçoit d'un jeu qui n'en parle pas (lib/pisteAudit.ts). */
+export const SANS_VENTE_FACTUREE: JustificatifsDesVentes = {
+  ecritures: [], factures: [], encaissements: [], exemplaires: [], transmissions: [],
+}
 
 /** Aucune facture source : ni part, ni exigibilité, ni document, ni écart, ni excédent. */
 export function ventesFactureesVides(dossierId: string): VentesFacturees {

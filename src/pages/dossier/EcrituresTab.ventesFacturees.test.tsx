@@ -30,8 +30,16 @@ const faux = vi.hoisted(() => ({
 
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ isSuperAdmin: true }) }))
 
+// Étape VF4c2 : `genererFec` et la piste restent les VRAIS, c'est leur contenu qu'on lit ; seul le téléchargement est
+// remplacé — jsdom n'a pas d'URL d'objet.
+const telecharge = vi.hoisted(() => ({ fichiers: [] as { nom: string; contenu: string }[] }))
+vi.mock('../../lib/fec', async (vrai) => ({
+  ...(await vrai<typeof import('../../lib/fec')>()),
+  telechargerTexte: (nom: string, contenu: string) => { telecharge.fichiers.push({ nom, contenu }) },
+}))
+
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     faux.tables.push(table)
     const predicats: Predicat[] = []
@@ -59,6 +67,7 @@ vi.mock('../../lib/supabase', async () => {
         return c
       },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
+      not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       then: (suite: (r: unknown) => unknown) => (faux.attente ?? Promise.resolve()).then(reponse).then(suite),
     })
@@ -147,9 +156,9 @@ function poser(tables: Partial<Record<string, Record<string, unknown>[]>> = {}) 
   }
 }
 
-function monter(o: { modele?: ModeleComptable; bascule?: boolean; valides?: readonly number[]; dossierId?: string } = {}) {
+function monter(o: { modele?: ModeleComptable; bascule?: boolean; valides?: readonly number[]; dossierId?: string; annee?: number } = {}) {
   const onglet = (dossierId: string) => (
-    <ContexteDossier annee="toutes" valides={o.valides ?? []}>
+    <ContexteDossier annee={o.annee ?? 'toutes'} valides={o.valides ?? []}>
       <EcrituresTab
         dossierId={dossierId} dossierNom="Dossier fictif" dossierSiret={null} assujettiTva modele={o.modele ?? TRESORERIE}
         ventesParLesFactures={o.bascule ?? true} onModeleUpdated={() => {}}
@@ -188,7 +197,8 @@ describe('la section ne paraît que pour un dossier qui a basculé', () => {
     expect(within(ligne).getByRole('button', { name: 'Écrire' })).toBeTruthy()
     // Le montant se lit au `textContent` : il porte des espaces insécables, que le comparateur du texte normaliserait.
     expect(ligne.querySelector('[data-libelle="Montant"]')?.textContent).toBe(formatMoney(120))
-    expect(within(section()).getByText(/ne vont pas encore au FEC ni à la piste d’audit/)).toBeTruthy()
+    // Depuis l'étape VF4c2, une écriture à jour va au FEC et à la piste d'audit ; la phrase le dit, et dit ce qui reste hors.
+    expect(within(section()).getByText(/Une écriture à jour va au FEC, sous la pièce de sa source, et à la piste d’audit/)).toBeTruthy()
   })
 })
 
@@ -443,8 +453,10 @@ describe('les contrôles et les gestes d’hier ne jugent pas les lignes d’une
     for (const geste of [/^Régénérer$/, /^Retirer l'écriture$/, /^Réaffecter$/]) expect(screen.queryByRole('button', { name: geste })).toBeNull()
     // Le mouvement déclassé, lui, se dit « à retirer » — dans la section, par sa fonction.
     expect(within(ligneDe(/^Le mouvement du 23\/11\/2025/)).getByText('à retirer')).toBeTruthy()
-    // Toutes les lignes restent au journal : elles comptent dans la balance, et le badge du FEC dit qu'elles n'y sont pas.
-    expect(screen.getByText(/9 écritures ne seront pas dans ce FEC/)).toBeTruthy()
+    // Toutes les lignes restent au journal : elles comptent dans la balance. Depuis l'étape VF4c2, le FEC porte celles que
+    // la composition rend telles quelles (la facture, le mouvement classé) ; le badge compte les autres — l'encaissement à
+    // réécrire, le mouvement déclassé — et dit d'où elles viennent.
+    expect(screen.getByText(/4 écritures ne seront pas dans ce FEC .* dont 4 d’une vente facturée, à réécrire ou à retirer/)).toBeTruthy()
   })
 
   it('le filtre ne rend pas le contrôle aveugle : une ligne sans pièce ni source reste une rupture', async () => {
@@ -453,5 +465,104 @@ describe('les contrôles et les gestes d’hier ne jugent pas les lignes d’une
     monter({ modele: ENGAGEMENT })
     await screen.findByRole('heading', { name: /Piste d'audit rompue/ })
     expect(ruptures().sort()).toEqual(['20/11/2025 606100', '23/11/2025 511000', '23/11/2025 512000'])
+  })
+})
+
+describe('le FEC, la piste d’audit et le lettrage d’un dossier qui a basculé (étape VF4c2)', () => {
+  // La facture et son encaissement du même jour, en engagement, au brouillon exactement comme la fonction les écrit.
+  const ECRITES = [
+    ecriture({ id: 'w1', date: '2025-11-10', compte: '411000', sens: 'debit', montant: 120, facture_id: 'f1', libelle: 'Facture F2025-0001 — Client fictif' }),
+    ecriture({ id: 'w2', date: '2025-11-10', compte: '706000', sens: 'credit', montant: 100, facture_id: 'f1', libelle: 'Facture F2025-0001 — Client fictif' }),
+    ecriture({ id: 'w3', date: '2025-11-10', compte: '445800', sens: 'credit', montant: 20, facture_id: 'f1', libelle: 'Facture F2025-0001 — Client fictif' }),
+    ecriture({ id: 'w4', compte: '512000', sens: 'debit', montant: 120, ligne_bancaire_id: 'm1', encaissement_id: 'e1' }),
+    ecriture({ id: 'w5', compte: '411000', sens: 'credit', montant: 120, encaissement_id: 'e1' }),
+    ecriture({ id: 'w6', compte: '445800', sens: 'debit', montant: 20, encaissement_id: 'e1' }),
+    ecriture({ id: 'w7', compte: '445710', sens: 'credit', montant: 20, encaissement_id: 'e1' }),
+  ]
+  beforeEach(() => { telecharge.fichiers = [] })
+
+  it('le FEC porte chaque écriture sous sa pièce, son journal et l’auxiliaire du client, lettrée par facture', async () => {
+    poser({ ecritures_brouillon: ECRITES })
+    monter({ modele: ENGAGEMENT, annee: 2025 })
+    await waitFor(() => expect(within(ligneDe(/^La facture F2025-0001/)).getByText('à jour')).toBeTruthy())
+    expect(screen.queryByText(/ne seront? pas dans ce FEC/)).toBeNull()
+    // Ce qui ne se lettre pas se dit dans la section, facture par facture ; ici, elle l'est.
+    expect(within(ligneDe(/^La facture F2025-0001/)).getByText(/^Lettrée A au 411000/)).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC 2025/ }).click() })
+    expect(telecharge.fichiers).toHaveLength(1)
+    const rangs = telecharge.fichiers[0].contenu.split('\r\n').slice(1).map((r) => r.split('\t'))
+    expect(rangs.map((r) => [r[0], r[2], r[4], r[6], r[8], r[13]])).toEqual([
+      ['VE', 'VE00001', '411000', 'CFICTIF', 'F2025-0001', 'A'],
+      ['VE', 'VE00001', '445800', '', 'F2025-0001', ''],
+      ['VE', 'VE00001', '706000', '', 'F2025-0001', ''],
+      ['BQ', 'BQ00001', '445800', '', 'F2025-0001', ''],
+      ['BQ', 'BQ00001', '512000', '', 'F2025-0001', ''],
+      ['BQ', 'BQ00001', '411000', 'CFICTIF', 'F2025-0001', 'A'],
+      ['BQ', 'BQ00001', '445710', '', 'F2025-0001', ''],
+    ])
+  })
+
+  it('la piste d’audit justifie chaque ligne par sa facture, son registre et son mouvement, et lit les preuves sur le clic', async () => {
+    poser({
+      ecritures_brouillon: ECRITES,
+      pieces: [{ id: 'p-ex', dossier_id: D, facture_id: 'f1', nom_fichier: 'F2025-0001.pdf', storage_hash: 'a'.repeat(64), statut: 'a_valider' }],
+    })
+    monter({ modele: ENGAGEMENT, annee: 2025 })
+    await waitFor(() => expect(within(ligneDe(/^La facture F2025-0001/)).getByText('à jour')).toBeTruthy())
+    faux.tables = []
+    await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit 2025/ }).click() })
+    await waitFor(() => expect(telecharge.fichiers).toHaveLength(1))
+    expect(faux.tables).toEqual(expect.arrayContaining(['pieces', 'transmissions_factures']))
+    const corps = telecharge.fichiers[0].contenu.split('\r\n').slice(1)
+    expect(corps).toHaveLength(ECRITES.length)
+    expect(corps.filter((r) => r.includes('Facture F2025-0001 — exemplaire : F2025-0001.pdf;' + 'a'.repeat(64)))).toHaveLength(3)
+    expect(corps.filter((r) => r.includes('Registre des encaissements : encaissement du 20/11/2025 (virement)'))).toHaveLength(4)
+    // Rien ne manque : la dernière colonne est vide sur chaque ligne.
+    for (const r of corps) expect(r.endsWith(';'), r).toBe(true)
+  })
+
+  it('une écriture à réécrire reste hors du FEC, et le badge le dit avec sa raison ; la facture dit pourquoi elle n’est pas lettrée', async () => {
+    poser({ ecritures_brouillon: ECRITES.map((e) => (e.id === 'w7' ? { ...e, montant: 20.01 } : e.id === 'w6' ? { ...e, montant: 20.01 } : e)) })
+    monter({ modele: ENGAGEMENT, annee: 2025 })
+    await waitFor(() => expect(within(ligneDe(NOM_E1)).getByText('à réécrire')).toBeTruthy())
+    expect(screen.getByText(/4 écritures ne seront pas dans ce FEC .* dont 4 d’une vente facturée, à réécrire ou à retirer/)).toBeTruthy()
+    expect(within(ligneDe(/^La facture F2025-0001/)).getByText(/^Non lettrée au 411000 : ses lignes se soldent, mais une de ses écritures est à réécrire/)).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC 2025/ }).click() })
+    expect(telecharge.fichiers[0].contenu).not.toContain('BQ00001')
+    expect(telecharge.fichiers[0].contenu).toContain('VE00001')
+  })
+
+  it('des ventes facturées lues en partie : ni le FEC ni la piste ne s’exportent, et le bouton dit pourquoi', async () => {
+    poser({ ecritures_brouillon: ECRITES })
+    faux.muet = { encaissements_factures: 0 }
+    monter({ modele: ENGAGEMENT, annee: 2025 })
+    await within(section()).findByText(/n’ont pas pu être lus en entier/)
+    for (const nom of [/Exporter FEC 2025/, /Exporter la piste d'audit 2025/]) {
+      const bouton = screen.getByRole('button', { name: nom })
+      expect(bouton.hasAttribute('disabled'), String(nom)).toBe(true)
+      expect(bouton.getAttribute('title'), String(nom)).toMatch(/^Ventes facturées non lues en entier/)
+    }
+  })
+
+  it('les preuves des factures lues en partie : la piste ne part pas, et l’écran dit pourquoi', async () => {
+    poser({
+      ecritures_brouillon: ECRITES,
+      transmissions_factures: [{ id: 't1', dossier_id: D, facture_id: 'f1', etat: 'accepte', sha256: 'b'.repeat(64), hote: 'api.superpdp.tech' }],
+    })
+    monter({ modele: ENGAGEMENT, annee: 2025 })
+    await waitFor(() => expect(within(ligneDe(/^La facture F2025-0001/)).getByText('à jour')).toBeTruthy())
+    faux.muet = { transmissions_factures: 0 }
+    await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit 2025/ }).click() })
+    expect(await screen.findByText(/Les preuves des factures n'ont pas pu être lues en entier/)).toBeTruthy()
+    expect(telecharge.fichiers).toHaveLength(0)
+  })
+
+  it('pas encore lues : les deux exports attendent', async () => {
+    poser({ ecritures_brouillon: ECRITES })
+    faux.attente = new Promise<void>(() => {})
+    monter({ modele: ENGAGEMENT, annee: 2025 })
+    for (const nom of [/Exporter FEC 2025/, /Exporter la piste d'audit 2025/]) {
+      expect(screen.getByRole('button', { name: nom }).hasAttribute('disabled'), String(nom)).toBe(true)
+    }
   })
 })

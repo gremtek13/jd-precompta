@@ -20,6 +20,11 @@ import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { lireTout } from '../../lib/lectureComplete'
 import ComptesDeTiersCard from './ComptesDeTiersCard'
+import { lireLesFacturesDesLignes } from '../../lib/lettragesLecture'
+import { porteUneSourceDeVente, type FacturesDesLignes } from '../../lib/ventesFactureesDesExports'
+
+// Aucune vente facturée à ranger : un dossier en trésorerie, ou dont le brouillon n'en porte aucune.
+const SANS_FACTURE: FacturesDesLignes = { factures: [], encaissements: [] }
 
 const NB_MOIS_EVOLUTION = 6
 
@@ -90,6 +95,11 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
   // bancaire. Lus en partie, la carte des comptes de tiers ne conclut pas — une facture lettrée y paraîtrait ouverte.
   const [lettragesManuels, setLettragesManuels] = useState<LettrageManuel[]>([])
   const [lectureLettragesIncomplete, setLectureLettragesIncomplete] = useState<string | null>(null)
+  // Les factures d'où viennent les lignes d'une vente facturée (ligne 28.6, chantier EC-Q3, étape VF4c2) : la carte des
+  // comptes de tiers les range sous leur facture, chez leur client. Lues en partie, la carte ne conclut pas — une ligne
+  // sans sa facture retomberait parmi les « écritures sans pièce ».
+  const [facturesDesLignes, setFacturesDesLignes] = useState<FacturesDesLignes>(SANS_FACTURE)
+  const [lectureFacturesIncomplete, setLectureFacturesIncomplete] = useState<string | null>(null)
   // Verrou d'exécution du lettrage à la main et de son retrait : un état React ne prend effet qu'au rendu suivant, et
   // deux clics du même rendu enverraient deux fois le même lettrage — le second refusé par la base, avec un message
   // d'erreur sur un lettrage bien enregistré. Relâché APRÈS la relecture : avant, les pièces qu'on vient de lettrer
@@ -136,6 +146,13 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
           .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
       ),
     ])
+    // Seulement en engagement — la carte n'existe qu'en engagement — et seulement si le brouillon porte une ligne d'une
+    // facture ou d'un encaissement : un dossier qui n'a pas basculé n'en a aucune, et rien n'est relu pour rien.
+    const lectureFactures = modeComptable === 'engagement' && brouillon.lignes.some(porteUneSourceDeVente)
+      ? await lireLesFacturesDesLignes(dossierId)
+      : { etat: 'lue' as const, ventes: SANS_FACTURE }
+    setFacturesDesLignes(lectureFactures.etat === 'lue' ? lectureFactures.ventes : SANS_FACTURE)
+    setLectureFacturesIncomplete(lectureFactures.etat === 'lue' ? null : lectureFactures.motif)
     setEcritures(brouillon.lignes)
     setCategories(lectureCategories.lignes)
     setPieces(lecturePieces.lignes)
@@ -149,7 +166,7 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
     setLectureCategoriesIncomplete(lectureCategories.motif)
     setLectureLettragesIncomplete(lectureLettrages.motif)
     setLoading(false)
-  }, [dossierId])
+  }, [dossierId, modeComptable])
 
   useEffect(() => { charger() }, [charger])
 
@@ -206,8 +223,8 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
   const finExercice = typeof anneeFilter === 'number' ? `${anneeFilter}-12-31` : null
   const dateArrete = finExercice !== null && finExercice < aujourdHui ? finExercice : aujourdHui
   const soldesDeTiers = useMemo(
-    () => comptesDeTiers(ecritures, pieces, aNouveaux, lettragesManuels, modeComptable, dateArrete),
-    [ecritures, pieces, aNouveaux, lettragesManuels, modeComptable, dateArrete],
+    () => comptesDeTiers(ecritures, pieces, aNouveaux, lettragesManuels, modeComptable, dateArrete, facturesDesLignes),
+    [ecritures, pieces, aNouveaux, lettragesManuels, modeComptable, dateArrete, facturesDesLignes],
   )
   // LE LETTRAGE FAIT À LA MAIN (lib/lettrage.ts) : sur l'état d'aujourd'hui, TOUT le brouillon — c'est ce que la base
   // vérifie au clic. Il ne s'offre que sur la vue arrêtée à aujourd'hui, et seulement quand tout ce dont il dépend a été
@@ -474,7 +491,7 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
           soldes={soldesDeTiers}
           dateArrete={dateArrete}
           finExercice={dateArrete === finExercice}
-          lectureIncomplete={lectureIncomplete ?? lectureANouveauxIncomplete ?? lectureLettragesIncomplete}
+          lectureIncomplete={lectureIncomplete ?? lectureANouveauxIncomplete ?? lectureLettragesIncomplete ?? lectureFacturesIncomplete}
           lignesDeTiers={lignesDeTiers}
           anterieuresALOuverture={tiersAvantOuverture}
           ouverture={ouverture}

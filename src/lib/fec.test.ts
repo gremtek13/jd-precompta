@@ -5,6 +5,8 @@ import { ecritureDuPaiementPersonnel } from './cotisationPersonnelle'
 import type { ModeleComptable } from './engagement'
 import type { ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
+import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
+import { anomaliesDgfip, colonnes, desequilibresDgfip } from '../test/fecDgfip'
 import { lignesPourPiece, type LigneAGenerer } from './ecritures'
 import { defautsDeNumerotation } from './validationExercice'
 import { lettrages, type LettrageDeLigne } from './lettrage'
@@ -27,37 +29,8 @@ const ligne = (pieceId: string, o: Partial<EcritureBrouillon> = {}): EcritureBro
   statut: 'proposee', compte: '606100', montant: 100, created_at: '2026-03-10T00:00:00Z', ...o,
 } as EcritureBrouillon)
 
-const colonnes = (fec: string) => fec.split('\r\n').map((l) => l.split('\t'))
 // Relit un montant tel que la norme l'écrit, virgule décimale comprise — `Number('6000,00')` rend NaN.
 const lireMontant = (champ: string) => Number(champ.replace(',', '.'))
-
-// L'OUTIL DE LA DGFiP, ÉCRITURE PAR ÉCRITURE (Test Compta Demat, SQL/ECRITURE.sql et SQL/VUES.sql, l'écran des
-// vérificateurs) : les lignes d'un même EcritureNum portent un seul journal, une seule date, une seule pièce, une seule
-// date de pièce et un seul lettrage — un lettrage vide n'en est pas un, `min(code_lettrage) = max(code_lettrage)`
-// ignorant les vides. Relus sur le fichier IMPRIMÉ, comme l'outil les lit.
-function anomaliesDgfip(fec: string): string[] {
-  const parEcriture = new Map<string, string[][]>()
-  for (const r of colonnes(fec).slice(1)) parEcriture.set(r[2], [...(parEcriture.get(r[2]) ?? []), r])
-  const anomalies: string[] = []
-  for (const [num, rows] of parEcriture) {
-    const distincts = (i: number) => new Set(rows.map((r) => r[i])).size
-    if (distincts(0) !== 1) anomalies.push(`${num} : différents codes journaux`)
-    if (distincts(3) !== 1) anomalies.push(`${num} : différentes dates comptables`)
-    if (distincts(8) !== 1) anomalies.push(`${num} : différents numéros de pièce`)
-    if (distincts(9) !== 1) anomalies.push(`${num} : différentes dates pièce`)
-    if (new Set(rows.map((r) => r[13]).filter((v) => v !== '')).size > 1) anomalies.push(`${num} : différents lettrages`)
-  }
-  return anomalies
-}
-
-// Le sixième contrôle de l'outil, « Écriture non équilibrée » : en centimes, écriture par écriture.
-function desequilibresDgfip(fec: string): string[] {
-  const soldes = new Map<string, number>()
-  for (const r of colonnes(fec).slice(1)) {
-    soldes.set(r[2], (soldes.get(r[2]) ?? 0) + Math.round(lireMontant(r[11]) * 100) - Math.round(lireMontant(r[12]) * 100))
-  }
-  return [...soldes].filter(([, s]) => s !== 0).map(([num]) => num)
-}
 
 describe('genererFec — intégrité du fichier', () => {
   it("neutralise les sauts de ligne d'un libellé venu de l'OCR", () => {
@@ -69,7 +42,7 @@ describe('genererFec — intégrité du fichier', () => {
       [piece('p1', { tiers: "CAISSE\nD'EPARGNE\nCEPAC" })],
       [],
       [],
-      'tresorerie', [], SANS_LETTRAGE,
+      'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE,
     )
     const rows = colonnes(fec)
     expect(rows).toHaveLength(2) // en-tête + 1 écriture, pas 4
@@ -77,14 +50,14 @@ describe('genererFec — intégrité du fichier', () => {
   })
 
   it('neutralise une tabulation, qui décalerait toutes les colonnes suivantes', () => {
-    const fec = genererFec([ligne('p1', { libelle: 'ACME\tSARL' })], [piece('p1')], [], [], 'tresorerie', [], SANS_LETTRAGE)
+    const fec = genererFec([ligne('p1', { libelle: 'ACME\tSARL' })], [piece('p1')], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     const rows = colonnes(fec)
     expect(rows[1]).toHaveLength(18) // le format en impose 18, ni plus ni moins
     expect(rows[1][10]).toBe('ACME SARL')
   })
 
   it('neutralise aussi un nom de fichier piégé', () => {
-    const fec = genererFec([ligne('p1')], [piece('p1', { nom_fichier: 'facture\tmars.pdf' })], [], [], 'tresorerie', [], SANS_LETTRAGE)
+    const fec = genererFec([ligne('p1')], [piece('p1', { nom_fichier: 'facture\tmars.pdf' })], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     expect(colonnes(fec)[1][8]).toBe('facture mars.pdf')
   })
 
@@ -94,7 +67,7 @@ describe('genererFec — intégrité du fichier', () => {
       [piece('p1', { nom_fichier: "x\ny.pdf" })],
       [],
       [],
-      'tresorerie', [], SANS_LETTRAGE,
+      'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE,
     )
     expect(colonnes(fec).every((r) => r.length === 18)).toBe(true)
   })
@@ -122,7 +95,7 @@ describe('genererFec — la forme imposée par l’article A47 A-1', () => {
       sens: 'debit', montant: 25000.1, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
       created_at: '2026-09-26T10:00:00Z',
     }],
-    'tresorerie', [], SANS_LETTRAGE,
+    'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE,
   )
 
   it('écrit les montants avec une virgule décimale et sans séparateur de milliers', () => {
@@ -144,7 +117,7 @@ describe('genererFec — la forme imposée par l’article A47 A-1', () => {
   it('met le signe d’un montant négatif en tête', () => {
     // Défensif : la génération écrit des valeurs absolues et porte le signe dans le sens. Mais un
     // montant négatif qui arriverait jusqu'ici doit rester lisible selon la norme, pas « 12,50- ».
-    const l = colonnes(genererFec([ligne('p1', { montant: -12.5 })], [piece('p1')], [], [], 'tresorerie', [], SANS_LETTRAGE))[1]
+    const l = colonnes(genererFec([ligne('p1', { montant: -12.5 })], [piece('p1')], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE))[1]
     expect(l[11]).toBe('-12,50')
   })
 
@@ -180,7 +153,7 @@ describe('genererFec — numérotation et dates', () => {
       ],
       [],
       [],
-      'tresorerie', [], SANS_LETTRAGE,
+      'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE,
     )
     const rows = colonnes(fec).slice(1)
     expect(rows.map((r) => [r[0], r[2]])).toEqual([
@@ -202,7 +175,7 @@ describe('genererFec — numérotation et dates', () => {
       [piece('janvier', { date_piece: '2026-01-10' }), piece('fevrier', { date_piece: '2026-02-01' })],
       [],
       [],
-      'tresorerie', [], SANS_LETTRAGE,
+      'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE,
     )
     const rows = colonnes(fec).slice(1)
     expect(rows.map((r) => [r[2], r[3], r[9]])).toEqual([
@@ -220,7 +193,7 @@ describe('genererFec — numérotation et dates', () => {
       ligne('p1', { compte: COMPTE_BANQUE, date: '2026-04-20', sens: 'credit' }),
       ligne('p1', { date: '2026-03-10' }),
     ]
-    const rows = colonnes(genererFec(lignes, [piece('p1', { date_piece: '2026-03-10' })], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(lignes, [piece('p1', { date_piece: '2026-03-10' })], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.every((r) => r[9] === '20260310')).toBe(true)
     // Une écriture ne porte qu'une date : la charge à la date de la facture et la banque à celle du paiement — un
     // brouillon d'avant la datation au paiement, que le contrôle des écritures déclare à régénérer — font deux écritures.
@@ -230,12 +203,12 @@ describe('genererFec — numérotation et dates', () => {
   it('produit deux fois le même fichier pour les mêmes données', () => {
     const lignes = [ligne('b'), ligne('a')]
     const pieces = [piece('a', { date_piece: '2026-02-01' }), piece('b', { date_piece: '2026-02-01' })]
-    expect(genererFec(lignes, pieces, [], [], 'tresorerie', [], SANS_LETTRAGE)).toBe(genererFec([...lignes].reverse(), pieces, [], [], 'tresorerie', [], SANS_LETTRAGE))
+    expect(genererFec(lignes, pieces, [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).toBe(genererFec([...lignes].reverse(), pieces, [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE))
   })
 
   it('ignore les écritures sans pièce rattachée', () => {
     const orpheline = { ...ligne('p1'), piece_id: null } as EcritureBrouillon
-    expect(colonnes(genererFec([orpheline], [piece('p1')], [], [], 'tresorerie', [], SANS_LETTRAGE))).toHaveLength(1) // en-tête seul
+    expect(colonnes(genererFec([orpheline], [piece('p1')], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE))).toHaveLength(1) // en-tête seul
   })
 })
 
@@ -254,7 +227,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
     const p = piece('p1', { montant_ttc: 100, date_piece: '2026-02-20', nom_fichier: 'facture.pdf' })
     const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
       [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)], TRESORERIE).map(enBase('a'))
-    const fec = genererFec(brouillon, [p], [], [], 'tresorerie', [], SANS_LETTRAGE)
+    const fec = genererFec(brouillon, [p], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     const rows = colonnes(fec).slice(1)
     expect(rows.map((r) => [r[2], r[3], r[4], debitMoinsCredit(r)])).toEqual([
       ['AC00001', '20260305', '606100', 60], ['AC00001', '20260305', COMPTE_BANQUE, -60],
@@ -264,14 +237,14 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
     expect(new Set(rows.map((r) => `${r[8]}|${r[9]}`))).toEqual(new Set(['facture.pdf|20260220']))
     expect(anomaliesDgfip(fec)).toEqual([])
     expect(desequilibresDgfip(fec)).toEqual([])
-    expect(defautsDeNumerotation(numeroterFec(brouillon, [p], [], [], 'tresorerie', []))).toEqual([])
+    expect(defautsDeNumerotation(numeroterFec(brouillon, [p], [], [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE))).toEqual([])
   })
 
   it('garde la TVA d’une date avec sa charge : chaque écriture s’équilibre face à son paiement', () => {
     const p = piece('p2', { montant_ttc: 120, montant_ht: 100, montant_tva: 20, date_piece: '2026-02-20' })
     const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, true,
       [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -60)], TRESORERIE).map(enBase('t'))
-    const fec = genererFec(brouillon, [p], [], [], 'tresorerie', [], SANS_LETTRAGE)
+    const fec = genererFec(brouillon, [p], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     expect(colonnes(fec).slice(1).map((r) => [r[2], r[4], debitMoinsCredit(r)])).toEqual([
       ['AC00001', '445660', 10], ['AC00001', '606100', 50], ['AC00001', COMPTE_BANQUE, -60],
       ['AC00002', '445660', 10], ['AC00002', '606100', 50], ['AC00002', COMPTE_BANQUE, -60],
@@ -284,7 +257,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
     const note = piece('note', { type_piece: 'note_frais', montant_ttc: 42.5, date_piece: '2026-03-10', nom_fichier: 'ticket.jpg' })
     const brouillon = lignesPourPiece('d1', note, { compte: '625700', immobilisation: false }, false,
       [paiement('l1', '2026-03-20', -20)], TRESORERIE).map(enBase('n'))
-    const fec = genererFec(brouillon, [note], [], [], 'tresorerie', [], SANS_LETTRAGE)
+    const fec = genererFec(brouillon, [note], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     expect(colonnes(fec).slice(1).map((r) => [r[2], r[3], r[4], debitMoinsCredit(r)])).toEqual([
       ['AC00001', '20260310', '625700', 22.5], ['AC00001', '20260310', '108000', -22.5],
       ['AC00002', '20260320', '625700', 20], ['AC00002', '20260320', COMPTE_BANQUE, -20],
@@ -297,7 +270,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
     const p = piece('p3', { montant_ttc: 100, date_piece: '2026-02-20' })
     const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
       [paiement('l1', '2026-03-05', -70), paiement('l2', '2026-03-05', -30)], TRESORERIE).map(enBase('m'))
-    const rows = colonnes(genererFec(brouillon, [p], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(brouillon, [p], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(new Set(rows.map((r) => r[2]))).toEqual(new Set(['AC00001']))
   })
 
@@ -307,7 +280,7 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
     const p = piece('p4', { montant_ttc: 100, date_piece: '2026-02-20', tiers: 'Transmedical' })
     const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
       [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)], ENGAGEMENT).map(enBase('g'))
-    const fec = genererFec(brouillon, [p], [], [], 'engagement', [], SANS_LETTRAGE)
+    const fec = genererFec(brouillon, [p], [], [], 'engagement', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     expect(colonnes(fec).slice(1).map((r) => [r[2], r[3], r[4]])).toEqual([
       ['AC00001', '20260220', '606100'], ['AC00001', '20260220', '401000'],
       ['BQ00001', '20260305', '401000'], ['BQ00001', '20260305', COMPTE_BANQUE],
@@ -326,8 +299,8 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
     for (const modele of [TRESORERIE, ENGAGEMENT]) {
       const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false, paiements, modele)
         .map(enBase('o'))
-      const fec = genererFec(brouillon, [p], [], [], modele.mode, [], SANS_LETTRAGE)
-      expect(genererFec([...brouillon].reverse(), [p], [], [], modele.mode, [], SANS_LETTRAGE)).toBe(fec)
+      const fec = genererFec(brouillon, [p], [], [], modele.mode, [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
+      expect(genererFec([...brouillon].reverse(), [p], [], [], modele.mode, [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).toBe(fec)
       if (modele.mode === 'tresorerie') expect(new Set(colonnes(fec).slice(1).map((r) => r[0]))).toEqual(new Set(['AC']))
     }
   })
@@ -341,17 +314,17 @@ describe('genererFec — une écriture ne porte qu’une date (l’outil de la D
       ligne('p7', { id: 'f1', compte: '606100', sens: 'debit', montant: 100, date: '2026-02-20' }),
       ligne('p7', { id: 'f2', compte: '401000', sens: 'credit', montant: 100, date: '2026-02-21' }),
     ]
-    const fec = genererFec(brouillon, [p], [], [], 'engagement', [], SANS_LETTRAGE)
+    const fec = genererFec(brouillon, [p], [], [], 'engagement', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     expect(anomaliesDgfip(fec)).toEqual([])
     expect(desequilibresDgfip(fec)).toEqual(['AC00001', 'AC00002'])
-    expect(defautsDeNumerotation(numeroterFec(brouillon, [p], [], [], 'engagement', [])).map((d) => d.type))
+    expect(defautsDeNumerotation(numeroterFec(brouillon, [p], [], [], 'engagement', [], SANS_ECRITURE_DE_VENTE)).map((d) => d.type))
       .toEqual(['desequilibre', 'desequilibre'])
   })
 
   // Le garde de l'outil lui-même : sans lui, « aucune anomalie » serait aussi ce que rendrait un contrôle aveugle.
   it('voit l’écriture à deux dates qu’un seul numéro ferait', () => {
     const fec = genererFec([ligne('p1', { date: '2026-03-05' }), ligne('p1', { id: 'b', compte: COMPTE_BANQUE, sens: 'credit', date: '2026-03-05' })],
-      [piece('p1')], [], [], 'tresorerie', [], SANS_LETTRAGE)
+      [piece('p1')], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     expect(anomaliesDgfip(fec)).toEqual([])
     const aDeuxDates = colonnes(fec).map((r) => (r[4] === COMPTE_BANQUE ? [...r.slice(0, 3), '20260306', ...r.slice(4)] : r))
       .map((r) => r.join('\t')).join('\r\n')
@@ -374,7 +347,7 @@ describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
   ]
 
   it('les place en tête, en une seule écriture du journal AN, triées par compte', () => {
-    const rows = colonnes(genererFec([ligne('p1')], [piece('p1')], [], ouverture, 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec([ligne('p1')], [piece('p1')], [], ouverture, 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[1], r[2], r[3], r[4]])).toEqual([
       ['AN', 'À-nouveaux', 'AN00001', '20260101', '108'],
       ['AN', 'À-nouveaux', 'AN00001', '20260101', '512000'],
@@ -385,12 +358,12 @@ describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
   it('garde le libellé de l’application pour la banque, et la balance d’origine dans le libellé d’écriture', () => {
     // Un même CompteNum ne porte qu'un CompteLib dans tout le fichier : les mouvements de la banque
     // l'appellent « Banque », son ouverture aussi.
-    const banque = colonnes(genererFec([], [], [], ouverture, 'tresorerie', [], SANS_LETTRAGE)).find((r) => r[4] === '512000')!
+    const banque = colonnes(genererFec([], [], [], ouverture, 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).find((r) => r[4] === '512000')!
     expect(banque[5]).toBe('Banque')
     expect(banque[10]).toBe('À-nouveau 51210000 Banque Populaire')
     expect(banque[8]).toBe('balance-2025.csv')
     expect([banque[11], banque[12]]).toEqual(['6000,00', '0,00'])
-    const exploitant = colonnes(genererFec([], [], [], ouverture, 'tresorerie', [], SANS_LETTRAGE)).find((r) => r[4] === '108')!
+    const exploitant = colonnes(genererFec([], [], [], ouverture, 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).find((r) => r[4] === '108')!
     expect([exploitant[5], exploitant[10], exploitant[11], exploitant[12]])
       .toEqual(['Compte de l’exploitant', 'À-nouveau Compte de l’exploitant', '0,00', '6000,00'])
   })
@@ -411,23 +384,23 @@ describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
       ligne('', { id: 'r1', piece_id: null, ligne_bancaire_id: 'l-rb', compte: '274100', sens: 'credit', montant: 500, date: '2026-02-10' }),
       ligne('', { id: 'r2', piece_id: null, ligne_bancaire_id: 'l-rb', compte: COMPTE_BANQUE, sens: 'debit', montant: 500, date: '2026-02-10' }),
     ]
-    const rows = colonnes(genererFec(ecritures, [], [], [...ouverture, pret], 'tresorerie', [rembourse], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(ecritures, [], [], [...ouverture, pret], 'tresorerie', [rembourse], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.filter((r) => r[4] === '274100').map((r) => [r[0], r[5]])).toEqual([['AN', 'Prêts'], ['BQ', 'Prêts']])
     // Et une fois l'exercice validé, la relecture dit la même chose : le nom figé est celui de la numérotation.
-    const n = numeroterFec(ecritures, [], [], [...ouverture, pret], 'tresorerie', [rembourse])
+    const n = numeroterFec(ecritures, [], [], [...ouverture, pret], 'tresorerie', [rembourse], SANS_ECRITURE_DE_VENTE)
     expect(n.aNouveaux.find((a) => a.aNouveau.id === 'an-3')!.compteLib).toBe('Prêts')
     const relu = numerotationValidee([], [{ ...pret }], '2027-01-15T10:00:00Z')
     expect(relu.aNouveaux[0].compteLib).toBe('Prêts')
   })
 
   it('s’exporte même sans aucune écriture : l’ouverture d’un exercice qui commence', () => {
-    const rows = colonnes(genererFec([], [], [], ouverture, 'tresorerie', [], SANS_LETTRAGE))
+    const rows = colonnes(genererFec([], [], [], ouverture, 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE))
     expect(rows).toHaveLength(3)
     expect(rows.every((r) => r.length === 18)).toBe(true)
   })
 
   it('neutralise un nom de balance piégé comme tout autre champ', () => {
-    const rows = colonnes(genererFec([], [], [], [aNouveau({ source_nom: 'balance\t2025.csv' })], 'tresorerie', [], SANS_LETTRAGE))
+    const rows = colonnes(genererFec([], [], [], [aNouveau({ source_nom: 'balance\t2025.csv' })], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE))
     expect(rows[1]).toHaveLength(18)
     expect(rows[1][8]).toBe('balance 2025.csv')
   })
@@ -464,7 +437,7 @@ describe('genererFec — en engagement', () => {
     ligne('vente', { id: 'v3', compte: '411000', sens: 'credit', montant: 50, date: '2026-03-20', ligne_bancaire_id: 'l-vente' }),
     ligne('vente', { id: 'v4', compte: COMPTE_BANQUE, sens: 'debit', montant: 50, date: '2026-03-20', ligne_bancaire_id: 'l-vente' }),
   ]
-  const rows = () => colonnes(genererFec(brouillon, [achat, vente], [], [], 'engagement', [], SANS_LETTRAGE)).slice(1)
+  const rows = () => colonnes(genererFec(brouillon, [achat, vente], [], [], 'engagement', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
 
   it('range la facture au journal de sa nature et chaque règlement au journal de banque, sous son propre numéro', () => {
     expect(rows().map((r) => [r[0], r[2], r[3], r[4]])).toEqual([
@@ -503,7 +476,7 @@ describe('genererFec — en engagement', () => {
     const autre = piece('autre', { tiers: 'TRANSMEDICAL / et redevient', date_piece: '2026-06-01' })
     const fec = genererFec(
       [...brouillon, ligne('autre', { id: 'x1', compte: '401000', sens: 'credit', date: '2026-06-01' })],
-      [achat, vente, autre], [], [], 'engagement', [], SANS_LETTRAGE,
+      [achat, vente, autre], [], [], 'engagement', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE,
     )
     const libelles = new Set(colonnes(fec).slice(1).filter((r) => r[6] === 'FTRANSMEDICAL').map((r) => r[7]))
     expect(libelles).toEqual(new Set(['Transmedical']))
@@ -520,7 +493,7 @@ describe('genererFec — en engagement', () => {
       ligne('aa', { id: 'r2', compte: COMPTE_BANQUE, sens: 'credit', montant: 80, date: '2026-05-02', ligne_bancaire_id: 'l-aa' }),
       ligne('zz', { id: 'f1', compte: '606100', montant: 90, date: '2026-05-02' }),
       ligne('zz', { id: 'f2', compte: '401000', sens: 'credit', montant: 90, date: '2026-05-02' }),
-    ], [reglee, facturee], [], [], 'engagement', [], SANS_LETTRAGE)).slice(1)
+    ], [reglee, facturee], [], [], 'engagement', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => r[0])).toEqual(['AC', 'AC', 'BQ', 'BQ'])
     expect(rows.filter((r) => r[6] === 'FTRANSMEDICAL').map((r) => r[7])).toEqual(['TRANSMEDICAL SARL', 'TRANSMEDICAL SARL'])
   })
@@ -530,7 +503,7 @@ describe('genererFec — en engagement', () => {
       ligne('achat', { id: 't1', compte: '606100', date: '2026-04-05' }),
       ligne('achat', { id: 't2', compte: COMPTE_BANQUE, sens: 'credit', date: '2026-04-05', ligne_bancaire_id: 'l-achat' }),
     ]
-    const r = colonnes(genererFec(tresorerie, [achat], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const r = colonnes(genererFec(tresorerie, [achat], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(r.map((x) => [x[0], x[2]])).toEqual([['AC', 'AC00001'], ['AC', 'AC00001']])
   })
 })
@@ -556,7 +529,7 @@ describe('genererFec — le lettrage des comptes de tiers', () => {
     ligne('partielle', { id: 'p3', compte: '401000', sens: 'debit', montant: 150, date: '2026-03-25', ligne_bancaire_id: 'l-partielle' }),
     ligne('partielle', { id: 'p4', compte: COMPTE_BANQUE, sens: 'credit', montant: 150, date: '2026-03-25', ligne_bancaire_id: 'l-partielle' }),
   ]
-  const fec = () => genererFec(brouillon, [achat, vente, partielle], [], [], 'engagement', [], lettrages(brouillon, [], [], 'engagement'))
+  const fec = () => genererFec(brouillon, [achat, vente, partielle], [], [], 'engagement', [], lettrages(brouillon, [], [], 'engagement', SANS_VENTE_FACTUREE), SANS_ECRITURE_DE_VENTE)
   const lettrees = () => colonnes(fec()).slice(1).filter((r) => r[13] !== '').map((r) => [r[2], r[4], r[13], r[14]])
 
   it('porte le code et la date sur les lignes de tiers d’une facture soldée, et sur elles seules', () => {
@@ -588,25 +561,25 @@ describe('genererFec — le lettrage des comptes de tiers', () => {
       ligne('dec', { id: 'd3', compte: '401000', sens: 'debit', montant: 80, date: '2027-01-08', ligne_bancaire_id: 'l-dec', created_at: '2027-01-09T08:00:00Z' }),
       ligne('dec', { id: 'd4', compte: COMPTE_BANQUE, sens: 'credit', montant: 80, date: '2027-01-08', ligne_bancaire_id: 'l-dec', created_at: '2027-01-09T08:00:00Z' }),
     ]
-    const lettrage = lettrages(tout, [], [], 'engagement')
-    const exercice = (annee: string) => genererFec(tout.filter((e) => e.date.startsWith(annee)), [decembre], [], [], 'engagement', [], lettrage)
+    const lettrage = lettrages(tout, [], [], 'engagement', SANS_VENTE_FACTUREE)
+    const exercice = (annee: string) => genererFec(tout.filter((e) => e.date.startsWith(annee)), [decembre], [], [], 'engagement', [], lettrage, SANS_ECRITURE_DE_VENTE)
     const tiers = (f: string) => colonnes(f).slice(1).filter((r) => r[4] === '401000').map((r) => [r[13], r[14]])
     expect(tiers(exercice('2026'))).toEqual([['A', '20270109']])
     expect(tiers(exercice('2027'))).toEqual([['A', '20270109']])
   })
 
   it('porte le lettrage dans le FEC d’un exercice validé, qui ne le fige pas', () => {
-    const numerotation = numeroterFec(brouillon, [achat, vente, partielle], [], [], 'engagement', [])
+    const numerotation = numeroterFec(brouillon, [achat, vente, partielle], [], [], 'engagement', [], SANS_ECRITURE_DE_VENTE)
     const validees = numerotation.lignes.map((l) => ({
       ...l.ecriture, statut: 'validee' as const, valide_le: '2027-01-14T23:30:00Z', journal_code: l.journal, numero_ecriture: l.numero,
       piece_ref: l.pieceRef, piece_date: l.pieceDate, compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
     }))
-    const relu = formaterFec(numerotationValidee(validees, [], '2027-01-14T23:30:00Z'), lettrages(validees, [], [], 'engagement'))
+    const relu = formaterFec(numerotationValidee(validees, [], '2027-01-14T23:30:00Z'), lettrages(validees, [], [], 'engagement', SANS_VENTE_FACTUREE))
     expect(colonnes(relu).slice(1).filter((r) => r[13] !== '').map((r) => [r[2], r[13], r[14]])).toEqual(lettrees().map((r) => [r[0], r[2], r[3]]))
   })
 
   it('ne lettre rien en trésorerie', () => {
-    expect(colonnes(genererFec(brouillon, [achat, vente, partielle], [], [], 'tresorerie', [], lettrages(brouillon, [], [], 'tresorerie')))
+    expect(colonnes(genererFec(brouillon, [achat, vente, partielle], [], [], 'tresorerie', [], lettrages(brouillon, [], [], 'tresorerie', SANS_VENTE_FACTUREE), SANS_ECRITURE_DE_VENTE))
       .slice(1).every((r) => r[13] === '' && r[14] === '')).toBe(true)
   })
 
@@ -624,7 +597,7 @@ describe('genererFec — le lettrage des comptes de tiers', () => {
     const manuels = ['fm', 'am'].map((p) => ({
       id: `g-${p}`, dossier_id: 'd1', groupe: 'g', piece_id: p, compte: '401000', created_at: '2026-05-12T08:00:00Z',
     }))
-    const f = genererFec(tout, [facture, avoir], [], [], 'engagement', [], lettrages(tout, [facture, avoir], manuels, 'engagement'))
+    const f = genererFec(tout, [facture, avoir], [], [], 'engagement', [], lettrages(tout, [facture, avoir], manuels, 'engagement', SANS_VENTE_FACTUREE), SANS_ECRITURE_DE_VENTE)
     expect(colonnes(f).slice(1).filter((r) => r[13] !== '').map((r) => [r[2], r[4], r[13], r[14]])).toEqual([
       ['AC00001', '401000', 'A', '20260512'],
       ['AC00002', '401000', 'A', '20260512'],
@@ -644,7 +617,7 @@ describe('genererFec — l’acquisition d’un bien immobilisé', () => {
       ligne('bien', { id: 'b2', compte: '445620', montant: 200, date: '2026-04-05' }),
       ligne('bien', { id: 'b3', compte: COMPTE_BANQUE, sens: 'credit', montant: 1200, date: '2026-04-05', ligne_bancaire_id: 'l-bien' }),
     ]
-    const r = colonnes(genererFec(brouillon, [facture], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const r = colonnes(genererFec(brouillon, [facture], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(r.map((x) => [x[0], x[2], x[4], x[5], x[8], x[11], x[12]])).toEqual([
       ['AC', 'AC00001', '215400', 'Matériel industriel', 'fauteuil.pdf', '1000,00', '0,00'],
       ['AC', 'AC00001', '445620', 'TVA déductible sur immobilisations', 'fauteuil.pdf', '200,00', '0,00'],
@@ -663,7 +636,7 @@ describe('genererFec — l’acquisition d’un bien immobilisé', () => {
       ligne('bien', { id: 'b4', compte: '404000', sens: 'debit', montant: 1200, date: '2026-04-05', ligne_bancaire_id: 'l-bien' }),
       ligne('bien', { id: 'b5', compte: COMPTE_BANQUE, sens: 'credit', montant: 1200, date: '2026-04-05', ligne_bancaire_id: 'l-bien' }),
     ]
-    const r = colonnes(genererFec(brouillon, [achat, facture], [], [], 'engagement', [], SANS_LETTRAGE)).slice(1)
+    const r = colonnes(genererFec(brouillon, [achat, facture], [], [], 'engagement', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(r.filter((x) => x[4] === '404000').map((x) => [x[0], x[5], x[6], x[7]])).toEqual([
       ['AC', "Fournisseurs d'immobilisations", 'FITRANSMEDICAL', 'Transmedical'],
       ['BQ', "Fournisseurs d'immobilisations", 'FITRANSMEDICAL', 'Transmedical'],
@@ -691,7 +664,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
   ]
 
   it('les porte au journal de banque, un numéro par mouvement, le relevé pour pièce', () => {
-    const rows = colonnes(genererFec(brouillon, [], [], [], 'tresorerie', [cpam, frais], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(brouillon, [], [], [], 'tresorerie', [cpam, frais], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[1], r[2], r[3], r[4], r[8], r[9]])).toEqual([
       ['BQ', 'Banque', 'BQ00001', '20260228', '627000', 'Relevé bancaire', '20260228'],
       ['BQ', 'Banque', 'BQ00001', '20260228', COMPTE_BANQUE, 'Relevé bancaire', '20260228'],
@@ -710,7 +683,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ligne('achat', { id: 'a3', compte: '401000', montant: 120, date: '2026-03-05', ligne_bancaire_id: 'l-achat' }),
       ligne('achat', { id: 'a4', compte: COMPTE_BANQUE, sens: 'credit', montant: 120, date: '2026-03-05', ligne_bancaire_id: 'l-achat' }),
     ]
-    const rows = colonnes(genererFec([...brouillon, ...reglement], [achat], [], [], 'engagement', [cpam, frais], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec([...brouillon, ...reglement], [achat], [], [], 'engagement', [cpam, frais], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect([...new Set(rows.filter((r) => r[0] === 'BQ').map((r) => `${r[2]} ${r[3]}`))])
       .toEqual(['BQ00001 20260228', 'BQ00002 20260305', 'BQ00003 20260312'])
   })
@@ -719,7 +692,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     // Le reste d'une pièce supprimée, ou d'une affectation défaite hors de l'application : sans
     // justificatif, elle ne va pas dans le fichier fiscal — `absenceFec` la chiffre à l'écran.
     const remis = { ...cpam, statut: 'non_rapprochee' as const, categorie_id: null }
-    const rows = colonnes(genererFec(brouillon, [], [], [], 'tresorerie', [remis, frais], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(brouillon, [], [], [], 'tresorerie', [remis, frais], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => r[4])).toEqual(['627000', COMPTE_BANQUE])
   })
 
@@ -733,14 +706,14 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ligne('', { id: 'v1', piece_id: null, ligne_bancaire_id: 'l-perso', compte: '108000', sens: 'debit', montant: 500, date: '2026-03-20', libelle: 'VIR PERSO' }),
       ligne('', { id: 'v2', piece_id: null, ligne_bancaire_id: 'l-perso', compte: COMPTE_BANQUE, sens: 'credit', montant: 500, date: '2026-03-20', libelle: 'VIR PERSO' }),
     ]
-    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [prelevement], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [prelevement], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[8], r[11], r[12]])).toEqual([
       ['BQ', 'BQ00001', '20260320', '108000', "Compte de l'exploitant", 'releve-mars-2026.pdf', '500,00', '0,00'],
       ['BQ', 'BQ00001', '20260320', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '500,00'],
     ])
     // Le garde symétrique : remis à traiter, le même mouvement n'est plus justifié par le relevé.
     const remis = { ...prelevement, statut: 'non_rapprochee' as const, prelevement_personnel: false }
-    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [remis], SANS_LETTRAGE)).slice(1)).toEqual([])
+    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [remis], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)).toEqual([])
   })
 
   it('porte de même une échéance d’emprunt, le capital, les intérêts et l’assurance face à la banque', () => {
@@ -757,7 +730,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ligne('', { id: 'p3', piece_id: null, ligne_bancaire_id: 'l-pret', compte: '616800', sens: 'debit', montant: 21.03, date: '2026-03-06', libelle: 'ECHEANCE PRET' }),
       ligne('', { id: 'p4', piece_id: null, ligne_bancaire_id: 'l-pret', compte: COMPTE_BANQUE, sens: 'credit', montant: 540, date: '2026-03-06', libelle: 'ECHEANCE PRET' }),
     ]
-    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [pret], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [pret], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[4], r[5], r[8], r[11], r[12]])).toEqual([
       ['BQ', 'BQ00001', '164000', 'Emprunts auprès des établissements de crédit', 'releve-mars-2026.pdf', '482,97', '0,00'],
       ['BQ', 'BQ00001', '616800', 'Assurance des emprunts', 'releve-mars-2026.pdf', '21,03', '0,00'],
@@ -766,7 +739,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ])
     // Le garde symétrique : une fois le rapprochement retiré, la même écriture n'a plus de justificatif.
     const retire = { ...pret, statut: 'non_rapprochee' as const, emprunt_id: null }
-    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [retire], SANS_LETTRAGE)).slice(1)).toEqual([])
+    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [retire], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)).toEqual([])
   })
 
   it('porte de même une échéance de cotisation, la cotisation au 646000 et sa CSG-CRDS au 108000', () => {
@@ -780,7 +753,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ligne('', { id: 'u2', piece_id: null, ligne_bancaire_id: 'l-urssaf', compte: '108000', sens: 'debit', montant: 48.5, date: '2026-03-05', libelle: 'PRLV URSSAF' }),
       ligne('', { id: 'u3', piece_id: null, ligne_bancaire_id: 'l-urssaf', compte: COMPTE_BANQUE, sens: 'credit', montant: 500, date: '2026-03-05', libelle: 'PRLV URSSAF' }),
     ]
-    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [urssaf], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [urssaf], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[4], r[5], r[8], r[11], r[12]])).toEqual([
       ['BQ', 'BQ00001', '108000', "Compte de l'exploitant", 'releve-mars-2026.pdf', '48,50', '0,00'],
       ['BQ', 'BQ00001', '646000', "Cotisations sociales personnelles de l'exploitant", 'releve-mars-2026.pdf', '451,50', '0,00'],
@@ -788,7 +761,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ])
     // Le garde symétrique : le rapprochement annulé, la même écriture n'a plus de justificatif.
     const annule = { ...urssaf, statut: 'non_rapprochee' as const, cotisation_id: null }
-    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [annule], SANS_LETTRAGE)).slice(1)).toEqual([])
+    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [annule], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)).toEqual([])
   })
 
   it('porte de même un mouvement ventilé, une ligne par part face à la banque', () => {
@@ -802,7 +775,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ligne('', { id: 't2', piece_id: null, ligne_bancaire_id: 'l-tel', compte: '108000', sens: 'debit', montant: 36, date: '2026-03-15', libelle: 'PRLV OPERATEUR' }),
       ligne('', { id: 't3', piece_id: null, ligne_bancaire_id: 'l-tel', compte: COMPTE_BANQUE, sens: 'credit', montant: 120, date: '2026-03-15', libelle: 'PRLV OPERATEUR' }),
     ]
-    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [telephone], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [telephone], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[8], r[11], r[12]])).toEqual([
       ['BQ', 'BQ00001', '20260315', '108000', 'releve-mars-2026.pdf', '36,00', '0,00'],
       ['BQ', 'BQ00001', '20260315', '626000', 'releve-mars-2026.pdf', '84,00', '0,00'],
@@ -810,7 +783,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ])
     // Le garde symétrique : la ventilation annulée, la même écriture n'a plus de justificatif.
     const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null }
-    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [annule], SANS_LETTRAGE)).slice(1)).toEqual([])
+    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [annule], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)).toEqual([])
   })
 
   it('porte de même un mouvement écrit sur un compte de bilan, nommé par l’application ou par le plan comptable', () => {
@@ -828,7 +801,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ligne('', { id: 'b3', piece_id: null, ligne_bancaire_id: 'l-pretc', compte: '274100', sens: 'debit', montant: 800, date: '2026-03-09', libelle: 'VIR PRET' }),
       ligne('', { id: 'b4', piece_id: null, ligne_bancaire_id: 'l-pretc', compte: COMPTE_BANQUE, sens: 'credit', montant: 800, date: '2026-03-09', libelle: 'VIR PRET' }),
     ]
-    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [depot, pret], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [depot, pret], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[8], r[11], r[12]])).toEqual([
       ['BQ', 'BQ00001', '20260302', '275000', 'Dépôts et cautionnements versés', 'releve-mars-2026.pdf', '1500,00', '0,00'],
       ['BQ', 'BQ00001', '20260302', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '1500,00'],
@@ -837,12 +810,12 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ])
     // Le garde symétrique : remis à traiter, le même mouvement n'a plus de justificatif.
     const remis = { ...depot, statut: 'non_rapprochee' as const, compte_bilan: null, declaration_tva_id: null }
-    expect(colonnes(genererFec(ecritures.slice(0, 2), [], [], [], 'tresorerie', [remis], SANS_LETTRAGE)).slice(1)).toEqual([])
+    expect(colonnes(genererFec(ecritures.slice(0, 2), [], [], [], 'tresorerie', [remis], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)).toEqual([])
   })
 
   it('les équilibre, une écriture après l’autre', () => {
     const parNumero = new Map<string, number>()
-    for (const r of colonnes(genererFec(brouillon, [], [], [], 'tresorerie', [cpam, frais], SANS_LETTRAGE)).slice(1)) {
+    for (const r of colonnes(genererFec(brouillon, [], [], [], 'tresorerie', [cpam, frais], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)) {
       parNumero.set(r[2], (parNumero.get(r[2]) ?? 0) + lireMontant(r[11]) - lireMontant(r[12]))
     }
     expect([...parNumero.values()].every((s) => Math.abs(s) < 0.005)).toBe(true)
@@ -859,7 +832,7 @@ describe('genererFec — les dotations aux amortissements', () => {
   ]
 
   it('portent une écriture par bien au journal OD, le tableau d’amortissement pour pièce', () => {
-    const rows = colonnes(genererFec([...dotation('i1', 400), ...dotation('i2', 150)], [], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec([...dotation('i1', 400), ...dotation('i2', 150)], [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[8], r[9], r[11], r[12]])).toEqual([
       ['OD', 'Opérations diverses', 'OD00001', '20261231', '681100', 'Dotations aux amortissements des immobilisations', '', "Tableau d'amortissement 2026", '20261231', '400,00', '0,00'],
       ['OD', 'Opérations diverses', 'OD00001', '20261231', '281830', 'Amortissements du matériel de bureau et matériel informatique', '', "Tableau d'amortissement 2026", '20261231', '0,00', '400,00'],
@@ -875,7 +848,7 @@ describe('genererFec — les dotations aux amortissements', () => {
       ligne('', { id: 'i1-d-2025', piece_id: null, immobilisation_id: 'i1', date: '2025-12-31', compte: '681100', sens: 'debit', montant: 200, libelle: 'Dotation 2025 — Ordinateur' }),
       ligne('', { id: 'i1-c-2025', piece_id: null, immobilisation_id: 'i1', date: '2025-12-31', compte: '281830', sens: 'credit', montant: 200, libelle: 'Dotation 2025 — Ordinateur' }),
     ]
-    const rows = colonnes(genererFec([...exercice2025, ...dotation('i1', 400)], [], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec([...exercice2025, ...dotation('i1', 400)], [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[2], r[3], r[4], r[11], r[12]])).toEqual([
       ['OD00001', '20251231', '681100', '200,00', '0,00'],
       ['OD00001', '20251231', '281830', '0,00', '200,00'],
@@ -885,12 +858,12 @@ describe('genererFec — les dotations aux amortissements', () => {
   })
 
   it('numérotent leur journal à part, après les écritures de l’année', () => {
-    const rows = colonnes(genererFec([ligne('p1'), ligne('p1', { compte: COMPTE_BANQUE, sens: 'credit' }), ...dotation('i1', 400)], [piece('p1')], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec([ligne('p1'), ligne('p1', { compte: COMPTE_BANQUE, sens: 'credit' }), ...dotation('i1', 400)], [piece('p1')], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => r[2])).toEqual(['AC00001', 'AC00001', 'OD00001', 'OD00001'])
   })
 
   it('ne font pas entrer une écriture sans pièce ni bien — le reste d’une pièce supprimée', () => {
-    expect(colonnes(genererFec([ligne('', { piece_id: null })], [], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)).toEqual([])
+    expect(colonnes(genererFec([ligne('', { piece_id: null })], [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)).toEqual([])
   })
 
   it('nomment un compte 28 ouvert par les à-nouveaux comme celui que la dotation crédite', () => {
@@ -898,7 +871,7 @@ describe('genererFec — les dotations aux amortissements', () => {
       id: 'an1', dossier_id: 'd1', date: '2026-01-01', compte: '281830', compte_origine: '28183', libelle: 'Amort. matériel info',
       sens: 'credit', montant: 600, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2026-02-01T00:00:00Z',
     }
-    const rows = colonnes(genererFec(dotation('i1', 400), [], [], [ouverture], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(dotation('i1', 400), [], [], [ouverture], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(new Set(rows.filter((r) => r[4] === '281830').map((r) => r[5])))
       .toEqual(new Set(['Amortissements du matériel de bureau et matériel informatique']))
   })
@@ -914,7 +887,7 @@ describe('genererFec — les forfaits kilométriques', () => {
   ]
 
   it('portent une écriture par véhicule au journal OD, le barème pour pièce', () => {
-    const rows = colonnes(genererFec([...forfait('v1', 10_234), ...forfait('v2', 23.81)], [], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec([...forfait('v1', 10_234), ...forfait('v2', 23.81)], [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[6], r[8], r[9], r[11], r[12]])).toEqual([
       ['OD', 'OD00001', '20261231', '625110', 'Indemnités kilométriques (barème)', '', 'Barème kilométrique 2026', '20261231', '10234,00', '0,00'],
       ['OD', 'OD00001', '20261231', '108000', "Compte de l'exploitant", '', 'Barème kilométrique 2026', '20261231', '0,00', '10234,00'],
@@ -930,7 +903,7 @@ describe('genererFec — les forfaits kilométriques', () => {
       ligne('', { id: 'i1-d', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '681100', sens: 'debit', montant: 400 }),
       ligne('', { id: 'i1-c', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '281830', sens: 'credit', montant: 400 }),
     ]
-    const rows = colonnes(genererFec([...forfait('v1', 50, '2025-12-31'), ...dotation, ...forfait('v1', 60)], [], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec([...forfait('v1', 50, '2025-12-31'), ...dotation, ...forfait('v1', 60)], [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[2], r[3], r[4], r[8]])).toEqual([
       ['OD00001', '20251231', '625110', 'Barème kilométrique 2025'],
       ['OD00001', '20251231', '108000', 'Barème kilométrique 2025'],
@@ -942,7 +915,7 @@ describe('genererFec — les forfaits kilométriques', () => {
   })
 
   it('n’ont pas de compte auxiliaire, même au compte courant du dirigeant en engagement', () => {
-    const rows = colonnes(genererFec(forfait('v1', 23.81, '2026-12-31', '455000'), [], [], [], 'engagement', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(forfait('v1', 23.81, '2026-12-31', '455000'), [], [], [], 'engagement', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[4], r[6], r[7]])).toEqual([['625110', '', ''], ['455000', '', '']])
   })
 })
@@ -971,7 +944,7 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
   }))
 
   it('porte la liquidation au journal OD, la CA3 arrêtée au dernier jour de la période pour pièce', () => {
-    const rows = colonnes(genererFec(liquidation, [], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(liquidation, [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[6], r[8], r[9], r[11], r[12]])).toEqual([
       ['OD', 'OD00001', '20260331', '445710', 'TVA collectée', '', 'CA3 au 31/03/2026', '20260331', '100,40', '0,00'],
       ['OD', 'OD00001', '20260331', '445510', 'TVA à décaisser', '', 'CA3 au 31/03/2026', '20260331', '0,00', '79,00'],
@@ -981,7 +954,7 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
   })
 
   it('porte son paiement au journal de banque, le relevé pour pièce, et le fichier passe les contrôles de la DGFiP', () => {
-    const fec = genererFec([...liquidation, ...paiement], [], [], [], 'tresorerie', [prelevement], SANS_LETTRAGE)
+    const fec = genererFec([...liquidation, ...paiement], [], [], [], 'tresorerie', [prelevement], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     const rows = colonnes(fec).slice(1)
     expect(rows.filter((r) => r[0] === 'BQ').map((r) => [r[2], r[3], r[4], r[8], r[11], r[12]])).toEqual([
       ['BQ00001', '20260420', '445510', 'releve-avril-2026.pdf', '79,00', '0,00'],
@@ -993,7 +966,7 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
 
   it('laisse dehors l’écriture d’un paiement que plus rien ne rapproche', () => {
     const remis = { ...prelevement, statut: 'non_rapprochee' as const, declaration_tva_id: null }
-    const n = numeroterFec(paiement, [], [], [], 'tresorerie', [remis])
+    const n = numeroterFec(paiement, [], [], [], 'tresorerie', [remis], SANS_ECRITURE_DE_VENTE)
     expect(n.lignes).toEqual([])
     expect(n.horsFec.map((e) => e.id).sort()).toEqual(['p-0', 'p-1'])
   })
@@ -1003,7 +976,7 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
       ligne('', { id: 'i1-d', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '681100', sens: 'debit', montant: 400 }),
       ligne('', { id: 'i1-c', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '281830', sens: 'credit', montant: 400 }),
     ]
-    const rows = colonnes(genererFec([...dotation, ...liquidation], [], [], [], 'tresorerie', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec([...dotation, ...liquidation], [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect([...new Set(rows.map((r) => `${r[2]} ${r[8]}`))]).toEqual(['OD00001 CA3 au 31/03/2026', "OD00002 Tableau d'amortissement 2026"])
   })
 })
@@ -1023,7 +996,7 @@ describe('genererFec — l’échéance payée depuis le compte personnel', () =
   const TRESO: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
   it('la porte au journal OD, au jour du paiement, le relevé du compte personnel pour pièce', () => {
-    const fec = genererFec(paiement(echeance, TRESO), [], [], [], 'tresorerie', [], SANS_LETTRAGE)
+    const fec = genererFec(paiement(echeance, TRESO), [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     const rows = colonnes(fec).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[6], r[8], r[9], r[11], r[12]])).toEqual([
       ['OD', 'OD00001', '20260310', '646000', "Cotisations sociales personnelles de l'exploitant", '', 'Compte personnel du 10/03/2026', '20260310', '700,00', '0,00'],
@@ -1035,7 +1008,7 @@ describe('genererFec — l’échéance payée depuis le compte personnel', () =
 
   it('en engagement, face au compte du dirigeant, sans compte auxiliaire', () => {
     const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
-    const rows = colonnes(genererFec(paiement(echeance, ENGAGEMENT), [], [], [], 'engagement', [], SANS_LETTRAGE)).slice(1)
+    const rows = colonnes(genererFec(paiement(echeance, ENGAGEMENT), [], [], [], 'engagement', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.map((r) => [r[0], r[4], r[6], r[7], r[8], r[11], r[12]])).toEqual([
       ['OD', '646000', '', '', 'Compte personnel du 10/03/2026', '1000,00', '0,00'],
       ['OD', '455000', '', '', 'Compte personnel du 10/03/2026', '0,00', '1000,00'],
@@ -1048,7 +1021,7 @@ describe('genererFec — l’échéance payée depuis le compte personnel', () =
       ligne('', { id: 'i1-d', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '681100', sens: 'debit', montant: 400 }),
       ligne('', { id: 'i1-c', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '281830', sens: 'credit', montant: 400 }),
     ]
-    const n = numeroterFec([...dotation, ...paiement(echeance, TRESO), ...paiement(seconde, TRESO)], [], [], [], 'tresorerie', [])
+    const n = numeroterFec([...dotation, ...paiement(echeance, TRESO), ...paiement(seconde, TRESO)], [], [], [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE)
     expect(n.horsFec).toEqual([])
     expect([...new Set(n.lignes.map((l) => `${l.journal}${l.numero} ${l.pieceRef} ${l.pieceDate}`))]).toEqual([
       'OD1 Compte personnel du 12/02/2026 2026-02-12',
@@ -1074,12 +1047,13 @@ describe('numeroterFec — ce que la validation reçoit', () => {
   ]
 
   it('donne à chaque ligne son journal, son numéro, sa pièce et le libellé de son compte', () => {
-    const n = numeroterFec(brouillon, [achat, vente], [], [], 'engagement', [])
+    const n = numeroterFec(brouillon, [achat, vente], [], [], 'engagement', [], SANS_ECRITURE_DE_VENTE)
     expect(n.lignes.map((l) => [l.ecriture.id, l.journal, l.numero, l.pieceRef, l.pieceDate, l.compteLib, l.compAuxNum, l.compAuxLib, l.validDate])).toEqual([
       ['a1', 'AC', 1, 'facture-mars.pdf', '2026-03-10', '606100', null, null, '2026-03-10'],
       ['a2', 'AC', 1, 'facture-mars.pdf', '2026-03-10', 'Fournisseurs', 'FTRANSMEDICAL', 'Transmedical', '2026-03-10'],
       ['v2', 'VE', 1, 'vente.pdf', '2026-03-15', 'Clients', 'CCPAM', 'CPAM', '2026-03-15'],
-      ['v1', 'VE', 1, 'vente.pdf', '2026-03-15', '706000', null, null, '2026-03-15'],
+      // Le nom du plan comptable général, depuis l'étape VF4c2 (VF4A-Q1) : le 706000 n'est plus nommé par son numéro.
+      ['v1', 'VE', 1, 'vente.pdf', '2026-03-15', 'Prestations de services', null, null, '2026-03-15'],
       ['a3', 'BQ', 1, 'facture-mars.pdf', '2026-03-10', 'Fournisseurs', 'FTRANSMEDICAL', 'Transmedical', '2026-04-05'],
       ['a4', 'BQ', 1, 'facture-mars.pdf', '2026-03-10', 'Banque', null, null, '2026-04-05'],
     ])
@@ -1090,7 +1064,7 @@ describe('numeroterFec — ce que la validation reçoit', () => {
   // fichier, lui, ne doit pas en dépendre : c'est ce qui permet au FEC relu depuis un exercice validé d'être
   // celui qu'on aurait exporté la veille.
   it('rend le même fichier quel que soit l’ordre de lecture', () => {
-    const fec = (ecritures: EcritureBrouillon[]) => genererFec(ecritures, [achat, vente], [], [], 'engagement', [], SANS_LETTRAGE)
+    const fec = (ecritures: EcritureBrouillon[]) => genererFec(ecritures, [achat, vente], [], [], 'engagement', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE)
     const attendu = fec(brouillon)
     expect(fec([...brouillon].reverse())).toBe(attendu)
     expect(fec([brouillon[3], brouillon[0], brouillon[5], brouillon[2], brouillon[4], brouillon[1]])).toBe(attendu)
@@ -1098,14 +1072,14 @@ describe('numeroterFec — ce que la validation reçoit', () => {
 
   it('met dehors l’écriture que rien ne rattache, au lieu de l’imprimer', () => {
     const orpheline = ligne('', { id: 'o1', piece_id: null, compte: '606100', montant: 19.99 })
-    const n = numeroterFec([...brouillon, orpheline], [achat, vente], [], [], 'engagement', [])
+    const n = numeroterFec([...brouillon, orpheline], [achat, vente], [], [], 'engagement', [], SANS_ECRITURE_DE_VENTE)
     expect(n.horsFec.map((e) => e.id)).toEqual(['o1'])
     expect(n.lignes.some((l) => l.ecriture.id === 'o1')).toBe(false)
   })
 
   it('ne laisse jamais une pièce sans référence', () => {
     const sansNom = piece('p-sans-nom-de-fichier', { nom_fichier: '  ' })
-    const n = numeroterFec([ligne('p-sans-nom-de-fichier')], [sansNom], [], [], 'tresorerie', [])
+    const n = numeroterFec([ligne('p-sans-nom-de-fichier')], [sansNom], [], [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE)
     expect(n.lignes[0].pieceRef).toBe('p-sans-n')
   })
 
@@ -1116,7 +1090,7 @@ describe('numeroterFec — ce que la validation reçoit', () => {
       sens: 'credit', montant: 1000, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
       created_at: '2026-02-01T00:00:00Z',
     }
-    const n = numeroterFec([ligne('p1', { compte: '455100' })], [piece('p1')], [], [ouverture], 'tresorerie', [])
+    const n = numeroterFec([ligne('p1', { compte: '455100' })], [piece('p1')], [], [ouverture], 'tresorerie', [], SANS_ECRITURE_DE_VENTE)
     expect(n.aNouveaux.map((a) => a.compteLib)).toEqual(['Compte courant M. Martin'])
     expect(n.lignes.map((l) => l.compteLib)).toEqual(['Compte courant M. Martin'])
   })
@@ -1127,7 +1101,7 @@ describe('numeroterFec — ce que la validation reçoit', () => {
       sens: 'debit', montant: 1000, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
       created_at: '2026-02-01T00:00:00Z',
     }
-    const n = numeroterFec([], [], [], [ouverture], 'tresorerie', [])
+    const n = numeroterFec([], [], [], [ouverture], 'tresorerie', [], SANS_ECRITURE_DE_VENTE)
     expect(n.aNouveaux.map((a) => [a.compteLib, a.ecritureLib])).toEqual([['Banque', 'À-nouveau 51210000 BNP Paribas']])
   })
 })
@@ -1140,7 +1114,7 @@ describe('numeroterFec — la note de frais en trésorerie', () => {
     const enBase = (l: LigneAGenerer, i: number): EcritureBrouillon => ligne('note', { ...l, id: `n${i}`, ligne_bancaire_id: null })
     const brouillon = lignesPourPiece('d1', note, { compte: '625700', immobilisation: false }, false, [], { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT })
       .map(enBase)
-    const n = numeroterFec(brouillon, [note], [], [], 'tresorerie', [])
+    const n = numeroterFec(brouillon, [note], [], [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE)
     expect(n.lignes.map((l) => [l.journal, l.numero, l.ecriture.compte, l.ecriture.sens, l.ecriture.montant, l.compteLib, l.compAuxNum])).toEqual([
       ['AC', 1, '625700', 'debit', 42.5, '625700', null],
       ['AC', 1, '108000', 'credit', 42.5, "Compte de l'exploitant", null],
@@ -1173,7 +1147,7 @@ describe('numerotationValidee — le FEC d’un exercice validé se relit depuis
   })
 
   it('relit le fichier d’avant la validation, à ValidDate près', () => {
-    const avant = numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', [])
+    const avant = numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', [], SANS_ECRITURE_DE_VENTE)
     const { ecritures, aNouveaux } = valider(avant)
     const apres = numerotationValidee([...ecritures].reverse(), aNouveaux, VALIDE_LE)
     expect(apres.horsFec).toEqual([])
@@ -1184,7 +1158,7 @@ describe('numerotationValidee — le FEC d’un exercice validé se relit depuis
   })
 
   it('ne relit plus rien des pièces ni des catégories d’aujourd’hui', () => {
-    const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', []))
+    const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', [], SANS_ECRITURE_DE_VENTE))
     // Ce que la validation a figé, même si l'application nommerait autrement ce compte aujourd'hui.
     const figees = ecritures.map((e) => (e.compte === '606100' ? { ...e, compte_lib: 'Achats de fournitures (2026)' } : e))
     const rows = colonnes(formaterFec(numerotationValidee(figees, aNouveaux, VALIDE_LE), SANS_LETTRAGE)).slice(1)
@@ -1199,7 +1173,7 @@ describe('numerotationValidee — le FEC d’un exercice validé se relit depuis
   })
 
   it('met dehors une écriture qui ne porte pas sa validation, au lieu de l’imprimer à moitié', () => {
-    const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', []))
+    const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', [], SANS_ECRITURE_DE_VENTE))
     const n = numerotationValidee([...ecritures, ligne('achat', { id: 'a5' })], aNouveaux, VALIDE_LE)
     expect(n.horsFec.map((e) => e.id)).toEqual(['a5'])
     expect(n.lignes).toHaveLength(4)
@@ -1208,7 +1182,7 @@ describe('numerotationValidee — le FEC d’un exercice validé se relit depuis
   // DÉFENSIF, et dit comme tel : la base interdit à une écriture proposée de porter les champs d'une validation
   // (`ecritures_brouillon_validation_complete`). Si elle en portait, le fichier d'un exercice validé ne l'imprime pas.
   it('n’imprime jamais une écriture proposée, même si elle portait les champs d’une validation', () => {
-    const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', []))
+    const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', [], SANS_ECRITURE_DE_VENTE))
     const n = numerotationValidee([{ ...ecritures[0], statut: 'proposee' }, ...ecritures.slice(1)], aNouveaux, VALIDE_LE)
     expect(n.horsFec.map((e) => e.id)).toEqual([ecritures[0].id])
   })
