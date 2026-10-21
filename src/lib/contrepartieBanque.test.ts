@@ -34,15 +34,31 @@ let filtresSuppression: string[] = []
 let misesAJour: { valeurs: Record<string, unknown>; filtres: string[] }[] = []
 // L'ordre des écritures en base : ce qui dit qu'une ligne part AVANT que les autres soient redatées.
 let ordre: string[] = []
+// LA TABLE des écritures, quand un test en pose une : la suppression y APPLIQUE ses filtres (src/test/filtresPostgrest.ts,
+// chargé dans la fabrique), si bien qu'un filtre oublié se voit aux lignes qui partent, et non au seul texte de la requête.
+let brouillon: Record<string, unknown>[] | null = null
 
-vi.mock('./supabase', () => {
+vi.mock('./supabase', async () => {
+  const { filtrer, predicatEq, predicatIs } = await import('../test/filtresPostgrest')
   const resolvable = (op: 'select' | 'compte' | 'insert' | 'delete' | 'update', filtres: string[] = []) => {
+    const predicats: ((ligne: Record<string, unknown>) => boolean)[] = []
     const chaine = {
-      eq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}=${valeur}`); return chaine },
-      neq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}!=${valeur}`); return chaine },
-      then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre(
-        op === 'compte' && comptesSuccessifs.length > 0 ? { count: comptesSuccessifs.shift(), error: null } : reponses[op],
-      )),
+      eq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}=${valeur}`); predicats.push(predicatEq(colonne, valeur)); return chaine },
+      neq: (colonne: string, valeur: unknown) => {
+        filtres.push(`${colonne}!=${valeur}`)
+        predicats.push(() => { throw new Error(`Faux client : .neq('${colonne}', …) n'est pas modélisé sur la table.`) })
+        return chaine
+      },
+      is: (colonne: string, valeur: unknown) => { filtres.push(`${colonne} is ${valeur}`); predicats.push(predicatIs(colonne, valeur)); return chaine },
+      then: (resoudre: (v: unknown) => unknown) => {
+        if (op === 'delete' && brouillon && !reponses.delete.error) {
+          const parties = new Set(filtrer(brouillon, predicats))
+          brouillon = brouillon.filter((ligne) => !parties.has(ligne))
+        }
+        return Promise.resolve(resoudre(
+          op === 'compte' && comptesSuccessifs.length > 0 ? { count: comptesSuccessifs.shift(), error: null } : reponses[op],
+        ))
+      },
     }
     return chaine
   }
@@ -91,6 +107,7 @@ beforeEach(() => {
   filtresSuppression = []
   misesAJour = []
   ordre = []
+  brouillon = null
 })
 
 describe('synchroniserContrepartieBanque', () => {
@@ -386,8 +403,38 @@ describe('synchroniserContrepartieBanque — en engagement', () => {
 describe('retirerContrepartieBanque — en engagement', () => {
   it('retire le règlement de CE mouvement, et ne redate rien', async () => {
     await retirerContrepartieBanque('l1', 'p1', piece(), ENGAGEMENT)
-    expect(filtresSuppression).toEqual(['ligne_bancaire_id=l1'])
+    expect(filtresSuppression).toEqual(['ligne_bancaire_id=l1', 'facture_id is null', 'encaissement_id is null'])
     expect(misesAJour).toEqual([])
+  })
+
+  // R1 (migration `lignes_propres_au_mouvement`) : un mouvement libéré porte encore les lignes d'une vente facturée — la
+  // banque d'un encaissement contre-passé sans mouvement, celle de sa contre-passation, et, restaurée, une ligne d'une
+  // facture. Elles ne se retirent que par leur fonction : supprimées ici, G5 refuserait APRÈS que l'écran a délié le
+  // mouvement, et le règlement de la pièce resterait au brouillon. Le faux client applique les filtres à la table.
+  const ecriture = (id: string, o: Record<string, unknown>) => ({
+    id, piece_id: null, ligne_bancaire_id: 'l1', facture_id: null, encaissement_id: null, ...o,
+  })
+  const tableDuMouvementLibere = () => [
+    ecriture('reglement-tiers', { piece_id: 'p1', compte: COMPTE_FOURNISSEURS }),
+    ecriture('reglement-banque', { piece_id: 'p1', compte: COMPTE_BANQUE }),
+    ecriture('propre-sans-piece', { compte: '467000' }),
+    ecriture('encaissement', { compte: COMPTE_BANQUE, encaissement_id: 'e1' }),
+    ecriture('contre-passation', { compte: COMPTE_BANQUE, encaissement_id: 'e2' }),
+    ecriture('facture', { compte: '411000', facture_id: 'f1' }),
+    ecriture('autre-mouvement', { piece_id: 'p2', ligne_bancaire_id: 'l2', compte: COMPTE_BANQUE }),
+  ]
+
+  it('retire les lignes propres du mouvement, jamais celles d’une vente facturée', async () => {
+    brouillon = tableDuMouvementLibere()
+    await retirerContrepartieBanque('l1', 'p1', piece(), ENGAGEMENT)
+    expect(brouillon.map((l) => l.id)).toEqual(['encaissement', 'contre-passation', 'facture', 'autre-mouvement'])
+  })
+
+  it('en trésorerie, la contrepartie de la pièce seule : une ligne d’une vente facturée ne porte jamais de pièce', async () => {
+    brouillon = tableDuMouvementLibere()
+    await retirerContrepartieBanque('l1', 'p1', null, TRESORERIE)
+    expect(brouillon.map((l) => l.id))
+      .toEqual(['propre-sans-piece', 'encaissement', 'contre-passation', 'facture', 'autre-mouvement'])
   })
 
   it('retire en trésorerie la contrepartie de ce mouvement pour la pièce', async () => {
