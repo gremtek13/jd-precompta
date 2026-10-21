@@ -395,7 +395,8 @@ const ECRANS: Ecran[] = [
     <Dossier1>
       <TvaTab
         dossierId="d1" plan={PLAN_PAR_DEFAUT} assujettiTva statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false} siret={null}
-        onStatutUpdated={rien} periodicite="trimestrielle" surDebits={false} onRegimeUpdated={rien}
+        onStatutUpdated={rien} periodicite="trimestrielle" surDebits={false} onRegimeUpdated={rien} modeComptable="tresorerie"
+        ventesParLesFactures
       />
     </Dossier1>
   ) },

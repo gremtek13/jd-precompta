@@ -45,7 +45,9 @@ import { LIBELLE_MOTIF_VENTE, type EncaissementVendu, type FactureVendue, type P
 // LES GESTES : « Écrire » (à écrire) et « Réécrire » (à réécrire) passent `ecrire_vente_facturee`, avec la composition
 // telle quelle (`argumentsEcrireVenteFacturee`) — la base la recompose et refuse ce qui diffère ; « Retirer » (à retirer)
 // passe `retirer_ecriture_vente_facturee`. Le compte de contrepartie d'un encaissement par compensation, ou « autre »,
-// sans mouvement se choisit là où la source dit « compte à choisir » ou « refusé » (`choisir_compte_contrepartie`). Chaque
+// sans mouvement se choisit là où la source dit « compte à choisir » ou « refusé » (`choisir_compte_contrepartie`) ; déjà
+// choisi et accepté, il se CHANGE par la même fonction (VF4C1-Q1, étape VF4c3), tant que l'exercice de l'encaissement n'est
+// pas validé — une écriture déjà passée sur l'ancien devient « à réécrire ». Chaque
 // refus se lit AVANT le clic : `refusEcritureVenteFacturee`, `refusRetraitEcritureVenteFacturee`,
 // `refusChoixCompteContrepartie`.
 //
@@ -112,7 +114,12 @@ export const LIBELLE_GESTE: Readonly<Record<GesteDeVente, string>> = { ecrire: '
 
 export interface ChoixDuCompte {
   encaissementId: string
-  /** Le compte que l'encaissement porte aujourd'hui, refusé ; nul quand il est à choisir. */
+  /**
+   * « choisir » : le compte est à choisir, ou celui qu'il porte est refusé. « changer » (VF4C1-Q1, étape VF4c3) : il porte un
+   * compte accepté, que le cabinet remplace, tant que l'exercice de l'encaissement n'est pas validé.
+   */
+  geste: 'choisir' | 'changer'
+  /** Le compte que l'encaissement porte aujourd'hui — refusé pour « choisir », accepté pour « changer » ; nul quand il est à choisir. */
   actuel: string | null
   /** Ce que la source devient une fois le compte choisi : « à écrire », ou « à réécrire » si elle porte des lignes. */
   apresLeChoix: Extract<EtatSourceDeVente, 'a_ecrire' | 'a_reecrire'>
@@ -207,12 +214,30 @@ export function confirmationDuGeste(s: SourceDeVenteEtat): string {
   return `${verbe} ${ecrituresEnClair(s.aEcrire)}. La base recompose l’écriture et la refuse si elle diffère.${validees}`
 }
 
-/** La confirmation du choix d'un compte de contrepartie : le compte, l'encaissement, et ce que le choix change. */
+/**
+ * La confirmation du choix d'un compte de contrepartie : le compte, l'encaissement, et ce que le choix change. Pour un
+ * CHANGEMENT (VF4C1-Q1), elle nomme aussi l'ancien compte, et dit ce que devient une écriture déjà passée.
+ */
 export function confirmationDuChoix(s: SourceDeVenteEtat, compte: string): string {
-  const suite = s.choixDuCompte?.apresLeChoix === 'a_reecrire'
+  const choix = s.choixDuCompte
+  if (choix?.geste === 'changer') {
+    const suite = choix.apresLeChoix === 'a_reecrire'
+      ? `Son écriture déjà passée, sur le ${choix.actuel}, deviendra « à réécrire » : elle se réécrit ensuite d’ici, sur un clic.`
+      : 'Aucune écriture n’est encore passée : il reste « à écrire ».'
+    return `Changer le compte de contrepartie de ${s.nom}, du ${choix.actuel} au ${compte} ? ${suite}`
+  }
+  const suite = choix?.apresLeChoix === 'a_reecrire'
     ? 'Ses écritures proposées, sur l’ancien compte, seront « à réécrire ».'
     : 'Il sera « à écrire » : son écriture se passe ensuite d’ici, sur un clic.'
   return `Choisir le compte ${compte} comme contrepartie de ${s.nom} ? ${suite}`
+}
+
+/**
+ * Le compte saisi est-il celui que l'encaissement porte déjà ? Changer pour le même compte ne changerait rien : l'écran ne
+ * l'envoie pas. Ce n'est pas un refus de la base, qui l'accepterait.
+ */
+export function choixInchange(choix: ChoixDuCompte, saisie: string): boolean {
+  return choix.geste === 'changer' && compteSaisi(saisie) === choix.actuel
 }
 
 // ── Les états ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -371,13 +396,19 @@ export function etatsDesVentesFacturees(entrees: EntreesEcrituresDeVente): Etats
     const refus = geste === 'retirer'
       ? refusRetraitEcritureVenteFacturee(source, contexte, brouillon)?.message ?? null
       : geste != null ? refusEcritureVenteFacturee(source, contexte)?.message ?? null : null
-    const choixDuCompte: ChoixDuCompte | null = source.genre === 'encaissement' && (motif === 'compte_a_choisir' || motif === 'compte_refuse')
-      ? {
-        encaissementId: source.encaissementId,
-        actuel: encaissements.get(source.encaissementId)?.compte_contrepartie ?? null,
-        apresLeChoix: proposees.length > 0 ? 'a_reecrire' : 'a_ecrire',
-      }
-      : null
+    // LE CHOIX DU COMPTE DE CONTREPARTIE : à choisir ou refusé, il se choisit ; accepté, il se CHANGE (VF4C1-Q1, recommandée
+    // et retenue à l'étape VF4c3) — tant que la base l'accepterait de ce compte même (`refusChoixCompteContrepartie` : ni
+    // l'exercice validé, ni un encaissement retiré, contre-passé, qui cite un mouvement ou se dit par son moyen), et que la
+    // source a encore une écriture à passer ou à reprendre.
+    const actuel = source.genre === 'encaissement' ? encaissements.get(source.encaissementId)?.compte_contrepartie ?? null : null
+    const apresLeChoix = proposees.length > 0 ? 'a_reecrire' as const : 'a_ecrire' as const
+    const choixDuCompte: ChoixDuCompte | null = source.genre !== 'encaissement' ? null
+      : motif === 'compte_a_choisir' || motif === 'compte_refuse'
+        ? { encaissementId: source.encaissementId, geste: 'choisir', actuel, apresLeChoix }
+        : actuel !== null && motif === null && (etat === 'a_ecrire' || etat === 'a_jour' || etat === 'a_reecrire')
+          && refusChoixCompteContrepartie(source.encaissementId, actuel, contexte) === null
+          ? { encaissementId: source.encaissementId, geste: 'changer', actuel, apresLeChoix }
+          : null
     etats.push({
       cle, source, etat, ...nomDeLaSource(source, factures, encaissements, mouvements), motif: etat === 'a_retirer' || etat === 'ne_s_ecrit_pas' ? motif : null,
       detail, aEcrire, proposees, validees, geste, refus, choixDuCompte,

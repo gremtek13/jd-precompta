@@ -5,6 +5,7 @@ import type {
 } from './ecrituresVentesFactureesEcran'
 import { lireTout, type LectureComplete } from './lectureComplete'
 import { messageErreur } from './messageErreur'
+import type { EcritureBrouillon } from './types'
 import type { PartVendue } from './ventesFacturees'
 import { COLONNES_LIGNES, COLONNES_PARTS } from './ventesFactureesLecture'
 
@@ -101,5 +102,35 @@ export async function lireLesSourcesDesEcrituresDeVente(dossierId: string): Prom
     }
   } catch (erreur) {
     return { dossierId, etat: 'incomplete', motif: messageErreur(erreur, 'la lecture des ventes facturées a échoué') }
+  }
+}
+
+export type LectureDesEcrituresDeVente =
+  | { dossierId: string; etat: 'lue'; sources: SourcesDesEcrituresDeVente; brouillon: EcritureBrouillon[] }
+  | { dossierId: string; etat: 'incomplete'; motif: string }
+
+/**
+ * LES VENTES FACTURÉES ET LE BROUILLON ENTIER DU DOSSIER, lus ENSEMBLE (étape VF4c3) : ce que l'onglet TVA confronte pour
+ * savoir si les écritures des ventes facturées d'une période sont à jour avant d'en liquider la TVA
+ * (lib/liquidationTva.ts, `refusDesVentesFacturees`). Les deux lectures dans le même appel — deux lectures faites à deux
+ * moments diraient « à écrire » une écriture qu'on vient de passer —, tout ou rien, chaque ligne confrontée au dossier.
+ * Ne rejette jamais.
+ */
+export async function lireLesEcrituresDesVentes(dossierId: string): Promise<LectureDesEcrituresDeVente> {
+  try {
+    const [sources, brouillon] = await Promise.all([
+      lireLesSourcesDesEcrituresDeVente(dossierId),
+      lireTout<EcritureBrouillon>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
+      ),
+    ])
+    if (sources.etat === 'incomplete') return sources
+    if (!brouillon.complete) return { dossierId, etat: 'incomplete', motif: `le brouillon : ${brouillon.motif ?? 'lecture incomplète'}` }
+    const motif = horsDuDossier('le brouillon', brouillon, (e) => e.dossier_id, dossierId)
+    if (motif !== null) return { dossierId, etat: 'incomplete', motif }
+    return { dossierId, etat: 'lue', sources: sources.sources, brouillon: brouillon.lignes }
+  } catch (erreur) {
+    return { dossierId, etat: 'incomplete', motif: messageErreur(erreur, 'la lecture des écritures des ventes facturées a échoué') }
   }
 }

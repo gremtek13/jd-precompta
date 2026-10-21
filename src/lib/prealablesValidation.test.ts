@@ -130,7 +130,9 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
   )
   const ouverture = base.aNouveaux.length > 0 ? base.aNouveaux[0].date : null
   const concordance = concordance2035(
-    declaration, base.ecritures, { piecesValidees: new Set(base.piecesValidees.map((p) => p.id)), piecesImmobilisees: new Set() }, ouverture,
+    declaration, base.ecritures,
+    { piecesValidees: new Set(base.piecesValidees.map((p) => p.id)), piecesImmobilisees: new Set(), mouvementsDesVentesFacturees: new Set() },
+    ouverture,
   )
   return { ...base, declaration, concordance }
 }
@@ -759,7 +761,9 @@ describe('prealablesDeValidation — une échéance payée depuis le compte pers
       d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
     )
     const concordance = concordance2035(
-      declaration, d.ecritures, { piecesValidees: new Set(d.piecesValidees.map((p) => p.id)), piecesImmobilisees: new Set() }, null,
+      declaration, d.ecritures,
+      { piecesValidees: new Set(d.piecesValidees.map((p) => p.id)), piecesImmobilisees: new Set(), mouvementsDesVentesFacturees: new Set() },
+      null,
     )
     return { ...d, declaration, concordance }
   }

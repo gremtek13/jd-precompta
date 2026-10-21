@@ -242,26 +242,22 @@ describe('le plan par défaut', () => {
     for (const r of VINGT_SIX) expect(r.libelleDefaut, r.role).toBe(comptes.LIBELLES_COMPTES[r.compteDefaut] ?? null)
     expect(ROLES_COMPTABLES.filter((r) => r.libelleDefaut === null).map((r) => r.role))
       .toEqual(['capital_individuel', 'resultat_benefice', 'resultat_perte'])
-    // Et aucun libellé de comptes.ts n'est laissé hors du catalogue : ceux des vingt-six, et, depuis l'étape VF4c2
-    // (VF4A-Q1), le 706000 et le 627000 de la vente facturée.
+    // Et aucun libellé de comptes.ts n'est laissé hors du catalogue : ceux des vingt-six, et les six de la vente facturée —
+    // le 706000 et le 627000 depuis l'étape VF4c2 (VF4A-Q1), les quatre autres depuis l'étape VF4c3 (VF4C2-Q1).
     expect(Object.keys(comptes.LIBELLES_COMPTES).sort()).toEqual(
-      [...VINGT_SIX.filter((r) => r.libelleDefaut !== null).map((r) => r.compteDefaut), '627000', '706000'].sort())
+      [...VINGT_SIX.filter((r) => r.libelleDefaut !== null).map((r) => r.compteDefaut),
+        ...ROLES_DE_LA_VENTE_FACTUREE.map((r) => r.compteDefaut)].sort())
   })
 
-  it('porte, pour les six de la vente facturée, le libellé du catalogue ; le 706000 et le 627000 seuls dans LIBELLES_COMPTES (VF4A-Q1)', () => {
+  it('porte, pour les six de la vente facturée, le libellé du catalogue, tous les six dans LIBELLES_COMPTES (VF4A-Q1, VF4C2-Q1)', () => {
     // Le 706000 et le 627000 sont aussi les comptes de deux catégories communes : dans `LIBELLES_COMPTES`, leur libellé
     // passe avant celui de la catégorie (`libelleCompteTenu`), dans la balance et le FEC de tout dossier — la décision du
-    // cabinet du 20/10/2026. Les quatre autres en restent hors : rien d'autre ne change de nom.
-    const nommesParLeCatalogue = new Set(['prestations_de_services', 'services_bancaires'])
+    // cabinet du 20/10/2026. Les quatre autres les y rejoignent à l'étape VF4c3 (VF4C2-Q1) ; `LIBELLES_DE_LA_VENTE_FACTUREE`
+    // lit chacun de là.
     for (const r of ROLES_DE_LA_VENTE_FACTUREE) {
       expect(comptes.LIBELLES_DE_LA_VENTE_FACTUREE[r.compteDefaut], r.role).toBe(r.libelleDefaut)
-      if (nommesParLeCatalogue.has(r.role)) {
-        expect(comptes.LIBELLES_COMPTES[r.compteDefaut], r.role).toBe(r.libelleDefaut)
-        expect(comptes.libelleCompteTenu(r.compteDefaut), r.role).toBe(r.libelleDefaut)
-      } else {
-        expect(comptes.LIBELLES_COMPTES[r.compteDefaut], r.role).toBeUndefined()
-        expect(comptes.libelleCompteTenu(r.compteDefaut), r.role).toBeNull()
-      }
+      expect(comptes.LIBELLES_COMPTES[r.compteDefaut], r.role).toBe(r.libelleDefaut)
+      expect(comptes.libelleCompteTenu(r.compteDefaut), r.role).toBe(r.libelleDefaut)
     }
     expect(Object.keys(comptes.LIBELLES_DE_LA_VENTE_FACTUREE).sort())
       .toEqual(ROLES_DE_LA_VENTE_FACTUREE.map((r) => r.compteDefaut).sort())

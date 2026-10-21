@@ -5,8 +5,8 @@ import { formatDate } from './format'
 import type { PlanComptable } from './planComptable'
 import type { EcritureBrouillon, JournalCode, LigneBancaire, ModeComptable, SensEcriture } from './types'
 import {
-  regimeDeLaFacture, ventesFacturees, type EncaissementVendu, type FactureVendue, type SourcesVentesFacturees,
-  type VentesFacturees,
+  regimeDeLaFacture, ventesFacturees, type EncaissementVendu, type FactureVendue, type MotifVenteEcartee, type RegimeCa3,
+  type SourcesVentesFacturees, type VentesFacturees,
 } from './ventesFacturees'
 
 // LES ÉCRITURES D'UNE VENTE FACTURÉE, COMPOSÉES (ligne 28.6, chantier EC-Q3, étape VF4a ; conception : HISTORIQUE.md,
@@ -191,6 +191,21 @@ export function refusCompteDeContrepartie(compte: string, plan: PlanComptable): 
   return null
 }
 
+// ── Le compte du produit ───────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * LE COMPTE DU PRODUIT d'une vente facturée, selon le régime que sa facture a figé (`regimeDeLaFacture`, ou le `regime`
+ * d'une part du module) : `ventes_de_biens` (707000 par défaut) pour des biens, livrés ; `prestations_de_services`
+ * (706000) pour des services. Au PLAN du dossier, jamais un numéro écrit ici. UNE SEULE RÈGLE : la composition s'en sert
+ * pour écrire le produit, et la 2035 (lib/declaration2035.ts) pour dire sur quel compte son écriture porte la part d'un
+ * encaissement — la concordance (lib/concordance2035.ts) les rapproche sur ce compte (étape VF4c3).
+ */
+export function compteDuProduit(
+  regime: RegimeCa3 | MotifVenteEcartee, plan: Pick<PlanComptable, 'ventes_de_biens' | 'prestations_de_services'>,
+): string {
+  return regime === 'livraison' ? plan.ventes_de_biens : plan.prestations_de_services
+}
+
 // ── La composition ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
 // Les montants d'une écriture, signés (positif au débit), par compte et par mouvement : la somme des montants d'une même
@@ -247,7 +262,7 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
   const encaissements = sources.encaissements.filter((e) => e.dossier_id === dossierId)
   const encaissementParId = new Map(encaissements.map((e) => [e.id, e]))
   const mouvements = new Map(entrees.mouvements.filter((m) => m.dossier_id === dossierId).map((m) => [m.id, m]))
-  const produitDe = (f: FactureVendue) => (regimeDeLaFacture(f) === 'livraison' ? plan.ventes_de_biens : plan.prestations_de_services)
+  const produitDe = (f: FactureVendue) => compteDuProduit(regimeDeLaFacture(f), plan)
 
   // Les écritures en cours, par clé : une source et une date.
   const enCours = new Map<string, { ecriture: Omit<EcritureVenteFacturee, 'lignes'>; solde: Solde }>()

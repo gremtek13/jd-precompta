@@ -7,6 +7,8 @@ import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { ecrituresDesVentesFacturees, lignesAuBrouillon, type MouvementDesEncaissements } from '../../lib/ecrituresVentesFacturees'
+import type { EncaissementVendu, FactureVendue } from '../../lib/ventesFacturees'
 
 // L'ONGLET QUI PRODUIT LE SEUL DOCUMENT QUE LE CABINET SIGNE — la 2035. Son garde-fou refuse de
 // remplir le formulaire sur une lecture partielle, et c'est la bonne règle : une déclaration bâtie
@@ -2443,8 +2445,83 @@ describe('ClotureTab — les ventes facturées', () => {
     within(titre.parentElement!).getByText(/Bénéfice de 280 € : case 5QC/)
     screen.getByText(/Exemplaires d’une facture source, que la 2035 ne compte pas/)
     expect(screen.getByText(/Exemplaires d’une facture source/).textContent).toMatch(/\(1\) : CLIENT FICTIF\.$/)
-    // La concordance dit la part sans écriture encore, à son motif.
-    screen.getByText(/1 vente facturée, sans écriture encore/)
+    // La concordance dit la part qu'aucune écriture ne porte encore, à son motif : à écrire (étape VF4c3).
+    screen.getByText(/1 vente facturée à écrire/)
+  })
+
+  // LA CONCORDANCE LIT LES ÉCRITURES DE LA VENTE FACTURÉE (étape VF4c3). Le brouillon est celui que la fonction de VF4b
+  // écrit pour la composition de VF4a sur les MÊMES lignes que l'écran lit — rien n'est écrit à la main —, plus l'écriture
+  // de la pièce d'achat ; sans cotisation, l'exercice est entièrement tenu.
+  const carteDeConcordance = async () =>
+    within((await screen.findByText(/Concordance avec les écritures — 2025/)).closest('.card') as HTMLElement)
+  const ECRITURE_DE_L_ACHAT = {
+    id: 'e-achat', dossier_id: 'dossier-de-test', piece_id: 'p1', ligne_bancaire_id: null, date: '2025-03-10', compte: '606100',
+    libelle: 'FOURNISSEUR', montant: 120, sens: 'debit', statut: 'proposee', created_at: '2025-03-11T09:00:00Z',
+    immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null,
+    ...NON_VALIDEE,
+  }
+  function brouillonDeLaVente(o: { encaissement?: Record<string, unknown>; mouvements?: MouvementDesEncaissements[] } = {}) {
+    const c = ecrituresDesVentesFacturees({
+      sources: {
+        dossierId: 'dossier-de-test', factures: [FACTURE_SOURCE as FactureVendue], lignes: [LIGNE_FS],
+        encaissements: [(o.encaissement ?? ENCAISSEMENT) as unknown as EncaissementVendu], parts: [PART],
+      },
+      mouvements: o.mouvements ?? [], comptesDeContrepartie: new Map(), mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
+    })
+    let i = 0
+    return c.ecritures.flatMap((e) => lignesAuBrouillon('dossier-de-test', e).map((l) => ({
+      ...l, id: `v${++i}`, created_at: `${e.date}T12:00:00Z`, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+      cotisation_id: null, ...NON_VALIDEE,
+    })))
+  }
+
+  it('l’écriture de l’encaissement au brouillon : la part concorde, au 706000', async () => {
+    poserLesVentes()
+    faux.parTable.cotisations_declarees = []
+    faux.parTable.ecritures_brouillon = [ECRITURE_DE_L_ACHAT, ...brouillonDeLaVente()]
+    faux.parTable.a_nouveaux = []
+    monter(2025)
+    const c = await carteDeConcordance()
+    c.getByText(/La 2035 se retrouve dans les écritures de l’exercice/)
+    expect(c.queryAllByText(/vente facturée/)).toHaveLength(0)
+  })
+
+  it('une écriture qui n’est plus celle que l’encaissement commande : « à réécrire », dans la section « Ventes facturées »', async () => {
+    poserLesVentes()
+    faux.parTable.cotisations_declarees = []
+    faux.parTable.ecritures_brouillon = [
+      ECRITURE_DE_L_ACHAT, ...brouillonDeLaVente().map((l) => (l.compte === '706000' ? { ...l, montant: 900 } : l)),
+    ]
+    faux.parTable.a_nouveaux = []
+    monter(2025)
+    const c = await carteDeConcordance()
+    c.getByText('1 vente facturée à réécrire')
+    c.getByText(/elle n’est plus celle que l’encaissement commande, à réécrire depuis la section « Ventes facturées »/)
+    c.getByText('Écritures — Ventes facturées')
+  })
+
+  it('les frais d’un mouvement que ses encaissements classent : un écart que la carte dit, sans geste', async () => {
+    poserLesVentes()
+    faux.parTable.cotisations_declarees = []
+    // L'encaissement cite le virement du même jour, que la banque crédite de 1 197 € : 3 € de frais, au 627000.
+    const mouvement = {
+      id: 'm-vir', dossier_id: 'dossier-de-test', date: '2025-05-10', libelle: 'VIR CLIENT FICTIF', montant: 1197, statut: 'rapprochee',
+      piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: 'releve.csv',
+      libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+      reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2025-05-11T09:00:00Z',
+      encaissements_de_factures: true,
+    }
+    const encaissement = { ...ENCAISSEMENT, ligne_bancaire_id: 'm-vir' }
+    faux.parTable.encaissements_factures = [encaissement]
+    faux.parTable.lignes_bancaires = [mouvement]
+    faux.parTable.ecritures_brouillon = [ECRITURE_DE_L_ACHAT, ...brouillonDeLaVente({ encaissement, mouvements: [mouvement] })]
+    faux.parTable.a_nouveaux = []
+    monter(2025)
+    const c = await carteDeConcordance()
+    c.getByText('1 frais d’un mouvement d’encaissements')
+    c.getByText(/la 2035 ne les compte pas encore/)
+    c.getByText('Pas encore dans l’application')
+    expect(c.queryAllByText(/vente facturée/)).toHaveLength(0)
   })
 
   it('dit les ventes écartées et les excédents, une ligne chacun, et se tait sans eux', async () => {

@@ -7,20 +7,26 @@ import { calculerCa3, type DeclarationCa3, type DonneesTva } from './declaration
 import { formatMoney } from './format'
 import { refusEcheanceEmprunt } from './echeanceEmprunt'
 import {
-  ARRONDI_MAXIMAL, REFUS_PAIEMENT_TVA_CLASSE, REFUS_VENTES_FACTUREES_NON_ECRITES, aPayerDe, arrondiDeLaLiquidation, declarationDeLaCa3,
+  ARRONDI_MAXIMAL, REFUS_PAIEMENT_TVA_CLASSE, REFUS_VENTES_FACTUREES_EN_ATTENTE, aPayerDe, arrondiDeLaLiquidation, declarationDeLaCa3,
   declarationsDuMontant, declarationsPourLeMouvement,
   ecritureDeLaLiquidation, ecritureDuPaiementTva, idsRemboursementsTva, liquidationsDesynchronisees,
   paiementTvaPlausible, paiementsTvaDesynchronises, parametresEnregistrement, periodesEnRetard, periodesNonDeclarees,
   phraseDuPaiement, phraseDuRemboursement, raisonPaiementTvaPlausible, refusEnregistrement, refusPaiementTva,
-  remboursementSousLeSeuil, seSaisitALaMain, seuilRemboursement, suiviDesDeclarations, type ContexteDeDeclaration,
+  remboursementSousLeSeuil, seSaisitALaMain, seuilRemboursement, suiviDesDeclarations, ETAT_DE_LA_SOURCE_EN_MOTS,
+  type ContexteDeDeclaration, type EcrituresDesVentesDeLaCa3, type EtatDeLaSourceDeVente,
   type DeclarationLiquidable, type DemandeDeDeclaration,
 } from './liquidationTva'
 import { PLAN_PAR_DEFAUT, type CleRoleComptable } from './planComptable'
 import { paiementsDesPieces } from './rattachement'
 import { REFUS_REGLE_EN_GROUPE, refusReglementGroupe } from './reglementGroupe'
-import type { DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import type { DeclarationTva, EcritureBrouillon, LigneBancaire, ModeComptable, Piece } from './types'
+import {
+  etatsDesVentesFacturees, LIBELLE_ETAT_SOURCE, type EncaissementDesEcritures, type EtatSourceDeVente, type EtatsDesVentes,
+  type SourcesDesEcrituresDeVente,
+} from './ecrituresVentesFactureesEcran'
+import { brouillonDesVentes, composition, facture as factureDesEcritures, mouvementDesVentes } from '../test/dossierBascule'
 import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
-import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
+import { ventesFacturees } from './ventesFacturees'
 import { refusVentilation } from './ventilationBanque'
 import { refusVirementPersonnel } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
@@ -322,9 +328,14 @@ function ca3(o: Partial<DeclarationCa3['cases']> = {}, comptes = { collectee: 10
 }
 
 const T1 = { debut: '2026-01-01', fin: '2026-03-31' }
+const T2 = { debut: '2026-04-01', fin: '2026-06-30' }
 
 function contexte(o: Partial<ContexteDeDeclaration> = {}): ContexteDeDeclaration {
-  return { assujettiTva: true, aujourdhui: '2026-04-15', declarations: [], ouverture: null, anneesValidees: [], ...o }
+  // Un dossier qui n'a pas basculé, sauf mention contraire : rien à lire de ses ventes facturées (étape VF4c3).
+  return {
+    assujettiTva: true, aujourdhui: '2026-04-15', declarations: [], ouverture: null, anneesValidees: [],
+    ventesFacturees: { etat: 'sans_bascule' }, ...o,
+  }
 }
 
 function demande(o: Partial<DemandeDeDeclaration> = {}): DemandeDeDeclaration {
@@ -926,88 +937,269 @@ describe('paiementsTvaDesynchronises — défensif', () => {
   })
 })
 
-// LES VENTES FACTURÉES NE S'ÉCRIVENT PAS ENCORE (ligne 28.6, chantier EC-Q3, étape VF3b2). La CA3 compte la TVA d'une facture
-// source (lib/declarationTva.ts), qu'aucune écriture ne porte avant l'étape VF4. Ce qui se mesure ici : ce que la liquidation
-// en ferait si la déclaration s'enregistrait — et le refus qui l'en empêche, dit avant le clic. Les CA3 viennent du VRAI
-// calcul, sur les ventes du VRAI module. Données FICTIVES.
-describe('refusEnregistrement — une période qui compte une vente facturée ne s’enregistre pas encore', () => {
+// LES VENTES FACTURÉES, À LA LIQUIDATION (ligne 28.6, chantier EC-Q3 ; étape VF3b2, puis VF4c3). La CA3 compte la TVA d'une
+// facture source (lib/declarationTva.ts) ; ses écritures la portent au 445710, et la liquidation la solde — quand elles sont
+// au brouillon telles que leurs sources les commandent. Ce qui se mesure ici, sur un dossier basculé : la CA3 du VRAI calcul,
+// sur les ventes du VRAI module ; le brouillon que la fonction de VF4b écrit pour la VRAIE composition ; l'état de chaque
+// source tel que l'onglet Écritures le calcule (lib/ecrituresVentesFactureesEcran.ts). Rien n'est écrit à la main.
+// Données FICTIVES.
+describe('refusEnregistrement — une période qui compte une vente facturée s’enregistre quand ses écritures sont à jour', () => {
   // Une vente de 1 000 € HT payée en février 2026, par sa pièce : 200 € de TVA, écrite au 445710.
   const pieces = [piece({ id: 'p1', date_piece: '2026-02-05', created_at: '2026-02-05T09:00:00Z' })]
   const lignes = [mouvement({ id: 'm-p1', piece_id: 'p1', statut: 'rapprochee', date: '2026-02-20', montant: 1200 })]
-  // Une facture source de services, encaissée en mars 2026 pour `ttc` euros à 20 %.
-  const ventesDe = (ttc: number, taux = 20, date = '2026-03-10') => {
-    const e = encaissementVendu({ id: 'e1', date_encaissement: date, montant: ttc }, taux)
-    return ventesFacturees({
-      dossierId: 'd1', factures: [factureVendue({ id: 'f1', date_emission: '2026-03-01' })],
-      lignes: [ligneVendue('f1', Math.round((ttc * 10000) / (100 + taux)) / 100, taux)], encaissements: [e.encaissement], parts: [e.part],
-    })
+  // Une facture source de services du 1er mars 2026, encaissée pour `ttc` euros à `taux` %, le `date` (sans mouvement cité :
+  // un virement, au 511 jusqu'au crédit).
+  const sourcesDe = (ttc: number, o: {
+    taux?: number; date?: string; moyen?: EncaissementDesEcritures['moyen']; emission?: string; retire?: boolean
+  } = {}): SourcesDesEcrituresDeVente => {
+    const taux = o.taux ?? 20
+    const { encaissement, part } = encaissementVendu({
+      id: 'e1', date_encaissement: o.date ?? '2026-03-10', montant: ttc, moyen: o.moyen ?? 'virement',
+      retire_le: o.retire ? '2026-03-20T10:00:00Z' : null,
+    }, taux)
+    return {
+      dossierId: 'd1', factures: [factureDesEcritures({ id: 'f1', date_emission: o.emission ?? '2026-03-01', montant_ttc: ttc })],
+      lignes: [ligneVendue('f1', Math.round((ttc * 10000) / (100 + taux)) / 100, taux)],
+      encaissements: [{ ...encaissement, compte_contrepartie: null }], parts: [part], mouvements: [],
+    }
   }
-  const ca3De = (v: VentesFacturees) => calculerCa3(
-    { pieces, paiements: paiementsDesPieces(lignes, []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: v }, T1, false, 0, 0,
+  const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
+    dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
+  })
+  const ca3De = (s: SourcesDesEcrituresDeVente, periode = T1) => calculerCa3(
+    { pieces, paiements: paiementsDesPieces(lignes, []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventesDe(s) },
+    periode, false, 0, 0,
   )
+  const ecrit = (s: SourcesDesEcrituresDeVente, mode: ModeComptable = 'tresorerie') => brouillonDesVentes(composition(s, mode, PLAN_PAR_DEFAUT))
+  const lues = (s: SourcesDesEcrituresDeVente, brouillon: EcritureBrouillon[], mode: ModeComptable = 'tresorerie'): ContexteDeDeclaration['ventesFacturees'] => ({
+    etat: 'lue',
+    etats: etatsDesVentesFacturees({ sources: s, brouillon, mode, plan: PLAN_PAR_DEFAUT, anneesValidees: [], ventesParLesFactures: true }),
+  })
+  // La TVA que le brouillon porte au 445710 dans une période, en centimes : celle que la liquidation retire.
+  const au445710 = (brouillon: readonly EcritureBrouillon[], periode: { debut: string; fin: string }) => brouillon
+    .filter((l) => l.compte === '445710' && l.date >= periode.debut && l.date <= periode.fin)
+    .reduce((t, l) => t + Math.round(l.montant * 100) * (l.sens === 'credit' ? 1 : -1), 0)
 
-  it('ce que la liquidation en ferait, mesuré : la TVA déclarée de la vente facturée irait à l’arrondi, que rien n’a écrit', () => {
-    // 30 € TTC encaissés : 5 € de TVA. Les lignes la déclarent ; les comptes ne la portent pas.
-    const c = ca3De(ventesDe(30))
+  it('écrites, la liquidation retire du 445710 exactement ce qu’elles y portent : l’arrondi n’est que l’arrondi', () => {
+    // 30 € TTC encaissés : 5 € de TVA, que l'écriture de l'encaissement porte au 445710 le 10 mars.
+    const s = sourcesDe(30)
+    const c = ca3De(s)
     expect(c.cases).toMatchObject({ base08: 1025, taxe08: 205, l16: 205, l28: 205 })
-    expect(c.tvaDesComptes.collectee).toBe(200)
+    expect(c.tvaDesComptes.collectee).toBe(205)
+    expect(au445710(ecrit(s), T1)).toBe(500)
     const liquidee = declarationDeLaCa3(c, T1)
-    // Sous dix euros, l'arrondi l'absorberait EN SILENCE : 5 € de charge au 658000, pour une TVA jamais écrite au 445710.
-    expect(arrondiDeLaLiquidation(liquidee)).toBe(5)
+    expect(arrondiDeLaLiquidation(liquidee)).toBe(0)
     expect(ecritureDeLaLiquidation(liquidee, PLAN_PAR_DEFAUT).map(({ compte, sens, montant }) => [compte, sens, montant])).toEqual([
-      ['445710', 'debit', 200], ['445510', 'credit', 205], ['658000', 'debit', 5],
+      ['445710', 'debit', 205], ['445510', 'credit', 205],
     ])
-    // Le refus l'en empêche, avant le clic.
-    expect(refusEnregistrement(demande({ ca3: c }), contexte())).toBe(REFUS_VENTES_FACTUREES_NON_ECRITES)
-    expect(REFUS_VENTES_FACTUREES_NON_ECRITES).toMatch(/^Les ventes facturées ne s’écrivent pas encore : la liquidation attend leurs écritures\./)
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: lues(s, ecrit(s)) }))).toBeNull()
   })
 
-  it('au-delà de dix euros, la vraie raison est dite, et non « ce n’est pas un arrondi »', () => {
-    const c = ca3De(ventesDe(1200))
-    expect(Math.abs(arrondiDeLaLiquidation(declarationDeLaCa3(c, T1)))).toBe(200)
-    expect(refusEnregistrement(demande({ ca3: c }), contexte())).toBe(REFUS_VENTES_FACTUREES_NON_ECRITES)
+  it('au-delà de dix euros aussi : 200 € de TVA, au centime', () => {
+    const s = sourcesDe(1200)
+    const c = ca3De(s)
+    expect(c.tvaDesComptes.collectee).toBe(400)
+    expect(arrondiDeLaLiquidation(declarationDeLaCa3(c, T1))).toBe(0)
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: lues(s, ecrit(s)) }))).toBeNull()
   })
 
-  it('une vente facturée écartée de la CA3 (2,1 %) retient aussi l’enregistrement : rien ne l’écrit davantage', () => {
-    const c = ca3De(ventesDe(102.1, 2.1))
+  it('pas encore écrite : refusée, sous des mots qui nomment la source, son état et la section où l’écrire', () => {
+    const s = sourcesDe(1200)
+    const refus = refusEnregistrement(demande({ ca3: ca3De(s) }), contexte({ ventesFacturees: lues(s, []) }))
+    expect(refus).toBe(
+      'La liquidation attend les écritures des ventes facturées de la période : l’encaissement du 10/03/2026 de la facture '
+      + `F2025-0001 (Client fictif, virement, ${formatMoney(1200)}) (à écrire). Sans elles, elle solderait au compte de la TVA `
+      + 'collectée une TVA qu’aucune écriture à jour n’y porte. Elles se passent depuis la section « Ventes facturées » de '
+      + 'l’onglet Écritures.',
+    )
+  })
+
+  it('une écriture périmée : « à réécrire » ; l’écriture d’un encaissement retiré, datée dans la période : « à retirer »', () => {
+    const s = sourcesDe(1200)
+    const perimee = ecrit(s).map((l) => (l.compte === '445710' ? { ...l, montant: 199.99 } : l))
+    expect(refusEnregistrement(demande({ ca3: ca3De(s) }), contexte({ ventesFacturees: lues(s, perimee) }))).toMatch(/\(à réécrire\)\./)
+    // Retiré après avoir été écrit : la CA3 ne le compte plus, mais le 445710 porte encore sa TVA.
+    const retire = sourcesDe(1200, { retire: true })
+    const c = ca3De(retire)
+    expect(c.exigibilitesRetenues).toEqual([])
+    expect(au445710(ecrit(s), T1)).toBe(20_000)
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: lues(retire, ecrit(s)) }))).toMatch(/\(à retirer\)\./)
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: lues(retire, []) }))).toBeNull()
+  })
+
+  it('un encaissement par compensation dont le compte n’est pas choisi : « ne s’écrit pas », refusée', () => {
+    const s = sourcesDe(1200, { moyen: 'compensation' })
+    expect(refusEnregistrement(demande({ ca3: ca3De(s) }), contexte({ ventesFacturees: lues(s, []) }))).toMatch(/\(ne s’écrit pas\)\./)
+  })
+
+  it('une régularisation — une contre-passation — écrite : la liquidation se tient', () => {
+    const e = encaissementVendu({ id: 'e1', date_encaissement: '2025-12-10', montant: 120 })
+    const cp = encaissementVendu({ id: 'c1', date_encaissement: '2026-02-10', montant: -120, annule_id: 'e1' })
+    const s: SourcesDesEcrituresDeVente = {
+      dossierId: 'd1', factures: [factureDesEcritures({ id: 'f1', date_emission: '2025-12-01' })], lignes: [ligneVendue('f1', 100, 20)],
+      encaissements: [e, cp].map((x) => ({ ...x.encaissement, compte_contrepartie: null })), parts: [e.part, cp.part], mouvements: [],
+    }
+    const c = ca3De(s)
+    expect(c.exigibilitesRetenues.map((x) => x.ligne)).toEqual(['B5'])
+    expect(c.tvaDesComptes.collectee).toBe(180)
+    expect(au445710(ecrit(s), T1)).toBe(-2000)
+    expect(arrondiDeLaLiquidation(declarationDeLaCa3(c, T1))).toBe(0)
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: lues(s, ecrit(s)) }))).toBeNull()
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: lues(s, []) }))).toMatch(/la contre-passation du 10\/02\/2026/)
+  })
+
+  it('en engagement, la TVA en attente (445800) n’entre pas dans la TVA collectée avant son exigibilité', () => {
+    // Facturée le 1er mars, encaissée le 10 avril : au premier trimestre, la facture écrit 200 € au 445800, rien au 445710.
+    const s = sourcesDe(1200, { date: '2026-04-10' })
+    const brouillon = ecrit(s, 'engagement')
+    expect(brouillon.filter((l) => l.date === '2026-03-01').map((l) => [l.compte, l.sens, l.montant]).sort())
+      .toEqual([['411000', 'debit', 1200], ['445800', 'credit', 200], ['706000', 'credit', 1000]])
+    const q1 = ca3De(s, T1)
+    expect(q1.exigibilitesRetenues).toEqual([])
+    expect(q1.tvaDesComptes.collectee).toBe(200)
+    expect(au445710(brouillon, T1)).toBe(0)
+    // La facture est une source de la période : à jour, rien ne retient la liquidation ; pas écrite, elle la retient.
+    expect(refusEnregistrement(demande({ ca3: q1 }), contexte({ ventesFacturees: lues(s, brouillon, 'engagement') }))).toBeNull()
+    expect(refusEnregistrement(demande({ ca3: q1 }), contexte({ ventesFacturees: lues(s, [], 'engagement') }))).toMatch(/la facture F2025-0001 \(Client fictif\) \(à écrire\)/)
+    // Au deuxième trimestre, l'encaissement la fait passer du 445800 au 445710 : c'est elle que la CA3 compte, et la liquidation retire.
+    const q2 = ca3De(s, T2)
+    expect(q2.tvaDesComptes.collectee).toBe(200)
+    expect(au445710(brouillon, T2)).toBe(20_000)
+    expect(brouillon.filter((l) => l.date === '2026-04-10' && l.compte === '445800').map((l) => [l.sens, l.montant])).toEqual([['debit', 200]])
+    expect(refusEnregistrement(demande({ periode: T2, ca3: q2 }), contexte({ aujourdhui: '2026-07-15', ventesFacturees: lues(s, brouillon, 'engagement') }))).toBeNull()
+  })
+
+  it('une exigibilité écartée de la CA3 (2,1 %) : son écriture porte sa TVA au 445710, aucune ligne ne la déclare — le refus reste', () => {
+    const s = sourcesDe(102.1, { taux: 2.1 })
+    const c = ca3De(s)
     expect(c.exigibilitesRetenues).toEqual([])
     expect(c.exigibilitesEcartees.map((x) => x.motif)).toEqual(['taux_a_placer'])
-    expect(refusEnregistrement(demande({ ca3: c }), contexte())).toBe(REFUS_VENTES_FACTUREES_NON_ECRITES)
+    expect(au445710(ecrit(s), T1)).toBe(210)
+    expect(c.tvaDesComptes.collectee).toBe(202.1)
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: lues(s, ecrit(s)) }))).toBe(
+      `Cette période compte la TVA d’une vente facturée à un taux qu’aucune ligne de la déclaration ne range (F2025-0001 (Client fictif) à 2,1 %, ${formatMoney(2.1)} de TVA) : `
+      + 'son écriture la porte au compte de la TVA collectée, et la liquidation la solderait sans qu’elle soit déclarée. '
+      + 'Cette déclaration se dépose et se liquide hors de l’application.',
+    )
   })
 
-  it('une régularisation seule — un avoir, une contre-passation — aussi', () => {
-    const e = encaissementVendu({ id: 'e1', date_encaissement: '2025-12-10', montant: 120 })
-    const c = encaissementVendu({ id: 'c1', date_encaissement: '2026-02-10', montant: -120, annule_id: 'e1' })
-    const v = ventesFacturees({
-      dossierId: 'd1', factures: [factureVendue({ id: 'f1', date_emission: '2025-12-01' })], lignes: [ligneVendue('f1', 100, 20)],
-      encaissements: [e.encaissement, c.encaissement], parts: [e.part, c.part],
-    })
-    const ca = ca3De(v)
-    expect(ca.exigibilitesRetenues.map((x) => x.ligne)).toEqual(['B5'])
-    expect(refusEnregistrement(demande({ ca3: ca }), contexte())).toBe(REFUS_VENTES_FACTUREES_NON_ECRITES)
+  it('les écritures pas lues en entier : refusée, côté fermé — même une période qu’aucune vente facturée ne touche', () => {
+    const s = sourcesDe(1200)
+    const c = ca3De(s)
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: { etat: 'en_attente' } }))).toBe(REFUS_VENTES_FACTUREES_EN_ATTENTE)
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: { etat: 'incomplete', motif: 'le brouillon : lecture incomplète' } })))
+      .toBe('Les écritures des ventes facturées n’ont pas pu être lues en entier (le brouillon : lecture incomplète) : la liquidation ne se décide pas sur une lecture partielle. Recharge la page.')
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: { etat: 'lue', etats: { etat: 'incoherent', motif: 'une ligne' } } })))
+      .toMatch(/^Les écritures des ventes facturées ne se tiennent pas avec leurs sources \(une ligne\)/)
+    const sansVente = ca3De(sourcesDe(1200, { date: '2026-04-10' }))
+    expect(refusEnregistrement(demande({ ca3: sansVente }), contexte({ ventesFacturees: { etat: 'en_attente' } }))).toBe(REFUS_VENTES_FACTUREES_EN_ATTENTE)
   })
 
   it('une période sans vente facturée s’enregistre comme hier, même quand le dossier en compte ailleurs', () => {
-    // La facture source est encaissée au deuxième trimestre : le premier n'en porte rien.
-    const c = ca3De(ventesDe(1200, 20, '2026-04-10'))
-    expect(c).toEqual(ca3De(ventesFactureesVides('d1')))
-    expect(refusEnregistrement(demande({ ca3: c }), contexte())).toBeNull()
-    expect(refusEnregistrement(demande({ ca3: ca3De(ventesFactureesVides('d1')) }), contexte())).toBeNull()
+    // La facture source est encaissée au deuxième trimestre : le premier n'en porte rien, et ses écritures n'y sont pas datées.
+    const s = sourcesDe(1200, { date: '2026-04-10' })
+    const c = ca3De(s)
+    expect(c).toEqual(calculerCa3(
+      { pieces, paiements: paiementsDesPieces(lignes, []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventesFactureesVides('d1') },
+      T1, false, 0, 0,
+    ))
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: lues(s, []) }))).toBeNull()
+    // Un dossier qui n'a pas basculé n'a rien à lire.
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: { etat: 'sans_bascule' } }))).toBeNull()
     // Une facture source ÉCARTÉE par le module (sans date qu'on puisse lui donner) ne retient pas une période.
-    const ecartee = ventesFacturees({
-      dossierId: 'd1', factures: [factureVendue({ id: 'f1' })], lignes: [], encaissements: [], parts: [],
+    const ecartee = ventesFacturees({ dossierId: 'd1', factures: [factureVendue({ id: 'f1' })], lignes: [], encaissements: [], parts: [] })
+    const avecEcartee = calculerCa3(
+      { pieces, paiements: paiementsDesPieces(lignes, []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ecartee }, T1, false, 0, 0,
+    )
+    expect(avecEcartee.ventesFactureesEcartees).toHaveLength(1)
+    expect(refusEnregistrement(demande({ ca3: avecEcartee }), contexte({ ventesFacturees: { etat: 'sans_bascule' } }))).toBeNull()
+  })
+
+  it('chaque exigibilité retrouve SA source : l’autre encaissement de la facture, hors de la période, ne la retient pas', () => {
+    // 600 € encaissés en mars, écrits ; 600 € en avril, pas encore : le premier trimestre s'enregistre, le deuxième attend.
+    const deux = ['2026-03-10', '2026-04-10'].map((date, i) => encaissementVendu({ id: `e${i + 1}`, date_encaissement: date, montant: 600 }))
+    const s: SourcesDesEcrituresDeVente = {
+      ...sourcesDe(1200), encaissements: deux.map((x) => ({ ...x.encaissement, compte_contrepartie: null })), parts: deux.map((x) => x.part),
+    }
+    const brouillon = ecrit(s).filter((l) => l.encaissement_id !== 'e2')
+    expect(refusEnregistrement(demande({ ca3: ca3De(s) }), contexte({ ventesFacturees: lues(s, brouillon) }))).toBeNull()
+    expect(refusEnregistrement(demande({ periode: T2, ca3: ca3De(s, T2) }), contexte({ aujourdhui: '2026-07-15', ventesFacturees: lues(s, brouillon) })))
+      .toMatch(/l’encaissement du 10\/04\/2026 .*\(à écrire\)/)
+  })
+
+  it('le mouvement que des encaissements classent ne retient pas la liquidation : son écriture ne touche aucun compte de TVA', () => {
+    // Un chèque remis le 10 mars, crédité le 12 : l'encaissement passe au 511, le mouvement solde le 511 par la banque.
+    const m = mouvementDesVentes({ id: 'm-cheque', dossier_id: 'd1', date: '2026-03-12', montant: 1200, libelle: 'REMISE CHEQUE FICTIVE' })
+    const base = sourcesDe(1200, { moyen: 'cheque' })
+    const s: SourcesDesEcrituresDeVente = {
+      ...base, encaissements: base.encaissements.map((e) => ({ ...e, ligne_bancaire_id: 'm-cheque' })), mouvements: [m],
+    }
+    const sansLeMouvement = ecrit(s).filter((l) => l.encaissement_id != null)
+    const ventes = lues(s, sansLeMouvement)
+    expect(ventes.etat === 'lue' && ventes.etats.etat === 'lus' && ventes.etats.sources.map((x) => [x.source.genre, x.etat])).toEqual([
+      ['encaissement', 'a_jour'], ['mouvement', 'a_ecrire'],
+    ])
+    expect(refusEnregistrement(demande({ ca3: ca3De(s) }), contexte({ ventesFacturees: ventes }))).toBeNull()
+  })
+
+  it('une exigibilité dont l’état des écritures ne liste pas la source : refusée, sans la prêter à une autre source', () => {
+    // Un bien livré le 1er février, et son avoir du 10 avril : l'avoir rend au deuxième trimestre une TVA négative.
+    const biens = { nature_operation: 'biens' as const }
+    const s: SourcesDesEcrituresDeVente = {
+      dossierId: 'd1',
+      factures: [
+        factureDesEcritures({ id: 'f1', date_emission: '2026-02-01', montant_ttc: 120, ...biens }),
+        factureDesEcritures({ id: 'a1', type: 'avoir', numero: 'A2026-0001', facture_origine_id: 'f1', date_emission: '2026-04-10', montant_ttc: -120, ...biens }),
+      ],
+      lignes: [ligneVendue('f1', 100, 20), { ...ligneVendue('a1', 100, 20), quantite: -1 }],
+      encaissements: [], parts: [], mouvements: [],
+    }
+    const c = ca3De(s, T2)
+    expect(c.exigibilitesRetenues.map((r) => [r.exigibilite.origine, r.ligne])).toEqual([['avoir', 'B5']])
+    const ventes = lues(s, ecrit(s))
+    expect(refusEnregistrement(demande({ periode: T2, ca3: c }), contexte({ aujourdhui: '2026-07-15', ventesFacturees: ventes }))).toBeNull()
+    // Le même état, sans la ligne de l'avoir : la facture, à jour, ne répond pas pour lui.
+    if (ventes.etat !== 'lue' || ventes.etats.etat !== 'lus') throw new Error('états non lus')
+    const sansLAvoir: ContexteDeDeclaration['ventesFacturees'] = {
+      etat: 'lue', etats: { ...ventes.etats, sources: ventes.etats.sources.filter((x) => x.source.genre !== 'avoir') },
+    }
+    expect(refusEnregistrement(demande({ periode: T2, ca3: c }), contexte({ aujourdhui: '2026-07-15', ventesFacturees: sansLAvoir })))
+      .toMatch(/une source de la facture F2025-0001 que l’état des écritures ne liste pas/)
+  })
+
+  it('la forme que la liquidation lit est celle que l’écran calcule, et ses mots sont les siens', () => {
+    // Le compilateur confronte les deux formes, dans les deux sens : l'état d'une source, et l'état de toutes.
+    const versLaLiquidation = (e: EtatSourceDeVente): EtatDeLaSourceDeVente => e
+    const versLEcran = (e: EtatDeLaSourceDeVente): EtatSourceDeVente => e
+    expect(versLEcran(versLaLiquidation('a_jour'))).toBe('a_jour')
+    const s = sourcesDe(1200)
+    const etats: EtatsDesVentes = etatsDesVentesFacturees({
+      sources: s, brouillon: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, anneesValidees: [], ventesParLesFactures: true,
     })
-    expect(ca3De(ecartee).ventesFactureesEcartees).toHaveLength(1)
-    expect(refusEnregistrement(demande({ ca3: ca3De(ecartee) }), contexte())).toBeNull()
+    const lue: EcrituresDesVentesDeLaCa3 = { etat: 'lue', etats }
+    expect(lue.etat).toBe('lue')
+    // Les mots : la même table, clé pour clé.
+    expect(ETAT_DE_LA_SOURCE_EN_MOTS).toEqual(LIBELLE_ETAT_SOURCE)
+  })
+
+  it('un dossier qui ne se dit pas basculé et dont la CA3 compte une facture source : les lectures ne se tiennent pas', () => {
+    expect(refusEnregistrement(demande({ ca3: ca3De(sourcesDe(1200)) }), contexte({ ventesFacturees: { etat: 'sans_bascule' } })))
+      .toMatch(/alors que le dossier ne se dit pas basculé : les lectures ne se tiennent pas/)
   })
 
   it('dans l’ordre : un exercice validé l’emporte, puis les ventes facturées, puis l’équilibre de la liquidation', () => {
-    const c = ca3De(ventesDe(1200))
-    expect(refusEnregistrement(demande({ ca3: c }), contexte({ anneesValidees: [2026] })))
+    const s = sourcesDe(1200)
+    const c = ca3De(s)
+    expect(refusEnregistrement(demande({ ca3: c }), contexte({ anneesValidees: [2026], ventesFacturees: lues(s, []) })))
       .toBe('L\'exercice 2026 est validé : une déclaration de TVA ne s’y enregistre plus.')
-    expect(refusEnregistrement(demande({ ca3: c, remboursement: 1.5 }), contexte()))
+    expect(refusEnregistrement(demande({ ca3: c, remboursement: 1.5 }), contexte({ ventesFacturees: lues(s, []) })))
       .toBe('Le remboursement demandé (ligne 26) se demande en euros entiers.')
+    // Les ventes facturées avant l'équilibre : une TVA de comptes faussée à la main, et la source pas écrite — c'est elle
+    // qu'on dit.
+    const faussee = { ...c, tvaDesComptes: { ...c.tvaDesComptes, collectee: 0 } }
+    expect(refusEnregistrement(demande({ ca3: faussee }), contexte({ ventesFacturees: lues(s, []) }))).toMatch(/^La liquidation attend les écritures/)
+    expect(refusEnregistrement(demande({ ca3: faussee }), contexte({ ventesFacturees: lues(s, ecrit(s)) }))).toMatch(/n’est pas un arrondi/)
     // Une saisie à la main ne porte pas de CA3 : la règle ne la concerne pas.
-    expect(refusEnregistrement(demande({ ca3: null, tvaDeclaree: 120, credit: 0, remboursement: 0 }), contexte({ ouverture: '2026-07-01' }))).toBeNull()
+    expect(refusEnregistrement(demande({ ca3: null, tvaDeclaree: 120, credit: 0, remboursement: 0 }), contexte({ ouverture: '2026-07-01', ventesFacturees: { etat: 'en_attente' } }))).toBeNull()
   })
 })

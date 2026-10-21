@@ -413,6 +413,8 @@ export default function DossierDetail() {
                 periodicite={dossier.tva_periodicite}
                 surDebits={dossier.tva_sur_debits}
                 onRegimeUpdated={(modification) => modifierDossier(id, modification)}
+                modeComptable={modele.mode}
+                ventesParLesFactures={dossier.ventes_par_les_factures === true}
               />
             )}
             {tab === 'immobilisations' && modele && (

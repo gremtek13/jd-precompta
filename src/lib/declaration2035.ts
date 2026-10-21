@@ -5,6 +5,7 @@ import { arrondiDeLaLiquidation } from './liquidationTva'
 import { montantRetenu } from './montantRetenu'
 import type { PartDuReleve } from './partsDuReleve'
 import type { PlanComptable } from './planComptable'
+import { compteDuProduit } from './ecrituresVentesFacturees'
 import { centimesParDate, partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { CotisationComptee } from './cotisationRapprochee'
@@ -147,12 +148,11 @@ export interface ContributionDeclaration {
   // qu'aucune écriture ne porte : la CSG-CRDS passe entière au 108000, et seule sa part déductible entre en
   // BV — la présentation relevée sur la 2035 déposée par le cabinet (voir plus bas).
   //
-  // NUL AUSSI POUR LA PART D'UNE VENTE FACTURÉE, JUSQU'À CE QUE SES ÉCRITURES S'ÉCRIVENT (étape VF4c). Aucune écriture ne
-  // la porte encore : leurs rôles — `prestations_de_services` pour des services, `ventes_de_biens` pour des biens — sont
-  // au catalogue de l'application (`ROLES_COMPTABLES`) depuis l'étape VF4a, et leur composition dans
-  // lib/ecrituresVentesFacturees.ts, que rien n'écrit avant VF4b et que rien ne lit avant VF4c. Un compte donné ici ferait
-  // concorder une recette qu'aucune écriture ne porte ; la concordance dit la part « sans écriture encore »
-  // (lib/concordance2035.ts).
+  // LA PART D'UNE VENTE FACTURÉE porte, depuis l'étape VF4c3, le compte que la COMPOSITION de ses écritures écrit pour elle
+  // (`compteDuProduit`, lib/ecrituresVentesFacturees.ts) : `prestations_de_services` pour des services,
+  // `ventes_de_biens` pour des biens, au plan du dossier — la même fonction, jamais une règle recopiée. La concordance
+  // (lib/concordance2035.ts) la rapproche sur ce compte des écritures de son encaissement, que l'onglet Écritures passe
+  // depuis l'étape VF4c1 ; une part qu'aucune écriture à jour ne porte reste un écart.
   compte: string | null
   // En centimes, signé comme ce que la source fait à son poste : un avoir ou un remboursement le diminue.
   centimes: number
@@ -467,14 +467,16 @@ export function calculerDeclaration2035(
   // dit elle-même sa TVA (conception, § 5 ; `montantRetenu`, qui suit le droit à déduction d'un achat, ne s'y applique
   // pas), et à 0 % h est le TTC. Une contre-passation est une part négative : elle diminue le poste, dans l'exercice de sa
   // date. Ni pièce ni mouvement du relevé : la ligne n'en compte aucun de plus — le mouvement qu'un encaissement cite est
-  // réservé à ses encaissements (G2), il n'est pas une part du relevé.
+  // réservé à ses encaissements (G2), il n'est pas une part du relevé. Son compte est celui où l'écriture de l'encaissement
+  // porte ce hors taxe en trésorerie (`compteDuProduit`, la règle même de la composition) : c'est sur lui, et sur
+  // l'encaissement, que la concordance retrouve l'écriture.
   for (const p of ventesFacturees.parts) {
     if (anneeDe(p.date) !== annee) continue
     ajouter({
       source: { type: 'encaissement', id: p.encaissementId, part: p },
       poste: POSTE_VENTES_FACTUREES,
       nature: 'recette',
-      compte: null,
+      compte: compteDuProduit(p.regime, plan),
       centimes: p.htCentimes,
     }, 0)
   }

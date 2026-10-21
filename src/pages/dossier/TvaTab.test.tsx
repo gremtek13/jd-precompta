@@ -3,12 +3,13 @@ import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TvaTab from './TvaTab'
 import type {
-  ANouveau, ArticleExoneration, Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, StatutTva,
-  VentilationBancaire,
+  ANouveau, ArticleExoneration, Categorie, DeclarationTva, LigneBancaire, ModeComptable, PeriodiciteTva, Piece, ReglementGroupe,
+  StatutTva, VentilationBancaire,
 } from '../../lib/types'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { AvecExercicesValides } from '../../test/exercicesValides'
-import { A_NOUVEAU_NON_VALIDE } from '../../test/ecritures'
+import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
+import { ecrituresDesVentesFacturees, lignesAuBrouillon } from '../../lib/ecrituresVentesFacturees'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import { regime as regimeDEreporting } from '../../test/ereportingEcran'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from '../../lib/planComptable'
@@ -206,10 +207,13 @@ const ligneDe = (libelle: string) => screen.getByText(libelle).closest('tr') as 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
 function Hote({
   periodicite = 'trimestrielle', surDebits = false, assujetti = true, statut, article = null, numero = false, siret = null, valides = [],
-  espion, plan = PLAN_PAR_DEFAUT, dossier = 'd',
+  espion, plan = PLAN_PAR_DEFAUT, dossier = 'd', mode = 'tresorerie', bascule = false,
 }: {
   // Le dossier ouvert : « d », sauf mention contraire.
   dossier?: string
+  // Le modèle comptable et le réglage des ventes facturées (étape VF4c3) : trésorerie, et pas basculé, sauf mention contraire.
+  mode?: ModeComptable
+  bascule?: boolean
   // Le plan comptable du dossier (ligne 43, étape PC3) : le défaut, sauf mention contraire.
   plan?: PlanComptable
   periodicite?: PeriodiciteTva
@@ -246,6 +250,8 @@ function Hote({
         periodicite={regime.tva_periodicite}
         surDebits={regime.tva_sur_debits}
         onRegimeUpdated={(m) => { espion?.(m); setRegime((r) => ({ ...r, ...m })) }}
+        modeComptable={mode}
+        ventesParLesFactures={bascule}
       />
     </AvecExercicesValides>
   )
@@ -994,7 +1000,7 @@ describe('TvaTab — les ventes facturées', () => {
   }
   const LIGNES_DISCRETES = [
     /Exemplaires d’une facture source, que la CA3 ne compte pas/, /Ventes facturées que la CA3 ne compte pas/,
-    /vente\(s\) facturée\(s\) de la période ne sont pas dans les cases/, /Les ventes facturées ne s’écrivent pas encore/,
+    /vente\(s\) facturée\(s\) de la période ne sont pas dans les cases/, /La liquidation attend les écritures des ventes facturées/,
   ]
 
   it('lit les ventes facturées du dossier à côté de ses autres entrées', async () => {
@@ -1006,7 +1012,7 @@ describe('TvaTab — les ventes facturées', () => {
 
   it('compte la facture source à son encaissement, ne compte plus son exemplaire — il se dit —, et retient l’enregistrement', async () => {
     poserLesVentes()
-    await afficher()
+    await afficher({ bascule: true })
     // 1 000 € de la vente par sa pièce, 500 € de la facture source : 1 500 € à 20 %. Compté aussi, l'exemplaire en aurait
     // ajouté 500 ; la facture oubliée, 1 000 seulement.
     const l08 = ligneDe('Taux normal 20 %')
@@ -1021,12 +1027,79 @@ describe('TvaTab — les ventes facturées', () => {
     expect(within(retenue).getByText('encaissement')).toBeTruthy()
     expect(within(retenue).getByText(MONTANT('500,00 €'))).toBeTruthy()
     expect(within(retenue).getByText(MONTANT('100,00 €'))).toBeTruthy()
-    // L'enregistrement attend leurs écritures : dit avant le clic, le bouton grisé, et rien ne part.
-    expect(screen.getByText(/^Les ventes facturées ne s’écrivent pas encore : la liquidation attend leurs écritures\./)).toBeTruthy()
+    // L'enregistrement attend leurs écritures, que rien n'a encore passées (étape VF4c3) : dit avant le clic, en nommant
+    // l'encaissement et son état, le bouton grisé, et rien ne part.
+    expect(screen.getByText(/^La liquidation attend les écritures des ventes facturées de la période : l’encaissement du 10\/03\/2027 de la facture F2027-0042 \(CLIENT FICTIF, virement, 600,00\s€\) \(à écrire\)\./)).toBeTruthy()
     const bouton = screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement
     expect(bouton.disabled).toBe(true)
     await act(async () => { bouton.click() })
     expect(faux.rpcs).toEqual([])
+  })
+
+  // LES ÉCRITURES DE LA VENTE FACTURÉE AU BROUILLON (étape VF4c3) : celles que la fonction de VF4b écrit pour la composition
+  // de VF4a sur les mêmes lignes que l'onglet lit — rien n'est écrit à la main.
+  function ecrituresDeLaVente(mode: ModeComptable = 'tresorerie') {
+    const c = ecrituresDesVentesFacturees({
+      sources: { dossierId: 'd', factures: [FACTURE_SOURCE], lignes: [LIGNE_FS], encaissements: [ENCAISSEMENT.encaissement], parts: [ENCAISSEMENT.part] },
+      mouvements: [], comptesDeContrepartie: new Map(), mode, plan: PLAN_PAR_DEFAUT,
+    })
+    let i = 0
+    return c.ecritures.flatMap((e) => lignesAuBrouillon('d', e).map((l) => ({
+      ...l, id: `v${++i}`, created_at: `${e.date}T12:00:00Z`, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+      cotisation_id: null, ...NON_VALIDEE,
+    })))
+  }
+
+  it('ses écritures à jour, la période s’enregistre : la liquidation retire du 445710 la TVA qu’elles y portent', async () => {
+    poserLesVentes()
+    faux.tables.ecritures_brouillon = ecrituresDeLaVente()
+    await afficher({ bascule: true })
+    for (const ligne of LIGNES_DISCRETES.slice(3)) expect(screen.queryByText(ligne)).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer comme déposée' }).click() })
+    expect(faux.rpcs.map((r) => r.nom)).toEqual(['enregistrer_declaration_tva'])
+    // 200 € de la pièce de vente et 100 € de la facture source, au centime ; 250 € de TVA nette.
+    expect(faux.rpcs[0].args).toMatchObject({ p_tva_declaree: 250, p_tva_collectee: 300 })
+    expect((faux.rpcs[0].args.p_ecriture as { compte: string; sens: string; montant: number }[])
+      .map(({ compte, sens, montant }) => [compte, sens, montant])).toEqual([
+      ['445710', 'debit', 300], ['445660', 'credit', 50], ['445510', 'credit', 250],
+    ])
+  })
+
+  it('une écriture qui n’est plus celle que l’encaissement commande : « à réécrire », et rien ne part', async () => {
+    poserLesVentes()
+    faux.tables.ecritures_brouillon = ecrituresDeLaVente().map((l) => (l.compte === '445710' ? { ...l, montant: 99 } : l))
+    await afficher({ bascule: true })
+    expect(screen.getByText(/La liquidation attend les écritures des ventes facturées de la période : .*\(à réécrire\)\./)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('les écritures lues en partie, ou pas encore revenues : refusée, côté fermé', async () => {
+    poserLesVentes()
+    faux.tables.ecritures_brouillon = ecrituresDeLaVente()
+    faux.tronquees = new Set(['ecritures_brouillon'])
+    await afficher({ bascule: true })
+    expect(screen.getByText(/^Les écritures des ventes facturées n’ont pas pu être lues en entier \(le brouillon : /)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement).disabled).toBe(true)
+    cleanup()
+    faux.tronquees = new Set()
+    // Pas encore revenues : elles se lisent avec le reste de l'onglet, qui attend tout — ni CA3, ni enregistrement.
+    let liberer: () => void = () => {}
+    faux.attentes.ecritures_brouillon = new Promise<void>((r) => { liberer = r })
+    render(<Hote bascule />)
+    await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
+    expect(document.querySelectorAll('.skeleton').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: /^Enregistrer comme/ })).toBeNull()
+    await act(async () => { liberer() })
+    await waitFor(() => expect(document.querySelectorAll('.skeleton')).toHaveLength(0))
+    expect((screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('un dossier qui n’a pas basculé ne lit ni le brouillon ni les sources de ses écritures', async () => {
+    await afficher()
+    expect(faux.tablesLues).not.toContain('ecritures_brouillon')
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer comme déposée' }).click() })
+    expect(faux.rpcs.map((r) => r.nom)).toEqual(['enregistrer_declaration_tva'])
   })
 
   it('une période sans vente facturée s’enregistre comme hier, même quand le dossier en compte ailleurs', async () => {

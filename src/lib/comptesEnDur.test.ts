@@ -148,11 +148,12 @@ const RESTE_DE_PC3A = '— reste de PC3a, à rendre au plan avant que l’étape
 
 const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> = {
   'src/lib/comptes.ts': {
-    nombre: 65,
+    nombre: 73,
     raison: 'LE CATALOGUE D’AUJOURD’HUI : les trente-deux constantes que `PLAN_PAR_DEFAUT` épingle (planComptable.test.ts), '
       + 'leurs libellés et ce qu’on en tire — le défaut de chaque rôle, et lui seul ; les six de la vente facturée (étape '
-      + 'VF4a) et leurs libellés, dont le 706000 et le 627000 dans `LIBELLES_COMPTES` depuis l’étape VF4c2 (VF4A-Q1 : '
-      + 'deux clés de plus, et leurs deux lectures dans `LIBELLES_DE_LA_VENTE_FACTUREE`).',
+      + 'VF4a) et leurs libellés, tous les six dans `LIBELLES_COMPTES` — le 706000 et le 627000 depuis l’étape VF4c2 '
+      + '(VF4A-Q1), les quatre autres depuis l’étape VF4c3 (VF4C2-Q1) : une clé chacun, et sa lecture dans '
+      + '`LIBELLES_DE_LA_VENTE_FACTUREE`.',
   },
   'src/lib/planComptable.ts': {
     nombre: 33,

@@ -31,6 +31,7 @@ import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsT
 import { prealablesDeValidation, prochainExerciceAValider } from '../../lib/prealablesValidation'
 import type { FacturePourJumelle, TransmissionPourJumelle } from '../../lib/ventesJumelles'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
+import { mouvementsClassesParEncaissements } from '../../lib/ecrituresVentesFactureesEcran'
 import {
   casesDeLInstantane, casesQuiDifferent, demandeDeValidation, exerciceQuiFige, instantane2035, lireInstantane2035, type Instantane2035,
 } from '../../lib/validationExercice'
@@ -576,10 +577,15 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
 
   // LA 2035 SE RETROUVE-T-ELLE DANS LES ÉCRITURES ? Source par source et compte par compte, pour chaque exercice
   // affiché (lib/concordance2035.ts). La 2035 reste calculée depuis les sources ; la concordance dit ce qui
-  // manque au FEC pour la porter.
+  // manque au FEC pour la porter. Les écritures d'une vente facturée s'y rapprochent de leur encaissement (étape VF4c3) ; les
+  // mouvements que leurs encaissements classent, lus avec tous les mouvements, disent pourquoi la 2035 ne compte pas leurs
+  // frais.
   const idsPiecesValidees = new Set(piecesValidees.map((p) => p.id))
+  const mouvementsDesVentesFacturees = mouvementsClassesParEncaissements(toutesLesLignes)
   const concordances = new Map(declarations.map((d) => [d.annee, {
-    concordance: concordance2035(d, ecritures, { piecesValidees: idsPiecesValidees, piecesImmobilisees: pieceIdsImmobilisees }, ouverture),
+    concordance: concordance2035(d, ecritures, {
+      piecesValidees: idsPiecesValidees, piecesImmobilisees: pieceIdsImmobilisees, mouvementsDesVentesFacturees,
+    }, ouverture),
     comptesPartages: comptesPartagesEntreCases(d),
   }]))
 

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EncaissementDesEcritures, FactureDesEcritures, MouvementDesEcritures } from './ecrituresVentesFactureesEcran'
-import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from './ecrituresVentesFactureesLecture'
+import {
+  lireLesEcrituresDesVentes, lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente,
+} from './ecrituresVentesFactureesLecture'
 import type { LigneDeFacture } from './encaissementsFactures'
 import type { PartVendue } from './ventesFacturees'
 
@@ -54,7 +56,8 @@ vi.mock('./supabase', async () => {
             const rendu = toutes
               .slice(debut, Math.min(fin + 1, debut + faux.plafond, faux.muetApres[table] ?? Infinity))
               .map((l) => {
-                const projetee: Record<string, unknown> = Object.fromEntries(colonnes.map((k) => [k, l[k]]))
+                // `*` : la ligne entière (le brouillon, étape VF4c3).
+                const projetee: Record<string, unknown> = colonnes.includes('*') ? { ...l } : Object.fromEntries(colonnes.map((k) => [k, l[k]]))
                 if (table === 'facture_lignes') {
                   const f = faux.tables.factures_emises.find((x) => x.id === l.facture_id)
                   projetee.factures_emises = f ? { dossier_id: f.dossier_id, source_de_la_vente: f.source_de_la_vente } : null
@@ -116,6 +119,13 @@ beforeEach(() => {
     ],
     encaissements_factures_taux: [part(), part({ encaissement_id: 'e2' }), part({ encaissement_id: 'e-d2', dossier_id: 'd2' })],
     lignes_bancaires: [mouvement(), mouvement({ id: 'm2', date: '2027-03-01', montant: -40 }), mouvement({ id: 'm-d2', dossier_id: 'd2' })],
+    // Le brouillon entier, que l'onglet TVA lit avec les sources (étape VF4c3) : une ligne d'une vente facturée, une ligne
+    // d'une pièce, et une ligne d'un autre dossier.
+    ecritures_brouillon: [
+      { id: 'b1', dossier_id: 'd1', encaissement_id: 'e1', facture_id: null, piece_id: null, date: '2027-02-01', compte: '445710', sens: 'credit', montant: 20, statut: 'proposee' },
+      { id: 'b2', dossier_id: 'd1', encaissement_id: null, facture_id: null, piece_id: 'p1', date: '2027-01-15', compte: '606100', sens: 'debit', montant: 30, statut: 'proposee' },
+      { id: 'b-d2', dossier_id: 'd2', encaissement_id: 'e-d2', facture_id: null, piece_id: null, date: '2027-02-01', compte: '445710', sens: 'credit', montant: 20, statut: 'proposee' },
+    ],
   }
 })
 
@@ -198,5 +208,47 @@ describe('lireLesSourcesDesEcrituresDeVente', () => {
     expect(s.factures.map((f) => f.id)).toEqual(['f-d2'])
     expect(s.encaissements.map((e) => e.id)).toEqual(['e-d2'])
     expect(s.mouvements.map((m) => m.id)).toEqual(['m-d2'])
+  })
+})
+
+// LES SOURCES ET LE BROUILLON ENTIER, LUS ENSEMBLE (étape VF4c3) : ce que l'onglet TVA confronte avant de liquider la TVA d'une
+// période qui porte une vente facturée. Tout ou rien, comme les sources ; chaque ligne du brouillon confrontée au dossier.
+describe('lireLesEcrituresDesVentes', () => {
+  it('lit les sources et le brouillon entier du dossier, et rien d’un autre', async () => {
+    const l = await lireLesEcrituresDesVentes('d1')
+    if (l.etat !== 'lue') throw new Error(l.motif)
+    expect(l.sources).toEqual(lue(await lireLesSourcesDesEcrituresDeVente('d1')))
+    expect(l.brouillon.map((b) => b.id)).toEqual(['b1', 'b2'])
+    expect(faux.demandes).toContain('ecritures_brouillon: *')
+  })
+
+  it('le brouillon lu en partie, refusé, ou qui fuit : RIEN ne se rend, et l’état dit pourquoi', async () => {
+    faux.muetApres = { ecritures_brouillon: 1 }
+    expect(await lireLesEcrituresDesVentes('d1')).toEqual({
+      dossierId: 'd1', etat: 'incomplete', motif: expect.stringMatching(/^le brouillon : 1 ligne\(s\) lue\(s\) sur 2 annoncée\(s\)/),
+    })
+    faux.muetApres = {}
+    faux.refus = { ecritures_brouillon: 'permission refusée' }
+    const refusee = await lireLesEcrituresDesVentes('d1')
+    expect(refusee.etat === 'incomplete' && refusee.motif).toMatch(/^le brouillon : .*permission refusée/)
+    faux.refus = {}
+    faux.fuite = { ecritures_brouillon: true }
+    expect(await lireLesEcrituresDesVentes('d1')).toEqual({
+      dossierId: 'd1', etat: 'incomplete', motif: "le brouillon : une ligne rendue n'est pas de ce dossier",
+    })
+  })
+
+  it('une source lue en partie : son motif, et le brouillon seul ne se rend pas', async () => {
+    for (const table of TABLES) {
+      faux.muetApres = { [table]: 0 }
+      const l = await lireLesEcrituresDesVentes('d1')
+      expect(l.etat, table).toBe('incomplete')
+      expect(l.etat === 'incomplete' && l.motif, table).not.toMatch(/^le brouillon/)
+    }
+  })
+
+  it('un client qui lève ne fait pas rejeter la lecture', async () => {
+    faux.leve = true
+    await expect(lireLesEcrituresDesVentes('d1')).resolves.toMatchObject({ dossierId: 'd1', etat: 'incomplete' })
   })
 })
