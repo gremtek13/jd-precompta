@@ -30452,3 +30452,120 @@ question entre dans la page des arbitrages : VF4C3-Q1, les frais d'un mouvement 
 - Le bouton du changement dit « Choisir ce compte », comme le choix.
 - Pour VF7 : numéroter et figer ces lignes, lever « écritures orphelines » ; la concordance d'un exercice sera alors
   bloquante pour les frais.
+
+**LA MISE EN LIGNE.** Demande #201, ouverte sur `deaca2b` après la barrière locale sous Node 22.23.3 sur le commit du
+code (`tsc -b` ; lint, 0 erreur et les 63 avertissements d'avant ; 438 fichiers et 13 310 tests sous Paris, UTC, New
+York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de 14 h 01 à 14 h 20
+UTC) ; fusionnée en « Rebase and merge » le 21/10/2026 à 14 h 21 UTC (`25eda69`, `0d7e1c6`), `main` linéaire, son arbre
+égal à celui de la branche ; le déploiement vert, et le site sert `index-4TKoOcN3.js` depuis 14 h 31, le bundle du build
+local ; la ligne 28.6 de la feuille de route mise à jour, puis relue par empreinte (12 376 positions) ; les barres
+d'avancement inchangées ; la question VF4C3-Q1 dans la page des arbitrages, et VF4C1-Q1 et VF4C2-Q1 notées faites sur la
+recommandation ; la copie de travail de l'agent retirée, son travail entier dans `main`. Le cabinet avait en fait
+tranché VF4C1-Q1 et VF4C2-Q1 le 21/10/2026 à 10 h 40 UTC, toutes deux à la recommandation, avant même la fusion : la
+relecture de la session, une requête sur leurs deux identifiants, ne rendait rien et ne l'a pas vu. Relue en entier le
+soir même, la collection porte 210 réponses, dont ces deux-là ; VF4C3-Q1 reste ouverte. La collection se relit désormais
+en entier.
+
+### 21/10/2026 — LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT — CHANTIER EC-Q3, LE LOT DE R1 (LIGNE 28.65)
+
+(Écrite par l'agent architecte du lot sur `0d7e1c6`, en trois commits que la session a relus puis réunis en un. Fichiers
+nouveaux : la migration `supabase/schema/20261021195226_lignes_propres_au_mouvement.sql` et
+`src/lib/lignesPropresAuMouvement.test.ts`. Modifiés : `contrepartieBanque.ts` et son test, `BanqueTab.test.tsx`,
+l'essai `supabase/essais/ecrituresVentesFacturees.sql`. Une migration, collée par le cabinet ; l'agent n'a lu en
+production que le catalogue. Depuis ce jour, le chantier EC-Q3 a sa ligne de feuille de route, la 28.65, à la demande du
+cabinet ; la 28.6 garde le pont livré du 8 au 10 octobre.)
+
+**LE DÉFAUT.** Le R1 de l'entrée de VF4b (« LES ÉCRITURES D'UNE VENTE FACTURÉE, EN BASE », « À REVOIR ») : un mouvement
+classé par ses encaissements, déclassé, puis dont l'encaissement du même jour est contre-passé sans mouvement — ou
+retiré —, redevient libre, mais porte encore des lignes d'une vente facturée : la banque de l'encaissement et celle de
+sa contre-passation, justes, ou celles, périmées, d'un encaissement retiré. Les dix-huit fonctions du relevé qui
+classent ou déclassent un mouvement supprimaient ses lignes sans pièce (quinze), toutes ses lignes (le règlement groupé
+et son retrait) ou celles des mouvements d'une déclaration (son retrait) : G5 refusait, en 42501, et le mouvement ne se
+classait plus. Un dix-neuvième chemin, dans le navigateur : le retrait d'une pièce rapprochée en engagement
+(`retirerContrepartieBanque`) déliait le mouvement, puis butait sur G5 en supprimant ses lignes. Fermé du côté sûr,
+inatteignable en production — aucun dossier n'a basculé —, à aligner avant toute bascule.
+
+**CE QUI CHANGE, ET RIEN D'AUTRE.** Dans les dix-huit, « and facture_id is null and encaissement_id is null » s'ajoute
+aux quarante-trois clauses qui désignent les lignes d'un mouvement — dix-huit qui jugent (« l'écriture de ce mouvement
+est validée »), dix-huit qui suppriment, sept qui vérifient l'équilibre de ce qu'elles viennent d'écrire —, et nulle
+part ailleurs : privé de ces filtres, chaque corps nouveau est la dernière définition d'avant au caractère près (18 sur
+18), et, au catalogue de la réplique, seules les dix-huit diffèrent, par leur corps seul. Deux colonnes, et non « toutes
+colonnes de source nulles » comme le retrait d'un mouvement de VF4b : sur une ligne qui porte un mouvement, les quatre
+autres colonnes de source sont nulles par quatre contraintes, que l'essai vérifie au catalogue (contrôle 155) ; et
+`piece_id` garde dans chaque fonction le sens qu'elle lui donnait — le règlement groupé et son retrait retirent aussi
+les lignes de leurs pièces, que l'application réécrit. Assouplir G5 a été écarté : elle laisserait partir la banque d'un
+encaissement contre-passé, une écriture juste. Ce qui en découle : une ligne d'une vente facturée validée ne retient
+plus le mouvement, dont elle n'est pas l'écriture (ce qui le fige reste `garder_mouvement_valide`), et ce qu'une
+fonction de retrait rend compte ses lignes propres. Dans le navigateur, `retirerContrepartieBanque` ne supprime, en
+engagement, que les lignes propres au mouvement ; en trésorerie, rien ne change. Les copies cherchées : dans tout
+`src/`, aucune autre suppression des lignes d'un mouvement ; dans les Edge Functions, `agent-comptable` seul nomme
+`ecritures_brouillon`, pour le lire. Aucun module ne redit ce que ces fonctions suppriment, jugent ou vérifient : rien à
+aligner.
+
+**LE GARDE.** `src/lib/lignesPropresAuMouvement.test.ts` part de TOUTES les dernières définitions de l'export et de tout
+le code du navigateur : une instruction qui désigne les lignes d'écriture d'un mouvement (`ligne_bancaire_id =` ou `in
+(`) doit écarter la facture et l'encaissement. Il en trouve quarante-six — les quarante-trois des dix-huit, et trois
+dans les deux fonctions de la vente facturée, qui les écartaient déjà —, et un plancher distingue « aucune faute » d'un
+lecteur devenu aveugle. Une migration qui redéfinirait l'une des dix-huit depuis un corps d'avant (PC4 en reprendra)
+vire au rouge avant d'être collée.
+
+**LE COLLAGE.** Le détecteur d'`apply_migration` retient le texte, dont les corps suppriment des écritures comme avant :
+sur l'accord du cabinet, il l'a collé dans l'éditeur SQL, dans un texte qui vérifiait sa propre empreinte (les fins de
+ligne Windows ramenées), exigeait la migration de VF4b, refusait une seconde application et posait la ligne d'historique
+sous la version de l'heure du collage, `20261021195226` (73 306 caractères, `76c37897…`, l'auteur de la migration de
+VF4b). Éprouvé d'abord sur la réplique : la même signature qu'une application par l'outil ; refusé altéré d'un
+caractère, sans VF4b, et une seconde fois ; accepté en fins de ligne Windows. Un retour arrière, prêt et éprouvé (66 038
+caractères, `108b37c0…`), rend les dix-huit définitions d'avant ; il supprime la ligne d'historique : jamais sans
+l'accord du cabinet. Donné d'abord dans un message écrit entre deux outils, le texte n'a pas paru sur l'iPhone du
+cabinet ; redonné dans le message final du tour, il a été collé du premier coup — la règle de CLAUDE.md le dit
+désormais.
+
+**LA RÉPLIQUE.** Montée à VF4b, sa signature égale à la production (neuf familles sur neuf), le jeu de départ des dix
+essais qui le cherchent semé, FICTIF, aux identifiants qu'ils attendent. Les cinquante-six essais, avant et après la
+migration : cinquante-quatre identiques ; `ecrituresVentesFacturees.sql` ne diffère que des douze contrôles de R1 (95,
+96, 130 à 139 : rouges sans la migration, justes avec) ; `transmissionsFactures.sql`, de ses identifiants tirés
+seulement. Au jeu de départ, de chaque côté : affectation 35, compteBilan 62, cotisationRapprochee 51, dotations 33,
+echeanceEmprunt 50, laBaseLitLePlan 54, reglementGroupe 51, reglesAffectation 25, ventilation 68, virementPersonnel 28 —
+457 verdicts justes, dont ceux des six essais que leurs suppressions tiennent hors de la production. `rls.sql` entier :
+46 invariants à 0 en faute, 43 mutations qui mordent, des deux côtés ; `validationExercice.sql` 151 sur 151 et
+`reportDesSoldes.sql` 52 sur 52, joués en super-utilisateur. Deux fautes d'avant, identiques des deux côtés, sans lien
+avec le lot : `ventesClient.sql`, contrôle 0c (la liste attendue des fonctions de la vente en compte 8, la base 19 :
+l'attendu a vieilli, et échouerait aussi en production) ; `forfaitKilometrique.sql`, contrôle 32 (la réplique n'a aucun
+bien à citer).
+
+**LA PRODUCTION, APRÈS LE COLLAGE.** La ligne d'historique relue (version `20261021195226`, `76c37897…`, 73 306
+caractères, l'auteur de VF4b, 144 migrations) ; le fichier de l'export renommé à cette version, son contenu inchangé ;
+la dérive, 144 fichiers et 144 migrations, empreinte globale `e1ece055…` des deux côtés ; le socle, 80 instructions,
+`5d53eea2…`, et l'inventaire, 2 122 objets, `b2666bf3…`, inchangés : la migration ne crée ni ne retire aucun objet. Les
+dix-huit corps en production sont ceux du fichier, empreinte par empreinte (18 sur 18), portent les quarante-trois
+clauses, et restent `security invoker`. L'essai `ecrituresVentesFacturees.sql`, rejoué sans ses lignes de commentaire
+(77 712 caractères, reçus tels quels, `ed45d71d…`) : 176 verdicts justes, et rien n'est resté en base. Les autres essais
+des mécanismes touchés ne sont pas rejoués en production : leurs fonctions y portent, corps pour corps, le texte qu'ils
+ont éprouvé sur la réplique, et sur une ligne qui ne porte ni facture ni encaissement — toutes, en production — chaque
+clause nouvelle dit ce que disait l'ancienne.
+
+**LES MUTATIONS.** Dans la migration, 129 mutants — chaque clause remise comme avant, puis privée du filtre de la
+facture, puis de celui de l'encaissement —, 129 tués par l'essai seul : deux lignes VALIDÉES et déséquilibrées posées
+sur le mouvement, l'une d'une facture, l'autre d'un encaissement, font de chaque filtre oublié un refus visible. Dans le
+navigateur, 3 sur 3, chacun par quatre tests. Le garde : 7 mutants, 6 tués ; survit « le plancher abaissé », par
+construction (un plancher ne se voit que si le lecteur perd des instructions).
+
+**LES PREUVES.** 7 tests de plus (13 310 avant, 13 317 après ; 439 fichiers), comparés test par test : aucun verdict
+changé, aucun disparu ; deux tests existants attendent désormais les deux filtres de la requête nouvelle
+(`contrepartieBanque.test.ts`, `BanqueTab.test.tsx`). La barrière locale sous Node 22.23.3 sur le commit du code
+(`4c381ed`) : `tsc -b` 0, son cache écarté d'abord ; lint 0 erreur (les 63 avertissements d'avant) ; 439 fichiers et 13
+317 tests sous les quatre fuseaux ; le build (`index-ChcTQI5l.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** La session a relu le code, l'a réuni en un commit, et a fait les
+vérifications de production. Aucune question nouvelle. VF4C1-Q1 et VF4C2-Q1, faites à la recommandation par VF4c3,
+avaient été tranchées ainsi par le cabinet le matin même (voir la mise en ligne de VF4c3) ; VF4C3-Q1 reste ouverte.
+
+**À REVOIR.**
+- `ventesClient.sql`, contrôle 0c : son attendu a vieilli (8 fonctions de la vente, quand la base en porte 19) ; à
+  recompter sur la liste de la base.
+- La batterie 130 à 139 joue les fonctions en propriétaire, sous l'identité du chef : la RLS n'y est pas dans la boucle
+  — elle l'est dans 96 et dans l'épreuve du navigateur sur la réplique.
+- Le contrôle 199 compte vingt tables entières : une écriture concurrente pendant l'essai le ferait mentir, sans que
+  rien ne reste pour autant.
+- Le choix des deux colonnes repose sur quatre contraintes : l'une relâchée, il se revoit, et le contrôle 155 le dira.
+- Avant toute bascule, restent les frais d'un mouvement d'encaissements dans la 2035 (VF4C3-Q1) ; puis VF5 à VF9.

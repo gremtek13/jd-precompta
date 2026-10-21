@@ -397,42 +397,44 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Défauts connus des Edge Functions** (3, `DEFAUTS_CONNUS`) : l'objet et l'expéditeur d'un e-mail reçu au journal
   (`receive-email`) : ne plus journaliser que des comptes, à écrire ; `taux-change-bce` sans contrôle d'appelant : la
   désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ».
-- **Une vente entrée deux fois ; la facture validée, source de sa vente** (ligne 28.6, EC-Q3) : CONÇUE le 18/10/2026 —
-  les moteurs lisent la facture et le registre des encaissements (la recette à sa date d'encaissement en trésorerie, la
-  créance à sa date en engagement, un taux soldé portant exactement la TVA facturée), la jumelle et le PDF désignés
-  « exemplaires » ne comptent plus, le double compte fermé en base (G1 à G5) ; la bascule par dossier, par le cabinet,
-  sans effet rétroactif, irréversible ; neuf étapes, VF1 à VF9 ; ses questions (EC3-Q1 à Q12, EC3-Q6b, VF2-Q2) tranchées
-  le 19/10/2026 à la recommandation, VF3-Q1 (la règle du cumul), VF6-Q1 (défaire l'exemplaire d'une facture source),
-  VF4A-Q1 (le nom du 706000 et du 627000) et VF4A-Q2 (le compte d'une compensation) le 20/10/2026, de même ; fini avant
-  que les clients facturent réellement ici → « LA FACTURE VALIDÉE, SOURCE DE SA VENTE : LA CONCEPTION ». VF1 en ligne le
-  18/10/2026 (28.6-Q1) : l'exemplaire d'une facture, en base (VF1a) puis désigné et défait depuis la fiche d'une pièce
-  de vente (VF1b) → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». VF2 en base le
-  19/10/2026, neutre (le réglage du dossier, la source fixée à la validation, les encaissements d'une facture source, le
-  mouvement réservé puis classé par ses encaissements) → « LA SOURCE DE LA VENTE, EN BASE ». VF3a le 19/10/2026,
-  neutre : une SECONDE forme, `VentesFacturees` (`lib/ventesFacturees.ts`, pur, et sa lecture) → « LES VENTES FACTURÉES,
-  EN MODULE ». VF3b le 19/10/2026, en trois lots : la 2035 (Clôture, la Révision), la CA3 (l'onglet TVA), la situation
-  et l'estimation (Financement, Estimation) les lisent, « Ma simulation » dit ne pas les compter jusqu'à VF8, et les
-  confirmations de VF1b disent ce qui se compte ; jusqu'à VF4, une part sans compte et une déclaration qui ne
-  s'enregistre pas → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION,
-  L'ESTIMATION ET LA SIMULATION LISENT LES VENTES FACTURÉES ». VF4a le 20/10/2026, neutre : les six rôles de la vente
-  facturée entrent dans le plan de l'application, et ses écritures se composent en module pur
-  (`lib/ecrituresVentesFacturees.ts`), que rien ne lit encore → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN MODULE ». VF4b
-  le 20/10/2026, neutre : les fonctions qui vérifient et remplacent ces écritures (`ecrire_vente_facturee`,
-  `retirer_ecriture_vente_facturee`), la garde G5 et le compte d'une compensation, en base — une migration collée par le
-  cabinet —, et `lib/ecritureVenteFacturee.ts`, qui redit leurs refus → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN BASE ».
-  VF4c1 le 20/10/2026, neutre : l'onglet Écritures écrit, réécrit et retire ces écritures, source par source, et le
-  cabinet y choisit le compte d'une compensation → « L'ONGLET ÉCRITURES ÉCRIT LES VENTES FACTURÉES ». VF4c2 le
-  21/10/2026 : le FEC, la piste d'audit et le lettrage lisent ces écritures, et le 706000 et le 627000 prennent le nom
-  du plan comptable général (VF4A-Q1) ; neutre hors de ce nom, qu'aucune ligne de la production ne porte → « LE FEC, LA
-  PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES ». VF4c3 le 21/10/2026, neutre : la concordance de la 2035 et
-  la CA3 lisent ces écritures — une période se déclare quand celles de ses ventes facturées sont à jour —, « Changer le
-  compte » d'une compensation (VF4C1-Q1) et le nom du plan comptable général pour les quatre autres comptes (VF4C2-Q1),
-  toutes deux sur la recommandation → « LA 2035 ET LA CA3 LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE ». Restent le lot de
-  R1 (les dix-neuf retraits des lignes d'un mouvement, que G5 refuse sur un mouvement libéré qui porte encore des lignes
-  d'un encaissement : fermé du côté sûr, à aligner avant toute bascule), les frais d'un mouvement d'encaissements, que
-  la 2035 ne compte pas encore (VF4C3-Q1, ouverte ; avant toute bascule), puis VF5 à VF9 — se conçoivent les
-  encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2) ;
-  à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
+- **Une vente entrée deux fois ; la facture validée, source de sa vente** (ligne 28.6 ; EC-Q3 a la sienne, la 28.65,
+  depuis le 21/10/2026) : CONÇUE le 18/10/2026 — les moteurs lisent la facture et le registre des encaissements (la
+  recette à sa date d'encaissement en trésorerie, la créance à sa date en engagement, un taux soldé portant exactement
+  la TVA facturée), la jumelle et le PDF désignés « exemplaires » ne comptent plus, le double compte fermé en base (G1 à
+  G5) ; la bascule par dossier, par le cabinet, sans effet rétroactif, irréversible ; neuf étapes, VF1 à VF9 ; ses
+  questions (EC3-Q1 à Q12, EC3-Q6b, VF2-Q2) tranchées le 19/10/2026 à la recommandation, VF3-Q1 (la règle du cumul),
+  VF6-Q1 (défaire l'exemplaire d'une facture source), VF4A-Q1 (le nom du 706000 et du 627000) et VF4A-Q2 (le compte
+  d'une compensation) le 20/10/2026, VF4C1-Q1 (changer le compte d'une compensation) et VF4C2-Q1 (le nom des quatre
+  autres comptes) le 21/10/2026, de même ; fini avant que les clients facturent réellement ici → « LA FACTURE VALIDÉE,
+  SOURCE DE SA VENTE : LA CONCEPTION ». VF1 en ligne le 18/10/2026 (28.6-Q1) : l'exemplaire d'une facture, en base
+  (VF1a) puis désigné et défait depuis la fiche d'une pièce de vente (VF1b) → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE »,
+  « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». VF2 en base le 19/10/2026, neutre (le réglage du dossier, la source fixée à
+  la validation, les encaissements d'une facture source, le mouvement réservé puis classé par ses encaissements) → « LA
+  SOURCE DE LA VENTE, EN BASE ». VF3a le 19/10/2026, neutre : une SECONDE forme, `VentesFacturees`
+  (`lib/ventesFacturees.ts`, pur, et sa lecture) → « LES VENTES FACTURÉES, EN MODULE ». VF3b le 19/10/2026, en trois
+  lots : la 2035 (Clôture, la Révision), la CA3 (l'onglet TVA), la situation et l'estimation (Financement, Estimation)
+  les lisent, « Ma simulation » dit ne pas les compter jusqu'à VF8, et les confirmations de VF1b disent ce qui se
+  compte ; jusqu'à VF4, une part sans compte et une déclaration qui ne s'enregistre pas → « LA 2035 LIT LES VENTES
+  FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION, L'ESTIMATION ET LA SIMULATION LISENT LES VENTES
+  FACTURÉES ». VF4a le 20/10/2026, neutre : les six rôles de la vente facturée entrent dans le plan de l'application, et
+  ses écritures se composent en module pur (`lib/ecrituresVentesFacturees.ts`), que rien ne lit encore → « LES ÉCRITURES
+  D'UNE VENTE FACTURÉE, EN MODULE ». VF4b le 20/10/2026, neutre : les fonctions qui vérifient et remplacent ces
+  écritures (`ecrire_vente_facturee`, `retirer_ecriture_vente_facturee`), la garde G5 et le compte d'une compensation,
+  en base — une migration collée par le cabinet —, et `lib/ecritureVenteFacturee.ts`, qui redit leurs refus → « LES
+  ÉCRITURES D'UNE VENTE FACTURÉE, EN BASE ». VF4c1 le 20/10/2026, neutre : l'onglet Écritures écrit, réécrit et retire
+  ces écritures, source par source, et le cabinet y choisit le compte d'une compensation → « L'ONGLET ÉCRITURES ÉCRIT
+  LES VENTES FACTURÉES ». VF4c2 le 21/10/2026 : le FEC, la piste d'audit et le lettrage lisent ces écritures, et le
+  706000 et le 627000 prennent le nom du plan comptable général (VF4A-Q1) ; neutre hors de ce nom, qu'aucune ligne de la
+  production ne porte → « LE FEC, LA PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES ». VF4c3 le 21/10/2026,
+  neutre : la concordance de la 2035 et la CA3 lisent ces écritures — une période se déclare quand celles de ses ventes
+  facturées sont à jour —, « Changer le compte » d'une compensation (VF4C1-Q1) et le nom du plan comptable général pour
+  les quatre autres comptes (VF4C2-Q1), toutes deux sur la recommandation → « LA 2035 ET LA CA3 LISENT LES ÉCRITURES
+  D'UNE VENTE FACTURÉE ». Le lot du mouvement libéré (R1 de VF4b) le 21/10/2026, neutre : les dix-huit fonctions du
+  relevé et le navigateur ne suppriment, ne jugent et ne vérifient que les lignes propres au mouvement — une migration
+  collée par le cabinet → « LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT ». Restent les frais
+  d'un mouvement d'encaissements, que la 2035 ne compte pas encore (VF4C3-Q1, ouverte ; avant toute bascule), puis VF5 à
+  VF9 — se conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et
+  quand : à VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -661,11 +663,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Trois portes vers l'écriture** : `categorie_id`, `compte_comptable`, `poste_2035`, à diagnostiquer ensemble ; une
   valeur par défaut connue s'applique d'elle-même.
 - **Chaque mouvement du relevé s'écrit par une fonction SQL qui VÉRIFIE l'écriture composée par l'application**, d'un
-  seul tenant ; ses refus dits avant le clic, dans le même ordre ; les règles PROPOSENT, le clic écrit ; un mouvement
-  dont le justificatif est peut-être au dossier n'entre jamais dans un lot → « LES RÈGLES D'AFFECTATION PROPOSENT »,
-  « UN VIREMENT PERSONNEL S'ÉCRIT », « UNE ÉCHÉANCE D'EMPRUNT S'ÉCRIT », « UN MOUVEMENT SE VENTILE », « UN VIREMENT
-  RÈGLE PLUSIEURS PIÈCES », « UNE RECETTE DU RELEVÉ D'UN DOSSIER ASSUJETTI », « UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE »,
-  « UN MOUVEMENT DU RELEVÉ S'ÉCRIT SUR UN COMPTE DE BILAN ».
+  seul tenant ; elle ne supprime, ne juge et ne vérifie que les lignes PROPRES au mouvement, jamais celles d'une facture
+  ou d'un encaissement (`lignesPropresAuMouvement.test.ts`) ; ses refus dits avant le clic, dans le même ordre ; les
+  règles PROPOSENT, le clic écrit ; un mouvement dont le justificatif est peut-être au dossier n'entre jamais dans un
+  lot → « LES RÈGLES D'AFFECTATION PROPOSENT », « UN VIREMENT PERSONNEL S'ÉCRIT », « UNE ÉCHÉANCE D'EMPRUNT S'ÉCRIT »,
+  « UN MOUVEMENT SE VENTILE », « UN VIREMENT RÈGLE PLUSIEURS PIÈCES », « UNE RECETTE DU RELEVÉ D'UN DOSSIER ASSUJETTI »,
+  « UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE », « UN MOUVEMENT DU RELEVÉ S'ÉCRIT SUR UN COMPTE DE BILAN », « LES FONCTIONS
+  DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT ».
 - **Une cotisation payée depuis le compte PERSONNEL** est un apport (PCG art. 1211-10), face au compte du dirigeant, à
   la date saisie, jamais proposée ; un mouvement OU le compte personnel, jamais les deux → « UNE ÉCHÉANCE PAYÉE DEPUIS
   LE COMPTE PERSONNEL S'ÉCRIT ». Les écritures d'inventaire suivent la même règle → « LES DOTATIONS AUX AMORTISSEMENTS
@@ -797,11 +801,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   les recompose en entiers et les compare en multiensemble, et ne se retirent que par `retirer_ecriture_vente_facturee`
   (la garde G5) ; le compte d'une compensation sans mouvement est une colonne de l'encaissement, choisie par le cabinet
   seul (`choisir_compte_contrepartie`), que le client « Ventes » lit ; un mouvement libéré qui porte encore des lignes
-  d'un encaissement ne se reclasse pas (R1) → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN BASE ». Elles se passent depuis
-  la section « Ventes facturées » de l'onglet Écritures, côté cabinet, pour un dossier basculé : l'état de chaque source
-  (à écrire, à jour, à réécrire, à retirer, validée, ne s'écrit pas) se calcule dans
-  `lib/ecrituresVentesFactureesEcran.ts`, sur des lectures faites en entier dans la même relecture que le brouillon ;
-  ces lignes ne sont pas des ruptures de la piste d'audit, dans l'onglet comme dans la Checklist
+  d'un encaissement se classe, ces lignes intactes : les fonctions du relevé n'en touchent que les lignes propres →
+  « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN BASE », « LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU
+  MOUVEMENT ». Elles se passent depuis la section « Ventes facturées » de l'onglet Écritures, côté cabinet, pour un
+  dossier basculé : l'état de chaque source (à écrire, à jour, à réécrire, à retirer, validée, ne s'écrit pas) se
+  calcule dans `lib/ecrituresVentesFactureesEcran.ts`, sur des lectures faites en entier dans la même relecture que le
+  brouillon ; ces lignes ne sont pas des ruptures de la piste d'audit, dans l'onglet comme dans la Checklist
   (`ligneDUneVenteFacturee`) → « L'ONGLET ÉCRITURES ÉCRIT LES VENTES FACTURÉES ». Le FEC, la piste d'audit et le
   lettrage les lisent depuis VF4c2 : chaque ligne retrouve son écriture composée par sa SOURCE et sa DATE, jamais par un
   montant ni un libellé, et seulement si les lignes de la source à cette date SONT cette écriture
@@ -912,12 +917,14 @@ et `supabase/config.toml` ne porte que `verify_jwt`.
   la Commission, documentations des plateformes, RFC), et le code cite la sienne. Une bibliothèque tierce se lit pour
   des noms de champs, jamais pour en copier le code.
 - **Ce que le cabinet doit coller ou recopier se donne DANS la conversation**, en bloc de code prêt à coller : il suit
-  la session sur iPhone, qui n'ouvre pas les fichiers qu'elle lui envoie. Un fichier peut accompagner le texte, jamais
-  le remplacer.
+  la session sur iPhone, qui n'ouvre pas les fichiers qu'elle lui envoie. Le bloc va dans le message qui CLÔT le tour :
+  écrit entre deux outils, il ne lui parvient pas (21/10/2026). Un fichier peut accompagner le texte, jamais le
+  remplacer.
 - **Les questions au cabinet ont leur page** : l'artefact privé « Arbitrages du cabinet », une fiche par question avec
-  sa recommandation, ses réponses dans la collection `reponses`. À chaque reprise, la session relit cette collection
-  (outil ArtifactData) et consigne ce qui a été tranché ; une question nouvelle y entre, une question tranchée ailleurs
-  en sort. Son adresse n'entre pas au dépôt (public) : `Artifact list` la retrouve par son titre.
+  sa recommandation, ses réponses dans la collection `reponses`. À chaque reprise, la session relit cette collection EN
+  ENTIER (outil ArtifactData, `list` ; une requête sur des identifiants n'en rend rien) et consigne ce qui a été
+  tranché ; une question nouvelle y entre, une question tranchée ailleurs en sort. Son adresse n'entre pas au dépôt
+  (public) : `Artifact list` la retrouve par son titre.
 - **Quand `apply_migration` attend une confirmation qui n'arrive pas** (un texte qui contient une suppression, même dans
   le corps d'une fonction), on ne contourne pas le détecteur — ni texte réécrit, ni `execute_sql`. Le cabinet colle la
   migration dans l'éditeur SQL de Supabase, dans une transaction, avec la ligne d'historique que l'outil aurait posée
