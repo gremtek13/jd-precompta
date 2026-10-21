@@ -63,8 +63,11 @@ import {
 // opération non imposable (E2) ; une exigibilité négative, une régularisation (B5 et 21 ; F8 à 0 %), jamais une somme
 // négative sur la ligne d'un taux. La pièce désignée comme l'EXEMPLAIRE d'une facture source ne compte plus, ni comme
 // opération, ni comme pièce à valider : sa facture compte la vente. Elle se dit, dans la période où elle aurait compté.
-// Ces exigibilités n'ont AUCUNE écriture avant l'étape VF4 : elles n'entrent pas dans `tvaDesComptes`, et la déclaration
-// d'une période qui en porte ne s'enregistre pas encore (`refusEnregistrement`, lib/liquidationTva.ts).
+// LEURS ÉCRITURES (étape VF4c3) portent au compte de la TVA collectée EXACTEMENT la TVA de ces exigibilités, à leur date
+// (lib/ecrituresVentesFacturees.ts, qui la lit du même module sans la recalculer) : elles entrent dans `tvaDesComptes`, et
+// la liquidation les solde. Une période ne s'enregistre que quand les écritures de ses ventes facturées sont à jour
+// (`refusEnregistrement`, lib/liquidationTva.ts) — sinon le compte ne porterait pas ce que la liquidation retire. La TVA
+// en attente d'un dossier en engagement (445800) n'y entre pas : elle ne passe au 445710 qu'à son exigibilité.
 //
 // LE REMBOURSEMENT D'UN CRÉDIT (ligne 26, formulaire 3519) se demande : c'est le cabinet qui le choisit, dans
 // la limite du crédit de la période (ligne 25), et le reste se reporte (ligne 27). Sa liquidation le porte au
@@ -391,7 +394,7 @@ export interface DeclarationCa3 {
   releveRetenues: RecetteDuReleveRetenue[]
   releveEcartees: RecetteDuReleveEcartee[]
   // LES VENTES FACTURÉES DE LA PÉRIODE (lib/ventesFacturees.ts) : leurs exigibilités datées dans la période, retenues à leur
-  // ligne ou écartées avec leur motif. Ni les unes ni les autres n'ont encore d'écriture (VF4).
+  // ligne ou écartées avec leur motif. Leur TVA est au 445710 dès que leurs écritures sont passées (étape VF4c3).
   exigibilitesRetenues: ExigibiliteRetenue[]
   exigibilitesEcartees: ExigibiliteEcartee[]
   // Les factures sources que le module ne sait pas compter sans deviner : rien d'elles n'entre, un vrai trou dans les
@@ -404,10 +407,10 @@ export interface DeclarationCa3 {
   // CE QUE LA LIQUIDATION RETIRE DES COMPTES DE TVA, au centime, en euros (lib/liquidationTva.ts) : la TVA
   // collectée nette (445710), déductible (445660) et déductible sur immobilisations (445620) que portent les
   // écritures des pièces et des recettes du relevé retenues — signées comme ces écritures, un avoir en moins.
-  // Ce qui sépare ces montants des lignes de la CA3 est l'arrondi à l'euro de chaque ligne, et lui seul — sauf la TVA
-  // des ventes facturées, que les lignes comptent et qu'aucune écriture ne porte avant l'étape VF4 : elle n'est PAS ici,
-  // et une déclaration qui en porte ne s'enregistre pas (`refusEnregistrement`), faute de quoi la liquidation solderait au
-  // 445710 une TVA qu'aucune écriture n'y a créditée, ou l'arrondi l'absorberait sous dix euros.
+  // Ce qui sépare ces montants des lignes de la CA3 est l'arrondi à l'euro de chaque ligne, et lui seul. LA TVA DES
+  // VENTES FACTURÉES Y EST (étape VF4c3) : celle de chaque exigibilité de la période, retenue ou écartée — leurs écritures
+  // la portent toute au 445710, à sa date ; une exigibilité écartée, qu'aucune ligne ne déclare, retient l'enregistrement
+  // (`refusEnregistrement`), qui attend aussi que ces écritures soient à jour.
   tvaDesComptes: TvaDesComptes
 }
 
@@ -645,10 +648,12 @@ export function calculerCa3(
   // la TVA facturée, et refaire la TVA d'une part depuis son montant et son taux la ferait s'écarter d'un centime à chaque
   // paiement partiel. Le régime est celui de la facture, déjà appliqué par le module : `surDebits` n'a rien à faire ici —
   // une facture source de services sur le régime de l'encaissement compte à ses encaissements, même si le dossier a opté
-  // depuis pour les débits, et inversement. Et rien n'entre dans `comptes` : aucune écriture ne les porte avant VF4.
+  // depuis pour les débits, et inversement. Leur TVA entre dans `comptes`, celle d'une exigibilité écartée comprise : leurs
+  // écritures la portent au 445710 à cette date, sans recalcul (lib/ecrituresVentesFacturees.ts).
   for (const e of donnees.ventesFacturees.exigibilites) {
     if (!dansLaPeriode(e.date)) continue
     const { baseCentimes: base, tvaCentimes: tva } = e
+    comptes.collectee += tva
     // Zéro : une franchise, une exonération ou une opération que la facture ne taxe pas, aucune ligne de taux. Négative,
     // c'est la régularisation d'une opération non imposable.
     if (e.taux === 0) {

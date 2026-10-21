@@ -7,6 +7,8 @@ import type { CleRoleComptable, PlanComptable } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { DeclarationTva, EcritureBrouillon, LigneBancaire, PeriodiciteTva } from './types'
 import { dateFigee, estFigee } from './validationExercice'
+import type { SourceEcritureVente } from './ecrituresVentesFacturees'
+import type { ExigibiliteVenteFacturee } from './ventesFacturees'
 
 // LA TVA SE LIQUIDE, SON PAIEMENT ET SON REMBOURSEMENT S'ÉCRIVENT (ligne 26.8 de la feuille de route).
 //
@@ -180,6 +182,9 @@ export interface ContexteDeDeclaration {
   // La date des à-nouveaux d'un dossier repris, ou null.
   ouverture: string | null
   anneesValidees: readonly number[]
+  // Les écritures des ventes facturées du dossier, telles que l'onglet les a lues (`EcrituresDesVentesDeLaCa3`) : une
+  // période qui en compte ne s'enregistre que quand elles sont à jour. Sans valeur par défaut.
+  ventesFacturees: EcrituresDesVentesDeLaCa3
 }
 
 // Les trois montants que la déclaration enregistre : ceux de la CA3, ou ceux saisis.
@@ -188,27 +193,128 @@ function montantsDeLaDemande(demande: DemandeDeDeclaration): { tva: number | nul
   return { tva: demande.tvaDeclaree, credit: demande.credit, remboursement: demande.remboursement }
 }
 
-// LES VENTES FACTURÉES NE S'ÉCRIVENT PAS ENCORE (ligne 28.6, chantier EC-Q3, étape VF3b2). La CA3 compte la TVA d'une facture
-// source à son exigibilité (lib/declarationTva.ts), mais aucune écriture ne la porte au compte de la TVA collectée avant
-// l'étape VF4 (conception, § 5). Enregistrée, la déclaration d'une telle période la LIQUIDERAIT quand même : la TVA des
-// comptes (`tvaDesComptes`) ne la porte pas, si bien que l'écart entre la TVA déclarée et celle des comptes irait à
-// l'arrondi — absorbée en silence au 658000 sous dix euros (`ARRONDI_MAXIMAL`), refusée au-delà sous une phrase qui ne
-// dirait pas pourquoi. Et la porter dans `tvaDesComptes` solderait au 445710 une TVA qu'aucune écriture n'y a créditée. La
-// base ne le voit pas : `enregistrer_declaration_tva` vérifie la déclaration contre elle-même, pas contre le brouillon.
-// D'où un refus de l'application, dit avant le clic, jusqu'à VF4 — comme la validation d'un exercice attend leurs écritures
-// depuis l'étape VF3b1 (`vente_facturee_non_ecrite`, lib/concordance2035.ts). Une exigibilité ÉCARTÉE de la CA3 (un taux à
-// placer à la main) compte aussi : le cabinet la reporte sur la déclaration déposée, et rien ne l'écrit davantage.
-export const REFUS_VENTES_FACTUREES_NON_ECRITES =
-  'Les ventes facturées ne s’écrivent pas encore : la liquidation attend leurs écritures. Cette période compte la TVA '
-  + 'd’une facture émise dans l’application, source de sa vente, qu’aucune écriture ne porte encore au compte de la TVA '
-  + 'collectée ; enregistrée, la déclaration la solderait sans qu’elle y ait été portée.'
+// LES VENTES FACTURÉES, À LA LIQUIDATION (ligne 28.6, chantier EC-Q3 ; étape VF3b2, puis VF4c3). La CA3 compte la TVA d'une
+// facture source à son exigibilité (lib/declarationTva.ts), et ses écritures la portent au compte de la TVA collectée à
+// cette date, au centime (lib/ecrituresVentesFacturees.ts, qui la lit du même module) : `tvaDesComptes` la compte, et la
+// liquidation la solde. Mais seulement si ces écritures SONT au brouillon, telles que leurs sources les commandent : la
+// base ne le vérifie pas — `enregistrer_declaration_tva` juge la déclaration contre elle-même, pas contre le brouillon —,
+// et sans elles la liquidation solderait au 445710 une TVA qu'aucune écriture n'y a portée. D'où trois refus de
+// l'application, dits avant le clic, après l'exercice validé et avant l'équilibre de la liquidation, dont ils sont la vraie
+// cause (`refusDesVentesFacturees`) :
+//   - UNE EXIGIBILITÉ ÉCARTÉE de la CA3 (2,1 %, un taux de la Corse ou d'outre-mer) : son écriture porte sa TVA au 445710,
+//     mais aucune ligne de la déclaration de l'application ne la porte, et `enregistrer_declaration_tva` n'admet qu'une CA3
+//     qui se déduit de ses lignes. Rien ne peut la porter juste : le refus reste pour elle ;
+//   - LES ÉCRITURES DES VENTES FACTURÉES PAS LUES EN ENTIER — pas encore revenues, partielles, refusées, ou qui ne se tiennent
+//     pas avec leurs sources : côté fermé, on ne sait pas ce que le 445710 porte ;
+//   - UNE SOURCE DE LA PÉRIODE QUI N'EST PAS À JOUR — une facture, un avoir ou un encaissement dont une exigibilité tombe dans
+//     la période, ou dont une écriture composée ou proposée y est datée : à écrire, à réécrire, à retirer, ou qui ne s'écrit
+//     pas (un compte de contrepartie à choisir) ; validée ou à jour, elle porte exactement ce que la CA3 compte. Le
+//     mouvement que des encaissements classent n'en est pas : son écriture ne touche aucun compte de TVA.
+// Une période qu'aucune vente facturée ne touche s'enregistre comme hier, une fois ces écritures lues.
+
+/**
+ * Ce que l'onglet TVA sait des écritures des ventes facturées du dossier. `sans_bascule` : le dossier n'a pas basculé —
+ * aucune facture n'y est source, la base le garantit, et rien n'est à lire. `en_attente` : la lecture n'est pas revenue.
+ * `incomplete` : partielle, refusée ou rompue. `lue` : l'état de chaque source (lib/ecrituresVentesFactureesEcran.ts),
+ * incohérent compris. Sans valeur par défaut.
+ */
+export type EcrituresDesVentesDeLaCa3 =
+  | { etat: 'sans_bascule' }
+  | { etat: 'en_attente' }
+  | { etat: 'incomplete'; motif: string }
+  | { etat: 'lue'; etats: EtatsDesSourcesDeVente }
+
+// CE QUE LA LIQUIDATION LIT DE L'ÉTAT DES SOURCES (`etatsDesVentesFacturees`, lib/ecrituresVentesFactureesEcran.ts), décrit
+// ici et non importé : ce module est lu par la 2035, que l'espace du client atteint, et le module d'écran des ventes facturées
+// est au cabinet seul, import de type compris (ventesFactureesEcrituresCabinetSeul.test.ts suit chaque `from`). Le
+// compilateur confronte les deux formes là où l'onglet TVA passe l'une pour l'autre, et liquidationTva.test.ts aussi.
+export type EtatDeLaSourceDeVente = 'a_ecrire' | 'a_jour' | 'a_reecrire' | 'a_retirer' | 'validee' | 'ne_s_ecrit_pas'
+export type EtatsDesSourcesDeVente =
+  | {
+    etat: 'lus'
+    sources: readonly {
+      source: SourceEcritureVente; etat: EtatDeLaSourceDeVente; nom: string
+      aEcrire: readonly { date: string }[]; proposees: readonly { date: string }[]
+    }[]
+  }
+  | { etat: 'incoherent'; motif: string }
+
+export const REFUS_VENTES_FACTUREES_EN_ATTENTE =
+  'Les écritures des ventes facturées ne sont pas encore lues : la liquidation ne s’enregistre qu’une fois vérifié que '
+  + 'chacune porte la TVA que la déclaration compte.'
+
+const tauxEnClair = (taux: number) => `${String(taux).replace('.', ',')} %`
+
+// L'état d'une source en mots : ceux de la section « Ventes facturées » (`LIBELLE_ETAT_SOURCE`), qu'un test confronte à
+// cette copie — le module d'écran n'est pas importé ici (voir plus haut).
+export const ETAT_DE_LA_SOURCE_EN_MOTS: Readonly<Record<EtatDeLaSourceDeVente, string>> = {
+  a_ecrire: 'à écrire', a_jour: 'à jour', a_reecrire: 'à réécrire', a_retirer: 'à retirer', validee: 'validée', ne_s_ecrit_pas: 'ne s’écrit pas',
+}
+
+// La source qu'une exigibilité rend exigible : son encaissement, son avoir, ou sa facture (la livraison d'un bien, la
+// facture sur l'option pour les débits) — l'écriture que la composition passe pour elle.
+function sourceDeLExigibilite(s: SourceEcritureVente, x: ExigibiliteVenteFacturee): boolean {
+  if (x.origine === 'encaissement') return s.genre === 'encaissement' && s.encaissementId === x.encaissementId
+  if (x.origine === 'avoir') return s.genre === 'avoir' && s.factureId === x.avoirId
+  return s.genre === 'facture' && s.factureId === x.factureId
+}
+
+/**
+ * Pourquoi la déclaration de cette période ne peut pas s'enregistrer à cause de ses ventes facturées, sous des mots qui
+ * nomment ce qui manque ; nul quand rien ne la retient. Dans l'ordre : une exigibilité écartée, une lecture qui manque,
+ * une source qui n'est pas à jour.
+ */
+export function refusDesVentesFacturees(ca3: DeclarationCa3, ecritures: EcrituresDesVentesDeLaCa3): string | null {
+  if (ca3.exigibilitesEcartees.length > 0) {
+    const liste = ca3.exigibilitesEcartees.map(({ exigibilite: x }) =>
+      `${x.numero ?? 'sans numéro'} (${x.tiers}) à ${tauxEnClair(x.taux)}, ${formatMoney(x.tvaCentimes / 100)} de TVA`).join(' ; ')
+    return `Cette période compte la TVA d’une vente facturée à un taux qu’aucune ligne de la déclaration ne range (${liste}) : `
+      + 'son écriture la porte au compte de la TVA collectée, et la liquidation la solderait sans qu’elle soit déclarée. '
+      + 'Cette déclaration se dépose et se liquide hors de l’application.'
+  }
+  const { debut, fin } = ca3.periode
+  const dans = (date: string) => date >= debut && date <= fin
+  const exigibles = [...ca3.exigibilitesRetenues, ...ca3.exigibilitesEcartees].map((r) => r.exigibilite)
+  switch (ecritures.etat) {
+    case 'sans_bascule':
+      return exigibles.length === 0 ? null
+        : 'Cette période compte la TVA d’une facture source de sa vente, alors que le dossier ne se dit pas basculé : '
+          + 'les lectures ne se tiennent pas. Recharge la page.'
+    case 'en_attente':
+      return REFUS_VENTES_FACTUREES_EN_ATTENTE
+    case 'incomplete':
+      return `Les écritures des ventes facturées n’ont pas pu être lues en entier (${ecritures.motif}) : la liquidation ne `
+        + 'se décide pas sur une lecture partielle. Recharge la page.'
+  }
+  if (ecritures.etats.etat === 'incoherent') {
+    return `Les écritures des ventes facturées ne se tiennent pas avec leurs sources (${ecritures.etats.motif}) : la `
+      + 'liquidation ne se décide pas sur elles. Recharge la page.'
+  }
+  const sources = ecritures.etats.sources
+  const enRetard: string[] = []
+  for (const x of exigibles) {
+    if (!sources.some((s) => sourceDeLExigibilite(s.source, x))) {
+      enRetard.push(`une source de la facture ${x.numero ?? 'sans numéro'} que l’état des écritures ne liste pas`)
+    }
+  }
+  for (const s of sources) {
+    if (s.source.genre === 'mouvement' || s.etat === 'a_jour' || s.etat === 'validee') continue
+    const concernee = exigibles.some((x) => sourceDeLExigibilite(s.source, x))
+      || s.aEcrire.some((e) => dans(e.date)) || s.proposees.some((l) => dans(l.date))
+    if (concernee) enRetard.push(`${s.nom} (${ETAT_DE_LA_SOURCE_EN_MOTS[s.etat]})`)
+  }
+  if (enRetard.length === 0) return null
+  return `La liquidation attend les écritures des ventes facturées de la période : ${enRetard.join(' ; ')}. Sans elles, `
+    + 'elle solderait au compte de la TVA collectée une TVA qu’aucune écriture à jour n’y porte. Elles se passent depuis la '
+    + 'section « Ventes facturées » de l’onglet Écritures.'
+}
 
 // POURQUOI CETTE DÉCLARATION NE PEUT PAS S'ENREGISTRER, dit AVANT le clic, dans l'ordre de la base : la fonction
 // (`enregistrer_declaration_tva`), puis le déclencheur de la validation, puis la liquidation (`ecrire_liquidation_tva`).
 // Deux refus de plus que la base. Un remboursement en centimes, qui la précède — la CA3 se dépose en euros entiers, et la
-// base le refuserait plus loin, sous une phrase qui ne dirait pas pourquoi. Et une période qui porte une vente facturée
-// (`REFUS_VENTES_FACTUREES_NON_ECRITES`), que la base accepterait : dit avant l'équilibre de la liquidation, dont il est
-// la vraie raison.
+// base le refuserait plus loin, sous une phrase qui ne dirait pas pourquoi. Et les ventes facturées de la période
+// (`refusDesVentesFacturees`), que la base accepterait : dites avant l'équilibre de la liquidation, dont elles sont la
+// vraie raison.
 export function refusEnregistrement(demande: DemandeDeDeclaration, contexte: ContexteDeDeclaration): string | null {
   const { debut, fin } = demande.periode
   if (!contexte.assujettiTva) return 'Ce dossier n’est pas assujetti à la TVA : il n’a pas de déclaration à enregistrer.'
@@ -240,9 +346,8 @@ export function refusEnregistrement(demande: DemandeDeDeclaration, contexte: Con
   const figee = dateFigee(fin, contexte.anneesValidees)
   if (figee) return `${figee} : une déclaration de TVA ne s’y enregistre plus.`
   if (demande.ca3) {
-    if (demande.ca3.exigibilitesRetenues.length > 0 || demande.ca3.exigibilitesEcartees.length > 0) {
-      return REFUS_VENTES_FACTUREES_NON_ECRITES
-    }
+    const ventes = refusDesVentesFacturees(demande.ca3, contexte.ventesFacturees)
+    if (ventes) return ventes
     const arrondi = Math.abs(arrondiDeLaLiquidation(declarationDeLaCa3(demande.ca3, demande.periode)))
     if (arrondi > ARRONDI_MAXIMAL) {
       return `La liquidation ne s’équilibre pas : un écart de ${formatMoney(arrondi)} entre la TVA des comptes et la `

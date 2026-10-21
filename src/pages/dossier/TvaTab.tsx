@@ -27,6 +27,7 @@ import {
   phraseDuRemboursement,
   refusEnregistrement,
   remboursementSousLeSeuil,
+  type EcrituresDesVentesDeLaCa3,
   seSaisitALaMain,
   seuilRemboursement,
   suiviDesDeclarations,
@@ -35,6 +36,8 @@ import {
 } from '../../lib/liquidationTva'
 import { libelleCompteTenu } from '../../lib/comptes'
 import type { PlanComptable } from '../../lib/planComptable'
+import { etatsDesVentesFacturees } from '../../lib/ecrituresVentesFactureesEcran'
+import { lireLesEcrituresDesVentes, type LectureDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import { estFigee } from '../../lib/validationExercice'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
@@ -44,8 +47,8 @@ import { declarationDuNonRedevable } from '../../lib/statutTva'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 import type { ExigibiliteVenteFacturee } from '../../lib/ventesFacturees'
 import type {
-  ANouveau, ArticleExoneration, Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, StatutTva,
-  VentilationBancaire,
+  ANouveau, ArticleExoneration, Categorie, DeclarationTva, LigneBancaire, ModeComptable, PeriodiciteTva, Piece, ReglementGroupe,
+  StatutTva, VentilationBancaire,
 } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -71,8 +74,12 @@ import EreportingCard from './EreportingCard'
 // LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b2 ; lib/ventesFactureesLecture.ts) : une facture SOURCE de sa
 // vente compte dans la CA3 par ses exigibilités, et son exemplaire ne compte plus. Lues tout ou rien à côté des autres
 // entrées, et gardées AVEC le dossier qui les a demandées : tant qu'elles ne sont pas revenues entières pour ce dossier,
-// ni CA3, ni enregistrement, ni comparaison des déclarations déposées. Aucune écriture ne les porte avant l'étape VF4 :
-// la déclaration d'une période qui en compte ne s'enregistre pas encore, et l'écran le dit avant le clic.
+// ni CA3, ni enregistrement, ni comparaison des déclarations déposées. LEURS ÉCRITURES (étape VF4c3) : pour un dossier qui a
+// basculé, l'onglet lit aussi, ensemble, les sources de ces écritures et le brouillon entier
+// (lib/ecrituresVentesFactureesLecture.ts, `lireLesEcrituresDesVentes`), et en tire l'état de chaque source
+// (lib/ecrituresVentesFactureesEcran.ts) ; la déclaration d'une période ne s'enregistre que quand celles de ses ventes
+// facturées sont à jour (lib/liquidationTva.ts, `refusDesVentesFacturees`), dit avant le clic. Elles se lisent dans la même
+// relecture que le reste : tant qu'elles ne sont pas revenues, l'onglet attend tout.
 
 interface Props {
   dossierId: string
@@ -90,6 +97,11 @@ interface Props {
   periodicite: PeriodiciteTva
   surDebits: boolean
   onRegimeUpdated: (modification: { tva_periodicite?: PeriodiciteTva; tva_sur_debits?: boolean }) => void
+  // Le modèle comptable du dossier : les écritures d'une vente facturée se composent selon lui. Sans valeur par défaut.
+  modeComptable: ModeComptable
+  // Le réglage du dossier (`ventes_par_les_factures`) : basculé, ses factures sont la source de leur vente, et la
+  // liquidation attend leurs écritures. Sans valeur par défaut.
+  ventesParLesFactures: boolean
 }
 
 const LIBELLE_NON_PLACEE: Record<MotifNonPlacee, string> = {
@@ -237,7 +249,7 @@ function etatDuRemboursement(s: SuiviDeDeclaration<DeclarationTva, LigneBancaire
 
 export default function TvaTab({
   dossierId, plan, assujettiTva, statutTva, articleExoneration, numeroTvaAttribue, siret, onStatutUpdated, periodicite, surDebits,
-  onRegimeUpdated,
+  onRegimeUpdated, modeComptable, ventesParLesFactures,
 }: Props) {
   // Les exercices validés : une déclaration dont la période y tombe est figée avec eux, et ne s'y enregistre plus.
   const { anneesValidees, frontiere } = useExercicesValides()
@@ -246,6 +258,9 @@ export default function TvaTab({
   // Les ventes facturées du dossier, lues tout ou rien (lib/ventesFactureesLecture.ts) : nulles tant qu'elles ne sont pas
   // revenues.
   const [lectureVentes, setLectureVentes] = useState<LectureVentesFacturees | null>(null)
+  // Les écritures des ventes facturées d'un dossier qui a basculé, avec le brouillon entier, lues ensemble (étape VF4c3) :
+  // nulles tant qu'elles ne sont pas revenues, et jamais lues pour un dossier qui n'a pas basculé.
+  const [lectureEcrituresVentes, setLectureEcrituresVentes] = useState<LectureDesEcrituresDeVente | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [erreurRegime, setErreurRegime] = useState<string | null>(null)
   // La période choisie, AVEC la périodicité pour laquelle elle l'a été : passer de trimestrielle à
@@ -272,23 +287,30 @@ export default function TvaTab({
   // un dossier changé relance une lecture, qui l'avance.
   const derniereLecture = useRef(0)
 
-  async function lire(dossier: string) {
+  // `bascule` : le réglage du dossier lu, passé par l'appelant — un dossier qui n'a pas basculé ne lit pas ses écritures.
+  async function lire(dossier: string, bascule: boolean) {
     const demande = ++derniereLecture.current
     // `lireLesVentesFacturees` ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
-    const [donnees, ventes] = await Promise.all([lireDonnees(dossier), lireLesVentesFacturees(dossier)])
+    // `lireLesEcrituresDesVentes` non plus.
+    const [donnees, ventes, ecrituresVentes] = await Promise.all([
+      lireDonnees(dossier), lireLesVentesFacturees(dossier),
+      bascule ? lireLesEcrituresDesVentes(dossier) : Promise.resolve(null),
+    ])
     if (demande !== derniereLecture.current) return
     setLu(donnees)
     setLectureVentes(ventes)
+    setLectureEcrituresVentes(ecrituresVentes)
   }
 
   useEffect(() => {
     if (!assujettiTva) return
-    void lire(dossierId)
-  }, [dossierId, assujettiTva])
+    void lire(dossierId, ventesParLesFactures)
+    // Un dossier qui bascule relit ses écritures.
+  }, [dossierId, assujettiTva, ventesParLesFactures])
 
   // Après une écriture : l'écran garde ses chiffres pendant la relecture, puis les remplace.
   async function recharger() {
-    await lire(dossierId)
+    await lire(dossierId, ventesParLesFactures)
   }
 
   async function changerRegime(modification: { tva_periodicite?: PeriodiciteTva; tva_sur_debits?: boolean }) {
@@ -425,8 +447,22 @@ export default function TvaTab({
   const demande: DemandeDeDeclaration | null = ca3 === null ? null : aLaMain
     ? { periode, ca3: null, remboursement: remboursementLu, tvaDeclaree: montantSaisi(montantTexte), credit: creditValide ? creditLu : null }
     : { periode, ca3, remboursement: ca3.cases.l25 > 0 ? remboursementLu : 0, tvaDeclaree: null, credit: null }
+  // LES ÉCRITURES DES VENTES FACTURÉES, telles que la liquidation les attend (étape VF4c3) : pour un dossier qui a basculé,
+  // l'état de chaque source, calculé sur les lectures de CE dossier, revenues en entier ; sinon ce qui manque, que le refus
+  // dit. Le calcul est celui de la section « Ventes facturées » de l'onglet Écritures, sur les mêmes lectures.
+  const lectureEcrituresDuDossier = lectureEcrituresVentes?.dossierId === dossierId ? lectureEcrituresVentes : null
+  const ecrituresDesVentes: EcrituresDesVentesDeLaCa3 = !ventesParLesFactures ? { etat: 'sans_bascule' }
+    : lectureEcrituresDuDossier === null ? { etat: 'en_attente' }
+      : lectureEcrituresDuDossier.etat === 'incomplete' ? { etat: 'incomplete', motif: lectureEcrituresDuDossier.motif }
+        : {
+          etat: 'lue',
+          etats: etatsDesVentesFacturees({
+            sources: lectureEcrituresDuDossier.sources, brouillon: lectureEcrituresDuDossier.brouillon, mode: modeComptable, plan,
+            anneesValidees, ventesParLesFactures,
+          }),
+        }
   const refus = demande === null ? null : refusEnregistrement(demande, {
-    assujettiTva, aujourdhui: aujourdHuiAParis(), declarations, ouverture, anneesValidees,
+    assujettiTva, aujourdhui: aujourdHuiAParis(), declarations, ouverture, anneesValidees, ventesFacturees: ecrituresDesVentes,
   })
   const liquidee = aLaMain || ca3 === null ? null : declarationDeLaCa3(ca3, periode)
   const liquidation = liquidee ? ecritureDeLaLiquidation(liquidee, plan) : []
@@ -1019,8 +1055,9 @@ export default function TvaTab({
                   ventilé depuis le relevé, comme pour la 2035.
                 </li>
                 <li>
-                  L’enregistrement d’une période qui compte une facture source de sa vente : ses écritures ne
-                  s’écrivent pas encore, et sa TVA ne se liquide pas sans elles.
+                  L’enregistrement d’une période qui compte une facture source de sa vente à un taux qu’aucune ligne
+                  ne range (2,1 %, la Corse, l’outre-mer) : son écriture porte sa TVA au compte de la TVA collectée,
+                  et aucune ligne de cette déclaration ne peut la solder.
                 </li>
                 <li>La dernière CA12 (régime simplifié, exercice 2026), à déposer au plus tard le 4 mai 2027.</li>
               </ul>

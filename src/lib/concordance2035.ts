@@ -19,11 +19,22 @@ import type { EcritureBrouillon } from './types'
 // gestes « Écrire » répartis dans cinq onglets, et un brouillon en retard donnerait une déclaration fausse
 // sans que rien ne le dise. Comparée à elles, elle dit au contraire ce qui manque au FEC pour la porter.
 //
-// LA PART D'UNE VENTE FACTURÉE (ligne 28.6, étape VF3b1) EST UN ÉCART, ET C'EST JUSTE : la 2035 la compte, et aucune
-// écriture ne peut encore la porter — les écritures d'une vente facturée viennent avec l'étape VF4, et sa contribution n'a
-// pas de compte jusque-là (lib/declaration2035.ts). Elle n'est pas « une catégorie sans compte », qu'un geste du cabinet
-// réparerait : elle a son motif, `vente_facturee_non_ecrite`, et la validation de l'exercice l'attend, comme elle attend
-// toute source sans écriture.
+// LA PART D'UNE VENTE FACTURÉE (ligne 28.6, chantier EC-Q3 ; étapes VF3b1 puis VF4c3) se rapproche des écritures de SON
+// ENCAISSEMENT, comme toute source : la 2035 la porte au compte que la composition écrit pour elle (`compteDuProduit`,
+// lib/ecrituresVentesFacturees.ts), et l'écriture que l'onglet Écritures passe (`ecrire_vente_facturee`) la désigne par
+// `encaissement_id` — une facture ou un avoir par `facture_id`, qu'un modèle de trésorerie n'écrit jamais en résultat. Ici
+// la 2035 est celle de la trésorerie : en engagement, elle n'est pas produite, et la concordance non plus. Rapprochées
+// source par source et compte par compte, elles concordent quand l'écriture est à jour. Sinon l'écart garde un motif à
+// lui, qui envoie à la section « Ventes facturées » de l'onglet Écritures plutôt qu'aux gestes d'une pièce
+// (« régénérer ») : `vente_facturee_non_ecrite` (aucune écriture de l'exercice ne la porte : à écrire),
+// `vente_facturee_a_reecrire` (une écriture qui n'est plus celle que l'encaissement commande), `vente_facturee_a_retirer`
+// (une écriture d'un encaissement que la 2035 ne compte pas dans l'exercice).
+//
+// ET LES FRAIS D'UN MOUVEMENT QUE SES ENCAISSEMENTS CLASSENT (`frais_d_encaissements`) : l'écart entre ce que les
+// encaissements portent et ce que la banque a crédité, sous le seuil des frais, s'écrit au compte des services bancaires
+// (627000) — une charge de l'exercice. La 2035 ne la compte pas : elle ne lit des ventes facturées que leurs parts, et le
+// mouvement, réservé à ses encaissements, n'est pas une part du relevé. Un écart VRAI, que la concordance dit sans
+// l'imputer à l'écriture : c'est la 2035 qui manque d'une dépense, et aucun geste de l'application ne la lui donne encore.
 //
 // CE QUI N'EST PAS UN ÉCART, PAR CONSTRUCTION : la CSG déductible (case BV). La CSG-CRDS passe entière au
 // 108000, hors résultat, et seule sa part déductible entre en BV — la présentation relevée sur la 2035 déposée
@@ -35,12 +46,12 @@ import type { EcritureBrouillon } from './types'
 // dans le résultat, ni d'un côté ni de l'autre.
 
 // Ce que la concordance ne sait pas rapprocher d'une source de la 2035 : une écriture sans pièce, sans
-// mouvement, sans bien, ni véhicule, ni déclaration de TVA, ni échéance payée depuis le compte personnel — le lien a
-// été rompu (sa pièce supprimée, la clé mise à nul). Une échéance de cotisation sans mouvement a pour référence
-// l'échéance elle-même : payée depuis le compte personnel, son écriture la désigne (`cotisation_id`) ; sans paiement,
-// elle n'a pas d'écriture.
+// mouvement, sans bien, ni véhicule, ni déclaration de TVA, ni échéance payée depuis le compte personnel, ni facture ni
+// encaissement — le lien a été rompu (sa pièce supprimée, la clé mise à nul). Une échéance de cotisation sans mouvement a
+// pour référence l'échéance elle-même : payée depuis le compte personnel, son écriture la désigne (`cotisation_id`) ; sans
+// paiement, elle n'a pas d'écriture.
 export type ReferenceEcriture = {
-  type: 'piece' | 'mouvement' | 'bien' | 'vehicule' | 'cotisation' | 'declaration' | 'encaissement' | 'ecriture'
+  type: 'piece' | 'mouvement' | 'bien' | 'vehicule' | 'cotisation' | 'declaration' | 'encaissement' | 'facture' | 'ecriture'
   id: string
 }
 
@@ -63,8 +74,18 @@ export type MotifEcart =
   | 'paiement_personnel_refuse'
   // ... la dotation d'un bien sans nature : son compte d'amortissement n'est pas connu, rien ne peut l'écrire.
   | 'bien_sans_nature'
-  // ... la part d'un encaissement d'une facture source : l'application n'écrit pas encore les ventes facturées (VF4).
+  // ... la part d'un encaissement d'une facture source, qu'aucune écriture de l'exercice ne porte : à écrire depuis la
+  // section « Ventes facturées » de l'onglet Écritures.
   | 'vente_facturee_non_ecrite'
+  // ... la part d'un encaissement que son écriture ne porte plus telle que l'encaissement la commande (un montant, un
+  // compte) : à réécrire depuis la même section.
+  | 'vente_facturee_a_reecrire'
+  // Une écriture d'un encaissement, ou d'une facture, que la 2035 ne compte pas dans l'exercice (l'encaissement retiré, la
+  // facture que le calcul écarte) : à retirer depuis la même section.
+  | 'vente_facturee_a_retirer'
+  // Une écriture de résultat d'un mouvement que ses encaissements classent — l'écart des frais, au 627 : la 2035 ne la
+  // compte pas encore.
+  | 'frais_d_encaissements'
   // Les deux, mais pas le même montant.
   | 'montant_different'
   // Le même montant, sur un autre compte.
@@ -138,6 +159,10 @@ function cleDeSource(s: SourceDeclaration): string {
 
 function referenceDeLEcriture(e: EcritureBrouillon): ReferenceEcriture {
   if (e.piece_id) return { type: 'piece', id: e.piece_id }
+  // Une écriture d'une vente facturée désigne sa source (lib/ecrituresVentesFacturees.ts, `colonnesDeLaSource`) : son
+  // encaissement — avant le mouvement qu'elle porte aussi quand l'encaissement est du jour du crédit —, ou sa facture.
+  if (e.encaissement_id) return { type: 'encaissement', id: e.encaissement_id }
+  if (e.facture_id) return { type: 'facture', id: e.facture_id }
   if (e.immobilisation_id) return { type: 'bien', id: e.immobilisation_id }
   if (e.vehicule_id) return { type: 'vehicule', id: e.vehicule_id }
   if (e.declaration_tva_id) return { type: 'declaration', id: e.declaration_tva_id }
@@ -195,14 +220,23 @@ interface Groupe {
   premiereEcriture: EcritureBrouillon | null
 }
 
+// Ce qui explique qu'une écriture de l'exercice ne soit pas comptée par la 2035 : les pièces validées, les factures des
+// biens du registre, que la 2035 compte par leur dotation, et les mouvements que leurs encaissements classent
+// (`mouvementsClassesParEncaissements`, lib/ecrituresVentesFactureesEcran.ts), dont la 2035 ne compte pas les frais.
+export interface ContexteDeLaConcordance {
+  piecesValidees: ReadonlySet<string>
+  piecesImmobilisees: ReadonlySet<string>
+  mouvementsDesVentesFacturees: ReadonlySet<string>
+}
+
 // La concordance d'un exercice. `ecritures` : TOUT le brouillon du dossier — une écriture datée d'un autre
-// exercice dit pourquoi elle manque à celui-ci. `contexte` : ce qui explique qu'une écriture de l'exercice ne
-// soit pas comptée par la 2035 — les pièces validées, et les factures des biens du registre, que la 2035 compte
-// par leur dotation. `ouverture` : la date des à-nouveaux d'un dossier repris, ou null.
+// exercice dit pourquoi elle manque à celui-ci. `contexte` : ce qui explique qu'une écriture de l'exercice ne soit pas
+// comptée par la 2035 (`ContexteDeLaConcordance`), sans valeur par défaut. `ouverture` : la date des à-nouveaux d'un
+// dossier repris, ou null.
 export function concordance2035(
   declaration: Declaration2035,
   ecritures: readonly EcritureBrouillon[],
-  contexte: { piecesValidees: ReadonlySet<string>; piecesImmobilisees: ReadonlySet<string> },
+  contexte: ContexteDeLaConcordance,
   ouverture: string | null,
 ): Concordance2035 {
   const annee = declaration.annee
@@ -317,7 +351,7 @@ function motifDeLEcart(x: {
   totalDeclare: number
   totalEcrit: number
   autresExercices: number[]
-  contexte: { piecesValidees: ReadonlySet<string>; piecesImmobilisees: ReadonlySet<string> }
+  contexte: ContexteDeLaConcordance
   piecesSansDate: ReadonlySet<string>
   piecesSansPoste: ReadonlySet<string>
   piecesSansMontant: ReadonlySet<string>
@@ -325,9 +359,17 @@ function motifDeLEcart(x: {
   mouvementsHorsResultat: ReadonlySet<string>
 }): MotifEcart {
   const { g, declare, ecrit } = x
-  // La part d'une vente facturée n'a pas de compte jusqu'à VF4 : ce n'est pas une catégorie à compléter, c'est une
-  // écriture que l'application ne sait pas encore composer. Avant `sans_compte`, qui enverrait régler un compte.
-  if (g.source?.type === 'encaissement' && declare.has(null)) return 'vente_facturee_non_ecrite'
+  // UNE VENTE FACTURÉE, avant tout autre motif : ses gestes sont ceux de la section « Ventes facturées », jamais
+  // « régénérer » une pièce ni régler une catégorie. La 2035 compte la part et rien ne la porte dans l'exercice : à
+  // écrire ; elle ne la compte pas et une écriture la porte : à retirer ; les deux, autrement : à réécrire.
+  if (g.source?.type === 'encaissement' || g.reference.type === 'encaissement' || g.reference.type === 'facture') {
+    if (declare.size === 0) return 'vente_facturee_a_retirer'
+    return ecrit.size === 0 ? 'vente_facturee_non_ecrite' : 'vente_facturee_a_reecrire'
+  }
+  // Une écriture de résultat d'un mouvement que ses encaissements classent, que la 2035 ne compte pas : ses frais.
+  if (declare.size === 0 && g.reference.type === 'mouvement' && x.contexte.mouvementsDesVentesFacturees.has(g.reference.id)) {
+    return 'frais_d_encaissements'
+  }
   // Une catégorie sans compte : rien ne peut l'écrire — ni maintenant, ni réécrire une écriture restée sur
   // l'ancien compte.
   if (declare.has(null)) return 'sans_compte'
@@ -373,7 +415,10 @@ export const LIBELLES_MOTIFS: Readonly<Record<MotifEcart, string>> = {
   rapprochement_refuse: 'rapprochement qui ne s’écrit pas',
   paiement_personnel_refuse: 'paiement personnel qui ne s’écrit pas',
   bien_sans_nature: 'bien sans nature',
-  vente_facturee_non_ecrite: 'vente facturée, sans écriture encore',
+  vente_facturee_non_ecrite: 'vente facturée à écrire',
+  vente_facturee_a_reecrire: 'vente facturée à réécrire',
+  vente_facturee_a_retirer: 'écriture d’une vente facturée à retirer',
+  frais_d_encaissements: 'frais d’un mouvement d’encaissements',
   montant_different: 'montant différent',
   compte_different: 'compte différent',
   piece_non_validee: 'pièce non validée',
@@ -408,7 +453,13 @@ export function phraseDeLEcart(e: EcartDeSource): string {
     case 'paiement_personnel_refuse':
       return `Son paiement depuis le compte personnel ne s’écrit pas, elle reste comptée à son échéance. ${e.source?.type === 'cotisation' ? e.source.refus : ''}`.trim()
     case 'vente_facturee_non_ecrite':
-      return `La 2035 compte cet encaissement d’une facture (${formatMoney(Math.abs(e.declaration))}) ; l’application n’écrit pas encore les ventes facturées, et la validation de l’exercice attend leurs écritures.`
+      return `La 2035 compte cet encaissement d’une facture (${formatMoney(Math.abs(e.declaration))}), aucune écriture de l’exercice ne le porte : à écrire depuis la section « Ventes facturées », qui dit aussi ce qui l’en empêcherait (un compte à choisir, un mouvement à classer).`
+    case 'vente_facturee_a_reecrire':
+      return `Son écriture porte ${formatMoney(Math.abs(e.ecritures))} au ${e.comptesEcritures.join(', ')}, la 2035 ${formatMoney(Math.abs(e.declaration))} au ${comptes(e.comptesDeclaration)} : elle n’est plus celle que l’encaissement commande, à réécrire depuis la section « Ventes facturées ».`
+    case 'vente_facturee_a_retirer':
+      return 'Écriture d’une vente facturée que la 2035 ne compte pas dans cet exercice (un encaissement retiré, une facture que le calcul écarte) : à retirer depuis la section « Ventes facturées ».'
+    case 'frais_d_encaissements':
+      return `Les frais que la banque a retenus sur ce mouvement, que ses encaissements de factures classent (${formatMoney(Math.abs(e.ecritures))} au ${e.comptesEcritures.join(', ')}) : l’écriture les porte, la 2035 ne les compte pas encore — une dépense qui lui manque, que l’application ne sait pas encore lui donner.`
     case 'montant_different':
       return `L’écriture porte ${formatMoney(Math.abs(e.ecritures))}, la 2035 ${formatMoney(Math.abs(e.declaration))} : à régénérer ou à réécrire.`
     case 'compte_different':
@@ -442,8 +493,12 @@ export function phraseDeLEcart(e: EcartDeSource): string {
 export function ouAgir(e: EcartDeSource): string {
   if (e.motif === 'sans_poste') return 'Clôture — Postes manquants'
   if (e.motif === 'sans_compte') return 'Écritures — Comptes manquants'
-  // Aucun onglet ne porte encore le geste : le dire, plutôt qu'envoyer chercher une écriture qu'aucun ne compose.
-  if (e.motif === 'vente_facturee_non_ecrite') return 'Pas encore dans l’application'
+  // Les écritures d'une vente facturée se passent, se réécrivent et se retirent dans leur section de l'onglet Écritures.
+  if (e.motif === 'vente_facturee_non_ecrite' || e.motif === 'vente_facturee_a_reecrire' || e.motif === 'vente_facturee_a_retirer') {
+    return 'Écritures — Ventes facturées'
+  }
+  // Aucun onglet ne porte le geste : le dire, plutôt qu'envoyer changer une écriture qui est juste.
+  if (e.motif === 'frais_d_encaissements') return 'Pas encore dans l’application'
   switch (e.source?.type ?? e.reference.type) {
     case 'piece':
       return e.motif === 'piece_non_validee' ? 'Justificatifs' : 'Écritures'

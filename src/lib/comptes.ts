@@ -138,23 +138,32 @@ export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   // même CompteNum ne porte qu'un CompteLib dans le fichier, et c'est l'intitulé de la nomenclature qui l'emporte. Placés
   // ici, ils passent avant le libellé d'une catégorie (`libelleCompteTenu`) dans la balance, le FEC, la révision, la revue
   // analytique et le lettrage — les lignes de ces deux catégories y changent de nom, dans tout dossier qui les emploie ;
-  // une écriture déjà validée garde le libellé figé avec elle (`compte_lib`). Les quatre autres comptes de la vente
-  // facturée gardent le nom qu'ils ont aujourd'hui (`LIBELLES_DE_LA_VENTE_FACTUREE`, ci-dessous).
+  // une écriture déjà validée garde le libellé figé avec elle (`compte_lib`).
   [COMPTE_PRESTATIONS_DE_SERVICES]: 'Prestations de services',
   [COMPTE_SERVICES_BANCAIRES]: 'Services bancaires et assimilés',
-}
-
-// LE LIBELLÉ DES SIX COMPTES DE LA VENTE FACTURÉE, celui du catalogue (l'intitulé de la nomenclature du PCG consolidé au
-// 1er janvier 2026). Le 706000 et le 627000 sont AUSSI dans `LIBELLES_COMPTES` depuis l'étape VF4c2 (VF4A-Q1, ci-dessus),
-// et leur intitulé n'y est écrit qu'une fois. Les quatre autres en restent HORS : `LIBELLES_COMPTES` passe avant tout autre
-// nom (`libelleCompteTenu`), et les y mettre renommerait aussi un 511, un 53 ou un 4458 qu'une balance reprise, une
-// catégorie ou un compte de bilan choisi nomme aujourd'hui autrement — ce que la décision ne demande pas.
-export const LIBELLES_DE_LA_VENTE_FACTUREE: Readonly<Record<string, string>> = {
-  [COMPTE_PRESTATIONS_DE_SERVICES]: LIBELLES_COMPTES[COMPTE_PRESTATIONS_DE_SERVICES],
+  // LES QUATRE AUTRES COMPTES DE LA VENTE FACTURÉE PRENNENT AUSSI LE NOM DU PLAN COMPTABLE GÉNÉRAL, pour tout dossier
+  // (VF4C2-Q1, recommandée et retenue à l'étape VF4c3 du chantier EC-Q3) : leurs écritures vont au FEC depuis VF4c2, sous
+  // un seul CompteLib. L'intitulé de la nomenclature (règlement ANC n° 2014-03 consolidé au 1er janvier 2026, classes 4, 5
+  // et 7). Ils passent désormais avant le nom qu'une catégorie, une balance reprise ou un compte de bilan choisi leur
+  // donnait — mesuré en production le 21/10/2026 par la session : aucune écriture, catégorie, à-nouveau, solde reporté,
+  // compte de bilan d'un mouvement ni compte de contrepartie ne porte l'un d'eux. Le libellé figé d'une écriture validée
+  // ne bouge pas.
   [COMPTE_VENTES_DE_BIENS]: 'Ventes de marchandises',
   [COMPTE_TVA_COLLECTEE_EN_ATTENTE]: "Taxes sur le chiffre d'affaires à régulariser ou en attente",
   [COMPTE_VALEURS_A_L_ENCAISSEMENT]: "Valeurs à l'encaissement",
   [COMPTE_CAISSE]: 'Caisse',
+}
+
+// LE LIBELLÉ DES SIX COMPTES DE LA VENTE FACTURÉE, celui du catalogue (l'intitulé de la nomenclature du PCG consolidé au
+// 1er janvier 2026). Tous les six sont dans `LIBELLES_COMPTES` — le 706000 et le 627000 depuis l'étape VF4c2 (VF4A-Q1),
+// les quatre autres depuis l'étape VF4c3 (VF4C2-Q1) — et leur intitulé n'y est écrit qu'une fois : cette table le lit de
+// là.
+export const LIBELLES_DE_LA_VENTE_FACTUREE: Readonly<Record<string, string>> = {
+  [COMPTE_PRESTATIONS_DE_SERVICES]: LIBELLES_COMPTES[COMPTE_PRESTATIONS_DE_SERVICES],
+  [COMPTE_VENTES_DE_BIENS]: LIBELLES_COMPTES[COMPTE_VENTES_DE_BIENS],
+  [COMPTE_TVA_COLLECTEE_EN_ATTENTE]: LIBELLES_COMPTES[COMPTE_TVA_COLLECTEE_EN_ATTENTE],
+  [COMPTE_VALEURS_A_L_ENCAISSEMENT]: LIBELLES_COMPTES[COMPTE_VALEURS_A_L_ENCAISSEMENT],
+  [COMPTE_CAISSE]: LIBELLES_COMPTES[COMPTE_CAISSE],
   [COMPTE_SERVICES_BANCAIRES]: LIBELLES_COMPTES[COMPTE_SERVICES_BANCAIRES],
 }
 

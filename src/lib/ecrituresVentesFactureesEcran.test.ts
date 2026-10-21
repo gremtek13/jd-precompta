@@ -6,7 +6,7 @@ import {
 } from './ecritureVenteFacturee'
 import { lignesAuBrouillon, type EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import {
-  LIBELLE_ETAT_SOURCE, argumentsDuChoix, argumentsDuGeste, compteSaisi, confirmationDuChoix, confirmationDuGeste,
+  LIBELLE_ETAT_SOURCE, argumentsDuChoix, argumentsDuGeste, choixInchange, compteSaisi, confirmationDuChoix, confirmationDuGeste,
   ecrituresEnClair, etatsDesVentesFacturees, ligneDUneVenteFacturee, mouvementsClassesParEncaissements, refusDuChoix,
   type EncaissementDesEcritures, type EntreesEcrituresDeVente, type EtatsDesVentes, type FactureDesEcritures,
   type LigneDuBrouillonLue, type MouvementDesEcritures, type SourceDeVenteEtat, type SourcesDesEcrituresDeVente,
@@ -227,7 +227,7 @@ describe('ce qui ne s’écrit pas, et pourquoi', () => {
     expect(e1.etat).toBe('ne_s_ecrit_pas')
     expect(e1.motif).toBe('compte_a_choisir')
     expect(e1.geste).toBeNull()
-    expect(e1.choixDuCompte).toEqual({ encaissementId: 'e1', actuel: null, apresLeChoix: 'a_ecrire' })
+    expect(e1.choixDuCompte).toEqual({ encaissementId: 'e1', geste: 'choisir', actuel: null, apresLeChoix: 'a_ecrire' })
     expect(confirmationDuChoix(e1, '467100')).toMatch(/Choisir le compte 467100 comme contrepartie de l’encaissement du 20\/11\/2025 .*« à écrire »/)
   })
 
@@ -245,14 +245,64 @@ describe('ce qui ne s’écrit pas, et pourquoi', () => {
     expect(REFUS_COMPTE_CONTREPARTIE.map((x) => x.cle)).toContain('compte_absent')
   })
 
-  it('un compte choisi puis remplacé (R3) : l’écriture proposée sur l’ancien compte est « à réécrire »', () => {
+  it('un compte choisi puis remplacé (R3) : l’écriture proposée sur l’ancien compte est « à réécrire », et le compte se change encore', () => {
     const avecA = compensation({ compte_contrepartie: '467100' })
     const brouillon = auBrouillon(parCle(etats(avecA), enc1)!.aEcrire)
     expect(brouillon.some((l) => l.compte === '467100')).toBe(true)
     const r = etats(compensation({ compte_contrepartie: '467200' }), { brouillon })
     const e1 = parCle(r, enc1)!
     expect(e1.etat).toBe('a_reecrire')
-    expect(e1.choixDuCompte).toBeNull()
+    // Depuis l'étape VF4c3 (VF4C1-Q1), un compte accepté se change encore, tant que l'exercice n'est pas validé.
+    expect(e1.choixDuCompte).toEqual({ encaissementId: 'e1', geste: 'changer', actuel: '467200', apresLeChoix: 'a_reecrire' })
+  })
+
+  it('« Changer le compte » (VF4C1-Q1) : offert sur un compte accepté, à écrire ou à jour ; la confirmation nomme l’ancien et le nouveau', () => {
+    const avecA = compensation({ compte_contrepartie: '467100' })
+    const aEcrire = parCle(etats(avecA), enc1)!
+    expect(aEcrire.etat).toBe('a_ecrire')
+    expect(aEcrire.choixDuCompte).toEqual({ encaissementId: 'e1', geste: 'changer', actuel: '467100', apresLeChoix: 'a_ecrire' })
+    expect(confirmationDuChoix(aEcrire, '467200')).toBe(
+      `Changer le compte de contrepartie de ${aEcrire.nom}, du 467100 au 467200 ? Aucune écriture n’est encore passée : il reste « à écrire ».`,
+    )
+    const aJour = parCle(etats(avecA, { brouillon: auBrouillon(aEcrire.aEcrire) }), enc1)!
+    expect(aJour.etat).toBe('a_jour')
+    expect(aJour.choixDuCompte).toEqual({ encaissementId: 'e1', geste: 'changer', actuel: '467100', apresLeChoix: 'a_reecrire' })
+    expect(confirmationDuChoix(aJour, '467200')).toBe(
+      `Changer le compte de contrepartie de ${aJour.nom}, du 467100 au 467200 ? Son écriture déjà passée, sur le 467100, deviendra « à réécrire » : elle se réécrit ensuite d’ici, sur un clic.`,
+    )
+    // Le même compte ne part pas — l'écran le dit ; la base l'accepterait, ce n'est pas un de ses refus.
+    expect(choixInchange(aJour.choixDuCompte!, ' 467 100 ')).toBe(true)
+    expect(choixInchange(aJour.choixDuCompte!, '467200')).toBe(false)
+    expect(refusDuChoix('e1', '467100', etats(avecA).contexte)).toBeNull()
+    // Un choix (à choisir, refusé) n'est jamais « inchangé ».
+    expect(choixInchange({ encaissementId: 'e1', geste: 'choisir', actuel: '512000', apresLeChoix: 'a_ecrire' }, '512000')).toBe(false)
+  })
+
+  it('« Changer le compte » ne s’offre ni dans un exercice validé, ni hors d’une compensation, ni pour une contre-passation', () => {
+    const avecA = compensation({ compte_contrepartie: '467100' })
+    const brouillon = auBrouillon(parCle(etats(avecA), enc1)!.aEcrire, 'validee')
+    const valide = parCle(etats(avecA, { brouillon, anneesValidees: [2025] }), enc1)!
+    expect(valide.etat).toBe('validee')
+    expect(valide.choixDuCompte).toBeNull()
+    // Un virement qui cite son mouvement : son compte est celui du moyen de paiement.
+    expect(parCle(etats(VIREMENT), enc1)!.choixDuCompte).toBeNull()
+    // La contre-passation d'une compensation s'écrit sur le compte de l'encaissement qu'elle annule.
+    const cp = etats({
+      encaissements: [
+        encaissement({ id: 'e1', date_encaissement: '2025-11-20', montant: 120, moyen: 'compensation', compte_contrepartie: '467100' }),
+        encaissement({ id: 'c1', date_encaissement: '2025-11-25', montant: -120, moyen: 'compensation', annule_id: 'e1' }),
+      ],
+    })
+    expect(parCle(cp, 'encaissement|c1')!.choixDuCompte).toBeNull()
+    expect(parCle(cp, enc1)!.choixDuCompte?.geste).toBe('changer')
+    // Un compte resté sur un encaissement qui cite un mouvement (une forme que la base refuse, qu'une restauration pourrait
+    // rendre) : il s'écrit par son mouvement, et la base refuserait d'en changer le compte — rien ne s'offre.
+    const avecMouvement = etats({
+      encaissements: [encaissement({ id: 'e1', date_encaissement: '2025-11-20', montant: 120, moyen: 'compensation', ligne_bancaire_id: 'm1', compte_contrepartie: '467100' })],
+      mouvements: [mouvement({ id: 'm1', date: '2025-11-20', montant: 120 })],
+    })
+    expect(parCle(avecMouvement, enc1)!.etat).toBe('a_ecrire')
+    expect(parCle(avecMouvement, enc1)!.choixDuCompte).toBeNull()
   })
 
   it('un compte devenu refusé sur un encaissement écrit : « à retirer », et le choix d’un autre compte le rendra « à réécrire »', () => {
@@ -261,7 +311,7 @@ describe('ce qui ne s’écrit pas, et pourquoi', () => {
     const e1 = parCle(r, enc1)!
     expect(e1.etat).toBe('a_retirer')
     expect(e1.motif).toBe('compte_refuse')
-    expect(e1.choixDuCompte).toEqual({ encaissementId: 'e1', actuel: '512000', apresLeChoix: 'a_reecrire' })
+    expect(e1.choixDuCompte).toEqual({ encaissementId: 'e1', geste: 'choisir', actuel: '512000', apresLeChoix: 'a_reecrire' })
     expect(e1.refus).toBe(refusRetraitEcritureVenteFacturee(e1.source, r.contexte, brouillon)?.message ?? null)
   })
 

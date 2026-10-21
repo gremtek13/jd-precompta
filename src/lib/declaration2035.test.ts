@@ -1066,10 +1066,11 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
     const en2026 = avec(v, { annee: 2026 })
     expect(en2025.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 500, nbPieces: 0, nbMouvements: 0 }])
     expect(en2026.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 500, nbPieces: 0, nbMouvements: 0 }])
-    // Une contribution par part, sous sa source : l'encaissement et sa facture nommée ; aucun compte jusqu'à VF4.
+    // Une contribution par part, sous sa source : l'encaissement et sa facture nommée ; au compte que la composition de ses
+    // écritures écrit pour des services (étape VF4c3).
     expect(desVentes(en2025)).toEqual([{
       source: { type: 'encaissement', id: 'e1', part: expect.objectContaining({ factureId: 'f1', numero: 'F2025-0001', tiers: 'Client fictif', date: '2025-12-15' }) },
-      poste: POSTE_VENTES_FACTUREES, nature: 'recette', compte: null, centimes: 50_000,
+      poste: POSTE_VENTES_FACTUREES, nature: 'recette', compte: '706000', centimes: 50_000,
     }])
     expect(desVentes(en2026).map((c) => c.source.type === 'encaissement' && c.source.id)).toEqual(['e2'])
     // Rien d'une autre année.

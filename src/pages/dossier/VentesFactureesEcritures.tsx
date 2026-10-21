@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import {
-  LIBELLE_ETAT_SOURCE, LIBELLE_GESTE, argumentsDuChoix, argumentsDuGeste, compteSaisi, confirmationDuChoix,
+  LIBELLE_ETAT_SOURCE, LIBELLE_GESTE, argumentsDuChoix, argumentsDuGeste, choixInchange, compteSaisi, confirmationDuChoix,
   confirmationDuGeste, refusDuChoix, type EtatSourceDeVente, type EtatsDesVentes, type SourceDeVenteEtat,
 } from '../../lib/ecrituresVentesFactureesEcran'
 
@@ -24,6 +24,12 @@ import {
 // recomposerait, mais rien ne sert de lui faire refuser ce que l'écran sait déjà. Le refus de la base se dit AVANT le
 // clic (le module le lit des fonctions de lib/ecritureVenteFacturee.ts) ; la confirmation NOMME la source et ce que le
 // geste écrit, remplace ou retire.
+//
+// « CHANGER LE COMPTE » (VF4C1-Q1, étape VF4c3) : sur un encaissement par compensation dont le compte de contrepartie est
+// déjà choisi et accepté, tant que son exercice n'est pas validé (le module le dit, `choixDuCompte.geste`). Le même contrat
+// que le choix : `choisir_compte_contrepartie` seule, le refus de la saisie telle qu'elle part dit avant le clic, le même
+// verrou par source, une confirmation qui nomme l'encaissement, l'ancien et le nouveau compte, et ce que devient une
+// écriture déjà passée. Le champ ne s'ouvre que sur un clic : un compte accepté n'a rien à demander.
 //
 // PAS DE LOT (« écrire tout ce qui est à écrire ») : chaque source se confirme sur ce qu'elle écrit, nommé ligne à ligne,
 // et un lot devrait soit taire ces lignes, soit les empiler dans une confirmation que personne ne lit ; une vente
@@ -62,6 +68,14 @@ export default function VentesFactureesEcritures({ etats, motifIncomplet, relect
   const [enCours, setEnCours] = useState<ReadonlySet<string>>(new Set())
   const [erreur, setErreur] = useState<string | null>(null)
   const [saisies, setSaisies] = useState<Readonly<Record<string, string>>>({})
+  // Les sources dont le champ « Changer le compte » est ouvert.
+  const [changements, setChangements] = useState<ReadonlySet<string>>(new Set())
+  const ouvrirLeChangement = (cle: string, ouvert: boolean) => setChangements((avant) => {
+    const apres = new Set(avant)
+    if (ouvert) apres.add(cle)
+    else apres.delete(cle)
+    return apres
+  })
 
   const lus = etats?.etat === 'lus' ? etats : null
   const gestesPermis = lus !== null && motifIncomplet === null && !relecture
@@ -97,7 +111,7 @@ export default function VentesFactureesEcritures({ etats, motifIncomplet, relect
     if (!lus || !gestesPermis || !choix || gestesEnCours.current.has(s.cle)) return
     const saisie = saisies[s.cle] ?? ''
     // Le refus se lit sur la saisie TELLE QU'ELLE PART (`compteSaisi`) : c'est elle que la fonction reçoit.
-    if (refusDuChoix(choix.encaissementId, saisie, lus.contexte)) return
+    if (refusDuChoix(choix.encaissementId, saisie, lus.contexte) || choixInchange(choix, saisie)) return
     if (!window.confirm(confirmationDuChoix(s, compteSaisi(saisie) as string))) return
     gestesEnCours.current.add(s.cle)
     setEnCours(new Set(gestesEnCours.current))
@@ -107,8 +121,9 @@ export default function VentesFactureesEcritures({ etats, motifIncomplet, relect
       if (error) throw error
       await relire()
       setSaisies((avant) => Object.fromEntries(Object.entries(avant).filter(([cle]) => cle !== s.cle)))
+      ouvrirLeChangement(s.cle, false)
     } catch (e) {
-      setErreur(messageErreur(e, `Le compte de contrepartie de ${s.nom} n’a pas pu être choisi.`))
+      setErreur(messageErreur(e, `Le compte de contrepartie de ${s.nom} n’a pas pu être ${choix.geste === 'changer' ? 'changé' : 'choisi'}.`))
     } finally {
       relacher(s.cle)
     }
@@ -156,6 +171,9 @@ export default function VentesFactureesEcritures({ etats, motifIncomplet, relect
                 const choix = s.choixDuCompte
                 const saisie = saisies[s.cle] ?? ''
                 const refusChoix = choix && lus ? refusDuChoix(choix.encaissementId, saisie, lus.contexte) : null
+                const inchange = choix !== null && choixInchange(choix, saisie)
+                // Un compte à choisir ou refusé montre son champ ; un compte accepté, sur le clic « Changer le compte ».
+                const champOuvert = choix !== null && (choix.geste === 'choisir' || changements.has(s.cle))
                 return (
                   <tr key={s.cle}>
                     <td data-libelle="Source">{s.nom.charAt(0).toUpperCase() + s.nom.slice(1)}</td>
@@ -184,11 +202,26 @@ export default function VentesFactureesEcritures({ etats, motifIncomplet, relect
                           </button>
                         )}
                         {s.refus !== null && <p className="muted" style={{ margin: '4px 0 0' }}>{s.refus}</p>}
-                        {choix && (
+                        {choix && choix.geste === 'changer' && !champOuvert && (
+                          <div style={{ marginTop: s.geste != null ? 8 : 0 }}>
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              disabled={!gestesPermis || occupee}
+                              onClick={() => ouvrirLeChangement(s.cle, true)}
+                            >
+                              Changer le compte
+                            </button>
+                            <p className="muted" style={{ margin: '4px 0 0' }}>Compte de contrepartie : {choix.actuel}.</p>
+                          </div>
+                        )}
+                        {choix && champOuvert && (
                           <div className="field-row aligne-bas" style={{ marginTop: s.geste != null ? 8 : 0 }}>
                             <div className="field">
                               <label htmlFor={`compte-${s.cle}`}>
-                                {choix.actuel ? `Compte de contrepartie (aujourd’hui ${choix.actuel}, refusé)` : 'Compte de contrepartie'}
+                                {choix.geste === 'changer'
+                                  ? `Nouveau compte de contrepartie (aujourd’hui ${choix.actuel})`
+                                  : choix.actuel ? `Compte de contrepartie (aujourd’hui ${choix.actuel}, refusé)` : 'Compte de contrepartie'}
                               </label>
                               <input
                                 id={`compte-${s.cle}`}
@@ -202,23 +235,36 @@ export default function VentesFactureesEcritures({ etats, motifIncomplet, relect
                             <button
                               type="button"
                               className="btn btn-outline btn-sm"
-                              disabled={!gestesPermis || occupee || refusChoix !== null}
+                              disabled={!gestesPermis || occupee || refusChoix !== null || inchange}
                               title={refusChoix?.message}
                               onClick={() => choisirLeCompte(s)}
                             >
                               Choisir ce compte
                             </button>
+                            {choix.geste === 'changer' && (
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                disabled={occupee}
+                                onClick={() => ouvrirLeChangement(s.cle, false)}
+                              >
+                                Annuler
+                              </button>
+                            )}
                           </div>
                         )}
                         {/* Le refus de la saisie telle qu'elle part, dit avant le clic ; « à choisir » se voit au champ vide. */}
-                        {choix && refusChoix && refusChoix.cle !== 'compte_absent' && (
+                        {champOuvert && refusChoix && refusChoix.cle !== 'compte_absent' && (
                           <p className="muted" style={{ margin: '4px 0 0' }}>{refusChoix.message}</p>
                         )}
-                        {choix && !refusChoix && (
+                        {champOuvert && !refusChoix && inchange && (
+                          <p className="muted" style={{ margin: '4px 0 0' }}>C’est le compte qu’il porte déjà.</p>
+                        )}
+                        {champOuvert && !refusChoix && !inchange && (
                           <p className="muted" style={{ margin: '4px 0 0' }}>
                             {choix.apresLeChoix === 'a_reecrire'
-                              ? 'Une fois choisi, ses écritures proposées seront « à réécrire ».'
-                              : 'Une fois choisi, il sera « à écrire ».'}
+                              ? `Une fois ${choix.geste === 'changer' ? 'changé' : 'choisi'}, ses écritures proposées seront « à réécrire ».`
+                              : `Une fois ${choix.geste === 'changer' ? 'changé' : 'choisi'}, il sera « à écrire ».`}
                           </p>
                         )}
                       </div>

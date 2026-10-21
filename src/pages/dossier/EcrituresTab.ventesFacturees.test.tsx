@@ -355,6 +355,90 @@ describe('le compte de contrepartie d’une compensation', () => {
     await waitFor(() => expect(within(ligneDe(NOM_E1)).getByText('à écrire')).toBeTruthy())
     expect(faux.rpcs).toHaveLength(1)
   })
+
+  // « CHANGER LE COMPTE » (VF4C1-Q1, étape VF4c3) : sur un encaissement par compensation dont le compte est choisi et accepté,
+  // et dont l'écriture est passée — les trois lignes que la vraie fonction écrit sur le 467100.
+  const changeable = () => poser({
+    encaissements_factures: [encaissement({ moyen: 'compensation', ligne_bancaire_id: null, compte_contrepartie: '467100' })],
+    lignes_bancaires: [],
+    ecritures_brouillon: [
+      ecriture({ id: 'b1', compte: '467100', sens: 'debit', montant: 120, encaissement_id: 'e1' }),
+      ecriture({ id: 'b2', compte: '706000', sens: 'credit', montant: 100, encaissement_id: 'e1' }),
+      ecriture({ id: 'b3', compte: '445710', sens: 'credit', montant: 20, encaissement_id: 'e1' }),
+    ],
+  })
+
+  it('« Changer le compte » : le champ s’ouvre sur un clic, le refus se dit avant, la confirmation nomme l’ancien et le nouveau', async () => {
+    changeable()
+    monter()
+    const ligne = await waitFor(() => ligneDe(NOM_E1))
+    expect(within(ligne).getByText('à jour')).toBeTruthy()
+    expect(within(ligne).queryByRole('textbox')).toBeNull()
+    expect(within(ligne).getByText('Compte de contrepartie : 467100.')).toBeTruthy()
+    fireEvent.click(within(ligne).getByRole('button', { name: 'Changer le compte' }))
+    const champ = within(ligne).getByLabelText('Nouveau compte de contrepartie (aujourd’hui 467100)')
+    const choisir = within(ligne).getByRole('button', { name: 'Choisir ce compte' })
+    // Le même compte : rien ne part, et la ligne le dit.
+    fireEvent.change(champ, { target: { value: '467 100' } })
+    expect(within(ligne).getByText('C’est le compte qu’il porte déjà.')).toBeTruthy()
+    expect(choisir.hasAttribute('disabled')).toBe(true)
+    // Un compte refusé : le mot de la base, avant le clic.
+    fireEvent.change(champ, { target: { value: '512000' } })
+    expect(within(ligne).getByText('Un encaissement par la banque, par chèque ou en espèces se dit par son moyen de paiement, qui choisit son compte.')).toBeTruthy()
+    expect(choisir.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(choisir)
+    expect(faux.rpcs).toEqual([])
+    fireEvent.change(champ, { target: { value: '467200' } })
+    expect(within(ligne).getByText('Une fois changé, ses écritures proposées seront « à réécrire ».')).toBeTruthy()
+    fireEvent.click(choisir)
+    await waitFor(() => expect(faux.rpcs).toHaveLength(1))
+    expect(String(confirmation.mock.calls[0][0])).toBe(
+      `Changer le compte de contrepartie de l’encaissement du 20/11/2025 de la facture F2025-0001 (Client fictif, compensation, ${formatMoney(120)}), `
+      + 'du 467100 au 467200 ? Son écriture déjà passée, sur le 467100, deviendra « à réécrire » : elle se réécrit ensuite d’ici, sur un clic.',
+    )
+    expect(faux.rpcs[0]).toEqual({ nom: 'choisir_compte_contrepartie', args: { p_dossier_id: D, p_encaissement_id: 'e1', p_compte: '467200' } })
+    // Relu : l'écriture passée sur l'ancien compte est « à réécrire », et le champ s'est refermé.
+    await waitFor(() => expect(within(ligneDe(NOM_E1)).getByText('à réécrire')).toBeTruthy())
+    expect(within(ligneDe(NOM_E1)).queryByRole('textbox')).toBeNull()
+    expect(within(ligneDe(NOM_E1)).getByText('Compte de contrepartie : 467200.')).toBeTruthy()
+  })
+
+  it('« Annuler » referme le champ sans rien envoyer ; une confirmation refusée n’envoie rien non plus', async () => {
+    changeable()
+    monter()
+    const ligne = await waitFor(() => ligneDe(NOM_E1))
+    fireEvent.click(within(ligne).getByRole('button', { name: 'Changer le compte' }))
+    fireEvent.change(within(ligne).getByRole('textbox'), { target: { value: '467200' } })
+    confirmation.mockImplementation(() => false)
+    fireEvent.click(within(ligne).getByRole('button', { name: 'Choisir ce compte' }))
+    fireEvent.click(within(ligne).getByRole('button', { name: 'Annuler' }))
+    expect(within(ligne).queryByRole('textbox')).toBeNull()
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('deux clics du même `act` sur le changement ne l’envoient qu’une fois', async () => {
+    changeable()
+    monter()
+    const ligne = await waitFor(() => ligneDe(NOM_E1))
+    fireEvent.click(within(ligne).getByRole('button', { name: 'Changer le compte' }))
+    fireEvent.change(within(ligne).getByRole('textbox'), { target: { value: '467200' } })
+    const choisir = within(ligne).getByRole('button', { name: 'Choisir ce compte' })
+    await act(async () => {
+      fireEvent.click(choisir)
+      fireEvent.click(choisir)
+    })
+    await waitFor(() => expect(within(ligneDe(NOM_E1)).getByText('à réécrire')).toBeTruthy())
+    expect(faux.rpcs).toHaveLength(1)
+  })
+
+  it('dans un exercice validé, le compte ne se change plus : aucun bouton', async () => {
+    changeable()
+    faux.parTable.ecritures_brouillon = (faux.parTable.ecritures_brouillon ?? []).map((l) => ({ ...l, statut: 'validee' }))
+    monter({ valides: [2025] })
+    const ligne = await waitFor(() => ligneDe(NOM_E1))
+    expect(within(ligne).getByText('validée')).toBeTruthy()
+    expect(within(ligne).queryByRole('button', { name: 'Changer le compte' })).toBeNull()
+  })
 })
 
 describe('aucun geste sur une lecture partielle, refusée, ou pas encore revenue', () => {

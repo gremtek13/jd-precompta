@@ -859,6 +859,10 @@ describe('calculerCa3 — les ventes facturées', () => {
     expect(ca3(v, T1).exigibilitesRetenues.map((r) => r.exigibilite)).toEqual(v.exigibilites.slice(0, 2))
     expect(ca3(v, T1).cases).toMatchObject({ base08: 667, taxe08: 133 })
     expect(ca3(v, T2).cases).toMatchObject({ base08: 333, taxe08: 67 })
+    // La TVA des comptes est la même, au centime (étape VF4c3) : 66,67 + 66,66 € — et non le taux de chaque base, qui
+    // ferait 133,34 €, un centime que la liquidation laisserait au 445710.
+    expect(ca3(v, T1).tvaDesComptes.collectee).toBe(133.33)
+    expect(ca3(v, T2).tvaDesComptes.collectee).toBe(66.67)
     // Et une exigibilité dont la taxe n'est pas le taux de sa base — écrite à la main, seul moyen de le voir — passe telle
     // quelle : la CA3 ne refait pas la TVA d'une vente facturée depuis sa base et son taux.
     const aLaMain: VentesFacturees = {
@@ -1052,12 +1056,12 @@ describe('calculerCa3 — les ventes facturées', () => {
     expect(ca3(enc, T2, true).releveEcartees).toEqual([])
   })
 
-  it('aucune écriture ne porte encore leur TVA : elle compte dans les lignes, pas dans la TVA des comptes', () => {
+  it('leurs écritures portent leur TVA au 445710 : elle compte dans les lignes ET dans la TVA des comptes (étape VF4c3)', () => {
     const v = ventes(registre(encaissementVendu({ id: 'e1', date_encaissement: '2027-02-20', montant: 1200 })))
     const c = ca3(v, T1, false, { pieces: [piece({ id: 'p2' })], lignes: [mouvement({ piece_id: 'p2' })] })
     expect(c.cases).toMatchObject({ A1: 2000, base08: 2000, taxe08: 400 })
     expect(c.netPeriode).toBe(400)
-    expect(c.tvaDesComptes).toEqual({ collectee: 200, deductible: 0, immobilisations: 0 })
+    expect(c.tvaDesComptes).toEqual({ collectee: 400, deductible: 0, immobilisations: 0 })
   })
 
   it('les ventes facturées s’ajoutent aux pièces et au relevé de la période, sans rien en retirer', () => {
@@ -1067,7 +1071,8 @@ describe('calculerCa3 — les ventes facturées', () => {
     const sansVentes = ca3(ventesFactureesVides('d1'), T1, false, { pieces, lignes })
     const avecVentes = ca3(v, T1, false, { pieces, lignes })
     expect(avecVentes.retenues).toEqual(sansVentes.retenues)
-    expect(avecVentes.tvaDesComptes).toEqual(sansVentes.tvaDesComptes)
+    // La TVA des comptes gagne celle de la vente facturée, que son écriture porte au 445710 (étape VF4c3), et rien d'autre.
+    expect(avecVentes.tvaDesComptes).toEqual({ ...sansVentes.tvaDesComptes, collectee: sansVentes.tvaDesComptes.collectee + 200 })
     expect(avecVentes.cases.taxe08 - sansVentes.cases.taxe08).toBe(200)
     expect(avecVentes.cases.l20).toBe(sansVentes.cases.l20)
   })

@@ -54,7 +54,7 @@ export interface DefinitionRoleComptable {
 // bancaires ») : la décision du cabinet du 20/10/2026 (VF4A-Q1) leur donne le nom du plan comptable général pour tout
 // dossier, et ils entrent dans `LIBELLES_COMPTES` à l'étape VF4c2, avec le FEC qui porte leurs écritures — leur libellé y
 // passe avant celui de la catégorie dans la balance, le FEC, la révision, la revue analytique et le lettrage
-// (`libelleCompteTenu`). Les quatre autres en restent hors : rien d'autre ne change de nom.
+// (`libelleCompteTenu`). Les quatre autres les y rejoignent à l'étape VF4c3 (VF4C2-Q1) : rien d'autre ne change de nom.
 export const ROLES_DE_LA_VENTE_FACTUREE = [
   { role: 'prestations_de_services', racines: ['706'], compteDefaut: '706000', libelleDefaut: 'Prestations de services', prefixeAuxiliaireDefaut: null, ordre: 270 },
   { role: 'ventes_de_biens', racines: ['701', '707'], compteDefaut: '707000', libelleDefaut: 'Ventes de marchandises', prefixeAuxiliaireDefaut: null, ordre: 280 },
