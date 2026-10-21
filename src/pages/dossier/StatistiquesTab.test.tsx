@@ -4,6 +4,7 @@ import { ContexteDossier } from '../../test/exercicesValides'
 import StatistiquesTab from './StatistiquesTab'
 import type { ANouveau, EcritureBrouillon, ModeComptable, Piece } from '../../lib/types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
+import { formatMoney } from '../../lib/format'
 
 // « Une recherche filtre l'affichage, jamais un total » — la règle que cet écran a violée : ses
 // totaux débit/crédit portaient sur les lignes TROUVÉES, si bien que taper « 606 » affichait le
@@ -698,6 +699,76 @@ describe('StatistiquesTab — les comptes de tiers, en engagement', () => {
 // LE LETTRAGE FAIT À LA MAIN (ligne 32, seconde brique). Le calcul est testé dans `lettrage.test.ts` ; ici, ce que
 // l'écran en fait — proposer sans écrire, cocher, dire avant le clic ce que la base refuserait, lettrer sous un verrou,
 // défaire après une confirmation qui nomme ce qu'on perd, et ne rien offrir sur une vue qui n'est pas celle d'aujourd'hui.
+// LES LIGNES D'UNE VENTE FACTURÉE (ligne 28.6, chantier EC-Q3, étape VF4c2) : la carte les range sous leur facture, chez
+// leur client, et ne les offre jamais au lettrage à la main ; elle lit les factures seulement quand le brouillon en porte.
+describe('StatistiquesTab — les comptes de tiers d’un dossier qui a basculé', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-04-15T10:00:00Z'))
+    faux.plafond = null
+    faux.parTable.categories = []
+    faux.parTable.pieces = []
+    // F2026-0002, 240 € TTC le 1er mars, encaissée de 100 € le 20 mars : 140 € restent dus.
+    faux.parTable.ecritures_brouillon = [
+      ligne({ id: 'v1', facture_id: 'f2', date: '2026-03-01', compte: '411000', sens: 'debit', montant: 240 }),
+      ligne({ id: 'v2', facture_id: 'f2', date: '2026-03-01', compte: '706000', sens: 'credit', montant: 200 }),
+      ligne({ id: 'v3', facture_id: 'f2', date: '2026-03-01', compte: '445800', sens: 'credit', montant: 40 }),
+      ligne({ id: 'v4', encaissement_id: 'e2', date: '2026-03-20', compte: '511000', sens: 'debit', montant: 100 }),
+      ligne({ id: 'v5', encaissement_id: 'e2', date: '2026-03-20', compte: '411000', sens: 'credit', montant: 100 }),
+    ]
+    faux.parTable.factures_emises = [{
+      id: 'f2', dossier_id: 'dossier-de-test', type: 'facture', numero: 'F2026-0002', tiers_nom: 'Clinique du Parc',
+      date_emission: '2026-03-01', montant_ttc: 240, facture_origine_id: null, source_de_la_vente: true,
+    }]
+    faux.parTable.encaissements_factures = [{
+      id: 'e2', dossier_id: 'dossier-de-test', facture_id: 'f2', date_encaissement: '2026-03-20', montant: 100, moyen: 'cheque',
+      ligne_bancaire_id: null, annule_id: null,
+    }]
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    delete faux.parTable.factures_emises
+    delete faux.parTable.encaissements_factures
+  })
+
+  const monter = () => render(
+    <ContexteDossier valides={faux.valides} annee="toutes">
+      <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="engagement" />
+    </ContexteDossier>,
+  )
+
+  it('range la facture chez son client, avec son reste et son état, et ne l’offre pas au lettrage à la main', async () => {
+    monter()
+    const facture = await screen.findByText('Facture F2026-0002')
+    const rang = facture.closest('tr')!
+    expect(rang.querySelector('[data-libelle="Reste"]')?.textContent).toBe(formatMoney(140))
+    expect(rang.textContent).toContain('Réglée en partie')
+    expect(rang.textContent).toContain('facture de l’application : se lettre par ses encaissements')
+    expect((rang.querySelector('input[type="checkbox"]') as HTMLInputElement).disabled).toBe(true)
+    expect(screen.queryByText(/Écritures sans pièce/)).toBeNull()
+  })
+
+  it('ne conclut pas sur des factures lues en partie', async () => {
+    faux.erreurs = { factures_emises: 'refus simulé' }
+    monter()
+    expect(await screen.findByText(/Les comptes de tiers ne peuvent pas être dits/)).toBeTruthy()
+    expect(screen.getByText(/refus simulé/)).toBeTruthy()
+  })
+
+  it('ne lit pas les factures quand le brouillon ne porte aucune ligne d’une vente facturée', async () => {
+    faux.parTable.ecritures_brouillon = [
+      ligne({ id: 'c1', piece_id: 'p-clinique', date: '2026-03-01', compte: '411000', sens: 'debit', montant: 500 }),
+      ligne({ id: 'c2', piece_id: 'p-clinique', date: '2026-03-01', compte: '706000', sens: 'credit', montant: 500 }),
+    ]
+    // Une lecture des factures, si elle partait, échouerait : la carte ne conclurait pas.
+    faux.erreurs = { factures_emises: 'refus simulé', encaissements_factures: 'refus simulé' }
+    monter()
+    expect(await screen.findByText('Comptes de tiers au 15/04/2026')).toBeTruthy()
+    await screen.findByText('Sans règlement')
+    expect(screen.queryByText(/Les comptes de tiers ne peuvent pas être dits/)).toBeNull()
+  })
+})
+
 describe('StatistiquesTab — le lettrage fait à la main', () => {
   const PIECES = [
     piece({ id: 'p-fact', tiers: 'Garage Martin', date_piece: '2026-03-02', montant_ttc: 300 }),

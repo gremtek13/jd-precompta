@@ -675,7 +675,8 @@ function valider(
   const dansLExercice = ecritures.filter((e) => String(e.date) <= `${annee}-12-31` && String(e.date) >= `${annee}-01-01`)
   const numerotation = numeroterFec(
     dansLExercice as unknown as EcritureBrouillon[], s.pieces as unknown as Piece[], categories as unknown as Categorie[], [],
-    TRESORERIE.mode, s.lignes as unknown as MouvementBancaire[],
+    // Le dossier que le banc valide n'a pas basculé : aucune écriture d'une vente facturée (étape VF4c2).
+    TRESORERIE.mode, s.lignes as unknown as MouvementBancaire[], [],
   )
   if (numerotation.horsFec.length > 0) console.error('[banc] écritures hors du FEC dans le dossier validé', numerotation.horsFec)
   for (const l of numerotation.lignes) {
@@ -2098,7 +2099,17 @@ function requete(table: string) {
   Object.assign(chaine, {
     select: (_c?: string, options?: { head?: boolean }) => { tete = !!options?.head; return chaine },
     insert: soi, update: soi, upsert: soi, delete: soi,
-    eq: (c: string, v: unknown) => { filtres.push(sur(c, (x) => x === v)); return chaine },
+    // LA JOINTURE DES LIGNES DE FACTURE (étape VF4c2) : `facture_lignes` se filtre sur une colonne de SA facture
+    // (`factures_emises.dossier_id`, `factures_emises.source_de_la_vente` — lib/ventesFactureesLecture.ts), qu'une ligne ne
+    // porte pas. `sur` laissait passer toute colonne absente : chaque lecture des ventes facturées recevait les lignes de
+    // TOUTES les factures du banc, et se disait incomplète. Jugée ici sur la facture de la ligne, comme la base.
+    eq: (c: string, v: unknown) => {
+      if (c.startsWith('factures_emises.')) {
+        const champ = c.slice('factures_emises.'.length)
+        filtres.push((l) => (TABLES.factures_emises ?? []).some((f) => f.id === l.facture_id && f[champ] === v))
+      } else filtres.push(sur(c, (x) => x === v))
+      return chaine
+    },
     neq: (c: string, v: unknown) => { filtres.push(sur(c, (x) => x !== v)); return chaine },
     in: (c: string, vs: unknown[]) => { filtres.push(sur(c, (x) => vs.includes(x))); return chaine },
     is: (c: string, v: unknown) => { filtres.push(sur(c, (x) => x === v)); return chaine },

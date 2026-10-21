@@ -36,7 +36,7 @@ describe('la section des ventes facturées, seule', () => {
     expect(r.sources.map((s) => [s.cle, s.geste, s.refus])).toEqual([['facture|f1', 'ecrire', null]])
     const refusee = { ...r, sources: r.sources.map((s) => ({ ...s, refus: 'Refus fictif de la base.' })) }
     vi.spyOn(window, 'confirm').mockImplementation(() => true)
-    render(<VentesFactureesEcritures etats={refusee} motifIncomplet={null} relecture={false} relire={async () => {}} />)
+    render(<VentesFactureesEcritures etats={refusee} motifIncomplet={null} relecture={false} relire={async () => {}} lettrageDesFactures={new Map()} />)
     const ligne = screen.getByText(/^La facture F2025-0001/).closest('tr') as HTMLElement
     expect(within(ligne).getByText('Refus fictif de la base.')).toBeTruthy()
     const bouton = within(ligne).getByRole('button', { name: 'Écrire' })
@@ -47,7 +47,7 @@ describe('la section des ventes facturées, seule', () => {
   })
 
   it('sans refus, le même état offre son geste', () => {
-    render(<VentesFactureesEcritures etats={etats()} motifIncomplet={null} relecture={false} relire={async () => {}} />)
+    render(<VentesFactureesEcritures etats={etats()} motifIncomplet={null} relecture={false} relire={async () => {}} lettrageDesFactures={new Map()} />)
     expect(screen.getByRole('button', { name: 'Écrire' }).hasAttribute('disabled')).toBe(false)
   })
 })

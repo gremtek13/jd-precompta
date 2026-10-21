@@ -3,7 +3,16 @@ import { mouvementJustifieParLeReleve } from './affectationBanque'
 import { COMPTE_BANQUE } from './comptes'
 import { nomDuVehicule } from './forfaitKilometrique'
 import { referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
-import type { ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
+import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
+import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
+import { formatDate } from './format'
+import type {
+  ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, TransmissionFacture, VehiculeDossier,
+} from './types'
+import {
+  indexDesFactures, nomDuDocument, porteUneSourceDeVente, rattachementDesVentes, type IndexDesFactures,
+  type VentesFactureesDesExports,
+} from './ventesFactureesDesExports'
 
 // Piste d'audit fiable — les ruptures de la chaîne « écriture → justificatif → opération réelle ».
 //
@@ -189,6 +198,26 @@ export interface LignePisteAudit {
 //
 // Le justificatif d'un FORFAIT KILOMÉTRIQUE est le BARÈME de l'exercice appliqué au kilométrage de la ligne
 // du cadre 7 qu'il désigne : `vehicules` permet de les nommer. Rien n'en a d'empreinte, la colonne reste vide.
+//
+// Le justificatif d'une ligne d'une VENTE FACTURÉE (ligne 28.6, chantier EC-Q3, étape VF4c2 ; conception, § 8 et § 14) :
+//   - d'une facture ou d'un avoir, le DOCUMENT lui-même — son numéro, son client, sa date, son TTC —, et pour preuve
+//     l'empreinte de son EXEMPLAIRE désigné (`pieces.facture_id` : l'original revenu de la plateforme, ou le PDF), à défaut
+//     celle du CII TRANSMIS (`transmissions_factures.sha256`, une transmission déposée ou acceptée) ; sans l'un ni l'autre,
+//     la colonne reste VIDE, jamais remplacée par un nom ;
+//   - d'un encaissement ou d'une contre-passation, son REGISTRE (`encaissements_factures`) — sa date, son moyen, son
+//     montant, la facture qu'il règle —, et son MOUVEMENT s'il en cite un, dans les colonnes de l'opération réelle ;
+//   - d'un mouvement que ses encaissements classent, le RELEVÉ qui le porte, comme un mouvement justifié par le relevé.
+// Rien ne lui « manque » tant que sa ligne se rattache à son écriture composée (`rattachementDesVentes`) ; une ligne que la
+// composition ne rend plus telle quelle (« à réécrire » ou « à retirer ») le dit, avec son justificatif quand même.
+// Obligatoire, sans valeur par défaut : l'oublier ferait dire « justificatif manquant » à chaque vente d'un dossier qui a
+// basculé.
+export interface JustificatifsDesVentes extends VentesFactureesDesExports {
+  /** Les pièces désignées exemplaires d'une facture ou d'un avoir, quel que soit leur statut : leur nom et leur empreinte. */
+  exemplaires: readonly Pick<Piece, 'id' | 'facture_id' | 'nom_fichier' | 'storage_hash'>[]
+  /** Les transmissions des factures du dossier : l'empreinte du CII déposé, et la plateforme qui l'a reçu. */
+  transmissions: readonly Pick<TransmissionFacture, 'id' | 'facture_id' | 'etat' | 'sha256' | 'hote'>[]
+}
+
 export interface RegistreAudit {
   immobilisations: readonly Immobilisation[]
   // Les factures d'acquisition, cherchées parmi TOUTES les pièces validées et non parmi celles de
@@ -198,6 +227,8 @@ export interface RegistreAudit {
   // Les lignes du cadre 7. Obligatoires, sans valeur par défaut : les oublier ferait nommer chaque forfait
   // « véhicule hors du jeu chargé ».
   vehicules: readonly VehiculeDossier[]
+  // Les ventes facturées et leurs preuves (ci-dessus).
+  ventes: JustificatifsDesVentes
 }
 
 export function pisteAudit(
@@ -213,8 +244,13 @@ export function pisteAudit(
   const factureParId = new Map(registre.factures.map((p) => [p.id, p]))
   const vehiculeParId = new Map(registre.vehicules.map((v) => [v.id, v]))
   const piecesCitees = new Set(ecritures.map((e) => e.piece_id).filter((id): id is string => !!id))
+  const ventes = rattachementDesVentes(ecritures, registre.ventes.ecritures)
+  const index = indexDesFactures(registre.ventes)
 
   const depuisEcritures = ecritures.map((e): LignePisteAudit => {
+    if (porteUneSourceDeVente(e) || ventes.has(e.id)) {
+      return ligneDUneVenteFacturee(e, ventes.get(e.id) ?? null, index, registre.ventes, ligneParId)
+    }
     if (!e.piece_id && !e.ligne_bancaire_id && e.immobilisation_id) return ligneDeDotation(e, bienParId, factureParId)
     if (!e.piece_id && !e.ligne_bancaire_id && e.vehicule_id) return ligneDuForfait(e, vehiculeParId)
     if (!e.piece_id && !e.ligne_bancaire_id && e.declaration_tva_id) return ligneDeLiquidation(e)
@@ -259,14 +295,21 @@ export function pisteAudit(
   })
 
   // L'autre sens : un justificatif validé que rien ne comptabilise. Sa ligne porte la pièce et rien
-  // de l'écriture — c'est justement ce qui manque.
+  // de l'écriture — c'est justement ce qui manque. SAUF L'EXEMPLAIRE D'UNE FACTURE SOURCE (étape VF4c2) : la vente est
+  // comptée par la facture, et lui n'a pas d'écriture à lui — le dire « sans écriture » ferait écrire une vente deux fois.
+  const exemplaireDUneSource = (p: Piece) => {
+    const f = p.facture_id == null ? undefined : index.factures.get(p.facture_id)
+    return f !== undefined && f.source_de_la_vente === true ? f : null
+  }
   const depuisPieces = pieces
     .filter((p) => !piecesCitees.has(p.id))
     .map((p): LignePisteAudit => ({
       ecritureId: null,
       date: p.date_piece ?? '',
       compte: '',
-      libelle: p.tiers ?? p.nom_fichier,
+      libelle: exemplaireDUneSource(p)
+        ? `Exemplaire de : ${nomDuDocument(exemplaireDUneSource(p)!)} — la vente est comptée par la facture`
+        : p.tiers ?? p.nom_fichier,
       debit: 0,
       credit: 0,
       pieceId: p.id,
@@ -282,7 +325,7 @@ export function pisteAudit(
       // CHACUN d'eux (l'appelant ne peut pas la rattacher à l'un sans la retirer des autres, et la
       // taire serait pire — c'est la règle de la feuille « Pièces sans date » d'un pack). Le manque
       // est nommé pour que sa présence ne se lise jamais comme « elle est de cet exercice-là ».
-      manque: p.date_piece ? ['écriture'] : ['écriture', 'date'],
+      manque: exemplaireDUneSource(p) ? [] : p.date_piece ? ['écriture'] : ['écriture', 'date'],
     }))
 
   const depuisANouveaux = aNouveaux.map((a): LignePisteAudit => ({
@@ -314,6 +357,81 @@ export function pisteAudit(
       a.compte.localeCompare(b.compte) ||
       (a.ecritureId ?? a.pieceId ?? '').localeCompare(b.ecritureId ?? b.pieceId ?? ''),
   )
+}
+
+// Ce qui manque à une ligne d'une vente facturée que la composition ne rend plus telle quelle : son justificatif existe,
+// c'est l'écriture qui n'est plus celle que sa source commande — la section « Ventes facturées » de l'onglet Écritures la
+// dit « à réécrire » ou « à retirer », et le FEC la laisse dehors.
+export const MANQUE_ECRITURE_PERIMEE = 'écriture qui n’est plus celle de sa source (à réécrire ou à retirer)'
+
+const libelleDuMoyen = (moyen: string) => (MOYENS_ENCAISSEMENT.find((m) => m.moyen === moyen)?.libelle ?? moyen).toLowerCase()
+
+// La ligne d'une vente facturée : sa facture, son registre ou son relevé pour justificatif (voir `JustificatifsDesVentes`).
+function ligneDUneVenteFacturee(
+  e: EcritureBrouillon,
+  vente: EcritureVenteFacturee | null,
+  index: IndexDesFactures,
+  justificatifs: JustificatifsDesVentes,
+  ligneParId: ReadonlyMap<string, LigneBancaire>,
+): LignePisteAudit {
+  // Une ligne de banque d'une vente facturée porte son mouvement par construction (la composition le pose sur elle) : rien
+  // à vérifier là qu'une ligne rattachée ne garantisse déjà.
+  const manque: string[] = []
+  if (vente === null) manque.push(MANQUE_ECRITURE_PERIMEE)
+  const base = {
+    ecritureId: e.id, date: e.date, compte: e.compte, libelle: e.libelle,
+    debit: e.sens === 'debit' ? e.montant : 0, credit: e.sens === 'credit' ? e.montant : 0, pieceId: null,
+  }
+  const sansJustificatif = { pieceTiers: null, pieceDate: null, pieceMontantTtc: null, pieceFichier: null, pieceEmpreinte: null }
+  const operation = (mouvementId: string | null) => {
+    const m = mouvementId == null ? null : ligneParId.get(mouvementId) ?? null
+    // Même distinction qu'ailleurs : un mouvement cité mais absent du jeu chargé est un filtre de l'appelant.
+    if (mouvementId != null && m === null) manque.push('mouvement hors du jeu chargé')
+    return { mouvementDate: m?.date ?? null, mouvementLibelle: m?.libelle ?? null, mouvementMontant: m?.montant ?? null }
+  }
+
+  if (e.facture_id != null) {
+    const doc = index.factures.get(e.facture_id)
+    if (!doc) {
+      manque.push('justificatif hors du jeu chargé')
+      return { ...base, ...sansJustificatif, ...operation(null), manque }
+    }
+    const exemplaires = justificatifs.exemplaires.filter((p) => p.facture_id === doc.id)
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    // Une seule transmission ACTIVE par facture (la base le garantit) ; seule une transmission déposée ou acceptée a remis
+    // le CII à la plateforme.
+    const transmis = justificatifs.transmissions.find((t) => t.facture_id === doc.id && (t.etat === 'depose' || t.etat === 'accepte'))
+    const empreintes = exemplaires.map((p) => p.storage_hash).filter((h): h is string => h != null)
+    const preuve = exemplaires.length > 0 ? ` — exemplaire : ${exemplaires.map((p) => p.nom_fichier).join(', ')}`
+      : transmis ? ` — CII transmis à ${transmis.hote}` : ''
+    return {
+      ...base, pieceTiers: doc.tiers_nom, pieceDate: doc.date_emission, pieceMontantTtc: doc.montant_ttc,
+      pieceFichier: `${nomDuDocument(doc)}${preuve}`,
+      pieceEmpreinte: exemplaires.length > 0 ? (empreintes.length > 0 ? empreintes.join(' ; ') : null) : transmis?.sha256 ?? null,
+      ...operation(null), manque,
+    }
+  }
+  if (e.encaissement_id != null) {
+    const enc = index.encaissements.get(e.encaissement_id)
+    if (!enc) {
+      manque.push('justificatif hors du jeu chargé')
+      return { ...base, ...sansJustificatif, ...operation(null), manque }
+    }
+    const facture = index.factures.get(enc.facture_id)
+    const quoi = enc.annule_id == null ? 'encaissement' : 'contre-passation'
+    return {
+      ...base, pieceTiers: facture?.tiers_nom ?? null, pieceDate: enc.date_encaissement, pieceMontantTtc: enc.montant,
+      pieceFichier: `Registre des encaissements : ${quoi} du ${formatDate(enc.date_encaissement)} (${libelleDuMoyen(enc.moyen)}) — `
+        + (facture ? nomDuDocument(facture) : 'facture non lue'),
+      pieceEmpreinte: null, ...operation(enc.ligne_bancaire_id), manque,
+    }
+  }
+  // Une ligne d'un mouvement que ses encaissements classent : le relevé.
+  const m = e.ligne_bancaire_id ? ligneParId.get(e.ligne_bancaire_id) ?? null : null
+  return {
+    ...base, pieceTiers: null, pieceDate: m?.date ?? null, pieceMontantTtc: null,
+    pieceFichier: m ? justificatifDuReleve(m) : null, pieceEmpreinte: null, ...operation(e.ligne_bancaire_id), manque,
+  }
 }
 
 // La ligne d'une dotation : le tableau d'amortissement pour justificatif, au 31 décembre, et la facture

@@ -3,8 +3,12 @@ import {
   COMPTE_FOURNISSEURS_IMMOBILISATIONS, libelleCompteTenu,
 } from './comptes'
 import { auxiliaireDuTiers } from './engagement'
-import { dateAParis, formatMoney } from './format'
+import { dateAParis, formatDate, formatMoney } from './format'
 import type { ANouveau, EcritureBrouillon, LettrageManuel, ModeComptable, Piece } from './types'
+import {
+  factureDeLaLigne, indexDesFactures, nomDuDocument, rattachementDesVentes, type FacturesDesLignes,
+  type VentesFactureesDesExports,
+} from './ventesFactureesDesExports'
 
 // LE LETTRAGE DES COMPTES DE TIERS — ligne 32 de la feuille de route (05/10/2026).
 //
@@ -35,6 +39,16 @@ import type { ANouveau, EcritureBrouillon, LettrageManuel, ModeComptable, Piece 
 // vraie au moment du clic peut cesser de l'être — un rapprochement posé ou annulé depuis, un tiers corrigé — : chaque
 // lettrage fait à la main est donc REVÉRIFIÉ à chaque lecture (`etatsDesLettragesManuels`), et seul celui qui tient
 // encore est appliqué. Les autres sont dits, jamais portés au FEC.
+//
+// LA VENTE FACTURÉE SE LETTRE PAR FACTURE (ligne 28.6, chantier EC-Q3, étape VF4c2 ; conception, § 14). Ses lignes n'ont
+// pas de pièce : la facture source écrit sa créance au 411 (`facture_id`), ses avoirs la réduisent (`facture_id` de
+// l'avoir, qui cite sa facture), ses encaissements la soldent et leurs contre-passations la rouvrent (`encaissement_id`,
+// dont le registre dit la facture). Quand ces lignes se soldent au centime sur le compte de tiers, ET que chacune est
+// celle que la composition rend (`rattachementDesVentes`, lib/ventesFactureesDesExports.ts — sinon le FEC la laisse dehors,
+// et un code posé sur le reste ne se solderait pas dans le fichier), elles reçoivent le même code, dans la suite des
+// lettrages du compte. Le geste qui apparie, ici, c'est l'encaissement enregistré au registre ; rien ne se lettre à la
+// main. Ce qui ne se lettre pas se DIT, facture par facture (`lettragesDesFactures`) : un reste au 411, ou une écriture à
+// reprendre.
 
 // Les comptes que le lettrage apparie : ceux qu'une pièce d'engagement porte comme compte de tiers — 401, 404 et
 // 411, et le compte du dirigeant d'une note de frais quand c'est un compte de tiers (455, 467). Jamais le 108,
@@ -115,6 +129,9 @@ export function lettrages(
   lettragesManuels: readonly LettrageManuel[],
   // Sans valeur par défaut : en trésorerie rien ne se lettre, et l'oublier en engagement ne lettrerait rien.
   mode: ModeComptable,
+  // Les ventes facturées du dossier : la composition, les factures et le registre, lus en entier. Sans valeur par défaut :
+  // oubliées, le 411 d'une vente facturée ne serait jamais lettré, et le FEC ne le dirait pas.
+  ventes: VentesFactureesDesExports,
 ): ReadonlyMap<string, LettrageDeLigne> {
   const resultat = new Map<string, LettrageDeLigne>()
   if (mode !== 'engagement') return resultat
@@ -134,6 +151,9 @@ export function lettrages(
   for (const g of appliques) {
     naissances.push(naissance(g.groupe, g.pieceIds.flatMap((id) => parPieceEtCompte.get(`${id}|${g.compte}`) ?? []), g.le))
   }
+  // Les ventes facturées, facture par facture : la même règle qu'une pièce — une facture dont deux comptes se solderaient
+  // n'est lettrée sur aucun —, et chaque ligne rattachée à son écriture composée.
+  for (const v of facturesSoldees(ecritures, ventes)) naissances.push(naissance(`vente|${v.factureId}`, v.lignes, null))
 
   const parCompte = new Map<string, Naissance[]>()
   for (const n of naissances) parCompte.set(n.compte, [...(parCompte.get(n.compte) ?? []), n])
@@ -180,6 +200,105 @@ function soldesParPiece(parPieceEtCompte: ReadonlyMap<string, EcritureBrouillon[
     soldees.set(pieceId, [...(soldees.get(pieceId) ?? []), lignes])
   }
   return soldees
+}
+
+// ── LA VENTE FACTURÉE, FACTURE PAR FACTURE ─────────────────────────────────────────────────────────────────────────
+
+// Les lignes d'une vente facturée sur chaque compte lettrable, par facture et par compte : la facture, ses avoirs, ses
+// encaissements et leurs contre-passations. Une ligne sans pièce dont la lecture ne connaît pas la source n'y est pas.
+function lignesParFactureEtCompte(
+  ecritures: readonly EcritureBrouillon[], ventes: FacturesDesLignes,
+): Map<string, { factureId: string; compte: string; lignes: EcritureBrouillon[] }> {
+  const index = indexDesFactures(ventes)
+  const groupes = new Map<string, { factureId: string; compte: string; lignes: EcritureBrouillon[] }>()
+  for (const e of ecritures) {
+    if (e.piece_id || !COMPTES_LETTRABLES.has(e.compte)) continue
+    const factureId = factureDeLaLigne(e, index)
+    if (factureId === null) continue
+    const cle = `${factureId}|${e.compte}`
+    const g = groupes.get(cle) ?? { factureId, compte: e.compte, lignes: [] }
+    g.lignes.push(e)
+    groupes.set(cle, g)
+  }
+  return groupes
+}
+
+// Les factures dont les lignes se soldent sur un compte de tiers et sont toutes celles que la composition rend : celles
+// qui se lettrent. Une facture qui se solderait sur deux comptes n'en a aucune (« Différents lettrages »).
+function facturesSoldees(
+  ecritures: readonly EcritureBrouillon[], ventes: VentesFactureesDesExports,
+): { factureId: string; lignes: EcritureBrouillon[] }[] {
+  const rattachees = rattachementDesVentes(ecritures, ventes.ecritures)
+  const soldees = [...lignesParFactureEtCompte(ecritures, ventes).values()]
+    .filter((g) => somme(g.lignes) === 0 && g.lignes.every((l) => rattachees.has(l.id)))
+  const parFacture = new Map<string, number>()
+  for (const g of soldees) parFacture.set(g.factureId, (parFacture.get(g.factureId) ?? 0) + 1)
+  return soldees.filter((g) => parFacture.get(g.factureId) === 1)
+}
+
+export type MotifFactureNonLettree =
+  // Ses lignes ne se soldent pas sur le compte : un reste à encaisser (ou un trop encaissé), au brouillon.
+  | 'reste'
+  // Elles se soldent, mais l'une n'est plus celle que sa source commande : à réécrire ou à retirer, et le FEC la laisse
+  // dehors — un code posé sur les autres ne se solderait pas dans le fichier.
+  | 'ecriture_a_reprendre'
+  // Elles se soldent sur deux comptes de tiers à la fois — défensif, comme la règle d'une pièce.
+  | 'deux_comptes'
+
+/** Le lettrage du compte de tiers d'une facture source, ou pourquoi elle n'en a pas. */
+export interface LettrageDUneFacture {
+  factureId: string
+  compte: string
+  /** Le code, quand elle est lettrée ; nul sinon. */
+  code: string | null
+  /** AAAA-MM-JJ, quand elle est lettrée. */
+  date: string | null
+  /** Ce qui reste sur le compte au brouillon, dans le sens normal du compte. */
+  reste: number
+  motif: MotifFactureNonLettree | null
+}
+
+/**
+ * Le lettrage de chaque facture source qui porte des lignes sur un compte de tiers, ou la raison pour laquelle il n'y en a
+ * pas : ce que l'onglet Écritures dit à côté de chaque facture. `lettrage` est celui que le FEC porte (`lettrages`), sur le
+ * même brouillon et les mêmes ventes. Rien en trésorerie.
+ */
+export function lettragesDesFactures(
+  ecritures: readonly EcritureBrouillon[], ventes: VentesFactureesDesExports, mode: ModeComptable,
+  lettrage: ReadonlyMap<string, LettrageDeLigne>,
+): Map<string, LettrageDUneFacture> {
+  const resultat = new Map<string, LettrageDUneFacture>()
+  if (mode !== 'engagement') return resultat
+  const rattachees = rattachementDesVentes(ecritures, ventes.ecritures)
+  for (const g of lignesParFactureEtCompte(ecritures, ventes).values()) {
+    const code = lettrage.get(g.lignes[0].id) ?? null
+    const reste = somme(g.lignes)
+    const motif: MotifFactureNonLettree | null = code !== null ? null
+      : reste !== 0 ? 'reste'
+        : g.lignes.some((l) => !rattachees.has(l.id)) ? 'ecriture_a_reprendre' : 'deux_comptes'
+    // `+ 0` : un reste nul retourné rend -0.
+    const enSensNormal = euros(sensNormal(g.compte) === 'debit' ? reste : -reste) + 0
+    const deja = resultat.get(g.factureId)
+    // Une facture sur deux comptes : le premier lettré l'emporte, sinon le premier lu — l'écran n'en dit qu'un.
+    if (!deja || (deja.code === null && code !== null)) {
+      resultat.set(g.factureId, { factureId: g.factureId, compte: g.compte, code: code?.code ?? null, date: code?.date ?? null, reste: enSensNormal, motif })
+    }
+  }
+  return resultat
+}
+
+/** Ce que l'onglet dit du lettrage d'une facture, en une phrase. */
+export function phraseDuLettrage(l: LettrageDUneFacture): string {
+  if (l.code !== null) return `Lettrée ${l.code} au ${l.compte}${l.date ? ` le ${formatDate(l.date)}` : ''} : la facture, ses avoirs et ses encaissements se soldent.`
+  if (l.motif === 'reste') {
+    return l.reste > 0
+      ? `Non lettrée au ${l.compte} : il reste ${formatMoney(l.reste)} au brouillon, à encaisser ou à écrire.`
+      : `Non lettrée au ${l.compte} : ${formatMoney(-l.reste)} de plus que la facture au brouillon.`
+  }
+  if (l.motif === 'ecriture_a_reprendre') {
+    return `Non lettrée au ${l.compte} : ses lignes se soldent, mais une de ses écritures est à réécrire ou à retirer, et reste hors du FEC.`
+  }
+  return `Non lettrée : ses lignes se soldent sur deux comptes de tiers, et une écriture du FEC ne porte qu’un lettrage.`
 }
 
 // ── LES LETTRAGES FAITS À LA MAIN ───────────────────────────────────────────────────────────────────────────────
@@ -466,6 +585,9 @@ export interface PieceDuTiers {
   // Le lettrage fait à la main où la pièce figure, qu'il tienne ou non : une pièce ouverte qui y figure attend qu'on le
   // défasse ou que ses pièces se soldent de nouveau, et ne se lettre pas une seconde fois.
   lettrageManuel: string | null
+  // Présent pour une FACTURE SOURCE de sa vente (étape VF4c2) — `pieceId` est alors l'identifiant de la facture : ses
+  // lignes sont celles de la facture, de ses avoirs et de ses encaissements, qui se lettrent par elle et jamais à la main.
+  factureId?: string
 }
 
 export type OrigineDuSolde = 'tiers' | 'ouverture' | 'sans_piece'
@@ -518,9 +640,14 @@ export function comptesDeTiers(
   mode: ModeComptable,
   // AAAA-MM-JJ : la vue se lit au soir de ce jour.
   dateArrete: string,
+  // Les factures et le registre des encaissements, lus en entier (étape VF4c2) : les lignes d'une vente facturée se lisent
+  // par facture, chez leur client, comme une pièce. Sans valeur par défaut : oubliées, elles tomberaient parmi les
+  // « écritures sans pièce », sans client ni ancienneté.
+  ventes: FacturesDesLignes,
 ): SoldeDeTiers[] {
   if (mode !== 'engagement') return []
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
+  const index = indexDesFactures(ventes)
   const lettrageDeLaPiece = new Map(lettragesManuels.flatMap((l) => (l.piece_id ? [[l.piece_id, l.groupe] as const] : [])))
   const enSensNormal = (compte: string, c: number) => (sensNormal(compte) === 'debit' ? c : -c)
   const soldes = new Map<string, SoldeDeTiers & { centimes: number; trancheCentimes: [number, number, number, number] }>()
@@ -540,9 +667,17 @@ export function comptesDeTiers(
   }
 
   const parPiece = new Map<string, EcritureBrouillon[]>()
+  const parFacture = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
     if (!COMPTES_LETTRABLES.has(e.compte) || e.date > dateArrete) continue
     if (!e.piece_id) {
+      // Une ligne d'une vente facturée se range sous sa facture ; les autres lignes sans pièce restent à part.
+      const factureId = factureDeLaLigne(e, index)
+      if (factureId !== null) {
+        const cle = `${factureId}|${e.compte}`
+        parFacture.set(cle, [...(parFacture.get(cle) ?? []), e])
+        continue
+      }
       entree(e.compte, null, 'Écritures sans pièce', 'sans_piece').centimes += enSensNormal(e.compte, centimes(e))
       continue
     }
@@ -590,6 +725,46 @@ export function comptesDeTiers(
       age,
       etat,
       lettrageManuel: lettrageDeLaPiece.get(pieceId) ?? null,
+    })
+    s.trancheCentimes[tranche(age)] += resteCentimes
+  }
+
+  // LES FACTURES SOURCES, comme des pièces : chez le client de la facture (l'auxiliaire d'une pièce de vente du même nom),
+  // la facture et ses avoirs d'un côté, ses encaissements et leurs contre-passations de l'autre, à l'arrêté. Une facture
+  // soldée n'y figure plus ; une facture ouverte dit son état — c'est ce qui dit pourquoi elle n'est pas lettrée.
+  for (const lignes of parFacture.values()) {
+    const compte = lignes[0].compte
+    const factureId = factureDeLaLigne(lignes[0], index)!
+    const document = index.factures.get(factureId)
+    const auxiliaire = auxiliaireDuTiers({ tiers: document?.tiers_nom ?? null }, compte)
+    const s = auxiliaire
+      ? entree(compte, auxiliaire.num, auxiliaire.lib, 'tiers')
+      : entree(compte, null, libelleCompteTenu(compte) ?? compte, 'tiers')
+    const facture = lignes.filter((e) => e.facture_id != null)
+    const reglements = lignes.filter((e) => e.encaissement_id != null)
+    const factureCentimes = facture.reduce((t, e) => t + enSensNormal(compte, centimes(e)), 0)
+    const resteCentimes = lignes.reduce((t, e) => t + enSensNormal(compte, centimes(e)), 0)
+    s.centimes += resteCentimes
+    if (resteCentimes === 0) continue
+    const dateFacture = facture.length > 0 ? facture.reduce((min, e) => (e.date < min ? e.date : min), facture[0].date) : null
+    const origine = dateFacture ?? reglements.reduce((min, e) => (e.date < min ? e.date : min), reglements[0].date)
+    const age = Math.max(0, joursEntre(origine, dateArrete))
+    const etat: EtatPieceDuTiers = facture.length === 0
+      ? 'reglement_sans_facture'
+      : reglements.length === 0
+        ? 'ouverte'
+        : Math.sign(resteCentimes) === Math.sign(factureCentimes) ? 'payee_en_partie' : 'payee_en_trop'
+    s.pieces.push({
+      pieceId: factureId,
+      libelle: document ? nomDuDocument(document) : lignes[0].libelle,
+      dateFacture,
+      facture: euros(factureCentimes),
+      regle: euros(factureCentimes - resteCentimes),
+      reste: euros(resteCentimes),
+      age,
+      etat,
+      lettrageManuel: null,
+      factureId,
     })
     s.trancheCentimes[tranche(age)] += resteCentimes
   }

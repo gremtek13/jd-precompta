@@ -41,7 +41,7 @@ const BADGE: Readonly<Record<EtatSourceDeVente, string>> = {
 
 const ORDRE_DES_COMPTES: readonly EtatSourceDeVente[] = ['a_ecrire', 'a_reecrire', 'a_retirer', 'ne_s_ecrit_pas', 'a_jour', 'validee']
 
-export default function VentesFactureesEcritures({ etats, motifIncomplet, relecture, relire }: {
+export default function VentesFactureesEcritures({ etats, motifIncomplet, relecture, relire, lettrageDesFactures }: {
   /** Les états des sources, tirés de lectures toutes revenues EN ENTIER ; `null` tant que l'une ne l'est pas. */
   etats: EtatsDesVentes | null
   /** Pourquoi une lecture a manqué (les ventes facturées ou le brouillon) ; nul sinon. */
@@ -50,6 +50,12 @@ export default function VentesFactureesEcritures({ etats, motifIncomplet, relect
   relecture: boolean
   /** La relecture de l'onglet : le brouillon et les ventes facturées ensemble. */
   relire: () => Promise<void>
+  /**
+   * Ce que le lettrage du compte de tiers dit de chaque facture, par identifiant (étape VF4c2 ; lib/lettrage.ts,
+   * `lettragesDesFactures`, `phraseDuLettrage`) : lettrée, ou pourquoi elle ne l'est pas. Vide en trésorerie. Sans valeur
+   * par défaut : oubliée, une facture que le FEC laisse sans lettrage ne dirait pas pourquoi.
+   */
+  lettrageDesFactures: ReadonlyMap<string, string>
 }) {
   // Un verrou par source : deux sources différentes peuvent s'écrire ensemble, la même jamais.
   const gestesEnCours = useRef<Set<string>>(new Set())
@@ -121,7 +127,8 @@ export default function VentesFactureesEcritures({ etats, motifIncomplet, relect
       <p className="muted" style={{ marginTop: -8 }}>
         Les factures de ce dossier sont la source de leurs ventes : chaque facture, avoir, encaissement, et chaque mouvement
         que des encaissements classent, s’écrit ici sur un clic, par la fonction qui vérifie l’écriture avant de l’écrire.
-        Ces écritures ne vont pas encore au FEC ni à la piste d’audit.
+        Une écriture à jour va au FEC, sous la pièce de sa source, et à la piste d’audit ; une écriture à réécrire ou à
+        retirer reste hors du FEC tant qu’elle n’est pas reprise.
       </p>
 
       {motifIncomplet !== null ? (
@@ -158,6 +165,9 @@ export default function VentesFactureesEcritures({ etats, motifIncomplet, relect
                       <div>
                         <span className={`badge ${BADGE[s.etat]}`}>{LIBELLE_ETAT_SOURCE[s.etat]}</span>
                         <p className="muted" style={{ margin: '4px 0 0' }}>{s.detail}</p>
+                        {s.source.genre === 'facture' && lettrageDesFactures.has(s.source.factureId) && (
+                          <p className="muted" style={{ margin: '4px 0 0' }}>{lettrageDesFactures.get(s.source.factureId)}</p>
+                        )}
                       </div>
                     </td>
                     <td className="td-boutons">

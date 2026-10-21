@@ -3,8 +3,10 @@ import { idsMouvementsJustifiesParLeReleve, referenceDuReleve, type MouvementBan
 import { libelleEcritureANouveau } from './aNouveaux'
 import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { auxiliaireDuTiers } from './engagement'
+import { auxiliaireDeLaLigne, type EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { dateAParis } from './format'
 import type { LettrageDeLigne } from './lettrage'
+import { porteUneSourceDeVente, rattachementDesVentes } from './ventesFactureesDesExports'
 
 // Génération du FEC (Fichier des Écritures Comptables) — format officiel imposé par l'article
 // A47 A-1 du Livre des procédures fiscales, que tout logiciel de comptabilité sait importer sans
@@ -116,7 +118,8 @@ export interface NumerotationFec {
   lignes: LigneFec[]
   // Les écritures que rien ne rattache : ni une pièce, ni un mouvement justifié par le relevé, ni un bien, ni
   // un véhicule, ni une déclaration de TVA, ni une échéance payée depuis le compte personnel — le reste d'une pièce
-  // supprimée, que `absenceFec` chiffre. Hors du fichier, et une écriture
+  // supprimée, que `absenceFec` chiffre —, et les lignes d'une vente facturée que la composition ne rend plus telles
+  // quelles (« à réécrire » ou « à retirer », lib/ventesFactureesDesExports.ts). Hors du fichier, et une écriture
   // qu'on ne peut pas numéroter empêche de valider son exercice.
   horsFec: EcritureBrouillon[]
 }
@@ -194,6 +197,18 @@ function libellesDesComptes(categories: Categorie[], aNouveaux: readonly ANouvea
 // COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL (ligne 26.6, lib/cotisationPersonnelle.ts) de même, une écriture par
 // échéance, au jour du paiement : sa pièce est le relevé du compte personnel de ce jour (`referenceDuPaiementPersonnel`).
 // Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
+//
+// UNE VENTE FACTURÉE (ligne 28.6, chantier EC-Q3, étape VF4c2 ; conception, § 5) fait les écritures que sa COMPOSITION rend
+// (lib/ecrituresVentesFacturees.ts) : la facture, l'avoir et l'encaissement de trésorerie au journal des VENTES, le
+// règlement d'engagement et le mouvement que ses encaissements classent au journal de BANQUE ; PieceRef, le numéro de la
+// facture (de l'avoir), le relevé pour un mouvement ; PieceDate, la date d'émission du document, celle du mouvement ; le
+// compte auxiliaire du 411, celui d'une pièce de vente du même client (« C » et la clé du nom) ; la clé, sa source et sa
+// date. Chaque ligne du brouillon retrouve son écriture composée par sa SOURCE et sa DATE, jamais par un montant ni un
+// libellé, et seulement si les lignes de la source à cette date SONT cette écriture (`rattachementDesVentes`, lib/
+// ventesFactureesDesExports.ts) ; sinon — une source « à réécrire » ou « à retirer » — elles restent HORS du fichier, avec
+// le reste d'une pièce supprimée, et l'onglet le dit. EcritureLib reste le libellé de la ligne, celui que la composition
+// lui a donné en l'écrivant : le FEC d'un exercice validé le relira de la ligne seule (`numerotationValidee`), et les deux
+// fichiers ne doivent différer que par ValidDate et le lettrage.
 export function numeroterFec(
   ecritures: readonly EcritureBrouillon[], pieces: readonly Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   // Sans valeur par défaut : numéroté en trésorerie, le brouillon d'un dossier en engagement mettrait
@@ -203,8 +218,13 @@ export function numeroterFec(
   // quelles lignes, seules celles-là comptent. Sans valeur par défaut : les oublier sortirait du fichier
   // tous les encaissements sans bordereau, c'est-à-dire, pour un infirmier, presque toutes ses recettes.
   mouvements: readonly MouvementBancaire[],
+  // Les écritures que la composition des ventes facturées du dossier rend (`ecrituresDesVentesFacturees`, sur des lectures
+  // faites en entier). Sans valeur par défaut : oubliées, toutes les écritures d'un dossier qui a basculé sortiraient du
+  // fichier — ses ventes. Un dossier qui n'a pas basculé n'en a aucune : la base refuse d'en écrire.
+  ventesFacturees: readonly EcritureVenteFacturee[],
 ): NumerotationFec {
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
+  const ventes = rattachementDesVentes(ecritures, ventesFacturees)
   const idsJustifies = idsMouvementsJustifiesParLeReleve(mouvements)
   const mouvementById = new Map(mouvements.map((m) => [m.id, m]))
   const libelleDu = libellesDesComptes(categories, aNouveaux)
@@ -226,7 +246,14 @@ export function numeroterFec(
   const horsFec: EcritureBrouillon[] = []
   for (const e of ecritures) {
     let cle: string
-    if (e.piece_id) {
+    const vente = ventes.get(e.id)
+    if (vente) {
+      cle = vente.cle
+    } else if (porteUneSourceDeVente(e)) {
+      // Une ligne d'une facture ou d'un encaissement que la composition ne rend plus telle quelle : à réécrire ou à retirer.
+      horsFec.push(e)
+      continue
+    } else if (e.piece_id) {
       const source = mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
       cle = `${source}|${e.date}`
     } else if (e.ligne_bancaire_id && idsJustifies.has(e.ligne_bancaire_id)) {
@@ -261,6 +288,10 @@ export function numeroterFec(
     .map(([cle, rows]) => {
       const pieceId = rows[0].piece_id
       const ordre = plusAncienne(rows)
+      const vente = ventes.get(rows[0].id)
+      if (vente) {
+        return { cle, pieceId: null, rows, ordre, journal: vente.journal, pieceDate: vente.pieceDate, pieceRef: vente.pieceRef }
+      }
       if (!pieceId && rows[0].immobilisation_id && !rows[0].ligne_bancaire_id) {
         return { cle, pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
           pieceRef: `Tableau d'amortissement ${rows[0].date.slice(0, 4)}` }
@@ -305,12 +336,15 @@ export function numeroterFec(
     const numero = (compteurs[journal] ?? 0) + 1
     compteurs[journal] = numero
     const piece = pieceId ? pieceById.get(pieceId) : undefined
+    const vente = ventes.get(rows[0].id)
     for (const e of rows) {
       // Une pièce absente du jeu fourni n'a pas de tiers qu'on puisse lire : son auxiliaire est le
       // compte « divers », plutôt qu'une clé tirée d'un libellé qui peut n'être qu'un nom de fichier.
       // Un mouvement justifié par le relevé n'a pas de compte AUXILIAIRE : son écriture va de la catégorie,
-      // ou du compte du dirigeant, à la banque — l'auxiliaire ne sert qu'aux 401 et 411 d'une pièce.
-      const auxiliaire = pieceId ? auxiliaireDuTiers(piece ?? { tiers: null }, e.compte) : null
+      // ou du compte du dirigeant, à la banque — l'auxiliaire ne sert qu'aux 401 et 411 d'une pièce. Celui du 411 d'une
+      // vente facturée est celui que la composition donne à son client (`auxiliaireDeLaLigne`).
+      const auxiliaire = vente ? auxiliaireDeLaLigne(vente, e)
+        : pieceId ? auxiliaireDuTiers(piece ?? { tiers: null }, e.compte) : null
       lignes.push({
         ecriture: e, journal, numero, pieceRef: champFec(pieceRef), pieceDate,
         compteLib: libelleDu(e.compte),
@@ -446,8 +480,9 @@ export function formaterFec(
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   mode: ModeComptable, mouvements: readonly MouvementBancaire[], lettrage: ReadonlyMap<string, LettrageDeLigne>,
+  ventesFacturees: readonly EcritureVenteFacturee[],
 ): string {
-  return formaterFec(numeroterFec(ecritures, pieces, categories, aNouveaux, mode, mouvements), lettrage)
+  return formaterFec(numeroterFec(ecritures, pieces, categories, aNouveaux, mode, mouvements, ventesFacturees), lettrage)
 }
 
 // SirenFECAAAAMMJJ.txt — nom de fichier imposé par le format (AAAAMMJJ = date de clôture de

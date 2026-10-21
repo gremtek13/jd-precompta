@@ -45,6 +45,10 @@ function emploisDuBrouillon(texte: string): string[] {
       const p = n.parent
       // La déclaration elle-même (`const [ecritures, setEcritures]`, `const ecrituresFiltrees = …`) n'est pas un emploi.
       if (ts.isBindingElement(p) || (ts.isVariableDeclaration(p) && p.name === n)) { /* déclaration */ }
+      // Ni le NOM d'une propriété qui s'appelle de même (étape VF4c2) : `composition.ecritures`, les écritures composées des
+      // ventes facturées, ou la clé `{ ecritures: … }` d'un objet — ce n'est pas le brouillon, et sa valeur, si elle en est
+      // un emploi, est rangée à part.
+      else if ((ts.isPropertyAccessExpression(p) || ts.isPropertyAssignment(p)) && p.name === n) { /* nom de propriété */ }
       else if (ts.isPropertyAccessExpression(p) && p.expression === n) {
         // Un receveur : `.length`, `.some(…)`, `.filter(…)`. Un `.filter` dont le résultat part à une fonction se range
         // sous cette fonction, filtré.
@@ -71,8 +75,10 @@ const INVENTAIRE: Record<string, { nombre: number; raison: string }> = {
   'appel:ecrituresAGenerer': { nombre: 1, raison: 'les pièces déjà écrites, par `piece_id` : une ligne sans pièce n’y entre pas' },
   'appel:analyserEcritures': { nombre: 1, raison: 'sans contrepartie, déséquilibrées, à régénérer : par pièce, les lignes sans pièce écartées' },
   'appel:ecrituresSansObjet': { nombre: 1, raison: 'part de l’écriture d’une PIÈCE (`piece_id` nul écarté)' },
-  'appel:etatsDesLettragesManuels': { nombre: 1, raison: 'le lettrage à la main, par pièce ; celui des ventes facturées est VF4c2' },
-  'appel:lettrages': { nombre: 1, raison: 'le lettrage par pièce (`piece_id` nul écarté) ; le lettrage par facture est VF4c2' },
+  'appel:etatsDesLettragesManuels': { nombre: 1, raison: 'le lettrage à la main, par pièce ; une facture source se lettre par ses encaissements, jamais à la main' },
+  'appel:lettrages': { nombre: 1, raison: 'le lettrage par pièce, et depuis VF4c2 par facture : le 411 d’une vente facturée quand ses lignes rattachées se soldent' },
+  'appel:lettragesDesFactures': { nombre: 1, raison: 'VF4c2 : ce que la section dit du lettrage de chaque facture source, ou pourquoi il n’y en a pas' },
+  'appel:rattachementDesVentes': { nombre: 1, raison: 'VF4c2 : les lignes de l’exercice que le FEC rattache à leur écriture composée — les autres, que le badge compte' },
   'appel:etatDeLOuverture': { nombre: 1, raison: 'ne lit que les dates : une écriture d’une vente facturée datée avant l’exercice le précède, comme une autre' },
   'appel:etatsDesVentesFacturees': { nombre: 1, raison: 'la section des ventes facturées : c’est elle qui juge ces lignes' },
   'appel:rupturesPisteAudit (filtré)': { nombre: 1, raison: 'les ruptures, SANS les lignes d’une vente facturée (`ligneDUneVenteFacturee`)' },
@@ -82,11 +88,11 @@ const INVENTAIRE: Record<string, { nombre: number; raison: string }> = {
   'appel:liquidationsDesynchronisees': { nombre: 1, raison: 'par déclaration (`declaration_tva_id`)' },
   'appel:paiementsTvaDesynchronises': { nombre: 1, raison: 'les mouvements qui paient une déclaration seuls (G1)' },
   'appel:soldeCompte': { nombre: 3, raison: 'les totaux de TVA de l’exercice : la TVA collectée d’une vente facturée y compte, à bon droit' },
-  'appel:numerotationValidee': { nombre: 1, raison: 'le FEC d’un exercice validé (VF4c2)' },
-  'appel:absenceFec': { nombre: 1, raison: 'ce qui n’ira pas au FEC : les lignes d’une vente facturée n’y vont pas encore (VF4c2), le badge le dit' },
-  'appel:genererFec': { nombre: 1, raison: 'le FEC, inchangé (VF4c2) : il écarte ces lignes, que le badge compte' },
-  'appel:pisteAudit': { nombre: 1, raison: 'l’export de la piste d’audit, inchangé (VF4c2)' },
-  'méthode:filter': { nombre: 3, raison: 'le compte des validées, l’exercice affiché, la recherche affichée : les lignes d’une vente facturée sont des écritures du journal comme les autres' },
+  'appel:numerotationValidee': { nombre: 1, raison: 'le FEC d’un exercice validé, relu de ce que la validation a figé : VF7 y numérotera ces lignes' },
+  'appel:absenceFec (filtré)': { nombre: 1, raison: 'ce qui n’ira pas au FEC, SANS les lignes qu’il rattache (VF4c2) : celles d’une vente facturée à réécrire ou à retirer y restent, et le badge le dit' },
+  'appel:genererFec': { nombre: 1, raison: 'le FEC, qui porte depuis VF4c2 les lignes rattachées à leur écriture composée' },
+  'appel:pisteAudit': { nombre: 1, raison: 'l’export de la piste d’audit, qui justifie depuis VF4c2 ces lignes par leur facture, leur registre ou leur relevé' },
+  'méthode:filter': { nombre: 4, raison: 'le compte des validées, l’exercice affiché, la recherche affichée : les lignes d’une vente facturée sont des écritures du journal comme les autres ; et (VF4c2) le compte de celles que le FEC ne rattache pas' },
   'méthode:length': { nombre: 8, raison: 'le compte des proposées ; le modèle verrouillé dès la première écriture, vente facturée comprise ; le FEC vide ; la recherche et le journal vides' },
   'méthode:some': { nombre: 2, raison: 'par `piece_id` : la part figée d’une pièce' },
   'méthode:map': { nombre: 1, raison: 'les lignes affichées du journal' },
@@ -114,6 +120,14 @@ describe('le relevé : chaque emploi du brouillon dans l’onglet Écritures, et
     expect(emploisDuBrouillon(plante)).toContain('appel:autreControle')
     const forme = TEXTE_ONGLET.replace('const nbValidees =', 'const copie = [...ecritures]\n  const nbValidees =')
     expect(emploisDuBrouillon(forme)).toContain('autre:SpreadElement')
+  })
+
+  it('le nom d’une propriété n’est pas un emploi ; sa valeur, si (étape VF4c2)', () => {
+    const avant = emploisDuBrouillon(TEXTE_ONGLET)
+    const nom = TEXTE_ONGLET.replace('const nbValidees =', 'const x = objet.ecritures\n  const y = { ecritures: 1 }\n  const nbValidees =')
+    expect(emploisDuBrouillon(nom)).toEqual(avant)
+    const valeur = TEXTE_ONGLET.replace('const nbValidees =', 'const y = { cle: ecritures }\n  const nbValidees =')
+    expect(emploisDuBrouillon(valeur)).toHaveLength(avant.length + 1)
   })
 
   it('chaque écriture d’hier de l’onglet vise une PIÈCE ou un mouvement classé autrement, jamais une ligne d’une vente facturée', () => {

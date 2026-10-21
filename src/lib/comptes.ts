@@ -132,21 +132,30 @@ export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   [COMPTE_REMBOURSEMENT_TVA_DEMANDE]: "Remboursement de taxes sur le chiffre d'affaires demandé",
   [COMPTE_ARRONDIS_CHARGE]: 'Pénalités et autres charges',
   [COMPTE_ARRONDIS_PRODUIT]: 'Indemnités et autres produits',
+  // LE 706000 ET LE 627000 PRENNENT LE NOM DU PLAN COMPTABLE GÉNÉRAL, pour tout dossier (décision du cabinet du 20/10/2026,
+  // VF4A-Q1 ; chantier EC-Q3, étape VF4c2). Ce sont les comptes par défaut de deux rôles de la vente facturée, que le FEC
+  // porte désormais (lib/fec.ts), ET ceux de deux catégories communes, « Ventes / prestations » et « Frais bancaires » : un
+  // même CompteNum ne porte qu'un CompteLib dans le fichier, et c'est l'intitulé de la nomenclature qui l'emporte. Placés
+  // ici, ils passent avant le libellé d'une catégorie (`libelleCompteTenu`) dans la balance, le FEC, la révision, la revue
+  // analytique et le lettrage — les lignes de ces deux catégories y changent de nom, dans tout dossier qui les emploie ;
+  // une écriture déjà validée garde le libellé figé avec elle (`compte_lib`). Les quatre autres comptes de la vente
+  // facturée gardent le nom qu'ils ont aujourd'hui (`LIBELLES_DE_LA_VENTE_FACTUREE`, ci-dessous).
+  [COMPTE_PRESTATIONS_DE_SERVICES]: 'Prestations de services',
+  [COMPTE_SERVICES_BANCAIRES]: 'Services bancaires et assimilés',
 }
 
 // LE LIBELLÉ DES SIX COMPTES DE LA VENTE FACTURÉE, celui du catalogue (l'intitulé de la nomenclature du PCG consolidé au
-// 1er janvier 2026), HORS DE `LIBELLES_COMPTES` : ce dernier passe avant le libellé d'une catégorie (`libelleCompteTenu`),
-// et le 706000 et le 627000 sont aussi les comptes de deux catégories communes, « Ventes / prestations » et « Frais
-// bancaires » — les y mettre renommerait leurs lignes dans la balance et le FEC de tout dossier qui les emploie. Le libellé
-// que le FEC donnera à ces comptes se tranche avec leurs premières écritures (étape VF4c ; un même CompteNum, un seul
-// CompteLib).
+// 1er janvier 2026). Le 706000 et le 627000 sont AUSSI dans `LIBELLES_COMPTES` depuis l'étape VF4c2 (VF4A-Q1, ci-dessus),
+// et leur intitulé n'y est écrit qu'une fois. Les quatre autres en restent HORS : `LIBELLES_COMPTES` passe avant tout autre
+// nom (`libelleCompteTenu`), et les y mettre renommerait aussi un 511, un 53 ou un 4458 qu'une balance reprise, une
+// catégorie ou un compte de bilan choisi nomme aujourd'hui autrement — ce que la décision ne demande pas.
 export const LIBELLES_DE_LA_VENTE_FACTUREE: Readonly<Record<string, string>> = {
-  [COMPTE_PRESTATIONS_DE_SERVICES]: 'Prestations de services',
+  [COMPTE_PRESTATIONS_DE_SERVICES]: LIBELLES_COMPTES[COMPTE_PRESTATIONS_DE_SERVICES],
   [COMPTE_VENTES_DE_BIENS]: 'Ventes de marchandises',
   [COMPTE_TVA_COLLECTEE_EN_ATTENTE]: "Taxes sur le chiffre d'affaires à régulariser ou en attente",
   [COMPTE_VALEURS_A_L_ENCAISSEMENT]: "Valeurs à l'encaissement",
   [COMPTE_CAISSE]: 'Caisse',
-  [COMPTE_SERVICES_BANCAIRES]: 'Services bancaires et assimilés',
+  [COMPTE_SERVICES_BANCAIRES]: LIBELLES_COMPTES[COMPTE_SERVICES_BANCAIRES],
 }
 
 // LES COMPTES D'AMORTISSEMENT que les dotations créditent : 28 suivi du compte d'immobilisation du bien

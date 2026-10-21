@@ -14,6 +14,7 @@ import {
 } from './reportDesSoldes'
 import type { ANouveau, EcritureBrouillon, SensEcriture, SoldeReporte } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
+import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
 import { tirage } from '../test/encaissementsBatterie'
 import { derniereDefinitionSql } from '../test/schema'
 
@@ -558,7 +559,7 @@ describe('les lignes d’un exercice, tirées de sa numérotation', () => {
   ]
   const numerotation = numeroterFec(
     ECRITURES, [], [{ id: 'c1', dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 1, compte_comptable: '706000', poste_2035: 'Recettes' }],
-    ouvertureDeLExercice([], OUVERTURE, 2026), 'tresorerie', MOUVEMENTS,
+    ouvertureDeLExercice([], OUVERTURE, 2026), 'tresorerie', MOUVEMENTS, SANS_ECRITURE_DE_VENTE,
   )
 
   it('chaque écriture et chaque solde d’ouverture, avec le libellé que la numérotation lui donne', () => {
@@ -692,7 +693,7 @@ describe('une chaîne d’exercices', () => {
   const E2026 = [ecriture('e5', 'l3', '2026-02-01', '512000', 'debit', 500), ecriture('e6', 'l3', '2026-02-01', '706000', 'credit', 500)]
 
   const report2025 = soldesAReporter(
-    mouvementsDeCloture(numeroterFec(E2025, [], CATEGORIES, ouvertureDeLExercice(REPRISE, [], 2025), 'tresorerie', MOUVEMENTS)),
+    mouvementsDeCloture(numeroterFec(E2025, [], CATEGORIES, ouvertureDeLExercice(REPRISE, [], 2025), 'tresorerie', MOUVEMENTS, SANS_ECRITURE_DE_VENTE)),
     TRESORERIE, 2025,
   )
   // Ce que `valider_exercice` écrit : ces soldes, datés du 1er janvier 2026, avec l'empreinte de l'exercice 2025.
@@ -712,7 +713,7 @@ describe('une chaîne d’exercices', () => {
   })
 
   it('ouvre le FEC de 2026 : journal AN, l’exercice validé pour pièce, au 1er janvier', () => {
-    const rows = colonnes(genererFec(E2026, [], CATEGORIES, OUVERTURE_2026, 'tresorerie', MOUVEMENTS, new Map())).slice(1)
+    const rows = colonnes(genererFec(E2026, [], CATEGORIES, OUVERTURE_2026, 'tresorerie', MOUVEMENTS, new Map(), SANS_ECRITURE_DE_VENTE)).slice(1)
     expect(rows.filter((r) => r[0] === 'AN').map((r) => [r[2], r[3], r[4], r[5], r[8], r[9], r[10], r[11], r[12]])).toEqual([
       ['AN00001', '20260101', '101000', 'Compte capital', 'Exercice 2025 validé', '20260101', 'À-nouveau Compte capital', '0,00', '4000,00'],
       ['AN00001', '20260101', '512000', 'Banque', 'Exercice 2025 validé', '20260101', 'À-nouveau Banque', '4000,00', '0,00'],
@@ -723,7 +724,7 @@ describe('une chaîne d’exercices', () => {
   })
 
   it('se relit telle quelle une fois 2026 validé : les libellés figés sont ceux de la numérotation', () => {
-    const n = numeroterFec(E2026, [], CATEGORIES, OUVERTURE_2026, 'tresorerie', MOUVEMENTS)
+    const n = numeroterFec(E2026, [], CATEGORIES, OUVERTURE_2026, 'tresorerie', MOUVEMENTS, SANS_ECRITURE_DE_VENTE)
     const figes = n.aNouveaux.map((a) => ({ ...a.aNouveau, compte_lib: a.compteLib, ecriture_lib: a.ecritureLib }))
     const relus = colonnes(formaterFec(numerotationValidee([], figes, '2027-01-15T10:00:00Z'), new Map())).slice(1)
     expect(relus.map((r) => [r[4], r[5], r[10]])).toEqual([
@@ -733,13 +734,14 @@ describe('une chaîne d’exercices', () => {
 
   it('ouvre la balance de 2026 ; celle de 2025 part de la reprise', () => {
     expect(calculerBalance(E2026, CATEGORIES, OUVERTURE_2026).map((l) => [l.compte, l.libelle, l.solde])).toEqual([
-      ['101000', 'Compte capital', -4000], ['512000', 'Banque', 4500], ['706000', 'Honoraires', -500],
+      // Le 706000 porte le nom du plan comptable général, avant celui de sa catégorie, depuis l'étape VF4c2 (VF4A-Q1).
+      ['101000', 'Compte capital', -4000], ['512000', 'Banque', 4500], ['706000', 'Prestations de services', -500],
     ])
     expect(calculerBalance(E2025, CATEGORIES, ouvertureDeLExercice(REPRISE, REPORTES, 2025)).find((l) => l.compte === '512000')?.solde).toBe(4000)
   })
 
   it('justifie l’ouverture de 2026, dans la piste d’audit, par l’exercice validé et son empreinte', () => {
-    const lignes = pisteAudit([], [], [], OUVERTURE_2026, { immobilisations: [], factures: [], vehicules: [] })
+    const lignes = pisteAudit([], [], [], OUVERTURE_2026, { immobilisations: [], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE })
     expect(lignes.map((l) => [l.compte, l.libelle, l.pieceFichier, l.pieceEmpreinte, l.manque])).toEqual([
       ['101000', 'À-nouveau Compte capital', 'Exercice 2025 validé', 'c'.repeat(64), []],
       ['512000', 'À-nouveau Banque', 'Exercice 2025 validé', 'c'.repeat(64), []],
@@ -748,7 +750,7 @@ describe('une chaîne d’exercices', () => {
 
   it('le report de 2026 repart de celui de 2025', () => {
     const report2026 = soldesAReporter(
-      mouvementsDeCloture(numeroterFec(E2026, [], CATEGORIES, OUVERTURE_2026, 'tresorerie', MOUVEMENTS)), TRESORERIE, 2026,
+      mouvementsDeCloture(numeroterFec(E2026, [], CATEGORIES, OUVERTURE_2026, 'tresorerie', MOUVEMENTS, SANS_ECRITURE_DE_VENTE)), TRESORERIE, 2026,
     )
     expect(report2026.soldes).toEqual([
       { compte: '101000', libelle: 'Compte capital', sens: 'credit', montant: 4500 },

@@ -8,6 +8,7 @@ import { COMPTE_BANQUE } from './comptes'
 import type { Declaration2035 } from './declaration2035'
 import type { ANouveau, EcritureBrouillon, Immobilisation, Piece } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
+import { SANS_ECRITURE_DE_VENTE } from '../test/ventesFacturees'
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd1', piece_id: 'p1', ligne_bancaire_id: null, date: '2025-03-10', compte: '606100',
@@ -89,7 +90,7 @@ describe('defautsDeNumerotation — ce que la base refusera, nommé', () => {
   const juste = () => numeroterFec([
     ecriture({ id: 'a1', piece_id: 'achat', compte: '606100', montant: 120 }),
     ecriture({ id: 'a2', piece_id: 'achat', compte: COMPTE_BANQUE, sens: 'credit', montant: 120, ligne_bancaire_id: 'l1' }),
-  ], [achat], [], [], 'tresorerie', [])
+  ], [achat], [], [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE)
 
   it('ne trouve rien à redire à une numérotation que `numeroterFec` produit sur un brouillon juste', () => {
     expect(defautsDeNumerotation(juste())).toEqual([])
@@ -97,7 +98,7 @@ describe('defautsDeNumerotation — ce que la base refusera, nommé', () => {
 
   // Le cas courant en trésorerie : une pièce dont le paiement n'est pas rapproché n'a pas sa contrepartie.
   it('nomme l’écriture déséquilibrée, sa pièce et son écart en centimes', () => {
-    const n = numeroterFec([ecriture({ id: 'a1', piece_id: 'achat', compte: '606100', montant: 120 })], [achat], [], [], 'tresorerie', [])
+    const n = numeroterFec([ecriture({ id: 'a1', piece_id: 'achat', compte: '606100', montant: 120 })], [achat], [], [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE)
     expect(defautsDeNumerotation(n)).toEqual([
       { type: 'desequilibre', journal: 'AC', numero: 1, pieceRef: 'facture-mars.pdf', ecartCentimes: 12000 },
     ])
@@ -111,7 +112,7 @@ describe('defautsDeNumerotation — ce que la base refusera, nommé', () => {
       ecriture({ id: 'a1', piece_id: 'achat', compte: '606100', montant: 0.07 }),
       ecriture({ id: 'a2', piece_id: 'achat', compte: '445660', montant: 0.14 }),
       ecriture({ id: 'a3', piece_id: 'achat', compte: COMPTE_BANQUE, sens: 'credit', montant: 0.21, ligne_bancaire_id: 'l1' }),
-    ], [achat], [], [], 'tresorerie', [])
+    ], [achat], [], [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE)
     expect(defautsDeNumerotation(n)).toEqual([])
   })
 
@@ -154,7 +155,7 @@ describe('defautsDeNumerotation — ce que la base refusera, nommé', () => {
       ecriture({ id: 'a2', piece_id: 'achat', date: '2025-03-10', compte: COMPTE_BANQUE, sens: 'credit', ligne_bancaire_id: 'l1' }),
       ecriture({ id: 'b1', piece_id: 'b', date: '2025-04-10' }),
       ecriture({ id: 'b2', piece_id: 'b', date: '2025-04-10', compte: COMPTE_BANQUE, sens: 'credit', ligne_bancaire_id: 'l2' }),
-    ], [achat, piece('b', { date_piece: '2025-04-10' })], [], [], 'tresorerie', [])
+    ], [achat, piece('b', { date_piece: '2025-04-10' })], [], [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE)
     expect(defautsDeNumerotation(n)).toEqual([])
     for (const l of n.lignes) l.numero = l.numero === 1 ? 2 : 1
     expect(defautsDeNumerotation(n)).toEqual([{ type: 'ordre', journal: 'AC', numero: 2 }])
@@ -166,7 +167,7 @@ describe('defautsDeNumerotation — ce que la base refusera, nommé', () => {
       sens: 'debit', montant: 10, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
       created_at: '2025-02-01T00:00:00Z',
     }
-    const n = numeroterFec([], [], [], [ouverture], 'tresorerie', [])
+    const n = numeroterFec([], [], [], [ouverture], 'tresorerie', [], SANS_ECRITURE_DE_VENTE)
     n.lignes.push({ ...juste().lignes[1], compteLib: 'Compte courant' })
     expect(defautsDeNumerotation(n).map((d) => d.type)).toContain('compte')
   })
@@ -183,7 +184,7 @@ describe('demandeDeValidation — ce que `valider_exercice` reçoit', () => {
     const n = numeroterFec([
       ecriture({ id: 'a1', piece_id: 'achat', compte: '606100' }),
       ecriture({ id: 'a2', piece_id: 'achat', compte: '401000', sens: 'credit' }),
-    ], [achat], [], [ouverture], 'engagement', [])
+    ], [achat], [], [ouverture], 'engagement', [], SANS_ECRITURE_DE_VENTE)
     expect(demandeDeValidation(n, null)).toEqual({
       p_lignes: [
         { id: 'a1', journal: 'AC', numero: 1, piece_ref: 'facture-mars.pdf', piece_date: '2025-03-10', compte_lib: '606100', comp_aux_num: null, comp_aux_lib: null },
