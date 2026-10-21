@@ -424,6 +424,23 @@ retient, se rejoueront avec le lot qui change leurs fonctions (R1). `rls.sql`, r
 après la migration (46 lignes, 0 en faute, 43 mutations sur 43), ne l'est pas en production : la migration ne crée ni ne
 change aucune policy.
 
+**Rejoué le 21/10/2026 après `lignes_propres_au_mouvement`** (chantier EC-Q3, le lot de R1), accordée par le cabinet.
+Retenue par le détecteur (les dix-huit corps de fonction suppriment des écritures, comme avant), collée par le cabinet
+dans l'éditeur SQL sous la version `20261021195226` — dans un texte qui vérifiait sa propre empreinte et la présence de
+la migration de VF4b, refusait une seconde application et posait sa ligne d'historique ; son fichier a quitté la version
+PROVISOIRE `20261021120000` sous laquelle sa réplique l'avait éprouvée, et porte le texte appliqué, octet pour octet (73
+306 caractères, aucun retour chariot) : sa ligne d'historique rend `76c37897015d13b8e23601a9ae8d6b27`. 144 fichiers, 144
+migrations, empreinte globale `e1ece0554f7eaf75e1e80732587a439c` des deux côtés, aucune divergence. Le socle (80
+instructions, `5d53eea2…`) et l'inventaire (2 122 objets, `b2666bf3…`) sont inchangés : la migration ne crée ni ne
+retire aucun objet, elle redéfinit dix-huit fonctions, dont les corps en production sont ceux du fichier, empreinte par
+empreinte. L'essai `supabase/essais/ecrituresVentesFacturees.sql`, rejoué en production sans ses lignes de commentaire
+(77 712 caractères, reçus tels quels, `ed45d71d…`), rend ses 176 verdicts justes, et rien n'est resté en base. Les
+cinquante-six essais, dont les six qui portent une suppression que l'outil retient (`affectation`,
+`cotisationRapprochee`, `echeanceEmprunt`, `reglementGroupe`, `reglesAffectation`, `ventilation`), ont été rejoués sur
+une réplique dont les neuf familles égalaient la production, avant et après la migration : leurs verdicts sont
+identiques, hors des douze que le lot change. `rls.sql`, rejoué entier sur la réplique (46 lignes, 0 en faute, 43
+mutations sur 43), ne l'est pas en production : la migration ne crée ni ne change aucune policy.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
