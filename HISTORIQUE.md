@@ -30341,3 +30341,114 @@ VF4C2-Q1, donner aussi le nom du plan comptable général au 707000, au 511000, 
   orphelines » (« le reste d'une pièce supprimée »), qui n'est pas leur cause.
 - Pour VF4c3 : la concordance de la 2035, la CA3 (`REFUS_VENTES_FACTUREES_NON_ECRITES`), « Changer le compte »
   (VF4C1-Q1), et VF4C2-Q1.
+
+**LA MISE EN LIGNE.** Demande #200, ouverte sur `b280b71` après la barrière locale sous Node 22.23.3 sur le commit du
+code (`tsc -b` ; lint, 0 erreur et les 63 avertissements d'avant ; 437 fichiers et 13 263 tests sous Paris, UTC, New
+York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de 8 h 07 à 8 h 25 UTC) ;
+fusionnée en « Rebase and merge » le 21/10/2026 à 8 h 28 UTC (`47c418a`, `98d382d`), `main` linéaire, son arbre égal à
+celui de la branche ; le déploiement vert à 8 h 33, et le site sert `index-C9ih9VLa.js`, le bundle du build local ; la
+ligne 28.6 de la feuille de route mise à jour, puis relue par empreinte (11 336 positions) ; les barres d'avancement
+inchangées ; la question VF4C2-Q1 dans la page des arbitrages, et la recommandation de VF4C1-Q1 reportée à VF4c3 ; la
+copie de travail de l'agent retirée, son travail entier dans `main`.
+
+### 21/10/2026 — LA 2035 ET LA CA3 LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE — CHANTIER EC-Q3, ÉTAPE VF4c3 (LIGNE 28.6)
+
+(Écrite par l'agent architecte de VF4c3 sur `98d382d`, en six commits que la session a relus puis réunis en un. Fichier
+nouveau : `src/lib/dossierBasculeBoutEnBout.test.ts`. Modifiés : `comptes.ts`, `planComptable.ts`, `concordance2035.ts`,
+`declaration2035.ts`, `ecrituresVentesFacturees.ts`, `declarationTva.ts`, `liquidationTva.ts`,
+`ecrituresVentesFactureesLecture.ts`, `ecrituresVentesFactureesEcran.ts`, `DossierDetail.tsx`, `ClotureTab.tsx`,
+`TvaTab.tsx`, `VentesFactureesEcritures.tsx`, et leurs tests. Ni base, ni migration, ni Edge Function ; aucun appel à la
+production par l'agent.)
+
+**LA DÉLIMITATION.** Le dernier lot de VF4c : la concordance de la 2035 et la CA3 lisent les écritures d'une vente
+facturée, et leurs refus d'attente tombent ; « Changer le compte » d'une compensation (VF4C1-Q1) ; le nom du plan
+comptable général pour le 707000, le 511000, le 445800 et le 530000 (VF4C2-Q1). Les deux questions sont sans réponse du
+cabinet : elles sont faites sur la recommandation, et la page des arbitrages le dit — une réponse contraire les défera.
+NEUTRE en production : aucun dossier n'a basculé, et la session a mesuré, en lecture seule, qu'aucune écriture,
+catégorie, à-nouveau, solde reporté, compte de bilan d'un mouvement ni compte de contrepartie ne porte l'un des quatre
+comptes renommés.
+
+**LA CONCORDANCE DE LA 2035.** La part d'un encaissement porte le compte que la composition écrit pour elle :
+`compteDuProduit` (`ecrituresVentesFacturees.ts`), une seule fonction que la composition et la 2035 appellent — le
+compte des ventes de biens pour une livraison, celui des prestations de services sinon, au plan du dossier. Les
+écritures se rattachent à leur source par `encaissement_id` (avant le mouvement qu'elles portent aussi), puis par
+`facture_id` ; la part et les lignes de résultat de son encaissement se comparent source par source et compte par
+compte, et concordent au centime quand l'écriture est à jour. Un écart garde un motif de vente facturée, avant tout
+autre, qui envoie à la section « Ventes facturées » de l'onglet Écritures : `vente_facturee_non_ecrite` (aucune écriture
+de l'exercice : à écrire — le nom reste, le sens change), `vente_facturee_a_reecrire`, `vente_facturee_a_retirer`. En
+engagement rien ne change : ni la 2035 ni la concordance n'y sont produites. La Clôture montre la carte ; les préalables
+comptent ces écarts, et la validation reste refusée jusqu'à VF7 (VF4c2) ; la Révision ne lit pas le compte d'une
+contribution.
+
+**UN DÉFAUT TROUVÉ EN PASSANT, D'AVANT CE LOT.** Les frais d'un mouvement que ses encaissements classent — l'écart sous
+le seuil, que la composition écrit au 627 — sont une charge que la 2035 ne compte pas : elle ne lit des ventes facturées
+que leurs parts, et le mouvement, réservé à ses encaissements, n'est pas une part du relevé. Elle surévalue donc le
+résultat de ces frais (au plus 2 % et 5 € par mouvement). La concordance le dit sous son propre motif,
+`frais_d_encaissements` (« Pas encore dans l'application »), grâce à un champ obligatoire de plus dans son contexte,
+`mouvementsDesVentesFacturees`. Le corriger donne à la 2035 une source de plus, tirée de la composition : la question
+VF4C3-Q1 entre dans la page des arbitrages (recommandé : le poste de la catégorie « Frais bancaires » du dossier, avant
+toute bascule).
+
+**LA CA3.** Le refus en bloc tombe (`REFUS_VENTES_FACTUREES_NON_ECRITES` n'existe plus). La TVA de chaque exigibilité de
+la période entre dans `tvaDesComptes`, telle que le module la porte (la règle du cumul, jamais base fois taux). Une
+période s'enregistre quand chaque facture, avoir ou encaissement qu'elle concerne — une exigibilité de la période le
+désigne, ou une écriture composée ou proposée y est datée — est « à jour » ou « validé » (`refusDesVentesFacturees`,
+`liquidationTva.ts`, sur les états mêmes de la section, jamais recalculés) ; sinon un refus nomme chaque source et son
+état et renvoie à la section. Le mouvement n'en est pas : son écriture ne touche aucun compte de TVA. Côté fermé : une
+lecture pas revenue, partielle, refusée ou incohérente refuse aussi, comme une CA3 qui compte une facture source dans un
+dossier qui ne se dit pas basculé. Une exigibilité ÉCARTÉE (2,1 %, la Corse, l'outre-mer) garde son refus : son écriture
+porte sa TVA au 445710, mais aucune ligne de la déclaration ne la range, et la base n'admet qu'une CA3 qui se déduit de
+ses lignes. En engagement, la TVA en attente (445800) n'entre pas avant son exigibilité. Écritures à jour, la
+liquidation solde le 445710 au centime. L'onglet TVA lit ensemble les sources et le brouillon d'un dossier basculé
+(`lireLesEcrituresDesVentes`) et reçoit deux props obligatoires, `modeComptable` et `ventesParLesFactures`.
+`liquidationTva.ts` étant atteint par l'espace du client (par la 2035), il ne peut importer le module d'écran, fût-ce un
+type (`ventesFactureesEcrituresCabinetSeul.test.ts`) : la forme qu'il lit y est décrite, et un test la confronte au
+module d'écran.
+
+**« CHANGER LE COMPTE » (VF4C1-Q1).** Sur un encaissement par compensation dont le compte de contrepartie est accepté, à
+écrire, à jour ou à réécrire, tant que la base l'accepterait (`refusChoixCompteContrepartie` : ni l'exercice validé, ni
+un encaissement retiré, contre-passé, qui cite un mouvement ou se dit par son moyen) — `choisir_compte_contrepartie` n'a
+aucun refus « déjà choisi ». Le champ ne s'ouvre que sur un clic ; le refus de la saisie se dit avant le clic, le même
+compte n'est jamais renvoyé (une règle d'écran) ; la confirmation nomme l'ancien et le nouveau compte, et dit qu'une
+écriture déjà passée deviendra « à réécrire » ; le verrou par source se relâche après la relecture, comme pour le choix.
+
+**LES LIBELLÉS (VF4C2-Q1).** Le 707000 (« Ventes de marchandises »), le 445800 (« Taxes sur le chiffre d'affaires à
+régulariser ou en attente »), le 511000 (« Valeurs à l'encaissement ») et le 530000 (« Caisse ») entrent dans
+`LIBELLES_COMPTES` ; `LIBELLES_DE_LA_VENTE_FACTUREE` lit les six de là. Rien d'autre ne change de nom : la liste exacte
+des clés, des voisins restés hors de la table (701000, 706100, 707100, 445801, 511100, 531000) et des témoins inchangés
+en balance et au FEC (`libellesVf4aQ1.test.ts`, `planComptable.test.ts`).
+
+**LE BANC.** Deux dossiers basculés provisoirement (hors commit, le faux restauré ensuite) : `debordements.mjs` rend 0
+aux quatre largeurs de référence, à 720 px et aux volets extrêmes, sauf le débordement de `factures/clients-soins` à la
+passe « 1280 sans barre », d'avant (VF4c2) ; 0 bouton recouvert sur 214. Le serveur du banc signale des clés React en
+double : deux écritures du faux Supabase portent le même identifiant, d'avant ce lot.
+
+**LES PREUVES.** 47 tests de plus (13 263 avant, 13 310 après ; 438 fichiers), comparés test par test : aucun verdict
+changé ; douze tests réécrits sous un autre nom, leur sens changé exprès (trois de la concordance, sept de la
+liquidation, un de la CA3, un du module d'écran) et un renommé dans le plan. Les assertions d'existants changées : la
+part porte le 706000 au lieu de nul (`declaration2035.test.ts`) ; « 1 vente facturée à écrire »
+(`ClotureTab.test.tsx`) ; la TVA des comptes compte celle des ventes facturées (`declarationTva.test.ts`) ;
+l'enregistrement d'une période (`TvaTab.test.tsx`) ; le geste du choix (`ecrituresVentesFactureesEcran.test.ts`) ; les
+noms des quatre comptes en balance et au FEC (`libellesVf4aQ1.test.ts`) ; la liste des clés (`planComptable.test.ts`) ;
+73 emplois dans `comptes.ts` au lieu de 65 (`comptesEnDur.test.ts`) ; et les fabriques (le contexte de la concordance,
+celui de l'enregistrement, les props de l'onglet TVA). Le bout en bout (`dossierBasculeBoutEnBout.test.ts`) :
+composition, brouillon, 2035 et concordance, CA3 et liquidation équilibrée. Mutations : 65, dont 58 tuées ; les sept
+survivantes sont équivalentes ou doublées par une autre garde. La barrière locale sous Node 22.23.3 sur le commit du
+code (`580e116`) : `tsc -b` 0, son cache écarté d'abord ; lint 0 erreur (les 63 avertissements d'avant) ; 438 fichiers
+et 13 310 tests sous les quatre fuseaux ; le build (`index-4TKoOcN3.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** La session a relu le code et l'a réuni en un commit ; la mesure de
+production est la sienne. VF4C1-Q1 et VF4C2-Q1 sont faites sur la recommandation, sans réponse du cabinet encore. Une
+question entre dans la page des arbitrages : VF4C3-Q1, les frais d'un mouvement d'encaissements dans la 2035.
+
+**À REVOIR.**
+- Les frais d'un mouvement d'encaissements, absents de la 2035 (VF4C3-Q1) : avant toute bascule.
+- La règle de la CA3 est tenue par l'écran : `enregistrer_declaration_tva` ne lit toujours pas le brouillon. La tenir en
+  base demanderait une migration.
+- La CA3 exige « à jour » aussi pour une source de la période qui ne porte aucune TVA au 445710 (une facture
+  d'engagement qui n'écrit que le 445800) : plus strict que nécessaire, choisi pour la règle « toutes à jour ».
+- Une période qui porte une exigibilité écartée ne se déclare jamais dans l'application : sa TVA reste au 445710, que
+  seule une écriture du cabinet soldera.
+- Le bouton du changement dit « Choisir ce compte », comme le choix.
+- Pour VF7 : numéroter et figer ces lignes, lever « écritures orphelines » ; la concordance d'un exercice sera alors
+  bloquante pour les frais.
