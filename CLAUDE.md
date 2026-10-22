@@ -449,7 +449,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   JUGE UNE FACTURE SOURCE ». VF5c le 22/10/2026, neutre : côté cabinet, la fiche d'un crédit classe un mouvement réservé
   par ses encaissements, retire ce classement, lui rattache un encaissement enregistré sans mouvement ou ouvre sur lui
   la fenêtre d'une facture (le mouvement imposé) ; une remise de chèques se rattache encaissement par encaissement →
-  « LA FICHE D'UN CRÉDIT CLASSE, RETIRE ET RATTACHE LES ENCAISSEMENTS D'UNE FACTURE ». Restent VF5d à VF9 — se
+  « LA FICHE D'UN CRÉDIT CLASSE, RETIRE ET RATTACHE LES ENCAISSEMENTS D'UNE FACTURE ». VF5d le 22/10/2026, neutre : côté
+  cabinet, la fiche d'un débit classe un débit réservé par ses contre-passations, retire ce classement, lui rattache une
+  contre-passation enregistrée sans mouvement ou ouvre sur lui la contre-passation d'un encaissement déclaré (la fenêtre
+  des encaissements, ce débit imposé) → « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE ». Restent VF5d2 à VF9 — se
   conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à
   VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
@@ -684,14 +687,16 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   ou d'un encaissement (`lignesPropresAuMouvement.test.ts`) ; ses refus dits avant le clic, dans le même ordre ; les
   règles PROPOSENT, le clic écrit ; un mouvement dont le justificatif est peut-être au dossier n'entre jamais dans un
   lot ; un mouvement classé par ses encaissements de factures, ou réservé à eux (G2), ne reçoit aucun autre classement :
-  sa fiche le dit et n'offre que ses gestes à lui (le classer par ses encaissements, retirer ce classement, lui
-  rattacher un encaissement ; `lib/mouvementsDesVentes.ts`), aucun lot ne le prend (`horsDesLots`, un paramètre
-  obligatoire de chaque plan) et il se compte à part → « LES RÈGLES D'AFFECTATION PROPOSENT », « UN VIREMENT PERSONNEL
-  S'ÉCRIT », « UNE ÉCHÉANCE D'EMPRUNT S'ÉCRIT », « UN MOUVEMENT SE VENTILE », « UN VIREMENT RÈGLE PLUSIEURS PIÈCES »,
-  « UNE RECETTE DU RELEVÉ D'UN DOSSIER ASSUJETTI », « UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE », « UN MOUVEMENT DU RELEVÉ
-  S'ÉCRIT SUR UN COMPTE DE BILAN », « LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT », « LE
-  RELEVÉ RECONNAÎT LES MOUVEMENTS DES VENTES FACTURÉES », « LES LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES
-  FACTURÉES », « LA FICHE D'UN CRÉDIT CLASSE, RETIRE ET RATTACHE LES ENCAISSEMENTS D'UNE FACTURE ».
+  sa fiche le dit et n'offre que ses gestes à lui (le classer par ses encaissements ou ses contre-passations, retirer ce
+  classement, lui rattacher un encaissement ou une contre-passation, contre-passer sur un débit un encaissement
+  déclaré ; `lib/mouvementsDesVentes.ts`), aucun lot ne le prend (`horsDesLots`, un paramètre obligatoire de chaque
+  plan) et il se compte à part → « LES RÈGLES D'AFFECTATION PROPOSENT », « UN VIREMENT PERSONNEL S'ÉCRIT », « UNE
+  ÉCHÉANCE D'EMPRUNT S'ÉCRIT », « UN MOUVEMENT SE VENTILE », « UN VIREMENT RÈGLE PLUSIEURS PIÈCES », « UNE RECETTE DU
+  RELEVÉ D'UN DOSSIER ASSUJETTI », « UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE », « UN MOUVEMENT DU RELEVÉ S'ÉCRIT SUR UN
+  COMPTE DE BILAN », « LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT », « LE RELEVÉ RECONNAÎT
+  LES MOUVEMENTS DES VENTES FACTURÉES », « LES LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES FACTURÉES », « LA FICHE
+  D'UN CRÉDIT CLASSE, RETIRE ET RATTACHE LES ENCAISSEMENTS D'UNE FACTURE », « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME
+  RENDUE ».
 - **Une cotisation payée depuis le compte PERSONNEL** est un apport (PCG art. 1211-10), face au compte du dirigeant, à
   la date saisie, jamais proposée ; un mouvement OU le compte personnel, jamais les deux → « UNE ÉCHÉANCE PAYÉE DEPUIS
   LE COMPTE PERSONNEL S'ÉCRIT ». Les écritures d'inventaire suivent la même règle → « LES DOTATIONS AUX AMORTISSEMENTS
