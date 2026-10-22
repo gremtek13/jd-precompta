@@ -34,6 +34,7 @@ import { compteDuDirigeant, ecritureDuVirementPersonnel, virementsPersonnelsAEcr
 import { NON_VALIDEE } from './ecritures'
 import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from './ventesFacturees'
 import { ecrituresDesVentesFacturees, type MouvementDesEncaissements } from '../lib/ecrituresVentesFacturees'
+import { ventesFacturees } from '../lib/ventesFacturees'
 
 // LES COMPOSITIONS SOUS UN PLAN (ligne 43, étape PC3 ; conception, § 5.1 et § 5.2) : chaque écriture que l'application
 // compose — et chaque contrôle qui la recompose pour juger le brouillon — joué sur des jeux d'essai FICTIFS tirés du
@@ -549,6 +550,26 @@ const CAS_DES_VENTES_FACTUREES: CasDuPlan[] = [
       return { ecritures, nonEcrites }
     }),
   },
+  {
+    // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS DANS LA 2035 (ligne 28.65, VF4C3-Q1) : au compte des services bancaires du
+    // plan, celui que la composition écrit — jamais celui de la catégorie « Frais bancaires », qui ne donne que son poste.
+    nom: 'calculerDeclaration2035 — les frais d’un mouvement d’encaissements, au compte que la composition écrit',
+    roles: ['services_bancaires', 'prestations_de_services', 'ventes_de_biens'],
+    composer: (plan) => {
+      const sources = {
+        dossierId: 'd1', factures: [VENTES_SERVICES, VENTES_BIENS],
+        lignes: [ligneVendue('vf-s', 100, 20), ligneVendue('vf-b', 200, 10)],
+        encaissements: [VENTES_CHEQUE.encaissement, VENTES_ESPECES.encaissement], parts: [VENTES_CHEQUE.part, VENTES_ESPECES.part],
+      }
+      const composition = ecrituresDesVentesFacturees({
+        sources, mouvements: [VENTES_MOUVEMENT], comptesDeContrepartie: new Map(), mode: 'tresorerie', plan,
+      })
+      const fraisBancaires = categorie({ id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires fictifs', poste_2035: 'Frais financiers' })
+      return calculerDeclaration2035(
+        2025, [], [fraisBancaires], [], [], [], true, new Map(), [], [], plan, ventesFacturees(sources), { etat: 'composees', composition },
+      ).contributions
+    },
+  },
 ]
 
 // ── La 2035, le report des soldes, la reprise d'une balance ──────────────────────────────────────────────────────────
@@ -564,6 +585,7 @@ const CAS_DE_LA_CLOTURE: CasDuPlan[] = [
       return calculerDeclaration2035(
         2026, [], CATEGORIES, [IMMOBILISATION], cotisationsComptees([COTISATION], lignes, 'tresorerie'), [vehicule2026], true,
         new Map(), parts, [A_PAYER, EN_CREDIT], plan, ventesFactureesVides('d1'),
+        { etat: 'sans_bascule' },
       ).contributions
     },
   },

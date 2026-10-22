@@ -352,9 +352,10 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       message: "écart(s) entre la 2035 et les écritures : la validation attend une concordance au centime. Le détail est dans la carte « Concordance avec les écritures » ci-dessus.",
     })
     bloque({
-      id: 'exclusions-2035', nb: e.sansPoste.length + e.sansMontant.length + e.mouvementsSansPoste.length + e.mouvementsHorsResultat.length,
+      id: 'exclusions-2035',
+      nb: e.sansPoste.length + e.sansMontant.length + e.mouvementsSansPoste.length + e.mouvementsHorsResultat.length + e.fraisSansPoste.length,
       cible: 'cloture',
-      message: "pièce(s) ou mouvement(s) que la 2035 ne compte pas (sans poste, sans montant, ou un compte sorti des comptes de résultat) : les compléter avant la validation.",
+      message: "pièce(s) ou mouvement(s) que la 2035 ne compte pas (sans poste, sans montant, un compte sorti des comptes de résultat, ou les frais d'un mouvement d'encaissements sans poste) : les compléter avant la validation.",
     })
     // Un poste qu'aucune case ne porte : son montant est compté, et n'apparaît nulle part sur le formulaire — la 2035
     // validée serait fausse de ce montant, et ses totaux aussi. Une recette sous un libellé de dépense (ou l'inverse) en
@@ -668,6 +669,7 @@ export const CARTES_DE_CLOTURE: Readonly<Record<string, { prealable: string } | 
   'Postes manquants': { prealable: 'exclusions-2035' },
   'Pièces validées absentes du récapitulatif': { prealable: 'exclusions-2035' },
   'Mouvements affectés absents du récapitulatif': { prealable: 'exclusions-2035' },
+  'Frais d’encaissements absents du récapitulatif': { prealable: 'exclusions-2035' },
   'Échéances d’emprunt non rapprochées': { prealable: 'echeances-emprunt-non-rapprochees' },
   'Pièces comptées à leur date de facture': {
     ecartee: "une pièce dont aucun paiement n'est rapproché a une écriture sans banque, déséquilibrée, refusée sous « ecritures-desequilibrees » (ou sans écriture, sous « ecritures-a-generer ») ; une note de frais compte à sa date, qui est celle de son paiement",

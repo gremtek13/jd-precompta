@@ -397,6 +397,7 @@ export default function DossierDetail() {
                 assujettiTva={dossier.assujetti_tva}
                 periodiciteTva={dossier.tva_periodicite}
                 statutTva={dossier.statut_tva}
+                ventesParLesFactures={dossier.ventes_par_les_factures === true}
                 onNavigate={allerA}
               />
             )}
@@ -427,6 +428,7 @@ export default function DossierDetail() {
                 assujettiTva={dossier.assujetti_tva}
                 periodiciteTva={dossier.tva_periodicite}
                 modele={modele}
+                ventesParLesFactures={dossier.ventes_par_les_factures === true}
                 onNavigate={allerA}
               />
             )}

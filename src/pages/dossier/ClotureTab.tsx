@@ -4,7 +4,10 @@ import { anneeDe, aujourdHuiAParis, aujourdHuiSql, formatMoney, formatDate } fro
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { montantRetenu } from '../../lib/montantRetenu'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
-import { calculerDeclaration2035, partCsgNonDeductible, type Declaration2035, type PartCsgNonDeductible } from '../../lib/declaration2035'
+import {
+  calculerDeclaration2035, partCsgNonDeductible, type Declaration2035, type FraisSansPoste, type PartCsgNonDeductible,
+} from '../../lib/declaration2035'
+import { fraisDesMouvements } from '../../lib/ecrituresVentesFacturees'
 import { dotationDeLExercice } from '../../lib/amortissements'
 import { amortissementsSousLeBareme } from '../../lib/forfaitKilometrique'
 import {
@@ -31,7 +34,8 @@ import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsT
 import { prealablesDeValidation, prochainExerciceAValider } from '../../lib/prealablesValidation'
 import type { FacturePourJumelle, TransmissionPourJumelle } from '../../lib/ventesJumelles'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
-import { mouvementsClassesParEncaissements } from '../../lib/ecrituresVentesFactureesEcran'
+import { ecrituresDesVentesPourLa2035, mouvementsClassesParEncaissements } from '../../lib/ecrituresVentesFactureesEcran'
+import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import {
   casesDeLInstantane, casesQuiDifferent, demandeDeValidation, exerciceQuiFige, instantane2035, lireInstantane2035, type Instantane2035,
 } from '../../lib/validationExercice'
@@ -67,12 +71,15 @@ import ValidationExerciceCard from './ValidationExerciceCard'
 // par exercice dit ce qui l'empêche, valide, puis montre l'exercice validé (ValidationExerciceCard). Un
 // exercice validé en trésorerie montre la 2035 TELLE QU'ELLE A ÉTÉ VALIDÉE — l'instantané gardé par la
 // base —, pas un calcul d'aujourd'hui, et dit les cases où un nouveau calcul ne la retrouverait plus.
-export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, modele, onNavigate }: {
+export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, modele, ventesParLesFactures, onNavigate }: {
   dossierId: string
   assujettiTva: boolean
   // La périodicité des déclarations de TVA : la validation d'un exercice dit les périodes qu'aucune ne couvre.
   periodiciteTva: PeriodiciteTva
   modele: ModeleComptable
+  // Le réglage du dossier (`ventes_par_les_factures`) : basculé, la 2035 compte les frais d'un mouvement d'encaissements
+  // tels que la composition de ses ventes facturées les écrit (VF4C3-Q1), et l'onglet lit ces sources. Sans valeur par défaut.
+  ventesParLesFactures: boolean
   onNavigate?: (tab: DossierTab) => void
 }) {
   const modeComptable = modele.mode
@@ -146,6 +153,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // déclaration, et gardées AVEC le dossier qui les a demandées : tant qu'elles ne sont pas revenues entières pour ce
   // dossier, aucune 2035 ne se calcule — ni chiffre, ni formulaire, ni validation.
   const [lectureVentes, setLectureVentes] = useState<LectureVentesFacturees | null>(null)
+  // LES SOURCES DES ÉCRITURES DES VENTES FACTURÉES d'un dossier qui a basculé (lib/ecrituresVentesFactureesLecture.ts) : la
+  // 2035 en tire les frais d'un mouvement d'encaissements, par la composition même de l'onglet Écritures (VF4C3-Q1). Lues
+  // tout ou rien avec le reste, gardées AVEC le dossier qui les a demandées, jamais lues pour un dossier qui n'a pas basculé :
+  // tant qu'elles ne sont pas revenues entières pour ce dossier, aucune 2035 ne se calcule.
+  const [lectureSourcesVentes, setLectureSourcesVentes] = useState<LectureSourcesDesEcrituresDeVente | null>(null)
   const [validationIncomplete, setValidationIncomplete] = useState<string | null>(null)
   const [ecrituresIncompletes, setEcrituresIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -197,7 +209,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes,
       { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
       lectureEcritures, lectureOuverture, lectureAValider, lectureValides, lectureDeclarationsTva, lectureReportes,
-      lectureFacturesEmises, lectureTransmissions, lectureVentesFacturees,
+      lectureFacturesEmises, lectureTransmissions, lectureVentesFacturees, lectureSourcesDesVentes,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -305,6 +317,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       ),
       // Ne rejette jamais : une lecture refusée ou partielle revient « incomplète », avec son motif.
       lireLesVentesFacturees(dossierId),
+      // Ne rejette jamais non plus ; jamais lue pour un dossier qui n'a pas basculé.
+      ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
     ])
     // Le relevé qui ne boucle pas et les doublons de contenu, comme la Checklist les lit — mais une lecture ratée
     // n'y vaut jamais « rien à signaler » : elle devient un préalable de la validation.
@@ -314,6 +328,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     ])
     if (demande !== derniereLecture.current) return
     setLectureVentes(lectureVentesFacturees)
+    setLectureSourcesVentes(lectureSourcesDesVentes)
     setRelevesIncoherents(releves)
     setDoublonsTexte(doublons)
     setPiecesAValider(lectureAValider.lignes)
@@ -363,7 +378,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [dossierId])
+  // Un dossier qui bascule relit ses ventes facturées.
+  useEffect(() => { load() }, [dossierId, ventesParLesFactures])
 
 
   // La facture d'un bien du registre : la 2035 l'écarte — le bien compte par sa dotation —, donc sa
@@ -372,7 +388,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // Catégories utilisées par une pièce validée, un mouvement affecté ou une part d'un mouvement ventilé
   // mais sans poste 2035 associé — le regroupement par poste les ignorera tant que ce n'est pas renseigné
   // (voir lib/controles.ts).
-  const categoriesSansPoste = calculerCategoriesSansPoste(
+  const categoriesSansPosteDesSources = calculerCategoriesSansPoste(
     categories, piecesValidees, [...lignesBancaires, ...ventilations], pieceIdsImmobilisees,
   )
   // Même famille que « Postes manquants », un cran plus tôt dans la chaîne : sans catégorie du tout,
@@ -419,8 +435,18 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // manquer à la liste. En engagement, celle de sa facture.
   // La lecture des ventes facturées de CE dossier, ou rien ; lue entière, ses ventes, sinon nulles et le motif.
   const lectureVentesDuDossier = lectureDuDossier(lectureVentes, dossierId)
-  const ventesFacturees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
-  const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : null
+  const ventesLues = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (VF4C3-Q1) : ce que la 2035 reçoit des écritures des ventes facturées, sur les
+  // lectures de CE dossier (lib/ecrituresVentesFactureesEcran.ts, `ecrituresDesVentesPourLa2035`). Un dossier basculé dont
+  // les sources ne sont pas revenues entières n'a pas de 2035, comme sans ses ventes facturées.
+  const pourLa2035 = ventesLues === null ? null : ecrituresDesVentesPourLa2035({
+    dossierId, ventesParLesFactures, facturesSources: ventesLues.sources, lecture: lectureSourcesVentes, mode: modeComptable,
+    plan: modele.plan,
+  })
+  const ecrituresDesVentes = pourLa2035?.etat === 'pret' ? pourLa2035.ecritures : null
+  const ventesFacturees = ecrituresDesVentes === null ? null : ventesLues
+  const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif
+    : pourLa2035?.etat === 'incomplete' ? pourLa2035.motif : null
   const paiements = paiementsDesPieces(lignesBancaires, reglements)
   const parts = partsDuReleve(lignesBancaires, categories, ventilations, assujettiTva)
   // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance :
@@ -443,6 +469,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     ...parts.map((m) => anneeDe(m.ligne.date)),
     // Et un exercice qui n'a que des encaissements de factures sources.
     ...(ventesFacturees?.parts ?? []).map((p) => anneeDe(p.date)),
+    // Et un exercice qui n'a que les frais d'un mouvement d'encaissements — un chèque de décembre remis en janvier.
+    ...(ecrituresDesVentes?.etat === 'composees' ? fraisDesMouvements(ecrituresDesVentes.composition, modele.plan) : [])
+      .map((f) => anneeDe(f.date)),
     ...comptees.map((c) => anneeDe(c.date)),
     ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
     ...vehicules.map((v) => v.annee),
@@ -460,8 +489,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   // Sans les ventes facturées du dossier lues en entier, AUCUNE 2035 : une déclaration sans ses ventes facturées serait
   // plausible, fausse et signée, et le moteur n'a pas de valeur par défaut à leur donner.
-  const declarations = ventesFacturees === null ? [] : exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan, ventesFacturees),
+  const declarations = ventesFacturees === null || ecrituresDesVentes === null ? [] : exercices.map((a) =>
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan, ventesFacturees, ecrituresDesVentes),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
@@ -577,9 +606,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
 
   // LA 2035 SE RETROUVE-T-ELLE DANS LES ÉCRITURES ? Source par source et compte par compte, pour chaque exercice
   // affiché (lib/concordance2035.ts). La 2035 reste calculée depuis les sources ; la concordance dit ce qui
-  // manque au FEC pour la porter. Les écritures d'une vente facturée s'y rapprochent de leur encaissement (étape VF4c3) ; les
-  // mouvements que leurs encaissements classent, lus avec tous les mouvements, disent pourquoi la 2035 ne compte pas leurs
-  // frais.
+  // manque au FEC pour la porter. Les écritures d'une vente facturée s'y rapprochent de leur encaissement (étape VF4c3), et
+  // celles des frais d'un mouvement d'encaissements de ce mouvement (VF4C3-Q1) ; les mouvements que leurs encaissements
+  // classent, lus avec tous les mouvements, disent qu'une écriture de frais que la 2035 ne compte plus est à reprendre.
   const idsPiecesValidees = new Set(piecesValidees.map((p) => p.id))
   const mouvementsDesVentesFacturees = mouvementsClassesParEncaissements(toutesLesLignes)
   const concordances = new Map(declarations.map((d) => [d.annee, {
@@ -731,6 +760,15 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     ...d.exclusions.mouvementsHorsResultat.map((m) => ({ mouvement: m, raison: 'compte de la catégorie hors charges et produits' })),
   ])
 
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS QUE LA 2035 NE RANGE SUR AUCUNE LIGNE (VF4C3-Q1) : la catégorie « Frais
+  // bancaires » du dossier manque, ou n'a pas de poste. Un mouvement ne compte que dans l'exercice de sa date.
+  const fraisExclus: FraisSansPoste[] = declarationsOuvertes.flatMap((d) => d.exclusions.fraisSansPoste)
+  // Sa catégorie, quand elle existe sans poste, rejoint « Postes manquants » : c'est là que son poste se règle — ou que la
+  // carte dit qu'une catégorie commune ne se règle que par l'administrateur de l'application.
+  const categorieDesFraisExclus = fraisExclus.find((f) => f.categorie !== null)?.categorie ?? null
+  const categoriesSansPoste = categorieDesFraisExclus === null || categoriesSansPosteDesSources.some((c) => c.id === categorieDesFraisExclus.id)
+    ? categoriesSansPosteDesSources : [...categoriesSansPosteDesSources, categorieDesFraisExclus]
+
   // CE QUE LES VENTES FACTURÉES ONT D'ÉCARTÉ OU DE TROP (lib/ventesFacturees.ts), et les exemplaires qu'elles retirent du
   // compte des pièces. Les écartées et les excédents sont ceux du DOSSIER — le module ne date pas une facture qu'il écarte —,
   // portés à l'identique par chaque déclaration : ils se lisent sur la première ouverte, et se disent une fois. Les
@@ -770,7 +808,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             + 'Ce dossier ne produit pas de 2035, mais le poste regroupe encore les recettes et les charges de '
             + 'la situation intermédiaire (onglet Financement) et du détail par poste de l\'estimation : leurs '
             + 'montants n\'y sont pas comptés tant que ce n\'est pas fait.'
-          : 'Ces catégories sont utilisées par des pièces validées ou des mouvements affectés mais n\'ont pas encore de poste 2035 '
+          : 'Ces catégories sont utilisées par des pièces validées ou des mouvements affectés'
+            + (categorieDesFraisExclus !== null ? ', ou reçoivent les frais d’un mouvement d’encaissements,' : '')
+            + ' mais n\'ont pas encore de poste 2035 '
             + 'associé — leurs montants ne sont pas comptés dans le récapitulatif tant que ce n\'est pas fait.'}
         {' '}Un poste déjà renseigné est une suggestion à vérifier, pas une valeur figée.
       </p>
@@ -945,6 +985,35 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                     <td data-libelle="Catégorie">{m.libelle}</td>
                     <td data-libelle="Motif" className="muted">{raison}</td>
                     <td data-libelle="Montant" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(m.montantReleve)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {fraisExclus.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Frais d’encaissements absents du récapitulatif ({fraisExclus.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            La banque a retenu ces frais sur des mouvements que leurs encaissements de factures classent, et l’écriture de
+            chaque mouvement les porte. La 2035 les compte sous le poste de la catégorie « Frais bancaires » du dossier
+            {fraisExclus.some((f) => f.categorie === null)
+              ? ', que le dossier n’a pas : ils manqueront dans la déclaration tant qu’aucune catégorie de code « frais_bancaires » n’existe.'
+              : ', qui n’a pas de poste 2035 : ils manqueront dans la déclaration tant que ce poste n’est pas donné (carte « Postes manquants »).'}
+            {categorieDesFraisExclus !== null && !categorieReglableIci(categorieDesFraisExclus, isSuperAdmin)
+              ? ` ${categorieCommuneNonReglable('poste')}` : ''}
+          </p>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
+              <thead><tr><th>Date</th><th>Mouvement</th><th style={{ textAlign: 'right' }}>Frais</th></tr></thead>
+              <tbody>
+                {fraisExclus.map(({ frais: f }) => (
+                  <tr key={f.ligneBancaireId}>
+                    <td data-libelle="Date">{formatDate(f.date)}</td>
+                    <td data-libelle="Mouvement">{f.libelle}</td>
+                    <td data-libelle="Frais" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(f.centimes / 100)}</td>
                   </tr>
                 ))}
               </tbody>

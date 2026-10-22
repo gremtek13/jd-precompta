@@ -699,6 +699,7 @@ function valider(
     // Aucune facture du banc n'est SOURCE de sa vente (`source_de_la_vente: false` partout) : les ventes facturées que la
     // Clôture lirait de ces dossiers sont vides, et la valeur vide le dit (étape VF3b1).
     ventesFactureesVides(s.dossier),
+    { etat: 'sans_bascule' },
   )
   const { valeurs } = valeursDesCases(declaration)
   const dossier = dossiers.find((d) => d.id === s.dossier)!

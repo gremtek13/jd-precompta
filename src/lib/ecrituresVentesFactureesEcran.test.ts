@@ -4,10 +4,10 @@ import {
   argumentsEcrireVenteFacturee, argumentsRetirerEcritureVenteFacturee, refusEcritureVenteFacturee,
   refusRetraitEcritureVenteFacturee, REFUS_COMPTE_CONTREPARTIE, REFUS_ECRITURE_VENTE,
 } from './ecritureVenteFacturee'
-import { lignesAuBrouillon, type EcritureVenteFacturee } from './ecrituresVentesFacturees'
+import { ecrituresDesVentesFacturees, lignesAuBrouillon, type EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import {
-  LIBELLE_ETAT_SOURCE, argumentsDuChoix, argumentsDuGeste, choixInchange, compteSaisi, confirmationDuChoix, confirmationDuGeste,
-  ecrituresEnClair, etatsDesVentesFacturees, ligneDUneVenteFacturee, mouvementsClassesParEncaissements, refusDuChoix,
+  LIBELLE_ETAT_SOURCE, MOTIF_NE_SE_COMPOSENT_PAS, argumentsDuChoix, argumentsDuGeste, choixInchange, compositionDesSources,
+  compteSaisi, confirmationDuChoix, confirmationDuGeste, ecrituresDesVentesPourLa2035, ecrituresEnClair, etatsDesVentesFacturees, ligneDUneVenteFacturee, mouvementsClassesParEncaissements, refusDuChoix,
   type EncaissementDesEcritures, type EntreesEcrituresDeVente, type EtatsDesVentes, type FactureDesEcritures,
   type LigneDuBrouillonLue, type MouvementDesEcritures, type SourceDeVenteEtat, type SourcesDesEcrituresDeVente,
 } from './ecrituresVentesFactureesEcran'
@@ -513,5 +513,69 @@ describe('les lignes d’une vente facturée, que les contrôles d’hier ne jug
     expect([...mouvementsClassesParEncaissements([
       { id: 'm1', encaissements_de_factures: true }, { id: 'm2', encaissements_de_factures: false },
     ])]).toEqual(['m1'])
+  })
+})
+
+// CE QUE LA 2035 REÇOIT DES ÉCRITURES DES VENTES FACTURÉES (ligne 28.65, VF4C3-Q1) : la composition des sources lues EN
+// ENTIER pour CE dossier, ou pourquoi la 2035 ne se calcule pas. Données FICTIVES.
+describe('ecrituresDesVentesPourLa2035', () => {
+  const sources = (): SourcesDesEcrituresDeVente => {
+    const e1 = encaissement({ id: 'e1', facture_id: 'f1', date_encaissement: '2025-11-20', montant: 120, ligne_bancaire_id: 'm1' })
+    return {
+      dossierId: D, factures: [facture({ id: 'f1', date_emission: '2025-11-10' })], lignes: [ligneVendue('f1', 100, 20)],
+      encaissements: [e1.encaissement], parts: [e1.part], mouvements: [mouvement({ id: 'm1', date: '2025-11-20', montant: 118 })],
+    }
+  }
+  const lue = (s = sources(), dossierId = D) => ({ dossierId, etat: 'lue' as const, sources: s })
+  const juger = (o: Partial<Parameters<typeof ecrituresDesVentesPourLa2035>[0]> = {}) => ecrituresDesVentesPourLa2035({
+    dossierId: D, ventesParLesFactures: true, facturesSources: new Set(['f1']), lecture: lue(), mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, ...o,
+  })
+
+  it('un dossier qui n’a pas basculé : sans bascule, sans rien lire', () => {
+    expect(juger({ ventesParLesFactures: false, facturesSources: new Set(), lecture: null })).toEqual({ etat: 'pret', ecritures: { etat: 'sans_bascule' } })
+  })
+
+  it('une facture source dans un dossier qui ne se dit pas basculé : les lectures ne se tiennent pas', () => {
+    expect(juger({ ventesParLesFactures: false, lecture: null })).toEqual({
+      etat: 'incomplete',
+      motif: 'les ventes facturées comptent une facture source alors que le dossier ne se dit pas basculé : les lectures ne se tiennent pas',
+    })
+  })
+
+  it('basculé : la composition même de l’onglet Écritures, sur les sources lues', () => {
+    const r = juger()
+    expect(r.etat).toBe('pret')
+    const attendue = ecrituresDesVentesFacturees({
+      sources: { dossierId: D, factures: sources().factures, lignes: sources().lignes, encaissements: sources().encaissements, parts: sources().parts },
+      mouvements: sources().mouvements, comptesDeContrepartie: new Map(), mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
+    })
+    expect(r).toEqual({ etat: 'pret', ecritures: { etat: 'composees', composition: attendue } })
+    // Au plan et au modèle donnés.
+    const decale = juger({ plan: PLAN_DECALE, mode: 'engagement' })
+    expect(decale.etat === 'pret' && decale.ecritures.etat === 'composees'
+      && decale.ecritures.composition.ecritures.some((e) => e.lignes.some((l) => l.compte === PLAN_DECALE.services_bancaires))).toBe(true)
+  })
+
+  it('pas encore revenue, ou revenue pour un autre dossier : en attente', () => {
+    expect(juger({ lecture: null })).toEqual({ etat: 'en_attente' })
+    expect(juger({ lecture: lue(sources(), 'd-quitte') })).toEqual({ etat: 'en_attente' })
+  })
+
+  it('partielle, d’un autre dossier sous le bon, ou qui ne se compose pas : incomplète, avec le motif', () => {
+    expect(juger({ lecture: { dossierId: D, etat: 'incomplete', motif: 'les encaissements : permission denied' } }))
+      .toEqual({ etat: 'incomplete', motif: 'les encaissements : permission denied' })
+    expect(juger({ lecture: lue({ ...sources(), dossierId: 'd-autre' }) })).toEqual({ etat: 'incomplete', motif: 'la lecture rendue est celle d’un autre dossier' })
+    // Des lectures qui ne se tiennent pas (ici, des lignes de facture illisibles) : la composition lève, la 2035 ne se
+    // calcule pas.
+    const sansEncaissement = { ...sources(), lignes: null as unknown as LigneDeFacture[] }
+    expect(compositionDesSources(sansEncaissement, 'tresorerie', PLAN_PAR_DEFAUT)).toEqual({ etat: 'incoherent', motif: MOTIF_NE_SE_COMPOSENT_PAS })
+    expect(juger({ lecture: lue(sansEncaissement) })).toEqual({ etat: 'incomplete', motif: MOTIF_NE_SE_COMPOSENT_PAS })
+  })
+
+  it('le compte de contrepartie d’une compensation entre dans la composition, comme pour la section', () => {
+    const e = encaissement({ id: 'e2', facture_id: 'f1', date_encaissement: '2025-11-21', montant: 120, moyen: 'compensation', compte_contrepartie: '467200' })
+    const s = { ...sources(), encaissements: [e.encaissement], parts: [e.part], mouvements: [] }
+    const r = compositionDesSources(s, 'tresorerie', PLAN_PAR_DEFAUT)
+    expect(r.etat === 'composee' && r.composition.ecritures.some((x) => x.lignes.some((l) => l.compte === '467200'))).toBe(true)
   })
 })

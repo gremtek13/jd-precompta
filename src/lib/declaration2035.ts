@@ -5,7 +5,9 @@ import { arrondiDeLaLiquidation } from './liquidationTva'
 import { montantRetenu } from './montantRetenu'
 import type { PartDuReleve } from './partsDuReleve'
 import type { PlanComptable } from './planComptable'
-import { compteDuProduit } from './ecrituresVentesFacturees'
+import {
+  compteDuProduit, fraisDesMouvements, type EcrituresDesVentesFacturees, type FraisDUnMouvement,
+} from './ecrituresVentesFacturees'
 import { centimesParDate, partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { CotisationComptee } from './cotisationRapprochee'
@@ -50,6 +52,39 @@ export const POSTE_ARRONDIS_TVA_CHARGE = 'Autres frais divers de gestion'
 // la catégorie des ventes d'un dossier : il n'en a pas, et le libellé du formulaire ne laisse aucun doute sur la case. Les
 // débours (ligne 2, AB) restent hors du chantier.
 export const POSTE_VENTES_FACTUREES = 'Recettes encaissées y compris les remboursements de frais'
+// LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (ligne 28.65, chantier EC-Q3, VF4C3-Q1, faite sur la recommandation) : la
+// catégorie dont le poste les reçoit, par son code stable — là où vont déjà les frais bancaires du relevé.
+export const CODE_CATEGORIE_FRAIS_BANCAIRES = 'frais_bancaires'
+
+/**
+ * LES ÉCRITURES DES VENTES FACTURÉES, TELLES QUE LA 2035 EN LIT LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS. `sans_bascule` :
+ * le dossier n'a pas basculé — aucune facture n'y est source (la base le garantit), aucun mouvement n'est classé par ses
+ * encaissements : il n'a pas de tels frais. `composees` : la composition (lib/ecrituresVentesFacturees.ts) faite sur les
+ * sources lues EN ENTIER, au plan et au modèle du dossier — la même que celle de l'onglet Écritures. Un dossier basculé
+ * dont la lecture n'est pas revenue entière n'a PAS de 2035 : l'appelant ne l'appelle pas, et l'écran le dit. Sans valeur
+ * par défaut, comme `EcrituresDesVentesDeLaCa3` (lib/liquidationTva.ts).
+ */
+export type EcrituresDesVentesDeLa2035 =
+  | { etat: 'sans_bascule' }
+  | { etat: 'composees'; composition: Pick<EcrituresDesVentesFacturees, 'dossierId' | 'ecritures'> }
+
+/** Les frais d'un mouvement d'encaissements que la 2035 ne range sur aucune ligne, et pourquoi. */
+export interface FraisSansPoste {
+  frais: FraisDUnMouvement
+  /** La catégorie « Frais bancaires » retenue (celle du dossier, sinon la commune) ; nulle quand le dossier n'en a aucune. */
+  categorie: Categorie | null
+}
+
+/**
+ * LA CATÉGORIE « FRAIS BANCAIRES » D'UN DOSSIER : la sienne quand il en a une, la commune à tous les cabinets sinon
+ * (`dossier_id` nul ; lib/categoriesCommunes.ts). Aucune règle de préséance par code n'existait dans le code : celle-ci est
+ * la règle d'une catégorie propre, qui l'emporte sur la commune du même code — la contrainte `unique (dossier_id, code)`
+ * les laisse coexister. Jamais une catégorie d'un autre dossier. Nulle quand aucune ne porte ce code.
+ */
+export function categorieDesFraisBancaires(categories: readonly Categorie[], dossierId: string): Categorie | null {
+  const duCode = categories.filter((c) => c.code === CODE_CATEGORIE_FRAIS_BANCAIRES)
+  return duCode.find((c) => c.dossier_id === dossierId) ?? duCode.find((c) => c.dossier_id == null) ?? null
+}
 
 // Un poste de la déclaration. `montant` est positif : c'est `nature` qui porte le sens. Mélanger les deux
 // (une charge en négatif) obligerait chaque consommateur — PDF, EDI, écran — à refaire la même convention
@@ -103,6 +138,10 @@ export interface ExclusionsDeclaration {
   // tomber dans n'importe quel exercice, un acompte avant même la facture —, et la dire dans un seul la ferait taire dans
   // l'autre.
   ventesFactureesEcartees: VenteEcartee[]
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS QUE NULLE LIGNE NE PORTE : la catégorie « Frais bancaires » du dossier manque,
+  // ou n'a pas de poste. Le même trou que `mouvementsSansPoste` — les frais sont écrits au 627, la 2035 ne les déduit
+  // pas —, dans l'exercice du mouvement. Jamais un poste deviné.
+  fraisSansPoste: FraisSansPoste[]
 }
 
 // Une pièce comptée à sa DATE DE FACTURE faute de paiement rapproché — une supposition, que l'écran
@@ -137,6 +176,9 @@ export type SourceDeclaration =
   // La part d'un encaissement d'une facture source, à un taux (lib/ventesFacturees.ts) : `id` est l'encaissement — une
   // contre-passation est le sien —, et la part nomme sa facture.
   | { type: 'encaissement'; id: string; part: PartVenteFacturee }
+  // Les frais d'un mouvement que ses encaissements classent (lib/ecrituresVentesFacturees.ts, `fraisDesMouvements`) : `id`
+  // est le mouvement, que l'écriture désigne par son seul `ligne_bancaire_id`.
+  | { type: 'frais_d_encaissements'; id: string; frais: FraisDUnMouvement }
 
 export interface ContributionDeclaration {
   source: SourceDeclaration
@@ -153,6 +195,9 @@ export interface ContributionDeclaration {
   // `ventes_de_biens` pour des biens, au plan du dossier — la même fonction, jamais une règle recopiée. La concordance
   // (lib/concordance2035.ts) la rapproche sur ce compte des écritures de son encaissement, que l'onglet Écritures passe
   // depuis l'étape VF4c1 ; une part qu'aucune écriture à jour ne porte reste un écart.
+  //
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS portent le compte que la composition écrit (`services_bancaires` du plan),
+  // jamais celui de leur catégorie : c'est sur lui que la concordance retrouve la ligne de l'écriture du mouvement.
   compte: string | null
   // En centimes, signé comme ce que la source fait à son poste : un avoir ou un remboursement le diminue.
   centimes: number
@@ -332,6 +377,10 @@ export function calculerDeclaration2035(
   // ventes vides par commodité compteraient l'exemplaire à la place de sa facture, c'est-à-dire la même vente à sa date de
   // pièce au lieu de celle de ses encaissements.
   ventesFacturees: VentesFacturees,
+  // Les écritures des ventes facturées du dossier, d'où la 2035 tire les frais d'un mouvement d'encaissements
+  // (`EcrituresDesVentesDeLa2035`). Sans valeur par défaut : un appelant qui les oublierait déclarerait le résultat d'un
+  // dossier basculé sans ses frais bancaires, plausible et faux ; l'absence de bascule se DIT (`sans_bascule`).
+  ecrituresDesVentes: EcrituresDesVentesDeLa2035,
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -341,7 +390,7 @@ export function calculerDeclaration2035(
 
   const exclusions: ExclusionsDeclaration = {
     sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [],
-    exemplairesDeFacturesSources: [], ventesFactureesEcartees: [...ventesFacturees.ecartees],
+    exemplairesDeFacturesSources: [], ventesFactureesEcartees: [...ventesFacturees.ecartees], fraisSansPoste: [],
   }
   const sansPaiementConnu: PieceSansPaiement[] = []
   const contributions: ContributionDeclaration[] = []
@@ -479,6 +528,33 @@ export function calculerDeclaration2035(
       compte: compteDuProduit(p.regime, plan),
       centimes: p.htCentimes,
     }, 0)
+  }
+
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (ligne 28.65, VF4C3-Q1, faite sur la recommandation sans réponse du cabinet).
+  // Quand la banque crédite un peu moins que les encaissements qu'un mouvement règle (au plus 2 % et 5 €), l'écriture du
+  // mouvement porte la différence au compte des services bancaires : une charge PAYÉE à la date du mouvement (art. 93, 1).
+  // La 2035 la compte EXACTEMENT telle que la composition l'écrit (`fraisDesMouvements` lit sa sortie, rien n'est
+  // recalculé), une dépense sous le poste de la catégorie « Frais bancaires » du dossier — là où vont déjà les frais
+  // bancaires du relevé —, au compte de la composition. Un mouvement dont la composition refuse l'écriture n'en donne
+  // aucun. Sans catégorie ou sans poste : nulle part, et c'est dit (`fraisSansPoste`), jamais un poste deviné. Le mouvement
+  // compte parmi ceux du poste : sa preuve est le relevé.
+  if (ecrituresDesVentes.etat === 'composees') {
+    const composition = ecrituresDesVentes.composition
+    const categorieFrais = categorieDesFraisBancaires(categories, composition.dossierId)
+    for (const frais of fraisDesMouvements(composition, plan)) {
+      if (anneeDe(frais.date) !== annee) continue
+      if (!categorieFrais?.poste_2035) {
+        exclusions.fraisSansPoste.push({ frais, categorie: categorieFrais })
+        continue
+      }
+      ajouter({
+        source: { type: 'frais_d_encaissements', id: frais.ligneBancaireId, frais },
+        poste: categorieFrais.poste_2035,
+        nature: 'depense',
+        compte: frais.compte,
+        centimes: frais.centimes,
+      }, 0, frais.ligneBancaireId)
+    }
   }
 
   // Une dotation par bien : la case CH est leur somme, et chacune s'écrit à part au brouillon.

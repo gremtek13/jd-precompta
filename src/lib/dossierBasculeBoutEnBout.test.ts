@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { concordance2035 } from './concordance2035'
 import { calculerCa3, type DeclarationCa3 } from './declarationTva'
 import { calculerDeclaration2035 } from './declaration2035'
+import { fraisDesMouvements } from './ecrituresVentesFacturees'
+import type { Categorie } from './types'
 import { etatsDesVentesFacturees, mouvementsClassesParEncaissements, type SourcesDesEcrituresDeVente } from './ecrituresVentesFactureesEcran'
 import { arrondiDeLaLiquidation, declarationDeLaCa3, ecritureDeLaLiquidation, refusEnregistrement } from './liquidationTva'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
@@ -45,7 +47,7 @@ describe.each(PLANS)('un dossier basculé, de bout en bout — %s', (_, plan) =>
   it('en trésorerie : la 2035 concorde avec les écritures, au compte que la composition écrit', () => {
     const { sources, brouillon, ventes, etats } = leDossier('tresorerie', plan)
     expect(etats.etat === 'lus' && etats.sources.every((s) => s.etat === 'a_jour')).toBe(true)
-    const declaration = calculerDeclaration2035(2025, [], [], [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventes)
+    const declaration = calculerDeclaration2035(2025, [], [], [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventes, { etat: 'composees', composition: composition(sources, 'tresorerie', plan) })
     // 100 € de F2025-0001 et 83,33 € des 100 € TTC encaissés de F2025-0002 ; l'avoir de F2025-0003, sans encaissement, rien.
     expect(declaration.totalRecettes).toBe(183.33)
     expect([...new Set(declaration.contributions.map((c) => c.compte))]).toEqual([plan.prestations_de_services])
@@ -83,12 +85,57 @@ describe.each(PLANS)('un dossier basculé, de bout en bout — %s', (_, plan) =>
     const { sources, brouillon, ventes } = leDossier('tresorerie', plan)
     const sansE2 = brouillon.filter((l) => l.encaissement_id !== 'e2')
     const etats = etatsDesVentesFacturees({ sources, brouillon: sansE2, mode: 'tresorerie', plan, anneesValidees: [], ventesParLesFactures: true })
-    const declaration = calculerDeclaration2035(2025, [], [], [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventes)
+    const declaration = calculerDeclaration2035(2025, [], [], [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventes, { etat: 'composees', composition: composition(sources, 'tresorerie', plan) })
     const c = concordance2035(declaration, sansE2, {
       piecesValidees: new Set(), piecesImmobilisees: new Set(), mouvementsDesVentesFacturees: mouvementsClassesParEncaissements(sources.mouvements),
     }, null)
     expect(c.ecarts.map((e) => [e.cle, e.motif])).toEqual([['encaissement:e2', 'vente_facturee_non_ecrite']])
     const ca3 = calculerCa3({ pieces: [], paiements: paiementsDesPieces([], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventes }, Q4, false, 0, 0)
     expect(enregistrement(ca3, etats)).toMatch(/l’encaissement du 21\/11\/2025 de la facture F2025-0002 .*\(à écrire\)/)
+  })
+})
+
+// LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS, DE BOUT EN BOUT (ligne 28.65, VF4C3-Q1) : le même dossier, son virement m1 crédité
+// de 118 € pour 120 € encaissés (2 € de frais) et sa remise de chèque m2 de 98 € pour 100 € (2 €). Pour chaque mouvement, les
+// frais que la 2035 compte sont, au centime et à la date, les lignes que la composition écrit au compte des services
+// bancaires ; écrites, la concordance est entière. Données FICTIVES.
+describe.each(PLANS)('les frais d’un mouvement d’encaissements, de bout en bout — %s', (_, plan) => {
+  const FRAIS_BANCAIRES = { id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' } as Categorie
+  const sourcesAvecFrais = (): SourcesDesEcrituresDeVente => {
+    const s = sourcesDuDossierBascule()
+    return { ...s, mouvements: s.mouvements.map((m) => ({ ...m, montant: m.montant - 2 })) }
+  }
+
+  it('pour chaque mouvement, les frais que la 2035 compte égalent les lignes que la composition écrit, et tout concorde', () => {
+    const sources = sourcesAvecFrais()
+    const c = composition(sources, 'tresorerie', plan)
+    const brouillon = brouillonDesVentes(c)
+    const ventes = ventesFacturees({
+      dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
+    })
+    const declaration = calculerDeclaration2035(
+      2025, [], [FRAIS_BANCAIRES], [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventes, { etat: 'composees', composition: c },
+    )
+    // Les lignes du compte des services bancaires que le brouillon porte, mouvement par mouvement, signées au débit.
+    const ecritParMouvement = new Map<string, number>()
+    for (const l of brouillon) {
+      if (l.compte !== plan.services_bancaires) continue
+      expect(l.encaissement_id ?? l.facture_id).toBeNull()
+      ecritParMouvement.set(l.ligne_bancaire_id!, (ecritParMouvement.get(l.ligne_bancaire_id!) ?? 0) + Math.round(l.montant * 100) * (l.sens === 'debit' ? 1 : -1))
+    }
+    const compteParMouvement = new Map(declaration.contributions
+      .flatMap((x) => (x.source.type === 'frais_d_encaissements' ? [[x.source.id, x.centimes] as const] : [])))
+    expect([...ecritParMouvement]).toEqual([['m1', 200], ['m2', 200]])
+    expect([...compteParMouvement].sort()).toEqual([...ecritParMouvement].sort())
+    for (const f of fraisDesMouvements(c, plan)) {
+      expect(brouillon.filter((l) => l.ligne_bancaire_id === f.ligneBancaireId && l.compte === plan.services_bancaires).every((l) => l.date === f.date)).toBe(true)
+    }
+    expect(declaration.contributions.filter((x) => x.source.type === 'frais_d_encaissements').every((x) => x.compte === plan.services_bancaires)).toBe(true)
+    expect(declaration.totalDepenses).toBe(4)
+    const conc = concordance2035(declaration, brouillon, {
+      piecesValidees: new Set(), piecesImmobilisees: new Set(), mouvementsDesVentesFacturees: mouvementsClassesParEncaissements(sources.mouvements),
+    }, null)
+    expect(conc.ecarts).toEqual([])
+    expect(conc.ecritures).toEqual({ recettes: 183.33, depenses: 4, resultat: 179.33 })
   })
 })

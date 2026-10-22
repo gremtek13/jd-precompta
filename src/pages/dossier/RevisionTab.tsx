@@ -24,6 +24,8 @@ import {
 } from '../../lib/revueAnalytique'
 import { donneesDeLaRevueAnalytique, identifiantDeLaLigne, memeCleDeLigne } from '../../lib/revueAnalytiqueEcran'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
+import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFactureesEcran'
+import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import {
   argumentsDeConsigner, argumentsDeRetirer, entreesDuDossierPermanent, type ContexteDuDossierPermanent, type SaisieDuDossierPermanent,
 } from '../../lib/dossierPermanent'
@@ -116,6 +118,10 @@ interface LectureDeLaRevision {
   // Elles ne servent qu'à la revue analytique — ni les soldes, ni les cycles, ni le dossier permanent ne les lisent —, et
   // leur lecture incomplète rejoint donc les motifs de la revue, qui se tait seule.
   ventesFacturees: LectureVentesFacturees
+  // Les sources des écritures des ventes facturées d'un dossier qui a basculé (VF4C3-Q1) : la 2035 de la revue en tire les
+  // frais d'un mouvement d'encaissements, comme celle de Clôture. Nulles pour un dossier qui n'a pas basculé, jamais lues.
+  // Elles ne servent qu'à la revue analytique : une lecture incomplète ne cache que sa section.
+  sourcesDesVentes: LectureSourcesDesEcrituresDeVente | null
   // Le dossier permanent (étape R7), tous exercices, À PART : sa lecture ratée ou partielle ne cache que sa section.
   permanent: LectureDuDossierPermanent
   // Ce que la section lit D'AUTRE que ses entrées — les pièces et les documents, de quoi nommer une citation et dire son état —
@@ -140,11 +146,12 @@ async function lireLePermanent(dossierId: string): Promise<LectureDuDossierPerma
 // et ce qu'elles ne portent pas : les soldes reportés, les contrôles de TOUS les relevés, les documents, les décisions de
 // la révision et leurs preuves. Le dossier ENTIER, tous exercices : l'ouverture lit ceux d'avant, la reprise le précédent,
 // une citation sa source quel que soit son exercice.
-async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
+// `bascule` : le réglage du dossier — un dossier qui n'a pas basculé ne lit pas les sources de ses écritures de vente.
+async function lireLaRevision(dossierId: string, bascule: boolean): Promise<LectureDeLaRevision> {
   const [
     checklist, lectureReportes, lectureControles, lectureDocuments, lectureDecisions, lecturePreuves, lectureConclusions,
     lectureJournal, lectureRevues, lectureSeuils, lectureExplications, lectureReperes, lectureReperesDesPostes, permanent,
-    ventesFacturees,
+    ventesFacturees, sourcesDesVentes,
   ] = await Promise.all([
     lireLaChecklist(dossierId),
     lireTout<SoldeReporte>((debut, fin) =>
@@ -203,6 +210,8 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
     lireLePermanent(dossierId),
     // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
     lireLesVentesFacturees(dossierId),
+    // Ne rejette jamais non plus.
+    bascule ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
   ])
   // Chaque lecture a son bandeau : dire laquelle manque, c'est dire où chercher.
   const motifs: MotifDeLecture[] = []
@@ -250,6 +259,7 @@ async function lireLaRevision(dossierId: string): Promise<LectureDeLaRevision> {
     motifs,
     motifsRevue,
     ventesFacturees,
+    sourcesDesVentes,
     permanent,
     motifsDuPermanent,
   }
@@ -272,7 +282,7 @@ function resumeDeLAvancement(avancement: Record<EtatDuSolde, number>): string {
   return `${total} solde${total > 1 ? 's' : ''} de bilan : ${parts.join(', ')}.`
 }
 
-export default function RevisionTab({ dossierId, modele, assujettiTva, periodiciteTva, statutTva, onNavigate }: {
+export default function RevisionTab({ dossierId, modele, assujettiTva, periodiciteTva, statutTva, ventesParLesFactures, onNavigate }: {
   dossierId: string
   // Le modèle ENTIER, sans valeur par défaut : il décide des cycles du dossier (les tiers en engagement) et de ses
   // preuves, comme de ses points de contrôle.
@@ -280,6 +290,9 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   assujettiTva: boolean
   periodiciteTva: PeriodiciteTva
   statutTva: StatutTva | null
+  // Le réglage du dossier (`ventes_par_les_factures`) : basculé, la 2035 de la revue compte les frais d'un mouvement
+  // d'encaissements (VF4C3-Q1), et l'onglet lit les sources des écritures de ses ventes. Sans valeur par défaut.
+  ventesParLesFactures: boolean
   onNavigate: (tab: DossierTab) => void
 }) {
   const { annee } = useAnnee()
@@ -365,9 +378,10 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
 
   useEffect(() => {
     let annule = false
-    void lireLaRevision(dossierId).then((lue) => { if (!annule) setLecture(lue) })
+    void lireLaRevision(dossierId, ventesParLesFactures).then((lue) => { if (!annule) setLecture(lue) })
     return () => { annule = true }
-  }, [dossierId])
+    // Un dossier qui bascule relit les sources de ses ventes facturées.
+  }, [dossierId, ventesParLesFactures])
 
   async function decider(decision: DecisionComposee) {
     if (decisionEnCours.current || cycleEnCours.current || revueEnCours.current || permanentEnCours.current || typeof annee !== 'number') return
@@ -384,7 +398,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       }
       // Relue dans les deux cas, AVANT de relâcher le verrou : écrite, la décision paraît dans l'historique et l'état du
       // solde change ; refusée, la base a peut-être vu ce que l'écran n'avait pas lu (une autre décision, une écriture).
-      setLecture(await lireLaRevision(dossierId))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
     } finally {
       decisionEnCours.current = false
       setEnCours(false)
@@ -407,7 +421,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       }
       // Relue dans les deux cas, AVANT de relâcher le verrou : écrite, elle devient la courante et l'état du cycle change ;
       // refusée, la base a peut-être vu ce que l'écran n'avait pas lu (une autre conclusion prise depuis).
-      setLecture(await lireLaRevision(dossierId))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
     } finally {
       cycleEnCours.current = false
       setCycleOccupe(false)
@@ -428,7 +442,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       } else {
         ecrite = true
       }
-      setLecture(await lireLaRevision(dossierId))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
     } finally {
       cycleEnCours.current = false
       setCycleOccupe(false)
@@ -449,7 +463,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       } else {
         ecrite = true
       }
-      setLecture(await lireLaRevision(dossierId))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
     } finally {
       cycleEnCours.current = false
       setCycleOccupe(false)
@@ -473,7 +487,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       }
       // Relue dans les deux cas, AVANT de relâcher le verrou : écrit, le seuil devient le courant et l'état des lignes change ;
       // refusé, la base a peut-être vu ce que l'écran n'avait pas lu (un autre seuil fixé depuis).
-      setLecture(await lireLaRevision(dossierId))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
     } finally {
       revueEnCours.current = false
       setRevueOccupee(false)
@@ -499,7 +513,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       }
       // Relue dans les deux cas : écrite, elle devient la courante ; refusée, la base a vu des montants ou une explication
       // que l'écran n'avait pas lus.
-      setLecture(await lireLaRevision(dossierId))
+      setLecture(await lireLaRevision(dossierId, ventesParLesFactures))
     } finally {
       revueEnCours.current = false
       setRevueOccupee(false)
@@ -782,12 +796,25 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   // revue le dit comme une lecture qui manque, plutôt que de calculer une 2035 sans elles.
   const lectureDesVentes = lectureDuDossier(lecture.ventesFacturees, dossierId)
   const ventesDeLaRevue = lectureDesVentes?.etat === 'lue' ? lectureDesVentes.ventes : null
-  const motifsDeLaRevue: MotifDeLectureDeLaRevue[] = lectureDesVentes === null
-    ? [...lecture.motifsRevue, { quoi: 'Les ventes facturées du dossier', accord: 'lues', motif: 'la lecture rendue est celle d’un autre dossier' }]
-    : lecture.motifsRevue
+  // Les frais d'un mouvement d'encaissements (VF4C3-Q1) : ce que la 2035 reçoit des écritures des ventes facturées, sur les
+  // lectures de CE dossier, comme Clôture le calcule ; une lecture qui manque se dit parmi celles de la revue.
+  const pourLa2035 = ventesDeLaRevue === null ? null : ecrituresDesVentesPourLa2035({
+    dossierId, ventesParLesFactures, facturesSources: ventesDeLaRevue.sources, lecture: lecture.sourcesDesVentes, mode: modele.mode,
+    plan: modele.plan,
+  })
+  const motifsDeLaRevue: MotifDeLectureDeLaRevue[] = [
+    ...lecture.motifsRevue,
+    ...(lectureDesVentes === null
+      ? [{ quoi: 'Les ventes facturées du dossier', accord: 'lues' as const, motif: 'la lecture rendue est celle d’un autre dossier' }] : []),
+    ...(pourLa2035?.etat === 'incomplete'
+      ? [{ quoi: 'Les écritures des ventes facturées du dossier', accord: 'lues' as const, motif: pourLa2035.motif }] : []),
+    ...(pourLa2035?.etat === 'en_attente'
+      ? [{ quoi: 'Les écritures des ventes facturées du dossier', accord: 'lues' as const, motif: 'pas encore lues pour ce dossier' }] : []),
+  ]
   const donneesDeLaRevue = donneesDeLaRevueAnalytique(annee, anneeCourante, modele, assujettiTva, {
     dossier: lecture.checklist, reprise: lecture.reprise, reportes: lecture.reportes, exercicesValides: exercices,
     reperes: lecture.reperes, seuils: lecture.seuils, explications: lecture.explications, ventesFacturees: ventesDeLaRevue,
+    ecrituresDesVentes: pourLa2035?.etat === 'pret' ? pourLa2035.ecritures : null,
   })
   const lectureDeLaRevueIncomplete = motifsDeLaRevue.length > 0
     ? motifsDeLaRevue.map((m) => `${m.quoi} : ${m.motif}`).join(' ; ')
