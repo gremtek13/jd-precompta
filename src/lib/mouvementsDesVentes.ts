@@ -1,10 +1,14 @@
 import { estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
-  encaissementsDuMouvement, MOYENS_ENCAISSEMENT, ordreDesEncaissements, refusDuClassementDuReleve,
-  type CleRefusGardeMouvements, type EncaissementDuReleve, type FactureDuDossier, type MouvementClasse, type RefusEncaissement,
+  ecartDeFrais, encaissementsDuMouvement, justifieSonMouvement, mouvementLibre, MOYENS_ENCAISSEMENT, ordreDesEncaissements,
+  refusClassement, refusDuClassementDuReleve, refusRattachement, refusRetraitDuClassement, resteAEncaisserVente,
+  type CleRefusGardeMouvements, type ContexteVente, type EncaissementDuReleve, type EncaissementLu, type FactureDuDossier,
+  type LigneDeFacture, type MouvementClasse, type PartLue, type RefusEncaissement,
 } from './encaissementsFactures'
 import { formatDate, formatMoney } from './format'
-import type { EncaissementFacture, LigneBancaire } from './types'
+import type { PlanComptable } from './planComptable'
+import type { EncaissementFacture, FactureEmise, LigneBancaire } from './types'
+import { dateFigee } from './validationExercice'
 
 // LE RELEVÉ RECONNAÎT LES MOUVEMENTS DES VENTES FACTURÉES (ligne 28.65, chantier EC-Q3, étape VF5a1 ; conception :
 // HISTORIQUE.md, « VF5, LA BANQUE : LA CONCEPTION », § 3 à 5). Un module PUR — il ne lit rien en base, n'appelle personne,
@@ -36,7 +40,10 @@ import type { EncaissementFacture, LigneBancaire } from './types'
 // écarte (`ecartDuLot`) ; les plans eux-mêmes restent dans leurs modules (lib/reglesAffectation.ts,
 // lib/appariementBanque.ts, lib/reglesIgnorees.ts), et le relevé compte ses mouvements par `comptesDuReleve`.
 //
-// Les gestes (classer, retirer un classement, rattacher) viennent avec l'étape VF5c. Ce module ne les offre pas.
+// LES GESTES DU CABINET SUR UN CRÉDIT (étape VF5c, en fin de module) : classer un mouvement réservé par ses encaissements,
+// retirer ce classement, rattacher à un crédit un encaissement enregistré sans mouvement, ou y enregistrer l'encaissement
+// d'une facture (`gestesDuCredit`) — la sélection et l'ordre des candidats, les phrases, l'état d'après ; chaque refus est
+// celui des fonctions de la base, redit par lib/encaissementsFactures.ts, jamais recopié ici.
 
 // ── Ce que le module lit ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -395,5 +402,280 @@ export function carteDeVente(m: MouvementDeVente, acces: AccesDuDossier): CarteD
       ? `Les accès du dossier n’ont pas été lus en entier (${acces.motif}) : on ne peut pas dire quels encaissements le `
         + 'client a enregistrés.'
       : null,
+  }
+}
+
+// ── Les gestes du cabinet sur la fiche d'un crédit (étape VF5c) ───────────────────────────────────────────────────────
+//
+// LA FICHE D'UN CRÉDIT : « ENCAISSEMENT D'UNE FACTURE » (conception de VF5, § 5, puce VF5c). Côté cabinet, pour un dossier
+// BASCULÉ dont les ventes facturées sont lues en entier, sur un CRÉDIT (les débits viennent avec VF5d) :
+//   - RÉSERVÉ (un encaissement d'une facture source le cite et le justifie) : ses encaissements, leur total face au crédit
+//     et l'écart des frais ; « Classer par ses encaissements » (`classer_mouvement_par_encaissements`), refusé avant le clic
+//     par `refusClassement`, confirmé par une phrase qui nomme les factures, les montants et les frais portés au compte des
+//     services bancaires du plan ;
+//   - CLASSÉ par ses encaissements : « Retirer ce classement » (`retirer_classement_par_encaissements`, refusé avant le
+//     clic par `refusRetraitDuClassement`) ; la confirmation dit que ses écritures deviennent « à retirer » dans l'onglet
+//     Écritures ;
+//   - LIBRE, ou réservé sans que ses encaissements fassent encore le crédit (une remise de chèques se rattache
+//     encaissement par encaissement, et le classement attend) : les encaissements de factures sources enregistrés sans
+//     mouvement, le plus proche de ce qui reste d'abord, chacun jugé par `refusRattachement`, avec ce que le mouvement
+//     deviendrait après (`refusClassement` joué sur l'état d'après) ; et les factures sources qui restent à encaisser, la
+//     plus proche d'abord, que la fenêtre des encaissements ouvre sur ce mouvement, IMPOSÉ.
+// Rien ne s'offre sur des ventes facturées pas encore revenues, lues en partie, refusées ou d'un autre dossier (la retenue
+// de VF5a1), ni, pour le complément, sur un mouvement qu'un exercice validé fige — son classement le dit par son refus.
+
+/** Une facture du dossier telle que la fiche d'un crédit la nomme : son client, sa date, son TTC — de quoi ouvrir la fenêtre. */
+export type FactureDesGestes = FactureDuDossier & Pick<FactureEmise, 'tiers_nom' | 'date_emission' | 'montant_ttc'>
+
+/**
+ * Ce que les gestes lisent : les ventes facturées du dossier, lues EN ENTIER par la lecture de l'onglet Écritures
+ * (lib/ecrituresVentesFactureesLecture.ts) — les factures nommées, les lignes des factures sources et de leurs avoirs, le
+ * registre et ses parts par taux (le reste d'une facture), les mouvements.
+ */
+export interface SourcesDesGestes extends SourcesDuReleve {
+  factures: readonly FactureDesGestes[]
+  lignes: readonly LigneDeFacture[]
+  parts: readonly PartLue[]
+}
+
+export type LectureDesGestes =
+  | { dossierId: string; etat: 'lue'; sources: SourcesDesGestes }
+  | { dossierId: string; etat: 'incomplete'; motif: string }
+
+export interface GesteConfirme {
+  /** Ce que la base refuserait, sous ses mots : dit avant le clic, le bouton grisé. Nul : le geste s'offre. */
+  refus: string | null
+  /** La confirmation, qui NOMME ce que le geste fait. */
+  confirmation: string
+}
+
+/** Un encaissement enregistré sans mouvement, qu'on rattacherait à ce crédit. */
+export interface EncaissementARattacher extends GesteConfirme {
+  id: string
+  /** La facture, son client, le moyen et la date ; le montant à part. */
+  libelle: string
+  montant: number
+}
+
+/** Une facture source qui reste à encaisser, que la fenêtre des encaissements ouvrirait sur ce crédit. */
+export interface FactureAEncaisser {
+  facture: FactureDesGestes
+  libelle: string
+  resteCentimes: number
+}
+
+export interface ComplementDuCredit {
+  /** Ce qui reste pour faire le crédit, en centimes : le crédit entier d'un mouvement libre. Toujours positif ici. */
+  manqueCentimes: number
+  rattachables: readonly EncaissementARattacher[]
+  factures: readonly FactureAEncaisser[]
+  /** Ni l'un ni l'autre : ce que la fiche en dit. */
+  note: string | null
+}
+
+export type GestesDuCredit =
+  // Rien de neuf : un dossier qui n'a pas basculé, des ventes facturées qui ne sont pas lues en entier, un débit, un
+  // mouvement classé autrement, ou un crédit libre que rien n'attend.
+  | { etat: 'aucun' }
+  | { etat: 'classe'; retrait: GesteConfirme }
+  | { etat: 'reserve'; ensemble: string; classement: GesteConfirme; complement: ComplementDuCredit | null }
+  | { etat: 'libre'; complement: ComplementDuCredit }
+
+export const AUCUN_GESTE: GestesDuCredit = { etat: 'aucun' }
+
+export const TITRE_CLASSER = 'Classer par ses encaissements'
+export const TITRE_RETIRER = 'Retirer ce classement'
+export const TITRE_RATTACHER = 'Rattacher un encaissement enregistré sans mouvement'
+export const TITRE_ENREGISTRER = 'Enregistrer l’encaissement d’une facture'
+
+const enCentimes = (montant: number) => Math.round(montant * 100)
+const euros = (centimes: number) => formatMoney(centimes / 100)
+
+// Un texte comparé octet par octet, comme la base sous `collate "C"` : un départage qui ne dépend de rien.
+function ordreC(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+/**
+ * Ce qui reste pour faire ce crédit, en centimes : son montant, moins ce que portent les encaissements de factures sources
+ * qui le citent et le justifient — ceux que le classement compte (`encaissementsDuMouvement`). Négatif quand ils le
+ * dépassent (l'écart des frais).
+ */
+export function manqueDuCredit(
+  mouvement: Pick<MouvementClasse, 'id' | 'montant'>,
+  encaissements: readonly EncaissementLu[],
+  vente: Pick<ContexteVente, 'factures'>,
+): number {
+  const portes = encaissementsDuMouvement(mouvement.id, encaissements, vente)
+  return enCentimes(mouvement.montant) - portes.reduce((total, e) => total + enCentimes(e.montant), 0)
+}
+
+/**
+ * Le montant que la fenêtre propose pour l'encaissement d'une facture sur un crédit IMPOSÉ, en centimes : tout le reste de
+ * la facture quand ce qui reste du crédit le fait à l'écart des frais près (la banque crédite un peu moins) ; sinon le plus
+ * petit des deux — une remise de chèques porte plusieurs factures, et une facture payée en plusieurs fois laisse un reste.
+ * Le cabinet le corrige ; la base juge ce qui part.
+ */
+export function montantSurLeCredit(resteFactureCentimes: number, manqueCentimes: number): number {
+  if (manqueCentimes <= 0) return resteFactureCentimes
+  const ecart = resteFactureCentimes - manqueCentimes
+  if (ecart >= 0 && ecartDeFrais(ecart, resteFactureCentimes)) return resteFactureCentimes
+  return Math.min(resteFactureCentimes, manqueCentimes)
+}
+
+function libelleDeLEncaissement(e: EncaissementDuMouvementLu, factures: readonly FactureDesGestes[]): string {
+  const f = factures.find((x) => x.id === e.facture_id)
+  return `Facture ${f?.numero ?? SANS_NUMERO}${f ? ` (${f.tiers_nom})` : ''} — ${libelleDuMoyen(e.moyen).toLowerCase()} du `
+    + formatDate(e.date_encaissement)
+}
+
+const leCredit = (m: Pick<MouvementClasse, 'date' | 'montant'>) => `ce crédit du ${formatDate(m.date)} de ${formatMoney(m.montant)}`
+
+const DANS_LES_ECRITURES = 'l’onglet Écritures, section « Ventes facturées »'
+
+// Ce que ses encaissements font face au crédit : ce qui reste à faire, l'égalité, les frais, ou un écart que des frais
+// n'expliquent pas (le refus du classement le dit alors aussi, sous ses mots).
+function phraseDeLEnsemble(totalCentimes: number, creditCentimes: number, compteDesFrais: string): string {
+  const face = `Ses encaissements font ${euros(totalCentimes)} pour un crédit de ${euros(creditCentimes)}`
+  const manque = creditCentimes - totalCentimes
+  if (manque > 0) {
+    return `${face} : il reste ${euros(manque)} à rattacher ou à enregistrer pour faire le crédit, et son classement attend `
+      + 'qu’il soit fait.'
+  }
+  if (manque === 0) return `Ses encaissements font exactement le crédit, ${euros(creditCentimes)}.`
+  return ecartDeFrais(-manque, totalCentimes)
+    ? `${face} : l’écart, ${euros(-manque)}, est celui des frais bancaires, que ses écritures porteront au ${compteDesFrais}.`
+    : `${face} : l’écart, ${euros(-manque)}, dépasse ce que des frais bancaires expliquent.`
+}
+
+function confirmationDuClassement(
+  m: MouvementClasse, portes: readonly EncaissementDuMouvementLu[], factures: readonly FactureDesGestes[], compteDesFrais: string,
+): string {
+  const lignes = portes.map((e) => `— ${libelleDeLEncaissement(e, factures)} : ${formatMoney(e.montant)}`)
+  const frais = portes.reduce((total, e) => total + enCentimes(e.montant), 0) - enCentimes(m.montant)
+  return `Classer ${leCredit(m)} par ses encaissements ?\n\n${lignes.join('\n')}\n\n`
+    + (frais > 0
+      ? `Les frais bancaires, ${euros(frais)}, seront portés au ${compteDesFrais} par ses écritures.`
+      : 'Aucun frais bancaire : ses encaissements font exactement le crédit.')
+    + ` Il sera rapproché par eux, et ne recevra plus aucun autre classement ; ses écritures se passent ensuite dans ${DANS_LES_ECRITURES}.`
+}
+
+function confirmationDuRetrait(m: MouvementClasse, numeros: readonly string[]): string {
+  const factures = numeros.length === 0 ? '' : ` (${numeros.length > 1 ? 'factures' : 'facture'} ${numeros.join(', ')})`
+  return `Retirer le classement de ${leCredit(m)} par ses encaissements${factures} ?\n\n`
+    + 'Il redevient à traiter, toujours réservé à ses encaissements : il ne reçoit aucun autre classement tant qu’ils le '
+    + `citent. Ses écritures, s’il en a été passé, deviennent « à retirer » dans ${DANS_LES_ECRITURES} : elles se retirent `
+    + 'là.'
+}
+
+// L'ÉTAT D'APRÈS un rattachement : le classement joué sur le registre où l'encaissement citerait ce mouvement.
+function apresLeRattachement(
+  dossierId: string, m: MouvementClasse, e: EncaissementDuMouvementLu, s: SourcesDesGestes, vente: ContexteVente,
+): string {
+  const apres = s.encaissements.map((x) => (x.id === e.id ? { ...x, ligne_bancaire_id: m.id } : x))
+  const refus = refusClassement(dossierId, m.id, s.mouvements, apres, vente)
+  if (refus === null) return 'Ses encaissements feront alors le crédit : il restera à le classer par eux.'
+  if (refus.cle === 'credit_non_fait') {
+    return `Il restera ${euros(manqueDuCredit(m, apres, vente))} pour faire le crédit : son classement attendra qu’il soit fait.`
+  }
+  return `Il ne pourra pas encore se classer par ses encaissements : « ${refus.message} »`
+}
+
+function complementDuCredit(
+  dossierId: string, m: MouvementClasse, manque: number, s: SourcesDesGestes, vente: ContexteVente,
+): ComplementDuCredit {
+  const sources = new Set(s.factures.filter((f) => f.dossier_id === dossierId && f.source_de_la_vente).map((f) => f.id))
+  // Des encaissements — pas des contre-passations, qui se justifient par un débit — de factures sources, sans mouvement, non
+  // retirés, et que rien ne dit « n'avoir pas eu lieu » : une contre-passation sans mouvement qui les annule les ferait
+  // rattacher sans qu'ils pèsent rien sur le crédit.
+  const rattachables = s.encaissements
+    .filter((e) => e.dossier_id === dossierId && e.ligne_bancaire_id == null && e.retire_le == null && e.annule_id == null
+      && sources.has(e.facture_id) && justifieSonMouvement(e, s.encaissements))
+    .sort((a, b) => Math.abs(enCentimes(a.montant) - manque) - Math.abs(enCentimes(b.montant) - manque)
+      || ordreC(a.date_encaissement, b.date_encaissement) || ordreC(a.id, b.id))
+    .map((e): EncaissementARattacher => {
+      const libelle = libelleDeLEncaissement(e, s.factures)
+      return {
+        id: e.id,
+        libelle,
+        montant: e.montant,
+        refus: refusRattachement(dossierId, e.id, m.id, s.encaissements, s.mouvements, vente)?.message ?? null,
+        confirmation: `Rattacher à ${leCredit(m)} l’encaissement suivant ?\n\n— ${libelle} : ${formatMoney(e.montant)}\n\n`
+          + 'Un encaissement ne se rattache qu’une fois : il citera ce mouvement, que la base réserve alors à ses '
+          + `encaissements. ${apresLeRattachement(dossierId, m, e, s, vente)}`,
+      }
+    })
+  const factures = s.factures
+    .filter((f) => sources.has(f.id) && f.type === 'facture' && f.statut === 'validee')
+    .map((f) => ({
+      facture: f,
+      resteCentimes: resteAEncaisserVente({ facture: f, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts }, vente)
+        .resteCentimes,
+    }))
+    .filter((x) => x.resteCentimes > 0)
+    .sort((a, b) => Math.abs(a.resteCentimes - manque) - Math.abs(b.resteCentimes - manque)
+      || ordreC(a.facture.numero ?? '', b.facture.numero ?? '') || ordreC(a.facture.id, b.facture.id))
+    .map((x): FactureAEncaisser => ({
+      ...x,
+      libelle: `${x.facture.numero ?? SANS_NUMERO} — ${x.facture.tiers_nom}, du ${formatDate(x.facture.date_emission)} — reste `
+        + euros(x.resteCentimes),
+    }))
+  return {
+    manqueCentimes: manque,
+    rattachables,
+    factures,
+    note: rattachables.length === 0 && factures.length === 0
+      ? 'Aucun encaissement de facture source n’attend son mouvement, et aucune facture source ne reste à encaisser : rien ne '
+        + 'se rattache ni ne s’enregistre ici.'
+      : null,
+  }
+}
+
+/**
+ * Les gestes du cabinet sur la fiche d'un CRÉDIT d'un dossier basculé (étape VF5c). `ventes` : ce que l'onglet sait de son
+ * relevé (`ventesDuReleve`) — rien ne s'offre s'il n'est pas lu en entier ; `lecture` : la même lecture des ventes
+ * facturées, avec ce que les gestes lisent de plus ; `anneesValidees` : celles du dossier (la frontière) ; `plan` : le
+ * compte des frais bancaires.
+ */
+export function gestesDuCredit(
+  ventes: VentesDuReleve,
+  lecture: LectureDesGestes | null,
+  ligne: Pick<MouvementClasse, 'id' | 'dossier_id'>,
+  anneesValidees: readonly number[],
+  plan: Pick<PlanComptable, 'services_bancaires'>,
+): GestesDuCredit {
+  if (ventes.etat !== 'lue' || lecture === null || lecture.etat !== 'lue') return AUCUN_GESTE
+  const dossierId = ligne.dossier_id
+  const s = lecture.sources
+  if (lecture.dossierId !== dossierId || s.dossierId !== dossierId) return AUCUN_GESTE
+  // Le mouvement tel que la lecture des ventes l'a rendu, dans la même relecture que leur registre.
+  const m = s.mouvements.find((x) => x.id === ligne.id && x.dossier_id === dossierId)
+  if (!m || m.montant <= 0) return AUCUN_GESTE
+  const vente: ContexteVente = { anneesValidees, factures: s.factures }
+  const portes = encaissementsDuMouvement(m.id, s.encaissements, vente).sort(ordreDesEncaissements)
+  if (m.encaissements_de_factures) {
+    return {
+      etat: 'classe',
+      retrait: {
+        refus: refusRetraitDuClassement(dossierId, m.id, s.mouvements, vente)?.message ?? null,
+        confirmation: confirmationDuRetrait(m, [...new Set(portes.map((e) => s.factures.find((f) => f.id === e.facture_id)?.numero
+          ?? SANS_NUMERO))]),
+      },
+    }
+  }
+  if (!mouvementLibre(m)) return AUCUN_GESTE
+  const manque = manqueDuCredit(m, s.encaissements, vente)
+  const complement = manque > 0 && dateFigee(m.date, anneesValidees) === null
+    ? complementDuCredit(dossierId, m, manque, s, vente)
+    : null
+  if (portes.length === 0) return complement !== null && complement.note === null ? { etat: 'libre', complement } : AUCUN_GESTE
+  return {
+    etat: 'reserve',
+    ensemble: phraseDeLEnsemble(enCentimes(m.montant) - manque, enCentimes(m.montant), plan.services_bancaires),
+    classement: {
+      refus: refusClassement(dossierId, m.id, s.mouvements, s.encaissements, vente)?.message ?? null,
+      confirmation: confirmationDuClassement(m, portes, s.factures, plan.services_bancaires),
+    },
+    complement,
   }
 }

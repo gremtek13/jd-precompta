@@ -276,8 +276,16 @@ export interface ResteAEncaisser {
 // juge ses plafonds sur des montants NETS (enregistrer_encaissement, refus 12).
 const compte = (e: Pick<EncaissementLu, 'retire_le'>) => e.retire_le == null
 
+/**
+ * Ce que le reste lit : la facture — son identifiant, son type et sa source, rien d'autre (la fiche d'un crédit, étape
+ * VF5c, n'en lit pas davantage) —, ses lignes, le registre et ses parts.
+ */
+export type ContexteDuReste = Pick<ContexteFacture, 'lignes' | 'encaissements' | 'parts'> & {
+  facture: Pick<FacturePourEncaissement, 'id' | 'type' | 'source_de_la_vente'>
+}
+
 /** Ce qui reste à encaisser de la facture, en tout et par taux, NET des encaissements retirés et des annulations. */
-export function resteAEncaisser(c: Pick<ContexteFacture, 'facture' | 'lignes' | 'encaissements' | 'parts'>): ResteAEncaisser {
+export function resteAEncaisser(c: ContexteDuReste): ResteAEncaisser {
   const comptes = c.encaissements.filter((e) => e.facture_id === c.facture.id && compte(e))
   const ids = new Set(comptes.map((e) => e.id))
   const siennes = c.parts.filter((p) => ids.has(p.encaissement_id))
@@ -1320,9 +1328,11 @@ export function propositionsEncaissement(
 // Cette section dit, AVANT le clic, dans l'ordre de la base et sous ses mots, l'accès excepté, ce que refusent les trois
 // fonctions neuves du cabinet et la garde des mouvements. Depuis l'étape VF5a1, l'onglet Banque lit la garde
 // (`refusDuClassementDuReleve`, par lib/mouvementsDesVentes.ts) ; depuis l'étape VF5b, la fenêtre des encaissements lit les
-// jugements de la vente ; les gestes du cabinet suivent (VF5c, VF5d). Aucun dossier n'a basculé (étape VF8) : aucune
-// facture n'est source, et ces refus ne se rencontrent pas encore. encaissementsFactures.test.ts confronte chaque liste au texte de sa fonction, codes
-// compris, et supabase/essais/ventesFacturees.sql éprouve chaque refus en base.
+// jugements de la vente ; depuis l'étape VF5c, la fiche d'un crédit classe, retire un classement et rattache par
+// `refusClassement`, `refusRetraitDuClassement` et `refusRattachement` ; les débits suivent (VF5d). Aucun dossier n'a
+// basculé (étape VF8) : aucune facture n'est source, et ces refus ne se rencontrent pas encore.
+// encaissementsFactures.test.ts confronte chaque liste au texte de sa fonction, codes compris, et
+// supabase/essais/ventesFacturees.sql éprouve chaque refus en base.
 
 /** Un mouvement tel que les refus d'une facture source le lisent : ce qui le classe, et s'il l'est par ses encaissements. */
 export type MouvementClasse = MouvementLu & Pick<LigneBancaire,
@@ -1739,7 +1749,7 @@ export function frontiereJugeeParLaBase(
  * que la fenêtre propose, et que ses propositions font.
  */
 export function resteAEncaisserVente(
-  c: Pick<ContexteFacture, 'facture' | 'lignes' | 'encaissements' | 'parts'>,
+  c: ContexteDuReste,
   vente: Pick<ContexteVente, 'factures'>,
 ): ResteAEncaisser {
   const brut = resteAEncaisser(c)

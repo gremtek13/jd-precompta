@@ -20,6 +20,7 @@ import {
   type ResteDuTaux, type SaisieEncaissement, type TransmissionLue, type TransmissionPourDeclaration,
 } from '../../lib/encaissementsFactures'
 import { lireMontantSaisi, montantPourSaisie, partsEnMots, tauxAffiche } from '../../lib/encaissementsAffichage'
+import { manqueDuCredit, montantSurLeCredit } from '../../lib/mouvementsDesVentes'
 import { lireConnexionPlateforme, type ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
 import {
   COLONNES_STATUT_LU, CONSEQUENCE_ANNULATION, auteurDuStatut, classeStatutLu, estUneAnnulation, horodatageTelQuEcrit,
@@ -47,7 +48,13 @@ type QuiRegarde = { espace: 'cabinet'; acces: AccesDuDossier } | { espace: 'clie
 
 type Props = QuiRegarde & {
   dossierId: string
-  facture: FactureEmise
+  // La facture ouverte : la fenêtre la relit, et n'en montre que l'en-tête avant sa lecture.
+  facture: Pick<FactureEmise, 'id' | 'numero' | 'tiers_nom' | 'date_emission' | 'montant_ttc'>
+  // LE MOUVEMENT IMPOSÉ (ligne 28.65, chantier EC-Q3, étape VF5c) : la fiche d'un crédit de l'onglet Banque ouvre la fenêtre
+  // sur une facture et sur CE mouvement — il ne se choisit pas, la saisie part de lui (sa date, ce qui reste à faire de
+  // lui), et la base juge s'il peut le citer. Nul partout ailleurs : le choix d'hier, parmi les propositions. Sans valeur par
+  // défaut, pour qu'aucun appel ne l'impose sans le dire.
+  mouvementImpose: string | null
   // Le statut de TVA du dossier aujourd'hui : l'obligation et l'échéance en dépendent, et la facture ne le fige pas.
   statutTva: StatutTva | null
   onClose: () => void
@@ -312,15 +319,36 @@ function saisieDe(f: Formulaire): SaisieEncaissement {
   }
 }
 
+// Le formulaire neuf sur un mouvement IMPOSÉ (étape VF5c) : ce mouvement, sa date, et le montant que propose le module —
+// le reste de la facture, borné par ce qui reste à faire du crédit (lib/mouvementsDesVentes.ts, `montantSurLeCredit`). Le
+// moyen n'est pas proposé, ni ici ni ailleurs. Un mouvement que la fenêtre n'a pas lu reste imposé : la saisie le cite, et
+// le refus de la base le dit avant le clic.
+function formulaireSurLeMouvement(parTaux: readonly ResteDuTaux[], resteCentimes: number, lu: Lu, ligneBancaireId: string): Formulaire {
+  const m = lu.mouvements.find((x) => x.id === ligneBancaireId)
+  if (!m) return { ...formulaireVierge(parTaux, resteCentimes), ligneBancaireId }
+  const centimes = resteCentimes > 0 ? montantSurLeCredit(resteCentimes, manqueDuCredit(m, lu.encaissements, venteDe(lu))) : null
+  return {
+    date: m.date, montant: centimes == null ? '' : montantPourSaisie(centimes), moyen: '', ligneBancaireId,
+    parts: partsProposees(centimes, parTaux),
+  }
+}
+
 // Ce qu'une lecture donne à la fenêtre : rien sur une lecture partielle, et le formulaire neuf qu'elle permet — `undefined`
 // quand elle n'en permet aucun (lecture partielle), `null` quand la facture n'a pas été retrouvée.
-function etatLu(r: { lu: Lu; manques: Manque[] }, dossierId: string, factureId: string): {
+function etatLu(r: { lu: Lu; manques: Manque[] }, dossierId: string, factureId: string, mouvementImpose: string | null): {
   manques: Manque[]; lu: Lu | null; formulaire: Formulaire | null | undefined
 } {
   if (r.manques.length > 0) return { manques: r.manques, lu: null, formulaire: undefined }
   const c = contexteDe(dossierId, factureId, r.lu)
   const reste = c ? resteAEncaisserVente(c, venteDe(r.lu)) : null
-  return { manques: [], lu: r.lu, formulaire: reste ? formulaireVierge(reste.parTaux, reste.resteCentimes) : null }
+  if (!reste) return { manques: [], lu: r.lu, formulaire: null }
+  return {
+    manques: [],
+    lu: r.lu,
+    formulaire: mouvementImpose === null
+      ? formulaireVierge(reste.parTaux, reste.resteCentimes)
+      : formulaireSurLeMouvement(reste.parTaux, reste.resteCentimes, r.lu, mouvementImpose),
+  }
 }
 
 const libelleMoyen = (moyen: string) => MOYENS_ENCAISSEMENT.find((m) => m.moyen === moyen)?.libelle ?? moyen
@@ -365,7 +393,7 @@ const messageDeclaration = (cle: (typeof REFUS_DECLARATION)[number]['cle']) =>
   (REFUS_DECLARATION.find((r) => r.cle === cle) as (typeof REFUS_DECLARATION)[number]).modele
 
 export default function EncaissementsFactureModal(props: Props) {
-  const { dossierId, facture: factureOuverte, statutTva, onClose, onUpdated, espace } = props
+  const { dossierId, facture: factureOuverte, statutTva, onClose, onUpdated, espace, mouvementImpose } = props
   // Le droit « Banque » de qui regarde : le cabinet le porte toujours ; le client, selon la société affichée.
   const gereLaBanque = props.espace === 'cabinet' || props.banque
   // Qui est le client : au cabinet seulement, sur les accès que l'onglet a lus ; le client n'en lit aucun.
@@ -387,7 +415,7 @@ export default function EncaissementsFactureModal(props: Props) {
   // `vider` : le formulaire repart de ce qui vient d'être lu — à l'ouverture, et après un geste réussi, quand le reste
   // et les propositions ont changé. Après un refus de la base, la saisie reste, pour qu'on la corrige.
   async function lire(vider: boolean) {
-    const etat = etatLu(await lireDonnees(dossierId, factureOuverte.id, espace, gereLaBanque), dossierId, factureOuverte.id)
+    const etat = etatLu(await lireDonnees(dossierId, factureOuverte.id, espace, gereLaBanque), dossierId, factureOuverte.id, mouvementImpose)
     setManques(etat.manques)
     setLu(etat.lu)
     if (vider && etat.formulaire !== undefined) setFormulaire(etat.formulaire)
@@ -399,7 +427,7 @@ export default function EncaissementsFactureModal(props: Props) {
     let fermee = false
     lireDonnees(dossierId, factureOuverte.id, espace, gereLaBanque).then((r) => {
       if (fermee) return
-      const etat = etatLu(r, dossierId, factureOuverte.id)
+      const etat = etatLu(r, dossierId, factureOuverte.id, mouvementImpose)
       setManques(etat.manques)
       setLu(etat.lu)
       if (etat.formulaire !== undefined) setFormulaire(etat.formulaire)
@@ -410,7 +438,7 @@ export default function EncaissementsFactureModal(props: Props) {
       setConnexionErreur(r.erreur)
     })
     return () => { fermee = true }
-  }, [dossierId, factureOuverte.id, espace, gereLaBanque])
+  }, [dossierId, factureOuverte.id, espace, gereLaBanque, mouvementImpose])
 
   async function lireConnexion() {
     const r = await lireConnexionPlateforme(dossierId)
@@ -634,7 +662,7 @@ export default function EncaissementsFactureModal(props: Props) {
             formulaire={formulaire} setFormulaire={setFormulaire} etape={etape} setEtape={setEtape} enCours={enCours}
             onEnregistrer={enregistrer} onRetirer={retirer} onDeclarer={declarer} onContrePasser={contrePasser}
             connexion={connexion} connexionErreur={connexionErreur} onRelever={releverStatuts}
-            espace={espace} gereLaBanque={gereLaBanque} acces={acces}
+            espace={espace} gereLaBanque={gereLaBanque} acces={acces} mouvementImpose={mouvementImpose}
           />
         )}
 
@@ -652,7 +680,7 @@ export default function EncaissementsFactureModal(props: Props) {
 
 function Contenu({
   dossierId, contexte, lu, statutTva, aujourdHui, formulaire, setFormulaire, etape, setEtape, enCours, onEnregistrer,
-  onRetirer, onDeclarer, onContrePasser, connexion, connexionErreur, onRelever, espace, gereLaBanque, acces,
+  onRetirer, onDeclarer, onContrePasser, connexion, connexionErreur, onRelever, espace, gereLaBanque, acces, mouvementImpose,
 }: {
   dossierId: string
   contexte: ContexteFacture
@@ -676,6 +704,8 @@ function Contenu({
   gereLaBanque: boolean
   // Qui est le client (étape P4c) : « par le client » de ce qu'il a enregistré, contre-passé ou déclaré, sur des accès lus en entier.
   acces: AccesDuDossier
+  // Le mouvement que la fiche d'un crédit impose (étape VF5c), ou nul : le choix parmi les propositions.
+  mouvementImpose: string | null
 }) {
   const dire = (texte: string) => pourLEspace(espace, texte)
   const facture = lu.factures.find((f) => f.id === contexte.facture.id) as FactureEmise
@@ -690,6 +720,7 @@ function Contenu({
   const siens = lu.encaissements.filter((e) => e.facture_id === facture.id)
   const partsDe = (id: string) => lu.parts.filter((p) => p.encaissement_id === id)
   const mouvement = (id: string | null) => (id == null ? undefined : lu.mouvements.find((m) => m.id === id))
+  const impose = mouvement(mouvementImpose)
   const declares = encaissementsDeclares(lu.declarations)
   const offerte = DECLARATION_OFFERTE.includes(obligation.etat)
   const hoteAcceptee = plateformeAcceptee(facture.id, lu.transmissions, lu.evenements)
@@ -1013,7 +1044,18 @@ function Contenu({
         <div className="field">
           <label>Enregistrer un encaissement</label>
 
-          {!gereLaBanque ? (
+          {mouvementImpose !== null ? (
+            <div className="field">
+              <label>Mouvement du relevé</label>
+              <p style={{ margin: 0 }}>
+                {impose ? `${libelleMouvement(impose)} · ${formatMoney(impose.montant)}` : 'Mouvement introuvable parmi ceux du relevé lus ici.'}
+              </p>
+              <p className="muted" style={{ margin: '4px 0 0' }}>
+                Imposé par la fiche du mouvement, dans l’onglet Banque : l’encaissement s’enregistre sur ce crédit. La date et
+                le montant en sont proposés ; le moyen reste à choisir.
+              </p>
+            </div>
+          ) : !gereLaBanque ? (
             <p className="muted" style={{ margin: '0 0 8px' }}>
               Ton accès ne porte pas « Banque » sur cette société : le relevé n’est pas lu ici, et aucun mouvement ne s’y
               propose ni ne s’y désigne. L’encaissement s’enregistre sans mouvement.

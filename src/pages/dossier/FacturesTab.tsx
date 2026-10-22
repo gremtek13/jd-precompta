@@ -673,6 +673,7 @@ export default function FacturesTab(props: Props) {
           {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const, banque: props.banque })}
           dossierId={dossierId}
           facture={encaissee}
+          mouvementImpose={null}
           statutTva={statutTva}
           onClose={() => setEncaissementsDe(null)}
           onUpdated={load}

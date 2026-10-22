@@ -199,7 +199,7 @@ function rendre(ventesParLesFactures = true) {
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee="toutes" valides={[]}>
-        <BanqueTab dossierId={D} modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={ventesParLesFactures} />
+        <BanqueTab dossierId={D} modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={ventesParLesFactures} statutTva="redevable" />
       </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,
@@ -263,7 +263,7 @@ describe('un dossier basculé, ses ventes facturées lues en entier', () => {
     expect(pastilles(await ligneDuReleve('VIR CABINET DURAND'))).toEqual([['badge-ok', 'Encaissements de factures — F2026-0015']])
   })
 
-  it('la fiche d’un mouvement réservé : la carte, les mots de la garde, aucune section de classement ni aucun geste', async () => {
+  it('la fiche d’un mouvement réservé : la carte, les mots de la garde, aucune section de classement d’hier — le seul geste, classer par ses encaissements (VF5c)', async () => {
     rendre()
     await ouvrir('VIR SARL HORIZON F2026-0014')
     const v = volet()
@@ -275,10 +275,12 @@ describe('un dossier basculé, ses ventes facturées lues en entier', () => {
     expect(within(v).queryByRole('heading', { name: 'Choisir une autre pièce' })).toBeNull()
     // La pièce que le client a proposée se montre, et s'écarte ; elle ne s'associe pas (la garde la refuserait).
     expect(within(v).getByRole('heading', { name: 'Pièce proposée par le client' })).toBeTruthy()
-    expect(gestesDeLaFiche().filter((g) => g !== 'Voir le justificatif' && g !== 'Écarter cette proposition')).toEqual([])
+    // Depuis l'étape VF5c, le seul geste de classement est celui de ses encaissements (BanqueTab.gestesDesVentes.test.tsx).
+    expect(gestesDeLaFiche().filter((g) => g !== 'Voir le justificatif' && g !== 'Écarter cette proposition'))
+      .toEqual(['Classer par ses encaissements'])
   })
 
-  it('la fiche d’un mouvement classé : la carte, sans « Annuler le rapprochement »', async () => {
+  it('la fiche d’un mouvement classé : la carte, sans « Annuler le rapprochement » — seulement « Retirer ce classement » (VF5c)', async () => {
     rendre()
     await tous()
     await ouvrir('VIR CABINET DURAND')
@@ -290,7 +292,8 @@ describe('un dossier basculé, ses ventes facturées lues en entier', () => {
     // Sa pastille, pas un « Rapproché » nu.
     expect([...v.querySelectorAll('.fiche-mouvement-etat .badge')].map((b) => texteDe(b))).toEqual(['Encaissements de factures — F2026-0015'])
     expect(within(v).queryByRole('heading', { name: 'Rapproché avec' })).toBeNull()
-    expect(gestesDeLaFiche()).toEqual([])
+    // Depuis l'étape VF5c, le classement par ses encaissements se retire, par sa fonction seule.
+    expect(gestesDeLaFiche()).toEqual(['Retirer ce classement'])
   })
 
   it('la fiche d’un mouvement libre reste celle d’hier, et les trois lots sont offerts', async () => {

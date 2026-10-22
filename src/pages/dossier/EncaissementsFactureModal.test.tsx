@@ -202,6 +202,8 @@ function monter(o: {
   client?: { banque: boolean }
   // Les lignes d'autres factures du dossier — celles d'un avoir (étape VF5b).
   lignesEnPlus?: Record<string, unknown>[]
+  // Le mouvement que la fiche d'un crédit impose (étape VF5c) ; aucun par défaut, comme l'onglet Factures.
+  mouvementImpose?: string
 
 } = {}) {
   const f = o.facture ?? FACTURE
@@ -229,7 +231,7 @@ function monter(o: {
   return render(
     <EncaissementsFactureModal {...qui}
       dossierId="d1" facture={f} statutTva={o.statutTva === undefined ? 'redevable' : o.statutTva}
-      onClose={() => {}} onUpdated={onUpdated}
+      mouvementImpose={o.mouvementImpose ?? null} onClose={() => {}} onUpdated={onUpdated}
     />,
   )
 }
@@ -1287,7 +1289,7 @@ describe('EncaissementsFactureModal — « par le client »', () => {
     faux.connexion = null
     render(
       <EncaissementsFactureModal espace="client" banque
-        dossierId="d1" facture={FACTURE} statutTva="redevable" onClose={() => {}} onUpdated={onUpdated}
+        dossierId="d1" facture={FACTURE} statutTva="redevable" mouvementImpose={null} onClose={() => {}} onUpdated={onUpdated}
       />,
     )
     await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
@@ -1503,7 +1505,7 @@ describe('EncaissementsFactureModal — la contre-passation d’une facture sour
     expect(enregistrerCp()).toHaveProperty('disabled', false)
     rerender(
       <EncaissementsFactureModal espace="client" banque={false}
-        dossierId="d1" facture={SOURCE} statutTva="redevable" onClose={() => {}} onUpdated={onUpdated}
+        dossierId="d1" facture={SOURCE} statutTva="redevable" mouvementImpose={null} onClose={() => {}} onUpdated={onUpdated}
       />,
     )
     await screen.findByText('Le mouvement bancaire d\'un encaissement ne se désigne qu\'avec le droit « Banque » sur ce dossier : '
@@ -1571,5 +1573,89 @@ describe('EncaissementsFactureModal — les lectures neuves lues en partie n’o
     await screen.findByText(new RegExp(`^${quoi} n`))
     expect(screen.queryByText(/Reste à encaisser/)).toBeNull()
     expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Fermer'])
+  })
+})
+
+describe('EncaissementsFactureModal — un mouvement IMPOSÉ par la fiche d’un crédit (étape VF5c)', () => {
+  const choixDuMouvement = () => screen.queryByLabelText('Mouvement du relevé (facultatif)')
+
+  it('le mouvement ne se choisit pas : il est dit, la saisie part de sa date et du reste, et l’appel le cite', async () => {
+    monter({
+      facture: SOURCE, mouvementImpose: 'm1',
+      mouvements: [mouvement({ id: 'm1', date: '2027-10-15', montant: 1355.5 }), mouvement({ id: 'm2', montant: 1355.5 })],
+    })
+    await bouton()
+    expect(choixDuMouvement()).toBeNull()
+    screen.getByText(/^15\/10\/2027 · VIR SEPA CLIENT FICTIF SAS · 1\s355,50\s€$/)
+    screen.getByText(/^Imposé par la fiche du mouvement, dans l’onglet Banque/)
+    expect(champ('Date de l’encaissement').value).toBe('2027-10-15')
+    expect(champ('Montant encaissé (€)').value).toBe('1355,50')
+    // Le moyen n'est jamais proposé.
+    expect(champ('Moyen de paiement').value).toBe('')
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'virement' } })
+    await act(async () => { (await bouton()).click() })
+    expect(faux.rpcs).toHaveLength(1)
+    expect(faux.rpcs[0]).toMatchObject({
+      nom: 'enregistrer_encaissement',
+      args: { p_facture_id: 'f1', p_date: '2027-10-15', p_montant: 1355.5, p_moyen: 'virement', p_ligne_bancaire_id: 'm1' },
+    })
+  })
+
+  it.each([
+    ['un crédit plus petit de quelques frais : le reste entier', 1353, '1355,50'],
+    ['une remise de chèques, plus grande que la facture : le reste', 2000, '1355,50'],
+    ['un crédit qui ne paie qu’une part : ce crédit', 500, '500,00'],
+  ] as const)('%s', async (_nom, credit, attendu) => {
+    monter({ facture: SOURCE, mouvementImpose: 'm1', mouvements: [mouvement({ id: 'm1', montant: credit })] })
+    await bouton()
+    expect(champ('Montant encaissé (€)').value).toBe(attendu)
+  })
+
+  it('ce que les encaissements d’autres factures sources font déjà du crédit est déduit', async () => {
+    const autre = facture({ id: 'f2', numero: 'F2027-0043', source_de_la_vente: true })
+    monter({
+      facture: SOURCE, factures: [autre], mouvementImpose: 'm1', mouvements: [mouvement({ id: 'm1', montant: 1900 })],
+      encaissements: [encaissement({ id: 'e2', facture_id: 'f2', montant: 600, ligne_bancaire_id: 'm1' })],
+      parts: [part({ encaissement_id: 'e2' })],
+    })
+    await bouton()
+    expect(champ('Montant encaissé (€)').value).toBe('1300,00')
+  })
+
+  it('un mouvement imposé que la base refuserait : le refus avant le clic, le bouton grisé, rien ne part', async () => {
+    monter({
+      facture: SOURCE, mouvementImpose: 'm1',
+      mouvements: [mouvement({ id: 'm1', statut: 'rapprochee', categorie_id: 'k1' })],
+    })
+    await bouton()
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'virement' } })
+    screen.getByText(/^Ce mouvement est déjà classé : l'encaissement d'une facture source de sa vente ne cite qu'un mouvement/)
+    expect(await bouton()).toHaveProperty('disabled', true)
+    await act(async () => { (await bouton()).click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('un mouvement imposé que la fenêtre n’a pas lu reste imposé : la saisie le cite, et la base dit son refus', async () => {
+    monter({ facture: SOURCE, mouvementImpose: 'm-inconnu', mouvements: [mouvement({ id: 'm1' })] })
+    await bouton()
+    screen.getByText('Mouvement introuvable parmi ceux du relevé lus ici.')
+    fireEvent.change(champ('Date de l’encaissement'), { target: { value: '2027-10-20' } })
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'virement' } })
+    screen.getByText('Ce mouvement n\'est pas un mouvement de ce dossier.')
+    expect(await bouton()).toHaveProperty('disabled', true)
+  })
+
+  it('après l’enregistrement, la saisie relue repart du même mouvement imposé', async () => {
+    monter({ facture: SOURCE, mouvementImpose: 'm1', mouvements: [mouvement({ id: 'm1', montant: 2000 })] })
+    await bouton()
+    fireEvent.change(champ('Montant encaissé (€)'), { target: { value: '1000' } })
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'cheque' } })
+    await act(async () => { (await bouton()).click() })
+    expect(faux.rpcs).toHaveLength(1)
+    // 2 000 € de crédit, 1 000 € déjà portés : 1 000 € à faire, et 355,50 € de reste à la facture.
+    await screen.findByText(/^Encaissement enregistré/)
+    expect(champ('Montant encaissé (€)').value).toBe('355,50')
+    expect(choixDuMouvement()).toBeNull()
+    expect(onUpdated).toHaveBeenCalled()
   })
 })

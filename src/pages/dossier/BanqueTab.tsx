@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, libelleDeLigne, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfLignes } from '../../lib/pdfText'
@@ -8,7 +9,7 @@ import { rendreAuxDatesDeFacture, retirerContrepartieBanque, synchroniserContrep
 import type { ModeleComptable } from '../../lib/engagement'
 import type {
   Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, DocumentDivers, LigneBancaire, Piece, RegleAffectationBancaire,
-  RegleBancaireIgnoree, ReglementGroupe, StatutLigneBancaire, VentilationBancaire,
+  RegleBancaireIgnoree, ReglementGroupe, StatutLigneBancaire, StatutTva, VentilationBancaire,
 } from '../../lib/types'
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
 import { nomDeLaPiece, piecesPayeesEnTrop, refusReglementGroupe, refusSecondPaiement, type PartReglement } from '../../lib/reglementGroupe'
@@ -62,9 +63,10 @@ import { lireLesAccesDuReleve, lireLesEnvoisDuClient } from '../../lib/banqueCab
 import { argumentsDeLaPrecision, argumentsDeRetirer } from '../../lib/banqueClient'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import {
-  comptesDuReleve, ecartDuLot, mouvementsHorsDesLots, PASTILLE_CLASSE, pastilleDeVente, retenueDuReleve, texteDesNonRapproches,
-  venteDuMouvement, ventesDuReleve, type EcartDuLot,
+  comptesDuReleve, ecartDuLot, gestesDuCredit, mouvementsHorsDesLots, PASTILLE_CLASSE, pastilleDeVente,
+  retenueDuReleve, texteDesNonRapproches, venteDuMouvement, ventesDuReleve, type EcartDuLot, type FactureDesGestes,
 } from '../../lib/mouvementsDesVentes'
+import EncaissementsFactureModal from './EncaissementsFactureModal'
 
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
@@ -116,8 +118,10 @@ const REMBOURSEMENT_D_UNE_NOTE_FIGEE = 'Une note de frais du même montant, d’
 // `ventesParLesFactures` : le réglage du dossier (`dossiers.ventes_par_les_factures`, chantier EC-Q3), sans valeur par défaut.
 // Basculé, l'onglet lit ses ventes facturées avec le relevé et reconnaît les mouvements qu'elles classent ou réservent
 // (étape VF5a1, lib/mouvementsDesVentes.ts) ; sinon il ne lit rien de plus et ne change en rien.
-export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLesFactures }: {
-  dossierId: string; modele: ModeleComptable; assujettiTva: boolean; ventesParLesFactures: boolean
+// `statutTva` : le statut de TVA du dossier, sans valeur par défaut — la fenêtre des encaissements qu'une fiche de crédit
+// ouvre sur une facture (étape VF5c) en tire l'obligation de déclarer et son échéance, comme depuis l'onglet Factures.
+export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLesFactures, statutTva }: {
+  dossierId: string; modele: ModeleComptable; assujettiTva: boolean; ventesParLesFactures: boolean; statutTva: StatutTva | null
 }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   // Ce que le rapprochement écrit au brouillon, nommé comme le modèle le nomme dans les messages.
@@ -217,6 +221,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // réservent (la garde G2) ; pas encore revenue, incomplète ou d'un autre dossier, l'onglet ne le sait pas : la fiche d'un
   // mouvement n'offre aucun geste, et les lots sont retenus. Nulle, et jamais lue, pour un dossier qui n'a pas basculé.
   const [lectureVentes, setLectureVentes] = useState<LectureSourcesDesEcrituresDeVente | null>(null)
+  // La fenêtre des encaissements ouverte depuis la fiche d'un crédit (étape VF5c) : la facture choisie, telle que la lecture
+  // des ventes l'a rendue — gardée ici, car la relecture qui suit chaque geste remet cette lecture à « pas encore revenue » —,
+  // et le mouvement qu'elle impose.
+  const [encaissementSurCredit, setEncaissementSurCredit] = useState<{ facture: FactureDesGestes; ligneId: string } | null>(null)
 
   async function load() {
     setLoading(true)
@@ -559,6 +567,60 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       if (error) window.alert(`La proposition n’a pas été écartée : ${messageErreur(error, 'raison inconnue')}`)
       return true
     })
+  }
+
+  // LES GESTES DU CABINET SUR UN CRÉDIT D'UN DOSSIER BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5c ;
+  // lib/mouvementsDesVentes.ts, `gestesDuCredit`). Chacun se rejuge au clic sur ce que l'onglet a lu — un geste que la base
+  // refuserait a déjà grisé son bouton, et rien ne s'offre sur des ventes facturées qui ne sont pas lues en entier —, se
+  // confirme par une phrase qui nomme ce qu'il fait, passe la fonction de la base SEULE, sous le verrou des écritures de
+  // l'écran, relâché après la relecture. Un refus de la base est dit ET suivi d'une relecture : le plus probable est une
+  // fiche en retard (un encaissement retiré, un classement posé ailleurs), et la relecture la remet d'aplomb.
+  const gestesDe = (ligne: LigneBancaire) => gestesDuCredit(ventes, lectureVentes, ligne, anneesValidees, modele.plan)
+
+  async function classerParEncaissements(ligne: LigneBancaire) {
+    const gestes = gestesDe(ligne)
+    if (ecritureEnCours.current || gestes.etat !== 'reserve' || gestes.classement.refus !== null) return
+    if (!window.confirm(gestes.classement.confirmation)) return
+    await sousVerrou(setActionMouvementEnCours, async () => {
+      const { error } = await supabase.rpc('classer_mouvement_par_encaissements', { p_dossier_id: dossierId, p_ligne_bancaire_id: ligne.id })
+      if (error) window.alert(`Le mouvement n’a pas été classé par ses encaissements : ${messageErreur(error, 'raison inconnue')}`)
+      return true
+    })
+  }
+
+  async function retirerClassementParEncaissements(ligne: LigneBancaire) {
+    const gestes = gestesDe(ligne)
+    if (ecritureEnCours.current || gestes.etat !== 'classe' || gestes.retrait.refus !== null) return
+    if (!window.confirm(gestes.retrait.confirmation)) return
+    await sousVerrou(setActionMouvementEnCours, async () => {
+      const { error } = await supabase.rpc('retirer_classement_par_encaissements', { p_dossier_id: dossierId, p_ligne_bancaire_id: ligne.id })
+      if (error) window.alert(`Le classement n’a pas été retiré : ${messageErreur(error, 'raison inconnue')}`)
+      return true
+    })
+  }
+
+  async function rattacherEncaissement(ligne: LigneBancaire, encaissementId: string) {
+    const gestes = gestesDe(ligne)
+    const complement = gestes.etat === 'libre' || gestes.etat === 'reserve' ? gestes.complement : null
+    const candidat = complement?.rattachables.find((e) => e.id === encaissementId)
+    if (ecritureEnCours.current || !candidat || candidat.refus !== null) return
+    if (!window.confirm(candidat.confirmation)) return
+    await sousVerrou(setActionMouvementEnCours, async () => {
+      const { error } = await supabase.rpc('rattacher_mouvement_encaissement', {
+        p_dossier_id: dossierId, p_encaissement_id: candidat.id, p_ligne_bancaire_id: ligne.id,
+      })
+      if (error) window.alert(`L’encaissement n’a pas été rattaché : ${messageErreur(error, 'raison inconnue')}`)
+      return true
+    })
+  }
+
+  // Ouvrir la fenêtre n'écrit rien : c'est elle qui enregistre, sous son propre verrou, et l'onglet relit après elle.
+  function ouvrirEncaissementSurCredit(ligne: LigneBancaire, factureId: string) {
+    const gestes = gestesDe(ligne)
+    const complement = gestes.etat === 'libre' || gestes.etat === 'reserve' ? gestes.complement : null
+    const aEncaisser = complement?.factures.find((f) => f.facture.id === factureId)
+    if (ecritureEnCours.current || !aEncaisser) return
+    setEncaissementSurCredit({ facture: aEncaisser.facture, ligneId: ligne.id })
   }
 
   // « SUPPRIMER CE MESSAGE » (P9B-Q2) : suppression directe, que la policy `precisions_mouvements_suppression_cabinet`
@@ -2104,6 +2166,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             plan={modele.plan}
             figeePar={dateFigee(ligneOuverte.date, anneesValidees)}
             venteDuMouvement={venteDuMouvement(ventes, ligneOuverte)}
+            gestesDeVente={gestesDe(ligneOuverte)}
+            onClasserParEncaissements={() => { void classerParEncaissements(ligneOuverte) }}
+            onRetirerClassementParEncaissements={() => { void retirerClassementParEncaissements(ligneOuverte) }}
+            onRattacherEncaissement={(encaissementId) => { void rattacherEncaissement(ligneOuverte, encaissementId) }}
+            onEnregistrerEncaissement={(factureId) => ouvrirEncaissementSurCredit(ligneOuverte, factureId)}
             pieces={pieces}
             piecesValidees={piecesValidees}
             cotisations={cotisations}
@@ -2162,6 +2229,24 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             onSupprimerMessage={(messageId) => { void supprimerLeMessage(messageId) }}
           />
         </PanneauDroit>
+      )}
+
+      {/* Posée sur le corps du document : ouverte depuis la fiche, la fenêtre doit passer AU-DESSUS du panneau de droite,
+          qui se superpose sous 1 280 px et flotte sur le téléphone — dans le panneau central, elle passait dessous (le banc,
+          `banque-basculee/encaissement-impose`, à 390 et 720 px). */}
+      {encaissementSurCredit && encaissementSurCredit.facture.dossier_id === dossierId && createPortal(
+        <EncaissementsFactureModal
+          key={`${encaissementSurCredit.facture.id}-${encaissementSurCredit.ligneId}`}
+          espace="cabinet"
+          acces={accesDuReleve.acces}
+          dossierId={dossierId}
+          facture={encaissementSurCredit.facture}
+          mouvementImpose={encaissementSurCredit.ligneId}
+          statutTva={statutTva}
+          onClose={() => setEncaissementSurCredit(null)}
+          onUpdated={() => { void load() }}
+        />,
+        document.body,
       )}
     </>
   )

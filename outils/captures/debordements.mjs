@@ -1153,6 +1153,33 @@ const VISITES = [
       await page.getByText(attendu).first().waitFor({ timeout: 10000 })
     },
   })),
+  // LA FICHE D'UN CRÉDIT : « ENCAISSEMENT D'UNE FACTURE » (étape VF5c). Les deux fiches ci-dessus portent désormais leur geste —
+  // « Classer par ses encaissements », « Retirer ce classement ». Puis un crédit LIBRE, la remise du chèque de F2026-0023 :
+  // l'encaissement enregistré sans mouvement à lui rattacher, choisi, et la facture qui reste à encaisser ; enfin la fenêtre
+  // des encaissements de F2026-0024, ouverte depuis cette fiche sur ce crédit, IMPOSÉ — mesurée contre sa carte.
+  {
+    dossier: 'd12', onglet: 'banque', nom: 'banque-basculee/fiche-credit-libre', fenetre: '.fiche-mouvement-corps',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.locator('tr.clickable', { hasText: 'REMISE DE CHEQUES 0057' }).first().click()
+      await page.getByText(/^Rattacher un encaissement enregistré sans mouvement$/).first().waitFor({ timeout: 10000 })
+      await page.getByLabel('Encaissement à rattacher', { exact: true }).selectOption('eb3')
+      await page.getByLabel('Facture à encaisser', { exact: true }).selectOption('fb4')
+    },
+  },
+  {
+    dossier: 'd12', onglet: 'banque', nom: 'banque-basculee/encaissement-impose', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.locator('tr.clickable', { hasText: 'REMISE DE CHEQUES 0057' }).first().click()
+      await page.getByLabel('Facture à encaisser', { exact: true }).selectOption('fb4')
+      await page.getByRole('button', { name: 'Enregistrer…', exact: true }).click()
+      await page.getByText(/^Imposé par la fiche du mouvement/).waitFor({ timeout: 10000 })
+    },
+  },
   // LA FENÊTRE DES ENCAISSEMENTS D'UNE FACTURE SOURCE (ligne 28.65, chantier EC-Q3, étape VF5b), sur la consultante d12 :
   // F2026-0024 et son avoir validé — le reste net de l'avoir, la colonne qui le dit, la phrase de l'avoir —, puis la
   // contre-passation de son chèque déclaré, qui cite le retour du chèque impayé : la liste des débits libres, et le débit
