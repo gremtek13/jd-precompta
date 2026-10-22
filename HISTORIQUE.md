@@ -31818,3 +31818,167 @@ demande, de 19 h 49 à 20 h 01 UTC) ; fusionnée en « Rebase and merge » le 22
 ligne 28.65 mise à jour, puis relue par empreinte (16 770 positions) ; les barres recomptées par requête, inchangées
 (186 chantiers hors de la phase 7, dont 141 livrés ; 76 % et 82 %). La copie de travail de l'agent retirée, son travail
 entier dans `main`, recomposé ; la branche réalignée sur `main`.
+
+### 22/10/2026 — LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE — CHANTIER EC-Q3, VF5D (LIGNE 28.65)
+
+(Écrite par l'agent dev du lot sur `b56dd28` — `main`, VF5a1, VF5a2, VF5b, le correctif « Banque » de la
+contre-passation et VF5c compris —, en deux commits : le code et ses tests, puis cette documentation — qu'il venait
+d'écrire, sans l'avoir encore commitée, quand le conteneur de la session a redémarré. La session l'a reprise telle
+quelle de sa copie de travail, avec le code déjà commité, sans relancer le lot, et a recomposé les deux commits sur
+`main` (la mise en ligne de VF5c en plus, rien d'autre) ; le compte rendu de l'agent s'est perdu, et cette entrée,
+écrite avant, en tient lieu. Créés : `ventesDuReleveLecture.ts`, `ventesDuReleveLecture.test.ts`,
+`gestesDuDebit.test.ts`, `BanqueTab.gestesDuDebit.test.tsx`. Modifiés : `mouvementsDesVentes.ts`, `BanqueTab.tsx`,
+`FicheMouvement.tsx`, `EncaissementsFactureModal.tsx`, `FacturesTab.tsx` et `ReglementsSection.tsx` (la prop neuve,
+nulle), le banc (`fauxSupabase.ts`, `debordements.mjs`), et trois tests (`EncaissementsFactureModal.test.tsx`,
+`ecransAvantLecture.test.tsx`, `encaissementsEcritures.test.ts`). Ni base, ni migration, ni policy, ni Edge Function ;
+en production, rien n'a été lu : le lot n'appelle que des fonctions déjà en base depuis VF2 et le correctif de la
+contre-passation, et la mesure de la conception de VF5 (aucun dossier basculé, aucun encaissement) vaut.)
+
+**LA DÉLIMITATION.** La puce VF5d du § 5 de la conception (« VF5, LA BANQUE : LA CONCEPTION ») et le point (e) de son
+§ 4 : la contre-passation n'était offerte que depuis la facture, et rien ne classait un débit par ses contre-passations,
+ne retirait ce classement ni ne lui rattachait une contre-passation enregistrée sans mouvement. Côté CABINET seulement,
+sur un DÉBIT d'un dossier basculé dont les ventes facturées sont lues en entier. Rien de VF5d2 (l'impayé d'un
+encaissement jamais déclaré, une migration), ni des candidats de `justificatifPossible` (VF5e), ni de la Checklist, ni
+de « Ma banque », ni de l'espace client. NEUTRE en production : sans dossier basculé, `gestesDuDebit` ne rend jamais que
+« aucun », la lecture des déclarations ne part pas, et la fiche est celle d'hier.
+
+**LE MODULE** (`mouvementsDesVentes.ts`, pur ; une section neuve en fin de module, après celle de VF5c, qui ne change
+pas : sa retenue est mise en commun, `mouvementDesGestes`, et le libellé d'un encaissement dit « Contre-passation,
+facture … » d'une contre-passation, qu'aucun geste d'un crédit ne nomme).
+`gestesDuDebit(ventes, lecture, ligne, anneesValidees, plan, aujourdHui)` rend, pour la fiche d'un débit :
+- « aucun » : la retenue de VF5a1 (l'état du relevé ET la lecture, chacun du dossier du mouvement), un mouvement que la
+  lecture n'a pas rendu, un crédit, un mouvement classé autrement, un débit libre que rien n'attend — une dépense,
+  l'immense majorité ;
+- « classé » : `retirer_classement_par_encaissements`, son refus par `refusRetraitDuClassement`, une confirmation qui
+  nomme le débit et ses factures, et dit qu'il redevient à traiter, toujours réservé à ses contre-passations, et que ses
+  écritures deviennent « à retirer » dans l'onglet Écritures ;
+- « réservé » : la phrase de l'ensemble — ce que ses contre-passations font face au débit, en valeur absolue :
+  exactement, l'écart des frais (la banque débite un peu PLUS : porté au compte `services_bancaires` du PLAN), ce qui
+  reste à faire, ou des contre-passations qui le dépassent, que la base ne classe pas, fût-ce de quelques frais (§ 8,
+  point 4) ; `classer_mouvement_par_encaissements`, son refus par `refusClassement`, une confirmation qui nomme chaque
+  contre-passation et les frais ; et le complément, tant que le classement le dit PAS ENCORE FAIT ;
+- « libre » : le complément seul.
+Le complément s'offre exactement quand `refusClassement` rend `aucun_encaissement` ou `debit_ecart` — rien ne cite le
+débit, ou ses contre-passations ne le font pas aux frais près (deux chèques revenus ensemble) : fait aux frais près il
+se classe, dépassé une contre-passation de plus n'y changerait rien, figé la frontière passe avant et rien ne s'offre.
+Il porte deux listes, chacune choisie par le SEUL jugement du module qui redit la fonction de la base, aucune règle
+recopiée, le plus proche de ce qui reste du débit d'abord (en valeur absolue), puis la date et l'identifiant, octet par
+octet :
+- « Rattacher une contre-passation enregistrée sans mouvement » : les lignes du registre que `refusRattachement` accepte
+  sur ce débit (sa branche des débits) — un encaissement, une contre-passation retirée, déjà rattachée, d'une facture
+  qui n'est pas source, d'un autre dossier, qui dépasserait le débit au-delà des frais, ou dont le crédit d'origine est
+  classé, il les refuse. La confirmation dit l'état d'APRÈS (`refusClassement` joué sur le registre où elle citerait ce
+  débit : « Ses contre-passations feront alors le débit : il restera à le classer par elles. », ce qui restera, ou qu'il
+  ne pourra pas se classer, sous les mots de la base), et ce que le rattachement rend à l'encaissement qu'elle annule
+  quand il cite un crédit : il le justifie de nouveau — l'argent est venu, puis reparti.
+- « Contre-passer l'encaissement d'une facture » : les encaissements que `refusContrePassationVente` accepte de
+  contre-passer en citant CE débit, à SA date, avec le droit « Banque » du cabinet et un motif tenant lieu de celui que
+  la fenêtre fera saisir (la fonction juge le motif avant le débit) : des encaissements DÉCLARÉS de factures sources —
+  un encaissement jamais déclaré se retire (VF5d2), un encaissement déjà contre-passé, postérieur au débit, ou que le
+  débit ne ferait pas à l'écart des frais près, la base le refuse. Chacun porte son état d'après, joué de même.
+Ni l'un ni l'autre : une note, sur un débit réservé ; rien du tout sur un débit libre. `manqueDuDebit` dit ce qui reste
+du débit par les seules contre-passations que le classement compte.
+
+**LA LECTURE** (`ventesDuReleveLecture.ts`, neuf). Seul un encaissement déclaré se contre-passe : la fiche d'un débit
+doit lire les déclarations. `lireLesVentesDuReleve` rend la lecture de l'onglet Écritures
+(`lireLesSourcesDesEcrituresDeVente`, inchangée) ET les déclarations des encaissements du dossier
+(`transmissions_encaissements` : `id, dossier_id, encaissement_id, etat`, par `lireTout`), dans le même appel, tout ou
+rien, chaque déclaration confrontée au dossier ; lue en partie, refusée ou d'un autre dossier, la lecture est
+incomplète, le motif nomme « les déclarations des encaissements », et l'onglet retient tout geste et tout lot du relevé,
+comme pour les cinq lectures de VF5a1. L'onglet Banque la lit, pour un dossier basculé seulement, à la place de celle de
+l'onglet Écritures. Le cabinet lit déjà cette table (la fenêtre des encaissements) : aucune lecture neuve pour la base,
+aucune pour le client.
+
+**L'ÉCRAN** (`BanqueTab.tsx`, `FicheMouvement.tsx`). L'onglet calcule les gestes d'un débit sur ce qu'il a lu dans la
+même relecture, le jour à Paris (`aujourdHuiAParis`) lu au rendu ; ses trois gestes d'écriture sont ceux de VF5c — les
+mêmes fonctions, les mêmes gestionnaires, qui rejugent au clic sur les gestes du crédit ou, à défaut, du débit (l'un des
+deux est toujours « aucun »), confirment la phrase du module, écrivent sous `sousVerrou` et relisent ; un refus de la
+base est dit puis suivi d'une relecture. La fiche porte une section par geste, sous des titres propres au débit
+(« Classer par ses contre-passations », « Retirer ce classement », « Rattacher une contre-passation enregistrée sans
+mouvement », « Contre-passer l'encaissement d'une facture ») ; le choix ne part qu'au clic, le libellé choisi et son
+état d'après se relisent sous la liste.
+
+**LA CONTRE-PASSATION : LA FENÊTRE, PAS UN FORMULAIRE NEUF.** Le choix recommandé, retenu : « Contre-passer… » ouvre la
+fenêtre des encaissements sur la facture de l'encaissement choisi, l'étape de SA contre-passation ouverte d'elle-même,
+CE débit imposé. Pourquoi : la fenêtre porte déjà la date et ses bornes, le motif et son libellé (lu par le client
+« Ventes »), tous les refus de `refusContrePassationVente` sous ses lectures entières (les déclarations, le relevé, les
+exercices validés), le droit « Banque », la phrase « ne pourra pas se classer », la confirmation qui nomme le débit, le
+verrou unique relâché après la relecture, et ce qui suit — la contre-passation se déclare à son tour, depuis la même
+fenêtre. Un formulaire dans la fiche aurait recopié ces règles et ces lectures, et laissé la déclaration ailleurs.
+`EncaissementsFactureModal.tsx` reçoit une prop OBLIGATOIRE,
+`contrePassationImposee: { encaissementId, ligneBancaireId } | null` — nulle à l'onglet Factures, dans les règlements et
+pour un crédit (le `mouvementImpose` de VF5c reste à lui) ; sa première lecture, faite en entier, ouvre l'étape : le
+débit se dit sans se choisir (« Imposé par la fiche du débit… »), sa date est PROPOSÉE — la date d'un décaissement n'est
+jamais proposée ailleurs : ici, c'est le jour où la banque a défait l'encaissement — et se corrige dans les bornes de la
+base (ni avant l'encaissement, ni dans l'avenir, la frontière), dites avant le clic ; le motif reste à saisir.
+« Annuler », puis « Contre-passer » sur la même ligne, rouvre l'étape imposée ; un autre encaissement de la facture se
+contre-passe comme hier. L'appel est celui de VF5b, ce débit en cinquième paramètre ; une fois la contre-passation
+enregistrée, l'étape ne se rouvre pas, et l'onglet relit après la fenêtre.
+
+**CE QUE LE CABINET APPELLE** : les trois fonctions de VF5c (`admin_du_dossier`), et `annuler_encaissement` par la seule
+fenêtre (`gere_les_ventes` et, pour un débit cité, `gere_la_banque` : le cabinet porte les deux). La garde
+d'`encaissementsEcritures.test.ts` qui nomme les lecteurs de `transmissions_encaissements` admet le troisième,
+nommément.
+
+**LE BANC.** Le dossier basculé (d12) reçoit trois factures sources (F2026-0025, -0026, -0027), leurs encaissements
+déclarés et défaits : deux chèques revenus ensemble — un débit de 360,80 € RÉSERVÉ par la contre-passation de F2026-0025
+qui le cite, l'autre contre-passée sans mouvement, à rattacher —, et l'acompte de F2026-0026 rendu à la librairie, un
+débit CLASSÉ par sa contre-passation. Le retour du chèque de F2026-0024 (b5, VF5b) reste LIBRE. Quatre visites neuves,
+après celles de l'onglet Factures et avant l'e-reporting (la fenêtre que la visite d'avant laisse ouverte sur l'onglet
+Banque couvrait sinon le bouton « Assistant » : trouvé au premier passage, la place changée) :
+`banque-basculee/fiche-debit-libre` et `fiche-debit-reserve` (les deux listes, choisies), `fiche-debit-classe`, mesurées
+contre le corps de la fiche, et `banque-basculee/contre-passation-imposee` (la fenêtre de F2026-0024 ouverte sur la
+contre-passation de son chèque, ce débit imposé, le motif saisi), contre sa carte. `debordements.mjs` : 0 à 1 440,
+1 280, 1 024, 390 et 720 px, et aux volets extrêmes (panneau 2 000, barre 2 000, les deux), 0 bouton recouvert sur 264
+sondés dans 59 fenêtres à chaque passe ; la passe « panneau fermé, barre 2 000 » garde sa faute d'avant, hors du lot
+(`factures/clients-soins`, « gestion@mutue|lle- ») ; les passes `client-banque` à 390 et 1 440 px, 0 (122 boutons sondés
+dans 31 fenêtres). Les visites existantes du dossier d12 voient des listes plus longues (des factures à encaisser, des
+encaissements à rattacher, un débit citable de plus), sans débordement. Joué par une copie du script à côté d'un lien
+vers le Playwright de l'environnement, sans rien installer, le navigateur sans le mandataire ; la copie ne diffère du
+fichier commité que par le recoupage d'un commentaire.
+
+**LES PREUVES.** La suite comparée test par test, sous Paris : avant (`b56dd28`, 446 fichiers, 13 577 tests), après (449
+fichiers, 13 640 tests) ; aucun verdict changé hors de la garde des lecteurs des déclarations, que la lecture neuve
+faisait échouer et qui la nomme désormais ; 63 tests neufs. Le module 25 (`gestesDuDebit.test.ts`) : la retenue, un
+crédit, un débit nul ou classé autrement, la fiche d'un crédit inchangée ; le libre — les encaissements à contre-passer
+(déclarés ; onze autres, chacun écarté par un refus de la base), leur ordre et ses deux départages, la date du débit
+(dans l'avenir, avant l'encaissement), l'état d'après, l'encaissement que le débit ne fait qu'aux frais près ; les
+contre-passations à rattacher (sept écartées par la base), la confirmation, ce qu'elle rend à l'encaissement d'origine,
+l'ordre ; le réservé exact, aux frais (le compte du PLAN décalé), dépassé, pas encore fait, sans complément, figé ; le
+classé, au singulier et au pluriel, figé ; `manqueDuDebit`. La lecture 4 (`ventesDuReleveLecture.test.ts`). L'écran 23
+(`BanqueTab.gestesDuDebit.test.tsx`) : chaque geste — le faux client voit la fonction et ses paramètres, puis la
+relecture et l'état d'après —, le refus de la base avant le clic et le bouton grisé, la confirmation refusée, le refus
+de la base après le clic (dit, puis relu), deux clics puis trois dans le même `act`, « Contre-passer… » qui ouvre la
+fenêtre sans rien écrire, puis la contre-passation partie de la fenêtre avec ce débit et sa date, chacune des six
+lectures lue en partie, la relecture pas encore revenue, un dossier non basculé (les déclarations ne s'y lisent pas). La
+fenêtre 9 (`EncaissementsFactureModal.test.tsx`) : l'étape ouverte d'elle-même, le débit dit, la date proposée, ses
+bornes, deux puis trois clics (un envoi, le cinquième paramètre), la confirmation refusée, « Annuler » puis la ligne, un
+autre encaissement comme hier, un débit non lu, des déclarations lues en partie. `ecransAvantLecture.test.tsx` 2 : la
+fenêtre à la contre-passation imposée sous ses deux gardes, et sa phrase fixe. Mutations : 62 (le module 40, la lecture
+4, la fenêtre 6, l'onglet 6, la fiche 6 ; deux, mal formées au premier passage — l'une introuvable, l'autre sans effet,
+un attribut doublé —, rejouées), 61 tuées ; une équivalente : le filtre des mouvements libres d'un débit
+(`mouvementLibre`), que `refusClassement` (`deja_classe`) et la base (G1, G2) rendent redondant — un débit classé
+autrement ne porte ni ne reçoit de contre-passation. La barrière, sous le Node 22.23.3 de la CI, sur le code du premier
+commit (`df190f9`) : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur (les 63 avertissements d'avant, aux numéros de
+ligne près) ; `npm run test:fuseaux` 0, 449 fichiers et 13 640 tests sous Paris, UTC, New York et Auckland ;
+`npm run build` 0 (`index-BxAgbxt_.js`). Une expression du test d'écran, écrite d'abord avec deux espaces insécables
+littérales, a été remise sous ses échappements avant le commit : le test, le compilateur et le lint rejoués. La barrière
+de la session, sous le même Node, sur le commit du code recomposé (`2d24948`, le même code) : `tsc -b --force` 0 ; lint
+0 erreur (les 63 avertissements d'avant, aux numéros de ligne près) ; `npm run test:fuseaux` 0, 449 fichiers et 13 640
+tests sous Paris, UTC, New York et Auckland ; le build 0 (`index-BxAgbxt_.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** Posé par ce lot, sur la conception : la contre-passation passe par la
+fenêtre, l'étape ouverte et le débit imposé ; les deux listes du complément ne montrent que ce que la base accepterait
+(le rattachement d'un crédit, en VF5c, montrait aussi les refusés, grisés) ; le complément s'offre tant que le
+classement dit le débit pas encore fait (`aucun_encaissement`, `debit_ecart`) ; la date d'une contre-passation imposée
+est celle du débit, proposée. Aucune question nouvelle.
+
+**À REVOIR.**
+- § 8, point 4, reste à l'expert-comptable : des contre-passations qui dépassent leur débit de quelques frais se
+  rattachent et se contre-passent (la base l'admet), mais ne se classent pas ; la fiche le dit avant le geste.
+- Comme sur un crédit (l'« À REVOIR » de VF5c), une contre-passation sans mouvement se rattache à tout débit libre au
+  moins égal, et un encaissement déclaré se contre-passe sur tout débit libre au moins égal : la fiche de chaque débit
+  libre assez grand les propose ; les candidats qui rapprochent un débit d'un impayé viennent avec VF5e.
+- La lecture des déclarations retient, partielle, tout geste et tout lot du relevé, pas seulement ceux d'un débit : le
+  tout ou rien de VF5a1, du côté sûr.
+- La garde `encaissementsEcritures.test.ts` (« les déclarations sont lues par… ») a dû admettre le troisième lecteur.
