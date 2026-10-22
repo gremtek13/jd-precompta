@@ -7,6 +7,7 @@ import {
 } from './reglesAffectation'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from './types'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { AUCUN_HORS_DES_LOTS } from './mouvementsDesVentes'
 
 function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
@@ -158,13 +159,13 @@ describe('motifPropose — un point de départ, jamais une décision', () => {
 
 describe('mouvementATraiter — ce que le lot peut affecter', () => {
   it('à traiter seulement, jamais un virement personnel ni un mouvement de zéro euro', () => {
-    expect(mouvementATraiter(ligne())).toBe(true)
-    expect(mouvementATraiter(ligne({ statut: 'ignoree' }))).toBe(false)
-    expect(mouvementATraiter(ligne({ statut: 'rapprochee', piece_id: 'p1' }))).toBe(false)
+    expect(mouvementATraiter(ligne(), AUCUN_HORS_DES_LOTS)).toBe(true)
+    expect(mouvementATraiter(ligne({ statut: 'ignoree' }), AUCUN_HORS_DES_LOTS)).toBe(false)
+    expect(mouvementATraiter(ligne({ statut: 'rapprochee', piece_id: 'p1' }), AUCUN_HORS_DES_LOTS)).toBe(false)
     // Défensif : l'écran classe un virement personnel « ignoré », mais la marque seule doit suffire à
     // l'écarter — la base refuserait de l'affecter, et le lot entier avec lui.
-    expect(mouvementATraiter(ligne({ prelevement_personnel: true }))).toBe(false)
-    expect(mouvementATraiter(ligne({ montant: 0 }))).toBe(false)
+    expect(mouvementATraiter(ligne({ prelevement_personnel: true }), AUCUN_HORS_DES_LOTS)).toBe(false)
+    expect(mouvementATraiter(ligne({ montant: 0 }), AUCUN_HORS_DES_LOTS)).toBe(false)
   })
 })
 
@@ -180,8 +181,8 @@ describe('mouvementsCouverts — ce qu’une règle nouvelle proposerait', () =>
       ligne({ id: 'g', montant: 0 }),
       ligne({ id: 'h', libelle: 'PRLV SEPA SWISSLIFE' }),
     ]
-    expect(mouvementsCouverts('TRANSMEDICAL', 'decaissement', lignes).map((l) => l.id)).toEqual(['a', 'b'])
-    expect(mouvementsCouverts('', 'decaissement', lignes)).toEqual([])
+    expect(mouvementsCouverts('TRANSMEDICAL', 'decaissement', lignes, AUCUN_HORS_DES_LOTS).map((l) => l.id)).toEqual(['a', 'b'])
+    expect(mouvementsCouverts('', 'decaissement', lignes, AUCUN_HORS_DES_LOTS)).toEqual([])
   })
 })
 
@@ -240,7 +241,7 @@ describe('planAffectationParRegles — ce que « Affecter les N » écrirait', (
       ligne({ id: 'e', statut: 'rapprochee', piece_id: 'p1' }),
       ligne({ id: 'f', statut: 'ignoree' }),
     ]
-    const plan = planAffectationParRegles(lignes, regles, [HONORAIRES, RECETTES, FRAIS], false, aucunJustificatif)
+    const plan = planAffectationParRegles(lignes, regles, [HONORAIRES, RECETTES, FRAIS], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(plan.propositions.map((p) => `${p.ligne.id}:${p.categorie.id}:${p.regle.id}`))
       .toEqual(['a:cat-honoraires:r1', 'b:cat-recettes:r2', 'c:cat-frais:r3'])
     expect(plan.refus).toEqual([])
@@ -248,7 +249,7 @@ describe('planAffectationParRegles — ce que « Affecter les N » écrirait', (
   })
 
   it('sur un dossier assujetti, une règle de recette sans taux ne range rien, et dit où le taux se choisit', () => {
-    const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CPAM 13', montant: 48.2 })], regles, [HONORAIRES, RECETTES, FRAIS], true, aucunJustificatif)
+    const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CPAM 13', montant: 48.2 })], regles, [HONORAIRES, RECETTES, FRAIS], true, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(plan.propositions).toEqual([])
     expect(plan.refus.map((r) => [r.ligne.id, r.raison])).toEqual([['b', REFUS_REGLE_SANS_TAUX]])
   })
@@ -256,7 +257,7 @@ describe('planAffectationParRegles — ce que « Affecter les N » écrirait', (
   it('sur un dossier assujetti, la règle de recette transmet son taux — exonération comprise', () => {
     for (const taux of [20, 0]) {
       const avecTaux = [regle({ id: 'r2', motif: 'client', sens: 'encaissement', categorie_id: 'cat-recettes', taux_tva: taux })]
-      const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CLIENT DUPONT', montant: 120 })], avecTaux, [RECETTES], true, aucunJustificatif)
+      const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CLIENT DUPONT', montant: 120 })], avecTaux, [RECETTES], true, aucunJustificatif, AUCUN_HORS_DES_LOTS)
       expect(plan.refus).toEqual([])
       expect(plan.propositions.map((p) => [p.ligne.id, p.taux])).toEqual([['b', taux]])
     }
@@ -264,20 +265,20 @@ describe('planAffectationParRegles — ce que « Affecter les N » écrirait', (
 
   it('un taux gardé par la règle ne s’applique plus sur un dossier qui a cessé d’être assujetti, ni à une dépense', () => {
     const recette = regle({ id: 'r2', motif: 'client', sens: 'encaissement', categorie_id: 'cat-recettes', taux_tva: 20 })
-    const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CLIENT DUPONT', montant: 120 })], [recette], [RECETTES], false, aucunJustificatif)
+    const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CLIENT DUPONT', montant: 120 })], [recette], [RECETTES], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(plan.propositions.map((p) => p.taux)).toEqual([null])
-    const depense = planAffectationParRegles([ligne()], [regle({ taux_tva: 20 })], [HONORAIRES], true, aucunJustificatif)
+    const depense = planAffectationParRegles([ligne()], [regle({ taux_tva: 20 })], [HONORAIRES], true, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(depense.propositions.map((p) => p.taux)).toEqual([null])
   })
 
   it('une catégorie que la règle vise mais qu’on n’a pas lue est refusée, jamais devinée', () => {
-    const plan = planAffectationParRegles([ligne()], regles, [RECETTES, FRAIS], false, aucunJustificatif)
+    const plan = planAffectationParRegles([ligne()], regles, [RECETTES, FRAIS], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(plan.propositions).toEqual([])
     expect(plan.refus[0].raison).toMatch(/ne figure pas parmi les catégories lues/)
   })
 
   it('une catégorie dont le compte n’est plus de résultat est refusée', () => {
-    const plan = planAffectationParRegles([ligne()], regles, [categorie({ compte_comptable: '108000' }), RECETTES, FRAIS], false, aucunJustificatif)
+    const plan = planAffectationParRegles([ligne()], regles, [categorie({ compte_comptable: '108000' }), RECETTES, FRAIS], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(plan.propositions).toEqual([])
     expect(plan.refus[0].raison).toMatch(/pas de compte de charge ou de produit/)
   })
@@ -286,13 +287,13 @@ describe('planAffectationParRegles — ce que « Affecter les N » écrirait', (
     const conflit = regle({ id: 'r4', motif: 'sepa', categorie_id: 'cat-frais' })
     // « sepa » n'est pas un motif acceptable pour l'écran, mais la base ne le refuse pas : le plan doit
     // quand même savoir ne pas trancher.
-    const plan = planAffectationParRegles([ligne()], [regle(), conflit], [HONORAIRES, FRAIS], false, aucunJustificatif)
+    const plan = planAffectationParRegles([ligne()], [regle(), conflit], [HONORAIRES, FRAIS], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(plan.propositions).toEqual([])
     expect(plan.conflits.map((c) => c.regles.map((r) => r.id))).toEqual([['r1', 'r4']])
   })
 
   it('sans règle, rien', () => {
-    expect(planAffectationParRegles([ligne()], [], [HONORAIRES], false, aucunJustificatif)).toEqual({ propositions: [], aRapprocher: [], refus: [], conflits: [] })
+    expect(planAffectationParRegles([ligne()], [], [HONORAIRES], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)).toEqual({ propositions: [], aRapprocher: [], refus: [], conflits: [], ecartesParLesVentes: [] })
   })
 })
 
@@ -344,7 +345,7 @@ describe('justificatifPossible — un paiement qui a peut-être sa pièce ne s�
     const justificatifs = { ...aucun, pieces: [piece({ montant_ttc: 76.8, montant_ht: 76.8, date_piece: '2025-06-01' })] }
     const plan = planAffectationParRegles([ligne(), ligne({ id: 'l2', libelle: 'FRAIS TENUE DE COMPTE', montant: -8.5 })],
       [regle(), regle({ id: 'r3', motif: 'frais', categorie_id: 'cat-frais' })], [HONORAIRES, FRAIS], false,
-      (l) => justificatifPossible(l, justificatifs))
+      (l) => justificatifPossible(l, justificatifs), AUCUN_HORS_DES_LOTS)
     expect(plan.propositions.map((p) => p.ligne.id)).toEqual(['l2'])
     expect(plan.aRapprocher.map((r) => [r.ligne.id, r.regle.id])).toEqual([['l1', 'r1']])
     expect(plan.aRapprocher[0].raison).toMatch(/justificatif de ce tiers/)
@@ -362,7 +363,7 @@ describe('totauxParCategorie — le lot relu avant de cliquer', () => {
       regle(),
       regle({ id: 'r2', motif: 'cpam', sens: 'encaissement', categorie_id: 'cat-recettes' }),
       regle({ id: 'r3', motif: 'frais', categorie_id: 'cat-frais' }),
-    ], [RECETTES, FRAIS, HONORAIRES], false, aucunJustificatif)
+    ], [RECETTES, FRAIS, HONORAIRES], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(totauxParCategorie(plan.propositions).map((t) => [t.categorie.id, t.nombre, t.montant])).toEqual([
       ['cat-honoraires', 1, -38.4],
       ['cat-frais', 1, -8.5],
@@ -381,7 +382,7 @@ describe('totauxParCategorie — deux catégories au même rang', () => {
     ], [
       regle({ id: 'r1', motif: 'swisslife', categorie_id: 'cat-assurance' }),
       regle({ id: 'r2', motif: 'transmedical', categorie_id: 'cat-abonnements' }),
-    ], [assurance, abonnements], false, aucunJustificatif)
+    ], [assurance, abonnements], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(totauxParCategorie(plan.propositions).map((t) => t.categorie.libelle)).toEqual(['Abonnements', 'Assurance'])
   })
 })
@@ -390,7 +391,7 @@ describe('envoisDuLot — ce qui part vers la base', () => {
   it('l’écriture de chaque mouvement est celle de l’affectation à l’unité, dans l’ordre du lot', () => {
     const plan = planAffectationParRegles([ligne({ id: 'a' }), ligne({ id: 'b', libelle: 'VIR CPAM', montant: 48.2 })],
       [regle(), regle({ id: 'r2', motif: 'cpam', sens: 'encaissement', categorie_id: 'cat-recettes' })],
-      [HONORAIRES, RECETTES], false, aucunJustificatif)
+      [HONORAIRES, RECETTES], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT)).toEqual([[
       { ligne_bancaire_id: 'a', categorie_id: 'cat-honoraires', taux_tva: null, ecritures: ecritureDuMouvement(plan.propositions[0].ligne, '622600', null, PLAN_PAR_DEFAUT) },
       { ligne_bancaire_id: 'b', categorie_id: 'cat-recettes', taux_tva: null, ecritures: ecritureDuMouvement(plan.propositions[1].ligne, '706000', null, PLAN_PAR_DEFAUT) },
@@ -400,7 +401,7 @@ describe('envoisDuLot — ce qui part vers la base', () => {
   it('une recette taxée part avec son taux, et l’écriture à trois lignes qu’il donne', () => {
     const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CLIENT DUPONT', montant: 120 })],
       [regle({ id: 'r2', motif: 'client', sens: 'encaissement', categorie_id: 'cat-recettes', taux_tva: 20 })],
-      [RECETTES], true, aucunJustificatif)
+      [RECETTES], true, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     const [[envoi]] = envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT)
     expect(envoi.taux_tva).toBe(20)
     expect(envoi.ecritures.map((e) => [e.compte, e.sens, e.montant])).toEqual([
@@ -412,7 +413,7 @@ describe('envoisDuLot — ce qui part vers la base', () => {
 
   it('découpe le lot en envois de la taille demandée, sans rien perdre ni doubler', () => {
     const lignes = Array.from({ length: 5 }, (_, i) => ligne({ id: `l${i}` }))
-    const plan = planAffectationParRegles(lignes, [regle()], [HONORAIRES], false, aucunJustificatif)
+    const plan = planAffectationParRegles(lignes, [regle()], [HONORAIRES], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     const envois = envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT, 2)
     expect(envois.map((e) => e.map((a) => a.ligne_bancaire_id))).toEqual([['l0', 'l1'], ['l2', 'l3'], ['l4']])
   })
@@ -420,7 +421,7 @@ describe('envoisDuLot — ce qui part vers la base', () => {
   it('cent par envoi : le délai de la base se mesure à cette taille', () => {
     expect(TAILLE_ENVOI_AFFECTATION).toBe(100)
     const lignes = Array.from({ length: 250 }, (_, i) => ligne({ id: `l${i}` }))
-    const plan = planAffectationParRegles(lignes, [regle()], [HONORAIRES], false, aucunJustificatif)
+    const plan = planAffectationParRegles(lignes, [regle()], [HONORAIRES], false, aucunJustificatif, AUCUN_HORS_DES_LOTS)
     expect(envoisDuLot(plan.propositions, PLAN_PAR_DEFAUT).map((e) => e.length)).toEqual([100, 100, 50])
   })
 })

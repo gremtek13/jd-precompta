@@ -1931,6 +1931,10 @@ const TABLES: Record<string, Ligne[]> = {
     { id: 'ra1', dossier_id: 'd1', motif: 'cpam', sens: 'encaissement', categorie_id: 'c9', taux_tva: null, created_at: MAINTENANT },
     { id: 'ra2', dossier_id: 'd1', motif: 'frais', sens: 'decaissement', categorie_id: 'c10', taux_tva: null, created_at: MAINTENANT },
     { id: 'ra3', dossier_id: 'd1', motif: 'telecom', sens: 'decaissement', categorie_id: 'c1', taux_tva: null, created_at: MAINTENANT },
+    // Le dossier basculé (d12, étape VF5a2) : une règle range les frais de tenue de compte, et une autre désigne le virement
+    // réservé à l'encaissement de F2026-0022 — que la carte du lot dit écarté, avec les mots de la garde.
+    { id: 'ra4', dossier_id: 'd12', motif: 'frais tenue', sens: 'decaissement', categorie_id: 'c10', taux_tva: null, created_at: MAINTENANT },
+    { id: 'ra5', dossier_id: 'd12', motif: 'horizon', sens: 'encaissement', categorie_id: 'c9', taux_tva: 20, created_at: MAINTENANT },
   ],
   lignes_bancaires: [
     ligne('l1', '2026-09-15', 'PRLV SEPA TELECOM PLUS', -39.99, 'non_rapprochee', null),

@@ -1129,6 +1129,11 @@ const VISITES = [
   ...[
     { nom: 'banque-basculee/releve', fenetre: undefined, tous: false, mouvement: null, attendu: /^Réservé à l’encaissement de la facture F2026-0022/ },
     { nom: 'banque-basculee/tous', fenetre: undefined, tous: true, mouvement: null, attendu: /^Encaissements de factures — F2026-0021/ },
+    // Étape VF5a2 : la carte des règles d'affectation dit le virement réservé qu'elle écarte, dépliée sur les mots de la garde.
+    {
+      nom: 'banque-basculee/lot-des-regles', fenetre: undefined, tous: false, mouvement: null,
+      ouvrir: /^Affectation par les règles — 1 mouvement écarté/, attendu: /: Ce mouvement justifie un encaissement de la facture F2026-0022/,
+    },
     {
       nom: 'banque-basculee/fiche-reserve', fenetre: '.fiche-mouvement-corps', tous: false, mouvement: 'VIR SEPA SARL HORIZON LOGISTIQUE',
       attendu: /^Réservé à des encaissements de factures$/,
@@ -1137,12 +1142,13 @@ const VISITES = [
       nom: 'banque-basculee/fiche-classe', fenetre: '.fiche-mouvement-corps', tous: true, mouvement: 'VIR SEPA CABINET DURAND',
       attendu: /^Classé par ses encaissements de factures$/,
     },
-  ].map(({ nom, fenetre, tous, mouvement, attendu }) => ({
+  ].map(({ nom, fenetre, tous, mouvement, ouvrir, attendu }) => ({
     dossier: 'd12', onglet: 'banque', nom, fenetre,
     apres: async (page) => {
       const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
       if (await fermer.count()) await fermer.first().click()
       if (tous) await page.getByRole('button', { name: 'Tous', exact: true }).click()
+      if (ouvrir) await page.locator('summary', { hasText: ouvrir }).first().click()
       if (mouvement) await page.locator('tr.clickable', { hasText: mouvement }).first().click()
       await page.getByText(attendu).first().waitFor({ timeout: 10000 })
     },

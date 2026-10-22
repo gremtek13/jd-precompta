@@ -4,7 +4,7 @@ import {
   type CleRefusGardeMouvements, type EncaissementDuReleve, type FactureDuDossier, type MouvementClasse, type RefusEncaissement,
 } from './encaissementsFactures'
 import { formatDate, formatMoney } from './format'
-import type { EncaissementFacture } from './types'
+import type { EncaissementFacture, LigneBancaire } from './types'
 
 // LE RELEVÉ RECONNAÎT LES MOUVEMENTS DES VENTES FACTURÉES (ligne 28.65, chantier EC-Q3, étape VF5a1 ; conception :
 // HISTORIQUE.md, « VF5, LA BANQUE : LA CONCEPTION », § 3 à 5). Un module PUR — il ne lit rien en base, n'appelle personne,
@@ -30,8 +30,13 @@ import type { EncaissementFacture } from './types'
 // refusée ou d'un autre dossier, l'onglet ne sait pas quels mouvements sont réservés : il le dit, et retient tout geste et
 // tout lot (`retenueDuReleve`). Un dossier qui n'a pas basculé ne lit rien de plus et ne change en rien (« sans objet »).
 //
-// Les gestes (classer, retirer un classement, rattacher) viennent avec l'étape VF5c ; les lots qui écartent un mouvement
-// réservé avec VF5a2. Ce module ne les offre pas.
+// LES LOTS (étape VF5a2, plus bas) : aucun lot du relevé — le rapprochement automatique, « Valider et rapprocher », les
+// règles d'affectation, la règle d'ignorance — ne prend un mouvement classé ou réservé. Ce module en dit la liste
+// (`mouvementsHorsDesLots`), que chaque plan reçoit sans valeur par défaut, et ce qu'une carte de lot dit de ceux qu'elle
+// écarte (`ecartDuLot`) ; les plans eux-mêmes restent dans leurs modules (lib/reglesAffectation.ts,
+// lib/appariementBanque.ts, lib/reglesIgnorees.ts), et le relevé compte ses mouvements par `comptesDuReleve`.
+//
+// Les gestes (classer, retirer un classement, rattacher) viennent avec l'étape VF5c. Ce module ne les offre pas.
 
 // ── Ce que le module lit ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -163,6 +168,108 @@ export function retenueDuReleve(v: VentesDuReleve): string | null {
   if (v.etat === 'en_cours') return 'les ventes facturées du dossier ne sont pas encore lues'
   if (v.etat === 'incomplete') return `les ventes facturées du dossier : ${v.motif}`
   return null
+}
+
+// ── Les lots du relevé (étape VF5a2) ──────────────────────────────────────────────────────────────────────────────────
+//
+// UN MOUVEMENT DES VENTES FACTURÉES N'ENTRE DANS AUCUN LOT. Classé par ses encaissements, il est déjà « rapproché » ;
+// réservé, il reste « à traiter » en base (`statut = 'non_rapprochee'`), mais la garde G2 lui refuse tout autre
+// classement : un lot qui le prendrait échouerait ENTIER (l'affectation par envois de cent, la règle d'ignorance en une
+// seule mise à jour) ou ligne par ligne (le rapprochement automatique), sans jamais rien écrire de faux. Chaque plan reçoit
+// donc ces mouvements en paramètre OBLIGATOIRE, les laisse de côté et les rend à part ; la carte du lot dit combien, et
+// pourquoi — les mots de la garde, tels que `mouvementDeVente` les a tirés de `refusDuClassementDuReleve`.
+
+/** Les mouvements qu'aucun lot ne prend : par identifiant, pourquoi — les mots de la garde G2. */
+export type MouvementsHorsDesLots = ReadonlyMap<string, string>
+
+/** Aucun : le relevé d'un dossier qui n'a pas basculé. */
+export const AUCUN_HORS_DES_LOTS: MouvementsHorsDesLots = new Map()
+
+/**
+ * Les mouvements qu'aucun lot du relevé ne prend : classés par leurs encaissements ou réservés à eux, sur des ventes lues
+ * EN ENTIER. Aucun sur un dossier qui n'a pas basculé. Sur des ventes pas encore revenues ou lues en partie, on ne sait
+ * pas lesquels : la liste est vide, et c'est `retenueDuReleve` — non nulle EXACTEMENT dans ces deux cas — qui suspend
+ * alors chaque lot ; aucun lot ne part jamais sur cette liste vide-là.
+ */
+export function mouvementsHorsDesLots(v: VentesDuReleve): MouvementsHorsDesLots {
+  if (v.etat !== 'lue') return AUCUN_HORS_DES_LOTS
+  return new Map([...v.mouvements.values()].map((m) => [m.id, m.refus.message]))
+}
+
+export interface MouvementEcarte<L> {
+  ligne: L
+  /** Les mots de la garde G2. */
+  raison: string
+}
+
+export interface EcartDuLot<L> {
+  /** Combien, en une phrase. */
+  resume: string
+  /** Chacun, dans l'ordre du plan, avec les mots de la garde. */
+  mouvements: readonly MouvementEcarte<L>[]
+}
+
+/** Ce qu'une carte de lot dit des mouvements que son plan a écartés parce qu'ils portent des encaissements ; null : aucun. */
+export function ecartDuLot<L extends { id: string }>(ecartes: readonly L[], hors: MouvementsHorsDesLots): EcartDuLot<L> | null {
+  const mouvements = ecartes.flatMap((ligne) => {
+    const raison = hors.get(ligne.id)
+    return raison === undefined ? [] : [{ ligne, raison }]
+  })
+  if (mouvements.length === 0) return null
+  const plusieurs = mouvements.length > 1
+  return {
+    resume: `${mouvements.length} mouvement${plusieurs ? 's' : ''} écarté${plusieurs ? 's' : ''} : `
+      + `${plusieurs ? 'ils portent' : 'il porte'} des encaissements de factures.`,
+    mouvements,
+  }
+}
+
+// ── Les comptes du relevé (étape VF5a2) ───────────────────────────────────────────────────────────────────────────────
+//
+// UN MOUVEMENT RÉSERVÉ N'EST PAS « NON RAPPROCHÉ » : il n'attend pas de pièce, il attend que le cabinet le classe par ses
+// encaissements (étape VF5c). Il ne disparaît pas pour autant des comptes : il s'y compte À PART, avec son total. Le
+// compte ne se dit que de ventes lues en entier ; pas encore revenues ou lues en partie, le relevé compte ses mouvements
+// non rapprochés comme hier, et dit que certains sont peut-être réservés. Un dossier qui n'a pas basculé ne change en rien.
+
+export interface CompteDeMouvements {
+  nombre: number
+  total: number
+}
+
+export type ComptesDuReleve =
+  | { etat: 'connus'; aRapprocher: CompteDeMouvements; reserves: CompteDeMouvements }
+  | { etat: 'incertains'; nonRapproches: CompteDeMouvements }
+
+// La somme dans l'ordre du relevé, comme l'écran la faisait : un dossier qui n'a pas basculé garde son total au flottant près.
+function compter(lignes: readonly Pick<LigneBancaire, 'montant'>[]): CompteDeMouvements {
+  return { nombre: lignes.length, total: lignes.reduce((s, l) => s + l.montant, 0) }
+}
+
+/** Les mouvements non rapprochés du relevé (`statut = 'non_rapprochee'`, lu en entier ou signalé), comptés. */
+export function comptesDuReleve(
+  nonRapprochees: readonly Pick<LigneBancaire, 'id' | 'montant'>[],
+  v: VentesDuReleve,
+): ComptesDuReleve {
+  if (v.etat === 'en_cours' || v.etat === 'incomplete') return { etat: 'incertains', nonRapproches: compter(nonRapprochees) }
+  const reserve = (l: Pick<LigneBancaire, 'id'>) => v.etat === 'lue' && v.mouvements.has(l.id)
+  return {
+    etat: 'connus',
+    aRapprocher: compter(nonRapprochees.filter((l) => !reserve(l))),
+    reserves: compter(nonRapprochees.filter(reserve)),
+  }
+}
+
+/** La phrase des « Écarts à vérifier » ; celle d'hier quand aucun mouvement n'est réservé. */
+export function texteDesNonRapproches(c: ComptesDuReleve): string {
+  if (c.etat === 'incertains') {
+    return `${c.nonRapproches.nombre} mouvement(s) bancaire(s) non rapproché(s) (${formatMoney(c.nonRapproches.total)}), dont `
+      + 'peut-être des mouvements réservés à des encaissements de factures : les ventes facturées du dossier ne sont pas lues '
+      + 'en entier'
+  }
+  const hier = `${c.aRapprocher.nombre} mouvement(s) bancaire(s) non rapproché(s) (${formatMoney(c.aRapprocher.total)})`
+  if (c.reserves.nombre === 0) return hier
+  return `${hier} · ${c.reserves.nombre} mouvement(s) réservé(s) à des encaissements de factures, à classer par eux `
+    + `(${formatMoney(c.reserves.total)})`
 }
 
 // ── Les pastilles de la liste ─────────────────────────────────────────────────────────────────────────────────────────
