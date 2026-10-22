@@ -960,7 +960,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     return {
       dossierId: 'd1', factures: [factureDesEcritures({ id: 'f1', date_emission: o.emission ?? '2026-03-01', montant_ttc: ttc })],
       lignes: [ligneVendue('f1', Math.round((ttc * 10000) / (100 + taux)) / 100, taux)],
-      encaissements: [{ ...encaissement, compte_contrepartie: null }], parts: [part], mouvements: [],
+      encaissements: [{ ...encaissement, compte_contrepartie: null, cree_par: null }], parts: [part], mouvements: [],
     }
   }
   const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
@@ -1037,7 +1037,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     const cp = encaissementVendu({ id: 'c1', date_encaissement: '2026-02-10', montant: -120, annule_id: 'e1' })
     const s: SourcesDesEcrituresDeVente = {
       dossierId: 'd1', factures: [factureDesEcritures({ id: 'f1', date_emission: '2025-12-01' })], lignes: [ligneVendue('f1', 100, 20)],
-      encaissements: [e, cp].map((x) => ({ ...x.encaissement, compte_contrepartie: null })), parts: [e.part, cp.part], mouvements: [],
+      encaissements: [e, cp].map((x) => ({ ...x.encaissement, compte_contrepartie: null, cree_par: null })), parts: [e.part, cp.part], mouvements: [],
     }
     const c = ca3De(s)
     expect(c.exigibilitesRetenues.map((x) => x.ligne)).toEqual(['B5'])
@@ -1119,7 +1119,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     // 600 € encaissés en mars, écrits ; 600 € en avril, pas encore : le premier trimestre s'enregistre, le deuxième attend.
     const deux = ['2026-03-10', '2026-04-10'].map((date, i) => encaissementVendu({ id: `e${i + 1}`, date_encaissement: date, montant: 600 }))
     const s: SourcesDesEcrituresDeVente = {
-      ...sourcesDe(1200), encaissements: deux.map((x) => ({ ...x.encaissement, compte_contrepartie: null })), parts: deux.map((x) => x.part),
+      ...sourcesDe(1200), encaissements: deux.map((x) => ({ ...x.encaissement, compte_contrepartie: null, cree_par: null })), parts: deux.map((x) => x.part),
     }
     const brouillon = ecrit(s).filter((l) => l.encaissement_id !== 'e2')
     expect(refusEnregistrement(demande({ ca3: ca3De(s) }), contexte({ ventesFacturees: lues(s, brouillon) }))).toBeNull()

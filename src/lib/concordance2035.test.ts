@@ -661,7 +661,7 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
   const lignes = [ligneVendue('f1', 1000, 20, 1), ligneVendue('f1', 100, 10, 2)]
   const enc = (o: Partial<EncaissementDesEcritures> & Pick<EncaissementDesEcritures, 'id' | 'date_encaissement' | 'montant'>) => {
     const { encaissement, part } = encaissementVendu(o)
-    const e: EncaissementDesEcritures = { ...encaissement, compte_contrepartie: o.compte_contrepartie ?? null }
+    const e: EncaissementDesEcritures = { ...encaissement, compte_contrepartie: o.compte_contrepartie ?? null, cree_par: null }
     const ratio = o.montant / 1310
     return { e, parts: [{ ...part, taux: 20, montant: Math.round(1200 * ratio * 100) / 100 }, { ...part, taux: 10, montant: Math.round(110 * ratio * 100) / 100 }] }
   }

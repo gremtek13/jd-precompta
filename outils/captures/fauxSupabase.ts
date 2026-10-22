@@ -125,6 +125,15 @@ for (const [id, code] of [
   if (dossier) dossier.code_email = code
 }
 
+// Le dossier BASCULÉ (d12, voir `FACTURES_D12`) : archivé, hors de la liste des dossiers — seules les visites qui l'ouvrent
+// par son adresse le voient. Ajouté après coup : la table ci-dessus ne connaît ni l'archive ni la bascule.
+dossiers.push({
+  ...(dossiers.find((d) => d.id === 'd7') as Ligne),
+  id: 'd12', nom: 'Clara Fontaine Conseil', siret: '44455566600019', code_naf: '70.22Z',
+  libelle_naf: 'Conseil pour les affaires et autres conseils de gestion', code_email: 'd12', archive: true,
+  ventes_par_les_factures: true, ...IDENTITE_LEGALE_VIDE,
+})
+
 // Les postes sont ceux que le formulaire connaît (lib/cases2035.ts), comme un cabinet les saisit — sauf
 // l'électricité, laissée sur un poste qu'aucune case ne reçoit : c'est elle qui fait paraître « Postes sans
 // case du formulaire » dans la Clôture du cabinet infirmier, et le préalable qui en refuse la validation.
@@ -1333,6 +1342,63 @@ const ENCAISSEMENT_A3: EncaissementFacture = encaissementDuBanc({
 })
 const PART_A3: EncaissementFactureTaux = { encaissement_id: 'enc7', dossier_id: 'd7', taux: 20, montant: 300 }
 
+// ── UN DOSSIER QUI A BASCULÉ (d12 ; ligne 28.65, chantier EC-Q3, étape VF5a1) ───────────────────────────────────────────
+//
+// Une consultante assujettie dont les factures validées dans l'application sont la SOURCE de leur vente
+// (`ventes_par_les_factures`) : le relevé reconnaît les mouvements que leurs encaissements classent ou réservent. ARCHIVÉ, pour
+// n'être vu que des visites qui l'ouvrent par son adresse (`banque-basculee/*`) : la liste des dossiers — la barre latérale, le
+// tableau de bord — n'offre que les dossiers en cours, et les autres visites ne changent pas. Trois factures sources de
+// services à 20 % : F2026-0021, encaissée par un virement crédité 1,50 € de moins (des frais), que le cabinet a CLASSÉ par ses
+// encaissements ; F2026-0022, encaissée par un virement que la cliente a désigné depuis son espace, RÉSERVÉ, pas encore
+// classé ; F2026-0023, payée par chèque, enregistré sans mouvement. Puis deux mouvements ordinaires, à traiter. Tous FICTIFS.
+const EMETTEUR_D12 = {
+  emetteur_nom: 'Clara Fontaine Conseil', emetteur_siret: '44455566600019', emetteur_adresse: '8 place des Tisserands\n31000 Toulouse',
+}
+const LIGNES_D12: Record<string, LigneSaisie[]> = {
+  fb1: [{ designation: 'Accompagnement à la réorganisation du service comptable — septembre 2026', quantite: 1, prix_unitaire_ht: 500, taux_tva: 20 }],
+  fb2: [{ designation: 'Audit des processus de facturation — deux journées', quantite: 2, prix_unitaire_ht: 200, taux_tva: 20 }],
+  fb3: [{ designation: 'Atelier de formation des bénévoles à la tenue de la caisse', quantite: 1, prix_unitaire_ht: 250, taux_tva: 20 }],
+}
+const factureD12 = (id: string, numero: string, emission: string, tiers: string): FactureEmise => ({
+  ...FACTURES_D7[0], ...EMETTEUR_D12,
+  id, dossier_id: 'd12', numero, date_emission: emission, date_echeance: '2026-10-31',
+  ...calculerTotaux(LIGNES_D12[id]),
+  tiers_nom: tiers, tiers_adresse: '12 avenue des Fictions\n31000 Toulouse', tiers_siret: null, tiers_siren: null,
+  tiers_adresse_electronique: null, type_client: 'assujetti', nature_operation: 'services', date_prestation: emission,
+  source_de_la_vente: true, created_by: 'u1', valide_par: 'u1',
+  created_at: `${emission}T09:00:00Z`, validated_at: `${emission}T09:10:00Z`,
+})
+const FACTURES_D12: FactureEmise[] = [
+  factureD12('fb1', 'F2026-0021', '2026-09-10', 'Cabinet Durand & Associés, experts en organisation'),
+  factureD12('fb2', 'F2026-0022', '2026-09-14', 'SARL Horizon Logistique du Grand Sud-Ouest'),
+  factureD12('fb3', 'F2026-0023', '2026-09-18', 'Association Les Tilleuls du Plateau'),
+]
+const LIGNES_DES_FACTURES_D12: FactureLigne[] = Object.entries(LIGNES_D12).flatMap(([id, lignes]) => lignesDeFacture(id, lignes))
+const ENCAISSEMENTS_D12: EncaissementFacture[] = [
+  encaissementDuBanc({
+    id: 'eb1', dossier_id: 'd12', facture_id: 'fb1', date_encaissement: '2026-09-21', montant: 600, ligne_bancaire_id: 'b1',
+    cree_le: '2026-09-21T10:00:00Z',
+  }),
+  // Enregistré par la cliente (son accès, plus bas), le virement désigné : « proposé par le client ».
+  encaissementDuBanc({
+    id: 'eb2', dossier_id: 'd12', facture_id: 'fb2', date_encaissement: '2026-09-28', montant: 480, ligne_bancaire_id: 'b2',
+    cree_par: 'u-clara', cree_le: '2026-09-28T18:20:00Z',
+  }),
+  encaissementDuBanc({
+    id: 'eb3', dossier_id: 'd12', facture_id: 'fb3', date_encaissement: '2026-10-05', montant: 300, moyen: 'cheque',
+    cree_le: '2026-10-05T09:00:00Z',
+  }),
+]
+const PARTS_D12: EncaissementFactureTaux[] = ENCAISSEMENTS_D12.map((e) => ({ encaissement_id: e.id, dossier_id: 'd12', taux: 20, montant: e.montant }))
+const RELEVE_D12: Ligne[] = [
+  mouvementDe('d12', 'b1', '2026-09-21', 'VIR SEPA CABINET DURAND ET ASSOCIES REGLEMENT FACTURE F2026-0021', 598.5, 'rapprochee', {
+    encaissements_de_factures: true,
+  }),
+  mouvementDe('d12', 'b2', '2026-09-28', 'VIR SEPA SARL HORIZON LOGISTIQUE DU GRAND SUD OUEST F2026-0022', 480, 'non_rapprochee'),
+  mouvementDe('d12', 'b3', '2026-09-30', 'FRAIS TENUE DE COMPTE', -8.5, 'non_rapprochee'),
+  mouvementDe('d12', 'b4', '2026-09-15', 'PRLV SEPA TELEPHONIE PRO', -36, 'non_rapprochee'),
+]
+
 const pieceEreporting = (o: Ligne): Ligne => ({
   ...piece('p-er', '2027-10-05', 'Editeur Logiciel', 120, 0, 'c8', 'a_valider'),
   dossier_id: 'd7', storage_path: 'd7/er.pdf', nom_fichier: 'er.pdf', ...o,
@@ -1701,6 +1767,8 @@ const TABLES: Record<string, Ligne[]> = {
     ...(CLIENT_DU_BANC && VENTES_DU_BANC
       ? [{ id: 'm-u1-d7', user_id: 'u1', dossier_id: 'd7', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: VENTES_DU_BANC === 'banque', created_at: '2026-01-05T09:00:00Z' }]
       : []),
+    // La titulaire du dossier basculé (d12), « Ventes » et « Banque » : l'onglet Banque la reconnaît comme « le client ».
+    { id: 'm-clara-d12', user_id: 'u-clara', dossier_id: 'd12', role: 'client', email: 'clara.fontaine@exemple-fictif.fr', droit_ventes: true, droit_banque: true, created_at: '2026-01-07T09:00:00Z' },
   ],
   notes_internes: NOTES_INTERNES,
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
@@ -1919,6 +1987,7 @@ const TABLES: Record<string, Ligne[]> = {
     ...SOURCES_D9.lignes,
     ...SOURCES_D10.lignes,
     ...BANQUE_DU_CLIENT_D7.lignes,
+    ...RELEVE_D12,
   ],
   justificatifs_proposes: [...BANQUE_DU_CLIENT_D7.propositions, ...ENVOIS_DU_CLIENT_D1.propositions],
   precisions_mouvements: [...BANQUE_DU_CLIENT_D7.precisions, ...ENVOIS_DU_CLIENT_D1.precisions],
@@ -1934,13 +2003,16 @@ const TABLES: Record<string, Ligne[]> = {
   // typées sur l'application, rendues au faux client en lignes nues.
   // Puis F2026-0008, acceptée par la plateforme de l'atelier, et la déclaration de ses encaissements (étape d4).
   // Puis F2026-0009, refusée par l'acheteur sur la plateforme du client, et les statuts lus de l'atelier (étape d7).
-  factures_emises: [...FACTURES_D1, ...FACTURES_D7, FACTURE_F8, FACTURE_F9, FACTURE_E1].map((f) => ({ ...f })),
-  facture_lignes: [...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7, ...LIGNES_DE_F8, ...LIGNES_DE_F9, ...lignesDeFacture(ER.V1, LIGNES_E1)].map((l) => ({ ...l })),
+  factures_emises: [...FACTURES_D1, ...FACTURES_D7, FACTURE_F8, FACTURE_F9, FACTURE_E1, ...FACTURES_D12].map((f) => ({ ...f })),
+  facture_lignes: [
+    ...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7, ...LIGNES_DE_F8, ...LIGNES_DE_F9, ...lignesDeFacture(ER.V1, LIGNES_E1),
+    ...LIGNES_DES_FACTURES_D12,
+  ].map((l) => ({ ...l })),
   statuts_factures_recus: STATUTS_D7.map((s) => ({ ...s })),
   transmissions_factures: [...TRANSMISSIONS_D1, ...TRANSMISSIONS_D7].map((t) => ({ ...t })),
   facture_superpdp_events: EVENEMENTS_SUPERPDP_D1.map((e) => ({ ...e })),
-  encaissements_factures: [...ENCAISSEMENTS_D7, ...ENCAISSEMENTS_F8, ENCAISSEMENT_E1, ENCAISSEMENT_A3].map((e) => ({ ...e })),
-  encaissements_factures_taux: [...PARTS_D7, ...PARTS_F8, PART_E1, PART_A3].map((p) => ({ ...p })),
+  encaissements_factures: [...ENCAISSEMENTS_D7, ...ENCAISSEMENTS_F8, ENCAISSEMENT_E1, ENCAISSEMENT_A3, ...ENCAISSEMENTS_D12].map((e) => ({ ...e })),
+  encaissements_factures_taux: [...PARTS_D7, ...PARTS_F8, PART_E1, PART_A3, ...PARTS_D12].map((p) => ({ ...p })),
   transmissions_encaissements: DECLARATIONS_ENCAISSEMENTS_D7.map((d) => ({ ...d })),
   dossier_permanent: DOSSIER_PERMANENT_D9.map((e) => ({ ...e })),
   // Les pièces jointes que la réception par e-mail a écartées pour le cabinet infirmier (ligne 22.7) : un format refusé et

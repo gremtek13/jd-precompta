@@ -1285,8 +1285,9 @@ export function propositionsEncaissement(
 // validation (lib/sourceDeLaVente.ts), RÉSERVENT à ses encaissements le mouvement qui les justifie (G2), le font CLASSER par
 // eux, par le cabinet seul (G1), et donnent aux fonctions des encaissements leurs refus neufs (ci-dessus, `venteFacturee`).
 // Cette section dit, AVANT le clic, dans l'ordre de la base et sous ses mots, l'accès excepté, ce que refusent les trois
-// fonctions neuves du cabinet et la garde des mouvements ; aucun écran ne les lit encore (la fenêtre des encaissements et
-// la fiche d'un mouvement, étape VF5). Aucun dossier n'a basculé (étape VF8) : aucune facture n'est source, et ces refus
+// fonctions neuves du cabinet et la garde des mouvements. Depuis l'étape VF5a1, l'onglet Banque lit la garde
+// (`refusDuClassementDuReleve`, par lib/mouvementsDesVentes.ts) ; les gestes du cabinet et la fenêtre des encaissements
+// suivent (VF5b à VF5d). Aucun dossier n'a basculé (étape VF8) : aucune facture n'est source, et ces refus
 // ne se rencontrent pas encore. encaissementsFactures.test.ts confronte chaque liste au texte de sa fonction, codes
 // compris, et supabase/essais/ventesFacturees.sql éprouve chaque refus en base.
 
@@ -1353,6 +1354,11 @@ function creditesDesAvoirs(factureId: string, lignes: readonly LigneDeFacture[],
 // en ISO dans un même fuseau : octet par octet — jamais `localeCompare`, qui range la ponctuation autrement.
 function ordreC(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
+}
+
+/** L'ordre de la garde des mouvements : par la création, puis l'identifiant, octet par octet. */
+export function ordreDesEncaissements(a: Pick<EncaissementDuReleve, 'cree_le' | 'id'>, b: Pick<EncaissementDuReleve, 'cree_le' | 'id'>): number {
+  return ordreC(a.cree_le, b.cree_le) || ordreC(a.id, b.id)
 }
 
 /** Une liste de refus d'une fonction ou d'une garde, avec le code de chacun (`using errcode`). */
@@ -1558,12 +1564,24 @@ export function refusRattachement(
   return null
 }
 
-// Ce que les encaissements de factures SOURCES non retirés qui le justifient portent sur un mouvement, en centimes, et
-// s'il en est au moins un — les encaissements des factures qui ne sont pas sources n'y comptent pas : leurs ventes se
-// comptent par leurs pièces.
-function porteDesSources(mouvementId: string, encaissements: readonly EncaissementLu[], vente: Pick<ContexteVente, 'factures'>) {
-  const justifies = encaissements.filter((x) => x.ligne_bancaire_id === mouvementId && compte(x)
+/**
+ * Les encaissements — contre-passations comprises — de factures SOURCES, non retirés, qui citent ce mouvement et le
+ * justifient : ceux que la garde G2 regarde pour le dire réservé, et que le classement compte (étape VF5a1 : le relevé les
+ * nomme, lib/mouvementsDesVentes.ts). Les encaissements des factures qui ne sont pas sources n'y sont pas : leurs ventes
+ * se comptent par leurs pièces. Dans l'ordre de la liste reçue.
+ */
+export function encaissementsDuMouvement<E extends EncaissementLu>(
+  mouvementId: string,
+  encaissements: readonly E[],
+  vente: Pick<ContexteVente, 'factures'>,
+): E[] {
+  return encaissements.filter((x) => x.ligne_bancaire_id === mouvementId && compte(x)
     && factureSource(x.facture_id, vente) && justifieSonMouvement(x, encaissements))
+}
+
+// Ce que ces encaissements portent sur un mouvement, en centimes, et s'il en est au moins un.
+function porteDesSources(mouvementId: string, encaissements: readonly EncaissementLu[], vente: Pick<ContexteVente, 'factures'>) {
+  const justifies = encaissementsDuMouvement(mouvementId, encaissements, vente)
   return { aucun: justifies.length === 0, centimes: justifies.reduce((somme, x) => somme + centimes(x.montant), 0) }
 }
 
@@ -1639,10 +1657,7 @@ export function refusDuClassementDuReleve(
   vente: Pick<ContexteVente, 'factures'>,
 ): RefusEncaissement<CleRefusGardeMouvements> | null {
   if (mouvement.encaissements_de_factures) return refusDe(REFUS_GARDE_MOUVEMENTS, 'classe_par_ses_encaissements')
-  const premier = encaissements
-    .filter((x) => x.ligne_bancaire_id === mouvement.id && compte(x) && factureSource(x.facture_id, vente)
-      && justifieSonMouvement(x, encaissements))
-    .sort((a, b) => ordreC(a.cree_le, b.cree_le) || ordreC(a.id, b.id))[0]
+  const premier = encaissementsDuMouvement(mouvement.id, encaissements, vente).sort(ordreDesEncaissements)[0]
   if (!premier) return null
   // Une facture validée porte toujours son numéro (`factures_emises_figees`) ; un `%` nul, `raise` l'écrirait `<NULL>`.
   const numero = vente.factures.find((f) => f.id === premier.facture_id)?.numero ?? '<NULL>'

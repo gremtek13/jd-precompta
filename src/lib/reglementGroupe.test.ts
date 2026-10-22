@@ -222,8 +222,8 @@ describe('les autres classements refusent un mouvement réglé en groupe', () =>
   })
 
   it('ne le dit pas « rapproché sans justificatif » : ses pièces sont dans ses parts', () => {
-    expect(mouvementRapprocheSansObjet(groupe)).toBe(false)
-    expect(mouvementRapprocheSansObjet({ ...groupe, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null })).toBe(true)
+    expect(mouvementRapprocheSansObjet({ ...groupe, encaissements_de_factures: false })).toBe(false)
+    expect(mouvementRapprocheSansObjet({ ...groupe, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, encaissements_de_factures: false })).toBe(true)
   })
 })
 

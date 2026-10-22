@@ -375,7 +375,12 @@ export default function DossierDetail() {
               />
             )}
             {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
-            {tab === 'banque' && modele && <BanqueTab dossierId={id} modele={modele} assujettiTva={dossier?.assujetti_tva ?? false} />}
+            {tab === 'banque' && modele && (
+              <BanqueTab
+                dossierId={id} modele={modele} assujettiTva={dossier?.assujetti_tva ?? false}
+                ventesParLesFactures={dossier?.ventes_par_les_factures === true}
+              />
+            )}
             {tab === 'documents' && <DocumentsTab dossierId={id} />}
             {tab === 'ecritures' && modele && (
               <EcrituresTab

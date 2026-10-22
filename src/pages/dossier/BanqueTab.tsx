@@ -60,6 +60,10 @@ import {
 } from '../../lib/banqueCabinet'
 import { lireLesAccesDuReleve, lireLesEnvoisDuClient } from '../../lib/banqueCabinetLecture'
 import { argumentsDeLaPrecision, argumentsDeRetirer } from '../../lib/banqueClient'
+import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
+import {
+  PASTILLE_CLASSE, pastilleDeVente, retenueDuReleve, venteDuMouvement, ventesDuReleve,
+} from '../../lib/mouvementsDesVentes'
 
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
@@ -91,8 +95,11 @@ const REMBOURSEMENT_D_UNE_NOTE_FIGEE = 'Une note de frais du même montant, d’
 // tiers contre la banque —, et l'annuler retire ce règlement-là et lui seul.
 // `assujettiTva` : une recette sans facture ne s'affecte pas sur un dossier assujetti, sa TVA ne se
 // lisant pas sur un relevé (lib/affectationBanque.ts).
-export default function BanqueTab({ dossierId, modele, assujettiTva }: {
-  dossierId: string; modele: ModeleComptable; assujettiTva: boolean
+// `ventesParLesFactures` : le réglage du dossier (`dossiers.ventes_par_les_factures`, chantier EC-Q3), sans valeur par défaut.
+// Basculé, l'onglet lit ses ventes facturées avec le relevé et reconnaît les mouvements qu'elles classent ou réservent
+// (étape VF5a1, lib/mouvementsDesVentes.ts) ; sinon il ne lit rien de plus et ne change en rien.
+export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLesFactures }: {
+  dossierId: string; modele: ModeleComptable; assujettiTva: boolean; ventesParLesFactures: boolean
 }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   // Ce que le rapprochement écrit au brouillon, nommé comme le modèle le nomme dans les messages.
@@ -186,11 +193,18 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   const [accesDuReleve, setAccesDuReleve] = useState<AccesDuReleve>(ACCES_DU_RELEVE_EN_COURS)
   // La case « Proposés par le client » : une préférence d'AFFICHAGE, qui ne vaut que sur des envois lus en entier.
   const [filtreProposes, setFiltreProposes] = useState(false)
+  // LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5a1 ; lib/mouvementsDesVentes.ts) :
+  // la lecture de l'onglet Écritures (lib/ecrituresVentesFactureesLecture.ts, tout ou rien), faite dans la même relecture que
+  // le relevé, et remise « pas encore revenue » à CHAQUE lecture. Elle dit quels mouvements ses encaissements classent ou
+  // réservent (la garde G2) ; pas encore revenue, incomplète ou d'un autre dossier, l'onglet ne le sait pas : la fiche d'un
+  // mouvement n'offre aucun geste, et les lots sont retenus. Nulle, et jamais lue, pour un dossier qui n'a pas basculé.
+  const [lectureVentes, setLectureVentes] = useState<LectureSourcesDesEcrituresDeVente | null>(null)
 
   async function load() {
     setLoading(true)
     setEnvoisDuClient(ENVOIS_EN_COURS)
     setAccesDuReleve(ACCES_DU_RELEVE_EN_COURS)
+    setLectureVentes(null)
     // Lue par tranches, triée sur un ordre TOTAL (`date` n'est pas unique) : PostgREST plafonne le
     // nombre de lignes rendues sans le signaler, et c'est la plus grosse table du projet — le total
     // non rapproché, le contrôle de solde et tout le rapprochement porteraient alors sur une partie
@@ -202,6 +216,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     )
     const lignesData = lecture.lignes
     setLignesIncompletes(lecture.complete ? null : lecture.motif)
+    // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
+    const lectureDesVentes = ventesParLesFactures ? await lireLesSourcesDesEcrituresDeVente(dossierId) : null
 
     // Les pièces encore à valider sont chargées elles aussi : c'est justement sur elles que porte
     // l'appariement certain (voir lib/appariementBanque.ts), qui sert à les valider plutôt qu'à
@@ -312,12 +328,21 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     setRelevesIncoherents(controles)
     setEnvoisDuClient(envois)
     setAccesDuReleve(accesLus)
+    setLectureVentes(lectureDesVentes)
     setLoading(false)
   }
 
   useEffect(() => {
     load()
-  }, [dossierId])
+  }, [dossierId, ventesParLesFactures])
+
+  // Ce que l'onglet sait des ventes facturées de son relevé, et ce qui retient alors tout geste et tout lot (nul : rien).
+  const ventes = useMemo(
+    () => ventesDuReleve(ventesParLesFactures, dossierId, lectureVentes, accesDuReleve.acces),
+    [ventesParLesFactures, dossierId, lectureVentes, accesDuReleve],
+  )
+  const ventesRetenues = retenueDuReleve(ventes)
+  const venteDe = (id: string) => (ventes.etat === 'lue' ? ventes.mouvements.get(id) ?? null : null)
 
   // Les propositions ligne à ligne et le bouton « tout rapprocher » historiques ne portent que sur
   // des pièces déjà relues par le cabinet : rapprocher sur de l'OCR non validé reviendrait à écrire
@@ -1056,9 +1081,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // Les parts des règlements groupés en font partie : une pièce payée par une part non lue paraîtrait seule
   // candidate, et le lot la rapprocherait d'un second mouvement.
   // En trésorerie, les pièces figées aussi : une pièce figée qu'on n'a pas lue comme telle paraîtrait seule candidate.
+  // Et les ventes facturées d'un dossier basculé (étape VF5a1) : sans elles, un mouvement réservé à l'encaissement d'une
+  // facture paraît à rapprocher, et la base refuserait le lot entier (G2).
   const lotAutomatiqueSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes ?? reglementsIncomplets
-    ?? (modele.mode === 'tresorerie' ? piecesFigees.motif : null)
-  const lotCertainSuspendu = lignesIncompletes ?? piecesIncompletes ?? reglementsIncomplets
+    ?? (modele.mode === 'tresorerie' ? piecesFigees.motif : null) ?? ventesRetenues
+  const lotCertainSuspendu = lignesIncompletes ?? piecesIncompletes ?? reglementsIncomplets ?? ventesRetenues
   // ET UNE LECTURE PAS ENCORE REVENUE NON PLUS. Pendant une relecture — celle qui suit l'import d'un relevé, le retrait
   // d'une règle —, les deux lots restent à l'écran sur le plan d'AVANT : un mouvement tout juste importé, jumeau de
   // celui que le plan rapproche, n'y est pas encore, et la pièce y paraît seule candidate. Ils attendent la fin de la
@@ -1109,7 +1136,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // précise aurait changé la catégorie), un emprunt ou une déclaration de TVA non lus (un prélèvement qui
   // les paie paraîtrait à affecter). Une lecture partielle ne commande pas d'écriture.
   const lotReglesSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes
-    ?? categoriesIncompletes ?? reglesAffectationIncompletes ?? empruntsIncomplets ?? declarationsTvaIncompletes
+    ?? categoriesIncompletes ?? reglesAffectationIncompletes ?? empruntsIncomplets ?? declarationsTvaIncompletes ?? ventesRetenues
   const [affectationLotEnCours, setAffectationLotEnCours] = useState(false)
   const [progressionLot, setProgressionLot] = useState<string | null>(null)
 
@@ -1382,6 +1409,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         consequence={
           'Une facture qu’un lettrage solde avec son avoir peut donc paraître sans mouvement bancaire, et son montant ' +
           'introuvable dans le relevé. Recharge la page.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les ventes facturées du dossier"
+        motif={ventes.etat === 'incomplete' ? ventes.motif : null}
+        consequence={
+          'Un mouvement réservé à l’encaissement d’une facture, ou classé par ses encaissements, ne se reconnaît donc pas : la ' +
+          'fiche d’un mouvement n’offre aucun geste, et les rapprochements et l’affectation en lot sont suspendus. Recharge la page.'
         }
       />
       <BandeauLecturePartielle
@@ -1897,6 +1932,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                     : null
                   const aUneSuggestion = l.statut === 'non_rapprochee' && (!!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
                     || idsProposesParRegle.has(l.id) || idsEmpruntPlausible.has(l.id) || idsPaiementTvaPlausible.has(l.id))
+                  // Classé par ses encaissements de factures, ou réservé à eux (étape VF5a1) : sa pastille le dit, avec ses factures.
+                  const vente = venteDe(l.id)
+                  const pastilleVente = vente ? pastilleDeVente(vente) : null
                   return (
                     <tr
                       key={l.id}
@@ -1962,7 +2000,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                               {declarationPayee(l) ? ` — ${declarationPayee(l)}` : ''}
                             </span>
                           )}
-                          {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !l.reglement_groupe && !l.compte_bilan && !l.declaration_tva_id && !mouvementRapprocheSansObjet(l) && (
+                          {/* Classé par ses encaissements de factures, ou réservé à eux : ses factures, pas un « Rapproché » nu. Classé
+                              sans que ses ventes soient lues, la ligne le dit d'elle-même, sans les numéros. */}
+                          {pastilleVente && (
+                            <span className={`badge ${pastilleVente.ton === 'ok' ? 'badge-ok' : 'badge-warning'}`} title={pastilleVente.titre ?? undefined}>
+                              {pastilleVente.texte}
+                            </span>
+                          )}
+                          {!pastilleVente && l.encaissements_de_factures && <span className="badge badge-ok">{PASTILLE_CLASSE}</span>}
+                          {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !l.reglement_groupe && !l.compte_bilan && !l.declaration_tva_id && !l.encaissements_de_factures && !mouvementRapprocheSansObjet(l) && (
                             <span className="badge badge-ok">
                               Rapproché
                               {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
@@ -1978,7 +2024,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                               seule chose qui le dirait est le déséquilibre des écritures, qui n'existe
                               pas tant qu'elles n'ont pas été générées. Jugé sur le total payé de la pièce. */}
                           {pastillesPaiement.map((texte) => <span key={texte} className="badge badge-danger">{texte}</span>)}
-                          {!l.prelevement_personnel && l.statut === 'non_rapprochee' && (
+                          {!l.prelevement_personnel && l.statut === 'non_rapprochee' && vente?.etat !== 'reserve' && (
                             <span className="badge badge-warning">Non rapproché{aUneSuggestion ? ' · suggestion' : ''}</span>
                           )}
                           {!l.prelevement_personnel && l.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
@@ -2004,6 +2050,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             ligne={ligneOuverte}
             plan={modele.plan}
             figeePar={dateFigee(ligneOuverte.date, anneesValidees)}
+            venteDuMouvement={venteDuMouvement(ventes, ligneOuverte)}
             pieces={pieces}
             piecesValidees={piecesValidees}
             cotisations={cotisations}

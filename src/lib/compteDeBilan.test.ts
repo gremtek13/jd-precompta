@@ -370,7 +370,7 @@ describe('les autres classements refusent un mouvement écrit sur un compte de b
 
 describe('un mouvement écrit sur un compte de bilan est justifié par le relevé', () => {
   it('son écriture sans pièce n’est pas une rupture, et il n’est pas « rapproché sans justificatif »', () => {
-    const ecrit = { ...mouvement({ statut: 'rapprochee', compte_bilan: COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES }), cotisation_id: null }
+    const ecrit = { ...mouvement({ statut: 'rapprochee', compte_bilan: COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES }), cotisation_id: null, encaissements_de_factures: false }
     expect(mouvementJustifieParLeReleve(ecrit)).toBe(true)
     expect(mouvementRapprocheSansObjet(ecrit)).toBe(false)
     // Le garde symétrique : remis à traiter, il ne l'est plus.

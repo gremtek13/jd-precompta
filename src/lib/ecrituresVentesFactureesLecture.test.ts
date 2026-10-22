@@ -83,7 +83,8 @@ const ligne = (o: Partial<LigneDeFacture & { id: string }> = {}) => ({
 })
 const encaissement = (o: Partial<EncaissementDesEcritures> = {}): EncaissementDesEcritures => ({
   id: 'e1', dossier_id: 'd1', facture_id: 'f1', date_encaissement: '2027-02-01', montant: 120, moyen: 'compensation',
-  ligne_bancaire_id: null, annule_id: null, cree_le: '2027-02-01T10:00:00Z', retire_le: null, compte_contrepartie: '467100', ...o,
+  ligne_bancaire_id: null, annule_id: null, cree_le: '2027-02-01T10:00:00Z', retire_le: null, compte_contrepartie: '467100',
+  cree_par: null, ...o,
 })
 const part = (o: Partial<PartVendue> = {}): PartVendue => ({ encaissement_id: 'e1', dossier_id: 'd1', taux: 20, montant: 120, ...o })
 const mouvement = (o: Partial<MouvementDesEcritures> = {}): MouvementDesEcritures => ({
@@ -152,7 +153,7 @@ describe('lireLesSourcesDesEcrituresDeVente', () => {
     expect(faux.demandes).toEqual([
       'factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, montant_ttc',
       'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id, source_de_la_vente)',
-      'encaissements_factures: id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le, compte_contrepartie',
+      'encaissements_factures: id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le, compte_contrepartie, cree_par',
       'encaissements_factures_taux: encaissement_id, dossier_id, taux, montant',
       'lignes_bancaires: id, dossier_id, date, montant, libelle, source_fichier, encaissements_de_factures, statut, piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, ventilee, reglement_groupe, prelevement_personnel',
     ])
