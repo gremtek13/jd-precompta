@@ -418,6 +418,44 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
   return { dossierId, ecritures, nonEcrites, ventes }
 }
 
+// ── Les frais d'un mouvement d'encaissements, tels que la composition les écrit (VF4C3-Q1) ─────────────────────────────
+
+/** Les frais qu'un mouvement d'encaissements porte au compte des services bancaires, lus dans son écriture composée. */
+export interface FraisDUnMouvement {
+  ligneBancaireId: string
+  /** La date du mouvement : celle de son écriture, et celle où la 2035 compte la dépense (CGI, art. 93, 1). */
+  date: string
+  /** Le libellé du mouvement, celui de son écriture. */
+  libelle: string
+  /** Le compte des services bancaires du plan, tel que l'écriture le porte. */
+  compte: string
+  /** Signés comme une charge : positifs au débit. La composition ne compose jamais un écart négatif. */
+  centimes: number
+}
+
+/**
+ * LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS, LUS DANS LA SORTIE DE LA COMPOSITION, jamais recalculés : les lignes que
+ * l'écriture d'un mouvement (`genre: 'mouvement'`) porte au compte des services bancaires du plan. Un mouvement que la
+ * composition n'écrit pas (pas encore classé, un écart hors du seuil des frais, une facture non source ou écartée, un
+ * montant illisible) n'a pas d'écriture, donc pas de frais ; un mouvement sans écart non plus. La 2035 les compte ainsi
+ * (lib/declaration2035.ts) : la dépense qu'elle déclare est, au centime, la ligne que l'onglet Écritures passe — et la
+ * concordance les rapproche par le mouvement. `plan` : celui de la composition, le plan du dossier.
+ */
+export function fraisDesMouvements(
+  composition: Pick<EcrituresDesVentesFacturees, 'ecritures'>, plan: Pick<PlanComptable, 'services_bancaires'>,
+): FraisDUnMouvement[] {
+  const frais: FraisDUnMouvement[] = []
+  for (const e of composition.ecritures) {
+    if (e.source.genre !== 'mouvement') continue
+    const centimes = e.lignes
+      .filter((l) => l.compte === plan.services_bancaires)
+      .reduce((s, l) => s + (l.sens === 'debit' ? l.centimes : -l.centimes), 0)
+    if (centimes === 0) continue
+    frais.push({ ligneBancaireId: e.source.ligneBancaireId, date: e.date, libelle: e.libelle, compte: plan.services_bancaires, centimes })
+  }
+  return frais
+}
+
 // ── Ce que la base écrira, et ce qu'elle comparera (VF4b) ─────────────────────────────────────────────────────────────
 
 /** Une ligne de `ecritures_brouillon` telle que la fonction de VF4b l'écrira : proposée, sans pièce, liée à sa source. */

@@ -267,7 +267,7 @@ const ECRANS: Ecran[] = [
     <Dossier1><ChecklistTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'ClotureTab', fichier: 'pages/dossier/ClotureTab.tsx', rendre: () => (
-    <Dossier1><ClotureTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" modele={TRESORERIE} onNavigate={rien} /></Dossier1>
+    <Dossier1><ClotureTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'ConnexionBancaireCard', fichier: 'pages/dossier/ConnexionBancaireCard.tsx', rendre: () => (
     <Dossier1><ConnexionBancaireCard dossierId="d1" lignes={[]} regles={[]} suspension={null} lectureEnCours={false} frontiere={null} onImported={rien} /></Dossier1>
@@ -367,7 +367,7 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'RevisionTab', fichier: 'pages/dossier/RevisionTab.tsx', rendre: () => (
     <Dossier1>
-      <RevisionTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} onNavigate={rien} />
+      <RevisionTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} ventesParLesFactures={false} onNavigate={rien} />
     </Dossier1>
   ) },
   { nom: 'StatistiquesTab (trésorerie)', fichier: 'pages/dossier/StatistiquesTab.tsx', rendre: () => (
@@ -687,7 +687,7 @@ describe('le dossier permanent n’offre aucun geste avant que sa lecture soit r
           <FournisseurPanneauDroit>
             <ExercicesValidesProvider exercices={[]} relire={async () => {}}>
               <AnneeProvider defaut="toutes">
-                <RevisionTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} onNavigate={rien} />
+                <RevisionTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} ventesParLesFactures={false} onNavigate={rien} />
               </AnneeProvider>
             </ExercicesValidesProvider>
             <EmplacementPanneauDroit />

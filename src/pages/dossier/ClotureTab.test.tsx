@@ -211,10 +211,12 @@ function poser(
   }
 }
 
-function monter(annee = 2025, assujettiTva = true) {
+// `ventesParLesFactures` : le réglage du dossier. Un dossier qui compte une facture source a basculé — la base l'impose — :
+// les tests des ventes facturées le montent basculé.
+function monter(annee = 2025, assujettiTva = true, ventesParLesFactures = false) {
   return render(
     <ContexteDossier annee={annee}>
-      <ClotureTab dossierId="dossier-de-test" assujettiTva={assujettiTva} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+      <ClotureTab dossierId="dossier-de-test" assujettiTva={assujettiTva} periodiciteTva="trimestrielle" ventesParLesFactures={ventesParLesFactures} modele={TRESORERIE} />
     </ContexteDossier>,
   )
 }
@@ -282,7 +284,7 @@ describe("ClotureTab — l'exercice du paiement", () => {
     poserDecembre(true)
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} />
       </ContexteDossier>,
     )
 
@@ -398,7 +400,7 @@ describe('ClotureTab — une échéance de cotisation compte à son prélèvemen
     faux.parTable.pieces = []
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await screen.findByText(/Report sur la déclaration des revenus 2026/)
@@ -587,7 +589,7 @@ describe('ClotureTab — un poste qu’aucune case ne porte', () => {
     const onNavigate = vi.fn()
     render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} onNavigate={onNavigate} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} onNavigate={onNavigate} />
       </ContexteDossier>,
     )
     const titre = await screen.findByRole('heading', { name: 'Postes sans case du formulaire (1)' })
@@ -1169,7 +1171,7 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
   function monterEngagement() {
     return render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={ENGAGEMENT} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={ENGAGEMENT} />
       </ContexteDossier>,
     )
   }
@@ -1235,7 +1237,7 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
     }]
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={ENGAGEMENT} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={ENGAGEMENT} />
       </ContexteDossier>,
     )
     await screen.findByText('Exercice 2025')
@@ -1307,7 +1309,7 @@ describe('ClotureTab — les mouvements du relevé affectés sans justificatif',
     faux.parTable.lignes_bancaires = [mouvement({ date: '2026-02-10' })]
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await screen.findByText(/Report sur la déclaration des revenus 2026/)
@@ -1708,7 +1710,7 @@ describe('ClotureTab — la concordance de la 2035 avec les écritures', () => {
     poserSansCotisation()
     render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={ENGAGEMENT} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={ENGAGEMENT} />
       </ContexteDossier>,
     )
     await screen.findByText(/La 2035 n’est pas produite pour ce dossier/)
@@ -1821,7 +1823,7 @@ describe('ClotureTab — valider l’exercice', () => {
   const monterAvec = (onNavigate = vi.fn()) => {
     render(
       <ContexteDossier annee={2025} relire={relirePage}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={TRESORERIE} onNavigate={onNavigate} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} onNavigate={onNavigate} />
       </ContexteDossier>,
     )
     return onNavigate
@@ -1965,7 +1967,7 @@ describe('ClotureTab — valider l’exercice', () => {
     ]
     const { unmount } = render(
       <ContexteDossier annee={2025} relire={relirePage}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await screen.findByText('Sa validation a écrit l’ouverture de l’exercice 2026 : 2 soldes reportés au 01/01/2026, qui ouvrent son FEC (journal AN) et sa balance.')
@@ -2101,7 +2103,7 @@ describe('ClotureTab — valider l’exercice', () => {
     confirmer(true)
     render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={ENGAGEMENT} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={ENGAGEMENT} />
       </ContexteDossier>,
     )
     const c = await carte()
@@ -2258,7 +2260,7 @@ describe('ClotureTab — valider l’exercice', () => {
     faux.parTable.exercices_valides = [{ ...VALIDE_2023, mode_comptable: 'engagement', declaration: null }]
     render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={ENGAGEMENT} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={ENGAGEMENT} />
       </ContexteDossier>,
     )
     const c = await carte()
@@ -2271,7 +2273,7 @@ describe('ClotureTab — valider l’exercice', () => {
     faux.parTable.exercices_valides = [VALIDE_2023]
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await screen.findByText(/^Exercice 2023 validé/)
@@ -2285,7 +2287,7 @@ describe('ClotureTab — valider l’exercice', () => {
     poserTenu()
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await screen.findByRole('heading', { name: 'Valider l’exercice 2025' })
@@ -2438,7 +2440,7 @@ describe('ClotureTab — les ventes facturées', () => {
 
   it('compte l’encaissement de la facture source, et l’exemplaire ne compte plus — il se dit', async () => {
     poserLesVentes()
-    monter(2025)
+    monter(2025, true, true)
     // 1 000 € de recette facturée, 120 € d'achat et 600 € de cotisations : 280 € de bénéfice. Compté deux fois,
     // l'exemplaire en aurait ajouté 1 200 ; compté seul, sans la facture, la 2035 serait en déficit.
     const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
@@ -2480,7 +2482,7 @@ describe('ClotureTab — les ventes facturées', () => {
     faux.parTable.cotisations_declarees = []
     faux.parTable.ecritures_brouillon = [ECRITURE_DE_L_ACHAT, ...brouillonDeLaVente()]
     faux.parTable.a_nouveaux = []
-    monter(2025)
+    monter(2025, true, true)
     const c = await carteDeConcordance()
     c.getByText(/La 2035 se retrouve dans les écritures de l’exercice/)
     expect(c.queryAllByText(/vente facturée/)).toHaveLength(0)
@@ -2493,35 +2495,148 @@ describe('ClotureTab — les ventes facturées', () => {
       ECRITURE_DE_L_ACHAT, ...brouillonDeLaVente().map((l) => (l.compte === '706000' ? { ...l, montant: 900 } : l)),
     ]
     faux.parTable.a_nouveaux = []
-    monter(2025)
+    monter(2025, true, true)
     const c = await carteDeConcordance()
     c.getByText('1 vente facturée à réécrire')
     c.getByText(/elle n’est plus celle que l’encaissement commande, à réécrire depuis la section « Ventes facturées »/)
     c.getByText('Écritures — Ventes facturées')
   })
 
-  it('les frais d’un mouvement que ses encaissements classent : un écart que la carte dit, sans geste', async () => {
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (VF4C3-Q1) : l'encaissement cite le virement du même jour, que la banque crédite
+  // de 1 197 € — 3 € de frais, que l'écriture du mouvement porte au 627000.
+  const MOUVEMENT_A_FRAIS = {
+    id: 'm-vir', dossier_id: 'dossier-de-test', date: '2025-05-10', libelle: 'VIR CLIENT FICTIF', montant: 1197, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: 'releve.csv',
+    libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+    reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2025-05-11T09:00:00Z',
+    encaissements_de_factures: true,
+  }
+  const CATEGORIE_FRAIS = {
+    id: 'cat-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 2, compte_comptable: '627000',
+    poste_2035: 'Frais financiers',
+  }
+  function poserLesFrais(o: { categories?: Record<string, unknown>[]; ecrits?: boolean } = {}) {
     poserLesVentes()
     faux.parTable.cotisations_declarees = []
-    // L'encaissement cite le virement du même jour, que la banque crédite de 1 197 € : 3 € de frais, au 627000.
-    const mouvement = {
-      id: 'm-vir', dossier_id: 'dossier-de-test', date: '2025-05-10', libelle: 'VIR CLIENT FICTIF', montant: 1197, statut: 'rapprochee',
-      piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: 'releve.csv',
-      libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
-      reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2025-05-11T09:00:00Z',
-      encaissements_de_factures: true,
-    }
+    faux.parTable.categories = [CATEGORIE, ...(o.categories ?? [CATEGORIE_FRAIS])]
     const encaissement = { ...ENCAISSEMENT, ligne_bancaire_id: 'm-vir' }
     faux.parTable.encaissements_factures = [encaissement]
-    faux.parTable.lignes_bancaires = [mouvement]
-    faux.parTable.ecritures_brouillon = [ECRITURE_DE_L_ACHAT, ...brouillonDeLaVente({ encaissement, mouvements: [mouvement] })]
+    faux.parTable.lignes_bancaires = [MOUVEMENT_A_FRAIS]
+    faux.parTable.ecritures_brouillon = [
+      ECRITURE_DE_L_ACHAT,
+      ...((o.ecrits ?? true) ? brouillonDeLaVente({ encaissement, mouvements: [MOUVEMENT_A_FRAIS as unknown as MouvementDesEncaissements] }) : []),
+    ]
     faux.parTable.a_nouveaux = []
-    monter(2025)
+  }
+
+  it('les frais d’un mouvement que ses encaissements classent : la 2035 les compte sous le poste de « Frais bancaires », et concorde', async () => {
+    poserLesFrais()
+    monter(2025, true, true)
+    // 1 000 € de recette facturée, 120 € d'achat et 3 € de frais : 877 € de bénéfice.
+    within((await screen.findByText(/Report sur la déclaration des revenus 2025/)).parentElement!).getByText(/Bénéfice de 877 € : case 5QC/)
     const c = await carteDeConcordance()
-    c.getByText('1 frais d’un mouvement d’encaissements')
-    c.getByText(/la 2035 ne les compte pas encore/)
-    c.getByText('Pas encore dans l’application')
-    expect(c.queryAllByText(/vente facturée/)).toHaveLength(0)
+    c.getByText(/La 2035 se retrouve dans les écritures de l’exercice/)
+    expect(screen.queryByText(/Pas encore dans l’application/)).toBeNull()
+    expect(screen.queryByText(/ne les compte pas encore/)).toBeNull()
+    expect(screen.queryByText(/Frais d’encaissements absents du récapitulatif/)).toBeNull()
+  })
+
+  it('la catégorie propre au dossier l’emporte sur la commune du même code', async () => {
+    poserLesFrais({
+      categories: [CATEGORIE_FRAIS, { ...CATEGORIE_FRAIS, id: 'cat-frais-dossier', dossier_id: 'dossier-de-test', poste_2035: 'Autres frais divers de gestion' }],
+    })
+    faux.remplies = []
+    URL.createObjectURL = () => 'blob:formulaire'
+    URL.revokeObjectURL = () => {}
+    const clic = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    monter(2025, true, true)
+    const c = await carteDeConcordance()
+    c.getByText(/La 2035 se retrouve dans les écritures de l’exercice/)
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    await act(async () => { bouton.click() })
+    // Le poste de la catégorie du dossier, « Autres frais divers de gestion », va en case BM ; la commune l'aurait mis en BN.
+    expect(faux.remplies[0].get('BM')).toBe(3)
+    expect(faux.remplies[0].get('BN') ?? 0).toBe(0)
+    expect(clic).toHaveBeenCalledTimes(1)
+    vi.restoreAllMocks()
+  })
+
+  it('pas encore écrits : « à écrire » depuis la section « Ventes facturées »', async () => {
+    poserLesFrais({ ecrits: false })
+    monter(2025, true, true)
+    const c = await carteDeConcordance()
+    c.getByText(/La 2035 compte les frais que la banque a retenus sur ce mouvement d’encaissements/)
+    expect(c.getAllByText('Écritures — Ventes facturées').length).toBeGreaterThan(0)
+  })
+
+  it('sans poste à la catégorie « Frais bancaires » : nulle ligne, une carte qui le dit, et la ligne 627 en écart', async () => {
+    poserLesFrais({ categories: [{ ...CATEGORIE_FRAIS, poste_2035: null }] })
+    faux.superAdmin = false
+    monter(2025, true, true)
+    // Les 3 € ne comptent pas : 880 € de bénéfice.
+    within((await screen.findByText(/Report sur la déclaration des revenus 2025/)).parentElement!).getByText(/Bénéfice de 880 € : case 5QC/)
+    const carteFrais = screen.getByText(/Frais d’encaissements absents du récapitulatif \(1\)/).closest('.card') as HTMLElement
+    within(carteFrais).getByText(/qui n’a pas de poste 2035/)
+    within(carteFrais).getByText(/seul l’administrateur de l’application en règle le poste/)
+    within(carteFrais).getByText('VIR CLIENT FICTIF')
+    // La catégorie rejoint « Postes manquants », où son poste se règle — ici, une catégorie commune : la carte le dit.
+    const postes = screen.getByText('Postes manquants').closest('.card') as HTMLElement
+    within(postes).getByText('Frais bancaires')
+    const c = await carteDeConcordance()
+    c.getByText('1 frais d’encaissements sans poste')
+    c.getByText(/la 2035 les compte sous le poste de la catégorie « Frais bancaires », qui n’en a pas/)
+    c.getByText('Clôture — Postes manquants')
+  })
+
+  // LES SOURCES DES ÉCRITURES D'UN DOSSIER BASCULÉ, lues tout ou rien (VF4C3-Q1). Le relevé lu en partie ferme aussi le
+  // formulaire (`lectureIncomplete`), mais n'empêche pas d'ordinaire la 2035 de s'afficher : basculé, elle ne se calcule plus.
+  it('basculé, les sources de ses écritures lues en partie : le bandeau, et aucune 2035', async () => {
+    poserLesFrais()
+    faux.muetApresParTable = { lignes_bancaires: 0 }
+    monter(2025, true, true)
+    await screen.findByText(/Les ventes facturées du dossier n'ont pas pu être lues en entier \(les mouvements du relevé/)
+    expect(screen.queryByText(/Report sur la déclaration des revenus/)).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Valider l’exercice 2025' })).toBeNull()
+  })
+
+  it('non basculé, le même relevé lu en partie : la 2035 s’affiche, son formulaire refusé — comme hier', async () => {
+    poser()
+    faux.muetApresParTable = { lignes_bancaires: 0 }
+    monter(2025, true, false)
+    await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    expect(screen.queryByText(/Les ventes facturées du dossier n'ont pas pu être lues en entier/)).toBeNull()
+  })
+
+  it('une facture source dans un dossier qui ne se dit pas basculé : les lectures ne se tiennent pas, aucune 2035', async () => {
+    poserLesVentes()
+    monter(2025, true, false)
+    await screen.findByText(/les ventes facturées comptent une facture source alors que le dossier ne se dit pas basculé/)
+    expect(screen.queryByText(/Report sur la déclaration des revenus/)).toBeNull()
+  })
+
+  // Un exercice qui n'a que les frais d'un mouvement d'encaissements se propose comme un autre, toutes années affichées : un
+  // chèque encaissé le 31 décembre, que la banque crédite le 2 janvier de 2 € de moins.
+  it('propose l’exercice que seuls les frais d’un mouvement d’encaissements touchent, toutes années affichées', async () => {
+    poserLesFrais({ ecrits: false })
+    faux.parTable.pieces = []
+    const encaissement = { ...ENCAISSEMENT, date_encaissement: '2025-12-31', cree_le: '2025-12-31T10:00:00Z', moyen: 'cheque', ligne_bancaire_id: 'm-vir' }
+    faux.parTable.encaissements_factures = [encaissement]
+    faux.parTable.lignes_bancaires = [{ ...MOUVEMENT_A_FRAIS, date: '2026-01-02', montant: 1198 }]
+    render(
+      <ContexteDossier annee="toutes">
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={true} modele={TRESORERIE} />
+      </ContexteDossier>,
+    )
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2026/)
+    within(titre.parentElement!).getByText(/Déficit de 2 € : case 5QE/)
+  })
+
+  it('le dossier n’a aucune catégorie « Frais bancaires » : la carte le dit', async () => {
+    poserLesFrais({ categories: [] })
+    monter(2025, true, true)
+    await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    const carteFrais = screen.getByText(/Frais d’encaissements absents du récapitulatif \(1\)/).closest('.card') as HTMLElement
+    within(carteFrais).getByText(/que le dossier n’a pas/)
   })
 
   it('dit les ventes écartées et les excédents, une ligne chacun, et se tait sans eux', async () => {
@@ -2533,7 +2648,7 @@ describe('ClotureTab — les ventes facturées', () => {
       { ...FACTURE_SOURCE, id: 'av', type: 'avoir', numero: 'A2025-0001', facture_origine_id: 'fs', date_emission: '2025-06-01' },
     ]
     faux.parTable.facture_lignes = [LIGNE_FS, { ...LIGNE_FS, id: 'lav', facture_id: 'av', prix_unitaire_ht: 100, quantite: -1 }]
-    monter(2025)
+    monter(2025, true, true)
     const ecartees = await screen.findByText(/Ventes facturées que la 2035 ne compte pas \(1\)/)
     expect(ecartees.textContent).toContain("F2025-0043 (CLIENT SANS LIGNE) — la facture n'a aucune ligne")
     const excedents = screen.getByText(/Ventes facturées encaissées au-delà de la facture nette de ses avoirs \(1\)/)
@@ -2549,7 +2664,7 @@ describe('ClotureTab — les ventes facturées', () => {
     faux.parTable.encaissements_factures = [{ ...ENCAISSEMENT, date_encaissement: '2027-02-10', cree_le: '2027-02-10T10:00:00Z' }]
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={true} modele={TRESORERIE} />
       </ContexteDossier>,
     )
     const titre = await screen.findByText(/Report sur la déclaration des revenus 2027/)
@@ -2558,7 +2673,7 @@ describe('ClotureTab — les ventes facturées', () => {
 
   it('sans vente facturée, aucune des trois lignes', async () => {
     poser()
-    monter(2025)
+    monter(2025, true, true)
     await screen.findByText(/Report sur la déclaration des revenus 2025/)
     for (const ligne of LIGNES_DISCRETES) expect(screen.queryByText(ligne)).toBeNull()
   })
@@ -2569,7 +2684,7 @@ describe('ClotureTab — les ventes facturées', () => {
     async (table) => {
       poserLesVentes()
       faux.muetApresParTable = { [table]: 0 }
-      monter(2025)
+      monter(2025, true, true)
       await screen.findByText(/Les ventes facturées du dossier n'ont pas pu être lues en entier/)
       expect(screen.queryByRole('button', { name: /Remplir le formulaire officiel/ })).toBeNull()
       expect(screen.queryByRole('heading', { name: 'Valider l’exercice 2025' })).toBeNull()
@@ -2583,7 +2698,7 @@ describe('ClotureTab — les ventes facturées', () => {
     poserLesVentes()
     let liberer: () => void = () => {}
     faux.attentes.encaissements_factures_taux = new Promise<void>((r) => { liberer = r })
-    monter(2025)
+    monter(2025, true, true)
     await act(async () => {})
     expect(screen.getAllByText('Chargement…').length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: /Remplir le formulaire officiel/ })).toBeNull()
@@ -2601,7 +2716,7 @@ describe('ClotureTab — les ventes facturées', () => {
     faux.attentes.factures_emises = new Promise<void>((r) => { liberer = r })
     const vue = render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-quitte" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-quitte" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await act(async () => {})
@@ -2609,7 +2724,7 @@ describe('ClotureTab — les ventes facturées', () => {
     faux.attentes = {}
     vue.rerender(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={true} modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })

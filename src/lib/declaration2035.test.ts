@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   calculerDeclaration2035, csgDeductible, partCsgNonDeductible,
   POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE,
-  POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
+  POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES, categorieDesFraisBancaires,
 } from './declaration2035'
 import { caseDuPoste, valeursDesCases } from './cases2035'
 import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
@@ -11,7 +11,9 @@ import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 import { paiementsDesPieces } from './rattachement'
 import { cotisationsComptees } from './cotisationRapprochee'
 import { lignesChargeProduitPourPiece } from './ecritures'
-import { PLAN_PAR_DEFAUT } from './planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
+import type { MouvementDesEcritures, SourcesDesEcrituresDeVente } from './ecrituresVentesFactureesEcran'
+import { D_BASCULE, composition, sourcesDuDossierBascule } from '../test/dossierBascule'
 import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
 
 const categories = [
@@ -35,6 +37,7 @@ const calcul = (o: {
   // Les échéances comptées comme à l'écran : au mouvement qui les paie quand `paiements` en porte un.
   cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], true,
   paiementsDesPieces(o.paiements ?? [], []), o.mouvements ?? [], o.declarationsTva ?? [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+  { etat: 'sans_bascule' },
 )
 
 const vehicule = (o: Partial<VehiculeDossier>): VehiculeDossier =>
@@ -68,7 +71,7 @@ describe('calculerDeclaration2035 — périmètre', () => {
   // 1 022,40 € payés, soit 170,40 € de dépenses absentes d'une 2035 signée.
   it('retient le TTC pour un dossier exonéré, TVA comprise', () => {
     const pieces = [piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })]
-    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'))
+    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' })
     expect(exonere.totalDepenses).toBe(120)
     // Le garde symétrique : l'assujetti garde le hors taxes.
     expect(calcul({ pieces }).totalDepenses).toBe(100)
@@ -269,6 +272,7 @@ describe('calculerDeclaration2035 — totaux et résultat', () => {
     const d = calculerDeclaration2035(
       2025, [piece({ id: 'a', categorie_id: 'c-honoraires-payes', montant_ht: 80 })], honoraires, [], [], [], true,
       paiementsDesPieces([], []), partsDuReleve([encaissement], honoraires, [], true), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+      { etat: 'sans_bascule' },
     )
     expect(d.recettes.map((l) => [l.poste, l.montant, l.nbMouvements])).toEqual([['Honoraires', 300, 1]])
     expect(d.depenses.map((l) => [l.poste, l.montant, l.nbPieces])).toEqual([['Honoraires', 80, 1]])
@@ -769,6 +773,7 @@ describe('calculerDeclaration2035 — l’arrondi de la liquidation de la TVA', 
     const d = calculerDeclaration2035(
       2025, [piece({ id: 'g', type_piece: 'vente', categorie_id: 'c-gains', montant_ht: 10, montant_ttc: 10 })], gains, [], [], [], true,
       paiementsDesPieces([], []), [], [declaration()], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+      { etat: 'sans_bascule' },
     )
     expect(d.recettes).toEqual([{ poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette', montant: 10.8, nbPieces: 1, nbMouvements: 0 }])
   })
@@ -874,6 +879,7 @@ describe('calculerDeclaration2035 — les contributions, source par source', () 
     cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], o.assujetti ?? true,
     paiementsDesPieces(o.paiements ?? [], []),
     partsDuReleve(o.mouvements ?? [], categoriesComptables, [], o.assujetti ?? true), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+    { etat: 'sans_bascule' },
   )
   // Par poste ET par nature : une vente rangée dans la catégorie des achats est une contribution « recette » au
   // poste Achats, et la ligne des dépenses Achats ne la porte pas.
@@ -1004,6 +1010,7 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
     paiement({ piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', ...o })
   const calculReleve = (...lignes: LigneBancaire[]) => calculerDeclaration2035(
     2025, [], categoriesDuReleve, [], [], [], false, paiementsDesPieces([], []), partsDuReleve(lignes, categoriesDuReleve, [], false), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+    { etat: 'sans_bascule' },
   )
 
   it('un remboursement sans dépense de l’exercice diminue les dépenses au lieu de s’y ajouter', () => {
@@ -1029,7 +1036,7 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
     // Le moteur ne déclarait la ligne 25 que positive : un remboursement de l'Urssaf supérieur aux appels de
     // l'année disparaissait du résultat.
     const rembt = cotisation({ id: 'r', echeance: '2025-06-05', montant_verse: null, montant_appele: -300, montant_csg_crds: null })
-    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'))
+    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' })
     expect(d.depenses).toEqual([{ poste: POSTE_COTISATIONS, nature: 'depense', montant: -300, nbPieces: 0, nbMouvements: 0 }])
     expect(d.resultat).toBe(300)
   })
@@ -1050,6 +1057,7 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
   })
   const avec = (v: VentesFacturees, o: { pieces?: Piece[]; annee?: number; assujetti?: boolean } = {}) => calculerDeclaration2035(
     o.annee ?? 2025, o.pieces ?? [], categories, [], [], [], o.assujetti ?? true, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, v,
+    { etat: 'sans_bascule' },
   )
   const desVentes = (d: ReturnType<typeof avec>) => d.contributions.filter((c) => c.source.type === 'encaissement')
 
@@ -1185,5 +1193,111 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
     for (const l of d.recettes) {
       expect(d.contributions.filter((c) => c.poste === l.poste && c.nature === l.nature).reduce((s, c) => s + c.centimes, 0) / 100).toBe(l.montant)
     }
+  })
+})
+
+// LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (ligne 28.65, chantier EC-Q3, VF4C3-Q1, faite sur la recommandation) : la 2035 les
+// compte tels que la composition des écritures les porte au compte des services bancaires — jamais recalculés —, en dépense,
+// à la date du mouvement, sous le poste de la catégorie « Frais bancaires » du dossier. Les sources sont celles d'un dossier
+// basculé d'essai (src/test/dossierBascule.ts), le virement m1 crédité de 118 € pour 120 € encaissés : 2 € de frais, sous le seuil de min(2 %, 5 €).
+// Données FICTIVES.
+describe('calculerDeclaration2035 — les frais d’un mouvement d’encaissements', () => {
+  const COMMUNE = { id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' } as Categorie
+  const DU_DOSSIER = { ...COMMUNE, id: 'c-frais-d1', dossier_id: D_BASCULE, poste_2035: 'Autres frais divers de gestion' } as Categorie
+  const D_UN_AUTRE = { ...COMMUNE, id: 'c-frais-autre', dossier_id: 'd-autre', poste_2035: 'Achats' } as Categorie
+  const sources = (o: { m1?: Partial<MouvementDesEcritures>; m2?: Partial<MouvementDesEcritures> } = {}): SourcesDesEcrituresDeVente => {
+    const s = sourcesDuDossierBascule()
+    return {
+      ...s,
+      mouvements: s.mouvements.map((m) => (m.id === 'm1' ? { ...m, montant: 118, ...o.m1 } : m.id === 'm2' ? { ...m, ...o.m2 } : m)),
+    }
+  }
+  const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
+    dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
+  })
+  const declarer = (s: SourcesDesEcrituresDeVente, o: { categories?: Categorie[]; annee?: number; plan?: PlanComptable; bascule?: boolean } = {}) => {
+    const plan = o.plan ?? PLAN_PAR_DEFAUT
+    return calculerDeclaration2035(
+      o.annee ?? 2025, [], o.categories ?? [COMMUNE], [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventesDe(s),
+      o.bascule === false ? { etat: 'sans_bascule' } : { etat: 'composees', composition: composition(s, 'tresorerie', plan) },
+    )
+  }
+  const desFrais = (d: ReturnType<typeof declarer>) => d.contributions.filter((c) => c.source.type === 'frais_d_encaissements')
+
+  it('le paramètre est obligatoire : aucun appel ne compile sans lui, et rien ne le remplace en silence', () => {
+    const s = sources()
+    // @ts-expect-error — les écritures des ventes facturées omises
+    expect(() => calculerDeclaration2035(2025, [], [COMMUNE], [], [], [], true, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventesDe(s))).toThrow()
+  })
+
+  it('une dépense, à la date du mouvement, sous le poste de la catégorie commune, au compte que la composition écrit', () => {
+    const d = declarer(sources())
+    expect(desFrais(d)).toEqual([{
+      source: { type: 'frais_d_encaissements', id: 'm1', frais: { ligneBancaireId: 'm1', date: '2025-11-20', libelle: 'VIR CLIENT FICTIF', compte: '627000', centimes: 200 } },
+      poste: 'Frais financiers', nature: 'depense', compte: '627000', centimes: 200,
+    }])
+    // Le mouvement compte parmi ceux du poste : sa preuve est le relevé.
+    expect(d.depenses).toEqual([{ poste: 'Frais financiers', nature: 'depense', montant: 2, nbPieces: 0, nbMouvements: 1 }])
+    expect(d.totalDepenses).toBe(2)
+    expect(d.resultat).toBe(Math.round((d.totalRecettes - 2) * 100) / 100)
+    expect(d.exclusions.fraisSansPoste).toEqual([])
+    // En case BN, ligne 31 du 2035-A.
+    expect(valeursDesCases(d).valeurs.get('BN')).toBe(2)
+  })
+
+  it('exactement les lignes du compte des services bancaires que la composition écrit pour le mouvement', () => {
+    const s = sources()
+    const c = composition(s, 'tresorerie', PLAN_PAR_DEFAUT)
+    const ecrites = c.ecritures.filter((e) => e.source.genre === 'mouvement')
+      .flatMap((e) => e.lignes.filter((l) => l.compte === PLAN_PAR_DEFAUT.services_bancaires).map((l) => [e.date, l.sens, l.centimes]))
+    expect(ecrites).toEqual([['2025-11-20', 'debit', 200]])
+    expect(desFrais(declarer(s)).map((x) => [x.source.type === 'frais_d_encaissements' && x.source.frais.date, 'debit', x.centimes]))
+      .toEqual(ecrites)
+  })
+
+  it('sous un plan décalé, au compte des services bancaires du plan', () => {
+    expect(desFrais(declarer(sources(), { plan: PLAN_DECALE })).map((c) => c.compte)).toEqual([PLAN_DECALE.services_bancaires])
+  })
+
+  it('la catégorie propre au dossier l’emporte sur la commune du même code ; celle d’un autre dossier ne compte jamais', () => {
+    expect(desFrais(declarer(sources(), { categories: [COMMUNE, DU_DOSSIER] })).map((c) => c.poste)).toEqual(['Autres frais divers de gestion'])
+    expect(desFrais(declarer(sources(), { categories: [DU_DOSSIER, COMMUNE] })).map((c) => c.poste)).toEqual(['Autres frais divers de gestion'])
+    expect(desFrais(declarer(sources(), { categories: [D_UN_AUTRE, COMMUNE] })).map((c) => c.poste)).toEqual(['Frais financiers'])
+    expect(categorieDesFraisBancaires([D_UN_AUTRE], D_BASCULE)).toBeNull()
+    // Le compte reste celui de la composition, jamais celui de la catégorie.
+    expect(desFrais(declarer(sources(), { categories: [{ ...DU_DOSSIER, compte_comptable: '627800' }] })).map((c) => c.compte)).toEqual(['627000'])
+  })
+
+  it('sans poste, ou sans catégorie « Frais bancaires » : sur aucune ligne, et dit — jamais un poste deviné', () => {
+    const sansPoste = declarer(sources(), { categories: [{ ...COMMUNE, poste_2035: null }] })
+    expect(desFrais(sansPoste)).toEqual([])
+    expect(sansPoste.depenses).toEqual([])
+    expect(sansPoste.exclusions.fraisSansPoste.map((f) => [f.frais.ligneBancaireId, f.frais.centimes, f.categorie?.id ?? null])).toEqual([['m1', 200, 'c-frais']])
+    const sansCategorie = declarer(sources(), { categories: [D_UN_AUTRE] })
+    expect(desFrais(sansCategorie)).toEqual([])
+    expect(sansCategorie.exclusions.fraisSansPoste.map((f) => [f.frais.ligneBancaireId, f.categorie])).toEqual([['m1', null]])
+  })
+
+  it('l’année du mouvement : un chèque du 31 décembre remis le 2 janvier, ses frais en janvier', () => {
+    const s = sources({ m2: { date: '2026-01-02', montant: 98 } })
+    const avant = { ...s, encaissements: s.encaissements.map((e) => (e.id === 'e2' ? { ...e, date_encaissement: '2025-12-31', cree_le: '2025-12-31T10:00:00Z' } : e)) }
+    expect(desFrais(declarer(avant, { annee: 2025 })).map((c) => c.source.type === 'frais_d_encaissements' && c.source.id)).toEqual(['m1'])
+    expect(desFrais(declarer(avant, { annee: 2026 })).map((c) => [c.source.type === 'frais_d_encaissements' && c.source.id, c.centimes])).toEqual([['m2', 200]])
+  })
+
+  it('un mouvement dont la composition refuse l’écriture n’en donne aucun : pas encore classé, ou un écart hors du seuil', () => {
+    expect(desFrais(declarer(sources({ m1: { encaissements_de_factures: false } })))).toEqual([])
+    // 20 € de moins que les 120 € encaissés : au-delà de min(2 %, 5 €), ce ne sont pas des frais.
+    expect(desFrais(declarer(sources({ m1: { montant: 100 } })))).toEqual([])
+    // Crédité de plus que ses encaissements : aucun frais.
+    expect(desFrais(declarer(sources({ m1: { montant: 121 } })))).toEqual([])
+    const refuse = declarer(sources({ m1: { montant: 100 } }))
+    expect(refuse.exclusions.fraisSansPoste).toEqual([])
+  })
+
+  it('sans bascule, aucun frais ; et une composition sans frais ne change rien à la 2035', () => {
+    expect(desFrais(declarer(sources(), { bascule: false }))).toEqual([])
+    const sansFrais = sourcesDuDossierBascule()
+    expect(declarer(sansFrais)).toEqual(declarer(sansFrais, { bascule: false }))
   })
 })

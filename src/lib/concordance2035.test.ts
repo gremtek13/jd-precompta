@@ -4,7 +4,7 @@ import { ecritureDeLaDotation } from './amortissements'
 import { comptesPartagesEntreCases, concordance2035, ouAgir, phraseDeLEcart, type EcartDeSource } from './concordance2035'
 import { ecritureDuPaiementPersonnel } from './cotisationPersonnelle'
 import { cotisationsComptees, ecritureDeLaCotisation } from './cotisationRapprochee'
-import { calculerDeclaration2035 } from './declaration2035'
+import { calculerDeclaration2035, type EcrituresDesVentesDeLa2035 } from './declaration2035'
 import { ecritureDeLEcheance } from './echeanceEmprunt'
 import { lignesPourPiece } from './ecritures'
 import type { ModeleComptable } from './engagement'
@@ -38,7 +38,7 @@ const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '4
 const categories = [
   { id: 'c-achats', libelle: 'Achats', compte_comptable: '606100', poste_2035: 'Achats' },
   { id: 'c-recettes', libelle: 'Recettes', compte_comptable: '706000', poste_2035: 'Recettes' },
-  { id: 'c-frais', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' },
+  { id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' },
   { id: 'c-tel', libelle: 'Téléphone', compte_comptable: '626000', poste_2035: 'Fournitures de bureau' },
   { id: 'c-sans-poste', libelle: 'Divers', compte_comptable: '628000', poste_2035: null },
   { id: 'c-sans-compte', libelle: 'Sans compte', compte_comptable: null, poste_2035: 'Achats' },
@@ -131,13 +131,18 @@ function concordance(d: Dossier, o: {
   // classent.
   ventes?: VentesFacturees
   mouvementsDesVentes?: ReadonlySet<string>
+  // Les écritures des ventes facturées que la 2035 lit pour les frais d'un mouvement d'encaissements : aucune bascule, sauf
+  // dans les tests qui en parlent ; et les catégories du dossier, celles d'en tête sauf exception.
+  ecrituresDesVentes?: EcrituresDesVentesDeLa2035
+  categories?: Categorie[]
 } = {}) {
   const immobilisations = o.immobilisations ?? [bien]
   const declaration = calculerDeclaration2035(
-    o.annee ?? 2025, d.pieces, categories, immobilisations,
+    o.annee ?? 2025, d.pieces, o.categories ?? categories, immobilisations,
     cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), o.vehicules ?? [vehicule], d.assujetti,
     paiementsDesPieces(d.lignes, []), partsDuReleve(d.lignes, categories, d.ventilations, d.assujetti), o.declarationsTva ?? [], PLAN_PAR_DEFAUT,
     o.ventes ?? ventesFactureesVides('d1'),
+    o.ecrituresDesVentes ?? { etat: 'sans_bascule' },
   )
   return concordance2035(
     declaration, d.ecritures,
@@ -617,6 +622,7 @@ describe('ouAgir', () => {
 describe('comptesPartagesEntreCases', () => {
   const declarer = (cats: Categorie[], pieces: Piece[]) => calculerDeclaration2035(
     2025, pieces, cats, [], [], [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+    { etat: 'sans_bascule' },
   )
 
   it('dit un compte que deux postes de cases différentes partagent', () => {
@@ -668,9 +674,14 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
   })
   // Le dossier complet, plus les écritures de ses ventes facturées telles que la fonction de VF4b les écrit.
   const ecrit = (s: SourcesDesEcrituresDeVente, plan = PLAN_PAR_DEFAUT) => brouillonDesVentes(composition(s, 'tresorerie', plan))
-  const avec = (s: SourcesDesEcrituresDeVente, ecritures: EcritureBrouillon[], o: { mouvementsDesVentes?: ReadonlySet<string> } = {}) => {
+  // Le dossier a basculé : la 2035 lit aussi la composition de ses écritures, d'où viennent les frais d'un mouvement.
+  const avec = (
+    s: SourcesDesEcrituresDeVente, ecritures: EcritureBrouillon[], o: { mouvementsDesVentes?: ReadonlySet<string>; categories?: Categorie[] } = {},
+  ) => {
     const d = dossier()
-    return concordance({ ...d, ecritures: [...d.ecritures, ...ecritures] }, { ventes: ventesDe(s), ...o })
+    return concordance({ ...d, ecritures: [...d.ecritures, ...ecritures] }, {
+      ventes: ventesDe(s), ecrituresDesVentes: { etat: 'composees', composition: composition(s, 'tresorerie', PLAN_PAR_DEFAUT) }, ...o,
+    })
   }
 
   it('écrite par la composition, elle concorde : la part au 706000, sous son encaissement, au centime', () => {
@@ -752,6 +763,7 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
     const d = dossier()
     const declaration = calculerDeclaration2035(
       2025, d.pieces, categories, [bien], [], [vehicule], d.assujetti, paiementsDesPieces(d.lignes, []), [], [], PLAN_DECALE, ventesDe(biens),
+      { etat: 'sans_bascule' },
     )
     expect(declaration.contributions.filter((c) => c.source.type === 'encaissement').map((c) => c.compte))
       .toEqual([PLAN_DECALE.ventes_de_biens, PLAN_DECALE.ventes_de_biens])
@@ -768,28 +780,88 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
     expect(avec(s, ecrit(s)).concorde).toBe(true)
   })
 
-  it('les frais qu’un mouvement classé par ses encaissements porte au 627 : la 2035 ne les compte pas, et le dit', () => {
-    // L'encaissement du 15/09 cite le virement du même jour, que la banque crédite de 1 307 € : 3 € de frais.
-    const m = mouvementDesVentes({ id: 'm-vir', date: '2025-09-15', montant: 1307 })
-    const s = sources({ encaissements: [{ ...e1.e, ligne_bancaire_id: 'm-vir' }], mouvements: [m] })
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (ligne 28.65, VF4C3-Q1) : l'encaissement du 15/09 cite le virement du même jour,
+  // que la banque crédite de 1 307 € — 3 € de frais, que l'écriture du mouvement porte au 627000 et que la 2035 compte.
+  const m = mouvementDesVentes({ id: 'm-vir', date: '2025-09-15', montant: 1307 })
+  const avecFrais = (o: Partial<SourcesDesEcrituresDeVente> = {}) =>
+    sources({ encaissements: [{ ...e1.e, ligne_bancaire_id: 'm-vir' }], mouvements: [m], ...o })
+  const classe = { mouvementsDesVentes: new Set(['m-vir']) }
+
+  it('les frais qu’un mouvement classé par ses encaissements porte au 627 : la 2035 les compte, et ils concordent', () => {
+    const s = avecFrais()
     const lignesEcrites = ecrit(s)
     expect(lignesEcrites.filter((l) => l.compte === '627000').map((l) => [l.sens, l.montant, l.ligne_bancaire_id])).toEqual([['debit', 3, 'm-vir']])
-    const c = avec(s, lignesEcrites, { mouvementsDesVentes: new Set(['m-vir']) })
-    expect(c.ecarts).toHaveLength(1)
+    const c = avec(s, lignesEcrites, classe)
+    expect(c.ecarts).toEqual([])
+    expect(c.concorde).toBe(true)
+    const sansVente = concordance(dossier())
+    expect(c.declaration.depenses).toBe(Math.round((sansVente.declaration.depenses + 3) * 100) / 100)
+    expect(c.ecritures.depenses).toBe(Math.round((sansVente.ecritures.depenses + 3) * 100) / 100)
+    // Le même résultat sans savoir que le mouvement est classé : la contribution suffit à rapprocher la ligne.
+    expect(avec(s, lignesEcrites).concorde).toBe(true)
+  })
+
+  it('pas encore écrits : à écrire, depuis la section « Ventes facturées »', () => {
+    const s = avecFrais()
+    const sansLeMouvement = ecrit(s).filter((l) => l.encaissement_id != null || l.facture_id != null)
+    const c = avec(s, sansLeMouvement, classe)
+    expect(c.ecarts.map((x) => [x.cle, x.reference, x.declaration, x.ecritures, x.comptesDeclaration, x.motif])).toEqual([
+      ['mouvement:m-vir', { type: 'mouvement', id: 'm-vir' }, -3, 0, ['627000'], 'vente_facturee_non_ecrite'],
+    ])
     const [ecart] = c.ecarts
-    expect(ecart).toMatchObject({ cle: 'mouvement:m-vir', declaration: 0, ecritures: -3, comptesEcritures: ['627000'], motif: 'frais_d_encaissements' })
+    expect(ecart.libelle).toBe('Frais retenus sur le mouvement « VIR CLIENT FICTIF »')
+    expect(ecart.date).toBe('2025-09-15')
     expect(phraseDeLEcart(ecart)).toBe(
-      `Les frais que la banque a retenus sur ce mouvement, que ses encaissements de factures classent (${formatMoney(3)} au 627000) : l’écriture les porte, la 2035 ne les compte pas encore — une dépense qui lui manque, que l’application ne sait pas encore lui donner.`,
+      `La 2035 compte les frais que la banque a retenus sur ce mouvement d’encaissements (${formatMoney(3)}), aucune écriture de l’exercice ne les porte : à écrire depuis la section « Ventes facturées », qui dit aussi ce qui l’en empêcherait.`,
     )
-    expect(ouAgir(ecart)).toBe('Pas encore dans l’application')
-    // La part elle-même concorde : l'écriture de l'encaissement porte la banque avec son mouvement, et la recette.
-    expect(c.ecarts.some((x) => x.cle === 'encaissement:enc-1')).toBe(false)
-    // Sans savoir que ce mouvement est classé par ses encaissements, la concordance n'aurait su dire que « non comptée ».
-    expect(avec(s, lignesEcrites).ecarts.map((x) => x.motif)).toEqual(['non_comptee'])
+    expect(ouAgir(ecart)).toBe('Écritures — Ventes facturées')
+  })
+
+  it('une écriture de frais qui n’est plus celle que le mouvement commande : à réécrire', () => {
+    const s = avecFrais()
+    const perimee = ecrit(s).map((l) => (l.compte === '627000' ? { ...l, montant: 2 } : l))
+    const [ecart] = avec(s, perimee, classe).ecarts
+    expect(ecart).toMatchObject({ cle: 'mouvement:m-vir', declaration: -3, ecritures: -2, motif: 'vente_facturee_a_reecrire' })
+    expect(phraseDeLEcart(ecart)).toBe(
+      `Son écriture porte ${formatMoney(2)} de frais au 627000, la 2035 ${formatMoney(3)} au 627000 : elle n’est plus celle que le mouvement commande, à réécrire depuis la section « Ventes facturées ».`,
+    )
+    expect(ouAgir(ecart)).toBe('Écritures — Ventes facturées')
+  })
+
+  it('une écriture de frais que la composition n’écrit plus : à reprendre depuis la section « Ventes facturées »', () => {
+    // L'encaissement corrigé à 1 307 € : le mouvement le porte au centime, sans frais ; l'ancienne ligne 627 est restée.
+    const s = avecFrais()
+    const anciennes = ecrit(s)
+    const corrige = avecFrais({
+      encaissements: [{ ...e1.e, ligne_bancaire_id: 'm-vir', montant: 1307 }],
+      parts: e1.parts.map((p) => (p.taux === 20 ? { ...p, montant: 1197 } : p)),
+    })
+    expect(ecrit(corrige).some((l) => l.compte === '627000')).toBe(false)
+    const ecarts = avec(corrige, anciennes, classe).ecarts.filter((x) => x.cle === 'mouvement:m-vir')
+    expect(ecarts.map((x) => [x.declaration, x.ecritures, x.motif])).toEqual([[0, -3, 'vente_facturee_a_retirer']])
+    expect(phraseDeLEcart(ecarts[0])).toMatch(/^Son écriture porte 3,00\s€ de frais au 627000, que la 2035 ne compte pas dans cet exercice/)
+    expect(ouAgir(ecarts[0])).toBe('Écritures — Ventes facturées')
+  })
+
+  it('sans poste à la catégorie « Frais bancaires » : la ligne 627 en écart, sous son motif — c’est la catégorie qui se règle', () => {
+    const s = avecFrais()
+    const sansPoste = categories.map((c) => (c.id === 'c-frais' ? { ...c, poste_2035: null } : c))
+    const c = avec(s, ecrit(s), { ...classe, categories: sansPoste })
+    const ecarts = c.ecarts.filter((x) => x.cle === 'mouvement:m-vir')
+    expect(ecarts.map((x) => [x.declaration, x.ecritures, x.comptesEcritures, x.motif])).toEqual([[0, -3, ['627000'], 'frais_sans_poste']])
+    expect(phraseDeLEcart(ecarts[0])).toBe(
+      `Les frais que la banque a retenus sur ce mouvement d’encaissements (${formatMoney(3)} au 627000) : l’écriture les porte, la 2035 les compte sous le poste de la catégorie « Frais bancaires », qui n’en a pas — ou que le dossier n’a pas. Ils n’entrent dans aucune ligne tant que ce poste manque.`,
+    )
+    expect(ouAgir(ecarts[0])).toBe('Clôture — Postes manquants')
+    // Même sans savoir que le mouvement est classé : l'exclusion de la 2035 le dit.
+    expect(avec(s, ecrit(s), { categories: sansPoste }).ecarts.filter((x) => x.cle === 'mouvement:m-vir').map((x) => x.motif))
+      .toEqual(['frais_sans_poste'])
+    // Aucun écran ne dit plus que l'application ne sait pas compter ces frais.
+    expect(Object.values(c.ecarts).map(phraseDeLEcart).join(' ')).not.toMatch(/ne sait pas encore|Pas encore dans l’application/)
   })
 
   it('aucun compte partagé entre cases : la part porte le 706000, en case AA comme les recettes du dossier', () => {
-    const declaration = calculerDeclaration2035(2025, [], categories, [], [], [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventesDe(sources()))
+    const declaration = calculerDeclaration2035(2025, [], categories, [], [], [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventesDe(sources()), { etat: 'sans_bascule' })
     expect(declaration.contributions.map((c) => c.compte)).toEqual(['706000', '706000'])
     expect(comptesPartagesEntreCases(declaration)).toEqual([])
   })

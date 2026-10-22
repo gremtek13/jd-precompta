@@ -1,4 +1,4 @@
-import { calculerDeclaration2035, type Declaration2035 } from './declaration2035'
+import { calculerDeclaration2035, type Declaration2035, type EcrituresDesVentesDeLa2035 } from './declaration2035'
 import { cotisationsComptees } from './cotisationRapprochee'
 import type { ModeleComptable } from './engagement'
 import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
@@ -52,6 +52,10 @@ export interface SourcesDeLaRevueAnalytique {
   // plausible et fausse. L'onglet le dit parmi les lectures de la revue (RevisionTab), qui n'affirme alors rien. Nulle et
   // non absente : l'appelant dit qu'il ne les a pas, il ne les oublie pas.
   ventesFacturees: VentesFacturees | null
+  // Ce que la 2035 reçoit des écritures des ventes facturées — les frais d'un mouvement d'encaissements (VF4C3-Q1,
+  // `ecrituresDesVentesPourLa2035`) ; NUL tant que, pour un dossier basculé, leurs sources ne sont pas revenues entières :
+  // la 2035 ne se calcule pas, comme sans ses ventes facturées, et l'onglet le dit parmi les lectures de la revue.
+  ecrituresDesVentes: EcrituresDesVentesDeLa2035 | null
 }
 
 /**
@@ -67,6 +71,7 @@ export function declarationPourLaRevue(
   d: LecturesDuDossierPourLaRevue,
   // Obligatoires, comme pour le moteur : la revue compare la 2035 que Clôture montre, ventes facturées comprises.
   ventesFacturees: VentesFacturees,
+  ecrituresDesVentes: EcrituresDesVentesDeLa2035,
 ): Declaration2035 | null {
   if (modele.mode === 'engagement') return null
   const rapprochees = d.lignes.filter((l) => l.statut === 'rapprochee')
@@ -75,7 +80,7 @@ export function declarationPourLaRevue(
   const comptees = cotisationsComptees(d.cotisations, rapprochees, modele.mode)
   return calculerDeclaration2035(
     annee, d.piecesValidees, d.categories, d.immobilisations, comptees, d.vehicules, assujettiTva, paiements, parts, d.declarationsTva,
-    modele.plan, ventesFacturees,
+    modele.plan, ventesFacturees, ecrituresDesVentes,
   )
 }
 
@@ -94,7 +99,8 @@ export function donneesDeLaRevueAnalytique(
     ecritures: s.dossier.ecritures,
     reprise: s.reprise,
     reportes: s.reportes,
-    declaration: s.ventesFacturees === null ? null : declarationPourLaRevue(annee, modele, assujettiTva, s.dossier, s.ventesFacturees),
+    declaration: s.ventesFacturees === null || s.ecrituresDesVentes === null ? null
+      : declarationPourLaRevue(annee, modele, assujettiTva, s.dossier, s.ventesFacturees, s.ecrituresDesVentes),
     exercicesValides: s.exercicesValides,
     reperes: s.reperes,
     partsDuReleve: partsDuReleve(rapprochees, s.dossier.categories, s.dossier.ventilations, assujettiTva),

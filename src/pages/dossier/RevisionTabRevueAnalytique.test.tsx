@@ -170,14 +170,15 @@ function AutreContenu() {
   )
 }
 
-function rendre(o: { annee?: ValeurAnnee; exercices?: ExerciceValide[]; modele?: ModeleComptable } = {}) {
+// `ventesParLesFactures` : le réglage du dossier — basculé dès qu'il compte une facture source, la base l'impose.
+function rendre(o: { annee?: ValeurAnnee; exercices?: ExerciceValide[]; modele?: ModeleComptable; ventesParLesFactures?: boolean } = {}) {
   return render(
     <FournisseurPanneauDroit>
       <ExercicesValidesProvider exercices={o.exercices ?? [exerciceValide(2024)]} relire={async () => {}}>
         <AnneeProvider defaut={o.annee ?? 2025}>
           <RevisionTab
             dossierId={DOSSIER} modele={o.modele ?? TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere"
-            onNavigate={() => {}}
+            ventesParLesFactures={o.ventesParLesFactures ?? false} onNavigate={() => {}}
           />
         </AnneeProvider>
       </ExercicesValidesProvider>
@@ -1249,10 +1250,37 @@ describe('RevisionTab, revue analytique — les ventes facturées', () => {
 
   it('la 2035 de la revue compte l’encaissement de la facture source', async () => {
     avecUneVenteFacturee()
-    rendre()
+    rendre({ ventesParLesFactures: true })
     await attendreLaSection()
     expect(texte(ligneDuTableau(POSTE))).toContain('1 000,00 €')
     expect(texte(ligneDuTableau('Total des recettes'))).toContain('1 000,00 €')
+  })
+
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (ligne 28.65, VF4C3-Q1) : le virement du même jour, crédité de 1 197 € pour
+  // 1 200 € encaissés — 3 € de frais, que la 2035 de la revue compte comme celle de Clôture, sous « Frais bancaires ».
+  it('la 2035 de la revue compte les frais d’un mouvement d’encaissements, sous le poste de la catégorie « Frais bancaires »', async () => {
+    avecUneVenteFacturee()
+    faux.tables.categories = [
+      ...CATEGORIES,
+      { id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 3, compte_comptable: '627000', poste_2035: 'Frais financiers' },
+    ]
+    faux.tables.encaissements_factures = faux.tables.encaissements_factures.map((e) => ({ ...(e as object), ligne_bancaire_id: 'm-vir' }))
+    faux.tables.lignes_bancaires = [
+      ...faux.tables.lignes_bancaires,
+      ligne({ id: 'm-vir', date: '2025-05-10', montant: 1197, libelle: 'VIR CLIENT FICTIF', encaissements_de_factures: true }),
+    ]
+    rendre({ ventesParLesFactures: true })
+    await attendreLaSection()
+    const frais = titreDeLaLigne({ objet_type: 'poste_2035', objet: 'Frais financiers', nature: 'depense' })
+    expect(texte(ligneDuTableau(frais))).toContain('3,00 €')
+  })
+
+  it('une facture source dans un dossier qui ne se dit pas basculé : la section le dit, sans tableau', async () => {
+    avecUneVenteFacturee()
+    rendre({ ventesParLesFactures: false })
+    await attendreLaSection()
+    expect(within(section()).getByText(/Les écritures des ventes facturées du dossier n'ont pas pu être lues en entier \(les ventes facturées comptent une facture source/)).toBeDefined()
+    expect(within(section()).queryByRole('table')).toBeNull()
   })
 
   // `factures_emises` n'y est pas : la Vue d'ensemble la lit aussi (les jumelles), et refusée elle cache l'onglet entier,
@@ -1262,7 +1290,7 @@ describe('RevisionTab, revue analytique — les ventes facturées', () => {
     async (table) => {
       avecUneVenteFacturee()
       faux.refusees.add(table)
-      rendre()
+      rendre({ ventesParLesFactures: true })
       await attendreLaSection()
       expect(within(section()).getByText(/Les ventes facturées du dossier n'ont pas pu être lues en entier \(.*permission denied\)/)).toBeDefined()
       expect(within(section()).queryByRole('table')).toBeNull()
@@ -1274,7 +1302,7 @@ describe('RevisionTab, revue analytique — les ventes facturées', () => {
 
   it('rendue pour un autre dossier — celui qu’on vient de quitter —, elle ne vaut pas : la section le dit', async () => {
     avecUneVenteFacturee()
-    const vue = rendre()
+    const vue = rendre({ ventesParLesFactures: true })
     await attendreLaSection()
     expect(texte(ligneDuTableau(POSTE))).toContain('1 000,00 €')
     // Un autre dossier s'ouvre dans le même onglet, et ses lectures ne sont pas revenues : la revue ne compte pas les ventes
@@ -1285,7 +1313,7 @@ describe('RevisionTab, revue analytique — les ventes facturées', () => {
         <ExercicesValidesProvider exercices={[exerciceValide(2024)]} relire={async () => {}}>
           <AnneeProvider defaut={2025}>
             <RevisionTab
-              dossierId="autre-dossier" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere"
+              dossierId="autre-dossier" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={true}
               onNavigate={() => {}}
             />
           </AnneeProvider>

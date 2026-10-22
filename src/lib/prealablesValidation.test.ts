@@ -127,6 +127,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
   const declaration = calculerDeclaration2035(
     base.annee, [...base.piecesValidees], [...base.categories], [...base.immobilisations], [], [...base.vehicules],
     base.assujettiTva, paiements, [], base.declarationsTva, PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+    { etat: 'sans_bascule' },
   )
   const ouverture = base.aNouveaux.length > 0 ? base.aNouveaux[0].date : null
   const concordance = concordance2035(
@@ -404,6 +405,16 @@ describe('prealablesDeValidation — la numérotation et la 2035', () => {
     const sansCategorie = piece('p2', { categorie_id: null, date_piece: '2025-05-02', montant_ttc: 40 })
     const etat = ids(donnees({ piecesValidees: [P1, sansCategorie] }))
     expect(etat).toEqual(expect.arrayContaining(['sans-categorie', 'exclusions-2035']))
+  })
+
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS SANS POSTE (ligne 28.65, VF4C3-Q1) : un trou dans la 2035, comme une pièce sans
+  // poste — refusé sous le même préalable.
+  it('refuse les frais d’un mouvement d’encaissements que la 2035 ne range sur aucune ligne', () => {
+    const d = donnees()
+    const frais = { ligneBancaireId: 'm1', date: '2025-06-10', libelle: 'VIR CLIENT FICTIF', compte: '627000', centimes: 200 }
+    const avecFrais = { ...d, declaration: { ...d.declaration!, exclusions: { ...d.declaration!.exclusions, fraisSansPoste: [{ frais, categorie: null }] } } }
+    expect(prealable(d, 'exclusions-2035')).toBeUndefined()
+    expect(prealable(avecFrais, 'exclusions-2035')).toMatchObject({ nb: 1, cible: 'cloture', bloquant: true })
   })
 
   it('refuse une pièce validée de l’exercice que rien n’a encore écrite', () => {
@@ -759,6 +770,7 @@ describe('prealablesDeValidation — une échéance payée depuis le compte pers
     const declaration = calculerDeclaration2035(
       d.annee, [...d.piecesValidees], [...d.categories], [], cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), [],
       d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+      { etat: 'sans_bascule' },
     )
     const concordance = concordance2035(
       declaration, d.ecritures,

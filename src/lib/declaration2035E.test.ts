@@ -296,7 +296,7 @@ describe('de bout en bout depuis les pièces', () => {
       piece({ id: 'v', type_piece: 'vente', categorie_id: 'c-recettes', montant_ttc: 160_000 }),
       piece({ id: 'a', categorie_id: 'c-achats', montant_ttc: 1_000.4 }),
       piece({ id: 'l', categorie_id: 'c-loyer', montant_ttc: 9_600 }),
-    ], categories, [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'))
+    ], categories, [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' })
     const { valeurs } = valeursDesCases(d)
     const a = calculer2035E({
       annee: 2025, cases: valeurs, formulaire: arrondirPourFormulaire(valeurs, 2025),

@@ -168,7 +168,7 @@ function rendre(o: { annee?: ValeurAnnee; exercices?: ExerciceValide[] } = {}) {
       <ExercicesValidesProvider exercices={o.exercices ?? [exerciceValide(2024)]} relire={async () => {}}>
         <AnneeProvider defaut={o.annee ?? 2025}>
           <RevisionTab
-            dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere"
+            dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false}
             onNavigate={() => {}}
           />
         </AnneeProvider>

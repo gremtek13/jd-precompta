@@ -6,14 +6,16 @@ import { ecartDeFrais, justifieSonMouvement } from './encaissementsFactures'
 import { auxiliaireDuTiers } from './engagement'
 import { montantsDuDocument } from './factureCii'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, ROLES_COMPTABLES, type CleRoleComptable, type PlanComptable } from './planComptable'
-import type { ModeComptable, MoyenEncaissement } from './types'
+import type { Categorie, ModeComptable, MoyenEncaissement } from './types'
+import { calculerDeclaration2035 } from './declaration2035'
+import { paiementsDesPieces } from './rattachement'
 import {
   LIBELLE_MOTIF_VENTE, recettesFactureesParMois, type EncaissementVendu, type FactureVendue, type PartVendue,
   type SourcesVentesFacturees,
 } from './ventesFacturees'
 import {
   LIBELLE_MOTIF_NON_ECRITE, auxiliaireDeLaLigne, cleFecEncaissement, cleFecFacture, cleFecMouvementEncaissements,
-  colonnesDeLaSource, ecrituresDesVentesFacturees, lignesAuBrouillon, memeEcritureQueLeBrouillon, ordreDesLignes,
+  colonnesDeLaSource, ecrituresDesVentesFacturees, fraisDesMouvements, lignesAuBrouillon, memeEcritureQueLeBrouillon, ordreDesLignes,
   refusCompteDeContrepartie, type EcritureVenteFacturee, type EcrituresDesVentesFacturees, type LigneVenteFacturee,
   type MouvementDesEncaissements,
 } from './ecrituresVentesFacturees'
@@ -1036,5 +1038,70 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
       })
       expect(JSON.stringify(r.ecritures)).toBe(JSON.stringify(parMode.engagement.ecritures))
     }
+  })
+
+  // LA 2035 COMPTE LES FRAIS QUE LA COMPOSITION ÉCRIT (ligne 28.65, VF4C3-Q1) : sur chaque dossier tiré, chaque exercice d'un
+  // mouvement, et sous les deux plans, la dépense que la 2035 déclare pour un mouvement est, au centime, ce que ses
+  // écritures portent au compte des services bancaires — et un mouvement sans frais n'y paraît pas.
+  it('la 2035 compte, mouvement par mouvement, exactement les frais que la composition écrit au compte des services bancaires', () => {
+    const FRAIS_BANCAIRES = { id: 'c-frais', dossier_id: null, code: 'frais_bancaires', poste_2035: 'Frais financiers' } as Categorie
+    let mouvementsAFrais = 0
+    for (const [index, { t, parMode }] of calcules.entries()) {
+      for (const plan of index < 300 ? [PLAN_PAR_DEFAUT, PLAN_DECALE] : [PLAN_PAR_DEFAUT]) {
+        const r = plan === PLAN_PAR_DEFAUT ? parMode.tresorerie
+          : ecrituresDesVentesFacturees({ sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, mode: 'tresorerie', plan })
+        const ecrit = new Map<string, number>()
+        for (const e of r.ecritures) {
+          for (const l of e.lignes) {
+            if (l.compte !== plan.services_bancaires) continue
+            const cle = `${e.date}|${l.ligneBancaireId}`
+            ecrit.set(cle, (ecrit.get(cle) ?? 0) + (l.sens === 'debit' ? l.centimes : -l.centimes))
+          }
+        }
+        const compte = new Map<string, number>()
+        for (const annee of new Set(t.mouvements.map((m) => Number(m.date.slice(0, 4))))) {
+          const d = calculerDeclaration2035(
+            annee, [], [FRAIS_BANCAIRES], [], [], [], true, paiementsDesPieces([], []), [], [], plan, r.ventes,
+            { etat: 'composees', composition: r },
+          )
+          for (const c of d.contributions) {
+            if (c.source.type !== 'frais_d_encaissements') continue
+            expect(c.compte).toBe(plan.services_bancaires)
+            expect(c.nature).toBe('depense')
+            expect(c.poste).toBe('Frais financiers')
+            const cle = `${c.source.frais.date}|${c.source.id}`
+            compte.set(cle, (compte.get(cle) ?? 0) + c.centimes)
+          }
+          expect(d.exclusions.fraisSansPoste).toEqual([])
+        }
+        expect([...compte].sort()).toEqual([...ecrit].filter(([, c]) => c !== 0).sort())
+        mouvementsAFrais += compte.size
+      }
+    }
+    expect(mouvementsAFrais).toBeGreaterThan(300)
+  })
+})
+
+// LES FRAIS D'UN MOUVEMENT, LUS DANS LA SORTIE DE LA COMPOSITION (ligne 28.65, VF4C3-Q1) : ce que la 2035 compte.
+describe('fraisDesMouvements', () => {
+  const ecriture = (o: Partial<EcritureVenteFacturee> & Pick<EcritureVenteFacturee, 'source' | 'lignes'>): EcritureVenteFacturee => ({
+    cle: 'c', date: '2025-11-20', journal: 'BQ', pieceRef: 'R', pieceDate: '2025-11-20', libelle: 'VIR', tiers: null, ...o,
+  })
+  const l = (compte: string, sens: 'debit' | 'credit', centimes: number, ligneBancaireId: string | null = 'm1') => ({ compte, sens, centimes, ligneBancaireId })
+
+  it.each(PLANS)('les lignes du compte des services bancaires d’une écriture de mouvement, et rien d’autre — %s', (_, plan) => {
+    const ecritures = [
+      ecriture({ source: { genre: 'mouvement', ligneBancaireId: 'm1' }, lignes: [l(plan.banque, 'debit', 11_800), l(plan.services_bancaires, 'debit', 200), l(plan.valeurs_a_l_encaissement, 'credit', 12_000)] }),
+      // Un mouvement sans écart : rien.
+      ecriture({ source: { genre: 'mouvement', ligneBancaireId: 'm2' }, lignes: [l(plan.banque, 'debit', 100), l(plan.valeurs_a_l_encaissement, 'credit', 100)] }),
+      // Le compte des services bancaires sur une autre source n'est pas un frais d'un mouvement.
+      ecriture({ source: { genre: 'encaissement', encaissementId: 'e1', factureId: 'f1' }, lignes: [l(plan.services_bancaires, 'debit', 50)] }),
+      // Un crédit diminue (jamais composé : un écart négatif ne s'écrit pas).
+      ecriture({ date: '2025-12-01', libelle: 'REMISE', source: { genre: 'mouvement', ligneBancaireId: 'm3' }, lignes: [l(plan.services_bancaires, 'debit', 30, 'm3'), l(plan.services_bancaires, 'credit', 10, 'm3')] }),
+    ]
+    expect(fraisDesMouvements({ ecritures }, plan)).toEqual([
+      { ligneBancaireId: 'm1', date: '2025-11-20', libelle: 'VIR', compte: plan.services_bancaires, centimes: 200 },
+      { ligneBancaireId: 'm3', date: '2025-12-01', libelle: 'REMISE', compte: plan.services_bancaires, centimes: 20 },
+    ])
   })
 })

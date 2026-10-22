@@ -30,11 +30,13 @@ import type { EcritureBrouillon } from './types'
 // `vente_facturee_a_reecrire` (une écriture qui n'est plus celle que l'encaissement commande), `vente_facturee_a_retirer`
 // (une écriture d'un encaissement que la 2035 ne compte pas dans l'exercice).
 //
-// ET LES FRAIS D'UN MOUVEMENT QUE SES ENCAISSEMENTS CLASSENT (`frais_d_encaissements`) : l'écart entre ce que les
+// ET LES FRAIS D'UN MOUVEMENT QUE SES ENCAISSEMENTS CLASSENT (ligne 28.65, VF4C3-Q1) : l'écart entre ce que les
 // encaissements portent et ce que la banque a crédité, sous le seuil des frais, s'écrit au compte des services bancaires
-// (627000) — une charge de l'exercice. La 2035 ne la compte pas : elle ne lit des ventes facturées que leurs parts, et le
-// mouvement, réservé à ses encaissements, n'est pas une part du relevé. Un écart VRAI, que la concordance dit sans
-// l'imputer à l'écriture : c'est la 2035 qui manque d'une dépense, et aucun geste de l'application ne la lui donne encore.
+// (627000) — une charge de l'exercice. La 2035 la compte telle que la composition l'écrit (lib/declaration2035.ts, source
+// `frais_d_encaissements`), au compte de la composition, sous le mouvement que l'écriture désigne : les deux se rapprochent
+// par lui et concordent quand l'écriture est à jour. Un écart renvoie, comme une part, à la section « Ventes facturées »
+// (à écrire, à réécrire, à retirer) ; sauf des frais que la 2035 ne range sur aucune ligne, faute de poste à la catégorie
+// « Frais bancaires » (`frais_sans_poste`) : c'est la catégorie qui se règle, pas l'écriture.
 //
 // CE QUI N'EST PAS UN ÉCART, PAR CONSTRUCTION : la CSG déductible (case BV). La CSG-CRDS passe entière au
 // 108000, hors résultat, et seule sa part déductible entre en BV — la présentation relevée sur la 2035 déposée
@@ -83,9 +85,9 @@ export type MotifEcart =
   // Une écriture d'un encaissement, ou d'une facture, que la 2035 ne compte pas dans l'exercice (l'encaissement retiré, la
   // facture que le calcul écarte) : à retirer depuis la même section.
   | 'vente_facturee_a_retirer'
-  // Une écriture de résultat d'un mouvement que ses encaissements classent — l'écart des frais, au 627 : la 2035 ne la
-  // compte pas encore.
-  | 'frais_d_encaissements'
+  // Une écriture de résultat d'un mouvement que ses encaissements classent — l'écart des frais, au 627 — que la 2035 ne
+  // range sur aucune ligne : la catégorie « Frais bancaires » du dossier manque, ou n'a pas de poste.
+  | 'frais_sans_poste'
   // Les deux, mais pas le même montant.
   | 'montant_different'
   // Le même montant, sur un autre compte.
@@ -154,6 +156,8 @@ function cleDeSource(s: SourceDeclaration): string {
     case 'declaration': return `declaration:${s.id}`
     // Un encaissement d'une facture source : ses parts, une par taux, se retrouvent ensemble.
     case 'encaissement': return `encaissement:${s.id}`
+    // Les frais d'un mouvement d'encaissements : son écriture ne désigne que le mouvement.
+    case 'frais_d_encaissements': return `mouvement:${s.id}`
   }
 }
 
@@ -177,6 +181,7 @@ const cleDeReference = (r: ReferenceEcriture) => `${r.type}:${r.id}`
 function referenceDeSource(s: SourceDeclaration): ReferenceEcriture {
   if (s.type === 'cotisation') return s.ligne ? { type: 'mouvement', id: s.ligne.id } : { type: 'cotisation', id: s.id }
   if (s.type === 'csg') return { type: 'ecriture', id: 'csg' }
+  if (s.type === 'frais_d_encaissements') return { type: 'mouvement', id: s.id }
   return { type: s.type, id: s.id }
 }
 
@@ -204,6 +209,7 @@ function libelleDeSource(s: SourceDeclaration): { libelle: string; date: string 
       libelle: `${s.part.annuleId ? 'Contre-passation d’un encaissement' : 'Encaissement'} de la facture ${s.part.numero ?? 'sans numéro'} — ${s.part.tiers}`,
       date: s.part.date,
     }
+    case 'frais_d_encaissements': return { libelle: `Frais retenus sur le mouvement « ${s.frais.libelle} »`, date: s.frais.date }
   }
 }
 
@@ -222,7 +228,7 @@ interface Groupe {
 
 // Ce qui explique qu'une écriture de l'exercice ne soit pas comptée par la 2035 : les pièces validées, les factures des
 // biens du registre, que la 2035 compte par leur dotation, et les mouvements que leurs encaissements classent
-// (`mouvementsClassesParEncaissements`, lib/ecrituresVentesFactureesEcran.ts), dont la 2035 ne compte pas les frais.
+// (`mouvementsClassesParEncaissements`, lib/ecrituresVentesFactureesEcran.ts), dont l'écriture porte les frais.
 export interface ContexteDeLaConcordance {
   piecesValidees: ReadonlySet<string>
   piecesImmobilisees: ReadonlySet<string>
@@ -303,6 +309,7 @@ export function concordance2035(
   const piecesSansMontant = new Set(exclusions.sansMontant.map((p) => p.id))
   const mouvementsSansPoste = new Set(exclusions.mouvementsSansPoste.map((p) => p.ligne.id))
   const mouvementsHorsResultat = new Set(exclusions.mouvementsHorsResultat.map((p) => p.ligne.id))
+  const fraisSansPoste = new Set(exclusions.fraisSansPoste.map((f) => f.frais.ligneBancaireId))
 
   const ecarts: EcartDeSource[] = []
   for (const [cle, g] of groupes) {
@@ -317,7 +324,7 @@ export function concordance2035(
     const autresExercices = [...(exercicesParCle.get(cle) ?? [])].sort((a, b) => a - b)
     const motif = motifDeLEcart({
       g, cle, declare, ecrit, totalDeclare, totalEcrit, autresExercices,
-      contexte, piecesSansDate, piecesSansPoste, piecesSansMontant, mouvementsSansPoste, mouvementsHorsResultat,
+      contexte, piecesSansDate, piecesSansPoste, piecesSansMontant, mouvementsSansPoste, mouvementsHorsResultat, fraisSansPoste,
     })
     const identite = g.source ? libelleDeSource(g.source)
       : { libelle: g.premiereEcriture?.libelle ?? '', date: g.premiereEcriture?.date ?? null }
@@ -357,6 +364,7 @@ function motifDeLEcart(x: {
   piecesSansMontant: ReadonlySet<string>
   mouvementsSansPoste: ReadonlySet<string>
   mouvementsHorsResultat: ReadonlySet<string>
+  fraisSansPoste: ReadonlySet<string>
 }): MotifEcart {
   const { g, declare, ecrit } = x
   // UNE VENTE FACTURÉE, avant tout autre motif : ses gestes sont ceux de la section « Ventes facturées », jamais
@@ -366,9 +374,14 @@ function motifDeLEcart(x: {
     if (declare.size === 0) return 'vente_facturee_a_retirer'
     return ecrit.size === 0 ? 'vente_facturee_non_ecrite' : 'vente_facturee_a_reecrire'
   }
-  // Une écriture de résultat d'un mouvement que ses encaissements classent, que la 2035 ne compte pas : ses frais.
-  if (declare.size === 0 && g.reference.type === 'mouvement' && x.contexte.mouvementsDesVentesFacturees.has(g.reference.id)) {
-    return 'frais_d_encaissements'
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (VF4C3-Q1) : la 2035 les compte, ou une écriture les porte sur un mouvement
+  // que ses encaissements classent. Sans poste, la 2035 ne les range nulle part : c'est la catégorie qui se règle. Sinon,
+  // les gestes de la section « Ventes facturées », comme pour une part.
+  const duMouvementDesVentes = g.source?.type === 'frais_d_encaissements'
+    || (g.reference.type === 'mouvement' && (x.contexte.mouvementsDesVentesFacturees.has(g.reference.id) || x.fraisSansPoste.has(g.reference.id)))
+  if (duMouvementDesVentes) {
+    if (declare.size === 0) return x.fraisSansPoste.has(g.reference.id) ? 'frais_sans_poste' : 'vente_facturee_a_retirer'
+    return ecrit.size === 0 ? 'vente_facturee_non_ecrite' : 'vente_facturee_a_reecrire'
   }
   // Une catégorie sans compte : rien ne peut l'écrire — ni maintenant, ni réécrire une écriture restée sur
   // l'ancien compte.
@@ -418,7 +431,7 @@ export const LIBELLES_MOTIFS: Readonly<Record<MotifEcart, string>> = {
   vente_facturee_non_ecrite: 'vente facturée à écrire',
   vente_facturee_a_reecrire: 'vente facturée à réécrire',
   vente_facturee_a_retirer: 'écriture d’une vente facturée à retirer',
-  frais_d_encaissements: 'frais d’un mouvement d’encaissements',
+  frais_sans_poste: 'frais d’encaissements sans poste',
   montant_different: 'montant différent',
   compte_different: 'compte différent',
   piece_non_validee: 'pièce non validée',
@@ -453,13 +466,22 @@ export function phraseDeLEcart(e: EcartDeSource): string {
     case 'paiement_personnel_refuse':
       return `Son paiement depuis le compte personnel ne s’écrit pas, elle reste comptée à son échéance. ${e.source?.type === 'cotisation' ? e.source.refus : ''}`.trim()
     case 'vente_facturee_non_ecrite':
+      if (e.reference.type === 'mouvement') {
+        return `La 2035 compte les frais que la banque a retenus sur ce mouvement d’encaissements (${formatMoney(Math.abs(e.declaration))}), aucune écriture de l’exercice ne les porte : à écrire depuis la section « Ventes facturées », qui dit aussi ce qui l’en empêcherait.`
+      }
       return `La 2035 compte cet encaissement d’une facture (${formatMoney(Math.abs(e.declaration))}), aucune écriture de l’exercice ne le porte : à écrire depuis la section « Ventes facturées », qui dit aussi ce qui l’en empêcherait (un compte à choisir, un mouvement à classer).`
     case 'vente_facturee_a_reecrire':
+      if (e.reference.type === 'mouvement') {
+        return `Son écriture porte ${formatMoney(Math.abs(e.ecritures))} de frais au ${e.comptesEcritures.join(', ')}, la 2035 ${formatMoney(Math.abs(e.declaration))} au ${comptes(e.comptesDeclaration)} : elle n’est plus celle que le mouvement commande, à réécrire depuis la section « Ventes facturées ».`
+      }
       return `Son écriture porte ${formatMoney(Math.abs(e.ecritures))} au ${e.comptesEcritures.join(', ')}, la 2035 ${formatMoney(Math.abs(e.declaration))} au ${comptes(e.comptesDeclaration)} : elle n’est plus celle que l’encaissement commande, à réécrire depuis la section « Ventes facturées ».`
     case 'vente_facturee_a_retirer':
+      if (e.reference.type === 'mouvement') {
+        return `Son écriture porte ${formatMoney(Math.abs(e.ecritures))} de frais au ${e.comptesEcritures.join(', ')}, que la 2035 ne compte pas dans cet exercice : la composition de ce mouvement ne les écrit plus — à réécrire ou à retirer depuis la section « Ventes facturées », selon ce qu’elle en dit.`
+      }
       return 'Écriture d’une vente facturée que la 2035 ne compte pas dans cet exercice (un encaissement retiré, une facture que le calcul écarte) : à retirer depuis la section « Ventes facturées ».'
-    case 'frais_d_encaissements':
-      return `Les frais que la banque a retenus sur ce mouvement, que ses encaissements de factures classent (${formatMoney(Math.abs(e.ecritures))} au ${e.comptesEcritures.join(', ')}) : l’écriture les porte, la 2035 ne les compte pas encore — une dépense qui lui manque, que l’application ne sait pas encore lui donner.`
+    case 'frais_sans_poste':
+      return `Les frais que la banque a retenus sur ce mouvement d’encaissements (${formatMoney(Math.abs(e.ecritures))} au ${e.comptesEcritures.join(', ')}) : l’écriture les porte, la 2035 les compte sous le poste de la catégorie « Frais bancaires », qui n’en a pas — ou que le dossier n’a pas. Ils n’entrent dans aucune ligne tant que ce poste manque.`
     case 'montant_different':
       return `L’écriture porte ${formatMoney(Math.abs(e.ecritures))}, la 2035 ${formatMoney(Math.abs(e.declaration))} : à régénérer ou à réécrire.`
     case 'compte_different':
@@ -497,8 +519,9 @@ export function ouAgir(e: EcartDeSource): string {
   if (e.motif === 'vente_facturee_non_ecrite' || e.motif === 'vente_facturee_a_reecrire' || e.motif === 'vente_facturee_a_retirer') {
     return 'Écritures — Ventes facturées'
   }
-  // Aucun onglet ne porte le geste : le dire, plutôt qu'envoyer changer une écriture qui est juste.
-  if (e.motif === 'frais_d_encaissements') return 'Pas encore dans l’application'
+  // Des frais sans poste : c'est la catégorie « Frais bancaires » qui se règle, là où Clôture dit les postes manquants (une
+  // catégorie commune à tous les cabinets ne se règle que par l'administrateur de l'application, et la carte le dit).
+  if (e.motif === 'frais_sans_poste') return 'Clôture — Postes manquants'
   switch (e.source?.type ?? e.reference.type) {
     case 'piece':
       return e.motif === 'piece_non_validee' ? 'Justificatifs' : 'Écritures'

@@ -8,6 +8,7 @@ import {
   ecrituresDesVentesFacturees, memeEcritureQueLeBrouillon, type EcrituresDesVentesFacturees, type EcritureVenteFacturee,
   type MotifNonEcrite, type MouvementDesEncaissements, type SourceEcritureVente,
 } from './ecrituresVentesFacturees'
+import type { EcrituresDesVentesDeLa2035 } from './declaration2035'
 import { MOYENS_ENCAISSEMENT, mouvementLibre, type LigneDeFacture, type RefusEncaissement } from './encaissementsFactures'
 import { formatDate, formatMoney } from './format'
 import type { PlanComptable } from './planComptable'
@@ -240,6 +241,74 @@ export function choixInchange(choix: ChoixDuCompte, saisie: string): boolean {
   return choix.geste === 'changer' && compteSaisi(saisie) === choix.actuel
 }
 
+// ── La composition des sources lues ───────────────────────────────────────────────────────────────────────────────────
+
+export const MOTIF_NE_SE_COMPOSENT_PAS =
+  'les ventes facturées lues ne se composent pas : une part, un encaissement ou une facture manque à l’autre'
+
+/**
+ * LA COMPOSITION DE VF4a SUR LES SOURCES LUES EN ENTIER, avec le compte de contrepartie que chaque encaissement porte : la
+ * même pour la section « Ventes facturées », la liquidation de la TVA et la 2035 (les frais d'un mouvement d'encaissements).
+ * « incohérente » quand les lectures ne se tiennent pas — la composition suppose qu'une part a son encaissement.
+ */
+export function compositionDesSources(
+  sources: SourcesDesEcrituresDeVente, mode: ModeComptable, plan: PlanComptable,
+): { etat: 'composee'; composition: EcrituresDesVentesFacturees } | { etat: 'incoherent'; motif: string } {
+  try {
+    return {
+      etat: 'composee',
+      composition: ecrituresDesVentesFacturees({
+        sources: {
+          dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements,
+          parts: sources.parts,
+        },
+        mouvements: sources.mouvements,
+        comptesDeContrepartie: new Map(sources.encaissements
+          .filter((e) => e.compte_contrepartie != null).map((e) => [e.id, e.compte_contrepartie as string])),
+        mode, plan,
+      }),
+    }
+  } catch {
+    // Défensif : la composition suppose des lectures qui se tiennent (une part sans son encaissement, par exemple).
+    return { etat: 'incoherent', motif: MOTIF_NE_SE_COMPOSENT_PAS }
+  }
+}
+
+/**
+ * CE QUE LA 2035 D'UN DOSSIER REÇOIT DE SES ÉCRITURES DE VENTES FACTURÉES (VF4C3-Q1 ; lib/declaration2035.ts,
+ * `EcrituresDesVentesDeLa2035`), ou pourquoi elle ne se calcule pas. Un dossier qui n'a pas basculé : `sans_bascule` —
+ * sauf si ses ventes facturées comptent une facture source, que la base interdit : les lectures ne se tiennent pas.
+ * Basculé : la composition des sources lues EN ENTIER pour CE dossier ; pas encore revenues pour lui, « en attente » ;
+ * partielles, refusées ou qui ne se composent pas, « incomplète » avec le motif. Pur : l'appelant lit, ceci juge.
+ */
+export function ecrituresDesVentesPourLa2035(entrees: {
+  dossierId: string
+  /** Le réglage du dossier (`dossiers.ventes_par_les_factures`). */
+  ventesParLesFactures: boolean
+  /** Les factures sources que les ventes facturées lues comptent (`VentesFacturees.sources`). */
+  facturesSources: ReadonlySet<string>
+  /** La lecture des sources (lib/ecrituresVentesFactureesLecture.ts), nulle tant qu'elle n'est pas revenue ou pas faite. */
+  lecture: { dossierId: string; etat: 'lue'; sources: SourcesDesEcrituresDeVente } | { dossierId: string; etat: 'incomplete'; motif: string } | null
+  mode: ModeComptable
+  plan: PlanComptable
+}):
+  | { etat: 'pret'; ecritures: EcrituresDesVentesDeLa2035 }
+  | { etat: 'en_attente' }
+  | { etat: 'incomplete'; motif: string } {
+  if (!entrees.ventesParLesFactures) {
+    return entrees.facturesSources.size === 0 ? { etat: 'pret', ecritures: { etat: 'sans_bascule' } }
+      : { etat: 'incomplete', motif: 'les ventes facturées comptent une facture source alors que le dossier ne se dit pas basculé : les lectures ne se tiennent pas' }
+  }
+  const { lecture } = entrees
+  // Une lecture faite pour un autre dossier ne vaut jamais : celle de CE dossier n'est pas encore revenue.
+  if (lecture === null || lecture.dossierId !== entrees.dossierId) return { etat: 'en_attente' }
+  if (lecture.etat === 'incomplete') return { etat: 'incomplete', motif: lecture.motif }
+  if (lecture.sources.dossierId !== entrees.dossierId) return { etat: 'incomplete', motif: 'la lecture rendue est celle d’un autre dossier' }
+  const composee = compositionDesSources(lecture.sources, entrees.mode, entrees.plan)
+  if (composee.etat === 'incoherent') return { etat: 'incomplete', motif: composee.motif }
+  return { etat: 'pret', ecritures: { etat: 'composees', composition: composee.composition } }
+}
+
 // ── Les états ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 function nomDeLaSource(
@@ -302,19 +371,9 @@ export function etatsDesVentesFacturees(entrees: EntreesEcrituresDeVente): Etats
     }
   }
 
-  let composition: EcrituresDesVentesFacturees
-  try {
-    composition = ecrituresDesVentesFacturees({
-      sources: { dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts },
-      mouvements: sources.mouvements,
-      comptesDeContrepartie: new Map(sources.encaissements
-        .filter((e) => e.compte_contrepartie != null).map((e) => [e.id, e.compte_contrepartie as string])),
-      mode, plan,
-    })
-  } catch {
-    // Défensif : la composition suppose des lectures qui se tiennent (une part sans son encaissement, par exemple).
-    return { etat: 'incoherent', dossierId, motif: 'les ventes facturées lues ne se composent pas : une part, un encaissement ou une facture manque à l’autre' }
-  }
+  const composee = compositionDesSources(sources, mode, plan)
+  if (composee.etat === 'incoherent') return { etat: 'incoherent', dossierId, motif: composee.motif }
+  const composition = composee.composition
   const contexte: ContexteEcritureVente = {
     dossierId, ventesParLesFactures: entrees.ventesParLesFactures, anneesValidees,
     factures: [...factures.values()], encaissements: [...encaissements.values()], mouvements: [...mouvements.values()],
