@@ -11,6 +11,7 @@ import {
   sensCotisationCoherent,
   tiersConfirmeParBanque,
 } from './appariementBanque'
+import { AUCUN_HORS_DES_LOTS } from './mouvementsDesVentes'
 import type { CotisationRapprochable } from './appariementBanque'
 import type { LigneBancaire, Piece } from './types'
 
@@ -414,13 +415,13 @@ describe('planRapprochementAutomatique', () => {
 
   it('rapproche la ligne quand une seule pièce convient', () => {
     const plan = planRapprochementAutomatique(
-      [ligne({ id: 'l1' })], [piece({ id: 'juin', statut: 'validee' })], [], vide)
+      [ligne({ id: 'l1' })], [piece({ id: 'juin', statut: 'validee' })], [], vide, AUCUN_HORS_DES_LOTS)
     expect(plan.retenus).toEqual([{ ligneId: 'l1', pieceId: 'juin' }])
     expect(plan.ecartesPourAmbiguite).toBe(0)
   })
 
   it('refuse de choisir entre deux pièces qui conviennent aussi bien', () => {
-    const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], deuxPiecesIdentiques, [], vide)
+    const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], deuxPiecesIdentiques, [], vide, AUCUN_HORS_DES_LOTS)
     expect(plan.retenus).toEqual([])
     expect(plan.ecartesPourAmbiguite).toBe(1)
   })
@@ -430,7 +431,7 @@ describe('planRapprochementAutomatique', () => {
     // le premier mouvement, sans que rien ne dise que le second convenait tout autant.
     const plan = planRapprochementAutomatique(
       [ligne({ id: 'l1', date: '2025-06-05' }), ligne({ id: 'l2', date: '2025-06-06' })],
-      [piece({ id: 'juin', statut: 'validee' })], [], vide)
+      [piece({ id: 'juin', statut: 'validee' })], [], vide, AUCUN_HORS_DES_LOTS)
     expect(plan.retenus).toEqual([])
     expect(plan.ecartesPourAmbiguite).toBe(2)
   })
@@ -444,7 +445,7 @@ describe('planRapprochementAutomatique', () => {
       [
         piece({ id: 'a', statut: 'validee', montant_ttc: 38.4 }),
         piece({ id: 'b', statut: 'validee', montant_ttc: 120, date_piece: '2025-06-09' }),
-      ], [], vide)
+      ], [], vide, AUCUN_HORS_DES_LOTS)
     expect(plan.retenus).toEqual([
       { ligneId: 'l1', pieceId: 'a' },
       { ligneId: 'l2', pieceId: 'b' },
@@ -456,7 +457,7 @@ describe('planRapprochementAutomatique', () => {
     // Sinon le message « N mouvements ont plusieurs pièces possibles » compterait tout le relevé, et
     // un avertissement qui se trompe toujours finit par ne plus être lu.
     const plan = planRapprochementAutomatique(
-      [ligne({ id: 'l1', montant: -999 })], [piece({ id: 'juin', statut: 'validee' })], [], vide)
+      [ligne({ id: 'l1', montant: -999 })], [piece({ id: 'juin', statut: 'validee' })], [], vide, AUCUN_HORS_DES_LOTS)
     expect(plan.retenus).toEqual([])
     expect(plan.ecartesPourAmbiguite).toBe(0)
   })
@@ -464,7 +465,7 @@ describe('planRapprochementAutomatique', () => {
   it('écarte une pièce déjà rapprochée ailleurs, ce qui lève l’ambiguïté', () => {
     const plan = planRapprochementAutomatique(
       [ligne({ id: 'l1' })], deuxPiecesIdentiques, [],
-      { pieces: new Set(['mai']), cotisations: new Set<string>() })
+      { pieces: new Set(['mai']), cotisations: new Set<string>() }, AUCUN_HORS_DES_LOTS)
     expect(plan.retenus).toEqual([{ ligneId: 'l1', pieceId: 'juin' }])
     expect(plan.ecartesPourAmbiguite).toBe(0)
   })
@@ -472,7 +473,7 @@ describe('planRapprochementAutomatique', () => {
   it('tient la tolérance de cinq jours, des deux côtés de la borne', () => {
     const avec = (date: string) => planRapprochementAutomatique(
       [ligne({ id: 'l1', date: '2025-06-05' })],
-      [piece({ id: 'p', statut: 'validee', date_piece: date })], [], vide).retenus.length
+      [piece({ id: 'p', statut: 'validee', date_piece: date })], [], vide, AUCUN_HORS_DES_LOTS).retenus.length
     expect(avec('2025-05-31'), '5 jours avant — dans la tolérance').toBe(1)
     expect(avec('2025-06-10'), '5 jours après — dans la tolérance').toBe(1)
     expect(avec('2025-05-30'), '6 jours avant — hors tolérance').toBe(0)
@@ -494,7 +495,7 @@ describe('planRapprochementAutomatique', () => {
         process.env.TZ = tz
         const plan = planRapprochementAutomatique(
           [ligne({ id: 'l1', date: '2025-06-05' })],
-          [piece({ id: 'p', statut: 'validee', date_piece: '2025-05-31' })], [], vide)
+          [piece({ id: 'p', statut: 'validee', date_piece: '2025-05-31' })], [], vide, AUCUN_HORS_DES_LOTS)
         expect(plan.retenus.length, tz).toBe(1)
       }
     } finally { process.env.TZ = TZ_ORIGINE }
@@ -505,7 +506,7 @@ describe('planRapprochementAutomatique', () => {
       ({ id: 'c1', echeance: '2025-06-05', montant_appele: 38.4, montant_verse: null, paiement_personnel_le: null, ...o })
 
     it('rapproche une échéance quand aucune pièce ne convient', () => {
-      const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({})], vide)
+      const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({})], vide, AUCUN_HORS_DES_LOTS)
       expect(plan.retenus).toEqual([{ ligneId: 'l1', cotisationId: 'c1' }])
     })
 
@@ -513,13 +514,13 @@ describe('planRapprochementAutomatique', () => {
       // Un appel n'est pas toujours prélevé pour son montant appelé exact (régularisation, paiement
       // partiel) : c'est le montant réellement versé qui doit retrouver le mouvement.
       const plan = planRapprochementAutomatique(
-        [ligne({ id: 'l1', montant: -40 })], [], [cot({ montant_appele: 38.4, montant_verse: 40 })], vide)
+        [ligne({ id: 'l1', montant: -40 })], [], [cot({ montant_appele: 38.4, montant_verse: 40 })], vide, AUCUN_HORS_DES_LOTS)
       expect(plan.retenus).toEqual([{ ligneId: 'l1', cotisationId: 'c1' }])
     })
 
     it('refuse de choisir entre deux échéances identiques', () => {
       const plan = planRapprochementAutomatique(
-        [ligne({ id: 'l1' })], [], [cot({ id: 'c1' }), cot({ id: 'c2' })], vide)
+        [ligne({ id: 'l1' })], [], [cot({ id: 'c1' }), cot({ id: 'c2' })], vide, AUCUN_HORS_DES_LOTS)
       expect(plan.retenus).toEqual([])
       expect(plan.ecartesPourAmbiguite).toBe(1)
     })
@@ -529,10 +530,10 @@ describe('planRapprochementAutomatique', () => {
       // l'aurait rapproché : un remboursement compté en charge. Depuis que le rapprochement s'écrit
       // (lib/cotisationRapprochee.ts), la base le refuse — ici, on ne le propose plus.
       const encaissement = ligne({ id: 'l1', montant: 38.4 })
-      expect(planRapprochementAutomatique([encaissement], [], [cot({})], vide).retenus).toEqual([])
-      expect(planRapprochementAutomatique([encaissement], [], [cot({ montant_appele: -38.4 })], vide).retenus)
+      expect(planRapprochementAutomatique([encaissement], [], [cot({})], vide, AUCUN_HORS_DES_LOTS).retenus).toEqual([])
+      expect(planRapprochementAutomatique([encaissement], [], [cot({ montant_appele: -38.4 })], vide, AUCUN_HORS_DES_LOTS).retenus)
         .toEqual([{ ligneId: 'l1', cotisationId: 'c1' }])
-      expect(planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({ montant_appele: -38.4 })], vide).retenus).toEqual([])
+      expect(planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({ montant_appele: -38.4 })], vide, AUCUN_HORS_DES_LOTS).retenus).toEqual([])
       // Le versement saisi fait foi sur l'appel, pour le sens comme pour le montant.
       expect(candidatsCotisations(encaissement, [cot({ montant_verse: -38.4 })], new Set()).map((c) => c.id)).toEqual(['c1'])
     })
@@ -542,7 +543,7 @@ describe('planRapprochementAutomatique', () => {
     it('une échéance payée depuis le compte personnel n’est plus proposée', () => {
       const payee = cot({ paiement_personnel_le: '2025-06-10' })
       expect(candidatsCotisations(ligne({ id: 'l1' }), [payee], new Set())).toEqual([])
-      expect(planRapprochementAutomatique([ligne({ id: 'l1' })], [], [payee], vide).retenus).toEqual([])
+      expect(planRapprochementAutomatique([ligne({ id: 'l1' })], [], [payee], vide, AUCUN_HORS_DES_LOTS).retenus).toEqual([])
       expect(candidatsCotisations(ligne({ id: 'l1' }), [cot({ paiement_personnel_le: null })], new Set()).map((c) => c.id)).toEqual(['c1'])
     })
 
@@ -556,7 +557,7 @@ describe('planRapprochementAutomatique', () => {
       // Ce n'est PAS un arbitrage entre égaux mais une règle de l'écran, conservée telle quelle : la
       // changer serait une décision produit, pas une correction.
       const plan = planRapprochementAutomatique(
-        [ligne({ id: 'l1' })], [piece({ id: 'p', statut: 'validee' })], [cot({})], vide)
+        [ligne({ id: 'l1' })], [piece({ id: 'p', statut: 'validee' })], [cot({})], vide, AUCUN_HORS_DES_LOTS)
       expect(plan.retenus).toEqual([{ ligneId: 'l1', pieceId: 'p' }])
     })
   })

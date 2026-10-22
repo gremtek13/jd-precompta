@@ -41,7 +41,9 @@ import FormulaireReglementGroupe from './FormulaireReglementGroupe'
 import FormulaireVentilation from './FormulaireVentilation'
 import { FilDuMouvement, PropositionsDuClient } from './EnvoisDuClient'
 import type { AccesDuReleve, ContexteDeLaProposition, EnvoisDuClient } from '../../lib/banqueCabinet'
-import { carteDeVente, PASTILLE_CLASSE, pastilleDeVente, type VenteDuMouvement } from '../../lib/mouvementsDesVentes'
+import {
+  carteDeVente, PASTILLE_CLASSE, pastilleDeVente, type MouvementsHorsDesLots, type VenteDuMouvement,
+} from '../../lib/mouvementsDesVentes'
 
 // Le rapprochement d'un mouvement bancaire, dans le panneau de droite — étape 2 de l'interface
 // d'ordinateur, comme la fiche d'une pièce (voir FichePiece). Il remplace la fenêtre qui assombrissait
@@ -160,6 +162,9 @@ interface FicheMouvementProps {
   regles: RegleAffectationBancaire[]
   reglesIncompletes: string | null
   lignes: LigneBancaire[]
+  // Les mouvements qu'aucun lot ne prend — classés par leurs encaissements de factures ou réservés à eux (étape VF5a2,
+  // lib/mouvementsDesVentes.ts) : une règle nouvelle ne les proposera pas, et le compte de ceux qu'elle désignerait les tait.
+  horsDesLots: MouvementsHorsDesLots
   // Sur un dossier assujetti, une recette sans facture porte son taux de TVA, que le relevé ne dit pas :
   // la fiche le demande (voir lib/tvaDuReleve.ts).
   assujettiTva: boolean
@@ -577,7 +582,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
 }
 
 export default function FicheMouvement({
-  ligne, plan, figeePar, venteDuMouvement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant, modeComptable,
+  ligne, plan, figeePar, venteDuMouvement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, horsDesLots, assujettiTva, compteDirigeant, modeComptable,
   piecesRapprochees, piecesFigees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
@@ -758,7 +763,7 @@ export default function FicheMouvement({
   const refusRegle = retenirRegle ? refusMotif(motifRegle) : null
   const motifNormalise = normaliserPourRegle(motifRegle)
   const autresCouverts = retenirRegle && sens && !refusRegle
-    ? mouvementsCouverts(motifNormalise, sens, lignes).filter((l) => l.id !== ligne.id).length
+    ? mouvementsCouverts(motifNormalise, sens, lignes, horsDesLots).filter((l) => l.id !== ligne.id).length
     : 0
   const regleRemplacee = retenirRegle && sens
     ? regles.find((r) => r.motif === motifNormalise && r.sens === sens) ?? null

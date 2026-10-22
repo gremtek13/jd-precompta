@@ -21,7 +21,7 @@ import { controlerSolde, lignesDeSolde } from '../../lib/soldeReleve'
 import { chargerRelevesIncoherents, enregistrerControleReleve } from '../../lib/controlesReleves'
 import {
   analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE_RAPPROCHEMENT,
-  libelleExploitable, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
+  libelleExploitable, lotDesCertains, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
 } from '../../lib/appariementBanque'
 import { mouvementRapprocheSansObjet, pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar, restesAReglerDesPieces } from '../../lib/controles'
 import { ecritureDuMouvement, mouvementsAffectes, recettesAffecteesSansTaux, refusAffectation } from '../../lib/affectationBanque'
@@ -47,7 +47,7 @@ import { libellePeriode } from '../../lib/declarationTva'
 import {
   ecritureDuPaiementTva, paiementTvaPlausible, raisonPaiementTvaPlausible, refusPaiementTva, suiviDesDeclarations,
 } from '../../lib/liquidationTva'
-import { statutPourLibelle } from '../../lib/reglesIgnorees'
+import { ignoresParLaRegle, statutPourLibelle } from '../../lib/reglesIgnorees'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import PanneauDroit from '../../components/PanneauDroit'
 import ConnexionBancaireCard from './ConnexionBancaireCard'
@@ -62,7 +62,8 @@ import { lireLesAccesDuReleve, lireLesEnvoisDuClient } from '../../lib/banqueCab
 import { argumentsDeLaPrecision, argumentsDeRetirer } from '../../lib/banqueClient'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import {
-  PASTILLE_CLASSE, pastilleDeVente, retenueDuReleve, venteDuMouvement, ventesDuReleve,
+  comptesDuReleve, ecartDuLot, mouvementsHorsDesLots, PASTILLE_CLASSE, pastilleDeVente, retenueDuReleve, texteDesNonRapproches,
+  venteDuMouvement, ventesDuReleve, type EcartDuLot,
 } from '../../lib/mouvementsDesVentes'
 
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -80,6 +81,23 @@ function phraseLignesFigees(nb: number, frontiere: string, toutes: boolean, doub
   return `${toutes ? 'Rien à importer : ' : ''}${sujet} d’un exercice validé, au plus tard le ${formatDate(frontiere)}, `
     + `${nb > 1 ? 'ne s’importent' : 'ne s’importe'} pas — un exercice validé ne reçoit plus de mouvement. Le relevé de cet `
     + `exercice ne ${nb > 1 ? 'les' : 'la'} porte pas : une opération oubliée se corrige sur l’exercice suivant.${autres}`
+}
+
+// Ce qu'une carte de lot dit des mouvements des ventes facturées qu'elle écarte (étape VF5a2) : combien, et pourquoi — les
+// mots de la garde G2, tirés de lib/mouvementsDesVentes.ts, jamais recopiés. Repliée, comme les autres listes des cartes.
+function EcartDesVentes({ lot, ecart }: { lot: string; ecart: EcartDuLot<LigneBancaire> }) {
+  return (
+    <details style={{ marginTop: 10 }}>
+      <summary>{`${lot} — ${ecart.resume}`}</summary>
+      <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+        {ecart.mouvements.map((e) => (
+          <li key={e.ligne.id}>
+            {`${formatDate(e.ligne.date)} — ${libelleExploitable(e.ligne)} — ${formatMoney(e.ligne.montant)} : ${e.raison}`}
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
 }
 
 function signatureLigne(l: { date: string; libelle: string; montant: number }): string {
@@ -343,6 +361,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   )
   const ventesRetenues = retenueDuReleve(ventes)
   const venteDe = (id: string) => (ventes.etat === 'lue' ? ventes.mouvements.get(id) ?? null : null)
+  // Les mouvements qu'aucun lot ne prend (étape VF5a2) : classés par leurs encaissements ou réservés à eux, chacun avec les
+  // mots de la garde. Vide tant que les ventes ne sont pas lues en entier — `ventesRetenues` suspend alors chaque lot.
+  const horsDesLots = useMemo(() => mouvementsHorsDesLots(ventes), [ventes])
 
   // Les propositions ligne à ligne et le bouton « tout rapprocher » historiques ne portent que sur
   // des pièces déjà relues par le cabinet : rapprocher sur de l'OCR non validé reviendrait à écrire
@@ -953,7 +974,18 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // Ignore cette ligne ET mémorise un mot-clé pour que toutes les lignes similaires (déjà importées
   // ou futures) soient automatiquement classées "ignorées" — utile pour les prélèvements récurrents
   // (assurance, cotisations) qui n'ont pas de pièce à fournir à chaque échéance.
+  //
+  // LES MOUVEMENTS DES VENTES FACTURÉES (étape VF5a2) : la mise à jour des mouvements déjà importés n'en prend aucun — la
+  // garde G2 la refuserait ENTIÈRE —, et l'écran dit combien la règle en a laissés, et pourquoi. Sur des ventes facturées
+  // pas encore lues en entier, on ne sait pas lesquels : RIEN ne part, ni la règle ni la mise à jour. La règle seule
+  // laisserait à traiter des mouvements qu'elle couvre, sans que rien ne les reprenne (elle ne joue qu'à l'import), et
+  // l'opérateur croirait le motif appliqué. La fiche, alors, n'offre déjà plus ce geste (`venteDuMouvement`) : ceci en est
+  // la seconde ceinture.
   async function toujoursIgnorer(ligne: LigneBancaire): Promise<boolean> {
+    if (ventesRetenues) {
+      window.alert(`La règle n’a pas été enregistrée : ${ventesRetenues}. Recharge la page.`)
+      return false
+    }
     const motif = window.prompt(
       'Mot-clé stable qui identifie ce type de mouvement récurrent (ex. "MACSF", "SWISSLIFE") — toute future ligne contenant ce mot sera automatiquement ignorée.',
       ligne.libelle,
@@ -967,10 +999,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       return false
     }
 
-    const aMettreAJour = lignes.filter((l) => l.statut === 'non_rapprochee' && l.libelle.toLowerCase().includes(motifNormalise))
+    const { aIgnorer: aMettreAJour, ecartesParLesVentes } = ignoresParLaRegle(lignes, motifNormalise, horsDesLots)
     if (aMettreAJour.length > 0) {
       const { error: errMaj } = await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).in('id', aMettreAJour.map((l) => l.id))
       if (errMaj) window.alert(`La règle est enregistrée, mais les mouvements déjà importés n'ont pas pu être ignorés : ${errMaj.message}`)
+    }
+    const ecart = ecartDuLot(ecartesParLesVentes, horsDesLots)
+    if (ecart) {
+      window.alert(`La règle est enregistrée, mais ne fait pas ignorer tous les mouvements qu’elle reconnaît. ${ecart.resume}\n\n`
+        + ecart.mouvements.map((e) => `${formatDate(e.ligne.date)} — ${libelleExploitable(e.ligne)} — ${formatMoney(e.ligne.montant)} : ${e.raison}`).join('\n'))
     }
     return true
   }
@@ -1044,7 +1081,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // Mémoïsée parce que `planAuto` en dépend : recréée à chaque rendu, elle relançait le plan — un
   // produit mouvements × pièces — à chaque frappe dans la recherche, et rendait son `useMemo` inopérant.
   const nonRapprochees = useMemo(() => lignes.filter((l) => l.statut === 'non_rapprochee'), [lignes])
-  const totalNonRapproche = nonRapprochees.reduce((s, l) => s + l.montant, 0)
+  // Un mouvement réservé à des encaissements de factures n'attend pas de pièce : il se compte à part, et seulement sur des
+  // ventes lues en entier (étape VF5a2, `comptesDuReleve`).
+  const comptesNonRapproches = comptesDuReleve(nonRapprochees, ventes)
 
   // Le plan vit dans lib/appariementBanque.ts, testé. Il REFUSE de trancher quand deux pièces
   // conviennent aussi bien l'une que l'autre, dans les deux sens — la version précédente parcourait
@@ -1053,10 +1092,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const planAuto = useMemo(
     () => planRapprochementAutomatique(nonRapprochees, piecesValidees, cotisations, {
       pieces: piecesHorsRapprochement, cotisations: cotisationsRapprochees,
-    }),
-    [nonRapprochees, piecesValidees, cotisations, piecesHorsRapprochement, cotisationsRapprochees],
+    }, horsDesLots),
+    [nonRapprochees, piecesValidees, cotisations, piecesHorsRapprochement, cotisationsRapprochees, horsDesLots],
   )
   const suggestionsAutomatiques = planAuto.retenus
+  const ecartDuLotAutomatique = ecartDuLot(planAuto.ecartesParLesVentes, horsDesLots)
 
   // Appariements où le montant, la date ET le fournisseur concordent — le seul cas où valider une
   // pièce n'apprend rien à personne. Le tri vit dans lib/appariementBanque.ts, testé ; ici il ne
@@ -1069,7 +1109,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     () => analyserAppariements(pieces.filter((p) => !piecesHorsRapprochement.has(p.id)), lignes),
     [pieces, lignes, piecesHorsRapprochement],
   )
-  const certainsAValider = appariementsCertains.filter((a) => a.piece.statut !== 'validee')
+  // Sans les paires dont le mouvement porte des encaissements de factures (étape VF5a2), que la carte dit à part.
+  const lotCertain = lotDesCertains(appariementsCertains.filter((a) => a.piece.statut !== 'validee'), horsDesLots)
+  const certainsAValider = lotCertain.aEcrire
+  const ecartDuLotCertain = ecartDuLot(lotCertain.ecartesParLesVentes.map((a) => a.ligne), horsDesLots)
 
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE. Les deux lots ci-dessous n'écrivent que ce
   // qu'aucun doute ne sépare, et « aucun doute » veut dire UN SEUL candidat de part et d'autre. Or une
@@ -1116,8 +1159,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       if (emprunt) return raisonEmpruntPlausible(emprunt)
       // Un prélèvement qui paie exactement une déclaration de TVA : une règle au nom du Trésor le rangerait en charge.
       return raisonPaiementTvaPlausible(l, suivisTva)
-    })
-  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva])
+    }, horsDesLots)
+  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva, horsDesLots])
+  const ecartDuLotDesRegles = ecartDuLot(planRegles.ecartesParLesVentes, horsDesLots)
   const idsProposesParRegle = useMemo(() => new Set(planRegles.propositions.map((p) => p.ligne.id)), [planRegles])
   const idsEmpruntPlausible = useMemo(
     () => new Set(nonRapprochees.filter((l) => empruntPlausible(l, emprunts, lignes)).map((l) => l.id)),
@@ -1509,7 +1553,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         <p className="muted" style={{ margin: 0 }}>
           {loading ? 'Chargement…' : (
             <>
-              {nonRapprochees.length} mouvement(s) bancaire(s) non rapproché(s) ({formatMoney(totalNonRapproche)})
+              {texteDesNonRapproches(comptesNonRapproches)}
               {' · '}
               {piecesSansMouvement.length} pièce(s) validée(s) sans mouvement bancaire correspondant
               {' · '}
@@ -1551,6 +1595,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             ne sont pas rapprochés automatiquement — ouvre la ligne pour choisir.
           </p>
         )}
+        {ecartDuLotAutomatique && <EcartDesVentes lot="Rapprochement automatique" ecart={ecartDuLotAutomatique} />}
         {reglesAffectation.length > 0 && (
           <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
             Règles d'affectation :{' '}
@@ -1591,7 +1636,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         )}
       </div>
 
-      {certainsAValider.length > 0 && (
+      {(certainsAValider.length > 0 || ecartDuLotCertain) && (
         <div className="card" style={{ marginBottom: 14, borderLeft: '3px solid var(--color-primary)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
@@ -1602,14 +1647,16 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
                 le libellé du mouvement. Les relire une par une n'apprendrait rien.
               </p>
             </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={rapprochementAuto || actionMouvementEnCours || affectationLotEnCours || lotCertainSuspendu !== null || lotsEnAttenteDeLecture}
-              onClick={validerEtRapprocherLot}
-            >
-              {rapprochementAuto ? 'Traitement…' : certainsAValider.length === 1 ? 'Valider et rapprocher cette pièce' : `Valider et rapprocher les ${certainsAValider.length}`}
-            </button>
+            {certainsAValider.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={rapprochementAuto || actionMouvementEnCours || affectationLotEnCours || lotCertainSuspendu !== null || lotsEnAttenteDeLecture}
+                onClick={validerEtRapprocherLot}
+              >
+                {rapprochementAuto ? 'Traitement…' : certainsAValider.length === 1 ? 'Valider et rapprocher cette pièce' : `Valider et rapprocher les ${certainsAValider.length}`}
+              </button>
+            )}
           </div>
           {lotsEnAttenteDeLecture && (
             <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
@@ -1625,7 +1672,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             </p>
           )}
           {/* Repliée en fiches sous 520 pixels de carte (08/10/2026) : sur téléphone, le mouvement apparié — sa date et son écart — était
-              coupé au bord, et le libellé bancaire hors de vue ; c'est lui qui dit à quoi la pièce a été appariée. La carte a sa marge. */}
+              coupé au bord, et le libellé bancaire hors de vue ; c'est lui qui dit à quoi la pièce a été appariée. La carte a sa marge.
+              Enveloppée sans être réindentée : la carte peut ne dire que ce qu'elle écarte (étape VF5a2). */}
+          {certainsAValider.length > 0 && (
           <div className="table-scroll tableau-adaptable" style={{ marginTop: 12 }}>
             <table className="table-empilable-etroite table-empilable-sans-jeu">
               <thead>
@@ -1660,6 +1709,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
               </tbody>
             </table>
           </div>
+          )}
+          {ecartDuLotCertain && <EcartDesVentes lot="Validation en lot" ecart={ecartDuLotCertain} />}
         </div>
       )}
 
@@ -1705,7 +1756,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
 
       {/* Après les pièces, et c'est voulu : un mouvement qui a son justificatif se rapproche, il ne
           s'affecte pas — le plan les écarte, et les montre à part. */}
-      {(planRegles.propositions.length + planRegles.aRapprocher.length + planRegles.refus.length + planRegles.conflits.length) > 0 && (
+      {(planRegles.propositions.length + planRegles.aRapprocher.length + planRegles.refus.length + planRegles.conflits.length
+        + planRegles.ecartesParLesVentes.length) > 0 && (
         <div className="card" style={{ marginBottom: 14, borderLeft: '3px solid var(--color-primary)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
@@ -1840,6 +1892,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
               </ul>
             </details>
           )}
+          {ecartDuLotDesRegles && <EcartDesVentes lot="Affectation par les règles" ecart={ecartDuLotDesRegles} />}
         </div>
       )}
 
@@ -2058,6 +2111,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             regles={reglesAffectation}
             reglesIncompletes={reglesAffectationIncompletes}
             lignes={lignes}
+            horsDesLots={horsDesLots}
             assujettiTva={assujettiTva}
             compteDirigeant={compteDuDirigeant(modele)}
             modeComptable={modele.mode}

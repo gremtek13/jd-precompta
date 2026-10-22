@@ -6,6 +6,7 @@ import { recollerSiglesPointes } from './format'
 import type { PlanComptable } from './planComptable'
 import { tauxApplicable, tauxRequis } from './tvaDuReleve'
 import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire, SensMouvementBancaire } from './types'
+import type { MouvementsHorsDesLots } from './mouvementsDesVentes'
 
 // LES RÈGLES D'AFFECTATION APPRISES PAR LIBELLÉ (ligne 26.6 de la feuille de route, étape a).
 //
@@ -131,21 +132,30 @@ export function motifPropose(
   return reference.slice(0, longueur)
 }
 
-/** Un mouvement que le lot peut affecter : à traiter, jamais un virement personnel, jamais zéro euro. */
-export function mouvementATraiter(ligne: Pick<LigneBancaire, 'statut' | 'prelevement_personnel' | 'montant'>): boolean {
-  return ligne.statut === 'non_rapprochee' && !ligne.prelevement_personnel && ligne.montant !== 0
+/**
+ * Un mouvement que le lot peut affecter : à traiter, jamais un virement personnel, jamais zéro euro — et jamais un mouvement
+ * des ventes facturées (étape VF5a2, lib/mouvementsDesVentes.ts) : réservé à des encaissements de factures, il reste « à
+ * traiter » en base, mais la garde G2 refuserait le lot entier. `horsDesLots` n'a pas de valeur par défaut, et c'est voulu :
+ * un appelant qui l'oublierait ne compile pas.
+ */
+export function mouvementATraiter(
+  ligne: Pick<LigneBancaire, 'id' | 'statut' | 'prelevement_personnel' | 'montant'>,
+  horsDesLots: MouvementsHorsDesLots,
+): boolean {
+  return ligne.statut === 'non_rapprochee' && !ligne.prelevement_personnel && ligne.montant !== 0 && !horsDesLots.has(ligne.id)
 }
 
 /** Les mouvements À TRAITER de ce sens que le motif désigne — ce qu'une règle nouvelle proposerait. */
-export function mouvementsCouverts<L extends Pick<LigneBancaire, 'statut' | 'prelevement_personnel' | 'montant' | 'libelle' | 'libelle_brut'>>(
+export function mouvementsCouverts<L extends Pick<LigneBancaire, 'id' | 'statut' | 'prelevement_personnel' | 'montant' | 'libelle' | 'libelle_brut'>>(
   motif: string,
   sens: SensMouvementBancaire,
   lignes: readonly L[],
+  horsDesLots: MouvementsHorsDesLots,
 ): L[] {
   const normalise = normaliserPourRegle(motif)
   if (!normalise) return []
   return lignes.filter((l) =>
-    mouvementATraiter(l) && sensDuMouvement(l) === sens
+    mouvementATraiter(l, horsDesLots) && sensDuMouvement(l) === sens
     && libelleCorrespond(normaliserPourRegle(libelleExploitable(l)), normalise))
 }
 
@@ -252,7 +262,13 @@ export interface PlanAffectationParRegles {
   // raison, jamais écrits.
   refus: RefusRegle[]
   conflits: ConflitRegles[]
+  // Désignés par une règle, mais qui portent des encaissements de factures (étape VF5a2) : ni affectés, ni à rapprocher —
+  // le cabinet les classe par leurs encaissements. La carte du lot dit combien, et pourquoi (`ecartDuLot`).
+  ecartesParLesVentes: LigneBancaire[]
 }
+
+// Le jugement du lot sans les ventes facturées : un mouvement ne se dit écarté par elles que si le lot l'aurait pris.
+const SANS_LES_VENTES: MouvementsHorsDesLots = new Map()
 
 // Ce que le clic « Affecter les N » écrirait. Seuls les mouvements À TRAITER : un mouvement rapproché,
 // classé ou déjà affecté porte une décision humaine que le lot n'a pas à revoir — la base le refuse
@@ -266,12 +282,20 @@ export function planAffectationParRegles(
   // Sans valeur par défaut, et c'est voulu : un appelant qui l'oublierait affecterait en lot des
   // paiements dont la pièce est au dossier.
   justificatif: (ligne: LigneBancaire) => string | null,
+  // Les mouvements des ventes facturées (lib/mouvementsDesVentes.ts) : sans valeur par défaut non plus.
+  horsDesLots: MouvementsHorsDesLots,
 ): PlanAffectationParRegles {
   const parId = new Map(categories.map((c) => [c.id, c]))
-  const plan: PlanAffectationParRegles = { propositions: [], aRapprocher: [], refus: [], conflits: [] }
+  const plan: PlanAffectationParRegles = { propositions: [], aRapprocher: [], refus: [], conflits: [], ecartesParLesVentes: [] }
   if (regles.length === 0) return plan
   for (const ligne of lignes) {
-    if (!mouvementATraiter(ligne)) continue
+    if (!mouvementATraiter(ligne, horsDesLots)) {
+      // Écarté pour ses encaissements, et pour eux seuls, quand une règle le désigne : la carte le dit.
+      if (horsDesLots.has(ligne.id) && mouvementATraiter(ligne, SANS_LES_VENTES) && regleApplicable(ligne, regles).etat !== 'aucune') {
+        plan.ecartesParLesVentes.push(ligne)
+      }
+      continue
+    }
     const resultat = regleApplicable(ligne, regles)
     if (resultat.etat === 'aucune') continue
     if (resultat.etat === 'conflit') {

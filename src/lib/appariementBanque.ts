@@ -1,5 +1,6 @@
 import { DEVISE_PIVOT, montantPlausiblePourDevise } from './devises'
 import type { LigneBancaire, Piece } from './types'
+import type { MouvementsHorsDesLots } from './mouvementsDesVentes'
 
 // Appariement pièce ↔ mouvement bancaire, et tri entre ce qui est certain et ce qui demande un
 // arbitrage.
@@ -324,6 +325,9 @@ export interface PlanRapprochement {
   // plutôt que tues : un bouton qui annonce « 12 » en traitant 9 ne dit pas où sont passées les 3
   // autres, et c'est la règle du pack (« un livrable incomplet le dit »).
   ecartesPourAmbiguite: number
+  // Les mouvements des ventes facturées qu'une pièce ou une échéance semblait justifier (étape VF5a2) : jamais rapprochés —
+  // la garde G2 le refuserait —, et comptés à part, jamais parmi les ambigus. La carte dit combien, et pourquoi.
+  ecartesParLesVentes: LigneBancaire[]
 }
 
 function montantEgal(a: number | null | undefined, b: number): boolean {
@@ -398,12 +402,19 @@ export function candidatsCotisations<C extends CotisationRapprochable>(
  *
  * La précédence pièce > cotisation est CONSERVÉE telle quelle : ce n'est pas un arbitrage entre
  * égaux mais une règle de l'écran, et la changer serait une décision produit.
+ *
+ * UN MOUVEMENT DES VENTES FACTURÉES N'EST JAMAIS RETENU (étape VF5a2, lib/mouvementsDesVentes.ts) : réservé à des
+ * encaissements de factures, la garde G2 refuserait son rapprochement. Il reste pourtant dans le calcul de l'unicité, comme
+ * concurrent : un mouvement du relevé du même montant reste un paiement possible de la pièce — que l'encaissement qui le
+ * réserve soit le bon ou non, c'est au cabinet de le dire, pas au lot de le déduire de son absence. `horsDesLots` n'a pas
+ * de valeur par défaut : un appelant qui l'oublierait ne compile pas.
  */
 export function planRapprochementAutomatique(
   lignesNonRapprochees: LigneBancaire[],
   piecesValidees: Piece[],
   cotisations: CotisationRapprochable[],
   dejaRapprochees: { pieces: ReadonlySet<string>; cotisations: ReadonlySet<string> },
+  horsDesLots: MouvementsHorsDesLots,
   joursTolerance = JOURS_TOLERANCE_RAPPROCHEMENT,
 ): PlanRapprochement {
   const parLignePieces = new Map<string, Piece[]>()
@@ -422,11 +433,16 @@ export function planRapprochementAutomatique(
 
   const retenus: RapprochementPropose[] = []
   let ecartesPourAmbiguite = 0
+  const ecartesParLesVentes: LigneBancaire[] = []
 
   for (const ligne of lignesNonRapprochees) {
     const pieces = parLignePieces.get(ligne.id) ?? []
     const cotis = parLigneCotisations.get(ligne.id) ?? []
     if (pieces.length === 0 && cotis.length === 0) continue
+    if (horsDesLots.has(ligne.id)) {
+      ecartesParLesVentes.push(ligne)
+      continue
+    }
 
     if (pieces.length === 1 && (lignesParPiece.get(pieces[0].id) ?? 0) === 1) {
       retenus.push({ ligneId: ligne.id, pieceId: pieces[0].id })
@@ -439,5 +455,25 @@ export function planRapprochementAutomatique(
     ecartesPourAmbiguite++
   }
 
-  return { retenus, ecartesPourAmbiguite }
+  return { retenus, ecartesPourAmbiguite, ecartesParLesVentes }
+}
+
+export interface LotDesCertains {
+  // Ce que « Valider et rapprocher » écrit.
+  aEcrire: Appariement[]
+  // Les paires dont le mouvement porte des encaissements de factures (étape VF5a2) : ni la pièce n'est validée, ni le
+  // mouvement rapproché — la garde G2 refuserait le rapprochement. La carte dit combien, et pourquoi.
+  ecartesParLesVentes: Appariement[]
+}
+
+/**
+ * Le lot « Valider et rapprocher » : les paires certaines (`analyserAppariements`), moins celles dont le mouvement est un
+ * mouvement des ventes facturées (lib/mouvementsDesVentes.ts). L'unicité, elle, s'est jugée sur TOUT le relevé, ces
+ * mouvements compris : une pièce qu'un mouvement réservé pourrait aussi payer n'est pas certaine. `horsDesLots` n'a pas
+ * de valeur par défaut.
+ */
+export function lotDesCertains(certains: readonly Appariement[], horsDesLots: MouvementsHorsDesLots): LotDesCertains {
+  const lot: LotDesCertains = { aEcrire: [], ecartesParLesVentes: [] }
+  for (const a of certains) (horsDesLots.has(a.ligne.id) ? lot.ecartesParLesVentes : lot.aEcrire).push(a)
+  return lot
 }
