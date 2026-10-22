@@ -31808,3 +31808,13 @@ l'écart des frais près, sinon le plus petit des deux. Aucune question nouvelle
   avec les frais.
 - La branche « il ne pourra pas encore se classer » de l'état d'après n'est atteinte par aucun candidat que
   `refusRattachement` admet : elle reste, pour ne jamais dire « il restera » d'un autre refus.
+
+**LA MISE EN LIGNE.** Demande #209, ouverte sur `b56dd28` après la barrière de la session sous Node 22.23.3 sur le
+commit du code recomposé (`tsc -b --force` ; lint, 0 erreur et les 63 avertissements d'avant ; 446 fichiers et 13 577
+tests sous Paris, UTC, New York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la
+demande, de 19 h 49 à 20 h 01 UTC) ; fusionnée en « Rebase and merge » le 22/10/2026 à 20 h 04 UTC (`267abaa`,
+`6cbaf60`), `main` linéaire, son arbre égal à celui de la branche ; le déploiement vert, et le site sert
+`index-EjDwdUC_.js` à 20 h 09 (le déploiement fini la même minute), le bundle du build local. La feuille de route : la
+ligne 28.65 mise à jour, puis relue par empreinte (16 770 positions) ; les barres recomptées par requête, inchangées
+(186 chantiers hors de la phase 7, dont 141 livrés ; 76 % et 82 %). La copie de travail de l'agent retirée, son travail
+entier dans `main`, recomposé ; la branche réalignée sur `main`.
