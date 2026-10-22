@@ -40,7 +40,10 @@ import type {
 //     base refuse DE PLUS pour une facture SOURCE de sa vente — la frontière d'un exercice validé, un mouvement déjà
 //     classé, les plafonds nets de ses avoirs, la contre-passation qui cite le débit qui défait l'encaissement —, et ce
 //     que refusent les trois fonctions neuves du cabinet (rattacher un encaissement à son mouvement, classer un mouvement
-//     par ses encaissements, retirer ce classement) et la garde des mouvements réservés (G2) : en fin de module.
+//     par ses encaissements, retirer ce classement) et la garde des mouvements réservés (G2) : en fin de module ;
+//   - depuis l'étape VF5b, ce que la fenêtre des encaissements lit d'une facture source : son reste net des avoirs, les
+//     débits qu'une contre-passation cite, la frontière que le client ne lit pas, le geste qui rendrait un mouvement
+//     inclassable — tout à la fin.
 //
 // Les sources sont publiques : CGI, art. 290 A, et ann. II, art. 242 nonies P — CIBS, art. L. 216-56 à compter du
 // 01/01/2027 — ; BOI-TVA-DECLA-20-30-60 ; BOI-TVA-BASE-20-20 ; spécifications externes de la DGFiP v3.2 (§ 3.6.4 et
@@ -582,7 +585,7 @@ export function refusEnregistrement(
  * exercice validé (rang 11), un mouvement déjà classé (rang 17) et les plafonds nets de ses avoirs validés (rangs 27 et
  * 29, à la place des plafonds bruts). `mouvements` : ceux du dossier, avec ce qui les classe ; `vente` : les exercices
  * validés et les factures du dossier — les lignes des avoirs de la facture dans `c.lignes`. Pour une facture qui n'est
- * pas source, la même chose que `refusEnregistrement`. La fenêtre des encaissements y passera à l'étape VF5.
+ * pas source, la même chose que `refusEnregistrement`. La fenêtre des encaissements le lit depuis l'étape VF5b.
  */
 export function refusEnregistrementVente(
   c: ContexteFacture,
@@ -1117,9 +1120,11 @@ export function piecesJumelles(c: Pick<ContexteFacture, 'facture' | 'transmissio
   return pieces.filter((p) => jumelles.has(p.id))
 }
 
-/** Un mouvement du relevé, tel que les propositions le lisent : son libellé, et ce que le cabinet en a dit. */
-export type MouvementPropose = MouvementLu & Pick<LigneBancaire,
-  'libelle' | 'libelle_brut' | 'prelevement_personnel' | 'compte_bilan' | 'emprunt_id' | 'declaration_tva_id' | 'cotisation_id'>
+/**
+ * Un mouvement du relevé, tel que les propositions le lisent : son libellé, ce que le cabinet en a dit, et — depuis l'étape
+ * VF5b — tout ce qui le classe (`MouvementClasse`) : pour une facture source, seul un mouvement LIBRE se propose.
+ */
+export type MouvementPropose = MouvementClasse & Pick<LigneBancaire, 'libelle' | 'libelle_brut'>
 
 // Ce que le cabinet a classé comme autre chose que le paiement d'un client : un apport de l'exploitant, un virement
 // interne ou un dépôt de garantie (compte de bilan), le déblocage d'un emprunt, le remboursement d'un crédit de TVA ou
@@ -1189,6 +1194,14 @@ function explication(creditCentimes: number, resteCentimes: number, solde: boole
  * l'ordre de ses paiements ; puis le relevé, le plus petit écart d'abord, le client cité d'abord, puis par date.
  * `gereLaBanque` : le droit « Banque » de qui saisit (`refusEnregistrement`) — sans lui, AUCUNE : chacune désigne un
  * mouvement, que la base refuserait (espace client, étape P2).
+ *
+ * `vente` (étape VF5b, sans valeur par défaut) : chaque proposition se juge par `refusEnregistrementVente`, qui rend pour une
+ * facture qui n'est pas source exactement ce que rendait `refusEnregistrement` — rien n'y change. Pour une facture SOURCE de
+ * sa vente : le reste est NET de ses avoirs validés (`resteAEncaisserVente`, le plafond de la base), et seuls des
+ * mouvements LIBRES se proposent — par le jugement même de la base (`refusEnregistrementVente`, rang 17 : un mouvement que
+ * rien ne classe encore), jamais par une règle recopiée ici. La pièce jumelle ne propose donc plus ses paiements : chacun
+ * est un mouvement rapproché d'elle, ou un règlement groupé, que ce rang refuse (la vente se compte par la facture ; G4 le
+ * figera à l'étape VF6).
  */
 export function propositionsEncaissement(
   c: ContexteFacture,
@@ -1197,9 +1210,10 @@ export function propositionsEncaissement(
   mouvements: readonly MouvementPropose[],
   aujourdHui: string,
   gereLaBanque: boolean,
+  vente: ContexteVente,
 ): PropositionEncaissement[] {
   if (!gereLaBanque) return []
-  const reste = resteAEncaisser(c)
+  const reste = resteAEncaisserVente(c, vente)
   if (reste.resteCentimes <= 0) return []
   const f = c.facture
   const parId = new Map(mouvements.map((m) => [m.id, m]))
@@ -1224,7 +1238,7 @@ export function propositionsEncaissement(
       ligneBancaireId: m.id,
       repartition: repartition.map((p) => ({ taux: p.taux, montant: p.centimes / 100 })),
     }
-    if (refusEnregistrement(c, saisie, mouvements, aujourdHui, gereLaBanque)) return null
+    if (refusEnregistrementVente(c, saisie, mouvements, aujourdHui, gereLaBanque, vente)) return null
     const avantLaFacture = m.date < f.date_emission
     return {
       source,
@@ -1286,9 +1300,9 @@ export function propositionsEncaissement(
 // eux, par le cabinet seul (G1), et donnent aux fonctions des encaissements leurs refus neufs (ci-dessus, `venteFacturee`).
 // Cette section dit, AVANT le clic, dans l'ordre de la base et sous ses mots, l'accès excepté, ce que refusent les trois
 // fonctions neuves du cabinet et la garde des mouvements. Depuis l'étape VF5a1, l'onglet Banque lit la garde
-// (`refusDuClassementDuReleve`, par lib/mouvementsDesVentes.ts) ; les gestes du cabinet et la fenêtre des encaissements
-// suivent (VF5b à VF5d). Aucun dossier n'a basculé (étape VF8) : aucune facture n'est source, et ces refus
-// ne se rencontrent pas encore. encaissementsFactures.test.ts confronte chaque liste au texte de sa fonction, codes
+// (`refusDuClassementDuReleve`, par lib/mouvementsDesVentes.ts) ; depuis l'étape VF5b, la fenêtre des encaissements lit les
+// jugements de la vente ; les gestes du cabinet suivent (VF5c, VF5d). Aucun dossier n'a basculé (étape VF8) : aucune
+// facture n'est source, et ces refus ne se rencontrent pas encore. encaissementsFactures.test.ts confronte chaque liste au texte de sa fonction, codes
 // compris, et supabase/essais/ventesFacturees.sql éprouve chaque refus en base.
 
 /** Un mouvement tel que les refus d'une facture source le lisent : ce qui le classe, et s'il l'est par ses encaissements. */
@@ -1305,8 +1319,12 @@ export type FactureDuDossier = Pick<FactureEmise,
  * ferait dire un refus faux, et l'écran qui n'a pas tout lu n'offre aucun geste.
  */
 export interface ContexteVente {
-  /** Les années des exercices validés du dossier (`exercices_valides`) : la frontière, et la phrase d'`exercice_fige`. */
-  anneesValidees: readonly number[]
+  /**
+   * Les années des exercices validés du dossier (`exercices_valides`) : la frontière, et la phrase d'`exercice_fige`. Côté
+   * CLIENT, `'illisibles'` (`ANNEES_ILLISIBLES`, étape VF5b) : la table ne s'ouvre qu'au cabinet, et le module saute alors la
+   * frontière — la base la jugera. Jamais une liste vide à la place : elle affirmerait qu'aucun exercice n'est validé.
+   */
+  anneesValidees: readonly number[] | typeof ANNEES_ILLISIBLES
   /**
    * Les factures du dossier, leur source comprise : celle d'un encaissement, et les avoirs validés d'une facture source,
    * dont le plafond net déduit ce que leurs LIGNES créditent — que `ContexteFacture.lignes` doit donc porter aussi.
@@ -1332,8 +1350,10 @@ function factureSource(factureId: string, vente: Pick<ContexteVente, 'factures'>
   return vente.factures.some((f) => f.id === factureId && f.source_de_la_vente)
 }
 
-// La phrase de la base pour une date que la frontière d'un exercice validé fige (`exercice_fige`), ou rien.
-function dateFigeePourLaVente(date: string, anneesValidees: readonly number[]): string | null {
+// La phrase de la base pour une date que la frontière d'un exercice validé fige (`exercice_fige`), ou rien — rien aussi
+// quand les exercices validés ne se lisent pas (le client, étape VF5b) : la base juge alors seule.
+function dateFigeePourLaVente(date: string, anneesValidees: ContexteVente['anneesValidees']): string | null {
+  if (anneesValidees === ANNEES_ILLISIBLES) return null
   const frontiere = frontiereDeValidation(anneesValidees)
   return frontiere != null && date <= frontiere ? exerciceQuiFige(anneeDe(date), anneesValidees) : null
 }
@@ -1341,7 +1361,7 @@ function dateFigeePourLaVente(date: string, anneesValidees: readonly number[]): 
 // Ce que les avoirs VALIDÉS d'une facture créditent, par taux et en centimes, tel que leurs lignes le transmettent — dans
 // le sens du document : un avoir s'y lit en montants positifs (`montants_par_taux_facture` en base, EC3-Q10). Tous les
 // taux de tous les avoirs : le plafond de la facture déduit leur somme, celui d'un taux ce qui est à ce taux.
-function creditesDesAvoirs(factureId: string, lignes: readonly LigneDeFacture[], vente: ContexteVente): Map<number, number> {
+function creditesDesAvoirs(factureId: string, lignes: readonly LigneDeFacture[], vente: Pick<ContexteVente, 'factures'>): Map<number, number> {
   const parTaux = new Map<number, number>()
   for (const a of vente.factures) {
     if (a.type !== 'avoir' || a.statut !== 'validee' || a.facture_origine_id !== factureId) continue
@@ -1662,4 +1682,171 @@ export function refusDuClassementDuReleve(
   // Une facture validée porte toujours son numéro (`factures_emises_figees`) ; un `%` nul, `raise` l'écrirait `<NULL>`.
   const numero = vente.factures.find((f) => f.id === premier.facture_id)?.numero ?? '<NULL>'
   return refusDe(REFUS_GARDE_MOUVEMENTS, 'reserve', numero)
+}
+
+// ── La fenêtre des encaissements juge une facture source (chantier EC-Q3, étape VF5b) ──────────────────────────────────
+//
+// La fenêtre des encaissements (EncaissementsFactureModal.tsx, les deux espaces) passe aux jugements de la vente —
+// `refusEnregistrementVente`, `refusRetraitVente`, `refusContrePassationVente` et `propositionsEncaissement` avec son
+// contexte —, qui rendent pour une facture qui n'est PAS source de sa vente exactement ce que rendaient les jugements
+// d'hier : encaissementsFenetreVente.test.ts le prouve sur un tirage. Ce qui suit ne vaut que pour une facture SOURCE : son
+// reste net des avoirs, la frontière que le client ne lit pas, les débits qu'une contre-passation peut citer, et le geste
+// qui rendrait un mouvement inclassable — dit avant le clic, jamais refusé : la base l'admet (l'aligner serait une
+// migration, à revoir avec VF7 ; conception de VF5, § 7).
+
+/**
+ * Les exercices validés, côté CLIENT : `exercices_valides` ne s'ouvre qu'au cabinet (sa policy, `admin_du_dossier` ;
+ * décision de P9a). `ContexteVente.anneesValidees` les dit alors illisibles, et le module saute la frontière d'un exercice
+ * validé : c'est la base qui la juge, à l'envoi, et son refus revient sous ses mots.
+ */
+export const ANNEES_ILLISIBLES = 'illisibles' as const
+
+/** Ce que la fenêtre du CLIENT dit d'une facture source, puisqu'elle ne lit pas la frontière (`frontiereJugeeParLaBase`). */
+export const FRONTIERE_JUGEE_PAR_LA_BASE = 'Les exercices que ton cabinet a validés ne se lisent pas d’ici : une date que l’un '
+  + 'd’eux fige ne se dit donc pas avant l’envoi — c’est la base qui la refusera, et son refus se dira ici.'
+
+/** La frontière d'un exercice validé, qu'une facture source subit, se juge-t-elle par la base seule (le client) ? */
+export function frontiereJugeeParLaBase(
+  facture: Pick<FacturePourEncaissement, 'source_de_la_vente'>,
+  vente: Pick<ContexteVente, 'anneesValidees'>,
+): boolean {
+  return facture.source_de_la_vente && vente.anneesValidees === ANNEES_ILLISIBLES
+}
+
+/**
+ * Ce qui reste à encaisser, tel que la base le plafonne : pour une facture qui n'est pas source, `resteAEncaisser` ; pour
+ * une facture SOURCE, net de ce que ses avoirs VALIDÉS créditent, en tout et par taux (EC3-Q10, les rangs 27 et 29
+ * d'`enregistrer_encaissement`) — les lignes de ses avoirs dans `c.lignes`, les avoirs dans `vente.factures`. C'est ce reste
+ * que la fenêtre propose, et que ses propositions font.
+ */
+export function resteAEncaisserVente(
+  c: Pick<ContexteFacture, 'facture' | 'lignes' | 'encaissements' | 'parts'>,
+  vente: Pick<ContexteVente, 'factures'>,
+): ResteAEncaisser {
+  const brut = resteAEncaisser(c)
+  if (!c.facture.source_de_la_vente) return brut
+  const credites = creditesDesAvoirs(c.facture.id, c.lignes, vente)
+  const credite = [...credites.values()].reduce((total, x) => total + x, 0)
+  const parTaux = brut.parTaux.map((t) => {
+    const ttcCentimes = t.ttcCentimes - (credites.get(t.taux) ?? 0)
+    return { ...t, ttcCentimes, resteCentimes: ttcCentimes - t.encaisseCentimes }
+  })
+  const ttcCentimes = brut.ttcCentimes - credite
+  return { ttcCentimes, encaisseCentimes: brut.encaisseCentimes, resteCentimes: ttcCentimes - brut.encaisseCentimes, parTaux }
+}
+
+/**
+ * Les débits qu'une contre-passation d'une facture source peut citer (le cinquième paramètre d'`annuler_encaissement`) :
+ * ceux du dossier, LIBRES — un mouvement que rien ne classe, comme la base l'exige —, le plus proche du montant de
+ * l'encaissement d'abord, puis par date et par identifiant. Aucun n'est imposé : `refusContrePassationVente` juge celui
+ * qu'on choisit, avant le clic.
+ */
+export function debitsCitables<M extends MouvementClasse>(
+  dossierId: string,
+  encaissement: Pick<EncaissementLu, 'montant'>,
+  mouvements: readonly M[],
+): M[] {
+  const cible = Math.abs(centimes(encaissement.montant))
+  const ecart = (m: M) => Math.abs(Math.abs(centimes(m.montant)) - cible)
+  return mouvements.filter((m) => m.dossier_id === dossierId && m.montant < 0 && mouvementLibre(m))
+    .sort((a, b) => ecart(a) - ecart(b) || ordreC(a.date, b.date) || ordreC(a.id, b.id))
+}
+
+// L'identifiant de ce que le geste écrirait, et celui du complément d'un mouvement payé en partie : des noms qu'aucun
+// identifiant de la base (un UUID) ne porte.
+const LE_GESTE = '(le geste)'
+const LE_COMPLEMENT = '(le complément)'
+
+/** Le début de ce que la fenêtre dit d'un geste qui rendrait un mouvement inclassable. */
+export const NE_POURRA_PAS_SE_CLASSER = 'Ce mouvement ne pourra pas se classer par ses encaissements'
+
+/** La fin : ce que la base fait du geste, et de ce qui suit. */
+export const LA_BASE_ADMET_LE_GESTE = 'La base admet ce geste ; c’est le classement du mouvement, ensuite, qu’elle refusera.'
+
+/**
+ * Le mouvement deviendrait-il INCLASSABLE par ses encaissements ? `refusClassement` joué sur l'état d'APRÈS le geste
+ * (`encaissementsApres` : le registre, et ce que le geste y écrirait), complété de ce qui reste à faire du mouvement par une
+ * facture source fictive : un crédit payé en partie n'est pas inclassable, il attend ses autres encaissements (une remise de
+ * chèques) ; un crédit qui justifie aussi l'encaissement d'une facture qui n'est pas source, ou un débit que ses
+ * contre-passations dépasseraient, ne se classera jamais. La phrase, ou null : le classement resterait possible. Un
+ * mouvement qui n'est pas libre n'a rien à en dire — le geste lui-même serait refusé.
+ */
+export function inclassableApres(
+  dossierId: string,
+  ligneBancaireId: string,
+  mouvements: readonly MouvementClasse[],
+  encaissementsApres: readonly EncaissementLu[],
+  vente: ContexteVente,
+): string | null {
+  const m = mouvements.find((x) => x.id === ligneBancaireId && x.dossier_id === dossierId)
+  if (!m || !mouvementLibre(m)) return null
+  const justifies = encaissementsApres.filter((x) => x.ligne_bancaire_id === m.id && compte(x)
+    && justifieSonMouvement(x, encaissementsApres))
+  const manque = centimes(m.montant) - justifies.reduce((total, x) => total + centimes(x.montant), 0)
+  const complete = manque !== 0 && Math.sign(manque) === Math.sign(m.montant)
+  const encaissements: EncaissementLu[] = complete
+    ? [...encaissementsApres, {
+      id: LE_COMPLEMENT, dossier_id: dossierId, facture_id: LE_COMPLEMENT, montant: manque / 100, ligne_bancaire_id: m.id,
+      annule_id: null, retire_le: null,
+    }]
+    : [...encaissementsApres]
+  const factures: FactureDuDossier[] = complete
+    ? [...vente.factures, {
+      id: LE_COMPLEMENT, dossier_id: dossierId, numero: null, type: 'facture', statut: 'validee', facture_origine_id: null,
+      source_de_la_vente: true,
+    }]
+    : [...vente.factures]
+  const refus = refusClassement(dossierId, m.id, mouvements, encaissements, { anneesValidees: vente.anneesValidees, factures })
+  if (!refus) return null
+  const nonSources = [...new Set(justifies.filter((x) => !factureSource(x.facture_id, vente))
+    .map((x) => vente.factures.find((f) => f.id === x.facture_id)?.numero ?? 'une facture'))]
+  const raison = nonSources.length > 0
+    ? `il justifie aussi l’encaissement de ${nonSources.join(', ')}, une facture qui n’est pas source de sa vente, que son `
+      + 'classement ne compte pas.'
+    : `« ${refus.message} »`
+  return `${NE_POURRA_PAS_SE_CLASSER} : ${raison} ${LA_BASE_ADMET_LE_GESTE}`
+}
+
+/**
+ * L'encaissement d'une facture SOURCE sur le mouvement que la saisie cite rendrait-il ce mouvement inclassable
+ * (`inclassableApres`) ? Null pour une facture qui n'est pas source, une saisie sans mouvement, ou un montant qui ne se
+ * compte pas encore — la saisie est alors refusée, et son refus le dit.
+ */
+export function inclassableApresEnregistrement(
+  c: ContexteFacture,
+  s: SaisieEncaissement,
+  mouvements: readonly MouvementClasse[],
+  vente: ContexteVente,
+): string | null {
+  if (!c.facture.source_de_la_vente || s.ligneBancaireId == null || s.montant == null) return null
+  const montant = centimesExacts(s.montant)
+  if (montant == null || montant <= 0) return null
+  const apres: EncaissementLu[] = [...c.encaissements, {
+    id: LE_GESTE, dossier_id: c.dossierId, facture_id: c.facture.id, montant: montant / 100, ligne_bancaire_id: s.ligneBancaireId,
+    annule_id: null, retire_le: null,
+  }]
+  return inclassableApres(c.dossierId, s.ligneBancaireId, mouvements, apres, vente)
+}
+
+/**
+ * La contre-passation d'un encaissement d'une facture SOURCE qui cite ce débit rendrait-elle le débit inclassable
+ * (`inclassableApres`) — des contre-passations qui le dépasseraient, de l'écart des frais que la base admet à la citation
+ * et que le classement refuse (`debit_depasse`) ? Null sans débit cité, ou pour une facture qui n'est pas source.
+ */
+export function inclassableApresContrePassation(
+  dossierId: string,
+  encaissementId: string,
+  encaissements: readonly EncaissementLu[],
+  ligneBancaireId: string | null,
+  mouvements: readonly MouvementClasse[],
+  vente: ContexteVente,
+): string | null {
+  if (ligneBancaireId == null) return null
+  const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId)
+  if (!e || !factureSource(e.facture_id, vente)) return null
+  const apres: EncaissementLu[] = [...encaissements, {
+    id: LE_GESTE, dossier_id: dossierId, facture_id: e.facture_id, montant: -e.montant, ligne_bancaire_id: ligneBancaireId,
+    annule_id: e.id, retire_le: null,
+  }]
+  return inclassableApres(dossierId, ligneBancaireId, mouvements, apres, vente)
 }

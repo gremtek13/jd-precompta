@@ -1153,6 +1153,30 @@ const VISITES = [
       await page.getByText(attendu).first().waitFor({ timeout: 10000 })
     },
   })),
+  // LA FENÊTRE DES ENCAISSEMENTS D'UNE FACTURE SOURCE (ligne 28.65, chantier EC-Q3, étape VF5b), sur la consultante d12 :
+  // F2026-0024 et son avoir validé — le reste net de l'avoir, la colonne qui le dit, la phrase de l'avoir —, puis la
+  // contre-passation de son chèque déclaré, qui cite le retour du chèque impayé : la liste des débits libres, et le débit
+  // qu'elle dépasserait de 0,50 €, dit « ne pourra pas se classer ». Avant les visites de l'e-reporting, qui figent l'horloge.
+  {
+    dossier: 'd12', onglet: 'factures', nom: 'factures-basculees/encaissements', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0024', 'Encaissements').click()
+      await page.getByText(/la base plafonne ses encaissements au total net de ses avoirs validés/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd12', onglet: 'factures', nom: 'factures-basculees/contre-passer-debit', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0024', 'Encaissements').click()
+      await page.getByRole('button', { name: 'Contre-passer', exact: true }).first().click()
+      await page.locator('#contre-passation-date').fill('2026-10-14')
+      await page.locator('#contre-passation-motif').fill('Chèque revenu impayé : provision insuffisante, rejeté par la banque du client')
+      await page.locator('#contre-passation-debit').selectOption('b5')
+      await page.getByText(/^Ce mouvement ne pourra pas se classer par ses encaissements/).waitFor({ timeout: 10000 })
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -1593,7 +1617,34 @@ const VISITES_BANQUE_CLIENT = [
       await page.getByRole('button', { name: 'Envoyer la précision', exact: true }).waitFor({ timeout: 10000 })
     },
   })),
+  // LA FENÊTRE DES ENCAISSEMENTS D'UNE FACTURE SOURCE, CHEZ LE CLIENT (ligne 28.65, étape VF5b), sur le dossier basculé (d12),
+  // que la clé `banc-client-basculee` donne au compte du banc avec « Ventes » et « Banque » — EN DERNIER : la page se recharge
+  // pour la lire, et le compte n'a plus que cette société. Les exercices validés, qu'il ne lit pas, se disent jugés par la base ;
+  // puis la contre-passation qui cite son débit, et le débit qu'elle dépasserait, dit « ne pourra pas se classer ».
+  ...[
+    { nom: 'client/encaissements-facture-source', contrePasser: false, attendu: /^Les exercices que ton cabinet a validés ne se lisent pas/ },
+    { nom: 'client/contre-passer-debit', contrePasser: true, attendu: /^Ce mouvement ne pourra pas se classer par ses encaissements/ },
+  ].map(({ nom, contrePasser, attendu }) => ({
+    chemin: '#/mes-ventes', nom, fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      if ((await page.evaluate(() => localStorage.getItem('banc-client-basculee'))) !== '1') {
+        await page.evaluate(() => localStorage.setItem('banc-client-basculee', '1'))
+        await page.reload()
+        await page.waitForTimeout(900)
+      }
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0024', 'Encaissements').click()
+      if (contrePasser) {
+        await page.getByRole('button', { name: 'Contre-passer', exact: true }).first().click()
+        await page.locator('#contre-passation-date').fill('2026-10-14')
+        await page.locator('#contre-passation-motif').fill('Chèque revenu impayé : provision insuffisante')
+        await page.locator('#contre-passation-debit').selectOption('b5')
+      }
+      await page.getByText(attendu).waitFor({ timeout: 10000 })
+    },
+  })),
 ]
+
 
 // Le bouton d'une ligne du tableau des factures, désignée par son numéro.
 function boutonDeFacture(page, numero, nom) {

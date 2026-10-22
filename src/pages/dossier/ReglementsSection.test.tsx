@@ -148,6 +148,8 @@ function poser(o: { encaissements?: EncaissementFacture[]; acces?: string[] } = 
     encaissements_factures_taux: nues(encaissements.map((e) => part({ encaissement_id: e.id, montant: e.montant }))),
     transmissions_encaissements: nues(encaissements.some((e) => e.id === 'e1') ? [declaration()] : []),
     statuts_factures_recus: [],
+    // Lus par la fenêtre des encaissements au cabinet (étape VF5b) : aucun ici.
+    exercices_valides: [],
     lignes_bancaires: nues([mouvement()]),
     reglements_groupes: [],
     pieces: [],

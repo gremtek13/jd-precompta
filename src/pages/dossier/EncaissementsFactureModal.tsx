@@ -10,13 +10,14 @@ import { pourLEspace, pourLEspaceSiTexte, type EspaceVentes } from '../../lib/es
 import type { LectureComplete } from '../../lib/lectureComplete'
 import BandeauLecturePartielle, { type AccordLecture } from '../../components/BandeauLecturePartielle'
 import {
-  ETATS_DECLARANTS, MOYENS_ENCAISSEMENT, REFUS_DECLARATION, centimesExacts, contrePassationDe, echeanceDeDeclaration,
-  encaissementsDeclares, obligationEncaissee, piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement,
-  refusContrePassation, refusDeLaFacture, refusDeclaration, refusEnregistrement, refusRetrait, repartitionProposee,
-  resteAEncaisser,
-  type ContexteFacture, type DeclarationLue, type EncaissementLu, type EtatObligationEncaissee, type EvenementSuperpdpLu,
-  type LigneDeFacture, type MouvementPropose, type PartLue, type PieceLue, type ResteDuTaux, type SaisieEncaissement,
-  type TransmissionLue, type TransmissionPourDeclaration,
+  ANNEES_ILLISIBLES, ETATS_DECLARANTS, FRONTIERE_JUGEE_PAR_LA_BASE, MOYENS_ENCAISSEMENT, REFUS_DECLARATION, centimesExacts,
+  contrePassationDe, debitsCitables, echeanceDeDeclaration, encaissementsDeclares, frontiereJugeeParLaBase,
+  inclassableApresContrePassation, inclassableApresEnregistrement, obligationEncaissee, piecesJumelles, plateformeAcceptee,
+  plateformeDeLaDeclaration, propositionsEncaissement, refusContrePassationVente, refusDeLaFacture, refusDeclaration,
+  refusEnregistrementVente, refusRetraitVente, repartitionProposee, resteAEncaisserVente,
+  type ContexteFacture, type ContexteVente, type DeclarationLue, type EncaissementLu, type EtatObligationEncaissee,
+  type EvenementSuperpdpLu, type FactureDuDossier, type LigneDeFacture, type MouvementPropose, type PartLue, type PieceLue,
+  type ResteDuTaux, type SaisieEncaissement, type TransmissionLue, type TransmissionPourDeclaration,
 } from '../../lib/encaissementsFactures'
 import { lireMontantSaisi, montantPourSaisie, partsEnMots, tauxAffiche } from '../../lib/encaissementsAffichage'
 import { lireConnexionPlateforme, type ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
@@ -28,7 +29,8 @@ import { releverEtNommer, type ResultatReleve } from '../../lib/releveStatuts'
 import BilanReleveStatuts from './BilanReleveStatuts'
 import { paiementsDesPieces, type LignePayante, type PartReglee } from '../../lib/rattachement'
 import type {
-  EncaissementFacture, FactureEmise, FactureSuperpdpEvent, Piece, StatutTva, TransmissionEncaissement, TransmissionFacture,
+  EncaissementFacture, ExerciceValide, FactureEmise, FactureSuperpdpEvent, Piece, StatutTva, TransmissionEncaissement,
+  TransmissionFacture,
 } from '../../lib/types'
 import {
   ACCES_SANS_OBJET, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, estLeClient, type AccesDuDossier,
@@ -76,6 +78,15 @@ function pasLue<T>(): Promise<LectureComplete<T>> {
 // reste faux, un mouvement manquant laisserait proposer un virement déjà pris, une déclaration manquante laisserait
 // retirer un encaissement déclaré ou le déclarer deux fois — et le premier clic écrirait sur cette base fausse (règle
 // « lecture → formulaire → écriture »).
+//
+// UNE FACTURE SOURCE DE SA VENTE (ligne 28.65, chantier EC-Q3, étape VF5b) : la fenêtre juge par les fonctions de la vente
+// du module (`refusEnregistrementVente`, `refusRetraitVente`, `refusContrePassationVente`, `propositionsEncaissement` et son
+// contexte), qui rendent pour toute autre facture ce que rendaient celles d'hier. Elle lit pour cela ce qui classe les
+// mouvements, les factures du dossier et leur source, les lignes des avoirs de la facture (le plafond net) et, au cabinet
+// seul, les exercices validés : le client ne les lit pas (`exercices_valides`, `admin_du_dossier`), la frontière se dit
+// alors jugée par la base (`ANNEES_ILLISIBLES`), jamais tenue pour vide. Une contre-passation d'une facture source peut
+// citer le débit qui défait l'encaissement, avec « Banque » seulement ; le geste qui rendrait un mouvement inclassable se
+// dit avant le clic, sans être refusé — la base l'admet.
 
 type LigneLue = LigneDeFacture & { id: string }
 type TransmissionEcran = TransmissionLue & TransmissionPourDeclaration & Pick<TransmissionFacture, 'id' | 'cree_le'>
@@ -86,10 +97,18 @@ type MouvementEcran = MouvementPropose & LignePayante
 type ReglementEcran = PartReglee & { id: string }
 type PieceEcran = PieceLue & Pick<Piece, 'tiers' | 'nom_fichier'>
 type DeclarationEcran = DeclarationLue & Pick<TransmissionEncaissement, 'note' | 'cree_le' | 'cree_par'>
+type ExerciceLu = Pick<ExerciceValide, 'dossier_id' | 'annee'>
 
 interface Lu {
-  // La facture et ses avoirs : un avoir réduit ce que le client doit encore, à l'écran seulement.
+  // La facture et ses avoirs : un avoir réduit ce que le client doit encore — à l'écran seulement pour une facture qui n'est
+  // pas source ; pour une facture source, la base plafonne aussi ses encaissements nets de ses avoirs validés (EC3-Q10).
   factures: FactureEmise[]
+  // Les factures du DOSSIER, leur source comprise (étape VF5b) : celle de chaque encaissement qui cite un mouvement — ce
+  // qu'un mouvement deviendrait se juge sur les encaissements de toutes les factures sources qui le citent.
+  facturesDuDossier: FactureDuDossier[]
+  // Les exercices validés du dossier, au cabinet ; `ANNEES_ILLISIBLES` pour le client, qui ne les lit pas (étape VF5b).
+  anneesValidees: readonly number[] | typeof ANNEES_ILLISIBLES
+  // Les lignes de la facture ET de ses avoirs : le plafond net d'une facture source se lit dans celles des avoirs.
   lignes: LigneLue[]
   transmissions: TransmissionEcran[]
   evenements: EvenementEcran[]
@@ -127,17 +146,24 @@ async function lireDonnees(
   dossierId: string, factureId: string, espace: EspaceVentes, gereLaBanque: boolean,
 ): Promise<{ lu: Lu; manques: Manque[] }> {
   const [
-    factures, lignes, transmissions, evenements, encaissements, parts, mouvements, reglements, pieces, declarations, statuts,
+    factures, facturesDuDossier, exercices, transmissions, evenements, encaissements, parts, mouvements, reglements, pieces,
+    declarations, statuts,
   ] = await Promise.all([
     lireTout<FactureEmise>((debut, fin) =>
       supabase.from('factures_emises').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).or(`id.eq.${factureId},facture_origine_id.eq.${factureId}`)
         .order('date_emission').order('id').range(debut, fin),
     ),
-    lireTout<LigneLue>((debut, fin) =>
-      supabase.from('facture_lignes').select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva', { count: 'exact' })
-        .eq('facture_id', factureId).order('ordre').order('id').range(debut, fin),
+    // Les factures du dossier et leur source (étape VF5b), sous les policies de la liste de l'onglet.
+    lireTout<FactureDuDossier>((debut, fin) =>
+      supabase.from('factures_emises').select('id, dossier_id, numero, type, statut, facture_origine_id, source_de_la_vente', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ),
+    // Les exercices validés : au cabinet seul (leur policy) ; le client ne les demande pas, la base juge la frontière.
+    espace === 'cabinet' ? lireTout<ExerciceLu>((debut, fin) =>
+      supabase.from('exercices_valides').select('dossier_id, annee', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('annee').order('dossier_id').range(debut, fin),
+    ) : pasLue<ExerciceLu>(),
     lireTout<TransmissionEcran>((debut, fin) =>
       supabase.from('transmissions_factures').select('id, facture_id, canal, etat, hote, flux_id, cree_le', { count: 'exact' })
         .eq('facture_id', factureId).order('cree_le').order('id').range(debut, fin),
@@ -159,8 +185,9 @@ async function lireDonnees(
     ),
     // Le relevé, ses règlements groupés et les pièces qu'il paie : de quoi PROPOSER un mouvement, ce qui demande « Banque ».
     gereLaBanque ? lireTout<MouvementEcran>((debut, fin) =>
+      // Tout ce qui CLASSE un mouvement (étape VF5b) : un encaissement d'une facture source ne cite qu'un mouvement libre.
       supabase.from('lignes_bancaires')
-        .select('id, dossier_id, date, montant, libelle, libelle_brut, statut, piece_id, reglement_groupe, prelevement_personnel, compte_bilan, emprunt_id, declaration_tva_id, cotisation_id', { count: 'exact' })
+        .select('id, dossier_id, date, montant, libelle, libelle_brut, statut, piece_id, reglement_groupe, prelevement_personnel, compte_bilan, emprunt_id, declaration_tva_id, cotisation_id, categorie_id, ventilee, encaissements_de_factures', { count: 'exact' })
         .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
     ) : pasLue<MouvementEcran>(),
     gereLaBanque ? lireTout<ReglementEcran>((debut, fin) =>
@@ -185,13 +212,23 @@ async function lireDonnees(
         .eq('dossier_id', dossierId).eq('facture_id', factureId).order('lu_le').order('id').range(debut, fin),
     ),
   ])
+  // Les lignes de la facture ET de ses avoirs, une fois ceux-ci lus : celles des avoirs portent le plafond net d'une facture
+  // source (étape VF5b). Celles de la facture toujours, même si la lecture de ses avoirs n'est pas revenue en entier.
+  const lignes = await lireTout<LigneLue>((debut, fin) =>
+    supabase.from('facture_lignes').select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva', { count: 'exact' })
+      .in('facture_id', [...new Set([factureId, ...factures.lignes.map((f) => f.id)])])
+      .order('facture_id').order('ordre').order('id').range(debut, fin),
+  )
+
   const manques: Manque[] = []
   // Chaque drapeau lu nommément : un drapeau jeté laisserait le bandeau éteint sur une lecture tronquée.
   const noter = (quoi: string, accord: AccordLecture, complete: boolean, motif: string | null, consequence = CONSEQUENCE) => {
     if (!complete) manques.push({ quoi, accord, motif: motif ?? 'lecture incomplète', consequence })
   }
   noter('La facture et ses avoirs', 'lus', factures.complete, factures.motif)
-  noter('Les lignes de la facture', 'lues', lignes.complete, lignes.motif)
+  noter('Les lignes de la facture et de ses avoirs', 'lues', lignes.complete, lignes.motif)
+  noter('Les factures du dossier', 'lues', facturesDuDossier.complete, facturesDuDossier.motif)
+  noter('Les exercices validés du dossier', 'lus', exercices.complete, exercices.motif)
   noter('Les transmissions de la facture', 'lues', transmissions.complete, transmissions.motif)
   noter('L’historique de Super PDP', 'lu', evenements.complete, evenements.motif)
   noter('Les encaissements du dossier', 'lus', encaissements.complete, encaissements.motif)
@@ -203,7 +240,9 @@ async function lireDonnees(
   noter(pourLEspace(espace, 'Les statuts lus sur la plateforme du client'), 'lus', statuts.complete, statuts.motif, CONSEQUENCE_STATUTS)
   return {
     lu: {
-      factures: factures.lignes, lignes: lignes.lignes, transmissions: transmissions.lignes, evenements: evenements.lignes,
+      factures: factures.lignes, facturesDuDossier: facturesDuDossier.lignes,
+      anneesValidees: espace === 'cabinet' ? exercices.lignes.map((x) => x.annee) : ANNEES_ILLISIBLES,
+      lignes: lignes.lignes, transmissions: transmissions.lignes, evenements: evenements.lignes,
       encaissements: encaissements.lignes, parts: parts.lignes, mouvements: mouvements.lignes, reglements: reglements.lignes,
       pieces: pieces.lignes, declarations: declarations.lignes, statuts: statuts.lignes,
     },
@@ -246,6 +285,11 @@ function formulaireVierge(parTaux: readonly ResteDuTaux[], resteCentimes: number
   }
 }
 
+// Ce qu'une facture source demande de lire de plus (étape VF5b), tel que la lecture l'a rendu.
+function venteDe(lu: Pick<Lu, 'anneesValidees' | 'facturesDuDossier'>): ContexteVente {
+  return { anneesValidees: lu.anneesValidees, factures: lu.facturesDuDossier }
+}
+
 function contexteDe(dossierId: string, factureId: string, lu: Lu): ContexteFacture | null {
   const facture = lu.factures.find((f) => f.id === factureId)
   if (!facture) return null
@@ -275,7 +319,7 @@ function etatLu(r: { lu: Lu; manques: Manque[] }, dossierId: string, factureId: 
 } {
   if (r.manques.length > 0) return { manques: r.manques, lu: null, formulaire: undefined }
   const c = contexteDe(dossierId, factureId, r.lu)
-  const reste = c ? resteAEncaisser(c) : null
+  const reste = c ? resteAEncaisserVente(c, venteDe(r.lu)) : null
   return { manques: [], lu: r.lu, formulaire: reste ? formulaireVierge(reste.parTaux, reste.resteCentimes) : null }
 }
 
@@ -286,9 +330,10 @@ const libelleMouvement = (m: Pick<MouvementEcran, 'date' | 'libelle'> | undefine
 // L'ÉTAPE OUVERTE SOUS LA LISTE (étape d4) : la déclaration hors application d'un encaissement — ou d'une
 // contre-passation —, ou la contre-passation d'un encaissement déclaré. Une seule à la fois, désignée par l'IDENTIFIANT
 // de l'encaissement : elle se juge sur la ligne relue, jamais sur celle du clic.
+// La contre-passation d'un encaissement d'une facture SOURCE peut citer le débit qui le défait (étape VF5b) : nul sinon.
 type Etape =
   | { type: 'declarer'; encaissementId: string; note: string }
-  | { type: 'contre-passer'; encaissementId: string; date: string; motif: string }
+  | { type: 'contre-passer'; encaissementId: string; date: string; motif: string; ligneBancaireId: string | null }
 
 // L'obligation sous laquelle « Déclaré sur la plateforme » s'offre : sans objet, à préciser ou refusée, rien ne se
 // déclare d'ici, et la fenêtre dit pourquoi.
@@ -419,7 +464,7 @@ export default function EncaissementsFactureModal(props: Props) {
   // confirmation nomme ce qui est retiré — la date, le montant, la facture.
   async function retirer(e: EncaissementEcran) {
     if (verrou.current || !lu) return
-    if (refusRetrait(dossierId, e.id, lu.encaissements, encaissementsDeclares(lu.declarations))) return
+    if (refusRetraitVente(dossierId, e.id, lu.encaissements, encaissementsDeclares(lu.declarations), lu.mouvements, venteDe(lu))) return
     if (!window.confirm(
       `Retirer l’encaissement du ${formatDate(e.date_encaissement)} de ${formatMoney(e.montant)} sur ${nature} ?\n\n`
       + 'Il reste au registre, marqué retiré : il ne compte plus dans ce qui est encaissé, et ne se rétablit pas — '
@@ -497,10 +542,16 @@ export default function EncaissementsFactureModal(props: Props) {
     if (!e) return
     const cp = contrePassationDe(e, lu.parts)
     const hote = declarationActive(lu.declarations, e.id)?.hote ?? '—'
+    // Le débit cité (étape VF5b) : nommé dans la confirmation, et le cinquième paramètre de la fonction — absent sans débit,
+    // pour que l'appel d'hier reste celui d'hier.
+    const debit = etape.ligneBancaireId == null ? undefined : lu.mouvements.find((m) => m.id === etape.ligneBancaireId)
     if (!window.confirm(
       `Contre-passer l’encaissement du ${formatDate(e.date_encaissement)} de ${formatMoney(e.montant)} sur ${nature} ?\n\n`
       + `Sera écrite au registre une contre-passation datée du ${formatDate(etape.date)} : ${formatMoney(cp.montantCentimes / 100)}, `
       + `dont ${partsEnMots(cp.parts)}, du même moyen de paiement (${libelleMoyen(e.moyen)}), motif « ${etape.motif} ».\n\n`
+      + (debit
+        ? `Elle cite le débit qui défait l’encaissement : ${libelleMouvement(debit)}, ${formatMoney(debit.montant)}.\n\n`
+        : '')
       + `Elle se déclare ensuite à son tour sur ${hote} ; puis le bon encaissement s’enregistre : l’annulation libère le reste `
       + 'de la facture et le mouvement.',
     )) return
@@ -511,6 +562,7 @@ export default function EncaissementsFactureModal(props: Props) {
     try {
       const { error } = await supabase.rpc('annuler_encaissement', {
         p_dossier_id: dossierId, p_encaissement_id: e.id, p_date: etape.date, p_motif: etape.motif,
+        ...(etape.ligneBancaireId == null ? {} : { p_ligne_bancaire_id: etape.ligneBancaireId }),
       })
       if (error) setErreur(messageErreur(error, 'La contre-passation n’a pas pu être enregistrée.'))
       else {
@@ -629,7 +681,11 @@ function Contenu({
   const facture = lu.factures.find((f) => f.id === contexte.facture.id) as FactureEmise
   const statuts = statutsDeLaFacture(lu.statuts, facture.id)
   const obligation = obligationEncaissee(facture, lu.lignes, statutTva)
-  const reste = resteAEncaisser(contexte)
+  // Ce qu'une facture source demande de plus (étape VF5b) ; pour toute autre facture, les jugements rendent ceux d'hier.
+  const vente = venteDe(lu)
+  const source = facture.source_de_la_vente
+  const reste = resteAEncaisserVente(contexte, vente)
+  const colonneTtc = source ? 'TTC net des avoirs' : 'TTC de la facture'
   const surLaFacture = refusDeLaFacture(contexte)
   const siens = lu.encaissements.filter((e) => e.facture_id === facture.id)
   const partsDe = (id: string) => lu.parts.filter((p) => p.encaissement_id === id)
@@ -645,17 +701,20 @@ function Contenu({
     if (cleEtape) refEtape.current?.scrollIntoView?.({ block: 'nearest' })
   }, [cleEtape])
 
-  // L'effet des avoirs, À L'ÉCRAN SEULEMENT : la base ne les déduit pas, et le plafond d'un encaissement reste le total
-  // de la facture (entrée d2). Le client, lui, ne doit plus ce qu'un avoir a crédité.
+  // L'effet des avoirs. Pour une facture qui n'est pas source, À L'ÉCRAN SEULEMENT : la base ne les déduit pas, et le
+  // plafond d'un encaissement reste le total de la facture (entrée d2) ; le client, lui, ne doit plus ce qu'un avoir a
+  // crédité. Pour une facture source, la base plafonne net des avoirs validés (EC3-Q10) : le reste ci-dessus l'est déjà.
   const avoirs = lu.factures.filter((f) => f.type === 'avoir' && f.statut === 'validee' && f.facture_origine_id === facture.id)
   const crediteCentimes = avoirs.reduce((s, a) => s + Math.round(-a.montant_ttc * 100), 0)
   const attenduCentimes = Math.max(reste.resteCentimes - crediteCentimes, 0)
 
   const propositions = propositionsEncaissement(
-    contexte, lu.pieces, paiementsDesPieces(lu.mouvements, lu.reglements), lu.mouvements, aujourdHui, gereLaBanque,
+    contexte, lu.pieces, paiementsDesPieces(lu.mouvements, lu.reglements), lu.mouvements, aujourdHui, gereLaBanque, vente,
   )
   const saisie = formulaire ? saisieDe(formulaire) : null
-  const refus = saisie ? refusEnregistrement(contexte, saisie, lu.mouvements, aujourdHui, gereLaBanque) : null
+  const refus = saisie ? refusEnregistrementVente(contexte, saisie, lu.mouvements, aujourdHui, gereLaBanque, vente) : null
+  // Le geste qu'accepte la base mais qui laisserait le mouvement cité inclassable (étape VF5b) : dit, jamais refusé.
+  const inclassable = saisie && refus == null ? inclassableApresEnregistrement(contexte, saisie, lu.mouvements, vente) : null
   const choisie = formulaire?.ligneBancaireId ? propositions.find((p) => p.ligneBancaireId === formulaire.ligneBancaireId) ?? null : null
   const moyen = formulaire ? MOYENS_ENCAISSEMENT.find((m) => m.moyen === formulaire.moyen) ?? null : null
   const echeanceSaisie = formulaire && formulaire.date !== '' ? echeanceDeDeclaration(formulaire.date, statutTva) : null
@@ -794,12 +853,12 @@ function Contenu({
         <label>Reste à encaisser : {formatMoney(reste.resteCentimes / 100)}</label>
         <div className="table-scroll tableau-adaptable">
           <table className="table-empilable-etroite">
-            <thead><tr><th>Taux de TVA</th><th>TTC de la facture</th><th>Encaissé</th><th>Reste</th></tr></thead>
+            <thead><tr><th>Taux de TVA</th><th>{colonneTtc}</th><th>Encaissé</th><th>Reste</th></tr></thead>
             <tbody>
               {reste.parTaux.map((t) => (
                 <tr key={t.taux}>
                   <td data-libelle="Taux de TVA">{tauxAffiche(t.taux)}</td>
-                  <td data-libelle="TTC de la facture">{formatMoney(t.ttcCentimes / 100)}</td>
+                  <td data-libelle={colonneTtc}>{formatMoney(t.ttcCentimes / 100)}</td>
                   <td data-libelle="Encaissé">{formatMoney(t.encaisseCentimes / 100)}</td>
                   <td data-libelle="Reste">{formatMoney(t.resteCentimes / 100)}</td>
                 </tr>
@@ -808,14 +867,22 @@ function Contenu({
             <tfoot>
               <tr>
                 <td><strong>Total</strong></td>
-                <td data-libelle="TTC de la facture">{formatMoney(reste.ttcCentimes / 100)}</td>
+                <td data-libelle={colonneTtc}>{formatMoney(reste.ttcCentimes / 100)}</td>
                 <td data-libelle="Encaissé">{formatMoney(reste.encaisseCentimes / 100)}</td>
                 <td data-libelle="Reste">{formatMoney(reste.resteCentimes / 100)}</td>
               </tr>
             </tfoot>
           </table>
         </div>
-        {avoirs.length > 0 && (
+        {avoirs.length > 0 && source && (
+          <p className="muted" style={{ margin: '6px 0 0' }}>
+            {avoirs.length === 1 ? 'L’avoir' : 'Les avoirs'} {avoirs.map((a) => a.numero ?? '—').join(', ')} de cette facture
+            {avoirs.length === 1 ? ' en crédite ' : ' en créditent '}{formatMoney(crediteCentimes / 100)} : la facture est
+            source de sa vente, et la base plafonne ses encaissements au total net de ses avoirs validés — le reste ci-dessus
+            en est net.
+          </p>
+        )}
+        {avoirs.length > 0 && !source && (
           <p className="muted" style={{ margin: '6px 0 0' }}>
             {avoirs.length === 1 ? 'L’avoir' : 'Les avoirs'} {avoirs.map((a) => a.numero ?? '—').join(', ')} de cette facture
             {avoirs.length === 1 ? ' en crédite ' : ' en créditent '}{formatMoney(crediteCentimes / 100)} : le client ne doit plus
@@ -837,7 +904,7 @@ function Contenu({
               </thead>
               <tbody>
                 {siens.map((e) => {
-                  const refusDuRetrait = refusRetrait(dossierId, e.id, lu.encaissements, declares)
+                  const refusDuRetrait = refusRetraitVente(dossierId, e.id, lu.encaissements, declares, lu.mouvements, vente)
                   // « Déclaré sur la plateforme » : un encaissement ou une contre-passation qui compte, pas encore déclaré,
                   // que la base inscrirait, sous une obligation due ou facultative.
                   const declarable = offerte && e.retire_le == null && !declares.has(e.id)
@@ -845,7 +912,9 @@ function Contenu({
                   // « Contre-passer » : un encaissement déclaré, à la place de « Retirer ». Tout ce qui précède la date se
                   // juge sans elle : un premier refus « date à renseigner » dit que rien d'autre ne s'y oppose.
                   const refusCp = refusDuRetrait?.cle === 'declare'
-                    ? refusContrePassation(dossierId, e.id, lu.encaissements, lu.declarations, null, null, aujourdHui)
+                    ? refusContrePassationVente(
+                      dossierId, e.id, lu.encaissements, lu.declarations, null, null, aujourdHui, null, lu.mouvements, vente,
+                    )
                     : null
                   const contrePassable = refusCp?.cle === 'date_absente'
                   const contrePasse = lu.encaissements.some((a) => a.annule_id === e.id && a.retire_le == null)
@@ -896,7 +965,7 @@ function Contenu({
                         {contrePassable && (
                           <button
                             type="button" className="btn btn-outline btn-sm" disabled={enCours != null}
-                            onClick={() => setEtape({ type: 'contre-passer', encaissementId: e.id, date: '', motif: '' })}
+                            onClick={() => setEtape({ type: 'contre-passer', encaissementId: e.id, date: '', motif: '', ligneBancaireId: null })}
                           >
                             Contre-passer
                           </button>
@@ -930,7 +999,7 @@ function Contenu({
         <div ref={refEtape}>
           <EtapeContrePassation
             dossierId={dossierId} lu={lu} encaissement={enEtape} etape={etape} setEtape={setEtape} aujourdHui={aujourdHui}
-            enCours={enCours} onContrePasser={onContrePasser} espace={espace}
+            enCours={enCours} onContrePasser={onContrePasser} espace={espace} gereLaBanque={gereLaBanque}
           />
         </div>
       )}
@@ -1026,6 +1095,7 @@ function Contenu({
             </p>
           )}
           {echeanceSaisie && <p className="muted" style={{ margin: '-6px 0 8px' }}>{echeanceSaisie.libelle}</p>}
+          {frontiereJugeeParLaBase(facture, vente) && <p className="note-info">{FRONTIERE_JUGEE_PAR_LA_BASE}</p>}
 
           <div className="table-scroll tableau-adaptable">
             <table className="table-empilable table-formulaire">
@@ -1057,6 +1127,7 @@ function Contenu({
           </p>
 
           {refus && <p className="alerte-tva" style={{ marginTop: 0 }}>{dire(refus.message)}</p>}
+          {inclassable && <p className="note-info">{dire(inclassable)}</p>}
 
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-primary" disabled={refus != null || enCours != null} onClick={onEnregistrer}>
@@ -1195,7 +1266,11 @@ function EtapeDeclaration({
 
 // « CONTRE-PASSER » UN ENCAISSEMENT DÉCLARÉ : la date du décaissement, jamais proposée — l'écran ne la choisit pas à la
 // place du cabinet —, le motif d'annulation, ce qui sera écrit, et les refus de la base avant le clic, au jour de Paris.
-function EtapeContrePassation({ dossierId, lu, encaissement: e, etape, setEtape, aujourdHui, enCours, onContrePasser, espace }: {
+// Pour une facture SOURCE (étape VF5b), le débit qui défait l'encaissement, choisi parmi les débits libres du dossier — avec
+// « Banque » seulement : sans lui le relevé n'est pas lu, et rien ne s'y choisit —, et ce qu'il deviendrait.
+function EtapeContrePassation({
+  dossierId, lu, encaissement: e, etape, setEtape, aujourdHui, enCours, onContrePasser, espace, gereLaBanque,
+}: {
   dossierId: string
   lu: Lu
   encaissement: EncaissementEcran
@@ -1205,12 +1280,20 @@ function EtapeContrePassation({ dossierId, lu, encaissement: e, etape, setEtape,
   enCours: string | null
   onContrePasser: () => void
   espace: EspaceVentes
+  gereLaBanque: boolean
 }) {
   const hote = declarationActive(lu.declarations, e.id)?.hote ?? '—'
   const cp = contrePassationDe(e, lu.parts)
-  const refus = refusContrePassation(
+  const vente = venteDe(lu)
+  const source = lu.factures.find((f) => f.id === e.facture_id)?.source_de_la_vente === true
+  const debits = source && gereLaBanque ? debitsCitables(dossierId, e, lu.mouvements) : []
+  const refus = refusContrePassationVente(
     dossierId, e.id, lu.encaissements, lu.declarations, etape.date === '' ? null : etape.date, etape.motif, aujourdHui,
+    etape.ligneBancaireId, lu.mouvements, vente,
   )
+  const inclassable = refus == null
+    ? inclassableApresContrePassation(dossierId, e.id, lu.encaissements, etape.ligneBancaireId, lu.mouvements, vente)
+    : null
   return (
     <div className="field etape-encaissement">
       <h3>Contre-passer l’encaissement du {formatDate(e.date_encaissement)} — {formatMoney(e.montant)}</h3>
@@ -1242,11 +1325,32 @@ function EtapeContrePassation({ dossierId, lu, encaissement: e, etape, setEtape,
         />
         <p className="muted" style={{ margin: '4px 0 0' }}>Obligatoire, 2 000 caractères au plus.</p>
       </div>
+      {source && gereLaBanque && (
+        <div className="field">
+          <label htmlFor="contre-passation-debit">Débit qui défait l’encaissement (facultatif)</label>
+          <select
+            id="contre-passation-debit" value={etape.ligneBancaireId ?? ''}
+            onChange={(ev) => setEtape({ ...etape, ligneBancaireId: ev.target.value === '' ? null : ev.target.value })}
+          >
+            <option value="">Aucun débit</option>
+            {debits.map((m) => (
+              <option key={m.id} value={m.id}>{libelleMouvement(m)} · {formatMoney(m.montant)}</option>
+            ))}
+          </select>
+          <p className="muted" style={{ margin: '4px 0 0' }}>
+            {debits.length === 0
+              ? 'Aucun débit libre au relevé : la contre-passation s’enregistre sans mouvement.'
+              : 'Le chèque revenu impayé, la somme rendue : le débit du relevé qui défait l’encaissement. Seul un débit que rien '
+                + 'ne classe encore se cite ; il se classe ensuite par cette contre-passation.'}
+          </p>
+        </div>
+      )}
       <p className="muted">
         Sera écrit : {formatMoney(cp.montantCentimes / 100)}, dont {partsEnMots(cp.parts)}, du même moyen de paiement
         ({libelleMoyen(e.moyen)}).
       </p>
       {refus && <p className="alerte-tva" style={{ marginTop: 0 }}>{pourLEspace(espace, refus.message)}</p>}
+      {inclassable && <p className="note-info">{pourLEspace(espace, inclassable)}</p>}
       <div className="rangee-boutons">
         <button type="button" className="btn btn-outline" disabled={enCours != null} onClick={() => setEtape(null)}>Annuler</button>
         <button type="button" className="btn btn-primary" disabled={refus != null || enCours != null} onClick={onContrePasser}>

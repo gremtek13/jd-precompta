@@ -287,6 +287,11 @@ const ECRANS: Ecran[] = [
   { nom: 'EncaissementsFactureModal', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
     <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture()} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
+  // Une facture SOURCE de sa vente, dans l'espace du client « Ventes » et « Banque » (étape VF5b) : la fenêtre y lit les
+  // factures du dossier, les lignes des avoirs et ce qui classe les mouvements, pas les exercices validés ; rien avant elles.
+  { nom: 'EncaissementsFactureModal (client, facture source)', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
+    <Dossier1><EncaissementsFactureModal espace="client" banque dossierId="d1" facture={facture({ source_de_la_vente: true })} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+  ) },
   // La carte de l'e-reporting de l'onglet TVA (étape e5c) : elle lit les régimes, et ouvre la fenêtre sur un clic.
   { nom: 'EreportingCard', fichier: 'pages/dossier/EreportingCard.tsx', rendre: () => (
     <Dossier1><EreportingCard dossierId="d1" dossier={DOSSIER_EREPORTING} /></Dossier1>
@@ -501,6 +506,10 @@ const PHRASES_FIXES: { ecran: string; texte: string; fois: number; raison: strin
   {
     ecran: 'EncaissementsFactureModal', fois: 1, raison: 'ce que la fenêtre fait, pas ce qu’elle a lu',
     texte: 'TTC. Un encaissement s’enregistre ici, au registre du dossier ; rien ne part vers une plateforme ni vers l’administration.',
+  },
+  {
+    ecran: 'EncaissementsFactureModal (client, facture source)', fois: 1, raison: 'ce que la fenêtre fait, aux mots du client',
+    texte: 'TTC. Un encaissement s’enregistre ici, au registre de ta société ; rien ne part vers une plateforme ni vers l’administration.',
   },
   {
     ecran: 'PlateformeClientModal', fois: 1, raison: 'la règle de l’import, pas un résultat',

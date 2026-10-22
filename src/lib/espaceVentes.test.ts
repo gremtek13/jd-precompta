@@ -16,7 +16,9 @@ import {
 import { REFUS_ENREGISTREMENT_CONTACT, REFUS_REPRISE_CONTACT } from './contacts'
 import { manqueMentionTva, motifExoneration, refusTauxPositif } from './statutTva'
 import { refusEmission } from './factureCii'
-import { obligationEncaissee } from './encaissementsFactures'
+import {
+  REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, obligationEncaissee,
+} from './encaissementsFactures'
 import { bilanDuReleve, refusDuReleve, verificationAvantDeclaration } from './statutsLus'
 import { libelleCanal, libelleCourtCanal } from './transmissionsFactures'
 import { REFUS_DECLARATION_ADRESSE } from './adressesReception'
@@ -65,7 +67,13 @@ const PRODUITES: Record<string, () => string> = {
   // `reprendre_contact`, tels que le module les dit ; les deux de la règle des soins nomment « un dossier » et « ses patients ».
   'REFUS_ENREGISTREMENT_CONTACT, REFUS_REPRISE_CONTACT': () => [...REFUS_ENREGISTREMENT_CONTACT, ...REFUS_REPRISE_CONTACT]
     .map((r) => r.modele).join('\n'),
+  // Les refus des quatre fonctions des encaissements que la fenêtre dit au client (étape VF5b), tels que le module les dit :
+  // trois nomment ce que le cabinet seul fait, ou vouvoient.
+  'REFUS_ENREGISTREMENT, REFUS_RETRAIT, REFUS_CONTRE_PASSATION, REFUS_DECLARATION': () => [
+    ...REFUS_ENREGISTREMENT, ...REFUS_RETRAIT, ...REFUS_CONTRE_PASSATION, ...REFUS_DECLARATION,
+  ].map((r) => r.modele).join('\n'),
   // Les messages d'un module qui appelle le client Supabase : lus dans sa source, que ce test n'importe pas.
+
   'receptionPlateforme (source)': () => readFileSync(resolve(process.cwd(), 'src/lib/receptionPlateforme.ts'), 'utf8'),
   // Les refus de la fonction que la liaison du client rencontre (étape P4b) : lus dans sa source, au caractère près.
   'plateforme-agreee (source)': () => readFileSync(resolve(process.cwd(), 'supabase/functions/plateforme-agreee/index.ts'), 'utf8'),
@@ -114,7 +122,32 @@ describe('les réécritures du client', () => {
     expect(pourLEspace('cabinet', phrase)).toBe(phrase)
   })
 
+  // Les refus des encaissements que la fenêtre dit au client (étape VF5b) : le classement d'un mouvement, c'est son cabinet
+  // qui le retire ; une contre-passation, c'est lui qui la retire, tutoyé.
+  it.each([
+    [
+      REFUS_ENREGISTREMENT.find((r) => r.cle === 'mouvement_classe')?.modele,
+      "Ce mouvement est déjà classé : l'encaissement d'une facture source de sa vente ne cite qu'un mouvement que rien ne classe encore — ton cabinet retire d'abord ce classement.",
+    ],
+    [
+      REFUS_RETRAIT.find((r) => r.cle === 'mouvement_classe')?.modele,
+      "Le mouvement dont dépend cet encaissement est classé : ton cabinet retire d'abord ce classement.",
+    ],
+    [
+      REFUS_CONTRE_PASSATION.find((r) => r.cle === 'mouvement_encaissement_classe')?.modele,
+      "Le mouvement de l'encaissement contre-passé est classé par ses encaissements : la contre-passation cite le débit qui défait l'encaissement, ou ton cabinet retire d'abord ce classement.",
+    ],
+    [
+      REFUS_RETRAIT.find((r) => r.cle === 'annule')?.modele,
+      "Cet encaissement est annulé par une contre-passation : retire d'abord celle-ci.",
+    ],
+  ])('le client lit « %s » sous ses mots', (cabinet, client) => {
+    expect(pourLEspace('client', cabinet ?? '')).toBe(client)
+    expect(pourLEspace('cabinet', cabinet ?? '')).toBe(cabinet)
+  })
+
   it('le texte du cabinet reste le sien, au caractère près', () => {
+
     for (const produire of Object.values(PRODUITES)) {
       const texte = produire()
       expect(pourLEspace('cabinet', texte)).toBe(texte)

@@ -11,7 +11,7 @@ import {
   repartitionProposee, resteAEncaisser, tauxCommeLaBase, ttcParTaux, VENTES_DU_CLIENT_EXPORTEES,
   type CleRefusContrePassation, type ContexteFacture, type DeclarationLue, type EcheanceDeclaration, type EncaissementLu,
   type EncaissementPourContrePassation, type FacturePourEncaissement, type FacturePourObligation, type LigneDeFacture,
-  type MouvementPropose, type PartLue, type PieceLue, type SaisieEncaissement, type StatutPlateformeLu,
+  type ContexteVente, type MouvementPropose, type PartLue, type PieceLue, type SaisieEncaissement, type StatutPlateformeLu,
   type TransmissionPourDeclaration,
 } from './encaissementsFactures'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
@@ -80,9 +80,16 @@ function mouvement(o: Partial<MouvementPropose> = {}): MouvementPropose {
   return {
     id: 'm1', dossier_id: D, date: '2027-10-15', montant: 1355.5, libelle: 'VIR SEPA', libelle_brut: null,
     prelevement_personnel: false, compte_bilan: null, emprunt_id: null, declaration_tva_id: null, cotisation_id: null,
+    // Ce qui classe un mouvement (étape VF5b) : un mouvement à traiter, que rien ne classe.
+    statut: 'non_rapprochee', piece_id: null, categorie_id: null, ventilee: false, reglement_groupe: false,
+    encaissements_de_factures: false,
     ...o,
   }
 }
+
+// Le contexte de la vente d'un dossier qui n'a pas basculé (étape VF5b) : aucune facture source, aucun exercice validé — les
+// propositions rendent celles d'hier.
+const HIER: ContexteVente = { anneesValidees: [], factures: [] }
 
 function saisie(o: Partial<SaisieEncaissement> = {}): SaisieEncaissement {
   return { date: '2027-10-15', montant: 100, moyen: 'virement', ligneBancaireId: null, repartition: [{ taux: 20, montant: 100 }], ...o }
@@ -820,8 +827,8 @@ describe('le droit « Banque » de qui saisit (espace client, étape P2)', () =>
   })
 
   it('sans lui, rien ne se propose : chaque proposition désigne un mouvement', () => {
-    expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, true)).toHaveLength(1)
-    expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, false)).toEqual([])
+    expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, true, HIER)).toHaveLength(1)
+    expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, false, HIER)).toEqual([])
   })
 })
 
@@ -1812,14 +1819,14 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
   })
   const proposer = (
     mouvements: MouvementPropose[], lignes: LignePayante[], o: Partial<ContexteFacture> = {}, reglements: PartReglee[] = [],
-  ) => propositionsEncaissement(contexte({ transmissions: [T], ...o }), [JUMELLE], paiementsDesPieces(lignes, reglements), mouvements, AUJOURD_HUI, true)
+  ) => propositionsEncaissement(contexte({ transmissions: [T], ...o }), [JUMELLE], paiementsDesPieces(lignes, reglements), mouvements, AUJOURD_HUI, true, HIER)
 
   it('la jumelle reconnue par son identité seule propose son paiement comme jumelle, pas comme un crédit du relevé', () => {
     const parIdentite: PieceLue = {
       ...JUMELLE, flux_hote: null, flux_id: null,
       identite_numero: 'F2027-0042', identite_siren_vendeur: '123456782', identite_date: '2027-10-01', identite_nature: 'facture',
     }
-    const p = propositionsEncaissement(contexte(), [parIdentite], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI, true)
+    const p = propositionsEncaissement(contexte(), [parIdentite], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI, true, HIER)
     expect(p.map((x) => [x.source, x.ligneBancaireId, x.piecesPayees])).toEqual([['jumelle', 'm1', ['pj']]])
   })
 
@@ -1867,9 +1874,9 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
   it('un crédit du relevé qui paie déjà une autre pièce se propose, et le dit', () => {
     // Le PDF de la même vente déposé à la main, rapproché de son virement : rien ne le relie à la facture émise.
     const p = propositionsEncaissement(contexte(), [], paiementsDesPieces([ligne({ id: 'r', piece_id: 'pdf' })], []),
-      [mouvement({ id: 'r' })], AUJOURD_HUI, true)
+      [mouvement({ id: 'r' })], AUJOURD_HUI, true, HIER)
     expect(p).toMatchObject([{ source: 'releve', ligneBancaireId: 'r', piecesPayees: ['pdf'] }])
-    expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, true)[0].piecesPayees).toEqual([])
+    expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, true, HIER)[0].piecesPayees).toEqual([])
   })
 
   it('un remboursement, un paiement déjà enregistré ou un mouvement non lu ne se proposent pas', () => {
@@ -1890,7 +1897,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
 
   it('les crédits du relevé qui font le reste, à l’écart des frais près, dans les deux sens', () => {
     const p = (montant: number, o: Partial<MouvementPropose> = {}) =>
-      propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r', montant, ...o })], AUJOURD_HUI, true)
+      propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r', montant, ...o })], AUJOURD_HUI, true, HIER)
     expect(p(1355.5)).toMatchObject([{ source: 'releve', ligneBancaireId: 'r', montantCentimes: 135550, ecartCentimes: 0, solde: true }])
     expect(p(1350.5)).toMatchObject([{ montantCentimes: 135550, ecartCentimes: -500 }])
     expect(p(1360.5)).toMatchObject([{ montantCentimes: 135550, ecartCentimes: 500 }])
@@ -1911,7 +1918,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
       facture: facture({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 }),
       lignes: [{ facture_id: 'f1', ordre: 1, designation: 'a', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
     })
-    const p = (montant: number) => propositionsEncaissement(petite, [], new Map(), [mouvement({ id: 'r', montant })], AUJOURD_HUI, true)
+    const p = (montant: number) => propositionsEncaissement(petite, [], new Map(), [mouvement({ id: 'r', montant })], AUJOURD_HUI, true, HIER)
     expect(p(117.6)).toHaveLength(1)
     expect(p(117.59)).toEqual([])
     expect(p(122.4)).toHaveLength(1)
@@ -1919,7 +1926,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
   })
 
   it('ce que le cabinet a classé comme autre chose qu’un paiement de client ne se propose pas', () => {
-    const p = (o: Partial<MouvementPropose>) => propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r', ...o })], AUJOURD_HUI, true)
+    const p = (o: Partial<MouvementPropose>) => propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r', ...o })], AUJOURD_HUI, true, HIER)
     expect(p({})).toHaveLength(1)
     for (const o of [
       { prelevement_personnel: true }, { compte_bilan: '580000' }, { emprunt_id: 'em1' }, { declaration_tva_id: 'dt1' }, { cotisation_id: 'c1' },
@@ -1928,7 +1935,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
 
   it('un crédit qui justifie déjà un encaissement vivant est pris ; retiré ou annulé, il est libre', () => {
     const p = (encaissements: EncaissementLu[]) =>
-      propositionsEncaissement(contexte({ encaissements }), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, true)
+      propositionsEncaissement(contexte({ encaissements }), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, true, HIER)
     // Cinq centimes pour une autre facture : sous le seuil des frais, la base accepterait encore le reste sur ce
     // virement — c'est bien parce qu'il est PRIS qu'il ne se propose pas.
     const autre = encaissement({ id: 'e8', facture_id: 'f2', ligne_bancaire_id: 'r', montant: 0.05 })
@@ -1953,7 +1960,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
       { ligne_bancaire_id: 'mg', piece_id: 'autre', montant: 1455.5 }, { ligne_bancaire_id: 'mg', piece_id: 'pj', montant: -100 },
     ])).toEqual([])
     // Sans la jumelle, le même crédit se propose depuis le relevé.
-    expect(propositionsEncaissement(contexte({ transmissions: [T] }), [], paiementsDesPieces([groupe], []), [mouvement({ id: 'mg' })], AUJOURD_HUI, true))
+    expect(propositionsEncaissement(contexte({ transmissions: [T] }), [], paiementsDesPieces([groupe], []), [mouvement({ id: 'mg' })], AUJOURD_HUI, true, HIER))
       .toMatchObject([{ source: 'releve', ligneBancaireId: 'mg' }])
     // Déjà enregistré pour cette facture : ni comme paiement de la jumelle, ni depuis le relevé.
     expect(proposer([mouvement()], [ligne({})], { encaissements: [encaissement({ ligne_bancaire_id: 'm1', montant: 100 })] })).toEqual([])
@@ -1967,7 +1974,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
       mouvement({ id: 'r1', date: '2027-10-10', montant: 1355.5 }),
       mouvement({ id: 'r0', date: '2027-10-10', montant: 1355.5 }),
       mouvement({ id: 'r5', date: '2027-10-02', montant: 1358.5 }),
-    ], AUJOURD_HUI, true)
+    ], AUJOURD_HUI, true, HIER)
     expect(p.map((x) => x.ligneBancaireId)).toEqual(['r2', 'r0', 'r1', 'r3', 'r5', 'r4'])
     expect(p.map((x) => x.clientCite)).toEqual([true, false, false, false, false, false])
     expect(p.map((x) => x.ecartCentimes)).toEqual([0, 0, 0, 0, 300, -300])
@@ -1976,20 +1983,20 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
   it('le client se lit aussi dans la ligne brute, quand le libellé est générique', () => {
     const [p] = propositionsEncaissement(contexte(), [], new Map(), [
       mouvement({ id: 'r', libelle: 'Mouvement bancaire', libelle_brut: '15/10/2027;VIR FICTIF;1355,50' }),
-    ], AUJOURD_HUI, true)
+    ], AUJOURD_HUI, true, HIER)
     expect(p.clientCite).toBe(true)
   })
 
   it('rien quand la facture est soldée, rejetée, ou porte un taux que la base refuserait', () => {
     const soldee = contexte({ encaissements: [encaissement({ montant: 1355.5 })], parts: [part({ taux: 20, montant: 1200 }), part({ taux: 5.5, montant: 105.5 }), part({ taux: 0, montant: 50 })] })
-    expect(propositionsEncaissement(soldee, [], new Map(), [mouvement({ id: 'r', montant: 1355.5 })], AUJOURD_HUI, true)).toEqual([])
+    expect(propositionsEncaissement(soldee, [], new Map(), [mouvement({ id: 'r', montant: 1355.5 })], AUJOURD_HUI, true, HIER)).toEqual([])
     const rejetee = contexte({ transmissions: [{ ...T, etat: 'rejete' }] })
-    expect(propositionsEncaissement(rejetee, [JUMELLE], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI, true)).toEqual([])
+    expect(propositionsEncaissement(rejetee, [JUMELLE], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI, true, HIER)).toEqual([])
     const f19 = contexte({
       facture: facture({ montant_ht: 100, montant_tva: 19, montant_ttc: 119 }),
       lignes: [{ facture_id: 'f1', ordre: 1, designation: 'a', quantite: 1, prix_unitaire_ht: 100, taux_tva: 19 }],
     })
-    expect(propositionsEncaissement(f19, [], new Map(), [mouvement({ id: 'r', montant: 119 })], AUJOURD_HUI, true)).toEqual([])
+    expect(propositionsEncaissement(f19, [], new Map(), [mouvement({ id: 'r', montant: 119 })], AUJOURD_HUI, true, HIER)).toEqual([])
   })
 
   it('chaque proposition est un encaissement que la base accepterait aujourd’hui', () => {
@@ -1997,7 +2004,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
     const mouvements = [
       mouvement(), mouvement({ id: 'r1', montant: 1352.5 }), mouvement({ id: 'r2', montant: 1360 }), mouvement({ id: 'm2', montant: 300 }),
     ]
-    const props = propositionsEncaissement(c, [JUMELLE], paiementsDesPieces([ligne({}), ligne({ id: 'm2', montant: 300 })], []), mouvements, AUJOURD_HUI, true)
+    const props = propositionsEncaissement(c, [JUMELLE], paiementsDesPieces([ligne({}), ligne({ id: 'm2', montant: 300 })], []), mouvements, AUJOURD_HUI, true, HIER)
     // La jumelle d'abord, dans l'ordre de ses paiements ; puis le relevé.
     expect(props.map((p) => `${p.source}:${p.ligneBancaireId}`)).toEqual(['jumelle:m1', 'jumelle:m2', 'releve:r1', 'releve:r2'])
     for (const p of props) {
