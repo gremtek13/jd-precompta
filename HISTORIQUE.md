@@ -30569,3 +30569,112 @@ avaient été tranchées ainsi par le cabinet le matin même (voir la mise en li
   rien ne reste pour autant.
 - Le choix des deux colonnes repose sur quatre contraintes : l'une relâchée, il se revoit, et le contrôle 155 le dira.
 - Avant toute bascule, restent les frais d'un mouvement d'encaissements dans la 2035 (VF4C3-Q1) ; puis VF5 à VF9.
+
+**LA MISE EN LIGNE.** Demande #202, ouverte sur `94b8ce7` après la barrière locale sous Node 22.23.3 sur le commit du
+code (`tsc -b`, son cache écarté d'abord ; lint, 0 erreur et les 63 avertissements d'avant ; 439 fichiers et 13 317
+tests sous Paris, UTC, New York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la
+demande, de 20 h 18 à 20 h 37 UTC) ; fusionnée en « Rebase and merge » le 21/10/2026 à 20 h 40 UTC (`53c9550`,
+`e33babe`), `main` linéaire, son arbre égal à celui de la branche ; le déploiement vert, et le site sert
+`index-ChcTQI5l.js` depuis 20 h 45, le bundle du build local. La feuille de route : la ligne 28.6 ramenée au pont livré
+du 8 au 10 octobre, la ligne 28.65 ouverte pour le chantier EC-Q3 (en cours, phase 1) puis mise à jour du lot, toutes
+deux relues par empreinte (2 441 et 11 336 positions) ; les barres d'avancement recomptées par requête : 186 chantiers
+hors de la phase 7, dont 141 livrés ; 45 restent, dont 17 en cours (la ligne 28.65 en est) ; pour un dossier BNC, 141
+sur 173 ; 76 % et 82 %, inchangés, l'en-tête de la page daté du 21 octobre. La branche réalignée sur `main`.
+
+### 22/10/2026 — LA 2035 COMPTE LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS — CHANTIER EC-Q3, VF4C3-Q1 (LIGNE 28.65)
+
+(Écrite par l'agent architecte du lot sur `e33babe`, en deux commits que la session a relus : le code et ses tests, puis
+cette documentation ; la session y a ajouté la mise en ligne du lot de R1, à la fin de son entrée. Modifiés :
+`declaration2035.ts`, `concordance2035.ts`, `ecrituresVentesFacturees.ts`, `ecrituresVentesFactureesEcran.ts`,
+`revueAnalytiqueEcran.ts`, `prealablesValidation.ts`, `ClotureTab.tsx`, `RevisionTab.tsx`, `DossierDetail.tsx`, le banc
+(`outils/captures/fauxSupabase.ts`), les fabriques (`src/test/compositionsAuPlan.ts`) et leurs tests. Ni base, ni
+migration, ni Edge Function ; en production, deux lectures en SELECT, sur `categories` et sur des comptes de lignes.)
+
+**LA DÉLIMITATION.** Le défaut trouvé en passant à VF4c3 (« LA 2035 ET LA CA3 LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE
+», « UN DÉFAUT TROUVÉ EN PASSANT, D'AVANT CE LOT ») : quand la banque crédite un peu moins que les encaissements qu'un
+mouvement règle (au plus 2 % et 5 €, `ecartDeFrais`), l'écriture du mouvement porte la différence au compte des services
+bancaires (627000), et la 2035, qui ne lit des ventes facturées que leurs parts, surévaluait le résultat de ces frais.
+La question VF4C3-Q1 n'a pas reçu de réponse du cabinet : elle est faite sur la recommandation (« Oui : la 2035 compte
+ces frais sous le poste de la catégorie « Frais bancaires » du dossier, là où vont déjà les frais bancaires du relevé,
+et c'est fait avant toute bascule »), et une réponse contraire la défera. NEUTRE en production : aucun dossier n'a
+basculé — relu en lecture seule, aucun dossier `ventes_par_les_factures`, aucune facture source, aucun encaissement,
+aucun mouvement classé par ses encaissements —, et sans bascule toute 2035 reste identique.
+
+**LE CHOIX : LIRE LA SORTIE DE LA COMPOSITION.** `fraisDesMouvements` (`ecrituresVentesFacturees.ts`) lit, dans les
+écritures composées, celles d'un mouvement (`genre: 'mouvement'`) et leurs lignes au compte des services bancaires du
+plan, signées au débit ; rien n'y est recalculé. Écartée : une fonction partagée que la composition appellerait pour le
+mouvement — il aurait fallu donner à la 2035 tout ce que la composition lit (factures, encaissements, mouvements), et
+redire l'ordre de ses refus (non classé, facture non source, vente écartée, montant illisible, écart négatif ou hors du
+seuil, écart nul). Lue en sortie, la composition décide seule : un mouvement qu'elle n'écrit pas n'a pas de frais, et un
+changement de sa règle passe de lui-même dans la 2035. La composition et les écritures ne changent pas.
+
+**LE MOTEUR.** `calculerDeclaration2035` reçoit un treizième paramètre, obligatoire et sans défaut,
+`EcrituresDesVentesDeLa2035` : `sans_bascule` (aucun frais), ou `composees` (la composition, au plan et au modèle du
+dossier). Chaque frais de l'exercice du MOUVEMENT (art. 93, 1) est une contribution à lui (`frais_d_encaissements`, le
+mouvement pour identifiant), une dépense sous le poste de la catégorie de code `frais_bancaires` du dossier — la sienne
+s'il en a une, la commune sinon (`categorieDesFraisBancaires`) : aucune règle de préséance par code n'existait (la seule
+recherche par code, `categorieParMotCle`, prend la première venue), celle-ci est posée, une catégorie d'un autre dossier
+n'est jamais retenue —, au compte de la composition (`services_bancaires`), jamais celui de la catégorie ; le mouvement
+compte parmi ceux du poste. Sans catégorie, ou sans poste : sur aucune ligne, et dit (`exclusions.fraisSansPoste`, la
+catégorie retenue ou nulle). En production, la seule catégorie de ce code est la commune, « Frais financiers » (case
+BN).
+
+**LA CONCORDANCE.** La contribution et la ligne 627 se rapprochent sous le mouvement (`mouvement:<id>`) et concordent
+quand l'écriture est à jour. Un écart prend les motifs de la section « Ventes facturées », comme une part — à écrire, à
+réécrire, à retirer (une ligne de frais que la composition n'écrit plus) —, avec des phrases propres au mouvement ; sauf
+des frais sans poste : `frais_sans_poste` (« frais d'encaissements sans poste »), qui envoie à « Clôture — Postes
+manquants ». Le motif `frais_d_encaissements` et « Pas encore dans l'application » n'existent plus.
+
+**LES ÉCRANS.** Clôture et la Révision reçoivent `ventesParLesFactures` (obligatoire, de `DossierDetail`) et, pour un
+dossier basculé seulement, lisent les sources des écritures (`lireLesSourcesDesEcrituresDeVente`) avec leurs autres
+lectures, dans la même relecture, gardées avec le dossier. `ecrituresDesVentesPourLa2035` (module d'écran, pur) en tire
+ce que la 2035 reçoit, par `compositionDesSources` — la composition même de la section et de la liquidation, que
+`etatsDesVentesFacturees` appelle aussi désormais : pas revenues pour ce dossier, « en attente » ; partielles, refusées
+ou qui ne se composent pas, « incomplète » ; et une facture source dans un dossier qui ne se dit pas basculé, que la
+base interdit, rend les lectures incohérentes, comme à la CA3. Sans elles, AUCUNE 2035 : à Clôture, « Chargement… » ou
+le bandeau des ventes facturées ; à la Révision, la section de la revue analytique se tait et nomme la lecture. Clôture
+dit les frais exclus dans une carte, « Frais d'encaissements absents du récapitulatif » (la date, le mouvement, les
+frais ; la catégorie qui manque, ou son poste, et `categorieCommuneNonReglable` pour une commune qu'on ne règle pas),
+met la catégorie sans poste dans « Postes manquants », et propose l'exercice que seuls des frais touchent (un chèque du
+31 décembre crédité le 2 janvier). La validation compte ces frais parmi les exclusions (`exclusions-2035`, la carte
+reprise dans `CARTES_DE_CLOTURE`) ; elle reste refusée jusqu'à VF7 pour un exercice qui porte des lignes d'une vente
+facturée.
+
+**LES MUTATIONS.** 32, toutes tuées : `fraisDesMouvements` (3), le moteur (9 : l'année, la préséance, une catégorie d'un
+autre dossier, le mouvement du poste, le compte, le poste nul, l'exclusion, la nature, la composition ignorée), la
+concordance (6), le module d'écran (4), Clôture (7), la validation (1), la Révision (2). La première campagne laissait
+survivre « les années des frais ignorées » : un test de Clôture l'a tuée.
+
+**LES PREUVES.** La suite comparée test par test, avant (`e33babe`) et après : aucun verdict changé ; deux tests
+réécrits exprès sous un autre nom, leur sens inversé — la concordance (« la 2035 ne les compte pas, et le dit ») et
+Clôture (« un écart que la carte dit, sans geste ») —, 39 tests neufs (13 317 avant, 13 354 après ; 439 fichiers). Les
+tests d'avant ne reçoivent que le paramètre (`sans_bascule`), le contexte et les props ; ceux des ventes facturées de
+Clôture et de la revue analytique montent le dossier basculé, comme la base l'impose. Le bout en bout et un tirage de
+1 500 dossiers (sous les deux plans pour 300) : pour chaque mouvement, les frais que la 2035 compte sont, au centime et
+à la date, les lignes que la composition écrit au compte des services bancaires ; écrites, la concordance est entière.
+Sous le Node 22.22.0 de l'environnement de l'agent, un test sans lien avec le lot échouait avant comme après,
+`contactsImportFichier.test.ts` (windows-1252 : ce Node décode 0x80 en U+0080) ; sous le Node 22.23.3 de la CI, il
+passe. La barrière de la session sous ce Node, sur le commit du code (`f7f21b6`) : `tsc -b --force` 0 ; lint 0 erreur
+(les 63 avertissements d'avant) ; `npm run test:fuseaux` 0, 439 fichiers et 13 354 tests sous Paris, UTC, New York et
+Auckland ; le build (`index-CW-roh9Q.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** VF4C3-Q1 est faite sur la recommandation, sans réponse du cabinet ; la
+préséance d'une catégorie « Frais bancaires » propre au dossier sur la commune est posée par ce lot, faute de règle
+existante. Aucune question nouvelle.
+
+**À REVOIR.**
+- La situation intermédiaire, l'estimation et « Ma simulation » ne comptent pas ces frais : la situation est la 2035 « à
+  ce jour » et devrait les compter par la même composition, avant toute bascule ; l'estimation et la simulation, quand
+  VF8 leur donnera leurs totaux.
+- La CA3 : rien à faire — des frais bancaires sont en principe exonérés (CGI, art. 261 C, 1°), la composition n'écrit
+  aucune TVA sur le mouvement, et la liquidation l'ignore déjà.
+- Clôture et la Révision lisent les ventes facturées et les sources de leurs écritures par deux lectures du même
+  instant, comme l'onglet TVA : une écriture faite entre les deux ferait un écart d'une relecture. Un dossier basculé
+  pourrait tirer ses ventes de la composition elle-même (`composition.ventes`).
+- Une ligne de frais d'un mouvement DÉCLASSÉ reste « que la 2035 ne compte pas » dans la concordance (le contexte ne
+  connaît que les mouvements classés) ; la section « Ventes facturées » la dit « à retirer ».
+- La Checklist ne met pas la catégorie des frais sans poste parmi ses postes manquants ; Clôture seule le fait.
+- Aucun test ne fait basculer un dossier pendant que Clôture ou la Révision est ouverte (la relecture que la dépendance
+  `ventesParLesFactures` commande).
+- Pour VF7 : le compte de mouvements du poste « Frais financiers » inclut ces mouvements ; l'instantané validé le
+  gardera.
