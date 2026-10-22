@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EncaissementsFactureModal from './EncaissementsFactureModal'
 import { facture as factureCii } from '../../test/facturesCii'
-import { LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_NOTE_DECLARATION } from '../../lib/droitsAcces'
+import { LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT, LIBELLE_NOTE_DECLARATION } from '../../lib/droitsAcces'
 import { ACCES_EN_COURS, type AccesDuDossier } from '../../lib/auteursVentes'
 import { motsDuCabinet } from '../../lib/espaceVentes'
 
@@ -1489,6 +1489,30 @@ describe('EncaissementsFactureModal — la contre-passation d’une facture sour
     await screen.findByRole('button', { name: 'Enregistrer la contre-passation' })
     expect(screen.queryByLabelText('Débit qui défait l’encaissement (facultatif)')).toBeNull()
     expect(faux.tablesLues).not.toContain('lignes_bancaires')
+  })
+
+  // La case « Banque » retirée pendant que la fenêtre est ouverte (migration contre_passation_banque) : la fenêtre relit
+  // sans le relevé, mais l'étape garde le débit choisi — le module le refuse avant le clic, sous les mots de la base (le
+  // rang 2), et non comme un mouvement d'un autre dossier ; rien ne part.
+  it('« Banque » retirée pendant la saisie : le débit retenu se refuse avant le clic, sous les mots de la base', async () => {
+    const { rerender } = monterSource({ client: { banque: true } })
+    await ouvrir()
+    fireEvent.change(champ('Date du décaissement'), { target: { value: '2027-11-01' } })
+    fireEvent.change(champ(LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT), { target: { value: 'Chèque revenu impayé' } })
+    fireEvent.change(debit(), { target: { value: 'juste' } })
+    expect(enregistrerCp()).toHaveProperty('disabled', false)
+    rerender(
+      <EncaissementsFactureModal espace="client" banque={false}
+        dossierId="d1" facture={SOURCE} statutTva="redevable" onClose={() => {}} onUpdated={onUpdated}
+      />,
+    )
+    await screen.findByText('Le mouvement bancaire d\'un encaissement ne se désigne qu\'avec le droit « Banque » sur ce dossier : '
+      + 'sans lui, l\'encaissement s\'enregistre sans mouvement.')
+    expect(screen.queryByLabelText('Débit qui défait l’encaissement (facultatif)')).toBeNull()
+    expect(enregistrerCp()).toHaveProperty('disabled', true)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { enregistrerCp().click() })
+    expect(faux.rpcs).toEqual([])
   })
 })
 

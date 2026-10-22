@@ -913,7 +913,8 @@ function Contenu({
                   // juge sans elle : un premier refus « date à renseigner » dit que rien d'autre ne s'y oppose.
                   const refusCp = refusDuRetrait?.cle === 'declare'
                     ? refusContrePassationVente(
-                      dossierId, e.id, lu.encaissements, lu.declarations, null, null, aujourdHui, null, lu.mouvements, vente,
+                      dossierId, e.id, lu.encaissements, lu.declarations, null, null, aujourdHui, null, lu.mouvements,
+                      gereLaBanque, vente,
                     )
                     : null
                   const contrePassable = refusCp?.cle === 'date_absente'
@@ -1287,9 +1288,11 @@ function EtapeContrePassation({
   const vente = venteDe(lu)
   const source = lu.factures.find((f) => f.id === e.facture_id)?.source_de_la_vente === true
   const debits = source && gereLaBanque ? debitsCitables(dossierId, e, lu.mouvements) : []
+  // Le droit « Banque » de qui saisit : sans lui, un débit retenu — la case retirée pendant que la fenêtre est ouverte —
+  // se refuse avant le clic, sous les mots de la base (migration contre_passation_banque).
   const refus = refusContrePassationVente(
     dossierId, e.id, lu.encaissements, lu.declarations, etape.date === '' ? null : etape.date, etape.motif, aujourdHui,
-    etape.ligneBancaireId, lu.mouvements, vente,
+    etape.ligneBancaireId, lu.mouvements, gereLaBanque, vente,
   )
   const inclassable = refus == null
     ? inclassableApresContrePassation(dossierId, e.id, lu.encaissements, etape.ligneBancaireId, lu.mouvements, vente)
