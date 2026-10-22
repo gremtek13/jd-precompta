@@ -5,7 +5,11 @@ import { montantRetenu } from './montantRetenu'
 import { partDansLaPeriode, rattachements, type PaiementsDesPieces } from './rattachement'
 import type { CotisationComptee } from './cotisationRapprochee'
 import type { Categorie, Immobilisation, ModeComptable, Piece } from './types'
-import { POSTE_VENTES_FACTUREES } from './declaration2035'
+import {
+  POSTE_VENTES_FACTUREES, categorieDesFraisBancaires, type EcrituresDesVentesDeLa2035, type FraisSansPoste,
+} from './declaration2035'
+import { fraisDesMouvements } from './ecrituresVentesFacturees'
+import type { PlanComptable } from './planComptable'
 import {
   exemplaireDUneFactureSource, recettesFactureesDeLaPeriode, type ExcedentVenteFacturee, type VenteEcartee, type VentesFacturees,
 } from './ventesFacturees'
@@ -33,6 +37,11 @@ export interface SituationIntermediaire {
   ventesFactureesEcartees: VenteEcartee[]
   // Les taux encaissés au-delà de la facture nette de ses avoirs : comptés — l'argent a été reçu —, et dits. Du dossier.
   ventesFactureesEnExcedent: ExcedentVenteFacturee[]
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS QUE NULLE LIGNE NE PORTE (ligne 28.65, chantier EC-Q3) : ceux de la période,
+  // quand la catégorie « Frais bancaires » du dossier manque ou n'a pas de poste. Le trou que la 2035 dit
+  // (`exclusions.fraisSansPoste`), dit ici pour la même raison : une charge payée qui manque à l'état montré à une banque
+  // flatte le résultat sans un signe.
+  fraisSansPoste: FraisSansPoste[]
 }
 
 // Situation intermédiaire — première brique du "dossier bancaire automatisé" (voir CLAUDE.md) :
@@ -105,6 +114,15 @@ export function calculerSituationIntermediaire(
   // appelant qui les oublierait montrerait à une banque un dossier qui facture dans l'application sans ses ventes ; des
   // ventes vides par commodité compteraient l'exemplaire à la place de sa facture.
   ventesFacturees: VentesFacturees,
+  // Le plan du dossier : la composition porte les frais d'un mouvement d'encaissements au compte des services bancaires DE
+  // CE PLAN, et c'est là que `fraisDesMouvements` les lit. La situation n'en lit rien d'autre. Sans valeur par défaut : un
+  // plan par défaut chercherait les frais d'un dossier qui en règle un autre sur un compte qu'aucune écriture ne porte.
+  plan: Pick<PlanComptable, 'services_bancaires'>,
+  // Les écritures des ventes facturées du dossier, d'où la 2035 tire les frais d'un mouvement d'encaissements
+  // (lib/declaration2035.ts, `EcrituresDesVentesDeLa2035`) : la situation, sa version « à ce jour », les tire de même. Sans
+  // valeur par défaut : un appelant qui les oublierait montrerait à une banque un dossier basculé sans ses frais bancaires,
+  // un résultat flatté ; l'absence de bascule se DIT (`sans_bascule`).
+  ecrituresDesVentes: EcrituresDesVentesDeLa2035,
 ): SituationIntermediaire {
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
@@ -150,6 +168,32 @@ export function calculerSituationIntermediaire(
     totauxParPoste.set(POSTE_VENTES_FACTUREES, (totauxParPoste.get(POSTE_VENTES_FACTUREES) ?? 0) + facturees / 100)
   }
 
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (ligne 28.65, chantier EC-Q3 ; la règle de la 2035, VF4C3-Q1) : quand la
+  // banque crédite un peu moins que les encaissements qu'un mouvement règle, l'écriture du mouvement porte la différence au
+  // compte des services bancaires — une charge payée à la date du MOUVEMENT. Les MÊMES fonctions que la 2035, jamais une
+  // règle recopiée : `fraisDesMouvements` lit la sortie de la composition, rien n'est recalculé ; `categorieDesFraisBancaires`
+  // choisit la catégorie (celle du dossier, sinon la commune), dont le poste reçoit la dépense. Sans catégorie ou sans
+  // poste : nulle part, et dit (`fraisSansPoste`), jamais un poste deviné. En trésorerie comme en engagement : la
+  // composition écrit le mouvement de la même façon dans les deux modes (lib/ecrituresVentesFacturees.ts, « Les mouvements
+  // que des encaissements citent », qui ne lit pas le mode). En centimes entiers jusqu'à la ligne, comme les ventes
+  // facturées. Sans bascule, rien : l'état d'hier, ligne pour ligne.
+  const fraisSansPoste: FraisSansPoste[] = []
+  if (ecrituresDesVentes.etat === 'composees') {
+    const composition = ecrituresDesVentes.composition
+    const categorieFrais = categorieDesFraisBancaires(categories, composition.dossierId)
+    let fraisCentimes = 0
+    for (const frais of fraisDesMouvements(composition, plan)) {
+      if (frais.date < periodeDebut || frais.date > periodeFin) continue
+      if (!categorieFrais?.poste_2035) {
+        fraisSansPoste.push({ frais, categorie: categorieFrais })
+        continue
+      }
+      fraisCentimes += frais.centimes
+    }
+    const poste = categorieFrais?.poste_2035
+    if (poste && fraisCentimes !== 0) totauxParPoste.set(poste, (totauxParPoste.get(poste) ?? 0) - fraisCentimes / 100)
+  }
+
   // LA DOTATION SUIT LA PÉRIODE ANNONCÉE. Cet état porte en tête « Période du 1er janvier au <date
   // choisie> », et sa ligne « Amortissements » comptait jusqu'au 22/09/2026 UNE ANNÉE ENTIÈRE de dotation
   // quelle que soit cette date — au 31 janvier, un bien de 12 000 € sur 5 ans affichait un résultat
@@ -185,5 +229,6 @@ export function calculerSituationIntermediaire(
     exemplairesDeFacturesSources,
     ventesFactureesEcartees: [...ventesFacturees.ecartees],
     ventesFactureesEnExcedent: [...ventesFacturees.excedents],
+    fraisSansPoste,
   }
 }

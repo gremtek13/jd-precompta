@@ -355,7 +355,10 @@ const ECRANS: Ecran[] = [
   { nom: 'FicheHorsDeFrance', fichier: 'pages/dossier/FicheHorsDeFrance.tsx', rendre: () => (
     <Dossier1><FicheHorsDeFrance dossierId="d1" piece={piece()} pieceModifiee={false} donnees={FICHES_RECUES} sansTexteLu={false} /></Dossier1>
   ) },
-  { nom: 'FinancementTab', fichier: 'pages/dossier/FinancementTab.tsx', rendre: () => <Dossier1><FinancementTab dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
+  { nom: 'FinancementTab', fichier: 'pages/dossier/FinancementTab.tsx', rendre: () => <Dossier1><FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
+  // Basculé (ligne 28.65) : il lit aussi les sources des écritures de ses ventes facturées, d'où la situation tire les frais
+  // d'un mouvement d'encaissements — retenues avec le reste, elles ne laissent rien affirmer ni écrire.
+  { nom: 'FinancementTab (basculé)', fichier: 'pages/dossier/FinancementTab.tsx', rendre: () => <Dossier1><FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'ImmobilisationsTab', fichier: 'pages/dossier/ImmobilisationsTab.tsx', rendre: () => <Dossier1><ImmobilisationsTab dossierId="d1" assujettiTva={false} plan={PLAN_PAR_DEFAUT} /></Dossier1> },
   { nom: 'InformationsTab', fichier: 'pages/dossier/InformationsTab.tsx', rendre: () => (
     <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} dossierDenomination={null} dossierRcsVille={null} dossierFormeJuridique={null} dossierCapital={null} modele={TRESORERIE} onIdentiteUpdated={rien} /></Dossier1>
@@ -736,6 +739,7 @@ const ECRITURES_SANS_LISTE: { ecran: string; geste: string; ecritures: string[];
     raison: 'une échéance saisie à la main ne se dédoublonne pas : seul l’exercice validé la refuse, et il vient de la page du dossier',
   },
   { ecran: 'FinancementTab', geste: 'form « Nom', ecritures: ['emprunts insert'], raison: 'un emprunt neuf, saisi en entier' },
+  { ecran: 'FinancementTab (basculé)', geste: 'form « Nom', ecritures: ['emprunts insert'], raison: 'un emprunt neuf, saisi en entier' },
   { ecran: 'ImmobilisationsTab', geste: 'form « Ajouter une nature', ecritures: ['natures_immobilisation insert'], raison: 'une nature neuve, saisie en entier' },
   { ecran: 'PiecesTab', geste: 'button « + Sous-dossier', ecritures: ['sous_dossiers insert'], raison: 'un sous-dossier neuf, nommé à l’invite' },
   { ecran: 'SupplementsTab', geste: 'form « Type', ecritures: ['supplements insert'], raison: 'une prestation neuve, saisie en entier' },
@@ -1037,7 +1041,7 @@ describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
   })
   afterAll(() => { vi.restoreAllMocks() })
 
-  for (const nom of ['ClotureTab', 'RevisionTab', 'TvaTab', 'FinancementTab', 'EstimationTab']) {
+  for (const nom of ['ClotureTab', 'RevisionTab', 'TvaTab', 'FinancementTab', 'FinancementTab (basculé)', 'EstimationTab']) {
     it(`${nom} : les ventes facturées retenues seules, rien ne s’offre ni ne s’écrit ; revenues, l’attente se lève`, async () => {
       const ecran = ECRANS.find((e) => e.nom === nom)!
       const journal = vi.spyOn(console, 'error').mockImplementation(() => {})

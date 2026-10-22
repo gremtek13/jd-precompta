@@ -22,6 +22,8 @@ interface LigneDossier {
   // L'identité légale (A5b2) : FACULTATIVE, comme dans `Dossier` — une ligne lue sans ces colonnes ne les porte pas.
   adresse?: string | null
   denomination_imprimee?: string | null; rcs_ville?: string | null; forme_juridique?: string | null; capital?: number | null
+  // La bascule des ventes (VF2) : absente des lignes d'essai d'avant, donc jamais une bascule.
+  ventes_par_les_factures?: boolean
 }
 
 const faux = vi.hoisted(() => ({
@@ -282,7 +284,19 @@ vi.mock('./dossier/ClotureTab', async () => {
   }
 })
 vi.mock('./dossier/EstimationTab', () => doubleTva('Estimation'))
-vi.mock('./dossier/FinancementTab', () => doubleTva('Financement'))
+// Le Financement reçoit aussi, depuis la ligne 28.65, le réglage de la bascule et le plan du dossier : sa situation compte les
+// frais d'un mouvement d'encaissements au compte des services bancaires du plan. Doublé pour montrer ce qu'il REÇOIT.
+vi.mock('./dossier/FinancementTab', () => ({
+  default: (props: { assujettiTva: boolean; modeComptable: string; ventesParLesFactures: boolean; plan: { services_bancaires: string } }) => {
+    const { default: Tva } = doubleTva('Financement')
+    return (
+      <>
+        <Tva assujettiTva={props.assujettiTva} modeComptable={props.modeComptable} />
+        <p>Financement — {props.ventesParLesFactures ? 'basculé' : 'non basculé'} — services bancaires {props.plan.services_bancaires}</p>
+      </>
+    )
+  },
+}))
 vi.mock('./dossier/ImmobilisationsTab', () => doubleTva('Immobilisations'))
 // Cotisations écrit une échéance payée dans le modèle du dossier (lib/cotisationRapprochee.ts) : sa
 // CSG-CRDS au 108000 en trésorerie, au 646000 avec le reste en engagement. Et une échéance payée depuis le compte
@@ -925,6 +939,20 @@ describe('Page d’un dossier — le plan comptable', () => {
 
     await afficher('/dossiers/d2/cotisations')
     expect(screen.getByText('Cotisations — plan : banque 512000, exploitant 108000')).toBeTruthy()
+  })
+
+  // Ligne 28.65 : la situation du Financement compte les frais d'un mouvement d'encaissements d'un dossier basculé, au compte
+  // des services bancaires de SON plan. Le réglage absent de la ligne lue n'est jamais une bascule.
+  it('le Financement reçoit le plan du dossier et le réglage de la bascule', async () => {
+    faux.plans = { d1: { ...(await decale()) } }
+    faux.dossiers.d1.compte_notes_de_frais = '455100' as never
+    await afficher('/dossiers/d1/financement')
+    expect(screen.getByText('Financement — non basculé — services bancaires 627100')).toBeTruthy()
+    cleanup()
+
+    faux.dossiers.d2 = { ...faux.dossiers.d2, ventes_par_les_factures: true }
+    await afficher('/dossiers/d2/financement')
+    expect(screen.getByText('Financement — basculé — services bancaires 627000')).toBeTruthy()
   })
 
   it('pendant sa lecture, aucun onglet ne se monte ; revenu, l’onglet reçoit le plan', async () => {

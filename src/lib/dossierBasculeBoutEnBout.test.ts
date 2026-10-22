@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { concordance2035 } from './concordance2035'
 import { calculerCa3, type DeclarationCa3 } from './declarationTva'
-import { calculerDeclaration2035 } from './declaration2035'
+import { calculerDeclaration2035, type EcrituresDesVentesDeLa2035 } from './declaration2035'
 import { fraisDesMouvements } from './ecrituresVentesFacturees'
 import type { Categorie } from './types'
 import { etatsDesVentesFacturees, mouvementsClassesParEncaissements, type SourcesDesEcrituresDeVente } from './ecrituresVentesFactureesEcran'
 import { arrondiDeLaLiquidation, declarationDeLaCa3, ecritureDeLaLiquidation, refusEnregistrement } from './liquidationTva'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
 import { paiementsDesPieces } from './rattachement'
+import { calculerSituationIntermediaire } from './situationIntermediaire'
 import type { EcritureBrouillon, ModeComptable } from './types'
 import { ventesFacturees } from './ventesFacturees'
 import { brouillonDesVentes, composition, sourcesDuDossierBascule } from '../test/dossierBascule'
@@ -137,5 +138,60 @@ describe.each(PLANS)('les frais d’un mouvement d’encaissements, de bout en b
     }, null)
     expect(conc.ecarts).toEqual([])
     expect(conc.ecritures).toEqual({ recettes: 183.33, depenses: 4, resultat: 179.33 })
+  })
+})
+
+// LA SITUATION DE L'ANNÉE ENTIÈRE ET LA 2035 DU MÊME EXERCICE COMPTENT LES MÊMES FRAIS, AU MÊME POSTE (ligne 28.65) : le même
+// dossier, ses deux mouvements crédités de 2 € de moins que leurs encaissements. La situation est la 2035 « à ce jour » : sur
+// l'année civile, elle doit dire, poste par poste, ce que la 2035 déclare — et ce qu'aucune ligne ne porte, les mêmes frais.
+// Sous les deux plans ; en engagement, la composition écrit le mouvement comme en trésorerie, et les frais restent les mêmes.
+// Données FICTIVES.
+describe.each(PLANS)('la situation de l’année et la 2035 comptent les mêmes frais d’encaissements — %s', (_, plan) => {
+  const categorieFrais = (o: Partial<Categorie> = {}): Categorie => ({
+    id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 1, compte_comptable: '627000',
+    poste_2035: 'Frais financiers', ...o,
+  })
+  const sources = (): SourcesDesEcrituresDeVente => {
+    const s = sourcesDuDossierBascule()
+    return { ...s, mouvements: s.mouvements.map((m) => ({ ...m, montant: m.montant - 2 })) }
+  }
+  const lesDeux = (mode: ModeComptable, categories: Categorie[]) => {
+    const s = sources()
+    const ventes = ventesFacturees({ dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
+    const ecritures: EcrituresDesVentesDeLa2035 = { etat: 'composees', composition: composition(s, mode, plan) }
+    return {
+      situation: calculerSituationIntermediaire([], categories, [], [], '2025-01-01', '2025-12-31', true, new Map(), mode, [], ventes, plan, ecritures),
+      declaration: calculerDeclaration2035(2025, [], categories, [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventes, ecritures),
+    }
+  }
+
+  it.each(['tresorerie', 'engagement'] as const)('en %s : les frais, poste pour poste', (mode) => {
+    const { situation, declaration } = lesDeux(mode, [categorieFrais()])
+    const depensesDeLa2035 = declaration.depenses.map((l): [string, number] => [l.poste, -l.montant])
+    expect(depensesDeLa2035).toEqual([['Frais financiers', -4]])
+    expect(situation.totauxParPoste.filter(([, montant]) => montant < 0)).toEqual(depensesDeLa2035)
+    expect(situation.charges).toBe(declaration.totalDepenses)
+  })
+
+  it('en trésorerie : la situation de l’année entière est la 2035, recettes, charges et résultat', () => {
+    const { situation, declaration } = lesDeux('tresorerie', [categorieFrais()])
+    expect(situation.totauxParPoste).toEqual([
+      ...declaration.recettes.map((l): [string, number] => [l.poste, l.montant]),
+      ...declaration.depenses.map((l): [string, number] => [l.poste, -l.montant]),
+    ])
+    expect([situation.recettes, situation.charges]).toEqual([declaration.totalRecettes, declaration.totalDepenses])
+    expect(situation.resultat).toBeCloseTo(declaration.resultat, 10)
+  })
+
+  const SANS_LIGNE: [string, Categorie[]][] = [
+    ['sans poste', [categorieFrais({ poste_2035: null })]],
+    ['sans catégorie « Frais bancaires »', []],
+  ]
+  it.each(SANS_LIGNE)('%s : les mêmes frais, sur aucune ligne, dits par les deux', (_, categories) => {
+    const { situation, declaration } = lesDeux('tresorerie', categories)
+    expect(declaration.depenses).toEqual([])
+    expect(situation.charges).toBe(0)
+    expect(situation.fraisSansPoste).toEqual(declaration.exclusions.fraisSansPoste)
+    expect(situation.fraisSansPoste.map((f) => f.frais.ligneBancaireId)).toEqual(['m1', 'm2'])
   })
 })

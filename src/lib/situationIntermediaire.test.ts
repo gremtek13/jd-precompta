@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { partsDuReleve } from './partsDuReleve'
 import { calculerSituationIntermediaire, fractionDeLAnnee, moisEcoulesDeLAnnee } from './situationIntermediaire'
-import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece } from './types'
+import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece } from './types'
 import { paiementsDesPieces } from './rattachement'
 import { cotisationsComptees } from './cotisationRapprochee'
 import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
 import { ventesFacturees, type FactureVendue } from './ventesFacturees'
 import type { LigneDeFacture } from './encaissementsFactures'
-import { POSTE_VENTES_FACTUREES } from './declaration2035'
+import { POSTE_VENTES_FACTUREES, type EcrituresDesVentesDeLa2035 } from './declaration2035'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
+import { fraisDesMouvements } from './ecrituresVentesFacturees'
+import type { MouvementDesEcritures, SourcesDesEcrituresDeVente } from './ecrituresVentesFactureesEcran'
+import { D_BASCULE, composition, pieceDeVente, sourcesDuDossierBascule } from '../test/dossierBascule'
+
+// Les tests d'avant la ligne 28.65 : un dossier qui n'a pas basculé n'a aucun frais d'un mouvement d'encaissements.
+const SANS_BASCULE: EcrituresDesVentesDeLa2035 = { etat: 'sans_bascule' }
 
 const categorie = { id: 'c1', libelle: 'Achats', poste_2035: 'Achats', compte_comptable: '606100' } as Categorie
 const recette = { id: 'c2', libelle: 'Recettes', poste_2035: 'Recettes', compte_comptable: '706000' } as Categorie
@@ -28,8 +35,8 @@ describe('calculerSituationIntermediaire', () => {
   // comprise pour un dossier exonéré, qui ne la récupère pas, hors taxes pour un assujetti.
   it('retient la TVA comprise pour un dossier exonéré, le hors taxes pour un assujetti', () => {
     const achat = piece({ id: 'a', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
-    const exonere = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', false, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
-    const assujetti = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+    const exonere = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', false, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
+    const assujetti = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(exonere.charges).toBe(120)
     expect(assujetti.charges).toBe(100)
   })
@@ -42,7 +49,7 @@ describe('calculerSituationIntermediaire', () => {
         piece({ id: 'c', montant_ttc: 700, date_piece: '2025-12-31' }), // hors période
       ],
       [categorie], [], [], '2026-01-01', '2026-06-30', true, new Map(),
-      'tresorerie', [], ventesFactureesVides('d1'),
+      'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE,
     )
     expect(s.charges).toBe(100)
     expect(s.resultat).toBe(-100)
@@ -55,7 +62,7 @@ describe('calculerSituationIntermediaire', () => {
         piece({ id: 'a', montant_ttc: 300 }),
       ],
       [categorie, recette], [], [], '2026-01-01', '2026-12-31', true, new Map(),
-      'tresorerie', [], ventesFactureesVides('d1'),
+      'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE,
     )
     expect(s.recettes).toBe(900)
     expect(s.charges).toBe(300)
@@ -77,9 +84,9 @@ describe('calculerSituationIntermediaire', () => {
       piece({ id: 'sans-paiement', date_piece: '2026-01-20', montant_ttc: 7 }),
     ]
     const paiements = [paiement('janvier', '2026-02-03', -100), paiement('decembre', '2026-01-05', -40)]
-    const auJanvier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces(paiements, []), 'tresorerie', [], ventesFactureesVides('d1'))
+    const auJanvier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces(paiements, []), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(auJanvier.charges).toBe(47)
-    const auFevrier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-02-28', true, paiementsDesPieces(paiements, []), 'tresorerie', [], ventesFactureesVides('d1'))
+    const auFevrier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-02-28', true, paiementsDesPieces(paiements, []), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(auFevrier.charges).toBe(147)
   })
 
@@ -93,7 +100,7 @@ describe('calculerSituationIntermediaire', () => {
       libelle_brut: null, created_at: '2026-01-10T09:00:00Z', encaissements_de_factures: false,
     }
     const partielle = piece({ id: 'partielle', date_piece: '2025-12-15', montant_ttc: 200 })
-    const s = calculerSituationIntermediaire([partielle], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([acompte], []), 'tresorerie', [], ventesFactureesVides('d1'))
+    const s = calculerSituationIntermediaire([partielle], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([acompte], []), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(s.charges).toBe(80)
   })
 
@@ -102,7 +109,7 @@ describe('calculerSituationIntermediaire', () => {
     // un 1er janvier se lisait dans l'année précédente, ce qui décalait toute la fenêtre
     // d'amortissement d'un an — dotation absente la première année, présente une année de trop.
     const lignes = (annee: number) =>
-      calculerSituationIntermediaire([], [], [immo({ date_acquisition: '2026-01-01' })], [], `${annee}-01-01`, `${annee}-12-31`, true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+      calculerSituationIntermediaire([], [], [immo({ date_acquisition: '2026-01-01' })], [], `${annee}-01-01`, `${annee}-12-31`, true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
         .totauxParPoste.find(([poste]) => poste === 'Amortissements')?.[1]
 
     expect(lignes(2025)).toBeUndefined()  // avant l'acquisition
@@ -117,7 +124,7 @@ describe('calculerSituationIntermediaire', () => {
       { id: 'y', dossier_id: 'd1', echeance: '2026-03-05', montant_appele: 400, montant_verse: null },
       { id: 'z', dossier_id: 'd1', echeance: '2027-01-05', montant_appele: 999, montant_verse: null }, // hors période
     ] as CotisationDeclaree[]
-    const s = calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, [], 'tresorerie'), '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+    const s = calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, [], 'tresorerie'), '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(s.totauxParPoste.find(([p]) => p === 'Cotisations sociales personnelles')?.[1]).toBe(-680)
   })
 
@@ -134,7 +141,7 @@ describe('calculerSituationIntermediaire', () => {
       reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-07-03T09:00:00Z', encaissements_de_factures: false,
     }
     const poste = (fin: string, lignes: LigneBancaire[]) =>
-      calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, lignes, 'tresorerie'), '2026-01-01', fin, true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+      calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, lignes, 'tresorerie'), '2026-01-01', fin, true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
         .totauxParPoste.find(([p]) => p === 'Cotisations sociales personnelles')?.[1]
     expect(poste('2026-06-30', [prelevement])).toBeUndefined()
     expect(poste('2026-07-31', [prelevement])).toBe(-290)
@@ -161,14 +168,14 @@ describe('calculerSituationIntermediaire', () => {
       // l'état affichait un RÉSULTAT NÉGATIF de 1 600 € — un déficit entièrement fabriqué par la
       // convention, sur le document qu'on montre à une banque pour obtenir un prêt.
       const s = calculerSituationIntermediaire(
-        [vente(800, '2026-01-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-01-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+        [vente(800, '2026-01-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-01-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
       expect(dotation(s)).toBe(-200)        // 2 400 € × 1/12
       expect(s.resultat).toBe(600)          // et non −1 600
     })
 
     it('compte la moitié de la dotation sur un premier semestre', () => {
       const s = calculerSituationIntermediaire(
-        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
       expect(dotation(s)).toBe(-1200)
       expect(s.resultat).toBe(8800)
     })
@@ -179,10 +186,10 @@ describe('calculerSituationIntermediaire', () => {
     it('ne compte un bien que depuis sa mise en service', () => {
       const avril = immo({ valeur: 12000, duree_annees: 5, date_acquisition: '2026-03-20', date_mise_en_service: '2026-04-01' })
       const semestre = calculerSituationIntermediaire(
-        [vente(10000, '2026-05-10')], [categorie, recette], [avril], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+        [vente(10000, '2026-05-10')], [categorie, recette], [avril], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
       expect(dotation(semestre)).toBe(-600)   // 90 jours sur les 1 800 de la durée
       const annee = calculerSituationIntermediaire(
-        [vente(10000, '2026-05-10')], [categorie, recette], [avril], [], '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+        [vente(10000, '2026-05-10')], [categorie, recette], [avril], [], '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
       expect(dotation(annee)).toBe(-1800)     // la case CH de la 2035 de l'exercice
     })
 
@@ -193,7 +200,7 @@ describe('calculerSituationIntermediaire', () => {
       const s = calculerSituationIntermediaire(
         [vente(10000, '2026-05-10')], [categorie, recette],
         [immo({ valeur: 12000, duree_annees: 5, date_acquisition: '2026-12-15' })], [],
-        '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+        '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
       expect(dotation(s)).toBeUndefined()
       expect(s.resultat).toBe(10000)
     })
@@ -204,7 +211,7 @@ describe('calculerSituationIntermediaire', () => {
     // cas, « la dotation suit la période » serait satisfait par une fonction qui rabote toujours.
     it('laisse une année civile complète rigoureusement inchangée', () => {
       const s = calculerSituationIntermediaire(
-        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'))
+        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
       expect(dotation(s)).toBe(-2400)
       expect(s.resultat).toBe(7600)
     })
@@ -259,7 +266,7 @@ describe('calculerSituationIntermediaire', () => {
       [categorie],
       [immo({ piece_id: 'p-immo' })],
       [], '2026-01-01', '2026-12-31', true, new Map(),
-      'tresorerie', [], ventesFactureesVides('d1'),
+      'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE,
     )
     // La pièce sort des charges courantes ; seule la dotation annuelle reste.
     expect(s.charges).toBe(1000)
@@ -277,10 +284,10 @@ describe('calculerSituationIntermediaire — en engagement', () => {
       encaissements_de_factures: false,
     } satisfies LigneBancaire
     const janvier = (mode: 'tresorerie' | 'engagement') =>
-      calculerSituationIntermediaire([facture], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([paiement], []), mode, [], ventesFactureesVides('d1'))
+      calculerSituationIntermediaire([facture], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([paiement], []), mode, [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(janvier('tresorerie').charges).toBe(300)
     expect(janvier('engagement').charges).toBe(0)
-    expect(calculerSituationIntermediaire([facture], [categorie], [], [], '2025-01-01', '2025-12-31', true, paiementsDesPieces([paiement], []), 'engagement', [], ventesFactureesVides('d1')).charges).toBe(300)
+    expect(calculerSituationIntermediaire([facture], [categorie], [], [], '2025-01-01', '2025-12-31', true, paiementsDesPieces([paiement], []), 'engagement', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE).charges).toBe(300)
   })
 })
 
@@ -298,7 +305,7 @@ describe('calculerSituationIntermediaire — les mouvements affectés du relevé
     libelle_brut: null, created_at: '2026-01-21T00:00:00Z', encaissements_de_factures: false, ...o,
   })
   const situation = (lignes: LigneBancaire[], fin = '2026-01-31') =>
-    calculerSituationIntermediaire([], toutes, [], [], '2026-01-01', fin, true, new Map(), 'tresorerie', partsDuReleve(lignes, toutes, [], true), ventesFactureesVides('d1'))
+    calculerSituationIntermediaire([], toutes, [], [], '2026-01-01', fin, true, new Map(), 'tresorerie', partsDuReleve(lignes, toutes, [], true), ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
 
   it('porte un encaissement affecté en recette', () => {
     const s = situation([mouvement({})])
@@ -381,7 +388,7 @@ describe('calculerSituationIntermediaire — les ventes facturées', () => {
       parts: (o.encaissements ?? [premier, second]).map((e) => e.part),
     })
   const situation = (debut: string, fin: string, mode: 'tresorerie' | 'engagement', pieces: Piece[] = [], v = ventes()) =>
-    calculerSituationIntermediaire(pieces, [categorie, recette], [], [], debut, fin, true, new Map(), mode, [], v)
+    calculerSituationIntermediaire(pieces, [categorie, recette], [], [], debut, fin, true, new Map(), mode, [], v, PLAN_PAR_DEFAUT, SANS_BASCULE)
   const facturees = (s: ReturnType<typeof calculerSituationIntermediaire>) =>
     s.totauxParPoste.find(([poste]) => poste === POSTE_VENTES_FACTUREES)?.[1]
 
@@ -462,5 +469,133 @@ describe('calculerSituationIntermediaire — les ventes facturées', () => {
     const vide = situation('2026-01-01', '2026-12-31', 'tresorerie', [], ventesFactureesVides('d1'))
     expect([vide.ventesFactureesEcartees, vide.ventesFactureesEnExcedent, vide.exemplairesDeFacturesSources]).toEqual([[], [], []])
     expect(facturees(vide)).toBeUndefined()
+  })
+})
+
+// LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (ligne 28.65, chantier EC-Q3 ; la règle de la 2035, VF4C3-Q1) : la situation, la
+// 2035 « à ce jour », les compte tels que la composition des écritures les porte au compte des services bancaires — jamais
+// recalculés —, en dépense, à la date du MOUVEMENT, sous le poste de la catégorie « Frais bancaires » du dossier. Les sources
+// sont celles du dossier basculé d'essai (src/test/dossierBascule.ts) : le virement m1 du 20/11/2025 crédité de 118 € pour
+// 120 € encaissés, la remise de chèque m2 du 22/11/2025 de 98 € pour 100 € — 2 € de frais chacun, sous le seuil de
+// min(2 %, 5 €). Données FICTIVES.
+describe('calculerSituationIntermediaire — les frais d’un mouvement d’encaissements', () => {
+  const categorieFrais = (o: Partial<Categorie> = {}): Categorie => ({
+    id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 1, compte_comptable: '627000',
+    poste_2035: 'Frais financiers', ...o,
+  })
+  const COMMUNE = categorieFrais()
+  const DU_DOSSIER = categorieFrais({ id: 'c-frais-d1', dossier_id: D_BASCULE, poste_2035: 'Autres frais divers de gestion' })
+  const D_UN_AUTRE = categorieFrais({ id: 'c-frais-autre', dossier_id: 'd-autre', poste_2035: 'Achats' })
+  const sources = (o: { m1?: Partial<MouvementDesEcritures>; m2?: Partial<MouvementDesEcritures> } = {}): SourcesDesEcrituresDeVente => {
+    const s = sourcesDuDossierBascule()
+    return {
+      ...s,
+      mouvements: s.mouvements.map((m) => (m.id === 'm1' ? { ...m, montant: 118, ...o.m1 } : { ...m, montant: 98, ...o.m2 })),
+    }
+  }
+  const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
+    dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
+  })
+  const situation = (debut: string, fin: string, o: {
+    s?: SourcesDesEcrituresDeVente; categories?: Categorie[]; mode?: ModeComptable; plan?: PlanComptable; planDeLaComposition?: PlanComptable
+    bascule?: boolean; pieces?: Piece[]
+  } = {}) => {
+    const s = o.s ?? sources()
+    const mode = o.mode ?? 'tresorerie'
+    const plan = o.plan ?? PLAN_PAR_DEFAUT
+    return calculerSituationIntermediaire(
+      o.pieces ?? [], o.categories ?? [COMMUNE], [], [], debut, fin, true, new Map(), mode, [], ventesDe(s), plan,
+      o.bascule === false ? SANS_BASCULE : { etat: 'composees', composition: composition(s, mode, o.planDeLaComposition ?? plan) },
+    )
+  }
+  const poste = (s: ReturnType<typeof situation>, nom: string) => s.totauxParPoste.find(([p]) => p === nom)?.[1]
+
+  it('une dépense à la date du mouvement, sous le poste de la catégorie, dans la période et hors d’elle', () => {
+    // Bornes comprises, comme pour les autres sources : la date du mouvement, jamais celle des encaissements.
+    expect(poste(situation('2025-01-01', '2025-11-19'), 'Frais financiers')).toBeUndefined()
+    expect(poste(situation('2025-01-01', '2025-11-20'), 'Frais financiers')).toBe(-2)
+    expect(poste(situation('2025-11-21', '2025-11-22'), 'Frais financiers')).toBe(-2)
+    // Un mouvement du jour même où la période commence y compte.
+    expect(poste(situation('2025-11-20', '2025-11-21'), 'Frais financiers')).toBe(-2)
+    expect(poste(situation('2025-11-23', '2025-12-31'), 'Frais financiers')).toBeUndefined()
+    const annee = situation('2025-01-01', '2025-12-31')
+    expect(poste(annee, 'Frais financiers')).toBe(-4)
+    expect(annee.charges).toBe(4)
+    // 100 € de F2025-0001 et 83,33 € des 100 € TTC encaissés de F2025-0002, moins les 4 € de frais.
+    expect(annee.resultat).toBeCloseTo(179.33, 10)
+    expect(annee.fraisSansPoste).toEqual([])
+  })
+
+  it('exactement ce que `fraisDesMouvements` lit dans la composition, ajouté au poste qu’une autre source porte', () => {
+    const s = sources({ m2: { montant: 98.5 } })
+    const lus = fraisDesMouvements(composition(s, 'tresorerie', PLAN_PAR_DEFAUT), PLAN_PAR_DEFAUT)
+    expect(lus.map((f) => [f.ligneBancaireId, f.date, f.centimes])).toEqual([['m1', '2025-11-20', 200], ['m2', '2025-11-22', 150]])
+    expect(poste(situation('2025-01-01', '2025-12-31', { s }), 'Frais financiers')).toBe(-3.5)
+    const agios = categorieFrais({ id: 'c-agios', code: 'agios' })
+    const piece = pieceDeVente({
+      id: 'ag', type_piece: 'achat', categorie_id: 'c-agios', montant_ht: 10, montant_tva: 0, montant_ttc: 10, date_piece: '2025-06-01',
+    })
+    expect(poste(situation('2025-01-01', '2025-12-31', { s, pieces: [piece], categories: [COMMUNE, agios] }), 'Frais financiers')).toBe(-13.5)
+  })
+
+  it('au compte des services bancaires du plan du dossier : la composition d’un plan décalé, lue au plan par défaut, n’en a aucun', () => {
+    expect(poste(situation('2025-01-01', '2025-12-31', { plan: PLAN_DECALE }), 'Frais financiers')).toBe(-4)
+    expect(poste(situation('2025-01-01', '2025-12-31', { plan: PLAN_PAR_DEFAUT, planDeLaComposition: PLAN_DECALE }), 'Frais financiers'))
+      .toBeUndefined()
+  })
+
+  it('la catégorie propre au dossier l’emporte sur la commune du même code ; celle d’un autre dossier ne compte jamais', () => {
+    const tout = (categories: Categorie[]) => situation('2025-01-01', '2025-12-31', { categories })
+    expect(poste(tout([COMMUNE, DU_DOSSIER]), 'Autres frais divers de gestion')).toBe(-4)
+    expect(poste(tout([COMMUNE, DU_DOSSIER]), 'Frais financiers')).toBeUndefined()
+    expect(poste(tout([DU_DOSSIER, COMMUNE]), 'Autres frais divers de gestion')).toBe(-4)
+    expect(poste(tout([D_UN_AUTRE, COMMUNE]), 'Frais financiers')).toBe(-4)
+    expect(poste(tout([D_UN_AUTRE, COMMUNE]), 'Achats')).toBeUndefined()
+  })
+
+  it('sans poste, ou sans catégorie « Frais bancaires » : sur aucune ligne, et dit dans la période seulement — jamais un poste deviné', () => {
+    const sansPoste = situation('2025-01-01', '2025-11-20', { categories: [categorieFrais({ poste_2035: null })] })
+    expect(sansPoste.totauxParPoste).toEqual([[POSTE_VENTES_FACTUREES, 100]])
+    expect(sansPoste.charges).toBe(0)
+    expect(sansPoste.fraisSansPoste.map((f) => [f.frais.ligneBancaireId, f.frais.date, f.frais.centimes, f.categorie?.id ?? null]))
+      .toEqual([['m1', '2025-11-20', 200, 'c-frais']])
+    const sansCategorie = situation('2025-01-01', '2025-12-31', { categories: [D_UN_AUTRE] })
+    expect(sansCategorie.charges).toBe(0)
+    expect(sansCategorie.fraisSansPoste.map((f) => [f.frais.ligneBancaireId, f.categorie])).toEqual([['m1', null], ['m2', null]])
+    // Hors de la période, rien ne se dit.
+    expect(situation('2025-11-23', '2025-12-31', { categories: [D_UN_AUTRE] }).fraisSansPoste).toEqual([])
+    // Une catégorie qui a son poste ne laisse rien à dire.
+    expect(situation('2025-01-01', '2025-12-31').fraisSansPoste).toEqual([])
+  })
+
+  it('en engagement : les mêmes frais, au même poste — la composition écrit le mouvement de la même façon dans les deux modes', () => {
+    const s = sources()
+    expect(fraisDesMouvements(composition(s, 'engagement', PLAN_PAR_DEFAUT), PLAN_PAR_DEFAUT))
+      .toEqual(fraisDesMouvements(composition(s, 'tresorerie', PLAN_PAR_DEFAUT), PLAN_PAR_DEFAUT))
+    expect(poste(situation('2025-01-01', '2025-12-31', { mode: 'engagement' }), 'Frais financiers')).toBe(-4)
+    expect(poste(situation('2025-01-01', '2025-11-21', { mode: 'engagement' }), 'Frais financiers')).toBe(-2)
+    expect(situation('2025-01-01', '2025-12-31', { mode: 'engagement', categories: [D_UN_AUTRE] }).fraisSansPoste).toHaveLength(2)
+  })
+
+  it('un mouvement dont la composition refuse l’écriture n’en donne aucun, et rien ne se dit', () => {
+    // Pas encore classé par ses encaissements, et un écart au-delà de min(2 %, 5 €).
+    const refuses = sources({ m1: { encaissements_de_factures: false }, m2: { montant: 80 } })
+    const s = situation('2025-01-01', '2025-12-31', { s: refuses, categories: [D_UN_AUTRE] })
+    expect(s.charges).toBe(0)
+    expect(s.fraisSansPoste).toEqual([])
+  })
+
+  it('sans bascule, aucun frais ; et une composition sans frais ne change rien à la situation', () => {
+    const sansBascule = situation('2025-01-01', '2025-12-31', { bascule: false })
+    expect(poste(sansBascule, 'Frais financiers')).toBeUndefined()
+    expect(sansBascule.fraisSansPoste).toEqual([])
+    const sansFrais = sourcesDuDossierBascule()
+    expect(situation('2025-01-01', '2025-12-31', { s: sansFrais })).toEqual(situation('2025-01-01', '2025-12-31', { s: sansFrais, bascule: false }))
+  })
+
+  it('les deux paramètres sont obligatoires : aucun appel ne compile sans eux, et rien ne les remplace en silence', () => {
+    const v = ventesDe(sources())
+    // @ts-expect-error — le plan et les écritures des ventes facturées omis
+    expect(() => calculerSituationIntermediaire([], [COMMUNE], [], [], '2025-01-01', '2025-12-31', true, new Map(), 'tresorerie', [], v)).toThrow()
   })
 })
