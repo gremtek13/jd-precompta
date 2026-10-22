@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import EncaissementsFactureModal from './EncaissementsFactureModal'
+import EncaissementsFactureModal, { type ContrePassationImposee } from './EncaissementsFactureModal'
 import { facture as factureCii } from '../../test/facturesCii'
 import { LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT, LIBELLE_NOTE_DECLARATION } from '../../lib/droitsAcces'
 import { ACCES_EN_COURS, type AccesDuDossier } from '../../lib/auteursVentes'
@@ -204,6 +204,8 @@ function monter(o: {
   lignesEnPlus?: Record<string, unknown>[]
   // Le mouvement que la fiche d'un crédit impose (étape VF5c) ; aucun par défaut, comme l'onglet Factures.
   mouvementImpose?: string
+  // La contre-passation que la fiche d'un débit impose (étape VF5d) ; aucune par défaut, comme l'onglet Factures.
+  contrePassationImposee?: ContrePassationImposee
 
 } = {}) {
   const f = o.facture ?? FACTURE
@@ -231,7 +233,8 @@ function monter(o: {
   return render(
     <EncaissementsFactureModal {...qui}
       dossierId="d1" facture={f} statutTva={o.statutTva === undefined ? 'redevable' : o.statutTva}
-      mouvementImpose={o.mouvementImpose ?? null} onClose={() => {}} onUpdated={onUpdated}
+      mouvementImpose={o.mouvementImpose ?? null} contrePassationImposee={o.contrePassationImposee ?? null}
+      onClose={() => {}} onUpdated={onUpdated}
     />,
   )
 }
@@ -1289,7 +1292,7 @@ describe('EncaissementsFactureModal — « par le client »', () => {
     faux.connexion = null
     render(
       <EncaissementsFactureModal espace="client" banque
-        dossierId="d1" facture={FACTURE} statutTva="redevable" mouvementImpose={null} onClose={() => {}} onUpdated={onUpdated}
+        dossierId="d1" facture={FACTURE} statutTva="redevable" mouvementImpose={null} contrePassationImposee={null} onClose={() => {}} onUpdated={onUpdated}
       />,
     )
     await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
@@ -1505,7 +1508,7 @@ describe('EncaissementsFactureModal — la contre-passation d’une facture sour
     expect(enregistrerCp()).toHaveProperty('disabled', false)
     rerender(
       <EncaissementsFactureModal espace="client" banque={false}
-        dossierId="d1" facture={SOURCE} statutTva="redevable" mouvementImpose={null} onClose={() => {}} onUpdated={onUpdated}
+        dossierId="d1" facture={SOURCE} statutTva="redevable" mouvementImpose={null} contrePassationImposee={null} onClose={() => {}} onUpdated={onUpdated}
       />,
     )
     await screen.findByText('Le mouvement bancaire d\'un encaissement ne se désigne qu\'avec le droit « Banque » sur ce dossier : '
@@ -1657,5 +1660,122 @@ describe('EncaissementsFactureModal — un mouvement IMPOSÉ par la fiche d’un
     expect(champ('Montant encaissé (€)').value).toBe('355,50')
     expect(choixDuMouvement()).toBeNull()
     expect(onUpdated).toHaveBeenCalled()
+  })
+})
+
+describe('EncaissementsFactureModal — une contre-passation IMPOSÉE par la fiche d’un débit (étape VF5d)', () => {
+  // Le chèque de 600 € du 05/10/2027, déclaré (e1), revenu impayé le 28/10/2027 : la fiche de ce débit ouvre la fenêtre
+  // sur sa contre-passation, ce débit imposé. Un autre débit libre, pour que le choix d'hier ait de quoi s'offrir.
+  const DEBITS = [
+    mouvement({ id: 'm1', montant: 1355.5 }),
+    mouvement({ id: 'juste', montant: -600, date: '2027-10-28', libelle: 'CHQ IMPAYE 0001' }),
+    mouvement({ id: 'presque', montant: -599, date: '2027-10-29', libelle: 'CHQ IMPAYE 0002' }),
+  ]
+  const IMPOSEE: ContrePassationImposee = { encaissementId: 'e1', ligneBancaireId: 'juste' }
+  const monterImposee = (o: Parameters<typeof monter>[0] = {}) =>
+    monterDeclarations({ facture: SOURCE, mouvements: DEBITS, contrePassationImposee: IMPOSEE, ...o })
+  const enregistrerCp = () => screen.getByRole('button', { name: 'Enregistrer la contre-passation' })
+  const etape = () => screen.findByRole('heading', { name: /^Contre-passer l’encaissement du 05\/10\/2027/ })
+  const choixDuDebit = () => screen.queryByLabelText('Débit qui défait l’encaissement (facultatif)')
+
+  it('l’étape s’ouvre d’elle-même : le débit se dit sans se choisir, sa date est proposée ; le motif reste à saisir', async () => {
+    monterImposee()
+    await etape()
+    expect(choixDuDebit()).toBeNull()
+    screen.getByText(/^28\/10\/2027 · CHQ IMPAYE 0001 · -600,00\s€$/)
+    screen.getByText(/^Imposé par la fiche du débit, dans l’onglet Banque/)
+    expect(champ('Date du décaissement').value).toBe('2027-10-28')
+    expect(champ(LIBELLE_MOTIF_CONTRE_PASSATION).value).toBe('')
+    screen.getByText('Le motif de la contre-passation est à renseigner.')
+    expect(enregistrerCp()).toHaveProperty('disabled', true)
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('la date se corrige dans les bornes de la base : avant l’encaissement ou dans l’avenir, refusée avant le clic', async () => {
+    monterImposee()
+    await etape()
+    fireEvent.change(champ(LIBELLE_MOTIF_CONTRE_PASSATION), { target: { value: 'Chèque revenu impayé' } })
+    expect(enregistrerCp()).toHaveProperty('disabled', false)
+    fireEvent.change(champ('Date du décaissement'), { target: { value: '2027-10-04' } })
+    screen.getByText('Une contre-passation ne se date pas avant l\'encaissement qu\'elle annule, du 05/10/2027.')
+    expect(enregistrerCp()).toHaveProperty('disabled', true)
+    fireEvent.change(champ('Date du décaissement'), { target: { value: '2027-11-03' } })
+    screen.getByText('Une contre-passation ne se date pas dans l\'avenir : nous sommes le 02/11/2027.')
+    expect(enregistrerCp()).toHaveProperty('disabled', true)
+    fireEvent.change(champ('Date du décaissement'), { target: { value: '2027-10-30' } })
+    expect(enregistrerCp()).toHaveProperty('disabled', false)
+  })
+
+  it.each([2, 3])('%i clics : un seul appel, ce débit en cinquième paramètre et la date corrigée, nommés par la confirmation', async (clics) => {
+    monterImposee()
+    await etape()
+    fireEvent.change(champ('Date du décaissement'), { target: { value: '2027-10-30' } })
+    fireEvent.change(champ(LIBELLE_MOTIF_CONTRE_PASSATION), { target: { value: 'Chèque revenu impayé' } })
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    faux.retenirLectures = true
+    const b = enregistrerCp()
+    await act(async () => { for (let i = 0; i < clics; i++) b.click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'annuler_encaissement',
+      args: { p_dossier_id: 'd1', p_encaissement_id: 'e1', p_date: '2027-10-30', p_motif: 'Chèque revenu impayé', p_ligne_bancaire_id: 'juste' },
+    }])
+    expect(confirmation).toHaveBeenCalledTimes(1)
+    expect(confirmation.mock.calls[0][0]).toContain('Elle cite le débit qui défait l’encaissement : 28/10/2027 · CHQ IMPAYE 0001, -600,00')
+    await act(async () => { faux.libererLectures?.() })
+    expect(onUpdated).toHaveBeenCalledTimes(1)
+    // Relue : l'étape ne se rouvre pas d'elle-même.
+    await screen.findByText(/^Contre-passation enregistrée/)
+    expect(screen.queryByRole('heading', { name: /^Contre-passer l’encaissement/ })).toBeNull()
+  })
+
+  it('une confirmation refusée : rien ne part', async () => {
+    monterImposee()
+    await etape()
+    fireEvent.change(champ(LIBELLE_MOTIF_CONTRE_PASSATION), { target: { value: 'Chèque revenu impayé' } })
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await act(async () => { enregistrerCp().click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('« Annuler », puis « Contre-passer » sur sa ligne : l’étape revient, le débit toujours imposé, sa date reproposée', async () => {
+    monterImposee()
+    await etape()
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler' }))
+    expect(screen.queryByRole('heading', { name: /^Contre-passer l’encaissement/ })).toBeNull()
+    const l = await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
+    fireEvent.click(within(l).getByRole('button', { name: 'Contre-passer' }))
+    await etape()
+    expect(choixDuDebit()).toBeNull()
+    expect(champ('Date du décaissement').value).toBe('2027-10-28')
+  })
+
+  it('un autre encaissement de la facture se contre-passe comme hier : le débit se choisit, la date n’est pas proposée', async () => {
+    monterImposee({ declarations: [declaration(), declaration({ id: 'te2', encaissement_id: 'e2', cree_le: '2027-10-21T08:00:00Z' })] })
+    await etape()
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler' }))
+    const l = await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 21/10/2027')
+    fireEvent.click(within(l).getByRole('button', { name: 'Contre-passer' }))
+    await screen.findByRole('heading', { name: /^Contre-passer l’encaissement du 20\/10\/2027/ })
+    expect(choixDuDebit()).not.toBeNull()
+    expect(champ('Date du décaissement').value).toBe('')
+  })
+
+  it('un débit que la fenêtre n’a pas lu reste imposé : sa date ne se propose pas, et la base dit son refus avant le clic', async () => {
+    monterImposee({ contrePassationImposee: { encaissementId: 'e1', ligneBancaireId: 'inconnu' } })
+    await etape()
+    screen.getByText('Mouvement introuvable parmi ceux du relevé lus ici.')
+    expect(champ('Date du décaissement').value).toBe('')
+    fireEvent.change(champ('Date du décaissement'), { target: { value: '2027-10-30' } })
+    fireEvent.change(champ(LIBELLE_MOTIF_CONTRE_PASSATION), { target: { value: 'Chèque revenu impayé' } })
+    screen.getByText('Ce mouvement n\'est pas un mouvement de ce dossier.')
+    expect(enregistrerCp()).toHaveProperty('disabled', true)
+  })
+
+  it('des déclarations lues en partie : le bandeau, aucune étape, aucun bouton que « Fermer »', async () => {
+    faux.muetApres = { transmissions_encaissements: 0 }
+    monterImposee()
+    await screen.findByText(/^Les déclarations des encaissements n/)
+    expect(screen.queryByRole('heading', { name: /^Contre-passer l’encaissement/ })).toBeNull()
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Fermer'])
   })
 })

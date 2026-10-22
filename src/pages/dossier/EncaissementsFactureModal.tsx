@@ -55,11 +55,21 @@ type Props = QuiRegarde & {
   // lui), et la base juge s'il peut le citer. Nul partout ailleurs : le choix d'hier, parmi les propositions. Sans valeur par
   // défaut, pour qu'aucun appel ne l'impose sans le dire.
   mouvementImpose: string | null
+  // LA CONTRE-PASSATION IMPOSÉE (étape VF5d) : la fiche d'un débit de l'onglet Banque ouvre la fenêtre sur la facture
+  // d'un encaissement déclaré, l'étape de SA contre-passation ouverte et CE débit cité — il ne se choisit pas ; sa date
+  // est proposée et se corrige, le motif se saisit, et la base juge. Nulle partout ailleurs, sans valeur par défaut.
+  contrePassationImposee: ContrePassationImposee | null
   // Le statut de TVA du dossier aujourd'hui : l'obligation et l'échéance en dépendent, et la facture ne le fige pas.
   statutTva: StatutTva | null
   onClose: () => void
   // L'onglet relit ses encaissements : sa pastille doit dire ce que la fenêtre vient d'écrire.
   onUpdated: () => void
+}
+
+/** L'encaissement à contre-passer, et le débit que sa contre-passation cite (étape VF5d). */
+export interface ContrePassationImposee {
+  encaissementId: string
+  ligneBancaireId: string
 }
 
 // Ce que la fenêtre ne lit PAS sans le droit « Banque » : rien ne s'en sert alors (aucune proposition, aucun mouvement
@@ -363,6 +373,13 @@ type Etape =
   | { type: 'declarer'; encaissementId: string; note: string }
   | { type: 'contre-passer'; encaissementId: string; date: string; motif: string; ligneBancaireId: string | null }
 
+// L'étape de la contre-passation imposée par la fiche d'un débit (étape VF5d) : ce débit cité, sa date proposée — vide
+// s'il n'a pas été lu ici, et le refus de la base le dit avant le clic —, le motif à saisir.
+function etapeImposee(lu: Pick<Lu, 'mouvements'>, encaissementId: string, ligneBancaireId: string): Etape {
+  const debit = lu.mouvements.find((m) => m.id === ligneBancaireId)
+  return { type: 'contre-passer', encaissementId, date: debit?.date ?? '', motif: '', ligneBancaireId }
+}
+
 // L'obligation sous laquelle « Déclaré sur la plateforme » s'offre : sans objet, à préciser ou refusée, rien ne se
 // déclare d'ici, et la fenêtre dit pourquoi.
 const DECLARATION_OFFERTE: readonly EtatObligationEncaissee[] = ['due', 'facultative']
@@ -393,7 +410,10 @@ const messageDeclaration = (cle: (typeof REFUS_DECLARATION)[number]['cle']) =>
   (REFUS_DECLARATION.find((r) => r.cle === cle) as (typeof REFUS_DECLARATION)[number]).modele
 
 export default function EncaissementsFactureModal(props: Props) {
-  const { dossierId, facture: factureOuverte, statutTva, onClose, onUpdated, espace, mouvementImpose } = props
+  const { dossierId, facture: factureOuverte, statutTva, onClose, onUpdated, espace, mouvementImpose, contrePassationImposee } = props
+  // La contre-passation imposée, par ses identifiants : la première lecture en dépend, pas de l'objet qui les porte.
+  const encaissementImpose = contrePassationImposee?.encaissementId ?? null
+  const debitImpose = contrePassationImposee?.ligneBancaireId ?? null
   // Le droit « Banque » de qui regarde : le cabinet le porte toujours ; le client, selon la société affichée.
   const gereLaBanque = props.espace === 'cabinet' || props.banque
   // Qui est le client : au cabinet seulement, sur les accès que l'onglet a lus ; le client n'en lit aucun.
@@ -431,6 +451,8 @@ export default function EncaissementsFactureModal(props: Props) {
       setManques(etat.manques)
       setLu(etat.lu)
       if (etat.formulaire !== undefined) setFormulaire(etat.formulaire)
+      // Imposée par la fiche d'un débit : son étape s'ouvre, une fois, sur ce qui vient d'être lu en entier.
+      if (etat.lu && encaissementImpose !== null && debitImpose !== null) setEtape(etapeImposee(etat.lu, encaissementImpose, debitImpose))
     })
     lireConnexionPlateforme(dossierId).then((r) => {
       if (fermee) return
@@ -438,7 +460,7 @@ export default function EncaissementsFactureModal(props: Props) {
       setConnexionErreur(r.erreur)
     })
     return () => { fermee = true }
-  }, [dossierId, factureOuverte.id, espace, gereLaBanque, mouvementImpose])
+  }, [dossierId, factureOuverte.id, espace, gereLaBanque, mouvementImpose, encaissementImpose, debitImpose])
 
   async function lireConnexion() {
     const r = await lireConnexionPlateforme(dossierId)
@@ -663,6 +685,7 @@ export default function EncaissementsFactureModal(props: Props) {
             onEnregistrer={enregistrer} onRetirer={retirer} onDeclarer={declarer} onContrePasser={contrePasser}
             connexion={connexion} connexionErreur={connexionErreur} onRelever={releverStatuts}
             espace={espace} gereLaBanque={gereLaBanque} acces={acces} mouvementImpose={mouvementImpose}
+            contrePassationImposee={contrePassationImposee}
           />
         )}
 
@@ -681,6 +704,7 @@ export default function EncaissementsFactureModal(props: Props) {
 function Contenu({
   dossierId, contexte, lu, statutTva, aujourdHui, formulaire, setFormulaire, etape, setEtape, enCours, onEnregistrer,
   onRetirer, onDeclarer, onContrePasser, connexion, connexionErreur, onRelever, espace, gereLaBanque, acces, mouvementImpose,
+  contrePassationImposee,
 }: {
   dossierId: string
   contexte: ContexteFacture
@@ -706,6 +730,8 @@ function Contenu({
   acces: AccesDuDossier
   // Le mouvement que la fiche d'un crédit impose (étape VF5c), ou nul : le choix parmi les propositions.
   mouvementImpose: string | null
+  // La contre-passation que la fiche d'un débit impose (étape VF5d), ou nulle.
+  contrePassationImposee: ContrePassationImposee | null
 }) {
   const dire = (texte: string) => pourLEspace(espace, texte)
   const facture = lu.factures.find((f) => f.id === contexte.facture.id) as FactureEmise
@@ -997,7 +1023,9 @@ function Contenu({
                         {contrePassable && (
                           <button
                             type="button" className="btn btn-outline btn-sm" disabled={enCours != null}
-                            onClick={() => setEtape({ type: 'contre-passer', encaissementId: e.id, date: '', motif: '', ligneBancaireId: null })}
+                            onClick={() => setEtape(contrePassationImposee?.encaissementId === e.id
+                              ? etapeImposee(lu, e.id, contrePassationImposee.ligneBancaireId)
+                              : { type: 'contre-passer', encaissementId: e.id, date: '', motif: '', ligneBancaireId: null })}
                           >
                             Contre-passer
                           </button>
@@ -1032,6 +1060,7 @@ function Contenu({
           <EtapeContrePassation
             dossierId={dossierId} lu={lu} encaissement={enEtape} etape={etape} setEtape={setEtape} aujourdHui={aujourdHui}
             enCours={enCours} onContrePasser={onContrePasser} espace={espace} gereLaBanque={gereLaBanque}
+            debitImpose={contrePassationImposee?.encaissementId === enEtape.id ? contrePassationImposee.ligneBancaireId : null}
           />
         </div>
       )}
@@ -1308,11 +1337,13 @@ function EtapeDeclaration({
 }
 
 // « CONTRE-PASSER » UN ENCAISSEMENT DÉCLARÉ : la date du décaissement, jamais proposée — l'écran ne la choisit pas à la
-// place du cabinet —, le motif d'annulation, ce qui sera écrit, et les refus de la base avant le clic, au jour de Paris.
-// Pour une facture SOURCE (étape VF5b), le débit qui défait l'encaissement, choisi parmi les débits libres du dossier — avec
-// « Banque » seulement : sans lui le relevé n'est pas lu, et rien ne s'y choisit —, et ce qu'il deviendrait.
+// place du cabinet —, le motif d'annulation, ce qui sera écrit, et les refus de la base avant le clic, au jour de
+// Paris. Pour une facture SOURCE (étape VF5b), le débit qui défait l'encaissement, choisi parmi les débits libres du
+// dossier — avec « Banque » seulement : sans lui le relevé n'est pas lu, et rien ne s'y choisit —, et ce qu'il
+// deviendrait. Le débit IMPOSÉ par la fiche d'un débit (étape VF5d) ne se choisit pas : il se dit, et sa date est
+// proposée — le jour où la banque a défait l'encaissement, que le cabinet corrige s'il le faut.
 function EtapeContrePassation({
-  dossierId, lu, encaissement: e, etape, setEtape, aujourdHui, enCours, onContrePasser, espace, gereLaBanque,
+  dossierId, lu, encaissement: e, etape, setEtape, aujourdHui, enCours, onContrePasser, espace, gereLaBanque, debitImpose,
 }: {
   dossierId: string
   lu: Lu
@@ -1324,8 +1355,11 @@ function EtapeContrePassation({
   onContrePasser: () => void
   espace: EspaceVentes
   gereLaBanque: boolean
+  // Le débit que la fiche d'un débit impose à CETTE contre-passation (étape VF5d), ou nul.
+  debitImpose: string | null
 }) {
   const hote = declarationActive(lu.declarations, e.id)?.hote ?? '—'
+  const impose = debitImpose === null ? undefined : lu.mouvements.find((m) => m.id === debitImpose)
   const cp = contrePassationDe(e, lu.parts)
   const vente = venteDe(lu)
   const source = lu.factures.find((f) => f.id === e.facture_id)?.source_de_la_vente === true
@@ -1370,7 +1404,18 @@ function EtapeContrePassation({
         />
         <p className="muted" style={{ margin: '4px 0 0' }}>Obligatoire, 2 000 caractères au plus.</p>
       </div>
-      {source && gereLaBanque && (
+      {debitImpose !== null ? (
+        <div className="field">
+          <label>Débit qui défait l’encaissement</label>
+          <p style={{ margin: 0 }}>
+            {impose ? `${libelleMouvement(impose)} · ${formatMoney(impose.montant)}` : 'Mouvement introuvable parmi ceux du relevé lus ici.'}
+          </p>
+          <p className="muted" style={{ margin: '4px 0 0' }}>
+            Imposé par la fiche du débit, dans l’onglet Banque : la contre-passation cite ce débit. Sa date en est proposée,
+            et se corrige ; le motif reste à saisir.
+          </p>
+        </div>
+      ) : source && gereLaBanque && (
         <div className="field">
           <label htmlFor="contre-passation-debit">Débit qui défait l’encaissement (facultatif)</label>
           <select

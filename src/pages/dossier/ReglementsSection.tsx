@@ -288,6 +288,7 @@ export default function ReglementsSection(props: Props) {
           dossierId={dossierId}
           facture={factureOuverte}
           mouvementImpose={null}
+          contrePassationImposee={null}
           statutTva={statutTva}
           onClose={() => setOuverte(null)}
           onUpdated={() => setVersion((v) => v + 1)}

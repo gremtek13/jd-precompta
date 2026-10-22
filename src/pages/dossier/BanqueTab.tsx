@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, libelleDeLigne, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfLignes } from '../../lib/pdfText'
 import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
-import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
+import { anneeDe, aujourdHuiAParis, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
 import { rendreAuxDatesDeFacture, retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import type { ModeleComptable } from '../../lib/engagement'
 import type {
@@ -61,12 +61,12 @@ import {
 } from '../../lib/banqueCabinet'
 import { lireLesAccesDuReleve, lireLesEnvoisDuClient } from '../../lib/banqueCabinetLecture'
 import { argumentsDeLaPrecision, argumentsDeRetirer } from '../../lib/banqueClient'
-import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
+import { lireLesVentesDuReleve, type LectureDesVentesEtDeclarations } from '../../lib/ventesDuReleveLecture'
 import {
-  comptesDuReleve, ecartDuLot, gestesDuCredit, mouvementsHorsDesLots, PASTILLE_CLASSE, pastilleDeVente,
+  comptesDuReleve, ecartDuLot, gestesDuCredit, gestesDuDebit, mouvementsHorsDesLots, PASTILLE_CLASSE, pastilleDeVente,
   retenueDuReleve, texteDesNonRapproches, venteDuMouvement, ventesDuReleve, type EcartDuLot, type FactureDesGestes,
 } from '../../lib/mouvementsDesVentes'
-import EncaissementsFactureModal from './EncaissementsFactureModal'
+import EncaissementsFactureModal, { type ContrePassationImposee } from './EncaissementsFactureModal'
 
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
@@ -215,16 +215,20 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const [accesDuReleve, setAccesDuReleve] = useState<AccesDuReleve>(ACCES_DU_RELEVE_EN_COURS)
   // La case « Proposés par le client » : une préférence d'AFFICHAGE, qui ne vaut que sur des envois lus en entier.
   const [filtreProposes, setFiltreProposes] = useState(false)
-  // LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5a1 ; lib/mouvementsDesVentes.ts) :
-  // la lecture de l'onglet Écritures (lib/ecrituresVentesFactureesLecture.ts, tout ou rien), faite dans la même relecture que
-  // le relevé, et remise « pas encore revenue » à CHAQUE lecture. Elle dit quels mouvements ses encaissements classent ou
-  // réservent (la garde G2) ; pas encore revenue, incomplète ou d'un autre dossier, l'onglet ne le sait pas : la fiche d'un
+  // LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5a1 ;
+  // lib/mouvementsDesVentes.ts) : la lecture de l'onglet Écritures et, depuis l'étape VF5d, les déclarations des
+  // encaissements (lib/ventesDuReleveLecture.ts, tout ou rien), faites dans la même relecture que le relevé, et remises
+  // « pas encore revenues » à CHAQUE lecture. Elles disent quels mouvements ses encaissements classent ou réservent (la
+  // garde G2) ; pas encore revenues, incomplètes ou d'un autre dossier, l'onglet ne le sait pas : la fiche d'un
   // mouvement n'offre aucun geste, et les lots sont retenus. Nulle, et jamais lue, pour un dossier qui n'a pas basculé.
-  const [lectureVentes, setLectureVentes] = useState<LectureSourcesDesEcrituresDeVente | null>(null)
-  // La fenêtre des encaissements ouverte depuis la fiche d'un crédit (étape VF5c) : la facture choisie, telle que la lecture
-  // des ventes l'a rendue — gardée ici, car la relecture qui suit chaque geste remet cette lecture à « pas encore revenue » —,
-  // et le mouvement qu'elle impose.
-  const [encaissementSurCredit, setEncaissementSurCredit] = useState<{ facture: FactureDesGestes; ligneId: string } | null>(null)
+  const [lectureVentes, setLectureVentes] = useState<LectureDesVentesEtDeclarations | null>(null)
+  // La fenêtre des encaissements ouverte depuis la fiche d'un mouvement : la facture choisie, telle que la lecture des
+  // ventes l'a rendue — gardée ici, car la relecture qui suit chaque geste remet cette lecture à « pas encore revenue »
+  // —, et ce qu'elle impose : le crédit d'un encaissement (étape VF5c), ou la contre-passation d'un encaissement
+  // déclaré et le débit qu'elle cite (étape VF5d).
+  const [fenetreSurMouvement, setFenetreSurMouvement] = useState<{
+    facture: FactureDesGestes; mouvementImpose: string | null; contrePassationImposee: ContrePassationImposee | null
+  } | null>(null)
 
   async function load() {
     setLoading(true)
@@ -243,7 +247,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     const lignesData = lecture.lignes
     setLignesIncompletes(lecture.complete ? null : lecture.motif)
     // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
-    const lectureDesVentes = ventesParLesFactures ? await lireLesSourcesDesEcrituresDeVente(dossierId) : null
+    const lectureDesVentes = ventesParLesFactures ? await lireLesVentesDuReleve(dossierId) : null
 
     // Les pièces encore à valider sont chargées elles aussi : c'est justement sur elles que porte
     // l'appariement certain (voir lib/appariementBanque.ts), qui sert à les valider plutôt qu'à
@@ -575,7 +579,18 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // confirme par une phrase qui nomme ce qu'il fait, passe la fonction de la base SEULE, sous le verrou des écritures de
   // l'écran, relâché après la relecture. Un refus de la base est dit ET suivi d'une relecture : le plus probable est une
   // fiche en retard (un encaissement retiré, un classement posé ailleurs), et la relecture la remet d'aplomb.
-  const gestesDe = (ligne: LigneBancaire) => gestesDuCredit(ventes, lectureVentes, ligne, anneesValidees, modele.plan)
+  //
+  // ET SUR UN DÉBIT (étape VF5d ; `gestesDuDebit`) : classer par ses contre-passations, retirer ce classement,
+  // rattacher une contre-passation — par les MÊMES fonctions —, ou ouvrir la fenêtre des encaissements sur la
+  // contre-passation d'un encaissement déclaré, ce débit imposé. L'une des deux fiches rend toujours « aucun » : un
+  // mouvement est l'un ou l'autre.
+  const gestesDuCreditDe = (ligne: LigneBancaire) => gestesDuCredit(ventes, lectureVentes, ligne, anneesValidees, modele.plan)
+  const gestesDuDebitDe = (ligne: LigneBancaire) =>
+    gestesDuDebit(ventes, lectureVentes, ligne, anneesValidees, modele.plan, aujourdHuiAParis())
+  const gestesDe = (ligne: LigneBancaire) => {
+    const credit = gestesDuCreditDe(ligne)
+    return credit.etat === 'aucun' ? gestesDuDebitDe(ligne) : credit
+  }
 
   async function classerParEncaissements(ligne: LigneBancaire) {
     const gestes = gestesDe(ligne)
@@ -616,11 +631,23 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
 
   // Ouvrir la fenêtre n'écrit rien : c'est elle qui enregistre, sous son propre verrou, et l'onglet relit après elle.
   function ouvrirEncaissementSurCredit(ligne: LigneBancaire, factureId: string) {
-    const gestes = gestesDe(ligne)
+    const gestes = gestesDuCreditDe(ligne)
     const complement = gestes.etat === 'libre' || gestes.etat === 'reserve' ? gestes.complement : null
     const aEncaisser = complement?.factures.find((f) => f.facture.id === factureId)
     if (ecritureEnCours.current || !aEncaisser) return
-    setEncaissementSurCredit({ facture: aEncaisser.facture, ligneId: ligne.id })
+    setFenetreSurMouvement({ facture: aEncaisser.facture, mouvementImpose: ligne.id, contrePassationImposee: null })
+  }
+
+  // De même sur un débit : c'est la fenêtre qui contre-passe, par `annuler_encaissement` seule, ce débit cité.
+  function ouvrirContrePassationSurDebit(ligne: LigneBancaire, encaissementId: string) {
+    const gestes = gestesDuDebitDe(ligne)
+    const complement = gestes.etat === 'libre' || gestes.etat === 'reserve' ? gestes.complement : null
+    const aContrePasser = complement?.aContrePasser.find((e) => e.id === encaissementId)
+    if (ecritureEnCours.current || !aContrePasser) return
+    setFenetreSurMouvement({
+      facture: aContrePasser.facture, mouvementImpose: null,
+      contrePassationImposee: { encaissementId: aContrePasser.id, ligneBancaireId: ligne.id },
+    })
   }
 
   // « SUPPRIMER CE MESSAGE » (P9B-Q2) : suppression directe, que la policy `precisions_mouvements_suppression_cabinet`
@@ -2166,11 +2193,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             plan={modele.plan}
             figeePar={dateFigee(ligneOuverte.date, anneesValidees)}
             venteDuMouvement={venteDuMouvement(ventes, ligneOuverte)}
-            gestesDeVente={gestesDe(ligneOuverte)}
+            gestesDeVente={gestesDuCreditDe(ligneOuverte)}
+            gestesDuDebit={gestesDuDebitDe(ligneOuverte)}
             onClasserParEncaissements={() => { void classerParEncaissements(ligneOuverte) }}
             onRetirerClassementParEncaissements={() => { void retirerClassementParEncaissements(ligneOuverte) }}
             onRattacherEncaissement={(encaissementId) => { void rattacherEncaissement(ligneOuverte, encaissementId) }}
             onEnregistrerEncaissement={(factureId) => ouvrirEncaissementSurCredit(ligneOuverte, factureId)}
+            onContrePasserEncaissement={(encaissementId) => ouvrirContrePassationSurDebit(ligneOuverte, encaissementId)}
             pieces={pieces}
             piecesValidees={piecesValidees}
             cotisations={cotisations}
@@ -2234,16 +2263,20 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       {/* Posée sur le corps du document : ouverte depuis la fiche, la fenêtre doit passer AU-DESSUS du panneau de droite,
           qui se superpose sous 1 280 px et flotte sur le téléphone — dans le panneau central, elle passait dessous (le banc,
           `banque-basculee/encaissement-impose`, à 390 et 720 px). */}
-      {encaissementSurCredit && encaissementSurCredit.facture.dossier_id === dossierId && createPortal(
+      {fenetreSurMouvement && fenetreSurMouvement.facture.dossier_id === dossierId && createPortal(
         <EncaissementsFactureModal
-          key={`${encaissementSurCredit.facture.id}-${encaissementSurCredit.ligneId}`}
+          key={[
+            fenetreSurMouvement.facture.id, fenetreSurMouvement.mouvementImpose, fenetreSurMouvement.contrePassationImposee?.encaissementId,
+            fenetreSurMouvement.contrePassationImposee?.ligneBancaireId,
+          ].join('-')}
           espace="cabinet"
           acces={accesDuReleve.acces}
           dossierId={dossierId}
-          facture={encaissementSurCredit.facture}
-          mouvementImpose={encaissementSurCredit.ligneId}
+          facture={fenetreSurMouvement.facture}
+          mouvementImpose={fenetreSurMouvement.mouvementImpose}
+          contrePassationImposee={fenetreSurMouvement.contrePassationImposee}
           statutTva={statutTva}
-          onClose={() => setEncaissementSurCredit(null)}
+          onClose={() => setFenetreSurMouvement(null)}
           onUpdated={() => { void load() }}
         />,
         document.body,
