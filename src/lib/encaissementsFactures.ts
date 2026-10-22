@@ -43,7 +43,10 @@ import type {
 //     par ses encaissements, retirer ce classement) et la garde des mouvements réservés (G2) : en fin de module ;
 //   - depuis l'étape VF5b, ce que la fenêtre des encaissements lit d'une facture source : son reste net des avoirs, les
 //     débits qu'une contre-passation cite, la frontière que le client ne lit pas, le geste qui rendrait un mouvement
-//     inclassable — tout à la fin.
+//     inclassable — tout à la fin ;
+//   - depuis la migration contre_passation_banque (chantier EC-Q3, ligne 28.65), que la contre-passation ne cite un débit
+//     qu'avec le droit « Banque », comme un encaissement ne désigne un mouvement qu'avec lui : le même refus, au même rang
+//     (`refusContrePassationVente`, qui reçoit ce droit).
 //
 // Les sources sont publiques : CGI, art. 290 A, et ann. II, art. 242 nonies P — CIBS, art. L. 216-56 à compter du
 // 01/01/2027 — ; BOI-TVA-DECLA-20-30-60 ; BOI-TVA-BASE-20-20 ; spécifications externes de la DGFiP v3.2 (§ 3.6.4 et
@@ -836,6 +839,15 @@ export type CleRefusDeclaration = (typeof REFUS_DECLARATION)[number]['cle']
 
 export const REFUS_CONTRE_PASSATION = [
   { cle: 'acces', modele: 'Accès refusé à ce dossier.' },
+  // Depuis la migration contre_passation_banque (chantier EC-Q3, ligne 28.65) : juste après l'accès, avant toute lecture —
+  // le débit qu'une contre-passation cite est une donnée de la banque, et sans le droit « Banque » il ne se cite pas. Le
+  // refus du rang 2 d'`enregistrer_encaissement`, sous ses mots et son code (`mouvement_sans_banque` de
+  // REFUS_ENREGISTREMENT) ; `contrePassationBanque` le marque : la base ne l'oppose qu'à un débit cité.
+  {
+    cle: 'mouvement_sans_banque',
+    modele: "Le mouvement bancaire d'un encaissement ne se désigne qu'avec le droit « Banque » sur ce dossier : sans lui, l'encaissement s'enregistre sans mouvement.",
+    contrePassationBanque: true,
+  },
   { cle: 'encaissement_introuvable', modele: 'Encaissement introuvable dans ce dossier.' },
   { cle: 'contre_passation', modele: "Une annulation ne se contre-passe pas : l'encaissement qu'elle annulait se saisit de nouveau." },
   { cle: 'retire', modele: "Un encaissement retiré ne s'annule pas : il n'a jamais été déclaré." },
@@ -848,9 +860,9 @@ export const REFUS_CONTRE_PASSATION = [
   { cle: 'date_absente', modele: 'La date de la contre-passation est à renseigner.' },
   { cle: 'date_avant_encaissement', modele: "Une contre-passation ne se date pas avant l'encaissement qu'elle annule, du %." },
   { cle: 'date_future', modele: "Une contre-passation ne se date pas dans l'avenir : nous sommes le %." },
-  // Depuis la migration encaissements_de_la_vente_facturee (étape VF2) : la frontière, pour une facture source (rang 11) ;
+  // Depuis la migration encaissements_de_la_vente_facturee (étape VF2) : la frontière, pour une facture source (rang 12) ;
   // puis, quand la contre-passation cite le DÉBIT qui défait l'encaissement (le cinquième paramètre), ce qui le refuse
-  // (rangs 14 à 18) ; sans débit, le mouvement de l'encaissement d'une facture source classé par ses encaissements (19).
+  // (rangs 15 à 19) ; sans débit, le mouvement de l'encaissement d'une facture source classé par ses encaissements (20).
   { cle: 'frontiere', modele: "% : une contre-passation ne s'y date plus.", venteFacturee: true },
   { cle: 'motif_absent', modele: 'Le motif de la contre-passation est à renseigner.' },
   { cle: 'motif_trop_long', modele: 'Le motif de la contre-passation dépasse 2 000 caractères.' },
@@ -991,13 +1003,16 @@ export function refusContrePassation(
 /**
  * Ce que `annuler_encaissement` refuserait, depuis la migration encaissements_de_la_vente_facturee (étape VF2), qui lui
  * donne un CINQUIÈME paramètre : `ligneBancaireId`, le DÉBIT qui défait l'encaissement (le chèque revenu impayé, la somme
- * rendue), nul pour la contre-passation d'hier. Dans l'ordre de la base : les refus de `refusContrePassation` jusqu'à la
- * date ; pour une facture source, la frontière d'un exercice validé (rang 11) ; le motif ; s'il cite un mouvement, une
+ * rendue), nul pour la contre-passation d'hier. Dans l'ordre de la base : depuis la migration contre_passation_banque, un
+ * débit cité sans le droit « Banque » (rang 2, avant toute lecture) ; les refus de `refusContrePassation` jusqu'à la
+ * date ; pour une facture source, la frontière d'un exercice validé (rang 12) ; le motif ; s'il cite un mouvement, une
  * facture qui n'est pas source, un mouvement d'un autre dossier, un crédit, un mouvement déjà classé, des
- * contre-passations qui dépasseraient le débit au-delà des frais (rangs 14 à 18) ; sans mouvement, pour une facture
- * source, le mouvement de l'encaissement classé par ses encaissements (rang 19). Sans débit cité et pour une facture qui
- * n'est pas source, la même chose que `refusContrePassation`. `mouvements` : ceux du dossier, lus en entier, avec ce qui
- * les classe.
+ * contre-passations qui dépasseraient le débit au-delà des frais (rangs 15 à 19) ; sans mouvement, pour une facture
+ * source, le mouvement de l'encaissement classé par ses encaissements (rang 20). Sans débit cité et pour une facture qui
+ * n'est pas source, la même chose que `refusContrePassation`, quel que soit le droit « Banque ». `mouvements` : ceux du
+ * dossier, lus en entier, avec ce qui les classe ; `gereLaBanque` : le droit « Banque » de qui saisit sur ce dossier
+ * (`gere_la_banque` en base), comme `refusEnregistrement` le reçoit — passé sans valeur par défaut : un écran du client
+ * qui l'oublierait laisserait citer un débit que la base refuse.
  */
 export function refusContrePassationVente(
   dossierId: string,
@@ -1009,8 +1024,12 @@ export function refusContrePassationVente(
   aujourdHui: string,
   ligneBancaireId: string | null,
   mouvements: readonly MouvementClasse[],
+  gereLaBanque: boolean,
   vente: ContexteVente,
 ): RefusEncaissement<CleRefusContrePassation> | null {
+  // Juste après l'accès (refus 1, que seule la base juge), avant toute lecture : le débit cité est une donnée de la
+  // banque — sans le droit « Banque », rien ne se dit de lui ni de l'encaissement (migration contre_passation_banque).
+  if (ligneBancaireId != null && !gereLaBanque) return refusC('mouvement_sans_banque')
   // Les refus d'hier jusqu'à la date — un motif valable à la place du sien : la base juge le motif APRÈS la frontière.
   const avantLeMotif = refusContrePassation(dossierId, encaissementId, encaissements, declarations, date, 'motif', aujourdHui)
   if (avantLeMotif) return avantLeMotif

@@ -26,12 +26,14 @@
 --     sans mouvement, il se classe comme hier ; contre-passé par un débit, il reste réservé, et le débit aussi ; classé,
 --     il ne reçoit rien d'autre ; les deux contraintes de G1 ;
 --   - LA GARDE DES ENCAISSEMENTS sans les fonctions (60 à 67) ;
---   - LES REFUS NEUFS des fonctions, à leur rang : enregistrer (11, 17, 27, 29), retirer (6, 7), contre-passer (11, 14 à
---     19, le cinquième paramètre), rattacher (1 à 16), classer (1 à 10), retirer le classement (1 à 4) ; et, pour une
---     facture qui n'est pas source, ce qu'hier rendait : ni frontière, ni mouvement réservé, les plafonds bruts ;
+--   - LES REFUS NEUFS des fonctions, à leur rang : enregistrer (11, 17, 27, 29), retirer (6, 7), contre-passer (12,
+--     15 à 20, le cinquième paramètre ; et 2, le droit « Banque » que ce débit demande depuis la migration
+--     `contre_passation_banque` : 94 à 96), rattacher (1 à 16), classer (1 à 10), retirer le classement (1 à 4) ; et,
+--     pour une facture qui n'est pas source, ce qu'hier rendait : ni frontière, ni mouvement réservé, les plafonds
+--     bruts ;
 --   - LE CATALOGUE (150 à 157) : les six rôles et leurs défauts, aucune racine qui en commence une autre, les colonnes,
 --     les contraintes, les déclencheurs, la sécurité et les droits des fonctions, les réglages et qui les nomme ;
---   - LES MUTATIONS (160 à 169) : chacune rejoue un contrôle avec un profil, une cible ou un réglage délibérément faux,
+--   - LES MUTATIONS (160 à 170) : chacune rejoue un contrôle avec un profil, une cible ou un réglage délibérément faux,
 --     et doit MORDRE ;
 --   - et que RIEN ne reste en base (199).
 --
@@ -40,7 +42,8 @@
 -- chaque contrôle dans sa sous-transaction, annulée elle aussi (`ANNULATION_ESSAI`, P0001) — le moteur d'étapes de
 -- exemplairesDesFactures.sql, ses six genres et ses profils : « chef » (super-administrateur), « chef_simple » (le compte
 -- client rattaché au cabinet comme chef, le temps du contrôle), « membre » (le même, affecté au dossier T), « client_vb »
--- (un accès du compte client à T, avec « Ventes » et « Banque »), « service » (le rôle des Edge Functions), « postgres »
+-- (un accès du compte client à T, avec « Ventes » et « Banque »), « client_v » (le même accès, avec « Ventes » seul :
+-- migration `contre_passation_banque`), « service » (le rôle des Edge Functions), « postgres »
 -- (le propriétaire) ; le moteur connaît aussi « client », « inconnu » et « anon », que rien n'emploie ici (l'accès de
 -- l'anonyme aux fonctions neuves se lit au catalogue, 155). Une étape « retenir » nommée « * » fusionne aux identifiants
 -- l'objet JSON que sa requête rend. Les exercices 2025 validés de T et de A, et les déclarations, se
@@ -64,6 +67,18 @@
 -- l'écriture ordinaire qu'il vient de poser, et non la ligne de l'encaissement, que G5 ne laisse plus changer qu'à sa
 -- fonction (ecrituresVentesFacturees.sql, 80 à 86) ; 157 lit qui nomme les réglages hors des trois fonctions de VF4b, que
 -- ecrituresVentesFacturees.sql (154) compte. Sur la réplique, 164 contrôles justes avant comme après la migration.
+--
+-- 22/10/2026, migration `contre_passation_banque` (préparée, PAS ENCORE APPLIQUÉE ; chantier EC-Q3, ligne 28.65) : le
+-- débit qu'une contre-passation cite demande aussi « Banque », au rang 2, sous les mots et le code du rang 2
+-- d'`enregistrer_encaissement`, avant toute lecture ; les rangs suivants d'`annuler_encaissement` avancent d'un cran
+-- (85 à 91). Huit contrôles de plus : 94 à 94e (le client « Ventes » sans « Banque » qui cite un débit, refusé avant ce
+-- que les refus suivants lui apprenaient — le montant du débit, un encaissement inconnu, un mouvement d'un autre
+-- dossier, un crédit, un débit classé), 95 (sans débit, il contre-passe comme hier), 96 (avec « Banque », il cite le
+-- débit) et la mutation 170 (avec « Banque », le rang 2 passe). Sur une réplique dont `signature.sql` égalait la
+-- production à 144 migrations (les neuf familles, et l'historique) : sans la migration, 172 contrôles, 5 en faute — 94
+-- à 94e, exactement — ; avec elle, 172 justes, rien n'est resté, et les 164 d'hier rendent, ligne à ligne, ce qu'ils
+-- rendaient. Dix mutations de la migration (le refus retiré, déplacé après la lecture de l'encaissement ou avant le
+-- débit, un autre prédicat, la condition élargie ou faussée, un autre code, un mot changé) : dix tuées par cet essai.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -129,7 +144,8 @@ begin
       'FR5', $m$L'exercice 2025 est validé : une facture source de sa vente, ou son avoir, ne s'y valide plus.$m$,
       'SEU', $m$Seul l'encaissement d'une facture source de sa vente se rattache après coup au mouvement qui le prouve.$m$,
       'DEB', $m$Une contre-passation se justifie par un débit : ce mouvement n'en est pas un.$m$,
-      'CRE', $m$Un encaissement se justifie par un crédit : ce mouvement n'en est pas un.$m$)
+      'CRE', $m$Un encaissement se justifie par un crédit : ce mouvement n'en est pas un.$m$,
+      'BQE', $m$Le mouvement bancaire d'un encaissement ne se désigne qu'avec le droit « Banque » sur ce dossier : sans lui, l'encaissement s'enregistre sans mouvement.$m$)
     || jsonb_build_object(
       'ENE', $m$select enregistrer_encaissement($m$,
       'ENF', $m$select enregistrer_facture($m$,
@@ -284,16 +300,29 @@ begin
     array['controle', '82. une facture qui n''est pas source : comme hier', 'chef', $q${RET}'{A}', '{EA25}')$q$, 'OK', ''],
 
     -- ══ 85 à 93. Contre-passer, et le cinquième paramètre ══════════
-    array['controle', '85. rang 11 : une date d''un exercice validé', 'chef', $q${ANN}'{T}', '{E25}', '2025-12-31', 'ESSAI')$q$, '22023', 'L''exercice 2025 est validé : une contre-passation ne s''y date plus.'],
-    array['controle', '86. rang 14 : le débit d''une facture qui n''est pas source', 'chef', $q${ANN}'{A}', '{EA}', '2026-03-12', 'ESSAI', '{MD}')$q$, '22023', 'Seule la contre-passation d''une facture source de sa vente cite le mouvement qui défait l''encaissement.'],
-    array['controle', '87. rang 15 : un mouvement d''un autre dossier', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{MD}')$q$, '22023', 'Ce mouvement n''est pas un mouvement de ce dossier.'],
-    array['controle', '88. rang 16 : zéro, ni un crédit', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{M0}')$q$, '22023', '{DEB}'],
-    array['controle', '89. rang 17 : un débit déjà classé', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{MC}')$q$, '22023', '{MOT}'],
-    array['controle', '90. rang 18 : un débit que la contre-passation dépasse', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{M6}')$q$, '22023', 'Ce mouvement de 50,00 € justifierait 100,00 € de contre-passations : l''écart dépasse ce que des frais bancaires expliquent.'],
-    array['controle', '91. rang 19 : sans débit, le mouvement classé par ses encaissements', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI')$q$, '22023', 'Le mouvement de l''encaissement contre-passé est classé par ses encaissements : la contre-passation cite le débit qui défait l''encaissement, ou le cabinet retire d''abord ce classement.'],
+    array['controle', '85. rang 12 : une date d''un exercice validé', 'chef', $q${ANN}'{T}', '{E25}', '2025-12-31', 'ESSAI')$q$, '22023', 'L''exercice 2025 est validé : une contre-passation ne s''y date plus.'],
+    array['controle', '86. rang 15 : le débit d''une facture qui n''est pas source', 'chef', $q${ANN}'{A}', '{EA}', '2026-03-12', 'ESSAI', '{MD}')$q$, '22023', 'Seule la contre-passation d''une facture source de sa vente cite le mouvement qui défait l''encaissement.'],
+    array['controle', '87. rang 16 : un mouvement d''un autre dossier', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{MD}')$q$, '22023', 'Ce mouvement n''est pas un mouvement de ce dossier.'],
+    array['controle', '88. rang 17 : zéro, ni un crédit', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{M0}')$q$, '22023', '{DEB}'],
+    array['controle', '89. rang 18 : un débit déjà classé', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{MC}')$q$, '22023', '{MOT}'],
+    array['controle', '90. rang 19 : un débit que la contre-passation dépasse', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{M6}')$q$, '22023', 'Ce mouvement de 50,00 € justifierait 100,00 € de contre-passations : l''écart dépasse ce que des frais bancaires expliquent.'],
+    array['controle', '91. rang 20 : sans débit, le mouvement classé par ses encaissements', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI')$q$, '22023', 'Le mouvement de l''encaissement contre-passé est classé par ses encaissements : la contre-passation cite le débit qui défait l''encaissement, ou le cabinet retire d''abord ce classement.'],
     array['controle', '92. le débit qui défait l''encaissement : la contre-passation passe', 'chef', $q${ANN}'{T}', '{E1}', '2026-03-12', 'Chèque revenu impayé', '{M3}')$q$, 'OK', ''],
     array['controle', '93. non source : l''appel d''hier, à quatre paramètres', 'chef', $q${ANN}'{A}', '{EA}', '2026-03-12', 'ESSAI')$q$, 'OK', ''],
     array['controle', '93b. … même sur un mouvement classé (VF2-Q2)', 'chef', $q${ENI} ('{CP}', '{T}', '{FP}', '2026-03-02', 10, 'virement', '{M1}', null, null); insert into transmissions_factures (dossier_id, facture_id, canal, hote, sha256, etat, flux_id) values ('{T}', '{FP}', 'plateforme', 'pa.exemple.fr', repeat('ab', 32), 'accepte', 'vf2-4'); insert into transmissions_encaissements (dossier_id, encaissement_id, facture_id, canal, hote, etat) values ('{T}', '{CP}', '{FP}', 'manuel', 'pa.exemple.fr', 'depose'); {ANN}'{T}', '{CP}', '2026-03-12', 'ESSAI')$q$, 'OK', ''],
+
+    -- ══ 94 à 96. Le débit cité demande aussi « Banque » (migration contre_passation_banque) ══════════
+    -- Le refus du rang 2 d'enregistrer_encaissement, sous ses mots et son code, AVANT toute lecture : sans lui, le
+    -- client qui n'a que « Ventes » apprenait du refus suivant ce que la RLS lui cache — le montant d'un débit (94),
+    -- qu'un encaissement n'existe pas (94b), qu'un mouvement n'est pas de son dossier (94c), un crédit (94d), un débit
+    -- déjà classé (94e).
+    array['controle', '94. rang 2 : sans « Banque », le client « Ventes » ne cite pas de débit — le montant ne se dit plus', 'client_v', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{M6}')$q$, '42501', '{BQE}'],
+    array['controle', '94b. … avant l''encaissement : un encaissement qui n''existe pas', 'client_v', $q${ANN}'{T}', '{X}', '2026-03-12', 'ESSAI', '{M6}')$q$, '42501', '{BQE}'],
+    array['controle', '94c. … avant le mouvement : celui d''un autre dossier', 'client_v', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{MD}')$q$, '42501', '{BQE}'],
+    array['controle', '94d. … un crédit', 'client_v', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{M2}')$q$, '42501', '{BQE}'],
+    array['controle', '94e. … un débit déjà classé', 'client_v', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{MC}')$q$, '42501', '{BQE}'],
+    array['controle', '95. sans débit, le client « Ventes » contre-passe comme hier : le rang 2 ne s''interpose pas', 'client_v', $q${ANN}'{T}', '{ES}', '2026-03-12', 'ESSAI')$q$, 'OK', ''],
+    array['controle', '96. avec « Banque », le client cite le débit qui défait l''encaissement', 'client_vb', $q${ANN}'{T}', '{E1}', '2026-03-12', 'Chèque revenu impayé', '{M3}')$q$, 'OK', ''],
 
     -- ══ 100 à 117. Rattacher un encaissement à son mouvement ══════════
     array['controle', '100. rang 1 : le client, même avec « Ventes » et « Banque »', 'client_vb', $q${RAT}'{T}', '{ES2}', '{M5}')$q$, '42501', 'Accès refusé à ce dossier.'],
@@ -366,7 +395,8 @@ begin
     array['controle', '166. MUTATION de 100 : le membre affecté rattache', 'membre', $q${RAT}'{T}', '{ES2}', '{M5}')$q$, 'OK', ''],
     array['controle', '167. MUTATION de 120 : le chef simple classe', 'chef_simple', $q${RCL}'{T}', '{M1}'); {CLA}'{T}', '{M1}')$q$, 'OK', ''],
     array['controle', '168. MUTATION de 60 : une facture source se rattache', 'postgres', $q$select set_config('jd.rattachement_encaissement', '{ES2}', true); update encaissements_factures set ligne_bancaire_id = '{M5}' where id = '{ES2}'$q$, 'OK', ''],
-    array['controle', '169. MUTATION de 81 : le classement retiré, il se retire', 'chef', $q${RCL}'{T}', '{M10}'); {RET}'{T}', '{E26}')$q$, 'OK', '']
+    array['controle', '169. MUTATION de 81 : le classement retiré, il se retire', 'chef', $q${RCL}'{T}', '{M10}'); {RET}'{T}', '{E26}')$q$, 'OK', ''],
+    array['controle', '170. MUTATION de 94 : avec « Banque », le rang 2 passe, et le rang 19 dit le montant', 'client_vb', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{M6}')$q$, '22023', 'Ce mouvement de 50,00 € justifierait 100,00 € de contre-passations : l''écart dépasse ce que des frais bancaires expliquent.']
   ];
 
   begin
@@ -403,7 +433,7 @@ begin
         end;
         verdicts := verdicts || jsonb_build_object('controle', etape[2], 'observe', coalesce(obs, '∅'), 'ok', coalesce(obs = attendu, false));
       else
-        if etape[3] in ('membre', 'chef_simple', 'client_vb') and etape[1] not in ('controle', 'lecture') then
+        if etape[3] in ('membre', 'chef_simple', 'client_vb', 'client_v') and etape[1] not in ('controle', 'lecture') then
           raise exception 'ESSAI_MAL_ECRIT : le profil % ne sert qu''à un contrôle ou à une lecture, qui s''annulent', etape[3];
         end if;
         begin
@@ -415,6 +445,8 @@ begin
             end if;
           elsif etape[3] = 'client_vb' then
             insert into memberships (user_id, dossier_id, role, droit_ventes, droit_banque) values (client, (ids ->> 'T')::uuid, 'client', true, true);
+          elsif etape[3] = 'client_v' then
+            insert into memberships (user_id, dossier_id, role, droit_ventes, droit_banque) values (client, (ids ->> 'T')::uuid, 'client', true, false);
           end if;
           if etape[3] <> 'postgres' then
             execute format('set local role %I', case etape[3] when 'anon' then 'anon' when 'service' then 'service_role' else 'authenticated' end);

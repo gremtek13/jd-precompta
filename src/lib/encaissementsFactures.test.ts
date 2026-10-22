@@ -925,8 +925,9 @@ describe('les refus des déclarations, tels que la migration les écrit', () => 
   it('annuler_encaissement : les mêmes messages, dans le même ordre, et leurs valeurs écrites comme le module les écrit', () => {
     const sql = derniereDefinitionSql('annuler_encaissement')
     // 12 hier ; 19 depuis l'étape VF2 : la frontière (rang 11), le débit cité et ses cinq refus (14 à 18), le mouvement de
-    // l'encaissement classé par ses encaissements (19).
-    expect(messagesSql(sql)).toHaveLength(19)
+    // l'encaissement classé par ses encaissements (19) ; 20 depuis la migration contre_passation_banque : le débit cité
+    // sans le droit « Banque » (rang 2), chacun des autres un rang plus loin.
+    expect(messagesSql(sql)).toHaveLength(20)
     expect(REFUS_CONTRE_PASSATION.map((r) => r.modele)).toEqual(messagesSql(sql))
     expect(new Set(REFUS_CONTRE_PASSATION.map((r) => r.cle)).size).toBe(REFUS_CONTRE_PASSATION.length)
     const MONTANT = (x: string) => `replace(to_char(${x}, 'FM999999999990.00'), '.', ',')`
@@ -983,21 +984,22 @@ describe('les refus des déclarations, tels que la migration les écrit', () => 
 //
 // Les deux migrations de l'étape — `source_de_la_vente` et `encaissements_de_la_vente_facturee` — sont en base et dans
 // l'export. Chaque liste du module se confronte au texte de sa fonction (sa dernière définition exportée), messages,
-// codes et valeurs ; et les trois listes d'hier, privées de leurs refus marqués `venteFacturee`, redisent EXACTEMENT la
-// définition qui précédait la migration : pour une facture qui n'est pas source, rien ne s'interpose.
+// codes et valeurs ; et les trois listes d'hier, privées de leurs refus marqués `venteFacturee` — et, pour la
+// contre-passation, du refus que la migration contre_passation_banque ajoute (`contrePassationBanque`) —, redisent
+// EXACTEMENT la définition qui précédait la migration : pour une facture qui n'est pas source, rien ne s'interpose.
 
 // Le code de chaque `raise exception`, dans l'ordre du texte.
 function codesSql(sql: string): string[] {
   return [...sql.matchAll(/raise exception '(?:[^']|'')*'[\s\S]*?using errcode = '([0-9A-Z]{5})'/g)].map((m) => m[1])
 }
 
-// La définition d'une fonction AVANT la migration encaissements_de_la_vente_facturee : la dernière des fichiers qui la
+// La définition d'une fonction AVANT une migration de l'export (son nom, sans version) : la dernière des fichiers qui la
 // précèdent — la lecture de `derniereDefinitionSql`, sur les fichiers d'avant.
-function definitionAvantLaVenteFacturee(nom: string): string {
+function definitionAvantLaMigration(nom: string, migration: string): string {
   const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
   const fichiers = fichiersDuSchema()
-  const m2 = fichiers.findIndex((f) => /\/\d{14}_encaissements_de_la_vente_facturee\.sql$/.test(f.chemin))
-  expect(m2).toBeGreaterThan(0)
+  const m2 = fichiers.findIndex((f) => new RegExp(`/\\d{14}_${migration}\\.sql$`).test(f.chemin))
+  expect(m2, migration).toBeGreaterThan(0)
   const avant = fichiers.slice(0, m2).filter((f) => new RegExp(motif.source).test(f.texte))
   expect(avant.length, nom).toBeGreaterThan(0)
   const texte = avant[avant.length - 1].texte
@@ -1005,6 +1007,8 @@ function definitionAvantLaVenteFacturee(nom: string): string {
   const debut = positions[positions.length - 1]
   return texte.slice(debut, texte.indexOf('$$;', debut))
 }
+
+const definitionAvantLaVenteFacturee = (nom: string) => definitionAvantLaMigration(nom, 'encaissements_de_la_vente_facturee')
 
 // Le code qu'une fonction des encaissements donne à chaque refus : l'accès et le droit « Banque » en 42501, l'introuvable
 // en P0002, le reste en 22023 (l'en-tête de la migration).
@@ -1022,7 +1026,7 @@ describe('la vente facturée (étape VF2) : les refus d’hier, et ceux qui ne v
 
   it('sans leurs refus d’une facture source, les trois listes redisent la définition d’avant la migration, mot pour mot', () => {
     for (const [nom, liste] of LISTES) {
-      const hier = liste.filter((r) => !('venteFacturee' in r)).map((r) => r.modele)
+      const hier = liste.filter((r) => !('venteFacturee' in r) && !('contrePassationBanque' in r)).map((r) => r.modele)
       expect(hier, nom).toEqual(messagesSql(definitionAvantLaVenteFacturee(nom)))
       expect(liste.map((r) => r.modele), nom).toEqual(messagesSql(derniereDefinitionSql(nom)))
     }
@@ -1048,13 +1052,14 @@ describe('la vente facturée (étape VF2) : les refus d’hier, et ceux qui ne v
     expect([rang(REFUS_ENREGISTREMENT, 'frontiere'), rang(REFUS_ENREGISTREMENT, 'mouvement_classe'),
       rang(REFUS_ENREGISTREMENT, 'plafond_facture_net'), rang(REFUS_ENREGISTREMENT, 'plafond_taux_net')]).toEqual([11, 17, 27, 29])
     expect([rang(REFUS_RETRAIT, 'frontiere'), rang(REFUS_RETRAIT, 'mouvement_classe')]).toEqual([6, 7])
+    // Ceux de la contre-passation, chacun un rang plus loin depuis la migration contre_passation_banque (son rang 2).
     expect(['frontiere', 'mouvement_non_source', 'mouvement_hors_dossier', 'mouvement_credit', 'mouvement_classe',
-      'mouvement_depasse', 'mouvement_encaissement_classe'].map((c) => rang(REFUS_CONTRE_PASSATION, c))).toEqual([11, 14, 15, 16, 17, 18, 19])
+      'mouvement_depasse', 'mouvement_encaissement_classe'].map((c) => rang(REFUS_CONTRE_PASSATION, c))).toEqual([12, 15, 16, 17, 18, 19, 20])
   })
 
   it('annuler_encaissement prend un cinquième paramètre, le débit, nul par défaut ; l’ancienne signature est retirée', () => {
     const sql = derniereDefinitionSql('annuler_encaissement')
-    expect(sql).toMatch(/^create function public\.annuler_encaissement\(\s*p_dossier_id uuid,\s*p_encaissement_id uuid,\s*p_date date,\s*p_motif text,\s*p_ligne_bancaire_id uuid default null\s*\)/)
+    expect(sql).toMatch(/^create (or replace )?function public\.annuler_encaissement\(\s*p_dossier_id uuid,\s*p_encaissement_id uuid,\s*p_date date,\s*p_motif text,\s*p_ligne_bancaire_id uuid default null\s*\)/)
     const m2 = fichiersDuSchema().find((f) => /\/\d{14}_encaissements_de_la_vente_facturee\.sql$/.test(f.chemin))?.texte ?? ''
     expect(m2).toContain('drop function public.annuler_encaissement(uuid, uuid, date, text);')
     expect(m2).toContain('grant execute on function public.annuler_encaissement(uuid, uuid, date, text, uuid) to authenticated;')
@@ -1069,6 +1074,67 @@ describe('la vente facturée (étape VF2) : les refus d’hier, et ceux qui ne v
     const champs = [...(/num_nonnulls\(([^;]*)\) = 0/.exec(libre) as RegExpExecArray)[1].matchAll(/p_ligne\.(\w+)/g)].map((m) => m[1])
     expect(champs).toEqual(['piece_id', 'cotisation_id', 'categorie_id', 'emprunt_id', 'compte_bilan', 'declaration_tva_id',
       'ventilee', 'reglement_groupe', 'prelevement_personnel', 'encaissements_de_factures'])
+  })
+})
+
+// ── Le débit cité demande aussi « Banque » (migration contre_passation_banque, chantier EC-Q3, ligne 28.65) ─────────────
+//
+// La contre-passation est reprise de sa définition de VF2 au caractère près, hors d'un refus : celui du rang 2
+// d'`enregistrer_encaissement` — sa condition, ses mots, son code —, à la même place : juste après l'accès, avant toute
+// lecture.
+
+// Le bloc que la migration insère : son commentaire, puis le refus.
+const DEBUT_DU_BLOC_BANQUE = "  -- Le débit qui défait l'encaissement est une donnée de la banque"
+const REFUS_BANQUE_SQL = 'if p_ligne_bancaire_id is not null and not public.gere_la_banque(p_dossier_id) then'
+
+describe('la contre-passation ne cite un débit qu’avec « Banque » (migration contre_passation_banque)', () => {
+  it('le refus du rang 2 est celui d’enregistrer_encaissement : la même condition, les mêmes mots, le même code', () => {
+    const neuf = REFUS_CONTRE_PASSATION[1]
+    const enregistrement = REFUS_ENREGISTREMENT[1]
+    expect([neuf.cle, enregistrement.cle]).toEqual(['mouvement_sans_banque', 'mouvement_sans_banque'])
+    expect(neuf.modele).toBe(enregistrement.modele)
+    for (const nom of ['enregistrer_encaissement', 'annuler_encaissement']) {
+      expect(derniereDefinitionSql(nom), nom).toContain(`${REFUS_BANQUE_SQL}\n    raise exception `
+        + `'${enregistrement.modele.replace(/'/g, "''")}'\n      using errcode = '42501';\n  end if;`)
+    }
+    expect(REFUS_CONTRE_PASSATION.filter((r) => 'contrePassationBanque' in r).map((r) => r.cle)).toEqual(['mouvement_sans_banque'])
+  })
+
+  it('juste après le contrôle d’accès, avant toute lecture de l’encaissement ou du mouvement', () => {
+    const sql = derniereDefinitionSql('annuler_encaissement')
+    const corps = sql.slice(sql.indexOf('\nbegin\n'))
+    const acces = corps.indexOf('if not public.gere_les_ventes(p_dossier_id) then')
+    const banque = corps.indexOf(REFUS_BANQUE_SQL)
+    expect(acces).toBeGreaterThan(0)
+    expect(banque).toBeGreaterThan(acces)
+    // Seul le contrôle d'accès le précède : la première lecture d'une table vient après lui.
+    expect(corps.indexOf('raise exception', acces + 1)).toBeLessThan(banque)
+    expect(corps.indexOf('raise exception', corps.indexOf('raise exception', acces + 1) + 1)).toBeGreaterThan(banque)
+    expect(corps.indexOf('select ')).toBeGreaterThan(banque)
+    expect(corps.indexOf(' from public.')).toBeGreaterThan(banque)
+  })
+
+  it('hors de ce refus et de son commentaire, la définition de VF2 au caractère près', () => {
+    const avant = definitionAvantLaMigration('annuler_encaissement', 'contre_passation_banque')
+    expect(avant.startsWith('create function public.annuler_encaissement(')).toBe(true)
+    const apres = derniereDefinitionSql('annuler_encaissement')
+    const debut = apres.indexOf(DEBUT_DU_BLOC_BANQUE)
+    const fin = apres.indexOf('  end if;\n', apres.indexOf(REFUS_BANQUE_SQL)) + '  end if;\n'.length
+    expect(debut).toBeGreaterThan(0)
+    expect(apres.slice(0, debut) + apres.slice(fin)).toBe(avant.replace('create function', 'create or replace function'))
+    // Et la liste du module, privée du seul refus neuf, redit celle de VF2 mot pour mot.
+    expect(REFUS_CONTRE_PASSATION.filter((r) => !('contrePassationBanque' in r)).map((r) => r.modele)).toEqual(messagesSql(avant))
+  })
+
+  it('la migration ne rejoue ni droits ni commentaire, et ne porte rien que le détecteur retiendrait', () => {
+    const migration = fichiersDuSchema().find((f) => /\/\d{14}_contre_passation_banque\.sql$/.test(f.chemin))?.texte ?? ''
+    expect(migration).toContain('create or replace function public.annuler_encaissement(')
+    // `create or replace` garde les droits et le commentaire de la fonction : rien à rejouer.
+    expect(migration).not.toMatch(/\b(grant|revoke)\b|comment on/i)
+    // Le détecteur d'apply_migration retient une suppression, même dans un corps de fonction : aucune ici.
+    expect(migration).not.toMatch(/\b(drop|delete|truncate)\b/i)
+    // Les outils MCP décodent les échappements de leurs paramètres : le texte n'en porte aucun.
+    expect(migration).not.toContain('\\')
   })
 })
 
@@ -1350,9 +1416,10 @@ describe('refusContrePassation — les refus d’annuler_encaissement', () => {
       corriger()
     }
     expect(refusC(o)).toBeNull()
-    // Sans débit cité ni facture source : les refus d'hier ; ceux de l'étape VF2 ont leur parcours dans
-    // encaissementsVenteFacturee.test.ts.
-    expect(vus).toEqual(REFUS_CONTRE_PASSATION.filter((r) => r.cle !== 'acces' && !('venteFacturee' in r)).map((r) => r.cle))
+    // Sans débit cité ni facture source : les refus d'hier ; ceux de l'étape VF2, et le droit « Banque » d'un débit cité
+    // (migration contre_passation_banque), ont leur parcours dans encaissementsVenteFacturee.test.ts.
+    expect(vus).toEqual(REFUS_CONTRE_PASSATION
+      .filter((r) => r.cle !== 'acces' && !('venteFacturee' in r) && !('contrePassationBanque' in r)).map((r) => r.cle))
   })
 
   it('mesure le motif comme la base, et tient une date qui n’en est pas une pour absente', () => {

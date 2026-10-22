@@ -311,21 +311,54 @@ describe('refusContrePassationVente — annuler_encaissement et son cinquième p
   const DECLARE = [{ encaissement_id: 'e1', etat: 'depose' as const }]
   const e1 = encaissement({ ligne_bancaire_id: 'm1', date_encaissement: '2027-10-15' })
   const DEBIT = mouvement({ id: 'm_debit', montant: -100, date: '2027-10-25' })
+  // Le droit « Banque » de qui saisit : le cabinet le porte ; `banque: false`, le client qui n'a que « Ventes ».
   const refusCV = (o: { encaissements?: EncaissementPourContrePassation[]; date?: string | null; motif?: string | null; ligne?: string | null;
-    mouvements?: MouvementClasse[]; v?: ContexteVente } = {}) =>
-    refusContrePassationVente(D, 'e1', o.encaissements ?? [e1], DECLARE, o.date === undefined ? '2027-10-25' : o.date,
+    mouvements?: MouvementClasse[]; v?: ContexteVente; banque?: boolean; id?: string } = {}) =>
+    refusContrePassationVente(D, o.id ?? 'e1', o.encaissements ?? [e1], DECLARE, o.date === undefined ? '2027-10-25' : o.date,
       o.motif === undefined ? 'Chèque revenu impayé' : o.motif, AUJOURD_HUI, o.ligne === undefined ? null : o.ligne,
-      o.mouvements ?? [mouvement(), DEBIT], o.v ?? vente())
+      o.mouvements ?? [mouvement(), DEBIT], o.banque ?? true, o.v ?? vente())
 
-  it('sans débit cité, une facture qui n’est pas source : la même chose qu’hier', () => {
+  it('sans débit cité, une facture qui n’est pas source : la même chose qu’hier, avec ou sans « Banque »', () => {
     const e = { ...e1, facture_id: 'f2' }
     for (const [date, motif] of [['2027-10-25', 'm'], [null, 'm'], ['2027-10-25', ''], ['2027-10-25', 'm'.repeat(2001)]] as const) {
-      expect(refusCV({ encaissements: [e], date, motif, v: vente({ anneesValidees: [2027] }) }))
-        .toEqual(refusContrePassation(D, 'e1', [e], DECLARE, date, motif, AUJOURD_HUI))
+      for (const banque of [true, false]) {
+        expect(refusCV({ encaissements: [e], date, motif, v: vente({ anneesValidees: [2027] }), banque }))
+          .toEqual(refusContrePassation(D, 'e1', [e], DECLARE, date, motif, AUJOURD_HUI))
+      }
     }
   })
 
-  it('rang 11 : la frontière, après les dates et avant le motif', () => {
+  // LA MIGRATION contre_passation_banque (chantier EC-Q3, ligne 28.65) : le débit cité est une donnée de la banque. Sans le
+  // droit « Banque », il se refuse au rang 2, avant toute lecture — rien ne se dit de l'encaissement ni du mouvement, ni
+  // de son montant —, sous les mots du rang 2 d'enregistrer_encaissement.
+  it('rang 2 : sans « Banque », un débit cité se refuse avant tout autre refus ; avec lui, ce rang passe', () => {
+    const NEUF = {
+      cle: 'mouvement_sans_banque',
+      message: "Le mouvement bancaire d'un encaissement ne se désigne qu'avec le droit « Banque » sur ce dossier : sans lui, l'encaissement s'enregistre sans mouvement.",
+    }
+    expect(refusCV({ ligne: 'm_debit', banque: false })).toEqual(NEUF)
+    // Ce qu'il aurait appris sinon, chaque fois : un encaissement inconnu, un mouvement d'un autre dossier, un crédit, un
+    // débit déjà classé, et le MONTANT d'un débit trop petit.
+    const ailleurs: [string, Parameters<typeof refusCV>[0]][] = [
+      ['encaissement_introuvable', { ligne: 'm_debit', id: 'inconnu' }],
+      ['mouvement_non_source', { ligne: 'm_debit', encaissements: [{ ...e1, facture_id: 'f2' }] }],
+      ['motif_absent', { ligne: 'm_debit', motif: ' ' }],
+      ['mouvement_hors_dossier', { ligne: 'inconnu' }],
+      ['mouvement_credit', { ligne: 'm1' }],
+      ['mouvement_classe', { ligne: 'm_debit', mouvements: [mouvement({ ...DEBIT, statut: 'rapprochee', piece_id: 'p' })] }],
+      ['mouvement_depasse', { ligne: 'm_debit', mouvements: [{ ...DEBIT, montant: -97.99 }] }],
+    ]
+    for (const [cle, o] of ailleurs) {
+      expect(refusCV(o)?.cle, cle).toBe(cle)
+      expect(refusCV({ ...o, banque: false }), cle).toEqual(NEUF)
+    }
+    // Avec « Banque », le débit libre que la contre-passation fait : accepté ; sans débit, « Banque » ne change rien.
+    expect(refusCV({ ligne: 'm_debit' })).toBeNull()
+    expect(refusCV({ banque: false })).toBeNull()
+    expect(refusCV({ banque: false, motif: '' })?.cle).toBe('motif_absent')
+  })
+
+  it('rang 12 : la frontière, après les dates et avant le motif', () => {
     expect(refusCV({ date: '2026-12-31', v: vente({ anneesValidees: [2026] }) })?.cle).toBe('date_avant_encaissement')
     expect(refusCV({ encaissements: [{ ...e1, date_encaissement: '2026-06-01' }], date: '2026-12-31', motif: '', v: vente({ anneesValidees: [2026] }) }))
       .toEqual({ cle: 'frontiere', message: "L'exercice 2026 est validé : une contre-passation ne s'y date plus." })
@@ -333,7 +366,7 @@ describe('refusContrePassationVente — annuler_encaissement et son cinquième p
       .toBe('motif_absent')
   })
 
-  it('rangs 14 à 18 : le débit cité — une facture source, de ce dossier, un débit, libre, que ses contre-passations ne dépassent pas', () => {
+  it('rangs 15 à 19 : le débit cité — une facture source, de ce dossier, un débit, libre, que ses contre-passations ne dépassent pas', () => {
     expect(refusCV({ encaissements: [{ ...e1, facture_id: 'f2' }], ligne: 'm_debit' })?.cle).toBe('mouvement_non_source')
     // Le motif d'abord : le débit se juge après lui.
     expect(refusCV({ encaissements: [{ ...e1, facture_id: 'f2' }], ligne: 'm_debit', motif: ' ' })?.cle).toBe('motif_absent')
@@ -359,7 +392,7 @@ describe('refusContrePassationVente — annuler_encaissement et son cinquième p
     expect(refusCV({ ligne: 'm_debit', encaissements: [e1, { ...autre, retire_le: '2027-10-26T10:00:00Z' }] })).toBeNull()
   })
 
-  it('rang 19 : sans débit cité, le mouvement de l’encaissement classé par ses encaissements', () => {
+  it('rang 20 : sans débit cité, le mouvement de l’encaissement classé par ses encaissements', () => {
     const classe = [mouvement({ statut: 'rapprochee', encaissements_de_factures: true }), DEBIT]
     expect(refusCV({ mouvements: classe })).toEqual({
       cle: 'mouvement_encaissement_classe',
@@ -367,7 +400,7 @@ describe('refusContrePassationVente — annuler_encaissement et son cinquième p
     })
     // Classé autrement — un état que G2 empêche — : ce refus-là ne le dit pas.
     expect(refusCV({ mouvements: [mouvement({ statut: 'rapprochee', piece_id: 'p' }), DEBIT] })).toBeNull()
-    // Le débit cité : le rang 19 ne se juge pas.
+    // Le débit cité : le rang 20 ne se juge pas.
     expect(refusCV({ mouvements: classe, ligne: 'm_debit' })).toBeNull()
     // Une facture qui n'est pas source, ou un encaissement sans mouvement : rien.
     expect(refusCV({ mouvements: classe, encaissements: [{ ...e1, facture_id: 'f2' }] })).toBeNull()
@@ -386,7 +419,8 @@ describe('refusContrePassationVente — annuler_encaissement et son cinquième p
   })
 
   it('les refus neufs, dans l’ordre du catalogue', () => {
-    expect(REFUS_CONTRE_PASSATION.map((r) => r.cle).slice(10)).toEqual([
+    expect(REFUS_CONTRE_PASSATION.map((r) => r.cle).slice(0, 3)).toEqual(['acces', 'mouvement_sans_banque', 'encaissement_introuvable'])
+    expect(REFUS_CONTRE_PASSATION.map((r) => r.cle).slice(11)).toEqual([
       'frontiere', 'motif_absent', 'motif_trop_long', 'mouvement_non_source', 'mouvement_hors_dossier', 'mouvement_credit',
       'mouvement_classe', 'mouvement_depasse', 'mouvement_encaissement_classe',
     ])
@@ -602,10 +636,12 @@ describe('les refus d’hier ne voient pas une facture source sans le contexte d
 describe('l’essai de la vente facturée, confronté au module et au texte des fonctions', () => {
   const refus = refusExigesParLEssai()
   const exige = (modele: string, code: string) => refus.some((e) => e.code === code && correspondAuModele(modele, e.attendu))
-  // Les refus d'hier se rangent sous le code de leur famille ; ceux de la vente facturée sont tous en 22023.
+  // Les refus d'hier se rangent sous le code de leur famille ; ceux de la vente facturée sont tous en 22023 ; celui que la
+  // migration contre_passation_banque ajoute à la contre-passation — un débit cité sans « Banque » —, en 42501.
   const venteFacturee = (r: object) => 'venteFacturee' in r && r.venteFacturee === true
   const NEUFS: readonly (readonly [string, string])[] = [
     ...[...REFUS_ENREGISTREMENT, ...REFUS_RETRAIT, ...REFUS_CONTRE_PASSATION].filter(venteFacturee).map((r) => [r.modele, '22023'] as const),
+    ...REFUS_CONTRE_PASSATION.filter((r) => 'contrePassationBanque' in r).map((r) => [r.modele, '42501'] as const),
     ...[...REFUS_RATTACHEMENT, ...REFUS_CLASSEMENT, ...REFUS_RETRAIT_CLASSEMENT, ...REFUS_GARDE_MOUVEMENTS].map((r) => [r.modele, r.code] as const),
   ]
   const FONCTIONS = [
@@ -623,7 +659,7 @@ describe('l’essai de la vente facturée, confronté au module et au texte des 
   it('l’essai se lit : ses étapes, ses refus exigés', () => {
     expect(etapesDeLEssai().length).toBeGreaterThan(140)
     expect(refus.length).toBeGreaterThan(80)
-    expect(NEUFS.length).toBe(47)
+    expect(NEUFS.length).toBe(48)
   })
 
   it('chaque refus neuf du module y est exigé de la base, sous ses mots et son code', () => {

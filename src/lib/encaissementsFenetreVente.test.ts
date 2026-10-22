@@ -122,15 +122,18 @@ describe('l’équivalence : une facture qui n’est pas source se juge comme hi
     }
   })
 
-  it('contre-passer sans débit : 1 500 tirages, la même réponse', () => {
+  it('contre-passer sans débit : 1 500 tirages, la même réponse, avec ou sans « Banque »', () => {
     const cles = new Set<string>()
-    for (const t of tirages) {
+    // Le droit « Banque » alterne d'un tirage à l'autre sans consommer de hasard : sans débit cité, il ne change rien
+    // (migration contre_passation_banque : le refus du rang 2 ne vise qu'un débit cité).
+    tirages.forEach((t, i) => {
       const hier = refusContrePassation(t.dossierId, t.id, encaissements, t.declarations, t.date, t.motif, AUJOURD_HUI_RELEVE)
       cles.add(hier?.cle ?? 'ok')
       expect(refusContrePassationVente(
-        t.dossierId, t.id, encaissements, t.declarations, t.date, t.motif, AUJOURD_HUI_RELEVE, null, t.mouvements, t.vente,
+        t.dossierId, t.id, encaissements, t.declarations, t.date, t.motif, AUJOURD_HUI_RELEVE, null, t.mouvements, i % 2 === 0,
+        t.vente,
       )).toEqual(hier)
-    }
+    })
     expect(cles.size).toBeGreaterThanOrEqual(8)
   })
 })
@@ -213,9 +216,9 @@ describe('les exercices validés illisibles (le client) : la frontière sautée,
     expect(refusRetraitVente(D, 'e1', [e], new Set(), [], vente({ anneesValidees: [2026] }))?.cle).toBe('frontiere')
     expect(refusRetraitVente(D, 'e1', [e], new Set(), [], illisibles)).toBeNull()
     const declare = [{ encaissement_id: 'e1', etat: 'depose' as const }]
-    expect(refusContrePassationVente(D, 'e1', [e], declare, '2026-12-31', 'Impayé', AUJOURD_HUI, null, [], vente({ anneesValidees: [2026] }))?.cle)
+    expect(refusContrePassationVente(D, 'e1', [e], declare, '2026-12-31', 'Impayé', AUJOURD_HUI, null, [], true, vente({ anneesValidees: [2026] }))?.cle)
       .toBe('frontiere')
-    expect(refusContrePassationVente(D, 'e1', [e], declare, '2026-12-31', 'Impayé', AUJOURD_HUI, null, [], illisibles)).toBeNull()
+    expect(refusContrePassationVente(D, 'e1', [e], declare, '2026-12-31', 'Impayé', AUJOURD_HUI, null, [], true, illisibles)).toBeNull()
   })
 
   it('la fenêtre ne dit la frontière jugée par la base que pour une facture source et des exercices illisibles', () => {
@@ -376,7 +379,7 @@ describe('le geste qui rendrait un mouvement inclassable : dit avant le clic, ja
     const declare = [{ encaissement_id: 'e1', etat: 'depose' as const }]
 
     it('des contre-passations qui dépasseraient le débit de quelques frais : la base les admet, le classement non', () => {
-      expect(refusContrePassationVente(D, 'e1', [e1], declare, '2027-10-25', 'Impayé', AUJOURD_HUI, 'md', [debit(-36)], vente())).toBeNull()
+      expect(refusContrePassationVente(D, 'e1', [e1], declare, '2027-10-25', 'Impayé', AUJOURD_HUI, 'md', [debit(-36)], true, vente())).toBeNull()
       expect(inclassableApresContrePassation(D, 'e1', [e1], 'md', [debit(-36)], vente())).toBe(`${NE_POURRA_PAS_SE_CLASSER} : `
         + '« Les contre-passations que ce mouvement justifie font 36,50 € pour un débit de 36,00 € : elles le dépassent. » '
         + LA_BASE_ADMET_LE_GESTE)
