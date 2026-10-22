@@ -31502,3 +31502,13 @@ débit d'une contre-passation ne se choisit qu'avec « Banque » ; aucune règle
 - Les colonnes `categorie_id` et `ventilee` ne changent aucun jugement tant que la base pose `statut = 'rapprochee'`
   avec elles (le prédicat les lit toutes, comme `mouvement_libre`) ; `encaissements_de_factures` décide seule du rang 19
   de la contre-passation, que le test d'écran garde.
+
+**LA MISE EN LIGNE.** Demande #207, ouverte sur `d311183` après la barrière de la session sous Node 22.23.3 sur le
+commit du code (`tsc -b --force` ; lint, 0 erreur et les 63 avertissements d'avant ; 444 fichiers et 13 512 tests sous
+Paris, UTC, New York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de
+16 h 09 à 16 h 26 UTC) ; fusionnée en « Rebase and merge » le 22/10/2026 à 16 h 29 UTC (`5cb4965`, `54bb9ac`), `main`
+linéaire, son arbre égal à celui de la branche ; le déploiement vert, et le site sert `index-2Wwcmrnc.js` à 16 h 49 (le
+déploiement fini à 16 h 46), le bundle du build local. La feuille de route : la ligne 28.65 mise à jour, puis relue par
+empreinte (15 317 positions) ; les barres recomptées par requête, inchangées (186 chantiers hors de la phase 7, dont 141
+livrés ; 76 % et 82 %). Le défaut de la contre-passation trouvé par le lot, sa correction préparée à part. La copie de
+travail de l'agent retirée, son travail entier dans `main` ; la branche réalignée sur `main`.
