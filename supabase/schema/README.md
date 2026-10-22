@@ -441,6 +441,20 @@ une réplique dont les neuf familles égalaient la production, avant et après l
 identiques, hors des douze que le lot change. `rls.sql`, rejoué entier sur la réplique (46 lignes, 0 en faute, 43
 mutations sur 43), ne l'est pas en production : la migration ne crée ni ne change aucune policy.
 
+**Rejoué le 22/10/2026 après `contre_passation_banque`** (chantier EC-Q3, le correctif de la contre-passation), accordée
+par le cabinet. Appliquée par `apply_migration`, sans confirmation demandée (le texte ne porte ni suppression, ni
+`drop`, ni `truncate`), sous la version `20261022185455` ; son fichier a quitté la version PROVISOIRE `20261022180000`
+sous laquelle sa réplique l'avait éprouvée, et porte le texte appliqué, octet pour octet (13 564 caractères, aucun
+retour chariot) : sa ligne d'historique rend `21e792e4be469bbb9e89a8299dacf78e`. 145 fichiers, 145 migrations, empreinte
+globale `9783a976c53560c02069b631b7ca0399` des deux côtés, aucune divergence. Le socle (80 instructions, `5d53eea2…`) et
+l'inventaire (2 122 objets, `b2666bf3…`) sont inchangés : la migration ne crée ni ne retire aucun objet, elle redéfinit
+`annuler_encaissement`, dont le corps en production est celui du fichier (`280da760…`), son commentaire et ses droits
+gardés. `signature.sql` : seule la famille « fonctions » change (191, `d44b4741…` puis `5a51f41d…`), et les neuf
+familles égalent celles de la réplique après la migration. L'essai `supabase/essais/ventesFacturees.sql`, rejoué en
+production sans ses lignes de commentaire (61 813 caractères, reçus tels quels, `7f0248f2…`), rend ses 172 verdicts
+justes, et rien n'est resté en base. `rls.sql`, rejoué entier sur la réplique (46 lignes, 0 en faute, 43 mutations sur
+43), ne l'est pas en production : la migration ne crée ni ne change aucune policy.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
