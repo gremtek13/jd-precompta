@@ -1429,6 +1429,9 @@ const RELEVE_D12: Ligne[] = [
   mouvementDe('d12', 'b4', '2026-09-15', 'PRLV SEPA TELEPHONIE PRO', -36, 'non_rapprochee'),
   // Le retour du chèque impayé de F2026-0024 (étape VF5b), libre : la contre-passation peut le citer.
   mouvementDe('d12', 'b5', '2026-10-14', 'RETOUR CHEQUE IMPAYE REMISE 0042', -120, 'non_rapprochee'),
+  // La remise du chèque de F2026-0023 (étape VF5c), un crédit LIBRE : sa fiche offre de lui rattacher ce chèque, enregistré
+  // sans mouvement, ou d'y enregistrer l'encaissement de F2026-0024, qui reste à encaisser.
+  mouvementDe('d12', 'b6', '2026-10-08', 'REMISE DE CHEQUES 0057 ASSOCIATION LES TILLEULS', 300, 'non_rapprochee'),
 ]
 
 const pieceEreporting = (o: Ligne): Ligne => ({

@@ -42,7 +42,8 @@ import FormulaireVentilation from './FormulaireVentilation'
 import { FilDuMouvement, PropositionsDuClient } from './EnvoisDuClient'
 import type { AccesDuReleve, ContexteDeLaProposition, EnvoisDuClient } from '../../lib/banqueCabinet'
 import {
-  carteDeVente, PASTILLE_CLASSE, pastilleDeVente, type MouvementsHorsDesLots, type VenteDuMouvement,
+  carteDeVente, PASTILLE_CLASSE, pastilleDeVente, TITRE_CLASSER, TITRE_ENREGISTRER, TITRE_RATTACHER, TITRE_RETIRER,
+  type ComplementDuCredit, type GestesDuCredit, type MouvementsHorsDesLots, type VenteDuMouvement,
 } from '../../lib/mouvementsDesVentes'
 
 // Le rapprochement d'un mouvement bancaire, dans le panneau de droite — étape 2 de l'interface
@@ -142,10 +143,19 @@ interface FicheMouvementProps {
   // calculé par l'onglet) : « libre », la fiche d'hier ; « porte » — classé par ses encaissements de factures, ou réservé à
   // eux —, une carte dit ce qui le porte et pourquoi rien d'autre ne s'offre (la garde G2 refuserait tout autre classement) ;
   // « retenu » — les ventes facturées d'un dossier basculé ne sont pas lues en entier, ou il est classé sans qu'on les lise —,
-  // une note. Dans ces deux cas, AUCUNE section de classement ni aucun geste sur le mouvement : les gestes du cabinet
-  // (classer, retirer un classement, rattacher) viennent avec l'étape VF5c. Le fil et les pièces proposées par le client
-  // restent, sans « Associer ».
+  // une note. Dans ces deux cas, AUCUNE section de classement ni aucun geste d'hier sur le mouvement. Le fil et les pièces
+  // proposées par le client restent, sans « Associer ».
   venteDuMouvement: VenteDuMouvement
+  // LES GESTES DU CABINET SUR UN CRÉDIT D'UN DOSSIER BASCULÉ (étape VF5c ; lib/mouvementsDesVentes.ts, `gestesDuCredit`,
+  // calculé par l'onglet) : classer un mouvement réservé par ses encaissements, retirer ce classement, rattacher un
+  // encaissement enregistré sans mouvement, ouvrir la fenêtre des encaissements d'une facture sur ce crédit. Chaque refus
+  // de la base y est dit avant le clic ; « aucun » sur des ventes facturées qui ne sont pas lues en entier. L'onglet
+  // confirme, écrit sous son verrou et relit (`sousVerrou`).
+  gestesDeVente: GestesDuCredit
+  onClasserParEncaissements: () => void
+  onRetirerClassementParEncaissements: () => void
+  onRattacherEncaissement: (encaissementId: string) => void
+  onEnregistrerEncaissement: (factureId: string) => void
   // Toutes les pièces chargées, à valider comprises : le choix à la main les offre toutes.
   pieces: Piece[]
   // Les seules qu'on PROPOSE : une proposition ne porte que sur une pièce relue par le cabinet —
@@ -582,7 +592,8 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
 }
 
 export default function FicheMouvement({
-  ligne, plan, figeePar, venteDuMouvement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, horsDesLots, assujettiTva, compteDirigeant, modeComptable,
+  ligne, plan, figeePar, venteDuMouvement, gestesDeVente, onClasserParEncaissements, onRetirerClassementParEncaissements,
+  onRattacherEncaissement, onEnregistrerEncaissement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, horsDesLots, assujettiTva, compteDirigeant, modeComptable,
   piecesRapprochees, piecesFigees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
@@ -1313,6 +1324,16 @@ export default function FicheMouvement({
           occupe={occupe}
           onAssocier={onRapprocher}
           onEcarter={onEcarterProposition}
+        />
+
+        <GestesDeLaVente
+          key={gestesDeVente.etat}
+          gestes={gestesDeVente}
+          occupe={occupe}
+          onClasser={onClasserParEncaissements}
+          onRetirer={onRetirerClassementParEncaissements}
+          onRattacher={onRattacherEncaissement}
+          onEnregistrer={onEnregistrerEncaissement}
         />
 
         {libre && (<>
@@ -2091,5 +2112,123 @@ function CarteDeLaVente({ vente, acces }: { vente: Extract<VenteDuMouvement, { e
       <p className="fiche-mouvement-note">{carte.pourquoi}</p>
       <p className="fiche-mouvement-note">{carte.suite}</p>
     </section>
+  )
+}
+
+// LES GESTES DU CABINET SUR UN CRÉDIT D'UN DOSSIER BASCULÉ (étape VF5c) : classer un mouvement réservé par ses encaissements,
+// retirer ce classement, rattacher un encaissement enregistré sans mouvement, ouvrir la fenêtre des encaissements d'une
+// facture sur ce crédit. Les candidats, leur ordre, les refus de la base et les phrases viennent de
+// lib/mouvementsDesVentes.ts (`gestesDuCredit`) ; ici, l'affichage seul. Un choix ne part qu'au clic, jamais au changement
+// de la liste, et l'onglet confirme avant d'écrire.
+function GestesDeLaVente({ gestes, occupe, onClasser, onRetirer, onRattacher, onEnregistrer }: {
+  gestes: GestesDuCredit
+  occupe: boolean
+  onClasser: () => void
+  onRetirer: () => void
+  onRattacher: (encaissementId: string) => void
+  onEnregistrer: (factureId: string) => void
+}) {
+  if (gestes.etat === 'aucun') return null
+  if (gestes.etat === 'classe') {
+    return (
+      <section className="fiche-mouvement-section" aria-label={TITRE_RETIRER}>
+        <h3>{TITRE_RETIRER}</h3>
+        <p className="fiche-mouvement-note">
+          Le mouvement redevient à traiter, toujours réservé à ses encaissements ; ses écritures deviennent « à retirer » dans
+          l’onglet Écritures.
+        </p>
+        {gestes.retrait.refus && <p className="fiche-mouvement-alerte">{gestes.retrait.refus}</p>}
+        <div className="fiche-mouvement-boutons">
+          <button type="button" className="btn btn-outline btn-sm" disabled={occupe || gestes.retrait.refus !== null} onClick={onRetirer}>
+            {TITRE_RETIRER}
+          </button>
+        </div>
+      </section>
+    )
+  }
+  return (
+    <>
+      {gestes.etat === 'reserve' && (
+        <section className="fiche-mouvement-section" aria-label={TITRE_CLASSER}>
+          <h3>{TITRE_CLASSER}</h3>
+          <p className="fiche-mouvement-note">{gestes.ensemble}</p>
+          {gestes.classement.refus && <p className="fiche-mouvement-alerte">{gestes.classement.refus}</p>}
+          <div className="fiche-mouvement-boutons">
+            <button type="button" className="btn btn-primary btn-sm" disabled={occupe || gestes.classement.refus !== null} onClick={onClasser}>
+              {TITRE_CLASSER}
+            </button>
+          </div>
+        </section>
+      )}
+      {gestes.complement && (
+        <ComplementDuCreditVue complement={gestes.complement} occupe={occupe} onRattacher={onRattacher} onEnregistrer={onEnregistrer} />
+      )}
+    </>
+  )
+}
+
+function ComplementDuCreditVue({ complement, occupe, onRattacher, onEnregistrer }: {
+  complement: ComplementDuCredit
+  occupe: boolean
+  onRattacher: (encaissementId: string) => void
+  onEnregistrer: (factureId: string) => void
+}) {
+  const [encaissementChoisi, setEncaissementChoisi] = useState('')
+  const [factureChoisie, setFactureChoisie] = useState('')
+  // Un choix qui a quitté la liste (rattaché, encaissé entre-temps) n'est plus un choix.
+  const rattachable = complement.rattachables.find((e) => e.id === encaissementChoisi) ?? null
+  const aEncaisser = complement.factures.find((f) => f.facture.id === factureChoisie) ?? null
+  if (complement.note) return <p className="fiche-mouvement-note">{complement.note}</p>
+  return (
+    <>
+      {complement.rattachables.length > 0 && (
+        <section className="fiche-mouvement-section" aria-label={TITRE_RATTACHER}>
+          <h3>{TITRE_RATTACHER}</h3>
+          <div className="fiche-mouvement-choix">
+            <select aria-label="Encaissement à rattacher" value={rattachable?.id ?? ''} onChange={(e) => setEncaissementChoisi(e.target.value)}>
+              <option value="">— Choisir —</option>
+              {complement.rattachables.map((e) => (
+                <option key={e.id} value={e.id}>{e.libelle} · {formatMoney(e.montant)}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={occupe || rattachable === null || rattachable.refus !== null}
+              onClick={() => { if (rattachable) onRattacher(rattachable.id) }}
+            >
+              Rattacher
+            </button>
+          </div>
+          {/* La liste tronque son libellé dans un volet étroit : le choix se relit en entier. */}
+          {rattachable && <p className="fiche-mouvement-note">{rattachable.libelle} : {formatMoney(rattachable.montant)}</p>}
+          {rattachable?.refus && <p className="fiche-mouvement-alerte">{rattachable.refus}</p>}
+        </section>
+      )}
+      {complement.factures.length > 0 && (
+        <section className="fiche-mouvement-section" aria-label={TITRE_ENREGISTRER}>
+          <h3>{TITRE_ENREGISTRER}</h3>
+          <div className="fiche-mouvement-choix">
+            <select aria-label="Facture à encaisser" value={aEncaisser?.facture.id ?? ''} onChange={(e) => setFactureChoisie(e.target.value)}>
+              <option value="">— Choisir —</option>
+              {complement.factures.map((f) => <option key={f.facture.id} value={f.facture.id}>{f.libelle}</option>)}
+            </select>
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={occupe || aEncaisser === null}
+              onClick={() => { if (aEncaisser) onEnregistrer(aEncaisser.facture.id) }}
+            >
+              Enregistrer…
+            </button>
+          </div>
+          {aEncaisser && <p className="fiche-mouvement-note">{aEncaisser.libelle}</p>}
+          <p className="fiche-mouvement-note">
+            La fenêtre des encaissements s’ouvre sur la facture choisie, ce mouvement imposé : la date, le moyen et le montant
+            s’y vérifient avant l’envoi.
+          </p>
+        </section>
+      )}
+    </>
   )
 }

@@ -379,6 +379,7 @@ export default function DossierDetail() {
               <BanqueTab
                 dossierId={id} modele={modele} assujettiTva={dossier?.assujetti_tva ?? false}
                 ventesParLesFactures={dossier?.ventes_par_les_factures === true}
+                statutTva={dossier?.statut_tva ?? null}
               />
             )}
             {tab === 'documents' && <DocumentsTab dossierId={id} />}

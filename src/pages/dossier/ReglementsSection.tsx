@@ -287,6 +287,7 @@ export default function ReglementsSection(props: Props) {
           {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const, banque: props.banque })}
           dossierId={dossierId}
           facture={factureOuverte}
+          mouvementImpose={null}
           statutTva={statutTva}
           onClose={() => setOuverte(null)}
           onUpdated={() => setVersion((v) => v + 1)}

@@ -125,6 +125,12 @@ const ECRANS_DE_LA_REVUE_ANALYTIQUE: readonly string[] = ['src/pages/dossier/Rev
 // Les écrans qui appellent les deux fonctions de la fiche, nommément : la section de la fiche d'une pièce (étape e3).
 const ECRANS_DE_LA_FICHE: readonly string[] = ['src/pages/dossier/FicheHorsDeFrance.tsx']
 
+// Les trois fonctions du cabinet sur un mouvement des ventes facturées (chantier EC-Q3, étape VF5c), nommément : la fiche
+// d'un crédit de l'onglet Banque les appelle, et elle seule.
+const FONCTIONS_DU_RELEVE = [
+  'classer_mouvement_par_encaissements', 'retirer_classement_par_encaissements', 'rattacher_mouvement_encaissement',
+] as const
+
 // Les Edge Functions qui écrivent les déclarations, nommément : aucune avant les étapes d6 et d8.
 const FONCTIONS_QUI_DECLARENT: readonly string[] = []
 
@@ -372,10 +378,21 @@ describe('le registre des encaissements ne s’écrit que par ses deux fonctions
       expect(appelants(fonction), fonction).toEqual(['src/pages/dossier/EncaissementsFactureModal.tsx'])
     }
     // Lues dans les sources, et non dans la liste : une fonction qui écrirait le registre ou ses déclarations sans y
-    // figurer — ou une liste raccourcie — se voit.
+    // figurer — ou une liste raccourcie — se voit. Les trois du relevé (étape VF5c) ont leur propre garde, ci-dessous.
     const appelees = new Set(sources.flatMap((s) =>
       [...sansCommentairesPleins(s.texte).matchAll(/\.rpc\(\s*['"](\w*encaissement\w*)['"]/g)].map((m) => m[1])))
-    expect([...appelees].sort()).toEqual([...quatre].sort())
+    expect([...appelees].sort()).toEqual([...quatre, ...FONCTIONS_DU_RELEVE].sort())
+  })
+
+  it('les trois fonctions du cabinet sur un mouvement des ventes facturées ne s’appellent que de l’onglet Banque (VF5c)', () => {
+    // Rattacher écrit le mouvement d'un encaissement, une fois (`rattacher_mouvement_encaissement`) ; classer et retirer le
+    // classement, le drapeau du mouvement. Le cabinet seul, depuis la fiche d'un crédit (lib/mouvementsDesVentes.ts).
+    for (const fonction of FONCTIONS_DU_RELEVE) {
+      const appelants = sources
+        .filter((s) => new RegExp(`\\.rpc\\(\\s*['"]${fonction}['"]`).test(sansCommentairesPleins(s.texte)))
+        .map((s) => s.chemin)
+      expect(appelants, fonction).toEqual(['src/pages/dossier/BanqueTab.tsx'])
+    }
   })
 
   it('aucune écriture directe des déclarations dans src/, hors de la restauration', () => {
