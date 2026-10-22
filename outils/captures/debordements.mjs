@@ -1204,6 +1204,51 @@ const VISITES = [
       await page.getByText(/^Ce mouvement ne pourra pas se classer par ses encaissements/).waitFor({ timeout: 10000 })
     },
   },
+  // LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE (étape VF5d). Le retour du chèque impayé de F2026-0024, un débit
+  // LIBRE : la contre-passation sans mouvement à lui rattacher et l'encaissement déclaré à contre-passer, choisis ; le
+  // retour de deux chèques, RÉSERVÉ par une contre-passation qui ne le fait pas encore, et de quoi le compléter ;
+  // l'acompte rendu, CLASSÉ ; enfin la fenêtre des encaissements de F2026-0024, ouverte depuis la fiche du débit libre
+  // sur la contre-passation de son chèque, ce débit IMPOSÉ, le motif saisi — mesurée contre sa carte. Après les visites
+  // de l'onglet Factures : la fenêtre que la visite d'avant laisse ouverte sur l'onglet Banque, posée sur le corps du
+  // document, couvrirait sinon le bouton « Assistant » de la première.
+  ...[
+    {
+      nom: 'banque-basculee/fiche-debit-libre', tous: false, mouvement: 'RETOUR CHEQUE IMPAYE REMISE 0042',
+      attendu: /^Contre-passer l’encaissement d’une facture$/, choix: [['Contre-passation à rattacher', 'cb7'], ['Encaissement à contre-passer', 'eb4']],
+    },
+    {
+      nom: 'banque-basculee/fiche-debit-reserve', tous: false, mouvement: 'RETOUR DE 2 CHEQUES IMPAYES REMISE 0049',
+      attendu: /^Classer par ses contre-passations$/, choix: [['Contre-passation à rattacher', 'cb7'], ['Encaissement à contre-passer', 'eb4']],
+    },
+    {
+      nom: 'banque-basculee/fiche-debit-classe', tous: true, mouvement: 'VIR SEPA RESTITUTION ACOMPTE LIBRAIRIE DES ARCADES',
+      attendu: /^Retirer ce classement$/, choix: [],
+    },
+  ].map(({ nom, tous, mouvement, attendu, choix }) => ({
+    dossier: 'd12', onglet: 'banque', nom, fenetre: '.fiche-mouvement-corps',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      if (tous) await page.getByRole('button', { name: 'Tous', exact: true }).click()
+      await page.locator('tr.clickable', { hasText: mouvement }).first().click()
+      await page.getByText(attendu).first().waitFor({ timeout: 10000 })
+      for (const [liste, valeur] of choix) await page.getByLabel(liste, { exact: true }).selectOption(valeur)
+    },
+  })),
+  {
+    dossier: 'd12', onglet: 'banque', nom: 'banque-basculee/contre-passation-imposee', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.locator('tr.clickable', { hasText: 'RETOUR CHEQUE IMPAYE REMISE 0042' }).first().click()
+      await page.getByLabel('Encaissement à contre-passer', { exact: true }).selectOption('eb4')
+      await page.getByRole('button', { name: 'Contre-passer…', exact: true }).click()
+      await page.getByText(/^Imposé par la fiche du débit/).waitFor({ timeout: 10000 })
+      await page.locator('#contre-passation-motif').fill('Chèque revenu impayé : provision insuffisante, rejeté par la banque du client')
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à

@@ -1,9 +1,10 @@
 import { estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
   ecartDeFrais, encaissementsDuMouvement, justifieSonMouvement, mouvementLibre, MOYENS_ENCAISSEMENT, ordreDesEncaissements,
-  refusClassement, refusDuClassementDuReleve, refusRattachement, refusRetraitDuClassement, resteAEncaisserVente,
-  type CleRefusGardeMouvements, type ContexteVente, type EncaissementDuReleve, type EncaissementLu, type FactureDuDossier,
-  type LigneDeFacture, type MouvementClasse, type PartLue, type RefusEncaissement,
+  refusClassement, refusContrePassationVente, refusDuClassementDuReleve, refusRattachement, refusRetraitDuClassement,
+  resteAEncaisserVente,
+  type CleRefusGardeMouvements, type ContexteVente, type DeclarationLue, type EncaissementDuReleve, type EncaissementLu,
+  type FactureDuDossier, type LigneDeFacture, type MouvementClasse, type PartLue, type RefusEncaissement,
 } from './encaissementsFactures'
 import { formatDate, formatMoney } from './format'
 import type { PlanComptable } from './planComptable'
@@ -44,6 +45,10 @@ import { dateFigee } from './validationExercice'
 // retirer ce classement, rattacher à un crédit un encaissement enregistré sans mouvement, ou y enregistrer l'encaissement
 // d'une facture (`gestesDuCredit`) — la sélection et l'ordre des candidats, les phrases, l'état d'après ; chaque refus est
 // celui des fonctions de la base, redit par lib/encaissementsFactures.ts, jamais recopié ici.
+//
+// LES GESTES DU CABINET SUR UN DÉBIT (étape VF5d, tout à la fin) : le miroir des précédents pour l'impayé et la somme
+// rendue — classer un débit réservé par ses contre-passations, retirer ce classement, y rattacher une contre-passation
+// enregistrée sans mouvement, ou y contre-passer un encaissement déclaré (`gestesDuDebit`), par les mêmes jugements.
 
 // ── Ce que le module lit ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -481,7 +486,8 @@ export type GestesDuCredit =
   | { etat: 'reserve'; ensemble: string; classement: GesteConfirme; complement: ComplementDuCredit | null }
   | { etat: 'libre'; complement: ComplementDuCredit }
 
-export const AUCUN_GESTE: GestesDuCredit = { etat: 'aucun' }
+// Celui d'un crédit comme celui d'un débit (étape VF5d) : rien ne s'offre.
+export const AUCUN_GESTE: Extract<GestesDuCredit, { etat: 'aucun' }> = { etat: 'aucun' }
 
 export const TITRE_CLASSER = 'Classer par ses encaissements'
 export const TITRE_RETIRER = 'Retirer ce classement'
@@ -523,10 +529,11 @@ export function montantSurLeCredit(resteFactureCentimes: number, manqueCentimes:
   return Math.min(resteFactureCentimes, manqueCentimes)
 }
 
+// Une contre-passation se dit telle, comme dans la carte de VF5a1 : un débit n'en porte pas d'autres (étape VF5d).
 function libelleDeLEncaissement(e: EncaissementDuMouvementLu, factures: readonly FactureDesGestes[]): string {
   const f = factures.find((x) => x.id === e.facture_id)
-  return `Facture ${f?.numero ?? SANS_NUMERO}${f ? ` (${f.tiers_nom})` : ''} — ${libelleDuMoyen(e.moyen).toLowerCase()} du `
-    + formatDate(e.date_encaissement)
+  return `${e.annule_id != null ? 'Contre-passation, facture' : 'Facture'} ${f?.numero ?? SANS_NUMERO}${f ? ` (${f.tiers_nom})` : ''} — `
+    + `${libelleDuMoyen(e.moyen).toLowerCase()} du ${formatDate(e.date_encaissement)}`
 }
 
 const leCredit = (m: Pick<MouvementClasse, 'date' | 'montant'>) => `ce crédit du ${formatDate(m.date)} de ${formatMoney(m.montant)}`
@@ -631,6 +638,22 @@ function complementDuCredit(
   }
 }
 
+// LA RETENUE DE VF5a1, commune aux fiches d'un crédit et d'un débit : des ventes facturées lues en entier — l'état du
+// relevé ET la lecture, l'un et l'autre du dossier du mouvement —, et le mouvement tel que cette lecture l'a rendu,
+// dans la même relecture que leur registre. Null : rien ne s'offre.
+function mouvementDesGestes<S extends SourcesDesGestes>(
+  ventes: VentesDuReleve,
+  lecture: { dossierId: string; etat: 'lue'; sources: S } | { dossierId: string; etat: 'incomplete'; motif: string } | null,
+  ligne: Pick<MouvementClasse, 'id' | 'dossier_id'>,
+): { m: MouvementClasse; s: S } | null {
+  if (ventes.etat !== 'lue' || lecture === null || lecture.etat !== 'lue') return null
+  const dossierId = ligne.dossier_id
+  const s = lecture.sources
+  if (lecture.dossierId !== dossierId || s.dossierId !== dossierId) return null
+  const m = s.mouvements.find((x) => x.id === ligne.id && x.dossier_id === dossierId)
+  return m ? { m, s } : null
+}
+
 /**
  * Les gestes du cabinet sur la fiche d'un CRÉDIT d'un dossier basculé (étape VF5c). `ventes` : ce que l'onglet sait de son
  * relevé (`ventesDuReleve`) — rien ne s'offre s'il n'est pas lu en entier ; `lecture` : la même lecture des ventes
@@ -644,13 +667,10 @@ export function gestesDuCredit(
   anneesValidees: readonly number[],
   plan: Pick<PlanComptable, 'services_bancaires'>,
 ): GestesDuCredit {
-  if (ventes.etat !== 'lue' || lecture === null || lecture.etat !== 'lue') return AUCUN_GESTE
+  const lu = mouvementDesGestes(ventes, lecture, ligne)
+  if (lu === null || lu.m.montant <= 0) return AUCUN_GESTE
+  const { m, s } = lu
   const dossierId = ligne.dossier_id
-  const s = lecture.sources
-  if (lecture.dossierId !== dossierId || s.dossierId !== dossierId) return AUCUN_GESTE
-  // Le mouvement tel que la lecture des ventes l'a rendu, dans la même relecture que leur registre.
-  const m = s.mouvements.find((x) => x.id === ligne.id && x.dossier_id === dossierId)
-  if (!m || m.montant <= 0) return AUCUN_GESTE
   const vente: ContexteVente = { anneesValidees, factures: s.factures }
   const portes = encaissementsDuMouvement(m.id, s.encaissements, vente).sort(ordreDesEncaissements)
   if (m.encaissements_de_factures) {
@@ -676,6 +696,263 @@ export function gestesDuCredit(
       refus: refusClassement(dossierId, m.id, s.mouvements, s.encaissements, vente)?.message ?? null,
       confirmation: confirmationDuClassement(m, portes, s.factures, plan.services_bancaires),
     },
+    complement,
+  }
+}
+
+// ── Les gestes du cabinet sur la fiche d'un débit (étape VF5d) ────────────────────────────────────────────────────────
+//
+// LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE (conception de VF5, § 5, puce VF5d). Côté cabinet, pour un dossier
+// BASCULÉ dont les ventes facturées sont lues en entier, sur un DÉBIT — le chèque revenu impayé, la somme rendue au
+// client —, le miroir des gestes d'un crédit, par les mêmes fonctions de la base :
+//   - RÉSERVÉ (une contre-passation d'une facture source le cite) : ses contre-passations, leur total face au débit et
+//     l'écart des frais — la banque débite un peu PLUS que ce qu'elles défont, jamais moins : des contre-passations qui
+//     dépassent le débit, fût-ce de quelques frais, la base ne les classe pas (`debit_depasse` ; conception de VF5,
+//     § 8, point 4, à l'expert-comptable) ; « Classer par ses contre-passations »
+//     (`classer_mouvement_par_encaissements`, refusé avant le clic par `refusClassement`) ;
+//   - CLASSÉ par ses contre-passations : « Retirer ce classement » (`retirer_classement_par_encaissements`) ;
+//   - LIBRE, ou réservé sans que ses contre-passations fassent encore le débit (deux chèques revenus impayés
+//     ensemble) : les contre-passations de factures sources enregistrées sans mouvement que `refusRattachement` accepte
+//     sur ce débit (`rattacher_mouvement_encaissement`) ; et les encaissements que `refusContrePassationVente` accepte
+//     de contre-passer en citant ce débit, à sa date — des encaissements DÉCLARÉS de factures sources, les seuls
+//     qu'`annuler_encaissement` contre-passe : un encaissement jamais déclaré se retire (son impayé, c'est VF5d2, une
+//     migration). Pour ceux-là, la fenêtre des encaissements s'ouvre sur la facture, ce débit IMPOSÉ à la
+//     contre-passation et sa date proposée : c'est elle qui porte la date, le motif et leurs refus, et qui écrit, par
+//     `annuler_encaissement` seule.
+// Chaque candidat est choisi par le jugement du module qui redit la fonction de la base, jamais par une règle recopiée
+// ici. Les mêmes retenues que sur un crédit : rien sur des ventes facturées qui ne sont pas lues en entier, ni, pour le
+// complément, sur un débit qu'un exercice validé fige.
+
+/**
+ * Ce que les gestes d'un débit lisent de plus que ceux d'un crédit : les déclarations des encaissements du dossier
+ * (lib/ventesDuReleveLecture.ts), lues en entier avec le reste — seul un encaissement déclaré se contre-passe.
+ */
+export interface SourcesDuDebit extends SourcesDesGestes {
+  declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[]
+}
+
+export type LectureDuDebit =
+  | { dossierId: string; etat: 'lue'; sources: SourcesDuDebit }
+  | { dossierId: string; etat: 'incomplete'; motif: string }
+
+/** Un encaissement déclaré que la fenêtre des encaissements contre-passerait en citant ce débit. */
+export interface EncaissementAContrePasser {
+  id: string
+  /** Sa facture, telle que la lecture l'a rendue : de quoi ouvrir la fenêtre. */
+  facture: FactureDesGestes
+  /** La facture, son client, le moyen et la date ; le montant à part. */
+  libelle: string
+  montant: number
+  /** Ce que le débit deviendrait, la contre-passation enregistrée. */
+  apres: string
+}
+
+export interface ComplementDuDebit {
+  /** Ce qui reste pour faire le débit, en centimes, en valeur absolue : le débit entier d'un mouvement libre. Positif ici. */
+  manqueCentimes: number
+  /** Toutes acceptées par `refusRattachement` : leur `refus` est nul. */
+  rattachables: readonly EncaissementARattacher[]
+  aContrePasser: readonly EncaissementAContrePasser[]
+  /** Ni l'un ni l'autre : ce que la fiche en dit. */
+  note: string | null
+}
+
+export type GestesDuDebit =
+  // Rien de neuf : un dossier qui n'a pas basculé, des ventes facturées qui ne sont pas lues en entier, un crédit, un
+  // mouvement classé autrement, ou un débit libre que rien n'attend — une dépense, l'immense majorité.
+  | { etat: 'aucun' }
+  | { etat: 'classe'; retrait: GesteConfirme }
+  | { etat: 'reserve'; ensemble: string; classement: GesteConfirme; complement: ComplementDuDebit | null }
+  | { etat: 'libre'; complement: ComplementDuDebit }
+
+export const TITRE_CLASSER_DEBIT = 'Classer par ses contre-passations'
+export const TITRE_RATTACHER_CONTRE_PASSATION = 'Rattacher une contre-passation enregistrée sans mouvement'
+export const TITRE_CONTRE_PASSER = 'Contre-passer l’encaissement d’une facture'
+
+// Le motif que la fenêtre fera saisir : `annuler_encaissement` le juge APRÈS la frontière et AVANT le débit cité — les
+// candidats se jugent donc avec un motif, pour que le débit le soit aussi. La fenêtre exige le vrai.
+const LE_MOTIF_DE_LA_FENETRE = '(le motif, saisi dans la fenêtre)'
+// L'identifiant de la contre-passation que la fenêtre écrirait : un nom qu'aucun identifiant de la base (un UUID) ne
+// porte.
+const LA_CONTRE_PASSATION = '(la contre-passation)'
+
+/**
+ * Ce qui reste pour faire ce débit, en centimes, en valeur absolue : son montant, moins ce que défont les
+ * contre-passations de factures sources qui le citent — celles que le classement compte (`encaissementsDuMouvement`).
+ * Négatif quand elles le dépassent ; positif de quelques frais quand la banque a débité un peu plus.
+ */
+export function manqueDuDebit(
+  mouvement: Pick<MouvementClasse, 'id' | 'montant'>,
+  encaissements: readonly EncaissementLu[],
+  vente: Pick<ContexteVente, 'factures'>,
+): number {
+  const portes = encaissementsDuMouvement(mouvement.id, encaissements, vente)
+  return portes.reduce((total, e) => total + enCentimes(e.montant), 0) - enCentimes(mouvement.montant)
+}
+
+const leDebit = (m: Pick<MouvementClasse, 'date' | 'montant'>) => `ce débit du ${formatDate(m.date)} de ${formatMoney(m.montant)}`
+
+// Ce que ses contre-passations font face au débit, en valeur absolue : l'égalité, des contre-passations qui le
+// dépassent (le refus du classement le dit aussi, sous ses mots), les frais (la banque débite un peu plus), ou ce qui
+// reste à faire.
+function phraseDuDebit(totalCentimes: number, debitCentimes: number, compteDesFrais: string): string {
+  const face = `Ses contre-passations font ${euros(totalCentimes)} pour un débit de ${euros(debitCentimes)}`
+  const manque = debitCentimes - totalCentimes
+  if (manque === 0) return `Ses contre-passations font exactement le débit, ${euros(debitCentimes)}.`
+  if (manque < 0) {
+    return `${face} : elles le dépassent de ${euros(-manque)}. La base ne classe un débit que si ses contre-passations le `
+      + 'font, ou qu’il les dépasse de quelques frais — jamais l’inverse.'
+  }
+  return ecartDeFrais(manque, totalCentimes)
+    ? `${face} : l’écart, ${euros(manque)}, est celui des frais bancaires, que ses écritures porteront au ${compteDesFrais}.`
+    : `${face} : il reste ${euros(manque)} à rattacher ou à contre-passer pour faire le débit, et son classement attend `
+      + 'qu’il soit fait.'
+}
+
+function confirmationDuClassementDuDebit(
+  m: MouvementClasse, portes: readonly EncaissementDuMouvementLu[], factures: readonly FactureDesGestes[], compteDesFrais: string,
+): string {
+  const lignes = portes.map((e) => `— ${libelleDeLEncaissement(e, factures)} : ${formatMoney(e.montant)}`)
+  const frais = portes.reduce((total, e) => total + enCentimes(e.montant), 0) - enCentimes(m.montant)
+  return `Classer ${leDebit(m)} par ses contre-passations ?\n\n${lignes.join('\n')}\n\n`
+    + (frais > 0
+      ? `Les frais bancaires, ${euros(frais)}, seront portés au ${compteDesFrais} par ses écritures.`
+      : 'Aucun frais bancaire : ses contre-passations font exactement le débit.')
+    + ` Il sera rapproché par elles, et ne recevra plus aucun autre classement ; ses écritures se passent ensuite dans ${DANS_LES_ECRITURES}.`
+}
+
+function confirmationDuRetraitDuDebit(m: MouvementClasse, numeros: readonly string[]): string {
+  const factures = numeros.length === 0 ? '' : ` (${numeros.length > 1 ? 'factures' : 'facture'} ${numeros.join(', ')})`
+  return `Retirer le classement de ${leDebit(m)} par ses contre-passations${factures} ?\n\n`
+    + 'Il redevient à traiter, toujours réservé à ses contre-passations : il ne reçoit aucun autre classement tant qu’elles '
+    + `le citent. Ses écritures, s’il en a été passé, deviennent « à retirer » dans ${DANS_LES_ECRITURES} : elles se retirent `
+    + 'là.'
+}
+
+// L'ÉTAT D'APRÈS un geste sur le débit — une contre-passation rattachée, ou écrite par la fenêtre — : le classement
+// joué sur le registre où elle citerait ce débit. Des contre-passations qui ne le font pas encore laissent un reste
+// (`debit_ecart`) ; qui le dépassent, ou tout autre refus, il ne se classera pas tel quel.
+function apresSurLeDebit(
+  dossierId: string, m: MouvementClasse, apres: readonly EncaissementLu[], s: SourcesDuDebit, vente: ContexteVente,
+): string {
+  const refus = refusClassement(dossierId, m.id, s.mouvements, apres, vente)
+  if (refus === null) return 'Ses contre-passations feront alors le débit : il restera à le classer par elles.'
+  if (refus.cle === 'debit_ecart') {
+    return `Il restera ${euros(manqueDuDebit(m, apres, vente))} pour faire le débit : son classement attendra qu’il soit fait.`
+  }
+  return `Il ne pourra pas se classer par ses contre-passations : « ${refus.message} »`
+}
+
+// Ce que le rattachement d'une contre-passation fait à l'encaissement qu'elle annule : sans mouvement, elle disait
+// qu'il n'avait pas eu lieu sur le crédit qu'il cite ; rattachée à son débit, elle dit que l'argent est venu, puis
+// reparti — et l'encaissement justifie de nouveau ce crédit (`justifieSonMouvement`).
+function effetSurLOrigine(e: EncaissementDuMouvementLu, s: SourcesDuDebit): string {
+  const origine = s.encaissements.find((x) => x.id === e.annule_id)
+  if (origine?.ligne_bancaire_id == null) return ''
+  const credit = s.mouvements.find((x) => x.id === origine.ligne_bancaire_id)
+  return ` L’encaissement qu’elle annule justifie alors de nouveau ${credit ? `le crédit du ${formatDate(credit.date)}` : 'le mouvement'} `
+    + 'qu’il cite : l’argent est venu, puis reparti par ce débit.'
+}
+
+function complementDuDebit(
+  dossierId: string, m: MouvementClasse, manque: number, s: SourcesDuDebit, vente: ContexteVente, aujourdHui: string,
+): ComplementDuDebit {
+  const proche = (a: EncaissementDuMouvementLu, b: EncaissementDuMouvementLu) =>
+    Math.abs(Math.abs(enCentimes(a.montant)) - manque) - Math.abs(Math.abs(enCentimes(b.montant)) - manque)
+    || ordreC(a.date_encaissement, b.date_encaissement) || ordreC(a.id, b.id)
+  // Les contre-passations sans mouvement que la base rattacherait à ce débit : son jugement seul les choisit — un
+  // encaissement (un crédit), une contre-passation retirée, déjà rattachée, d'une facture qui n'est pas source ou d'un
+  // autre dossier, ou qui dépasserait le débit au-delà des frais, il le refuse.
+  const rattachables = s.encaissements
+    .filter((e) => refusRattachement(dossierId, e.id, m.id, s.encaissements, s.mouvements, vente) === null)
+    .sort(proche)
+    .map((e): EncaissementARattacher => {
+      const libelle = libelleDeLEncaissement(e, s.factures)
+      const apres = s.encaissements.map((x) => (x.id === e.id ? { ...x, ligne_bancaire_id: m.id } : x))
+      return {
+        id: e.id,
+        libelle,
+        montant: e.montant,
+        refus: null,
+        confirmation: `Rattacher à ${leDebit(m)} la contre-passation suivante ?\n\n— ${libelle} : ${formatMoney(e.montant)}\n\n`
+          + 'Une contre-passation ne se rattache qu’une fois : elle citera ce débit, que la base réserve alors à ses '
+          + `contre-passations.${effetSurLOrigine(e, s)} ${apresSurLeDebit(dossierId, m, apres, s, vente)}`,
+      }
+    })
+  // Les encaissements que la base contre-passerait en citant ce débit, à sa date : son jugement seul les choisit — un
+  // encaissement jamais déclaré, retiré, déjà contre-passé, d'une facture qui n'est pas source, postérieur au débit, ou
+  // que le débit ne ferait pas à l'écart des frais près, il le refuse. Le cabinet porte le droit « Banque ».
+  const aContrePasser = s.encaissements
+    .filter((e) => refusContrePassationVente(
+      dossierId, e.id, s.encaissements, s.declarations, m.date, LE_MOTIF_DE_LA_FENETRE, aujourdHui, m.id, s.mouvements, true, vente,
+    ) === null)
+    .sort(proche)
+    .flatMap((e): EncaissementAContrePasser[] => {
+      const facture = s.factures.find((f) => f.id === e.facture_id)
+      if (!facture) return []
+      const apres: EncaissementLu[] = [...s.encaissements, {
+        id: LA_CONTRE_PASSATION, dossier_id: dossierId, facture_id: e.facture_id, montant: -e.montant, ligne_bancaire_id: m.id,
+        annule_id: e.id, retire_le: null,
+      }]
+      return [{
+        id: e.id, facture, libelle: libelleDeLEncaissement(e, s.factures), montant: e.montant,
+        apres: apresSurLeDebit(dossierId, m, apres, s, vente),
+      }]
+    })
+  return {
+    manqueCentimes: manque,
+    rattachables,
+    aContrePasser,
+    note: rattachables.length === 0 && aContrePasser.length === 0
+      ? 'Aucune contre-passation de facture source n’attend son mouvement, et aucun encaissement déclaré ne se contre-passe '
+        + 'sur ce débit : rien ne se rattache ni ne se contre-passe ici.'
+      : null,
+  }
+}
+
+/**
+ * Les gestes du cabinet sur la fiche d'un DÉBIT d'un dossier basculé (étape VF5d), comme `gestesDuCredit` ; `lecture`
+ * porte en plus les déclarations des encaissements, et `aujourdHui` — le jour à Paris, que la base lit — borne la date
+ * d'une contre-passation.
+ */
+export function gestesDuDebit(
+  ventes: VentesDuReleve,
+  lecture: LectureDuDebit | null,
+  ligne: Pick<MouvementClasse, 'id' | 'dossier_id'>,
+  anneesValidees: readonly number[],
+  plan: Pick<PlanComptable, 'services_bancaires'>,
+  aujourdHui: string,
+): GestesDuDebit {
+  const lu = mouvementDesGestes(ventes, lecture, ligne)
+  if (lu === null || lu.m.montant >= 0) return AUCUN_GESTE
+  const { m, s } = lu
+  const dossierId = ligne.dossier_id
+  const vente: ContexteVente = { anneesValidees, factures: s.factures }
+  const portes = encaissementsDuMouvement(m.id, s.encaissements, vente).sort(ordreDesEncaissements)
+  if (m.encaissements_de_factures) {
+    return {
+      etat: 'classe',
+      retrait: {
+        refus: refusRetraitDuClassement(dossierId, m.id, s.mouvements, vente)?.message ?? null,
+        confirmation: confirmationDuRetraitDuDebit(m, [...new Set(portes.map((e) => s.factures.find((f) => f.id === e.facture_id)?.numero
+          ?? SANS_NUMERO))]),
+      },
+    }
+  }
+  if (!mouvementLibre(m)) return AUCUN_GESTE
+  const manque = manqueDuDebit(m, s.encaissements, vente)
+  const refus = refusClassement(dossierId, m.id, s.mouvements, s.encaissements, vente)
+  // Le complément, tant que le classement dit le débit PAS ENCORE FAIT : rien ne le cite (`aucun_encaissement`), ou ses
+  // contre-passations ne le font pas aux frais près (`debit_ecart`). Fait aux frais près, il se classe ; dépassé, une
+  // contre-passation de plus n'y changerait rien ; figé, le classement oppose d'abord la frontière, et rien ne s'offre.
+  const complement = refus?.cle === 'aucun_encaissement' || refus?.cle === 'debit_ecart'
+    ? complementDuDebit(dossierId, m, manque, s, vente, aujourdHui)
+    : null
+  if (portes.length === 0) return complement !== null && complement.note === null ? { etat: 'libre', complement } : AUCUN_GESTE
+  return {
+    etat: 'reserve',
+    ensemble: phraseDuDebit(enCentimes(-m.montant) - manque, enCentimes(-m.montant), plan.services_bancaires),
+    classement: { refus: refus?.message ?? null, confirmation: confirmationDuClassementDuDebit(m, portes, s.factures, plan.services_bancaires) },
     complement,
   }
 }

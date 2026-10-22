@@ -42,8 +42,10 @@ import FormulaireVentilation from './FormulaireVentilation'
 import { FilDuMouvement, PropositionsDuClient } from './EnvoisDuClient'
 import type { AccesDuReleve, ContexteDeLaProposition, EnvoisDuClient } from '../../lib/banqueCabinet'
 import {
-  carteDeVente, PASTILLE_CLASSE, pastilleDeVente, TITRE_CLASSER, TITRE_ENREGISTRER, TITRE_RATTACHER, TITRE_RETIRER,
-  type ComplementDuCredit, type GestesDuCredit, type MouvementsHorsDesLots, type VenteDuMouvement,
+  carteDeVente, PASTILLE_CLASSE, pastilleDeVente, TITRE_CLASSER, TITRE_CLASSER_DEBIT, TITRE_CONTRE_PASSER, TITRE_ENREGISTRER,
+  TITRE_RATTACHER, TITRE_RATTACHER_CONTRE_PASSATION, TITRE_RETIRER,
+  type ComplementDuCredit, type ComplementDuDebit, type GestesDuCredit, type GestesDuDebit, type MouvementsHorsDesLots,
+  type VenteDuMouvement,
 } from '../../lib/mouvementsDesVentes'
 
 // Le rapprochement d'un mouvement bancaire, dans le panneau de droite — étape 2 de l'interface
@@ -156,6 +158,12 @@ interface FicheMouvementProps {
   onRetirerClassementParEncaissements: () => void
   onRattacherEncaissement: (encaissementId: string) => void
   onEnregistrerEncaissement: (factureId: string) => void
+  // ET SUR UN DÉBIT (étape VF5d ; `gestesDuDebit`, calculé par l'onglet) : classer un débit réservé par ses
+  // contre-passations, retirer ce classement, rattacher une contre-passation enregistrée sans mouvement — par les trois
+  // gestes ci-dessus —, ou ouvrir la fenêtre des encaissements sur la contre-passation d'un encaissement déclaré, ce
+  // débit imposé. « aucun » sur un crédit, comme `gestesDeVente` sur un débit.
+  gestesDuDebit: GestesDuDebit
+  onContrePasserEncaissement: (encaissementId: string) => void
   // Toutes les pièces chargées, à valider comprises : le choix à la main les offre toutes.
   pieces: Piece[]
   // Les seules qu'on PROPOSE : une proposition ne porte que sur une pièce relue par le cabinet —
@@ -593,7 +601,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
 
 export default function FicheMouvement({
   ligne, plan, figeePar, venteDuMouvement, gestesDeVente, onClasserParEncaissements, onRetirerClassementParEncaissements,
-  onRattacherEncaissement, onEnregistrerEncaissement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, horsDesLots, assujettiTva, compteDirigeant, modeComptable,
+  onRattacherEncaissement, onEnregistrerEncaissement, gestesDuDebit, onContrePasserEncaissement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, horsDesLots, assujettiTva, compteDirigeant, modeComptable,
   piecesRapprochees, piecesFigees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
@@ -1334,6 +1342,15 @@ export default function FicheMouvement({
           onRetirer={onRetirerClassementParEncaissements}
           onRattacher={onRattacherEncaissement}
           onEnregistrer={onEnregistrerEncaissement}
+        />
+        <GestesDuDebitVue
+          key={`debit-${gestesDuDebit.etat}`}
+          gestes={gestesDuDebit}
+          occupe={occupe}
+          onClasser={onClasserParEncaissements}
+          onRetirer={onRetirerClassementParEncaissements}
+          onRattacher={onRattacherEncaissement}
+          onContrePasser={onContrePasserEncaissement}
         />
 
         {libre && (<>
@@ -2226,6 +2243,128 @@ function ComplementDuCreditVue({ complement, occupe, onRattacher, onEnregistrer 
           <p className="fiche-mouvement-note">
             La fenêtre des encaissements s’ouvre sur la facture choisie, ce mouvement imposé : la date, le moyen et le montant
             s’y vérifient avant l’envoi.
+          </p>
+        </section>
+      )}
+    </>
+  )
+}
+
+// LES GESTES DU CABINET SUR UN DÉBIT D'UN DOSSIER BASCULÉ (étape VF5d) : le chèque revenu impayé, la somme rendue —
+// classer un débit réservé par ses contre-passations, retirer ce classement, rattacher une contre-passation enregistrée
+// sans mouvement, ouvrir la fenêtre des encaissements sur la contre-passation d'un encaissement déclaré, ce débit
+// imposé. Les candidats, leur ordre, les refus de la base et les phrases viennent de lib/mouvementsDesVentes.ts
+// (`gestesDuDebit`) ; ici, l'affichage seul. Un choix ne part qu'au clic, et l'onglet confirme avant d'écrire.
+function GestesDuDebitVue({ gestes, occupe, onClasser, onRetirer, onRattacher, onContrePasser }: {
+  gestes: GestesDuDebit
+  occupe: boolean
+  onClasser: () => void
+  onRetirer: () => void
+  onRattacher: (encaissementId: string) => void
+  onContrePasser: (encaissementId: string) => void
+}) {
+  if (gestes.etat === 'aucun') return null
+  if (gestes.etat === 'classe') {
+    return (
+      <section className="fiche-mouvement-section" aria-label={TITRE_RETIRER}>
+        <h3>{TITRE_RETIRER}</h3>
+        <p className="fiche-mouvement-note">
+          Le débit redevient à traiter, toujours réservé à ses contre-passations ; ses écritures deviennent « à retirer » dans
+          l’onglet Écritures.
+        </p>
+        {gestes.retrait.refus && <p className="fiche-mouvement-alerte">{gestes.retrait.refus}</p>}
+        <div className="fiche-mouvement-boutons">
+          <button type="button" className="btn btn-outline btn-sm" disabled={occupe || gestes.retrait.refus !== null} onClick={onRetirer}>
+            {TITRE_RETIRER}
+          </button>
+        </div>
+      </section>
+    )
+  }
+  return (
+    <>
+      {gestes.etat === 'reserve' && (
+        <section className="fiche-mouvement-section" aria-label={TITRE_CLASSER_DEBIT}>
+          <h3>{TITRE_CLASSER_DEBIT}</h3>
+          <p className="fiche-mouvement-note">{gestes.ensemble}</p>
+          {gestes.classement.refus && <p className="fiche-mouvement-alerte">{gestes.classement.refus}</p>}
+          <div className="fiche-mouvement-boutons">
+            <button type="button" className="btn btn-primary btn-sm" disabled={occupe || gestes.classement.refus !== null} onClick={onClasser}>
+              {TITRE_CLASSER_DEBIT}
+            </button>
+          </div>
+        </section>
+      )}
+      {gestes.complement && (
+        <ComplementDuDebitVue complement={gestes.complement} occupe={occupe} onRattacher={onRattacher} onContrePasser={onContrePasser} />
+      )}
+    </>
+  )
+}
+
+function ComplementDuDebitVue({ complement, occupe, onRattacher, onContrePasser }: {
+  complement: ComplementDuDebit
+  occupe: boolean
+  onRattacher: (encaissementId: string) => void
+  onContrePasser: (encaissementId: string) => void
+}) {
+  const [contrePassationChoisie, setContrePassationChoisie] = useState('')
+  const [encaissementChoisi, setEncaissementChoisi] = useState('')
+  // Un choix qui a quitté la liste (rattachée, contre-passé entre-temps) n'est plus un choix.
+  const rattachable = complement.rattachables.find((e) => e.id === contrePassationChoisie) ?? null
+  const aContrePasser = complement.aContrePasser.find((e) => e.id === encaissementChoisi) ?? null
+  if (complement.note) return <p className="fiche-mouvement-note">{complement.note}</p>
+  return (
+    <>
+      {complement.rattachables.length > 0 && (
+        <section className="fiche-mouvement-section" aria-label={TITRE_RATTACHER_CONTRE_PASSATION}>
+          <h3>{TITRE_RATTACHER_CONTRE_PASSATION}</h3>
+          <div className="fiche-mouvement-choix">
+            <select aria-label="Contre-passation à rattacher" value={rattachable?.id ?? ''} onChange={(e) => setContrePassationChoisie(e.target.value)}>
+              <option value="">— Choisir —</option>
+              {complement.rattachables.map((e) => (
+                <option key={e.id} value={e.id}>{e.libelle} · {formatMoney(e.montant)}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={occupe || rattachable === null || rattachable.refus !== null}
+              onClick={() => { if (rattachable) onRattacher(rattachable.id) }}
+            >
+              Rattacher
+            </button>
+          </div>
+          {/* La liste tronque son libellé dans un volet étroit : le choix se relit en entier. */}
+          {rattachable && <p className="fiche-mouvement-note">{rattachable.libelle} : {formatMoney(rattachable.montant)}</p>}
+          {rattachable?.refus && <p className="fiche-mouvement-alerte">{rattachable.refus}</p>}
+        </section>
+      )}
+      {complement.aContrePasser.length > 0 && (
+        <section className="fiche-mouvement-section" aria-label={TITRE_CONTRE_PASSER}>
+          <h3>{TITRE_CONTRE_PASSER}</h3>
+          <div className="fiche-mouvement-choix">
+            <select aria-label="Encaissement à contre-passer" value={aContrePasser?.id ?? ''} onChange={(e) => setEncaissementChoisi(e.target.value)}>
+              <option value="">— Choisir —</option>
+              {complement.aContrePasser.map((e) => (
+                <option key={e.id} value={e.id}>{e.libelle} · {formatMoney(e.montant)}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={occupe || aContrePasser === null}
+              onClick={() => { if (aContrePasser) onContrePasser(aContrePasser.id) }}
+            >
+              Contre-passer…
+            </button>
+          </div>
+          {aContrePasser && <p className="fiche-mouvement-note">{aContrePasser.libelle} : {formatMoney(aContrePasser.montant)}</p>}
+          {aContrePasser && <p className="fiche-mouvement-note">{aContrePasser.apres}</p>}
+          <p className="fiche-mouvement-note">
+            Seul un encaissement déclaré se contre-passe ; jamais déclaré, il se retire, dans la fenêtre de sa facture. La
+            fenêtre des encaissements s’ouvre sur la facture, la contre-passation de cet encaissement préparée et ce débit
+            imposé : la date, proposée, et le motif s’y vérifient avant l’envoi.
           </p>
         </section>
       )}

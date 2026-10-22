@@ -674,6 +674,7 @@ export default function FacturesTab(props: Props) {
           dossierId={dossierId}
           facture={encaissee}
           mouvementImpose={null}
+          contrePassationImposee={null}
           statutTva={statutTva}
           onClose={() => setEncaissementsDe(null)}
           onUpdated={load}

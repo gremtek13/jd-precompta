@@ -1367,6 +1367,10 @@ const LIGNES_D12: Record<string, LigneSaisie[]> = {
   // Étape VF5b : une quatrième facture source et son avoir validé (plus bas).
   fb4: [{ designation: 'Diagnostic de la chaîne de facturation et restitution', quantite: 2, prix_unitaire_ht: 150, taux_tva: 20 }],
   fbA: [{ designation: 'Geste commercial sur le diagnostic', quantite: -1, prix_unitaire_ht: 50, taux_tva: 20 }],
+  // Étape VF5d : trois factures sources dont un encaissement déclaré a été défait (plus bas).
+  fb5: [{ designation: 'Charte de facturation et modèles de documents', quantite: 1, prix_unitaire_ht: 200, taux_tva: 20 }],
+  fb6: [{ designation: 'Acompte sur l’atelier de mars, annulé à la demande du client', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
+  fb7: [{ designation: 'Relecture des conditions générales de vente', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
 }
 const factureD12 = (id: string, numero: string, emission: string, tiers: string): FactureEmise => ({
   ...FACTURES_D7[0], ...EMETTEUR_D12,
@@ -1391,6 +1395,12 @@ const FACTURES_D12: FactureEmise[] = [
     type: 'avoir', facture_origine_id: 'fb4',
 
   },
+  // LA FICHE D'UN DÉBIT (étape VF5d) : deux chèques déclarés, revenus impayés ENSEMBLE — celui de F2026-0025
+  // contre-passé en citant le débit, celui de F2026-0027 contre-passé sans mouvement, à rattacher —, et l'acompte de
+  // F2026-0026, rendu à la librairie par un virement que sa contre-passation a CLASSÉ.
+  factureD12('fb5', 'F2026-0025', '2026-09-24', 'Atelier Bleu, studio de design graphique et d’édition'),
+  factureD12('fb6', 'F2026-0026', '2026-09-25', 'Librairie des Arcades'),
+  factureD12('fb7', 'F2026-0027', '2026-09-26', 'Compagnie théâtrale du Grand Rond'),
 ]
 const LIGNES_DES_FACTURES_D12: FactureLigne[] = Object.entries(LIGNES_D12).flatMap(([id, lignes]) => lignesDeFacture(id, lignes))
 const ENCAISSEMENTS_D12: EncaissementFacture[] = [
@@ -1411,6 +1421,32 @@ const ENCAISSEMENTS_D12: EncaissementFacture[] = [
     id: 'eb4', dossier_id: 'd12', facture_id: 'fb4', date_encaissement: '2026-10-06', montant: 120.5, moyen: 'cheque',
     cree_le: '2026-10-06T09:00:00Z',
   }),
+  // Étape VF5d : les deux chèques revenus ensemble, déclarés puis contre-passés — l'un citant le débit, l'autre sans
+  // mouvement —, et l'acompte rendu par virement.
+  encaissementDuBanc({
+    id: 'eb5', dossier_id: 'd12', facture_id: 'fb5', date_encaissement: '2026-09-29', montant: 240, moyen: 'cheque',
+    cree_le: '2026-09-29T09:00:00Z',
+  }),
+  encaissementDuBanc({
+    id: 'cb5', dossier_id: 'd12', facture_id: 'fb5', date_encaissement: '2026-10-16', montant: -240, moyen: 'cheque', annule_id: 'eb5',
+    ligne_bancaire_id: 'b7', motif: 'Chèque revenu impayé : provision insuffisante', cree_le: '2026-10-16T10:00:00Z',
+  }),
+  encaissementDuBanc({
+    id: 'eb7', dossier_id: 'd12', facture_id: 'fb7', date_encaissement: '2026-10-01', montant: 120, moyen: 'cheque',
+    cree_le: '2026-10-01T09:00:00Z',
+  }),
+  encaissementDuBanc({
+    id: 'cb7', dossier_id: 'd12', facture_id: 'fb7', date_encaissement: '2026-10-16', montant: -120, moyen: 'cheque', annule_id: 'eb7',
+    motif: 'Chèque revenu impayé, constaté sur l’avis de la banque', cree_le: '2026-10-16T10:05:00Z',
+  }),
+  encaissementDuBanc({
+    id: 'eb6', dossier_id: 'd12', facture_id: 'fb6', date_encaissement: '2026-09-26', montant: 120, moyen: 'virement',
+    cree_le: '2026-09-26T09:00:00Z',
+  }),
+  encaissementDuBanc({
+    id: 'cb6', dossier_id: 'd12', facture_id: 'fb6', date_encaissement: '2026-10-12', montant: -120, moyen: 'virement', annule_id: 'eb6',
+    ligne_bancaire_id: 'b8', motif: 'Acompte rendu : atelier annulé à la demande du client', cree_le: '2026-10-12T10:00:00Z',
+  }),
 ]
 // Le chèque de F2026-0024, déclaré sur la plateforme qui a accepté la facture (étape VF5b).
 const DECLARATIONS_D12: TransmissionEncaissement[] = [
@@ -1418,6 +1454,11 @@ const DECLARATIONS_D12: TransmissionEncaissement[] = [
     id: 'te-d12', dossier_id: 'd12', facture_id: 'fb4', encaissement_id: 'eb4', hote: 'flux.plateforme-beta.example',
     cree_le: '2026-10-07T09:00:00Z', maj_le: '2026-10-07T09:00:00Z',
   }),
+  // Étape VF5d : les trois encaissements défaits, déclarés avant de l'être.
+  ...([['eb5', 'fb5', '2026-09-30'], ['eb6', 'fb6', '2026-09-27'], ['eb7', 'fb7', '2026-10-02']] as const).map(([e, f, jour]) => declarationDuBanc({
+    id: `te-d12-${e}`, dossier_id: 'd12', facture_id: f, encaissement_id: e, hote: 'flux.plateforme-beta.example',
+    cree_le: `${jour}T09:00:00Z`, maj_le: `${jour}T09:00:00Z`,
+  })),
 ]
 const PARTS_D12: EncaissementFactureTaux[] = ENCAISSEMENTS_D12.map((e) => ({ encaissement_id: e.id, dossier_id: 'd12', taux: 20, montant: e.montant }))
 const RELEVE_D12: Ligne[] = [
@@ -1432,6 +1473,13 @@ const RELEVE_D12: Ligne[] = [
   // La remise du chèque de F2026-0023 (étape VF5c), un crédit LIBRE : sa fiche offre de lui rattacher ce chèque, enregistré
   // sans mouvement, ou d'y enregistrer l'encaissement de F2026-0024, qui reste à encaisser.
   mouvementDe('d12', 'b6', '2026-10-08', 'REMISE DE CHEQUES 0057 ASSOCIATION LES TILLEULS', 300, 'non_rapprochee'),
+  // LA FICHE D'UN DÉBIT (étape VF5d). Le retour des deux chèques impayés, RÉSERVÉ par la contre-passation de F2026-0025
+  // qui le cite : 120,80 € restent à faire, que la contre-passation de F2026-0027 sans mouvement, ou celle du chèque de
+  // F2026-0024, feraient aux frais près. Puis l'acompte rendu à la librairie, CLASSÉ par sa contre-passation.
+  mouvementDe('d12', 'b7', '2026-10-16', 'RETOUR DE 2 CHEQUES IMPAYES REMISE 0049 FRAIS INCLUS', -360.8, 'non_rapprochee'),
+  mouvementDe('d12', 'b8', '2026-10-12', 'VIR SEPA RESTITUTION ACOMPTE LIBRAIRIE DES ARCADES', -120, 'rapprochee', {
+    encaissements_de_factures: true,
+  }),
 ]
 
 const pieceEreporting = (o: Ligne): Ligne => ({

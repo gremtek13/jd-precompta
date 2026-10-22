@@ -285,17 +285,22 @@ const ECRANS: Ecran[] = [
     <Dossier1><EcrituresTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} assujettiTva={false} modele={TRESORERIE} ventesParLesFactures onModeleUpdated={rien} /></Dossier1>
   ) },
   { nom: 'EncaissementsFactureModal', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
-    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture()} mouvementImpose={null} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture()} mouvementImpose={null} contrePassationImposee={null} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   // Ouverte par la fiche d'un crédit de l'onglet Banque, sur une facture source et un mouvement IMPOSÉ (étape VF5c) : la saisie
   // part de ce mouvement, qu'elle ne connaît qu'une fois le relevé lu ; rien ne se dit ni ne part avant.
   { nom: 'EncaissementsFactureModal (mouvement imposé)', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
-    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture({ source_de_la_vente: true })} mouvementImpose="m1" statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture({ source_de_la_vente: true })} mouvementImpose="m1" contrePassationImposee={null} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+  ) },
+  // Ouverte par la fiche d'un débit de l'onglet Banque, sur la contre-passation IMPOSÉE d'un encaissement et son débit
+  // (étape VF5d) : l'étape ne s'ouvre, sa date ne se propose et rien ne part qu'une fois tout lu.
+  { nom: 'EncaissementsFactureModal (contre-passation imposée)', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
+    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture({ source_de_la_vente: true })} mouvementImpose={null} contrePassationImposee={{ encaissementId: 'e1', ligneBancaireId: 'm1' }} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   // Une facture SOURCE de sa vente, dans l'espace du client « Ventes » et « Banque » (étape VF5b) : la fenêtre y lit les
   // factures du dossier, les lignes des avoirs et ce qui classe les mouvements, pas les exercices validés ; rien avant elles.
   { nom: 'EncaissementsFactureModal (client, facture source)', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
-    <Dossier1><EncaissementsFactureModal espace="client" banque dossierId="d1" facture={facture({ source_de_la_vente: true })} mouvementImpose={null} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+    <Dossier1><EncaissementsFactureModal espace="client" banque dossierId="d1" facture={facture({ source_de_la_vente: true })} mouvementImpose={null} contrePassationImposee={null} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   // La carte de l'e-reporting de l'onglet TVA (étape e5c) : elle lit les régimes, et ouvre la fenêtre sur un clic.
   { nom: 'EreportingCard', fichier: 'pages/dossier/EreportingCard.tsx', rendre: () => (
@@ -514,6 +519,10 @@ const PHRASES_FIXES: { ecran: string; texte: string; fois: number; raison: strin
   },
   {
     ecran: 'EncaissementsFactureModal (mouvement imposé)', fois: 1, raison: 'ce que la fenêtre fait, pas ce qu’elle a lu',
+    texte: 'TTC. Un encaissement s’enregistre ici, au registre du dossier ; rien ne part vers une plateforme ni vers l’administration.',
+  },
+  {
+    ecran: 'EncaissementsFactureModal (contre-passation imposée)', fois: 1, raison: 'ce que la fenêtre fait, pas ce qu’elle a lu',
     texte: 'TTC. Un encaissement s’enregistre ici, au registre du dossier ; rien ne part vers une plateforme ni vers l’administration.',
   },
   {
