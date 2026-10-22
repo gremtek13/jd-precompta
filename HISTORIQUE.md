@@ -31216,3 +31216,126 @@ nouvelle.
   retenue.
 - Les sections de classement de la fiche sont enveloppées (`{libre && (<>`) sans être réindentées, pour un diff lisible.
 - La faute d'avant de la passe « panneau fermé, barre 2 000 » reste à corriger, hors du chantier.
+
+**LA MISE EN LIGNE.** Demande #205, ouverte sur `09ab5df` après la barrière de la session sous Node 22.23.3 sur le
+commit du code (`tsc -b --force` ; lint, 0 erreur et les 63 avertissements d'avant ; 441 fichiers et 13 430 tests sous
+Paris, UTC, New York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de
+11 h 33 à 11 h 52 UTC) ; fusionnée en « Rebase and merge » le 22/10/2026 à 11 h 52 UTC (`3a4efc8`, `ebfc3a8`), `main`
+linéaire, son arbre égal à celui de la branche ; le déploiement vert, et le site sert `index-CY-vNsbp.js` depuis
+11 h 58, le bundle du build local. La feuille de route : la ligne 28.65 mise à jour, puis relue par empreinte (13 845
+positions) ; les barres recomptées par requête, inchangées (186 chantiers hors de la phase 7, dont 141 livrés ; 76 % et
+82 %). La page des arbitrages : VF5-Q1 à VF5-Q3 y entrent, chacune avec sa recommandation. La copie de travail de
+l'agent retirée, son travail entier dans `main` ; la branche réalignée sur `main`.
+
+### 22/10/2026 — LES LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES FACTURÉES — CHANTIER EC-Q3, VF5A2 (LIGNE 28.65)
+
+(Écrite par l'agent architecte du lot sur `09ab5df` — `main` et VF5a1, la demande de fusion #205 —, en deux commits que
+la session a relus et recomposés sur `main` : le code et ses tests, puis cette documentation, qui porte aussi la mise en
+ligne de VF5a1. Créés : `lotsDuReleve.test.ts`, `BanqueTab.lotsDesVentes.test.tsx`. Modifiés : `mouvementsDesVentes.ts`,
+`reglesAffectation.ts`, `appariementBanque.ts`, `reglesIgnorees.ts`, `BanqueTab.tsx`, `FicheMouvement.tsx`, le banc
+(`fauxSupabase.ts`, `debordements.mjs`), deux tests (les appels des plans). Ni base, ni migration, ni Edge Function ; en
+production, rien n'a été lu : le lot ne change ni une table ni une fonction, et la mesure de la conception de VF5
+(22/10/2026 : aucun dossier basculé, aucun encaissement) vaut.)
+
+**LA DÉLIMITATION.** La puce VF5a2 du § 5 de la conception (« VF5, LA BANQUE : LA CONCEPTION ») et le second point de
+l'« À REVOIR » de VF5a1 : un mouvement réservé à des encaissements de factures (la garde G2) restait « à traiter », et
+chaque lot du relevé le prenait — l'affectation par envois de cent et la règle d'ignorance en une seule mise à jour
+auraient alors échoué ENTIÈRES, le rapprochement automatique ligne par ligne, sans jamais rien écrire de faux. Rien de
+VF5b et des suivants : ni la fenêtre des encaissements, ni geste neuf, ni candidat (`justificatifPossible` inchangé,
+c'est VF5e), ni Checklist, ni « Ma banque ». NEUTRE en production : sans dossier basculé, la liste des mouvements hors
+des lots est vide, et chaque plan rend ce qu'il rendait.
+
+**LE MODULE.** `mouvementsDesVentes.ts` gagne deux sections, pures. Les lots : `mouvementsHorsDesLots` rend, sur des
+ventes lues en entier, les mouvements classés ou réservés, chacun avec les mots de la garde que `mouvementDeVente` a
+tirés de `refusDuClassementDuReleve` (`MouvementsHorsDesLots`, une table identifiant → raison) ; vide sur un dossier qui
+n'a pas basculé (`AUCUN_HORS_DES_LOTS`), vide aussi sur des ventes pas encore revenues ou lues en partie — et c'est
+alors `retenueDuReleve`, non nulle EXACTEMENT dans ces deux cas (un test le tient), qui suspend chaque lot ;
+`ecartDuLot` dit ce qu'une carte écarte : combien, en une phrase, et chacun sous les mots de la garde. Les comptes :
+`comptesDuReleve` et `texteDesNonRapproches` (plus bas).
+
+**LES PLANS.** Chacun reçoit la liste en paramètre OBLIGATOIRE, sans valeur par défaut : un appelant qui l'oublie ne
+compile pas, et l'écran en a quatre.
+- `mouvementATraiter(ligne, horsDesLots)` : un mouvement de la liste n'est jamais à traiter. `mouvementsCouverts` (ce
+  qu'une règle nouvelle proposerait, compté dans la fiche) et `planAffectationParRegles` suivent ; le plan des règles
+  rend à part, dans `ecartesParLesVentes`, le mouvement qu'une règle désigne et que le lot aurait pris sans ses
+  encaissements (ni un mouvement déjà écarté pour une autre raison, ni un réservé qu'aucune règle ne désigne) — jamais
+  dans « à rapprocher », qui dit une pièce à chercher.
+- `planRapprochementAutomatique(…, horsDesLots)` ne retient jamais un mouvement de la liste et le rend dans
+  `ecartesParLesVentes` quand une pièce ou une échéance semblait le justifier, jamais parmi les ambigus. Il RESTE un
+  concurrent dans le calcul de l'unicité : une pièce qu'un mouvement réservé pourrait aussi payer n'est pas rapprochée
+  seule de son jumeau libre — que l'encaissement qui le réserve soit le bon ou non, c'est au cabinet de le dire, pas au
+  lot de le déduire de son absence. Écarté : retirer le réservé de l'entrée, ce qui aurait fait paraître certaine une
+  paire qui ne l'est pas.
+- `lotDesCertains(certains, horsDesLots)` (« Valider et rapprocher ») : la paire dont le mouvement est hors des lots ne
+  part pas — ni la pièce validée, ni le mouvement rapproché —, et l'unicité s'est jugée sur tout le relevé, de même.
+  `analyserAppariements` ne change pas : « À trancher par l'opérateur » montre encore la paire douteuse d'un mouvement
+  réservé (un affichage, que VF5e reprendra avec les candidats).
+- `ignoresParLaRegle(lignes, motif, horsDesLots)` (`reglesIgnorees.ts`) : les mouvements déjà importés que la règle
+  « toujours ignorer » fait ignorer, sous le jugement même de l'import (`statutPourLibelle`), et à part ceux qu'elle
+  reconnaît mais qui portent des encaissements.
+
+**L'ÉCRAN.** `BanqueTab.tsx` tire la liste de `ventes` (`mouvementsHorsDesLots`) et la passe aux quatre plans et à la
+fiche. Une carte de lot qui écarte un mouvement le dit, repliée comme ses autres listes : « Rapprochement automatique —
+1 mouvement écarté : il porte des encaissements de factures. », puis la date, le libellé, le montant et les mots de la
+garde ; de même « Validation en lot » et « Affectation par les règles ». La carte « Sans doute possible » paraît aussi
+quand elle n'écarte que des paires (sans bouton ni tableau). La règle d'ignorance dit, après l'enregistrement, ceux
+qu'elle ne fait pas ignorer, et pourquoi.
+
+**LA RÈGLE D'IGNORANCE, SUR DES VENTES PAS ENCORE LUES : RIEN.** Ni la règle, ni la mise à jour. La règle seule
+laisserait à traiter des mouvements qu'elle couvre sans que rien ne les reprenne — elle ne joue qu'à l'import —, et
+l'opérateur croirait le motif appliqué ; la mise à jour seule ferait échouer le tout sur un réservé. Depuis VF5a1, la
+fiche ne l'offre d'ailleurs plus dans cet état (`venteDuMouvement` la retient) : la garde du gestionnaire en est la
+seconde ceinture.
+
+**LES COMPTES : UN MOUVEMENT RÉSERVÉ SE COMPTE À PART.** Il n'attend pas une pièce mais un classement par le cabinet
+(VF5c) : il ne se fait donc pas passer pour un mouvement à rapprocher, et il ne disparaît pas non plus. Les « Écarts à
+vérifier » disent « N mouvement(s) bancaire(s) non rapproché(s) (total) · M mouvement(s) réservé(s) à des encaissements
+de factures, à classer par eux (total) » — la seconde moitié n'existe que s'il y en a, et la phrase d'hier est rendue au
+mot près (la somme dans l'ordre du relevé, au flottant près). Le compte ne se dit que de ventes lues en entier : pas
+encore revenues ou lues en partie, la phrase d'hier dit « dont peut-être des mouvements réservés à des encaissements de
+factures : les ventes facturées du dossier ne sont pas lues en entier ». Le filtre « Non rapprochés » reste un filtre de
+statut, d'AFFICHAGE : un mouvement réservé y paraît, sous sa pastille de réserve.
+
+**TOUS LES CHEMINS QUI ÉCRIVENT SUR PLUSIEURS MOUVEMENTS, CHERCHÉS.** Les quatre ci-dessus. Puis, hors de l'onglet,
+« Écrire les N » des onglets Cotisations (`rapprocher_cotisation`) et Virements (`classer_virement_personnel`), et les
+réécritures de l'onglet Écritures (`affecter_mouvement_bancaire`, `rapprocher_declaration_tva`) : ils ne réécrivent que
+des mouvements déjà classés, qu'un encaissement d'une facture source ne peut pas citer (`garder_encaissement_facture` :
+« Un mouvement déjà classé ne se cite pas ») et que G2 n'aurait pas laissé classer une fois cités — aucun réservé ne les
+atteint, par construction. L'import d'un relevé et la connexion bancaire insèrent des mouvements neufs, qu'aucun
+encaissement ne cite encore. Rien n'y change.
+
+**LES PREUVES.** La suite comparée test par test, sous Paris : avant (`09ab5df`, 441 fichiers, 13 430 tests), après (443
+fichiers, 13 462 tests) ; aucun verdict changé ni disparu, 32 tests neufs (`lotsDuReleve.test.ts` 20 : la liste tirée de
+la vraie lecture du module, la carte, chaque plan avec et sans les ventes, les comptes ; l'écran 12 : chaque lot sur un
+dossier basculé — le faux client voit partir le jumeau libre et jamais le réservé, la carte dit lequel et pourquoi —, la
+validation qui n'écarte que le réservé, la fiche qui ne le compte pas, les comptes, deux clics puis trois dans le même
+`act` sur chacun des quatre lots — un seul envoi —, des ventes lues en partie — aucun lot ne part, rien n'est écrit —,
+et un dossier non basculé comme hier). Les tests d'avant ne reçoivent que le paramètre (`AUCUN_HORS_DES_LOTS`) et, pour
+l'un, le champ de plus du plan vide. `ecransAvantLecture.test.tsx` inchangé : aucun geste ni aucune lecture neuve.
+Mutations : 33, 32 tuées (le module 8, les plans 10, l'écran et la fiche 14) ; une survit, équivalente à l'écran — la
+garde du gestionnaire de la règle d'ignorance sur des ventes non lues, que la fiche n'offre plus dans cet état. Le
+banc : deux règles d'affectation sur le dossier basculé (d12), dont l'une désigne le virement réservé, et une visite
+neuve, `banque-basculee/lot-des-regles` (la carte dépliée), avant les fiches et l'e-reporting. `debordements.mjs` : 0 à
+1 440, 1 280, 1 024, 390 et 720 px, et aux volets extrêmes (panneau 2 000, barre 2 000, les deux) ; les cinq visites
+`banque-basculee/*` ne débordent à aucune passe ; la passe « panneau fermé, barre 2 000 » garde sa faute d'avant, hors
+du lot (`factures/clients-soins`, « gestion@mutue|lle- »). Joué par une copie du script, d'empreinte égale, à côté d'un
+lien vers un Playwright déjà installé, sans rien installer ; le navigateur sans le mandataire. La barrière de l'agent,
+sous le Node 22.23.3 de la CI, sur le code de son premier commit, puis celle de la session, sous le même Node, sur le
+commit du code recomposé sur `main` (`924c6c5`) : `tsc -b --force` 0 ; lint 0 erreur (les 63 avertissements d'avant, aux
+numéros de ligne près) ; `npm run test:fuseaux` 0, 443 fichiers et 13 462 tests sous Paris, UTC, New York et Auckland ;
+le build 0 (`index-DdoW2UN-.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** Posé par ce lot : un mouvement réservé reste un concurrent dans l'unicité
+des deux lots de rapprochement ; il se compte à part des non rapprochés, sur des ventes lues en entier ; la règle
+d'ignorance ne s'enregistre pas sur des ventes non lues ; un lot ne dit écarté par les ventes que ce qu'il aurait pris.
+Aucune question nouvelle.
+
+**À REVOIR.**
+- La Checklist (`pointsDeLaChecklist.ts`), la Révision (`revisionPreuves.ts`) et les préalables de la validation
+  (`prealablesValidation.ts`, `mouvements-a-traiter`) comptent encore un mouvement réservé parmi les mouvements à
+  traiter : bloquant à la validation, ce qui tient (il l'est, VF7 le dira sous son nom) ; ses mots viennent avec VF5f.
+- « À trancher par l'opérateur » montre la paire douteuse d'un mouvement réservé : VF5e.
+- La carte « Sans doute possible (0) » d'un lot qui n'écarte que des paires : un titre à revoir si le cas se rencontre.
+- Le tableau de cette carte est enveloppé sans être réindenté, pour un diff lisible.
+- Sur des ventes lues en partie, les plans s'affichent, suspendus, avec les mouvements réservés qu'ils ne savent pas
+  reconnaître : rien ne part, la carte dit le motif.

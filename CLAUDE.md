@@ -438,9 +438,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   CONCEPTION ». VF5a1 le 22/10/2026, neutre : le relevé reconnaît les mouvements que les encaissements de factures
   sources classent ou réservent (G2), un mouvement classé n'est plus « rapproché sans justificatif », leur fiche n'offre
   aucun geste, et des ventes lues en partie retiennent la fiche et les lots → « LE RELEVÉ RECONNAÎT LES MOUVEMENTS DES
-  VENTES FACTURÉES ». Restent VF5a2 à VF9 — se conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9
-  font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce
-  ignorer.
+  VENTES FACTURÉES ». VF5a2 le 22/10/2026, neutre : aucun lot du relevé ne prend ces mouvements, sa carte dit combien
+  il en écarte, et un mouvement réservé se compte à part des non rapprochés → « LES LOTS DU RELEVÉ ÉCARTENT LES
+  MOUVEMENTS DES VENTES FACTURÉES ». Restent VF5b à VF9 — se conçoivent les encaissements de factures non sources que
+  VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit
+  aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -673,11 +675,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   ou d'un encaissement (`lignesPropresAuMouvement.test.ts`) ; ses refus dits avant le clic, dans le même ordre ; les
   règles PROPOSENT, le clic écrit ; un mouvement dont le justificatif est peut-être au dossier n'entre jamais dans un
   lot ; un mouvement classé par ses encaissements de factures, ou réservé à eux (G2), ne reçoit aucun autre classement :
-  sa fiche le dit, sans geste (`lib/mouvementsDesVentes.ts`) → « LES RÈGLES D'AFFECTATION PROPOSENT », « UN VIREMENT
-  PERSONNEL S'ÉCRIT », « UNE ÉCHÉANCE D'EMPRUNT S'ÉCRIT », « UN MOUVEMENT SE VENTILE », « UN VIREMENT RÈGLE PLUSIEURS
-  PIÈCES », « UNE RECETTE DU RELEVÉ D'UN DOSSIER ASSUJETTI », « UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE », « UN MOUVEMENT
-  DU RELEVÉ S'ÉCRIT SUR UN COMPTE DE BILAN », « LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU
-  MOUVEMENT », « LE RELEVÉ RECONNAÎT LES MOUVEMENTS DES VENTES FACTURÉES ».
+  sa fiche le dit, sans geste (`lib/mouvementsDesVentes.ts`), aucun lot ne le prend (`horsDesLots`, un paramètre
+  obligatoire de chaque plan) et il se compte à part → « LES RÈGLES D'AFFECTATION PROPOSENT », « UN VIREMENT PERSONNEL
+  S'ÉCRIT », « UNE ÉCHÉANCE D'EMPRUNT S'ÉCRIT », « UN MOUVEMENT SE VENTILE », « UN VIREMENT RÈGLE PLUSIEURS PIÈCES »,
+  « UNE RECETTE DU RELEVÉ D'UN DOSSIER ASSUJETTI », « UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE », « UN MOUVEMENT DU RELEVÉ
+  S'ÉCRIT SUR UN COMPTE DE BILAN », « LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT », « LE
+  RELEVÉ RECONNAÎT LES MOUVEMENTS DES VENTES FACTURÉES », « LES LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES
+  FACTURÉES ».
 - **Une cotisation payée depuis le compte PERSONNEL** est un apport (PCG art. 1211-10), face au compte du dirigeant, à
   la date saisie, jamais proposée ; un mouvement OU le compte personnel, jamais les deux → « UNE ÉCHÉANCE PAYÉE DEPUIS
   LE COMPTE PERSONNEL S'ÉCRIT ». Les écritures d'inventaire suivent la même règle → « LES DOTATIONS AUX AMORTISSEMENTS
