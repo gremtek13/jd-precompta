@@ -431,10 +431,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   les quatre autres comptes (VF4C2-Q1), toutes deux sur la recommandation → « LA 2035 ET LA CA3 LISENT LES ÉCRITURES
   D'UNE VENTE FACTURÉE ». Le lot du mouvement libéré (R1 de VF4b) le 21/10/2026, neutre : les dix-huit fonctions du
   relevé et le navigateur ne suppriment, ne jugent et ne vérifient que les lignes propres au mouvement — une migration
-  collée par le cabinet → « LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT ». Restent les frais
-  d'un mouvement d'encaissements, que la 2035 ne compte pas encore (VF4C3-Q1, ouverte ; avant toute bascule), puis VF5 à
-  VF9 — se conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et
-  quand : à VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
+  collée par le cabinet → « LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT ». Les frais d'un
+  mouvement d'encaissements le 22/10/2026, neutre : la 2035 les compte tels que la composition les écrit (VF4C3-Q1, sur
+  la recommandation) → « LA 2035 COMPTE LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS ». Restent VF5 à VF9 — se conçoivent
+  les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6
+  (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -791,11 +792,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   « LES VENTES FACTURÉES, EN MODULE ». La 2035 la lit depuis VF3b1, la CA3 depuis VF3b2, la situation et l'estimation
   depuis VF3b3 ; depuis VF4c3, la concordance la rapproche des écritures de son encaissement, sur le compte que la
   composition écrit (`compteDuProduit`), et une période qui en porte ne s'enregistre que quand leurs écritures sont à
-  jour (`refusDesVentesFacturees`), jamais sur une exigibilité écartée ; les frais d'un mouvement d'encaissements
-  manquent encore à la 2035 (`frais_d_encaissements`, VF4C3-Q1). L'estimation la reçoit en total hors taxe par mois, ou
-  « non comptées », un état que l'appelant choisit et que son écran dit (« Ma simulation », jusqu'à VF8) → « LA 2035 LIT
-  LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION, L'ESTIMATION ET LA SIMULATION LISENT LES
-  VENTES FACTURÉES », « LA 2035 ET LA CA3 LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE ». Ses écritures se composent dans
+  jour (`refusDesVentesFacturees`), jamais sur une exigibilité écartée ; les frais d'un mouvement d'encaissements y
+  entrent tels que la composition les écrit, sous le poste de « Frais bancaires » (VF4C3-Q1). L'estimation la reçoit en
+  total hors taxe par mois, ou « non comptées », un état que l'appelant choisit et que son écran dit (« Ma simulation »,
+  jusqu'à VF8) → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION, L'ESTIMATION
+  ET LA SIMULATION LISENT LES VENTES FACTURÉES », « LA 2035 ET LA CA3 LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE », « LA
+  2035 COMPTE LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS ». Ses écritures se composent dans
   `lib/ecrituresVentesFacturees.ts`, pur, en centimes, la TVA du module jamais recalculée, chaque écriture liée à sa
   source → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN MODULE ». Elles ne s'écrivent que par `ecrire_vente_facturee`, qui
   les recompose en entiers et les compare en multiensemble, et ne se retirent que par `retirer_ecriture_vente_facturee`
