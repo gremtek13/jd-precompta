@@ -67,7 +67,14 @@ export const REECRITURES_CLIENT: readonly { de: string; vers: string }[] = [
     de: 'le statut de TVA du dossier, dont l’obligation dépend, n’est pas encore choisi (onglet TVA du dossier).',
     vers: 'ton statut de TVA, dont l’obligation dépend, n’est pas encore précisé par ton cabinet.',
   },
+  // lib/encaissementsFactures.ts, les refus des fonctions des encaissements que la fenêtre dit au client (étape VF5b) : le
+  // classement d'un mouvement se retire au cabinet seul (`retirer_classement_par_encaissements`), et le client ne le fait
+  // pas ; une contre-passation se retire, au tutoiement.
+  { de: "le cabinet retire d'abord ce classement", vers: "ton cabinet retire d'abord ce classement" },
+  { de: "— retirer d'abord ce classement", vers: "— ton cabinet retire d'abord ce classement" },
+  { de: "retirez d'abord celle-ci", vers: "retire d'abord celle-ci" },
   // lib/statutsLus.ts, `refusDuReleve` : l'identité ouverte sur la plateforme est celle de l'entreprise du client, et depuis
+
   // l'étape P4b il la relie lui-même, dans « Tes plateformes » (« Mes ventes »).
   {
     de: 'L’identifiant ou le secret enregistrés ne sont plus acceptés : demandez-en de nouveaux au client, puis saisissez-les '

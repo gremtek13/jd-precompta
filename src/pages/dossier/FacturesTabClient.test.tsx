@@ -185,6 +185,8 @@ function poser(j: Jeu = {}) {
     encaissements_factures_taux: nues(j.parts ?? []),
     transmissions_encaissements: nues(j.declarations ?? []),
     statuts_factures_recus: [],
+    // Lus par la fenêtre des encaissements AU CABINET seulement (étape VF5b) : aucun ici.
+    exercices_valides: [],
     lignes_bancaires: nues(j.mouvements ?? [mouvement()]),
     reglements_groupes: [],
     pieces: [],

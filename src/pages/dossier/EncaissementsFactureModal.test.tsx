@@ -4,6 +4,8 @@ import EncaissementsFactureModal from './EncaissementsFactureModal'
 import { facture as factureCii } from '../../test/facturesCii'
 import { LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_NOTE_DECLARATION } from '../../lib/droitsAcces'
 import { ACCES_EN_COURS, type AccesDuDossier } from '../../lib/auteursVentes'
+import { motsDuCabinet } from '../../lib/espaceVentes'
+
 import type {
   EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureSuperpdpEvent, LigneBancaire, Piece, ReglementGroupe,
   StatutFactureRecu, StatutTva, TransmissionEncaissement, TransmissionFacture,
@@ -37,6 +39,8 @@ const faux = vi.hoisted(() => ({
   appels: [] as Record<string, unknown>[],
   resoudreReleve: null as null | ((v: unknown) => void),
   lecturesConnexion: 0,
+  // Les tables que la fenêtre a demandées, une entrée par requête (étape VF5b : le client ne lit pas les exercices validés).
+  tablesLues: [] as string[],
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -61,8 +65,9 @@ vi.mock('../../lib/supabase', async () => {
     } else if (nom === 'annuler_encaissement') {
       const e = faux.tables.encaissements_factures.find((x) => x.id === args.p_encaissement_id) as Record<string, unknown>
       const id = `e-cp-${faux.rpcs.length}`
+      // Le débit cité (le cinquième paramètre, étape VF2), s'il y en a un.
       faux.tables.encaissements_factures.push({
-        ...e, id, date_encaissement: args.p_date, montant: -(e.montant as number), ligne_bancaire_id: null,
+        ...e, id, date_encaissement: args.p_date, montant: -(e.montant as number), ligne_bancaire_id: args.p_ligne_bancaire_id ?? null,
         annule_id: e.id, motif: args.p_motif, cree_le: '2027-11-02T10:00:00Z', retire_le: null, retire_par: null,
       })
       for (const p of faux.tables.encaissements_factures_taux.filter((x) => x.encaissement_id === e.id)) {
@@ -139,6 +144,7 @@ vi.mock('../../lib/supabase', async () => {
           },
         })
         if (!(table in faux.tables)) throw new Error(`Table non attendue dans ce test : ${table}`)
+        faux.tablesLues.push(table)
         return c
       },
     },
@@ -190,13 +196,20 @@ function monter(o: {
   connexion?: unknown; pieces?: PieceEssai[]; reglements?: ReglementGroupe[]
   // Les accès du dossier que l'onglet a lus (étape P4c) ; « en cours » par défaut : rien n'est dit « par le client ».
   acces?: AccesDuDossier
+  // Les années des exercices validés (étape VF5b), que le cabinet seul lit ; aucune par défaut.
+  exercices?: number[]
+  // Le client « Ventes », avec ou sans « Banque » (étape VF5b) ; le cabinet par défaut.
+  client?: { banque: boolean }
+  // Les lignes d'autres factures du dossier — celles d'un avoir (étape VF5b).
+  lignesEnPlus?: Record<string, unknown>[]
+
 } = {}) {
   const f = o.facture ?? FACTURE
   // Des copies en objets nus : le faux client les modifie comme la base, et le jeu d'essai reste intact.
   const nues = (lignes: readonly object[]): Record<string, unknown>[] => lignes.map((l) => Object.fromEntries(Object.entries(l)))
   faux.tables = {
     factures_emises: nues([f, ...(o.factures ?? [])]),
-    facture_lignes: LIGNES_CII.map((l, i) => ({ ...l, id: `l${i + 1}`, facture_id: f.id })),
+    facture_lignes: [...LIGNES_CII.map((l, i) => ({ ...l, id: `l${i + 1}`, facture_id: f.id })), ...(o.lignesEnPlus ?? [])],
     transmissions_factures: nues(o.transmissions ?? []),
     facture_superpdp_events: nues(o.evenements ?? []),
     transmissions_encaissements: nues(o.declarations ?? []),
@@ -206,10 +219,15 @@ function monter(o: {
     reglements_groupes: nues(o.reglements ?? []),
     pieces: nues(o.pieces ?? []),
     statuts_factures_recus: nues(o.statuts ?? []),
+    // Les exercices validés, que la fenêtre lit au cabinet depuis l'étape VF5b : aucun par défaut.
+    exercices_valides: (o.exercices ?? []).map((annee) => ({ dossier_id: 'd1', annee })),
   }
   faux.connexion = o.connexion === undefined ? null : o.connexion
+  const qui = o.client
+    ? { espace: 'client' as const, banque: o.client.banque }
+    : { espace: 'cabinet' as const, acces: o.acces ?? ACCES_EN_COURS }
   return render(
-    <EncaissementsFactureModal espace="cabinet" acces={o.acces ?? ACCES_EN_COURS}
+    <EncaissementsFactureModal {...qui}
       dossierId="d1" facture={f} statutTva={o.statutTva === undefined ? 'redevable' : o.statutTva}
       onClose={() => {}} onUpdated={onUpdated}
     />,
@@ -241,7 +259,9 @@ beforeEach(() => {
   faux.appels = []
   faux.resoudreReleve = null
   faux.lecturesConnexion = 0
+  faux.tablesLues = []
   onUpdated.mockReset()
+
 })
 
 afterEach(() => {
@@ -1272,5 +1292,260 @@ describe('EncaissementsFactureModal — « par le client »', () => {
     )
     await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
     expect(screen.queryByText(MENTION)).toBeNull()
+  })
+})
+
+// ── UNE FACTURE SOURCE DE SA VENTE (ligne 28.65, chantier EC-Q3, étape VF5b) ─────────────────────────────────────────────
+//
+// La fenêtre juge par les fonctions de la vente du module : le reste NET des avoirs validés, la frontière d'un exercice validé
+// (au cabinet ; le client ne la lit pas, et la base la juge), le mouvement libre seul proposé, le retrait d'un encaissement dont
+// le mouvement est classé, la contre-passation qui cite son débit — le cinquième paramètre —, et le geste qui rendrait ce débit
+// inclassable, dit sans être refusé. Ce que ces cas gardent : chaque refus neuf dit AVANT le clic, le câblage, le verrou.
+const SOURCE = facture({ source_de_la_vente: true })
+// Son avoir validé : 100 € HT à 20 %, 120 € TTC crédités.
+const AVOIR = facture({
+  id: 'a1', numero: 'A2027-0001', type: 'avoir', facture_origine_id: 'f1', montant_ht: -100, montant_tva: -20, montant_ttc: -120,
+  source_de_la_vente: true,
+})
+const LIGNE_AVOIR = { id: 'la1', facture_id: 'a1', ordre: 1, designation: 'Remise', quantite: -1, prix_unitaire_ht: 100, taux_tva: 20 }
+const NON_SOURCE = facture({ id: 'f2', numero: 'F2027-0043' })
+
+describe('EncaissementsFactureModal — une facture source de sa vente : ce qui se dit avant le clic (étape VF5b)', () => {
+  it('le reste est net de l’avoir validé, comme la base le plafonne ; le formulaire le propose', async () => {
+    monter({ facture: SOURCE, factures: [AVOIR], lignesEnPlus: [LIGNE_AVOIR] })
+    await bouton()
+    screen.getByText(/^Reste à encaisser : 1\s235,50\s€$/)
+    expect(screen.getAllByRole('columnheader').map((c) => c.textContent)).toContain('TTC net des avoirs')
+    expect(champ('Montant encaissé (€)').value).toBe('1235,50')
+    expect(champ('Part à 20 %').value).toBe('1080,00')
+    screen.getByText(/la facture est\s+source de sa vente, et la base plafonne ses encaissements au total net de ses avoirs validés/)
+    expect(screen.queryByText(/la base ne déduit pas les avoirs/)).toBeNull()
+    // Les lignes de l'avoir sont lues avec celles de la facture, dans la même lecture.
+    expect(faux.tablesLues.filter((t) => t === 'facture_lignes')).toHaveLength(1)
+  })
+
+  it('au cabinet, la frontière d’un exercice validé se dit avant le clic, sous les mots de la base', async () => {
+    monter({ facture: SOURCE, exercices: [2027] })
+    await saisirSansMouvement()
+    screen.getByText('L\'exercice 2027 est validé : un encaissement de cette facture ne s\'y date plus.')
+    expect(await bouton()).toHaveProperty('disabled', true)
+    expect(faux.tablesLues).toContain('exercices_valides')
+    expect(screen.queryByText(/ne se lisent pas d’ici/)).toBeNull()
+  })
+
+  it('… et une facture qui n’est pas source, la même date : rien de neuf, comme hier', async () => {
+    monter({ exercices: [2027] })
+    await saisirSansMouvement()
+    expect(screen.queryByText(/est validé/)).toBeNull()
+    expect(await bouton()).toHaveProperty('disabled', false)
+  })
+
+  it('seul un mouvement LIBRE se propose ; la pièce jumelle ne propose plus son paiement', async () => {
+    monter({
+      facture: SOURCE, factures: [AVOIR], lignesEnPlus: [LIGNE_AVOIR],
+      transmissions: [{ ...transmissionJumelle() }],
+      pieces: [pieceEssai({ id: 'pj', flux_hote: 'pa.exemple.fr', flux_id: 'flux-9' })],
+      mouvements: [
+        mouvement({ id: 'm1', montant: 1235.5 }),
+        mouvement({ id: 'm2', montant: 1235.5, statut: 'rapprochee', categorie_id: 'k1' }),
+        mouvement({ id: 'mj', montant: 1235.5, statut: 'rapprochee', piece_id: 'pj' }),
+      ],
+    })
+    await bouton()
+    const choix = champ('Mouvement du relevé (facultatif)') as unknown as HTMLSelectElement
+    expect([...choix.options].map((o) => o.value)).toEqual(['', 'm1'])
+  })
+
+  it('le retrait d’un encaissement dont le mouvement est classé : refusé avant le clic, aucun bouton', async () => {
+    monter({
+      facture: SOURCE, encaissements: [encaissement({ ligne_bancaire_id: 'm1' })], parts: [part()],
+      mouvements: [mouvement({ statut: 'rapprochee', encaissements_de_factures: true })],
+    })
+    const l = await ligneDe('Le mouvement dont dépend cet encaissement est classé : le cabinet retire d\'abord ce classement.')
+    expect(within(l).queryByRole('button', { name: 'Retirer' })).toBeNull()
+    // Le même encaissement d'une facture qui n'est pas source se retire, comme hier.
+    cleanup()
+    monter({ encaissements: [encaissement({ ligne_bancaire_id: 'm1' })], parts: [part()], mouvements: [mouvement({ statut: 'rapprochee', encaissements_de_factures: true })] })
+    await screen.findByRole('button', { name: 'Retirer' })
+  })
+})
+
+// La pièce jumelle de l'essai : reconnue par le flux qui l'a transmise.
+function transmissionJumelle(): TransmissionFacture {
+  return {
+    id: 'tj', dossier_id: 'd1', facture_id: 'f1', canal: 'plateforme', hote: 'pa.exemple.fr', flux_id: 'flux-9', sha256: 'b'.repeat(64),
+    etat: 'accepte', detail: null, cree_le: '2027-10-02T08:00:00Z', maj_le: '2027-10-02T08:05:00Z',
+  }
+}
+
+describe('EncaissementsFactureModal — la contre-passation d’une facture source cite son débit (étape VF5b)', () => {
+  // Le chèque de 600 € du 05/10/2027, déclaré, revenu impayé ; les débits du relevé.
+  const DEBITS = [
+    mouvement({ id: 'm1', montant: 1355.5 }),
+    mouvement({ id: 'loin', montant: -550, date: '2027-10-27', libelle: 'PRLV FICTIF' }),
+    mouvement({ id: 'juste', montant: -600, date: '2027-10-28', libelle: 'CHQ IMPAYE 0001' }),
+    mouvement({ id: 'presque', montant: -599, date: '2027-10-29', libelle: 'CHQ IMPAYE 0002' }),
+    mouvement({ id: 'classe', montant: -600, date: '2027-10-30', libelle: 'CHQ CLASSE', statut: 'rapprochee', piece_id: 'p9' }),
+  ]
+  const monterSource = (o: Parameters<typeof monter>[0] = {}) => monterDeclarations({ facture: SOURCE, mouvements: DEBITS, ...o })
+  const ouvrir = async () => {
+    const l = await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
+    fireEvent.click(within(l).getByRole('button', { name: 'Contre-passer' }))
+  }
+  const debit = () => screen.getByLabelText('Débit qui défait l’encaissement (facultatif)') as HTMLSelectElement
+  const enregistrerCp = () => screen.getByRole('button', { name: 'Enregistrer la contre-passation' })
+  const saisir = () => {
+    fireEvent.change(champ('Date du décaissement'), { target: { value: '2027-11-01' } })
+    fireEvent.change(champ(LIBELLE_MOTIF_CONTRE_PASSATION), { target: { value: 'Chèque revenu impayé' } })
+  }
+
+  it('les débits LIBRES du dossier, le plus proche du montant d’abord ; aucun n’est choisi d’office', async () => {
+    monterSource()
+    await ouvrir()
+    expect([...debit().options].map((o) => o.value)).toEqual(['', 'juste', 'presque', 'loin'])
+    expect(debit().value).toBe('')
+  })
+
+  it('un débit trop petit : refusé avant le clic ; un débit de quelques frais trop petit : admis, et dit inclassable', async () => {
+    monterSource()
+    await ouvrir()
+    saisir()
+    fireEvent.change(debit(), { target: { value: 'loin' } })
+    screen.getByText('Ce mouvement de 550,00 € justifierait 600,00 € de contre-passations : l\'écart dépasse ce que des frais bancaires expliquent.')
+    expect(enregistrerCp()).toHaveProperty('disabled', true)
+
+    fireEvent.change(debit(), { target: { value: 'presque' } })
+    screen.getByText('Ce mouvement ne pourra pas se classer par ses encaissements : « Les contre-passations que ce mouvement justifie '
+      + 'font 600,00 € pour un débit de 599,00 € : elles le dépassent. » La base admet ce geste ; c’est le classement du mouvement, '
+      + 'ensuite, qu’elle refusera.')
+    expect(enregistrerCp()).toHaveProperty('disabled', false)
+
+    fireEvent.change(debit(), { target: { value: 'juste' } })
+    expect(screen.queryByText(/ne pourra pas se classer/)).toBeNull()
+    expect(enregistrerCp()).toHaveProperty('disabled', false)
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it.each([2, 3])('%i clics : un seul appel, avec le débit en cinquième paramètre, nommé par la confirmation', async (clics) => {
+    monterSource()
+    await ouvrir()
+    saisir()
+    fireEvent.change(debit(), { target: { value: 'juste' } })
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    faux.retenirLectures = true
+    const b = enregistrerCp()
+    await act(async () => { for (let i = 0; i < clics; i++) b.click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'annuler_encaissement',
+      args: { p_dossier_id: 'd1', p_encaissement_id: 'e1', p_date: '2027-11-01', p_motif: 'Chèque revenu impayé', p_ligne_bancaire_id: 'juste' },
+    }])
+    expect(confirmation.mock.calls[0][0]).toContain('Elle cite le débit qui défait l’encaissement : 28/10/2027 · CHQ IMPAYE 0001, -600,00')
+    await act(async () => { faux.libererLectures?.() })
+    expect(onUpdated).toHaveBeenCalledTimes(1)
+    // Relue, la contre-passation cite son débit.
+    await screen.findByText('28/10/2027 · CHQ IMPAYE 0001')
+  })
+
+  it('sans débit choisi, l’appel est celui d’hier : quatre paramètres', async () => {
+    monterSource()
+    await ouvrir()
+    saisir()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { enregistrerCp().click() })
+    expect(Object.keys(faux.rpcs[0].args)).toEqual(['p_dossier_id', 'p_encaissement_id', 'p_date', 'p_motif'])
+  })
+
+  it('sans débit, l’encaissement dont le crédit est classé par ses encaissements : refusé avant le clic ; le débit cité, admis', async () => {
+    monterSource({
+      encaissements: [encaissement({ ligne_bancaire_id: 'mc' })], parts: [part({ montant: 500 }), part({ taux: 0, montant: 100 })],
+      // Le crédit n'est classé QUE par sa colonne `encaissements_de_factures` : la lecture doit la demander.
+      mouvements: [...DEBITS, mouvement({ id: 'mc', montant: 600, statut: 'rapprochee', encaissements_de_factures: true })],
+    })
+    await ouvrir()
+    saisir()
+    screen.getByText('Le mouvement de l\'encaissement contre-passé est classé par ses encaissements : la contre-passation cite le '
+      + 'débit qui défait l\'encaissement, ou le cabinet retire d\'abord ce classement.')
+    expect(enregistrerCp()).toHaveProperty('disabled', true)
+    fireEvent.change(debit(), { target: { value: 'juste' } })
+    expect(screen.queryByText(/contre-passé est classé/)).toBeNull()
+    expect(enregistrerCp()).toHaveProperty('disabled', false)
+  })
+
+  it('une facture qui n’est pas source n’offre aucun débit : la base le refuserait', async () => {
+
+    monterDeclarations({ mouvements: DEBITS })
+    await ouvrir()
+    expect(screen.queryByLabelText('Débit qui défait l’encaissement (facultatif)')).toBeNull()
+  })
+
+  it('le client « Ventes » avec « Banque » choisit un débit ; sans « Banque », aucun, et le relevé n’est pas lu', async () => {
+    monterSource({ client: { banque: true } })
+    await ouvrir()
+    expect([...debit().options].map((o) => o.value)).toEqual(['', 'juste', 'presque', 'loin'])
+    cleanup()
+    faux.tablesLues = []
+    monterSource({ client: { banque: false } })
+    await ouvrir()
+    await screen.findByRole('button', { name: 'Enregistrer la contre-passation' })
+    expect(screen.queryByLabelText('Débit qui défait l’encaissement (facultatif)')).toBeNull()
+    expect(faux.tablesLues).not.toContain('lignes_bancaires')
+  })
+})
+
+describe('EncaissementsFactureModal — une facture source, dans l’espace du client (étape VF5b)', () => {
+  it('les exercices validés ne se lisent pas : la fenêtre le dit, et c’est la base qui juge la frontière, sous ses mots', async () => {
+    monter({ facture: SOURCE, client: { banque: true } })
+    await saisirSansMouvement('2026-12-15')
+    expect(faux.tablesLues).not.toContain('exercices_valides')
+    screen.getByText(/^Les exercices que ton cabinet a validés ne se lisent pas d’ici/)
+    // Aucun refus avant le clic : le module ne tient pas les exercices pour vides, il saute la frontière.
+    const b = await bouton()
+    expect(b).toHaveProperty('disabled', false)
+    faux.erreurRpc = 'L\'exercice 2026 est validé : un encaissement de cette facture ne s\'y date plus.'
+    await act(async () => { b.click() })
+    await screen.findByText(faux.erreurRpc)
+    // Le verrou est relâché : un nouveau clic repart.
+    await act(async () => { b.click() })
+    expect(faux.rpcs).toHaveLength(2)
+  })
+
+  it('le refus d’un retrait se dit au client sous ses mots : son cabinet retire le classement', async () => {
+    monter({
+      facture: SOURCE, client: { banque: true }, encaissements: [encaissement({ ligne_bancaire_id: 'm1' })], parts: [part()],
+      mouvements: [mouvement({ statut: 'rapprochee', encaissements_de_factures: true })],
+    })
+    await screen.findByText('Le mouvement dont dépend cet encaissement est classé : ton cabinet retire d\'abord ce classement.')
+    expect(screen.queryByText(/le cabinet retire/)).toBeNull()
+  })
+
+  it('… et ce que lit le client ne porte aucun mot du cabinet', async () => {
+    const { container } = monter({
+      facture: SOURCE, factures: [AVOIR], lignesEnPlus: [LIGNE_AVOIR], client: { banque: true },
+      encaissements: [encaissement({ ligne_bancaire_id: 'm1' })], parts: [part()],
+      mouvements: [mouvement({ statut: 'rapprochee', encaissements_de_factures: true })],
+    })
+    await bouton()
+    expect(motsDuCabinet(container.textContent ?? '')).toEqual([])
+  })
+
+  it('une facture qui n’est pas source : rien de neuf pour le client non plus', async () => {
+    monter({ facture: NON_SOURCE, client: { banque: true } })
+    await bouton()
+    expect(screen.queryByText(/ne se lisent pas d’ici/)).toBeNull()
+  })
+})
+
+describe('EncaissementsFactureModal — les lectures neuves lues en partie n’offrent aucun geste (étape VF5b)', () => {
+  it.each([
+    ['les exercices validés refusés', { refus: { exercices_valides: 'permission denied' } }, 'Les exercices validés du dossier'],
+    ['les factures du dossier lues en partie', { muetApres: { factures_emises: 1 } }, 'Les factures du dossier'],
+    ['les lignes de l’avoir lues en partie', { muetApres: { facture_lignes: 3 } }, 'Les lignes de la facture et de ses avoirs'],
+  ] as const)('%s : le bandeau, ni reste ni formulaire, aucun bouton que « Fermer »', async (_nom, panne, quoi) => {
+    if ('refus' in panne) faux.refus = { ...panne.refus }
+    if ('muetApres' in panne) faux.muetApres = { ...panne.muetApres }
+    monter({ facture: SOURCE, factures: [AVOIR], lignesEnPlus: [LIGNE_AVOIR], encaissements: [encaissement()], parts: [part()] })
+    await screen.findByText(new RegExp(`^${quoi} n`))
+    expect(screen.queryByText(/Reste à encaisser/)).toBeNull()
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Fermer'])
   })
 })

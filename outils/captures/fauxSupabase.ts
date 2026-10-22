@@ -60,6 +60,12 @@ const CLIENT_DU_BANC = typeof localStorage === 'undefined' ? false : localStorag
 // d'AuthContext (`jd-precompta-dossier-actif`).
 const VENTES_DU_BANC = typeof localStorage === 'undefined' ? null : localStorage.getItem('banc-client-ventes')
 
+// La fenêtre des encaissements d'une facture SOURCE, chez le client (ligne 28.65, étape VF5b) : une troisième clé, posée par
+// les seules visites qui la montrent, rattache le compte du banc au dossier basculé (d12) avec « Ventes » et « Banque », et à
+// lui seul — sa seule société est alors la société affichée, quelle que soit la clé d'AuthContext que le banc repose à chaque
+// chargement. Les autres visites du client ne la voient pas.
+const CLIENT_DU_DOSSIER_BASCULE = typeof localStorage === 'undefined' ? false : localStorage.getItem('banc-client-basculee') === '1'
+
 // L'identité LÉGALE des dossiers du banc (étape A5b2, onglet Informations) : quatre colonnes de `dossiers`, que l'onglet lit et écrit
 // avec le SIRET et l'adresse. Une société (forme et capital), un entrepreneur individuel (sa dénomination en « EI », aucun
 // capital), et la catégorie dont le libellé de l'INSEE est le plus long (141 caractères : le `<select>` à 390 px) ; le dossier
@@ -1358,6 +1364,9 @@ const LIGNES_D12: Record<string, LigneSaisie[]> = {
   fb1: [{ designation: 'Accompagnement à la réorganisation du service comptable — septembre 2026', quantite: 1, prix_unitaire_ht: 500, taux_tva: 20 }],
   fb2: [{ designation: 'Audit des processus de facturation — deux journées', quantite: 2, prix_unitaire_ht: 200, taux_tva: 20 }],
   fb3: [{ designation: 'Atelier de formation des bénévoles à la tenue de la caisse', quantite: 1, prix_unitaire_ht: 250, taux_tva: 20 }],
+  // Étape VF5b : une quatrième facture source et son avoir validé (plus bas).
+  fb4: [{ designation: 'Diagnostic de la chaîne de facturation et restitution', quantite: 2, prix_unitaire_ht: 150, taux_tva: 20 }],
+  fbA: [{ designation: 'Geste commercial sur le diagnostic', quantite: -1, prix_unitaire_ht: 50, taux_tva: 20 }],
 }
 const factureD12 = (id: string, numero: string, emission: string, tiers: string): FactureEmise => ({
   ...FACTURES_D7[0], ...EMETTEUR_D12,
@@ -1372,6 +1381,16 @@ const FACTURES_D12: FactureEmise[] = [
   factureD12('fb1', 'F2026-0021', '2026-09-10', 'Cabinet Durand & Associés, experts en organisation'),
   factureD12('fb2', 'F2026-0022', '2026-09-14', 'SARL Horizon Logistique du Grand Sud-Ouest'),
   factureD12('fb3', 'F2026-0023', '2026-09-18', 'Association Les Tilleuls du Plateau'),
+  // LA FENÊTRE DES ENCAISSEMENTS D'UNE FACTURE SOURCE (étape VF5b) : F2026-0024 (360 €) et son avoir validé A2026-0003 (60 €),
+  // que la fenêtre dit nette de l'avoir ; un chèque de 120,50 € enregistré et DÉCLARÉ, revenu impayé, que la banque a débité
+  // 120 € — la contre-passation qui cite ce débit le dépasserait de 0,50 € : la base l'admet, et la fenêtre dit que le débit
+  // ne pourra pas se classer.
+  factureD12('fb4', 'F2026-0024', '2026-09-22', 'Maison de santé pluriprofessionnelle des Coteaux et du Lauragais'),
+  {
+    ...factureD12('fbA', 'A2026-0003', '2026-09-25', 'Maison de santé pluriprofessionnelle des Coteaux et du Lauragais'),
+    type: 'avoir', facture_origine_id: 'fb4',
+
+  },
 ]
 const LIGNES_DES_FACTURES_D12: FactureLigne[] = Object.entries(LIGNES_D12).flatMap(([id, lignes]) => lignesDeFacture(id, lignes))
 const ENCAISSEMENTS_D12: EncaissementFacture[] = [
@@ -1388,6 +1407,17 @@ const ENCAISSEMENTS_D12: EncaissementFacture[] = [
     id: 'eb3', dossier_id: 'd12', facture_id: 'fb3', date_encaissement: '2026-10-05', montant: 300, moyen: 'cheque',
     cree_le: '2026-10-05T09:00:00Z',
   }),
+  encaissementDuBanc({
+    id: 'eb4', dossier_id: 'd12', facture_id: 'fb4', date_encaissement: '2026-10-06', montant: 120.5, moyen: 'cheque',
+    cree_le: '2026-10-06T09:00:00Z',
+  }),
+]
+// Le chèque de F2026-0024, déclaré sur la plateforme qui a accepté la facture (étape VF5b).
+const DECLARATIONS_D12: TransmissionEncaissement[] = [
+  declarationDuBanc({
+    id: 'te-d12', dossier_id: 'd12', facture_id: 'fb4', encaissement_id: 'eb4', hote: 'flux.plateforme-beta.example',
+    cree_le: '2026-10-07T09:00:00Z', maj_le: '2026-10-07T09:00:00Z',
+  }),
 ]
 const PARTS_D12: EncaissementFactureTaux[] = ENCAISSEMENTS_D12.map((e) => ({ encaissement_id: e.id, dossier_id: 'd12', taux: 20, montant: e.montant }))
 const RELEVE_D12: Ligne[] = [
@@ -1397,6 +1427,8 @@ const RELEVE_D12: Ligne[] = [
   mouvementDe('d12', 'b2', '2026-09-28', 'VIR SEPA SARL HORIZON LOGISTIQUE DU GRAND SUD OUEST F2026-0022', 480, 'non_rapprochee'),
   mouvementDe('d12', 'b3', '2026-09-30', 'FRAIS TENUE DE COMPTE', -8.5, 'non_rapprochee'),
   mouvementDe('d12', 'b4', '2026-09-15', 'PRLV SEPA TELEPHONIE PRO', -36, 'non_rapprochee'),
+  // Le retour du chèque impayé de F2026-0024 (étape VF5b), libre : la contre-passation peut le citer.
+  mouvementDe('d12', 'b5', '2026-10-14', 'RETOUR CHEQUE IMPAYE REMISE 0042', -120, 'non_rapprochee'),
 ]
 
 const pieceEreporting = (o: Ligne): Ligne => ({
@@ -1759,13 +1791,17 @@ const TABLES: Record<string, Ligne[]> = {
   memberships: [
     { id: 'm1', user_id: 'u-claire', dossier_id: 'd1', role: 'client', email: 'claire.moreau@exemple.fr', droit_ventes: true, droit_banque: false, created_at: '2026-01-05T09:30:00Z' },
     { id: 'm2', user_id: 'u-secretariat', dossier_id: 'd1', role: 'client', email: 'secretariat.cabinet-moreau@exemple.fr', droit_ventes: false, droit_banque: false, created_at: '2026-02-10T09:30:00Z' },
-    ...(CLIENT_DU_BANC
+    ...(CLIENT_DU_BANC && !CLIENT_DU_DOSSIER_BASCULE
       ? [{ id: 'm-u1', user_id: 'u1', dossier_id: 'd1', role: 'client', email: 'client@exemple.fr', droit_ventes: false, droit_banque: false, created_at: '2026-01-05T09:00:00Z' }]
+      : []),
+    ...(CLIENT_DU_BANC && CLIENT_DU_DOSSIER_BASCULE
+      ? [{ id: 'm-u1-d12', user_id: 'u1', dossier_id: 'd12', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: true, created_at: '2026-01-05T09:00:00Z' }]
       : []),
     // Le titulaire de l'atelier (d7) : l'accès que l'onglet Factures du cabinet reconnaît comme « le client » (étape P4c).
     { id: 'm-bernard-d7', user_id: 'u-bernard', dossier_id: 'd7', role: 'client', email: 'bernard@atelier-exemple.fr', droit_ventes: true, droit_banque: false, created_at: '2026-01-06T09:00:00Z' },
-    ...(CLIENT_DU_BANC && VENTES_DU_BANC
-      ? [{ id: 'm-u1-d7', user_id: 'u1', dossier_id: 'd7', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: VENTES_DU_BANC === 'banque', created_at: '2026-01-05T09:00:00Z' }]
+    ...(CLIENT_DU_BANC && VENTES_DU_BANC && !CLIENT_DU_DOSSIER_BASCULE
+      ? [{ id: 'm-u1-d7',
+ user_id: 'u1', dossier_id: 'd7', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: VENTES_DU_BANC === 'banque', created_at: '2026-01-05T09:00:00Z' }]
       : []),
     // La titulaire du dossier basculé (d12), « Ventes » et « Banque » : l'onglet Banque la reconnaît comme « le client ».
     { id: 'm-clara-d12', user_id: 'u-clara', dossier_id: 'd12', role: 'client', email: 'clara.fontaine@exemple-fictif.fr', droit_ventes: true, droit_banque: true, created_at: '2026-01-07T09:00:00Z' },
@@ -2017,7 +2053,8 @@ const TABLES: Record<string, Ligne[]> = {
   facture_superpdp_events: EVENEMENTS_SUPERPDP_D1.map((e) => ({ ...e })),
   encaissements_factures: [...ENCAISSEMENTS_D7, ...ENCAISSEMENTS_F8, ENCAISSEMENT_E1, ENCAISSEMENT_A3, ...ENCAISSEMENTS_D12].map((e) => ({ ...e })),
   encaissements_factures_taux: [...PARTS_D7, ...PARTS_F8, PART_E1, PART_A3, ...PARTS_D12].map((p) => ({ ...p })),
-  transmissions_encaissements: DECLARATIONS_ENCAISSEMENTS_D7.map((d) => ({ ...d })),
+  transmissions_encaissements: [...DECLARATIONS_ENCAISSEMENTS_D7, ...DECLARATIONS_D12].map((d) => ({ ...d })),
+
   dossier_permanent: DOSSIER_PERMANENT_D9.map((e) => ({ ...e })),
   // Les pièces jointes que la réception par e-mail a écartées pour le cabinet infirmier (ligne 22.7) : un format refusé et
   // une pièce trop lourde, à signaler en tête de l'onglet Justificatifs, et une déjà vue, dans l'historique replié. Des
