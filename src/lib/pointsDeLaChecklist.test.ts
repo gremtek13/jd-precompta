@@ -71,6 +71,15 @@ describe('pointsDeLaChecklist', () => {
     expect(piste({ ecritures: [...ecritures, ecriture({ id: 'o', compte: '606100' })], lignes: declasse })).toBe(3)
   })
 
+  it('« rapprochés sans justificatif » ne compte pas un mouvement classé par ses encaissements de factures (VF5a1)', () => {
+    const compte = (lignes: LigneBancaire[]) =>
+      pointsDeLaChecklist(donnees({ lignes }), CONTEXTE).tousLesPointsATraiter.find((p) => p.id === 'rapproches-sans-objet')?.nb
+    const classe = ligne({ id: 'm1', statut: 'rapprochee', montant: 598.5, encaissements_de_factures: true })
+    expect(compte([classe])).toBe(0)
+    // Sans le drapeau, le même mouvement ne désigne rien : un point en erreur.
+    expect(compte([{ ...classe, encaissements_de_factures: false }])).toBe(1)
+  })
+
   it('nomme le justificatif que coche un document attendu, sans en faire le geste', () => {
     const { documentsAttendus } = pointsDeLaChecklist(
       donnees({ info: informations({ tickets_restaurant: true, cheques_vacances: true, justificatif_cheques_vacances_recu: true }) }),

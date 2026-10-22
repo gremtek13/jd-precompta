@@ -62,8 +62,11 @@ import { LIBELLE_MOTIF_VENTE, type EncaissementVendu, type FactureVendue, type P
 /** Une facture ou un avoir du dossier, source ou non : ce que la composition, les refus et la confirmation lisent. */
 export type FactureDesEcritures = FactureVendue & Pick<FactureEmise, 'montant_ttc'>
 
-/** Un encaissement du registre, retirés et contre-passations compris, avec son compte de contrepartie. */
-export type EncaissementDesEcritures = EncaissementVendu & Pick<EncaissementFacture, 'compte_contrepartie'>
+/**
+ * Un encaissement du registre, retirés et contre-passations compris, avec son compte de contrepartie — et son auteur
+ * (`cree_par`), que l'onglet Banque reconnaît parmi les accès du dossier (étape VF5a1, lib/mouvementsDesVentes.ts).
+ */
+export type EncaissementDesEcritures = EncaissementVendu & Pick<EncaissementFacture, 'compte_contrepartie' | 'cree_par'>
 
 /** Un mouvement du dossier : ce que la composition en lit, et ce qui le classe, que les refus jugent. */
 export type MouvementDesEcritures = MouvementDesEncaissements & MouvementPourEcriture

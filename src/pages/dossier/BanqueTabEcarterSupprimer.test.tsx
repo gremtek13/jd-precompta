@@ -200,7 +200,7 @@ function rendre() {
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee="toutes" valides={[]}>
-        <BanqueTab dossierId="dossier-de-test" modele={TRESORERIE} assujettiTva={false} />
+        <BanqueTab dossierId="dossier-de-test" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={false} />
       </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,

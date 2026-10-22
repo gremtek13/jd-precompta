@@ -59,6 +59,7 @@ describe('la section des ventes facturées, seule', () => {
         encaissements: [{
           id: 'e1', dossier_id: 'd1', facture_id: 'f1', date_encaissement: '2025-11-20', montant: 120, moyen: 'compensation',
           ligne_bancaire_id: null, annule_id: null, cree_le: '2025-11-20T10:00:00Z', retire_le: null, compte_contrepartie: '467100',
+          cree_par: null,
         }],
         parts: [{ encaissement_id: 'e1', dossier_id: 'd1', taux: 20, montant: 120 }], mouvements: [],
       },

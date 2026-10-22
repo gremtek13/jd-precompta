@@ -1120,6 +1120,33 @@ const VISITES = [
       await page.getByText(/n’ont pas été lus avec ce dossier/u).waitFor({ timeout: 10000 })
     },
   },
+  // LE RELEVÉ D'UN DOSSIER BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5a1), sur la consultante d12 — archivé, il n'est vu
+  // que de ces visites : la pastille d'un mouvement RÉSERVÉ à l'encaissement d'une facture, « proposé par le client », puis le
+  // relevé entier et celle, verte, d'un mouvement CLASSÉ par ses encaissements ; enfin la fiche de chacun, sans section de
+  // classement — une carte, ses encaissements, les mots de la garde —, mesurée contre le corps de la fiche (`fenetre`) : la
+  // fiche entière n'a pas de marge, et ses bords tombent exactement sur les siens. La page ne se recharge pas
+  // d'une visite à l'autre : un volet resté ouvert se ferme d'abord. Avant les visites de l'e-reporting, qui figent l'horloge.
+  ...[
+    { nom: 'banque-basculee/releve', fenetre: undefined, tous: false, mouvement: null, attendu: /^Réservé à l’encaissement de la facture F2026-0022/ },
+    { nom: 'banque-basculee/tous', fenetre: undefined, tous: true, mouvement: null, attendu: /^Encaissements de factures — F2026-0021/ },
+    {
+      nom: 'banque-basculee/fiche-reserve', fenetre: '.fiche-mouvement-corps', tous: false, mouvement: 'VIR SEPA SARL HORIZON LOGISTIQUE',
+      attendu: /^Réservé à des encaissements de factures$/,
+    },
+    {
+      nom: 'banque-basculee/fiche-classe', fenetre: '.fiche-mouvement-corps', tous: true, mouvement: 'VIR SEPA CABINET DURAND',
+      attendu: /^Classé par ses encaissements de factures$/,
+    },
+  ].map(({ nom, fenetre, tous, mouvement, attendu }) => ({
+    dossier: 'd12', onglet: 'banque', nom, fenetre,
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      if (tous) await page.getByRole('button', { name: 'Tous', exact: true }).click()
+      if (mouvement) await page.locator('tr.clickable', { hasText: mouvement }).first().click()
+      await page.getByText(attendu).first().waitFor({ timeout: 10000 })
+    },
+  })),
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à

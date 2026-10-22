@@ -513,6 +513,17 @@ describe('mouvementsRapprochesSansObjet', () => {
     ])).toEqual([])
   })
 
+  it('se tait sur un mouvement classé par ses encaissements de factures : sa justification est le registre', () => {
+    // Ligne 28.65, étape VF5a1 : `classer_mouvement_par_encaissements` le passe à « rapproché » sans pièce, ni échéance, ni
+    // catégorie. Sans la clause, la pastille rouge, le point de la Checklist en erreur et le préalable BLOQUANT de la
+    // validation le disaient orphelin.
+    const classe = ligne({ id: 'encaisse', piece_id: null, cotisation_id: null, montant: 598.5, encaissements_de_factures: true })
+    expect(mouvementRapprocheSansObjet(classe)).toBe(false)
+    expect(mouvementsRapprochesSansObjet([classe])).toEqual([])
+    // Le même, sans le drapeau : orphelin. La clause ne tait que ce que le drapeau justifie.
+    expect(mouvementRapprocheSansObjet({ ...classe, encaissements_de_factures: false })).toBe(true)
+  })
+
   it('le prédicat unitaire et la version tableau disent la même chose', () => {
     // L'onglet Banque a besoin du prédicat LIGNE PAR LIGNE pour sa pastille, la Checklist du
     // tableau : deux règles séparées finiraient par diverger, et la pastille verte reviendrait

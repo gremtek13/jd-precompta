@@ -410,13 +410,21 @@ export function moisEnDoubleSurAbonnement(pieces: Piece[]): MoisEnDoubleSurAbonn
 // NI LE PAIEMENT OU LE REMBOURSEMENT D'UNE DÉCLARATION DE TVA (ligne 26.8, lib/liquidationTva.ts) : sa preuve est
 // le relevé, son écriture le 445510 ou le 445830 face à la banque, et sa clé est sans action — une déclaration ne
 // se retire que par la base, qui remet ses mouvements à traiter.
+//
+// NI UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS DE FACTURES (ligne 28.65, chantier EC-Q3, étape VF5a1 ;
+// lib/mouvementsDesVentes.ts) : `classer_mouvement_par_encaissements` le passe à « rapproché » sans pièce ni catégorie —
+// sa justification est le registre des encaissements de factures SOURCES qui le citent, que la garde G1 tient, et ses
+// écritures sont celles de la vente facturée (onglet Écritures). Sans cette clause, il ressortait « rapproché sans
+// justificatif », en rouge, dans Banque et la Checklist, et le préalable BLOQUANT `rapproches-sans-objet` refusait la
+// validation de son exercice.
 export function mouvementRapprocheSansObjet(
   ligne: Pick<LigneBancaire,
     'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id' | 'ventilee' | 'reglement_groupe' | 'compte_bilan'
-    | 'declaration_tva_id'>,
+    | 'declaration_tva_id' | 'encaissements_de_factures'>,
 ): boolean {
   return ligne.statut === 'rapprochee' && !ligne.piece_id && !ligne.cotisation_id && !ligne.categorie_id && !ligne.emprunt_id
     && !ligne.ventilee && !ligne.reglement_groupe && !ligne.compte_bilan && !ligne.declaration_tva_id
+    && !ligne.encaissements_de_factures
 }
 
 // Ce que TOUTE suppression d'une pièce fait au rapprochement qui la désignait, dit à l'opérateur AVANT

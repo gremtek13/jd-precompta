@@ -41,6 +41,7 @@ import FormulaireReglementGroupe from './FormulaireReglementGroupe'
 import FormulaireVentilation from './FormulaireVentilation'
 import { FilDuMouvement, PropositionsDuClient } from './EnvoisDuClient'
 import type { AccesDuReleve, ContexteDeLaProposition, EnvoisDuClient } from '../../lib/banqueCabinet'
+import { carteDeVente, PASTILLE_CLASSE, pastilleDeVente, type VenteDuMouvement } from '../../lib/mouvementsDesVentes'
 
 // Le rapprochement d'un mouvement bancaire, dans le panneau de droite — étape 2 de l'interface
 // d'ordinateur, comme la fiche d'une pièce (voir FichePiece). Il remplace la fenêtre qui assombrissait
@@ -135,6 +136,14 @@ interface FicheMouvementProps {
   // nul quand rien ne le fige. Figé, il ne se rapproche, ne se classe et ne se modifie plus (`garder_mouvement_valide`) :
   // la fiche le dit, ne propose plus aucun geste, et tait ce qui réclamerait un geste impossible.
   figeePar: string | null
+  // CE QUE SES VENTES FACTURÉES DISENT DE CE MOUVEMENT (ligne 28.65, chantier EC-Q3, étape VF5a1 ; lib/mouvementsDesVentes.ts,
+  // calculé par l'onglet) : « libre », la fiche d'hier ; « porte » — classé par ses encaissements de factures, ou réservé à
+  // eux —, une carte dit ce qui le porte et pourquoi rien d'autre ne s'offre (la garde G2 refuserait tout autre classement) ;
+  // « retenu » — les ventes facturées d'un dossier basculé ne sont pas lues en entier, ou il est classé sans qu'on les lise —,
+  // une note. Dans ces deux cas, AUCUNE section de classement ni aucun geste sur le mouvement : les gestes du cabinet
+  // (classer, retirer un classement, rattacher) viennent avec l'étape VF5c. Le fil et les pièces proposées par le client
+  // restent, sans « Associer ».
+  venteDuMouvement: VenteDuMouvement
   // Toutes les pièces chargées, à valider comprises : le choix à la main les offre toutes.
   pieces: Piece[]
   // Les seules qu'on PROPOSE : une proposition ne porte que sur une pièce relue par le cabinet —
@@ -568,7 +577,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
 }
 
 export default function FicheMouvement({
-  ligne, plan, figeePar, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant, modeComptable,
+  ligne, plan, figeePar, venteDuMouvement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant, modeComptable,
   piecesRapprochees, piecesFigees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
@@ -581,6 +590,10 @@ export default function FicheMouvement({
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   const fige = figeePar !== null
+  // Libre : la fiche d'hier. Sinon, ni section de classement ni geste sur le mouvement (voir `venteDuMouvement`).
+  const libre = venteDuMouvement.etat === 'libre'
+  const venteDuMouvementPorte = venteDuMouvement.etat === 'porte' ? venteDuMouvement.mouvement : null
+  const pastilleVente = venteDuMouvementPorte ? pastilleDeVente(venteDuMouvementPorte) : null
   // Le choix à la main ne s'applique qu'au clic sur « Associer », jamais au changement de la liste :
   // sur une liste déroulante qui a le focus, les flèches du clavier changent la valeur — et
   // rapprochaient donc, dans la fenêtre d'avant, la première pièce venue sans qu'on l'ait choisie.
@@ -1260,9 +1273,15 @@ export default function FicheMouvement({
               {suiviPaye ? ` — ${libellePeriode(suiviPaye.declaration.periode_debut, suiviPaye.declaration.periode_fin)}` : ''}
             </span>
           )}
-          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && !surCompteDeBilan && !paieUneDeclaration && <span className="badge badge-ok">Rapproché</span>}
+          {pastilleVente && (
+            <span className={`badge ${pastilleVente.ton === 'ok' ? 'badge-ok' : 'badge-warning'}`} title={pastilleVente.titre ?? undefined}>
+              {pastilleVente.texte}
+            </span>
+          )}
+          {!pastilleVente && ligne.encaissements_de_factures && <span className="badge badge-ok">{PASTILLE_CLASSE}</span>}
+          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && !surCompteDeBilan && !paieUneDeclaration && !ligne.encaissements_de_factures && <span className="badge badge-ok">Rapproché</span>}
           {pastillesPaiement.map((texte) => <span key={texte} className="badge badge-danger">{texte}</span>)}
-          {!ligne.prelevement_personnel && aTraiter && <span className="badge badge-warning">Non rapproché</span>}
+          {!ligne.prelevement_personnel && aTraiter && venteDuMouvementPorte?.etat !== 'reserve' && <span className="badge badge-warning">Non rapproché</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
         </div>
 
@@ -1273,18 +1292,25 @@ export default function FicheMouvement({
           </p>
         )}
 
-        {/* EN TÊTE : ce que le client a proposé pour ce mouvement, avant ce que le rapprochement propose de lui-même. */}
+        {venteDuMouvementPorte && <CarteDeLaVente vente={venteDuMouvementPorte} acces={accesDuReleve} />}
+        {venteDuMouvement.etat === 'retenu' && (
+          <p className="fiche-mouvement-note" role="status">{venteDuMouvement.note}</p>
+        )}
+
+        {/* EN TÊTE : ce que le client a proposé pour ce mouvement, avant ce que le rapprochement propose de lui-même. Sur un
+            mouvement que ses ventes facturées portent, ou qu'on ne sait pas juger, sa pièce ne s'associe pas. */}
         <PropositionsDuClient
           ligne={ligne}
           envois={envoisDuClient}
           acces={accesDuReleve.acces}
           contexte={contexteDeLaProposition}
-          aTraiter={aTraiter && !fige}
+          aTraiter={aTraiter && !fige && libre}
           occupe={occupe}
           onAssocier={onRapprocher}
           onEcarter={onEcarterProposition}
         />
 
+        {libre && (<>
         {piecesCandidates.length === 1 && (
           <section className="fiche-mouvement-section">
             <h3>Pièce proposée</h3>
@@ -1989,6 +2015,7 @@ export default function FicheMouvement({
             rattaché à rien. Annule le rapprochement pour le refaire.
           </p>
         )}
+        </>)}
 
         <FilDuMouvement
           dossierId={dossierId}
@@ -2012,7 +2039,7 @@ export default function FicheMouvement({
         )}
       </div>
 
-      {principal && <div className="fiche-mouvement-pied">{principal}</div>}
+      {libre && principal && <div className="fiche-mouvement-pied">{principal}</div>}
     </div>
   )
 }
@@ -2030,5 +2057,34 @@ function NoteEmpruntsIncomplets() {
     <p className="fiche-mouvement-note">
       La liste des emprunts n’a pas pu être lue en entier : un emprunt peut manquer à ce choix. Recharge la page.
     </p>
+  )
+}
+
+// LA CARTE D'UN MOUVEMENT QUE SES VENTES FACTURÉES PORTENT (étape VF5a1) : ses encaissements, leur auteur reconnu parmi les
+// accès lus en entier, ce qu'ils font ensemble, puis pourquoi rien d'autre ne s'offre — les mots de la garde G2 — et où la
+// suite se passe. Aucun geste : la règle et les phrases sont dans lib/mouvementsDesVentes.ts.
+function CarteDeLaVente({ vente, acces }: { vente: Extract<VenteDuMouvement, { etat: 'porte' }>['mouvement']; acces: AccesDuReleve }) {
+  const carte = carteDeVente(vente, acces.acces)
+  return (
+    <section className="fiche-mouvement-section" aria-label={carte.titre}>
+      <h3>{carte.titre}</h3>
+      <div className="carte-rapprochement">
+        <dl className="decoupage-emprunt">
+          {carte.lignes.map((l) => (
+            <Fragment key={l.cle}>
+              <dt>
+                {l.libelle}
+                {l.parLeClient && <> <span className="badge badge-neutral" title={l.parLeClient.titre}>{l.parLeClient.libelle}</span></>}
+              </dt>
+              <dd>{formatMoney(l.montant)}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      </div>
+      {carte.ensemble && <p className="fiche-mouvement-note">{carte.ensemble}</p>}
+      {carte.noteDesAuteurs && <p className="fiche-mouvement-note">{carte.noteDesAuteurs}</p>}
+      <p className="fiche-mouvement-note">{carte.pourquoi}</p>
+      <p className="fiche-mouvement-note">{carte.suite}</p>
+    </section>
   )
 }

@@ -31,7 +31,7 @@ const encaissement = (
   o: Partial<EncaissementDesEcritures> & Pick<EncaissementDesEcritures, 'id' | 'date_encaissement' | 'montant'>,
 ): { encaissement: EncaissementDesEcritures; part: PartVendue } => {
   const { encaissement: e, part } = encaissementVendu({ cree_le: `${o.date_encaissement}T10:00:00Z`, ...o })
-  return { encaissement: { ...e, compte_contrepartie: o.compte_contrepartie ?? null }, part }
+  return { encaissement: { ...e, compte_contrepartie: o.compte_contrepartie ?? null, cree_par: o.cree_par ?? null }, part }
 }
 
 export const mouvementDesVentes = (

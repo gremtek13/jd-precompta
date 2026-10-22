@@ -32,7 +32,7 @@ const encaissement = (
   o: Partial<EncaissementDesEcritures> & Pick<EncaissementDesEcritures, 'id' | 'date_encaissement' | 'montant'>,
 ): { encaissement: EncaissementDesEcritures; part: PartVendue } => {
   const { encaissement: e, part } = encaissementVendu(o)
-  return { encaissement: { ...e, compte_contrepartie: o.compte_contrepartie ?? null }, part }
+  return { encaissement: { ...e, compte_contrepartie: o.compte_contrepartie ?? null, cree_par: o.cree_par ?? null }, part }
 }
 const mouvement = (o: Partial<MouvementDesEcritures> & Pick<MouvementDesEcritures, 'id' | 'date' | 'montant'>): MouvementDesEcritures => ({
   dossier_id: D, libelle: 'VIR CLIENT FICTIF', source_fichier: 'releve-fictif.csv', encaissements_de_factures: true,

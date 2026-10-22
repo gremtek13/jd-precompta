@@ -256,7 +256,9 @@ const ECRANS: Ecran[] = [
   { nom: 'AccesTab', fichier: 'pages/dossier/AccesTab.tsx', rendre: () => <Dossier1><AccesTab dossierId="d1" dossierNom="Dossier fictif" codeEmail="abc123" /></Dossier1> },
   { nom: 'AssistantTab', fichier: 'pages/dossier/AssistantTab.tsx', rendre: () => <Dossier1><AssistantTab dossierId="d1" dossierNom="Dossier fictif" onFermer={rien} /></Dossier1> },
   { nom: 'BalanceCard', fichier: 'pages/dossier/BalanceCard.tsx', rendre: () => <Dossier1><BalanceCard dossierId="d1" plan={PLAN_PAR_DEFAUT} /></Dossier1> },
-  { nom: 'BanqueTab', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} /></Dossier1> },
+  { nom: 'BanqueTab', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={false} /></Dossier1> },
+  // Basculé (ligne 28.65, étape VF5a1) : l'onglet lit aussi les ventes facturées, et ne dit ni n'offre rien avant elles.
+  { nom: 'BanqueTab (basculé)', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures /></Dossier1> },
   { nom: 'BilanTab (trésorerie)', fichier: 'pages/dossier/BilanTab.tsx', rendre: () => (
     <Dossier1><BilanTab dossierId="d1" modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },

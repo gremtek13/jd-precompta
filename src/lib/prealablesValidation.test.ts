@@ -677,6 +677,15 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
     })
   }
 
+  // UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS DE FACTURES (ligne 28.65, étape VF5a1) : rapproché sans pièce ni catégorie, il
+  // n'est pas orphelin — sa justification est le registre. Le même mouvement sans le drapeau bloque la validation.
+  it('« rapproches-sans-objet » se tait sur un mouvement classé par ses encaissements de factures', () => {
+    const classe = ligne('l2', { date: '2025-09-01', montant: 598.5, encaissements_de_factures: true })
+    expect(ids(donnees({ lignes: [L1, classe], anneesValidees: [2024] }))).not.toContain('rapproches-sans-objet')
+    expect(prealable(donnees({ lignes: [L1, { ...classe, encaissements_de_factures: false }], anneesValidees: [2024] }), 'rapproches-sans-objet'))
+      .toMatchObject({ nb: 1, bloquant: true })
+  })
+
   // LA VENTE COMPTÉE DEUX FOIS (ligne 28.6) : en engagement aussi, où chaque pièce s'écrit à sa date, équilibrée — rien
   // d'autre ne la refuserait. Une facture que sa seule jumelle porte ne bloque rien.
   it('« ventes-en-double » : deux pièces validées pour une facture bloquent, en engagement comme en trésorerie ; une seule, rien', () => {

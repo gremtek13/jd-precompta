@@ -17,7 +17,7 @@ import { COLONNES_LIGNES, COLONNES_PARTS } from './ventesFactureesLecture'
 //     source dans la confirmation ;
 //   - les lignes des factures sources (la jointure de lib/ventesFactureesLecture.ts) ;
 //   - le registre ENTIER des encaissements, retirés et contre-passations compris, AVEC le compte de contrepartie d'une
-//     compensation (VF4A-Q2) ;
+//     compensation (VF4A-Q2) et leur auteur (étape VF5a1 : l'onglet Banque dit « proposé par le client ») ;
 //   - leurs parts par taux ;
 //   - les mouvements du dossier, tous : ceux que les encaissements citent — classés par eux, pas encore classés, ou
 //     déclassés (R3) — et ce qui les classe, que les refus jugent. L'onglet ne lit d'ordinaire que les rapprochés : un
@@ -30,7 +30,7 @@ import { COLONNES_LIGNES, COLONNES_PARTS } from './ventesFactureesLecture'
 export const COLONNES_FACTURES_ECRITURES =
   'id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, montant_ttc'
 export const COLONNES_ENCAISSEMENTS_ECRITURES =
-  'id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le, compte_contrepartie'
+  'id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le, compte_contrepartie, cree_par'
 export const COLONNES_MOUVEMENTS_ECRITURES =
   'id, dossier_id, date, montant, libelle, source_fichier, encaissements_de_factures, statut, piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, ventilee, reglement_groupe, prelevement_personnel'
 
