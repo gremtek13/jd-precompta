@@ -30766,3 +30766,453 @@ poste se disent aussi dans le prévisionnel. Aucune question nouvelle.
   sensible sur les dossiers d'essai, à surveiller sur un gros dossier.
 - `ecrituresDesVentesPourLa2035` porte le nom de la 2035 et sert aussi la situation : un nom plus général le dirait
   mieux (hors du lot).
+
+**LA MISE EN LIGNE.** Demande #204, ouverte sur `699936b` après la barrière de la session sous Node 22.23.3 sur le
+commit du code (`tsc -b --force` ; lint, 0 erreur et les 63 avertissements d'avant ; 439 fichiers et 13 387 tests sous
+Paris, UTC, New York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de 8 h 32
+à 8 h 50 UTC) ; fusionnée en « Rebase and merge » le 22/10/2026 à 8 h 53 UTC (`5d09628`, `d924d1c`), `main` linéaire,
+son arbre égal à celui de la branche ; le déploiement vert, et le site sert `index-BI0--OeU.js` depuis 8 h 57, le bundle
+du build local. La feuille de route : la ligne 28.65 mise à jour, puis relue par empreinte (12 534 positions) ; les
+barres recomptées par requête, inchangées (186 chantiers hors de la phase 7, dont 141 livrés ; 76 % et 82 %). La copie
+de travail de l'agent retirée, son travail entier dans `main` ; la branche réalignée sur `main`. La page des arbitrages
+relue en entier à la reprise suivante : 211 réponses. Le cabinet a tranché VF4C3-Q1 le 22/10/2026 à 9 h 02 UTC, à la
+recommandation (« oui, sous le poste de la catégorie « Frais bancaires » ») : ce que font la 2035 depuis la demande #203
+et la situation depuis la demande #204.
+
+### 22/10/2026 — VF5, LA BANQUE : LA CONCEPTION — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(Conception de l'agent architecte, sur `d924d1c` ; rien d'écrit, ni dans le code ni en base. Production lue le
+22/10/2026 : le catalogue (policies, fonctions, droits) et des comptes de lignes, aucune valeur. Lus avant d'écrire :
+la conception d'EC-Q3 (§ 5, 7, 9, 10, 11, 14, 15), « LA SOURCE DE LA VENTE, EN BASE », les entrées d1 à d4 des
+encaissements, « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » », « « MA BANQUE » CÔTÉ CABINET », VF3a, VF4b, VF4c1 à
+VF4c3, le lot de R1 et les deux lots des frais ; le code de la banque, de la fenêtre des encaissements, de la Checklist
+et de « Ma banque » ; la migration `encaissements_de_la_vente_facturee` dans l'export. Sources au § 10.)
+
+#### 0. Le résumé
+
+1. La base de VF5 est en ligne depuis VF2 et VF4b : trois fonctions du cabinet (rattacher, classer, retirer le
+   classement), la garde G2, la contre-passation qui cite un débit ; le module `encaissementsFactures.ts` redit tous
+   leurs refus. AUCUN écran ne les lit encore.
+2. Le relevé ne connaît pas les mouvements des ventes facturées : classé par ses encaissements, un mouvement s'y dit
+   « Rapproché sans justificatif », en rouge, et retient la validation de l'exercice (le préalable bloquant
+   `rapproches-sans-objet`) ; réservé, il est « à traiter » et entre dans les lots, que G2 fait alors échouer entiers.
+3. La fenêtre des encaissements juge une facture source comme une facture d'hier : ni la frontière, ni le mouvement
+   déjà classé, ni le plafond net des avoirs ne s'y disent avant le clic ; elle propose des mouvements que la base
+   refusera.
+4. Deux impasses en base, que « Base : non » ne lève pas : le chèque revenu impayé d'un encaissement JAMAIS DÉCLARÉ ne
+   se contre-passe pas (il ne peut que se retirer, et plus du tout une fois l'exercice validé) — c'est le cas de TOUTE
+   facture à un particulier, qu'aucune plateforme ne reçoit (VF5-Q1) ; un virement qui paie une facture d'avant la
+   bascule et une facture source ne se classe jamais (VF2-Q2, VF5-Q2).
+5. Neuf lots, VF5a1 à VF5h, chacun neutre tant qu'aucun dossier n'a basculé ; deux demandent une migration (VF5d2 si
+   VF5-Q1 est accordée, VF5h pour VF2-Q2). EC3-Q9 se range avec A8, qui crée la facture reprise.
+6. Trois questions au cabinet, VF5-Q1 à VF5-Q3 ; quatre points à l'expert-comptable (§ 8).
+
+#### 1. La mesure (production, 22/10/2026 ; des comptes)
+
+Quatre dossiers, aucun basculé ; six factures, toutes validées, aucune source ; aucun encaissement (donc aucun sans
+mouvement, aucune contre-passation, aucune facture non source encaissée), aucune déclaration d'encaissement ; 998
+mouvements dont 389 crédits, 383 crédits à traiter, AUCUN classé par ses encaissements ; six pièces de vente, aucun
+exemplaire désigné ; aucune écriture d'une vente facturée ; aucun exercice validé ; aucun accès qui porte « Ventes » ni
+« Banque » ; aucune proposition de justificatif ; aucune règle d'affectation ni d'ignorance. La colonne qui dirait une
+facture reprise de l'ancien logiciel (A8) n'existe pas : aucune facture reprise. Tout ce qui suit est LATENT.
+
+Le catalogue, relu : `encaissements_factures` et ses parts se lisent par le cabinet (`admin_du_dossier`) et par le
+client « Ventes » (`client_du_dossier(…, 'ventes')`), jamais par le client « Banque » seul ; `lignes_bancaires` par le
+client « Banque » ; `exercices_valides` par le cabinet seul. Les fonctions : `enregistrer_encaissement`,
+`retirer_encaissement`, `annuler_encaissement` (cinq paramètres) et `declarer_encaissement_hors_application` jugent
+`gere_les_ventes` (le cabinet, ou le client « Ventes ») ; `rattacher_mouvement_encaissement`,
+`classer_mouvement_par_encaissements`, `retirer_classement_par_encaissements`, `choisir_compte_contrepartie`,
+`ecrire_vente_facturee` et `retirer_ecriture_vente_facturee` jugent `admin_du_dossier` (le cabinet seul) ; toutes
+`SECURITY DEFINER`, exécutables par un compte connecté, par aucun anonyme. `encaissement_justifie_son_mouvement`
+n'est exécutable par personne ; `mouvement_libre` l'est par un compte connecté (un prédicat pur).
+
+#### 2. L'inventaire : ce que la base offre déjà
+
+- **Enregistrer** (`enregistrer_encaissement`, 29 refus) : pour une facture source, la frontière (rang 11), le
+  mouvement déjà classé (17), les plafonds nets des avoirs validés (27, 29) ; le mouvement ne se cite qu'avec
+  « Banque » (rang 2). **Retirer** (`retirer_encaissement`) : la frontière (6), le mouvement classé dont il dépend (7).
+- **Contre-passer** (`annuler_encaissement`) : SEULEMENT un encaissement DÉCLARÉ (rang 5 : « Cet encaissement n'est pas
+  déclaré : il se retire, sans contre-passation. ») ; pour une facture source, un débit cité, libre, que les
+  contre-passations ne dépassent qu'à l'écart des frais (rangs 14 à 18) ; sans débit, le mouvement de l'encaissement
+  classé par ses encaissements refuse (19).
+- **Rattacher** (`rattacher_mouvement_encaissement`, 16 refus) : une fois, de nul à un mouvement libre, un encaissement
+  (un crédit) ou une contre-passation (un débit) d'une facture source ; la contre-passation rattachée rend à
+  l'encaissement qu'elle annule le mouvement qui le justifiait, qui ne doit être ni classé ni dépassé.
+- **Classer, retirer le classement** (`classer_mouvement_par_encaissements`, 10 refus ;
+  `retirer_classement_par_encaissements`, 4) : le cabinet seul ; un crédit que les encaissements de factures SOURCES
+  font à l'écart des frais près (la banque crédite un peu moins, jamais plus), un débit de même pour les
+  contre-passations. Les encaissements d'une facture qui n'est pas source n'y comptent pas (`porteDesSources`).
+- **G2** (`garder_mouvement_reserve`) : un mouvement cité par un encaissement vivant d'une facture source, ou classé par
+  ses encaissements, ne reçoit AUCUN autre classement, par la policy comme par les dix-huit fonctions du relevé
+  (23514, la facture du premier encaissement nommée). **G1** : classé par ses encaissements, il ne porte rien d'autre.
+- **Les écritures** (VF4b) : `ecrire_vente_facturee` refuse un mouvement « pas encore classé », « hors de l'écart des
+  frais », ou qui « porte aussi une facture non source ».
+- **Le module** (`src/lib/encaissementsFactures.ts`) redit tout, dans l'ordre et sous les mots de la base, confronté
+  au texte exporté et à l'essai : `refusEnregistrementVente`, `refusRetraitVente`, `refusContrePassationVente`,
+  `refusRattachement`, `refusClassement`, `refusRetraitDuClassement`, `refusDuClassementDuReleve` (G2),
+  `mouvementLibre`, `justifieSonMouvement`. Son en-tête le dit : « aucun écran ne les lit encore (la fenêtre des
+  encaissements et la fiche d'un mouvement, étape VF5) ». Vérifié : hors de leurs tests, ces fonctions ne sont
+  appelées que du module lui-même (et `refusClassement` de la composition des écritures).
+
+#### 3. L'inventaire : ce que les écrans font déjà
+
+- **L'onglet Factures et sa fenêtre** (`FacturesTab.tsx`, `EncaissementsFactureModal.tsx`, les deux espaces) :
+  enregistrer, retirer, déclarer hors application, contre-passer un encaissement déclaré, sous UN verrou `useRef` ; les
+  propositions de `propositionsEncaissement` (la jumelle, puis le relevé). Elle appelle `refusEnregistrement`,
+  `refusRetrait` et `refusContrePassation`, les jugements D'HIER ; `annuler_encaissement` part sans le cinquième
+  paramètre. Elle lit les mouvements sans `categorie_id`, `ventilee` ni `encaissements_de_factures`
+  (`mouvementLibre` ne s'y calcule pas), et les lignes de LA facture seulement — pas celles
+  de ses avoirs, dont le plafond net a besoin. Les propositions du relevé écartent un mouvement personnel, de bilan,
+  d'emprunt, de TVA ou de cotisation, pas un mouvement affecté, ventilé ou rapproché d'une pièce ; celles de la jumelle
+  proposent ses mouvements, rapprochés : pour une facture source, la base refuserait les deux (rang 17).
+- **L'onglet Banque et la fiche d'un mouvement** (`BanqueTab.tsx`, `FicheMouvement.tsx`) : rien des ventes facturées.
+  Ni le registre ni les factures ne sont lus ; `ventesParLesFactures` n'est pas une prop de l'onglet.
+  `mouvementRapprocheSansObjet` (`controles.ts:413`) ne connaît pas `encaissements_de_factures` : un mouvement classé
+  par ses encaissements porte la pastille rouge « Rapproché sans justificatif » (`BanqueTab.tsx:1917`), la fiche le dit
+  sans objet (`FicheMouvement.tsx:610`), la Checklist le compte en erreur (`pointsDeLaChecklist.ts:490`) et le préalable
+  BLOQUANT `rapproches-sans-objet` (`prealablesValidation.ts:545`) refuserait la validation. Un mouvement réservé est
+  « Non rapproché » ; tous les gestes de la fiche lui sont offerts, que G2 refusera après le clic.
+- **Les lots** : `mouvementATraiter` (`reglesAffectation.ts:135`) et `nonRapprochees` (`BanqueTab.tsx:1021`) prennent
+  un mouvement réservé pour un mouvement à traiter. Le rapprochement automatique l'écrirait ligne par ligne (une erreur
+  par ligne) ; l'affectation par les règles envoie des lots de cent (`affecter_mouvements_bancaires`) et la règle
+  d'ignorance UNE mise à jour `.in(…)` (`BanqueTab.tsx:947`) : un seul mouvement réservé fait échouer le lot entier.
+- **`justificatifPossible`** (`reglesAffectation.ts:200`) ne connaît que les pièces, les restes des pièces payées en
+  partie et les échéances de cotisation.
+- **La section « Ventes facturées » de l'onglet Écritures** (VF4c1) dit « ne s'écrit pas : mouvement pas encore
+  classé » ; c'est la seule trace, côté cabinet, d'un mouvement que le client a désigné.
+- **La Checklist** écarte des ruptures de la piste les lignes d'un mouvement classé par ses encaissements
+  (`ligneDUneVenteFacturee`), sans lire le registre ; aucun point ne dit un mouvement réservé ni un encaissement sans
+  mouvement.
+- **« Ma banque »** (`banqueClient.ts`, `ClientBanque.tsx`) : un mouvement classé par ses encaissements est « Traité par
+  ton cabinet » (rapproché sans lien lisible) ; réservé, « Sans justificatif », et le client peut y proposer une pièce
+  que le cabinet ne pourra jamais associer (G2). `COLONNES_DU_MOUVEMENT` ne lit pas `encaissements_de_factures`.
+- **Le banc** (`outils/captures/fauxSupabase.ts`) n'a aucun dossier basculé : aucune facture source, aucun mouvement
+  classé par ses encaissements ; VF4c1 avait travaillé sur une copie provisoire.
+
+#### 4. Ce qui manque, en faits
+
+(a) Le contrôle des rapprochés sans objet, faux sur un mouvement classé par ses encaissements (§ 3) — bloquant à la
+validation. (b) G2 non dite avant le clic dans la fiche et dans les lots. (c) La fenêtre des encaissements sur les
+jugements d'hier pour une facture source, ses lectures trop courtes, ses propositions que la base refusera. (d) Aucun
+geste pour classer, retirer un classement, rattacher. (e) La contre-passation n'est offerte que depuis la facture, sans
+débit. (f) Le chèque revenu impayé d'un encaissement non déclaré : sans issue après la validation (§ 2 ; VF5-Q1). (g) Un
+débit cité peut dépasser ses contre-passations de l'écart des frais — la base l'admet au rattachement et à la
+contre-passation —, mais le classement refuse un débit DÉPASSÉ par elles (`debit_depasse`) : un tel débit se cite et ne
+se classe plus ; même chose d'un crédit cité par une facture d'avant la bascule et une facture source (VF2-Q2), et d'une
+contre-passation sans mouvement retirée qui fait justifier au mouvement plus qu'il ne porte (« À REVOIR » de VF2). (h)
+Les candidats ignorent les factures ouvertes et les encaissements sans mouvement. (i) La Checklist ne dit ni le
+mouvement réservé ni l'encaissement sans mouvement. (j) « Ma banque » laisse proposer une pièce sur un mouvement
+réservé. (k) Le banc n'a pas de dossier basculé.
+
+#### 5. Le découpage
+
+Chaque lot ne lit le registre et ne monte une section que pour un dossier BASCULÉ (`ventesParLesFactures`, une prop
+obligatoire, comme VF4c1) — sauf VF5a1, dont la correction du contrôle vaut partout et ne change rien tant qu'aucun
+mouvement n'est classé par ses encaissements (aucun en production). Aucun dossier n'a basculé : chaque lot est NEUTRE,
+et aucun test existant ne change de verdict. La règle de chaque refus vit dans le module, l'écran la lit ; un geste
+passe sa fonction seule, sous le verrou `useRef` de l'écran (`sousVerrou` dans l'onglet Banque, le verrou unique de la
+fenêtre), relâché après la relecture ; deux clics puis trois dans le même `act` n'écrivent qu'une fois ; une lecture
+partielle, refusée, pas encore revenue ou d'un autre dossier n'offre aucun geste (`ecransAvantLecture.test.tsx`, ses
+deux gardes). Le banc : `debordements.mjs` à zéro aux quatre largeurs, à 720 px et aux volets extrêmes, les visites
+nouvelles AVANT celles de l'e-reporting.
+
+- **VF5a1 — Le relevé reconnaît les mouvements des ventes facturées.** Module neuf, pur,
+  `src/lib/mouvementsDesVentes.ts` : pour chaque mouvement, `classe` (par ses encaissements), `reserve` (cité par un
+  encaissement vivant d'une facture source qui le justifie, pas encore classé) ou rien ; les factures et encaissements
+  qu'il porte ; l'auteur (le client ou le cabinet, par `lib/auteursVentes.ts`, sur des accès lus en entier) ; le refus
+  de G2 par `refusDuClassementDuReleve`, jamais recopié. `controles.ts` : `mouvementRapprocheSansObjet` écarte
+  `encaissements_de_factures` (la pastille, la fiche, la Checklist et le préalable bloquant suivent d'eux-mêmes).
+  L'onglet Banque reçoit `ventesParLesFactures` de `DossierDetail` et, pour un dossier basculé, lit
+  `lireLesSourcesDesEcrituresDeVente` dans la même relecture que le relevé (la lecture de VF4c1, cinq `lireTout`, tout
+  ou rien) ; partielle, un bandeau, et tout geste et tout lot du relevé se retiennent. Pastilles : « Encaissements de
+  factures — F…, F… » (verte) ; « Réservé à l'encaissement de la facture F… » (attention), « proposé par le client »
+  quand c'est lui. La fiche d'un mouvement classé ou réservé ne montre AUCUNE section de classement : une carte dit ce
+  qui le porte et pourquoi rien d'autre ne s'offre (les mots de G2) ; les gestes viennent avec VF5c. Le banc reçoit un
+  dossier basculé (une facture source, un mouvement réservé par le client, un mouvement classé, un encaissement sans
+  mouvement), vu des seules visites neuves. Preuves : le module et ses mutations ; `controles.test.ts` (un mouvement
+  classé par ses encaissements n'est pas sans objet ; la mutation qui retire la clause vire au rouge) ; un test d'écran
+  (pastilles, fiche fermée, bandeau d'une lecture partielle de chacune des cinq collections, un dossier non basculé sans
+  lecture) ; le banc. Agent : architecte (un contrôle bloquant de la validation change).
+- **VF5a2 — Les lots écartent les mouvements des ventes facturées.** `mouvementATraiter` reçoit l'ensemble des
+  mouvements réservés ou classés (un paramètre obligatoire, sans défaut) ; le rapprochement automatique, l'appariement
+  « Valider et rapprocher », l'affectation par les règles et la règle d'ignorance ne les prennent jamais ; une carte de
+  lot dit combien elle en écarte et pourquoi (`aRapprocher` porte la raison de G2). Fichiers : `reglesAffectation.ts`,
+  `appariementBanque.ts` (son entrée), `BanqueTab.tsx`. Preuves : les plans purs (un mouvement réservé n'y entre
+  jamais), un test d'écran par lot (le lot n'envoie pas le mouvement réservé ; sans registre lu, aucun lot), mutations.
+  Agent : architecte. Dépend de : VF5a1.
+- **VF5b — La fenêtre des encaissements juge une facture source.** `EncaissementsFactureModal.tsx` passe aux jugements
+  `…Vente` (`refusEnregistrementVente`, `refusRetraitVente`, `refusContrePassationVente`), identiques à ceux d'hier pour
+  une facture qui n'est pas source (le module le dit, un test le prouve) ; elle lit les mouvements avec ce qui les
+  classe (`MouvementClasse`), les lignes des avoirs de la facture, et, côté cabinet, les exercices validés. Côté client,
+  `exercices_valides` ne se lit pas (le cabinet seul, décision de P9a) : `ContexteVente.anneesValidees` devient une
+  union `readonly number[] | 'illisibles'`, le module saute alors la frontière, l'écran dit que la base la jugera, et
+  son refus revient sous ses mots — on ne passe jamais une liste vide pour une liste lue. `propositionsEncaissement`
+  reçoit le contexte de la vente : pour une facture source, seuls des mouvements LIBRES, jugés par
+  `refusEnregistrementVente` ; la jumelle d'une facture source ne propose plus ses mouvements (G4 le figera à VF6). La
+  contre-passation d'une facture source peut citer son débit, choisi parmi les débits libres du dossier, refusé avant
+  le clic. Le geste qui rendrait un mouvement inclassable — un encaissement d'une facture source sur un crédit qui
+  justifie déjà une facture non source, une contre-passation qui ferait dépasser son débit — se dit avant le clic, par
+  `refusClassement` joué sur l'état d'après, sans être refusé (la base l'admet) : « ce mouvement ne pourra pas se
+  classer ». Preuves : la fenêtre dans les deux espaces, chaque refus neuf dit avant le clic, le verrou, mutations,
+  `ecransAvantLecture.test.tsx`, le banc (une visite de la fenêtre d'une facture source). Agent : dev en Opus (le
+  module existe ; l'écran sert le client). Dépend de : VF5a1 (le banc).
+- **VF5c — La fiche d'un crédit : « Encaissement d'une facture ».** Côté cabinet. Sur un mouvement RÉSERVÉ : les
+  encaissements qu'il justifie, leur total, l'écart des frais ; « Classer par ses encaissements »
+  (`classer_mouvement_par_encaissements`), refusé avant le clic par `refusClassement`, confirmé par une phrase qui nomme
+  les factures, les montants et les frais portés au 627. Sur un mouvement CLASSÉ : « Retirer ce classement »
+  (`refusRetraitDuClassement`), la confirmation dit que ses écritures deviennent « à retirer » dans l'onglet Écritures.
+  Sur un crédit LIBRE d'un dossier basculé : « Rattacher un encaissement enregistré sans mouvement » (les encaissements
+  de factures sources sans mouvement, le plus proche du montant d'abord, `refusRattachement` sur chacun) et
+  « Enregistrer l'encaissement d'une facture » (la fenêtre de VF5b ouverte sur la facture choisie, le mouvement imposé).
+  Un mouvement payé par plusieurs encaissements (une remise de chèques, une remise de cartes) se rattache encaissement
+  par encaissement : la fiche dit ce qui reste pour faire le crédit, et le classement attend qu'il soit fait (un lot
+  atomique viendrait avec A11). Module : la sélection et l'ordre des candidats, les phrases, l'état d'après — pur, dans
+  `mouvementsDesVentes.ts`. Les gestes passent `sousVerrou`. Preuves : les trois gestes, deux puis trois clics, refus
+  avant et après le clic, la relecture, mutations, le banc. Agent : dev en Opus. Dépend de : VF5a1, VF5b.
+- **VF5d — La fiche d'un débit : l'impayé et la somme rendue.** Sur un débit libre d'un dossier basculé :
+  « Contre-passer l'encaissement d'une facture » — les encaissements déclarés que `refusContrePassationVente`
+  accepterait avec ce débit, la date (celle du débit, proposée et modifiable dans les bornes de la base), le motif
+  obligatoire ; « Rattacher une contre-passation enregistrée sans mouvement » (`refusRattachement`, la branche des
+  débits). Classer et retirer le classement d'un débit, comme en VF5c. Preuves : de même. Agent : dev en Opus. Dépend
+  de : VF5c.
+- **VF5d2 — L'impayé d'un encaissement jamais déclaré** (si VF5-Q1 est accordée). Une MIGRATION : `annuler_encaissement`
+  accepte, pour une facture SOURCE et un débit cité, un encaissement non déclaré (le rang 5 ne s'applique plus à ce
+  cas) ; la contre-passation qui en naît ne se déclare pas (`refusDeclaration` le refuse déjà :
+  `contre_passation_non_declaree`), et la paire ne fait rien déclarer (`pastilleDeclaration`, `obligationEncaissee`).
+  Base : `apply_migration` d'une fonction remplacée, présentée ; `encaissementsFactures.sql`, `ventesFacturees.sql`,
+  `transmissionsEncaissements.sql`, `ecrituresVentesFacturees.sql`, `rls.sql` entier, les trois contrôles de l'export ;
+  le module et sa confrontation au texte. Agent : architecte. Dépend de : VF5d.
+- **VF5e — Les candidats.** `JustificatifsDuDossier` gagne deux champs obligatoires : les factures sources ouvertes
+  (leur reste par `resteAEncaisser`, le client cité dans le libellé par `tiersConfirmeParBanque`) et les encaissements
+  de factures sources sans mouvement ; `justificatifPossible` les apprend — « Une facture de l'application attend son
+  encaissement : ce crédit la règle peut-être. », « Un encaissement enregistré attend son mouvement. » — et le lot des
+  règles les met « à rapprocher ». La fiche d'un crédit libre les propose en tête, le plus petit écart d'abord ; rien ne
+  s'écrit seul. Vides sur un registre lu en partie, et alors aucun lot (VF5a1). Preuves : le module (montant à l'écart
+  des frais, client cité, une facture soldée n'est pas candidate, un encaissement retiré non plus), le lot des règles
+  sur un dossier basculé, mutations. Agent : architecte (le double compte du relevé). Dépend de : VF5a2, VF5c.
+- **VF5f — La Checklist et la Révision.** Deux points, en `attention` jusqu'à VF7, qui les rendra préalables (§ 11 de
+  la conception) : `mouvements-reserves` (« mouvement(s) réservé(s) à des encaissements de factures, à classer »,
+  cible `banque`) et `encaissements-sans-mouvement` (« encaissement(s) de factures par virement, prélèvement, chèque,
+  carte ou effet sans mouvement du relevé », cible `banque`) — les espèces, la compensation et « autre » n'en ont pas
+  à attendre. `checklistLecture.ts` lit le registre pour un dossier basculé ; partiel, les deux points se taisent et le
+  bandeau le dit. `revisionCycles.ts` range les deux points (la trésorerie, les recettes) ;
+  `prealablesValidation.test.ts` les tient pour écartés jusqu'à VF7. Preuves : `ChecklistTab.test.tsx`,
+  `revisionCycles.test.ts`, la lecture partielle, mutations, le banc (la Vue d'ensemble du dossier basculé). Agent :
+  dev en Opus. Dépend de : VF5a1.
+- **VF5g — « Ma banque ».** Pour un client qui porte « Banque » ET « Ventes » (il lit le registre et ses factures par
+  les policies d'aujourd'hui) : un état neuf, « Encaissement de tes factures » (classé) et « Encaissement enregistré —
+  ton cabinet le classe » (réservé), et `proposableParLeClient` faux sur un mouvement réservé (sa pièce ne pourrait
+  jamais être associée). `COLONNES_DU_MOUVEMENT` gagne `encaissements_de_factures`. Pour un client « Banque » seul,
+  rien de plus que « Traité par ton cabinet » (VF5-Q3). Les mots passent `MOTS_DU_CABINET` (tutoiement). Module :
+  `banqueClient.ts` ; écran : `ClientBanque.tsx`. Preuves : le module, l'écran (deux droits, lecture partielle du
+  registre : l'état se tait), mutations, le banc (passe `client-banque`). Agent : dev en Opus (l'espace client).
+  Dépend de : VF5a1.
+- **VF5h — Un virement pour une facture d'avant la bascule et une facture source** (VF2-Q2, selon VF5-Q2). Une
+  MIGRATION et des modules : § 6. Agent : architecte. Dépend de : VF5c ; avant VF8.
+
+Aucun lot ne convient à un agent en Sonnet : chacun touche un calcul (le contrôle bloquant, les lots, les candidats,
+les comptes de la Checklist) ou l'espace du client. L'ordre : VF5a1, VF5a2, VF5b, VF5c, VF5d (VF5d2), VF5e, VF5f, VF5g,
+VF5h ; VF5f et VF5g peuvent suivre VF5a1 en parallèle de VF5b à VF5e (fichiers disjoints, hors de `fauxSupabase.ts`,
+que chacun ne change que par ajout).
+
+#### 6. Les encaissements des factures qui ne sont pas sources
+
+**VF2-Q2, LE VIREMENT MIXTE.** Le décidé (19/10/2026) : « compter aussi l'encaissement de la facture d'avant cité sur ce
+mouvement — sa vente se compterait alors par le registre des encaissements, une exception à la règle qui la compte par
+sa pièce —, à concevoir avec VF3, VF5 et l'expert-comptable ». Ce que la base fait aujourd'hui : un crédit de 300 € qui
+justifie 200 € d'une facture source et 100 € d'une facture d'avant est réservé (G2) ; le classement n'en compte que 200
+(`credit_non_fait`) ; la pièce de la facture d'avant ne peut pas s'y rapprocher (G2) ; l'écriture refuse « un mouvement
+qui porte aussi une facture non source ». Le mouvement reste réservé pour toujours, et la pièce compte « sans paiement »
+à sa date de facture — en trésorerie, souvent dans l'exercice d'avant. Le cas est COURANT au premier exercice basculé :
+un client qui règle en février sa facture de décembre et celle de janvier.
+
+Deux manières de compter cette vente sans jamais la compter deux fois :
+- **(A) Le registre DATE la pièce** (recommandée). La vente d'avant reste comptée par sa pièce — son exemplaire
+  désigné (VF1), exigé —, comme toute vente d'avant ; l'encaissement cité sur le mouvement devient un PAIEMENT de cette
+  pièce, à la date du mouvement, que `paiementsDesPieces` (`rattachement.ts`) apprend comme il a appris les parts d'un
+  règlement groupé. La 2035, la CA3, la situation et l'estimation la comptent alors à la date de son encaissement (CGI,
+  art. 93), par la machinerie d'aujourd'hui, et JAMAIS deux fois : une pièce compte une fois, ses paiements ne font que
+  la dater. Les écritures : la pièce écrit sa banque sur ce mouvement (`contrepartieBanque`, une ligne qui porte la
+  pièce, donc pas « propre au mouvement », ni du troisième genre de G5), la composition du mouvement n'écrit que la
+  part des factures sources et les frais du tout. La base change : `classer_mouvement_par_encaissements` compte aussi
+  l'encaissement vivant d'une facture qui n'est pas source quand elle a EXACTEMENT un exemplaire validé désigné (sinon
+  un refus neuf : « désignez d'abord l'exemplaire de la facture F… ») ; `ecriture_attendue_vente_facturee` et
+  `ecrire_vente_facturee` retirent ces montants du 512 du mouvement et lèvent le refus de la facture non source dans ce
+  seul cas ; le jumeau dans `ecrituresVentesFacturees.ts`, `refusClassement` et `ecritureVenteFacturee.ts`. Une pièce
+  payée en partie AVANT par un autre mouvement reste juste : ses paiements s'additionnent.
+- **(B) Le registre REMPLACE la pièce** (la lettre de VF2-Q2). La pièce de la facture d'avant cesse de compter et ses
+  encaissements comptent comme ceux d'une source. Une pièce ne compte jamais à moitié : il faudrait basculer la facture
+  ENTIÈRE, tous ses paiements, y compris un acompte déjà daté par un rapprochement, et la 2035 déjà déposée qui l'a
+  comptée « sans paiement » ; le montant de la pièce (`montantRetenu`, au statut d'aujourd'hui) et celui de la facture
+  peuvent différer. Plus de règles, plus de chemins vers un double compte.
+(A) tient la décision — l'encaissement de la facture d'avant est compté, sa vente se date par le registre — sans
+l'exception qui l'aurait fait compter deux fois : VF5-Q2 le soumet au cabinet. Dans le découpage : VF5h, une migration
+(deux fonctions de la composition et la fonction du classement remplacées, présentées ; collée si l'outil retient un
+`delete` dans un corps), avant toute bascule. Neutre : sans facture source, aucun mouvement n'est réservé.
+
+**EC3-Q9, LA FACTURE REPRISE DE L'ANCIEN LOGICIEL.** Le décidé : son encaissement d'après la bascule compte. Elle
+n'existe pas encore : A8 la créera (aucune colonne ne dit « reprise » ; mesuré, aucune). Elle n'a pas de pièce dans
+l'application ; ses encaissements d'avant ont été comptés par l'ancien logiciel. Le registre est donc sa SEULE source
+d'après la bascule, et la manière (B) s'applique sans ses défauts : en trésorerie, ses parts comptent comme celles
+d'une facture source (la 2035 à leur date, la CA3 selon la nature figée) ; en engagement, aucun « document » (la
+créance est à l'ouverture, au 411 de la balance reprise), l'encaissement solde le 411. Pour ne jamais compter deux
+fois avec le relevé, son encaissement suit les règles d'une facture source : il ne cite qu'un mouvement libre, le
+réserve (G2) et le fait classer par ses encaissements (G1) — la facture reprise prend donc, en base, une source à elle
+(par exemple `source_de_la_vente = 'encaissements'`, ou une colonne d'A8 que G1, G2, `ventesFacturees.ts` et la
+composition lisent). Ce n'est PAS un lot de VF5 : il se range dans A8, qui écrit la facture reprise, et ne retient pas
+la bascule d'un dossier qui ne reprend rien. Reste à l'expert-comptable : la TVA d'une prestation reprise en
+engagement, encore « en attente » à l'ouverture — la reprise d'une balance ne range aujourd'hui que la banque, le
+44566 et le 44571 (`compteQueLApplicationEcrit`), pas le 445800.
+
+**CE QUI NE CHANGE PAS.** Une facture d'avant que rien ne mêle à une facture source se compte par sa pièce, rapprochée
+comme hier ; son encaissement au registre ne sert qu'au statut « Encaissée ». Le relevé d'un dossier basculé garde ses
+recettes sans facture (l'Assurance maladie d'un infirmier).
+
+#### 7. Les questions au cabinet
+
+Trois, dans le fichier joint au compte rendu de l'agent ; chacune avec son contexte et sa recommandation.
+- **VF5-Q1 — Le chèque revenu impayé d'un encaissement jamais déclaré.** Recommandé : le contre-passer en citant le
+  débit (VF5d2, une migration) ; écarté : le retirer, ce qui efface un fait, laisse deux mouvements à classer à la main
+  et devient impossible dès l'exercice validé.
+- **VF5-Q2 — VF2-Q2 précisée : le registre date la pièce de la facture d'avant (A), ou la remplace (B).** Recommandé :
+  (A).
+- **VF5-Q3 — « Ma banque » d'un client « Banque » sans « Ventes ».** Recommandé : rien de plus (« Traité par ton
+  cabinet ») ; écarté : une fonction qui lui dirait les mouvements réservés ou classés par des encaissements (une
+  migration, une lecture neuve présentée).
+Tranchés sans question, par une règle ou une décision déjà prise : la frontière non lue côté client (P9a : la base
+répond) ; un encaissement à la fois sur une remise (A11 hors du chantier) ; la sévérité des points de la Checklist
+(§ 11 de la conception : préalables à VF7) ; EC3-Q9 dans A8 (A8 crée la facture reprise) ; le geste qui rendrait un
+mouvement inclassable, dit et non refusé (la base l'admet ; l'aligner est une migration, à revoir avec VF7).
+
+#### 8. Ce qui va à l'expert-comptable du cabinet
+
+1. L'impayé d'une facture source en BNC : la contre-passation à la date du débit compte la recette en moins dans
+   l'exercice de l'impayé (`ventesFacturees.ts`, parts opposées) et sa TVA en B5 et 21 (BOI-TVA-BASE-20-20, § 40) ; à
+   confirmer pour la 2035 quand la remise est d'un exercice déjà déclaré.
+2. La manière (A) de VF5-Q2 : la vente d'avant datée par l'encaissement de son virement, les frais du virement mixte
+   entiers au 627.
+3. EC3-Q9 en engagement : la TVA d'une prestation reprise, en attente à l'ouverture, et son passage au 44571 à
+   l'encaissement.
+4. Un débit qui dépasse ses contre-passations de quelques frais (la somme rendue frais compris) : faut-il le classer,
+   l'écart au 627 comme pour un crédit ? Aujourd'hui la base le refuse au classement et l'admet à la citation.
+
+#### 9. Les risques
+
+- VF5a1 change un contrôle que la validation lit : sans mouvement classé par ses encaissements en base, rien ne change ;
+  avec, le préalable cesserait de bloquer à tort. Le retour arrière : le code seul.
+- La fenêtre des encaissements sert le client : une erreur de jugement y ferait dire « possible » ce que la base refuse
+  — fermé du côté sûr (la base refuse, l'écran dit son refus) ; le contraire griserait un geste légitime : chaque
+  jugement est confronté au texte de la fonction.
+- Les lots : un mouvement réservé qu'un lot prendrait ferait échouer le lot entier (G2), jamais écrire faux.
+- Deux migrations (VF5d2, VF5h) remplacent des fonctions que l'essai de VF2 et celui de VF4b éprouvent : présentées,
+  rejouées sur une réplique, les trois contrôles de l'export. VF5h touche la composition des écritures du mouvement :
+  le cas le plus délicat du chantier ; son essai rejoue la table relevée de la règle du cumul.
+- Deux sessions sur un mouvement (le client désigne, le cabinet classe) : les verrous des fonctions (VF2) ; l'écran
+  relit après chaque geste et ne garde pas une décision sur une lecture ancienne.
+- Le banc gagne un dossier basculé : vu des seules visites neuves, sinon les passes du cabinet changeraient.
+- Hors de VF5 : le trop-perçu, le remboursement partiel, un virement pour plusieurs factures saisi d'un geste (A11), le
+  statut déclaré par API (d6).
+
+#### 10. Sources
+
+Citées par la conception d'EC-Q3 et l'entrée d4, non relues ce jour : CGI, art. 93, 1 (BOI-BNC-BASE-20-10-10, § 1, 10,
+20, 40) ; BOI-TVA-BASE-20-20, § 30 à 60 (le chèque impayé, § 40) ; BOI-TVA-DECLA-20-30-60, § 120 (le statut
+« Encaissée » déclaré par la plateforme qui a reçu la facture) ; spécifications externes de la DGFiP v3.2, § 3.6.7,
+note 109, et annexe 7, règles P1.15 et P1.17 (un montant négatif est un décaissement, qui porte un motif). Lus : la
+migration `20261019070229_encaissements_de_la_vente_facturee.sql` (les fonctions et leurs refus), le catalogue de la
+production. Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées.
+
+### 22/10/2026 — LE RELEVÉ RECONNAÎT LES MOUVEMENTS DES VENTES FACTURÉES — CHANTIER EC-Q3, VF5A1 (LIGNE 28.65)
+
+(Écrite par l'agent architecte du lot sur `2e10153` — `main` et la conception de VF5 —, en deux commits que la session a
+relus et recomposés sur `main` : le code et ses tests, puis cette documentation, qui porte aussi la conception de VF5,
+la réponse du cabinet à VF4C3-Q1 et la mise en ligne du lot de la situation. Créés : `mouvementsDesVentes.ts` et son
+test, `BanqueTab.ventesFacturees.test.tsx`. Modifiés : `controles.ts`, `encaissementsFactures.ts`,
+`ecrituresVentesFactureesLecture.ts`, `ecrituresVentesFactureesEcran.ts`, `BanqueTab.tsx`, `FicheMouvement.tsx`,
+`DossierDetail.tsx`, le banc (`fauxSupabase.ts`, `debordements.mjs`), des fabriques et des tests. Ni base, ni migration,
+ni Edge Function ; en production, une lecture en SELECT, du catalogue et des comptes.)
+
+**LA DÉLIMITATION.** La puce VF5a1 du § 5 de la conception (« VF5, LA BANQUE : LA CONCEPTION ») : le relevé dit ce que
+la base sait depuis VF2 — un mouvement classé par ses encaissements, un mouvement réservé à eux (la garde G2) —, le
+contrôle des rapprochés sans objet cesse de tenir le premier pour orphelin, et la fiche de l'un et de l'autre n'offre
+plus aucun geste que la base refuserait. Rien de VF5a2 et des suivants : les lots ne les écartent pas encore (ils se
+retiennent seulement quand la lecture manque), la fenêtre des encaissements ne change pas, aucun geste neuf. NEUTRE en
+production, relue le 22/10/2026 : aucun dossier basculé, aucune facture source, aucun encaissement, aucun mouvement
+classé par ses encaissements, aucun mouvement rapproché sans objet.
+
+**LE MODULE.** `src/lib/mouvementsDesVentes.ts`, pur. L'état d'un mouvement se tire du refus que la garde opposerait
+(`refusDuClassementDuReleve`) : `classe_par_ses_encaissements`, classé ; `reserve`, réservé ; rien, rien. Ses
+encaissements sont ceux du filtre même de la garde et du classement, que `encaissementsFactures.ts` exporte désormais
+(`encaissementsDuMouvement` : des factures sources, non retirés, qui le justifient — la garde et `porteDesSources`
+l'appellent), dans l'ordre de la garde (`ordreDesEncaissements` : la création, puis l'identifiant, octet par octet).
+L'auteur : `estLeClient` (`auteursVentes.ts`) sur les accès que l'onglet lit déjà (`lireLesAccesDuReleve`) ; « proposé
+par le client » quand CHACUN de ses encaissements l'est, jamais sur des accès lus en partie, ce que la carte dit.
+`ventesDuReleve` : sans objet (le dossier n'a pas basculé), en cours (pas revenue, ou d'un autre dossier), incomplète
+(le motif), lue (les mouvements classés ou réservés) ; `retenueDuReleve` dit ce qui retient gestes et lots ;
+`pastilleDeVente`, `venteDuMouvement` (libre, porté, retenu) et `carteDeVente` portent les mots.
+
+**LE CONTRÔLE.** `mouvementRapprocheSansObjet` écarte `encaissements_de_factures`, que son type exige : un appelant qui
+ne passerait pas la colonne ne compile plus. Toutes les lectures qui l'alimentent lisent la ligne entière
+(`select('*')`) : l'onglet Banque, la Checklist (`checklistLecture.ts`, qui sert aussi la Révision), Clôture (les
+préalables de la validation). La pastille, la fiche, le point de la Checklist et le préalable bloquant
+`rapproches-sans-objet` suivent d'eux-mêmes. Deux tests passaient au contrôle des mouvements sans la colonne
+(`compteDeBilan.test.ts`, `reglementGroupe.test.ts`) : ils la reçoivent, fausse.
+
+**L'ONGLET BANQUE.** `ventesParLesFactures`, obligatoire, de `DossierDetail` ; basculé, il lit
+`lireLesSourcesDesEcrituresDeVente` juste après le relevé, dans la même relecture, remise « pas encore revenue » à
+chaque lecture et refaite au basculement. Les pastilles : « Encaissements de factures — F… » (verte) à la place d'un
+« Rapproché » nu ; « Réservé à l'encaissement de la facture F… » (`badge-warning`), « — proposé par le client » et son
+survol, à la place de « Non rapproché » ; « la contre-passation » pour un débit ; classé sans lecture, la ligne le dit
+d'elle-même, sans les numéros. Lue en partie ou refusée : le bandeau « Les ventes facturées du dossier », et les trois
+lots (le rapprochement automatique, « Sans doute possible », les règles d'affectation) suspendus, leur carte nommant le
+motif ; pas encore revenue, de même, et la fiche se retient. La lecture partagée lit désormais l'auteur des
+encaissements (`cree_par`) : ses quatre autres lecteurs, tous du cabinet, n'en font rien.
+
+**LA FICHE.** Libre, la fiche d'hier ; portée, une carte — ses encaissements (la facture, le moyen, la date, le montant,
+« par le client »), l'ensemble face au mouvement, les mots de la garde, où la suite se passe — ; retenue, une note.
+Portée ou retenue : aucune section de classement, aucun pied ; la pièce que le client a proposée se montre et s'écarte,
+sans « Associer » ; le fil reste.
+
+**LE BANC.** Un dossier BASCULÉ, archivé pour n'être vu que des visites neuves (la liste des dossiers n'offre que ceux
+en cours) : d12, trois factures sources, un virement classé (1,50 € de frais), un virement réservé que la cliente a
+enregistré, un chèque sans mouvement, deux mouvements ordinaires. Quatre visites `banque-basculee/*`, avant celles de
+l'e-reporting : le relevé, « Tous », la fiche du réservé, celle du classé, mesurées contre le corps de la fiche — la
+fiche entière n'a pas de marge, et son en-tête tombait à 0 px de son bord. `debordements.mjs` : 0 à 1 440, 1 280, 1 024,
+390 et 720 px, et aux volets extrêmes (panneau 2 000, barre 2 000, les deux) ; la passe « panneau fermé, barre 2 000 »
+garde sa faute d'avant, hors du lot (`factures/clients-soins`, « gestion@m|utuelle- »), la même qu'aux lots précédents.
+Joué par une copie du script, d'empreinte égale, à côté d'un lien vers le Playwright de l'environnement, sans rien
+installer ; le navigateur sans le mandataire.
+
+**LES PREUVES.** La suite comparée test par test, sous Paris : avant (`2e10153`, 439 fichiers, 13 387 tests), après (441
+fichiers, 13 430 tests) ; aucun verdict changé ni disparu, 43 tests neufs (le module 24, l'écran 14,
+`ecransAvantLecture.test.tsx` 2 — « BanqueTab (basculé) » sous ses deux gardes —, le contrôle, les préalables et la
+Checklist 1 chacun). Les tests d'avant ne reçoivent que la prop (`false`), `cree_par: null` dans leurs fabriques, la
+colonne dans deux appels du contrôle, et la colonne de plus dans l'attente de la lecture. Le test d'écran : les cinq
+collections des ventes lues en partie une à une (le bandeau, aucune pastille de réserve, les trois lots suspendus, la
+fiche sans geste, rien d'écrit), la relecture pas encore revenue après un geste, les accès lus en partie, un dossier non
+basculé sans lecture de plus. Aucun verrou neuf : les gestes restent ceux d'hier, sous `sousVerrou`. Mutations : 34,
+toutes tuées (le module 14, `encaissementsFactures.ts` 2, le contrôle 1, l'onglet 10, la fiche 7). La barrière de
+l'agent, sous le Node 22.23.3 de la CI, sur son commit du code, puis celle de la session, sous le même Node, sur le
+commit du code recomposé sur `main` (`35806b4`) : `tsc -b --force` 0 ; lint 0 erreur (les 63 avertissements d'avant) ;
+`npm run test:fuseaux` 0, 441 fichiers et 13 430 tests sous Paris, UTC, New York et Auckland ; le build 0
+(`index-CY-vNsbp.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** Posé par ce lot : la lecture partagée lit `cree_par` ; « proposé par le
+client » vaut quand chacun des encaissements est du client ; un mouvement classé se reconnaît à sa ligne même sans
+lecture ; sur un dossier basculé dont les ventes ne sont pas lues, aucune fiche n'offre de geste, même d'un mouvement
+libre ; l'import d'un relevé et la connexion bancaire ne se retiennent pas (ils ne classent rien). Aucune question
+nouvelle.
+
+**À REVOIR.**
+- « Proposé par le client » dit l'auteur de l'ENCAISSEMENT : rattaché après coup par le cabinet
+  (`rattacher_mouvement_encaissement`), l'encaissement d'un client sans « Banque » se dit « proposé par le client »
+  alors que le cabinet a désigné le mouvement ; la base ne garde pas l'auteur d'un rattachement (une colonne, si le
+  cabinet le veut, avec VF5c).
+- Un mouvement réservé entre encore dans les lots, que G2 fait échouer entiers, et les totaux « non rapprochés » le
+  comptent : VF5a2.
+- Un mouvement qui porte aussi l'encaissement d'une facture qui n'est pas source (VF2-Q2) : la carte ne le nomme pas
+  (VF5h).
+- La relecture remet la lecture « pas encore revenue » : après chaque geste, la fiche dit un instant la note de la
+  retenue.
+- Les sections de classement de la fiche sont enveloppées (`{libre && (<>`) sans être réindentées, pour un diff lisible.
+- La faute d'avant de la passe « panneau fermé, barre 2 000 » reste à corriger, hors du chantier.
