@@ -793,13 +793,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   depuis VF3b3 ; depuis VF4c3, la concordance la rapproche des écritures de son encaissement, sur le compte que la
   composition écrit (`compteDuProduit`), et une période qui en porte ne s'enregistre que quand leurs écritures sont à
   jour (`refusDesVentesFacturees`), jamais sur une exigibilité écartée ; les frais d'un mouvement d'encaissements y
-  entrent tels que la composition les écrit, sous le poste de « Frais bancaires » (VF4C3-Q1). L'estimation la reçoit en
-  total hors taxe par mois, ou « non comptées », un état que l'appelant choisit et que son écran dit (« Ma simulation »,
-  jusqu'à VF8) → « LA 2035 LIT LES VENTES FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION, L'ESTIMATION
-  ET LA SIMULATION LISENT LES VENTES FACTURÉES », « LA 2035 ET LA CA3 LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE », « LA
-  2035 COMPTE LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS ». Ses écritures se composent dans
-  `lib/ecrituresVentesFacturees.ts`, pur, en centimes, la TVA du module jamais recalculée, chaque écriture liée à sa
-  source → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN MODULE ». Elles ne s'écrivent que par `ecrire_vente_facturee`, qui
+  entrent tels que la composition les écrit, sous le poste de « Frais bancaires » (VF4C3-Q1), dans la 2035 comme dans la
+  situation intermédiaire (ligne 28.65). L'estimation la reçoit en total hors taxe par mois, ou « non comptées », un
+  état que l'appelant choisit et que son écran dit (« Ma simulation », jusqu'à VF8) → « LA 2035 LIT LES VENTES
+  FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION, L'ESTIMATION ET LA SIMULATION LISENT LES VENTES
+  FACTURÉES », « LA 2035 ET LA CA3 LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE », « LA 2035 COMPTE LES FRAIS D'UN
+  MOUVEMENT D'ENCAISSEMENTS », « LA SITUATION INTERMÉDIAIRE COMPTE LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS ». Ses
+  écritures se composent dans `lib/ecrituresVentesFacturees.ts`, pur, en centimes, la TVA du module jamais recalculée,
+  chaque écriture liée à sa source → « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN MODULE ». Elles ne s'écrivent que par
+  `ecrire_vente_facturee`, qui
   les recompose en entiers et les compare en multiensemble, et ne se retirent que par `retirer_ecriture_vente_facturee`
   (la garde G5) ; le compte d'une compensation sans mouvement est une colonne de l'encaissement, choisie par le cabinet
   seul (`choisir_compte_contrepartie`), que le client « Ventes » lit ; un mouvement libéré qui porte encore des lignes
