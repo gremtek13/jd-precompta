@@ -433,7 +433,15 @@ export default function DossierDetail() {
               />
             )}
             {tab === 'estimation' && modele && <EstimationTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
-            {tab === 'financement' && modele && <FinancementTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
+            {tab === 'financement' && dossier && modele && (
+              <FinancementTab
+                dossierId={id}
+                assujettiTva={dossier.assujetti_tva}
+                modeComptable={modele.mode}
+                plan={modele.plan}
+                ventesParLesFactures={dossier.ventes_par_les_factures === true}
+              />
+            )}
             {tab === 'supplements' && <SupplementsTab dossierId={id} />}
             {tab === 'informations' && modele && (
               <InformationsTab

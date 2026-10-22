@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FinancementTab from './FinancementTab'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece } from '../../lib/types'
 import type { Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
@@ -147,7 +148,7 @@ async function cliquerGenerer(titre: HTMLElement) {
 }
 
 async function ouvrirLaSituation(au: string, assujettiTva = true, modeComptable: 'tresorerie' | 'engagement' = 'tresorerie') {
-  render(<FinancementTab dossierId="d" assujettiTva={assujettiTva} modeComptable={modeComptable} />)
+  render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={assujettiTva} modeComptable={modeComptable} />)
   const titre = await screen.findByRole('heading', { name: 'Situation intermédiaire', level: 3 })
   await cliquerGenerer(titre)
   // La date par défaut est « aujourd'hui » : on la fixe, sinon le test dirait autre chose chaque mois.
@@ -258,7 +259,7 @@ describe('FinancementTab — situation intermédiaire', () => {
     faux.categories = [CATEGORIE]
     faux.immobilisations = []
 
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
 
     // Le libellé est coupé en plusieurs nœuds par le `<strong>` du montant : on lit le texte du
     // paragraphe entier plutôt qu'un nœud, sinon le test échoue pour une raison qui n'est pas la
@@ -289,7 +290,7 @@ describe('FinancementTab — situation intermédiaire', () => {
       created_at: '2026-09-15T09:00:00Z',
     }]
 
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="engagement" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="engagement" />)
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
     await cliquerGenerer(titre)
 
@@ -311,7 +312,7 @@ describe('FinancementTab — situation intermédiaire', () => {
       created_at: '2026-09-15T09:00:00Z',
     }]
 
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
     await cliquerGenerer(titre)
 
@@ -339,7 +340,7 @@ describe('FinancementTab — ce sur quoi la projection repose', () => {
   }
 
   async function ouvrir(carte: string) {
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: carte, level: 3 })
     await cliquerGenerer(titre)
     return screen.getByRole('heading', { name: carte, level: 2 }).closest('.card') as HTMLElement
@@ -441,7 +442,7 @@ describe('FinancementTab — le prévisionnel ne s’enregistre pas sur une lect
 
   it('dit qu’on n’a pas lu, et ferme le formulaire', async () => {
     faux.refusees = new Set(['previsionnels_bancaires'])
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
     await attendreChargement()
 
     const { entete } = carteDuPrevisionnel()
@@ -455,7 +456,7 @@ describe('FinancementTab — le prévisionnel ne s’enregistre pas sur une lect
   // par le bouton de l'AUTRE carte.
   it('mais laisse générer quand la lecture a réussi', async () => {
     faux.refusees = new Set()
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
     await attendreChargement()
 
     const { entete } = carteDuPrevisionnel()
@@ -515,7 +516,7 @@ describe('FinancementTab — une recette compte à son encaissement', () => {
     faux.immobilisations = []
     faux.paiements = [ENCAISSEE_EN_JUILLET]
     faux.muet = { lignes_bancaires: 0 }
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
 
     expect(await screen.findByText(/n'ont pas pu être lu/)).toBeTruthy()
   })
@@ -555,7 +556,7 @@ describe('FinancementTab — des recettes encaissées par un virement groupé', 
     faux.paiements = [VIREMENT_DE_JUILLET]
     faux.reglements = PARTS
     faux.muet = { reglements_groupes: 1 }
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
 
     expect(await screen.findByText(/n'ont pas pu être lu/)).toBeTruthy()
   })
@@ -568,7 +569,7 @@ describe('FinancementTab — préremplir le prévisionnel', () => {
   const ANNEE_REFERENCE = new Date().getFullYear() - 1
 
   async function ouvrirLePrevisionnel(modeComptable: 'tresorerie' | 'engagement' = 'tresorerie') {
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable={modeComptable} />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable={modeComptable} />)
     const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
     await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
     const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
@@ -657,7 +658,7 @@ describe('FinancementTab — un dossier ouvert par des à-nouveaux', () => {
   it('part du solde repris pour la trésorerie actuelle, sans l’écriture antérieure', async () => {
     faux.aNouveaux = ouverture
     faux.ecritures = mouvements
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
     const tuile = (await screen.findByText('Trésorerie actuelle (banque)')).closest('.card') as HTMLElement
     await waitFor(() => expect(montantDe(tuile)).toMatch(/^4\s?750,00\s€$/))
     expect(within(tuile).getByText('Depuis l’ouverture du 01/01/2026 (à-nouveaux).')).toBeTruthy()
@@ -667,14 +668,14 @@ describe('FinancementTab — un dossier ouvert par des à-nouveaux', () => {
   // ajoute toujours quelque chose, ou qui annonce une ouverture qui n'existe pas.
   it('cumule tout l’historique quand rien n’ouvre le dossier, et ne parle pas d’ouverture', async () => {
     faux.ecritures = mouvements
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
     const tuile = (await screen.findByText('Trésorerie actuelle (banque)')).closest('.card') as HTMLElement
     await waitFor(() => expect(montantDe(tuile)).toMatch(/^1\s?450,00\s€$/))
     expect(within(tuile).queryAllByText(/Depuis l’ouverture/)).toHaveLength(0)
   })
 
   async function situationAu(date: string) {
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: 'Situation intermédiaire', level: 3 })
     // Attendre la fin du chargement : la modale reçoit l'ouverture à l'ouverture, pas après.
     await waitFor(() => expect(screen.queryAllByText('—')).toHaveLength(0))
@@ -714,7 +715,7 @@ describe('FinancementTab — un dossier ouvert par des à-nouveaux', () => {
     faux.aNouveaux = ouverture
     faux.ecritures = mouvements
     faux.muet = { a_nouveaux: 1 }
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
     expect(await screen.findByText(/Les à-nouveaux du dossier n'ont pas pu être lus en entier/)).toBeTruthy()
     // Le bandeau général se tait : ce n'est pas lui qui a manqué, et c'est lui qui suspend le
     // préremplissage du prévisionnel, qui ne lit pas l'ouverture.
@@ -744,7 +745,7 @@ describe('FinancementTab — un dossier exonéré compte TVA comprise', () => {
     faux.pieces = [recetteAvecTva()]
     faux.categories = [CATEGORIE]
     faux.immobilisations = []
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
     await cliquerGenerer(titre)
     // 12 000 € ramenés à douze mois sur 241 jours en 30/360 (8,03 mois) : 17 925,31 € — et non
@@ -759,7 +760,7 @@ describe('FinancementTab — un dossier exonéré compte TVA comprise', () => {
     faux.categories = [CATEGORIE]
     faux.immobilisations = []
     faux.ecritures = []
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
     await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
     const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
@@ -820,7 +821,7 @@ describe('FinancementTab — les mouvements affectés sans justificatif', () => 
     faux.categories = [CATEGORIE]
     faux.immobilisations = []
     faux.paiements = [{ ...ENCAISSEMENT_AFFECTE, montant: 10000 }]
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
     await cliquerGenerer(titre)
     // 10 000 € ramenés à douze mois : 14 937,76 €, comme la même recette portée par une pièce.
@@ -835,7 +836,7 @@ describe('FinancementTab — les mouvements affectés sans justificatif', () => 
     faux.immobilisations = []
     faux.ecritures = []
     faux.paiements = [{ ...ENCAISSEMENT_AFFECTE, date: `${annee}-03-10`, montant: 12000 }]
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
     await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
     const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
@@ -877,7 +878,7 @@ describe('FinancementTab — les emprunts et le relevé', () => {
     faux.emprunts = [EMPRUNT]
   }
   async function rendreEtAttendre() {
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     return screen.findByText('Prêt matériel')
   }
   const ligneDeLEmprunt = async () => (await rendreEtAttendre()).closest('tr') as HTMLElement
@@ -964,7 +965,7 @@ describe('FinancementTab — les emprunts et le relevé', () => {
       : rythme
   }
   async function ouvrirLePlan(carte: string) {
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: carte, level: 3 })
     await waitFor(() => expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.querySelector('strong')?.textContent).not.toBe('—'))
     await cliquerGenerer(titre)
@@ -1170,7 +1171,7 @@ describe('FinancementTab — les mouvements ventilés sur plusieurs comptes', ()
     // 10 500 € reçus : 10 000 € d'honoraires et 500 € d'apport de l'exploitant sur le même virement.
     faux.paiements = [mouvement({ montant: 10500 })]
     faux.ventilations = [part('v1', 'cat-recettes', 10000), part('v2', null, 500)]
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
     await cliquerGenerer(titre)
     // 10 000 € ramenés à douze mois : 14 937,76 €. Comptée, la part personnelle en ferait 15 684,65.
@@ -1183,7 +1184,7 @@ describe('FinancementTab — les mouvements ventilés sur plusieurs comptes', ()
     poser()
     faux.paiements = [mouvement({ date: `${annee}-03-10`, montant: 11940 })]
     faux.ventilations = [part('v1', 'cat-recettes', 12000), part('v2', 'cat-frais', -60)]
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
     await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
     const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
@@ -1197,7 +1198,7 @@ describe('FinancementTab — les mouvements ventilés sur plusieurs comptes', ()
     faux.paiements = [mouvement()]
     faux.ventilations = [part('v1', 'cat-recettes', 5000), part('v2', 'cat-frais', -50)]
     faux.muet = { ventilations_bancaires: 1 }
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva modeComptable="tresorerie" />)
     expect(await screen.findByText(/Les données du dossier bancaire/)).toBeTruthy()
   })
 })
@@ -1245,7 +1246,7 @@ describe('FinancementTab — une échéance de cotisation payée par le relevé'
     faux.paiements = paiements
   }
   async function ouvrirLaCarte(carte: string) {
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     const titre = await screen.findByRole('heading', { name: carte, level: 3 })
     await waitFor(() => expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.querySelector('strong')?.textContent).not.toBe('—'))
     await cliquerGenerer(titre)
@@ -1352,7 +1353,7 @@ describe('FinancementTab — une échéance de cotisation payée par le relevé'
       echeance({ id: 'c-juin', echeance: '2025-06-05', montant_appele: 200 }),
       echeance({ id: 'c-dec', echeance: '2025-12-05', montant_appele: 300 }),
     ]
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     await waitFor(() => expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.querySelector('strong')?.textContent).not.toBe('—'))
     const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
     await act(async () => { within(titre.parentElement as HTMLElement).getByRole('button').click() })
@@ -1384,7 +1385,7 @@ describe('FinancementTab — rien ne se chiffre avant la lecture', () => {
     faux.emprunts = [PRET]
     let liberer = () => {}
     faux.porte = new Promise<void>((resolve) => { liberer = resolve })
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)) })
 
     expect(tuile('Mensualités en cours (total)')).toBe('—')
@@ -1421,7 +1422,7 @@ describe('FinancementTab — le verrou de création d’un emprunt', () => {
     faux.categories = []
     faux.immobilisations = []
     faux.ecritures = []
-    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
     await act(async () => { (await screen.findByRole('button', { name: '+ Nouvel emprunt' })).click() })
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Nom'), { target: { value: 'Prêt véhicule' } })
