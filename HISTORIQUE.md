@@ -31079,6 +31079,8 @@ Trois, dans le fichier joint au compte rendu de l'agent ; chacune avec son conte
 - **VF5-Q3 — « Ma banque » d'un client « Banque » sans « Ventes ».** Recommandé : rien de plus (« Traité par ton
   cabinet ») ; écarté : une fonction qui lui dirait les mouvements réservés ou classés par des encaissements (une
   migration, une lecture neuve présentée).
+Tranchées par le cabinet sur sa page le 22/10/2026 (14 h 05), toutes trois à la recommandation : VF5d2 et VF5h, chacune
+une migration, entrent au découpage, et « Ma banque » ne change pas (consigné avec VF5c).
 Tranchés sans question, par une règle ou une décision déjà prise : la frontière non lue côté client (P9a : la base
 répond) ; un encaissement à la fois sur une remise (A11 hors du chantier) ; la sévérité des points de la Checklist
 (§ 11 de la conception : préalables à VF7) ; EC3-Q9 dans A8 (A8 crée la facture reprise) ; le geste qui rendrait un
@@ -31644,3 +31646,165 @@ pas rejoué en production : aucune policy ne change.
   reprendre avant son prochain rejeu en production.
 - Le refus parle d'« un encaissement » à qui contre-passe : c'est la phrase du rang 2 de l'enregistrement, voulue
   telle ; des mots propres à la contre-passation demanderaient une migration de plus et une ligne du module.
+
+**LA MISE EN LIGNE.** Demande #208, ouverte sur `ba0a40e` après la barrière de la session sous Node 22.23.3 sur la tête
+(`tsc -b --force` ; lint, 0 erreur et les 63 avertissements d'avant ; 444 fichiers et 13 518 tests sous Paris, UTC, New
+York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de 19 h 06 à 19 h 42
+UTC) ; fusionnée en « Rebase and merge » le 22/10/2026 à 19 h 42 UTC (`f4ab605`, `3ddb546`, `0781044`), `main` linéaire,
+son arbre égal à celui de la branche ; le déploiement vert, et le site sert `index-BvnE9d55.js` à 19 h 48 (le
+déploiement fini la même minute), le bundle du build local. La feuille de route : la ligne 28.65 mise à jour, puis relue
+par empreinte (15 871 positions) ; les barres recomptées par requête, inchangées (186 chantiers hors de la phase 7, dont
+141 livrés ; 76 % et 82 %). La branche réalignée sur `main`.
+
+### 22/10/2026 — LA FICHE D'UN CRÉDIT CLASSE, RETIRE ET RATTACHE LES ENCAISSEMENTS D'UNE FACTURE — CHANTIER EC-Q3, VF5C (LIGNE 28.65)
+
+(Écrite par l'agent dev du lot sur `5d79b4b` — `main`, VF5a1, VF5a2 et VF5b compris —, en deux commits que la session a
+relus et recomposés sur le correctif de la contre-passation : le code et ses tests — le test de la case « Banque »
+retirée, venu du correctif, passe `mouvementImpose={null}`, la prop devenue obligatoire ; le bloc des gestes de l'onglet
+remonté au-dessus du commentaire de « Supprimer ce message », qu'il séparait de sa fonction ; la fin d'un commentaire
+d'`encaissementsFactures.ts` recoupée ; rien d'autre —, puis cette documentation, qui porte aussi la mise en ligne du
+correctif et consigne VF5-Q1 à VF5-Q3. Créés : `gestesDuCredit.test.ts`, `BanqueTab.gestesDesVentes.test.tsx`.
+Modifiés : `mouvementsDesVentes.ts`, `encaissementsFactures.ts` (un type élargi), `BanqueTab.tsx`, `FicheMouvement.tsx`,
+`EncaissementsFactureModal.tsx`, `FacturesTab.tsx`, `ReglementsSection.tsx`, `DossierDetail.tsx`, le banc
+(`fauxSupabase.ts`, `debordements.mjs`), et des tests (`BanqueTab.ventesFacturees.test.tsx`,
+`EncaissementsFactureModal.test.tsx`, `encaissementsEcritures.test.ts`, `ecransAvantLecture.test.tsx`, et la prop neuve
+dans les quatre autres tests de l'onglet Banque). Ni base, ni migration, ni policy, ni Edge Function ; en production,
+rien n'a été lu : le lot n'appelle que trois fonctions déjà en base depuis VF2, et la mesure de la conception de VF5
+(22/10/2026 : aucun dossier basculé, aucun encaissement) vaut.)
+
+**LA DÉLIMITATION.** La puce VF5c du § 5 de la conception (« VF5, LA BANQUE : LA CONCEPTION ») et le point (d) de son
+§ 4 : aucun geste ne classait un mouvement par ses encaissements, ne retirait ce classement, ni ne rattachait un
+encaissement enregistré sans mouvement. Côté CABINET seulement, sur un CRÉDIT d'un dossier basculé. Rien de VF5d et des
+suivants : ni les débits (un débit réservé ou classé garde la carte de VF5a1, sans geste), ni les candidats de
+`justificatifPossible`, ni la Checklist, ni « Ma banque », ni la contre-passation (un lot à part l'aligne sur
+« Banque »). NEUTRE en production : sans dossier basculé, `gestesDuCredit` ne rend jamais que « aucun », et la fiche est
+celle d'hier.
+
+**LE MODULE** (`mouvementsDesVentes.ts`, pur ; une section neuve en fin de module). `gestesDuCredit(ventes, lecture,
+ligne, anneesValidees, plan)` rend, pour la fiche d'un crédit :
+- « aucun » : un dossier qui n'a pas basculé, des ventes facturées pas encore revenues, lues en partie, refusées ou d'un
+  autre dossier (la retenue de VF5a1 — l'état du relevé ET la lecture, l'un et l'autre confrontés au dossier du
+  mouvement), un mouvement que la lecture n'a pas rendu, un débit (VF5d), un mouvement classé autrement, un crédit libre
+  que rien n'attend ;
+- « classé » : `retirer_classement_par_encaissements`, son refus par `refusRetraitDuClassement`, une confirmation qui
+  nomme le crédit et ses factures, et dit que le mouvement redevient à traiter, toujours réservé, et que ses écritures,
+  s'il en a été passé, deviennent « à retirer » dans l'onglet Écritures ;
+- « réservé » : la phrase de l'ensemble — ce que ses encaissements font face au crédit : exactement, à l'écart des frais
+  (portés au compte `services_bancaires` du PLAN, jamais un compte en dur), un écart que des frais n'expliquent pas, ou
+  ce qui reste à faire, et que le classement attend ; `classer_mouvement_par_encaissements`, son refus par
+  `refusClassement`, une confirmation qui nomme chaque encaissement (la facture, son client, le moyen, la date, le
+  montant) et les frais ; et le complément, tant que ses encaissements ne font pas le crédit (une remise de chèques) ;
+- « libre » : le complément seul.
+Le complément, sur un mouvement qu'aucun exercice validé ne fige : les encaissements — pas les contre-passations — de
+factures sources du dossier, sans mouvement, non retirés, que rien ne dit « n'avoir pas eu lieu »
+(`justifieSonMouvement`), le plus proche de ce qui reste du crédit d'abord, puis la date et l'identifiant, octet par
+octet ; chacun jugé par `refusRattachement`, et sa confirmation dit l'état d'APRÈS — `refusClassement` joué sur le
+registre où il citerait ce mouvement : « Ses encaissements feront alors le crédit : il restera à le classer par eux. »,
+ou ce qui restera ; puis les factures sources validées, des factures, dont le reste net de leurs avoirs
+(`resteAEncaisserVente`) est positif, la plus proche de ce qui reste d'abord, puis le numéro et l'identifiant. Ni l'un
+ni l'autre : une note, sur un mouvement réservé ; rien du tout sur un crédit libre — une recette sans facture n'a rien à
+en dire. `manqueDuCredit` (ce qui reste à faire du crédit, par les seuls encaissements que le classement compte) et
+`montantSurLeCredit` (ce que la fenêtre propose) servent aussi la fenêtre. `resteAEncaisser` et `resteAEncaisserVente`
+reçoivent un type élargi (`ContexteDuReste` : de la facture, l'identifiant, le type et la source) : la lecture des
+ventes facturées ne porte pas tout ce qu'en lit la fenêtre, et ces deux fonctions n'en lisaient pas plus.
+
+**L'ÉCRAN** (`BanqueTab.tsx`, `FicheMouvement.tsx`). L'onglet calcule les gestes de la fiche ouverte sur ce qu'il a lu
+dans la même relecture (le relevé, `lectureVentes`, les exercices validés), et les rejuge AU CLIC : un geste que la base
+refuserait a grisé son bouton, et son gestionnaire ne part pas non plus. Chaque geste passe sa fonction SEULE, après
+`window.confirm` de la phrase du module, sous `sousVerrou` — le verrou des écritures de l'écran, relâché après la
+relecture —, et un refus de la base est dit (`messageErreur`) puis suivi d'une relecture, comme l'écart d'une
+proposition du client. Le verrou est lu AVANT la question : un second clic pendant l'écriture ne la repose pas. La fiche
+porte une section par geste, sous le titre du geste, entre ce que le client a proposé et les sections d'hier : « Classer
+par ses encaissements » (la phrase, le refus, le bouton), « Retirer ce classement », « Rattacher un encaissement
+enregistré sans mouvement » et « Enregistrer l'encaissement d'une facture » — une liste et un bouton chacun, le choix ne
+partant qu'au clic ; le libellé choisi se relit en entier sous la liste, que le volet tronque. `BanqueTab` reçoit
+`statutTva` de `DossierDetail`, sans valeur par défaut : la fenêtre ouverte depuis la fiche en tire l'obligation de
+déclarer et son échéance, comme depuis l'onglet Factures.
+
+**LA FENÊTRE, LE MOUVEMENT IMPOSÉ** (`EncaissementsFactureModal.tsx`). Une prop OBLIGATOIRE, `mouvementImpose: string |
+null` — nulle à l'onglet Factures et dans les règlements, sans valeur par défaut qui la changerait ailleurs. Imposé, le
+mouvement ne se choisit pas : il est dit (la date, le libellé, le montant, « Imposé par la fiche du mouvement… »), la
+saisie part de sa date et de `montantSurLeCredit` — le reste entier de la facture quand ce qui reste du crédit le fait à
+l'écart des frais près, sinon le plus petit des deux —, la répartition est celle d'hier, et le moyen reste à choisir. Un
+mouvement que la fenêtre n'a pas lu reste imposé : la saisie le cite, et le refus de la base le dit avant le clic. Après
+un enregistrement, la saisie relue repart du même mouvement. Le type de la prop `facture` se resserre sur ce que
+l'en-tête lit avant la lecture (l'identifiant, le numéro, le client, la date, le TTC) : la fiche n'a de la facture que
+la lecture des ventes facturées. L'onglet garde la facture choisie dans son état — la relecture qui suit chaque geste
+remet la lecture des ventes à « pas encore revenue » — et relit après la fenêtre, qu'il pose sur le corps du document,
+au-dessus du panneau de droite (plus bas, le banc).
+
+**CE QUE LE CABINET APPELLE** : `classer_mouvement_par_encaissements(p_dossier_id, p_ligne_bancaire_id)`,
+`retirer_classement_par_encaissements(p_dossier_id, p_ligne_bancaire_id)`,
+`rattacher_mouvement_encaissement(p_dossier_id, p_encaissement_id, p_ligne_bancaire_id)` — `admin_du_dossier`, depuis
+VF2 ; `enregistrer_encaissement` par la fenêtre, comme hier. `encaissementsEcritures.test.ts` en tient la liste : les
+trois ne s'appellent que de l'onglet Banque, et la garde qui disait les quatre fonctions du registre les admet
+nommément.
+
+**LE BANC.** Le dossier basculé (d12) reçoit un crédit libre, la remise du chèque de F2026-0023 (300 €, b6). Les deux
+fiches de VF5a1 portent désormais leur geste. Deux visites neuves, avant celles de l'e-reporting :
+`banque-basculee/fiche-credit-libre` (le chèque à rattacher et la facture à encaisser, choisis), mesurée contre le corps
+de la fiche, et `banque-basculee/encaissement-impose` (la fenêtre de F2026-0024 ouverte sur la remise), contre sa carte.
+Le premier passage a trouvé un défaut : à 390 et 720 px, la fenêtre ouverte depuis la fiche passait SOUS le panneau de
+droite (qui se superpose sous 1 280 px et flotte sur le téléphone), trois de ses boutons recouverts par la fiche ;
+l'onglet la pose désormais sur le corps du document (`createPortal`), au-dessus du panneau. `debordements.mjs`, rejoué
+sur le code final : 0 à 1 440, 1 280, 1 024, 390 et 720 px, et aux volets extrêmes (panneau 2 000, barre 2 000, les
+deux), 0 bouton recouvert sur 241 sondés dans 55 fenêtres à chaque passe ; les sept visites `banque-basculee/*` ne
+débordent à aucune ; la passe « panneau fermé, barre 2 000 » garde sa faute d'avant, hors du lot
+(`factures/clients-soins`, « gestion@mutue|lle- »). Joué par une copie du script, d'empreinte égale, à côté d'un lien
+vers le Playwright de l'environnement, sans rien installer ; le navigateur sans le mandataire.
+
+**LES PREUVES.** La suite comparée test par test, sous Paris : avant (`5d79b4b`, 444 fichiers, 13 512 tests), après (446
+fichiers, 13 571 tests) ; aucun verdict changé, 59 tests neufs, et deux de VF5a1 renommés (plus bas, dont l'attente
+change). Le module 26 (`gestesDuCredit.test.ts`) : la retenue (l'état du relevé, la lecture, chacun d'un autre dossier),
+un débit, un crédit nul, un mouvement classé autrement ; le réservé exact, aux frais (le compte du PLAN décalé, pas
+celui du catalogue), au-delà des frais, pas encore fait, figé ; le classé, au singulier et au pluriel, figé ; le libre —
+la sélection des rattachables, leur ordre et ses deux départages, chacun jugé, l'état d'après, un second encaissement de
+la même facture, un crédit qui porte déjà l'encaissement d'une facture d'avant la bascule, un encaissement ou une
+facture d'un autre dossier — et les factures à encaisser (sources, validées, nettes de leurs avoirs, leur ordre) ;
+`montantSurLeCredit` aux deux bords du seuil des frais, `manqueDuCredit`. L'écran 22
+(`BanqueTab.gestesDesVentes.test.tsx`) : les trois gestes — le faux client voit la fonction et ses paramètres, puis la
+relecture et l'état d'après —, chaque refus dit avant le clic et le bouton grisé (le classement d'une remise pas encore
+faite, le retrait figé, un chèque trop grand), la confirmation refusée de chacun (rien ne part), le refus de la base
+après le clic pour chacun (dit, puis relu), deux clics puis trois dans le même `act` (un seul envoi par geste, une seule
+question), « Enregistrer… » qui ouvre la fenêtre sur la facture choisie et le mouvement imposé sans rien écrire — c'est
+elle qui enregistre, et l'onglet relit —, chacune des cinq lectures des ventes lue en partie (aucun geste neuf), la
+relecture pas encore revenue, un dossier non basculé. La fenêtre 8 (`EncaissementsFactureModal.test.tsx`) : le mouvement
+imposé dit et cité, la saisie (frais, remise, part, encaissements déjà portés), son refus avant le clic, un mouvement
+non lu, la saisie relue. `ecransAvantLecture.test.tsx` 2 : la fenêtre au mouvement imposé sous ses deux gardes, et sa
+phrase fixe. `encaissementsEcritures.test.ts` 1. Les tests d'avant ne reçoivent que les props neuves (`statutTva`,
+`mouvementImpose={null}`). Mutations : 73 (le module 39, la fiche 11, l'onglet 16, la fenêtre 7), 68 tuées ; deux
+survivantes du premier passage — le filtre du dossier d'un encaissement candidat, le départage des factures par leur
+numéro — ont fait ajouter leurs cas, et sont tuées ; cinq équivalentes : un crédit nul (`<= 0` contre `< 0` : un
+mouvement nul n'est ni réservé ni classé, la base le refuse), l'égalité au seuil de `montantSurLeCredit` (`>= 0` contre
+`> 0` : le reste et ce qui reste du crédit sont alors égaux), et les trois refus que le gestionnaire de l'onglet rejuge
+au clic, derrière un bouton déjà grisé (la seconde ceinture). La barrière de l'agent, sous le Node 22.23.3 de la CI, sur
+le commit du code (`7874410`) : `tsc -b --force` 0 ; lint 0 erreur (les 63 avertissements d'avant, aux numéros de ligne
+près) ; `npm run test:fuseaux` 0, 446 fichiers et 13 571 tests sous Paris, UTC, New York et Auckland ; le build 0
+(`index-iiOx7BnJ.js`). La barrière de la session, sous le même Node, sur le commit du code recomposé (`d79686e`) :
+`tsc -b --force` 0 ; lint 0 erreur (les 63 avertissements d'avant, aux numéros de ligne près) ; `npm run test:fuseaux`
+0, 446 fichiers et 13 577 tests sous Paris, UTC, New York et Auckland ; le build 0 (`index-EjDwdUC_.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** Posé par ce lot, sur la conception : le complément s'offre aussi sur un
+mouvement réservé tant que ses encaissements ne font pas le crédit (la remise de chèques de la puce VF5c) ; un crédit
+libre sans candidat ne montre rien ; un mouvement figé n'offre aucun complément ; le geste se rejuge au clic ; la
+confirmation du rattachement dit l'état d'après ; le montant proposé sur un crédit imposé est le reste de la facture à
+l'écart des frais près, sinon le plus petit des deux. Aucune question nouvelle.
+
+**À REVOIR.**
+- La garde `encaissementsEcritures.test.ts` (« les quatre fonctions ne s'appellent que de la fenêtre ») a dû admettre
+  les trois fonctions du relevé, qui portent « encaissement » dans leur nom : sa liste fermée les nomme, et une garde
+  neuve dit qu'elles ne s'appellent que de l'onglet Banque.
+- Deux tests de VF5a1 (`BanqueTab.ventesFacturees.test.tsx`) disaient la fiche d'un mouvement réservé ou classé « sans
+  aucun geste » : ils disent désormais le seul geste de VF5c, et leur nom le dit.
+- « Proposé par le client » dit toujours l'auteur de l'ENCAISSEMENT : rattaché depuis la fiche par le cabinet, un
+  encaissement de la cliente se dit encore « proposé par le client » (l'« À REVOIR » de VF5a1 ; une colonne, si le
+  cabinet le veut).
+- Sur un dossier basculé qui a une facture source à encaisser, la fiche de CHAQUE crédit libre offre « Enregistrer
+  l'encaissement d'une facture », même une recette sans facture (l'Assurance maladie) : les candidats qui rapprochent un
+  crédit d'une facture viennent avec VF5e.
+- La fenêtre propose la date du mouvement ; pour un chèque, la date à retenir est celle de la remise (la fenêtre la dit
+  dès le moyen choisi), à corriger à la main.
+- La carte de VF5a1 dit encore « Ensemble : … ; le mouvement : … » au-dessus de la phrase du classement, qui le redit
+  avec les frais.
+- La branche « il ne pourra pas encore se classer » de l'état d'après n'est atteinte par aucun candidat que
+  `refusRattachement` admet : elle reste, pour ne jamais dire « il restera » d'un autre refus.
