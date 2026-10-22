@@ -30678,3 +30678,91 @@ existante. Aucune question nouvelle.
   `ventesParLesFactures` commande).
 - Pour VF7 : le compte de mouvements du poste « Frais financiers » inclut ces mouvements ; l'instantané validé le
   gardera.
+
+**LA MISE EN LIGNE.** Demande #203, ouverte sur `8ef35b6` après la barrière de la session sous Node 22.23.3 sur le
+commit du code (`tsc -b --force` ; lint, 0 erreur et les 63 avertissements d'avant ; 439 fichiers et 13 354 tests sous
+Paris, UTC, New York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de 5 h 34
+à 5 h 48 UTC) ; fusionnée en « Rebase and merge » le 22/10/2026 à 5 h 51 UTC (`da832f1`, `f0f7e64`), `main` linéaire,
+son arbre égal à celui de la branche ; le déploiement vert, et le site sert `index-CW-roh9Q.js` depuis 5 h 57, le bundle
+du build local. La feuille de route : la ligne 28.65 mise à jour, puis relue par empreinte (12 004 positions) ; les
+barres recomptées par requête, inchangées (186 chantiers hors de la phase 7, dont 141 livrés ; 76 % et 82 %), l'en-tête
+daté du 22 octobre. La page des arbitrages dit VF4C3-Q1 faite sur la recommandation, en attendant la réponse du cabinet.
+La copie de travail de l'agent retirée, son travail entier dans `main` ; la branche réalignée sur `main`.
+
+### 22/10/2026 — LA SITUATION INTERMÉDIAIRE COMPTE LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(Écrite par l'agent dev du lot sur `f0f7e64`, en deux commits que la session a relus : le code et ses tests, puis cette
+documentation ; la session y a ajouté la mise en ligne de VF4C3-Q1, à la fin de son entrée. Modifiés :
+`situationIntermediaire.ts`, `FinancementTab.tsx`, `DossierDetail.tsx`, et les tests (`situationIntermediaire.test.ts`,
+`dossierBasculeBoutEnBout.test.ts`, `FinancementTab.test.tsx`, `FinancementTab.ventesFacturees.test.tsx`,
+`ecransAvantLecture.test.tsx`, `DossierDetail.test.tsx`). Ni base, ni migration, ni Edge Function, ni lecture de
+production.)
+
+**LA DÉLIMITATION.** Le premier point de l'« À REVOIR » de VF4C3-Q1 (« LA 2035 COMPTE LES FRAIS D'UN MOUVEMENT
+D'ENCAISSEMENTS ») : la situation intermédiaire, la 2035 « à ce jour » qu'on montre à une banque, ne comptait pas les
+frais que la banque retient sur un mouvement classé par ses encaissements de factures sources ; un dossier basculé y
+aurait montré un résultat flatté de ces frais, sur trois chiffres — la situation de la période, la CAF des ratios, le
+préremplissage du prévisionnel. L'estimation et « Ma simulation » restent hors du lot (VF8), comme la 2035, la
+composition et la base. NEUTRE en production : aucun dossier n'a basculé, et sans bascule toute situation reste
+identique.
+
+**LE MOTEUR.** `calculerSituationIntermediaire` reçoit deux paramètres de plus, obligatoires et sans défaut : le plan du
+dossier (`Pick<PlanComptable, 'services_bancaires'>`) et `EcrituresDesVentesDeLa2035`, le type même de la 2035
+(`sans_bascule` ou `composees`). Le plan est nécessaire : `fraisDesMouvements` lit les lignes que la composition porte
+au compte des services bancaires DU PLAN, et la forme `composees` ne le porte pas ; la situation n'en lit rien d'autre.
+Chaque frais dont la date du mouvement tombe dans la période (bornes comprises, comme le relevé) compte en dépense sous
+le poste de `categorieDesFraisBancaires` (la catégorie du dossier, sinon la commune), exactement le montant que
+`fraisDesMouvements` rend, en centimes jusqu'à la ligne : les MÊMES fonctions que la 2035, aucune règle recopiée. En
+trésorerie comme en engagement : la composition écrit le mouvement sans lire le mode (la section « Les mouvements que
+des encaissements citent » de `ecrituresVentesFacturees.ts` ne le consulte pas, et `ventesFacturees` n'en dépend pas) ;
+un test compare les frais des deux compositions. Sans catégorie ou sans poste : sur aucune ligne, et dit
+(`fraisSansPoste`, du type de la 2035, ceux de la période seulement). Aucune ligne de poste à zéro ne se crée.
+
+**L'ÉCRAN.** `FinancementTab` reçoit de `DossierDetail` le plan et `ventesParLesFactures`, props obligatoires ; l'onglet
+ne se monte plus qu'avec la ligne du dossier, déjà lue quand le modèle l'est. Pour un dossier basculé seulement, il lit
+`lireLesSourcesDesEcrituresDeVente` dans le même `Promise.all` que ses autres lectures, sous la garde de la dernière
+lecture, et relit au basculement ; `ecrituresDesVentesPourLa2035` en tire l'état, comme à Clôture. Pas revenues pour ce
+dossier, « en attente » : les trois « Générer » attendent (`aria-busy`). Partielles, refusées, qui ne se composent pas,
+ou une facture source dans un dossier qui ne se dit pas basculé : le bandeau des ventes facturées, avec le motif ; ni
+situation ni ratios ; le prévisionnel s'ouvre, sans préremplissage — exactement comme des ventes facturées lues en
+partie. Les frais sans poste se disent en une ligne discrète, la forme des ventes écartées : sous la situation et sous
+la CAF des ratios (« Frais d'encaissements que la situation ne compte pas »), et dans le prévisionnel, avant le clic,
+pour l'année de référence affichée (« … que le préremplissage ne compte pas ») ; la date, le libellé du mouvement, le
+montant, et la raison : la catégorie sans poste (Clôture, carte « Postes manquants »), ou le dossier sans catégorie de
+code « frais_bancaires ». La situation de l'année de référence se calcule désormais à chaque rendu du prévisionnel, et
+le clic reprend ce calcul.
+
+**LES PREUVES.** La suite comparée test par test, avant (`f0f7e64`, 439 fichiers, 13 354 tests) et après (439 fichiers,
+13 387 tests), sous Paris : aucun verdict changé ni disparu, 33 tests neufs (le module 9, la confrontation 10, l'onglet
+10, le garde transversal des écrans 3, la page 1). Les tests d'avant ne reçoivent que les paramètres et les props
+(`sans_bascule`, `PLAN_PAR_DEFAUT`, `ventesParLesFactures={false}`) ; ceux des ventes facturées du Financement montent
+le dossier basculé, comme la base l'impose — une facture source dans un dossier qui ne se dit pas basculé rend désormais
+les lectures incohérentes, comme à Clôture —, leurs verdicts inchangés. La confrontation
+(`dossierBasculeBoutEnBout.test.ts`) : sur le dossier basculé d'essai, ses deux mouvements crédités de 2 € de moins que
+leurs encaissements, la situation de l'année 2025 et la 2035 de 2025 comptent les mêmes frais au même poste, sous les
+deux plans et dans les deux modèles ; en trésorerie, la situation de l'année est la 2035, poste pour poste ; sans poste
+ou sans catégorie, les deux disent les mêmes frais. Mutations : 30 sur la logique nouvelle (13 du module, 15 de
+l'onglet, 2 de la page), 29 tuées ; « la borne basse de la période exclue » survivait d'abord, tuée par un cas au jour
+même du début. La survivante : retirer « en attente » de l'attente de l'onglet — cet état n'est atteint que dans le
+rendu qui précède l'effet de relecture d'un basculement, où la situation et les ratios restent fermés faute des
+écritures ; le terme reste, défensif. La barrière de l'agent, sous le Node 22.23.3 de la CI, sur le commit de cette
+documentation, puis celle de la session, sous le même Node, sur le commit du code (`fc5b66f`) : `tsc -b --force` 0 ;
+lint 0 erreur (les 63 avertissements d'avant) ; `npm run test:fuseaux` 0, 439 fichiers et 13 387 tests sous Paris, UTC,
+New York et Auckland ; le build (`index-BI0--OeU.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** Rien de nouveau à trancher : la règle est celle de VF4C3-Q1, appliquée à la
+situation. Posé par ce lot : le plan entre dans la signature de la situation, à côté des écritures ; les frais sans
+poste se disent aussi dans le prévisionnel. Aucune question nouvelle.
+
+**À REVOIR.**
+- L'estimation et « Ma simulation » ne comptent toujours pas ces frais : à VF8, avec leurs totaux. L'estimation projette
+  des charges par poste (`totauxPourAnnee`) ; ses frais viendraient des mêmes fonctions, au poste de
+  `categorieDesFraisBancaires`.
+- Le plan de trésorerie ne lit rien des ventes facturées : il projette les écritures du compte de banque, où l'écriture
+  d'un mouvement d'encaissements porte déjà le montant crédité, frais déduits.
+- La lecture des sources et celle des ventes facturées sont deux lectures du même instant, comme à Clôture : une
+  écriture faite entre les deux ferait un écart d'une relecture.
+- Le prévisionnel calcule la situation de l'année de référence à chaque rendu (chaque frappe dans un champ) : sans coût
+  sensible sur les dossiers d'essai, à surveiller sur un gros dossier.
+- `ecrituresDesVentesPourLa2035` porte le nom de la 2035 et sert aussi la situation : un nom plus général le dirait
+  mieux (hors du lot).
