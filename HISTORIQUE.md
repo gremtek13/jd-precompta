@@ -31339,3 +31339,166 @@ Aucune question nouvelle.
 - Le tableau de cette carte est enveloppé sans être réindenté, pour un diff lisible.
 - Sur des ventes lues en partie, les plans s'affichent, suspendus, avec les mouvements réservés qu'ils ne savent pas
   reconnaître : rien ne part, la carte dit le motif.
+
+**LA MISE EN LIGNE.** Demande #206, ouverte sur `bcf5e88` après la barrière de la session sous Node 22.23.3 sur le
+commit du code (`tsc -b --force` ; lint, 0 erreur et les 63 avertissements d'avant ; 443 fichiers et 13 462 tests sous
+Paris, UTC, New York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la demande, de
+13 h 42 à 14 h 01 UTC) ; fusionnée en « Rebase and merge » le 22/10/2026 à 14 h 03 UTC (`325748a`, `4ba2564`), `main`
+linéaire, son arbre égal à celui de la branche ; le déploiement vert, et le site sert `index-DdoW2UN-.js` depuis
+14 h 12, le bundle du build local. La feuille de route : la ligne 28.65 mise à jour, puis relue par empreinte (14 449
+positions) ; les barres recomptées par requête, inchangées (186 chantiers hors de la phase 7, dont 141 livrés ; 76 % et
+82 %). Aucune question nouvelle. La copie de travail de l'agent retirée, son travail entier dans `main` ; la branche
+réalignée sur `main`.
+
+### 22/10/2026 — LA FENÊTRE DES ENCAISSEMENTS JUGE UNE FACTURE SOURCE — CHANTIER EC-Q3, VF5B (LIGNE 28.65)
+
+(Écrite par l'agent dev du lot sur `362f247` — `main`, VF5a1 compris, et le lot VF5a2 —, en deux commits que la session
+a relus et recomposés sur `main` : le code et ses tests — quatre lignes vides égarées retirées et un commentaire
+recoupé, rien d'autre —, puis cette documentation, qui porte aussi la mise en ligne de VF5a2. Créé :
+`encaissementsFenetreVente.test.ts`. Modifiés : `encaissementsFactures.ts`, `espaceVentes.ts`,
+`EncaissementsFactureModal.tsx`, le banc (`fauxSupabase.ts`, `debordements.mjs`), et six tests
+(`encaissementsFactures.test.ts`, `espaceVentes.test.ts`, `EncaissementsFactureModal.test.tsx`,
+`FacturesTabClient.test.tsx`, `ReglementsSection.test.tsx`, `ecransAvantLecture.test.tsx`). Ni base, ni migration, ni
+policy, ni Edge Function ; en production, des SELECT sur le catalogue (policies, droits des tables) et des comptes,
+aucune valeur.)
+
+**LA DÉLIMITATION.** La puce VF5b du § 5 de la conception (« VF5, LA BANQUE : LA CONCEPTION ») et le point (c) de son
+§ 4 : la fenêtre des encaissements jugeait une facture source comme une facture d'hier — ni la frontière, ni le
+mouvement déjà classé, ni le plafond net des avoirs ne s'y disaient avant le clic, et elle proposait des mouvements que
+la base refuserait. Rien de VF5c et des suivants : ni la fiche d'un mouvement, ni les candidats, ni la Checklist, ni
+« Ma banque ». NEUTRE en production, relue le 22/10/2026 : aucun dossier basculé, aucune facture source, aucun
+encaissement, aucun exercice validé, aucun avoir.
+
+**LE MODULE** (`encaissementsFactures.ts`, pur ; une section neuve en fin de module).
+- `ContexteVente.anneesValidees` devient `readonly number[] | 'illisibles'` (`ANNEES_ILLISIBLES`) : côté client,
+  `exercices_valides` ne se lit pas (sa policy, `admin_du_dossier` ; décision de P9a). Illisibles, la frontière d'un
+  exercice validé est sautée par les quatre jugements qui la portent — l'écran dit que la base la jugera
+  (`frontiereJugeeParLaBase`, `FRONTIERE_JUGEE_PAR_LA_BASE`), et son refus revient après le clic, sous ses mots. Jamais
+  une liste vide à la place : elle affirmerait qu'aucun exercice n'est validé.
+- `resteAEncaisserVente` : le reste qu'une facture SOURCE peut encore encaisser, net de ce que ses avoirs validés
+  créditent, en tout et par taux (EC3-Q10, les rangs 27 et 29) ; pour toute autre facture, `resteAEncaisser`. C'est le
+  reste que la fenêtre montre et propose, et que ses propositions font.
+- `propositionsEncaissement` reçoit le contexte de la vente, sans valeur par défaut, et juge chaque proposition par
+  `refusEnregistrementVente`. Pour une facture source, seuls des mouvements LIBRES se proposent — par le jugement même
+  de la base (rang 17), aucune règle recopiée ; la pièce jumelle ne propose donc plus ses paiements, qui sont tous des
+  mouvements rapprochés ou des règlements groupés (`paiementsDesPieces`), que ce rang refuse. Un filtre explicite des
+  mouvements libres et un saut explicite de la jumelle, écrits d'abord, ont été retirés : les mutations les ont montrés
+  équivalents au jugement (plus bas).
+- `debitsCitables` : les débits qu'une contre-passation d'une facture source peut citer (le cinquième paramètre
+  d'`annuler_encaissement`) — du dossier, libres, le plus proche du montant de l'encaissement d'abord, puis la date et
+  l'identifiant ; aucun n'est choisi d'office, `refusContrePassationVente` juge celui qu'on choisit.
+- `inclassableApres`, et ses deux portes `inclassableApresEnregistrement` et `inclassableApresContrePassation` : le
+  geste qui rendrait un mouvement inclassable se DIT, sans être refusé (la base l'admet). `refusClassement` joué sur
+  l'état d'après le geste, COMPLÉTÉ de ce qui reste à faire du mouvement par une facture source fictive : un crédit payé
+  en partie n'est pas inclassable, il attend ses autres encaissements (une remise de chèques) ; un crédit qui justifie
+  aussi l'encaissement d'une facture qui n'est pas source, ou un débit que ses contre-passations dépasseraient, ne se
+  classera jamais. La phrase nomme la facture non source, ou cite le refus du classement, puis « La base admet ce
+  geste ; c'est le classement du mouvement, ensuite, qu'elle refusera. ». Illisibles, les exercices validés n'y comptent
+  pas non plus.
+- Les jugements d'hier (`refusEnregistrement`, `refusRetrait`, `refusContrePassation`) restent, que la batterie des
+  encaissements et leurs tests lisent ; la fenêtre ne les appelle plus.
+
+**L'ÉCRAN** (`EncaissementsFactureModal.tsx`, les deux espaces).
+- Les lectures : la facture et ses avoirs, PUIS les lignes de la facture et de ses avoirs (`.in('facture_id', …)`) ; les
+  factures du dossier et leur source (`id, dossier_id, numero, type, statut, facture_origine_id, source_de_la_vente`) ;
+  au cabinet seul, les exercices validés ; le relevé avec tout ce qui classe un mouvement (`categorie_id`, `ventilee`,
+  `encaissements_de_factures` de plus). Chacune en entier par `lireTout`, et chacune lue en partie, refusée ou pas
+  encore revenue fait le bandeau et retient tout : ni reste, ni formulaire, ni geste.
+- Les jugements de la vente partout : la saisie (`refusEnregistrementVente`), le retrait (`refusRetraitVente`, au bouton
+  et au gestionnaire), la contre-passation (`refusContrePassationVente`), les propositions.
+- Une facture source : la colonne « TTC net des avoirs », la phrase de l'avoir qui dit que la base plafonne net (celle
+  d'hier, « un affichage seulement », reste aux autres factures) ; chez le client, la note de la frontière jugée par la
+  base ; le geste inclassable dit dans une `.note-info` (la teinte neutre : rien n'est refusé).
+- La contre-passation d'une facture source : « Débit qui défait l'encaissement (facultatif) », les débits libres du
+  dossier, avec « Banque » seulement — sans lui, le relevé n'est pas lu et rien ne s'y choisit ; refusé avant le clic
+  par le module ; la confirmation nomme le débit ; le cinquième paramètre ne part que s'il est choisi (l'appel d'hier
+  reste celui d'hier, à quatre paramètres).
+- Le verrou unique de la fenêtre, relâché après la relecture, couvre le geste neuf : deux puis trois clics dans le même
+  `act`, un seul envoi.
+
+**CE QUE LIT LE CLIENT, ET PAR QUELLES POLICIES** (catalogue relu en production le 22/10/2026). Aucune lecture d'une
+table neuve, aucune policy ouverte. `factures_emises` (les deux lectures) : `factures_emises_lecture_ventes`
+(`client_du_dossier(dossier_id, 'ventes')`) ; `facture_lignes` (celles des avoirs comprises) :
+`facture_lignes_lecture_ventes` (par la facture, `client_du_dossier(…, 'ventes')`) ; `lignes_bancaires` (trois colonnes
+de plus, avec « Banque » seulement, comme hier) : « membres peuvent lire leurs lignes bancaires »
+(`client_du_dossier(dossier_id, 'banque')`) ; le droit SELECT de `authenticated` porte sur la table entière, aucune
+colonne n'est retenue. `exercices_valides` (`exercices_valides_lecture`, `admin_du_dossier`) : le client ne la demande
+pas — `EncaissementsFactureModal.test.tsx` relève les tables que la fenêtre demande, et la mutation qui la lui ferait
+lire vire au rouge.
+
+**LES MOTS DU CLIENT.** Trois réécritures de plus (`REECRITURES_CLIENT`), pour les refus des fonctions des
+encaissements que la fenêtre lui dit : « le cabinet retire d'abord ce classement » et « — retirer d'abord ce
+classement » deviennent « ton cabinet retire d'abord ce classement » (le client ne retire pas un classement) ; « retirez
+d'abord celle-ci » devient « retire d'abord celle-ci » — un vouvoiement d'hier, que le client lisait déjà sur un
+encaissement annulé par une contre-passation (trouvé en route). `espaceVentes.test.ts` passe désormais au garde des mots
+les refus des quatre fonctions des encaissements, tels que le module les dit.
+
+**LE BANC.** Le dossier basculé (d12) reçoit une quatrième facture source, F2026-0024 (360 €), son avoir validé
+A2026-0003 (60 €), un chèque de 120,50 € enregistré et déclaré, et le retour du chèque impayé, un débit libre de 120 € :
+la contre-passation qui le cite le dépasserait de 0,50 €, ce que la base admet et que le classement refusera. Deux
+visites du cabinet, avant celles de l'e-reporting : `factures-basculees/encaissements` (le reste net, la colonne, la
+phrase de l'avoir) et `factures-basculees/contre-passer-debit` (la liste des débits, le débit choisi, « ne pourra pas se
+classer »). Deux visites du client, en fin de la passe `client-banque` : une troisième clé du banc
+(`banc-client-basculee`), posée par elles seules, rattache le compte du banc au seul dossier d12 avec « Ventes » et
+« Banque » — `client/encaissements-facture-source` (la frontière jugée par la base) et `client/contre-passer-debit`.
+`debordements.mjs` : 0 à 1 440, 1 280, 1 024, 390 et 720 px, et aux volets extrêmes (panneau 2 000, barre 2 000, les
+deux) ; les passes `client` (390, 1 440) et `client-banque` (390, 720, 1 440) à 0 ; la passe « panneau fermé, barre
+2 000 » garde sa faute d'avant, hors du lot (`factures/clients-soins`, « gestion@mutue|lle- »). Joué par une copie du
+script, d'empreinte égale, à côté d'un lien vers le Playwright de l'environnement, sans rien installer ; le navigateur
+sans le mandataire. Après le changement de forme de la lecture des lignes (plus bas), quatre passes rejouées sur le code
+final — 1 440 et 390 px, et `client-banque` aux mêmes largeurs —, à 0, les quatre visites neuves comprises.
+
+**LES PREUVES.** La suite comparée test par test, sous Paris : avant (`362f247`, 443 fichiers, 13 462 tests), après (444
+fichiers, 13 512 tests) ; aucun verdict changé ni disparu, 50 tests neufs. Le module 24
+(`encaissementsFenetreVente.test.ts`) : l'ÉQUIVALENCE sur un tirage : les 4 000 saisies de la batterie des
+encaissements, chacune avec un contexte de la vente tiré (des exercices validés, ou illisibles ; ce qui classe chaque
+mouvement ; « Banque » ou pas), rendent la même réponse que `refusEnregistrement`, sur plus de vingt refus distincts ;
+le plancher : les mêmes saisies, la facture rendue source et un exercice validé, changent plus de 500 réponses ; 1 500
+retraits et 1 500 contre-passations sans débit tirés de même, la même réponse ; puis les exercices illisibles, le reste
+net, les propositions, les débits citables, le geste inclassable. L'écran 20 (`EncaissementsFactureModal.test.tsx`) :
+chaque refus neuf dit avant le clic (la frontière au cabinet, le retrait d'un encaissement dont le mouvement est classé,
+le rang 19 de la contre-passation, le débit trop petit), l'avertissement « ne pourra pas se classer », la
+contre-passation qui cite son débit (le faux client voit le cinquième paramètre, et ne le voit pas sans débit choisi),
+deux puis trois clics dans le même `act` (un seul envoi), le client — sans les exercices validés, la frontière jugée par
+la base puis son refus après le clic, le verrou relâché, ses mots, le débit avec « Banque » seulement —, et chaque
+lecture neuve lue en partie ou refusée (le bandeau, aucun bouton que « Fermer »). Les mots du client 4
+(`espaceVentes.test.ts`, qui passe aussi au garde des mots les refus des quatre fonctions des encaissements).
+`ecransAvantLecture.test.tsx` 2 : la fenêtre d'une facture source dans l'espace du client, sous ses deux gardes, et sa
+phrase fixe. Les tests d'avant ne reçoivent que le contexte de la vente (`HIER`, aucune facture source) et les colonnes
+du classement dans leur fabrique (`encaissementsFactures.test.ts`), et `exercices_valides` dans trois faux clients.
+Mutations : 46 (le module 22, l'écran 21, les mots du client 3), 44 tuées ; deux équivalentes — le saut explicite de la
+jumelle d'une facture source (ses paiements sont tous des mouvements rapprochés ou des règlements groupés, que le rang
+17 refuse : le saut, une règle recopiée, a été retiré, comme le filtre des mouvements libres avant lui) et la liste des
+débits calculée pour une facture qui n'est pas source (le choix ne s'y affiche pas). Deux survivantes du premier passage
+— le départage des débits par la date, un montant négatif dans l'avertissement de l'enregistrement — ont fait ajouter
+leurs cas, et sont tuées. Les scanners : `lecturesSignalees.test.ts` a refusé la première forme de la lecture des lignes
+(un `.then` dans une entrée du `Promise.all`, puis un argument de type à virgule qui décalait l'appariement) : les
+lignes se lisent après les autres lectures, et le type des exercices lus porte un nom (`ExerciceLu`). La barrière de
+l'agent, sous le Node 22.23.3 de la CI, sur le code du premier commit, puis celle de la session, sous le même Node, sur
+le commit du code recomposé sur `main` (`2d1f365`) : `tsc -b --force` 0 ; lint 0 erreur (les 63 avertissements d'avant,
+les mêmes) ; `npm run test:fuseaux` 0, 444 fichiers et 13 512 tests sous Paris, UTC, New York et Auckland ; le build 0
+(`index-2Wwcmrnc.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** Posé par ce lot, sur la conception : les exercices validés illisibles du
+client sautent la frontière, jamais tenus pour vides ; le reste d'une facture source se montre et se propose NET de ses
+avoirs validés ; l'état d'après d'un geste se complète par une facture source fictive avant de se juger inclassable ; le
+débit d'une contre-passation ne se choisit qu'avec « Banque » ; aucune règle du module recopiée dans les propositions
+(le filtre des mouvements libres et le saut de la jumelle, équivalents au jugement, retirés). Aucune question nouvelle.
+
+**À REVOIR.**
+- `annuler_encaissement` ne juge pas « Banque » sur le débit cité (`p_ligne_bancaire_id`), là où
+  `enregistrer_encaissement` le juge (rang 2) : un client « Ventes » sans « Banque » qui connaîtrait l'identifiant d'un
+  débit pourrait le citer par la fonction. L'écran ne le lui offre jamais (il ne lit pas le relevé). L'aligner est une
+  migration (un refus au rang 2 de la fonction, et sa ligne dans `REFUS_CONTRE_PASSATION`) : à l'architecte.
+- L'avertissement de l'ENREGISTREMENT ne s'atteint pas encore depuis la fenêtre : un crédit qui justifie déjà un
+  encaissement est « pris » et ne se propose pas, et le choix du mouvement ne se fait que parmi les propositions. Il
+  servira quand VF5c ouvrira la fenêtre sur un mouvement imposé ; il est éprouvé par le module.
+- Un crédit qui justifie l'encaissement d'une facture non source de quelques frais au plus, à côté de factures sources
+  qui le font : `refusClassement` l'accepte, et c'est l'écriture (`ecrire_vente_facturee`, « porte aussi une facture non
+  source ») qui le refuse ; la fenêtre ne le dit pas (VF2-Q2, VF5h).
+- Chez le client, la frontière ne se dit qu'après le clic (la base répond) : c'est la décision de P9a.
+- L'en-tête de la fenêtre dit le TTC de la facture (360 €), le tableau le TTC net de ses avoirs : les deux sont vrais,
+  et la phrase de l'avoir fait le lien.
+- Les colonnes `categorie_id` et `ventilee` ne changent aucun jugement tant que la base pose `statut = 'rapprochee'`
+  avec elles (le prédicat les lit toutes, comme `mouvement_libre`) ; `encaissements_de_factures` décide seule du rang 19
+  de la contre-passation, que le test d'écran garde.

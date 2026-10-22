@@ -438,11 +438,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   CONCEPTION ». VF5a1 le 22/10/2026, neutre : le relevé reconnaît les mouvements que les encaissements de factures
   sources classent ou réservent (G2), un mouvement classé n'est plus « rapproché sans justificatif », leur fiche n'offre
   aucun geste, et des ventes lues en partie retiennent la fiche et les lots → « LE RELEVÉ RECONNAÎT LES MOUVEMENTS DES
-  VENTES FACTURÉES ». VF5a2 le 22/10/2026, neutre : aucun lot du relevé ne prend ces mouvements, sa carte dit combien
-  il en écarte, et un mouvement réservé se compte à part des non rapprochés → « LES LOTS DU RELEVÉ ÉCARTENT LES
-  MOUVEMENTS DES VENTES FACTURÉES ». Restent VF5b à VF9 — se conçoivent les encaissements de factures non sources que
-  VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit
-  aussi quelle pièce ignorer.
+  VENTES FACTURÉES ». VF5a2 le 22/10/2026, neutre : aucun lot du relevé ne prend ces mouvements, sa carte dit combien il
+  en écarte, et un mouvement réservé se compte à part des non rapprochés → « LES LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS
+  DES VENTES FACTURÉES ». VF5b le 22/10/2026, neutre : la fenêtre des encaissements juge une facture source par les
+  jugements de la vente — le reste net de ses avoirs, des mouvements libres, la contre-passation qui cite son débit, le
+  geste qui rendrait un mouvement inclassable dit sans être refusé ; chez le client, qui ne lit pas les exercices
+  validés, la frontière jugée par la base → « LA FENÊTRE DES ENCAISSEMENTS JUGE UNE FACTURE SOURCE ». Restent VF5c à
+  VF9 — se conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et
+  quand : à VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -765,10 +768,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Les encaissements** : un REGISTRE, jamais déduit d'un rapprochement, par `enregistrer_encaissement` seule (plafonds
   sous verrou, montants NETS, le TTC par taux refait en base) ; déclaré, il se CONTRE-PASSE (motif obligatoire, datée du
   décaissement) ; aucune écriture directe hors de la restauration (`encaissementsEcritures.test.ts`) → « LES
-  ENCAISSEMENTS D'UNE FACTURE ÉMISE ». **Sa déclaration** : sur la plateforme qui a accepté la facture, une seule ACTIVE
-  → « LA DÉCLARATION HORS APPLICATION ». **Son message** (`lib/cdarEncaissee.ts`, CDAR D22B) : MDT-74 `false` ; un
-  montant par `centimesExacts`, jamais `decimal` ; ce que l'annexe ne dit pas est un paramètre sans défaut → « LE
-  MESSAGE DU STATUT « ENCAISSÉE » ».
+  ENCAISSEMENTS D'UNE FACTURE ÉMISE ». **Sa fenêtre** juge par les fonctions de la vente, identiques à celles d'hier
+  pour une facture qui n'est pas source ; le client ne lit pas les exercices validés (`ANNEES_ILLISIBLES`, jamais une
+  liste vide) → « LA FENÊTRE DES ENCAISSEMENTS JUGE UNE FACTURE SOURCE ». **Sa déclaration** : sur la plateforme qui a
+  accepté la facture, une seule ACTIVE → « LA DÉCLARATION HORS APPLICATION ». **Son message** (`lib/cdarEncaissee.ts`,
+  CDAR D22B) : MDT-74 `false` ; un montant par `centimesExacts`, jamais `decimal` ; ce que l'annexe ne dit pas est un
+  paramètre sans défaut → « LE MESSAGE DU STATUT « ENCAISSÉE » ».
 - **Le cycle de vie des factures émises** : relevé sur un clic, lu sans jamais deviner (`lib/cdarRecu.ts`), rattaché par
   l'identité de G1.42 (SIREN figé à la validation) — ce qui ne se rattache pas se dit et ne se garde pas ; un 210 ou un
   213 vaut refus ; le 601 se dit, son effet appartient à d6 → « LE CYCLE DE VIE DES FACTURES ÉMISES ». Libellés de la
