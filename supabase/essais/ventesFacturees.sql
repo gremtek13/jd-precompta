@@ -68,9 +68,9 @@
 -- fonction (ecrituresVentesFacturees.sql, 80 à 86) ; 157 lit qui nomme les réglages hors des trois fonctions de VF4b, que
 -- ecrituresVentesFacturees.sql (154) compte. Sur la réplique, 164 contrôles justes avant comme après la migration.
 --
--- 22/10/2026, migration `contre_passation_banque` (préparée, PAS ENCORE APPLIQUÉE ; chantier EC-Q3, ligne 28.65) : le
--- débit qu'une contre-passation cite demande aussi « Banque », au rang 2, sous les mots et le code du rang 2
--- d'`enregistrer_encaissement`, avant toute lecture ; les rangs suivants d'`annuler_encaissement` avancent d'un cran
+-- 22/10/2026, migration `contre_passation_banque` (appliquée sous la version `20261022185455` ; chantier EC-Q3, ligne
+-- 28.65) : le débit qu'une contre-passation cite demande aussi « Banque », au rang 2, sous les mots et le code du rang
+-- 2 d'`enregistrer_encaissement`, avant toute lecture ; les rangs suivants d'`annuler_encaissement` avancent d'un cran
 -- (85 à 91). Huit contrôles de plus : 94 à 94e (le client « Ventes » sans « Banque » qui cite un débit, refusé avant ce
 -- que les refus suivants lui apprenaient — le montant du débit, un encaissement inconnu, un mouvement d'un autre
 -- dossier, un crédit, un débit classé), 95 (sans débit, il contre-passe comme hier), 96 (avec « Banque », il cite le
@@ -79,6 +79,8 @@
 -- à 94e, exactement — ; avec elle, 172 justes, rien n'est resté, et les 164 d'hier rendent, ligne à ligne, ce qu'ils
 -- rendaient. Dix mutations de la migration (le refus retiré, déplacé après la lecture de l'encaissement ou avant le
 -- débit, un autre prédicat, la condition élargie ou faussée, un autre code, un mot changé) : dix tuées par cet essai.
+-- Rejoué en production après l'application, sans ses lignes de commentaire (61 813 caractères, `7f0248f2…`) : 172
+-- justes, rien n'est resté.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';

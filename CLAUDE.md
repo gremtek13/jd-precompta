@@ -253,8 +253,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Les droits sont en base** : `memberships.droit_ventes` et `droit_banque`, faux par défaut, posés par
   `changer_droits_acces` seule (un droit nul y est inchangé) ; prédicats `client_du_dossier`, `gere_les_ventes`,
   `gere_la_banque`, `droits_sur_le_dossier`. « Banque » ouvre la banque du client ; « Ventes » ses ventes et leurs
-  gestes (un mouvement désigné demande aussi « Banque »), articles, adresse de réception, clients, paramètres (un RIB
-  qu'il pose n'est que PROPOSÉ jusqu'à `confirmer_rib`, le cabinet seul) et le seau `ventes` (lire, déposer ; jamais
+  gestes (un mouvement désigné demande aussi « Banque », le débit qu'une contre-passation cite compris → « LA
+  CONTRE-PASSATION NE CITE UN MOUVEMENT QU'AVEC « BANQUE » »), articles, adresse de réception, clients, paramètres (un
+  RIB qu'il pose n'est que PROPOSÉ jusqu'à `confirmer_rib`, le cabinet seul) et le seau `ventes` (lire, déposer ; jamais
   modifier ni supprimer) ; « Banque » seul n'apprend du RIB que `dernier_changement_de_rib`, jamais le RIB ; l'identité
   légale, le client ne l'écrit jamais. L'onglet Accès dit ce que la base ouvre à la SESSION du client
   (`ceQueDisentLesCases`, confronté à l'export) → « LES DROITS D'UN ACCÈS CLIENT, TENUS EN BASE ». **Un texte libre que

@@ -31512,3 +31512,135 @@ déploiement fini à 16 h 46), le bundle du build local. La feuille de route : l
 empreinte (15 317 positions) ; les barres recomptées par requête, inchangées (186 chantiers hors de la phase 7, dont 141
 livrés ; 76 % et 82 %). Le défaut de la contre-passation trouvé par le lot, sa correction préparée à part. La copie de
 travail de l'agent retirée, son travail entier dans `main` ; la branche réalignée sur `main`.
+
+### 22/10/2026 — LA CONTRE-PASSATION NE CITE UN MOUVEMENT QU'AVEC « BANQUE » — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(Écrite par l'agent architecte du correctif sur `d311183` — `main` et le lot VF5b, demande #207 —, en deux commits : la
+migration, le module, la fenêtre, leurs tests et l'essai ; puis cette documentation. Créé :
+`supabase/schema/20261022180000_contre_passation_banque.sql`, sous une version PROVISOIRE — renommé à l'application
+`20261022185455_contre_passation_banque.sql`, texte inchangé. Modifiés : `encaissementsFactures.ts`,
+`EncaissementsFactureModal.tsx`, trois tests du module (`encaissementsFactures.test.ts`,
+`encaissementsVenteFacturee.test.ts`, `encaissementsFenetreVente.test.ts`), le test de la fenêtre
+(`EncaissementsFactureModal.test.tsx`) et l'essai `ventesFacturees.sql`. Ni policy, ni Edge Function ; en production,
+des SELECT sur le catalogue et des comptes, aucune valeur, aucune écriture : la migration n'y était pas encore
+appliquée.)
+
+**LE DÉFAUT** (le premier « À REVOIR » de VF5b). `annuler_encaissement` juge l'accès par `gere_les_ventes` seul. Depuis
+VF2, une contre-passation peut citer le DÉBIT qui défait l'encaissement (son cinquième paramètre), et la fonction ne
+demandait pas « Banque » pour le citer, là où `enregistrer_encaissement` le demande au rang 2 pour le mouvement d'un
+encaissement (étape P2) : la règle du cabinet — « un mouvement désigné demande aussi « Banque » » — n'était tenue que
+d'un côté. Un client « Ventes » sans « Banque » lit `encaissements_factures.ligne_bancaire_id` (la lecture de ses
+ventes) : l'identifiant d'un débit qu'une contre-passation du cabinet cite lui était lisible. En appelant la fonction
+lui-même avec cet identifiant, les refus suivants lui disaient ce que la RLS lui cache : qu'un mouvement est de son
+dossier, un débit, déjà classé, et son MONTANT (« Ce mouvement de 50,00 € justifierait 100,00 € de
+contre-passations… ») ; accepté, il écrivait une contre-passation qui cite un débit, que la garde G2 réserve ensuite aux
+encaissements — un geste de la banque sans le droit « Banque ». L'écran ne le lui a jamais offert : sans « Banque », la
+fenêtre ne lit pas le relevé, et le choix du débit n'existe pas.
+
+**L'EXPOSITION, MESURÉE EN PRODUCTION LE 22/10/2026** (des comptes) : trois accès, aucun ne porte « Ventes » ni
+« Banque » ; aucun encaissement, aucune facture source, aucune contre-passation qui cite un débit. Nulle — à fermer
+avant le premier accès « Ventes ». La production est celle de l'export : 144 migrations, empreinte globale `e1ece055…` ;
+le corps de la fonction est celui du fichier de VF2 (6 512 caractères, `071db874…`), son commentaire aussi
+(`7c5780de…`) ; ses droits : `authenticated` et `service_role`, ni l'anonyme ni PUBLIC.
+
+**LA CORRECTION.**
+- La migration `contre_passation_banque` (13 564 caractères, 13 858 octets, 219 lignes, md5
+  `21e792e4be469bbb9e89a8299dacf78e`) : `create or replace` de la fonction, recopiée du fichier de VF2 par un script,
+  jamais retapée, avec UN bloc de plus juste après le contrôle d'accès — un commentaire, et le refus du rang 2
+  d'`enregistrer_encaissement`, sa condition, ses mots et son code (42501). AVANT toute lecture : rien ne se dit du
+  mouvement ni de l'encaissement avant lui. Les autres refus avancent d'un rang (3 à 20). Une garde d'abord : la
+  fonction à cinq paramètres de VF2 en base, et son corps celui de VF2 au caractère près (les retours chariot d'un
+  collage écartés) — une contre-passation changée depuis, ou une seconde application, se refuse. Ni droits ni
+  commentaire rejoués : `create or replace` garde l'OID, les droits et le commentaire (éprouvé). Le texte ne porte ni
+  suppression, ni `drop`, ni `truncate`, ni barre oblique inverse : `apply_migration` ne devrait pas attendre de
+  confirmation.
+- Le module : `REFUS_CONTRE_PASSATION` porte le refus au rang 2, sous les mots de `mouvement_sans_banque` de
+  `REFUS_ENREGISTREMENT`, marqué `contrePassationBanque` ; `refusContrePassationVente` reçoit le droit « Banque » de qui
+  saisit (`gereLaBanque`, sans valeur par défaut, comme `refusEnregistrement`) et le juge en premier quand un débit est
+  cité. `refusContrePassation` (l'appel à quatre paramètres) ne cite jamais de débit : inchangé.
+- La fenêtre : `EncaissementsFactureModal.tsx` passe ce droit à ses deux jugements de la contre-passation. Le seul cas
+  où il compte à l'écran : la case « Banque » retirée pendant que la fenêtre est ouverte — elle relit sans le relevé,
+  l'étape garde le débit choisi, et le refus se dit avant le clic sous les mots de la base, au lieu de « Ce mouvement
+  n'est pas un mouvement de ce dossier. ».
+- Les mots du client : aucune réécriture — la phrase est celle du rang 2 de l'enregistrement, que le garde des mots
+  (`espaceVentes.test.ts`) passe déjà.
+
+**LES CHOIX ÉCARTÉS.** Des mots propres à la contre-passation : la décision était « les mêmes mots et le même code que
+le rang 2 d'`enregistrer_encaissement` » — une règle, une phrase, et une contre-passation EST une ligne du registre des
+encaissements. Le refus après la lecture de l'encaissement : il dirait encore qu'un encaissement n'existe pas. Le
+marquer `venteFacturee` : la confrontation de l'essai veut ces refus-là en 22023 ; le marqueur `contrePassationBanque`
+dit sa provenance, et les listes d'hier s'en privent comme de ceux de VF2. Rejouer `grant` et `revoke` : inutile,
+`create or replace` les garde (R1 non plus ne les a pas rejoués).
+
+**LES PREUVES.**
+- La réplique : une copie à froid de la grappe de R1 (PostgreSQL 16, UTF8), sur son propre port ; sa base collée de R1,
+  l'historique remis à la version de la production — `signature.sql` : les neuf familles égales à la production, et
+  l'historique (144, `e1ece055…`).
+- La migration appliquée comme l'outil l'aurait fait (une transaction, sa ligne d'historique) : le texte d'historique
+  rend l'empreinte du fichier ; une seule `annuler_encaissement` ; même OID, mêmes droits, le commentaire de la
+  production gardé (posé d'abord sur une copie) ; un corps neuf de 7 202 caractères (`280da760…`). Seule la famille
+  « fonctions » de `signature.sql` change (191, `5a51f41d…`). La garde refuse une seconde application, et une base sans
+  la fonction de VF2 ; rien n'y reste.
+- L'essai `ventesFacturees.sql` : un profil de plus (« client_v », « Ventes » seul, sur le dossier jetable T, dans un
+  contrôle annulé : le compte client de la production reste sans droit), huit contrôles (94 à 96, et la mutation 170),
+  les rangs 85 à 91 renumérotés. Sans la migration : 172 contrôles, 5 en faute — 94 à 94e, exactement, chacun rendant ce
+  que le client apprenait : le montant (50,00 € et 100,00 €), « Encaissement introuvable », un mouvement d'un autre
+  dossier, un crédit, un débit classé. Avec elle : 172 justes, rien n'est resté ; les 164 d'hier rendent, verdict et
+  observation, ce qu'ils rendaient, et l'essai d'origine rend ses 164 justes avant comme après. Sa copie sans
+  commentaires, envoyée en une requête : 61 813 caractères, `7f0248f2f9d142deb43bfdc2ce00bc06`, 172 justes.
+- Dix mutations de la migration — le refus retiré, déplacé après la lecture de l'encaissement ou juste avant le débit,
+  `gere_les_ventes` ou `admin_du_dossier` à la place de `gere_la_banque`, la condition élargie (tout appel sans
+  « Banque ») ou faussée (« ou » pour « et », un autre paramètre), un autre code, un mot changé : dix tuées par l'essai.
+- Les autres essais, avant et après, sorties identiques : `encaissementsFactures.sql` (111 verdicts),
+  `transmissionsEncaissements.sql` (130), `statutsFacturesRecus.sql` (63), `ecrituresVentesFacturees.sql` (177),
+  `ventesClient.sql` (90, hors des identifiants tirés au hasard) ; `rls.sql` entier : 46 lignes, 0 en faute, 43
+  mutations sur 43, identique.
+- Les trois contrôles de l'export sur la réplique : sans le fichier, 144 migrations et `e1ece055…` des deux côtés ; avec
+  lui, sous sa version provisoire, 145 et `295e1aba…` ; le socle (80 instructions, `5d53eea2…`) et l'inventaire (2 122
+  objets, `b2666bf3…`) inchangés et égaux des deux côtés — la migration ne crée aucun objet.
+- Les tests : la suite comparée test par test, sous Paris — avant 444 fichiers et 13 512 tests, après 444 et 13 518 ;
+  aucun verdict changé ; cinq tests renommés (les rangs, « avec ou sans « Banque » ») ; six neufs : les mots et le code
+  du rang 2, sa place avant toute lecture, la définition de VF2 au caractère près hors du refus, la migration sans
+  droits rejoués ni mot que le détecteur retiendrait, le parcours du rang 2 dans le module, la case « Banque » retirée
+  pendant la saisie. Huit mutations du TypeScript : sept tuées, une équivalente (le droit passé à la ligne du tableau,
+  qui ne cite jamais de débit).
+- La barrière, sous le Node 22.23.3 de la CI, sur le code du premier commit (`f359550`) : `npx tsc -b --force` 0 ;
+  `npm run lint` 0 erreur (les 63 avertissements d'avant, ceux de VF5b) ; `npm run test:fuseaux` 0, 444 fichiers et 13
+  518 tests sous Paris, UTC, New York et Auckland ; `npm run build` 0 (`index-BvnE9d55.js`) ; le cache du dépôt
+  principal intact (un `node_modules` fait de liens, son `.tmp` à la copie).
+
+**CE QUI RESTAIT À LA SESSION, DANS L'ORDRE** (fait le même jour : « L'APPLICATION », ci-dessous). (1) Présenter la
+correction au cabinet ; sur son accord, appliquer la migration par `apply_migration`, sous le nom
+`contre_passation_banque`, le texte du fichier tel quel — si l'outil attendait une confirmation, la faire coller avec sa
+ligne d'historique. (2) Renommer le fichier à la version posée, texte inchangé ; la ligne d'historique doit rendre
+`21e792e4…`. (3) Rejouer en production `ventesFacturees.sql` sans ses lignes de commentaire (61 813 caractères,
+`7f0248f2…`, que sa ligne 0 doit rendre) : 172 justes, rien ne reste. (4) `rls.sql` : aucune policy ne change, la
+réplique l'a rejoué entier. (5) Les trois contrôles de `supabase/schema/README.md` contre la production — 145
+migrations ; socle 80, `5d53eea2…` ; inventaire 2 122, `b2666bf3…` — et leur passage noté dans ce README ;
+`signature.sql` : seule la famille « fonctions » doit changer. (6) Le code peut partir avant comme après : le module
+refuse le débit sans « Banque » avant le clic, ce que la fenêtre n'offrait déjà pas. (7) Dans CLAUDE.md, la puce « Les
+droits sont en base » dit la migration « à appliquer » : la dire appliquée, avec sa version.
+
+**L'APPLICATION, LE 22/10/2026.** Présentée au cabinet, qui l'a accordée. Appliquée par `apply_migration`
+(`contre_passation_banque`), le texte du fichier tel quel, sans confirmation demandée, sous la version `20261022185455`
+(20 h 54 à Paris) ; le fichier renommé à cette version, texte inchangé. Sa ligne d'historique rend une instruction de
+13 564 caractères, `21e792e4be469bbb9e89a8299dacf78e`, l'empreinte du fichier ; 145 migrations. La fonction relue : le
+corps du fichier (`280da760…`), `security definer`, `search_path=public`, son commentaire gardé (`7c5780de…`),
+exécutable par `authenticated` et `service_role`, jamais par l'anonyme. L'essai `ventesFacturees.sql` rejoué en
+production sans ses lignes de commentaire (61 813 caractères reçus, `7f0248f2…`, la copie envoyée) : 172 verdicts
+justes, rien n'est resté en base. Les trois contrôles de l'export : 145 fichiers, 145 migrations, empreinte globale
+`9783a976c53560c02069b631b7ca0399` des deux côtés ; le socle (80 instructions, `5d53eea2…`) et l'inventaire (2 122
+objets, `b2666bf3…`) égaux des deux côtés, inchangés. `signature.sql` : seule la famille « fonctions » change (191,
+`d44b4741…` puis `5a51f41d…`), et les neuf familles égalent celles de la réplique après la migration. `rls.sql` n'est
+pas rejoué en production : aucune policy ne change.
+
+**À REVOIR.**
+- La phrase de l'onglet Accès (`ceQueDisentLesCases`) dit de « Banque » qu'il permet, avec « Ventes », de « désigner
+  celui qui prouve un encaissement » ; elle ne nomme pas le débit qu'une contre-passation cite, que la case ouvre aussi
+  depuis VF5b. Exacte, incomplète ; hors de ce lot.
+- `ventesClient.sql` rend une faute, avant comme après la migration, sur la réplique : son contrôle 0c attend les huit
+  fonctions des factures (et les quatre des devis), quand `gere_les_ventes` garde aussi, depuis les étapes A1 à A6,
+  celles des articles, des contacts, des paramètres et de l'adresse de réception — une attente restée à hier, à
+  reprendre avant son prochain rejeu en production.
+- Le refus parle d'« un encaissement » à qui contre-passe : c'est la phrase du rang 2 de l'enregistrement, voulue
+  telle ; des mots propres à la contre-passation demanderaient une migration de plus et une ligne du module.
