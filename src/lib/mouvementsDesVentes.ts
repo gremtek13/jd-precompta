@@ -1,3 +1,4 @@
+import { libelleExploitable, tiersConfirmeParBanque } from './appariementBanque'
 import { estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
   ecartDeFrais, encaissementsDeclares, encaissementsDuMouvement, justifieSonMouvement, mouvementLibre, MOYENS_ENCAISSEMENT,
@@ -50,6 +51,13 @@ import { dateFigee } from './validationExercice'
 // rendue — classer un débit réservé par ses contre-passations, retirer ce classement, y rattacher une contre-passation
 // enregistrée sans mouvement, ou y contre-passer l'encaissement d'une facture — déclaré, ou, depuis l'étape VF5d2,
 // jamais déclaré (`gestesDuDebit`), par les mêmes jugements.
+//
+// LES CANDIDATS (étape VF5e, en fin de module) : ce que les ventes facturées proposent pour un mouvement LIBRE — une facture
+// source ouverte, un encaissement enregistré sans mouvement pour un crédit ; une contre-passation enregistrée sans mouvement
+// pour un débit —, chacun accepté par le jugement du module qui redit la base, désigné par son montant (le mouvement se
+// classerait alors, à l'écart des frais près) ou par son client, cité au libellé. Ils disent au lot des règles un
+// justificatif possible (lib/reglesAffectation.ts, `justificatifPossible`), écartent le mouvement des trois autres lots
+// (`horsDesLotsAvecLesCandidats`), et la fiche d'un crédit libre les propose en tête. Rien ne s'écrit seul.
 
 // ── Ce que le module lit ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -230,9 +238,23 @@ export function ecartDuLot<L extends { id: string }>(ecartes: readonly L[], hors
   })
   if (mouvements.length === 0) return null
   const plusieurs = mouvements.length > 1
+  const debut = `${mouvements.length} mouvement${plusieurs ? 's' : ''} écarté${plusieurs ? 's' : ''} : `
+  // Ceux qu'un candidat de la vente justifie peut-être (étape VF5e) se disent autrement que ceux que leurs encaissements
+  // portent : ils restent à rapprocher, depuis leur fiche.
+  const candidats = mouvements.filter((m) => JUSTIFICATIFS_DE_LA_VENTE.has(m.raison)).length
+  const portes = mouvements.length - candidats
+  if (candidats === 0) return { resume: `${debut}${plusieurs ? 'ils portent' : 'il porte'} des encaissements de factures.`, mouvements }
+  if (portes === 0) {
+    return {
+      resume: `${debut}une vente facturée ${plusieurs ? 'les' : 'le'} justifie peut-être — ${plusieurs ? 'ils restent' : 'il reste'} `
+        + `à rapprocher depuis ${plusieurs ? 'leur' : 'sa'} fiche.`,
+      mouvements,
+    }
+  }
   return {
-    resume: `${mouvements.length} mouvement${plusieurs ? 's' : ''} écarté${plusieurs ? 's' : ''} : `
-      + `${plusieurs ? 'ils portent' : 'il porte'} des encaissements de factures.`,
+    resume: `${debut}${portes} ${portes > 1 ? 'portent' : 'porte'} des encaissements de factures, ${candidats} `
+      + `${candidats > 1 ? 'sont peut-être justifiés' : 'est peut-être justifié'} par une vente facturée, à rapprocher depuis `
+      + `${candidats > 1 ? 'leur' : 'sa'} fiche.`,
     mouvements,
   }
 }
@@ -461,6 +483,8 @@ export interface EncaissementARattacher extends GesteConfirme {
   /** La facture, son client, le moyen et la date ; le montant à part. */
   libelle: string
   montant: number
+  /** Le client de sa facture est cité au libellé du mouvement (`tiersConfirmeParBanque`, étape VF5e). */
+  clientCite: boolean
 }
 
 /** Une facture source qui reste à encaisser, que la fenêtre des encaissements ouvrirait sur ce crédit. */
@@ -473,6 +497,12 @@ export interface FactureAEncaisser {
 export interface ComplementDuCredit {
   /** Ce qui reste pour faire le crédit, en centimes : le crédit entier d'un mouvement libre. Toujours positif ici. */
   manqueCentimes: number
+  /**
+   * Les candidats de ses ventes facturées (étape VF5e, `candidatsDuMouvement`), proposés EN TÊTE de la fiche, le plus petit
+   * écart d'abord : sur un crédit libre seulement — vide sur un crédit réservé, que ses encaissements portent déjà. Chacun
+   * figure aussi dans `rattachables` ou `factures`, dont le geste est le sien.
+   */
+  proposes: readonly CandidatDeLaVente[]
   rattachables: readonly EncaissementARattacher[]
   factures: readonly FactureAEncaisser[]
   /** Ni l'un ni l'autre : ce que la fiche en dit. */
@@ -494,6 +524,8 @@ export const TITRE_CLASSER = 'Classer par ses encaissements'
 export const TITRE_RETIRER = 'Retirer ce classement'
 export const TITRE_RATTACHER = 'Rattacher un encaissement enregistré sans mouvement'
 export const TITRE_ENREGISTRER = 'Enregistrer l’encaissement d’une facture'
+// La section des candidats de la vente, en tête de la fiche d'un crédit libre (étape VF5e).
+export const TITRE_PROPOSES = 'Proposés par ses ventes facturées'
 
 const enCentimes = (montant: number) => Math.round(montant * 100)
 const euros = (centimes: number) => formatMoney(centimes / 100)
@@ -536,6 +568,12 @@ function libelleDeLEncaissement(e: EncaissementDuMouvementLu, factures: readonly
   return `${e.annule_id != null ? 'Contre-passation, facture' : 'Facture'} ${f?.numero ?? SANS_NUMERO}${f ? ` (${f.tiers_nom})` : ''} — `
     + `${libelleDuMoyen(e.moyen).toLowerCase()} du ${formatDate(e.date_encaissement)}`
 }
+
+/**
+ * Le mouvement tel que la fiche le reçoit de l'onglet : son identifiant, son dossier, et son libellé — celui où le client
+ * d'une facture se lit (étape VF5e), la lecture des ventes facturées ne portant pas le libellé brut.
+ */
+export type LigneDesGestes = Pick<LigneBancaire, 'id' | 'dossier_id' | 'libelle' | 'libelle_brut'>
 
 const leCredit = (m: Pick<MouvementClasse, 'date' | 'montant'>) => `ce crédit du ${formatDate(m.date)} de ${formatMoney(m.montant)}`
 
@@ -590,9 +628,11 @@ function apresLeRattachement(
 }
 
 function complementDuCredit(
-  dossierId: string, m: MouvementClasse, manque: number, s: SourcesDesGestes, vente: ContexteVente,
+  dossierId: string, m: MouvementClasse, manque: number, s: SourcesDesGestes, vente: ContexteVente, libelle: string,
+  proposes: readonly CandidatDeLaVente[],
 ): ComplementDuCredit {
   const sources = new Set(s.factures.filter((f) => f.dossier_id === dossierId && f.source_de_la_vente).map((f) => f.id))
+  const cite = (e: EncaissementDuMouvementLu) => clientCite(e.facture_id, s.factures, libelle)
   // Des encaissements — pas des contre-passations, qui se justifient par un débit — de factures sources, sans mouvement, non
   // retirés, et que rien ne dit « n'avoir pas eu lieu » : une contre-passation sans mouvement qui les annule les ferait
   // rattacher sans qu'ils pèsent rien sur le crédit.
@@ -600,13 +640,14 @@ function complementDuCredit(
     .filter((e) => e.dossier_id === dossierId && e.ligne_bancaire_id == null && e.retire_le == null && e.annule_id == null
       && sources.has(e.facture_id) && justifieSonMouvement(e, s.encaissements))
     .sort((a, b) => Math.abs(enCentimes(a.montant) - manque) - Math.abs(enCentimes(b.montant) - manque)
-      || ordreC(a.date_encaissement, b.date_encaissement) || ordreC(a.id, b.id))
+      || Number(cite(b)) - Number(cite(a)) || ordreC(a.date_encaissement, b.date_encaissement) || ordreC(a.id, b.id))
     .map((e): EncaissementARattacher => {
       const libelle = libelleDeLEncaissement(e, s.factures)
       return {
         id: e.id,
         libelle,
         montant: e.montant,
+        clientCite: cite(e),
         refus: refusRattachement(dossierId, e.id, m.id, s.encaissements, s.mouvements, vente)?.message ?? null,
         confirmation: `Rattacher à ${leCredit(m)} l’encaissement suivant ?\n\n— ${libelle} : ${formatMoney(e.montant)}\n\n`
           + 'Un encaissement ne se rattache qu’une fois : il citera ce mouvement, que la base réserve alors à ses '
@@ -630,6 +671,7 @@ function complementDuCredit(
     }))
   return {
     manqueCentimes: manque,
+    proposes,
     rattachables,
     factures,
     note: rattachables.length === 0 && factures.length === 0
@@ -664,7 +706,7 @@ function mouvementDesGestes<S extends SourcesDesGestes>(
 export function gestesDuCredit(
   ventes: VentesDuReleve,
   lecture: LectureDesGestes | null,
-  ligne: Pick<MouvementClasse, 'id' | 'dossier_id'>,
+  ligne: LigneDesGestes,
   anneesValidees: readonly number[],
   plan: Pick<PlanComptable, 'services_bancaires'>,
 ): GestesDuCredit {
@@ -686,8 +728,10 @@ export function gestesDuCredit(
   }
   if (!mouvementLibre(m)) return AUCUN_GESTE
   const manque = manqueDuCredit(m, s.encaissements, vente)
+  // Les candidats, sur un crédit libre seulement (`candidatsDuMouvement` le vérifie) : ceux de la même lecture.
+  const proposes = portes.length === 0 ? candidatsDuMouvement(candidatsDeLaVente(ventes, lecture, anneesValidees), ligne) : []
   const complement = manque > 0 && dateFigee(m.date, anneesValidees) === null
-    ? complementDuCredit(dossierId, m, manque, s, vente)
+    ? complementDuCredit(dossierId, m, manque, s, vente, libelleExploitable(ligne), proposes)
     : null
   if (portes.length === 0) return complement !== null && complement.note === null ? { etat: 'libre', complement } : AUCUN_GESTE
   return {
@@ -749,6 +793,8 @@ export interface EncaissementAContrePasser {
   apres: string
   /** Ce que devient sa déclaration : déclaré, sa contre-passation se déclare à son tour ; jamais déclaré, ni l'un ni l'autre. */
   declaration: string
+  /** Le client de sa facture est cité au libellé du débit (`tiersConfirmeParBanque`, étape VF5e). */
+  clientCite: boolean
 }
 
 /** Ce qu'un encaissement à contre-passer dit de sa déclaration, selon qu'il a été déclaré ou non (étape VF5d2). */
@@ -867,10 +913,14 @@ function effetSurLOrigine(e: EncaissementDuMouvementLu, s: SourcesDuDebit): stri
 
 function complementDuDebit(
   dossierId: string, m: MouvementClasse, manque: number, s: SourcesDuDebit, vente: ContexteVente, aujourdHui: string,
+  libelleDuDebit: string,
 ): ComplementDuDebit {
+  // Le plus petit écart d'abord, puis — l'ordre des candidats d'un crédit (étape VF5e) — le client cité au libellé du débit,
+  // puis la date et l'identifiant. Un impayé ne se devine pas : la liste reste entière, l'ordre et la mention seuls changent.
+  const cite = (e: EncaissementDuMouvementLu) => clientCite(e.facture_id, s.factures, libelleDuDebit)
   const proche = (a: EncaissementDuMouvementLu, b: EncaissementDuMouvementLu) =>
     Math.abs(Math.abs(enCentimes(a.montant)) - manque) - Math.abs(Math.abs(enCentimes(b.montant)) - manque)
-    || ordreC(a.date_encaissement, b.date_encaissement) || ordreC(a.id, b.id)
+    || Number(cite(b)) - Number(cite(a)) || ordreC(a.date_encaissement, b.date_encaissement) || ordreC(a.id, b.id)
   // Les contre-passations sans mouvement que la base rattacherait à ce débit : son jugement seul les choisit — un
   // encaissement (un crédit), une contre-passation retirée, déjà rattachée, d'une facture qui n'est pas source ou d'un
   // autre dossier, ou qui dépasserait le débit au-delà des frais, il le refuse.
@@ -884,6 +934,7 @@ function complementDuDebit(
         id: e.id,
         libelle,
         montant: e.montant,
+        clientCite: cite(e),
         refus: null,
         confirmation: `Rattacher à ${leDebit(m)} la contre-passation suivante ?\n\n— ${libelle} : ${formatMoney(e.montant)}\n\n`
           + 'Une contre-passation ne se rattache qu’une fois : elle citera ce débit, que la base réserve alors à ses '
@@ -912,6 +963,7 @@ function complementDuDebit(
         id: e.id, facture, libelle: libelleDeLEncaissement(e, s.factures), montant: e.montant,
         apres: apresSurLeDebit(dossierId, m, apres, s, vente),
         declaration: declares.has(e.id) ? DECLARATION_DU_CANDIDAT.declare : DECLARATION_DU_CANDIDAT.jamaisDeclare,
+        clientCite: cite(e),
       }]
     })
   return {
@@ -933,7 +985,7 @@ function complementDuDebit(
 export function gestesDuDebit(
   ventes: VentesDuReleve,
   lecture: LectureDuDebit | null,
-  ligne: Pick<MouvementClasse, 'id' | 'dossier_id'>,
+  ligne: LigneDesGestes,
   anneesValidees: readonly number[],
   plan: Pick<PlanComptable, 'services_bancaires'>,
   aujourdHui: string,
@@ -961,7 +1013,7 @@ export function gestesDuDebit(
   // contre-passations ne le font pas aux frais près (`debit_ecart`). Fait aux frais près, il se classe ; dépassé, une
   // contre-passation de plus n'y changerait rien ; figé, le classement oppose d'abord la frontière, et rien ne s'offre.
   const complement = refus?.cle === 'aucun_encaissement' || refus?.cle === 'debit_ecart'
-    ? complementDuDebit(dossierId, m, manque, s, vente, aujourdHui)
+    ? complementDuDebit(dossierId, m, manque, s, vente, aujourdHui, libelleExploitable(ligne))
     : null
   if (portes.length === 0) return complement !== null && complement.note === null ? { etat: 'libre', complement } : AUCUN_GESTE
   return {
@@ -970,4 +1022,251 @@ export function gestesDuDebit(
     classement: { refus: refus?.message ?? null, confirmation: confirmationDuClassementDuDebit(m, portes, s.factures, plan.services_bancaires) },
     complement,
   }
+}
+
+// ── Les candidats du relevé (étape VF5e) ──────────────────────────────────────────────────────────────────────────────────
+//
+// CE QUE LES VENTES FACTURÉES PROPOSENT POUR UN MOUVEMENT LIBRE (conception de VF5, § 5, puce VF5e). Sur un dossier BASCULÉ
+// dont les ventes facturées sont lues en entier, un mouvement libre — que rien ne classe, qu'aucun encaissement ne réserve,
+// qu'aucun exercice validé ne fige — peut être celui qu'une vente attend :
+//   - un CRÉDIT : une facture source OUVERTE (validée, dont le reste net de ses avoirs est positif, `resteAEncaisserVente`) ;
+//     un ENCAISSEMENT d'une facture source enregistré sans mouvement (le chèque saisi avant sa remise, l'encaissement d'un
+//     client sans « Banque ») ;
+//   - un DÉBIT : une CONTRE-PASSATION d'une facture source enregistrée sans mouvement (le chèque revenu impayé saisi depuis
+//     la facture). Rien de plus pour un débit : un impayé ne se devine pas.
+// UN CANDIDAT N'EST PROPOSÉ QUE SI LA BASE L'ACCEPTERAIT, par le jugement du module qui la redit, jamais par une règle
+// recopiée : un encaissement ou une contre-passation, par `refusRattachement` sur ce mouvement ; une facture, par
+// `refusRattachement` d'un encaissement FICTIF de cette facture, daté du mouvement, du montant que la fenêtre proposerait
+// (`montantSurLeCredit`) — ce sont les refus du mouvement cité d'`enregistrer_encaissement` pour une facture source (la
+// frontière du rang 11, le rang 10, le rang 17), et la fenêtre, qui lit en plus les transmissions de la facture, rejuge
+// tout avant l'envoi. Puis il doit être DÉSIGNÉ :
+//   - par son MONTANT : le mouvement se classerait alors par ses encaissements — `refusClassement` joué sur l'état d'après,
+//     la facture encaissée de tout son reste —, c'est-à-dire à l'écart des frais près (`min(2 %, 5 €)`, « LA BANQUE FAIT
+//     FOI ») : la banque crédite un peu moins que l'encaissement, ou débite un peu plus que la contre-passation ;
+//   - ou par son CLIENT, cité au libellé du mouvement (`tiersConfirmeParBanque`, le signal des pièces) — un paiement en
+//     deux fois échappe au montant, pas au nom.
+// L'ORDRE : le plus petit écart au mouvement d'abord, puis un encaissement avant une facture (il est déjà saisi), le
+// client cité, la date et l'identifiant, octet par octet.
+//
+// RIEN NE S'ÉCRIT SEUL. Un candidat dit au lot des règles que le mouvement a peut-être son justificatif
+// (`justificatifDeLaVente`, lu par `justificatifPossible`) : le lot le met « à rapprocher » ; il écarte le mouvement des
+// trois autres lots (`horsDesLotsAvecLesCandidats`) ; la fiche d'un crédit le propose en tête, et c'est le clic, puis la
+// confirmation, qui rattache ou ouvre la fenêtre. VIDES sur des ventes pas encore revenues, lues en partie, refusées ou
+// d'un autre dossier — et alors aucun lot ne part (`retenueDuReleve`, VF5a1) — comme sur un dossier qui n'a pas basculé.
+
+/** Ce qu'un candidat dit au lot des règles et à la fiche, dans les mots de la conception. */
+export const JUSTIFICATIF_FACTURE = 'Une facture de l’application attend son encaissement : ce crédit la règle peut-être.'
+export const JUSTIFICATIF_ENCAISSEMENT = 'Un encaissement enregistré attend son mouvement.'
+export const JUSTIFICATIF_CONTRE_PASSATION = 'Une contre-passation enregistrée attend son mouvement.'
+const JUSTIFICATIFS_DE_LA_VENTE: ReadonlySet<string> = new Set([
+  JUSTIFICATIF_FACTURE, JUSTIFICATIF_ENCAISSEMENT, JUSTIFICATIF_CONTRE_PASSATION,
+])
+
+/** Une facture source ouverte : son reste net de ses avoirs validés, positif, en centimes. */
+export interface FactureSourceOuverte {
+  facture: FactureDesGestes
+  resteCentimes: number
+}
+
+/** De quoi juger chaque candidat sur un mouvement : la lecture des ventes facturées, lue en entier, et la frontière. */
+interface JugeDesCandidats {
+  dossierId: string
+  sources: SourcesDesGestes
+  vente: ContexteVente
+  anneesValidees: readonly number[]
+}
+
+/**
+ * Les candidats de la vente d'un dossier : les deux listes de la puce VF5e — les factures sources ouvertes, les
+ * encaissements (contre-passations comprises) de factures sources enregistrés sans mouvement — et la lecture qui les
+ * juge sur chaque mouvement. Sans elle : aucun candidat (`AUCUN_CANDIDAT`).
+ */
+export interface CandidatsDeLaVente {
+  facturesSourcesOuvertes: readonly FactureSourceOuverte[]
+  encaissementsSansMouvement: readonly EncaissementDuMouvementLu[]
+  juge: JugeDesCandidats | null
+}
+
+/** Aucun : un dossier qui n'a pas basculé, ou des ventes facturées qui ne sont pas lues en entier. */
+export const AUCUN_CANDIDAT: CandidatsDeLaVente = { facturesSourcesOuvertes: [], encaissementsSansMouvement: [], juge: null }
+
+/**
+ * Les candidats de la vente, tirés de la lecture même des gestes (la retenue de VF5a1 : l'état du relevé ET la lecture,
+ * lus en entier, du même dossier). `anneesValidees` : celles du dossier — un mouvement qu'elles figent n'a pas de candidat.
+ */
+export function candidatsDeLaVente(
+  ventes: VentesDuReleve,
+  lecture: LectureDesGestes | null,
+  anneesValidees: readonly number[],
+): CandidatsDeLaVente {
+  if (ventes.etat !== 'lue' || lecture === null || lecture.etat !== 'lue') return AUCUN_CANDIDAT
+  const s = lecture.sources
+  if (lecture.dossierId !== s.dossierId) return AUCUN_CANDIDAT
+  const dossierId = s.dossierId
+  const vente: ContexteVente = { anneesValidees, factures: s.factures }
+  const sources = new Set(s.factures.filter((f) => f.dossier_id === dossierId && f.source_de_la_vente).map((f) => f.id))
+  return {
+    facturesSourcesOuvertes: s.factures
+      .filter((f) => sources.has(f.id) && f.type === 'facture' && f.statut === 'validee')
+      .map((facture) => ({
+        facture,
+        resteCentimes: resteAEncaisserVente({ facture, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts }, vente)
+          .resteCentimes,
+      }))
+      .filter((x) => x.resteCentimes > 0),
+    // Comme les rattachables de VF5c : non retirés, de factures sources, et que rien ne dit « n'avoir pas eu lieu ».
+    encaissementsSansMouvement: s.encaissements.filter((e) => e.dossier_id === dossierId && e.ligne_bancaire_id == null
+      && e.retire_le == null && sources.has(e.facture_id) && justifieSonMouvement(e, s.encaissements)),
+    juge: { dossierId, sources: s, vente, anneesValidees },
+  }
+}
+
+/** Ce qu'un candidat porterait sur le mouvement, et ce qui le désigne. */
+export interface CandidatDeLaVente {
+  genre: 'encaissement' | 'facture' | 'contre_passation'
+  /** L'encaissement (ou la contre-passation) à rattacher ; ou la facture, dont la fenêtre enregistrerait l'encaissement. */
+  id: string
+  facture: FactureDesGestes
+  /** La facture, son client, le moyen et la date — ou le reste d'une facture. */
+  libelle: string
+  /** Le montant de l'encaissement, ou le reste de la facture, en centimes, en valeur absolue. */
+  montantCentimes: number
+  /** L'écart entre ce montant et le mouvement, en centimes, en valeur absolue. */
+  ecartCentimes: number
+  /** Le mouvement se classerait alors, à l'écart des frais près. */
+  parLeMontant: boolean
+  /** Le client de la facture est cité au libellé du mouvement. */
+  parLeClient: boolean
+  /** Ce qui le désigne : le montant, le client — une phrase chacun, la fiche les dit comme les signaux d'une pièce. */
+  signaux: readonly string[]
+  /** Ce qu'il porterait sur le mouvement, en une phrase : ce que la fiche nomme avant le geste. */
+  titre: string
+}
+
+// L'identifiant de l'encaissement qu'une facture candidate recevrait : un nom qu'aucun identifiant de la base (un UUID) ne
+// porte.
+const L_ENCAISSEMENT_CANDIDAT = '(l’encaissement candidat)'
+
+function clientCite(factureId: string, factures: readonly FactureDesGestes[], libelle: string): boolean {
+  const f = factures.find((x) => x.id === factureId)
+  return f != null && tiersConfirmeParBanque(f.tiers_nom, libelle)
+}
+
+/** Les phrases des deux signaux d'un candidat. */
+export const SIGNAL_MONTANT_CREDIT = 'Le montant : le crédit la solde, à l’écart des frais près.'
+export const SIGNAL_MONTANT_DEBIT = 'Le montant : elle ferait ce débit, à l’écart des frais près.'
+export const signalDuClient = (client: string) => `Le client, ${client}, est cité au libellé du mouvement.`
+
+function signauxDuCandidat(parLeMontant: boolean, parLeClient: boolean, credit: boolean, client: string): string[] {
+  return [
+    parLeMontant ? (credit ? SIGNAL_MONTANT_CREDIT : SIGNAL_MONTANT_DEBIT) : null,
+    parLeClient ? signalDuClient(client) : null,
+  ].filter((x): x is string => x !== null)
+}
+
+const TITRES_DES_CANDIDATS = {
+  encaissement: 'Encaissement enregistré sans mouvement',
+  facture: 'Facture à encaisser',
+  contre_passation: 'Contre-passation enregistrée sans mouvement',
+} as const
+
+/**
+ * Les candidats de la vente pour CE mouvement, le plus petit écart d'abord ; vide sur un mouvement qui n'est pas libre, que
+ * des encaissements réservent, qu'un exercice validé fige, que la lecture n'a pas rendu, d'un autre dossier, ou sans
+ * candidat. `ligne` : le mouvement tel que l'onglet le lit — son libellé, où le client se lit.
+ */
+export function candidatsDuMouvement(c: CandidatsDeLaVente, ligne: LigneDesGestes): CandidatDeLaVente[] {
+  const j = c.juge
+  if (j === null || ligne.dossier_id !== j.dossierId) return []
+  const { dossierId, sources: s, vente } = j
+  const m = s.mouvements.find((x) => x.id === ligne.id && x.dossier_id === dossierId)
+  if (!m || m.montant === 0 || !mouvementLibre(m) || encaissementsDuMouvement(m.id, s.encaissements, vente).length > 0) return []
+  if (dateFigee(m.date, j.anneesValidees) !== null) return []
+  const credit = m.montant > 0
+  const libelle = libelleExploitable(ligne)
+  const mouvementCentimes = Math.abs(enCentimes(m.montant))
+  const candidats: { candidat: CandidatDeLaVente; date: string }[] = []
+  const ajouter = (
+    genre: CandidatDeLaVente['genre'], id: string, facture: FactureDesGestes, texte: string, montantCentimes: number,
+    parLeMontant: boolean, date: string,
+  ) => {
+    const parLeClient = tiersConfirmeParBanque(facture.tiers_nom, libelle)
+    if (!parLeMontant && !parLeClient) return
+    candidats.push({
+      candidat: {
+        genre, id, facture, libelle: texte, montantCentimes, ecartCentimes: Math.abs(montantCentimes - mouvementCentimes),
+        parLeMontant, parLeClient, signaux: signauxDuCandidat(parLeMontant, parLeClient, credit, facture.tiers_nom),
+        titre: TITRES_DES_CANDIDATS[genre],
+      },
+      date,
+    })
+  }
+  for (const e of c.encaissementsSansMouvement) {
+    // Un crédit attend un encaissement, un débit une contre-passation.
+    if ((e.annule_id == null) !== credit) continue
+    const facture = s.factures.find((f) => f.id === e.facture_id)
+    if (!facture || refusRattachement(dossierId, e.id, m.id, s.encaissements, s.mouvements, vente) !== null) continue
+    const apres = s.encaissements.map((x) => (x.id === e.id ? { ...x, ligne_bancaire_id: m.id } : x))
+    ajouter(credit ? 'encaissement' : 'contre_passation', e.id, facture, libelleDeLEncaissement(e, s.factures),
+      Math.abs(enCentimes(e.montant)), refusClassement(dossierId, m.id, s.mouvements, apres, vente) === null, e.date_encaissement)
+  }
+  if (credit) {
+    for (const o of c.facturesSourcesOuvertes) {
+      const fictif = (montantCentimes: number, ligneBancaireId: string | null): EncaissementDuMouvementLu => ({
+        id: L_ENCAISSEMENT_CANDIDAT, dossier_id: dossierId, facture_id: o.facture.id, montant: montantCentimes / 100,
+        ligne_bancaire_id: ligneBancaireId, annule_id: null, retire_le: null, date_encaissement: m.date, moyen: 'virement',
+        cree_le: m.date, cree_par: null,
+      })
+      // La base l'accepterait-elle sur ce crédit, du montant que la fenêtre proposerait ?
+      const propose = fictif(montantSurLeCredit(o.resteCentimes, mouvementCentimes), null)
+      if (refusRattachement(dossierId, propose.id, m.id, [...s.encaissements, propose], s.mouvements, vente) !== null) continue
+      // Et le crédit la solderait-il, à l'écart des frais près ?
+      const solde = refusClassement(dossierId, m.id, s.mouvements, [...s.encaissements, fictif(o.resteCentimes, m.id)], vente) === null
+      ajouter('facture', o.facture.id, o.facture,
+        `${o.facture.numero ?? SANS_NUMERO} — ${o.facture.tiers_nom}, du ${formatDate(o.facture.date_emission)} — reste `
+          + euros(o.resteCentimes),
+        o.resteCentimes, solde, o.facture.date_emission)
+    }
+  }
+  return candidats
+    .sort((a, b) => a.candidat.ecartCentimes - b.candidat.ecartCentimes
+      || Number(a.candidat.genre === 'facture') - Number(b.candidat.genre === 'facture')
+      || Number(b.candidat.parLeClient) - Number(a.candidat.parLeClient)
+      || ordreC(a.date, b.date) || ordreC(a.candidat.id, b.candidat.id))
+    .map((x) => x.candidat)
+}
+
+/**
+ * Ce que les candidats de la vente disent d'un mouvement au lot des règles et à la fiche (`justificatifPossible`) : un
+ * encaissement — ou, à défaut, une facture — qui le justifie peut-être, sur un crédit ; une contre-passation qui le ferait
+ * aux frais près, sur un débit — le client seul ne désigne pas un impayé. Null : rien.
+ */
+export function justificatifDeLaVente(c: CandidatsDeLaVente, ligne: LigneDesGestes): string | null {
+  const candidats = candidatsDuMouvement(c, ligne)
+  if (candidats.some((x) => x.genre === 'encaissement')) return JUSTIFICATIF_ENCAISSEMENT
+  if (candidats.some((x) => x.genre === 'facture')) return JUSTIFICATIF_FACTURE
+  if (candidats.some((x) => x.genre === 'contre_passation' && x.parLeMontant)) return JUSTIFICATIF_CONTRE_PASSATION
+  return null
+}
+
+/**
+ * LE DOUBLE COMPTE DU RELEVÉ : les mouvements que ni le rapprochement automatique, ni « Valider et rapprocher », ni la
+ * règle d'ignorance ne prennent. Ceux qu'aucun lot ne prend déjà (classés ou réservés, sous les mots de la garde), ET ceux
+ * qu'un candidat de la vente justifie peut-être, sous sa phrase : rapprochés d'une pièce ou ignorés, ils ne pourraient plus
+ * être cités par l'encaissement qui les attend. Le lot des règles reçoit les seuls premiers, et met les seconds « à
+ * rapprocher » par `justificatifPossible`. Aucun mouvement de plus n'entre dans un lot.
+ */
+export function horsDesLotsAvecLesCandidats(
+  hors: MouvementsHorsDesLots,
+  c: CandidatsDeLaVente,
+  lignes: readonly LigneDesGestes[],
+): MouvementsHorsDesLots {
+  if (c.juge === null) return hors
+  const avec = new Map(hors)
+  for (const l of lignes) {
+    if (avec.has(l.id)) continue
+    const raison = justificatifDeLaVente(c, l)
+    if (raison !== null) avec.set(l.id, raison)
+  }
+  return avec
 }

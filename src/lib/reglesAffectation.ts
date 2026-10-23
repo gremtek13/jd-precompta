@@ -6,7 +6,7 @@ import { recollerSiglesPointes } from './format'
 import type { PlanComptable } from './planComptable'
 import { tauxApplicable, tauxRequis } from './tvaDuReleve'
 import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire, SensMouvementBancaire } from './types'
-import type { MouvementsHorsDesLots } from './mouvementsDesVentes'
+import { justificatifDeLaVente, type CandidatsDeLaVente, type MouvementsHorsDesLots } from './mouvementsDesVentes'
 
 // LES RÈGLES D'AFFECTATION APPRISES PAR LIBELLÉ (ligne 26.6 de la feuille de route, étape a).
 //
@@ -194,6 +194,12 @@ export interface JustificatifsDuDossier {
   restesARegler: ReadonlyMap<string, number>
   cotisations: CotisationRapprochable[]
   cotisationsRapprochees: ReadonlySet<string>
+  // LES CANDIDATS DE LA VENTE (ligne 28.65, chantier EC-Q3, étape VF5e ; lib/mouvementsDesVentes.ts, `candidatsDeLaVente`) :
+  // les factures sources ouvertes et les encaissements de factures sources enregistrés sans mouvement, avec la lecture
+  // qui les juge sur chaque mouvement. Sans valeur par défaut : un appelant qui l'oublierait affecterait en lot un crédit
+  // que l'encaissement d'une facture compte déjà. `AUCUN_CANDIDAT` sur un dossier qui n'a pas basculé, et sur des ventes
+  // facturées qui ne sont pas lues en entier — les lots sont alors retenus (VF5a1).
+  ventes: CandidatsDeLaVente
 }
 
 // UN MOUVEMENT QUI A PEUT-ÊTRE SON JUSTIFICATIF NE S'AFFECTE PAS EN LOT. Affecté, il compterait dans la
@@ -229,7 +235,9 @@ export function justificatifPossible(ligne: LigneBancaire, justificatifs: Justif
   })) {
     return 'Une pièce payée en partie attend son solde : ce mouvement le règle peut-être.'
   }
-  return null
+  // UNE VENTE FACTURÉE ATTEND SON ENCAISSEMENT (étape VF5e) : affecté à une recette, ce crédit compterait à côté de
+  // l'encaissement de la facture qu'il règle — la même vente deux fois. De même d'un débit qu'une contre-passation attend.
+  return justificatifDeLaVente(justificatifs.ventes, ligne)
 }
 
 export interface PropositionRegle {

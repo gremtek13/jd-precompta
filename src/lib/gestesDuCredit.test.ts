@@ -69,7 +69,7 @@ const lue = (s: SourcesDesGestes): LectureDesGestes => ({ dossierId: D, etat: 'l
 
 // La fiche telle que l'onglet la calcule : l'état du relevé tiré de la MÊME lecture.
 function gestes(s: SourcesDesGestes, id: string, annees: readonly number[] = [], plan = PLAN_PAR_DEFAUT): GestesDuCredit {
-  return gestesDuCredit(ventesDuReleve(true, D, lue(s), ACCES), lue(s), { id, dossier_id: D }, annees, plan)
+  return gestesDuCredit(ventesDuReleve(true, D, lue(s), ACCES), lue(s), { id, dossier_id: D, libelle: 'VIR SEPA RECU', libelle_brut: null }, annees, plan)
 }
 
 function refus(liste: readonly { cle: string; modele: string }[], cle: string, ...valeurs: string[]): string {
@@ -81,7 +81,7 @@ describe('gestesDuCredit : la retenue de VF5a1 — rien ne s’offre sans des ve
     mouvements: [mouvement({ id: 'm1' })],
     encaissements: [encaissement({ id: 'e1', facture_id: 'f1', montant: 600, ligne_bancaire_id: 'm1' })],
   })
-  const ici = { id: 'm1', dossier_id: D }
+  const ici = { id: 'm1', dossier_id: D, libelle: 'VIR SEPA RECU', libelle_brut: null }
 
   it('un dossier qui n’a pas basculé, des ventes pas encore revenues ou lues en partie : aucun geste', () => {
     expect(gestesDuCredit({ etat: 'sans_objet' }, lue(s), ici, [], PLAN_PAR_DEFAUT)).toEqual(AUCUN_GESTE)
@@ -96,7 +96,7 @@ describe('gestesDuCredit : la retenue de VF5a1 — rien ne s’offre sans des ve
     expect(gestesDuCredit(v, { dossierId: D, etat: 'incomplete', motif: 'refusée' }, ici, [], PLAN_PAR_DEFAUT)).toEqual(AUCUN_GESTE)
     expect(gestesDuCredit(v, { ...lue(s), dossierId: 'autre' }, ici, [], PLAN_PAR_DEFAUT)).toEqual(AUCUN_GESTE)
     expect(gestesDuCredit(v, lue({ ...s, dossierId: 'autre' }), ici, [], PLAN_PAR_DEFAUT)).toEqual(AUCUN_GESTE)
-    expect(gestesDuCredit(v, lue(s), { id: 'm1', dossier_id: 'autre' }, [], PLAN_PAR_DEFAUT)).toEqual(AUCUN_GESTE)
+    expect(gestesDuCredit(v, lue(s), { id: 'm1', dossier_id: 'autre', libelle: 'VIR SEPA RECU', libelle_brut: null }, [], PLAN_PAR_DEFAUT)).toEqual(AUCUN_GESTE)
   })
 
   it('un mouvement que la lecture des ventes n’a pas rendu, ou d’un autre dossier : aucun geste', () => {
@@ -396,7 +396,7 @@ describe('un crédit LIBRE : rattacher un encaissement, ou enregistrer celui d�
     const g = gestes(seul, 'm1')
     if (g.etat !== 'reserve') throw new Error(g.etat)
     expect(g.complement).toEqual({
-      manqueCentimes: 30000, rattachables: [], factures: [],
+      manqueCentimes: 30000, proposes: [], rattachables: [], factures: [],
       note: 'Aucun encaissement de facture source n’attend son mouvement, et aucune facture source ne reste à encaisser : rien ne '
         + 'se rattache ni ne s’enregistre ici.',
     })

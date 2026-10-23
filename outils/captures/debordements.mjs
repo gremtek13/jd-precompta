@@ -1168,6 +1168,18 @@ const VISITES = [
       await page.getByLabel('Facture à encaisser', { exact: true }).selectOption('fb4')
     },
   },
+  // LES CANDIDATS DU RELEVÉ (étape VF5e) : le virement de la maison de santé, un crédit LIBRE dont la fiche propose EN TÊTE
+  // la facture source qui l'attend, F2026-0024 — ses deux signaux, son bouton —, mesurée contre le corps de la fiche.
+  {
+    dossier: 'd12', onglet: 'banque', nom: 'banque-basculee/fiche-credit-candidat', fenetre: '.fiche-mouvement-corps',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.locator('tr.clickable', { hasText: 'VIR SEPA MAISON DE SANTE DES COTEAUX' }).first().click()
+      await page.getByText(/^Proposés par ses ventes facturées$/).first().waitFor({ timeout: 10000 })
+    },
+  },
   {
     dossier: 'd12', onglet: 'banque', nom: 'banque-basculee/encaissement-impose', fenetre: FENETRE_FACTURE,
     apres: async (page) => {

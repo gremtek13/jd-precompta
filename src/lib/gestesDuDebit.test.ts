@@ -62,7 +62,7 @@ const lue = (s: SourcesDuDebit): LectureDuDebit => ({ dossierId: D, etat: 'lue',
 
 // La fiche telle que l'onglet la calcule : l'état du relevé tiré de la MÊME lecture.
 function gestes(s: SourcesDuDebit, id: string, annees: readonly number[] = [], plan = PLAN_PAR_DEFAUT, aujourdHui = AUJOURDHUI): GestesDuDebit {
-  return gestesDuDebit(ventesDuReleve(true, D, lue(s), ACCES), lue(s), { id, dossier_id: D }, annees, plan, aujourdHui)
+  return gestesDuDebit(ventesDuReleve(true, D, lue(s), ACCES), lue(s), { id, dossier_id: D, libelle: 'VIR SEPA RECU', libelle_brut: null }, annees, plan, aujourdHui)
 }
 
 function refus(liste: readonly { cle: string; modele: string }[], cle: string, ...valeurs: string[]): string {
@@ -77,7 +77,7 @@ describe('gestesDuDebit : la retenue de VF5a1 — rien ne s’offre sans des ven
     encaissements: [encaissement({ id: 'e1', facture_id: 'f1', montant: 600 })],
     declarations: [declare('e1')],
   })
-  const ici = { id: 'd1', dossier_id: D }
+  const ici = { id: 'd1', dossier_id: D, libelle: 'VIR SEPA RECU', libelle_brut: null }
 
   it('un dossier qui n’a pas basculé, des ventes pas encore revenues ou lues en partie : aucun geste', () => {
     expect(gestes(s, 'd1').etat).toBe('libre')
@@ -93,7 +93,7 @@ describe('gestesDuDebit : la retenue de VF5a1 — rien ne s’offre sans des ven
       .toEqual(AUCUN_GESTE)
     expect(gestesDuDebit(v, { ...lue(s), dossierId: 'autre' }, ici, [], PLAN_PAR_DEFAUT, AUJOURDHUI)).toEqual(AUCUN_GESTE)
     expect(gestesDuDebit(v, lue({ ...s, dossierId: 'autre' }), ici, [], PLAN_PAR_DEFAUT, AUJOURDHUI)).toEqual(AUCUN_GESTE)
-    expect(gestesDuDebit(v, lue(s), { id: 'd1', dossier_id: 'autre' }, [], PLAN_PAR_DEFAUT, AUJOURDHUI)).toEqual(AUCUN_GESTE)
+    expect(gestesDuDebit(v, lue(s), { id: 'd1', dossier_id: 'autre', libelle: 'VIR SEPA RECU', libelle_brut: null }, [], PLAN_PAR_DEFAUT, AUJOURDHUI)).toEqual(AUCUN_GESTE)
   })
 
   it('un débit que la lecture n’a pas rendu, ou d’un autre dossier : aucun geste', () => {
