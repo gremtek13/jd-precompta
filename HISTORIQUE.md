@@ -32414,3 +32414,12 @@ build (`index-7NSu-vim.js`).
   le relevé.
 - Le banc ne montre toujours pas la paire de VF5d2 (l'encaissement jamais déclaré et sa contre-passation) : une visite
   de d12, à ajouter avec VF5f ou VF5g.
+
+**LA MISE EN LIGNE.** Demande #213, ouverte sur `08182b3` après la barrière de la session sur `fd5bdfa` (ci-dessus) ;
+les deux passes de `verifier` vertes (la branche et la demande, de 9 h 47 à 10 h 07 UTC) ; fusionnée en « Rebase and
+merge » le 23/10/2026 à 10 h 10 UTC (`3754091` à `a406ce9`, à la suite de la mise en ligne de la retouche #212,
+`7156ecc`, venue avec elle), `main` linéaire, son arbre égal à celui de la branche ; le déploiement vert (fini à
+10 h 14), et le site sert `index-7NSu-vim.js`, le bundle du build local, depuis 10 h 14. La feuille de route : la ligne
+28.65 mise à jour, puis relue par empreinte (19 361 positions) ; les barres recomptées par requête, inchangées (187
+chantiers hors de la phase 7, dont 142 livrés ; 76 % et 82 %). La copie de travail de l'agent retirée, son travail
+entier dans `main`, recomposé ; la branche réalignée sur `main`.
