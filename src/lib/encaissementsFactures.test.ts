@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF, seuilAlignement } from './alignementBanque'
@@ -1117,7 +1118,8 @@ describe('la contre-passation ne cite un débit qu’avec « Banque » (migratio
   it('hors de ce refus et de son commentaire, la définition de VF2 au caractère près', () => {
     const avant = definitionAvantLaMigration('annuler_encaissement', 'contre_passation_banque')
     expect(avant.startsWith('create function public.annuler_encaissement(')).toBe(true)
-    const apres = derniereDefinitionSql('annuler_encaissement')
+    // La définition de cette migration-ci : celle qui précède la migration impaye_non_declare (étape VF5d2), qui la reprend.
+    const apres = definitionAvantLaMigration('annuler_encaissement', 'impaye_non_declare')
     const debut = apres.indexOf(DEBUT_DU_BLOC_BANQUE)
     const fin = apres.indexOf('  end if;\n', apres.indexOf(REFUS_BANQUE_SQL)) + '  end if;\n'.length
     expect(debut).toBeGreaterThan(0)
@@ -1135,6 +1137,69 @@ describe('la contre-passation ne cite un débit qu’avec « Banque » (migratio
     expect(migration).not.toMatch(/\b(drop|delete|truncate)\b/i)
     // Les outils MCP décodent les échappements de leurs paramètres : le texte n'en porte aucun.
     expect(migration).not.toContain('\\')
+  })
+})
+
+// ── L'impayé d'un encaissement jamais déclaré (migration impaye_non_declare, chantier EC-Q3, étape VF5d2) ───────────────
+//
+// La contre-passation est reprise de sa définition du correctif « Banque » au caractère près, hors de la condition du rang
+// 6 et de son commentaire : le refus « non déclaré » ne s'oppose plus à l'encaissement d'une facture source dont la
+// contre-passation cite un débit — et à lui seul. Les mêmes refus, aux mêmes rangs, sous les mêmes mots et les mêmes codes.
+
+const RANG_6_HIER = "  if not found then\n    raise exception 'Cet encaissement n''est pas déclaré : il se retire, sans "
+  + "contre-passation.' using errcode = '22023';\n  end if;\n"
+const RANG_6_NEUF = "  if not found and (p_ligne_bancaire_id is null or v_source is not true) then\n    raise exception 'Cet "
+  + "encaissement n''est pas déclaré : il se retire, sans contre-passation.' using errcode = '22023';\n  end if;\n"
+const DEBUT_DU_COMMENTAIRE_DU_RANG_6 = '  -- Jamais déclaré, un encaissement se retire ;'
+
+describe('l’impayé d’un encaissement jamais déclaré (migration impaye_non_declare, étape VF5d2)', () => {
+  const migration = () => fichiersDuSchema().find((f) => /\/\d{14}_impaye_non_declare\.sql$/.test(f.chemin))?.texte ?? ''
+
+  it('hors de la condition du rang 6 et de son commentaire, la définition du correctif « Banque » au caractère près', () => {
+    const avant = definitionAvantLaMigration('annuler_encaissement', 'impaye_non_declare')
+    const apres = derniereDefinitionSql('annuler_encaissement')
+    expect(avant).toContain(RANG_6_HIER)
+    expect(apres).not.toContain(RANG_6_HIER)
+    expect(apres).toContain(RANG_6_NEUF)
+    const debut = apres.indexOf(DEBUT_DU_COMMENTAIRE_DU_RANG_6)
+    const fin = apres.indexOf(RANG_6_NEUF) + RANG_6_NEUF.length
+    expect(debut).toBeGreaterThan(0)
+    expect(apres.slice(0, debut) + RANG_6_HIER + apres.slice(fin)).toBe(avant)
+    // Les mêmes refus, aux mêmes rangs, sous les mêmes mots et les mêmes codes : la liste du module ne change pas.
+    expect(messagesSql(apres)).toEqual(messagesSql(avant))
+    expect(codesSql(apres)).toEqual(codesSql(avant))
+    expect(REFUS_CONTRE_PASSATION.map((r) => r.modele)).toEqual(messagesSql(apres))
+  })
+
+  it('la condition : la source se lit avant elle, la déclaration juste avant ; une source illisible tombe du côté fermé', () => {
+    const sql = derniereDefinitionSql('annuler_encaissement')
+    const source = sql.indexOf('select f.source_de_la_vente into v_source')
+    const declaration = sql.indexOf('select * into v_declaration from public.transmissions_encaissements t')
+    const rang6 = sql.indexOf(RANG_6_NEUF)
+    expect(source).toBeGreaterThan(0)
+    expect(declaration).toBeGreaterThan(source)
+    expect(rang6).toBeGreaterThan(declaration)
+    // `is not true` : une source nulle ne lève pas le refus — elle le laisse tomber.
+    expect(RANG_6_NEUF).toContain(' or v_source is not true)')
+  })
+
+  it('la migration : sa garde sur le corps du correctif, le commentaire de la fonction, ni droits rejoués ni mot que le détecteur retiendrait', () => {
+    const texte = migration()
+    expect(texte).not.toBe('')
+    // L'empreinte que la garde exige est celle du corps du correctif tel que l'export le porte (et la production l'exécute).
+    const correctif = definitionAvantLaMigration('annuler_encaissement', 'impaye_non_declare')
+    const corps = correctif.slice(correctif.indexOf('as $$') + 'as $$'.length)
+    expect(texte).toContain(`chr(13), '')) <> '${createHash('md5').update(corps).digest('hex')}' then`)
+    expect(texte).toContain("chr(13), '')) <> '280da760fa49f59627d483b4a4741f6b' then")
+    expect(texte.match(/create or replace function public\.annuler_encaissement\(/g)).toHaveLength(1)
+    expect(texte).not.toMatch(/\b(grant|revoke)\b/i)
+    expect(texte).not.toMatch(/\b(drop|delete|truncate)\b/i)
+    expect(texte).not.toContain('\\')
+    const commentaire = /comment on function public\.annuler_encaissement\(uuid, uuid, date, text, uuid\) is\n {2}'((?:[^']|'')*)';/.exec(texte)
+    expect(commentaire, 'le commentaire de la fonction').not.toBeNull()
+    const dit = (commentaire as RegExpExecArray)[1].replace(/''/g, "'")
+    expect(dit).toContain('contre-passer aussi un encaissement jamais déclaré')
+    expect(dit).toContain('sauf celle d\'un encaissement jamais déclaré')
   })
 })
 

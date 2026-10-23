@@ -3,9 +3,9 @@ import { TEXTE_ESSAI_VENTES_FACTUREES, correspondAuModele, etapesDeLEssai, refus
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import {
   REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT, REFUS_GARDE_MOUVEMENTS, REFUS_RATTACHEMENT, REFUS_RETRAIT,
-  REFUS_RETRAIT_CLASSEMENT, justifieSonMouvement, mouvementLibre, refusClassement, refusContrePassation, refusContrePassationVente,
-  refusDuClassementDuReleve, refusEnregistrement, refusEnregistrementVente, refusRattachement, refusRetrait,
-  refusRetraitDuClassement, refusRetraitVente,
+  REFUS_RETRAIT_CLASSEMENT, debitObligatoire, justifieSonMouvement, mouvementLibre, paireNonDeclaree, refusClassement,
+  refusContrePassation, refusContrePassationAvantLaDate, refusContrePassationVente, refusDuClassementDuReleve,
+  refusEnregistrement, refusEnregistrementVente, refusRattachement, refusRetrait, refusRetraitDuClassement, refusRetraitVente,
   type ContexteFacture, type ContexteVente, type EncaissementDuReleve, type EncaissementLu, type EncaissementPourContrePassation,
   type FactureDuDossier, type FacturePourEncaissement, type LigneDeFacture, type MouvementClasse, type SaisieEncaissement,
 } from './encaissementsFactures'
@@ -424,6 +424,135 @@ describe('refusContrePassationVente — annuler_encaissement et son cinquième p
       'frontiere', 'motif_absent', 'motif_trop_long', 'mouvement_non_source', 'mouvement_hors_dossier', 'mouvement_credit',
       'mouvement_classe', 'mouvement_depasse', 'mouvement_encaissement_classe',
     ])
+  })
+})
+
+// L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (étape VF5d2, migration impaye_non_declare) : le rang 6 ne s'oppose plus à
+// l'encaissement d'une facture SOURCE dont la contre-passation cite un débit — et à lui seul.
+describe('l’impayé d’un encaissement jamais déclaré — le rang 6 levé pour une facture source et un débit cité', () => {
+  const AUCUNE: { encaissement_id: string; etat: 'depose' | 'echec' | 'rejete' | 'envoi' }[] = []
+  const e1 = encaissement({ ligne_bancaire_id: 'm1', date_encaissement: '2027-10-15' })
+  const DEBIT = mouvement({ id: 'm_debit', montant: -100, date: '2027-10-25' })
+  const refusCV = (o: { encaissements?: EncaissementPourContrePassation[]; declarations?: typeof AUCUNE; date?: string | null;
+    motif?: string | null; ligne?: string | null; mouvements?: MouvementClasse[]; v?: ContexteVente; banque?: boolean; id?: string } = {}) =>
+    refusContrePassationVente(D, o.id ?? 'e1', o.encaissements ?? [e1], o.declarations ?? AUCUNE, o.date === undefined ? '2027-10-25' : o.date,
+      o.motif === undefined ? 'Chèque revenu impayé' : o.motif, AUJOURD_HUI, o.ligne === undefined ? 'm_debit' : o.ligne,
+      o.mouvements ?? [mouvement(), DEBIT], o.banque ?? true, o.v ?? vente())
+  const NON_DECLARE = { cle: 'non_declare', message: "Cet encaissement n'est pas déclaré : il se retire, sans contre-passation." }
+
+  it('jamais déclaré, d’une facture source, avec le débit qui l’a défait : la contre-passation passe', () => {
+    expect(refusCV()).toBeNull()
+    // Une déclaration échouée ou rejetée ne déclare pas : de même.
+    expect(refusCV({ declarations: [{ encaissement_id: 'e1', etat: 'echec' }] })).toBeNull()
+    expect(refusCV({ declarations: [{ encaissement_id: 'e1', etat: 'rejete' }] })).toBeNull()
+    // Déclaré, comme hier : avec ou sans débit.
+    expect(refusCV({ declarations: [{ encaissement_id: 'e1', etat: 'depose' }] })).toBeNull()
+  })
+
+  it('sans débit, ou pour une facture qui n’est pas source : le refus d’hier, sous ses mots', () => {
+    expect(refusCV({ ligne: null })).toEqual(NON_DECLARE)
+    expect(refusCV({ ligne: null, mouvements: [mouvement({ statut: 'rapprochee', encaissements_de_factures: true }), DEBIT] })).toEqual(NON_DECLARE)
+    const f2 = { ...e1, facture_id: 'f2' }
+    expect(refusCV({ encaissements: [f2] })).toEqual(NON_DECLARE)
+    expect(refusCV({ encaissements: [f2], ligne: null })).toEqual(NON_DECLARE)
+    // Hors de la vente : la facture que la lecture n'a pas rendue n'est pas source — le refus d'hier, du côté fermé.
+    expect(refusCV({ v: vente({ factures: FACTURES.filter((f) => f.id !== 'f1') }) })).toEqual(NON_DECLARE)
+    // Et la fonction d'hier, à quatre paramètres, n'en sait rien : jamais déclaré, il se retire.
+    expect(refusContrePassation(D, 'e1', [e1], AUCUNE, '2027-10-25', 'm', AUJOURD_HUI)).toEqual(NON_DECLARE)
+  })
+
+  it('le rang 2 d’abord : sans « Banque », le débit cité se refuse, avant le rang 6 comme hier', () => {
+    expect(refusCV({ banque: false })?.cle).toBe('mouvement_sans_banque')
+    expect(refusCV({ banque: false, encaissements: [{ ...e1, facture_id: 'f2' }] })?.cle).toBe('mouvement_sans_banque')
+    expect(refusCV({ banque: false, ligne: null })).toEqual(NON_DECLARE)
+  })
+
+  it('dans l’ordre de la base : chaque refus encore en faute derrière celui qu’on corrige, le rang 6 sauté', () => {
+    const cp = encaissement({ id: 'c1', montant: -100, annule_id: 'e1', ligne_bancaire_id: 'm_autre' })
+    let o: Parameters<typeof refusCV>[0] = {
+      id: 'c1', encaissements: [{ ...e1, retire_le: '2027-10-20T10:00:00Z' }, cp], date: null, motif: ' ',
+      ligne: 'inconnu', v: vente({ anneesValidees: [2027] }),
+    }
+    const etapes: [string, () => void][] = [
+      ['contre_passation', () => { o = { ...o, id: 'e1' } }],
+      ['retire', () => { o = { ...o, encaissements: [e1, cp] } }],
+      ['deja_contre_passe', () => { o = { ...o, encaissements: [e1] } }],
+      ['date_absente', () => { o = { ...o, date: '2027-10-14' } }],
+      ['date_avant_encaissement', () => { o = { ...o, date: '2027-11-03' } }],
+      ['date_future', () => { o = { ...o, date: '2027-10-25' } }],
+      ['frontiere', () => { o = { ...o, v: vente() } }],
+      ['motif_absent', () => { o = { ...o, motif: 'Chèque revenu impayé' } }],
+      ['mouvement_hors_dossier', () => { o = { ...o, ligne: 'm1' } }],
+      ['mouvement_credit', () => { o = { ...o, ligne: 'm_debit', mouvements: [mouvement(), { ...DEBIT, statut: 'rapprochee', piece_id: 'p' }] } }],
+      ['mouvement_classe', () => { o = { ...o, mouvements: [mouvement(), { ...DEBIT, montant: -97.99 }] } }],
+      ['mouvement_depasse', () => { o = { ...o, mouvements: [mouvement(), DEBIT] } }],
+    ]
+    const vus: string[] = []
+    for (const [cle, corriger] of etapes) {
+      vus.push(refusCV(o)?.cle ?? 'aucun')
+      expect(vus[vus.length - 1], `avant de corriger ${cle}`).toBe(cle)
+      corriger()
+    }
+    expect(refusCV(o)).toBeNull()
+  })
+
+  it('debitObligatoire : jamais déclaré, vivant, pas une contre-passation, d’une facture source', () => {
+    const v = vente()
+    expect(debitObligatoire(D, 'e1', [e1], AUCUNE, v)).toBe(true)
+    expect(debitObligatoire(D, 'e1', [e1], [{ encaissement_id: 'e1', etat: 'echec' }], v)).toBe(true)
+    expect(debitObligatoire(D, 'e1', [e1], [{ encaissement_id: 'e1', etat: 'depose' }], v)).toBe(false)
+    expect(debitObligatoire(D, 'e1', [e1], [{ encaissement_id: 'e1', etat: 'envoi' }], v)).toBe(false)
+    expect(debitObligatoire(D, 'e1', [{ ...e1, facture_id: 'f2' }], AUCUNE, v)).toBe(false)
+    expect(debitObligatoire(D, 'e1', [{ ...e1, retire_le: '2027-10-20T10:00:00Z' }], AUCUNE, v)).toBe(false)
+    expect(debitObligatoire(D, 'c1', [e1, encaissement({ id: 'c1', montant: -100, annule_id: 'e1' })], AUCUNE, v)).toBe(false)
+    expect(debitObligatoire('d2', 'e1', [e1], AUCUNE, v)).toBe(false)
+    expect(debitObligatoire(D, 'e1', [e1], AUCUNE, vente({ factures: [] }))).toBe(false)
+  })
+
+  it('refusContrePassationAvantLaDate : ce qui décide l’offre — déclaré sans débit, jamais déclaré avec le débit à choisir', () => {
+    const avant = (o: { declarations?: typeof AUCUNE; banque?: boolean; encaissements?: EncaissementPourContrePassation[] } = {}) =>
+      refusContrePassationAvantLaDate(D, 'e1', o.encaissements ?? [e1], o.declarations ?? AUCUNE, AUJOURD_HUI, [mouvement(), DEBIT],
+        o.banque ?? true, vente())
+    // Jamais déclaré, d'une facture source : rien d'autre que la date ne s'y oppose ; sans « Banque », le débit ne se cite pas.
+    expect(avant()?.cle).toBe('date_absente')
+    expect(avant({ banque: false })?.cle).toBe('mouvement_sans_banque')
+    // Déclaré : comme hier, sans débit — « Banque » n'y change rien.
+    expect(avant({ declarations: [{ encaissement_id: 'e1', etat: 'depose' }] })?.cle).toBe('date_absente')
+    expect(avant({ declarations: [{ encaissement_id: 'e1', etat: 'depose' }], banque: false })?.cle).toBe('date_absente')
+    expect(avant({ declarations: [{ encaissement_id: 'e1', etat: 'envoi' }] })?.cle).toBe('issue_inconnue')
+    // Jamais déclaré, d'une facture qui n'est pas source : il se retire.
+    expect(avant({ encaissements: [{ ...e1, facture_id: 'f2' }] })).toEqual(NON_DECLARE)
+    // Déjà contre-passé : l'offre se retient.
+    expect(avant({ encaissements: [e1, encaissement({ id: 'c1', montant: -100, annule_id: 'e1', ligne_bancaire_id: 'm_debit' })] })?.cle)
+      .toBe('deja_contre_passe')
+  })
+})
+
+describe('paireNonDeclaree — la paire d’un encaissement jamais déclaré et de sa contre-passation ne se déclare pas', () => {
+  const e = encaissement({ id: 'e1' })
+  const c = encaissement({ id: 'c1', montant: -100, annule_id: 'e1', ligne_bancaire_id: 'm_debit' })
+  const declares = (...ids: string[]) => new Set(ids)
+
+  it('ni l’encaissement ni sa contre-passation, quand aucun des deux n’est déclaré', () => {
+    expect(paireNonDeclaree(e, [e, c], declares())).toBe(true)
+    expect(paireNonDeclaree(c, [e, c], declares())).toBe(true)
+  })
+
+  it('l’encaissement déclaré défait la paire : sa contre-passation se déclare, comme hier', () => {
+    expect(paireNonDeclaree(e, [e, c], declares('e1'))).toBe(false)
+    expect(paireNonDeclaree(c, [e, c], declares('e1'))).toBe(false)
+  })
+
+  it('la contre-passation déclarée la défait aussi : l’encaissement est à déclarer, pour que la plateforme ait les deux', () => {
+    expect(paireNonDeclaree(e, [e, c], declares('c1'))).toBe(false)
+    expect(paireNonDeclaree(c, [e, c], declares('c1'))).toBe(false)
+  })
+
+  it('sans contre-passation vivante, pas de paire ; un retiré n’en est d’aucune', () => {
+    expect(paireNonDeclaree(e, [e], declares())).toBe(false)
+    expect(paireNonDeclaree(e, [e, { ...c, retire_le: '2027-10-26T10:00:00Z' }], declares())).toBe(false)
+    expect(paireNonDeclaree({ ...c, retire_le: '2027-10-26T10:00:00Z' }, [e, c], declares())).toBe(false)
+    expect(paireNonDeclaree({ ...e, retire_le: '2027-10-26T10:00:00Z' }, [e, c], declares())).toBe(false)
   })
 })
 

@@ -75,6 +75,17 @@
 -- encaissements, qui ne laisse une contre-passation citer un mouvement — le débit qui défait l'encaissement — que pour
 -- une facture source de sa vente. Le contrôle 57 attend donc le refus de la garde, sous ses mots (23514) : la facture de
 -- l'essai n'est pas source. Rien d'autre ne change ; supabase/essais/ventesFacturees.sql éprouve la facture source.
+--
+-- 23/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `impaye_non_declare`, appliquée le 23/10/2026 sous la
+-- version `20261023063657` ; chantier EC-Q3, étape VF5d2) : le contrôle 47d — jamais déclaré, l'encaissement d'une
+-- facture qui n'est pas source ne se contre-passe pas, même en citant un débit (le rang 6 d'`annuler_encaissement`,
+-- comme hier), et il se retire comme hier. L'essai se rejoue donc aussi après une migration qui touche
+-- `annuler_encaissement` ; la facture source s'éprouve dans ventesFacturees.sql (97 à 97l). Sur une réplique égale à la
+-- production (145 migrations), avant comme après la migration : 110 contrôles justes, rien laissé en base, les 109
+-- d'hier inchangés. Le texte sans ses lignes de commentaire, envoyé en une requête : 62 259 caractères, empreinte
+-- 9860ab4868d215f8bfa080e88ccec8a9, 110 justes. Après l'application, la session n'a rejoué en production que
+-- ventesFacturees.sql (187 justes), qui y éprouve `annuler_encaissement` pour une facture source comme pour une autre :
+-- les fonctions que cet essai éprouve d'autre n'ont pas changé.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -584,6 +595,32 @@ begin
         'ok', not accepte and code_recu = case when obs like '47b.%' then '22023' else '23514' end
           and message_recu = 'Un encaissement déclaré ne se retire pas : il se contre-passe, et l''annulation se déclare à son tour.');
     end loop;
+
+    -- 47d. JAMAIS DÉCLARÉ, l'encaissement d'une facture qui n'est pas source ne se contre-passe pas, même en citant un
+    -- débit — la migration `impaye_non_declare` (étape VF5d2) ne lève le refus que pour une facture source, et
+    -- ventesFacturees.sql l'éprouve (97 à 97l) — : la fonction le refuse comme hier, à son rang 6, avant de juger le
+    -- débit ; et il se retire comme hier.
+    code_recu := null; message_recu := null; detail := null; fixture := null;
+    begin
+      insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen)
+        values (dossier_f, fm, jour, 5, 'cheque') returning id into ident;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      begin
+        perform annuler_encaissement(dossier_f, ident, jour, 'Chèque revenu impayé', m_debit);
+        code_recu := 'ACCEPTÉ';
+      exception when others then code_recu := sqlstate; message_recu := sqlerrm;
+      end;
+      select (r.retire_le is not null)::text into detail from retirer_encaissement(dossier_f, ident) r;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then
+      if sqlerrm <> 'ANNULATION_ESSAI' then fixture := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', '47d. jamais déclaré, l''encaissement d''une facture qui n''est pas source ne se contre-passe pas, même en citant un débit : il se retire, comme hier',
+      'observe', coalesce(fixture, coalesce(code_recu, '?') || ' ' || coalesce(message_recu, '') || ' — retiré : ' || coalesce(detail, '?')),
+      'ok', fixture is null and code_recu = '22023'
+        and message_recu = 'Cet encaissement n''est pas déclaré : il se retire, sans contre-passation.' and detail = 'true');
 
     -- ══ 48 à 71. Ce que la table et son déclencheur refusent seuls, à une écriture directe ══════════
     insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen)

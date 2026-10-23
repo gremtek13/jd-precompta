@@ -43,6 +43,9 @@
 --     d'elles (95) ; le mouvement déclassé, puis l'encaissement retiré, il s'écrit de même, et les lignes périmées de
 --     l'encaissement restent jusqu'à `retirer_ecriture_vente_facturee`, qui les retire sans toucher au compte de bilan
 --     (96). Hier, ces deux chemins butaient sur G5 en 42501, rien d'écrit ni de retiré ;
+--   - L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (97 ; migration `impaye_non_declare`, étape VF5d2) : la
+--     contre-passation que la fonction écrit en citant un débit libre se compose et s'écrit comme toute
+--     contre-passation ; rien de ce qui compose ne lit les déclarations ;
 --   - R1, LES DIX-HUIT FONCTIONS DU RELEVÉ SUR LE MOUVEMENT LIBÉRÉ (130 à 139) : la même préparation (la macro PR1 — le
 --     mouvement 401 déclassé, l'encaissement 501 contre-passé sans mouvement, ses lignes et celles de sa contre-passation
 --     écrites —, et deux lignes posées par la validation sur ce mouvement, VALIDÉES : une ligne de la facture 101, que la
@@ -98,6 +101,16 @@
 -- caractères reçus, empreinte ed45d71df8da3bce60ca0332d7cb5aef). Les mutations de la migration — chacune des
 -- quarante-trois clauses rendue à son texte d'hier, puis privée de l'un ou l'autre de ses deux filtres : 129 — sont
 -- toutes tuées par cet essai.
+--
+-- 23/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `impaye_non_declare`, appliquée le 23/10/2026 sous la
+-- version `20261023063657` ; chantier EC-Q3, étape VF5d2) : le contrôle 97 — la contre-passation que la fonction écrit
+-- pour un encaissement jamais déclaré, en citant un débit libre du même jour, se compose (la banque sur ce débit) et
+-- s'écrit comme toute contre-passation, et rien de ce qui compose ne lit les déclarations. Sur une réplique égale à la
+-- production (145 migrations) : sans la migration, 176 contrôles, 1 en faute — 97 — ; avec elle, 176 justes, rien n'est
+-- resté, les 175 d'hier inchangés. Le texte sans ses lignes de commentaire, envoyé en une requête : 79 113 caractères,
+-- empreinte 80ee2b0fe8ab2d4f2b8a68e278af4228, 176 justes. Après l'application, la session n'a rejoué en production que
+-- ventesFacturees.sql (187 justes), qui y éprouve `annuler_encaissement` pour une facture source comme pour une autre :
+-- les fonctions que cet essai éprouve d'autre n'ont pas changé.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -421,6 +434,20 @@ begin
     select set_config('essai.o', {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00401' and b.encaissement_id is null) || ' / ' || {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00401' and b.encaissement_id is not null), true);
     {N}{R}'{D1}', 'encaissement', '{U}00501')::text, true); select current_setting('essai.e') || '|' || current_setting('essai.o') || '|' || current_setting('essai.n') || '|' || {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00401')$q$, '',
     '|passé|22023 Ce mouvement ne justifie aucun encaissem|03-02 467000-12000@401 03-02 512000+12000@401 / 03-02 512000+12000@401|3|03-02 467000-12000@401 03-02 512000+12000@401'],
+
+  -- ══ 97. L'impayé d'un encaissement jamais déclaré (migration impaye_non_declare, étape VF5d2) : la contre-passation
+  -- que la fonction écrit pour l'encaissement 501, jamais déclaré, en citant un débit libre (499) du même jour, se compose
+  -- et s'écrit comme toute contre-passation — celle du jeu, 509, que la restauration pose — : la banque sur ce débit,
+  -- comme l'encaissement 501 sur son crédit du même jour ; rien de ce qui compose ne lit les déclarations. Le
+  -- propriétaire, sous le jeton du chef, comme en 95 : la recomposition ne s'exécute pas au compte connecté. Sa mutation
+  -- — sans débit, le refus d'hier — se joue dans ventesFacturees.sql (171) ══════════
+  array['lecture', '97. VF5d2 : contre-passé en citant un débit, l''encaissement jamais déclaré s''écrit comme toute contre-passation ; rien de ce qui compose ne lit les déclarations', 'postgres', $q${JWT} insert into lignes_bancaires (id, dossier_id, date, libelle, montant) values ('{U}00499', '{D1}', '2026-03-05', 'ESSAI', -120);
+    select set_config('essai.cp', (select a.id from annuler_encaissement('{D1}', '{U}00501', '2026-03-05', 'Chèque revenu impayé', '{U}00499') a)::text, true);
+    {N}{W}'{D1}', 'encaissement', current_setting('essai.cp')::uuid, {PRO}'{D1}', 'encaissement', current_setting('essai.cp')::uuid{ORP})::text, true);
+    select current_setting('essai.n') || '|' || {LIG}'{D1}' and b.encaissement_id = current_setting('essai.cp')::uuid)
+      || '|' || (select count(*) from transmissions_encaissements x where x.encaissement_id in ('{U}00501', current_setting('essai.cp')::uuid))
+      || '|' || (select count(*) || ':' || coalesce(string_agg(proname, ',') filter (where prosrc ~ '(transmissions_encaissements|encaissement_declare)'), '∅') from pg_proc where pronamespace = 'public'::regnamespace and proname in ('calcul_vente_facturee', 'ecriture_attendue_vente_facturee', 'ecrire_vente_facturee', 'retirer_ecriture_vente_facturee', 'prorata_arrondi', 'refus_compte_de_contrepartie'))$q$, '',
+    '3|03-05 445710+2000 03-05 512000-12000@499 03-05 706000+10000|0|6:∅'],
 
   -- ══ 130 à 139. R1 : les dix-huit fonctions du relevé sur le mouvement libéré (PR1), chacune par son mécanisme — ce que
   -- la fonction qui classe rend, ce que celle qui déclasse rend, les lignes propres après le classement, puis après le

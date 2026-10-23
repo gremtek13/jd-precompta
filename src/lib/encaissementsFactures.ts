@@ -46,7 +46,11 @@ import type {
 //     inclassable — tout à la fin ;
 //   - depuis la migration contre_passation_banque (chantier EC-Q3, ligne 28.65), que la contre-passation ne cite un débit
 //     qu'avec le droit « Banque », comme un encaissement ne désigne un mouvement qu'avec lui : le même refus, au même rang
-//     (`refusContrePassationVente`, qui reçoit ce droit).
+//     (`refusContrePassationVente`, qui reçoit ce droit) ;
+//   - depuis la migration impaye_non_declare (étape VF5d2), que l'encaissement JAMAIS DÉCLARÉ d'une facture source se
+//     contre-passe aussi, en citant le débit qui l'a défait — le rang 6 ne s'y oppose plus, et à ce cas seul
+//     (`refusContrePassationVente`, `debitObligatoire`, `refusContrePassationAvantLaDate`) —, et que la paire qui en naît
+//     ne fait rien déclarer (`paireNonDeclaree`).
 //
 // Les sources sont publiques : CGI, art. 290 A, et ann. II, art. 242 nonies P — CIBS, art. L. 216-56 à compter du
 // 01/01/2027 — ; BOI-TVA-DECLA-20-30-60 ; BOI-TVA-BASE-20-20 ; spécifications externes de la DGFiP v3.2 (§ 3.6.4 et
@@ -859,6 +863,8 @@ export const REFUS_CONTRE_PASSATION = [
   { cle: 'encaissement_introuvable', modele: 'Encaissement introuvable dans ce dossier.' },
   { cle: 'contre_passation', modele: "Une annulation ne se contre-passe pas : l'encaissement qu'elle annulait se saisit de nouveau." },
   { cle: 'retire', modele: "Un encaissement retiré ne s'annule pas : il n'a jamais été déclaré." },
+  // Rang 6. Depuis la migration impaye_non_declare (étape VF5d2), il ne s'oppose plus à l'encaissement d'une facture source
+  // dont la contre-passation cite le débit qui le défait ; sans débit, ou pour une facture qui n'est pas source, comme hier.
   { cle: 'non_declare', modele: "Cet encaissement n'est pas déclaré : il se retire, sans contre-passation." },
   {
     cle: 'issue_inconnue',
@@ -992,13 +998,30 @@ export function refusContrePassation(
   motif: string | null,
   aujourdHui: string,
 ): RefusEncaissement<CleRefusContrePassation> | null {
+  return jugerContrePassation(dossierId, encaissementId, encaissements, declarations, date, motif, aujourdHui, () => false)
+}
+
+// Le jugement d'`annuler_encaissement` jusqu'au motif, dans son ordre. `sansDeclaration` dit si l'encaissement jamais
+// déclaré se contre-passe — le rang 6 ne s'y oppose pas : jamais pour l'appel d'hier, qui ne cite aucun débit ; depuis la
+// migration impaye_non_declare (étape VF5d2), pour une facture source dont la contre-passation cite un débit
+// (`refusContrePassationVente`). Sans déclaration, le rang 7 (une issue inconnue) ne se rencontre pas.
+function jugerContrePassation(
+  dossierId: string,
+  encaissementId: string,
+  encaissements: readonly EncaissementPourContrePassation[],
+  declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[],
+  date: string | null,
+  motif: string | null,
+  aujourdHui: string,
+  sansDeclaration: (e: EncaissementPourContrePassation) => boolean,
+): RefusEncaissement<CleRefusContrePassation> | null {
   const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId)
   if (!e) return refusC('encaissement_introuvable')
   if (e.annule_id != null) return refusC('contre_passation')
   if (!compte(e)) return refusC('retire')
   const declaration = declarations.find((d) => d.encaissement_id === e.id && ETATS_DECLARANTS.includes(d.etat))
-  if (!declaration) return refusC('non_declare')
-  if (declaration.etat === 'envoi') return refusC('issue_inconnue')
+  if (!declaration && !sansDeclaration(e)) return refusC('non_declare')
+  if (declaration?.etat === 'envoi') return refusC('issue_inconnue')
   if (annuleParUneContrePassation(e, encaissements)) return refusC('deja_contre_passe')
   if (date == null || !dateCivile(date)) return refusC('date_absente')
   if (date < e.date_encaissement) return refusC('date_avant_encaissement', formatDate(e.date_encaissement))
@@ -1013,14 +1036,16 @@ export function refusContrePassation(
  * donne un CINQUIÈME paramètre : `ligneBancaireId`, le DÉBIT qui défait l'encaissement (le chèque revenu impayé, la somme
  * rendue), nul pour la contre-passation d'hier. Dans l'ordre de la base : depuis la migration contre_passation_banque, un
  * débit cité sans le droit « Banque » (rang 2, avant toute lecture) ; les refus de `refusContrePassation` jusqu'à la
- * date ; pour une facture source, la frontière d'un exercice validé (rang 12) ; le motif ; s'il cite un mouvement, une
- * facture qui n'est pas source, un mouvement d'un autre dossier, un crédit, un mouvement déjà classé, des
- * contre-passations qui dépasseraient le débit au-delà des frais (rangs 15 à 19) ; sans mouvement, pour une facture
- * source, le mouvement de l'encaissement classé par ses encaissements (rang 20). Sans débit cité et pour une facture qui
- * n'est pas source, la même chose que `refusContrePassation`, quel que soit le droit « Banque ». `mouvements` : ceux du
- * dossier, lus en entier, avec ce qui les classe ; `gereLaBanque` : le droit « Banque » de qui saisit sur ce dossier
- * (`gere_la_banque` en base), comme `refusEnregistrement` le reçoit — passé sans valeur par défaut : un écran du client
- * qui l'oublierait laisserait citer un débit que la base refuse.
+ * date — à une différence près, depuis la migration impaye_non_declare (étape VF5d2) : l'encaissement JAMAIS DÉCLARÉ
+ * d'une facture source dont la contre-passation cite un débit ne reçoit pas le refus du rang 6 (« il se retire ») ; pour
+ * une facture source, la frontière d'un exercice validé (rang 12) ; le motif ; s'il cite un mouvement, une facture qui
+ * n'est pas source, un mouvement d'un autre dossier, un crédit, un mouvement déjà classé, des contre-passations qui
+ * dépasseraient le débit au-delà des frais (rangs 15 à 19) ; sans mouvement, pour une facture source, le mouvement de
+ * l'encaissement classé par ses encaissements (rang 20). Sans débit cité et pour une facture qui n'est pas source, la
+ * même chose que `refusContrePassation`, quel que soit le droit « Banque ». `mouvements` : ceux du dossier, lus en entier,
+ * avec ce qui les classe ; `gereLaBanque` : le droit « Banque » de qui saisit sur ce dossier (`gere_la_banque` en base),
+ * comme `refusEnregistrement` le reçoit — passé sans valeur par défaut : un écran du client qui l'oublierait laisserait
+ * citer un débit que la base refuse.
  */
 export function refusContrePassationVente(
   dossierId: string,
@@ -1038,8 +1063,12 @@ export function refusContrePassationVente(
   // Juste après l'accès (refus 1, que seule la base juge), avant toute lecture : le débit cité est une donnée de la
   // banque — sans le droit « Banque », rien ne se dit de lui ni de l'encaissement (migration contre_passation_banque).
   if (ligneBancaireId != null && !gereLaBanque) return refusC('mouvement_sans_banque')
-  // Les refus d'hier jusqu'à la date — un motif valable à la place du sien : la base juge le motif APRÈS la frontière.
-  const avantLeMotif = refusContrePassation(dossierId, encaissementId, encaissements, declarations, date, 'motif', aujourdHui)
+  // Les refus d'hier jusqu'à la date — un motif valable à la place du sien : la base juge le motif APRÈS la frontière. Le
+  // rang 6 n'y retient pas l'encaissement jamais déclaré d'une facture source dont la contre-passation cite un débit
+  // (étape VF5d2) : la base lit la source avant lui ; une facture que la lecture n'a pas rendue n'est pas source, et le
+  // refus d'hier tombe, du côté fermé.
+  const avantLeMotif = jugerContrePassation(dossierId, encaissementId, encaissements, declarations, date, 'motif', aujourdHui,
+    (x) => ligneBancaireId != null && factureSource(x.facture_id, vente))
   if (avantLeMotif) return avantLeMotif
   const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId) as EncaissementPourContrePassation
   const source = factureSource(e.facture_id, vente)
@@ -1070,6 +1099,84 @@ export function refusContrePassationVente(
     }
   }
   return null
+}
+
+// ── L'impayé d'un encaissement jamais déclaré (chantier EC-Q3, étape VF5d2) ─────────────────────────────────────────────
+//
+// LA DÉCISION DU CABINET DU 22/10/2026 (VF5-Q1, à la recommandation) : « contre-passer en citant le débit, même sans
+// déclaration ». La migration impaye_non_declare lève le rang 6 d'`annuler_encaissement` pour l'encaissement d'une facture
+// SOURCE dont la contre-passation cite le débit qui le défait — le chèque revenu impayé, la somme rendue d'une facture à
+// un particulier, qu'aucune plateforme ne reçoit, n'avait d'issue que le retrait, qui efface un fait et que la validation
+// de l'exercice interdit ensuite. Sans débit, ou pour une facture qui n'est pas source, le refus d'hier. La contre-passation
+// qui en naît ne se déclare pas (`refusDeclaration`, `contre_passation_non_declaree`), et la paire ne fait rien déclarer.
+
+/**
+ * La contre-passation de cet encaissement EXIGE-T-ELLE un débit ? Oui pour un encaissement — pas une contre-passation —,
+ * non retiré, qu'aucune déclaration active ne vise, d'une facture SOURCE de sa vente : la base ne le contre-passe qu'en
+ * citant le débit qui l'a défait, et sans lui il se retire (le refus du rang 6). Non pour tout autre : déclaré, il se
+ * contre-passe avec ou sans débit, comme hier ; jamais déclaré, d'une facture qui n'est pas source, il ne se contre-passe
+ * pas du tout. `encaissements` et `declarations` : ceux du dossier, lus en entier ; `vente.factures` : celles du dossier,
+ * leur source comprise — une facture absente n'est pas source.
+ */
+export function debitObligatoire(
+  dossierId: string,
+  encaissementId: string,
+  encaissements: readonly EncaissementLu[],
+  declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[],
+  vente: Pick<ContexteVente, 'factures'>,
+): boolean {
+  const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId)
+  return e != null && e.annule_id == null && compte(e) && !encaissementsDeclares(declarations).has(e.id)
+    && factureSource(e.facture_id, vente)
+}
+
+// Le débit qu'une contre-passation citera, pas encore choisi : ce que l'offre de « Contre-passer » juge quand la base
+// exige un débit. Un nom qu'aucun identifiant de la base (un UUID) ne porte ; le jugement s'arrête à la date, avant lui.
+const LE_DEBIT_A_CHOISIR = '(le débit, à choisir)'
+
+/**
+ * Ce que `annuler_encaissement` opposerait à la contre-passation de cet encaissement AVANT LA DATE — ce qui décide si
+ * « Contre-passer » s'offre : le premier refus d'une saisie qui n'a encore ni date ni motif, `date_absente` disant que rien
+ * d'autre ne s'y oppose. Un encaissement déclaré se juge sans débit, comme hier ; l'encaissement jamais déclaré d'une
+ * facture source (`debitObligatoire`), avec le débit qui reste à choisir — la base l'exige (étape VF5d2), et le citer
+ * demande le droit « Banque » (le rang 2) : sans lui, `mouvement_sans_banque`. Les arguments sont ceux de
+ * `refusContrePassationVente`.
+ */
+export function refusContrePassationAvantLaDate(
+  dossierId: string,
+  encaissementId: string,
+  encaissements: readonly EncaissementPourContrePassation[],
+  declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[],
+  aujourdHui: string,
+  mouvements: readonly MouvementClasse[],
+  gereLaBanque: boolean,
+  vente: ContexteVente,
+): RefusEncaissement<CleRefusContrePassation> | null {
+  const debit = debitObligatoire(dossierId, encaissementId, encaissements, declarations, vente) ? LE_DEBIT_A_CHOISIR : null
+  return refusContrePassationVente(dossierId, encaissementId, encaissements, declarations, null, null, aujourdHui, debit,
+    mouvements, gereLaBanque, vente)
+}
+
+/**
+ * L'encaissement — ou la contre-passation — d'une PAIRE QUI NE SE DÉCLARE PAS : un encaissement que rien ne déclare,
+ * qu'une contre-passation vivante annule, elle-même non déclarée — et cette contre-passation. L'argent est venu, puis
+ * reparti, sans que rien n'en ait été dit à l'administration : il n'y a rien à déclarer, ni de l'un ni de l'autre — ni
+ * « à déclarer », ni échéance (`pastilleDeclaration`, la fenêtre des encaissements, la liste des règlements). C'est la
+ * paire que la migration impaye_non_declare fait naître (étape VF5d2) ; c'est aussi celle d'un encaissement dont la
+ * déclaration a échoué, ou a été rejetée, après sa contre-passation. Une contre-passation DÉCLARÉE défait la paire :
+ * l'encaissement qu'elle annule est alors à déclarer, pour que la plateforme ait les deux. La base refuse la déclaration
+ * de la contre-passation d'un encaissement non déclaré (`contre_passation_non_declaree`) ; celle de l'encaissement, elle
+ * l'inscrirait encore — il a pu l'être sur la plateforme sans être inscrit ici —, et sa contre-passation se déclarerait
+ * alors à son tour. `encaissements` : le registre du dossier, lu en entier ; `declares` : `encaissementsDeclares`.
+ */
+export function paireNonDeclaree(
+  e: Pick<EncaissementLu, 'id' | 'annule_id' | 'retire_le'>,
+  encaissements: readonly EncaissementLu[],
+  declares: ReadonlySet<string>,
+): boolean {
+  if (!compte(e) || declares.has(e.id)) return false
+  if (e.annule_id != null) return !declares.has(e.annule_id)
+  return encaissements.some((c) => c.annule_id === e.id && compte(c) && !declares.has(c.id))
 }
 
 /**

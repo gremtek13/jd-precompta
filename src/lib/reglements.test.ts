@@ -149,8 +149,25 @@ describe('reglementsDuDossier — la déclaration, par les modules de d3 et d4',
   })
 
   it('une déclaration échouée ne déclare pas : l’encaissement est à déclarer de nouveau', () => {
+    // Sans sa contre-passation (retirée) : seul, il est à déclarer de nouveau.
     const v = ventes({ declarations: [declaration('d1', 'e1', 'f1', { etat: 'echec' })] })
+    v.encaissements = v.encaissements.map((e) => (e.id === 'e1x' ? { ...e, retire_le: '2027-10-13T08:00:00Z' } : e))
     expect(ligne(lues({ ventes: v }), 'e1').declaration?.etat).toBe('en_retard')
+  })
+
+  it('la paire d’un encaissement jamais déclaré et de sa contre-passation : non due, l’un et l’autre (étape VF5d2)', () => {
+    // e1 n'est pas déclaré (sa déclaration a échoué), e1x l'annule et ne l'est pas non plus : rien n'est dû.
+    const v = ventes({ declarations: [declaration('d1', 'e1', 'f1', { etat: 'echec' })] })
+    const l = lues({ ventes: v })
+    const paire = { etat: 'non_due', detail: 'Contre-passé avant d’être déclaré : ni l’encaissement ni sa contre-passation ne se déclarent.' }
+    expect(ligne(l, 'e1').declaration).toEqual(paire)
+    expect(ligne(l, 'e1x').declaration).toEqual(paire)
+    // La pastille de la facture se tait de même : la liste le dit exactement quand elle le dirait.
+    expect(pastilleDeclaration('d1', v.factures[0], v.lignes, v.encaissements, v.declarations, v.transmissions, v.evenementsSuperpdp,
+      v.statutsLus, 'redevable', AUJOURDHUI)).toBeNull()
+    // Sa contre-passation déclarée, l'encaissement redevient à déclarer — pour que la plateforme ait les deux.
+    const w = ventes({ declarations: [declaration('d1', 'e1', 'f1', { etat: 'rejete' }), declaration('d2', 'e1x', 'f1')] })
+    expect(ligne(lues({ ventes: w }), 'e1').declaration?.etat).toBe('en_retard')
   })
 
   it('un statut de TVA à préciser : pas d’ici, sous la raison de l’obligation', () => {

@@ -913,10 +913,11 @@ function premierRefusDeLaVente(f: FactureLue, coherente: boolean): CleRefusErepo
  * LA DÉCLARATION DES PAIEMENTS de la période (bloc 10.4, rôle vendeur) : les encaissements du registre de d1 sur les
  * factures à un particulier émises le 1er septembre 2027 ou après — la date de la FACTURE décide de l'obligation, celle de
  * l'encaissement range la période (e1, `dansLObligation`) —, agrégés par jour et par taux. NETS : un encaissement retiré
- * ne compte pas ; une contre-passation compte en moins, rangée par `choix.contrePassation`. Aujourd'hui l'encaissement
- * d'une vente à un particulier ne fait que se retirer : jamais transmise, sa facture n'est pas « déclarée » au sens de d4
- * (`encaissement_declare`), et `annuler_encaissement` ne contre-passe qu'un encaissement déclaré — e5 dira ce qu'un
- * retrait devient dans une période déclarée. Seules les prestations de
+ * ne compte pas ; une contre-passation compte en moins, rangée par `choix.contrePassation`. Jamais transmise, la facture
+ * d'une vente à un particulier n'est pas « déclarée » au sens de d4 (`encaissement_declare`) : son encaissement se retire,
+ * ou, depuis l'étape VF5d2 (migration impaye_non_declare), se contre-passe en citant le débit qui l'a défait quand la
+ * facture est source de sa vente — une contre-passation comme une autre, ici —, et e5 dira ce qu'un retrait devient dans
+ * une période déclarée. Seules les prestations de
  * services dont la TVA est due à l'encaissement : pas une livraison de biens, pas sur option pour les débits (dossier
  * général, note 119 ; BOI-TVA-DECLA-20-30-60, § 1 et § 30). Un paiement n'existe que d'une facture (la base refuse
  * l'encaissement d'un avoir).

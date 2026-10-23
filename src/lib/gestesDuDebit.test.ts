@@ -5,7 +5,7 @@ import {
 } from './encaissementsFactures'
 import { formatMoney } from './format'
 import {
-  AUCUN_GESTE, gestesDuCredit, gestesDuDebit, manqueDuDebit, ventesDuReleve,
+  AUCUN_GESTE, DECLARATION_DU_CANDIDAT, gestesDuCredit, gestesDuDebit, manqueDuDebit, ventesDuReleve,
   type EncaissementDuMouvementLu, type FactureDesGestes, type GestesDuDebit, type LectureDuDebit, type SourcesDuDebit,
 } from './mouvementsDesVentes'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
@@ -115,9 +115,11 @@ describe('gestesDuDebit : la retenue de VF5a1 — rien ne s’offre sans des ven
 
 describe('un débit LIBRE : contre-passer l’encaissement déclaré d’une facture', () => {
   // Le débit de 600 € du 20/03/2026 — le chèque revenu impayé. Candidats : e1 et e2 (600 €, à égale distance : la
-  // date), e3 (300 €). Écartés, chacun par le jugement de la base : jamais déclaré, déclaration échouée ou rejetée,
-  // issue inconnue, d'une facture d'avant la bascule, retiré, déjà contre-passé, au-delà des frais, postérieur au
-  // débit, une contre-passation elle-même, d'un autre dossier.
+  // date), e3 (300 €) ; et, depuis l'étape VF5d2 (migration impaye_non_declare), les encaissements jamais déclarés de
+  // factures sources — jamais déclaré, déclaration échouée ou rejetée : x-non-declare, x-echec, x-rejete (600 €, le
+  // 10/03, l'identifiant départage). Écartés, chacun par le jugement de la base : issue inconnue, d'une facture d'avant la
+  // bascule, retiré, déjà contre-passé, au-delà des frais, postérieur au débit, une contre-passation elle-même, d'un autre
+  // dossier.
   const ENCAISSEMENTS = [
     encaissement({ id: 'e2', facture_id: 'f2', montant: 600, moyen: 'virement', date_encaissement: '2026-03-11' }),
     encaissement({ id: 'e1', facture_id: 'f1', montant: 600, ligne_bancaire_id: 'c1' }),
@@ -144,15 +146,32 @@ describe('un débit LIBRE : contre-passer l’encaissement déclaré d’une fac
     ],
   })
 
-  it('les candidats : déclarés, acceptés avec ce débit à sa date ; le plus proche de ce qui reste d’abord, puis la date', () => {
+  it('les candidats : acceptés avec ce débit à sa date — déclarés ou, d’une facture source, jamais déclarés ; le plus proche de ce qui reste d’abord, puis la date', () => {
     const g = gestes(s, 'd1')
     if (g.etat !== 'libre') throw new Error(g.etat)
     expect(g.complement.manqueCentimes).toBe(60000)
-    expect(g.complement.aContrePasser.map((e) => e.id)).toEqual(['e1', 'e2', 'e3'])
+    expect(g.complement.aContrePasser.map((e) => e.id)).toEqual(['e1', 'x-echec', 'x-non-declare', 'x-rejete', 'e2', 'e3'])
     expect(g.complement.aContrePasser[0]).toMatchObject({
       libelle: 'Facture F2026-0014 (SARL Horizon) — chèque du 10/03/2026', montant: 600, facture: FACTURES[0],
     })
     expect(g.complement.note).toBeNull()
+  })
+
+  it('chaque candidat dit ce que devient sa déclaration : déclaré, sa contre-passation se déclare ; jamais déclaré, ni l’un ni l’autre (VF5d2)', () => {
+    const g = gestes(s, 'd1')
+    if (g.etat !== 'libre') throw new Error(g.etat)
+    expect(g.complement.aContrePasser.map((e) => [e.id, e.declaration])).toEqual([
+      ['e1', DECLARATION_DU_CANDIDAT.declare],
+      ['x-echec', DECLARATION_DU_CANDIDAT.jamaisDeclare],
+      ['x-non-declare', DECLARATION_DU_CANDIDAT.jamaisDeclare],
+      ['x-rejete', DECLARATION_DU_CANDIDAT.jamaisDeclare],
+      ['e2', DECLARATION_DU_CANDIDAT.declare],
+      ['e3', DECLARATION_DU_CANDIDAT.declare],
+    ])
+    // Sans le débit cité, la base refuserait les trois derniers ; la fiche ne les offre qu'avec lui, qu'elle impose.
+    expect(DECLARATION_DU_CANDIDAT.jamaisDeclare).toBe(
+      'Jamais déclaré : ni lui ni sa contre-passation ne se déclarent — l’argent est venu, puis reparti, avant que rien n’en '
+      + 'soit dit.')
   })
 
   it('l’état d’après : la contre-passation fait le débit, ou il restera à faire', () => {
@@ -166,10 +185,11 @@ describe('un débit LIBRE : contre-passer l’encaissement déclaré d’une fac
   it('la date du débit est celle que la contre-passation reçoit : dans l’avenir, ou avant l’encaissement, rien', () => {
     // Le jour à Paris avant le débit : la base refuserait une contre-passation datée de demain.
     expect(complementDe(gestes(s, 'd1', [], PLAN_PAR_DEFAUT, '2026-03-19'))).toBeNull()
-    expect(complementDe(gestes(s, 'd1', [], PLAN_PAR_DEFAUT, '2026-03-20'))?.aContrePasser.map((e) => e.id)).toEqual(['e1', 'e2', 'e3'])
+    expect(complementDe(gestes(s, 'd1', [], PLAN_PAR_DEFAUT, '2026-03-20'))?.aContrePasser.map((e) => e.id))
+      .toEqual(['e1', 'x-echec', 'x-non-declare', 'x-rejete', 'e2', 'e3'])
     // Un débit daté du 10/03 : seuls les encaissements de ce jour ou d'avant.
     const tot = { ...s, mouvements: [mouvement({ id: 'd1', date: '2026-03-10' })] }
-    expect(complementDe(gestes(tot, 'd1'))?.aContrePasser.map((e) => e.id)).toEqual(['e1', 'e3'])
+    expect(complementDe(gestes(tot, 'd1'))?.aContrePasser.map((e) => e.id)).toEqual(['e1', 'x-echec', 'x-non-declare', 'x-rejete', 'e3'])
   })
 
   it('à égale distance et à la même date, l’identifiant départage', () => {
@@ -197,8 +217,17 @@ describe('un débit LIBRE : contre-passer l’encaissement déclaré d’une fac
   })
 
   it('rien à contre-passer ni à rattacher : aucun geste — c’est une dépense', () => {
-    expect(gestes(sources({ mouvements: [mouvement({ id: 'd1' })], encaissements: [encaissement({ id: 'e', facture_id: 'f1', montant: 600 })] }), 'd1'))
+    // L'encaissement jamais déclaré d'une facture d'avant la bascule ne se contre-passe pas : il se retire.
+    expect(gestes(sources({ mouvements: [mouvement({ id: 'd1' })], encaissements: [encaissement({ id: 'e', facture_id: 'f0', montant: 600 })] }), 'd1'))
       .toEqual(AUCUN_GESTE)
+  })
+
+  it('jamais déclaré, d’une facture source : candidat depuis l’étape VF5d2, et il le dit', () => {
+    const g = gestes(sources({ mouvements: [mouvement({ id: 'd1' })], encaissements: [encaissement({ id: 'e', facture_id: 'f1', montant: 600 })] }), 'd1')
+    if (g.etat !== 'libre') throw new Error(g.etat)
+    expect(g.complement.aContrePasser.map((e) => [e.id, e.apres, e.declaration])).toEqual([[
+      'e', 'Ses contre-passations feront alors le débit : il restera à le classer par elles.', DECLARATION_DU_CANDIDAT.jamaisDeclare,
+    ]])
   })
 
   it('daté d’un exercice validé : aucun geste', () => {
@@ -244,7 +273,12 @@ describe('un débit LIBRE : rattacher une contre-passation enregistrée sans mou
     expect(g.complement.rattachables[1]).toMatchObject({
       libelle: 'Contre-passation, facture F2026-0015 (Cabinet Durand) — virement du 15/03/2026', montant: -120,
     })
-    expect(g.complement.aContrePasser).toEqual([])
+    // Jamais déclarés, d'une facture source, x-credit (100 €) et o4 (50 €, sa contre-passation retirée) se contre-passent
+    // en citant ce débit depuis l'étape VF5d2 ; les autres encaissements sont déjà contre-passés, ou d'une facture d'avant
+    // la bascule.
+    expect(g.complement.aContrePasser.map((e) => [e.id, e.declaration])).toEqual([
+      ['x-credit', DECLARATION_DU_CANDIDAT.jamaisDeclare], ['o4', DECLARATION_DU_CANDIDAT.jamaisDeclare],
+    ])
   })
 
   it('la confirmation nomme la contre-passation, dit ce qu’elle rend à son encaissement et l’état d’après', () => {
@@ -372,8 +406,8 @@ describe('un débit RÉSERVÉ : classer par ses contre-passations', () => {
     if (g.etat !== 'reserve') throw new Error(g.etat)
     expect(g.complement).toEqual({
       manqueCentimes: 30000, rattachables: [], aContrePasser: [],
-      note: 'Aucune contre-passation de facture source n’attend son mouvement, et aucun encaissement déclaré ne se contre-passe '
-        + 'sur ce débit : rien ne se rattache ni ne se contre-passe ici.',
+      note: 'Aucune contre-passation de facture source n’attend son mouvement, et aucun encaissement de facture source ne se '
+        + 'contre-passe sur ce débit : rien ne se rattache ni ne se contre-passe ici.',
     })
   })
 

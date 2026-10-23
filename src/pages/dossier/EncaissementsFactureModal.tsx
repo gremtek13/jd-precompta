@@ -11,15 +11,18 @@ import type { LectureComplete } from '../../lib/lectureComplete'
 import BandeauLecturePartielle, { type AccordLecture } from '../../components/BandeauLecturePartielle'
 import {
   ANNEES_ILLISIBLES, ETATS_DECLARANTS, FRONTIERE_JUGEE_PAR_LA_BASE, MOYENS_ENCAISSEMENT, REFUS_DECLARATION, centimesExacts,
-  contrePassationDe, debitsCitables, echeanceDeDeclaration, encaissementsDeclares, frontiereJugeeParLaBase,
-  inclassableApresContrePassation, inclassableApresEnregistrement, obligationEncaissee, piecesJumelles, plateformeAcceptee,
-  plateformeDeLaDeclaration, propositionsEncaissement, refusContrePassationVente, refusDeLaFacture, refusDeclaration,
-  refusEnregistrementVente, refusRetraitVente, repartitionProposee, resteAEncaisserVente,
+  contrePassationDe, debitObligatoire, debitsCitables, echeanceDeDeclaration, encaissementsDeclares, frontiereJugeeParLaBase,
+  inclassableApresContrePassation, inclassableApresEnregistrement, obligationEncaissee, paireNonDeclaree, piecesJumelles,
+  plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement, refusContrePassationAvantLaDate,
+  refusContrePassationVente, refusDeLaFacture, refusDeclaration, refusEnregistrementVente, refusRetraitVente,
+  repartitionProposee, resteAEncaisserVente,
   type ContexteFacture, type ContexteVente, type DeclarationLue, type EncaissementLu, type EtatObligationEncaissee,
   type EvenementSuperpdpLu, type FactureDuDossier, type LigneDeFacture, type MouvementPropose, type PartLue, type PieceLue,
   type ResteDuTaux, type SaisieEncaissement, type TransmissionLue, type TransmissionPourDeclaration,
 } from '../../lib/encaissementsFactures'
-import { lireMontantSaisi, montantPourSaisie, partsEnMots, tauxAffiche } from '../../lib/encaissementsAffichage'
+import {
+  PAIRE_DECLAREE_AILLEURS, PAIRE_NON_DECLAREE, lireMontantSaisi, montantPourSaisie, partsEnMots, tauxAffiche,
+} from '../../lib/encaissementsAffichage'
 import { manqueDuCredit, montantSurLeCredit } from '../../lib/mouvementsDesVentes'
 import { lireConnexionPlateforme, type ConnexionPlateformeVue } from '../../lib/receptionPlateforme'
 import {
@@ -56,8 +59,9 @@ type Props = QuiRegarde & {
   // défaut, pour qu'aucun appel ne l'impose sans le dire.
   mouvementImpose: string | null
   // LA CONTRE-PASSATION IMPOSÉE (étape VF5d) : la fiche d'un débit de l'onglet Banque ouvre la fenêtre sur la facture
-  // d'un encaissement déclaré, l'étape de SA contre-passation ouverte et CE débit cité — il ne se choisit pas ; sa date
-  // est proposée et se corrige, le motif se saisit, et la base juge. Nulle partout ailleurs, sans valeur par défaut.
+  // d'un encaissement — déclaré, ou, depuis l'étape VF5d2, jamais déclaré —, l'étape de SA contre-passation ouverte et CE
+  // débit cité — il ne se choisit pas ; sa date est proposée et se corrige, le motif se saisit, et la base juge. Nulle
+  // partout ailleurs, sans valeur par défaut.
   contrePassationImposee: ContrePassationImposee | null
   // Le statut de TVA du dossier aujourd'hui : l'obligation et l'échéance en dépendent, et la facture ne le fige pas.
   statutTva: StatutTva | null
@@ -104,6 +108,11 @@ function pasLue<T>(): Promise<LectureComplete<T>> {
 // alors jugée par la base (`ANNEES_ILLISIBLES`), jamais tenue pour vide. Une contre-passation d'une facture source peut
 // citer le débit qui défait l'encaissement, avec « Banque » seulement ; le geste qui rendrait un mouvement inclassable se
 // dit avant le clic, sans être refusé — la base l'admet.
+//
+// L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (étape VF5d2 ; migration impaye_non_declare) : l'encaissement d'une facture
+// source qui n'a jamais été déclaré se contre-passe aussi, en citant le débit qui l'a défait — le débit y est OBLIGATOIRE,
+// et l'étape le dit avant le clic ; « Retirer » lui reste offert à côté (retirer efface le fait, contre-passer le garde).
+// La contre-passation qui en naît ne se déclare pas, et la paire ne dit ni « à déclarer » ni échéance (`paireNonDeclaree`).
 
 type LigneLue = LigneDeFacture & { id: string }
 type TransmissionEcran = TransmissionLue & TransmissionPourDeclaration & Pick<TransmissionFacture, 'id' | 'cree_le'>
@@ -368,7 +377,8 @@ const libelleMouvement = (m: Pick<MouvementEcran, 'date' | 'libelle'> | undefine
 // L'ÉTAPE OUVERTE SOUS LA LISTE (étape d4) : la déclaration hors application d'un encaissement — ou d'une
 // contre-passation —, ou la contre-passation d'un encaissement déclaré. Une seule à la fois, désignée par l'IDENTIFIANT
 // de l'encaissement : elle se juge sur la ligne relue, jamais sur celle du clic.
-// La contre-passation d'un encaissement d'une facture SOURCE peut citer le débit qui le défait (étape VF5b) : nul sinon.
+// La contre-passation d'un encaissement d'une facture SOURCE peut citer le débit qui le défait (étape VF5b) : nul sinon ;
+// celle d'un encaissement de facture source jamais déclaré le cite toujours (étape VF5d2).
 type Etape =
   | { type: 'declarer'; encaissementId: string; note: string }
   | { type: 'contre-passer'; encaissementId: string; date: string; motif: string; ligneBancaireId: string | null }
@@ -585,13 +595,15 @@ export default function EncaissementsFactureModal(props: Props) {
   }
 
   // LA CONTRE-PASSATION D'UN ENCAISSEMENT DÉCLARÉ : un encaissement de montant opposé, réparti comme lui, de même moyen,
-  // qui porte son motif. La confirmation nomme ce qui sera écrit, et ce qui suit : la déclarer à son tour.
+  // qui porte son motif. La confirmation nomme ce qui sera écrit, et ce qui suit : la déclarer à son tour. Celle d'un
+  // encaissement JAMAIS déclaré (étape VF5d2), qui cite toujours son débit, ne se déclare pas : la confirmation le dit.
   async function contrePasser() {
     if (verrou.current || !lu || etape?.type !== 'contre-passer') return
     const e = lu.encaissements.find((x) => x.id === etape.encaissementId)
     if (!e) return
     const cp = contrePassationDe(e, lu.parts)
-    const hote = declarationActive(lu.declarations, e.id)?.hote ?? '—'
+    // Nul : l'encaissement n'a jamais été déclaré, et sa contre-passation ne se déclarera pas.
+    const hote = declarationActive(lu.declarations, e.id)?.hote ?? null
     // Le débit cité (étape VF5b) : nommé dans la confirmation, et le cinquième paramètre de la fonction — absent sans débit,
     // pour que l'appel d'hier reste celui d'hier.
     const debit = etape.ligneBancaireId == null ? undefined : lu.mouvements.find((m) => m.id === etape.ligneBancaireId)
@@ -602,8 +614,11 @@ export default function EncaissementsFactureModal(props: Props) {
       + (debit
         ? `Elle cite le débit qui défait l’encaissement : ${libelleMouvement(debit)}, ${formatMoney(debit.montant)}.\n\n`
         : '')
-      + `Elle se déclare ensuite à son tour sur ${hote} ; puis le bon encaissement s’enregistre : l’annulation libère le reste `
-      + 'de la facture et le mouvement.',
+      + (hote == null
+        ? 'L’encaissement n’a jamais été déclaré : ni lui ni sa contre-passation ne se déclarent. Puis le bon encaissement '
+          + 's’enregistre, s’il y a lieu : l’annulation libère le reste de la facture.'
+        : `Elle se déclare ensuite à son tour sur ${hote} ; puis le bon encaissement s’enregistre : l’annulation libère le `
+          + 'reste de la facture et le mouvement.'),
     )) return
     verrou.current = true
     setEnCours('contre-passer')
@@ -617,7 +632,9 @@ export default function EncaissementsFactureModal(props: Props) {
       if (error) setErreur(messageErreur(error, 'La contre-passation n’a pas pu être enregistrée.'))
       else {
         setMessage(`Contre-passation enregistrée : ${formatMoney(cp.montantCentimes / 100)} le ${formatDate(etape.date)}. `
-          + `Elle se déclare à son tour sur ${hote}.`)
+          + (hote == null
+            ? 'Elle ne se déclare pas : l’encaissement qu’elle annule ne l’a jamais été.'
+            : `Elle se déclare à son tour sur ${hote}.`))
         setEtape(null)
       }
       await lire(!error)
@@ -864,6 +881,14 @@ function Contenu({
     const refusDecl = offerte
       ? refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, lu.statuts, null)
       : null
+    // Une paire qui ne se déclare pas (étape VF5d2) : ni « à déclarer », ni échéance, de l'encaissement comme de sa
+    // contre-passation. L'encaissement dont la base inscrirait encore la déclaration garde « Déclaré sur la plateforme »,
+    // pour qui l'y aurait déclaré sans l'inscrire ici : la phrase dit à quoi il sert.
+    if (paireNonDeclaree(e, lu.encaissements, declares)) {
+      lignes.push(<div key="paire">{PAIRE_NON_DECLAREE}</div>)
+      if (e.annule_id == null && refusDecl == null && offerte) lignes.push(<div key="ailleurs">{PAIRE_DECLAREE_AILLEURS}</div>)
+      return <div>{lignes}</div>
+    }
     if (!offerte) lignes.push(<div key="hors">Ne se déclare pas d’ici : voir le statut « Encaissée » ci-dessus.</div>)
     else if (refusDecl == null) {
       lignes.push(<div key="ou">À déclarer sur {plateformeDeLaDeclaration(e, lu.declarations, lu.transmissions, lu.evenements)}</div>)
@@ -966,15 +991,19 @@ function Contenu({
                   // que la base inscrirait, sous une obligation due ou facultative.
                   const declarable = offerte && e.retire_le == null && !declares.has(e.id)
                     && refusDeclaration(dossierId, e.id, lu.encaissements, lu.declarations, lu.transmissions, lu.evenements, lu.statuts, null) == null
-                  // « Contre-passer » : un encaissement déclaré, à la place de « Retirer ». Tout ce qui précède la date se
-                  // juge sans elle : un premier refus « date à renseigner » dit que rien d'autre ne s'y oppose.
-                  const refusCp = refusDuRetrait?.cle === 'declare'
-                    ? refusContrePassationVente(
-                      dossierId, e.id, lu.encaissements, lu.declarations, null, null, aujourdHui, null, lu.mouvements,
-                      gereLaBanque, vente,
+                  // « Contre-passer » : un encaissement déclaré, à la place de « Retirer » ; depuis l'étape VF5d2, aussi
+                  // l'encaissement jamais déclaré d'une facture source, à côté de « Retirer », quand un débit libre du
+                  // relevé peut se citer — sa contre-passation l'exige. Tout ce qui précède la date se juge sans elle (et,
+                  // pour ce dernier, avec le débit qui reste à choisir) : un premier refus « date à renseigner » dit que
+                  // rien d'autre ne s'y oppose.
+                  const avecDebit = debitObligatoire(dossierId, e.id, lu.encaissements, lu.declarations, vente)
+                  const refusCp = refusDuRetrait?.cle === 'declare' || avecDebit
+                    ? refusContrePassationAvantLaDate(
+                      dossierId, e.id, lu.encaissements, lu.declarations, aujourdHui, lu.mouvements, gereLaBanque, vente,
                     )
                     : null
                   const contrePassable = refusCp?.cle === 'date_absente'
+                    && (!avecDebit || debitsCitables(dossierId, e, lu.mouvements).length > 0)
                   const contrePasse = lu.encaissements.some((a) => a.annule_id === e.id && a.retire_le == null)
                   return (
                     <tr key={e.id}>
@@ -1033,7 +1062,9 @@ function Contenu({
                         {refusDuRetrait != null && refusDuRetrait.cle !== 'deja_retire' && (
                           <span className="muted" style={{ fontSize: '0.82rem' }}>{dire(refusDuRetrait.message)}</span>
                         )}
-                        {refusCp != null && !contrePassable && (
+                        {/* Jamais déclaré, l'encaissement se retire : ce qui retient sa contre-passation — pas de
+                            « Banque », pas de débit libre, une contre-passation déjà vivante — ne se dit pas à côté. */}
+                        {refusCp != null && !contrePassable && !avecDebit && (
                           <span className="muted" style={{ fontSize: '0.82rem' }}>{dire(refusCp.message)}</span>
                         )}
                       </td>
@@ -1341,7 +1372,9 @@ function EtapeDeclaration({
 // Paris. Pour une facture SOURCE (étape VF5b), le débit qui défait l'encaissement, choisi parmi les débits libres du
 // dossier — avec « Banque » seulement : sans lui le relevé n'est pas lu, et rien ne s'y choisit —, et ce qu'il
 // deviendrait. Le débit IMPOSÉ par la fiche d'un débit (étape VF5d) ne se choisit pas : il se dit, et sa date est
-// proposée — le jour où la banque a défait l'encaissement, que le cabinet corrige s'il le faut.
+// proposée — le jour où la banque a défait l'encaissement, que le cabinet corrige s'il le faut. L'encaissement JAMAIS
+// DÉCLARÉ d'une facture source (étape VF5d2) ne se contre-passe qu'en citant ce débit : il devient obligatoire, l'étape
+// le dit, et ni lui ni sa contre-passation ne se déclarent.
 function EtapeContrePassation({
   dossierId, lu, encaissement: e, etape, setEtape, aujourdHui, enCours, onContrePasser, espace, gereLaBanque, debitImpose,
 }: {
@@ -1364,6 +1397,8 @@ function EtapeContrePassation({
   const vente = venteDe(lu)
   const source = lu.factures.find((f) => f.id === e.facture_id)?.source_de_la_vente === true
   const debits = source && gereLaBanque ? debitsCitables(dossierId, e, lu.mouvements) : []
+  // Jamais déclaré, d'une facture source : sa contre-passation n'existe qu'avec le débit qui l'a défait (étape VF5d2).
+  const sansDeclaration = debitObligatoire(dossierId, e.id, lu.encaissements, lu.declarations, vente)
   // Le droit « Banque » de qui saisit : sans lui, un débit retenu — la case retirée pendant que la fenêtre est ouverte —
   // se refuse avant le clic, sous les mots de la base (migration contre_passation_banque).
   const refus = refusContrePassationVente(
@@ -1376,10 +1411,18 @@ function EtapeContrePassation({
   return (
     <div className="field etape-encaissement">
       <h3>Contre-passer l’encaissement du {formatDate(e.date_encaissement)} — {formatMoney(e.montant)}</h3>
-      <p>
-        Un encaissement déclaré ne se retire pas : il s’annule par une contre-passation de montant opposé, qui se déclare à
-        son tour sur {hote} ; puis le bon encaissement s’enregistre.
-      </p>
+      {sansDeclaration ? (
+        <p>
+          Cet encaissement n’a jamais été déclaré : il se retire — ou, quand la banque l’a défait (le chèque revenu impayé,
+          la somme rendue), il se contre-passe en citant ce débit. Retirer efface le fait ; contre-passer le garde : l’argent
+          est venu, puis reparti. Ni lui ni sa contre-passation ne se déclarent.
+        </p>
+      ) : (
+        <p>
+          Un encaissement déclaré ne se retire pas : il s’annule par une contre-passation de montant opposé, qui se déclare à
+          son tour sur {hote} ; puis le bon encaissement s’enregistre.
+        </p>
+      )}
       <div className="field">
         <label htmlFor="contre-passation-date">Date du décaissement</label>
         <input
@@ -1417,21 +1460,27 @@ function EtapeContrePassation({
         </div>
       ) : source && gereLaBanque && (
         <div className="field">
-          <label htmlFor="contre-passation-debit">Débit qui défait l’encaissement (facultatif)</label>
+          <label htmlFor="contre-passation-debit">
+            Débit qui défait l’encaissement ({sansDeclaration ? 'obligatoire' : 'facultatif'})
+          </label>
           <select
             id="contre-passation-debit" value={etape.ligneBancaireId ?? ''}
             onChange={(ev) => setEtape({ ...etape, ligneBancaireId: ev.target.value === '' ? null : ev.target.value })}
           >
-            <option value="">Aucun débit</option>
+            <option value="">{sansDeclaration ? 'Choisir le débit…' : 'Aucun débit'}</option>
             {debits.map((m) => (
               <option key={m.id} value={m.id}>{libelleMouvement(m)} · {formatMoney(m.montant)}</option>
             ))}
           </select>
           <p className="muted" style={{ margin: '4px 0 0' }}>
             {debits.length === 0
-              ? 'Aucun débit libre au relevé : la contre-passation s’enregistre sans mouvement.'
-              : 'Le chèque revenu impayé, la somme rendue : le débit du relevé qui défait l’encaissement. Seul un débit que rien '
-                + 'ne classe encore se cite ; il se classe ensuite par cette contre-passation.'}
+              ? (sansDeclaration
+                ? 'Aucun débit libre au relevé : jamais déclaré, cet encaissement ne se contre-passe qu’en citant le débit qui '
+                  + 'l’a défait ; sans lui, il se retire.'
+                : 'Aucun débit libre au relevé : la contre-passation s’enregistre sans mouvement.')
+              : 'Le chèque revenu impayé, la somme rendue : le débit du relevé qui défait l’encaissement'
+                + (sansDeclaration ? ' — obligatoire ici, l’encaissement n’ayant jamais été déclaré. ' : '. ')
+                + 'Seul un débit que rien ne classe encore se cite ; il se classe ensuite par cette contre-passation.'}
           </p>
         </div>
       )}

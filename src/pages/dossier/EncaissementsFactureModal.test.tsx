@@ -1779,3 +1779,212 @@ describe('EncaissementsFactureModal — une contre-passation IMPOSÉE par la fic
     expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Fermer'])
   })
 })
+
+// ── L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (chantier EC-Q3, étape VF5d2 ; migration impaye_non_declare) ────────────────
+//
+// Le chèque de 600 € du 05/10/2027 (e1), JAMAIS déclaré, d'une facture SOURCE acceptée par une plateforme, revenu impayé
+// le 28/10/2027 : il se retire, comme hier, ou se contre-passe en citant ce débit — obligatoire ici —, et ni lui ni sa
+// contre-passation ne se déclarent. Ce que ces cas gardent : l'offre de « Contre-passer » et ses conditions, le débit
+// obligatoire dit avant le clic, le refus de la base tant qu'il manque, l'appel, la confirmation, et la paire relue, qui ne
+// dit ni « à déclarer » ni échéance.
+describe('EncaissementsFactureModal — l’impayé d’un encaissement jamais déclaré (étape VF5d2)', () => {
+  const DEBITS = [
+    mouvement({ id: 'm1', montant: 1355.5 }),
+    mouvement({ id: 'loin', montant: -550, date: '2027-10-27', libelle: 'PRLV FICTIF' }),
+    mouvement({ id: 'juste', montant: -600, date: '2027-10-28', libelle: 'CHQ IMPAYE 0001' }),
+    mouvement({ id: 'presque', montant: -599, date: '2027-10-29', libelle: 'CHQ IMPAYE 0002' }),
+    mouvement({ id: 'classe', montant: -600, date: '2027-10-30', libelle: 'CHQ CLASSE', statut: 'rapprochee', piece_id: 'p9' }),
+  ]
+  const monterImpaye = (o: Parameters<typeof monter>[0] = {}) => monter({
+    facture: SOURCE, transmissions: [acceptee()], mouvements: DEBITS,
+    encaissements: [encaissement()], parts: [part({ montant: 500 }), part({ taux: 0, montant: 100 })], ...o,
+  })
+  // La contre-passation de e1 déjà enregistrée, citant le débit, et jamais déclarée : la paire.
+  const PAIRE: Parameters<typeof monter>[0] = {
+    encaissements: [
+      encaissement(),
+      encaissement({
+        id: 'e9', date_encaissement: '2027-10-28', montant: -600, annule_id: 'e1', motif: 'Chèque revenu impayé', ligne_bancaire_id: 'juste',
+      }),
+    ],
+    parts: [part({ montant: 500 }), part({ taux: 0, montant: 100 }), part({ encaissement_id: 'e9', montant: -500 }),
+      part({ encaissement_id: 'e9', taux: 0, montant: -100 })],
+  }
+  const ligneE1 = () => ligneDe('À déclarer sur flux.plateforme-demo.fr')
+  const ligneCp = () => ligneDe(/^Annule l’encaissement du 05\/10\/2027 de 600,00\s€/)
+  const debit = () => screen.getByLabelText('Débit qui défait l’encaissement (obligatoire)') as HTMLSelectElement
+  const enregistrerCp = () => screen.getByRole('button', { name: 'Enregistrer la contre-passation' })
+  const etape = () => screen.findByRole('heading', { name: /^Contre-passer l’encaissement du 05\/10\/2027/ })
+  const ouvrir = async () => {
+    fireEvent.click(within(await ligneE1()).getByRole('button', { name: 'Contre-passer' }))
+    await etape()
+  }
+  const saisir = (libelleMotif = LIBELLE_MOTIF_CONTRE_PASSATION) => {
+    fireEvent.change(champ('Date du décaissement'), { target: { value: '2027-11-01' } })
+    fireEvent.change(champ(libelleMotif), { target: { value: 'Chèque revenu impayé' } })
+  }
+  const NON_DECLARE = 'Cet encaissement n\'est pas déclaré : il se retire, sans contre-passation.'
+  // La cellule des gestes d'une ligne, en entier : ses boutons, et ce qu'elle dit à côté — rien de plus.
+  const gestes = (ligne: HTMLElement) => [...ligne.querySelectorAll('td')].at(-1)?.textContent
+  const PAIRE_DITE = 'Contre-passé avant d’être déclaré : ni l’encaissement ni sa contre-passation ne se déclarent.'
+  const DECLAREE_AILLEURS = 'S’il l’a été sur la plateforme sans être inscrit ici, « Déclaré sur la plateforme » l’inscrit : sa '
+    + 'contre-passation se déclare alors à son tour.'
+
+  it('« Contre-passer » s’offre à côté de « Retirer », sans qu’aucun refus ne se dise sur la ligne', async () => {
+    monterImpaye()
+    const ligne = await ligneE1()
+    expect(gestes(ligne)).toBe('RetirerDéclaré sur la plateformeContre-passer')
+    // Rien ne l'a encore défait : toujours à déclarer, avec son échéance.
+    within(ligne).getByText('Paiements d’octobre 2027 : à déclarer au plus tard le 10/11/2027.')
+  })
+
+  it('l’étape dit le débit obligatoire avant le clic ; tant qu’il manque, le refus de la base, et rien ne part', async () => {
+    monterImpaye()
+    await ouvrir()
+    screen.getByText(/^Cet encaissement n’a jamais été déclaré : il se retire — ou, quand la banque l’a défait/)
+    screen.getByText(/Ni lui ni sa contre-passation ne se déclarent\.$/)
+    expect(screen.queryByText(/qui se déclare à\s+son tour/)).toBeNull()
+    expect([...debit().options].map((o) => o.value)).toEqual(['', 'juste', 'presque', 'loin'])
+    expect(debit().options[0].textContent).toBe('Choisir le débit…')
+    expect(debit().value).toBe('')
+    screen.getByText(/obligatoire ici, l’encaissement n’ayant jamais été déclaré\./)
+    saisir()
+    screen.getByText(NON_DECLARE)
+    expect(enregistrerCp()).toHaveProperty('disabled', true)
+    // Un débit trop petit : le refus du rang 19, comme pour un encaissement déclaré.
+    fireEvent.change(debit(), { target: { value: 'loin' } })
+    screen.getByText('Ce mouvement de 550,00 € justifierait 600,00 € de contre-passations : l\'écart dépasse ce que des frais bancaires expliquent.')
+    expect(enregistrerCp()).toHaveProperty('disabled', true)
+    fireEvent.change(debit(), { target: { value: 'juste' } })
+    expect(screen.queryByText(NON_DECLARE)).toBeNull()
+    expect(enregistrerCp()).toHaveProperty('disabled', false)
+    // Revenu à « Choisir le débit… » : le refus revient, et le clic ne fait rien partir.
+    fireEvent.change(debit(), { target: { value: '' } })
+    screen.getByText(NON_DECLARE)
+    expect(enregistrerCp()).toHaveProperty('disabled', true)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { enregistrerCp().click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it.each([2, 3])('%i clics : un seul appel, le débit cité ; relue, la paire ne dit ni « à déclarer » ni échéance', async (clics) => {
+    monterImpaye()
+    await ouvrir()
+    saisir()
+    fireEvent.change(debit(), { target: { value: 'juste' } })
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    faux.retenirLectures = true
+    const b = enregistrerCp()
+    await act(async () => { for (let i = 0; i < clics; i++) b.click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'annuler_encaissement',
+      args: { p_dossier_id: 'd1', p_encaissement_id: 'e1', p_date: '2027-11-01', p_motif: 'Chèque revenu impayé', p_ligne_bancaire_id: 'juste' },
+    }])
+    expect(confirmation).toHaveBeenCalledTimes(1)
+    const texte = confirmation.mock.calls[0][0] as string
+    expect(texte).toContain('Elle cite le débit qui défait l’encaissement : 28/10/2027 · CHQ IMPAYE 0001, -600,00')
+    expect(texte).toContain('L’encaissement n’a jamais été déclaré : ni lui ni sa contre-passation ne se déclarent.')
+    expect(texte).not.toMatch(/se déclare ensuite|sur —/)
+    await act(async () => { faux.libererLectures?.() })
+    expect(onUpdated).toHaveBeenCalledTimes(1)
+    await screen.findByText(/^Contre-passation enregistrée : .* le 01\/11\/2027\. Elle ne se déclare pas : l’encaissement qu’elle annule ne l’a jamais été\.$/)
+    expect(screen.queryByRole('heading', { name: /^Contre-passer l’encaissement/ })).toBeNull()
+    // La paire relue : ni « à déclarer », ni échéance, de l'un ni de l'autre ; la contre-passation cite son débit.
+    expect(screen.getAllByText(PAIRE_DITE)).toHaveLength(2)
+    expect(screen.queryByText(/^À déclarer sur/)).toBeNull()
+    expect(screen.queryByText(/à déclarer au plus tard/)).toBeNull()
+    within(await ligneCp()).getByText('28/10/2027 · CHQ IMPAYE 0001')
+  })
+
+  it('la paire : l’encaissement garde « Déclaré sur la plateforme », dit à quoi il sert ; la contre-passation, rien', async () => {
+    monterImpaye(PAIRE)
+    const e1 = within(await ligneDe(DECLAREE_AILLEURS))
+    e1.getByText(PAIRE_DITE)
+    e1.getByText('Contre-passé')
+    e1.getByRole('button', { name: 'Déclaré sur la plateforme' })
+    expect(e1.queryByRole('button', { name: 'Contre-passer' })).toBeNull()
+    expect(e1.queryByRole('button', { name: 'Retirer' })).toBeNull()
+    const cp = within(await ligneCp())
+    cp.getByText(PAIRE_DITE)
+    cp.getByText('Annulation')
+    expect(cp.queryByText(DECLAREE_AILLEURS)).toBeNull()
+    expect(cp.queryByRole('button', { name: 'Déclaré sur la plateforme' })).toBeNull()
+    // Jamais déclarée, la contre-passation se retire encore.
+    cp.getByRole('button', { name: 'Retirer' })
+    expect(screen.getAllByRole('button', { name: 'Déclaré sur la plateforme' })).toHaveLength(1)
+    expect(screen.queryByText(/à déclarer au plus tard/)).toBeNull()
+  })
+
+  it('la paire d’une facture qu’aucune plateforme n’a acceptée, ou d’une vente à un particulier : la paire dite, rien de plus', async () => {
+    for (const o of [{ transmissions: [] }, { facture: facture({ source_de_la_vente: true, type_client: 'non_assujetti' }) }]) {
+      const { unmount } = monterImpaye({ ...PAIRE, ...o })
+      expect(await screen.findAllByText(PAIRE_DITE)).toHaveLength(2)
+      expect(screen.queryByText(DECLAREE_AILLEURS)).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Déclaré sur la plateforme' })).toBeNull()
+      expect(screen.queryByText(/à déclarer au plus tard|Échéance dépassée/)).toBeNull()
+      unmount()
+    }
+  })
+
+  it('l’encaissement de la paire inscrit déclaré : la paire tombe, et sa contre-passation est à déclarer, avec son échéance', async () => {
+    monterImpaye(PAIRE)
+    fireEvent.click(within(await ligneDe(DECLAREE_AILLEURS)).getByRole('button', { name: 'Déclaré sur la plateforme' }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { screen.getByRole('button', { name: 'Inscrire la déclaration' }).click() })
+    expect(faux.rpcs.map((r) => [r.nom, r.args.p_encaissement_id])).toEqual([['declarer_encaissement_hors_application', 'e1']])
+    await screen.findByText(/^Déclaré à la main sur flux\.plateforme-demo\.fr le 02\/11\/2027/)
+    const cp = within(await ligneCp())
+    cp.getByText('À déclarer sur flux.plateforme-demo.fr')
+    cp.getByRole('button', { name: 'Déclaré sur la plateforme' })
+    cp.getByText('Paiements d’octobre 2027 : à déclarer au plus tard le 10/11/2027.')
+    expect(screen.queryByText(PAIRE_DITE)).toBeNull()
+  })
+
+  it('imposée par la fiche du débit : l’étape s’ouvre, le débit dit sans se choisir, et l’appel le cite', async () => {
+    monterImpaye({ contrePassationImposee: { encaissementId: 'e1', ligneBancaireId: 'juste' } })
+    await etape()
+    screen.getByText(/^Cet encaissement n’a jamais été déclaré : il se retire/)
+    expect(screen.queryByLabelText(/^Débit qui défait l’encaissement \(/)).toBeNull()
+    screen.getByText(/^28\/10\/2027 · CHQ IMPAYE 0001 · -600,00\s€$/)
+    expect(champ('Date du décaissement').value).toBe('2027-10-28')
+    expect(screen.queryByText(NON_DECLARE)).toBeNull()
+    fireEvent.change(champ(LIBELLE_MOTIF_CONTRE_PASSATION), { target: { value: 'Chèque revenu impayé' } })
+    expect(enregistrerCp()).toHaveProperty('disabled', false)
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { enregistrerCp().click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'annuler_encaissement',
+      args: { p_dossier_id: 'd1', p_encaissement_id: 'e1', p_date: '2027-10-28', p_motif: 'Chèque revenu impayé', p_ligne_bancaire_id: 'juste' },
+    }])
+    expect(confirmation.mock.calls[0][0]).toContain('ni lui ni sa contre-passation ne se déclarent')
+  })
+
+  it('aucun débit libre au relevé : « Retirer » seul, et rien ne dit pourquoi « Contre-passer » manque', async () => {
+    monterImpaye({ mouvements: [DEBITS[0], DEBITS[4]] })
+    expect(gestes(await ligneE1())).toBe('RetirerDéclaré sur la plateforme')
+  })
+
+  it('une facture qui n’est pas source : « Retirer » seul, comme hier, des débits libres fussent-ils au relevé', async () => {
+    monterImpaye({ facture: FACTURE })
+    expect(gestes(await ligneE1())).toBe('RetirerDéclaré sur la plateforme')
+  })
+
+  it('le client « Ventes » : avec « Banque », il contre-passe sous ses mots ; sans lui, « Retirer » seul', async () => {
+    const { container } = monterImpaye({ client: { banque: true } })
+    await ouvrir()
+    saisir(LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT)
+    fireEvent.change(debit(), { target: { value: 'juste' } })
+    expect(enregistrerCp()).toHaveProperty('disabled', false)
+    expect(motsDuCabinet(container.textContent ?? '')).toEqual([])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => { enregistrerCp().click() })
+    expect(faux.rpcs.map((r) => r.args.p_ligne_bancaire_id)).toEqual(['juste'])
+    expect(await screen.findAllByText(PAIRE_DITE)).toHaveLength(2)
+    expect(motsDuCabinet(container.textContent ?? '')).toEqual([])
+    cleanup()
+    faux.tablesLues = []
+    monterImpaye({ client: { banque: false } })
+    expect(gestes(await ligneE1())).toBe('RetirerDéclaré sur la plateforme')
+    expect(faux.tablesLues).not.toContain('lignes_bancaires')
+  })
+})
