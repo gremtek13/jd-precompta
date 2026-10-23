@@ -156,8 +156,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Une rangée de boutons ou de champs passe à la ligne** (`flex-wrap`), jamais ne déborde ; un tableau vit dans un
   `.table-scroll` ; un bouton aligné sur le bas des champs passe par `.field-row.aligne-bas`. Un tableau qui se replie
   en fiches (`table-empilable`, `data-libelle`) vit dans `.tableau-adaptable` (`tableauxFormulaires.test.ts`) ; le
-  téléphone ne comprime jamais un tableau ; un nom de fichier porte `.nom-fichier` → « UN MOT NE SE COUPE PLUS AU
-  MILIEU ».
+  téléphone ne comprime jamais un tableau ; un nom de fichier porte `.nom-fichier`, une adresse électronique `.courriel`
+  → « UN MOT NE SE COUPE PLUS AU MILIEU », « L'ADRESSE D'UN CLIENT NE SE COUPE PLUS AU MILIEU D'UN MOT ».
 - **Vérification visuelle** : `outils/captures/` après toute modification de `index.css` ou de la coque ;
   `debordements.mjs` rend 0 aux quatre largeurs de référence, à 720 px et aux volets extrêmes ; un bouton de fenêtre
   qu'aucune position ne dégage est une faute ; la passe du client : `debordements.mjs <largeur> client` (ou

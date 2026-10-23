@@ -32194,3 +32194,26 @@ VF5d, `eb8014e`), `main` linéaire, son arbre égal à celui de la branche ; le 
 par empreinte (18 401 positions) ; les barres recomptées par requête, inchangées (186 chantiers hors de la phase 7, dont
 141 livrés ; 76 % et 82 %). La copie de travail de l'agent retirée, son travail entier dans `main`, recomposé ; la
 branche réalignée sur `main`.
+
+### 23/10/2026 — L'ADRESSE D'UN CLIENT NE SE COUPE PLUS AU MILIEU D'UN MOT
+
+(`src/index.css` : la classe `.courriel` ; `src/pages/dossier/ContactsVue.tsx` ; `ContactsVue.test.tsx`.) Depuis le
+20/10/2026, la passe « 1440 px, panneau de droite fermé, barre latérale à 2000 » de `debordements.mjs` (les autres
+rendaient 0) signalait une faute dans la visite `factures/clients-soins` : l'adresse du client fictif de la mutuelle
+(`gestion@mutuelle-fictive-exemple.fr`) se coupait en « gestion@mutue|lle- », dans un `<span>` de 107 px.
+
+**La cause.** L'onglet « Clients » mettait l'adresse dans un `<span class="nom-fichier">`, donc
+`overflow-wrap: anywhere`. Cette valeur rétrécit la largeur MINIMALE de la colonne (entrée « UN MOT NE SE COUPE PLUS AU
+MILIEU ») : avec la barre latérale à 2000 px, le panneau central est étroit, la colonne tombe à 107 px et le navigateur
+coupe où il peut. La classe convient à un nom de fichier, que le banc admet coupé au-delà de 24 caractères ; ici le
+morceau fautif n'en avait que 17.
+
+**La correction.** Une classe `.courriel { overflow-wrap: break-word; }` : la colonne garde son plus long morceau
+(« gestion@mutuelle- », jusqu'au trait d'union) et le tableau se replie en fiches ou défile ; seule une adresse qui
+dépasserait seule sa case se coupe, faute de mieux. Ni `<wbr>` ni fonction : une coupure après « @ » aurait cassé le
+morceau « gestion@mutuelle- » que le banc juge entier.
+
+**Les preuves.** Un test d'écran (`ContactsVue.test.tsx`) lit la classe de l'adresse et la règle de la feuille de style.
+La passe fautive rend 0, comme les autres du banc (390, 720, 1 024, 1 280, 1 440, panneau 2000, barre 2000, les
+deux, `client` et `client-banque` à 390). Ailleurs, l'adresse d'un client n'est affichée que dans cette cellule ; celles
+des accès et de l'équipe sont dans des cellules sans `.nom-fichier`, non touchées.
