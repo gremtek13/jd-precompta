@@ -9,8 +9,9 @@ import type { Emprunt } from './emprunts'
 import type { DonneesDeLaChecklist } from './pointsDeLaChecklist'
 import type { FacturePourJumelle, TransmissionPourJumelle } from './ventesJumelles'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from './ecrituresVentesFactureesLecture'
+import { facturesSourcesDe } from './facturesSources'
 import type {
-  ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
+  ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, FactureEmise, Immobilisation,
   LigneBancaire, LettrageManuel, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from './types'
 
@@ -138,8 +139,10 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
       supabase.from('declarations_tva').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
     ),
-    lireTout<FacturePourJumelle>((debut, fin) =>
-      supabase.from('factures_emises').select('id, dossier_id, statut, type, numero, date_emission, emetteur_siret, superpdp_invoice_id', { count: 'exact' })
+    // Avec la source de leur vente (étape VF6a) : l'exemplaire d'une facture source ne compte nulle part, et les points qui
+    // jugent une pièce l'écartent. La même lecture que le pont : une lecture que deux points comptent s'écrit une fois.
+    lireTout<FacturePourJumelle & Pick<FactureEmise, 'source_de_la_vente'>>((debut, fin) =>
+      supabase.from('factures_emises').select('id, dossier_id, statut, type, numero, date_emission, emetteur_siret, superpdp_invoice_id, source_de_la_vente', { count: 'exact' })
         .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
     ),
     lireTout<TransmissionPourJumelle & { id: string }>((debut, fin) =>
@@ -181,6 +184,8 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
       return partielle === undefined ? null : partielle.motif ?? 'lecture incomplète'
     })(),
     facturesEmises: lectureFacturesEmises.lignes,
+    // Lues en partie, `lectureIncomplete` le dit : les points se signalent partiels, et la révision se tait.
+    facturesSources: facturesSourcesDe(lectureFacturesEmises.lignes),
     transmissions: lectureTransmissions.lignes,
     jumellesPartielles: [lectureValidees, lectureAValider, lectureFacturesEmises, lectureTransmissions].some((l) => !l.complete),
     declarationsTva: lectureDeclarations.lignes,

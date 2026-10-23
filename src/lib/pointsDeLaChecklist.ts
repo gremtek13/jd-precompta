@@ -32,6 +32,7 @@ import type { DossierTab } from './ongletsDossier'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, type ExerciceAReclamer } from './resteAEnvoyer'
 import type { LectureDesVentesDuReleve } from './mouvementsDesVentes'
 import { detailDesEncaissementsSansMouvement, ventesDeLaChecklist } from './ventesDeLaChecklist'
+import { exemplairesDesSources, horsDesExemplairesDesSources, type FacturesSources } from './facturesSources'
 
 // LES POINTS DE LA VUE D'ENSEMBLE (pages/dossier/ChecklistTab.tsx) : les points à traiter, rangés en paramétrage et en
 // travail, et les documents attendus du client. Ils étaient calculés DANS l'écran, et l'onglet de la révision (ligne 41,
@@ -99,6 +100,11 @@ export interface DonneesDeLaChecklist {
   facturesEmises: FacturePourJumelle[]
   transmissions: TransmissionPourJumelle[]
   jumellesPartielles: boolean
+  // Les factures SOURCES de leur vente parmi les factures émises lues (étape VF6a, lib/facturesSources.ts) : leur exemplaire
+  // ne compte nulle part, et les points qui jugent une pièce comme une pièce qui compte l'écartent — le brouillon (à
+  // générer, à régénérer, sans objet, sans contrepartie, déséquilibré), la catégorie, la devise, la TVA, le montant
+  // introuvable en banque, le paiement partiel. Lues avec les factures émises : en partie, `lectureIncomplete` le dit.
+  facturesSources: FacturesSources
   info: InformationsDossier | null
   // Non nul = on ne SAIT PAS ce que le dossier porte comme informations : les points qui en dépendent se taisent.
   infoInconnue: string | null
@@ -144,7 +150,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     piecesValidees, piecesAValider, cotisations, lignes, relevesIncoherents, doublonsTexte, immobilisations, natures,
     categories, ecritures, emprunts, ventilations, ventilationsPartielles, reglements, reglementsPartiels, paiementsPartiels,
     lettragesManuels, vehicules, declarationsTva, declarationsPartielles, facturesEmises, transmissions, jumellesPartielles,
-    info, infoInconnue, anneesCloturees, ouverture, ouvertureIncomplete, ventesFacturees,
+    info, infoInconnue, anneesCloturees, ouverture, ouvertureIncomplete, ventesFacturees, facturesSources,
   } = d
   const { assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneeCourante, moisEcoules, premierJourDuMois } = c
 
@@ -194,12 +200,19 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const piecesJugees = ouvertureIncomplete !== null
     ? piecesValidees.filter((p) => !pieceIdsImmobilisees.has(p.id))
     : piecesValidees
-  const aComptabiliser = piecesAComptabiliser(piecesJugees, categories, acquisitions)
+  // L'exemplaire d'une facture source ne s'écrit pas (étape VF6a) : sa facture écrit la vente. Les validées, pour les
+  // contrôles qui partent de l'écriture : celles que `ecrituresSansObjet` juge, où son écriture se dit et se retire.
+  const aComptabiliser = piecesAComptabiliser(piecesJugees, categories, acquisitions, facturesSources)
+  const exemplaires = exemplairesDesSources(piecesValidees, facturesSources)
+  // Les pièces qui COMPTENT, pour les points qui jugent une pièce par ses montants ou ses paiements : l'exemplaire d'une
+  // facture source n'en est plus une — sa TVA, son montant et son règlement sont ceux de sa facture.
+  const validesQuiComptent = horsDesExemplairesDesSources(piecesValidees, facturesSources)
+  const aValiderQuiComptent = horsDesExemplairesDesSources(piecesAValider, facturesSources)
   // Les paiements de chaque pièce — mouvements rapprochés et parts des virements groupés — décident de la
   // date qu'une écriture doit porter et de ses lignes de banque (lib/rattachement.ts). `lignes` porte tout
   // le relevé, et `paiementsDesPieces` n'en retient que les rapprochés.
   const paiements = paiementsDesPieces(lignes, reglements)
-  const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere)
+  const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplaires)
   // Les lettrages faits à la main (lib/lettrage.ts), revérifiés sur TOUTES les pièces lues, comme la carte des comptes
   // de tiers qui les montre : la liste qu'on y défait et ces points disent la même chose. En trésorerie, rien ne se
   // lettre et la liste est vide. Une facture qu'un lettrage qui tient solde avec son avoir n'attend plus de règlement :
@@ -207,7 +220,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const etatsLettrages = etatsDesLettragesManuels(ecritures, toutesPieces, lettragesManuels, modele.mode)
   const lettreesALaMain = piecesLettreesALaMain(etatsLettrages)
   const nbSansContrepartie = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
-  const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesJugees, categories, acquisitions, frontiere, modele.plan)
+  const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesJugees, categories, acquisitions, frontiere, modele.plan, facturesSources)
   // Les mouvements du relevé affectés à une catégorie sans justificatif (ligne 26.6) : leur écriture n'a
   // pas de pièce, par construction, et n'est pas une rupture de la piste d'audit.
   const affectes = mouvementsAffectes(lignes, categories, assujettiTva)
@@ -260,8 +273,8 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // La facture d'un bien n'y compte pas : elle s'écrit sur le compte de sa nature, et la 2035 l'écarte.
   const catSansCompte = categoriesSansCompte(categories, piecesValidees, [...lignes, ...ventilations], pieceIdsImmobilisees)
   const catSansPoste = categoriesSansPoste(categories, piecesValidees, [...lignes, ...ventilations], pieceIdsImmobilisees)
-  const sansTva = piecesSansTva(piecesValidees, assujettiTva)
-  const sansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees)
+  const sansTva = piecesSansTva(validesQuiComptent, assujettiTva)
+  const sansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees, facturesSources)
   // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
   // absente de Clôture, de la 2035 et de la Balance sans être comptée nulle part comme manquante.
   //
@@ -294,8 +307,8 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // l'écriture. Sans filtre sur l'assujettissement non plus : un montant impossible signale une
   // lecture ratée du document, et sur un dossier non assujetti c'est le TTC — donc la charge — qui
   // peut être faux (voir lib/controles.ts).
-  const tvaImpossible = piecesTvaImpossible([...piecesValidees, ...piecesAValider])
-  const deviseNonConvertie = piecesDeviseNonConvertie([...piecesValidees, ...piecesAValider])
+  const tvaImpossible = piecesTvaImpossible([...validesQuiComptent, ...aValiderQuiComptent])
+  const deviseNonConvertie = piecesDeviseNonConvertie([...piecesValidees, ...piecesAValider], facturesSources)
   // Le pendant côté Banque de "en attente de rapprochement bancaire" ci-dessous (qui part des
   // écritures) : un mouvement bancaire importé mais jamais rattaché à une pièce, une cotisation, ou
   // marqué personnel/à ignorer — le seul cycle du dossier qui manquait encore à ce tableau de bord.
@@ -328,7 +341,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // presque toujours un paiement partiel, donc on le signale sans rien écraser. Jugé sur le TOTAL
   // payé de la pièce, pas mouvement par mouvement : une facture réglée en deux fois n'a rien à
   // reprendre. En trésorerie seulement — voir `piecesPayeesEnPartie`.
-  const payeesEnPartie = paiementsPartiels ? [] : piecesPayeesEnPartie(piecesValidees, paiements, modele.mode)
+  const payeesEnPartie = paiementsPartiels ? [] : piecesPayeesEnPartie(validesQuiComptent, paiements, modele.mode)
   // La TROISIÈME clé en `ON DELETE SET NULL` de `pieces` : supprimer une pièce immobilisée détache
   // son immobilisation sans un mot, et la dotation continue de partir en case CH d'une 2035 signée.
   const immosSansJustificatif = immobilisationsSansJustificatif(immobilisations)
@@ -387,8 +400,10 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // validées — c'est exactement le nom trompeur que le renommage a supprimé.
   // Ni une pièce qu'un lettrage fait à la main qui tient solde : une facture lettrée avec son avoir n'attend aucun
   // mouvement, et son montant ne sera jamais dans le relevé. Le même critère que l'onglet Banque, où mène ce point.
+  // Ni l'exemplaire d'une facture source (étape VF6a) : il ne se règle pas, sa facture s'encaisse — l'envoyer chercher dans
+  // le relevé mènerait à le rapprocher, ce que G4 (VF6b) refusera.
   const montantSuspect = piecesMontantIntrouvableEnBanque(
-    piecesValidees.filter((p) => !piecesRapprocheesIds.has(p.id) && !lettreesALaMain.has(p.id)),
+    validesQuiComptent.filter((p) => !piecesRapprocheesIds.has(p.id) && !lettreesALaMain.has(p.id)),
     lignes,
   )
 

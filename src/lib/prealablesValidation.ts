@@ -29,6 +29,7 @@ import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces } 
 import { defautsDeNumerotation, frontiereDeValidation } from './validationExercice'
 import { mouvementsDeCloture, ouvertureDeLExercice, soldesAReporter, type ReportDesSoldes } from './reportDesSoldes'
 import { jumellesDuDossier, ventesEnDouble, type FacturePourJumelle, type TransmissionPourJumelle } from './ventesJumelles'
+import { exemplairesDesSources, horsDesExemplairesDesSources, type FacturesSources } from './facturesSources'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
   LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
@@ -131,6 +132,11 @@ export interface DonneesDeValidation {
   // validation comme les autres collections (`lectureIncomplete`).
   facturesEmises: readonly FacturePourJumelle[]
   transmissions: readonly TransmissionPourJumelle[]
+  // Les factures SOURCES de leur vente (étape VF6a, lib/facturesSources.ts ; `VentesFacturees.sources`) : leur exemplaire ne
+  // compte nulle part, et les préalables qui jugent une pièce comme une pièce qui compte l'écartent — sinon la validation
+  // attendrait son écriture, sa catégorie ou sa conversion, que rien ne lit. NULLES quand on ne les a pas lues en entier :
+  // la validation se suspend, comme sur toute lecture partielle. Sans valeur par défaut.
+  facturesSources: FacturesSources | null
   // En trésorerie, la 2035 de l'exercice et sa concordance avec les écritures ; RIEN en engagement, où la 2035 ne se
   // produit pas — l'appelant ne la calcule pas, et la base refuserait de la recevoir.
   declaration: Declaration2035 | null
@@ -213,13 +219,17 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   const bloque = (p: Omit<PrealableDeValidation, 'bloquant'>) => { if (p.nb === null || p.nb > 0) prealables.push({ ...p, bloquant: true }) }
 
   // ── Une lecture partielle d'abord : rien de ce qui suit ne vaudrait. ─────────────────────────────────────
-  if (d.lectureIncomplete !== null) {
+  // Les factures sources non lues en entier en sont une : un exemplaire qu'on ne saurait pas reconnaître serait jugé comme
+  // une pièce qui compte.
+  const lectureIncomplete = d.lectureIncomplete ?? (d.facturesSources === null ? 'les factures sources de leurs ventes ne sont pas lues en entier' : null)
+  if (lectureIncomplete !== null || d.facturesSources === null) {
     prealables.push({
       id: 'lecture-partielle', nb: null, cible: 'cloture', bloquant: true,
-      message: `La lecture du dossier est restée partielle (${d.lectureIncomplete}) : une validation ne se fait que sur tout le dossier. Recharger la page.`,
+      message: `La lecture du dossier est restée partielle (${lectureIncomplete}) : une validation ne se fait que sur tout le dossier. Recharger la page.`,
     })
     return { prealables, numerotation: null, report: null, validable: false }
   }
+  const sources = d.facturesSources
 
   // ── Ce que la base refusera, avec ses mots. ─────────────────────────────────────────────────────────────
   const derniere = d.anneesValidees.length > 0 ? Math.max(...d.anneesValidees) : null
@@ -418,8 +428,13 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // Ce que les exercices déjà validés ont figé ne se compare plus (lib/validationExercice.ts) : une pièce payée dans
   // l'exercice à valider mais facturée dans le précédent n'est jugée que sur sa part encore ouverte.
   const frontiere = frontiereDeValidation(d.anneesValidees)
-  const aComptabiliser = piecesAComptabiliser([...d.piecesValidees], [...d.categories], acquisitions)
-  const { piecesDesynchronisees } = analyserEcritures([...d.ecritures], aComptabiliser, d.assujettiTva, paiements, d.modele, frontiere)
+  // Ni l'écriture, ni la catégorie, ni la conversion, ni la TVA, ni le paiement de l'exemplaire d'une facture source (étape
+  // VF6a) : sa facture compte la vente. Son écriture déjà passée, elle, est sans objet — et refusée comme telle.
+  const aComptabiliser = piecesAComptabiliser([...d.piecesValidees], [...d.categories], acquisitions, sources)
+  const validesQuiComptent = horsDesExemplairesDesSources(d.piecesValidees, sources)
+  const { piecesDesynchronisees } = analyserEcritures(
+    [...d.ecritures], aComptabiliser, d.assujettiTva, paiements, d.modele, frontiere, exemplairesDesSources(d.piecesValidees, sources),
+  )
   bloque({
     id: 'ecritures-a-generer', cible: 'ecritures',
     nb: aComptabiliser.filter(({ piece }) => !ecrituresParPiece.has(piece.id) && pieceDeLExercice(piece)).length,
@@ -431,20 +446,20 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
   bloque({
     id: 'ecritures-sans-objet', cible: 'ecritures',
-    nb: ecrituresSansObjet([...d.ecritures], [...d.piecesValidees], [...d.categories], acquisitions, frontiere, d.modele.plan)
+    nb: ecrituresSansObjet([...d.ecritures], [...d.piecesValidees], [...d.categories], acquisitions, frontiere, d.modele.plan, sources)
       .filter((s) => (ecrituresParPiece.get(s.piece.id) ?? []).some((e) => dansLExercice(e.date))).length,
     message: "écriture(s) que la pièce ne justifie plus : retirer l'écriture ou corriger la pièce.",
   })
   bloque({
-    id: 'sans-categorie', nb: piecesValideesSansCategorie([...d.piecesValidees], pieceIdsImmobilisees).filter(pieceDeLExercice).length, cible: 'pieces',
+    id: 'sans-categorie', nb: piecesValideesSansCategorie([...d.piecesValidees], pieceIdsImmobilisees, sources).filter(pieceDeLExercice).length, cible: 'pieces',
     message: "pièce(s) validée(s) de l'exercice sans catégorie — invisibles en comptabilité : les catégoriser.",
   })
   bloque({
-    id: 'devise-non-convertie', nb: piecesDeviseNonConvertie([...d.piecesValidees]).filter(pieceDeLExercice).length, cible: 'pieces',
+    id: 'devise-non-convertie', nb: piecesDeviseNonConvertie([...d.piecesValidees], sources).filter(pieceDeLExercice).length, cible: 'pieces',
     message: "pièce(s) en devise étrangère non converties en euros : les convertir.",
   })
   bloque({
-    id: 'tva-impossible', nb: piecesTvaImpossible([...d.piecesValidees]).filter((t) => pieceDeLExercice(t.piece)).length, cible: 'pieces',
+    id: 'tva-impossible', nb: piecesTvaImpossible(validesQuiComptent).filter((t) => pieceDeLExercice(t.piece)).length, cible: 'pieces',
     message: "pièce(s) dont la TVA est arithmétiquement impossible : corriger leurs montants.",
   })
   bloque({
@@ -583,7 +598,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // en deux fois n'a rien à reprendre. En trésorerie seulement — en engagement, le reste court au 401 ou au 411.
   bloque({
     id: 'pieces-payees-en-partie', cible: 'banque',
-    nb: piecesPayeesEnPartie([...d.piecesValidees], paiements, d.modele.mode).filter((x) => pieceDeLExercice(x.piece)).length,
+    nb: piecesPayeesEnPartie(validesQuiComptent, paiements, d.modele.mode).filter((x) => pieceDeLExercice(x.piece)).length,
     message: "pièce(s) payée(s) en partie — leur écriture reste déséquilibrée : rapprocher le paiement qui manque, ou vérifier le montant de la pièce.",
   })
   // Un bien dont le justificatif a disparu, s'il s'amortit dans l'exercice : sa dotation partirait sans pièce.

@@ -6,6 +6,7 @@ import { centimesParDate, rattachementsTresorerie, type PaiementDePiece, type Pa
 import type { AcquisitionDuBien } from './amortissements'
 import { estFigee } from './validationExercice'
 import { dateLocaleDe } from './format'
+import { exemplaireDUneSource, type FacturesSources } from './facturesSources'
 import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
@@ -287,6 +288,12 @@ export interface AnalyseEcritures {
 // le compte de sa nature — ou rien, pour un bien sans nature, qui ne s'écrit pas tant qu'on ne l'a pas
 // choisie, et pour un bien acquis avant l'ouverture d'un dossier repris, que les à-nouveaux portent déjà.
 // Sans valeur par défaut : une liste vide écrirait chaque bien en charge, sur sa catégorie.
+//
+// ET JAMAIS L'EXEMPLAIRE D'UNE FACTURE SOURCE (ligne 28.65, étape VF6a ; lib/facturesSources.ts) : sa vente s'écrit par sa
+// facture et ses encaissements (VF4), et l'écrire aussi depuis la pièce la compterait deux fois — au FEC, à la balance, au
+// bilan. Il sort AVANT tout le reste : ni catégorie, ni montant, ni bien n'y manque, rien ne s'y écrit. `sources`, sans
+// valeur par défaut : un appelant qui l'oublierait générerait cette seconde vente. L'exemplaire d'une facture qui n'est
+// pas source s'écrit comme hier.
 export interface PieceAComptabiliser extends CibleComptable {
   piece: Piece
 }
@@ -295,8 +302,10 @@ export function piecesAComptabiliser(
   piecesValidees: Piece[],
   categories: Categorie[],
   acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
+  sources: FacturesSources,
 ): PieceAComptabiliser[] {
   return piecesValidees.flatMap((piece): PieceAComptabiliser[] => {
+    if (exemplaireDUneSource(piece, sources)) return []
     // UNE PIÈCE À 0 € N'A RIEN À COMPTABILISER. La base refuse une ligne nulle (`ecritures_brouillon_montant_positif`) :
     // comptée ici, elle restait « sans écriture » pour toujours — dans Écritures, où l'insertion d'un seul tenant de
     // « Générer les écritures manquantes » emportait tout le lot avec elle, et à la validation de son exercice, que
@@ -315,11 +324,20 @@ export function piecesAComptabiliser(
 // « Régénérer » ne saurait pas où écrire, et une écriture déjà passée sur la catégorie compte une charge de
 // trop — et le bien REPRIS, acquis avant l'ouverture : la balance reprise le porte, et toute écriture de sa
 // facture le compte une seconde fois (ou compte en charge un bien qui s'amortit).
-export type MotifSansObjet = 'bien_sans_nature' | 'bien_repris' | 'sans_categorie' | 'categorie_sans_compte' | 'sans_montant'
+//
+// ET L'EXEMPLAIRE D'UNE FACTURE SOURCE (étape VF6a), désigné après que son écriture a été générée : sa vente s'écrit par sa
+// facture (VF4), et l'écriture de la pièce la compte une seconde fois. Il se lit avant tout le reste — sa catégorie, son
+// montant ou son bien ne décident plus de rien —, et « Régénérer » n'y réécrirait rien : retirer l'écriture est le seul
+// geste juste. TOUTES ses lignes ouvertes sont sans objet, sa banque et son tiers compris : la pièce ne se règle plus,
+// c'est la facture qui s'encaisse (G4, étape VF6b, le refusera en base).
+export type MotifSansObjet =
+  | 'exemplaire_d_une_facture_source' | 'bien_sans_nature' | 'bien_repris' | 'sans_categorie' | 'categorie_sans_compte' | 'sans_montant'
 
 export interface EcritureSansObjet {
   piece: Piece
   motif: MotifSansObjet
+  // Les lignes comptées en trop, celles du montant ci-dessous ; pour l'exemplaire d'une facture source, toutes ses lignes
+  // ouvertes — sa banque et son tiers aussi —, celles que le retrait emporte.
   nbLignes: number
   // Débit − crédit des lignes hors banque : positif pour une charge, négatif pour un produit.
   // C'est exactement ce que le FEC, la balance et la 2035 comptent en trop.
@@ -330,7 +348,9 @@ function motifSansObjet(
   piece: Piece,
   categories: Categorie[],
   acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
+  sources: FacturesSources,
 ): MotifSansObjet | null {
+  if (exemplaireDUneSource(piece, sources)) return 'exemplaire_d_une_facture_source'
   const acquisition = acquisitions.get(piece.id)
   if (acquisition) {
     if (acquisition.motif === 'repris') return 'bien_repris'
@@ -370,11 +390,18 @@ export function ecrituresSansObjet(
   frontiere: string | null,
   // Le plan du dossier : la banque et les comptes de tiers qu'on écarte sont les siens.
   plan: PlanComptable,
+  // Les factures sources du dossier (lib/facturesSources.ts), sans valeur par défaut : un appelant qui les oublierait
+  // tairait l'écriture d'un exemplaire, qui compte sa vente une seconde fois.
+  sources: FacturesSources,
 ): EcritureSansObjet[] {
   const tiers = comptesDeTiers(plan)
   const parPiece = new Map<string, EcritureBrouillon[]>()
+  // Toutes les lignes ouvertes de chaque pièce, banque et tiers compris : celles d'un exemplaire de facture source, que le
+  // retrait emporte toutes.
+  const ouvertesParPiece = new Map<string, number>()
   for (const e of ecritures) {
     if (estFigee(e.date, frontiere)) continue
+    if (e.piece_id) ouvertesParPiece.set(e.piece_id, (ouvertesParPiece.get(e.piece_id) ?? 0) + 1)
     // `piece_id` nul est le domaine de rupturesPisteAudit, pas d'ici. Et un mouvement bancaire est
     // RÉEL : ni la contrepartie banque (trésorerie) ni l'écriture de règlement (engagement, les deux
     // lignes qui désignent leur mouvement) ne disparaissent parce que la pièce a changé de nature.
@@ -395,14 +422,23 @@ export function ecrituresSansObjet(
     // crier au loup sur un choix de chargement, et un avertissement qui se trompe emporte dans son
     // discrédit les avertissements voisins qui, eux, disent vrai.
     if (!piece) continue
-    const motif = motifSansObjet(piece, categories, acquisitions)
+    const motif = motifSansObjet(piece, categories, acquisitions, sources)
     if (!motif) continue
     sansObjet.push({
       piece,
       motif,
-      nbLignes: lignes.length,
+      nbLignes: motif === 'exemplaire_d_une_facture_source' ? ouvertesParPiece.get(pieceId)! : lignes.length,
       montant: lignes.reduce((somme, e) => somme + (e.sens === 'debit' ? e.montant : -e.montant), 0),
     })
+  }
+  // L'exemplaire dont il ne reste que la banque ou le tiers — un règlement en engagement, une contrepartie en trésorerie :
+  // ses lignes ne comptent rien en trop au produit, mais elles règlent une pièce qui ne se règle plus. Après les autres,
+  // pour que l'ordre d'hier reste celui d'aujourd'hui.
+  for (const [pieceId, nb] of ouvertesParPiece) {
+    if (parPiece.has(pieceId)) continue
+    const piece = piecesValidees.find((p) => p.id === pieceId)
+    if (!piece || !exemplaireDUneSource(piece, sources)) continue
+    sansObjet.push({ piece, motif: 'exemplaire_d_une_facture_source', nbLignes: nb, montant: 0 })
   }
   return sansObjet
 }
@@ -427,10 +463,15 @@ export function analyserEcritures(
   // qui reste ouvert (`partieOuverteDesynchronisee`). Sans valeur par défaut : un appelant qui l'oublie ferait
   // dire « à régénérer » d'une écriture validée que rien ne réécrira plus.
   frontiere: string | null,
+  // Les pièces exemplaires d'une facture source (lib/facturesSources.ts, `exemplairesDesSources`) : leur écriture est sans
+  // objet (`ecrituresSansObjet`), et c'est là qu'elle se dit et se retire. La dire aussi « en attente de rapprochement »
+  // enverrait chercher dans Banque le paiement d'une pièce qui ne se règle plus — c'est la facture qui s'encaisse ; la dire
+  // « déséquilibrée » enverrait la régénérer. Sans valeur par défaut, comme les factures sources d'où elles se tirent.
+  exemplaires: ReadonlySet<string>,
 ): AnalyseEcritures {
   const piecesParGroupe = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
-    if (!e.piece_id) continue
+    if (!e.piece_id || exemplaires.has(e.piece_id)) continue
     piecesParGroupe.set(e.piece_id, [...(piecesParGroupe.get(e.piece_id) ?? []), e])
   }
   // Une pièce dont aucune ligne ne touche la banque ET qu'aucun paiement ne règle : en trésorerie, la

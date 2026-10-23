@@ -467,7 +467,8 @@ export function calculerCa3(
   remboursement: number,
 ): DeclarationCa3 {
   const impossibles = new Map(piecesTvaImpossible(donnees.pieces).map((a) => [a.piece.id, a.motif]))
-  const nonConverties = new Set(piecesDeviseNonConvertie(donnees.pieces).map((p) => p.id))
+  // L'exemplaire d'une facture source sort plus bas, avant d'être jugé : le dire non converti ne changerait rien.
+  const nonConverties = new Set(piecesDeviseNonConvertie(donnees.pieces, donnees.ventesFacturees.sources).map((p) => p.id))
 
   const cumul = {
     A1: 0, B5: 0, E2: 0, F8: 0,

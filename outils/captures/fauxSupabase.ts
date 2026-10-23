@@ -651,7 +651,8 @@ function ecrituresDe(s: SourcesDeValidation): Ligne[] {
     valide_le: null, journal_code: null, numero_ecriture: null, piece_ref: null, piece_date: null, compte_lib: null, comp_aux_num: null,
     comp_aux_lib: null, ...liens,
   })
-  const parPiece = piecesAComptabiliser(s.pieces as unknown as Piece[], categories as unknown as Categorie[], acquisitions)
+  // Les dossiers d9 et d10 n'ont pas basculé : aucune de leurs factures n'est source de sa vente (étape VF6a).
+  const parPiece = piecesAComptabiliser(s.pieces as unknown as Piece[], categories as unknown as Categorie[], acquisitions, new Set())
     .flatMap(({ piece: p, compte, immobilisation }) =>
       lignesPourPiece(s.dossier, p, { compte, immobilisation }, false, paiements.get(p.id) ?? [], TRESORERIE)
         .map((l) => ecriture(l, { piece_id: l.piece_id, ligne_bancaire_id: l.ligne_bancaire_id ?? null })))

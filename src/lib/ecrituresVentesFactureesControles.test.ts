@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
+import { SANS_FACTURE_SOURCE, SANS_EXEMPLAIRE } from '../test/ventesFacturees'
 import { ecriture } from '../test/revision'
 import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises } from './affectationBanque'
 import { mouvementsSurUnCompteDeBilanDesynchronises } from './compteDeBilan'
@@ -181,9 +182,9 @@ const DANS_LES_DEUX_MODELES = [
 describe('la preuve : aucun contrôle d’hier ne signale les lignes d’une vente facturée', () => {
   for (const modele of DANS_LES_DEUX_MODELES) {
     it(`${modele.mode} : ni sans objet, ni sans contrepartie, ni déséquilibrées, ni à régénérer, ni à générer`, () => {
-      expect(ecrituresSansObjet(LIGNES_DES_VENTES, [], [], new Map(), null, PLAN_PAR_DEFAUT)).toEqual([])
+      expect(ecrituresSansObjet(LIGNES_DES_VENTES, [], [], new Map(), null, PLAN_PAR_DEFAUT, SANS_FACTURE_SOURCE)).toEqual([])
       const paiements = paiementsDesPieces(MOUVEMENTS, [])
-      expect(analyserEcritures(LIGNES_DES_VENTES, [], true, paiements, modele, null)).toMatchObject({
+      expect(analyserEcritures(LIGNES_DES_VENTES, [], true, paiements, modele, null, SANS_EXEMPLAIRE)).toMatchObject({
         piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [],
       })
       expect(ecrituresAGenerer(D, [], LIGNES_DES_VENTES, true, paiements, modele, null)).toEqual({ pieces: [], lignes: [], dansUnExerciceValide: [] })

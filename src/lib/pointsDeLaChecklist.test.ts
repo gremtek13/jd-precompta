@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
-import type { DeclarationTva, EcritureBrouillon, InformationsDossier, LigneBancaire } from './types'
+import type { Categorie, DeclarationTva, EcritureBrouillon, InformationsDossier, LigneBancaire, Piece } from './types'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // Les points de la Vue d'ensemble, sortis de ChecklistTab (ligne 41, étape R3) : `ChecklistTab.test.tsx` garde ce que
@@ -14,7 +15,7 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
     natures: [], categories: [], ecritures: [], emprunts: [], ventilations: [], ventilationsPartielles: false, reglements: [],
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,
-    anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, ventesFacturees: null, ...o,
+    anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, ...o,
   }
 }
 
@@ -119,5 +120,77 @@ describe('pointsDeLaChecklist', () => {
     expect(r.pointsTravail.map((p) => p.id)).toContain('lignes-non-rapprochees')
     expect(r.pointsATraiter.every((p) => p.nb > 0)).toBe(true)
     expect(r.tousLesPointsATraiter.length).toBeGreaterThan(r.pointsATraiter.length)
+  })
+})
+
+// L'EXEMPLAIRE D'UNE FACTURE SOURCE (ligne 28.65, étape VF6a ; lib/facturesSources.ts) : sa facture compte la vente, et les
+// points qui jugent une pièce comme une pièce qui compte l'écartent — le même exemplaire, désigné à une facture qui n'est
+// pas source, se compte comme hier. L'écriture déjà passée sur lui, elle, devient sans objet. Données FICTIVES.
+describe('pointsDeLaChecklist : l’exemplaire d’une facture source (VF6a)', () => {
+  const piece = (o: Partial<Piece>): Piece => ({
+    id: 'x', dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: 'd1/x.pdf', nom_fichier: 'x.pdf', storage_hash: null,
+    date_piece: '2026-03-10', tiers: 'Client fictif', montant_ht: 100, montant_tva: 20, montant_ttc: 120, devise: 'EUR', montant_devise: null,
+    taux_change: null, conversion_source: null, categorie_id: 'c-vente', sous_dossier_id: null, type_piece: 'vente', statut: 'validee',
+    notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: 'f1', created_at: '2026-03-10T09:00:00Z',
+    updated_at: '2026-03-10T09:00:00Z', ...o,
+  })
+  const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
+    id: 'e', dossier_id: 'd1', piece_id: 'x', ligne_bancaire_id: null, date: '2026-03-10', compte: '706000', libelle: 'Client fictif',
+    montant: 100, sens: 'credit', statut: 'proposee', created_at: '2026-03-10T10:00:00Z', immobilisation_id: null, vehicule_id: null,
+    declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, valide_le: null, journal_code: null,
+    numero_ecriture: null, piece_ref: null, piece_date: null, compte_lib: null, comp_aux_num: null, comp_aux_lib: null, ...o,
+  })
+  const HONORAIRES: Categorie = {
+    id: 'c-vente', dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 1, compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  // Son écriture telle que la génération l'écrit en trésorerie, encaissée le 20 mars.
+  const ENCAISSEMENT = ligne({ id: 'm1', statut: 'rapprochee', piece_id: 'x', montant: 120, date: '2026-03-20' })
+  const ECRITURE = [
+    ecriture({ id: 'e1', date: '2026-03-20' }),
+    ecriture({ id: 'e2', date: '2026-03-20', compte: '445710', montant: 20 }),
+    ecriture({ id: 'e3', date: '2026-03-20', compte: '512000', montant: 120, sens: 'debit', ligne_bancaire_id: 'm1' }),
+  ]
+  const cas: [string, Partial<DonneesDeLaChecklist>, { source: number; autre: number }][] = [
+    ['montant-suspect', { piecesValidees: [piece({})], lignes: [ligne({ id: 'm9', montant: -50 })], categories: [HONORAIRES] }, { source: 0, autre: 1 }],
+    ['sans-categorie', { piecesValidees: [piece({ categorie_id: null })] }, { source: 0, autre: 1 }],
+    ['tva-impossible', { piecesValidees: [piece({ montant_tva: 50 })], categories: [HONORAIRES] }, { source: 0, autre: 1 }],
+    // Sur les deux piles, comme hier : à valider aussi.
+    ['tva-impossible', { piecesAValider: [piece({ statut: 'a_valider', montant_tva: 50 })] }, { source: 0, autre: 1 }],
+    ['devise-non-convertie', { piecesValidees: [piece({ devise: 'USD', montant_devise: 140, montant_ht: null, montant_tva: null, montant_ttc: null })] }, { source: 0, autre: 1 }],
+    ['devise-non-convertie', { piecesAValider: [piece({ statut: 'a_valider', devise: 'USD', montant_devise: 140, montant_ht: null, montant_tva: null, montant_ttc: null })] }, { source: 0, autre: 1 }],
+    ['sans-tva', { piecesValidees: [piece({ montant_tva: null, montant_ht: null })], categories: [HONORAIRES] }, { source: 0, autre: 1 }],
+    ['pieces-payees-en-partie', {
+      piecesValidees: [piece({ montant_ttc: 500, montant_ht: null, montant_tva: null })], categories: [HONORAIRES],
+      lignes: [ligne({ id: 'm1', statut: 'rapprochee', piece_id: 'x', montant: 50 })],
+    }, { source: 0, autre: 1 }],
+    // L'écriture déjà passée : sans objet pour l'exemplaire d'une facture source, juste pour celui d'une autre.
+    ['ecritures-sans-objet', { piecesValidees: [piece({})], categories: [HONORAIRES], lignes: [ENCAISSEMENT], ecritures: ECRITURE }, { source: 1, autre: 0 }],
+    // Sans sa banque, elle n'attend pas de rapprochement ; mal équilibrée, elle ne se régénère pas ; modifiée, non plus.
+    ['sans-contrepartie', { piecesValidees: [piece({})], categories: [HONORAIRES], ecritures: ECRITURE.slice(0, 2) }, { source: 0, autre: 1 }],
+    ['desequilibrees', {
+      piecesValidees: [piece({})], categories: [HONORAIRES], lignes: [ENCAISSEMENT],
+      ecritures: [...ECRITURE.slice(0, 2), { ...ECRITURE[2], montant: 90 }],
+    }, { source: 0, autre: 1 }],
+    ['desynchronisees', { piecesValidees: [piece({ montant_ttc: 150, montant_ht: 125, montant_tva: 25 })], categories: [HONORAIRES], lignes: [ENCAISSEMENT], ecritures: ECRITURE }, { source: 0, autre: 1 }],
+    // Le témoin : la pièce telle que son écriture l'a écrite est à jour — l'écriture est bien celle de la génération.
+    ['desynchronisees', { piecesValidees: [piece({})], categories: [HONORAIRES], lignes: [ENCAISSEMENT], ecritures: ECRITURE }, { source: 0, autre: 0 }],
+    ['desequilibrees', { piecesValidees: [piece({})], categories: [HONORAIRES], lignes: [ENCAISSEMENT], ecritures: ECRITURE }, { source: 0, autre: 0 }],
+  ]
+  const nb = (d: Partial<DonneesDeLaChecklist>, id: string, sources: ReadonlySet<string>) =>
+    pointsDeLaChecklist(donnees({ ...d, facturesSources: sources }), CONTEXTE).tousLesPointsATraiter.find((p) => p.id === id)?.nb
+
+  for (const [i, [id, d, attendu]] of cas.entries()) {
+    it(`${i + 1}. « ${id} » : l’exemplaire d’une facture source ${attendu.source ? 'y compte' : 'n’y compte pas'}, celui d’une autre ${attendu.autre ? 'y compte' : 'non'}`, () => {
+      expect(nb(d, id, new Set(['f1'])), 'facture source').toBe(attendu.source)
+      // La même pièce, désignée à une facture qui n'est pas source, ou un dossier sans facture source : comme hier.
+      expect(nb(d, id, new Set(['f2'])), 'facture qui n’est pas source').toBe(attendu.autre)
+      expect(nb(d, id, SANS_FACTURE_SOURCE), 'aucune facture source').toBe(attendu.autre)
+    })
+  }
+
+  it('n’écarte que l’exemplaire : une autre pièce du même défaut se compte toujours', () => {
+    const d = { piecesValidees: [piece({ categorie_id: null }), piece({ id: 'y', facture_id: null, categorie_id: null })] }
+    expect(nb(d, 'sans-categorie', new Set(['f1']))).toBe(1)
   })
 })

@@ -205,7 +205,8 @@ function poser(pieces: {
   vehicules?: unknown[]
   lettrages?: unknown[]
   declarations?: DeclarationTva[]
-  factures?: FacturePourJumelle[]
+  // Avec la source de leur vente (étape VF6a) : la Checklist la lit avec elles.
+  factures?: (FacturePourJumelle & { source_de_la_vente?: boolean })[]
   transmissions?: TransmissionLue[]
 }) {
   faux.parTable = {
@@ -2882,5 +2883,30 @@ describe('ChecklistTab — les ventes facturées d’un dossier qui a basculé (
     expect((await screen.findByText(NON_RAPPROCHEES)).textContent).toMatch(/^2 /)
     expect(screen.queryByText(RESERVES)).toBeNull()
     expect(screen.queryByText(SANS_MOUVEMENT)).toBeNull()
+  })
+})
+
+// L'EXEMPLAIRE D'UNE FACTURE SOURCE (ligne 28.65, étape VF6a) : la Vue d'ensemble lit la source des factures émises avec
+// elles, et l'exemplaire d'une facture source ne se compte pas parmi les pièces qui jugent une pièce comme une pièce qui
+// compte ; celui d'une facture qui n'est pas source, comme hier. Le calcul de chaque point est éprouvé à part
+// (lib/pointsDeLaChecklist.test.ts) ; ici, le CÂBLAGE de la lecture. Données FICTIVES.
+describe('ChecklistTab — l’exemplaire d’une facture source (VF6a)', () => {
+  const POINT = /pièce\(s\) validée\(s\) sans catégorie — invisibles en compta/
+  // Deux ventes validées sans catégorie : l'une désignée exemplaire de la facture F2026-0007, l'autre ordinaire.
+  const exemplaire = piece({
+    id: 'ex', type_piece: 'vente', statut: 'validee', date_piece: '2026-03-14', montant_ttc: 120, facture_id: 'f1', nom_fichier: 'F2026-0007.pdf',
+  })
+  const ordinaire = piece({ id: 'or', type_piece: 'vente', statut: 'validee', date_piece: '2026-03-20', montant_ttc: 60 })
+
+  it('ne compte pas l’exemplaire d’une facture source parmi les pièces sans catégorie', async () => {
+    poser({ validees: [exemplaire, ordinaire], factures: [{ ...factureEmise({ superpdp_invoice_id: null }), source_de_la_vente: true }] })
+    monter()
+    expect((await screen.findByText(POINT)).textContent).toMatch(/^1 /)
+  })
+
+  it('compte celui d’une facture qui n’est pas source, comme hier', async () => {
+    poser({ validees: [exemplaire, ordinaire], factures: [{ ...factureEmise({ superpdp_invoice_id: null }), source_de_la_vente: false }] })
+    monter()
+    expect((await screen.findByText(POINT)).textContent).toMatch(/^2 /)
   })
 })

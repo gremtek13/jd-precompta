@@ -363,6 +363,38 @@ describe('RevisionTab — les soldes, par cycle', () => {
   })
 })
 
+// L'EXEMPLAIRE D'UNE FACTURE SOURCE (ligne 28.65, étape VF6a) : les points de la Vue d'ensemble que la révision range dans
+// ses cycles l'écartent comme la Vue d'ensemble — la lecture est la même. Données FICTIVES.
+describe('RevisionTab — l’exemplaire d’une facture source', () => {
+  const POINT = '1 pièce(s) validée(s) sans catégorie — invisibles en compta'
+  const facture = (source: boolean) => ({
+    id: 'f1', dossier_id: DOSSIER, statut: 'validee', type: 'facture', numero: 'F2025-0003', date_emission: '2025-05-02',
+    emetteur_siret: '12345678900012', superpdp_invoice_id: null, source_de_la_vente: source,
+  })
+  const exemplaire = piece({
+    id: 'ex', type_piece: 'vente', nom_fichier: 'F2025-0003.pdf', date_piece: '2025-05-02', montant_ttc: 120, facture_id: 'f1',
+    created_at: '2025-05-03T09:00:00Z', updated_at: '2025-05-03T09:00:00Z',
+  })
+
+  it('ne range pas l’exemplaire sans catégorie d’une facture source parmi les pièces sans catégorie du cycle', async () => {
+    dossier2025()
+    faux.tables.pieces = [exemplaire]
+    faux.tables.factures_emises = [facture(true)]
+    rendre()
+    await screen.findByRole('button', { name: 'Ouvrir le compte 512000' })
+    expect(within(cycle('Dépenses')).queryByText(POINT)).toBeNull()
+  })
+
+  it('range celui d’une facture qui n’est pas source, comme hier', async () => {
+    dossier2025()
+    faux.tables.pieces = [exemplaire]
+    faux.tables.factures_emises = [facture(false)]
+    rendre()
+    await screen.findByRole('button', { name: 'Ouvrir le compte 512000' })
+    expect(within(cycle('Dépenses')).getByText(POINT)).toBeDefined()
+  })
+})
+
 describe('RevisionTab — décider d’un solde', () => {
   it('la preuve se dit — ce qu’elle établit et n’établit pas —, et les refus se lisent avant le clic, boutons grisés', async () => {
     dossier2025()

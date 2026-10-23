@@ -14,7 +14,7 @@ import { analyserEcritures } from './ecritures'
 import type { ModeleComptable } from './engagement'
 import type { ANouveau, Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
-import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
+import { SANS_ECRITURE_DE_VENTE, SANS_EXEMPLAIRE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // Le lettrage d'un fichier (lib/lettrage.ts) : vide, sauf dans les tests qui le calculent comme l'écran.
@@ -101,7 +101,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est invisible aux trois contrôles de analyserEcritures', () => {
     const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } =
-      analyserEcritures([orpheline], [], true, new Map(), TRESORERIE, null)
+      analyserEcritures([orpheline], [], true, new Map(), TRESORERIE, null, SANS_EXEMPLAIRE)
     expect(nbSansContrepartie).toBe(0)
     expect(groupesDesequilibres).toEqual([])
     expect(piecesDesynchronisees).toEqual([])
