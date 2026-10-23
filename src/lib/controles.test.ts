@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationSansJustificatif, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementRapprocheSansObjet, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
 import { aujourdHuiSql, ajouterJours, dateLocaleDe } from './format'
 import type { Categorie, Immobilisation, LigneBancaire, Piece } from './types'
@@ -104,23 +105,23 @@ describe('piecesValideesSansCategorie', () => {
     // Le cas que ni categoriesSansCompte ni categoriesSansPoste ne peuvent voir : ils partent d'une
     // catégorie, et ici il n'y en a pas. La pièce est pourtant aussi stérile — ni écriture, ni 2035.
     const orpheline = piece({ id: 'orpheline', categorie_id: null })
-    expect(piecesValideesSansCategorie([orpheline, piece({ id: 'ok' })], new Set()).map((p) => p.id)).toEqual(['orpheline'])
+    expect(piecesValideesSansCategorie([orpheline, piece({ id: 'ok' })], new Set(), SANS_FACTURE_SOURCE).map((p) => p.id)).toEqual(['orpheline'])
   })
 
   it('ne signale pas une pièce encore à valider', () => {
     // C'est la corbeille d'arrivée : une pièce qui attend son arbitrage n'a pas à avoir de catégorie,
     // et les signaler noierait le vrai signal — un dossier réel en portait 30 face à 10 validées.
-    expect(piecesValideesSansCategorie([piece({ statut: 'a_valider', categorie_id: null })], new Set())).toEqual([])
+    expect(piecesValideesSansCategorie([piece({ statut: 'a_valider', categorie_id: null })], new Set(), SANS_FACTURE_SOURCE)).toEqual([])
   })
 
   it('ne signale rien quand toutes les pièces validées sont catégorisées', () => {
-    expect(piecesValideesSansCategorie([piece({}), piece({ id: 'b' })], new Set())).toEqual([])
+    expect(piecesValideesSansCategorie([piece({}), piece({ id: 'b' })], new Set(), SANS_FACTURE_SOURCE)).toEqual([])
   })
 
   it('ne signale pas la facture d’un bien : elle s’écrit sur le compte de sa nature et s’amortit', () => {
     // « Elle ne compte nulle part » y serait faux deux fois : l'acquisition l'écrit, la dotation la déduit.
     const facture = piece({ id: 'immo', categorie_id: null })
-    expect(piecesValideesSansCategorie([facture, piece({ id: 'orpheline', categorie_id: null })], new Set(['immo'])).map((p) => p.id))
+    expect(piecesValideesSansCategorie([facture, piece({ id: 'orpheline', categorie_id: null })], new Set(['immo']), SANS_FACTURE_SOURCE).map((p) => p.id))
       .toEqual(['orpheline'])
   })
 
@@ -129,7 +130,15 @@ describe('piecesValideesSansCategorie', () => {
     // Constaté en production, l'une des onze était un avoir à −214,21 €.
     const recette = piece({ id: 'recette', type_piece: 'vente', categorie_id: null })
     const avoir = piece({ id: 'avoir', montant_ttc: -214.21, categorie_id: null })
-    expect(piecesValideesSansCategorie([recette, avoir], new Set()).map((p) => p.id)).toEqual(['recette', 'avoir'])
+    expect(piecesValideesSansCategorie([recette, avoir], new Set(), SANS_FACTURE_SOURCE).map((p) => p.id)).toEqual(['recette', 'avoir'])
+  })
+
+  // L'EXEMPLAIRE D'UNE FACTURE SOURCE (étape VF6a) : sa facture compte la vente, une catégorie ne le ferait pas compter.
+  it('ne signale pas l’exemplaire d’une facture source ; celui d’une facture qui n’est pas source, si', () => {
+    const exemplaire = piece({ id: 'ex', type_piece: 'vente', categorie_id: null, facture_id: 'f-source' })
+    const autre = piece({ id: 'autre', type_piece: 'vente', categorie_id: null, facture_id: 'f-autre' })
+    expect(piecesValideesSansCategorie([exemplaire, autre], new Set(), new Set(['f-source'])).map((p) => p.id)).toEqual(['autre'])
+    expect(piecesValideesSansCategorie([exemplaire, autre], new Set(), SANS_FACTURE_SOURCE).map((p) => p.id)).toEqual(['ex', 'autre'])
   })
 })
 
@@ -249,17 +258,26 @@ describe('piecesDeviseNonConvertie', () => {
     // des dollars : sans ce contrôle, l'absence ne se verrait nulle part.
     const sansTaux = piece({ id: 'openai', devise: 'USD', montant_devise: 24, taux_change: null,
       montant_ht: null, montant_tva: null, montant_ttc: null })
-    expect(piecesDeviseNonConvertie([sansTaux]).map((p) => p.id)).toEqual(['openai'])
+    expect(piecesDeviseNonConvertie([sansTaux], SANS_FACTURE_SOURCE).map((p) => p.id)).toEqual(['openai'])
   })
 
   it('laisse tranquille une pièce convertie', () => {
     const convertie = piece({ devise: 'USD', montant_devise: 24, taux_change: 1.1698,
       montant_ht: 17.10, montant_tva: 3.42, montant_ttc: 20.52 })
-    expect(piecesDeviseNonConvertie([convertie])).toEqual([])
+    expect(piecesDeviseNonConvertie([convertie], SANS_FACTURE_SOURCE)).toEqual([])
   })
 
   it('ne dit rien des pièces en euros, qui n’ont pas de taux par construction', () => {
-    expect(piecesDeviseNonConvertie([piece({}), piece({ id: 'b', taux_change: null })])).toEqual([])
+    expect(piecesDeviseNonConvertie([piece({}), piece({ id: 'b', taux_change: null })], SANS_FACTURE_SOURCE)).toEqual([])
+  })
+
+  // L'EXEMPLAIRE D'UNE FACTURE SOURCE (étape VF6a) : ses montants ne comptent nulle part — sa facture compte la vente.
+  it('ne signale pas l’exemplaire d’une facture source ; celui d’une facture qui n’est pas source, si', () => {
+    const enDevise = { devise: 'USD', montant_devise: 24, taux_change: null, montant_ht: null, montant_tva: null, montant_ttc: null }
+    const exemplaire = piece({ id: 'ex', type_piece: 'vente', facture_id: 'f-source', ...enDevise })
+    const autre = piece({ id: 'autre', type_piece: 'vente', facture_id: 'f-autre', ...enDevise })
+    expect(piecesDeviseNonConvertie([exemplaire, autre], new Set(['f-source'])).map((p) => p.id)).toEqual(['autre'])
+    expect(piecesDeviseNonConvertie([exemplaire, autre], SANS_FACTURE_SOURCE).map((p) => p.id)).toEqual(['ex', 'autre'])
   })
 })
 

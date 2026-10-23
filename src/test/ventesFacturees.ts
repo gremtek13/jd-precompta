@@ -3,6 +3,7 @@ import type { EncaissementVendu, FactureVendue, PartVendue, VentesFacturees } fr
 import type { RecettesFacturees } from '../lib/estimation'
 import type { EcritureVenteFacturee } from '../lib/ecrituresVentesFacturees'
 import type { JustificatifsDesVentes } from '../lib/pisteAudit'
+import type { FacturesSources } from '../lib/facturesSources'
 
 // LES VENTES FACTURÉES DES TESTS (ligne 28.6, chantier EC-Q3, étape VF3b1). Les moteurs reçoivent les ventes facturées en
 // paramètre OBLIGATOIRE, sans valeur par défaut (lib/declaration2035.ts) : le code de production n'en fabrique aucune, et
@@ -23,6 +24,15 @@ export const SANS_ECRITURE_DE_VENTE: readonly EcritureVenteFacturee[] = []
 export const SANS_VENTE_FACTUREE: JustificatifsDesVentes = {
   ecritures: [], factures: [], encaissements: [], exemplaires: [], transmissions: [],
 }
+
+/**
+ * Aucune facture source (étape VF6a, lib/facturesSources.ts) : ce que le brouillon, ses contrôles, la Checklist et les
+ * préalables de la validation reçoivent d'un jeu d'essai qui ne parle pas de l'exemplaire d'une facture source.
+ */
+export const SANS_FACTURE_SOURCE: FacturesSources = new Set<string>()
+
+/** Aucune pièce exemplaire d'une facture source (`exemplairesDesSources`), pour `analyserEcritures`. */
+export const SANS_EXEMPLAIRE: ReadonlySet<string> = new Set<string>()
 
 /** Aucune facture source : ni part, ni exigibilité, ni document, ni écart, ni excédent. */
 export function ventesFactureesVides(dossierId: string): VentesFacturees {

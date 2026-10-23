@@ -49,6 +49,12 @@ import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVen
 import { rattachementDesVentes, type VentesFactureesDesExports } from '../../lib/ventesFactureesDesExports'
 import { lireLesJustificatifsDesVentes } from '../../lib/justificatifsDesVentesLecture'
 import VentesFactureesEcritures from './VentesFactureesEcritures'
+import { exemplairesDesSources, facturesSourcesDe, type FacturesSources } from '../../lib/facturesSources'
+
+// Aucune facture source : celles d'un dossier qui n'a pas basculé (étape VF6a). La base refuse qu'une facture y soit source
+// de sa vente (`fixer_source_de_la_vente`), et qu'un dossier qui en porte une revienne en arrière
+// (`garder_ventes_par_les_factures`) : le vide est ici un fait, pas un défaut.
+const AUCUNE_FACTURE_SOURCE: FacturesSources = new Set()
 
 // Aucune vente facturée : un dossier qui n'a pas basculé (la base refuse d'en écrire), ou dont les ventes ne sont pas lues —
 // alors le FEC et la piste d'audit ne s'exportent pas, et le lettrage du journal ne porte que celui des pièces.
@@ -58,6 +64,7 @@ const SANS_VENTE_FACTUREE: VentesFactureesDesExports = { ecritures: [], factures
 // retirer une écriture est un arbitrage comptable, et les trois derniers motifs se réparent en
 // AMONT (sur la pièce), après quoi « Régénérer » reprend la bonne écriture.
 const LIBELLE_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
+  exemplaire_d_une_facture_source: 'Désignée exemplaire d’une facture source de sa vente : la facture compte la vente',
   bien_sans_nature: "Enregistrée en immobilisation, sans nature : son compte d'immobilisation n'est pas connu",
   bien_repris: "Bien acquis avant l'ouverture du dossier : la balance reprise porte déjà sa valeur",
   sans_categorie: 'La catégorie a été retirée',
@@ -66,6 +73,7 @@ const LIBELLE_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
 }
 
 const ACTION_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
+  exemplaire_d_une_facture_source: "Le FEC, la balance et le bilan comptent la vente deux fois : par cette écriture, et par celles de sa facture (section « Ventes facturées »). « Régénérer » n'y réécrirait rien — la pièce ne s'écrit plus : retirer l'écriture ci-contre.",
   bien_sans_nature: "Le FEC et la balance la portent en charge, alors que le bien s'amortit. Choisir sa nature dans l'onglet Immobilisations, puis régénérer : l'écriture passe sur le compte du bien. Ou retirer l'écriture ci-contre — ou l'immobilisation, si c'en est une par erreur.",
   bien_repris: "Le FEC et la balance le comptent une seconde fois — ou en charge, si l'écriture précède son inscription au registre. Retirer l'écriture ci-contre : les à-nouveaux portent son acquisition, et ses dotations s'écrivent à partir de l'ouverture.",
   sans_categorie: "Redonner une catégorie à la pièce depuis Justificatifs, puis régénérer l'écriture.",
@@ -383,7 +391,18 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Checklist (voir lib/ecritures.ts). La facture d'un bien immobilisé s'écrit sur le compte de sa
   // NATURE, pas sur sa catégorie : c'est un actif qui s'amortit, pas une charge courante, et la passer
   // en charge compterait la dépense deux fois. Un bien sans nature ne s'écrit pas.
-  const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, acquisitions)
+  //
+  // Ni l'exemplaire d'une FACTURE SOURCE (étape VF6a ; lib/facturesSources.ts) : sa vente s'écrit par sa facture. Un dossier
+  // qui a basculé lit ses factures sources avec ses ventes facturées ; pas encore revenues pour CE dossier, ou lues en
+  // partie, elles sont NULLES — les contrôles se lisent alors comme hier, sans écarter aucun exemplaire, et la génération et
+  // la régénération attendent : elles écriraient la vente d'un exemplaire à côté de celle de sa facture.
+  const lectureDesSources = lectureVentes !== null && lectureVentes.dossierId === dossierId ? lectureVentes : null
+  const facturesSources: FacturesSources | null = !ventesParLesFactures ? AUCUNE_FACTURE_SOURCE
+    : lectureDesSources?.etat === 'lue' ? facturesSourcesDe(lectureDesSources.sources.factures) : null
+  const sourcesNonLues = facturesSources !== null ? null
+    : lectureDesSources?.etat === 'incomplete' ? lectureDesSources.motif : 'pas encore lues'
+  const sourcesDesControles = facturesSources ?? AUCUNE_FACTURE_SOURCE
+  const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, acquisitions, sourcesDesControles)
   // Les paiements de chaque pièce, parts des virements groupés comprises : ils datent sa charge et portent
   // ses contreparties banque (lib/rattachement.ts).
   const paiements = paiementsDesPieces(lignesBancaires, reglements)
@@ -407,7 +426,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // moitié feraient pire : une charge pour un bien qui s'amortit déjà. `brouillonIncomplet` couvre
   // les cinq lectures dont dépend la génération, les mêmes que celles des deux exports.
   async function genererEcritures() {
-    if (enAttente.length === 0 || brouillonIncomplet !== null || biensSansOuverture || generationEnCours.current || changementModeleEnCours.current) return
+    if (enAttente.length === 0 || brouillonIncomplet !== null || sourcesNonLues !== null || biensSansOuverture || generationEnCours.current || changementModeleEnCours.current) return
     generationEnCours.current = true
     setGenerating(true)
     setError(null)
@@ -470,14 +489,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
   // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
   // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
-  const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere)
+  const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplairesDesSources(piecesValidees, sourcesDesControles))
   // En engagement, une facture qu'un lettrage fait à la main solde avec son avoir n'attend plus de règlement : la compter
   // « sans règlement rapproché » enverrait chercher un paiement qui n'existera jamais (lib/lettrage.ts).
   const lettreesALaMain = piecesLettreesALaMain(etatsDesLettragesManuels(ecritures, piecesValidees, lettragesManuels, modele.mode))
   const nbSansContrepartie = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
   // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
-  const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, acquisitions, frontiere, modele.plan)
+  const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, acquisitions, frontiere, modele.plan, sourcesDesControles)
 
   // LES ÉTATS DES VENTES FACTURÉES (étape VF4c1 ; lib/ecrituresVentesFactureesEcran.ts), sur des lectures toutes revenues
   // EN ENTIER, pour le dossier ouvert : les ventes facturées, le brouillon et ce qu'il faut pour le juger. Sinon rien ne se
@@ -681,7 +700,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // pièce immobilisée après coup.
   async function regenererEcriture(piece: Piece) {
     const cible = aComptabiliser.find((a) => a.piece.id === piece.id)
-    if (!cible || brouillonIncomplet !== null || regenerationsEnCours.current.has(piece.id)) return
+    if (!cible || brouillonIncomplet !== null || sourcesNonLues !== null || regenerationsEnCours.current.has(piece.id)) return
     // Le bien d'une ouverture lue en partie : on ne sait pas s'il est repris (voir `biensSansOuverture`).
     if (cible.immobilisation && aNouveauxIncomplets !== null) return
     regenerationsEnCours.current.add(piece.id)
@@ -911,14 +930,41 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // qu'elles forment s'équilibre seule — en trésorerie chaque paiement y porte sa contrepartie, en engagement la
   // facture porte sa dette. Seule la part d'après la frontière part.
   //
+  // Ce que retirer l'écriture d'un exemplaire de facture source emporte, et ce qu'il laisse : la confirmation NOMME la pièce
+  // et sa facture. Son rapprochement bancaire, s'il en a un, ne bouge pas — et le mouvement n'a plus d'écriture : il se
+  // défait dans Banque, et le mouvement se classe par les encaissements de la facture (G4, étape VF6b, refusera ce
+  // rapprochement en base).
+  function confirmationDuRetraitDeLExemplaire(piece: Piece, partFigee: boolean): string {
+    const facture = lectureDesSources?.etat === 'lue'
+      ? lectureDesSources.sources.factures.find((f) => f.id === piece.facture_id) ?? null : null
+    const nomDeLaFacture = facture ? `la facture ${facture.numero ?? 'sans numéro'}` : 'sa facture'
+    const rapprochee = (paiements.get(piece.id) ?? []).length > 0
+    return `Retirer du brouillon l'écriture de « ${piece.tiers ?? piece.nom_fichier} » ? `
+      + `Cette pièce est l'exemplaire de ${nomDeLaFacture}, source de sa vente : la vente s'écrit par la facture et ses `
+      + 'encaissements, et cette écriture la compte une seconde fois. '
+      + (modele.mode === 'engagement'
+        ? 'Son produit, sa TVA, sa créance sur le client et ses règlements partent ensemble. '
+        : 'Son produit, sa TVA et sa contrepartie banque partent ensemble. ')
+      + (partFigee && frontiere ? `Sa part datée d’un exercice validé, au plus tard le ${formatDate(frontiere)}, reste : elle ne se retire plus. ` : '')
+      + (rapprochee
+        ? 'La pièce et sa désignation ne bougent pas, son rapprochement bancaire non plus : le mouvement n’aura plus '
+          + 'd’écriture. Annule ce rapprochement dans Banque, puis classe le mouvement par les encaissements de la facture.'
+        : 'La pièce et sa désignation ne bougent pas : la vente reste comptée par sa facture.')
+  }
+
+  // ET L'EXEMPLAIRE D'UNE FACTURE SOURCE (étape VF6a) : sa vente s'écrit par sa facture, et rien ne doit s'écrire de la
+  // pièce — retirer est le seul geste juste, comme pour un bien repris. Toutes ses lignes partent, banque comprise ; son
+  // rapprochement, s'il en a un, reste, et la confirmation dit ce qu'il laisse.
+  //
   // Pas de verrou `useRef` ici, contrairement aux gestes qui DUPLIQUENT : une suppression est
   // idempotente, deux clics retirent les mêmes lignes. `retrait` n'est qu'un état d'affichage.
   async function retirerEcriture({ piece, motif }: EcritureSansObjet) {
     // Une part datée d'un exercice validé ne se retire plus (lib/validationExercice.ts) : la confirmation le dit, et
     // seule la part ouverte part.
     const partFigee = ecritures.some((e) => e.piece_id === piece.id && estFigee(e.date, frontiere))
-    if (!window.confirm(
-      `Retirer du brouillon l'écriture de « ${piece.tiers ?? piece.nom_fichier} » ? `
+    if (!window.confirm(motif === 'exemplaire_d_une_facture_source'
+      ? confirmationDuRetraitDeLExemplaire(piece, partFigee)
+      : `Retirer du brouillon l'écriture de « ${piece.tiers ?? piece.nom_fichier} » ? `
       + (modele.mode === 'engagement'
         ? 'Sa ligne de charge, sa TVA, sa dette envers le fournisseur et ses règlements partent ensemble. '
         : 'Sa ligne de charge, sa TVA et sa contrepartie banque partent ensemble. ')
@@ -944,7 +990,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   }
 
   const piecesSansTva = calculerPiecesSansTva(piecesValidees, assujettiTva)
-  const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees)
+  const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees, sourcesDesControles)
   // Cet onglet ne charge que les pièces VALIDÉES : ce sont donc les TVA fausses déjà figées dans une
   // écriture et parties en déduction. Les autres se voient en amont, dans Justificatifs, là où on
   // peut encore les corriger avant de valider.
@@ -1065,10 +1111,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                     <td data-libelle="Ce qu'il faut faire" className="muted">
                       <div>
                         {ACTION_MOTIF_SANS_OBJET[o.motif]}
-                        {/* Le bouton n'existe QUE pour la facture d'un bien. Les trois autres motifs se
-                            réparent en amont puis se régénèrent : l'écriture doit y revenir, pas
-                            disparaître. */}
-                        {(o.motif === 'bien_sans_nature' || o.motif === 'bien_repris') && (
+                        {/* Le bouton n'existe QUE pour la facture d'un bien et l'exemplaire d'une facture source (VF6a) :
+                            rien ne doit s'y écrire. Les trois autres motifs se réparent en amont puis se régénèrent :
+                            l'écriture doit y revenir, pas disparaître. */}
+                        {(o.motif === 'bien_sans_nature' || o.motif === 'bien_repris' || o.motif === 'exemplaire_d_une_facture_source') && (
                           <div style={{ marginTop: 8 }}>
                             <button
                               className="btn btn-danger btn-sm"
@@ -1195,9 +1241,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                     <td className="td-boutons">
                       <button
                         className="btn btn-outline btn-sm"
-                        disabled={regenerating === p.id || brouillonIncomplet !== null || (aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id))}
+                        disabled={regenerating === p.id || brouillonIncomplet !== null || sourcesNonLues !== null || (aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id))}
                         title={brouillonIncomplet
                           ? `Lecture incomplète (${brouillonIncomplet}) — régénérer maintenant pourrait mal dater l’écriture, ou retirer des règlements.`
+                          : sourcesNonLues
+                          ? `Factures sources de leurs ventes non lues (${sourcesNonLues}) — régénérer maintenant pourrait réécrire la vente d’un exemplaire que sa facture compte déjà.`
                           : aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id)
                           ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — on ne sait pas si la balance reprise porte déjà ce bien.`
                           : undefined}
@@ -1639,10 +1687,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </p>
         <button
           className="btn btn-primary btn-sm"
-          disabled={generating || changementModele || enAttente.length === 0 || brouillonIncomplet !== null || biensSansOuverture}
+          disabled={generating || changementModele || enAttente.length === 0 || brouillonIncomplet !== null || sourcesNonLues !== null || biensSansOuverture}
           title={
             brouillonIncomplet
               ? `Lecture incomplète (${brouillonIncomplet}) — générer maintenant pourrait doubler des écritures déjà passées.`
+              : sourcesNonLues
+              ? `Factures sources de leurs ventes non lues (${sourcesNonLues}) — générer maintenant pourrait écrire la vente d’un exemplaire à côté de celle de sa facture.`
               : biensSansOuverture
               ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — on ne sait pas quels biens la balance reprise porte déjà : leur acquisition s’écrirait une seconde fois.`
               : undefined

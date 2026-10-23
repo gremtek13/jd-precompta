@@ -32,7 +32,7 @@ import type {
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises } from '../lib/ventilationBanque'
 import { compteDuDirigeant, ecritureDuVirementPersonnel, virementsPersonnelsAEcrire } from '../lib/virementPersonnel'
 import { NON_VALIDEE } from './ecritures'
-import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from './ventesFacturees'
+import { encaissementVendu, factureVendue, ligneVendue, SANS_EXEMPLAIRE, SANS_FACTURE_SOURCE, ventesFactureesVides } from './ventesFacturees'
 import { ecrituresDesVentesFacturees, type MouvementDesEncaissements } from '../lib/ecrituresVentesFacturees'
 import { ventesFacturees } from '../lib/ventesFacturees'
 
@@ -217,12 +217,12 @@ const CAS_DES_PIECES: CasDuPlan[] = [
     roles: [],
     composer: (plan) => (['tresorerie', 'engagement'] as const).map((mode) => {
       const m = modele(plan, mode, mode === 'tresorerie' ? 'exploitant' : 'associe')
-      return analyserEcritures(brouillonGenere(m), A_COMPTABILISER, true, PAIEMENTS, m, null)
+      return analyserEcritures(brouillonGenere(m), A_COMPTABILISER, true, PAIEMENTS, m, null, SANS_EXEMPLAIRE)
     }),
     temoin: (plan) => (['tresorerie', 'engagement'] as const).map((mode) => {
       const m = modele(plan, mode, mode === 'tresorerie' ? 'exploitant' : 'associe')
       // Le même brouillon, sa banque ôtée : l'analyse le dit déséquilibré.
-      return analyserEcritures(brouillonGenere(m).filter((e) => e.compte !== plan.banque), A_COMPTABILISER, true, PAIEMENTS, m, null)
+      return analyserEcritures(brouillonGenere(m).filter((e) => e.compte !== plan.banque), A_COMPTABILISER, true, PAIEMENTS, m, null, SANS_EXEMPLAIRE)
     }),
   },
   {
@@ -231,14 +231,29 @@ const CAS_DES_PIECES: CasDuPlan[] = [
     composer: (plan) => {
       const m = modele(plan, 'engagement', 'associe')
       const sansCategorie = { ...ACHAT, categorie_id: null }
-      return ecrituresSansObjet(brouillonGenere(m), [sansCategorie, VENTE], CATEGORIES, new Map(), null, plan)
+      return ecrituresSansObjet(brouillonGenere(m), [sansCategorie, VENTE], CATEGORIES, new Map(), null, plan, SANS_FACTURE_SOURCE)
     },
     // Lu sous un autre plan que celui qui l'a composé, le même brouillon compterait sa banque et son tiers en trop.
     temoin: (plan) => {
       const m = modele(plan, 'engagement', 'associe')
       const sansCategorie = { ...ACHAT, categorie_id: null }
-      return ecrituresSansObjet(brouillonGenere(m), [sansCategorie, VENTE], CATEGORIES, new Map(), null, PLAN_DECALE)
+      return ecrituresSansObjet(brouillonGenere(m), [sansCategorie, VENTE], CATEGORIES, new Map(), null, PLAN_DECALE, SANS_FACTURE_SOURCE)
     },
+  },
+  {
+    // L'EXEMPLAIRE D'UNE FACTURE SOURCE (étape VF6a) : toutes ses lignes ouvertes partent, et son montant — ce que le
+    // produit compte en trop — écarte la banque et le tiers du plan, dans les deux modèles.
+    nom: 'ecrituresSansObjet — l’exemplaire d’une facture source : ses lignes, sans la banque ni le tiers du plan dans son montant',
+    roles: [],
+    composer: (plan) => (['tresorerie', 'engagement'] as const).map((mode) => {
+      const m = modele(plan, mode, mode === 'tresorerie' ? 'exploitant' : 'associe')
+      return ecrituresSansObjet(brouillonGenere(m), [ACHAT, { ...VENTE, facture_id: 'f-source' }], CATEGORIES, new Map(), null, plan, new Set(['f-source']))
+    }),
+    // Lu sous un autre plan que celui qui l'a composé, le même brouillon compterait sa banque et son tiers dans le montant.
+    temoin: (plan) => (['tresorerie', 'engagement'] as const).map((mode) => {
+      const m = modele(plan, mode, mode === 'tresorerie' ? 'exploitant' : 'associe')
+      return ecrituresSansObjet(brouillonGenere(m), [ACHAT, { ...VENTE, facture_id: 'f-source' }], CATEGORIES, new Map(), null, PLAN_DECALE, new Set(['f-source']))
+    }),
   },
 ]
 

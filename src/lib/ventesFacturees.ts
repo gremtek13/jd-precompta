@@ -1,5 +1,6 @@
 import { montantsDuDocument } from './factureCii'
 import { centimesExacts, type LigneDeFacture } from './encaissementsFactures'
+import { exemplaireDUneSource } from './facturesSources'
 import type { EncaissementFacture, EncaissementFactureTaux, FactureEmise, ModeComptable, Piece } from './types'
 
 // LES VENTES FACTURÉES, TELLES QUE LES MOTEURS LES COMPTERONT (ligne 28.6, chantier EC-Q3, étape VF3a ; décision du cabinet
@@ -480,7 +481,8 @@ export function ventesFacturees(sources: SourcesVentesFacturees): VentesFacturee
 export function exemplaireDUneFactureSource(
   piece: Pick<Piece, 'facture_id'>, ventes: Pick<VentesFacturees, 'sources'>,
 ): boolean {
-  return piece.facture_id != null && ventes.sources.has(piece.facture_id)
+  // La règle vit une fois (lib/facturesSources.ts) : le brouillon et les préalables de la validation la lisent aussi (VF6a).
+  return exemplaireDUneSource(piece, ventes.sources)
 }
 
 /**

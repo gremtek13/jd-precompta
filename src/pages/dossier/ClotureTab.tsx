@@ -391,9 +391,6 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const categoriesSansPosteDesSources = calculerCategoriesSansPoste(
     categories, piecesValidees, [...lignesBancaires, ...ventilations], pieceIdsImmobilisees,
   )
-  // Même famille que « Postes manquants », un cran plus tôt dans la chaîne : sans catégorie du tout,
-  // le montant n'atteint même pas la question du poste (voir lib/controles.ts).
-  const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees)
 
   // Valeur affichée tant que le cabinet n'a rien tapé : la suggestion connue pour ce code de
   // catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
@@ -436,6 +433,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // La lecture des ventes facturées de CE dossier, ou rien ; lue entière, ses ventes, sinon nulles et le motif.
   const lectureVentesDuDossier = lectureDuDossier(lectureVentes, dossierId)
   const ventesLues = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
+  // Même famille que « Postes manquants », un cran plus tôt dans la chaîne : sans catégorie du tout,
+  // le montant n'atteint même pas la question du poste (voir lib/controles.ts). Jamais l'exemplaire d'une facture source
+  // (étape VF6a) : sa facture compte la vente, et une catégorie ne le ferait pas compter. Sur des factures sources lues en
+  // entier seulement — sans elles, la 2035 ne se calcule pas, et la carte qui dit ce qui lui manque se tait avec elle.
+  const piecesSansCategorie = ventesLues === null ? [] : piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees, ventesLues.sources)
   // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (VF4C3-Q1) : ce que la 2035 reçoit des écritures des ventes facturées, sur les
   // lectures de CE dossier (lib/ecrituresVentesFactureesEcran.ts, `ecrituresDesVentesPourLa2035`). Un dossier basculé dont
   // les sources ne sont pas revenues entières n'a pas de 2035, comme sans ses ventes facturées.
@@ -626,7 +628,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // sinon ce qui l'empêche, et ce que `valider_exercice` recevrait — la numérotation même du FEC et, en trésorerie,
   // la 2035 telle qu'elle est affichée. L'année en cours est lue À PARIS, comme la base la lit. Une lecture
   // partielle de l'une des collections lues ici suspend la validation, en le disant.
+  // Les ventes facturées lues en partie en sont une : sans leurs factures sources, un exemplaire serait jugé comme une pièce
+  // qui compte (étape VF6a) — leur motif se dit ; pas encore revenues, la validation attend (`facturesSources` nulles).
   const motifValidation = lectureIncomplete ?? ecrituresIncompletes ?? naturesIncompletes ?? empruntsIncomplets ?? validationIncomplete
+    ?? (lectureVentesDuDossier?.etat === 'incomplete' ? `les ventes facturées : ${lectureVentesDuDossier.motif}` : null)
   const entete = { nom: dossier?.nom ?? null, activite: dossier?.libelle_naf ?? null, siret: dossier?.siret ?? null }
   const validationDe = (annee: number, formulaire?: { declaration: Declaration2035; valeurs: Map<string, number> }) => {
     const valide = exercicesValides.find((e) => e.annee === annee) ?? null
@@ -641,6 +646,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
       lignes: toutesLesLignes, ventilations, reglements, cotisations, vehicules, emprunts, aNouveaux, soldesReportes, declarationsTva,
       periodiciteTva, relevesIncoherents, doublonsTexte, facturesEmises, transmissions,
+      // Les factures sources lues en entier pour CE dossier, ou rien : la validation se suspend alors (étape VF6a).
+      facturesSources: ventesLues?.sources ?? null,
       declaration: formulaire?.declaration ?? null,
       concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
     })

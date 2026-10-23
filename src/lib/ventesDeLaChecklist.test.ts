@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import type { LigneDeFacture } from './encaissementsFactures'
 import type { EncaissementDuMouvementLu, FactureDesGestes, LectureDesVentesDuReleve, SourcesDesGestes } from './mouvementsDesVentes'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
@@ -181,7 +182,7 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
     natures: [], categories: [], ecritures: [], emprunts: [], ventilations: [], ventilationsPartielles: false, reglements: [],
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,
-    anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, ventesFacturees: null, ...o,
+    anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, ...o,
   }
 }
 const CONTEXTE: ContexteDeLaChecklist = {

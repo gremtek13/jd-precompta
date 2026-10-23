@@ -3,6 +3,7 @@ import type { Categorie, Immobilisation, LigneBancaire, ModeComptable, Piece } f
 import { soldeDesPaiements } from './alignementBanque'
 import type { PaiementsDesPieces } from './rattachement'
 import { estFigee } from './validationExercice'
+import { exemplaireDUneSource, type FacturesSources } from './facturesSources'
 
 // Contrôles transverses partagés entre plusieurs onglets — extraits pour n'avoir qu'un seul endroit
 // où ces règles vivent, utilisés à la fois là où ils bloquent une action (Écritures, Clôture) et dans
@@ -65,8 +66,15 @@ function utilisee(
 //
 // Et jamais la facture d'un bien IMMOBILISÉ : elle s'écrit sur le compte de la nature du bien, s'amortit,
 // et la 2035 l'écarte. Dire d'elle qu'elle « ne compte nulle part » serait faux deux fois.
-export function piecesValideesSansCategorie(pieces: Piece[], pieceIdsImmobilisees: ReadonlySet<string>): Piece[] {
-  return pieces.filter((p) => p.statut === 'validee' && !p.categorie_id && !pieceIdsImmobilisees.has(p.id))
+//
+// Ni l'exemplaire d'une facture SOURCE (étape VF6a, lib/facturesSources.ts) : c'est sa facture qui compte la vente, et une
+// catégorie ne le ferait pas compter — elle ne décide de rien. `sources`, sans valeur par défaut : la validation de son
+// exercice attendrait sinon une catégorie que rien ne lit.
+export function piecesValideesSansCategorie(
+  pieces: Piece[], pieceIdsImmobilisees: ReadonlySet<string>, sources: FacturesSources,
+): Piece[] {
+  return pieces.filter((p) => p.statut === 'validee' && !p.categorie_id && !pieceIdsImmobilisees.has(p.id)
+    && !exemplaireDUneSource(p, sources))
 }
 
 // UN POINT DE CHECKLIST DOIT VÉRIFIER QUE SA CIBLE PEUT MONTRER CE QU'IL COMPTE — et la pièce SANS
@@ -198,8 +206,12 @@ export function piecesTvaImpossible(pieces: Piece[]): PieceTvaImpossible[] {
 // mention de devise passe pour 24,00 € et fausse la charge de 15 % sans que rien ne dépasse.
 // C'est pour éviter cela que le dépôt laisse les montants en euros NULS plutôt que d'y écrire des
 // dollars (voir lib/tauxChange.ts) — et ce contrôle est ce qui rend cette absence visible.
-export function piecesDeviseNonConvertie(pieces: Piece[]): Piece[] {
-  return pieces.filter((p) => p.devise !== 'EUR' && p.taux_change == null)
+//
+// Ni l'exemplaire d'une facture SOURCE (étape VF6a, lib/facturesSources.ts) : ses montants ne comptent nulle part, sa
+// facture compte la vente en euros. `sources`, sans valeur par défaut : la validation de son exercice attendrait sinon une
+// conversion qui ne change rien.
+export function piecesDeviseNonConvertie(pieces: Piece[], sources: FacturesSources): Piece[] {
+  return pieces.filter((p) => p.devise !== 'EUR' && p.taux_change == null && !exemplaireDUneSource(p, sources))
 }
 
 /** Une pièce dont la date lue ne peut pas être vraie. */

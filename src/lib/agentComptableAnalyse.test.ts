@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
+import { SANS_FACTURE_SOURCE, SANS_EXEMPLAIRE } from '../test/ventesFacturees'
 import type { AcquisitionDuBien } from './amortissements'
 import { analyserEcritures, lignesPourPiece, piecesAComptabiliser, type CibleComptable, type LigneAGenerer } from './ecritures'
 import { lignesEngagementPourPiece, type ModeleComptable } from './engagement'
@@ -198,7 +199,7 @@ function memeResultat(
 ) {
   // `biens` : la pièce de chaque bien du registre, et ce que sa facture écrit — le compte de sa nature, ou rien
   // (sans nature, ou acquis avant l'ouverture d'un dossier repris).
-  const ici = piecesAComptabiliser(pieces, categories, new Map(biens))
+  const ici = piecesAComptabiliser(pieces, categories, new Map(biens), SANS_FACTURE_SOURCE)
   const la = copie.piecesAComptabiliser(pieces, categories, new Map(biens))
   const resume = (a: ({ piece: Piece } & CibleComptable)[]) => a.map((x) => `${x.piece.id}:${x.compte}:${x.immobilisation}`)
   expect(resume(la), 'piecesAComptabiliser a dérivé').toEqual(resume(ici))
@@ -209,14 +210,14 @@ function memeResultat(
     piecesDesynchronisees: r.piecesDesynchronisees.map((p) => p.id),
   })
   for (const f of new Set([...FRONTIERES, frontiere])) {
-    const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts), modele, f)
+    const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts), modele, f, SANS_EXEMPLAIRE)
     const r2 = copie.analyserEcritures(ecritures, la, assujettiTva, copie.paiementsDesPieces(paiements, parts), modele, f)
     expect(forme(r2), `analyserEcritures a dérivé (frontière ${f})`).toEqual(forme(r1))
     // Les pièces elles-mêmes, et pas seulement leur nombre : en engagement, celles d'un lettrage fait à la main qui
     // tient en sont retirées (bloc LETTRAGE MANUEL), donc deux listes de même longueur peuvent dire deux choses.
     expect(r2.piecesSansContrepartie, `piecesSansContrepartie a dérivé (frontière ${f})`).toEqual(r1.piecesSansContrepartie)
   }
-  return forme(analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts), modele, frontiere))
+  return forme(analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts), modele, frontiere, SANS_EXEMPLAIRE))
 }
 
 describe('agent-comptable / analyserEcritures (copie déployée)', () => {

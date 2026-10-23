@@ -2521,6 +2521,52 @@ describe('ClotureTab — les ventes facturées', () => {
   }
   const LIGNES_DISCRETES = [/Ventes facturées que la 2035 ne compte pas/, /Ventes facturées encaissées au-delà/, /Exemplaires d’une facture source/]
 
+  // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE SE JUGE PAS COMME UNE PIÈCE QUI COMPTE (étape VF6a) : sans catégorie, il ne se range
+  // pas parmi les pièces validées sans catégorie — la carte et le préalable de la validation se taisent sur lui.
+  it('l’exemplaire sans catégorie d’une facture source : ni la carte des pièces sans catégorie, ni le préalable', async () => {
+    poserLesVentes()
+    faux.parTable.pieces = [PIECE, { ...EXEMPLAIRE, categorie_id: null }]
+    monter(2025, true, true)
+    await screen.findByRole('heading', { name: 'Valider l’exercice 2025' })
+    expect(screen.queryByText(/Pièces validées sans catégorie/)).toBeNull()
+    expect(screen.queryByText(/de l'exercice sans catégorie/)).toBeNull()
+  })
+
+  // Le garde symétrique : la même pièce, désignée à une facture d'un dossier qui n'a pas basculé — qui n'est donc pas source —,
+  // se range là comme hier, et retient la validation.
+  it('celui d’une facture qui n’est pas source : la carte et le préalable, comme hier', async () => {
+    poser()
+    faux.parTable.pieces = [PIECE, { ...EXEMPLAIRE, categorie_id: null }]
+    faux.parTable.factures_emises = [{ ...FACTURE_SOURCE, source_de_la_vente: false }]
+    monter(2025, true, false)
+    await screen.findByText(/Pièces validées sans catégorie/)
+    await screen.findByText(/de l'exercice sans catégorie/)
+  })
+
+  // EN ENGAGEMENT, LA VALIDATION NE LISAIT PAS LES VENTES FACTURÉES : depuis VF6a, lues en partie, elles la retiennent — sans
+  // leurs factures sources, un exemplaire serait jugé comme une pièce qui compte. Leurs seules lignes tronquées suffisent.
+  it('en engagement, les ventes facturées lues en partie retiennent la validation, et le disent', async () => {
+    poserLesVentes()
+    faux.muetApresParTable = { facture_lignes: 0 }
+    render(
+      <ContexteDossier annee={2025}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={true} modele={ENGAGEMENT} />
+      </ContexteDossier>,
+    )
+    await screen.findByText(/La lecture du dossier est restée partielle \(les ventes facturées : leurs lignes/)
+  })
+
+  it('en engagement, les mêmes lues en entier : la validation ne se suspend pas', async () => {
+    poserLesVentes()
+    render(
+      <ContexteDossier annee={2025}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={true} modele={ENGAGEMENT} />
+      </ContexteDossier>,
+    )
+    await screen.findByRole('heading', { name: 'Valider l’exercice 2025' })
+    expect(screen.queryByText(/La lecture du dossier est restée partielle/)).toBeNull()
+  })
+
   it('compte l’encaissement de la facture source, et l’exemplaire ne compte plus — il se dit', async () => {
     poserLesVentes()
     monter(2025, true, true)

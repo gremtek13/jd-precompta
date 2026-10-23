@@ -21,7 +21,7 @@ import { demandeDeValidation } from './validationExercice'
 import type { FacturePourJumelle } from './ventesJumelles'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
-import { ventesFactureesVides } from '../test/ventesFacturees'
+import { SANS_FACTURE_SOURCE, ventesFactureesVides } from '../test/ventesFacturees'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -121,7 +121,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
-    doublonsTexte: [], facturesEmises: [], transmissions: [], ...o,
+    doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE, ...o,
   }
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
   const paiements = paiementsDesPieces(base.lignes, base.reglements)
@@ -880,6 +880,74 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
       ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])
+  })
+})
+
+// L'EXEMPLAIRE D'UNE FACTURE SOURCE (ligne 28.65, étape VF6a ; lib/facturesSources.ts) : sa facture compte la vente. Les
+// préalables qui jugent une pièce comme une pièce qui compte l'écartent — sinon la validation attendrait son écriture, sa
+// catégorie, sa conversion, sa TVA ou son paiement, que rien ne lit, et, une fois G4 écrite (aucune écriture sur un
+// exemplaire), « ecritures-a-generer » la retiendrait pour toujours. Son écriture déjà passée, elle, est sans objet, et
+// refusée comme telle. L'exemplaire d'une facture qui n'est pas source se juge comme hier.
+describe('prealablesDeValidation — l’exemplaire d’une facture source (VF6a)', () => {
+  const exemplaire = (o: Partial<Piece> = {}) => piece('v1', {
+    type_piece: 'vente', tiers: 'Client fictif', categorie_id: 'c-recettes', facture_id: 'f1', date_piece: '2025-05-02', montant_ttc: 60,
+    created_at: '2025-05-03T09:00:00Z', ...o,
+  })
+  const ecritureDeLExemplaire = (o: Partial<EcritureBrouillon>) =>
+    ecriture('ev', { piece_id: 'v1', date: '2025-05-04', compte: '706000', sens: 'credit', montant: 60, ...o })
+  const cas: [string, Surcharges, { source: boolean; autre: boolean }][] = [
+    ['ecritures-a-generer', { piecesValidees: [P1, exemplaire()] }, { source: false, autre: true }],
+    ['sans-categorie', { piecesValidees: [P1, exemplaire({ categorie_id: null })] }, { source: false, autre: true }],
+    ['devise-non-convertie', { piecesValidees: [P1, exemplaire({ devise: 'USD', montant_devise: 70 })] }, { source: false, autre: true }],
+    ['tva-impossible', { piecesValidees: [P1, exemplaire({ montant_ht: 50, montant_tva: 30 })] }, { source: false, autre: true }],
+    ['pieces-payees-en-partie', {
+      piecesValidees: [P1, exemplaire({ montant_ttc: 500 })],
+      lignes: [L1, ligne('l2', { piece_id: 'v1', date: '2025-05-04', montant: 50 })],
+    }, { source: false, autre: true }],
+    // L'écriture déjà passée sur lui : sans objet — refusée — pour l'exemplaire d'une facture source ; juste pour un autre.
+    ['ecritures-sans-objet', {
+      piecesValidees: [P1, exemplaire()], lignes: [L1, ligne('l2', { piece_id: 'v1', date: '2025-05-04', montant: 60 })],
+      ecritures: [E1, E2, ecritureDeLExemplaire({ id: 'e3' }),
+        ecritureDeLExemplaire({ id: 'e4', compte: COMPTE_BANQUE, sens: 'debit', ligne_bancaire_id: 'l2' })],
+    }, { source: true, autre: false }],
+    // Modifiée depuis : « à régénérer » pour un autre, jamais pour l'exemplaire d'une facture source, qui ne se régénère pas.
+    ['desynchronisees', {
+      piecesValidees: [P1, exemplaire({ montant_ttc: 80 })], lignes: [L1, ligne('l2', { piece_id: 'v1', date: '2025-05-04', montant: 80 })],
+      ecritures: [E1, E2, ecritureDeLExemplaire({ id: 'e3' }),
+        ecritureDeLExemplaire({ id: 'e4', compte: COMPTE_BANQUE, sens: 'debit', ligne_bancaire_id: 'l2' })],
+    }, { source: false, autre: true }],
+  ]
+
+  for (const [id, surcharges, attendu] of cas) {
+    it(`« ${id} » : ${attendu.source ? 'retient' : 'ne retient pas'} l’exemplaire d’une facture source, ${attendu.autre ? 'retient' : 'ne retient pas'} celui d’une autre`, () => {
+      const avec = (facturesSources: ReadonlySet<string>) =>
+        prealable(donnees({ ...surcharges, categories: [ACHATS, RECETTES], anneesValidees: [2024], facturesSources }), id)
+      expect(avec(new Set(['f1']))?.bloquant ?? false, 'facture source').toBe(attendu.source)
+      expect(avec(new Set(['f2']))?.bloquant ?? false, 'facture qui n’est pas source').toBe(attendu.autre)
+      expect(avec(SANS_FACTURE_SOURCE)?.bloquant ?? false, 'aucune facture source').toBe(attendu.autre)
+    })
+  }
+
+  it('l’exemplaire d’une facture source sans écriture, sans catégorie et à la TVA impossible ne retient rien de ce qui juge une pièce', () => {
+    const d = donnees({ piecesValidees: [P1, exemplaire({ categorie_id: null, montant_ht: 50, montant_tva: 30 })], categories: [ACHATS, RECETTES],
+      anneesValidees: [2024], facturesSources: new Set(['f1']) })
+    const presents = ids(d)
+    for (const id of ['ecritures-a-generer', 'sans-categorie', 'tva-impossible', 'ecritures-sans-objet', 'desynchronisees']) {
+      expect(presents, id).not.toContain(id)
+    }
+  })
+
+  it('sans les factures sources lues en entier, la validation se suspend et dit pourquoi', () => {
+    const etat = prealablesDeValidation(donnees({ facturesSources: null }))
+    expect(etat.validable).toBe(false)
+    expect(etat.numerotation).toBeNull()
+    expect(etat.prealables).toEqual([expect.objectContaining({
+      id: 'lecture-partielle', bloquant: true,
+      message: expect.stringContaining('les factures sources de leurs ventes ne sont pas lues en entier'),
+    })])
+    // Le motif que l'appelant donne l'emporte : il dit laquelle des lectures a manqué.
+    expect(prealablesDeValidation(donnees({ facturesSources: null, lectureIncomplete: 'les ventes facturées : refusée' })).prealables[0].message)
+      .toContain('(les ventes facturées : refusée)')
   })
 })
 

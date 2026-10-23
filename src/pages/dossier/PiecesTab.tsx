@@ -42,6 +42,10 @@ import { pieceDeclaree } from '../../lib/ereportingEcran'
 import type { LectureComplete } from '../../lib/lectureComplete'
 import { fichesEmporteesParLaSuppression, type LectureFichesHorsDeFrance } from '../../lib/propositionsHorsDeFrance'
 import PiecesJointesEcartees from './PiecesJointesEcartees'
+import type { FacturesSources } from '../../lib/facturesSources'
+
+// Les factures sources que cet onglet ne lit pas encore (voir le badge « Devise non convertie ») : aucune n'est écartée.
+const SOURCES_NON_LUES: FacturesSources = new Set()
 
 // `dossierSiret` : le SIRET du dossier, que la page lit avec son identité — la réception par la plateforme du client
 // vérifie à chaque facture qu'elle désigne bien CE dossier (voir lib/receptionPlateforme.ts).
@@ -330,7 +334,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
   const dateImpossibleParPiece = new Map(
     piecesADateImpossible(pieces).map(({ piece, date, borne }) => [piece.id, { date, borne }]),
   )
-  const deviseNonConvertieIds = new Set(piecesDeviseNonConvertie(pieces).map((piece) => piece.id))
+  // Sans les factures sources, que cet onglet ne lit pas encore (étape VF6e : la lecture du pont gagnera leur source) — le
+  // badge garde la règle d'hier, sur toutes les pièces. Le point de la Checklist qui y envoie écarte l'exemplaire d'une
+  // facture source (VF6a) : il en compte moins, jamais plus, et chaque pièce qu'il compte porte bien son badge ici.
+  const deviseNonConvertieIds = new Set(piecesDeviseNonConvertie(pieces, SOURCES_NON_LUES).map((piece) => piece.id))
 
   // LA PIÈCE JUMELLE ET LA VENTE COMPTÉE DEUX FOIS (ligne 28.6), sur le dossier entier comme la Checklist, qui y envoie
   // l'opérateur : « Comptée deux fois » se corrige ici, en ne gardant qu'une pièce. Muettes sur une lecture partielle des
