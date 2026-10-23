@@ -695,9 +695,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   qui parcourt le relevé ne se joue qu'après les signaux bon marché, qui ne font que filtrer → « LES CANDIDATS DU
   RELEVÉ ».
 - **Un écran de saisie ne choisit pas l'exercice** à la place du cabinet ; un champ devenu sans objet est remis à zéro
-  dans la même écriture. **Un lot parallèle réserve l'empreinte** dans un `Set` avant toute attente, partagé par TOUS les
-  lots de l'écran (`ClientUpload`, un `useRef`), libérée à la fin du dépôt, réussi ou non (`lib/depot.ts`) → « LE MÊME
-  FICHIER DÉPOSÉ DEUX FOIS ENTRE DEUX LOTS ».
+  dans la même écriture. **Un lot parallèle réserve l'empreinte** dans un `Set` avant toute attente, partagé par TOUS
+  les lots de l'écran (`ClientUpload`, un `useRef`), libérée à la fin du dépôt, réussi ou non (`lib/depot.ts`) → « LE
+  MÊME FICHIER DÉPOSÉ DEUX FOIS ENTRE DEUX LOTS ».
 - **Un constructeur de requête n'est pas une promesse** : un module l'ATTEND, et une requête qui lève tombe du côté
   signalé. Les points de la Vue d'ensemble se calculent dans `lib/pointsDeLaChecklist.ts` et se lisent par
   `lib/checklistLecture.ts`, un point écrit `{ id: '…', …, severite: '…' }` (lu comme texte par deux tests) → « L'ÉCRAN
