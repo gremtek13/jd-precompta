@@ -31982,3 +31982,14 @@ est celle du débit, proposée. Aucune question nouvelle.
 - La lecture des déclarations retient, partielle, tout geste et tout lot du relevé, pas seulement ceux d'un débit : le
   tout ou rien de VF5a1, du côté sûr.
 - La garde `encaissementsEcritures.test.ts` (« les déclarations sont lues par… ») a dû admettre le troisième lecteur.
+
+**LA MISE EN LIGNE.** Demande #210, ouverte sur `d08440b` après la barrière de la session sous Node 22.23.3 sur le
+commit du code recomposé (`tsc -b --force` ; lint, 0 erreur et les 63 avertissements d'avant ; 449 fichiers et 13 640
+tests sous Paris, UTC, New York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche et la
+demande, de 22 h 18 à 22 h 38 UTC) ; fusionnée en « Rebase and merge » le 22/10/2026 à 22 h 40 UTC (`1232ea3`,
+`5817fe4`, après la mise en ligne de VF5c, `245db58`), `main` linéaire, son arbre égal à celui de la branche ; le
+déploiement vert (fini à 22 h 46), et le site sert `index-BxAgbxt_.js`, le bundle du build local — relu le 23/10/2026
+à 5 h 11 UTC, le conteneur de la session ayant de nouveau redémarré pendant l'attente. La feuille de route : la ligne
+28.65 mise à jour, puis relue par empreinte (17 502 positions) ; les barres recomptées par requête, inchangées (186
+chantiers hors de la phase 7, dont 141 livrés ; 76 % et 82 %). La copie de travail de l'agent retirée, son travail
+entier dans `main`, recomposé ; la branche réalignée sur `main`.
