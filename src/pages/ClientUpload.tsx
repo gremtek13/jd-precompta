@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type DragEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, type DragEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -76,6 +76,11 @@ export default function ClientUpload() {
   // que Textract réponde (jusqu'à 50s sur un document multi-pages), aucune ligne n'existe encore, donc
   // rien à corriger après coup. Voir handleFiles.
   const [enCours, setEnCours] = useState<{ id: string; nomFichier: string }[]>([])
+  // Les empreintes des fichiers EN VOL, de tous les lots de l'écran (lib/depot.ts) : un `useRef`, car deux lots lancés
+  // coup sur coup — le même fichier glissé puis choisi, deux gestes avant la fin du premier — se croisent avant que
+  // l'écran ait pu se redessiner. Un Set neuf par lot les laissait passer tous deux le contrôle anti-doublon en base avant
+  // que l'un ait écrit sa ligne. Le dépôt y réserve l'empreinte avant toute attente et la libère à sa fin, réussi ou non.
+  const empreintesEnVol = useRef(new Set<string>())
   const [dragOver, setDragOver] = useState(false)
   const [recherche, setRecherche] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -175,16 +180,15 @@ export default function ClientUpload() {
     if (files.length === 0 || !dossierId) return
     setError(null)
     const erreurs: string[] = []
-    // Partagé par tous les fichiers de ce dépôt-ci : les branches partent en parallèle, donc deux
-    // fichiers de contenu identique passeraient sinon tous deux la vérification anti-doublon en base
-    // avant que l'un ait écrit sa ligne (voir deposerFichier). Un Set neuf par lot, jamais réutilisé
-    // d'un dépôt à l'autre : au dépôt suivant, la base fait foi.
-    const hashsDuLot = new Set<string>()
+    // Les branches d'un lot partent en parallèle, et les lots entre eux aussi : le MÊME ensemble d'empreintes en vol sert à
+    // tous (voir `empreintesEnVol`), sans quoi deux fichiers de contenu identique passeraient tous deux la vérification
+    // anti-doublon en base avant que l'un ait écrit sa ligne (voir deposerFichier).
+    const hashsEnVol = empreintesEnVol.current
 
     await Promise.all(files.map(async (file) => {
       const localId = `${Date.now()}-${Math.random()}-${file.name}`
       setEnCours((prev) => [...prev, { id: localId, nomFichier: file.name }])
-      const resultat = await deposerFichier(dossierId, file, hashsDuLot)
+      const resultat = await deposerFichier(dossierId, file, hashsEnVol)
       if (resultat.statut === 'doublon') erreurs.push(`${file.name} : déjà déposé, pas réenvoyé.`)
       else if (resultat.statut === 'erreur') erreurs.push(`${file.name} : ${resultat.message}.`)
       // Un seul fichier déposé : on ouvre sa zone de précision, tant que le client se souvient de ce

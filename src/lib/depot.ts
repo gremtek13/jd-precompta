@@ -35,28 +35,35 @@ export type ResultatDepot =
 // correction apportée à l'un doit être portée à l'autre — c'est ainsi que le nettoyage de l'orphelin
 // ci-dessous a manqué ici pendant un temps alors qu'il existait déjà là-bas.
 //
-// `hashsDuLot` est l'équivalent du `hashsConnus` du cabinet, mais il n'a pas le même rôle et ne peut
+// `hashsEnVol` est l'équivalent du `hashsConnus` du cabinet, mais il n'a pas le même rôle et ne peut
 // pas avoir la même mécanique : le cabinet traite ses fichiers en série et n'y note un fichier
-// qu'une fois écrit, alors que le client les dépose en parallèle (Promise.all dans ClientUpload).
-// Deux fichiers de contenu identique du même lot — le cas courant étant la même facture téléchargée
-// deux fois depuis un portail fournisseur, « facture.pdf » et « facture (1).pdf » — passent donc
-// tous deux la vérification en base avant que l'un ait écrit sa ligne, et repartent en double sans
-// que rien ne les arrête : il n'y a pas d'index unique sur (dossier_id, storage_hash). Le paramètre
-// est requis, et non optionnel avec un Set vide par défaut, pour qu'aucun appelant ne retombe dans
-// ce trou sans l'avoir décidé.
-export async function deposerFichier(dossierId: string, file: File, hashsDuLot: Set<string>): Promise<ResultatDepot> {
+// qu'une fois écrit, alors que le client les dépose en parallèle (Promise.all dans ClientUpload, et
+// des lots lancés coup sur coup). Deux fichiers de contenu identique — le cas courant étant la même
+// facture téléchargée deux fois depuis un portail fournisseur, « facture.pdf » et « facture (1).pdf »
+// — passent donc tous deux la vérification en base avant que l'un ait écrit sa ligne, et repartent en
+// double sans que rien ne les arrête : il n'y a pas d'index unique sur (dossier_id, storage_hash).
+// Le paramètre est requis, et non optionnel avec un Set vide par défaut, pour qu'aucun appelant ne
+// retombe dans ce trou sans l'avoir décidé.
+//
+// Ce Set note ce qui est EN VOL, jamais ce qui est écrit : l'empreinte y entre avant toute attente et
+// en sort à la FIN du dépôt, réussi ou non. Réussi, la base fait foi dès que la ligne y est (le même
+// fichier redéposé plus tard s'y heurte) ; raté, un nouvel essai doit rester possible. C'est ce qui
+// permet à un écran de partager UN seul Set entre tous ses lots (un `useRef`), là où un Set neuf par
+// lot laissait deux lots lancés coup sur coup déposer deux fois le même fichier (ligne 28.8).
+export async function deposerFichier(dossierId: string, file: File, hashsEnVol: Set<string>): Promise<ResultatDepot> {
   // LES BORNES DU SEAU D'ABORD (ligne 22.6), avant toute lecture et tout envoi : le glisser-déposer de « Mes pièces » et
   // l'appareil photo (`image/*`) laissaient partir n'importe quel fichier, de n'importe quel poids. Le refus est dit au
   // client avec le poids et la borne ; le fichier part RÉÉTIQUETÉ du type que le seau admet (voir lib/bornesStockage.ts).
   const pret = await preparerPiece(file)
   if ('refus' in pret) return { statut: 'erreur', message: pret.refus.message }
   const hash = await hashFichier(file)
-  if (hashsDuLot.has(hash)) return { statut: 'doublon' }
+  // Ce `return` vient AVANT le `try` : l'empreinte appartient alors à un autre dépôt en vol, que le `finally` plus bas ne
+  // doit surtout pas libérer à sa place.
+  if (hashsEnVol.has(hash)) return { statut: 'doublon' }
   // Réservation immédiate : aucun `await` entre le test et l'ajout, donc rien ne peut s'intercaler
-  // (JavaScript est mono-thread). Ce Set note ce qui est *engagé*, pas ce qui est écrit — la
-  // réservation est relâchée plus bas si le dépôt échoue, sans quoi un fichier dont l'envoi a raté
-  // serait ensuite annoncé « déjà déposé » et ne repartirait jamais.
-  hashsDuLot.add(hash)
+  // (JavaScript est mono-thread). Elle est relâchée à la fin du dépôt, quelle qu'en soit l'issue : un fichier dont
+  // l'envoi a raté serait sinon annoncé « déjà déposé » et ne repartirait jamais.
+  hashsEnVol.add(hash)
 
   try {
     if (await fichierDejaPresent(dossierId, hash)) return { statut: 'doublon' }
@@ -138,8 +145,11 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
       return { statut: 'ok', cible: { type: 'piece', id } }
     }
   } catch (err) {
-    hashsDuLot.delete(hash)
     return { statut: 'erreur', message: messageErreur(err, "l'envoi a échoué")}
+  } finally {
+    // Réussi, doublon de la base ou raté : l'empreinte n'est plus en vol. La ligne écrite, s'il y en a une, l'est avant
+    // d'arriver ici — le même fichier redéposé ensuite se heurte à la base.
+    hashsEnVol.delete(hash)
   }
 }
 
