@@ -260,6 +260,10 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    pixels : 1 108 pixels de tableau dans 936) passaient hors de vue. `anywhere` et non `break-word` : celui-ci suffit dans une liste,
    mais ne change rien à la largeur minimale d'une colonne — le tableau gardait ses 1 108 pixels ; `anywhere` l'a ramené à 936. */
 .nom-fichier { overflow-wrap: anywhere; }
+/* Une adresse électronique garde son plus long morceau (« gestion@mutuelle- », jusqu'au trait d'union) : `anywhere` en
+   rétrécissait la largeur minimale de la colonne et coupait « mutue|lle- » (banc, 20/10/2026). `break-word` ne coupe qu'une
+   adresse qui dépasserait seule sa case, et ne touche pas à la largeur minimale : le tableau se replie en fiches ou défile. */
+.courriel { overflow-wrap: break-word; }
 
 /* ---------- Coque de l'application ---------- */
 /* Sur ordinateur, trois volets à la manière des applications récentes : la barre latérale posée sur
