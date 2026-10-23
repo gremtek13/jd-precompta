@@ -291,7 +291,7 @@ describe('le rangement des contrôles existants', () => {
     ensemble: [
       'exercice-en-cours', 'deja-valide', 'ordre', 'avant-ouverture', 'ouverture-d-abord', 'ecritures-anterieures',
       'exercice-anterieur-d-abord', 'ecritures-orphelines', 'ecritures-desequilibrees', 'desequilibrees', 'numerotation',
-      'report-hors-classes', 'report-desequilibre', 'concordance', 'exclusions-2035', 'piste-rompue', 'informations',
+      'report-hors-classes', 'report-desequilibre', 'ouverture-en-ecart', 'concordance', 'exclusions-2035', 'piste-rompue', 'informations',
     ],
   }
 
