@@ -14,7 +14,7 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
     natures: [], categories: [], ecritures: [], emprunts: [], ventilations: [], ventilationsPartielles: false, reglements: [],
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,
-    anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, ...o,
+    anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, ventesFacturees: null, ...o,
   }
 }
 

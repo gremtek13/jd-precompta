@@ -978,4 +978,19 @@ describe('prealablesDeValidation — la couverture des points de la Checklist', 
     ]`
     expect(pointsEnErreur(source)).toEqual(['b'])
   })
+
+  // LES DEUX POINTS DES VENTES FACTURÉES (ligne 28.65, étape VF5f) : en « attention », ÉCARTÉS des préalables jusqu'à VF7,
+  // qui les rendra préalables (conception d'EC-Q3, § 11 : bloquant pour un virement ou un prélèvement, une information pour
+  // un chèque, un effet ou une carte). Le jour où VF7 les reprend, ce test tombe, et se réécrit avec elle.
+  it('tient « mouvements réservés » et « encaissements sans mouvement » en attention, écartés des préalables jusqu’à VF7', () => {
+    const points = readFileSync(new URL('./pointsDeLaChecklist.ts', import.meta.url), 'utf8')
+    for (const id of ['mouvements-reserves', 'encaissements-sans-mouvement']) {
+      const debut = points.indexOf(`id: '${id}'`)
+      expect(debut, `« ${id} » n'est pas un point de la Checklist`).toBeGreaterThan(0)
+      expect(points.slice(debut, points.indexOf('}', debut))).toContain("severite: 'attention'")
+      expect(pointsEnErreur(checklist)).not.toContain(id)
+      expect(repris(id), `« ${id} » est repris par la validation avant VF7`).toBe(false)
+      expect(id in POINTS_DE_LA_CHECKLIST_ECARTES).toBe(false)
+    }
+  })
 })

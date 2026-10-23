@@ -1261,6 +1261,31 @@ const VISITES = [
       await page.locator('#contre-passation-motif').fill('Chèque revenu impayé : provision insuffisante, rejeté par la banque du client')
     },
   },
+  // LA PAIRE QUI NE SE DÉCLARE PAS (étape VF5d2) ET LA VUE D'ENSEMBLE D'UN DOSSIER BASCULÉ (étape VF5f), sur la consultante
+  // d12 : la fenêtre des encaissements de F2026-0028, facture d'une particulière, dont le chèque jamais déclaré a été
+  // contre-passé en citant le débit de son retour — l'encaissement, la contre-passation, la phrase de la paire —, mesurée
+  // contre sa carte ; puis la Vue d'ensemble, ses deux points en « attention » (les mouvements réservés à classer, les
+  // encaissements sans mouvement du relevé, nommés dans leur détail). Avant les visites de l'e-reporting, qui figent l'horloge.
+  {
+    dossier: 'd12', onglet: 'factures', nom: 'factures-basculees/paire-non-declaree', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0028', 'Encaissements').click()
+      await page.getByText(/^Contre-passé avant d’être déclaré : ni l’encaissement ni sa contre-passation ne se déclarent\.$/).first()
+        .waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd12', onglet: 'checklist', nom: 'checklist-basculee/vue-d-ensemble',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.getByText(/^3 mouvement\(s\) réservé\(s\) à des encaissements de factures, à classer$/).waitFor({ timeout: 10000 })
+      await page.getByText(/^5 encaissement\(s\) de factures par virement, prélèvement, chèque, carte ou effet sans mouvement du relevé$/)
+        .scrollIntoViewIfNeeded()
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à

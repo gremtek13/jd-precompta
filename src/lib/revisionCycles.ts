@@ -155,6 +155,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'releves-inconnus': 'tresorerie',
   'mouvements-a-traiter': 'tresorerie',
   'lignes-non-rapprochees': 'tresorerie',
+  // Un mouvement du relevé que des encaissements de factures réservent, à classer (étape VF5f) : ce que le relevé porte.
+  'mouvements-reserves': 'tresorerie',
   'mouvements-ignores': 'tresorerie',
   'rapproches-sans-objet': 'tresorerie',
   'ventilations-incoherentes': 'tresorerie',
@@ -170,6 +172,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'recettes-affectees-assujetti': 'recettes',
   'ventes-en-double': 'recettes',
   'jumelles-incoherentes': 'recettes',
+  // Un encaissement de facture qui attend son mouvement (étape VF5f) : le registre des ventes, que le relevé confirme.
+  'encaissements-sans-mouvement': 'recettes',
   // Les dépenses : les pièces, leurs écritures, leurs postes.
   'pieces-a-valider': 'depenses',
   'pieces-sans-date': 'depenses',

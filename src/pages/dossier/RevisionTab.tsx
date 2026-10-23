@@ -25,7 +25,7 @@ import {
 import { donneesDeLaRevueAnalytique, identifiantDeLaLigne, memeCleDeLigne } from '../../lib/revueAnalytiqueEcran'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFactureesEcran'
-import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
+import type { LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import {
   argumentsDeConsigner, argumentsDeRetirer, entreesDuDossierPermanent, type ContexteDuDossierPermanent, type SaisieDuDossierPermanent,
 } from '../../lib/dossierPermanent'
@@ -120,8 +120,12 @@ interface LectureDeLaRevision {
   ventesFacturees: LectureVentesFacturees
   // Les sources des écritures des ventes facturées d'un dossier qui a basculé (VF4C3-Q1) : la 2035 de la revue en tire les
   // frais d'un mouvement d'encaissements, comme celle de Clôture. Nulles pour un dossier qui n'a pas basculé, jamais lues.
-  // Elles ne servent qu'à la revue analytique : une lecture incomplète ne cache que sa section.
+  // Une lecture incomplète ne cache que sa section. Depuis l'étape VF5f, c'est la lecture même de la Vue d'ensemble
+  // (lib/checklistLecture.ts), dont deux points s'en tirent — lue une fois pour les deux.
   sourcesDesVentes: LectureSourcesDesEcrituresDeVente | null
+  // Son motif quand elle n'est pas entière (étape VF5f) : les deux points des ventes facturées se taisent dans les cycles
+  // Trésorerie et Recettes, et un bandeau le dit ; les soldes et les cycles demeurent, comme la revue le voulait déjà.
+  ventesIncompletes: string | null
   // Le dossier permanent (étape R7), tous exercices, À PART : sa lecture ratée ou partielle ne cache que sa section.
   permanent: LectureDuDossierPermanent
   // Ce que la section lit D'AUTRE que ses entrées — les pièces et les documents, de quoi nommer une citation et dire son état —
@@ -151,9 +155,10 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
   const [
     checklist, lectureReportes, lectureControles, lectureDocuments, lectureDecisions, lecturePreuves, lectureConclusions,
     lectureJournal, lectureRevues, lectureSeuils, lectureExplications, lectureReperes, lectureReperesDesPostes, permanent,
-    ventesFacturees, sourcesDesVentes,
+    ventesFacturees,
   ] = await Promise.all([
-    lireLaChecklist(dossierId),
+    // Un dossier qui a basculé y lit aussi les sources de ses écritures de vente : elles servent à la revue, plus bas.
+    lireLaChecklist(dossierId, bascule),
     lireTout<SoldeReporte>((debut, fin) =>
       supabase.from('soldes_reportes').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
@@ -210,8 +215,6 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
     lireLePermanent(dossierId),
     // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
     lireLesVentesFacturees(dossierId),
-    // Ne rejette jamais non plus.
-    bascule ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
   ])
   // Chaque lecture a son bandeau : dire laquelle manque, c'est dire où chercher.
   const motifs: MotifDeLecture[] = []
@@ -259,7 +262,8 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
     motifs,
     motifsRevue,
     ventesFacturees,
-    sourcesDesVentes,
+    sourcesDesVentes: checklist.ventesFacturees,
+    ventesIncompletes: checklist.ventesIncompletes,
     permanent,
     motifsDuPermanent,
   }
@@ -867,6 +871,17 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
         erreurVerification={erreurVerification}
         onVerifier={() => verifierEmpreinte(annee - 1)}
         onNavigate={onNavigate}
+      />
+
+      {/* Les ventes facturées d'un dossier qui a basculé, lues en partie (étape VF5f) : deux points de la Vue d'ensemble se
+          taisent sous leurs cycles. Le reste de la révision ne les lit pas, et demeure. */}
+      <BandeauLecturePartielle
+        quoi="Les ventes facturées du dossier"
+        motif={lecture.ventesIncompletes}
+        consequence={
+          'Les cycles Trésorerie et Recettes ne disent donc ni les mouvements réservés à des encaissements de factures, ni les '
+          + 'encaissements sans mouvement du relevé : leur silence ne prouve rien. Recharge la page.'
+        }
       />
 
       {revision.exercice?.type === 'revisable' && (

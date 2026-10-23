@@ -266,8 +266,11 @@ describe('le rangement des contrôles existants', () => {
       'releve-incoherent', 'releves-inconnus', 'mouvements-a-traiter', 'lignes-non-rapprochees', 'mouvements-ignores',
       'rapproches-sans-objet', 'ventilations-incoherentes', 'reglements-groupes-incoherents', 'affectes-perimes',
       'ventiles-perimes', 'comptes-de-bilan-perimes', 'montant-suspect', 'banque',
+      // Étape VF5f : le mouvement du relevé que des encaissements de factures réservent, à classer.
+      'mouvements-reserves',
     ],
-    recettes: ['recettes-affectees-assujetti', 'ventes-en-double', 'jumelles-incoherentes'],
+    // Étape VF5f : l'encaissement d'une facture qui attend son mouvement du relevé, au registre des ventes.
+    recettes: ['recettes-affectees-assujetti', 'ventes-en-double', 'jumelles-incoherentes', 'encaissements-sans-mouvement'],
     depenses: [
       'pieces-a-valider', 'pieces-sans-date', 'date-impossible', 'sans-categorie', 'comptes-manquants', 'postes-manquants',
       'sans-tva', 'tva-impossible', 'devise-non-convertie', 'confiance-basse', 'mois-en-double', 'doublon-texte',

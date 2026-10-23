@@ -358,7 +358,7 @@ export default function DossierDetail() {
               }
             />
 
-            {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} periodiciteTva={dossier?.tva_periodicite ?? 'trimestrielle'} statutTva={dossier?.statut_tva ?? null} modele={modele} onNavigate={allerA} />}
+            {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} periodiciteTva={dossier?.tva_periodicite ?? 'trimestrielle'} statutTva={dossier?.statut_tva ?? null} modele={modele} ventesParLesFactures={dossier?.ventes_par_les_factures === true} onNavigate={allerA} />}
             {tab === 'pieces' && <PiecesTab dossierId={id} dossierSiret={dossier?.siret ?? null} />}
             {tab === 'factures' && (
               <FacturesTab
