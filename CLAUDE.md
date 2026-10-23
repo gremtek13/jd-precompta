@@ -319,8 +319,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Créer un accès ne touche jamais au mot de passe d'un compte existant** (décision du cabinet du 10/10/2026) :
   `compte: "cree"` ou `"existant"` ; d'un compte d'ailleurs, le 409 dit qu'il existe, rien de plus, et l'onglet Accès le
   rattache après une confirmation qui nomme l'adresse (le marqueur, puis le booléen `true` seul), jamais un membre d'un
-  cabinet ni un super-administrateur (23-Q2) → « LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE
-  EXISTANT », « UN COMPTE QUE LE CABINET NE CONNAÎT PAS SE RATTACHE APRÈS UNE CONFIRMATION ».
+  cabinet ni un super-administrateur (23-Q2) ; l'équipe n'accueille pas un compte client d'un autre cabinet, sous une
+  phrase qui ne le dit pas (23Q2-Q2) ; une lecture qui dit un compte connu lit son erreur (500, rien d'écrit) → « LA
+  CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT », « UN COMPTE QUE LE CABINET NE CONNAÎT PAS
+  SE RATTACHE APRÈS UNE CONFIRMATION », « L'ÉQUIPE N'ACCUEILLE PAS LE CLIENT D'UN AUTRE CABINET ».
 - **La règle des mots de passe est celle du tableau de bord** (une minuscule, une majuscule, un chiffre, un symbole ;
   dix caractères, soixante-douze OCTETS au plus : le maximum de bcrypt, que les trois fonctions refusent en 400 français
   avant tout appel) : les quatre écrans en portent un REFLET (`REGLE_DU_MOT_DE_PASSE`), appliqué avant tout appel, et un
@@ -388,8 +390,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET ».
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
   au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français. Un compte dont le dernier
-  accès au cabinet a été retiré se rattache de nouveau après une confirmation (23-Q2, écrit le 23/10/2026 ; 23Q2-Q1 et
-  Q2 au cabinet) → « UN COMPTE QUE LE CABINET NE CONNAÎT PAS SE RATTACHE APRÈS UNE CONFIRMATION ».
+  accès au cabinet a été retiré se rattache de nouveau après une confirmation (23-Q2, écrit le 23/10/2026 ; 23Q2-Q1 au
+  cabinet ; 23Q2-Q2 écrite le 23/10/2026 sur la recommandation, ses questions 23Q2Q2-Q1 à Q3 au cabinet) → « UN COMPTE
+  QUE LE CABINET NE CONNAÎT PAS SE RATTACHE APRÈS UNE CONFIRMATION », « L'ÉQUIPE N'ACCUEILLE PAS LE CLIENT D'UN AUTRE
+  CABINET ».
 - **Facturation électronique** (ligne 28.5) : (a) à (c) en ligne, la réception et le dépôt à éprouver sur la plateforme
   réelle d'un client ; (d) « Encaissée » : d1 à d4 en ligne ; d5, le message CDAR, en module (ses quatre choix et MDT-95
   tranchés par le premier essai réel ; le matricule d'une plateforme, une colonne de la connexion) ; d6 reste (les Edge
