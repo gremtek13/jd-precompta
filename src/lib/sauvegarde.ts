@@ -14,7 +14,7 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
-import { EXEMPLAIRES_DES_FACTURES_EXPORTES } from './exemplairesDesFactures'
+import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
@@ -90,12 +90,28 @@ export function auPlanDesParametresFacturation(table: string, parametresExportes
   return parametresExportes || !TABLES_DES_PARAMETRES_FACTURATION.includes(table)
 }
 
+// LE JOURNAL DES DÉSIGNATIONS (chantier EC-Q3, étape VF6b ; migration `jumelle_inversee`, PRÉPARÉE, présentée au cabinet,
+// PAS ENCORE APPLIQUÉE) : qui a désigné, déclaré, ou retiré l'un ou l'autre, et quand (VF6-Q3). Le patron des devis, sous
+// le drapeau de la migration (`JUMELLE_INVERSEE_EXPORTEE`, src/lib/exemplairesDesFactures.ts), baissé : la production n'a
+// pas la table, et la lire ferait échouer toute sauvegarde. Sa table est déclarée ci-dessous à sa place — ses trois
+// relations, son rang, son chemin ; aucune vague, une ligne n'en pointe aucune autre — et RETIRÉE du plan tant que le
+// drapeau est baissé. La migration pose aussi une COLONNE sur une table au plan, `pieces.vente_hors_des_factures`, que la
+// sauvegarde recopie avec sa ligne (`select('*')`) : une pièce déclarée se réinsère déclarée, par la porte que la garde
+// ouvre au super-administrateur. sauvegardeDesignations.test.ts éprouve le plan prévu et le plan du jour.
+export const TABLES_DU_JOURNAL_DES_DESIGNATIONS: readonly string[] = ['designations_des_pieces']
+
+/** Une table au plan, côté journal des désignations : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
+export function auPlanDuJournalDesDesignations(table: string, jumelleExportee: boolean): boolean {
+  return jumelleExportee || !TABLES_DU_JOURNAL_DES_DESIGNATIONS.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
- *  adresses de réception, les contacts, les paramètres de facturation. */
+ *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations. */
 export function auPlanAujourdHui(table: string): boolean {
   return auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
     && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
     && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES)
+    && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -277,11 +293,17 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'parametres_facturation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   // L'exemplaire d'une facture (chantier EC-Q3, étape VF1a) : la facture émise validée dont la pièce est un exemplaire.
   { enfant: 'pieces', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
+  // Le journal des désignations (chantier EC-Q3, étape VF6b) : son dossier et sa pièce, en cascade — une ligne ne part
+  // qu'avec eux —, et la facture d'une désignation ou de son retrait, sans action (une facture validée ne se supprime
+  // qu'avec son dossier).
+  { enfant: 'designations_des_pieces', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'designations_des_pieces', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
+  { enfant: 'designations_des_pieces', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
-// contacts ni des paramètres de facturation tant que leurs migrations ne sont pas exportées, ni celle de l'exemplaire d'une
-// facture tant que la sienne ne l'est pas.
+// contacts, des paramètres de facturation ni du journal des désignations tant que leurs migrations ne sont pas exportées,
+// ni celle de l'exemplaire d'une facture tant que la sienne ne l'est pas.
 export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
   .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES))
 
@@ -431,6 +453,13 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // telle quelle, son RIB proposé ou confirmé et ses auteurs compris, par la policy du super-administrateur. Le jour où leur
 // table existe, l'essai de restauration les met à cette place : seuls les rangs des devis et d'`exercices_valides`
 // changent. `sauvegardeParametresFacturation.test.ts` garde cet ordre.
+//
+// Le journal des désignations (chantier EC-Q3, étape VF6b) vient après les paramètres de facturation, avant les devis : ses
+// parents sont le dossier, la pièce et la facture, écrits bien avant ; sa garde, à l'insertion, lit la pièce et la facture,
+// qu'elle exige du dossier de la ligne ; rien ne le lit à l'insertion d'une autre ligne, aucune validation ne le fige. Une
+// ligne se réinsère telle quelle, son auteur et son instant compris, par la policy du super-administrateur. Le jour où sa
+// table existe, l'essai de restauration la met à cette place : seuls les rangs des devis et d'`exercices_valides`
+// changent. `sauvegardeDesignations.test.ts` garde cet ordre.
 export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -511,6 +540,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'adresses_reception',
   'contacts',
   'parametres_facturation',
+  'designations_des_pieces',
   'devis_numerotation',
   'devis',
   'devis_factures',
@@ -518,7 +548,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
 ]
 
 // L'ordre tel qu'il s'applique AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception, des
-// contacts ni des paramètres de facturation tant que leurs migrations ne sont pas exportées.
+// contacts, des paramètres de facturation ni du journal des désignations tant que leurs migrations ne sont pas exportées.
 export const ORDRE_RESTAURATION: readonly string[] = ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t))
 
 // Une table qui se référence elle-même ne peut PAS être restaurée en un seul passage : la première
@@ -1005,10 +1035,11 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   adresses_reception: { acces: 'direct' },
   contacts: { acces: 'direct' },
   parametres_facturation: { acces: 'direct' },
+  designations_des_pieces: { acces: 'direct' },
 }
 
 // Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception, des
-// contacts ni des paramètres de facturation tant que leurs migrations ne sont pas exportées.
+// contacts, des paramètres de facturation ni du journal des désignations tant que leurs migrations ne sont pas exportées.
 export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = Object.fromEntries(
   Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => auPlanAujourdHui(table)),
 )

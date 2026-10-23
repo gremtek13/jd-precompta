@@ -65,6 +65,18 @@ export function appelsDe(appel: string): { fonction: string; arguments: string[]
  */
 export function valeurSql(expression: string, noms: ReadonlyMap<string, string>, sousRequete?: (texte: string) => unknown): unknown {
   if (expression === 'null') return null
+  // Un caractère par son point de code, et une concaténation de textes et de caractères — `'123456789' || chr(8239) ||
+  // '00012'`, le SIRET aux blancs divers du jeu du jumeau (exemplairesDesFactures.sql) : chaque morceau lu à son tour.
+  const caractere = /^chr\((\d+)\)$/.exec(expression)
+  if (caractere) return String.fromCodePoint(Number(caractere[1]))
+  const morceaux = horsDesChaines(expression, '||')
+  if (morceaux.length > 1) {
+    return morceaux.map((m) => {
+      const v = valeurSql(m.trim(), noms, sousRequete)
+      if (typeof v !== 'string') throw new Error(`Concaténation que le test ne sait pas lire : ${expression}`)
+      return v
+    }).join('')
+  }
   if (expression === 'true' || expression === 'false') return expression === 'true'
   if (/^-?\d+(?:\.\d+)?$/.test(expression)) return Number(expression)
   const repete = /^repeat\('(\w)', (\d+)\)$/.exec(expression)
@@ -80,6 +92,27 @@ export function valeurSql(expression: string, noms: ReadonlyMap<string, string>,
   const resolu = noms.get(nom[1])
   if (resolu === undefined) throw new Error(`Identifiant jetable inconnu : ${valeur}`)
   return resolu
+}
+
+/** Un texte SQL coupé sur un séparateur, hors chaînes et hors parenthèses (une apostrophe doublée ouvre et referme). */
+function horsDesChaines(texte: string, separateur: string): string[] {
+  const morceaux: string[] = []
+  let profondeur = 0
+  let chaine = false
+  let courant = ''
+  for (let i = 0; i < texte.length; i++) {
+    const car = texte[i]
+    if (car === "'") chaine = !chaine
+    if (!chaine && car === '(') profondeur++
+    if (!chaine && car === ')') profondeur--
+    if (!chaine && profondeur === 0 && texte.startsWith(separateur, i)) {
+      morceaux.push(courant)
+      courant = ''
+      i += separateur.length - 1
+    } else courant += car
+  }
+  morceaux.push(courant)
+  return morceaux
 }
 
 /** Les identifiants jetables d'un texte, rendus par leur nom (ou leur valeur retenue). */

@@ -301,6 +301,24 @@
 -- IDENTIQUES (38 lignes), les douze contrôles justes ; sans le semis, ils disent que rien n'est prouvé ; sans la
 -- migration, le contrôle du compte attend. La réinsertion par la porte du super-administrateur — un encaissement né avec
 -- son compte, une ligne d'un mouvement classé — est jouée par ecrituresVentesFacturees.sql (contrôles 119c et 78).
+--
+-- 23/10/2026, chantier EC-Q3, étape VF6b (migration `jumelle_inversee`, préparée, non appliquée) : `designations_des_pieces`,
+-- le journal des désignations, entre au plan par son bloc à part dès que sa table existe (81 tables, 84 avec les devis),
+-- juste avant `exercices_valides` — après les paramètres de facturation, avant les devis —, sans vague ; seuls les rangs
+-- des devis et d'`exercices_valides` changent ; et une colonne, `pieces.vente_hors_des_factures`, recopiée avec sa ligne
+-- et sa contrainte. Un contrôle de plus suit le verdict : chaque pièce déclarée, restaurée déclarée. Rejoué sur une copie
+-- de la réplique de l'étape (signature.sql : les neuf familles égales à la production à 146 migrations, plus celle de
+-- VF5h, puis celle-ci), le dossier `test` semé PAR LES FONCTIONS, sous la session du chef : le dossier bascule, sa pièce
+-- de vente est désignée exemplaire de sa facture validée, une seconde pièce de vente est déclarée, sa déclaration retirée
+-- puis reposée, et la pièce validée (quatre lignes au journal) : 146 clés recopiées, 75 tables restaurées et IDENTIQUES à
+-- la source (23 lignes, dont les quatre du journal et les trois pièces), 0 écart, aucun arrêt ; le contrôle de la
+-- désignation juste (1 sur 1), celui de la déclaration aussi (1 sur 1). Planté — le journal restauré à la place des pièces
+-- —, le script s'arrête sur `designations_des_pieces` (23503, `designations_des_pieces_piece_id_fkey`). Sans la
+-- migration : 143 clés, 74 tables IDENTIQUES, 18 lignes, et le contrôle de la déclaration se tait. Ce script recopie les
+-- clés, pas les gardes : la réinsertion d'une pièce déclarée et d'une ligne du journal par la porte du
+-- super-administrateur, et leurs refus, sont joués par exemplairesDesFactures.sql (contrôles 336 à 339, 360 à 363) ; la
+-- suppression d'une ligne du journal — refusée hors de la cascade de sa pièce ou de son dossier —, par une sonde sur la
+-- réplique seulement.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -457,6 +475,23 @@ begin
      ('parametres_facturation','direct',null,null);
     insert into essai_restauration._vagues (table_nom, colonne) values
      ('parametres_facturation','remplace_id');
+  end if;
+end $$;
+
+-- ══ Le journal des désignations (chantier EC-Q3, étape VF6b) ══ Au plan du code quand `JUMELLE_INVERSEE_EXPORTEE` est levé
+-- — c'est-à-dire quand sa migration est en base : le script l'y met dès que sa table existe, juste avant
+-- `exercices_valides` (ORDRE_RESTAURATION_PREVU : après les paramètres de facturation, que leur bloc vient d'y mettre,
+-- avant les devis, que leur bloc met ensuite au même endroit), `exercices_valides` reculant d'un rang ; son chemin. Aucune
+-- vague : une ligne du journal n'en pointe aucune autre ; sa pièce et sa facture la précèdent. Absente de la base, rien
+-- n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+begin
+  if to_regclass('public.designations_des_pieces') is not null then
+    update essai_restauration._ordre set rang = rang + 1 where table_nom = 'exercices_valides';
+    insert into essai_restauration._ordre (rang, table_nom)
+      select o.rang - 1, 'designations_des_pieces' from essai_restauration._ordre o where o.table_nom = 'exercices_valides';
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('designations_des_pieces','direct',null,null);
   end if;
 end $$;
 
@@ -748,6 +783,25 @@ begin
       case when n > 0 then n || ' sur ' || n || ', clé recopiée' else 'au moins une pièce désignée' end,
       case when n > 0 then egales || ' sur ' || n || ', clé ' || case when cle then 'recopiée' else 'absente' end
            else 'aucune pièce désignée dans le dossier : rien n''est prouvé' end);
+  end if;
+end $$;
+
+-- LA JUMELLE INVERSÉE (chantier EC-Q3, étape VF6b ; migration `jumelle_inversee`) : une colonne de plus sur une table au
+-- plan, `pieces.vente_hors_des_factures`, recopiée avec sa ligne et sa contrainte, et le journal des désignations, au plan
+-- par son bloc, jugé comme toute table par l'empreinte de son contenu. Ce contrôle dit que chaque pièce déclarée a été
+-- restaurée déclarée : au moins une, ou rien n'est prouvé, et il le dit. Sans la migration, il ne dit rien : la colonne
+-- n'existe pas.
+do $$
+declare d uuid := (select dossier from essai_restauration._cible); n bigint; egales bigint;
+begin
+  if exists (select 1 from pg_attribute where attrelid = 'public.pieces'::regclass and attname = 'vente_hors_des_factures'
+              and not attisdropped) then
+    execute 'select count(*), count(*) filter (where e.vente_hors_des_factures) from public.pieces s'
+            || ' left join essai_restauration.pieces e on e.id = s.id where s.dossier_id = $1 and s.vente_hors_des_factures'
+      into n, egales using d;
+    insert into essai_restauration._controles values ('pieces.vente_hors_des_factures : chaque pièce déclarée restaurée déclarée',
+      case when n > 0 then n || ' sur ' || n else 'au moins une pièce déclarée' end,
+      case when n > 0 then egales || ' sur ' || n else 'aucune pièce déclarée dans le dossier : rien n''est prouvé' end);
   end if;
 end $$;
 

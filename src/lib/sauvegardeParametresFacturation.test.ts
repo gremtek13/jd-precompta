@@ -99,7 +99,9 @@ describe('le plan prévu, paramètres de facturation compris', () => {
   it('après les contacts, à la fin de ce qui ne dépend que du dossier — avant les devis et `exercices_valides`', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(ORDRE_RESTAURATION_PREVU[rang('parametres_facturation') - 1]).toBe('contacts')
-    expect(ORDRE_RESTAURATION_PREVU[rang('parametres_facturation') + 1]).toBe('devis_numerotation')
+    // Depuis l'étape VF6b, le journal des désignations les suit (sauvegardeDesignations.test.ts), puis les devis.
+    expect(ORDRE_RESTAURATION_PREVU[rang('parametres_facturation') + 1]).toBe('designations_des_pieces')
+    expect(rang('parametres_facturation')).toBeLessThan(rang('devis_numerotation'))
     expect(rang('parametres_facturation')).toBeGreaterThan(rang('dossiers'))
     expect(rang('parametres_facturation')).toBeLessThan(rang('exercices_valides'))
   })

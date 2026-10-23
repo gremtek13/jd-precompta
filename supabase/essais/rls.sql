@@ -483,6 +483,20 @@
 -- des blancs reçus tels quels) y rend 46 lignes, 0 en faute, 43 mutations sur 43 (80 tables, dont 71 portant un
 -- `dossier_id` ; M1 et M3 : 28 et 14 tables en faute ; M-SV1, M-SV3, M-SV4 et M-SV5 mordent). `logoDesFactures.sql` y
 -- rend ses 126 verdicts, 0 en faute.
+--
+-- 23/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (chantier EC-Q3, étape VF6b : migration `jumelle_inversee`, préparée,
+-- présentée au cabinet, non appliquée), qui crée `designations_des_pieces`, le journal des désignations — lecture du
+-- cabinet (`admin_du_dossier`), insertion de restauration réservée au super-administrateur, aucune autre policy, aucune
+-- branche client (VF6-Q3) — ; aucune autre policy ne change, et ce fichier n'y change rien que cet en-tête. Joué ENTIER
+-- par psql sur la réplique de l'étape (signature.sql : les neuf familles, et l'historique, égaux à la production à 146
+-- migrations, puis la migration `virement_mixte` de l'étape VF5h) : sans la migration, 46 lignes de verdict (80 tables,
+-- dont 71 portant un `dossier_id`), 0 en faute, 43 mutations sur 43 qui mordent ; avec elle, le journal semé dans le
+-- dossier `test` (une désignation et son retrait, par les fonctions, sous la session du chef) et dans celui du client
+-- (une déclaration, par la porte de la restauration), 46 lignes (81 tables, dont 72 portant un `dossier_id`), 0 en
+-- faute, 43 sur 43 — M1, M3 et M3ter y voient la table de plus (14, 5 et 5 tables en faute, pour 13, 4 et 4). Que le
+-- client ne lise aucune ligne du journal, pas même de son dossier, que le membre d'ailleurs et l'anonyme n'en lisent rien,
+-- et qui l'écrit : `exemplairesDesFactures.sql` (contrôles 350 à 366). Le passage en production suivra l'application et
+-- se notera ici.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
