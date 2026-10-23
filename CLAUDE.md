@@ -485,9 +485,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   facture d'avant la bascule se classe par ses encaissements avec l'exemplaire unique et validé de celle-ci (sinon le
   rang 7, neuf), s'écrit sans la part de cette facture et date l'exemplaire (`partsEncaissees`) ; G5 laisse la banque
   d'une pièce sur un tel mouvement ; des ventes facturées lues en partie retiennent la génération et la validation par
-  la garde unique de VF6a ; VF5H-Q1 à Q3 ouvertes → « LE VIREMENT MIXTE — CHANTIER EC-Q3 ». Restent VF6b à VF6e (avec
-  eux, trois préalables qui jugent encore l'exemplaire), puis VF7 à VF9 (EC3-Q9, la facture reprise, va à A8) ; à VF8,
-  ce que la simulation recevra dit aussi quelle pièce ignorer.
+  la garde unique de VF6a ; VF5H-Q1 à Q3 ouvertes → « LE VIREMENT MIXTE — CHANTIER EC-Q3 ». VF6b le 23/10/2026, sa
+  migration (`jumelle_inversee`) éprouvée sur une réplique après celle de VF5h, PAS appliquée : la déclaration d'une
+  vente hors des factures, `factures_du_pont` (le jumeau du pont), G3 et G4, la désignation qui remplace (VF6-Q1) et
+  se refuse sous un virement mixte classé (VF5H-Q1, sur la recommandation), le journal des désignations au cabinet
+  seul ; le code derrière `JUMELLE_INVERSEE_EXPORTEE`, baissé → « LA JUMELLE INVERSÉE, EN BASE ». Restent VF6c à VF6e
+  (avec eux, trois préalables qui jugent encore l'exemplaire), puis VF7 à VF9 (EC3-Q9, la facture reprise, va à A8) ;
+  à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
