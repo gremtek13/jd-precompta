@@ -32660,3 +32660,20 @@ sources de vente de la lecture de la Vue d'ensemble. Aucune question nouvelle.
   sont, l'onglet Banque s'ouvre sur l'exercice choisi.
 - Le détail du mouvement réservé ne nomme pas ses factures (le point des encaissements, si) : la pastille de l'onglet
   Banque les nomme.
+
+**LA MISE EN LIGNE, AVEC VF5G.** Les deux lots dans une seule demande, #214 : ouverte sur `7ba8b7c` (VF5g) après la
+barrière de la session, sa tête portée à `94f340a` quand VF5f a été recomposé à sa suite — rien n'attend sur le disque
+seul —, la barrière de la session rejouée sur cette tête (`tsc -b --force` ; lint, 0 erreur et les 63 avertissements
+d'avant ; 452 fichiers et 13 764 tests sous Paris, UTC, New York et Auckland ; le build, `index-DCjl_eaZ.js`), et les
+trois passes du client au banc sur les données réunies, celles de VF5f paraissant dans les visites « Ma banque » de VF5g
+(`390 client-banque`, `1440 client-banque`, `390 client` : 0 débordement, 0 bouton recouvert sur 122, 122 et 114) ; les
+deux passes de `verifier` vertes sur `94f340a` (de 11 h 43 à 12 h 02 UTC) ; fusionnée en « Rebase and merge » le
+23/10/2026 à 12 h 11 UTC (`f64e1ef` à `c3c5e27`, à la suite de la mise en ligne de VF5e, `c9d957f`, venue avec elle),
+`main` linéaire, son arbre égal à celui de la branche ; le déploiement vert (fini à 12 h 18), et le site sert
+`index-DCjl_eaZ.js`, le bundle du build local, depuis 12 h 19. La feuille de route : la ligne 28.65 mise à jour pour les
+deux lots, puis relue par empreinte (20 823 positions) ; les barres recomptées par requête, inchangées (187 chantiers
+hors de la phase 7, dont 142 livrés ; 76 % et 82 %). Les copies de travail des deux agents retirées, leur travail entier
+dans `main`, recomposé ; la branche réalignée sur `main`. Le même jour, à 10 h 31, le cabinet a tranché sur la page des
+arbitrages VF5D2-Q1 à Q3 (inscrire « déclaré » un encaissement contre-passé avant de l'être, le message d'un impayé
+contre-passé sans débit, l'impayé contre-passé par le client « Ventes » et « Banque »), toutes trois à la
+recommandation, que VF5d2 appliquait déjà : rien à changer.
