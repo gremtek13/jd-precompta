@@ -480,9 +480,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   puis la déclaration, G3, G4, le refus de défaire et le journal des désignations en base → « VF6, LA JUMELLE INVERSÉE :
   LA CONCEPTION ». VF6a le 23/10/2026, neutre : le brouillon, la Checklist et les préalables ignorent l'exemplaire d'une
   facture source (`lib/facturesSources.ts`, en paramètre obligatoire), son écriture passée est sans objet et se retire →
-  « LE BROUILLON ET LES PRÉALABLES IGNORENT L'EXEMPLAIRE D'UNE FACTURE SOURCE ». Restent VF5h, VF6b à VF6e (avec eux,
-  trois préalables qui jugent encore l'exemplaire), puis VF7 à VF9 — se conçoivent les encaissements de factures non
-  sources que VF2-Q2 et EC3-Q9 font compter ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
+  « LE BROUILLON ET LES PRÉALABLES IGNORENT L'EXEMPLAIRE D'UNE FACTURE SOURCE ». VF5h le 23/10/2026, repris sur VF6a, sa
+  migration (`virement_mixte`) éprouvée sur une réplique, PAS appliquée : un crédit qui paie une facture source et une
+  facture d'avant la bascule se classe par ses encaissements avec l'exemplaire unique et validé de celle-ci (sinon le
+  rang 7, neuf), s'écrit sans la part de cette facture et date l'exemplaire (`partsEncaissees`) ; G5 laisse la banque
+  d'une pièce sur un tel mouvement ; des ventes facturées lues en partie retiennent la génération et la validation par
+  la garde unique de VF6a ; VF5H-Q1 à Q3 ouvertes → « LE VIREMENT MIXTE — CHANTIER EC-Q3 ». Restent VF6b à VF6e (avec
+  eux, trois préalables qui jugent encore l'exemplaire), puis VF7 à VF9 (EC3-Q9, la facture reprise, va à A8) ; à VF8,
+  ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -767,9 +772,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   incomplet, aucun onglet ne se monte —, jamais un compte de rôle en dur (`comptesEnDur.test.ts`,
   `compositionsAuPlan.test.ts`) → « L'APPLICATION LIT LE PLAN ».
 - **Montant retenu** : HT pour un assujetti, TTC pour un exonéré (`lib/montantRetenu.ts`) → « HT OU TTC ». **La 2035
-  compte une pièce à la date de son PAIEMENT** (`paiementsDesPieces`, entrées obligatoires) → « LA 2035 COMPTE UNE PIÈCE
-  À LA DATE DE SON PAIEMENT ». **La CA3** : exigibilité à l'encaissement ou au paiement, arrondi fiscal par ligne,
-  aucune somme négative sur un taux ; une déclaration enregistrée écrit sa liquidation → « LA TVA SE LIQUIDE ».
+  compte une pièce à la date de son PAIEMENT** (`paiementsDesPieces`, entrées obligatoires : le relevé, les parts des
+  virements groupés, et celles des virements mixtes, lues avec les ventes facturées) → « LA 2035 COMPTE UNE PIÈCE À LA
+  DATE DE SON PAIEMENT », « LE VIREMENT MIXTE — CHANTIER EC-Q3 ». **La CA3** : exigibilité à l'encaissement ou au
+  paiement, arrondi fiscal par ligne, aucune somme négative sur un taux ; une déclaration enregistrée écrit sa
+  liquidation → « LA TVA SE LIQUIDE ».
 - **Le moteur de la 2035** : une ligne par poste ET par nature, un poste négatif reste négatif, une case n'appartient
   pas à la ligne en face (BH, BJ, BM groupent) ; amortissements en CH ; la CSG-CRDS entière au 108 en trésorerie, 6,8
   points en BV ; le cadre 8 sans l'abattement de 26 % → « Le cadre 8 du 2035-B ». **L'annexe 2035-E** se tire des cases

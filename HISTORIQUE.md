@@ -33745,3 +33745,251 @@ changer (`exerciceAConfronter` gardé par `prochainExerciceAValider`).
 la feuille de route (la ligne 33 : O33-Q3 fait), la page des arbitrages (O33-Q3 faite sur la recommandation, à confirmer). Rien d'autre :
 aucune migration, aucune policy, aucune Edge Function. Pas de vérification visuelle du banc `outils/captures/` : `index.css` et
 la coque n'ont pas changé, et la ligne neuve est un `check-ligne` ordinaire de la liste du travail à effectuer.
+
+### 23/10/2026 — LE VIREMENT MIXTE — CHANTIER EC-Q3, VF5H (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF5h sur `897b5e5` — l'arbre de `main` après la mise en ligne de VF5f et VF5g —, en
+deux commits : la migration, les modules, les écrans, leurs tests et les essais ; puis cette documentation. Créés :
+`supabase/schema/20261023200000_virement_mixte.sql`, sous une version PROVISOIRE, et deux tests, `virementMixte.test.ts`
+(la migration confrontée aux définitions d'hier) et `virementMixteBoutEnBout.test.ts`. Modifiés : douze modules
+(`encaissementsFactures.ts`, `rattachement.ts`, `ecrituresVentesFacturees.ts`, `ecritureVenteFacturee.ts`,
+`ecrituresVentesFactureesEcran.ts`, `ecrituresVentesFactureesLecture.ts`, `ventesFactureesLecture.ts`,
+`mouvementsDesVentes.ts`, `pointsDeLaChecklist.ts`, `prealablesValidation.ts`, `revueAnalytiqueEcran.ts`,
+`espaceVentes.ts`) ; onze écrans (`DossierDetail.tsx`, `BanqueTab.tsx`, `ClotureTab.tsx`, `EcrituresTab.tsx`,
+`EncaissementsFactureModal.tsx`, `EstimationTab.tsx`, `FinancementTab.tsx`, `PiecesTab.tsx`, `RevisionTab.tsx`,
+`TvaTab.tsx` et `ClientSimulation.tsx`, qui ne passe qu'une liste vide) ; trois fabriques de tests
+(`src/test/compositionsAuPlan.ts`, `dossierBascule.ts`, `essaiEcrituresVentesFacturees.ts`) ; des commentaires seuls
+dans `outils/captures/fauxSupabase.ts` ; quarante-trois fichiers de tests ; deux essais (`ventesFacturees.sql`,
+`ecrituresVentesFacturees.sql`). Ni policy, ni Edge Function ; de l'espace du client, une réécriture de mots
+(`espaceVentes.ts`) et deux colonnes de plus des pièces que la fenêtre des encaissements, partagée, lisait déjà sous
+« Banque ». En production, des SELECT sur le catalogue et des comptes, aucune valeur, aucune écriture : la migration n'y
+est PAS appliquée.)
+
+(Reprise le 23/10/2026 sur `f4a0648`, la tête de `main` qui porte VF6a, en deux commits, la migration et les essais
+inchangés ; la reprise a uni la garde des ventes facturées lues en partie — l'onglet Écritures ne retient plus la
+génération et la régénération que par `sourcesNonLues` de VF6a, de même condition que la `generationRetenue` d'ici, son
+titre disant les deux raisons, et Clôture ne suspend plus la validation que par le motif « les ventes facturées : … » de
+VF6a, en trésorerie comme en engagement, si bien que deux assertions de ce lot suivent les mots de VF6a —, et donné aux
+appels neufs de chaque lot le paramètre de l'autre : sous Paris, 457 fichiers et 14 019 tests justes, les 13 952 de
+`main` et les 67 de plus de ce lot.)
+
+**LA DÉCISION.** VF2-Q2 (19/10/2026) : compter aussi l'encaissement de la facture d'avant la bascule cité sur le
+mouvement qui paie aussi une facture source. VF5-Q2 (22/10/2026, à la recommandation) : de la manière (A), « le registre
+DATE la pièce » — la vente d'avant reste comptée par sa pièce, l'exemplaire désigné de sa facture (étape VF1), et
+l'encaissement cité sur ce mouvement en devient un PAIEMENT, à la date du mouvement (CGI, art. 93, 1 : les recettes
+encaissées) ; une pièce compte une fois, ses paiements ne font que la dater (« VF5, LA BANQUE : LA CONCEPTION », § 6).
+
+**LA DÉLIMITATION.** La puce VF5h du § 5 de cette conception et son § 6. Ni la facture reprise de l'ancien logiciel
+(EC3-Q9, rangée dans A8), ni les fonctions du registre (enregistrer, retirer, contre-passer, rattacher, déclarer), ni
+G2, ni « Ma banque » ni « Ma simulation » (VF8), ni la copie de `paiementsDesPieces` dans `agent-comptable` (VF9).
+
+**CE QUE LA BASE FAISAIT.** Un crédit de 300 € qui justifie 200 € d'une facture source et 100 € d'une facture d'avant
+est réservé (G2) ; son classement n'en comptait que 200 (« ce qui le dépasse reste à traiter ») ; la pièce de la facture
+d'avant ne pouvait pas s'y rapprocher (G2) ; son écriture se refusait (« son écriture n'est pas encore conçue »). Le
+mouvement restait réservé pour toujours, et la pièce comptait « sans paiement », à sa date de facture — souvent dans
+l'exercice d'avant. Et ce que la conception n'avait pas vu : la garde G5 tenait toute ligne sans facture ni encaissement
+passée sur un mouvement classé par ses encaissements pour une ligne propre au mouvement (le « troisième genre »),
+réservée aux fonctions de VF4b ; la banque d'une pièce sur ce mouvement — l'écriture de l'exemplaire que la manière (A)
+demande — s'y refusait en 42501, à l'insertion comme au retrait.
+
+**L'ÉTAT DE LA PRODUCTION, RELEVÉ LE 23/10/2026** (le catalogue et des comptes, relevé deux fois, au début du lot puis à
+sa fin) : 146 migrations, la dernière `20261023063657` (`impaye_non_declare`), empreinte globale `c096ac1d…` ; les
+quatre fonctions que la migration remplace portent les corps que sa garde exige (`02d897a7…`, `f050e941…`, `134a5174…`,
+`6538f241…`) ; aucun dossier basculé, aucune facture source (six factures en tout), aucun encaissement, aucun mouvement
+classé par ses encaissements, aucun exemplaire désigné, aucune ligne d'écriture d'une vente facturée. La migration y est
+NEUTRE.
+
+**LA MIGRATION** `virement_mixte` (43 779 caractères, 44 360 octets, 701 lignes, md5
+`ebbcd8407ecc3338ca625afc397afb8c`) : quatre fonctions, chacune recopiée de sa dernière définition par un script, jamais
+retapée, et changée aux seules lignes que voici.
+- Une garde d'abord : les quatre corps d'hier au caractère près (les retours chariot d'un collage écartés), sinon un
+  refus qui nomme la fonction et sa migration ; une seconde application se refuse de même.
+- `classer_mouvement_par_encaissements` : un rang 7 neuf, avant les sommes — l'encaissement vivant (non retiré,
+  qu'aucune contre-passation sans mouvement n'annule) d'une facture qui n'est pas source, cité sur le mouvement, quand
+  sa facture n'a pas EXACTEMENT un exemplaire désigné, une pièce de vente validée du dossier : « Désignez d'abord
+  l'exemplaire de la facture % : ce mouvement porte aussi son encaissement, et cette facture, qui n'est pas la source de
+  sa vente, se compte par une seule pièce validée. » (22023), la facture au plus petit numéro (`collate "C"`, puis
+  l'identifiant). Les sommes des rangs 8 à 11 comptent désormais tous les encaissements qui justifient le mouvement ; le
+  rang 6 ne change pas — une facture d'avant seule ne fait pas classer un mouvement, et sa pièce s'y rapproche comme
+  hier. Corps : 5 226 caractères, `96c3e6f8…`.
+- `ecriture_attendue_vente_facturee` : le motif `mouvement_facture_non_source` ne vaut plus que sans cet exemplaire, et
+  son détail nomme la facture, la même que le classement ; la banque du mouvement ne porte plus les encaissements des
+  factures qui ne sont pas sources, quel que soit leur jour — la pièce écrit elle-même sa banque, à la date du mouvement
+  (`contrepartieBanque.ts`) — ; le 511 ou le 53 ne soldent que ceux des factures sources d'un autre jour ; le 627 porte
+  les frais du tout. Corps : 12 636 caractères, `e956e19e…`.
+- `ecrire_vente_facturee` : son rang 16 nomme la facture, sous les mots du classement ; le reste inchangé. Corps : 11
+  528 caractères, `d6b091af…`.
+- G5 (`garder_lignes_de_la_vente_facturee`) : une ligne passée sur un mouvement classé par ses encaissements n'est du
+  troisième genre que sans pièce, comme `ligneDUneVenteFacturee` le juge déjà ; l'ancienne ligne et la nouvelle sont
+  jugées, si bien qu'aucune ne passe d'un genre à l'autre en recevant ou en perdant sa pièce. Corps : 2 629 caractères,
+  `905446cc…`.
+- Les commentaires du classement et de G5 disent ce qu'ils font désormais. `create or replace` garde l'OID et les droits
+  (éprouvé) : rien n'est rejoué ; aucune table, colonne, contrainte, policy ni aucun droit ne change, aucune donnée
+  n'est lue de plus, écrite ni retirée.
+- Le corps d'`ecrire_vente_facturee` supprime, comme hier, les écritures proposées de la source qu'il remplace : le
+  détecteur d'`apply_migration` retiendra sans doute le texte, comme celui du lot de R1. Le texte à coller est prêt,
+  remis à la session avec le compte rendu de l'agent (`collage_virement_mixte.sql`, 45 442 caractères,
+  `647f3840a3d36f92b95f8ef892b8d4df`) : une transaction qui vérifie sa propre empreinte (les fins de ligne Windows
+  ramenées), refuse une seconde application, s'exécute — sa garde refuse un corps d'hier changé depuis — et pose la
+  ligne d'historique sous la version de l'heure du collage, au nom de l'auteur de la migration
+  `encaissements_de_la_vente_facturee`. Son retour arrière aussi (33 043 caractères, `636466c691a17b3450b2cea29f614020`,
+  `retour_virement_mixte.sql`) : les quatre définitions d'hier et leurs commentaires, refusé si les quatre corps ne sont
+  pas ceux de la migration ou si un virement mixte est classé ou écrit ; il supprime la ligne d'historique — jamais sans
+  l'accord du cabinet.
+
+**LE MODULE ET LES ÉCRANS.**
+- `encaissementsFactures.ts` redit la base : `exemplaireUnique`, `encaissementsDAvantDuMouvement`,
+  `factureSansExemplaire` (la facture que la base nomme, `<NULL>` pour une facture que la lecture n'a pas rendue), le
+  rang 7 de `REFUS_CLASSEMENT` (`exemplaire_a_designer`) ; `refusClassement`, `inclassableApres`,
+  `inclassableApresEnregistrement` et `inclassableApresContrePassation` reçoivent les pièces désignées, sans valeur par
+  défaut. La phrase d'un geste qui rendrait un mouvement inclassable cite désormais le refus de la base (celle d'hier,
+  « … que son classement ne compte pas », serait fausse) ; et l'encaissement d'une facture qui n'est pas source, sur un
+  mouvement que ceux d'une facture source réservent, se juge aussi. `partsEncaissees` tire du registre ce que les
+  virements mixtes paient : la pièce, le mouvement, le montant.
+- `rattachement.ts` : `paiementsDesPieces` reçoit ces parts, troisième paramètre OBLIGATOIRE (origine `encaissements`),
+  et ne les compte que sur un mouvement lu, rapproché et classé par ses encaissements ; une pièce payée en partie par un
+  autre mouvement additionne ses paiements, et compte une fois.
+- `ventesFactureesLecture.ts` rend ces parts avec les ventes facturées (`encaissees`) : les pièces désignées ne se
+  lisent qu'APRÈS les quatre autres collections, et seulement quand une facture source est lue et que l'encaissement
+  d'une facture qui ne l'est pas cite un mouvement — un dossier qui n'a pas basculé n'a ni une lecture de plus, ni une
+  raison de plus de se dire incomplet. `ecrituresVentesFactureesLecture.ts` lit les pièces désignées en sixième
+  collection ; la composition (`ecrituresVentesFacturees.ts`) et son refus (`ecritureVenteFacturee.ts`) redisent la
+  migration, la facture nommée.
+- Les moteurs datent la pièce par le virement : Clôture (la 2035, la validation et le prochain exercice à valider), TVA
+  (la CA3), Financement (la situation), Estimation, Révision (la revue analytique), Banque (une pièce payée n'est plus
+  candidate), Pièces (« Rapprochée », un dossier basculé lisant désormais ses ventes facturées), la Checklist (une
+  lecture partielle des ventes facturées tait les pièces payées en partie). Sur un dossier basculé dont les ventes
+  facturées ne sont pas lues en entier, l'onglet Écritures ne génère ni ne régénère aucune écriture de pièce — elle
+  daterait mal une pièce qu'un virement mixte paie —, et Clôture suspend la validation en le disant (en engagement, où
+  elle se montre sans la 2035).
+- La fiche d'un crédit : la carte nomme les encaissements des factures d'avant (« pas source de sa vente : son
+  exemplaire la compte, daté par ce mouvement », ou « … et sans son exemplaire unique et validé ») ; ce qui reste à
+  faire du crédit les compte ; « Classer » dit le rang 7 avant le clic ; les confirmations du classement et de son
+  retrait nomment les factures d'avant, et le « Régénérer » de leurs écritures. L'onglet Écritures dit la facture à
+  désigner (« désignez d’abord cet exemplaire (facture F…) »). La fenêtre des encaissements lit `statut` et `type_piece`
+  des pièces qu'elle lisait déjà, et le client « Ventes » et « Banque » y lit le rang 7 réécrit pour lui : « Ton cabinet
+  doit d'abord désigner l'exemplaire de la facture… » (`REECRITURES_CLIENT`) — sans quoi il lisait un vouvoiement et un
+  geste du cabinet. « Ma simulation » passe une liste vide, jusqu'à VF8.
+
+**LES CHOIX ÉCARTÉS.**
+- La manière (B), le registre qui remplace la pièce : écartée par VF5-Q2.
+- La banque de l'exemplaire écrite par la composition du mouvement, en ligne propre : l'écriture de la pièce
+  (`lignesPourPiece`) porte sa banque comme celle de toute pièce payée, et la Checklist l'aurait dite désynchronisée, ou
+  la banque se serait écrite deux fois.
+- Une garde G5 étroite — seule la banque de l'exemplaire unique dont l'encaissement cite le mouvement : elle refuserait
+  le « Régénérer » qui retire la banque d'une pièce dont la désignation a changé. La règle large, « une ligne qui porte
+  une pièce n'est pas du troisième genre », est celle du module, et l'ancienne ligne comme la nouvelle y sont jugées.
+- Lire les pièces désignées à chaque lecture des ventes facturées : une lecture de plus pour tous les dossiers, et une
+  raison de plus de se dire incomplète — l'onglet TVA, dont les essais tronquent les pièces, l'a montré.
+- Compter l'encaissement d'une facture d'avant sans exemplaire : sa vente ne compterait nulle part, ou deux fois avec
+  une pièce désignée plus tard.
+- Écarter, dans `partsEncaissees`, la contre-passation d'une facture d'avant : le filtre est gardé, mais il ne fait que
+  redire la garde `garder_encaissement_facture`, qui refuse qu'une telle contre-passation cite un mouvement, à toute
+  insertion, celle de la restauration comprise, comme au rattachement.
+
+**LES PREUVES.**
+- La réplique : une copie à froid de la grappe de VF5d2 (PostgreSQL 16, UTF8), dans son propre répertoire de données,
+  sur son propre port (5533), arrêtée par son répertoire de données ; sa base égale à la production — `signature.sql`,
+  les neuf familles (fonctions 191, `d24edf75…`) ; l'historique, 146, `c096ac1d…`.
+- La migration appliquée comme l'outil l'aurait fait (une transaction, sa ligne d'historique) : 147 migrations,
+  `8b997dae…` ; seule la famille « fonctions » change (191, `68ffb183…`) ; mêmes OID, mêmes droits ; les deux
+  commentaires neufs. La garde refuse une seconde application (elle nomme le classement) et une base où le corps de G5 a
+  changé depuis sa migration (elle nomme G5) ; dans les deux cas, rien ne change.
+- Le texte à coller, éprouvé sur des copies fraîches de la base égale à la production : collé comme le cabinet le
+  ferait, la même signature que l'application par l'outil, la ligne d'historique rend l'empreinte du fichier ; altéré
+  d'un caractère, refusé, rien n'est appliqué ; collé deux fois, refusé la seconde ; en fins de ligne Windows, appliqué,
+  la même empreinte. Le retour arrière : sur la base collée, il rend la production (signature, neuf familles sur neuf ;
+  146 migrations, `c096ac1d…`) ; refusé sur une base sans la migration, et tant qu'un virement mixte est classé.
+- Les essais, chacun sur une copie fraîche, sans puis avec la migration : `ventesFacturees.sql`, 198 contrôles, 9 en
+  faute sans elle (128c à 128e, 128i à 128k, 174 à 176), 0 avec ; `ecrituresVentesFacturees.sql`, 196, 17 en faute sans
+  elle (6b, 8, 14b à 14d, 46 à 46d, 53 à 57, 79a, 79b, 79d), 0 avec ; `encaissementsFactures.sql` (110) et
+  `transmissionsEncaissements.sql` (130), aucun en faute, sans elle comme avec. Les contrôles d'hier rendent, verdict et
+  observation, ce qu'ils rendaient, hors de ceux que le lot change (128c ; 2, 8 et 46) et du compte des tables du
+  contrôle 199 de `ventesFacturees.sql`, où les pièces entrent. Sur la réplique seulement, une sonde des suppressions de
+  G5 (la banque de l'exemplaire retirée par le chef, par le membre ; une ligne du mouvement, seule ou avec elle ; la
+  suppression du dossier) : juste avec la migration ; sans elle, la banque de l'exemplaire ne se retire pas (42501). Les
+  textes sans lignes de commentaire, envoyés en une requête comme l'outil : 71 369 caractères (`70d26257…`), 87 680
+  (`e93a36fa…`), 62 259 (`9860ab48…`), 79 631 (`e954cf7d…`), tous justes. `rls.sql` n'est pas rejoué : aucune policy ne
+  change.
+- Trente-deux mutations des quatre fonctions (douze du classement, quatorze de la composition, deux de l'écriture,
+  quatre de G5 : une condition, un filtre, un ordre, un mot), jouées contre les deux essais et la sonde : vingt-sept
+  tuées ; cinq équivalentes, déclarées d'avance avec leur raison — le dossier et la nature d'un exemplaire, que
+  `garder_exemplaire_facture` impose (quatre), la source d'une facture, fixée à sa validation (une).
+- Les trois contrôles de l'export sur la réplique : sans le fichier, 146 et `c096ac1d…` des deux côtés ; avec lui, sous
+  sa version provisoire, 147 et `8b997daed9ae35b3efd28c7c2fdcf004` ; le socle (80, `5d53eea2…`) et l'inventaire (2 122,
+  `b2666bf3…`) égaux et inchangés — la migration ne crée aucun objet.
+- Le TypeScript : cinquante-quatre mutations (les parts et leur filtre, le rang 7 et son ordre, la composition, la
+  lecture conditionnelle, la carte et les confirmations, chaque appel de `paiementsDesPieces` qui reçoit les parts, la
+  réécriture du client) : cinquante-trois tuées ; une équivalente, le filtre des contre-passations de `partsEncaissees`
+  (plus haut). Dix ont d'abord survécu, sept de la première campagne et les trois écrans qu'elle oubliait (la situation,
+  l'estimation, la revue) ; des tests neufs les tuent (les préalables et le prochain exercice à valider, la revue
+  analytique dans son module et dans son écran, la validation suspendue en engagement et le prochain exercice dans
+  Clôture, la CA3, la situation, l'estimation, la fenêtre des encaissements).
+- La suite comparée test par test, sous Paris : avant (`897b5e5`) 452 fichiers et 13 764 tests ; après, 454 fichiers et
+  13 831 tests ; aucun verdict changé ; douze tests remplacés, qui disaient ce que le lot change (le refus d'hier du
+  virement mixte, la facture d'avant que le classement ne comptait pas, la lecture en quatre et cinq collections),
+  soixante-dix-neuf neufs.
+- La barrière, sous le Node 22.23.3 de la CI, sur l'arbre du premier commit (`78e5300`), son `node_modules` branché sur
+  un recouvrement du bloc-notes (les caches de `tsc -b` et de Vite hors du dépôt principal, que d'autres sessions
+  utilisaient ; leurs empreintes inchangées) : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les 63 avertissements
+  d'avant (les mêmes, fichier et règle) ; `npm run build` 0 (`index-ChhERLHT.js`) ; `npm run test:fuseaux` : Paris et
+  UTC, 454 fichiers et 13 831 tests justes ; à New York puis à Auckland, chaque passe entière n'a perdu qu'un test que
+  le lot ne touche pas, sur la charge de la machine (les suites d'autres sessions, une charge de 11 pour quatre cœurs) :
+  `declarationsEreporting.test.ts` (« le contenu : un objet, d'un mégaoctet au plus… », qui sérialise des contenus d'un
+  mégaoctet, 1,4 à 4,4 s à Paris, 5,9 et 6,1 s ici, au-delà du délai de 5 s), et une fois `TuilesVentesClient.test.tsx`
+  (un texte attendu une seconde) ; chacun rejoué seul sous le fuseau de sa faute : juste. Une passe entière de New York
+  et d'Auckland sur une machine moins chargée reste à faire : la CI de la demande de fusion la fera.
+- Le banc (`outils/captures/debordements.mjs`, sous le même Node, sur un port à lui, le navigateur sans le mandataire,
+  le serveur arrêté par son PID) : 0 débordement à 390, 720, 1 024, 1 280 et 1 440 px, et dans la passe du client
+  « Ventes » et « Banque » à 390 px ; aucun bouton de fenêtre recouvert (282 sondés dans 61 fenêtres au cabinet, 122
+  dans 31 chez le client). Aucune visite ne montre encore un virement mixte.
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) Présenter la migration au cabinet ; sur son accord, l'appliquer par
+`apply_migration`, sous le nom `virement_mixte`, le texte du fichier tel quel ; si l'outil attend une confirmation —
+c'est probable —, donner le texte à coller dans le message final du tour (`collage_virement_mixte.sql`, 45 442
+caractères, `647f3840…`), à coller dans l'éditeur SQL. (2) Renommer le fichier à la version posée, texte inchangé ; la
+ligne d'historique doit rendre `ebbcd8407ecc3338ca625afc397afb8c` (fins de ligne ramenées à `\n`). (3) Rejouer en
+production, sans leurs lignes de commentaire, `ventesFacturees.sql` (71 369 caractères, `70d26257…` : 198 justes) et
+`ecrituresVentesFacturees.sql` (87 680, `e93a36fa…` : 196), et, si la session le juge utile, `encaissementsFactures.sql`
+(62 259, `9860ab48…` : 110) et `transmissionsEncaissements.sql` (79 631, `e954cf7d…` : 130), dont les fonctions ne
+changent pas ; rien ne doit rester. (4) `rls.sql` : aucune policy ne change. (5) Les trois contrôles de
+`supabase/schema/README.md` contre la production — 147 migrations ; socle 80, `5d53eea2…` ; inventaire 2 122,
+`b2666bf3…` — et leur passage noté dans ce README ; `signature.sql` : seule la famille « fonctions » doit changer (191,
+`d24edf75…` puis `68ffb183…`). (6) Le code peut partir avant comme après la migration : sans elle, la base refuse le
+virement mixte comme hier, et aucun dossier n'a basculé ; avec elle et sans le code, l'écran d'hier refuse encore avant
+le clic le virement mixte que la base accepterait — rien de faux ne s'écrit. (7) CLAUDE.md : la migration dite
+appliquée, avec sa version (la puce d'EC-Q3). (8) VF5H-Q1 à VF5H-Q3 à la page des arbitrages. (9) La feuille de route :
+la ligne 28.65.
+
+**LES QUESTIONS AU CABINET** (aucune ne retient le lot) :
+- VF5H-Q1 — Figer la désignation dont dépend un virement mixte classé ? Aujourd'hui, désigner ou défaire l'exemplaire
+  d'une facture d'avant reste possible après le classement : le classement demeure, la composition retient alors le
+  mouvement (« désignez d'abord cet exemplaire »), et la pièce retombe à sa date de facture — l'onglet Écritures et la
+  Checklist le disent. Recommandé : que `designer_exemplaire_facture` et `defaire_exemplaire_facture` refusent ce
+  geste — désigner, remplacer ou défaire — tant qu'un mouvement classé par ses encaissements compte l'encaissement de
+  cette facture (« retirer d'abord ce classement »), dans la migration de VF6b, qui remplace déjà ces deux fonctions
+  (« VF6, LA JUMELLE INVERSÉE : LA CONCEPTION », le remplacement et VF6-Q1) ; écarté : attendre VF7, où la validation
+  figera les désignations d'un exercice validé seulement.
+- VF5H-Q2 — Les gardes du registre pour l'encaissement d'une facture d'avant sur un mouvement classé ? Pour une facture
+  qui n'est pas source, `enregistrer_encaissement` laisse citer un mouvement classé par ses encaissements,
+  `retirer_encaissement` laisse retirer, et `annuler_encaissement` contre-passer sans mouvement, un encaissement dont le
+  mouvement est classé : chacun change ce que ce mouvement justifie, sa composition le retient alors (`mouvement_ecart`
+  ou `mouvement_facture_non_source`) et ses écritures sont à réécrire ou à retirer. Recommandé : étendre à ce cas les
+  refus que ces trois fonctions et la garde `garder_encaissement_facture` opposent déjà pour une facture source — une
+  migration, VF5h2, avant la première bascule réelle ; écarté : laisser la dérive, que la composition dit mais qu'aucun
+  geste ne prévient.
+- VF5H-Q3 — « Ma banque » d'un client « Banque » et « Ventes » nomme-t-elle aussi la facture d'avant d'un virement
+  mixte ? Aujourd'hui elle ne nomme que les factures sources (`venteDuMouvement`) : vrai, mais incomplet. Recommandé :
+  oui, une ligne de `banqueClient.ts`, dans le prochain lot de l'espace du client (VF8 au plus tard) ; ce lot ne le
+  touchait pas.
+
+**À REVOIR.**
+- La copie de `paiementsDesPieces` dans `agent-comptable` n'a que deux paramètres : son analyse dirait « à régénérer »
+  l'exemplaire qu'un virement mixte paie ; ses blocs se reprennent à VF9, et ses gardes la confrontent au module sans
+  virement mixte.
+- Un classement ou son retrait ne régénère pas les écritures de l'exemplaire : la confirmation renvoie au « Régénérer »
+  de l'onglet Écritures, et la Checklist dit l'écriture désynchronisée tant qu'il n'est pas fait.
+- Le point 2 du § 8 de la conception de VF5 (la vente d'avant datée par l'encaissement de son virement, les frais du
+  virement mixte), qui va à l'expert-comptable, vaut désormais pour le code.
+- Le banc n'a pas de visite d'un virement mixte (la carte de la fiche d'un crédit, le motif de l'onglet Écritures) : à
+  ajouter.
