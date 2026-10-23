@@ -32217,3 +32217,13 @@ morceau « gestion@mutuelle- » que le banc juge entier.
 La passe fautive rend 0, comme les autres du banc (390, 720, 1 024, 1 280, 1 440, panneau 2000, barre 2000, les
 deux, `client` et `client-banque` à 390). Ailleurs, l'adresse d'un client n'est affichée que dans cette cellule ; celles
 des accès et de l'équipe sont dans des cellules sans `.nom-fichier`, non touchées.
+
+**LA MISE EN LIGNE.** Demande #212, ouverte sur `42f675c` après la barrière de la session sous Node 22.23.3
+(`tsc -b --force` ; lint, 0 erreur et les 63 avertissements d'avant ; 449 fichiers et 13 670 tests sous Paris, UTC, New
+York et Auckland ; le build) ; les deux passes de `verifier` vertes (la branche, de 8 h 17 à 8 h 31 UTC, puis la
+demande, de 8 h 44 à 9 h 04) ; fusionnée en « Rebase and merge » le 23/10/2026 à 9 h 04 UTC (`fcdafd2`, `d20be77`, après
+la mise en ligne de VF5d2, `793b9d8`), `main` linéaire, son arbre égal à celui de la branche ; le déploiement vert (fini
+à 9 h 08), et le site sert `index-CTWXy1SD.js`, le bundle du build local, depuis 9 h 08. La feuille de route : une ligne
+neuve, la 34.94, « Fait » ; les barres recomptées par requête (187 chantiers hors de la phase 7, dont 142 livrés ; 76 %
+et 82 %, inchangées) et leur texte en tête de page mis à jour. La copie de travail de l'agent retirée ; la branche
+réalignée sur `main`.
