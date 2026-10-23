@@ -676,6 +676,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Une recherche filtre l'affichage, jamais un total ni un export** (`recherchesEtTotaux.test.ts`). Un état qui porte
   un sous-ensemble le dit dans son nom → « Un nom qui ment sur son filtre ». Un point de Checklist vérifie que sa cible
   peut MONTRER ce qu'il compte → « Un rapprochement qui hésite dit un symptôme ».
+- **Un calcul refait pour chaque mouvement du relevé se mesure** sur un relevé fictif de 3 000 mouvements libres : ce
+  qui parcourt le relevé ne se joue qu'après les signaux bon marché, qui ne font que filtrer → « LES CANDIDATS DU
+  RELEVÉ ».
 - **Un écran de saisie ne choisit pas l'exercice** à la place du cabinet ; un champ devenu sans objet est remis à zéro
   dans la même écriture. **Un lot parallèle réserve l'empreinte** dans un `Set` avant toute attente (`ClientUpload`),
   pas encore d'un lot à l'autre (28.8-ClientUpload, à écrire).
