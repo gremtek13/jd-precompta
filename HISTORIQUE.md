@@ -32227,3 +32227,159 @@ la mise en ligne de VF5d2, `793b9d8`), `main` linéaire, son arbre égal à celu
 neuve, la 34.94, « Fait » ; les barres recomptées par requête (187 chantiers hors de la phase 7, dont 142 livrés ; 76 %
 et 82 %, inchangées) et leur texte en tête de page mis à jour. La copie de travail de l'agent retirée ; la branche
 réalignée sur `main`.
+
+### 23/10/2026 — LES CANDIDATS DU RELEVÉ — CHANTIER EC-Q3, VF5E (LIGNE 28.65)
+
+(Écrite par l'agent architecte du lot sur `44523b0` — `main`, VF5d compris, et VF5d2, la demande de fusion #211 —, en
+deux commits : le code et ses tests, puis cette documentation. Créés : `candidatsDuReleve.test.ts`,
+`BanqueTab.candidats.test.tsx`. Modifiés : `mouvementsDesVentes.ts`, `reglesAffectation.ts`, `BanqueTab.tsx`,
+`FicheMouvement.tsx`, le banc (`fauxSupabase.ts`, `debordements.mjs`), et trois tests (`gestesDuCredit.test.ts`,
+`gestesDuDebit.test.ts`, `reglesAffectation.test.ts` : le libellé du mouvement que les gestes reçoivent désormais, le
+champ neuf du complément, celui de `JustificatifsDuDossier`). Ni base, ni migration, ni policy, ni Edge Function ; en
+production, des comptes seulement, le 23/10/2026 : aucun dossier basculé, aucune facture source, aucun encaissement,
+aucune règle d'affectation ni d'ignorance, aucun mouvement classé par ses encaissements, 146 migrations. Le lot y est
+NEUTRE.)
+
+**LA DÉLIMITATION.** La puce VF5e du § 5 de la conception (« VF5, LA BANQUE : LA CONCEPTION ») et le point (h) de son
+§ 4 : les candidats du relevé ignoraient les factures ouvertes et les encaissements sans mouvement ; et trois « À
+REVOIR » qui renvoyaient ici — celui de VF5c (la fiche de CHAQUE crédit libre offrait « Enregistrer l'encaissement d'une
+facture », même une recette sans facture) et celui de VF5d (chaque débit libre assez grand proposait toutes les
+contre-passations sans mouvement et tous les encaissements à contre-passer) —, et celui de VF5a2 (« À trancher par
+l'opérateur » montrait la paire douteuse d'un mouvement réservé). Côté CABINET seulement, sur un dossier basculé dont
+les ventes facturées sont lues en entier. Rien de VF5f (la Checklist), de VF5g (« Ma banque »), de VF5h (le virement
+mixte), ni de l'espace client.
+
+**LE MODULE** (`mouvementsDesVentes.ts`, pur ; une section neuve en fin de module).
+- `candidatsDeLaVente(ventes, lecture, anneesValidees)` rend les deux listes de la puce — les factures sources OUVERTES
+  (validées, du dossier, leur reste net de leurs avoirs validés positif, `resteAEncaisserVente`) et les encaissements de
+  factures sources enregistrés sans mouvement (non retirés, que rien ne dit « n'avoir pas eu lieu », contre-passations
+  comprises) — et la lecture qui les juge sur chaque mouvement ; `AUCUN_CANDIDAT` sur un dossier qui n'a pas basculé,
+  sur des ventes pas encore revenues, lues en partie, refusées ou d'un autre dossier (la retenue de VF5a1).
+- `candidatsDuMouvement(candidats, ligne)` : pour un mouvement LIBRE — que rien ne classe, qu'aucun encaissement ne
+  réserve, qu'aucun exercice validé ne fige —, sur un CRÉDIT les encaissements sans mouvement et les factures ouvertes,
+  sur un DÉBIT les contre-passations sans mouvement. Un candidat n'est proposé que si la base l'accepterait, par le
+  jugement du module qui la redit, jamais par une règle recopiée : un encaissement ou une contre-passation par
+  `refusRattachement` sur ce mouvement ; une facture par `refusRattachement` d'un encaissement FICTIF de cette facture,
+  daté du mouvement, du montant que la fenêtre proposerait (`montantSurLeCredit`) — les refus du mouvement cité
+  d'`enregistrer_encaissement` pour une facture source (la frontière, le rang 10, le rang 17). Puis il est DÉSIGNÉ : par
+  son MONTANT — `refusClassement` joué sur l'état d'après, la facture encaissée de tout son reste : le mouvement se
+  classerait alors, à l'écart des frais près (`min(2 %, 5 €)` : la banque crédite un peu moins, ou débite un peu plus)
+  —, ou par son CLIENT, cité au libellé du mouvement (`tiersConfirmeParBanque`, le signal des pièces). L'ordre : le plus
+  petit écart au mouvement d'abord, puis un encaissement avant une facture (il est déjà saisi), le client cité, la date
+  et l'identifiant, octet par octet. Chaque candidat porte son titre, son libellé et ses signaux en phrases.
+- `justificatifDeLaVente(candidats, ligne)` : sur un crédit, « Un encaissement enregistré attend son mouvement. », à
+  défaut « Une facture de l'application attend son encaissement : ce crédit la règle peut-être. » ; sur un débit, « Une
+  contre-passation enregistrée attend son mouvement. » quand une contre-passation le ferait aux frais près — le client
+  seul ne désigne pas un impayé.
+- `horsDesLotsAvecLesCandidats(hors, candidats, lignes)` : les mouvements que ni le rapprochement automatique, ni
+  « Valider et rapprocher », ni la règle d'ignorance ne prennent — ceux de VF5a2 sous les mots de la garde, et ceux
+  qu'un candidat justifie peut-être, sous sa phrase. `ecartDuLot` dit les seconds autrement : « une vente facturée le
+  justifie peut-être — il reste à rapprocher depuis sa fiche » ; mêlés, les deux comptes.
+- Les gestes d'un crédit (VF5c) gagnent `proposes`, les candidats d'un crédit libre — chacun aussi dans sa liste, dont
+  le geste est le sien ; vide sur un crédit réservé. Ceux d'un débit (VF5d) gardent leurs listes ENTIÈRES (un impayé ne
+  se devine pas) : à écart égal, le client cité au libellé du débit passe devant, et chaque ligne le dit (`clientCite`).
+  Les deux reçoivent le libellé du mouvement (`LigneDesGestes`) : la lecture des ventes ne porte pas le libellé brut.
+
+**LE LOT DES RÈGLES** (`reglesAffectation.ts`). `JustificatifsDuDossier` gagne un champ OBLIGATOIRE, `ventes` — les deux
+listes de la puce et la lecture qui les juge, en un objet : elles ne se jugent pas sans le registre ni les mouvements,
+et un champ unique ne se passe pas à moitié. `justificatifPossible` les apprend en dernier : une pièce du même montant,
+une échéance, un tiers, un solde se disent d'abord, comme hier. Le lot met le crédit « à rapprocher », sous la phrase,
+jamais parmi les mouvements que leurs encaissements portent.
+
+**LE DOUBLE COMPTE DU RELEVÉ, VÉRIFIÉ LOT PAR LOT** (sur un crédit LIBRE qu'une facture source pourrait régler, avant ce
+lot) :
+- `horsDesLots` et `retenueDuReleve` (VF5a1, VF5a2) ne le connaissaient pas : un mouvement libre n'est ni classé ni
+  réservé. `retenueDuReleve` suspend tout lot sur des ventes non lues en entier — elle tient : les candidats sont alors
+  vides, et rien ne part.
+- Le lot des RÈGLES l'affectait en recette : la vente comptée deux fois — par ce crédit, et par l'encaissement de la
+  facture. Le seul vrai double compte. Fermé par `justificatifPossible` : « à rapprocher ».
+- Le RAPPROCHEMENT AUTOMATIQUE le rapprochait de la seule pièce validée du même montant — l'exemplaire de la facture, ou
+  une pièce de vente non désignée —, « Valider et rapprocher » validait et rapprochait la jumelle à valider que le
+  montant, la date et le nom confirment, et la règle d'ignorance l'ignorait. Rapproché ou ignoré, il n'est plus libre :
+  l'encaissement de la facture ne peut plus le citer (rang 17), se saisit sans mouvement, et le relevé paraît justifié
+  par une pièce qui ne compte pas (l'exemplaire d'une facture source, VF3b) — ou qui compte à côté de la facture (une
+  pièce de vente non désignée : un double compte que la base ne ferme pas encore, et que le lot rendait silencieux).
+  Fermé du côté sûr : les trois lots reçoivent `horsDesLotsAvecLesCandidats` ; le mouvement reste « à rapprocher », la
+  carte du lot dit pourquoi ; il reste un concurrent dans l'unicité, comme un réservé (VF5a2). Aucun mouvement n'entre
+  dans un lot qui n'y entrait pas.
+- « À trancher par l'opérateur » (un affichage) dit, à côté du motif d'une paire, ce que la vente dit du mouvement : les
+  mots de la garde d'un réservé, la phrase d'un candidat.
+- Reste ouvert, sans double compte possible : l'IMPORT d'un relevé (CSV, PDF) et la connexion bancaire appliquent la
+  règle « toujours ignorer » à des mouvements neufs ; un crédit qu'une facture attend, importé sous un motif ignoré,
+  naît « ignoré » (À REVOIR).
+
+**L'ÉCRAN** (`BanqueTab.tsx`, `FicheMouvement.tsx`). L'onglet calcule les candidats dans la même relecture que le relevé
+(`candidatsDeLaVente`, mémoïsé), les passe au lot des règles, à la fiche (le justificatif dit avant une affectation, une
+prop obligatoire `candidatsDeLaVente`) et, par `horsDesLotsAvecLesCandidats`, aux trois autres lots. La fiche d'un
+crédit libre ouvre son complément par une section neuve, EN TÊTE, « Proposés par ses ventes facturées » : une carte par
+candidat — son titre, son libellé, son montant, ses signaux sous les coches des signaux d'une pièce — et un bouton,
+« Rattacher celui-ci » (le geste de VF5c, sa confirmation, `rattacher_mouvement_encaissement` sous `sousVerrou`) ou
+« Enregistrer son encaissement… » (la fenêtre de la facture, ce crédit imposé ; elle seule écrit) ; puis les listes
+d'hier, entières. La fiche d'un débit dit « client cité au libellé » dans ses deux listes. Rien ne s'écrit seul : aucun
+geste neuf, aucune lecture neuve, aucun appel neuf.
+
+**LE BANC.** Le dossier basculé (d12) reçoit un virement libre de la maison de santé (b9, 178,50 €) : F2026-0024, qui
+reste à encaisser de 179,50 €, le règle par son montant (1 € de frais) et par son client. Une visite neuve, avant celles
+de l'e-reporting, `banque-basculee/fiche-credit-candidat`, mesurée contre le corps de la fiche. Les visites existantes
+de d12 en voient davantage : la remise de b6 propose en tête le chèque de F2026-0023, le virement b9 propose aussi, par
+le nom de son client, le chèque de F2026-0024 enregistré sans mouvement (un paiement en deux fois se rattache), et le
+retour du chèque impayé (b5) dit sa contre-passation sans mouvement. `debordements.mjs`, sous le Node 22.23.3, le
+navigateur sans le mandataire : 0 à 390, 720, 1 024, 1 280 et 1 440 px, et aux volets extrêmes (panneau 2 000, barre
+2 000, les deux), 0 bouton recouvert sur 279 sondés dans 60 fenêtres à chaque passe ; les passes du client — « Ventes »
+à 390 px (114 boutons, 29 fenêtres), « Ventes » et « Banque » à 390 et 1 440 px (122, 31) — à 0 ; la passe « panneau
+fermé, barre 2 000 » garde sa seule faute d'avant, hors du lot, ENCORE LÀ (`factures/clients-soins`,
+« gestion@mutue|lle- »). Le port 5199 était pris par le banc d'une autre copie : le serveur de ce lot a écouté le 5299,
+et la copie du script jouée ne diffère du fichier commité que par cette adresse (une ligne). Les fiches du virement
+candidat (1 440 et 390 px), de la remise et du débit libre relues à l'œil.
+
+**LES PREUVES.**
+- La suite comparée test par test, sous Paris : avant (`44523b0`, une copie de l'arbre sans `.git`, et
+  `clesSupabase.test.ts`, qui lit `git ls-files`, joué dans la copie de travail) 449 fichiers et 13 669 tests ; après
+  451 fichiers et 13 712 tests ; aucun verdict changé ni disparu, 43 tests neufs (le module 31,
+  `candidatsDuReleve.test.ts` : les deux listes et la retenue, le montant à l'écart des frais — 5 €, 2 %, jamais plus
+  que le crédit —, le reste net des avoirs, le client cité et le libellé brut, l'ordre et ses départages, la facture
+  soldée, l'encaissement retiré, rattaché, d'une facture d'avant, une facture que la base refuserait sur ce crédit, un
+  mouvement classé, réservé, figé — même d'un encaissement daté d'après la frontière —, d'un autre dossier, le débit et
+  sa contre-passation, le client seul qui ne désigne pas un impayé, `justificatifPossible`, les quatre lots sur un
+  relevé basculé, les cartes, la fiche d'un crédit et celle d'un débit ; l'écran 12, `BanqueTab.candidats.test.tsx` : la
+  section en tête, ses signaux, le clic, la confirmation, le rattachement seul, deux clics dans le même `act` pour un
+  envoi, la confirmation refusée, la fenêtre ouverte sans rien écrire, un crédit sans candidat, la fiche d'un débit, les
+  quatre lots — le faux client voit partir le jumeau libre, jamais le candidat —, « À trancher », des ventes lues en
+  partie, un dossier non basculé). Les tests d'avant ne reçoivent que le libellé du mouvement (`gestesDuCredit.test.ts`,
+  `gestesDuDebit.test.ts`), `proposes: []` dans un complément attendu, et `ventes: AUCUN_CANDIDAT`
+  (`reglesAffectation.test.ts`). `ecransAvantLecture.test.tsx` inchangé : aucune lecture ni aucun geste neuf.
+- Mutations : 49 (le module 37, `justificatifPossible` 1, l'onglet 5, la fiche 6) ; au premier passage, 43 tuées ; cinq
+  des six survivantes ont fait ajouter leurs cas — un mouvement figé dont l'encaissement est daté d'après la frontière
+  (le rattachement ne juge que la date de l'encaissement), une facture que la base refuserait d'encaisser sur un crédit
+  qui justifie déjà une facture d'avant, la date avant l'identifiant, l'encaissement dit avant la facture, l'ordre du
+  client cité dans la liste d'un crédit — et sont tuées ; une équivalente : le filtre des mouvements libres de
+  `candidatsDuMouvement`, que `refusRattachement` (`mouvement_classe`) rend redondant pour chaque candidat, gardé pour
+  dire la délimitation.
+- La barrière, sous le Node 22.23.3 de la CI, sur le code du premier commit (`da50703`, l'arbre même où elle a tourné,
+  `04c50d4`) : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les 63 avertissements d'avant ; `npm run build` 0
+  (`index-DTBVOBO1.js`) ; `npm run test:fuseaux` : la première passe a buté sous Paris sur un délai —
+  `recuperationMotDePasse.test.ts`, un scanner des sources, 5,5 s pour 5 s permises, la machine chargée par d'autres
+  copies (il prend 3 s avant comme après ce lot, et passe dans la suite en JSON) — ; rejouée sur la tête, cette
+  documentation comprise : 0, 451 fichiers et 13 712 tests sous Paris, UTC, New York et Auckland.
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** Posé par ce lot : `JustificatifsDuDossier.ventes`, un seul champ qui porte
+les deux listes de la puce et leur juge ; une facture candidate jugée par le rattachement d'un encaissement fictif (les
+refus du mouvement cité, mot pour mot), son rejet par une plateforme laissé à la fenêtre ; un encaissement passe devant
+une facture à écart égal ; la pièce du même montant se dit avant la facture dans `justificatifPossible` ; les candidats
+seulement sur un mouvement libre et non réservé ; les trois autres lots écartent le candidat, le lot des règles le met
+« à rapprocher » ; les listes d'un débit restent entières. Aucune question nouvelle au cabinet.
+
+**À REVOIR.**
+- Une facture source REJETÉE ou refusée sur sa plateforme, dont l'avoir interne n'est pas encore validé, reste
+  « ouverte » : elle se propose, et la fenêtre dit son refus avant l'envoi (elle lit les transmissions de la facture,
+  que l'onglet Banque ne lit pas). La lire ici ferait trois lectures de plus pour tout relevé basculé.
+- L'import d'un relevé et la connexion bancaire ignorent à leur naissance les mouvements qu'une règle « toujours
+  ignorer » reconnaît, sans regarder les candidats : un crédit qu'une facture attend peut naître « ignoré ». Aucun
+  double compte (ignoré, il ne compte rien ; l'encaissement se saisit sans mouvement), un lien perdu, que le point
+  `encaissements-sans-mouvement` de VF5f dira ; le fermer demanderait les ventes lues à l'import, dans ses trois
+  chemins.
+- Les listes d'un crédit libre (VF5c) restent entières sous les propositions : une recette sans facture (l'Assurance
+  maladie) offre encore « Enregistrer l'encaissement d'une facture », sans proposition en tête.
+- Un crédit RÉSERVÉ qui n'est pas encore fait (une remise de chèques) n'a pas de candidats en tête : son complément
+  garde l'ordre du plus proche de ce qui reste.
+- Un encaissement en espèces ou par compensation, sans mouvement, peut être candidat d'un crédit : la base le rattache.

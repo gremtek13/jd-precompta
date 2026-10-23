@@ -455,9 +455,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   des encaissements, ce débit imposé) → « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE ». VF5d2 le 23/10/2026
   (VF5-Q1), neutre : l'encaissement jamais déclaré d'une facture source se contre-passe en citant le débit qui l'a
   défait, et la paire ne se déclare pas — une migration accordée par le cabinet ; VF5D2-Q1 à Q3 faites sur la
-  recommandation → « L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ ». Restent VF5e à VF9 — se conçoivent les encaissements
-  de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2) ; à VF8, ce que
-  la simulation recevra dit aussi quelle pièce ignorer.
+  recommandation → « L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ ». VF5e le 23/10/2026, neutre : les candidats du relevé —
+  une facture source ouverte ou un encaissement sans mouvement pour un crédit libre, une contre-passation sans mouvement
+  pour un débit, acceptés par les jugements de la base — mettent le crédit « à rapprocher » dans le lot des règles,
+  l'écartent des trois autres lots et se proposent en tête de sa fiche → « LES CANDIDATS DU RELEVÉ ». Restent VF5f à VF9
+  — se conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et
+  quand : à VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -693,13 +696,14 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   sa fiche le dit et n'offre que ses gestes à lui (le classer par ses encaissements ou ses contre-passations, retirer ce
   classement, lui rattacher un encaissement ou une contre-passation, contre-passer sur un débit un encaissement
   déclaré ; `lib/mouvementsDesVentes.ts`), aucun lot ne le prend (`horsDesLots`, un paramètre obligatoire de chaque
-  plan) et il se compte à part → « LES RÈGLES D'AFFECTATION PROPOSENT », « UN VIREMENT PERSONNEL S'ÉCRIT », « UNE
-  ÉCHÉANCE D'EMPRUNT S'ÉCRIT », « UN MOUVEMENT SE VENTILE », « UN VIREMENT RÈGLE PLUSIEURS PIÈCES », « UNE RECETTE DU
-  RELEVÉ D'UN DOSSIER ASSUJETTI », « UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE », « UN MOUVEMENT DU RELEVÉ S'ÉCRIT SUR UN
-  COMPTE DE BILAN », « LES FONCTIONS DU RELEVÉ NE TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT », « LE RELEVÉ RECONNAÎT
-  LES MOUVEMENTS DES VENTES FACTURÉES », « LES LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES FACTURÉES », « LA FICHE
-  D'UN CRÉDIT CLASSE, RETIRE ET RATTACHE LES ENCAISSEMENTS D'UNE FACTURE », « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME
-  RENDUE ».
+  plan) et il se compte à part ; un mouvement libre qu'une vente facturée attend peut-être (ses candidats,
+  `candidatsDuMouvement`) n'entre dans aucun lot non plus, et le lot des règles le dit « à rapprocher » → « LES RÈGLES
+  D'AFFECTATION PROPOSENT », « UN VIREMENT PERSONNEL S'ÉCRIT », « UNE ÉCHÉANCE D'EMPRUNT S'ÉCRIT », « UN MOUVEMENT SE
+  VENTILE », « UN VIREMENT RÈGLE PLUSIEURS PIÈCES », « UNE RECETTE DU RELEVÉ D'UN DOSSIER ASSUJETTI », « UNE ÉCHÉANCE DE
+  COTISATION RAPPROCHÉE », « UN MOUVEMENT DU RELEVÉ S'ÉCRIT SUR UN COMPTE DE BILAN », « LES FONCTIONS DU RELEVÉ NE
+  TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT », « LE RELEVÉ RECONNAÎT LES MOUVEMENTS DES VENTES FACTURÉES », « LES
+  LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES FACTURÉES », « LA FICHE D'UN CRÉDIT CLASSE, RETIRE ET RATTACHE LES
+  ENCAISSEMENTS D'UNE FACTURE », « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE », « LES CANDIDATS DU RELEVÉ ».
 - **Une cotisation payée depuis le compte PERSONNEL** est un apport (PCG art. 1211-10), face au compte du dirigeant, à
   la date saisie, jamais proposée ; un mouvement OU le compte personnel, jamais les deux → « UNE ÉCHÉANCE PAYÉE DEPUIS
   LE COMPTE PERSONNEL S'ÉCRIT ». Les écritures d'inventaire suivent la même règle → « LES DOTATIONS AUX AMORTISSEMENTS
