@@ -509,8 +509,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     selon qui valide, et la série de l'ancien logiciel qui continue ; rien n'en est écrit) ; les devis (P5) ; P1-trace.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
   que le bilan lira : 33-Q6), l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ;
-  sur l'ouverture, un écart retient la validation de N (O33-Q1, à écrire) et confronter une balance reprise (O33-Q2,
-  plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE ».
+  sur l'ouverture, confronter une balance reprise (O33-Q2, plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU
+  2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE », « UN ÉCART D'OUVERTURE RETIENT LA VALIDATION ».
 - **Plan comptable personnalisable** (ligne 43, étapes PC1 à PC9) : PC1, PC2 et PC3a en ligne, NEUTRES (le plan de
   chaque dossier est vide) ; restent la § 2.4 et la § 2.5 (les emplois comptés par `comptesEnDur.test.ts`) et les
   libellés du plan (§ 3.9), puis PC3b, l'assistant ; PC4, la fonction qui réglera le plan, déplace le compte des notes
@@ -736,8 +736,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Le bilan se lit depuis les soldes** (`lib/bilan.ts`, rubriques du 2033-A-SD) : aucune compensation (le sens jugé
   compte par compte et tiers par tiers), un compte non nommé est « à classer » ; la colonne N−1 est le MÊME bilan
   calculé sur N−1, jamais l'ouverture relue ; l'ouverture se confronte à la clôture précédente
-  (`lib/ouvertureConfrontee.ts`) → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN
-  QUI LA PRÉCÈDE ».
+  (`lib/ouvertureConfrontee.ts`), et un écart retient la validation de N (O33-Q1 : `ouverture-en-ecart`, le même
+  calcul sur les entrées de l'onglet Bilan ; sans confrontation, rien ne se retient) → « LE BILAN SE LIT DANS LES
+  RUBRIQUES DU 2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE », « UN ÉCART D'OUVERTURE RETIENT LA
+  VALIDATION ».
 - **La révision** (ligne 41) : décisions par solde, conclusions par cycle, seuil et explications, dossier permanent —
   immuables, qui se REMPLACENT ou se RETIRENT, écrites par leurs fonctions seules sous le verrou de la validation puis
   de la révision ; l'état se DÉDUIT, jamais stocké ; une preuve est PROPOSÉE et dit ce qu'elle n'établit pas ; plusieurs

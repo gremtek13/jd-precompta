@@ -32963,3 +32963,78 @@ APRÈS la page : la page neuve devant la fonction d'avant reçoit un 409 sans ma
 l'autre ordre, une page d'avant restée ouverte dirait une confirmation qu'elle n'offre pas. La copie déployée comparée
 au dépôt AVANT d'écraser, le texte ENVOYÉ relu dans le journal, puis `allerretour.py` (aucune bordure neuve). Les deux
 questions sur la page des arbitrages. Rien d'autre : aucune migration, aucune policy.
+
+### 23/10/2026 — UN ÉCART D'OUVERTURE RETIENT LA VALIDATION — LIGNE 33, O33-Q1
+
+(Écrite par l'agent architecte, en deux commits : le code et ses tests, puis cette documentation. Modifiés :
+`src/lib/prealablesValidation.ts`, `src/pages/dossier/ClotureTab.tsx` (un champ passé), `src/lib/revisionCycles.ts` (un
+rangement), et leurs tests. Ni base, ni migration, ni policy, ni Edge Function, aucune lecture de plus ; rien de
+l'espace du client ; ni la Checklist ni la Révision. En production, lu le 23/10/2026 : aucun exercice validé, aucun
+solde reporté, aucune reprise — aucune ouverture ne se confronte, le préalable ne peut pas paraître. Le lot y est
+NEUTRE.)
+
+**LA DÉCISION.** O33-Q1, posée le 11/10/2026 (« L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE »), tranchée le
+18/10/2026 à la recommandation : un écart entre l'ouverture de N et la clôture de N−1 retient la validation de N — un
+préalable de la validation. « Le bilan d'ouverture d'un exercice doit correspondre au bilan de clôture de l'exercice
+précédent » (code de commerce, art. L123-19, al. 3) ; « le bilan d'ouverture d'un exercice correspond au bilan de
+clôture avant répartition de l'exercice précédent » (PCG, art. 112-2). O33-Q2 (confronter une balance reprise au
+bilan de clôture de l'ancien logiciel) reste à plus tard, hors du lot.
+
+**CE QUI CHANGE.**
+- Un préalable neuf, `ouverture-en-ecart`, bloquant, de la famille de « CE QUE LA BASE NE VOIT PAS » : la base ne
+  calcule pas de bilan, comme elle ne calcule pas de 2035. Le calcul est celui de l'onglet Bilan,
+  `confronterLOuverture`, appelé sur ses entrées : tout le brouillon, les catégories, la reprise, les soldes reportés,
+  les exercices validés, les pièces des deux piles (le tiers d'une écriture de 401 ou de 411) et le modèle. Ni copie
+  de la règle, ni second calcul. `DonneesDeValidation` reçoit `aujourdHui` (le même instant qu'`anneeCourante`, à
+  Paris), que l'onglet Bilan passe aussi.
+- Il dit l'écart assez pour le retrouver : combien de comptes et de rubriques ; chaque rubrique en écart, son côté, ses
+  deux montants (le net à l'actif, le montant au passif, au centime, par `formatMoney`) et ses comptes ; les comptes en
+  écart dont la rubrique concorde (deux écarts qui s'y compensent) ; que l'ouverture est faite des soldes reportés à la
+  validation de N−1, figés avec lui, que l'écart ne vient pas d'une saisie et ne se corrige pas dans l'application —
+  « Le signaler » ; et où le voir : l'onglet Bilan de N, ligne « Ouverture », vers lequel mène son bouton. Les comptes
+  par leur numéro seul : un libellé dépend de l'ordre des catégories, que Clôture et Bilan ne lisent pas dans le même
+  ordre.
+- Sans confrontation, rien ne se retient ni ne se dit — ni écart, ni « concorde » : premier exercice, ouverture par une
+  balance reprise (O33-Q2), ouverture qui attend la validation de N−1 (l'ordre la refuse déjà), N−1 qui ne s'établit
+  pas. Le préalable suit ce que la confrontation dit de ces cas, sans les juger à nouveau.
+- Une lecture partielle, ou pas encore revenue : rien ne se confronte. Clôture lit déjà toutes ces entrées, et chacune
+  porte un drapeau du motif de la validation (pièces et catégories, écritures et reprise, pièces à valider, exercices
+  validés et soldes reportés) : le préalable « lecture-partielle » retient la validation en disant le motif, avant
+  tout autre ; avant le retour des lectures, la carte n'existe pas.
+- Rangé dans le cycle « ensemble » de la révision (`CYCLE_DES_CONTROLES`, que `revisionCycles.test.ts` exige), sans
+  rien ajouter à la Checklist ni à l'onglet Révision.
+
+**UNE OBSERVATION QUI BORNE LE CAS.** La confrontation n'a lieu que sur une ouverture par report : N−1 est alors validé,
+figé avec ses écritures et ses soldes reportés, que la base calcule elle-même (`soldes_a_reporter`). Un écart ne vient
+donc que d'une restauration ou de deux calculs qui divergent ; le dossier ne se valide plus tant qu'il n'est pas
+expliqué, et rien dans l'application ne le corrige. C'est la décision, et le préalable le dit.
+
+**LES PREUVES.**
+- `prealablesValidation.test.ts` (+7) : une ouverture qui reprend la clôture ne retient rien ; l'écart d'un centime
+  (texte entier : deux comptes, deux rubriques, montants, comptes) ; une rubrique à deux comptes (au pluriel) ; un
+  compte et une rubrique (au singulier) ; deux écarts compensés dans le capital individuel (le 108 reporté tel quel),
+  dits à part ; les cas sans confrontation (premier exercice, reprise, ouverture en attente, N−1 qui ne s'établit pas) ;
+  la lecture partielle. Le test d'une pièce coupée par l'exercice validé dit aussi l'écart en engagement, d'une société.
+  `ClotureTab.test.tsx` (+7) : concordante, le geste offert ; l'écart d'un centime, le texte, le bouton désactivé, rien
+  n'envoyé au clic, le bouton « Bilan » qui y mène ; avant le retour des soldes reportés, aucune carte, puis l'écart ;
+  une lecture partielle des soldes reportés, de la reprise, des pièces et des catégories, chacune retenant la
+  validation sans confronter.
+- QUATRE JEUX D'ESSAI D'AVANT reçoivent un report cohérent : un exercice validé qui ne portait rien et reportait
+  1 000 € ; une reprise validée sans soldes reportés ; un achat validé de 2024 sans sa banque ni son report ; une
+  facture validée de 2025 sans son report. Leur intention demeure (aucun préalable) ; c'est le préalable neuf qui les
+  disait faux.
+- Mutations : 31, toutes sur une suite verte. 26 tuées ; 5 survivent, équivalentes : les catégories et `aujourdHui`
+  (trois mutations, dans le module et dans Clôture) ne décident que d'un libellé de compte et du badge « provisoire »,
+  que le préalable ne dit pas ; les pièces à valider retirées des entrées (une pièce qui porte une écriture d'un
+  exercice validé est figée validée : elle est dans l'autre pile) ; la garde d'une rubrique en écart sans compte (une
+  rubrique ne s'écarte que par une contribution, donc par un compte en écart). Gardées pour la fidélité aux entrées de
+  l'onglet Bilan.
+- La barrière, sous le Node 22.23.3 de la CI : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les 63
+  avertissements d'avant ; la suite entière sous Paris comparée test par test : avant (`c3c5e27`) 452 fichiers et
+  13 764 tests, après (`b86f1b0`) 452 fichiers et
+  13 778 tests verts ; aucun verdict changé ni disparu, 14 tests neufs.
+
+**CE QUI RESTE À LA SESSION.** La barrière complète (`test:fuseaux`, build), la demande de fusion, la feuille de route
+(la ligne 33 : O33-Q1 fait). Une recommandation, non écrite : la Checklist pourrait dire l'écart d'ouverture (en
+« erreur », renvoyé à l'onglet Bilan), pour qu'il se voie avant le geste de validation ; elle ne le fait pas
+aujourd'hui, et `prealablesValidation.test.ts` ne l'exige pas (il exige l'inverse).
