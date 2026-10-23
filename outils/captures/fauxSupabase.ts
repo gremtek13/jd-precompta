@@ -1486,6 +1486,33 @@ const RELEVE_D12: Ligne[] = [
   mouvementDe('d12', 'b9', '2026-10-20', 'VIR SEPA MAISON DE SANTE DES COTEAUX REGLEMENT', 178.5, 'non_rapprochee'),
 ]
 
+// LA VUE D'ENSEMBLE D'UN DOSSIER BASCULÉ ET LA PAIRE QUI NE SE DÉCLARE PAS (ligne 28.65, chantier EC-Q3, étape VF5f). Une
+// huitième facture source, à une PARTICULIÈRE — aucune plateforme ne la reçoit, rien ne se déclare (VF5-Q1) — : son chèque,
+// enregistré sans mouvement et JAMAIS déclaré, revenu impayé, contre-passé en citant le débit du retour (étape VF5d2), qui
+// reste RÉSERVÉ, pas encore classé. La Vue d'ensemble de d12 dit alors trois mouvements réservés (b2, b7 et ce retour) et
+// cinq encaissements sans mouvement (les chèques de F2026-0023, F2026-0024, F2026-0025 et de celle-ci, le virement de
+// F2026-0026) ; la fenêtre des encaissements de F2026-0028 dit la paire. Ajoutés par `push` — VF5g ajoute au banc dans le
+// même temps, et aucune ligne d'avant ne change. Tous FICTIFS.
+LIGNES_D12.fb8 = [{ designation: 'Bilan de compétences personnel — trois séances', quantite: 3, prix_unitaire_ht: 25, taux_tva: 20 }]
+FACTURES_D12.push({
+  ...factureD12('fb8', 'F2026-0028', '2026-09-28', 'Mme Solène Exemple-Fictif, particulière'),
+  type_client: 'non_assujetti',
+})
+LIGNES_DES_FACTURES_D12.push(...lignesDeFacture('fb8', LIGNES_D12.fb8))
+const PAIRE_D12: EncaissementFacture[] = [
+  encaissementDuBanc({
+    id: 'eb8', dossier_id: 'd12', facture_id: 'fb8', date_encaissement: '2026-10-02', montant: 90, moyen: 'cheque',
+    cree_le: '2026-10-02T09:00:00Z',
+  }),
+  encaissementDuBanc({
+    id: 'cb8', dossier_id: 'd12', facture_id: 'fb8', date_encaissement: '2026-10-19', montant: -90, moyen: 'cheque', annule_id: 'eb8',
+    ligne_bancaire_id: 'b10', motif: 'Chèque revenu impayé : signature non conforme', cree_le: '2026-10-19T10:00:00Z',
+  }),
+]
+ENCAISSEMENTS_D12.push(...PAIRE_D12)
+PARTS_D12.push(...PAIRE_D12.map((e) => ({ encaissement_id: e.id, dossier_id: 'd12', taux: 20, montant: e.montant })))
+RELEVE_D12.push(mouvementDe('d12', 'b10', '2026-10-19', 'RETOUR CHEQUE IMPAYE REMISE 0061 SIGNATURE', -90, 'non_rapprochee'))
+
 const pieceEreporting = (o: Ligne): Ligne => ({
   ...piece('p-er', '2027-10-05', 'Editeur Logiciel', 120, 0, 'c8', 'a_valider'),
   dossier_id: 'd7', storage_path: 'd7/er.pdf', nom_fichier: 'er.pdf', ...o,

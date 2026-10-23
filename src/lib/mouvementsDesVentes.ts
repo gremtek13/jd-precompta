@@ -1121,9 +1121,7 @@ export function candidatsDeLaVente(
           .resteCentimes,
       }))
       .filter((x) => x.resteCentimes > 0),
-    // Comme les rattachables de VF5c : non retirés, de factures sources, et que rien ne dit « n'avoir pas eu lieu ».
-    encaissementsSansMouvement: s.encaissements.filter((e) => e.dossier_id === dossierId && e.ligne_bancaire_id == null
-      && e.retire_le == null && sources.has(e.facture_id) && justifieSonMouvement(e, s.encaissements)),
+    encaissementsSansMouvement: encaissementsEnregistresSansMouvement(s),
     juge: {
       dossierId, sources: s, vente, anneesValidees,
       mouvementsParId: new Map(s.mouvements.filter((m) => m.dossier_id === dossierId).map((m) => [m.id, m])),
@@ -1131,6 +1129,19 @@ export function candidatsDeLaVente(
       motsDesClients: new Map(s.factures.filter((f) => sources.has(f.id)).map((f) => [f.id, motsIdentifiants(f.tiers_nom)])),
     },
   }
+}
+
+/**
+ * Les encaissements (contre-passations comprises) de factures sources du dossier enregistrés sans mouvement — comme les
+ * rattachables de VF5c : non retirés, de factures sources, et que rien ne dit « n'avoir pas eu lieu ». La liste des
+ * candidats, et celle que la Vue d'ensemble compte (étape VF5f, lib/ventesDeLaChecklist.ts) : une seule règle pour les deux.
+ */
+export function encaissementsEnregistresSansMouvement(
+  s: Pick<SourcesDuReleve, 'dossierId' | 'factures' | 'encaissements'>,
+): EncaissementDuMouvementLu[] {
+  const sources = new Set(s.factures.filter((f) => f.dossier_id === s.dossierId && f.source_de_la_vente).map((f) => f.id))
+  return s.encaissements.filter((e) => e.dossier_id === s.dossierId && e.ligne_bancaire_id == null
+    && e.retire_le == null && sources.has(e.facture_id) && justifieSonMouvement(e, s.encaissements))
 }
 
 /** Ce qu'un candidat porterait sur le mouvement, et ce qui le désigne. */

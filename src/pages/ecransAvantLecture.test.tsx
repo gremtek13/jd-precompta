@@ -266,7 +266,11 @@ const ECRANS: Ecran[] = [
     <Dossier1><BilanTab dossierId="d1" modele={{ mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'ChecklistTab', fichier: 'pages/dossier/ChecklistTab.tsx', rendre: () => (
-    <Dossier1><ChecklistTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
+    <Dossier1><ChecklistTab ventesParLesFactures={false} dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
+  ) },
+  // Étape VF5f : basculée, la Vue d'ensemble lit aussi les ventes facturées — rien ne s'affirme avant leur retour non plus.
+  { nom: 'ChecklistTab (basculé)', fichier: 'pages/dossier/ChecklistTab.tsx', rendre: () => (
+    <Dossier1><ChecklistTab ventesParLesFactures dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'ClotureTab', fichier: 'pages/dossier/ClotureTab.tsx', rendre: () => (
     <Dossier1><ClotureTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} onNavigate={rien} /></Dossier1>

@@ -8,6 +8,7 @@ import { ouvertureBanque } from './aNouveaux'
 import type { Emprunt } from './emprunts'
 import type { DonneesDeLaChecklist } from './pointsDeLaChecklist'
 import type { FacturePourJumelle, TransmissionPourJumelle } from './ventesJumelles'
+import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from './ecrituresVentesFactureesLecture'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
   LigneBancaire, LettrageManuel, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
@@ -17,7 +18,7 @@ import type {
 // pages/dossier/ChecklistTab.tsx, qui le lisait lui-même, pour que l'onglet de la révision (ligne 41, étape R3) range
 // les mêmes points, tirés des mêmes lectures. Les requêtes sont celles de l'écran, dans le même ordre.
 
-export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'relevesIncoherents' | 'doublonsTexte'> {
+export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'relevesIncoherents' | 'doublonsTexte' | 'ventesFacturees'> {
   // Nuls quand leur lecture a échoué — l'échec est journalisé. La Vue d'ensemble les lit alors comme vides, comme elle
   // l'a toujours fait (best-effort) ; la révision, elle, n'affirme rien d'une lecture qu'elle n'a pas.
   relevesIncoherents: ControleReleveBancaire[] | null
@@ -32,9 +33,18 @@ export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'releve
   clotureInconnue: string | null
   // L'ouverture reprise d'un autre logiciel, telle que lue : la révision en tire l'ouverture de ses exercices.
   aNouveaux: ANouveau[]
+  // Les ventes facturées d'un dossier qui a basculé (ligne 28.65, étape VF5f) : la lecture de l'onglet Banque et de l'onglet
+  // Écritures, tout ou rien, nulle et jamais faite pour un dossier qui n'a pas basculé. La révision en tire aussi les frais
+  // d'un mouvement d'encaissements de sa revue analytique : une lecture que deux écrans comptent s'écrit une fois.
+  ventesFacturees: LectureSourcesDesEcrituresDeVente | null
+  // Son motif quand elle n'est pas entière : À PART de `lectureIncomplete` — seuls les deux points des ventes facturées se
+  // taisent, et leur bandeau le dit ; les autres points portent sur tout ce qu'ils lisent.
+  ventesIncompletes: string | null
 }
 
-export async function lireLaChecklist(dossierId: string): Promise<LectureDeLaChecklist> {
+// `ventesParLesFactures` : le réglage du dossier, sans valeur par défaut — un dossier qui a basculé lit aussi ses ventes
+// facturées (étape VF5f) ; un autre, rien de plus.
+export async function lireLaChecklist(dossierId: string, ventesParLesFactures: boolean): Promise<LectureDeLaChecklist> {
   const [
     lectureValidees,
     lectureAValider,
@@ -55,6 +65,7 @@ export async function lireLaChecklist(dossierId: string): Promise<LectureDeLaChe
     lectureDeclarations,
     lectureFacturesEmises,
     lectureTransmissions,
+    ventesFacturees,
   ] = await Promise.all([
     // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
     // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -135,6 +146,8 @@ export async function lireLaChecklist(dossierId: string): Promise<LectureDeLaChe
       supabase.from('transmissions_factures').select('id, facture_id, canal, hote, flux_id', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ),
+    // Ne rejette jamais : refusée, partielle ou d'un autre dossier, elle revient « incomplète », avec son motif.
+    ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
   ])
   // Best-effort, comme dans BanqueTab : l'échec est journalisé, et rendu NUL — jamais lu ici comme « aucun écart ».
   const relevesIncoherents = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -192,5 +205,7 @@ export async function lireLaChecklist(dossierId: string): Promise<LectureDeLaChe
     ouverture: lectureANouveaux.complete ? ouvertureBanque(lectureANouveaux.lignes) : null,
     ouvertureIncomplete: lectureANouveaux.motif,
     aNouveaux: lectureANouveaux.lignes,
+    ventesFacturees,
+    ventesIncompletes: ventesFacturees?.etat === 'incomplete' ? ventesFacturees.motif : null,
   }
 }

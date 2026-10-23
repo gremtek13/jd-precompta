@@ -36,15 +36,18 @@ type ItemChecklist = DocumentAttendu & { onToggle?: () => void }
 // doivent contenir — lues dans l'autre modèle, elles paraîtraient toutes « à régénérer ».
 // `periodiciteTva` : le régime du dossier, qui dit quelles périodes de TVA attendent une déclaration.
 // `statutTva` : son statut de TVA (lib/statutTva.ts) — nul, il est à préciser, et c'est un paramétrage à finir.
+// `ventesParLesFactures` : le réglage du dossier (ligne 28.65, étape VF5f) — basculé, la Vue d'ensemble lit aussi ses ventes
+// facturées et dit les mouvements réservés à leurs encaissements et les encaissements qui attendent leur mouvement.
 //
 // SES POINTS SE CALCULENT DANS lib/pointsDeLaChecklist.ts, ET SE LISENT PAR lib/checklistLecture.ts : l'onglet de la
 // révision (ligne 41, étape R3) range les mêmes points dans ses cycles, et deux copies auraient divergé.
-export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, statutTva, modele, onNavigate }: {
+export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, statutTva, modele, ventesParLesFactures, onNavigate }: {
   dossierId: string
   assujettiTva: boolean
   periodiciteTva: PeriodiciteTva
   statutTva: StatutTva | null
   modele: ModeleComptable
+  ventesParLesFactures: boolean
   onNavigate: (tab: DossierTab) => void
 }) {
   // Ce que les exercices validés ont figé ne se compare plus : la base refuse de le réécrire, et le dire
@@ -60,11 +63,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
 
   async function load() {
     setLoading(true)
-    setLecture(await lireLaChecklist(dossierId))
+    setLecture(await lireLaChecklist(dossierId, ventesParLesFactures))
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [dossierId])
+  useEffect(() => { load() }, [dossierId, ventesParLesFactures])
 
   async function toggleJustificatif(champ: 'justificatif_tickets_restaurant_recu' | 'justificatif_cheques_vacances_recu') {
     const info = lecture?.info
@@ -101,7 +104,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     .filter((e) => modele.mode !== 'engagement' || e.impot !== 'Liasse')
   const imminente = (date: string) => date <= ajouterJours(aujourdHuiFiscal, 30)
 
-  const { lectureIncomplete, ouvertureIncomplete, ouverture, clotureInconnue, infoInconnue, ecritures, piecesAValider } = lecture
+  const { lectureIncomplete, ouvertureIncomplete, ouverture, clotureInconnue, infoInconnue, ecritures, piecesAValider, ventesIncompletes } = lecture
   // Les relevés incohérents et les doublons de contenu sont BEST-EFFORT ici : illisibles, ils se lisent comme vides —
   // l'échec est journalisé par la lecture —, comme avant que leurs lectures sortent de cet écran.
   const {
@@ -171,6 +174,15 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
           'plutôt qu’un solde faux — et un rouge faux. Et les points qui en dépendent se taisent : les ' +
           'dotations aux amortissements, les forfaits kilométriques, et l’écriture de la facture d’un bien — ' +
           'c’est l’ouverture qui dit ce qui est déjà dans la balance reprise. Recharge la page.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les ventes facturées du dossier"
+        motif={ventesIncompletes}
+        consequence={
+          'Les points « mouvements réservés à des encaissements de factures » et « encaissements sans mouvement du relevé » ' +
+          'se taisent donc — leur silence ne prouve rien —, et les lignes non rapprochées comptent peut-être des mouvements ' +
+          'réservés. Recharge la page avant de t’y fier.'
         }
       />
       {reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true }) && (

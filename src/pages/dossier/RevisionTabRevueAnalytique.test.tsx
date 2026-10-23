@@ -1300,6 +1300,53 @@ describe('RevisionTab, revue analytique — les ventes facturées', () => {
     },
   )
 
+  // ÉTAPE VF5f : la même lecture sert aux deux points de la Vue d'ensemble que la révision range dans ses cycles — le
+  // virement sans mouvement sous Recettes, le mouvement qu'un encaissement réserve sous Trésorerie. Incomplète, ils se
+  // taisent et un bandeau le dit ; les soldes et les cycles demeurent, comme la revue le voulait déjà.
+  const cycle = (nom: string) => screen.getByRole('region', { name: `Cycle ${nom}` })
+
+  it('l’encaissement par virement sans mouvement du relevé se range sous le cycle Recettes (VF5f)', async () => {
+    avecUneVenteFacturee()
+    rendre({ ventesParLesFactures: true })
+    await attendreLaSection()
+    expect(within(cycle('Recettes')).getByText(/^1 encaissement\(s\) de factures par virement, prélèvement, chèque, carte ou effet sans mouvement du relevé$/)).toBeDefined()
+    expect(screen.queryByText(/mouvement\(s\) réservé\(s\)/)).toBeNull()
+    expect(screen.queryByText(/^Les ventes facturées du dossier n'ont pas pu être lues en entier/)).toBeNull()
+  })
+
+  it('le mouvement que l’encaissement réserve, pas encore classé, se range sous le cycle Trésorerie (VF5f)', async () => {
+    avecUneVenteFacturee()
+    faux.tables.encaissements_factures = faux.tables.encaissements_factures.map((e) => ({ ...(e as object), ligne_bancaire_id: 'm-vir' }))
+    faux.tables.lignes_bancaires = [
+      ...faux.tables.lignes_bancaires,
+      ligne({ id: 'm-vir', date: '2025-05-10', montant: 1200, libelle: 'VIR CLIENT FICTIF', statut: 'non_rapprochee' }),
+    ]
+    rendre({ ventesParLesFactures: true })
+    await attendreLaSection()
+    expect(within(cycle('Trésorerie')).getByText(/^1 mouvement\(s\) réservé\(s\) à des encaissements de factures, à classer$/)).toBeDefined()
+    expect(screen.queryByText(/sans mouvement du relevé$/)).toBeNull()
+  })
+
+  it('un dossier qui n’a pas basculé : ni l’un ni l’autre point (VF5f)', async () => {
+    avecUneVenteFacturee()
+    rendre({ ventesParLesFactures: false })
+    await attendreLaSection()
+    expect(screen.queryByText(/sans mouvement du relevé$/)).toBeNull()
+    expect(screen.queryByText(/^Les ventes facturées du dossier n'ont pas pu être lues en entier/)).toBeNull()
+  })
+
+  it('le registre refusé : un bandeau dit que Trésorerie et Recettes se taisent — les cycles demeurent (VF5f)', async () => {
+    avecUneVenteFacturee()
+    faux.refusees.add('encaissements_factures')
+    rendre({ ventesParLesFactures: true })
+    await attendreLaSection()
+    const bandeau = screen.getAllByText(/^Les ventes facturées du dossier n'ont pas pu être lues en entier/)
+      .find((el) => !section().contains(el))
+    expect(bandeau?.textContent).toContain('Les cycles Trésorerie et Recettes ne disent donc ni les mouvements réservés')
+    expect(screen.queryByText(/sans mouvement du relevé$/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Ouvrir le compte 512000' })).toBeDefined()
+  })
+
   it('rendue pour un autre dossier — celui qu’on vient de quitter —, elle ne vaut pas : la section le dit', async () => {
     avecUneVenteFacturee()
     const vue = rendre({ ventesParLesFactures: true })

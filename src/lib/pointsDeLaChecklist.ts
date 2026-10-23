@@ -30,6 +30,8 @@ import {
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import type { DossierTab } from './ongletsDossier'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, type ExerciceAReclamer } from './resteAEnvoyer'
+import type { LectureDesVentesDuReleve } from './mouvementsDesVentes'
+import { detailDesEncaissementsSansMouvement, ventesDeLaChecklist } from './ventesDeLaChecklist'
 
 // LES POINTS DE LA VUE D'ENSEMBLE (pages/dossier/ChecklistTab.tsx) : les points à traiter, rangés en paramétrage et en
 // travail, et les documents attendus du client. Ils étaient calculés DANS l'écran, et l'onglet de la révision (ligne 41,
@@ -103,6 +105,10 @@ export interface DonneesDeLaChecklist {
   anneesCloturees: number[]
   ouverture: OuvertureBanque | null
   ouvertureIncomplete: string | null
+  // Les ventes facturées d'un dossier qui a basculé (ligne 28.65, étape VF5f ; lib/ventesDeLaChecklist.ts) : la lecture de
+  // l'onglet Banque, lue ou incomplète ; NULLE pour un dossier qui n'a pas basculé, qui ne lit rien de plus. Incomplète, les
+  // deux points qui en dépendent se taisent, et l'écran le dit.
+  ventesFacturees: LectureDesVentesDuReleve | null
 }
 
 /** Ce que l'écran sait du dossier et du moment, lu au rendu. */
@@ -138,7 +144,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     piecesValidees, piecesAValider, cotisations, lignes, relevesIncoherents, doublonsTexte, immobilisations, natures,
     categories, ecritures, emprunts, ventilations, ventilationsPartielles, reglements, reglementsPartiels, paiementsPartiels,
     lettragesManuels, vehicules, declarationsTva, declarationsPartielles, facturesEmises, transmissions, jumellesPartielles,
-    info, infoInconnue, anneesCloturees, ouverture, ouvertureIncomplete,
+    info, infoInconnue, anneesCloturees, ouverture, ouvertureIncomplete, ventesFacturees,
   } = d
   const { assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneeCourante, moisEcoules, premierJourDuMois } = c
 
@@ -293,7 +299,16 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // Le pendant côté Banque de "en attente de rapprochement bancaire" ci-dessous (qui part des
   // écritures) : un mouvement bancaire importé mais jamais rattaché à une pièce, une cotisation, ou
   // marqué personnel/à ignorer — le seul cycle du dossier qui manquait encore à ce tableau de bord.
-  const lignesNonRapprochees = lignes.filter((l) => l.statut === 'non_rapprochee')
+  //
+  // LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (étape VF5f) : un mouvement RÉSERVÉ à des encaissements de factures
+  // n'attend pas de pièce, il attend que le cabinet le classe par eux — il se compte à part, comme l'onglet Banque le compte
+  // (`comptesDuReleve`), jamais deux fois. Figé par la validation, rien ne le classe plus : il reste où il était. Sur une
+  // lecture incomplète, on ne sait pas lesquels le sont : les lignes non rapprochées comptent tout, comme hier.
+  const ventes = ventesDeLaChecklist(ventesFacturees, frontiere)
+  const mouvementsReserves = ventes.etat === 'lue' ? ventes.reserves : []
+  const idsReserves = new Set(mouvementsReserves.map((m) => m.id))
+  const encaissementsSansMouvement = ventes.etat === 'lue' ? ventes.sansMouvement : []
+  const lignesNonRapprochees = lignes.filter((l) => l.statut === 'non_rapprochee' && !idsReserves.has(l.id))
   // L'AUTRE MOITIÉ, et celle qui ne se voyait nulle part : un mouvement que le dossier DIT rapproché
   // et qui ne désigne plus rien. Le point ci-dessus ne compte que les `non_rapprochee`, donc il se
   // tait exactement dessus — sur l'écran dont le métier est de dire ce qui manque. Voir
@@ -522,6 +537,24 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       action: 'Voir les écritures à rapprocher', nb: nbSansContrepartie, cible: 'banque', severite: 'attention',
     },
     { id: 'lignes-non-rapprochees', label: 'ligne(s) bancaire(s) non rapprochée(s)', action: 'Voir les opérations à rapprocher', nb: lignesNonRapprochees.length, cible: 'banque', severite: 'attention' },
+    // LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, étape VF5f ; lib/ventesDeLaChecklist.ts). « Attention »
+    // jusqu'à VF7, qui les rendra préalables à la validation (conception d'EC-Q3, § 11) ; prealablesValidation.test.ts les
+    // tient pour écartés d'ici là. Un mouvement réservé se voit dans Banque, sous sa pastille, et sa fiche le classe.
+    {
+      id: 'mouvements-reserves', label: 'mouvement(s) réservé(s) à des encaissements de factures, à classer',
+      action: 'Classer ces mouvements', nb: mouvementsReserves.length, cible: 'banque', severite: 'attention',
+      detail: 'Dans Banque, filtre « Non rapprochés » : ils portent la pastille « Réservé à l’encaissement de la facture … ». Leur fiche les classe par leurs encaissements.',
+    },
+    // L'onglet Banque ne LISTE pas un encaissement sans mouvement — il ne le propose que dans la fiche d'un crédit libre —,
+    // la vue « Règlements » de l'onglet Factures, si : une ligne par encaissement, et sa colonne « Mouvement ». Le point y
+    // mène, et son détail les nomme (un point qui compte doit pouvoir montrer ce qu'il compte). Un chèque remis le 31
+    // décembre et crédité en janvier est un en-cours légitime : d'où l'« attention », que VF7 ne durcira que pour un
+    // virement ou un prélèvement.
+    {
+      id: 'encaissements-sans-mouvement', label: 'encaissement(s) de factures par virement, prélèvement, chèque, carte ou effet sans mouvement du relevé',
+      action: 'Voir ces règlements', nb: encaissementsSansMouvement.length, cible: 'factures', severite: 'attention',
+      detail: ventes.etat === 'lue' && encaissementsSansMouvement.length > 0 ? detailDesEncaissementsSansMouvement(ventes) : undefined,
+    },
     // « Attention » et non « erreur » : ignorer est le bon geste pour un doublon, et rien ne les distingue d'ici d'un
     // mouvement réel oublié. Le point les montre avec ce qu'ils emportent, le cabinet tranche.
     {
