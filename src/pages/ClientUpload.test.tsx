@@ -12,8 +12,9 @@ import type { DocumentDivers, Piece, PieceCommentaire } from '../lib/types'
 //  2. « ce qu'il reste à envoyer » compte les DÉPÔTS de l'année — le critère propre aux écrans
 //     client — et suit la clôture cochée par le cabinet ;
 //  3. une lecture refusée n'affirme pas « aucun dépôt » : le client croirait ses envois perdus ;
-//  4. les fichiers d'un même lot partagent UN registre d'empreintes, qui seul empêche deux copies
-//     d'un même fichier, parties en parallèle, de passer toutes deux le contrôle anti-doublon ;
+//  4. tous les lots de l'écran partagent UN registre d'empreintes en vol, qui seul empêche deux copies
+//     d'un même fichier, parties en parallèle, de passer toutes deux le contrôle anti-doublon (le comportement
+//     du dépôt réel : ClientUpload.empreintes.test.tsx) ;
 //  5. la zone de précision s'ouvre sur un dépôt unique, jamais au hasard dans un lot ;
 //  6. tant que les lectures ne sont pas revenues, l'écran dit « Chargement… » : il ne réclame rien (les listes sont vides
 //     faute d'avoir été lues, pas faute d'envois) et ne dit pas « aucun dépôt » ; la relecture qui suit un dépôt, elle,
@@ -356,9 +357,10 @@ describe('ClientUpload — déposer', () => {
     expect(appels[1][2]).toBe(appels[0][2])
     expect(screen.queryAllByPlaceholderText(/four de la salle d’attente/)).toHaveLength(0)
 
-    // Et un registre NEUF au lot suivant : au dépôt d'après, la base fait foi.
+    // Et le MÊME au lot suivant : le dépôt y réserve l'empreinte avant toute attente et la libère à sa fin, de sorte que deux
+    // lots lancés coup sur coup se voient, là où un registre neuf par lot les laissait passer tous deux.
     await deposer(container, ['c.jpg'])
-    expect(faux.deposer.mock.calls[2][2]).not.toBe(appels[0][2])
+    expect(faux.deposer.mock.calls[2][2]).toBe(appels[0][2])
   })
 
   it('laisse sous les yeux du client la liste déjà lue pendant la relecture qui suit le dépôt', async () => {

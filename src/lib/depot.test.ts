@@ -305,11 +305,32 @@ describe('doublons au sein d’un même dépôt', () => {
   })
 
   it('ne réserve rien qui empêcherait un dépôt légitime au lot suivant', async () => {
-    // Un Set neuf par dépôt : le premier lot réserve, le second repart de la base. Ici la base ne
-    // connaît pas encore le fichier (faux client sans persistance), donc il doit repasser.
-    const premierLot = new Set<string>()
-    await deposer('facture.pdf', 'EDF', premierLot)
-    expect((await deposer('facture.pdf', 'EDF', new Set())).statut).toBe('ok')
+    // Le Set est celui de l'ÉCRAN, partagé d'un lot à l'autre : un dépôt réussi doit en libérer l'empreinte, la base faisant
+    // foi ensuite. Ici la base ne connaît pas encore le fichier (faux client sans persistance), donc il doit repasser.
+    const registre = new Set<string>()
+    await deposer('facture.pdf', 'EDF', registre)
+    expect(registre.size).toBe(0)
+    expect((await deposer('facture.pdf', 'EDF', registre)).statut).toBe('ok')
+  })
+
+  it('libère l’empreinte aussi quand la base connaît déjà le fichier', async () => {
+    // Le doublon de la base sort par un `return` du `try` : sans `finally`, l'empreinte restait dans le registre de l'écran.
+    const registre = new Set<string>()
+    etat.presents.add('hash-de-facture.pdf')
+    expect((await deposer('facture.pdf', undefined, registre)).statut).toBe('doublon')
+    expect(registre.size).toBe(0)
+  })
+
+  it('ne libère pas l’empreinte d’un autre dépôt en vol quand il se heurte à elle', async () => {
+    // Le second dépôt voit l'empreinte réservée et s'arrête AVANT d'en réserver une : s'il la libérait en sortant, un
+    // troisième dépôt passerait pendant que le premier travaille encore.
+    const registre = new Set<string>()
+    const premier = deposer('facture.pdf', 'EDF', registre)
+    const second = deposer('facture (1).pdf', 'EDF', registre)
+    expect((await second).statut).toBe('doublon')
+    expect(registre.has('hash-de-EDF')).toBe(true)
+    expect((await premier).statut).toBe('ok')
+    expect(registre.size).toBe(0)
   })
 })
 
