@@ -32423,3 +32423,103 @@ merge » le 23/10/2026 à 10 h 10 UTC (`3754091` à `a406ce9`, à la suite de la
 28.65 mise à jour, puis relue par empreinte (19 361 positions) ; les barres recomptées par requête, inchangées (187
 chantiers hors de la phase 7, dont 142 livrés ; 76 % et 82 %). La copie de travail de l'agent retirée, son travail
 entier dans `main`, recomposé ; la branche réalignée sur `main`.
+
+### 23/10/2026 — « MA BANQUE » DIT LES ENCAISSEMENTS DE SES FACTURES — CHANTIER EC-Q3, VF5G (LIGNE 28.65)
+
+(Écrite par l'agent dev du lot sur `08182b3` — VF5e compris, sa demande de fusion #213 encore ouverte —, en deux
+commits : le code et ses tests, puis cette documentation. Modifiés : `banqueClient.ts`, `ClientBanque.tsx`, leurs deux
+tests, `ecrituresVerifiees.test.ts` (le compte des consommateurs de `droits_sur_le_dossier`) et le banc
+(`debordements.mjs`, trois visites ; `fauxSupabase.ts` inchangé). Ni base, ni migration, ni policy, ni Edge Function ;
+côté cabinet, rien ; rien de VF5f (la Checklist, la Révision). En production, des comptes et le catalogue seulement, le
+23/10/2026 : aucun accès qui porte « Banque » (donc aucun « Banque » et « Ventes »), aucune facture source, aucun
+encaissement, aucun mouvement classé par ses encaissements, aucune proposition de justificatif, 146 migrations. Le lot y
+est NEUTRE.)
+
+**LA DÉLIMITATION.** La puce VF5g du § 5 de la conception (« VF5, LA BANQUE : LA CONCEPTION ») et le point (j) de son
+§ 4 : « Ma banque » laissait proposer une pièce sur un mouvement réservé, que le cabinet ne pourrait jamais associer
+(G2), et disait « Traité par ton cabinet » d'un mouvement classé par ses encaissements. VF5-Q3, tranchée à la
+recommandation : rien de plus pour un client « Banque » seul.
+
+**CE QUE LA BASE OUVRE, LU AU CATALOGUE** (aucune écriture). Un client « Banque » et « Ventes » lit : `lignes_bancaires`
+par la policy `client_du_dossier(…, 'banque')` ; `factures_emises` et `encaissements_factures` par leurs policies
+`…_lecture_ventes` (`client_du_dossier(…, 'ventes')`), toutes `to authenticated`, en lecture seule ; les droits de
+`authenticated` portent sur les trois tables entières, aucune colonne refusée (`has_column_privilege`), donc
+`encaissements_de_factures`, et du registre tout ce que la garde lit. Rien à élargir. Un client « Banque » seul lit
+aussi la colonne `encaissements_de_factures` (la policy de la banque rend la ligne entière) ; l'écran n'en dit rien de
+plus (VF5-Q3). Et la base ACCEPTE qu'un client propose une pièce sur un mouvement réservé : `proposer_justificatif` ne
+juge que l'accès, le mouvement et la pièce du dossier, l'exercice figé et la pièce déjà proposée, et la garde de
+`justificatifs_proposes` que le dossier ; c'est au cabinet que la garde des mouvements (`garder_mouvement_reserve`)
+refuserait ensuite de l'y rapprocher, sous « Ce mouvement justifie un encaissement de la facture %, source de sa vente :
+il se classe par ses encaissements, et par rien d'autre. » (23514). La pièce attendrait pour rien : l'écran ne l'offre
+plus, sans refus de la base à redire. Un client « Banque » seul peut encore la proposer (VF5-Q3) — le cabinet l'écarte
+par `retirer_proposition`.
+
+**LE MODULE** (`banqueClient.ts`, pur). `COLONNES_DU_MOUVEMENT` gagne `encaissements_de_factures`. Deux états neufs,
+`encaissement_factures` (« Encaissement de tes factures ») et `encaissement_enregistre` (« Encaissement enregistré — ton
+cabinet le classe »). `VentesDuClient` : `banque_seule`, ou, pour un client « Ventes », ses factures et le registre lus
+en entier, ou le motif du premier manque ; `ventesLues` compose deux lectures entières et refuse une ligne d'un autre
+dossier. `venteDuMouvement` tire l'état du refus que la garde opposerait (`refusDuClassementDuReleve`,
+`encaissementsFactures.ts`, celui de l'onglet Banque du cabinet), jamais d'une règle recopiée, avec les numéros des
+factures de ses encaissements dans l'ordre de la garde ; registre lu en partie, un mouvement LIBRE (`mouvementLibre`) se
+tait — il est peut-être réservé — et tout autre garde ce que dit le relevé seul (un classé reste « Traité par ton
+cabinet »). `etatAvecLesVentes` : le classement ou la réserve l'emportent sur l'état d'hier, une pièce envoyée ou une
+question du cabinet comprises, qui restent dites. `proposableParLeClient` reçoit l'état, obligatoire, et est faux sur un
+réservé. `sensDeLaVente` dit l'état en une phrase selon le sens du mouvement — un crédit encaisse ses factures, un débit
+défait l'un de leurs encaissements (un chèque revenu impayé, une somme rendue) —, suivie des numéros. Les filtres : le
+réservé avec « Justificatifs envoyés » (il attend son cabinet), le classé avec « Justifiés ». `situationsDuReleve` prend
+les ventes (champ obligatoire) et dit les mouvements tus et leur motif (`tus`). `etatDuMouvement` garde sa signature :
+`banqueCabinet.ts` la lit, et le côté cabinet est hors du lot.
+
+**L'ÉCRAN** (`ClientBanque.tsx`). Les cases se lisent par `lireLesDroitsVentes` (« Banque » et « Ventes », un refus
+ferme l'écran comme hier) ; avec « Ventes », les factures et le registre se lisent APRÈS la case, jamais avant — la RLS
+les rendrait vides sans erreur, et un réservé passerait pour « sans justificatif » ; sans elle, rien de plus n'est lu.
+Lue en partie, ou une lecture qui lève : le motif, en infobulle d'un bandeau neuf (« Tes factures et leurs
+encaissements… »), les mouvements libres sans état ni geste, le détail le dit, le résumé et le filtre d'état se taisent
+(un filtre choisi revient à « Tous ») ; le drapeau de chaque lecture se lit dans l'écran (`lecturesSignalees.test.ts`).
+Le détail d'un réservé dit sa phrase et ses factures, n'offre ni le choix d'une pièce ni le dépôt, garde la précision
+(la base l'écrit sur tout mouvement) et le retrait d'une proposition envoyée avant. Le résumé compte à part « N
+encaissement(s) de tes factures attendent que ton cabinet les classe ».
+
+**LE BANC.** Trois visites de la passe `client-banque`, après celles de VF5b, sur le dossier basculé (d12) que la clé
+`banc-client-basculee` donne au compte du banc avec « Ventes » et « Banque » : `client/ma-banque-ventes` (le relevé),
+`client/ma-banque-credit-reserve` (le virement de F2026-0022) et `client/ma-banque-debit-reserve` (le retour des deux
+chèques impayés) ; chacune attend sa phrase. Le serveur sur le 5399 (le 5199 est à la session), la copie du script ne
+différant que par l'adresse, le navigateur sans le mandataire, arrêté par son PID : `390 client-banque` 0 (122 boutons
+sondés, 31 fenêtres), `1440 client-banque` 0 (122, 31), `390 client` 0 (114, 29). Le relevé et le crédit réservé relus à
+l'œil à 390 et 1 440 px : à 390 px, la pastille du réservé passe sur deux lignes dans sa fiche, sans couper un mot.
+
+**LES PREUVES.**
+- La suite comparée test par test, sous Paris : avant (`08182b3`) 451 fichiers et 13 716 tests — les deux fichiers
+  touchés rejoués sur leur version d'avant, la suite entière ayant tourné pendant les premières retouches ; après 451
+  fichiers et 13 733 tests (par nom complet, 13 713 et 13 730 : trois noms se répètent dans la suite) ; aucun verdict
+  changé ni disparu, 17 tests neufs (le module 10 : les deux lectures composées, le classé et le
+  réservé avec leurs factures dans l'ordre de la garde, les encaissements qui ne réservent pas — retiré, d'une facture
+  qui n'est pas source, d'un autre mouvement, sans mouvement, contre-passé sans mouvement —, la contre-passation citant
+  un débit, « Banque » seul, le registre partiel, l'état d'hier remplacé, les situations dans les trois cas, les quatre
+  phrases et le garde des mots ; l'écran 7 : les deux droits, les filtres, « Banque » seul qui ne lit rien de plus, les
+  deux lectures partielles et leur motif, une lecture qui lève, un filtre choisi sur un registre devenu partiel après
+  une précision). Les tests d'avant reçoivent la colonne neuve dans leurs jeux et l'état dans `proposableParLeClient` ;
+  `ecrituresVerifiees.test.ts` compte `lireLeDroitBanque` une fois (« Ma simulation ») et `lireLesDroitsVentes` trois.
+- Mutations : 36 (le module 22, l'écran 14), toutes tuées, aucune survivante. Un premier passage, 32 sur 32, avant que
+  le drapeau des deux lectures passe du module à l'écran (le scanner des lectures signalées veut le voir là où la
+  lecture se fait, et l'avait mis au rouge) ; deux de ses mutations y ont laissé la place à six — chaque drapeau, le
+  dossier de chaque lecture, le motif permuté, la lecture qui lève —, et l'écran a gagné deux cas pour elles (le motif
+  en infobulle, la lecture qui lève).
+- La barrière, sous le Node 22.23.3 de la CI, sur le code du premier commit : `npx tsc -b --force` 0 ; `npm run lint` 0
+  erreur, les 63 avertissements d'avant ; `npm run test:fuseaux` 0, 451 fichiers et 13 733 tests sous Paris, UTC, New
+  York et Auckland ; `npm run build` 0 (`index-B8XcNzNZ.js`).
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** Sans question au cabinet : les deux états gardent leurs libellés de la
+puce sur un débit, la phrase du détail disant l'impayé ou la somme rendue ; le réservé se range avec les justificatifs
+envoyés, le classé avec les justifiés ; une pièce envoyée avant la réserve reste dite, et son retrait offert ; la
+précision reste offerte sur un réservé ; registre partiel, un classé dit « Traité par ton cabinet » (ce que dit le
+relevé seul) plutôt que de se taire ; le registre lu dans une seconde vague, après la case.
+
+**À REVOIR.**
+- Côté cabinet, `banqueCabinet.ts` dit encore ce que « le client verra » d'un mouvement par `etatDuMouvement` : pour
+  un client « Ventes », un réservé ou un classé se lit désormais autrement. Hors du lot (côté cabinet, rien) ; à
+  aligner si la fiche d'un mouvement réservé offre un jour d'écarter une proposition ou d'écrire au client.
+- Un client « Banque » seul peut toujours proposer une pièce sur un mouvement réservé (VF5-Q3) : la base l'accepte, le
+  cabinet l'écarte.
+- Le banc ne montre toujours pas la paire de VF5d2 (l'encaissement jamais déclaré et sa contre-passation) : elle
+  demande des lignes de plus au dossier basculé, que les visites du cabinet verraient aussi ; laissée à VF5f.
