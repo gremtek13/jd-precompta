@@ -637,7 +637,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       return { valide, etat: null, demande: null, reportesEcrits }
     }
     const etat = prealablesDeValidation({
-      annee, anneeCourante, modele, assujettiTva, anneesValidees,
+      annee, anneeCourante, aujourdHui: aujourdHuiAParis(), modele, assujettiTva, anneesValidees,
       lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
       lignes: toutesLesLignes, ventilations, reglements, cotisations, vehicules, emprunts, aNouveaux, soldesReportes, declarationsTva,
       periodiciteTva, relevesIncoherents, doublonsTexte, facturesEmises, transmissions,

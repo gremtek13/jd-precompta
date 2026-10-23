@@ -12,6 +12,7 @@ import { lignesPourPiece } from './ecritures'
 import type { ModeleComptable } from './engagement'
 import { COMPTE_BANQUE } from './comptes'
 import type { Emprunt } from './emprunts'
+import { formatMoney } from './format'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
   LigneBancaire, NatureImmobilisation, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
@@ -116,7 +117,7 @@ type Surcharges = Partial<Omit<DonneesDeValidation, 'declaration' | 'concordance
 // Les données de validation de 2025, la 2035 et la concordance recalculées sur les données passées.
 function donnees(o: Surcharges = {}): DonneesDeValidation {
   const base: Omit<DonneesDeValidation, 'declaration' | 'concordance'> = {
-    annee: 2025, anneeCourante: 2026, modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, assujettiTva: false,
+    annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, assujettiTva: false,
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
@@ -163,6 +164,12 @@ describe('prealablesDeValidation — un exercice tenu', () => {
 // l'exercice reçoit les soldes que la validation précédente a reportés — la base exige qu'elle couvre exactement la
 // reprise de l'exercice et ses soldes reportés.
 describe('prealablesDeValidation — le report des soldes', () => {
+  // L'exercice 2024 validé dont ces soldes sont le report : l'apport de l'exploitant, 1 000 € en banque face au 108, que
+  // le report verse au capital individuel — l'ouverture de 2025 reprend ainsi sa clôture (O33-Q1).
+  const EXERCICE_2024 = [
+    ecriture('e-2024-1', { piece_id: null, date: '2024-01-02', compte: COMPTE_BANQUE, montant: 1000, statut: 'validee' }),
+    ecriture('e-2024-2', { piece_id: null, date: '2024-01-02', compte: '108000', montant: 1000, sens: 'credit', statut: 'validee' }),
+  ]
   const REPORTES = [
     reporte('s1', '2025-01-01', COMPTE_BANQUE, 'Banque', 'debit', 1000),
     reporte('s2', '2025-01-01', '101000', 'Capital individuel', 'credit', 1000),
@@ -171,7 +178,7 @@ describe('prealablesDeValidation — le report des soldes', () => {
   ]
 
   it('numérote les soldes reportés qui ouvrent l’exercice, et eux seuls, et les envoie à la base', () => {
-    const etat = prealablesDeValidation(donnees({ anneesValidees: [2024], soldesReportes: REPORTES }))
+    const etat = prealablesDeValidation(donnees({ anneesValidees: [2024], soldesReportes: REPORTES, ecritures: [E1, E2, ...EXERCICE_2024] }))
     expect(etat.prealables).toEqual([])
     expect(etat.numerotation!.aNouveaux.map((a) => a.aNouveau.id)).toEqual(['s2', 's1'])
     expect(etat.numerotation!.aNouveaux.every((a) => a.aNouveau.compte_origine === null)).toBe(true)
@@ -211,6 +218,97 @@ describe('prealablesDeValidation — le report des soldes', () => {
   })
 })
 
+// L'OUVERTURE DE L'EXERCICE CONFRONTÉE À LA CLÔTURE DU PRÉCÉDENT (O33-Q1, décision du cabinet du 18/10/2026) : la
+// confrontation de l'onglet Bilan (lib/ouvertureConfrontee.ts), dont un écart retient la validation. 2024 validé, tenu dans
+// l'application : l'apport de l'exploitant, 1 000 € en banque face au 108. Sa clôture, telle que le report la verse :
+// 512000 1 000 D, 101000 1 000 C (le 108 au capital individuel, PCG, art. 1211-10). Les soldes reportés au 01/01/2025
+// la reprennent, ou s'en écartent d'une façon choisie.
+describe('prealablesDeValidation — l’ouverture confrontée à la clôture de l’exercice précédent', () => {
+  const APPORT_2024 = [
+    ecriture('a1', { piece_id: null, date: '2024-01-02', compte: COMPTE_BANQUE, montant: 1000, statut: 'validee' }),
+    ecriture('a2', { piece_id: null, date: '2024-01-02', compte: '108000', montant: 1000, sens: 'credit', statut: 'validee' }),
+  ]
+  const ouvertPar = (soldes: [compte: string, sens: 'debit' | 'credit', montant: number][], o: Surcharges = {}) => donnees({
+    anneesValidees: [2024], ecritures: [E1, E2, ...APPORT_2024],
+    soldesReportes: soldes.map(([compte, sens, montant], i) => reporte(`s${i}`, '2025-01-01', compte, `Compte ${compte}`, sens, montant)),
+    ...o,
+  })
+  const SUITE = "L'ouverture de 2025 est faite des soldes reportés à la validation de 2024, figés avec lui : l'écart ne vient pas "
+    + "d'une saisie et ne se corrige pas dans l'application. Le signaler. Le détail, compte par compte, est dans l'onglet Bilan "
+    + "de l'exercice 2025, à la ligne « Ouverture »."
+  const message = (combien: string) => `L'ouverture de l'exercice 2025 ne reprend pas la clôture de 2024 : ${combien} en écart. `
+    + "Le bilan d'ouverture doit correspondre au bilan de clôture de l'exercice précédent (code de commerce, art. L123-19 ; "
+    + "PCG, art. 112-2) : l'exercice 2025 ne se valide pas sur cet écart."
+
+  it('une ouverture qui reprend la clôture ne retient rien', () => {
+    const etat = prealablesDeValidation(ouvertPar([[COMPTE_BANQUE, 'debit', 1000], ['101000', 'credit', 1000]]))
+    expect(etat.prealables).toEqual([])
+    expect(etat.validable).toBe(true)
+  })
+
+  it('un écart d’un centime retient la validation, et dit ses rubriques, leurs montants et leurs comptes', () => {
+    const etat = prealablesDeValidation(ouvertPar([[COMPTE_BANQUE, 'debit', 1000.01], ['101000', 'credit', 1000.01]]))
+    expect(etat.validable).toBe(false)
+    expect(etat.prealables).toEqual([{
+      id: 'ouverture-en-ecart', nb: null, cible: 'bilan', bloquant: true,
+      message: message('2 comptes et 2 rubriques du bilan'),
+      detail: `En écart : Disponibilités (actif), ouverture ${formatMoney(1000.01)}, clôture de 2024 ${formatMoney(1000)} (compte `
+        + `512000) ; Capital social ou individuel (passif), ouverture ${formatMoney(1000.01)}, clôture de 2024 ${formatMoney(1000)} `
+        + `(compte 101000). ${SUITE}`,
+    }])
+  })
+
+  it('une rubrique dit tous ses comptes en écart, au pluriel', () => {
+    // 512000 900 D et 530000 99,99 D, quand la clôture porte 1 000 € en banque et rien en caisse.
+    const d = ouvertPar([[COMPTE_BANQUE, 'debit', 900], ['530000', 'debit', 99.99], ['101000', 'credit', 999.99]])
+    expect(prealable(d, 'ouverture-en-ecart')).toMatchObject({
+      message: message('3 comptes et 2 rubriques du bilan'),
+      detail: `En écart : Disponibilités (actif), ouverture ${formatMoney(999.99)}, clôture de 2024 ${formatMoney(1000)} (comptes `
+        + `512000, 530000) ; Capital social ou individuel (passif), ouverture ${formatMoney(999.99)}, clôture de 2024 `
+        + `${formatMoney(1000)} (compte 101000). ${SUITE}`,
+    })
+  })
+
+  it('un seul compte, une seule rubrique : au singulier', () => {
+    const d = ouvertPar([[COMPTE_BANQUE, 'debit', 1000.01], ['101000', 'credit', 1000]])
+    expect(prealable(d, 'ouverture-en-ecart')!.message).toBe(message('1 compte et 1 rubrique du bilan'))
+  })
+
+  it('deux écarts qui se compensent dans une rubrique : les comptes se disent à part, sans rubrique', () => {
+    // Le 108 reporté tel quel au lieu du 101000 : le capital individuel concorde, les deux comptes non.
+    const d = ouvertPar([[COMPTE_BANQUE, 'debit', 1000], ['108000', 'credit', 1000]])
+    expect(prealable(d, 'ouverture-en-ecart')).toMatchObject({
+      bloquant: true,
+      message: message('2 comptes'),
+      detail: `Comptes en écart dans des rubriques qui concordent, les écarts s'y compensant : 101000, 108000. ${SUITE}`,
+    })
+  })
+
+  it('sans confrontation, rien ne se retient ni ne se dit : premier exercice, reprise, ouverture en attente', () => {
+    // Le premier exercice du dossier : rien ne le précède dans l'application.
+    expect(ids(donnees())).toEqual([])
+    // 2025 s'ouvre par une balance reprise : 2024 est tenu dans le logiciel précédent (O33-Q2, plus tard).
+    expect(ids(donnees({ aNouveaux: ouvertureReprise('2025-01-01') }))).toEqual([])
+    // 2024 n'est pas validé : l'ouverture de 2025 l'attend, et l'ordre seul refuse.
+    expect(ids(donnees({ anneesValidees: [2023], ecritures: [E1, E2, ...APPORT_2024] }))).toEqual(['ordre'])
+    // 2024 ne s'établit pas — son ouverture attend 2023, que rien n'a validé : la confrontation n'a pas lieu, et le
+    // préalable suit ce qu'elle dit.
+    const avecDesEcrituresDe2023 = ouvertPar([[COMPTE_BANQUE, 'debit', 1], ['101000', 'credit', 1]], {
+      ecritures: [E1, E2, ...APPORT_2024, ecriture('x1', { piece_id: null, date: '2023-05-01', statut: 'validee' })],
+    })
+    expect(ids(avecDesEcrituresDe2023)).not.toContain('ouverture-en-ecart')
+  })
+
+  it('sur une lecture partielle, ne confronte rien et retient la validation en disant pourquoi', () => {
+    const etat = prealablesDeValidation(ouvertPar([[COMPTE_BANQUE, 'debit', 1000.01], ['101000', 'credit', 1000.01]], {
+      lectureIncomplete: 'soldes reportés : 1 lu sur 2',
+    }))
+    expect(etat.prealables.map((p) => p.id)).toEqual(['lecture-partielle'])
+    expect(etat.prealables[0].message).toContain('soldes reportés : 1 lu sur 2')
+    expect(etat.validable).toBe(false)
+  })
+})
+
 describe('prealablesDeValidation — ce que la base refusera, avec ses mots', () => {
   it('refuse un exercice en cours', () => {
     expect(prealable(donnees({ annee: 2026 }), 'exercice-en-cours')?.message).toBe("L'exercice 2026 n'est pas terminé : il se valide une fois clos.")
@@ -234,7 +332,14 @@ describe('prealablesDeValidation — ce que la base refusera, avec ses mots', ()
     expect(prealable(donnees({ aNouveaux: [aNouveau('2024-01-01')] }), 'ouverture-d-abord')?.exercice).toBe(2024)
     // Un exercice des comptes repris ne se valide pas : rien à quoi mener.
     expect(prealable(donnees({ aNouveaux: [aNouveau('2026-01-01')] }), 'avant-ouverture')?.exercice).toBeUndefined()
-    expect(ids(donnees({ aNouveaux: [aNouveau('2024-01-01')], anneesValidees: [2024] }))).toEqual([])
+    // L'exercice des à-nouveaux validé, l'ouverture de 2025 en est le report (O33-Q1) : la reprise, que rien n'a mouvementée.
+    expect(ids(donnees({
+      aNouveaux: ouvertureReprise('2024-01-01'), anneesValidees: [2024],
+      soldesReportes: [
+        reporte('s1', '2025-01-01', COMPTE_BANQUE, 'Banque', 'debit', 1000),
+        reporte('s2', '2025-01-01', '101000', 'Capital individuel', 'credit', 1000),
+      ],
+    }))).toEqual([])
   })
 
   it('refuse des écritures antérieures non validées — et, avant l’ouverture, dit de les retirer ou de les redater', () => {
@@ -269,8 +374,15 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
   })
 
   it('ne retient pas une écriture antérieure déjà validée', () => {
+    // Un achat de 2024 payé en 2024, validé ; l'ouverture de 2025 en est le report : la banque, et la perte au capital
+    // individuel (O33-Q1).
     const ancienne = ecriture('e0', { piece_id: null, ligne_bancaire_id: null, date: '2024-06-01', statut: 'validee' })
-    expect(ids(donnees({ ecritures: [E1, E2, ancienne], anneesValidees: [2024] }))).toEqual([])
+    const banque = ecriture('e00', { piece_id: null, ligne_bancaire_id: null, date: '2024-06-01', statut: 'validee', compte: COMPTE_BANQUE, sens: 'credit' })
+    const soldesReportes = [
+      reporte('s1', '2025-01-01', COMPTE_BANQUE, 'Banque', 'credit', 120),
+      reporte('s2', '2025-01-01', '101000', 'Capital individuel', 'debit', 120),
+    ]
+    expect(ids(donnees({ ecritures: [E1, E2, ancienne, banque], anneesValidees: [2024], soldesReportes }))).toEqual([])
   })
 
   // Sans ouverture ni exercice validé, valider 2025 figerait 2024 sans qu'il l'ait été.
@@ -309,10 +421,17 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
     ])
     // La catégorie est passée au 606300 depuis la validation : la facture validée reste sur l'ancien compte.
     const d = donnees({
-      annee: 2026, anneeCourante: 2027, anneesValidees: [2025], modele: engagement, piecesValidees: [facture],
+      annee: 2026, anneeCourante: 2027, aujourdHui: '2027-03-15', anneesValidees: [2025], modele: engagement, piecesValidees: [facture],
       categories: [{ ...ACHATS, compte_comptable: '606300' }], lignes: [janvier], ecritures: ecrites,
+      // L'ouverture de 2026, report de 2025 validé (O33-Q1) : la dette au fournisseur, et la perte d'une société au 129000.
+      soldesReportes: [
+        reporte('s1', '2026-01-01', '129000', 'Résultat de l’exercice (perte)', 'debit', 120),
+        reporte('s2', '2026-01-01', '401000', 'Fournisseurs', 'credit', 120),
+      ],
     })
     expect(ids(d)).toEqual([])
+    // En engagement aussi, l'ouverture se confronte : sans ses soldes reportés, elle ne reprend pas la clôture de 2025.
+    expect(ids({ ...d, soldesReportes: [] })).toEqual(['ouverture-en-ecart'])
     // Son règlement manque — le mouvement rapproché, l'écriture pas encore là : la part ouverte le dit.
     expect(ids({ ...d, ecritures: ecrites.filter((e) => e.date <= '2025-12-31') })).toContain('desynchronisees')
   })
@@ -534,7 +653,7 @@ describe('prealablesDeValidation — la TVA liquidée', () => {
     const q4 = declarationTva('q4', ...Q(4), { tva_declaree: 200, tva_collectee: 200, cases: { l16: 200, l28: 200, l32: 200 } })
     const janvier = ligne('lt', { date: '2026-01-20', montant: -200, declaration_tva_id: 'q4' })
     // L'exercice 2025 validé : sa liquidation ne se réécrit plus ; le paiement de janvier, lui, se juge en 2026.
-    const d = donnees({ annee: 2026, anneeCourante: 2027, anneesValidees: [2025], declarationsTva: [q4], piecesValidees: [], lignes: [janvier], ecritures: [] })
+    const d = donnees({ annee: 2026, anneeCourante: 2027, aujourdHui: '2027-03-15', anneesValidees: [2025], declarationsTva: [q4], piecesValidees: [], lignes: [janvier], ecritures: [] })
     expect(ids(d)).not.toContain('liquidations-tva-perimees')
     expect(ids(d)).toContain('paiements-tva-perimes')
   })

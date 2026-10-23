@@ -239,6 +239,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   numerotation: 'ensemble',
   'report-hors-classes': 'ensemble',
   'report-desequilibre': 'ensemble',
+  // L'ouverture de l'exercice qui ne reprend pas la clôture du précédent (O33-Q1) : l'enchaînement des exercices.
+  'ouverture-en-ecart': 'ensemble',
   concordance: 'ensemble',
   'exclusions-2035': 'ensemble',
   'piste-rompue': 'ensemble',

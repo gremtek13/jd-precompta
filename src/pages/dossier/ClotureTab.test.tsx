@@ -2175,6 +2175,89 @@ describe('ClotureTab — valider l’exercice', () => {
     expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  // L'OUVERTURE DE 2025 CONFRONTÉE À LA CLÔTURE DE 2024 (O33-Q1) : 2024 validé, tenu dans l'application — l'apport de
+  // l'exploitant, 1 000 € en banque face au 108 —, sa clôture versée par le report au capital individuel. Ce qui se joue
+  // ici : que l'écran passe à la confrontation les entrées que l'onglet Bilan lui passe, et qu'un écart y retienne le geste.
+  describe('l’ouverture confrontée à la clôture de 2024', () => {
+    const APPORT_2024 = [
+      { ...ECRITURE, id: 'a1', piece_id: null, date: '2024-01-02', compte: '512000', montant: 1000, statut: 'validee' },
+      { ...ECRITURE, id: 'a2', piece_id: null, date: '2024-01-02', compte: '108000', montant: 1000, sens: 'credit', statut: 'validee' },
+    ]
+    function poserApres2024(capital: number) {
+      poserTenu()
+      faux.parTable.exercices_valides = [{ ...VALIDE, annee: 2024 }]
+      faux.parTable.ecritures_brouillon = [ECRITURE, BANQUE, ...APPORT_2024]
+      faux.parTable.soldes_reportes = [
+        reporte('512000', 'Banque', 'debit', capital, '2025-01-01'),
+        reporte('101000', 'Capital individuel', 'credit', capital, '2025-01-01'),
+      ]
+    }
+
+    it('une ouverture qui reprend la clôture ne retient rien', async () => {
+      poserApres2024(1000)
+      monterAvec()
+      const c = await carte()
+      c.getByText(/Rien n.empêche de valider cet exercice/)
+      expect(c.queryByText(/ne reprend pas la clôture/)).toBeNull()
+      expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('un écart d’un centime retient la validation, le dit, mène à l’onglet Bilan, et rien ne part', async () => {
+      poserApres2024(1000.01)
+      accepter()
+      confirmer(true)
+      const onNavigate = monterAvec()
+      const c = await carte()
+      c.getByText('Avant de valider')
+      const item = c.getByText(/L'ouverture de l'exercice 2025 ne reprend pas la clôture de 2024 : 2 comptes et 2 rubriques du bilan en écart\./)
+        .closest('li') as HTMLElement
+      expect(item.textContent).toContain("l'exercice 2025 ne se valide pas sur cet écart.")
+      expect(item.textContent).toMatch(/En écart : Disponibilités \(actif\), ouverture 1\s000,01\s€, clôture de 2024 1\s000,00\s€ \(compte 512000\)/)
+      expect(item.textContent).toContain("Le détail, compte par compte, est dans l'onglet Bilan de l'exercice 2025, à la ligne « Ouverture ».")
+      const valider = c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement
+      expect(valider.disabled).toBe(true)
+      await act(async () => { fireEvent.click(valider) })
+      expect(faux.appels).toEqual([])
+      await act(async () => { fireEvent.click(within(item).getByRole('button', { name: 'Bilan' })) })
+      expect(onNavigate).toHaveBeenCalledWith('bilan')
+    })
+
+    it('avant que les soldes reportés reviennent, aucune carte ; revenus, l’écart se dit', async () => {
+      poserApres2024(1000.01)
+      let liberer: () => void = () => {}
+      faux.attentes.soldes_reportes = new Promise<void>((r) => { liberer = r })
+      monterAvec()
+      await act(async () => {})
+      expect(screen.queryByRole('heading', { name: 'Valider l’exercice 2025' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Valider l’exercice 2025' })).toBeNull()
+      await act(async () => { liberer() })
+      const c = await carte()
+      c.getByText(/ne reprend pas la clôture de 2024/)
+      expect(faux.appels).toEqual([])
+    })
+
+    // Les entrées de la confrontation que les autres tests de lecture partielle ne couvrent pas. Une table vide se lit
+    // en entier même muette : la reprise reçoit une ligne, que la lecture tronquée ne rend pas.
+    const REPRISE = {
+      id: 'an1', dossier_id: 'dossier-de-test', date: '2024-01-01', compte: '512000', compte_origine: '512', libelle: 'Banque',
+      sens: 'debit', montant: 1000, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
+      created_at: '2024-02-01T00:00:00Z',
+    }
+    it.each(['soldes_reportes', 'a_nouveaux', 'pieces', 'categories'])(
+      'sur une lecture partielle de %s, ne confronte rien et retient la validation en le disant',
+      async (table) => {
+        poserApres2024(1000.01)
+        if (table === 'a_nouveaux') faux.parTable.a_nouveaux = [REPRISE]
+        faux.muetApresParTable = { [table]: 0 }
+        monterAvec()
+        const c = await carte()
+        c.getByText(/La lecture du dossier est restée partielle/)
+        expect(c.queryByText(/ne reprend pas la clôture/)).toBeNull()
+        expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+      },
+    )
+  })
+
   // LA MÊME VENTE PORTÉE PAR DEUX PIÈCES DE L'EXERCICE (ligne 28.6) : la facture émise revenue de Super PDP et de la
   // plateforme du client. La validation la refuse, et mène aux Justificatifs où l'une se retire.
   it('refuse de figer une vente que deux pièces portent, et mène aux Justificatifs', async () => {
