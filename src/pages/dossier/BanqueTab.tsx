@@ -63,8 +63,9 @@ import { lireLesAccesDuReleve, lireLesEnvoisDuClient } from '../../lib/banqueCab
 import { argumentsDeLaPrecision, argumentsDeRetirer } from '../../lib/banqueClient'
 import { lireLesVentesDuReleve, type LectureDesVentesEtDeclarations } from '../../lib/ventesDuReleveLecture'
 import {
-  candidatsDeLaVente, comptesDuReleve, ecartDuLot, gestesDuCredit, horsDesLotsAvecLesCandidats, gestesDuDebit, mouvementsHorsDesLots, PASTILLE_CLASSE, pastilleDeVente,
-  retenueDuReleve, texteDesNonRapproches, venteDuMouvement, ventesDuReleve, type EcartDuLot, type FactureDesGestes,
+  candidatsDeLaVente, comptesDuReleve, ecartDuLot, gestesDuCredit, gestesDuDebit, horsDesLotsAvecLesCandidats,
+  mouvementsHorsDesLots, PASTILLE_CLASSE, pastilleDeVente, retenueDuReleve, texteDesNonRapproches, venteDuMouvement,
+  ventesDuReleve, type EcartDuLot, type FactureDesGestes,
 } from '../../lib/mouvementsDesVentes'
 import EncaissementsFactureModal, { type ContrePassationImposee } from './EncaissementsFactureModal'
 

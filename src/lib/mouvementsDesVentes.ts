@@ -1,9 +1,9 @@
-import { libelleExploitable, tiersConfirmeParBanque } from './appariementBanque'
+import { libelleExploitable, motsDuLibelle, motsIdentifiants, motsSeConfirment, tiersConfirmeParBanque } from './appariementBanque'
 import { estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
   ecartDeFrais, encaissementsDeclares, encaissementsDuMouvement, justifieSonMouvement, mouvementLibre, MOYENS_ENCAISSEMENT,
   ordreDesEncaissements, refusClassement, refusContrePassationVente, refusDuClassementDuReleve, refusRattachement,
-  refusRetraitDuClassement, resteAEncaisserVente,
+  refusRetraitDuClassement, resteAEncaisserVente, SEUIL_PLAFOND_CENTIMES,
   type CleRefusGardeMouvements, type ContexteVente, type DeclarationLue, type EncaissementDuReleve, type EncaissementLu,
   type FactureDuDossier, type LigneDeFacture, type MouvementClasse, type PartLue, type RefusEncaissement,
 } from './encaissementsFactures'
@@ -1068,12 +1068,19 @@ export interface FactureSourceOuverte {
   resteCentimes: number
 }
 
-/** De quoi juger chaque candidat sur un mouvement : la lecture des ventes facturées, lue en entier, et la frontière. */
+/**
+ * De quoi juger chaque candidat sur un mouvement : la lecture des ventes facturées, lue en entier, et la frontière ; les
+ * mouvements et les factures du dossier par identifiant, et les mots de chaque client — lus une fois pour tout le relevé,
+ * que `horsDesLotsAvecLesCandidats` parcourt mouvement par mouvement.
+ */
 interface JugeDesCandidats {
   dossierId: string
   sources: SourcesDesGestes
   vente: ContexteVente
   anneesValidees: readonly number[]
+  mouvementsParId: ReadonlyMap<string, MouvementClasse>
+  facturesParId: ReadonlyMap<string, FactureDesGestes>
+  motsDesClients: ReadonlyMap<string, readonly string[]>
 }
 
 /**
@@ -1117,7 +1124,12 @@ export function candidatsDeLaVente(
     // Comme les rattachables de VF5c : non retirés, de factures sources, et que rien ne dit « n'avoir pas eu lieu ».
     encaissementsSansMouvement: s.encaissements.filter((e) => e.dossier_id === dossierId && e.ligne_bancaire_id == null
       && e.retire_le == null && sources.has(e.facture_id) && justifieSonMouvement(e, s.encaissements)),
-    juge: { dossierId, sources: s, vente, anneesValidees },
+    juge: {
+      dossierId, sources: s, vente, anneesValidees,
+      mouvementsParId: new Map(s.mouvements.filter((m) => m.dossier_id === dossierId).map((m) => [m.id, m])),
+      facturesParId: new Map(s.factures.map((f) => [f.id, f])),
+      motsDesClients: new Map(s.factures.filter((f) => sources.has(f.id)).map((f) => [f.id, motsIdentifiants(f.tiers_nom)])),
+    },
   }
 }
 
@@ -1179,18 +1191,27 @@ export function candidatsDuMouvement(c: CandidatsDeLaVente, ligne: LigneDesGeste
   const j = c.juge
   if (j === null || ligne.dossier_id !== j.dossierId) return []
   const { dossierId, sources: s, vente } = j
-  const m = s.mouvements.find((x) => x.id === ligne.id && x.dossier_id === dossierId)
+  const m = j.mouvementsParId.get(ligne.id)
   if (!m || m.montant === 0 || !mouvementLibre(m) || encaissementsDuMouvement(m.id, s.encaissements, vente).length > 0) return []
   if (dateFigee(m.date, j.anneesValidees) !== null) return []
   const credit = m.montant > 0
-  const libelle = libelleExploitable(ligne)
+  const motsBanque = motsDuLibelle(libelleExploitable(ligne))
   const mouvementCentimes = Math.abs(enCentimes(m.montant))
   const candidats: { candidat: CandidatDeLaVente; date: string }[] = []
+  // CE QUI PEUT DÉSIGNER UN CANDIDAT, AVANT TOUT JUGEMENT : son client cité au libellé (`tiersConfirmeParBanque`, en deux
+  // moitiés), ou un écart au mouvement que les frais peuvent couvrir — `ecartDeFrais` n'en admet jamais plus de
+  // `SEUIL_PLAFOND_CENTIMES`. Ni l'un ni l'autre : il ne serait pas proposé, et les jugements de la base, qui parcourent le
+  // relevé entier, ne se jouent pas pour rien — sur 3 000 mouvements libres et 50 factures ouvertes, ils prenaient plus de
+  // six secondes à chaque relecture du relevé. Un filtre, jamais une règle : le montant ne désigne qu'au verdict de
+  // `refusClassement`. Null : rien ne peut le désigner.
+  const designable = (facture: FactureDesGestes, montantCentimes: number): { parLeClient: boolean } | null => {
+    const parLeClient = motsSeConfirment(j.motsDesClients.get(facture.id) ?? motsIdentifiants(facture.tiers_nom), motsBanque)
+    return parLeClient || Math.abs(montantCentimes - mouvementCentimes) <= SEUIL_PLAFOND_CENTIMES ? { parLeClient } : null
+  }
   const ajouter = (
     genre: CandidatDeLaVente['genre'], id: string, facture: FactureDesGestes, texte: string, montantCentimes: number,
-    parLeMontant: boolean, date: string,
+    parLeMontant: boolean, parLeClient: boolean, date: string,
   ) => {
-    const parLeClient = tiersConfirmeParBanque(facture.tiers_nom, libelle)
     if (!parLeMontant && !parLeClient) return
     candidats.push({
       candidat: {
@@ -1204,14 +1225,19 @@ export function candidatsDuMouvement(c: CandidatsDeLaVente, ligne: LigneDesGeste
   for (const e of c.encaissementsSansMouvement) {
     // Un crédit attend un encaissement, un débit une contre-passation.
     if ((e.annule_id == null) !== credit) continue
-    const facture = s.factures.find((f) => f.id === e.facture_id)
-    if (!facture || refusRattachement(dossierId, e.id, m.id, s.encaissements, s.mouvements, vente) !== null) continue
+    const facture = j.facturesParId.get(e.facture_id)
+    if (!facture) continue
+    const montantCentimes = Math.abs(enCentimes(e.montant))
+    const designe = designable(facture, montantCentimes)
+    if (designe === null || refusRattachement(dossierId, e.id, m.id, s.encaissements, s.mouvements, vente) !== null) continue
     const apres = s.encaissements.map((x) => (x.id === e.id ? { ...x, ligne_bancaire_id: m.id } : x))
-    ajouter(credit ? 'encaissement' : 'contre_passation', e.id, facture, libelleDeLEncaissement(e, s.factures),
-      Math.abs(enCentimes(e.montant)), refusClassement(dossierId, m.id, s.mouvements, apres, vente) === null, e.date_encaissement)
+    ajouter(credit ? 'encaissement' : 'contre_passation', e.id, facture, libelleDeLEncaissement(e, s.factures), montantCentimes,
+      refusClassement(dossierId, m.id, s.mouvements, apres, vente) === null, designe.parLeClient, e.date_encaissement)
   }
   if (credit) {
     for (const o of c.facturesSourcesOuvertes) {
+      const designe = designable(o.facture, o.resteCentimes)
+      if (designe === null) continue
       const fictif = (montantCentimes: number, ligneBancaireId: string | null): EncaissementDuMouvementLu => ({
         id: L_ENCAISSEMENT_CANDIDAT, dossier_id: dossierId, facture_id: o.facture.id, montant: montantCentimes / 100,
         ligne_bancaire_id: ligneBancaireId, annule_id: null, retire_le: null, date_encaissement: m.date, moyen: 'virement',
@@ -1225,7 +1251,7 @@ export function candidatsDuMouvement(c: CandidatsDeLaVente, ligne: LigneDesGeste
       ajouter('facture', o.facture.id, o.facture,
         `${o.facture.numero ?? SANS_NUMERO} — ${o.facture.tiers_nom}, du ${formatDate(o.facture.date_emission)} — reste `
           + euros(o.resteCentimes),
-        o.resteCentimes, solde, o.facture.date_emission)
+        o.resteCentimes, solde, designe.parLeClient, o.facture.date_emission)
     }
   }
   return candidats
