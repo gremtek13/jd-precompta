@@ -299,10 +299,124 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
   {
     slug: 'create-client-access', quoi: 'le refus d’un compte d’ailleurs qui rend son identifiant',
     remplacements: [[
-      'Demande à cette personne d\'utiliser une autre adresse e-mail.",\n      }, 409)',
-      'Demande à cette personne d\'utiliser une autre adresse e-mail.",\n        compteId: clientUserId,\n      }, 409)',
+      '          rattachementAConfirmer: true,\n        }, 409)',
+      '          rattachementAConfirmer: true,\n          compteId: clientUserId,\n        }, 409)',
     ]],
-    scenario: 'le chef d’un autre cabinet, que ce cabinet ne connaît pas : 409, le même refus, et le compte n’est pas touché',
+    scenario: 'le chef d’un autre cabinet, que ce cabinet ne connaît pas, sans confirmation : 409, le même refus et son marqueur, rien d’écrit, le compte intact',
+  },
+  // LE RATTACHEMENT CONFIRMÉ (23-Q2) : la confirmation acceptée sous une autre forme, lue après le contrôle du dossier ou
+  // passée outre lui ; l'accès écrit avant elle, ou elle ignorée ; le mot de passe posé ; le marqueur oublié, ou posé sur
+  // un compte connu ou sur un refus définitif ; un compte qui ne peut pas être client rattaché ; sa vérification en panne
+  // prise pour un « non ».
+  {
+    slug: 'create-client-access', quoi: 'la confirmation acceptée sous une autre forme (un texte non vide confirme)',
+    remplacements: [
+      ['  if (!booleenOuAbsent(confirmationLue)) {', '  if (false) {'],
+      ['  const rattachementConfirme = confirmationLue === true', '  const rattachementConfirme = !!confirmationLue'],
+    ],
+    scenario: 'la confirmation reçue en texte (« oui ») : 400 en français, avant le contrôle du dossier, aucun compte cherché',
+  },
+  {
+    slug: 'create-client-access', quoi: 'le type de la confirmation plus contrôlé (un nombre passe pour une absence)',
+    remplacements: [['  if (!booleenOuAbsent(confirmationLue)) {', '  if (false) {']],
+    scenario: 'la confirmation reçue en nombre (1) : 400 en français, avant le contrôle du dossier, aucun compte cherché',
+  },
+  {
+    slug: 'create-client-access', quoi: 'la confirmation lue dans un texte (« true » confirme)',
+    remplacements: [
+      ['  return valeur == null || typeof valeur === "boolean"', '  return valeur == null || typeof valeur === "boolean" || typeof valeur === "string"'],
+      ['  const rattachementConfirme = confirmationLue === true', '  const rattachementConfirme = confirmationLue === true || confirmationLue === "true"'],
+    ],
+    scenario: 'la confirmation reçue en texte (« true ») : 400 en français, avant le contrôle du dossier, aucun compte cherché',
+  },
+  {
+    slug: 'create-client-access', quoi: 'la confirmation lue après le contrôle du dossier',
+    remplacements: [
+      [
+        '  if (!booleenOuAbsent(confirmationLue)) {\n    return json({ error: "rattachementConfirme doit être un booléen (true pour confirmer le rattachement)." }, 400)\n  }\n',
+        '',
+      ],
+      [
+        '  if (!aAcces) {\n    return json({ error: "Dossier introuvable." }, 404)\n  }\n',
+        '  if (!aAcces) {\n    return json({ error: "Dossier introuvable." }, 404)\n  }\n'
+        + '  if (!booleenOuAbsent(confirmationLue)) {\n    return json({ error: "rattachementConfirme doit être un booléen (true pour confirmer le rattachement)." }, 400)\n  }\n',
+      ],
+    ],
+    scenario: 'la confirmation reçue en nombre (1) : 400 en français, avant le contrôle du dossier, aucun compte cherché',
+  },
+  {
+    slug: 'create-client-access', quoi: 'la confirmation qui passe outre le contrôle du dossier',
+    remplacements: [['  if (!aAcces) {', '  if (!aAcces && !rattachementConfirme) {']],
+    scenario: 'comptableNonAssigne, rattachement confirmé : refusé (404), la confirmation n’ouvre pas le dossier, rien ne part',
+  },
+  {
+    slug: 'create-client-access', quoi: 'l’accès écrit avant la confirmation',
+    remplacements: [[
+      '      if (!rattachementConfirme) {\n',
+      '      await supabaseAdmin.from("memberships").insert({ user_id: clientUserId, dossier_id: dossierId, role: "client", email })\n      if (!rattachementConfirme) {\n',
+    ]],
+    scenario: 'un compte inscrit seul, que ce cabinet ne connaît pas, sans confirmation : 409, le même refus et son marqueur, rien d’écrit, le compte intact',
+  },
+  {
+    slug: 'create-client-access', quoi: 'la confirmation ignorée (le compte reste refusé)',
+    remplacements: [['      if (!rattachementConfirme) {\n', '      if (true) {\n']],
+    scenario: 'un compte inscrit seul, rattachement confirmé : l’accès s’écrit, sans aucun droit, la réponse dit « existant », le compte intact',
+  },
+  {
+    slug: 'create-client-access', quoi: 'le mot de passe posé sur le compte rattaché sur confirmation',
+    remplacements: [['      if (particulier) {\n', '      await supabaseAdmin.auth.admin.updateUserById(clientUserId, { password })\n      if (particulier) {\n']],
+    scenario: 'un compte inscrit seul, rattachement confirmé : l’accès s’écrit, sans aucun droit, la réponse dit « existant », le compte intact',
+  },
+  {
+    slug: 'create-client-access', quoi: 'le marqueur oublié sur le premier refus',
+    remplacements: [['          rattachementAConfirmer: true,\n        }, 409)', '        }, 409)']],
+    scenario: 'un compte inscrit seul, que ce cabinet ne connaît pas, sans confirmation : 409, le même refus et son marqueur, rien d’écrit, le compte intact',
+  },
+  {
+    slug: 'create-client-access', quoi: 'le marqueur sur le refus d’un compte connu (un accès déjà donné)',
+    remplacements: [[
+      'envoie-lui un lien de réinitialisation depuis la liste des accès.",\n      }, 409)',
+      'envoie-lui un lien de réinitialisation depuis la liste des accès.",\n        rattachementAConfirmer: true,\n      }, 409)',
+    ]],
+    scenario: 'un accès déjà donné sur ce dossier : 409, rien n’a changé, le mot de passe du client non plus',
+  },
+  {
+    slug: 'create-client-access', quoi: 'le marqueur sur la réponse d’un compte connu repris',
+    remplacements: [['  return json({ ok: true, compte })', '  return json({ ok: true, compte, rattachementAConfirmer: compte === "existant" })']],
+    scenario: 'un compte existant déjà lié au cabinet (un membre de son équipe) : repris tel qu’il est, et la réponse le dit',
+  },
+  {
+    slug: 'create-client-access', quoi: 'le marqueur sur le refus d’un compte qui ne peut pas être client (l’écran bouclerait)',
+    remplacements: [[
+      'Demande à cette personne d\'utiliser une autre adresse e-mail.",\n        }, 409)',
+      'Demande à cette personne d\'utiliser une autre adresse e-mail.",\n          rattachementAConfirmer: true,\n        }, 409)',
+    ]],
+    scenario: 'le chef d’un autre cabinet, rattachement confirmé : 409, il ne reçoit pas d’accès client, sans marqueur, rien d’écrit, le compte intact',
+  },
+  {
+    slug: 'create-client-access', quoi: 'le membre d’un autre cabinet rattaché sur confirmation',
+    remplacements: [['  if (membre) return true\n', '']],
+    scenario: 'le chef d’un autre cabinet, rattachement confirmé : 409, il ne reçoit pas d’accès client, sans marqueur, rien d’écrit, le compte intact',
+  },
+  {
+    slug: 'create-client-access', quoi: 'le super-administrateur rattaché sur confirmation',
+    remplacements: [['  return !!superAdmin', '  return false']],
+    scenario: 'le super-administrateur, rattachement confirmé : 409, il ne reçoit pas d’accès client, sans marqueur, rien d’écrit, le compte intact',
+  },
+  {
+    slug: 'create-client-access', quoi: 'la lecture des membres en panne prise pour un « non »',
+    remplacements: [['  if (erreurMembre) return null\n', '']],
+    scenario: 'la vérification du compte en panne (cabinet_admins), rattachement confirmé : 500 qui le dit, rien d’écrit, le compte intact',
+  },
+  {
+    slug: 'create-client-access', quoi: 'la lecture des super-administrateurs en panne prise pour un « non »',
+    remplacements: [['  if (erreurSuperAdmin) return null\n', '']],
+    scenario: 'la vérification du compte en panne (super_admins), rattachement confirmé : 500 qui le dit, rien d’écrit, le compte intact',
+  },
+  {
+    slug: 'create-client-access', quoi: 'la vérification en panne qui rattache quand même',
+    remplacements: [['      if (particulier === null) {', '      if (particulier === undefined) {']],
+    scenario: 'la vérification du compte en panne (super_admins), rattachement confirmé : 500 qui le dit, rien d’écrit, le compte intact',
   },
   // Le défaut 23.5 (10/10/2026) : « déjà inscrit » lu au STATUT. Le service rend 422 aussi pour un mot de passe que la
   // règle du projet refuse : la fonction cherchait alors un compte qui n'existe pas, puis disait « Un compte existe

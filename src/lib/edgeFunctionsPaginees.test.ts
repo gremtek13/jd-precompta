@@ -53,7 +53,9 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
     raison:
       'les dossiers du cabinet, dans `appartientDejaAuCabinet`. Tronquée, la liste fait manquer le ' +
       '`membership` cherché, donc la fonction rend `false` et l’appelant REFUSE en 409 : le côté ' +
-      'FERMÉ, sur la garde contre la prise de contrôle d’un compte déjà inscrit ailleurs',
+      'FERMÉ, sur la garde contre la prise de contrôle d’un compte déjà inscrit ailleurs. Depuis 23-Q2 ' +
+      'ce refus se lève sur la confirmation du cabinet : un client d’un dossier manqué n’y gagne qu’une ' +
+      'confirmation de plus, et le membre d’un cabinet se reconnaît sans cette liste',
   },
   'create-team-member': {
     nombre: 1,

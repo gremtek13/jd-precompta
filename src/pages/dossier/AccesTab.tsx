@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import ConfirmationArticle from './ConfirmationArticle'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { messageErreur } from '../../lib/messageErreur'
 import { lireTout } from '../../lib/lectureComplete'
@@ -13,7 +14,9 @@ import {
   CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, changementApplique, demandeDeChangement, droitsDeLaLigne,
   libelleDeLaCase, messageDuRefus, type Domaine,
 } from '../../lib/droitsAcces'
-import { avisDeLAccesCree, compteDeLaReponse } from '../../lib/creationDesComptes'
+import {
+  avisDeLAccesCree, compteDeLaReponse, confirmationDuRattachement, copieDuRefus, corpsDeLaCreation, refusARattacher,
+} from '../../lib/creationDesComptes'
 import { CE_QUE_DIT_LA_COLLECTE } from '../../lib/piecesJointesEcarteesClient'
 import { adresseDeCollecte } from '../../lib/adresseCollecte'
 import { useCopieDuTexte } from '../../lib/copieDuTexte'
@@ -31,6 +34,10 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // mot de passe) — sans cet avis, le cabinet communiquerait au client un mot de passe qui n'a pas été posé.
   const [avisCreation, setAvisCreation] = useState<string | null>(null)
   const [inviting, setInviting] = useState(false)
+  // Le rattachement d'un compte que ce cabinet ne connaît pas, ou plus (23-Q2, décision du cabinet du 18/10/2026) : la
+  // fonction a refusé la création en disant qu'une confirmation est possible. L'adresse et le mot de passe sont gardés
+  // TELS QU'ILS SONT PARTIS : la fenêtre nomme l'adresse que le second appel enverra, quoi qu'il arrive ensuite au champ.
+  const [aRattacher, setARattacher] = useState<{ email: string; password: string } | null>(null)
   const [relanceDe, setRelanceDe] = useState<AccesLu | null>(null)
   // « Aucun accès client pour ce dossier » est une AFFIRMATION, pas un écran vide : une lecture
   // refusée rendait la même liste vide, et le cabinet en concluait qu'il ne restait aucun accès.
@@ -122,37 +129,79 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     creationEnCours.current = true
     setInviting(true)
     setError(null)
-    // L'avis de la création précédente s'efface : rien ne dit « créé » d'un accès encore en vol.
+    // L'avis de la création précédente s'efface : rien ne dit « créé » d'un accès encore en vol. Une confirmation restée
+    // ouverte cède aussi : elle nommait l'adresse d'un envoi précédent.
     setAvisCreation(null)
+    setARattacher(null)
     try {
-      // Passe par une fonction Edge (clé de service) plutôt qu'un signUp() classique côté navigateur :
-      // retirer un accès (bouton "Retirer" ci-dessous) ne supprime que la ligne memberships, jamais le
-      // compte Auth sous-jacent — un signUp() sur la même adresse pour un autre dossier échouerait donc
-      // en "déjà inscrit". La fonction réutilise le compte existant le cas échéant. L'accès qu'elle crée n'a
-      // aucun droit (les deux cases sont fausses par défaut en base) : le cabinet les coche ensuite.
-      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: true; compte?: string; error?: string }>(
-        'create-client-access',
-        { body: { dossierId, email, password } },
-      )
-      // Sur un statut non-2xx, supabase-js jette systématiquement un FunctionsHttpError générique
-      // ("Edge Function returned a non-2xx status code") dans invokeError SANS jamais remplir data
-      // (voir lib/invokeErreur.ts) — le message précis qu'on renvoie nous-mêmes (403/409/500...) se
-      // lit sur invokeError.context, jamais sur data.error (toujours undefined dans ce cas).
-      if (data?.error) throw new Error(data.error)
-      if (invokeError) throw new Error(await extraireErreurFonction(invokeError))
-      if (!data?.ok) throw new Error("La création de l'accès n'a rien retourné.")
-
-      // L'adresse envoyée à la fonction, celle du clic : le champ se vide juste après.
-      setAvisCreation(avisDeLAccesCree(email, compteDeLaReponse(data)))
-      setEmail('')
-      setPassword('')
-      load()
+      await envoyerLaCreation(email, password, false)
     } catch (err) {
       setError(messageErreur(err))
     } finally {
       creationEnCours.current = false
       setInviting(false)
     }
+  }
+
+  // « Rattacher ce compte » (23-Q2) : le second appel, confirmé, sous le MÊME verrou que la création — posé avant le `try`,
+  // relâché dans le `finally`, après la relecture de la liste —, avec l'adresse et le mot de passe du premier. La fenêtre
+  // reste ouverte pendant l'appel, ses deux boutons en attente, puis se ferme : un refus se dit sous le formulaire, comme
+  // celui d'une création.
+  async function confirmerLeRattachement() {
+    if (creationEnCours.current) return
+    const demande = aRattacher
+    if (demande === null) return
+    creationEnCours.current = true
+    setInviting(true)
+    setError(null)
+    try {
+      await envoyerLaCreation(demande.email, demande.password, true)
+    } catch (err) {
+      setError(messageErreur(err))
+    } finally {
+      setARattacher(null)
+      creationEnCours.current = false
+      setInviting(false)
+    }
+  }
+
+  // L'appel de create-client-access, toujours sous le verrou de son appelant : la création (`confirme` faux), ou le
+  // rattachement confirmé d'un compte que ce cabinet ne connaît pas (`confirme` vrai, 23-Q2). L'adresse et le mot de
+  // passe sont ceux qui PARTENT : l'avis nomme l'adresse envoyée, le champ se vide après. Lève sur un refus, qui se dit.
+  async function envoyerLaCreation(adresse: string, motDePasse: string, confirme: boolean) {
+    // Passe par une fonction Edge (clé de service) plutôt qu'un signUp() classique côté navigateur :
+    // retirer un accès (bouton "Retirer" ci-dessous) ne supprime que la ligne memberships, jamais le
+    // compte Auth sous-jacent — un signUp() sur la même adresse pour un autre dossier échouerait donc
+    // en "déjà inscrit". La fonction réutilise le compte existant le cas échéant. L'accès qu'elle crée n'a
+    // aucun droit (les deux cases sont fausses par défaut en base) : le cabinet les coche ensuite.
+    const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: true; compte?: string; error?: string }>(
+      'create-client-access',
+      { body: corpsDeLaCreation(dossierId, adresse, motDePasse, confirme) },
+    )
+    // Sur un statut non-2xx, supabase-js jette systématiquement un FunctionsHttpError générique
+    // ("Edge Function returned a non-2xx status code") dans invokeError SANS jamais remplir data
+    // (voir lib/invokeErreur.ts) — le message précis qu'on renvoie nous-mêmes (403/409/500...) se
+    // lit sur invokeError.context, jamais sur data.error (toujours undefined dans ce cas).
+    if (data?.error) throw new Error(data.error)
+    if (invokeError) {
+      // Le corps d'un refus ne se lit qu'une fois : sa copie pour le marqueur, l'original à `extraireErreurFonction`.
+      const copie = copieDuRefus(invokeError)
+      const message = await extraireErreurFonction(invokeError)
+      // Le marqueur ne vaut qu'au PREMIER appel : un appel déjà confirmé qui le rendrait encore ne rouvre pas la fenêtre
+      // (aucune boucle), il se dit comme tout refus.
+      if (!confirme && await refusARattacher(copie)) {
+        setARattacher({ email: adresse, password: motDePasse })
+        return
+      }
+      throw new Error(message)
+    }
+    if (!data?.ok) throw new Error("La création de l'accès n'a rien retourné.")
+
+    setAvisCreation(avisDeLAccesCree(adresse, compteDeLaReponse(data)))
+    setEmail('')
+    setPassword('')
+    // Attendue : le verrou de l'appelant ne se relâche qu'une fois la liste relue.
+    await load()
   }
 
   // Une case cochée ou décochée : `changer_droits_acces`, la seule écriture des droits — `memberships` n'a aucune policy de
@@ -207,9 +256,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
 
   async function revoke(row: AccesLu) {
     // Couper l'accès d'un client ne se défait pas d'un clic : il faut recréer l'accès, qui reprend le même compte avec
-    // son mot de passe (décision du cabinet du 10/10/2026) — et que `create-client-access` refuse quand c'était le
-    // dernier lien de ce compte avec le cabinet. C'était le seul geste destructeur de cet écran à
-    // partir sans rien demander, dans une colonne d'actions où il voisine « Relancer ». Ses droits partent
+    // son mot de passe (décision du cabinet du 10/10/2026) — et que `create-client-access` ne rattache plus que sur une
+    // confirmation quand c'était le dernier lien de ce compte avec le cabinet (23-Q2). C'était le seul geste destructeur
+    // de cet écran à partir sans rien demander, dans une colonne d'actions où il voisine « Relancer ». Ses droits partent
     // avec lui : un accès recréé n'en a aucun, la confirmation le nomme.
     const droits = droitsDeLaLigne(row)
     const droitsTenus = DOMAINES.filter((d) => droits[d.domaine]).map((d) => `« ${d.libelle} »`)
@@ -288,7 +337,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
           </div>
           {error && <p className="error-text">{error}</p>}
           {avisCreation && <p role="status">{avisCreation}</p>}
-          <button className="btn btn-primary" type="submit" disabled={inviting}>
+          <button className="btn btn-primary" type="submit" disabled={inviting || aRattacher !== null}>
             {inviting ? 'Création…' : 'Créer l\'accès'}
           </button>
         </form>
@@ -374,6 +423,24 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
           <div className="empty-state">Aucun accès client pour ce dossier.</div>
         )}
       </div>
+
+      {/* La confirmation du rattachement (23-Q2) : une fenêtre de la page, jamais `window.confirm` — elle nomme l'adresse
+          telle qu'elle partira, le dossier et ce que l'accès ouvre. « Annuler » n'envoie rien. */}
+      {aRattacher && (() => {
+        const confirmation = confirmationDuRattachement(aRattacher.email, dossierNom)
+        return (
+          <ConfirmationArticle
+            titre={confirmation.titre} boutonLabel={confirmation.bouton} occupe={inviting} refus={null} erreur={null}
+            onConfirmer={() => { void confirmerLeRattachement() }}
+            onAnnuler={() => setARattacher(null)}
+          >
+            <p>
+              {confirmation.adresse.avant}<strong className="courriel">{confirmation.adresse.adresse}</strong>{confirmation.adresse.apres}
+            </p>
+            {confirmation.paragraphes.map((p) => <p key={p}>{p}</p>)}
+          </ConfirmationArticle>
+        )
+      })()}
 
       {relanceDe?.email && (
         <EnvoyerEmailModal

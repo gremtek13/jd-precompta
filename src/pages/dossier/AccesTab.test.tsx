@@ -1080,3 +1080,195 @@ describe('AccesTab — la phrase de la collecte par e-mail', () => {
     expect(CE_QUE_DIT_LA_COLLECTE).toMatch(/arrivée vide, ou dont le dépôt a échoué/)
   })
 })
+
+// LE RATTACHEMENT D'UN COMPTE QUE CE CABINET NE CONNAÎT PAS, OU PLUS (23-Q2, décision du cabinet du 18/10/2026 : « rattacher
+// après une confirmation qui nomme l'adresse et ce qu'elle ouvre »). La fonction refuse le premier appel en 409 et ne dit
+// qu'une chose de plus, par un marqueur : qu'une confirmation est possible. L'onglet ouvre alors une fenêtre de la page —
+// jamais `window.confirm` — qui nomme l'adresse TELLE QU'ELLE PARTIRA ; « Annuler » n'envoie rien ; confirmé, le second
+// appel porte la confirmation, sous le verrou de la création, relâché après la relecture.
+describe('AccesTab — rattacher un compte que ce cabinet ne connaît pas, ou plus (23-Q2)', () => {
+  const REFUS = "Un compte existe déjà avec cet e-mail, mais il n'est rattaché à aucun dossier ou membre de ce cabinet : rien n'y a été changé, et il ne reçoit d'accès d'ici qu'après ta confirmation."
+  const PARTICULIER = "Ce compte ne peut pas recevoir d'accès client : il sert déjà à l'équipe d'un cabinet ou à l'administration de l'application, et rien n'y a été changé. Demande à cette personne d'utiliser une autre adresse e-mail."
+
+  // La réponse réelle d'un statut non-2xx : supabase-js ne remplit pas `data`, le corps se lit sur le contexte.
+  const refusHttp = (corps: unknown, statut = 409) => ({
+    data: null,
+    error: new FunctionsHttpError(new Response(JSON.stringify(corps), { status: statut, headers: { 'Content-Type': 'application/json' } })),
+  })
+  const fenetre = () => screen.queryByRole('alertdialog')
+  const dansLaFenetre = (nom: string) => {
+    const f = fenetre()
+    if (!f) throw new Error('la fenêtre de confirmation n’est pas ouverte')
+    return within(f).getByRole<HTMLButtonElement>('button', { name: nom })
+  }
+  const avisDeCreation = () => screen.queryAllByRole('status').map((e) => e.textContent ?? '').filter((t) => t.includes('est créé'))
+  const formulaire = () => {
+    const f = screen.getByLabelText('Email du client').closest('form')
+    if (!f) throw new Error('formulaire introuvable')
+    return f
+  }
+  const corpsDeLAppel = (rang: number) => (faux.appels[rang] as { options: { body: unknown } }).options.body
+
+  async function soumettre(adresse: string) {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: adresse } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: MOT_DE_PASSE } })
+    })
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+  }
+
+  // Le premier appel, refusé avec le marqueur : la fenêtre s'ouvre (cherchée hors de l'`act`, elle paraît après lecture du corps).
+  async function ouvrirLaConfirmation(adresse = 'ancien@exemple.fr') {
+    await soumettre(adresse)
+    await act(async () => { faux.resoudre?.(refusHttp({ error: REFUS, rattachementAConfirmer: true })) })
+    return screen.findByRole('alertdialog')
+  }
+
+  it('le refus qui porte le marqueur ouvre une fenêtre de la page, jamais window.confirm, qui nomme l’adresse telle qu’elle part, le dossier, ce que l’accès ouvre et que le mot de passe ne sert pas', async () => {
+    const confirmer = vi.fn(() => true)
+    window.confirm = confirmer
+    const dialogue = await ouvrirLaConfirmation('Ancien.Client@exemple.fr')
+    expect(confirmer).not.toHaveBeenCalled()
+    const texte = dialogue.textContent ?? ''
+    expect(texte).toContain("L'adresse Ancien.Client@exemple.fr a déjà un compte, que ce cabinet ne connaît pas, ou plus")
+    expect(texte).toContain('le dossier « Cabinet Martin »')
+    expect(texte).toContain(CE_QUE_DONNE_UN_ACCES)
+    expect(texte).toContain('sans les cases « Ventes » et « Banque »')
+    expect(texte).toContain('Le mot de passe initial que tu as saisi ne sert pas : ce compte garde le sien')
+    // L'adresse porte `.courriel` : elle ne se coupe pas au milieu d'un mot.
+    expect(within(dialogue).getByText('Ancien.Client@exemple.fr').className).toBe('courriel')
+    // Rien d'autre n'est parti, rien ne se dit « créé », et le refus ne s'affiche pas en erreur : la fenêtre le dit.
+    expect(faux.appels).toHaveLength(1)
+    expect(corpsDeLAppel(0)).toEqual({ dossierId: 'd1', email: 'Ancien.Client@exemple.fr', password: MOT_DE_PASSE })
+    expect(avisDeCreation()).toEqual([])
+    expect(screen.queryByText(REFUS)).toBeNull()
+    // Le formulaire attend la réponse de la fenêtre.
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: /Créer l'accès/ }).disabled).toBe(true)
+  })
+
+  it('« Annuler » n’envoie rien : la fenêtre se ferme, aucun second appel, rien ne dit « créé », et le formulaire garde sa saisie', async () => {
+    await ouvrirLaConfirmation()
+    await act(async () => { dansLaFenetre('Annuler').click() })
+    expect(fenetre()).toBeNull()
+    expect(faux.appels).toHaveLength(1)
+    expect(avisDeCreation()).toEqual([])
+    expect(screen.getByLabelText<HTMLInputElement>('Email du client').value).toBe('ancien@exemple.fr')
+    expect(screen.getByLabelText<HTMLInputElement>('Mot de passe initial').value).toBe(MOT_DE_PASSE)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: /Créer l'accès/ }).disabled).toBe(false)
+  })
+
+  it('« Rattacher ce compte » envoie le second appel — l’adresse et le mot de passe du premier, la confirmation à true — ; l’avis dit le compte existant, et la liste relue le montre', async () => {
+    await ouvrirLaConfirmation()
+    await act(async () => { dansLaFenetre('Rattacher ce compte').click() })
+    expect(faux.appels).toHaveLength(2)
+    expect(faux.appels[1]).toEqual({
+      nom: 'create-client-access',
+      options: { body: { dossierId: 'd1', email: 'ancien@exemple.fr', password: MOT_DE_PASSE, rattachementConfirme: true } },
+    })
+    faux.lignes = [...faux.lignes, acces({ id: 'm9', user_id: 'u9', email: 'ancien@exemple.fr', created_at: '2026-10-09T08:00:00Z' })]
+    await act(async () => { faux.resoudre?.({ data: { ok: true, compte: 'existant' }, error: null }) })
+    await laisserPasserUnTour()
+    expect(fenetre()).toBeNull()
+    const [texte, ...autres] = avisDeCreation()
+    expect(autres).toEqual([])
+    expect(texte).toContain("L'accès de ancien@exemple.fr est créé.")
+    expect(texte).toContain("celui saisi ici n'a pas été posé — ne le lui communique pas")
+    expect(screen.getByText('ancien@exemple.fr').closest('tr')).toBeTruthy()
+    expect(screen.getByLabelText<HTMLInputElement>('Email du client').value).toBe('')
+  })
+
+  it('l’adresse que la fenêtre nomme est celle qui part, avec le mot de passe du premier appel : les champs changés derrière elle n’y changent rien', async () => {
+    const dialogue = await ouvrirLaConfirmation()
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'autre@exemple.fr' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: 'court' } })
+    })
+    expect(dialogue.textContent).toContain('ancien@exemple.fr')
+    expect(dialogue.textContent).not.toContain('autre@exemple.fr')
+    await act(async () => { dansLaFenetre('Rattacher ce compte').click() })
+    expect(corpsDeLAppel(1)).toEqual({ dossierId: 'd1', email: 'ancien@exemple.fr', password: MOT_DE_PASSE, rattachementConfirme: true })
+  })
+
+  it('deux clics sur « Rattacher ce compte » dans le même act n’envoient qu’un appel, trois non plus : le verrou est posé avant le `try`', async () => {
+    await ouvrirLaConfirmation()
+    const rattacher = dansLaFenetre('Rattacher ce compte')
+    await act(async () => { rattacher.click(); rattacher.click(); rattacher.click() })
+    expect(faux.appels).toHaveLength(2)
+  })
+
+  it('pendant le second appel, la fenêtre reste ouverte et ses deux boutons attendent', async () => {
+    await ouvrirLaConfirmation()
+    await act(async () => { dansLaFenetre('Rattacher ce compte').click() })
+    expect(fenetre()).not.toBeNull()
+    expect(dansLaFenetre('Annuler').disabled).toBe(true)
+    expect(dansLaFenetre('Enregistrement…').disabled).toBe(true)
+  })
+
+  it('le verrou ne se relâche qu’après la relecture : soumis pendant elle, le formulaire n’envoie rien', async () => {
+    await ouvrirLaConfirmation()
+    await act(async () => { dansLaFenetre('Rattacher ce compte').click() })
+    const liberer = retenir()
+    await act(async () => { faux.resoudre?.({ data: { ok: true, compte: 'existant' }, error: null }) })
+    await laisserPasserUnTour()
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'nouveau@exemple.fr' } })
+      fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: MOT_DE_PASSE } })
+    })
+    // `submit` passe outre le bouton grisé : c'est le verrou seul qui retient l'envoi.
+    await act(async () => { fireEvent.submit(formulaire()) })
+    expect(faux.appels).toHaveLength(2)
+    await liberer()
+    await act(async () => { fireEvent.submit(formulaire()) })
+    expect(faux.appels).toHaveLength(3)
+    expect(corpsDeLAppel(2)).toEqual({ dossierId: 'd1', email: 'nouveau@exemple.fr', password: MOT_DE_PASSE })
+  })
+
+  it('un refus sans marqueur n’ouvre rien : il se dit sous le formulaire, comme avant', async () => {
+    await soumettre('ancien@exemple.fr')
+    await act(async () => { faux.resoudre?.(refusHttp({ error: REFUS })) })
+    expect(await screen.findByText(REFUS)).toBeTruthy()
+    expect(fenetre()).toBeNull()
+    expect(faux.appels).toHaveLength(1)
+  })
+
+  it('un marqueur qui n’est pas le booléen true n’ouvre rien', async () => {
+    await soumettre('ancien@exemple.fr')
+    await act(async () => { faux.resoudre?.(refusHttp({ error: REFUS, rattachementAConfirmer: 'true' })) })
+    expect(await screen.findByText(REFUS)).toBeTruthy()
+    expect(fenetre()).toBeNull()
+  })
+
+  it('le refus du second appel se dit sous le formulaire, la fenêtre fermée, sans avis — et sans boucle, même s’il portait le marqueur', async () => {
+    await ouvrirLaConfirmation()
+    await act(async () => { dansLaFenetre('Rattacher ce compte').click() })
+    await act(async () => { faux.resoudre?.(refusHttp({ error: PARTICULIER, rattachementAConfirmer: true })) })
+    expect(await screen.findByText(PARTICULIER)).toBeTruthy()
+    expect(fenetre()).toBeNull()
+    expect(faux.appels).toHaveLength(2)
+    expect(avisDeCreation()).toEqual([])
+    // Le verrou s'est relâché : le formulaire, resté rempli, repart — sans confirmation.
+    expect(screen.getByLabelText<HTMLInputElement>('Email du client').value).toBe('ancien@exemple.fr')
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    expect(faux.appels).toHaveLength(3)
+    expect(corpsDeLAppel(2)).toEqual({ dossierId: 'd1', email: 'ancien@exemple.fr', password: MOT_DE_PASSE })
+  })
+
+  it('une nouvelle soumission ferme la confirmation restée ouverte, et ne porte aucune confirmation', async () => {
+    await ouvrirLaConfirmation()
+    await act(async () => { fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'autre@exemple.fr' } }) })
+    await act(async () => { fireEvent.submit(formulaire()) })
+    expect(fenetre()).toBeNull()
+    expect(faux.appels).toHaveLength(2)
+    expect(corpsDeLAppel(1)).toEqual({ dossierId: 'd1', email: 'autre@exemple.fr', password: MOT_DE_PASSE })
+  })
+
+  it('un compte disparu entre les deux appels se crée : l’avis suit la réponse, et le mot de passe saisi se communique', async () => {
+    await ouvrirLaConfirmation()
+    await act(async () => { dansLaFenetre('Rattacher ce compte').click() })
+    await act(async () => { faux.resoudre?.({ data: { ok: true, compte: 'cree' }, error: null }) })
+    await laisserPasserUnTour()
+    expect(avisDeCreation()).toEqual(["L'accès de ancien@exemple.fr est créé : communique-lui le mot de passe initial que tu as saisi."])
+  })
+})

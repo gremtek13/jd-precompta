@@ -1,5 +1,6 @@
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { AuthApiError, AuthWeakPasswordError } from '@supabase/supabase-js'
+import { CHAMP_DE_LA_CONFIRMATION, MARQUEUR_DU_RATTACHEMENT, corpsDeLaCreation } from '../lib/creationDesComptes'
 import { refusDuMotDePasse } from '../lib/recuperationMotDePasse'
 import { SIRET_VENDEUR_RECU, messageRecu } from './cdarRecu'
 import { facture as factureEnBase, ligne as ligneDeFacture } from './facturesCii'
@@ -1732,7 +1733,8 @@ const DELETE_CABINET: ContratFonction = {
 // 10/10/2026 : « le propriétaire du compte peut changer son mot de passe ») — ni avant un refus, ni avant un
 // rattachement. Le compte repris l'est tel qu'il est, et la réponse le dit (`compte: "existant"`), pour que l'écran dise
 // au cabinet de ne pas communiquer un mot de passe qui n'a pas servi. D'un compte que le cabinet ne connaît pas, la
-// fonction ne dit que ce qu'elle disait avant : il existe, il n'est pas rattaché à ce cabinet.
+// fonction ne dit que ce qu'elle disait avant : il existe, il n'est pas rattaché à ce cabinet — et, pour l'onglet Accès
+// seulement (23-Q2), qu'une confirmation peut le rattacher (plus bas).
 
 const MEMBRE = { email: NOUVEL_EMAIL, password: MOT_DE_PASSE, role: 'comptable' }
 const membreDe = (m: Monde, email: string) => lignes(m, 'cabinet_admins').find((c) => c.email === email)
@@ -1766,12 +1768,20 @@ function refusDUnCompteDAilleurs(slug: string): string {
 /**
  * D'un compte d'ailleurs, la fonction dit ce qu'elle en disait avant le 10/10/2026 — il existe, il n'est rattaché à aucun
  * dossier ni membre de ce cabinet — et RIEN DE PLUS : la même phrase quel que soit ce compte, sous la seule clé `error`.
- * Une phrase qui changerait selon lui dirait où il vit, ou ce qu'il est.
+ * Une phrase qui changerait selon lui dirait où il vit, ou ce qu'il est. Depuis 23-Q2, l'onglet Accès porte À CÔTÉ le
+ * marqueur du rattachement à confirmer (`marqueur`), le booléen `true` et rien d'autre — le même pour tous les comptes.
  */
-const neDitQueLExistence = (slug: string) => (r: Resultat) => {
+const neDitQueLExistence = (slug: string, marqueur: boolean) => (r: Resultat) => {
   const fautes: string[] = []
-  const cles = Object.keys(corpsDe(r))
-  if (cles.length !== 1 || cles[0] !== 'error') fautes.push(`le refus porte d’autres clés que « error » : ${cles.join(', ')}`)
+  const corps = corpsDe(r)
+  const attendues = marqueur ? ['error', MARQUEUR_DU_RATTACHEMENT] : ['error']
+  const cles = Object.keys(corps)
+  if (JSON.stringify([...cles].sort()) !== JSON.stringify([...attendues].sort())) {
+    fautes.push(`le refus porte d’autres clés que ${attendues.map((c) => `« ${c} »`).join(' et ')} : ${cles.join(', ')}`)
+  }
+  if (marqueur && corps[MARQUEUR_DU_RATTACHEMENT] !== true) {
+    fautes.push(`le marqueur n’est pas le booléen true : ${JSON.stringify(corps[MARQUEUR_DU_RATTACHEMENT])}`)
+  }
   const message = messageDe(r)
   if (message !== refusDUnCompteDAilleurs(slug)) fautes.push(`le refus n’est pas la phrase unique de la source : ${String(message).slice(0, 160)}`)
   return fautes
@@ -1798,7 +1808,7 @@ function refusDesComptesDAilleurs(slug: string, corps: (email: string) => unknow
     requete: (s: string) => requeteDe(s, { personne: 'chef', corps: corps(email) }),
     attendu: {
       statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
-      verifier: (r: Resultat, m: Monde) => [...compteIntact(r, m), ...neDitQueLExistence(slug)(r)],
+      verifier: (r: Resultat, m: Monde) => [...compteIntact(r, m), ...neDitQueLExistence(slug, false)(r)],
     },
   }))
 }
@@ -1955,10 +1965,221 @@ const COMPTES_DU_CABINET: { quoi: string; email: string; preparer?: (m: Monde) =
   },
 ]
 
+// ── LE RATTACHEMENT CONFIRMÉ D'UN COMPTE QUE CE CABINET NE CONNAÎT PAS, OU PLUS (create-client-access, 23-Q2) ───────────
+// Décision du cabinet du 18/10/2026 : « rattacher après une confirmation qui nomme l'adresse et ce qu'elle ouvre ». Le
+// PREMIER appel — sans confirmation, ou `false`, ou nulle — refuse comme avant et n'en dit pas plus : la même phrase pour
+// toutes les sortes de comptes, et le seul marqueur `rattachementAConfirmer: true` ; rien d'écrit. Le SECOND porte
+// `rattachementConfirme: true`, le corps même de l'écran (`corpsDeLaCreation`) : l'accès s'écrit, sans aucun droit, et
+// rien ne touche au compte. Seul le booléen `true` confirme : toute autre forme se refuse en 400 avant le contrôle du
+// dossier et avant tout compte cherché. La confirmation ne passe outre aucun contrôle (le dossier, le mot de passe, un
+// accès déjà donné), et ne rattache pas un compte qui sert à l'équipe d'un cabinet ou à l'administration : refusé en 409,
+// sans marqueur, la même phrase pour toutes ces sortes ; sa vérification en panne refuse en 500.
+
+/** Le corps du second appel, tel que l'écran l'envoie : la confirmation comprise. */
+const confirme = (email: string, motDePasse: string = MOT_DE_PASSE) => corpsDeLaCreation(D, email, motDePasse, true)
+
+/** Aucun accès de cette adresse sur ce dossier : rien n'a été écrit. */
+const aucunAccesPour = (email: string) => (m: Monde) =>
+  (accesDe(m, email).length > 0 ? [`un accès a été écrit pour ${email} : ${JSON.stringify(accesDe(m, email))}`] : [])
+
+/** Le marqueur n'est que sur le premier refus d'un compte que ce cabinet ne connaît pas : jamais ailleurs. */
+const sansMarqueur = (r: Resultat) =>
+  (MARQUEUR_DU_RATTACHEMENT in corpsDe(r) ? [`la réponse ${r.statut} porte le marqueur du rattachement : ${r.texte.slice(0, 160)}`] : [])
+
+/** Rattaché sur confirmation : UN accès de ce compte sur ce dossier, client, sans aucun droit ; la réponse exacte ; le compte intact. */
+const rattacheSurConfirmation = (email: string, userId: string) => (r: Resultat, m: Monde) => {
+  const acces = accesDe(m, email)
+  const fautes = acces.length === 1 && acces[0].user_id === userId && acces[0].role === 'client'
+    ? [] : [`un accès de ${userId} attendu, et seul : ${JSON.stringify(acces)}`]
+  if (acces.some((a) => a.droit_ventes === true || a.droit_banque === true)) fautes.push('l’accès rattaché porte un droit')
+  return [...fautes, ...reponseDeCreation('existant')(r), ...compteIntact(r, m)]
+}
+
+/**
+ * Le refus d'un compte qui ne peut pas être client, tel que la source l'écrit : UNE phrase, lue dans la source. Deux
+ * phrases — une pour le membre d'un cabinet, une pour le super-administrateur — diraient déjà lequel il est.
+ */
+function refusDUnCompteQuiNePeutEtreClient(): string {
+  const trouves = [...sourceDe('create-client-access').matchAll(/"(Ce compte ne peut pas recevoir d'accès client[^"]*)"/g)].map((x) => x[1])
+  return trouves.length === 1 ? trouves[0] : `(${trouves.length} refus d’un compte qui ne peut pas être client dans la source, au lieu d’un)`
+}
+
+const refuseSansMarqueur = (r: Resultat) => {
+  const cles = Object.keys(corpsDe(r))
+  const fautes = cles.length === 1 && cles[0] === 'error' ? [] : [`le refus porte d’autres clés que « error » : ${cles.join(', ')}`]
+  if (messageDe(r) !== refusDUnCompteQuiNePeutEtreClient()) {
+    fautes.push(`le refus n’est pas la phrase unique de la source : ${String(messageDe(r)).slice(0, 160)}`)
+  }
+  return fautes
+}
+
+/** Les premiers appels : sans confirmation, à `false`, ou nulle — aucune ne confirme. */
+const SANS_CONFIRMATION: { quoi: string; corps: (email: string) => Record<string, unknown> }[] = [
+  { quoi: 'sans confirmation', corps: (email) => ({ ...ACCES, email }) },
+  { quoi: 'la confirmation à false', corps: (email) => ({ ...ACCES, email, [CHAMP_DE_LA_CONFIRMATION]: false }) },
+]
+
+function premiersAppelsDesComptesDAilleurs(): Scenario[] {
+  const premier = (quoi: string, forme: string, email: string, corps: Record<string, unknown>, preparer?: (m: Monde) => void): Scenario => ({
+    nom: `${quoi}, que ce cabinet ne connaît pas, ${forme} : 409, le même refus et son marqueur, rien d’écrit, le compte intact`,
+    preparer: (m) => { motDePasseSecret(m); preparer?.(m) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps }),
+    attendu: {
+      statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+      verifier: (r, m) => [...compteIntact(r, m), ...neDitQueLExistence('create-client-access', true)(r), ...aucunAccesPour(email)(m)],
+    },
+  })
+  return [
+    ...SANS_CONFIRMATION.flatMap(({ quoi: forme, corps }) =>
+      COMPTES_D_AILLEURS.map(({ quoi, email, preparer }) => premier(quoi, forme, email, corps(email), preparer))),
+    // Nulle, elle se lit comme absente — la règle des champs texte (`texteOuAbsent`) : elle ne confirme pas.
+    premier('un compte inscrit seul', 'la confirmation nulle', PERSONNES.inscrit.email, { ...ACCES, email: PERSONNES.inscrit.email, [CHAMP_DE_LA_CONFIRMATION]: null }),
+  ]
+}
+
+/** Deux comptes que ce cabinet ne connaît pas et qui peuvent être clients : un compte rattaché à rien, le client d'un autre cabinet. */
+const COMPTES_RATTACHABLES: { quoi: string; email: string; id: string; preparer?: (m: Monde) => void }[] = [
+  { quoi: 'un compte inscrit seul', email: PERSONNES.inscrit.email, id: PERSONNES.inscrit.id },
+  {
+    quoi: 'le client d’un autre cabinet',
+    email: PERSONNES.inscrit.email,
+    id: PERSONNES.inscrit.id,
+    preparer: (m) => {
+      m.base.memberships.push({ id: identifiantGenere(), user_id: PERSONNES.inscrit.id, dossier_id: ID.dossierAutreCabinet, role: 'client', email: PERSONNES.inscrit.email })
+    },
+  },
+]
+
+/** Des comptes qui ne peuvent pas être clients, confirmés ou non : le membre d'un autre cabinet, quel que soit son rôle, et le super-administrateur. */
+const COMPTES_QUI_NE_PEUVENT_ETRE_CLIENTS: { quoi: string; email: string; preparer?: (m: Monde) => void }[] = [
+  { quoi: 'le chef d’un autre cabinet', email: PERSONNES.chefAutreCabinet.email },
+  {
+    quoi: 'un comptable d’un autre cabinet',
+    email: PERSONNES.inscrit.email,
+    preparer: (m) => {
+      m.base.cabinet_admins.push({ user_id: PERSONNES.inscrit.id, cabinet_id: ID.autreCabinet, role: 'comptable', email: PERSONNES.inscrit.email })
+    },
+  },
+  { quoi: 'le super-administrateur', email: PERSONNES.superAdmin.email },
+  {
+    // La forme de la production : le super-administrateur est aussi le chef d'un cabinet — ici, d'un autre.
+    quoi: 'le super-administrateur, chef d’un autre cabinet',
+    email: PERSONNES.superAdmin.email,
+    preparer: (m) => {
+      m.base.cabinet_admins.push({ user_id: PERSONNES.superAdmin.id, cabinet_id: ID.autreCabinet, role: 'comptable_en_chef', email: PERSONNES.superAdmin.email })
+    },
+  },
+]
+
+/** La confirmation sous une autre forme que le booléen : un nombre, un texte, un objet, un tableau. */
+const CONFIRMATIONS_DE_TRAVERS: [string, unknown][] = [
+  ['nombre (1)', 1],
+  ['nombre (0)', 0],
+  ['texte (« true »)', 'true'],
+  ['texte (« false »)', 'false'],
+  ['texte (« oui »)', 'oui'],
+  ['objet', { valeur: true }],
+  ['tableau', [true]],
+]
+
+function rattachementsConfirmes(): Scenario[] {
+  return [
+    ...COMPTES_RATTACHABLES.map(({ quoi, email, id, preparer }): Scenario => ({
+      nom: `${quoi}, rattachement confirmé : l’accès s’écrit, sans aucun droit, la réponse dit « existant », le compte intact`,
+      preparer: (m) => { motDePasseSecret(m); preparer?.(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(email) }),
+      attendu: {
+        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        verifier: rattacheSurConfirmation(email, id),
+      },
+    })),
+    ...COMPTES_QUI_NE_PEUVENT_ETRE_CLIENTS.map(({ quoi, email, preparer }): Scenario => ({
+      nom: `${quoi}, rattachement confirmé : 409, il ne reçoit pas d’accès client, sans marqueur, rien d’écrit, le compte intact`,
+      preparer: (m) => { motDePasseSecret(m); preparer?.(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(email) }),
+      attendu: {
+        statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+        verifier: (r, m) => [...refuseSansMarqueur(r), ...compteIntact(r, m), ...aucunAccesPour(email)(m)],
+      },
+    })),
+    // La vérification de ces comptes LIT ses erreurs : en panne, ne pas savoir ne rattache pas.
+    ...(['cabinet_admins', 'super_admins'] as const).map((table): Scenario => ({
+      nom: `la vérification du compte en panne (${table}), rattachement confirmé : 500 qui le dit, rien d’écrit, le compte intact`,
+      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ table, operation: 'select', erreur: { message: 'délai dépassé' } }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(PERSONNES.inscrit.email) }),
+      attendu: {
+        statut: 500, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+        verifier: (r, m) => [...sansMarqueur(r), ...compteIntact(r, m), ...aucunAccesPour(PERSONNES.inscrit.email)(m)],
+      },
+    })),
+    {
+      nom: 'l’accès ne s’écrit pas (panne de la base) pour un compte rattaché sur confirmation : 500, et le compte n’a pas été touché',
+      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ table: 'memberships', operation: 'insert', erreur: { message: 'délai dépassé' } }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(PERSONNES.inscrit.email) }),
+      attendu: {
+        statut: 500, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        verifier: (r, m) => [...sansMarqueur(r), ...compteIntact(r, m)],
+      },
+    },
+    // Ce que la confirmation ne change pas : un compte que le cabinet connaît, un accès déjà donné, une adresse neuve.
+    {
+      nom: 'un compte déjà lié au cabinet (un membre de son équipe), rattachement confirmé : repris comme sans confirmation',
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(PERSONNES.comptableNonAssigne.email) }),
+      attendu: {
+        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        verifier: rattacheSurConfirmation(PERSONNES.comptableNonAssigne.email, PERSONNES.comptableNonAssigne.id),
+      },
+    },
+    {
+      nom: 'un accès déjà donné sur ce dossier, rattachement confirmé : 409 « existe déjà », sans marqueur, rien n’a changé',
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(PERSONNES.client.email) }),
+      attendu: {
+        statut: 409, refusEnFrancais: true,
+        depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        verifier: (r, m) => [
+          ...(String(messageDe(r)).startsWith('Cet accès existe déjà pour ce dossier') ? [] : [`refus « ${String(messageDe(r)).slice(0, 120)} »`]),
+          ...sansMarqueur(r), ...compteIntact(r, m),
+          ...(accesDe(m, PERSONNES.client.email).length === 1 ? [] : ['l’accès du client a changé']),
+        ],
+      },
+    },
+    {
+      nom: 'une adresse neuve, rattachement confirmé : le compte se crée comme sans confirmation',
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(NOUVEL_EMAIL) }),
+      attendu: {
+        statut: 200, depenses: ['comptes createUser', 'écriture insert memberships'],
+        verifier: (r, m) => [...(accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']), ...reponseDeCreation('cree')(r)],
+      },
+    },
+    // La confirmation ne passe outre aucun contrôle : ni celui du dossier, ni celui du mot de passe.
+    ...HORS_DU_DOSSIER.map((personne): Scenario => ({
+      nom: `${personne}, rattachement confirmé : refusé (404), la confirmation n’ouvre pas le dossier, rien ne part`,
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne, corps: confirme(PERSONNES.inscrit.email) }),
+      attendu: { statut: 404, refusEnFrancais: true, aucuneDepense: true },
+    })),
+    {
+      nom: 'un mot de passe de moins de dix caractères, rattachement confirmé : 400, aucun compte cherché, rien d’écrit',
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(PERSONNES.inscrit.email, 'court') }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+    },
+    // Seul le booléen `true` confirme : toute autre forme se refuse, avant le contrôle du dossier et avant tout compte.
+    ...CONFIRMATIONS_DE_TRAVERS.map(([quoi, valeur]): Scenario => ({
+      nom: `la confirmation reçue en ${quoi} : 400 en français, avant le contrôle du dossier, aucun compte cherché`,
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...ACCES, email: PERSONNES.inscrit.email, [CHAMP_DE_LA_CONFIRMATION]: valeur } }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true, verifier: avantLeDossier },
+    })),
+  ]
+}
+
 const CREATE_CLIENT_ACCESS: ContratFonction = {
   slug: 'create-client-access',
   navigateur: true,
-  porte: 'une session, puis `admin_du_dossier` avec le jeton de l’appelant ; un compte existant n’est repris que s’il est déjà lié au cabinet du dossier, et tel qu’il est : son mot de passe n’est jamais touché',
+  porte: 'une session, puis `admin_du_dossier` avec le jeton de l’appelant ; un compte existant n’est repris que s’il est déjà lié au cabinet du dossier, ou sur la confirmation du cabinet (23-Q2) s’il peut être client, et tel qu’il est : son mot de passe n’est jamais touché',
   scenarios: [
     preflight(),
     ...sansSession('create-client-access', ACCES),
@@ -1978,7 +2199,8 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
         verifier: (r, m) => [...(accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']), ...reponseDeCreation('cree')(r)],
       },
     })),
-    ...refusDesComptesDAilleurs('create-client-access', (email) => ({ ...ACCES, email })),
+    ...premiersAppelsDesComptesDAilleurs(),
+    ...rattachementsConfirmes(),
     ...COMPTES_DU_CABINET.map(({ quoi, email, preparer }): Scenario => ({
       nom: `un compte existant déjà lié au cabinet (${quoi}) : repris tel qu’il est, et la réponse le dit`,
       preparer: (m) => { motDePasseSecret(m); preparer?.(m) },
@@ -2015,7 +2237,8 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
       attendu: {
         statut: 409, refusEnFrancais: true,
         depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
-        verifier: compteIntact,
+        // Un compte que le cabinet connaît n'a rien à confirmer : le refus ne porte pas le marqueur (23-Q2).
+        verifier: (r, m) => [...compteIntact(r, m), ...sansMarqueur(r)],
       },
     },
     {
@@ -2038,7 +2261,7 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
       },
       rienEcrit: (m) => (accesDe(m, NOUVEL_EMAIL).length > 0 ? ['un accès a été créé'] : []),
     }),
-    ...corpsMalFormes('chef', ['dossierId', 'email', 'password'], {}, undefined, avantLeDossier),
+    ...corpsMalFormes('chef', ['dossierId', 'email', 'password', CHAMP_DE_LA_CONFIRMATION], {}, undefined, avantLeDossier),
     // La batterie met TOUS les champs de travers, et le premier contrôle y masque les autres : chaque champ seul de
     // travers, les autres lisibles, prouve que son contrôle tient par lui-même — avant le contrôle du dossier.
     ...(['dossierId', 'email', 'password'] as const).map((champ): Scenario => ({
