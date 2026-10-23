@@ -1,5 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import ContactsVue from './ContactsVue'
 import { ficheDuContactCsv, phraseDeLExportDeLaFiche } from '../../lib/contactsExport'
 import { motsDuCabinet } from '../../lib/espaceVentes'
@@ -220,6 +222,16 @@ describe('Clients — avant et après la lecture', () => {
     await act(async () => { faux.retenirLecture = false; for (const r of faux.lecturesEnAttente.splice(0)) r() })
     expect(await lignes()).toHaveLength(4)
     expect(screen.queryByText('Chargement…')).toBeNull()
+  })
+
+  it('l\u2019adresse e-mail d\u2019un client porte `courriel` (break-word), pas `nom-fichier` (anywhere), qui la coupait au milieu d\u2019un mot', async () => {
+    render(arbre('cabinet', { article: SOINS }))
+    await lignes()
+    const adresse = screen.getByText('contact@societe-essai-fictive.example')
+    expect(adresse.className).toBe('courriel')
+    // Le banc voit la coupure ; ici on garde la règle de style qui la fonde (jsdom ne met rien en page).
+    const css = readFileSync(resolve(__dirname, '../../index.css'), 'utf8')
+    expect(css).toMatch(/\.courriel\s*\{\s*overflow-wrap:\s*break-word;\s*\}/)
   })
 
   it('un fichier vide, lu en entier : il le dit, sans tableau, et le geste de création est offert', async () => {

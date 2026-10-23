@@ -342,7 +342,7 @@ export default function ContactsVue(props: Props) {
                       <td data-libelle="SIREN / SIRET">
                         {identifiant ? <span title={identifiant.nom}>{identifiant.valeur}</span> : '—'}
                       </td>
-                      <td data-libelle="E-mail">{c.email ? <span className="nom-fichier">{c.email}</span> : '—'}</td>
+                      <td data-libelle="E-mail">{c.email ? <span className="courriel">{c.email}</span> : '—'}</td>
                       <td data-libelle="Délai">{delai ?? '—'}</td>
                       {peutEcrire && (
                         <td className="td-actions">
