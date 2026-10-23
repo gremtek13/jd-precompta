@@ -108,14 +108,23 @@ export function motsIdentifiants(tiers: string | null): string[] {
 const PREFIXE_CARTE = /^cb\d+/
 
 export function tiersConfirmeParBanque(tiers: string | null, libelleBanque: string): boolean {
-  const mots = motsIdentifiants(tiers)
-  if (mots.length === 0) return false
-  const motsBanque = normaliser(libelleBanque)
+  return motsSeConfirment(motsIdentifiants(tiers), motsDuLibelle(libelleBanque))
+}
+
+// Les deux moitiés de `tiersConfirmeParBanque`, pour qui confronte un même libellé à beaucoup de tiers (les candidats du
+// relevé, lib/mouvementsDesVentes.ts) : chaque texte ne se normalise qu'une fois. Les mots d'un libellé bancaire, de cinq
+// caractères au moins, le préfixe d'un terminal carte détaché.
+export function motsDuLibelle(libelleBanque: string): string[] {
+  return normaliser(libelleBanque)
     .split(' ')
     .flatMap((m) => (PREFIXE_CARTE.test(m) ? [m, m.replace(PREFIXE_CARTE, '')] : [m]))
     .filter((m) => m.length >= 5)
-  if (motsBanque.length === 0) return false
-  return mots.some((mot) => motsBanque.some((b) => b.startsWith(mot) || mot.startsWith(b)))
+}
+
+// Un mot du tiers (`motsIdentifiants`) retrouvé dans un mot du libellé (`motsDuLibelle`), l'un commençant par l'autre.
+// Aucun mot d'un côté ou de l'autre : rien ne se confirme.
+export function motsSeConfirment(motsDuTiers: readonly string[], motsBanque: readonly string[]): boolean {
+  return motsDuTiers.some((mot) => motsBanque.some((b) => b.startsWith(mot) || mot.startsWith(b)))
 }
 
 export type MotifArbitrage =

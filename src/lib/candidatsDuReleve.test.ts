@@ -131,6 +131,14 @@ describe('candidatsDeLaVente : les deux listes, et la retenue de VF5a1', () => {
     expect(candidatsDeLaVente(v, { ...lue(s), dossierId: 'autre' }, [])).toBe(AUCUN_CANDIDAT)
     expect(AUCUN_CANDIDAT).toEqual({ facturesSourcesOuvertes: [], encaissementsSansMouvement: [], juge: null })
   })
+
+  it('un mouvement que la lecture rend d’un autre dossier n’a pas de candidat, même désigné sous l’identifiant attendu', () => {
+    // La facture f1 (600 €) que le crédit solderait : sous le dossier de la lecture, elle se propose ; la même ligne lue
+    // d'un autre dossier n'est pas un mouvement du dossier, et rien ne se propose.
+    const m = mouvement({ id: 'm', montant: 600 })
+    expect(candidatsDuMouvement(candidatsDe(sources([m])), m).map((x) => x.id)).toEqual(['f1'])
+    expect(candidatsDuMouvement(candidatsDe(sources([{ ...m, dossier_id: 'autre' }])), m)).toEqual([])
+  })
 })
 
 describe('candidatsDuMouvement : un CRÉDIT libre', () => {

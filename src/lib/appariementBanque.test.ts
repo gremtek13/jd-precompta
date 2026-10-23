@@ -5,7 +5,9 @@ import {
   candidatsCotisations,
   ecartEnJours,
   libelleExploitable,
+  motsDuLibelle,
   motsIdentifiants,
+  motsSeConfirment,
   piecesMontantIntrouvableEnBanque,
   planRapprochementAutomatique,
   sensCotisationCoherent,
@@ -107,6 +109,22 @@ describe('tiersConfirmeParBanque', () => {
 
   it('ne se laisse pas confirmer par un mot générique commun aux deux', () => {
     expect(tiersConfirmeParBanque('Cabinet Dupont', 'PRLV SEPA CABINET MARTIN')).toBe(false)
+  })
+})
+
+// Les deux moitiés de `tiersConfirmeParBanque`, que les candidats du relevé (lib/mouvementsDesVentes.ts) appellent pour ne
+// normaliser chaque texte qu'une fois : le libellé de la banque d'un côté, le tiers de l'autre.
+describe('motsDuLibelle et motsSeConfirment', () => {
+  it('les mots du libellé : normalisés, de cinq caractères au moins, le préfixe d’un terminal carte détaché', () => {
+    expect(motsDuLibelle('CB30CONVERGENCE Pâtisserie du Coin')).toEqual(['cb30convergence', 'convergence', 'patisserie'])
+    expect(motsDuLibelle('VIR SEPA')).toEqual([])
+  })
+
+  it('un mot du tiers retrouvé au début d’un mot du libellé, dans un sens ou dans l’autre ; aucun mot, rien', () => {
+    expect(motsSeConfirment(motsIdentifiants('Swisslife Prévoyance'), motsDuLibelle('PRLV SWISSLIFE PREVOYAN'))).toBe(true)
+    expect(motsSeConfirment(motsIdentifiants('Transmedical'), motsDuLibelle('PRLV SEPA MEDICAL SERVICE'))).toBe(false)
+    expect(motsSeConfirment([], motsDuLibelle('PRLV SWISSLIFE'))).toBe(false)
+    expect(motsSeConfirment(motsIdentifiants('Swisslife'), [])).toBe(false)
   })
 })
 
