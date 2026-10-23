@@ -33510,3 +33510,16 @@ rapproché sans écriture — G4 et `designer_exemplaire_facture` le fermeront, 
 lot ; les deux premiers sont du paramétrage) ; le badge de Justificatifs (VF6e, qui fera lire la source des factures au
 pont). Le lot rejoint VF5h sans peine : dans `EcrituresTab.tsx`, il ne touche ni la section des ventes facturées ni
 l'affichage de ses refus.
+
+**LES QUESTIONS DE VF6, TRANCHÉES.** Le cabinet a tranché VF6-Q2 à VF6-Q5 le 23/10/2026 à 16 h 12, toutes à la
+recommandation, sur la page des arbitrages. VF6-Q2 : la déclaration se ferme au client par la garde seule, le patron de
+VF1a — VF6f, la policy d'insertion du client, n'a plus lieu. VF6-Q3 : qui a désigné, et quand (VF1A-Q2), dans un journal
+au cabinet seul. VF6-Q4 : une pièce déclarée à tort se dit quand son TTC est celui d'une facture source du même exercice
+sans exemplaire. VF6-Q5 : dans un dossier basculé, la validation d'une pièce reçue dont les preuves se contredisent est
+refusée tant qu'elles se contredisent. VF6b n'attend plus que VF5h appliquée ; VF6e compte le symptôme de VF6-Q4, et
+reprend les trois préalables que VF6a laisse (`comptes-manquants`, `postes-manquants`, `pieces-payees-en-trop`),
+puisqu'il touche déjà les préalables et la Checklist.
+
+**L'INTÉGRATION.** La session a relu le code de production du lot (le module, le brouillon, les contrôles, les
+préalables, la Checklist, les trois écrans) et l'a joint à la demande qui portait la conception de VF6, ses deux commits
+repris tels quels à la suite de `8add479`, sans conflit.
