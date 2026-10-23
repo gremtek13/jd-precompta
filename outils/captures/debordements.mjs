@@ -1727,6 +1727,25 @@ const VISITES_BANQUE_CLIENT = [
       await page.getByText(attendu).waitFor({ timeout: 10000 })
     },
   })),
+  // « MA BANQUE » D'UN CLIENT « VENTES » (ligne 28.65, étape VF5g), sur le même dossier basculé : le relevé, où un virement
+  // réservé se dit « Encaissement enregistré — ton cabinet le classe » et un virement classé « Encaissement de tes
+  // factures » ; puis le détail du crédit réservé, sans pièce à envoyer, et celui du débit réservé par une contre-passation.
+  ...[
+    { nom: 'client/ma-banque-ventes', libelle: null, attendu: 'Encaissement enregistré — ton cabinet le classe' },
+    { nom: 'client/ma-banque-credit-reserve', libelle: 'VIR SEPA SARL HORIZON LOGISTIQUE', attendu: /Facture\(s\) : F2026-0022\.$/ },
+    { nom: 'client/ma-banque-debit-reserve', libelle: 'RETOUR DE 2 CHEQUES IMPAYES', attendu: /est enregistré sur ce débit : ton cabinet le classera/ },
+  ].map(({ nom, libelle, attendu }) => ({
+    chemin: '#/ma-banque', nom, nav: true,
+    apres: async (page) => {
+      if ((await page.evaluate(() => localStorage.getItem('banc-client-basculee'))) !== '1') {
+        await page.evaluate(() => localStorage.setItem('banc-client-basculee', '1'))
+        await page.reload()
+        await page.waitForTimeout(900)
+      }
+      if (libelle) await page.locator('tr', { hasText: libelle }).getByRole('button', { name: 'Ouvrir', exact: true }).click()
+      await page.getByText(attendu).first().waitFor({ timeout: 10000 })
+    },
+  })),
 ]
 
 

@@ -21,7 +21,22 @@
 //     de la migration (banqueClient.test.ts). Un seul ne se dit pas d'avance côté client : l'exercice figé par la
 //     validation, que le client ne lit pas (`exercices_valides` est au cabinet seul) — le module le dit quand l'appelant
 //     connaît les exercices validés (le côté cabinet de P9), et l'écran du client reçoit le refus de la base.
+//
+// LES ENCAISSEMENTS DE SES FACTURES (ligne 28.65, chantier EC-Q3, étape VF5g ; conception : HISTORIQUE.md, « VF5, LA
+// BANQUE : LA CONCEPTION », § 5). Un client qui porte « Banque » ET « Ventes » lit, par les policies d'aujourd'hui, ses
+// factures et leur registre des encaissements : un mouvement que ses encaissements CLASSENT se dit « Encaissement de tes
+// factures », un mouvement qu'ils RÉSERVENT (la garde G2) « Encaissement enregistré — ton cabinet le classe », et ce
+// dernier n'offre pas d'y envoyer une pièce : le cabinet ne pourrait jamais la lui associer. La règle n'est pas recopiée :
+// l'état se tire du refus que la garde opposerait (`refusDuClassementDuReleve`, lib/encaissementsFactures.ts, confronté au
+// texte de la migration), comme l'onglet Banque du cabinet. Un client « Banque » seul n'en apprend rien de plus (VF5-Q3) :
+// un mouvement classé reste « Traité par ton cabinet ». Le registre lu en partie : rien n'est deviné — un mouvement que le
+// cabinet n'a pas encore classé (`mouvementLibre`) peut être réservé, son état se tait et rien ne s'y offre ; un mouvement
+// classé par ses encaissements garde ce que dit le relevé seul, « Traité par ton cabinet ».
 import { mouvementJustifieParLeReleve } from './affectationBanque'
+import {
+  encaissementsDuMouvement, mouvementLibre, ordreDesEncaissements, refusDuClassementDuReleve, type EncaissementDuReleve,
+  type FactureDuDossier,
+} from './encaissementsFactures'
 import { dateAParis } from './format'
 import type { LectureComplete } from './lectureComplete'
 import type { ControleReleveBancaire, JustificatifPropose, LigneBancaire, Piece, PrecisionMouvement, ReglementGroupe } from './types'
@@ -42,21 +57,64 @@ export function maBanqueOuverte(banqueExportee: boolean, droitBanque: boolean): 
 // catégorie et les autres liens ne se lisent que pour savoir s'ils sont posés — l'écran n'en montre rien.
 // Une seule chaîne littérale : supabase-js lit son type, et une concaténation le lui ferait perdre.
 export const COLONNES_DU_MOUVEMENT =
-  'id, dossier_id, date, libelle, montant, statut, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan, declaration_tva_id, prelevement_personnel, created_at'
+  'id, dossier_id, date, libelle, montant, statut, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan, declaration_tva_id, prelevement_personnel, encaissements_de_factures, created_at'
 
 export type MouvementDuClient = Pick<LigneBancaire,
   'id' | 'dossier_id' | 'date' | 'libelle' | 'montant' | 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'
   | 'emprunt_id' | 'ventilee' | 'reglement_groupe' | 'compte_bilan' | 'declaration_tva_id' | 'prelevement_personnel'
-  | 'created_at'>
+  | 'encaissements_de_factures' | 'created_at'>
 
 // Les colonnes d'une pièce que l'écran montre : son nom et son jour de dépôt, comme « Mes pièces » — ni montant, ni
 // catégorie, ni tiers lu par l'OCR (les accès clients restent restreints hors des trois domaines décidés).
 export const COLONNES_DE_LA_PIECE = 'id, dossier_id, nom_fichier, created_at'
 export type PieceDuClient = Pick<Piece, 'id' | 'dossier_id' | 'nom_fichier' | 'created_at'>
 
+// ── Ce que l'écran lit des ventes, pour un client « Ventes » (étape VF5g) ──────────────────────────────────────────────
+// Les colonnes que la garde G2 lit, et elles seules : ni montant ni client d'une facture, ni moyen ni auteur d'un
+// encaissement — l'écran n'en montre que le numéro des factures.
+export const COLONNES_DES_FACTURES = 'id, dossier_id, numero, type, statut, facture_origine_id, source_de_la_vente'
+export type FactureDuClient = FactureDuDossier
+export const COLONNES_DES_ENCAISSEMENTS = 'id, dossier_id, facture_id, montant, ligne_bancaire_id, annule_id, retire_le, cree_le'
+export type EncaissementDuClient = EncaissementDuReleve
+
+/**
+ * Ce que l'écran sait des ventes du client : rien de plus pour un client « Banque » seul (VF5-Q3) — même si la RLS lui rend
+ * la colonne qui dit un mouvement classé —, et pour un client « Ventes », ses factures et le registre ENTIER, ou le motif
+ * de la première lecture qui a manqué.
+ */
+export type VentesDuClient =
+  | { droit: 'banque_seule' }
+  | { droit: 'ventes'; lues: false; motif: string }
+  | { droit: 'ventes'; lues: true; factures: readonly FactureDuClient[]; encaissements: readonly EncaissementDuClient[] }
+
+// Le motif de chacune des deux lectures, lue en partie : l'écran lit lui-même leur drapeau (lecturesSignalees.test.ts
+// veut le voir là où la lecture se fait) et le dit sous ces mots.
+export const FACTURES_LUES_EN_PARTIE = 'tes factures n’ont pas été lues en entier'
+export const ENCAISSEMENTS_LUS_EN_PARTIE = 'les encaissements de tes factures n’ont pas été lus en entier'
+
+/**
+ * Les deux lectures d'un client « Ventes », lues EN ENTIER, composées : toutes du dossier, ou le motif de la première qui
+ * en sort. Une ligne d'un autre dossier ferait juger un mouvement sur le registre d'une autre société.
+ */
+export function ventesLues(
+  dossierId: string,
+  factures: readonly FactureDuClient[],
+  encaissements: readonly EncaissementDuClient[],
+): VentesDuClient {
+  if (!factures.every((l) => l.dossier_id === dossierId)) {
+    return { droit: 'ventes', lues: false, motif: 'tes factures n’ont pas été lues pour cette seule société' }
+  }
+  if (!encaissements.every((l) => l.dossier_id === dossierId)) {
+    return { droit: 'ventes', lues: false, motif: 'les encaissements de tes factures n’ont pas été lus pour cette seule société' }
+  }
+  return { droit: 'ventes', lues: true, factures, encaissements }
+}
+
 // ── L'état d'un mouvement, pour le client (conception, §6.2) ─────────────────────────────────────────────────────────
 export const ETATS_DU_MOUVEMENT = [
   'sans_justificatif', 'demande', 'propose', 'justifie_piece', 'justifie_releve', 'traite', 'rien_a_fournir',
+  // Étape VF5g, pour un client « Ventes » seulement : classé par les encaissements de ses factures, ou réservé à eux.
+  'encaissement_factures', 'encaissement_enregistre',
 ] as const
 export type EtatDuMouvement = typeof ETATS_DU_MOUVEMENT[number]
 
@@ -70,6 +128,8 @@ export const LIBELLE_DE_L_ETAT: Record<EtatDuMouvement, string> = {
   justifie_releve: 'Justifié par le relevé',
   traite: 'Traité par ton cabinet',
   rien_a_fournir: 'Rien à fournir',
+  encaissement_factures: 'Encaissement de tes factures',
+  encaissement_enregistre: 'Encaissement enregistré — ton cabinet le classe',
 }
 
 /**
@@ -96,14 +156,70 @@ export function etatDuMouvement(
   return 'sans_justificatif'
 }
 
+/**
+ * Ce que les ventes du client disent d'un mouvement (étape VF5g) : classé par ses encaissements, réservé à eux, rien
+ * (`null`), ou « tue » — le registre lu en partie, et un mouvement libre qu'il réserve peut-être. Avec les numéros des
+ * factures de ses encaissements, sans doublon, dans l'ordre de la garde.
+ */
+export type VenteDuMouvement =
+  | { vente: 'classe' | 'reserve' | null; factures: readonly string[] }
+  | { vente: 'tue' }
+
+export function venteDuMouvement(m: MouvementDuClient, ventes: VentesDuClient): VenteDuMouvement {
+  if (ventes.droit === 'banque_seule') return { vente: null, factures: [] }
+  if (!ventes.lues) return mouvementLibre(m) ? { vente: 'tue' } : { vente: null, factures: [] }
+  const refus = refusDuClassementDuReleve(m, ventes.encaissements, ventes)
+  const vente = refus?.cle === 'classe_par_ses_encaissements' ? 'classe' : refus?.cle === 'reserve' ? 'reserve' : null
+  if (vente === null) return { vente: null, factures: [] }
+  const numeros = encaissementsDuMouvement(m.id, ventes.encaissements, ventes).sort(ordreDesEncaissements)
+    .map((e) => ventes.factures.find((f) => f.id === e.facture_id)?.numero ?? null)
+    .filter((n): n is string => n !== null)
+  return { vente, factures: [...new Set(numeros)] }
+}
+
+/** L'état d'hier, et ce que les ventes y changent : le classement ou la réserve l'emportent sur tout le reste. */
+export function etatAvecLesVentes(etat: EtatDuMouvement, vente: 'classe' | 'reserve' | null): EtatDuMouvement {
+  if (vente === 'classe') return 'encaissement_factures'
+  if (vente === 'reserve') return 'encaissement_enregistre'
+  return etat
+}
+
+/**
+ * Ce que l'un des deux états neufs veut dire, en une phrase : un crédit encaisse ses factures ; un débit défait l'un de
+ * leurs encaissements (un chèque revenu impayé, une somme rendue). Les numéros des factures, quand le registre les nomme.
+ */
+export function sensDeLaVente(
+  etat: 'encaissement_factures' | 'encaissement_enregistre', montant: number, factures: readonly string[],
+): string {
+  const credit = montant > 0
+  const phrase = etat === 'encaissement_factures'
+    ? (credit
+      ? 'Ton cabinet a classé ce mouvement par les encaissements de tes factures : il n’attend rien de toi.'
+      : 'Ton cabinet a classé ce débit : il défait l’encaissement d’une de tes factures — un chèque revenu impayé, une '
+        + 'somme rendue. Il n’attend rien de toi.')
+    : (credit
+      ? 'L’encaissement d’une de tes factures est enregistré sur ce mouvement : ton cabinet le classera par cet '
+        + 'encaissement. Il n’attend pas de pièce de toi — une pièce envoyée ici ne pourrait pas lui être rattachée.'
+      : 'L’encaissement défait d’une de tes factures — un chèque revenu impayé, une somme rendue — est enregistré sur ce '
+        + 'débit : ton cabinet le classera. Il n’attend pas de pièce de toi — une pièce envoyée ici ne pourrait pas lui être '
+        + 'rattachée.')
+  return factures.length === 0 ? phrase : `${phrase} Facture(s) : ${factures.join(', ')}.`
+}
+
 /** Un mouvement qui attend encore une pièce du client : ni classé, ni écarté, et aucune pièce proposée. */
 export function attendUnePiece(etat: EtatDuMouvement): boolean {
   return etat === 'sans_justificatif' || etat === 'demande'
 }
 
-/** Le client peut-il proposer une pièce ? Sur un mouvement que le cabinet n'a ni rapproché ni écarté. */
-export function proposableParLeClient(mouvement: Pick<MouvementDuClient, 'statut' | 'prelevement_personnel'>): boolean {
-  return mouvement.statut === 'non_rapprochee' && !mouvement.prelevement_personnel
+/**
+ * Le client peut-il proposer une pièce ? Sur un mouvement que le cabinet n'a ni rapproché ni écarté — et qu'aucun
+ * encaissement de ses factures ne réserve (étape VF5g) : `proposer_justificatif` l'accepterait, mais la garde G2 refuserait
+ * ensuite au cabinet de l'y associer, et la pièce attendrait pour rien.
+ */
+export function proposableParLeClient(
+  mouvement: Pick<MouvementDuClient, 'statut' | 'prelevement_personnel'>, etat: EtatDuMouvement,
+): boolean {
+  return etat !== 'encaissement_enregistre' && mouvement.statut === 'non_rapprochee' && !mouvement.prelevement_personnel
 }
 
 export interface SituationDuMouvement {
@@ -117,11 +233,15 @@ export interface SituationDuMouvement {
   // Les pièces qui justifient un mouvement rapproché (la sienne, ou les parts d'un virement qui en règle plusieurs) ;
   // nul quand les parts n'ont pas été lues en entier — on ne nomme pas une partie pour le tout.
   piecesQuiJustifient: string[] | null
+  // Les numéros des factures dont les encaissements classent ou réservent le mouvement ; vide sinon (étape VF5g).
+  facturesDeLaVente: readonly string[]
 }
 
 export type SituationsDuReleve =
   | { lues: false; motif: string }
-  | { lues: true; parMouvement: Map<string, SituationDuMouvement> }
+  // `tus` : les mouvements dont l'état se tait parce que le registre des encaissements n'a pas été lu en entier — absents
+  // de `parMouvement` —, et ce motif ; nul quand aucun ne se tait.
+  | { lues: true; parMouvement: Map<string, SituationDuMouvement>; tus: { ids: ReadonlySet<string>; motif: string } | null }
 
 // L'ordre d'écriture : l'instant, puis l'identifiant pour départager deux lignes du même instant.
 function chronologique<T extends { created_at: string; id: string }>(a: T, b: T): number {
@@ -131,13 +251,15 @@ function chronologique<T extends { created_at: string; id: string }>(a: T, b: T)
 
 /**
  * La situation de chaque mouvement lu. MUETTE si les mouvements, les propositions ou le fil n'ont pas été lus en
- * entier ; les parts des virements groupés lues en partie ne taisent que les pièces de ces virements.
+ * entier ; les parts des virements groupés lues en partie ne taisent que les pièces de ces virements ; le registre des
+ * encaissements lu en partie ne tait que les mouvements libres (étape VF5g).
  */
 export function situationsDuReleve(sources: {
   mouvements: LectureComplete<MouvementDuClient>
   propositions: LectureComplete<JustificatifPropose>
   precisions: LectureComplete<PrecisionMouvement>
   reglements: LectureComplete<ReglementGroupe>
+  ventes: VentesDuClient
 }): SituationsDuReleve {
   for (const [quoi, lecture] of [
     ['les mouvements n’ont pas été lus', sources.mouvements], ['les justificatifs envoyés n’ont pas été lus', sources.propositions],
@@ -159,19 +281,26 @@ export function situationsDuReleve(sources: {
     if (r.piece_id) parts.set(r.ligne_bancaire_id, [...(parts.get(r.ligne_bancaire_id) ?? []), r.piece_id])
   }
   const parMouvement = new Map<string, SituationDuMouvement>()
+  const tus = new Set<string>()
   for (const m of sources.mouvements.lignes) {
+    const vente = venteDuMouvement(m, sources.ventes)
+    if (vente.vente === 'tue') {
+      tus.add(m.id)
+      continue
+    }
     const propositions = actives.get(m.id) ?? []
     const precisions = fils.get(m.id) ?? []
     const questionEnAttente = precisions.length > 0 && precisions[precisions.length - 1].origine === 'cabinet'
-    const etat = etatDuMouvement(m, propositions.length, questionEnAttente)
+    const etat = etatAvecLesVentes(etatDuMouvement(m, propositions.length, questionEnAttente), vente.vente)
     let piecesQuiJustifient: string[] | null = []
     if (etat === 'justifie_piece') {
       if (m.piece_id) piecesQuiJustifient = [m.piece_id]
       else piecesQuiJustifient = sources.reglements.complete ? parts.get(m.id) ?? [] : null
     }
-    parMouvement.set(m.id, { etat, propositions, precisions, questionEnAttente, piecesQuiJustifient })
+    parMouvement.set(m.id, { etat, propositions, precisions, questionEnAttente, piecesQuiJustifient, facturesDeLaVente: vente.factures })
   }
-  return { lues: true, parMouvement }
+  const motifDesTus = sources.ventes.droit === 'ventes' && !sources.ventes.lues ? sources.ventes.motif : null
+  return { lues: true, parMouvement, tus: tus.size > 0 && motifDesTus !== null ? { ids: tus, motif: motifDesTus } : null }
 }
 
 // ── Les filtres de l'écran ────────────────────────────────────────────────────────────────────────────────────────
@@ -189,8 +318,10 @@ export function correspondAuFiltre(etat: EtatDuMouvement, filtre: FiltreEtat): b
   switch (filtre) {
     case 'tous': return true
     case 'attend': return attendUnePiece(etat)
-    case 'propose': return etat === 'propose'
+    // Un encaissement enregistré attend son cabinet, comme un justificatif envoyé ; classé, il est justifié.
+    case 'propose': return etat === 'propose' || etat === 'encaissement_enregistre'
     case 'justifie': return etat === 'justifie_piece' || etat === 'justifie_releve' || etat === 'traite'
+      || etat === 'encaissement_factures'
     case 'rien_a_fournir': return etat === 'rien_a_fournir'
   }
 }
