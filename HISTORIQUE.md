@@ -33523,3 +33523,144 @@ puisqu'il touche déjà les préalables et la Checklist.
 **L'INTÉGRATION.** La session a relu le code de production du lot (le module, le brouillon, les contrôles, les
 préalables, la Checklist, les trois écrans) et l'a joint à la demande qui portait la conception de VF6, ses deux commits
 repris tels quels à la suite de `8add479`, sans conflit.
+
+### 23/10/2026 — L'ÉQUIPE N'ACCUEILLE PAS LE CLIENT D'UN AUTRE CABINET — 23Q2-Q2, ET LE « À REVOIR » DE 23-Q2
+
+(Écrite par l'agent architecte, en deux commits : le code et ses tests, puis cette documentation. Modifiés :
+`supabase/functions/create-team-member/index.ts`, `supabase/functions/create-client-access/index.ts` ;
+`src/test/contratsFonctions.ts`, `src/lib/edgeFunctionsHttp.test.ts`, `src/lib/edgeFunctionsLectures.test.ts`. Ni
+migration, ni policy, ni écran : la page de l'équipe et l'onglet Accès disent déjà, tel qu'il arrive, le refus de la
+fonction. Question 23Q2-Q2, écrite sur la recommandation (« le refuser »), le cabinet ayant pour règle qu'on avance sur
+elle ; et le second « À REVOIR » de 23-Q2. En production, des comptes seulement, le 23/10/2026 : un cabinet, quatre
+dossiers, trois accès pour deux comptes clients, un membre d'équipe (le super-administrateur), aucun client de deux
+cabinets, aucun membre qui porte un accès client. Il n'existe pas d'autre cabinet : le lot y est NEUTRE.)
+
+**LES DEUX DÉFAUTS.**
+- 23Q2-Q2. `create-team-member` reprenait sans confirmation tout compte que le cabinet connaît. Depuis 23-Q2, le client
+  d'un autre cabinet rattaché ici sur confirmation l'est : un geste du chef le faisait entrer dans l'équipe. Or
+  `AuthContext` range du côté du cabinet tout compte qui a une ligne `cabinet_admins`, avant de lire ses accès : la
+  personne perdait son espace client — chez l'autre cabinet aussi —, et le dossier de cet autre cabinet paraissait dans
+  l'espace de celui-ci (la RLS l'ouvre par son accès).
+- Le « À REVOIR » de 23-Q2. Les trois lectures d'`appartientDejaAuCabinet` (les dossiers du cabinet, les accès du
+  compte sur eux, sa ligne d'équipe) jetaient leur erreur, dans les deux fonctions. En panne, un compte connu passait
+  pour inconnu : dans l'onglet Accès, le premier appel offrait la confirmation d'un compte « que ce cabinet ne connaît
+  pas », le second le rattachait par elle — ou refusait un membre de CE cabinet comme s'il servait un autre cabinet (le
+  409 de `compteDeCabinetOuSuperAdmin`, qui trouvait sa ligne d'équipe) ; dans l'équipe, le 409 « n'est rattaché à aucun
+  dossier ou membre de ce cabinet », faux.
+
+**LA FONCTION DE L'ÉQUIPE.** Après le refus d'un compte inconnu, qui reste la même phrase pour tous (le client d'un
+autre cabinet compris : `neDitQueLExistence`), et avant toute écriture, `accesClientDansUnAutreCabinet` : UNE lecture,
+les accès du compte joints à leur dossier (`dossiers!inner(cabinet_id)`), filtrés sur `dossiers.cabinet_id` différent
+du cabinet VISÉ (celui que désigne un super-administrateur, jamais celui de l'appelant), `limit(1)` — la question est
+« en existe-t-il un ? », rien ne s'y tronque. La forme est celle que documente Supabase (« Querying referenced table
+with inner join », supabase.com/docs/reference/javascript/select ; « Filtering using joined fields »,
+supabase.com/docs/guides/database/joins-and-nesting), et que l'application lit déjà en ligne, sous `eq`
+(`lib/ventesLecture.ts`, `factures_emises!inner`) ; `dossiers.cabinet_id` est NOT NULL (lu au catalogue), `neq`
+n'écarte donc aucun dossier faute de cabinet. Vrai : 409 « Ce compte ne peut pas entrer dans l'équipe de ce cabinet, et
+rien n'y a été changé. Demande à cette personne d'utiliser une autre adresse e-mail. » — ni quel cabinet, ni qu'il y est
+client, aucun marqueur, rien d'écrit, le mot de passe jamais touché. Illisible : 500 « Ce compte n'a pas pu être vérifié
+avant son entrée dans l'équipe… », rien d'écrit. Le client de deux dossiers de CE cabinet est repris comme avant ; un
+membre de cette équipe client d'un autre cabinet est refusé avant l'écriture que la clé primaire aurait refusée, sous la
+même phrase.
+
+**LE LIEN ILLISIBLE, DANS LES DEUX FONCTIONS.** `appartientDejaAuCabinet` lit ses trois erreurs et rend null ;
+l'appelant refuse alors en 500, avant tout autre geste — avant le refus d'un compte inconnu et son marqueur, la
+confirmation, `compteDeCabinetOuSuperAdmin` et l'écriture. « Le lien de ce compte avec ce cabinet n'a pas pu être
+vérifié : rien n'a été écrit, et aucun accès n'a été donné. Réessaie dans un instant. » (l'accès) ; « … : personne n'a
+été ajouté à l'équipe, et rien n'a été changé. … » (l'équipe). Sans marqueur : l'onglet Accès le dit sous le formulaire,
+sans fenêtre. Le reste ne change pas.
+
+**CE QUE `create-team-member` FAIT DES AUTRES COMPTES PARTICULIERS (la demande de la session), NON ÉLARGI.**
+- Le membre d'un autre cabinet : inconnu d'ici, le même 409 que tout compte inconnu ; connu d'ici comme client d'un de
+  ses dossiers (`memberships_write`, ou un rattachement d'avant 23-Q2), l'écriture bute sur la clé primaire
+  (`cabinet_admins.user_id`, lue au catalogue : une personne, un cabinet) → 409 « Cette personne appartient déjà à un
+  cabinet (le sien ou un autre)… », rien d'écrit — ce qui apprend à ce cabinet que le compte sert un cabinet.
+- Le super-administrateur : inconnu d'ici, le même 409 ; avec une ligne d'équipe (la forme de la production), le 409 de
+  la clé primaire ; sans ligne d'équipe et client d'un dossier d'ici, il entre dans l'équipe comme tout client du
+  cabinet. Deux scénarios le disent, sans rien changer.
+
+**LE SIGNAL QUI RESTE, DIT.** La phrase ne dit rien, mais le code est public : elle ne vient que de cette condition, et
+un cabinet qui la lit et l'obtient sait que le compte porte un accès client dans un autre cabinet. L'obtenir demande
+l'adresse, un rattachement sur confirmation — qui ouvre un de ses dossiers à cette personne, dans son espace client —,
+puis l'essai. Même nature que le 409 de la clé primaire (membre d'un cabinet) et que le prix de 23Q2-Q1
+(23Q2Q2-Q2, plus bas).
+
+**TROUVÉ EN PASSANT** (lu au catalogue le 23/10/2026, déduit et non joué : aucune écriture en production). La policy
+`cabinet_admins_update` (migration `gestion_equipe_cabinet`) ne juge que `est_chef_du_cabinet(cabinet_id)`, avant et
+après, et `authenticated` porte UPDATE sur les quatre colonnes (`user_id`, `cabinet_id`, `role`, `email`), sans
+déclencheur : un chef peut, depuis le navigateur, changer le compte d'une ligne de son équipe pour un compte dont il
+connaît l'identifiant — un client de ses dossiers, donc un client d'un autre cabinet rattaché sur confirmation —, sans
+passer par `create-team-member`. Le commentaire de la migration promettait « changer le rôle d'un membre … ou le
+retirer (jamais créer) » ; l'application n'écrit que `role`. La garde de ce lot protège donc de l'erreur, pas d'un chef
+hostile, comme la confirmation de 23-Q2 (23Q2Q2-Q3, plus bas).
+
+**LES PREUVES.**
+- Le contrat HTTP de `create-team-member` : 44 → 56 scénarios. Trois comptes connus d'ici et clients d'un autre
+  cabinet (le client d'un autre de ses dossiers, la forme de 23-Q2 ; le client du dossier ; un membre de son équipe) :
+  409, la phrase unique de la source, sous la seule clé `error`, et une phrase qui ne parle ni d'un client, ni d'un
+  autre cabinet, ni d'aucun cabinet ou dossier du monde par son nom ou son identifiant (`neDitRienDeLAutreCabinet`) ;
+  l'équipe intacte (`equipeIntacte`, retenue à la préparation), le compte intact, dépenses exactes (aucune écriture
+  tentée). Le
+  super-administrateur chef du premier cabinet, pour l'autre : un client des deux refusé, un client de cet autre cabinet
+  seul repris. Le client de deux dossiers d'ici, repris. La vérification en panne, 500. Les trois lectures du lien en
+  panne (passagère, une fois), 500, chacune sa phrase exacte. Et les deux comptes particuliers d'aujourd'hui (le chef
+  d'un autre cabinet, client d'ici ; le super-administrateur sans ligne d'équipe, client d'ici).
+- Le contrat de `create-client-access` : 72 → 78. Les trois lectures du lien en panne, sans confirmation et confirmé :
+  500, la phrase exacte, sans marqueur, rien d'écrit. Ajusté : la panne de la vérification de
+  `compteDeCabinetOuSuperAdmin` passe désormais la première lecture de l'équipe (`sauter: 1`), qui est celle du lien, et
+  le refus y est jugé à sa phrase exacte — sans quoi le défaut planté « la lecture des membres en panne prise pour un
+  « non » » ne se voyait plus.
+- Quatorze défauts plantés neufs, tous vus, aucune faute sur la vraie source : dans chaque fonction, chacune des trois
+  lectures du lien en panne prise pour un « non », et le lien illisible qui retombe sur le refus d'un inconnu ; dans
+  l'équipe, le contrôle oublié, l'équipe écrite avant lui, sa panne prise pour un « non », le cabinet de l'appelant
+  comparé au lieu du cabinet visé, tout accès client pris pour un accès ailleurs, la phrase qui dirait le compte client
+  d'un autre cabinet.
+- ROUGE AVANT, les fonctions de 8add479 devant les scénarios neufs : 14 rouges sur 18 (8 sur 12 pour l'équipe, 6 sur 6
+  pour l'accès), chacun pour sa raison — l'entrée dans l'équipe (200), l'écriture tentée sur la clé primaire, le 409
+  d'un inconnu sous une panne, le rattachement confirmé sous une panne (200), et, pour un membre de ce cabinet sous une
+  panne passagère confirmée, le 409 « ne peut pas recevoir d'accès client ». Les quatre verts sont les gardes
+  symétriques et ce que le lot ne change pas : le client de l'autre cabinet seul, le client de deux dossiers d'ici, le
+  chef d'un autre cabinet et le super-administrateur clients d'ici.
+- TRENTE-SEPT MUTATIONS (un banc hors dépôt : chaque mutation seule dans le vrai fichier, les contrats de la fonction
+  rejoués, puis les scanners si elle survit, le fichier remis et vérifié à l'empreinte ; témoins verts avant et après,
+  56 et 78 scénarios, 55 tests des scanners). Vingt-sept sur l'équipe, dix sur l'accès ; 35 tuées par les contrats, une
+  par le scanner des lectures paginées (`limit(1)` retiré : la même réponse, une lecture sans borne). SURVIT,
+  équivalente : `!acces` retiré du rendu nul — sans erreur, supabase-js rend toujours un tableau, et l'erreur est lue
+  à côté. La jointure sans `!inner` meurt sur le harnais, qui lève sur une forme qu'il ne modélise pas ; sous PostgREST
+  le filtre n'écarterait plus aucun accès, et le client de deux dossiers d'ici serait refusé.
+- Les scanners : `edgeFunctionsLectures.test.ts` dispense une lecture de `create-client-access` au lieu de quatre
+  (`admin_du_dossier`), deux de `create-team-member` au lieu de cinq (le rôle de l'appelant), leurs raisons réécrites ;
+  `edgeFunctionsPaginees.test.ts` inchangé (la lecture neuve est bornée).
+- La barrière, sous le Node 22.23.3 de la CI : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les 63 avertissements
+  de 8add479, les mêmes ; `npx tsc -p tsconfig.edge.json`, les 25 erreurs de 8add479, les mêmes, aucune dans les deux
+  fonctions. Onze fichiers (les touchés, ceux qui lisent les deux fonctions, `fuseau.test.ts`) sous Paris, UTC, New York
+  et Auckland : 903 sur 903 à chacun. La suite entière sous Paris, comparée test par test à 8add479 : 453 fichiers et
+  13 866 tests avant, 453 et 13 923 après ; aucun verdict changé, aucun test disparu ; 57 neufs, tous verts — les 18
+  scénarios et les 14 défauts plantés, et les 25 tests de `clesSupabase.test.ts`, qui n'avaient pas tourné avant : la
+  copie de 8add479 jouée hors du dépôt n'est pas un dépôt git, et `git ls-files` y lève.
+
+**À TRANCHER PAR LE CABINET** (la recommandation, chaque fois, sur laquelle on avancerait).
+- 23Q2Q2-Q1 — Le client de CE cabinet qui entre dans l'équipe perd son espace client sans que rien ne le dise, et une
+  adresse mal tapée suffit (choisi « comptable en chef », il voit tous les dossiers du cabinet). Recommandation : le
+  confirmer, en nommant l'adresse, le rôle et ce qu'il perd — le patron de 23-Q2 : un premier refus porteur d'un
+  marqueur, une fenêtre de la page de l'équipe, un second appel ; un lot à part. Les autres voies : le refuser comme le
+  client d'un autre cabinet (une autre adresse pour l'équipe), ou laisser.
+- 23Q2Q2-Q2 — Le refus neutre reste un signal pour qui lit le code. Recommandation : l'accepter (l'obtenir ouvre un
+  dossier du cabinet à la personne, et le doublon de la clé primaire en dit déjà autant d'un membre). L'autre voie : une
+  seule phrase pour « client d'un autre cabinet » et « déjà dans un cabinet », qui brouille client et membre sans taire
+  la relation, au prix de la précision du doublon.
+- 23Q2Q2-Q3 — `cabinet_admins_update` laisse un chef changer le compte d'une ligne de son équipe. Recommandation :
+  restreindre la mise à jour du navigateur à la colonne `role` (`revoke update` puis `grant update (role)` à
+  `authenticated`), une migration de resserrement, avec son cas dans `rls.sql`. Les autres voies : un déclencheur qui
+  refuse un changement de `user_id` ou de `cabinet_id`, ou laisser.
+
+**CE QUI RESTE À LA SESSION.** Déployer `create-team-member` et `create-client-access`, chacune à `verify_jwt = false`
+(la valeur de `supabase/config.toml`, et celle que rend `list_edge_functions`). La copie de `create-client-access` porte
+aussi 23-Q2, qui n'est pas en ligne (la version 18, lue le 23/10/2026, est celle d'avant 23-Q2) : elle part APRÈS la
+page de 23-Q2, comme le dit son entrée ; son 500 neuf n'a pas de marqueur, et la page d'avant comme celle d'après le
+disent sous le formulaire. `create-team-member` (version 11, celle d'avant ce lot) ne dépend d'aucun écran. Les copies
+déployées comparées au dépôt AVANT d'écraser, le texte ENVOYÉ relu dans le journal, les bordures répétées
+(`bordures.py`, aucune neuve), puis `allerretour.py`. Les trois questions sur la page des arbitrages ; 23Q2-Q2, écrite
+sur la recommandation, y reste jusqu'à la réponse du cabinet. Dans la feuille de route, une ligne pour 23Q2Q2-Q3,
+trouvée en passant. Rien d'autre : aucune migration, aucune policy. Repris par la session à la suite de `f4a0648` (VF6a
+et la conception de VF6) : un seul conflit, la fin de ce fichier, où les deux entrées se suivent.
