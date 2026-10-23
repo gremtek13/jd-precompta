@@ -70,21 +70,22 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
       'refusée — le côté FERMÉ, et le seul qui soit sûr sur une fonction qui crée un cabinet',
   },
   'create-client-access': {
-    nombre: 4,
+    nombre: 1,
     raison:
-      'trois lectures d’`appartientDejaAuCabinet` plus le contrôle d’accès. Toutes retombent sur ' +
-      '« ce compte n’appartient pas à ce cabinet » ou « pas d’accès », donc sur un REFUS — et le ' +
-      'commentaire de cette fonction dit pourquoi ce sens-là est le bon : c’est la garde contre la ' +
-      'prise de contrôle d’un compte déjà inscrit ailleurs sur la plateforme. Depuis 23-Q2 ce refus-là se ' +
-      'lève sur la confirmation du cabinet, après les deux lectures de `compteDeCabinetOuSuperAdmin`, qui ' +
-      'lisent LEUR erreur (en panne, 500) : une panne ne rattache donc jamais que ce que le cabinet aurait ' +
-      'rattaché sans elle, une confirmation de plus',
+      'le contrôle d’accès `admin_du_dossier`, au jeton de l’appelant. Sans réponse, `aAcces` est nul et la ' +
+      'fonction répond 404 « Dossier introuvable. » avant tout compte cherché : ne rien savoir revient à ne ' +
+      'rien accorder. Les trois lectures d’`appartientDejaAuCabinet` ne sont plus dispensées (le « À REVOIR » ' +
+      'de 23-Q2) : une panne y faisait d’un compte connu un compte « que ce cabinet ne connaît pas », et la ' +
+      'confirmation le disait ainsi ; elles lisent leur erreur, en 500, rien d’écrit',
   },
   'create-team-member': {
-    nombre: 5,
+    nombre: 2,
     raison:
-      'les mêmes lectures d’appartenance et les deux vérifications de rôle (chef de cabinet, ' +
-      'super-admin). Sans réponse, le membre n’est pas créé : ne rien savoir ne donne aucun droit',
+      'les deux vérifications du rôle de l’APPELANT (chef de cabinet, super-admin). Sans réponse, l’appelant ' +
+      'n’a que le droit que l’autre lecture lui reconnaît — sinon 403, ou, pour un super-admin sans cabinet ' +
+      'désigné ni lu, 400 « requis » : ne rien savoir ne donne aucun droit. Les lectures qui disent le compte ' +
+      'connu d’ici, ou client d’un autre cabinet (23Q2-Q2), ne sont pas dispensées : elles lisent leur erreur, ' +
+      'en 500, rien d’écrit',
   },
   'delete-cabinet': {
     nombre: 1,

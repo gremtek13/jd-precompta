@@ -418,6 +418,82 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     remplacements: [['      if (particulier === null) {', '      if (particulier === undefined) {']],
     scenario: 'la vérification du compte en panne (super_admins), rattachement confirmé : 500 qui le dit, rien d’écrit, le compte intact',
   },
+  // LE LIEN D'UN COMPTE AVEC CE CABINET, LU AVEC SON ERREUR (le « À REVOIR » de 23-Q2), dans les deux fonctions : chacune
+  // des trois lectures d'`appartientDejaAuCabinet` en panne de nouveau prise pour un « non », et la panne qui laisse
+  // passer le refus d'un compte inconnu (sa confirmation, dans l'onglet Accès) au lieu du 500.
+  ...([
+    ['create-client-access', 'sans confirmation', 'le client d’un autre de ses dossiers', 'un membre de son équipe'],
+    ['create-team-member', '', 'le client du dossier', 'un membre de son équipe'],
+  ] as const).flatMap(([slug, forme, client, membre]): DefautPlante[] => {
+    const scenario = (table: string, quoi: string) => slug === 'create-client-access'
+      ? `le lien du compte avec ce cabinet illisible (${table}), pour ${quoi}, ${forme} : 500 qui le dit, sans marqueur, rien d’écrit, le compte intact`
+      : `le lien du compte avec ce cabinet illisible (${table}), pour ${quoi} : 500 qui le dit, personne n’est ajouté, aucun compte touché`
+    return [
+      {
+        slug, quoi: 'la lecture des dossiers du cabinet en panne prise pour un « non »',
+        remplacements: [['  if (erreurDossiers) return null\n', '']],
+        scenario: scenario('dossiers', client),
+      },
+      {
+        slug, quoi: 'la lecture des accès du compte en panne prise pour un « non »',
+        remplacements: [['    if (erreurAcces) return null\n', '']],
+        scenario: scenario('memberships', client),
+      },
+      {
+        slug, quoi: 'la lecture de l’équipe en panne prise pour un « non »',
+        remplacements: [['  if (erreurEquipe) return null\n', '']],
+        scenario: scenario('cabinet_admins', membre),
+      },
+      {
+        slug, quoi: 'le lien illisible qui retombe sur le refus d’un compte inconnu',
+        remplacements: [['    if (connu === null) {', '    if (connu === undefined) {']],
+        scenario: scenario('memberships', client),
+      },
+    ]
+  }),
+  // UN COMPTE CLIENT D'UN AUTRE CABINET N'ENTRE PAS DANS L'ÉQUIPE (23Q2-Q2) : le contrôle oublié, l'équipe écrite avant
+  // lui, sa panne prise pour un « non », le cabinet de l'appelant comparé au lieu du cabinet visé, tout accès client pris
+  // pour un accès ailleurs, et la phrase qui dirait la relation du compte avec un autre cabinet.
+  {
+    slug: 'create-team-member', quoi: 'le client d’un autre cabinet admis (le contrôle oublié)',
+    remplacements: [['    if (clientAilleurs) {\n', '    if (false) {\n']],
+    scenario: 'le client d’un autre de ses dossiers, client aussi d’un autre cabinet (rattaché sur confirmation, 23-Q2) : 409, une phrase qui ne dit ni quel cabinet ni qu’il y est client, rien d’écrit, le compte intact',
+  },
+  {
+    slug: 'create-team-member', quoi: 'l’équipe écrite avant le contrôle',
+    remplacements: [[
+      '    const clientAilleurs = await accesClientDansUnAutreCabinet(admin, userId, cabinetId)\n',
+      '    await admin.from("cabinet_admins").insert({ user_id: userId, cabinet_id: cabinetId, role, email })\n'
+      + '    const clientAilleurs = await accesClientDansUnAutreCabinet(admin, userId, cabinetId)\n',
+    ]],
+    scenario: 'le client du dossier, client aussi d’un autre cabinet : 409, une phrase qui ne dit ni quel cabinet ni qu’il y est client, rien d’écrit, le compte intact',
+  },
+  {
+    slug: 'create-team-member', quoi: 'la vérification d’un accès ailleurs en panne prise pour un « non »',
+    remplacements: [['  if (erreurAilleurs || !acces) return null\n', '  if (!acces) return false\n']],
+    scenario: 'la vérification d’un accès dans un autre cabinet en panne : 500 qui le dit, personne n’est ajouté, aucun compte touché',
+  },
+  {
+    slug: 'create-team-member', quoi: 'le cabinet de l’appelant comparé au lieu du cabinet visé',
+    remplacements: [[
+      'await accesClientDansUnAutreCabinet(admin, userId, cabinetId)',
+      'await accesClientDansUnAutreCabinet(admin, userId, adminRow?.cabinet_id ?? cabinetId)',
+    ]],
+    scenario: 'super-admin, chef du premier cabinet, pour l’autre : un compte client de cet autre cabinet seulement y entre, tel qu’il est',
+  },
+  {
+    slug: 'create-team-member', quoi: 'tout accès client pris pour un accès ailleurs (le dossier comparé au cabinet)',
+    remplacements: [['    .neq("dossiers.cabinet_id", cabinetId)\n', '    .neq("dossier_id", cabinetId)\n']],
+    scenario: 'le client de deux dossiers de ce cabinet : repris tel qu’il est — seul un accès dans un AUTRE cabinet le retient',
+  },
+  {
+    slug: 'create-team-member', quoi: 'la phrase qui dit que le compte est client d’un autre cabinet',
+    remplacements: [[
+      '"Ce compte ne peut pas entrer dans l\'équipe de ce cabinet, et rien n\'y a été changé.',
+      '"Ce compte ne peut pas entrer dans l\'équipe de ce cabinet : il est client d\'un autre cabinet, et rien n\'y a été changé.',
+    ]],
+    scenario: 'un membre de son équipe, client d’un autre cabinet : 409, une phrase qui ne dit ni quel cabinet ni qu’il y est client, rien d’écrit, le compte intact',
+  },
   // Le défaut 23.5 (10/10/2026) : « déjà inscrit » lu au STATUT. Le service rend 422 aussi pour un mot de passe que la
   // règle du projet refuse : la fonction cherchait alors un compte qui n'existe pas, puis disait « Un compte existe
   // déjà… ». Remis dans chacune des trois fonctions, il doit faire tomber le refus du mot de passe ; remis au MESSAGE, la

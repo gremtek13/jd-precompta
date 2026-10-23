@@ -31,7 +31,8 @@
 // d'authentification viennent avant elle, dans le même ordre ; un accès déjà donné sur ce dossier garde son 409. Elle ne
 // rattache pas non plus un compte qui sert à l'équipe d'un cabinet ou à l'administration de l'application (voir
 // compteDeCabinetOuSuperAdmin) : celui-là est refusé même confirmé, sans marqueur — le premier appel, lui, ne le
-// distingue d'aucun autre.
+// distingue d'aucun autre. Et une lecture qui dit ce compte connu ou non lit son erreur : en panne, 500, sans marqueur,
+// rien d'écrit (voir appartientDejaAuCabinet).
 //
 // Sécurité : vérifie que l'appelant est bien un administrateur du cabinet (via son propre JWT, celui
 // que le navigateur envoie normalement) avant d'utiliser la clé de service — sans ce contrôle,
@@ -72,28 +73,34 @@ function booleenOuAbsent(valeur: unknown): valeur is boolean | null | undefined 
 // passe, et son titulaire n'est peut-être pas le client du cabinet (une adresse mal tapée, la personne
 // d'un autre cabinet). Vrai uniquement si le cabinet appelant a déjà, en base, une raison légitime de
 // connaître ce compte. Faux, le compte ne reçoit d'accès que sur la confirmation du cabinet (23-Q2, voir l'en-tête).
+// Null si l'une des trois lectures a échoué (le « À REVOIR » de 23-Q2) : l'appelant refuse alors en 500, avant tout
+// autre geste — jusque-là, une panne faisait d'un compte connu un compte que « ce cabinet ne connaît pas », et la
+// confirmation le disait ainsi, à tort.
 async function appartientDejaAuCabinet(
   admin: ReturnType<typeof createClient>,
   userId: string,
   cabinetId: string,
-): Promise<boolean> {
-  const { data: dossiers } = await admin.from("dossiers").select("id").eq("cabinet_id", cabinetId)
+): Promise<boolean | null> {
+  const { data: dossiers, error: erreurDossiers } = await admin.from("dossiers").select("id").eq("cabinet_id", cabinetId)
+  if (erreurDossiers) return null
   const dossierIds = ((dossiers ?? []) as { id: string }[]).map((d) => d.id)
   if (dossierIds.length > 0) {
-    const { data: membership } = await admin
+    const { data: membership, error: erreurAcces } = await admin
       .from("memberships")
       .select("id")
       .eq("user_id", userId)
       .in("dossier_id", dossierIds)
       .limit(1)
+    if (erreurAcces) return null
     if (membership && membership.length > 0) return true
   }
-  const { data: adminRow } = await admin
+  const { data: adminRow, error: erreurEquipe } = await admin
     .from("cabinet_admins")
     .select("user_id")
     .eq("user_id", userId)
     .eq("cabinet_id", cabinetId)
     .maybeSingle()
+  if (erreurEquipe) return null
   return !!adminRow
 }
 
@@ -352,8 +359,13 @@ Deno.serve(async (req: Request) => {
     }
     clientUserId = trouve
     // Voir appartientDejaAuCabinet ci-dessus : un compte qui n'a aucun lien préexistant avec ce cabinet
-    // ne reçoit pas d'accès d'ici sans la confirmation du cabinet (23-Q2, voir l'en-tête).
-    if (!(await appartientDejaAuCabinet(supabaseAdmin, clientUserId, cabinetId))) {
+    // ne reçoit pas d'accès d'ici sans la confirmation du cabinet (23-Q2, voir l'en-tête). Une lecture en panne
+    // n'en fait pas un compte inconnu : 500, sans marqueur, avant le refus, la confirmation et l'écriture.
+    const connu = await appartientDejaAuCabinet(supabaseAdmin, clientUserId, cabinetId)
+    if (connu === null) {
+      return json({ error: "Le lien de ce compte avec ce cabinet n'a pas pu être vérifié : rien n'a été écrit, et aucun accès n'a été donné. Réessaie dans un instant." }, 500)
+    }
+    if (!connu) {
       // Sans confirmation, le refus dit ce qu'il disait avant, et pas davantage : ni où vit ce compte, ni ce qu'il est —
       // une seule phrase, quel qu'il soit, et rien n'y a été écrit. Le marqueur ne dit qu'une chose à l'écran : qu'une
       // confirmation est possible.

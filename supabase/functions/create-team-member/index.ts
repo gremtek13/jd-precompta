@@ -13,6 +13,17 @@
 // avant un rattachement. Le mot de passe saisi ne sert qu'à un compte neuf ; la réponse dit lequel des
 // deux cas s'est produit (`compte: "cree"` ou `"existant"`), et l'écran de l'équipe dit au chef de ne
 // pas communiquer un mot de passe qui n'a pas servi. Voir l'en-tête de create-client-access.
+//
+// UN COMPTE CLIENT D'UN AUTRE CABINET N'ENTRE PAS DANS L'ÉQUIPE D'ICI (23Q2-Q2, sur la recommandation : « le refuser »).
+// L'application range du côté du cabinet tout compte qui a une ligne dans `cabinet_admins` (AuthContext, avant même de
+// lire ses accès) : entré dans l'équipe, un compte qui porte un accès client dans un dossier d'un AUTRE cabinet y
+// perdrait son espace client — chez cet autre cabinet aussi. Depuis 23-Q2, un tel compte peut être connu d'ici
+// (create-client-access le rattache sur la confirmation du cabinet) ; il est refusé en 409, avant toute écriture, sous
+// une phrase qui ne dit ni quel cabinet ni qu'il y est client (voir accesClientDansUnAutreCabinet). Le client d'un
+// dossier de CE cabinet est repris comme avant.
+//
+// NE PAS SAVOIR N'EST PAS UN « NON » (le « À REVOIR » de 23-Q2) : une lecture qui décide qu'un compte est connu, ou client
+// d'un autre cabinet, lit son erreur ; en panne, la fonction refuse en 500, avant tout autre geste, et rien n'est écrit.
 
 import { createClient } from "npm:@supabase/supabase-js@2"
 
@@ -38,30 +49,57 @@ function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
 // dupliquée ici (fichiers auto-porteurs, voir en-tête) : un compte Auth existant ne rejoint l'équipe
 // d'ici QUE s'il a déjà une relation avec CE cabinet. Son mot de passe n'est plus jamais touché, mais le
 // contrôle garde sa raison : repris, ce compte entrerait dans le cabinet avec SON mot de passe, et son
-// titulaire n'est peut-être pas la personne que le chef croit ajouter.
+// titulaire n'est peut-être pas la personne que le chef croit ajouter. Vrai, faux, ou null si l'une des
+// trois lectures a échoué : l'appelant refuse alors en 500 (voir l'en-tête), au lieu de dire inconnu
+// d'ici un compte qu'il ne sait pas lire.
 async function appartientDejaAuCabinet(
   admin: ReturnType<typeof createClient>,
   userId: string,
   cabinetId: string,
-): Promise<boolean> {
-  const { data: dossiers } = await admin.from("dossiers").select("id").eq("cabinet_id", cabinetId)
+): Promise<boolean | null> {
+  const { data: dossiers, error: erreurDossiers } = await admin.from("dossiers").select("id").eq("cabinet_id", cabinetId)
+  if (erreurDossiers) return null
   const dossierIds = ((dossiers ?? []) as { id: string }[]).map((d) => d.id)
   if (dossierIds.length > 0) {
-    const { data: membership } = await admin
+    const { data: membership, error: erreurAcces } = await admin
       .from("memberships")
       .select("id")
       .eq("user_id", userId)
       .in("dossier_id", dossierIds)
       .limit(1)
+    if (erreurAcces) return null
     if (membership && membership.length > 0) return true
   }
-  const { data: adminRow } = await admin
+  const { data: adminRow, error: erreurEquipe } = await admin
     .from("cabinet_admins")
     .select("user_id")
     .eq("user_id", userId)
     .eq("cabinet_id", cabinetId)
     .maybeSingle()
+  if (erreurEquipe) return null
   return !!adminRow
+}
+
+// UN ACCÈS CLIENT DANS UN DOSSIER D'UN AUTRE CABINET (23Q2-Q2, voir l'en-tête) : une ligne de `memberships` (dont le rôle
+// est toujours « client ») sur un dossier dont le cabinet n'est pas `cabinetId` — le cabinet VISÉ, celui que désigne un
+// super-administrateur, jamais celui de l'appelant. Une seule lecture : le cabinet du dossier se lit par la jointure
+// (`dossiers!inner`, filtrée par `dossiers.cabinet_id` : la forme que documente Supabase, « Querying referenced table
+// with inner join », supabase.com/docs/reference/javascript/select), et `limit(1)` ne tronque rien, la question étant
+// « en existe-t-il un ? ». `dossiers.cabinet_id` est NOT NULL : `neq` n'écarte aucun dossier faute de cabinet. Vrai ou
+// faux, null si la lecture a échoué — l'appelant refuse alors en 500 : ne pas savoir n'ajoute personne.
+async function accesClientDansUnAutreCabinet(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  cabinetId: string,
+): Promise<boolean | null> {
+  const { data: acces, error: erreurAilleurs } = await admin
+    .from("memberships")
+    .select("id, dossiers!inner(cabinet_id)")
+    .eq("user_id", userId)
+    .neq("dossiers.cabinet_id", cabinetId)
+    .limit(1)
+  if (erreurAilleurs || !acces) return null
+  return acces.length > 0
 }
 
 // ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
@@ -273,10 +311,29 @@ Deno.serve(async (req: Request) => {
     userId = trouve
     // Voir appartientDejaAuCabinet ci-dessus : un compte qui n'a aucun lien préexistant avec ce cabinet
     // ne rejoint pas l'équipe d'ici. Le refus dit ce qu'il disait avant, et pas davantage : ni où vit ce
-    // compte, ni ce qu'il est — et rien n'y a été écrit.
-    if (!(await appartientDejaAuCabinet(admin, userId, cabinetId))) {
+    // compte, ni ce qu'il est — et rien n'y a été écrit. Une lecture en panne n'en fait pas un compte
+    // inconnu : 500, avant tout autre geste.
+    const connu = await appartientDejaAuCabinet(admin, userId, cabinetId)
+    if (connu === null) {
+      return json({ error: "Le lien de ce compte avec ce cabinet n'a pas pu être vérifié : personne n'a été ajouté à l'équipe, et rien n'a été changé. Réessaie dans un instant." }, 500)
+    }
+    if (!connu) {
       return json({
         error: "Un compte existe déjà avec cet e-mail, mais il n'est rattaché à aucun dossier ou membre de ce cabinet : il ne rejoint pas l'équipe depuis ici, et rien n'y a été changé. Demande à cette personne d'utiliser une autre adresse e-mail.",
+      }, 409)
+    }
+    // Connu d'ici, il n'entre pas dans l'équipe s'il est client d'un dossier d'un AUTRE cabinet (23Q2-Q2, voir l'en-tête) :
+    // jugé après le refus d'un compte inconnu, qui reste la même phrase pour tous, et avant toute écriture. La phrase ne
+    // dit ni quel cabinet, ni que ce compte y est client : un cabinet qui rattacherait une adresse sur confirmation pour
+    // l'essayer ici ne lirait pas, dans la réponse, la relation d'un tiers avec un autre cabinet. Le refus lui-même reste
+    // un signal pour qui lit ce code, public : le prix que dit HISTORIQUE.md, et que le cabinet arbitre (23Q2Q2-Q2).
+    const clientAilleurs = await accesClientDansUnAutreCabinet(admin, userId, cabinetId)
+    if (clientAilleurs === null) {
+      return json({ error: "Ce compte n'a pas pu être vérifié avant son entrée dans l'équipe : personne n'a été ajouté, et rien n'a été changé. Réessaie dans un instant." }, 500)
+    }
+    if (clientAilleurs) {
+      return json({
+        error: "Ce compte ne peut pas entrer dans l'équipe de ce cabinet, et rien n'y a été changé. Demande à cette personne d'utiliser une autre adresse e-mail.",
       }, 409)
     }
     // Repris TEL QU'IL EST, mot de passe compris (voir l'en-tête) : aucune écriture sur le compte, ni
