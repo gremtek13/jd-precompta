@@ -4,15 +4,16 @@ import { supabase } from '../lib/supabase'
 import { messageErreur } from '../lib/messageErreur'
 import { formatDate, formatMoney } from '../lib/format'
 import { lireTout, type LectureComplete } from '../lib/lectureComplete'
-import { lireLeDroitBanque } from '../lib/couvertureReleve'
+import { lireLesDroitsVentes } from '../lib/espaceVentes'
 import { correspondALaRecherche } from '../lib/recherche'
 import { deposerFichier } from '../lib/depot'
 import {
   anneesDuReleve, argumentsDeLaPrecision, argumentsDeProposer, argumentsDeRetirer, attendUnePiece, auteurPourLeClient,
-  COLONNES_DE_LA_PIECE, COLONNES_DU_MOUVEMENT, correspondAuFiltre, couvertureDuReleve, FILTRES_D_ETAT, LIBELLE_DE_L_ETAT,
-  libelleDuMois, longueurEnCaracteres, LONGUEUR_MAX_PRECISION, proposableParLeClient, refusDeLaPrecision, refusDeProposer,
-  refusDeRetirer, situationsDuReleve, soldeAuReleve, type EtatDuMouvement, type FiltreEtat, type MouvementDuClient,
-  type PieceDuClient, type SituationDuMouvement,
+  COLONNES_DE_LA_PIECE, COLONNES_DES_ENCAISSEMENTS, COLONNES_DES_FACTURES, COLONNES_DU_MOUVEMENT, correspondAuFiltre,
+  couvertureDuReleve, ENCAISSEMENTS_LUS_EN_PARTIE, FACTURES_LUES_EN_PARTIE, FILTRES_D_ETAT, LIBELLE_DE_L_ETAT, libelleDuMois, longueurEnCaracteres, LONGUEUR_MAX_PRECISION,
+  proposableParLeClient, refusDeLaPrecision, refusDeProposer, refusDeRetirer, sensDeLaVente, situationsDuReleve,
+  soldeAuReleve, ventesLues, type EncaissementDuClient, type EtatDuMouvement, type FactureDuClient, type FiltreEtat,
+  type MouvementDuClient, type PieceDuClient, type SituationDuMouvement, type VentesDuClient,
 } from '../lib/banqueClient'
 import type { ControleReleveBancaire, JustificatifPropose, PrecisionMouvement, ReglementGroupe } from '../lib/types'
 import BarreRecherche from '../components/BarreRecherche'
@@ -35,6 +36,14 @@ import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 // mouvement et retirent tous les gestes ; les pièces lues en partie retirent le seul choix d'une pièce déjà déposée ; le
 // solde lu en partie se tait. Chaque écriture passe un seul verrou `useRef`, relâché après la relecture ; pendant elle,
 // aucun geste n'est offert.
+//
+// LES ENCAISSEMENTS DE SES FACTURES (ligne 28.65, étape VF5g). Le client dont la base dit qu'il porte AUSSI « Ventes » lit
+// ensuite ses factures et leur registre des encaissements — après la case, jamais avant : sans elle, la RLS les rendrait
+// vides sans erreur, et un mouvement réservé passerait pour « sans justificatif ». Un mouvement classé par ses
+// encaissements se dit « Encaissement de tes factures » ; réservé à eux, « Encaissement enregistré — ton cabinet le
+// classe », sans pièce à envoyer (lib/banqueClient.ts). Le registre lu en partie : les mouvements que le cabinet n'a pas
+// encore classés taisent leur état et n'offrent rien, le résumé se tait, le bandeau le dit. Un client « Banque » seul ne
+// lit rien de plus (VF5-Q3).
 
 type Lecture = {
   mouvements: LectureComplete<MouvementDuClient>
@@ -43,6 +52,7 @@ type Lecture = {
   reglements: LectureComplete<ReglementGroupe>
   pieces: LectureComplete<PieceDuClient>
   controles: LectureComplete<ControleDuClient>
+  ventes: VentesDuClient
 }
 
 type ControleDuClient = Pick<ControleReleveBancaire, 'id' | 'solde_final' | 'coherent' | 'periode_fin' | 'created_at'>
@@ -60,17 +70,41 @@ type Motifs = {
   pieces: string | null
   reglements: string | null
   controles: string | null
+  ventes: string | null
 }
 
 // Ce qu'un geste a rendu, dit sous le mouvement qui l'a reçu.
 type Retour = { mouvementId: string; texte: string; erreur: boolean }
 
-// Toutes les lectures de l'écran, et la case « Banque » vue par la base, en une vague. Ce qui a été lu sans la case n'est
-// pas montré : la base a pu rendre un relevé vide sans le dire.
+// Les factures du client « Ventes » et leur registre des encaissements (étape VF5g), lus en entier ; ne rejette jamais —
+// une requête qui lève rend le motif, et l'état neuf se tait.
+async function lireLesVentesDuClient(dossierId: string): Promise<VentesDuClient> {
+  try {
+    const [factures, encaissements] = await Promise.all([
+      lireTout<FactureDuClient>((debut, fin) =>
+        supabase.from('factures_emises').select(COLONNES_DES_FACTURES, { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+      lireTout<EncaissementDuClient>((debut, fin) =>
+        supabase.from('encaissements_factures').select(COLONNES_DES_ENCAISSEMENTS, { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+    ])
+    // Lue en partie, le registre ne se rend pas : un mouvement réservé dont l'encaissement manque passerait pour libre.
+    if (!factures.complete) return { droit: 'ventes', lues: false, motif: FACTURES_LUES_EN_PARTIE }
+    if (!encaissements.complete) return { droit: 'ventes', lues: false, motif: ENCAISSEMENTS_LUS_EN_PARTIE }
+    return ventesLues(dossierId, factures.lignes, encaissements.lignes)
+  } catch (erreur) {
+    return { droit: 'ventes', lues: false, motif: messageErreur(erreur, 'les encaissements de tes factures n’ont pas pu être lus') }
+  }
+}
+
+// Toutes les lectures de l'écran, et les cases vues par la base, en une vague ; puis, pour un client « Ventes », ses ventes.
+// Ce qui a été lu sans la case n'est pas montré : la base a pu rendre un relevé vide sans le dire.
 async function lireLaBanque(dossierId: string): Promise<Etat> {
   try {
-    const [droit, mouvements, propositions, precisions, reglements, pieces, controles] = await Promise.all([
-      lireLeDroitBanque(supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })),
+    const [droits, mouvements, propositions, precisions, reglements, pieces, controles] = await Promise.all([
+      lireLesDroitsVentes(supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId }), (e) => messageErreur(e, 'droits illisibles')),
       lireTout<MouvementDuClient>((debut, fin) =>
         supabase.from('lignes_bancaires').select(COLONNES_DU_MOUVEMENT, { count: 'exact' })
           .eq('dossier_id', dossierId).order('date', { ascending: false }).order('id').range(debut, fin),
@@ -96,19 +130,21 @@ async function lireLaBanque(dossierId: string): Promise<Etat> {
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
     ])
-    if (droit.motif) return { etat: 'echec', motif: `ton accès à ta banque n’a pas pu être vérifié (${droit.motif})` }
-    if (!droit.banque) return { etat: 'sans_banque' }
+    if (droits.motif !== null) return { etat: 'echec', motif: `ton accès à ta banque n’a pas pu être vérifié (${droits.motif})` }
+    if (!droits.droits.banque) return { etat: 'sans_banque' }
+    const ventes: VentesDuClient = droits.droits.ventes ? await lireLesVentesDuClient(dossierId) : { droit: 'banque_seule' }
     // Chaque lecture garde son drapeau, que le module relit (`situationsDuReleve`, `soldeAuReleve`, `couvertureDuReleve`) ;
     // et chacune a son motif, que l'écran dit avec sa conséquence propre : aucune lecture partielle ne passe pour entière.
     return {
       etat: 'lu',
-      lecture: { mouvements, propositions, precisions, reglements, pieces, controles },
+      lecture: { mouvements, propositions, precisions, reglements, pieces, controles, ventes },
       motifs: {
         mouvements: mouvements.motif,
         envois: [propositions, precisions].find((l) => !l.complete)?.motif ?? null,
         pieces: pieces.motif,
         reglements: reglements.motif,
         controles: controles.motif,
+        ventes: ventes.droit === 'ventes' && !ventes.lues ? ventes.motif : null,
       },
     }
   } catch (erreur) {
@@ -124,10 +160,13 @@ const CLASSE_DE_L_ETAT: Record<EtatDuMouvement, string> = {
   justifie_releve: 'badge-ok',
   traite: 'badge-ok',
   rien_a_fournir: 'badge-neutral',
+  encaissement_factures: 'badge-ok',
+  encaissement_enregistre: 'badge-neutral',
 }
 
-// Ce que l'état veut dire, pour le client, en une phrase.
-const SENS_DE_L_ETAT: Record<EtatDuMouvement, string> = {
+// Ce que l'état veut dire, pour le client, en une phrase. Les deux états des ventes (étape VF5g) se disent par
+// `sensDeLaVente`, selon le sens du mouvement et les factures qu'il porte.
+const SENS_DE_L_ETAT: Record<Exclude<EtatDuMouvement, 'encaissement_factures' | 'encaissement_enregistre'>, string> = {
   sans_justificatif: 'Aucune pièce n’est rattachée à ce mouvement pour l’instant. Si tu as sa facture ou son reçu, '
     + 'envoie-le ici : beaucoup de mouvements n’en demandent pas, ton cabinet sait lesquels.',
   demande: 'Ton cabinet a une question sur ce mouvement : réponds-lui ci-dessous, ou envoie la pièce qui le justifie.',
@@ -334,10 +373,18 @@ function Releve(p: ProprietesReleve) {
   const periode = p.periode ?? annees[0] ?? 'toutes'
   const dansLaPeriode = lecture.mouvements.lignes.filter((m) => periode === 'toutes' || Number(m.date.slice(0, 4)) === periode)
   const etatDe = (m: MouvementDuClient): SituationDuMouvement | null => (situations.lues ? situations.parMouvement.get(m.id) ?? null : null)
+  // Tous les états dits : ni situation muette, ni mouvement que le registre lu en partie tait (étape VF5g). Sinon, ni
+  // résumé ni filtre d'état — un compte ou un filtre qui manquerait les mouvements tus affirmerait ce qu'on ne sait pas.
+  const etatsDits = situations.lues && situations.tus === null
+  const filtre: FiltreEtat = etatsDits ? p.filtre : 'tous'
+  // Ce que le détail d'un mouvement sans état dit de son silence.
+  const pourquoiTu = situations.lues
+    ? 'L’état de ce mouvement ne s’affiche pas tant que les encaissements de tes factures n’ont pas été lus en entier.'
+    : 'L’état de ce mouvement ne s’affiche pas tant que tes envois n’ont pas été lus en entier.'
   // « N sur M » : M après les filtres de l'écran (la période, l'état), avant la recherche.
   const filtres = dansLaPeriode.filter((m) => {
     const s = etatDe(m)
-    return s === null ? p.filtre === 'tous' : correspondAuFiltre(s.etat, p.filtre)
+    return s === null ? filtre === 'tous' : correspondAuFiltre(s.etat, filtre)
   })
   const affiches = filtres.filter((m) => {
     const s = etatDe(m)
@@ -348,6 +395,9 @@ function Releve(p: ProprietesReleve) {
   const attendent = situations.lues ? dansLaPeriode.filter((m) => attendUnePiece(situations.parMouvement.get(m.id)?.etat ?? 'traite')) : []
   const demandes = attendent.filter((m) => situations.lues && situations.parMouvement.get(m.id)?.etat === 'demande')
   const envoyes = situations.lues ? dansLaPeriode.filter((m) => situations.parMouvement.get(m.id)?.etat === 'propose') : []
+  const enregistres = situations.lues
+    ? dansLaPeriode.filter((m) => situations.parMouvement.get(m.id)?.etat === 'encaissement_enregistre')
+    : []
 
   return (
     <>
@@ -364,6 +414,10 @@ function Releve(p: ProprietesReleve) {
         quoi="Tes justificatifs envoyés et tes précisions" accord="lus"
         motif={p.motifs.envois} technique={false}
         consequence="L’état de chaque mouvement ne s’affiche pas, et rien ne t’est proposé : un justificatif déjà envoyé passerait pour manquant. Recharge la page."
+      />
+      <BandeauLecturePartielle
+        quoi="Tes factures et leurs encaissements" accord="lus" motif={p.motifs.ventes} technique={false}
+        consequence="L’état des mouvements que ton cabinet n’a pas encore classés ne s’affiche pas, et rien ne t’y est proposé : l’un d’eux règle peut-être une de tes factures. Recharge la page."
       />
       <BandeauLecturePartielle
         quoi="Tes pièces" accord="lues" motif={p.motifs.pieces} technique={false}
@@ -383,13 +437,14 @@ function Releve(p: ProprietesReleve) {
       {lecture.mouvements.complete && (
         <>
           <h3>Tes mouvements</h3>
-          {situations.lues && (
+          {etatsDits && (
             <p style={{ marginTop: 0 }}>
               {attendent.length === 0
                 ? `Sur ${libellePeriode}, aucun mouvement n’attend de pièce de ta part.`
                 : `Sur ${libellePeriode}, ${attendent.length} mouvement(s) sans justificatif`
                   + (demandes.length > 0 ? `, dont ${demandes.length} demandé(s) par ton cabinet.` : '.')}
               {envoyes.length > 0 && ` ${envoyes.length} justificatif(s) envoyé(s) attendent ton cabinet.`}
+              {enregistres.length > 0 && ` ${enregistres.length} encaissement(s) de tes factures attendent que ton cabinet les classe.`}
             </p>
           )}
           <div className="field-row" style={{ marginBottom: 6 }}>
@@ -408,8 +463,8 @@ function Releve(p: ProprietesReleve) {
               <label htmlFor="banque-filtre">Afficher</label>
               <select
                 id="banque-filtre"
-                value={p.filtre}
-                disabled={!situations.lues}
+                value={filtre}
+                disabled={!etatsDits}
                 onChange={(e) => p.onFiltre(e.target.value as FiltreEtat)}
               >
                 {FILTRES_D_ETAT.map((f) => <option key={f.valeur} value={f.valeur}>{f.libelle}</option>)}
@@ -478,6 +533,7 @@ function Releve(p: ProprietesReleve) {
                                   {...p}
                                   mouvement={m}
                                   situation={s}
+                                  pourquoiTu={pourquoiTu}
                                   nomDesPieces={nomDesPieces}
                                   piecesLues={lecture.pieces.complete}
                                   pieces={lecture.pieces.lignes}
@@ -551,6 +607,7 @@ function CouvertureDuCompte({ couverture }: { couverture: ReturnType<typeof couv
 function DetailDuMouvement(p: ProprietesReleve & {
   mouvement: MouvementDuClient
   situation: SituationDuMouvement | null
+  pourquoiTu: string
   nomDesPieces: Map<string, string>
   piecesLues: boolean
   pieces: PieceDuClient[]
@@ -575,10 +632,13 @@ function DetailDuMouvement(p: ProprietesReleve & {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}>
       {s === null ? (
-        <p className="muted" style={{ margin: 0 }}>L’état de ce mouvement ne s’affiche pas tant que tes envois n’ont pas été lus en entier.</p>
+        <p className="muted" style={{ margin: 0 }}>{p.pourquoiTu}</p>
       ) : (
         <p style={{ margin: 0 }}>
-          <strong>{LIBELLE_DE_L_ETAT[s.etat]}.</strong> {SENS_DE_L_ETAT[s.etat]}
+          <strong>{LIBELLE_DE_L_ETAT[s.etat]}.</strong>{' '}
+          {s.etat === 'encaissement_factures' || s.etat === 'encaissement_enregistre'
+            ? sensDeLaVente(s.etat, m.montant, s.facturesDeLaVente)
+            : SENS_DE_L_ETAT[s.etat]}
           {s.etat === 'justifie_piece' && (
             s.piecesQuiJustifient === null
               ? ' Les pièces de ce virement ne s’affichent pas.'
@@ -615,7 +675,7 @@ function DetailDuMouvement(p: ProprietesReleve & {
         </div>
       )}
 
-      {s !== null && proposableParLeClient(m) && (
+      {s !== null && proposableParLeClient(m, s.etat) && (
         <div>
           <strong>Envoyer une pièce pour ce mouvement</strong>
           {p.piecesLues ? (

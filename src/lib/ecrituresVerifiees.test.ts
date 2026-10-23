@@ -85,19 +85,21 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'ou une réponse illisible rendent une lecture INCOMPLÈTE, que l’écran dit, jamais un relevé vide',
   },
   lireLeDroitBanque: {
-    // 2 depuis l'étape P9 : « Ma banque » relit aussi la case « Banque » à la base.
-    nombre: 2,
+    // 2 depuis l'étape P9 : « Ma banque » relit aussi la case « Banque » à la base ; 1 depuis l'étape VF5g, où « Ma
+    // banque » lit les deux cases par `lireLesDroitsVentes`.
+    nombre: 1,
     raison:
       'ce n’est pas une écriture : `droits_sur_le_dossier` LIT les cases de l’appelant (étape P1), pour « Ma ' +
-      'simulation » (P7) et « Ma banque » (P9). `lib/couvertureReleve.ts` attend la requête et lit son erreur : un refus ' +
+      'simulation » (P7). `lib/couvertureReleve.ts` attend la requête et lit son erreur : un refus ' +
       'FERME l’écran, avec son motif',
   },
   lireLesDroitsVentes: {
-    // 2 depuis l'étape P4b : les tuiles « À encaisser » et « À déclarer » de l'accueil relisent aussi les cases.
-    nombre: 2,
+    // 2 depuis l'étape P4b : les tuiles « À encaisser » et « À déclarer » de l'accueil relisent aussi les cases ; 3 depuis
+    // l'étape VF5g : « Ma banque » lit « Banque » et « Ventes », qui ouvre la lecture des encaissements de ses factures.
+    nombre: 3,
     raison:
       'ce n’est pas une écriture : `droits_sur_le_dossier` LIT les cases de l’appelant (étape P1), pour « Mes ventes » ' +
-      '(P4a) et ses tuiles de l’accueil (P4b). `lib/espaceVentes.ts` attend la requête et lit son erreur : un refus, ou une ' +
+      '(P4a), ses tuiles de l’accueil (P4b) et « Ma banque » (VF5g). `lib/espaceVentes.ts` attend la requête et lit son erreur : un refus, ou une ' +
       'réponse illisible, ne rend AUCUN droit, et l’écran n’offre alors aucun geste, ni les tuiles aucun chiffre, avec son motif',
   },
   lireLesEcarteesDuClient: {

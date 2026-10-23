@@ -2,11 +2,14 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   anneesDuReleve, argumentsDeLaPrecision, argumentsDeProposer, argumentsDeRetirer, attendUnePiece, auteurPourLeClient,
-  BLANCS_D_UNE_PRECISION, COLONNES_DE_LA_PIECE, COLONNES_DU_MOUVEMENT, correspondAuFiltre, couvertureDuReleve,
-  ETATS_DU_MOUVEMENT, etatDuMouvement, exerciceFige, FILTRES_D_ETAT, LIBELLE_DE_L_ETAT, libelleDuMois, longueurEnCaracteres,
-  LONGUEUR_MAX_PRECISION, maBanqueOuverte, proposableParLeClient, REFUS_PRECISION, REFUS_PROPOSER, REFUS_RETIRER, refusDeLaPrecision,
-  refusDeProposer, refusDeRetirer, situationsDuReleve, soldeAuReleve, type MouvementDuClient,
+  BLANCS_D_UNE_PRECISION, COLONNES_DE_LA_PIECE, COLONNES_DES_ENCAISSEMENTS, COLONNES_DES_FACTURES, COLONNES_DU_MOUVEMENT,
+  correspondAuFiltre, couvertureDuReleve, ENCAISSEMENTS_LUS_EN_PARTIE, ETATS_DU_MOUVEMENT, FACTURES_LUES_EN_PARTIE, etatAvecLesVentes, etatDuMouvement, exerciceFige, FILTRES_D_ETAT,
+  LIBELLE_DE_L_ETAT, libelleDuMois, longueurEnCaracteres, LONGUEUR_MAX_PRECISION, maBanqueOuverte, proposableParLeClient,
+  REFUS_PRECISION, REFUS_PROPOSER, REFUS_RETIRER, refusDeLaPrecision, refusDeProposer, refusDeRetirer, sensDeLaVente,
+  situationsDuReleve, soldeAuReleve, venteDuMouvement, ventesLues, type EncaissementDuClient, type FactureDuClient,
+  type MouvementDuClient, type VentesDuClient,
 } from './banqueClient'
+import { motsDuCabinet } from './espaceVentes'
 import type { LectureComplete } from './lectureComplete'
 import type { ControleReleveBancaire, JustificatifPropose, PrecisionMouvement, ReglementGroupe } from './types'
 import { derniereDefinitionSql } from '../test/schema'
@@ -22,7 +25,8 @@ function mouvement(o: Partial<MouvementDuClient> = {}): MouvementDuClient {
   return {
     id: 'l1', dossier_id: DOSSIER, date: '2026-09-15', libelle: 'PRLV FICTIF', montant: -42.5, statut: 'non_rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, emprunt_id: null, ventilee: false, reglement_groupe: false,
-    compte_bilan: null, declaration_tva_id: null, prelevement_personnel: false, created_at: '2026-09-20T08:00:00Z', ...o,
+    compte_bilan: null, declaration_tva_id: null, prelevement_personnel: false, encaissements_de_factures: false,
+    created_at: '2026-09-20T08:00:00Z', ...o,
   }
 }
 
@@ -50,6 +54,23 @@ function controle(o: Partial<ControleReleveBancaire> = {}): ControleReleveBancai
     ecart: 0, coherent: true, periode_debut: '2026-08-01', periode_fin: '2026-08-31', created_at: '2026-09-02T08:00:00Z', ...o,
   }
 }
+
+// Étape VF5g : une facture SOURCE de sa vente et un encaissement qui cite le mouvement l1.
+function facture(o: Partial<FactureDuClient> = {}): FactureDuClient {
+  return {
+    id: 'f1', dossier_id: DOSSIER, numero: 'F2026-0001', type: 'facture', statut: 'validee', facture_origine_id: null,
+    source_de_la_vente: true, ...o,
+  }
+}
+
+function encaissement(o: Partial<EncaissementDuClient> = {}): EncaissementDuClient {
+  return {
+    id: 'e1', dossier_id: DOSSIER, facture_id: 'f1', montant: 100, ligne_bancaire_id: 'l1', annule_id: null, retire_le: null,
+    cree_le: '2026-09-21T08:00:00Z', ...o,
+  }
+}
+
+const BANQUE_SEULE: VentesDuClient = { droit: 'banque_seule' }
 
 const lue = <T,>(lignes: T[]): LectureComplete<T> => ({ lignes, complete: true, motif: null })
 const partielle = <T,>(lignes: T[]): LectureComplete<T> => ({ lignes, complete: false, motif: '1 ligne(s) lue(s) sur 2' })
@@ -230,10 +251,16 @@ describe('l’état d’un mouvement, pour le client', () => {
   })
   it('ce qui attend une pièce, et ce qu’on peut proposer', () => {
     expect(ETATS_DU_MOUVEMENT.filter(attendUnePiece)).toEqual(['sans_justificatif', 'demande'])
-    expect(proposableParLeClient(mouvement())).toBe(true)
-    expect(proposableParLeClient(mouvement({ statut: 'rapprochee' }))).toBe(false)
-    expect(proposableParLeClient(mouvement({ statut: 'ignoree' }))).toBe(false)
-    expect(proposableParLeClient(mouvement({ prelevement_personnel: true }))).toBe(false)
+    expect(proposableParLeClient(mouvement(), 'sans_justificatif')).toBe(true)
+    expect(proposableParLeClient(mouvement({ statut: 'rapprochee' }), 'traite')).toBe(false)
+    expect(proposableParLeClient(mouvement({ statut: 'ignoree' }), 'rien_a_fournir')).toBe(false)
+    expect(proposableParLeClient(mouvement({ prelevement_personnel: true }), 'sans_justificatif')).toBe(false)
+    // Étape VF5g : un mouvement réservé aux encaissements de ses factures reste à traiter, et ne prend pourtant aucune pièce ;
+    // tout autre état d'un mouvement à traiter en prend une.
+    expect(proposableParLeClient(mouvement(), 'encaissement_enregistre')).toBe(false)
+    for (const e of ETATS_DU_MOUVEMENT.filter((x) => x !== 'encaissement_enregistre')) {
+      expect(proposableParLeClient(mouvement(), e), e).toBe(true)
+    }
   })
   it('chaque état a son libellé, tutoyé, et chaque filtre range chaque état', () => {
     expect(Object.keys(LIBELLE_DE_L_ETAT)).toEqual([...ETATS_DU_MOUVEMENT])
@@ -244,6 +271,10 @@ describe('l’état d’un mouvement, pour le client', () => {
     }
     expect(correspondAuFiltre('traite', 'justifie')).toBe(true)
     expect(correspondAuFiltre('demande', 'attend')).toBe(true)
+    // Étape VF5g : classé, il est justifié ; réservé, il attend son cabinet comme un justificatif envoyé.
+    expect(correspondAuFiltre('encaissement_factures', 'justifie')).toBe(true)
+    expect(correspondAuFiltre('encaissement_enregistre', 'propose')).toBe(true)
+    expect(Object.values(LIBELLE_DE_L_ETAT).flatMap(motsDuCabinet)).toEqual([])
   })
 })
 
@@ -254,6 +285,7 @@ describe('les situations du relevé', () => {
     propositions: lue<JustificatifPropose>([]),
     precisions: lue<PrecisionMouvement>([]),
     reglements: lue([part({ ligne_bancaire_id: 'l2', piece_id: 'p1' }), part({ id: 'r2', ligne_bancaire_id: 'l2', piece_id: 'p2' })]),
+    ventes: BANQUE_SEULE,
     ...o,
   })
 
@@ -310,6 +342,147 @@ describe('les situations du relevé', () => {
     expect(avec([precision(), precision({ id: 'q0', origine: 'client' })])?.questionEnAttente).toBe(true)
     // Un message d'un autre mouvement ne répond pas.
     expect(avec([precision(), precision({ id: 'q2', origine: 'client', ligne_bancaire_id: 'l2', created_at: '2026-09-22T09:00:00Z' })])?.etat).toBe('demande')
+  })
+})
+
+// ── Les encaissements de ses factures (étape VF5g) ───────────────────────────────────────────────────────────────
+describe('les encaissements des factures d’un client « Ventes »', () => {
+  // Un crédit libre que l'encaissement e1 de F2026-0001 RÉSERVE ; un crédit que ses encaissements CLASSENT.
+  const reserve = mouvement({ montant: 100 })
+  const classe = mouvement({ id: 'l2', montant: 250, statut: 'rapprochee', encaissements_de_factures: true })
+  const ventes = (factures: FactureDuClient[], encaissements: EncaissementDuClient[]): VentesDuClient =>
+    ({ droit: 'ventes', lues: true, factures, encaissements })
+  const registre = ventes(
+    [facture(), facture({ id: 'f2', numero: 'F2026-0002' }), facture({ id: 'f3', numero: 'F2026-0003' })],
+    [
+      encaissement(),
+      // Deux factures sur le mouvement classé, la seconde enregistrée la première : l'ordre de la garde, sans doublon.
+      encaissement({ id: 'e3', facture_id: 'f3', ligne_bancaire_id: 'l2', montant: 150, cree_le: '2026-09-22T08:00:00Z' }),
+      encaissement({ id: 'e2', facture_id: 'f2', ligne_bancaire_id: 'l2', montant: 50, cree_le: '2026-09-20T08:00:00Z' }),
+      encaissement({ id: 'e4', facture_id: 'f3', ligne_bancaire_id: 'l2', montant: 50, cree_le: '2026-09-23T08:00:00Z' }),
+    ],
+  )
+  const PARTIEL: VentesDuClient = { droit: 'ventes', lues: false, motif: ENCAISSEMENTS_LUS_EN_PARTIE }
+
+  it('les deux lectures entières, composées : toutes du dossier, ou le motif de la première qui en sort', () => {
+    expect(ventesLues(DOSSIER, [facture()], [encaissement()]))
+      .toEqual({ droit: 'ventes', lues: true, factures: [facture()], encaissements: [encaissement()] })
+    expect(ventesLues(DOSSIER, [facture({ dossier_id: 'd2' })], [encaissement({ dossier_id: 'd2' })]))
+      .toEqual({ droit: 'ventes', lues: false, motif: 'tes factures n’ont pas été lues pour cette seule société' })
+    expect(ventesLues(DOSSIER, [facture()], [encaissement(), encaissement({ id: 'e9', dossier_id: 'd2' })]))
+      .toEqual({ droit: 'ventes', lues: false, motif: 'les encaissements de tes factures n’ont pas été lus pour cette seule société' })
+    // Rien encore de facturé : lu, et vide.
+    expect(ventesLues(DOSSIER, [], [])).toEqual({ droit: 'ventes', lues: true, factures: [], encaissements: [] })
+    // Les motifs d'une lecture partielle, que l'écran dit (ClientBanque.test.tsx), tutoyés.
+    expect([FACTURES_LUES_EN_PARTIE, ENCAISSEMENTS_LUS_EN_PARTIE]).toEqual(['tes factures n’ont pas été lues en entier',
+      'les encaissements de tes factures n’ont pas été lus en entier'])
+  })
+
+  it('le registre lu : classé, réservé, avec les numéros de leurs factures dans l’ordre de la garde', () => {
+    expect(venteDuMouvement(reserve, registre)).toEqual({ vente: 'reserve', factures: ['F2026-0001'] })
+    expect(venteDuMouvement(classe, registre)).toEqual({ vente: 'classe', factures: ['F2026-0002', 'F2026-0003'] })
+    expect(venteDuMouvement(mouvement({ id: 'l9' }), registre)).toEqual({ vente: null, factures: [] })
+  })
+
+  it('ne réservent que les encaissements vivants, d’une facture source, qui justifient le mouvement', () => {
+    expect(venteDuMouvement(reserve, ventes([facture({ source_de_la_vente: false })], [encaissement()])).vente).toBeNull()
+    expect(venteDuMouvement(reserve, ventes([facture()], [encaissement({ retire_le: '2026-09-22T08:00:00Z' })])).vente).toBeNull()
+    expect(venteDuMouvement(reserve, ventes([facture()], [encaissement({ ligne_bancaire_id: 'l9' })])).vente).toBeNull()
+    expect(venteDuMouvement(reserve, ventes([facture()], [encaissement({ ligne_bancaire_id: null })])).vente).toBeNull()
+    // Contre-passé SANS mouvement, l'encaissement n'a pas eu lieu sur ce crédit ; en citant un débit, il l'a justifié.
+    const contrePasse = (ligne: string | null) => ventes([facture()], [
+      encaissement(), encaissement({ id: 'c1', montant: -100, annule_id: 'e1', ligne_bancaire_id: ligne, cree_le: '2026-10-01T08:00:00Z' }),
+    ])
+    expect(venteDuMouvement(reserve, contrePasse(null)).vente).toBeNull()
+    expect(venteDuMouvement(reserve, contrePasse('l7')).vente).toBe('reserve')
+    // Le débit que cette contre-passation cite est réservé, lui aussi.
+    expect(venteDuMouvement(mouvement({ id: 'l7', montant: -100 }), contrePasse('l7'))).toEqual({ vente: 'reserve', factures: ['F2026-0001'] })
+  })
+
+  it('un client « Banque » seul n’en apprend rien (VF5-Q3), même du mouvement que la colonne dit classé', () => {
+    expect(venteDuMouvement(reserve, BANQUE_SEULE)).toEqual({ vente: null, factures: [] })
+    expect(venteDuMouvement(classe, BANQUE_SEULE)).toEqual({ vente: null, factures: [] })
+  })
+
+  it('le registre lu en partie : un mouvement libre se tait ; tout autre garde ce que dit le relevé seul', () => {
+    expect(venteDuMouvement(reserve, PARTIEL)).toEqual({ vente: 'tue' })
+    expect(venteDuMouvement(classe, PARTIEL)).toEqual({ vente: null, factures: [] })
+    for (const autre of [{ statut: 'rapprochee' as const, piece_id: 'p1' }, { statut: 'ignoree' as const }, { categorie_id: 'c1' },
+      { prelevement_personnel: true }]) {
+      expect(venteDuMouvement(mouvement(autre), PARTIEL), JSON.stringify(autre)).toEqual({ vente: null, factures: [] })
+    }
+  })
+
+  it('les ventes l’emportent sur l’état d’hier ; sans elles, il reste', () => {
+    for (const e of ETATS_DU_MOUVEMENT) {
+      expect(etatAvecLesVentes(e, 'classe')).toBe('encaissement_factures')
+      expect(etatAvecLesVentes(e, 'reserve')).toBe('encaissement_enregistre')
+      expect(etatAvecLesVentes(e, null)).toBe(e)
+    }
+  })
+
+  describe('dans les situations du relevé', () => {
+    const sourcesVF5g = (v: VentesDuClient) => ({
+      mouvements: lue([reserve, classe, mouvement({ id: 'l3', statut: 'rapprochee', piece_id: 'p9' })]),
+      // Le client avait envoyé une pièce pour le mouvement réservé, et le cabinet lui avait posé une question.
+      propositions: lue([proposition()]),
+      precisions: lue([precision()]),
+      reglements: lue<ReglementGroupe>([]),
+      ventes: v,
+    })
+
+    it('« Ventes », lu : la réserve l’emporte sur la pièce envoyée et la question, qui restent dites', () => {
+      const s = situationsDuReleve(sourcesVF5g(registre))
+      if (!s.lues) throw new Error('muettes')
+      expect(s.tus).toBeNull()
+      const l1 = s.parMouvement.get('l1')
+      expect(l1?.etat).toBe('encaissement_enregistre')
+      expect(l1?.propositions.map((p) => p.id)).toEqual(['j1'])
+      expect(l1?.questionEnAttente).toBe(true)
+      expect(l1?.facturesDeLaVente).toEqual(['F2026-0001'])
+      expect(s.parMouvement.get('l2')?.etat).toBe('encaissement_factures')
+      expect(s.parMouvement.get('l2')?.facturesDeLaVente).toEqual(['F2026-0002', 'F2026-0003'])
+      expect(s.parMouvement.get('l3')?.etat).toBe('justifie_piece')
+      expect(s.parMouvement.get('l3')?.facturesDeLaVente).toEqual([])
+    })
+
+    it('« Banque » seul : les états d’hier', () => {
+      const s = situationsDuReleve(sourcesVF5g(BANQUE_SEULE))
+      if (!s.lues) throw new Error('muettes')
+      expect(s.tus).toBeNull()
+      expect(s.parMouvement.get('l1')?.etat).toBe('propose')
+      expect(s.parMouvement.get('l2')?.etat).toBe('traite')
+      expect(s.parMouvement.get('l1')?.facturesDeLaVente).toEqual([])
+    })
+
+    it('le registre lu en partie : le mouvement libre se tait, avec le motif ; les autres restent', () => {
+      const s = situationsDuReleve(sourcesVF5g(PARTIEL))
+      if (!s.lues) throw new Error('muettes')
+      expect(s.parMouvement.has('l1')).toBe(false)
+      expect(s.tus).toEqual({ ids: new Set(['l1']), motif: 'les encaissements de tes factures n’ont pas été lus en entier' })
+      expect(s.parMouvement.get('l2')?.etat).toBe('traite')
+      expect(s.parMouvement.get('l3')?.etat).toBe('justifie_piece')
+      // Aucun mouvement libre : rien ne se tait, et rien ne le dit.
+      const sansLibre = situationsDuReleve({ ...sourcesVF5g(PARTIEL), mouvements: lue([classe]) })
+      if (!sansLibre.lues) throw new Error('muettes')
+      expect(sansLibre.tus).toBeNull()
+    })
+  })
+
+  it('le sens de chaque état neuf, selon le sens du mouvement, avec ses factures ; tutoyé, sans un mot du cabinet', () => {
+    expect(sensDeLaVente('encaissement_factures', 250, ['F2026-0002', 'F2026-0003'])).toBe('Ton cabinet a classé ce mouvement par '
+      + 'les encaissements de tes factures : il n’attend rien de toi. Facture(s) : F2026-0002, F2026-0003.')
+    expect(sensDeLaVente('encaissement_factures', -120, [])).toBe('Ton cabinet a classé ce débit : il défait l’encaissement '
+      + 'd’une de tes factures — un chèque revenu impayé, une somme rendue. Il n’attend rien de toi.')
+    expect(sensDeLaVente('encaissement_enregistre', 100, ['F2026-0001'])).toBe('L’encaissement d’une de tes factures est '
+      + 'enregistré sur ce mouvement : ton cabinet le classera par cet encaissement. Il n’attend pas de pièce de toi — une pièce '
+      + 'envoyée ici ne pourrait pas lui être rattachée. Facture(s) : F2026-0001.')
+    expect(sensDeLaVente('encaissement_enregistre', -360.8, [])).toBe('L’encaissement défait d’une de tes factures — un chèque '
+      + 'revenu impayé, une somme rendue — est enregistré sur ce débit : ton cabinet le classera. Il n’attend pas de pièce de '
+      + 'toi — une pièce envoyée ici ne pourrait pas lui être rattachée.')
+    const phrases = (['encaissement_factures', 'encaissement_enregistre'] as const)
+      .flatMap((e) => [sensDeLaVente(e, 1, ['F1']), sensDeLaVente(e, -1, [])])
+    expect(phrases.flatMap(motsDuCabinet)).toEqual([])
   })
 })
 
@@ -377,8 +550,15 @@ describe('ce que l’écran lit, et qui a écrit', () => {
   it('les colonnes lues sont celles du type, sans rien de plus', () => {
     const attendues: (keyof MouvementDuClient)[] = ['id', 'dossier_id', 'date', 'libelle', 'montant', 'statut', 'piece_id',
       'cotisation_id', 'categorie_id', 'emprunt_id', 'ventilee', 'reglement_groupe', 'compte_bilan', 'declaration_tva_id',
-      'prelevement_personnel', 'created_at']
+      'prelevement_personnel', 'encaissements_de_factures', 'created_at']
     expect(COLONNES_DU_MOUVEMENT.split(', ')).toEqual(attendues)
+    // Étape VF5g : ce que la garde G2 lit d'une facture et d'un encaissement, et rien de plus — ni montant ni client d'une
+    // facture, ni moyen ni auteur d'un encaissement.
+    const deLaFacture: (keyof FactureDuClient)[] = ['id', 'dossier_id', 'numero', 'type', 'statut', 'facture_origine_id', 'source_de_la_vente']
+    expect(COLONNES_DES_FACTURES.split(', ')).toEqual(deLaFacture)
+    const deLEncaissement: (keyof EncaissementDuClient)[] = ['id', 'dossier_id', 'facture_id', 'montant', 'ligne_bancaire_id',
+      'annule_id', 'retire_le', 'cree_le']
+    expect(COLONNES_DES_ENCAISSEMENTS.split(', ')).toEqual(deLEncaissement)
     // Ni montant, ni catégorie, ni tiers d'une pièce : son nom et son jour de dépôt.
     expect(COLONNES_DE_LA_PIECE).toBe('id, dossier_id, nom_fichier, created_at')
   })

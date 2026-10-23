@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientBanque from './ClientBanque'
 import { motsDuCabinet } from '../lib/espaceVentes'
-import type { MouvementDuClient, PieceDuClient } from '../lib/banqueClient'
+import type { EncaissementDuClient, FactureDuClient, MouvementDuClient, PieceDuClient } from '../lib/banqueClient'
 import type { ControleReleveBancaire, JustificatifPropose, PrecisionMouvement, ReglementGroupe } from '../lib/types'
 
 // « MA BANQUE » (espace client, étape P9) : l'écran du client qui porte la case « Banque ». Ce que ces cas gardent :
@@ -102,7 +102,15 @@ vi.mock('../lib/supabase', async () => {
 const mouvement = (o: Partial<MouvementDuClient>): MouvementDuClient => ({
   id: 'l0', dossier_id: 'd1', date: '2026-09-15', libelle: 'PRLV FICTIF', montant: -10, statut: 'non_rapprochee', piece_id: null,
   cotisation_id: null, categorie_id: null, emprunt_id: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
-  declaration_tva_id: null, prelevement_personnel: false, created_at: '2026-09-20T08:00:00Z', ...o,
+  declaration_tva_id: null, prelevement_personnel: false, encaissements_de_factures: false, created_at: '2026-09-20T08:00:00Z', ...o,
+})
+// Étape VF5g : une facture source et un encaissement de son registre, tels que l'écran les lit.
+const facture = (o: Partial<FactureDuClient>): FactureDuClient => ({
+  id: 'f0', dossier_id: 'd1', numero: 'F2026-0000', type: 'facture', statut: 'validee', facture_origine_id: null, source_de_la_vente: true, ...o,
+})
+const encaissement = (o: Partial<EncaissementDuClient>): EncaissementDuClient => ({
+  id: 'e0', dossier_id: 'd1', facture_id: 'f0', montant: 100, ligne_bancaire_id: null, annule_id: null, retire_le: null,
+  cree_le: '2026-09-21T08:00:00Z', ...o,
 })
 const piece = (o: Partial<PieceDuClient>): PieceDuClient => ({ id: 'p0', dossier_id: 'd1', nom_fichier: 'piece.pdf', created_at: '2026-09-01T08:00:00Z', ...o })
 const proposition = (o: Partial<JustificatifPropose>): JustificatifPropose => ({
@@ -152,7 +160,28 @@ function poser() {
       controle({ id: 'c1' }),
       controle({ id: 'c2', periode_fin: '2026-09-30', solde_final: 9999, coherent: false }),
     ]),
+    // Les ventes (étape VF5g) : aucune facture tant qu'un cas n'en pose. Un client « Banque » seul ne les lit jamais.
+    factures_emises: [],
+    encaissements_factures: [],
   }
+}
+
+// Le dossier qui a basculé (étape VF5g) : F2026-0021, encaissée par un virement que le cabinet a CLASSÉ par ses
+// encaissements ; F2026-0022, encaissée par un virement RÉSERVÉ, pas encore classé ; une facture d'une autre société.
+function poserLesVentes() {
+  faux.tables.lignes_bancaires.push(...nues([
+    mouvement({ id: 'lv1', date: '2026-09-28', libelle: 'VIR FICTIF HORIZON F2026-0022', montant: 480 }),
+    mouvement({ id: 'lv2', date: '2026-09-21', libelle: 'VIR FICTIF DURAND F2026-0021', montant: 598.5, statut: 'rapprochee', encaissements_de_factures: true }),
+  ]))
+  faux.tables.factures_emises = nues([
+    facture({ id: 'f1', numero: 'F2026-0021' }),
+    facture({ id: 'f2', numero: 'F2026-0022' }),
+    facture({ id: 'fx', dossier_id: 'd2', numero: 'F2026-0099' }),
+  ])
+  faux.tables.encaissements_factures = nues([
+    encaissement({ id: 'e1', facture_id: 'f1', ligne_bancaire_id: 'lv2', montant: 600 }),
+    encaissement({ id: 'e2', facture_id: 'f2', ligne_bancaire_id: 'lv1', montant: 480, cree_le: '2026-09-28T18:00:00Z' }),
+  ])
 }
 
 beforeEach(() => {
@@ -332,6 +361,120 @@ describe('les lectures partielles, table par table', () => {
     await monter()
     expect(texte()).toContain('Le solde ne s’affiche pas : tes relevés contrôlés n’ont pas pu être lus en entier.')
     expect(texte()).not.toContain('5 432,10')
+  })
+})
+
+describe('les encaissements de tes factures (étape VF5g)', () => {
+  const etat = (libelle: string) => within(ligne(libelle)).getByText((_, e) => e?.matches('td[data-libelle="État"]') ?? false).textContent
+  const VENTES_ET_BANQUE = { cabinet: false, membre: true, ventes: true, banque: true }
+
+  it('« Banque » et « Ventes » : le registre lu après la case, le réservé et le classé dits, aucune pièce à envoyer sur le réservé', async () => {
+    poserLesVentes()
+    faux.droits = VENTES_ET_BANQUE
+    await monter()
+    expect(new Set(faux.lectures)).toEqual(new Set(['lignes_bancaires', 'justificatifs_proposes', 'precisions_mouvements',
+      'reglements_groupes', 'pieces', 'controles_releves_bancaires', 'factures_emises', 'encaissements_factures']))
+    expect(etat('VIR FICTIF HORIZON F2026-0022')).toBe('Encaissement enregistré — ton cabinet le classe')
+    expect(etat('VIR FICTIF DURAND F2026-0021')).toBe('Encaissement de tes factures')
+    // Les autres mouvements ne changent pas, ni le compte de ce qui attend une pièce.
+    expect(etat('PRLV FICTIF TELECOM')).toBe('Sans justificatif')
+    expect(texte()).toContain('Sur 2026, 2 mouvement(s) sans justificatif, dont 1 demandé(s) par ton cabinet. 1 justificatif(s) '
+      + 'envoyé(s) attendent ton cabinet. 1 encaissement(s) de tes factures attendent que ton cabinet les classe.')
+    await ouvrir('VIR FICTIF HORIZON F2026-0022')
+    expect(texte()).toContain('Encaissement enregistré — ton cabinet le classe. L’encaissement d’une de tes factures est '
+      + 'enregistré sur ce mouvement : ton cabinet le classera par cet encaissement. Il n’attend pas de pièce de toi — une pièce '
+      + 'envoyée ici ne pourrait pas lui être rattachée. Facture(s) : F2026-0022.')
+    expect(screen.queryByText('Envoyer une pièce pour ce mouvement')).toBeNull()
+    expect(screen.queryByLabelText('Une pièce déjà déposée')).toBeNull()
+    expect(document.querySelector('input[type="file"]')).toBeNull()
+    // La précision reste offerte : la base l'écrit sur tout mouvement du dossier.
+    expect(screen.getByLabelText('Ta précision')).toBeTruthy()
+    await ouvrir('VIR FICTIF DURAND F2026-0021')
+    expect(texte()).toContain('Encaissement de tes factures. Ton cabinet a classé ce mouvement par les encaissements de tes '
+      + 'factures : il n’attend rien de toi. Facture(s) : F2026-0021.')
+    expect(texte()).not.toContain('F2026-0099')
+    expect(motsDuCabinet(texte())).toEqual([])
+  })
+
+  it('les filtres : le réservé attend son cabinet avec les justificatifs envoyés ; le classé est justifié', async () => {
+    poserLesVentes()
+    faux.droits = VENTES_ET_BANQUE
+    await monter()
+    fireEvent.change(screen.getByLabelText('Afficher'), { target: { value: 'propose' } })
+    expect(libelles()).toEqual(['CB FICTIVE PAPETERIE', 'VIR FICTIF HORIZON F2026-0022'])
+    fireEvent.change(screen.getByLabelText('Afficher'), { target: { value: 'justifie' } })
+    expect(libelles()).toContain('VIR FICTIF DURAND F2026-0021')
+    fireEvent.change(screen.getByLabelText('Afficher'), { target: { value: 'attend' } })
+    expect(libelles()).not.toContain('VIR FICTIF HORIZON F2026-0022')
+  })
+
+  it('« Banque » seul : rien de plus — le registre n’est pas lu, le classé est « Traité par ton cabinet » (VF5-Q3)', async () => {
+    poserLesVentes()
+    await monter()
+    expect(faux.lectures).not.toContain('factures_emises')
+    expect(faux.lectures).not.toContain('encaissements_factures')
+    expect(etat('VIR FICTIF HORIZON F2026-0022')).toBe('Sans justificatif')
+    expect(etat('VIR FICTIF DURAND F2026-0021')).toBe('Traité par ton cabinet')
+    expect(texte()).not.toMatch(/Encaissement|F2026-0022\./)
+    await ouvrir('VIR FICTIF HORIZON F2026-0022')
+    expect(screen.getByText('Envoyer une pièce pour ce mouvement')).toBeTruthy()
+  })
+
+  it.each([
+    ['factures_emises', 'tes factures n’ont pas été lues en entier'],
+    ['encaissements_factures', 'les encaissements de tes factures n’ont pas été lus en entier'],
+  ])('%s lu en partie : l’état neuf se tait, rien ne s’offre sur un mouvement libre, le bandeau le dit', async (table, motif) => {
+    poserLesVentes()
+    faux.droits = VENTES_ET_BANQUE
+    faux.muetApres = { [table]: 1 }
+    await monter()
+    expect(texte()).toContain('Tes factures et leurs encaissements n\'ont pas pu être affichés en entier. L’état des mouvements '
+      + 'que ton cabinet n’a pas encore classés ne s’affiche pas, et rien ne t’y est proposé')
+    // Le motif, en infobulle comme les autres bandeaux du client : la lecture qui a manqué.
+    expect(screen.getByText(/^Tes factures et leurs encaissements/).getAttribute('title')).toBe(motif)
+    // Les mouvements libres — le réservé, et ceux qu'il pourrait être — se taisent ; le classé dit ce que dit le relevé seul.
+    expect(etat('VIR FICTIF HORIZON F2026-0022')).toBe('—')
+    expect(etat('PRLV FICTIF TELECOM')).toBe('—')
+    expect(etat('VIR FICTIF DURAND F2026-0021')).toBe('Traité par ton cabinet')
+    expect(etat('PRLV FICTIF ENERGIE')).toBe('Justifié par une pièce')
+    expect(texte()).not.toMatch(/Encaissement (de tes|enregistré)|Sur 2026/)
+    expect((screen.getByLabelText('Afficher') as HTMLSelectElement).disabled).toBe(true)
+    await ouvrir('VIR FICTIF HORIZON F2026-0022')
+    expect(texte()).toContain('L’état de ce mouvement ne s’affiche pas tant que les encaissements de tes factures n’ont pas été lus en entier.')
+    expect(screen.queryByText('Envoyer une pièce pour ce mouvement')).toBeNull()
+    expect(screen.queryByLabelText('Ta précision')).toBeNull()
+    // Un mouvement que le registre ne change pas garde ses gestes.
+    await ouvrir('PRLV FICTIF ENERGIE')
+    expect(screen.getByLabelText('Ta précision')).toBeTruthy()
+    expect(motsDuCabinet(texte())).toEqual([])
+  })
+
+  it('une lecture du registre qui lève : l’écran reste, l’état neuf se tait, le bandeau le dit', async () => {
+    poserLesVentes()
+    faux.droits = VENTES_ET_BANQUE
+    delete faux.tables.encaissements_factures
+    await monter()
+    expect(screen.getByText(/^Tes factures et leurs encaissements/).getAttribute('title')).toContain('encaissements_factures')
+    expect(etat('VIR FICTIF HORIZON F2026-0022')).toBe('—')
+    expect(etat('VIR FICTIF DURAND F2026-0021')).toBe('Traité par ton cabinet')
+  })
+
+  it('un filtre d’état choisi ne cache pas, sur un registre devenu partiel, les mouvements qui se taisent', async () => {
+    poserLesVentes()
+    faux.droits = VENTES_ET_BANQUE
+    await monter()
+    fireEvent.change(screen.getByLabelText('Afficher'), { target: { value: 'justifie' } })
+    expect(libelles()).not.toContain('PRLV FICTIF TELECOM')
+    // La précision écrite relit tout : le registre revient lu en partie.
+    await ouvrir('VIR FICTIF DURAND F2026-0021')
+    fireEvent.change(screen.getByLabelText('Ta précision'), { target: { value: 'Le virement de la facture de septembre.' } })
+    faux.muetApres = { encaissements_factures: 0 }
+    faux.lectures = []
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Envoyer la précision' })) })
+    expect(faux.rpcs.map((r) => r.nom)).toEqual(['ecrire_precision_mouvement'])
+    expect(faux.lectures).toContain('encaissements_factures')
+    expect(libelles()).toContain('PRLV FICTIF TELECOM')
+    expect(etat('PRLV FICTIF TELECOM')).toBe('—')
   })
 })
 
