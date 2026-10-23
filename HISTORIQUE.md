@@ -33038,3 +33038,358 @@ expliqué, et rien dans l'application ne le corrige. C'est la décision, et le p
 (la ligne 33 : O33-Q1 fait). Une recommandation, non écrite : la Checklist pourrait dire l'écart d'ouverture (en
 « erreur », renvoyé à l'onglet Bilan), pour qu'il se voie avant le geste de validation ; elle ne le fait pas
 aujourd'hui, et `prealablesValidation.test.ts` ne l'exige pas (il exige l'inverse).
+
+### 23/10/2026 — VF6, LA JUMELLE INVERSÉE : LA CONCEPTION — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(Conception de l'agent architecte, sur `897b5e5` ; rien d'écrit, ni dans le code ni en base. Production lue le
+23/10/2026 : le catalogue (colonnes, contraintes, déclencheurs, policies, clés étrangères) et des comptes de lignes,
+aucune valeur. Lus avant d'écrire : la conception d'EC-Q3 (§ 7, 8, 10, 11, 14, 15), « L'EXEMPLAIRE D'UNE FACTURE, EN
+BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN », « UNE VENTE PEUT ENTRER DEUX FOIS », VF2, VF3b1 à VF3b3 (dont
+VF6-Q1), VF4b, « VF5, LA BANQUE : LA CONCEPTION » (son § 6, que VF5h écrit en parallèle) ; le code du pont
+(`ventesJumelles.ts`), des exemplaires (`exemplairesDesFactures*.ts`, `FichePiece.tsx`), du brouillon (`ecritures.ts`),
+des préalables et de la Checklist ; les migrations `exemplaires_des_factures` et `source_de_la_vente` dans l'export.
+Sources au § 9.)
+
+#### 0. Le résumé
+
+1. Le moteur de la 2035, la CA3, la situation et l'estimation ignorent déjà l'exemplaire d'une facture source (VF3b).
+   RIEN D'AUTRE ne le connaît : la génération des écritures l'écrirait au brouillon (donc au FEC, à la balance, au
+   bilan), et cinq préalables BLOQUANTS de la validation le jugent comme une pièce qui compte (§ 2). Un trou que la
+   conception d'EC-Q3 n'avait pas nommé : il ouvre VF6 (VF6a), sans migration.
+2. La base ne connaît ni la déclaration « vente hors des factures de l'application », ni G3, ni G4 : une pièce de vente
+   se valide sans rien dire d'elle, se rapproche, entre dans un règlement groupé et porte une écriture, exemplaire d'une
+   facture source ou non. Défaire l'exemplaire d'une facture source est admis (VF6-Q1 tranchée, pas écrite).
+3. Une migration, `jumelle_inversee` (VF6b) : la colonne, le jumeau SQL du pont, G3, G4, les quatre fonctions du cabinet
+   (désigner, qui REMPLACE désormais, défaire, déclarer, retirer la déclaration), et le journal de qui a fait quoi, et
+   quand (VF1A-Q2, si VF6-Q3 le retient).
+4. Aucune policy ne change dans la voie recommandée : la garde ferme au client la déclaration comme VF1a lui a fermé la
+   désignation (VF6-Q2). Le journal est une table neuve, au cabinet seul.
+5. Six lots, VF6a à VF6f, chacun neutre tant qu'aucun dossier n'a basculé (aucun en production) ; VF6f n'existe que si
+   le cabinet veut aussi la policy resserrée.
+6. Quatre questions, VF6-Q2 à VF6-Q5 ; une conséquence pour VF7 (§ 7).
+
+#### 1. La mesure (production, 23/10/2026 ; des comptes)
+
+146 migrations, la dernière `impaye_non_declare`. Quatre dossiers, aucun basculé ; six factures, toutes validées, aucune
+source ; six pièces de vente, une validée, quatre reçues de Super PDP (aucune ne porte d'identité ni de flux, aucune
+n'a l'identifiant Super PDP d'une facture) ; aucun exemplaire désigné ; aucune transmission ; aucun encaissement ;
+aucun exercice validé ; aucun accès « Ventes ». Aucune pièce de vente rapprochée, dans un règlement groupé, portant une
+écriture ou un lettrage ; aucun règlement groupé, aucun lettrage manuel, aucune proposition de justificatif. Tout ce qui
+suit est LATENT, et chaque lot sera neutre.
+
+Le catalogue de `pieces`, relu :
+- **Policies.** `pieces_select` ouvre la ligne ENTIÈRE à tout accès du dossier (le client lit `facture_id`) ;
+  `pieces_update` et `pieces_delete` au cabinet seul (`admin_du_dossier`) ; `pieces_insert` (`to authenticated`) au
+  cabinet, ou au client sous six conditions : `source = 'upload'`, `statut = 'a_valider'`, ni catégorie, ni identifiant
+  Super PDP, ni lisible, l'auteur lui-même. Elle ne nomme ni `facture_id` ni `type_piece`.
+- **Gardes.** `garder_exemplaire_facture` (VF1a, aux droits de l'appelant) : une pièce ne NAÎT désignée que réinsérée
+  par le super-administrateur (42501) ; la désignation ne change que sous le réglage `jd.exemplaire_facture` des deux
+  fonctions ; une pièce désignée ne change ni de dossier ni de nature. `garder_piece_validee` compare la ligne entière
+  dès que `exercice_figeant_la_piece` rend une année (une colonne neuve y entre d'elle-même) ; `garder_identite_piece` ;
+  quatre déclencheurs de la suppression et du changement de dossier (révision, e-reporting deux fois, hors de France).
+- **Les fonctions.** `designer_exemplaire_facture` (sept refus) refuse une pièce déjà désignée, « défaire cette
+  désignation avant d'en faire une autre » ; `defaire_exemplaire_facture` (quatre) ne regarde ni la source ni le statut.
+  Aucune ne juge le pont.
+- **Ce qui cite une pièce** : `lignes_bancaires.piece_id` (le rapprochement, écrit par le navigateur sous la policy du
+  cabinet), `reglements_groupes.piece_id` (`regler_pieces_par_mouvement`), `ecritures_brouillon.piece_id`,
+  `lettrages_manuels.piece_id`, `justificatifs_proposes.piece_id`, `immobilisations.piece_id`, et quatre tables
+  enfants. Aucun déclencheur de ces tables ne lit `pieces.facture_id`.
+- **Le réglage** : `garder_ventes_par_les_factures` ne refuse que de défaire un réglage qui a une facture source ;
+  `fixer_source_de_la_vente` fixe la source à la validation d'une facture, sous le verrou de la ligne du dossier.
+
+#### 2. Ce que le code fait aujourd'hui de l'exemplaire d'une facture source
+
+- **Les moteurs** (VF3b) : la 2035, la CA3, la situation et l'estimation l'écartent par `exemplaireDUneFactureSource`
+  (`ventesFacturees.ts:480`) et le disent dans la période où il aurait compté. « Ma simulation » le compte jusqu'à VF8,
+  et le dit.
+- **Le brouillon : rien.** `piecesAComptabiliser` (`ecritures.ts:294`) ne connaît que le montant, le bien et la
+  catégorie : un exemplaire validé qui porte une catégorie s'écrit à « Générer les écritures manquantes » — en
+  engagement, 411 et 706 à sa date, À CÔTÉ des écritures de sa facture (VF4) ; la vente compte deux fois au FEC, à la
+  balance, au bilan et à la concordance. `ecrituresSansObjet` ne dit pas « sans objet » l'écriture qu'il porterait.
+- **Les préalables bloquants** (`prealablesValidation.ts`) : `ecritures-a-generer` exigerait son écriture,
+  `sans-categorie` sa catégorie, `devise-non-convertie` sa conversion, `ventes-en-double` le compterait avec sa jumelle
+  désignée elle aussi, et `ecritures-sans-objet` ne dirait pas sans objet l'écriture qu'il porterait. Une fois G4
+  écrite (aucune écriture sur un exemplaire), `ecritures-a-generer` retiendrait la validation POUR TOUJOURS. La
+  Checklist, de même (`montant-suspect`, `sans-tva`, `pieces-payees-en-partie` suivent).
+- **Le relevé** : `appariementBanque.ts`, `justificatifPossible` (`reglesAffectation.ts:200`) et le formulaire du
+  règlement groupé proposent l'exemplaire comme une pièce à rapprocher ; `validerEtRapprocherLot` (`BanqueTab.tsx:1324`)
+  le validerait et le rapprocherait ; la fenêtre des encaissements ne propose plus les mouvements de la jumelle d'une
+  facture source (VF5b).
+- **Le pont** : `ventesEnDouble` ne connaît pas la source — deux exemplaires désignés d'une facture source (la jumelle
+  et le PDF) se disent « Comptée deux fois », en erreur, alors qu'aucun ne compte ; une jumelle d'une facture source
+  restée « à valider » se dit « Facture émise F… », neutre, sans dire qu'elle est à désigner.
+- **La validation en lot** (`PiecesTab.tsx:498`) envoie UNE mise à jour `.in('id', ids)` : une seule pièce que G3
+  refusera fera échouer la sélection entière. La fiche (`FichePiece.tsx:549`) peut INSÉRER une pièce validée.
+
+#### 3. Ce que VF6 fait
+
+**(a) La déclaration : `pieces.vente_hors_des_factures`.** `boolean not null default false` ; une contrainte : vraie
+seulement sur une pièce de vente. Le sens : « aucune facture validée de l'application n'est la facture de cette
+vente » — une prestation facturée ailleurs, une recette sans facture. LE NOM CHANGE de celui de la conception
+(`vente_sans_facture_source`) : une pièce de vente d'un dossier basculé peut porter une facture d'AVANT la bascule, qui
+n'est pas source et qui est pourtant une facture de l'application ; « sans facture source » la dirait vraie de son PDF,
+et ce PDF doit être DÉSIGNÉ — c'est ce que VF5h exige pour classer un virement mixte (« désignez d'abord l'exemplaire de
+la facture F… »). Un nom qui dirait moins que la règle mentirait sur son filtre. Écarté : garder le nom de la
+conception et le sens large, qui laisse déclarer le PDF d'une facture d'avant et fait échouer VF5h sans le dire avant.
+
+**(b) Le jumeau SQL du pont : `factures_du_pont(piece)`.** Les trois preuves que le pont DÉDUIT, et seulement elles (la
+désignation est ce que la garde juge) : le flux (`pieces.flux_hote/flux_id` égal à celui d'une transmission de la
+facture), Super PDP (l'identifiant écrit sur la facture, ou le flux d'une transmission `superpdp`), l'identité G1.42
+(le numéro tel quel, le SIREN figé de l'émetteur — les neuf premiers chiffres d'un SIRET de quatorze ou d'un SIREN, les
+blancs ôtés, comme `sirenDe` —, l'année de la date) ; une identité dont la nature contredit le type de la facture rend
+une ligne « nature contraire ». Sur les factures VALIDÉES du même dossier. Aux droits de l'appelant, `search_path`
+fixé, exécutable par personne (les gardes et les fonctions l'appellent). La CONFRONTATION : l'essai porte entre deux
+bornes un jeu (factures, transmissions, pièces) et ce que la base en rend ; `ventesJumellesJumeau.test.ts` extrait ce
+jeu, le passe à `jumellesDuDossier` sans désignation, et exige le même rattachement, pièce par pièce, et les mêmes
+incohérences — puis, le drapeau levé, confronte au texte exporté (le patron d'`exemplairesDesFactures.test.ts`). Un
+défaut planté de chaque côté (un SIREN non tronqué, l'année d'une autre date, une transmission d'un autre dossier) doit
+virer au rouge.
+
+**(c) G3, la garde des pièces de vente d'un dossier basculé** (`garder_vente_d_un_dossier_bascule`, `before insert or
+update of statut, type_piece, dossier_id, facture_id, vente_hors_des_factures`, le dossier lu `for share`). Elle ne
+juge qu'une pièce de vente VALIDÉE d'un dossier basculé, et seulement au PASSAGE : à l'insertion, ou quand la pièce
+devient validée, devient une vente, change de dossier, ou change de désignation ou de déclaration. Une pièce validée
+avant la bascule reste ce qu'elle est (EC3-Q1, sans rétroactivité), et sa note ou son sous-dossier se modifient comme
+hier.
+1. Insérée validée : refusée, sauf par le super-administrateur (la restauration, qui réinsère un état déjà gardé et que
+   la garde ne rejuge pas — ses transmissions peuvent venir après ses pièces) : « une pièce de vente naît à valider dans
+   un dossier dont les factures sont la source de leurs ventes » (23514).
+2. Ni désignée ni déclarée : « désignez-la exemplaire de sa facture, ou déclarez-la vente hors des factures de
+   l'application, avant de la valider » (23514).
+3. Le pont la rattache à UNE facture (source ou non) : validée seulement désignée À ELLE — déclarée ou désignée à une
+   autre, refusée, la facture nommée (23514).
+4. Ses preuves se contredisent (plusieurs factures, ou la nature) : refusée, « vérifiez-la sur la plateforme » (VF6-Q5).
+Le point 3 vaut aussi pour une facture d'AVANT : dans un dossier basculé, ce que le pont prouve s'écrit ; VF5h y trouve
+l'exemplaire unique qu'il exige. Écarté : ne l'exiger que d'une facture source (la lettre de la conception), qui laisse
+une jumelle de facture d'avant non désignée, que VF5h refusera plus tard sans que la validation l'ait dit.
+
+**(d) G4, l'exemplaire d'une facture source ne justifie rien** (`garder_exemplaire_d_une_source`, une fonction, quatre
+déclencheurs `before insert or update of piece_id`) : sur `lignes_bancaires` (le rapprochement), `reglements_groupes`
+(la part d'un virement groupé), `ecritures_brouillon` (une écriture) et `lettrages_manuels` (un lettrage) — une pièce
+désignée à une facture source y est refusée : « La pièce « … » est l'exemplaire de la facture F…, source de sa vente :
+la vente se règle et s'écrit par sa facture et ses encaissements. » (23514). Elle juge aussi la restauration : un état
+gardé ne la heurte jamais. Le CÔTÉ D'EN FACE (« Un contrôle qui part d'un côté d'une relation ne voit pas l'autre ») :
+`designer_exemplaire_facture` refuse de désigner à une facture source une pièce rapprochée, prise dans un règlement
+groupé, qui porte une écriture ou un lettrage, chacun dit, et ce qu'il faut retirer d'abord. Hors de G4, dit à
+l'écran : la proposition de justificatif du client (une parole, pas un classement ; la fiche du mouvement dit qu'elle
+ne s'associe pas et offre `retirer_proposition`) ; `immobilisations.piece_id` (une vente n'est pas un bien acquis).
+G4 ne touche pas l'exemplaire d'une facture QUI N'EST PAS SOURCE : il compte comme hier, se rapproche, s'écrit, et VF5h
+lui donne un paiement daté par un encaissement. Les deux chantiers ne se croisent qu'au déclencheur de
+`ecritures_brouillon` : la ligne que VF5h écrit porte la pièce d'une facture non source, que G4 laisse passer.
+
+**(e) Les quatre fonctions du cabinet** (`admin_du_dossier`, `SECURITY DEFINER`, fermées à l'anonyme, sous le verrou
+partagé de la validation puis celui de la ligne, le patron de VF1a).
+- `designer_exemplaire_facture` REMPLACE : son rang 5 (« défaire avant d'en faire une autre ») ne refuse plus qu'une
+  désignation à la MÊME facture ; une désignation à une autre facture, ou une déclaration, est remplacée dans la même
+  écriture — le geste unique de VF6-Q1, qui ne laisse jamais G3 voir une pièce validée sans marque. Neufs, après le
+  rang 7 : dans un dossier basculé, le pont qui dit une autre facture, des preuves contraires ; pour une facture source,
+  les quatre liens de G4. Partout, pas seulement après la bascule : c'est le seul changement de comportement d'un
+  dossier qui n'a pas basculé, sans effet sur ce qui se compte, et aucune pièce n'est désignée en production.
+- `defaire_exemplaire_facture` : neuf, avant le gel — une pièce VALIDÉE d'un dossier basculé ne perd pas sa
+  désignation : « désignez l'autre facture, ou déclarez-la vente hors des factures de l'application » (22023). VF6-Q1,
+  dit sous les mots de la fonction plutôt que laissé au refus de G3. À valider, elle se défait comme hier.
+- `declarer_vente_hors_des_factures(dossier, pièce)` : l'accès ; la pièce ; une vente ; un dossier basculé (hors de lui,
+  la déclaration ne dit rien, et la refuser évite un état sans objet) ; le gel ; déjà déclarée ; le pont qui la rattache
+  à une facture, ou des preuves contraires. Une désignation en cours est remplacée (VF6-Q1).
+- `retirer_declaration_hors_des_factures(dossier, pièce)` : l'accès ; la pièce ; déclarée ; validée dans un dossier
+  basculé, refusé comme défaire ; le gel.
+La déclaration ne s'écrit que sous le réglage `jd.exemplaire_facture` (la garde de VF1a l'apprend), et ne naît vraie
+que réinsérée par le super-administrateur : la ligne que VF1a écrivait pour `facture_id`. Une pièce déclarée ne
+change pas de nature sans retirer d'abord sa déclaration — validée dans un dossier basculé, on la remet à valider
+d'abord, comme un exemplaire : trois gestes pour une erreur rare, dits par le formulaire.
+
+**(f) Qui a désigné, et quand (VF1A-Q2, VF6-Q3).** Recommandé : un JOURNAL, `designations_des_pieces` — une ligne par
+geste (`designation`, `retrait_designation`, `declaration`, `retrait_declaration`), la pièce (cascade avec elle), la
+facture d'une désignation ou de son retrait (sans action, comme `pieces.facture_id`), l'auteur (`auth.uid()`, sans clé
+vers `auth.users`, comme `justificatifs_proposes.auteur_id` : un compte effacé ne doit ni effacer ni bloquer
+l'histoire), l'instant. Écrit par les quatre fonctions seules ; aucune policy d'écriture, la lecture au cabinet
+(`admin_du_dossier`, `to authenticated`), l'insertion de restauration au super-administrateur ; aucune mise à jour ni
+suppression (une parole datée ne se réécrit pas). Remplacer une désignation écrit deux lignes au même instant. Au plan
+de sauvegarde derrière `DESIGNATIONS_DES_PIECES_PREVUES` ; une ligne du registre RGPD.md (l'identifiant d'un compte du
+cabinet, par geste). Écartées : deux colonnes sur `pieces` (le client les lirait, `pieces_select` ouvrant la ligne
+entière — un fait du cabinet seul ne se range pas dans une table que le client lit — et un retrait effacerait le fait
+d'avant) ; rien (VF1A-Q2 l'a reporté ici, pas abandonné). La piste d'audit fiable (CGI, art. 289, VII, 1°) relie la
+facture à son fondement : le journal dit qui a relié une pièce à une facture.
+
+**(g) La fiche d'une pièce** (cabinet seul), dans un dossier basculé, une section « Ce que cette pièce est » :
+« Exemplaire de la facture F… » (désigner, désigner une autre facture) ou « Vente hors des factures de l'application »
+(déclarer, retirer) ; le pont propose la facture qu'il prouve, jamais une autre, et rien n'est choisi d'avance ;
+« Valider » attend la marque, et le dit (le refus de G3 sous ses mots) ; une pièce neuve de vente s'enregistre à valider
+d'abord (G3, point 1). Défaire n'est pas offert sur une pièce validée d'un dossier basculé (VF6-Q1). Chaque
+confirmation NOMME la pièce et la facture, et dit ce qui se compte : désignée à une facture source, la pièce ne compte
+plus ; déclarée, elle compte comme une vente, « et si c'était le PDF d'une facture de l'application, la vente compterait
+deux fois ». Le journal se lit sous la section (« désignée par … le … »), les auteurs nommés par `lib/auteursVentes.ts`
+sur des accès lus en entier. Le formulaire d'une pièce déclarée dit, comme celui d'une désignée, que sa nature ne
+change pas.
+
+**(h) Les marques, le bilan d'un import, la Checklist.** `ventesEnDouble` par régime : pour une facture qui n'est pas
+source, plus d'une pièce (inchangé) ; pour une facture source, une pièce VALIDÉE qui n'est pas son exemplaire (G3
+l'empêche ; le point reste en témoin). Les marques : « Exemplaire de la facture F… — la vente est comptée par la
+facture » (neutre) ; « À désigner : c'est la facture F… » (attention), pour une pièce que le pont rattache à une
+facture d'un dossier basculé et qui n'est pas encore désignée ; « Vente hors des factures de l'application » (neutre).
+Le bilan d'un import : « à désigner à la validation ». La Checklist garde `ventes-en-double` (erreur, préalable bloquant
+inchangé) et gagne `exemplaires-a-designer` (attention) et, si VF6-Q4 le retient, `ventes-hors-factures-a-verifier`
+(attention) : une pièce DÉCLARÉE dont le TTC est, au centime, celui d'une facture source du même exercice qu'aucun
+exemplaire validé ne porte — un symptôme, qui ne décide rien (le pont, lui, ne rapproche jamais un montant).
+`revisionCycles.ts` range les deux points (les recettes). La lecture du pont (`ventesJumellesLecture.ts`) gagne
+`source_de_la_vente` et `vente_hors_des_factures`.
+
+**(i) La policy d'insertion du client (VF6-Q2).** La conception voulait « la policy d'insertion d'une pièce par le
+client, resserrée (aucune désignation) ». La désignation lui est fermée depuis VF1a, par la garde, sans policy : une
+pièce ne naît désignée que réinsérée par le super-administrateur. VF6 ferme la déclaration de même (§ 3 e). La garde
+tient pour TOUS les écrivains (le client, le cabinet, les Edge Functions qui insèrent des pièces) ; la policy ne
+tiendrait que pour le client, et sa clause serait une mutation équivalente de `rls.sql` (la garde refuse avant elle).
+Recommandé : aucune policy ne change. Si le cabinet la veut aussi, le texte est prêt (VF6f, en dernier) :
+`… and (source = 'upload') and (statut = 'a_valider') and (facture_id is null) and (not vente_hors_des_factures) and …`
+dans la branche du client de `pieces_insert`, le reste identique — présentée avant d'être appliquée, `rls.sql` entier.
+
+#### 4. Le double compte, chemin par chemin
+
+Chaque chemin, ce qu'il fait aujourd'hui, et ce qui le ferme :
+- La jumelle validée non désignée d'une facture source : compte avec sa facture — G3, point 3.
+- Le PDF validé non désigné d'une facture source : compte avec sa facture — G3, point 2 ; déclaré à tort, le symptôme
+  (VF6-Q4).
+- L'exemplaire désigné et validé, aux moteurs : ne compte pas depuis VF3b.
+- L'exemplaire au brouillon (« Générer », en engagement) : s'écrit à côté de sa facture — VF6a (la génération), G4.
+- La désignation défaite après la validation : admise — G3, et VF6-Q1 dans `defaire_exemplaire_facture`.
+- L'exemplaire rapproché d'un crédit (en trésorerie, sa contrepartie l'écrit) : admis — G4, et `designer` de l'autre
+  côté.
+- L'exemplaire dans un règlement groupé : admis — G4, et `designer`.
+- Le mouvement d'un encaissement classé autrement : fermé par G1 et G2 (VF2).
+- Une seconde écriture de vente facturée : fermée par G5 (VF4b).
+- L'encaissement sans mouvement dont le crédit est affecté en recette : dit (VF5f) — G5 à la validation (VF7).
+- Une pièce validée avant la bascule, dont la vente est facturée ensuite : compte avec sa facture — hors de G3, qui
+  n'est pas rétroactive ; le symptôme.
+- La facture d'avant, portée par sa jumelle et par son PDF : « Comptée deux fois » — `ventes-en-double`, préalable
+  bloquant, inchangé.
+- La facture d'avant d'un virement mixte (VF5h) : inclassable aujourd'hui — VF5h, sur l'exemplaire unique que G3 rend
+  sûr.
+- Le client qui désignerait ou déclarerait : la désignation fermée depuis VF1a, la déclaration par la garde.
+
+Restent des affirmations humaines, dites plutôt que promises : une pièce déclarée qui serait le PDF d'une facture de
+l'application ; une pièce validée avant la bascule dont la vente est facturée ensuite. Le symptôme les signale sans les
+juger.
+
+#### 5. Le découpage
+
+Chaque lot reste NEUTRE : aucun dossier n'a basculé (G3 ne s'éveille pas), aucune facture n'est source (G4 non plus),
+aucun exemplaire n'est désigné (le remplacement de `designer` ne rencontre rien). La règle de chaque refus vit dans le
+module (`exemplairesDesFactures.ts`), confrontée au texte exporté et à l'essai ; l'écran la lit avant le clic ; un
+geste passe sa fonction seule, sous le verrou `useRef` de l'écran, relâché après la relecture ; une lecture partielle,
+refusée ou pas encore revenue n'offre aucun geste (`ecransAvantLecture.test.tsx`, ses deux gardes). Le banc : le
+dossier basculé de VF5a1 reçoit une jumelle à désigner, un exemplaire désigné, une pièce déclarée ; visites neuves
+AVANT celles de l'e-reporting.
+
+- **VF6a — Le brouillon et les préalables ignorent l'exemplaire d'une facture source.** Le trou du § 2, d'abord : il ne
+  demande aucune base (`pieces.facture_id` et `factures_emises.source_de_la_vente` sont lus aujourd'hui). Un paramètre
+  OBLIGATOIRE, sans défaut, les identifiants des factures sources (ou `VentesFacturees.sources`), dans
+  `piecesAComptabiliser`, `ecrituresSansObjet` (un motif neuf, `exemplaire_d_une_facture_source` : une écriture déjà
+  passée y est sans objet, et « Régénérer » la retire), `analyserEcritures`, `piecesValideesSansCategorie`,
+  `piecesDeviseNonConvertie`, et les points `montant-suspect`, `sans-tva`, `tva-impossible`, `pieces-payees-en-partie`
+  (`controles.ts`, `pointsDeLaChecklist.ts`) ; les préalables qui les reprennent suivent. Appelants : EcrituresTab,
+  ClotureTab, `checklistLecture.ts`, RevisionTab ; lues en partie, les factures retiennent la génération et les
+  préalables, comme aujourd'hui. Base : non. Preuves : chaque fonction sur un exemplaire de facture source et sur celui
+  d'une facture non source (qui compte comme hier) ; `prealablesValidation.test.ts` (chaque point en erreur repris ou
+  écarté avec sa raison) ; `compositionsAuPlan.test.ts` ; la suite comparée test par test, aucun verdict changé ;
+  mutations. Agent : architecte (cinq préalables bloquants), effort élevé. Dépend de : rien ; avant VF6b.
+- **VF6b — La base : `jumelle_inversee`.** La colonne et sa contrainte ; `factures_du_pont` ; G3 ; G4 et ses quatre
+  déclencheurs ; `designer_exemplaire_facture` et `defaire_exemplaire_facture` REMPLACÉES, `declarer_…` et `retirer_…`
+  neuves ; la garde de VF1a qui apprend la déclaration ; le journal (VF6-Q3) ; le drapeau `JUMELLE_INVERSEE_EXPORTEE`,
+  le module qui redit chaque refus neuf, `types.ts` (`Piece.vente_hors_des_factures`, facultatif jusqu'au premier écran
+  qui le lit), `sauvegarde.ts` (la table au plan derrière son drapeau, ses relations, `liensPerdus`). La migration
+  VÉRIFIE D'ABORD le corps d'hier : son préalable compare l'empreinte de `prosrc` des deux fonctions remplacées et de
+  `garder_exemplaire_facture` à celle du texte de VF1a, et s'arrête si un autre chantier les a changées. Base :
+  `apply_migration`, présentée (deux fonctions remplacées, une garde, quatre déclencheurs sur des tables que les
+  fonctions du relevé écrivent, une table) ; aucune suppression, aucun `drop` ; collée si l'outil retient le texte. Elle
+  se prépare sur une réplique de la production APRÈS la migration de VF5h. Essais : `exemplairesDesFactures.sql`
+  ÉTENDU (G3 par ses quatre points et son passage, G4 sur les quatre tables et l'autre côté, VF6-Q1, la déclaration, le
+  remplacement, le journal, le jeu du jumeau entre ses bornes ; quatre profils ; des mutations qui mordent) ;
+  `identiteFacturesRecues.sql`, `receptionPlateforme.sql`, `reglementGroupe.sql`, `lettrageManuel.sql`,
+  `ecrituresVentesFacturees.sql`, `encaissementsFactures.sql`, `ventesFacturees.sql`, et les essais des contraintes de
+  `lignes_bancaires` et `ecritures_brouillon` (les fonctions du relevé, `affectation.sql` à `virementPersonnel.sql`) ;
+  `validationExercice.sql` en une transaction ; `restauration.sql` sur la réplique (une pièce désignée, une déclarée, le
+  journal, rien d'arrêté) ; `rls.sql` ENTIER (une table neuve) ; `signature.sql` ; les trois contrôles de l'export.
+  Preuves du code : le module confronté à l'essai et au texte, `ventesJumellesJumeau.test.ts`, les deux états du
+  drapeau. Agent : architecte, effort maximal. Dépend de : VF6a (sans lui, G4 ferait échouer « Générer » sur un
+  exemplaire) ; VF5h appliquée ; VF6-Q3 et VF6-Q5 tranchées.
+- **VF6c — La fiche d'une pièce.** § 3 g. `ExemplaireDeLaFacture.tsx` devient la section « Ce que cette pièce est »
+  (désigner, remplacer, déclarer, retirer ; le journal), `exemplairesDesFacturesEcran.ts` ses phrases (les confirmations
+  de VF1b et VF3b3 revues pour le remplacement et VF6-Q1), `FichePiece.tsx` (« Valider » retenu par G3, la pièce neuve
+  enregistrée à valider, le formulaire d'une pièce déclarée). `exemplaireCabinetSeul.test.ts` couvre les deux
+  fonctions neuves. Base : non. Preuves : chaque geste dans les deux sortes de dossiers, deux puis trois clics, les
+  refus avant et après le clic, la relecture de LA pièce, une lecture partielle, mutations, le banc. Agent : dev en
+  Opus, effort élevé. Dépend de : VF6b.
+- **VF6d — Les lots et le relevé.** La validation en lot (`PiecesTab`) écarte, avant le clic, les pièces que G3
+  refuserait, et dit combien et pourquoi (sinon une seule fait échouer la sélection) ; `validerEtRapprocherLot`,
+  l'appariement, `justificatifPossible` et les candidats de VF5e, le formulaire du règlement groupé et la fenêtre des
+  encaissements (`piecesJumelles`) ne prennent jamais l'exemplaire d'une facture source (G4) ; la fiche d'un mouvement
+  dit d'une proposition du client qui le cite qu'elle ne s'associe pas. Base : non. Preuves : les plans purs, un test
+  d'écran par lot, mutations, le banc. Agent : architecte (les lots du relevé), effort élevé. Dépend de : VF6b.
+- **VF6e — Le pont, ses marques, le bilan d'un import, la Checklist.** § 3 h. Fichiers : `ventesJumelles.ts`,
+  `ventesJumellesLecture.ts`, `pointsDeLaChecklist.ts`, `checklistLecture.ts`, `revisionCycles.ts`, `PiecesTab.tsx`
+  (les marques), le bilan d'un import (`receptionPlateforme.ts`, la synchronisation Super PDP). Base : non. Preuves :
+  le pont (ses 29 cas d'hier intacts, les deux régimes), `ChecklistTab.test.tsx`, `prealablesValidation.test.ts`
+  (`ventes-en-double` bloquant pour les deux régimes, `exemplaires-a-designer` et le symptôme en attention), la lecture
+  partielle qui tait les points, mutations, le banc. Agent : architecte (un préalable bloquant change de calcul), effort
+  élevé. Dépend de : VF6b ; VF6-Q4.
+- **VF6f — La policy d'insertion du client** (seulement si VF6-Q2 la retient). Le texte du § 3 i, présenté ; `rls.sql`
+  ENTIER, sa mutation (la clause retirée) attendue équivalente et dite telle ; les trois contrôles. Agent : architecte,
+  effort maximal. Dépend de : VF6b à VF6e — en dernier.
+
+L'ordre : VF6a, puis VF6b ; VF6c, VF6d et VF6e en parallèle (fichiers disjoints, sauf `PiecesTab.tsx`, que VF6d
+touche à la validation en lot et VF6e aux marques : l'un après l'autre sur ce fichier) ; VF6f. Aucun lot ne convient à
+un agent en Sonnet : chacun touche un calcul, une garde ou un préalable.
+
+#### 6. Les questions au cabinet
+
+Quatre, dans le fichier joint au compte rendu de l'agent, chacune avec son contexte et sa recommandation.
+- **VF6-Q2 — Fermer au client la déclaration : par la garde seule, ou aussi par la policy.** Recommandé : la garde
+  seule (le patron de VF1a ; elle tient pour tout écrivain) ; la policy, prête, se présenterait en dernier (VF6f).
+- **VF6-Q3 — Qui a désigné, et quand (VF1A-Q2).** Recommandé : le journal, au cabinet seul ; écartés : deux colonnes
+  lues par le client, rien.
+- **VF6-Q4 — Le symptôme d'une pièce déclarée à tort.** Recommandé : la dire quand son TTC est celui d'une facture
+  source du même exercice sans exemplaire ; écartés : le seul compte des pièces déclarées (un bruit), rien.
+- **VF6-Q5 — La pièce reçue dont les preuves se contredisent, dans un dossier basculé.** Recommandé : sa validation
+  refusée tant qu'elles se contredisent (la vente d'une facture source compte déjà par sa facture) ; écarté : la
+  laisser se déclarer hors des factures.
+Tranchées sans question, par une décision déjà prise ou une règle : VF6-Q1 (le refus de défaire, et le remplacement
+d'un seul geste) ; EC3-Q3 (pièce par pièce) ; EC3-Q1 (G3 n'est pas rétroactive) ; le nom de la colonne (§ 3 a) ;
+l'obligation du pont pour une facture d'avant (§ 3 c) ; la proposition du client hors de G4 (§ 3 d).
+
+#### 7. Ce que VF6 laisse à VF7 et à VF8
+
+- **Le gel de l'exemplaire d'une facture source.** `garder_piece_validee` fige une pièce dès que
+  `exercice_figeant_la_piece` rend une année, c'est-à-dire dès sa première écriture validée : l'exemplaire d'une
+  facture source n'en a JAMAIS (G4). Sans VF7, sa désignation et sa déclaration resteraient modifiables après la
+  validation de l'exercice de sa facture. VF7 le fige par l'exercice de la date d'émission de sa facture (le critère que
+  `fixer_source_de_la_vente` lit), et `exercice_figeant_la_piece`, qui sert aussi les deux fonctions de VF1a, l'apprend.
+- **La bascule (VF8)** ne reprend aucune pièce : celles qui sont à valider ce jour-là se marqueront à leur validation.
+  La phrase de l'onglet Informations le dira.
+- Une désignation défaite AVANT la bascule n'est pas au journal : il commence avec VF6b (aucune n'existe).
+
+#### 8. Les risques
+
+- VF6a change cinq préalables bloquants : sans exemplaire de facture source en base, rien ne change ; avec, ils cessent
+  de juger à tort. Le retour arrière : le code seul.
+- G4 pose quatre déclencheurs sur des tables que dix-huit fonctions du relevé, la composition des ventes facturées et
+  la restauration écrivent : un refus imprévu y ferait échouer un geste entier, jamais écrire faux ; d'où la liste des
+  essais rejoués de VF6b, sur une réplique, après VF5h.
+- G3 sur la validation en lot : une pièce refusée emporte la sélection entière (une instruction) ; VF6d l'écarte avant
+  le clic, et VF6b est neutre jusque-là (aucun dossier basculé).
+- Le jumeau et le module divergeraient en silence : la confrontation sur un jeu commun, et les défauts plantés.
+- Le remplacement d'une désignation change un refus d'hier partout : sans pièce désignée en production, sans effet ; le
+  module et l'essai de VF1a suivent.
+- Le retour arrière de VF6b supprime une colonne, une table et des fonctions : DESTRUCTIF (les déclarations et le
+  journal), sur un accord explicite du cabinet seulement, le drapeau rebaissé d'abord ; il n'est pas au dépôt.
+- La pièce déclarée à tort et la pièce validée avant la bascule restent des affirmations humaines (§ 4).
+
+#### 9. Sources
+
+Citées par la conception d'EC-Q3, non relues ce jour : CGI, art. 93, 1 (la recette encaissée), art. 269, 2-c (la TVA
+des services), art. 289, I (la facture) ; spécifications externes de la DGFiP v3.2, dossier général § 3.6.7, note 109,
+et annexe 7 v1.9, règles G1.05 et G1.42 (l'identité d'une facture) ; LPF, art. A47 A-1 (le FEC). Cité sans avoir été
+relu ce jour (Légifrance refuse les lectures automatiques) : CGI, art. 289, VII, 1° (les contrôles qui établissent une
+piste d'audit fiable entre une facture et l'opération qui la fonde), à vérifier avant d'en écrire le commentaire de la
+migration. Lus : les migrations `20261018142041_exemplaires_des_factures.sql` et
+`20261018201312_source_de_la_vente.sql`, le catalogue de la production. Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont
+été ni lues ni citées.
