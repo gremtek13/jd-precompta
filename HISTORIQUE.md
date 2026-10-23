@@ -33993,3 +33993,248 @@ la ligne 28.65.
   virement mixte), qui va à l'expert-comptable, vaut désormais pour le code.
 - Le banc n'a pas de visite d'un virement mixte (la carte de la fiche d'un crédit, le motif de l'onglet Écritures) : à
   ajouter.
+
+### 23/10/2026 — LA JUMELLE INVERSÉE, EN BASE — CHANTIER EC-Q3, VF6B (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF6b sur `d3aaed6` — la branche locale `vf5h-prepa` : VF5h et sa migration
+`virement_mixte`, PAS appliquée —, en deux commits : le module, la sauvegarde, les tests et les essais ; puis cette
+documentation. Créés : `src/lib/ventesJumellesJumeau.test.ts` (le pont confronté à son jumeau en base) et
+`src/lib/sauvegardeDesignations.test.ts`. Modifiés : `exemplairesDesFactures.ts` et son test (réécrit), `sauvegarde.ts`,
+`types.ts`, `src/test/essaiSql.ts` (la lecture d'un `'…' || chr(n) || '…'`), `restaurationEssai.test.ts`,
+`sauvegardeDevis.test.ts`, `sauvegardeParametresFacturation.test.ts` ; cinq essais (`exemplairesDesFactures.sql` étendu,
+`restauration.sql` — un bloc, un contrôle —, `validationExercice.sql` et `ecrituresVentesFacturees.sql` — un compte du
+catalogue chacun —, `rls.sql` — son en-tête) ; `RGPD.md` (le registre) ; CLAUDE.md. La migration n'est PAS dans
+l'export — le drapeau `JUMELLE_INVERSEE_EXPORTEE` est baissé — : elle attend dans le bloc-notes de la session, sous une
+version PROVISOIRE, avec son texte à coller et son retour arrière (ci-dessous). En production, des SELECT sur le
+catalogue et des comptes, aucune valeur, aucune écriture.)
+
+**LA DÉCISION.** VF6-Q1, Q2, Q3 et Q5 (23/10/2026, à la recommandation) : l'exemplaire d'une pièce validée d'un dossier
+basculé ne se défait pas, il se remplace d'un seul geste ; la déclaration se ferme au client par la garde seule — VF6f,
+la policy d'insertion du client, n'a plus lieu ; qui a désigné, et quand, dans un journal au cabinet seul ; la
+validation d'une pièce reçue dont les preuves se contredisent est refusée tant qu'elles se contredisent. VF5H-Q1, PAS
+ENCORE TRANCHÉE, écrite sur la recommandation (le cabinet avance sur elle) : désigner, remplacer ou défaire l'exemplaire
+d'une facture est refusé tant qu'un mouvement classé par ses encaissements compte un encaissement de cette facture (un
+virement mixte) ; la déclaration aussi, qui retire la désignation.
+
+**LA DÉLIMITATION.** La puce VF6b du § 5 de « VF6, LA JUMELLE INVERSÉE : LA CONCEPTION », et son § 3 (a) à (g). Ni la
+fiche d'une pièce (VF6c), ni les lots du relevé et la validation en lot (VF6d), ni le pont, ses marques et la Checklist
+(VF6e, VF6-Q4), ni le gel de l'exemplaire d'une facture source (VF7). Aucune policy ne change, hors des deux de la table
+neuve ; aucune Edge Function.
+
+**CE QUE LA BASE FAISAIT.** Une pièce de vente se validait sans rien dire d'elle dans un dossier basculé, se
+rapprochait, entrait dans un virement groupé, portait une écriture et se lettrait, exemplaire d'une facture source ou
+non : rien en base ne fermait le double compte que VF3b et VF6a écartent des moteurs. Désigner une pièce déjà désignée
+à une autre facture se refusait (« défaire cette désignation avant d'en faire une autre ») ; défaire restait possible
+sur une pièce validée ; personne ne gardait qui avait désigné.
+
+**L'ÉTAT DE LA PRODUCTION, RELEVÉ LE 23/10/2026** (le catalogue et des comptes) : 146 migrations, la dernière
+`20261023063657` (`impaye_non_declare`), empreinte globale `c096ac1d…` ; `virement_mixte` PAS en base ; les trois
+corps que la migration remplace sont ceux de VF1a (`5f2a0b0f…`, `aefe42ab…`, `dc8969b7…`) ; ni la colonne ni la table ;
+aucun dossier basculé, aucune facture source (six factures), aucune pièce désignée, aucun mouvement classé par ses
+encaissements, aucun encaissement ; une pièce de vente validée. La migration y est NEUTRE : G3 et G4 ne s'éveillent pas,
+et le seul comportement qui change hors d'un dossier basculé — désigner une pièce déjà désignée à une autre facture
+remplace au lieu de refuser — ne rencontre aucune pièce désignée.
+
+**LA MIGRATION** `jumelle_inversee` (52 619 caractères, 53 761 octets, 810 lignes, md5
+`5a1394d473db7a60cb551b64f451438a`, aucune barre oblique inverse), dans le bloc-notes de la session :
+`/tmp/claude-0/-home-user-jd-precompta/00f32a60-d018-5460-8fb4-2dbdde8949fc/scratchpad/vf6b/migration/20261023210000_jumelle_inversee.sql`.
+- Une garde d'abord : `virement_mixte` dans l'historique (les rangs du virement mixte jugent son classement), et les
+  trois corps de VF1a au caractère près (les retours chariot d'un collage écartés), sinon un refus qui nomme la
+  fonction ; une seconde application se refuse de même.
+- (a) `pieces.vente_hors_des_factures`, NOT NULL, faux par défaut, et sa contrainte : vraie seulement sur une vente que
+  rien ne désigne.
+- (b) `factures_du_pont(p_piece public.pieces)`, le jumeau en base du pont : les factures VALIDÉES du dossier de la
+  pièce que son flux (hôte et identifiant), l'identifiant de Super PDP (sur la facture, ou flux d'une transmission
+  `superpdp`) ou son identité G1.42 entière (numéro, SIREN figé de l'émetteur — les vingt-cinq blancs que `\s` ôte en
+  JavaScript, neuf chiffres ou quatorze, les neuf premiers —, année) désignent ; une identité de l'autre nature rend sa
+  facture contraire. Sans la désignation, que les gardes jugent. Aux droits de l'appelant, exécutable par personne.
+- (c) G3, `garder_vente_d_un_dossier_bascule` (SECURITY DEFINER) : une pièce de vente VALIDÉE d'un dossier basculé,
+  jugée à son PASSAGE seulement (insérée validée, devenue validée ou vente, arrivée d'un autre dossier, sa marque
+  changée ; EC3-Q1, sans rétroactivité), la restauration du super-administrateur exceptée à l'insertion ; le dossier lu
+  `for share`. Dans l'ordre : née validée ; le pont qui la rattache à une facture qu'elle ne désigne pas (la facture
+  nommée) ; des preuves contraires (VF6-Q5) ; ni désignée ni déclarée.
+- (d) G4, `garder_exemplaire_d_une_source` (SECURITY DEFINER), sur `lignes_bancaires`, `reglements_groupes`,
+  `ecritures_brouillon` et `lettrages_manuels`, à l'insertion et au changement de `piece_id` : l'exemplaire d'une
+  facture SOURCE n'y entre pas ; celui d'une facture d'avant, si (la banque que VF5h lui écrit sur un virement mixte).
+- (e) `designer_exemplaire_facture` REMPLACÉE (quinze rangs : le 5 ne refuse plus que la MÊME facture ; après le 7, le
+  pont et les preuves contraires dans un dossier basculé, les quatre liens de G4 pour une facture source, le virement
+  mixte sur la facture qu'elle quitte et sur celle qu'elle prend) ; elle remplace la désignation ou la déclaration d'un
+  seul geste. `defaire_exemplaire_facture` REMPLACÉE (six rangs : une pièce validée d'un dossier basculé, le virement
+  mixte). Deux neuves : `declarer_vente_hors_des_factures` (neuf rangs ; la désignation remplacée) et
+  `retirer_declaration_hors_des_factures` (cinq). Le cabinet seul, le verrou partagé de la validation puis la ligne,
+  fermées à l'anonyme ; chaque refus en 22023 hors de l'accès (42501) et de la pièce ou de la facture introuvable
+  (P0002).
+- (f) Le journal, `designations_des_pieces` : la pièce, le geste (désignation, retrait de la désignation, déclaration,
+  retrait de la déclaration), la facture d'une désignation ou de son retrait, `auteur_id` (`auth.uid()`, sans clé vers
+  les comptes, comme `justificatifs_proposes`), l'instant ; remplacer écrit deux lignes au même instant. Sa garde
+  (aux droits de l'appelant) : écrit par les quatre fonctions sous le réglage de leur pièce, ou réinséré par le
+  super-administrateur ; une pièce et une facture de son dossier ; aucune réécriture, aucune suppression hors de la
+  cascade de sa pièce ou de son dossier. RLS : la lecture au cabinet (`admin_du_dossier`), l'insertion de restauration
+  au super-administrateur — aucune branche client.
+- (g) La garde de VF1a apprend la déclaration : posée et retirée par les deux fonctions de la déclaration (et la
+  désignation qui la remplace) sous le réglage `jd.exemplaire_facture`, née vraie seulement par la restauration du
+  super-administrateur, jamais avec une désignation, seulement sur une vente ; une pièce déclarée ne change ni de
+  dossier ni de nature. Son déclencheur apprend la colonne (`create or replace trigger`).
+- Ce que le texte ne retire pas : aucune table, colonne, contrainte, fonction ni donnée ; `create or replace` garde les
+  OID et les droits des trois fonctions d'hier. Ce que le détecteur d'`apply_migration` pourrait retenir : aucune
+  instruction de suppression ; le mot « delete » n'y paraît que dans `on delete cascade`, `tg_op = 'DELETE'` et les
+  événements d'un déclencheur, que les migrations d'hier ont passés sans confirmation. Si l'outil la retient, le texte à
+  coller est prêt (`collage_jumelle_inversee.sql`, 54 222 caractères, `572ca8dd59f85dbe3b33db4fc434d1d3`) : une
+  transaction qui vérifie sa propre empreinte (les fins de ligne Windows ramenées), refuse une seconde application,
+  s'exécute — sa garde exige VF5h et les corps de VF1a — et pose la ligne d'historique sous la version de l'heure du
+  collage, au nom de l'auteur d'`encaissements_de_la_vente_facturee`. Son retour arrière, DESTRUCTIF — la colonne et ses
+  déclarations, la table et son journal, six fonctions, cinq déclencheurs, la ligne d'historique —, jamais sans l'accord
+  du cabinet et après le drapeau rebaissé en ligne (`retour_jumelle_inversee.sql`, 12 872 caractères,
+  `6b252f275301d70fb48c939a43c24938`) : il rend les trois définitions de VF1a, leur déclencheur et leurs commentaires,
+  refusé si les neuf corps ne sont pas ceux de la migration, et, tant qu'une pièce est déclarée ou le journal non vide,
+  sans l'accord dit d'abord dans la session (`set local jd.retour_jumelle_inversee = 'perdre les declarations et le
+  journal';`). Tous deux dans le bloc-notes, à côté de la migration (`…/scratchpad/vf6b/collage/`).
+
+**LE MODULE ET LE CODE.**
+- `exemplairesDesFactures.ts` : le drapeau `JUMELLE_INVERSEE_EXPORTEE`, baissé ; les refus neufs, dans l'ordre et sous
+  les mots de la base — les quatre fonctions, la garde étendue (et l'ordre de ses `raise`), G3, G4, le journal (et
+  l'ordre des siens), les gestes du journal (typés par `GesteDuJournal`) — ; `refusDeLaDesignationMarquee`,
+  `refusDuRetraitMarque`, `refusDeLaDeclaration`, `refusDuRetraitDeLaDeclaration`, `refusDeLaValidationDUneVente` (G3),
+  `refusDeLaModificationMarquee` (la garde puis G3, dans l'ordre des noms des déclencheurs), `refusDuLienDeLExemplaire`
+  (G4) ; `verdictDuPont` (des lignes de `factures_du_pont`) et `verdictDuPontDeLaPiece` (du pont de l'application, sur
+  des pièces lues sans leur désignation) ; les paramètres des deux fonctions neuves. Chaque fonction reçoit ce qu'elle
+  juge — le pont, les liens, le virement mixte, la bascule —, sans valeur par défaut. Les fonctions de VF1a restent
+  celles de la production tant que la migration n'y est pas : la fiche d'une pièce (VF1b) les lit, et sur un dossier qui
+  n'a pas basculé elles disent la même chose que celles-ci d'une pièce que rien ne désigne.
+- `types.ts` : `Piece.vente_hors_des_factures`, FACULTATIVE jusqu'au premier écran qui la lit (VF6c) ;
+  `DesignationDeLaPiece` et `GesteDuJournal`.
+- `sauvegarde.ts` : le journal au plan derrière le drapeau (`TABLES_DU_JOURNAL_DES_DESIGNATIONS`,
+  `auPlanDuJournalDesDesignations`), ses trois relations (dossier et pièce en cascade, facture sans action), son rang
+  (après les paramètres de facturation, avant les devis), son chemin ; `liensPerdus` dit, drapeau levé, une facture ou
+  une pièce absente, jamais effaçable. La colonne de la déclaration se recopie avec sa ligne.
+- `restauration.sql` : un sixième bloc à part (la table au plan dès qu'elle existe), et un contrôle après le verdict
+  (chaque pièce déclarée, restaurée déclarée) ; `restaurationEssai.test.ts` lit le bloc et le confronte au plan prévu.
+
+**LES CHOIX ÉCARTÉS.**
+- La policy d'insertion du client (VF6f) : écartée par VF6-Q2 — la garde tient pour tout écrivain.
+- Deux colonnes lues par le client, ou rien, pour dire qui a désigné : écartés par VF6-Q3.
+- G3 à toute mise à jour d'une pièce validée : elle rejugerait les pièces validées avant la bascule (EC3-Q1) ; jugée au
+  passage seulement. Et l'exception de la restauration limitée à l'INSERTION : le chef du cabinet étant
+  super-administrateur, une mise à jour par lui se juge comme une autre.
+- Lire le pont de l'application depuis la base, ou recopier sa règle sans la confronter : un jumeau SQL, et un jeu
+  commun que l'essai demande à la base et que le test redemande au pont, pièce par pièce.
+- G4 sur l'exemplaire d'une facture d'avant : la banque que VF5h écrit à cet exemplaire sur un virement mixte se
+  refuserait.
+- Une clé de `auteur_id` vers les comptes : un compte effacé bloquerait ou effacerait l'histoire.
+- Un retour arrière qui refuse toujours dès qu'une donnée se perdrait : il ne servirait jamais quand il le faut ; un
+  accord dit dans la session, en connaissance de cause.
+- La migration dans l'export sous sa version provisoire (comme VF5h) : son drapeau baissé dirait le contraire de
+  l'export, et la sauvegarde lirait une table absente ; le patron des devis (P5) et de VF1a — l'export ne porte que ce
+  qui est appliqué.
+
+**LES PREUVES.**
+- La réplique : une copie à froid de celle de VF5h (PostgreSQL 16, UTF8), dans son propre répertoire de données, sur son
+  propre port (5544), arrêtée par son répertoire de données ; sa base égale à la production — `signature.sql`, les neuf
+  familles, et l'historique, 146, `c096ac1d…` — puis munie de VF5h comme l'outil l'aurait fait (147, `8b997dae…`,
+  « fonctions » seule change, 191, `68ffb183…`).
+- La migration appliquée de même (une transaction, sa ligne d'historique) : 148 migrations, `94d24896…` sous la version
+  provisoire ; les neuf familles changent — colonnes 865 (+8), contraintes 670 (+7), déclencheurs 67 (+6), fonctions
+  et leurs droits 197 (+6, `d3d1a53e…`), index 237 (+4), policies 159 (+2), RLS et droits des tables 81 (+1).
+- Les essais, chacun sur une copie fraîche, sans puis avec la migration. `exemplairesDesFactures.sql` : 266 verdicts ;
+  sans elle, 130 en faute (les contrôles de VF6b, le 18, le 26, le 37, le 153 et le 157 qu'elle change, deux lignes du
+  jeu) ; avec elle, 0 — dont dix-neuf mutations qui mordent. Le texte sans ses lignes de commentaire, envoyé en une
+  requête comme l'outil : 113 927 caractères, `0ad23abccbbbe079b00f55dea9914479`, 266 justes. Tous les autres essais du
+  dépôt (hors `rls.sql`, `restauration.sql`, `signature.sql`, le socle, l'inventaire et
+  `logoDesFacturesSuppression.sql`), sans puis avec : mêmes verdicts ligne à ligne, hors des identifiants tirés au
+  hasard, du contrôle 141 de `validationExercice.sql` (les déclencheurs qui gardent une suppression : celui du journal
+  de plus, 41 ; 152 verdicts, joué par le superutilisateur, le seul en faute sans la migration) et du contrôle 151
+  d'`ecrituresVentesFacturees.sql` (les déclencheurs des écritures : G4 de plus ; 198 verdicts, le seul en faute sans
+  elle), tous deux suivis. En une requête : 87 729 caractères, `41891a1387e9d6c6cf75d16047b7b156` (198 justes) ;
+  75 150, `f5b500f3ff41279fb8e941f68b33090e` (152). Les essais des fonctions du relevé, semés du jeu de départ de R1 :
+  identiques, 0 en faute.
+- `rls.sql` ENTIER, par psql : sans la migration, 46 lignes, 0 en faute, 43 mutations sur 43 (80 tables, 71 portant un
+  `dossier_id`) ; avec elle, le journal semé dans le dossier `test` (par les fonctions) et dans celui du client (par la
+  porte de la restauration), 46 lignes, 0 en faute, 43 sur 43 (81 tables, 72) — M1, M3 et M3ter voient la table de plus.
+- `restauration.sql` sur une copie semée par les fonctions (la bascule, une désignation, une déclaration retirée puis
+  reposée, la pièce validée, quatre lignes au journal) : 146 clés recopiées, 75 tables IDENTIQUES (23 lignes), aucun
+  arrêt, les contrôles de la désignation et de la déclaration justes (1 sur 1 chacun) ; planté — le journal à la place
+  des pièces —, arrêté sur sa clé (23503) ; sans la migration, 143 clés, 74 tables, 18 lignes.
+- Une sonde des suppressions, sur la réplique seulement : le propriétaire ne supprime ni ne réécrit une ligne du journal
+  (23514), le chef n'en touche aucune (aucune policy), la cascade de la pièce et celle du dossier l'emportent, la clé
+  vers la facture comprise. Jouée contre les mutations de la garde du journal.
+- Cent dix mutations de la migration (une condition, un filtre, un rang, un mot, un déclencheur, un droit, une policy,
+  une contrainte), chacune appliquée sur une copie fraîche puis jouée contre l'essai (et la sonde pour le journal) :
+  cent deux tuées ; huit équivalentes, déclarées d'avance avec leur raison — deux filtres nuls d'avance du jumeau (une
+  date ou un SIREN absent rend la comparaison nulle), la marque rejugée par G3 alors que les fonctions jugent déjà le
+  pont, un `for share` et deux verrous des fonctions (la concurrence ne se voit pas dans une session seule), le passage
+  de G4 sur une ligne qui ne peut pas exister, le `grant` que les privilèges par défaut font déjà. La première campagne
+  en a laissé huit autres survivre : l'essai a reçu ce qui leur manquait (un brouillon, un autre hôte, un canal qui
+  n'est pas de Super PDP, une preuve jointe à une identité contraire, une pièce de T que le pont rattache, un
+  encaissement de facture d'avant sur un mouvement non classé et un autre contre-passé sans mouvement, la facture source
+  du virement mixte aux rangs du virement mixte des trois fonctions).
+- Le texte à coller, sur des copies fraîches : collé, la même signature que l'application par l'outil (neuf familles),
+  la ligne d'historique rend `5a1394d4…` ; altéré d'un caractère, refusé, rien d'appliqué ; collé deux fois, refusé la
+  seconde ; en fins de ligne Windows, appliqué, la même empreinte. Le retour arrière : sur la base collée, la base
+  d'avant (neuf familles ; 147, `8b997dae…`) ; refusé sans la migration ; refusé devant une déclaration et une ligne du
+  journal, rendu avec l'accord dit dans la session, la colonne et la table parties.
+- Les trois contrôles de l'export : sans le fichier, 147 et `8b997dae…` des deux côtés ; avec lui, sous sa version
+  provisoire, 148 et `94d24896941efd299013bc7e550888b6` ; le socle inchangé (80, `5d53eea2…`) ; l'inventaire 2 155
+  objets, `855735eaca8d59e2464550dcfd598e7b`, des deux côtés (2 122, `b2666bf3…`, sans) — trente-trois objets de plus.
+- Le TypeScript : les tests neufs ROUGES d'abord — joués sur le code de `vf5h-prepa`, les six fichiers échouent (deux ne
+  se chargent pas, seize tests en faute dans les quatre autres) ; cinquante mutations (chaque rang, chaque condition du
+  passage de G3, le virement mixte, un mot, un code, un paramètre, la sauvegarde, la lecture d'un `chr`) : quarante-sept
+  tuées le drapeau baissé ; les trois autres — l'ordre des refus de la garde et du journal, celui des gestes — ne se
+  confrontent qu'au texte exporté, et meurent en simulation. Le rejeu de l'essai dans le module : 98 appels aux quatre
+  fonctions, 28 écritures directes d'une pièce, 17 liens de G4, chacun au mot près ; huit défauts plantés dans l'essai
+  (un mot, un accepté devenu refus et l'inverse, la nature d'une écriture directe, une désignation du jeu, un pont, un
+  lien, le virement mixte de l'état relevé) font tomber les contrôles qu'ils changent, et seulement eux.
+- La suite comparée test par test, sous Paris : avant (`d3aaed6`), 457 fichiers et 14 051 tests ; après, 459 fichiers et
+  14 100 tests justes ; aucun verdict changé ; dix-sept tests renommés ou remplacés (le rejeu et la confrontation au
+  texte, désormais ceux du bloc de VF6b et de VF1a), soixante-six neufs.
+- La simulation (le fichier dans l'export sous sa version provisoire, le drapeau levé) : la suite entière, sous Paris,
+  459 fichiers et 14 100 tests justes — les confrontations au texte exporté s'y jouent (les quatre fonctions, la garde
+  étendue, G3, G4 et la garde du journal, la colonne et ses déclencheurs, les deux policies et pas une de plus, le
+  préalable qui exige les corps de VF1a, les blancs du jumeau égaux à ceux de `\s`), et le plan de sauvegarde nomme le
+  journal ; `npx tsc -b --force` 0 ; les trois mutations du TypeScript que le drapeau baissé laissait vivre y meurent.
+  Puis le fichier retiré de l'export et le drapeau rebaissé.
+- La barrière, sous le Node 22.23.3 de la CI, le drapeau baissé : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les
+  63 avertissements d'avant (les mêmes, fichier et règle) ; `npm run build` 0 (`index-CQXwTwRr.js`).
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) VF5h d'abord : sa migration (`virement_mixte`), sur l'accord du
+cabinet — celle-ci s'y refuse sans elle. (2) Présenter `jumelle_inversee` au cabinet (une table, une colonne, deux
+fonctions remplacées et deux neuves, trois gardes, cinq déclencheurs sur des tables que les fonctions du relevé
+écrivent,
+deux policies sur la table neuve ; aucune suppression) ; sur son accord, l'appliquer par `apply_migration`, sous le nom
+`jumelle_inversee`, le texte du fichier tel quel ; si l'outil attend une confirmation, donner le texte à coller dans le
+message final du tour. (3) Poser le fichier dans l'export sous la version de sa ligne d'historique, texte inchangé ; la
+ligne doit rendre `5a1394d473db7a60cb551b64f451438a` (fins de ligne ramenées à `\n`) ; dans le même commit, lever
+`JUMELLE_INVERSEE_EXPORTEE` (la simulation l'a joué) et dire la migration appliquée dans les commentaires qui la disent
+préparée (`exemplairesDesFactures.ts`, `sauvegarde.ts`, `types.ts`, l'en-tête de `exemplairesDesFactures.test.ts`). (4)
+Rejouer en production, sans leurs lignes de commentaire, `exemplairesDesFactures.sql` (113 927 caractères, `0ad23abc…` :
+266 justes), `ecrituresVentesFacturees.sql` (87 729, `41891a13…` : 198) et `validationExercice.sql` (75 150, `f5b500f3…`
+: 152), et, si la session le juge utile, les essais du relevé et de la vente facturée que la fiche nomme ; rien ne doit
+rester. (5) `rls.sql`, la copie adaptée : 46 lignes, 0 en faute, 43 mutations sur 43, 81 tables dont 72 portant un
+`dossier_id`. (6) Les trois contrôles de `supabase/schema/README.md` — 148 migrations ; le socle 80, `5d53eea2…` ;
+l'inventaire 2 155, `855735ea…` — et leur passage noté dans ce README ; `signature.sql` : les neuf familles changent
+(les
+valeurs ci-dessus). (7) CLAUDE.md : la migration dite appliquée, sa version. (8) VF5H-Q1 et VF6B-Q1 à la page des
+arbitrages. (9) La feuille de route : la ligne 28.65. (10) Puis VF6c, VF6d et VF6e (VF6d avant la première bascule
+réelle : une validation en lot qu'une pièce non marquée fait refuser en entier).
+
+**LES QUESTIONS AU CABINET** (aucune ne retient le lot) :
+- VF5H-Q1 — écrite sur la recommandation (ci-dessus) : à confirmer. Si le cabinet la refuse, une migration retire les
+  rangs du virement mixte (14 et 15 de la désignation, 6 du retrait, 9 de la déclaration).
+- VF6B-Q1 — Le journal d'une pièce qui change de dossier. Une pièce marquée ne change pas de dossier (la garde) ; une
+  pièce qui ne l'est plus — sa désignation défaite, sa déclaration retirée — le peut, et ses lignes du journal restent
+  dans l'ancien dossier, que son cabinet lit (l'identifiant de la pièce, les gestes, l'instant), le nouveau n'en voyant
+  rien. Recommandé : les laisser, et que la fiche d'une pièce (VF6c) dise qu'un journal est resté ailleurs ; écartés :
+  refuser de déplacer une pièce qui a un journal (elle ne se déplacerait plus jamais : le journal ne se retire pas), ou
+  déplacer le journal avec elle (une réécriture d'une table qui ne se réécrit pas).
+
+**À REVOIR.**
+- G3 juge au passage : une transmission enregistrée APRÈS la validation d'une pièce qu'elle rattache à une facture ne
+  la rejuge pas — VF6e la dira (le pont et ses marques), sans refus en base.
+- Le chef du cabinet est super-administrateur : la porte de la restauration (une pièce insérée validée, déclarée ou
+  désignée) lui est ouverte hors de l'application, comme pour les factures validées ; l'application n'insère jamais une
+  pièce validée.
+- Une pièce déclarée dans un dossier dont la bascule redescend (avant sa première facture source) garde sa déclaration,
+  sans effet ; `retirer_declaration_hors_des_factures` la retire.
+- VF5H-Q1 ne couvre que la désignation, son retrait et la déclaration : un changement de STATUT de l'exemplaire (remis
+  à valider) sous un virement mixte classé reste possible, et la composition le dit (« désignez d'abord… »).
+- VF7 : sans le gel, la désignation d'un exemplaire de facture source reste modifiable après la validation de
+  l'exercice de sa facture (§ 7 de la conception).
