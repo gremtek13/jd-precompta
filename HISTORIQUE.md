@@ -32815,6 +32815,32 @@ envoyés) : rien à y changer.
 copie déployée comparée au dépôt AVANT d'écraser, le texte ENVOYÉ relu dans le journal, puis `allerretour.py`. Les
 lignes d'avant restent au journal de Supabase le temps qu'il vit (un jour). Rien d'autre.
 
+**LA MISE EN LIGNE DES TROIS CHANTIERS.** Demande #215, ouverte sur `c9f2251` après la barrière de la session sous Node
+22.23.3 (`tsc -b --force` ; lint, 0 erreur et les 63 avertissements d'avant ; 453 fichiers et 13 813 tests sous Paris,
+UTC, New York et Auckland ; le build, `index-3s-_ylc_.js`) ; les deux passes de `verifier` vertes (la branche, de
+13 h 56 à 14 h 08, et la demande, de 14 h 20 à 14 h 38) ; fusionnée en « Rebase and merge » à `3603a85`, `main` toujours
+linéaire ; le site sert `index-3s-_ylc_.js` (le déploiement de 14 h 38 à 14 h 43). Les quatre copies déployées d'abord
+comparées au dépôt d'avant le lot par `allerretour.py`, zéro différence (`create-cabinet` 7, `create-client-access` 14,
+`create-team-member` 9, `receive-email` 15) ; puis redéployées, `verify_jwt = false` : `create-cabinet` en version 8,
+`create-client-access` en 18, `create-team-member` en 11, `receive-email` en 24, chacune relue ensuite, égale au dépôt
+au caractère près. La question de l'identifiant de l'e-mail gardé au journal est sur la page des arbitrages
+(23-identifiantEmail, recommandé : le garder). La feuille de route : la ligne 23.3 faite, la 23.5 et la 28.8 complétées,
+les deux barres recomptées (143 lignes faites sur 187, 143 sur 174 pour un BNC).
+
+**CE QUE ÇA A RÉVÉLÉ : LES BORDURES SE RECOPIENT ENCORE.** Écrites d'un seul tenant en échappements `\u2500`, les
+longues bordures sont parties fausses, presque toujours de quatre traits de moins : la fin de `refusDuService` (89
+traits) à 85, trois fois sur `create-client-access` et une sur `create-team-member` ; les deux bordures de
+`bornesDesPieces` (86 et 88) à 82 et 84, cinq fois sur les neuf envois de `receive-email`, et une fois à 90 et 94 (une
+correction faite à l'aveugle). Les versions intermédiaires (`create-client-access` 15 à 17, `create-team-member` 10,
+`receive-email` 16 à 23) portaient le code du dépôt ; seules ces bordures différaient, toutes corrigées dans l'heure (de
+14 h 54 à 15 h 48). Trois leçons. La répétition de `bordures.py`, quatre échappements et un trait littéral par groupe de
+cinq, ne protège que si l'appel la RECOPIE telle quelle : réécrite en échappements continus, elle redevient fausse.
+L'empreinte `ezbr_sha256` que rend `deploy_edge_function` dépend du texte entier, commentaires compris : la même
+empreinte qu'un déploiement relu juste prouve le même texte, et une empreinte inchangée d'un envoi à l'autre dit qu'il
+n'a rien changé. Et le contrôle du texte envoyé lit le journal de la session qui a déployé : celui d'un sous-agent vit
+sous `subagents/`, qu'un script qui écarte les entrées `isSidechain` ne voit pas ; c'est la copie relue par
+`get_edge_function`, puis `allerretour.py`, qui fait foi.
+
 ### 23/10/2026 — UN COMPTE QUE LE CABINET NE CONNAÎT PAS SE RATTACHE APRÈS UNE CONFIRMATION — 23-Q2
 
 (`supabase/functions/create-client-access/index.ts` ; `src/lib/creationDesComptes.ts` ;
