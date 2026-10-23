@@ -63,7 +63,7 @@ import { lireLesAccesDuReleve, lireLesEnvoisDuClient } from '../../lib/banqueCab
 import { argumentsDeLaPrecision, argumentsDeRetirer } from '../../lib/banqueClient'
 import { lireLesVentesDuReleve, type LectureDesVentesEtDeclarations } from '../../lib/ventesDuReleveLecture'
 import {
-  comptesDuReleve, ecartDuLot, gestesDuCredit, gestesDuDebit, mouvementsHorsDesLots, PASTILLE_CLASSE, pastilleDeVente,
+  candidatsDeLaVente, comptesDuReleve, ecartDuLot, gestesDuCredit, horsDesLotsAvecLesCandidats, gestesDuDebit, mouvementsHorsDesLots, PASTILLE_CLASSE, pastilleDeVente,
   retenueDuReleve, texteDesNonRapproches, venteDuMouvement, ventesDuReleve, type EcartDuLot, type FactureDesGestes,
 } from '../../lib/mouvementsDesVentes'
 import EncaissementsFactureModal, { type ContrePassationImposee } from './EncaissementsFactureModal'
@@ -376,6 +376,19 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // Les mouvements qu'aucun lot ne prend (étape VF5a2) : classés par leurs encaissements ou réservés à eux, chacun avec les
   // mots de la garde. Vide tant que les ventes ne sont pas lues en entier — `ventesRetenues` suspend alors chaque lot.
   const horsDesLots = useMemo(() => mouvementsHorsDesLots(ventes), [ventes])
+  // LES CANDIDATS DE LA VENTE (étape VF5e ; lib/mouvementsDesVentes.ts) : les factures sources ouvertes et les encaissements
+  // enregistrés sans mouvement, jugés sur la même lecture. Aucun tant que les ventes ne sont pas lues en entier. Le lot des
+  // règles les apprend par `justificatifPossible` (« à rapprocher ») ; les trois autres lots — le rapprochement automatique,
+  // « Valider et rapprocher », la règle d'ignorance — ne prennent pas un mouvement qu'ils justifient peut-être : rapproché
+  // d'une pièce ou ignoré, il ne pourrait plus être cité par l'encaissement qui l'attend.
+  const candidats = useMemo(
+    () => candidatsDeLaVente(ventes, lectureVentes, anneesValidees),
+    [ventes, lectureVentes, anneesValidees],
+  )
+  const horsDesLotsEtCandidats = useMemo(
+    () => horsDesLotsAvecLesCandidats(horsDesLots, candidats, lignes),
+    [horsDesLots, candidats, lignes],
+  )
 
   // Les propositions ligne à ligne et le bouton « tout rapprocher » historiques ne portent que sur
   // des pièces déjà relues par le cabinet : rapprocher sur de l'OCR non validé reviendrait à écrire
@@ -1088,12 +1101,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       return false
     }
 
-    const { aIgnorer: aMettreAJour, ecartesParLesVentes } = ignoresParLaRegle(lignes, motifNormalise, horsDesLots)
+    const { aIgnorer: aMettreAJour, ecartesParLesVentes } = ignoresParLaRegle(lignes, motifNormalise, horsDesLotsEtCandidats)
     if (aMettreAJour.length > 0) {
       const { error: errMaj } = await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).in('id', aMettreAJour.map((l) => l.id))
       if (errMaj) window.alert(`La règle est enregistrée, mais les mouvements déjà importés n'ont pas pu être ignorés : ${errMaj.message}`)
     }
-    const ecart = ecartDuLot(ecartesParLesVentes, horsDesLots)
+    const ecart = ecartDuLot(ecartesParLesVentes, horsDesLotsEtCandidats)
     if (ecart) {
       window.alert(`La règle est enregistrée, mais ne fait pas ignorer tous les mouvements qu’elle reconnaît. ${ecart.resume}\n\n`
         + ecart.mouvements.map((e) => `${formatDate(e.ligne.date)} — ${libelleExploitable(e.ligne)} — ${formatMoney(e.ligne.montant)} : ${e.raison}`).join('\n'))
@@ -1181,11 +1194,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const planAuto = useMemo(
     () => planRapprochementAutomatique(nonRapprochees, piecesValidees, cotisations, {
       pieces: piecesHorsRapprochement, cotisations: cotisationsRapprochees,
-    }, horsDesLots),
-    [nonRapprochees, piecesValidees, cotisations, piecesHorsRapprochement, cotisationsRapprochees, horsDesLots],
+    }, horsDesLotsEtCandidats),
+    [nonRapprochees, piecesValidees, cotisations, piecesHorsRapprochement, cotisationsRapprochees, horsDesLotsEtCandidats],
   )
   const suggestionsAutomatiques = planAuto.retenus
-  const ecartDuLotAutomatique = ecartDuLot(planAuto.ecartesParLesVentes, horsDesLots)
+  const ecartDuLotAutomatique = ecartDuLot(planAuto.ecartesParLesVentes, horsDesLotsEtCandidats)
 
   // Appariements où le montant, la date ET le fournisseur concordent — le seul cas où valider une
   // pièce n'apprend rien à personne. Le tri vit dans lib/appariementBanque.ts, testé ; ici il ne
@@ -1199,9 +1212,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     [pieces, lignes, piecesHorsRapprochement],
   )
   // Sans les paires dont le mouvement porte des encaissements de factures (étape VF5a2), que la carte dit à part.
-  const lotCertain = lotDesCertains(appariementsCertains.filter((a) => a.piece.statut !== 'validee'), horsDesLots)
+  const lotCertain = lotDesCertains(appariementsCertains.filter((a) => a.piece.statut !== 'validee'), horsDesLotsEtCandidats)
   const certainsAValider = lotCertain.aEcrire
-  const ecartDuLotCertain = ecartDuLot(lotCertain.ecartesParLesVentes.map((a) => a.ligne), horsDesLots)
+  const ecartDuLotCertain = ecartDuLot(lotCertain.ecartesParLesVentes.map((a) => a.ligne), horsDesLotsEtCandidats)
 
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE. Les deux lots ci-dessous n'écrivent que ce
   // qu'aucun doute ne sépare, et « aucun doute » veut dire UN SEUL candidat de part et d'autre. Or une
@@ -1239,7 +1252,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     [piecesValidees, piecesFigeesHorsRapprochement],
   )
   const planRegles = useMemo(() => {
-    const justificatifs = { pieces, piecesRapprochees: piecesHorsRapprochement, restesARegler, cotisations, cotisationsRapprochees }
+    const justificatifs = {
+      pieces, piecesRapprochees: piecesHorsRapprochement, restesARegler, cotisations, cotisationsRapprochees, ventes: candidats,
+    }
     return planAffectationParRegles(lignes, reglesAffectation, categories, assujettiTva, (l) => {
       const justificatif = justificatifPossible(l, justificatifs)
       if (justificatif) return justificatif
@@ -1249,7 +1264,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       // Un prélèvement qui paie exactement une déclaration de TVA : une règle au nom du Trésor le rangerait en charge.
       return raisonPaiementTvaPlausible(l, suivisTva)
     }, horsDesLots)
-  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva, horsDesLots])
+  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva, horsDesLots, candidats])
   const ecartDuLotDesRegles = ecartDuLot(planRegles.ecartesParLesVentes, horsDesLots)
   const idsProposesParRegle = useMemo(() => new Set(planRegles.propositions.map((p) => p.ligne.id)), [planRegles])
   const idsEmpruntPlausible = useMemo(
@@ -1829,7 +1844,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
                     <td data-libelle="Pièce">{a.piece.tiers ?? a.piece.nom_fichier}</td>
                     <td data-libelle="Montant" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.piece.montant_ttc ?? 0)}</td>
                     <td data-libelle="Date pièce">{formatDate(a.piece.date_piece!)}</td>
-                    <td data-libelle="Pourquoi" style={{ color: 'var(--color-warning)' }}>{a.motif}</td>
+                    {/* Le mouvement d'une paire que les ventes facturées réservent, ou qu'un de leurs candidats justifie peut-être
+                        (étape VF5e) : ce qui empêche aussi de conclure se dit, sous leurs mots. */}
+                    <td data-libelle="Pourquoi" style={{ color: 'var(--color-warning)' }}>
+                      {horsDesLotsEtCandidats.has(a.ligne.id) ? `${a.motif} — ${horsDesLotsEtCandidats.get(a.ligne.id)}` : a.motif}
+                    </td>
                     <td data-libelle="Libellé bancaire" className="muted">
                       <div style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {libelleExploitable(a.ligne)}
@@ -2208,6 +2227,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             reglesIncompletes={reglesAffectationIncompletes}
             lignes={lignes}
             horsDesLots={horsDesLots}
+            candidatsDeLaVente={candidats}
             assujettiTva={assujettiTva}
             compteDirigeant={compteDuDirigeant(modele)}
             modeComptable={modele.mode}

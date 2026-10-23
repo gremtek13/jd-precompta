@@ -43,8 +43,8 @@ import { FilDuMouvement, PropositionsDuClient } from './EnvoisDuClient'
 import type { AccesDuReleve, ContexteDeLaProposition, EnvoisDuClient } from '../../lib/banqueCabinet'
 import {
   carteDeVente, PASTILLE_CLASSE, pastilleDeVente, TITRE_CLASSER, TITRE_CLASSER_DEBIT, TITRE_CONTRE_PASSER, TITRE_ENREGISTRER,
-  TITRE_RATTACHER, TITRE_RATTACHER_CONTRE_PASSATION, TITRE_RETIRER,
-  type ComplementDuCredit, type ComplementDuDebit, type GestesDuCredit, type GestesDuDebit, type MouvementsHorsDesLots,
+  TITRE_PROPOSES, TITRE_RATTACHER, TITRE_RATTACHER_CONTRE_PASSATION, TITRE_RETIRER,
+  type CandidatsDeLaVente, type ComplementDuCredit, type ComplementDuDebit, type GestesDuCredit, type GestesDuDebit, type MouvementsHorsDesLots,
   type VenteDuMouvement,
 } from '../../lib/mouvementsDesVentes'
 
@@ -183,6 +183,10 @@ interface FicheMouvementProps {
   // Les mouvements qu'aucun lot ne prend — classés par leurs encaissements de factures ou réservés à eux (étape VF5a2,
   // lib/mouvementsDesVentes.ts) : une règle nouvelle ne les proposera pas, et le compte de ceux qu'elle désignerait les tait.
   horsDesLots: MouvementsHorsDesLots
+  // Les candidats de ses ventes facturées (étape VF5e, `candidatsDeLaVente`, calculés par l'onglet) : un crédit qu'une
+  // facture ou un encaissement attend, un débit qu'une contre-passation attend, a peut-être son justificatif — la fiche le
+  // dit avant une affectation (`justificatifPossible`). `AUCUN_CANDIDAT` sur un dossier qui n'a pas basculé.
+  candidatsDeLaVente: CandidatsDeLaVente
   // Sur un dossier assujetti, une recette sans facture porte son taux de TVA, que le relevé ne dit pas :
   // la fiche le demande (voir lib/tvaDuReleve.ts).
   assujettiTva: boolean
@@ -601,7 +605,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
 
 export default function FicheMouvement({
   ligne, plan, figeePar, venteDuMouvement, gestesDeVente, onClasserParEncaissements, onRetirerClassementParEncaissements,
-  onRattacherEncaissement, onEnregistrerEncaissement, gestesDuDebit, onContrePasserEncaissement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, horsDesLots, assujettiTva, compteDirigeant, modeComptable,
+  onRattacherEncaissement, onEnregistrerEncaissement, gestesDuDebit, onContrePasserEncaissement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, horsDesLots, candidatsDeLaVente, assujettiTva, compteDirigeant, modeComptable,
   piecesRapprochees, piecesFigees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
@@ -796,7 +800,9 @@ export default function FicheMouvement({
   // Un paiement dont la pièce est peut-être au dossier : l'affecter compterait la dépense deux fois
   // (voir `justificatifPossible`). Dit avant le clic, jamais refusé : c'est l'opérateur qui sait.
   const justificatifAttendu = aTraiter
-    ? justificatifPossible(ligne, { pieces, piecesRapprochees: horsRapprochement, restesARegler, cotisations, cotisationsRapprochees })
+    ? justificatifPossible(ligne, {
+      pieces, piecesRapprochees: horsRapprochement, restesARegler, cotisations, cotisationsRapprochees, ventes: candidatsDeLaVente,
+    })
     : null
 
   // Même précédence que le rapprochement automatique : une pièce avant une échéance, une échéance
@@ -2198,6 +2204,55 @@ function ComplementDuCreditVue({ complement, occupe, onRattacher, onEnregistrer 
   if (complement.note) return <p className="fiche-mouvement-note">{complement.note}</p>
   return (
     <>
+      {/* EN TÊTE, les candidats de ses ventes facturées (étape VF5e) : le plus petit écart d'abord, chacun avec ce qui le
+          désigne. Le bouton est le geste de sa liste plus bas — rattacher, ou ouvrir la fenêtre —, que l'onglet confirme. */}
+      {complement.proposes.length > 0 && (
+        <section className="fiche-mouvement-section" aria-label={TITRE_PROPOSES}>
+          <h3>{TITRE_PROPOSES}</h3>
+          {complement.proposes.map((p) => {
+            const rattachable = p.genre === 'encaissement' ? complement.rattachables.find((e) => e.id === p.id) ?? null : null
+            const aEncaisserIci = p.genre === 'facture' ? complement.factures.find((f) => f.facture.id === p.id) ?? null : null
+            return (
+              <div key={`${p.genre}-${p.id}`} className="carte-rapprochement">
+                <div className="carte-rapprochement-entete">
+                  <div className="carte-rapprochement-titres">
+                    <strong>{p.titre}</strong>
+                    <span>{p.libelle}</span>
+                  </div>
+                  <strong className="carte-rapprochement-montant">{formatMoney(p.montantCentimes / 100)}</strong>
+                </div>
+                <ListeSignaux signaux={p.signaux.map((texte) => ({ ok: true, texte }))} />
+                <div className="carte-rapprochement-actions">
+                  {rattachable && (
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      disabled={occupe || rattachable.refus !== null}
+                      onClick={() => onRattacher(rattachable.id)}
+                    >
+                      Rattacher celui-ci
+                    </button>
+                  )}
+                  {aEncaisserIci && (
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      disabled={occupe}
+                      onClick={() => onEnregistrer(aEncaisserIci.facture.id)}
+                    >
+                      Enregistrer son encaissement…
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          <p className="fiche-mouvement-note">
+            Proposé par ses ventes facturées, jamais écrit : rattacher se confirme, et l’encaissement d’une facture se saisit
+            dans sa fenêtre, ce mouvement imposé.
+          </p>
+        </section>
+      )}
       {complement.rattachables.length > 0 && (
         <section className="fiche-mouvement-section" aria-label={TITRE_RATTACHER}>
           <h3>{TITRE_RATTACHER}</h3>
@@ -2303,6 +2358,10 @@ function GestesDuDebitVue({ gestes, occupe, onClasser, onRetirer, onRattacher, o
   )
 }
 
+// Ce qu'une ligne de la fiche d'un débit dit de son client quand le libellé du débit le cite (étape VF5e) : un signal, que
+// l'ordre de la liste suit après l'écart — jamais un choix fait à la place du cabinet.
+const CLIENT_CITE = 'client cité au libellé'
+
 function ComplementDuDebitVue({ complement, occupe, onRattacher, onContrePasser }: {
   complement: ComplementDuDebit
   occupe: boolean
@@ -2324,7 +2383,7 @@ function ComplementDuDebitVue({ complement, occupe, onRattacher, onContrePasser 
             <select aria-label="Contre-passation à rattacher" value={rattachable?.id ?? ''} onChange={(e) => setContrePassationChoisie(e.target.value)}>
               <option value="">— Choisir —</option>
               {complement.rattachables.map((e) => (
-                <option key={e.id} value={e.id}>{e.libelle} · {formatMoney(e.montant)}</option>
+                <option key={e.id} value={e.id}>{e.libelle} · {formatMoney(e.montant)}{e.clientCite ? ` · ${CLIENT_CITE}` : ''}</option>
               ))}
             </select>
             <button
@@ -2337,7 +2396,11 @@ function ComplementDuDebitVue({ complement, occupe, onRattacher, onContrePasser 
             </button>
           </div>
           {/* La liste tronque son libellé dans un volet étroit : le choix se relit en entier. */}
-          {rattachable && <p className="fiche-mouvement-note">{rattachable.libelle} : {formatMoney(rattachable.montant)}</p>}
+          {rattachable && (
+            <p className="fiche-mouvement-note">
+              {rattachable.libelle} : {formatMoney(rattachable.montant)}{rattachable.clientCite ? ` — ${CLIENT_CITE}.` : ''}
+            </p>
+          )}
           {rattachable?.refus && <p className="fiche-mouvement-alerte">{rattachable.refus}</p>}
         </section>
       )}
@@ -2348,7 +2411,7 @@ function ComplementDuDebitVue({ complement, occupe, onRattacher, onContrePasser 
             <select aria-label="Encaissement à contre-passer" value={aContrePasser?.id ?? ''} onChange={(e) => setEncaissementChoisi(e.target.value)}>
               <option value="">— Choisir —</option>
               {complement.aContrePasser.map((e) => (
-                <option key={e.id} value={e.id}>{e.libelle} · {formatMoney(e.montant)}</option>
+                <option key={e.id} value={e.id}>{e.libelle} · {formatMoney(e.montant)}{e.clientCite ? ` · ${CLIENT_CITE}` : ''}</option>
               ))}
             </select>
             <button
@@ -2360,7 +2423,11 @@ function ComplementDuDebitVue({ complement, occupe, onRattacher, onContrePasser 
               Contre-passer…
             </button>
           </div>
-          {aContrePasser && <p className="fiche-mouvement-note">{aContrePasser.libelle} : {formatMoney(aContrePasser.montant)}</p>}
+          {aContrePasser && (
+            <p className="fiche-mouvement-note">
+              {aContrePasser.libelle} : {formatMoney(aContrePasser.montant)}{aContrePasser.clientCite ? ` — ${CLIENT_CITE}.` : ''}
+            </p>
+          )}
           {aContrePasser && <p className="fiche-mouvement-note">{aContrePasser.apres}</p>}
           {aContrePasser && <p className="fiche-mouvement-note">{aContrePasser.declaration}</p>}
           <p className="fiche-mouvement-note">

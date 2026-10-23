@@ -1480,6 +1480,10 @@ const RELEVE_D12: Ligne[] = [
   mouvementDe('d12', 'b8', '2026-10-12', 'VIR SEPA RESTITUTION ACOMPTE LIBRAIRIE DES ARCADES', -120, 'rapprochee', {
     encaissements_de_factures: true,
   }),
+  // LES CANDIDATS DU RELEVÉ (étape VF5e) : un virement de la maison de santé, LIBRE, que rien ne cite — F2026-0024, qui reste
+  // à encaisser de 179,50 € (300 € net de son avoir, moins le chèque de 120,50 €), se propose en tête de sa fiche, par son
+  // montant (1 € de frais) et par son client, cité au libellé.
+  mouvementDe('d12', 'b9', '2026-10-20', 'VIR SEPA MAISON DE SANTE DES COTEAUX REGLEMENT', 178.5, 'non_rapprochee'),
 ]
 
 const pieceEreporting = (o: Ligne): Ligne => ({
