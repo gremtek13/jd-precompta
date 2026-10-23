@@ -1,5 +1,6 @@
-// Edge Function : création d'un accès client sur un dossier — pour un compte neuf, ou pour un compte qui existe
-// déjà et que ce cabinet connaît.
+// Edge Function : création d'un accès client sur un dossier — pour un compte neuf, pour un compte qui existe déjà et
+// que ce cabinet connaît, ou, sur la confirmation du cabinet, pour un compte qui existe et que ce cabinet ne connaît pas,
+// ou plus (23-Q2, plus bas).
 //
 // Remplace l'ancien flux signUp() côté navigateur (AccesTab) : retirer un accès (bouton "Retirer")
 // ne supprime que la ligne memberships, jamais le compte Auth sous-jacent — donc redonner accès avec
@@ -17,6 +18,20 @@
 // un mot de passe qui n'ouvre rien. Le titulaire change le sien lui-même : « Mot de passe oublié », ou le lien que le
 // cabinet lui envoie depuis l'onglet Accès. La distinction n'est rendue que pour un compte que le cabinet connaît déjà
 // (voir appartientDejaAuCabinet) : de tout autre compte, la fonction ne dit que ce qu'elle disait avant (le 409).
+//
+// UN COMPTE QUE CE CABINET NE CONNAÎT PAS, OU PLUS (décision du cabinet du 18/10/2026, 23-Q2 : « rattacher après une
+// confirmation qui nomme l'adresse et ce qu'elle ouvre »). Le cas qui compte : rendre un accès à un client dont on a
+// retiré le dernier accès. Le PREMIER appel refuse comme avant, en 409, et n'en dit pas plus — ni où vit ce compte, ni
+// ce qu'il est, ni s'il a été client du cabinet : la même phrase pour tous — ; son corps porte seulement le marqueur
+// `rattachementAConfirmer: true`, que l'écran lit pour ouvrir sa confirmation. Le SECOND porte `rattachementConfirme:
+// true` — le booléen `true`, et lui seul ; toute autre forme se refuse en 400, avant le contrôle du dossier et avant
+// tout compte cherché — et la fonction rattache le compte TEL QU'IL EST : l'accès s'écrit dans memberships, la réponse
+// dit `compte: "existant"`, et rien ne s'écrit sur le compte, son mot de passe moins que tout. La confirmation ne passe
+// outre aucun contrôle : la session, le corps, `admin_du_dossier` au jeton de l'appelant, le mot de passe et le service
+// d'authentification viennent avant elle, dans le même ordre ; un accès déjà donné sur ce dossier garde son 409. Elle ne
+// rattache pas non plus un compte qui sert à l'équipe d'un cabinet ou à l'administration de l'application (voir
+// compteDeCabinetOuSuperAdmin) : celui-là est refusé même confirmé, sans marqueur — le premier appel, lui, ne le
+// distingue d'aucun autre.
 //
 // Sécurité : vérifie que l'appelant est bien un administrateur du cabinet (via son propre JWT, celui
 // que le navigateur envoie normalement) avant d'utiliser la clé de service — sans ce contrôle,
@@ -42,7 +57,12 @@ function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
   return valeur == null || typeof valeur === "string"
 }
 
-// Un compte Auth existant ne reçoit un accès d'ici QUE s'il a déjà une relation avec CE cabinet — un
+/** Un champ du corps qui se lit comme une confirmation : un booléen, ou rien (absent, nul — qui ne confirment pas). */
+function booleenOuAbsent(valeur: unknown): valeur is boolean | null | undefined {
+  return valeur == null || typeof valeur === "boolean"
+}
+
+// Un compte Auth existant ne reçoit un accès d'ici, sans confirmation, QUE s'il a déjà une relation avec CE cabinet — un
 // client d'un de ses dossiers, ou un membre de son équipe. Le contrôle est né d'un audit de sécurité
 // (compte utilisateurs, Haute) : la fonction posait alors le mot de passe saisi sur le compte repris, et
 // n'importe quel email déjà inscrit ailleurs sur la plateforme (client d'un autre cabinet, comptable d'un
@@ -51,7 +71,7 @@ function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
 // mais le contrôle garde sa raison : rattaché, ce compte verrait aussitôt le dossier avec SON mot de
 // passe, et son titulaire n'est peut-être pas le client du cabinet (une adresse mal tapée, la personne
 // d'un autre cabinet). Vrai uniquement si le cabinet appelant a déjà, en base, une raison légitime de
-// connaître ce compte.
+// connaître ce compte. Faux, le compte ne reçoit d'accès que sur la confirmation du cabinet (23-Q2, voir l'en-tête).
 async function appartientDejaAuCabinet(
   admin: ReturnType<typeof createClient>,
   userId: string,
@@ -75,6 +95,34 @@ async function appartientDejaAuCabinet(
     .eq("cabinet_id", cabinetId)
     .maybeSingle()
   return !!adminRow
+}
+
+// UN COMPTE QUI NE PEUT PAS ÊTRE CLIENT, même sur confirmation (23-Q2). L'application range du côté du cabinet tout compte
+// qui a une ligne dans `cabinet_admins` (AuthContext : l'espace client ne s'ouvre jamais pour lui), et les listes de
+// dossiers de cet espace se lisent par la RLS, qu'un accès client ouvre (`dossiers_select`, `pieces_select`…). Rattaché,
+// le membre d'un AUTRE cabinet — un membre de celui-ci est déjà connu, et repris comme avant — verrait donc ce dossier
+// parmi ceux de son propre cabinet, sans jamais pouvoir s'en servir en client : la confirmation lui aurait promis ce que
+// l'accès ne lui donne pas. Un super-administrateur voit déjà tous les dossiers : un accès ne lui donnerait rien. Vrai
+// pour l'un ou l'autre, faux sinon, null si l'une des deux lectures a échoué — l'appelant refuse alors : ne pas savoir,
+// ici, ne rattache pas.
+async function compteDeCabinetOuSuperAdmin(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<boolean | null> {
+  const { data: membre, error: erreurMembre } = await admin
+    .from("cabinet_admins")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle()
+  if (erreurMembre) return null
+  if (membre) return true
+  const { data: superAdmin, error: erreurSuperAdmin } = await admin
+    .from("super_admins")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle()
+  if (erreurSuperAdmin) return null
+  return !!superAdmin
 }
 
 // ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
@@ -206,13 +254,14 @@ Deno.serve(async (req: Request) => {
   if (corps === null || typeof corps !== "object" || Array.isArray(corps)) {
     return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
   }
-  const payload = corps as { dossierId?: unknown; email?: unknown; password?: unknown }
+  const payload = corps as { dossierId?: unknown; email?: unknown; password?: unknown; rattachementConfirme?: unknown }
   // Même porte pour un champ reçu sous une autre forme qu'un texte (un nombre) : `.trim()` y levait, et
   // un mot de passe en nombre passait le contrôle de longueur (la longueur d'un nombre n'existe pas, et
   // la comparaison est fausse). Absent ou nul, le champ tombe sur le refus « requis » juste après.
   const dossierIdLu = payload.dossierId
   const emailLu = payload.email
   const password = payload.password
+  const confirmationLue = payload.rattachementConfirme
   if (!texteOuAbsent(dossierIdLu)) {
     return json({ error: "dossierId doit être un texte." }, 400)
   }
@@ -222,6 +271,13 @@ Deno.serve(async (req: Request) => {
   if (!texteOuAbsent(password)) {
     return json({ error: "password doit être un texte." }, 400)
   }
+  // La confirmation du rattachement d'un compte que ce cabinet ne connaît pas (23-Q2, voir l'en-tête) : SEUL le booléen
+  // `true` confirme. Toute autre forme — le texte « true », un nombre, un objet — se refuse ici, avec les champs texte,
+  // avant le contrôle du dossier et avant tout compte cherché ; absente, nulle ou `false`, elle ne confirme pas.
+  if (!booleenOuAbsent(confirmationLue)) {
+    return json({ error: "rattachementConfirme doit être un booléen (true pour confirmer le rattachement)." }, 400)
+  }
+  const rattachementConfirme = confirmationLue === true
   const dossierId = dossierIdLu?.trim()
   const email = emailLu?.trim()
   if (!dossierId || !email || !password) {
@@ -296,12 +352,28 @@ Deno.serve(async (req: Request) => {
     }
     clientUserId = trouve
     // Voir appartientDejaAuCabinet ci-dessus : un compte qui n'a aucun lien préexistant avec ce cabinet
-    // ne reçoit pas d'accès d'ici. Le refus dit ce qu'il disait avant, et pas davantage : ni où vit ce
-    // compte, ni ce qu'il est — et rien n'y a été écrit.
+    // ne reçoit pas d'accès d'ici sans la confirmation du cabinet (23-Q2, voir l'en-tête).
     if (!(await appartientDejaAuCabinet(supabaseAdmin, clientUserId, cabinetId))) {
-      return json({
-        error: "Un compte existe déjà avec cet e-mail, mais il n'est rattaché à aucun dossier ou membre de ce cabinet : il ne reçoit pas d'accès depuis ici, et rien n'y a été changé. Demande à cette personne d'utiliser une autre adresse e-mail.",
-      }, 409)
+      // Sans confirmation, le refus dit ce qu'il disait avant, et pas davantage : ni où vit ce compte, ni ce qu'il est —
+      // une seule phrase, quel qu'il soit, et rien n'y a été écrit. Le marqueur ne dit qu'une chose à l'écran : qu'une
+      // confirmation est possible.
+      if (!rattachementConfirme) {
+        return json({
+          error: "Un compte existe déjà avec cet e-mail, mais il n'est rattaché à aucun dossier ou membre de ce cabinet : rien n'y a été changé, et il ne reçoit d'accès d'ici qu'après ta confirmation.",
+          rattachementAConfirmer: true,
+        }, 409)
+      }
+      // Confirmé : rattaché tel qu'il est, sauf un compte qui ne peut pas être client (voir compteDeCabinetOuSuperAdmin),
+      // refusé sans marqueur — confirmer de nouveau n'y changerait rien. Ce contrôle-ci lit ses erreurs.
+      const particulier = await compteDeCabinetOuSuperAdmin(supabaseAdmin, clientUserId)
+      if (particulier === null) {
+        return json({ error: "Ce compte n'a pas pu être vérifié avant son rattachement : rien n'a été écrit. Réessaie dans un instant." }, 500)
+      }
+      if (particulier) {
+        return json({
+          error: "Ce compte ne peut pas recevoir d'accès client : il sert déjà à l'équipe d'un cabinet ou à l'administration de l'application, et rien n'y a été changé. Demande à cette personne d'utiliser une autre adresse e-mail.",
+        }, 409)
+      }
     }
     // Repris TEL QU'IL EST, mot de passe compris (voir l'en-tête) : aucune écriture sur le compte, ni
     // ici ni plus bas. Jusqu'au 10/10/2026 le mot de passe saisi s'y posait à cet endroit, avant

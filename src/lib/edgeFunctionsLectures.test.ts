@@ -75,7 +75,10 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
       'trois lectures d’`appartientDejaAuCabinet` plus le contrôle d’accès. Toutes retombent sur ' +
       '« ce compte n’appartient pas à ce cabinet » ou « pas d’accès », donc sur un REFUS — et le ' +
       'commentaire de cette fonction dit pourquoi ce sens-là est le bon : c’est la garde contre la ' +
-      'prise de contrôle d’un compte déjà inscrit ailleurs sur la plateforme',
+      'prise de contrôle d’un compte déjà inscrit ailleurs sur la plateforme. Depuis 23-Q2 ce refus-là se ' +
+      'lève sur la confirmation du cabinet, après les deux lectures de `compteDeCabinetOuSuperAdmin`, qui ' +
+      'lisent LEUR erreur (en panne, 500) : une panne ne rattache donc jamais que ce que le cabinet aurait ' +
+      'rattaché sans elle, une confirmation de plus',
   },
   'create-team-member': {
     nombre: 5,
