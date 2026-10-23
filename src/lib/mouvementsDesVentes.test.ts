@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ACCES_EN_COURS, type AccesDuDossier } from './auteursVentes'
 import { REFUS_GARDE_MOUVEMENTS, type FactureDuDossier, type MouvementClasse } from './encaissementsFactures'
 import {
-  carteDeVente, mouvementDeVente, pastilleDeVente, retenueDuReleve, venteDuMouvement, ventesDuReleve,
+  HORS_DES_VENTES_FACTUREES, carteDeVente, mouvementDeVente, pastilleDeVente, retenueDuReleve, venteDuMouvement, ventesDuReleve,
   type EncaissementDuMouvementLu, type LectureDesVentesDuReleve, type MouvementDeVente, type SourcesDuReleve, type VentesDuReleve,
 } from './mouvementsDesVentes'
 
@@ -40,7 +40,7 @@ const FACTURES = [
 ]
 
 function sources(o: Partial<SourcesDuReleve> = {}): SourcesDuReleve {
-  return { dossierId: D, factures: FACTURES, encaissements: [], mouvements: [], ...o }
+  return { dossierId: D, factures: FACTURES, encaissements: [], mouvements: [], exemplaires: [], ...o }
 }
 
 const lue = (s: SourcesDuReleve): LectureDesVentesDuReleve => ({ dossierId: D, etat: 'lue', sources: s })
@@ -140,6 +140,37 @@ describe('mouvementDeVente : classé, réservé, ou rien — par la garde G2', (
     for (const encaissements of cas) {
       expect(mouvementDeVente(mouvement({ id: 'm1' }), sources({ encaissements }), ACCES), encaissements.map((e) => e.id).join(',')).toBeNull()
     }
+  })
+
+  // Le virement mixte (étape VF5h) : l'encaissement d'une facture d'avant, cité sur un crédit qu'une facture source
+  // réserve, est porté avec les siens — son classement le compte —, et dit si sa facture a son exemplaire unique et validé.
+  // Seul sur le crédit, il ne réserve toujours rien (le cas qui précède).
+  it('le virement mixte : les encaissements des factures d’avant portés avec ceux des sources, dans l’ordre de la garde', () => {
+    const s = sources({
+      encaissements: [
+        encaissement({ id: 'e0', facture_id: 'f0', montant: 100, ligne_bancaire_id: 'm1', cree_le: '2026-03-09T08:00:00Z' }),
+        encaissement({ id: 'e1', facture_id: 'f1', montant: 500, ligne_bancaire_id: 'm1' }),
+      ],
+    })
+    const sans = mouvementDeVente(mouvement({ id: 'm1' }), s, ACCES)
+    expect(sans?.etat).toBe('reserve')
+    expect(sans?.encaissements.map((e) => [e.id, e.horsDesVentesFacturees])).toEqual([['e0', 'sans_exemplaire'], ['e1', null]])
+    // La garde ne nomme que la facture source : c'est elle qui réserve.
+    expect(sans?.refus.message).toContain('F2026-0014')
+    const avec = mouvementDeVente(mouvement({ id: 'm1' }), { ...s, exemplaires: [
+      { id: 'p0', dossier_id: D, facture_id: 'f0', statut: 'validee', type_piece: 'vente' },
+    ] }, ACCES)
+    expect(avec?.encaissements.map((e) => e.horsDesVentesFacturees)).toEqual(['exemplaire', null])
+    const carte = carteDeVente(avec as MouvementDeVente, ACCES)
+    expect(carte.lignes.map((l) => l.libelle)).toEqual([
+      `Facture F2025-0099 — virement du 10/03/2026 — ${HORS_DES_VENTES_FACTUREES.exemplaire}`,
+      'Facture F2026-0014 — virement du 10/03/2026',
+    ])
+    expect(carteDeVente(sans as MouvementDeVente, ACCES).lignes[0].libelle).toBe(
+      'Facture F2025-0099 — virement du 10/03/2026 — pas source de sa vente, et sans son exemplaire unique et validé',
+    )
+    // L'ensemble les compte tous : ce que le classement comptera.
+    expect(carte.ensemble?.replace(/\s/g, ' ')).toBe('Ensemble : 600,00 € ; le mouvement : 600,00 €.')
   })
 
   it('une contre-passation qui cite un débit le réserve aussi, et se dit contre-passation', () => {

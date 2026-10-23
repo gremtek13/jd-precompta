@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { calculerDeclaration2035 } from './declaration2035'
 import { cotisationsComptees } from './cotisationRapprochee'
 import { partsDuReleve } from './partsDuReleve'
-import { paiementsDesPieces } from './rattachement'
+import { paiementsDesPieces, type PartEncaissee } from './rattachement'
 import { ETATS_DE_LA_LIGNE, LIBELLE_DE_L_ETAT_DE_LA_LIGNE, type CauseARevoir } from './revueAnalytique'
 import {
   CAUSES_A_REVOIR_DE_LA_LIGNE, PASTILLE_DE_L_ETAT_DE_LA_LIGNE, centimesDeLaSaisie, declarationPourLaRevue,
@@ -55,10 +55,10 @@ describe('declarationPourLaRevue — la 2035 de Clôture, et nulle part ailleurs
     const rapprochees = lignes.filter((l) => l.statut === 'rapprochee')
     const attendu = calculerDeclaration2035(
       2025, pieces, categories, [], cotisationsComptees([], rapprochees, 'tresorerie'), [], false,
-      paiementsDesPieces(rapprochees, []), partsDuReleve(rapprochees, categories, [], false), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+      paiementsDesPieces(rapprochees, [], []), partsDuReleve(rapprochees, categories, [], false), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
       { etat: 'sans_bascule' },
     )
-    const lue = declarationPourLaRevue(2025, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' })
+    const lue = declarationPourLaRevue(2025, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, [])
     expect(lue).toEqual(attendu)
     // 120 € de loyer (exonéré : TTC) et 40 € de frais de banque : les 900 € non rapprochés n'y sont pas.
     expect(lue?.totalDepenses).toBe(160)
@@ -66,19 +66,35 @@ describe('declarationPourLaRevue — la 2035 de Clôture, et nulle part ailleurs
 
   it('compte le TTC pour un dossier exonéré et le hors taxes pour un assujetti (le paramètre est celui du dossier)', () => {
     const d = dossier({ piecesValidees: [piece({})] })
-    expect(declarationPourLaRevue(2025, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' })?.totalDepenses).toBe(120)
-    expect(declarationPourLaRevue(2025, TRESORERIE, true, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' })?.totalDepenses).toBe(100)
+    expect(declarationPourLaRevue(2025, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, [])?.totalDepenses).toBe(120)
+    expect(declarationPourLaRevue(2025, TRESORERIE, true, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, [])?.totalDepenses).toBe(100)
   })
 
   it('est nulle pour un dossier en engagement : la 2035 n’y est pas produite', () => {
-    expect(declarationPourLaRevue(2025, ENGAGEMENT, false, dossier({ piecesValidees: [piece({})] }), ventesFactureesVides('d1'), { etat: 'sans_bascule' })).toBeNull()
+    expect(declarationPourLaRevue(2025, ENGAGEMENT, false, dossier({ piecesValidees: [piece({})] }), ventesFactureesVides('d1'), { etat: 'sans_bascule' }, [])).toBeNull()
   })
 
   it('se lit sur l’exercice demandé, et rien d’un autre', () => {
     const d = dossier({ piecesValidees: [piece({ id: 'a', date_piece: '2024-12-31' }), piece({ id: 'b' })] })
-    expect(declarationPourLaRevue(2025, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' })?.totalDepenses).toBe(120)
-    expect(declarationPourLaRevue(2024, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' })?.totalDepenses).toBe(120)
-    expect(declarationPourLaRevue(2023, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' })?.totalDepenses).toBe(0)
+    expect(declarationPourLaRevue(2025, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, [])?.totalDepenses).toBe(120)
+    expect(declarationPourLaRevue(2024, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, [])?.totalDepenses).toBe(120)
+    expect(declarationPourLaRevue(2023, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, [])?.totalDepenses).toBe(0)
+  })
+
+  // LE VIREMENT MIXTE (étape VF5h) : l'exemplaire d'une facture d'avant la bascule, qu'un crédit classé par ses encaissements
+  // paie, se date par lui — la revue compare la 2035 que Clôture montre. Sans ses parts, il compterait à sa date de facture.
+  it('date par le virement mixte la pièce qu’il paie, comme Clôture', () => {
+    const recettes = {
+      id: 'c-recettes', dossier_id: null, code: 'RECETTES', libelle: 'Honoraires', ordre: 3, compte_comptable: '706000', poste_2035: 'Recettes',
+    } satisfies Categorie
+    const exemplaire = piece({ id: 'pv', type_piece: 'vente', date_piece: '2024-12-15', montant_ht: 60, montant_ttc: 60, categorie_id: 'c-recettes' })
+    const virement = ligne({ id: 'mx', date: '2025-01-08', montant: 179.5, statut: 'rapprochee', encaissements_de_factures: true })
+    const d = dossier({ piecesValidees: [exemplaire], categories: [...categories, recettes], lignes: [virement] })
+    const recettesDe = (annee: number, encaissees: readonly PartEncaissee[]) =>
+      declarationPourLaRevue(annee, TRESORERIE, false, d, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, encaissees)?.totalRecettes
+    const parts = [{ ligne_bancaire_id: 'mx', piece_id: 'pv', montant: 60 }]
+    expect([recettesDe(2025, parts), recettesDe(2024, parts)]).toEqual([60, 0])
+    expect([recettesDe(2025, []), recettesDe(2024, [])]).toEqual([0, 60])
   })
 
   // LE JUMEAU DE CLÔTURE : ce fichier recopie quatre expressions de l'écran qui signe la 2035. Si l'une change là-bas, la
@@ -87,7 +103,9 @@ describe('declarationPourLaRevue — la 2035 de Clôture, et nulle part ailleurs
     const source = readFileSync(new URL('../pages/dossier/ClotureTab.tsx', import.meta.url), 'utf8')
     for (const expression of [
       "toutesLesLignes.filter((l) => l.statut === 'rapprochee')",
-      'paiementsDesPieces(lignesBancaires, reglements)',
+      // Les parts des virements mixtes (étape VF5h) : de la lecture des ventes facturées, comme la revue les reçoit.
+      'paiementsDesPieces(lignesBancaires, reglements, encaissees)',
+      "const encaissees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.encaissees : []",
       'partsDuReleve(lignesBancaires, categories, ventilations, assujettiTva)',
       'cotisationsComptees(cotisations, lignesBancaires, modeComptable)',
       'calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan, ventesFacturees, ecrituresDesVentes)',
@@ -103,7 +121,7 @@ describe('donneesDeLaRevueAnalytique', () => {
     ]
     const d = donneesDeLaRevueAnalytique(2025, 2026, TRESORERIE, false, {
       dossier: dossier({ lignes, piecesValidees: [piece({})] }), reprise: [], reportes: [], exercicesValides: [],
-      reperes: { annuels: [], postes: [] }, seuils: [], explications: [], ventesFacturees: ventesFactureesVides('d1'),
+      reperes: { annuels: [], postes: [] }, seuils: [], explications: [], ventesFacturees: ventesFactureesVides('d1'), encaissees: [],
       ecrituresDesVentes: { etat: 'sans_bascule' },
     })
     expect(d.annee).toBe(2025)
@@ -122,11 +140,11 @@ describe('donneesDeLaRevueAnalytique', () => {
     })
     const sources = {
       dossier: dossier({ piecesValidees: [piece({})] }), reprise: [], reportes: [], exercicesValides: [],
-      reperes: { annuels: [], postes: [] }, seuils: [], explications: [], ecrituresDesVentes: { etat: 'sans_bascule' } as const,
+      reperes: { annuels: [], postes: [] }, seuils: [], explications: [], encaissees: [], ecrituresDesVentes: { etat: 'sans_bascule' } as const,
     }
     const avec = donneesDeLaRevueAnalytique(2025, 2026, TRESORERIE, false, { ...sources, ventesFacturees: ventes })
     expect(avec.declaration?.totalRecettes).toBe(1000)
-    expect(avec.declaration).toEqual(declarationPourLaRevue(2025, TRESORERIE, false, sources.dossier, ventes, { etat: 'sans_bascule' }))
+    expect(avec.declaration).toEqual(declarationPourLaRevue(2025, TRESORERIE, false, sources.dossier, ventes, { etat: 'sans_bascule' }, []))
     expect(donneesDeLaRevueAnalytique(2025, 2026, TRESORERIE, false, { ...sources, ventesFacturees: null }).declaration).toBeNull()
   })
 
@@ -141,18 +159,18 @@ describe('donneesDeLaRevueAnalytique', () => {
     const fraisBancaires = { id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 3, compte_comptable: '627000', poste_2035: 'Frais financiers' } satisfies Categorie
     const sources = {
       dossier: dossier({ categories: [...categories, fraisBancaires] }), reprise: [], reportes: [], exercicesValides: [],
-      reperes: { annuels: [], postes: [] }, seuils: [], explications: [], ventesFacturees: ventes,
+      reperes: { annuels: [], postes: [] }, seuils: [], explications: [], ventesFacturees: ventes, encaissees: [],
     }
     const avec = donneesDeLaRevueAnalytique(2025, 2026, TRESORERIE, false, { ...sources, ecrituresDesVentes })
     expect(avec.declaration?.depenses).toEqual([{ poste: 'Frais financiers', nature: 'depense', montant: 2, nbPieces: 0, nbMouvements: 1 }])
-    expect(avec.declaration).toEqual(declarationPourLaRevue(2025, TRESORERIE, false, sources.dossier, ventes, ecrituresDesVentes))
+    expect(avec.declaration).toEqual(declarationPourLaRevue(2025, TRESORERIE, false, sources.dossier, ventes, ecrituresDesVentes, []))
     expect(donneesDeLaRevueAnalytique(2025, 2026, TRESORERIE, false, { ...sources, ecrituresDesVentes: null }).declaration).toBeNull()
   })
 
   it('n’a pas de 2035 en engagement', () => {
     const d = donneesDeLaRevueAnalytique(2025, 2026, ENGAGEMENT, false, {
       dossier: dossier(), reprise: [], reportes: [], exercicesValides: [], reperes: { annuels: [], postes: [] }, seuils: [], explications: [], ventesFacturees: ventesFactureesVides('d1'),
-      ecrituresDesVentes: { etat: 'sans_bascule' },
+      encaissees: [], ecrituresDesVentes: { etat: 'sans_bascule' },
     })
     expect(d.declaration).toBeNull()
   })

@@ -4,7 +4,9 @@
 -- `factures_emises.source_de_la_vente` et la validation d'une facture (`enregistrer_facture`, les gardes des factures),
 -- `lignes_bancaires` (ses contraintes de rapprochement, ses gardes, les fonctions des classements du relevé),
 -- `encaissements_factures` et ses fonctions, les colonnes `encaissement_id` et `facture_id` des écritures, le catalogue
--- des rôles, `admin_du_dossier`, `gere_les_ventes`, `gere_la_banque`, `memberships` ou `cabinet_admins`.
+-- des rôles, `admin_du_dossier`, `gere_les_ventes`, `gere_la_banque`, `memberships` ou `cabinet_admins` ; et, depuis la
+-- migration `virement_mixte` (étape VF5h), les exemplaires des factures (`pieces.facture_id` et ses fonctions), que le
+-- classement d'un mouvement lit.
 --
 -- Ce qui se prouve ici, et ne se relit pas — chaque refus jugé à son code ET à ses mots, ceux du texte des migrations,
 -- que src/lib/sourceDeLaVente.test.ts et src/lib/encaissementsVenteFacturee.test.ts relisent ici :
@@ -28,16 +30,21 @@
 --   - LA GARDE DES ENCAISSEMENTS sans les fonctions (60 à 67) ;
 --   - LES REFUS NEUFS des fonctions, à leur rang : enregistrer (11, 17, 27, 29), retirer (6, 7), contre-passer (12,
 --     15 à 20, le cinquième paramètre ; et 2, le droit « Banque » que ce débit demande depuis la migration
---     `contre_passation_banque` : 94 à 96), rattacher (1 à 16), classer (1 à 10), retirer le classement (1 à 4) ; et,
+--     `contre_passation_banque` : 94 à 96), rattacher (1 à 16), classer (1 à 11), retirer le classement (1 à 4) ; et,
 --     pour une facture qui n'est pas source, ce qu'hier rendait : ni frontière, ni mouvement réservé, les plafonds
 --     bruts ;
 --   - L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (97 à 97l ; migration `impaye_non_declare`, étape VF5d2) : celui d'une
 --     facture source se contre-passe en citant le débit qui le défait, le rang 6 levé à ce seul cas ; ce que la
 --     contre-passation écrit, le débit qu'elle réserve et que le cabinet classe par elle, le retrait qu'elle retient,
 --     les rangs voisins qui tiennent ;
+--   - LE VIREMENT MIXTE (128c à 128k ; migration `virement_mixte`, étape VF5h ; VF2-Q2, selon VF5-Q2) : le crédit
+--     partagé entre une facture source et une facture d'avant la bascule se classe avec l'exemplaire unique et validé
+--     de celle-ci, les deux encaissements comptés et les frais du tout ; sans lui, le rang 7, neuf, avant les sommes ;
+--     retiré, ou défait par sa contre-passation sans mouvement, l'encaissement d'avant ne retient rien et ne compte
+--     pas ; seul sur le crédit, il ne le fait pas classer (le rang 6 d'abord) ;
 --   - LE CATALOGUE (150 à 157) : les six rôles et leurs défauts, aucune racine qui en commence une autre, les colonnes,
 --     les contraintes, les déclencheurs, la sécurité et les droits des fonctions, les réglages et qui les nomme ;
---   - LES MUTATIONS (160 à 173) : chacune rejoue un contrôle avec un profil, une cible ou un réglage délibérément faux,
+--   - LES MUTATIONS (160 à 176) : chacune rejoue un contrôle avec un profil, une cible ou un réglage délibérément faux,
 --     et doit MORDRE ;
 --   - et que RIEN ne reste en base (199).
 --
@@ -102,6 +109,21 @@
 -- de commentaire, envoyé en une requête comme le fait l'outil : 66 060 caractères, empreinte
 -- 7587424ef3ba9e6251775e2598bebe4b, 187 justes. Rejoué en production après l'application, sans ses lignes de
 -- commentaire (66 060 caractères, `7587424e…`) : 187 justes, rien n'est resté.
+--
+-- 23/10/2026, migration `virement_mixte` (présentée au cabinet, pas encore appliquée ; chantier EC-Q3, étape VF5h ;
+-- VF2-Q2, selon VF5-Q2) : `classer_mouvement_par_encaissements` compte aussi l'encaissement d'une facture d'avant la
+-- bascule cité sur le mouvement, avec l'exemplaire unique et validé de cette facture, et le refuse sans lui au rang 7,
+-- neuf. Le jeu pose trois pièces de vente de T ; 128c dit désormais le rang 7 (hier, la facture d'avant ne comptait
+-- pas) ; onze contrôles de plus : 128d à 128k (l'exemplaire désigné, le crédit classé ; ce qui reste du crédit ;
+-- l'encaissement d'avant retiré, défait sans mouvement, seul ; le rang 7 avant le rang 9, puis le rang 9 ; les frais du
+-- tout) et les mutations 174 à 176 (un exemplaire à valider, deux exemplaires, l'exemplaire d'une autre facture). Sur
+-- une réplique dont `signature.sql` égalait la production à 146 migrations (les neuf familles, et l'historique) : sans
+-- la migration, 198 contrôles, 9 en faute — 128c à 128e, 128i à 128k, 174 à 176 — ; avec elle, 198 justes, rien n'est
+-- resté, et les contrôles d'hier rendent, verdict et observation, ce qu'ils rendaient, hors de 128c et du compte des
+-- tables de 199 (les pièces y entrent). Le texte sans ses lignes de commentaire, envoyé en une requête : 71 369
+-- caractères, empreinte 70d26257a053e7d0216af5a257a584e8, 198 justes. Les douze mutations du classement, jouées contre
+-- cet essai et ecrituresVentesFacturees.sql : dix tuées ; les deux survivantes sont équivalentes (le dossier et la
+-- nature d'un exemplaire, que sa garde impose).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -114,7 +136,7 @@ declare
   cle text; valeur text; s text; attendu text; n bigint;
   tables text[] := array['dossiers', 'factures_emises', 'facture_lignes', 'facture_numerotation', 'lignes_bancaires',
     'encaissements_factures', 'encaissements_factures_taux', 'ecritures_brouillon', 'exercices_valides', 'transmissions_factures',
-    'transmissions_encaissements', 'cabinet_admins', 'dossier_assignations', 'memberships'];
+    'transmissions_encaissements', 'cabinet_admins', 'dossier_assignations', 'memberships', 'pieces'];
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
   verdicts jsonb := '[]'::jsonb;
@@ -132,7 +154,9 @@ begin
       'T', '5f200000-0000-4000-8000-0000000000d1', 'A', '5f200000-0000-4000-8000-0000000000d2',
       'R', '5f200000-0000-4000-8000-0000000000d3', 'N', '5f200000-0000-4000-8000-0000000000d4',
       'W', '5f200000-0000-4000-8000-0000000000e1', 'CP', '5f200000-0000-4000-8000-0000000000e2',
-      'Y1', '5f200000-0000-4000-8000-0000000000e3', 'Y2', '5f200000-0000-4000-8000-0000000000e4')
+      'Y1', '5f200000-0000-4000-8000-0000000000e3', 'Y2', '5f200000-0000-4000-8000-0000000000e4',
+      'PE1', '5f200000-0000-4000-8000-0000000000f1', 'PE2', '5f200000-0000-4000-8000-0000000000f2',
+      'PE3', '5f200000-0000-4000-8000-0000000000f3')
     || jsonb_build_object(
       'M1', '5f200000-0000-4000-8000-0000000000b1', 'M2', '5f200000-0000-4000-8000-0000000000b2',
       'M3', '5f200000-0000-4000-8000-0000000000b3', 'M4', '5f200000-0000-4000-8000-0000000000b4',
@@ -169,7 +193,9 @@ begin
       'DEB', $m$Une contre-passation se justifie par un débit : ce mouvement n'en est pas un.$m$,
       'CRE', $m$Un encaissement se justifie par un crédit : ce mouvement n'en est pas un.$m$,
       'BQE', $m$Le mouvement bancaire d'un encaissement ne se désigne qu'avec le droit « Banque » sur ce dossier : sans lui, l'encaissement s'enregistre sans mouvement.$m$,
-      'NDE', $m$Cet encaissement n'est pas déclaré : il se retire, sans contre-passation.$m$)
+      'NDE', $m$Cet encaissement n'est pas déclaré : il se retire, sans contre-passation.$m$,
+      'EXF', $m$Désignez d'abord l'exemplaire de la facture F2026-0001 : ce mouvement porte aussi son encaissement, et cette facture, qui n'est pas la source de sa vente, se compte par une seule pièce validée.$m$,
+      'DEX', $m$select designer_exemplaire_facture('5f200000-0000-4000-8000-0000000000d1', $m$)
     || jsonb_build_object(
       'ENE', $m$select enregistrer_encaissement($m$,
       'ENF', $m$select enregistrer_facture($m$,
@@ -201,6 +227,10 @@ begin
       ('{MA}', '{A}', '2026-03-02', 'ESSAI', 100, 'non_rapprochee', null), ('{MD}', '{A}', '2026-03-12', 'ESSAI', -30, 'non_rapprochee', null),
       ('{MK}', '{A}', '2026-03-04', 'ESSAI', 20, 'rapprochee', '467000'), ('{M0}', '{T}', '2026-03-15', 'ESSAI', 0, 'non_rapprochee', null),
       ('{M13}', '{T}', '2026-03-15', 'ESSAI', 98, 'non_rapprochee', null)$q$, '', ''],
+    array['jeu', 'pièces de vente de T, que les contrôles du virement mixte désignent (étape VF5h)', 'postgres', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, date_piece, montant_ttc) values
+      ('{PE1}', '{T}', '{T}/essai-vf5h-1.pdf', 'essai-vf5h-1.pdf', 'vente', 'validee', '2026-02-01', 120),
+      ('{PE2}', '{T}', '{T}/essai-vf5h-2.pdf', 'essai-vf5h-2.pdf', 'vente', 'validee', '2026-02-01', 120),
+      ('{PE3}', '{T}', '{T}/essai-vf5h-3.pdf', 'essai-vf5h-3.pdf', 'vente', 'a_valider', '2026-02-01', 120)$q$, '', ''],
     array['fait', '0. le jeu : une facture validée dans T AVANT la bascule (F2026-0001)', 'chef', $q${ENF}'{T}', null, {FJ1} || '{"date_emission":"2026-02-01"}', {L1}, true)$q$, 'OK', ''],
     array['fait', '1. le cabinet pose le réglage, par la policy des dossiers', 'chef', $q$update dossiers set ventes_par_les_factures = true where id = '{T}'$q$, 'OK', ''],
     array['fait', '0. le jeu : F2025-0001', 'chef', $q${ENF}'{T}', null, {FJ1} || '{"date_emission":"2025-06-01","nature_operation":"services"}', {L1}, true)$q$, 'OK', ''],
@@ -400,11 +430,19 @@ begin
     array['controle', '127. rang 5 : classé autrement', 'chef', $q${CLA}'{T}', '{M4}')$q$, '22023', 'Ce mouvement est déjà classé : retirer d''abord ce classement.'],
     array['controle', '128. rang 6 : rien d''une facture source', 'chef', $q${CLA}'{T}', '{M2}')$q$, '22023', '{MLI}'],
     array['controle', '128b. … une facture qui n''est pas source n''y compte pas', 'chef', $q${CLA}'{A}', '{MA}')$q$, '22023', '{MLI}'],
-    array['controle', '128c. … ni sur un crédit partagé avec une facture d''avant la bascule (VF2-Q2)', 'chef', $q${ENC} ('{T}', '{F1}', '2026-03-03', 50, 'virement', '{M2}', null, null), ('{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', '{M50}'],
-    array['controle', '129. rang 7 : un crédit que ses encaissements ne font pas', 'chef', $q${CLA}'{T}', '{M7}')$q$, '22023', '{M50}'],
-    array['controle', '130. rang 8 : … ou qu''ils dépassent au-delà des frais', 'chef', $q${ENC} ('{T}', '{F1}', '2026-03-03', 120, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', 'Les encaissements que ce mouvement justifie font 120,00 € pour un crédit de 100,00 € : l''écart dépasse ce que des frais bancaires expliquent.'],
-    array['controle', '131. rang 9 : un débit que ses contre-passations dépassent', 'chef', $q$insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen) values ('{Y1}', '{T}', '{F1}', '2026-03-12', 120, 'virement'); insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, motif) values ('{Y2}', '{T}', '{F1}', '2026-03-12', -120, 'virement', '{M8}', '{Y1}', 'ESSAI'); {CLA}'{T}', '{M8}')$q$, '22023', 'Les contre-passations que ce mouvement justifie font 120,00 € pour un débit de 100,00 € : elles le dépassent.'],
-    array['controle', '131b. rang 10 : … ou qu''elles ne le font pas aux frais près', 'chef', $q$insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen) values ('{Y1}', '{T}', '{F1}', '2026-03-12', 90, 'virement'); insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, motif) values ('{Y2}', '{T}', '{F1}', '2026-03-12', -90, 'virement', '{M8}', '{Y1}', 'ESSAI'); {CLA}'{T}', '{M8}')$q$, '22023', 'Les contre-passations que ce mouvement justifie font 90,00 € pour un débit de 100,00 € : l''écart dépasse ce que des frais bancaires expliquent.'],
+    array['controle', '128c. VF5h, rang 7 : un crédit partagé avec une facture d''avant la bascule (VF2-Q2), sans l''exemplaire de cette facture', 'chef', $q${ENC} ('{T}', '{F1}', '2026-03-03', 50, 'virement', '{M2}', null, null), ('{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', '{EXF}'],
+    array['lecture', '128d. … son exemplaire désigné, unique et validé : le crédit se classe, les deux encaissements comptés', 'chef', $q${DEX}'{PE1}', '{FP}'); {ENC} ('{T}', '{F1}', '2026-03-03', 50, 'virement', '{M2}', null, null), ('{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}', null, null); select concat_ws('|', l.statut, l.encaissements_de_factures::text) from classer_mouvement_par_encaissements('{T}', '{M2}') l$q$, '', 'rapprochee|true'],
+    array['controle', '128e. … ce qui reste du crédit compte la facture d''avant', 'chef', $q${DEX}'{PE1}', '{FP}'); {ENC} ('{T}', '{F1}', '2026-03-03', 50, 'virement', '{M2}', null, null), ('{T}', '{FP}', '2026-03-03', 30, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', 'Les encaissements que ce mouvement justifie font 80,00 € pour un crédit de 100,00 € : ce qui le dépasse reste à traiter.'],
+    array['controle', '128f. … retiré, l''encaissement de la facture d''avant ne retient pas le crédit, et ne compte pas', 'chef', $q${ENC} ('{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}', null, null), ('{T}', '{F1}', '2026-03-03', 50, 'virement', '{M2}', null, null); select retirer_encaissement('{T}', (select id from encaissements_factures where facture_id = '{FP}' and ligne_bancaire_id = '{M2}')); {CLA}'{T}', '{M2}')$q$, '22023', '{M50}'],
+    array['controle', '128g. … défait par sa contre-passation sans mouvement, non plus', 'chef', $q$insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id) values ('{Y1}', '{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}'); insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, annule_id, motif) values ('{T}', '{FP}', '2026-03-04', -50, 'virement', '{Y1}', 'ESSAI'); {ENC} ('{T}', '{F1}', '2026-03-03', 50, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', '{M50}'],
+    array['controle', '128h. … seule sur le crédit, elle ne le fait pas classer : le rang 6 avant le 7', 'chef', $q${ENC} ('{T}', '{FP}', '2026-03-03', 100, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', '{MLI}'],
+    array['controle', '128i. … le rang 7 avant le 9 : sans son exemplaire, une facture d''avant qui ferait dépasser le crédit', 'chef', $q${ENC} ('{T}', '{F1}', '2026-03-03', 100, 'virement', '{M2}', null, null), ('{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', '{EXF}'],
+    array['controle', '128j. … son exemplaire désigné, le rang 9 : la facture d''avant comptée, le crédit dépassé au-delà des frais', 'chef', $q${DEX}'{PE1}', '{FP}'); {ENC} ('{T}', '{F1}', '2026-03-03', 100, 'virement', '{M2}', null, null), ('{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', 'Les encaissements que ce mouvement justifie font 150,00 € pour un crédit de 100,00 € : l''écart dépasse ce que des frais bancaires expliquent.'],
+    array['controle', '128k. … les frais sont ceux du tout : crédité de 1 € de moins que les deux, il se classe', 'chef', $q${DEX}'{PE1}', '{FP}'); {ENC} ('{T}', '{F1}', '2026-03-03', 51, 'virement', '{M2}', null, null), ('{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, 'OK', ''],
+    array['controle', '129. rang 8 : un crédit que ses encaissements ne font pas', 'chef', $q${CLA}'{T}', '{M7}')$q$, '22023', '{M50}'],
+    array['controle', '130. rang 9 : … ou qu''ils dépassent au-delà des frais', 'chef', $q${ENC} ('{T}', '{F1}', '2026-03-03', 120, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', 'Les encaissements que ce mouvement justifie font 120,00 € pour un crédit de 100,00 € : l''écart dépasse ce que des frais bancaires expliquent.'],
+    array['controle', '131. rang 10 : un débit que ses contre-passations dépassent', 'chef', $q$insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen) values ('{Y1}', '{T}', '{F1}', '2026-03-12', 120, 'virement'); insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, motif) values ('{Y2}', '{T}', '{F1}', '2026-03-12', -120, 'virement', '{M8}', '{Y1}', 'ESSAI'); {CLA}'{T}', '{M8}')$q$, '22023', 'Les contre-passations que ce mouvement justifie font 120,00 € pour un débit de 100,00 € : elles le dépassent.'],
+    array['controle', '131b. rang 11 : … ou qu''elles ne le font pas aux frais près', 'chef', $q$insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen) values ('{Y1}', '{T}', '{F1}', '2026-03-12', 90, 'virement'); insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, motif) values ('{Y2}', '{T}', '{F1}', '2026-03-12', -90, 'virement', '{M8}', '{Y1}', 'ESSAI'); {CLA}'{T}', '{M8}')$q$, '22023', 'Les contre-passations que ce mouvement justifie font 90,00 € pour un débit de 100,00 € : l''écart dépasse ce que des frais bancaires expliquent.'],
     array['controle', '132. crédité de 2 % de moins (le seuil) : il se classe', 'chef', $q${ENC} ('{T}', '{F1}', '2026-03-15', 100, 'virement', '{M13}', null, null); {CLA}'{T}', '{M13}')$q$, 'OK', ''],
     array['controle', '135. retirer le classement, rang 1 : le client', 'client_vb', $q${RCL}'{T}', '{M1}')$q$, '42501', 'Accès refusé à ce dossier.'],
     array['controle', '136. rang 2 : le mouvement d''un autre dossier', 'chef', $q${RCL}'{T}', '{MA}')$q$, 'P0002', 'Mouvement introuvable dans ce dossier.'],
@@ -445,7 +483,10 @@ begin
     array['controle', '170. MUTATION de 94 : avec « Banque », le rang 2 passe, et le rang 19 dit le montant', 'client_vb', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{M6}')$q$, '22023', 'Ce mouvement de 50,00 € justifierait 100,00 € de contre-passations : l''écart dépasse ce que des frais bancaires expliquent.'],
     array['controle', '171. MUTATION de 97 : sans débit, le rang 6 retient — le refus d''hier', 'chef', $q${ANN}'{T}', '{E7}', '2026-03-12', 'Chèque revenu impayé')$q$, '22023', '{NDE}'],
     array['controle', '172. MUTATION de 97 : une facture qui n''est pas source, le débit cité — le rang 6 retient, avant le rang 15', 'chef', $q${ANN}'{A}', '{EA25}', '2026-03-12', 'Chèque revenu impayé', '{MD}')$q$, '22023', '{NDE}'],
-    array['controle', '173. MUTATION de 97k : sans « Banque », le rang 2 retient le client, avant le rang 6', 'client_v', $q${ANN}'{T}', '{E7}', '2026-03-12', 'Chèque revenu impayé', '{M6}')$q$, '42501', '{BQE}']
+    array['controle', '173. MUTATION de 97k : sans « Banque », le rang 2 retient le client, avant le rang 6', 'client_v', $q${ANN}'{T}', '{E7}', '2026-03-12', 'Chèque revenu impayé', '{M6}')$q$, '42501', '{BQE}'],
+    array['controle', '174. MUTATION de 128d : un exemplaire à valider ne suffit pas — le rang 7', 'chef', $q${DEX}'{PE3}', '{FP}'); {ENC} ('{T}', '{F1}', '2026-03-03', 50, 'virement', '{M2}', null, null), ('{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', '{EXF}'],
+    array['controle', '175. MUTATION de 128d : deux exemplaires validés non plus', 'chef', $q${DEX}'{PE1}', '{FP}'); {DEX}'{PE2}', '{FP}'); {ENC} ('{T}', '{F1}', '2026-03-03', 50, 'virement', '{M2}', null, null), ('{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', '{EXF}'],
+    array['controle', '176. MUTATION de 128d : l''exemplaire d''une AUTRE facture non plus', 'chef', $q${DEX}'{PE1}', '{F1}'); {ENC} ('{T}', '{F1}', '2026-03-03', 50, 'virement', '{M2}', null, null), ('{T}', '{FP}', '2026-03-03', 50, 'virement', '{M2}', null, null); {CLA}'{T}', '{M2}')$q$, '22023', '{EXF}']
   ];
 
   begin

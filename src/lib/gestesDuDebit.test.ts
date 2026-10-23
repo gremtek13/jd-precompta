@@ -55,7 +55,7 @@ const FACTURES = [
 const LIGNES = [ligne('f1', 500), ligne('f2', 500), ligne('f3', 250), ligne('f0', 500)]
 
 function sources(o: Partial<SourcesDuDebit> = {}): SourcesDuDebit {
-  return { dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements: [], parts: [], mouvements: [], declarations: [], ...o }
+  return { dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements: [], parts: [], mouvements: [], exemplaires: [], declarations: [], ...o }
 }
 
 const lue = (s: SourcesDuDebit): LectureDuDebit => ({ dossierId: D, etat: 'lue', sources: s })

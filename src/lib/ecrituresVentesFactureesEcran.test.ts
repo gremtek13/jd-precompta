@@ -11,7 +11,7 @@ import {
   type EncaissementDesEcritures, type EntreesEcrituresDeVente, type EtatsDesVentes, type FactureDesEcritures,
   type LigneDuBrouillonLue, type MouvementDesEcritures, type SourceDeVenteEtat, type SourcesDesEcrituresDeVente,
 } from './ecrituresVentesFactureesEcran'
-import type { LigneDeFacture } from './encaissementsFactures'
+import type { ExemplaireLu, LigneDeFacture } from './encaissementsFactures'
 import { formatMoney } from './format'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
 import type { ModeComptable } from './types'
@@ -46,6 +46,8 @@ interface Jeu {
   lignes?: LigneDeFacture[]
   encaissements?: { encaissement: EncaissementDesEcritures; part: PartVendue }[]
   mouvements?: MouvementDesEcritures[]
+  // Les pièces désignées (étape VF5h, le virement mixte) ; aucune par défaut.
+  exemplaires?: ExemplaireLu[]
 }
 
 function sources(jeu: Jeu): SourcesDesEcrituresDeVente {
@@ -53,6 +55,7 @@ function sources(jeu: Jeu): SourcesDesEcrituresDeVente {
   return {
     dossierId: D, factures: jeu.factures ?? [facture()], lignes: jeu.lignes ?? [ligneVendue('f1', 100, 20)],
     encaissements: encs.map((e) => e.encaissement), parts: encs.map((e) => e.part), mouvements: jeu.mouvements ?? [],
+    exemplaires: jeu.exemplaires ?? [],
   }
 }
 
@@ -524,6 +527,7 @@ describe('ecrituresDesVentesPourLa2035', () => {
     return {
       dossierId: D, factures: [facture({ id: 'f1', date_emission: '2025-11-10' })], lignes: [ligneVendue('f1', 100, 20)],
       encaissements: [e1.encaissement], parts: [e1.part], mouvements: [mouvement({ id: 'm1', date: '2025-11-20', montant: 118 })],
+      exemplaires: [],
     }
   }
   const lue = (s = sources(), dossierId = D) => ({ dossierId, etat: 'lue' as const, sources: s })
@@ -547,7 +551,7 @@ describe('ecrituresDesVentesPourLa2035', () => {
     expect(r.etat).toBe('pret')
     const attendue = ecrituresDesVentesFacturees({
       sources: { dossierId: D, factures: sources().factures, lignes: sources().lignes, encaissements: sources().encaissements, parts: sources().parts },
-      mouvements: sources().mouvements, comptesDeContrepartie: new Map(), mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
+      mouvements: sources().mouvements, comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
     })
     expect(r).toEqual({ etat: 'pret', ecritures: { etat: 'composees', composition: attendue } })
     // Au plan et au modèle donnés.

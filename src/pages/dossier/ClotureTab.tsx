@@ -447,7 +447,12 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const ventesFacturees = ecrituresDesVentes === null ? null : ventesLues
   const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif
     : pourLa2035?.etat === 'incomplete' ? pourLa2035.motif : null
-  const paiements = paiementsDesPieces(lignesBancaires, reglements)
+  // CE QUE LES VIREMENTS MIXTES PAIENT DE LEURS EXEMPLAIRES (étape VF5h ; lib/rattachement.ts), lu avec les ventes facturées :
+  // une pièce qu'un tel virement paie se date par lui, dans la 2035 comme dans la validation. Sans facture source, aucun
+  // mouvement n'est classé par ses encaissements, et il n'y en a aucun. Pas encore revenues ou lues en partie, aucune 2035
+  // ne s'affiche ; et la validation se suspend en le disant, par la garde des factures sources (`motifValidation`).
+  const encaissees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.encaissees : []
+  const paiements = paiementsDesPieces(lignesBancaires, reglements, encaissees)
   const parts = partsDuReleve(lignesBancaires, categories, ventilations, assujettiTva)
   // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance :
   // la 2035 et le FEC disent la même année (lib/cotisationRapprochee.ts).
@@ -460,7 +465,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const anneesValidees = exercicesValides.map((e) => e.annee)
   const prochainAValider = prochainExerciceAValider({
     anneeCourante, modele, anneesValidees, aNouveaux, ecritures,
-    lignes: toutesLesLignes, reglements, piecesValidees, piecesAValider, cotisations, vehicules, immobilisations,
+    lignes: toutesLesLignes, reglements, encaissees, piecesValidees, piecesAValider, cotisations, vehicules, immobilisations,
   })
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
@@ -626,8 +631,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // sinon ce qui l'empêche, et ce que `valider_exercice` recevrait — la numérotation même du FEC et, en trésorerie,
   // la 2035 telle qu'elle est affichée. L'année en cours est lue À PARIS, comme la base la lit. Une lecture
   // partielle de l'une des collections lues ici suspend la validation, en le disant.
-  // Les ventes facturées lues en partie en sont une : sans leurs factures sources, un exemplaire serait jugé comme une pièce
-  // qui compte (étape VF6a) — leur motif se dit ; pas encore revenues, la validation attend (`facturesSources` nulles).
+  // Les ventes facturées lues en partie en sont une : sans leurs factures sources, un exemplaire serait jugé comme une
+  // pièce qui compte (étape VF6a), et sans ce que leurs virements mixtes paient, l'exemplaire d'une facture d'avant serait
+  // daté par sa facture et non par le virement (étape VF5h) — leur motif se dit, en trésorerie comme en engagement ; pas
+  // encore revenues, la validation attend (`facturesSources` nulles). Une seule garde pour les deux raisons.
   const motifValidation = lectureIncomplete ?? ecrituresIncompletes ?? naturesIncompletes ?? empruntsIncomplets ?? validationIncomplete
     ?? (lectureVentesDuDossier?.etat === 'incomplete' ? `les ventes facturées : ${lectureVentesDuDossier.motif}` : null)
   const entete = { nom: dossier?.nom ?? null, activite: dossier?.libelle_naf ?? null, siret: dossier?.siret ?? null }
@@ -642,7 +649,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     const etat = prealablesDeValidation({
       annee, anneeCourante, aujourdHui: aujourdHuiAParis(), modele, assujettiTva, anneesValidees,
       lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
-      lignes: toutesLesLignes, ventilations, reglements, cotisations, vehicules, emprunts, aNouveaux, soldesReportes, declarationsTva,
+      lignes: toutesLesLignes, ventilations, reglements, encaissees, cotisations, vehicules, emprunts, aNouveaux, soldesReportes, declarationsTva,
       periodiciteTva, relevesIncoherents, doublonsTexte, facturesEmises, transmissions,
       // Les factures sources lues en entier pour CE dossier, ou rien : la validation se suspend alors (étape VF6a).
       facturesSources: ventesLues?.sources ?? null,

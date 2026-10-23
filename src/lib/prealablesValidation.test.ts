@@ -7,7 +7,7 @@ import { calculerDeclaration2035 } from './declaration2035'
 import { concordance2035 } from './concordance2035'
 import { ecritureDuPaiementPersonnel } from './cotisationPersonnelle'
 import { cotisationsComptees } from './cotisationRapprochee'
-import { paiementsDesPieces } from './rattachement'
+import { paiementsDesPieces, type PartEncaissee } from './rattachement'
 import { lignesPourPiece } from './ecritures'
 import type { ModeleComptable } from './engagement'
 import { COMPTE_BANQUE } from './comptes'
@@ -119,12 +119,12 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
   const base: Omit<DonneesDeValidation, 'declaration' | 'concordance'> = {
     annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, assujettiTva: false,
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
-    immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], cotisations: [],
+    immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE, ...o,
   }
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
-  const paiements = paiementsDesPieces(base.lignes, base.reglements)
+  const paiements = paiementsDesPieces(base.lignes, base.reglements, base.encaissees)
   const declaration = calculerDeclaration2035(
     base.annee, [...base.piecesValidees], [...base.categories], [...base.immobilisations], [], [...base.vehicules],
     base.assujettiTva, paiements, [], base.declarationsTva, PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
@@ -413,7 +413,7 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
     const janvier = ligne('l-jan', { date: '2026-01-05', piece_id: 'p1' })
     // Telles que la génération les écrit ; la facture a été validée avec 2025, son règlement est de 2026.
     const ecrites = lignesPourPiece('d1', facture, { compte: '606100', immobilisation: false }, false,
-      paiementsDesPieces([janvier], []).get('p1') ?? [], engagement)
+      paiementsDesPieces([janvier], [], []).get('p1') ?? [], engagement)
       .map((l, i) => ecriture(`e${i}`, { ...l, ligne_bancaire_id: l.ligne_bancaire_id ?? null, statut: l.date <= '2025-12-31' ? 'validee' : 'proposee' }))
     expect(ecrites.map((e) => [e.date, e.compte, e.statut])).toEqual([
       ['2025-12-20', '606100', 'validee'], ['2025-12-20', '401000', 'validee'],
@@ -965,7 +965,7 @@ describe('prealablesDeValidation — une échéance payée depuis le compte pers
     const d = donnees(o)
     const declaration = calculerDeclaration2035(
       d.annee, [...d.piecesValidees], [...d.categories], [], cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), [],
-      d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+      d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements, []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
       { etat: 'sans_bascule' },
     )
     const concordance = concordance2035(
@@ -1179,5 +1179,44 @@ describe('prealablesDeValidation — la couverture des points de la Checklist', 
       expect(repris(id), `« ${id} » est repris par la validation avant VF7`).toBe(false)
       expect(id in POINTS_DE_LA_CHECKLIST_ECARTES).toBe(false)
     }
+  })
+})
+
+// LE VIREMENT MIXTE (chantier EC-Q3, étape VF5h) : l'exemplaire d'une facture d'avant la bascule, qu'un crédit classé par
+// ses encaissements paie, se date par lui (`partsEncaissees`, lib/rattachement.ts) — dans les préalables comme dans la
+// 2035. Sans ses parts, il retomberait à sa date de facture : ses écritures, datées par le virement, se diraient « à
+// régénérer », et l'exercice de sa facture deviendrait le premier à valider.
+describe('prealablesDeValidation et prochainExerciceAValider — la pièce qu’un virement mixte paie (étape VF5h)', () => {
+  const RECETTE_D_AVANT = piece('pv', {
+    type_piece: 'vente', categorie_id: 'c-recettes', tiers: 'Client d’avant', date_piece: '2025-12-15', montant_ttc: 60, facture_id: 'fa',
+  })
+  // Le crédit de janvier, classé par ses encaissements : celui de la facture source, et les 60 € de la facture d'avant.
+  const VIREMENT_MIXTE = ligne('mx', { date: '2026-01-08', libelle: 'VIR CLIENT', montant: 179.5, encaissements_de_factures: true })
+  const PARTS: PartEncaissee[] = [{ ligne_bancaire_id: 'mx', piece_id: 'pv', montant: 60 }]
+  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+  // Ses écritures telles que la génération les écrit : à la date du virement, sa banque sur lui.
+  const ECRITES = lignesPourPiece('d1', RECETTE_D_AVANT, { compte: '706000', immobilisation: false }, false,
+    paiementsDesPieces([VIREMENT_MIXTE], [], PARTS).get('pv') ?? [], TRESORERIE)
+    .map((l, i) => ecriture(`ev${i}`, { ...l, piece_id: 'pv', ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+
+  it('les écritures de la pièce sont celles de son paiement par le virement : 2025 n’a rien à régénérer', () => {
+    expect(ECRITES.map((e) => e.date)).toEqual(['2026-01-08', '2026-01-08'])
+    expect(ECRITES.find((e) => e.compte === COMPTE_BANQUE)).toMatchObject({ sens: 'debit', montant: 60, ligne_bancaire_id: 'mx' })
+    const avec = (encaissees: PartEncaissee[]) => donnees({
+      piecesValidees: [P1, RECETTE_D_AVANT], categories: [ACHATS, RECETTES], lignes: [L1, VIREMENT_MIXTE],
+      ecritures: [E1, E2, ...ECRITES], encaissees,
+    })
+    expect(ids(avec(PARTS))).not.toContain('desynchronisees')
+    // Sans les parts du virement mixte, la pièce compterait le 15/12/2025, et ses écritures de 2026 seraient « à régénérer ».
+    expect(prealable(avec([]), 'desynchronisees')?.nb).toBe(1)
+  })
+
+  it('le premier exercice à valider est celui du virement, pas celui de la facture', () => {
+    const avec = (encaissees: PartEncaissee[]) => prochainExerciceAValider(donnees({
+      piecesValidees: [P1, { ...RECETTE_D_AVANT, date_piece: '2024-12-15' }], categories: [ACHATS, RECETTES],
+      lignes: [L1, { ...VIREMENT_MIXTE, date: '2025-01-08' }], encaissees,
+    }))
+    expect(avec(PARTS)).toBe(2025)
+    expect(avec([])).toBe(2024)
   })
 })

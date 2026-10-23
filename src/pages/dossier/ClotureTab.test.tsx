@@ -2597,7 +2597,7 @@ describe('ClotureTab — les ventes facturées', () => {
         dossierId: 'dossier-de-test', factures: [FACTURE_SOURCE as FactureVendue], lignes: [LIGNE_FS],
         encaissements: [(o.encaissement ?? ENCAISSEMENT) as unknown as EncaissementVendu], parts: [PART],
       },
-      mouvements: o.mouvements ?? [], comptesDeContrepartie: new Map(), mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
+      mouvements: o.mouvements ?? [], comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
     })
     let i = 0
     return c.ecritures.flatMap((e) => lignesAuBrouillon('dossier-de-test', e).map((l) => ({
@@ -2668,6 +2668,89 @@ describe('ClotureTab — les ventes facturées', () => {
     expect(screen.queryByText(/Pas encore dans l’application/)).toBeNull()
     expect(screen.queryByText(/ne les compte pas encore/)).toBeNull()
     expect(screen.queryByText(/Frais d’encaissements absents du récapitulatif/)).toBeNull()
+  })
+
+  // LE VIREMENT MIXTE (étape VF5h ; VF2-Q2, selon VF5-Q2) : un crédit du 10 mai 2025 de 1 800 € porte l'encaissement de la
+  // facture source (1 200 €) et celui d'une facture d'avant la bascule (600 € TTC, 500 € HT, du 20 décembre 2024), dont la
+  // pièce est l'exemplaire désigné ; le mouvement est classé par ses encaissements. Ce qui se joue ici est le CÂBLAGE : que
+  // l'écran tire les parts du virement mixte de la lecture des ventes, et les passe aux paiements — la pièce compte en 2025,
+  // à la date du virement, et non en 2024 à sa date de facture.
+  const FACTURE_D_AVANT = {
+    ...FACTURE_SOURCE, id: 'fa', numero: 'F2024-0099', date_emission: '2024-12-20', source_de_la_vente: false,
+  }
+  const CATEGORIE_RECETTES = {
+    id: 'cat-recettes', dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 3, compte_comptable: '706000',
+    poste_2035: 'Recettes',
+  }
+  const EXEMPLAIRE_D_AVANT = {
+    ...PIECE, id: 'pa', nom_fichier: 'F2024-0099.pdf', type_piece: 'vente', date_piece: '2024-12-20', montant_ht: 500,
+    montant_tva: 100, montant_ttc: 600, tiers: 'CLIENT D’AVANT', categorie_id: 'cat-recettes', facture_id: 'fa',
+  }
+  const VIREMENT_MIXTE = { ...MOUVEMENT_A_FRAIS, id: 'm-mixte', montant: 1800 }
+  function poserLeVirementMixte(designee = true) {
+    poserLesVentes()
+    faux.parTable.cotisations_declarees = []
+    faux.parTable.categories = [CATEGORIE, CATEGORIE_RECETTES]
+    faux.parTable.pieces = [PIECE, designee ? EXEMPLAIRE_D_AVANT : { ...EXEMPLAIRE_D_AVANT, facture_id: null }]
+    faux.parTable.factures_emises = [FACTURE_SOURCE, FACTURE_D_AVANT]
+    faux.parTable.encaissements_factures = [
+      { ...ENCAISSEMENT, ligne_bancaire_id: 'm-mixte' },
+      { ...ENCAISSEMENT, id: 'enc-a', facture_id: 'fa', date_encaissement: '2025-05-08', montant: 600, ligne_bancaire_id: 'm-mixte', cree_le: '2025-05-08T10:00:00Z' },
+    ]
+    faux.parTable.encaissements_factures_taux = [PART, { encaissement_id: 'enc-a', dossier_id: 'dossier-de-test', taux: 20, montant: 600 }]
+    faux.parTable.lignes_bancaires = [VIREMENT_MIXTE]
+    faux.parTable.a_nouveaux = []
+  }
+
+  it('un virement mixte : l’exemplaire de la facture d’avant compte à la date du virement, pas à sa date de facture', async () => {
+    poserLeVirementMixte()
+    monter(2025, true, true)
+    // 1 000 € de recette facturée, 500 € HT de l'exemplaire, 120 € d'achat : 1 380 € de bénéfice.
+    within((await screen.findByText(/Report sur la déclaration des revenus 2025/)).parentElement!).getByText(/Bénéfice de 1\s380 € : case 5QC/)
+    // Seul l'achat, que rien ne paie, s'y dit compté à sa date de facture ; l'exemplaire, payé par le virement, non.
+    const carte = within(screen.getByText(/Pièces comptées à leur date de facture \(1\)/).closest('.card')!)
+    carte.getByText('FOURNISSEUR')
+    expect(carte.queryByText('CLIENT D’AVANT')).toBeNull()
+  })
+
+  it('… sans sa désignation, aucune part : la pièce retombe à sa date de facture, et la 2035 de 2025 ne la compte pas', async () => {
+    poserLeVirementMixte(false)
+    monter(2025, true, true)
+    within((await screen.findByText(/Report sur la déclaration des revenus 2025/)).parentElement!).getByText(/Bénéfice de 880 € : case 5QC/)
+  })
+
+  // Le premier exercice à valider se tire des paiements, ceux du virement mixte compris : la vue « toutes années » ne
+  // propose pas celui de la date de facture de l'exemplaire, que rien d'autre ne porte.
+  it('… « toutes années » : l’exercice du virement, pas celui de la facture d’avant', async () => {
+    const toutes = () => render(
+      <ContexteDossier annee="toutes">
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={true} modele={TRESORERIE} />
+      </ContexteDossier>,
+    )
+    poserLeVirementMixte()
+    const avec = toutes()
+    await screen.findByText(/Concordance avec les écritures — 2025/)
+    expect(screen.queryByText(/Concordance avec les écritures — 2024/)).toBeNull()
+    avec.unmount()
+    // Sans sa désignation, l'exemplaire n'a pas de paiement : 2024, l'exercice de sa facture, se propose — le garde symétrique.
+    poserLeVirementMixte(false)
+    toutes()
+    await screen.findByText(/Concordance avec les écritures — 2024/)
+  })
+
+  // En engagement, la validation se montre sans la 2035 : tant que les ventes facturées d'un dossier basculé ne sont pas
+  // lues en entier, elle ignorerait ce que les virements mixtes paient — elle se suspend, et le dit, par la garde des
+  // factures sources lues en partie (étape VF6a), la seule : le motif de la collection qui manque.
+  it('… en engagement, la validation attend les ventes facturées lues en entier, et le dit', async () => {
+    poserLeVirementMixte()
+    faux.muetApresParTable = { encaissements_factures: 0 }
+    render(
+      <ContexteDossier annee={2025}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" ventesParLesFactures={true} modele={ENGAGEMENT} />
+      </ContexteDossier>,
+    )
+    await screen.findByText('Exercice 2025')
+    await screen.findByText(/La lecture du dossier est restée partielle \(les ventes facturées : les encaissements : /)
   })
 
   it('la catégorie propre au dossier l’emporte sur la commune du même code', async () => {

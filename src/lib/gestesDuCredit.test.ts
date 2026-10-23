@@ -58,7 +58,7 @@ const FACTURES = [
 const LIGNES = [ligne('f1', 500), ligne('f2', 500), ligne('f3', 250), ligne('f0', 500), ligne('a2', 100, -1), ligne('fb', 500)]
 
 function sources(o: Partial<SourcesDesGestes> = {}): SourcesDesGestes {
-  return { dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements: [], parts: [], mouvements: [], ...o }
+  return { dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements: [], parts: [], mouvements: [], exemplaires: [], ...o }
 }
 
 // Les parts d'un encaissement, à un seul taux : ce que le reste d'une facture lit.
@@ -117,6 +117,52 @@ describe('gestesDuCredit : la retenue de VF5a1 — rien ne s’offre sans des ve
     expect(gestes(sources({ mouvements: [mouvement({ id: 'm', statut: 'rapprochee', piece_id: 'p1' })] }), 'm')).toEqual(AUCUN_GESTE)
     // Un crédit nul n'est pas un crédit.
     expect(gestes(sources({ mouvements: [mouvement({ id: 'm', montant: 0 })], encaissements: [encaissement({ id: 'e', facture_id: 'f1', montant: 600 })] }), 'm')).toEqual(AUCUN_GESTE)
+  })
+})
+
+// LE VIREMENT MIXTE (étape VF5h ; VF2-Q2, selon VF5-Q2) : un crédit qu'une facture source réserve porte aussi
+// l'encaissement d'une facture d'avant la bascule. Le classement le compte, avec l'exemplaire unique et validé de sa
+// facture — sinon il le refuse sous ses mots, avant le clic —, et les confirmations disent ce qu'il fait à cet exemplaire :
+// le classement le date, son retrait ne le date plus ; ses écritures se régénèrent dans l'onglet Écritures.
+describe('un virement mixte : la facture source et la facture d’avant, classées ensemble', () => {
+  const EXEMPLAIRE = { id: 'p0', dossier_id: D, facture_id: 'f0', statut: 'validee', type_piece: 'vente' } as const
+  const s = sources({
+    mouvements: [mouvement({ id: 'm1', montant: 600 })],
+    encaissements: [
+      encaissement({ id: 'e1', facture_id: 'f1', montant: 500, ligne_bancaire_id: 'm1' }),
+      encaissement({ id: 'e0', facture_id: 'f0', montant: 100, ligne_bancaire_id: 'm1', cree_le: '2026-03-10T11:00:00Z' }),
+    ],
+  })
+
+  it('sans l’exemplaire : réservé, l’ensemble fait le crédit, le refus de la base dit l’exemplaire à désigner', () => {
+    const g = gestes(s, 'm1')
+    if (g.etat !== 'reserve') throw new Error(g.etat)
+    expect(g.ensemble).toBe(`Ses encaissements font exactement le crédit, ${fm(600)}.`)
+    expect(g.classement.refus).toBe(refus(REFUS_CLASSEMENT, 'exemplaire_a_designer', 'F2025-0099'))
+    expect(g.complement).toBeNull()
+  })
+
+  it('avec lui : aucun refus, et la confirmation nomme les deux factures et dit que le crédit date l’exemplaire', () => {
+    const g = gestes({ ...s, exemplaires: [EXEMPLAIRE] }, 'm1')
+    if (g.etat !== 'reserve') throw new Error(g.etat)
+    expect(g.classement.refus).toBeNull()
+    expect(g.classement.confirmation).toBe(
+      `Classer ce crédit du 12/03/2026 de ${fm(600)} par ses encaissements ?\n\n`
+      + `— Facture F2026-0014 (SARL Horizon) — virement du 10/03/2026 : ${fm(500)}\n`
+      + `— Facture F2025-0099 (Client fictif) — virement du 10/03/2026 : ${fm(100)}\n\n`
+      + 'Aucun frais bancaire : ses encaissements font exactement le crédit. La facture F2025-0099 n’est pas source de sa '
+      + 'vente : son exemplaire la compte, et ce crédit le date ; son écriture, si elle est déjà passée, se régénère dans '
+      + 'l’onglet Écritures. Il sera rapproché par eux, et ne recevra plus aucun autre classement ; ses écritures se passent '
+      + 'ensuite dans l’onglet Écritures, section « Ventes facturées ».',
+    )
+  })
+
+  it('classé : le retrait nomme les deux factures, et dit que l’exemplaire n’est plus daté par lui', () => {
+    const g = gestes({ ...s, exemplaires: [EXEMPLAIRE], mouvements: [mouvement({ id: 'm1', montant: 600, statut: 'rapprochee', encaissements_de_factures: true })] }, 'm1')
+    if (g.etat !== 'classe') throw new Error(g.etat)
+    expect(g.retrait.refus).toBeNull()
+    expect(g.retrait.confirmation).toContain('par ses encaissements (factures F2026-0014, F2025-0099) ?')
+    expect(g.retrait.confirmation).toMatch(/elles se retirent là\. L’exemplaire de la facture F2025-0099 n’est plus daté par lui : son écriture, si elle est déjà passée, se régénère dans l’onglet Écritures\.$/)
   })
 })
 
@@ -216,15 +262,23 @@ describe('un crédit RÉSERVÉ : classer par ses encaissements', () => {
     expect((gestes(s, 'm1', [2025]) as Extract<GestesDuCredit, { etat: 'reserve' }>).complement?.rattachables.map((e) => e.id)).toEqual(['e3'])
   })
 
-  it('un encaissement d’une facture d’avant la bascule sur le crédit ne le réserve pas, et ne se compte pas', () => {
+  it('un encaissement d’une facture d’avant la bascule sur le crédit ne le réserve pas, mais ce qui reste du crédit le compte', () => {
+    // Le virement mixte (étape VF5h) : son classement compterait cet encaissement ; libre pour la garde, le crédit qu'il fait
+    // n'attend aucune facture source — sa pièce s'y rapproche comme hier —, et la fiche n'offre rien de neuf.
     const s = sources({
       mouvements: [mouvement({ id: 'm1', montant: 600 })],
       encaissements: [encaissement({ id: 'e0', facture_id: 'f0', montant: 600, ligne_bancaire_id: 'm1' })],
     })
-    // Libre pour la garde : ce qui reste du crédit, c'est le crédit entier.
-    const g = gestes(s, 'm1')
-    expect(g.etat).toBe('libre')
-    expect(manqueDuCredit(mouvement({ id: 'm1', montant: 600 }), s.encaissements, { factures: FACTURES })).toBe(60000)
+    expect(gestes(s, 'm1')).toEqual(AUCUN_GESTE)
+    expect(manqueDuCredit(mouvement({ id: 'm1', montant: 600 }), s.encaissements, { factures: FACTURES })).toBe(0)
+    // Une part seulement : ce qui reste attend une facture source, et le complément le propose.
+    const partie = sources({
+      mouvements: [mouvement({ id: 'm1', montant: 600 })],
+      encaissements: [encaissement({ id: 'e0', facture_id: 'f0', montant: 120, ligne_bancaire_id: 'm1' })],
+    })
+    const g = gestes(partie, 'm1')
+    if (g.etat !== 'libre') throw new Error(g.etat)
+    expect(g.complement.manqueCentimes).toBe(48000)
   })
 })
 
@@ -309,7 +363,7 @@ describe('un crédit LIBRE : rattacher un encaissement, ou enregistrer celui d�
     expect(par.get('e4')?.confirmation).toContain(`— Facture F2026-0014 (SARL Horizon) — espèces du 02/03/2026 : ${fm(120)}`)
   })
 
-  it('le crédit porte déjà l’encaissement d’une facture d’avant la bascule : le rattachement le compte, le classement non', () => {
+  it('le crédit porte déjà l’encaissement d’une facture d’avant la bascule : le rattachement et le classement le comptent', () => {
     const avecAvant = {
       ...s,
       encaissements: [...s.encaissements, encaissement({ id: 'e0', facture_id: 'f0', montant: 100, ligne_bancaire_id: 'm1' })],
@@ -319,9 +373,19 @@ describe('un crédit LIBRE : rattacher un encaissement, ou enregistrer celui d�
     const par = new Map(g.complement.rattachables.map((e) => [e.id, e]))
     // e3 (300 €) : le crédit justifierait 400 € — au-delà des frais, la base refuse.
     expect(par.get('e3')?.refus).toBe(refus(REFUS_RATTACHEMENT, 'mouvement_depasse', '300,00', '400,00'))
-    // e4 (120 €) : admis ; le classement, lui, ne compterait que les 120 € de la facture source (VF2-Q2, VF5h).
+    // e4 (120 €) : admis ; le classement compterait aussi les 100 € de la facture d'avant (le virement mixte, VF5h) — sans
+    // l'exemplaire de cette facture, il les refuse d'abord, et l'état d'après le dit sous ses mots.
     expect(par.get('e4')?.refus).toBeNull()
-    expect(par.get('e4')?.confirmation).toContain(`Il restera ${fm(180)} pour faire le crédit`)
+    expect(par.get('e4')?.confirmation).toContain(
+      `Il ne pourra pas encore se classer par ses encaissements : « ${refus(REFUS_CLASSEMENT, 'exemplaire_a_designer', 'F2025-0099')} »`)
+    // Son exemplaire désigné : il resterait 80 € — 300 € moins les 100 € de la facture d'avant et les 120 € rattachés.
+    const avecExemplaire = gestes({
+      ...avecAvant, exemplaires: [{ id: 'p0', dossier_id: D, facture_id: 'f0', statut: 'validee', type_piece: 'vente' }],
+    }, 'm1')
+    if (avecExemplaire.etat !== 'libre') throw new Error(avecExemplaire.etat)
+    expect(avecExemplaire.complement.manqueCentimes).toBe(20000)
+    expect(avecExemplaire.complement.rattachables.find((e) => e.id === 'e4')?.confirmation)
+      .toContain(`Il restera ${fm(80)} pour faire le crédit : son classement attendra qu’il soit fait.`)
   })
 
   it('les factures à encaisser : sources, validées, des factures, un reste net de leurs avoirs ; la plus proche d’abord', () => {
@@ -420,7 +484,7 @@ describe('montantSurLeCredit et manqueDuCredit : la saisie de la fenêtre sur un
     expect(montantSurLeCredit(30000, -150)).toBe(30000)
   })
 
-  it('ce qui reste du crédit ne compte que les encaissements de factures sources qui le justifient, non retirés', () => {
+  it('ce qui reste du crédit compte les encaissements qui le justifient, non retirés — ceux d’une facture d’avant compris (VF5h)', () => {
     const m = mouvement({ id: 'm1', montant: 1000 })
     const registre = [
       encaissement({ id: 'a', facture_id: 'f1', montant: 300, ligne_bancaire_id: 'm1' }),
@@ -430,6 +494,8 @@ describe('montantSurLeCredit et manqueDuCredit : la saisie de la fenêtre sur un
       encaissement({ id: 'd-cp', facture_id: 'f3', montant: -50, annule_id: 'd' }),
       encaissement({ id: 'e', facture_id: 'f2', montant: 40, ligne_bancaire_id: 'm-autre' }),
     ]
-    expect(manqueDuCredit(m, registre, { factures: FACTURES })).toBe(70000)
+    // 1 000 € moins a (300 €, une facture source) et b (200 €, une facture d'avant la bascule) : le classement les compte
+    // tous deux ; c est retiré, d défait sans mouvement, e cite un autre mouvement.
+    expect(manqueDuCredit(m, registre, { factures: FACTURES })).toBe(50000)
   })
 })

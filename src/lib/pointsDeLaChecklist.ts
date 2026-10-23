@@ -24,6 +24,7 @@ import type {
 import { etatsDesLettragesManuels, piecesLettreesALaMain } from './lettrage'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from './ventilationBanque'
 import { paiementsDesPieces, piecesPayees } from './rattachement'
+import { partsEncaissees } from './encaissementsFactures'
 import {
   detailJumellesIncoherentes, detailVentesEnDouble, jumellesDuDossier, ventesEnDouble,
   type FacturePourJumelle, type TransmissionPourJumelle,
@@ -222,10 +223,16 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // facture source n'en est plus une — sa TVA, son montant et son règlement sont ceux de sa facture.
   const validesQuiComptent = horsDesExemplairesDesSources(piecesValidees, facturesSources)
   const aValiderQuiComptent = horsDesExemplairesDesSources(piecesAValider, facturesSources)
-  // Les paiements de chaque pièce — mouvements rapprochés et parts des virements groupés — décident de la
-  // date qu'une écriture doit porter et de ses lignes de banque (lib/rattachement.ts). `lignes` porte tout
-  // le relevé, et `paiementsDesPieces` n'en retient que les rapprochés.
-  const paiements = paiementsDesPieces(lignes, reglements)
+  // Les paiements de chaque pièce — mouvements rapprochés, parts des virements groupés, et, depuis l'étape VF5h, ce que
+  // les virements mixtes paient des exemplaires (`partsEncaissees`, sur les ventes facturées lues en entier d'un dossier
+  // basculé ; aucun ailleurs : sans facture source, aucun mouvement n'est classé par ses encaissements) — décident de la
+  // date qu'une écriture doit porter et de ses lignes de banque (lib/rattachement.ts). `lignes` porte tout le relevé, et
+  // `paiementsDesPieces` n'en retient que les rapprochés.
+  const encaissees = ventesFacturees?.etat === 'lue'
+    ? partsEncaissees(ventesFacturees.dossierId, ventesFacturees.sources.encaissements, ventesFacturees.sources,
+      ventesFacturees.sources.exemplaires)
+    : []
+  const paiements = paiementsDesPieces(lignes, reglements, encaissees)
   const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplaires)
   // Les lettrages faits à la main (lib/lettrage.ts), revérifiés sur TOUTES les pièces lues, comme la carte des comptes
   // de tiers qui les montre : la liste qu'on y défait et ces points disent la même chose. En trésorerie, rien ne se
@@ -355,7 +362,10 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // presque toujours un paiement partiel, donc on le signale sans rien écraser. Jugé sur le TOTAL
   // payé de la pièce, pas mouvement par mouvement : une facture réglée en deux fois n'a rien à
   // reprendre. En trésorerie seulement — voir `piecesPayeesEnPartie`.
-  const payeesEnPartie = paiementsPartiels ? [] : piecesPayeesEnPartie(validesQuiComptent, paiements, modele.mode)
+  // Des ventes facturées lues en partie taisent aussi ce point : un virement mixte non lu ferait passer son exemplaire pour
+  // payé en partie.
+  const payeesEnPartie = paiementsPartiels || ventesFacturees?.etat === 'incomplete' ? []
+    : piecesPayeesEnPartie(validesQuiComptent, paiements, modele.mode)
   // La TROISIÈME clé en `ON DELETE SET NULL` de `pieces` : supprimer une pièce immobilisée détache
   // son immobilisation sans un mot, et la dotation continue de partir en case CH d'une 2035 signée.
   const immosSansJustificatif = immobilisationsSansJustificatif(immobilisations)

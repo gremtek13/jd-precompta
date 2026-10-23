@@ -34,6 +34,7 @@ import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib
 import { jumellesDuDossier, marquesDesPieces, PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
 import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
 import { lireLesFacturesProposees, type FactureProposee } from '../../lib/exemplairesDesFacturesLecture'
+import { lireLesVentesFacturees } from '../../lib/ventesFactureesLecture'
 import { citantDe, lireCitationsDeLaRevision, quiCite, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
 import { lireFichesHorsDeFrance } from '../../lib/piecesHorsDeFranceLecture'
 import { lireEcarts } from '../../lib/regimesEreportingLecture'
@@ -49,7 +50,11 @@ const SOURCES_NON_LUES: FacturesSources = new Set()
 
 // `dossierSiret` : le SIRET du dossier, que la page lit avec son identité — la réception par la plateforme du client
 // vérifie à chaque facture qu'elle désigne bien CE dossier (voir lib/receptionPlateforme.ts).
-export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierId: string; dossierSiret?: string | null }) {
+// `ventesParLesFactures` : le réglage du dossier (étape VF2), sans valeur par défaut — un dossier basculé lit aussi ses
+// ventes facturées, dont les virements mixtes paient des exemplaires (étape VF5h) : le badge « Rapprochée » le dit d'eux.
+export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLesFactures }: {
+  dossierId: string; dossierSiret?: string | null; ventesParLesFactures: boolean
+}) {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [sousDossiers, setSousDossiers] = useState<SousDossier[]>([])
@@ -210,7 +215,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     // plusieurs pièces n'en porte aucune — elles sont dans ses parts (lib/reglementGroupe.ts), lues juste
     // après. Une pièce payée avec d'autres est rapprochée comme une autre, et le badge doit le dire.
     const lectureRapprochees = await lireTout<LignePayante>((debut, fin) =>
-      supabase.from('lignes_bancaires').select('id, piece_id, date, montant, statut, reglement_groupe', { count: 'exact' })
+      supabase.from('lignes_bancaires').select('id, piece_id, date, montant, statut, reglement_groupe, encaissements_de_factures', { count: 'exact' })
         .eq('dossier_id', dossierId)
         .eq('statut', 'rapprochee')
         .order('id').range(debut, fin),
@@ -219,6 +224,11 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
       supabase.from('reglements_groupes').select('ligne_bancaire_id, piece_id, montant', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     )
+    // Et, pour un dossier basculé, ce que ses virements mixtes paient des exemplaires (étape VF5h), lu avec ses ventes
+    // facturées (lib/ventesFactureesLecture.ts) : l'exemplaire qu'un tel virement paie est rapproché comme une autre
+    // pièce. Aucun ailleurs — sans facture source, aucun mouvement n'est classé par ses encaissements. Ne rejette jamais :
+    // lue en partie, elle revient « incomplète », et le bandeau des listes de référence le dit.
+    const lectureVentes = ventesParLesFactures ? await lireLesVentesFacturees(dossierId) : null
 
     const lectureCategories = await lireTout<Categorie>((debut, fin) =>
       supabase.from('categories').select('*', { count: 'exact' })
@@ -252,7 +262,8 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     // sur « non rapprochée »), ou taisent une catégorie déjà arbitrée.
     setReferencesIncompletes(
       [lectureRapprochees, lectureReglements, lectureCategories, lectureSousDossiers, lectureTiersCategories, lectureTiersCabinet]
-        .find((l) => !l.complete)?.motif ?? null,
+        .find((l) => !l.complete)?.motif
+        ?? (lectureVentes?.etat === 'incomplete' ? `les ventes facturées du dossier : ${lectureVentes.motif}` : null),
     )
 
     // Les précisions portées par le client sur ses dépôts. Chargées ici, en une requête pour tout le
@@ -286,13 +297,14 @@ export default function PiecesTab({ dossierId, dossierSiret = null }: { dossierI
     setSousDossiers(lectureSousDossiers.lignes)
     setTiersCategories(lectureTiersCategories.lignes)
     setTiersCategoriesCabinet(lectureTiersCabinet.lignes)
-    setPiecesRapprochees(new Set(piecesPayees(paiementsDesPieces(lectureRapprochees.lignes, lectureReglements.lignes))))
+    setPiecesRapprochees(new Set(piecesPayees(paiementsDesPieces(lectureRapprochees.lignes, lectureReglements.lignes,
+      lectureVentes?.etat === 'lue' ? lectureVentes.encaissees : []))))
     setLoading(false)
   }
 
   useEffect(() => {
     load()
-  }, [dossierId])
+  }, [dossierId, ventesParLesFactures])
 
   // Un dossier est par client, pas par année (voir Estimation) — les pièces s'accumulent sur plusieurs
   // exercices sans jamais être archivées ailleurs. Le filtre d'exercice ne déplace rien, il joue sur

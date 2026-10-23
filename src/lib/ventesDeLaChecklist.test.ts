@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
-import type { LigneDeFacture } from './encaissementsFactures'
+import { lignesPourPiece } from './ecritures'
+import { partsEncaissees, type ExemplaireLu, type LigneDeFacture } from './encaissementsFactures'
 import type { EncaissementDuMouvementLu, FactureDesGestes, LectureDesVentesDuReleve, SourcesDesGestes } from './mouvementsDesVentes'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
 import { PLAN_PAR_DEFAUT } from './planComptable'
-import type { LigneBancaire, MoyenEncaissement } from './types'
+import { paiementsDesPieces } from './rattachement'
+import type { Categorie, EcritureBrouillon, LigneBancaire, MoyenEncaissement } from './types'
+import { pieceDeVente } from '../test/dossierBascule'
+import { NON_VALIDEE } from '../test/ecritures'
 import { detailDesEncaissementsSansMouvement, MOYENS_DU_RELEVE, ventesDeLaChecklist } from './ventesDeLaChecklist'
 
 // CE QUE LA VUE D'ENSEMBLE DIT DES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5f) :
@@ -46,9 +50,11 @@ const FACTURES = [
 ]
 const LIGNES = [ligneDeFacture('f1', 500), ligneDeFacture('f2', 500), ligneDeFacture('f0', 500)]
 
-function lue(mouvements: readonly LigneBancaire[], encaissements: readonly EncaissementDuMouvementLu[] = []): LectureDesVentesDuReleve {
+function lue(
+  mouvements: readonly LigneBancaire[], encaissements: readonly EncaissementDuMouvementLu[] = [], exemplaires: readonly ExemplaireLu[] = [],
+): LectureDesVentesDuReleve {
   const s: SourcesDesGestes = {
-    dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements, mouvements,
+    dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements, mouvements, exemplaires,
     parts: encaissements.filter((e) => e.annule_id == null).map((e) => ({ encaissement_id: e.id, taux: 20, montant: e.montant })),
   }
   return { dossierId: D, etat: 'lue', sources: s }
@@ -235,5 +241,55 @@ describe('pointsDeLaChecklist : les ventes facturées (VF5f)', () => {
     expect(point(d, 'mouvements-reserves')?.nb).toBe(0)
     expect(point(d, 'encaissements-sans-mouvement')?.nb).toBe(0)
     expect(point(d, 'lignes-non-rapprochees')?.nb).toBe(2)
+  })
+})
+
+// LE VIREMENT MIXTE (étape VF5h ; VF2-Q2, selon VF5-Q2) : le crédit m-mx, classé par ses encaissements, porte celui de la
+// facture source F2026-0014 (600 €) et celui de la facture d'avant F2025-0099 (60 €), dont la pièce p-avant est
+// l'exemplaire désigné ; ses écritures sont celles que la génération écrit, datées par le virement, sa banque sur lui. La
+// Vue d'ensemble tire la part du virement mixte de la même lecture des ventes (`partsEncaissees`) : ces écritures ne sont
+// pas « à régénérer », et la pièce n'est pas « payée en partie ». Lue en partie, cette lecture tait le second point —
+// un virement mixte non lu ferait passer l'exemplaire pour payé en partie.
+describe('pointsDeLaChecklist : l’exemplaire qu’un virement mixte paie (étape VF5h)', () => {
+  const RECETTES = { id: 'c-rec', dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 1, compte_comptable: '706000', poste_2035: 'Recettes' } as Categorie
+  const EXEMPLAIRE = pieceDeVente({
+    id: 'p-avant', dossier_id: D, date_piece: '2025-12-15', montant_ht: 50, montant_tva: 10, montant_ttc: 60, categorie_id: 'c-rec', facture_id: 'f0',
+  })
+  const DESIGNEE: ExemplaireLu = { id: 'p-avant', dossier_id: D, facture_id: 'f0', statut: 'validee', type_piece: 'vente' }
+  const MIXTE = mouvement({ id: 'm-mx', date: '2026-03-12', montant: 660, statut: 'rapprochee', encaissements_de_factures: true })
+  const REGISTRE = [
+    encaissement({ id: 'e1', facture_id: 'f1', montant: 600, ligne_bancaire_id: 'm-mx', date_encaissement: '2026-03-12' }),
+    encaissement({ id: 'ea', facture_id: 'f0', montant: 60, ligne_bancaire_id: 'm-mx', date_encaissement: '2026-03-12' }),
+  ]
+  // Les écritures de l'exemplaire, telles que la génération les écrit avec la part du virement mixte.
+  const paiements = paiementsDesPieces([MIXTE], [], partsEncaissees(D, REGISTRE, { factures: FACTURES }, [DESIGNEE]))
+  const ECRITES: EcritureBrouillon[] = lignesPourPiece(D, EXEMPLAIRE, { compte: '706000', immobilisation: false }, true,
+    paiements.get('p-avant') ?? [], CONTEXTE.modele).map((l, i) => ({
+    ...l, id: `ex${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null, created_at: `${l.date}T12:00:00Z`, immobilisation_id: null,
+    vehicule_id: null, declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
+  }))
+  const lesDonnees = (o: Partial<DonneesDeLaChecklist> = {}) => donnees({
+    piecesValidees: [EXEMPLAIRE], categories: [RECETTES], lignes: [MIXTE], ecritures: ECRITES, ventesFacturees: lue([MIXTE], REGISTRE, [DESIGNEE]), ...o,
+  })
+
+  it('ses écritures, datées par le virement et sa banque sur lui, ne sont pas « à régénérer »', () => {
+    expect(ECRITES.find((l) => l.compte === '512000')).toMatchObject({ date: '2026-03-12', ligne_bancaire_id: 'm-mx', sens: 'debit', montant: 60 })
+    expect(point(lesDonnees(), 'desynchronisees')?.nb).toBe(0)
+    expect(point(lesDonnees(), 'pieces-payees-en-partie')?.nb).toBe(0)
+    // Le garde symétrique : sans la part — la désignation défaite —, les mêmes écritures sont à régénérer.
+    expect(point(lesDonnees({ ventesFacturees: lue([MIXTE], REGISTRE, []) }), 'desynchronisees')?.nb).toBe(1)
+  })
+
+  it('payée pour moitié par un autre mouvement : sur des ventes lues en partie, le point « payée en partie » se tait', () => {
+    const ACOMPTE = mouvement({ id: 'm-ac', date: '2026-02-01', montant: 30, statut: 'rapprochee', piece_id: 'p-avant' })
+    const registre = [REGISTRE[0], { ...REGISTRE[1], montant: 30 }]
+    const lignes = [MIXTE, ACOMPTE]
+    // Lues en entier : 30 € + 30 € font la pièce ; rien n'est dit.
+    expect(point(lesDonnees({ lignes, ventesFacturees: lue(lignes, registre, [DESIGNEE]) }), 'pieces-payees-en-partie')?.nb).toBe(0)
+    // Lues en partie : le virement mixte manque, la pièce aurait l'air payée en partie — le point se tait.
+    expect(point(lesDonnees({ lignes, ventesFacturees: { dossierId: D, etat: 'incomplete', motif: 'refusée' } }), 'pieces-payees-en-partie')?.nb)
+      .toBe(0)
+    // Le garde symétrique : sans le virement mixte, sur une lecture entière, la pièce EST payée en partie, et le point le dit.
+    expect(point(lesDonnees({ lignes, ventesFacturees: lue(lignes, registre, []) }), 'pieces-payees-en-partie')?.nb).toBe(1)
   })
 })

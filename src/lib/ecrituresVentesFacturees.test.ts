@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { encaissementVendu, factureVendue, ligneVendue } from '../test/ventesFacturees'
-import type { LigneDeFacture } from './encaissementsFactures'
+import type { ExemplaireLu, LigneDeFacture } from './encaissementsFactures'
 import { ecartDeFrais, justifieSonMouvement } from './encaissementsFactures'
 import { auxiliaireDuTiers } from './engagement'
 import { montantsDuDocument } from './factureCii'
@@ -56,6 +56,8 @@ interface Jeu {
   encaissements?: { encaissement: EncaissementVendu; part: PartVendue }[]
   mouvements?: MouvementDesEncaissements[]
   comptes?: Map<string, string>
+  // Les pièces désignées (étape VF5h, le virement mixte) ; aucune par défaut.
+  exemplaires?: ExemplaireLu[]
 }
 
 function composer(jeu: Jeu, mode: ModeComptable, plan: PlanComptable): EcrituresDesVentesFacturees {
@@ -65,7 +67,7 @@ function composer(jeu: Jeu, mode: ModeComptable, plan: PlanComptable): Ecritures
       dossierId: D, factures: jeu.factures ?? [facture()], lignes: jeu.lignes ?? [ligneVendue('f1', 100, 20)],
       encaissements: encs.map((e) => e.encaissement), parts: encs.map((e) => e.part),
     },
-    mouvements: jeu.mouvements ?? [], comptesDeContrepartie: jeu.comptes ?? new Map(), mode, plan,
+    mouvements: jeu.mouvements ?? [], comptesDeContrepartie: jeu.comptes ?? new Map(), exemplaires: jeu.exemplaires ?? [], mode, plan,
   })
   verifier(r)
   return r
@@ -488,7 +490,7 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
           encaissements: [enc('e1', '2025-11-20', 172.75, { ligne_bancaire_id: 'm1' }).encaissement],
           parts: [{ encaissement_id: 'e1', dossier_id: D, taux: 20, montant: 120 }, { encaissement_id: 'e1', dossier_id: D, taux: 5.5, montant: 52.75 }],
         },
-        mouvements: [mvt({ id: 'm1', date: '2025-11-20', montant: 172.75 })], comptesDeContrepartie: new Map(), mode, plan,
+        mouvements: [mvt({ id: 'm1', date: '2025-11-20', montant: 172.75 })], comptesDeContrepartie: new Map(), exemplaires: [], mode, plan,
       })
       verifier(deux)
       expect(ecriture(deux, cleFecEncaissement('e1', '2025-11-20')).lignes).toEqual(lignes(plan, mode === 'tresorerie'
@@ -547,23 +549,130 @@ describe('ce qui ne s’écrit pas se dit, avec sa raison', () => {
     ])
   })
 
-  it('un mouvement qui porte aussi l’encaissement d’une facture qui n’est pas source (VF2-Q2) : à concevoir, il ne s’écrit pas', () => {
-    const r = composer({
+  // LE VIREMENT MIXTE (étape VF5h ; VF2-Q2, selon VF5-Q2 : la manière A, « le registre DATE la pièce »). Un crédit qui paie
+  // une facture source et une facture d'avant la bascule s'écrit quand celle-ci a son exemplaire unique et validé : la part
+  // des factures sources — la banque de ce que leurs encaissements du même jour n'ont pas porté, le 511 ou le 53 de ceux
+  // d'un autre jour — et les frais du tout ; l'exemplaire écrit lui-même sa banque sur ce mouvement
+  // (lib/contrepartieBanque.ts). Sans lui, ou avec plusieurs, il ne s'écrit pas, et la facture se nomme comme la base la
+  // nomme (`ecriture_attendue_vente_facturee`, migration virement_mixte).
+  describe('le virement mixte (étape VF5h)', () => {
+    const mixte = (o: Partial<Jeu> = {}, montant = 180): Jeu => ({
       factures: [facture(), facture({ id: 'f9', numero: 'F2025-0009', source_de_la_vente: false })],
       lignes: [ligneVendue('f1', 100, 20), ligneVendue('f9', 50, 20)],
       encaissements: [
         enc('e1', '2025-11-19', 120, { ligne_bancaire_id: 'm1' }),
         enc('e9', '2025-11-20', 60, { facture_id: 'f9', ligne_bancaire_id: 'm1' }),
       ],
-      mouvements: [mvt({ id: 'm1', date: '2025-11-20', montant: 180 })],
-    }, 'tresorerie', PLAN_PAR_DEFAUT)
-    // L'encaissement de la facture source s'écrit (au 511 : son mouvement est d'un autre jour) ; celui de l'autre facture,
-    // compté par sa pièce, n'est pas une vente facturée.
-    expect(cles(r)).toEqual([cleFecEncaissement('e1', '2025-11-19')])
-    expect(r.nonEcrites).toEqual([{
+      mouvements: [mvt({ id: 'm1', date: '2025-11-20', montant })],
+      ...o,
+    })
+    const exemplaire = (o: Partial<ExemplaireLu> = {}): ExemplaireLu => ({
+      id: 'p9', dossier_id: D, facture_id: 'f9', statut: 'validee', type_piece: 'vente', ...o,
+    })
+    const SANS_EXEMPLAIRE = {
       source: { genre: 'mouvement', ligneBancaireId: 'm1' }, motif: 'mouvement_facture_non_source',
-      detail: LIBELLE_MOTIF_NON_ECRITE.mouvement_facture_non_source,
-    }])
+      detail: `${LIBELLE_MOTIF_NON_ECRITE.mouvement_facture_non_source} (facture F2025-0009)`, facture: 'F2025-0009',
+    }
+
+    it.each(MODES)('%s : sans l’exemplaire de la facture d’avant, il ne s’écrit pas, et la facture se nomme', (mode) => {
+      const r = composer(mixte(), mode, PLAN_PAR_DEFAUT)
+      // L'encaissement de la facture source s'écrit (au 511 : son mouvement est d'un autre jour) ; celui de l'autre facture,
+      // compté par sa pièce, n'est pas une vente facturée ; le mouvement, lui, attend.
+      expect(cles(r)).toContain(cleFecEncaissement('e1', '2025-11-19'))
+      expect(cles(r)).not.toContain(cleFecMouvementEncaissements('m1'))
+      expect(r.nonEcrites).toEqual([SANS_EXEMPLAIRE])
+    })
+
+    it('à valider, deux fois désigné, celui d’une autre facture, d’un autre dossier, une pièce d’achat : pas d’exemplaire unique et validé', () => {
+      for (const exemplaires of [
+        [exemplaire({ statut: 'a_valider' })],
+        [exemplaire(), exemplaire({ id: 'p8' })],
+        [exemplaire({ facture_id: 'f1' })],
+        [exemplaire({ dossier_id: 'd2' })],
+        [exemplaire({ type_piece: 'achat' })],
+      ]) {
+        expect(composer(mixte({ exemplaires }), 'tresorerie', PLAN_PAR_DEFAUT).nonEcrites, JSON.stringify(exemplaires))
+          .toEqual([SANS_EXEMPLAIRE])
+      }
+      // Une pièce à valider à côté de l'exemplaire validé : celui-ci reste l'unique exemplaire validé.
+      expect(composer(mixte({ exemplaires: [exemplaire({ id: 'p8', statut: 'a_valider' }), exemplaire()] }), 'tresorerie', PLAN_PAR_DEFAUT)
+        .nonEcrites).toEqual([])
+    })
+
+    it.each(MODES)('%s : avec lui, la part de la facture source — le 511 d’un autre jour — ; l’exemplaire porte sa banque', (mode) => {
+      const r = composer(mixte({ exemplaires: [exemplaire()] }), mode, PLAN_PAR_DEFAUT)
+      expect(r.nonEcrites).toEqual([])
+      expect(ecriture(r, cleFecMouvementEncaissements('m1')).lignes).toEqual(lignes(PLAN_PAR_DEFAUT, [
+        ['D', 'banque', 12000, 'm1'], ['C', 'valeurs_a_l_encaissement', 12000, 'm1'],
+      ]))
+      // La banque que la composition écrit sur le mouvement : la part de la facture source ; les 60 € de la facture d'avant,
+      // son exemplaire les écrit, daté par ce mouvement.
+      expect(banqueDuMouvement(r, 'm1')).toBe(12000)
+    })
+
+    it('les frais sont ceux du tout : crédité de 1 € de moins, le 627 porte 1 € ; au-delà du seuil du tout, il ne s’écrit pas', () => {
+      const r = composer(mixte({ exemplaires: [exemplaire()] }, 179), 'tresorerie', PLAN_PAR_DEFAUT)
+      expect(ecriture(r, cleFecMouvementEncaissements('m1')).lignes).toEqual(lignes(PLAN_PAR_DEFAUT, [
+        ['D', 'banque', 11900, 'm1'], ['C', 'valeurs_a_l_encaissement', 12000, 'm1'], ['D', 'services_bancaires', 100, 'm1'],
+      ]))
+      // Le seuil se lit sur le tout, 180 € : min(2 %, 5 €) = 3,60 €. Sur la seule part de la source, 120 €, il serait de 2,40 €.
+      expect(composer(mixte({ exemplaires: [exemplaire()] }, 176.4), 'tresorerie', PLAN_PAR_DEFAUT).nonEcrites).toEqual([])
+      expect(composer(mixte({ exemplaires: [exemplaire()] }, 176.39), 'tresorerie', PLAN_PAR_DEFAUT).nonEcrites.map((n) => n.motif))
+        .toEqual(['mouvement_ecart'])
+    })
+
+    it('l’encaissement de la facture d’avant, d’un autre jour que le mouvement : comme un encaissement du même jour', () => {
+      const r = composer(mixte({
+        encaissements: [
+          enc('e1', '2025-11-20', 120, { ligne_bancaire_id: 'm1' }),
+          enc('e9', '2025-11-17', 60, { facture_id: 'f9', ligne_bancaire_id: 'm1' }),
+        ],
+        exemplaires: [exemplaire()],
+      }), 'tresorerie', PLAN_PAR_DEFAUT)
+      // Rien de plus à écrire : la source du même jour porte sa banque, l'exemplaire la sienne — jamais au 511.
+      expect(cles(r)).not.toContain(cleFecMouvementEncaissements('m1'))
+      expect(r.nonEcrites).toEqual([])
+      expect(banqueDuMouvement(r, 'm1')).toBe(12000)
+    })
+
+    it('deux factures d’avant sans exemplaire : celle du plus petit numéro, octet par octet, et non du plus petit identifiant', () => {
+      const r = composer(mixte({
+        factures: [facture(), facture({ id: 'f8', numero: 'F2025-0011', source_de_la_vente: false }),
+          facture({ id: 'f9', numero: 'F2025-0010', source_de_la_vente: false })],
+        lignes: [ligneVendue('f1', 100, 20), ligneVendue('f8', 25, 20), ligneVendue('f9', 25, 20)],
+        encaissements: [
+          enc('e1', '2025-11-19', 120, { ligne_bancaire_id: 'm1' }),
+          enc('e8', '2025-11-20', 30, { facture_id: 'f8', ligne_bancaire_id: 'm1' }),
+          enc('e9', '2025-11-20', 30, { facture_id: 'f9', ligne_bancaire_id: 'm1' }),
+        ],
+      }), 'tresorerie', PLAN_PAR_DEFAUT)
+      expect(r.nonEcrites.map((n) => n.facture)).toEqual(['F2025-0010'])
+      // Celle qui a son exemplaire ne se nomme pas : l'autre, si.
+      const une = composer(mixte({
+        factures: [facture(), facture({ id: 'f8', numero: 'F2025-0011', source_de_la_vente: false }),
+          facture({ id: 'f9', numero: 'F2025-0010', source_de_la_vente: false })],
+        lignes: [ligneVendue('f1', 100, 20), ligneVendue('f8', 25, 20), ligneVendue('f9', 25, 20)],
+        encaissements: [
+          enc('e1', '2025-11-19', 120, { ligne_bancaire_id: 'm1' }),
+          enc('e8', '2025-11-20', 30, { facture_id: 'f8', ligne_bancaire_id: 'm1' }),
+          enc('e9', '2025-11-20', 30, { facture_id: 'f9', ligne_bancaire_id: 'm1' }),
+        ],
+        exemplaires: [exemplaire()],
+      }), 'tresorerie', PLAN_PAR_DEFAUT)
+      expect(une.nonEcrites.map((n) => n.facture)).toEqual(['F2025-0011'])
+    })
+
+    it('retiré, ou défait par une contre-passation sans mouvement, l’encaissement de la facture d’avant ne compte plus', () => {
+      for (const e9 of [
+        [enc('e9', '2025-11-20', 60, { facture_id: 'f9', ligne_bancaire_id: 'm1', retire_le: '2025-11-21T10:00:00Z' })],
+        [enc('e9', '2025-11-20', 60, { facture_id: 'f9', ligne_bancaire_id: 'm1' }),
+          enc('c9', '2025-11-22', -60, { facture_id: 'f9', annule_id: 'e9' })],
+      ]) {
+        const r = composer(mixte({ encaissements: [enc('e1', '2025-11-19', 120, { ligne_bancaire_id: 'm1' }), ...e9] }), 'tresorerie', PLAN_PAR_DEFAUT)
+        // Ni retenu faute d'exemplaire, ni compté : ses encaissements ne font plus le crédit.
+        expect(r.nonEcrites.map((n) => n.motif)).toEqual(['mouvement_ecart'])
+      }
+    })
   })
 
   it('un mouvement au montant illisible (plus de deux décimales) ne s’écrit pas', () => {
@@ -717,7 +826,7 @@ describe('chaque écriture porte sa source, et se recompose à l’identique dep
         encaissements: [autreDossier.encaissement, ...encs.map((e) => e.encaissement)], parts: [autreDossier.part, ...encs.map((e) => e.part)],
       },
       mouvements: [mvt({ id: 'm9', dossier_id: 'd2', date: '2025-11-20', montant: 3 }), mvt({ id: 'm1', date: '2025-11-20', montant: 95.5 })],
-      comptesDeContrepartie: new Map(), mode: 'engagement', plan: PLAN_PAR_DEFAUT,
+      comptesDeContrepartie: new Map(), exemplaires: [], mode: 'engagement', plan: PLAN_PAR_DEFAUT,
     })
     expect(JSON.stringify(r2.ecritures)).toBe(JSON.stringify(r.ecritures))
     expect(r2.nonEcrites).toEqual(r.nonEcrites)
@@ -885,7 +994,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
   const calcules = dossiers.map((t) => ({
     t,
     parMode: Object.fromEntries(MODES.map((mode) => [mode, ecrituresDesVentesFacturees({
-      sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, mode, plan: PLAN_PAR_DEFAUT,
+      sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode, plan: PLAN_PAR_DEFAUT,
     })])) as Record<ModeComptable, EcrituresDesVentesFacturees>,
   }))
   const P = PLAN_PAR_DEFAUT
@@ -1017,7 +1126,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
     const defauts = new Set(Object.values(PLAN_PAR_DEFAUT))
     for (const { t, parMode } of calcules.slice(0, 300)) {
       for (const mode of MODES) {
-        const decale = ecrituresDesVentesFacturees({ sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, mode, plan: PLAN_DECALE })
+        const decale = ecrituresDesVentesFacturees({ sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode, plan: PLAN_DECALE })
         for (const e of decale.ecritures) for (const l of e.lignes) expect(defauts.has(l.compte), l.compte).toBe(false)
         const ramene = decale.ecritures.map((e) => ({
           ...e, lignes: e.lignes.map((l) => ({ ...l, compte: versLeDefaut.get(l.compte) ?? l.compte })).sort(ordreDesLignes),
@@ -1034,7 +1143,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
     for (const { t, parMode } of calcules.slice(0, 300)) {
       const r = ecrituresDesVentesFacturees({
         sources: { ...t.sources, factures: melange(t.sources.factures), lignes: melange(t.sources.lignes), encaissements: melange(t.sources.encaissements), parts: melange(t.sources.parts) },
-        mouvements: melange(t.mouvements), comptesDeContrepartie: t.comptes, mode: 'engagement', plan: PLAN_PAR_DEFAUT,
+        mouvements: melange(t.mouvements), comptesDeContrepartie: t.comptes, exemplaires: [], mode: 'engagement', plan: PLAN_PAR_DEFAUT,
       })
       expect(JSON.stringify(r.ecritures)).toBe(JSON.stringify(parMode.engagement.ecritures))
     }
@@ -1049,7 +1158,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
     for (const [index, { t, parMode }] of calcules.entries()) {
       for (const plan of index < 300 ? [PLAN_PAR_DEFAUT, PLAN_DECALE] : [PLAN_PAR_DEFAUT]) {
         const r = plan === PLAN_PAR_DEFAUT ? parMode.tresorerie
-          : ecrituresDesVentesFacturees({ sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, mode: 'tresorerie', plan })
+          : ecrituresDesVentesFacturees({ sources: t.sources, mouvements: t.mouvements, comptesDeContrepartie: t.comptes, exemplaires: [], mode: 'tresorerie', plan })
         const ecrit = new Map<string, number>()
         for (const e of r.ecritures) {
           for (const l of e.lignes) {
@@ -1061,7 +1170,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
         const compte = new Map<string, number>()
         for (const annee of new Set(t.mouvements.map((m) => Number(m.date.slice(0, 4))))) {
           const d = calculerDeclaration2035(
-            annee, [], [FRAIS_BANCAIRES], [], [], [], true, paiementsDesPieces([], []), [], [], plan, r.ventes,
+            annee, [], [FRAIS_BANCAIRES], [], [], [], true, paiementsDesPieces([], [], []), [], [], plan, r.ventes,
             { etat: 'composees', composition: r },
           )
           for (const c of d.contributions) {

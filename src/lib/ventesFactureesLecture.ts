@@ -1,7 +1,8 @@
 import { supabase } from './supabase'
-import type { LigneDeFacture } from './encaissementsFactures'
+import { partsEncaissees, type ExemplaireLu, type LigneDeFacture } from './encaissementsFactures'
 import { lireTout, type LectureComplete } from './lectureComplete'
 import { messageErreur } from './messageErreur'
+import type { PartEncaissee } from './rattachement'
 import {
   ventesFacturees, type EncaissementVendu, type FactureVendue, type PartVendue, type VentesFacturees,
 } from './ventesFacturees'
@@ -11,14 +12,24 @@ import {
 // liront à côté de leurs autres sources, et passeront ce qu'elle rend à la 2035, à la CA3, à la situation et à
 // l'estimation, en paramètre obligatoire.
 //
-// Quatre collections, chacune EN ENTIER par `lireTout` (compte annoncé, tri total terminé par la clé primaire) :
+// Cinq collections, chacune EN ENTIER par `lireTout` (compte annoncé, tri total terminé par la clé primaire) :
 //   - les factures et avoirs VALIDÉS SOURCES de leur vente — une facture qui n'est pas source a sa vente comptée par sa
 //     pièce, et ne se lit pas ici ; un brouillon n'est jamais source (`factures_emises_source_d_une_facture_validee`) ;
 //   - leurs lignes, par leur facture (la table n'a pas de dossier ; la jointure filtre en base, et chaque ligne rendue doit
 //     être celle d'une facture source lue) : le TTC et la TVA de chaque taux s'en refont ;
 //   - le registre ENTIER des encaissements du dossier, retirés et contre-passations compris : c'est le module qui décide
 //     de ce qui compte, et une contre-passation se juge sur l'encaissement qu'elle annule ;
-//   - leurs parts par taux.
+//   - leurs parts par taux ;
+//   - les pièces DÉSIGNÉES du dossier (`pieces.facture_id`, étape VF1) — le virement mixte (étape VF5h) : l'encaissement
+//     d'une facture qui n'est pas source, cité sur un mouvement classé par ses encaissements, est un paiement de
+//     l'exemplaire unique et validé de sa facture (lib/rattachement.ts, `paiementsDesPieces`). La lecture en rend ces
+//     parts (`encaissees`), tirées du même registre : un moteur qui compte les ventes facturées date aussi ces pièces, et
+//     n'a pas d'autre lecture à faire — une pièce qu'un virement mixte paie, datée sans lui, retomberait à sa date de
+//     facture, souvent dans l'exercice d'avant. Elles ne se lisent qu'APRÈS les quatre autres, et seulement si une part
+//     peut exister : une facture source lue (sans elle, aucun mouvement n'est classé par ses encaissements) et
+//     l'encaissement d'une facture qui ne l'est pas, cité sur un mouvement. Sinon il n'y en a aucune, quelle que soit la
+//     désignation — et un dossier qui n'a pas basculé, tous aujourd'hui, n'a ni une lecture de plus, ni une raison de
+//     plus de se dire incomplet.
 // LE TOUT OU RIEN : une seule lecture partielle, refusée ou rompue, et RIEN NE SE CALCULE — l'état le dit, avec le motif
 // de la première qui a manqué. Une vente facturée dont un encaissement manquerait aurait exactement l'air d'une vente juste
 // à moitié payée, et la 2035 d'un exercice se tairait sur la moitié de ses recettes.
@@ -38,16 +49,20 @@ export const COLONNES_LIGNES =
 export const COLONNES_ENCAISSEMENTS =
   'id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le'
 export const COLONNES_PARTS = 'encaissement_id, dossier_id, taux, montant'
+export const COLONNES_EXEMPLAIRES = 'id, dossier_id, facture_id, statut, type_piece'
 
 /** Une ligne de facture : elle n'a pas de dossier ; c'est sa facture, lue à part, qui le porte. */
 type LigneLue = LigneDeFacture & { id: string }
 
 export type LectureVentesFacturees =
-  | { dossierId: string; etat: 'lue'; ventes: VentesFacturees }
+  // `encaissees` : ce que les virements mixtes paient de leurs exemplaires (étape VF5h), que `paiementsDesPieces` reçoit.
+  | { dossierId: string; etat: 'lue'; ventes: VentesFacturees; encaissees: readonly PartEncaissee[] }
   | { dossierId: string; etat: 'incomplete'; motif: string }
 
 /** Le nom de chaque collection, dans l'ordre de la lecture : c'est lui que le motif d'un manque nomme. */
-export const NOMS_DES_LECTURES = ['les factures sources', 'leurs lignes', 'les encaissements', 'leurs parts par taux'] as const
+export const NOMS_DES_LECTURES = [
+  'les factures sources', 'leurs lignes', 'les encaissements', 'leurs parts par taux', 'les exemplaires des factures',
+] as const
 
 // Une collection lue en entier ne vaut que si chacune de ses lignes est du dossier ; sinon, le motif qui le dit.
 function horsDuDossier<T>(nom: string, lecture: LectureComplete<T>, dossier: (l: T) => string | undefined, dossierId: string): string | null {
@@ -55,8 +70,8 @@ function horsDuDossier<T>(nom: string, lecture: LectureComplete<T>, dossier: (l:
 }
 
 /**
- * Les ventes facturées du dossier, calculées sur ses quatre collections lues en entier ; ou « incomplète », avec le motif
- * de la première lecture qui a manqué. Ne rejette jamais.
+ * Les ventes facturées du dossier, calculées sur ses cinq collections lues en entier, et les parts des virements mixtes ;
+ * ou « incomplète », avec le motif de la première lecture qui a manqué. Ne rejette jamais.
  */
 export async function lireLesVentesFacturees(dossierId: string): Promise<LectureVentesFacturees> {
   try {
@@ -93,6 +108,18 @@ export async function lireLesVentesFacturees(dossierId: string): Promise<Lecture
       ?? horsDuDossier(NOMS_DES_LECTURES[2], encaissements, (e) => e.dossier_id, dossierId)
       ?? horsDuDossier(NOMS_DES_LECTURES[3], parts, (p) => p.dossier_id, dossierId)
     if (motif !== null) return { dossierId, etat: 'incomplete', motif }
+    // Les exemplaires, seulement si une part de virement mixte peut exister (l'en-tête) ; lus, en entier et du dossier.
+    let exemplaires: readonly ExemplaireLu[] = []
+    if (factures.lignes.length > 0 && encaissements.lignes.some((e) => e.ligne_bancaire_id != null && !sourcesLues.has(e.facture_id))) {
+      const lus = await lireTout<ExemplaireLu>((debut, fin) =>
+        supabase.from('pieces').select(COLONNES_EXEMPLAIRES, { count: 'exact' })
+          .eq('dossier_id', dossierId).not('facture_id', 'is', null).order('id').range(debut, fin),
+      )
+      if (!lus.complete) return { dossierId, etat: 'incomplete', motif: `${NOMS_DES_LECTURES[4]} : ${lus.motif ?? 'lecture incomplète'}` }
+      const horsDossier = horsDuDossier(NOMS_DES_LECTURES[4], lus, (p) => p.dossier_id, dossierId)
+      if (horsDossier !== null) return { dossierId, etat: 'incomplete', motif: horsDossier }
+      exemplaires = lus.lignes
+    }
     return {
       dossierId,
       etat: 'lue',
@@ -104,6 +131,8 @@ export async function lireLesVentesFacturees(dossierId: string): Promise<Lecture
         encaissements: encaissements.lignes,
         parts: parts.lignes,
       }),
+      // Les factures lues sont les seules sources : celle d'un encaissement qu'elles ne portent pas n'est pas source.
+      encaissees: partsEncaissees(dossierId, encaissements.lignes, { factures: factures.lignes }, exemplaires),
     }
   } catch (erreur) {
     return { dossierId, etat: 'incomplete', motif: messageErreur(erreur, 'la lecture des ventes facturées a échoué') }

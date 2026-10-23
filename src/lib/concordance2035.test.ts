@@ -106,7 +106,7 @@ function dossier(o: { assujetti?: boolean } = {}) {
   const prelevement = ligne({ id: 'l-cotis', date: '2025-03-07', montant: -3000, cotisation_id: 'appel' })
   const lignes = [paiementFacture, frais, echeance, abonnement, prelevement]
 
-  const paiements = paiementsDesPieces(lignes, [])
+  const paiements = paiementsDesPieces(lignes, [], [])
   const ecritures: EcritureBrouillon[] = [
     ...[facture, recette].flatMap((p) => brouillon(
       lignesPourPiece('d1', p, { compte: categories.find((c) => c.id === p.categorie_id)!.compte_comptable!, immobilisation: false }, assujetti, paiements.get(p.id) ?? [], TRESORERIE),
@@ -140,7 +140,7 @@ function concordance(d: Dossier, o: {
   const declaration = calculerDeclaration2035(
     o.annee ?? 2025, d.pieces, o.categories ?? categories, immobilisations,
     cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), o.vehicules ?? [vehicule], d.assujetti,
-    paiementsDesPieces(d.lignes, []), partsDuReleve(d.lignes, categories, d.ventilations, d.assujetti), o.declarationsTva ?? [], PLAN_PAR_DEFAUT,
+    paiementsDesPieces(d.lignes, [], []), partsDuReleve(d.lignes, categories, d.ventilations, d.assujetti), o.declarationsTva ?? [], PLAN_PAR_DEFAUT,
     o.ventes ?? ventesFactureesVides('d1'),
     o.ecrituresDesVentes ?? { etat: 'sans_bascule' },
   )
@@ -183,7 +183,7 @@ describe('concordance2035 — une comptabilité écrite par l’application', ()
   it('concorde aussi sur un dossier assujetti, au hors taxe', () => {
     const d = dossier({ assujetti: true })
     d.pieces[0] = piece({ id: 'facture', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
-    const paiements = paiementsDesPieces(d.lignes, [])
+    const paiements = paiementsDesPieces(d.lignes, [], [])
     d.ecritures = [
       ...brouillon(lignesPourPiece('d1', d.pieces[0], { compte: '606100', immobilisation: false }, true, paiements.get('facture') ?? [], TRESORERIE), {}),
       ...d.ecritures.filter((e) => e.piece_id !== 'facture'),
@@ -199,7 +199,7 @@ describe('concordance2035 — une comptabilité écrite par l’application', ()
       ligne({ id: `${p.id}-dec`, piece_id: p.id, date: '2025-12-20', montant: -50 }),
       ligne({ id: `${p.id}-jan`, piece_id: p.id, date: '2026-01-10', montant: -70 }),
     ])
-    const paiements = paiementsDesPieces(paiementsDeux, [])
+    const paiements = paiementsDesPieces(paiementsDeux, [], [])
     const e = { ...d, pieces: deux, lignes: paiementsDeux, ventilations: [], cotisations: [],
       ecritures: deux.flatMap((p) => brouillon(lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, true, paiements.get(p.id) ?? [], TRESORERIE), {})) }
     expect(concordance(e, { annee: 2025, immobilisations: [], vehicules: [] }).ecarts).toEqual([])
@@ -465,7 +465,7 @@ describe('concordance2035 — une écriture de l’exercice que la 2035 ne compt
     const partiel = ligne({ id: 'l-sd', piece_id: 'sd', date: '2025-05-10', montant: -48 })
     d.pieces.push(sansDate)
     d.lignes.push(partiel)
-    d.ecritures.push(...brouillon(lignesPourPiece('d1', sansDate, { compte: '606100', immobilisation: false }, false, paiementsDesPieces([partiel], []).get('sd') ?? [], TRESORERIE), {}))
+    d.ecritures.push(...brouillon(lignesPourPiece('d1', sansDate, { compte: '606100', immobilisation: false }, false, paiementsDesPieces([partiel], [], []).get('sd') ?? [], TRESORERIE), {}))
     const c = concordance(d)
     expect(motifs(c.ecarts)).toEqual([['piece:sd', 'piece_sans_date']])
     expect(c.ecarts[0]).toMatchObject({ declaration: -48, ecritures: -120 })
@@ -621,7 +621,7 @@ describe('ouAgir', () => {
 
 describe('comptesPartagesEntreCases', () => {
   const declarer = (cats: Categorie[], pieces: Piece[]) => calculerDeclaration2035(
-    2025, pieces, cats, [], [], [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+    2025, pieces, cats, [], [], [], false, paiementsDesPieces([], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
     { etat: 'sans_bascule' },
   )
 
@@ -667,7 +667,7 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
   }
   const e1 = enc({ id: 'enc-1', date_encaissement: '2025-09-15', montant: 1310 })
   const sources = (o: Partial<SourcesDesEcrituresDeVente> = {}): SourcesDesEcrituresDeVente => ({
-    dossierId: 'd1', factures: [f], lignes, encaissements: [e1.e], parts: e1.parts, mouvements: [], ...o,
+    dossierId: 'd1', factures: [f], lignes, encaissements: [e1.e], parts: e1.parts, mouvements: [], exemplaires: [], ...o,
   })
   const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
     dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
@@ -762,7 +762,7 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
     expect(avec(biens, ecrit(biens)).concorde).toBe(true)
     const d = dossier()
     const declaration = calculerDeclaration2035(
-      2025, d.pieces, categories, [bien], [], [vehicule], d.assujetti, paiementsDesPieces(d.lignes, []), [], [], PLAN_DECALE, ventesDe(biens),
+      2025, d.pieces, categories, [bien], [], [vehicule], d.assujetti, paiementsDesPieces(d.lignes, [], []), [], [], PLAN_DECALE, ventesDe(biens),
       { etat: 'sans_bascule' },
     )
     expect(declaration.contributions.filter((c) => c.source.type === 'encaissement').map((c) => c.compte))
@@ -861,7 +861,7 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
   })
 
   it('aucun compte partagé entre cases : la part porte le 706000, en case AA comme les recettes du dossier', () => {
-    const declaration = calculerDeclaration2035(2025, [], categories, [], [], [], false, paiementsDesPieces([], []), [], [], PLAN_PAR_DEFAUT, ventesDe(sources()), { etat: 'sans_bascule' })
+    const declaration = calculerDeclaration2035(2025, [], categories, [], [], [], false, paiementsDesPieces([], [], []), [], [], PLAN_PAR_DEFAUT, ventesDe(sources()), { etat: 'sans_bascule' })
     expect(declaration.contributions.map((c) => c.compte)).toEqual(['706000', '706000'])
     expect(comptesPartagesEntreCases(declaration)).toEqual([])
   })

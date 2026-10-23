@@ -156,6 +156,38 @@ describe('EstimationTab — les ventes facturées', () => {
   })
 })
 
+// LE VIREMENT MIXTE (chantier EC-Q3, étape VF5h). Le virement m1 du 20 mars paie la facture source (600 €) et une facture
+// d'avant la bascule (120 €), dont l'exemplaire est désigné : la projection compte cet exemplaire à la date du virement
+// (lib/rattachement.ts, `partsEncaissees`), et non à sa date de facture, en décembre 2025 — où 2026 ne le verrait pas.
+describe('EstimationTab — le virement mixte date l’exemplaire de la facture d’avant (étape VF5h)', () => {
+  it('la projection compte l’exemplaire à la date du virement', async () => {
+    faux.parTable.factures_emises = [FACTURE_SOURCE, {
+      ...FACTURE_SOURCE, id: 'fa', numero: 'F2025-0099', date_emission: '2025-12-15', tiers_nom: 'CLIENT D’AVANT', source_de_la_vente: false,
+    }]
+    faux.parTable.facture_lignes = [LIGNE, { ...LIGNE, id: 'lfa', facture_id: 'fa', prix_unitaire_ht: 100 }]
+    faux.parTable.pieces = [EXEMPLAIRE, AUTRE, piece({
+      id: 'pa', nom_fichier: 'F2025-0099.pdf', tiers: 'CLIENT D’AVANT', date_piece: '2025-12-15', montant_ht: 100, montant_tva: 20,
+      montant_ttc: 120, facture_id: 'fa',
+    })]
+    faux.parTable.encaissements_factures = [
+      { ...ENCAISSEMENT, ligne_bancaire_id: 'm1' },
+      { ...ENCAISSEMENT, id: 'ea', facture_id: 'fa', montant: 120, ligne_bancaire_id: 'm1', cree_le: '2026-03-20T10:05:00Z' },
+    ]
+    faux.parTable.encaissements_factures_taux = [PART, { encaissement_id: 'ea', dossier_id: D, taux: 20, montant: 120 }]
+    faux.parTable.lignes_bancaires = [{
+      id: 'm1', dossier_id: D, date: '2026-03-20', libelle: 'VIR CLIENT FICTIF', montant: 720, statut: 'rapprochee', piece_id: null,
+      cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, emprunt_id: null, emprunt_echeance: null,
+      emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
+      declaration_tva_id: null, source_fichier: 'releve-fictif.csv', libelle_brut: null, id_externe: null,
+      created_at: '2026-03-20T08:00:00Z', encaissements_de_factures: true,
+    }]
+    render(<EstimationTab dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    await screen.findByText('Projection 2026')
+    // 500 € facturés encaissés, 300 € d'une autre recette, 100 € de l'exemplaire payé par le virement.
+    expect(valeur('CA encaissé à date')).toMatch(/^900,00\s€$/)
+  })
+})
+
 describe('EstimationTab — sans les ventes facturées entières, ni projection ni repère calculé', () => {
   it.each(TABLES_DES_VENTES)('lue en partie (%s) : le bandeau, ni projection ni calcul du chiffre d’affaires', async (table) => {
     faux.muet = { [table]: 0 }

@@ -78,9 +78,11 @@ export const REFUS_ECRITURE_VENTE = [
     code: '22023',
   },
   { cle: 'compte_refuse', modele: 'Le compte de contrepartie de cet encaissement, %, est refusé : %', code: '22023' },
+  // Depuis la migration virement_mixte (étape VF5h) : sous les mots du classement, la facture nommée ; il ne vaut plus que
+  // pour une facture d'avant sans son exemplaire unique et validé.
   {
     cle: 'mouvement_facture_non_source',
-    modele: "Ce mouvement porte aussi l'encaissement d'une facture qui n'est pas la source de sa vente : son écriture n'est pas encore conçue.",
+    modele: "Désignez d'abord l'exemplaire de la facture % : ce mouvement porte aussi son encaissement, et cette facture, qui n'est pas la source de sa vente, se compte par une seule pièce validée.",
     code: '22023',
   },
   {
@@ -338,7 +340,6 @@ export function argumentsChoisirCompteContrepartie(dossierId: string, encaisseme
 
 const MOTIF_VERS_REFUS = {
   compte_a_choisir: 'compte_a_choisir',
-  mouvement_facture_non_source: 'mouvement_facture_non_source',
   mouvement_vente_ecartee: 'mouvement_vente_ecartee',
   mouvement_non_classe: 'mouvement_non_classe',
   mouvement_ecart: 'mouvement_ecart',
@@ -405,6 +406,8 @@ export function refusEcritureVenteFacturee(
     const compte = compteDeTresorerie(source.encaissementId, c) ?? ''
     return non('compte_refuse', compte, refusCompteDeContrepartie(compte, c.plan) ?? '')
   }
+  // Le virement mixte (étape VF5h) : la facture d'avant que la composition nomme, comme la base la nomme.
+  if (nonEcrite?.motif === 'mouvement_facture_non_source') return non('mouvement_facture_non_source', nonEcrite.facture ?? '<NULL>')
   if (nonEcrite && nonEcrite.motif in MOTIF_VERS_REFUS) return non(MOTIF_VERS_REFUS[nonEcrite.motif as keyof typeof MOTIF_VERS_REFUS])
   // Un mouvement que la composition n'a pas lu : elle ne sait pas ce qu'il écrit, et la base, qui le lit, en jugera.
   if (nonEcrite) return null

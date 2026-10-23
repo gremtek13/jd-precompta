@@ -26,6 +26,8 @@ const faux = vi.hoisted(() => ({
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   erreurRpc: null as string | null,
   tables: [] as string[],
+  // Ce que l'écran insère en direct — les écritures des pièces (étape VF5h : celle de l'exemplaire qu'un virement mixte paie).
+  inserts: [] as { table: string; lignes: Record<string, unknown>[] }[],
 }))
 
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ isSuperAdmin: true }) }))
@@ -70,6 +72,14 @@ vi.mock('../../lib/supabase', async () => {
       not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       then: (suite: (r: unknown) => unknown) => (faux.attente ?? Promise.resolve()).then(reponse).then(suite),
+      insert: (lignes: Record<string, unknown>[]) => {
+        faux.inserts.push({ table, lignes })
+        faux.parTable[table] = [...(faux.parTable[table] ?? []), ...lignes.map((l, i) => ({
+          id: `ins-${faux.inserts.length}-${i}`, created_at: '2026-10-23T09:00:00Z', immobilisation_id: null, vehicule_id: null,
+          declaration_tva_id: null, cotisation_id: null, facture_id: null, encaissement_id: null, ligne_bancaire_id: null, ...l,
+        }))]
+        return Promise.resolve({ data: null, error: null })
+      },
     })
     return c
   }
@@ -147,6 +157,7 @@ function poser(tables: Partial<Record<string, Record<string, unknown>[]>> = {}) 
   faux.rpcs = []
   faux.erreurRpc = null
   faux.tables = []
+  faux.inserts = []
   faux.parTable = {
     categories: [], pieces: [], ecritures_brouillon: [], immobilisations: [], natures_immobilisation: [], a_nouveaux: [],
     ventilations_bancaires: [], reglements_groupes: [], lettrages_manuels: [], declarations_tva: [], soldes_reportes: [],
@@ -482,6 +493,77 @@ describe('aucun geste sur une lecture partielle, refusée, ou pas encore revenue
     changerDeDossier('d2')
     expect(within(section()).getByText('Chargement…')).toBeTruthy()
     sansGeste()
+  })
+})
+
+// LE VIREMENT MIXTE (étape VF5h ; VF2-Q2, selon VF5-Q2) : le virement m1 de 179,50 € porte l'encaissement de la facture
+// source (120 €, du jour) et celui d'une facture d'avant la bascule (60 €, du 18/11), dont la pièce pa est l'exemplaire
+// désigné. Le CÂBLAGE : la section compose le mouvement avec les exemplaires lus — la part de la source et les frais —, la
+// génération écrit l'exemplaire daté par le virement, sa banque sur lui ; sans l'exemplaire, le mouvement ne s'écrit pas et
+// la section nomme la facture ; des ventes lues en partie retiennent la génération, et le bouton dit pourquoi.
+describe('le virement mixte dans l’onglet Écritures (étape VF5h)', () => {
+  const FACTURE_D_AVANT = facture({ id: 'fa', numero: 'F2025-0042', date_emission: '2025-09-30', source_de_la_vente: false, montant_ttc: 60 })
+  const RECETTES = { id: 'c-rec', dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 1, compte_comptable: '706000', poste_2035: 'Recettes' }
+  const EXEMPLAIRE = {
+    id: 'pa', dossier_id: D, nom_fichier: 'F2025-0042.pdf', storage_path: `${D}/pa.pdf`, statut: 'validee', type_piece: 'vente',
+    date_piece: '2025-09-30', montant_ht: 50, montant_tva: 10, montant_ttc: 60, devise: 'EUR', tiers: 'CLIENT D’AVANT',
+    categorie_id: 'c-rec', facture_id: 'fa', created_at: '2025-09-30T09:00:00Z',
+  }
+  const poserLeVirementMixte = (o: { designee?: boolean } = {}) => poser({
+    categories: [RECETTES],
+    pieces: [{ ...EXEMPLAIRE, facture_id: (o.designee ?? true) ? 'fa' : null }],
+    factures_emises: [facture(), FACTURE_D_AVANT],
+    encaissements_factures: [
+      encaissement(),
+      encaissement({ id: 'ea', facture_id: 'fa', date_encaissement: '2025-11-18', montant: 60, cree_le: '2025-11-18T10:00:00Z' }),
+    ],
+    encaissements_factures_taux: [part(), part({ encaissement_id: 'ea', montant: 60 })],
+    lignes_bancaires: [mouvement({ montant: 179.5 })],
+  })
+  const NOM_M1 = /^Le mouvement du 20\/11\/2025/
+
+  it('la section écrit la part de la source et les frais ; la génération date l’exemplaire par le virement, sa banque sur lui', async () => {
+    poserLeVirementMixte()
+    monter()
+    const ligne = await waitFor(() => ligneDe(NOM_M1))
+    expect(within(ligne).getByText('à écrire')).toBeTruthy()
+    fireEvent.click(within(ligne).getByRole('button', { name: 'Écrire' }))
+    await waitFor(() => expect(faux.rpcs).toHaveLength(1))
+    expect(faux.rpcs[0].args.p_lignes).toEqual([
+      { date: '2025-11-20', compte: '512000', sens: 'credit', montant: 0.5, ligne_bancaire_id: 'm1', libelle: expect.any(String) },
+      { date: '2025-11-20', compte: '627000', sens: 'debit', montant: 0.5, ligne_bancaire_id: 'm1', libelle: expect.any(String) },
+    ])
+    const generer = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    expect(generer.hasAttribute('disabled')).toBe(false)
+    await act(async () => { generer.click() })
+    await waitFor(() => expect(faux.inserts).toHaveLength(1))
+    const lignes = faux.inserts[0].lignes
+    expect(lignes.every((l) => l.piece_id === 'pa' && l.date === '2025-11-20')).toBe(true)
+    expect(lignes.map((l) => [l.compte, l.sens, l.montant, l.ligne_bancaire_id ?? null]).sort()).toEqual([
+      ['445710', 'credit', 10, null], ['512000', 'debit', 60, 'm1'], ['706000', 'credit', 50, null],
+    ])
+  })
+
+  it('sans l’exemplaire désigné : le mouvement ne s’écrit pas, la section nomme la facture et dit le geste qui manque', async () => {
+    poserLeVirementMixte({ designee: false })
+    monter()
+    const ligne = await waitFor(() => ligneDe(NOM_M1))
+    expect(within(ligne).getByText(/désignez d’abord cet exemplaire \(facture F2025-0042\)/)).toBeTruthy()
+    expect(within(ligne).queryByRole('button', { name: 'Écrire' })).toBeNull()
+  })
+
+  it('les ventes facturées lues en partie : la génération des pièces est retenue, et le bouton dit pourquoi', async () => {
+    poserLeVirementMixte()
+    faux.muet = { encaissements_factures: 0 }
+    monter()
+    await within(section()).findByText(/n’ont pas pu être lus en entier/)
+    const generer = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    expect(generer.hasAttribute('disabled')).toBe(true)
+    // La garde des factures sources non lues (étape VF6a) est la seule : son titre dit aussi le virement mixte.
+    expect(generer.getAttribute('title')).toMatch(
+      /^Factures sources de leurs ventes non lues \(les encaissements : .*\) — générer maintenant pourrait écrire la vente d’un exemplaire à côté de celle de sa facture, ou mal dater une pièce qu’un virement mixte paie\.$/)
+    await act(async () => { generer.click() })
+    expect(faux.inserts).toEqual([])
   })
 })
 

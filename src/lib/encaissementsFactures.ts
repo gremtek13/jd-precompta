@@ -3,14 +3,14 @@ import { libelleExploitable, tiersConfirmeParBanque } from './appariementBanque'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
 import { anneeDe, dernierJourDuMois, formatDate, formatMoney, moisDe } from './format'
 import { frequenceDesPaiements, periodeDe } from './periodesEreporting'
-import type { PaiementsDesPieces } from './rattachement'
+import type { PaiementsDesPieces, PartEncaissee } from './rattachement'
 import { DEBUT_EMISSION_PME } from './statutTva'
 import { STATUTS_ANNULATION_SUPERPDP, annuleeSurSaPlateforme, type StatutPlateformeLu } from './transmissionsFactures'
 import { exerciceQuiFige, frontiereDeValidation } from './validationExercice'
 import { jumellesDeLaFacture, type PiecePourJumelle } from './ventesJumelles'
 import type {
   EncaissementFacture, EncaissementFactureTaux, EtatTransmission, FactureEmise, FactureLigne, FactureSuperpdpEvent,
-  LigneBancaire, MoyenEncaissement, StatutTva, TransmissionEncaissement, TransmissionFacture,
+  LigneBancaire, MoyenEncaissement, Piece, StatutTva, TransmissionEncaissement, TransmissionFacture,
 } from './types'
 
 // LES ENCAISSEMENTS D'UNE FACTURE ÉMISE, TELS QUE L'ÉCRAN LES DIT (ligne 28.5, étape d2). Un module PUR : il ne lit rien
@@ -50,7 +50,11 @@ import type {
 //   - depuis la migration impaye_non_declare (étape VF5d2), que l'encaissement JAMAIS DÉCLARÉ d'une facture source se
 //     contre-passe aussi, en citant le débit qui l'a défait — le rang 6 ne s'y oppose plus, et à ce cas seul
 //     (`refusContrePassationVente`, `debitObligatoire`, `refusContrePassationAvantLaDate`) —, et que la paire qui en naît
-//     ne fait rien déclarer (`paireNonDeclaree`).
+//     ne fait rien déclarer (`paireNonDeclaree`) ;
+//   - depuis la migration virement_mixte (étape VF5h), qu'un crédit qui paie une facture source ET une facture d'avant la
+//     bascule se classe par ses encaissements, celui de la facture d'avant compris, quand cette facture a son exemplaire
+//     unique et validé — sinon le rang 7 du classement le refuse, la facture nommée (`refusClassement`,
+//     `exemplaireUnique`, `factureSansExemplaire`) ; ce mouvement paie alors cet exemplaire (lib/rattachement.ts).
 //
 // Les sources sont publiques : CGI, art. 290 A, et ann. II, art. 242 nonies P — CIBS, art. L. 216-56 à compter du
 // 01/01/2027 — ; BOI-TVA-DECLA-20-30-60 ; BOI-TVA-BASE-20-20 ; spécifications externes de la DGFiP v3.2 (§ 3.6.4 et
@@ -1588,6 +1592,13 @@ export const REFUS_CLASSEMENT = [
     modele: "Ce mouvement ne justifie aucun encaissement d'une facture source de sa vente : il ne se classe pas par des encaissements.",
     code: '22023',
   },
+  // Le virement mixte (étape VF5h, migration `virement_mixte`) : l'encaissement d'une facture qui n'est pas source ne
+  // compte qu'avec l'exemplaire unique et validé de cette facture.
+  {
+    cle: 'exemplaire_a_designer',
+    modele: "Désignez d'abord l'exemplaire de la facture % : ce mouvement porte aussi son encaissement, et cette facture, qui n'est pas la source de sa vente, se compte par une seule pièce validée.",
+    code: '22023',
+  },
   {
     cle: 'credit_non_fait',
     modele: 'Les encaissements que ce mouvement justifie font % € pour un crédit de % € : ce qui le dépasse reste à traiter.',
@@ -1741,12 +1752,112 @@ function porteDesSources(mouvementId: string, encaissements: readonly Encaisseme
   return { aucun: justifies.length === 0, centimes: justifies.reduce((somme, x) => somme + centimes(x.montant), 0) }
 }
 
+// ── Le virement mixte (chantier EC-Q3, étape VF5h ; VF2-Q2, selon VF5-Q2 : la manière A) ─────────────────────────────
+//
+// Un crédit qui paie une facture source ET une facture d'avant la bascule (une facture qui n'est pas source de sa vente)
+// se classe par ses encaissements : celui de la facture d'avant y compte aussi, quand cette facture a EXACTEMENT UN
+// exemplaire désigné, une pièce de vente validée du dossier (étape VF1, `pieces.facture_id`). Sa vente reste comptée par
+// cette pièce, et ce mouvement la date : un paiement de son exemplaire (lib/rattachement.ts, `paiementsDesPieces`) ; la
+// pièce écrit elle-même sa banque sur ce mouvement, et la composition du mouvement n'écrit que la part des factures
+// sources et les frais du tout (lib/ecrituresVentesFacturees.ts). Sans cet exemplaire, ou avec plusieurs, le classement se
+// refuse au rang 7 (`exemplaire_a_designer`), la facture nommée — celle qui a le plus petit numéro, octet par octet, puis
+// son identifiant, comme la base (`classer_mouvement_par_encaissements`, migration `virement_mixte`). G2 ne change pas :
+// seul l'encaissement d'une facture SOURCE réserve un mouvement (`encaissementsDuMouvement`).
+
+/** Une pièce telle que le virement mixte la lit : l'exemplaire désigné d'une facture (`pieces.facture_id`, étape VF1). */
+export type ExemplaireLu = Pick<Piece, 'id' | 'dossier_id' | 'facture_id' | 'statut' | 'type_piece'>
+
+/**
+ * L'EXEMPLAIRE UNIQUE ET VALIDÉ d'une facture : la seule pièce de vente validée de ce dossier désignée à elle — ce que la
+ * base exige pour qu'un mouvement compte l'encaissement d'une facture qui n'est pas source (le virement mixte), et la
+ * pièce que ce mouvement paie alors. Aucune, ou plusieurs : null. `exemplaires` : les pièces désignées du dossier, lues en
+ * entier (celles qui ne le sont pas ne changent rien).
+ */
+export function exemplaireUnique(dossierId: string, factureId: string, exemplaires: readonly ExemplaireLu[]): string | null {
+  const siens = exemplaires.filter((p) => p.facture_id === factureId && p.dossier_id === dossierId && p.statut === 'validee'
+    && p.type_piece === 'vente')
+  return siens.length === 1 ? siens[0].id : null
+}
+
+/**
+ * Les encaissements de factures qui ne sont PAS sources de leur vente, non retirés, qui citent ce mouvement et le
+ * justifient : ceux que le classement compte aussi, quand leur facture a son exemplaire unique et validé. Une facture que
+ * la lecture n'a pas rendue n'est pas source : son encaissement compte ici, et son exemplaire manque — du côté fermé. Dans
+ * l'ordre de la liste reçue.
+ */
+export function encaissementsDAvantDuMouvement<E extends EncaissementLu>(
+  mouvementId: string,
+  encaissements: readonly E[],
+  vente: Pick<ContexteVente, 'factures'>,
+): E[] {
+  return encaissements.filter((x) => x.ligne_bancaire_id === mouvementId && compte(x)
+    && !factureSource(x.facture_id, vente) && justifieSonMouvement(x, encaissements))
+}
+
+/**
+ * La facture qui n'est pas source dont un encaissement retient ce mouvement, faute de son exemplaire unique et validé : son
+ * numéro, tel que la base le nomme — celle qui a le plus petit numéro, octet par octet, puis l'identifiant —, ou null. Une
+ * facture que la lecture n'a pas rendue se nomme `<NULL>`, comme `raise` écrirait un `%` nul.
+ */
+export function factureSansExemplaire(
+  dossierId: string,
+  mouvementId: string,
+  encaissements: readonly EncaissementLu[],
+  vente: Pick<ContexteVente, 'factures'>,
+  exemplaires: readonly ExemplaireLu[],
+): string | null {
+  const retenues = [...new Set(encaissementsDAvantDuMouvement(mouvementId, encaissements, vente)
+    .filter((x) => exemplaireUnique(dossierId, x.facture_id, exemplaires) === null)
+    .map((x) => x.facture_id))]
+    .map((id) => ({ id, numero: vente.factures.find((f) => f.id === id)?.numero ?? null }))
+    // Comme `order by f.numero collate "C", f.id` : un numéro nul après les autres.
+    .sort((a, b) => (a.numero === b.numero ? 0 : a.numero === null ? 1 : b.numero === null ? -1 : ordreC(a.numero, b.numero))
+      || ordreC(a.id, b.id))
+  return retenues.length === 0 ? null : retenues[0].numero ?? '<NULL>'
+}
+
+/**
+ * LES PAIEMENTS QU'UN VIREMENT MIXTE FAIT AUX EXEMPLAIRES (étape VF5h) : pour chaque encaissement d'une facture qui n'est
+ * pas source de sa vente, non retiré, qui cite un mouvement et le justifie — ceux que le classement compte aussi
+ * (`encaissementsDAvantDuMouvement`) —, la pièce qu'il paie, l'exemplaire unique et validé de sa facture, et son montant :
+ * ce que `paiementsDesPieces` (lib/rattachement.ts) reçoit, et qui ne compte que sur un mouvement CLASSÉ par ses
+ * encaissements, que lui seul relit. Un encaissement dont la facture n'a pas son exemplaire unique ne paie rien — le
+ * classement de son mouvement le refuse (`refusClassement`) ; une contre-passation non plus : celle d'une facture qui
+ * n'est pas source ne cite jamais de mouvement — la garde `garder_encaissement_facture` le refuse à toute insertion,
+ * celle de la restauration comprise, comme au rattachement, et la source d'une facture se fixe à sa validation : ce
+ * filtre ne fait que redire la garde. Les encaissements d'un autre dossier sont écartés. Dans l'ordre du mouvement, de
+ * la pièce, puis de l'encaissement, octet par octet : deux lectures du même registre rendent la même liste.
+ * `exemplaires` : les pièces désignées du dossier, lues en entier, sans valeur par défaut.
+ */
+export function partsEncaissees(
+  dossierId: string,
+  encaissements: readonly EncaissementLu[],
+  vente: Pick<ContexteVente, 'factures'>,
+  exemplaires: readonly ExemplaireLu[],
+): PartEncaissee[] {
+  const parts: { encaissement: string; part: PartEncaissee }[] = []
+  for (const e of encaissements) {
+    if (e.dossier_id !== dossierId || e.ligne_bancaire_id == null || e.annule_id != null || !compte(e)
+      || factureSource(e.facture_id, vente) || !justifieSonMouvement(e, encaissements)) continue
+    const piece = exemplaireUnique(dossierId, e.facture_id, exemplaires)
+    if (piece === null) continue
+    parts.push({ encaissement: e.id, part: { ligne_bancaire_id: e.ligne_bancaire_id, piece_id: piece, montant: e.montant } })
+  }
+  return parts
+    .sort((a, b) => ordreC(a.part.ligne_bancaire_id, b.part.ligne_bancaire_id) || ordreC(a.part.piece_id, b.part.piece_id)
+      || ordreC(a.encaissement, b.encaissement))
+    .map((x) => x.part)
+}
+
 /**
  * Ce que `classer_mouvement_par_encaissements` refuserait : le PREMIER refus, dans l'ordre de la base et sous son message,
  * ou null — l'accès, seule la base le juge. Dans l'ordre : le mouvement introuvable, daté d'un exercice que la frontière
  * fige, déjà classé par ses encaissements, classé autrement, qui ne justifie aucun encaissement d'une facture source ;
- * pour un crédit, des encaissements qui ne le font pas — ce qui le dépasse reste à traiter —, ou qui le dépassent au-delà
- * des frais ; pour un débit, des contre-passations qui le dépassent, ou qui ne le font pas à l'écart des frais près.
+ * l'encaissement d'une facture qui n'est pas source sans l'exemplaire unique et validé de cette facture (le virement
+ * mixte, étape VF5h) ; pour un crédit, des encaissements — ceux de ses factures d'avant compris — qui ne le font pas — ce
+ * qui le dépasse reste à traiter —, ou qui le dépassent au-delà des frais ; pour un débit, des contre-passations qui le
+ * dépassent, ou qui ne le font pas à l'écart des frais près. `exemplaires` : les pièces désignées du dossier, lues en
+ * entier, sans valeur par défaut — une liste vide dirait qu'aucune facture d'avant n'a son exemplaire.
  */
 export function refusClassement(
   dossierId: string,
@@ -1754,6 +1865,7 @@ export function refusClassement(
   mouvements: readonly MouvementClasse[],
   encaissements: readonly EncaissementLu[],
   vente: ContexteVente,
+  exemplaires: readonly ExemplaireLu[],
 ): RefusEncaissement<CleRefusClassement> | null {
   const refusK = (cle: CleRefusClassement, ...valeurs: string[]) => refusDe(REFUS_CLASSEMENT, cle, ...valeurs)
   const m = mouvements.find((x) => x.id === ligneBancaireId && x.dossier_id === dossierId)
@@ -1764,17 +1876,23 @@ export function refusClassement(
   if (!mouvementLibre(m)) return refusK('deja_classe')
   const porte = porteDesSources(m.id, encaissements, vente)
   if (porte.aucun) return refusK('aucun_encaissement')
+  const sansExemplaire = factureSansExemplaire(dossierId, m.id, encaissements, vente, exemplaires)
+  if (sansExemplaire !== null) return refusK('exemplaire_a_designer', sansExemplaire)
+  // Ce que le mouvement justifie : les encaissements de ses factures sources, et ceux de ses factures d'avant, dont chacune
+  // a désormais son exemplaire.
+  const total = porte.centimes
+    + encaissementsDAvantDuMouvement(m.id, encaissements, vente).reduce((somme, x) => somme + centimes(x.montant), 0)
   const montant = centimes(m.montant)
-  const ecart = porte.centimes - montant
-  if (montant > 0 && ecart < 0) return refusK('credit_non_fait', euroCommeLaBase(porte.centimes), euroCommeLaBase(montant))
-  if (montant > 0 && !ecartDeFrais(ecart, porte.centimes)) {
-    return refusK('credit_ecart', euroCommeLaBase(porte.centimes), euroCommeLaBase(montant))
+  const ecart = total - montant
+  if (montant > 0 && ecart < 0) return refusK('credit_non_fait', euroCommeLaBase(total), euroCommeLaBase(montant))
+  if (montant > 0 && !ecartDeFrais(ecart, total)) {
+    return refusK('credit_ecart', euroCommeLaBase(total), euroCommeLaBase(montant))
   }
   if (montant < 0 && ecart < 0) {
-    return refusK('debit_depasse', euroCommeLaBase(Math.abs(porte.centimes)), euroCommeLaBase(Math.abs(montant)))
+    return refusK('debit_depasse', euroCommeLaBase(Math.abs(total)), euroCommeLaBase(Math.abs(montant)))
   }
-  if (montant < 0 && !ecartDeFrais(ecart, Math.abs(porte.centimes))) {
-    return refusK('debit_ecart', euroCommeLaBase(Math.abs(porte.centimes)), euroCommeLaBase(Math.abs(montant)))
+  if (montant < 0 && !ecartDeFrais(ecart, Math.abs(total))) {
+    return refusK('debit_ecart', euroCommeLaBase(Math.abs(total)), euroCommeLaBase(Math.abs(montant)))
   }
   return null
 }
@@ -1903,9 +2021,10 @@ export const LA_BASE_ADMET_LE_GESTE = 'La base admet ce geste ; c’est le class
  * Le mouvement deviendrait-il INCLASSABLE par ses encaissements ? `refusClassement` joué sur l'état d'APRÈS le geste
  * (`encaissementsApres` : le registre, et ce que le geste y écrirait), complété de ce qui reste à faire du mouvement par une
  * facture source fictive : un crédit payé en partie n'est pas inclassable, il attend ses autres encaissements (une remise de
- * chèques) ; un crédit qui justifie aussi l'encaissement d'une facture qui n'est pas source, ou un débit que ses
- * contre-passations dépasseraient, ne se classera jamais. La phrase, ou null : le classement resterait possible. Un
- * mouvement qui n'est pas libre n'a rien à en dire — le geste lui-même serait refusé.
+ * chèques) ; un débit que ses contre-passations dépasseraient ne se classera jamais, ni un crédit qui justifie aussi
+ * l'encaissement d'une facture qui n'est pas source tant que cette facture n'a pas son exemplaire unique et validé (le
+ * virement mixte, étape VF5h) — la phrase cite alors le refus de la base, sous ses mots. La phrase, ou null : le classement
+ * resterait possible. Un mouvement qui n'est pas libre n'a rien à en dire — le geste lui-même serait refusé.
  */
 export function inclassableApres(
   dossierId: string,
@@ -1913,6 +2032,7 @@ export function inclassableApres(
   mouvements: readonly MouvementClasse[],
   encaissementsApres: readonly EncaissementLu[],
   vente: ContexteVente,
+  exemplaires: readonly ExemplaireLu[],
 ): string | null {
   const m = mouvements.find((x) => x.id === ligneBancaireId && x.dossier_id === dossierId)
   if (!m || !mouvementLibre(m)) return null
@@ -1932,36 +2052,36 @@ export function inclassableApres(
       source_de_la_vente: true,
     }]
     : [...vente.factures]
-  const refus = refusClassement(dossierId, m.id, mouvements, encaissements, { anneesValidees: vente.anneesValidees, factures })
+  const refus = refusClassement(dossierId, m.id, mouvements, encaissements, { anneesValidees: vente.anneesValidees, factures }, exemplaires)
   if (!refus) return null
-  const nonSources = [...new Set(justifies.filter((x) => !factureSource(x.facture_id, vente))
-    .map((x) => vente.factures.find((f) => f.id === x.facture_id)?.numero ?? 'une facture'))]
-  const raison = nonSources.length > 0
-    ? `il justifie aussi l’encaissement de ${nonSources.join(', ')}, une facture qui n’est pas source de sa vente, que son `
-      + 'classement ne compte pas.'
-    : `« ${refus.message} »`
-  return `${NE_POURRA_PAS_SE_CLASSER} : ${raison} ${LA_BASE_ADMET_LE_GESTE}`
+  return `${NE_POURRA_PAS_SE_CLASSER} : « ${refus.message} » ${LA_BASE_ADMET_LE_GESTE}`
 }
 
 /**
- * L'encaissement d'une facture SOURCE sur le mouvement que la saisie cite rendrait-il ce mouvement inclassable
- * (`inclassableApres`) ? Null pour une facture qui n'est pas source, une saisie sans mouvement, ou un montant qui ne se
- * compte pas encore — la saisie est alors refusée, et son refus le dit.
+ * L'encaissement sur le mouvement que la saisie cite rendrait-il ce mouvement inclassable (`inclassableApres`) ? Celui
+ * d'une facture SOURCE ; et, depuis l'étape VF5h (le virement mixte), celui d'une facture qui n'est pas source sur un
+ * mouvement que les encaissements d'une facture source réservent — le classement le compte alors, et le refuse sans
+ * l'exemplaire unique et validé de sa facture. Null pour une facture qui n'est pas source sur un autre mouvement (sa pièce
+ * s'y rapproche comme hier), une saisie sans mouvement, ou un montant qui ne se compte pas encore — la saisie est alors
+ * refusée, et son refus le dit.
  */
 export function inclassableApresEnregistrement(
   c: ContexteFacture,
   s: SaisieEncaissement,
   mouvements: readonly MouvementClasse[],
   vente: ContexteVente,
+  exemplaires: readonly ExemplaireLu[],
 ): string | null {
-  if (!c.facture.source_de_la_vente || s.ligneBancaireId == null || s.montant == null) return null
+  if (s.ligneBancaireId == null || s.montant == null) return null
   const montant = centimesExacts(s.montant)
   if (montant == null || montant <= 0) return null
   const apres: EncaissementLu[] = [...c.encaissements, {
     id: LE_GESTE, dossier_id: c.dossierId, facture_id: c.facture.id, montant: montant / 100, ligne_bancaire_id: s.ligneBancaireId,
     annule_id: null, retire_le: null,
   }]
-  return inclassableApres(c.dossierId, s.ligneBancaireId, mouvements, apres, vente)
+  // Une facture qui n'est pas source : ce que le mouvement porte déjà d'une facture source le réserve, ou rien à dire.
+  if (!c.facture.source_de_la_vente && encaissementsDuMouvement(s.ligneBancaireId, c.encaissements, vente).length === 0) return null
+  return inclassableApres(c.dossierId, s.ligneBancaireId, mouvements, apres, vente, exemplaires)
 }
 
 /**
@@ -1976,6 +2096,7 @@ export function inclassableApresContrePassation(
   ligneBancaireId: string | null,
   mouvements: readonly MouvementClasse[],
   vente: ContexteVente,
+  exemplaires: readonly ExemplaireLu[],
 ): string | null {
   if (ligneBancaireId == null) return null
   const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId)
@@ -1984,5 +2105,5 @@ export function inclassableApresContrePassation(
     id: LE_GESTE, dossier_id: dossierId, facture_id: e.facture_id, montant: -e.montant, ligne_bancaire_id: ligneBancaireId,
     annule_id: e.id, retire_le: null,
   }]
-  return inclassableApres(dossierId, ligneBancaireId, mouvements, apres, vente)
+  return inclassableApres(dossierId, ligneBancaireId, mouvements, apres, vente, exemplaires)
 }

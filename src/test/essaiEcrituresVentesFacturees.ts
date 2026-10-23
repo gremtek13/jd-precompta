@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import type { LigneDeFacture } from '../lib/encaissementsFactures'
+import type { ExemplaireLu, LigneDeFacture } from '../lib/encaissementsFactures'
 import {
   ecrituresDesVentesFacturees, type EcrituresDesVentesFacturees, type MouvementDesEncaissements, type SourceEcritureVente,
 } from '../lib/ecrituresVentesFacturees'
@@ -19,7 +19,8 @@ import { prorataArrondi, type EncaissementVendu, type FactureVendue, type PartVe
 export const TEXTE_ESSAI_ECRITURES = readFileSync(new URL('../../supabase/essais/ecrituresVentesFacturees.sql', import.meta.url), 'utf8')
 
 // Les identifiants du jeu : un préfixe fixe, puis cinq chiffres — les dossiers 1 à 3, les factures 101 à 199, les avoirs
-// 301 à 399, les mouvements 401 à 499, les encaissements 501 à 599 ; ceux du dossier en engagement, 1 000 de plus.
+// 301 à 399, les mouvements 401 à 499, les encaissements 501 à 599, les pièces 601 à 699 ; ceux du dossier en engagement,
+// 1 000 de plus.
 export const PREFIXE_ESSAI = '5f4b0000-0000-4000-8000-0000000'
 export const uuidEssai = (n: number) => `${PREFIXE_ESSAI}${String(n).padStart(5, '0')}`
 
@@ -43,6 +44,8 @@ interface FactureDuJeu {
   lignes: readonly (readonly [number, number, number])[]
 }
 interface MouvementDuJeu { i: number; date: string; montant: number; classe: boolean }
+/** Une pièce de vente désignée exemplaire d'une facture (`pieces.facture_id`, étape VF1) : validée, ou à valider. */
+interface PieceDuJeu { i: number; facture: number; validee: boolean }
 interface EncaissementDuJeu {
   i: number
   facture: number
@@ -119,6 +122,24 @@ export const FACTURES: readonly FactureDuJeu[] = [
   // son montant sur les taux comme son encaissement (la restauration seule pose l'une et l'autre).
   F(122, 'F2026-0021', '2026-03-27', [[1, 10, 20]]),
   F(123, 'F2026-0022', '2026-03-27', [[1, 10, 20], [1, 10, 5.5]]),
+  // F124 à F134 : LE VIREMENT MIXTE (étape VF5h ; VF2-Q2, selon VF5-Q2). Un crédit qui paie une facture source et une
+  // facture d'avant la bascule s'écrit quand celle-ci a son exemplaire unique et validé (les pièces 601 et 602) : la part
+  // des sources — la banque de ce que leurs encaissements du même jour n'ont pas porté (le mouvement 420), le 511 d'un
+  // chèque d'un autre jour (421) — et les frais du tout ; l'exemplaire écrit lui-même sa banque, quel que soit le jour de
+  // l'encaissement de sa facture (420). Sans exemplaire (422), avec un exemplaire à valider (423), ou deux (424), le
+  // mouvement ne s'écrit pas, et la base nomme la facture au plus petit numéro : F2026-0032 (F134) avant F2026-0033
+  // (F133), que son identifiant précède.
+  F(124, 'F2026-0023', '2026-03-20', [[1, 200, 20]]),
+  F(125, 'F2026-0024', '2026-02-20', [[1, 100, 20]], { source: false }),
+  F(126, 'F2026-0025', '2026-03-20', [[1, 125, 20]]),
+  F(127, 'F2026-0026', '2026-02-21', [[1, 50, 0]], { source: false }),
+  F(128, 'F2026-0027', '2026-03-21', [[1, 50, 20]]),
+  F(129, 'F2026-0028', '2026-02-22', [[1, 40, 0]], { source: false }),
+  F(130, 'F2026-0029', '2026-03-22', [[1, 50, 20]]),
+  F(131, 'F2026-0030', '2026-02-23', [[1, 40, 0]], { source: false }),
+  F(132, 'F2026-0031', '2026-03-23', [[1, 50, 0]]),
+  F(133, 'F2026-0033', '2026-02-24', [[1, 25, 0]], { source: false }),
+  F(134, 'F2026-0032', '2026-02-24', [[1, 25, 0]], { source: false }),
 ]
 
 export const MOUVEMENTS: readonly MouvementDuJeu[] = [
@@ -141,6 +162,20 @@ export const MOUVEMENTS: readonly MouvementDuJeu[] = [
   { i: 417, date: '2026-03-27', montant: 294.5, classe: true },
   { i: 418, date: '2026-03-27', montant: 97.5, classe: true },
   { i: 419, date: '2026-03-25', montant: 50, classe: true },
+  { i: 420, date: '2026-03-28', montant: 359.5, classe: true },
+  { i: 421, date: '2026-03-29', montant: 200, classe: true },
+  { i: 422, date: '2026-03-29', montant: 100, classe: true },
+  { i: 423, date: '2026-03-30', montant: 100, classe: true },
+  { i: 424, date: '2026-03-30', montant: 100, classe: true },
+]
+
+/** Les exemplaires du virement mixte (étape VF5h). */
+export const PIECES: readonly PieceDuJeu[] = [
+  { i: 601, facture: 125, validee: true },
+  { i: 602, facture: 127, validee: true },
+  { i: 603, facture: 131, validee: false },
+  { i: 604, facture: 133, validee: true },
+  { i: 605, facture: 133, validee: true },
 ]
 
 const E = (i: number, facture: number, date: string, montant: number, moyen: MoyenEncaissement, parts: EncaissementDuJeu['parts'],
@@ -198,6 +233,20 @@ export const ENCAISSEMENTS: readonly EncaissementDuJeu[] = [
   E(556, 111, '2026-03-25', 6, 'virement', [[20, 6]], { ligne: 419 }),
   E(557, 111, '2026-03-26', -6, 'virement', [[20, -6]], { annule: 556 }),
   E(558, 120, '2026-03-25', 50, 'virement', [[20, 50]], { ligne: 419 }),
+  // Le virement mixte (étape VF5h) : 420, un virement du jour pour la facture source, celui d'un autre jour pour la facture
+  // d'avant, 0,50 € de frais ; 421, un chèque d'un autre jour pour la source ; 422 à 424, des factures d'avant sans leur
+  // exemplaire unique et validé.
+  E(560, 124, '2026-03-28', 240, 'virement', [[20, 240]], { ligne: 420 }),
+  E(561, 125, '2026-03-26', 120, 'virement', [[20, 120]], { ligne: 420 }),
+  E(562, 126, '2026-03-27', 150, 'cheque', [[20, 150]], { ligne: 421 }),
+  E(563, 127, '2026-03-29', 50, 'virement', [[0, 50]], { ligne: 421 }),
+  E(564, 128, '2026-03-29', 60, 'virement', [[20, 60]], { ligne: 422 }),
+  E(565, 129, '2026-03-29', 40, 'virement', [[0, 40]], { ligne: 422 }),
+  E(566, 130, '2026-03-30', 60, 'virement', [[20, 60]], { ligne: 423 }),
+  E(567, 131, '2026-03-30', 40, 'virement', [[0, 40]], { ligne: 423 }),
+  E(568, 132, '2026-03-30', 50, 'virement', [[0, 50]], { ligne: 424 }),
+  E(569, 133, '2026-03-30', 25, 'virement', [[0, 25]], { ligne: 424 }),
+  E(570, 134, '2026-03-30', 25, 'virement', [[0, 25]], { ligne: 424 }),
 ]
 
 // L'instant de création d'un encaissement : son jour, à une minute qui suit son numéro — deux encaissements d'un même jour
@@ -214,6 +263,7 @@ export interface JeuDuDossier {
   parts: PartVendue[]
   mouvements: MouvementDesEncaissements[]
   comptes: Map<string, string>
+  exemplaires: ExemplaireLu[]
 }
 
 function dossierDuJeu(numero: number) {
@@ -248,6 +298,9 @@ export function jeuDuDossier(numero: number): JeuDuDossier {
       encaissements_de_factures: m.classe,
     })),
     comptes: new Map(ENCAISSEMENTS.filter((e) => e.compte != null).map((e) => [u(e.i), e.compte as string])),
+    exemplaires: PIECES.map((p) => ({
+      id: u(p.i), dossier_id: dossierId, facture_id: u(p.facture), statut: p.validee ? 'validee' : 'a_valider', type_piece: 'vente',
+    })),
   }
 }
 
@@ -255,7 +308,7 @@ export function compositionDuJeu(numero: number): EcrituresDesVentesFacturees {
   const j = jeuDuDossier(numero)
   return ecrituresDesVentesFacturees({
     sources: { dossierId: j.dossierId, factures: j.factures, lignes: j.lignes, encaissements: j.encaissements, parts: j.parts },
-    mouvements: j.mouvements, comptesDeContrepartie: j.comptes, mode: j.mode, plan: PLAN_PAR_DEFAUT,
+    mouvements: j.mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: j.mode, plan: PLAN_PAR_DEFAUT,
   })
 }
 
@@ -294,6 +347,8 @@ export function vueDuModule(numero: number, genre: GenreAbrege, n: number): stri
   if (factureDeLaSource && ecartees.has(factureDeLaSource)) return `vente_ecartee(${ecartees.get(factureDeLaSource)})`
   const nonEcrite = r.nonEcrites.find((x) => x.source.genre === g && cle(x.source) === id)
   if (nonEcrite) {
+    // Le virement mixte (étape VF5h) : la facture d'avant que la base nomme, en détail du motif.
+    if (nonEcrite.motif === 'mouvement_facture_non_source') return `${nonEcrite.motif}(${nonEcrite.facture})`
     if (nonEcrite.motif !== 'compte_refuse') return nonEcrite.motif
     const e = j.encaissements.find((x) => x.id === id)
     const t = e && e.annule_id != null && e.ligne_bancaire_id == null ? e.annule_id : id
@@ -354,7 +409,7 @@ export const jourDuJeu = (date: string) => Math.round((Date.parse(`${date}T00:00
  * booléen, 0 ou 1 (un encaissement retiré, 1 ou rien) ; la nature, « s » ou « b » ; le type d'une facture, l'initiale de
  * son numéro ; ses montants en euros. La facture d'origine d'un avoir et l'encaissement qu'annule une contre-passation
  * sont au même rang (8), que l'essai lit par une seule macro. L'essai date la création d'un encaissement comme
- * `creeLe`, de son jour et de son numéro.
+ * `creeLe`, de son jour et de son numéro. Les exemplaires (« x ») : la pièce, sa facture, 1 si elle est validée.
  */
 export function jeuPourLaBase(): string {
   const montants = (f: FactureDuJeu) => {
@@ -380,6 +435,8 @@ export function jeuPourLaBase(): string {
     e: ENCAISSEMENTS.map((e) => sansFinVide([e.i, e.facture, jour(e.date), e.montant, e.moyen, e.ligne, e.retire ? 1 : null, e.compte,
       e.annule])),
     p: ENCAISSEMENTS.flatMap((e) => e.parts.map(([t, m]) => [e.i, t, m])),
+    // Les exemplaires du virement mixte (étape VF5h) : [pièce, facture, validée].
+    x: PIECES.map((p) => [p.i, p.facture, b(p.validee)]),
   })
 }
 

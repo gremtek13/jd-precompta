@@ -7,7 +7,8 @@ import type { LigneDeFacture } from './encaissementsFactures'
 import type { PartVendue } from './ventesFacturees'
 
 // LA LECTURE DES VENTES FACTURÉES QUE L'ONGLET ÉCRITURES ÉCRIT (lib/ecrituresVentesFactureesLecture.ts, chantier EC-Q3,
-// étape VF4c1) : cinq collections, chacune EN ENTIER — ou rien ne se décide, et l'état dit pourquoi ; la pagination d'un
+// étape VF4c1) : six collections — les exemplaires des factures depuis l'étape VF5h —, chacune EN ENTIER — ou rien ne se
+// décide, et l'état dit pourquoi ; la pagination d'un
 // serveur qui rend moins qu'on ne demande ; une ligne d'un autre dossier. Le faux client est celui du test de
 // lib/ventesFactureesLecture.ts : il APPLIQUE les filtres (src/test/filtresPostgrest.ts), la jointure de `facture_lignes`
 // comprise, ne rend que les colonnes demandées, et peut plafonner chaque réponse. Données FICTIVES.
@@ -23,7 +24,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('./supabase', async () => {
-  const { filtrer, predicatEq } = await import('../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatNot } = await import('../test/filtresPostgrest')
   return {
     supabase: {
       from: (table: string) => {
@@ -46,6 +47,10 @@ vi.mock('./supabase', async () => {
             } else {
               predicats.push(predicatEq(c, v))
             }
+            return q
+          },
+          not: (c: string, operateur: string, v: unknown) => {
+            predicats.push(predicatNot(c, operateur, v))
             return q
           },
           order: () => q,
@@ -94,7 +99,9 @@ const mouvement = (o: Partial<MouvementDesEcritures> = {}): MouvementDesEcriture
   prelevement_personnel: false, ...o,
 })
 
-const TABLES = ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux', 'lignes_bancaires'] as const
+const TABLES = [
+  'factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux', 'lignes_bancaires', 'pieces',
+] as const
 
 beforeEach(() => {
   faux.plafond = Infinity
@@ -120,6 +127,13 @@ beforeEach(() => {
     ],
     encaissements_factures_taux: [part(), part({ encaissement_id: 'e2' }), part({ encaissement_id: 'e-d2', dossier_id: 'd2' })],
     lignes_bancaires: [mouvement(), mouvement({ id: 'm2', date: '2027-03-01', montant: -40 }), mouvement({ id: 'm-d2', dossier_id: 'd2' })],
+    // Les pièces désignées (étape VF5h) : l'exemplaire de la facture d'avant, lu ; une pièce que rien ne désigne, non ; celui
+    // d'un autre dossier, non plus.
+    pieces: [
+      { id: 'p-hier', dossier_id: 'd1', facture_id: 'f-hier', statut: 'a_valider', type_piece: 'vente', nom_fichier: 'hier.pdf' },
+      { id: 'p-libre', dossier_id: 'd1', facture_id: null, statut: 'validee', type_piece: 'achat', nom_fichier: 'libre.pdf' },
+      { id: 'p-d2', dossier_id: 'd2', facture_id: 'f-d2', statut: 'validee', type_piece: 'vente', nom_fichier: 'd2.pdf' },
+    ],
     // Le brouillon entier, que l'onglet TVA lit avec les sources (étape VF4c3) : une ligne d'une vente facturée, une ligne
     // d'une pièce, et une ligne d'un autre dossier.
     ecritures_brouillon: [
@@ -136,7 +150,7 @@ const lue = (l: LectureSourcesDesEcrituresDeVente) => {
 }
 
 describe('lireLesSourcesDesEcrituresDeVente', () => {
-  it('lit les cinq collections du dossier, réduites à leurs colonnes : toutes ses factures, tout son registre, tout son relevé', async () => {
+  it('lit les six collections du dossier, réduites à leurs colonnes : toutes ses factures, tout son registre, tout son relevé', async () => {
     const s = lue(await lireLesSourcesDesEcrituresDeVente('d1'))
     expect(s.dossierId).toBe('d1')
     expect(s.factures.map((f) => f.id)).toEqual(['f1', 'f-hier', 'f-brouillon'])
@@ -150,12 +164,15 @@ describe('lireLesSourcesDesEcrituresDeVente', () => {
     expect(s.parts.map((p) => p.encaissement_id)).toEqual(['e1', 'e2'])
     // Tous les mouvements du dossier, avec ce qui les classe.
     expect(s.mouvements).toEqual([mouvement(), mouvement({ id: 'm2', date: '2027-03-01', montant: -40 })])
+    // Les pièces désignées du dossier, validées ou non — c'est le module qui juge l'exemplaire unique et validé.
+    expect(s.exemplaires).toEqual([{ id: 'p-hier', dossier_id: 'd1', facture_id: 'f-hier', statut: 'a_valider', type_piece: 'vente' }])
     expect(faux.demandes).toEqual([
       'factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, montant_ttc',
       'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id, source_de_la_vente)',
       'encaissements_factures: id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le, compte_contrepartie, cree_par',
       'encaissements_factures_taux: encaissement_id, dossier_id, taux, montant',
       'lignes_bancaires: id, dossier_id, date, montant, libelle, source_fichier, encaissements_de_factures, statut, piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, ventilee, reglement_groupe, prelevement_personnel',
+      'pieces: id, dossier_id, facture_id, statut, type_piece',
     ])
   })
 
@@ -168,11 +185,11 @@ describe('lireLesSourcesDesEcrituresDeVente', () => {
     expect(faux.tranches).toBeGreaterThan(tranchesEntieres)
   })
 
-  it('une lecture partielle, de n’importe laquelle des cinq, et RIEN ne se rend : l’état dit laquelle', async () => {
+  it('une lecture partielle, de n’importe laquelle des six, et RIEN ne se rend : l’état dit laquelle', async () => {
     const noms: Record<(typeof TABLES)[number], string> = {
       factures_emises: 'les factures du dossier', facture_lignes: 'les lignes des factures sources',
       encaissements_factures: 'les encaissements', encaissements_factures_taux: 'leurs parts par taux',
-      lignes_bancaires: 'les mouvements du relevé',
+      lignes_bancaires: 'les mouvements du relevé', pieces: 'les exemplaires des factures',
     }
     for (const table of TABLES) {
       faux.muetApres = { [table]: 0 }
@@ -182,7 +199,7 @@ describe('lireLesSourcesDesEcrituresDeVente', () => {
     }
   })
 
-  it('une lecture refusée, de n’importe laquelle des cinq, rend l’état incomplet avec le refus', async () => {
+  it('une lecture refusée, de n’importe laquelle des six, rend l’état incomplet avec le refus', async () => {
     for (const table of TABLES) {
       faux.refus = { [table]: 'permission refusée' }
       const l = await lireLesSourcesDesEcrituresDeVente('d1')
@@ -209,6 +226,7 @@ describe('lireLesSourcesDesEcrituresDeVente', () => {
     expect(s.factures.map((f) => f.id)).toEqual(['f-d2'])
     expect(s.encaissements.map((e) => e.id)).toEqual(['e-d2'])
     expect(s.mouvements.map((m) => m.id)).toEqual(['m-d2'])
+    expect(s.exemplaires.map((p) => p.id)).toEqual(['p-d2'])
   })
 })
 

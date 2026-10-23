@@ -54,7 +54,7 @@ vi.mock('./supabase', async () => {
 const declaration = (o: Partial<DeclarationDuReleve> = {}): DeclarationDuReleve => ({
   id: 't1', dossier_id: 'd1', encaissement_id: 'e1', etat: 'accepte', ...o,
 })
-const SOURCES = { dossierId: 'd1', factures: [], lignes: [], encaissements: [], parts: [], mouvements: [] }
+const SOURCES = { dossierId: 'd1', factures: [], lignes: [], encaissements: [], parts: [], mouvements: [], exemplaires: [] }
 
 beforeEach(() => {
   faux.ventes = { dossierId: 'd1', etat: 'lue', sources: SOURCES }

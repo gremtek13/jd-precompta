@@ -5,7 +5,10 @@
 -- (`ecriture_attendue_vente_facturee`, `refus_compte_de_contrepartie`), les deux gardes (`garder_lignes_de_la_vente_facturee`,
 -- `garder_encaissement_facture`), `ecritures_brouillon` et ses déclencheurs, `encaissements_factures`, la frontière de la
 -- validation, `compte_du_role` et le catalogue des rôles, `admin_du_dossier`, et les dix-huit fonctions du relevé qui
--- classent ou déclassent un mouvement (le lot de R1, migration `lignes_propres_au_mouvement` : 95, 96, 130 à 139, 155).
+-- classent ou déclassent un mouvement (le lot de R1, migration `lignes_propres_au_mouvement` : 95, 96, 130 à 139,
+-- 155) ; et, depuis la migration `virement_mixte` (étape VF5h), le classement d'un mouvement par ses encaissements
+-- (`classer_mouvement_par_encaissements`, 53 à 57) et les exemplaires des factures (`pieces.facture_id`,
+-- `garder_exemplaire_facture`), que le classement et la recomposition lisent.
 --
 -- Ce qui se prouve ici — chaque refus jugé à son code ET à ses mots, ceux de la migration, que
 -- src/lib/ecritureVenteFacturee.test.ts confronte à ses listes ; chaque recomposition confrontée au MODULE, que ce même test
@@ -46,6 +49,17 @@
 --   - L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (97 ; migration `impaye_non_declare`, étape VF5d2) : la
 --     contre-passation que la fonction écrit en citant un débit libre se compose et s'écrit comme toute
 --     contre-passation ; rien de ce qui compose ne lit les déclarations ;
+--   - LE VIREMENT MIXTE (6b, 14b à 14d, 46 à 46d, 53 à 59, 79a à 79d, 166 ; migration `virement_mixte`, étape VF5h ;
+--     VF2-Q2, selon VF5-Q2) : un crédit qui paie une facture source et une facture d'avant la bascule — l'exemplaire
+--     unique et validé de celle-ci désigné (les pièces 601 à 605, posées par la porte de la restauration) — se classe
+--     (53) et s'écrit : la banque de ce que les encaissements du même jour des factures sources et l'exemplaire n'ont
+--     pas porté, le 511 d'un chèque d'un autre jour, les frais du tout (6b, 14b, 14c) ; la banque de l'exemplaire, que
+--     l'application écrit, fait avec eux le crédit (14d). Sans exemplaire, avec un exemplaire à valider, avec deux, le
+--     classement et l'écriture refusent sous les mêmes mots, la facture au plus petit numéro nommée (46 à 46d, 54 à
+--     57) ; déclassé, l'encaissement de la facture d'avant retiré ou défait sans mouvement ne retient plus la
+--     composition (58, 59). G5 laisse la banque d'une pièce sur un mouvement classé être l'écriture de cette pièce —
+--     posée par le membre ou le chef simple, reprise —, mais une ligne ne passe pas d'un genre à l'autre en perdant ou
+--     en recevant sa pièce (79a à 79d, 166) ;
 --   - R1, LES DIX-HUIT FONCTIONS DU RELEVÉ SUR LE MOUVEMENT LIBÉRÉ (130 à 139) : la même préparation (la macro PR1 — le
 --     mouvement 401 déclassé, l'encaissement 501 contre-passé sans mouvement, ses lignes et celles de sa contre-passation
 --     écrites —, et deux lignes posées par la validation sur ce mouvement, VALIDÉES : une ligne de la facture 101, que la
@@ -64,8 +78,10 @@
 --     chacune rejoue un contrôle avec une cible ou un profil délibérément juste, et doit passer ; et que RIEN ne reste en
 --     base (199).
 --
--- Ce qui ne se joue PAS ici, faute de pouvoir supprimer en production : G5 refuse la suppression directe d'une écriture de
--- vente facturée, et laisse passer la cascade d'un dossier qu'on supprime — joué sur la réplique seulement.
+-- Ce qui ne se joue PAS ici, faute de pouvoir supprimer en production : G5 refuse la suppression directe d'une écriture
+-- de vente facturée, et laisse passer la cascade d'un dossier qu'on supprime ; depuis l'étape VF5h, elle laisse retirer
+-- la banque d'une pièce sur un mouvement classé par ses encaissements, et refuse toujours d'en retirer une ligne du
+-- mouvement — joué sur la réplique seulement.
 --
 -- Trois dossiers JETABLES du cabinet du dossier `test` : R (trésorerie) et G (engagement) ont basculé et portent le même
 -- jeu, N n'a pas basculé. Le jeu se pose par la porte de la restauration (le super-administrateur), depuis la macro JEU
@@ -111,6 +127,22 @@
 -- empreinte 80ee2b0fe8ab2d4f2b8a68e278af4228, 176 justes. Après l'application, la session n'a rejoué en production que
 -- ventesFacturees.sql (187 justes), qui y éprouve `annuler_encaissement` pour une facture source comme pour une autre :
 -- les fonctions que cet essai éprouve d'autre n'ont pas changé.
+--
+-- 23/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `virement_mixte`, présentée au cabinet, pas encore
+-- appliquée ; chantier EC-Q3, étape VF5h) : le jeu du virement mixte — les factures 124 à 134, dont six d'avant la
+-- bascule ; les mouvements 420 à 424 ; les encaissements 560 à 570 ; les exemplaires 601 à 605 — et vingt contrôles
+-- neufs (l'étape des exemplaires, 6b, 14b à 14d, 46b à 46d, 53 à 59, 79a à 79d, 166) ; 2, 8 et 46 suivent le jeu et le
+-- module. Sur une réplique égale à la production (`signature.sql` : les neuf familles égales, et ses 146 migrations) :
+-- sans la migration, 196 contrôles, 17 en faute — 6b, 8, 14b à 14d, 46 à 46d, 53 à 57, 79a, 79b et 79d — ; avec elle,
+-- 196 justes, rien n'est resté, et les contrôles d'hier rendent, verdict et observation, ce qu'ils rendaient, hors de
+-- 2, 8 et 46. Le texte sans ses lignes de commentaire, envoyé en une requête : 87 680 caractères, empreinte
+-- e93a36faa98795aad666786584b1c697, 196 justes. Sur la réplique seulement, une sonde des suppressions de G5 (la banque
+-- de l'exemplaire retirée par le chef, puis par le membre ; une ligne du mouvement, seule ou avec elle ; la suppression
+-- du dossier) : justes avec la migration ; sans elle, la banque de l'exemplaire ne se retire pas (42501). Trente-deux
+-- mutations des quatre fonctions de la migration (une condition, un filtre, un ordre, un mot changés), jouées contre
+-- cet essai, ventesFacturees.sql et la sonde : vingt-sept tuées ; les cinq qui survivent sont déclarées équivalentes
+-- d'avance, avec leur raison (le dossier et la nature d'un exemplaire, que sa garde impose ; la source d'une facture,
+-- fixée à sa validation).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -142,7 +174,7 @@ begin
       'D1', '5f4b0000-0000-4000-8000-000000000001', 'D2', '5f4b0000-0000-4000-8000-000000000002',
       'D3', '5f4b0000-0000-4000-8000-000000000003')
     || jsonb_build_object(
-    'JEU', $m${"f":[[101,"F2026-0001",1,"s",0,1,100,20],[102,"F2026-0002",2,"s",0,1,1100,205.5],[103,"F2026-0003",3,"b",0,1,300,30,null,8],[104,"F2026-0004",4,"s",1,1,500,100],[301,"A2026-0001",11,"s",1,1,-50,-10,104],[105,"F2026-0005",5,"s",0,1,80,0],[106,"F2026-0006",6,"s",0,1,200,40],[107,"F2026-0007",7,"s",0,1,10,2],[108,"F2026-0008",8,"s",0,1,300,60],[109,"F2026-0009",9,"s",0,1,83.33,16.67],[302,"A2026-0002",14,"s",0,1,-0.83,-0.17,109],[110,"F2026-0010",10,"s",0,1,40,8],[111,"F2026-0011",11,"s",0,0,30,6],[303,"A2026-0003",12,"s",0,0,-5,-1,111],[112,"F2026-0012",11,"s",0,1,25,5],[113,"F2026-0013",12,"s",0,1,20,4],[114,"F2025-0001",-81,"s",0,1,50,10],[115,"F2026-0014",14,null,0,1,10,2],[116,"F2026-0015",14,"s",null,1,10,2],[117,"F2026-0016",14,"s",0,1,0,0],[118,"F2026-0017",15,"s",0,1,20,2.55],[119,"F2026-0018",15,"s",0,1,10,2],[304,"A2026-0004",17,"s",0,1,-10,-2,119],[120,"F2026-0019",24,"s",0,1,1000,200],[121,"F2026-0020",26,"s",0,1,100,20],[122,"F2026-0021",26,"s",0,1,10,2],[123,"F2026-0022",26,"s",0,1,20,2.55]],"l":[[101,1,1,100,20],[102,1,1,1000,20],[102,2,1,100,5.5],[103,1,2,150,10],[104,1,1,500,20],[301,1,-1,50,20],[105,1,1,80,0],[106,1,1,200,20],[107,1,1,10,20],[108,1,1,300,20],[109,1,1,83.33,20],[302,1,-1,0.83,20],[110,1,1,40,20],[111,1,1,30,20],[303,1,-1,5,20],[112,1,1,25,20],[113,1,1,20,20],[114,1,1,50,20],[115,1,1,10,20],[116,1,1,10,20],[118,1,1,10,20],[118,2,1,10,5.5],[119,1,1,10,20],[304,1,-1,10,20],[120,1,1,1000,20],[121,1,1,100,20],[122,1,1,10,20],[123,1,1,10,20],[123,2,1,10,5.5]],"m":[[401,1,120,1],[402,19,1005.15,1],[403,8,230,1],[404,15,540,1],[405,16,240,1],[406,18,-240,1],[407,20,180,0],[408,21,60,1],[409,22,10,1],[410,8,0.02,1],[411,24,50,0],[412,15,300,1],[413,23,6,0],[414,22,60,1],[415,26,50,1],[416,26,295,1],[417,26,294.5,1],[418,26,97.5,1],[419,24,50,1]],"e":[[501,101,1,120,"virement",401],[502,102,14,300,"especes",412],[503,102,17,1005.5,"virement",402],[504,103,5,100,"especes"],[505,103,8,230,"virement",403],[506,104,15,540,"virement",404],[507,105,7,80,"compensation",null,null,"467200"],[508,106,16,240,"virement",405],[509,106,17,-240,"virement",406,null,null,508],[510,106,18,12,"cheque"],[511,106,23,-12,"cheque",null,null,null,510],[512,107,8,0.02,"virement",410],[513,108,18,180,"virement",407],[514,108,19,50,"cheque",414,1],[515,109,10,33.33,"carte"],[516,109,11,33.33,"prelevement"],[517,109,14,32.34,"effet"],[518,110,11,24,"compensation"],[519,110,12,24,"autre",null,null,"411000"],[520,111,21,30,"virement",408],[521,112,21,30,"virement",408],[522,113,22,24,"virement",409],[523,114,-60,30,"compensation"],[524,114,-60,30,"cheque"],[525,118,15,12,"cheque"],[526,118,16,-12,"cheque",null,null,null,525],[527,119,17,12,"cheque"],[539,121,27,0.03,"virement"],[541,121,27,0.03,"virement"],[542,109,12,-33.33,"carte",null,null,null,515],[543,105,8,-80,"compensation",null,null,null,507],[544,111,23,6,"virement",413],[545,108,20,60,"virement",414],[546,108,20,40,"virement",414],[547,108,21,-40,"virement",null,null,null,546],[548,120,25,40,"virement",415],[549,120,25,300,"virement",416],[550,120,25,300,"virement",417],[551,120,25,100,"virement",418],[552,122,28,12,"cheque"],[553,122,27,-12,"cheque",null,null,null,552],[554,123,27,2,"cheque"],[555,123,28,-2,"cheque",null,null,null,554],[556,111,24,6,"virement",419],[557,111,25,-6,"virement",null,null,null,556],[558,120,24,50,"virement",419]],"p":[[501,20,120],[502,20,250],[502,5.5,50],[503,20,950],[503,5.5,55.5],[504,10,100],[505,10,230],[506,20,540],[507,0,80],[508,20,240],[509,20,-240],[510,20,12],[511,20,-12],[512,20,0.01],[513,20,180],[514,20,50],[515,20,33.33],[516,20,33.33],[517,20,32.34],[518,20,24],[519,20,24],[520,20,30],[521,20,30],[522,20,24],[523,20,30],[524,20,30],[525,20,12],[526,5.5,-12],[527,20,12],[539,20,0.03],[541,20,0.03],[542,20,-33.33],[543,0,-80],[544,20,6],[545,20,60],[546,20,40],[547,20,-40],[548,20,40],[549,20,300],[550,20,300],[551,20,100],[552,20,12],[553,20,-12],[554,20,1],[554,5.5,1],[555,20,-1.5],[555,5.5,-0.5],[556,20,6],[557,20,-6],[558,20,50]]}$m$,
+    'JEU', $m${"f":[[101,"F2026-0001",1,"s",0,1,100,20],[102,"F2026-0002",2,"s",0,1,1100,205.5],[103,"F2026-0003",3,"b",0,1,300,30,null,8],[104,"F2026-0004",4,"s",1,1,500,100],[301,"A2026-0001",11,"s",1,1,-50,-10,104],[105,"F2026-0005",5,"s",0,1,80,0],[106,"F2026-0006",6,"s",0,1,200,40],[107,"F2026-0007",7,"s",0,1,10,2],[108,"F2026-0008",8,"s",0,1,300,60],[109,"F2026-0009",9,"s",0,1,83.33,16.67],[302,"A2026-0002",14,"s",0,1,-0.83,-0.17,109],[110,"F2026-0010",10,"s",0,1,40,8],[111,"F2026-0011",11,"s",0,0,30,6],[303,"A2026-0003",12,"s",0,0,-5,-1,111],[112,"F2026-0012",11,"s",0,1,25,5],[113,"F2026-0013",12,"s",0,1,20,4],[114,"F2025-0001",-81,"s",0,1,50,10],[115,"F2026-0014",14,null,0,1,10,2],[116,"F2026-0015",14,"s",null,1,10,2],[117,"F2026-0016",14,"s",0,1,0,0],[118,"F2026-0017",15,"s",0,1,20,2.55],[119,"F2026-0018",15,"s",0,1,10,2],[304,"A2026-0004",17,"s",0,1,-10,-2,119],[120,"F2026-0019",24,"s",0,1,1000,200],[121,"F2026-0020",26,"s",0,1,100,20],[122,"F2026-0021",26,"s",0,1,10,2],[123,"F2026-0022",26,"s",0,1,20,2.55],[124,"F2026-0023",19,"s",0,1,200,40],[125,"F2026-0024",-9,"s",0,0,100,20],[126,"F2026-0025",19,"s",0,1,125,25],[127,"F2026-0026",-8,"s",0,0,50,0],[128,"F2026-0027",20,"s",0,1,50,10],[129,"F2026-0028",-7,"s",0,0,40,0],[130,"F2026-0029",21,"s",0,1,50,10],[131,"F2026-0030",-6,"s",0,0,40,0],[132,"F2026-0031",22,"s",0,1,50,0],[133,"F2026-0033",-5,"s",0,0,25,0],[134,"F2026-0032",-5,"s",0,0,25,0]],"l":[[101,1,1,100,20],[102,1,1,1000,20],[102,2,1,100,5.5],[103,1,2,150,10],[104,1,1,500,20],[301,1,-1,50,20],[105,1,1,80,0],[106,1,1,200,20],[107,1,1,10,20],[108,1,1,300,20],[109,1,1,83.33,20],[302,1,-1,0.83,20],[110,1,1,40,20],[111,1,1,30,20],[303,1,-1,5,20],[112,1,1,25,20],[113,1,1,20,20],[114,1,1,50,20],[115,1,1,10,20],[116,1,1,10,20],[118,1,1,10,20],[118,2,1,10,5.5],[119,1,1,10,20],[304,1,-1,10,20],[120,1,1,1000,20],[121,1,1,100,20],[122,1,1,10,20],[123,1,1,10,20],[123,2,1,10,5.5],[124,1,1,200,20],[125,1,1,100,20],[126,1,1,125,20],[127,1,1,50,0],[128,1,1,50,20],[129,1,1,40,0],[130,1,1,50,20],[131,1,1,40,0],[132,1,1,50,0],[133,1,1,25,0],[134,1,1,25,0]],"m":[[401,1,120,1],[402,19,1005.15,1],[403,8,230,1],[404,15,540,1],[405,16,240,1],[406,18,-240,1],[407,20,180,0],[408,21,60,1],[409,22,10,1],[410,8,0.02,1],[411,24,50,0],[412,15,300,1],[413,23,6,0],[414,22,60,1],[415,26,50,1],[416,26,295,1],[417,26,294.5,1],[418,26,97.5,1],[419,24,50,1],[420,27,359.5,1],[421,28,200,1],[422,28,100,1],[423,29,100,1],[424,29,100,1]],"e":[[501,101,1,120,"virement",401],[502,102,14,300,"especes",412],[503,102,17,1005.5,"virement",402],[504,103,5,100,"especes"],[505,103,8,230,"virement",403],[506,104,15,540,"virement",404],[507,105,7,80,"compensation",null,null,"467200"],[508,106,16,240,"virement",405],[509,106,17,-240,"virement",406,null,null,508],[510,106,18,12,"cheque"],[511,106,23,-12,"cheque",null,null,null,510],[512,107,8,0.02,"virement",410],[513,108,18,180,"virement",407],[514,108,19,50,"cheque",414,1],[515,109,10,33.33,"carte"],[516,109,11,33.33,"prelevement"],[517,109,14,32.34,"effet"],[518,110,11,24,"compensation"],[519,110,12,24,"autre",null,null,"411000"],[520,111,21,30,"virement",408],[521,112,21,30,"virement",408],[522,113,22,24,"virement",409],[523,114,-60,30,"compensation"],[524,114,-60,30,"cheque"],[525,118,15,12,"cheque"],[526,118,16,-12,"cheque",null,null,null,525],[527,119,17,12,"cheque"],[539,121,27,0.03,"virement"],[541,121,27,0.03,"virement"],[542,109,12,-33.33,"carte",null,null,null,515],[543,105,8,-80,"compensation",null,null,null,507],[544,111,23,6,"virement",413],[545,108,20,60,"virement",414],[546,108,20,40,"virement",414],[547,108,21,-40,"virement",null,null,null,546],[548,120,25,40,"virement",415],[549,120,25,300,"virement",416],[550,120,25,300,"virement",417],[551,120,25,100,"virement",418],[552,122,28,12,"cheque"],[553,122,27,-12,"cheque",null,null,null,552],[554,123,27,2,"cheque"],[555,123,28,-2,"cheque",null,null,null,554],[556,111,24,6,"virement",419],[557,111,25,-6,"virement",null,null,null,556],[558,120,24,50,"virement",419],[560,124,27,240,"virement",420],[561,125,25,120,"virement",420],[562,126,26,150,"cheque",421],[563,127,28,50,"virement",421],[564,128,28,60,"virement",422],[565,129,28,40,"virement",422],[566,130,29,60,"virement",423],[567,131,29,40,"virement",423],[568,132,29,50,"virement",424],[569,133,29,25,"virement",424],[570,134,29,25,"virement",424]],"p":[[501,20,120],[502,20,250],[502,5.5,50],[503,20,950],[503,5.5,55.5],[504,10,100],[505,10,230],[506,20,540],[507,0,80],[508,20,240],[509,20,-240],[510,20,12],[511,20,-12],[512,20,0.01],[513,20,180],[514,20,50],[515,20,33.33],[516,20,33.33],[517,20,32.34],[518,20,24],[519,20,24],[520,20,30],[521,20,30],[522,20,24],[523,20,30],[524,20,30],[525,20,12],[526,5.5,-12],[527,20,12],[539,20,0.03],[541,20,0.03],[542,20,-33.33],[543,0,-80],[544,20,6],[545,20,60],[546,20,40],[547,20,-40],[548,20,40],[549,20,300],[550,20,300],[551,20,100],[552,20,12],[553,20,-12],[554,20,1],[554,5.5,1],[555,20,-1.5],[555,5.5,-0.5],[556,20,6],[557,20,-6],[558,20,50],[560,20,240],[561,20,120],[562,20,150],[563,0,50],[564,20,60],[565,0,40],[566,20,60],[567,0,40],[568,0,50],[569,0,25],[570,0,25]],"x":[[601,125,1],[602,127,1],[603,131,0],[604,133,1],[605,133,1]]}$m$,
     'DK', $m$cross join (values (1, 0), (2, 1000)) d(n, k)$m$,
     'DN', $m$('5f4b0000-0000-4000-8000-0000000' || lpad(d.n::text, 5, '0'))::uuid$m$,
     'I0', $m$('5f4b0000-0000-4000-8000-0000000' || lpad(((x ->> 0)::int + d.k)::text, 5, '0'))::uuid$m$,
@@ -207,7 +239,14 @@ begin
       ('5f4b0000-0000-4000-8000-000000000001', '5f4b0000-0000-4000-8000-000000000401', '2026-03-04', '512000', 'ESSAI', 0.5, 'debit', 'validee', null, '5f4b0000-0000-4000-8000-000000000501', now(), 'BQ', 902, 'R1', '2026-03-04', 'ESSAI');
     select set_config('jd.validation_exercice', '', true);$m$,
     'LPR', $m$coalesce((select string_agg(to_char(b.date, 'MM-DD') || ' ' || b.compte || case b.sens when 'debit' then '+' else '-' end || (b.montant * 100)::bigint, ' ' order by b.date, b.compte, b.sens, b.montant) from ecritures_brouillon b where b.ligne_bancaire_id = '5f4b0000-0000-4000-8000-000000000401' and b.facture_id is null and b.encaissement_id is null), '∅')$m$,
-    'LVF', $m$(select string_agg(to_char(b.date, 'MM-DD') || ' ' || b.compte || case b.sens when 'debit' then '+' else '-' end || (b.montant * 100)::bigint || ' ' || b.statut || coalesce(' f' || right(b.facture_id::text, 3), '') || case when b.encaissement_id = '5f4b0000-0000-4000-8000-000000000501' then ' e501' when b.encaissement_id is not null then ' cp' else '' end, ' ' order by b.date, b.compte, b.sens, b.montant, b.statut) from ecritures_brouillon b where b.ligne_bancaire_id = '5f4b0000-0000-4000-8000-000000000401' and (b.facture_id is not null or b.encaissement_id is not null))$m$);
+    'LVF', $m$(select string_agg(to_char(b.date, 'MM-DD') || ' ' || b.compte || case b.sens when 'debit' then '+' else '-' end || (b.montant * 100)::bigint || ' ' || b.statut || coalesce(' f' || right(b.facture_id::text, 3), '') || case when b.encaissement_id = '5f4b0000-0000-4000-8000-000000000501' then ' e501' when b.encaissement_id is not null then ' cp' else '' end, ' ' order by b.date, b.compte, b.sens, b.montant, b.statut) from ecritures_brouillon b where b.ligne_bancaire_id = '5f4b0000-0000-4000-8000-000000000401' and (b.facture_id is not null or b.encaissement_id is not null))$m$)
+    -- Le virement mixte (étape VF5h). L420 : la banque de l'exemplaire 601 de la facture 125, qui n'est pas source, sur le
+    -- mouvement 420 qu'il paie, à la date du mouvement — la ligne que l'application écrit pour toute pièce payée
+    -- (src/lib/contrepartieBanque.ts). EXF et EXG : les deux moitiés du refus du rang 16, qui nomme la facture.
+    || jsonb_build_object(
+    'L420', $m$insert into ecritures_brouillon (dossier_id, piece_id, ligne_bancaire_id, date, compte, libelle, montant, sens) values ('5f4b0000-0000-4000-8000-000000000001', '5f4b0000-0000-4000-8000-000000000601', '5f4b0000-0000-4000-8000-000000000420', '2026-03-28', '512000', 'ESSAI', 120, 'debit')$m$,
+    'EXF', $m$Désignez d'abord l'exemplaire de la facture $m$,
+    'EXG', $m$ : ce mouvement porte aussi son encaissement, et cette facture, qui n'est pas la source de sa vente, se compte par une seule pièce validée.$m$);
 
   foreach cle in array tables loop
     execute format('select count(*) from %I', cle) into n;
@@ -251,20 +290,25 @@ begin
     select {I0}, {DN}, (x ->> 1)::numeric, (x ->> 2)::numeric
       from jsonb_array_elements('{JEU}'::jsonb -> 'p') x {DK}
     union all select '{U}02501', '{D3}', 20, 120$q$, 'OK', ''],
+  array['fait', '0. le jeu : les exemplaires des factures d''avant (VF5h)', 'chef', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, facture_id)
+    select {I0}, {DN}, {DN}::text || '/vf5h-' || (x ->> 0) || '.pdf', 'vf5h-' || (x ->> 0) || '.pdf', 'vente',
+           case when x ->> 2 = '1' then 'validee' else 'a_valider' end, ('{U}' || lpad(((x ->> 1)::int + d.k)::text, 5, '0'))::uuid
+      from jsonb_array_elements('{JEU}'::jsonb -> 'x') x {DK}$q$, 'OK', ''],
   array['fait', '0. le jeu : une écriture validée de 2025', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, statut, encaissement_id, valide_le, journal_code, numero_ecriture, piece_ref, piece_date, compte_lib)
     values ('{D1}', '2025-12-31', '511000', 'ESSAI', 30, 'debit', 'validee', '{U}00524', now(), 'VE', 1, 'F2025-0001', '2025-12-10', 'ESSAI')$q$, 'OK', ''],
   array['jeu', 'l''exercice 2025 validé dans R', 'postgres', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values
     ('{D1}', 2025, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('a', 64), '{}')$q$, '', ''],
   array['retenir', '*', 'postgres', $q$select jsonb_object_agg(s.k, {PRO}s.d, s.g, s.i{ORP}::text)::text
     from (values ('PA', '{D1}'::uuid, 'encaissement', '{U}00501'::uuid), ('PB', '{D1}', 'mouvement', '{U}00402'), ('PC', '{D2}', 'facture', '{U}01103'),
-                 ('PD', '{D1}', 'encaissement', '{U}00524'), ('PF', '{D1}', 'encaissement', '{U}00513'), ('PG', '{D2}', 'encaissement', '{U}01524')) s(k, d, g, i)$q$, '', ''],
+                 ('PD', '{D1}', 'encaissement', '{U}00524'), ('PF', '{D1}', 'encaissement', '{U}00513'), ('PG', '{D2}', 'encaissement', '{U}01524'),
+                 ('PH', '{D1}', 'mouvement', '{U}00420'), ('PI', '{D1}', 'mouvement', '{U}00421'), ('PJ', '{D1}', 'encaissement', '{U}00560')) s(k, d, g, i)$q$, '', ''],
 
   -- ══ 1 à 9. La recomposition : la base rend ce que le module compose ══════════
   array['valeur', '1. la règle du cumul, en entiers, comme le module', 'postgres', $q$select string_agg(prorata_arrondi(x.v, x.p, x.t)::text, ' ' order by x.o) from (values (1, 2000, 5000, 12000), (2, 2000, 6000, 12000), (3, -2000, 6000, 12000), (4, 1, 1, 2), (5, -1, 1, 2), (6, 1, 3, 2), (7, 3, 1, 2), (8, -3, 1, 2), (9, 0, 7, 9), (10, 7, 0, 9), (11, 1667, 3333, 10000), (12, 1667, 6666, 10000), (13, 1650, 9900, 9900), (14, 550, 1055, 10550), (15, 550, 5275, 10550), (16, -550, 5275, 10550), (17, 2000, 12001, 12000), (18, 2000, 11999, 12000), (19, 100, 1, 200), (20, 100, 3, 200), (21, 999999999999999, 999999999999999, 999999999999998), (22, 123456789012345, 98765432109, 999999999999999), (23, -123456789012345, 98765432109, 999999999999999), (24, 1, 999999999999999, 2000000000000000), (25, 1, 1000000000000000, 2000000000000000), (26, 5, 1, 10), (27, 15, 1, 10), (28, 25, 1, 10), (29, -25, 1, 10), (30, 833, 3333, 9999), (31, 999999999999997, 500000000000001, 999999999999998)) x(o, v, p, t)$q$, '',
     '833 1000 -1000 1 -1 2 2 -2 0 0 556 1111 1650 55 275 -275 2000 2000 1 2 1000000000000000 12193263114 -12193263114 0 1 1 2 3 -3 278 500000000000000'],
-  -- attendu 2 : 501:20:12000:2000 502:20:25000:4167 502:5.5:5000:261 503:20:95000:15833 503:5.5:5550:289 504:10:10000:909 505:10:23000:2091 506:20:54000:9000 507:0:8000:0 508:20:24000:4000 509:20:-24000:-4000 510:20:1200:200 511:20:-1200:-200 513:20:18000:3000 515:20:3333:556 516:20:3333:555 517:20:3234:540 518:20:2400:400 519:20:2400:400 521:20:3000:500 522:20:2400:400 523:20:3000:500 524:20:3000:500 539:20:3:0 541:20:3:1 542:20:-3333:-556 543:0:-8000:0 545:20:6000:1000 546:20:4000:667 547:20:-4000:-667 548:20:4000:667 549:20:30000:5000 550:20:30000:5000 551:20:10000:1667 558:20:5000:833
+  -- attendu 2 : 501:20:12000:2000 502:20:25000:4167 502:5.5:5000:261 503:20:95000:15833 503:5.5:5550:289 504:10:10000:909 505:10:23000:2091 506:20:54000:9000 507:0:8000:0 508:20:24000:4000 509:20:-24000:-4000 510:20:1200:200 511:20:-1200:-200 513:20:18000:3000 515:20:3333:556 516:20:3333:555 517:20:3234:540 518:20:2400:400 519:20:2400:400 521:20:3000:500 522:20:2400:400 523:20:3000:500 524:20:3000:500 539:20:3:0 541:20:3:1 542:20:-3333:-556 543:0:-8000:0 545:20:6000:1000 546:20:4000:667 547:20:-4000:-667 548:20:4000:667 549:20:30000:5000 550:20:30000:5000 551:20:10000:1667 558:20:5000:833 560:20:24000:4000 562:20:15000:2500 564:20:6000:1000 566:20:6000:1000 568:0:5000:0
   array['valeur', '2. les parts du jeu, au centime du module', 'postgres', $q$select string_agg(right(c.encaissement_id::text, 3) || ':' || trim_scale(c.taux) || ':' || c.ttc_centimes || ':' || c.tva_centimes, ' ' order by c.encaissement_id, c.taux desc) from factures_emises f cross join lateral calcul_vente_facturee(f.id) c where f.dossier_id = '{D1}' and c.genre = 'part'$q$, '',
-    'md5:38c04f4666cfb62fbcf662716e4bb7bb'],
+    'md5:da62f7e1e487479a80f79fd5dca1958f'],
   -- attendu 3 : f101 : ∅ / 03-02 411+12000 4458-2000 706-10000 | f102 : ∅ / 03-03 411+130550 4458-20550 706-110000 | f103 : 03-09 411+2091 44571-2091 / 03-04 411+33000 4458-3000 707-30000 ; 03-09 44571-2091 4458+2091 | f104 : 03-05 411+10000 44571-10000 / 03-05 411+60000 44571-10000 706-50000 | a301 : 03-12 411-1000 44571+1000 / 03-12 411-6000 44571+1000 706+5000 | f105 : ∅ / 03-06 411+8000 706-8000 | f106 : ∅ / 03-07 411+24000 4458-4000 706-20000 | f108 : ∅ / 03-09 411+36000 4458-6000 706-30000 | f109 : ∅ / 03-10 411+10000 4458-1667 706-8333 | a302 : ∅ / 03-15 411-100 4458+17 706+83 | f110 : ∅ / 03-11 411+4800 4458-800 706-4000 | f112 : ∅ / 03-12 411+3000 4458-500 706-2500 | f113 : ∅ / 03-13 411+2400 4458-400 706-2000 | f120 : ∅ / 03-25 411+120000 4458-20000 706-100000 | f121 : ∅ / 03-27 411+12000 4458-2000 706-10000
   array['valeur', '3. la facture et l''avoir', 'postgres', $q${VUE}'{f101,f102,f103,f104,a301,f105,f106,f108,f109,a302,f110,f112,f113,f120,f121}'::text[]) with ordinality s(x, o)$q$, '',
     'md5:1625e2c70f41aa89bf52e8878e097f18'],
@@ -277,12 +321,15 @@ begin
   -- attendu 6 : m401 : ∅ | m402 : 03-20 511-100550@402 512+100515@402 627+35@402 | m403 : ∅ | m404 : ∅ | m405 : ∅ | m406 : 03-19 511+24000@406 512-24000@406 | m412 : 03-16 512+30000@412 53-30000@412 | m414 : 03-23 511-6000@414 512+6000@414 | m415 : mouvement_ecart | m416 : 03-27 511-30000@416 512+29500@416 627+500@416 | m417 : mouvement_ecart | m418 : mouvement_ecart | m419 : ∅
   array['valeur', '6. le mouvement', 'postgres', $q${VUE}'{m401,m402,m403,m404,m405,m406,m412,m414,m415,m416,m417,m418,m419}'::text[]) with ordinality s(x, o)$q$, '',
     'md5:6e265597418e734525721f8bb0c07ff2'],
+  -- attendu 6b : f124 : ∅ / 03-20 411+24000 4458-4000 706-20000 | f125 : ∅ | f126 : ∅ / 03-20 411+15000 4458-2500 706-12500 | f127 : ∅ | f128 : ∅ / 03-21 411+6000 4458-1000 706-5000 | f129 : ∅ | f130 : ∅ / 03-22 411+6000 4458-1000 706-5000 | f131 : ∅ | f132 : ∅ / 03-23 411+5000 706-5000 | f133 : ∅ | f134 : ∅ | e560 : 03-28 44571-4000 512+24000@420 706-20000 / 03-28 411-24000 44571-4000 4458+4000 512+24000@420 | e561 : ∅ | e562 : 03-27 44571-2500 511+15000 706-12500 / 03-27 411-15000 44571-2500 4458+2500 511+15000 | e563 : ∅ | e564 : 03-29 44571-1000 512+6000@422 706-5000 / 03-29 411-6000 44571-1000 4458+1000 512+6000@422 | e565 : ∅ | e566 : 03-30 44571-1000 512+6000@423 706-5000 / 03-30 411-6000 44571-1000 4458+1000 512+6000@423 | e567 : ∅ | e568 : 03-30 512+5000@424 706-5000 / 03-30 411-5000 512+5000@424 | e569 : ∅ | e570 : ∅ | m420 : 03-28 512-50@420 627+50@420 | m421 : 03-29 511-15000@421 512+15000@421 | m422 : mouvement_facture_non_source(F2026-0028) | m423 : mouvement_facture_non_source(F2026-0030) | m424 : mouvement_facture_non_source(F2026-0032)
+  array['valeur', '6b. le virement mixte : la part des sources et les frais du tout, ou la facture d''avant nommée', 'postgres', $q${VUE}'{f124,f125,f126,f127,f128,f129,f130,f131,f132,f133,f134,e560,e561,e562,e563,e564,e565,e566,e567,e568,e569,e570,m420,m421,m422,m423,m424}'::text[]) with ordinality s(x, o)$q$, '',
+    'md5:cb9f7250c04121eb3170ea9dfcf30cfe'],
   -- attendu 7 : e513 : 03-19 44571-3000 511+18000 706-15000 / 03-19 411-18000 44571-3000 4458+3000 511+18000 | e514 : ∅ | e515 : 03-11 44571-556 511+3333 706-2777 / 03-11 411-3333 44571-556 4458+556 511+3333 | e516 : 03-12 44571-555 511+3333 706-2778 / 03-12 411-3333 44571-555 4458+555 511+3333 | e517 : 03-15 44571-540 511+3234 706-2694 / 03-15 411-3234 44571-540 4458+540 511+3234 | e545 : 03-21 44571-1000 511+6000 706-5000 / 03-21 411-6000 44571-1000 4458+1000 511+6000 | e546 : 03-21 44571-667 511+4000 706-3333 / 03-21 411-4000 44571-667 4458+667 511+4000 | e539 : 03-28 511+3 706-3 / 03-28 411-3 511+3 | e541 : 03-28 44571-1 511+3 706-2 / 03-28 411-3 44571-1 4458+1 511+3
   array['valeur', '7. le paiement partiel, le retrait, le cumul', 'postgres', $q${VUE}'{e513,e514,e515,e516,e517,e545,e546,e539,e541}'::text[]) with ordinality s(x, o)$q$, '',
     'md5:280fb99a1bca55ae1dbd097fd4a84e93'],
-  -- attendu 8 : f107 : vente_ecartee(encaissement_illisible) | e512 : vente_ecartee(encaissement_illisible) | m410 : mouvement_vente_ecartee | e518 : compte_a_choisir | e519 : compte_refuse(411000) | m407 : mouvement_non_classe | m408 : mouvement_facture_non_source | m409 : mouvement_ecart | f111 : ∅ | a303 : ∅ | e520 : ∅ | m411 : ∅ | m413 : ∅ | e544 : ∅ | e556 : ∅ | e557 : ∅
+  -- attendu 8 : f107 : vente_ecartee(encaissement_illisible) | e512 : vente_ecartee(encaissement_illisible) | m410 : mouvement_vente_ecartee | e518 : compte_a_choisir | e519 : compte_refuse(411000) | m407 : mouvement_non_classe | m408 : mouvement_facture_non_source(F2026-0011) | m409 : mouvement_ecart | f111 : ∅ | a303 : ∅ | e520 : ∅ | m411 : ∅ | m413 : ∅ | e544 : ∅ | e556 : ∅ | e557 : ∅
   array['valeur', '8. ce qui ne s''écrit pas, et pourquoi', 'postgres', $q${VUE}'{f107,e512,m410,e518,e519,m407,m408,m409,f111,a303,e520,m411,m413,e544,e556,e557}'::text[]) with ordinality s(x, o)$q$, '',
-    'md5:260457a019f5dad08a4ad15e22db5511'],
+    'md5:d252bf0ac2ac926f3897dc8c6031ab40'],
   -- attendu 9 : f114 : ∅ / 12-10 411+6000 4458-1000 706-5000 | e523 : compte_a_choisir | e524 : 12-31 44571-500 511+3000 706-2500 / 12-31 411-3000 44571-500 4458+500 511+3000 | f115 : vente_ecartee(nature) | f116 : vente_ecartee(option_debits) | f117 : vente_ecartee(sans_lignes) | f118 : vente_ecartee(contre_passation_illisible) | e525 : vente_ecartee(contre_passation_illisible) | e526 : vente_ecartee(contre_passation_illisible) | f119 : vente_ecartee(ttc_nul) | a304 : vente_ecartee(ttc_nul) | e527 : vente_ecartee(ttc_nul) | f122 : vente_ecartee(contre_passation_illisible) | e552 : vente_ecartee(contre_passation_illisible) | e553 : vente_ecartee(contre_passation_illisible) | f123 : vente_ecartee(contre_passation_illisible) | e554 : vente_ecartee(contre_passation_illisible) | e555 : vente_ecartee(contre_passation_illisible)
   array['valeur', '9. l''exercice 2025, une vente écartée par motif', 'postgres', $q${VUE}'{f114,e523,e524,f115,f116,f117,f118,e525,e526,f119,a304,e527,f122,e552,e553,f123,e554,e555}'::text[]) with ordinality s(x, o)$q$, '',
     'md5:3848a624c9cdb13a8aa38f463f522ff4'],
@@ -304,6 +351,14 @@ begin
     '03-09 411000+1991 03-09 445710-1991|0|03-12 411000-1000 03-12 445710+1000'],
   array['lecture', '14. un mouvement : banque, valeurs à l''encaissement, frais', 'chef', $q${W1}mouvement', '{U}00402', '{PB}'); select {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00402' and b.facture_id is null and b.encaissement_id is null)$q$, '',
     '03-20 511000-100550@402 03-20 512000+100515@402 03-20 627000+35@402'],
+  array['lecture', '14b. le virement mixte : la banque de ce que la source du jour et l''exemplaire n''ont pas porté, et les frais du tout', 'chef', $q${W1}mouvement', '{U}00420', '{PH}'); select {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00420' and b.facture_id is null and b.encaissement_id is null and b.piece_id is null)$q$, '',
+    '03-28 512000-50@420 03-28 627000+50@420'],
+  array['lecture', '14c. … le 511 d''un chèque d''un autre jour, sans frais', 'chef', $q${W1}mouvement', '{U}00421', '{PI}'); select {LIG}'{D1}' and b.ligne_bancaire_id = '{U}00421' and b.facture_id is null and b.encaissement_id is null and b.piece_id is null)$q$, '',
+    '03-29 511000-15000@421 03-29 512000+15000@421'],
+  array['lecture', '14d. … l''encaissement de la source, l''exemplaire et le mouvement : la banque fait le crédit', 'chef', $q$select {W}'{D1}', 'encaissement', '{U}00560', '{PJ}'); {W1}mouvement', '{U}00420', '{PH}'); {L420};
+    select (sum(case b.sens when 'debit' then b.montant else -b.montant end) * 100)::bigint || '|' || count(*) || '|' || (select (montant * 100)::bigint from lignes_bancaires where id = '{U}00420')
+      from ecritures_brouillon b where b.ligne_bancaire_id = '{U}00420' and b.compte = '512000'$q$, '',
+    '35950|3|35950'],
   array['controle', '15. un autre ordre, d''autres libellés', 'chef', $q${WE}(select jsonb_agg(x || '{"libelle": "AUTRE"}' order by o desc) from jsonb_array_elements('{PA}') with ordinality t(x, o)))$q$, 'OK', ''],
   array['controle', '16. le membre affecté au dossier écrit', 'membre', $q${WE}'{PA}')$q$, 'OK', ''],
   array['controle', '17. le chef simple écrit', 'chef_simple', $q$select {W}'{D2}', 'facture', '{U}01103', '{PC}')$q$, 'OK', ''],
@@ -353,7 +408,10 @@ begin
   array['controle', '43g. … un avoir qui annule le taux', 'chef', $q${W1}avoir', '{U}00304', '[]')$q$, '22023', 'La facture F2026-0018{ECA}ses avoirs datés au plus tard du jour d''un encaissement annulent le taux de cet encaissement : la règle du cumul n''a plus de TTC à répartir{ECB}'],
   array['controle', '44. rang 14 : une compensation sans compte', 'chef', $q${W1}encaissement', '{U}00518', '[]')$q$, '22023', 'Cet encaissement s''écrit sur un compte de contrepartie que le cabinet choisit, et il n''est pas encore choisi.'],
   array['controle', '45. rang 15 : son compte refusé', 'chef', $q${W1}encaissement', '{U}00519', '[]')$q$, '22023', 'Le compte de contrepartie de cet encaissement, 411000, est refusé : Le compte des clients est celui que l’encaissement solde : il n’en est pas la contrepartie.'],
-  array['controle', '46. rang 16 : une facture non source sur le mouvement', 'chef', $q${W1}mouvement', '{U}00408', '[]')$q$, '22023', 'Ce mouvement porte aussi l''encaissement d''une facture qui n''est pas la source de sa vente : son écriture n''est pas encore conçue.'],
+  array['controle', '46. rang 16 : une facture non source sur le mouvement, sans exemplaire', 'chef', $q${W1}mouvement', '{U}00408', '[]')$q$, '22023', '{EXF}F2026-0011{EXG}'],
+  array['controle', '46b. … la facture au plus petit numéro : F134 (F2026-0032) avant F133, que son identifiant précède', 'chef', $q${W1}mouvement', '{U}00424', '[]')$q$, '22023', '{EXF}F2026-0032{EXG}'],
+  array['controle', '46c. … un exemplaire à valider ne suffit pas', 'chef', $q${W1}mouvement', '{U}00423', '[]')$q$, '22023', '{EXF}F2026-0030{EXG}'],
+  array['controle', '46d. … deux exemplaires validés non plus : F134 désigné, F133 nommé', 'chef', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, facture_id) values ('{X}', '{D1}', '{D1}/vf5h-x.pdf', 'vf5h-x.pdf', 'vente', 'validee', '{U}00134'); {W1}mouvement', '{U}00424', '[]')$q$, '22023', '{EXF}F2026-0033{EXG}'],
   array['controle', '47. rang 17 : … une vente écartée', 'chef', $q${W1}mouvement', '{U}00410', '[]')$q$, '22023', 'Ce mouvement porte l''encaissement d''une facture que les ventes facturées écartent : il ne s''écrit pas.'],
   array['controle', '48. rang 18 : pas encore classé', 'chef', $q${W1}mouvement', '{U}00407', '[]')$q$, '22023', 'Ce mouvement n''est pas encore classé par ses encaissements : son écriture attend ce classement.'],
   array['controle', '49. rang 19 : au-delà des frais', 'chef', $q${W1}mouvement', '{U}00409', '[]')$q$, '22023', 'Les encaissements que ce mouvement porte ne font pas son montant à l''écart des frais près : il ne s''écrit pas.'],
@@ -373,6 +431,26 @@ begin
   array['controle', '52h. … un mouvement de trop', 'chef', $q${WE}jsonb_set('{PA}', '{0,ligne_bancaire_id}', '"{U}00401"'))$q$, '22023', '{DIF}'],
   array['controle', '52i. … aucune ligne', 'chef', $q${WE}'[]')$q$, '22023', '{DIF}'],
   array['controle', '52j. … les lignes d''une autre source', 'chef', $q${W1}encaissement', '{U}00521', '{PA}')$q$, '22023', '{DIF}'],
+
+  -- ══ 53 à 59. Le virement mixte (VF5h) : déclassé, le mouvement se classe de nouveau avec l'exemplaire unique et validé
+  -- de la facture d'avant, et le classement nomme sinon la facture au plus petit numéro, comme la composition (53 à 57) ;
+  -- déclassé, l'encaissement de la facture d'avant retiré ou défait sans mouvement ne retient plus la composition, qui
+  -- dit le mouvement à classer (58, 59 ; le propriétaire, sous le jeton du chef, comme en 95) ══════════
+  array['lecture', '53. le virement mixte se classe : la source du jour et la facture d''avant, son exemplaire désigné', 'chef', $q$select retirer_classement_par_encaissements('{D1}', '{U}00420'); select concat_ws('|', l.statut, l.encaissements_de_factures::text) from classer_mouvement_par_encaissements('{D1}', '{U}00420') l$q$, '',
+    'rapprochee|true'],
+  array['controle', '54. le classement nomme la facture au plus petit numéro : F134 (F2026-0032) avant F133', 'chef', $q$select retirer_classement_par_encaissements('{D1}', '{U}00424'); select classer_mouvement_par_encaissements('{D1}', '{U}00424')$q$, '22023', '{EXF}F2026-0032{EXG}'],
+  array['controle', '55. … deux exemplaires validés ne suffisent pas : F134 désigné, F133 nommé', 'chef', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, facture_id) values ('{X}', '{D1}', '{D1}/vf5h-x.pdf', 'vf5h-x.pdf', 'vente', 'validee', '{U}00134'); select retirer_classement_par_encaissements('{D1}', '{U}00424'); select classer_mouvement_par_encaissements('{D1}', '{U}00424')$q$, '22023', '{EXF}F2026-0033{EXG}'],
+  array['controle', '56. … un exemplaire à valider non plus', 'chef', $q$select retirer_classement_par_encaissements('{D1}', '{U}00423'); select classer_mouvement_par_encaissements('{D1}', '{U}00423')$q$, '22023', '{EXF}F2026-0030{EXG}'],
+  array['controle', '57. … ni aucun exemplaire', 'chef', $q$select retirer_classement_par_encaissements('{D1}', '{U}00422'); select classer_mouvement_par_encaissements('{D1}', '{U}00422')$q$, '22023', '{EXF}F2026-0028{EXG}'],
+  array['lecture', '58. déclassé, l''encaissement de la facture d''avant retiré : la composition ne le compte plus', 'postgres', $q${JWT} select retirer_classement_par_encaissements('{D1}', '{U}00422'); select retirer_encaissement('{D1}', '{U}00565');
+    select coalesce((ecriture_attendue_vente_facturee('{D1}', 'mouvement', '{U}00422')).motif, '-')$q$, '',
+    'mouvement_non_classe'],
+  array['lecture', '59. … défait par sa contre-passation sans mouvement, non plus', 'postgres', $q${JWT} select retirer_classement_par_encaissements('{D1}', '{U}00422');
+    insert into transmissions_factures (dossier_id, facture_id, canal, hote, flux_id, sha256, etat) values ('{D1}', '{U}00129', 'plateforme', 'p.fr', 'x', repeat('0', 64), 'accepte');
+    insert into transmissions_encaissements (dossier_id, encaissement_id, facture_id, canal, hote, etat) values ('{D1}', '{U}00565', '{U}00129', 'manuel', 'p.fr', 'depose');
+    select annuler_encaissement('{D1}', '{U}00565', '2026-03-30', 'ESSAI', null);
+    select coalesce((ecriture_attendue_vente_facturee('{D1}', 'mouvement', '{U}00422')).motif, '-')$q$, '',
+    'mouvement_non_classe'],
 
   -- ══ 60 à 69. Retirer ══════════
   array['controle', '60. rang 1 : le client', 'client_vb', $q${R1}encaissement', '{U}00501')$q$, '42501', '{ACC}'],
@@ -401,6 +479,10 @@ begin
   array['controle', '76. … sous le réglage d''une AUTRE source', 'postgres', $q$select set_config('jd.ecriture_vente_facturee', '{U}00501', true); {L402}$q$, '42501', '{INS}'],
   array['controle', '77. sous le réglage de SON mouvement, elle passe', 'postgres', $q$select set_config('jd.ecriture_vente_facturee', '{U}00402', true); {L402}$q$, 'OK', ''],
   array['controle', '78. la restauration du super-administrateur', 'chef', $q${L402}$q$, 'OK', ''],
+  array['controle', '79a. la banque de l''exemplaire sur le mouvement mixte, par le membre : l''écriture de sa pièce', 'membre', $q${L420}$q$, 'OK', ''],
+  array['controle', '79b. … le chef simple la pose et la reprend', 'chef_simple', $q${L420}; update ecritures_brouillon set montant = 119 where piece_id = '{U}00601' and ligne_bancaire_id = '{U}00420'$q$, 'OK', ''],
+  array['controle', '79c. … mais elle ne perd pas sa pièce : elle deviendrait une ligne du mouvement', 'chef', $q${L420}; update ecritures_brouillon set piece_id = null where piece_id = '{U}00601' and ligne_bancaire_id = '{U}00420'$q$, '42501', '{MOD}'],
+  array['controle', '79d. … ni une ligne du mouvement n''en reçoit une', 'chef', $q${W1}mouvement', '{U}00420', '{PH}'); update ecritures_brouillon set piece_id = '{U}00601' where ligne_bancaire_id = '{U}00420' and piece_id is null and facture_id is null and encaissement_id is null$q$, '42501', '{MOD}'],
   array['controle', '80. la ligne d''un encaissement ne se modifie pas', 'chef', $q$update ecritures_brouillon set libelle = 'AUTRE' where encaissement_id = '{U}00501'$q$, '42501', '{MOD}'],
   array['controle', '81. … ni celle d''une facture', 'chef', $q$update ecritures_brouillon set montant = montant + 1 where facture_id = '{U}01103'$q$, '42501', '{MOD}'],
   array['controle', '82. … ni celle d''un mouvement classé', 'chef', $q$update ecritures_brouillon set ligne_bancaire_id = null where ligne_bancaire_id = '{U}00402' and encaissement_id is null$q$, '42501', '{MOD}'],
@@ -577,7 +659,8 @@ begin
   array['controle', '161. MUTATION de 52c : au centime juste', 'chef', $q${WE}jsonb_set('{PA}', '{0,montant}', '20.00'))$q$, 'OK', ''],
   array['controle', '162. MUTATION de 50a : sans exercice validé', 'chef', $q$select {W}'{D2}', 'encaissement', '{U}01524', '{PG}')$q$, 'OK', ''],
   array['controle', '163. MUTATION de 64b : cité par un encaissement retiré', 'chef', $q$select retirer_classement_par_encaissements('{D1}', '{U}00402'); select retirer_encaissement('{D1}', '{U}00503'); {R1}mouvement', '{U}00402')$q$, 'OK', ''],
-  array['controle', '165. MUTATION de 72 : sur un mouvement libre', 'chef_simple', $q${L411}$q$, 'OK', '']
+  array['controle', '165. MUTATION de 72 : sur un mouvement libre', 'chef_simple', $q${L411}$q$, 'OK', ''],
+  array['controle', '166. MUTATION de 79a : la même ligne, sans sa pièce, est une ligne du mouvement', 'membre', $q$insert into ecritures_brouillon (dossier_id, ligne_bancaire_id, date, compte, libelle, montant, sens) values ('{D1}', '{U}00420', '2026-03-28', '512000', 'ESSAI', 120, 'debit')$q$, '42501', '{INS}']
   ];
 
   begin

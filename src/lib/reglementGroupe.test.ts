@@ -41,7 +41,7 @@ const FACTURE = piece({ id: 'fa', tiers: 'Grossiste', montant_ttc: 1000 })
 const AVOIR = piece({ id: 'av', tiers: 'Grossiste', nom_fichier: 'avoir.pdf', montant_ttc: -100 })
 const PIECES = [FACTURE, AVOIR, piece({ id: 'p3', montant_ttc: 250 }), piece({ id: 'vente', type_piece: 'vente', montant_ttc: 600 })]
 const PARTS: PartReglement[] = [{ piece_id: 'fa', montant: -1000 }, { piece_id: 'av', montant: 100 }]
-const SANS_PAIEMENT = paiementsDesPieces([], [])
+const SANS_PAIEMENT = paiementsDesPieces([], [], [])
 
 describe('signeReglant et la saisie des parts', () => {
   it('règle une dépense par une sortie, une recette par une entrée, un avoir à l’inverse', () => {
@@ -71,7 +71,7 @@ describe('signeReglant et la saisie des parts', () => {
 
 describe('resteARegler et resteARepartir', () => {
   it('rend ce qu’aucun AUTRE mouvement ne paie encore de la pièce', () => {
-    const paiements = paiementsDesPieces([mouvement({ id: 'acompte', piece_id: 'fa', statut: 'rapprochee', montant: -300 })], [])
+    const paiements = paiementsDesPieces([mouvement({ id: 'acompte', piece_id: 'fa', statut: 'rapprochee', montant: -300 })], [], [])
     expect(resteARegler(FACTURE, paiements.get('fa') ?? [], 'g')).toBe(700)
     // Le mouvement qu'on règle de nouveau ne compte pas : ses parts vont être remplacées.
     expect(resteARegler(FACTURE, paiements.get('fa') ?? [], 'acompte')).toBe(1000)
@@ -97,7 +97,7 @@ describe('refusReglementGroupe — ce que la base refuserait, dans le même ordr
 
   it('accepte de régler de nouveau un mouvement déjà réglé en groupe : ses parts sont remplacées', () => {
     const deja = mouvement({ statut: 'rapprochee', reglement_groupe: true })
-    const paiements = paiementsDesPieces([deja], [{ ligne_bancaire_id: 'g', piece_id: 'fa', montant: -1000 }, { ligne_bancaire_id: 'g', piece_id: 'av', montant: 100 }])
+    const paiements = paiementsDesPieces([deja], [{ ligne_bancaire_id: 'g', piece_id: 'fa', montant: -1000 }, { ligne_bancaire_id: 'g', piece_id: 'av', montant: 100 }], [])
     expect(refusReglementGroupe(deja, PARTS, PIECES, paiements)).toBeNull()
   })
 
@@ -153,7 +153,7 @@ describe('refusReglementGroupe — ce que la base refuserait, dans le même ordr
     const parts = [{ piece_id: 'usd', montant: -1040 }, { piece_id: 'eur', montant: -200 }]
     expect(refusReglementGroupe(ligne, parts, [usd, autre], new Map())).toBeNull()
     // Un acompte l'a déjà payée en partie : la part n'en est qu'une fraction, comparée au reste.
-    const acompte = paiementsDesPieces([mouvement({ id: 'a', piece_id: 'usd', statut: 'rapprochee', montant: -500 })], [])
+    const acompte = paiementsDesPieces([mouvement({ id: 'a', piece_id: 'usd', statut: 'rapprochee', montant: -500 })], [], [])
     const ligne2 = mouvement({ montant: -740 })
     expect(refusReglementGroupe(ligne2, [{ piece_id: 'usd', montant: -540 }, { piece_id: 'eur', montant: -200 }], [usd, autre], acompte))
       .toMatch(/dépasse ce qu’il en reste à régler/)
@@ -163,7 +163,7 @@ describe('refusReglementGroupe — ce que la base refuserait, dans le même ordr
   })
 
   it('refuse une part qui dépasse ce qu’il reste à régler de sa pièce, au-delà de l’écart d’alignement', () => {
-    const acompte = paiementsDesPieces([mouvement({ id: 'acompte', piece_id: 'fa', statut: 'rapprochee', montant: -300 })], [])
+    const acompte = paiementsDesPieces([mouvement({ id: 'acompte', piece_id: 'fa', statut: 'rapprochee', montant: -300 })], [], [])
     expect(refus({}, PARTS, acompte))
       .toBe(`La part de la pièce « Grossiste » dépasse ce qu’il en reste à régler (${formatMoney(700)}) : une pièce ne se paie pas deux fois.`)
     // Sous l'écart (5 € sur cette facture), c'est un frais : accepté.
@@ -175,7 +175,7 @@ describe('refusReglementGroupe — ce que la base refuserait, dans le même ordr
 // LE SECOND PAIEMENT D'UNE PIÈCE PAYÉE EN PARTIE (ligne 26) : un acompte de 300 € sur la facture de 1 000 €, puis le
 // solde par un autre virement qui ne paie qu'elle. Ce qui refuse une part de règlement groupé le refuse ici aussi.
 describe('refusSecondPaiement', () => {
-  const ACOMPTE = paiementsDesPieces([mouvement({ id: 'acompte', montant: -300, statut: 'rapprochee', piece_id: 'fa' })], [])
+  const ACOMPTE = paiementsDesPieces([mouvement({ id: 'acompte', montant: -300, statut: 'rapprochee', piece_id: 'fa' })], [], [])
   const deFacture = ACOMPTE.get('fa') ?? []
 
   it('accepte le solde, et un solde que le seuil absorbe', () => {
@@ -193,7 +193,7 @@ describe('refusSecondPaiement', () => {
     expect(refusSecondPaiement(mouvement({ montant: 700 }), FACTURE, deFacture)).toMatch(/mauvais sens pour la pièce « Grossiste »/)
     // Une recette, elle, se règle par une entrée.
     const vente = piece({ id: 'vente', type_piece: 'vente', montant_ttc: 600 })
-    const acompteClient = paiementsDesPieces([mouvement({ id: 'ac', montant: 200, statut: 'rapprochee', piece_id: 'vente' })], []).get('vente') ?? []
+    const acompteClient = paiementsDesPieces([mouvement({ id: 'ac', montant: 200, statut: 'rapprochee', piece_id: 'vente' })], [], []).get('vente') ?? []
     expect(refusSecondPaiement(mouvement({ montant: 400 }), vente, acompteClient)).toBeNull()
     expect(refusSecondPaiement(mouvement({ montant: -400 }), vente, acompteClient)).toMatch(/mauvais sens/)
   })
@@ -203,7 +203,7 @@ describe('refusSecondPaiement', () => {
     const avecLui = paiementsDesPieces([
       mouvement({ id: 'acompte', montant: -300, statut: 'rapprochee', piece_id: 'fa' }),
       mouvement({ id: 'solde', montant: -700, statut: 'rapprochee', piece_id: 'fa' }),
-    ], []).get('fa') ?? []
+    ], [], []).get('fa') ?? []
     expect(refusSecondPaiement(mouvement({ id: 'solde', montant: -700 }), FACTURE, avecLui)).toBeNull()
   })
 })
@@ -272,14 +272,15 @@ describe('piecesPayeesEnTrop', () => {
     const paiements = paiementsDesPieces(
       [mouvement({ id: 's', piece_id: 'fa', statut: 'rapprochee', montant: -1000 }), mouvement({ statut: 'rapprochee', reglement_groupe: true })],
       [{ ligne_bancaire_id: 'g', piece_id: 'fa', montant: -1000 }, { ligne_bancaire_id: 'g', piece_id: 'av', montant: 100 }],
+      [],
     )
     expect(piecesPayeesEnTrop(PIECES, paiements)).toEqual([{ piece: FACTURE, paye: 2000, enTrop: 1000 }])
   })
 
   it('se tait sous l’écart d’alignement : un frais ne fait pas payer la pièce deux fois', () => {
-    const frais = paiementsDesPieces([mouvement({ id: 's', piece_id: 'fa', statut: 'rapprochee', montant: -1005 })], [])
+    const frais = paiementsDesPieces([mouvement({ id: 's', piece_id: 'fa', statut: 'rapprochee', montant: -1005 })], [], [])
     expect(piecesPayeesEnTrop(PIECES, frais)).toEqual([])
-    const au_dela = paiementsDesPieces([mouvement({ id: 's', piece_id: 'fa', statut: 'rapprochee', montant: -1005.01 })], [])
+    const au_dela = paiementsDesPieces([mouvement({ id: 's', piece_id: 'fa', statut: 'rapprochee', montant: -1005.01 })], [], [])
     expect(piecesPayeesEnTrop(PIECES, au_dela)).toEqual([{ piece: FACTURE, paye: 1005.01, enTrop: 5.01 }])
   })
 
@@ -287,7 +288,7 @@ describe('piecesPayeesEnTrop', () => {
   // accuserait un paiement juste, sur une pièce qu'il faut d'abord compléter.
   it('se tait sur une pièce dont le montant n’a pas été lu', () => {
     const sansMontant = piece({ id: 'sm', montant_ttc: null })
-    const paiements = paiementsDesPieces([mouvement({ id: 's', piece_id: 'sm', statut: 'rapprochee', montant: -40 })], [])
+    const paiements = paiementsDesPieces([mouvement({ id: 's', piece_id: 'sm', statut: 'rapprochee', montant: -40 })], [], [])
     expect(piecesPayeesEnTrop([sansMontant], paiements)).toEqual([])
   })
 })

@@ -25,7 +25,7 @@ import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees }
 import { acquisitionsDesBiens, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut } from './amortissements'
 import { amortissementsSousLeBareme, forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
-import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
+import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces, type PartEncaissee } from './rattachement'
 import { defautsDeNumerotation, frontiereDeValidation } from './validationExercice'
 import { mouvementsDeCloture, ouvertureDeLExercice, soldesAReporter, type ReportDesSoldes } from './reportDesSoldes'
 import { jumellesDuDossier, ventesEnDouble, type FacturePourJumelle, type TransmissionPourJumelle } from './ventesJumelles'
@@ -112,6 +112,10 @@ export interface DonneesDeValidation {
   lignes: readonly LigneBancaire[]
   ventilations: readonly VentilationBancaire[]
   reglements: readonly ReglementGroupe[]
+  // Ce que les virements mixtes paient de leurs exemplaires (étape VF5h ; lib/encaissementsFactures.ts,
+  // `partsEncaissees`) : sans eux, la pièce qu'un tel virement paie s'attendrait à sa date de facture, et ses écritures,
+  // datées par lui, se diraient désynchronisées.
+  encaissees: readonly PartEncaissee[]
   cotisations: readonly CotisationDeclaree[]
   vehicules: readonly VehiculeDossier[]
   emprunts: readonly Emprunt[]
@@ -172,8 +176,8 @@ function datesDesEcrituresAttendues(piece: Piece, paiements: PaiementsDesPieces,
 
 // Ce qui décide de l'ordre des exercices : ce qui est validé, l'ouverture, et ce que chaque année porte.
 export type SuiteDesExercices = Pick<DonneesDeValidation,
-  'anneeCourante' | 'modele' | 'anneesValidees' | 'aNouveaux' | 'ecritures' | 'lignes' | 'reglements' | 'piecesValidees'
-  | 'piecesAValider' | 'cotisations' | 'vehicules' | 'immobilisations'>
+  'anneeCourante' | 'modele' | 'anneesValidees' | 'aNouveaux' | 'ecritures' | 'lignes' | 'reglements' | 'encaissees'
+  | 'piecesValidees' | 'piecesAValider' | 'cotisations' | 'vehicules' | 'immobilisations'>
 
 // Les années qui portent quelque chose : une écriture, un mouvement qui n'est pas ignoré (un virement personnel
 // l'est, et s'écrit), une pièce validée à la date où elle s'écrit, une pièce à valider, une échéance de
@@ -207,7 +211,7 @@ export function prochainExerciceAValider(d: SuiteDesExercices): number | null {
     ? Math.max(...d.anneesValidees) + 1
     : ouverture !== null
       ? anneeDe(ouverture)
-      : Math.min(...anneesActives(d, paiementsDesPieces(d.lignes, d.reglements)))
+      : Math.min(...anneesActives(d, paiementsDesPieces(d.lignes, d.reglements, d.encaissees)))
   return Number.isFinite(prochain) && prochain < d.anneeCourante ? prochain : null
 }
 
@@ -278,7 +282,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
         : `L'exercice ${premiere} porte des mouvements bancaires à traiter : ils se traitent avant la validation.`,
     })
   }
-  const paiements = paiementsDesPieces(d.lignes, d.reglements)
+  const paiements = paiementsDesPieces(d.lignes, d.reglements, d.encaissees)
   // Le premier exercice qui porte quelque chose, quand rien ne le fige encore — et que les écritures
   // antérieures ne l'ont pas déjà nommé.
   if (derniere === null && anneeOuverture === null) {

@@ -818,6 +818,8 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   const donneesDeLaRevue = donneesDeLaRevueAnalytique(annee, anneeCourante, modele, assujettiTva, {
     dossier: lecture.checklist, reprise: lecture.reprise, reportes: lecture.reportes, exercicesValides: exercices,
     reperes: lecture.reperes, seuils: lecture.seuils, explications: lecture.explications, ventesFacturees: ventesDeLaRevue,
+    // Ce que les virements mixtes paient de leurs exemplaires (étape VF5h), lu avec elles ; sans elles, aucune 2035.
+    encaissees: lectureDesVentes?.etat === 'lue' ? lectureDesVentes.encaissees : [],
     ecrituresDesVentes: pourLa2035?.etat === 'pret' ? pourLa2035.ecritures : null,
   })
   const lectureDeLaRevueIncomplete = motifsDeLaRevue.length > 0

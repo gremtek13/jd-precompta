@@ -480,3 +480,36 @@ describe('FinancementTab — les frais d’un mouvement d’encaissements', () =
     expect(screen.queryByText(/Les ventes facturées du dossier n.ont pas pu être lues/)).toBeNull()
   })
 })
+
+// LE VIREMENT MIXTE (chantier EC-Q3, étape VF5h). Le virement m1 du 20 mars paie la facture source (600 €) et une facture
+// d'avant la bascule (120 €), dont l'exemplaire est désigné : la situation compte cet exemplaire à la date du virement
+// (lib/rattachement.ts, `partsEncaissees`), au poste de sa catégorie, et non à sa date de facture, en décembre 2025 — où
+// l'exercice ne le verrait pas. Données FICTIVES.
+describe('FinancementTab — le virement mixte date l’exemplaire de la facture d’avant (étape VF5h)', () => {
+  const FACTURE_D_AVANT = {
+    ...FACTURE_SOURCE, id: 'fa', numero: 'F2025-0099', date_emission: '2025-12-15', tiers_nom: 'CLIENT D’AVANT', source_de_la_vente: false,
+  }
+  const MIXTE: LigneBancaire = ligneBancaire(mouvementDesVentes({ id: 'm1', dossier_id: D, date: '2026-03-20', montant: 720 }))
+  function poserLeVirementMixte() {
+    poser({ factures: [FACTURE_SOURCE, FACTURE_D_AVANT], lignes: [LIGNE, { ...LIGNE, id: 'lfa', facture_id: 'fa', prix_unitaire_ht: 100 }] })
+    faux.parTable.pieces = [EXEMPLAIRE, piece({
+      id: 'pa', nom_fichier: 'F2025-0099.pdf', tiers: 'CLIENT D’AVANT', date_piece: '2025-12-15', montant_ht: 100, montant_tva: 20,
+      montant_ttc: 120, facture_id: 'fa',
+    })]
+    faux.parTable.encaissements_factures = [
+      { ...ENCAISSEMENT, ligne_bancaire_id: 'm1' },
+      { ...ENCAISSEMENT, id: 'ea', facture_id: 'fa', montant: 120, ligne_bancaire_id: 'm1', cree_le: '2026-03-20T10:05:00Z' },
+    ]
+    faux.parTable.encaissements_factures_taux = [PART, { encaissement_id: 'ea', dossier_id: D, taux: 20, montant: 120 }]
+    faux.parTable.lignes_bancaires = [MIXTE]
+  }
+
+  it('la situation compte l’exemplaire à la date du virement, et rien avant lui', async () => {
+    poserLeVirementMixte()
+    const modale = await ouvrirLaSituation('2026-06-30')
+    expect(totalDuPoste(modale, POSTE_VENTES_FACTUREES)).toMatch(/^500,00\s€$/)
+    expect(totalDuPoste(modale, 'Recettes')).toMatch(/^100,00\s€$/)
+    await act(async () => { fireEvent.change(screen.getByLabelText('À la date du'), { target: { value: '2026-03-19' } }) })
+    expect(totalDuPoste(modale, 'Recettes')).toBeNull()
+  })
+})

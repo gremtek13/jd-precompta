@@ -249,7 +249,7 @@ function ca3Aleatoire(graine: number): DeclarationCa3 {
       montant: (vente ? 1 : -1) * signe * Math.round((ht + tva) * 100) / 100,
     }))
   }
-  const donnees: DonneesTva = { pieces, paiements: paiementsDesPieces(lignes, []), pieceIdsImmobilisees: new Set(['p3']), releve: [], ventesFacturees: ventesFactureesVides('d1') }
+  const donnees: DonneesTva = { pieces, paiements: paiementsDesPieces(lignes, [], []), pieceIdsImmobilisees: new Set(['p3']), releve: [], ventesFacturees: ventesFactureesVides('d1') }
   return calculerCa3(donnees, T1_2027, false, Math.floor(alea() * 500), 0)
 }
 
@@ -960,14 +960,14 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     return {
       dossierId: 'd1', factures: [factureDesEcritures({ id: 'f1', date_emission: o.emission ?? '2026-03-01', montant_ttc: ttc })],
       lignes: [ligneVendue('f1', Math.round((ttc * 10000) / (100 + taux)) / 100, taux)],
-      encaissements: [{ ...encaissement, compte_contrepartie: null, cree_par: null }], parts: [part], mouvements: [],
+      encaissements: [{ ...encaissement, compte_contrepartie: null, cree_par: null }], parts: [part], mouvements: [], exemplaires: [],
     }
   }
   const ventesDe = (s: SourcesDesEcrituresDeVente) => ventesFacturees({
     dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts,
   })
   const ca3De = (s: SourcesDesEcrituresDeVente, periode = T1) => calculerCa3(
-    { pieces, paiements: paiementsDesPieces(lignes, []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventesDe(s) },
+    { pieces, paiements: paiementsDesPieces(lignes, [], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventesDe(s) },
     periode, false, 0, 0,
   )
   const ecrit = (s: SourcesDesEcrituresDeVente, mode: ModeComptable = 'tresorerie') => brouillonDesVentes(composition(s, mode, PLAN_PAR_DEFAUT))
@@ -1038,6 +1038,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     const s: SourcesDesEcrituresDeVente = {
       dossierId: 'd1', factures: [factureDesEcritures({ id: 'f1', date_emission: '2025-12-01' })], lignes: [ligneVendue('f1', 100, 20)],
       encaissements: [e, cp].map((x) => ({ ...x.encaissement, compte_contrepartie: null, cree_par: null })), parts: [e.part, cp.part], mouvements: [],
+      exemplaires: [],
     }
     const c = ca3De(s)
     expect(c.exigibilitesRetenues.map((x) => x.ligne)).toEqual(['B5'])
@@ -1100,7 +1101,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     const s = sourcesDe(1200, { date: '2026-04-10' })
     const c = ca3De(s)
     expect(c).toEqual(calculerCa3(
-      { pieces, paiements: paiementsDesPieces(lignes, []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventesFactureesVides('d1') },
+      { pieces, paiements: paiementsDesPieces(lignes, [], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventesFactureesVides('d1') },
       T1, false, 0, 0,
     ))
     expect(refusEnregistrement(demande({ ca3: c }), contexte({ ventesFacturees: lues(s, []) }))).toBeNull()
@@ -1109,7 +1110,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
     // Une facture source ÉCARTÉE par le module (sans date qu'on puisse lui donner) ne retient pas une période.
     const ecartee = ventesFacturees({ dossierId: 'd1', factures: [factureVendue({ id: 'f1' })], lignes: [], encaissements: [], parts: [] })
     const avecEcartee = calculerCa3(
-      { pieces, paiements: paiementsDesPieces(lignes, []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ecartee }, T1, false, 0, 0,
+      { pieces, paiements: paiementsDesPieces(lignes, [], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ecartee }, T1, false, 0, 0,
     )
     expect(avecEcartee.ventesFactureesEcartees).toHaveLength(1)
     expect(refusEnregistrement(demande({ ca3: avecEcartee }), contexte({ ventesFacturees: { etat: 'sans_bascule' } }))).toBeNull()
@@ -1152,7 +1153,7 @@ describe('refusEnregistrement — une période qui compte une vente facturée s�
         factureDesEcritures({ id: 'a1', type: 'avoir', numero: 'A2026-0001', facture_origine_id: 'f1', date_emission: '2026-04-10', montant_ttc: -120, ...biens }),
       ],
       lignes: [ligneVendue('f1', 100, 20), { ...ligneVendue('a1', 100, 20), quantite: -1 }],
-      encaissements: [], parts: [], mouvements: [],
+      encaissements: [], parts: [], mouvements: [], exemplaires: [],
     }
     const c = ca3De(s, T2)
     expect(c.exigibilitesRetenues.map((r) => [r.exigibilite.origine, r.ligne])).toEqual([['avoir', 'B5']])

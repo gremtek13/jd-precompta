@@ -37,7 +37,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     const predicats: ReturnType<typeof predicatEq>[] = []
     let debut = 0
@@ -60,6 +60,8 @@ vi.mock('../../lib/supabase', async () => {
         return c
       },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
+      // Les pièces désignées comme l'exemplaire d'une facture (étape VF5h : la lecture des écritures des ventes facturées).
+      not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
       order: () => c,
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => (faux.attente ?? Promise.resolve()).then(() => {
@@ -1273,6 +1275,46 @@ describe('RevisionTab, revue analytique — les ventes facturées', () => {
     await attendreLaSection()
     const frais = titreDeLaLigne({ objet_type: 'poste_2035', objet: 'Frais financiers', nature: 'depense' })
     expect(texte(ligneDuTableau(frais))).toContain('3,00 €')
+  })
+
+  // LE VIREMENT MIXTE (chantier EC-Q3, étape VF5h) : le virement du 10 mai paie la facture source (1 200 €) et une facture
+  // d'avant la bascule (120 €, TTC : le dossier est exonéré), dont l'exemplaire, daté du 15 décembre 2024, est désigné. La 2035
+  // de la revue le compte en 2025, à la date du virement, comme celle de Clôture ; sans les parts du virement, il retomberait
+  // en 2024.
+  it('la 2035 de la revue compte l’exemplaire d’une facture d’avant à la date du virement mixte qui le paie', async () => {
+    avecUneVenteFacturee()
+    faux.tables.categories = [
+      ...CATEGORIES,
+      { id: 'c-hono', dossier_id: null, code: 'HONO', libelle: 'Honoraires', ordre: 3, compte_comptable: '706000', poste_2035: 'Honoraires' },
+    ]
+    faux.tables.factures_emises.push({
+      id: 'fa', dossier_id: DOSSIER, statut: 'validee', type: 'facture', numero: 'F2024-0099', date_emission: '2024-12-15',
+      tiers_nom: 'CLIENT D’AVANT', facture_origine_id: null, source_de_la_vente: false, nature_operation: 'services', option_debits: false,
+      date_prestation: null,
+    })
+    faux.tables.facture_lignes.push({ id: 'lfa', facture_id: 'fa', ordre: 1, designation: 'Prestation d’avant', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 })
+    faux.tables.encaissements_factures = [
+      {
+        id: 'enc', dossier_id: DOSSIER, facture_id: 'fs', date_encaissement: '2025-05-10', montant: 1200, moyen: 'virement',
+        ligne_bancaire_id: 'm-vir', annule_id: null, cree_le: '2025-05-10T10:00:00Z', retire_le: null,
+      },
+      {
+        id: 'enc-a', dossier_id: DOSSIER, facture_id: 'fa', date_encaissement: '2025-05-10', montant: 120, moyen: 'virement',
+        ligne_bancaire_id: 'm-vir', annule_id: null, cree_le: '2025-05-10T10:05:00Z', retire_le: null,
+      },
+    ]
+    faux.tables.encaissements_factures_taux.push({ encaissement_id: 'enc-a', dossier_id: DOSSIER, taux: 20, montant: 120 })
+    faux.tables.lignes_bancaires = [
+      ...faux.tables.lignes_bancaires,
+      ligne({ id: 'm-vir', date: '2025-05-10', montant: 1320, libelle: 'VIR CLIENT FICTIF', encaissements_de_factures: true }),
+    ]
+    faux.tables.pieces.push(piece({
+      id: 'pa', type_piece: 'vente', categorie_id: 'c-hono', tiers: 'CLIENT D’AVANT', date_piece: '2024-12-15', montant_ttc: 120, facture_id: 'fa',
+    }))
+    rendre({ ventesParLesFactures: true })
+    await attendreLaSection()
+    expect(texte(ligneDuTableau('Honoraires (recette)'))).toContain('120,00 €')
+    expect(texte(ligneDuTableau(POSTE))).toContain('1 000,00 €')
   })
 
   it('une facture source dans un dossier qui ne se dit pas basculé : la section le dit, sans tableau', async () => {

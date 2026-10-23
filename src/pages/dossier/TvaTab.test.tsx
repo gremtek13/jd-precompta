@@ -1036,12 +1036,45 @@ describe('TvaTab — les ventes facturées', () => {
     expect(faux.rpcs).toEqual([])
   })
 
+  // LE VIREMENT MIXTE (étape VF5h) : un crédit classé par ses encaissements paie la facture source ET une facture d'avant la
+  // bascule ; l'exemplaire de celle-ci compte à la date du virement, et la TVA de sa prestation y devient exigible. Sans les
+  // parts du virement, l'exemplaire resterait sans paiement, hors de la période.
+  it('compte l’exemplaire d’une facture d’avant à la date du virement mixte qui le paie', async () => {
+    poserLesVentes()
+    const FACTURE_D_AVANT = factureVendue({
+      id: 'fa', dossier_id: 'd', numero: 'F2026-0099', date_emission: '2026-12-15', tiers_nom: 'CLIENT D’AVANT', source_de_la_vente: false,
+    })
+    const AVANT = encaissementVendu({ id: 'enc-a', dossier_id: 'd', facture_id: 'fa', date_encaissement: '2027-03-10', montant: 120 })
+    faux.tables.factures_emises = [FACTURE_SOURCE, FACTURE_D_AVANT]
+    faux.tables.facture_lignes = [LIGNE_FS, { ...ligneVendue('fa', 100, 20), id: 'lfa' }]
+    faux.tables.encaissements_factures = [
+      { ...ENCAISSEMENT.encaissement, ligne_bancaire_id: 'mx' }, { ...AVANT.encaissement, ligne_bancaire_id: 'mx' },
+    ]
+    faux.tables.encaissements_factures_taux = [ENCAISSEMENT.part, AVANT.part]
+    // L'exemplaire de la facture source reste : sans paiement désormais, il ne compte pas davantage (étape VF3b).
+    faux.tables.pieces = [
+      ...faux.tables.pieces,
+      piece({ id: 'pa', tiers: 'CLIENT D’AVANT', date_piece: '2026-12-15', montant_ht: 100, montant_tva: 20, montant_ttc: 120, facture_id: 'fa' }),
+    ]
+    faux.tables.lignes_bancaires = [
+      paiement('vente', 1200, '2027-02-20'), paiement('achat', -300, '2027-03-05'),
+      { ...paiement('mx', 720, '2027-03-10'), id: 'mx', piece_id: null, encaissements_de_factures: true },
+    ]
+    await afficher({ bascule: true })
+    // 1 000 € de la vente par sa pièce, 500 € de la facture source, 100 € de l'exemplaire payé par le virement : 1 600 €.
+    const l08 = ligneDe('Taux normal 20 %')
+    expect(within(l08).getByText(MONTANT('1 600,00 €'))).toBeTruthy()
+    expect(within(l08).getByText(MONTANT('320,00 €'))).toBeTruthy()
+    // Les pièces désignées se lisent avec les ventes facturées, l'encaissement d'avant citant un mouvement.
+    expect(faux.tablesLues.filter((t) => t === 'pieces').length).toBeGreaterThan(1)
+  })
+
   // LES ÉCRITURES DE LA VENTE FACTURÉE AU BROUILLON (étape VF4c3) : celles que la fonction de VF4b écrit pour la composition
   // de VF4a sur les mêmes lignes que l'onglet lit — rien n'est écrit à la main.
   function ecrituresDeLaVente(mode: ModeComptable = 'tresorerie') {
     const c = ecrituresDesVentesFacturees({
       sources: { dossierId: 'd', factures: [FACTURE_SOURCE], lignes: [LIGNE_FS], encaissements: [ENCAISSEMENT.encaissement], parts: [ENCAISSEMENT.part] },
-      mouvements: [], comptesDeContrepartie: new Map(), mode, plan: PLAN_PAR_DEFAUT,
+      mouvements: [], comptesDeContrepartie: new Map(), exemplaires: [], mode, plan: PLAN_PAR_DEFAUT,
     })
     let i = 0
     return c.ecritures.flatMap((e) => lignesAuBrouillon('d', e).map((l) => ({

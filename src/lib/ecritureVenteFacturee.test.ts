@@ -15,6 +15,7 @@ import {
   refusChoixCompteContrepartie, refusEcritureVenteFacturee, refusRetraitEcritureVenteFacturee,
   type ContexteEcritureVente, type LigneDuBrouillon, type MouvementPourEcriture,
 } from './ecritureVenteFacturee'
+import { refusClassement, type ExemplaireLu, type MouvementClasse } from './encaissementsFactures'
 import { ecrituresDesVentesFacturees, refusCompteDeContrepartie, type SourceEcritureVente } from './ecrituresVentesFacturees'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { COLONNES_GENEREES } from './sauvegarde'
@@ -29,6 +30,10 @@ import { LIBELLE_MOTIF_VENTE, type MotifVenteEcartee } from './ventesFacturees'
 // La migration, par son nom : sa version sera celle de son application.
 const MIGRATION = /\/\d{14}_ecritures_de_la_vente_facturee\.sql$/
 const TEXTE_MIGRATION = fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))?.texte ?? ''
+// La migration du virement mixte (étape VF5h), qui reprend deux de ces fonctions : `ecrire_vente_facturee` (le rang 16 sous
+// ses mots neufs) et la garde G5 (une ligne qui porte une pièce n'est pas du troisième genre).
+const TEXTE_VIREMENT_MIXTE = fichiersDuSchema().find((f) => /\/\d{14}_virement_mixte\.sql$/.test(f.chemin))?.texte ?? ''
+const REPRISES_PAR_VF5H: ReadonlySet<string> = new Set(['ecrire_vente_facturee', 'garder_lignes_de_la_vente_facturee'])
 
 const D1 = uuidEssai(1)
 const D2 = uuidEssai(2)
@@ -92,10 +97,13 @@ const FONCTIONS: readonly (readonly [string, Liste])[] = [
 ]
 
 describe('chaque liste redit sa fonction, dans son ordre, sous ses mots et ses codes', () => {
-  it('les quatre fonctions neuves sont dans la migration, et c’est leur dernière définition', () => {
+  it('les quatre fonctions neuves sont dans la migration ; leur dernière définition, la sienne ou celle du virement mixte', () => {
     for (const [nom] of FONCTIONS) {
       expect(TEXTE_MIGRATION, nom).toContain(`create function public.${nom}(`)
-      expect(derniereDefinitionSql(nom)).toBe(TEXTE_MIGRATION.slice(TEXTE_MIGRATION.indexOf(`create function public.${nom}(`), TEXTE_MIGRATION.indexOf('$$;', TEXTE_MIGRATION.indexOf(`create function public.${nom}(`))))
+      const texte = REPRISES_PAR_VF5H.has(nom) ? TEXTE_VIREMENT_MIXTE : TEXTE_MIGRATION
+      const debut = texte.indexOf(`${REPRISES_PAR_VF5H.has(nom) ? 'create or replace' : 'create'} function public.${nom}(`)
+      expect(debut, nom).toBeGreaterThanOrEqual(0)
+      expect(derniereDefinitionSql(nom), nom).toBe(texte.slice(debut, texte.indexOf('$$;', debut)))
     }
   })
 
@@ -258,7 +266,7 @@ describe('les refus d’écrire, sur le jeu de l’essai', () => {
     const j = jeuDuDossier(1)
     const composition = ecrituresDesVentesFacturees({
       sources: { dossierId: j.dossierId, factures: j.factures, lignes: j.lignes, encaissements: j.encaissements, parts: j.parts },
-      mouvements: j.mouvements, comptesDeContrepartie: new Map([...j.comptes, [u(518), '467100']]), mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
+      mouvements: j.mouvements, comptesDeContrepartie: new Map([...j.comptes, [u(518), '467100']]), exemplaires: j.exemplaires, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
     })
     const choisi = contexte(1, {
       composition, encaissements: c1.encaissements.map((e) => (e.id === u(518) ? { ...e, compte_contrepartie: '467100' } : e)),
@@ -318,7 +326,7 @@ describe('les refus de retirer', () => {
     const mouvements = j.mouvements.map((m) => (m.id === u(402) ? { ...m, encaissements_de_factures: false } : m))
     const composition = ecrituresDesVentesFacturees({
       sources: { dossierId: j.dossierId, factures: j.factures, lignes: j.lignes, encaissements: j.encaissements, parts: j.parts },
-      mouvements, comptesDeContrepartie: j.comptes, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
+      mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,
     })
     const declasse = contexte(1, {
       composition,
@@ -379,7 +387,7 @@ describe('les bornes du module', () => {
   const composer = (o: Partial<Parameters<typeof ecrituresDesVentesFacturees>[0]> = {}, encaissements = j.encaissements, parts = j.parts) =>
     ecrituresDesVentesFacturees({
       sources: { dossierId: j.dossierId, factures: j.factures, lignes: j.lignes, encaissements, parts },
-      mouvements: j.mouvements, comptesDeContrepartie: j.comptes, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, ...o,
+      mouvements: j.mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, ...o,
     })
   const ligne = (o: Partial<LigneDuBrouillon>): LigneDuBrouillon => ({
     dossier_id: D1, statut: 'proposee', facture_id: null, encaissement_id: null, ligne_bancaire_id: null, piece_id: null,
@@ -485,8 +493,9 @@ describe('l’essai des écritures d’une vente facturée, confronté au module
   })
 
   it('chaque source du jeu, une fois, rendue comme le module la compose dans les deux modèles', () => {
+    // Huit depuis l'étape VF5h : le 6b, le virement mixte.
     const vues = etapes.filter((e) => sourcesDuControleVue(e.requete).length > 0)
-    expect(vues).toHaveLength(7)
+    expect(vues).toHaveLength(8)
     for (const v of vues) {
       const attendue = vueDesSources(sourcesDuControleVue(v.requete))
       expect(v.attendu, v.controle).toBe(empreinteDAttendu(attendue))
@@ -561,6 +570,38 @@ describe('l’essai des écritures d’une vente facturée, confronté au module
       confrontes++
     }
     expect(confrontes).toBeGreaterThan(35)
+  })
+
+  // Le virement mixte (étape VF5h, 53 à 57) : le mouvement du jeu, classé par la restauration, déclassé d'abord ; puis
+  // `refusClassement` dit ce que la base refuse — l'exemplaire à désigner, la facture au plus petit numéro —, la pièce que
+  // le contrôle désigne en plus comprise, et ne refuse rien du mouvement qui se classe.
+  it('chaque refus du classement d’un mouvement mixte que l’essai exige, le module le redit (étape VF5h)', () => {
+    const j = jeuDuDossier(1)
+    const declasse = (id: string): MouvementClasse[] => j.mouvements.map((m) => ({
+      id: m.id, dossier_id: m.dossier_id, date: m.date, montant: m.montant,
+      statut: m.id === id || !m.encaissements_de_factures ? 'non_rapprochee' : 'rapprochee',
+      encaissements_de_factures: m.id === id ? false : m.encaissements_de_factures,
+      piece_id: null, cotisation_id: null, categorie_id: null, emprunt_id: null, compte_bilan: null, declaration_tva_id: null,
+      ventilee: false, reglement_groupe: false, prelevement_personnel: false,
+    }))
+    const vente = { anneesValidees: [2025], factures: j.factures }
+    const appel = /select retirer_classement_par_encaissements\('\{D1\}', '\{U\}(\d{5})'\); select classer_mouvement_par_encaissements\('\{D1\}', '\{U\}\1'\)$/
+    const designee = /^insert into pieces \([^)]*\) values \('\{X\}', '\{D1\}', [^;]*'\{U\}(\d{5})'\);/
+    let confrontes = 0
+    for (const e of refusExiges) {
+      const m = appel.exec(e.requete.trim())
+      if (!m) continue
+      const d = designee.exec(e.requete.trim())
+      const exemplaires: ExemplaireLu[] = d
+        ? [...j.exemplaires, { id: 'x', dossier_id: j.dossierId, facture_id: u(Number(d[1])), statut: 'validee', type_piece: 'vente' }]
+        : j.exemplaires
+      const r = refusClassement(j.dossierId, u(Number(m[1])), declasse(u(Number(m[1]))), j.encaissements, vente, exemplaires)
+      expect(`${e.code} ${r?.message}`, e.controle).toBe(`22023 ${e.attendu}`)
+      confrontes++
+    }
+    expect(confrontes).toBe(4)
+    expect(refusClassement(j.dossierId, u(420), declasse(u(420)), j.encaissements, vente, j.exemplaires)).toBeNull()
+    expect(valeur('53. ').attendu).toBe('rapprochee|true')
   })
 
   it('chaque refus du choix d’un compte que l’essai exige, le module le redit', () => {

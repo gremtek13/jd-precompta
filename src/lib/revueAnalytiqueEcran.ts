@@ -4,7 +4,7 @@ import type { ModeleComptable } from './engagement'
 import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { formatMoney } from './format'
 import { partsDuReleve } from './partsDuReleve'
-import { paiementsDesPieces } from './rattachement'
+import { paiementsDesPieces, type PartEncaissee } from './rattachement'
 import {
   LIBELLE_DE_L_ETAT_DE_LA_LIGNE, LIBELLE_DU_TOTAL, type CauseARevoir, type CleDeLigne, type DonneesDeLaRevueAnalytique,
   type EtatDeLaLigne, type ExercicePourLaRevue, type ReperesAnnuels, type TotalDeLa2035,
@@ -52,6 +52,9 @@ export interface SourcesDeLaRevueAnalytique {
   // plausible et fausse. L'onglet le dit parmi les lectures de la revue (RevisionTab), qui n'affirme alors rien. Nulle et
   // non absente : l'appelant dit qu'il ne les a pas, il ne les oublie pas.
   ventesFacturees: VentesFacturees | null
+  // Ce que les virements mixtes paient de leurs exemplaires (étape VF5h), lu avec les ventes facturées
+  // (lib/ventesFactureesLecture.ts, `encaissees`) ; vide tant que celles-ci ne sont pas lues — la 2035 ne se calcule pas.
+  encaissees: readonly PartEncaissee[]
   // Ce que la 2035 reçoit des écritures des ventes facturées — les frais d'un mouvement d'encaissements (VF4C3-Q1,
   // `ecrituresDesVentesPourLa2035`) ; NUL tant que, pour un dossier basculé, leurs sources ne sont pas revenues entières :
   // la 2035 ne se calcule pas, comme sans ses ventes facturées, et l'onglet le dit parmi les lectures de la revue.
@@ -69,13 +72,15 @@ export function declarationPourLaRevue(
   modele: ModeleComptable,
   assujettiTva: boolean,
   d: LecturesDuDossierPourLaRevue,
-  // Obligatoires, comme pour le moteur : la revue compare la 2035 que Clôture montre, ventes facturées comprises.
+  // Obligatoires, comme pour le moteur : la revue compare la 2035 que Clôture montre, ventes facturées comprises, et les
+  // exemplaires que les virements mixtes datent (étape VF5h).
   ventesFacturees: VentesFacturees,
   ecrituresDesVentes: EcrituresDesVentesDeLa2035,
+  encaissees: readonly PartEncaissee[],
 ): Declaration2035 | null {
   if (modele.mode === 'engagement') return null
   const rapprochees = d.lignes.filter((l) => l.statut === 'rapprochee')
-  const paiements = paiementsDesPieces(rapprochees, d.reglements)
+  const paiements = paiementsDesPieces(rapprochees, d.reglements, encaissees)
   const parts = partsDuReleve(rapprochees, d.categories, d.ventilations, assujettiTva)
   const comptees = cotisationsComptees(d.cotisations, rapprochees, modele.mode)
   return calculerDeclaration2035(
@@ -100,7 +105,7 @@ export function donneesDeLaRevueAnalytique(
     reprise: s.reprise,
     reportes: s.reportes,
     declaration: s.ventesFacturees === null || s.ecrituresDesVentes === null ? null
-      : declarationPourLaRevue(annee, modele, assujettiTva, s.dossier, s.ventesFacturees, s.ecrituresDesVentes),
+      : declarationPourLaRevue(annee, modele, assujettiTva, s.dossier, s.ventesFacturees, s.ecrituresDesVentes, s.encaissees),
     exercicesValides: s.exercicesValides,
     reperes: s.reperes,
     partsDuReleve: partsDuReleve(rapprochees, s.dossier.categories, s.dossier.ventilations, assujettiTva),

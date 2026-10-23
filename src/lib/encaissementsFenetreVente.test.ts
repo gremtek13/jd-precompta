@@ -268,9 +268,12 @@ describe('propositionsEncaissement — une facture source : des mouvements libre
     id: 'pj', dossier_id: D, flux_hote: 'pa.exemple.fr', flux_id: 'flux-9', superpdp_invoice_id: null,
     identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
   }
-  const paye: LignePayante = { id: 'mj', piece_id: 'pj', date: '2027-10-12', montant: 1235.5, statut: 'rapprochee', reglement_groupe: false }
+  const paye: LignePayante = {
+    id: 'mj', piece_id: 'pj', date: '2027-10-12', montant: 1235.5, statut: 'rapprochee', reglement_groupe: false,
+    encaissements_de_factures: false,
+  }
   const proposer = (o: { source?: boolean; mouvements?: MouvementPropose[]; v?: ContexteVente } = {}) => propositionsEncaissement(
-    contexte({ transmissions: [T], facture: facture({ source_de_la_vente: o.source ?? true }) }), [JUMELLE], paiementsDesPieces([paye], []),
+    contexte({ transmissions: [T], facture: facture({ source_de_la_vente: o.source ?? true }) }), [JUMELLE], paiementsDesPieces([paye], [], []),
     o.mouvements ?? [mouvement(), mouvement({ id: 'mj', date: '2027-10-12', statut: 'rapprochee', piece_id: 'pj' })], AUJOURD_HUI, true,
     o.v ?? vente(),
   )
@@ -326,50 +329,81 @@ describe('debitsCitables — les débits qu’une contre-passation d’une factu
 describe('le geste qui rendrait un mouvement inclassable : dit avant le clic, jamais refusé', () => {
   const credit = mouvement({ id: 'mc', montant: 300 })
   const nonSource = encaissement({ id: 'ens', facture_id: 'f2', montant: 100, ligne_bancaire_id: 'mc' })
+  // L'exemplaire unique et validé de F2027-0043, qui n'est pas source (le virement mixte, étape VF5h).
+  const EXEMPLAIRE_F2 = { id: 'p2', dossier_id: D, facture_id: 'f2', statut: 'validee', type_piece: 'vente' } as const
+  const EXF = `${NE_POURRA_PAS_SE_CLASSER} : « Désignez d'abord l'exemplaire de la facture F2027-0043 : ce mouvement porte aussi `
+    + 'son encaissement, et cette facture, qui n\'est pas la source de sa vente, se compte par une seule pièce validée. » '
+    + LA_BASE_ADMET_LE_GESTE
 
-  it('un encaissement d’une facture source sur un crédit qui justifie déjà une facture non source', () => {
+  it('un encaissement d’une facture source sur un crédit qui justifie déjà une facture non source : son exemplaire, ou le rang 7', () => {
     const c = contexte({ encaissements: [nonSource] })
     const s = saisie({ montant: 200, ligneBancaireId: 'mc' })
     // La base l'accepte : 300 € pour un crédit de 300 €.
     expect(refusEnregistrementVente(c, { ...s, repartition: [{ taux: 20, montant: 200 }] }, [credit], AUJOURD_HUI, true, vente())).toBeNull()
-    expect(inclassableApresEnregistrement(c, s, [credit], vente())).toBe(`${NE_POURRA_PAS_SE_CLASSER} : il justifie aussi `
-      + 'l’encaissement de F2027-0043, une facture qui n’est pas source de sa vente, que son classement ne compte pas. '
-      + LA_BASE_ADMET_LE_GESTE)
-    // Payé en partie seulement : rien ne le complètera par une facture source, la place est prise.
-    expect(inclassableApresEnregistrement(c, { ...s, montant: 50 }, [credit], vente())).toContain('F2027-0043')
+    // Le virement mixte (étape VF5h) : le classement compte la facture d'avant, et demande d'abord son exemplaire.
+    expect(inclassableApresEnregistrement(c, s, [credit], vente(), [])).toBe(EXF)
+    // Payé en partie seulement : la facture d'avant attend toujours son exemplaire.
+    expect(inclassableApresEnregistrement(c, { ...s, montant: 50 }, [credit], vente(), [])).toBe(EXF)
+    // Son exemplaire désigné : les deux font le crédit, rien à dire ; 50 €, il attend ses autres encaissements.
+    expect(inclassableApresEnregistrement(c, s, [credit], vente(), [EXEMPLAIRE_F2])).toBeNull()
+    expect(inclassableApresEnregistrement(c, { ...s, montant: 50 }, [credit], vente(), [EXEMPLAIRE_F2])).toBeNull()
+    // 250 € dépasseraient le crédit au-delà des frais, la facture d'avant comptée.
+    expect(inclassableApresEnregistrement(c, { ...s, montant: 250 }, [credit], vente(), [EXEMPLAIRE_F2]))
+      .toContain('font 350,00 € pour un crédit de 300,00 €')
+  })
+
+  it('l’encaissement d’une facture qui n’est pas source, sur un crédit qu’une facture source réserve : son exemplaire, ou le rang 7', () => {
+    const reserve = encaissement({ id: 'es', facture_id: 'f1', montant: 200, ligne_bancaire_id: 'mc' })
+    const c = contexte({ facture: facture({ id: 'f2', numero: 'F2027-0043', source_de_la_vente: false }), encaissements: [reserve] })
+    const s = saisie({ montant: 100, ligneBancaireId: 'mc' })
+    expect(inclassableApresEnregistrement(c, s, [credit], vente(), [])).toBe(EXF)
+    expect(inclassableApresEnregistrement(c, s, [credit], vente(), [EXEMPLAIRE_F2])).toBeNull()
+    // Sur un crédit qu'aucune facture source ne réserve, sa pièce s'y rapproche comme hier : rien à dire.
+    expect(inclassableApresEnregistrement({ ...c, encaissements: [] }, s, [credit], vente(), [])).toBeNull()
+  })
+
+  // La fenêtre sert aussi le client « Ventes » et « Banque » : il lit la même phrase, tutoyé, et c'est son cabinet qui
+  // désigne l'exemplaire d'une facture.
+  it('le client lit le rang 7 sous ses mots : son cabinet désigne l’exemplaire', () => {
+    const client = pourLEspace('client', EXF)
+    expect(client).toBe(`${NE_POURRA_PAS_SE_CLASSER} : « Ton cabinet doit d'abord désigner l'exemplaire de la facture F2027-0043 : `
+      + 'ce mouvement porte aussi son encaissement, et cette facture, qui n\'est pas la source de sa vente, se compte par une '
+      + `seule pièce validée. » ${LA_BASE_ADMET_LE_GESTE}`)
+    expect(motsDuCabinet(client)).toEqual([])
+    expect(pourLEspace('cabinet', EXF)).toBe(EXF)
   })
 
   it('un crédit payé en partie n’est pas inclassable : il attend ses autres encaissements ; payé en entier non plus', () => {
-    expect(inclassableApresEnregistrement(contexte(), saisie({ montant: 200, ligneBancaireId: 'mc' }), [credit], vente())).toBeNull()
-    expect(inclassableApresEnregistrement(contexte(), saisie({ montant: 300, ligneBancaireId: 'mc' }), [credit], vente())).toBeNull()
+    expect(inclassableApresEnregistrement(contexte(), saisie({ montant: 200, ligneBancaireId: 'mc' }), [credit], vente(), [])).toBeNull()
+    expect(inclassableApresEnregistrement(contexte(), saisie({ montant: 300, ligneBancaireId: 'mc' }), [credit], vente(), [])).toBeNull()
     // La banque crédite un peu moins (des frais) : classable.
-    expect(inclassableApresEnregistrement(contexte(), saisie({ montant: 302, ligneBancaireId: 'mc' }), [credit], vente())).toBeNull()
+    expect(inclassableApresEnregistrement(contexte(), saisie({ montant: 302, ligneBancaireId: 'mc' }), [credit], vente(), [])).toBeNull()
     // Une autre facture source sur le même crédit : elle compte, rien de plus à dire.
     const autre = encaissement({ id: 'e3', facture_id: 'f3', montant: 100, ligne_bancaire_id: 'mc' })
-    expect(inclassableApresEnregistrement(contexte({ encaissements: [autre] }), saisie({ montant: 200, ligneBancaireId: 'mc' }), [credit], vente()))
+    expect(inclassableApresEnregistrement(contexte({ encaissements: [autre] }), saisie({ montant: 200, ligneBancaireId: 'mc' }), [credit], vente(), []))
       .toBeNull()
   })
 
   it('rien à dire : une facture qui n’est pas source, une saisie sans mouvement ou sans montant, un mouvement classé', () => {
     const c = contexte({ encaissements: [nonSource] })
-    expect(inclassableApresEnregistrement({ ...c, facture: facture({ source_de_la_vente: false }) }, saisie({ montant: 200, ligneBancaireId: 'mc' }), [credit], vente()))
+    expect(inclassableApresEnregistrement({ ...c, facture: facture({ source_de_la_vente: false }) }, saisie({ montant: 200, ligneBancaireId: 'mc' }), [credit], vente(), []))
       .toBeNull()
-    expect(inclassableApresEnregistrement(c, saisie({ montant: 200 }), [credit], vente())).toBeNull()
-    expect(inclassableApresEnregistrement(c, saisie({ montant: null, ligneBancaireId: 'mc' }), [credit], vente())).toBeNull()
-    expect(inclassableApresEnregistrement(c, saisie({ montant: 0.001, ligneBancaireId: 'mc' }), [credit], vente())).toBeNull()
-    expect(inclassableApresEnregistrement(c, saisie({ montant: -50, ligneBancaireId: 'mc' }), [credit], vente())).toBeNull()
-    expect(inclassableApresEnregistrement(c, saisie({ montant: 0, ligneBancaireId: 'mc' }), [credit], vente())).toBeNull()
+    expect(inclassableApresEnregistrement(c, saisie({ montant: 200 }), [credit], vente(), [])).toBeNull()
+    expect(inclassableApresEnregistrement(c, saisie({ montant: null, ligneBancaireId: 'mc' }), [credit], vente(), [])).toBeNull()
+    expect(inclassableApresEnregistrement(c, saisie({ montant: 0.001, ligneBancaireId: 'mc' }), [credit], vente(), [])).toBeNull()
+    expect(inclassableApresEnregistrement(c, saisie({ montant: -50, ligneBancaireId: 'mc' }), [credit], vente(), [])).toBeNull()
+    expect(inclassableApresEnregistrement(c, saisie({ montant: 0, ligneBancaireId: 'mc' }), [credit], vente(), [])).toBeNull()
 
-    expect(inclassableApresEnregistrement(c, saisie({ montant: 200, ligneBancaireId: 'mc' }), [{ ...credit, statut: 'rapprochee', piece_id: 'p' }], vente()))
+    expect(inclassableApresEnregistrement(c, saisie({ montant: 200, ligneBancaireId: 'mc' }), [{ ...credit, statut: 'rapprochee', piece_id: 'p' }], vente(), []))
       .toBeNull()
-    expect(inclassableApresEnregistrement(c, saisie({ montant: 200, ligneBancaireId: 'inconnu' }), [credit], vente())).toBeNull()
+    expect(inclassableApresEnregistrement(c, saisie({ montant: 200, ligneBancaireId: 'inconnu' }), [credit], vente(), [])).toBeNull()
   })
 
   it('un mouvement daté d’un exercice validé : la frontière se dit au cabinet ; illisible, le client n’en dit rien', () => {
     const fige = { ...credit, date: '2026-12-30' }
-    expect(inclassableApresEnregistrement(contexte(), saisie({ montant: 300, ligneBancaireId: 'mc' }), [fige], vente({ anneesValidees: [2026] })))
+    expect(inclassableApresEnregistrement(contexte(), saisie({ montant: 300, ligneBancaireId: 'mc' }), [fige], vente({ anneesValidees: [2026] }), []))
       .toBe(`${NE_POURRA_PAS_SE_CLASSER} : « L'exercice 2026 est validé : ce mouvement ne change plus. » ${LA_BASE_ADMET_LE_GESTE}`)
-    expect(inclassableApresEnregistrement(contexte(), saisie({ montant: 300, ligneBancaireId: 'mc' }), [fige], vente({ anneesValidees: ANNEES_ILLISIBLES })))
+    expect(inclassableApresEnregistrement(contexte(), saisie({ montant: 300, ligneBancaireId: 'mc' }), [fige], vente({ anneesValidees: ANNEES_ILLISIBLES }), []))
       .toBeNull()
   })
 
@@ -380,35 +414,37 @@ describe('le geste qui rendrait un mouvement inclassable : dit avant le clic, ja
 
     it('des contre-passations qui dépasseraient le débit de quelques frais : la base les admet, le classement non', () => {
       expect(refusContrePassationVente(D, 'e1', [e1], declare, '2027-10-25', 'Impayé', AUJOURD_HUI, 'md', [debit(-36)], true, vente())).toBeNull()
-      expect(inclassableApresContrePassation(D, 'e1', [e1], 'md', [debit(-36)], vente())).toBe(`${NE_POURRA_PAS_SE_CLASSER} : `
+      expect(inclassableApresContrePassation(D, 'e1', [e1], 'md', [debit(-36)], vente(), [])).toBe(`${NE_POURRA_PAS_SE_CLASSER} : `
         + '« Les contre-passations que ce mouvement justifie font 36,50 € pour un débit de 36,00 € : elles le dépassent. » '
         + LA_BASE_ADMET_LE_GESTE)
     })
 
     it('le débit qu’elles font, ou un débit plus grand qui attend d’autres contre-passations : rien à dire', () => {
-      expect(inclassableApresContrePassation(D, 'e1', [e1], 'md', [debit(-36.5)], vente())).toBeNull()
-      expect(inclassableApresContrePassation(D, 'e1', [e1], 'md', [debit(-37)], vente())).toBeNull()
-      expect(inclassableApresContrePassation(D, 'e1', [e1], 'md', [debit(-80)], vente())).toBeNull()
+      expect(inclassableApresContrePassation(D, 'e1', [e1], 'md', [debit(-36.5)], vente(), [])).toBeNull()
+      expect(inclassableApresContrePassation(D, 'e1', [e1], 'md', [debit(-37)], vente(), [])).toBeNull()
+      expect(inclassableApresContrePassation(D, 'e1', [e1], 'md', [debit(-80)], vente(), [])).toBeNull()
     })
 
     it('sans débit, pour une facture qui n’est pas source, ou un encaissement d’un autre dossier : rien', () => {
-      expect(inclassableApresContrePassation(D, 'e1', [e1], null, [debit(-36)], vente())).toBeNull()
-      expect(inclassableApresContrePassation(D, 'e1', [{ ...e1, facture_id: 'f2' }], 'md', [debit(-36)], vente())).toBeNull()
-      expect(inclassableApresContrePassation('d2', 'e1', [e1], 'md', [debit(-36)], vente())).toBeNull()
+      expect(inclassableApresContrePassation(D, 'e1', [e1], null, [debit(-36)], vente(), [])).toBeNull()
+      expect(inclassableApresContrePassation(D, 'e1', [{ ...e1, facture_id: 'f2' }], 'md', [debit(-36)], vente(), [])).toBeNull()
+      expect(inclassableApresContrePassation('d2', 'e1', [e1], 'md', [debit(-36)], vente(), [])).toBeNull()
     })
 
     it('d’autres contre-passations citent déjà ce débit : elles comptent', () => {
       const autre = encaissement({ id: 'c8', facture_id: 'f3', montant: -40, annule_id: 'e8', ligne_bancaire_id: 'md' })
-      expect(inclassableApresContrePassation(D, 'e1', [e1, autre], 'md', [debit(-76.5)], vente())).toBeNull()
-      expect(inclassableApresContrePassation(D, 'e1', [e1, autre], 'md', [debit(-76)], vente())).toContain('font 76,50 € pour un débit de 76,00 €')
+      expect(inclassableApresContrePassation(D, 'e1', [e1, autre], 'md', [debit(-76.5)], vente(), [])).toBeNull()
+      expect(inclassableApresContrePassation(D, 'e1', [e1, autre], 'md', [debit(-76)], vente(), [])).toContain('font 76,50 € pour un débit de 76,00 €')
     })
   })
 
   it('l’état d’après est complété par une facture source fictive, jamais par un identifiant de la base', () => {
     // Un mouvement qu'aucun encaissement ne cite après le geste : le complément fait tout le crédit, et il se classe.
-    expect(inclassableApres(D, 'mc', [credit], [], vente())).toBeNull()
-    // Un crédit qui ne justifie que l'encaissement d'une facture non source : le complément ne le ferait jamais.
-    expect(inclassableApres(D, 'mc', [credit], [nonSource], vente())).toContain('F2027-0043')
+    expect(inclassableApres(D, 'mc', [credit], [], vente(), [])).toBeNull()
+    // Un crédit qui ne justifie que l'encaissement d'une facture non source : le complément ne le ferait jamais sans son
+    // exemplaire ; avec lui, le complément d'une facture source le classerait (le virement mixte, étape VF5h).
+    expect(inclassableApres(D, 'mc', [credit], [nonSource], vente(), [])).toBe(EXF)
+    expect(inclassableApres(D, 'mc', [credit], [nonSource], vente(), [EXEMPLAIRE_F2])).toBeNull()
 
   })
 })
