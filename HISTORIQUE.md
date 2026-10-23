@@ -32814,3 +32814,152 @@ envoyés) : rien à y changer.
 **CE QUI RESTE À LA SESSION.** Déployer `receive-email` (`verify_jwt = false`, valeur de `supabase/config.toml`), la
 copie déployée comparée au dépôt AVANT d'écraser, le texte ENVOYÉ relu dans le journal, puis `allerretour.py`. Les
 lignes d'avant restent au journal de Supabase le temps qu'il vit (un jour). Rien d'autre.
+
+### 23/10/2026 — UN COMPTE QUE LE CABINET NE CONNAÎT PAS SE RATTACHE APRÈS UNE CONFIRMATION — 23-Q2
+
+(`supabase/functions/create-client-access/index.ts` ; `src/lib/creationDesComptes.ts` ;
+`src/pages/dossier/AccesTab.tsx` ; `src/test/contratsFonctions.ts` ; `creationDesComptes.test.ts`, `AccesTab.test.tsx`,
+`edgeFunctionsHttp.test.ts` ; la raison de deux exceptions, dans `edgeFunctionsLectures.test.ts` et
+`edgeFunctionsPaginees.test.ts`. Ni migration, ni policy, ni autre fonction : `create-team-member` et l'écran de
+l'équipe ne changent pas.) Question 23-Q2, tranchée par le cabinet le 18/10/2026 à la recommandation : « rattacher après
+une confirmation qui nomme l'adresse et ce qu'elle ouvre » — la même information qu'aujourd'hui, un geste de plus,
+aucune prise de contrôle possible. En production, des comptes seulement, le 23/10/2026 : un cabinet, trois accès, deux
+comptes clients, un super-administrateur, membre d'un cabinet ; aucun client de deux cabinets, aucun membre d'un cabinet
+qui porte un accès client. Le lot y est NEUTRE jusqu'au premier rattachement que le cabinet confirmera.
+
+**Le défaut.** `create-client-access` refusait en 409 tout compte existant que le cabinet ne connaît pas, ou plus
+(`appartientDejaAuCabinet` faux). Rendre son accès à un client dont on avait retiré le dernier butait sur « Demande à
+cette personne d'utiliser une autre adresse e-mail », et rien, dans l'application, ne le permettait autrement.
+
+**La fonction.** Le premier appel refuse comme avant, en 409, sous une seule phrase pour tous ces comptes (« … rien n'y
+a été changé, et il ne reçoit d'accès d'ici qu'après ta confirmation. ») ; son corps porte un marqueur que la machine
+lit, `rattachementAConfirmer: true`, et rien de plus — ni où vit ce compte, ni ce qu'il est, ni s'il a été client du
+cabinet. Le second porte `rattachementConfirme: true`. Seul le booléen `true` confirme : toute autre forme (le texte
+« true », un nombre, un objet, un tableau) se refuse en 400 français avec les champs texte (`booleenOuAbsent`, le patron
+de `texteOuAbsent`), avant `admin_du_dossier` et avant tout compte cherché ; absente, nulle ou `false`, elle ne confirme
+pas. Confirmé, l'accès s'écrit dans `memberships`, sans droit, la réponse dit `compte: "existant"`, et rien ne touche au
+compte : ni `updateUserById`, ni aucune autre opération que la création tentée et la recherche par adresse. L'ordre des
+contrôles ne change pas — la session, le corps, `admin_du_dossier` au jeton de l'appelant, le mot de passe, le service ;
+un accès déjà donné sur ce dossier garde son 409 « existe déjà » ; un compte que le cabinet connaît est repris comme
+avant, confirmation ou non, et sans marqueur.
+
+**Les comptes particuliers, examinés.** Lu en base le 23/10/2026 (définitions des fonctions, policies) et dans le code :
+un accès client ouvre au compte, par la RLS, ce que les branches « membre » ouvrent — `dossiers_select`, `pieces_select`
+et les fichiers du seau `pieces`, les textes OCR, les documents, les informations (en écriture aussi), les cotisations,
+et `cabinets_select` le cabinet du dossier —, quel que soit ce compte ; `admin_du_dossier`, `admin_du_cabinet` et
+`est_chef_du_cabinet` restent faux pour le membre d'un autre cabinet (son cabinet n'est pas celui du dossier), et le
+super-administrateur voit déjà tout (`is_super_admin` dans chacune). Mais `AuthContext` range du côté du cabinet tout
+compte qui a une ligne `cabinet_admins`, avant de lire ses accès, et les listes de cet espace (`DossiersList`,
+`listeDossiers`) se lisent par la RLS sans filtre de cabinet : rattaché, le membre d'un autre cabinet verrait le dossier
+parmi ceux de son cabinet, dans un espace qui n'en lit rien d'autre (une lecture refusée rend zéro ligne), sans jamais
+l'espace client — et la confirmation lui aurait promis ce que l'accès ne lui donne pas. Un accès ne donnerait rien au
+super-administrateur. D'où `compteDeCabinetOuSuperAdmin`, sur le seul appel confirmé : `cabinet_admins` puis
+`super_admins`, au compte cherché, chacune lisant son erreur — en panne, 500, rien d'écrit ; l'un ou l'autre, 409 « Ce
+compte ne peut pas recevoir d'accès client : il sert déjà à l'équipe d'un cabinet ou à l'administration de
+l'application… », une phrase pour ces deux sortes, sans marqueur (l'écran ne reboucle pas). Un membre de CE cabinet est
+connu, et repris comme avant. Le prix, dit : après sa confirmation, le cabinet apprend que l'adresse est celle d'un
+compte professionnel de l'application (23Q2-Q1, plus bas). Le client d'un autre cabinet, lui, se rattache — le risque
+que la décision accepte — et voit les deux sociétés dans son espace.
+
+**Le module** (`lib/creationDesComptes.ts`, pur). Le champ (`CHAMP_DE_LA_CONFIRMATION`) et le marqueur
+(`MARQUEUR_DU_RATTACHEMENT`) ; le corps des deux appels (`corpsDeLaCreation`), que le contrat HTTP envoie tel quel ; la
+lecture du marqueur, sur le booléen `true` d'un objet seulement (`rattachementAConfirmer`) ; la copie du corps d'un
+refus, prise avant `extraireErreurFonction` qui lit l'original (`copieDuRefus`, le patron de `receptionPlateforme.ts`),
+et sa lecture (`refusARattacher`) ; ce que dit la fenêtre (`confirmationDuRattachement`) : l'adresse telle qu'elle
+partira, le dossier, `CE_QUE_DONNE_UN_ACCES` tel quel, les deux cases par leurs libellés (`DOMAINES`), et que le mot de
+passe saisi ne sert pas, ce compte gardant le sien.
+
+**L'écran.** Sur le marqueur du premier appel, l'onglet Accès ouvre une fenêtre de la page — `ConfirmationArticle`,
+celle de la vue « Paramètres », jamais `window.confirm` —, qui garde l'adresse et le mot de passe TELS QU'ILS SONT
+PARTIS : changer les champs derrière elle ne change ni ce qu'elle nomme ni ce qui part. L'adresse y porte `.courriel`.
+« Annuler » n'envoie rien et laisse le formulaire rempli ; « Rattacher ce compte » envoie le second appel sous le verrou
+de la création (posé avant le `try`, relâché dans le `finally` après la relecture), la fenêtre ouverte et ses deux
+boutons en attente, puis dit l'avis d'un compte existant. Un refus du second appel se dit sous le formulaire, la fenêtre
+fermée, même s'il portait le marqueur ; une nouvelle soumission ferme une confirmation restée ouverte. Changé en
+passant, pour la création elle-même : son verrou ne se relâche plus qu'après la relecture de la liste (`await load()`).
+
+**LES PREUVES.**
+- Le contrat HTTP de `create-client-access` : 33 scénarios neufs, à la place des quatre « compte d'ailleurs » d'avant.
+  Le premier appel pour quatre sortes de comptes (un inscrit seul, le chef d'un autre cabinet, le client d'un autre
+  cabinet, le super-administrateur), sans confirmation puis à `false` (et nulle pour l'un) : 409, la phrase unique de la
+  source, les clés `error` et le marqueur seuls, dépenses exactes, rien d'écrit, le compte intact (`neDitQueLExistence`,
+  paramétrée : `create-team-member` garde la clé `error` seule). Confirmé : l'inscrit seul et le client d'un autre
+  cabinet rattachés (un accès client, sans droit, la réponse exacte, `compteIntact`) ; le chef et un comptable d'un
+  autre cabinet, le super-administrateur seul ou chef d'un autre cabinet refusés en 409 sans marqueur, la phrase unique
+  lue dans la source ; les deux lectures en panne, 500 ; l'accès en panne, 500 ; un compte connu, un accès déjà donné,
+  une adresse neuve comme sans confirmation ; les quatre personnes hors du dossier, 404 sans dépense ; un mot de passe
+  court, 400 ; la confirmation en nombre (1, 0), en texte (« true », « false », « oui »), en objet ou en tableau : 400,
+  avant le contrôle du dossier. Le marqueur absent des autres refus jugés (`sansMarqueur` : le doublon, d'avant et
+  confirmé, et les pannes) et des réponses d'un compte connu, jugées au corps exact.
+  Dix-sept défauts plantés, tous vus, chacun pour sa raison (relue faute par faute) : la confirmation acceptée sous une
+  autre forme, lue dans un texte, son type plus contrôlé, lue après le contrôle du dossier ou passée outre lui ; l'accès
+  écrit avant elle ; elle ignorée ; le mot de passe posé ; le marqueur oublié, ou posé sur le refus d'un compte connu,
+  sur la réponse d'un compte repris, sur le refus d'un compte qui ne peut pas être client ; le membre d'un autre
+  cabinet, le super-administrateur rattachés ; chacune des deux lectures en panne prise pour un « non », et la panne qui
+  rattache quand même. Le défaut d'avant « le refus d'un compte d'ailleurs qui rend son identifiant » suit l'ancre
+  neuve. ROUGE AVANT, la fonction de `c9f2251` devant les scénarios neufs : 25 rouges sur 33 ; les huit verts sont ce
+  que la confirmation ne change pas (le compte connu, le doublon, l'adresse neuve, les quatre refus hors du dossier, le
+  mot de passe court).
+- Le module : six tests neufs (`creationDesComptes.test.ts`) — le corps des deux appels, le marqueur sur le booléen seul
+  (quatorze formes refusées), la copie qui laisse l'original à `extraireErreurFonction`, rien à copier d'un corps lu ni
+  d'une erreur sans réponse, les mots de la fenêtre, et le champ et le marqueur confrontés au texte de la fonction.
+- L'écran : douze tests neufs (`AccesTab.test.tsx`) — la fenêtre de la page et ce qu'elle nomme (`window.confirm` jamais
+  appelé), « Annuler », le second appel et son corps exact, les champs changés derrière la fenêtre, deux et trois clics
+  dans le même `act`, la fenêtre en attente pendant l'appel, le verrou retenu pendant la relecture (`submit`, qui passe
+  outre le bouton grisé), un refus sans marqueur et un marqueur qui n'est pas `true`, le refus du second appel sans
+  boucle, la nouvelle soumission, le compte disparu entre les deux appels. ROUGE AVANT, l'écran de `c9f2251` : 10 rouges
+  sur 12, les deux verts étant les gardes symétriques (pas de marqueur, pas de fenêtre).
+- CINQUANTE-CINQ MUTATIONS, toutes tuées (un banc hors dépôt : chaque mutation seule dans le vrai fichier, les tests qui
+  le gardent rejoués, le fichier remis et vérifié à l'empreinte ; témoins verts avant et après). Vingt-trois sur la
+  fonction : la forme de la confirmation (toute forme admise, la nulle refusée, un texte qui passe), sa lecture (absente
+  qui confirme, jamais lue, lue sous un autre nom), son sens inversé, le marqueur retiré ou en texte, le premier refus
+  en 400, la vérification en panne ignorée ou en 409, le refus d'un compte particulier ignoré ou en 403, chacune des
+  deux lectures sur une autre table ou sans filtre, chacune de leurs pannes prise pour un « non », un membre pris pour
+  un client possible, le super-administrateur inversé, le compte de l'appelant vérifié au lieu du compte cherché. Seize
+  sur le module : le champ et le marqueur renommés, la confirmation en texte ou portée par le premier appel, le marqueur
+  lu à l'égalité large, un tableau ou un nul lus comme un corps, la copie d'un corps déjà lu ou l'original rendu, un
+  marqueur supposé sans copie ou sur une copie illisible, l'adresse mise en minuscules, ce que l'accès ouvre, le
+  dossier, les deux cases et la phrase du mot de passe oubliés. Seize sur l'écran : le marqueur honoré au second appel,
+  l'adresse, le mot de passe et la confirmation du second appel pris ailleurs, le verrou oublié, posé dans le `try` ou
+  relâché avant la relecture, « Annuler » qui envoie, le formulaire libre pendant la confirmation, une nouvelle création
+  qui la laisse ouverte, l'adresse sans `.courriel`, la fenêtre libre pendant l'appel ou jamais refermée, la copie prise
+  après la lecture du corps, le refus relu après elle, l'adresse gardée autrement qu'elle est partie. Une équivalente,
+  non jouée : garder pour la fenêtre les champs de l'état plutôt que les arguments de l'appel — au premier appel, ce
+  sont les mêmes valeurs, du même rendu. Une mutation vue d'avance comme survivante (le mot de passe du second appel
+  pris au formulaire, qu'aucun test ne changeait) a fait ajouter, avant la campagne, le mot de passe changé derrière la
+  fenêtre au test des champs ; elle meurt sur lui.
+- La barrière, sous le Node 22.23.3 de la CI : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les 63 avertissements
+  d'avant ; `npx tsc -p tsconfig.edge.json`, les 25 erreurs d'avant, aucune dans `create-client-access` ;
+  `npm run build` 0 (`index-LcVvdGRh.js`) ; les cinq fichiers touchés sous Paris, UTC, New York et Auckland, 826 sur 826
+  à chacun. La suite entière sous Paris, comparée test par test à `c9f2251` : 453 fichiers et 13 813 tests avant, 453 et
+  13 877 après ; aucun verdict changé ; quatre tests disparus, voulus (les quatre « compte d'ailleurs » d'avant,
+  remplacés) ; 68 neufs, tous verts (6 du module, 50 du contrat HTTP — 33 scénarios et 17 défauts plantés —, 12 de
+  l'écran).
+
+**À TRANCHER PAR LE CABINET.**
+- 23Q2-Q1 — Un compte qui sert à l'équipe d'un cabinet, ou le super-administrateur, se refuse même confirmé (écrit
+  ainsi, le côté fermé). Recommandation : le garder. L'autre voie : le rattacher aussi ; le dossier paraîtrait alors
+  dans l'espace de son cabinet, sans espace client, et la confirmation promettrait ce que l'accès ne donne pas. Le prix
+  du refus : le cabinet apprend, après avoir confirmé, que l'adresse est celle d'un compte professionnel.
+- 23Q2-Q2 — `create-team-member` (hors de ce lot) reprend sans confirmation tout compte que le cabinet connaît : un
+  compte rattaché ici sur confirmation le devient. Le client d'un autre cabinet, rattaché, pourrait donc entrer dans
+  l'équipe d'un geste ; l'application ne lui montrerait plus que l'espace du cabinet, et il perdrait son espace client,
+  chez l'autre cabinet aussi. Recommandation : que `create-team-member` refuse un compte qui porte un accès client dans
+  un dossier d'un autre cabinet (ou le confirme en nommant ce qu'il perd) — un lot à part.
+
+**À REVOIR.**
+- La charte d'un client de deux cabinets : `monCabinetId` vient du premier de ses dossiers lus (`AuthContext`, sans
+  ordre), et le nom, la couleur et le logo d'un seul cabinet s'appliquent aux deux sociétés. Elle suivrait la société
+  affichée (`dossierActifId`) — rien n'y était possible avant ce lot.
+- Non changé, dit : les lectures d'`appartientDejaAuCabinet` ne lisent toujours pas leur erreur. En panne, un compte
+  connu passe par la confirmation (sa phrase dit alors « que ce cabinet ne connaît pas », à tort) et se rattache comme
+  il l'aurait fait sans elle ; jamais plus ouvert, les deux raisons d'exception le disent désormais.
+- La confirmation garde contre l'erreur, pas contre un cabinet hostile : `memberships_write` laisse déjà le cabinet
+  écrire un accès pour un compte dont il connaît l'identifiant — il ne connaît que ceux de ses dossiers et de son
+  équipe.
+
+**CE QUI RESTE À LA SESSION.** Déployer `create-client-access` (`verify_jwt = false`, valeur de `supabase/config.toml`),
+APRÈS la page : la page neuve devant la fonction d'avant reçoit un 409 sans marqueur et le dit comme aujourd'hui ; dans
+l'autre ordre, une page d'avant restée ouverte dirait une confirmation qu'elle n'offre pas. La copie déployée comparée
+au dépôt AVANT d'écraser, le texte ENVOYÉ relu dans le journal, puis `allerretour.py` (aucune bordure neuve). Les deux
+questions sur la page des arbitrages. Rien d'autre : aucune migration, aucune policy.
