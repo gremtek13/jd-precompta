@@ -32183,3 +32183,14 @@ arbitrages, faites sur la recommandation.
   restée aux huit des factures).
 - Le banc ne montre pas encore la fenêtre d'une facture source qui porte un encaissement jamais déclaré, ni la paire :
   une visite du dossier d12 à ajouter, avec VF5e.
+
+**LA MISE EN LIGNE.** Demande #211, ouverte sur `44523b0` après la barrière de la session sous Node 22.23.3 (`tsc -b
+--force` ; lint, 0 erreur et les 63 avertissements d'avant ; 449 fichiers et 13 669 tests sous Paris, UTC, New York et
+Auckland ; le build), la suite rejouée une fois de plus après le renommage du fichier et la documentation de
+l'application (13 669 tests, 0) ; les deux passes de `verifier` vertes (la branche et la demande, de 6 h 47 à 7 h 10
+UTC) ; fusionnée en « Rebase and merge » le 23/10/2026 à 7 h 13 UTC (`5eb668d`, `21ab015`, après la mise en ligne de
+VF5d, `eb8014e`), `main` linéaire, son arbre égal à celui de la branche ; le déploiement vert, et le site sert
+`index-xXJ3jYYA.js` à 7 h 23, le bundle du build local. La feuille de route : la ligne 28.65 mise à jour, puis relue
+par empreinte (18 401 positions) ; les barres recomptées par requête, inchangées (186 chantiers hors de la phase 7, dont
+141 livrés ; 76 % et 82 %). La copie de travail de l'agent retirée, son travail entier dans `main`, recomposé ; la
+branche réalignée sur `main`.
