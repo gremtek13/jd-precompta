@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError, AuthWeakPasswordError } from '@supabase/supabase-js'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import {
   ADRESSE_DE_RETOUR, AVIS_LIEN_SANS_SESSION, LONGUEUR_MAXIMALE_MOT_DE_PASSE_EN_OCTETS, LONGUEUR_MINIMALE_MOT_DE_PASSE,
   REGLE_DU_MOT_DE_PASSE, SORTES_DE_CARACTERES,
@@ -474,11 +474,19 @@ function sourcesDeProduction(): { chemin: string; texte: string }[] {
 }
 
 describe('chaque demande de lien de la source revient à l’adresse de retour de ce module', () => {
+  // Lire toute la source et l'analyser fichier par fichier coûte des secondes, et, sur une machine chargée, plus que le
+  // délai d'un test (5 s, dépassé le 23/10/2026 sous New York) : le calcul se paie une fois, ici, jamais en relevant le
+  // délai.
+  let sources: { chemin: string; texte: string }[] = []
+  let appels: ReturnType<typeof appelsDuLien> = []
+  beforeAll(() => {
+    sources = sourcesDeProduction()
+    appels = appelsDuLien(sources)
+  })
+
   it('l’écran de connexion et l’onglet Accès, et eux seuls, demandent le lien — avec `{ redirectTo: ADRESSE_DE_RETOUR }`', () => {
-    const sources = sourcesDeProduction()
     // Plancher : sans lui, « aucune faute » se confondrait avec « aucun fichier lu ».
     expect(sources.length).toBeGreaterThan(180)
-    const appels = appelsDuLien(sources)
     expect(appels).toEqual([
       { chemin: 'src/pages/Login.tsx', faute: null },
       { chemin: 'src/pages/dossier/AccesTab.tsx', faute: null },

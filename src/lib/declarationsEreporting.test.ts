@@ -475,11 +475,21 @@ describe('refusDeclaration — dit avant le clic ce que la base refuserait', () 
     expect(cle({ note: '\t'.repeat(2001) })).toBe('note_trop_longue')
   })
 
+  // Trois contenus d'un mégaoctet : les juger coûte, sur une machine chargée, plus que le délai d'un test (5 s, dépassé
+  // le 23/10/2026 sous New York). Le calcul se paie une fois, ici, jamais en relevant le délai.
+  let contenusLourds: (string | null)[] = []
+  beforeAll(() => {
+    contenusLourds = [
+      cle({ contenu: { bourre: 'b'.repeat(1_048_563) } }),
+      cle({ contenu: { bourre: 'b'.repeat(1_048_562) } }),
+      cle({ contenu: { bourre: 'é'.repeat(600_000) } }),
+    ]
+  })
+
   it('le contenu : un objet, d’un mégaoctet au plus, sur l’objet, les bornes et le rôle annoncés', () => {
     for (const contenu of [null, undefined, [], 'contenu', 12]) expect(cle({ contenu }), String(contenu)).toBe('contenu_absent')
-    expect(cle({ contenu: { bourre: 'b'.repeat(1_048_563) } })).toBe('contenu_trop_grand')
-    expect(cle({ contenu: { bourre: 'b'.repeat(1_048_562) } })).toBe('contenu_autre')
-    expect(cle({ contenu: { bourre: 'é'.repeat(600_000) } })).toBe('contenu_trop_grand')
+    // Un octet de trop, juste à la borne, et un mégaoctet de lettres de deux octets.
+    expect(contenusLourds).toEqual(['contenu_trop_grand', 'contenu_autre', 'contenu_trop_grand'])
     expect(cle({ contenu: contenuAchats([achat(F1, P1)], { objet: 'ventes' }) })).toBe('contenu_autre')
     expect(cle({ contenu: contenuAchats([achat(F1, P1)], { debut: '2027-09-02' }) })).toBe('contenu_autre')
     expect(cle({ contenu: contenuAchats([achat(F1, P1)], { fin: 20270930 }) })).toBe('contenu_autre')
