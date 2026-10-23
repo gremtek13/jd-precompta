@@ -3,7 +3,7 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
-import { EXEMPLAIRES_DES_FACTURES_EXPORTES } from './exemplairesDesFactures'
+import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import {
   auGrapheDesExemplaires,
@@ -13,6 +13,7 @@ import {
   auPlanDesArticles,
   auPlanDesContacts,
   auPlanDesParametresFacturation,
+  auPlanDuJournalDesDesignations,
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
   CLES_PRIMAIRES,
@@ -51,11 +52,13 @@ describe('le filtre du plan', () => {
     // depuis l'étape A6a, celui des adresses de réception (sauvegardeAdressesReception.test.ts) ; depuis l'étape A4a, celui
     // des contacts (sauvegardeContacts.test.ts) ; depuis l'étape A5a, celui des paramètres de facturation
     // (sauvegardeParametresFacturation.test.ts) ; depuis l'étape VF1a, le graphe retire aussi la relation de l'exemplaire d'une
-    // facture tant que sa migration n'est pas exportée (sauvegardeExemplaires.test.ts).
+    // facture tant que sa migration n'est pas exportée (sauvegardeExemplaires.test.ts) ; depuis l'étape VF6b, celui du journal
+    // des désignations (sauvegardeDesignations.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
-        && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES))
+        && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES)
+        && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)))

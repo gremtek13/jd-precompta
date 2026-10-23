@@ -400,8 +400,36 @@ export interface Piece {
   // qui ne nomme pas la colonne (la lecture du pont, sans sa désignation) se type sur sa propre sélection
   // (`PiecePourJumelle`), jamais sur celle-ci.
   facture_id: string | null
+  // LA VENTE HORS DES FACTURES DE L'APPLICATION (chantier EC-Q3, étape VF6b ; migration `jumelle_inversee`, PRÉPARÉE, pas
+  // encore appliquée) : le cabinet DÉCLARE qu'aucune facture validée de l'application n'est la facture de cette vente — une
+  // prestation facturée ailleurs, une recette sans facture —, par `declarer_vente_hors_des_factures`, et la retire par
+  // `retirer_declaration_hors_des_factures` ; `designer_exemplaire_facture` la remplace. Jamais avec une désignation (une
+  // contrainte et la garde) ; dans un dossier basculé, une pièce de vente validée est désignée ou déclarée (G3). FACULTATIVE
+  // jusqu'au premier écran qui la lit (VF6c) : la production n'a pas la colonne, et aucune lecture ne la nomme avant que le
+  // drapeau `JUMELLE_INVERSEE_EXPORTEE` (lib/exemplairesDesFactures.ts) soit levé.
+  vente_hors_des_factures?: boolean
   created_at: string
   updated_at: string
+}
+
+// LE JOURNAL DES DÉSIGNATIONS (chantier EC-Q3, étape VF6b ; VF6-Q3 ; migration `jumelle_inversee`, PRÉPARÉE, pas encore
+// appliquée) : une ligne par geste sur la marque d'une pièce de vente — sa désignation exemplaire d'une facture, le retrait
+// de cette désignation (un remplacement en écrit deux au même instant), sa déclaration hors des factures de l'application,
+// le retrait de celle-ci —, le compte qui l'a fait et l'instant. Écrit par les quatre fonctions du cabinet seules, réinséré
+// par la restauration du super-administrateur ; ne se modifie ni ne se supprime hors de la cascade de sa pièce ou de son
+// dossier ; lu par le cabinet, jamais par le client. `auteur_id` n'a pas de clé vers `auth.users` : un compte effacé n'efface
+// ni ne bloque l'histoire.
+export type GesteDuJournal = 'designation' | 'retrait_designation' | 'declaration' | 'retrait_declaration'
+
+export interface DesignationDeLaPiece {
+  id: string
+  dossier_id: string
+  piece_id: string
+  geste: GesteDuJournal
+  /** La facture d'une désignation ou de son retrait ; nulle pour une déclaration et son retrait. */
+  facture_id: string | null
+  auteur_id: string
+  fait_le: string
 }
 
 export interface Pack {
