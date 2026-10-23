@@ -1734,7 +1734,9 @@ const DELETE_CABINET: ContratFonction = {
 // rattachement. Le compte repris l'est tel qu'il est, et la réponse le dit (`compte: "existant"`), pour que l'écran dise
 // au cabinet de ne pas communiquer un mot de passe qui n'a pas servi. D'un compte que le cabinet ne connaît pas, la
 // fonction ne dit que ce qu'elle disait avant : il existe, il n'est pas rattaché à ce cabinet — et, pour l'onglet Accès
-// seulement (23-Q2), qu'une confirmation peut le rattacher (plus bas).
+// seulement (23-Q2), qu'une confirmation peut le rattacher (plus bas). Une lecture qui décide qu'un compte est connu —
+// ou, pour l'équipe, client d'un autre cabinet (23Q2-Q2) — lit son erreur : en panne, 500, rien d'écrit (le « À REVOIR »
+// de 23-Q2).
 
 const MEMBRE = { email: NOUVEL_EMAIL, password: MOT_DE_PASSE, role: 'comptable' }
 const membreDe = (m: Monde, email: string) => lignes(m, 'cabinet_admins').find((c) => c.email === email)
@@ -1813,10 +1815,209 @@ function refusDesComptesDAilleurs(slug: string, corps: (email: string) => unknow
   }))
 }
 
+/**
+ * Une phrase de la fonction, telle que sa source l'écrit : le texte entre guillemets qui commence par `debut`, et lui
+ * seul. Lue dans la source plutôt que recopiée ici, pour que le contrat juge ce que la fonction RÉPOND contre ce qu'elle
+ * ÉCRIT ; deux phrases du même début (une par sorte de compte) seraient déjà une faute.
+ */
+function phraseDeLaSource(slug: string, debut: string): string {
+  const motif = new RegExp(`"(${debut.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"]*)"`, 'g')
+  const trouvees = [...sourceDe(slug).matchAll(motif)].map((x) => x[1])
+  return trouvees.length === 1 ? trouvees[0] : `(${trouvees.length} phrases de ${slug} commencent par « ${debut} », au lieu d’une)`
+}
+
+/** Un accès client de cette personne sur ce dossier, ajouté au monde de référence. */
+const accesClientDans = (personne: Personne, dossierId: string) => (m: Monde) => {
+  m.base.memberships.push({
+    id: identifiantGenere(), user_id: PERSONNES[personne].id, dossier_id: dossierId, role: 'client', email: PERSONNES[personne].email,
+  })
+}
+
+/** L'équipe des deux cabinets telle que le scénario la prépare, retenue pour juger que personne n'y est entré ni n'en a bougé. */
+const retenirLEquipe = (m: Monde) => { m.notes.equipeAvant = [JSON.stringify(lignes(m, 'cabinet_admins'))] }
+const equipeIntacte = (_r: Resultat, m: Monde) => {
+  const avant = m.notes.equipeAvant?.[0]
+  if (typeof avant !== 'string') return ['l’équipe n’a pas été retenue avant la requête']
+  const apres = JSON.stringify(lignes(m, 'cabinet_admins'))
+  return apres === avant ? [] : [`l’équipe a changé : ${apres.slice(0, 240)}`]
+}
+
+/** Le super-administrateur chef du premier cabinet : la forme de la production (un super-administrateur, membre d'un cabinet). */
+const superAdminChefDuPremierCabinet = (m: Monde) => {
+  m.base.cabinet_admins.push({ user_id: PERSONNES.superAdmin.id, cabinet_id: ID.cabinet, role: 'comptable_en_chef', email: PERSONNES.superAdmin.email })
+}
+
+// ── UN COMPTE CLIENT D'UN AUTRE CABINET N'ENTRE PAS DANS L'ÉQUIPE (create-team-member, 23Q2-Q2) ──────────────────────
+// La recommandation, sur laquelle le cabinet avance : « le refuser ». L'application range du côté du cabinet tout compte
+// d'équipe (AuthContext) : entré dans l'équipe, un compte qui porte un accès client dans un dossier d'un AUTRE cabinet y
+// perdrait son espace client, chez cet autre cabinet aussi — et 23-Q2 permet désormais qu'un tel compte soit connu d'ici,
+// rattaché sur confirmation. Refusé en 409, avant toute écriture, sous UNE phrase qui ne dit ni quel cabinet ni qu'il y
+// est client ; jugé APRÈS le refus d'un compte inconnu, qui reste la même phrase pour tous (`refusDesComptesDAilleurs`,
+// le client d'un autre cabinet compris). Le cabinet comparé est le cabinet VISÉ — celui que désigne un
+// super-administrateur —, jamais celui de l'appelant ; le client de deux dossiers de CE cabinet est repris comme avant ;
+// la vérification en panne refuse en 500. Et ce que la fonction faisait déjà, que le cabinet a demandé de dire : le
+// membre d'un autre cabinet n'entre jamais (la clé primaire de `cabinet_admins` est le compte : une personne, un
+// cabinet) ; le super-administrateur sans ligne d'équipe, client d'un dossier d'ici, y entre.
+
+/**
+ * Le refus d'un compte client d'un autre cabinet ne dit que cela : la phrase unique de la source, sous la seule clé
+ * `error`. Et cette phrase ne nomme ni un client, ni un autre cabinet, ni aucun cabinet ou dossier du monde, par son nom
+ * ou son identifiant : sans ce second juge, une phrase réécrite dans la source (« … il est client d'un autre cabinet »)
+ * passerait le premier, qui la lit là.
+ */
+const neDitRienDeLAutreCabinet = (r: Resultat) => {
+  const attendue = phraseDeLaSource('create-team-member', 'Ce compte ne peut pas entrer dans l\'équipe')
+  const fautes = refusExact(attendue)(r)
+  const reference = mondeDeReference().base
+  const noms = [...reference.cabinets, ...reference.dossiers].flatMap((l) => [String(l.id), String(l.nom)])
+  for (const texte of [String(messageDe(r)), attendue]) {
+    if (/client/i.test(texte)) fautes.push(`le refus parle d’un client : ${texte.slice(0, 160)}`)
+    if (/autre cabinet|ailleurs/i.test(texte)) fautes.push(`le refus parle d’un autre cabinet : ${texte.slice(0, 160)}`)
+    for (const nom of noms) if (texte.includes(nom)) fautes.push(`le refus nomme « ${nom} » : ${texte.slice(0, 160)}`)
+  }
+  return fautes
+}
+
+/** Des comptes que ce cabinet connaît, chacun d'une autre façon, et qui portent un accès client dans un dossier d'un autre cabinet. */
+const CLIENTS_D_UN_AUTRE_CABINET: { quoi: string; personne: Personne; preparer: (m: Monde) => void }[] = [
+  {
+    // La forme que 23-Q2 rend possible : le client d'un autre cabinet, rattaché ici sur confirmation.
+    quoi: 'le client d’un autre de ses dossiers, client aussi d’un autre cabinet (rattaché sur confirmation, 23-Q2)',
+    personne: 'inscrit',
+    preparer: (m) => { accesClientDans('inscrit', ID.dossierAutreCabinet)(m); accesClientDans('inscrit', ID.dossierVoisin)(m) },
+  },
+  { quoi: 'le client du dossier, client aussi d’un autre cabinet', personne: 'client', preparer: accesClientDans('client', ID.dossierAutreCabinet) },
+  {
+    // Déjà dans l'équipe : refusé AVANT l'écriture que la clé primaire aurait refusée, sous la même phrase.
+    quoi: 'un membre de son équipe, client d’un autre cabinet',
+    personne: 'comptableNonAssigne',
+    preparer: accesClientDans('comptableNonAssigne', ID.dossierAutreCabinet),
+  },
+]
+
+function clientsDUnAutreCabinetDansLEquipe(): Scenario[] {
+  const refuse: Attendu = {
+    statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+    verifier: (r, m) => [...neDitRienDeLAutreCabinet(r), ...equipeIntacte(r, m), ...compteIntact(r, m)],
+  }
+  const reprisDans = (email: string, cabinetId: string): Attendu => ({
+    statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'],
+    verifier: (r, m) => [
+      ...(membreDe(m, email)?.cabinet_id === cabinetId ? [] : [`${email} n’est pas entré dans l’équipe de ${cabinetId} : ${JSON.stringify(membreDe(m, email))}`]),
+      ...reponseDeCreation('existant')(r),
+      ...compteIntact(r, m),
+    ],
+  })
+  return [
+    ...CLIENTS_D_UN_AUTRE_CABINET.map(({ quoi, personne, preparer }): Scenario => ({
+      nom: `${quoi} : 409, une phrase qui ne dit ni quel cabinet ni qu’il y est client, rien d’écrit, le compte intact`,
+      preparer: (m) => { motDePasseSecret(m); preparer(m); retenirLEquipe(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES[personne].email } }),
+      attendu: refuse,
+    })),
+    // Le cabinet comparé est le cabinet VISÉ, celui que le super-administrateur désigne — ici chef du premier cabinet, la
+    // forme de la production —, jamais le sien : le client de l'autre cabinet seulement y entre, celui des deux non.
+    {
+      nom: 'super-admin, chef du premier cabinet, pour l’autre : un compte client de cet autre cabinet et du premier n’y entre pas (409, la même phrase)',
+      preparer: (m) => {
+        motDePasseSecret(m)
+        superAdminChefDuPremierCabinet(m)
+        accesClientDans('inscrit', ID.dossierAutreCabinet)(m)
+        accesClientDans('inscrit', ID.dossier)(m)
+        retenirLEquipe(m)
+      },
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { ...MEMBRE, email: PERSONNES.inscrit.email, cabinetId: ID.autreCabinet } }),
+      attendu: refuse,
+    },
+    {
+      nom: 'super-admin, chef du premier cabinet, pour l’autre : un compte client de cet autre cabinet seulement y entre, tel qu’il est',
+      preparer: (m) => { motDePasseSecret(m); superAdminChefDuPremierCabinet(m); accesClientDans('inscrit', ID.dossierAutreCabinet)(m) },
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { ...MEMBRE, email: PERSONNES.inscrit.email, cabinetId: ID.autreCabinet } }),
+      attendu: reprisDans(PERSONNES.inscrit.email, ID.autreCabinet),
+    },
+    {
+      nom: 'le client de deux dossiers de ce cabinet : repris tel qu’il est — seul un accès dans un AUTRE cabinet le retient',
+      preparer: (m) => { motDePasseSecret(m); accesClientDans('client', ID.dossierVoisin)(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.client.email } }),
+      attendu: reprisDans(PERSONNES.client.email, ID.cabinet),
+    },
+    {
+      // Le client est connu par la première lecture des accès (`appartientDejaAuCabinet`) : la panne vise la seconde.
+      nom: 'la vérification d’un accès dans un autre cabinet en panne : 500 qui le dit, personne n’est ajouté, aucun compte touché',
+      preparer: (m) => {
+        motDePasseSecret(m)
+        m.pannes.push({ table: 'memberships', operation: 'select', sauter: 1, erreur: { message: 'délai dépassé' } })
+        retenirLEquipe(m)
+      },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.client.email } }),
+      attendu: {
+        statut: 500, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+        verifier: (r, m) => [
+          ...refusExact(phraseDeLaSource('create-team-member', 'Ce compte n\'a pas pu être vérifié avant son entrée dans l\'équipe'))(r),
+          ...equipeIntacte(r, m), ...compteIntact(r, m),
+        ],
+      },
+    },
+    // Ce que 23Q2-Q2 ne change pas, dit par le contrat : le membre d'un autre cabinet, connu d'ici comme client, refusé
+    // par la clé primaire de l'équipe ; le super-administrateur sans ligne d'équipe, client d'un dossier d'ici, repris.
+    {
+      nom: 'le chef d’un autre cabinet, client d’un dossier de ce cabinet : 409 « appartient déjà à un cabinet », rien n’a changé',
+      preparer: (m) => { motDePasseSecret(m); accesClientDans('chefAutreCabinet', ID.dossierVoisin)(m); retenirLEquipe(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.chefAutreCabinet.email } }),
+      attendu: {
+        statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'],
+        verifier: (r, m) => [
+          ...refusExact(phraseDeLaSource('create-team-member', 'Cette personne appartient déjà à un cabinet'))(r),
+          ...equipeIntacte(r, m), ...compteIntact(r, m),
+        ],
+      },
+    },
+    {
+      nom: 'le super-administrateur, sans ligne d’équipe et client d’un dossier de ce cabinet : repris dans l’équipe, inchangé par 23Q2-Q2',
+      preparer: (m) => { motDePasseSecret(m); accesClientDans('superAdmin', ID.dossierVoisin)(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.superAdmin.email } }),
+      attendu: reprisDans(PERSONNES.superAdmin.email, ID.cabinet),
+    },
+  ]
+}
+
+/**
+ * Le lien du compte avec ce cabinet (`appartientDejaAuCabinet`) se lit en trois lectures — les dossiers du cabinet, les
+ * accès du compte sur eux, sa ligne d'équipe —, et chacune lit son erreur (le « À REVOIR » de 23-Q2) : en panne, 500,
+ * avant tout autre geste, au lieu du refus d'un compte inconnu. Le compte est choisi pour que la lecture visée se fasse :
+ * un client se reconnaît à ses accès, un membre à sa ligne d'équipe, qui ne se lit qu'à défaut d'accès. La panne est
+ * passagère (une fois) : c'est la première lecture qui échoue qui doit refuser, pas une lecture suivante tombée sur la
+ * même panne. La première lecture de l'équipe est celle du rôle de l'appelant : la panne la passe (`sauter`).
+ */
+const LIENS_ILLISIBLES_DE_L_EQUIPE: { table: string; sauter?: number; quoi: string; personne: Personne }[] = [
+  { table: 'dossiers', quoi: 'le client du dossier', personne: 'client' },
+  { table: 'memberships', quoi: 'le client du dossier', personne: 'client' },
+  { table: 'cabinet_admins', sauter: 1, quoi: 'un membre de son équipe', personne: 'comptableNonAssigne' },
+]
+
+function liensIllisiblesDeLEquipe(): Scenario[] {
+  return LIENS_ILLISIBLES_DE_L_EQUIPE.map(({ table, sauter, quoi, personne }): Scenario => ({
+    nom: `le lien du compte avec ce cabinet illisible (${table}), pour ${quoi} : 500 qui le dit, personne n’est ajouté, aucun compte touché`,
+    preparer: (m) => {
+      motDePasseSecret(m)
+      m.pannes.push({ table, operation: 'select', sauter, fois: 1, erreur: { message: 'délai dépassé' } })
+      retenirLEquipe(m)
+    },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES[personne].email } }),
+    attendu: {
+      statut: 500, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+      verifier: (r, m) => [
+        ...refusExact(phraseDeLaSource('create-team-member', 'Le lien de ce compte avec ce cabinet'))(r),
+        ...equipeIntacte(r, m), ...compteIntact(r, m),
+      ],
+    },
+  }))
+}
+
 const CREATE_TEAM_MEMBER: ContratFonction = {
   slug: 'create-team-member',
   navigateur: true,
-  porte: 'une session, puis un chef de cabinet (cabinet_admins) ou un super-admin, avant de lire le corps ; un compte existant n’est repris que s’il est déjà lié au cabinet, et tel qu’il est : son mot de passe n’est jamais touché',
+  porte: 'une session, puis un chef de cabinet (cabinet_admins) ou un super-admin, avant de lire le corps ; un compte existant n’est repris que s’il est déjà lié au cabinet et ne porte aucun accès client dans un dossier d’un autre cabinet (23Q2-Q2), et tel qu’il est : son mot de passe n’est jamais touché',
   scenarios: [
     preflight(),
     ...sansSession('create-team-member', MEMBRE),
@@ -1861,6 +2062,8 @@ const CREATE_TEAM_MEMBER: ContratFonction = {
       attendu: { statut: 200, verifier: (_r, m) => (membreDe(m, NOUVEL_EMAIL)?.cabinet_id === ID.autreCabinet ? [] : ['membre mal posé']) },
     },
     ...refusDesComptesDAilleurs('create-team-member', (email) => ({ ...MEMBRE, email })),
+    ...clientsDUnAutreCabinetDansLEquipe(),
+    ...liensIllisiblesDeLEquipe(),
     {
       nom: 'un compte existant déjà lié au cabinet (un client de ses dossiers) : repris tel qu’il est, et la réponse le dit',
       preparer: motDePasseSecret,
@@ -2102,14 +2305,22 @@ function rattachementsConfirmes(): Scenario[] {
         verifier: (r, m) => [...refuseSansMarqueur(r), ...compteIntact(r, m), ...aucunAccesPour(email)(m)],
       },
     })),
-    // La vérification de ces comptes LIT ses erreurs : en panne, ne pas savoir ne rattache pas.
+    // La vérification de ces comptes LIT ses erreurs : en panne, ne pas savoir ne rattache pas. La PREMIÈRE lecture de
+    // l'équipe est celle d'`appartientDejaAuCabinet`, qui lit aussi la sienne depuis le « À REVOIR » de 23-Q2 : la panne
+    // de `cabinet_admins` passe celle-là (`sauter`) pour viser la vérification, que la phrase exacte du refus désigne.
     ...(['cabinet_admins', 'super_admins'] as const).map((table): Scenario => ({
       nom: `la vérification du compte en panne (${table}), rattachement confirmé : 500 qui le dit, rien d’écrit, le compte intact`,
-      preparer: (m) => { motDePasseSecret(m); m.pannes.push({ table, operation: 'select', erreur: { message: 'délai dépassé' } }) },
+      preparer: (m) => {
+        motDePasseSecret(m)
+        m.pannes.push({ table, operation: 'select', sauter: table === 'cabinet_admins' ? 1 : undefined, erreur: { message: 'délai dépassé' } })
+      },
       requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(PERSONNES.inscrit.email) }),
       attendu: {
         statut: 500, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
-        verifier: (r, m) => [...sansMarqueur(r), ...compteIntact(r, m), ...aucunAccesPour(PERSONNES.inscrit.email)(m)],
+        verifier: (r, m) => [
+          ...refusExact(phraseDeLaSource('create-client-access', 'Ce compte n\'a pas pu être vérifié avant son rattachement'))(r),
+          ...sansMarqueur(r), ...compteIntact(r, m), ...aucunAccesPour(PERSONNES.inscrit.email)(m),
+        ],
       },
     })),
     {
@@ -2176,6 +2387,39 @@ function rattachementsConfirmes(): Scenario[] {
   ]
 }
 
+/**
+ * Le lien du compte avec ce cabinet (`appartientDejaAuCabinet`) illisible, lecture par lecture (le « À REVOIR » de 23-Q2) :
+ * 500, sans marqueur, avant le refus d'un compte inconnu, la confirmation et l'écriture — avec ou sans confirmation.
+ * Jusque-là, une panne faisait d'un compte connu un compte « que ce cabinet ne connaît pas » : le premier appel offrait
+ * la confirmation d'un rattachement, le second le rattachait par elle, ou refusait un membre de l'équipe comme s'il
+ * venait d'ailleurs. La panne est passagère (une fois), comme dans l'équipe ; la première lecture des dossiers est celle
+ * du cabinet du dossier : la panne la passe (`sauter`).
+ */
+const LIENS_ILLISIBLES_DE_L_ACCES: { table: string; sauter?: number; quoi: string; email: string; preparer?: (m: Monde) => void }[] = [
+  { table: 'dossiers', sauter: 1, quoi: 'le client d’un autre de ses dossiers', email: PERSONNES.inscrit.email, preparer: accesClientDans('inscrit', ID.dossierVoisin) },
+  { table: 'memberships', quoi: 'le client d’un autre de ses dossiers', email: PERSONNES.inscrit.email, preparer: accesClientDans('inscrit', ID.dossierVoisin) },
+  { table: 'cabinet_admins', quoi: 'un membre de son équipe', email: PERSONNES.comptableNonAssigne.email },
+]
+
+function liensIllisiblesDeLAcces(): Scenario[] {
+  return LIENS_ILLISIBLES_DE_L_ACCES.flatMap(({ table, sauter, quoi, email, preparer }) => [false, true].map((confirmation): Scenario => ({
+    nom: `le lien du compte avec ce cabinet illisible (${table}), pour ${quoi}, ${confirmation ? 'rattachement confirmé' : 'sans confirmation'} : 500 qui le dit, sans marqueur, rien d’écrit, le compte intact`,
+    preparer: (m) => {
+      motDePasseSecret(m)
+      preparer?.(m)
+      m.pannes.push({ table, operation: 'select', sauter, fois: 1, erreur: { message: 'délai dépassé' } })
+    },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: confirmation ? confirme(email) : { ...ACCES, email } }),
+    attendu: {
+      statut: 500, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+      verifier: (r, m) => [
+        ...refusExact(phraseDeLaSource('create-client-access', 'Le lien de ce compte avec ce cabinet'))(r),
+        ...sansMarqueur(r), ...compteIntact(r, m), ...aucunAccesPour(email)(m),
+      ],
+    },
+  })))
+}
+
 const CREATE_CLIENT_ACCESS: ContratFonction = {
   slug: 'create-client-access',
   navigateur: true,
@@ -2201,6 +2445,7 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
     })),
     ...premiersAppelsDesComptesDAilleurs(),
     ...rattachementsConfirmes(),
+    ...liensIllisiblesDeLAcces(),
     ...COMPTES_DU_CABINET.map(({ quoi, email, preparer }): Scenario => ({
       nom: `un compte existant déjà lié au cabinet (${quoi}) : repris tel qu’il est, et la réponse le dit`,
       preparer: (m) => { motDePasseSecret(m); preparer?.(m) },
