@@ -456,11 +456,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   contre-passation enregistrée sans mouvement ou ouvre sur lui la contre-passation d'un encaissement déclaré (la fenêtre
   des encaissements, ce débit imposé) → « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE ». VF5d2 le 23/10/2026
   (VF5-Q1), neutre : l'encaissement jamais déclaré d'une facture source se contre-passe en citant le débit qui l'a
-  défait, et la paire ne se déclare pas — une migration accordée par le cabinet ; VF5D2-Q1 à Q3 faites sur la
-  recommandation → « L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ ». VF5e le 23/10/2026, neutre : les candidats du relevé —
-  une facture source ouverte ou un encaissement sans mouvement pour un crédit libre, une contre-passation sans mouvement
-  pour un débit, acceptés par les jugements de la base — mettent le crédit « à rapprocher » dans le lot des règles,
-  l'écartent des trois autres lots et se proposent en tête de sa fiche → « LES CANDIDATS DU RELEVÉ ». VF5f le
+  défait, et la paire ne se déclare pas — une migration accordée par le cabinet ; VF5D2-Q1 à Q3 tranchées le 23/10/2026
+  à la recommandation → « L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ ». VF5e le 23/10/2026, neutre : les candidats du
+  relevé — une facture source ouverte ou un encaissement sans mouvement pour un crédit libre, une contre-passation sans
+  mouvement pour un débit, acceptés par les jugements de la base — mettent le crédit « à rapprocher » dans le lot des
+  règles, l'écartent des trois autres lots et se proposent en tête de sa fiche → « LES CANDIDATS DU RELEVÉ ». VF5f le
   23/10/2026, neutre : la Checklist et la Révision disent, en « attention » jusqu'à VF7, les mouvements réservés à des
   encaissements de factures, à classer (Banque), et les encaissements par un moyen du relevé sans mouvement (Factures,
   vue « Règlements », que Banque ne liste pas) ; lues en partie, les ventes taisent les deux points et un bandeau le
