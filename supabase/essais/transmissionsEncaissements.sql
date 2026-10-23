@@ -16,6 +16,9 @@
 --   - LE RETRAIT, désormais pour de vrai : un encaissement déclaré ne se retire ni par la fonction ni en direct ; un
 --     encaissement dont la déclaration a échoué ou a été rejetée se retire ; une contre-passation jamais déclarée se
 --     retire, et l'encaissement s'annule de nouveau ;
+--   - L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (36b et 51b ; migration `impaye_non_declare`, étape VF5d2) : hors
+--     facture source, le débit cité ne lève pas le refus de la contre-passation ; d'une facture source, il la permet,
+--     et elle ne se déclare pas — l'encaissement, lui, s'inscrit encore déclaré, et elle se déclare alors à son tour ;
 --   - CE QUE LA TABLE ET SA GARDE REFUSENT SEULES, à une écriture directe : chaque contrainte par son nom, chaque règle du
 --     déclencheur par son message, l'unicité de la déclaration active, l'immuabilité, la marche avant des états, et ce
 --     qu'une restauration rejoue (ce qui empêche ne compte que s'il était connu AVANT la déclaration) ;
@@ -61,6 +64,20 @@
 -- commentaire retirées et une ligne qui rend le texte reçu ajoutée au verdict (75 141 caractères, empreinte
 -- 6bc5ae99e6c07feabeded01b003f8764) ; sur une réplique égale à la production, la copie et ce fichier rendent les mêmes
 -- verdicts, à l'octet.
+--
+-- 23/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `impaye_non_declare`, appliquée le 23/10/2026 sous la
+-- version `20261023063657` ; chantier EC-Q3, étape VF5d2) : l'encaissement jamais déclaré d'une facture SOURCE se
+-- contre-passe en citant le débit qui le défait. Un dossier jetable qui a basculé, du cabinet du dossier d'essai, et sa
+-- facture de services validée par le chef naissent avec les factures d'essai, et s'annulent avec elles. Deux contrôles
+-- de plus : 36b (hors facture source, le débit cité : le refus d'hier, avant celui du débit) et 51b (la facture
+-- source : sans débit, le refus d'hier ; avec lui, la contre-passation, qui ne se déclare pas — le rang 5 de la
+-- déclaration — ; l'encaissement s'inscrit encore déclaré, et elle se déclare alors à son tour, sur la même
+-- plateforme). Sur une réplique égale à la production (145 migrations) : sans la migration, 130 contrôles, 1 en faute —
+-- 51b — ; avec elle, 130 justes, rien laissé en base, et les 128 d'hier rendent ce qu'ils rendaient. Le texte sans ses
+-- lignes de commentaire, envoyé en une requête : 79 631 caractères, empreinte e954cf7ddc8c37c9a33bab5d38fca95f, 130
+-- justes. Après l'application, la session n'a rejoué en production que ventesFacturees.sql (187 justes), qui y éprouve
+-- `annuler_encaissement` pour une facture source comme pour une autre : les fonctions que cet essai éprouve d'autre
+-- n'ont pas changé.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -72,9 +89,12 @@ declare
   -- Les identifiants des lignes d'essai, tirés une fois : chaque contrôle les recrée dans sa sous-transaction.
   t1 uuid := gen_random_uuid(); e1 uuid := gen_random_uuid(); e2 uuid := gen_random_uuid(); a1 uuid := gen_random_uuid();
   d1 uuid := gen_random_uuid(); d2 uuid := gen_random_uuid(); m1 uuid := gen_random_uuid();
+  -- Le dossier jetable qui a basculé, l'encaissement de sa facture source et le débit qui le défait (étape VF5d2).
+  ds uuid := gen_random_uuid(); es uuid := gen_random_uuid(); ms uuid := gen_random_uuid();
 
-  facture_v uuid; dossier_f uuid; autre_dossier uuid; chef_super boolean; fm uuid; f2 uuid;
+  facture_v uuid; dossier_f uuid; autre_dossier uuid; chef_super boolean; fm uuid; f2 uuid; fs uuid;
   p_acc text; p_dep text; p_spdp text; p_e1 text; p_e1_retire text; p_e2 text; p_d1 text; p_a1 text; p_d1_api_envoi text;
+  p_accs text; p_es text; p_ms text;
   accepte boolean; code_recu text; message_recu text; obs text; motif text; code_attendu text; prep text; appel text;
   qui text; verif text; verif_attendue text; verif_lue text; requete text; attendu boolean;
   vus int; n_maj int; detail text; trace text; fixture text; ident uuid; ident2 uuid;
@@ -174,6 +194,17 @@ begin
       jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120),
       '[{"designation":"a","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) r;
     reset role;
+    -- La facture SOURCE de sa vente (migration `impaye_non_declare`, étape VF5d2) : un dossier jetable du cabinet du
+    -- dossier d'essai, qui a basculé, et sa facture de services de 120,00 € à 20 %, validée par le chef.
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures)
+      select ds, 'ESSAI VF5D2', d.cabinet_id, 'tresorerie', '455000', true from dossiers d where d.id = dossier_f;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select r.facture_id into fs from enregistrer_facture(ds, null,
+      jsonb_build_object('tiers_nom', 'Essai', 'tiers_siret', '12345678900012', 'emetteur_nom', 'Essai', 'date_emission', jour,
+        'nature_operation', 'services', 'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120),
+      '[{"designation":"a","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) r;
+    reset role;
 
     -- Les morceaux dont les contrôles se composent, écrits en direct par le propriétaire de la base : une transmission
     -- acceptée de fm (la plateforme du client, pa.exemple.fr), une déposée sans accusé, une déposée chez Super PDP ;
@@ -188,6 +219,11 @@ begin
     p_d1 := format('insert into transmissions_encaissements (id, dossier_id, encaissement_id, facture_id, canal, hote, etat) values (%L, %L, %L, %L, ''manuel'', ''pa.exemple.fr'', ''depose'')', d1, dossier_f, e1, fm);
     p_a1 := format('insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen, annule_id, motif) values (%L, %L, %L, %L, -10, ''cheque'', %L, ''essai''); insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant) values (%L, %L, 20, -10)', a1, dossier_f, fm, jour, e1, a1, dossier_f);
     p_d1_api_envoi := format('insert into transmissions_encaissements (id, dossier_id, encaissement_id, facture_id, canal, hote, sha256, etat) values (%L, %L, %L, %L, ''plateforme'', ''pa.exemple.fr'', %L, ''envoi'')', d1, dossier_f, e1, fm, sha);
+    -- Et, pour la facture source (étape VF5d2) : sa transmission acceptée, un chèque es de 10 € à 20 % jamais déclaré,
+    -- le débit ms de 10 € qui le défait.
+    p_accs := format('insert into transmissions_factures (dossier_id, facture_id, canal, hote, sha256, etat, flux_id) values (%L, %L, ''plateforme'', ''pa.exemple.fr'', %L, ''accepte'', ''flux-s'')', ds, fs, sha);
+    p_es := format('insert into encaissements_factures (id, dossier_id, facture_id, date_encaissement, montant, moyen) values (%L, %L, %L, %L, 10, ''cheque''); insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant) values (%L, %L, 20, 10)', es, ds, fs, jour, es, ds);
+    p_ms := format('insert into lignes_bancaires (id, dossier_id, date, libelle, montant) values (%L, %L, %L, ''essai'', -10)', ms, ds, jour);
 
     -- ══ 4. Le chef déclare hors application, voit, ne modifie pas, ne retire plus, contre-passe et déclare la
     -- contre-passation ; super-administrateur, il insère (restauration) ══════════
@@ -441,6 +477,10 @@ begin
         ('36. un encaissement que rien n''a déclaré', p_acc || '; ' || p_e1,
           format('select annuler_encaissement(%L, %L, %L, ''essai'')', dossier_f, e1, jour),
           '22023', 'Cet encaissement n''est pas déclaré : il se retire, sans contre-passation.'),
+        ('36b. un encaissement que rien n''a déclaré, d''une facture qui n''est pas source, le débit cité : le refus d''hier, avant celui du débit',
+          p_acc || '; ' || p_e1 || '; ' || format('insert into lignes_bancaires (id, dossier_id, date, libelle, montant) values (%L, %L, %L, ''essai'', -10)', m1, dossier_f, jour),
+          format('select annuler_encaissement(%L, %L, %L, ''Chèque revenu impayé'', %L)', dossier_f, e1, jour, m1),
+          '22023', 'Cet encaissement n''est pas déclaré : il se retire, sans contre-passation.'),
         ('37. un encaissement dont la déclaration a échoué', p_acc || '; ' || p_e1 || '; '
           || format('insert into transmissions_encaissements (dossier_id, encaissement_id, facture_id, canal, hote, sha256, etat) values (%L, %L, %L, ''plateforme'', ''pa.exemple.fr'', %L, ''echec'')', dossier_f, e1, fm, sha),
           format('select annuler_encaissement(%L, %L, %L, ''essai'')', dossier_f, e1, jour),
@@ -568,6 +608,43 @@ begin
       'observe', coalesce(fixture, coalesce(detail, '?') || ' — puis 0,01 € : ' || coalesce(code_recu, '?') || ' ' || coalesce(message_recu, '')),
       'ok', fixture is null and detail = '1355.5' and code_recu = '22023'
         and message_recu = 'L''encaissement dépasserait le total de la facture : il reste 0,00 € à encaisser.');
+
+    -- 51b. L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (migration `impaye_non_declare`, étape VF5d2) : l'encaissement
+    -- d'une facture SOURCE qui n'a jamais été déclaré se contre-passe en citant le débit qui l'a défait — sans lui, le
+    -- refus d'hier ; sa contre-passation ne se déclare pas (le rang 5 de la déclaration) ; l'encaissement, lui,
+    -- s'inscrit encore déclaré — il a pu l'être sur la plateforme sans l'être ici —, et sa contre-passation se déclare
+    -- alors à son tour, sur la même plateforme.
+    trace := null; code_recu := null; message_recu := null; code_d := null; msg_d := null; fixture := null;
+    begin
+      execute p_accs || '; ' || p_es || '; ' || p_ms;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      begin
+        perform annuler_encaissement(ds, es, jour, 'Chèque revenu impayé');
+        code_recu := 'ACCEPTÉ';
+      exception when others then code_recu := sqlstate; message_recu := sqlerrm;
+      end;
+      select a.montant || ' ' || a.moyen || ' ' || (a.ligne_bancaire_id = ms) || ' ' || (a.annule_id = es), a.id
+        into trace, ident2 from annuler_encaissement(ds, es, jour, 'Chèque revenu impayé', ms) a;
+      begin
+        perform declarer_encaissement_hors_application(ds, ident2, null);
+        code_d := 'ACCEPTÉ';
+      exception when others then code_d := sqlstate; msg_d := sqlerrm;
+      end;
+      select trace || ' | ' || d.hote || ' ' || d.etat into trace from declarer_encaissement_hors_application(ds, es, null) d;
+      select trace || ' | ' || d.hote || ' ' || d.etat into trace from declarer_encaissement_hors_application(ds, ident2, null) d;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then
+      if sqlerrm <> 'ANNULATION_ESSAI' then fixture := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', '51b. jamais déclaré, l''encaissement d''une facture source se contre-passe en citant le débit qui l''a défait — sans lui, le refus d''hier ; sa contre-passation ne se déclare pas ; l''encaissement s''inscrit encore déclaré, et elle se déclare alors à son tour',
+      'observe', coalesce(fixture, 'sans débit : ' || coalesce(code_recu, '?') || ' ' || coalesce(message_recu, '') || ' — avec : '
+        || coalesce(trace, '?') || ' — la contre-passation déclarée d''abord : ' || coalesce(code_d, '?') || ' ' || coalesce(msg_d, '')),
+      'ok', fixture is null and code_recu = '22023'
+        and message_recu = 'Cet encaissement n''est pas déclaré : il se retire, sans contre-passation.'
+        and trace = '-10 cheque true true | pa.exemple.fr depose | pa.exemple.fr depose' and code_d = '22023'
+        and msg_d = 'L''encaissement que cette contre-passation annule n''est pas déclaré : elle ne se déclare pas.');
 
     -- ══ 52 à 57. Le retrait, désormais pour de vrai ══════════
     for obs, prep, qui, requete, code_attendu, motif in

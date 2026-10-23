@@ -148,6 +148,22 @@ describe('pastilleDeclaration', () => {
     expect(juger({ encaissements, declarations: [decl(), decl({ id: 'te9', encaissement_id: 'e9' })] })).toBeNull()
   })
 
+  // L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (étape VF5d2) : contre-passé en citant le débit qui l'a défait, il ne se
+  // déclare pas, sa contre-passation non plus — la paire ne fait rien déclarer, même l'échéance passée.
+  it('la paire d’un encaissement jamais déclaré et de sa contre-passation : rien, même en retard', () => {
+    const encaissements = [enc(), enc({ id: 'e9', montant: -600, annule_id: 'e1', ligne_bancaire_id: 'd1', date_encaissement: '2027-10-25' })]
+    expect(juger({ encaissements })).toBeNull()
+    expect(juger({ encaissements, aujourdHui: '2028-01-01' })).toBeNull()
+    // Seul, l'encaissement est à déclarer ; sa contre-passation retirée, de même.
+    expect(juger({ encaissements: [enc()], aujourdHui: '2028-01-01' })).toEqual(EN_RETARD)
+    expect(juger({ encaissements: [enc(), { ...encaissements[1], retire_le: '2027-10-26T08:00:00Z' }] })).toEqual(A_DECLARER)
+    // Un autre encaissement de la facture, lui, reste à déclarer.
+    expect(juger({ encaissements: [...encaissements, enc({ id: 'e2' })] })).toEqual(A_DECLARER)
+    // La contre-passation déclarée — la déclaration de l'encaissement rejetée après coup — : l'encaissement est à déclarer.
+    expect(juger({ encaissements, declarations: [decl({ etat: 'rejete' }), decl({ id: 'te9', encaissement_id: 'e9' })] }))
+      .toEqual(A_DECLARER)
+  })
+
   it('rien de ce qui ne se déclare pas d’ici : jamais acceptée par l’application, rejetée ou refusée', () => {
     // Jamais transmise, ou déposée sans accusé : une déclaration faite ailleurs ne s'inscrirait pas ici — même en retard,
     // la pastille ne s'allume pas, la fenêtre dit l'échéance et pourquoi.

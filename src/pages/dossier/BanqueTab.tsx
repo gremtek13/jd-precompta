@@ -582,8 +582,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   //
   // ET SUR UN DÉBIT (étape VF5d ; `gestesDuDebit`) : classer par ses contre-passations, retirer ce classement,
   // rattacher une contre-passation — par les MÊMES fonctions —, ou ouvrir la fenêtre des encaissements sur la
-  // contre-passation d'un encaissement déclaré, ce débit imposé. L'une des deux fiches rend toujours « aucun » : un
-  // mouvement est l'un ou l'autre.
+  // contre-passation d'un encaissement — déclaré, ou, depuis l'étape VF5d2, jamais déclaré —, ce débit imposé. L'une des
+  // deux fiches rend toujours « aucun » : un mouvement est l'un ou l'autre.
   const gestesDuCreditDe = (ligne: LigneBancaire) => gestesDuCredit(ventes, lectureVentes, ligne, anneesValidees, modele.plan)
   const gestesDuDebitDe = (ligne: LigneBancaire) =>
     gestesDuDebit(ventes, lectureVentes, ligne, anneesValidees, modele.plan, aujourdHuiAParis())

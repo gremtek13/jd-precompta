@@ -1,8 +1,8 @@
 import { estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
-  ecartDeFrais, encaissementsDuMouvement, justifieSonMouvement, mouvementLibre, MOYENS_ENCAISSEMENT, ordreDesEncaissements,
-  refusClassement, refusContrePassationVente, refusDuClassementDuReleve, refusRattachement, refusRetraitDuClassement,
-  resteAEncaisserVente,
+  ecartDeFrais, encaissementsDeclares, encaissementsDuMouvement, justifieSonMouvement, mouvementLibre, MOYENS_ENCAISSEMENT,
+  ordreDesEncaissements, refusClassement, refusContrePassationVente, refusDuClassementDuReleve, refusRattachement,
+  refusRetraitDuClassement, resteAEncaisserVente,
   type CleRefusGardeMouvements, type ContexteVente, type DeclarationLue, type EncaissementDuReleve, type EncaissementLu,
   type FactureDuDossier, type LigneDeFacture, type MouvementClasse, type PartLue, type RefusEncaissement,
 } from './encaissementsFactures'
@@ -48,7 +48,8 @@ import { dateFigee } from './validationExercice'
 //
 // LES GESTES DU CABINET SUR UN DÉBIT (étape VF5d, tout à la fin) : le miroir des précédents pour l'impayé et la somme
 // rendue — classer un débit réservé par ses contre-passations, retirer ce classement, y rattacher une contre-passation
-// enregistrée sans mouvement, ou y contre-passer un encaissement déclaré (`gestesDuDebit`), par les mêmes jugements.
+// enregistrée sans mouvement, ou y contre-passer l'encaissement d'une facture — déclaré, ou, depuis l'étape VF5d2,
+// jamais déclaré (`gestesDuDebit`), par les mêmes jugements.
 
 // ── Ce que le module lit ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -714,18 +715,19 @@ export function gestesDuCredit(
 //   - LIBRE, ou réservé sans que ses contre-passations fassent encore le débit (deux chèques revenus impayés
 //     ensemble) : les contre-passations de factures sources enregistrées sans mouvement que `refusRattachement` accepte
 //     sur ce débit (`rattacher_mouvement_encaissement`) ; et les encaissements que `refusContrePassationVente` accepte
-//     de contre-passer en citant ce débit, à sa date — des encaissements DÉCLARÉS de factures sources, les seuls
-//     qu'`annuler_encaissement` contre-passe : un encaissement jamais déclaré se retire (son impayé, c'est VF5d2, une
-//     migration). Pour ceux-là, la fenêtre des encaissements s'ouvre sur la facture, ce débit IMPOSÉ à la
-//     contre-passation et sa date proposée : c'est elle qui porte la date, le motif et leurs refus, et qui écrit, par
-//     `annuler_encaissement` seule.
+//     de contre-passer en citant ce débit, à sa date — des encaissements de factures sources, DÉCLARÉS, ou, depuis
+//     l'étape VF5d2 (migration impaye_non_declare), jamais déclarés : citer le débit est ce qui fait contre-passer ces
+//     derniers, et ni eux ni leur contre-passation ne se déclarent ; chaque candidat le dit (`declaration`). Pour
+//     ceux-là, la fenêtre des encaissements s'ouvre sur la facture, ce débit IMPOSÉ à la contre-passation et sa date
+//     proposée : c'est elle qui porte la date, le motif et leurs refus, et qui écrit, par `annuler_encaissement` seule.
 // Chaque candidat est choisi par le jugement du module qui redit la fonction de la base, jamais par une règle recopiée
 // ici. Les mêmes retenues que sur un crédit : rien sur des ventes facturées qui ne sont pas lues en entier, ni, pour le
 // complément, sur un débit qu'un exercice validé fige.
 
 /**
  * Ce que les gestes d'un débit lisent de plus que ceux d'un crédit : les déclarations des encaissements du dossier
- * (lib/ventesDuReleveLecture.ts), lues en entier avec le reste — seul un encaissement déclaré se contre-passe.
+ * (lib/ventesDuReleveLecture.ts), lues en entier avec le reste — un encaissement déclaré se contre-passe, une déclaration
+ * d'issue inconnue retient la contre-passation, et celle d'un encaissement jamais déclaré ne se déclare pas.
  */
 export interface SourcesDuDebit extends SourcesDesGestes {
   declarations: readonly Pick<DeclarationLue, 'encaissement_id' | 'etat'>[]
@@ -735,7 +737,7 @@ export type LectureDuDebit =
   | { dossierId: string; etat: 'lue'; sources: SourcesDuDebit }
   | { dossierId: string; etat: 'incomplete'; motif: string }
 
-/** Un encaissement déclaré que la fenêtre des encaissements contre-passerait en citant ce débit. */
+/** Un encaissement que la fenêtre des encaissements contre-passerait en citant ce débit. */
 export interface EncaissementAContrePasser {
   id: string
   /** Sa facture, telle que la lecture l'a rendue : de quoi ouvrir la fenêtre. */
@@ -745,7 +747,16 @@ export interface EncaissementAContrePasser {
   montant: number
   /** Ce que le débit deviendrait, la contre-passation enregistrée. */
   apres: string
+  /** Ce que devient sa déclaration : déclaré, sa contre-passation se déclare à son tour ; jamais déclaré, ni l'un ni l'autre. */
+  declaration: string
 }
+
+/** Ce qu'un encaissement à contre-passer dit de sa déclaration, selon qu'il a été déclaré ou non (étape VF5d2). */
+export const DECLARATION_DU_CANDIDAT = {
+  declare: 'Déclaré : sa contre-passation se déclare ensuite à son tour, sur la plateforme de sa déclaration.',
+  jamaisDeclare: 'Jamais déclaré : ni lui ni sa contre-passation ne se déclarent — l’argent est venu, puis reparti, avant '
+    + 'que rien n’en soit dit.',
+} as const
 
 export interface ComplementDuDebit {
   /** Ce qui reste pour faire le débit, en centimes, en valeur absolue : le débit entier d'un mouvement libre. Positif ici. */
@@ -880,8 +891,11 @@ function complementDuDebit(
       }
     })
   // Les encaissements que la base contre-passerait en citant ce débit, à sa date : son jugement seul les choisit — un
-  // encaissement jamais déclaré, retiré, déjà contre-passé, d'une facture qui n'est pas source, postérieur au débit, ou
-  // que le débit ne ferait pas à l'écart des frais près, il le refuse. Le cabinet porte le droit « Banque ».
+  // encaissement retiré, déjà contre-passé, d'une facture qui n'est pas source, d'issue de déclaration inconnue,
+  // postérieur au débit, ou que le débit ne ferait pas à l'écart des frais près, il le refuse. Jamais déclaré, celui d'une
+  // facture source se contre-passe en citant ce débit (étape VF5d2) : il est candidat, et le dit. Le cabinet porte le
+  // droit « Banque ».
+  const declares = encaissementsDeclares(s.declarations)
   const aContrePasser = s.encaissements
     .filter((e) => refusContrePassationVente(
       dossierId, e.id, s.encaissements, s.declarations, m.date, LE_MOTIF_DE_LA_FENETRE, aujourdHui, m.id, s.mouvements, true, vente,
@@ -897,6 +911,7 @@ function complementDuDebit(
       return [{
         id: e.id, facture, libelle: libelleDeLEncaissement(e, s.factures), montant: e.montant,
         apres: apresSurLeDebit(dossierId, m, apres, s, vente),
+        declaration: declares.has(e.id) ? DECLARATION_DU_CANDIDAT.declare : DECLARATION_DU_CANDIDAT.jamaisDeclare,
       }]
     })
   return {
@@ -904,8 +919,8 @@ function complementDuDebit(
     rattachables,
     aContrePasser,
     note: rattachables.length === 0 && aContrePasser.length === 0
-      ? 'Aucune contre-passation de facture source n’attend son mouvement, et aucun encaissement déclaré ne se contre-passe '
-        + 'sur ce débit : rien ne se rattache ni ne se contre-passe ici.'
+      ? 'Aucune contre-passation de facture source n’attend son mouvement, et aucun encaissement de facture source ne se '
+        + 'contre-passe sur ce débit : rien ne se rattache ni ne se contre-passe ici.'
       : null,
   }
 }

@@ -31,9 +31,13 @@
 --     `contre_passation_banque` : 94 à 96), rattacher (1 à 16), classer (1 à 10), retirer le classement (1 à 4) ; et,
 --     pour une facture qui n'est pas source, ce qu'hier rendait : ni frontière, ni mouvement réservé, les plafonds
 --     bruts ;
+--   - L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (97 à 97l ; migration `impaye_non_declare`, étape VF5d2) : celui d'une
+--     facture source se contre-passe en citant le débit qui le défait, le rang 6 levé à ce seul cas ; ce que la
+--     contre-passation écrit, le débit qu'elle réserve et que le cabinet classe par elle, le retrait qu'elle retient,
+--     les rangs voisins qui tiennent ;
 --   - LE CATALOGUE (150 à 157) : les six rôles et leurs défauts, aucune racine qui en commence une autre, les colonnes,
 --     les contraintes, les déclencheurs, la sécurité et les droits des fonctions, les réglages et qui les nomme ;
---   - LES MUTATIONS (160 à 170) : chacune rejoue un contrôle avec un profil, une cible ou un réglage délibérément faux,
+--   - LES MUTATIONS (160 à 173) : chacune rejoue un contrôle avec un profil, une cible ou un réglage délibérément faux,
 --     et doit MORDRE ;
 --   - et que RIEN ne reste en base (199).
 --
@@ -81,6 +85,23 @@
 -- débit, un autre prédicat, la condition élargie ou faussée, un autre code, un mot changé) : dix tuées par cet essai.
 -- Rejoué en production après l'application, sans ses lignes de commentaire (61 813 caractères, `7f0248f2…`) : 172
 -- justes, rien n'est resté.
+--
+-- 23/10/2026, migration `impaye_non_declare` (appliquée le 23/10/2026 sous la version `20261023063657` ; chantier
+-- EC-Q3, étape VF5d2, VF5-Q1) : l'encaissement JAMAIS DÉCLARÉ d'une facture source se contre-passe en citant le débit
+-- qui le défait — le rang 6 d'`annuler_encaissement` levé à ce seul cas. Quinze contrôles de plus : 97 à 97l (le cas ;
+-- ce que la contre-passation écrit ; le débit qu'elle réserve, puis que le cabinet classe par elle ; le retrait de
+-- l'encaissement qu'elle retient, puis le sien d'abord ; les rangs 5, 8, 12 et 19 qui tiennent ; le client « Ventes »
+-- et « Banque » ; une seconde contre-passation sans débit, qui bute sur le rang 6 avant le rang 8) et les mutations 171
+-- à 173 (sans débit, hors facture source, sans « Banque » : le refus d'hier). Sur une réplique dont `signature.sql`
+-- égalait la production à 145 migrations (les neuf familles, et l'historique) : sans la migration, 187 contrôles, 10 en
+-- faute — 97, 97b à 97i et 97k, exactement — ; avec elle, 187 justes, rien n'est resté, et les 172 d'hier rendent,
+-- verdict et observation, ce qu'ils rendaient. Quatorze mutations de la migration — la condition d'hier, chacun de ses
+-- deux termes retiré ou inversé, « ou » pour « et », `found` pour `not found`, le refus retiré, sous un autre code ou
+-- d'autres mots, jugé après le rang 8 ou après la date — : douze tuées, toutes par cet essai ; les deux survivantes
+-- sont équivalentes (la source jugée `is false` ou `not v_source` : elle n'est jamais nulle). Le texte sans ses lignes
+-- de commentaire, envoyé en une requête comme le fait l'outil : 66 060 caractères, empreinte
+-- 7587424ef3ba9e6251775e2598bebe4b, 187 justes. Rejoué en production après l'application, sans ses lignes de
+-- commentaire (66 060 caractères, `7587424e…`) : 187 justes, rien n'est resté.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -147,7 +168,8 @@ begin
       'SEU', $m$Seul l'encaissement d'une facture source de sa vente se rattache après coup au mouvement qui le prouve.$m$,
       'DEB', $m$Une contre-passation se justifie par un débit : ce mouvement n'en est pas un.$m$,
       'CRE', $m$Un encaissement se justifie par un crédit : ce mouvement n'en est pas un.$m$,
-      'BQE', $m$Le mouvement bancaire d'un encaissement ne se désigne qu'avec le droit « Banque » sur ce dossier : sans lui, l'encaissement s'enregistre sans mouvement.$m$)
+      'BQE', $m$Le mouvement bancaire d'un encaissement ne se désigne qu'avec le droit « Banque » sur ce dossier : sans lui, l'encaissement s'enregistre sans mouvement.$m$,
+      'NDE', $m$Cet encaissement n'est pas déclaré : il se retire, sans contre-passation.$m$)
     || jsonb_build_object(
       'ENE', $m$select enregistrer_encaissement($m$,
       'ENF', $m$select enregistrer_facture($m$,
@@ -326,6 +348,28 @@ begin
     array['controle', '95. sans débit, le client « Ventes » contre-passe comme hier : le rang 2 ne s''interpose pas', 'client_v', $q${ANN}'{T}', '{ES}', '2026-03-12', 'ESSAI')$q$, 'OK', ''],
     array['controle', '96. avec « Banque », le client cite le débit qui défait l''encaissement', 'client_vb', $q${ANN}'{T}', '{E1}', '2026-03-12', 'Chèque revenu impayé', '{M3}')$q$, 'OK', ''],
 
+    -- ══ 97. L'impayé d'un encaissement jamais déclaré (migration impaye_non_declare, étape VF5d2) ══════════
+    -- E7 — 50 € à 5,5 % de F2026-0002, source de sa vente, sur le crédit M7, JAMAIS déclaré — se contre-passe en citant
+    -- le débit M6 qui le défait : le rang 6 ne s'y oppose plus. Ce que la contre-passation écrit (97b) ; le débit réservé
+    -- à ses contre-passations (97c), que le cabinet classe par elles (97d) ; vivante, elle retient le retrait de
+    -- l'encaissement, et se retire d'abord (97e, 97f) ; les rangs qui suivent le 6 tiennent — la frontière (97g), le débit
+    -- trop petit (97h), la contre-passation vivante (97i) —, et celui qui le précède aussi (97j) ; le client « Ventes » et
+    -- « Banque » contre-passe ainsi (97k) ; la paire faite, une seconde contre-passation sans débit bute sur le rang 6
+    -- avant le rang 8 (97l). Leurs mutations, 171 à 173 : sans débit, hors facture source, sans « Banque » — le refus
+    -- d'hier.
+    array['controle', '97. rang 6 levé : l''encaissement jamais déclaré d''une facture source se contre-passe, en citant le débit qui le défait', 'chef', $q${ANN}'{T}', '{E7}', '2026-03-12', 'Chèque revenu impayé', '{M6}')$q$, 'OK', ''],
+    array['lecture', '97b. … ce qu''elle écrit : montant et part opposés, même moyen, le débit cité ; rien n''est déclaré', 'chef', $q$select set_config('essai.cp', (select a.id from annuler_encaissement('{T}', '{E7}', '2026-03-12', 'Chèque revenu impayé', '{M6}') a)::text, true); select concat_ws('|', c.montant, c.moyen, c.date_encaissement, c.ligne_bancaire_id = '{M6}', c.annule_id = '{E7}', c.motif, (select string_agg(trim_scale(t.taux)::text || ':' || t.montant, ',') from encaissements_factures_taux t where t.encaissement_id = c.id), (select count(*) from transmissions_encaissements x where x.encaissement_id in ('{E7}', c.id))) from encaissements_factures c where c.id = current_setting('essai.cp')::uuid$q$, '', '-50|virement|2026-03-12|t|t|Chèque revenu impayé|5.5:-50|0'],
+    array['controle', '97c. … le débit cité, réservé à ses contre-passations (G2) : aucun autre classement', 'chef', $q${ANN}'{T}', '{E7}', '2026-03-12', 'ESSAI', '{M6}'); update lignes_bancaires {BIL} where id = '{M6}'$q$, '23514', '{RES}'],
+    array['controle', '97d. … et le cabinet le classe par elles', 'chef', $q${ANN}'{T}', '{E7}', '2026-03-12', 'ESSAI', '{M6}'); {CLA}'{T}', '{M6}')$q$, 'OK', ''],
+    array['controle', '97e. … vivante, elle retient le retrait de l''encaissement', 'chef', $q${ANN}'{T}', '{E7}', '2026-03-12', 'ESSAI', '{M6}'); {RET}'{T}', '{E7}')$q$, '22023', 'Cet encaissement est annulé par une contre-passation : retirez d''abord celle-ci.'],
+    array['controle', '97f. … retirée d''abord, puis lui : l''une et l''autre se retirent', 'chef', $q$select set_config('essai.cp', (select a.id from annuler_encaissement('{T}', '{E7}', '2026-03-12', 'ESSAI', '{M6}') a)::text, true); {RET}'{T}', current_setting('essai.cp')::uuid); {RET}'{T}', '{E7}')$q$, 'OK', ''],
+    array['controle', '97g. les rangs qui suivent tiennent : la frontière d''un exercice validé (rang 12)', 'chef', $q${ANN}'{T}', '{E25b}', '2025-12-31', 'ESSAI', '{M6}')$q$, '22023', 'L''exercice 2025 est validé : une contre-passation ne s''y date plus.'],
+    array['controle', '97h. … un débit que la contre-passation dépasse (rang 19)', 'chef', $q${ANN}'{T}', '{E7}', '2026-03-12', 'ESSAI', '{M12}')$q$, '22023', 'Ce mouvement de 1,00 € justifierait 50,00 € de contre-passations : l''écart dépasse ce que des frais bancaires expliquent.'],
+    array['controle', '97i. … une contre-passation déjà vivante (rang 8)', 'chef', $q${ANN}'{T}', '{E7}', '2026-03-12', 'ESSAI', '{M6}'); {ANN}'{T}', '{E7}', '2026-03-13', 'ESSAI', '{M8}')$q$, '22023', 'Cet encaissement est déjà annulé par une contre-passation.'],
+    array['controle', '97j. … et celui qui le précède : un encaissement retiré (rang 5)', 'chef', $q${RET}'{T}', '{E7}'); {ANN}'{T}', '{E7}', '2026-03-12', 'ESSAI', '{M6}')$q$, '22023', 'Un encaissement retiré ne s''annule pas : il n''a jamais été déclaré.'],
+    array['controle', '97k. le client « Ventes » et « Banque » le contre-passe ainsi', 'client_vb', $q${ANN}'{T}', '{E7}', '2026-03-12', 'Chèque revenu impayé', '{M6}')$q$, 'OK', ''],
+    array['controle', '97l. la paire faite, une seconde contre-passation sans débit : le rang 6 avant le rang 8', 'chef', $q${ANN}'{T}', '{E7}', '2026-03-12', 'ESSAI', '{M6}'); {ANN}'{T}', '{E7}', '2026-03-13', 'ESSAI')$q$, '22023', '{NDE}'],
+
     -- ══ 100 à 117. Rattacher un encaissement à son mouvement ══════════
     array['controle', '100. rang 1 : le client, même avec « Ventes » et « Banque »', 'client_vb', $q${RAT}'{T}', '{ES2}', '{M5}')$q$, '42501', 'Accès refusé à ce dossier.'],
     array['controle', '101. rang 2 : l''encaissement d''un autre dossier', 'chef', $q${RAT}'{T}', '{EA25}', '{M5}')$q$, 'P0002', 'Encaissement introuvable dans ce dossier.'],
@@ -387,7 +431,7 @@ begin
     array['valeur', '157. qui nomme les trois réglages', 'postgres', $q$select string_agg(r || ':' || (select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc like '%' || r || '%' and proname not in ('ecrire_vente_facturee', 'garder_lignes_de_la_vente_facturee', 'retirer_ecriture_vente_facturee')), ' | ' order by r) from unnest(array['jd.classement_encaissements', 'jd.ecriture_vente_facturee', 'jd.rattachement_encaissement']) r$q$, '',
       'jd.classement_encaissements:classer_mouvement_par_encaissements,garder_mouvement_reserve,retirer_classement_par_encaissements | jd.ecriture_vente_facturee:garder_ecriture_vente_facturee | jd.rattachement_encaissement:garder_encaissement_facture,rattacher_mouvement_encaissement'],
 
-    -- ══ 160 à 169. Les mutations : chacune doit MORDRE ══════════
+    -- ══ 160 à 173. Les mutations : chacune doit MORDRE ══════════
     array['controle', '160. MUTATION de 3 : sans facture source, il se baisse', 'chef', $q$update dossiers set ventes_par_les_factures = false where id = '{R}'$q$, 'OK', ''],
     array['controle', '161. MUTATION de 11 : hors bascule, elle se valide', 'chef', $q${ENF}'{A}', null, {FJ1} || '{"date_emission":"2026-03-20"}', {L1}, true)$q$, 'OK', ''],
     array['controle', '162. MUTATION de 30 : le super-administrateur la pose', 'chef', $q${EC}, null, '{F1}')$q$, 'OK', ''],
@@ -398,7 +442,10 @@ begin
     array['controle', '167. MUTATION de 120 : le chef simple classe', 'chef_simple', $q${RCL}'{T}', '{M1}'); {CLA}'{T}', '{M1}')$q$, 'OK', ''],
     array['controle', '168. MUTATION de 60 : une facture source se rattache', 'postgres', $q$select set_config('jd.rattachement_encaissement', '{ES2}', true); update encaissements_factures set ligne_bancaire_id = '{M5}' where id = '{ES2}'$q$, 'OK', ''],
     array['controle', '169. MUTATION de 81 : le classement retiré, il se retire', 'chef', $q${RCL}'{T}', '{M10}'); {RET}'{T}', '{E26}')$q$, 'OK', ''],
-    array['controle', '170. MUTATION de 94 : avec « Banque », le rang 2 passe, et le rang 19 dit le montant', 'client_vb', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{M6}')$q$, '22023', 'Ce mouvement de 50,00 € justifierait 100,00 € de contre-passations : l''écart dépasse ce que des frais bancaires expliquent.']
+    array['controle', '170. MUTATION de 94 : avec « Banque », le rang 2 passe, et le rang 19 dit le montant', 'client_vb', $q${ANN}'{T}', '{E1}', '2026-03-12', 'ESSAI', '{M6}')$q$, '22023', 'Ce mouvement de 50,00 € justifierait 100,00 € de contre-passations : l''écart dépasse ce que des frais bancaires expliquent.'],
+    array['controle', '171. MUTATION de 97 : sans débit, le rang 6 retient — le refus d''hier', 'chef', $q${ANN}'{T}', '{E7}', '2026-03-12', 'Chèque revenu impayé')$q$, '22023', '{NDE}'],
+    array['controle', '172. MUTATION de 97 : une facture qui n''est pas source, le débit cité — le rang 6 retient, avant le rang 15', 'chef', $q${ANN}'{A}', '{EA25}', '2026-03-12', 'Chèque revenu impayé', '{MD}')$q$, '22023', '{NDE}'],
+    array['controle', '173. MUTATION de 97k : sans « Banque », le rang 2 retient le client, avant le rang 6', 'client_v', $q${ANN}'{T}', '{E7}', '2026-03-12', 'Chèque revenu impayé', '{M6}')$q$, '42501', '{BQE}']
   ];
 
   begin

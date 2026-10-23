@@ -160,8 +160,8 @@ interface FicheMouvementProps {
   onEnregistrerEncaissement: (factureId: string) => void
   // ET SUR UN DÉBIT (étape VF5d ; `gestesDuDebit`, calculé par l'onglet) : classer un débit réservé par ses
   // contre-passations, retirer ce classement, rattacher une contre-passation enregistrée sans mouvement — par les trois
-  // gestes ci-dessus —, ou ouvrir la fenêtre des encaissements sur la contre-passation d'un encaissement déclaré, ce
-  // débit imposé. « aucun » sur un crédit, comme `gestesDeVente` sur un débit.
+  // gestes ci-dessus —, ou ouvrir la fenêtre des encaissements sur la contre-passation d'un encaissement — déclaré, ou,
+  // depuis l'étape VF5d2, jamais déclaré —, ce débit imposé. « aucun » sur un crédit, comme `gestesDeVente` sur un débit.
   gestesDuDebit: GestesDuDebit
   onContrePasserEncaissement: (encaissementId: string) => void
   // Toutes les pièces chargées, à valider comprises : le choix à la main les offre toutes.
@@ -2252,9 +2252,10 @@ function ComplementDuCreditVue({ complement, occupe, onRattacher, onEnregistrer 
 
 // LES GESTES DU CABINET SUR UN DÉBIT D'UN DOSSIER BASCULÉ (étape VF5d) : le chèque revenu impayé, la somme rendue —
 // classer un débit réservé par ses contre-passations, retirer ce classement, rattacher une contre-passation enregistrée
-// sans mouvement, ouvrir la fenêtre des encaissements sur la contre-passation d'un encaissement déclaré, ce débit
-// imposé. Les candidats, leur ordre, les refus de la base et les phrases viennent de lib/mouvementsDesVentes.ts
-// (`gestesDuDebit`) ; ici, l'affichage seul. Un choix ne part qu'au clic, et l'onglet confirme avant d'écrire.
+// sans mouvement, ouvrir la fenêtre des encaissements sur la contre-passation d'un encaissement — déclaré, ou, depuis
+// l'étape VF5d2, jamais déclaré —, ce débit imposé. Les candidats, leur ordre, les refus de la base et les phrases
+// viennent de lib/mouvementsDesVentes.ts (`gestesDuDebit`) ; ici, l'affichage seul. Un choix ne part qu'au clic, et
+// l'onglet confirme avant d'écrire.
 function GestesDuDebitVue({ gestes, occupe, onClasser, onRetirer, onRattacher, onContrePasser }: {
   gestes: GestesDuDebit
   occupe: boolean
@@ -2361,10 +2362,12 @@ function ComplementDuDebitVue({ complement, occupe, onRattacher, onContrePasser 
           </div>
           {aContrePasser && <p className="fiche-mouvement-note">{aContrePasser.libelle} : {formatMoney(aContrePasser.montant)}</p>}
           {aContrePasser && <p className="fiche-mouvement-note">{aContrePasser.apres}</p>}
+          {aContrePasser && <p className="fiche-mouvement-note">{aContrePasser.declaration}</p>}
           <p className="fiche-mouvement-note">
-            Seul un encaissement déclaré se contre-passe ; jamais déclaré, il se retire, dans la fenêtre de sa facture. La
-            fenêtre des encaissements s’ouvre sur la facture, la contre-passation de cet encaissement préparée et ce débit
-            imposé : la date, proposée, et le motif s’y vérifient avant l’envoi.
+            Déclaré, un encaissement se contre-passe, et sa contre-passation se déclare à son tour ; jamais déclaré, il se
+            contre-passe aussi en citant ce débit — ou se retire, dans la fenêtre de sa facture : retirer efface le fait,
+            contre-passer le garde. La fenêtre des encaissements s’ouvre sur la facture, la contre-passation de cet
+            encaissement préparée et ce débit imposé : la date, proposée, et le motif s’y vérifient avant l’envoi.
           </p>
         </section>
       )}

@@ -15,7 +15,7 @@ import { COLONNES_LIGNES, COLONNES_PARTS } from '../../lib/ventesFactureesLectur
 import { REFUS_CLASSEMENT, REFUS_RETRAIT_CLASSEMENT, remplirModele } from '../../lib/encaissementsFactures'
 import { LIBELLE_MOTIF_CONTRE_PASSATION } from '../../lib/droitsAcces'
 import {
-  TITRE_CLASSER_DEBIT, TITRE_CONTRE_PASSER, TITRE_RATTACHER_CONTRE_PASSATION, TITRE_RETIRER,
+  DECLARATION_DU_CANDIDAT, TITRE_CLASSER_DEBIT, TITRE_CONTRE_PASSER, TITRE_RATTACHER_CONTRE_PASSATION, TITRE_RETIRER,
 } from '../../lib/mouvementsDesVentes'
 
 // LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE (ligne 28.65, chantier EC-Q3, étape VF5d). La règle est éprouvée à
@@ -159,7 +159,8 @@ const declaration = (encaissementId: string, factureId: string) => ({
 // LIBRE : le chèque de F2026-0014 revenu impayé, un débit de 600 € que rien ne cite. RÉSERVÉ : deux chèques revenus
 // ensemble (900 €), un seul contre-passé (F2026-0015, 600 €). CLASSÉ : la somme rendue à l'Atelier Martin (300 €).
 // EXACT : le retour du chèque de F2026-0018 (200 €), que sa contre-passation fait. Une contre-passation sans mouvement
-// (F2026-0017, 300 €) ; un encaissement jamais déclaré (F2026-0018, 100 €), qui ne se contre-passe pas.
+// (F2026-0017, 300 €) ; un encaissement jamais déclaré (F2026-0018, 100 €), qui se contre-passe en citant un débit
+// depuis l'étape VF5d2 (migration impaye_non_declare), et dont la contre-passation ne se déclare pas.
 const CREDIT = mouvement({ id: 'm-cre', date: '2026-06-03', montant: 600, libelle: 'REMISE CHEQUE HORIZON' })
 const LIBRE = mouvement({ id: 'm-lib', date: '2026-06-10', montant: -600, libelle: 'IMPAYE CHEQUE HORIZON' })
 const RESERVE = mouvement({ id: 'm-res', date: '2026-06-11', montant: -900, libelle: 'IMPAYES CHEQUES' })
@@ -297,8 +298,9 @@ describe('un débit RÉSERVÉ que ses contre-passations font : classer par elles
     expect(boutonDe(TITRE_CLASSER_DEBIT, TITRE_CLASSER_DEBIT).disabled).toBe(true)
     await cliquer(boutonDe(TITRE_CLASSER_DEBIT, TITRE_CLASSER_DEBIT))
     expect(options('Contre-passation à rattacher')).toEqual(['', 'cp4'])
-    // Le chèque de F2026-0014 dépasserait ce débit : la base le refuserait, il ne s'offre pas.
-    expect(section(TITRE_CONTRE_PASSER)).toBeNull()
+    // Le chèque de F2026-0014 dépasserait ce débit : la base le refuserait, il ne s'offre pas. Celui de 100 € de
+    // F2026-0018, jamais déclaré, se contre-passe en citant ce débit (étape VF5d2) : il s'offre.
+    expect(options('Encaissement à contre-passer')).toEqual(['', 'e6'])
     expect(faux.rpcs).toEqual([])
   })
 
@@ -364,18 +366,19 @@ describe('rattacher une contre-passation enregistrée sans mouvement', () => {
 })
 
 describe('contre-passer l’encaissement d’une facture : la fenêtre, ce débit imposé', () => {
-  it('sur un débit libre : les deux gestes, seul l’encaissement déclaré ; la fenêtre s’ouvre sans rien écrire, et c’est elle qui contre-passe', async () => {
+  it('sur un débit libre : les deux gestes ; la fenêtre s’ouvre sans rien écrire, et c’est elle qui contre-passe', async () => {
     confirmer()
     rendre()
     await ouvrir('IMPAYE CHEQUE HORIZON')
     expect(section(TITRE_CLASSER_DEBIT)).toBeNull()
     expect(options('Contre-passation à rattacher')).toEqual(['', 'cp4'])
-    // Le chèque de 100 € de F2026-0018, jamais déclaré, ne se contre-passe pas : il se retire.
-    expect(options('Encaissement à contre-passer')).toEqual(['', 'e1'])
+    // Le chèque de 100 € de F2026-0018, jamais déclaré, se contre-passe aussi en citant ce débit (étape VF5d2).
+    expect(options('Encaissement à contre-passer')).toEqual(['', 'e1', 'e6'])
     const contrePasser = boutonDe(TITRE_CONTRE_PASSER, 'Contre-passer…')
     expect(contrePasser.disabled).toBe(true)
     choisir('Encaissement à contre-passer', 'e1')
     expect(texteDe(section(TITRE_CONTRE_PASSER))).toContain('Ses contre-passations feront alors le débit : il restera à le classer par elles.')
+    expect(texteDe(section(TITRE_CONTRE_PASSER))).toContain(DECLARATION_DU_CANDIDAT.declare)
     await cliquer(boutonDe(TITRE_CONTRE_PASSER, 'Contre-passer…'))
     expect(faux.rpcs).toEqual([])
     await screen.findByRole('heading', { name: 'Encaissements de la facture F2026-0014' })
@@ -397,6 +400,35 @@ describe('contre-passer l’encaissement d’une facture : la fenêtre, ce débi
     // Relu : la contre-passation cite le débit, qui se classe désormais par elle.
     await waitFor(() => expect(section(TITRE_CLASSER_DEBIT)).not.toBeNull())
     expect(boutonDe(TITRE_CLASSER_DEBIT, TITRE_CLASSER_DEBIT).disabled).toBe(false)
+  })
+
+  // L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (étape VF5d2, migration impaye_non_declare) : la fiche l'offre et dit qu'il
+  // ne se déclare pas ; la fenêtre impose le débit, dit l'étape d'un encaissement jamais déclaré, et sa confirmation que
+  // ni lui ni sa contre-passation ne se déclarent.
+  it('sur un débit libre : l’encaissement jamais déclaré d’une facture source — ce débit imposé, et rien à déclarer', async () => {
+    const questions = confirmer()
+    rendre()
+    await ouvrir('IMPAYE CHEQUE HORIZON')
+    choisir('Encaissement à contre-passer', 'e6')
+    const fiche = texteDe(section(TITRE_CONTRE_PASSER))
+    expect(fiche).toContain('Il restera 500,00 € pour faire le débit : son classement attendra qu’il soit fait.')
+    expect(fiche).toContain(DECLARATION_DU_CANDIDAT.jamaisDeclare)
+    await cliquer(boutonDe(TITRE_CONTRE_PASSER, 'Contre-passer…'))
+    expect(faux.rpcs).toEqual([])
+    await screen.findByRole('heading', { name: 'Encaissements de la facture F2026-0018' })
+    await screen.findByRole('heading', { name: /^Contre-passer l’encaissement du 05\/06\/2026/ })
+    screen.getByText(/^Cet encaissement n’a jamais été déclaré : il se retire — ou, quand la banque l’a défait/)
+    screen.getByText(/^10\/06\/2026 · IMPAYE CHEQUE HORIZON · -600,00\s€$/)
+    expect((screen.getByLabelText('Date du décaissement') as HTMLInputElement).value).toBe('2026-06-10')
+    fireEvent.change(screen.getByLabelText(LIBELLE_MOTIF_CONTRE_PASSATION), { target: { value: 'Chèque revenu impayé' } })
+    await cliquer(screen.getByRole('button', { name: 'Enregistrer la contre-passation' }))
+    expect(questions.at(-1)).toContain('L’encaissement n’a jamais été déclaré : ni lui ni sa contre-passation ne se déclarent.')
+    expect(questions.at(-1)).not.toContain('Elle se déclare ensuite à son tour')
+    expect(faux.rpcs).toEqual([{
+      nom: 'annuler_encaissement',
+      args: { p_dossier_id: D, p_encaissement_id: 'e6', p_date: '2026-06-10', p_motif: 'Chèque revenu impayé', p_ligne_bancaire_id: 'm-lib' },
+    }])
+    await screen.findByText(/Elle ne se déclare pas : l’encaissement qu’elle annule ne l’a jamais été\.$/)
   })
 
   it('deux clics, puis trois, sur « Contre-passer… » : une seule fenêtre, et rien n’est écrit', async () => {

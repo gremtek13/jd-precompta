@@ -1,7 +1,7 @@
-import { pastilleDeclaration } from './encaissementsAffichage'
+import { PAIRE_NON_DECLAREE, pastilleDeclaration } from './encaissementsAffichage'
 import {
   ETATS_DECLARANTS, MOYENS_ENCAISSEMENT, echeanceDeDeclaration, encaissementsDeclares, obligationEncaissee,
-  plateformeDeLaDeclaration, refusDeclaration,
+  paireNonDeclaree, plateformeDeLaDeclaration, refusDeclaration,
 } from './encaissementsFactures'
 import { estLeClient, etatDuFiltre, type AccesDuDossier } from './auteursVentes'
 import { pourLEspace, type EspaceVentes } from './espaceVentes'
@@ -194,6 +194,10 @@ function declarationDe(
     const d = v.declarations.find((x) => x.encaissement_id === enc.id && ETATS_DECLARANTS.includes(x.etat))
     return { etat: 'declaree', detail: d ? `sur ${d.hote}${d.etat === 'envoi' ? ' — issue inconnue' : ''}` : null }
   }
+  // Une paire qui ne se déclare pas (étape VF5d2) : un encaissement jamais déclaré, contre-passé en citant le débit qui
+  // l'a défait, et sa contre-passation — rien n'est dû, ni de l'un ni de l'autre. Jugée sur le registre ENTIER, avant la
+  // pastille, qui ne reçoit que cet encaissement et ne verrait pas la contre-passation qui l'annule.
+  if (paireNonDeclaree(enc, v.encaissements, declares)) return { etat: 'non_due', detail: PAIRE_NON_DECLAREE }
   // La pastille de la facture, sur CET encaissement seul : « À déclarer » ou « Déclaration en retard » exactement quand
   // elle le dirait à cause de lui.
   const pastille = pastilleDeclaration(

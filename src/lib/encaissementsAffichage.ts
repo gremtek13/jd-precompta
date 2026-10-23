@@ -1,5 +1,5 @@
 import {
-  echeanceDeDeclaration, obligationEncaissee, refusDeclaration, resteAEncaisser,
+  echeanceDeDeclaration, encaissementsDeclares, obligationEncaissee, paireNonDeclaree, refusDeclaration, resteAEncaisser,
   type DeclarationLue, type EncaissementPourContrePassation, type EncaissementLu, type EvenementSuperpdpLu,
   type FacturePourEncaissement, type FacturePourObligation, type LigneDeFacture, type PartLue, type PartProposee,
   type StatutPlateformeLu, type TransmissionPourDeclaration,
@@ -62,9 +62,15 @@ export function pastilleEncaissement(
  * acceptée par l'application — jamais transmise d'ici, déposée sans accusé, ou déposée par le client lui-même : une
  * déclaration faite ailleurs ne s'inscrirait pas ici, et « Déclaration en retard » s'y allumerait sans que rien d'ici
  * puisse l'éteindre. Le statut y reste dû : la fenêtre le dit, avec son échéance, et pourquoi il ne se déclare pas d'ici.
+ * Pas non plus pour une PAIRE QUI NE SE DÉCLARE PAS (`paireNonDeclaree`, étape VF5d2) : un encaissement jamais déclaré,
+ * contre-passé en citant le débit qui l'a défait, et sa contre-passation — l'argent est venu puis reparti avant que rien
+ * n'en ait été dit, et il n'y a rien à dire ; la base inscrirait encore la déclaration de l'encaissement, pas celle de la
+ * contre-passation.
  *
  * Les listes sont celles du dossier, LUES EN ENTIER — une déclaration qui manquerait ferait dire « À déclarer » d'un
- * encaissement déjà déclaré : l'appelant qui ne les a pas toutes n'en affiche aucune.
+ * encaissement déjà déclaré : l'appelant qui ne les a pas toutes n'en affiche aucune. Une contre-passation qui manquerait
+ * le ferait dire d'un encaissement d'une paire : la liste des règlements, qui l'appelle sur un encaissement seul, juge la
+ * paire avant elle, sur le registre entier.
  */
 export function pastilleDeclaration(
   dossierId: string,
@@ -80,7 +86,8 @@ export function pastilleDeclaration(
 ): PastilleEncaissement | null {
   // Un brouillon, un avoir : `obligationEncaissee` les dit sans objet, et rien ne se déclare.
   if (obligationEncaissee(facture, lignes, statutTva).etat !== 'due') return null
-  const aDeclarer = encaissements.filter((e) => e.facture_id === facture.id
+  const declares = encaissementsDeclares(declarations)
+  const aDeclarer = encaissements.filter((e) => e.facture_id === facture.id && !paireNonDeclaree(e, encaissements, declares)
     && refusDeclaration(dossierId, e.id, encaissements, declarations, transmissions, evenementsSuperpdp, statutsRecus, null) == null)
   if (aDeclarer.length === 0) return null
   const enRetard = aDeclarer.some((e) => {
@@ -91,6 +98,20 @@ export function pastilleDeclaration(
     ? { libelle: 'Déclaration en retard', classe: 'badge-danger' }
     : { libelle: 'À déclarer', classe: 'badge-warning' }
 }
+
+/**
+ * Ce que l'écran dit d'une ligne d'une PAIRE QUI NE SE DÉCLARE PAS (`paireNonDeclaree`, étape VF5d2), à la place de « À
+ * déclarer » et de l'échéance — la fenêtre des encaissements, la liste des règlements. Sans vouvoiement ni tutoiement :
+ * les deux espaces la lisent telle quelle.
+ */
+export const PAIRE_NON_DECLAREE = 'Contre-passé avant d’être déclaré : ni l’encaissement ni sa contre-passation ne se déclarent.'
+
+/**
+ * Et, de l'encaissement d'une telle paire, quand la base inscrirait encore sa déclaration : s'il a été déclaré sur la
+ * plateforme sans que ce soit inscrit ici, c'est ici qu'il s'inscrit — et sa contre-passation se déclare alors à son tour.
+ */
+export const PAIRE_DECLAREE_AILLEURS = 'S’il l’a été sur la plateforme sans être inscrit ici, « Déclaré sur la plateforme » '
+  + 'l’inscrit : sa contre-passation se déclare alors à son tour.'
 
 /**
  * Les parts d'un encaissement en mots, telles que la confirmation les nomme : « 1 000,00 € à 20 %, 100,00 € à 5,5 % et

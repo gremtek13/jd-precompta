@@ -8,11 +8,12 @@ import type { TransmissionEncaissement } from './types'
 // CE QUE L'ONGLET BANQUE LIT DES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, chantier EC-Q3 ; le module
 // pur est lib/mouvementsDesVentes.ts). Depuis l'étape VF5a1, la lecture de l'onglet Écritures
 // (lib/ecrituresVentesFactureesLecture.ts) ; depuis l'étape VF5d, AVEC les déclarations des encaissements du dossier :
-// seul un encaissement DÉCLARÉ se contre-passe (`annuler_encaissement`, son refus « non déclaré »), et la fiche d'un
-// débit ne propose de contre-passer que ceux-là. Les deux dans le même appel, tout ou rien : une seule lecture
-// partielle, refusée ou rompue, et rien ne se décide — l'état le dit, avec le motif de la première qui a manqué, et
-// l'onglet retient tout geste et tout lot du relevé (`retenueDuReleve`). Gardée avec le dossier : chaque déclaration
-// rendue est confrontée au dossier demandé. Ne rejette jamais.
+// la contre-passation qu'`annuler_encaissement` accepte en dépend — d'un encaissement déclaré, d'issue inconnue, ou,
+// depuis l'étape VF5d2, jamais déclaré d'une facture source —, et la fiche d'un débit dit de chaque candidat ce que
+// devient sa déclaration. Les deux dans le même appel, tout ou rien : une seule lecture partielle, refusée ou rompue, et
+// rien ne se décide — l'état le dit, avec le motif de la première qui a manqué, et l'onglet retient tout geste et tout
+// lot du relevé (`retenueDuReleve`). Gardée avec le dossier : chaque déclaration rendue est confrontée au dossier
+// demandé. Ne rejette jamais.
 
 /** Les colonnes des déclarations que l'onglet lit : de quoi dire un encaissement déclaré, rien de plus. */
 export const COLONNES_DECLARATIONS_DU_RELEVE = 'id, dossier_id, encaissement_id, etat'
