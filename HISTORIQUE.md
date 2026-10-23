@@ -32369,6 +32369,31 @@ une facture à écart égal ; la pièce du même montant se dit avant la facture
 seulement sur un mouvement libre et non réservé ; les trois autres lots écartent le candidat, le lot des règles le met
 « à rapprocher » ; les listes d'un débit restent entières. Aucune question nouvelle au cabinet.
 
+**LA RELECTURE DE LA SESSION, LE 23/10/2026.** Le lot recomposé à la suite de `c3e8a2f` (la mise en ligne de la retouche
+#212) : le code sans conflit ; la fin de ce fichier, seule en conflit, garde les deux textes. Le module, l'onglet et la
+fiche relus contre la puce VF5e. Un défaut, de COÛT : mesuré par la session sur un relevé fictif dont tous les
+mouvements sont libres (des crédits de 100 à 799 €, des factures ouvertes de 600 € et plus),
+`horsDesLotsAvecLesCandidats` prenait 355 ms pour 400 mouvements et 20 factures ouvertes, 6,3 s pour 3 000 et 50, 19,6 s
+pour 3 000 et 150 — et l'onglet le recalcule à chaque relecture du relevé, donc après chaque écriture : l'onglet Banque
+d'un dossier basculé se serait figé après l'import d'une année. La cause : chaque candidat de chaque mouvement libre
+passait `refusRattachement` et `refusClassement`, qui parcourent le relevé entier, avant que rien ne dise s'il était
+désigné. La correction (`fd5bdfa`) : les signaux d'abord — le client cité, ou un écart que les frais peuvent couvrir
+(`ecartDeFrais` n'en admet jamais plus de `SEUIL_PLAFOND_CENTIMES`, 5 €) ; ni l'un ni l'autre, le candidat n'aurait pas
+été proposé, et les jugements ne se jouent pas. Un filtre, jamais une règle : le montant ne désigne qu'au verdict de
+`refusClassement`. Le juge porte les mouvements et les factures du dossier par identifiant, et les mots de chaque
+client ; `tiersConfirmeParBanque` se coupe en deux moitiés exportées d'`appariementBanque.ts` (`motsDuLibelle`,
+`motsSeConfirment`), son verdict inchangé, et un libellé ne se normalise plus qu'une fois par mouvement. Mesuré de
+nouveau : 14 ms, 202 ms et 534 ms, les mêmes mouvements écartés (0, 116 et 316). Deux tests neufs : les deux moitiés
+(`appariementBanque.test.ts`), un mouvement que la lecture rend d'un autre dossier (`candidatsDuReleve.test.ts`). Cinq
+mutations du filtre : le seuil strict, le plafond moins un centime, le client qui ne désigne plus seul, aucun mot de
+client — tuées par les bornes déjà écrites (595 € contre 594,99 €) et par le paiement en deux fois — ; le filtre du
+dossier dans l'index, équivalente (`refusRattachement` refuse un mouvement hors du dossier), gardée pour dire la
+délimitation. L'import de l'onglet remis dans l'ordre. Le banc de l'agent a tourné avant la retouche #212 : la faute
+« gestion@mutue|lle- » qu'il dit encore là est celle que #212 a corrigée. La barrière de la session, sous Node 22.23.3,
+sur `fd5bdfa` : `tsc -b --force` 0 ; lint, 0 erreur et les 63 avertissements d'avant ; 451 fichiers et 13 716 tests sous
+Paris, UTC, New York et Auckland (les 13 712 de l'agent, le test de la retouche #212 et les trois de la session) ; le
+build (`index-7NSu-vim.js`).
+
 **À REVOIR.**
 - Une facture source REJETÉE ou refusée sur sa plateforme, dont l'avoir interne n'est pas encore validé, reste
   « ouverte » : elle se propose, et la fenêtre dit son refus avant l'envoi (elle lit les transmissions de la facture,
@@ -32383,3 +32408,9 @@ seulement sur un mouvement libre et non réservé ; les trois autres lots écart
 - Un crédit RÉSERVÉ qui n'est pas encore fait (une remise de chèques) n'a pas de candidats en tête : son complément
   garde l'ordre du plus proche de ce qui reste.
 - Un encaissement en espèces ou par compensation, sans mouvement, peut être candidat d'un crédit : la base le rattache.
+- Le pire cas mesuré par la session reste de 0,2 à 0,5 s par relecture (une année entière de mouvements libres, 50 à 150
+  factures ouvertes aux montants serrés) : `refusRattachement` et `refusClassement` parcourent encore le relevé pour
+  chaque candidat désigné. À mesurer sur le premier dossier basculé ; s'il le faut, leur donner le mouvement plutôt que
+  le relevé.
+- Le banc ne montre toujours pas la paire de VF5d2 (l'encaissement jamais déclaré et sa contre-passation) : une visite
+  de d12, à ajouter avec VF5f ou VF5g.
