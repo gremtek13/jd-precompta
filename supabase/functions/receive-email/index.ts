@@ -298,15 +298,23 @@ Deno.serve(async (req: Request) => {
     return new Response("ok", { status: 200 })
   }
 
-  const { email_id, to, from, subject, attachments } = event.data
+  // `from` et `subject` ne se lisent pas : rien de cette fonction n'en a besoin, et ne pas les nommer garantit qu'aucune
+  // ligne de journal ne les recopie.
+  const { email_id, to, attachments } = event.data
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!
   const cleSecrete = cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS"))
   const supabase = createClient(supabaseUrl, cleSecrete)
 
+  // LE JOURNAL NE PORTE QUE DES COMPTES (ligne 23-journalEmail ; décision du cabinet du 18/10/2026) : ni l'adresse d'un
+  // destinataire, ni son code de collecte, ni l'expéditeur, ni l'objet — un objet peut nommer un patient, une adresse
+  // désigne une personne, et le journal de la fonction se garde et se lit ailleurs que dans l'application. Chaque ligne
+  // ci-dessous dit COMBIEN (de destinataires, de pièces jointes, de pièces importées), jamais DE QUI ni DE QUOI ;
+  // l'identifiant que Resend donne à l'e-mail reste, opaque : c'est lui qui retrouve l'e-mail chez Resend, où seul le
+  // cabinet peut le lire.
   const codeEmail = to.map(extractEmail).map((addr) => addr.split("@")[0]).find((c) => !!c)
   if (!codeEmail) {
-    console.error("Aucun destinataire exploitable:", to)
+    console.error(`[receive-email] aucun destinataire exploitable : ${to.length} destinataire(s) reçu(s), e-mail ${email_id}`)
     return new Response("ok", { status: 200 })
   }
 
@@ -317,13 +325,16 @@ Deno.serve(async (req: Request) => {
     .maybeSingle()
 
   if (dossierError) {
-    console.error(dossierError)
+    // Le code et le message de PostgREST, jamais son détail ni l'objet entier : le journal ne recopie rien de la requête.
+    console.error(`[receive-email] lecture du dossier refusée (${dossierError.code || "sans code"} ${dossierError.message})`)
     return new Response("Erreur base de données", { status: 500 })
   }
   if (!dossier) {
     // Adresse inconnue (faute de frappe côté client, ancien transfert...) — on ignore silencieusement
-    // plutôt que de renvoyer une erreur, ce qui ferait retenter Resend inutilement.
-    console.warn(`Aucun dossier pour "${codeEmail}" (e-mail ${email_id}, de ${from}, sujet "${subject}")`)
+    // plutôt que de renvoyer une erreur, ce qui ferait retenter Resend inutilement. Le journal dit qu'elle est
+    // inconnue et combien l'e-mail portait de destinataires et de fichiers : ni l'adresse, ni son code, ni l'expéditeur,
+    // ni l'objet — l'identifiant de l'e-mail suffit à le retrouver chez Resend.
+    console.warn(`[receive-email] adresse de collecte inconnue : e-mail ${email_id}, ${to.length} destinataire(s), ${(attachments ?? []).length} fichier(s) joint(s)`)
     return new Response("ok", { status: 200 })
   }
 
@@ -491,6 +502,6 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  console.log(`E-mail ${email_id} ("${subject}") → dossier ${dossier.id} : ${nbImportees}/${fichiers.length} pièce(s) importée(s)`)
+  console.log(`E-mail ${email_id} → dossier ${dossier.id} : ${nbImportees}/${fichiers.length} pièce(s) importée(s)`)
   return new Response("ok", { status: 200 })
 })

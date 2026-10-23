@@ -582,8 +582,8 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
   {
     slug: 'receive-email', quoi: 'le compte écrit pour une adresse inconnue',
     remplacements: [[
-      '    console.warn(`Aucun dossier pour "${codeEmail}" (e-mail ${email_id}, de ${from}, sujet "${subject}")`)\n',
-      '    console.warn(`Aucun dossier pour "${codeEmail}" (e-mail ${email_id}, de ${from}, sujet "${subject}")`)\n'
+      '    console.warn(`[receive-email] adresse de collecte inconnue : e-mail ${email_id}, ${to.length} destinataire(s), ${(attachments ?? []).length} fichier(s) joint(s)`)\n',
+      '    console.warn(`[receive-email] adresse de collecte inconnue : e-mail ${email_id}, ${to.length} destinataire(s), ${(attachments ?? []).length} fichier(s) joint(s)`)\n'
       + '    console.log(`[receive-email] dossier inconnu : ${compteDesElementsIntegres(attachments ?? [])}`)\n',
     ]],
     scenario: 'une adresse que nul dossier ne porte, avec des éléments intégrés : rien de compté — le compte est celui d’un dossier connu',
@@ -595,6 +595,61 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
       '(attachments ?? []).filter((a) => a.content_disposition !== "inline")',
     ]],
     scenario: 'un e-mail d’éléments intégrés seulement : comptés au journal, et rien de lu chez Resend, de téléchargé ni d’écrit',
+  },
+  // LE JOURNAL NE PORTE QUE DES COMPTES (23-journalEmail) : l'objet et l'expéditeur de l'adresse inconnue, son code, la
+  // liste brute des destinataires, l'objet du bilan, l'erreur de la base recopiée entière — chacun posé tel qu'il était.
+  {
+    slug: 'receive-email', quoi: 'l’objet et l’expéditeur à nouveau recopiés à la ligne de l’adresse inconnue',
+    remplacements: [
+      ['  const { email_id, to, attachments } = event.data', '  const { email_id, to, from, subject, attachments } = event.data'],
+      [
+        '    console.warn(`[receive-email] adresse de collecte inconnue : e-mail ${email_id}, ${to.length} destinataire(s), ${(attachments ?? []).length} fichier(s) joint(s)`)\n',
+        '    console.warn(`[receive-email] adresse de collecte inconnue : e-mail ${email_id}, de ${from}, sujet "${subject}"`)\n',
+      ],
+    ],
+    scenario: 'une adresse que nul dossier ne porte : le journal la dit inconnue et compte destinataires et fichiers — ni l’objet, ni l’expéditeur, ni l’adresse, ni son code',
+  },
+  {
+    slug: 'receive-email', quoi: 'le code de collecte à nouveau recopié à la ligne de l’adresse inconnue',
+    remplacements: [[
+      '    console.warn(`[receive-email] adresse de collecte inconnue : e-mail ${email_id}, ${to.length}',
+      '    console.warn(`[receive-email] adresse de collecte inconnue : "${codeEmail}", e-mail ${email_id}, ${to.length}',
+    ]],
+    scenario: 'une adresse que nul dossier ne porte : le journal la dit inconnue et compte destinataires et fichiers — ni l’objet, ni l’expéditeur, ni l’adresse, ni son code',
+  },
+  {
+    slug: 'receive-email', quoi: 'la liste brute des destinataires à nouveau rendue au journal',
+    remplacements: [[
+      '    console.error(`[receive-email] aucun destinataire exploitable : ${to.length} destinataire(s) reçu(s), e-mail ${email_id}`)',
+      '    console.error("Aucun destinataire exploitable:", to)',
+    ]],
+    scenario: 'un e-mail sans destinataire exploitable : le journal compte les destinataires — ni leur adresse ni leur nom affiché',
+  },
+  {
+    slug: 'receive-email', quoi: 'l’objet de l’e-mail remis à la ligne de bilan',
+    remplacements: [
+      ['  const { email_id, to, attachments } = event.data', '  const { email_id, to, subject, attachments } = event.data'],
+      [
+        '  console.log(`E-mail ${email_id} → dossier ${dossier.id} : ${nbImportees}/${fichiers.length} pièce(s) importée(s)`)',
+        '  console.log(`E-mail ${email_id} ("${subject}") → dossier ${dossier.id} : ${nbImportees}/${fichiers.length} pièce(s) importée(s)`)',
+      ],
+    ],
+    scenario: 'un e-mail sans élément hors pièces jointes : le compte au journal dit zéro',
+  },
+  {
+    slug: 'receive-email', quoi: 'l’erreur de la base recopiée entière au journal (son détail porte le code de collecte)',
+    remplacements: [[
+      '    console.error(`[receive-email] lecture du dossier refusée (${dossierError.code || "sans code"} ${dossierError.message})`)',
+      '    console.error(dossierError)',
+    ]],
+    scenario: 'la lecture du dossier tombe : 500, et le journal en dit le message de la base — rien de l’adresse',
+  },
+  {
+    slug: 'receive-email', quoi: 'la ligne de bilan disparue',
+    remplacements: [[
+      '  console.log(`E-mail ${email_id} → dossier ${dossier.id} : ${nbImportees}/${fichiers.length} pièce(s) importée(s)`)\n', '',
+    ]],
+    scenario: 'un e-mail sans élément hors pièces jointes : le compte au journal dit zéro',
   },
   // UN MOT DE PASSE DE PLUS DE 72 OCTETS (23-Q5), dans chacune des trois fonctions qui créent des comptes : le contrôle
   // oublié, compté en caractères, ou décalé d'un octet de part et d'autre.

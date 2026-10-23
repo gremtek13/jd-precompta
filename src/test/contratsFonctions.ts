@@ -80,11 +80,8 @@ export interface ContratFonction {
 // ── LES DÉFAUTS CONNUS : CONSTATÉS, NOMMÉS, COMPTÉS ──────────────────────────────────────────────────────────────────
 
 export const DEFAUTS_CONNUS = {
-  objetAuJournal: {
-    nombre: 1,
-    raison: 'receive-email journalise l’objet et l’expéditeur de chaque e-mail reçu (adresse inconnue, et bilan) : un ' +
-      'objet peut nommer un patient. Décision du cabinet.',
-  },
+  // `objetAuJournal` n'y est plus (23-journalEmail, décision du cabinet du 18/10/2026) : receive-email ne journalise que des
+  // comptes — ni l'objet, ni l'expéditeur, ni une adresse ni un code de collecte ; le contrat l'exige, au zéro.
   tauxSansControle: {
     nombre: 2,
     raison: 'taux-change-bce ne contrôle aucun appelant : la passerelle (verify_jwt) seule refuse l’appel sans session, et ' +
@@ -442,6 +439,15 @@ const EXPEDITEUR = 'brumoxe-lindavar@exemple.invalid'
 // L'identifiant que Resend donne à l'e-mail : une trace qui le garderait tel quel désignerait un e-mail relisible chez
 // Resend (ligne 22.7).
 const EMAIL_ID = 'courriel-du-harnais'
+// L'adresse de collecte du dossier du harnais, telle que l'e-mail la porte (`a` par défaut de `evenementRecu`), et son code
+// (`code_email` du dossier de référence, `fonctionsEdge.ts`) : un journal qui ne porte que des comptes n'en recopie aucun.
+const CODE_DU_DOSSIER = 'dossier-fictif'
+const ADRESSE_DU_DOSSIER = `${CODE_DU_DOSSIER}@precompta.jdarnis.fr`
+// Une adresse que nul dossier ne porte, et son code : des marqueurs inventés, qu'aucune ligne légitime ne contient.
+const CODE_SANS_DOSSIER = 'brelquinoz-vamurix'
+const ADRESSE_SANS_DOSSIER = `${CODE_SANS_DOSSIER}@precompta.jdarnis.fr`
+// Le nom affiché d'un destinataire sans code (« Nom <@domaine> ») : lui non plus ne va pas au journal.
+const NOM_AFFICHE_DU_DESTINATAIRE = 'Zelmorix Quandrebois'
 
 function evenementRecu(options: {
   a?: string; type?: string; pieces?: number; fichier?: { nom: string; type: string }
@@ -571,8 +577,8 @@ const ENTETE_DU_COMPTE = '[receive-email] dossier '
 /**
  * La ligne du compte des éléments qui ne sont pas des pièces jointes (ligne 22.92) : UNE, pour le dossier, qui dit
  * `attendu` mot pour mot — sans nom (le juge commun le cherche dans tout le journal, `sensibles`), ni identifiant de
- * l'e-mail ou d'un élément, ni objet, ni expéditeur. Et l'objet de l'e-mail sur la seule ligne de bilan qui le portait
- * déjà (le défaut connu `objetAuJournal`, décision du cabinet) : pas une ligne de plus.
+ * l'e-mail ou d'un élément, ni objet, ni expéditeur. Et l'objet de l'e-mail sur AUCUNE ligne du journal, pas même celle
+ * du bilan (23-journalEmail : le journal ne porte que des comptes).
  */
 function compteAuJournal(m: Monde, attendu: string): string[] {
   const fautes: string[] = []
@@ -583,10 +589,29 @@ function compteAuJournal(m: Monde, attendu: string): string[] {
   for (const v of [EMAIL_ID, OBJET, EXPEDITEUR, 'integre-', 'cid-']) {
     if (ligne?.includes(v)) fautes.push(`la ligne du compte porte « ${v.slice(0, 8)}… »`)
   }
-  const avecObjet = m.journaux.filter((j) => j.texte.includes(OBJET)).length
-  if (avecObjet !== 1) fautes.push(`${avecObjet} ligne(s) du journal portent l’objet de l’e-mail, au lieu de la seule ligne de bilan`)
-  if (m.journaux.some((j) => j.texte.includes(EXPEDITEUR))) fautes.push('l’expéditeur au journal')
+  return [...fautes, ...rienDeLEmailAuJournal(m)]
+}
+
+/**
+ * LE JOURNAL NE PORTE QUE DES COMPTES (23-journalEmail ; décision du cabinet du 18/10/2026) : aucune ligne ne recopie
+ * l'objet de l'e-mail, son expéditeur, l'adresse du dossier ni son code de collecte, ni les `aussi` que le scénario nomme
+ * (l'adresse inconnue qu'on a écrite, son code). Une recherche du texte ENTIER, en plus du juge commun (`sensibles`, par
+ * morceaux de huit caractères) : une adresse courte ou un code passent sous ses morceaux.
+ */
+function rienDeLEmailAuJournal(m: Monde, aussi: readonly string[] = []): string[] {
+  const fautes: string[] = []
+  for (const v of [OBJET, EXPEDITEUR, ADRESSE_DU_DOSSIER, CODE_DU_DOSSIER, ...aussi]) {
+    if (m.journaux.some((j) => j.texte.includes(v))) fautes.push(`le journal recopie « ${v.slice(0, 12)}… »`)
+  }
   return fautes
+}
+
+/** La ligne de bilan d'un e-mail traité : UNE, qui compte les pièces importées sur les pièces jointes, sans objet. */
+function bilanAuJournal(m: Monde, importees: number, jointes: number): string[] {
+  const bilans = m.journaux.filter((j) => j.texte.startsWith('E-mail '))
+  if (bilans.length !== 1) return [`${bilans.length} ligne(s) de bilan au journal au lieu d’une`]
+  const attendu = `E-mail ${EMAIL_ID} → dossier ${D} : ${importees}/${jointes} pièce(s) importée(s)`
+  return bilans[0].texte === attendu ? [] : [`bilan au journal : ${bilans[0].texte.slice(0, 200)}`]
 }
 
 /** Le journal porte-t-il cette phrase ? Une faute sinon. */
@@ -745,12 +770,44 @@ const RECEIVE_EMAIL: ContratFonction = {
         ],
       },
     },
+    // LE JOURNAL NE PORTE QUE DES COMPTES (23-journalEmail ; décision du cabinet du 18/10/2026) : une adresse inconnue, un
+    // e-mail sans destinataire exploitable, un e-mail traité — jamais l'objet, l'expéditeur, l'adresse ni son code. Chaque
+    // ligne dit COMBIEN (destinataires, fichiers, pièces importées) ; l'identifiant de l'e-mail seul reste, opaque.
     {
-      nom: 'l’objet et l’expéditeur d’un e-mail ne vont pas au journal',
-      preparer: (m) => { m.sensibles.push(OBJET, EXPEDITEUR) },
-      requete: requeteWebhook(evenementRecu({ a: 'inconnu@precompta.jdarnis.fr' })),
-      attendu: { statut: 200, aucuneDepense: true },
-      defautConnu: 'objetAuJournal',
+      nom: 'une adresse que nul dossier ne porte : le journal la dit inconnue et compte destinataires et fichiers — ni l’objet, ni l’expéditeur, ni l’adresse, ni son code',
+      preparer: (m) => { m.sensibles.push(OBJET, EXPEDITEUR, ADRESSE_SANS_DOSSIER, CODE_SANS_DOSSIER) },
+      requete: requeteWebhook(evenementRecu({ a: `Nom Affiché <${ADRESSE_SANS_DOSSIER}>` })),
+      attendu: {
+        statut: 200, aucuneDepense: true,
+        verifier: (_r, m) => [
+          ...rienDeLEmailAuJournal(m, [ADRESSE_SANS_DOSSIER, CODE_SANS_DOSSIER, 'Nom Affiché']),
+          ...journalise(m, new RegExp(`^\\[receive-email\\] adresse de collecte inconnue : e-mail ${EMAIL_ID}, 1 destinataire\\(s\\), 1 fichier\\(s\\) joint\\(s\\)$`), 'la ligne de l’adresse inconnue'),
+        ],
+      },
+    },
+    {
+      nom: 'un e-mail sans destinataire exploitable : le journal compte les destinataires — ni leur adresse ni leur nom affiché',
+      preparer: (m) => { m.sensibles.push(NOM_AFFICHE_DU_DESTINATAIRE) },
+      requete: requeteWebhook(evenementRecu({ a: `${NOM_AFFICHE_DU_DESTINATAIRE} <@precompta.jdarnis.fr>` })),
+      attendu: {
+        statut: 200, aucuneDepense: true,
+        verifier: (_r, m) => [
+          ...rienDeLEmailAuJournal(m, [NOM_AFFICHE_DU_DESTINATAIRE, '@precompta.jdarnis.fr']),
+          ...journalise(m, new RegExp(`^\\[receive-email\\] aucun destinataire exploitable : 1 destinataire\\(s\\) reçu\\(s\\), e-mail ${EMAIL_ID}$`), 'la ligne sans destinataire exploitable'),
+        ],
+      },
+    },
+    {
+      nom: 'la lecture du dossier tombe : 500, et le journal en dit le message de la base — rien de l’adresse',
+      preparer: (m) => { m.sensibles.push(OBJET, EXPEDITEUR); m.pannes.push({ table: 'dossiers', operation: 'select', erreur: { message: 'délai dépassé', details: `code_email=eq.${CODE_DU_DOSSIER}` } }) },
+      requete: requeteWebhook(evenementRecu()),
+      attendu: {
+        statut: 500, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (_r, m) => [
+          ...rienDeLEmailAuJournal(m),
+          ...journalise(m, /^\[receive-email\] lecture du dossier refusée \(sans code délai dépassé\)$/, 'la lecture refusée'),
+        ],
+      },
     },
     {
       nom: 'une pièce jointe d’un format que le seau n’admet pas : écartée avant tout dépôt, journalisée sans son nom, consignée pour le cabinet',
@@ -1108,6 +1165,7 @@ const RECEIVE_EMAIL: ContratFonction = {
         statut: 200, depenses: deposee('pj-0'),
         verifier: (_r, m) => [
           ...compteAuJournal(m, COMPTE_DES_INTEGRES),
+          ...bilanAuJournal(m, 1, 1),
           ...ecartsConsignes(m, [], NOMS_INTEGRES),
           ...(lignes(m, 'pieces').length === 1 ? [] : [`${lignes(m, 'pieces').length} pièce(s) déposée(s) au lieu d’une`]),
         ],
@@ -1117,12 +1175,12 @@ const RECEIVE_EMAIL: ContratFonction = {
       nom: 'un e-mail d’éléments intégrés seulement : comptés au journal, et rien de lu chez Resend, de téléchargé ni d’écrit',
       preparer: (m) => { m.sensibles.push(...NOMS_INTEGRES) },
       requete: requeteWebhook(evenementRecu({ pieces: 0, integres: INTEGRES })),
-      attendu: { statut: 200, aucuneDepense: true, verifier: (_r, m) => compteAuJournal(m, COMPTE_DES_INTEGRES) },
+      attendu: { statut: 200, aucuneDepense: true, verifier: (_r, m) => [...compteAuJournal(m, COMPTE_DES_INTEGRES), ...bilanAuJournal(m, 0, 0)] },
     },
     {
       nom: 'un e-mail sans élément hors pièces jointes : le compte au journal dit zéro',
       requete: requeteWebhook(evenementRecu({ pieces: 0 })),
-      attendu: { statut: 200, aucuneDepense: true, verifier: (_r, m) => compteAuJournal(m, COMPTE_A_ZERO) },
+      attendu: { statut: 200, aucuneDepense: true, verifier: (_r, m) => [...compteAuJournal(m, COMPTE_A_ZERO), ...bilanAuJournal(m, 0, 0)] },
     },
     {
       nom: 'une adresse que nul dossier ne porte, avec des éléments intégrés : rien de compté — le compte est celui d’un dossier connu',
