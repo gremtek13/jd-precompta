@@ -188,7 +188,11 @@ export default function ClientSimulation() {
   // Les cotisations comptent à la date du prélèvement qui les paie, sinon à leur échéance — comme au cabinet.
   const projection = projectionAnnuelle(
     recettesValidees, cotisationsComptees(cotisations, mouvementsRapproches, modeComptable), aujourdHuiSql(), assujettiTva,
-    paiementsDesPieces(mouvementsRapproches, reglements), modeComptable,
+    // Ni ce que les virements mixtes paient de leurs exemplaires (étape VF5h) : la session du client ne lit ni les factures
+    // ni leurs encaissements, et l'exemplaire qu'un tel virement paie s'y date à sa facture. Jusqu'à VF8, comme les ventes
+    // facturées : un virement mixte n'existe que sur un dossier basculé, où la simulation dit déjà ce qu'elle compte
+    // (`SIMULATION_SANS_VENTES_FACTUREES`).
+    paiementsDesPieces(mouvementsRapproches, reglements, []), modeComptable,
     partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva),
     // Un état choisi, et dit plus bas : pas une valeur par défaut.
     RECETTES_FACTUREES_NON_COMPTEES,

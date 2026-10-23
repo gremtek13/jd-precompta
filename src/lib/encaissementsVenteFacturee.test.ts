@@ -3,10 +3,12 @@ import { TEXTE_ESSAI_VENTES_FACTUREES, correspondAuModele, etapesDeLEssai, refus
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import {
   REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT, REFUS_GARDE_MOUVEMENTS, REFUS_RATTACHEMENT, REFUS_RETRAIT,
-  REFUS_RETRAIT_CLASSEMENT, debitObligatoire, justifieSonMouvement, mouvementLibre, paireNonDeclaree, refusClassement,
+  REFUS_RETRAIT_CLASSEMENT, debitObligatoire, exemplaireUnique, factureSansExemplaire, justifieSonMouvement, mouvementLibre,
+  paireNonDeclaree, partsEncaissees, refusClassement,
   refusContrePassation, refusContrePassationAvantLaDate, refusContrePassationVente, refusDuClassementDuReleve,
   refusEnregistrement, refusEnregistrementVente, refusRattachement, refusRetrait, refusRetraitDuClassement, refusRetraitVente,
   type ContexteFacture, type ContexteVente, type EncaissementDuReleve, type EncaissementLu, type EncaissementPourContrePassation,
+  type ExemplaireLu,
   type FactureDuDossier, type FacturePourEncaissement, type LigneDeFacture, type MouvementClasse, type SaisieEncaissement,
 } from './encaissementsFactures'
 
@@ -415,7 +417,7 @@ describe('refusContrePassationVente — annuler_encaissement et son cinquième p
   it('un débit un peu plus petit que sa contre-passation : cité sans refus, puis jamais classé', () => {
     expect(refusCV({ ligne: 'm_debit', mouvements: [{ ...DEBIT, montant: -99 }] })).toBeNull()
     const cite = encaissement({ id: 'c1', montant: -100, annule_id: 'e1', ligne_bancaire_id: 'm_debit' })
-    expect(refusClassement(D, 'm_debit', [{ ...DEBIT, montant: -99 }], [e1, cite], vente())?.cle).toBe('debit_depasse')
+    expect(refusClassement(D, 'm_debit', [{ ...DEBIT, montant: -99 }], [e1, cite], vente(), [])?.cle).toBe('debit_depasse')
   })
 
   it('les refus neufs, dans l’ordre du catalogue', () => {
@@ -634,46 +636,50 @@ describe('refusClassement et refusRetraitDuClassement — le cabinet classe un m
 
   it('rang par rang : introuvable, la frontière, déjà classé, classé autrement, rien d’une facture source', () => {
     const v = vente()
-    expect(refusClassement(D, 'm9', [mouvement()], sources([1355.5]), v)?.cle).toBe('mouvement_introuvable')
-    expect(refusClassement(D, 'm1', [mouvement({ dossier_id: 'd2' })], sources([1355.5]), v)?.cle).toBe('mouvement_introuvable')
-    expect(refusClassement(D, 'm1', [mouvement({ date: '2026-12-31', statut: 'rapprochee', piece_id: 'p' })], [], vente({ anneesValidees: [2026] })))
+    expect(refusClassement(D, 'm9', [mouvement()], sources([1355.5]), v, [])?.cle).toBe('mouvement_introuvable')
+    expect(refusClassement(D, 'm1', [mouvement({ dossier_id: 'd2' })], sources([1355.5]), v, [])?.cle).toBe('mouvement_introuvable')
+    expect(refusClassement(D, 'm1', [mouvement({ date: '2026-12-31', statut: 'rapprochee', piece_id: 'p' })], [], vente({ anneesValidees: [2026] }), []))
       .toEqual({ cle: 'frontiere', message: "L'exercice 2026 est validé : ce mouvement ne change plus." })
-    expect(refusClassement(D, 'm1', [mouvement({ statut: 'rapprochee', encaissements_de_factures: true })], [], v)?.cle)
+    expect(refusClassement(D, 'm1', [mouvement({ statut: 'rapprochee', encaissements_de_factures: true })], [], v, [])?.cle)
       .toBe('deja_classe_par_ses_encaissements')
     for (const [quoi, o] of CLASSEMENTS.filter(([q]) => q !== 'classé par ses encaissements')) {
-      expect(refusClassement(D, 'm1', [mouvement(o)], [], v)?.cle, quoi).toBe('deja_classe')
+      expect(refusClassement(D, 'm1', [mouvement(o)], [], v, [])?.cle, quoi).toBe('deja_classe')
     }
-    expect(refusClassement(D, 'm1', [mouvement()], [], v)?.cle).toBe('aucun_encaissement')
+    expect(refusClassement(D, 'm1', [mouvement()], [], v, [])?.cle).toBe('aucun_encaissement')
     // Ni un encaissement d'une facture qui n'est pas source, ni un retiré, ni un contre-passé sans mouvement.
-    expect(refusClassement(D, 'm1', [mouvement()], [encaissement({ facture_id: 'f2', ligne_bancaire_id: 'm1', montant: 1355.5 })], v)?.cle)
+    expect(refusClassement(D, 'm1', [mouvement()], [encaissement({ facture_id: 'f2', ligne_bancaire_id: 'm1', montant: 1355.5 })], v, [])?.cle)
       .toBe('aucun_encaissement')
-    expect(refusClassement(D, 'm1', [mouvement()], [encaissement({ ligne_bancaire_id: 'm1', montant: 1355.5, retire_le: '2027-10-20T10:00:00Z' })], v)?.cle)
+    expect(refusClassement(D, 'm1', [mouvement()], [encaissement({ ligne_bancaire_id: 'm1', montant: 1355.5, retire_le: '2027-10-20T10:00:00Z' })], v, [])?.cle)
       .toBe('aucun_encaissement')
-    expect(refusClassement(D, 'm1', [mouvement()], [...sources([1355.5]), encaissement({ id: 'c0', montant: -1355.5, annule_id: 'e0' })], v)?.cle)
+    expect(refusClassement(D, 'm1', [mouvement()], [...sources([1355.5]), encaissement({ id: 'c0', montant: -1355.5, annule_id: 'e0' })], v, [])?.cle)
       .toBe('aucun_encaissement')
-    expect(refusClassement(D, 'm1', [mouvement()], sources([1355.5]), v)).toBeNull()
+    expect(refusClassement(D, 'm1', [mouvement()], sources([1355.5]), v, [])).toBeNull()
   })
 
   it('un crédit : ses encaissements le font, à l’écart des frais près — la banque crédite un peu moins, jamais plus', () => {
     const v = vente()
-    expect(refusClassement(D, 'm1', [mouvement()], sources([1000, 355.5]), v)).toBeNull()
-    expect(refusClassement(D, 'm1', [mouvement()], sources([1000, 355.49]), v)).toEqual({
+    expect(refusClassement(D, 'm1', [mouvement()], sources([1000, 355.5]), v, [])).toBeNull()
+    expect(refusClassement(D, 'm1', [mouvement()], sources([1000, 355.49]), v, [])).toEqual({
       cle: 'credit_non_fait',
       message: 'Les encaissements que ce mouvement justifie font 1355,49 € pour un crédit de 1355,50 € : ce qui le dépasse reste à traiter.',
     })
     // 5 € de frais au plus : 1 360,50 € d'encaissements pour 1 355,50 € crédités passent, un centime de plus non.
-    expect(refusClassement(D, 'm1', [mouvement()], sources([1000, 360.5]), v)).toBeNull()
-    expect(refusClassement(D, 'm1', [mouvement()], sources([1000, 360.51]), v)).toEqual({
+    expect(refusClassement(D, 'm1', [mouvement()], sources([1000, 360.5]), v, [])).toBeNull()
+    expect(refusClassement(D, 'm1', [mouvement()], sources([1000, 360.51]), v, [])).toEqual({
       cle: 'credit_ecart',
       message: "Les encaissements que ce mouvement justifie font 1360,51 € pour un crédit de 1355,50 € : l'écart dépasse ce que des frais bancaires expliquent.",
     })
     // 2 % d'un petit montant — 2 % des ENCAISSEMENTS, comme la base : 102,04 € pour 100 € passent (2,04 € ≤ 2,0408 €),
     // 102,05 € non (2,05 € > 2,041 €).
-    expect(refusClassement(D, 'm1', [mouvement({ montant: 100 })], sources([102.04]), v)).toBeNull()
-    expect(refusClassement(D, 'm1', [mouvement({ montant: 100 })], sources([102.05]), v)?.cle).toBe('credit_ecart')
-    // Un encaissement d'une facture qui n'est pas source ne compte pas dans ce que le mouvement porte.
-    expect(refusClassement(D, 'm1', [mouvement()], [...sources([1000]), encaissement({ id: 'x', facture_id: 'f2', montant: 355.5, ligne_bancaire_id: 'm1' })], v)?.cle)
-      .toBe('credit_non_fait')
+    expect(refusClassement(D, 'm1', [mouvement({ montant: 100 })], sources([102.04]), v, [])).toBeNull()
+    expect(refusClassement(D, 'm1', [mouvement({ montant: 100 })], sources([102.05]), v, [])?.cle).toBe('credit_ecart')
+    // Le virement mixte (étape VF5h) : l'encaissement d'une facture qui n'est pas source compte dans ce que le mouvement
+    // porte, avec l'exemplaire unique et validé de cette facture ; sans lui, le rang 7 le refuse, avant les sommes.
+    const mixte = [...sources([1000]), encaissement({ id: 'x', facture_id: 'f2', montant: 355.5, ligne_bancaire_id: 'm1' })]
+    expect(refusClassement(D, 'm1', [mouvement()], mixte, v, [])?.cle).toBe('exemplaire_a_designer')
+    const exemplaire = { id: 'p2', dossier_id: D, facture_id: 'f2', statut: 'validee', type_piece: 'vente' } as const
+    expect(refusClassement(D, 'm1', [mouvement()], mixte, v, [exemplaire])).toBeNull()
+    expect(refusClassement(D, 'm1', [mouvement({ montant: 1355.51 })], mixte, v, [exemplaire])?.cle).toBe('credit_non_fait')
   })
 
   it('un débit : ses contre-passations ne le dépassent pas, et le font à l’écart des frais près', () => {
@@ -681,17 +687,19 @@ describe('refusClassement et refusRetraitDuClassement — le cabinet classe un m
     const contrePassations = (montants: number[]) => montants.map((montant, i) =>
       encaissement({ id: `c${i}`, montant, annule_id: `e${i}`, ligne_bancaire_id: 'm_debit' }))
     const debit = mouvement({ id: 'm_debit', montant: -100 })
-    expect(refusClassement(D, 'm_debit', [debit], contrePassations([-100]), v)).toBeNull()
-    expect(refusClassement(D, 'm_debit', [{ ...debit, montant: -102 }], contrePassations([-100]), v)).toBeNull()
-    expect(refusClassement(D, 'm_debit', [debit], contrePassations([-60, -40.01]), v)).toEqual({
+    expect(refusClassement(D, 'm_debit', [debit], contrePassations([-100]), v, [])).toBeNull()
+    expect(refusClassement(D, 'm_debit', [{ ...debit, montant: -102 }], contrePassations([-100]), v, [])).toBeNull()
+    expect(refusClassement(D, 'm_debit', [debit], contrePassations([-60, -40.01]), v, [])).toEqual({
       cle: 'debit_depasse',
       message: 'Les contre-passations que ce mouvement justifie font 100,01 € pour un débit de 100,00 € : elles le dépassent.',
     })
-    expect(refusClassement(D, 'm_debit', [{ ...debit, montant: -102.01 }], contrePassations([-100]), v)).toEqual({
+    expect(refusClassement(D, 'm_debit', [{ ...debit, montant: -102.01 }], contrePassations([-100]), v, [])).toEqual({
       cle: 'debit_ecart',
       message: "Les contre-passations que ce mouvement justifie font 100,00 € pour un débit de 102,01 € : l'écart dépasse ce que des frais bancaires expliquent.",
     })
-    expect(REFUS_CLASSEMENT.map((r) => r.cle).slice(6)).toEqual(['credit_non_fait', 'credit_ecart', 'debit_depasse', 'debit_ecart'])
+    expect(REFUS_CLASSEMENT.map((r) => r.cle).slice(6)).toEqual([
+      'exemplaire_a_designer', 'credit_non_fait', 'credit_ecart', 'debit_depasse', 'debit_ecart',
+    ])
   })
 
   it('retirer le classement : introuvable, la frontière, pas classé par ses encaissements', () => {
@@ -703,6 +711,101 @@ describe('refusClassement et refusRetraitDuClassement — le cabinet classe un m
       cle: 'non_classe', message: "Ce mouvement n'est pas classé par ses encaissements.",
     })
     expect(refusRetraitDuClassement(D, 'm1', [classe], vente())).toBeNull()
+  })
+})
+
+// LE VIREMENT MIXTE (chantier EC-Q3, étape VF5h ; migration `virement_mixte`) : le rang 7 du classement — l'encaissement
+// d'une facture qui n'est pas source, cité sur le mouvement, compte avec l'exemplaire UNIQUE et VALIDÉ de sa facture, sinon
+// la facture au plus petit numéro se nomme — et ce que le classement paie alors aux exemplaires (`partsEncaissees`), que
+// lib/rattachement.ts reçoit. Les contrôles 128c à 128k et 174 à 176 de ventesFacturees.sql, 53 à 57 de
+// ecrituresVentesFacturees.sql, le prouvent en base.
+describe('le virement mixte : le rang 7 du classement, et ce qu’il paie aux exemplaires (étape VF5h)', () => {
+  const exemplaire = (o: Partial<ExemplaireLu> = {}): ExemplaireLu =>
+    ({ id: 'p2', dossier_id: D, facture_id: 'f2', statut: 'validee', type_piece: 'vente', ...o })
+  // Deux factures d'avant la bascule, que la base ordonne par leur numéro, octet par octet : f5 (F2026-0002) avant f4
+  // (F2026-0009), que son identifiant précède pourtant ; et une sans numéro.
+  const v = vente({ factures: [...FACTURES,
+    factureDuDossier({ id: 'f4', numero: 'F2026-0009', source_de_la_vente: false }),
+    factureDuDossier({ id: 'f5', numero: 'F2026-0002', source_de_la_vente: false }),
+    factureDuDossier({ id: 'f6', numero: null, source_de_la_vente: false })] })
+  const credit = mouvement({ montant: 300 })
+  const source = encaissement({ id: 'es', facture_id: 'f1', montant: 200, ligne_bancaire_id: 'm1' })
+  const dAvant = encaissement({ id: 'ea', facture_id: 'f2', montant: 100, ligne_bancaire_id: 'm1' })
+
+  it('l’exemplaire unique et validé : une seule pièce de vente validée du dossier, désignée à la facture', () => {
+    expect(exemplaireUnique(D, 'f2', [exemplaire()])).toBe('p2')
+    expect(exemplaireUnique(D, 'f2', [])).toBeNull()
+    expect(exemplaireUnique(D, 'f2', [exemplaire({ statut: 'a_valider' })])).toBeNull()
+    expect(exemplaireUnique(D, 'f2', [exemplaire(), exemplaire({ id: 'p3' })])).toBeNull()
+    // Une pièce à valider ne gêne pas la seule validée ; celle d'un autre dossier, ni une autre facture, ne comptent pas.
+    expect(exemplaireUnique(D, 'f2', [exemplaire(), exemplaire({ id: 'p3', statut: 'a_valider' })])).toBe('p2')
+    expect(exemplaireUnique(D, 'f2', [exemplaire({ dossier_id: 'd2' })])).toBeNull()
+    expect(exemplaireUnique(D, 'f2', [exemplaire({ facture_id: 'f4' })])).toBeNull()
+  })
+
+  it('rang 7 : sans l’exemplaire, le refus nomme la facture — avant les sommes, après « aucun encaissement d’une facture source »', () => {
+    const refus = (encaissements: EncaissementLu[], exemplaires: ExemplaireLu[]) =>
+      refusClassement(D, 'm1', [credit], encaissements, v, exemplaires)
+    expect(refus([source, dAvant], [])).toEqual({
+      cle: 'exemplaire_a_designer',
+      message: "Désignez d'abord l'exemplaire de la facture F2027-0043 : ce mouvement porte aussi son encaissement, et cette facture, qui n'est pas la source de sa vente, se compte par une seule pièce validée.",
+    })
+    expect(refus([source, dAvant], [exemplaire({ statut: 'a_valider' })])?.cle).toBe('exemplaire_a_designer')
+    expect(refus([source, dAvant], [exemplaire(), exemplaire({ id: 'p3' })])?.cle).toBe('exemplaire_a_designer')
+    expect(refus([source, dAvant], [exemplaire()])).toBeNull()
+    // Avant les sommes : un crédit qu'ils dépasseraient se dit d'abord par l'exemplaire.
+    expect(refus([source, { ...dAvant, montant: 150 }], [])?.cle).toBe('exemplaire_a_designer')
+    expect(refus([source, { ...dAvant, montant: 150 }], [exemplaire()])?.cle).toBe('credit_ecart')
+    // Seule sur le crédit, la facture d'avant ne le fait pas classer : le rang 6 d'abord.
+    expect(refus([{ ...dAvant, montant: 300 }], [])?.cle).toBe('aucun_encaissement')
+    // Retiré, ou défait par sa contre-passation sans mouvement, l'encaissement d'avant ne retient rien et ne compte pas.
+    expect(refus([source, { ...dAvant, retire_le: '2027-10-20T10:00:00Z' }], [])?.cle).toBe('credit_non_fait')
+    expect(refus([source, dAvant, encaissement({ id: 'ca', facture_id: 'f2', montant: -100, annule_id: 'ea' })], [])?.cle)
+      .toBe('credit_non_fait')
+  })
+
+  it('rang 7 : la facture au plus petit numéro, octet par octet, puis l’identifiant ; un numéro nul après les autres', () => {
+    const deux = [source, encaissement({ id: 'e4', facture_id: 'f4', montant: 50, ligne_bancaire_id: 'm1' }),
+      encaissement({ id: 'e5', facture_id: 'f5', montant: 50, ligne_bancaire_id: 'm1' })]
+    expect(factureSansExemplaire(D, 'm1', deux, v, [])).toBe('F2026-0002')
+    expect(factureSansExemplaire(D, 'm1', deux, v, [exemplaire({ facture_id: 'f5' })])).toBe('F2026-0009')
+    const les2 = [exemplaire({ facture_id: 'f5' }), exemplaire({ id: 'p4', facture_id: 'f4' })]
+    expect(factureSansExemplaire(D, 'm1', deux, v, les2)).toBeNull()
+    const avecNul = [...deux, encaissement({ id: 'e6', facture_id: 'f6', montant: 1, ligne_bancaire_id: 'm1' })]
+    expect(factureSansExemplaire(D, 'm1', avecNul, v, les2)).toBe('<NULL>')
+    expect(factureSansExemplaire(D, 'm1', avecNul, v, [])).toBe('F2026-0002')
+    // Une facture que la lecture n'a pas rendue n'est pas source : son encaissement compte, et son exemplaire manque.
+    expect(factureSansExemplaire(D, 'm1', [source, encaissement({ id: 'ex', facture_id: 'inconnue', ligne_bancaire_id: 'm1' })], v, []))
+      .toBe('<NULL>')
+  })
+
+  it('ce que le classement paie aux exemplaires : la pièce, le mouvement, le montant — de chaque encaissement d’avant qui compte', () => {
+    const p5 = exemplaire({ id: 'p5', facture_id: 'f5' })
+    const registre: EncaissementLu[] = [
+      source, dAvant,
+      encaissement({ id: 'e5', facture_id: 'f5', montant: 30, ligne_bancaire_id: 'm2' }),
+      encaissement({ id: 'e5b', facture_id: 'f5', montant: 20, ligne_bancaire_id: 'm2' }),
+      // Ce qui ne paie rien : sans mouvement, retiré, contre-passé sans mouvement, d'un autre dossier, d'une facture sans
+      // son exemplaire unique et validé.
+      encaissement({ id: 'n1', facture_id: 'f2', montant: 10, ligne_bancaire_id: null }),
+      encaissement({ id: 'n2', facture_id: 'f2', montant: 10, ligne_bancaire_id: 'm1', retire_le: '2027-10-20T10:00:00Z' }),
+      encaissement({ id: 'n3', facture_id: 'f2', montant: 10, ligne_bancaire_id: 'm1' }),
+      encaissement({ id: 'n3c', facture_id: 'f2', montant: -10, annule_id: 'n3' }),
+      encaissement({ id: 'n4', dossier_id: 'd2', facture_id: 'f2', montant: 10, ligne_bancaire_id: 'm1' }),
+      encaissement({ id: 'n5', facture_id: 'f4', montant: 10, ligne_bancaire_id: 'm1' }),
+    ]
+    expect(partsEncaissees(D, registre, v, [exemplaire(), p5])).toEqual([
+      { ligne_bancaire_id: 'm1', piece_id: 'p2', montant: 100 },
+      { ligne_bancaire_id: 'm2', piece_id: 'p5', montant: 30 },
+      { ligne_bancaire_id: 'm2', piece_id: 'p5', montant: 20 },
+    ])
+    // L'encaissement d'une facture SOURCE ne paie aucune pièce : sa facture compte sa vente, l'exemplaire non (VF3b).
+    expect(partsEncaissees(D, [source], v, [exemplaire({ facture_id: 'f1' })])).toEqual([])
+    // Deux exemplaires validés, ou aucun : rien — le classement le refuse.
+    expect(partsEncaissees(D, [dAvant], v, [exemplaire(), exemplaire({ id: 'p3' })])).toEqual([])
+    expect(partsEncaissees(D, [dAvant], v, [])).toEqual([])
+    // Le même registre lu dans un autre ordre rend la même liste.
+    expect(partsEncaissees(D, [...registre].reverse(), v, [p5, exemplaire()])).toEqual(partsEncaissees(D, registre, v, [exemplaire(), p5]))
   })
 })
 
@@ -788,7 +891,8 @@ describe('l’essai de la vente facturée, confronté au module et au texte des 
   it('l’essai se lit : ses étapes, ses refus exigés', () => {
     expect(etapesDeLEssai().length).toBeGreaterThan(140)
     expect(refus.length).toBeGreaterThan(80)
-    expect(NEUFS.length).toBe(48)
+    // Quarante-neuf depuis l'étape VF5h : le rang 7 du classement, l'exemplaire à désigner.
+    expect(NEUFS.length).toBe(49)
   })
 
   it('chaque refus neuf du module y est exigé de la base, sous ses mots et son code', () => {

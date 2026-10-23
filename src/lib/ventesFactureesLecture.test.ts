@@ -3,8 +3,9 @@ import type { LigneDeFacture } from './encaissementsFactures'
 import { ventesFacturees, type EncaissementVendu, type FactureVendue, type PartVendue } from './ventesFacturees'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from './ventesFactureesLecture'
 
-// LA LECTURE DES VENTES FACTURÉES (lib/ventesFactureesLecture.ts, chantier EC-Q3, étape VF3a) : quatre collections, chacune
-// EN ENTIER — ou rien ne se calcule, et l'état dit pourquoi ; la pagination d'un serveur qui rend moins qu'on ne demande ;
+// LA LECTURE DES VENTES FACTURÉES (lib/ventesFactureesLecture.ts, chantier EC-Q3, étape VF3a) : cinq collections — les
+// exemplaires des factures depuis l'étape VF5h, dont la lecture tire ce que les virements mixtes paient —, chacune EN
+// ENTIER — ou rien ne se calcule, et l'état dit pourquoi ; la pagination d'un serveur qui rend moins qu'on ne demande ;
 // une ligne d'un autre dossier ; un dossier changé en cours de route. Le faux client APPLIQUE les filtres
 // (src/test/filtresPostgrest.ts), la jointure de `facture_lignes` comprise, ne rend que les colonnes demandées, et peut
 // plafonner chaque réponse comme PostgREST. Données FICTIVES.
@@ -26,7 +27,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('./supabase', async () => {
-  const { filtrer, predicatEq } = await import('../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatNot } = await import('../test/filtresPostgrest')
   return {
     supabase: {
       from: (table: string) => {
@@ -52,6 +53,10 @@ vi.mock('./supabase', async () => {
             } else {
               predicats.push(predicatEq(c, v))
             }
+            return q
+          },
+          not: (c: string, operateur: string, v: unknown) => {
+            predicats.push(predicatNot(c, operateur, v))
             return q
           },
           order: () => q,
@@ -121,13 +126,21 @@ beforeEach(() => {
     ],
     encaissements_factures: [
       ...ENCAISSEMENTS,
-      encaissement({ id: 'e-hier', facture_id: 'f-hier' }),
+      // La facture d'avant la bascule, encaissée sur un mouvement : un virement mixte, si ce mouvement est classé par ses
+      // encaissements (étape VF5h) — la lecture n'en juge pas, `paiementsDesPieces` le relit.
+      encaissement({ id: 'e-hier', facture_id: 'f-hier', ligne_bancaire_id: 'm-mixte' }),
       encaissement({ id: 'e-d2', dossier_id: 'd2', facture_id: 'f-d2', montant: 60 }),
     ],
     encaissements_factures_taux: [
       ...PARTS,
       part({ encaissement_id: 'e-hier' }),
       part({ encaissement_id: 'e-d2', dossier_id: 'd2', montant: 60 }),
+    ],
+    // L'exemplaire de la facture d'avant ; une pièce que rien ne désigne, qui ne se lit pas ; celui d'un autre dossier.
+    pieces: [
+      { id: 'p-hier', dossier_id: 'd1', facture_id: 'f-hier', statut: 'validee', type_piece: 'vente', nom_fichier: 'hier.pdf' },
+      { id: 'p-libre', dossier_id: 'd1', facture_id: null, statut: 'validee', type_piece: 'vente', nom_fichier: 'libre.pdf' },
+      { id: 'p-d2', dossier_id: 'd2', facture_id: 'f-d2', statut: 'validee', type_piece: 'vente', nom_fichier: 'd2.pdf' },
     ],
   }
 })
@@ -138,9 +151,11 @@ const lue = (l: LectureVentesFacturees) => {
 }
 
 describe('lireLesVentesFacturees', () => {
-  it('lit les quatre collections du dossier, réduites à leurs colonnes, et calcule sur elles seules', async () => {
+  it('lit les cinq collections du dossier, réduites à leurs colonnes, et calcule sur elles seules', async () => {
     const l = await lireLesVentesFacturees('d1')
     expect(l.dossierId).toBe('d1')
+    // Ce que le virement mixte paie de l'exemplaire de la facture d'avant (étape VF5h) : tiré du même registre.
+    expect(l.etat === 'lue' && l.encaissees).toEqual([{ ligne_bancaire_id: 'm-mixte', piece_id: 'p-hier', montant: 40 }])
     const v = lue(l)
     expect(v).toEqual(ventesFacturees({
       dossierId: 'd1', factures: [facture()],
@@ -154,6 +169,7 @@ describe('lireLesVentesFacturees', () => {
       'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id, source_de_la_vente)',
       'encaissements_factures: id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le',
       'encaissements_factures_taux: encaissement_id, dossier_id, taux, montant',
+      'pieces: id, dossier_id, facture_id, statut, type_piece',
     ])
   })
 
@@ -166,10 +182,11 @@ describe('lireLesVentesFacturees', () => {
     expect(faux.tranches).toBeGreaterThan(tranchesEntieres)
   })
 
-  it('une lecture partielle, de n’importe laquelle des quatre, et RIEN ne se calcule : l’état dit laquelle', async () => {
+  it('une lecture partielle, de n’importe laquelle des cinq, et RIEN ne se calcule : l’état dit laquelle', async () => {
     const noms: Record<string, string> = {
       factures_emises: 'les factures sources', facture_lignes: 'leurs lignes',
       encaissements_factures: 'les encaissements', encaissements_factures_taux: 'leurs parts par taux',
+      pieces: 'les exemplaires des factures',
     }
     for (const [table, nom] of Object.entries(noms)) {
       faux.muetApres = { [table]: 0 }
@@ -182,8 +199,8 @@ describe('lireLesVentesFacturees', () => {
     expect((await lireLesVentesFacturees('d1')).etat).toBe('incomplete')
   })
 
-  it('une lecture refusée, de n’importe laquelle des quatre, rend l’état incomplet avec le refus', async () => {
-    for (const table of ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux']) {
+  it('une lecture refusée, de n’importe laquelle des cinq, rend l’état incomplet avec le refus', async () => {
+    for (const table of ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux', 'pieces']) {
       faux.refus = { [table]: 'permission refusée' }
       const l = await lireLesVentesFacturees('d1')
       expect(l.etat, table).toBe('incomplete')
@@ -192,7 +209,7 @@ describe('lireLesVentesFacturees', () => {
   })
 
   it('une ligne d’un autre dossier, rendue par une lecture qui fuit, rend l’état incomplet — jamais un calcul', async () => {
-    for (const table of ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux']) {
+    for (const table of ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux', 'pieces']) {
       faux.fuite = { [table]: true }
       const l = await lireLesVentesFacturees('d1')
       expect(l, table).toEqual({ dossierId: 'd1', etat: 'incomplete', motif: expect.stringContaining("n'est pas de ce dossier") })
@@ -204,8 +221,30 @@ describe('lireLesVentesFacturees', () => {
     await expect(lireLesVentesFacturees('d1')).resolves.toEqual({ dossierId: 'd1', etat: 'incomplete', motif: 'client indisponible' })
   })
 
+  // Les exemplaires ne se lisent que si une part de virement mixte peut exister (étape VF5h) : une facture source lue, et
+  // l'encaissement d'une facture qui ne l'est pas cité sur un mouvement. Sinon, aucune lecture de plus — et aucune raison
+  // de plus d'être incomplète : refusée, la lecture des pièces ne compte pas.
+  it('sans encaissement d’une facture d’avant cité sur un mouvement, ou sans facture source, les pièces ne se lisent pas', async () => {
+    const tout = faux.tables
+    const sansMouvement = tout.encaissements_factures.map((e) => (e.id === 'e-hier' ? { ...e, ligne_bancaire_id: null } : e))
+    for (const [quoi, tables] of [
+      ['l’encaissement d’avant sans mouvement', { ...tout, encaissements_factures: sansMouvement }],
+      ['aucune facture source', { ...tout, factures_emises: tout.factures_emises.filter((f) => f.id !== 'f1') }],
+    ] as const) {
+      faux.tables = tables
+      faux.demandes = []
+      faux.refus = { pieces: 'permission refusée' }
+      const l = await lireLesVentesFacturees('d1')
+      expect(l.etat === 'lue' && l.encaissees, quoi).toEqual([])
+      expect(faux.demandes.some((d) => d.startsWith('pieces:')), quoi).toBe(false)
+    }
+  })
+
   it('un autre dossier lit ses ventes à lui', async () => {
-    const v = lue(await lireLesVentesFacturees('d2'))
+    const l = await lireLesVentesFacturees('d2')
+    // Son exemplaire est celui d'une facture SOURCE : aucun virement mixte ne le paie.
+    expect(l.etat === 'lue' && l.encaissees).toEqual([])
+    const v = lue(l)
     expect(v.dossierId).toBe('d2')
     expect(v.parts.map((p) => [p.factureId, p.ttcCentimes])).toEqual([['f-d2', 6000]])
   })

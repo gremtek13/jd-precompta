@@ -83,7 +83,7 @@ function dossierA() {
     km_professionnel: A_VEHICULE.kmProfessionnels, inscrit_immobilisations: false, amortissements_a_reintegrer: null,
     created_at: HORODATAGE, updated_at: HORODATAGE,
   }]
-  const paiements = paiementsDesPieces(lignes, [])
+  const paiements = paiementsDesPieces(lignes, [], [])
   const parts = partsDuReleve(lignes, categories, [], false)
   const comptees = cotisationsComptees(cotisations, lignes, 'tresorerie')
   const d = calculerDeclaration2035(2025, pieces, categories, immobilisations, comptees, vehicules, false, paiements, parts, [])
@@ -109,7 +109,7 @@ function dossierA() {
 function dossierB() {
   const pieces = B_PIECES.map(piece)
   const lignes = [...releveB(), ...B_APRES_PERIODE].map(ligne)
-  const paiements = paiementsDesPieces(lignes, [])
+  const paiements = paiementsDesPieces(lignes, [], [])
   const releve = partsDuReleve(lignes, categories, [], true)
   const pieceIdsImmobilisees = new Set(B_PIECES.filter((p) => p.immobilisation).map((p) => p.id))
   const ca3 = calculerCa3({ pieces, paiements, pieceIdsImmobilisees, releve }, { debut: '2026-03-01', fin: '2026-03-31' }, false, B_SITUATION.creditAnterieur, 0)

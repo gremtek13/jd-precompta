@@ -24,10 +24,11 @@ import type { LigneBancaire, ModeComptable, Piece, ReglementGroupe } from './typ
 // même question — quand cette pièce a-t-elle été réglée ? — et une règle écrite deux fois n'attend
 // que de diverger.
 
-// LES PAIEMENTS D'UNE PIÈCE, tels que tous les calculs les lisent : un mouvement RAPPROCHÉ de la pièce, ou
-// la PART d'un mouvement qui règle plusieurs pièces (lib/reglementGroupe.ts, ligne 26 de la feuille de
-// route). Une part est un paiement de sa pièce à la date du mouvement et de son montant : la 2035, la TVA
-// et les écritures la lisent comme un rapprochement simple.
+// LES PAIEMENTS D'UNE PIÈCE, tels que tous les calculs les lisent : un mouvement RAPPROCHÉ de la pièce, la
+// PART d'un mouvement qui règle plusieurs pièces (lib/reglementGroupe.ts, ligne 26 de la feuille de
+// route), ou, depuis l'étape VF5h, l'ENCAISSEMENT d'une facture d'avant la bascule cité sur un mouvement
+// classé par ses encaissements (le virement mixte, plus bas). Une part est un paiement de sa pièce à la date
+// du mouvement et de son montant : la 2035, la TVA et les écritures la lisent comme un rapprochement simple.
 export interface PaiementDePiece {
   /** Le mouvement bancaire : en engagement il désigne le règlement de la pièce, en trésorerie sa
    *  contrepartie banque. Deux parts d'un même mouvement portent le même, sur deux pièces différentes. */
@@ -36,21 +37,36 @@ export interface PaiementDePiece {
   /** Ce que CE mouvement paie de CETTE pièce, signé comme le relevé : tout le mouvement pour un
    *  rapprochement, sa part pour un règlement groupé. */
   montant: number
-  /** `groupe` : la part d'un règlement groupé. Le champ sert aussi de garde : une ligne du relevé ne le
-   *  porte pas, donc ne peut pas passer à la compilation pour les paiements d'une pièce — un filtre sur
-   *  `piece_id` oublierait toutes les pièces réglées par un virement groupé. */
-  origine: 'rapprochement' | 'groupe'
+  /** `groupe` : la part d'un règlement groupé ; `encaissements` : l'encaissement d'une facture d'avant la
+   *  bascule, cité sur un mouvement classé par ses encaissements (le virement mixte, étape VF5h). Le champ
+   *  sert aussi de garde : une ligne du relevé ne le porte pas, donc ne peut pas passer à la compilation pour
+   *  les paiements d'une pièce — un filtre sur `piece_id` oublierait toutes les pièces réglées par un virement
+   *  groupé, et celles qu'un virement mixte paie. */
+  origine: 'rapprochement' | 'groupe' | 'encaissements'
 }
 
 /** Les paiements de chaque pièce, par identifiant de pièce. Ne se construit que par `paiementsDesPieces`,
- *  qui exige les parts des règlements groupés. */
+ *  qui exige les parts des règlements groupés et celles des virements mixtes. */
 export type PaiementsDesPieces = ReadonlyMap<string, readonly PaiementDePiece[]>
 
 /** Ce que `paiementsDesPieces` lit d'une ligne du relevé. */
-export type LignePayante = Pick<LigneBancaire, 'id' | 'piece_id' | 'date' | 'montant' | 'statut' | 'reglement_groupe'>
+export type LignePayante = Pick<LigneBancaire,
+  'id' | 'piece_id' | 'date' | 'montant' | 'statut' | 'reglement_groupe' | 'encaissements_de_factures'>
 
 /** Ce qu'il lit d'une part de règlement groupé. */
 export type PartReglee = Pick<ReglementGroupe, 'ligne_bancaire_id' | 'piece_id' | 'montant'>
+
+/**
+ * Ce qu'il lit d'un VIREMENT MIXTE (étape VF5h) : l'encaissement d'une facture qui n'est pas source de sa vente, cité
+ * sur un mouvement — le mouvement, la pièce que cet encaissement paie, l'exemplaire unique et validé de la facture
+ * (étape VF1), et son montant, signé comme le relevé. Ne se construit que par `partsEncaissees`
+ * (lib/encaissementsFactures.ts), qui juge l'encaissement comme `classer_mouvement_par_encaissements` le compte.
+ */
+export interface PartEncaissee {
+  ligne_bancaire_id: string
+  piece_id: string
+  montant: number
+}
 
 // Les paiements de chaque pièce. Seul un mouvement RAPPROCHÉ paie une pièce : le statut est relu ici
 // plutôt que supposé du côté de l'appelant, un `piece_id` sur une ligne remise à traiter étant exactement
@@ -62,9 +78,26 @@ export type PartReglee = Pick<ReglementGroupe, 'ligne_bancaire_id' | 'piece_id' 
 // retomberaient sans paiement — comptées à leur date de facture dans la 2035, dans AUCUNE déclaration de
 // TVA, et « à rapprocher » partout.
 //
+// LE VIREMENT MIXTE (chantier EC-Q3, étape VF5h ; VF2-Q2, selon VF5-Q2 : la manière A, « le registre DATE la
+// pièce »). Un crédit qui paie une facture SOURCE de sa vente et une facture d'avant la bascule se classe par
+// ses encaissements (`classer_mouvement_par_encaissements`, migration virement_mixte) ; la vente d'avant reste
+// comptée par sa pièce, l'exemplaire désigné de sa facture, et l'encaissement cité sur ce mouvement en est un
+// PAIEMENT, à la date du mouvement et de son montant, comme la part d'un règlement groupé : la 2035, la CA3, la
+// situation et l'estimation la datent par la machinerie d'aujourd'hui (CGI, art. 93, 1), et une pièce compte
+// une fois — ses paiements ne font que la dater ; une pièce payée en partie par un autre mouvement additionne
+// ses paiements. Le mouvement est relu ici : lu, rapproché et CLASSÉ PAR SES ENCAISSEMENTS — un mouvement
+// seulement réservé, ou dont le classement est retiré, ne date rien, et l'encaissement d'une facture d'avant cité
+// sur un mouvement rapproché de sa pièce n'y ajoute rien : c'est le rapprochement qui la paie. Ces parts sont
+// OBLIGATOIRES elles aussi, pour la même raison : oubliées, la pièce d'un virement mixte retomberait sans
+// paiement, à sa date de facture.
+//
 // Chaque liste est triée par date puis par mouvement, pour que deux lectures du même relevé rendent la
 // même chose quel que soit l'ordre de la requête — la répartition des centimes d'une écriture en dépend.
-export function paiementsDesPieces(lignes: readonly LignePayante[], reglements: readonly PartReglee[]): PaiementsDesPieces {
+export function paiementsDesPieces(
+  lignes: readonly LignePayante[],
+  reglements: readonly PartReglee[],
+  encaissees: readonly PartEncaissee[],
+): PaiementsDesPieces {
   const mouvements = new Map(lignes.map((l) => [l.id, l]))
   const parPiece = new Map<string, PaiementDePiece[]>()
   const ajouter = (pieceId: string, paiement: PaiementDePiece) => {
@@ -81,6 +114,11 @@ export function paiementsDesPieces(lignes: readonly LignePayante[], reglements: 
     const mouvement = mouvements.get(part.ligne_bancaire_id)
     if (!mouvement || mouvement.statut !== 'rapprochee' || !mouvement.reglement_groupe) continue
     ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: 'groupe' })
+  }
+  for (const part of encaissees) {
+    const mouvement = mouvements.get(part.ligne_bancaire_id)
+    if (!mouvement || mouvement.statut !== 'rapprochee' || !mouvement.encaissements_de_factures) continue
+    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: 'encaissements' })
   }
   for (const liste of parPiece.values()) liste.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
   return parPiece

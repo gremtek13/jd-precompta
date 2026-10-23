@@ -238,6 +238,43 @@ const CERTAINS = 'Valider et rapprocher cette pièce'
 const REGLES = 'Affecter ce mouvement'
 const lot = (nom: string | RegExp) => screen.getByRole('button', { name: nom }) as HTMLButtonElement
 
+// LE VIREMENT MIXTE (étape VF5h ; VF2-Q2, selon VF5-Q2) : le mouvement classé m-cls porte aussi l'encaissement d'une
+// facture d'avant la bascule, dont la pièce « Client d’avant » est l'exemplaire désigné. Le CÂBLAGE : l'onglet tire la part
+// du virement mixte de la lecture des ventes (`partsEncaissees`), et la pièce qu'il paie n'est plus candidate ailleurs —
+// sans quoi un second crédit la rapprocherait, et la compterait payée deux fois.
+describe('le virement mixte : l’exemplaire qu’il paie n’est plus candidate ailleurs (étape VF5h)', () => {
+  function poserLeVirementMixte(designee: boolean) {
+    poser()
+    faux.parTable.factures_emises = [...faux.parTable.factures_emises,
+      { ...facture('fa', 'F2025-0042'), date_emission: '2025-12-15', source_de_la_vente: false, montant_ttc: 100 }]
+    faux.parTable.encaissements_factures = [...faux.parTable.encaissements_factures,
+      encaissement({ id: 'ea', facture_id: 'fa', montant: 100, ligne_bancaire_id: 'm-cls', date_encaissement: '2026-06-02' })]
+    faux.parTable.encaissements_factures_taux = [...faux.parTable.encaissements_factures_taux,
+      { encaissement_id: 'ea', dossier_id: D, taux: 20, montant: 100 }]
+    faux.parTable.lignes_bancaires = [
+      ...(faux.parTable.lignes_bancaires as Record<string, unknown>[]).map((l) => (l.id === 'm-cls' ? { ...l, montant: 578.5 } : l)),
+      mouvement({ id: 'm-autre', date: '2026-06-06', montant: 100, libelle: 'VIR CLIENT D AVANT' }) as unknown as Record<string, unknown>,
+    ]
+    faux.parTable.pieces = [...faux.parTable.pieces, piece({
+      id: 'pa', tiers: 'Client d’avant', montant_ttc: 100, date_piece: '2026-06-04', type_piece: 'vente', facture_id: designee ? 'fa' : null,
+    }) as unknown as Record<string, unknown>]
+  }
+
+  it('l’exemplaire que le virement mixte paie ne s’offre pas sur un autre crédit ; sans sa désignation, il s’offre', async () => {
+    poserLeVirementMixte(true)
+    rendre()
+    await ouvrir('VIR CLIENT D AVANT')
+    expect(within(volet()).queryByRole('option', { name: /Client d’avant/ })).toBeNull()
+    // Le garde symétrique : la même pièce, que rien ne paie, est bien candidate — sans quoi ce test serait satisfait par
+    // un écran qui ne propose jamais rien.
+    cleanup()
+    poserLeVirementMixte(false)
+    rendre()
+    await ouvrir('VIR CLIENT D AVANT')
+    expect(within(volet()).getByRole('option', { name: /Client d’avant/ })).toBeTruthy()
+  })
+})
+
 describe('un dossier basculé, ses ventes facturées lues en entier', () => {
   it('lit ses ventes facturées dans la même relecture que le relevé', async () => {
     rendre()

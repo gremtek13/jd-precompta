@@ -67,6 +67,8 @@ export function sourcesDuDossierBascule(): SourcesDesEcrituresDeVente {
       mouvementDesVentes({ id: 'm1', date: '2025-11-20', montant: 120 }),
       mouvementDesVentes({ id: 'm2', date: '2025-11-22', montant: 100, libelle: 'REMISE CHEQUE FICTIVE' }),
     ],
+    // Aucune pièce désignée : aucun virement mixte (étape VF5h).
+    exemplaires: [],
   }
 }
 
@@ -76,6 +78,7 @@ export function composition(sources: SourcesDesEcrituresDeVente, mode: ModeCompt
     mouvements: sources.mouvements,
     comptesDeContrepartie: new Map(sources.encaissements
       .filter((e) => e.compte_contrepartie != null).map((e) => [e.id, e.compte_contrepartie as string])),
+    exemplaires: sources.exemplaires,
     mode, plan,
   })
 }

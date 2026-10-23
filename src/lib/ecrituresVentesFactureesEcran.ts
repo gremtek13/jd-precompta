@@ -9,7 +9,9 @@ import {
   type MotifNonEcrite, type MouvementDesEncaissements, type SourceEcritureVente,
 } from './ecrituresVentesFacturees'
 import type { EcrituresDesVentesDeLa2035 } from './declaration2035'
-import { MOYENS_ENCAISSEMENT, mouvementLibre, type LigneDeFacture, type RefusEncaissement } from './encaissementsFactures'
+import {
+  MOYENS_ENCAISSEMENT, mouvementLibre, type ExemplaireLu, type LigneDeFacture, type RefusEncaissement,
+} from './encaissementsFactures'
 import { formatDate, formatMoney } from './format'
 import type { PlanComptable } from './planComptable'
 import type { EcritureBrouillon, EncaissementFacture, FactureEmise, ModeComptable } from './types'
@@ -79,6 +81,9 @@ export interface SourcesDesEcrituresDeVente {
   encaissements: readonly EncaissementDesEcritures[]
   parts: readonly PartVendue[]
   mouvements: readonly MouvementDesEcritures[]
+  /** Les pièces désignées du dossier (`pieces.facture_id`, étape VF1) : le virement mixte s'écrit et se classe avec
+   *  l'exemplaire unique et validé de sa facture d'avant (étape VF5h). */
+  exemplaires: readonly ExemplaireLu[]
 }
 
 /** Une ligne du brouillon telle que ce module la confronte : la source, et ce que `memeEcritureQueLeBrouillon` compare. */
@@ -268,6 +273,7 @@ export function compositionDesSources(
         mouvements: sources.mouvements,
         comptesDeContrepartie: new Map(sources.encaissements
           .filter((e) => e.compte_contrepartie != null).map((e) => [e.id, e.compte_contrepartie as string])),
+        exemplaires: sources.exemplaires,
         mode, plan,
       }),
     }

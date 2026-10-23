@@ -34,7 +34,7 @@ import { ventesFactureesVides } from '../../src/test/ventesFacturees'
 import { ecritureDuVirementPersonnel } from '../../src/lib/virementPersonnel'
 import type {
   Categorie, CotisationDeclaree, EcritureBrouillon, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne,
-  FactureSuperpdpEvent, Immobilisation, NatureImmobilisation, Piece, PieceEcarteeEreporting, PieceHorsDeFrance, PieceHorsDeFranceTaux,
+  FactureSuperpdpEvent, Immobilisation, LigneBancaire, NatureImmobilisation, Piece, PieceEcarteeEreporting, PieceHorsDeFrance, PieceHorsDeFranceTaux,
   RegimeEreporting, StatutFactureRecu, TransmissionEncaissement, TransmissionFacture,
   VehiculeDossier, VentilationBancaire,
 } from '../../src/lib/types'
@@ -401,10 +401,12 @@ const RELEVE_D7 = {
 // traiter, en paie exactement le reste, et sa fiche propose la déclaration. Le troisième trimestre reste à
 // déclarer : c'est lui que l'onglet propose.
 function declarationD7(id: string, debut: string, fin: string, depot: string) {
-  const lignes = [...TVA_D7.lignes, ...RELEVE_D7.lignes] as unknown as MouvementBancaire[]
+  const lignes = [...TVA_D7.lignes, ...RELEVE_D7.lignes] as unknown as LigneBancaire[]
   const donnees: DonneesTva = {
     pieces: TVA_D7.pieces as unknown as Piece[],
-    paiements: paiementsDesPieces(lignes, []),
+    // Aucun virement mixte (étape VF5h) : l'atelier n'a pas basculé, aucun de ses mouvements n'est classé par ses
+    // encaissements.
+    paiements: paiementsDesPieces(lignes, [], []),
     // L'ordinateur du dossier, immobilisé (`i-d7`) : sa TVA va en ligne 19.
     pieceIdsImmobilisees: new Set(['a2']),
     releve: partsDuReleve(lignes, categories as unknown as Categorie[], RELEVE_D7.ventilations as unknown as VentilationBancaire[], true),
@@ -640,9 +642,10 @@ interface SourcesDeValidation {
 }
 
 function ecrituresDe(s: SourcesDeValidation): Ligne[] {
-  const lignes = s.lignes as unknown as MouvementBancaire[]
+  const lignes = s.lignes as unknown as LigneBancaire[]
   const rapprochees = lignes.filter((l) => l.statut === 'rapprochee')
-  const paiements = paiementsDesPieces(rapprochees, [])
+  // Ni règlement groupé ni virement mixte dans ces dossiers : aucun n'a basculé (étape VF5h).
+  const paiements = paiementsDesPieces(rapprochees, [], [])
   const acquisitions = acquisitionsDesBiens(s.immobilisations as unknown as Immobilisation[], natures as unknown as NatureImmobilisation[], null)
   let n = 0
   const ecriture = (l: { compte: string; sens: 'debit' | 'credit'; montant: number; libelle: string; date: string }, liens: Ligne): Ligne => ({
@@ -704,11 +707,11 @@ function valider(
   const centimes = (sens: 'debit' | 'credit') =>
     dansLExercice.filter((e) => e.sens === sens).reduce((t, e) => t + Math.round(Number(e.montant) * 100), 0) / 100
 
-  const lignes = (s.lignes as unknown as MouvementBancaire[]).filter((l) => l.statut === 'rapprochee')
+  const lignes = (s.lignes as unknown as LigneBancaire[]).filter((l) => l.statut === 'rapprochee')
   const declaration = calculerDeclaration2035(
     annee, s.pieces as unknown as Piece[], categories as unknown as Categorie[], s.immobilisations as unknown as Immobilisation[],
     cotisationsComptees(s.cotisations as unknown as CotisationDeclaree[], lignes, TRESORERIE.mode),
-    s.vehicules as unknown as VehiculeDossier[], false, paiementsDesPieces(lignes, []), partsDuReleve(lignes, categories as unknown as Categorie[], [], false),
+    s.vehicules as unknown as VehiculeDossier[], false, paiementsDesPieces(lignes, [], []), partsDuReleve(lignes, categories as unknown as Categorie[], [], false),
     // Ni l'un ni l'autre dossier n'est assujetti : aucune déclaration de TVA, donc aucun arrondi de liquidation.
     [],
     PLAN_PAR_DEFAUT,

@@ -15,6 +15,7 @@ import { lireTout } from '../../lib/lectureComplete'
 import { lireLesSoldesReportes } from '../../lib/soldesReportesLecture'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
 import { anneesDesRattachements, paiementsDesPieces, rattachements } from '../../lib/rattachement'
+import { partsEncaissees } from '../../lib/encaissementsFactures'
 import {
   ecritureDuMouvement, idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, refusAffectation,
   type MouvementAffecte,
@@ -393,7 +394,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Ni l'exemplaire d'une FACTURE SOURCE (étape VF6a ; lib/facturesSources.ts) : sa vente s'écrit par sa facture. Un dossier
   // qui a basculé lit ses factures sources avec ses ventes facturées ; pas encore revenues pour CE dossier, ou lues en
   // partie, elles sont NULLES — les contrôles se lisent alors comme hier, sans écarter aucun exemplaire, et la génération et
-  // la régénération attendent : elles écriraient la vente d'un exemplaire à côté de celle de sa facture.
+  // la régénération attendent : elles écriraient la vente d'un exemplaire à côté de celle de sa facture, ou dateraient
+  // mal une pièce qu'un virement mixte paie (étape VF5h, plus bas) — une seule garde, `sourcesNonLues`, pour les deux.
   const lectureDesSources = lectureVentes !== null && lectureVentes.dossierId === dossierId ? lectureVentes : null
   const facturesSources: FacturesSources | null = !ventesParLesFactures ? AUCUNE_FACTURE_SOURCE
     : lectureDesSources?.etat === 'lue' ? facturesSourcesDe(lectureDesSources.sources.factures) : null
@@ -402,8 +404,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const sourcesDesControles = facturesSources ?? AUCUNE_FACTURE_SOURCE
   const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, acquisitions, sourcesDesControles)
   // Les paiements de chaque pièce, parts des virements groupés comprises : ils datent sa charge et portent
-  // ses contreparties banque (lib/rattachement.ts).
-  const paiements = paiementsDesPieces(lignesBancaires, reglements)
+  // ses contreparties banque (lib/rattachement.ts). Et ce que les virements mixtes paient de leurs exemplaires (étape
+  // VF5h), sur les ventes facturées lues en entier de CE dossier : l'exemplaire qu'un tel virement paie s'écrit à sa date,
+  // sa banque sur lui. Aucune pour un dossier qui n'a pas basculé — sans facture source, aucun mouvement n'est classé par
+  // ses encaissements. Tant qu'un dossier basculé ne les a pas lues en entier, aucune écriture de pièce ne se génère ni
+  // ne se régénère (`sourcesNonLues`) : elle daterait mal une pièce qu'un virement mixte paie, ou retirerait sa banque.
+  const encaissees = lectureDesSources?.etat === 'lue'
+    ? partsEncaissees(dossierId, lectureDesSources.sources.encaissements, lectureDesSources.sources,
+      lectureDesSources.sources.exemplaires)
+    : []
+  const paiements = paiementsDesPieces(lignesBancaires, reglements, encaissees)
   // Les pièces sans écriture, et ce que la génération écrirait d'elles. Rien ne s'écrit au plus tard à la frontière
   // de validation (lib/validationExercice.ts) : la base le refuserait, et tout le lot avec, l'insertion étant d'un
   // seul tenant. Une pièce dont une part tombe dans un exercice validé est NOMMÉE plus bas, plutôt que de
@@ -1243,7 +1253,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                         title={brouillonIncomplet
                           ? `Lecture incomplète (${brouillonIncomplet}) — régénérer maintenant pourrait mal dater l’écriture, ou retirer des règlements.`
                           : sourcesNonLues
-                          ? `Factures sources de leurs ventes non lues (${sourcesNonLues}) — régénérer maintenant pourrait réécrire la vente d’un exemplaire que sa facture compte déjà.`
+                          ? `Factures sources de leurs ventes non lues (${sourcesNonLues}) — régénérer maintenant pourrait réécrire la vente d’un exemplaire que sa facture compte déjà, ou mal dater une pièce qu’un virement mixte paie.`
                           : aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id)
                           ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — on ne sait pas si la balance reprise porte déjà ce bien.`
                           : undefined}
@@ -1690,7 +1700,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             brouillonIncomplet
               ? `Lecture incomplète (${brouillonIncomplet}) — générer maintenant pourrait doubler des écritures déjà passées.`
               : sourcesNonLues
-              ? `Factures sources de leurs ventes non lues (${sourcesNonLues}) — générer maintenant pourrait écrire la vente d’un exemplaire à côté de celle de sa facture.`
+              ? `Factures sources de leurs ventes non lues (${sourcesNonLues}) — générer maintenant pourrait écrire la vente d’un exemplaire à côté de celle de sa facture, ou mal dater une pièce qu’un virement mixte paie.`
               : biensSansOuverture
               ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — on ne sait pas quels biens la balance reprise porte déjà : leur acquisition s’écrirait une seconde fois.`
               : undefined

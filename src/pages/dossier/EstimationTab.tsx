@@ -193,13 +193,17 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   // repère pour anticiper. Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés
   // viennent du même instant, et le calcul est celui de la Simulation client (lib/estimation.ts).
   const parts = partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva)
-  const paiements = paiementsDesPieces(mouvementsRapproches, reglements)
   // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance
   // (lib/cotisationRapprochee.ts) : la règle de la 2035.
   const comptees = cotisationsComptees(cotisations, mouvementsRapproches, modeComptable)
   // Les ventes facturées de CE dossier, ou rien ; lues entières, leurs recettes mois par mois (lib/estimation.ts,
   // `RecettesFacturees`) — la forme que « Ma simulation » recevra à VF8 —, sinon nulles et le motif.
   const lectureVentesDuDossier = lectureDuDossier(lectureVentes, dossierId)
+  // Les paiements des pièces, et ce que les virements mixtes paient de leurs exemplaires (étape VF5h), lu avec les ventes
+  // facturées : sans elles, le chiffre d'affaires ne se projette pas ; le détail par poste ne lit que des charges, qu'aucun
+  // virement mixte ne paie.
+  const paiements = paiementsDesPieces(mouvementsRapproches, reglements,
+    lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.encaissees : [])
   const ventesFacturees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
   const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : null
   const recettesFacturees = ventesFacturees === null ? null : recettesFactureesDuDossier(ventesFacturees, modeComptable)

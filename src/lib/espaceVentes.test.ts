@@ -17,7 +17,7 @@ import { REFUS_ENREGISTREMENT_CONTACT, REFUS_REPRISE_CONTACT } from './contacts'
 import { manqueMentionTva, motifExoneration, refusTauxPositif } from './statutTva'
 import { refusEmission } from './factureCii'
 import {
-  REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, obligationEncaissee,
+  REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, obligationEncaissee,
 } from './encaissementsFactures'
 import { bilanDuReleve, refusDuReleve, verificationAvantDeclaration } from './statutsLus'
 import { libelleCanal, libelleCourtCanal } from './transmissionsFactures'
@@ -72,6 +72,9 @@ const PRODUITES: Record<string, () => string> = {
   'REFUS_ENREGISTREMENT, REFUS_RETRAIT, REFUS_CONTRE_PASSATION, REFUS_DECLARATION': () => [
     ...REFUS_ENREGISTREMENT, ...REFUS_RETRAIT, ...REFUS_CONTRE_PASSATION, ...REFUS_DECLARATION,
   ].map((r) => r.modele).join('\n'),
+  // Le refus du rang 7 du classement (le virement mixte, étape VF5h), que la fenêtre cite au client quand son geste
+  // laisserait un mouvement inclassable : il vouvoie, et nomme ce que le cabinet seul fait.
+  'REFUS_CLASSEMENT, rang 7': () => REFUS_CLASSEMENT.find((r) => r.cle === 'exemplaire_a_designer')?.modele ?? '',
   // Les messages d'un module qui appelle le client Supabase : lus dans sa source, que ce test n'importe pas.
 
   'receptionPlateforme (source)': () => readFileSync(resolve(process.cwd(), 'src/lib/receptionPlateforme.ts'), 'utf8'),
@@ -140,6 +143,11 @@ describe('les réécritures du client', () => {
     [
       REFUS_RETRAIT.find((r) => r.cle === 'annule')?.modele,
       "Cet encaissement est annulé par une contre-passation : retire d'abord celle-ci.",
+    ],
+    // Le virement mixte (étape VF5h) : l'exemplaire d'une facture, c'est son cabinet qui le désigne.
+    [
+      REFUS_CLASSEMENT.find((r) => r.cle === 'exemplaire_a_designer')?.modele,
+      "Ton cabinet doit d'abord désigner l'exemplaire de la facture % : ce mouvement porte aussi son encaissement, et cette facture, qui n'est pas la source de sa vente, se compte par une seule pièce validée.",
     ],
   ])('le client lit « %s » sous ses mots', (cabinet, client) => {
     expect(pourLEspace('client', cabinet ?? '')).toBe(client)

@@ -376,6 +376,9 @@ export default function TvaTab({
   // La lecture des ventes facturées de CE dossier, ou rien ; lue entière, ses ventes, sinon nulles et le motif.
   const lectureVentesDuDossier = lectureDuDossier(lectureVentes, dossierId)
   const ventesFacturees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
+  // Et ce que les virements mixtes paient de leurs exemplaires (étape VF5h), lu avec elles : la TVA d'une telle pièce est
+  // exigible au paiement que ce virement fait. Sans elles, aucune CA3 ne se calcule.
+  const encaissees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.encaissees : []
   const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : null
   // Tant que l'une ou l'autre n'est pas revenue, l'onglet attend : ni CA3, ni enregistrement, ni comparaison.
   const enAttente = loading || lectureVentesDuDossier === null
@@ -414,7 +417,7 @@ export default function TvaTab({
   // déposée, et le moteur n'a pas de valeur par défaut à leur donner.
   const donnees: DonneesTva | null = ventesFacturees === null ? null : {
     pieces,
-    paiements: paiementsDesPieces(lignesBancaires, luDuDossier?.reglements ?? []),
+    paiements: paiementsDesPieces(lignesBancaires, luDuDossier?.reglements ?? [], encaissees),
     pieceIdsImmobilisees: luDuDossier?.pieceIdsImmobilisees ?? new Set(),
     releve: partsDuReleve(lignesBancaires, luDuDossier?.categories ?? [], luDuDossier?.ventilations ?? [], assujettiTva),
     ventesFacturees,

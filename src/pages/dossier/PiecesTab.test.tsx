@@ -267,11 +267,11 @@ function poser(pieces: unknown[], commentaires: PieceCommentaire[] = []) {
 
 // Dans la coque du panneau de droite : la fiche d'une pièce s'y ouvre, et `usePanneauDroit` lève hors
 // d'elle plutôt que d'offrir des lignes qui ne feraient rien.
-function monter(annee: number | 'toutes') {
+function monter(annee: number | 'toutes', ventesParLesFactures = false) {
   return render(
     <FournisseurPanneauDroit>
       <AnneeProvider defaut={annee}>
-        <PiecesTab dossierId="dossier-de-test" />
+        <PiecesTab dossierId="dossier-de-test" ventesParLesFactures={ventesParLesFactures} />
       </AnneeProvider>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,
@@ -426,7 +426,7 @@ describe('PiecesTab — les factures reçues de la plateforme du client', () => 
     render(
       <FournisseurPanneauDroit>
         <AnneeProvider defaut="toutes">
-          <PiecesTab dossierId="dossier-de-test" dossierSiret="12345678200010" />
+          <PiecesTab dossierId="dossier-de-test" dossierSiret="12345678200010" ventesParLesFactures={false} />
         </AnneeProvider>
         <EmplacementPanneauDroit />
       </FournisseurPanneauDroit>,
@@ -743,6 +743,59 @@ describe('PiecesTab — une pièce réglée par un virement groupé', () => {
     monter('toutes')
 
     expect(await screen.findByText(/Les listes de référence du dossier n'ont pas pu être lues en entier/)).toBeTruthy()
+  })
+})
+
+// UNE PIÈCE QU'UN VIREMENT MIXTE PAIE (étape VF5h ; VF2-Q2, selon VF5-Q2) : le virement « mx », classé par ses
+// encaissements, porte celui de la facture source et celui d'une facture d'avant la bascule, dont la pièce GAMMA est
+// l'exemplaire désigné. Le virement ne porte aucune pièce : l'onglet tire la part de la lecture des ventes facturées
+// (lib/ventesFactureesLecture.ts) pour un dossier basculé, et dit l'exemplaire « Rapprochée » comme une autre pièce payée.
+describe('PiecesTab — l’exemplaire qu’un virement mixte paie', () => {
+  const ligneDe = async (tiers: string) => {
+    const cellules = await screen.findAllByText(tiers)
+    const ligne = cellules.map((c) => c.closest('tr')).find((tr) => tr !== null)
+    if (!ligne) throw new Error(`Aucune ligne ne porte « ${tiers} »`)
+    return ligne
+  }
+  const FACTURE = {
+    id: 'f1', dossier_id: 'dossier-de-test', statut: 'validee', type: 'facture', numero: 'F2026-0001', date_emission: '2026-03-01',
+    tiers_nom: 'CLIENT', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services', option_debits: false,
+    date_prestation: null,
+  }
+  const encaissement = (id: string, factureId: string, montant: number) => ({
+    id, dossier_id: 'dossier-de-test', facture_id: factureId, date_encaissement: '2026-03-15', montant, moyen: 'virement',
+    ligne_bancaire_id: 'mx', annule_id: null, cree_le: '2026-03-15T10:00:00Z', retire_le: null,
+  })
+  function poserLeVirementMixte() {
+    poser([
+      piece({ id: 'p-avant', statut: 'validee', type_piece: 'vente', tiers: 'GAMMA', montant_ttc: 60, facture_id: 'f-avant' }),
+      piece({ id: 'p-libre', statut: 'validee', type_piece: 'vente', tiers: 'DELTA', montant_ttc: 60 }),
+    ])
+    faux.parTable.factures_emises = [FACTURE, { ...FACTURE, id: 'f-avant', numero: 'F2025-0042', source_de_la_vente: false }]
+    faux.parTable.facture_lignes = [{ id: 'l1', facture_id: 'f1', ordre: 1, designation: 'Prestation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }]
+    faux.parTable.encaissements_factures = [encaissement('e1', 'f1', 120), encaissement('ea', 'f-avant', 60)]
+    faux.parTable.encaissements_factures_taux = [
+      { encaissement_id: 'e1', dossier_id: 'dossier-de-test', taux: 20, montant: 120 },
+      { encaissement_id: 'ea', dossier_id: 'dossier-de-test', taux: 20, montant: 60 },
+    ]
+    faux.parTable.lignes_bancaires = [{
+      id: 'mx', piece_id: null, date: '2026-03-15', montant: 180, statut: 'rapprochee', reglement_groupe: false, encaissements_de_factures: true,
+    }]
+  }
+
+  it('est dite « Rapprochée » sur un dossier basculé, et la pièce que rien ne paie reste « Non rapprochée »', async () => {
+    poserLeVirementMixte()
+    monter('toutes', true)
+    expect(within(await ligneDe('GAMMA')).getByText('Rapprochée')).toBeTruthy()
+    expect(within(await ligneDe('DELTA')).getByText('Non rapprochée')).toBeTruthy()
+  })
+
+  it('des ventes facturées lues en partie : l’écran le dit, au lieu de laisser l’exemplaire « non rapprochée » sans un mot', async () => {
+    poserLeVirementMixte()
+    faux.muetApres = { encaissements_factures: 0 }
+    monter('toutes', true)
+    expect(await screen.findByText(/Les listes de référence du dossier n'ont pas pu être lues en entier \(les ventes facturées du dossier : les encaissements/))
+      .toBeTruthy()
   })
 })
 

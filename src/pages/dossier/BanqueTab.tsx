@@ -12,6 +12,7 @@ import type {
   RegleBancaireIgnoree, ReglementGroupe, StatutLigneBancaire, StatutTva, VentilationBancaire,
 } from '../../lib/types'
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
+import { partsEncaissees } from '../../lib/encaissementsFactures'
 import { nomDeLaPiece, piecesPayeesEnTrop, refusReglementGroupe, refusSecondPaiement, type PartReglement } from '../../lib/reglementGroupe'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
@@ -395,10 +396,17 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // des pièces déjà relues par le cabinet : rapprocher sur de l'OCR non validé reviendrait à écrire
   // une écriture comptable sur un montant que personne n'a confirmé.
   const piecesValidees = useMemo(() => pieces.filter((p) => p.statut === 'validee'), [pieces])
-  // Les paiements de chaque pièce : les mouvements rapprochés d'elle, et les parts des virements qui en
-  // règlent plusieurs (lib/rattachement.ts). Une pièce payée, en tout ou en partie, n'est plus candidate :
-  // une pièce réglée par la part d'un virement groupé se laisserait sinon rapprocher d'un second mouvement.
-  const paiements = useMemo(() => paiementsDesPieces(lignes, reglements), [lignes, reglements])
+  // Les paiements de chaque pièce : les mouvements rapprochés d'elle, les parts des virements qui en
+  // règlent plusieurs, et ce que les virements mixtes paient des exemplaires (étape VF5h) (lib/rattachement.ts). Une
+  // pièce payée, en tout ou en partie, n'est plus candidate : une pièce réglée par la part d'un virement groupé se
+  // laisserait sinon rapprocher d'un second mouvement. Les parts des virements mixtes viennent des ventes facturées lues
+  // en entier de CE dossier ; aucune pour un dossier qui n'a pas basculé — sans facture source, aucun mouvement n'est
+  // classé par ses encaissements —, ni tant qu'elles ne sont pas lues : l'onglet retient alors tout geste et tout lot
+  // (`retenueDuReleve`).
+  const encaissees = useMemo(() => (lectureVentes?.etat === 'lue' && lectureVentes.dossierId === dossierId
+    ? partsEncaissees(dossierId, lectureVentes.sources.encaissements, lectureVentes.sources, lectureVentes.sources.exemplaires)
+    : []), [lectureVentes, dossierId])
+  const paiements = useMemo(() => paiementsDesPieces(lignes, reglements, encaissees), [lignes, reglements, encaissees])
   const piecesRapprochees = useMemo(() => piecesPayees(paiements), [paiements])
   // UNE PIÈCE QU'UN LETTRAGE FAIT À LA MAIN SOLDE N'ATTEND PLUS DE MOUVEMENT BANCAIRE : en engagement, une facture lettrée
   // avec son avoir est réglée sans paiement. Comptée « sans mouvement », et surtout parmi les montants introuvables en

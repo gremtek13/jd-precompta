@@ -215,6 +215,9 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
   // La lecture des ventes facturées de CE dossier, ou rien ; lue entière, ses ventes, sinon nulles et le motif.
   const lectureVentesDuDossier = lectureDuDossier(lectureVentes, dossierId)
   const ventesLues = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
+  // Et ce que les virements mixtes paient de leurs exemplaires (étape VF5h), lu avec elles : une pièce qu'un tel virement
+  // paie se date par lui. Sans elles, aucune situation ne se calcule.
+  const encaissees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.encaissees : []
   // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (ligne 28.65) : ce que les trois états reçoivent des écritures des ventes
   // facturées, sur les lectures de CE dossier — la règle de Clôture (lib/ecrituresVentesFactureesEcran.ts,
   // `ecrituresDesVentesPourLa2035`). Un dossier basculé dont les sources ne sont pas revenues entières n'a pas de situation,
@@ -233,9 +236,9 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
   // Ce que le relevé ajoute sans pièce aux trois états — mouvements affectés, échéances d'emprunt, parts
   // ventilées (lib/partsDuReleve.ts) —, calculé une fois et passé aux trois fenêtres qui le comptent.
   const partsReleve = partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva)
-  // Les paiements de chaque pièce, parts des virements groupés comprises : ils datent les pièces des trois
-  // états comme dans la 2035.
-  const paiements = paiementsDesPieces(mouvementsRapproches, reglements)
+  // Les paiements de chaque pièce, parts des virements groupés et des virements mixtes comprises : ils datent les pièces
+  // des trois états comme dans la 2035.
+  const paiements = paiementsDesPieces(mouvementsRapproches, reglements, encaissees)
   // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance
   // (lib/cotisationRapprochee.ts) : la règle de la 2035, pour les trois états qui les comptent.
   const cotisationsDatees = cotisationsComptees(cotisations, mouvementsRapproches, modeComptable)

@@ -28,7 +28,7 @@ function leDossier(mode: ModeComptable, plan: PlanComptable) {
     dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
   })
   const etats = etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true })
-  const ca3 = calculerCa3({ pieces: [], paiements: paiementsDesPieces([], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventes }, Q4, false, 0, 0)
+  const ca3 = calculerCa3({ pieces: [], paiements: paiementsDesPieces([], [], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventes }, Q4, false, 0, 0)
   return { sources, brouillon, ventes, etats, ca3 }
 }
 
@@ -48,7 +48,7 @@ describe.each(PLANS)('un dossier basculé, de bout en bout — %s', (_, plan) =>
   it('en trésorerie : la 2035 concorde avec les écritures, au compte que la composition écrit', () => {
     const { sources, brouillon, ventes, etats } = leDossier('tresorerie', plan)
     expect(etats.etat === 'lus' && etats.sources.every((s) => s.etat === 'a_jour')).toBe(true)
-    const declaration = calculerDeclaration2035(2025, [], [], [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventes, { etat: 'composees', composition: composition(sources, 'tresorerie', plan) })
+    const declaration = calculerDeclaration2035(2025, [], [], [], [], [], true, paiementsDesPieces([], [], []), [], [], plan, ventes, { etat: 'composees', composition: composition(sources, 'tresorerie', plan) })
     // 100 € de F2025-0001 et 83,33 € des 100 € TTC encaissés de F2025-0002 ; l'avoir de F2025-0003, sans encaissement, rien.
     expect(declaration.totalRecettes).toBe(183.33)
     expect([...new Set(declaration.contributions.map((c) => c.compte))]).toEqual([plan.prestations_de_services])
@@ -86,12 +86,12 @@ describe.each(PLANS)('un dossier basculé, de bout en bout — %s', (_, plan) =>
     const { sources, brouillon, ventes } = leDossier('tresorerie', plan)
     const sansE2 = brouillon.filter((l) => l.encaissement_id !== 'e2')
     const etats = etatsDesVentesFacturees({ sources, brouillon: sansE2, mode: 'tresorerie', plan, anneesValidees: [], ventesParLesFactures: true })
-    const declaration = calculerDeclaration2035(2025, [], [], [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventes, { etat: 'composees', composition: composition(sources, 'tresorerie', plan) })
+    const declaration = calculerDeclaration2035(2025, [], [], [], [], [], true, paiementsDesPieces([], [], []), [], [], plan, ventes, { etat: 'composees', composition: composition(sources, 'tresorerie', plan) })
     const c = concordance2035(declaration, sansE2, {
       piecesValidees: new Set(), piecesImmobilisees: new Set(), mouvementsDesVentesFacturees: mouvementsClassesParEncaissements(sources.mouvements),
     }, null)
     expect(c.ecarts.map((e) => [e.cle, e.motif])).toEqual([['encaissement:e2', 'vente_facturee_non_ecrite']])
-    const ca3 = calculerCa3({ pieces: [], paiements: paiementsDesPieces([], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventes }, Q4, false, 0, 0)
+    const ca3 = calculerCa3({ pieces: [], paiements: paiementsDesPieces([], [], []), pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventes }, Q4, false, 0, 0)
     expect(enregistrement(ca3, etats)).toMatch(/l’encaissement du 21\/11\/2025 de la facture F2025-0002 .*\(à écrire\)/)
   })
 })
@@ -115,7 +115,7 @@ describe.each(PLANS)('les frais d’un mouvement d’encaissements, de bout en b
       dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
     })
     const declaration = calculerDeclaration2035(
-      2025, [], [FRAIS_BANCAIRES], [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventes, { etat: 'composees', composition: c },
+      2025, [], [FRAIS_BANCAIRES], [], [], [], true, paiementsDesPieces([], [], []), [], [], plan, ventes, { etat: 'composees', composition: c },
     )
     // Les lignes du compte des services bancaires que le brouillon porte, mouvement par mouvement, signées au débit.
     const ecritParMouvement = new Map<string, number>()
@@ -161,7 +161,7 @@ describe.each(PLANS)('la situation de l’année et la 2035 comptent les mêmes 
     const ecritures: EcrituresDesVentesDeLa2035 = { etat: 'composees', composition: composition(s, mode, plan) }
     return {
       situation: calculerSituationIntermediaire([], categories, [], [], '2025-01-01', '2025-12-31', true, new Map(), mode, [], ventes, plan, ecritures),
-      declaration: calculerDeclaration2035(2025, [], categories, [], [], [], true, paiementsDesPieces([], []), [], [], plan, ventes, ecritures),
+      declaration: calculerDeclaration2035(2025, [], categories, [], [], [], true, paiementsDesPieces([], [], []), [], [], plan, ventes, ecritures),
     }
   }
 

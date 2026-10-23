@@ -84,9 +84,9 @@ describe('calculerSituationIntermediaire', () => {
       piece({ id: 'sans-paiement', date_piece: '2026-01-20', montant_ttc: 7 }),
     ]
     const paiements = [paiement('janvier', '2026-02-03', -100), paiement('decembre', '2026-01-05', -40)]
-    const auJanvier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces(paiements, []), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
+    const auJanvier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces(paiements, [], []), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(auJanvier.charges).toBe(47)
-    const auFevrier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-02-28', true, paiementsDesPieces(paiements, []), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
+    const auFevrier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-02-28', true, paiementsDesPieces(paiements, [], []), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(auFevrier.charges).toBe(147)
   })
 
@@ -100,7 +100,7 @@ describe('calculerSituationIntermediaire', () => {
       libelle_brut: null, created_at: '2026-01-10T09:00:00Z', encaissements_de_factures: false,
     }
     const partielle = piece({ id: 'partielle', date_piece: '2025-12-15', montant_ttc: 200 })
-    const s = calculerSituationIntermediaire([partielle], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([acompte], []), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
+    const s = calculerSituationIntermediaire([partielle], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([acompte], [], []), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(s.charges).toBe(80)
   })
 
@@ -284,10 +284,10 @@ describe('calculerSituationIntermediaire — en engagement', () => {
       encaissements_de_factures: false,
     } satisfies LigneBancaire
     const janvier = (mode: 'tresorerie' | 'engagement') =>
-      calculerSituationIntermediaire([facture], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([paiement], []), mode, [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
+      calculerSituationIntermediaire([facture], [categorie], [], [], '2026-01-01', '2026-01-31', true, paiementsDesPieces([paiement], [], []), mode, [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(janvier('tresorerie').charges).toBe(300)
     expect(janvier('engagement').charges).toBe(0)
-    expect(calculerSituationIntermediaire([facture], [categorie], [], [], '2025-01-01', '2025-12-31', true, paiementsDesPieces([paiement], []), 'engagement', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE).charges).toBe(300)
+    expect(calculerSituationIntermediaire([facture], [categorie], [], [], '2025-01-01', '2025-12-31', true, paiementsDesPieces([paiement], [], []), 'engagement', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, SANS_BASCULE).charges).toBe(300)
   })
 })
 

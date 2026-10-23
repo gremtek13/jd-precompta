@@ -22,7 +22,7 @@ function etats(): Extract<EtatsDesVentes, { etat: 'lus' }> {
         option_debits: false, date_prestation: null, montant_ttc: 120,
       }],
       lignes: [{ facture_id: 'f1', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
-      encaissements: [], parts: [], mouvements: [],
+      encaissements: [], parts: [], mouvements: [], exemplaires: [],
     },
     brouillon: [], mode: 'engagement', plan: PLAN_PAR_DEFAUT, anneesValidees: [], ventesParLesFactures: true,
   })
@@ -61,7 +61,7 @@ describe('la section des ventes facturées, seule', () => {
           ligne_bancaire_id: null, annule_id: null, cree_le: '2025-11-20T10:00:00Z', retire_le: null, compte_contrepartie: '467100',
           cree_par: null,
         }],
-        parts: [{ encaissement_id: 'e1', dossier_id: 'd1', taux: 20, montant: 120 }], mouvements: [],
+        parts: [{ encaissement_id: 'e1', dossier_id: 'd1', taux: 20, montant: 120 }], mouvements: [], exemplaires: [],
       },
       brouillon: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT, anneesValidees: [], ventesParLesFactures: true,
     })

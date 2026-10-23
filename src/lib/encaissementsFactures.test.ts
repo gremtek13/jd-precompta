@@ -1211,8 +1211,10 @@ describe('les trois fonctions neuves du cabinet et la garde des mouvements, tell
       contre_passations_depassent: [MONTANT_SQL('abs(v_mouvement.montant)'), MONTANT_SQL('abs(v_total)')],
       origine_depassee: [MONTANT_SQL('v_origine.montant'), MONTANT_SQL('v_total')],
     }],
-    ['classer_mouvement_par_encaissements', REFUS_CLASSEMENT, 10, {
+    // Onze depuis la migration virement_mixte (étape VF5h) : le rang 7, l'exemplaire à désigner, et la facture qu'il nomme.
+    ['classer_mouvement_par_encaissements', REFUS_CLASSEMENT, 11, {
       frontiere: ['public.exercice_fige(p_dossier_id, extract(year from v_mouvement.date)::integer)'],
+      exemplaire_a_designer: ['v_numero'],
       credit_non_fait: [MONTANT_SQL('v_porte'), MONTANT_SQL('v_mouvement.montant')],
       credit_ecart: [MONTANT_SQL('v_porte'), MONTANT_SQL('v_mouvement.montant')],
       debit_depasse: [MONTANT_SQL('abs(v_porte)'), MONTANT_SQL('abs(v_mouvement.montant)')],
@@ -1947,18 +1949,19 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
   }
   const RESTES = [{ taux: 20, centimes: 120000 }, { taux: 5.5, centimes: 10550 }, { taux: 0, centimes: 5000 }]
   const ligne = (o: Partial<LignePayante>): LignePayante => ({
-    id: 'm1', piece_id: 'pj', date: '2027-10-15', montant: 1355.5, statut: 'rapprochee', reglement_groupe: false, ...o,
+    id: 'm1', piece_id: 'pj', date: '2027-10-15', montant: 1355.5, statut: 'rapprochee', reglement_groupe: false,
+    encaissements_de_factures: false, ...o,
   })
   const proposer = (
     mouvements: MouvementPropose[], lignes: LignePayante[], o: Partial<ContexteFacture> = {}, reglements: PartReglee[] = [],
-  ) => propositionsEncaissement(contexte({ transmissions: [T], ...o }), [JUMELLE], paiementsDesPieces(lignes, reglements), mouvements, AUJOURD_HUI, true, HIER)
+  ) => propositionsEncaissement(contexte({ transmissions: [T], ...o }), [JUMELLE], paiementsDesPieces(lignes, reglements, []), mouvements, AUJOURD_HUI, true, HIER)
 
   it('la jumelle reconnue par son identité seule propose son paiement comme jumelle, pas comme un crédit du relevé', () => {
     const parIdentite: PieceLue = {
       ...JUMELLE, flux_hote: null, flux_id: null,
       identite_numero: 'F2027-0042', identite_siren_vendeur: '123456782', identite_date: '2027-10-01', identite_nature: 'facture',
     }
-    const p = propositionsEncaissement(contexte(), [parIdentite], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI, true, HIER)
+    const p = propositionsEncaissement(contexte(), [parIdentite], paiementsDesPieces([ligne({})], [], []), [mouvement()], AUJOURD_HUI, true, HIER)
     expect(p.map((x) => [x.source, x.ligneBancaireId, x.piecesPayees])).toEqual([['jumelle', 'm1', ['pj']]])
   })
 
@@ -2005,7 +2008,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
 
   it('un crédit du relevé qui paie déjà une autre pièce se propose, et le dit', () => {
     // Le PDF de la même vente déposé à la main, rapproché de son virement : rien ne le relie à la facture émise.
-    const p = propositionsEncaissement(contexte(), [], paiementsDesPieces([ligne({ id: 'r', piece_id: 'pdf' })], []),
+    const p = propositionsEncaissement(contexte(), [], paiementsDesPieces([ligne({ id: 'r', piece_id: 'pdf' })], [], []),
       [mouvement({ id: 'r' })], AUJOURD_HUI, true, HIER)
     expect(p).toMatchObject([{ source: 'releve', ligneBancaireId: 'r', piecesPayees: ['pdf'] }])
     expect(propositionsEncaissement(contexte(), [], new Map(), [mouvement({ id: 'r' })], AUJOURD_HUI, true, HIER)[0].piecesPayees).toEqual([])
@@ -2092,7 +2095,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
       { ligne_bancaire_id: 'mg', piece_id: 'autre', montant: 1455.5 }, { ligne_bancaire_id: 'mg', piece_id: 'pj', montant: -100 },
     ])).toEqual([])
     // Sans la jumelle, le même crédit se propose depuis le relevé.
-    expect(propositionsEncaissement(contexte({ transmissions: [T] }), [], paiementsDesPieces([groupe], []), [mouvement({ id: 'mg' })], AUJOURD_HUI, true, HIER))
+    expect(propositionsEncaissement(contexte({ transmissions: [T] }), [], paiementsDesPieces([groupe], [], []), [mouvement({ id: 'mg' })], AUJOURD_HUI, true, HIER))
       .toMatchObject([{ source: 'releve', ligneBancaireId: 'mg' }])
     // Déjà enregistré pour cette facture : ni comme paiement de la jumelle, ni depuis le relevé.
     expect(proposer([mouvement()], [ligne({})], { encaissements: [encaissement({ ligne_bancaire_id: 'm1', montant: 100 })] })).toEqual([])
@@ -2123,7 +2126,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
     const soldee = contexte({ encaissements: [encaissement({ montant: 1355.5 })], parts: [part({ taux: 20, montant: 1200 }), part({ taux: 5.5, montant: 105.5 }), part({ taux: 0, montant: 50 })] })
     expect(propositionsEncaissement(soldee, [], new Map(), [mouvement({ id: 'r', montant: 1355.5 })], AUJOURD_HUI, true, HIER)).toEqual([])
     const rejetee = contexte({ transmissions: [{ ...T, etat: 'rejete' }] })
-    expect(propositionsEncaissement(rejetee, [JUMELLE], paiementsDesPieces([ligne({})], []), [mouvement()], AUJOURD_HUI, true, HIER)).toEqual([])
+    expect(propositionsEncaissement(rejetee, [JUMELLE], paiementsDesPieces([ligne({})], [], []), [mouvement()], AUJOURD_HUI, true, HIER)).toEqual([])
     const f19 = contexte({
       facture: facture({ montant_ht: 100, montant_tva: 19, montant_ttc: 119 }),
       lignes: [{ facture_id: 'f1', ordre: 1, designation: 'a', quantite: 1, prix_unitaire_ht: 100, taux_tva: 19 }],
@@ -2136,7 +2139,7 @@ describe('propositionsEncaissement — la pièce jumelle, puis le relevé ; rien
     const mouvements = [
       mouvement(), mouvement({ id: 'r1', montant: 1352.5 }), mouvement({ id: 'r2', montant: 1360 }), mouvement({ id: 'm2', montant: 300 }),
     ]
-    const props = propositionsEncaissement(c, [JUMELLE], paiementsDesPieces([ligne({}), ligne({ id: 'm2', montant: 300 })], []), mouvements, AUJOURD_HUI, true, HIER)
+    const props = propositionsEncaissement(c, [JUMELLE], paiementsDesPieces([ligne({}), ligne({ id: 'm2', montant: 300 })], [], []), mouvements, AUJOURD_HUI, true, HIER)
     // La jumelle d'abord, dans l'ordre de ses paiements ; puis le relevé.
     expect(props.map((p) => `${p.source}:${p.ligneBancaireId}`)).toEqual(['jumelle:m1', 'jumelle:m2', 'releve:r1', 'releve:r2'])
     for (const p of props) {

@@ -12,11 +12,11 @@ import BandeauLecturePartielle, { type AccordLecture } from '../../components/Ba
 import {
   ANNEES_ILLISIBLES, ETATS_DECLARANTS, FRONTIERE_JUGEE_PAR_LA_BASE, MOYENS_ENCAISSEMENT, REFUS_DECLARATION, centimesExacts,
   contrePassationDe, debitObligatoire, debitsCitables, echeanceDeDeclaration, encaissementsDeclares, frontiereJugeeParLaBase,
-  inclassableApresContrePassation, inclassableApresEnregistrement, obligationEncaissee, paireNonDeclaree, piecesJumelles,
-  plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement, refusContrePassationAvantLaDate,
+  inclassableApresContrePassation, inclassableApresEnregistrement, obligationEncaissee, paireNonDeclaree, partsEncaissees,
+  piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement, refusContrePassationAvantLaDate,
   refusContrePassationVente, refusDeLaFacture, refusDeclaration, refusEnregistrementVente, refusRetraitVente,
   repartitionProposee, resteAEncaisserVente,
-  type ContexteFacture, type ContexteVente, type DeclarationLue, type EncaissementLu, type EtatObligationEncaissee,
+  type ContexteFacture, type ContexteVente, type DeclarationLue, type EncaissementLu, type EtatObligationEncaissee, type ExemplaireLu,
   type EvenementSuperpdpLu, type FactureDuDossier, type LigneDeFacture, type MouvementPropose, type PartLue, type PieceLue,
   type ResteDuTaux, type SaisieEncaissement, type TransmissionLue, type TransmissionPourDeclaration,
 } from '../../lib/encaissementsFactures'
@@ -121,7 +121,8 @@ type EncaissementEcran = EncaissementLu & Pick<EncaissementFacture, 'date_encais
 type PartEcran = PartLue & { dossier_id: string }
 type MouvementEcran = MouvementPropose & LignePayante
 type ReglementEcran = PartReglee & { id: string }
-type PieceEcran = PieceLue & Pick<Piece, 'tiers' | 'nom_fichier'>
+// `statut` et `type_piece` : l'exemplaire unique et validé d'une facture que le virement mixte exige (étape VF5h).
+type PieceEcran = PieceLue & Pick<Piece, 'tiers' | 'nom_fichier' | 'statut' | 'type_piece'>
 type DeclarationEcran = DeclarationLue & Pick<TransmissionEncaissement, 'note' | 'cree_le' | 'cree_par'>
 type ExerciceLu = Pick<ExerciceValide, 'dossier_id' | 'annee'>
 
@@ -223,7 +224,7 @@ async function lireDonnees(
     gereLaBanque ? lireTout<PieceEcran>((debut, fin) =>
       // `facture_id` : la désignation du cabinet, la première preuve du pont (VF1a) — sans elle, le PDF désigné exemplaire de la
       // facture ne serait pas vu comme sa pièce, et sa proposition de mouvement manquerait.
-      supabase.from('pieces').select('id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature, facture_id, tiers, nom_fichier', { count: 'exact' })
+      supabase.from('pieces').select('id, dossier_id, flux_hote, flux_id, superpdp_invoice_id, identite_numero, identite_siren_vendeur, identite_date, identite_nature, facture_id, tiers, nom_fichier, statut, type_piece', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ) : pasLue<PieceEcran>(),
     // Les déclarations du DOSSIER, échouées et rejetées comprises : le module décide lui-même de ce qui compte.
@@ -314,6 +315,14 @@ function formulaireVierge(parTaux: readonly ResteDuTaux[], resteCentimes: number
 // Ce qu'une facture source demande de lire de plus (étape VF5b), tel que la lecture l'a rendu.
 function venteDe(lu: Pick<Lu, 'anneesValidees' | 'facturesDuDossier'>): ContexteVente {
   return { anneesValidees: lu.anneesValidees, factures: lu.facturesDuDossier }
+}
+
+// Les pièces désignées du dossier (étape VF1), lues avec le relevé, sous « Banque » : le virement mixte (étape VF5h) se juge
+// sur l'exemplaire unique et validé d'une facture qui n'est pas source — ce qu'un mouvement cité deviendrait, et ce qu'il
+// paie déjà.
+function exemplairesDe(lu: Pick<Lu, 'pieces'>): ExemplaireLu[] {
+  return lu.pieces.flatMap((p) => (p.facture_id == null ? []
+    : [{ id: p.id, dossier_id: p.dossier_id, facture_id: p.facture_id, statut: p.statut, type_piece: p.type_piece }]))
 }
 
 function contexteDe(dossierId: string, factureId: string, lu: Lu): ContexteFacture | null {
@@ -782,13 +791,21 @@ function Contenu({
   const crediteCentimes = avoirs.reduce((s, a) => s + Math.round(-a.montant_ttc * 100), 0)
   const attenduCentimes = Math.max(reste.resteCentimes - crediteCentimes, 0)
 
+  // Les paiements des pièces, ceux qu'un virement mixte fait à son exemplaire compris (étape VF5h).
+  const exemplaires = exemplairesDe(lu)
   const propositions = propositionsEncaissement(
-    contexte, lu.pieces, paiementsDesPieces(lu.mouvements, lu.reglements), lu.mouvements, aujourdHui, gereLaBanque, vente,
+    contexte, lu.pieces,
+    paiementsDesPieces(lu.mouvements, lu.reglements, partsEncaissees(contexte.dossierId, lu.encaissements, vente, exemplaires)),
+    lu.mouvements, aujourdHui, gereLaBanque, vente,
   )
   const saisie = formulaire ? saisieDe(formulaire) : null
   const refus = saisie ? refusEnregistrementVente(contexte, saisie, lu.mouvements, aujourdHui, gereLaBanque, vente) : null
-  // Le geste qu'accepte la base mais qui laisserait le mouvement cité inclassable (étape VF5b) : dit, jamais refusé.
-  const inclassable = saisie && refus == null ? inclassableApresEnregistrement(contexte, saisie, lu.mouvements, vente) : null
+  // Le geste qu'accepte la base mais qui laisserait le mouvement cité inclassable (étape VF5b) : dit, jamais refusé. Depuis
+  // l'étape VF5h, l'encaissement d'une facture qui n'est pas source sur un mouvement que ceux d'une facture source
+  // réservent aussi : son classement le compte, et exige son exemplaire.
+  const inclassable = saisie && refus == null
+    ? inclassableApresEnregistrement(contexte, saisie, lu.mouvements, vente, exemplaires)
+    : null
   const choisie = formulaire?.ligneBancaireId ? propositions.find((p) => p.ligneBancaireId === formulaire.ligneBancaireId) ?? null : null
   const moyen = formulaire ? MOYENS_ENCAISSEMENT.find((m) => m.moyen === formulaire.moyen) ?? null : null
   const echeanceSaisie = formulaire && formulaire.date !== '' ? echeanceDeDeclaration(formulaire.date, statutTva) : null
@@ -1406,7 +1423,7 @@ function EtapeContrePassation({
     etape.ligneBancaireId, lu.mouvements, gereLaBanque, vente,
   )
   const inclassable = refus == null
-    ? inclassableApresContrePassation(dossierId, e.id, lu.encaissements, etape.ligneBancaireId, lu.mouvements, vente)
+    ? inclassableApresContrePassation(dossierId, e.id, lu.encaissements, etape.ligneBancaireId, lu.mouvements, vente, exemplairesDe(lu))
     : null
   return (
     <div className="field etape-encaissement">

@@ -73,6 +73,10 @@ export const REECRITURES_CLIENT: readonly { de: string; vers: string }[] = [
   { de: "le cabinet retire d'abord ce classement", vers: "ton cabinet retire d'abord ce classement" },
   { de: "— retirer d'abord ce classement", vers: "— ton cabinet retire d'abord ce classement" },
   { de: "retirez d'abord celle-ci", vers: "retire d'abord celle-ci" },
+  // lib/encaissementsFactures.ts, le refus du rang 7 du classement (le virement mixte, étape VF5h) : la fenêtre le cite au
+  // client quand son geste laisserait un mouvement inclassable (`inclassableApres`) ; l'exemplaire d'une facture, c'est son
+  // cabinet qui le désigne.
+  { de: "Désignez d'abord l'exemplaire de la facture", vers: "Ton cabinet doit d'abord désigner l'exemplaire de la facture" },
   // lib/statutsLus.ts, `refusDuReleve` : l'identité ouverte sur la plateforme est celle de l'entreprise du client, et depuis
 
   // l'étape P4b il la relie lui-même, dans « Tes plateformes » (« Mes ventes »).

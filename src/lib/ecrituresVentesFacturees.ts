@@ -1,6 +1,8 @@
 import { referenceDuReleve } from './affectationBanque'
 import { auxiliaireDuTiers, type CompteAuxiliaire } from './engagement'
-import { centimesExacts, ecartDeFrais, justifieSonMouvement } from './encaissementsFactures'
+import {
+  centimesExacts, ecartDeFrais, factureSansExemplaire, justifieSonMouvement, type ExemplaireLu,
+} from './encaissementsFactures'
 import { formatDate } from './format'
 import type { PlanComptable } from './planComptable'
 import type { EcritureBrouillon, JournalCode, LigneBancaire, ModeComptable, SensEcriture } from './types'
@@ -60,6 +62,13 @@ import {
 // le 627 (`services_bancaires`) de l'écart des frais, sous le seuil min(2 %, 5 €) d'alignementBanque.ts que le registre
 // tient (`ecartDeFrais`) ; rien quand tout est du même jour et sans écart. Le 512 d'un mouvement fait exactement son
 // montant ; pour un débit (une contre-passation qui cite le mouvement qui a défait l'argent), les sens s'inversent.
+// LE VIREMENT MIXTE (étape VF5h ; VF2-Q2, selon VF5-Q2 : la manière A) : un mouvement qui porte aussi l'encaissement
+// d'une facture qui n'est pas source de sa vente s'écrit quand cette facture a son exemplaire unique et validé (étape
+// VF1) : la pièce de cette facture compte la vente, et écrit elle-même sa banque sur ce mouvement, à sa date
+// (lib/contrepartieBanque.ts) — comme un encaissement du même jour, quel que soit le jour du sien. La composition du
+// mouvement n'écrit donc que la part des factures sources — la banque de ce que leurs encaissements du même jour n'ont pas
+// porté, le 511 ou le 53 de ceux d'un autre jour — et les frais du tout, au 627. Sans cet exemplaire, ou avec plusieurs,
+// le mouvement ne s'écrit pas, et la facture est nommée (`mouvement_facture_non_source`).
 //
 // LA TVA ÉCRITE AU 44571 EST EXACTEMENT CELLE QUE LA CA3 COMPTE, à sa date : ce module ne décide pas où une TVA est
 // exigible, il lit les EXIGIBILITÉS du module des ventes facturées. Une part dont le module fait une exigibilité
@@ -97,6 +106,9 @@ export interface EntreesEcrituresVentes {
   /** Le compte de bilan choisi pour un encaissement par compensation (ou par un autre moyen sans mouvement), par
    *  l'identifiant de l'encaissement. Où la base le gardera est une question de VF4b. */
   comptesDeContrepartie: ReadonlyMap<string, string>
+  /** Les pièces désignées du dossier (`pieces.facture_id`, étape VF1), lues en entier, sans valeur par défaut : le virement
+   *  mixte ne s'écrit qu'avec l'exemplaire unique et validé de sa facture d'avant (étape VF5h). */
+  exemplaires: readonly ExemplaireLu[]
   /** Le modèle comptable du dossier, sans valeur par défaut. */
   mode: ModeComptable
   /** Le plan du dossier (lib/planComptable.ts) : chaque compte y est pris. */
@@ -146,7 +158,7 @@ export const LIBELLE_MOTIF_NON_ECRITE: Readonly<Record<MotifNonEcrite, string>> 
   compte_a_choisir: 'un encaissement par compensation, ou par un autre moyen sans mouvement, s’écrit sur un compte de bilan que le cabinet choisit, et il n’est pas encore choisi',
   compte_refuse: 'le compte de contrepartie choisi ne peut pas recevoir cet encaissement',
   mouvement_non_classe: 'le mouvement n’est pas encore classé par ses encaissements : son écriture attend ce classement',
-  mouvement_facture_non_source: 'le mouvement porte aussi l’encaissement d’une facture qui n’est pas source de sa vente : comment il s’écrit reste à concevoir (VF2-Q2)',
+  mouvement_facture_non_source: 'le mouvement porte aussi l’encaissement d’une facture qui n’est pas source de sa vente, sans son exemplaire unique et validé : désignez d’abord cet exemplaire',
   mouvement_vente_ecartee: 'le mouvement porte l’encaissement d’une facture que le module écarte',
   mouvement_ecart: 'les encaissements qu’il porte ne font pas le mouvement à l’écart des frais près',
 }
@@ -156,6 +168,9 @@ export interface SourceNonEcrite {
   source: SourceEcritureVente
   motif: MotifNonEcrite
   detail: string
+  /** Le numéro de la facture que la base nomme avec le motif — celle qui n'est pas source et n'a pas son exemplaire unique
+   *  et validé (`mouvement_facture_non_source`, étape VF5h) ; absent pour les autres motifs. */
+  facture?: string
 }
 
 export interface EcrituresDesVentesFacturees {
@@ -252,8 +267,11 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
   const dossierId = sources.dossierId
   const ventes = ventesFacturees(sources)
   const nonEcrites: SourceNonEcrite[] = []
-  const nonEcrite = (source: SourceEcritureVente, motif: MotifNonEcrite, precision?: string) =>
-    nonEcrites.push({ source, motif, detail: precision ? `${LIBELLE_MOTIF_NON_ECRITE[motif]} (${precision})` : LIBELLE_MOTIF_NON_ECRITE[motif] })
+  const nonEcrite = (source: SourceEcritureVente, motif: MotifNonEcrite, precision?: string, facture?: string) =>
+    nonEcrites.push({
+      source, motif, detail: precision ? `${LIBELLE_MOTIF_NON_ECRITE[motif]} (${precision})` : LIBELLE_MOTIF_NON_ECRITE[motif],
+      ...(facture === undefined ? {} : { facture }),
+    })
 
   const factures = new Map(sources.factures
     .filter((f) => f.dossier_id === dossierId && ventes.sources.has(f.id))
@@ -367,8 +385,11 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
     const justifies = citants.filter((e) => justifieSonMouvement(e, encaissements))
     if (!justifies.some((e) => factures.has(e.facture_id))) continue
     const source: SourceEcritureVente = { genre: 'mouvement', ligneBancaireId: m.id }
-    if (justifies.some((e) => !factures.has(e.facture_id))) {
-      nonEcrite(source, 'mouvement_facture_non_source')
+    // Le virement mixte (étape VF5h) : l'encaissement d'une facture qui n'est pas source ne retient plus le mouvement quand
+    // cette facture a son exemplaire unique et validé ; sinon la facture se nomme, comme la base la nomme.
+    const sansExemplaire = factureSansExemplaire(dossierId, m.id, encaissements, { factures: sources.factures }, entrees.exemplaires)
+    if (sansExemplaire !== null) {
+      nonEcrite(source, 'mouvement_facture_non_source', `facture ${sansExemplaire}`, sansExemplaire)
       continue
     }
     if (justifies.some((e) => ecartees.has(e.facture_id))) {
@@ -382,12 +403,13 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
       continue
     }
     // Ceux du même jour ont porté la banque eux-mêmes ; ceux d'un autre jour sont passés au 511 (au 53 pour des espèces),
-    // que le mouvement solde.
+    // que le mouvement solde. La pièce d'une facture qui n'est pas source porte elle-même sa banque sur ce mouvement, quel
+    // que soit le jour de son encaissement : comme un encaissement du même jour. Les frais sont ceux du tout.
     const solde = new Solde()
     let memeJour = 0
     for (const e of justifies) {
       const c = centimesExacts(e.montant)!
-      if (e.date_encaissement === m.date) memeJour += c
+      if (e.date_encaissement === m.date || !factures.has(e.facture_id)) memeJour += c
       else solde.ajouter(e.moyen === 'especes' ? plan.caisse : plan.valeurs_a_l_encaissement, -c, m.id)
     }
     const frais = total - montant

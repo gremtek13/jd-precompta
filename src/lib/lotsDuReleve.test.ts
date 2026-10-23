@@ -73,6 +73,7 @@ const LUE: VentesDuReleve = ventesDuReleve(true, D, {
       encaissement({ id: 'e2', facture_id: 'f2', montant: 480, ligne_bancaire_id: 'm-cls' }),
     ],
     mouvements: RELEVE,
+    exemplaires: [],
   },
 }, { etat: 'lus', comptes: [] })
 const HORS = mouvementsHorsDesLots(LUE)

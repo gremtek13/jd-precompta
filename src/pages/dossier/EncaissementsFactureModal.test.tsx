@@ -1579,6 +1579,38 @@ describe('EncaissementsFactureModal — les lectures neuves lues en partie n’o
   })
 })
 
+// ── LE VIREMENT MIXTE (chantier EC-Q3, étape VF5h) ─────────────────────────────────────────────────────────────────────
+//
+// Le crédit m1, de 1 955,50 €, porte déjà 600 € de la facture source F2027-0042 ; la fenêtre de F2027-0043, qui n'est pas
+// source, y enregistre son reste. Le classement compte alors cet encaissement, et exige l'exemplaire unique et validé de sa
+// facture : la fenêtre lit les pièces désignées avec le relevé, et le dit avant le clic, sans rien refuser.
+describe('EncaissementsFactureModal — le virement mixte : l’exemplaire de la facture d’avant (étape VF5h)', () => {
+  const RESERVE = encaissement({ id: 'es', facture_id: 'f1', montant: 600, ligne_bancaire_id: 'm1' })
+  const EXEMPLAIRE_F2 = { ...pieceEssai({ id: 'p2', facture_id: 'f2' }), statut: 'validee', type_piece: 'vente' }
+  const ouvrir = async (pieces: PieceEssai[]) => {
+    monter({
+      facture: NON_SOURCE, factures: [SOURCE], encaissements: [RESERVE], parts: [part({ encaissement_id: 'es' })],
+      mouvements: [mouvement({ id: 'm1', montant: 1955.5 })], pieces, mouvementImpose: 'm1',
+    })
+    await bouton()
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'virement' } })
+  }
+
+  it('son exemplaire désigné : les deux encaissements feront le crédit, rien ne se dit', async () => {
+    await ouvrir([EXEMPLAIRE_F2])
+    expect(champ('Montant encaissé (€)').value).toBe('1355,50')
+    expect(screen.queryByText(/ne pourra pas se classer/)).toBeNull()
+    expect(await bouton()).toHaveProperty('disabled', false)
+  })
+
+  it('sans lui : le rang 7 du classement, sous les mots de la base — et le geste reste offert', async () => {
+    await ouvrir([])
+    screen.getByText(/^Ce mouvement ne pourra pas se classer par ses encaissements : « Désignez d'abord l'exemplaire de la facture F2027-0043 : /)
+    expect(await bouton()).toHaveProperty('disabled', false)
+    expect(faux.rpcs).toEqual([])
+  })
+})
+
 describe('EncaissementsFactureModal — un mouvement IMPOSÉ par la fiche d’un crédit (étape VF5c)', () => {
   const choixDuMouvement = () => screen.queryByLabelText('Mouvement du relevé (facultatif)')
 

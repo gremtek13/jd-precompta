@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import { paiementsDesPieces, type PaiementsDesPieces, type PartReglee } from './rattachement'
+import { paiementsDesPieces, type LignePayante, type PaiementsDesPieces, type PartReglee } from './rattachement'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import type { LigneBancaire, Piece } from './types'
 
@@ -28,7 +28,10 @@ type Ligne = Pick<LigneBancaire, 'id' | 'montant' | 'statut' | 'reglement_groupe
 interface Copie {
   reglementsGroupesIncoherents: (l: readonly Ligne[], r: readonly PartReglee[]) => { ligne: Ligne; raison: string; montant: number }[]
   piecesPayeesEnTrop: (p: readonly Pick<Piece, 'id' | 'montant_ttc'>[], paiements: PaiementsDesPieces) => { piece: { id: string }; paye: number; enTrop: number }[]
-  paiementsDesPieces: typeof paiementsDesPieces
+  // La copie de l'Edge Function n'a que les deux premiers paramètres : elle ne connaît pas encore ce que les virements
+  // mixtes paient de leurs exemplaires (étape VF5h ; ses blocs se reprennent à l'étape VF9). Elle se confronte au module
+  // sans virement mixte, la seule forme qu'elle sache lire.
+  paiementsDesPieces: (lignes: readonly LignePayante[], reglements: readonly PartReglee[]) => PaiementsDesPieces
 }
 
 // Le bloc lit `seuilAlignement` et `paiementsDesPieces` du bloc copié de src/lib/rattachement.ts : on reprend
@@ -116,7 +119,7 @@ describe('agent-comptable / bloc RÈGLEMENT GROUPÉ (copie déployée)', () => {
     for (const [cas, pieces, lignes, parts] of CAS_EN_TROP) {
       // Chaque côté tire les paiements de SA copie de `paiementsDesPieces`.
       expect(formeEnTrop(deployee.piecesPayeesEnTrop(pieces, deployee.paiementsDesPieces(lignes, parts))), cas)
-        .toEqual(formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts))))
+        .toEqual(formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, []))))
     }
   })
 
@@ -132,7 +135,7 @@ describe('agent-comptable / bloc RÈGLEMENT GROUPÉ (copie déployée)', () => {
       'g:parts_sans_reglement:-900.00',
       'h:part_sans_piece:300.00',
     ])
-    const enTrop = CAS_EN_TROP.flatMap(([, pieces, lignes, parts]) => formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts))))
+    const enTrop = CAS_EN_TROP.flatMap(([, pieces, lignes, parts]) => formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, []))))
     expect(enTrop).toEqual(['fa:2000.00:1000.00', 'fa:1005.01:5.01', 'av:200.00:100.00'])
   })
 })
@@ -213,7 +216,7 @@ describe('le garde-fou du bloc RÈGLEMENT GROUPÉ sait encore échouer', () => {
     const [, pieces, lignes, parts] = CAS_EN_TROP.find(([n]) => n === nom)!
     return {
       la: formeEnTrop(copie.piecesPayeesEnTrop(pieces, copie.paiementsDesPieces(lignes, parts))),
-      ici: formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts))),
+      ici: formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, []))),
     }
   }
 
