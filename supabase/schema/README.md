@@ -455,6 +455,22 @@ production sans ses lignes de commentaire (61 813 caractères, reçus tels quels
 justes, et rien n'est resté en base. `rls.sql`, rejoué entier sur la réplique (46 lignes, 0 en faute, 43 mutations sur
 43), ne l'est pas en production : la migration ne crée ni ne change aucune policy.
 
+**Rejoué le 23/10/2026 après `impaye_non_declare`** (chantier EC-Q3, étape VF5d2), accordée par le cabinet. Appliquée
+par `apply_migration`, sans confirmation demandée (le texte ne porte ni suppression, ni `drop`, ni `truncate`), sous la
+version `20261023063657` ; son fichier a quitté la version PROVISOIRE `20261022230000` sous laquelle sa réplique l'avait
+éprouvée, et porte le texte appliqué, octet pour octet (13 951 caractères, aucun retour chariot) : sa ligne d'historique
+rend `2c1daa4697c23527f2d71c489f4e56f2`. 146 fichiers, 146 migrations, empreinte globale
+`c096ac1d6e2bcf64d3bf5ee3d438ec37` des deux côtés, aucune divergence. Le socle (80 instructions, `5d53eea2…`) et
+l'inventaire (2 122 objets, `b2666bf3…`) sont inchangés : la migration ne crée ni ne retire aucun objet, elle redéfinit
+`annuler_encaissement`, dont le corps en production est celui du fichier (`93cd70fc…`), son commentaire réécrit
+(`7721f9f6…`) et ses droits gardés. `signature.sql` : seule la famille « fonctions » change (191, `5a51f41d…` puis
+`d24edf75…`), et les neuf familles égalent celles de la réplique après la migration. L'essai
+`supabase/essais/ventesFacturees.sql`, rejoué en production sans ses lignes de commentaire (66 060 caractères, reçus
+tels quels, `7587424e…`), rend ses 187 verdicts justes, et rien n'est resté en base ; les trois autres essais du lot ne
+le sont que sur la réplique, les fonctions qu'ils éprouvent n'ayant pas changé, hors celle-ci. `rls.sql`, rejoué entier
+sur la réplique (46 lignes, 0 en faute, 43 mutations sur 43), ne l'est pas en production : la migration ne crée ni ne
+change aucune policy.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

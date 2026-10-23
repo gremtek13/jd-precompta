@@ -452,9 +452,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   « LA FICHE D'UN CRÉDIT CLASSE, RETIRE ET RATTACHE LES ENCAISSEMENTS D'UNE FACTURE ». VF5d le 22/10/2026, neutre : côté
   cabinet, la fiche d'un débit classe un débit réservé par ses contre-passations, retire ce classement, lui rattache une
   contre-passation enregistrée sans mouvement ou ouvre sur lui la contre-passation d'un encaissement déclaré (la fenêtre
-  des encaissements, ce débit imposé) → « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE ». Restent VF5d2 à VF9 — se
-  conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à
-  VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
+  des encaissements, ce débit imposé) → « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE ». VF5d2 le 23/10/2026
+  (VF5-Q1), neutre : l'encaissement jamais déclaré d'une facture source se contre-passe en citant le débit qui l'a
+  défait, et la paire ne se déclare pas — une migration accordée par le cabinet ; VF5D2-Q1 à Q3 faites sur la
+  recommandation → « L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ ». Restent VF5e à VF9 — se conçoivent les encaissements
+  de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2) ; à VF8, ce que
+  la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -779,13 +782,14 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   202 et la suite acceptent, un rejet l'emporte → « LES ÉCRANS DE LA FACTURE ÉLECTRONIQUE ».
 - **Les encaissements** : un REGISTRE, jamais déduit d'un rapprochement, par `enregistrer_encaissement` seule (plafonds
   sous verrou, montants NETS, le TTC par taux refait en base) ; déclaré, il se CONTRE-PASSE (motif obligatoire, datée du
-  décaissement) ; aucune écriture directe hors de la restauration (`encaissementsEcritures.test.ts`) → « LES
-  ENCAISSEMENTS D'UNE FACTURE ÉMISE ». **Sa fenêtre** juge par les fonctions de la vente, identiques à celles d'hier
-  pour une facture qui n'est pas source ; le client ne lit pas les exercices validés (`ANNEES_ILLISIBLES`, jamais une
-  liste vide) → « LA FENÊTRE DES ENCAISSEMENTS JUGE UNE FACTURE SOURCE ». **Sa déclaration** : sur la plateforme qui a
-  accepté la facture, une seule ACTIVE → « LA DÉCLARATION HORS APPLICATION ». **Son message** (`lib/cdarEncaissee.ts`,
-  CDAR D22B) : MDT-74 `false` ; un montant par `centimesExacts`, jamais `decimal` ; ce que l'annexe ne dit pas est un
-  paramètre sans défaut → « LE MESSAGE DU STATUT « ENCAISSÉE » ».
+  décaissement) ; jamais déclaré, celui d'une facture source aussi, en citant le débit qui l'a défait, et la paire ne se
+  déclare pas (`paireNonDeclaree` → « L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ ») ; aucune écriture directe hors de la
+  restauration (`encaissementsEcritures.test.ts`) → « LES ENCAISSEMENTS D'UNE FACTURE ÉMISE ». **Sa fenêtre** juge par
+  les fonctions de la vente, identiques à celles d'hier pour une facture qui n'est pas source ; le client ne lit pas les
+  exercices validés (`ANNEES_ILLISIBLES`, jamais une liste vide) → « LA FENÊTRE DES ENCAISSEMENTS JUGE UNE FACTURE
+  SOURCE ». **Sa déclaration** : sur la plateforme qui a accepté la facture, une seule ACTIVE → « LA DÉCLARATION HORS
+  APPLICATION ». **Son message** (`lib/cdarEncaissee.ts`, CDAR D22B) : MDT-74 `false` ; un montant par `centimesExacts`,
+  jamais `decimal` ; ce que l'annexe ne dit pas est un paramètre sans défaut → « LE MESSAGE DU STATUT « ENCAISSÉE » ».
 - **Le cycle de vie des factures émises** : relevé sur un clic, lu sans jamais deviner (`lib/cdarRecu.ts`), rattaché par
   l'identité de G1.42 (SIREN figé à la validation) — ce qui ne se rattache pas se dit et ne se garde pas ; un 210 ou un
   213 vaut refus ; le 601 se dit, son effet appartient à d6 → « LE CYCLE DE VIE DES FACTURES ÉMISES ». Libellés de la

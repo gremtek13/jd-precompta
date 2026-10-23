@@ -31993,3 +31993,193 @@ déploiement vert (fini à 22 h 46), et le site sert `index-BxAgbxt_.js`, le bun
 28.65 mise à jour, puis relue par empreinte (17 502 positions) ; les barres recomptées par requête, inchangées (186
 chantiers hors de la phase 7, dont 141 livrés ; 76 % et 82 %). La copie de travail de l'agent retirée, son travail
 entier dans `main`, recomposé ; la branche réalignée sur `main`.
+
+### 23/10/2026 — L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ — CHANTIER EC-Q3, VF5D2 (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF5d2 sur `d08440b` — l'arbre de `main` après VF5d, `5817fe4` —, en deux commits : la
+migration, le module, l'écran, leurs tests et les essais ; puis cette documentation. Créé :
+`supabase/schema/20261022230000_impaye_non_declare.sql`, sous une version PROVISOIRE — renommé à l'application
+`20261023063657_impaye_non_declare.sql`, texte inchangé. Modifiés : `encaissementsFactures.ts`,
+`encaissementsAffichage.ts`, `reglements.ts`, `mouvementsDesVentes.ts`, `EncaissementsFactureModal.tsx`,
+`FicheMouvement.tsx` ; des commentaires seuls dans `ventesDuReleveLecture.ts`, `ereporting.ts` et `BanqueTab.tsx` ; sept
+tests (`encaissementsFactures.test.ts`, `encaissementsVenteFacturee.test.ts`, `encaissementsAffichage.test.ts`,
+`reglements.test.ts`, `gestesDuDebit.test.ts`, `BanqueTab.gestesDuDebit.test.tsx`,
+`EncaissementsFactureModal.test.tsx`) ; quatre essais (`ventesFacturees.sql`, `transmissionsEncaissements.sql`,
+`encaissementsFactures.sql`, `ecrituresVentesFacturees.sql`). Ni policy, ni Edge Function ; en production, des SELECT
+sur le catalogue et des comptes, aucune valeur, aucune écriture : la migration n'y était pas encore appliquée. Le
+conteneur de la session a de nouveau redémarré dans la nuit, après le compte rendu de l'agent : la session l'a retrouvé
+sur le disque avec ses deux commits, les a relus et recomposés à la suite de `main` (la mise en ligne de VF5d en plus),
+et a rejoué sa barrière sous Node 22.23.3 sur la tête recomposée, le code de `2514e54` : `tsc -b --force` 0 ; lint 0
+erreur, les 63 avertissements d'avant ; `npm run test:fuseaux` 0, 449 fichiers et 13 669 tests sous Paris, UTC, New York
+et Auckland ; `npm run build` 0, `index-xXJ3jYYA.js`, le bundle de l'agent.)
+
+**LA DÉCISION** (VF5-Q1, tranchée le 22/10/2026 à 14 h 05, à la recommandation) : « contre-passer en citant le débit,
+même sans déclaration ». `annuler_encaissement` ne contre-passait qu'un encaissement DÉCLARÉ — son rang 6 : « Cet
+encaissement n'est pas déclaré : il se retire, sans contre-passation. » Le chèque revenu impayé d'un encaissement jamais
+déclaré — celui de toute facture à un particulier, qu'aucune plateforme ne reçoit, ou d'une facture dont le statut
+« Encaissée » n'était pas encore déclaré — n'avait d'issue que le retrait : il efface un fait (l'argent est venu, puis
+reparti), laisse le crédit et le débit à classer à la main, et devient impossible dès l'exercice validé, où le retrait
+d'un encaissement de facture source se refuse.
+
+**LA DÉLIMITATION.** Ce lot ne touche que la contre-passation de l'encaissement jamais déclaré d'une facture source, qui
+cite le débit qui l'a défait. Ni la déclaration (`declarer_encaissement_hors_application` refuse déjà, à son rang 5, la
+contre-passation d'un encaissement non déclaré), ni le retrait, ni les moteurs, ni les écritures, ni l'e-reporting, ni
+les candidats de VF5e, ni les mots d'aucun refus.
+
+**L'ÉTAT DE LA PRODUCTION, RELEVÉ LE 23/10/2026** (le catalogue et des comptes) : 145 migrations, empreinte globale
+`9783a976…` ; une seule `annuler_encaissement`, son corps celui du correctif « Banque » (`280da760…`, l'empreinte que la
+garde exige), son commentaire celui de VF2 (233 caractères, `7c5780de…`), exécutable par `authenticated` et
+`service_role`, jamais par l'anonyme ; aucun dossier basculé, aucune facture source, aucun encaissement, aucune
+déclaration ; trois accès, aucun ne porte « Ventes » ni « Banque ». La migration y est NEUTRE.
+
+**LA MIGRATION** `impaye_non_declare` (13 951 caractères, 14 267 octets, 219 lignes, md5
+`2c1daa4697c23527f2d71c489f4e56f2`) :
+- `create or replace` de la fonction, recopiée du fichier du correctif par un script, jamais retapée ; une seule
+  différence dans le corps : la condition du rang 6, `if not found then` devenue
+  `if not found and (p_ligne_bancaire_id is null or v_source is not true) then`, et son commentaire de quatre lignes.
+  Sans débit, ou pour une facture qui n'est pas source, le refus d'hier, sous les mêmes mots ; la source est lue avant
+  le rang 6, sous le verrou de la facture, comme hier ; le rang 7 (une issue inconnue) ne se rencontre pas sans
+  déclaration ; les rangs suivants — déjà contre-passé, la date, la frontière d'un exercice validé, le motif, les cinq
+  du débit — jugent ce cas comme les autres. Le corps neuf : 7 706 caractères, `93cd70fc…`.
+- Le commentaire de la fonction disait « Contre-passe un encaissement déclaré » et « La contre-passation se déclare à
+  son tour » : il dit désormais ce cas (380 caractères, `7721f9f6…`).
+- Une garde d'abord : la fonction à cinq paramètres en base, son corps celui du correctif au caractère près (les retours
+  chariot d'un collage écartés) — une seconde application, ou une fonction changée depuis, se refuse.
+  `create or replace` garde l'OID et les droits (éprouvé) ; rien n'est rejoué.
+- Le texte ne porte ni suppression, ni `drop`, ni `truncate`, ni barre oblique inverse : `apply_migration` ne devrait
+  pas attendre de confirmation (le correctif, de même forme, n'en a pas demandé).
+
+**LE MODULE ET L'ÉCRAN.**
+- `encaissementsFactures.ts` : `refusContrePassationVente` lève le rang 6 pour ce seul cas — une facture source que la
+  lecture a rendue, un débit cité —, une facture absente étant tenue pour non source (le refus d'hier, du côté fermé) ;
+  `refusContrePassation`, l'appel d'hier sans débit, est inchangé, et `REFUS_CONTRE_PASSATION` garde ses mots et son
+  ordre. Trois fonctions neuves : `debitObligatoire` (jamais déclaré, d'une facture source, l'encaissement ne se
+  contre-passe qu'en citant un débit), `refusContrePassationAvantLaDate` (ce que la base opposerait avant la date, le
+  débit restant à choisir : ce qui décide l'offre de « Contre-passer »), `paireNonDeclaree` (un encaissement que rien ne
+  déclare, qu'une contre-passation vivante et non déclarée annule, et cette contre-passation : rien à déclarer ; une
+  contre-passation déclarée défait la paire).
+- La pastille (`encaissementsAffichage.ts`) et la liste des règlements (`reglements.ts`, « non due », jugée sur le
+  registre entier) ne disent pas la paire « à déclarer » ; deux phrases, `PAIRE_NON_DECLAREE` et
+  `PAIRE_DECLAREE_AILLEURS`, sans tutoiement ni vouvoiement.
+- La fenêtre des encaissements offre « Contre-passer » à côté de « Retirer » à l'encaissement jamais déclaré d'une
+  facture source, quand le droit « Banque » et un débit libre du relevé le permettent ; sinon « Retirer » seul, et rien
+  à côté ne dit pourquoi. L'étape le dit avant le clic : retirer efface le fait, contre-passer le garde ; « Débit qui
+  défait l'encaissement (obligatoire) », « Choisir le débit… » ; tant qu'il manque, le refus du rang 6, sous les mots de
+  la base. La confirmation et le message de réussite disent que ni lui ni sa contre-passation ne se déclarent. Relue, la
+  paire ne dit ni « à déclarer » ni échéance ; l'encaissement garde « Déclaré sur la plateforme » quand la base
+  l'inscrirait, avec la phrase qui dit à quoi il sert.
+- La fiche d'un débit (`gestesDuDebit`, `FicheMouvement.tsx`) propose ces encaissements aussi — le jugement du module
+  les choisit, sans règle recopiée — et chaque candidat dit ce que devient sa déclaration (`DECLARATION_DU_CANDIDAT`) ;
+  la note générale suit.
+
+**CE QUE LA PAIRE DEVIENT AILLEURS — RIEN NE CHANGE.** Les moteurs (`ventesFacturees.ts` : la 2035, la CA3, la
+situation) ne lisent pas les déclarations : la contre-passation compte la recette et sa TVA en moins à sa date, comme
+toute contre-passation. Les écritures se composent et s'écrivent de même (`ecrire_vente_facturee` ; le contrôle 97 de
+`ecrituresVentesFacturees.sql`). L'e-reporting compte la contre-passation en moins parmi les paiements
+(`declarationDesPaiements`). Le message du statut « Encaissée » (`cdarEncaissee.ts`) ne naît que d'une déclaration : la
+paire n'en produit aucun.
+
+**LES CHOIX ÉCARTÉS.** D'autres mots au rang 6 pour une facture source sans débit : la seule différence voulue était la
+condition, et l'étape dit le débit obligatoire avant le clic (VF5D2-Q2). Fermer en base la déclaration de l'encaissement
+d'une paire : il a pu être déclaré sur la plateforme sans l'être ici, et sa contre-passation devrait alors se déclarer —
+la base doit pouvoir l'inscrire, et l'écran le dit (VF5D2-Q1). Offrir « Contre-passer » sans débit libre : la base le
+refuserait, l'étape n'aurait pas d'issue. Lever le rang 6 pour une facture qui n'est pas source : ni la réservation G2
+ni le débit cité n'y existent, et VF5-Q1 ne le demande pas. `v_source is not true` plutôt que `not v_source` : la forme
+fermée, équivalente tant que la source n'est jamais nulle.
+
+**LES PREUVES.**
+- La réplique : la grappe du correctif (PostgreSQL 16, UTF8, port 5512) ; sa base égale à la production —
+  `signature.sql`, les neuf familles ; l'historique, 145 migrations, `9783a976…`.
+- La migration appliquée comme l'outil l'aurait fait (une transaction, sa ligne d'historique) : la ligne rend
+  l'empreinte du fichier ; 146 migrations, `74ac4e71…` ; seule la famille « fonctions » change (191, `d24edf75…`) ; même
+  OID, mêmes droits, le commentaire neuf (celui de la production posé d'abord, sur une copie). La garde refuse une
+  seconde application, et une base sans le correctif ; rien n'y reste.
+- Les essais, chacun sur une copie fraîche, avant puis après la migration : `ventesFacturees.sql`, 187 contrôles, 10 en
+  faute avant (97, 97b à 97i et 97k, exactement), 0 après ; `transmissionsEncaissements.sql`, 130, 1 avant (51b), 0
+  après ; `ecrituresVentesFacturees.sql`, 176, 1 avant (97), 0 après ; `encaissementsFactures.sql`, 110, 0 avant comme
+  après (47d dit le refus d'hier). Les contrôles d'hier rendent, verdict et observation, ce qu'ils rendaient ; ceux qui
+  disent le refus d'hier (97j, 97l, 171 à 173, 36b, 47d) passent avant comme après. `statutsFacturesRecus.sql` et
+  `ventesClient.sql`, inchangés, rendent la même chose avant et après (sa faute 0c d'hier comprise). `rls.sql` entier :
+  46 lignes d'invariants, 0 en faute, 43 mutations sur 43, identique avant et après. Les textes sans commentaires,
+  envoyés en une requête sur la base d'après : 66 060 caractères (`7587424e…`), 79 631 (`e954cf7d…`), 62 259
+  (`9860ab48…`), 79 113 (`80ee2b0f…`), tous justes.
+- Quatorze mutations de la migration — la condition d'hier, chacun de ses deux termes retiré ou inversé, « ou » pour
+  « et », `found` pour `not found`, le refus retiré, sous un autre code ou d'autres mots, jugé après le rang 8 ou après
+  la date — : douze tuées, toutes par `ventesFacturees.sql` (le rang 6 jugé après le 8 survivait : 97l, ajouté, le
+  tue) ; deux équivalentes (`is false`, `not v_source`).
+- Les trois contrôles de l'export sur la réplique : sans le fichier, 145 et `9783a976…` des deux côtés ; avec lui, sous
+  sa version provisoire, 146 et `74ac4e71…` ; le socle (80, `5d53eea2…`) et l'inventaire (2 122, `b2666bf3…`) égaux et
+  inchangés — la migration ne crée aucun objet.
+- La suite comparée test par test, sous Paris : avant (`d08440b`) 449 fichiers et 13 640 tests, après 449 et 13 669 ;
+  aucun verdict changé ; deux tests renommés (« seul l'encaissement déclaré » ne vaut plus), vingt-neuf neufs : la
+  définition du correctif au caractère près hors de la condition, la condition et sa place, la migration (sa garde, le
+  commentaire, ni droits rejoués ni mot que le détecteur retiendrait) ; le module (le rang 6 levé, ses voisins,
+  `debitObligatoire`, l'offre, la paire) ; la pastille, les règlements ; la fiche d'un débit ; la fenêtre (l'offre et
+  ses conditions, l'étape, le refus tant que le débit manque, deux puis trois clics, la confirmation, la paire relue,
+  l'encaissement de la paire inscrit déclaré, la paire d'une facture qu'aucune plateforme n'a acceptée ou d'une vente à
+  un particulier, le débit imposé, le client avec et sans « Banque », sous ses mots). Vingt-six mutations du TypeScript
+  — le module, la pastille, les règlements, la fenêtre, la fiche d'un débit — : vingt-six tuées.
+- La barrière, sous le Node 22.23.3 de la CI, sur le code du premier commit (`d28875c`, l'arbre même où elle a tourné) :
+  `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les 63 avertissements d'avant (les mêmes, fichier et règle) ;
+  `npm run test:fuseaux` 0, 449 fichiers et 13 669 tests sous Paris, UTC, New York et Auckland ; `npm run build` 0
+  (`index-xXJ3jYYA.js`) ; le cache du dépôt principal intact.
+- Le banc (`outils/captures/debordements.mjs`, sous le même Node, le navigateur sans le mandataire) : 0 débordement à
+  390, 720, 1 024, 1 280 et 1 440 px, aux volets extrêmes (le panneau, la barre, les deux à 2 000 px) et dans les passes
+  du client (« Ventes » à 390 px ; « Ventes » et « Banque » à 390 et 1 440 px) ; aucun bouton de fenêtre recouvert (264
+  sondés dans 59 fenêtres au cabinet, 114 et 122 chez le client) ; la passe « fermé, barre à 2 000 » garde la seule
+  faute d'hier, un mot coupé dans `factures/clients-soins`, que VF5d rendait déjà. Ses visites mesurent la fiche d'un
+  débit et ses phrases neuves ; aucune ne montre encore la fenêtre d'un encaissement jamais déclaré.
+
+**CE QUI RESTAIT À LA SESSION, DANS L'ORDRE** (fait le même jour : « L'APPLICATION », ci-dessous). (1) Présenter la
+migration au cabinet ; sur son accord, l'appliquer par `apply_migration`, sous le nom `impaye_non_declare`, le texte du
+fichier tel quel — si l'outil attendait une confirmation, la faire coller avec sa ligne d'historique. (2) Renommer le
+fichier à la version posée, texte inchangé ; la ligne d'historique doit rendre `2c1daa4697c23527f2d71c489f4e56f2`.
+(3) Rejouer en production, sans leurs lignes de commentaire, `ventesFacturees.sql` (66 060 caractères, `7587424e…` : 187
+justes), `transmissionsEncaissements.sql` (79 631, `e954cf7d…` : 130), `ecrituresVentesFacturees.sql` (79 113,
+`80ee2b0f…` : 176) et `encaissementsFactures.sql` (62 259, `9860ab48…` : 110) ; rien ne doit rester. (4) `rls.sql` :
+aucune policy ne change, la réplique l'a rejoué entier. (5) Les trois contrôles de `supabase/schema/README.md` contre la
+production — 146 migrations ; socle 80, `5d53eea2…` ; inventaire 2 122, `b2666bf3…` — et leur passage noté dans ce
+README ; `signature.sql` : seule la famille « fonctions » doit changer (191, `d24edf75…`). (6) Le code peut partir avant
+comme après : sans la migration, la base refuse au rang 6 ce que la fenêtre offrirait, et aucun dossier n'a basculé.
+(7) CLAUDE.md : la migration dite appliquée, avec sa version (la puce d'EC-Q3, la règle des encaissements). (8) VF5D2-Q1
+à VF5D2-Q3 à la page des arbitrages.
+
+**L'APPLICATION, LE 23/10/2026.** Présentée au cabinet, qui l'a accordée. Appliquée par `apply_migration`
+(`impaye_non_declare`), le texte du fichier tel quel, sans confirmation demandée, sous la version `20261023063657`
+(8 h 36 à Paris) ; le fichier renommé à cette version, texte inchangé. Sa ligne d'historique rend une instruction de
+13 951 caractères, `2c1daa4697c23527f2d71c489f4e56f2`, l'empreinte du fichier ; 146 migrations. La fonction relue : le
+corps attendu (`93cd70fc…`), `security definer`, `search_path=public`, son commentaire neuf (380 caractères,
+`7721f9f6…`), exécutable par `authenticated` et `service_role`, jamais par l'anonyme. L'essai `ventesFacturees.sql`
+rejoué en production sans ses lignes de commentaire (66 060 caractères reçus, `7587424e…`, la copie envoyée) : 187
+verdicts justes, rien n'est resté en base. Les trois autres essais du lot (`transmissionsEncaissements.sql`,
+`ecrituresVentesFacturees.sql`, `encaissementsFactures.sql`) ne sont rejoués que sur la réplique : les fonctions qu'ils
+éprouvent n'ont pas changé, hors `annuler_encaissement`, que `ventesFacturees.sql` éprouve en production pour une
+facture source comme pour une autre (86, 93, 172). Les trois contrôles de l'export : 146 fichiers, 146 migrations,
+empreinte globale `c096ac1d6e2bcf64d3bf5ee3d438ec37` des deux côtés ; le socle (80 instructions, `5d53eea2…`) et
+l'inventaire (2 122 objets, `b2666bf3…`) égaux des deux côtés, inchangés. `signature.sql` : seule la famille
+« fonctions » change (191, `5a51f41d…` puis `d24edf75…`), et les neuf familles égalent celles de la réplique après la
+migration. `rls.sql` n'est pas rejoué en production : aucune policy ne change. VF5D2-Q1 à VF5D2-Q3 entrent à la page des
+arbitrages, faites sur la recommandation.
+
+**LES QUESTIONS** (tranchées ici à la recommandation, à la page des arbitrages depuis le 23/10/2026) :
+- VF5D2-Q1 — La base doit-elle refuser la déclaration de l'encaissement d'une paire ? Recommandé : non — il a pu être
+  déclaré sur la plateforme sans l'être ici ; l'inscrire rend sa contre-passation déclarable, et l'écran le dit sur sa
+  ligne.
+- VF5D2-Q2 — Le refus du rang 6, pour une facture source sans débit, garde-t-il ses mots d'hier (« il se retire, sans
+  contre-passation ») ? Recommandé : oui, pour l'instant — l'étape dit le débit obligatoire avant le clic ; d'autres
+  mots demanderaient une migration de plus et une ligne du module.
+- VF5D2-Q3 — Le client qui porte « Ventes » et « Banque » contre-passe-t-il aussi l'encaissement jamais déclaré de ses
+  factures sources ? Recommandé : oui — il contre-passe déjà, avec les mêmes droits, un encaissement déclaré en citant
+  un débit, et contre-passer garde le fait que son retrait effacerait ; le réserver au cabinet demanderait une autre
+  condition en base. Sans « Banque », il ne cite aucun débit (le rang 2), et le geste ne lui est pas offert.
+
+**À REVOIR.**
+- Le refus du rang 6 d'une facture source sans débit dit « il se retire, sans contre-passation » quand la
+  contre-passation reste possible avec le débit (VF5D2-Q2).
+- Le point 1 du § 8 de la conception de VF5 (l'impayé d'une facture source en BNC, la remise d'un exercice déjà
+  déclaré), qui va à l'expert-comptable, vaut désormais aussi pour l'encaissement jamais déclaré, celui d'une vente à un
+  particulier.
+- `ventesClient.sql`, contrôle 0c : sa faute d'hier, avant comme après la migration (l'attente des fonctions de la vente
+  restée aux huit des factures).
+- Le banc ne montre pas encore la fenêtre d'une facture source qui porte un encaissement jamais déclaré, ni la paire :
+  une visite du dossier d12 à ajouter, avec VF5e.
