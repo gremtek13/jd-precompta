@@ -47,6 +47,15 @@ export const ADRESSE_DE_RETOUR = 'https://compta.jdarnis.fr/'
 export const LONGUEUR_MINIMALE_MOT_DE_PASSE = 10
 
 /**
+ * Ce que bcrypt retient d'un mot de passe : 72 OCTETS (UTF-8), et non 72 caractères. Au-delà, le service d'authentification
+ * refuse en 400 `validation_failed`, en anglais, et les trois fonctions qui créent des comptes le rendaient en 500
+ * (défaut 23.5, question 23-Q5) ; elles le refusent désormais avant l'appel, comme les écrans (confronté par le test).
+ */
+export const LONGUEUR_MAXIMALE_MOT_DE_PASSE_EN_OCTETS = 72
+
+const octetsDe = (motDePasse: string): number => new TextEncoder().encode(motDePasse).length
+
+/**
  * Les sortes de caractères exigées, chacune avec les caractères qui la font, tels que le service les liste dans son
  * refus (message relevé le 10/10/2026, « Password should contain at least one character of each: … », que le test
  * recopie) : il en exige un de chaque jeu (`strings.ContainsAny`, supabase/auth, `checkPasswordStrength`). Un « é »
@@ -73,21 +82,29 @@ const SYMBOLES = SORTES_DE_CARACTERES.find((s) => s.sorte === 'un symbole')?.car
  */
 export const REGLE_DU_MOT_DE_PASSE = `Règle du projet : au moins ${LONGUEUR_MINIMALE_MOT_DE_PASSE} caractères, dont `
   + `${enumeration(SORTES_DE_CARACTERES.map((s) => s.sorte))} — l'un de ${[...SYMBOLES].join(' ')} `
-  + "(une lettre accentuée, « € » ou l'espace ne comptent pas)."
+  + "(une lettre accentuée, « € » ou l'espace ne comptent pas). "
+  + `Au plus ${LONGUEUR_MAXIMALE_MOT_DE_PASSE_EN_OCTETS} octets : une lettre accentuée ou « € » en compte plusieurs.`
 
 /**
  * Ce que la règle refuse d'un mot de passe, dit en français, ou null s'il la suit : jugé avant tout appel, il dit tout
- * ce qui manque d'un coup. La longueur se compte comme les trois fonctions la comptent (`password.length`) ; le service,
- * lui, compte des octets, toujours au moins autant : ce que l'écran laisse partir, la longueur du service l'admet.
+ * ce qui manque d'un coup. Le MINIMUM se compte comme les trois fonctions le comptent (`password.length`, des
+ * caractères) ; le service, lui, compte des octets, toujours au moins autant : ce que l'écran laisse partir, la longueur
+ * minimale du service l'admet. Le MAXIMUM se compte en octets, comme bcrypt : une lettre accentuée ou un symbole comme
+ * « € » en pèse plusieurs, et un mot de passe de 40 caractères peut déjà dépasser 72 octets.
  */
 export function refusDeLaRegle(motDePasse: string): string | null {
   const court = motDePasse.length < LONGUEUR_MINIMALE_MOT_DE_PASSE
+  const octets = octetsDe(motDePasse)
+  const long = octets > LONGUEUR_MAXIMALE_MOT_DE_PASSE_EN_OCTETS
   const manquantes = SORTES_DE_CARACTERES
     .filter(({ caracteres }) => ![...caracteres].some((c) => motDePasse.includes(c)))
     .map((s) => s.sorte)
-  if (!court && manquantes.length === 0) return null
+  if (!court && !long && manquantes.length === 0) return null
   const exigences = [
     ...(court ? [`faire au moins ${LONGUEUR_MINIMALE_MOT_DE_PASSE} caractères`] : []),
+    ...(long
+      ? [`faire au plus ${LONGUEUR_MAXIMALE_MOT_DE_PASSE_EN_OCTETS} octets (une lettre accentuée ou un symbole comme « € » compte pour plusieurs octets, et celui-ci en fait ${octets})`]
+      : []),
     ...(manquantes.length > 0 ? [`contenir ${enumeration(manquantes)}`] : []),
   ]
   return `Ce mot de passe ne suit pas la règle du projet : il doit ${exigences.join(', et ')}.`

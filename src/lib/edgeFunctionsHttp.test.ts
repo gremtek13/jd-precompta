@@ -596,6 +596,33 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     ]],
     scenario: 'un e-mail d’éléments intégrés seulement : comptés au journal, et rien de lu chez Resend, de téléchargé ni d’écrit',
   },
+  // UN MOT DE PASSE DE PLUS DE 72 OCTETS (23-Q5), dans chacune des trois fonctions qui créent des comptes : le contrôle
+  // oublié, compté en caractères, ou décalé d'un octet de part et d'autre.
+  ...['create-cabinet', 'create-team-member', 'create-client-access'].flatMap((slug): DefautPlante[] => {
+    const controle = '  if (new TextEncoder().encode(password).length > 72) {'
+    return [
+      {
+        slug, quoi: 'le maximum des 72 octets oublié',
+        remplacements: [[controle, '  if (false) {']],
+        scenario: 'un mot de passe de plus de 72 octets (84) : 400 en français avant tout appel au service, rien d’écrit, aucun compte cherché',
+      },
+      {
+        slug, quoi: 'le maximum compté en caractères et non en octets',
+        remplacements: [[controle, '  if (password.length > 72) {']],
+        scenario: 'un mot de passe de 39 caractères mais 74 octets : les lettres accentuées en pèsent deux : 400 en français avant tout appel au service, rien d’écrit, aucun compte cherché',
+      },
+      {
+        slug, quoi: 'le maximum décalé d’un octet vers le bas (72 refusé)',
+        remplacements: [[controle, '  if (new TextEncoder().encode(password).length > 71) {']],
+        scenario: 'un mot de passe de 72 octets n’est pas refusé par la fonction : il atteint le service',
+      },
+      {
+        slug, quoi: 'le maximum décalé d’un octet vers le haut (73 admis)',
+        remplacements: [[controle, '  if (new TextEncoder().encode(password).length > 73) {']],
+        scenario: 'un mot de passe de 73 octets, un de trop : 400 en français avant tout appel au service, rien d’écrit, aucun compte cherché',
+      },
+    ]
+  }),
 ]
 
 describe.each(DEFAUTS_PLANTES.map((d) => [`${d.slug} : ${d.quoi}`, d] as const))('défaut planté — %s', (_nom, defaut) => {

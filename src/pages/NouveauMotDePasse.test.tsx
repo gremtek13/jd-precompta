@@ -98,6 +98,26 @@ describe('NouveauMotDePasse', () => {
     expect(onTermine).not.toHaveBeenCalled()
   })
 
+  // 23-Q5 : le maximum de bcrypt, 72 OCTETS. Trente-neuf caractères pour soixante-quatorze octets : la limite est dite sous
+  // le champ, le refus se lit avant tout appel, et soixante-douze octets tout juste partent.
+  it('un mot de passe de plus de 72 octets ne part pas, même court en caractères : la limite est dite avant le clic, puis le refus', async () => {
+    const { onTermine } = monter()
+    expect(screen.getByText(REGLE_DU_MOT_DE_PASSE).textContent).toContain('Au plus 72 octets')
+    const trop = `${'é'.repeat(35)}Aa1!`
+    saisir(trop, trop)
+    fireEvent.submit(formulaire())
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Ce mot de passe ne suit pas la règle du projet : il doit faire au plus 72 octets (une lettre accentuée ou un symbole comme « € » compte pour plusieurs octets, et celui-ci en fait 74).',
+    )
+    expect(faux.appels).toEqual([])
+    expect(onTermine).not.toHaveBeenCalled()
+    const juste = `${'é'.repeat(34)}Aa1!`
+    saisir(juste, juste)
+    await act(async () => { fireEvent.submit(formulaire()) })
+    expect(faux.appels).toEqual([{ password: juste }])
+    expect(onTermine).toHaveBeenCalledTimes(1)
+  })
+
   it('le refus du service (une règle réglée autrement au tableau de bord) se dit en français, avec ce qui manque', async () => {
     faux.resultat = { data: { user: null }, error: new AuthWeakPasswordError('Password should be at least 12 characters.', 422, ['length']) }
     const { onTermine } = monter()

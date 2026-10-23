@@ -240,6 +240,22 @@ describe('EquipePage — la règle des mots de passe du projet', () => {
     expect(creations()).toHaveLength(1)
   })
 
+  // 23-Q5 : le maximum de bcrypt, 72 OCTETS (la fonction le rendait en 500 et en anglais). Trente-neuf caractères pour
+  // soixante-quatorze octets : l'écran dit la limite sous le champ, puis refuse avant tout appel.
+  it('un mot de passe de plus de 72 octets ne part pas, même court en caractères : la limite est dite avant le clic, puis le refus', async () => {
+    await ouvrir(`${'é'.repeat(35)}Aa1!`)
+    expect(screen.getByText(REGLE_DU_MOT_DE_PASSE).textContent).toContain('Au plus 72 octets')
+    await act(async () => { screen.getByRole('button', { name: 'Créer le compte' }).click() })
+    expect(creations()).toEqual([])
+    expect(screen.getByText(
+      'Ce mot de passe ne suit pas la règle du projet : il doit faire au plus 72 octets (une lettre accentuée ou un symbole comme « € » compte pour plusieurs octets, et celui-ci en fait 74).',
+    )).toBeTruthy()
+    // Soixante-douze octets tout juste : il part.
+    await act(async () => { fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: `${'é'.repeat(34)}Aa1!` } }) })
+    await act(async () => { screen.getByRole('button', { name: 'Créer le compte' }).click() })
+    expect(creations()).toHaveLength(1)
+  })
+
   it('le refus du service, traduit par la fonction (400), se dit tel quel, et le formulaire reste ouvert', async () => {
     const refus = refusDuMotDePasse(new AuthWeakPasswordError('Password is known to be weak and easy to guess, please choose a different one.', 422, ['pwned']))
     expect(refus).toMatch(/divulgués lors de fuites de données\.$/)
