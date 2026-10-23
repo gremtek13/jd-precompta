@@ -460,12 +460,16 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   recommandation → « L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ ». VF5e le 23/10/2026, neutre : les candidats du relevé —
   une facture source ouverte ou un encaissement sans mouvement pour un crédit libre, une contre-passation sans mouvement
   pour un débit, acceptés par les jugements de la base — mettent le crédit « à rapprocher » dans le lot des règles,
-  l'écartent des trois autres lots et se proposent en tête de sa fiche → « LES CANDIDATS DU RELEVÉ ». VF5g le
-  23/10/2026, neutre : « Ma banque » d'un client « Banque » et « Ventes » dit le mouvement que les encaissements de ses
-  factures classent ou réservent, et n'offre aucune pièce sur un réservé ; « Banque » seul, rien de plus (VF5-Q3) → « « MA
-  BANQUE » DIT LES ENCAISSEMENTS DE SES FACTURES ». Restent VF5f, VF5h et VF6 à VF9 — se conçoivent les encaissements de
-  factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a désigné, et quand : à VF6 (VF1A-Q2) ; à VF8, ce que la
-  simulation recevra dit aussi quelle pièce ignorer.
+  l'écartent des trois autres lots et se proposent en tête de sa fiche → « LES CANDIDATS DU RELEVÉ ». VF5f le
+  23/10/2026, neutre : la Checklist et la Révision disent, en « attention » jusqu'à VF7, les mouvements réservés à des
+  encaissements de factures, à classer (Banque), et les encaissements par un moyen du relevé sans mouvement (Factures,
+  vue « Règlements », que Banque ne liste pas) ; lues en partie, les ventes taisent les deux points et un bandeau le
+  dit ; un réservé ne se compte plus parmi les non rapprochées → « LA CHECKLIST ET LA RÉVISION DISENT LES MOUVEMENTS
+  RÉSERVÉS ET LES ENCAISSEMENTS SANS MOUVEMENT ». VF5g le 23/10/2026, neutre : « Ma banque » d'un client « Banque » et
+  « Ventes » dit le mouvement que les encaissements de ses factures classent ou réservent, et n'offre aucune pièce sur
+  un réservé ; « Banque » seul, rien de plus (VF5-Q3) → « « MA BANQUE » DIT LES ENCAISSEMENTS DE SES FACTURES ». Restent
+  VF5h et VF6 à VF9 — se conçoivent les encaissements de factures non sources que VF2-Q2 et EC3-Q9 font compter ; qui a
+  désigné, et quand : à VF6 (VF1A-Q2) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;

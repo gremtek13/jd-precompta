@@ -32523,3 +32523,140 @@ relevé seul) plutôt que de se taire ; le registre lu dans une seconde vague, a
   cabinet l'écarte.
 - Le banc ne montre toujours pas la paire de VF5d2 (l'encaissement jamais déclaré et sa contre-passation) : elle
   demande des lignes de plus au dossier basculé, que les visites du cabinet verraient aussi ; laissée à VF5f.
+
+### 23/10/2026 — LA CHECKLIST ET LA RÉVISION DISENT LES MOUVEMENTS RÉSERVÉS ET LES ENCAISSEMENTS SANS MOUVEMENT — CHANTIER EC-Q3, VF5F (LIGNE 28.65)
+
+(Écrite par l'agent dev du lot sur `08182b3` — VF5e, la demande de fusion #213, pas encore dans `main` —, en deux
+commits : le code et ses tests, puis cette documentation. Créés : `ventesDeLaChecklist.ts` et son test. Modifiés :
+`pointsDeLaChecklist.ts`, `checklistLecture.ts`, `mouvementsDesVentes.ts` (une fonction extraite, rien de changé),
+`revisionCycles.ts`, `ChecklistTab.tsx`, `RevisionTab.tsx`, `DossierDetail.tsx`, le banc (`fauxSupabase.ts`, par ajout
+seulement ; `debordements.mjs`), et six tests. Ni base, ni migration, ni policy, ni Edge Function ; rien de l'espace du
+client (VF5g, en même temps dans une autre copie). En production, des comptes seulement, le 23/10/2026 : aucun dossier
+basculé, aucune facture source, aucun encaissement, aucun mouvement classé par ses encaissements. Le lot y est NEUTRE.)
+
+**LA DÉLIMITATION.** La puce VF5f du § 5 de la conception (« VF5, LA BANQUE : LA CONCEPTION ») et le point (i) de son
+§ 4 : la Checklist ne disait ni le mouvement réservé ni l'encaissement sans mouvement. Deux points en « attention »
+jusqu'à VF7, qui les rendra préalables (conception d'EC-Q3, § 11 : bloquant pour un virement ou un prélèvement, une
+information pour un chèque, un effet ou une carte). Rien de VF5g (« Ma banque »), de VF5h (le virement mixte), ni de
+VF7.
+
+**LE MODULE** (`ventesDeLaChecklist.ts`, pur). `ventesDeLaChecklist(lecture, frontiere)` : sans objet (le dossier n'a
+pas basculé : rien de lu de plus), incomplète (le motif ; une lecture qui dit un dossier et porte les sources d'un autre
+l'est aussi), ou lue — et alors deux listes, aucune règle recopiée :
+- les mouvements RÉSERVÉS : l'état que l'onglet Banque leur donne (`ventesDuReleve`, VF5a1, tiré du refus de la garde
+  G2), dans l'ordre du relevé, crédits comme débits (un débit que cite une contre-passation l'est aussi, comme dans
+  « Écarts à vérifier ») ;
+- les encaissements SANS MOUVEMENT : la liste même des candidats de VF5e, extraite de `candidatsDeLaVente` en
+  `encaissementsEnregistresSansMouvement` (`mouvementsDesVentes.ts` : non retirés, de factures sources, que rien ne dit
+  « n'avoir pas eu lieu »), réduite aux encaissements proprement dits — une contre-passation n'en est pas un, et sans
+  mouvement elle dit, pour la base, que l'encaissement n'a pas eu lieu — et aux moyens du relevé (`MOYENS_DU_RELEVE` :
+  virement, prélèvement, chèque, carte, effet). Les espèces, la compensation et « autre » n'attendent pas de mouvement.
+  L'encaissement d'un chèque revenu impayé, dont la contre-passation cite le débit, attend toujours le crédit de sa
+  remise : il se compte.
+
+Ni l'un ni l'autre d'un exercice figé (`estFigee`, la frontière) : rien ne les classe ni ne les rattache plus. Le
+mouvement réservé se juge à SA date. `detailDesEncaissementsSansMouvement` nomme chacun — facture, moyen, date,
+montant —, six au plus, et dit où les trouver.
+
+**LES POINTS** (`pointsDeLaChecklist.ts`, après « lignes non rapprochées »). `DonneesDeLaChecklist` gagne un champ
+OBLIGATOIRE, `ventesFacturees` (nul pour un dossier qui n'a pas basculé). `mouvements-reserves` : « mouvement(s)
+réservé(s) à des encaissements de factures, à classer », « Classer ces mouvements », cible `banque`, son détail (le
+filtre « Non rapprochés », la pastille « Réservé à l'encaissement de la facture … », la fiche qui classe).
+`encaissements-sans-mouvement` : « encaissement(s) de factures par virement, prélèvement, chèque, carte ou effet sans
+mouvement du relevé », « Voir ces règlements », cible `factures`, son détail. Et un mouvement réservé ne se compte plus
+parmi les « ligne(s) bancaire(s) non rapprochée(s) » : la règle de VF5a2 (« un mouvement réservé n'est pas non
+rapproché », `comptesDuReleve`), qui évite de le compter deux fois dans les anomalies ; figé, il y reste comme hier ;
+sur une lecture incomplète, tout y reste.
+
+**LA CIBLE DE CHAQUE POINT, VÉRIFIÉE.** Le mouvement réservé se voit dans l'onglet Banque : sous « Non rapprochés », sa
+pastille (VF5a1), et sa fiche le classe (VF5c, VF5d) — cible `banque`, celle de la conception. L'encaissement sans
+mouvement, NON : l'onglet Banque ne le liste nulle part — il ne paraît que dans la fiche d'un crédit libre, en tête s'il
+est désigné (VF5e) ou dans la liste « Rattacher un encaissement enregistré sans mouvement » (VF5c). La conception lui
+donnait `banque` ; un point qui y mènerait annoncerait un nombre qu'aucune liste ne montre. La vue « Règlements » de
+l'onglet Factures, si : une ligne par encaissement, sa colonne « Mouvement » (« — » quand il n'en a pas), le filtre
+« Moyen ». Le point y mène donc (`factures` ; le bouton ouvre l'onglet sur sa vue « Factures », d'où le détail nomme
+« Règlements »), et son détail nomme les factures et dit que le crédit qui en porte un se rattache depuis sa fiche, dans
+Banque — remis d'abord à traiter s'il a été ignoré (le cas de l'« À REVOIR » de VF5e, qu'il dit désormais) —, et qu'un
+chèque remis pas encore crédité attend son mouvement à bon droit.
+
+**LA LECTURE** (`checklistLecture.ts`). `lireLaChecklist(dossierId, ventesParLesFactures)`, le second paramètre
+obligatoire : basculé, elle lit aussi `lireLesSourcesDesEcrituresDeVente` (la lecture de l'onglet Écritures et de
+l'onglet Banque, tout ou rien, gardée avec le dossier), dans le même `Promise.all`. Elle rend la lecture
+(`ventesFacturees`) et son motif À PART (`ventesIncompletes`) : seuls les deux points se taisent, le bandeau général
+(« Les données du dossier ») n'en dit rien. Un dossier qui n'a pas basculé ne lit rien de plus.
+
+**LA VUE D'ENSEMBLE** (`ChecklistTab.tsx`). La prop obligatoire `ventesParLesFactures`, de `DossierDetail` ; l'onglet se
+relit quand elle change. Un bandeau, « Les ventes facturées du dossier n'ont pas pu être lues en entier (…) », dit que
+les deux points se taisent et que les lignes non rapprochées comptent peut-être des mouvements réservés. Aucun geste
+neuf, aucun verrou neuf.
+
+**LA RÉVISION** (`revisionCycles.ts`, `RevisionTab.tsx`). `mouvements-reserves` va à la trésorerie,
+`encaissements-sans-mouvement` aux recettes. L'onglet lisait déjà ces sources pour sa revue analytique (les frais d'un
+mouvement d'encaissements, VF4C3-Q1) ; il les prend désormais de la lecture de la Vue d'ensemble — une lecture que deux
+écrans comptent s'écrit une fois. Incomplète, elle ne cache pas la révision (VF3b1 voulait que les soldes et les cycles
+demeurent, et un test le garde) : un bandeau sous l'en-tête dit que les cycles Trésorerie et Recettes ne disent ni l'un
+ni l'autre, et la revue garde le sien.
+
+**LES PRÉALABLES.** `prealablesValidation.test.ts` tient les deux points en « attention », hors des points en erreur, ni
+repris ni écartés par `POINTS_DE_LA_CHECKLIST_ECARTES` : le jour où VF7 les reprend, ce test tombe et se réécrit avec
+elle.
+
+**LE BANC.** Le dossier basculé (d12) reçoit, par `push` seulement (VF5g ajoute au banc dans le même temps), une
+huitième facture source, F2026-0028 (90 €), à une particulière — aucune plateforme ne la reçoit (VF5-Q1) —, son chèque
+enregistré sans mouvement et JAMAIS déclaré, contre-passé en citant le débit de son retour (b10, `RETOUR CHEQUE IMPAYE
+REMISE 0061`), qui reste réservé. Deux visites neuves, avant celles de l'e-reporting :
+`factures-basculees/paire-non-declaree` (la fenêtre des encaissements de F2026-0028 : l'encaissement « Contre-passé »,
+la phrase de la paire, la contre-passation et son mouvement ; l'« À REVOIR » de VF5d2 et de VF5e), mesurée contre sa
+carte ; `checklist-basculee/vue-d-ensemble` (« 3 mouvement(s) réservé(s) » — b2, b7, b10 —, « 5 encaissement(s) … sans
+mouvement du relevé » — les chèques de F2026-0023, F2026-0024, F2026-0025, F2026-0028, le virement de F2026-0026 ; celui
+de F2026-0027, que sa contre-passation sans mouvement dit n'avoir pas eu lieu, non —, et « 5 ligne(s) bancaire(s) non
+rapprochée(s) » au lieu de huit). Les visites d'avant de d12 en voient un peu plus (un débit réservé de plus au relevé,
+un encaissement de plus à rattacher). `debordements.mjs`, sous le Node 22.23.3, le navigateur sans le mandataire : 0 à
+390, 720, 1 024, 1 280 et 1 440 px, et aux volets extrêmes (panneau 2 000, barre 2 000, les deux), 0 bouton recouvert
+sur 282 sondés dans 61 fenêtres à chaque passe ; la passe « panneau fermé, barre 2 000 » à 0 (la faute d'avant, corrigée
+par #212, n'y est plus) ; les passes du client — « Ventes » à 390 px (114 boutons, 29 fenêtres), « Ventes » et
+« Banque » à 390 et 1 440 px (122, 31) — à 0. Joué par une copie du script qui ne diffère du fichier commité que par son
+adresse (le port 5299 ; le 5199 est à la session), à côté d'un lien vers le Playwright de l'environnement, sans rien
+installer ; le serveur arrêté par son PID. La Vue d'ensemble (1 440 et 390 px) et la fenêtre de la paire (1 440 px)
+relues à l'œil.
+
+**LES PREUVES.**
+- La suite comparée test par test, sous Paris : avant (`08182b3`) 451 fichiers et 13 716 tests ; après 452 fichiers et
+  13 747 tests ; aucun verdict changé ni disparu, 31 tests neufs (le module 17, `ventesDeLaChecklist.test.ts` : la
+  lecture sans objet, incomplète, mêlée ; le réservé crédit et débit, classé, d'une facture d'avant, retiré, figé à la
+  frontière exacte, d'un autre dossier ; chaque moyen, rattaché, retiré, d'avant, d'un autre dossier, la
+  contre-passation, l'encaissement qui n'a pas eu lieu, le chèque impayé, figé ; le détail et ses six ; les deux points,
+  leurs cibles, leurs sévérités, les non rapprochées, l'incomplète, le dossier non basculé. L'écran 7,
+  `ChecklistTab.test.tsx` : les deux points, leurs détails, leurs pastilles, leurs boutons ; lues en partie et
+  refusées ; non basculé, aucune lecture de plus ; basculé, les lectures ; le basculement onglet ouvert ; l'exercice
+  validé. La révision 4, `RevisionTabRevueAnalytique.test.tsx` : chaque point sous son cycle, le dossier non basculé, le
+  registre refusé — le bandeau, les cycles qui demeurent. `ecransAvantLecture.test.tsx` 2, « ChecklistTab (basculé) »
+  sous ses deux gardes ; `prealablesValidation.test.ts` 1). Les tests d'avant ne reçoivent que la prop (`false`),
+  `ventesFacturees: null` dans une fabrique, les deux identifiants dans la table des cycles de `revisionCycles.test.ts`,
+  et le relevé des tables lues dans le faux client de `ChecklistTab.test.tsx`.
+- Mutations : 30 ; au premier passage, 28 tuées, une survivante — le repli `?? ''` de la date d'un mouvement réservé,
+  inatteignable (le mouvement vient du relevé lu) : équivalente ; le code réécrit pour juger chaque mouvement à sa
+  propre date, sans repli, et la mutation qui le jugerait à la date de son encaissement est tuée —, et une dont le motif
+  se trouvait deux fois, reprise et tuée. Le module 11, les points 5, `mouvementsDesVentes.ts` 3, la lecture 3, la Vue
+  d'ensemble 3, la révision 3, les cycles 2.
+- La barrière, sous le Node 22.23.3 de la CI, sur le code du premier commit (`64a2b4a`) : `npx tsc -b --force` 0 ;
+  `npm run lint` 0 erreur, les 63 avertissements d'avant ; `npm run build` 0 (`index-BSdQQdGi.js`) ; `npm run test:fuseaux` 0, 452
+  fichiers et 13 747 tests sous Paris, UTC, New York et Auckland.
+
+**CE QUI EST TRANCHÉ, ET CE QUI EST POSÉ.** Posé par ce lot, sans question au cabinet : la cible du point des
+encaissements sans mouvement est l'onglet Factures, et non Banque (ci-dessus) ; une contre-passation sans mouvement ne
+se compte pas ; un mouvement réservé ne se compte plus parmi les lignes non rapprochées ; ni l'un ni l'autre d'un
+exercice figé ; une lecture incomplète ne cache pas la révision, elle tait deux points et le dit ; la révision prend ses
+sources de vente de la lecture de la Vue d'ensemble. Aucune question nouvelle.
+
+**À REVOIR.**
+- Une contre-passation enregistrée sans mouvement attend peut-être le débit de son impayé (VF5d : « à rattacher ») — ou
+  dit que l'encaissement n'a pas eu lieu. Rien ne les distingue en base ; aucun point ne la dit (le chèque de F2026-0027
+  au banc).
+- Le bouton « Voir ces règlements » ouvre l'onglet Factures sur sa vue « Factures » : le détail nomme « Règlements »,
+  mais la vue ne s'ouvre pas d'elle-même, et la liste n'a pas de filtre « sans mouvement ». Les deux tiendraient dans un
+  lot de l'onglet Factures.
+- Les deux points comptent tout le dossier, tous exercices non figés ; la Vue d'ensemble ne dit pas de quelle année ils
+  sont, l'onglet Banque s'ouvre sur l'exercice choisi.
+- Le détail du mouvement réservé ne nomme pas ses factures (le point des encaissements, si) : la pastille de l'onglet
+  Banque les nomme.
