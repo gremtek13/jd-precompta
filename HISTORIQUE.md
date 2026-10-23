@@ -33419,3 +33419,94 @@ piste d'audit fiable entre une facture et l'opération qui la fonde), à vérifi
 migration. Lus : les migrations `20261018142041_exemplaires_des_factures.sql` et
 `20261018201312_source_de_la_vente.sql`, le catalogue de la production. Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont
 été ni lues ni citées.
+
+### 23/10/2026 — LE BROUILLON ET LES PRÉALABLES IGNORENT L'EXEMPLAIRE D'UNE FACTURE SOURCE — CHANTIER EC-Q3, VF6A (LIGNE 28.65)
+
+(Écrite par l'agent architecte, en deux commits : le code et ses tests (`9b67f08`), puis cette documentation. La
+spécification : la puce VF6a du § 5 de « VF6, LA JUMELLE INVERSÉE : LA CONCEPTION », et son § 2. Ni base, ni migration,
+ni policy, ni Edge Function ; aucun des quatre modules de VF5h (`rattachement.ts`, `encaissementsFactures.ts`,
+`ecrituresVentesFacturees.ts`, `ecritureVenteFacturee.ts`) ; dans `EcrituresTab.tsx`, le paramètre neuf et ce que le
+motif neuf exige, rien d'autre. En production, lu le 23/10/2026 par des comptes : quatre dossiers, aucun basculé, aucune
+facture source, aucune pièce désignée, aucune écriture sur un exemplaire. Le lot y est NEUTRE.)
+
+**LE TROU.** Les moteurs de la 2035, de la CA3, de la situation et de l'estimation écartaient l'exemplaire d'une facture
+source depuis VF3b ; rien d'autre ne le connaissait. « Générer les écritures manquantes » l'aurait écrit au brouillon à
+côté des écritures de sa facture (VF4) — la vente deux fois au FEC, à la balance et au bilan —, et les préalables de la
+validation l'auraient jugé comme une pièce qui compte : son écriture, sa catégorie, sa conversion, sa TVA, son paiement.
+
+**CE QUI CHANGE.**
+- **Une règle, un module** (`lib/facturesSources.ts`) : `exemplaireDUneSource` (la pièce désignée à une facture ou un
+  avoir source), `horsDesExemplairesDesSources`, `exemplairesDesSources` (les pièces, par identifiant) et
+  `facturesSourcesDe` (validées et sources, le filtre de la base refait). `exemplaireDUneFactureSource`
+  (`ventesFacturees.ts`) lui délègue : les moteurs de VF3b et le brouillon lisent le même prédicat.
+- **Le paramètre**, OBLIGATOIRE et sans défaut — les identifiants des factures sources (`VentesFacturees.sources`) —,
+  dans `piecesAComptabiliser`, `ecrituresSansObjet`, `piecesValideesSansCategorie` et `piecesDeviseNonConvertie`.
+  `analyserEcritures` ne reçoit pas de pièces : il prend les pièces exemplaires qu'on en tire (`exemplairesDesSources`),
+  dont il ne dit l'écriture ni « sans contrepartie » ni « déséquilibrée » — elle est sans objet, et se dit là. Un
+  `@ts-expect-error` par fonction (`facturesSources.test.ts`) refuse qu'un défaut s'y glisse.
+- **`ecrituresSansObjet`, un motif neuf**, `exemplaire_d_une_facture_source`, lu avant tous les autres (sa catégorie,
+  son bien ou son montant ne décident plus de rien). Toutes ses lignes ouvertes sont sans objet, sa banque et son tiers
+  compris (`nbLignes` les compte ; le montant reste ce que le produit compte en trop, banque et tiers ôtés) ; un
+  exemplaire dont il ne reste qu'une ligne de banque ou un règlement se dit aussi, après les autres, sans montant —
+  l'ordre d'hier tient. Une ligne figée par la validation ne se dit pas, comme pour les autres motifs.
+- **La Checklist** (`pointsDeLaChecklist.ts`) : `DonneesDeLaChecklist.facturesSources`, que `checklistLecture.ts` tire
+  de sa lecture des factures émises — la même que le pont, une colonne de plus (`source_de_la_vente`) ; lue en partie,
+  `lectureIncomplete` le dit déjà. Les points du brouillon (à régénérer, sans objet, sans contrepartie, déséquilibrées),
+  `sans-categorie`, `devise-non-convertie`, `montant-suspect`, `sans-tva`, `tva-impossible` (les deux piles) et
+  `pieces-payees-en-partie` écartent l'exemplaire d'une facture source. La Révision range les mêmes points : elle passe
+  la lecture de la Vue d'ensemble telle quelle, sans une ligne changée.
+- **Les préalables** (`prealablesValidation.ts`) : `DonneesDeValidation.facturesSources`, NULLES quand on ne les a pas
+  lues en entier — la validation se suspend alors (« lecture-partielle »), en disant pourquoi. `ecritures-a-generer`,
+  `desynchronisees`, `sans-categorie`, `devise-non-convertie`, `tva-impossible` et `pieces-payees-en-partie` écartent
+  l'exemplaire ; `ecritures-sans-objet` retient son écriture déjà passée. Une fois G4 écrite (VF6b : aucune écriture sur
+  un exemplaire), « ecritures-a-generer » l'aurait retenu POUR TOUJOURS ; il ne le peut plus.
+- **Les appelants.** Écritures : les factures sources d'un dossier basculé se tirent de la lecture de ses ventes
+  facturées (`lireLesSourcesDesEcrituresDeVente`, déjà faite) ; un dossier qui n'a pas basculé n'en a aucune — la base
+  refuse qu'une facture y soit source (`fixer_source_de_la_vente`) et qu'un dossier qui en porte une revienne en arrière
+  (`garder_ventes_par_les_factures`), le vide y est un fait. Pas encore revenues ou lues en partie : les contrôles se
+  lisent comme hier, et « Générer » et « Régénérer » attendent, en disant pourquoi. Le retrait de l'écriture d'un
+  exemplaire, dans la carte « Écritures que la pièce ne justifie plus » : « Régénérer » n'y réécrirait rien — la pièce
+  ne s'écrit plus —, donc le geste est « Retirer l'écriture », celui du bien repris ; sa confirmation nomme la pièce et
+  la facture, dit ce qui part (produit, TVA, banque ou créance et règlements) et, la pièce rapprochée, que le
+  rapprochement reste et que le mouvement n'aura plus d'écriture : l'annuler dans Banque, puis classer le mouvement par
+  les encaissements de la facture. Clôture : `ventesLues.sources` aux préalables et à la carte des pièces sans catégorie
+  (qui se tait avec la 2035 tant qu'elles ne sont pas lues) ; en ENGAGEMENT, la validation ne lisait pas les ventes
+  facturées — lues en partie, elles la retiennent désormais, leur motif dit. Justificatifs garde la règle d'hier pour
+  son badge « Devise non convertie » (`SOURCES_NON_LUES`, explicite) : l'onglet ne lit pas encore la source des factures
+  (VF6e), et le point de la Checklist qui y envoie en compte moins, jamais plus. La CA3 passe ses sources à
+  `piecesDeviseNonConvertie` : elle écartait déjà l'exemplaire juste après, rien n'y change. Le banc passe un ensemble
+  vide aux dossiers d9 et d10, qui n'ont pas basculé.
+
+**LES PREUVES.**
+- Tests neufs : 61. `facturesSources.test.ts` (7, dont la garde du paramètre obligatoire) ; `ecritures.test.ts` (8 :
+  `piecesAComptabiliser`, « Générer » dans les deux modèles, `ecrituresSansObjet` en trésorerie et en engagement, la
+  seule banque restante, la ligne figée, `analyserEcritures`, la pièce d'une facture qui n'est pas source « à
+  régénérer ») ; `controles.test.ts` (2) ; `pointsDeLaChecklist.test.ts` (15, un cas par point, chacun sur la facture
+  source, une facture qui n'est pas source et aucune, deux témoins qui prouvent que l'écriture d'essai est celle de la
+  génération) ; `prealablesValidation.test.ts` (9, un par préalable, plus les sources nulles) ;
+  `compositionsAuPlan.test.ts` (1 : la banque et le tiers du plan, dans les deux modèles, avec son témoin) ; écrans :
+  `EcrituresTab.exemplaires.test.tsx` (11 : « Générer » sans l'exemplaire en trésorerie et en engagement, celui d'une
+  facture qui n'est pas source, un dossier non basculé ; le retrait confirmé qui nomme la facture et emporte toutes les
+  lignes, rapprochée ou non, refusé ; des sources lues en partie qui retiennent « Générer » et « Régénérer »),
+  `ClotureTab.test.tsx` (4), `ChecklistTab.test.tsx` (2), `RevisionTab.test.tsx` (2).
+- La garde des préalables (`prealablesValidation.test.ts`) : chaque point en erreur de la Checklist reste repris ou
+  écarté avec sa raison ; aucun point neuf, aucune raison changée.
+- Mutations : 44, chacune sur une suite verte. 40 tuées ; 4 survivent, équivalentes : dans la Checklist, l'exemplaire
+  rendu à `piecesAComptabiliser` (ses lignes sont hors des groupes d'`analyserEcritures`, il ne peut être « à
+  régénérer », et la Checklist n'a pas de point « à générer ») ; dans les préalables, les exemplaires rendus vides à
+  `analyserEcritures` (ils ne lisent que `piecesDesynchronisees`, que ce paramètre ne touche pas) ; les deux gardes de
+  `genererEcritures` et `regenererEcriture` (seconde ceinture : le bouton est désactivé, aucun clic ne les atteint).
+- La suite, sous Paris, comparée test par test à la tête de la branche (`b079a3e`, une copie extraite) : 13 891 tests
+  avant, 13 952 après ; aucun verdict changé hors de ce lot, aucun disparu. Deux écarts qui ne sont pas de lui : la
+  copie sans `.git` ne charge pas `clesSupabase.test.ts` (25 tests, verts dans l'arbre de travail), et un test de
+  `recuperationMotDePasse.test.ts` y dépassait ses 5 s sous charge, vert ensuite.
+- La barrière, sous le Node 22.23.3 de la CI : `tsc -b --force` 0 ; `npm run lint` 0 erreur, les 63 avertissements
+  d'avant ; `npm test` entier vert (455 fichiers, 13 952 tests). Le banc : aucune mise en page ne change.
+
+**CE QUI RESTE À LA SESSION.** La barrière complète (`test:fuseaux`, build), la demande de fusion, la feuille de route
+(la ligne 28.65 : VF6a fait). À VF6b et après, hors du lot : l'exemplaire rapproché (le retrait laisse un mouvement
+rapproché sans écriture — G4 et `designer_exemplaire_facture` le fermeront, VF6d le dira dans Banque) ;
+`comptes-manquants`, `postes-manquants` et `pieces-payees-en-trop` le jugent encore comme une pièce (aucun n'était au
+lot ; les deux premiers sont du paramétrage) ; le badge de Justificatifs (VF6e, qui fera lire la source des factures au
+pont). Le lot rejoint VF5h sans peine : dans `EcrituresTab.tsx`, il ne touche ni la section des ventes facturées ni
+l'affichage de ses refus.
