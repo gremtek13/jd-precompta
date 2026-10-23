@@ -32677,3 +32677,140 @@ dans `main`, recomposé ; la branche réalignée sur `main`. Le même jour, à 1
 arbitrages VF5D2-Q1 à Q3 (inscrire « déclaré » un encaissement contre-passé avant de l'être, le message d'un impayé
 contre-passé sans débit, l'impayé contre-passé par le client « Ventes » et « Banque »), toutes trois à la
 recommandation, que VF5d2 appliquait déjà : rien à changer.
+
+### 23/10/2026 — LE MÊME FICHIER DÉPOSÉ DEUX FOIS ENTRE DEUX LOTS
+
+(`src/lib/depot.ts` ; `src/pages/ClientUpload.tsx` ; `depot.test.ts`, `ClientUpload.test.tsx`,
+`ClientUpload.empreintes.test.tsx`.) Ligne 28.8-ClientUpload, tranchée par le cabinet le 18/10/2026 à la
+recommandation : « changer (ensemble d'empreintes « en vol » partagé d'un lot à l'autre) ».
+
+**Le défaut.** `handleFiles` créait un `new Set()` PAR LOT (`hashsDuLot`). Les fichiers d'un même lot se voyaient (le
+Set est réservé avant toute attente) ; deux LOTS lancés coup sur coup — le même fichier glissé puis choisi, deux gestes
+avant la fin du premier — ne se voyaient pas : chacun passait `fichierDejaPresent` avant que l'autre ait écrit sa ligne,
+et comme il n'existe aucun index unique sur `(dossier_id, storage_hash)`, la pièce partait en double (comptée deux fois
+en 2035 comme en balance).
+
+**Ce que `deposerFichier` faisait de l'ensemble.** Il y réservait l'empreinte avant tout `await`, et ne la libérait que
+dans le `catch` : un dépôt RÉUSSI la laissait. Inoffensif tant que le Set mourait avec son lot ; faux dès qu'il est
+partagé — le même fichier redéposé plus tard, la pièce peut-être supprimée entre-temps, se serait dit « déjà déposé »
+par le registre de l'écran, alors que la base seule doit faire foi.
+
+**La correction.** `ClientUpload` tient un `useRef(new Set<string>())` (`empreintesEnVol`), le même pour tous ses lots.
+`deposerFichier` (paramètre renommé `hashsEnVol`, ce qu'il note : ce qui est EN VOL, jamais ce qui est écrit) libère
+l'empreinte dans un `finally`, réussi, doublon de la base ou raté : réussi, la ligne est écrite avant d'arriver là et la
+base fait foi ; raté, un nouvel essai reste possible. Le `return` du doublon en vol reste AVANT le `try` : sorti du
+`finally`, il libérerait l'empreinte d'un AUTRE dépôt encore en cours. `ClientBanque`, qui passait déjà un registre
+persistant, gagne la même libération (la base lui dit « déjà là »).
+
+**Les autres chemins de dépôt, laissés tels quels.** `ClientHome` (une photo à la fois, sous `captureEnCours`),
+`ClientBanque` (sous `ecritureEnCours`), le cabinet (`AjouterDocumentsModal`, `ImportDossierModal` : un verrou `useRef`,
+une boucle en série, les empreintes de la base relues à chaque exécution) : aucun n'a le défaut.
+
+**LES PREUVES.**
+- Six tests neufs. `depot.test.ts` 2 : l'empreinte libérée aussi quand la base connaît déjà le fichier, et celle d'un
+  AUTRE dépôt en vol, que le doublon ne libère pas ; le test d'avant (« ne réserve rien… au lot suivant ») exige
+  désormais le registre vide après un succès. `ClientUpload.empreintes.test.tsx` 4, sur le VRAI dépôt (un faux Supabase
+  qui écrit sa ligne, une vérification des doublons asynchrone) : deux lots du même fichier dans le même `act`, un seul
+  envoi et un seul `insert`, le second dit « déjà déposé » ; deux fichiers différents, deux dépôts ; un dépôt raté
+  libère l'empreinte, le réessai part ; un dépôt réussi, c'est la base qui dit « déjà déposé », sans envoi de plus.
+  `ClientUpload.test.tsx` : le registre est le MÊME au lot suivant (le test exigeait un registre neuf).
+- Mutations : 7. Six tuées (un registre neuf par lot ; aucune libération ; l'ancien comportement, libérée seulement
+  après un échec ; le doublon qui libère l'empreinte d'un autre dépôt ; la libération d'une autre clé ; la réservation
+  oubliée) ; une survivante, ÉQUIVALENTE : un `delete` de plus dans le `catch`, alors que le `finally` libère déjà.
+- La barrière des trois chantiers : voir la dernière entrée de ce lot.
+
+**CE QUI RESTE À LA SESSION.** Rien à déployer : le front seul, qui part avec la fusion.
+
+### 23/10/2026 — UN MOT DE PASSE DE PLUS DE 72 OCTETS SE REFUSE AVANT L'APPEL
+
+(`src/lib/recuperationMotDePasse.ts` ; `supabase/functions/create-cabinet`, `create-client-access`,
+`create-team-member` ; `src/test/contratsFonctions.ts` ; `recuperationMotDePasse.test.ts` et les tests des quatre
+écrans.) Défaut 23.5, question 23-Q5, tranchée par le cabinet le 18/10/2026 à la recommandation : « oui », le refuser
+avant l'appel, en français.
+
+**Le défaut.** bcrypt ne retient que 72 OCTETS d'un mot de passe : au-delà, le service d'authentification refuse en 400
+`validation_failed`, en anglais (« Password cannot be longer than 72 characters »), et les trois fonctions qui créent
+des comptes le rendaient en 500, après avoir parfois écrit le cabinet (`create-cabinet`, qui le retire). Le reflet des
+écrans (`refusDeLaRegle`) ne comptait que des caractères : un mot de passe de 39 lettres accentuées (74 octets) passait
+l'écran et butait sur le service.
+
+**La correction.** `refusDeLaRegle` refuse un encodage UTF-8 de plus de 72 octets (`TextEncoder`,
+`LONGUEUR_MAXIMALE_MOT_DE_PASSE_EN_OCTETS`) et le dit en français, avec ce que le mot de passe pèse : « il doit faire au
+plus 72 octets (une lettre accentuée ou un symbole comme « € » compte pour plusieurs octets, et celui-ci en fait 74) »,
+d'un coup avec ce qui manque d'autre. Le MINIMUM reste en caractères (le service compte des octets, toujours au moins
+autant) ; le commentaire du module, qui disait la longueur comptée en caractères, le dit désormais par moitié. La phrase
+sous le champ (`REGLE_DU_MOT_DE_PASSE`) ajoute « Au plus 72 octets : une lettre accentuée ou « € » en compte
+plusieurs. ». Chacune des trois fonctions refuse, à côté de `password.length < 10` et avant tout appel
+(`create-cabinet` : avant le cabinet), `new TextEncoder().encode(password).length > 72` par un 400 français ; chacune
+reste auto-portée, et le module teste que le nombre est le même partout.
+
+**Les quatre écrans** (l'onglet Accès, l'équipe, un nouveau cabinet, le nouveau mot de passe) appliquent déjà
+`refusDeLaRegle` avant tout appel et disent `REGLE_DU_MOT_DE_PASSE` sous le champ : le maximum leur vient du module,
+sans une ligne de plus, et la phrase est neutre (ni tu ni vous), comme celle d'avant. Un test d'écran par écran.
+
+**LES PREUVES.**
+- Onze tests neufs hors contrat. Le module 7 : 71 et 72 octets passent, 73 est refusé, avec ce que le mot de passe
+  pèse ; 39 caractères pour 74 octets ; « € » (trois octets) et une émoticône (quatre) ; le refus d'un coup avec ce qui
+  manque d'autre ; les deux saisies du nouveau mot de passe ; le service refuse bien ce que l'écran refuse ; le maximum
+  confronté au modèle du service et aux trois fonctions. La grille de mille mots de passe s'étend aux plus de 72 octets
+  (une quatrième variante, répétée douze fois) : le reflet n'en laisse partir aucun. Les écrans 4, un chacun : la limite
+  dite sous le champ, le refus sans aucun appel, puis 72 octets tout juste qui partent.
+- Le contrat HTTP des trois fonctions, 15 scénarios neufs à la place du scénario « un autre refus du service (500) » :
+  84 octets, 73 octets et « 39 caractères mais 74 octets » refusés en 400 français, aucune dépense, rien d'écrit, aucun
+  compte cherché ; 72 octets et « 38 caractères et 72 octets » atteignent le service. Douze défauts plantés (le contrôle
+  oublié, compté en caractères, décalé d'un octet de part et d'autre, dans chaque fonction), tous vus.
+- Mutations du module et des écrans : 12, toutes tuées (72 refusé, 73 admis, octets comptés en caractères, le maximum
+  oublié du refus, des exigences dites, de la phrase sous le champ, le nombre d'octets tu, la valeur 73 ; puis chacun
+  des quatre écrans qui ne juge plus le maximum).
+
+**CE QUI RESTE À LA SESSION.** Déployer `create-cabinet` (`verify_jwt = false`), `create-client-access` (`verify_jwt =
+false`) et `create-team-member` (`verify_jwt = false`), valeurs de `supabase/config.toml`, la copie déployée comparée au
+dépôt AVANT d'écraser, puis `allerretour.py` ; et le front, avec la fusion. Rien d'autre : aucune migration, aucune
+policy.
+
+### 23/10/2026 — RECEIVE-EMAIL NE JOURNALISE PLUS QUE DES COMPTES
+
+(`supabase/functions/receive-email/index.ts` ; `src/test/contratsFonctions.ts` ; `src/lib/edgeFunctionsHttp.test.ts`.)
+Ligne 23-journalEmail, tranchée par le cabinet le 18/10/2026 à la recommandation : « ne plus journaliser que des
+comptes ». C'était le défaut connu `objetAuJournal`, décision du cabinet d'avant : un objet peut nommer un patient.
+
+**Le défaut.** Trois lignes recopiaient de quoi désigner une personne : l'adresse inconnue (« Aucun dossier pour "<code
+de collecte>" (e-mail …, de <expéditeur>, sujet "<objet>") »), la liste brute des destinataires d'un e-mail sans
+destinataire exploitable, et le bilan (« E-mail … ("<objet>") → dossier … »). L'erreur de lecture du dossier, elle,
+était journalisée entière, détail de PostgREST compris.
+
+**La correction.** Chaque ligne dit COMBIEN, jamais DE QUI : « adresse de collecte inconnue : e-mail <id>, N
+destinataire(s), M fichier(s) joint(s) » ; « aucun destinataire exploitable : N destinataire(s) reçu(s), e-mail <id> » ;
+« E-mail <id> → dossier <id> : n/m pièce(s) importée(s) » ; la lecture refusée, son code et son message seulement (comme
+l'insertion, « jamais son détail »). `from` et `subject` ne sont plus même lus de l'événement. L'identifiant que Resend
+donne à l'e-mail reste, opaque : c'est lui qui retrouve l'e-mail chez Resend. Le reste de la fonction, relu ligne à
+ligne : les autres lignes (extract-piece, pièces jointes écartées, doublon, stockage, insertion, orphelin) ne portaient
+déjà que des identifiants, des codes et des poids.
+
+**Le contrat.** `DEFAUTS_CONNUS` perd `objetAuJournal` (il en reste un, `tauxSansControle`, deux scénarios) ; le contrat
+HTTP exige zéro recopie — l'objet, l'expéditeur, l'adresse du dossier et son code de collecte ne figurent dans AUCUNE
+ligne du journal, par une recherche du texte entier en plus du juge commun —, sur l'adresse inconnue, l'e-mail sans
+destinataire exploitable, la lecture du dossier refusée et le bilan d'un e-mail traité ; la ligne de bilan, qui portait
+l'objet, est jugée mot pour mot. Le RGPD.md ne parlait pas de ce défaut (« 0 e-mail journalisé » y compte les e-mails
+envoyés) : rien à y changer.
+
+**LES PREUVES.**
+- Trois scénarios neufs au contrat, à la place de celui du défaut connu : l'adresse inconnue (la ligne mot pour mot, ni
+  l'objet, ni l'expéditeur, ni l'adresse, ni son code, ni le nom affiché), l'e-mail sans destinataire exploitable, la
+  lecture du dossier refusée — la panne porte un détail qui cite le code de collecte, que le journal ne doit pas
+  reprendre — ; et la ligne de bilan, jugée mot pour mot dans les trois scénarios qui comptent les éléments intégrés.
+  Six défauts plantés neufs, tous vus : l'objet et l'expéditeur à la ligne de l'adresse inconnue, le code de collecte,
+  la liste brute des destinataires, l'objet à la ligne de bilan, l'erreur de la base recopiée entière, le bilan
+  disparu ; l'ancre du défaut « le compte écrit pour une adresse inconnue » suit la nouvelle ligne.
+- **La barrière des trois chantiers**, sous le Node 22.23.3 de la CI : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur,
+  les 63 avertissements d'avant ; `npm run build` 0 (`index-3s-_ylc_.js`) ; `npm run test:fuseaux` 0, 453 fichiers et 13
+  813 tests sous Paris, UTC, New York et Auckland ; `npx tsc -p tsconfig.edge.json` : les 25 erreurs d'avant, les mêmes
+  (des types npm que l'environnement ne résout pas), aucune de ce lot.
+- La suite comparée test par test, sous Paris : avant (`897b5e5`) 452 fichiers et 13 764 tests, après 453 fichiers et 13
+  813 ; aucun verdict changé ; quatre tests disparus, voulus (les trois scénarios « un autre refus du service », rendus
+  en 500, et le défaut connu de l'objet) ; 53 neufs (hors `clesSupabase.test.ts`, que la copie d'avant, sans dépôt git,
+  ne pouvait pas jouer : ses 25 tests verts), dont les six, onze et trente-six ci-dessus.
+
+**CE QUI RESTE À LA SESSION.** Déployer `receive-email` (`verify_jwt = false`, valeur de `supabase/config.toml`), la
+copie déployée comparée au dépôt AVANT d'écraser, le texte ENVOYÉ relu dans le journal, puis `allerretour.py`. Les
+lignes d'avant restent au journal de Supabase le temps qu'il vit (un jour). Rien d'autre.
