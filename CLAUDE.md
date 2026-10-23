@@ -320,9 +320,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `compte: "cree"` ou `"existant"` ; d'un compte d'ailleurs, le 409 dit qu'il existe, rien de plus → « LA CRÉATION D'UN
   ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT ».
 - **La règle des mots de passe est celle du tableau de bord** (une minuscule, une majuscule, un chiffre, un symbole ;
-  dix caractères) : les quatre écrans en portent un REFLET (`REGLE_DU_MOT_DE_PASSE`), appliqué avant tout appel, et un
+  dix caractères, soixante-douze OCTETS au plus : le maximum de bcrypt, que les trois fonctions refusent en 400 français
+  avant tout appel) : les quatre écrans en portent un REFLET (`REGLE_DU_MOT_DE_PASSE`), appliqué avant tout appel, et un
   réglage changé se reporte là et dans PLAN_DE_REPRISE.md ; le refus du service se lit au CODE, jamais au statut ni au
-  message (`refusDuService`) → « UN MOT DE PASSE REFUSÉ SE DISAIT « UN COMPTE EXISTE DÉJÀ » ».
+  message (`refusDuService`) → « UN MOT DE PASSE REFUSÉ SE DISAIT « UN COMPTE EXISTE DÉJÀ » », « UN MOT DE PASSE DE PLUS
+  DE 72 OCTETS SE REFUSE AVANT L'APPEL ».
 - **Variables d'environnement** : nommées dans PLAN_DE_REPRISE.md (§3), comparées au code
   (`variablesEnvironnement.test.ts`). Les données fictives sont traitées comme identifiantes : aucun service tiers hors
   de cette liste.
@@ -383,11 +385,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   d'extensions seulement si ces fichiers font du bruit et si le cabinet la choisit (S227-Q5) → « UNE PIÈCE JOINTE
   ÉCARTÉE À LA RÉCEPTION PAR E-MAIL SE DIT AU CABINET ».
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
-  au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français. Un mot de passe de plus
-  de 72 octets reçoit encore le refus anglais du service, en 500 (défaut 23.5 ; le refuser avant l'appel, en français :
-  23-Q5, à écrire). Un compte dont le dernier accès au cabinet a été retiré n'y est plus « rattaché » : lui recréer un
-  accès bute sur le 409 (le rattacher après une confirmation qui nomme l'adresse et ce qu'elle ouvre : 23-Q2, à écrire)
-  → « LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT ».
+  au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français. Un compte dont le dernier
+  accès au cabinet a été retiré n'y est plus « rattaché » : lui recréer un accès bute sur le 409 (le rattacher après une
+  confirmation qui nomme l'adresse et ce qu'elle ouvre : 23-Q2, à écrire) → « LA CRÉATION D'UN ACCÈS NE CHANGE PLUS LE
+  MOT DE PASSE D'UN COMPTE EXISTANT ».
 - **Facturation électronique** (ligne 28.5) : (a) à (c) en ligne, la réception et le dépôt à éprouver sur la plateforme
   réelle d'un client ; (d) « Encaissée » : d1 à d4 en ligne ; d5, le message CDAR, en module (ses quatre choix et MDT-95
   tranchés par le premier essai réel ; le matricule d'une plateforme, une colonne de la connexion) ; d6 reste (les Edge
@@ -397,9 +398,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   déclarée qui retient sa pièce), e6b (le bouton qui télécharge le fichier) et la suite (e7 : une facture à un client
   étranger ; e9 : `fluxEreporting` recopié dans `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER
   D'UNE DÉCLARATION D'E-REPORTING ».
-- **Défauts connus des Edge Functions** (3, `DEFAUTS_CONNUS`) : l'objet et l'expéditeur d'un e-mail reçu au journal
-  (`receive-email`) : ne plus journaliser que des comptes, à écrire ; `taux-change-bce` sans contrôle d'appelant : la
-  désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ».
+- **Défauts connus des Edge Functions** (2, `DEFAUTS_CONNUS`) : `taux-change-bce` sans contrôle d'appelant : la
+  désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ». `receive-email`
+  ne journalise plus que des comptes, ni objet, ni expéditeur, ni adresse, ni code de collecte (le contrat exige zéro
+  recopie) → « RECEIVE-EMAIL NE JOURNALISE PLUS QUE DES COMPTES ».
 - **Une vente entrée deux fois ; la facture validée, source de sa vente** (ligne 28.6 ; EC-Q3 a la sienne, la 28.65,
   depuis le 21/10/2026) : CONÇUE le 18/10/2026 — les moteurs lisent la facture et le registre des encaissements (la
   recette à sa date d'encaissement en trésorerie, la créance à sa date en engagement, un taux soldé portant exactement
@@ -689,8 +691,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   qui parcourt le relevé ne se joue qu'après les signaux bon marché, qui ne font que filtrer → « LES CANDIDATS DU
   RELEVÉ ».
 - **Un écran de saisie ne choisit pas l'exercice** à la place du cabinet ; un champ devenu sans objet est remis à zéro
-  dans la même écriture. **Un lot parallèle réserve l'empreinte** dans un `Set` avant toute attente (`ClientUpload`),
-  pas encore d'un lot à l'autre (28.8-ClientUpload, à écrire).
+  dans la même écriture. **Un lot parallèle réserve l'empreinte** dans un `Set` avant toute attente, partagé par TOUS les
+  lots de l'écran (`ClientUpload`, un `useRef`), libérée à la fin du dépôt, réussi ou non (`lib/depot.ts`) → « LE MÊME
+  FICHIER DÉPOSÉ DEUX FOIS ENTRE DEUX LOTS ».
 - **Un constructeur de requête n'est pas une promesse** : un module l'ATTEND, et une requête qui lève tombe du côté
   signalé. Les points de la Vue d'ensemble se calculent dans `lib/pointsDeLaChecklist.ts` et se lisent par
   `lib/checklistLecture.ts`, un point écrit `{ id: '…', …, severite: '…' }` (lu comme texte par deux tests) → « L'ÉCRAN
