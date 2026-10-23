@@ -3,7 +3,8 @@ import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError, AuthWea
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import {
-  ADRESSE_DE_RETOUR, AVIS_LIEN_SANS_SESSION, LONGUEUR_MINIMALE_MOT_DE_PASSE, REGLE_DU_MOT_DE_PASSE, SORTES_DE_CARACTERES,
+  ADRESSE_DE_RETOUR, AVIS_LIEN_SANS_SESSION, LONGUEUR_MAXIMALE_MOT_DE_PASSE_EN_OCTETS, LONGUEUR_MINIMALE_MOT_DE_PASSE,
+  REGLE_DU_MOT_DE_PASSE, SORTES_DE_CARACTERES,
   adresseDejaInscrite, avisDuLienEnvoye, avisDuRefus, lireRetourDuLien, messageErreurDuLien, messageErreurDuLienEnvoye,
   messageErreurDuMotDePasse, questionDuLienEnvoye, refusDeLaRegle, refusDuMotDePasse, refusDuNouveauMotDePasse,
 } from './recuperationMotDePasse'
@@ -106,6 +107,17 @@ describe('le nouveau mot de passe, jugé avant tout appel', () => {
       expect([...source.matchAll(/password\.length < (\d+)/g)].map((m) => Number(m[1])), fonction).toEqual([LONGUEUR_MINIMALE_MOT_DE_PASSE])
     }
   })
+
+  it('le maximum est celui de bcrypt, en OCTETS, dans le module comme dans les trois fonctions (23-Q5)', () => {
+    // Le service d'authentification refuse au-delà de 72 octets : la valeur du module est celle de son modèle d'essai.
+    expect(LONGUEUR_MAXIMALE_MOT_DE_PASSE_EN_OCTETS).toBe(LONGUEUR_MAXIMALE_EN_OCTETS)
+    for (const fonction of ['create-client-access', 'create-team-member', 'create-cabinet']) {
+      const source = readFileSync(racine(`supabase/functions/${fonction}/index.ts`), 'utf8')
+      // Compté à l'encodage UTF-8, jamais à `password.length` : « é » pèse deux octets.
+      expect([...source.matchAll(/new TextEncoder\(\)\.encode\(password\)\.length > (\d+)/g)].map((m) => Number(m[1])), fonction)
+        .toEqual([LONGUEUR_MAXIMALE_MOT_DE_PASSE_EN_OCTETS])
+    }
+  })
 })
 
 // LA RÈGLE DES MOTS DE PASSE DU PROJET (défaut 23.5, 10/10/2026) : un REFLET de celle du tableau de bord, que les quatre
@@ -127,7 +139,7 @@ describe('la règle des mots de passe du projet, reflet du tableau de bord', () 
     expect(REGLE_DU_MOT_DE_PASSE).toBe(
       'Règle du projet : au moins 10 caractères, dont une minuscule, une majuscule, un chiffre et un symbole — l\'un de '
       + '! @ # $ % ^ & * ( ) _ + - = [ ] { } ; \' \\ : " | < > ? , . / ` ~ (une lettre accentuée, « € » ou l\'espace ne '
-      + 'comptent pas).',
+      + 'comptent pas). Au plus 72 octets : une lettre accentuée ou « € » en compte plusieurs.',
     )
     for (const c of PONCTUATION) expect(REGLE_DU_MOT_DE_PASSE, c).toContain(` ${c} `)
   })
@@ -166,6 +178,60 @@ describe('la règle des mots de passe du projet, reflet du tableau de bord', () 
     expect(jugementDuService('éééééAa1!', REGLE_DU_PROJET_RELEVEE)).toEqual({ admis: true })
   })
 
+  // LE MAXIMUM DE BCRYPT, EN OCTETS (23-Q5) : le service refuse en 400 anglais au-delà de 72 OCTETS, et les trois fonctions
+  // le rendaient en 500. L'écran le refuse avant l'appel, en français, en comptant comme lui.
+  describe('au plus 72 octets', () => {
+    const tete = 'Ce mot de passe ne suit pas la règle du projet : il doit '
+    const dit = (octets: number) => `faire au plus 72 octets (une lettre accentuée ou un symbole comme « € » compte pour plusieurs octets, et celui-ci en fait ${octets})`
+    const base = 'Mot-de-passe-1'
+    const octets = (s: string) => new TextEncoder().encode(s).length
+
+    it('71 et 72 octets passent, 73 est refusé — la limite est dite, avec ce que le mot de passe pèse', () => {
+      const de = (n: number) => `${base}${'x'.repeat(n - base.length)}`
+      expect(octets(de(71))).toBe(71)
+      expect(octets(de(72))).toBe(72)
+      expect(octets(de(73))).toBe(73)
+      expect(refusDeLaRegle(de(71))).toBeNull()
+      expect(refusDeLaRegle(de(72))).toBeNull()
+      expect(refusDeLaRegle(de(73))).toBe(`${tete}${dit(73)}.`)
+    })
+
+    it('court en caractères, long en octets : les lettres accentuées pèsent deux octets', () => {
+      // 38 caractères, 72 octets : tout juste admis. 39 caractères, 74 octets : refusé, alors que `length` n'en voit que 39.
+      const juste = `${'é'.repeat(34)}Aa1!`
+      const trop = `${'é'.repeat(35)}Aa1!`
+      expect([juste.length, octets(juste)]).toEqual([38, 72])
+      expect([trop.length, octets(trop)]).toEqual([39, 74])
+      expect(refusDeLaRegle(juste)).toBeNull()
+      expect(refusDeLaRegle(trop)).toBe(`${tete}${dit(74)}.`)
+    })
+
+    it('un symbole comme « € » (trois octets) et une émoticône (quatre) se comptent aussi', () => {
+      const euros = `Aa1!${'€'.repeat(23)}`
+      const emoticones = `Aa1!${'😀'.repeat(18)}`
+      expect([octets(euros), octets(emoticones)]).toEqual([73, 76])
+      expect(refusDeLaRegle(euros)).toBe(`${tete}${dit(73)}.`)
+      expect(refusDeLaRegle(emoticones)).toBe(`${tete}${dit(76)}.`)
+      expect(refusDeLaRegle(`Aa1!${'€'.repeat(22)}`)).toBeNull()
+    })
+
+    it('se dit avec le reste, d’un coup : trop long ET sans une sorte de caractères', () => {
+      const mdp = 'é'.repeat(40)
+      expect(refusDeLaRegle(mdp)).toBe(`${tete}${dit(80)}, et contenir une minuscule, une majuscule, un chiffre et un symbole.`)
+    })
+
+    it('le mot de passe des deux saisies du nouveau mot de passe est jugé de même, avant la confirmation', () => {
+      const trop = `${base}${'x'.repeat(60)}`
+      expect(refusDuNouveauMotDePasse(trop, trop)).toBe(`${tete}${dit(74)}.`)
+    })
+
+    it('le service refuse bien ce que l’écran refuse : 400 au-delà de 72 octets, rien en deçà', () => {
+      const trop = `${base}${'x'.repeat(59)}`
+      expect(jugementDuService(trop, REGLE_DU_PROJET_RELEVEE)).toMatchObject({ admis: false, code: 'validation_failed', statut: 400 })
+      expect(jugementDuService(`${base}${'x'.repeat(58)}`, REGLE_DU_PROJET_RELEVEE)).toEqual({ admis: true })
+    })
+  })
+
   it('le reflet ne laisse partir aucun mot de passe que le service refuserait, sur une grille de mille mots de passe', () => {
     const morceaux = ['a', 'Z', '7', '!', '~', ' ', 'é', '€', '😀', 'ß', '\t', 'xy', 'Q9', '-_']
     const grille: string[] = []
@@ -173,13 +239,21 @@ describe('la règle des mots de passe du projet, reflet du tableau de bord', () 
       // Un tirage déterministe : le n-ième mot de passe s'écrit en base 14 sur ses morceaux.
       let mdp = ''
       for (let k = n + 1; k > 0; k = Math.floor(k / 14)) mdp += morceaux[k % 14]
-      grille.push(mdp, `${mdp}${mdp}`, `Base-1${mdp}`)
+      // Le quatrième, répété douze fois, passe les 72 octets pour les uns et pas pour les autres (23-Q5).
+      grille.push(mdp, `${mdp}${mdp}`, `Base-1${mdp}`, `Base-1${mdp.repeat(12)}`)
     }
     let ascii = 0
     let admis = 0
+    let longs = 0
     for (const mdp of grille) {
       const service = jugementDuService(mdp, REGLE_DU_PROJET_RELEVEE)
-      if (new TextEncoder().encode(mdp).length > LONGUEUR_MAXIMALE_EN_OCTETS) continue
+      // Depuis 23-Q5 la grille comprend aussi les mots de passe de plus de 72 octets : le service les refuse en 400, et
+      // le reflet ne doit plus en laisser partir un seul.
+      if (new TextEncoder().encode(mdp).length > LONGUEUR_MAXIMALE_EN_OCTETS) {
+        longs++
+        expect(service.admis, mdp).toBe(false)
+        expect(refusDeLaRegle(mdp), mdp).not.toBeNull()
+      }
       if (refusDeLaRegle(mdp) === null) {
         admis++
         expect(service, mdp).toEqual({ admis: true })
@@ -192,6 +266,7 @@ describe('la règle des mots de passe du projet, reflet du tableau de bord', () 
     // Plancher : la grille voit des deux côtés, et assez d'ASCII pour que l'égalité y dise quelque chose.
     expect(admis).toBeGreaterThan(300)
     expect(ascii).toBeGreaterThan(300)
+    expect(longs).toBeGreaterThan(20)
     expect(grille.filter((m) => refusDeLaRegle(m) !== null).length).toBeGreaterThan(300)
   })
 })

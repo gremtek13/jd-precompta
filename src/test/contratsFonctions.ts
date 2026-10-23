@@ -1425,9 +1425,11 @@ const EVALUER_EXTRACTION: ContratFonction = {
 // posée au tableau de bord, le cabinet a lu « Un compte existe déjà… » sur un mot de passe refusé (défaut 23.5). Joués
 // sur les trois : l'adresse déjà inscrite reconnue à son CODE — sous un message que la fonction ne lit pas, et sous
 // l'autre code qu'auth-js nomme — ; le mot de passe refusé, raison par raison, dit en français en 400 par la phrase même
-// du module (celle que l'écran du nouveau mot de passe dit aussi), sans qu'aucun compte soit cherché ; un autre refus,
-// sur son chemin d'avant ; et une adresse déjà inscrite avec un mot de passe refusé, que le service juge sur l'adresse
-// d'abord. Les refus viennent du faux service (`regleDuService.ts`), en VRAIES classes d'erreur d'auth-js.
+// du module (celle que l'écran du nouveau mot de passe dit aussi), sans qu'aucun compte soit cherché ; un mot de passe de
+// plus de 72 OCTETS (le maximum de bcrypt, 23-Q5), refusé par la fonction elle-même en 400 français AVANT tout appel au
+// service — il rendait 500 et le message anglais du service —, compté en octets et non en caractères, à 72 près ; et une
+// adresse déjà inscrite avec un mot de passe refusé, que le service juge sur l'adresse d'abord. Les refus viennent du faux
+// service (`regleDuService.ts`), en VRAIES classes d'erreur d'auth-js.
 
 /** Assez long pour la fonction (dix caractères), sans majuscule, chiffre ni symbole. */
 const SANS_LES_SORTES = 'motdepassesimple'
@@ -1435,8 +1437,16 @@ const SANS_LES_SORTES = 'motdepassesimple'
 const ONZE_CARACTERES = 'Mot-passe-1'
 /** Il suit la règle relevée, mais la protection des mots de passe divulgués le connaît. */
 const DIVULGUE = 'Motdepasse-2026'
-/** Il suit la règle relevée, et passe les 72 octets de bcrypt : le service refuse en `validation_failed`, un autre refus. */
+/** Il suit la règle relevée, et passe les 72 octets de bcrypt : le service refuserait en `validation_failed`, la fonction le refuse avant. */
 const TROP_LONG = `Mot-de-passe-1${'x'.repeat(70)}`
+/** Soixante-douze octets tout juste, soixante-treize : la limite se compte à l'octet. */
+const SOIXANTE_DOUZE_OCTETS = `Mot-de-passe-1${'x'.repeat(58)}`
+const SOIXANTE_TREIZE_OCTETS = `Mot-de-passe-1${'x'.repeat(59)}`
+/** Trente-huit caractères pour soixante-douze octets, puis trente-neuf pour soixante-quatorze : `length` ne voit pas la différence. */
+const ACCENTS_72_OCTETS = `${'é'.repeat(34)}Aa1!`
+const ACCENTS_74_OCTETS = `${'é'.repeat(35)}Aa1!`
+/** Ce que les trois fonctions disent d'un mot de passe de plus de 72 octets (un texte écrit dans leur source). */
+const REFUS_DES_72_OCTETS = 'Le mot de passe ne doit pas dépasser 72 octets (une lettre accentuée ou un symbole comme « € » compte pour plusieurs octets).'
 
 const MOTS_DE_PASSE_REFUSES: { quoi: string; regle: RegleDuService; motDePasse: string; raisons: RaisonDuService[] }[] = [
   { quoi: 'une sorte de caractères manque', regle: REGLE_DU_PROJET_RELEVEE, motDePasse: SANS_LES_SORTES, raisons: ['characters'] },
@@ -1490,15 +1500,32 @@ function refusDuServiceDesComptes(f: RefusDuService): Scenario[] {
       requete: (s) => requeteDe(s, { personne: f.personne, corps: f.corps(f.inscrite, MOT_DE_PASSE) }),
       attendu: f.dejaInscrite,
     })),
-    {
-      nom: 'un autre refus du service (plus de 72 octets : validation_failed) : son chemin d’avant — 500 et le message du service, aucun compte cherché',
-      preparer: (m) => { m.secrets.push(TROP_LONG) },
-      requete: (s) => requeteDe(s, { personne: f.personne, corps: f.corps(NOUVEL_EMAIL, TROP_LONG) }),
+    // 23-Q5 : au-delà de 72 OCTETS le service refuse en 400 anglais, que la fonction rendait en 500 ; elle le refuse désormais
+    // elle-même, en français, avant tout appel (aucune dépense : ni compte, ni écriture), comme les dix caractères.
+    ...([
+      ['plus de 72 octets (84)', TROP_LONG],
+      ['73 octets, un de trop', SOIXANTE_TREIZE_OCTETS],
+      ['39 caractères mais 74 octets : les lettres accentuées en pèsent deux', ACCENTS_74_OCTETS],
+    ] as const).map(([quoi, motDePasse]): Scenario => ({
+      nom: `un mot de passe de ${quoi} : 400 en français avant tout appel au service, rien d’écrit, aucun compte cherché`,
+      preparer: (m) => { m.secrets.push(motDePasse) },
+      requete: (s) => requeteDe(s, { personne: f.personne, corps: f.corps(NOUVEL_EMAIL, motDePasse) }),
       attendu: {
-        statut: 500, depenses: f.depensesDuRefus,
-        verifier: (r, m) => [...refusExact('Password cannot be longer than 72 characters')(r), ...f.rienEcrit(m), ...aucunCompteCree(m)],
+        statut: 400, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (r, m) => [...refusExact(REFUS_DES_72_OCTETS)(r), ...f.rienEcrit(m), ...aucunCompteCree(m)],
       },
-    },
+    })),
+    // La limite est à 72 OCTETS tout juste : ce mot de passe-là PART au service (qui, pour une adresse déjà inscrite, répond
+    // comme à n'importe quel mot de passe admis), au lieu d'être refusé par la fonction.
+    ...([
+      ['72 octets', SOIXANTE_DOUZE_OCTETS],
+      ['38 caractères et 72 octets', ACCENTS_72_OCTETS],
+    ] as const).map(([quoi, motDePasse]): Scenario => ({
+      nom: `un mot de passe de ${quoi} n’est pas refusé par la fonction : il atteint le service`,
+      preparer: (m) => { m.secrets.push(motDePasse) },
+      requete: (s) => requeteDe(s, { personne: f.personne, corps: f.corps(f.inscrite, motDePasse) }),
+      attendu: f.dejaInscrite,
+    })),
     {
       nom: 'une adresse déjà inscrite avec un mot de passe que la règle refuse : le service juge l’adresse d’abord, la fonction aussi',
       preparer: (m) => { m.regleDesMotsDePasse = REGLE_DU_PROJET_RELEVEE; m.secrets.push(SANS_LES_SORTES) },

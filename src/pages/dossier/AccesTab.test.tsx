@@ -1019,6 +1019,23 @@ describe('AccesTab — la règle des mots de passe du projet', () => {
     expect(screen.queryAllByText(/ne suit pas la règle du projet/)).toHaveLength(0)
   })
 
+  // 23-Q5 : le maximum de bcrypt, 72 OCTETS. Trente-neuf caractères qui pèsent soixante-quatorze octets : la fonction le
+  // rendait en 500 et en anglais ; l'écran le dit avant l'appel, en français, et dit déjà la limite sous le champ.
+  it('un mot de passe de plus de 72 octets ne part pas, même court en caractères : la limite est dite avant le clic, puis le refus', async () => {
+    await saisir(`${'é'.repeat(35)}Aa1!`)
+    expect(screen.getByText(REGLE_DU_MOT_DE_PASSE).textContent).toContain('Au plus 72 octets')
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    expect(faux.appels).toEqual([])
+    expect(screen.getByText(
+      'Ce mot de passe ne suit pas la règle du projet : il doit faire au plus 72 octets (une lettre accentuée ou un symbole comme « € » compte pour plusieurs octets, et celui-ci en fait 74).',
+    )).toBeTruthy()
+    // Soixante-douze octets tout juste : il part.
+    await act(async () => { fireEvent.change(screen.getByLabelText('Mot de passe initial'), { target: { value: `${'é'.repeat(34)}Aa1!` } }) })
+    await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
+    expect(faux.appels).toHaveLength(1)
+    expect(screen.queryAllByText(/ne suit pas la règle du projet/)).toHaveLength(0)
+  })
+
   it('un refus de la règle efface l’avis de la création précédente : rien ne dit « créé » à côté de lui', async () => {
     await saisir(MOT_DE_PASSE)
     await act(async () => { screen.getByRole('button', { name: /Créer l'accès/ }).click() })
