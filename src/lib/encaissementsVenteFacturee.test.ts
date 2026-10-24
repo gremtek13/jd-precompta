@@ -135,6 +135,8 @@ describe('refusEnregistrementVente — enregistrer_encaissement, la facture sour
   it('une facture qui n’est pas source : la même chose qu’hier, frontière, classement et avoirs ignorés', () => {
     const c = contexte({ facture: facture({ source_de_la_vente: false }) })
     const v = vente({ anneesValidees: [2027] })
+    // Classé autrement que par ses encaissements : ce qu'un mouvement classé PAR SES ENCAISSEMENTS — un virement mixte —
+    // oppose à une telle facture depuis l'étape VF5h2 (le rang 18), registreVirementMixte.test.ts le joue.
     const classe = [mouvement({ statut: 'rapprochee', piece_id: 'p1' })]
     for (const s of [saisie(), saisie({ ligneBancaireId: 'm1' }), saisie({ montant: 1300, repartition: [{ taux: 20, montant: 1200 }, { taux: 5.5, montant: 100 }] })]) {
       expect(refusV(c, s, classe, v)).toEqual(refusEnregistrement(c, s, classe, AUJOURD_HUI, true))
@@ -179,7 +181,7 @@ describe('refusEnregistrementVente — enregistrer_encaissement, la facture sour
     })
   })
 
-  it('rangs 27 et 29 : les plafonds nets des avoirs VALIDÉS de la facture, à la place des plafonds bruts', () => {
+  it('rangs 28 et 30 (27 et 29 avant l’étape VF5h2) : les plafonds nets des avoirs VALIDÉS de la facture, à la place des plafonds bruts', () => {
     const c = contexte()
     // 1 355,50 € moins l'avoir de 120 € : 1 235,50 € ; le brouillon et l'avoir d'une autre facture ne comptent pas.
     expect(refusV(c, saisie({ montant: 1235.51, repartition: [{ taux: 20, montant: 1080 }, { taux: 5.5, montant: 105.51 }, { taux: 0, montant: 50 }] })))
@@ -255,20 +257,27 @@ describe('refusEnregistrementVente — enregistrer_encaissement, la facture sour
       corriger()
     }
     expect(refusEnregistrementVente(c, s, m, AUJOURD_HUI, banque, v)).toBeNull()
-    // Toutes les clés, dans l'ordre du catalogue, sauf l'accès (la base seule) et les plafonds bruts (jamais pour une source).
-    expect(vus).toEqual(REFUS_ENREGISTREMENT.map((r) => r.cle).filter((cle) => !['acces', 'plafond_facture', 'plafond_taux'].includes(cle)))
+    // Toutes les clés, dans l'ordre du catalogue, sauf l'accès (la base seule), les plafonds bruts (jamais pour une source) et
+    // le refus d'une facture qui n'est PAS source sur un virement mixte (le rang 18, étape VF5h2 : `virementMixte`).
+    expect(vus).toEqual(REFUS_ENREGISTREMENT.filter((r) => !('virementMixte' in r)).map((r) => r.cle)
+      .filter((cle) => !['acces', 'plafond_facture', 'plafond_taux'].includes(cle)))
   })
 })
 
 describe('refusRetraitVente — retirer_encaissement, la facture source', () => {
   const vide = new Set<string>()
 
-  it('une facture qui n’est pas source : la même chose qu’hier', () => {
+  it('une facture qui n’est pas source : la même chose qu’hier, sur un mouvement que ses encaissements ne classent pas', () => {
     const e = encaissement({ facture_id: 'f2', ligne_bancaire_id: 'm1', date_encaissement: '2026-06-01' })
     const v = vente({ anneesValidees: [2026] })
+    for (const [quoi, o] of CLASSEMENTS.filter(([, o]) => !o.encaissements_de_factures)) {
+      const m = [mouvement(o)]
+      expect(refusRetraitVente(D, 'e1', [e], vide, m, v), quoi).toEqual(refusRetrait(D, 'e1', [e], vide))
+      expect(refusRetraitVente(D, 'e1', [e], vide, m, v), quoi).toBeNull()
+    }
+    // Classé PAR SES ENCAISSEMENTS — un virement mixte — : le rang 8 de l'étape VF5h2 (registreVirementMixte.test.ts).
     const m = [mouvement({ statut: 'rapprochee', encaissements_de_factures: true })]
-    expect(refusRetraitVente(D, 'e1', [e], vide, m, v)).toEqual(refusRetrait(D, 'e1', [e], vide))
-    expect(refusRetraitVente(D, 'e1', [e], vide, m, v)).toBeNull()
+    expect(refusRetraitVente(D, 'e1', [e], vide, m, v)?.cle).toBe('mouvement_classe_facture_d_avant')
   })
 
   it('rang 6 : daté d’un exercice que la frontière fige ; rang 7 : le mouvement dont il dépend, classé', () => {
@@ -305,7 +314,8 @@ describe('refusRetraitVente — retirer_encaissement, la facture source', () => 
     expect(refusRetraitVente(D, 'e1', [e, c], vide, classe, v)?.cle).toBe('annule')
     expect(refusRetraitVente(D, 'e1', [e], vide, classe, v)?.cle).toBe('frontiere')
     expect(refusRetraitVente(D, 'e1', [e], vide, classe, vente())?.cle).toBe('mouvement_classe')
-    expect(REFUS_RETRAIT.slice(-2).map((r) => r.cle)).toEqual(['frontiere', 'mouvement_classe'])
+    // Le rang 8, depuis l'étape VF5h2, pour une facture qui n'est pas source (`virementMixte`).
+    expect(REFUS_RETRAIT.slice(-3).map((r) => r.cle)).toEqual(['frontiere', 'mouvement_classe', 'mouvement_classe_facture_d_avant'])
   })
 })
 
@@ -404,8 +414,9 @@ describe('refusContrePassationVente — annuler_encaissement et son cinquième p
     expect(refusCV({ mouvements: [mouvement({ statut: 'rapprochee', piece_id: 'p' }), DEBIT] })).toBeNull()
     // Le débit cité : le rang 20 ne se juge pas.
     expect(refusCV({ mouvements: classe, ligne: 'm_debit' })).toBeNull()
-    // Une facture qui n'est pas source, ou un encaissement sans mouvement : rien.
-    expect(refusCV({ mouvements: classe, encaissements: [{ ...e1, facture_id: 'f2' }] })).toBeNull()
+    // Une facture qui n'est pas source : le rang 21 (étape VF5h2, VF5H-Q2), sous ses mots à lui — le débit ne la sauve pas,
+    // elle n'en cite aucun (rang 15) ; un encaissement sans mouvement : rien.
+    expect(refusCV({ mouvements: classe, encaissements: [{ ...e1, facture_id: 'f2' }] })?.cle).toBe('mouvement_encaissement_classe_facture_d_avant')
     expect(refusCV({ mouvements: classe, encaissements: [{ ...e1, ligne_bancaire_id: null }] })).toBeNull()
   })
 
@@ -424,7 +435,7 @@ describe('refusContrePassationVente — annuler_encaissement et son cinquième p
     expect(REFUS_CONTRE_PASSATION.map((r) => r.cle).slice(0, 3)).toEqual(['acces', 'mouvement_sans_banque', 'encaissement_introuvable'])
     expect(REFUS_CONTRE_PASSATION.map((r) => r.cle).slice(11)).toEqual([
       'frontiere', 'motif_absent', 'motif_trop_long', 'mouvement_non_source', 'mouvement_hors_dossier', 'mouvement_credit',
-      'mouvement_classe', 'mouvement_depasse', 'mouvement_encaissement_classe',
+      'mouvement_classe', 'mouvement_depasse', 'mouvement_encaissement_classe', 'mouvement_encaissement_classe_facture_d_avant',
     ])
   })
 })
@@ -868,9 +879,10 @@ describe('les refus d’hier ne voient pas une facture source sans le contexte d
 describe('l’essai de la vente facturée, confronté au module et au texte des fonctions', () => {
   const refus = refusExigesParLEssai()
   const exige = (modele: string, code: string) => refus.some((e) => e.code === code && correspondAuModele(modele, e.attendu))
-  // Les refus d'hier se rangent sous le code de leur famille ; ceux de la vente facturée sont tous en 22023 ; celui que la
-  // migration contre_passation_banque ajoute à la contre-passation — un débit cité sans « Banque » —, en 42501.
-  const venteFacturee = (r: object) => 'venteFacturee' in r && r.venteFacturee === true
+  // Les refus d'hier se rangent sous le code de leur famille ; ceux de la vente facturée sont tous en 22023, comme les trois
+  // du virement mixte (étape VF5h2, migration registre_virement_mixte) ; celui que la migration contre_passation_banque
+  // ajoute à la contre-passation — un débit cité sans « Banque » —, en 42501.
+  const venteFacturee = (r: object) => ('venteFacturee' in r && r.venteFacturee === true) || ('virementMixte' in r && r.virementMixte === true)
   const NEUFS: readonly (readonly [string, string])[] = [
     ...[...REFUS_ENREGISTREMENT, ...REFUS_RETRAIT, ...REFUS_CONTRE_PASSATION].filter(venteFacturee).map((r) => [r.modele, '22023'] as const),
     ...REFUS_CONTRE_PASSATION.filter((r) => 'contrePassationBanque' in r).map((r) => [r.modele, '42501'] as const),
@@ -891,8 +903,9 @@ describe('l’essai de la vente facturée, confronté au module et au texte des 
   it('l’essai se lit : ses étapes, ses refus exigés', () => {
     expect(etapesDeLEssai().length).toBeGreaterThan(140)
     expect(refus.length).toBeGreaterThan(80)
-    // Quarante-neuf depuis l'étape VF5h : le rang 7 du classement, l'exemplaire à désigner.
-    expect(NEUFS.length).toBe(49)
+    // Quarante-neuf depuis l'étape VF5h : le rang 7 du classement, l'exemplaire à désigner ; cinquante-deux depuis l'étape
+    // VF5h2 : les rangs 18, 8 et 21 d'enregistrer, de retirer et de contre-passer.
+    expect(NEUFS.length).toBe(52)
   })
 
   it('chaque refus neuf du module y est exigé de la base, sous ses mots et son code', () => {

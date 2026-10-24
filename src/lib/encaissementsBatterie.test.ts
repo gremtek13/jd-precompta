@@ -79,6 +79,14 @@ describe('la batterie jouée par la base', () => {
         expect(atteints.has(r.cle) || atteintsSansBanque.has(r.cle), r.cle).toBe(false)
         continue
       }
+      // Le refus d'une facture qui n'est pas source sur un mouvement classé par ses encaissements (étape VF5h2, un virement
+      // mixte) : un tel classement suppose une facture source, que le monde n'a pas — la base ne l'oppose jamais ici, et
+      // `refusEnregistrement` ne le juge pas ; supabase/essais/ventesFacturees.sql l'éprouve, registreVirementMixte.test.ts
+      // le joue.
+      if ('virementMixte' in r) {
+        expect(atteints.has(r.cle) || atteintsSansBanque.has(r.cle), r.cle).toBe(false)
+        continue
+      }
       expect(atteints.has(r.cle) || atteintsSansBanque.has(r.cle), r.cle).toBe(true)
     }
     expect(atteints.has('mouvement_sans_banque')).toBe(false)
@@ -90,7 +98,8 @@ describe('la batterie jouée par la base', () => {
   // LA VENTE FACTURÉE (étape VF2) NE CHANGE RIEN À UNE FACTURE QUI N'EST PAS SOURCE : la version qui lit ce qui classe les
   // mouvements, les exercices validés et les avoirs rend, saisie par saisie, ce que rend la fonction d'hier — sous un
   // exercice validé qui figerait toutes les dates de la batterie, et quand chaque mouvement serait classé : ces refus-là ne
-  // visent qu'une facture source.
+  // visent qu'une facture source. Classé autrement que par ses encaissements : celui de l'étape VF5h2 (un virement mixte),
+  // le seul qui vise une facture qui n'est pas source, encaissementsFenetreVente.test.ts le cerne sur un tirage.
   it('la version de la vente facturée rend, saisie par saisie, ce que rend celle d’hier : aucune facture n’y est source', () => {
     const l = lecturesDuMonde(MONDE)
     const vente: ContexteVente = {
