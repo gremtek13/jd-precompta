@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
 import ClotureTab from './ClotureTab'
@@ -2530,6 +2530,26 @@ describe('ClotureTab — les ventes facturées', () => {
     await screen.findByRole('heading', { name: 'Valider l’exercice 2025' })
     expect(screen.queryByText(/Pièces validées sans catégorie/)).toBeNull()
     expect(screen.queryByText(/de l'exercice sans catégorie/)).toBeNull()
+  })
+
+  // LA CARTE « POSTES MANQUANTS » (étape VF6e) : l'exemplaire d'une facture source n'entre pas dans la 2035 — sa catégorie n'a
+  // pas à recevoir un poste. Le même, désigné à une facture qui n'est pas source, compte : la carte réclame le poste.
+  it('l’exemplaire d’une facture source n’a pas de poste à recevoir ; celui d’une facture qui n’est pas source, si', async () => {
+    const SANS_POSTE = { id: 'cat-nue', dossier_id: null, code: 'autre', libelle: 'Catégorie fictive sans poste', ordre: 9, compte_comptable: '706000', poste_2035: null }
+    poserLesVentes()
+    faux.parTable.categories = [...(faux.parTable.categories ?? []), SANS_POSTE]
+    faux.parTable.pieces = [PIECE, { ...EXEMPLAIRE, categorie_id: 'cat-nue' }]
+    monter(2025, true, true)
+    await screen.findByRole('heading', { name: 'Valider l’exercice 2025' })
+    expect(screen.queryByRole('heading', { name: 'Postes manquants' })).toBeNull()
+    cleanup()
+    poser()
+    faux.parTable.categories = [...(faux.parTable.categories ?? []), SANS_POSTE]
+    faux.parTable.pieces = [PIECE, { ...EXEMPLAIRE, categorie_id: 'cat-nue' }]
+    faux.parTable.factures_emises = [{ ...FACTURE_SOURCE, source_de_la_vente: false }]
+    monter(2025, true, false)
+    expect(await screen.findByRole('heading', { name: 'Postes manquants' })).toBeTruthy()
+    expect(screen.getAllByText('Catégorie fictive sans poste').length).toBeGreaterThan(0)
   })
 
   // Le garde symétrique : la même pièce, désignée à une facture d'un dossier qui n'a pas basculé — qui n'est donc pas source —,

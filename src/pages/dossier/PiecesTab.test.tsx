@@ -47,6 +47,7 @@ const faux = vi.hoisted(() => ({
   retenueRpc: null as Promise<void> | null,
   refusRelecturePiece: null as string | null,
   relecturesDeLaPiece: 0,
+  relecturesRefusees: 0,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -95,6 +96,12 @@ vi.mock('../../lib/supabase', async () => {
           if (operation === 'select' && table === 'pieces') {
             faux.relecturesDeLaPiece += 1
             if (faux.refusRelecturePiece) return Promise.resolve({ data: null, error: { message: faux.refusRelecturePiece } })
+            // Les N prochaines relectures refusées, et les suivantes servies (étape VF6e) : la relecture de la fiche échoue, celle
+            // de l'onglet aboutit.
+            if (faux.relecturesRefusees > 0) {
+              faux.relecturesRefusees -= 1
+              return Promise.resolve({ data: null, error: { message: 'relecture refusée (fictif)' } })
+            }
             const lue = ((faux.parTable.pieces ?? []) as { id: unknown }[]).find((l) => idsVises.includes(l.id))
             return Promise.resolve({ data: lue ?? null, error: null })
           }
@@ -162,6 +169,14 @@ vi.mock('../../lib/supabase', async () => {
           (l as { id: unknown }).id === args.p_piece_id
             ? { ...(l as object), facture_id: nom === 'designer_exemplaire_facture' ? args.p_facture_id : null, updated_at: '2026-09-17T09:00:00Z' }
             : l
+        ))
+        return { data: {}, error: null }
+      }
+      // Retirer la déclaration d'une vente hors des factures (étape VF6b) : la colonne s'écrit sur la pièce, qui change de date.
+      if (nom === 'retirer_declaration_hors_des_factures') {
+        faux.rpcs.push({ nom, args })
+        faux.parTable.pieces = (faux.parTable.pieces ?? []).map((l) => (
+          (l as { id: unknown }).id === args.p_piece_id ? { ...(l as object), vente_hors_des_factures: false, updated_at: '2026-09-17T09:00:00Z' } : l
         ))
         return { data: {}, error: null }
       }
@@ -264,6 +279,7 @@ function poser(pieces: unknown[], commentaires: PieceCommentaire[] = []) {
   faux.retenueRpc = null
   faux.refusRelecturePiece = null
   faux.relecturesDeLaPiece = 0
+  faux.relecturesRefusees = 0
   faux.parTable = {
     pieces, categories: [], sous_dossiers: [], tiers_categories: [],
     tiers_categories_cabinet: [], piece_commentaires: commentaires, lignes_bancaires: [],
@@ -1230,6 +1246,96 @@ describe('PiecesTab — la pièce jumelle d’une facture émise', () => {
   })
 })
 
+// LE PONT PAR RÉGIME (ligne 28.65, chantier EC-Q3, étape VF6e ; lib/ventesJumelles.ts). Dans un dossier dont les factures
+// sont la source de leurs ventes : l'exemplaire désigné d'une facture source se marque « Exemplaire de la facture … »,
+// neutre ; la pièce que le pont rattache sans désignation, « À désigner : c’est la facture … », en attention ; la vente
+// déclarée hors des factures, neutre ; et le badge « Devise non convertie » se tait sur l'exemplaire d'une facture source,
+// que le pont a lu (étape VF6a laissait la règle d'hier). Ce que le module ne voit pas : que l'écran lise la SOURCE des
+// factures avec le pont, et lui passe la bascule. Données FICTIVES.
+describe('PiecesTab — le pont par régime (VF6e)', () => {
+  const D = 'dossier-de-test'
+  const facture = (o: Record<string, unknown> = {}) => ({
+    id: 'fs', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2026-0021', date_emission: '2026-03-14',
+    emetteur_siret: '12345678900012', superpdp_invoice_id: 21, tiers_nom: 'CLIENT FICTIF SAS', montant_ttc: 360,
+    source_de_la_vente: true, ...o,
+  })
+  const FACTURES = [facture(), facture({ id: 'fa', numero: 'F2026-0003', superpdp_invoice_id: 3, source_de_la_vente: false })]
+  const vente = (o: Partial<Piece> = {}) => piece({ type_piece: 'vente', source: 'superpdp', ...o })
+  const ligne = (tiers: string) => screen.getByText(tiers, { selector: 'td' }).closest('tr')!
+  function poserVentes(pieces: Piece[], factures: unknown[] = FACTURES) {
+    poser(pieces)
+    faux.parTable.factures_emises = factures
+    faux.parTable.transmissions_factures = []
+  }
+  const JEU = [
+    vente({ id: 'p-recue', tiers: 'CLIENT A DESIGNER', superpdp_invoice_id: 21 }),
+    vente({ id: 'p-pdf', tiers: 'CLIENT EXEMPLAIRE', facture_id: 'fs', statut: 'validee' }),
+    vente({ id: 'p-avant', tiers: 'CLIENT D AVANT', superpdp_invoice_id: 3, statut: 'validee' }),
+    vente({ id: 'p-formation', tiers: 'CLIENT FORMATION', vente_hors_des_factures: true, statut: 'validee' }),
+  ]
+
+  it('basculé : l’exemplaire, les pièces à désigner, la vente déclarée — chacune sa pastille et ce qu’elle veut dire', async () => {
+    poserVentes(JEU)
+    monter('toutes', true)
+    const exemplaire = await screen.findByText('Exemplaire de la facture F2026-0021')
+    expect(within(ligne('CLIENT EXEMPLAIRE')).getByText('Exemplaire de la facture F2026-0021')).toBe(exemplaire)
+    expect(exemplaire.className).toBe('badge badge-neutral')
+    expect(exemplaire.getAttribute('title')).toContain('La vente est comptée par la facture, source de sa vente')
+    const aDesigner = within(ligne('CLIENT A DESIGNER')).getByText('À désigner : c’est la facture F2026-0021')
+    expect(aDesigner.className).toBe('badge badge-warning')
+    expect(aDesigner.getAttribute('title')).toContain('désignez-la avant de la valider')
+    expect(within(ligne('CLIENT D AVANT')).getByText('À désigner : c’est la facture F2026-0003').getAttribute('title'))
+      .toContain('Validée sans être désignée')
+    const declaree = within(ligne('CLIENT FORMATION')).getByText('Vente hors des factures de l’application')
+    expect(declaree.className).toBe('badge badge-neutral')
+    // Aucune vente n'est comptée deux fois : la jumelle et le PDF portent la même facture source, qui compte la vente.
+    expect(screen.queryByText(/Comptée/)).toBeNull()
+  })
+
+  it('hors d’un dossier basculé, les mêmes pièces portent les marques d’hier', async () => {
+    poserVentes(JEU, FACTURES.map((f) => ({ ...f, source_de_la_vente: false })))
+    monter('toutes', false)
+    expect(await screen.findAllByText('Comptée deux fois')).toHaveLength(2)
+    expect(within(ligne('CLIENT D AVANT')).getByText('Facture émise F2026-0003')).toBeTruthy()
+    expect(screen.queryByText(/À désigner|Exemplaire de la facture/)).toBeNull()
+  })
+
+  it('basculé, la jumelle validée d’une facture source qui n’en est pas l’exemplaire : « Comptée deux fois », en tête', async () => {
+    poserVentes([
+      vente({ id: 'p-recue', tiers: 'CLIENT VALIDE', superpdp_invoice_id: 21, statut: 'validee' }),
+      vente({ id: 'p-pdf', tiers: 'CLIENT EXEMPLAIRE', facture_id: 'fs', statut: 'validee' }),
+    ])
+    monter('toutes', true)
+    const double = await screen.findByText('Comptée deux fois')
+    expect(within(ligne('CLIENT VALIDE')).getByText('Comptée deux fois')).toBe(double)
+    expect(double.getAttribute('title')).toContain('est la source de sa vente : elle la compte elle-même')
+    expect(within(ligne('CLIENT EXEMPLAIRE')).getByText('Exemplaire de la facture F2026-0021')).toBeTruthy()
+  })
+
+  it('le badge « Devise non convertie » se tait sur l’exemplaire d’une facture source, que le pont a lu ; pas sur un autre', async () => {
+    const enDevise = { devise: 'USD', montant_devise: 400, montant_ttc: null }
+    poserVentes([vente({ id: 'p-pdf', tiers: 'CLIENT EXEMPLAIRE', facture_id: 'fs', statut: 'validee', ...enDevise })])
+    monter('toutes', true)
+    await screen.findByText('Exemplaire de la facture F2026-0021')
+    expect(screen.queryByText('Devise non convertie')).toBeNull()
+    cleanup()
+    // Désignée à une facture d'avant la bascule : elle compte, et son badge se montre.
+    poserVentes([vente({ id: 'p-pdf', tiers: 'CLIENT EXEMPLAIRE', facture_id: 'fa', statut: 'validee', ...enDevise })])
+    monter('toutes', true)
+    expect(await screen.findByText('Devise non convertie')).toBeTruthy()
+  })
+
+  it('le pont lu en partie : ni marque ni exemplaire écarté — le badge garde la règle d’hier, et le bandeau le dit', async () => {
+    const enDevise = { devise: 'USD', montant_devise: 400, montant_ttc: null }
+    poserVentes([vente({ id: 'p-pdf', tiers: 'CLIENT EXEMPLAIRE', facture_id: 'fs', statut: 'validee', ...enDevise })])
+    faux.muetApres = { factures_emises: 1 }
+    monter('toutes', true)
+    expect(await screen.findByText(/^Les factures émises du dossier et leurs transmissions n'ont pas pu être lues en entier/)).toBeTruthy()
+    expect(screen.queryByText(/Exemplaire de la facture|À désigner|Comptée|Facture émise/)).toBeNull()
+    expect(screen.getByText('Devise non convertie')).toBeTruthy()
+  })
+})
+
 // UNE PIÈCE CITÉE PAR LA RÉVISION DES SOLDES NE SE SUPPRIME PLUS (ligne 41, étape R3 ; `garder_source_citee`, hypothèse
 // Q8) : même citée par une décision remplacée depuis — l'historique garde ses preuves. La fiche le dit sous les mots de la
 // base et n'offre pas « Supprimer » ; la sélection l'écarte et la NOMME ; rien ne part que la base refuserait.
@@ -1781,6 +1887,24 @@ describe('PiecesTab — l’exemplaire d’une facture émise', () => {
       expect(within(volet()).getByText('Cette pièce est désignée comme l’exemplaire de la facture F2026-0007.')).toBeTruthy()
       expect(within(volet()).getByRole('button', { name: 'Défaire la désignation' })).toBeTruthy()
       expect((within(volet()).getByLabelText('Tiers (fournisseur / client)') as HTMLInputElement).value).toBe('SAISIE EN COURS')
+    })
+
+    // ÉTAPE VF6e : l'onglet recopie aussi la DÉCLARATION dans la fiche ouverte. Sa propre relecture refusée, la fiche ne
+    // dirait plus la pièce déclarée que par l'onglet : sans la recopie, elle offrirait encore « Retirer la déclaration ».
+    it('retire la déclaration : l’onglet recopie la déclaration relue dans la fiche, même quand la relecture de la fiche échoue', async () => {
+      poserVentes([vente({ id: 'p-formation', vente_hors_des_factures: true })])
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      monter('toutes')
+      const marque = await screen.findByText('Vente hors des factures de l’application')
+      expect(within(ligne('CLIENT FICTIF')).getByText('Vente hors des factures de l’application')).toBe(marque)
+      expect(marque.className).toBe('badge badge-neutral')
+      await ouvrir('CLIENT FICTIF')
+      const retirer = await within(volet()).findByRole('button', { name: 'Retirer la déclaration' })
+      faux.relecturesRefusees = 1
+      await act(async () => { retirer.click() })
+      expect(faux.rpcs).toEqual([{ nom: 'retirer_declaration_hors_des_factures', args: { p_dossier_id: D, p_piece_id: 'p-formation' } }])
+      expect(within(ligne('CLIENT FICTIF')).queryByText('Vente hors des factures de l’application')).toBeNull()
+      expect(within(volet()).queryByRole('button', { name: 'Retirer la déclaration' })).toBeNull()
     })
 
     it('défait : la confirmation nomme, un appel, la ligne perd sa marque et la fiche revient au choix', async () => {

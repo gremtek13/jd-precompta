@@ -51,7 +51,7 @@ import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVen
 import { rattachementDesVentes, type VentesFactureesDesExports } from '../../lib/ventesFactureesDesExports'
 import { lireLesJustificatifsDesVentes } from '../../lib/justificatifsDesVentesLecture'
 import VentesFactureesEcritures from './VentesFactureesEcritures'
-import { exemplairesDesSources, facturesSourcesDe, type FacturesSources } from '../../lib/facturesSources'
+import { exemplairesDesSources, facturesSourcesDe, horsDesExemplairesDesSources, type FacturesSources } from '../../lib/facturesSources'
 
 // Aucune facture source : celles d'un dossier qui n'a pas basculé (étape VF6a). La base refuse qu'une facture y soit source
 // de sa vente (`fixer_source_de_la_vente`), et qu'un dossier qui en porte une revienne en arrière
@@ -339,13 +339,6 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const acquisitions = acquisitionsDesBiens(immobilisations, natures, ouverture)
   const pieceIdsImmobilisees = new Set(acquisitions.keys())
 
-  // Catégories utilisées par au moins une pièce validée, un mouvement affecté ou une part d'un mouvement
-  // ventilé mais sans compte associé — impossible de générer l'écriture correspondante tant que ce n'est
-  // pas renseigné (voir lib/controles.ts). La facture d'un bien n'y compte pas : elle s'écrit sur le
-  // compte de sa nature.
-  const categoriesSansCompte = calculerCategoriesSansCompte(
-    categories, piecesValidees, [...lignesBancaires, ...ventilations], pieceIdsImmobilisees,
-  )
 
   // Valeur affichée dans le champ tant que le cabinet n'a rien tapé : la suggestion connue pour ce
   // code de catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
@@ -403,6 +396,15 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     : lectureDesSources?.etat === 'incomplete' ? lectureDesSources.motif : 'pas encore lues'
   const sourcesDesControles = facturesSources ?? AUCUNE_FACTURE_SOURCE
   const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, acquisitions, sourcesDesControles)
+  // Catégories utilisées par au moins une pièce validée, un mouvement affecté ou une part d'un mouvement
+  // ventilé mais sans compte associé — impossible de générer l'écriture correspondante tant que ce n'est
+  // pas renseigné (voir lib/controles.ts). La facture d'un bien n'y compte pas : elle s'écrit sur le
+  // compte de sa nature. Ni l'exemplaire d'une facture source (étape VF6e), qui ne s'écrit pas : sur des sources pas encore
+  // lues, la règle d'hier — la carte en montre plus, jamais moins.
+  const categoriesSansCompte = calculerCategoriesSansCompte(
+    categories, horsDesExemplairesDesSources(piecesValidees, sourcesDesControles), [...lignesBancaires, ...ventilations],
+    pieceIdsImmobilisees,
+  )
   // Les paiements de chaque pièce, parts des virements groupés comprises : ils datent sa charge et portent
   // ses contreparties banque (lib/rattachement.ts). Et ce que les virements mixtes paient de leurs exemplaires (étape
   // VF5h), sur les ventes facturées lues en entier de CE dossier : l'exemplaire qu'un tel virement paie s'écrit à sa date,

@@ -832,6 +832,32 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
       .not.toContain('ventes-en-double')
   })
 
+  // LE PONT PAR RÉGIME (chantier EC-Q3, étape VF6e) : bloquant dans les deux régimes, chacun par sa règle. Une facture SOURCE
+  // compte sa vente elle-même : la jumelle et le PDF tous deux désignés ne la comptent pas — rien ne bloque —, une pièce
+  // validée qui n'est pas son exemplaire la compte une seconde fois — bloquant. Une facture d'avant la bascule, comme hier.
+  it('« ventes-en-double » par régime : bloquant pour une facture source comptée par une pièce de plus, comme pour une autre', () => {
+    const jumelle = (o: Partial<Piece> = {}) =>
+      piece('v1', { type_piece: 'vente', source: 'superpdp', date_piece: '2025-06-01', superpdp_invoice_id: 4242, ...o })
+    const pdf = piece('v2', { type_piece: 'vente', date_piece: '2025-06-01', facture_id: 'f1' })
+    const source = (o: Surcharges) => donnees({ facturesEmises: [factureEmise()], facturesSources: new Set(['f1']), ...o })
+    for (const modele of [{ mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }, { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }] as const) {
+      // Deux exemplaires désignés d'une facture source : ni l'un ni l'autre ne compte.
+      expect(ids(source({ modele, piecesValidees: [P1, jumelle({ facture_id: 'f1' }), pdf] })), modele.mode).not.toContain('ventes-en-double')
+      // La jumelle validée sans être désignée, à côté du PDF désigné : la vente compte par la facture ET par elle.
+      expect(prealable(source({ modele, piecesValidees: [P1, jumelle(), pdf] }), 'ventes-en-double'), modele.mode)
+        .toMatchObject({ nb: 1, bloquant: true, cible: 'pieces' })
+      // Seule et validée, sans désignation : de même.
+      expect(prealable(source({ modele, piecesValidees: [P1, jumelle()] }), 'ventes-en-double'), modele.mode)
+        .toMatchObject({ nb: 1, bloquant: true })
+      // À valider, elle ne compte pas encore : elle est à désigner, rien ne bloque à ce titre.
+      expect(ids(source({ modele, piecesValidees: [P1, pdf], piecesAValider: [jumelle({ statut: 'a_valider' })] })), modele.mode)
+        .not.toContain('ventes-en-double')
+    }
+    // Le régime d'hier sur les deux exemplaires : comptée deux fois, bloquant.
+    expect(prealable(donnees({ piecesValidees: [P1, jumelle({ facture_id: 'f1' }), pdf], facturesEmises: [factureEmise()] }), 'ventes-en-double'))
+      .toMatchObject({ nb: 1, bloquant: true })
+  })
+
   // L'écart se juge sur le TOTAL payé de la pièce : réglée par un acompte puis par la part d'un virement groupé, elle
   // n'a rien à reprendre — le contrôle d'avant comparait chaque mouvement à la pièce, et refusait cette validation.
   it('« pieces-payees-en-partie » se tait sur une pièce réglée en deux fois', () => {
@@ -915,6 +941,11 @@ describe('prealablesDeValidation — l’exemplaire d’une facture source (VF6a
       piecesValidees: [P1, exemplaire({ montant_ttc: 80 })], lignes: [L1, ligne('l2', { piece_id: 'v1', date: '2025-05-04', montant: 80 })],
       ecritures: [E1, E2, ecritureDeLExemplaire({ id: 'e3' }),
         ecritureDeLExemplaire({ id: 'e4', compte: COMPTE_BANQUE, sens: 'debit', ligne_bancaire_id: 'l2' })],
+    }, { source: false, autre: true }],
+    // Étape VF6e, le préalable que VF6a laissait : payé plus que son montant — deux rapprochements de 60 € pour 60 €.
+    ['pieces-payees-en-trop', {
+      piecesValidees: [P1, exemplaire()],
+      lignes: [L1, ligne('l2', { piece_id: 'v1', date: '2025-05-04', montant: 60 }), ligne('l3', { piece_id: 'v1', date: '2025-05-05', montant: 60 })],
     }, { source: false, autre: true }],
   ]
 
@@ -1179,6 +1210,24 @@ describe('prealablesDeValidation — la couverture des points de la Checklist', 
       expect(repris(id), `« ${id} » est repris par la validation avant VF7`).toBe(false)
       expect(id in POINTS_DE_LA_CHECKLIST_ECARTES).toBe(false)
     }
+  })
+
+  // LES DEUX POINTS DE LA JUMELLE INVERSÉE (étape VF6e) : en « attention ». La pièce à désigner ne se valide pas sans sa
+  // marque — la base la refuse (G3) — et, validée avant la bascule, compte comme hier ; la vente déclarée dont le montant est
+  // celui d'une facture source est un symptôme, qui ne décide rien (VF6-Q4). Ni l'un ni l'autre ne retient la validation ;
+  // la vente comptée deux fois, elle, reste un préalable bloquant, dans les deux régimes.
+  it('tient « exemplaires à désigner » et « ventes hors factures à vérifier » en attention, et « ventes en double » reprise', () => {
+    const points = readFileSync(new URL('./pointsDeLaChecklist.ts', import.meta.url), 'utf8')
+    for (const id of ['exemplaires-a-designer', 'ventes-hors-factures-a-verifier']) {
+      const debut = points.indexOf(`id: '${id}'`)
+      expect(debut, `« ${id} » n'est pas un point de la Checklist`).toBeGreaterThan(0)
+      expect(points.slice(debut, points.indexOf('}', debut))).toContain("severite: 'attention'")
+      expect(pointsEnErreur(checklist)).not.toContain(id)
+      expect(repris(id), `« ${id} » est repris par la validation`).toBe(false)
+      expect(id in POINTS_DE_LA_CHECKLIST_ECARTES).toBe(false)
+    }
+    expect(pointsEnErreur(checklist)).toContain('ventes-en-double')
+    expect(repris('ventes-en-double')).toBe(true)
   })
 })
 

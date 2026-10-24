@@ -91,8 +91,14 @@ vi.mock('../../lib/supabase', async () => {
         // deux piles devant être distinguables.
         let statut: string | null = null
         let valeurMaj: Record<string, unknown> | null = null
+        // Les colonnes demandées des factures émises : seules elles reviennent (étape VF6e) — une lecture qui oublierait leur
+        // montant tairait le symptôme d'une pièce déclarée à tort, sans erreur.
+        let colonnes: string[] | null = null
         Object.assign(chaine, {
-          select: () => chaine,
+          select: (liste?: string) => {
+            if (table === 'factures_emises' && liste && liste !== '*' && !liste.includes('(')) colonnes = liste.split(',').map((c) => c.trim())
+            return chaine
+          },
           update: (valeur: Record<string, unknown>) => { valeurMaj = valeur; return chaine },
           eq: (colonne: string, valeur: string) => {
             if (colonne === 'statut') statut = valeur
@@ -122,8 +128,11 @@ vi.mock('../../lib/supabase', async () => {
               return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: 0 }).then(suite)
             }
             const toutes = filtrer(faux.parTable[cle] ?? [], predicats)
+            const demandees: string[] | null = colonnes
+            const projetees = demandees === null ? toutes
+              : toutes.map((l) => Object.fromEntries(demandees.map((c) => [c, (l as Record<string, unknown>)[c]])))
             return Promise.resolve({
-              data: toutes.slice(debut, debut + (fin - debut + 1)),
+              data: projetees.slice(debut, debut + (fin - debut + 1)),
               error: null,
               // `pieces:validee` ou `pieces:a_valider` : une seule des deux piles lue en partie.
               count: faux.tronquees.has(table) || faux.tronquees.has(cle) ? toutes.length + 5 : toutes.length,
@@ -208,8 +217,8 @@ function poser(pieces: {
   vehicules?: unknown[]
   lettrages?: unknown[]
   declarations?: DeclarationTva[]
-  // Avec la source de leur vente (étape VF6a) : la Checklist la lit avec elles.
-  factures?: (FacturePourJumelle & { source_de_la_vente?: boolean })[]
+  // Avec la source de leur vente (étape VF6a) et leur montant (étape VF6e) : la Checklist les lit avec elles.
+  factures?: (FacturePourJumelle & { source_de_la_vente?: boolean; montant_ttc?: number })[]
   transmissions?: TransmissionLue[]
 }) {
   faux.parTable = {
@@ -3014,5 +3023,77 @@ describe('ChecklistTab — l’ouverture de l’exercice qui suit le dernier val
 
     await screen.findByText(POINT)
     expect(screen.queryByText(/Les soldes reportés des exercices validés n'ont pas pu être lus/)).toBeNull()
+  })
+})
+
+// LA JUMELLE INVERSÉE (ligne 28.65, chantier EC-Q3, étape VF6e ; lib/ventesJumelles.ts) : dans un dossier dont les factures
+// sont la source de leurs ventes, la pièce que le pont rattache à une facture sans être désignée est « à désigner », en
+// attention ; deux exemplaires désignés d'une facture source ne sont pas une vente comptée deux fois ; une pièce déclarée
+// hors des factures dont le TTC est celui d'une facture source sans exemplaire validé se vérifie (VF6-Q4). Ce que le module
+// ne voit pas : que l'écran lise la source et le montant des factures, la bascule du dossier, et se taise sur une lecture
+// partielle. Données FICTIVES.
+describe('ChecklistTab — la jumelle inversée (VF6e)', () => {
+  const A_DESIGNER = /pièce\(s\) de vente que le pont rattache à une facture émise, à désigner exemplaire de cette facture/
+  const HORS_FACTURES = /pièce\(s\) déclarée\(s\) vente hors des factures dont le montant est celui d’une facture source/
+  const EN_DOUBLE = /portée\(s\) par plusieurs pièces/
+  const source = factureEmise({ id: 'fs', numero: 'F2026-0021', superpdp_invoice_id: 21, date_emission: '2026-04-02' })
+  const factures = [{ ...source, source_de_la_vente: true, montant_ttc: 360 }]
+  const recue = piece({
+    id: 'recue', source: 'superpdp', superpdp_invoice_id: 21, type_piece: 'vente', nom_fichier: 'original-0021.xml', date_piece: '2026-04-02',
+  })
+  const declaree = piece({
+    id: 'pd', type_piece: 'vente', statut: 'validee', vente_hors_des_factures: true, nom_fichier: 'formation.pdf',
+    date_piece: '2026-06-30', montant_ttc: 360,
+  })
+
+  it('basculé : la pièce à désigner et la vente déclarée à vérifier, en attention, nommées, et menées à Justificatifs', async () => {
+    poser({ aValider: [recue], validees: [declaree], factures })
+    const onglets: DossierTab[] = []
+    monter(false, TRESORERIE, [], 'trimestrielle', 'exonere', (tab) => { onglets.push(tab) }, true)
+    const aDesigner = await screen.findByText(A_DESIGNER)
+    expect(aDesigner.textContent).toMatch(/^1 /)
+    expect(screen.getByText(/« original-0021\.xml » : F2026-0021\. Dans ce dossier, une pièce de vente ne se valide que désignée/)).toBeDefined()
+    expect(screen.getByText(HORS_FACTURES).textContent).toMatch(/^1 /)
+    expect(screen.getByText(/« formation\.pdf », 360,00\s€ : F2026-0021\./)).toBeDefined()
+    const pastille = (motif: RegExp) => screen.getByText(motif).closest('.check-ligne')!.querySelector('.check-dot')!.className
+    expect(pastille(A_DESIGNER)).toContain('check-attention')
+    expect(pastille(HORS_FACTURES)).toContain('check-attention')
+    aDesigner.closest('.check-ligne')!.querySelector('button')!.click()
+    expect(onglets).toEqual(['pieces'])
+  })
+
+  it('basculé : la jumelle et le PDF tous deux désignés d’une facture source ne sont pas une vente comptée deux fois', async () => {
+    const pdf = piece({ id: 'pdf', type_piece: 'vente', statut: 'validee', facture_id: 'fs', nom_fichier: 'F2026-0021.pdf' })
+    // L'ancre : un achat validé sans catégorie, dont le point paraît forcément (l'exemplaire, lui, n'en réclame pas).
+    const ancre = piece({ id: 'ancre', statut: 'validee' })
+    poser({ aValider: [{ ...recue, facture_id: 'fs' }], validees: [pdf, ancre], factures })
+    monter(false, TRESORERIE, [], 'trimestrielle', 'exonere', () => {}, true)
+    expect((await screen.findByText(/sans catégorie/)).textContent).toMatch(/^1 /)
+    expect(screen.queryByText(EN_DOUBLE)).toBeNull()
+    expect(screen.queryByText(A_DESIGNER)).toBeNull()
+    // Les mêmes pièces hors d'un dossier basculé, la facture source de rien : comptée deux fois, comme hier.
+    cleanup()
+    poser({ aValider: [{ ...recue, facture_id: 'fs' }], validees: [pdf], factures: [{ ...source, source_de_la_vente: false, montant_ttc: 360 }] })
+    monter()
+    expect((await screen.findByText(EN_DOUBLE)).textContent).toMatch(/^1 /)
+  })
+
+  it('les pièces ou les factures lues en partie : les deux points se taisent, et le bandeau le dit', async () => {
+    for (const table of ['factures_emises', 'pieces:a_valider']) {
+      poser({ aValider: [recue], validees: [declaree], factures, tronquees: [table] })
+      const { unmount } = monter(false, TRESORERIE, [], 'trimestrielle', 'exonere', () => {}, true)
+      expect((await screen.findAllByText(/n’ont pas pu être lues en entier|n'ont pas pu être lues en entier/)).length, table).toBeGreaterThan(0)
+      expect(screen.queryByText(A_DESIGNER), table).toBeNull()
+      expect(screen.queryByText(HORS_FACTURES), table).toBeNull()
+      unmount()
+    }
+  })
+
+  it('hors d’un dossier basculé : rien à désigner', async () => {
+    poser({ aValider: [recue], validees: [declaree], factures: [{ ...source, source_de_la_vente: false, montant_ttc: 360 }] })
+    monter()
+    await screen.findByText(/sans catégorie/)
+    expect(screen.queryByText(A_DESIGNER)).toBeNull()
+    expect(screen.queryByText(HORS_FACTURES)).toBeNull()
   })
 })

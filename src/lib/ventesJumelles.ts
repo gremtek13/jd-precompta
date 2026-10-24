@@ -1,4 +1,6 @@
 import { sirenDe } from './factureCii'
+import { formatMoney } from './format'
+import type { FacturesSources } from './facturesSources'
 import type { FactureEmise, Piece, TransmissionFacture } from './types'
 
 // LA VENTE QUI REVIENT : LE PONT ENTRE UNE FACTURE ÉMISE ET SA PIÈCE JUMELLE (ligne 28.6 de la feuille de route).
@@ -192,24 +194,144 @@ export function jumellesDeLaFacture(
   return jumellesDuDossier([facture], transmissions, pieces).parFacture.get(facture.id) ?? []
 }
 
+// ── LE PONT PAR RÉGIME (chantier EC-Q3, étape VF6e ; conception : HISTORIQUE.md, « VF6, LA JUMELLE INVERSÉE : LA
+// CONCEPTION », § 3 h) ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Dans un dossier dont les factures sont la SOURCE de leurs ventes (étape VF2, `dossiers.ventes_par_les_factures`), une
+// facture source compte sa vente ELLE-MÊME — par ses encaissements en trésorerie, par elle-même en engagement — et son
+// exemplaire désigné ne compte plus (étapes VF3b et VF6a, lib/facturesSources.ts). Ce que le pont en dit change donc avec
+// le RÉGIME de la facture : une facture qui n'est pas source (tout dossier qui n'a pas basculé, et les factures d'avant la
+// bascule) se compte par ses pièces, comme hier ; une facture source, par elle-même. Et dans un dossier basculé, la base
+// refuse de valider une pièce de vente que rien ne marque (G3, migration `jumelle_inversee`) : la pièce que le pont
+// rattache à une facture s'y DÉSIGNE exemplaire de cette facture, ce que le pont dit avant la validation.
+
+/** Ce que le pont sait du dossier pour juger par régime. Rien n'a de valeur par défaut : un appelant qui oublierait la
+ *  bascule ou les sources dirait d'hier ce que la base juge aujourd'hui. */
+export interface RegimeDuPont {
+  /** `dossiers.ventes_par_les_factures` : les factures du dossier sont la source de leurs ventes (étape VF2). */
+  dossierBascule: boolean
+  /** Les factures sources de leur vente, sur des factures émises lues EN ENTIER (`facturesSourcesDe`). Vides hors d'un
+   *  dossier basculé : la base y refuse toute facture source (`fixer_source_de_la_vente`). */
+  sources: FacturesSources
+}
+
+/** La pièce, telle que le pont la juge par régime : son statut (une pièce VALIDÉE compte), sa déclaration. */
+export type PieceDuRegime = Pick<Piece, 'id' | 'statut' | 'vente_hors_des_factures'>
+
 export interface VenteEnDouble {
   factureId: string
-  /** Les pièces qui la portent toutes, dans l'ordre des pièces données. */
+  /** Les pièces qui la comptent, dans l'ordre des pièces données : toutes ses pièces pour une facture qui n'est pas
+   *  source ; pour une facture source, ses pièces VALIDÉES qui ne sont pas son exemplaire. */
   pieceIds: string[]
+  /** Présent, et vrai, pour une facture SOURCE seulement : elle compte la vente elle-même, et ses pièces la comptent en plus. */
+  parLaFacture?: true
+}
+
+const designee = (j: Jumelle) => j.preuves.includes('designation')
+
+/**
+ * LES VENTES COMPTÉES PLUSIEURS FOIS, par régime (étape VF6e).
+ * - Une facture qui N'EST PAS source (un dossier qui n'a pas basculé, une facture d'avant la bascule) : portée par
+ *   plusieurs pièces — sa jumelle reçue de la plateforme ET celle de la synchronisation Super PDP, ou sa jumelle ET le PDF
+ *   que le cabinet a désigné exemplaire de la facture (étape VF1a). Validées, chacune compte la vente dans la 2035, la CA3
+ *   et le brouillon. Dit sur les deux piles, validées comme à valider : un doublon est un fait, et c'est avant la
+ *   validation qu'il se corrige le mieux. Inchangé.
+ * - Une facture SOURCE compte sa vente elle-même : une pièce VALIDÉE que le pont lui rattache et qui n'est pas son
+ *   exemplaire désigné la compte une seconde fois. Ses exemplaires ne comptent pas — deux exemplaires désignés, la jumelle
+ *   et le PDF, ne sont pas un double —, et une pièce à valider ne compte pas encore (elle se dit « à désigner »). G3 empêche
+ *   une telle pièce de DEVENIR validée dans un dossier basculé (point 3 de la garde) : le point reste en témoin — une pièce
+ *   validée avant la bascule (EC3-Q1), ou avant que sa transmission soit connue (G3 ne juge qu'au passage).
+ * Dans l'ordre des factures données.
+ */
+export function ventesEnDouble(
+  factures: readonly Pick<FacturePourJumelle, 'id'>[],
+  jumelles: JumellesDuDossier,
+  sources: FacturesSources,
+  pieces: readonly Pick<Piece, 'id' | 'statut'>[],
+): VenteEnDouble[] {
+  const statutDe = new Map(pieces.map((p) => [p.id, p.statut]))
+  return factures.flatMap((f): VenteEnDouble[] => {
+    const portees = jumelles.parFacture.get(f.id) ?? []
+    if (!sources.has(f.id)) {
+      return portees.length > 1 ? [{ factureId: f.id, pieceIds: portees.map((j) => j.pieceId) }] : []
+    }
+    const enPlus = portees.filter((j) => !designee(j) && statutDe.get(j.pieceId) === 'validee')
+    return enPlus.length > 0 ? [{ factureId: f.id, pieceIds: enPlus.map((j) => j.pieceId), parLaFacture: true }] : []
+  })
+}
+
+export interface PieceADesigner {
+  pieceId: string
+  factureId: string
 }
 
 /**
- * LES VENTES COMPTÉES PLUSIEURS FOIS : une facture émise que plusieurs pièces portent — sa jumelle reçue de la
- * plateforme ET celle de la synchronisation Super PDP, ou sa jumelle ET le PDF que le cabinet a désigné exemplaire de la
- * facture (étape VF1a). Validées, chacune compte la vente dans la 2035, la CA3 et le brouillon : tant que le dossier n'a
- * pas basculé (étape VF2), une facture émise ne compte nulle part, ses exemplaires si. Dit sur les deux piles, validées
- * comme à valider : un doublon est un fait, et c'est avant la validation qu'il se corrige le mieux. Dans l'ordre des
- * factures données.
+ * LES PIÈCES À DÉSIGNER (étape VF6e) : dans un dossier BASCULÉ, chaque pièce que le pont rattache à une facture émise
+ * validée — source, ou d'avant la bascule — sans que le cabinet l'ait désignée exemplaire de cette facture. La base ne la
+ * validera que désignée à elle (G3, point 3) ; validée avant, elle compte comme hier, et la désignation la relie à sa
+ * facture (le virement mixte de l'étape VF5h exige son exemplaire unique). Une pièce comptée deux fois n'en est pas : elle
+ * se dit « Comptée deux fois », plus grave, et sa marque dit aussi de la désigner. Rien hors d'un dossier basculé : la
+ * désignation y reste un geste libre. Dans l'ordre des pièces données au pont.
  */
-export function ventesEnDouble(factures: readonly FacturePourJumelle[], jumelles: JumellesDuDossier): VenteEnDouble[] {
-  return factures.flatMap((f) => {
-    const pieces = jumelles.parFacture.get(f.id) ?? []
-    return pieces.length > 1 ? [{ factureId: f.id, pieceIds: pieces.map((j) => j.pieceId) }] : []
+export function piecesADesigner(
+  jumelles: JumellesDuDossier,
+  regime: RegimeDuPont,
+  enDouble: readonly VenteEnDouble[],
+): PieceADesigner[] {
+  if (!regime.dossierBascule) return []
+  const doubles = new Set(enDouble.flatMap((v) => v.pieceIds))
+  const resultat: PieceADesigner[] = []
+  for (const [pieceId, j] of jumelles.parPiece) {
+    if (designee(j) || doubles.has(pieceId)) continue
+    resultat.push({ pieceId, factureId: j.factureId })
+  }
+  return resultat
+}
+
+export interface VenteHorsFacturesAVerifier {
+  pieceId: string
+  /** Les factures sources sans exemplaire validé dont le TTC est celui de la pièce, la même année. */
+  factureIds: string[]
+}
+
+/** La facture, telle que le symptôme la lit : son montant et sa date. */
+export type FacturePourLeSymptome = Pick<FactureEmise, 'id' | 'statut' | 'numero' | 'date_emission' | 'montant_ttc'>
+/** La pièce, telle que le symptôme la lit. */
+export type PiecePourLeSymptome = Pick<Piece,
+  'id' | 'statut' | 'facture_id' | 'vente_hors_des_factures' | 'montant_ttc' | 'date_piece'>
+
+const centimes = (n: number) => Math.round(n * 100)
+
+/**
+ * LE SYMPTÔME D'UNE PIÈCE DÉCLARÉE À TORT (VF6-Q4, tranchée le 23/10/2026 à la recommandation) : une pièce DÉCLARÉE vente
+ * hors des factures de l'application dont le TTC est, au centime, celui d'une facture SOURCE de la même année qu'aucun
+ * exemplaire validé ne porte. Si c'était le PDF de cette facture, la vente compterait deux fois — par la facture et par la
+ * pièce. Un SYMPTÔME, qui ne décide rien : deux prestations du même prix sont possibles, et la déclaration est un geste du
+ * cabinet. Le pont, lui, ne rapproche jamais un montant (le lien se déduit, il ne se devine pas) : ce point vit à côté de
+ * lui. Sur les deux piles : une pièce déclarée à valider se vérifie mieux avant sa validation. L'année est celle de la date
+ * de la pièce et de la date d'émission de la facture ; une pièce sans date ni montant ne se compare pas. Le montant est
+ * signé (un avoir l'est) : au centime, le signe compris. Dans l'ordre des pièces données ; les factures de chaque pièce dans
+ * l'ordre des factures données.
+ */
+export function ventesHorsFacturesAVerifier(
+  pieces: readonly PiecePourLeSymptome[],
+  factures: readonly FacturePourLeSymptome[],
+  sources: FacturesSources,
+): VenteHorsFacturesAVerifier[] {
+  const exemplairesValides = new Set(
+    pieces.flatMap((p) => (p.statut === 'validee' && p.facture_id != null ? [p.facture_id] : [])),
+  )
+  // Une recherche par (année, centimes) : aucun parcours des factures pour chaque pièce.
+  const parCle = new Map<string, string[]>()
+  for (const f of factures) {
+    if (f.statut !== 'validee' || !sources.has(f.id) || exemplairesValides.has(f.id)) continue
+    const cle = `${f.date_emission.slice(0, 4)} ${centimes(f.montant_ttc)}`
+    parCle.set(cle, [...(parCle.get(cle) ?? []), f.id])
+  }
+  if (parCle.size === 0) return []
+  return pieces.flatMap((p) => {
+    if (!p.vente_hors_des_factures || p.montant_ttc == null || p.date_piece == null) return []
+    const ids = parCle.get(`${p.date_piece.slice(0, 4)} ${centimes(p.montant_ttc)}`)
+    return ids ? [{ pieceId: p.id, factureIds: ids }] : []
   })
 }
 
@@ -228,7 +350,9 @@ const nomsDesPieces = (pieces: readonly Pick<Piece, 'id' | 'nom_fichier'>[], ids
 
 const etLeReste = (n: number) => (n > AU_PLUS ? ` Et ${n - AU_PLUS} autre${n - AU_PLUS > 1 ? 's' : ''}.` : '')
 
-/** Les ventes comptées plusieurs fois : chaque facture et les pièces qui la portent ; rien quand il n'y en a pas. */
+/** Les ventes comptées plusieurs fois : chaque facture et les pièces qui la portent ; rien quand il n'y en a pas. Une
+ *  facture source se nomme avec les pièces qui la comptent en plus d'elle, et le remède se dit selon le régime : garder une
+ *  seule pièce d'une facture qui n'est pas source ; désigner exemplaire de sa facture source la pièce qui la compte aussi. */
 export function detailVentesEnDouble(
   enDouble: readonly VenteEnDouble[],
   factures: readonly Pick<FactureEmise, 'id' | 'numero'>[],
@@ -236,9 +360,49 @@ export function detailVentesEnDouble(
 ): string | undefined {
   if (enDouble.length === 0) return undefined
   const liste = enDouble.slice(0, AU_PLUS)
-    .map((v) => `${nomDeLaFacture(factures, v.factureId)} : ${nomsDesPieces(pieces, v.pieceIds)}.`).join(' ')
-  return `${liste}${etLeReste(enDouble.length)} Une vente ne se compte qu’une fois : gardez une seule pièce par facture — `
-    + 'celle reçue de la plateforme du client porte l’original.'
+    .map((v) => (v.parLaFacture
+      ? `${nomDeLaFacture(factures, v.factureId)}, source de sa vente, et ${nomsDesPieces(pieces, v.pieceIds)}.`
+      : `${nomDeLaFacture(factures, v.factureId)} : ${nomsDesPieces(pieces, v.pieceIds)}.`)).join(' ')
+  const remedes = [
+    ...(enDouble.some((v) => !v.parLaFacture)
+      ? [' Une vente ne se compte qu’une fois : gardez une seule pièce par facture — celle reçue de la plateforme du client '
+        + 'porte l’original.'] : []),
+    ...(enDouble.some((v) => v.parLaFacture)
+      ? [' Une facture source compte sa vente elle-même : désignez la pièce validée exemplaire de sa facture, et elle ne '
+        + 'comptera plus.'] : []),
+  ]
+  return `${liste}${etLeReste(enDouble.length)}${remedes.join('')}`
+}
+
+/** Les pièces à désigner : chacune et la facture que le pont prouve ; rien quand il n'y en a pas. */
+export function detailPiecesADesigner(
+  aDesigner: readonly PieceADesigner[],
+  factures: readonly Pick<FactureEmise, 'id' | 'numero'>[],
+  pieces: readonly Pick<Piece, 'id' | 'nom_fichier'>[],
+): string | undefined {
+  if (aDesigner.length === 0) return undefined
+  const liste = aDesigner.slice(0, AU_PLUS)
+    .map((x) => `${nomsDesPieces(pieces, [x.pieceId])} : ${nomDeLaFacture(factures, x.factureId)}.`).join(' ')
+  return `${liste}${etLeReste(aDesigner.length)} Dans ce dossier, une pièce de vente ne se valide que désignée exemplaire `
+    + 'de la facture que le pont prouve : sa fiche, dans Justificatifs, la désigne.'
+}
+
+/** Les pièces déclarées dont le montant est celui d'une facture source sans exemplaire : chacune, son montant et la
+ *  facture ; rien quand il n'y en a pas. */
+export function detailVentesHorsFacturesAVerifier(
+  aVerifier: readonly VenteHorsFacturesAVerifier[],
+  factures: readonly Pick<FactureEmise, 'id' | 'numero'>[],
+  pieces: readonly Pick<Piece, 'id' | 'nom_fichier' | 'montant_ttc'>[],
+): string | undefined {
+  if (aVerifier.length === 0) return undefined
+  const liste = aVerifier.slice(0, AU_PLUS).map((x) => {
+    const montant = pieces.find((p) => p.id === x.pieceId)?.montant_ttc
+    return `${nomsDesPieces(pieces, [x.pieceId])}${montant == null ? '' : `, ${formatMoney(montant)}`} : `
+      + `${x.factureIds.map((id) => nomDeLaFacture(factures, id)).join(' ou ')}.`
+  }).join(' ')
+  return `${liste}${etLeReste(aVerifier.length)} Une facture source compte sa vente elle-même : si l’une de ces pièces est `
+    + 'le PDF de la facture, la vente compte deux fois — désignez-la exemplaire de sa facture, la désignation remplace la '
+    + 'déclaration. Deux prestations du même prix ne sont pas une erreur.'
 }
 
 /** Les pièces dont les preuves se contredisent : ce que chacune désigne ; rien quand il n'y en a pas. */
@@ -267,13 +431,16 @@ export function detailJumellesIncoherentes(
 // sache — et l'écran ne l'appelle que sur des listes LUES EN ENTIER, une facture non lue faisant passer une pièce
 // contradictoire pour une jumelle.
 
-/** Ce qu'une pièce est pour le pont : la jumelle d'une facture, l'une des pièces d'une vente comptée plusieurs fois, ou
- * une pièce dont les preuves se contredisent. */
-export type GenreMarque = 'jumelle' | 'double' | 'incoherente'
+/** Ce qu'une pièce est pour le pont : la jumelle d'une facture, l'une des pièces d'une vente comptée plusieurs fois, une
+ * pièce dont les preuves se contredisent ; et, par régime (étape VF6e), l'exemplaire désigné d'une facture source, une
+ * pièce à désigner exemplaire de sa facture dans un dossier basculé, une vente déclarée hors des factures de
+ * l'application. */
+export type GenreMarque = 'jumelle' | 'double' | 'incoherente' | 'exemplaire' | 'a_designer' | 'hors_factures'
 
 export interface MarqueDeLaPiece {
   genre: GenreMarque
-  /** Le texte de la pastille : « Facture émise F2026-0007 », « Comptée deux fois », « À vérifier : … ». */
+  /** Le texte de la pastille : « Facture émise F2026-0007 », « Comptée deux fois », « À vérifier : … », « Exemplaire de la
+   *  facture F2026-0021 », « À désigner : c’est la facture F2026-0021 », « Vente hors des factures de l’application ». */
   libelle: string
   /** Ce qu'elle veut dire, preuves comprises : l'infobulle de la ligne, le texte de la fiche. */
   explication: string
@@ -283,12 +450,16 @@ export interface MarqueDeLaPiece {
   autresPieces: string[]
 }
 
-/** La pastille de chaque genre : le neutre pour une jumelle (rien n'est faux), le danger pour une vente comptée deux fois
- * (une erreur de la Checklist), l'attention pour une pièce à vérifier (une attention de la Checklist). */
+/** La pastille de chaque genre : le neutre pour une jumelle, un exemplaire désigné ou une vente déclarée (rien n'est faux),
+ * le danger pour une vente comptée deux fois (une erreur de la Checklist), l'attention pour une pièce à vérifier ou à
+ * désigner (une attention de la Checklist). */
 export const PASTILLE_DE_LA_MARQUE: Record<GenreMarque, string> = {
   jumelle: 'badge-neutral',
   double: 'badge-danger',
   incoherente: 'badge-warning',
+  exemplaire: 'badge-neutral',
+  a_designer: 'badge-warning',
+  hors_factures: 'badge-neutral',
 }
 
 // Les trois faits que le pont DÉDUIT ; la désignation, un geste du cabinet, se dit à part et la première.
@@ -316,13 +487,41 @@ const fois = (n: number) => (n === 2 ? 'deux' : n === 3 ? 'trois' : String(n))
 
 const A_VERIFIER = 'elle n’est tenue pour la pièce d’aucune facture émise. Vérifiez-la sur la plateforme avant de la valider.'
 
+// Ce que dit la marque d'une pièce À DÉSIGNER, selon ce qu'elle est et la facture que le pont prouve.
+function explicationADesigner(
+  nomFacture: string, dites: string, source: boolean, validee: boolean, declaree: boolean,
+): string {
+  const ce = `Cette pièce est la facture ${nomFacture} émise dans l’application, revenue comme pièce — ${dites}.`
+    + (declaree ? ' Elle est pourtant déclarée vente hors des factures de l’application.' : '')
+  if (validee) {
+    // Une pièce validée que le pont rattache à une facture SOURCE est comptée deux fois : elle n'arrive pas ici.
+    return `${ce} Validée sans être désignée — avant la bascule du dossier, ou avant que sa transmission soit connue —, elle `
+      + 'compte la vente comme une pièce : désignez-la exemplaire de cette facture, qui ne change rien à ce qui se compte '
+      + 'et la relie à sa facture.'
+  }
+  return `${ce} Dans ce dossier, une pièce de vente ne se valide que désignée exemplaire de la facture que le pont prouve`
+    + (declaree ? ' (la désignation remplace la déclaration)' : '') + ' : désignez-la avant de la valider. '
+    + (source
+      ? 'Désignée, elle ne compte pas : la facture, source de sa vente, la compte elle-même.'
+      : 'Désignée, elle compte la vente comme aujourd’hui : la facture, émise avant la bascule, n’en est pas la source.')
+}
+
 /**
- * La marque de chaque pièce que le pont reconnaît, ou dont les preuves se contredisent ; une pièce sans marque n'est pas
- * dans la table. `factures` : celles qu'on a données au pont, pour leurs numéros et leur nature.
+ * La marque de chaque pièce que le pont reconnaît, dont les preuves se contredisent, ou que le cabinet a déclarée vente
+ * hors des factures de l'application ; une pièce sans marque n'est pas dans la table. `factures` : celles qu'on a données au
+ * pont, pour leurs numéros et leur nature. `regime` : la bascule du dossier et ses factures sources (étape VF6e) ;
+ * `pieces` : celles qu'on a données au pont, pour leur statut et leur déclaration. Par régime :
+ * - une facture qui n'est pas source : comme hier — sa jumelle, ou « Comptée deux fois » quand plusieurs pièces la portent ;
+ *   dans un dossier basculé, une pièce que rien ne désigne s'y dit « À désigner » ;
+ * - une facture source : son exemplaire désigné, « Exemplaire de la facture … » ; une pièce validée qui la compte en plus,
+ *   « Comptée deux fois » ; une pièce à valider que rien ne désigne, « À désigner : c’est la facture … » ;
+ * - une pièce déclarée que le pont ne rattache à rien : « Vente hors des factures de l’application ».
  */
 export function marquesDesPieces(
   factures: readonly Pick<FactureEmise, 'id' | 'numero' | 'type'>[],
   jumelles: JumellesDuDossier,
+  regime: RegimeDuPont,
+  pieces: readonly PieceDuRegime[],
 ): Map<string, MarqueDeLaPiece> {
   const facture = (id: string) => factures.find((f) => f.id === id)
   // Une facture validée porte toujours son numéro (la base le donne à la validation) : l'absence ne se verrait que sur
@@ -330,6 +529,11 @@ export function marquesDesPieces(
   const nom = (id: string) => facture(id)?.numero ?? '(sans numéro)'
   const numeros = (ids: readonly string[]) =>
     ids.flatMap((id) => { const n = facture(id)?.numero; return n == null ? [] : [n] })
+  const pieceDe = new Map(pieces.map((p) => [p.id, p]))
+  // Le pont et les marques jugent par le même calcul : les doubles, puis les pièces à désigner.
+  const enDouble = ventesEnDouble(factures, jumelles, regime.sources, pieces)
+  const doubleDe = new Map(enDouble.flatMap((v) => v.pieceIds.map((id) => [id, v] as const)))
+  const aDesigner = new Set(piecesADesigner(jumelles, regime, enDouble).map((x) => x.pieceId))
 
   const marques = new Map<string, MarqueDeLaPiece>()
   for (const [pieceId, j] of jumelles.parPiece) {
@@ -337,7 +541,22 @@ export function marquesDesPieces(
     const portees = jumelles.parFacture.get(j.factureId) ?? []
     // Revenue de la plateforme : un des trois faits le prouve. Désignée seulement : un exemplaire que le cabinet a déposé.
     const revenue = j.preuves.some((p) => p !== 'designation')
-    if (portees.length > 1) {
+    const source = regime.sources.has(j.factureId)
+    const double = doubleDe.get(pieceId)
+    const avoir = facture(j.factureId)?.type === 'avoir'
+    if (double?.parLaFacture) {
+      // La facture source compte la vente, et chaque pièce validée qui n'est pas son exemplaire la compte une fois de plus.
+      const fs = fois(double.pieceIds.length + 1)
+      marques.set(pieceId, {
+        genre: 'double',
+        libelle: `Comptée ${fs} fois`,
+        explication: `La facture ${nom(j.factureId)} émise dans l’application est la source de sa vente : elle la compte `
+          + `elle-même, et cette pièce validée, ${dites}, la compte aussi — ${fs} fois dans la 2035, la CA3 et les `
+          + 'écritures. Désignez-la exemplaire de la facture : elle ne comptera plus.',
+        numeros: numeros([j.factureId]),
+        autresPieces: double.pieceIds.filter((x) => x !== pieceId),
+      })
+    } else if (double) {
       marques.set(pieceId, {
         genre: 'double',
         libelle: `Comptée ${fois(portees.length)} fois`,
@@ -346,6 +565,27 @@ export function marquesDesPieces(
           + 'écritures : gardez une seule pièce par facture — celle reçue de la plateforme du client porte l’original.',
         numeros: numeros([j.factureId]),
         autresPieces: portees.filter((x) => x.pieceId !== pieceId).map((x) => x.pieceId),
+      })
+    } else if (source && designee(j)) {
+      marques.set(pieceId, {
+        genre: 'exemplaire',
+        libelle: `Exemplaire ${avoir ? 'de l’avoir' : 'de la facture'} ${nom(j.factureId)}`,
+        explication: `Cette pièce est l’exemplaire ${avoir ? 'de l’avoir' : 'de la facture'} ${nom(j.factureId)} émis`
+          + `${avoir ? '' : 'e'} dans l’application — ${dites}. La vente est comptée par la facture, source de sa vente : `
+          + 'la pièce ne compte nulle part.',
+        numeros: numeros([j.factureId]),
+        autresPieces: [],
+      })
+    } else if (aDesigner.has(pieceId)) {
+      const piece = pieceDe.get(pieceId)
+      marques.set(pieceId, {
+        genre: 'a_designer',
+        libelle: `À désigner : c’est ${avoir ? 'l’avoir' : 'la facture'} ${nom(j.factureId)}`,
+        explication: explicationADesigner(
+          nom(j.factureId), dites, source, piece?.statut === 'validee', piece?.vente_hors_des_factures === true,
+        ),
+        numeros: numeros([j.factureId]),
+        autresPieces: [],
       })
     } else {
       marques.set(pieceId, {
@@ -382,6 +622,24 @@ export function marquesDesPieces(
       autresPieces: [],
     })
   }
+  // La vente DÉCLARÉE hors des factures de l'application (étape VF6b), que le pont ne rattache à rien : une marque neutre,
+  // la déclaration étant un geste du cabinet. Rattachée par le pont, elle porte la marque du pont (« À désigner »), qui dit
+  // la déclaration ; ses preuves contraires, celle d'une pièce à vérifier.
+  for (const p of pieces) {
+    if (!p.vente_hors_des_factures || marques.has(p.id)) continue
+    marques.set(p.id, {
+      genre: 'hors_factures',
+      libelle: 'Vente hors des factures de l’application',
+      explication: regime.dossierBascule
+        ? 'Le cabinet l’a déclarée vente hors des factures de l’application : aucune facture validée de l’application '
+          + 'n’est la facture de cette vente, qui compte comme une vente. Si c’était le PDF d’une facture de '
+          + 'l’application, la vente compterait deux fois.'
+        : 'Le cabinet l’a déclarée vente hors des factures de l’application : dans un dossier dont les factures ne sont '
+          + 'pas la source de leurs ventes, la déclaration ne change rien à ce qui se compte.',
+      numeros: [],
+      autresPieces: [],
+    })
+  }
   return marques
 }
 
@@ -390,14 +648,19 @@ export function marquesDesPieces(
 export interface JumellesImportees {
   /** Les pièces importées que le pont reconnaît comme la jumelle d'une facture émise. */
   reconnues: number
-  /** Parmi elles, celles dont la facture est portée par une autre pièce aussi : la vente compte deux fois. */
+  /** Parmi elles, celles dont la facture — qui n'est pas source — est portée par une autre pièce aussi : la vente compte
+   *  deux fois. Jamais pour une facture SOURCE (étape VF6e) : une pièce importée est à valider, elle ne compte pas encore, et
+   *  désignée exemplaire de sa facture elle ne comptera pas. */
   dejaPortees: number
   /** Les pièces importées dont les preuves se contredisent. */
   incoherentes: number
 }
 
-/** Ce que le pont dit des pièces qu'un import vient de créer, jugé sur TOUTES les pièces du dossier. */
-export function jumellesImportees(pieceIds: readonly string[], jumelles: JumellesDuDossier): JumellesImportees {
+/** Ce que le pont dit des pièces qu'un import vient de créer, jugé sur TOUTES les pièces du dossier. `sources` : les
+ *  factures sources du dossier, lues en entier avec ses factures émises (étape VF6e). */
+export function jumellesImportees(
+  pieceIds: readonly string[], jumelles: JumellesDuDossier, sources: FacturesSources,
+): JumellesImportees {
   const importees = new Set(pieceIds)
   let reconnues = 0
   let dejaPortees = 0
@@ -405,23 +668,28 @@ export function jumellesImportees(pieceIds: readonly string[], jumelles: Jumelle
     const j = jumelles.parPiece.get(id)
     if (!j) continue
     reconnues++
-    if ((jumelles.parFacture.get(j.factureId) ?? []).length > 1) dejaPortees++
+    if (!sources.has(j.factureId) && (jumelles.parFacture.get(j.factureId) ?? []).length > 1) dejaPortees++
   }
   const incoherentes = jumelles.incoherentes.filter((i) => importees.has(i.pieceId)).length
   return { reconnues, dejaPortees, incoherentes }
 }
 
-/** Les phrases du bilan : rien quand aucune pièce importée n'a affaire à une facture émise. */
-export function phrasesJumellesImportees(j: JumellesImportees): string[] {
+/** Les phrases du bilan : rien quand aucune pièce importée n'a affaire à une facture émise. `dossierBascule` (étape VF6e) :
+ *  dans un dossier dont les factures sont la source de leurs ventes, une vente reconnue est À DÉSIGNER à sa validation —
+ *  la base ne la validera que désignée exemplaire de sa facture (G3). Une pièce importée naît à valider : aucune ne l'est
+ *  encore. */
+export function phrasesJumellesImportees(j: JumellesImportees, dossierBascule: boolean): string[] {
   const phrases: string[] = []
   if (j.reconnues > 0) {
     const reconnues = j.reconnues === 1
       ? '1 vente reconnue comme une facture émise de l’application'
       : `${j.reconnues} ventes reconnues comme des factures émises de l’application`
+    const aDesigner = dossierBascule
+      ? `, à désigner exemplaire de ${j.reconnues > 1 ? 'leur' : 'sa'} facture à la validation` : ''
     phrases.push(j.dejaPortees === 0
-      ? `${reconnues} : Justificatifs ${j.reconnues > 1 ? 'les' : 'la'} marque.`
-      : `${reconnues}, dont ${j.dejaPortees} déjà portée${j.dejaPortees > 1 ? 's' : ''} par une autre pièce : ne validez `
-        + 'qu’une pièce par facture ; la Checklist le signale.')
+      ? `${reconnues}${aDesigner} : Justificatifs ${j.reconnues > 1 ? 'les' : 'la'} marque.`
+      : `${reconnues}${aDesigner}, dont ${j.dejaPortees} déjà portée${j.dejaPortees > 1 ? 's' : ''} par une autre pièce : `
+        + 'ne validez qu’une pièce par facture ; la Checklist le signale.')
   }
   if (j.incoherentes > 0) {
     phrases.push(j.incoherentes === 1

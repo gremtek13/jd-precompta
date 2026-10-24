@@ -404,7 +404,7 @@ const ECRANS: Ecran[] = [
   { nom: 'PacksTab', fichier: 'pages/dossier/PacksTab.tsx', rendre: () => <Dossier1><PacksTab dossierId="d1" dossierNom="Dossier fictif" /></Dossier1> },
   { nom: 'PiecesTab', fichier: 'pages/dossier/PiecesTab.tsx', rendre: () => <Dossier1><PiecesTab dossierId="d1" ventesParLesFactures={false} /></Dossier1> },
   { nom: 'PlateformeClientModal', fichier: 'pages/dossier/PlateformeClientModal.tsx', rendre: () => (
-    <Dossier1><PlateformeClientModal espace="cabinet" dossierId="d1" dossierSiret="12345678901234" onClose={rien} onImported={rien} /></Dossier1>
+    <Dossier1><PlateformeClientModal espace="cabinet" dossierId="d1" dossierSiret="12345678901234" ventesParLesFactures={false} onClose={rien} onImported={rien} /></Dossier1>
   ) },
   { nom: 'RevisionTab', fichier: 'pages/dossier/RevisionTab.tsx', rendre: () => (
     <Dossier1>

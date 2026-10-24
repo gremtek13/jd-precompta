@@ -172,6 +172,10 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'recettes-affectees-assujetti': 'recettes',
   'ventes-en-double': 'recettes',
   'jumelles-incoherentes': 'recettes',
+  // La pièce de vente à désigner exemplaire de sa facture, et la vente déclarée hors des factures dont le montant est celui
+  // d'une facture source (étape VF6e) : ce qui relie une recette à la facture qui la compte.
+  'exemplaires-a-designer': 'recettes',
+  'ventes-hors-factures-a-verifier': 'recettes',
   // Un encaissement de facture qui attend son mouvement (étape VF5f) : le registre des ventes, que le relevé confirme.
   'encaissements-sans-mouvement': 'recettes',
   // Les dépenses : les pièces, leurs écritures, leurs postes.
