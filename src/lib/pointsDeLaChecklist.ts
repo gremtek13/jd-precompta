@@ -19,14 +19,15 @@ import { confronterLOuverture, exerciceAConfronter, ouvertureEnEcart } from './o
 import type { OuvertureBanque } from './planTresorerie'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier,
-  LigneBancaire, LettrageManuel, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, SoldeReporte, StatutTva, VehiculeDossier, VentilationBancaire,
+  FactureEmise, LigneBancaire, LettrageManuel, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, SoldeReporte, StatutTva, VehiculeDossier, VentilationBancaire,
 } from './types'
 import { etatsDesLettragesManuels, piecesLettreesALaMain } from './lettrage'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from './ventilationBanque'
 import { paiementsDesPieces, piecesPayees } from './rattachement'
 import { partsEncaissees } from './encaissementsFactures'
 import {
-  detailJumellesIncoherentes, detailVentesEnDouble, jumellesDuDossier, ventesEnDouble,
+  detailJumellesIncoherentes, detailPiecesADesigner, detailVentesEnDouble, detailVentesHorsFacturesAVerifier,
+  jumellesDuDossier, piecesADesigner, ventesEnDouble, ventesHorsFacturesAVerifier,
   type FacturePourJumelle, type TransmissionPourJumelle,
 } from './ventesJumelles'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
@@ -99,13 +100,15 @@ export interface DonneesDeLaChecklist {
   vehicules: VehiculeDossier[]
   declarationsTva: DeclarationTva[]
   declarationsPartielles: boolean
-  facturesEmises: FacturePourJumelle[]
+  // Avec leur montant (étape VF6e) : le symptôme d'une pièce déclarée à tort compare son TTC à celui d'une facture source.
+  facturesEmises: (FacturePourJumelle & Pick<FactureEmise, 'montant_ttc'>)[]
   transmissions: TransmissionPourJumelle[]
   jumellesPartielles: boolean
   // Les factures SOURCES de leur vente parmi les factures émises lues (étape VF6a, lib/facturesSources.ts) : leur exemplaire
   // ne compte nulle part, et les points qui jugent une pièce comme une pièce qui compte l'écartent — le brouillon (à
-  // générer, à régénérer, sans objet, sans contrepartie, déséquilibré), la catégorie, la devise, la TVA, le montant
-  // introuvable en banque, le paiement partiel. Lues avec les factures émises : en partie, `lectureIncomplete` le dit.
+  // générer, à régénérer, sans objet, sans contrepartie, déséquilibré), la catégorie et son compte ou son poste, la devise,
+  // la TVA, le montant introuvable en banque, le paiement partiel ou en trop. Lues avec les factures émises : en partie,
+  // `lectureIncomplete` le dit. Le pont juge aussi par elles (étape VF6e) : une facture source compte sa vente elle-même.
   facturesSources: FacturesSources
   info: InformationsDossier | null
   // Non nul = on ne SAIT PAS ce que le dossier porte comme informations : les points qui en dépendent se taisent.
@@ -292,8 +295,11 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
   // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
   // La facture d'un bien n'y compte pas : elle s'écrit sur le compte de sa nature, et la 2035 l'écarte.
-  const catSansCompte = categoriesSansCompte(categories, piecesValidees, [...lignes, ...ventilations], pieceIdsImmobilisees)
-  const catSansPoste = categoriesSansPoste(categories, piecesValidees, [...lignes, ...ventilations], pieceIdsImmobilisees)
+  // Ni l'exemplaire d'une facture source (étape VF6e) : il ne s'écrit pas et la 2035 l'écarte — sa catégorie ne décide de
+  // rien. Écarté ici, chez l'appelant, et non dans les deux fonctions : `agent-comptable` en porte une copie gardée
+  // (agentComptableAffectation.test.ts), que ce lot ne redéploie pas.
+  const catSansCompte = categoriesSansCompte(categories, validesQuiComptent, [...lignes, ...ventilations], pieceIdsImmobilisees)
+  const catSansPoste = categoriesSansPoste(categories, validesQuiComptent, [...lignes, ...ventilations], pieceIdsImmobilisees)
   const sansTva = piecesSansTva(validesQuiComptent, assujettiTva)
   const sansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees, facturesSources)
   // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
@@ -320,9 +326,17 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const moisEnDouble = moisEnDoubleSurAbonnement([...piecesValidees, ...piecesAValider])
   // LA MÊME VENTE PORTÉE PAR PLUSIEURS PIÈCES (ligne 28.6, lib/ventesJumelles.ts), sur les deux piles comme les doublons
   // de texte : un doublon est un fait, et il se corrige mieux avant la validation. Muets sur une lecture partielle.
+  // PAR RÉGIME (étape VF6e) : une facture source compte sa vente elle-même — ses exemplaires désignés ne la doublent pas,
+  // une pièce validée qui n'en est pas l'exemplaire, si. Dans un dossier basculé, la pièce que le pont rattache à une facture
+  // sans être désignée est à désigner ; et une pièce déclarée hors des factures dont le TTC est celui d'une facture source
+  // sans exemplaire validé, la même année, se vérifie (VF6-Q4). Le dossier a basculé quand il lit ses ventes facturées :
+  // `ventesFacturees` n'est nulle QUE pour un dossier qui n'a pas basculé (lib/checklistLecture.ts), lue ou non.
+  const regime = { dossierBascule: ventesFacturees !== null, sources: facturesSources }
   const jumelles = jumellesPartielles ? null : jumellesDuDossier(facturesEmises, transmissions, toutesPieces)
-  const enDouble = jumelles ? ventesEnDouble(facturesEmises, jumelles) : []
+  const enDouble = jumelles ? ventesEnDouble(facturesEmises, jumelles, regime.sources, toutesPieces) : []
   const jumellesIncoherentes = jumelles?.incoherentes ?? []
+  const aDesigner = jumelles ? piecesADesigner(jumelles, regime, enDouble) : []
+  const horsFacturesAVerifier = jumellesPartielles ? [] : ventesHorsFacturesAVerifier(toutesPieces, facturesEmises, regime.sources)
   // Sur les deux piles, validées comme à valider : une TVA arithmétiquement impossible l'est à tout
   // stade, et c'est avant la validation qu'il faut la voir — après, le chiffre est figé dans
   // l'écriture. Sans filtre sur l'assujettissement non plus : un montant impossible signale une
@@ -417,7 +431,9 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // Compté par MOUVEMENT : une part sans pièce et une somme qui ne tombe plus juste sont deux raisons pour un
   // seul virement à reprendre.
   const reglementsFaux = reglementsPartiels ? [] : [...new Set(reglementsGroupesIncoherents(lignes, reglements).map((r) => r.ligne.id))]
-  const payeesEnTrop = piecesPayeesEnTrop(piecesValidees, paiements)
+  // Ni l'exemplaire d'une facture source (étape VF6e) : il ne se règle pas, sa facture s'encaisse (G4 refuse son
+  // rapprochement, la part d'un virement groupé et son écriture).
+  const payeesEnTrop = piecesPayeesEnTrop(validesQuiComptent, paiements)
   const lettragesQuiNeTiennentPlus = etatsLettrages.filter((e) => e.motif !== null)
   // `piecesValidees` et non `pieces` : ce contrôle ne vise que les pièces VALIDÉES, et son libellé le
   // dit. L'état s'appelait `pieces` quand ce point a été écrit, alors qu'il ne portait déjà que les
@@ -582,6 +598,13 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     // Une pièce reçue que ses preuves rattachent à deux factures émises, ou dont l'identité dit une autre nature que la
     // facture qu'elle désigne : elle n'est la jumelle d'aucune, donc d'aucun des deux contrôles du dessus (ligne 28.6).
     { id: 'jumelles-incoherentes', label: 'pièce(s) reçue(s) dont les preuves contredisent une facture émise', action: 'Vérifier ces pièces', nb: jumellesIncoherentes.length, cible: 'pieces', severite: 'attention', detail: detailJumellesIncoherentes(jumellesIncoherentes, facturesEmises, toutesPieces) },
+    // LA JUMELLE INVERSÉE (ligne 28.65, étape VF6e ; lib/ventesJumelles.ts). « Attention » : rien n'est faux tant que la pièce
+    // n'est pas validée — la base refuse de la valider sans sa marque (G3) —, et une pièce validée avant la bascule compte
+    // comme hier ; dans Justificatifs, elle porte la pastille « À désigner : c’est la facture … », et sa fiche la désigne.
+    { id: 'exemplaires-a-designer', label: 'pièce(s) de vente que le pont rattache à une facture émise, à désigner exemplaire de cette facture', action: 'Désigner ces pièces', nb: aDesigner.length, cible: 'pieces', severite: 'attention', detail: detailPiecesADesigner(aDesigner, facturesEmises, toutesPieces) },
+    // Le symptôme d'une déclaration à tort (VF6-Q4) : un montant égal ne prouve rien — deux prestations du même prix sont
+    // possibles —, d'où l'« attention ». Le détail nomme chaque pièce, que la recherche de Justificatifs retrouve.
+    { id: 'ventes-hors-factures-a-verifier', label: 'pièce(s) déclarée(s) vente hors des factures dont le montant est celui d’une facture source sans exemplaire validé', action: 'Vérifier ces pièces', nb: horsFacturesAVerifier.length, cible: 'pieces', severite: 'attention', detail: detailVentesHorsFacturesAVerifier(horsFacturesAVerifier, facturesEmises, toutesPieces) },
     // Un statut à préciser n'est pas une erreur : le dossier retient ses pièces TVA comprise, comme avant que le
     // statut existe. Mais la mention de ses factures et ce qu'il doit à la facturation électronique en dépendent
     // (lib/statutTva.ts), et c'est un réglage à faire une fois — d'où le bloc « Paramétrage ».

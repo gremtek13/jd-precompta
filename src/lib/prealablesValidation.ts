@@ -492,11 +492,16 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   }
   // LA MÊME VENTE PORTÉE PAR PLUSIEURS PIÈCES (ligne 28.6) : sur les deux piles, comme la Checklist ; de l'exercice
   // quand l'une de ses pièces l'est. En trésorerie, la pièce restée sans paiement serait aussi refusée par ses écritures ;
-  // en engagement, chacune s'écrit à sa date, équilibrée, et rien d'autre ne la voit.
+  // en engagement, chacune s'écrit à sa date, équilibrée, et rien d'autre ne la voit. PAR RÉGIME (étape VF6e), comme la
+  // Checklist : une facture source compte sa vente elle-même, et c'est une pièce VALIDÉE qui n'est pas son exemplaire qui la
+  // compte une seconde fois ; deux exemplaires désignés d'une facture source ne comptent ni l'un ni l'autre.
   const piecesDesDeuxPiles = new Map([...d.piecesValidees, ...d.piecesAValider].map((p) => [p.id, p]))
   bloque({
     id: 'ventes-en-double', cible: 'pieces',
-    nb: ventesEnDouble(d.facturesEmises, jumellesDuDossier(d.facturesEmises, d.transmissions, [...piecesDesDeuxPiles.values()]))
+    nb: ventesEnDouble(
+      d.facturesEmises, jumellesDuDossier(d.facturesEmises, d.transmissions, [...piecesDesDeuxPiles.values()]), sources,
+      [...piecesDesDeuxPiles.values()],
+    )
       .filter((v) => v.pieceIds.some((id) => {
         const p = piecesDesDeuxPiles.get(id)
         return !!p && (dansLExercice(p.date_piece) || pieceDeLExercice(p))
@@ -595,9 +600,10 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     nb: new Set(reglementsGroupesIncoherents(d.lignes, d.reglements).filter((r) => mouvementDeLExercice(r.ligne)).map((r) => r.ligne.id)).size,
     message: "virement(s) groupé(s) dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement : les régler de nouveau ou les annuler.",
   })
+  // Ni l'exemplaire d'une facture source (étape VF6e) : il ne se règle pas, sa facture s'encaisse.
   bloque({
     id: 'pieces-payees-en-trop', cible: 'banque',
-    nb: piecesPayeesEnTrop([...d.piecesValidees], paiements).filter((p) => pieceDeLExercice(p.piece)).length,
+    nb: piecesPayeesEnTrop(validesQuiComptent, paiements).filter((p) => pieceDeLExercice(p.piece)).length,
     message: "pièce(s) payée(s) plus que leur montant — un paiement en double ? Annuler le paiement en trop.",
   })
   // Jugé sur le TOTAL payé de chaque pièce, jamais mouvement par mouvement (lib/controles.ts) : une facture réglée

@@ -3,12 +3,19 @@ import {
   COLONNES_DES_PIECES_DU_PONT, COLONNES_DES_PIECES_DU_PONT_ET_DESIGNATION,
   detailJumellesIncoherentes, detailVentesEnDouble, jumellesDeLaFacture, jumellesDuDossier, jumellesImportees,
   marquesDesPieces, PASTILLE_DE_LA_MARQUE, phrasesJumellesImportees, ventesEnDouble,
-  type FacturePourJumelle, type PiecePourJumelle, type TransmissionPourJumelle,
+  type FacturePourJumelle, type PieceDuRegime, type PiecePourJumelle, type RegimeDuPont, type TransmissionPourJumelle,
 } from './ventesJumelles'
+import type { FacturesSources } from './facturesSources'
 
 // Des données fictives : un dossier, ses factures émises, ses transmissions, ses pièces.
 const D = 'dossier-1'
 const AUTRE = 'dossier-2'
+
+// LE RÉGIME D'HIER (étape VF6e) : un dossier qui n'a pas basculé n'a aucune facture source — la base l'y refuse. Les cas
+// d'avant l'étape se jouent sous lui, leurs attentes inchangées ; ceux du régime neuf, dans « le pont par régime ».
+const SANS_SOURCE: FacturesSources = new Set()
+const REGIME_D_HIER: RegimeDuPont = { dossierBascule: false, sources: SANS_SOURCE }
+const aValider = (p: { id: string }): PieceDuRegime => ({ id: p.id, statut: 'a_valider', vente_hors_des_factures: false })
 
 function facture(o: Partial<FacturePourJumelle> = {}): FacturePourJumelle {
   return {
@@ -271,29 +278,29 @@ describe('ventesEnDouble — la même vente portée par plusieurs pièces', () =
   it('la jumelle reçue de la plateforme et celle de Super PDP portent la même facture : comptée deux fois', () => {
     const j = jumellesDuDossier([f1, f2], [], [recue, synchronisee, seule])
     expect(j.parFacture.get('f1')?.map((x) => x.pieceId)).toEqual(['p-plateforme', 'p-superpdp'])
-    expect(ventesEnDouble([f1, f2], j)).toEqual([{ factureId: 'f1', pieceIds: ['p-plateforme', 'p-superpdp'] }])
+    expect(ventesEnDouble([f1, f2], j, SANS_SOURCE, [])).toEqual([{ factureId: 'f1', pieceIds: ['p-plateforme', 'p-superpdp'] }])
   })
 
   it('la jumelle reçue de la plateforme et le PDF que le cabinet a désigné : comptée deux fois — le trou que 28.6-Q1 ferme', () => {
     const pdf = piece({ id: 'p-pdf', facture_id: 'f1' })
-    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [recue, pdf, seule])))
+    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [recue, pdf, seule]), SANS_SOURCE, []))
       .toEqual([{ factureId: 'f1', pieceIds: ['p-plateforme', 'p-pdf'] }])
     // Le même PDF, non désigné : rien ne le relie à sa facture, et la vente comptée deux fois ne se voit pas.
-    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [recue, piece({ id: 'p-pdf' }), seule]))).toEqual([])
+    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [recue, piece({ id: 'p-pdf' }), seule]), SANS_SOURCE, [])).toEqual([])
     // Désigné seul, sans jumelle revenue : une seule pièce porte la vente.
-    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [pdf, seule]))).toEqual([])
+    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [pdf, seule]), SANS_SOURCE, [])).toEqual([])
   })
 
   it('une facture portée par une seule pièce n\'est pas en double ; rien n\'est en double sans jumelle', () => {
-    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [recue, seule]))).toEqual([])
-    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], []))).toEqual([])
+    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], [recue, seule]), SANS_SOURCE, [])).toEqual([])
+    expect(ventesEnDouble([f1, f2], jumellesDuDossier([f1, f2], [], []), SANS_SOURCE, [])).toEqual([])
   })
 
   it('dans l\'ordre des factures données, chacune avec ses pièces dans l\'ordre des pièces', () => {
     const autreDeF2 = piece({ id: 'p-f2-bis', flux_hote: 'pa.exemple.fr', flux_id: 'flux-f2' })
     const t = transmission({ facture_id: 'f2', flux_id: 'flux-f2' })
     const j = jumellesDuDossier([f2, f1], [t], [synchronisee, autreDeF2, seule, recue])
-    expect(ventesEnDouble([f2, f1], j)).toEqual([
+    expect(ventesEnDouble([f2, f1], j, SANS_SOURCE, [])).toEqual([
       { factureId: 'f2', pieceIds: ['p-f2-bis', 'p-f2'] },
       { factureId: 'f1', pieceIds: ['p-superpdp', 'p-plateforme'] },
     ])
@@ -355,8 +362,9 @@ describe('marquesDesPieces — la pastille de chaque pièce, et ce qu’elle veu
   const f1 = facture({ superpdp_invoice_id: 4242 })
   const f2 = facture({ id: 'f2', numero: 'F2026-0008' })
   const a1 = facture({ id: 'a1', type: 'avoir', numero: 'A2026-0001' })
+  // Le régime d'hier : un dossier qui n'a pas basculé, aucune facture source ; des pièces à valider, aucune déclarée.
   const marques = (factures: FacturePourJumelle[], transmissions: TransmissionPourJumelle[], pieces: PiecePourJumelle[]) =>
-    marquesDesPieces(factures, jumellesDuDossier(factures, transmissions, pieces))
+    marquesDesPieces(factures, jumellesDuDossier(factures, transmissions, pieces), REGIME_D_HIER, pieces.map(aValider))
 
   it('la jumelle : le numéro de sa facture, la preuve qui la relie, et rien sur une pièce sans lien', () => {
     const m = marques([f1, f2], [transmission()], [piece({ flux_hote: 'pa.exemple.fr', flux_id: 'flux-1' }), piece({ id: 'p9' })])
@@ -491,7 +499,13 @@ describe('marquesDesPieces — la pastille de chaque pièce, et ce qu’elle veu
   })
 
   it('la pastille : neutre pour une jumelle, danger pour une vente en double, attention pour une pièce à vérifier', () => {
-    expect(PASTILLE_DE_LA_MARQUE).toEqual({ jumelle: 'badge-neutral', double: 'badge-danger', incoherente: 'badge-warning' })
+    expect(PASTILLE_DE_LA_MARQUE).toMatchObject({ jumelle: 'badge-neutral', double: 'badge-danger', incoherente: 'badge-warning' })
+    // Les trois genres de l'étape VF6e : neutres l'exemplaire d'une facture source et la vente déclarée, attention la pièce
+    // à désigner — et aucun autre genre.
+    expect(PASTILLE_DE_LA_MARQUE).toEqual({
+      jumelle: 'badge-neutral', double: 'badge-danger', incoherente: 'badge-warning',
+      exemplaire: 'badge-neutral', a_designer: 'badge-warning', hors_factures: 'badge-neutral',
+    })
   })
 })
 
@@ -510,28 +524,28 @@ describe('jumellesImportees et ses phrases — le bilan d’un import', () => {
 
   it('compte les seules pièces importées, jugées sur toutes celles du dossier', () => {
     // « nouvelle » porte f1, que « deja » portait avant l'import : une vente déjà portée par une autre pièce.
-    expect(jumellesImportees(['seule', 'nouvelle', 'contradictoire', 'achat'], j))
+    expect(jumellesImportees(['seule', 'nouvelle', 'contradictoire', 'achat'], j, SANS_SOURCE))
       .toEqual({ reconnues: 2, dejaPortees: 1, incoherentes: 1 })
-    expect(jumellesImportees(['achat'], j)).toEqual({ reconnues: 0, dejaPortees: 0, incoherentes: 0 })
+    expect(jumellesImportees(['achat'], j, SANS_SOURCE)).toEqual({ reconnues: 0, dejaPortees: 0, incoherentes: 0 })
     // Un identifiant rendu deux fois ne se compte qu'une fois.
-    expect(jumellesImportees(['nouvelle', 'nouvelle'], j)).toEqual({ reconnues: 1, dejaPortees: 1, incoherentes: 0 })
+    expect(jumellesImportees(['nouvelle', 'nouvelle'], j, SANS_SOURCE)).toEqual({ reconnues: 1, dejaPortees: 1, incoherentes: 0 })
   })
 
   it('les phrases : rien pour rien, le singulier, le pluriel, et le double qui renvoie à la Checklist', () => {
-    expect(phrasesJumellesImportees({ reconnues: 0, dejaPortees: 0, incoherentes: 0 })).toEqual([])
-    expect(phrasesJumellesImportees({ reconnues: 1, dejaPortees: 0, incoherentes: 0 }))
+    expect(phrasesJumellesImportees({ reconnues: 0, dejaPortees: 0, incoherentes: 0 }, false)).toEqual([])
+    expect(phrasesJumellesImportees({ reconnues: 1, dejaPortees: 0, incoherentes: 0 }, false))
       .toEqual(['1 vente reconnue comme une facture émise de l’application : Justificatifs la marque.'])
-    expect(phrasesJumellesImportees({ reconnues: 3, dejaPortees: 0, incoherentes: 0 }))
+    expect(phrasesJumellesImportees({ reconnues: 3, dejaPortees: 0, incoherentes: 0 }, false))
       .toEqual(['3 ventes reconnues comme des factures émises de l’application : Justificatifs les marque.'])
-    expect(phrasesJumellesImportees({ reconnues: 1, dejaPortees: 1, incoherentes: 0 })).toEqual([
+    expect(phrasesJumellesImportees({ reconnues: 1, dejaPortees: 1, incoherentes: 0 }, false)).toEqual([
       '1 vente reconnue comme une facture émise de l’application, dont 1 déjà portée par une autre pièce : ne validez '
       + 'qu’une pièce par facture ; la Checklist le signale.'])
-    expect(phrasesJumellesImportees({ reconnues: 3, dejaPortees: 2, incoherentes: 0 })).toEqual([
+    expect(phrasesJumellesImportees({ reconnues: 3, dejaPortees: 2, incoherentes: 0 }, false)).toEqual([
       '3 ventes reconnues comme des factures émises de l’application, dont 2 déjà portées par une autre pièce : ne '
       + 'validez qu’une pièce par facture ; la Checklist le signale.'])
-    expect(phrasesJumellesImportees({ reconnues: 0, dejaPortees: 0, incoherentes: 1 })).toEqual([
+    expect(phrasesJumellesImportees({ reconnues: 0, dejaPortees: 0, incoherentes: 1 }, false)).toEqual([
       '1 pièce dont les preuves contredisent une facture émise : à vérifier sur la plateforme avant de la valider.'])
-    expect(phrasesJumellesImportees({ reconnues: 1, dejaPortees: 0, incoherentes: 2 })).toEqual([
+    expect(phrasesJumellesImportees({ reconnues: 1, dejaPortees: 0, incoherentes: 2 }, false)).toEqual([
       '1 vente reconnue comme une facture émise de l’application : Justificatifs la marque.',
       '2 pièces dont les preuves contredisent une facture émise : à vérifier sur la plateforme avant de les valider.'])
   })

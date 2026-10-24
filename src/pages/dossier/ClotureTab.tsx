@@ -56,6 +56,7 @@ import VoletSocialCard from './VoletSocialCard'
 import Annexe2035ECard from './Annexe2035ECard'
 import ConcordanceCard from './ConcordanceCard'
 import ValidationExerciceCard from './ValidationExerciceCard'
+import { AUCUNE_FACTURE_SOURCE, horsDesExemplairesDesSources } from '../../lib/facturesSources'
 
 // Palier 5, briques 5 et 6 réunies — postes de la 2035 et clôture brouillon. Regroupe et totalise
 // par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer d'impôt.
@@ -383,12 +384,6 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // La facture d'un bien du registre : la 2035 l'écarte — le bien compte par sa dotation —, donc sa
   // catégorie ne décide de rien ici.
   const pieceIdsImmobilisees = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
-  // Catégories utilisées par une pièce validée, un mouvement affecté ou une part d'un mouvement ventilé
-  // mais sans poste 2035 associé — le regroupement par poste les ignorera tant que ce n'est pas renseigné
-  // (voir lib/controles.ts).
-  const categoriesSansPosteDesSources = calculerCategoriesSansPoste(
-    categories, piecesValidees, [...lignesBancaires, ...ventilations], pieceIdsImmobilisees,
-  )
 
   // Valeur affichée tant que le cabinet n'a rien tapé : la suggestion connue pour ce code de
   // catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
@@ -436,6 +431,15 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // (étape VF6a) : sa facture compte la vente, et une catégorie ne le ferait pas compter. Sur des factures sources lues en
   // entier seulement — sans elles, la 2035 ne se calcule pas, et la carte qui dit ce qui lui manque se tait avec elle.
   const piecesSansCategorie = ventesLues === null ? [] : piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees, ventesLues.sources)
+  // Catégories utilisées par une pièce validée, un mouvement affecté ou une part d'un mouvement ventilé
+  // mais sans poste 2035 associé — le regroupement par poste les ignorera tant que ce n'est pas renseigné
+  // (voir lib/controles.ts). Ni l'exemplaire d'une facture source (étape VF6e) : la 2035 l'écarte, et sa catégorie ne décide
+  // de rien. Sur des ventes facturées pas encore lues pour CE dossier, ou lues en partie, la règle d'hier — la carte en
+  // montre plus, jamais moins.
+  const categoriesSansPosteDesSources = calculerCategoriesSansPoste(
+    categories, horsDesExemplairesDesSources(piecesValidees, ventesLues?.sources ?? AUCUNE_FACTURE_SOURCE),
+    [...lignesBancaires, ...ventilations], pieceIdsImmobilisees,
+  )
   // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (VF4C3-Q1) : ce que la 2035 reçoit des écritures des ventes facturées, sur les
   // lectures de CE dossier (lib/ecrituresVentesFactureesEcran.ts, `ecrituresDesVentesPourLa2035`). Un dossier basculé dont
   // les sources ne sont pas revenues entières n'a pas de 2035, comme sans ses ventes facturées.

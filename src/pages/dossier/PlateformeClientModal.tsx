@@ -63,8 +63,10 @@ const nomDuFlux = (f: FluxVu) => f.nom ?? `Facture ${f.id}`
 // (`src/test/quiPeutQuoi.ts`). La RÉCEPTION (lister, télécharger, importer, retenir, repartir) reste au cabinet : en mode
 // client elle n'existe pas, ni bouton ni texte, et le type le garantit — le SIRET qui la contrôle et le rappel d'un import
 // n'existent qu'au cabinet. Une propriété OBLIGATOIRE : un écran qui oublierait de dire qui regarde ne compile pas.
+// `ventesParLesFactures` (étape VF6e) : le réglage du dossier, sans valeur par défaut — dans un dossier dont les factures
+// sont la source de leurs ventes, le bilan d'un import dit qu'une vente reconnue est à désigner à sa validation.
 type QuiRegarde =
-  | { espace: 'cabinet'; dossierSiret: string | null; onImported: () => void }
+  | { espace: 'cabinet'; dossierSiret: string | null; ventesParLesFactures: boolean; onImported: () => void }
   | { espace: 'client' }
 
 type Props = QuiRegarde & {
@@ -220,13 +222,21 @@ export default function PlateformeClientModal(props: Props) {
       )
       // LA VENTE QUI REVIENT (ligne 28.6) : une facture que l'application a émise revient ici comme pièce de vente. Rien
       // n'est refusé ni retiré à l'import — la jumelle entre, marquée —, mais le bilan le dit, et dit la vente déjà
-      // portée par une autre pièce. Relu sur le dossier ENTIER, ou rien : une liste partielle tairait un double.
+      // portée par une autre pièce. Relu sur le dossier ENTIER, ou rien : une liste partielle tairait un double. Par régime
+      // (étape VF6e) : la facture source d'une vente reconnue ne la fait pas compter deux fois, et dans un dossier basculé la
+      // vente reconnue est à désigner à sa validation.
       const importees = resultat.issues.flatMap((i) => (i.statut === 'importee' ? [i.pieceId] : []))
       let ventes: { phrases: string[]; motif: string | null } | null = null
       if (importees.length > 0) {
         const lecture = await lireJumellesDuDossier(dossierId)
-        ventes = lecture.jumelles
-          ? { phrases: phrasesJumellesImportees(jumellesImportees(importees, lecture.jumelles)), motif: null }
+        ventes = lecture.jumelles && lecture.sources
+          ? {
+            phrases: phrasesJumellesImportees(
+              jumellesImportees(importees, lecture.jumelles, lecture.sources),
+              props.espace === 'cabinet' && props.ventesParLesFactures,
+            ),
+            motif: null,
+          }
           : { phrases: [], motif: lecture.motif }
       }
       setBilan(resultat)

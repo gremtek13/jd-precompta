@@ -270,7 +270,12 @@ describe('le rangement des contrôles existants', () => {
       'mouvements-reserves',
     ],
     // Étape VF5f : l'encaissement d'une facture qui attend son mouvement du relevé, au registre des ventes.
-    recettes: ['recettes-affectees-assujetti', 'ventes-en-double', 'jumelles-incoherentes', 'encaissements-sans-mouvement'],
+    recettes: [
+      'recettes-affectees-assujetti', 'ventes-en-double', 'jumelles-incoherentes', 'encaissements-sans-mouvement',
+      // Étape VF6e : la pièce de vente à désigner exemplaire de sa facture, et la vente déclarée dont le montant est celui
+      // d'une facture source sans exemplaire.
+      'exemplaires-a-designer', 'ventes-hors-factures-a-verifier',
+    ],
     depenses: [
       'pieces-a-valider', 'pieces-sans-date', 'date-impossible', 'sans-categorie', 'comptes-manquants', 'postes-manquants',
       'sans-tva', 'tva-impossible', 'devise-non-convertie', 'confiance-basse', 'mois-en-double', 'doublon-texte',

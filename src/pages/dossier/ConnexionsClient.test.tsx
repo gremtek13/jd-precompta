@@ -229,7 +229,7 @@ describe('« Tes plateformes », selon l’état', () => {
 async function ouvrirPlateforme(espace: 'client' | 'cabinet') {
   render(espace === 'client'
     ? <PlateformeClientModal espace="client" dossierId="d1" onClose={() => {}} />
-    : <PlateformeClientModal espace="cabinet" dossierId="d1" dossierSiret="12345678200010" onClose={() => {}} onImported={() => {}} />)
+    : <PlateformeClientModal espace="cabinet" dossierId="d1" dossierSiret="12345678200010" ventesParLesFactures={false} onClose={() => {}} onImported={() => {}} />)
   await act(async () => {})
 }
 async function ouvrirSuperPdp(espace: 'client' | 'cabinet') {

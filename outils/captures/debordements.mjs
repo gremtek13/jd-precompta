@@ -1331,6 +1331,34 @@ const VISITES = [
       await page.getByText(attendu).first().waitFor({ timeout: 10000 })
     },
   })),
+  // LE PONT PAR RÉGIME (ligne 28.65, chantier EC-Q3, étape VF6e), sur la consultante d12 : la liste des Justificatifs et ses
+  // marques — « À désigner », « Exemplaire de la facture », « Vente hors des factures », « Comptée deux fois » d'une facture
+  // source —, puis la Vue d'ensemble, sur les deux points neufs (la pièce à désigner, la vente déclarée à vérifier). Avant
+  // l'e-reporting, qui fige l'horloge.
+  {
+    dossier: 'd12', onglet: 'pieces', nom: 'justificatifs-bascules/marques',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.locator('tr', { hasText: 'Maison de santé des Coteaux, original validé' }).first().waitFor({ timeout: 10000 })
+      await page.getByText('Comptée deux fois', { exact: true }).first().waitFor({ timeout: 10000 })
+      await page.getByText('À désigner : c’est la facture F2026-0021', { exact: true }).first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd12', onglet: 'checklist', nom: 'checklist-basculee/jumelle-inversee',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      const aDesigner = page.getByText(/^\d+ pièce\(s\) de vente que le pont rattache à une facture émise, à désigner exemplaire de cette facture$/)
+      await aDesigner.waitFor({ timeout: 10000 })
+      await page.getByText(/^1 pièce\(s\) déclarée\(s\) vente hors des factures dont le montant est celui d’une facture source/)
+        .waitFor({ timeout: 10000 })
+      await aDesigner.scrollIntoViewIfNeeded()
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à

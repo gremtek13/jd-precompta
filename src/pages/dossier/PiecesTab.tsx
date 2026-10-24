@@ -32,7 +32,7 @@ import { fichiersDeLaPiece } from '../../lib/fichiersPiece'
 import { lirePiecesFigees } from '../../lib/piecesFigeesLecture'
 import { AUCUNE_PIECE_SUPPRIMEE, messageBilanSuppressionPieces } from '../../lib/bilanSuppression'
 import { jumellesDuDossier, marquesDesPieces, PASTILLE_DE_LA_MARQUE, type MarqueDeLaPiece } from '../../lib/ventesJumelles'
-import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
+import { lireVentesEmises, sourcesDuPont, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
 import { lireLesFacturesProposees, type FactureProposee } from '../../lib/exemplairesDesFacturesLecture'
 import { lireLesVentesFacturees } from '../../lib/ventesFactureesLecture'
 import { citantDe, lireCitationsDeLaRevision, quiCite, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
@@ -46,7 +46,7 @@ import PiecesJointesEcartees from './PiecesJointesEcartees'
 import type { FacturesSources } from '../../lib/facturesSources'
 import { jugeDeLaValidation, resumeDeLaSelection, validationEnLot } from '../../lib/lotsDeLaJumelleInversee'
 
-// Les factures sources que cet onglet ne lit pas encore (voir le badge « Devise non convertie ») : aucune n'est écartée.
+// Les factures sources tant que le pont n'est pas lu en entier (voir le badge « Devise non convertie ») : aucune n'est écartée.
 const SOURCES_NON_LUES: FacturesSources = new Set()
 
 // `dossierSiret` : le SIRET du dossier, que la page lit avec son identité — la réception par la plateforme du client
@@ -181,10 +181,11 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // (hypothèse E5-Q6) — la fiche et la suppression le disent avant le clic. Nulles avant leur première lecture.
   const [declarationsEreporting, setDeclarationsEreporting] = useState<LectureDesDeclarations | null>(null)
 
-  // Relit UNE pièce après un geste de sa fiche (désigner, défaire l'exemplaire d'une facture) : la liste prend la ligne relue,
-  // et la fiche ouverte sa désignation — seulement elle : le reste de la saisie reste celui de la fiche. Une pièce quittée
-  // entre-temps n'est pas déplacée (la fiche n'est remplacée que si elle porte encore cette pièce). Ne rejette jamais : le
-  // motif d'un échec revient à la fiche, qui le dit.
+  // Relit UNE pièce après un geste de sa fiche (désigner, défaire l'exemplaire d'une facture, déclarer ou retirer la
+  // déclaration d'une vente hors des factures) : la liste prend la ligne relue, et la fiche ouverte ses deux marques — la
+  // désignation et, depuis l'étape VF6e, la déclaration —, seulement elles : le reste de la saisie reste celui de la fiche.
+  // Une pièce quittée entre-temps n'est pas déplacée (la fiche n'est remplacée que si elle porte encore cette pièce). Ne
+  // rejette jamais : le motif d'un échec revient à la fiche, qui le dit.
   const relirePiece = useCallback(async (pieceId: string): Promise<string | null> => {
     try {
       const { data, error } = await supabase.from('pieces').select('*').eq('id', pieceId).eq('dossier_id', dossierId).maybeSingle()
@@ -193,7 +194,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
       const relue: Piece = data
       setPieces((prec) => prec.map((p) => (p.id === relue.id ? relue : p)))
       setEditing((prec) => (prec !== null && prec.id === relue.id
-        ? { ...prec, facture_id: relue.facture_id, updated_at: relue.updated_at }
+        ? { ...prec, facture_id: relue.facture_id, vente_hors_des_factures: relue.vente_hors_des_factures, updated_at: relue.updated_at }
         : prec))
       return null
     } catch (err) {
@@ -349,19 +350,25 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   const dateImpossibleParPiece = new Map(
     piecesADateImpossible(pieces).map(({ piece, date, borne }) => [piece.id, { date, borne }]),
   )
-  // Sans les factures sources, que cet onglet ne lit pas encore (étape VF6e : la lecture du pont gagnera leur source) — le
-  // badge garde la règle d'hier, sur toutes les pièces. Le point de la Checklist qui y envoie écarte l'exemplaire d'une
-  // facture source (VF6a) : il en compte moins, jamais plus, et chaque pièce qu'il compte porte bien son badge ici.
-  const deviseNonConvertieIds = new Set(piecesDeviseNonConvertie(pieces, SOURCES_NON_LUES).map((piece) => piece.id))
+  // Les factures sources de leur vente, lues avec le pont (étape VF6e) : l'exemplaire d'une facture source ne compte nulle
+  // part, et son badge « Devise non convertie » se tait comme le point de la Checklist qui y envoie (étape VF6a). Le pont
+  // pas encore revenu ou lu en partie, le badge garde la règle d'hier, sur toutes les pièces : il en montre plus que la
+  // Checklist n'en compte, jamais moins.
+  const sourcesLues = ventesEmises === null ? null : sourcesDuPont(ventesEmises)
+  const deviseNonConvertieIds = new Set(piecesDeviseNonConvertie(pieces, sourcesLues ?? SOURCES_NON_LUES).map((piece) => piece.id))
 
   // LA PIÈCE JUMELLE ET LA VENTE COMPTÉE DEUX FOIS (ligne 28.6), sur le dossier entier comme la Checklist, qui y envoie
   // l'opérateur : « Comptée deux fois » se corrige ici, en ne gardant qu'une pièce. Muettes sur une lecture partielle des
   // pièces, des factures émises ou de leurs transmissions — une facture non lue ferait passer une pièce dont les preuves
   // se contredisent pour la jumelle d'une autre, et une pièce non lue tairait le double —, le bandeau disant pourquoi.
-  const jumelles = ventesEmises && ventesEmises.motif === null && lectureIncomplete === null
+  // PAR RÉGIME (étape VF6e) : la bascule du dossier et ses factures sources — l'exemplaire d'une facture source, la pièce à
+  // désigner dans un dossier basculé, la vente déclarée hors des factures (lib/ventesJumelles.ts).
+  const jumelles = ventesEmises && sourcesLues !== null && lectureIncomplete === null
     ? jumellesDuDossier(ventesEmises.factures, ventesEmises.transmissions, pieces)
     : null
-  const marqueParPiece = jumelles && ventesEmises ? marquesDesPieces(ventesEmises.factures, jumelles) : new Map<string, MarqueDeLaPiece>()
+  const marqueParPiece = jumelles && ventesEmises && sourcesLues !== null
+    ? marquesDesPieces(ventesEmises.factures, jumelles, { dossierBascule: ventesParLesFactures, sources: sourcesLues }, pieces)
+    : new Map<string, MarqueDeLaPiece>()
 
   // CE QUE LA GARDE G3 REFUSERAIT À « VALIDER LA SÉLECTION » (étape VF6d ; lib/lotsDeLaJumelleInversee.ts). Dans un dossier
   // basculé, une pièce de vente qui devient validée est l'exemplaire de la facture que le pont prouve, ou désignée, ou
@@ -1240,6 +1247,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
           espace="cabinet"
           dossierId={dossierId}
           dossierSiret={dossierSiret}
+          ventesParLesFactures={ventesParLesFactures}
           onClose={() => setPlateformeOuverte(false)}
           onImported={load}
         />

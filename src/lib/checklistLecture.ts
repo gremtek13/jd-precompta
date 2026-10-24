@@ -144,9 +144,10 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
         .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
     ),
     // Avec la source de leur vente (étape VF6a) : l'exemplaire d'une facture source ne compte nulle part, et les points qui
-    // jugent une pièce l'écartent. La même lecture que le pont : une lecture que deux points comptent s'écrit une fois.
-    lireTout<FacturePourJumelle & Pick<FactureEmise, 'source_de_la_vente'>>((debut, fin) =>
-      supabase.from('factures_emises').select('id, dossier_id, statut, type, numero, date_emission, emetteur_siret, superpdp_invoice_id, source_de_la_vente', { count: 'exact' })
+    // jugent une pièce l'écartent. La même lecture que le pont : une lecture que deux points comptent s'écrit une fois. Et
+    // leur montant (étape VF6e) : le symptôme d'une pièce déclarée à tort compare son TTC à celui d'une facture source.
+    lireTout<FacturePourJumelle & Pick<FactureEmise, 'source_de_la_vente' | 'montant_ttc'>>((debut, fin) =>
+      supabase.from('factures_emises').select('id, dossier_id, statut, type, numero, date_emission, emetteur_siret, superpdp_invoice_id, source_de_la_vente, montant_ttc', { count: 'exact' })
         .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
     ),
     lireTout<TransmissionPourJumelle & { id: string }>((debut, fin) =>

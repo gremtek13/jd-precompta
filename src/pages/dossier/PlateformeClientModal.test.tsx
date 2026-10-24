@@ -105,11 +105,14 @@ function bilan(o: Partial<BilanReception> = {}): BilanReception {
 
 const onImported = vi.fn()
 const onClose = vi.fn()
+// `bascule` : le réglage du dossier (étape VF6e) — un dossier qui n'a pas basculé, sauf dans les cas qui le disent.
+let bascule = false
 const ouvrir = (siret: string | null = '12345678200010') =>
-  render(<PlateformeClientModal espace="cabinet" dossierId="d1" dossierSiret={siret} onClose={onClose} onImported={onImported} />)
+  render(<PlateformeClientModal espace="cabinet" dossierId="d1" dossierSiret={siret} ventesParLesFactures={bascule} onClose={onClose} onImported={onImported} />)
 
 beforeEach(() => {
   numero = 0
+  bascule = false
   base.factures = []
   base.transmissions = []
   base.pieces = []
@@ -372,7 +375,7 @@ describe('chercher puis importer', () => {
   describe('les ventes reconnues comme une facture émise', () => {
     const facture = (o: Record<string, unknown> = {}) => ({
       id: 'f1', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2026-0007', date_emission: '2026-03-14',
-      emetteur_siret: '12345678200010', superpdp_invoice_id: 4242, ...o,
+      emetteur_siret: '12345678200010', superpdp_invoice_id: 4242, source_de_la_vente: false, ...o,
     })
     const piece = (o: Record<string, unknown> = {}) => ({
       id: 'p1', dossier_id: 'd1', flux_hote: null, flux_id: null, superpdp_invoice_id: null, identite_numero: null,
@@ -412,10 +415,44 @@ describe('chercher puis importer', () => {
       // le drapeau de sa migration levé, et pas avant (lib/ventesJumellesLecture.ts ; les deux textes : ventesJumelles.test.ts).
       expect([...base.lectures].sort()).toEqual([
         EXEMPLAIRES_DES_FACTURES_EXPORTES ? COLONNES_DES_PIECES_DU_PONT_ET_DESIGNATION : COLONNES_DES_PIECES_DU_PONT,
-        'id, dossier_id, statut, type, numero, date_emission, emetteur_siret, superpdp_invoice_id',
+        'id, dossier_id, statut, type, numero, date_emission, emetteur_siret, superpdp_invoice_id, source_de_la_vente',
         'id, facture_id, canal, hote, flux_id',
       ].sort())
       expect(onImported).toHaveBeenCalledTimes(1)
+    })
+
+    // LE PONT PAR RÉGIME (étape VF6e). Dans un dossier dont les factures sont la source de leurs ventes, une vente reconnue
+    // est à désigner à sa validation (G3) ; et la facture SOURCE qu'un exemplaire désigné porte déjà ne fait pas d'une
+    // pièce importée une vente « déjà portée » — son exemplaire ne compte pas, et la pièce neuve, désignée, ne comptera pas.
+    it('dans un dossier basculé, une vente reconnue est à désigner à sa validation', async () => {
+      bascule = true
+      base.factures = [facture()]
+      base.pieces = [piece({ superpdp_invoice_id: 4242 })]
+      await importer(['p1'])
+      expect(screen.getByText('1 vente reconnue comme une facture émise de l’application, à désigner exemplaire de sa facture '
+        + 'à la validation : Justificatifs la marque.')).toBeTruthy()
+    })
+
+    it('dans un dossier basculé, la facture source déjà portée par son exemplaire : la pièce importée n’est pas un double', async () => {
+      bascule = true
+      base.factures = [facture({ source_de_la_vente: true }), facture({ id: 'f2', numero: 'F2026-0008', superpdp_invoice_id: 77 })]
+      base.pieces = [
+        piece({ id: 'p-pdf', facture_id: 'f1' }), piece({ id: 'p1', superpdp_invoice_id: 4242 }),
+        piece({ id: 'p-f2', facture_id: 'f2' }), piece({ id: 'p2', superpdp_invoice_id: 77 }),
+      ]
+      await importer(['p1', 'p2'])
+      // f2, d'avant la bascule, compte par ses pièces : la seconde la compte deux fois ; f1, source, par elle-même.
+      expect(screen.getByText('2 ventes reconnues comme des factures émises de l’application, à désigner exemplaire de leur '
+        + 'facture à la validation, dont 1 déjà portée par une autre pièce : ne validez qu’une pièce par facture ; la Checklist '
+        + 'le signale.')).toBeTruthy()
+    })
+
+    it('hors d’un dossier basculé, la même lecture dit la même chose qu’hier', async () => {
+      base.factures = [facture()]
+      base.pieces = [piece({ id: 'p-pdf', facture_id: 'f1' }), piece({ superpdp_invoice_id: 4242 })]
+      await importer(['p1'])
+      expect(screen.getByText('1 vente reconnue comme une facture émise de l’application, dont 1 déjà portée par une autre '
+        + 'pièce : ne validez qu’une pièce par facture ; la Checklist le signale.')).toBeTruthy()
     })
 
     it('une seule vente, que rien d’autre ne porte : Justificatifs la marque', async () => {

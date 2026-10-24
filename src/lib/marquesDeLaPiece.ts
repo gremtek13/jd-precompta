@@ -24,8 +24,9 @@ export const COLONNES_DES_MARQUES =
 
 /**
  * La pièce que la fiche montre : celle que l'écran appelant lui a donnée, ou — quand la fiche l'a relue elle-même après un
- * geste, et que cette relecture n'est pas plus ancienne — sa marque relue. L'écran appelant ne recopie que la désignation
- * dans sa fiche ouverte (PiecesTab, `relirePiece`) : sans cette relecture, une déclaration posée ou retirée ne s'y verrait pas.
+ * geste, et que cette relecture n'est pas plus ancienne — sa marque relue. L'écran appelant ne recopiait que la désignation
+ * dans sa fiche ouverte (PiecesTab, `relirePiece`) ; il recopie aussi la déclaration depuis l'étape VF6e, et cette relecture
+ * reste la garde de tout autre appelant.
  */
 export function pieceAJour<P extends MarquesDeLaPiece>(piece: P, relue: MarquesDeLaPiece | null): P {
   if (relue === null || relue.id !== piece.id || relue.updated_at < piece.updated_at) return piece

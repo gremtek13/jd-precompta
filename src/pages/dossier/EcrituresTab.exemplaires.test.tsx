@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
 import type { Predicat } from '../../test/filtresPostgrest'
@@ -176,6 +176,27 @@ describe('« Générer » n’écrit pas l’exemplaire d’une facture source',
     monter({ bascule: false })
     const bouton = await generer()
     await waitFor(() => expect(bouton.textContent).toBe('Générer les écritures manquantes (2)'))
+  })
+})
+
+// LA CARTE « COMPTES MANQUANTS » (étape VF6e) : l'exemplaire d'une facture source ne s'écrit pas — sa catégorie n'a pas à
+// recevoir un compte. Celui d'une facture qui n'est pas source s'écrit comme hier, et la réclame.
+describe('« Comptes manquants » ne réclame pas le compte de la catégorie de l’exemplaire d’une facture source', () => {
+  const NUE = { ...HONORAIRES, id: 'c-nue', code: 'autre', libelle: 'Catégorie fictive sans compte', compte_comptable: null }
+  const carte = () => screen.queryByRole('heading', { name: 'Comptes manquants' })
+
+  it('basculé, la facture source : la carte se tait ; sa facture d’avant : la carte réclame le compte', async () => {
+    poser({ categories: [HONORAIRES, NUE], pieces: [piece({ categorie_id: 'c-nue' }), AUTRE] })
+    monter()
+    await generer()
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Générer les écritures manquantes/ }).textContent)
+      .toBe('Générer les écritures manquantes (1)'))
+    expect(carte()).toBeNull()
+    cleanup()
+    poser({ categories: [HONORAIRES, NUE], pieces: [piece({ categorie_id: 'c-nue' }), AUTRE], factures_emises: [facture({ source_de_la_vente: false })] })
+    monter()
+    expect(await screen.findByRole('heading', { name: 'Comptes manquants' })).toBeTruthy()
+    expect(screen.getByText('Catégorie fictive sans compte')).toBeTruthy()
   })
 })
 

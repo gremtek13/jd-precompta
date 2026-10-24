@@ -1556,6 +1556,22 @@ pieces.push({
 })
 RELEVE_D12.push(mouvementDe('d12', 'b11', '2026-10-22', 'VIR SEPA VERRERIE TOURNON', 1234.56, 'non_rapprochee'))
 
+// LE PONT PAR RÉGIME (ligne 28.65, chantier EC-Q3, étape VF6e), dans le dossier basculé d12. Les trois pièces de VF6c portent
+// déjà leurs marques — « À désigner : c’est la facture F2026-0021 », « Exemplaire de la facture F2026-0022 », « Vente hors des
+// factures de l’application ». S'y ajoutent l'original de F2026-0024, VALIDÉ sans être désigné — la facture source compte sa
+// vente, et lui aussi : « Comptée deux fois » —, et une prestation déclarée hors des factures, à valider, dont le TTC est
+// celui de F2026-0025, source sans exemplaire : le symptôme de VF6-Q4. Des montants qu'aucun mouvement de d12 ne porte.
+// Ajoutés par `push`, comme ci-dessus. Tous FICTIFS.
+PIECES_D12.push(
+  pieceDeVenteD12('pb4', 'Maison de santé des Coteaux, original validé', 360, {
+    nom_fichier: 'F2026-0024-original.pdf', statut: 'validee', identite_numero: 'F2026-0024', identite_siren_vendeur: '444555666',
+    identite_date: '2026-09-22', identite_nature: 'facture',
+  }),
+  pieceDeVenteD12('pb5', 'Atelier Bleu, mission déclarée hors des factures', 240, {
+    nom_fichier: 'mission-atelier-bleu.pdf', date_piece: '2026-10-12', vente_hors_des_factures: true,
+  }),
+)
+
 const pieceEreporting = (o: Ligne): Ligne => ({
   ...piece('p-er', '2027-10-05', 'Editeur Logiciel', 120, 0, 'c8', 'a_valider'),
   dossier_id: 'd7', storage_path: 'd7/er.pdf', nom_fichier: 'er.pdf', ...o,

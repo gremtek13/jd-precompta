@@ -197,6 +197,99 @@ describe('pointsDeLaChecklist : l’exemplaire d’une facture source (VF6a)', (
     const d = { piecesValidees: [piece({ categorie_id: null }), piece({ id: 'y', facture_id: null, categorie_id: null })] }
     expect(nb(d, 'sans-categorie', new Set(['f1']))).toBe(1)
   })
+
+  // LES TROIS POINTS QUE VF6a LAISSAIT (étape VF6e) : la catégorie de l'exemplaire ne réclame ni compte ni poste — il ne
+  // s'écrit pas, la 2035 l'écarte —, et il ne se dit pas payé en trop — il ne se règle pas, sa facture s'encaisse.
+  const SANS_COMPTE: Categorie = { ...HONORAIRES, id: 'c-nue', code: 'autre', compte_comptable: null, poste_2035: null }
+  const casVF6e: [string, Partial<DonneesDeLaChecklist>, { source: number; autre: number }][] = [
+    ['comptes-manquants', { piecesValidees: [piece({ categorie_id: 'c-nue' })], categories: [SANS_COMPTE] }, { source: 0, autre: 1 }],
+    ['postes-manquants', { piecesValidees: [piece({ categorie_id: 'c-nue' })], categories: [SANS_COMPTE] }, { source: 0, autre: 1 }],
+    ['pieces-payees-en-trop', {
+      piecesValidees: [piece({})], categories: [HONORAIRES],
+      lignes: [ENCAISSEMENT, ligne({ id: 'm2', statut: 'rapprochee', piece_id: 'x', montant: 120, date: '2026-03-21' })],
+    }, { source: 0, autre: 1 }],
+  ]
+  for (const [i, [id, d, attendu]] of casVF6e.entries()) {
+    it(`VF6e ${i + 1}. « ${id} » : l’exemplaire d’une facture source ${attendu.source ? 'y compte' : 'n’y compte pas'}, celui d’une autre ${attendu.autre ? 'y compte' : 'non'}`, () => {
+      expect(nb(d, id, new Set(['f1'])), 'facture source').toBe(attendu.source)
+      expect(nb(d, id, new Set(['f2'])), 'facture qui n’est pas source').toBe(attendu.autre)
+      expect(nb(d, id, SANS_FACTURE_SOURCE), 'aucune facture source').toBe(attendu.autre)
+    })
+  }
+
+  it('VF6e : une catégorie qu’une autre pièce emploie aussi réclame toujours son compte et son poste', () => {
+    const d = { piecesValidees: [piece({ categorie_id: 'c-nue' }), piece({ id: 'y', facture_id: null, categorie_id: 'c-nue' })], categories: [SANS_COMPTE] }
+    expect(nb(d, 'comptes-manquants', new Set(['f1']))).toBe(1)
+    expect(nb(d, 'postes-manquants', new Set(['f1']))).toBe(1)
+  })
+})
+
+// LE PONT PAR RÉGIME (ligne 28.65, étape VF6e ; lib/ventesJumelles.ts) : la vente comptée deux fois se juge par le régime de
+// sa facture ; dans un dossier basculé, la pièce que le pont rattache sans désignation est à désigner ; et une vente déclarée
+// hors des factures dont le TTC est celui d'une facture source sans exemplaire validé se vérifie (VF6-Q4). Le dossier a
+// basculé quand il lit ses ventes facturées (`ventesFacturees` non nulle, lue ou non). Données FICTIVES.
+describe('pointsDeLaChecklist : le pont par régime (VF6e)', () => {
+  const piece = (o: Partial<Piece>): Piece => ({
+    id: 'x', dossier_id: 'd1', uploaded_by: null, source: 'superpdp', storage_path: 'd1/x.pdf', nom_fichier: 'x.pdf', storage_hash: null,
+    date_piece: '2026-04-02', tiers: 'Client fictif', montant_ht: 300, montant_tva: 60, montant_ttc: 360, devise: 'EUR', montant_devise: null,
+    taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'vente', statut: 'a_valider',
+    notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
+    created_at: '2026-04-03T09:00:00Z', updated_at: '2026-04-03T09:00:00Z', ...o,
+  })
+  const facture = (o: Partial<DonneesDeLaChecklist['facturesEmises'][number]> = {}): DonneesDeLaChecklist['facturesEmises'][number] => ({
+    id: 'fs', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2026-0021', date_emission: '2026-04-02',
+    emetteur_siret: '12345678900012', superpdp_invoice_id: 21, montant_ttc: 360, ...o,
+  })
+  const FACTURES = [facture(), facture({ id: 'fa', numero: 'F2026-0003', superpdp_invoice_id: 3, date_emission: '2026-02-01' })]
+  const BASCULE = { ventesFacturees: { dossierId: 'd1', etat: 'incomplete' as const, motif: 'lecture fictive' }, facturesSources: new Set(['fs']) }
+  const points = (d: Partial<DonneesDeLaChecklist>) => pointsDeLaChecklist(donnees({ facturesEmises: FACTURES, ...d }), CONTEXTE).tousLesPointsATraiter
+  const point = (d: Partial<DonneesDeLaChecklist>, id: string) => points(d).find((p) => p.id === id)
+
+  it('deux exemplaires désignés d’une facture source ne sont pas une vente comptée deux fois ; une pièce validée non désignée, si', () => {
+    const exemplaires = [piece({ id: 'p1', statut: 'validee', superpdp_invoice_id: 21, facture_id: 'fs' }), piece({ id: 'p2', statut: 'validee', facture_id: 'fs' })]
+    expect(point({ ...BASCULE, piecesValidees: exemplaires }, 'ventes-en-double')?.nb).toBe(0)
+    // Le régime d'hier, sur les mêmes pièces : comptée deux fois.
+    expect(point({ piecesValidees: exemplaires }, 'ventes-en-double')?.nb).toBe(1)
+    const validee = [piece({ id: 'p1', statut: 'validee', superpdp_invoice_id: 21, nom_fichier: 'original-0021.xml' })]
+    expect(point({ ...BASCULE, piecesValidees: validee }, 'ventes-en-double')).toMatchObject({
+      nb: 1, severite: 'erreur', detail: expect.stringContaining('F2026-0021, source de sa vente, et « original-0021.xml ».') as unknown as string,
+    })
+  })
+
+  it('« exemplaires-a-designer » : dans un dossier basculé, la pièce que le pont rattache sans désignation, en attention', () => {
+    const d = {
+      piecesAValider: [piece({ id: 'p1', superpdp_invoice_id: 21, nom_fichier: 'original-0021.xml' }), piece({ id: 'p2', facture_id: 'fs' })],
+      piecesValidees: [piece({ id: 'a1', statut: 'validee', superpdp_invoice_id: 3, nom_fichier: 'facture-0003.pdf' })],
+    }
+    expect(point({ ...BASCULE, ...d }, 'exemplaires-a-designer')).toEqual({
+      id: 'exemplaires-a-designer',
+      label: 'pièce(s) de vente que le pont rattache à une facture émise, à désigner exemplaire de cette facture',
+      action: 'Désigner ces pièces', nb: 2, cible: 'pieces', severite: 'attention',
+      detail: '« facture-0003.pdf » : F2026-0003. « original-0021.xml » : F2026-0021. Dans ce dossier, une pièce de vente ne se '
+        + 'valide que désignée exemplaire de la facture que le pont prouve : sa fiche, dans Justificatifs, la désigne.',
+    })
+    // Hors d'un dossier basculé : rien.
+    expect(point(d, 'exemplaires-a-designer')?.nb).toBe(0)
+    // Pièces, factures ou transmissions lues en partie : le point se tait.
+    expect(point({ ...BASCULE, ...d, jumellesPartielles: true }, 'exemplaires-a-designer')?.nb).toBe(0)
+  })
+
+  it('« ventes-hors-factures-a-verifier » : une pièce déclarée du montant d’une facture source sans exemplaire validé, en attention', () => {
+    const declaree = piece({ id: 'pd', statut: 'validee', vente_hors_des_factures: true, nom_fichier: 'formation.pdf', date_piece: '2026-06-30' })
+    const p = point({ ...BASCULE, piecesValidees: [declaree] }, 'ventes-hors-factures-a-verifier')
+    expect(p).toMatchObject({
+      label: 'pièce(s) déclarée(s) vente hors des factures dont le montant est celui d’une facture source sans exemplaire validé',
+      action: 'Vérifier ces pièces', nb: 1, cible: 'pieces', severite: 'attention',
+    })
+    expect(p?.detail?.replace(/\s/g, ' ')).toContain('« formation.pdf », 360,00 € : F2026-0021.')
+    // Son exemplaire validé, ailleurs : rien à vérifier.
+    expect(point({ ...BASCULE, piecesValidees: [declaree, piece({ id: 'ex', statut: 'validee', facture_id: 'fs' })] }, 'ventes-hors-factures-a-verifier')?.nb).toBe(0)
+    // Lue en partie : le point se tait.
+    expect(point({ ...BASCULE, piecesValidees: [declaree], jumellesPartielles: true }, 'ventes-hors-factures-a-verifier')?.nb).toBe(0)
+    // Sans facture source : rien.
+    expect(point({ piecesValidees: [declaree] }, 'ventes-hors-factures-a-verifier')?.nb).toBe(0)
+  })
 })
 
 // L'OUVERTURE DE L'EXERCICE QUI SUIT LE DERNIER VALIDÉ, CONFRONTÉE À LA CLÔTURE DU PRÉCÉDENT (O33-Q3) : le même calcul que
