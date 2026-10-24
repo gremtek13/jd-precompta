@@ -49,6 +49,7 @@ import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { useAuth } from '../../context/AuthContext'
 import { lireTout } from '../../lib/lectureComplete'
+import { lireLesSoldesReportes } from '../../lib/soldesReportesLecture'
 import { messageErreur } from '../../lib/messageErreur'
 import { CATEGORIE_NON_MODIFIEE, categorieCommuneNonReglable, categorieReglableIci } from '../../lib/categoriesCommunes'
 import VoletSocialCard from './VoletSocialCard'
@@ -301,10 +302,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       // Les soldes reportés : la validation numérote ceux de l'exercice qu'ils ouvrent. Tronquée, cette lecture ferait
       // refuser la validation par la base (« Les libellés proposés ne couvrent pas exactement… ») — le drapeau de la
       // validation, pas celui de la déclaration, qui ne les lit pas.
-      lireTout<SoldeReporte>((debut, fin) =>
-        supabase.from('soldes_reportes').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
-      ),
+      lireLesSoldesReportes(dossierId),
       // Les factures émises validées et leurs transmissions : la vente qui revient de la plateforme du client ou de Super
       // PDP se reconnaît par elles (ligne 28.6). Le drapeau de la validation.
       lireTout<FacturePourJumelle>((debut, fin) =>

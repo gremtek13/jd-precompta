@@ -7,8 +7,8 @@ import type { DoublonDeTexte } from './doublonsTexte'
 import type { Emprunt } from './emprunts'
 import { numeroterFec, type NumerotationFec } from './fec'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
-import { anneeDe, formatMoney } from './format'
-import { confronterLOuverture, type ConfrontationDeLOuverture } from './ouvertureConfrontee'
+import { anneeDe } from './format'
+import { confronterLOuverture, ouvertureEnEcart } from './ouvertureConfrontee'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
 import {
   immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec,
@@ -63,6 +63,8 @@ import type {
 // 18/10/2026) : « le bilan d'ouverture d'un exercice doit correspondre au bilan de clôture de l'exercice précédent »
 // (code de commerce, art. L123-19, al. 3 ; PCG, art. 112-2). La base ne calcule pas de bilan, comme elle ne calcule pas
 // de 2035 : l'onglet Bilan les confronte (lib/ouvertureConfrontee.ts), et un écart retient la validation.
+// La Checklist le dit aussi, avant le geste (O33-Q3, lib/pointsDeLaChecklist.ts) : ses mots sont écrits une fois, dans
+// lib/ouvertureConfrontee.ts (`ouvertureEnEcart`), et dits pareils là et ici.
 //
 // ET CE QUI RESTERAIT EN SUSPENS : une pièce à valider de l'exercice, une pièce sans date, une date impossible.
 // Après la validation, aucune écriture ne se passe plus dans l'exercice : une pièce qu'on validerait ensuite ne
@@ -686,41 +688,6 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   }
 
   return { prealables, numerotation, report, validable: !prealables.some((p) => p.bloquant) }
-}
-
-// CE QUE LE PRÉALABLE DIT D'UN ÉCART D'OUVERTURE : assez pour le retrouver dans l'onglet Bilan — combien de comptes et de
-// rubriques, chaque rubrique avec ses deux montants (le net à l'actif, le montant au passif, comme la ligne « Ouverture »
-// de l'onglet) et ses comptes, puis les comptes dont la rubrique concorde (deux écarts qui s'y compensent). Les comptes
-// par leur numéro seul : c'est ce qu'on cherche, et un libellé se lit dans l'onglet.
-function ouvertureEnEcart(c: Extract<ConfrontationDeLOuverture, { etat: 'ecarts' }>): { message: string; detail: string } {
-  const euros = (centimes: number) => formatMoney(centimes / 100)
-  const k = c.comptes.length
-  const r = c.rubriques.length
-  const combien = [
-    k > 0 ? pluriel(k, 'compte') : null,
-    r > 0 ? `${pluriel(r, 'rubrique')} du bilan` : null,
-  ].filter(Boolean).join(' et ')
-  const sousUneRubrique = new Set(c.rubriques.flatMap((x) => x.comptes))
-  const aPart = c.comptes.filter((e) => !sousUneRubrique.has(e.compte)).map((e) => e.compte)
-  const phrases = [
-    ...c.rubriques.length > 0
-      ? [`En écart : ${c.rubriques.map((x) => `${x.libelle} (${x.cote}), ouverture ${euros(x.ouverture)}, clôture de `
-        + `${c.precedent} ${euros(x.cloture)}${x.comptes.length > 0 ? ` (${x.comptes.length > 1 ? 'comptes' : 'compte'} ${x.comptes.join(', ')})` : ''}`).join(' ; ')}.`]
-      : [],
-    ...aPart.length > 0
-      // Deux au moins : une rubrique ne concorde avec un compte en écart que si un autre l'y compense.
-      ? [`Comptes en écart dans des rubriques qui concordent, les écarts s'y compensant : ${aPart.join(', ')}.`]
-      : [],
-    `L'ouverture de ${c.exercice} est faite des soldes reportés à la validation de ${c.precedent}, figés avec lui : l'écart ne `
-      + "vient pas d'une saisie et ne se corrige pas dans l'application. Le signaler.",
-    `Le détail, compte par compte, est dans l'onglet Bilan de l'exercice ${c.exercice}, à la ligne « Ouverture ».`,
-  ]
-  return {
-    message: `L'ouverture de l'exercice ${c.exercice} ne reprend pas la clôture de ${c.precedent} : ${combien} en écart. Le bilan `
-      + "d'ouverture doit correspondre au bilan de clôture de l'exercice précédent (code de commerce, art. L123-19 ; PCG, "
-      + `art. 112-2) : l'exercice ${c.exercice} ne se valide pas sur cet écart.`,
-    detail: phrases.join(' '),
-  }
 }
 
 // LES POINTS EN ERREUR DE LA CHECKLIST, et ce que la validation en fait. Chacun est repris ici (son

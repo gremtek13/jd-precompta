@@ -2,7 +2,7 @@ import {
   bilanDeLExercice, colonneDeLExercicePrecedent, regleDuCompte, RUBRIQUES_ACTIF, RUBRIQUES_PASSIF, type EntreesDuBilan,
   type IdRubriqueActif, type IdRubriquePassif,
 } from './bilan'
-import { formatDate } from './format'
+import { formatDate, formatMoney } from './format'
 import { compteDuResultat, compteQuiRecoit, etatDeLOuverture, ouvertureDeLExercice, soldesAReporter } from './reportDesSoldes'
 
 // L'OUVERTURE D'UN EXERCICE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE — ligne 33 de la feuille de route, troisième brique
@@ -245,3 +245,51 @@ export function confronterLOuverture(d: EntreesDuBilan, lecture: 'complete' | 'p
       + 'vient pas d’une saisie, et rien ne se corrige d’ici.',
   }
 }
+
+/**
+ * L'exercice dont l'ouverture se confronte AVANT qu'on le valide : celui qui suit le dernier exercice validé. Les autres
+ * n'ont rien à confronter — le premier exercice s'ouvre sans solde, une balance reprise s'est contrôlée à son import —
+ * ou l'ont été à leur validation : un exercice déjà validé est figé, et un écart qu'il garderait ne se corrigerait de
+ * nulle part. Nul sans exercice validé. La Vue d'ensemble n'a pas d'exercice choisi (elle ne lit pas `useAnnee()`), et
+ * c'est celui-là que la validation réclame ensuite.
+ */
+export function exerciceAConfronter(anneesValidees: readonly number[]): number | null {
+  return anneesValidees.length > 0 ? Math.max(...anneesValidees) + 1 : null
+}
+
+// CE QUE LE PRÉALABLE DE LA VALIDATION ET LE POINT DE LA CHECKLIST DISENT D'UN ÉCART D'OUVERTURE (O33-Q1, O33-Q3) — les MÊMES
+// mots, écrits une fois ici : un écart se lit pareil là où il retient la validation et là où il se voit avant. Assez pour le
+// retrouver dans l'onglet Bilan — combien de comptes et de rubriques, chaque rubrique avec ses deux montants (le net à l'actif, le montant au passif, comme la ligne « Ouverture »
+// de l'onglet) et ses comptes, puis les comptes dont la rubrique concorde (deux écarts qui s'y compensent). Les comptes
+// par leur numéro seul : c'est ce qu'on cherche, et un libellé se lit dans l'onglet.
+export function ouvertureEnEcart(c: Extract<ConfrontationDeLOuverture, { etat: 'ecarts' }>): { message: string; detail: string } {
+  const euros = (centimes: number) => formatMoney(centimes / 100)
+  const k = c.comptes.length
+  const r = c.rubriques.length
+  const combien = [
+    k > 0 ? `${k} ${pluriel(k, 'compte', 'comptes')}` : null,
+    r > 0 ? `${r} ${pluriel(r, 'rubrique', 'rubriques')} du bilan` : null,
+  ].filter(Boolean).join(' et ')
+  const sousUneRubrique = new Set(c.rubriques.flatMap((x) => x.comptes))
+  const aPart = c.comptes.filter((e) => !sousUneRubrique.has(e.compte)).map((e) => e.compte)
+  const phrases = [
+    ...c.rubriques.length > 0
+      ? [`En écart : ${c.rubriques.map((x) => `${x.libelle} (${x.cote}), ouverture ${euros(x.ouverture)}, clôture de `
+        + `${c.precedent} ${euros(x.cloture)}${x.comptes.length > 0 ? ` (${x.comptes.length > 1 ? 'comptes' : 'compte'} ${x.comptes.join(', ')})` : ''}`).join(' ; ')}.`]
+      : [],
+    ...aPart.length > 0
+      // Deux au moins : une rubrique ne concorde avec un compte en écart que si un autre l'y compense.
+      ? [`Comptes en écart dans des rubriques qui concordent, les écarts s'y compensant : ${aPart.join(', ')}.`]
+      : [],
+    `L'ouverture de ${c.exercice} est faite des soldes reportés à la validation de ${c.precedent}, figés avec lui : l'écart ne `
+      + "vient pas d'une saisie et ne se corrige pas dans l'application. Le signaler.",
+    `Le détail, compte par compte, est dans l'onglet Bilan de l'exercice ${c.exercice}, à la ligne « Ouverture ».`,
+  ]
+  return {
+    message: `L'ouverture de l'exercice ${c.exercice} ne reprend pas la clôture de ${c.precedent} : ${combien} en écart. Le bilan `
+      + "d'ouverture doit correspondre au bilan de clôture de l'exercice précédent (code de commerce, art. L123-19 ; PCG, "
+      + `art. 112-2) : l'exercice ${c.exercice} ne se valide pas sur cet écart.`,
+    detail: phrases.join(' '),
+  }
+}
+

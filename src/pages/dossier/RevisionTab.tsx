@@ -153,16 +153,13 @@ async function lireLePermanent(dossierId: string): Promise<LectureDuDossierPerma
 // `bascule` : le réglage du dossier — un dossier qui n'a pas basculé ne lit pas les sources de ses écritures de vente.
 async function lireLaRevision(dossierId: string, bascule: boolean): Promise<LectureDeLaRevision> {
   const [
-    checklist, lectureReportes, lectureControles, lectureDocuments, lectureDecisions, lecturePreuves, lectureConclusions,
+    checklist, lectureControles, lectureDocuments, lectureDecisions, lecturePreuves, lectureConclusions,
     lectureJournal, lectureRevues, lectureSeuils, lectureExplications, lectureReperes, lectureReperesDesPostes, permanent,
     ventesFacturees,
   ] = await Promise.all([
-    // Un dossier qui a basculé y lit aussi les sources de ses écritures de vente : elles servent à la revue, plus bas.
+    // Un dossier qui a basculé y lit aussi les sources de ses écritures de vente : elles servent à la revue, plus bas. Elle lit
+    // aussi les soldes reportés (O33-Q3), que la révision reprend tels quels : une lecture que deux écrans comptent s'écrit une fois.
     lireLaChecklist(dossierId, bascule),
-    lireTout<SoldeReporte>((debut, fin) =>
-      supabase.from('soldes_reportes').select('*', { count: 'exact' })
-        .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
-    ),
     lireTout<ControleReleveBancaire>((debut, fin) =>
       supabase.from('controles_releves_bancaires').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
@@ -228,7 +225,9 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
   }
   if (checklist.infoInconnue) motifs.push({ quoi: 'Les informations complémentaires du dossier', accord: 'lues', motif: checklist.infoInconnue })
   if (checklist.clotureInconnue) motifs.push({ quoi: 'Les exercices clos du dossier', accord: 'lus', motif: checklist.clotureInconnue })
-  if (lectureReportes.motif) motifs.push({ quoi: 'Les soldes reportés des exercices validés', accord: 'lus', motif: lectureReportes.motif })
+  if (checklist.soldesReportesIncomplets) {
+    motifs.push({ quoi: 'Les soldes reportés des exercices validés', accord: 'lus', motif: checklist.soldesReportesIncomplets })
+  }
   if (lectureControles.motif) motifs.push({ quoi: 'Les contrôles des relevés bancaires', accord: 'lus', motif: lectureControles.motif })
   if (lectureDocuments.motif) motifs.push({ quoi: 'Les documents du dossier', accord: 'lus', motif: lectureDocuments.motif })
   if (lectureDecisions.motif) motifs.push({ quoi: 'Les décisions de la révision', accord: 'lues', motif: lectureDecisions.motif })
@@ -248,7 +247,7 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
   return {
     checklist: { ...checklist, relevesIncoherents: checklist.relevesIncoherents ?? [], doublonsTexte: checklist.doublonsTexte ?? [] },
     reprise: checklist.aNouveaux,
-    reportes: lectureReportes.lignes,
+    reportes: checklist.soldesReportes,
     controlesReleves: lectureControles.lignes,
     documents: lectureDocuments.lignes,
     decisions: lectureDecisions.lignes,
@@ -753,11 +752,12 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
 
   // « Aujourd'hui » se lit au rendu, jamais au chargement du module : la page ne se recharge pas d'un jour à l'autre. La
   // base lit l'année À PARIS ; la Vue d'ensemble compte ses mois comme elle l'a toujours fait (`anneeEtMoisEcoules`).
-  const anneeCourante = anneeDe(aujourdHuiAParis())
+  const aujourdHui = aujourdHuiAParis()
+  const anneeCourante = anneeDe(aujourdHui)
   const { annee: anneeDesPoints, moisEcoules } = anneeEtMoisEcoules()
   const points = pointsDeLaChecklist(lecture.checklist, {
-    assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneeCourante: anneeDesPoints, moisEcoules,
-    premierJourDuMois: premierJourDuMoisCourant(),
+    assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees: exercices.map((e) => e.annee),
+    aujourdHui, anneeCourante: anneeDesPoints, moisEcoules, premierJourDuMois: premierJourDuMoisCourant(),
   })
   const donnees: DonneesDeLaRevision = {
     annee, anneeCourante, modele, assujettiTva, periodiciteTva,

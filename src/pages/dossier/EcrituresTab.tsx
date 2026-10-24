@@ -12,6 +12,7 @@ import { formaterFec, genererFec, nomFichierFec, numerotationValidee, telecharge
 import { etatsDesLettragesManuels, lettrages, lettragesDesFactures, phraseDuLettrage, piecesLettreesALaMain } from '../../lib/lettrage'
 import { estFigee } from '../../lib/validationExercice'
 import { lireTout } from '../../lib/lectureComplete'
+import { lireLesSoldesReportes } from '../../lib/soldesReportesLecture'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
 import { anneesDesRattachements, paiementsDesPieces, rattachements } from '../../lib/rattachement'
 import {
@@ -293,10 +294,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('declarations_tva').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
       ),
-      lireTout<SoldeReporte>((debut, fin) =>
-        supabase.from('soldes_reportes').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
-      ),
+      lireLesSoldesReportes(dossierId),
       // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
       ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
     ])

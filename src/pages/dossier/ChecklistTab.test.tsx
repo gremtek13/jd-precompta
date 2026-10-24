@@ -1,11 +1,11 @@
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
 import type {
   ANouveau, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier,
   LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, StatutTva, TransmissionFacture,
-  VehiculeDossier, VentilationBancaire,
+  SoldeReporte, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import type { Emprunt } from '../../lib/emprunts'
 import type { DossierTab } from '../../components/DossierParcours'
@@ -67,7 +67,8 @@ vi.mock('../../lib/supabase', async () => {
   // et une lecture qui ne demanderait que celles du dossier les perdrait toutes — avec elles le compte 28
   // de chaque dotation, qui paraîtrait alors à réécrire.
   // Et les factures émises et leurs transmissions (ligne 28.6) : la lecture ne demande que les validées du dossier.
-  const filtrees = new Set(['natures_immobilisation', 'factures_emises', 'transmissions_factures'])
+  // Et les soldes reportés (O33-Q3) : ceux d'un autre dossier ne sont pas l'ouverture de celui-ci.
+  const filtrees = new Set(['natures_immobilisation', 'factures_emises', 'transmissions_factures', 'soldes_reportes'])
   return {
     supabase: {
       rpc: async (nom: string, args: unknown) => {
@@ -195,6 +196,8 @@ function poser(pieces: {
   tronquees?: string[]
   ecritures?: unknown[]
   aNouveaux?: unknown[]
+  // Les soldes reportés par la validation de chaque exercice (O33-Q3) : l'ouverture de l'exercice qui suit le dernier validé.
+  soldes?: unknown[]
   refusees?: string[]
   categories?: unknown[]
   emprunts?: unknown[]
@@ -216,7 +219,8 @@ function poser(pieces: {
     cotisations_declarees: pieces.cotisations ?? [], lignes_bancaires: pieces.lignes ?? [], immobilisations: pieces.immos ?? [],
     natures_immobilisation: pieces.natures ?? [], categories: pieces.categories ?? [], ecritures_brouillon: pieces.ecritures ?? [],
     declarations_tva: pieces.declarations ?? [], documents_divers: [], informations_dossier: [],
-    exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [], emprunts: pieces.emprunts ?? [],
+    exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [], soldes_reportes: pieces.soldes ?? [],
+    emprunts: pieces.emprunts ?? [],
     ventilations_bancaires: pieces.ventilations ?? [], reglements_groupes: pieces.reglements ?? [],
     vehicules: pieces.vehicules ?? [], lettrages_manuels: pieces.lettrages ?? [],
     factures_emises: pieces.factures ?? [], transmissions_factures: pieces.transmissions ?? [],
@@ -2908,5 +2912,107 @@ describe('ChecklistTab — l’exemplaire d’une facture source (VF6a)', () => 
     poser({ validees: [exemplaire, ordinaire], factures: [{ ...factureEmise({ superpdp_invoice_id: null }), source_de_la_vente: false }] })
     monter()
     expect((await screen.findByText(POINT)).textContent).toMatch(/^2 /)
+  })
+})
+
+// L'OUVERTURE DE L'EXERCICE QUI SUIT LE DERNIER VALIDÉ, CONFRONTÉE À LA CLÔTURE DU PRÉCÉDENT (ligne 33, O33-Q3) : un écart
+// retient la validation depuis O33-Q1, et la Vue d'ensemble le dit avant le geste, en erreur, avec un renvoi à l'onglet Bilan.
+// Le calcul est éprouvé à part (lib/pointsDeLaChecklist.test.ts) ; ici, le CÂBLAGE des lectures : tout le brouillon, les
+// catégories, les pièces, la reprise, les soldes reportés — lus en entier, sinon le point se tait ET l'écran le dit. Données
+// FICTIVES : 2024 validé, l'apport de l'exploitant (1 000 € en banque face au 108).
+describe('ChecklistTab — l’ouverture de l’exercice qui suit le dernier validé reprend la clôture du précédent (O33-Q3)', () => {
+  const ecritureDApport = (id: string, compte: string, sens: 'debit' | 'credit'): EcritureBrouillon => ({
+    id, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, date: '2024-01-02', compte, libelle: 'Apport de l’exploitant',
+    montant: 1000, sens, statut: 'validee', created_at: '2024-01-02T10:00:00Z', immobilisation_id: null, vehicule_id: null,
+    declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
+  })
+  const APPORT = [ecritureDApport('a1', '512000', 'debit'), ecritureDApport('a2', '108000', 'credit')]
+  const reporte = (id: string, compte: string, sens: 'debit' | 'credit', montant: number): SoldeReporte => ({
+    id, dossier_id: 'dossier-de-test', date: '2025-01-01', compte, libelle: `Compte ${compte}`, sens, montant,
+    source_nom: 'Exercice 2024 validé', source_empreinte: 'b'.repeat(64), created_at: '2025-01-01T00:00:00Z', ...A_NOUVEAU_NON_VALIDE,
+  })
+  const OUVERTURE_JUSTE = [reporte('s1', '512000', 'debit', 1000), reporte('s2', '101000', 'credit', 1000)]
+  const OUVERTURE_EN_ECART = [reporte('s1', '512000', 'debit', 1000.01), reporte('s2', '101000', 'credit', 1000.01)]
+  const POINT = /L'ouverture de l'exercice 2025 ne reprend pas la clôture de 2024 : 2 comptes et 2 rubriques du bilan en écart\./
+  const ANCRE = /^Relevés bancaires \d{4}$/
+
+  it('dit l’écart en erreur, sans nombre devant, avec son détail, et mène à l’onglet Bilan', async () => {
+    poser({ ecritures: APPORT, soldes: OUVERTURE_EN_ECART })
+    const onNavigate = vi.fn()
+    monter(false, TRESORERIE, [2024], 'trimestrielle', 'exonere', onNavigate)
+
+    const ligne = (await screen.findByText(POINT)).closest('.check-ligne') as HTMLElement
+    // Un point qui ne compte rien : le libellé commence par la phrase, pas par « 1 ».
+    expect(ligne.querySelector('.check-ligne-libelle')!.textContent).toMatch(/^L'ouverture de l'exercice 2025/)
+    expect(ligne.querySelector('.check-dot')!.className).toContain('check-manque')
+    expect(ligne.querySelector('.check-ligne-detail')!.textContent).toContain("est dans l'onglet Bilan de l'exercice 2025, à la ligne « Ouverture ».")
+    fireEvent.click(within(ligne).getByRole('button', { name: 'Voir l’ouverture dans le bilan' }))
+    expect(onNavigate).toHaveBeenCalledWith('bilan')
+    // Une erreur bloquante de plus : la tuile des anomalies la compte.
+    expect(screen.getByText(/type\(s\) d'erreur bloquante/)).toBeTruthy()
+  })
+
+  it('se tait quand l’ouverture reprend la clôture', async () => {
+    poser({ ecritures: APPORT, soldes: OUVERTURE_JUSTE })
+    monter(false, TRESORERIE, [2024])
+
+    // L'ancre : la liste est rendue (une absence vérifiée sur un écran en chargement serait verte pour rien).
+    await screen.findAllByText(ANCRE)
+    expect(screen.queryByText(POINT)).toBeNull()
+  })
+
+  it('ne lit que les soldes reportés de CE dossier : ceux d’un autre ne font pas un écart', async () => {
+    poser({ ecritures: APPORT, soldes: [...OUVERTURE_JUSTE, { ...reporte('autre', '512000', 'debit', 5), dossier_id: 'autre-dossier' }] })
+    monter(false, TRESORERIE, [2024])
+
+    await screen.findAllByText(ANCRE)
+    expect(screen.queryByText(POINT)).toBeNull()
+  })
+
+  it('se tait sans exercice validé : rien à confronter, quelles que soient les lectures', async () => {
+    poser({ ecritures: APPORT, soldes: OUVERTURE_EN_ECART })
+    monter(false, TRESORERIE, [])
+
+    await screen.findAllByText(ANCRE)
+    expect(screen.queryByText(POINT)).toBeNull()
+  })
+
+  // Une collection lue en partie — plafonnée (le serveur annonce plus qu'il ne rend) ou refusée — rend le point muet, jamais
+  // « pas d'écart ». Chaque lecture de la confrontation a son cas : le brouillon, les catégories, les deux piles de pièces, la
+  // reprise et les soldes reportés.
+  const LECTURES = [
+    { table: 'ecritures_brouillon', bandeau: /Les données du dossier n'ont pas pu être lues en entier/ },
+    { table: 'categories', bandeau: /Les données du dossier n'ont pas pu être lues en entier/ },
+    { table: 'pieces:validee', bandeau: /Les données du dossier n'ont pas pu être lues en entier/ },
+    { table: 'pieces:a_valider', bandeau: /Les données du dossier n'ont pas pu être lues en entier/ },
+    { table: 'a_nouveaux', bandeau: /Les à-nouveaux du dossier n'ont pas pu être lus en entier/ },
+    { table: 'soldes_reportes', bandeau: /Les soldes reportés des exercices validés n'ont pas pu être lus en entier/ },
+  ]
+  for (const { table, bandeau } of LECTURES) {
+    it(`se tait et le dit quand « ${table} » est lue en partie`, async () => {
+      poser({ ecritures: APPORT, soldes: OUVERTURE_EN_ECART, tronquees: [table] })
+      monter(false, TRESORERIE, [2024])
+
+      await screen.findByText(bandeau)
+      expect(screen.queryByText(POINT)).toBeNull()
+    })
+  }
+
+  it('se tait et le dit quand les soldes reportés sont refusés — sans le bandeau des points des autres lectures', async () => {
+    poser({ ecritures: APPORT, soldes: OUVERTURE_EN_ECART, refusees: ['soldes_reportes'] })
+    monter(false, TRESORERIE, [2024])
+
+    await screen.findByText(/Les soldes reportés des exercices validés n'ont pas pu être lus en entier/)
+    expect(screen.queryByText(POINT)).toBeNull()
+    // Les autres points portent sur tout ce qu'ils lisent : leur silence vaut, le bandeau de leurs lectures ne paraît pas.
+    expect(screen.queryByText(/Les données du dossier n'ont pas pu être lues/)).toBeNull()
+  })
+
+  it('ne dit rien des soldes reportés quand ils sont lus en entier', async () => {
+    poser({ ecritures: APPORT, soldes: OUVERTURE_EN_ECART })
+    monter(false, TRESORERIE, [2024])
+
+    await screen.findByText(POINT)
+    expect(screen.queryByText(/Les soldes reportés des exercices validés n'ont pas pu être lus/)).toBeNull()
   })
 })

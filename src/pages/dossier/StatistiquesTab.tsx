@@ -19,6 +19,7 @@ import ProgressRing from '../../components/widgets/ProgressRing'
 import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { lireTout } from '../../lib/lectureComplete'
+import { lireLesSoldesReportes } from '../../lib/soldesReportesLecture'
 import ComptesDeTiersCard from './ComptesDeTiersCard'
 import { lireLesFacturesDesLignes } from '../../lib/lettragesLecture'
 import { porteUneSourceDeVente, type FacturesDesLignes } from '../../lib/ventesFactureesDesExports'
@@ -141,10 +142,7 @@ export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }
         supabase.from('lettrages_manuels').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-      lireTout<SoldeReporte>((debut, fin) =>
-        supabase.from('soldes_reportes').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
-      ),
+      lireLesSoldesReportes(dossierId),
     ])
     // Seulement en engagement — la carte n'existe qu'en engagement — et seulement si le brouillon porte une ligne d'une
     // facture ou d'un encaissement : un dossier qui n'a pas basculé n'en a aucune, et rien n'est relu pour rien.

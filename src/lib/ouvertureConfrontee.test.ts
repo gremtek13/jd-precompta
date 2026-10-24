@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { EntreesDuBilan } from './bilan'
 import type { ModeleComptable } from './engagement'
-import { confronterLOuverture, type ConfrontationDeLOuverture } from './ouvertureConfrontee'
+import { confronterLOuverture, exerciceAConfronter, type ConfrontationDeLOuverture } from './ouvertureConfrontee'
 import type { ANouveau, EcritureBrouillon, Piece, SoldeReporte } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
@@ -278,5 +278,18 @@ describe('confronterLOuverture — une société : le résultat avant répartiti
       reportes: reportes('2026-01-01', [['101000', 'C', 2_000], ['129000', 'D', 500], ['512000', 'D', 1_500]]),
     })
     expect(confronterLOuverture(d, 'complete')).toMatchObject({ etat: 'concordante', comptes: 3 })
+  })
+})
+
+// L'EXERCICE QUE LA VUE D'ENSEMBLE CONFRONTE (O33-Q3) : la Vue d'ensemble n'a pas d'exercice choisi, et dit l'écart de celui
+// que la validation réclame ensuite — celui qui suit le dernier validé. Sans exercice validé, rien à confronter.
+describe('exerciceAConfronter', () => {
+  it('est l’exercice qui suit le dernier validé, quel que soit l’ordre où la liste le donne', () => {
+    expect(exerciceAConfronter([2024])).toBe(2025)
+    expect(exerciceAConfronter([2022, 2024, 2023])).toBe(2025)
+  })
+
+  it('est nul sans exercice validé : le premier exercice s’ouvre sans solde, une balance reprise s’est contrôlée à son import', () => {
+    expect(exerciceAConfronter([])).toBeNull()
   })
 })
