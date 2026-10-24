@@ -1209,6 +1209,30 @@ export function refusContrePassationAvantLaDate(
 }
 
 /**
+ * Ce qui retient la contre-passation de cet encaissement QUELLES QUE SOIENT sa date et son motif — avec
+ * `refusContrePassationAvantLaDate`, ce qui décide si « Contre-passer » s'offre : le rang 21 (étape VF5h2, VF5H-Q2).
+ * L'encaissement d'une facture qui n'est pas source, dont le mouvement est classé par ses encaissements — le virement mixte
+ * le compte —, ne se contre-passe pas sans débit, et sa contre-passation n'en cite pas (le rang 15) : aucune saisie
+ * n'aboutit tant que ce classement tient, et son motif se dit à la place du bouton. Nul sinon : une facture source a le
+ * débit qui défait l'encaissement (le rang 20) ; un mouvement libre ou classé autrement, ou aucun, rien de neuf. Une facture
+ * que la lecture n'a pas rendue n'est pas source : le refus, du côté fermé, comme `refusContrePassationVente`. Sans
+ * « Banque », le relevé n'est pas lu (`mouvements` vide) : rien ne se dit d'avance, et la base le dira à la saisie.
+ */
+export function refusContrePassationSansIssue(
+  dossierId: string,
+  encaissementId: string,
+  encaissements: readonly EncaissementPourContrePassation[],
+  mouvements: readonly MouvementClasse[],
+  vente: Pick<ContexteVente, 'factures'>,
+): RefusEncaissement<CleRefusContrePassation> | null {
+  const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId)
+  if (e == null || e.ligne_bancaire_id == null || factureSource(e.facture_id, vente)) return null
+  return mouvements.find((m) => m.id === e.ligne_bancaire_id)?.encaissements_de_factures === true
+    ? refusC('mouvement_encaissement_classe_facture_d_avant')
+    : null
+}
+
+/**
  * L'encaissement — ou la contre-passation — d'une PAIRE QUI NE SE DÉCLARE PAS : un encaissement que rien ne déclare,
  * qu'une contre-passation vivante annule, elle-même non déclarée — et cette contre-passation. L'argent est venu, puis
  * reparti, sans que rien n'en ait été dit à l'administration : il n'y a rien à déclarer, ni de l'un ni de l'autre — ni
