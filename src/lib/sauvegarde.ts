@@ -90,12 +90,12 @@ export function auPlanDesParametresFacturation(table: string, parametresExportes
   return parametresExportes || !TABLES_DES_PARAMETRES_FACTURATION.includes(table)
 }
 
-// LE JOURNAL DES DÉSIGNATIONS (chantier EC-Q3, étape VF6b ; migration `jumelle_inversee`, PRÉPARÉE, présentée au cabinet,
-// PAS ENCORE APPLIQUÉE) : qui a désigné, déclaré, ou retiré l'un ou l'autre, et quand (VF6-Q3). Le patron des devis, sous
-// le drapeau de la migration (`JUMELLE_INVERSEE_EXPORTEE`, src/lib/exemplairesDesFactures.ts), baissé : la production n'a
-// pas la table, et la lire ferait échouer toute sauvegarde. Sa table est déclarée ci-dessous à sa place — ses trois
-// relations, son rang, son chemin ; aucune vague, une ligne n'en pointe aucune autre — et RETIRÉE du plan tant que le
-// drapeau est baissé. La migration pose aussi une COLONNE sur une table au plan, `pieces.vente_hors_des_factures`, que la
+// LE JOURNAL DES DÉSIGNATIONS (chantier EC-Q3, étape VF6b ; migration `jumelle_inversee`, appliquée le 24/10/2026) : qui a
+// désigné, déclaré, ou retiré l'un ou l'autre, et quand (VF6-Q3). Le patron des devis, sous le drapeau de la migration
+// (`JUMELLE_INVERSEE_EXPORTEE`, src/lib/exemplairesDesFactures.ts), levé depuis : avant, la production n'avait pas la
+// table, et la lire aurait fait échouer toute sauvegarde. Sa table est déclarée ci-dessous à sa place — ses trois
+// relations, son rang, son chemin ; aucune vague, une ligne n'en pointe aucune autre — et serait RETIRÉE du plan si le
+// drapeau redescendait. La migration pose aussi une COLONNE sur une table au plan, `pieces.vente_hors_des_factures`, que la
 // sauvegarde recopie avec sa ligne (`select('*')`) : une pièce déclarée se réinsère déclarée, par la porte que la garde
 // ouvre au super-administrateur. sauvegardeDesignations.test.ts éprouve le plan prévu et le plan du jour.
 export const TABLES_DU_JOURNAL_DES_DESIGNATIONS: readonly string[] = ['designations_des_pieces']

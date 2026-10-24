@@ -471,6 +471,17 @@ le sont que sur la réplique, les fonctions qu'ils éprouvent n'ayant pas chang�
 sur la réplique (46 lignes, 0 en faute, 43 mutations sur 43), ne l'est pas en production : la migration ne crée ni ne
 change aucune policy.
 
+**Rejoué le 24/10/2026 après `virement_mixte` et `jumelle_inversee`** (chantier EC-Q3, étapes VF5h et VF6b), accordées
+par le cabinet. Appliquées par `apply_migration`, sans confirmation demandée, sous les versions `20261024052038` et
+`20261024052424` ; leurs fichiers ont quitté les versions PROVISOIRES `20261023200000` et `20261023210000` sous lesquelles
+leurs répliques les avaient éprouvées, et portent les textes appliqués, octet pour octet (aucun retour chariot) : leurs
+lignes d'historique rendent `ebbcd8407ecc3338ca625afc397afb8c` et `5a1394d473db7a60cb551b64f451438a`. 148 fichiers, 148
+migrations, empreinte globale `19c0e53c5514e71e7af8c80874106e79` des deux côtés, aucune divergence. Le socle est inchangé
+(80 instructions, `5d53eea2…`) ; l'inventaire compte 2 155 objets (`855735eaca8d59e2464550dcfd598e7b`, des deux côtés,
+2 122 avant). `signature.sql` : les neuf familles égalent celles de la réplique de VF6b munie des deux migrations, où
+tous les essais ont été joués entiers ; en production, un contrôle ciblé de la table neuve, aucun essai entier
+(HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

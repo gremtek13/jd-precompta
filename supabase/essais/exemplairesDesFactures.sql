@@ -102,6 +102,10 @@
 -- Aucune instruction de suppression, aucune mise à jour sans `where`. Aucune barre oblique inverse dans le jeu (l'outil
 -- d'exécution décode les échappements Unicode) : un blanc d'un SIRET s'écrit `chr(…)` ; les seules du fichier sont celles
 -- du verdict final, d'avant VF6b.
+--
+-- 24/10/2026 — la migration `jumelle_inversee` APPLIQUÉE en production (`20261024052424`) : ce fichier n'y a pas été
+-- rejoué entier ; la signature des neuf familles en production égale celle de la réplique où il a rendu ses 266 justes,
+-- et un contrôle ciblé du journal y a été joué (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';

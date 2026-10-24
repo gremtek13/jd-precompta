@@ -247,11 +247,11 @@ export function argumentsDuRetraitDeLaDesignation(dossierId: string, pieceId: st
 // levé — au texte exporté de la migration.
 
 // ── Est-ce en base ? ──────────────────────────────────────────────────────────────────────────────────────────────────
-// La migration `jumelle_inversee` est PRÉPARÉE, présentée au cabinet, PAS ENCORE APPLIQUÉE : l'export ne la porte pas, et
-// ce drapeau est baissé. Baissé, rien ne nomme la déclaration ni le journal : la sauvegarde ne lit pas la table
-// (`auPlanAujourdHui`, lib/sauvegarde.ts), et les fonctions neuves ne s'appellent pas. Il se lève quand l'export porte la
-// migration ; exemplairesDesFactures.test.ts le confronte à l'export.
-export const JUMELLE_INVERSEE_EXPORTEE: boolean = false
+// La migration `jumelle_inversee` est APPLIQUÉE (24/10/2026, sur l'accord du cabinet, version `20261024052424`) et l'export
+// la porte : ce drapeau est levé. Baissé, rien ne nommait la déclaration ni le journal — la sauvegarde ne lisait pas la
+// table (`auPlanAujourdHui`, lib/sauvegarde.ts), et les fonctions neuves ne s'appelaient pas —, état que les tests
+// éprouvent encore tant que son code existe ; exemplairesDesFactures.test.ts confronte le drapeau à l'export.
+export const JUMELLE_INVERSEE_EXPORTEE: boolean = true
 
 // ── Les refus ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 

@@ -34238,3 +34238,73 @@ réelle : une validation en lot qu'une pièce non marquée fait refuser en entie
   à valider) sous un virement mixte classé reste possible, et la composition le dit (« désignez d'abord… »).
 - VF7 : sans le gel, la désignation d'un exemplaire de facture source reste modifiable après la validation de
   l'exercice de sa facture (§ 7 de la conception).
+
+### 24/10/2026 — LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION — CHANTIER EC-Q3, VF5H ET VF6B (LIGNE 28.65)
+
+(Écrite par la session. Les deux migrations, accordées par le cabinet, appliquées en production ; leurs fichiers dans
+l'export sous leur version ; le drapeau `JUMELLE_INVERSEE_EXPORTEE` levé. Aucun écran ne change : aucun dossier n'a
+basculé.)
+
+**LES ACCORDS.** Sur la page des arbitrages, le 24/10/2026 vers 04 h 35 UTC, toutes à la recommandation : VF5h-migration
+(« Oui, l'appliquer ») ; VF6b-migration (« Oui, l'appliquer après le virement mixte ») ; VF5H-Q1 (« Le refuser » : la
+désignation de l'exemplaire d'une facture ne change pas sous un virement mixte classé — ce que la migration de VF6b
+écrivait déjà sur la recommandation) ; VF5H-Q2 (« Oui, les refuser aussi » : une petite migration, VF5h2, avant la
+première bascule réelle) ; VF5H-Q3 (« Oui » : « Ma banque » nommera la facture d'avant d'un virement mixte, au prochain
+lot de l'espace client, au plus tard avec VF8) ; VF6B-Q1 (« Les laisser, et le dire » : le journal d'une pièce qui
+change de dossier reste à l'ancien, et la fiche de la pièce, à VF6c, dira qu'un journal est resté ailleurs).
+
+**AVANT.** 146 migrations, la dernière `impaye_non_declare` ; ni `virement_mixte` ni `jumelle_inversee` ; aucun dossier
+basculé, aucune facture source.
+
+**L'APPLICATION**, par `apply_migration`, le texte des fichiers tel quel, sans qu'aucune confirmation soit demandée (le
+corps d'`ecrire_vente_facturee` supprime pourtant des écritures proposées : le détecteur ne l'a pas retenu cette fois) :
+`virement_mixte` sous la version `20261024052038`, sa ligne d'historique rendant `ebbcd8407ecc3338ca625afc397afb8c` ;
+puis `jumelle_inversee` sous `20261024052424`, `5a1394d473db7a60cb551b64f451438a` — sa garde de tête exigeait la
+première. 148 migrations, empreinte globale `19c0e53c5514e71e7af8c80874106e79`.
+
+**LA PREUVE QUE LA PRODUCTION EST LA RÉPLIQUE ÉPROUVÉE.** `signature.sql` en production, après les deux : les neuf
+familles égales, une à une, à celles de la réplique de VF6b munie des deux migrations — colonnes 865 (`f353a5aa…`),
+contraintes 670 (`d63ab39f…`), déclencheurs 67 (`10f1a74a…`), fonctions 197 (`d3d1a53e…`), droits des fonctions 197
+(`98e0d5c9…`), index 237 (`08ef14df…`), policies 159 (`c6aae852…`), RLS 81 (`6450be96…`), droits des tables 81
+(`79e266f1…`). Sur cette réplique ont été joués entiers, avec les migrations : `ventesFacturees.sql` (198 justes),
+`ecrituresVentesFacturees.sql` (198), `exemplairesDesFactures.sql` (266), `validationExercice.sql` (152), tous les
+autres essais du dépôt (mêmes verdicts sans puis avec), et `rls.sql` (46 lignes, 0 en faute, 43 mutations sur 43, 81
+tables dont 72 portant un `dossier_id`).
+
+**CE QUI N'A PAS ÉTÉ REJOUÉ EN PRODUCTION, ET POURQUOI.** Aucun de ces essais n'a été rejoué entier en production, à
+l'inverse du 23/10/2026 (`ventesFacturees.sql`, 66 060 caractères, rejoué après `impaye_non_declare`). Chacun se
+transmet en une seule requête, que la session doit recopier caractère pour caractère : 71 369 à 113 927 caractères, et
+81 075 pour la copie adaptée de `rls.sql`, soit de 60 000 à 100 000 jetons chacun, ou 130 000 pour celle-ci, lecture et
+recopie comprises. La signature égale établit que la base où ils ont passé est celle-ci : leurs verdicts y sont ceux de
+la réplique, sauf une donnée de production qu'un essai lirait et que la réplique n'aurait pas — ils se jouent sur leurs
+propres dossiers jetables. C'est un choix de coût, soumis au cabinet ; rejoués, ils le seraient tels quels (les
+empreintes de leurs textes sans commentaires : `70d26257…`, `41891a13…`, `0ad23abc…`, `f5b500f3…` ; celle de la copie
+adaptée de `rls.sql`, `bcad9dbd…`).
+
+**CE QUI L'A ÉTÉ, À LA PLACE.** Un contrôle ciblé de la table neuve, par impersonation, dans une transaction annulée :
+le super-administrateur pose une ligne au journal par la porte de la restauration et la lit (1) ; le client d'essai, un
+compte connecté rattaché à rien et l'anonyme n'en lisent rien (0), et leur insertion est refusée (42501) ; rien n'est
+resté au journal. Le catalogue : la RLS active, exactement les deux policies, à `authenticated` seul —
+`designations_des_pieces_lecture` (SELECT, `admin_du_dossier(dossier_id)`) et `designations_des_pieces_restauration`
+(INSERT, `is_super_admin()`) ; les droits d'exécution : les deux fonctions de la déclaration aux connectés, jamais à
+l'anonyme ; `factures_du_pont`, G3, G4 et la garde du journal à personne ; `designer_exemplaire_facture` et
+`classer_mouvement_par_encaissements` jamais à l'anonyme. Le client d'essai n'a aucun accès au dossier `test` : que le
+client d'un dossier ne lise pas son journal, c'est l'essai de la réplique qui le dit (`exemplairesDesFactures.sql`,
+contrôles 350 à 366), et le catalogue (aucune branche client).
+
+**LES TROIS CONTRÔLES DE L'EXPORT.** Les deux fichiers sous leur version (`20261024052038_virement_mixte.sql`, le texte
+d'hier renommé ; `20261024052424_jumelle_inversee.sql`, le texte appliqué), octet pour octet : 148 fichiers, 148
+migrations, `19c0e53c…` des deux côtés ; le socle inchangé (80 instructions, `5d53eea2…`) ; l'inventaire 2 155 objets,
+`855735eaca8d59e2464550dcfd598e7b`, des deux côtés (2 122 avant : trente-trois objets de plus, ceux de VF6b).
+
+**LE DÉPÔT.** `JUMELLE_INVERSEE_EXPORTEE` levé (`exemplairesDesFactures.ts`) : la sauvegarde lit le journal, et le
+module se confronte au texte exporté ; les commentaires qui disaient la migration préparée la disent appliquée
+(`exemplairesDesFactures.ts`, `sauvegarde.ts`, `types.ts`, l'en-tête de `exemplairesDesFactures.test.ts`) ; une ligne
+datée dans l'en-tête des cinq essais ; le README de l'export ; CLAUDE.md. `pieces.vente_hors_des_factures` reste
+facultative dans `types.ts` jusqu'à VF6c, le premier écran qui la lit.
+
+**CE QUI RESTE.** VF5h2 (VF5H-Q2 : les refus du registre pour la facture d'avant d'un virement mixte classé, une
+migration, avant la première bascule réelle) ; VF6c, la fiche d'une pièce (la déclaration, et le journal resté
+ailleurs, VF6B-Q1), VF6d (les lots du relevé et la validation en lot, avant la première bascule réelle), VF6e (le pont,
+ses marques et la Checklist, VF6-Q4 ; les trois préalables qui jugent encore l'exemplaire) ; « Ma banque » et la
+facture d'avant (VF5H-Q3) ; puis VF7 à VF9.
