@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
-import type { Categorie, DeclarationTva, EcritureBrouillon, InformationsDossier, LigneBancaire, Piece } from './types'
+import type { ANouveau, Categorie, DeclarationTva, EcritureBrouillon, InformationsDossier, LigneBancaire, Piece, SoldeReporte } from './types'
+import { COMPTE_BANQUE } from './comptes'
+import { formatMoney } from './format'
+import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 
 // Les points de la Vue d'ensemble, sortis de ChecklistTab (ligne 41, étape R3) : `ChecklistTab.test.tsx` garde ce que
@@ -15,13 +18,14 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
     natures: [], categories: [], ecritures: [], emprunts: [], ventilations: [], ventilationsPartielles: false, reglements: [],
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,
-    anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, ...o,
+    anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, aNouveaux: [], soldesReportes: [], entreesDeLOuvertureIncompletes: null,
+    ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, ...o,
   }
 }
 
 const CONTEXTE: ContexteDeLaChecklist = {
   assujettiTva: true, periodiciteTva: 'trimestrielle', statutTva: 'redevable', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT },
-  frontiere: null, anneeCourante: 2026, moisEcoules: 9, premierJourDuMois: '2026-10-01',
+  frontiere: null, anneesValidees: [], aujourdHui: '2026-10-24', anneeCourante: 2026, moisEcoules: 9, premierJourDuMois: '2026-10-01',
 }
 
 function informations(o: Partial<InformationsDossier>): InformationsDossier {
@@ -192,5 +196,155 @@ describe('pointsDeLaChecklist : l’exemplaire d’une facture source (VF6a)', (
   it('n’écarte que l’exemplaire : une autre pièce du même défaut se compte toujours', () => {
     const d = { piecesValidees: [piece({ categorie_id: null }), piece({ id: 'y', facture_id: null, categorie_id: null })] }
     expect(nb(d, 'sans-categorie', new Set(['f1']))).toBe(1)
+  })
+})
+
+// L'OUVERTURE DE L'EXERCICE QUI SUIT LE DERNIER VALIDÉ, CONFRONTÉE À LA CLÔTURE DU PRÉCÉDENT (O33-Q3) : le même calcul que
+// l'onglet Bilan et le préalable de la validation (`ouverture-en-ecart`, O33-Q1, prealablesValidation.test.ts), dit AVANT le geste
+// de validation. Le dossier fictif du préalable : 2024 validé, l'apport de l'exploitant (1 000 € en banque face au 108), dont la
+// clôture, telle que le report la verse, est 512000 1 000 D et 101000 1 000 C (PCG, art. 1211-10).
+describe('pointsDeLaChecklist : l’ouverture confrontée à la clôture du précédent (O33-Q3)', () => {
+  const ecriture = (id: string, date: string, compte: string, sens: 'debit' | 'credit'): EcritureBrouillon => ({
+    id, dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date, compte, libelle: 'Apport de l’exploitant', montant: 1000, sens,
+    statut: 'validee', created_at: `${date}T10:00:00Z`, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
+    cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
+  })
+  const apport = (annee: number) => [
+    ecriture(`a${annee}1`, `${annee}-01-02`, COMPTE_BANQUE, 'debit'), ecriture(`a${annee}2`, `${annee}-01-02`, '108000', 'credit'),
+  ]
+  const reporte = (id: string, date: string, compte: string, sens: 'debit' | 'credit', montant: number): SoldeReporte => ({
+    id, dossier_id: 'd1', date, compte, libelle: `Compte ${compte}`, sens, montant, source_nom: `Exercice ${Number(date.slice(0, 4)) - 1} validé`,
+    source_empreinte: 'b'.repeat(64), created_at: `${date}T00:00:00Z`, ...A_NOUVEAU_NON_VALIDE,
+  })
+  const ouvrir = (date: string, montant: number) => [
+    reporte(`s${date}1`, date, COMPTE_BANQUE, 'debit', montant), reporte(`s${date}2`, date, '101000', 'credit', montant),
+  ]
+  const apresLa2024: Partial<DonneesDeLaChecklist> = { ecritures: apport(2024) }
+  const dans = (anneesValidees: number[]): ContexteDeLaChecklist => ({ ...CONTEXTE, anneesValidees })
+  const resultat = (d: Partial<DonneesDeLaChecklist>, c: ContexteDeLaChecklist = dans([2024])) => pointsDeLaChecklist(donnees(d), c)
+  const point = (d: Partial<DonneesDeLaChecklist>, c?: ContexteDeLaChecklist) =>
+    resultat(d, c).tousLesPointsATraiter.find((x) => x.id === 'ouverture-en-ecart')
+
+  // Les mots du préalable (prealablesValidation.test.ts, « un écart d’un centime ») : ils sont écrits une fois, dans
+  // lib/ouvertureConfrontee.ts, et dits pareils où l'écart retient la validation et où il se voit avant.
+  const MESSAGE = "L'ouverture de l'exercice 2025 ne reprend pas la clôture de 2024 : 2 comptes et 2 rubriques du bilan en écart. "
+    + "Le bilan d'ouverture doit correspondre au bilan de clôture de l'exercice précédent (code de commerce, art. L123-19 ; "
+    + "PCG, art. 112-2) : l'exercice 2025 ne se valide pas sur cet écart."
+  const DETAIL = `En écart : Disponibilités (actif), ouverture ${formatMoney(1000.01)}, clôture de 2024 ${formatMoney(1000)} (compte 512000) ; `
+    + `Capital social ou individuel (passif), ouverture ${formatMoney(1000.01)}, clôture de 2024 ${formatMoney(1000)} (compte 101000). `
+    + "L'ouverture de 2025 est faite des soldes reportés à la validation de 2024, figés avec lui : l'écart ne vient pas d'une saisie et ne "
+    + "se corrige pas dans l'application. Le signaler. Le détail, compte par compte, est dans l'onglet Bilan de l'exercice 2025, à la ligne « Ouverture »."
+
+  it('un écart d’un centime se dit en erreur, avec les mots du préalable, et renvoie à l’onglet Bilan', () => {
+    const r = resultat({ ...apresLa2024, soldesReportes: ouvrir('2025-01-01', 1000.01) })
+    const p = r.tousLesPointsATraiter.find((x) => x.id === 'ouverture-en-ecart')
+    expect(p).toEqual({
+      id: 'ouverture-en-ecart', label: MESSAGE, detail: DETAIL, action: 'Voir l’ouverture dans le bilan', nb: 1, cible: 'bilan',
+      severite: 'erreur', sansNombre: true,
+    })
+    // Un point du travail à effectuer, que l'écran montre : il compte, et la révision le range dans l'« ensemble ».
+    expect(r.pointsATraiter.map((x) => x.id)).toContain('ouverture-en-ecart')
+    expect(r.pointsTravail.map((x) => x.id)).toContain('ouverture-en-ecart')
+    expect(r.pointsParametrage.map((x) => x.id)).not.toContain('ouverture-en-ecart')
+  })
+
+  it('une ouverture qui reprend la clôture ne dit rien', () => {
+    const d = { ...apresLa2024, soldesReportes: ouvrir('2025-01-01', 1000) }
+    expect(point(d)?.nb).toBe(0)
+    expect(resultat(d).pointsATraiter.map((x) => x.id)).not.toContain('ouverture-en-ecart')
+  })
+
+  it('des soldes reportés qui manquent à l’ouverture sont un écart, pas un silence', () => {
+    expect(point({ ...apresLa2024, soldesReportes: [] })?.nb).toBe(1)
+  })
+
+  it('sans exercice validé, il n’y a rien à confronter : ni écart, ni premier exercice, ni balance reprise', () => {
+    const ecart = { ...apresLa2024, soldesReportes: ouvrir('2025-01-01', 1000.01) }
+    expect(point(ecart, dans([]))?.nb).toBe(0)
+    // 2025 s'ouvre par une balance reprise, contrôlée à son import (O33-Q2, plus tard) : 2024 est tenu dans l'ancien logiciel.
+    const reprise: ANouveau[] = [{
+      id: 'an1', dossier_id: 'd1', date: '2025-01-01', compte: COMPTE_BANQUE, compte_origine: '512', libelle: 'Banque', sens: 'debit',
+      montant: 1000, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2025-02-01T00:00:00Z',
+    }]
+    expect(point({ aNouveaux: reprise, ecritures: [] }, dans([]))?.nb).toBe(0)
+  })
+
+  it('ne juge que l’exercice qui suit le dernier validé : l’ouverture d’un exercice déjà validé est figée avec lui', () => {
+    // 2023 validé (apport de 1 000 €), 2024 ouvert par 999 € : un écart de 2024 sur 2023, figé quand 2024 a été validé. Les soldes
+    // reportés de 2025 reprennent bien la clôture de 2024, restée à 999 €.
+    const d = { ecritures: apport(2023), soldesReportes: [...ouvrir('2024-01-01', 999), ...ouvrir('2025-01-01', 999)] }
+    expect(point(d, dans([2023, 2024]))?.nb).toBe(0)
+    // 2024 pas encore validé : c'est lui que la validation réclame ensuite, et son ouverture ne reprend pas la clôture de 2023.
+    expect(point(d, dans([2023]))?.nb).toBe(1)
+  })
+
+  it('l’exercice qui suit le dernier validé se juge même s’il n’est pas clos : l’écart se voit dès qu’il existe', () => {
+    const d = { ...apresLa2024, soldesReportes: ouvrir('2025-01-01', 1000.01) }
+    expect(point(d, { ...dans([2024]), anneeCourante: 2025, aujourdHui: '2025-06-15' })?.nb).toBe(1)
+  })
+
+  it('se tait sur une lecture partielle — et ne dit jamais « aucun écart » de ce qu’il n’a pas lu en entier', () => {
+    const d = { ...apresLa2024, soldesReportes: ouvrir('2025-01-01', 1000.01) }
+    expect(point({ ...d, entreesDeLOuvertureIncompletes: 'lecture interrompue après 500 ligne(s) : permission denied' })?.nb).toBe(0)
+    expect(point(d)?.nb).toBe(1)
+  })
+
+  it('un 401 qui porte deux fournisseurs, une créance et une dette, concorde : les pièces des deux piles sont celles du préalable', () => {
+    // Une société en engagement. 401 : Alpha payé 150 pour 100 (50 D, une créance), Beta 300 non payé (300 C), l'une des pièces
+    // validée et l'autre à valider : les deux piles sont données à la confrontation, comme au préalable de la validation (le tiers
+    // d'une pièce ne change ni un compte ni une rubrique en écart, mais l'entrée est celle de l'onglet Bilan).
+    const societe = { mode: 'engagement' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+    const pieceDe = (id: string, tiers: string, statut: 'validee' | 'a_valider'): Piece => ({
+      id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`, storage_hash: null,
+      date_piece: '2025-02-01', tiers, montant_ht: null, montant_tva: null, montant_ttc: 100, devise: 'EUR', montant_devise: null,
+      taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut, notes: null,
+      confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+      identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, created_at: '2025-02-01T09:00:00Z',
+      updated_at: '2025-02-01T09:00:00Z',
+    })
+    const ligne = (id: string, date: string, compte: string, sens: 'debit' | 'credit', montant: number, pieceId: string | null = null) =>
+      ({ ...ecriture(id, date, compte, sens), montant, piece_id: pieceId })
+    const ecritures = [
+      ligne('b1', '2025-01-02', COMPTE_BANQUE, 'debit', 1000), ligne('b2', '2025-01-02', '101000', 'credit', 1000),
+      ligne('c1', '2025-02-01', '606000', 'debit', 100, 'pa'), ligne('c2', '2025-02-01', '401000', 'credit', 100, 'pa'),
+      ligne('c3', '2025-02-15', '401000', 'debit', 150, 'pa'), ligne('c4', '2025-02-15', COMPTE_BANQUE, 'credit', 150, 'pa'),
+      ligne('c5', '2025-03-01', '606000', 'debit', 300, 'pb'), ligne('c6', '2025-03-01', '401000', 'credit', 300, 'pb'),
+    ]
+    const d = {
+      ecritures, piecesValidees: [pieceDe('pa', 'Alpha Essai', 'validee')], piecesAValider: [pieceDe('pb', 'Beta Essai', 'a_valider')],
+      soldesReportes: [
+        reporte('t1', '2026-01-01', '101000', 'credit', 1000), reporte('t2', '2026-01-01', '129000', 'debit', 400),
+        reporte('t3', '2026-01-01', '401000', 'credit', 250), reporte('t4', '2026-01-01', COMPTE_BANQUE, 'debit', 850),
+      ],
+    }
+    const contexte = { ...dans([2025]), modele: societe, anneeCourante: 2027, aujourdHui: '2027-03-15' }
+    expect(point(d, contexte)?.nb).toBe(0)
+  })
+
+  it('N−1 ouvert par une balance reprise : sa clôture part de la reprise, que la Vue d’ensemble lit', () => {
+    // 2024 s'ouvre par la balance reprise du 1er janvier (1 000 € en banque face au capital), sans autre écriture, et 2024 est
+    // validé : sa clôture est la reprise, et les soldes reportés de 2025 la reprennent. Sans la reprise, 2024 serait un exercice
+    // sans ouverture ni mouvement, et 2025 s'ouvrirait sur 1 000 € que rien ne précède.
+    const ligne = (id: string, compte: string, sens: 'debit' | 'credit'): ANouveau => ({
+      id, dossier_id: 'd1', date: '2024-01-01', compte, compte_origine: compte.slice(0, 3), libelle: `Compte ${compte}`, sens, montant: 1000,
+      source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2024-02-01T00:00:00Z',
+    })
+    const reprise = [ligne('r1', COMPTE_BANQUE, 'debit'), ligne('r2', '101000', 'credit')]
+    expect(point({ aNouveaux: reprise, soldesReportes: ouvrir('2025-01-01', 1000) })?.nb).toBe(0)
+    expect(point({ aNouveaux: reprise, soldesReportes: ouvrir('2025-01-01', 1000.01) })?.nb).toBe(1)
+  })
+
+  it('juge sur le modèle du dossier : en engagement, la perte d’une société reste au 129000', () => {
+    // La clôture de 2024 d'une société en engagement : un achat de 120 € à crédit, donc une perte de 120 € et une dette de 120 €.
+    const engagement = { mode: 'engagement' as const, compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+    const achat = [
+      { ...ecriture('x1', '2024-06-01', '606100', 'debit'), montant: 120 }, { ...ecriture('x2', '2024-06-01', '401000', 'credit'), montant: 120 },
+    ]
+    const juste = [
+      reporte('s1', '2025-01-01', '129000', 'debit', 120), reporte('s2', '2025-01-01', '401000', 'credit', 120),
+    ]
+    expect(point({ ecritures: achat, soldesReportes: juste }, { ...dans([2024]), modele: engagement })?.nb).toBe(0)
+    // La même ouverture, jugée comme celle d'une entreprise individuelle (trésorerie) : la perte irait au capital, 101000.
+    expect(point({ ecritures: achat, soldesReportes: juste })?.nb).toBe(1)
   })
 })

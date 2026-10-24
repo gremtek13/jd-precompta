@@ -10,6 +10,7 @@ import type { DonneesDeLaChecklist } from './pointsDeLaChecklist'
 import type { FacturePourJumelle, TransmissionPourJumelle } from './ventesJumelles'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from './ecrituresVentesFactureesLecture'
 import { facturesSourcesDe } from './facturesSources'
+import { lireLesSoldesReportes } from './soldesReportesLecture'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, FactureEmise, Immobilisation,
   LigneBancaire, LettrageManuel, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
@@ -32,8 +33,10 @@ export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'releve
   piecesIncompletes: string | null
   // Exercices que le cabinet a marqués clos : une lecture refusée laisse la liste VIDE, donc on continue de réclamer.
   clotureInconnue: string | null
-  // L'ouverture reprise d'un autre logiciel, telle que lue : la révision en tire l'ouverture de ses exercices.
-  aNouveaux: ANouveau[]
+  // Le motif des seuls SOLDES REPORTÉS quand leur lecture n'est pas entière (O33-Q3) : À PART de `lectureIncomplete`, car seul le
+  // point de l'ouverture confrontée à la clôture du précédent s'en passe — les autres portent sur tout ce qu'ils lisent —,
+  // et son bandeau le dit. La révision y retrouve le motif de ses soldes, sans les relire.
+  soldesReportesIncomplets: string | null
   // Les ventes facturées d'un dossier qui a basculé (ligne 28.65, étape VF5f) : la lecture de l'onglet Banque et de l'onglet
   // Écritures, tout ou rien, nulle et jamais faite pour un dossier qui n'a pas basculé. La révision en tire aussi les frais
   // d'un mouvement d'encaissements de sa revue analytique : une lecture que deux écrans comptent s'écrit une fois.
@@ -66,6 +69,7 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
     lectureDeclarations,
     lectureFacturesEmises,
     lectureTransmissions,
+    lectureReportes,
     ventesFacturees,
   ] = await Promise.all([
     // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
@@ -149,6 +153,9 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
       supabase.from('transmissions_factures').select('id, facture_id, canal, hote, flux_id', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ),
+    // Les soldes reportés de chaque exercice validé : l'ouverture de l'exercice qui suit le dernier validé s'y lit, et se
+    // confronte à la clôture du précédent (O33-Q3). La lecture de l'onglet Bilan, écrite une fois.
+    lireLesSoldesReportes(dossierId),
     // Ne rejette jamais : refusée, partielle ou d'un autre dossier, elle revient « incomplète », avec son motif.
     ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
   ])
@@ -210,6 +217,17 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
     ouverture: lectureANouveaux.complete ? ouvertureBanque(lectureANouveaux.lignes) : null,
     ouvertureIncomplete: lectureANouveaux.motif,
     aNouveaux: lectureANouveaux.lignes,
+    soldesReportes: lectureReportes.lignes,
+    soldesReportesIncomplets: lectureReportes.complete ? null : lectureReportes.motif ?? 'lecture incomplète',
+    // Les six lectures dont la confrontation de l'ouverture ne se juge qu'entières : le brouillon, les catégories, les pièces
+    // (leur tiers), la reprise et les soldes reportés. Une seule tronquée et un « aucun écart » ne prouverait rien : le point se
+    // tait (jamais « pas d'écart » sur une lecture partielle), et les bandeaux de l'écran le disent.
+    entreesDeLOuvertureIncompletes: (() => {
+      const partielle = [
+        lectureEcritures, lectureCategories, lectureValidees, lectureAValider, lectureANouveaux, lectureReportes,
+      ].find((l) => !l.complete)
+      return partielle === undefined ? null : partielle.motif ?? 'lecture incomplète'
+    })(),
     ventesFacturees,
     ventesIncompletes: ventesFacturees?.etat === 'incomplete' ? ventesFacturees.motif : null,
   }

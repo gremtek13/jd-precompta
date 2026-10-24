@@ -52,7 +52,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
 }) {
   // Ce que les exercices validés ont figé ne se compare plus : la base refuse de le réécrire, et le dire
   // « à régénérer » laisserait un point en erreur que rien ne lève (lib/validationExercice.ts).
-  const { frontiere } = useExercicesValides()
+  const { frontiere, anneesValidees } = useExercicesValides()
   // Tout ce que les points lisent, avec les drapeaux de ses lectures partielles (lib/checklistLecture.ts). Nul avant
   // la première lecture : rien ne s'affirme d'une liste pas encore revenue.
   const [lecture, setLecture] = useState<LectureDeLaChecklist | null>(null)
@@ -104,14 +104,20 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     .filter((e) => modele.mode !== 'engagement' || e.impot !== 'Liasse')
   const imminente = (date: string) => date <= ajouterJours(aujourdHuiFiscal, 30)
 
-  const { lectureIncomplete, ouvertureIncomplete, ouverture, clotureInconnue, infoInconnue, ecritures, piecesAValider, ventesIncompletes } = lecture
+  const {
+    lectureIncomplete, ouvertureIncomplete, soldesReportesIncomplets, ouverture, clotureInconnue, infoInconnue, ecritures, piecesAValider,
+    ventesIncompletes,
+  } = lecture
   // Les relevés incohérents et les doublons de contenu sont BEST-EFFORT ici : illisibles, ils se lisent comme vides —
   // l'échec est journalisé par la lecture —, comme avant que leurs lectures sortent de cet écran.
   const {
     pointsParametrage, pointsTravail, documentsAttendus, moisManquants, moisRecus, piecesConfianceBasse,
   } = pointsDeLaChecklist(
     { ...lecture, relevesIncoherents: lecture.relevesIncoherents ?? [], doublonsTexte: lecture.doublonsTexte ?? [] },
-    { assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneeCourante, moisEcoules, premierJourDuMois: premierJourDuMoisCourant() },
+    {
+      assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees, aujourdHui: aujourdHuiFiscal, anneeCourante, moisEcoules,
+      premierJourDuMois: premierJourDuMoisCourant(),
+    },
   )
   const items: ItemChecklist[] = documentsAttendus.map((item) => {
     const coche = item.coche
@@ -173,7 +179,17 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
           'La tuile Trésorerie ne peut donc pas partir du solde repris : elle n’affiche aucun montant, ' +
           'plutôt qu’un solde faux — et un rouge faux. Et les points qui en dépendent se taisent : les ' +
           'dotations aux amortissements, les forfaits kilométriques, et l’écriture de la facture d’un bien — ' +
-          'c’est l’ouverture qui dit ce qui est déjà dans la balance reprise. Recharge la page.'
+          'c’est l’ouverture qui dit ce qui est déjà dans la balance reprise. Et l’ouverture de l’exercice, confrontée à la ' +
+          'clôture du précédent, ne se juge pas sur une reprise lue à moitié. Recharge la page.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les soldes reportés des exercices validés"
+        accord="lus"
+        motif={soldesReportesIncomplets}
+        consequence={
+          'Le point « l’ouverture de l’exercice ne reprend pas la clôture du précédent » se tait donc — son silence ne prouve ' +
+          'rien : l’ouverture d’un exercice se lit dans ces soldes. Recharge la page avant de t’y fier.'
         }
       />
       <BandeauLecturePartielle

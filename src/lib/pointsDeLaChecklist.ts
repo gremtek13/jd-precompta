@@ -15,10 +15,11 @@ import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesEnReta
 import type { Emprunt } from './emprunts'
 import type { DoublonDeTexte } from './doublonsTexte'
 import { anneeDe } from './format'
+import { confronterLOuverture, exerciceAConfronter, ouvertureEnEcart } from './ouvertureConfrontee'
 import type { OuvertureBanque } from './planTresorerie'
 import type {
-  ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier,
-  LigneBancaire, LettrageManuel, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, StatutTva, VehiculeDossier, VentilationBancaire,
+  ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier,
+  LigneBancaire, LettrageManuel, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, SoldeReporte, StatutTva, VehiculeDossier, VentilationBancaire,
 } from './types'
 import { etatsDesLettragesManuels, piecesLettreesALaMain } from './lettrage'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from './ventilationBanque'
@@ -111,6 +112,14 @@ export interface DonneesDeLaChecklist {
   anneesCloturees: number[]
   ouverture: OuvertureBanque | null
   ouvertureIncomplete: string | null
+  // L'ouverture REPRISE d'un autre logiciel, telle que lue (la révision en tire l'ouverture de ses exercices), et les soldes
+  // REPORTÉS par la validation de chaque exercice : de quoi confronter l'ouverture de l'exercice qui suit le dernier validé à la
+  // clôture du précédent (O33-Q3, lib/ouvertureConfrontee.ts).
+  aNouveaux: ANouveau[]
+  soldesReportes: SoldeReporte[]
+  // Le motif de la première des lectures de cette confrontation (brouillon, catégories, pièces, reprise, soldes reportés) qui
+  // n'est pas entière, ou rien. Sans valeur par défaut : lue en partie, la confrontation se tait — jamais « aucun écart ».
+  entreesDeLOuvertureIncompletes: string | null
   // Les ventes facturées d'un dossier qui a basculé (ligne 28.65, étape VF5f ; lib/ventesDeLaChecklist.ts) : la lecture de
   // l'onglet Banque, lue ou incomplète ; NULLE pour un dossier qui n'a pas basculé, qui ne lit rien de plus. Incomplète, les
   // deux points qui en dépendent se taisent, et l'écran le dit.
@@ -125,6 +134,10 @@ export interface ContexteDeLaChecklist {
   modele: ModeleComptable
   // La frontière des exercices validés (lib/validationExercice.ts).
   frontiere: string | null
+  // Les exercices validés, dont la frontière est le dernier : l'exercice dont l'ouverture se confronte est celui qui le suit.
+  anneesValidees: readonly number[]
+  // Aujourd'hui À PARIS (AAAA-MM-JJ, `aujourdHuiAParis`), lu au rendu : le bilan d'un exercice qui n'est pas clos est provisoire.
+  aujourdHui: string
   // L'année et les mois écoulés, d'un même instant (`anneeEtMoisEcoules`).
   anneeCourante: number
   moisEcoules: number
@@ -150,9 +163,10 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     piecesValidees, piecesAValider, cotisations, lignes, relevesIncoherents, doublonsTexte, immobilisations, natures,
     categories, ecritures, emprunts, ventilations, ventilationsPartielles, reglements, reglementsPartiels, paiementsPartiels,
     lettragesManuels, vehicules, declarationsTva, declarationsPartielles, facturesEmises, transmissions, jumellesPartielles,
-    info, infoInconnue, anneesCloturees, ouverture, ouvertureIncomplete, ventesFacturees, facturesSources,
+    info, infoInconnue, anneesCloturees, ouverture, ouvertureIncomplete, ventesFacturees, facturesSources, aNouveaux, soldesReportes,
+    entreesDeLOuvertureIncompletes,
   } = d
-  const { assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneeCourante, moisEcoules, premierJourDuMois } = c
+  const { assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees, aujourdHui, anneeCourante, moisEcoules, premierJourDuMois } = c
 
   // L'ARITHMÉTIQUE D'EXERCICE VIT DANS `lib/resteAEnvoyer.ts`, partagée avec les deux écrans client :
   // elle était écrite trois fois et avait déjà divergé deux fois. Ce qui reste ici est ce qui diffère
@@ -407,6 +421,22 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     lignes,
   )
 
+  // L'OUVERTURE DE L'EXERCICE QUI SUIT LE DERNIER VALIDÉ, CONFRONTÉE À LA CLÔTURE DU PRÉCÉDENT (O33-Q3) : le calcul de l'onglet
+  // Bilan et du préalable de la validation (`ouverture-en-ecart`, O33-Q1), sur les mêmes entrées — tout le brouillon, les
+  // catégories, la reprise, les soldes reportés, les exercices validés, les pièces des deux piles (leur tiers) et le modèle —,
+  // et les mêmes mots (`ouvertureEnEcart`). Sans exercice à confronter (rien de validé : premier exercice, ou balance reprise
+  // que son import a contrôlée), sans confrontation (l'ouverture attend la validation du précédent, que l'ordre refuse déjà)
+  // ou sur concordance, le point se tait ; lue en partie, une entrée le tait aussi, et l'écran le dit : jamais « aucun écart »
+  // sur ce qu'on n'a pas lu en entier.
+  const exerciceDeLOuverture = exerciceAConfronter(anneesValidees)
+  const confrontation = exerciceDeLOuverture === null || entreesDeLOuvertureIncompletes !== null
+    ? null
+    : confronterLOuverture({
+      exercice: exerciceDeLOuverture, ecritures, categories, reprise: aNouveaux, reportes: soldesReportes, anneesValidees,
+      pieces: toutesPieces, modele, aujourdHui,
+    }, 'complete')
+  const ecartDOuverture = confrontation?.etat === 'ecarts' ? ouvertureEnEcart(confrontation) : null
+
   const tousLesPointsATraiter: PointATraiter[] = [
     // En tête, et en « erreur » : c'est le seul point de cette liste qui ne se voit nulle part
     // ailleurs. Une pièce validée sans catégorie a l'air traitée — elle ne produit pourtant ni
@@ -523,6 +553,14 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     { id: 'reglements-groupes-incoherents', label: 'virement(s) groupé(s) dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement', action: 'Régler de nouveau ou annuler ces virements', nb: reglementsFaux.length, cible: 'banque', severite: 'erreur' },
     // « Erreur » : la 2035 compte la pièce une fois, et l'argent versé en trop n'y est nulle part.
     { id: 'pieces-payees-en-trop', label: 'pièce(s) payée(s) plus que leur montant — un paiement en double ?', action: 'Annuler le paiement en trop', nb: payeesEnTrop.length, cible: 'banque', severite: 'erreur' },
+    // « Erreur » : la validation de cet exercice se refuse sur cet écart (même identifiant que son préalable), et le dire ici, c'est
+    // le dire AVANT le geste. Rien ne s'y corrige — les soldes reportés sont figés avec l'exercice validé — : le point renvoie
+    // à l'onglet Bilan, à la ligne « Ouverture », qui montre l'écart compte par compte. Un point qui ne compte rien : l'exercice
+    // entier est concerné ou ne l'est pas, d'où `sansNombre`.
+    {
+      id: 'ouverture-en-ecart', label: ecartDOuverture?.message ?? '', action: 'Voir l’ouverture dans le bilan',
+      nb: ecartDOuverture === null ? 0 : 1, cible: 'bilan', severite: 'erreur', detail: ecartDOuverture?.detail, sansNombre: true,
+    },
     // Plus de point « déclaration de TVA en écart avec le brouillon » (retiré le 28/09/2026) : le
     // brouillon date la TVA à la PIÈCE et ne porte aucune écriture pour un bien immobilisé, donc il
     // ne pouvait pas dire ce qu'une CA3 déposée sur les encaissements devait contenir — il aurait

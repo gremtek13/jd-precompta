@@ -341,6 +341,45 @@ describe('RevisionTab — les soldes, par cycle', () => {
     expect(onNavigate).toHaveBeenCalledWith('banque')
   })
 
+  // L'OUVERTURE QUI NE REPREND PAS LA CLÔTURE DU PRÉCÉDENT (O33-Q3) : la Vue d'ensemble la dit, la révision la range dans le cycle
+  // de l'ensemble — la lecture est la même, et les soldes reportés ne sont lus qu'une fois pour les deux. 2024 est validé : un
+  // apport de 1 000 € (512000 face au 108000), dont la clôture est 512000 1 000 D et 101000 1 000 C.
+  function ouvertureDe2025(montant: number) {
+    dossier2025()
+    faux.tables.ecritures_brouillon.push(...ecritureEquilibree('a0', '2024-01-02', '512000', '108000', 1000))
+    faux.tables.soldes_reportes = [
+      soldeReporte({ id: 's1', date: '2025-01-01', compte: '512000', sens: 'debit', montant, libelle: 'Banque', source_empreinte: 'empreinte-de-test' }),
+      soldeReporte({ id: 's2', date: '2025-01-01', compte: '101000', sens: 'credit', montant, libelle: 'Capital', source_empreinte: 'empreinte-de-test' }),
+    ]
+  }
+  const OUVERTURE_EN_ECART = /L'ouverture de l'exercice 2025 ne reprend pas la clôture de 2024 : 2 comptes et 2 rubriques du bilan en écart\./
+
+  it('range l’écart d’ouverture de la Vue d’ensemble dans le cycle Ensemble, et mène à l’onglet Bilan', async () => {
+    ouvertureDe2025(1000.01)
+    const onNavigate = vi.fn()
+    rendre({ valides: [2024], onNavigate })
+    const ensemble = await screen.findByRole('region', { name: 'Cycle Ensemble' })
+    expect(await within(ensemble).findByText(OUVERTURE_EN_ECART)).toBeDefined()
+    fireEvent.click(within(ensemble).getByRole('button', { name: 'Voir l’ouverture dans le bilan' }))
+    expect(onNavigate).toHaveBeenCalledWith('bilan')
+  })
+
+  it('ne dit rien d’une ouverture qui reprend la clôture', async () => {
+    ouvertureDe2025(1000)
+    rendre({ valides: [2024] })
+    await screen.findByRole('button', { name: 'Ouvrir le compte 512000' })
+    expect(screen.queryByText(OUVERTURE_EN_ECART)).toBeNull()
+  })
+
+  it('n’affirme rien des soldes reportés qu’elle n’a pas lus en entier : la révision se suspend et le dit, sans le point', async () => {
+    ouvertureDe2025(1000.01)
+    faux.refusees = new Set(['soldes_reportes'])
+    rendre({ valides: [2024] })
+    expect(await screen.findByText(/Les soldes reportés des exercices validés n'ont pas pu être lus en entier/)).toBeDefined()
+    expect(screen.queryByText(OUVERTURE_EN_ECART)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Ouvrir le compte/ })).toBeNull()
+  })
+
   it('un exercice en cours le dit sous les mots de la base, et le panneau n’offre aucune décision', async () => {
     dossier2025()
     faux.tables.ecritures_brouillon = ecritureEquilibree('e3', '2026-02-01', '512000', '706000', 50)

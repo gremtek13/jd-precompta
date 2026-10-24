@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { lireTout } from '../../lib/lectureComplete'
+import { lireLesSoldesReportes } from '../../lib/soldesReportesLecture'
 import {
   bilanDeLExercice, CASES_DES_TOTAUX, colonneDeLExercicePrecedent, detailDuBilan, lignesDuBilan, type BilanEtabli,
   type ColonneDeLExercicePrecedent, type CompteDuDetail, type LigneDeLActif, type LigneDuPassif, type PointDuBilan,
@@ -435,10 +436,7 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
           supabase.from('a_nouveaux').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
         ),
-        lireTout<SoldeReporte>((debut, fin) =>
-          supabase.from('soldes_reportes').select('*', { count: 'exact' })
-            .eq('dossier_id', dossierId).order('date').order('compte').order('id').range(debut, fin),
-        ),
+        lireLesSoldesReportes(dossierId),
       ])
       if (annule) return
       // Chaque lecture a son bandeau : dire laquelle manque, c'est dire où chercher.
