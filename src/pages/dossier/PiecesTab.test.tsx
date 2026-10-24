@@ -98,6 +98,11 @@ vi.mock('../../lib/supabase', async () => {
             const lue = ((faux.parTable.pieces ?? []) as { id: unknown }[]).find((l) => idsVises.includes(l.id))
             return Promise.resolve({ data: lue ?? null, error: null })
           }
+          // Le réglage du dossier, que la fiche d'une pièce de vente lit pour dire ce qu'elle est (étape VF6c) : ce dossier n'a
+          // pas basculé, comme `ventesParLesFactures` le dit à l'onglet.
+          if (operation === 'select' && table === 'dossiers') {
+            return Promise.resolve({ data: { ventes_par_les_factures: false }, error: null })
+          }
           if (operation !== 'delete') return Promise.resolve({ data: null, error: null })
           if (faux.refusSuppression) return Promise.resolve({ data: null, error: { message: faux.refusSuppression } })
           const lignes = (faux.parTable[table] ?? []) as { id: unknown }[]
@@ -238,7 +243,7 @@ function piece(o: Partial<Piece> = {}): Piece {
     // `superpdp_invoice_id`. Aucune n'était visible en relisant.
     uploaded_by: null, source: 'upload', conversion_source: null,
     notes: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, updated_at: '2026-09-16T09:00:00Z',
-    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
     created_at: '2026-09-16T09:00:00Z', ...o,
   }
 }
@@ -1768,8 +1773,10 @@ describe('PiecesTab — l’exemplaire d’une facture émise', () => {
       expect(String(confirmation.mock.calls[0][0])).toContain('la facture F2026-0007')
       expect(String(confirmation.mock.calls[0][0])).toContain('CLIENT FICTIF SAS')
       expect(faux.rpcs).toEqual([{ nom: 'designer_exemplaire_facture', args: { p_dossier_id: D, p_piece_id: 'p-pdf', p_facture_id: 'f1' } }])
-      // La pièce relue (une seule fois), la ligne marquée, la fiche passée à « Défaire » — et la saisie en cours, intacte.
-      expect(faux.relecturesDeLaPiece).toBe(relecturesAvant + 1)
+      // La pièce relue — sa marque par la fiche, sa ligne par l'onglet (étape VF6c : l'onglet ne recopie à la fiche que la
+      // désignation, la déclaration se relit à part), une fois chacune —, la ligne marquée, la fiche passée à « Défaire » — et
+      // la saisie en cours, intacte.
+      expect(faux.relecturesDeLaPiece).toBe(relecturesAvant + 2)
       expect(within(ligne('CLIENT FICTIF')).getByText('Facture émise F2026-0007')).toBeTruthy()
       expect(within(volet()).getByText('Cette pièce est désignée comme l’exemplaire de la facture F2026-0007.')).toBeTruthy()
       expect(within(volet()).getByRole('button', { name: 'Défaire la désignation' })).toBeTruthy()
@@ -1881,7 +1888,7 @@ describe('PiecesTab — l’exemplaire d’une facture émise', () => {
       faux.muetApres = { ecritures_brouillon: 1 }
       monter('toutes')
       await ouvrir('CLIENT FICTIF')
-      expect(within(volet()).getByText(/faute de savoir si un exercice validé fige cette pièce, sa désignation ne se pose ni ne se défait d’ici/)).toBeTruthy()
+      expect(within(volet()).getByText(/faute de savoir si un exercice validé fige cette pièce, sa marque ne change pas d’ici/)).toBeTruthy()
       sansGeste()
     })
 

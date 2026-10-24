@@ -136,7 +136,7 @@ describe('pointsDeLaChecklist : l’exemplaire d’une facture source (VF6a)', (
     date_piece: '2026-03-10', tiers: 'Client fictif', montant_ht: 100, montant_tva: 20, montant_ttc: 120, devise: 'EUR', montant_devise: null,
     taux_change: null, conversion_source: null, categorie_id: 'c-vente', sous_dossier_id: null, type_piece: 'vente', statut: 'validee',
     notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
-    identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: 'f1', created_at: '2026-03-10T09:00:00Z',
+    identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: 'f1', vente_hors_des_factures: false, created_at: '2026-03-10T09:00:00Z',
     updated_at: '2026-03-10T09:00:00Z', ...o,
   })
   const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
@@ -299,7 +299,7 @@ describe('pointsDeLaChecklist : l’ouverture confrontée à la clôture du pré
       date_piece: '2025-02-01', tiers, montant_ht: null, montant_tva: null, montant_ttc: 100, devise: 'EUR', montant_devise: null,
       taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat', statut, notes: null,
       confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
-      identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, created_at: '2025-02-01T09:00:00Z',
+      identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false, created_at: '2025-02-01T09:00:00Z',
       updated_at: '2025-02-01T09:00:00Z',
     })
     const ligne = (id: string, date: string, compte: string, sens: 'debit' | 'credit', montant: number, pieceId: string | null = null) =>

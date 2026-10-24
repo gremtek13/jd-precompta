@@ -404,10 +404,10 @@ export interface Piece {
   // 24/10/2026) : le cabinet DÉCLARE qu'aucune facture validée de l'application n'est la facture de cette vente — une
   // prestation facturée ailleurs, une recette sans facture —, par `declarer_vente_hors_des_factures`, et la retire par
   // `retirer_declaration_hors_des_factures` ; `designer_exemplaire_facture` la remplace. Jamais avec une désignation (une
-  // contrainte et la garde) ; dans un dossier basculé, une pièce de vente validée est désignée ou déclarée (G3). FACULTATIVE
-  // jusqu'au premier écran qui la lit (VF6c), qui la rendra obligatoire comme la colonne l'est en base depuis la migration :
-  // aucune lecture ne la nomme encore.
-  vente_hors_des_factures?: boolean
+  // contrainte et la garde) ; dans un dossier basculé, une pièce de vente validée est désignée ou déclarée (G3). OBLIGATOIRE
+  // depuis l'étape VF6c, la fiche d'une pièce qui la lit et la dit, comme la colonne l'est en base (NOT NULL, faux par
+  // défaut) depuis la migration : une lecture `select('*')` la rend toujours.
+  vente_hors_des_factures: boolean
   created_at: string
   updated_at: string
 }
