@@ -490,10 +490,15 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   l'accord du cabinet : la déclaration d'une vente hors des factures, `factures_du_pont` (le jumeau du pont), G3 et G4,
   la désignation qui remplace (VF6-Q1) et se refuse sous un virement mixte classé (VF5H-Q1), le journal des désignations
   au cabinet seul ; `JUMELLE_INVERSEE_EXPORTEE` levé → « LA JUMELLE INVERSÉE, EN BASE », « LE VIREMENT MIXTE ET LA
-  JUMELLE INVERSÉE EN PRODUCTION ». VF5H-Q1 à Q3 et VF6B-Q1 tranchées le 24/10/2026 à la recommandation. Restent VF5h2
-  (VF5H-Q2 : les refus du registre pour la facture d'avant d'un virement mixte classé, une migration, avant la première
-  bascule réelle), VF6c à VF6e (avec eux, trois préalables qui jugent encore l'exemplaire ; à VF6c, la fiche d'une pièce
-  dit qu'un journal est resté dans un autre dossier, VF6B-Q1), puis VF7 à VF9 (EC3-Q9, la facture reprise, va à A8) ;
+  JUMELLE INVERSÉE EN PRODUCTION ». VF5H-Q1 à Q3 et VF6B-Q1 tranchées le 24/10/2026 à la recommandation. VF6c le
+  24/10/2026, neutre : la section « Ce que cette pièce est » de la fiche d'une pièce de vente, au cabinet seul — désigner,
+  remplacer d'un seul geste, défaire là où la base le permet, déclarer, retirer la déclaration, le journal (qui, quel
+  geste, quand ; un journal resté dans un autre dossier, VF6B-Q1) —, la fiche lisant elle-même la bascule, le pont, les
+  liens de G4 et le virement mixte (`lib/marquesDeLaPieceLecture.ts`) ; « Valider » retenu par G3 ; la pièce neuve de
+  vente d'un dossier basculé à valider → « LA FICHE D'UNE PIÈCE DIT CE QU'ELLE EST ». Restent VF5h2 (VF5H-Q2 : les
+  refus du registre pour la facture d'avant d'un virement mixte classé, une migration, avant la première bascule
+  réelle), VF6d et VF6e (avec eux, trois préalables qui jugent encore l'exemplaire), puis VF7 à VF9 (EC3-Q9, la facture
+  reprise, va à A8) ;
   « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la
   simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
@@ -860,9 +865,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   VENTE, figé avec la pièce ; la garde refuse toute autre écriture, sauf la restauration ; la quatrième preuve du pont,
   dite la première, sans faire taire les autres ; l'exemplaire d'une facture SOURCE ne compte plus (VF3b), celui d'une
   autre compte comme hier ; à l'écran, la fiche d'une pièce de vente seule, côté cabinet, sur des factures lues en
-  entier, et chaque confirmation dit ce que désigner ou défaire change à ce qui se compte — défaire l'exemplaire d'une
-  facture source la fait compter deux fois, ce que la base refusera à VF6, une erreur se corrigeant par un seul geste
-  (VF6-Q1) → « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». **La source de la
+  entier, et chaque confirmation dit ce que le geste change à ce qui se compte ; depuis VF6c, la section « Ce que cette
+  pièce est » : une pièce validée d'un dossier basculé ne se défait plus, elle se remplace d'un seul geste (VF6-Q1) →
+  « L'EXEMPLAIRE D'UNE FACTURE, EN BASE », « L'EXEMPLAIRE D'UNE FACTURE, À L'ÉCRAN ». **La source de la
   vente** : le réglage d'un dossier, irréversible dès sa première facture source ; la source fixée à la validation, puis
   figée ; un mouvement qui justifie un encaissement d'une facture source est RÉSERVÉ (G2) et ne se classe que par ses
   encaissements, par le cabinet seul (G1) ; les colonnes des écritures, que seule la fonction de VF4b remplit ;

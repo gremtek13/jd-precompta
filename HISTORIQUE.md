@@ -34308,3 +34308,91 @@ migration, avant la première bascule réelle) ; VF6c, la fiche d'une pièce (la
 ailleurs, VF6B-Q1), VF6d (les lots du relevé et la validation en lot, avant la première bascule réelle), VF6e (le pont,
 ses marques et la Checklist, VF6-Q4 ; les trois préalables qui jugent encore l'exemplaire) ; « Ma banque » et la
 facture d'avant (VF5H-Q3) ; puis VF7 à VF9.
+
+### 24/10/2026 — LA FICHE D'UNE PIÈCE DIT CE QU'ELLE EST — CHANTIER EC-Q3, VF6C (LIGNE 28.65)
+
+(Écrite par l'agent dev de VF6c sur `0298872` — la tête de la demande #219, VF5h et VF6b —, branche `vf6c-fiche`, en deux
+commits : le code et ses tests (`cdbb113`), puis cette documentation. Ni base, ni migration, ni Edge Function, ni accès à la
+production. Créés : `src/lib/marquesDeLaPiece.ts` (pur), `src/lib/marquesDeLaPieceLecture.ts` (la lecture) et leurs tests.
+Modifiés : `ExemplaireDeLaFacture.tsx` (réécrit) et son test, `FichePiece.tsx`, `exemplairesDesFacturesEcran.ts` et son
+test, `exemplairesDesFactures.ts` (`passageJugeParG3`, extrait de G3 sans changer son verdict) et son test, `types.ts`,
+`FichePiece.exemplaire.test.tsx`, `exemplaireCabinetSeul.test.ts`, `ecransAvantLecture.test.tsx`, `PiecesTab.test.tsx` (son
+faux client et deux attentes, jamais `PiecesTab.tsx`), les fabriques de pièces de 43 fichiers de tests et de deux modules de
+`src/test` (`vente_hors_des_factures: false`), le banc (`fauxSupabase.ts`, `debordements.mjs`) ; CLAUDE.md.)
+
+**LA DÉLIMITATION.** La puce VF6c du § 5 de « VF6, LA JUMELLE INVERSÉE : LA CONCEPTION » et son § 3 g, plus VF6B-Q1 (le
+journal resté ailleurs, tranchée le 24/10/2026 : « les laisser, et le dire »). Ni la validation en lot ni les lots du relevé
+(VF6d), ni le pont, ses marques et la Checklist (VF6e) : `PiecesTab.tsx`, `FicheMouvement.tsx`, `ventesJumelles*.ts`, la
+Checklist et la Révision ne changent pas.
+
+**CE QUE LE CABINET VOIT.** La section « Exemplaire d'une facture émise » de la fiche d'une pièce de vente devient « Ce que
+cette pièce est » (côté cabinet seul ; une pièce déclarée qui n'est plus une vente garde sa section, pour que sa marque se
+dise).
+- Ce que la pièce est : l'exemplaire de sa facture (numéro, client, montant, et, pour une facture source, qu'elle ne compte
+  pas) ; une vente déclarée hors des factures de l'application (qui compte comme une vente — ou, hors d'un dossier basculé,
+  une déclaration qui n'y change rien) ; ou rien, sous le paragraphe d'hier (dossier qui n'a pas basculé) ou celui d'un
+  dossier basculé (les deux marques, ce que chacune fait compter, la validation qui attend l'une d'elles).
+- Les gestes, chacun sous la fonction de la base seule : désigner ; désigner une AUTRE facture à la place (VF6-Q1, le
+  remplacement d'un seul geste) ; défaire, sauf sur une pièce validée d'un dossier basculé, dont le refus de la base dit de
+  désigner l'autre facture ou de la déclarer ; déclarer (dossier basculé seulement), y compris à la place d'une désignation ;
+  retirer la déclaration. Les refus du module (`refusDeLaDesignationMarquee`, `refusDuRetraitMarque`, `refusDeLaDeclaration`,
+  `refusDuRetraitDeLaDeclaration`) se disent avant le clic, sur la pièce telle qu'enregistrée : la facture que le pont prouve
+  est nommée par le refus de la déclaration, aucune n'est choisie d'avance, une autre se refuse ; les preuves contraires
+  (VF6-Q5), les liens de G4 pour une facture source, le virement mixte classé (VF5H-Q1).
+- Les confirmations (`exemplairesDesFacturesEcran.ts`) NOMMENT la pièce, la facture prise et celle qu'elle quitte, et disent
+  ce qui change à ce qui se compte selon les DEUX factures (source vers source, source vers non source — « la vente serait
+  comptée deux fois » —, non source vers source) ; la déclaration dit qu'elle compte comme une vente, « et si c'était le PDF
+  d'une facture de l'application, la vente compterait deux fois » ; défaire et retirer, dans un dossier basculé, disent
+  qu'une pièce à valider ne compte pas encore et ne se validera qu'à nouveau marquée.
+- Le journal, sous la section : chaque geste de ce dossier, dans l'ordre (à un même instant, le retrait avant le geste qui
+  le remplace), qui — « vous », l'adresse d'un membre de l'équipe que la base laisse lire (`cabinet_admins`), sinon « un
+  autre compte » — et quand ; les gestes restés dans un autre dossier, le dossier nommé quand son nom se lit, « un autre
+  dossier » sinon (VF6B-Q1) ; illisible, il le dit et n'affirme rien, ni le vide ni l'absence d'un journal ailleurs.
+- La fiche : « Valider » est retenu sous les mots de G3 (`refusDeLaValidationDUneVente`) — ni désignée ni déclarée, le pont
+  qui dit une autre facture, des preuves contraires —, et ATTEND tant que la fiche ne sait pas si le dossier a basculé, ou
+  que les factures qui nommeraient la facture du pont ne sont pas lues ; « Enregistrer brouillon » reste offert. G3 ne juge
+  que le PASSAGE (`passageJugeParG3`) : une vente validée avant, sous la même marque, n'attend rien (EC3-Q1). Une pièce neuve
+  de vente d'un dossier basculé s'enregistre à valider (« naît à valider »). Le formulaire d'une pièce déclarée dit, comme
+  celui d'une désignée, que sa nature ne change pas (la garde étendue).
+
+**LA LECTURE.** L'onglet donne les factures et le gel ; `PiecesTab.tsx` étant au lot parallèle, la fiche lit le reste
+elle-même (`lireCeQueLaPieceEst`), quand l'onglet lui a donné les factures et qu'il s'agit d'une vente — enregistrée,
+saisie ou marquée : la bascule du dossier ; dans un dossier basculé SEULEMENT (ailleurs aucune facture n'est source, aucun
+mouvement classé, aucun refus ne lit le pont), le pont sans la désignation (`verdictDuPontDeLaPiece`), les quatre liens de
+G4 sur la pièce seule, le registre et les mouvements classés (`facturesDuVirementMixte`, comme les rangs 14 et 15) — tout
+ou rien, sinon aucun geste, un message et « Relire » ; le journal par `piece_id`, sans filtre sur le dossier (la policy de
+chaque ligne décide), et le nom des dossiers où il est resté ; l'équipe, seulement quand le journal de ce dossier a une
+ligne. Un dossier qui n'a pas basculé — tous aujourd'hui — ne lit que deux choses de plus : son réglage et le journal.
+Une lecture plus lente écrit en dernier (seule la dernière demandée s'inscrit). Après un geste, sous le verrou `useRef` de
+la section (posé avant le `try`, relâché dans le `finally`), la fiche relit LA pièce (`relireLesMarquesDeLaPiece` : l'onglet
+ne recopie à la fiche que la désignation, `pieceAJour` garde la plus récente des deux), puis sa ligne dans l'onglet, puis ce
+qu'elle est. `pieces.vente_hors_des_factures` devient obligatoire dans `types.ts`.
+
+**ÉCARTS À LA CONCEPTION, DITS.** (1) Les auteurs du journal ne passent pas par `lib/auteursVentes.ts` : ce module ne sait
+dire que « par le client », et seuls les gestes du cabinet écrivent le journal ; ils se nomment par l'équipe lue. (2) La
+fiche lit elle-même la bascule et le reste, faute de toucher `PiecesTab.tsx` : une relecture de la pièce de plus par geste
+(deux au lieu d'une, `PiecesTab.test.tsx` le dit). Quand VF6d aura fini avec `PiecesTab.tsx`, son `relirePiece` pourra
+recopier aussi la déclaration, et l'onglet passer la bascule qu'il reçoit déjà ; la fiche la relirait alors moins.
+
+**LES PREUVES.** Tests : la section dans les deux sortes de dossiers (chaque geste, deux puis trois clics dans le même
+`act`, la confirmation refusée, les refus du module avant le clic, ceux de la base après, la relecture de la pièce et son
+échec, chaque lecture en cours, partielle ou refusée), la fiche (G3, l'attente, la pièce neuve, le formulaire d'une pièce
+déclarée, la marque relue après un geste, la lecture plus lente), la lecture (le tout ou rien collection par collection),
+le module pur, les phrases ; `exemplaireCabinetSeul.test.ts` couvre les deux fonctions neuves et le journal ;
+`ecransAvantLecture.test.tsx` monte la fiche aux factures lues, ses lectures retenues ; `verrousExecution`,
+`verrousEcritures`, `lecturesPaginees`, `lecturesSignalees` verts. Mutations : 64, une à une, chacune contre les huit
+fichiers de tests concernés — 63 tuées ; survit le refus du module relu au clic de « Désigner » (`designer()`), doublé par
+le bouton grisé : la défense en profondeur de VF1b. Barrière sous le Node 22.23.3 de la CI : `npx tsc -b --force` 0 ; `npm
+run lint` 0 erreur, 63 avertissements (FichePiece garde le seul d'avant) ; `npm run test:fuseaux` : Paris, UTC, New York et Auckland, 461 fichiers et 14 228 tests justes chacun (au départ 459 et
+14 127) — un premier passage avait vu Auckland dater du 25 octobre un geste du journal fait à 11 h UTC, le 24 : le jour
+d'un instant est celui de qui le regarde, et le test a pris des instants qui tombent le 24 dans les quatre fuseaux ;
+`npm run build` 0. Le banc : trois pièces de vente à valider dans le dossier basculé d12 (l'original de F2026-0021 que le
+pont reconnaît, le PDF désigné de F2026-0022, une formation déclarée dont deux gestes sont restés dans d1) et trois visites
+`pieces-basculees/*` avant l'e-reporting ; `debordements.mjs` à 1 440 (panneau ouvert), 1 280, 1 024, 720 et 390 px : 0 débordement à chaque largeur, les
+trois visites neuves comprises, 0 bouton de fenêtre recouvert sur 285 sondés, toutes les visites d'avant passées (servi sur
+le port 5299 par une copie temporaire du script, retirée ensuite : le 5199 était pris par le banc d'un autre agent).
+
+**CE QUI RESTE.** VF5h2 (une migration, avant la première bascule réelle) ; VF6d (la validation en lot qui écarte avant le
+clic ce que G3 refuserait, les lots du relevé et G4) ; VF6e (le pont, ses marques — « À désigner : c'est la facture F… »
+dans la liste —, la Checklist, VF6-Q4, et les trois préalables qui jugent encore l'exemplaire) ; puis VF7 à VF9. Aucune
+question nouvelle au cabinet.
