@@ -149,7 +149,9 @@ describe('chaque liste redit sa fonction, dans son ordre, sous ses mots et ses c
     const corps = (texte: string) => texte.slice(texte.lastIndexOf('function public.garder_encaissement_facture()'))
       .split('$$;')[0]
     const avant = corps(vf2)
-    const apres = corps(derniereDefinitionSql('garder_encaissement_facture'))
+    // La définition de cette migration-ci, que la migration registre_virement_mixte (étape VF5h2) reprend ensuite pour une
+    // règle de plus au retrait (registreVirementMixte.test.ts) : celle de ce fichier, non la dernière de l'export.
+    const apres = corps(TEXTE_MIGRATION)
     expect(avant.length).toBeGreaterThan(1000)
     const retire = apres
       .replace(/\n {4}if new\.compte_contrepartie is not null and not public\.is_super_admin\(\) then[\s\S]*?\n {4}end if;/, '')

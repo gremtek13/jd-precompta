@@ -54,7 +54,12 @@ import type {
 //   - depuis la migration virement_mixte (étape VF5h), qu'un crédit qui paie une facture source ET une facture d'avant la
 //     bascule se classe par ses encaissements, celui de la facture d'avant compris, quand cette facture a son exemplaire
 //     unique et validé — sinon le rang 7 du classement le refuse, la facture nommée (`refusClassement`,
-//     `exemplaireUnique`, `factureSansExemplaire`) ; ce mouvement paie alors cet exemplaire (lib/rattachement.ts).
+//     `exemplaireUnique`, `factureSansExemplaire`) ; ce mouvement paie alors cet exemplaire (lib/rattachement.ts) ;
+//   - depuis la migration registre_virement_mixte (étape VF5h2, VF5H-Q2), que l'encaissement d'une facture qui n'est PAS
+//     source ne cite pas un mouvement classé par ses encaissements, et que, quand le mouvement dont il dépend l'est, il ne
+//     se retire pas ni ne se contre-passe sans débit — ce que ce mouvement justifie ne change plus, comme pour une facture
+//     source : trois refus neufs, sous des mots à eux (`virementMixte`), que seuls les jugements de la vente disent
+//     (`refusEnregistrementVente`, `refusRetraitVente`, `refusContrePassationVente`).
 //
 // Les sources sont publiques : CGI, art. 290 A, et ann. II, art. 242 nonies P — CIBS, art. L. 216-56 à compter du
 // 01/01/2027 — ; BOI-TVA-DECLA-20-30-60 ; BOI-TVA-BASE-20-20 ; spécifications externes de la DGFiP v3.2 (§ 3.6.4 et
@@ -367,6 +372,10 @@ export const VENTES_DU_CLIENT_EXPORTEES: boolean = true
 // « % » y reçoit une valeur, « %% » s'y écrit « % ». encaissementsFactures.test.ts extrait les messages de la fonction et
 // les confronte à cette liste, ordre et texte. `venteFacturee` marque les refus qui ne visent qu'une facture SOURCE de sa
 // vente (étape VF2) : pour toute autre facture, la base ne les oppose jamais, et les plafonds sont ceux d'hier.
+// `virementMixte` (étape VF5h2, migration registre_virement_mixte), ceux qui ne visent qu'une facture qui n'est PAS source,
+// sur un mouvement classé par ses encaissements — un virement mixte : sur tout autre mouvement, la base ne les oppose
+// jamais. Les deux marques ne se croisent pas : la dernière définition exportée moins les refus de l'une et de l'autre est
+// la définition d'avant l'étape VF2.
 export const REFUS_ENREGISTREMENT = [
   { cle: 'acces', modele: 'Accès refusé à ce dossier.' },
   // Depuis la migration ventes_du_client (`VENTES_DU_CLIENT_EXPORTEES`) : juste après l'accès, avant la facture.
@@ -398,6 +407,13 @@ export const REFUS_ENREGISTREMENT = [
     modele: "Ce mouvement est déjà classé : l'encaissement d'une facture source de sa vente ne cite qu'un mouvement que rien ne classe encore — retirer d'abord ce classement.",
     venteFacturee: true,
   },
+  // Rang 18 (étape VF5h2, VF5H-Q2) : pour une facture qui n'est pas source, un mouvement classé par ses encaissements — le
+  // virement mixte y compte l'encaissement d'une facture d'avant la bascule, et ce qu'il justifie ne change plus.
+  {
+    cle: 'mouvement_classe_facture_d_avant',
+    modele: "Ce mouvement est déjà classé par ses encaissements : l'encaissement d'une facture qui n'est pas la source de sa vente ne s'y ajoute plus — retirer d'abord ce classement.",
+    virementMixte: true,
+  },
   { cle: 'mouvement_deja_pris', modele: 'Ce mouvement justifie déjà un encaissement de cette facture.' },
   {
     cle: 'mouvement_depasse',
@@ -426,7 +442,8 @@ export const REFUS_ENREGISTREMENT = [
 
 export type CleRefusEnregistrement = (typeof REFUS_ENREGISTREMENT)[number]['cle']
 
-// Les refus de `retirer_encaissement`, de même ; les deux derniers pour une facture source seulement.
+// Les refus de `retirer_encaissement`, de même ; les rangs 6 et 7 pour une facture source seulement, le rang 8 (étape VF5h2)
+// pour une facture qui ne l'est pas, sur un mouvement classé par ses encaissements.
 export const REFUS_RETRAIT = [
   { cle: 'acces', modele: 'Accès refusé à ce dossier.' },
   { cle: 'encaissement_introuvable', modele: 'Encaissement introuvable dans ce dossier.' },
@@ -438,6 +455,13 @@ export const REFUS_RETRAIT = [
     cle: 'mouvement_classe',
     modele: "Le mouvement dont dépend cet encaissement est classé : le cabinet retire d'abord ce classement.",
     venteFacturee: true,
+  },
+  // Rang 8 (étape VF5h2, VF5H-Q2) : le virement mixte compte cet encaissement — ou l'écarte, tant qu'une contre-passation
+  // sans mouvement vit —, et son retrait changerait ce que le mouvement justifie.
+  {
+    cle: 'mouvement_classe_facture_d_avant',
+    modele: "Le mouvement dont dépend cet encaissement est classé par ses encaissements : le cabinet retire d'abord ce classement.",
+    virementMixte: true,
   },
 ] as const
 
@@ -580,13 +604,15 @@ export interface SaisieEncaissement {
 }
 
 /**
- * Ce que `enregistrer_encaissement` refuserait de cette saisie, pour une facture qui n'est PAS source de sa vente : le
- * PREMIER refus, dans l'ordre de la base et sous son message, ou null quand elle l'accepterait. `mouvements` : ceux du
- * dossier, où se cherche le mouvement cité ; `aujourdHui` : la date du jour À PARIS (`aujourdHuiAParis`), celle que la
- * base lit ; `gereLaBanque` : le droit « Banque » de qui saisit sur ce dossier (`gere_la_banque` en base) — le cabinet le
- * porte toujours, un client s'il lui est coché. Passé sans valeur par défaut : un écran du client qui l'oublierait
- * laisserait désigner un mouvement que la base refuse. Pour une facture SOURCE (étape VF2), la base refuse davantage, que
- * seule `refusEnregistrementVente` dit : elle lit ce qui classe les mouvements, les exercices validés et les avoirs.
+ * Ce que `enregistrer_encaissement` refuserait de cette saisie, pour une facture qui n'est PAS source de sa vente, sur un
+ * mouvement que rien ne classe par ses encaissements : le PREMIER refus, dans l'ordre de la base et sous son message, ou
+ * null quand elle l'accepterait. `mouvements` : ceux du dossier, où se cherche le mouvement cité ; `aujourdHui` : la date
+ * du jour À PARIS (`aujourdHuiAParis`), celle que la base lit ; `gereLaBanque` : le droit « Banque » de qui saisit sur ce
+ * dossier (`gere_la_banque` en base) — le cabinet le porte toujours, un client s'il lui est coché. Passé sans valeur par
+ * défaut : un écran du client qui l'oublierait laisserait désigner un mouvement que la base refuse. Pour une facture SOURCE
+ * (étape VF2), la base refuse davantage, que seule `refusEnregistrementVente` dit : elle lit ce qui classe les mouvements,
+ * les exercices validés et les avoirs ; et, depuis l'étape VF5h2, pour une facture qui ne l'est pas, un mouvement classé
+ * par ses encaissements (le rang 18), que ce jugement-ci ne lit pas.
  */
 export function refusEnregistrement(
   c: ContexteFacture,
@@ -601,10 +627,12 @@ export function refusEnregistrement(
 /**
  * Ce que `enregistrer_encaissement` refuserait de cette saisie, la facture source ou non : les refus de
  * `refusEnregistrement`, et, pour une facture SOURCE de sa vente (`facture.source_de_la_vente`), la frontière d'un
- * exercice validé (rang 11), un mouvement déjà classé (rang 17) et les plafonds nets de ses avoirs validés (rangs 27 et
- * 29, à la place des plafonds bruts). `mouvements` : ceux du dossier, avec ce qui les classe ; `vente` : les exercices
- * validés et les factures du dossier — les lignes des avoirs de la facture dans `c.lignes`. Pour une facture qui n'est
- * pas source, la même chose que `refusEnregistrement`. La fenêtre des encaissements le lit depuis l'étape VF5b.
+ * exercice validé (rang 11), un mouvement déjà classé (rang 17) et les plafonds nets de ses avoirs validés (rangs 28 et
+ * 30, à la place des plafonds bruts) ; pour une facture qui n'est PAS source, depuis l'étape VF5h2 (VF5H-Q2), un mouvement
+ * classé par ses encaissements (rang 18) — le virement mixte, que l'encaissement de plus changerait. `mouvements` : ceux du
+ * dossier, avec ce qui les classe ; `vente` : les exercices validés et les factures du dossier — les lignes des avoirs de
+ * la facture dans `c.lignes`. Pour une facture qui n'est pas source, sur un autre mouvement, la même chose que
+ * `refusEnregistrement`. La fenêtre des encaissements le lit depuis l'étape VF5b.
  */
 export function refusEnregistrementVente(
   c: ContexteFacture,
@@ -656,15 +684,20 @@ function jugerEnregistrement(
   if (!MOYENS_ENCAISSEMENT.some((m) => m.moyen === s.moyen)) return refus('moyen_inconnu')
 
   // 10. Le mouvement, s'il en cite un : de ce dossier, un crédit — pour une facture source, que rien ne classe encore (rang
-  // 17) —, qui ne justifie pas déjà un encaissement de cette facture, et dont les encaissements — de toutes les factures :
-  // un virement peut en régler plusieurs — ne le dépasseraient pas au-delà de l'écart que des frais expliquent. Ce qu'un
-  // mouvement justifie se lit comme la base le lit depuis l'étape VF2 (`justifieSonMouvement`) : pour un mouvement
-  // qu'aucune contre-passation ne cite, comme hier.
+  // 17) ; pour une autre, que ses encaissements ne classent pas (rang 18, étape VF5h2 : le virement mixte) —, qui ne
+  // justifie pas déjà un encaissement de cette facture, et dont les encaissements — de toutes les factures : un virement
+  // peut en régler plusieurs — ne le dépasseraient pas au-delà de l'écart que des frais expliquent. Ce qu'un mouvement
+  // justifie se lit comme la base le lit depuis l'étape VF2 (`justifieSonMouvement`) : pour un mouvement qu'aucune
+  // contre-passation ne cite, comme hier. Le rang 18 ne se juge qu'avec la vente (`vente` donné) : sans elle, le mouvement
+  // lu ne dit pas ce qui le classe.
   if (s.ligneBancaireId != null) {
     const mouvement = mouvements.find((m) => m.id === s.ligneBancaireId && m.dossier_id === c.dossierId)
     if (!mouvement) return refus('mouvement_hors_dossier')
     if (mouvement.montant <= 0) return refus('mouvement_debit')
     if (source && !mouvementLibre(mouvement as MouvementClasse)) return refus('mouvement_classe')
+    if (vente != null && !source && (mouvement as MouvementClasse).encaissements_de_factures) {
+      return refus('mouvement_classe_facture_d_avant')
+    }
     const justifies = c.encaissements.filter((e) =>
       e.ligne_bancaire_id === mouvement.id && compte(e) && justifieSonMouvement(e, c.encaissements))
     if (justifies.some((e) => e.facture_id === f.id)) return refus('mouvement_deja_pris')
@@ -699,8 +732,8 @@ function jugerEnregistrement(
 
   // 12. Les plafonds, sur des montants NETS : le reste de la facture, puis celui de chaque taux, dans l'ordre des parts.
   // Le total de la facture est son en-tête, au centime depuis le refus 6 ; le TTC d'un taux, celui de ses lignes. Pour une
-  // facture source, l'un et l'autre moins ce que ses avoirs validés créditent (EC3-Q10, rangs 27 et 29), tel que leurs
-  // lignes le transmettent.
+  // facture source, l'un et l'autre moins ce que ses avoirs validés créditent (EC3-Q10, rangs 28 et 30 depuis l'étape
+  // VF5h2, 27 et 29 avant elle), tel que leurs lignes le transmettent.
   const comptes = c.encaissements.filter((e) => e.facture_id === f.id && compte(e))
   const deja = comptes.reduce((total, e) => total + centimes(e.montant), 0)
   const credites = vente != null && source ? creditesDesAvoirs(f.id, c.lignes, vente) : new Map<number, number>()
@@ -755,7 +788,10 @@ export function refusRetrait(
  * mouvement dont il dépend — le sien, ou, pour une contre-passation sans mouvement, celui de l'encaissement qu'elle
  * annule — classé (rang 7 : le cabinet retire d'abord ce classement ; par ses encaissements, le retrait changerait ce
  * qu'il justifie ; autrement, le retrait de la contre-passation le ferait justifier de nouveau l'encaissement, en plus de
- * son classement). `mouvements` : ceux du dossier, lus en entier, avec ce qui les classe.
+ * son classement) ; et, depuis l'étape VF5h2 (VF5H-Q2), pour un encaissement d'une facture qui n'est PAS source, ce même
+ * mouvement classé PAR SES ENCAISSEMENTS (rang 8 : le virement mixte compte cet encaissement, ou l'écarte tant que la
+ * contre-passation vit) — classé autrement, il se retire comme hier. Une facture que la lecture n'a pas rendue n'est pas
+ * source : le rang 8 la juge, du côté fermé. `mouvements` : ceux du dossier, lus en entier, avec ce qui les classe.
  */
 export function refusRetraitVente(
   dossierId: string,
@@ -768,11 +804,13 @@ export function refusRetraitVente(
   const hier = refusRetrait(dossierId, encaissementId, encaissements, declares)
   if (hier) return hier
   const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId) as EncaissementPourContrePassation
-  if (!factureSource(e.facture_id, vente)) return null
-  const fige = dateFigeePourLaVente(e.date_encaissement, vente.anneesValidees)
-  if (fige) return refusR('frontiere', fige)
   const ligne = e.ligne_bancaire_id ?? encaissements.find((x) => x.id === e.annule_id)?.ligne_bancaire_id ?? null
   const mouvement = ligne == null ? undefined : mouvements.find((m) => m.id === ligne)
+  if (!factureSource(e.facture_id, vente)) {
+    return mouvement?.encaissements_de_factures ? refusR('mouvement_classe_facture_d_avant') : null
+  }
+  const fige = dateFigeePourLaVente(e.date_encaissement, vente.anneesValidees)
+  if (fige) return refusR('frontiere', fige)
   if (mouvement && !mouvementLibre(mouvement)) return refusR('mouvement_classe')
   return null
 }
@@ -905,6 +943,13 @@ export const REFUS_CONTRE_PASSATION = [
     cle: 'mouvement_encaissement_classe',
     modele: "Le mouvement de l'encaissement contre-passé est classé par ses encaissements : la contre-passation cite le débit qui défait l'encaissement, ou le cabinet retire d'abord ce classement.",
     venteFacturee: true,
+  },
+  // Rang 21 (étape VF5h2, VF5H-Q2) : sans débit, pour une facture qui n'est pas source, le même mouvement classé par ses
+  // encaissements — le virement mixte compte cet encaissement ; et le débit ne la sauve pas : elle n'en cite pas (rang 15).
+  {
+    cle: 'mouvement_encaissement_classe_facture_d_avant',
+    modele: "Le mouvement de l'encaissement contre-passé est classé par ses encaissements : le cabinet retire d'abord ce classement.",
+    virementMixte: true,
   },
 ] as const
 
@@ -1045,8 +1090,10 @@ function jugerContrePassation(
  * une facture source, la frontière d'un exercice validé (rang 12) ; le motif ; s'il cite un mouvement, une facture qui
  * n'est pas source, un mouvement d'un autre dossier, un crédit, un mouvement déjà classé, des contre-passations qui
  * dépasseraient le débit au-delà des frais (rangs 15 à 19) ; sans mouvement, pour une facture source, le mouvement de
- * l'encaissement classé par ses encaissements (rang 20). Sans débit cité et pour une facture qui n'est pas source, la
- * même chose que `refusContrePassation`, quel que soit le droit « Banque ». `mouvements` : ceux du dossier, lus en entier,
+ * l'encaissement classé par ses encaissements (rang 20) — et, depuis l'étape VF5h2 (VF5H-Q2), pour une facture qui n'est
+ * pas source, le même mouvement classé par ses encaissements (rang 21 : le virement mixte compte cet encaissement). Sans
+ * débit cité et pour une facture qui n'est pas source, sur un mouvement que ses encaissements ne classent pas, la même
+ * chose que `refusContrePassation`, quel que soit le droit « Banque ». `mouvements` : ceux du dossier, lus en entier,
  * avec ce qui les classe ; `gereLaBanque` : le droit « Banque » de qui saisit sur ce dossier (`gere_la_banque` en base),
  * comme `refusEnregistrement` le reçoit — passé sans valeur par défaut : un écran du client qui l'oublierait laisserait
  * citer un débit que la base refuse.
@@ -1097,10 +1144,10 @@ export function refusContrePassationVente(
     if (!ecartDeFrais(Math.abs(total) - debit, Math.abs(total))) {
       return refusC('mouvement_depasse', euroCommeLaBase(debit), euroCommeLaBase(Math.abs(total)))
     }
-  } else if (source && e.ligne_bancaire_id != null) {
-    if (mouvements.find((m) => m.id === e.ligne_bancaire_id)?.encaissements_de_factures) {
-      return refusC('mouvement_encaissement_classe')
-    }
+  } else if (e.ligne_bancaire_id != null && mouvements.find((m) => m.id === e.ligne_bancaire_id)?.encaissements_de_factures) {
+    // Sans débit, le mouvement de l'encaissement classé par ses encaissements : le rang 20 pour une facture source, que le
+    // débit qui défait l'encaissement laisserait passer ; le rang 21 pour une autre (étape VF5h2), que rien ne sauve.
+    return refusC(source ? 'mouvement_encaissement_classe' : 'mouvement_encaissement_classe_facture_d_avant')
   }
   return null
 }
@@ -1334,7 +1381,10 @@ function explication(creditCentimes: number, resteCentimes: number, solde: boole
  * mouvement, que la base refuserait (espace client, étape P2).
  *
  * `vente` (étape VF5b, sans valeur par défaut) : chaque proposition se juge par `refusEnregistrementVente`, qui rend pour une
- * facture qui n'est pas source exactement ce que rendait `refusEnregistrement` — rien n'y change. Pour une facture SOURCE de
+ * facture qui n'est pas source exactement ce que rendait `refusEnregistrement` — rien n'y change : le seul refus neuf qu'il
+ * lui oppose (le rang 18, étape VF5h2) vise un mouvement classé par ses encaissements, que le relevé ne proposait déjà pas
+ * (il justifie des encaissements : pris), et qui ne paie la jumelle que par l'encaissement de cette facture qu'il porte
+ * déjà (le rang 19, « justifie déjà », le refusait). Pour une facture SOURCE de
  * sa vente : le reste est NET de ses avoirs validés (`resteAEncaisserVente`, le plafond de la base), et seuls des
  * mouvements LIBRES se proposent — par le jugement même de la base (`refusEnregistrementVente`, rang 17 : un mouvement que
  * rien ne classe encore), jamais par une règle recopiée ici. La pièce jumelle ne propose donc plus ses paiements : chacun
@@ -1943,7 +1993,9 @@ export function refusDuClassementDuReleve(
 // La fenêtre des encaissements (EncaissementsFactureModal.tsx, les deux espaces) passe aux jugements de la vente —
 // `refusEnregistrementVente`, `refusRetraitVente`, `refusContrePassationVente` et `propositionsEncaissement` avec son
 // contexte —, qui rendent pour une facture qui n'est PAS source de sa vente exactement ce que rendaient les jugements
-// d'hier : encaissementsFenetreVente.test.ts le prouve sur un tirage. Ce qui suit ne vaut que pour une facture SOURCE : son
+// d'hier, hors des trois refus de l'étape VF5h2 sur un mouvement classé par ses encaissements (`virementMixte`) :
+// encaissementsFenetreVente.test.ts le prouve sur un tirage, et que chaque écart est l'un d'eux, à son rang, sur un tel
+// mouvement. Ce qui suit ne vaut que pour une facture SOURCE : son
 // reste net des avoirs, la frontière que le client ne lit pas, les débits qu'une contre-passation peut citer, et le geste
 // qui rendrait un mouvement inclassable — dit avant le clic, jamais refusé : la base l'admet (l'aligner serait une
 // migration, à revoir avec VF7 ; conception de VF5, § 7).
@@ -1969,9 +2021,9 @@ export function frontiereJugeeParLaBase(
 
 /**
  * Ce qui reste à encaisser, tel que la base le plafonne : pour une facture qui n'est pas source, `resteAEncaisser` ; pour
- * une facture SOURCE, net de ce que ses avoirs VALIDÉS créditent, en tout et par taux (EC3-Q10, les rangs 27 et 29
- * d'`enregistrer_encaissement`) — les lignes de ses avoirs dans `c.lignes`, les avoirs dans `vente.factures`. C'est ce reste
- * que la fenêtre propose, et que ses propositions font.
+ * une facture SOURCE, net de ce que ses avoirs VALIDÉS créditent, en tout et par taux (EC3-Q10, les rangs 28 et 30
+ * d'`enregistrer_encaissement` depuis l'étape VF5h2) — les lignes de ses avoirs dans `c.lignes`, les avoirs dans
+ * `vente.factures`. C'est ce reste que la fenêtre propose, et que ses propositions font.
  */
 export function resteAEncaisserVente(
   c: ContexteDuReste,

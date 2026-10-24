@@ -3,7 +3,8 @@ import {
   AUJOURD_HUI_RELEVE, MONDE, batterie, entierTire, entreeDuCas, lecturesDuMonde, tirage,
 } from '../test/encaissementsBatterie'
 import {
-  ANNEES_ILLISIBLES, FRONTIERE_JUGEE_PAR_LA_BASE, LA_BASE_ADMET_LE_GESTE, NE_POURRA_PAS_SE_CLASSER, debitsCitables,
+  ANNEES_ILLISIBLES, FRONTIERE_JUGEE_PAR_LA_BASE, LA_BASE_ADMET_LE_GESTE, NE_POURRA_PAS_SE_CLASSER, REFUS_CONTRE_PASSATION,
+  REFUS_ENREGISTREMENT, REFUS_RETRAIT, debitsCitables,
   frontiereJugeeParLaBase, inclassableApres, inclassableApresContrePassation, inclassableApresEnregistrement,
   propositionsEncaissement, refusContrePassation, refusContrePassationVente, refusEnregistrement, refusEnregistrementVente,
   refusRetrait, refusRetraitVente, resteAEncaisser, resteAEncaisserVente,
@@ -20,7 +21,11 @@ import { paiementsDesPieces, type LignePayante } from './rattachement'
 //     4 000 saisies tirées de la batterie (src/test/encaissementsBatterie.ts), chacune avec un contexte de la vente tiré lui
 //     aussi (des exercices validés, ou illisibles ; des avoirs ; ce qui classe chaque mouvement), et sur des retraits et des
 //     contre-passations tirés de même. Le plancher : la même batterie, la facture rendue source, change des réponses — le
-//     test n'est pas aveugle là où il dit « rien ne change ».
+//     test n'est pas aveugle là où il dit « rien ne change ». Une exception, depuis l'étape VF5h2 (VF5H-Q2, migration
+//     registre_virement_mixte) : sur un mouvement classé PAR SES ENCAISSEMENTS — un virement mixte —, trois refus neufs
+//     (`virementMixte`). Chaque écart est l'un d'eux, à son rang — la réponse d'hier quand elle le précède, le refus neuf
+//     sinon —, et seulement sur un tel mouvement ; le tirage en rencontre, et une seconde passe, chaque mouvement classé par
+//     ses encaissements, les atteint tous les trois.
 //  2. Les exercices validés ILLISIBLES (le client) : la frontière sautée, jamais tenue pour vide.
 //  3. Le reste net des avoirs, les propositions d'une facture source, les débits citables, le geste qui rendrait un
 //     mouvement inclassable. Données FICTIVES.
@@ -62,7 +67,17 @@ function facturesDuMonde(source: boolean): FactureDuDossier[] {
 
 const ANNEES_TIREES: ContexteVente['anneesValidees'][] = [[], [2025], [2026], [2025, 2026], ANNEES_ILLISIBLES]
 
-describe('l’équivalence : une facture qui n’est pas source se juge comme hier', () => {
+// Le refus neuf de l'étape VF5h2, tel que le module le rend : sa clé et son modèle, qui n'attend aucune valeur.
+function refusNeuf<C extends string>(liste: readonly { cle: C; modele: string }[], cle: C) {
+  const r = liste.find((x) => x.cle === cle) as { cle: C; modele: string }
+  return { cle, message: r.modele }
+}
+
+// Chaque mouvement classé par ses encaissements : la seconde passe, qui ne tire rien.
+const parSesEncaissements = (mouvements: readonly MouvementClasse[]) =>
+  mouvements.map((m) => ({ ...m, statut: 'rapprochee' as const, encaissements_de_factures: true }))
+
+describe('l’équivalence : une facture qui n’est pas source se juge comme hier, hors du virement mixte', () => {
   const cas = batterie(SAISIES, GRAINE, AUJOURD_HUI_RELEVE)
   const suivant = tirage(GRAINE + 1)
   const tirer = <T>(liste: readonly T[]): T => liste[entierTire(suivant, liste.length)]
@@ -73,11 +88,32 @@ describe('l’équivalence : une facture qui n’est pas source se juge comme hi
     return { ...e, mouvementsClasses: mouvements, vente, gereLaBanque: suivant() < 0.8 }
   })
 
+  // Le rang 18 (étape VF5h2) : la réponse d'hier si elle le précède ; sinon, si la saisie cite un mouvement du dossier classé
+  // par ses encaissements, le refus neuf.
+  const RANG_18 = REFUS_ENREGISTREMENT.findIndex((r) => r.cle === 'mouvement_classe_facture_d_avant')
+  const enregistrementAttendu = (e: (typeof entrees)[number], mouvements: readonly MouvementClasse[]) => {
+    const hier = refusEnregistrement(e.contexte, e.saisie, e.mouvements, AUJOURD_HUI_RELEVE, e.gereLaBanque)
+    const cite = mouvements.find((m) => m.id === e.saisie.ligneBancaireId && m.dossier_id === e.contexte.dossierId)
+    const avant = hier != null && REFUS_ENREGISTREMENT.findIndex((r) => r.cle === hier.cle) < RANG_18
+    return cite?.encaissements_de_factures && !avant ? refusNeuf(REFUS_ENREGISTREMENT, 'mouvement_classe_facture_d_avant') : hier
+  }
+
   it('enregistrer : 4 000 saisies, la même réponse — avec ou sans « Banque », exercices validés ou illisibles', () => {
-    const ecarts = entrees.filter((e) =>
-      JSON.stringify(refusEnregistrementVente(e.contexte, e.saisie, e.mouvementsClasses, AUJOURD_HUI_RELEVE, e.gereLaBanque, e.vente))
-      !== JSON.stringify(refusEnregistrement(e.contexte, e.saisie, e.mouvements, AUJOURD_HUI_RELEVE, e.gereLaBanque)))
-    expect(ecarts.length).toBe(0)
+    for (const [passe, mouvementsDe] of [
+      ['tirée', (e: (typeof entrees)[number]) => e.mouvementsClasses],
+      ['par ses encaissements', (e: (typeof entrees)[number]) => parSesEncaissements(e.mouvementsClasses)],
+    ] as const) {
+      const ecarts = entrees.filter((e) =>
+        JSON.stringify(refusEnregistrementVente(e.contexte, e.saisie, mouvementsDe(e), AUJOURD_HUI_RELEVE, e.gereLaBanque, e.vente))
+        !== JSON.stringify(enregistrementAttendu(e, mouvementsDe(e))))
+      expect(ecarts.length, passe).toBe(0)
+      // Le refus neuf se rencontre, à la place d'une acceptation comme d'un refus qui le suit.
+      const neufs = entrees.filter((e) => enregistrementAttendu(e, mouvementsDe(e))?.cle === 'mouvement_classe_facture_d_avant')
+      const remplaces = new Set(neufs.map((e) =>
+        refusEnregistrement(e.contexte, e.saisie, e.mouvements, AUJOURD_HUI_RELEVE, e.gereLaBanque)?.cle ?? 'ok'))
+      expect(remplaces.has('ok'), passe).toBe(true)
+      expect(remplaces.size, passe).toBeGreaterThanOrEqual(2)
+    }
     // Les réponses ne sont pas toutes les mêmes : le tirage parcourt les refus, et l'acceptation.
     const cles = new Set(entrees.map((e) =>
       refusEnregistrement(e.contexte, e.saisie, e.mouvements, AUJOURD_HUI_RELEVE, e.gereLaBanque)?.cle ?? 'ok'))
@@ -114,26 +150,52 @@ describe('l’équivalence : une facture qui n’est pas source se juge comme hi
     }
   })
 
-  it('retirer : 1 500 tirages, la même réponse', () => {
-    for (const t of tirages) {
-      const declares = new Set(t.declarations.filter((d) => ['envoi', 'depose', 'accepte'].includes(d.etat)).map((d) => d.encaissement_id))
-      expect(refusRetraitVente(t.dossierId, t.id, encaissements, declares, t.mouvements, t.vente))
-        .toEqual(refusRetrait(t.dossierId, t.id, encaissements, declares))
+  // Le mouvement dont dépend un encaissement : le sien, ou, pour une contre-passation sans mouvement, celui de l'encaissement
+  // qu'elle annule.
+  const dontIlDepend = (id: string, mouvements: readonly MouvementClasse[]) => {
+    const e = encaissements.find((x) => x.id === id)
+    const ligne = e?.ligne_bancaire_id ?? encaissements.find((x) => x.id === e?.annule_id)?.ligne_bancaire_id ?? null
+    return mouvements.find((m) => m.id === ligne)
+  }
+
+  it('retirer : 1 500 tirages, la même réponse — le rang 8 (étape VF5h2) après les refus d’hier', () => {
+    for (const passe of ['tirée', 'par ses encaissements'] as const) {
+      let neufs = 0
+      for (const t of tirages) {
+        const mouvements = passe === 'tirée' ? t.mouvements : parSesEncaissements(t.mouvements)
+        const declares = new Set(t.declarations.filter((d) => ['envoi', 'depose', 'accepte'].includes(d.etat)).map((d) => d.encaissement_id))
+        const hier = refusRetrait(t.dossierId, t.id, encaissements, declares)
+        const attendu = hier ?? (dontIlDepend(t.id, mouvements)?.encaissements_de_factures
+          ? refusNeuf(REFUS_RETRAIT, 'mouvement_classe_facture_d_avant') : null)
+        if (attendu !== hier) neufs += 1
+        expect(refusRetraitVente(t.dossierId, t.id, encaissements, declares, mouvements, t.vente), passe).toEqual(attendu)
+      }
+      expect(neufs, passe).toBeGreaterThan(0)
     }
   })
 
-  it('contre-passer sans débit : 1 500 tirages, la même réponse, avec ou sans « Banque »', () => {
+  it('contre-passer sans débit : 1 500 tirages, la même réponse, avec ou sans « Banque » — le rang 21 (étape VF5h2) en dernier', () => {
     const cles = new Set<string>()
-    // Le droit « Banque » alterne d'un tirage à l'autre sans consommer de hasard : sans débit cité, il ne change rien
-    // (migration contre_passation_banque : le refus du rang 2 ne vise qu'un débit cité).
-    tirages.forEach((t, i) => {
-      const hier = refusContrePassation(t.dossierId, t.id, encaissements, t.declarations, t.date, t.motif, AUJOURD_HUI_RELEVE)
-      cles.add(hier?.cle ?? 'ok')
-      expect(refusContrePassationVente(
-        t.dossierId, t.id, encaissements, t.declarations, t.date, t.motif, AUJOURD_HUI_RELEVE, null, t.mouvements, i % 2 === 0,
-        t.vente,
-      )).toEqual(hier)
-    })
+    for (const passe of ['tirée', 'par ses encaissements'] as const) {
+      let neufs = 0
+      // Le droit « Banque » alterne d'un tirage à l'autre sans consommer de hasard : sans débit cité, il ne change rien
+      // (migration contre_passation_banque : le refus du rang 2 ne vise qu'un débit cité).
+      tirages.forEach((t, i) => {
+        const mouvements = passe === 'tirée' ? t.mouvements : parSesEncaissements(t.mouvements)
+        const hier = refusContrePassation(t.dossierId, t.id, encaissements, t.declarations, t.date, t.motif, AUJOURD_HUI_RELEVE)
+        cles.add(hier?.cle ?? 'ok')
+        // Le rang 21 ne regarde que le mouvement de l'encaissement lui-même : une contre-passation ne se contre-passe pas.
+        const sien = encaissements.find((x) => x.id === t.id)?.ligne_bancaire_id
+        const attendu = hier ?? (sien != null && mouvements.find((m) => m.id === sien)?.encaissements_de_factures
+          ? refusNeuf(REFUS_CONTRE_PASSATION, 'mouvement_encaissement_classe_facture_d_avant') : null)
+        if (attendu !== hier) neufs += 1
+        expect(refusContrePassationVente(
+          t.dossierId, t.id, encaissements, t.declarations, t.date, t.motif, AUJOURD_HUI_RELEVE, null, mouvements, i % 2 === 0,
+          t.vente,
+        ), passe).toEqual(attendu)
+      })
+      if (passe === 'par ses encaissements') expect(neufs).toBeGreaterThan(0)
+    }
     expect(cles.size).toBeGreaterThanOrEqual(8)
   })
 })

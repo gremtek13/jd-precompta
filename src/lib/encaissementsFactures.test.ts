@@ -341,8 +341,9 @@ describe('les refus de la base, tels que la migration les écrit', () => {
   it('enregistrer_encaissement : les mêmes messages, dans le même ordre', () => {
     const sql = derniereDefinitionSql('enregistrer_encaissement')
     // 25 depuis l'étape P2 ; 29 depuis la migration encaissements_de_la_vente_facturee (étape VF2), ses quatre refus d'une
-    // facture source à leur rang (11, 17, 27 et 29).
-    expect(messagesSql(sql)).toHaveLength(VENTES_DU_CLIENT_EXPORTEES ? 29 : 28)
+    // facture source à leur rang (11, 17, 27 et 29) ; 30 depuis la migration registre_virement_mixte (étape VF5h2), le rang
+    // 18 d'une facture qui n'est pas source, ceux qui le suivent un cran plus loin.
+    expect(messagesSql(sql)).toHaveLength(VENTES_DU_CLIENT_EXPORTEES ? 30 : 29)
     expect(REFUS_DE_L_EXPORT.map((r) => r.modele)).toEqual(messagesSql(sql))
     expect(new Set(REFUS_ENREGISTREMENT.map((r) => r.cle)).size).toBe(REFUS_ENREGISTREMENT.length)
   })
@@ -367,8 +368,9 @@ describe('les refus de la base, tels que la migration les écrit', () => {
 
   it('retirer_encaissement : les mêmes messages, dans le même ordre', () => {
     const sql = derniereDefinitionSql('retirer_encaissement')
-    // 5 hier ; 7 depuis l'étape VF2, ses deux refus d'une facture source à la fin (rangs 6 et 7).
-    expect(messagesSql(sql)).toHaveLength(7)
+    // 5 hier ; 7 depuis l'étape VF2, ses deux refus d'une facture source à la fin (rangs 6 et 7) ; 8 depuis l'étape VF5h2,
+    // le rang 8 d'une facture qui n'est pas source.
+    expect(messagesSql(sql)).toHaveLength(8)
     expect(REFUS_RETRAIT.map((r) => r.modele)).toEqual(messagesSql(sql))
     expect(new Set(REFUS_RETRAIT.map((r) => r.cle)).size).toBe(REFUS_RETRAIT.length)
   })
@@ -801,8 +803,11 @@ describe('refusEnregistrement — les refus de la base, avec ses messages', () =
     }
     expect(refusEnregistrement(c, s, MOUVEMENTS, AUJOURD_HUI, banque)).toBeNull()
     // Toutes les clés que le module juge pour une facture qui n'est pas source, dans l'ordre du catalogue : l'accès seul
-    // reste à la base, et les refus d'une facture source (étape VF2) ont leur parcours dans encaissementsVenteFacturee.test.ts.
-    expect(vus).toEqual(REFUS_ENREGISTREMENT.filter((r) => r.cle !== 'acces' && !('venteFacturee' in r)).map((r) => r.cle))
+    // reste à la base, et les refus d'une facture source (étape VF2) ont leur parcours dans encaissementsVenteFacturee.test.ts,
+    // celui d'un mouvement classé par ses encaissements (étape VF5h2, que ce jugement-ci ne lit pas) dans
+    // registreVirementMixte.test.ts.
+    expect(vus).toEqual(REFUS_ENREGISTREMENT
+      .filter((r) => r.cle !== 'acces' && !('venteFacturee' in r) && !('virementMixte' in r)).map((r) => r.cle))
   })
 })
 
@@ -927,8 +932,9 @@ describe('les refus des déclarations, tels que la migration les écrit', () => 
     const sql = derniereDefinitionSql('annuler_encaissement')
     // 12 hier ; 19 depuis l'étape VF2 : la frontière (rang 11), le débit cité et ses cinq refus (14 à 18), le mouvement de
     // l'encaissement classé par ses encaissements (19) ; 20 depuis la migration contre_passation_banque : le débit cité
-    // sans le droit « Banque » (rang 2), chacun des autres un rang plus loin.
-    expect(messagesSql(sql)).toHaveLength(20)
+    // sans le droit « Banque » (rang 2), chacun des autres un rang plus loin ; 21 depuis la migration registre_virement_mixte
+    // (étape VF5h2) : le même mouvement classé, pour une facture qui n'est pas source (rang 21).
+    expect(messagesSql(sql)).toHaveLength(21)
     expect(REFUS_CONTRE_PASSATION.map((r) => r.modele)).toEqual(messagesSql(sql))
     expect(new Set(REFUS_CONTRE_PASSATION.map((r) => r.cle)).size).toBe(REFUS_CONTRE_PASSATION.length)
     const MONTANT = (x: string) => `replace(to_char(${x}, 'FM999999999990.00'), '.', ',')`
@@ -1026,8 +1032,11 @@ describe('la vente facturée (étape VF2) : les refus d’hier, et ceux qui ne v
   ] as const
 
   it('sans leurs refus d’une facture source, les trois listes redisent la définition d’avant la migration, mot pour mot', () => {
+    // Privées aussi, depuis l'étape VF5h2 (migration registre_virement_mixte), des refus d'une facture qui n'est pas source
+    // sur un mouvement classé par ses encaissements (`virementMixte`) : registreVirementMixte.test.ts les confronte.
     for (const [nom, liste] of LISTES) {
-      const hier = liste.filter((r) => !('venteFacturee' in r) && !('contrePassationBanque' in r)).map((r) => r.modele)
+      const hier = liste.filter((r) => !('venteFacturee' in r) && !('contrePassationBanque' in r) && !('virementMixte' in r))
+        .map((r) => r.modele)
       expect(hier, nom).toEqual(messagesSql(definitionAvantLaVenteFacturee(nom)))
       expect(liste.map((r) => r.modele), nom).toEqual(messagesSql(derniereDefinitionSql(nom)))
     }
@@ -1038,6 +1047,10 @@ describe('la vente facturée (étape VF2) : les refus d’hier, et ceux qui ne v
       'frontiere', 'mouvement_non_source', 'mouvement_hors_dossier', 'mouvement_credit', 'mouvement_classe', 'mouvement_depasse',
       'mouvement_encaissement_classe',
     ])
+    // Les deux marques ne se croisent pas.
+    for (const [nom, liste] of LISTES) {
+      expect(liste.filter((r) => 'venteFacturee' in r && 'virementMixte' in r), nom).toEqual([])
+    }
   })
 
   it('chaque refus, d’hier ou neuf, sous le code de sa famille', () => {
@@ -1050,8 +1063,12 @@ describe('la vente facturée (étape VF2) : les refus d’hier, et ceux qui ne v
 
   it('le rang de chaque refus neuf est celui que l’en-tête de la migration annonce', () => {
     const rang = (liste: readonly { cle: string }[], cle: string) => liste.findIndex((r) => r.cle === cle) + 1
+    // Les plafonds nets d'une facture source, aux rangs 27 et 29 de l'étape VF2, avancent d'un cran depuis le rang 18 de
+    // l'étape VF5h2 (migration registre_virement_mixte), qui les précède.
     expect([rang(REFUS_ENREGISTREMENT, 'frontiere'), rang(REFUS_ENREGISTREMENT, 'mouvement_classe'),
-      rang(REFUS_ENREGISTREMENT, 'plafond_facture_net'), rang(REFUS_ENREGISTREMENT, 'plafond_taux_net')]).toEqual([11, 17, 27, 29])
+      rang(REFUS_ENREGISTREMENT, 'plafond_facture_net'), rang(REFUS_ENREGISTREMENT, 'plafond_taux_net')]).toEqual([11, 17, 28, 30])
+    expect([rang(REFUS_ENREGISTREMENT, 'mouvement_classe_facture_d_avant'), rang(REFUS_RETRAIT, 'mouvement_classe_facture_d_avant'),
+      rang(REFUS_CONTRE_PASSATION, 'mouvement_encaissement_classe_facture_d_avant')]).toEqual([18, 8, 21])
     expect([rang(REFUS_RETRAIT, 'frontiere'), rang(REFUS_RETRAIT, 'mouvement_classe')]).toEqual([6, 7])
     // Ceux de la contre-passation, chacun un rang plus loin depuis la migration contre_passation_banque (son rang 2).
     expect(['frontiere', 'mouvement_non_source', 'mouvement_hors_dossier', 'mouvement_credit', 'mouvement_classe',
@@ -1124,8 +1141,10 @@ describe('la contre-passation ne cite un débit qu’avec « Banque » (migratio
     const fin = apres.indexOf('  end if;\n', apres.indexOf(REFUS_BANQUE_SQL)) + '  end if;\n'.length
     expect(debut).toBeGreaterThan(0)
     expect(apres.slice(0, debut) + apres.slice(fin)).toBe(avant.replace('create function', 'create or replace function'))
-    // Et la liste du module, privée du seul refus neuf, redit celle de VF2 mot pour mot.
-    expect(REFUS_CONTRE_PASSATION.filter((r) => !('contrePassationBanque' in r)).map((r) => r.modele)).toEqual(messagesSql(avant))
+    // Et la liste du module, privée du seul refus neuf — et de celui de l'étape VF5h2, venu après —, redit celle de VF2 mot
+    // pour mot.
+    expect(REFUS_CONTRE_PASSATION.filter((r) => !('contrePassationBanque' in r) && !('virementMixte' in r)).map((r) => r.modele))
+      .toEqual(messagesSql(avant))
   })
 
   it('la migration ne rejoue ni droits ni commentaire, et ne porte rien que le détecteur retiendrait', () => {
@@ -1157,7 +1176,9 @@ describe('l’impayé d’un encaissement jamais déclaré (migration impaye_non
 
   it('hors de la condition du rang 6 et de son commentaire, la définition du correctif « Banque » au caractère près', () => {
     const avant = definitionAvantLaMigration('annuler_encaissement', 'impaye_non_declare')
-    const apres = derniereDefinitionSql('annuler_encaissement')
+    // La définition de cette migration-ci : celle qui précède la migration registre_virement_mixte (étape VF5h2), qui la
+    // reprend.
+    const apres = definitionAvantLaMigration('annuler_encaissement', 'registre_virement_mixte')
     expect(avant).toContain(RANG_6_HIER)
     expect(apres).not.toContain(RANG_6_HIER)
     expect(apres).toContain(RANG_6_NEUF)
@@ -1165,10 +1186,11 @@ describe('l’impayé d’un encaissement jamais déclaré (migration impaye_non
     const fin = apres.indexOf(RANG_6_NEUF) + RANG_6_NEUF.length
     expect(debut).toBeGreaterThan(0)
     expect(apres.slice(0, debut) + RANG_6_HIER + apres.slice(fin)).toBe(avant)
-    // Les mêmes refus, aux mêmes rangs, sous les mêmes mots et les mêmes codes : la liste du module ne change pas.
+    // Les mêmes refus, aux mêmes rangs, sous les mêmes mots et les mêmes codes : la liste du module ne change pas — hors du
+    // rang 21 que l'étape VF5h2 lui ajoute ensuite.
     expect(messagesSql(apres)).toEqual(messagesSql(avant))
     expect(codesSql(apres)).toEqual(codesSql(avant))
-    expect(REFUS_CONTRE_PASSATION.map((r) => r.modele)).toEqual(messagesSql(apres))
+    expect(REFUS_CONTRE_PASSATION.filter((r) => !('virementMixte' in r)).map((r) => r.modele)).toEqual(messagesSql(apres))
   })
 
   it('la condition : la source se lit avant elle, la déclaration juste avant ; une source illisible tombe du côté fermé', () => {
@@ -1484,9 +1506,11 @@ describe('refusContrePassation — les refus d’annuler_encaissement', () => {
     }
     expect(refusC(o)).toBeNull()
     // Sans débit cité ni facture source : les refus d'hier ; ceux de l'étape VF2, et le droit « Banque » d'un débit cité
-    // (migration contre_passation_banque), ont leur parcours dans encaissementsVenteFacturee.test.ts.
+    // (migration contre_passation_banque), ont leur parcours dans encaissementsVenteFacturee.test.ts ; celui d'un mouvement
+    // classé par ses encaissements (étape VF5h2), dans registreVirementMixte.test.ts.
     expect(vus).toEqual(REFUS_CONTRE_PASSATION
-      .filter((r) => r.cle !== 'acces' && !('venteFacturee' in r) && !('contrePassationBanque' in r)).map((r) => r.cle))
+      .filter((r) => r.cle !== 'acces' && !('venteFacturee' in r) && !('contrePassationBanque' in r) && !('virementMixte' in r))
+      .map((r) => r.cle))
   })
 
   it('mesure le motif comme la base, et tient une date qui n’en est pas une pour absente', () => {
