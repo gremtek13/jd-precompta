@@ -690,6 +690,25 @@ describe('EncaissementsFactureModal — ce que la colonne « Déclaration » dit
     expect(aDeclarer.queryByText(/n'est pas déclaré : il se retire, sans contre-passation/)).toBeNull()
   })
 
+  // Le rang 21 (étape VF5h2, VF5H-Q2) : l'encaissement déclaré d'une facture qui n'est pas source, que compte un virement
+  // mixte classé, ne se contre-passe ni sans débit ni avec — « Contre-passer » mènerait à un refus certain, après la date et
+  // le motif : son motif se dit à la place, comme celui de « Retirer ».
+  it('déclaré, sur un virement mixte classé : ni « Contre-passer » ni « Retirer », le motif de la base à leur place', async () => {
+    const DECLARE_SUR_M1 = { encaissements: [encaissement({ ligne_bancaire_id: 'm1' })], parts: [part({ montant: 500 }), part({ taux: 0, montant: 100 })] }
+    monterDeclarations({ ...DECLARE_SUR_M1, mouvements: [mouvement({ statut: 'rapprochee', encaissements_de_factures: true })] })
+    const mixte = within(await ligneDe('Le mouvement de l\'encaissement contre-passé est classé par ses encaissements : le cabinet retire d\'abord ce classement.'))
+    expect(mixte.queryByRole('button', { name: 'Contre-passer' })).toBeNull()
+    expect(mixte.queryByRole('button', { name: 'Retirer' })).toBeNull()
+    expect(mixte.queryByText(/il se contre-passe/)).toBeNull()
+    expect(mixte.queryByText('La date de la contre-passation est à renseigner.')).toBeNull()
+    // Classé autrement — rapproché de la pièce de la facture —, il se contre-passe comme hier.
+    cleanup()
+    monterDeclarations({ ...DECLARE_SUR_M1, mouvements: [mouvement({ statut: 'rapprochee', piece_id: 'p1' })] })
+    const hier = within(await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027'))
+    hier.getByRole('button', { name: 'Contre-passer' })
+    hier.getByText('Un encaissement déclaré ne se retire pas : il se contre-passe, et l\'annulation se déclare à son tour.')
+  })
+
   // Une ligne qu'aucune base ne porterait — une déclaration de e2 rangée sous un autre dossier — sert de témoin : la
   // lecture est celle du dossier, et e2 reste à déclarer.
   it('ne lit que les déclarations du dossier', async () => {

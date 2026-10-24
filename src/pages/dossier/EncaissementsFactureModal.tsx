@@ -14,8 +14,8 @@ import {
   contrePassationDe, debitObligatoire, debitsCitables, echeanceDeDeclaration, encaissementsDeclares, frontiereJugeeParLaBase,
   inclassableApresContrePassation, inclassableApresEnregistrement, obligationEncaissee, paireNonDeclaree, partsEncaissees,
   piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement, refusContrePassationAvantLaDate,
-  refusContrePassationVente, refusDeLaFacture, refusDeclaration, refusEnregistrementVente, refusRetraitVente,
-  repartitionProposee, resteAEncaisserVente,
+  refusContrePassationSansIssue, refusContrePassationVente, refusDeLaFacture, refusDeclaration, refusEnregistrementVente,
+  refusRetraitVente, repartitionProposee, resteAEncaisserVente,
   type ContexteFacture, type ContexteVente, type DeclarationLue, type EncaissementLu, type EtatObligationEncaissee, type ExemplaireLu,
   type EvenementSuperpdpLu, type FactureDuDossier, type LigneDeFacture, type MouvementPropose, type PartLue, type PieceLue,
   type ResteDuTaux, type SaisieEncaissement, type TransmissionLue, type TransmissionPourDeclaration,
@@ -1019,7 +1019,14 @@ function Contenu({
                       dossierId, e.id, lu.encaissements, lu.declarations, aujourdHui, lu.mouvements, gereLaBanque, vente,
                     )
                     : null
-                  const contrePassable = refusCp?.cle === 'date_absente'
+                  // Le rang 21 (étape VF5h2) : l'encaissement déclaré d'une facture qui n'est pas source, que compte un
+                  // virement mixte classé, ne se contre-passe ni sans débit ni avec (le rang 15) — aucune date, aucun motif
+                  // n'y changent rien : « Contre-passer » ne s'offre pas, et ce motif se dit à la place de celui du retrait,
+                  // qui renvoie à la contre-passation.
+                  const sansIssue = refusDuRetrait?.cle === 'declare'
+                    ? refusContrePassationSansIssue(dossierId, e.id, lu.encaissements, lu.mouvements, vente)
+                    : null
+                  const contrePassable = sansIssue == null && refusCp?.cle === 'date_absente'
                     && (!avecDebit || debitsCitables(dossierId, e, lu.mouvements).length > 0)
                   const contrePasse = lu.encaissements.some((a) => a.annule_id === e.id && a.retire_le == null)
                   return (
@@ -1077,11 +1084,11 @@ function Contenu({
                           </button>
                         )}
                         {refusDuRetrait != null && refusDuRetrait.cle !== 'deja_retire' && (
-                          <span className="muted" style={{ fontSize: '0.82rem' }}>{dire(refusDuRetrait.message)}</span>
+                          <span className="muted" style={{ fontSize: '0.82rem' }}>{dire((sansIssue ?? refusDuRetrait).message)}</span>
                         )}
                         {/* Jamais déclaré, l'encaissement se retire : ce qui retient sa contre-passation — pas de
                             « Banque », pas de débit libre, une contre-passation déjà vivante — ne se dit pas à côté. */}
-                        {refusCp != null && !contrePassable && !avecDebit && (
+                        {refusCp != null && !contrePassable && !avecDebit && sansIssue == null && (
                           <span className="muted" style={{ fontSize: '0.82rem' }}>{dire(refusCp.message)}</span>
                         )}
                       </td>
