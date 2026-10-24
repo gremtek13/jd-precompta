@@ -33664,3 +33664,84 @@ déployées comparées au dépôt AVANT d'écraser, le texte ENVOYÉ relu dans l
 sur la recommandation, y reste jusqu'à la réponse du cabinet. Dans la feuille de route, une ligne pour 23Q2Q2-Q3,
 trouvée en passant. Rien d'autre : aucune migration, aucune policy. Repris par la session à la suite de `f4a0648` (VF6a
 et la conception de VF6) : un seul conflit, la fin de ce fichier, où les deux entrées se suivent.
+
+### 24/10/2026 — L'ÉCART D'OUVERTURE SE DIT DANS LA CHECKLIST — LIGNE 33, O33-Q3
+
+(Écrite par l'agent `dev`, en deux commits : le code et ses tests, puis cette documentation. Modifiés :
+`src/lib/pointsDeLaChecklist.ts`, `src/lib/checklistLecture.ts`, `src/lib/ouvertureConfrontee.ts`,
+`src/lib/prealablesValidation.ts`, `src/pages/dossier/ChecklistTab.tsx`, `RevisionTab.tsx` ; neuf :
+`src/lib/soldesReportesLecture.ts` ; quatre écrans qui ne font que changer d'appel : `BilanTab.tsx`, `ClotureTab.tsx`,
+`EcrituresTab.tsx`, `StatistiquesTab.tsx` ; et leurs tests. Ni base, ni migration, ni policy, ni Edge Function ; aucun calcul
+ni droit changé ; rien de l'espace du client. Partie de `main` (`3c74cef`), sans les deux lots en attente d'un accord.)
+
+**LA DÉCISION.** O33-Q3, posée au cabinet le 23/10/2026 avec O33-Q1, PAS ENCORE TRANCHÉE : le lot est fait sur sa
+recommandation (le cabinet avance sur elle) — la Checklist dit aussi l'écart d'ouverture, en « erreur », avec un renvoi à
+l'onglet Bilan, pour qu'il se voie avant le geste de validation.
+
+**CE QUI CHANGE.**
+- Un point neuf de la Vue d'ensemble, `ouverture-en-ecart` — le MÊME identifiant que le préalable, que
+  `prealablesValidation.test.ts` exige (chaque point en erreur est repris par la validation ou écarté) —, en « erreur », sans
+  nombre devant (l'exercice entier est concerné ou ne l'est pas), dont le bouton « Voir l'ouverture dans le bilan » mène à
+  l'onglet Bilan. Rangé par la révision dans le cycle « ensemble » (le rangement y figurait déjà depuis O33-Q1) : la Révision
+  le montre aussi, par la même lecture.
+- LES MÊMES MOTS que le préalable, écrits une fois : `ouvertureEnEcart` (le message et le détail) sort de
+  `prealablesValidation.ts` pour `ouvertureConfrontee.ts`, où le préalable et le point l'importent. Aucune règle recopiée ;
+  `prealablesValidation.test.ts` pose toujours le texte entier, et `pointsDeLaChecklist.test.ts` le même.
+- L'EXERCICE JUGÉ. La Vue d'ensemble n'a pas d'exercice choisi (son `exerciceCourant` ne sert qu'aux documents attendus
+  du client ; elle ne lit pas `useAnnee()`). Le point confronte l'exercice qui suit le dernier validé (`exerciceAConfronter`) :
+  celui que la validation réclame ensuite, et le seul dont un écart la retient. L'ouverture d'un exercice déjà validé est
+  figée avec lui : un écart qu'elle garderait ne se corrigerait de nulle part, et un point en erreur à jamais n'aiderait
+  personne. Sans exercice validé il n'y a rien à confronter (le premier exercice s'ouvre sans solde ; une balance reprise s'est
+  contrôlée à son import, O33-Q2 plus tard). L'exercice n'a pas à être clos — contrairement à `prochainExerciceAValider`,
+  qui attend la fin de l'année : l'écart naît à la validation de N−1, et se voit dès lors, la validation de N venant plus tard.
+- Les entrées sont celles du préalable et de l'onglet Bilan : tout le brouillon, les catégories, la reprise, les soldes
+  reportés, les exercices validés, les pièces des deux piles et le modèle. `lireLaChecklist` lit en plus les soldes reportés,
+  par un module neuf, `lireLesSoldesReportes` : la requête s'écrivait cinq fois (Bilan, Révision, Clôture, Écritures,
+  Statistiques) — « une lecture que deux écrans comptent s'écrit une fois » —, et les cinq appellent désormais le module (un
+  changement d'appel, le même texte de requête, le même ordre). La Révision ne lit plus les soldes reportés elle-même : elle
+  reprend ceux de la Vue d'ensemble, et garde son bandeau. Les exercices validés viennent du contexte de la page du dossier,
+  qui ne monte aucun onglet sur une lecture partielle d'eux.
+- Une lecture partielle ou refusée rend le point muet ET le dit. `entreesDeLOuvertureIncompletes` (le motif de la première
+  des six lectures — brouillon, catégories, deux piles de pièces, reprise, soldes reportés — qui n'est pas entière) mute le
+  point ; les bandeaux existants le disent pour cinq d'entre elles (« Les données du dossier… », « Les à-nouveaux du
+  dossier… », dont la phrase dit maintenant aussi l'ouverture confrontée), et un bandeau neuf, À PART comme celui des ventes
+  facturées (seul ce point en dépend), pour « Les soldes reportés des exercices validés ». Jamais « aucun écart » sur ce
+  qu'on n'a pas lu en entier ; la Révision se suspend déjà sur chacune de ces lectures.
+
+**UNE RÉSERVE.** Le point peut paraître sur l'exercice en cours (N−1 validé, N pas clos) : le préalable ne paraît qu'à la
+validation de N, l'an d'après. C'est voulu — l'écart est déjà là — et le message dit vrai (« l'exercice N ne se valide pas
+sur cet écart »). Il ne se corrige pas dans l'application (la décision d'O33-Q1) : il reste à la Vue d'ensemble jusqu'à ce
+que le cabinet l'ait fait expliquer. Si le cabinet préfère qu'il n'y paraisse qu'une fois N clos, c'est un seul test à
+changer (`exerciceAConfronter` gardé par `prochainExerciceAValider`).
+
+**LES PREUVES.**
+- `pointsDeLaChecklist.test.ts` (+10) : l'écart d'un centime — le point entier (texte, détail, action, cible, sévérité, sans
+  nombre) et son rang parmi le travail à effectuer ; la concordance ; des soldes reportés absents ; sans exercice validé, ni
+  écart ni balance reprise ; seul l'exercice qui suit le dernier validé est jugé (l'ouverture d'un exercice validé, écartée,
+  ne se dit pas) ; l'exercice non clos ; la lecture partielle ; un 401 à deux fournisseurs en engagement ; N−1 ouvert par une
+  balance reprise ; le modèle (la perte d'une société reste au 129000). `ouvertureConfrontee.test.ts` (+2) :
+  `exerciceAConfronter`. `ChecklistTab.test.tsx` (+12) : l'écart en erreur, sans « 1 » devant, son détail et le bouton qui
+  mène au Bilan ; la concordance ; sans exercice validé ; les soldes d'un autre dossier ne font pas d'écart (le faux client
+  applique maintenant le filtre de `soldes_reportes`) ; CHACUNE des six lectures en partie (le point se tait, le bandeau
+  paraît) ; les soldes reportés refusés ; les soldes lus en entier, aucun bandeau. `RevisionTab.test.tsx` (+3) : le point dans
+  le cycle Ensemble et son bouton vers Bilan ; l'ouverture juste, rien ; les soldes reportés refusés, la révision se suspend
+  et le dit, sans le point.
+- Mutations : 29, toutes sur une suite verte. 27 tuées ; 2 survivent, équivalentes : les pièces vidées des entrées de la
+  confrontation et les catégories vidées. Ni les unes ni les autres ne décident d'un compte ni d'une rubrique en écart (le
+  tiers d'une pièce ne sépare que le détail par tiers, les catégories ne nomment qu'un compte, et les mots ne disent que
+  des numéros) : même le test de `ouvertureConfrontee.test.ts` sur un fournisseur partagé survit à des pièces vidées.
+  Gardées pour la fidélité aux entrées de l'onglet Bilan. Deux mutations ont d'abord survécu et ont fait écrire un test :
+  la reprise vidée (le cas « N−1 ouvert par une balance reprise ») et le dossier de la lecture des soldes (le filtre du faux
+  client). Une erreur, aussi, que le jeu d'essai du préalable a attrapée à la première suite : le pluriel de « compte »
+  perdait son nombre en sortant du fichier du préalable.
+- `lecturesSignalees.test.ts` a refusé le module de lecture à sa première forme (`return lireTout(…)` : « forme non
+  reconnue ») ; il suit maintenant la forme de ses voisins (`const lecture = await lireTout(…)`, puis l'objet rendu). Le plancher
+  de lectures reste franchi.
+- La barrière, sous le Node 22.23.3 de la CI : `npx tsc -b` 0 ; `npm run lint` 0 erreur, les 63 avertissements d'avant ; `npm run
+  test:fuseaux` : Paris, UTC, New York et Auckland, 455 fichiers et 14 011 tests verts à chacun (13 984 avant, 27 neufs, aucun
+  disparu : le compte d'avant est déduit, pas rejoué) ; `npm run build` 0.
+
+**CE QUI RESTE À LA SESSION.** Pousser la branche `o33q3-checklist`, la demande de fusion (`verifier` vert sur la tête),
+la feuille de route (la ligne 33 : O33-Q3 fait), la page des arbitrages (O33-Q3 faite sur la recommandation, à confirmer). Rien d'autre :
+aucune migration, aucune policy, aucune Edge Function. Pas de vérification visuelle du banc `outils/captures/` : `index.css` et
+la coque n'ont pas changé, et la ligne neuve est un `check-ligne` ordinaire de la liste du travail à effectuer.

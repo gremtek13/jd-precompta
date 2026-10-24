@@ -747,9 +747,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   compte par compte et tiers par tiers), un compte non nommé est « à classer » ; la colonne N−1 est le MÊME bilan
   calculé sur N−1, jamais l'ouverture relue ; l'ouverture se confronte à la clôture précédente
   (`lib/ouvertureConfrontee.ts`), et un écart retient la validation de N (O33-Q1 : `ouverture-en-ecart`, le même
-  calcul sur les entrées de l'onglet Bilan ; sans confrontation, rien ne se retient) → « LE BILAN SE LIT DANS LES
-  RUBRIQUES DU 2033-A », « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE », « UN ÉCART D'OUVERTURE RETIENT LA
-  VALIDATION ».
+  calcul sur les entrées de l'onglet Bilan ; sans confrontation, rien ne se retient), et la Checklist le dit aussi, en
+  erreur, pour l'exercice qui suit le dernier validé (O33-Q3) → « LE BILAN SE LIT DANS LES RUBRIQUES DU 2033-A »,
+  « L'OUVERTURE CONFRONTÉE AU BILAN QUI LA PRÉCÈDE », « UN ÉCART D'OUVERTURE RETIENT LA VALIDATION », « L'ÉCART
+  D'OUVERTURE SE DIT DANS LA CHECKLIST ».
 - **La révision** (ligne 41) : décisions par solde, conclusions par cycle, seuil et explications, dossier permanent —
   immuables, qui se REMPLACENT ou se RETIRENT, écrites par leurs fonctions seules sous le verrou de la validation puis
   de la révision ; l'état se DÉDUIT, jamais stocké ; une preuve est PROPOSÉE et dit ce qu'elle n'établit pas ; plusieurs
