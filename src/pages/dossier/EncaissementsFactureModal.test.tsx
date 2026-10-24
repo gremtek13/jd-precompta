@@ -1368,9 +1368,15 @@ describe('EncaissementsFactureModal — une facture source de sa vente : ce qui 
     })
     const l = await ligneDe('Le mouvement dont dépend cet encaissement est classé : le cabinet retire d\'abord ce classement.')
     expect(within(l).queryByRole('button', { name: 'Retirer' })).toBeNull()
-    // Le même encaissement d'une facture qui n'est pas source se retire, comme hier.
+    // Le même encaissement d'une facture qui n'est pas source : depuis l'étape VF5h2 (VF5H-Q2, migration
+    // registre_virement_mixte), sur un mouvement classé PAR SES ENCAISSEMENTS — un virement mixte —, le rang 8, sous ses mots,
+    // aucun bouton ; sur un mouvement classé autrement — rapproché de la pièce de la facture —, il se retire comme hier.
     cleanup()
     monter({ encaissements: [encaissement({ ligne_bancaire_id: 'm1' })], parts: [part()], mouvements: [mouvement({ statut: 'rapprochee', encaissements_de_factures: true })] })
+    const mixte = await ligneDe('Le mouvement dont dépend cet encaissement est classé par ses encaissements : le cabinet retire d\'abord ce classement.')
+    expect(within(mixte).queryByRole('button', { name: 'Retirer' })).toBeNull()
+    cleanup()
+    monter({ encaissements: [encaissement({ ligne_bancaire_id: 'm1' })], parts: [part()], mouvements: [mouvement({ statut: 'rapprochee', piece_id: 'p1' })] })
     await screen.findByRole('button', { name: 'Retirer' })
   })
 })

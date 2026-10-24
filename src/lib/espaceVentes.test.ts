@@ -144,6 +144,20 @@ describe('les réécritures du client', () => {
       REFUS_RETRAIT.find((r) => r.cle === 'annule')?.modele,
       "Cet encaissement est annulé par une contre-passation : retire d'abord celle-ci.",
     ],
+    // Les refus du registre pour la facture d'avant d'un virement mixte (étape VF5h2) : ce classement aussi, c'est son
+    // cabinet qui le retire.
+    [
+      REFUS_ENREGISTREMENT.find((r) => r.cle === 'mouvement_classe_facture_d_avant')?.modele,
+      "Ce mouvement est déjà classé par ses encaissements : l'encaissement d'une facture qui n'est pas la source de sa vente ne s'y ajoute plus — ton cabinet retire d'abord ce classement.",
+    ],
+    [
+      REFUS_RETRAIT.find((r) => r.cle === 'mouvement_classe_facture_d_avant')?.modele,
+      "Le mouvement dont dépend cet encaissement est classé par ses encaissements : ton cabinet retire d'abord ce classement.",
+    ],
+    [
+      REFUS_CONTRE_PASSATION.find((r) => r.cle === 'mouvement_encaissement_classe_facture_d_avant')?.modele,
+      "Le mouvement de l'encaissement contre-passé est classé par ses encaissements : ton cabinet retire d'abord ce classement.",
+    ],
     // Le virement mixte (étape VF5h) : l'exemplaire d'une facture, c'est son cabinet qui le désigne.
     [
       REFUS_CLASSEMENT.find((r) => r.cle === 'exemplaire_a_designer')?.modele,
