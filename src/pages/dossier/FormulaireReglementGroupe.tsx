@@ -22,7 +22,7 @@ import type { LigneBancaire, Piece, ReglementGroupe } from '../../lib/types'
 interface LignePart { cle: number; pieceId: string; montant: string }
 
 export default function FormulaireReglementGroupe({
-  ligne, pieces, paiements, partsExistantes, suspension, occupe, verbe, onRegler,
+  ligne, pieces, paiements, partsExistantes, suspension, exemplairesDesSources, occupe, verbe, onRegler,
 }: {
   ligne: LigneBancaire
   // Les pièces du dossier, à valider comprises : le choix à la main les offre toutes, comme le rapprochement
@@ -35,6 +35,11 @@ export default function FormulaireReglementGroupe({
   // Non nul quand les parts des règlements groupés n'ont pas pu être lues en entier : une pièce déjà payée
   // paraîtrait alors à régler, et le règlement est suspendu.
   suspension: string | null
+  // LES EXEMPLAIRES DES FACTURES SOURCES (étape VF6d ; lib/lotsDeLaJumelleInversee.ts) : pièce → les mots de G4. La base refuse
+  // qu'une part d'un virement groupé règle l'un d'eux — la vente se règle par sa facture et ses encaissements : il n'est pas
+  // offert, et une part qui le porte déjà (un règlement d'avant la garde) se dit refusée avant le clic. Sans valeur par
+  // défaut ; vide sur un dossier qui n'a pas basculé.
+  exemplairesDesSources: ReadonlyMap<string, string>
   occupe: boolean
   verbe: string
   onRegler: (parts: PartReglement[]) => void
@@ -78,7 +83,8 @@ export default function FormulaireReglementGroupe({
   const sens = Math.sign(ligne.montant)
   const jours = (p: Piece) => (p.date_piece ? ecartEnJours(p.date_piece, ligne.date) : Number.MAX_SAFE_INTEGER)
   const offertes = pieces
-    .filter((p) => dansCeReglement.has(p.id) || p.montant_ttc == null || reste(p) > seuilAlignement(p.montant_ttc))
+    .filter((p) => dansCeReglement.has(p.id)
+      || (!exemplairesDesSources.has(p.id) && (p.montant_ttc == null || reste(p) > seuilAlignement(p.montant_ttc))))
     .sort((a, b) =>
       (signeReglant(a) === sens ? 0 : 1) - (signeReglant(b) === sens ? 0 : 1)
       || jours(a) - jours(b)
@@ -99,7 +105,11 @@ export default function FormulaireReglementGroupe({
     return { piece_id: p.pieceId, montant: piece && signeReglant(piece) !== 0 ? partSigneeDe(piece, saisie) : saisie }
   })
   const incomplete = parts.some((p) => p.pieceId === '' || p.montant.trim() === '')
-  const refus = incomplete ? null : refusReglementGroupe(ligne, signees, pieces, paiements)
+  // La garde G4 juge chaque part à son écriture, APRÈS les refus de `regler_pieces_par_mouvement` : elle se dit après eux.
+  const refus = incomplete
+    ? null
+    : refusReglementGroupe(ligne, signees, pieces, paiements)
+      ?? parts.map((p) => exemplairesDesSources.get(p.pieceId)).find((r) => r !== undefined) ?? null
   const aRepartir = resteARepartir(ligne, signees.map((s) => ({ ...s, montant: Number.isFinite(s.montant) ? s.montant : 0 })))
 
   return (

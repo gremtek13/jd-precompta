@@ -1,6 +1,7 @@
 import { DEVISE_PIVOT, montantPlausiblePourDevise } from './devises'
 import type { LigneBancaire, Piece } from './types'
 import type { MouvementsHorsDesLots } from './mouvementsDesVentes'
+import { exemplaireDUneSource, type FacturesSources } from './facturesSources'
 
 // Appariement pièce ↔ mouvement bancaire, et tri entre ce qui est certain et ce qui demande un
 // arbitrage.
@@ -227,12 +228,19 @@ export function piecesMontantIntrouvableEnBanque(pieces: Piece[], lignes: LigneB
   })
 }
 
+// L'EXEMPLAIRE D'UNE FACTURE SOURCE N'EST LE JUSTIFICATIF D'AUCUN MOUVEMENT (étape VF6d ; lib/lotsDeLaJumelleInversee.ts) :
+// la base refuse qu'il soit rapproché, réglé par une part d'un virement groupé, écrit ou lettré (G4) — la vente se règle et
+// s'écrit par sa facture et ses encaissements. Il n'entre donc ni dans les paires, ni dans leur unicité : il ne dispute
+// rien à une autre pièce. Le crédit qui paie sa facture, quand elle attend encore son encaissement, est un candidat de la
+// vente (`candidatsDeLaVente`, lib/mouvementsDesVentes.ts), qu'aucun lot ne prend. `sources` n'a pas de valeur par défaut :
+// un appelant qui l'oublierait proposerait un rapprochement que la base refuse.
 export function analyserAppariements(
   pieces: Piece[],
   lignes: LigneBancaire[],
+  sources: FacturesSources,
   joursTolerance = JOURS_TOLERANCE,
 ): AnalyseAppariements {
-  const piecesUtiles = pieces.filter((p) => p.montant_ttc != null && p.date_piece)
+  const piecesUtiles = pieces.filter((p) => p.montant_ttc != null && p.date_piece && !exemplaireDUneSource(p, sources))
   const lignesUtiles = lignes.filter((l) => l.statut === 'non_rapprochee')
 
   const paires: Appariement[] = []
@@ -343,15 +351,20 @@ function montantEgal(a: number | null | undefined, b: number): boolean {
   return a != null && Math.abs(Math.abs(a) - Math.abs(b)) <= 0.01
 }
 
-/** Les pièces validées qui conviennent à ce mouvement — toutes, jamais la première. */
+/**
+ * Les pièces validées qui conviennent à ce mouvement — toutes, jamais la première. Jamais l'exemplaire d'une facture source
+ * (G4, étape VF6d) : `sources` n'a pas de valeur par défaut.
+ */
 export function candidatsPieces(
   ligne: LigneBancaire,
   piecesValidees: Piece[],
   dejaRapprochees: ReadonlySet<string>,
+  sources: FacturesSources,
   joursTolerance = JOURS_TOLERANCE_RAPPROCHEMENT,
 ): Piece[] {
   return piecesValidees.filter((p) =>
     !dejaRapprochees.has(p.id)
+    && !exemplaireDUneSource(p, sources)
     && p.date_piece != null
     && montantEgal(p.montant_ttc, ligne.montant)
     && Math.abs(jourDe(p.date_piece) - jourDe(ligne.date)) <= joursTolerance)
@@ -417,6 +430,10 @@ export function candidatsCotisations<C extends CotisationRapprochable>(
  * concurrent : un mouvement du relevé du même montant reste un paiement possible de la pièce — que l'encaissement qui le
  * réserve soit le bon ou non, c'est au cabinet de le dire, pas au lot de le déduire de son absence. `horsDesLots` n'a pas
  * de valeur par défaut : un appelant qui l'oublierait ne compile pas.
+ *
+ * L'EXEMPLAIRE D'UNE FACTURE SOURCE N'EST JAMAIS RETENU (étape VF6d) : la base refuse son rapprochement (G4). Il n'est pas
+ * non plus un concurrent dans l'unicité — il ne paie aucun mouvement —, comme une pièce déjà payée. `sources` n'a pas de
+ * valeur par défaut.
  */
 export function planRapprochementAutomatique(
   lignesNonRapprochees: LigneBancaire[],
@@ -424,6 +441,7 @@ export function planRapprochementAutomatique(
   cotisations: CotisationRapprochable[],
   dejaRapprochees: { pieces: ReadonlySet<string>; cotisations: ReadonlySet<string> },
   horsDesLots: MouvementsHorsDesLots,
+  sources: FacturesSources,
   joursTolerance = JOURS_TOLERANCE_RAPPROCHEMENT,
 ): PlanRapprochement {
   const parLignePieces = new Map<string, Piece[]>()
@@ -432,7 +450,7 @@ export function planRapprochementAutomatique(
   const lignesParCotisation = new Map<string, number>()
 
   for (const ligne of lignesNonRapprochees) {
-    const pieces = candidatsPieces(ligne, piecesValidees, dejaRapprochees.pieces, joursTolerance)
+    const pieces = candidatsPieces(ligne, piecesValidees, dejaRapprochees.pieces, sources, joursTolerance)
     const cotis = candidatsCotisations(ligne, cotisations, dejaRapprochees.cotisations, joursTolerance)
     parLignePieces.set(ligne.id, pieces)
     parLigneCotisations.set(ligne.id, cotis)
@@ -473,16 +491,28 @@ export interface LotDesCertains {
   // Les paires dont le mouvement porte des encaissements de factures (étape VF5a2) : ni la pièce n'est validée, ni le
   // mouvement rapproché — la garde G2 refuserait le rapprochement. La carte dit combien, et pourquoi.
   ecartesParLesVentes: Appariement[]
+  // Les paires dont la pièce ne se validerait pas (étape VF6d) : une pièce de vente d'un dossier basculé que G3 refuserait,
+  // chacune sous les mots de la base. Ni validée, ni rapprochée ; la carte dit combien, et pourquoi.
+  ecartesParLaValidation: (Appariement & { raison: string })[]
 }
 
 /**
  * Le lot « Valider et rapprocher » : les paires certaines (`analyserAppariements`), moins celles dont le mouvement est un
- * mouvement des ventes facturées (lib/mouvementsDesVentes.ts). L'unicité, elle, s'est jugée sur TOUT le relevé, ces
- * mouvements compris : une pièce qu'un mouvement réservé pourrait aussi payer n'est pas certaine. `horsDesLots` n'a pas
- * de valeur par défaut.
+ * mouvement des ventes facturées (lib/mouvementsDesVentes.ts), puis celles dont la pièce ne se validerait pas
+ * (`refusDeValidation` : pièce → raison, lib/lotsDeLaJumelleInversee.ts). L'unicité, elle, s'est jugée sur TOUT le relevé, ces
+ * mouvements et ces pièces compris : une pièce qu'un mouvement réservé pourrait aussi payer n'est pas certaine, et un
+ * mouvement qu'une pièce écartée pourrait justifier non plus. Ni `horsDesLots` ni `refusDeValidation` n'ont de valeur par
+ * défaut.
  */
-export function lotDesCertains(certains: readonly Appariement[], horsDesLots: MouvementsHorsDesLots): LotDesCertains {
-  const lot: LotDesCertains = { aEcrire: [], ecartesParLesVentes: [] }
-  for (const a of certains) (horsDesLots.has(a.ligne.id) ? lot.ecartesParLesVentes : lot.aEcrire).push(a)
+export function lotDesCertains(
+  certains: readonly Appariement[], horsDesLots: MouvementsHorsDesLots, refusDeValidation: ReadonlyMap<string, string>,
+): LotDesCertains {
+  const lot: LotDesCertains = { aEcrire: [], ecartesParLesVentes: [], ecartesParLaValidation: [] }
+  for (const a of certains) {
+    const raison = refusDeValidation.get(a.piece.id)
+    if (horsDesLots.has(a.ligne.id)) lot.ecartesParLesVentes.push(a)
+    else if (raison !== undefined) lot.ecartesParLaValidation.push({ ...a, raison })
+    else lot.aEcrire.push(a)
+  }
   return lot
 }

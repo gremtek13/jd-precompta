@@ -69,6 +69,11 @@ import {
   ventesDuReleve, type EcartDuLot, type FactureDesGestes,
 } from '../../lib/mouvementsDesVentes'
 import EncaissementsFactureModal, { type ContrePassationImposee } from './EncaissementsFactureModal'
+import { exemplaireDUneSource } from '../../lib/facturesSources'
+import {
+  AUCUN_EXEMPLAIRE_DE_SOURCE, AUCUN_REFUS_DE_VALIDATION, exemplairesDesSourcesDe, jugeDeLaValidation, refusDeValidationDesPieces, resumeDesPairesEcartees,
+} from '../../lib/lotsDeLaJumelleInversee'
+import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
 
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
@@ -97,6 +102,25 @@ function EcartDesVentes({ lot, ecart }: { lot: string; ecart: EcartDuLot<LigneBa
         {ecart.mouvements.map((e) => (
           <li key={e.ligne.id}>
             {`${formatDate(e.ligne.date)} — ${libelleExploitable(e.ligne)} — ${formatMoney(e.ligne.montant)} : ${e.raison}`}
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}
+
+// Ce que la carte « Valider et rapprocher » dit des paires dont la pièce ne se validerait pas (étape VF6d) : combien, et
+// pourquoi — les mots de la garde G3, tirés de lib/exemplairesDesFactures.ts. Repliée, comme `EcartDesVentes`.
+function EcartDeLaValidation({ resume, paires }: {
+  resume: string; paires: readonly { piece: Piece; ligne: LigneBancaire; raison: string }[]
+}) {
+  return (
+    <details style={{ marginTop: 10 }}>
+      <summary>{`Validation en lot — ${resume}`}</summary>
+      <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+        {paires.map((a) => (
+          <li key={a.piece.id}>
+            {`${formatDate(a.ligne.date)} — ${libelleExploitable(a.ligne)} — ${formatMoney(a.ligne.montant)} : ${a.raison}`}
           </li>
         ))}
       </ul>
@@ -224,6 +248,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // garde G2) ; pas encore revenues, incomplètes ou d'un autre dossier, l'onglet ne le sait pas : la fiche d'un
   // mouvement n'offre aucun geste, et les lots sont retenus. Nulle, et jamais lue, pour un dossier qui n'a pas basculé.
   const [lectureVentes, setLectureVentes] = useState<LectureDesVentesEtDeclarations | null>(null)
+  // LE PONT D'UN DOSSIER QUI A BASCULÉ (étape VF6d ; lib/ventesJumellesLecture.ts) : ses factures émises validées et leurs
+  // transmissions, lues dans la même relecture, et remises « pas encore revenues » à chacune. De quoi dire avant le clic ce que
+  // la garde G3 refuserait à « Valider et rapprocher » : la validation d'une pièce de vente que le pont rattache à une
+  // facture qu'elle ne désigne pas, ou qui n'est ni désignée ni déclarée. Nul, et jamais lu, pour un dossier qui n'a pas basculé.
+  const [pontDuReleve, setPontDuReleve] = useState<LectureVentesEmises | null>(null)
   // La fenêtre des encaissements ouverte depuis la fiche d'un mouvement : la facture choisie, telle que la lecture des
   // ventes l'a rendue — gardée ici, car la relecture qui suit chaque geste remet cette lecture à « pas encore revenue »
   // —, et ce qu'elle impose : le crédit d'un encaissement (étape VF5c), ou la contre-passation d'un encaissement
@@ -237,6 +266,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     setEnvoisDuClient(ENVOIS_EN_COURS)
     setAccesDuReleve(ACCES_DU_RELEVE_EN_COURS)
     setLectureVentes(null)
+    setPontDuReleve(null)
     // Lue par tranches, triée sur un ordre TOTAL (`date` n'est pas unique) : PostgREST plafonne le
     // nombre de lignes rendues sans le signaler, et c'est la plus grosse table du projet — le total
     // non rapproché, le contrôle de solde et tout le rapprochement porteraient alors sur une partie
@@ -250,6 +280,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     setLignesIncompletes(lecture.complete ? null : lecture.motif)
     // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
     const lectureDesVentes = ventesParLesFactures ? await lireLesVentesDuReleve(dossierId) : null
+    const lectureDuPont = ventesParLesFactures ? await lireVentesEmises(dossierId) : null
 
     // Les pièces encore à valider sont chargées elles aussi : c'est justement sur elles que porte
     // l'appariement certain (voir lib/appariementBanque.ts), qui sert à les valider plutôt qu'à
@@ -361,6 +392,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     setEnvoisDuClient(envois)
     setAccesDuReleve(accesLus)
     setLectureVentes(lectureDesVentes)
+    setPontDuReleve(lectureDuPont)
     setLoading(false)
   }
 
@@ -407,6 +439,36 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     ? partsEncaissees(dossierId, lectureVentes.sources.encaissements, lectureVentes.sources, lectureVentes.sources.exemplaires)
     : []), [lectureVentes, dossierId])
   const paiements = useMemo(() => paiementsDesPieces(lignes, reglements, encaissees), [lignes, reglements, encaissees])
+  // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE JUSTIFIE AUCUN MOUVEMENT (étape VF6d ; lib/lotsDeLaJumelleInversee.ts) : la base refuse
+  // qu'il soit rapproché ou réglé par une part d'un virement groupé (G4). Les factures sont celles des ventes facturées lues en
+  // entier de CE dossier ; aucune pour un dossier qui n'a pas basculé — la base y refuse toute facture source —, ni tant
+  // qu'elles ne sont pas lues : l'onglet retient alors tout geste et tout lot (`retenueDuReleve`).
+  const facturesDesVentes = lectureVentes?.etat === 'lue' && lectureVentes.dossierId === dossierId ? lectureVentes.sources.factures : null
+  const exemplairesDesSources = useMemo(
+    () => (facturesDesVentes ? exemplairesDesSourcesDe(pieces, facturesDesVentes) : AUCUN_EXEMPLAIRE_DE_SOURCE),
+    [facturesDesVentes, pieces],
+  )
+  const facturesSources = exemplairesDesSources.sources
+  // CE QUE G3 REFUSERAIT À « VALIDER ET RAPPROCHER » (étape VF6d) : dans un dossier basculé, la validation d'une pièce de vente
+  // que le pont rattache à une facture qu'elle ne désigne pas, dont les preuves se contredisent, ou qui n'est ni désignée ni
+  // déclarée. Jugé sur les factures des ventes et le pont lus en entier ; sinon, la pièce de vente ne part pas, et la carte
+  // dit quelle lecture manque.
+  const jugeDeValidation = useMemo(() => jugeDeLaValidation(
+    ventesParLesFactures,
+    lectureVentes === null ? null
+      : facturesDesVentes !== null ? { lignes: [...facturesDesVentes], complete: true, motif: null }
+        : { lignes: [], complete: false, motif: lectureVentes.etat === 'incomplete' ? lectureVentes.motif : 'une lecture d’un autre dossier' },
+    pontDuReleve,
+    pieces,
+  ), [ventesParLesFactures, lectureVentes, facturesDesVentes, pontDuReleve, pieces])
+  // Sur des ventes facturées qui ne sont pas lues en entier, le lot est retenu (`retenueDuReleve`) et son plan d'hier s'affiche,
+  // suspendu, sans rien en écarter — comme pour les mouvements réservés (étape VF5a2).
+  const refusDeValidation = useMemo(
+    () => (ventesRetenues !== null
+      ? AUCUN_REFUS_DE_VALIDATION
+      : refusDeValidationDesPieces(pieces.filter((p) => p.statut !== 'validee'), jugeDeValidation)),
+    [ventesRetenues, pieces, jugeDeValidation],
+  )
   const piecesRapprochees = useMemo(() => piecesPayees(paiements), [paiements])
   // UNE PIÈCE QU'UN LETTRAGE FAIT À LA MAIN SOLDE N'ATTEND PLUS DE MOUVEMENT BANCAIRE : en engagement, une facture lettrée
   // avec son avoir est réglée sans paiement. Comptée « sans mouvement », et surtout parmi les montants introuvables en
@@ -417,7 +479,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     () => piecesLettreesALaMain(etatsDesLettragesManuels(lettragesManuels.ecritures, pieces, lettragesManuels.lettrages, modele.mode)),
     [lettragesManuels, pieces, modele.mode],
   )
-  const piecesSansMouvement = piecesValidees.filter((p) => !piecesRapprochees.has(p.id) && !lettreesALaMain.has(p.id))
+  // L'exemplaire d'une facture source n'attend aucun mouvement : sa vente se règle par les encaissements de sa facture.
+  const piecesSansMouvement = piecesValidees.filter((p) =>
+    !piecesRapprochees.has(p.id) && !lettreesALaMain.has(p.id) && !exemplaireDUneSource(p, facturesSources))
   // EN TRÉSORERIE, UNE PIÈCE QUI PORTE ELLE-MÊME UNE ÉCRITURE VALIDÉE NE SE RAPPROCHE PLUS. Son écriture s'équilibre déjà
   // sans paiement — une note de frais, face au compte de l'exploitant —, et la rapprocher la redaterait au paiement, ce
   // que la base refuse, pendant que la 2035 de l'exercice suivant la compterait une seconde fois. Le remboursement d'une
@@ -488,7 +552,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // pièces triées par score, et propose de voir le justificatif avant de confirmer.
   function suggestion(ligne: LigneBancaire): Piece | null {
     if (ligne.statut !== 'non_rapprochee') return null
-    return candidatsPieces(ligne, piecesValidees, piecesHorsRapprochement)[0] ?? null
+    return candidatsPieces(ligne, piecesValidees, piecesHorsRapprochement, facturesSources)[0] ?? null
   }
 
   function suggestionCotisation(ligne: LigneBancaire): CotisationDeclaree | null {
@@ -716,6 +780,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     // Le second paiement d'une pièce déjà payée en partie : ce que la fiche refuse avant le clic se refuse ici aussi —
     // le mauvais sens, ou plus que ce qu'il reste à régler (`refusSecondPaiement`). Une seconde ceinture : aucun clic ne
     // l'atteint aujourd'hui, la fiche grisant « Associer » sur ce refus et rien d'autre n'offrant une pièce déjà payée.
+    // L'exemplaire d'une facture source ne se rapproche pas (G4, étape VF6d) : la fiche ne l'offre pas, ni au choix ni dans une
+    // proposition du client — une seconde ceinture, que les mots de la garde disent.
+    const exemplaire = exemplairesDesSources.raisons.get(pieceId)
+    if (exemplaire !== undefined) { window.alert(exemplaire); return false }
     const dejaPayee = paiements.get(pieceId) ?? []
     if (ligne && pieceAvant && dejaPayee.length > 0) {
       const refus = refusSecondPaiement(ligne, pieceAvant, dejaPayee)
@@ -993,6 +1061,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       return false
     }
     const refus = refusReglementGroupe(ligne, parts, pieces, paiements)
+      ?? parts.map((part) => exemplairesDesSources.raisons.get(part.piece_id)).find((r) => r !== undefined)
     if (refus) { window.alert(refus); return false }
     const avant = reglements.flatMap((r) => (r.ligne_bancaire_id === ligne.id && r.piece_id ? [r.piece_id] : []))
     const { error } = await supabase.rpc('regler_pieces_par_mouvement', {
@@ -1203,8 +1272,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const planAuto = useMemo(
     () => planRapprochementAutomatique(nonRapprochees, piecesValidees, cotisations, {
       pieces: piecesHorsRapprochement, cotisations: cotisationsRapprochees,
-    }, horsDesLotsEtCandidats),
-    [nonRapprochees, piecesValidees, cotisations, piecesHorsRapprochement, cotisationsRapprochees, horsDesLotsEtCandidats],
+    }, horsDesLotsEtCandidats, facturesSources),
+    [nonRapprochees, piecesValidees, cotisations, piecesHorsRapprochement, cotisationsRapprochees, horsDesLotsEtCandidats, facturesSources],
   )
   const suggestionsAutomatiques = planAuto.retenus
   const ecartDuLotAutomatique = ecartDuLot(planAuto.ecartesParLesVentes, horsDesLotsEtCandidats)
@@ -1217,13 +1286,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // — ou déjà rapprochée — que le lot « Valider et rapprocher » rattacherait à un second mouvement du même
   // montant serait payée deux fois.
   const { certains: appariementsCertains, aArbitrer: appariementsDouteux } = useMemo(
-    () => analyserAppariements(pieces.filter((p) => !piecesHorsRapprochement.has(p.id)), lignes),
-    [pieces, lignes, piecesHorsRapprochement],
+    () => analyserAppariements(pieces.filter((p) => !piecesHorsRapprochement.has(p.id)), lignes, facturesSources),
+    [pieces, lignes, piecesHorsRapprochement, facturesSources],
   )
-  // Sans les paires dont le mouvement porte des encaissements de factures (étape VF5a2), que la carte dit à part.
-  const lotCertain = lotDesCertains(appariementsCertains.filter((a) => a.piece.statut !== 'validee'), horsDesLotsEtCandidats)
+  // Sans les paires dont le mouvement porte des encaissements de factures (étape VF5a2), ni celles dont la pièce ne se
+  // validerait pas (G3, étape VF6d), que la carte dit à part.
+  const lotCertain = lotDesCertains(appariementsCertains.filter((a) => a.piece.statut !== 'validee'), horsDesLotsEtCandidats, refusDeValidation)
   const certainsAValider = lotCertain.aEcrire
   const ecartDuLotCertain = ecartDuLot(lotCertain.ecartesParLesVentes.map((a) => a.ligne), horsDesLotsEtCandidats)
+  const resumeDeLaValidation = resumeDesPairesEcartees(lotCertain.ecartesParLaValidation.length)
 
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE. Les deux lots ci-dessous n'écrivent que ce
   // qu'aucun doute ne sépare, et « aucun doute » veut dire UN SEUL candidat de part et d'autre. Or une
@@ -1263,17 +1334,18 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const planRegles = useMemo(() => {
     const justificatifs = {
       pieces, piecesRapprochees: piecesHorsRapprochement, restesARegler, cotisations, cotisationsRapprochees, ventes: candidats,
+      facturesSources,
     }
     return planAffectationParRegles(lignes, reglesAffectation, categories, assujettiTva, (l) => {
       const justificatif = justificatifPossible(l, justificatifs)
       if (justificatif) return justificatif
-      if (candidatsPieces(l, notesFigees, piecesRapprochees).length > 0) return REMBOURSEMENT_D_UNE_NOTE_FIGEE
+      if (candidatsPieces(l, notesFigees, piecesRapprochees, facturesSources).length > 0) return REMBOURSEMENT_D_UNE_NOTE_FIGEE
       const emprunt = empruntPlausible(l, emprunts, lignes)
       if (emprunt) return raisonEmpruntPlausible(emprunt)
       // Un prélèvement qui paie exactement une déclaration de TVA : une règle au nom du Trésor le rangerait en charge.
       return raisonPaiementTvaPlausible(l, suivisTva)
     }, horsDesLots)
-  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva, horsDesLots, candidats])
+  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva, horsDesLots, candidats, facturesSources])
   const ecartDuLotDesRegles = ecartDuLot(planRegles.ecartesParLesVentes, horsDesLots)
   const idsProposesParRegle = useMemo(() => new Set(planRegles.propositions.map((p) => p.ligne.id)), [planRegles])
   const idsEmpruntPlausible = useMemo(
@@ -1749,7 +1821,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         )}
       </div>
 
-      {(certainsAValider.length > 0 || ecartDuLotCertain) && (
+      {(certainsAValider.length > 0 || ecartDuLotCertain || resumeDeLaValidation) && (
         <div className="card" style={{ marginBottom: 14, borderLeft: '3px solid var(--color-primary)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
@@ -1824,6 +1896,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
           </div>
           )}
           {ecartDuLotCertain && <EcartDesVentes lot="Validation en lot" ecart={ecartDuLotCertain} />}
+          {resumeDeLaValidation && <EcartDeLaValidation resume={resumeDeLaValidation} paires={lotCertain.ecartesParLaValidation} />}
         </div>
       )}
 
@@ -2237,6 +2310,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             lignes={lignes}
             horsDesLots={horsDesLots}
             candidatsDeLaVente={candidats}
+            exemplairesDesSources={exemplairesDesSources}
             assujettiTva={assujettiTva}
             compteDirigeant={compteDuDirigeant(modele)}
             modeComptable={modele.mode}

@@ -41,6 +41,8 @@ import FormulaireReglementGroupe from './FormulaireReglementGroupe'
 import FormulaireVentilation from './FormulaireVentilation'
 import { FilDuMouvement, PropositionsDuClient } from './EnvoisDuClient'
 import type { AccesDuReleve, ContexteDeLaProposition, EnvoisDuClient } from '../../lib/banqueCabinet'
+import { exemplaireDUneSource } from '../../lib/facturesSources'
+import type { ExemplairesDesSources } from '../../lib/lotsDeLaJumelleInversee'
 import {
   carteDeVente, PASTILLE_CLASSE, pastilleDeVente, TITRE_CLASSER, TITRE_CLASSER_DEBIT, TITRE_CONTRE_PASSER, TITRE_ENREGISTRER,
   TITRE_PROPOSES, TITRE_RATTACHER, TITRE_RATTACHER_CONTRE_PASSATION, TITRE_RETIRER,
@@ -187,6 +189,12 @@ interface FicheMouvementProps {
   // facture ou un encaissement attend, un débit qu'une contre-passation attend, a peut-être son justificatif — la fiche le
   // dit avant une affectation (`justificatifPossible`). `AUCUN_CANDIDAT` sur un dossier qui n'a pas basculé.
   candidatsDeLaVente: CandidatsDeLaVente
+  // LES EXEMPLAIRES DES FACTURES SOURCES (étape VF6d ; lib/lotsDeLaJumelleInversee.ts, calculés par l'onglet) : la base refuse
+  // qu'un tel exemplaire soit rapproché ou réglé par une part d'un virement groupé (G4). Il n'est ni proposé, ni offert au
+  // choix à la main, ni au règlement groupé, ni pris pour le justificatif d'un mouvement ; une pièce que le client a
+  // proposée et qui en est un se dit sous les mots de la garde, sans « Associer ». `AUCUN_EXEMPLAIRE_DE_SOURCE` sur un
+  // dossier qui n'a pas basculé.
+  exemplairesDesSources: ExemplairesDesSources
   // Sur un dossier assujetti, une recette sans facture porte son taux de TVA, que le relevé ne dit pas :
   // la fiche le demande (voir lib/tvaDuReleve.ts).
   assujettiTva: boolean
@@ -605,7 +613,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
 
 export default function FicheMouvement({
   ligne, plan, figeePar, venteDuMouvement, gestesDeVente, onClasserParEncaissements, onRetirerClassementParEncaissements,
-  onRattacherEncaissement, onEnregistrerEncaissement, gestesDuDebit, onContrePasserEncaissement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, horsDesLots, candidatsDeLaVente, assujettiTva, compteDirigeant, modeComptable,
+  onRattacherEncaissement, onEnregistrerEncaissement, gestesDuDebit, onContrePasserEncaissement, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, horsDesLots, candidatsDeLaVente, exemplairesDesSources, assujettiTva, compteDirigeant, modeComptable,
   piecesRapprochees, piecesFigees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
@@ -802,16 +810,17 @@ export default function FicheMouvement({
   const justificatifAttendu = aTraiter
     ? justificatifPossible(ligne, {
       pieces, piecesRapprochees: horsRapprochement, restesARegler, cotisations, cotisationsRapprochees, ventes: candidatsDeLaVente,
+      facturesSources: exemplairesDesSources.sources,
     })
     : null
 
   // Même précédence que le rapprochement automatique : une pièce avant une échéance, une échéance
   // avant une récurrence. Ce n'est pas un arbitrage entre égaux mais une règle de l'écran.
-  const piecesCandidates = aTraiter ? candidatsPieces(ligne, piecesValidees, horsRapprochement) : []
+  const piecesCandidates = aTraiter ? candidatsPieces(ligne, piecesValidees, horsRapprochement, exemplairesDesSources.sources) : []
   // La pièce figée qu'on aurait proposée : elle ne se rapproche plus, et la fiche le dit au lieu de la taire — un mouvement
   // du même montant qu'une note de frais d'un exercice validé en est souvent le remboursement.
   const figeeDeMemeMontant = aTraiter && piecesFigees.size > 0
-    ? candidatsPieces(ligne, piecesValidees.filter((p) => piecesFigees.has(p.id)), piecesRapprochees)[0] ?? null
+    ? candidatsPieces(ligne, piecesValidees.filter((p) => piecesFigees.has(p.id)), piecesRapprochees, exemplairesDesSources.sources)[0] ?? null
     : null
   const echeancesCandidates = aTraiter && piecesCandidates.length === 0
     ? candidatsCotisations(ligne, cotisations, cotisationsRapprochees)
@@ -849,7 +858,7 @@ export default function FicheMouvement({
     : new Set([...horsRapprochement].filter((id) => !restesARegler.has(id) || piecesFigees.has(id)))
   const montantAttendu = (p: Piece) => restesARegler.get(p.id) ?? p.montant_ttc
   const piecesAuChoix = aTraiter
-    ? pieces.filter((p) => !horsChoix.has(p.id))
+    ? pieces.filter((p) => !horsChoix.has(p.id) && !exemplaireDUneSource(p, exemplairesDesSources.sources))
         .sort((a, b) => scoreCorrespondance(montantAttendu(a), a.date_piece, ligne) - scoreCorrespondance(montantAttendu(b), b.date_piece, ligne))
     : []
   const pieceChoisieDejaPayee = pieceChoisie && restesARegler.has(pieceChoisie)
@@ -895,6 +904,7 @@ export default function FicheMouvement({
       piecesDuReglement: reglementsIncomplets ? null : reglements.map((r) => r.piece_id).filter((id): id is string => id !== null),
       piecesFigees, horsRapprochement, restesARegler, paiementsDeLaPiece,
       refusSecondPaiement: piece && restesARegler.has(pieceId) ? refusSecondPaiement(ligne, piece, paiementsDeLaPiece) : null,
+      exemplairesDesSources: exemplairesDesSources.raisons,
     }
   }
 
@@ -1592,6 +1602,7 @@ export default function FicheMouvement({
             {reglementDeplie ? (
               <FormulaireReglementGroupe
                 ligne={ligne} pieces={piecesReglables} paiements={paiements} partsExistantes={[]} suspension={reglementsIncomplets}
+                exemplairesDesSources={exemplairesDesSources.raisons}
                 occupe={occupe} verbe="Régler ces pièces" onRegler={onReglerEnGroupe}
               />
             ) : (
@@ -1832,6 +1843,7 @@ export default function FicheMouvement({
             {!reglementsIncomplets && !fige && (modificationReglementDepliee ? (
               <FormulaireReglementGroupe
                 ligne={ligne} pieces={piecesReglables} paiements={paiements} partsExistantes={reglements} suspension={reglementsIncomplets}
+                exemplairesDesSources={exemplairesDesSources.raisons}
                 occupe={occupe} verbe="Enregistrer le règlement" onRegler={onReglerEnGroupe}
               />
             ) : (

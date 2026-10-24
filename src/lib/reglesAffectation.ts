@@ -7,6 +7,7 @@ import type { PlanComptable } from './planComptable'
 import { tauxApplicable, tauxRequis } from './tvaDuReleve'
 import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire, SensMouvementBancaire } from './types'
 import { justificatifDeLaVente, type CandidatsDeLaVente, type MouvementsHorsDesLots } from './mouvementsDesVentes'
+import { exemplaireDUneSource, type FacturesSources } from './facturesSources'
 
 // LES RÈGLES D'AFFECTATION APPRISES PAR LIBELLÉ (ligne 26.6 de la feuille de route, étape a).
 //
@@ -200,6 +201,12 @@ export interface JustificatifsDuDossier {
   // que l'encaissement d'une facture compte déjà. `AUCUN_CANDIDAT` sur un dossier qui n'a pas basculé, et sur des ventes
   // facturées qui ne sont pas lues en entier — les lots sont alors retenus (VF5a1).
   ventes: CandidatsDeLaVente
+  // LES FACTURES SOURCES (étape VF6d ; lib/facturesSources.ts) : l'exemplaire de l'une d'elles n'est le justificatif d'aucun
+  // mouvement — la base refuse qu'il soit rapproché (G4) — ni ne compte la vente (VF3b) : ni son montant ni son tiers ne
+  // disent qu'un mouvement « attend un rapprochement ». Le crédit qui paie sa facture, quand elle attend encore son
+  // encaissement, se dit par `ventes`, la phrase de la facture. Sans valeur par défaut ; vide sur un dossier qui n'a pas
+  // basculé.
+  facturesSources: FacturesSources
 }
 
 // UN MOUVEMENT QUI A PEUT-ÊTRE SON JUSTIFICATIF NE S'AFFECTE PAS EN LOT. Affecté, il compterait dans la
@@ -214,7 +221,8 @@ export interface JustificatifsDuDossier {
 // lue échappent au montant et pas au nom. Le troisième est large exprès : le mouvement reste à traiter,
 // l'opérateur l'ouvre, et un faux négatif coûte un clic.
 export function justificatifPossible(ligne: LigneBancaire, justificatifs: JustificatifsDuDossier): string | null {
-  if (candidatsPieces(ligne, justificatifs.pieces, justificatifs.piecesRapprochees).length > 0) {
+  const sources = justificatifs.facturesSources
+  if (candidatsPieces(ligne, justificatifs.pieces, justificatifs.piecesRapprochees, sources).length > 0) {
     return 'Une pièce du même montant attend un rapprochement.'
   }
   if (candidatsCotisations(ligne, justificatifs.cotisations, justificatifs.cotisationsRapprochees).length > 0) {
@@ -222,7 +230,8 @@ export function justificatifPossible(ligne: LigneBancaire, justificatifs: Justif
   }
   const libelle = libelleExploitable(ligne)
   if (justificatifs.pieces.some((p) =>
-    !justificatifs.piecesRapprochees.has(p.id) && sensCoherent(p, ligne) && tiersConfirmeParBanque(p.tiers, libelle))) {
+    !justificatifs.piecesRapprochees.has(p.id) && !exemplaireDUneSource(p, sources) && sensCoherent(p, ligne)
+    && tiersConfirmeParBanque(p.tiers, libelle))) {
     return 'Un justificatif de ce tiers n’est rapproché d’aucun mouvement.'
   }
   // UNE PIÈCE PAYÉE EN PARTIE ATTEND SON SOLDE : rapprochée de son acompte, elle échappait aux deux questions
@@ -230,7 +239,7 @@ export function justificatifPossible(ligne: LigneBancaire, justificatifs: Justif
   // entière, son reste à la date de la facture. Le même tiers, ou le montant du reste, suffit à la soupçonner.
   if (justificatifs.pieces.some((p) => {
     const reste = justificatifs.restesARegler.get(p.id)
-    return reste != null && sensCoherent(p, ligne)
+    return reste != null && !exemplaireDUneSource(p, sources) && sensCoherent(p, ligne)
       && (tiersConfirmeParBanque(p.tiers, libelle) || Math.round(Math.abs(ligne.montant) * 100) === Math.round(reste * 100))
   })) {
     return 'Une pièce payée en partie attend son solde : ce mouvement le règle peut-être.'

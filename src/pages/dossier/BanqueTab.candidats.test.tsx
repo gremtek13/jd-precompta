@@ -154,8 +154,10 @@ function poser() {
     lignes_bancaires: [CAND_AUTO, CAND_CERT, CAND_REGLE, LIBRE_AUTO, LIBRE_CERT, LIBRE_REGLE] as unknown as Record<string, unknown>[],
     pieces: [
       piece({ id: 'p-auto' }),
-      // L'exemplaire de F2026-0021, validé : du même montant que le virement, à un jour près.
-      piece({ id: 'p-ex', type_piece: 'vente', tiers: 'Exemplaire F2026-0021', montant_ttc: 600, date_piece: '2026-06-02', facture_id: 'f1' }),
+      // Une pièce de vente validée avant la bascule, que rien ne désigne : du même montant que le virement, à un jour près.
+      // Jusqu'à l'étape VF6d, c'était l'exemplaire de F2026-0021 — la pièce que le lot aurait rapprochée de ce crédit. Il
+      // n'est plus le candidat de rien (G4 ; BanqueTab.exemplaires.test.tsx) : une pièce qui l'est encore tient sa place.
+      piece({ id: 'p-ex', type_piece: 'vente', tiers: 'Vente d’avant la bascule', montant_ttc: 600, date_piece: '2026-06-02' }),
       piece({ id: 'p-cert', tiers: 'Imprimerie fictive', montant_ttc: 75, date_piece: '2026-06-05', statut: 'a_valider' }),
       piece({ id: 'p-cand-cert', type_piece: 'vente', tiers: 'Librairie Rocher', montant_ttc: 600, date_piece: '2026-07-14', statut: 'a_valider' }),
     ] as unknown as Record<string, unknown>[],
@@ -325,7 +327,7 @@ describe('les lots, sur un dossier basculé : aucun ne prend un crédit qu’une
     await waitFor(() => expect(affectes()).toEqual(['m-libre-regle']))
   })
 
-  it('le rapprochement automatique : l’exemplaire ne se rapproche pas du crédit qu’attend sa facture, et la carte le dit', async () => {
+  it('le rapprochement automatique : la pièce du même montant ne se rapproche pas du crédit qu’attend une facture, et la carte le dit', async () => {
     rendre()
     const bouton = await lot('Tout rapprocher automatiquement (1)')
     const ecart = ecartDe('Rapprochement automatique')

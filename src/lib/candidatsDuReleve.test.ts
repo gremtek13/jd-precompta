@@ -10,6 +10,8 @@ import {
 } from './mouvementsDesVentes'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { justificatifPossible, planAffectationParRegles } from './reglesAffectation'
+import { AUCUNE_FACTURE_SOURCE } from './facturesSources'
+import { AUCUN_REFUS_DE_VALIDATION } from './lotsDeLaJumelleInversee'
 import { ignoresParLaRegle } from './reglesIgnorees'
 import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire } from './types'
 
@@ -331,7 +333,7 @@ describe('candidatsDuMouvement : un DÉBIT libre — la contre-passation seule',
 describe('justificatifPossible apprend les candidats de la vente', () => {
   const aucun = {
     pieces: [], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), cotisations: [],
-    cotisationsRapprochees: new Set<string>(),
+    cotisationsRapprochees: new Set<string>(), facturesSources: AUCUNE_FACTURE_SOURCE,
   }
 
   it('une facture, un encaissement : les mots de la conception ; sans candidat, rien', () => {
@@ -351,6 +353,16 @@ describe('justificatifPossible apprend les candidats de la vente', () => {
     const m = mouvement({ id: 'm', montant: 600 })
     expect(justificatifPossible(m, { ...aucun, pieces: [piece({ id: 'p1' })], ventes: candidatsDe(sources([m])) }))
       .toBe('Une pièce du même montant attend un rapprochement.')
+  })
+
+  // L'EXEMPLAIRE D'UNE FACTURE SOURCE (étape VF6d) n'est le justificatif d'aucun mouvement (G4) : du même montant, il ne se dit
+  // plus — c'est sa facture, qui attend son encaissement, que le lot des règles et la fiche disent.
+  it('l’exemplaire d’une facture source du même montant ne se dit pas : sa facture, si', () => {
+    const m = mouvement({ id: 'm', montant: 600 })
+    const exemplaire = piece({ id: 'p-ex', facture_id: 'f1' })
+    const avec = { ...aucun, pieces: [exemplaire], ventes: candidatsDe(sources([m])), facturesSources: new Set(['f1', 'f2', 'f3']) }
+    expect(justificatifPossible(m, avec)).toBe(JUSTIFICATIF_FACTURE)
+    expect(justificatifPossible(m, { ...avec, facturesSources: AUCUNE_FACTURE_SOURCE })).toBe('Une pièce du même montant attend un rapprochement.')
   })
 })
 
@@ -387,7 +399,7 @@ describe('les lots sur un crédit qu’une facture source pourrait régler', () 
     // « vir » ne passe pas `refusMotif`, mais le plan ne juge pas le motif : il désigne ici tout le relevé.
     const justificatifs = {
       pieces: [], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), cotisations: [],
-      cotisationsRapprochees: new Set<string>(), ventes: CANDIDATS,
+      cotisationsRapprochees: new Set<string>(), ventes: CANDIDATS, facturesSources: AUCUNE_FACTURE_SOURCE,
     }
     const plan = planAffectationParRegles(RELEVE, [regle], [RECETTES], false, (l) => justificatifPossible(l, justificatifs), HORS)
     expect(plan.propositions.map((p) => p.ligne.id)).toEqual(['m-libre'])
@@ -402,15 +414,15 @@ describe('les lots sur un crédit qu’une facture source pourrait régler', () 
   it('le rapprochement automatique ne rapproche pas le candidat de l’exemplaire de sa facture ; il le dit', () => {
     const vide = { pieces: new Set<string>(), cotisations: new Set<string>() }
     const exemplaire = piece({ id: 'p-ex', montant_ttc: 598.5, facture_id: 'f1' })
-    const p = planRapprochementAutomatique([CANDIDAT, LIBRE], [exemplaire], [], vide, AVEC)
+    const p = planRapprochementAutomatique([CANDIDAT, LIBRE], [exemplaire], [], vide, AVEC, AUCUNE_FACTURE_SOURCE)
     expect(p).toEqual({ retenus: [], ecartesPourAmbiguite: 0, ecartesParLesVentes: [CANDIDAT] })
-    expect(planRapprochementAutomatique([CANDIDAT, LIBRE], [exemplaire], [], vide, HORS).retenus)
+    expect(planRapprochementAutomatique([CANDIDAT, LIBRE], [exemplaire], [], vide, HORS, AUCUNE_FACTURE_SOURCE).retenus)
       .toEqual([{ ligneId: 'm-cand', pieceId: 'p-ex' }])
   })
 
   it('« Valider et rapprocher » ne valide ni ne rapproche la pièce du candidat ; la règle d’ignorance ne l’ignore pas', () => {
     const paire = (l: LigneBancaire, id: string): Appariement => ({ piece: piece({ id, statut: 'a_valider' }), ligne: l, ecartJours: 2 })
-    const lot = lotDesCertains([paire(CANDIDAT, 'p1'), paire(LIBRE, 'p2')], AVEC)
+    const lot = lotDesCertains([paire(CANDIDAT, 'p1'), paire(LIBRE, 'p2')], AVEC, AUCUN_REFUS_DE_VALIDATION)
     expect(lot.aEcrire.map((a) => a.piece.id)).toEqual(['p2'])
     expect(lot.ecartesParLesVentes.map((a) => a.ligne.id)).toEqual(['m-cand'])
     expect(ignoresParLaRegle(RELEVE, 'vir', AVEC)).toEqual({ aIgnorer: [LIBRE], ecartesParLesVentes: [RESERVE, CANDIDAT] })

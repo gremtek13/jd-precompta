@@ -135,8 +135,9 @@ type CategorieAutomatique = 'mise à jour' | 'suppression' | 'session'
 const CATEGORIES_AUTOMATIQUES: Record<CategorieAutomatique, { nombre: number; raison: string }> = {
   'mise à jour': {
     // 23 depuis que `SuperPdpModal.enregistrer` porte son verrou (espace client, étape P4b : le client y enregistre aussi) ; 22
-    // depuis que `InformationsTab.enregistrerIdentite` porte le sien (étape A5b2 : six colonnes d'un seul tenant).
-    nombre: 22,
+    // depuis que `InformationsTab.enregistrerIdentite` porte le sien (étape A5b2 : six colonnes d'un seul tenant) ; 21 depuis
+    // que `PiecesTab.validateSelection` porte le sien (étape VF6d : elle écarte d'abord ce que la garde G3 refuserait).
+    nombre: 21,
     raison: 'Ne fait que des `update` par clé et des `upsert` à clé déclarée (`onConflict`), ou une porte déclarée '
       + 'comme telle : deux envois du même rendu écrivent la même valeur, calculée dans la même fermeture.',
   },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  accesDuReleveDeLaLecture, associable, auteurDuMessage, ceQueVoitLeClient, envoisDeLaLecture, envoisDuMouvement,
+  accesDuReleveDeLaLecture, associable, auteurDuMessage, ecartable, ceQueVoitLeClient, envoisDeLaLecture, envoisDuMouvement,
   etatDeLaProposition, etatDuFiltreProposes, gardeParLeFiltre, lecteursDeLaQuestion, mouvementsProposesParLeClient,
   phraseDeLaProposition, phraseDeLEtat, phraseDuRetrait, signauxDeLaProposition, silenceDesEnvois, titreDesPropositions,
   type ContexteDeLaProposition, type EnvoisDuClient,
@@ -48,7 +48,8 @@ const lues = <T,>(lignes: T[]) => ({ lignes, complete: true, motif: null })
 function contexte(o: Partial<ContexteDeLaProposition> = {}): ContexteDeLaProposition {
   return {
     ligne: ligne(), figeePar: null, piecesDuReglement: [], pieces: [piece()], piecesLuesEnEntier: true, piecesFigees: new Set(),
-    horsRapprochement: new Set(), restesARegler: new Map(), paiementsDeLaPiece: [], refusSecondPaiement: null, ...o,
+    horsRapprochement: new Set(), restesARegler: new Map(), paiementsDeLaPiece: [], refusSecondPaiement: null,
+    exemplairesDesSources: new Map(), ...o,
   }
 }
 
@@ -219,6 +220,36 @@ describe('ce qu’il advient d’une proposition', () => {
     expect(refusee).toEqual({ etat: 'piece_payee_en_partie', reste: 40, refus: 'Trop.' })
     expect(associable(refusee)).toBe(false)
     expect(phraseDeLEtat(refusee)).toBe('Trop.')
+  })
+})
+
+// L'EXEMPLAIRE D'UNE FACTURE SOURCE (étape VF6d) : la base refuse qu'il soit rapproché (G4). La proposition du client qui le
+// cite le dit sous les mots de la garde — après ce que le mouvement en dit, avant tout ce que la pièce en dit d'autre —, sans
+// « Associer », et s'écarte comme une autre.
+describe('une proposition qui cite l’exemplaire d’une facture source', () => {
+  const p = proposition()
+  const MOTS = 'La pièce « justificatif.pdf » est l’exemplaire de la facture F2026-0021, source de sa vente : la vente se règle '
+    + 'et s’écrit par sa facture et ses encaissements.'
+  const avec = (o: Partial<ContexteDeLaProposition> = {}) => contexte({ exemplairesDesSources: new Map([['p1', MOTS]]), ...o })
+
+  it('ne s’associe pas, et le dit ; elle s’écarte', () => {
+    const e = etatDeLaProposition(p, avec())
+    expect(e).toEqual({ etat: 'exemplaire_d_une_source', raison: MOTS })
+    expect(associable(e)).toBe(false)
+    expect(phraseDeLEtat(e)).toBe(`${MOTS} Elle ne s’associe pas à ce mouvement.`)
+    expect(ecartable(p, e)).toBe(true)
+    // Une autre pièce du dossier : comme hier.
+    expect(etatDeLaProposition(proposition({ piece_id: 'p2' }), avec({ pieces: [piece(), piece({ id: 'p2' })] }))).toEqual({ etat: 'a_associer' })
+  })
+
+  it('ce que le mouvement dit passe d’abord ; puis l’exemplaire, avant la pièce figée ou payée ailleurs', () => {
+    expect(etatDeLaProposition(p, avec({ ligne: ligne({ statut: 'rapprochee', piece_id: 'p1' }) }))).toEqual({ etat: 'retenue' })
+    expect(etatDeLaProposition(p, avec({ ligne: ligne({ statut: 'ignoree' }) }))).toEqual({ etat: 'mouvement_classe' })
+    expect(etatDeLaProposition(p, avec({ figeePar: 'L’exercice 2026 est validé' })).etat).toBe('mouvement_fige')
+    expect(etatDeLaProposition(p, avec({ pieces: [] })).etat).toBe('piece_non_lue')
+    expect(etatDeLaProposition(p, avec({ piecesFigees: new Set(['p1']) })).etat).toBe('exemplaire_d_une_source')
+    expect(etatDeLaProposition(p, avec({ horsRapprochement: new Set(['p1']), restesARegler: new Map([['p1', 40]]) })).etat)
+      .toBe('exemplaire_d_une_source')
   })
 })
 
