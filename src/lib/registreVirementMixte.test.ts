@@ -4,8 +4,8 @@ import { correspondAuModele, etapesDeLEssai, refusExigesParLEssai } from '../tes
 import { codesSql, messagesSql } from '../test/raiseSql'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import {
-  REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, refusContrePassation, refusContrePassationVente,
-  refusEnregistrement, refusEnregistrementVente, refusRetrait, refusRetraitVente,
+  REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, refusContrePassation, refusContrePassationSansIssue,
+  refusContrePassationVente, refusEnregistrement, refusEnregistrementVente, refusRetrait, refusRetraitVente,
   type ContexteFacture, type ContexteVente, type EncaissementPourContrePassation, type FactureDuDossier,
   type FacturePourEncaissement, type LigneDeFacture, type MouvementClasse, type SaisieEncaissement,
 } from './encaissementsFactures'
@@ -394,6 +394,37 @@ describe('refusContrePassationVente — le rang 21 : sans débit, l’encaisseme
     expect(refusC({ encaissements: [source] })).toEqual({
       cle: 'mouvement_encaissement_classe', message: modele(REFUS_CONTRE_PASSATION, 'mouvement_encaissement_classe'),
     })
+  })
+})
+
+describe('refusContrePassationSansIssue — le rang 21 se dit avant la saisie : « Contre-passer » ne s’offre pas', () => {
+  const DECLARE = [{ encaissement_id: 'e2', etat: 'depose' as const }]
+  const DEBIT = mouvement({ id: 'm_debit', montant: -120, date: '2027-10-25' })
+  const sansIssue = (o: { encaissements?: EncaissementPourContrePassation[]; mouvements?: MouvementClasse[]; v?: ContexteVente } = {}) =>
+    refusContrePassationSansIssue(D, 'e2', o.encaissements ?? [encaissement()], o.mouvements ?? [VIREMENT_MIXTE, DEBIT], o.v ?? vente())
+
+  it('le virement mixte classé : le refus du rang 21, sous les mots de la base — et aucune saisie n’aboutit', () => {
+    expect(sansIssue()).toEqual({ cle: 'mouvement_encaissement_classe_facture_d_avant', message: NEUF_ANNULER })
+    // Sans débit le rang 21, avec un débit le rang 15 : quelles que soient la date et le motif, la base refuse.
+    for (const ligne of [null, 'm_debit']) {
+      for (const [date, motif] of [['2027-10-25', 'Virement rendu'], ['2027-10-20', 'Chèque revenu impayé'], ['2027-11-02', 'x']]) {
+        expect(refusContrePassationVente(D, 'e2', [encaissement()], DECLARE, date, motif, AUJOURD_HUI, ligne, [VIREMENT_MIXTE, DEBIT],
+          true, vente()), `${ligne} ${date}`).not.toBeNull()
+      }
+    }
+  })
+
+  it('un mouvement libre ou classé autrement, aucun mouvement, la facture source, le relevé non lu : rien d’avance', () => {
+    for (const [quoi, o] of AUTREMENT) expect(sansIssue({ mouvements: [mouvement(o), DEBIT] }), quoi).toBeNull()
+    expect(sansIssue({ encaissements: [encaissement({ ligne_bancaire_id: null })] })).toBeNull()
+    expect(sansIssue({ encaissements: [encaissement({ facture_id: 'f1', montant: 1200 })] })).toBeNull()
+    expect(sansIssue({ mouvements: [] })).toBeNull()
+  })
+
+  it('une facture que la lecture n’a pas rendue : le refus, du côté fermé ; un autre dossier ou un encaissement absent : rien', () => {
+    expect(sansIssue({ encaissements: [encaissement({ facture_id: 'f9' })] })?.cle).toBe('mouvement_encaissement_classe_facture_d_avant')
+    expect(sansIssue({ encaissements: [encaissement({ dossier_id: 'd2' })] })).toBeNull()
+    expect(sansIssue({ encaissements: [] })).toBeNull()
   })
 })
 

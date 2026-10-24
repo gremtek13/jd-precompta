@@ -34797,10 +34797,14 @@ dite appliquée, sa version ; la ligne 28.65 de la feuille de route. (6) VF5H2-Q
   exceptée, dans une petite migration à part avant la première bascule réelle ; écartés : l'élargir ici (hors de la
   décision), ou laisser l'ouverture (la garde existe pour qui écrit sans la fonction).
 
-**À REVOIR.**
-- La fenêtre des encaissements offre encore « Contre-passer » pour l'encaissement déclaré d'une facture d'avant que
-  compte un virement mixte classé : le rang 21 ne se juge qu'après la date et le motif, et se dit alors, avant le clic —
-  un geste offert qui n'aboutit pas. L'écran pourrait le taire ou le dire d'emblée (un lot d'écran, VF8 au plus tard).
+**À REVOIR, PUIS FAIT.**
+- La fenêtre des encaissements offrait encore « Contre-passer » pour l'encaissement déclaré d'une facture d'avant que
+  compte un virement mixte classé : le rang 21 ne se jugeait qu'après la date et le motif, et se disait alors, avant le
+  clic — un geste offert qui n'aboutissait pas. Corrigé sur la même branche (le troisième commit du lot) :
+  `refusContrePassationSansIssue` (`encaissementsFactures.ts`) le juge quelles que soient la date et le motif ; la
+  fenêtre n'offre alors ni « Contre-passer » ni « Retirer » et dit le motif de la base à leur place ; un mouvement libre
+  ou classé autrement, et une facture source, comme hier (`registreVirementMixte.test.ts`,
+  `EncaissementsFactureModal.test.tsx`).
 
 ### 25/10/2026 — VF7, LA VALIDATION FIGE LA SOURCE : LA CONCEPTION — CHANTIER EC-Q3 (LIGNE 28.65)
 
