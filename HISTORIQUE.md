@@ -34396,3 +34396,124 @@ le port 5299 par une copie temporaire du script, retirée ensuite : le 5199 éta
 clic ce que G3 refuserait, les lots du relevé et G4) ; VF6e (le pont, ses marques — « À désigner : c'est la facture F… »
 dans la liste —, la Checklist, VF6-Q4, et les trois préalables qui jugent encore l'exemplaire) ; puis VF7 à VF9. Aucune
 question nouvelle au cabinet.
+
+### 24/10/2026 — LES LOTS ET LE RELEVÉ ÉCARTENT L'EXEMPLAIRE D'UNE FACTURE SOURCE — CHANTIER EC-Q3, VF6D (LIGNE 28.65)
+
+(Écrite par l'agent architecte du lot sur `0298872` — la demande de fusion #219, VF5h et VF6b —, en deux commits : le code
+et ses tests, puis cette documentation. Créés : `lib/lotsDeLaJumelleInversee.ts` et son test,
+`PiecesTab.validationEnLot.test.tsx`, `BanqueTab.exemplaires.test.tsx`. Modifiés : `appariementBanque.ts`,
+`reglesAffectation.ts`, `banqueCabinet.ts`, `facturesSources.ts` (une constante), `BanqueTab.tsx`, `FicheMouvement.tsx`,
+`FormulaireReglementGroupe.tsx`, `PiecesTab.tsx` (la validation en lot seulement), le banc (`fauxSupabase.ts`,
+`debordements.mjs`) et huit tests (les appels des plans, un jeu d'essai, un compte de `verrousEcritures.test.ts`). Ni base,
+ni migration, ni policy, ni Edge Function ; la production n'a pas été lue : la mesure de VF6b (24/10/2026 : aucun dossier
+basculé, aucune facture source, aucune pièce désignée) vaut, et le lot y est NEUTRE.)
+
+**LA DÉLIMITATION.** La puce VF6d du § 5 de « VF6, LA JUMELLE INVERSÉE : LA CONCEPTION » : la validation en lot écarte, avant
+le clic, ce que G3 refuserait ; les lots du relevé, l'appariement, `justificatifPossible`, le règlement groupé et la fenêtre
+des encaissements ne prennent jamais l'exemplaire d'une facture source (G4) ; la fiche d'un mouvement dit d'une proposition
+du client qui le cite qu'elle ne s'associe pas. Rien de VF6c (la fiche d'une pièce, `types.ts`), rien de VF6e (le pont, ses
+marques, la Checklist, la Révision) ; dans `PiecesTab.tsx`, la validation en lot seulement.
+
+**CE QUI CHANGE.**
+- **Un module, `lib/lotsDeLaJumelleInversee.ts`, pur.** G3 : `jugeDeLaValidation` (dormante sur un dossier qui n'a pas
+  basculé ; jugée sur les factures émises validées et le pont lus en entier ; sinon « non lue », avec le motif) et
+  `refusDeValiderEnLot`, qui rend les mots de `refusDeLaValidationDUneVente` (lib/exemplairesDesFactures.ts) pour le passage
+  à « validée », sur le pont calculé SANS la désignation (`pontSansLaDesignation`, comme `factures_du_pont`). Sur des
+  lectures qui manquent, la pièce que G3 jugerait ne part pas : le jugement est rendu au pire des ponts (des preuves
+  contraires, que G3 refuse toujours quand elle juge), et la raison dit la lecture qui manque — aucune règle recopiée.
+  G4 : `exemplairesDesSourcesDe`, les factures sources et, pour chaque exemplaire, les mots de `refusDuLienDeLExemplaire`.
+- **« Valider la sélection » (Justificatifs).** La sélection, moins ce que G3 refuserait : le bouton dit « Valider la
+  sélection (3 sur 5) », une note repliée dit combien et, pièce par pièce, les mots de la base ; une seule mise à jour part,
+  sans elles, et elles restent sélectionnées, à valider. Le geste gagne son verrou `useRef` (il n'en avait pas : la
+  catégorie « mise à jour » de `verrousEcritures.test.ts` passe de 22 à 21), relâché après la relecture. Un dossier qui n'a
+  pas basculé valide comme hier.
+- **Les plans du relevé** reçoivent les factures sources en paramètre OBLIGATOIRE : `analyserAppariements`,
+  `candidatsPieces`, `planRapprochementAutomatique`, et `JustificatifsDuDossier.facturesSources`. L'exemplaire d'une facture
+  source n'y est ni une paire, ni un candidat, ni un concurrent dans l'unicité, ni le justificatif d'un mouvement — par son
+  montant, son tiers ou un reste. Celui d'une facture d'avant la bascule compte comme hier (VF5h lui écrit sa banque).
+- **« Valider et rapprocher »** écarte aussi la paire dont la pièce ne se validerait pas : `lotDesCertains` reçoit les refus
+  de G3 (pièce → raison) en paramètre obligatoire, et sa carte dit « Validation en lot — 1 pièce écartée : elle ne se valide
+  pas en lot. », dépliée sur les mots de la garde. Pour cela, l'onglet Banque d'un dossier basculé lit le pont
+  (`lireVentesEmises`) dans la même relecture que le relevé. Sur des ventes facturées non lues, le lot reste retenu et son
+  plan d'hier s'affiche sans rien en écarter, comme pour les mouvements réservés (VF5a2).
+- **La fiche d'un mouvement** : l'exemplaire n'est ni proposé, ni au choix, ni offert au règlement groupé, ni dit
+  « pièce du même montant ». Un règlement groupé d'avant la garde qui le règle se dit refusé avant le clic, sous les mots
+  de G4. La proposition du client qui le cite prend un état neuf, `exemplaire_d_une_source` — après ce que le mouvement en
+  dit, avant la pièce figée ou payée ailleurs —, les mots de G4 suivis de « Elle ne s'associe pas à ce mouvement. », sans
+  « Associer », et s'écarte par `retirer_proposition` comme une autre. Le rapprochement et le règlement groupé de l'onglet
+  gardent une seconde ceinture.
+- **« Écarts à vérifier »** ne compte plus l'exemplaire parmi les pièces validées sans mouvement : il n'en attend aucun.
+- **La fenêtre des encaissements** (`piecesJumelles`) ne change pas : depuis VF5b, une facture source ne propose que des
+  mouvements libres (le rang 17), et le paiement d'un exemplaire n'en est pas un. Un test le tient pour le PDF désigné.
+- **Les candidats de VF5e** ne portent pas de pièce ; ce qui change pour eux : un crédit que l'exemplaire « justifiait » par
+  son montant se dit désormais par la phrase de sa facture, quand elle attend son encaissement.
+
+**UN ÉCART À LA CONCEPTION.** Elle ne rangeait « Valider et rapprocher » que sous G4. Le lot VALIDE aussi : une pièce de vente
+d'un dossier basculé, ni désignée ni déclarée, ou que le pont rattache à une autre facture, y était validée puis refusée par
+G3, dite après le clic parmi les échecs. Le lot l'écarte désormais avant, sous les mots de la garde.
+
+**LES CHOIX ÉCARTÉS.**
+- Garder l'exemplaire comme concurrent dans l'unicité, comme un mouvement réservé (VF5a2) : il ne paie aucun mouvement. Le
+  crédit qui paie sa facture est soit un candidat de la vente (facture ouverte, encaissement sans mouvement), déjà hors des
+  lots, soit le paiement d'autre chose (la facture est soldée) ; un concurrent fictif aurait laissé à l'opérateur des
+  ambiguïtés que la fiche ne montre pas.
+- Filtrer les pièces chez chaque appelant : un appelant oublieux proposerait ce que la base refuse ; le paramètre
+  obligatoire le fait refuser par le compilateur (`@ts-expect-error` dans le test).
+- Écarter toute pièce de vente de « Valider et rapprocher » sans lire le pont : une vente déclarée, ou l'exemplaire d'une
+  facture d'avant, se serait vu refuser un lot que la base accepte.
+- Vider la sélection après la validation : la note, et la raison, auraient disparu avec elle.
+
+**LA MESURE** (un relevé fictif de 3 000 mouvements libres, 600 pièces dont 150 exemplaires de 150 factures sources, une
+règle qui désigne tous les crédits ; Node 22, cinq passages après un d'échauffement). Avec un ensemble de sources vide — le
+chemin d'hier, plus une recherche dans un ensemble vide — puis avec les 150 sources : le rapprochement automatique 32,9 puis
+28,9 ms ; l'appariement certain 23,2 puis 17,1 ms ; le plan des règles 693 puis 528 ms ; `exemplairesDesSourcesDe` 0,2 ms ;
+le juge et les refus de G3 sur les 600 pièces 0,5 ms. Ce qui s'ajoute est une recherche dans un ensemble par pièce, sans
+parcours du relevé. Le plan des règles coûte 0,5 à 0,7 s sur ce relevé AVANT ce lot : `justificatifPossible` confronte le
+tiers de chaque pièce au libellé de chaque mouvement (À REVOIR).
+
+**LES PREUVES.**
+- La suite comparée test par test, sous Paris : avant (`0298872`, une copie extraite sans `.git`, où `clesSupabase.test.ts`
+  ne se charge pas : 459 fichiers, 14 102 tests, et ses 25 dans la copie de travail), après 462 fichiers et 14 163 tests ; aucun verdict changé
+  ni disparu ; un test de VF5e renommé, son jeu d'essai changé : la pièce que le rapprochement automatique aurait prise du
+  crédit qu'une facture attend était l'exemplaire de cette facture, qui n'est plus le candidat de rien — une vente d'avant
+  la bascule, que rien ne désigne, tient sa place, et le test garde ce qu'il prouvait.36 tests neufs :
+  le module 19 (`lotsDeLaJumelleInversee.test.ts` : le pont sans la désignation, le juge, chaque refus de G3 et son passage,
+  la sélection, les lectures qui manquent, un dossier non basculé, les mots de G4, chaque plan du relevé avec et sans les
+  sources, l'exemplaire d'une facture d'avant, les `@ts-expect-error` des paramètres obligatoires) ; `banqueCabinet.test.ts`
+  2 (l'état neuf et son rang) ; `candidatsDuReleve.test.ts` 1 (la phrase de la facture plutôt que l'exemplaire) ;
+  `encaissementsFenetreVente.test.ts` 1 (le PDF désigné) ; les écrans 13 — `PiecesTab.validationEnLot.test.tsx` 5 (ce qui
+  part et ce qui reste, deux clics dans le même `act` pour un envoi, le bouton grisé, les transmissions puis les factures
+  lues en partie, un dossier non basculé), `BanqueTab.exemplaires.test.tsx` 8 (chaque lot, la fiche, la proposition du
+  client, le règlement groupé d'avant la garde, le pont lu en partie, un dossier non basculé). `ecransAvantLecture.test.tsx`
+  inchangé : aucun geste neuf, et la lecture neuve de l'onglet Banque passe ses deux gardes.
+- Mutations : 48, chacune sur une suite verte, jouées contre les tests du module, de la fiche et des trois fichiers d'écran
+  de l'onglet Banque, ou de la validation en lot : 45 tuées (le module 12, les plans 8, la
+  proposition 3, le règlement groupé 2, la fiche 4, l’onglet 9, Justificatifs 7). Trois survivent,
+  équivalentes : le retour anticipé de `refusDeValidationDesPieces` sur un juge dormant (chaque refus y est déjà nul) et les
+  deux secondes ceintures de l'onglet (le rapprochement et le règlement groupé d'un exemplaire), qu'aucun clic n'atteint.
+- Le banc : le dossier basculé (d12) reçoit une pièce de vente à valider que rien ne marque et le virement qui la paie ;
+  deux visites neuves, avant celles de l'e-reporting — `justificatifs-bascules/validation-en-lot` (la sélection, sa note
+  dépliée) et `banque-basculee/validation-en-lot` (la carte, dépliée sur les mots de la garde). La première version du jeu
+  d'essai payait un crédit qu'un encaissement sans mouvement désignait par son client (« Atelier ») : la carte disait le
+  candidat de VF5e, à bon droit ; le tiers et le montant ont changé. `debordements.mjs`, le navigateur sans le mandataire :
+  0 à 1 440, 1 280, 1 024 et 720 px, 285 boutons sondés dans 61 fenêtres, aucun recouvert, et aux volets extrêmes (panneau 2 000, barre 2 000, les deux, la barre 2 000 panneau fermé) de même ;
+  à 390 px, huit
+  fautes, les MÊMES que sur le code de `0298872` rejoué de même (les champs de l'onglet Informations et du véhicule figé,
+  3 px hors de leur carte ; un identifiant coupé dans l'adresse de réception), hors du lot ; les deux visites neuves ne
+  débordent à aucune passe. Les passes du client : « Ventes » à 390 px (114 boutons, 29 fenêtres), « Ventes » et « Banque »
+  à 390 et 1 440 px (122, 31), aucun bouton recouvert ; à 390 px, la seule faute de l'identifiant de l'adresse de
+  réception, la même.
+- La barrière, sous le Node 22.23.3 de la CI, sur le code du premier commit (`1699dab`) : `npx tsc -b --force` 0 ;
+  `npm run lint` 0 erreur, les 63 avertissements d'avant, les mêmes fichier par fichier et règle par règle ;
+  `npm run test:fuseaux` 0, 462 fichiers et 14 163 tests sous Paris, UTC, New York et Auckland ; `npm run build` 0
+  (`index-B4Pl0l8p.js`).
+
+**À REVOIR.**
+- Le plan des règles sur un relevé d'une année (ci-dessus) : à mesurer sur le premier dossier réel.
+- Une fiche dont la seule pièce du même montant est l'exemplaire d'une facture source n'en dit rien ; et « Toutes les pièces
+  sont déjà rapprochées » peut s'y lire quand seuls des exemplaires restent.
+- L'onglet Banque lit `lireVentesEmises` (lib/ventesJumellesLecture.ts), que VF6e étend : sa forme doit rester.
+- La carte « Sans doute possible (0) » d'un lot qui n'écarte que des paires (VF5a2) se rencontre ici aussi.
+
+**CE QUI RESTE À LA SESSION.** La barrière complète sur la tête, la demande de fusion, la feuille de route (la ligne 28.65 :
+VF6d fait). Aucune question au cabinet.

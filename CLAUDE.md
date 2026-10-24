@@ -495,12 +495,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   remplacer d'un seul geste, défaire là où la base le permet, déclarer, retirer la déclaration, le journal (qui, quel
   geste, quand ; un journal resté dans un autre dossier, VF6B-Q1) —, la fiche lisant elle-même la bascule, le pont, les
   liens de G4 et le virement mixte (`lib/marquesDeLaPieceLecture.ts`) ; « Valider » retenu par G3 ; la pièce neuve de
-  vente d'un dossier basculé à valider → « LA FICHE D'UNE PIÈCE DIT CE QU'ELLE EST ». Restent VF5h2 (VF5H-Q2 : les
-  refus du registre pour la facture d'avant d'un virement mixte classé, une migration, avant la première bascule
-  réelle), VF6d et VF6e (avec eux, trois préalables qui jugent encore l'exemplaire), puis VF7 à VF9 (EC3-Q9, la facture
-  reprise, va à A8) ;
-  « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la
-  simulation recevra dit aussi quelle pièce ignorer.
+  vente d'un dossier basculé à valider → « LA FICHE D'UNE PIÈCE DIT CE QU'ELLE EST ». VF6d le 24/10/2026, neutre :
+  « Valider la sélection » et « Valider et rapprocher » écartent avant le clic ce que G3 refuserait, et ni les lots du
+  relevé, ni la fiche d'un mouvement, ni le règlement groupé ne prennent l'exemplaire d'une facture source (G4) ; une
+  proposition du client qui le cite se dit sous les mots de la garde → « LES LOTS ET LE RELEVÉ ÉCARTENT L'EXEMPLAIRE
+  D'UNE FACTURE SOURCE ». Restent VF5h2 (VF5H-Q2 : les refus du registre pour la facture d'avant d'un virement mixte
+  classé, une migration, avant la première bascule réelle), VF6e (avec lui, trois préalables qui jugent encore
+  l'exemplaire), puis VF7 à VF9 (EC3-Q9, la facture reprise, va à A8) ; « Ma banque » nomme la facture d'avant d'un
+  virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -741,13 +743,16 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   classement, lui rattacher un encaissement ou une contre-passation, contre-passer sur un débit un encaissement
   déclaré ; `lib/mouvementsDesVentes.ts`), aucun lot ne le prend (`horsDesLots`, un paramètre obligatoire de chaque
   plan) et il se compte à part ; un mouvement libre qu'une vente facturée attend peut-être (ses candidats,
-  `candidatsDuMouvement`) n'entre dans aucun lot non plus, et le lot des règles le dit « à rapprocher » → « LES RÈGLES
+  `candidatsDuMouvement`) n'entre dans aucun lot non plus, et le lot des règles le dit « à rapprocher » ; l'exemplaire d'une
+  facture source (G4) n'est la paire, le candidat ni le justificatif d'aucun mouvement, et une pièce de vente que G3
+  refuserait ne se valide dans aucun lot (`lib/lotsDeLaJumelleInversee.ts`, paramètres obligatoires) → « LES RÈGLES
   D'AFFECTATION PROPOSENT », « UN VIREMENT PERSONNEL S'ÉCRIT », « UNE ÉCHÉANCE D'EMPRUNT S'ÉCRIT », « UN MOUVEMENT SE
   VENTILE », « UN VIREMENT RÈGLE PLUSIEURS PIÈCES », « UNE RECETTE DU RELEVÉ D'UN DOSSIER ASSUJETTI », « UNE ÉCHÉANCE DE
   COTISATION RAPPROCHÉE », « UN MOUVEMENT DU RELEVÉ S'ÉCRIT SUR UN COMPTE DE BILAN », « LES FONCTIONS DU RELEVÉ NE
   TOUCHENT QUE LES LIGNES PROPRES AU MOUVEMENT », « LE RELEVÉ RECONNAÎT LES MOUVEMENTS DES VENTES FACTURÉES », « LES
   LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES FACTURÉES », « LA FICHE D'UN CRÉDIT CLASSE, RETIRE ET RATTACHE LES
-  ENCAISSEMENTS D'UNE FACTURE », « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE », « LES CANDIDATS DU RELEVÉ ».
+  ENCAISSEMENTS D'UNE FACTURE », « LA FICHE D'UN DÉBIT : L'IMPAYÉ ET LA SOMME RENDUE », « LES CANDIDATS DU RELEVÉ », « LES
+  LOTS ET LE RELEVÉ ÉCARTENT L'EXEMPLAIRE D'UNE FACTURE SOURCE ».
 - **Une cotisation payée depuis le compte PERSONNEL** est un apport (PCG art. 1211-10), face au compte du dirigeant, à
   la date saisie, jamais proposée ; un mouvement OU le compte personnel, jamais les deux → « UNE ÉCHÉANCE PAYÉE DEPUIS
   LE COMPTE PERSONNEL S'ÉCRIT ». Les écritures d'inventaire suivent la même règle → « LES DOTATIONS AUX AMORTISSEMENTS
