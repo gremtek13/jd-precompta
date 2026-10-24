@@ -34517,3 +34517,168 @@ tiers de chaque pièce au libellé de chaque mouvement (À REVOIR).
 
 **CE QUI RESTE À LA SESSION.** La barrière complète sur la tête, la demande de fusion, la feuille de route (la ligne 28.65 :
 VF6d fait). Aucune question au cabinet.
+
+### 24/10/2026 — LES REFUS DU REGISTRE POUR LA FACTURE D'AVANT D'UN VIREMENT MIXTE — CHANTIER EC-Q3, VF5H2 (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF5h2 sur `b9a1313`, la branche locale `vf5h2-registre`, en deux commits : la
+migration, le module, les tests et l'essai ; puis cette documentation. Créé : `src/lib/registreVirementMixte.test.ts`.
+Modifiés : `encaissementsFactures.ts` ; sept tests qui le confrontent ou le jouent (`encaissementsFactures.test.ts`,
+`encaissementsVenteFacturee.test.ts`, `encaissementsFenetreVente.test.ts`, `encaissementsBatterie.test.ts`,
+`espaceVentes.test.ts`, `ecritureVenteFacturee.test.ts`, `EncaissementsFactureModal.test.tsx`) ; l'essai
+`ventesFacturees.sql` ; CLAUDE.md. La migration est dans l'export sous une version PROVISOIRE, `20261024120000`, et
+n'est PAS appliquée : elle attend l'accord du cabinet. En production, un SELECT de comptes et d'empreintes, aucune
+valeur, aucune écriture.)
+
+**LA DÉCISION.** VF5H-Q2 (24/10/2026, « Oui, les refuser aussi ») : pour l'encaissement d'une facture qui n'est PAS
+source de sa vente, les refus que le registre oppose déjà à celui d'une facture source quand le mouvement dont il dépend
+est classé — ici, classé PAR SES ENCAISSEMENTS (le virement mixte de VF5h) : `enregistrer_encaissement` ne le laisse
+plus citer ce mouvement, `retirer_encaissement` ne le retire plus, `annuler_encaissement` ne le contre-passe plus sans
+débit, et la garde des encaissements refuse de même le retrait direct ; chaque refus dit sa raison sous les mots de la
+facture source (« le cabinet retire d'abord ce classement »). Rien d'autre ne change.
+
+**LA DÉLIMITATION.** Les trois fonctions du registre et leur garde : ni le classement, ni le rattachement, ni la
+déclaration, ni G2, ni la composition ou l'écriture d'un mouvement ; aucune table, colonne, contrainte, policy ni aucun
+droit ; aucun écran, aucune Edge Function. Une facture source garde ses refus, à leurs rangs, sous leurs mots ; une
+facture qui n'est pas source, sur un mouvement libre ou classé autrement — rapproché de la pièce de la facture, le plus
+souvent —, se juge comme hier.
+
+**CE QUE LA BASE FAISAIT.** Depuis `virement_mixte`, un crédit qui paie une facture source et une facture d'avant la
+bascule se classe par ses encaissements, celui de la facture d'avant compris, et date l'exemplaire de celle-ci. Pour la
+facture d'avant, la base laissait citer ce mouvement classé par un encaissement de plus, retirer celui qu'il compte (ou
+la contre-passation sans mouvement qui l'en écarte) et le contre-passer sans débit : chaque geste changeait ce que le
+mouvement justifie — sa composition le retenait ensuite (`mouvement_ecart`, `mouvement_facture_non_source`), ses
+écritures devenaient à réécrire ou à retirer, et l'exemplaire n'était plus daté comme le classement l'avait dit.
+
+**L'ÉTAT DE LA PRODUCTION, RELEVÉ LE 24/10/2026** (des comptes et des empreintes) : 148 migrations, `19c0e53c…`, sans
+`registre_virement_mixte` ; les quatre corps que la migration remplace sont ceux qu'elle exige (`fff9e766…`,
+`48a36698…`, `93cd70fc…`, `533f6942…`) ; aucun dossier basculé, aucune facture source, aucun encaissement, aucun
+mouvement classé par ses encaissements. La migration y est NEUTRE : aucun refus neuf ne peut s'y rencontrer.
+
+**LA MIGRATION** `registre_virement_mixte` (45 128 caractères, 45 731 octets, 735 lignes, md5
+`65c118eb783c46f2230e4543c1ca0c17`, ni barre oblique inverse ni retour chariot) :
+`supabase/schema/20261024120000_registre_virement_mixte.sql`, sous sa version provisoire. Quatre fonctions reprises de
+leur définition d'hier, au caractère près hors des lignes qu'elle INSÈRE (`create or replace` : OID, droits,
+propriétaire, `search_path` et commentaires gardés) :
+- Une garde d'abord : `virement_mixte` dans l'historique, et les quatre corps d'hier au caractère près (les retours
+  chariot d'un collage écartés), sinon un refus qui nomme la fonction — une seconde application se refuse de même.
+- `enregistrer_encaissement` : le rang 18, neuf, juste après le 17 de la facture source — `source_de_la_vente is not
+  true` et le mouvement cité classé par ses encaissements ; les rangs suivants avancent d'un cran (19 à 30). Le
+  mouvement cité était déjà verrouillé (`for no key update`).
+- `retirer_encaissement` : le rang 8, neuf, dans la branche que la facture source ne prend pas — le mouvement dont
+  l'encaissement dépend (le sien, ou, pour une contre-passation sans mouvement, celui de l'encaissement qu'elle annule),
+  lu sous le verrou partagé comme pour une facture source, classé par ses encaissements.
+- `annuler_encaissement` : le rang 21, neuf, après les vingt d'hier — sans débit cité (un débit cité se refuse avant,
+  au rang 15), le mouvement de l'encaissement contre-passé, sous le même verrou, classé par ses encaissements. À
+  l'inverse du rang 20 d'une facture source, aucun débit ne le lève.
+- La garde des encaissements : au retrait direct (le rôle des Edge Functions, le propriétaire), après la règle d'une
+  facture source, celle du rang 8, sous ses mots, en 23514.
+- Chaque refus a ses mots — un `raise`, une clé du module —, en 22023 : « Ce mouvement est déjà classé par ses
+  encaissements : l'encaissement d'une facture qui n'est pas la source de sa vente ne s'y ajoute plus — retirer
+  d'abord ce classement. » ; « Le mouvement dont dépend cet encaissement est classé par ses encaissements : le cabinet
+  retire d'abord ce classement. » (retirer, et la garde en 23514) ; « Le mouvement de l'encaissement contre-passé est
+  classé par ses encaissements : le cabinet retire d'abord ce classement. »
+- Ce que le texte retire : rien. Le mot « delete » n'y paraît que dans la garde reprise (`tg_op = 'DELETE'`), comme
+  hier. Si `apply_migration` attend pourtant une confirmation, le texte à coller est prêt
+  (`collage_registre_virement_mixte.sql`, 46 783 caractères, `1463e9d3e017143f789af7c905658dbb`) : une transaction qui
+  vérifie sa propre empreinte (les fins de ligne Windows ramenées), refuse une seconde application, s'exécute — sa garde
+  exige VF5h et les quatre corps d'hier — et pose la ligne d'historique sous la version de l'heure du collage, au nom de
+  l'auteur d'`encaissements_de_la_vente_facturee`. Son retour arrière (`retour_registre_virement_mixte.sql`, 34 331
+  caractères, `4af0692d02bc7f6a86ddc96606bfbe5e`) rend les quatre définitions d'hier et retire la ligne d'historique —
+  une suppression dans l'historique, jamais sans l'accord du cabinet ; aucune donnée ne se perd — ; il se refuse si la
+  migration n'est pas dans l'historique ou si l'une des quatre fonctions n'est plus celle qu'elle a posée (`79d615e6…`,
+  `b335daf9…`, `22648331…`, `21c11ef2…`). Tous deux dans le bloc-notes de la session (`…/scratchpad/vf5h2/collage/`).
+
+**LE MODULE** (`src/lib/encaissementsFactures.ts`). Les trois refus entrent dans `REFUS_ENREGISTREMENT` (le 18e),
+`REFUS_RETRAIT` (le 8e) et `REFUS_CONTRE_PASSATION` (le 21e) sous les mots de la base, marqués `virementMixte` — les
+refus qui ne visent qu'une facture qui n'est pas source, sur un mouvement classé par ses encaissements ; la marque ne
+croise pas `venteFacturee`, et la dernière définition exportée moins les refus de l'une et de l'autre est celle d'avant
+VF2. Seuls les jugements de la vente les disent : `refusEnregistrementVente` (le rang 18, avec la vente seulement : sans
+elle, le mouvement lu ne dit pas ce qui le classe), `refusRetraitVente` (le rang 8 ; une facture que la lecture n'a pas
+rendue n'est pas source, et le rang 8 la juge, du côté fermé, comme la base), `refusContrePassationVente` (le rang 21) ;
+les jugements d'hier ne changent pas. Le client les lit par les réécritures existantes (« ton cabinet retire d'abord ce
+classement »), aucune neuve. La fenêtre des encaissements lit déjà ces jugements : « Retirer » ne s'y offre plus pour un
+tel encaissement, et l'enregistrement comme la contre-passation y disent le refus avant le clic.
+
+**LES CHOIX ÉCARTÉS.**
+- Les mots des refus de la facture source, réutilisés : le rang 20 propose de citer le débit, ce qu'une facture qui
+  n'est pas source ne peut pas (rang 15), et un message pour deux refus ferait deux clés d'un seul `raise`.
+- `not source_de_la_vente` : `is not true` tient du côté fermé si la valeur manquait ; aujourd'hui les deux disent la
+  même chose (la colonne est NOT NULL, et la facture d'un encaissement existe toujours).
+- Refuser aussi sur un mouvement classé AUTREMENT : hors de la décision — le cas le plus courant d'une facture d'avant,
+  payée par un mouvement rapproché de sa pièce, se juge comme hier.
+- Fermer aussi la garde à l'INSERTION : sans pendant pour une facture source sur un mouvement classé par ses
+  encaissements, et hors de la décision ; une question au cabinet (VF5H2-Q1).
+
+**LES PREUVES.**
+- La réplique : une copie à froid de celle de VF6b (PostgreSQL 16, UTF8), dans son propre répertoire de données, sur
+  son propre port (5566), arrêtée par son répertoire de données ; sa base égale à la production — `signature.sql`, les
+  neuf familles, et l'historique, 148, `19c0e53c…` — ; munie de la migration comme l'outil l'aurait fait, 149,
+  `94ee888f…` : seule la famille « fonctions » change (197, `d3d1a53e…` puis `99843aa9…`), les droits des fonctions
+  non (`98e0d5c9…`).
+- Les essais, chacun sur une copie fraîche, sans puis avec la migration. `ventesFacturees.sql` : 235 verdicts ; sans
+  elle, 12 en faute — 93b, 140, 140b, 140c, 141, 141b, 142, 143b, 143c, 144, 144b et 144c, exactement — ; avec elle,
+  0, et rien n'est resté. En une requête comme l'outil, sans ses lignes de commentaire : 84 414 caractères,
+  `223838a727548b9e9f8d26f17831c69c`, 235 justes. Les cinquante-trois autres essais du dépôt, dont les dix du relevé
+  semés du jeu de départ et `validationExercice.sql` par le superutilisateur : mêmes verdicts ligne à ligne (hors d'un
+  identifiant tiré au hasard), leurs fautes connues comprises (`ventesClient.sql` 0c, `forfaitKilometrique.sql` 32).
+  `rls.sql` ENTIER, par psql : 46 lignes, 0 en faute, 43 mutations sur 43 (81 tables, 72 portant un `dossier_id`), des
+  deux côtés, à l'identique. `restauration.sql` (75 tables IDENTIQUES, 23 lignes), `logoDesFacturesSuppression.sql` et
+  `reportDesSoldes.sql` : identiques des deux côtés.
+- Trente-trois mutations de la migration (chaque clause neuve, son rang, son code, ses mots, son verrou, sa garde de
+  tête), chacune appliquée sur une copie fraîche puis jouée contre six essais (`ventesFacturees.sql`,
+  `encaissementsFactures.sql`, `transmissionsEncaissements.sql`, `ventesClient.sql`, `ecrituresVentesFacturees.sql`,
+  `exemplairesDesFactures.sql`) : vingt-sept tuées — dont une empreinte changée (refusée sur la production) et la garde
+  de tête retirée (appliquée sur la base d'avant le virement mixte, où la migration se refuse) — ; six équivalentes,
+  déclarées d'avance avec leur raison : la condition de source retirée du rang 18 (le rang 17 refuse d'abord une
+  facture source), `is not true` pour `not` à l'enregistrement et dans la garde (NOT NULL, et la facture existe), le
+  verrou partagé retiré au retrait et à la contre-passation (la concurrence ne se voit pas dans une session seule), le
+  mouvement lu même sans ligne (rien n'est lu, rien ne se lève). Le contrôle 140g est venu avec elles : un débit classé
+  par ses contre-passations se refuse d'abord comme débit (le rang 16 avant le 18).
+- Le texte à coller, sur des copies fraîches : collé, la même signature que l'application par l'outil (neuf familles),
+  sa ligne d'historique rendant `65c118eb…` ; collé deux fois, refusé la seconde ; altéré d'un caractère, refusé, rien
+  d'appliqué ; en fins de ligne Windows, appliqué, la même empreinte ; sur la base d'avant le virement mixte, refusé par
+  sa garde. Le retour arrière : sur la base collée, la production d'avant (neuf familles ; 148, `19c0e53c…`) ; refusé
+  sans la migration ; refusé quand l'une des quatre fonctions a changé depuis.
+- Les trois contrôles de l'export : avec le fichier, sous sa version provisoire, 149 fichiers, 149 migrations,
+  `94ee888f7f9d94ca51cbf10ad048c947` des deux côtés ; sans lui, 148 et `19c0e53c…`, la production ; le socle inchangé
+  (80 instructions, `5d53eea2…`) ; l'inventaire inchangé (2 155 objets, `855735eaca8d59e2464550dcfd598e7b`) : la
+  migration ne crée aucun objet.
+- Le TypeScript : les tests neufs et changés ROUGES d'abord — sur le module d'hier, 30 tests en faute dans six fichiers,
+  dont 10 des 21 de `registreVirementMixte.test.ts` et celui de la fenêtre (« Retirer » n'est plus offert) ; sur le
+  module, l'export et l'essai d'hier, 32, dont 15 des 21 ; ceux qui restent verts gardent ce qui ne change pas.
+  Vingt-deux mutations du module (chaque rang, sa condition, son ordre, sa clé, ses mots, sa marque) : vingt et une
+  tuées, une équivalente déclarée d'avance (la condition de source retirée du rang 18, pour la même raison qu'en base).
+- La suite comparée test par test, sous Paris : avant, l'arbre de `b9a1313` exporté, 14 102 tests justes
+  (`clesSupabase.test.ts`, qui lit la liste des fichiers suivis du dépôt, ne s'y charge pas) ; après, 460 fichiers et
+  14 151 tests justes ; six tests renommés (le `describe` de l'équivalence de la fenêtre, deux titres de rang),
+  vingt-quatre neufs (les 21 du garde, les trois phrases du client), et un seul verdict changé, adapté : la fenêtre
+  n'offre plus « Retirer » à l'encaissement d'une facture d'avant que compte un virement mixte classé
+  (`EncaissementsFactureModal.test.tsx`).
+- La barrière, sous le Node 22.23.3 de la CI : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les 63 avertissements
+  d'avant (les mêmes, fichier et règle) ; `npm run test:fuseaux` 0, 460 fichiers et 14 151 tests justes sous chacun des
+  quatre fuseaux ; `npm run build` 0 (`index-DkbfWB81.js`).
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) Présenter `registre_virement_mixte` au cabinet (quatre fonctions
+reprises : trois refus neufs et une règle de la garde ; aucune donnée, aucun objet) ; sur son accord, l'appliquer par
+`apply_migration`, sous le nom `registre_virement_mixte`, le texte du fichier tel quel ; si l'outil attend une
+confirmation, donner le texte à coller dans le message final du tour. (2) Renommer le fichier sous la version de sa
+ligne d'historique, texte inchangé ; la ligne doit rendre `65c118eb783c46f2230e4543c1ca0c17` (fins de ligne ramenées à
+`\n`). (3) `signature.sql` en production : seule la famille « fonctions » change (197, `99843aa9…`) ; rejouer
+`ventesFacturees.sql` sans ses lignes de commentaire (84 414 caractères, `223838a7…` : 235 justes, rien ne reste) si la
+session le juge utile. (4) Les trois contrôles de l'export, et leur passage noté au README. (5) CLAUDE.md : la migration
+dite appliquée, sa version ; la ligne 28.65 de la feuille de route. (6) VF5H2-Q1 à la page des arbitrages.
+
+**LA QUESTION AU CABINET** (elle ne retient pas le lot) :
+- VF5H2-Q1 — La garde des encaissements à l'INSERTION. Sans les fonctions — le propriétaire, le rôle des Edge
+  Functions —, une insertion directe peut encore poser l'encaissement d'une facture qui n'est pas source sur un
+  mouvement classé par ses encaissements, ou la contre-passation sans mouvement d'un encaissement — d'une facture source
+  comme d'une autre — que compte un tel mouvement : la garde de VF2 a la même ouverture pour la facture source.
+  Aujourd'hui aucune Edge Function n'écrit un encaissement (`encaissementsEcritures.test.ts`), et la restauration du
+  super-administrateur réinsère ce qui a été. Recommandé : fermer l'insertion, pour toutes les factures, la restauration
+  exceptée, dans une petite migration à part avant la première bascule réelle ; écartés : l'élargir ici (hors de la
+  décision), ou laisser l'ouverture (la garde existe pour qui écrit sans la fonction).
+
+**À REVOIR.**
+- La fenêtre des encaissements offre encore « Contre-passer » pour l'encaissement déclaré d'une facture d'avant que
+  compte un virement mixte classé : le rang 21 ne se juge qu'après la date et le motif, et se dit alors, avant le clic —
+  un geste offert qui n'aboutit pas. L'écran pourrait le taire ou le dire d'emblée (un lot d'écran, VF8 au plus tard).

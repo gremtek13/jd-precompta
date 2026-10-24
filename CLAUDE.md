@@ -499,10 +499,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   « Valider la sélection » et « Valider et rapprocher » écartent avant le clic ce que G3 refuserait, et ni les lots du
   relevé, ni la fiche d'un mouvement, ni le règlement groupé ne prennent l'exemplaire d'une facture source (G4) ; une
   proposition du client qui le cite se dit sous les mots de la garde → « LES LOTS ET LE RELEVÉ ÉCARTENT L'EXEMPLAIRE
-  D'UNE FACTURE SOURCE ». Restent VF5h2 (VF5H-Q2 : les refus du registre pour la facture d'avant d'un virement mixte
-  classé, une migration, avant la première bascule réelle), VF6e (avec lui, trois préalables qui jugent encore
-  l'exemplaire), puis VF7 à VF9 (EC3-Q9, la facture reprise, va à A8) ; « Ma banque » nomme la facture d'avant d'un
-  virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
+  D'UNE FACTURE SOURCE ». VF5h2 (VF5H-Q2) PRÉPARÉE le 24/10/2026, pas appliquée — sa migration
+  (`registre_virement_mixte`) dans l'export à sa version provisoire, à appliquer sur l'accord du cabinet avant la
+  première bascule réelle : l'encaissement d'une facture d'avant ne cite plus un virement mixte classé, ni ne se retire
+  ou ne se contre-passe sans débit quand celui-ci le compte → « LES REFUS DU REGISTRE POUR LA FACTURE D'AVANT D'UN
+  VIREMENT MIXTE ». Restent VF6e (avec lui, trois préalables qui jugent encore l'exemplaire), puis VF7 à VF9 (EC3-Q9, la
+  facture reprise, va à A8) ; « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard avec VF8
+  (VF5H-Q3) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
