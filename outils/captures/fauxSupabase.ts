@@ -1517,6 +1517,34 @@ ENCAISSEMENTS_D12.push(...PAIRE_D12)
 PARTS_D12.push(...PAIRE_D12.map((e) => ({ encaissement_id: e.id, dossier_id: 'd12', taux: 20, montant: e.montant })))
 RELEVE_D12.push(mouvementDe('d12', 'b10', '2026-10-19', 'RETOUR CHEQUE IMPAYE REMISE 0061 SIGNATURE', -90, 'non_rapprochee'))
 
+// CE QUE CETTE PIÈCE EST (ligne 28.65, chantier EC-Q3, étape VF6c), dans le dossier basculé d12 : trois pièces de vente à
+// valider — l'original de F2026-0021 revenu de la plateforme, que le pont reconnaît par son identité (G1.42) et qui reste à
+// désigner ; le PDF de F2026-0022, désigné exemplaire ; une formation facturée ailleurs, déclarée vente hors des factures de
+// l'application — et le journal de leurs gestes, dont deux restés dans le dossier d'où la troisième vient (VF6B-Q1). Des
+// montants qu'aucun mouvement de d12 ne porte : aucune n'est proposée au relevé. Toutes FICTIVES.
+const pieceDeVenteD12 = (id: string, tiers: string, ttc: number, o: Ligne): Ligne => ({
+  ...piece(id, '2026-10-02', tiers, ttc, Math.round((ttc / 6) * 100) / 100, 'c9', 'a_valider'),
+  dossier_id: 'd12', type_piece: 'vente', storage_path: `d12/${id}.pdf`, facture_id: null, vente_hors_des_factures: false, ...o,
+})
+const PIECES_D12: Ligne[] = [
+  pieceDeVenteD12('pb1', 'Cabinet Durand, original rendu par la plateforme', 1450, {
+    nom_fichier: 'F2026-0021-original.pdf', identite_numero: 'F2026-0021', identite_siren_vendeur: '444555666',
+    identite_date: '2026-09-10', identite_nature: 'facture',
+  }),
+  pieceDeVenteD12('pb2', 'SARL Horizon Logistique, PDF déposé', 960, { nom_fichier: 'F2026-0022.pdf', facture_id: 'fb2' }),
+  pieceDeVenteD12('pb3', 'Formation inter-entreprises facturée ailleurs', 2400, {
+    nom_fichier: 'formation-octobre.pdf', vente_hors_des_factures: true,
+  }),
+]
+const JOURNAL_D12: Ligne[] = [
+  { id: 'jd1', dossier_id: 'd12', piece_id: 'pb2', geste: 'designation', facture_id: 'fb2', auteur_id: 'u1', fait_le: '2026-10-03T08:15:00Z' },
+  // La formation, déclarée par erreur dans le cabinet infirmier, sa déclaration retirée pour la déplacer, puis déclarée ici
+  // par un autre membre de l'équipe.
+  { id: 'jd2', dossier_id: 'd1', piece_id: 'pb3', geste: 'declaration', facture_id: null, auteur_id: 'u1', fait_le: '2026-09-28T14:00:00Z' },
+  { id: 'jd3', dossier_id: 'd1', piece_id: 'pb3', geste: 'retrait_declaration', facture_id: null, auteur_id: 'u1', fait_le: '2026-09-29T09:30:00Z' },
+  { id: 'jd4', dossier_id: 'd12', piece_id: 'pb3', geste: 'declaration', facture_id: null, auteur_id: 'u-collegue', fait_le: '2026-10-03T08:20:00Z' },
+]
+
 const pieceEreporting = (o: Ligne): Ligne => ({
   ...piece('p-er', '2027-10-05', 'Editeur Logiciel', 120, 0, 'c8', 'a_valider'),
   dossier_id: 'd7', storage_path: 'd7/er.pdf', nom_fichier: 'er.pdf', ...o,
@@ -1896,7 +1924,10 @@ const TABLES: Record<string, Ligne[]> = {
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
   dossiers,
   categories,
-  pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces, ...SOURCES_D9.pieces, ...SOURCES_D10.pieces, ...PIECES_EREPORTING],
+  pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces, ...SOURCES_D9.pieces, ...SOURCES_D10.pieces, ...PIECES_EREPORTING, ...PIECES_D12],
+  // Le journal des désignations (étape VF6c) : la base le rend sous `admin_du_dossier` de chaque ligne, ici le cabinet du banc
+  // voit les deux dossiers.
+  designations_des_pieces: JOURNAL_D12,
   ecritures_brouillon: [
     // L'ACQUISITION de l'ordinateur du cabinet, telle que la génération l'écrit (lib/ecritures.ts) : sa facture sur
     // le compte de sa nature, au TTC — le dossier est exonéré —, à sa date, son paiement n'étant pas rapproché. Le

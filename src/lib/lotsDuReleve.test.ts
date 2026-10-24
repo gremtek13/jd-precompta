@@ -35,7 +35,7 @@ function piece(o: Partial<Piece> & Pick<Piece, 'id'>): Piece {
     date_piece: '2026-03-10', tiers: 'Client fictif', montant_ht: 600, montant_tva: 0, montant_ttc: 600, devise: 'EUR',
     montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'vente',
     statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
-    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
     created_at: '2026-03-10T09:00:00Z', updated_at: '2026-03-10T09:00:00Z', ...o,
   }
 }

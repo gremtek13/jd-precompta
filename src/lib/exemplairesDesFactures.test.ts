@@ -28,7 +28,7 @@ import {
   refusDeLaDesignationMarquee,
   refusDeLaModificationMarquee,
   refusDeLaPieceDesignee,
-  refusDeLaValidationDUneVente,
+  refusDeLaValidationDUneVente, passageJugeParG3,
   refusDuLienDeLExemplaire,
   refusDuRetraitDeLaDeclaration,
   refusDuRetraitDeLaDesignation,
@@ -886,6 +886,19 @@ describe('refusDeLaValidationDUneVente — G3, la pièce de vente validée d’u
     expect(cle(g3(validee({ dossier_id: 'd2' }), validee()))).toBe('ni_designee_ni_declaree')
     expect(cle(g3(validee({ facture_id: 'f1' }), validee({ facture_id: 'f2' }), { pont: { genre: 'une', factureId: 'f1' } })))
       .toBe('pont_une_facture')
+  })
+
+  // Le passage, seul (étape VF6c) : ce que la fiche d'une pièce lit pour savoir si la validation attend la lecture du dossier.
+  it('passageJugeParG3 : une vente qui DEVIENT validée, et elle seule', () => {
+    expect(passageJugeParG3(null, validee())).toBe(true)
+    expect(passageJugeParG3(pieceM(), validee())).toBe(true)
+    expect(passageJugeParG3(validee({ type_piece: 'achat' }), validee())).toBe(true)
+    expect(passageJugeParG3(validee({ dossier_id: 'd2' }), validee())).toBe(true)
+    expect(passageJugeParG3(validee(), validee({ facture_id: 'f1' }))).toBe(true)
+    expect(passageJugeParG3(validee(), validee({ vente_hors_des_factures: true }))).toBe(true)
+    expect(passageJugeParG3(validee(), validee())).toBe(false)
+    expect(passageJugeParG3(pieceM(), pieceM())).toBe(false)
+    expect(passageJugeParG3(null, validee({ type_piece: 'achat' }))).toBe(false)
   })
 })
 

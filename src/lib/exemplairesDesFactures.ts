@@ -717,6 +717,20 @@ export function refusDeLaModificationMarquee(
 }
 
 /**
+ * LE PASSAGE QUE G3 JUGE, et lui seul (EC3-Q1, sans rétroactivité) : une pièce qui sera une vente validée, et qui ne l'était
+ * pas déjà, dans le même dossier et sous la même marque — insérée validée, devenue validée ou vente, arrivée d'un autre
+ * dossier, sa désignation ou sa déclaration changée. Faux : G3 la laisse passer quel que soit le dossier. Écrit une fois,
+ * pour `refusDeLaValidationDUneVente` et pour l'écran qui doit savoir, avant d'avoir lu le dossier, si la validation
+ * attendra sa lecture (la fiche d'une pièce, étape VF6c).
+ */
+export function passageJugeParG3(avant: PieceMarquable | null, apres: PieceMarquable): boolean {
+  if (apres.type_piece !== 'vente' || apres.statut !== 'validee') return false
+  const marque = (p: PieceMarquable) => `${p.facture_id ?? ''}|${String(p.vente_hors_des_factures ?? false)}`
+  return !(avant != null && avant.statut === 'validee' && avant.type_piece === 'vente' && avant.dossier_id === apres.dossier_id
+    && marque(avant) === marque(apres))
+}
+
+/**
  * G3, seule : la pièce telle qu'elle était (nulle à l'insertion) et telle qu'elle serait. Une pièce de vente validée d'un
  * dossier basculé, jugée à son PASSAGE — insérée validée, ou devenue validée, devenue une vente, arrivée d'un autre
  * dossier, sa désignation ou sa déclaration changée. La restauration du super-administrateur, que la base laisse passer,
@@ -728,10 +742,7 @@ export function refusDeLaValidationDUneVente(
   contexte: { factures: readonly FacturePourMarquer[]; basculeDuDossier: boolean; pont: VerdictDuPont },
 ): RefusExemplaire<CleRefusValidationDUneVente> | null {
   const non = (cle: CleRefusValidationDUneVente, ...valeurs: string[]) => dire(REFUS_VALIDATION_D_UNE_VENTE, cle, ...valeurs)
-  if (apres.type_piece !== 'vente' || apres.statut !== 'validee') return null
-  const marque = (p: PieceMarquable) => `${p.facture_id ?? ''}|${String(p.vente_hors_des_factures ?? false)}`
-  if (avant != null && avant.statut === 'validee' && avant.type_piece === 'vente' && avant.dossier_id === apres.dossier_id
-    && marque(avant) === marque(apres)) return null
+  if (!passageJugeParG3(avant, apres)) return null
   if (!contexte.basculeDuDossier) return null
   if (avant == null) return non('nee_validee')
   if (contexte.pont.genre === 'une' && (apres.facture_id ?? null) !== contexte.pont.factureId) {

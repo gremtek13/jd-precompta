@@ -8,8 +8,9 @@ import { describe, expect, it } from 'vitest'
 // d'ÉCRAN » pour tant d'autres choses (CLAUDE.md), et un geste que la base refuserait au client ne lui est pas montré.
 //
 // Ce garde part de ce que le client MONTE (les six écrans de son espace, et la coque qu'il partage) et suit les imports
-// relatifs de proche en proche : aucun fichier atteint ne nomme les deux fonctions de la base, ni ne monte la fiche d'une
-// pièce ou la section de l'exemplaire. Il part aussi du résultat inverse — le cabinet, lui, atteint la section —, faute de
+// relatifs de proche en proche : aucun fichier atteint ne nomme les quatre fonctions de la base (désigner, défaire, et depuis
+// l'étape VF6c déclarer une vente hors des factures et retirer la déclaration), ni ne lit le journal des désignations, ni ne
+// monte la fiche d'une pièce ou la section « Ce que cette pièce est ». Il part aussi du résultat inverse — le cabinet, lui, atteint la section —, faute de
 // quoi un parcours qui ne suivrait aucun import passerait pour un espace client vierge.
 const SRC = resolve(process.cwd(), 'src')
 
@@ -49,7 +50,13 @@ function atteints(racines: readonly string[]): Map<string, string> {
 const nommant = (fichiers: Map<string, string>, motif: RegExp) =>
   [...fichiers].filter(([, texte]) => motif.test(texte)).map(([chemin]) => relative(SRC, chemin)).sort()
 
+// Les quatre fonctions de la marque d'une pièce : les deux de VF1a, et les deux de la déclaration (étape VF6b), que la
+// section « Ce que cette pièce est » appelle depuis l'étape VF6c — le cabinet seul, comme la base (`admin_du_dossier`).
 const LES_DEUX_FONCTIONS = /designer_exemplaire_facture|defaire_exemplaire_facture/
+const LES_FONCTIONS_DE_LA_DECLARATION = /declarer_vente_hors_des_factures|retirer_declaration_hors_des_factures/
+const LES_QUATRE_FONCTIONS = new RegExp(`${LES_DEUX_FONCTIONS.source}|${LES_FONCTIONS_DE_LA_DECLARATION.source}`)
+// Le journal des désignations, lu par la fiche (lib/marquesDeLaPieceLecture.ts) : sa policy n'a aucune branche client.
+const LE_JOURNAL = /designations_des_pieces|marquesDeLaPieceLecture/
 const LA_SECTION = /ExemplaireDeLaFacture|FichePiece/
 
 describe('l’exemplaire d’une facture n’est offert qu’au cabinet', () => {
@@ -61,14 +68,20 @@ describe('l’exemplaire d’une facture n’est offert qu’au cabinet', () => 
     expect(nommant(client, /\bsupabase\b/).length).toBeGreaterThan(10)
   })
 
-  it('le cabinet atteint la section et les deux fonctions : le garde voit ce qu’il cherche', () => {
+  it('le cabinet atteint la section et les quatre fonctions : le garde voit ce qu’il cherche', () => {
     expect(nommant(cabinet, LES_DEUX_FONCTIONS)).toEqual(['pages/dossier/ExemplaireDeLaFacture.tsx'])
+    expect(nommant(cabinet, LES_FONCTIONS_DE_LA_DECLARATION)).toEqual(['pages/dossier/ExemplaireDeLaFacture.tsx'])
     expect(nommant(cabinet, LA_SECTION)).toContain('pages/dossier/FichePiece.tsx')
     expect(nommant(cabinet, LA_SECTION)).toContain('pages/dossier/PiecesTab.tsx')
+    expect(nommant(cabinet, LE_JOURNAL)).toContain('lib/marquesDeLaPieceLecture.ts')
   })
 
-  it('aucun fichier de l’espace du client ne nomme les deux fonctions de la base', () => {
-    expect(nommant(client, LES_DEUX_FONCTIONS)).toEqual([])
+  it('aucun fichier de l’espace du client ne nomme les quatre fonctions de la base', () => {
+    expect(nommant(client, LES_QUATRE_FONCTIONS)).toEqual([])
+  })
+
+  it('aucun fichier de l’espace du client ne lit le journal des désignations', () => {
+    expect(nommant(client, LE_JOURNAL)).toEqual([])
   })
 
   it('aucun fichier de l’espace du client ne monte la fiche d’une pièce ni la section de l’exemplaire', () => {
@@ -81,8 +94,8 @@ describe('l’exemplaire d’une facture n’est offert qu’au cabinet', () => 
     expect(section).not.toMatch(/droit/i)
   })
 
-  it('seule la section de l’exemplaire nomme les deux fonctions, sur toute la source de production', () => {
+  it('seule la section nomme les quatre fonctions, sur toute la source de production', () => {
     const tous = atteints(['main.tsx', 'App.tsx'])
-    expect(nommant(tous, LES_DEUX_FONCTIONS)).toEqual(['pages/dossier/ExemplaireDeLaFacture.tsx'])
+    expect(nommant(tous, LES_QUATRE_FONCTIONS)).toEqual(['pages/dossier/ExemplaireDeLaFacture.tsx'])
   })
 })

@@ -111,6 +111,6 @@ export const pieceDeVente = (o: Partial<Piece> & Pick<Piece, 'id'>): Piece => ({
   storage_hash: null, date_piece: '2025-11-05', tiers: 'Client fictif', montant_ht: 50, montant_tva: 10, montant_ttc: 60,
   devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null,
   type_piece: 'vente', statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null,
-  lisible_path: null, identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null,
+  lisible_path: null, identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
   created_at: '2025-11-05T09:00:00Z', updated_at: '2025-11-05T09:00:00Z', ...o,
 })

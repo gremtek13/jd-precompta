@@ -1286,6 +1286,24 @@ const VISITES = [
         .scrollIntoViewIfNeeded()
     },
   },
+  // CE QUE CETTE PIÈCE EST (ligne 28.65, chantier EC-Q3, étape VF6c), sur la consultante d12 : la fiche de l'original de
+  // F2026-0021 que le pont reconnaît (à désigner : la déclaration refusée, la facture nommée, « Valider » retenu par G3), celle
+  // du PDF désigné de F2026-0022 (son journal), celle de la formation déclarée hors des factures (son journal, et deux gestes
+  // restés dans le dossier d'où elle vient). Avant l'e-reporting, qui fige l'horloge.
+  ...[
+    ['pieces-basculees/a-designer', 'Cabinet Durand, original rendu par la plateforme', /^Cette pièce est la facture F2026-0021 émise/],
+    ['pieces-basculees/exemplaire', 'SARL Horizon Logistique, PDF déposé', /^Désignée exemplaire de la facture F2026-0022/],
+    ['pieces-basculees/declaree', 'Formation inter-entreprises facturée ailleurs', /^2 gestes du journal de cette pièce sont restés/],
+  ].map(([nom, tiers, attendu]) => ({
+    dossier: 'd12', onglet: 'pieces', nom,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.getByRole('cell', { name: tiers }).first().click()
+      await page.getByText(attendu).first().waitFor({ timeout: 10000 })
+    },
+  })),
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à

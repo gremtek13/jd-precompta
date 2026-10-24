@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
@@ -25,6 +25,9 @@ import { pieceDeclaree } from '../../lib/ereportingEcran'
 import FicheHorsDeFrance, { type DonneesHorsDeFrance } from './FicheHorsDeFrance'
 import ExemplaireDeLaFacture, { type DonneesExemplaire } from './ExemplaireDeLaFacture'
 import { refusDuFormulaireDeLaPiece } from '../../lib/exemplairesDesFacturesEcran'
+import { passageJugeParG3, refusDeLaValidationDUneVente, type PieceMarquable } from '../../lib/exemplairesDesFactures'
+import { pieceAJour, type LectureDeCeQueLaPieceEst, type MarquesDeLaPiece } from '../../lib/marquesDeLaPiece'
+import { lireCeQueLaPieceEst, relireLesMarquesDeLaPiece } from '../../lib/marquesDeLaPieceLecture'
 import { preparerPiece, refusDUnePiece } from '../../lib/bornesStockage'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
@@ -95,10 +98,12 @@ interface Props {
   // l'écran appelant, de quoi les relire, le gel de la pièce et les pièces du dossier. Obligatoire : la confirmation de
   // la suppression nomme la fiche qu'elle emporte (la clé est en cascade), et un appelant qui l'oublierait la tairait.
   horsDeFrance: DonneesHorsDeFrance
-  // L'EXEMPLAIRE D'UNE FACTURE ÉMISE (ligne 28.6, étape VF1b) : les factures validées du dossier lues par l'écran appelant, le
-  // gel de la pièce et de quoi relire la pièce après un geste. FACULTATIF, et sa seule absence suffit : sans lui la fiche
-  // n'offre ni de désigner ni de défaire la désignation d'une pièce de vente — un geste ne s'offre jamais sur des données
-  // que l'appelant n'a pas lues. Le cabinet seul ouvre cette fiche (l'onglet des justificatifs) ; l'espace du client ne la monte pas.
+  // CE QUE CETTE PIÈCE EST (ligne 28.6 : étapes VF1b et VF6c) : les factures validées du dossier lues par l'écran appelant, le
+  // gel de la pièce et de quoi relire sa ligne après un geste. FACULTATIF, et sa seule absence suffit : sans lui la fiche
+  // n'offre aucun geste sur la marque d'une pièce de vente — un geste ne s'offre jamais sur des données que l'appelant n'a pas
+  // lues —, ne lit rien de plus, et laisse la base juger seule la validation d'une vente (G3). Avec lui, la fiche lit
+  // elle-même ce que la pièce est (lib/marquesDeLaPieceLecture.ts) : la bascule du dossier, le pont, les liens, le virement
+  // mixte, le journal. Le cabinet seul ouvre cette fiche (l'onglet des justificatifs) ; l'espace du client ne la monte pas.
   exemplaire?: DonneesExemplaire | null
 }
 
@@ -112,7 +117,9 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
   // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
   // était l'une des deux raisons pour lesquelles elle ne s'écrivait jamais.
-  const { monCabinetId } = useAuth()
+  const { monCabinetId, session } = useAuth()
+  // Le compte connecté : le journal d'une pièce dit ses gestes « par vous ».
+  const moi = session?.user.id ?? null
   const [file, setFile] = useState<File | null>(null)
   // Les bornes du seau des pièces (ligne 22.6), jugées dès le choix du fichier : le refus se dit tout de suite, avec le
   // poids et la borne, et le fichier n'est pas retenu. `choixDuFichier` est le choix en cours d'examen : la réponse pour
@@ -208,9 +215,79 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   // Démontée — remplacée, fermée —, elle n'a plus rien à protéger.
   useEffect(() => () => onModifiee?.(false), [onModifiee])
 
-  // La désignation d'une facture se joue dans la base, sur la pièce ENREGISTRÉE : le formulaire dit avant l'enregistrement ce
-  // que la garde refuserait, sans toucher au reste de la saisie.
-  const refusDeLaDesignee = piece !== null ? refusDuFormulaireDeLaPiece(piece, typePiece, exemplaire?.factures?.lignes ?? null) : null
+  // LA MARQUE DE LA PIÈCE (étape VF6c) : sa désignation, sa déclaration, son statut — relus par la fiche après chacun de ses
+  // gestes. L'écran appelant ne recopie que la désignation dans la pièce qu'il lui passe ; une déclaration posée ou retirée
+  // ne se verrait pas sans cette relecture (`pieceAJour` : la plus récente des deux).
+  const [marquesRelues, setMarquesRelues] = useState<MarquesDeLaPiece | null>(null)
+  const pieceMarquee = piece === null ? null : pieceAJour(piece, marquesRelues)
+
+  // La désignation et la déclaration se jouent dans la base, sur la pièce ENREGISTRÉE : le formulaire dit avant
+  // l'enregistrement ce que la garde refuserait — sa nature ne change pas —, sans toucher au reste de la saisie.
+  const refusDeLaNature = pieceMarquee !== null
+    ? refusDuFormulaireDeLaPiece(pieceMarquee, typePiece, exemplaire?.factures?.lignes ?? null) : null
+
+  // CE QUE LA PIÈCE EST (étape VF6c, lib/marquesDeLaPieceLecture.ts), lu par la fiche quand l'écran appelant lui a donné les
+  // factures (`exemplaire`) et qu'il s'agit d'une vente — enregistrée, saisie, ou marquée. Une lecture plus lente écrit en
+  // dernier : seule la DERNIÈRE demandée s'inscrit, et elle porte la pièce pour laquelle elle a été faite.
+  const [lectureDesMarques, setLectureDesMarques] = useState<LectureDeCeQueLaPieceEst | null>(null)
+  const lectureEnVigueur = lectureDesMarques !== null && lectureDesMarques.pour === pieceId ? lectureDesMarques : null
+  const besoinDesMarques = exemplaire !== null && (typePiece === 'vente' || pieceMarquee?.type_piece === 'vente'
+    || (pieceMarquee?.facture_id ?? null) !== null || pieceMarquee?.vente_hors_des_factures === true)
+  // La pièce que la lecture regarde (son pont) : tenue à jour APRÈS le rendu, avant l'effet qui lit — une relecture n'a pas à
+  // repartir chaque fois que l'écran appelant recopie la désignation dans un nouvel objet.
+  const pieceALire = useRef(piece)
+  useEffect(() => { pieceALire.current = piece }, [piece])
+  const derniereLecture = useRef(0)
+  const relireCeQuElleEst = useCallback(async () => {
+    const numero = ++derniereLecture.current
+    const lecture = await lireCeQueLaPieceEst(dossierId, pieceALire.current)
+    if (numero === derniereLecture.current) setLectureDesMarques(lecture)
+  }, [dossierId])
+  useEffect(() => {
+    if (besoinDesMarques) void relireCeQuElleEst()
+  }, [besoinDesMarques, pieceId, relireCeQuElleEst])
+
+  // Après un geste de la section : la marque de LA pièce, relue par la fiche ; sa ligne dans la liste de l'écran appelant ;
+  // ce qu'elle est (le journal a une ligne de plus). Le motif d'un échec, que la section dit.
+  async function apresUnGeste(): Promise<string | null> {
+    if (piece === null || exemplaire === null) return null
+    const relue = await relireLesMarquesDeLaPiece(dossierId, piece.id)
+    if ('marques' in relue) setMarquesRelues(relue.marques)
+    const motifDeLaListe = await exemplaire.relirePiece(piece.id)
+    await relireCeQuElleEst()
+    return 'motif' in relue ? relue.motif : motifDeLaListe
+  }
+
+  // G3 (étape VF6b) : dans un dossier dont les factures sont la source de leurs ventes, une pièce de vente qui DEVIENT
+  // validée est désignée exemplaire de la facture que le pont prouve, ou déclarée vente hors des factures — et ne naît jamais
+  // validée. « Valider » le dit avant le clic, sous les mots de la base ; tant que la fiche ne sait pas si le dossier a
+  // basculé, la validation d'une vente attend (« Enregistrer brouillon » reste offert : G3 ne juge pas une pièce à valider).
+  // Sans `exemplaire`, la fiche ne lit rien, et la base juge seule.
+  const pieceValidee: PieceMarquable = {
+    id: pieceMarquee?.id ?? '', dossier_id: dossierId, type_piece: typePiece, statut: 'validee',
+    nom_fichier: file?.name ?? pieceMarquee?.nom_fichier ?? '',
+    facture_id: pieceMarquee?.facture_id ?? null, vente_hors_des_factures: pieceMarquee?.vente_hors_des_factures ?? false,
+  }
+  const contexteLu = lectureEnVigueur?.contexte.etat === 'lu' ? lectureEnVigueur.contexte.contexte : null
+  const facturesLues = exemplaire?.factures?.complete ? exemplaire.factures.lignes : null
+  const g3Juge = exemplaire !== null && !fige && passageJugeParG3(pieceMarquee, pieceValidee)
+  const attenteDeLaValidation: string | null = !g3Juge ? null
+    : lectureEnVigueur === null
+      ? 'La validation d’une pièce de vente attend de savoir si les factures de ce dossier sont la source de leurs ventes : lecture en cours…'
+      : lectureEnVigueur.contexte.etat === 'incomplet'
+        ? `La validation d’une pièce de vente attend : ce que la base dit de ce dossier n’a pas pu être lu en entier (${lectureEnVigueur.contexte.motif}). La pièce s’enregistre à valider.`
+        // Le refus de G3 nomme la facture que le pont prouve : elle se lit d'abord, pour ne jamais en taire le numéro.
+        : contexteLu !== null && contexteLu.dossierBascule && contexteLu.pont.genre === 'une' && facturesLues === null
+          ? 'La validation d’une pièce de vente attend les factures émises du dossier, lues en entier.'
+          : null
+  const refusDeLaValidation = !g3Juge || contexteLu === null || attenteDeLaValidation !== null ? null
+    : refusDeLaValidationDUneVente(pieceMarquee, pieceValidee, {
+      factures: facturesLues ?? [], basculeDuDossier: contexteLu.dossierBascule, pont: contexteLu.pont,
+    })?.message ?? null
+  // La section « Ce que cette pièce est » dit elle-même une lecture incomplète et offre de la refaire ; ailleurs (une pièce
+  // en création, ou qui devient une vente), la fiche l'offre ici.
+  const sectionMontree = pieceMarquee !== null && exemplaire !== null && (pieceMarquee.type_piece === 'vente'
+    || pieceMarquee.facture_id !== null || pieceMarquee.vente_hors_des_factures)
 
   // La note de CETTE pièce, lue à l'ouverture. Une réponse qui arrive pour une pièce déjà quittée est sans effet : le
   // drapeau d'annulation l'écarte, et ni la lecture ni le texte du champ ne passent à la pièce suivante.
@@ -494,9 +571,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
 
   async function save(statut: 'a_valider' | 'validee') {
     if (enregistrementEnCours.current) return
-    // Une pièce désignée exemplaire d'une facture reste une pièce de vente : le refus de la garde est dit sous le champ, et
-    // rien ne part qu'elle refuserait.
-    if (refusDeLaDesignee !== null) return
+    // Une pièce désignée exemplaire d'une facture, ou déclarée vente hors des factures, reste une pièce de vente : le refus de
+    // la garde est dit sous le champ, et rien ne part qu'elle refuserait. Ni une validation que G3 refuserait, ou qui attend
+    // de savoir si elle la refuserait.
+    if (refusDeLaNature !== null) return
+    if (statut === 'validee' && (refusDeLaValidation !== null || attenteDeLaValidation !== null)) return
     enregistrementEnCours.current = true
     setSaving(true)
     setError(null)
@@ -776,11 +855,12 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               )}
             </div>
           )}
-          {piece && exemplaire && (
+          {pieceMarquee && exemplaire && (
             <ExemplaireDeLaFacture
               dossierId={dossierId}
-              piece={piece}
+              piece={pieceMarquee}
               donnees={exemplaire}
+              ceQuElleEst={{ lecture: lectureEnVigueur, relire: relireCeQuElleEst, apresUnGeste, moi }}
               autresPieces={venteEmise?.genre === 'double' ? venteEmise.autres : null}
             />
           )}
@@ -868,7 +948,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             </div>
           </div>
 
-          {refusDeLaDesignee !== null && <p className="error-text" style={{ marginTop: -8 }}>{refusDeLaDesignee}</p>}
+          {refusDeLaNature !== null && <p className="error-text" style={{ marginTop: -8 }}>{refusDeLaNature}</p>}
 
           <div className="field">
             <label htmlFor="tiers">Tiers (fournisseur / client)</label>
@@ -1057,6 +1137,16 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
 
           {rapprochee && <p className="fiche-piece-rapprochee">Rapprochée avec un mouvement bancaire.</p>}
 
+          {refusDeLaValidation !== null && <p className="error-text">{refusDeLaValidation}</p>}
+          {attenteDeLaValidation !== null && (
+            <div>
+              <p className="muted" style={{ margin: 0 }}>{attenteDeLaValidation}</p>
+              {!sectionMontree && lectureEnVigueur?.contexte.etat === 'incomplet' && (
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => void relireCeQuElleEst()}>Relire</button>
+              )}
+            </div>
+          )}
+
           {error && <p className="error-text">{error}</p>}
         </div>
 
@@ -1068,11 +1158,15 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
           ) : <span />}
           <div className="fiche-piece-actions">
             {!fige && (
-              <button type="button" className="btn btn-outline btn-sm" disabled={occupee || refusDeLaDesignee !== null} onClick={() => save('a_valider')}>
+              <button type="button" className="btn btn-outline btn-sm" disabled={occupee || refusDeLaNature !== null} onClick={() => save('a_valider')}>
                 Enregistrer brouillon
               </button>
             )}
-            <button type="submit" className="btn btn-primary btn-sm" disabled={occupee || refusDeLaDesignee !== null}>
+            <button
+              type="submit"
+              className="btn btn-primary btn-sm"
+              disabled={occupee || refusDeLaNature !== null || refusDeLaValidation !== null || attenteDeLaValidation !== null}
+            >
               {saving ? 'Enregistrement…' : fige ? 'Enregistrer' : 'Valider'}
             </button>
           </div>
