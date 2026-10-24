@@ -285,6 +285,23 @@ describe('propositionsEncaissement — une facture source : des mouvements libre
     expect(proposer({ source: false }).map((p) => `${p.source}:${p.ligneBancaireId}`)).toEqual(['jumelle:mj'])
   })
 
+  // L'EXEMPLAIRE DÉSIGNÉ (étape VF6d) : le PDF que le cabinet a désigné exemplaire de la facture, sans flux ni identité, est
+  // une jumelle par sa désignation. Payé par un mouvement — un état d'avant la garde G4, qui le refuse désormais —, il ne
+  // propose pas ce mouvement pour une facture source ; pour une autre, comme hier.
+  it('l’exemplaire désigné d’une facture source ne propose pas son paiement ; celui d’une autre facture, si', () => {
+    const PDF: PieceLue = {
+      id: 'pdf', dossier_id: D, flux_hote: null, flux_id: null, superpdp_invoice_id: null, identite_numero: null,
+      identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: 'f1',
+    }
+    const payePdf: LignePayante = { ...paye, id: 'mp', piece_id: 'pdf' }
+    const proposerPdf = (source: boolean) => propositionsEncaissement(
+      contexte({ facture: facture({ source_de_la_vente: source }) }), [PDF], paiementsDesPieces([payePdf], [], []),
+      [mouvement({ id: 'mp', date: '2027-10-12', statut: 'rapprochee', piece_id: 'pdf' })], AUJOURD_HUI, true, vente(),
+    )
+    expect(proposerPdf(true)).toEqual([])
+    expect(proposerPdf(false).map((p) => `${p.source}:${p.ligneBancaireId}`)).toEqual(['jumelle:mp'])
+  })
+
   it('le crédit qui fait le reste NET se propose, au reste net ; celui du reste brut, non', () => {
     expect(proposer()).toMatchObject([{ ligneBancaireId: 'm1', montantCentimes: 123550, solde: true }])
     expect(proposer({ mouvements: [mouvement({ montant: 1355.5 })] })).toEqual([])

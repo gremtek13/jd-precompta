@@ -1275,6 +1275,33 @@ const VISITES = [
         .waitFor({ timeout: 10000 })
     },
   },
+  // LES LOTS DEVANT LA JUMELLE INVERSÉE (ligne 28.65, chantier EC-Q3, étape VF6d), sur la consultante d12 : la sélection des
+  // Justificatifs, qui écarte la pièce de vente que la garde G3 refuserait de valider et le dit, dépliée ; puis la carte
+  // « Valider et rapprocher » du relevé, qui écarte la même pièce, dépliée sur les mots de la garde.
+  {
+    dossier: 'd12', onglet: 'pieces', nom: 'justificatifs-bascules/validation-en-lot',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      // La liste du dossier d'abord : la page ne se recharge pas, et celle de la visite d'avant paraît un instant.
+      await page.locator('tr', { hasText: 'Verrerie Tournon' }).first().waitFor({ timeout: 10000 })
+      await page.getByRole('button', { name: 'Tout sélectionner', exact: true }).click()
+      await page.locator('summary', { hasText: /ne se valid(?:e|ent) pas en lot/ }).first().click()
+      await page.getByText(/^Valider la sélection \(\d+ sur \d+\)$/).first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd12', onglet: 'banque', nom: 'banque-basculee/validation-en-lot',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.locator('summary', { hasText: /^Validation en lot — 1 pièce écartée/ }).first().click()
+      await page.getByText(/avant de la valider : les factures de ce dossier sont la source de leurs ventes\.$/).first()
+        .waitFor({ timeout: 10000 })
+    },
+  },
   {
     dossier: 'd12', onglet: 'checklist', nom: 'checklist-basculee/vue-d-ensemble',
     apres: async (page) => {

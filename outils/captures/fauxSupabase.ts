@@ -1545,6 +1545,17 @@ const JOURNAL_D12: Ligne[] = [
   { id: 'jd4', dossier_id: 'd12', piece_id: 'pb3', geste: 'declaration', facture_id: null, auteur_id: 'u-collegue', fait_le: '2026-10-03T08:20:00Z' },
 ]
 
+// LES LOTS DEVANT LA JUMELLE INVERSÉE (ligne 28.65, chantier EC-Q3, étape VF6d). Une pièce de vente à valider que rien ne
+// marque — ni désignée exemplaire d'une facture, ni déclarée vente hors des factures de l'application —, et le virement qui la
+// paie : la garde G3 refuserait de la valider. « Valider la sélection » (Justificatifs) l'écarte avant le clic et le dit,
+// comme la carte « Valider et rapprocher » (Banque). Ajoutés par `push`, comme ci-dessus. Tous FICTIFS.
+pieces.push({
+  ...piece('pd12-1', '2026-10-21', 'Verrerie Tournon', 1234.56, 205.76, null, 'a_valider'),
+  dossier_id: 'd12', storage_path: 'd12/pd12-1.pdf', nom_fichier: 'releve-de-prestation-verrerie-tournon.pdf', type_piece: 'vente',
+  facture_id: null, vente_hors_des_factures: false,
+})
+RELEVE_D12.push(mouvementDe('d12', 'b11', '2026-10-22', 'VIR SEPA VERRERIE TOURNON', 1234.56, 'non_rapprochee'))
+
 const pieceEreporting = (o: Ligne): Ligne => ({
   ...piece('p-er', '2027-10-05', 'Editeur Logiciel', 120, 0, 'c8', 'a_valider'),
   dossier_id: 'd7', storage_path: 'd7/er.pdf', nom_fichier: 'er.pdf', ...o,

@@ -8,6 +8,7 @@ import {
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from './types'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { AUCUN_CANDIDAT, AUCUN_HORS_DES_LOTS } from './mouvementsDesVentes'
+import { AUCUNE_FACTURE_SOURCE } from './facturesSources'
 
 function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
@@ -300,7 +301,7 @@ describe('planAffectationParRegles — ce que « Affecter les N » écrirait', (
 describe('justificatifPossible — un paiement qui a peut-être sa pièce ne s’affecte pas en lot', () => {
   const aucun = {
     pieces: [], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), cotisations: [],
-    cotisationsRapprochees: new Set<string>(), ventes: AUCUN_CANDIDAT,
+    cotisationsRapprochees: new Set<string>(), ventes: AUCUN_CANDIDAT, facturesSources: AUCUNE_FACTURE_SOURCE,
   }
 
   it('une pièce du même montant dans la fenêtre du rapprochement — à valider comprise', () => {

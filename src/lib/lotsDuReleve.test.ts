@@ -8,6 +8,8 @@ import {
 } from './mouvementsDesVentes'
 import { mouvementATraiter, mouvementsCouverts, planAffectationParRegles } from './reglesAffectation'
 import { ignoresParLaRegle, statutPourLibelle } from './reglesIgnorees'
+import { AUCUNE_FACTURE_SOURCE } from './facturesSources'
+import { AUCUN_REFUS_DE_VALIDATION } from './lotsDeLaJumelleInversee'
 import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire } from './types'
 
 // LES LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES FACTURÉES (ligne 28.65, chantier EC-Q3, étape VF5a2). Les mouvements
@@ -179,20 +181,20 @@ describe('planRapprochementAutomatique : le rapprochement automatique', () => {
   const vide = { pieces: new Set<string>(), cotisations: new Set<string>() }
 
   it('le réservé n’est jamais retenu, même avec une seule pièce possible ; il se compte à part, jamais parmi les ambigus', () => {
-    const p = planRapprochementAutomatique([RESERVE], [piece({ id: 'p1', date_piece: '2026-03-10' })], [], vide, HORS)
+    const p = planRapprochementAutomatique([RESERVE], [piece({ id: 'p1', date_piece: '2026-03-10' })], [], vide, HORS, AUCUNE_FACTURE_SOURCE)
     expect(p).toEqual({ retenus: [], ecartesPourAmbiguite: 0, ecartesParLesVentes: [RESERVE] })
     // Sans les ventes facturées, le même plan le rapprochait.
-    expect(planRapprochementAutomatique([RESERVE], [piece({ id: 'p1', date_piece: '2026-03-10' })], [], vide, AUCUN_HORS_DES_LOTS).retenus)
+    expect(planRapprochementAutomatique([RESERVE], [piece({ id: 'p1', date_piece: '2026-03-10' })], [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE).retenus)
       .toEqual([{ ligneId: 'm-res', pieceId: 'p1' }])
   })
 
   it('un réservé sans candidate ne se dit pas écarté', () => {
-    expect(planRapprochementAutomatique([RESERVE], [], [], vide, HORS).ecartesParLesVentes).toEqual([])
+    expect(planRapprochementAutomatique([RESERVE], [], [], vide, HORS, AUCUNE_FACTURE_SOURCE).ecartesParLesVentes).toEqual([])
   })
 
   it('il reste un CONCURRENT : une pièce qu’il pourrait payer aussi n’est pas rapprochée seule du mouvement libre', () => {
     const p = planRapprochementAutomatique(
-      [RESERVE, ligne({ ...LIBRE, date: '2026-03-13' })], [piece({ id: 'p1', date_piece: '2026-03-12' })], [], vide, HORS)
+      [RESERVE, ligne({ ...LIBRE, date: '2026-03-13' })], [piece({ id: 'p1', date_piece: '2026-03-12' })], [], vide, HORS, AUCUNE_FACTURE_SOURCE)
     expect(p.retenus).toEqual([])
     expect(p.ecartesPourAmbiguite).toBe(1)
     expect(p.ecartesParLesVentes.map((l) => l.id)).toEqual(['m-res'])
@@ -203,10 +205,10 @@ describe('lotDesCertains : « Valider et rapprocher »', () => {
   const paire = (l: LigneBancaire, id: string): Appariement => ({ piece: piece({ id, statut: 'a_valider' }), ligne: l, ecartJours: 2 })
 
   it('la paire du réservé ne part pas ; celle du libre, si ; chacune dans l’ordre reçu', () => {
-    const lot = lotDesCertains([paire(LIBRE, 'p2'), paire(RESERVE, 'p1'), paire(FRAIS, 'p3')], HORS)
+    const lot = lotDesCertains([paire(LIBRE, 'p2'), paire(RESERVE, 'p1'), paire(FRAIS, 'p3')], HORS, AUCUN_REFUS_DE_VALIDATION)
     expect(lot.aEcrire.map((a) => a.piece.id)).toEqual(['p2', 'p3'])
     expect(lot.ecartesParLesVentes.map((a) => a.ligne.id)).toEqual(['m-res'])
-    expect(lotDesCertains([paire(RESERVE, 'p1')], AUCUN_HORS_DES_LOTS).aEcrire.map((a) => a.piece.id)).toEqual(['p1'])
+    expect(lotDesCertains([paire(RESERVE, 'p1')], AUCUN_HORS_DES_LOTS, AUCUN_REFUS_DE_VALIDATION).aEcrire.map((a) => a.piece.id)).toEqual(['p1'])
   })
 })
 

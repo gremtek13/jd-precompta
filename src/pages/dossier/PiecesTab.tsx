@@ -44,6 +44,7 @@ import type { LectureComplete } from '../../lib/lectureComplete'
 import { fichesEmporteesParLaSuppression, type LectureFichesHorsDeFrance } from '../../lib/propositionsHorsDeFrance'
 import PiecesJointesEcartees from './PiecesJointesEcartees'
 import type { FacturesSources } from '../../lib/facturesSources'
+import { jugeDeLaValidation, resumeDeLaSelection, validationEnLot } from '../../lib/lotsDeLaJumelleInversee'
 
 // Les factures sources que cet onglet ne lit pas encore (voir le badge « Devise non convertie ») : aucune n'est écartée.
 const SOURCES_NON_LUES: FacturesSources = new Set()
@@ -115,6 +116,8 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // toute la boucle, et un second clic relançait une seconde boucle sur les MÊMES pièces. L'état ne sert qu'à
   // griser le bouton et à dire où on en est.
   const suppressionEnCours = useRef(false)
+  // Verrou de « Valider la sélection » : deux clics du même rendu enverraient deux fois la même mise à jour.
+  const validationEnCours = useRef(false)
   const [suppression, setSuppression] = useState<{ fait: number; total: number } | null>(null)
   const [recherche, setRecherche] = useState('')
   // Précisions déposées par le client (et notes du cabinet) sur les pièces — voir lib/commentaires.ts.
@@ -360,6 +363,20 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     : null
   const marqueParPiece = jumelles && ventesEmises ? marquesDesPieces(ventesEmises.factures, jumelles) : new Map<string, MarqueDeLaPiece>()
 
+  // CE QUE LA GARDE G3 REFUSERAIT À « VALIDER LA SÉLECTION » (étape VF6d ; lib/lotsDeLaJumelleInversee.ts). Dans un dossier
+  // basculé, une pièce de vente qui devient validée est l'exemplaire de la facture que le pont prouve, ou désignée, ou
+  // déclarée vente hors des factures de l'application : sinon la base la refuse — et avec elle la sélection ENTIÈRE, qui part
+  // en une mise à jour. Jugé avant le clic, sur les factures émises validées et le pont lus en entier ; pas encore revenus ou
+  // lus en partie, une pièce de vente ne part pas, et l'écran dit quelle lecture manque. Rien ne change ailleurs.
+  const jugeDeValidation = jugeDeLaValidation(ventesParLesFactures, facturesProposees, ventesEmises, pieces)
+  // La sélection telle que la validation l'envoie : les pièces lues dont le montant est lu, dans l'ordre de la sélection.
+  const selectionAValider = [...selected].flatMap((id) => {
+    const p = pieces.find((x) => x.id === id)
+    return p !== undefined && p.montant_ttc != null ? [p] : []
+  })
+  const validationDeLaSelection = validationEnLot(selectionAValider, jugeDeValidation)
+  const ecartesDeLaSelection = validationDeLaSelection.ecartees
+
   const moisSuspectParPiece = new Map<string, string>()
   for (const trouve of moisEnDoubleSurAbonnement(pieces)) {
     for (const piece of trouve.pieces) {
@@ -511,17 +528,26 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     })
   }
 
+  // Les pièces que G3 refuserait ne partent pas (`validationDeLaSelection`) : l'écran les a dites avant le clic, et elles
+  // restent sélectionnées après lui, à valider.
   async function validateSelection() {
-    const ids = [...selected].filter((id) => pieces.find((p) => p.id === id)?.montant_ttc != null)
+    if (validationEnCours.current) return
+    const ids = validationDeLaSelection.aValider.map((p) => p.id)
     if (ids.length === 0) return
-    const { error } = await supabase.from('pieces').update({ statut: 'validee' }).in('id', ids)
-    // Refusée, la sélection est GARDÉE : vidée, il faudrait la refaire pièce par pièce pour réessayer.
-    if (error) {
-      window.alert(`La sélection n’a pas pu être validée : ${messageErreur(error, 'refus de la base')}.`)
-    } else {
-      setSelected(new Set())
+    validationEnCours.current = true
+    try {
+      const { error } = await supabase.from('pieces').update({ statut: 'validee' }).in('id', ids)
+      // Refusée, la sélection est GARDÉE : vidée, il faudrait la refaire pièce par pièce pour réessayer.
+      if (error) {
+        window.alert(`La sélection n’a pas pu être validée : ${messageErreur(error, 'refus de la base')}.`)
+      } else {
+        const restees = new Set(ecartesDeLaSelection.map((e) => e.piece.id))
+        setSelected(new Set([...selected].filter((id) => restees.has(id))))
+      }
+      await load()
+    } finally {
+      validationEnCours.current = false
     }
-    load()
   }
 
   function toggleSelectAll() {
@@ -857,8 +883,14 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
           )}
           {selected.size > 0 && (
             <>
-              <button className="btn btn-outline btn-sm" onClick={validateSelection}>
-                Valider la sélection ({selected.size})
+              <button
+                className="btn btn-outline btn-sm"
+                disabled={ecartesDeLaSelection.length > 0 && validationDeLaSelection.aValider.length === 0}
+                onClick={validateSelection}
+              >
+                {ecartesDeLaSelection.length === 0
+                  ? `Valider la sélection (${selected.size})`
+                  : `Valider la sélection (${validationDeLaSelection.aValider.length} sur ${selected.size})`}
               </button>
               <button className="btn btn-danger btn-sm" disabled={suppression !== null} onClick={deleteSelection}>
                 {suppression ? `Suppression… ${suppression.fait}/${suppression.total}` : `Supprimer la sélection (${selected.size})`}
@@ -886,6 +918,20 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
           <button className="btn btn-primary btn-sm" onClick={() => setAjoutOuvert(true)}>+ Ajouter des documents</button>
         </div>
       </div>
+
+      {/* Ce que « Valider la sélection » n'enverra pas, et pourquoi, sous les mots de la base : dit AVANT le clic. */}
+      {ecartesDeLaSelection.length > 0 && (
+        <details className="card" style={{ marginBottom: 14 }}>
+          <summary>{resumeDeLaSelection(ecartesDeLaSelection.length)}</summary>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+            {ecartesDeLaSelection.map((e) => (
+              <li key={e.piece.id}>
+                <span className="nom-fichier">{e.piece.nom_fichier}</span>{` — ${e.raison}`}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {presenceTexteIncertaine && (
         // Dit pourquoi le bouton a disparu, plutôt que de le laisser manquer sans raison visible.

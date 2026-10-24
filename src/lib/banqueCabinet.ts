@@ -22,6 +22,7 @@ import { sensCoherent } from './appariementBanque'
 import { estLeClient, type AccesDuDossier, type EtatDuFiltre } from './auteursVentes'
 import { etatDuMouvement, LIBELLE_DE_L_ETAT, refusDeRetirer } from './banqueClient'
 import { formatDate, formatMoney } from './format'
+import { NE_S_ASSOCIE_PAS } from './lotsDeLaJumelleInversee'
 import type { PaiementDePiece } from './rattachement'
 import type { JustificatifPropose, LigneBancaire, Piece, PrecisionMouvement } from './types'
 
@@ -270,6 +271,9 @@ export type EtatDeLaProposition =
   | { etat: 'mouvement_fige'; figeePar: string }
   // La pièce ne figure pas parmi les pièces lues.
   | { etat: 'piece_non_lue'; lecturePartielle: boolean }
+  // La pièce est l'exemplaire d'une facture source de sa vente (étape VF6d) : la base refuse qu'elle soit rapprochée (G4) ;
+  // `raison`, ses mots.
+  | { etat: 'exemplaire_d_une_source'; raison: string }
   // La pièce porte une écriture d'un exercice validé (en trésorerie) : elle ne se rapproche plus.
   | { etat: 'piece_figee' }
   // La pièce est déjà payée par un autre mouvement, et rien n'en reste à régler.
@@ -294,6 +298,10 @@ export interface ContexteDeLaProposition {
   paiementsDeLaPiece: readonly Pick<PaiementDePiece, 'date' | 'montant'>[]
   // Le refus d'un second paiement de cette pièce par ce mouvement (`refusSecondPaiement`), calculé par l'appelant.
   refusSecondPaiement: string | null
+  // Les exemplaires des factures sources parmi les pièces lues, chacun sous les mots de G4 (étape VF6d ;
+  // lib/lotsDeLaJumelleInversee.ts, `exemplairesDesSourcesDe`) : pièce → raison. Sans valeur par défaut ; vide sur un
+  // dossier qui n'a pas basculé.
+  exemplairesDesSources: ReadonlyMap<string, string>
 }
 
 /** L'état d'une proposition courante, dans l'ordre : le mouvement d'abord, puis sa pièce. */
@@ -305,6 +313,9 @@ export function etatDeLaProposition(p: Pick<JustificatifPropose, 'piece_id'>, c:
   if (c.ligne.statut !== 'non_rapprochee' || c.ligne.prelevement_personnel) return { etat: 'mouvement_classe' }
   if (c.figeePar !== null) return { etat: 'mouvement_fige', figeePar: c.figeePar }
   if (!c.pieces.some((x) => x.id === p.piece_id)) return { etat: 'piece_non_lue', lecturePartielle: !c.piecesLuesEnEntier }
+  // L'exemplaire d'une facture source ne s'associe à aucun mouvement, figé ou payé ailleurs : G4 le dit d'abord.
+  const exemplaire = c.exemplairesDesSources.get(p.piece_id)
+  if (exemplaire !== undefined) return { etat: 'exemplaire_d_une_source', raison: exemplaire }
   if (c.piecesFigees.has(p.piece_id)) return { etat: 'piece_figee' }
   const reste = c.restesARegler.get(p.piece_id)
   if (reste !== undefined) return { etat: 'piece_payee_en_partie', reste, refus: c.refusSecondPaiement }
@@ -332,6 +343,8 @@ export function phraseDeLEtat(e: EtatDeLaProposition): string | null {
         ? 'La pièce proposée ne figure pas parmi les pièces lues — elles ne l’ont pas été en entier : recharge la page.'
         : 'La pièce proposée ne figure pas parmi les pièces du dossier : elle a peut-être été supprimée depuis la lecture. '
           + 'Recharge la page.'
+    case 'exemplaire_d_une_source':
+      return `${e.raison} ${NE_S_ASSOCIE_PAS}`
     case 'piece_figee':
       return 'Cette pièce porte une écriture d’un exercice validé : elle ne se rapproche plus d’aucun mouvement.'
     case 'piece_rapprochee_ailleurs':

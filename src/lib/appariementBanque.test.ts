@@ -14,6 +14,7 @@ import {
   tiersConfirmeParBanque,
 } from './appariementBanque'
 import { AUCUN_HORS_DES_LOTS } from './mouvementsDesVentes'
+import { AUCUNE_FACTURE_SOURCE } from './facturesSources'
 import type { CotisationRapprochable } from './appariementBanque'
 import type { LigneBancaire, Piece } from './types'
 
@@ -130,79 +131,79 @@ describe('motsDuLibelle et motsSeConfirment', () => {
 
 describe('analyserAppariements — ce qui est certain', () => {
   it('retient une pièce dont montant, date et fournisseur concordent', () => {
-    const { certains, aArbitrer } = analyserAppariements([piece({})], [ligne({})])
+    const { certains, aArbitrer } = analyserAppariements([piece({})], [ligne({})], AUCUNE_FACTURE_SOURCE)
     expect(certains).toHaveLength(1)
     expect(certains[0].ecartJours).toBe(4)
     expect(aArbitrer).toEqual([])
   })
 
   it('n’apparie rien hors de la tolérance de date', () => {
-    const { certains, aArbitrer } = analyserAppariements([piece({})], [ligne({ date: '2025-06-20' })])
+    const { certains, aArbitrer } = analyserAppariements([piece({})], [ligne({ date: '2025-06-20' })], AUCUNE_FACTURE_SOURCE)
     expect(certains).toEqual([])
     expect(aArbitrer).toEqual([])
   })
 
   it('n’apparie rien sur un montant différent d’un centime', () => {
-    const { certains, aArbitrer } = analyserAppariements([piece({})], [ligne({ montant: -38.42 })])
+    const { certains, aArbitrer } = analyserAppariements([piece({})], [ligne({ montant: -38.42 })], AUCUNE_FACTURE_SOURCE)
     expect(certains).toEqual([])
     expect(aArbitrer).toEqual([])
   })
 
   it('ignore un mouvement déjà rapproché', () => {
-    const { certains } = analyserAppariements([piece({})], [ligne({ statut: 'rapprochee' })])
+    const { certains } = analyserAppariements([piece({})], [ligne({ statut: 'rapprochee' })], AUCUNE_FACTURE_SOURCE)
     expect(certains).toEqual([])
   })
 
   it('ignore une pièce sans montant ou sans date', () => {
-    expect(analyserAppariements([piece({ montant_ttc: null })], [ligne({})]).certains).toEqual([])
-    expect(analyserAppariements([piece({ date_piece: null })], [ligne({})]).certains).toEqual([])
+    expect(analyserAppariements([piece({ montant_ttc: null })], [ligne({})], AUCUNE_FACTURE_SOURCE).certains).toEqual([])
+    expect(analyserAppariements([piece({ date_piece: null })], [ligne({})], AUCUNE_FACTURE_SOURCE).certains).toEqual([])
   })
 })
 
 describe('analyserAppariements — ce qui part à l’arbitrage', () => {
   it('refuse quand deux mouvements peuvent convenir à la même pièce', () => {
-    const a = analyserAppariements([piece({})], [ligne({ id: 'a' }), ligne({ id: 'b', date: '2025-06-03' })])
+    const a = analyserAppariements([piece({})], [ligne({ id: 'a' }), ligne({ id: 'b', date: '2025-06-03' })], AUCUNE_FACTURE_SOURCE)
     expect(a.certains).toEqual([])
     expect(a.aArbitrer.map((p) => p.motif)).toEqual(['plusieurs mouvements possibles', 'plusieurs mouvements possibles'])
   })
 
   it('refuse quand deux pièces se disputent le même mouvement', () => {
     // Cas réel : la même facture déposée deux fois, même date et même montant.
-    const a = analyserAppariements([piece({ id: 'p1' }), piece({ id: 'p2' })], [ligne({})])
+    const a = analyserAppariements([piece({ id: 'p1' }), piece({ id: 'p2' })], [ligne({})], AUCUNE_FACTURE_SOURCE)
     expect(a.certains).toEqual([])
     expect(a.aArbitrer.every((p) => p.motif === 'plusieurs pièces possibles')).toBe(true)
   })
 
   it('refuse un fournisseur que la banque ne confirme pas', () => {
-    const a = analyserAppariements([piece({ tiers: 'DARNIS JEREMY' })], [ligne({})])
+    const a = analyserAppariements([piece({ tiers: 'DARNIS JEREMY' })], [ligne({})], AUCUNE_FACTURE_SOURCE)
     expect(a.certains).toEqual([])
     expect(a.aArbitrer[0].motif).toBe('fournisseur non confirmé par le libellé bancaire')
   })
 
   it('refuse une pièce sans fournisseur lu', () => {
-    const a = analyserAppariements([piece({ tiers: null })], [ligne({})])
+    const a = analyserAppariements([piece({ tiers: null })], [ligne({})], AUCUNE_FACTURE_SOURCE)
     expect(a.aArbitrer[0].motif).toBe('aucun fournisseur lu sur la pièce')
   })
 
   it('refuse un achat rapproché d’un encaissement', () => {
     // Même montant, même date, bon fournisseur — mais l'argent est entré alors que la pièce est un
     // achat. C'est un remboursement, pas le paiement de cette facture.
-    const a = analyserAppariements([piece({})], [ligne({ montant: 38.4 })])
+    const a = analyserAppariements([piece({})], [ligne({ montant: 38.4 })], AUCUNE_FACTURE_SOURCE)
     expect(a.certains).toEqual([])
     expect(a.aArbitrer[0].motif).toBe('sens contraire au type de pièce')
   })
 
   it('attend un encaissement pour une vente', () => {
     const vente = piece({ type_piece: 'vente', tiers: 'Transmedical' })
-    expect(analyserAppariements([vente], [ligne({ montant: 38.4 })]).certains).toHaveLength(1)
-    expect(analyserAppariements([vente], [ligne({ montant: -38.4 })]).aArbitrer[0].motif)
+    expect(analyserAppariements([vente], [ligne({ montant: 38.4 })], AUCUNE_FACTURE_SOURCE).certains).toHaveLength(1)
+    expect(analyserAppariements([vente], [ligne({ montant: -38.4 })], AUCUNE_FACTURE_SOURCE).aArbitrer[0].motif)
       .toBe('sens contraire au type de pièce')
   })
 
   it('attend un encaissement pour un avoir sur achat', () => {
     // Un avoir fournisseur est une pièce d'achat à montant négatif : l'argent revient sur le compte.
     const avoir = piece({ montant_ttc: -38.4 })
-    expect(analyserAppariements([avoir], [ligne({ montant: 38.4 })]).certains).toHaveLength(1)
+    expect(analyserAppariements([avoir], [ligne({ montant: 38.4 })], AUCUNE_FACTURE_SOURCE).certains).toHaveLength(1)
   })
 })
 
@@ -218,7 +219,7 @@ describe('analyserAppariements — ordre de présentation', () => {
         ligne({ id: 'a', montant: -38.4 }),
         ligne({ id: 'b', montant: -100 }),
         ligne({ id: 'c', montant: -900 }),
-      ],
+      ], AUCUNE_FACTURE_SOURCE,
     )
     expect(a.certains.map((p) => p.piece.id)).toEqual(['gros', 'pres', 'loin'])
   })
@@ -243,7 +244,7 @@ describe('le scénario réel qui a servi de référence', () => {
     pieces.push(piece({ id: 'doublon-b', date_piece: '2025-12-01', montant_ttc: 55, tiers: 'Transmedical' }))
     lignes.push(ligne({ id: 'l-55', date: '2025-12-05', montant: -55, libelle: 'PRLV SEPA TRANSMEDICAL' }))
 
-    const { certains, aArbitrer } = analyserAppariements(pieces, lignes)
+    const { certains, aArbitrer } = analyserAppariements(pieces, lignes, AUCUNE_FACTURE_SOURCE)
     expect(certains).toHaveLength(10)
     expect(certains.map((c) => c.piece.id).sort()).toEqual(mois.map((m) => `ok-${m}`).sort())
 
@@ -267,7 +268,7 @@ describe('appariement d’une pièce en devise étrangère', () => {
 
   it('apparie un débit proche, que l’égalité au centime rejetterait', () => {
     const debit = ligne({ date: '2025-08-12', montant: -20.68, libelle: 'CB59OPENAI          09/08/25' })
-    const { certains } = analyserAppariements([enUsd()], [debit])
+    const { certains } = analyserAppariements([enUsd()], [debit], AUCUNE_FACTURE_SOURCE)
     expect(certains).toHaveLength(1)
     expect(certains[0].ligne.montant).toBe(-20.68)
   })
@@ -276,7 +277,7 @@ describe('appariement d’une pièce en devise étrangère', () => {
     // Même fournisseur, même semaine, mais 34 € pour une facture de 24 USD : ce n'est pas un écart
     // de change, c'est un autre mouvement.
     const debit = ligne({ date: '2025-08-12', montant: -34.00, libelle: 'CB59OPENAI          09/08/25' })
-    const { certains, aArbitrer } = analyserAppariements([enUsd()], [debit])
+    const { certains, aArbitrer } = analyserAppariements([enUsd()], [debit], AUCUNE_FACTURE_SOURCE)
     expect(certains).toEqual([])
     expect(aArbitrer).toEqual([])
   })
@@ -287,7 +288,7 @@ describe('appariement d’une pièce en devise étrangère', () => {
     // cinq jours après la facture — dans la tolérance. Seul le libellé l'écarte. Sans lui, une
     // prime d'assurance devenait le montant d'une facture OpenAI.
     const macsf = ligne({ date: '2025-08-14', montant: -19.72, libelle: 'PRLV SEPA MACSF-ASSU-' })
-    const { certains, aArbitrer } = analyserAppariements([enUsd()], [macsf])
+    const { certains, aArbitrer } = analyserAppariements([enUsd()], [macsf], AUCUNE_FACTURE_SOURCE)
     expect(certains).toEqual([])
     expect(aArbitrer).toHaveLength(1)
     expect(aArbitrer[0].motif).toBe('fournisseur non confirmé par le libellé bancaire')
@@ -299,7 +300,7 @@ describe('appariement d’une pièce en devise étrangère', () => {
     // ignore encore ce qu'elle vaut.
     const sansAncre = enUsd({ montant_ttc: null, montant_ht: null, montant_tva: null, taux_change: null })
     const debit = ligne({ date: '2025-08-12', montant: -20.68, libelle: 'CB59OPENAI          09/08/25' })
-    const { certains, aArbitrer } = analyserAppariements([sansAncre], [debit])
+    const { certains, aArbitrer } = analyserAppariements([sansAncre], [debit], AUCUNE_FACTURE_SOURCE)
     expect(certains).toEqual([])
     expect(aArbitrer).toEqual([])
   })
@@ -309,7 +310,7 @@ describe('appariement d’une pièce en devise étrangère', () => {
     // les pièces gagnaient cinq pour cent de tolérance sans que personne l'ait demandé.
     const sansDevise = piece({ montant_ttc: 38.4 })
     delete (sansDevise as { devise?: string }).devise
-    const { certains, aArbitrer } = analyserAppariements([sansDevise], [ligne({ montant: -38.42 })])
+    const { certains, aArbitrer } = analyserAppariements([sansDevise], [ligne({ montant: -38.42 })], AUCUNE_FACTURE_SOURCE)
     expect(certains).toEqual([])
     expect(aArbitrer).toEqual([])
   })
@@ -351,7 +352,7 @@ describe('tolérance de date', () => {
     expect(JOURS_TOLERANCE).toBeGreaterThanOrEqual(7)
     const facture = piece({ date_piece: '2025-04-01' })
     const preleve = ligne({ date: '2025-04-07', montant: -38.4 })
-    const { certains } = analyserAppariements([piece({ ...facture, montant_ttc: 38.4 })], [preleve])
+    const { certains } = analyserAppariements([piece({ ...facture, montant_ttc: 38.4 })], [preleve], AUCUNE_FACTURE_SOURCE)
     expect(certains).toHaveLength(1)
     expect(certains[0].ecartJours).toBe(6)
   })
@@ -363,7 +364,7 @@ describe('tolérance de date', () => {
     expect(JOURS_TOLERANCE).toBeLessThan(28)
     const facture = piece({ date_piece: '2025-04-01', montant_ttc: 38.4 })
     const moisSuivant = ligne({ date: '2025-05-05', montant: -38.4 })
-    const { certains, aArbitrer } = analyserAppariements([facture], [moisSuivant])
+    const { certains, aArbitrer } = analyserAppariements([facture], [moisSuivant], AUCUNE_FACTURE_SOURCE)
     expect(certains).toEqual([])
     expect(aArbitrer).toEqual([])
   })
@@ -433,13 +434,13 @@ describe('planRapprochementAutomatique', () => {
 
   it('rapproche la ligne quand une seule pièce convient', () => {
     const plan = planRapprochementAutomatique(
-      [ligne({ id: 'l1' })], [piece({ id: 'juin', statut: 'validee' })], [], vide, AUCUN_HORS_DES_LOTS)
+      [ligne({ id: 'l1' })], [piece({ id: 'juin', statut: 'validee' })], [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
     expect(plan.retenus).toEqual([{ ligneId: 'l1', pieceId: 'juin' }])
     expect(plan.ecartesPourAmbiguite).toBe(0)
   })
 
   it('refuse de choisir entre deux pièces qui conviennent aussi bien', () => {
-    const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], deuxPiecesIdentiques, [], vide, AUCUN_HORS_DES_LOTS)
+    const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], deuxPiecesIdentiques, [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
     expect(plan.retenus).toEqual([])
     expect(plan.ecartesPourAmbiguite).toBe(1)
   })
@@ -449,7 +450,7 @@ describe('planRapprochementAutomatique', () => {
     // le premier mouvement, sans que rien ne dise que le second convenait tout autant.
     const plan = planRapprochementAutomatique(
       [ligne({ id: 'l1', date: '2025-06-05' }), ligne({ id: 'l2', date: '2025-06-06' })],
-      [piece({ id: 'juin', statut: 'validee' })], [], vide, AUCUN_HORS_DES_LOTS)
+      [piece({ id: 'juin', statut: 'validee' })], [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
     expect(plan.retenus).toEqual([])
     expect(plan.ecartesPourAmbiguite).toBe(2)
   })
@@ -463,7 +464,7 @@ describe('planRapprochementAutomatique', () => {
       [
         piece({ id: 'a', statut: 'validee', montant_ttc: 38.4 }),
         piece({ id: 'b', statut: 'validee', montant_ttc: 120, date_piece: '2025-06-09' }),
-      ], [], vide, AUCUN_HORS_DES_LOTS)
+      ], [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
     expect(plan.retenus).toEqual([
       { ligneId: 'l1', pieceId: 'a' },
       { ligneId: 'l2', pieceId: 'b' },
@@ -475,7 +476,7 @@ describe('planRapprochementAutomatique', () => {
     // Sinon le message « N mouvements ont plusieurs pièces possibles » compterait tout le relevé, et
     // un avertissement qui se trompe toujours finit par ne plus être lu.
     const plan = planRapprochementAutomatique(
-      [ligne({ id: 'l1', montant: -999 })], [piece({ id: 'juin', statut: 'validee' })], [], vide, AUCUN_HORS_DES_LOTS)
+      [ligne({ id: 'l1', montant: -999 })], [piece({ id: 'juin', statut: 'validee' })], [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
     expect(plan.retenus).toEqual([])
     expect(plan.ecartesPourAmbiguite).toBe(0)
   })
@@ -483,7 +484,7 @@ describe('planRapprochementAutomatique', () => {
   it('écarte une pièce déjà rapprochée ailleurs, ce qui lève l’ambiguïté', () => {
     const plan = planRapprochementAutomatique(
       [ligne({ id: 'l1' })], deuxPiecesIdentiques, [],
-      { pieces: new Set(['mai']), cotisations: new Set<string>() }, AUCUN_HORS_DES_LOTS)
+      { pieces: new Set(['mai']), cotisations: new Set<string>() }, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
     expect(plan.retenus).toEqual([{ ligneId: 'l1', pieceId: 'juin' }])
     expect(plan.ecartesPourAmbiguite).toBe(0)
   })
@@ -491,7 +492,7 @@ describe('planRapprochementAutomatique', () => {
   it('tient la tolérance de cinq jours, des deux côtés de la borne', () => {
     const avec = (date: string) => planRapprochementAutomatique(
       [ligne({ id: 'l1', date: '2025-06-05' })],
-      [piece({ id: 'p', statut: 'validee', date_piece: date })], [], vide, AUCUN_HORS_DES_LOTS).retenus.length
+      [piece({ id: 'p', statut: 'validee', date_piece: date })], [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE).retenus.length
     expect(avec('2025-05-31'), '5 jours avant — dans la tolérance').toBe(1)
     expect(avec('2025-06-10'), '5 jours après — dans la tolérance').toBe(1)
     expect(avec('2025-05-30'), '6 jours avant — hors tolérance').toBe(0)
@@ -513,7 +514,7 @@ describe('planRapprochementAutomatique', () => {
         process.env.TZ = tz
         const plan = planRapprochementAutomatique(
           [ligne({ id: 'l1', date: '2025-06-05' })],
-          [piece({ id: 'p', statut: 'validee', date_piece: '2025-05-31' })], [], vide, AUCUN_HORS_DES_LOTS)
+          [piece({ id: 'p', statut: 'validee', date_piece: '2025-05-31' })], [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
         expect(plan.retenus.length, tz).toBe(1)
       }
     } finally { process.env.TZ = TZ_ORIGINE }
@@ -524,7 +525,7 @@ describe('planRapprochementAutomatique', () => {
       ({ id: 'c1', echeance: '2025-06-05', montant_appele: 38.4, montant_verse: null, paiement_personnel_le: null, ...o })
 
     it('rapproche une échéance quand aucune pièce ne convient', () => {
-      const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({})], vide, AUCUN_HORS_DES_LOTS)
+      const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({})], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
       expect(plan.retenus).toEqual([{ ligneId: 'l1', cotisationId: 'c1' }])
     })
 
@@ -532,13 +533,13 @@ describe('planRapprochementAutomatique', () => {
       // Un appel n'est pas toujours prélevé pour son montant appelé exact (régularisation, paiement
       // partiel) : c'est le montant réellement versé qui doit retrouver le mouvement.
       const plan = planRapprochementAutomatique(
-        [ligne({ id: 'l1', montant: -40 })], [], [cot({ montant_appele: 38.4, montant_verse: 40 })], vide, AUCUN_HORS_DES_LOTS)
+        [ligne({ id: 'l1', montant: -40 })], [], [cot({ montant_appele: 38.4, montant_verse: 40 })], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
       expect(plan.retenus).toEqual([{ ligneId: 'l1', cotisationId: 'c1' }])
     })
 
     it('refuse de choisir entre deux échéances identiques', () => {
       const plan = planRapprochementAutomatique(
-        [ligne({ id: 'l1' })], [], [cot({ id: 'c1' }), cot({ id: 'c2' })], vide, AUCUN_HORS_DES_LOTS)
+        [ligne({ id: 'l1' })], [], [cot({ id: 'c1' }), cot({ id: 'c2' })], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
       expect(plan.retenus).toEqual([])
       expect(plan.ecartesPourAmbiguite).toBe(1)
     })
@@ -548,10 +549,10 @@ describe('planRapprochementAutomatique', () => {
       // l'aurait rapproché : un remboursement compté en charge. Depuis que le rapprochement s'écrit
       // (lib/cotisationRapprochee.ts), la base le refuse — ici, on ne le propose plus.
       const encaissement = ligne({ id: 'l1', montant: 38.4 })
-      expect(planRapprochementAutomatique([encaissement], [], [cot({})], vide, AUCUN_HORS_DES_LOTS).retenus).toEqual([])
-      expect(planRapprochementAutomatique([encaissement], [], [cot({ montant_appele: -38.4 })], vide, AUCUN_HORS_DES_LOTS).retenus)
+      expect(planRapprochementAutomatique([encaissement], [], [cot({})], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE).retenus).toEqual([])
+      expect(planRapprochementAutomatique([encaissement], [], [cot({ montant_appele: -38.4 })], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE).retenus)
         .toEqual([{ ligneId: 'l1', cotisationId: 'c1' }])
-      expect(planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({ montant_appele: -38.4 })], vide, AUCUN_HORS_DES_LOTS).retenus).toEqual([])
+      expect(planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({ montant_appele: -38.4 })], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE).retenus).toEqual([])
       // Le versement saisi fait foi sur l'appel, pour le sens comme pour le montant.
       expect(candidatsCotisations(encaissement, [cot({ montant_verse: -38.4 })], new Set()).map((c) => c.id)).toEqual(['c1'])
     })
@@ -561,7 +562,7 @@ describe('planRapprochementAutomatique', () => {
     it('une échéance payée depuis le compte personnel n’est plus proposée', () => {
       const payee = cot({ paiement_personnel_le: '2025-06-10' })
       expect(candidatsCotisations(ligne({ id: 'l1' }), [payee], new Set())).toEqual([])
-      expect(planRapprochementAutomatique([ligne({ id: 'l1' })], [], [payee], vide, AUCUN_HORS_DES_LOTS).retenus).toEqual([])
+      expect(planRapprochementAutomatique([ligne({ id: 'l1' })], [], [payee], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE).retenus).toEqual([])
       expect(candidatsCotisations(ligne({ id: 'l1' }), [cot({ paiement_personnel_le: null })], new Set()).map((c) => c.id)).toEqual(['c1'])
     })
 
@@ -575,7 +576,7 @@ describe('planRapprochementAutomatique', () => {
       // Ce n'est PAS un arbitrage entre égaux mais une règle de l'écran, conservée telle quelle : la
       // changer serait une décision produit, pas une correction.
       const plan = planRapprochementAutomatique(
-        [ligne({ id: 'l1' })], [piece({ id: 'p', statut: 'validee' })], [cot({})], vide, AUCUN_HORS_DES_LOTS)
+        [ligne({ id: 'l1' })], [piece({ id: 'p', statut: 'validee' })], [cot({})], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
       expect(plan.retenus).toEqual([{ ligneId: 'l1', pieceId: 'p' }])
     })
   })

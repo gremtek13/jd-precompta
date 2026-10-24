@@ -48,3 +48,9 @@ export function facturesSourcesDe(
 ): FacturesSources {
   return new Set(factures.filter((f) => f.statut === 'validee' && f.source_de_la_vente === true).map((f) => f.id))
 }
+
+/**
+ * Aucune facture source : le fait d'un dossier qui n'a pas basculé — la base y refuse toute facture source
+ * (`fixer_source_de_la_vente`). Jamais pour des factures qui ne sont pas encore lues : ce vide est une affirmation.
+ */
+export const AUCUNE_FACTURE_SOURCE: FacturesSources = new Set()
