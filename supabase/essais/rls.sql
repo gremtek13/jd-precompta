@@ -500,6 +500,14 @@
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
+--
+-- 24/10/2026 — EN PRODUCTION, la migration `jumelle_inversee` appliquée (`20261024052424`, après `virement_mixte`) : ce
+-- fichier n'y a pas été rejoué entier (sa copie adaptée : 81 075 caractères, `bcad9dbd…`, de l'ordre de 130 000 jetons à
+-- lire et recopier) ; la signature des neuf familles en production égale celle de la réplique où il a rendu 46 lignes,
+-- 0 en faute, 43 mutations sur 43. À la place, un contrôle ciblé de `designations_des_pieces` par impersonation, la
+-- transaction annulée : le super-administrateur y pose et y lit une ligne de restauration, le client d'essai, un compte
+-- rattaché à rien et l'anonyme n'en lisent rien et n'y écrivent pas (42501), rien n'est resté ; la RLS active, les deux
+-- policies à `authenticated` seul (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 

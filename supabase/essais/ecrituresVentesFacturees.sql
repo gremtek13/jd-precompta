@@ -150,6 +150,10 @@
 -- l'exemplaire d'une facture d'avant passe G4, qui ne refuse que l'exemplaire d'une facture SOURCE. Sur une réplique égale
 -- à la production plus la migration de VF5h : sans la migration, 198 contrôles, le 151 seul en faute ; avec elle, 198
 -- justes, rien n'est resté.
+--
+-- 24/10/2026 — les migrations `virement_mixte` et `jumelle_inversee` APPLIQUÉES en production (`20261024052038`,
+-- `20261024052424`) : ce fichier n'y a pas été rejoué entier ; la signature des neuf familles en production égale celle
+-- de la réplique où il a rendu ses 198 justes (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';

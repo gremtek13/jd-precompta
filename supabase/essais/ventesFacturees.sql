@@ -124,6 +124,10 @@
 -- caractères, empreinte 70d26257a053e7d0216af5a257a584e8, 198 justes. Les douze mutations du classement, jouées contre
 -- cet essai et ecrituresVentesFacturees.sql : dix tuées ; les deux survivantes sont équivalentes (le dossier et la
 -- nature d'un exemplaire, que sa garde impose).
+--
+-- 24/10/2026 — la migration `virement_mixte` APPLIQUÉE en production (`20261024052038`), puis `jumelle_inversee` : ce
+-- fichier n'y a pas été rejoué entier ; la signature des neuf familles en production égale celle de la réplique où il a
+-- rendu ses 198 justes (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';

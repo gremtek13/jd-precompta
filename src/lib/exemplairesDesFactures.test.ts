@@ -55,8 +55,8 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 // confrontent au texte de CETTE migration (§ 5), et à leurs cas (§ 4) — plus à l'essai, que l'étape VF6b a étendu à la
 // migration `jumelle_inversee` : la désignation y REMPLACE désormais (VF6-Q1), et l'essai n'exige plus le refus d'hier.
 //
-// LE BLOC DE VF6b (refusDeLaDesignationMarquee et la suite) dit ce que la base refusera, la migration `jumelle_inversee`
-// appliquée. Il se confronte à l'essai `supabase/essais/exemplairesDesFactures.sql`, joué sur une réplique égale à la
+// LE BLOC DE VF6b (refusDeLaDesignationMarquee et la suite) dit ce que la base refuse depuis la migration
+// `jumelle_inversee`, appliquée le 24/10/2026. Il se confronte à l'essai `supabase/essais/exemplairesDesFactures.sql`, joué sur une réplique égale à la
 // production plus les migrations de VF5h et de VF6b, dont chaque contrôle exige de la base un code ET des mots : chaque
 // refus du bloc y est exigé (§ 2), et le test rejoue dans le bloc, appel par appel, ce que l'essai a demandé à la base —
 // sur le même jeu, l'état de J relevé par l'essai lui-même (231 et 232) —, le refus au mot près, ou rien quand elle a

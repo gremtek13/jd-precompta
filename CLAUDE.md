@@ -481,17 +481,21 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   LA CONCEPTION ». VF6a le 23/10/2026, neutre : le brouillon, la Checklist et les préalables ignorent l'exemplaire d'une
   facture source (`lib/facturesSources.ts`, en paramètre obligatoire), son écriture passée est sans objet et se retire →
   « LE BROUILLON ET LES PRÉALABLES IGNORENT L'EXEMPLAIRE D'UNE FACTURE SOURCE ». VF5h le 23/10/2026, repris sur VF6a, sa
-  migration (`virement_mixte`) éprouvée sur une réplique, PAS appliquée : un crédit qui paie une facture source et une
-  facture d'avant la bascule se classe par ses encaissements avec l'exemplaire unique et validé de celle-ci (sinon le
-  rang 7, neuf), s'écrit sans la part de cette facture et date l'exemplaire (`partsEncaissees`) ; G5 laisse la banque
-  d'une pièce sur un tel mouvement ; des ventes facturées lues en partie retiennent la génération et la validation par
-  la garde unique de VF6a ; VF5H-Q1 à Q3 ouvertes → « LE VIREMENT MIXTE — CHANTIER EC-Q3 ». VF6b le 23/10/2026, sa
-  migration (`jumelle_inversee`) éprouvée sur une réplique après celle de VF5h, PAS appliquée : la déclaration d'une
-  vente hors des factures, `factures_du_pont` (le jumeau du pont), G3 et G4, la désignation qui remplace (VF6-Q1) et
-  se refuse sous un virement mixte classé (VF5H-Q1, sur la recommandation), le journal des désignations au cabinet
-  seul ; le code derrière `JUMELLE_INVERSEE_EXPORTEE`, baissé → « LA JUMELLE INVERSÉE, EN BASE ». Restent VF6c à VF6e
-  (avec eux, trois préalables qui jugent encore l'exemplaire), puis VF7 à VF9 (EC3-Q9, la facture reprise, va à A8) ;
-  à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
+  migration (`virement_mixte`, `20261024052038`) appliquée le 24/10/2026 sur l'accord du cabinet : un crédit qui paie
+  une facture source et une facture d'avant la bascule se classe par ses encaissements avec l'exemplaire unique et
+  validé de celle-ci (sinon le rang 7, neuf), s'écrit sans la part de cette facture et date l'exemplaire
+  (`partsEncaissees`) ; G5 laisse la banque d'une pièce sur un tel mouvement ; des ventes facturées lues en partie
+  retiennent la génération et la validation par la garde unique de VF6a → « LE VIREMENT MIXTE — CHANTIER EC-Q3 ». VF6b
+  le 23/10/2026, sa migration (`jumelle_inversee`, `20261024052424`) appliquée le 24/10/2026 après celle de VF5h, sur
+  l'accord du cabinet : la déclaration d'une vente hors des factures, `factures_du_pont` (le jumeau du pont), G3 et G4,
+  la désignation qui remplace (VF6-Q1) et se refuse sous un virement mixte classé (VF5H-Q1), le journal des désignations
+  au cabinet seul ; `JUMELLE_INVERSEE_EXPORTEE` levé → « LA JUMELLE INVERSÉE, EN BASE », « LE VIREMENT MIXTE ET LA
+  JUMELLE INVERSÉE EN PRODUCTION ». VF5H-Q1 à Q3 et VF6B-Q1 tranchées le 24/10/2026 à la recommandation. Restent VF5h2
+  (VF5H-Q2 : les refus du registre pour la facture d'avant d'un virement mixte classé, une migration, avant la première
+  bascule réelle), VF6c à VF6e (avec eux, trois préalables qui jugent encore l'exemplaire ; à VF6c, la fiche d'une pièce
+  dit qu'un journal est resté dans un autre dossier, VF6B-Q1), puis VF7 à VF9 (EC3-Q9, la facture reprise, va à A8) ;
+  « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la
+  simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;

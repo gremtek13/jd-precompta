@@ -159,6 +159,10 @@
 -- celui des lignes d'une facture, qui ne l'écrit pas. Elle reste une LECTURE : une suppression ne se joue pas en
 -- production (l'outil la soumet à une confirmation qui n'arrive pas) : celle d'un dossier entier ne se joue que sur
 -- une réplique.
+--
+-- 24/10/2026 — la migration `jumelle_inversee` APPLIQUÉE en production (`20261024052424`) : ce fichier n'y a pas été
+-- rejoué entier ; la signature des neuf familles en production égale celle de la réplique où il a rendu ses 152 justes
+-- (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
