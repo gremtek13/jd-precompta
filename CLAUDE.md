@@ -504,12 +504,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   « Exemplaire de la facture … », « À désigner : c’est la facture … » et « Vente hors des factures de l’application », le
   bilan d'un import, deux points d'attention (`exemplaires-a-designer`, le symptôme de VF6-Q4) ; `comptes-manquants`,
   `postes-manquants` et `pieces-payees-en-trop` écartent l'exemplaire → « LE PONT, SES MARQUES ET LA CHECKLIST DEVANT LA
-  JUMELLE INVERSÉE ». VF7 conçue le 25/10/2026 (cinq lots, VF7a à VF7e, dont trois migrations ; question VF7-Q1) →
-  « VF7, LA VALIDATION FIGE LA SOURCE : LA CONCEPTION ». Restent VF5h2 (VF5H-Q2 : les refus du registre pour la facture
-  d'avant d'un virement mixte classé, une migration, avant la première bascule réelle), puis VF7a à VF7e, VF8 et VF9
-  (EC3-Q9, la facture reprise, va à A8) ;
-  « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la
-  simulation recevra dit aussi quelle pièce ignorer.
+  JUMELLE INVERSÉE ». VF5h2 (VF5H-Q2) PRÉPARÉE le 24/10/2026, pas appliquée — sa migration (`registre_virement_mixte`)
+  dans l'export à sa version provisoire, à appliquer sur l'accord du cabinet avant la première bascule réelle :
+  l'encaissement d'une facture d'avant ne cite plus un virement mixte classé, ni ne se retire ou ne se contre-passe sans
+  débit quand celui-ci le compte → « LES REFUS DU REGISTRE POUR LA FACTURE D'AVANT D'UN VIREMENT MIXTE ». VF7 conçue
+  le 25/10/2026 (cinq lots, VF7a à VF7e, dont trois migrations ; question VF7-Q1) → « VF7, LA VALIDATION FIGE LA
+  SOURCE : LA CONCEPTION ». Restent VF7a à VF7e, VF8 et VF9 (EC3-Q9, la facture reprise, va à A8) ; « Ma banque »
+  nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la simulation recevra
+  dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
