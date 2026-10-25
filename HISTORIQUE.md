@@ -35645,3 +35645,101 @@ coût, les huit secondes vers 35 000 à 40 000 lignes). (6) VF7c, les préalable
 **LES QUESTIONS AU CABINET.** Aucune neuve : VF7B-Q1 et VF7B-Q2 sont sur la page des arbitrages, suivies à leur
 recommandation ; une autre réponse à VF7B-Q1 retirerait la recomposition d'un bloc (la migration se récrirait), une
 autre à VF7B-Q2 ouvrirait d'abord le lot des gardes par ligne.
+
+### 25/10/2026 — LES PRÉALABLES DE LA VALIDATION DISENT LES VENTES FACTURÉES — CHANTIER EC-Q3, VF7C (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF7c sur `c7aa870` — `main` et trois lots préparés dont les migrations ne sont pas
+appliquées : VF5h2, VF7a, VF7b —, la branche locale `vf7c-prealables`, en deux commits : le code et les tests
+(`0bd12c7`), puis cette documentation. À l'écran seulement : aucune lecture ni écriture en base, aucune migration.)
+
+**LA DÉCISION.** La conception de VF7, § 3 (d) et la puce VF7c du § 5 : pour un dossier BASCULÉ, la validation numérote
+les écritures des ventes facturées et dit avant le clic, sous les mots de la base et dans son ordre
+(`REFUS_VENTES_FACTUREES_DE_LA_VALIDATION`, VF7b), ce que `valider_exercice` refusera ; pour un dossier qui n'a pas
+basculé, rien ne change.
+
+**CE QUE L'ÉCRAN FAISAIT.** La numérotation recevait `[]` pour composition : chaque ligne d'une vente facturée sortait
+de la numérotation et se comptait sous `ecritures-orphelines` (« le reste d'une pièce supprimée », faux pour elle) ; un
+mouvement réservé se comptait parmi `mouvements-a-traiter` ; un virement sans son mouvement et une vente pas écrite à
+jour ne se disaient pas ; `anneesActives` ignorait les dates des ventes facturées.
+
+**CE QUI EST FAIT.**
+- `prealablesValidation.ts` : deux entrées OBLIGATOIRES, sans valeur par défaut — `etatsDesVentes` (les états de la
+  section « Ventes facturées », `etatsDesVentesFacturees`, ou « sans objet », ou « incomplète ») et
+  `ventesDeLaChecklist` (la lecture de la Vue d'ensemble) ; nulles tant qu'elles ne sont pas revenues, lues en partie,
+  incohérentes, ou l'une « sans objet » et l'autre non : `lecture-partielle`, motif dit (`ventesIllisibles`). La
+  numérotation reçoit la composition (le paramètre `ventesFacturees` de `numeroterFec`) : les lignes rattachées y
+  prennent le journal, la pièce et l'auxiliaire du FEC. Trois préalables bloquants, nb nul, la PREMIÈRE cause sous les
+  mots de la base (`motsDeLaBase`) et la liste en détail : `mouvements-reserves` (crédit ou débit, juste avant
+  `mouvements-a-traiter`, qui ne le compte plus), `encaissements-sans-mouvement` (virement ou prélèvement, juste après),
+  `ventes-facturees-a-ecrire` (à écrire, à réécrire, à retirer, ne s'écrit pas, chacune nommée, avec le renvoi à la
+  section). Un avertissement nommé, `encaissements-en-cours` : un chèque, une carte ou un effet sans mouvement au 31
+  décembre, un en-cours au 511 (EC3-Q7). `ventesFactureesEnDefaut` rejuge chaque source comme
+  `ventes_facturees_de_l_exercice` : ce qui s'écrit après la frontière ET jusqu'au 31 décembre, comparé date par date
+  aux lignes proposées de la même fenêtre (`memeEcritureQueLeBrouillon`) ; une source qui ne s'écrit pas, quand SA date
+  y tombe ; dans l'ordre du jour, du genre, de la clé. `anneesActives` apprend les dates des documents, des parts, des
+  écritures composées et des sources nommées.
+- `ClotureTab.tsx` compose, sur la lecture qu'il fait déjà (`lectureSourcesVentes`, gardée avec son dossier) et le
+  brouillon entier, les états et la Vue d'ensemble, et les passe à la validation et à `prochainExerciceAValider`.
+- `revisionCycles.ts` range les deux contrôles neufs aux recettes (le garde de `revisionCycles.test.ts` l'a exigé).
+- Les deux points de VF5f restent en « attention » dans la Checklist ; la validation les reprend
+  (`prealablesValidation.test.ts`, le test de VF5f réécrit).
+- `prealablesValidation.ts` importe le module d'écran des ventes facturées : il n'est atteint que par Clôture et la
+  carte de validation, jamais par l'espace du client (le parcours de `ventesFactureesEcrituresCabinetSeul.test.ts`,
+  rejoué : 196 fichiers atteints par le client, ni lui ni Clôture parmi eux) ; aucune forme décrite à part.
+
+**DEUX ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- `ecritures-orphelines` ne retire pas toute ligne qui porte une facture ou un encaissement, ou d'un mouvement classé
+  (`porteUneSourceDeVente`, `ligneDUneVenteFacturee`) : il retire les lignes que `ventes-facturees-a-ecrire` NOMME (les
+  lignes proposées d'une source en défaut). Sur ce que le module produit, c'est le même ensemble — une ligne d'une vente
+  hors de la numérotation appartient à une source à réécrire ou à retirer à sa date — ; une ligne qu'aucune source en
+  défaut ne porterait reste orpheline, du côté fermé. Les lignes d'un mouvement DÉCLASSÉ (R3), que la conception
+  laissait aux orphelines, se disent ainsi une fois, sous `ventes-facturees-a-ecrire` (« à retirer »), et non deux.
+- `anneesActives` lit la composition (documents, parts, écritures) et les sources nommées, pas les lignes lues : les
+  formes de `ContexteEcritureVente` ne portent ni la date d'émission ni celle d'un mouvement. Même ensemble de dates ;
+  la date d'un mouvement classé est déjà au relevé.
+
+**CE QUI CHANGE POUR UN DOSSIER BASCULÉ.** La validation numérote ses ventes ; elle ne dit plus « orphelines » de leurs
+lignes ; elle dit le mouvement réservé, le virement sans mouvement, la vente pas écrite à jour, sous les mots que la
+base rendra (VF7b, pas encore appliquée), et le chèque en cours. Pour un dossier qui n'a pas basculé : composition vide,
+aucun des quatre préalables, les orphelines et les mouvements à traiter comptés comme hier — la suite comparée le
+prouve.
+
+**LES PREUVES.**
+- Les tests : 13 tests neufs dans `prealablesValidation.test.ts`, et celui de VF5f réécrit (chaque préalable de ses deux
+  côtés : hors de l'exercice, figé, dossier non basculé ; la concordance des frais bloquante sur un exercice numéroté ;
+  `anneesActives`, y compris une facture que rien n'encaisse en trésorerie ; sept lectures partielles) ; dix dans
+  `dossierBasculeBoutEnBout.test.ts` (deux plans, deux modèles : la demande couvre exactement les écritures de
+  l'exercice, chacune équilibrée, d'une pièce et d'une date, journaux, numéros et libellés rejoués sur la demande
+  elle-même ; son FEC est celui de l'onglet Écritures, et celui de l'exercice validé, ValidDate près ; non basculé, tout
+  orphelin comme hier) ; quatre dans `ventesFactureesDesExports.test.ts` (les deux tests « jusqu'à VF7 » réécrits, le
+  FEC validé dans les deux modèles) ; trois dans `ClotureTab.test.tsx` ; trois dans `ecransAvantLecture.test.tsx` («
+  ClotureTab (basculé) ») ; le rangement de `revisionCycles.test.ts`.
+- Rouges d'abord : le module d'avant VF7c fait tomber 21 des tests neufs.
+- Les mutations (`muter.py`, hors du dépôt) : 24, 23 tuées. Le module : la numérotation sans composition (14 tests), les
+  orphelines qui comptent les lignes des ventes, les réservés comptés à traiter, un réservé de janvier, un débit sous
+  les mots d'un crédit, un prélèvement qui ne retient plus, un encaissement de janvier, le chèque en cours tu ou
+  bloquant, les deux bornes de la fenêtre, une source qui ne s'écrit pas à toute date, figée ou de janvier, une écriture
+  périmée crue à jour, deux lectures incohérentes, `anneesActives` sans les ventes ou sans les émissions, la dernière
+  source nommée au lieu de la première. L'écran : la validation sans les ventes (3 tests), composée sur un brouillon
+  vide. Survit, ÉQUIVALENTE : la garde du dossier de `lectureSourcesVentes` dans Clôture — tant que la lecture d'un
+  autre dossier est en place, celle de ses factures sources l'est aussi, et la garde de VF6a suspend déjà la
+  validation ; elle reste, en défense.
+- La suite comparée test par test, sous Paris : avant, 14 367 justes ; après, 14 398 justes (34 neufs, trois réécrits
+  disparus sous leur ancien nom), aucun verdict d'avant changé — le rangement de `revisionCycles.test.ts`, tombé au
+  premier passage (deux contrôles sans cycle), compris.
+- Le banc : la visite `cloture-basculee/validation` (la consultante d12, avant l'e-reporting), `debordements.mjs` à 0 à
+  1 440, 1 280, 1 024, 720 et 390 px ; la carte lue : le réservé, les mouvements à traiter, le virement sans mouvement,
+  quatorze ventes à écrire, l'avertissement des quatre chèques.
+
+**LES RISQUES.** Deux préalables bloquants changent, pour un dossier basculé seulement (aucun en production). La
+liste des sources en défaut redit en TypeScript le jugement de `ventes_facturees_de_l_exercice` : la base reste le juge,
+et une divergence ne ferait qu'échouer un clic sur ses mots ; un essai qui confronterait les deux sur une réplique
+viendra avec l'application de VF7b. Retour arrière : le commit du code, rien en base.
+
+**OBSERVÉ EN PASSANT, HORS DU LOT.** Sous un plan comptable dont le compte des clients n'est pas le 411000 (le plan
+décalé des tests, 411100), le 411 d'une vente facturée n'a pas d'auxiliaire dans le FEC (`auxiliaireDuTiers` ne connaît
+que le 411000) — avant comme après VF7c, la numérotation et le FEC restant identiques ; le chantier du plan comptable
+personnalisable (§ 2.4) le portera.
+
+**CE QUI RESTE.** VF7d (l'instantané validé compte ses encaissements), VF7e (le gel des désignations, VF7-Q1), et
+l'application des migrations de VF5h2, VF7a et VF7b sur l'accord du cabinet.
