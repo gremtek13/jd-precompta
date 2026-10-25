@@ -6,7 +6,8 @@
 -- `encaissements_factures` et ses fonctions, les colonnes `encaissement_id` et `facture_id` des écritures, le catalogue
 -- des rôles, `admin_du_dossier`, `gere_les_ventes`, `gere_la_banque`, `memberships` ou `cabinet_admins` ; et, depuis la
 -- migration `virement_mixte` (étape VF5h), les exemplaires des factures (`pieces.facture_id` et ses fonctions), que le
--- classement d'un mouvement lit.
+-- classement d'un mouvement lit ; et, depuis la migration `validation_des_ventes_facturees` (étape VF7b), la
+-- recomposition d'un bloc (`ecritures_attendues_de_la_periode`, 188).
 --
 -- Ce qui se prouve ici, et ne se relit pas — chaque refus jugé à son code ET à ses mots, ceux du texte des migrations,
 -- que src/lib/sourceDeLaVente.test.ts et src/lib/encaissementsVenteFacturee.test.ts relisent ici :
@@ -177,6 +178,15 @@
 -- lignes de commentaire, envoyé en une requête : 96 200 caractères, empreinte 58037c913afacf195babb11a4ef2c3d8, 272
 -- justes. Quarante-six mutations de la migration, jouées contre cet essai et cinq autres : quarante-deux tuées, quatre
 -- équivalentes déclarées d'avance (HISTORIQUE.md, « LA FRONTIÈRE DES ENCAISSEMENTS, EN BASE »).
+--
+-- 25/10/2026, migration `validation_des_ventes_facturees` (PRÉPARÉE, pas appliquée ; chantier EC-Q3, étape VF7b) : 188,
+-- posé en dernier, confronte la recomposition d'un bloc (`ecritures_attendues_de_la_periode`), source par source, à
+-- `ecriture_attendue_vente_facturee`, sur les quatre dossiers tels que l'essai les laisse : 27 sources, 0 écart. Sur une
+-- réplique égale à la production munie de VF5h2 et de VF7a : sans la migration, 273 verdicts, 1 en faute — 188,
+-- exactement — ; avec elle, 273 justes, rien n'est resté, et les contrôles d'hier rendent, verdict et observation, ce
+-- qu'ils rendaient. Le texte sans ses lignes de commentaire, envoyé en une requête : 96 784 caractères, empreinte
+-- 888fc6c56b993634c2ba97ea8312f4b6, 273 justes (HISTORIQUE.md, « LA VALIDATION REFUSE LES MANQUES DES VENTES
+-- FACTURÉES »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -662,7 +672,11 @@ begin
     array['controle', '184. MUTATION de 145 : daté de 2026, par un autre moyen, il se rattache', 'chef', $q${ENI} ('{ER3}', '{R}', '{FR}', '2026-01-02', 5, 'autre', null, null, null); {RAT}'{R}', '{ER3}', '{MR2}')$q$, 'OK', ''],
     array['controle', '185. MUTATION de 146e : un mouvement de 2026 se cite à la naissance', 'service', $q${ENC} ('{R}', '{FR}', '2026-01-05', 1, 'virement', '{MR2}', null, null)$q$, 'OK', ''],
     array['controle', '186. MUTATION de 148b : le client cite un mouvement libre de 2026', 'client_vb', $q${ENE}'{T}', '{F1}', '2026-03-05', 1, 'virement', '{M2}', '[{"taux":20,"montant":1}]')$q$, 'OK', ''],
-    array['controle', '187. MUTATION de 147f : l''encaissement contre-passé sans mouvement, la contre-passation figée se rattache, sans la fonction aussi', 'service', $q$select set_config('jd.rattachement_encaissement', '{CP6}', true); update encaissements_factures set ligne_bancaire_id = '{MR6}' where id = '{CP6}'$q$, 'OK', '']
+    array['controle', '187. MUTATION de 147f : l''encaissement contre-passé sans mouvement, la contre-passation figée se rattache, sans la fonction aussi', 'service', $q$select set_config('jd.rattachement_encaissement', '{CP6}', true); update encaissements_factures set ligne_bancaire_id = '{MR6}' where id = '{CP6}'$q$, 'OK', ''],
+    -- LA RECOMPOSITION D'UN BLOC (étape VF7b0, migration `validation_des_ventes_facturees`), à la fin de l'essai : chaque source
+    -- des quatre dossiers, sur toute son histoire, rend recomposée d'un bloc ce que `ecriture_attendue_vente_facturee` rend.
+    array['valeur', '188. la recomposition d''un bloc : chaque source des quatre dossiers rend ce que la composition rend (étape VF7b0)', 'postgres', $q$select count(*) || ' sources, ' || count(*) filter (where (b.motif, b.detail, b.lignes) is distinct from (c.motif, c.detail, c.lignes)) || ' écart(s)' from (values ('{T}'::uuid), ('{A}'::uuid), ('{R}'::uuid), ('{N}'::uuid)) z(d) cross join lateral ecritures_attendues_de_la_periode(z.d, null, '9999-12-31') b cross join lateral ecriture_attendue_vente_facturee(z.d, b.genre, b.source_id) c$q$, '',
+      '27 sources, 0 écart(s)']
   ];
 
   begin

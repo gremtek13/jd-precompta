@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  CARTES_DE_CLOTURE, POINTS_DE_LA_CHECKLIST_ECARTES, prealablesDeValidation, prochainExerciceAValider, type DonneesDeValidation,
+  CARTES_DE_CLOTURE, NOM_DU_MOYEN_SANS_MOUVEMENT, POINTS_DE_LA_CHECKLIST_ECARTES, prealablesDeValidation, prochainExerciceAValider,
+  REFUS_VENTES_FACTUREES_DE_LA_VALIDATION, type DonneesDeValidation,
 } from './prealablesValidation'
 import { calculerDeclaration2035 } from './declaration2035'
 import { concordance2035 } from './concordance2035'
@@ -22,6 +24,10 @@ import type { FacturePourJumelle } from './ventesJumelles'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { SANS_FACTURE_SOURCE, ventesFactureesVides } from '../test/ventesFacturees'
+import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { argumentsSql, codesSql, messagesSql } from '../test/raiseSql'
+import { etapesDe } from '../test/essaiSql'
+import { correspondAuModele } from '../test/essaiVentesFacturees'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -1267,5 +1273,160 @@ describe('prealablesDeValidation et prochainExerciceAValider — la pièce qu’
     }))
     expect(avec(PARTS)).toBe(2025)
     expect(avec([])).toBe(2024)
+  })
+})
+
+// ── CE QUE LA BASE REFUSE POUR LES VENTES FACTURÉES (chantier EC-Q3, étape VF7b), CONFRONTÉ ────────────────────────────
+// `REFUS_VENTES_FACTUREES_DE_LA_VALIDATION` redit les refus que la migration `validation_des_ventes_facturees` ajoute à
+// `valider_exercice` : leurs mots, leurs codes, leurs valeurs, leur ordre et leur place parmi les refus d'hier, dans le texte
+// exporté ; et l'essai (supabase/essais/validationDesVentesFacturees.sql) les exige de la base, chacun sous ses mots et son
+// code, comme il n'exige rien que le texte d'une fonction ne dise.
+describe('les refus de la validation pour les ventes facturées (étape VF7b) — le texte de valider_exercice et l’essai', () => {
+  const sql = derniereDefinitionSql('valider_exercice')
+  const messages = messagesSql(sql)
+  const codes = codesSql(sql)
+  const valeurs = argumentsSql(sql)
+  const modeles: readonly string[] = REFUS_VENTES_FACTUREES_DE_LA_VALIDATION.map((r) => r.modele)
+  const rangs = modeles.map((m) => messages.indexOf(m))
+  const essai = readFileSync(new URL('../../supabase/essais/validationDesVentesFacturees.sql', import.meta.url), 'utf8')
+  const exiges = (texte: string) => etapesDe(texte).filter((e) => e.code !== '' && e.code !== 'OK')
+  const exige = (texte: string, modele: string, code: string) =>
+    exiges(texte).some((e) => e.code === code && correspondAuModele(modele, e.attendu))
+
+  it('les mêmes messages, dans l’ordre du texte, sous les mêmes codes, autant de « % » que de valeurs', () => {
+    expect(REFUS_VENTES_FACTUREES_DE_LA_VALIDATION).toHaveLength(7)
+    expect(rangs.every((r) => r >= 0), rangs.join(',')).toBe(true)
+    expect([...rangs].sort((a, b) => a - b)).toEqual(rangs)
+    expect(new Set(REFUS_VENTES_FACTUREES_DE_LA_VALIDATION.map((r) => r.cle)).size).toBe(7)
+    REFUS_VENTES_FACTUREES_DE_LA_VALIDATION.forEach((r, k) => {
+      expect(codes[rangs[k]], r.cle).toBe(r.code)
+      expect(r.modele.split('%').length - 1, r.cle).toBe(valeurs[rangs[k]].length)
+    })
+  })
+
+  it('à leur place : le mouvement réservé avant les mouvements à traiter, le reste après eux, avant la 2035', () => {
+    const anterieurs = messages.indexOf("Des mouvements bancaires antérieurs à l'ouverture du dossier restent à traiter : les ignorer avant la validation.")
+    const aTraiter = messages.indexOf("L'exercice % porte des mouvements bancaires à traiter : ils se traitent avant la validation.")
+    expect(anterieurs).toBeGreaterThan(0)
+    expect(aTraiter).toBe(anterieurs + 1)
+    // Les deux du mouvement réservé, juste avant ceux des mouvements à traiter ; les cinq autres, juste après eux, puis la
+    // 2035 (son refus s'écrit « '%' », le message choisi selon le modèle comptable).
+    expect(rangs.slice(0, 2)).toEqual([anterieurs - 2, anterieurs - 1])
+    expect(rangs.slice(2)).toEqual([aTraiter + 1, aTraiter + 2, aTraiter + 3, aTraiter + 4, aTraiter + 5])
+    expect(messages[aTraiter + 6]).toBe('%')
+    expect(valeurs[aTraiter + 6].join(' ')).toContain("'La 2035 à valider manque.'")
+  })
+
+  it('les valeurs que la base y met : l’exercice de la date nommée, la date, la facture, le moyen, la source', () => {
+    const v = (cle: string) => valeurs[rangs[REFUS_VENTES_FACTUREES_DE_LA_VALIDATION.findIndex((r) => r.cle === cle)]]
+    const reserve = ['extract(year from v_mouvement.date)::integer', "to_char(v_mouvement.date, 'DD/MM/YYYY')", 'v_numero']
+    expect(v('mouvement_reserve_credit')).toEqual(reserve)
+    expect(v('mouvement_reserve_debit')).toEqual(reserve)
+    expect(v('encaissement_sans_mouvement')).toEqual([
+      'extract(year from v_encaissement.date_encaissement)::integer', 'v_encaissement.numero',
+      "case v_encaissement.moyen when 'virement' then 'virement' else 'prélèvement' end",
+      "to_char(v_encaissement.date_encaissement, 'DD/MM/YYYY')",
+    ])
+    for (const cle of ['a_ecrire', 'a_reecrire', 'a_retirer', 'ne_s_ecrit_pas']) {
+      expect(v(cle), cle).toEqual(['extract(year from v_vente.jour)::integer', 'v_vente.nom'])
+    }
+  })
+
+  it('les moyens qui retiennent, et leur nom ; les états de la source, dans l’ordre des refus', () => {
+    expect(sql).toContain(`e.moyen in (${Object.keys(NOM_DU_MOYEN_SANS_MOUVEMENT).map((m) => `'${m}'`).join(', ')})`)
+    expect(sql).toContain(`case v_encaissement.moyen when 'virement' then '${NOM_DU_MOYEN_SANS_MOUVEMENT.virement}' else '${NOM_DU_MOYEN_SANS_MOUVEMENT.prelevement}' end`)
+    const etats = [...sql.matchAll(/if v_vente\.etat = '(\w+)' then/g)].map((m) => m[1])
+    expect(etats).toEqual(['a_ecrire', 'a_reecrire', 'a_retirer'])
+    expect(REFUS_VENTES_FACTUREES_DE_LA_VALIDATION.slice(3).map((r) => r.cle)).toEqual([...etats, 'ne_s_ecrit_pas'])
+    // Ce sont les quatre états que rend la fonction des sources en défaut.
+    const jugement = derniereDefinitionSql('ventes_facturees_de_l_exercice')
+    for (const etat of ['ne_s_ecrit_pas', 'a_ecrire', 'a_retirer', 'a_reecrire']) expect(jugement, etat).toContain(` '${etat}'`)
+  })
+
+  it('vire au rouge sur une dérive plantée : un mot, deux refus permutés, un refus ajouté, un code changé', () => {
+    const relus = (texte: string) => modeles.map((m) => messagesSql(texte).indexOf(m))
+    // Les deux du réservé se suivent, et les cinq autres aussi.
+    const tenu = (r: number[]) => r.every((x) => x >= 0) && r.every((x, i) => i === 0 || i === 2 || x === r[i - 1] + 1)
+    const premier = `raise exception '${modeles[3].replace(/'/g, "''")}'`
+    const second = `raise exception '${modeles[4].replace(/'/g, "''")}'`
+    expect(sql).toContain(premier)
+    expect(sql).toContain(second)
+    expect(tenu(rangs)).toBe(true)
+    expect(tenu(relus(sql.replace(premier, `${premier.slice(0, -1)} !'`)))).toBe(false)
+    expect(tenu(relus(sql.replace(premier, '§').replace(second, premier).replace('§', second)))).toBe(false)
+    expect(tenu(relus(sql.replace(second, `raise exception 'Un refus de plus.' using errcode = '23514'; ${second}`)))).toBe(false)
+    const code = "using errcode = '23514'"
+    const dernier = sql.indexOf(code, sql.indexOf(second))
+    const plante = `${sql.slice(0, dernier)}using errcode = '22023'${sql.slice(dernier + code.length)}`
+    expect(codesSql(plante)[messagesSql(plante).indexOf(modeles[4])]).toBe('22023')
+  })
+
+  it('l’essai exige chaque refus de la base, sous ses mots et son code', () => {
+    expect(etapesDe(essai).length).toBeGreaterThan(60)
+    for (const r of REFUS_VENTES_FACTUREES_DE_LA_VALIDATION) expect(exige(essai, r.modele, r.code), r.cle).toBe(true)
+  })
+
+  it('chaque refus que l’essai exige est dans le texte d’une fonction, sous le même code', () => {
+    const raiseSql = ['valider_exercice', 'ecrire_vente_facturee', 'retirer_ecriture_vente_facturee', 'garder_ecritures_validees']
+      .flatMap((nom) => {
+        const texte = derniereDefinitionSql(nom)
+        const lesCodes = codesSql(texte)
+        return messagesSql(texte).map((m, i) => [m, lesCodes[i]] as const)
+      })
+    expect(exiges(essai).length).toBeGreaterThan(15)
+    for (const e of exiges(essai)) {
+      expect(raiseSql.some(([m, c]) => c === e.code && correspondAuModele(m, e.attendu)), `${e.titre} : ${e.code} ${e.attendu}`).toBe(true)
+    }
+  })
+
+  it('vire au rouge sur un refus que l’essai n’exigerait plus, ou sous un autre code', () => {
+    const r = REFUS_VENTES_FACTUREES_DE_LA_VALIDATION[2]
+    expect(exige(essai, r.modele, '22023')).toBe(false)
+    const plante = essai.replace(/— le rattacher avant la validation\./g, '— le rattacher avant la validation !')
+    expect(plante).not.toBe(essai)
+    expect(exige(plante, r.modele, r.code)).toBe(false)
+  })
+
+  // La migration reprend `valider_exercice` telle que `report_des_soldes` l'a laissée : sa garde exige ce corps-là, au
+  // caractère près, et ses refus d'hier y restent, mot pour mot et dans leur ordre — la définition d'hier, ligne à ligne,
+  // se retrouve dans la nouvelle, qui n'ajoute que des lignes.
+  const fichiers = fichiersDuSchema()
+  const migration = fichiers.find((f) => /\/\d{14}_validation_des_ventes_facturees\.sql$/.test(f.chemin))
+  const avant = (() => {
+    const rang = fichiers.findIndex((f) => f === migration)
+    const motif = /create (or replace )?function public\.valider_exercice\(/g
+    const texte = fichiers.slice(0, rang).filter((f) => new RegExp(motif.source).test(f.texte)).at(-1)?.texte ?? ''
+    const debut = [...texte.matchAll(motif)].at(-1)?.index ?? -1
+    return debut < 0 ? '' : texte.slice(debut, texte.indexOf('$$;', debut))
+  })()
+
+  it('la migration : ses refus d’hier au caractère près, la définition d’hier contenue ligne à ligne dans la nouvelle', () => {
+    expect(migration).toBeDefined()
+    expect(avant).toContain('create or replace function public.valider_exercice(')
+    expect(messages.filter((m) => !modeles.includes(m))).toEqual(messagesSql(avant))
+    expect(codes.filter((_, i) => !rangs.includes(i))).toEqual(codesSql(avant))
+    const neuves = sql.split('\n')
+    let k = 0
+    for (const ligne of avant.split('\n')) {
+      while (k < neuves.length && neuves[k] !== ligne) k++
+      expect(k < neuves.length, ligne).toBe(true)
+      k++
+    }
+  })
+
+  it('la migration : sa garde sur le corps d’hier, deux fonctions neuves hors de l’API, rien que le détecteur retiendrait', () => {
+    const texte = (migration as { texte: string }).texte
+    const corps = avant.slice(avant.indexOf('as $$') + 'as $$'.length)
+    expect(texte).toContain(`'${createHash('md5').update(corps).digest('hex')}', 'report_des_soldes'`)
+    expect(texte).toContain("'8c4c7a5a618de4a692d2494f9a197b0c', 'report_des_soldes'")
+    for (const f of ['ecritures_attendues_de_la_periode(uuid, date, date)', 'ventes_facturees_de_l_exercice(uuid, integer)']) {
+      expect(texte).toContain(`revoke execute on function public.${f} from public, anon, authenticated;`)
+    }
+    for (const nom of ['ecritures_attendues_de_la_periode', 'ventes_facturees_de_l_exercice']) {
+      expect(derniereDefinitionSql(nom), nom).not.toContain('security definer')
+    }
+    expect(texte).not.toMatch(/\b(drop|delete|truncate|grant)\b/i)
+    expect(texte).not.toMatch(/\b(create|alter) (table|policy|trigger)\b/i)
+    expect(texte).not.toContain('\\')
   })
 })

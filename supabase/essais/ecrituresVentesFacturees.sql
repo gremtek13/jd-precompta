@@ -8,7 +8,9 @@
 -- classent ou déclassent un mouvement (le lot de R1, migration `lignes_propres_au_mouvement` : 95, 96, 130 à 139,
 -- 155) ; et, depuis la migration `virement_mixte` (étape VF5h), le classement d'un mouvement par ses encaissements
 -- (`classer_mouvement_par_encaissements`, 53 à 57) et les exemplaires des factures (`pieces.facture_id`,
--- `garder_exemplaire_facture`), que le classement et la recomposition lisent.
+-- `garder_exemplaire_facture`), que le classement et la recomposition lisent ; et, depuis la migration
+-- `validation_des_ventes_facturees` (étape VF7b), la recomposition d'un bloc (`ecritures_attendues_de_la_periode`, 9c et
+-- 177).
 --
 -- Ce qui se prouve ici — chaque refus jugé à son code ET à ses mots, ceux de la migration, que
 -- src/lib/ecritureVenteFacturee.test.ts confronte à ses listes ; chaque recomposition confrontée au MODULE, que ce même test
@@ -166,6 +168,14 @@
 -- production (148 migrations) munie de `registre_virement_mixte` : sans la migration, 205 contrôles, 5 en faute — 170,
 -- 173 à 176 — ; avec elle, 205 justes, rien n'est resté, et les 198 d'hier inchangés. Le texte sans ses lignes de
 -- commentaire, envoyé en une requête : 89 884 caractères, empreinte adff7a718db8f96a3a77994fa5531683, 205 justes.
+--
+-- 25/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `validation_des_ventes_facturees`, préparée, pas appliquée ;
+-- chantier EC-Q3, étape VF7b) : 9c et 177 confrontent la recomposition d'un bloc (`ecritures_attendues_de_la_periode`),
+-- source par source, à `ecriture_attendue_vente_facturee` — les 198 sources des trois dossiers au départ, les 199 que
+-- l'essai laisse à la fin, après tout ce qu'il a écrit, retiré et classé : 0 écart. Sur une réplique égale à la
+-- production munie de VF5h2 et de VF7a : sans la migration, 207 contrôles, 2 en faute — 9c et 177, exactement — ; avec
+-- elle, 207 justes, rien n'est resté, et les 205 d'hier inchangés. Le texte sans ses lignes de commentaire, envoyé en
+-- une requête : 91 000 caractères, empreinte 652baa561e5596fbc74d521686d13991, 207 justes.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -358,6 +368,10 @@ begin
     'md5:3848a624c9cdb13a8aa38f463f522ff4'],
   array['valeur', '9b. un dossier qui n''a pas basculé : rien', 'postgres', $q$select string_agg(s.g || ':' || coalesce(a.motif, '') || cardinality(a.lignes), ' ' order by s.g) from (values ('facture', '{U}02101'), ('encaissement', '{U}02501'), ('mouvement', '{U}02401')) s(g, i) cross join lateral ecriture_attendue_vente_facturee('{D3}', s.g, s.i::uuid) a$q$, '',
     'encaissement:0 facture:0 mouvement:0'],
+  -- LA RECOMPOSITION D'UN BLOC (étape VF7b0, migration `validation_des_ventes_facturees`) : chaque source du jeu, sur toute son
+  -- histoire, rend recomposée d'un bloc ce que `ecriture_attendue_vente_facturee` rend pour elle (motif, détail, lignes).
+  array['valeur', '9c. la recomposition d''un bloc (étape VF7b0) : chaque source des trois dossiers rend ce que la composition rend', 'postgres', $q$select count(*) || ' sources, ' || count(*) filter (where (b.motif, b.detail, b.lignes) is distinct from (c.motif, c.detail, c.lignes)) || ' écart(s)' from (values ('{D1}'::uuid), ('{D2}'::uuid), ('{D3}'::uuid)) z(d) cross join lateral ecritures_attendues_de_la_periode(z.d, null, '9999-12-31') b cross join lateral ecriture_attendue_vente_facturee(z.d, b.genre, b.source_id) c$q$, '',
+    '198 sources, 0 écart(s)'],
 
   -- ══ 10 à 19. Écrire, et remplacer d'un tenant ══════════
   array['lecture', '10. un encaissement s''écrit ; le réglage retiré', 'chef', $q${N}{W}'{D1}', 'encaissement', '{U}00501', '{PA}')::text, true); select current_setting('essai.n') || '|' || coalesce(nullif(current_setting('jd.ecriture_vente_facturee', true), ''), 'retiré') || '|' || {LIG}'{D1}' and b.encaissement_id = '{U}00501' and b.facture_id is null and b.libelle = 'ESSAI')$q$, '',
@@ -701,7 +715,10 @@ begin
   array['valeur', '174. le crédit de janvier se compose : le 511 au crédit, la banque au débit', 'postgres', $q$select array_to_string((ecriture_attendue_vente_facturee('{D1}', 'mouvement', '{U}00430')).lignes, ';')$q$, '', '2026-01-05|511000|credit|3000|{U}00430;2026-01-05|512000|debit|3000|{U}00430'],
   array['retenir', 'PJ', 'postgres', $q$select ({PRO}'{D1}', 'mouvement', '{U}00430'{ORP})::text$q$, '', ''],
   array['fait', '175. et s''écrit', 'chef', $q${W1}mouvement', '{U}00430', '{PJ}')$q$, 'OK', ''],
-  array['valeur', '176. ses lignes proposées, sur le crédit de janvier', 'postgres', $q$select string_agg(concat_ws('|', date, compte, sens, trim_scale(montant), statut), ';' order by compte collate "C") from ecritures_brouillon where ligne_bancaire_id = '{U}00430'$q$, '', '2026-01-05|511000|credit|30|proposee;2026-01-05|512000|debit|30|proposee']
+  array['valeur', '176. ses lignes proposées, sur le crédit de janvier', 'postgres', $q$select string_agg(concat_ws('|', date, compte, sens, trim_scale(montant), statut), ';' order by compte collate "C") from ecritures_brouillon where ligne_bancaire_id = '{U}00430'$q$, '', '2026-01-05|511000|credit|30|proposee;2026-01-05|512000|debit|30|proposee'],
+  -- La recomposition d'un bloc, à la fin de l'essai : de même.
+  array['valeur', '177. et à la fin de l''essai, tout ce qu''il a écrit, retiré et classé : de même (étape VF7b0)', 'postgres', $q$select count(*) || ' sources, ' || count(*) filter (where (b.motif, b.detail, b.lignes) is distinct from (c.motif, c.detail, c.lignes)) || ' écart(s)' from (values ('{D1}'::uuid), ('{D2}'::uuid), ('{D3}'::uuid)) z(d) cross join lateral ecritures_attendues_de_la_periode(z.d, null, '9999-12-31') b cross join lateral ecriture_attendue_vente_facturee(z.d, b.genre, b.source_id) c$q$, '',
+    '199 sources, 0 écart(s)']
   ];
 
   begin
