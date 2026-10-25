@@ -35743,3 +35743,78 @@ personnalisable (§ 2.4) le portera.
 
 **CE QUI RESTE.** VF7d (l'instantané validé compte ses encaissements), VF7e (le gel des désignations, VF7-Q1), et
 l'application des migrations de VF5h2, VF7a et VF7b sur l'accord du cabinet.
+
+### 25/10/2026 — L'INSTANTANÉ VALIDÉ COMPTE SES ENCAISSEMENTS — CHANTIER EC-Q3, VF7D (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF7d sur `c34e675` — `main`, VF5h2, VF7a et VF7b préparés et non appliqués, VF7c —, la
+branche locale `vf7d-instantane`, en deux commits : le code et les tests (`8d35d8c`), puis cette documentation. À l'écran
+et dans les modules seulement : aucune lecture ni écriture en base, aucune migration.)
+
+**LA DÉCISION.** La conception de VF7, § 3 (e) et la puce VF7d du § 5 : une ligne de la 2035 compte ses encaissements de
+factures, l'instantané validé passe à la version 2, qui les porte, et la version 1 se relit telle quelle.
+
+**CE QUI EST FAIT.**
+- `declaration2035.ts` : `LigneDeclaration.nbEncaissements`, le nombre d'ENTRÉES DU REGISTRE derrière la ligne — un
+  encaissement réparti sur deux taux compte une fois (deux parts, un encaissement) ; une contre-passation est une entrée
+  du registre, elle compte, dans l'année de sa date. Seules les parts des ventes facturées le nourrissent : une pièce, un
+  mouvement du relevé, les frais d'un mouvement d'encaissements n'en comptent aucun. Le mouvement qu'un encaissement cite
+  ne rejoint pas `nbMouvements` (il est réservé à ses encaissements, G2) ; celui des frais, si, comme depuis VF4C3-Q1.
+- `cases2035.ts` : `CaseRemplie.nbEncaissements`, la somme de ses postes.
+- `validationExercice.ts` : `Instantane2035` devient l'union `Instantane2035V1 | Instantane2035V2` ; `instantane2035`
+  écrit la version 2 (chaque poste porte `nbEncaissements`) et la demande de validation n'envoie qu'elle.
+  `lireInstantane2035` accepte la 1 comme avant VF7d et la REND TELLE QUELLE (le même objet, ni réécrit ni complété) ; la
+  2 exige en plus, à chaque poste, `nbPieces`, `nbMouvements` et `nbEncaissements` entiers et positifs, sinon nul (« la
+  2035 validée n'a pas pu être relue », comme hier). `postesDeLInstantane` rend les postes et leurs trois nombres, nuls
+  quand l'instantané ne les porte pas : les encaissements d'une version 1, toujours ; ses pièces ou ses mouvements quand
+  ils ne se lisent pas comme des comptes (la version 1 ne les vérifiait pas).
+- `ClotureTab.tsx` : sous « 2035 validée le … », un repli « Ce que compte la 2035 validée, poste par poste » — montant,
+  pièces, mouvements du relevé, encaissements de factures ; « — » pour un nombre nul, et pour une version 1 la phrase
+  « Validée avant que l'application compte les encaissements de factures, elle se relit telle quelle ».
+- `src/test/revueAnalytique.ts` (`posteDeclare`) et les fabriques des tests de la 2035 et des cases : `nbEncaissements`.
+
+**CE QUI NE BOUGE PAS, VÉRIFIÉ.** `revueAnalytique.ts` ne lit ni `version` ni `nbPieces`, `nbMouvements` ou
+`nbEncaissements` (recherche sur le texte) ; `lireLa2035Validee` ne lit que les postes (nom, nature, montant) et les trois
+totaux. `centimes_de_la_2035_validee` (`supabase/schema/20261011090828_revue_analytique.sql`, sa seule définition) lit
+de même `postes[].poste`, `nature`, `montant` et les totaux, jamais `version` ; `valider_exercice` (dernière définition,
+`20261025180000_validation_des_ventes_facturees.sql`) n'exige qu'un objet, et la contrainte
+`exercices_valides_declaration` aussi. Aucun texte de `supabase/` ne nomme `nbPieces`, `nbMouvements` ni `'version'`. La
+base est donc inchangée, et un exercice validé en version 1 reste lu à l'identique par la revue analytique.
+
+**UN CHOIX QUE LA CONCEPTION NE TRANCHAIT PAS.** La contre-passation compte parmi les encaissements de sa ligne : c'est
+une entrée du registre, la preuve d'une part négative, et la taire ferait chercher une part sans entrée. Écartées : ne
+compter que les encaissements positifs (une ligne nette à −500 € qui dirait 0 encaissement), ou compter les parts (un
+encaissement sur deux taux compté deux fois, comme `nbMouvements` refuse de compter les parts d'un mouvement ventilé).
+
+**LES PREUVES.**
+- Dix tests neufs : trois dans `declaration2035.test.ts` (les entrées du registre et non les parts, sur deux années, une
+  contre-passation comprise ; une ligne de pièces à zéro, à côté de celle des ventes ; le poste des frais d'un dossier
+  basculé dans l'instantané — `nbMouvements` 1, `nbEncaissements` 0 —, celui des ventes avec les encaissements de
+  l'exercice, l'aller-retour JSON), un dans `cases2035.test.ts`, trois dans `validationExercice.test.ts` (la version 2
+  refusée sans l'un de ses trois nombres, ou non entier, négatif, nul, texte ; la version 1 relue TELLE QUELLE — le même
+  objet, aucun `nbEncaissements` ajouté, « — » même si un poste en portait un ; les nombres d'une version 2), trois dans
+  `ClotureTab.test.tsx` (le récapitulatif d'une version 2 ; celui d'une version 1, « — » et la phrase, la 2035 inchangée ;
+  un dossier basculé qui se valide : la demande en version 2 compte l'encaissement de la recette et le mouvement des
+  frais, et le récapitulatif relu les redit). Trois tests réécrits sur la version 2 (l'instantané, son refus d'une
+  « version 2 » devenu celui d'une version 3, la demande de Clôture), et les égalités des lignes de la 2035 complétées de
+  `nbEncaissements` (dix-sept tests, dont celui de la revue analytique).
+- Rouges d'abord : sur le module de `c34e675`, les dix neufs tombent (29 en tout, avec les égalités complétées).
+- Les mutations (`muter.py`, hors du dépôt) : 23, 23 tuées — les parts sans encaissement, un nombre nul, une part
+  comptée pour un encaissement, la contre-passation tue, les frais qui comptent un encaissement ou perdent leur
+  mouvement, la case qui ne somme pas ou part de zéro (survivante au premier passage : le test plaçait d'abord un poste à
+  zéro ; réordonné), l'instantané en version 1 ou sans ses nombres, la lecture qui refuse la 2 ou ne la contrôle pas, un
+  compte non entier ou négatif, la version 1 qui lirait des encaissements ou dirait 0, recopiée au lieu d'être rendue ;
+  à l'écran, le récapitulatif absent, « — » devenu 0, la phrase de la version 1 tue, les postes lus comme une version 1,
+  une colonne pour une autre.
+- La suite comparée test par test, sous Paris : avant, 14 398 justes ; après, 14 408 justes (les dix neufs), aucun
+  test disparu, aucun verdict changé.
+
+**LES RISQUES.** Un exercice validé en version 1 se lit comme hier ; le seul changement qu'il voit est le récapitulatif,
+qui dit « — ». Aucun exercice n'est validé en production (CLAUDE.md, ligne 26.6) : aucune version 1 n'existe encore hors
+des tests. Un instantané version 2 refusé par la lecture (un nombre manquant) se dit illisible, comme un instantané
+abîmé d'hier — l'application l'écrit entier. Le banc (`outils/captures/`) n'a pas été rejoué : le repli est un
+`<details>` fermé, son tableau dans un `.table-scroll`, sans style nouveau. Retour arrière : le commit du code, rien en
+base ; une 2035 validée en version 2 ne se relirait plus par le module d'avant (« n'a pas pu être relue ») — sans objet
+tant qu'aucun exercice basculé n'est validé.
+
+**CE QUI RESTE.** VF7e (le gel des désignations, VF7-Q1), et l'application des migrations de VF5h2, VF7a et VF7b sur
+l'accord du cabinet ; puis VF8 et VF9.
