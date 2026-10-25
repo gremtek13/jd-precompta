@@ -198,13 +198,13 @@ export interface DemandeDeValidation {
   p_lignes: LigneDemandee[]
   p_a_nouveaux: ANouveauDemande[]
   // La 2035 telle qu'elle est validée (trésorerie), rien en engagement — la base exige l'un ou l'autre selon
-  // le modèle du dossier.
-  p_declaration: Instantane2035 | null
+  // le modèle du dossier. Toujours la version d'aujourd'hui : la 1 ne s'écrit plus, elle se relit.
+  p_declaration: Instantane2035V2 | null
 }
 
 // TIRÉE DE LA NUMÉROTATION MÊME DU FEC : ce que la base fige est exactement ce que le fichier imprime, et le FEC
 // relu depuis l'exercice validé est celui qu'on aurait exporté la veille.
-export function demandeDeValidation(n: NumerotationFec, declaration: Instantane2035 | null): DemandeDeValidation {
+export function demandeDeValidation(n: NumerotationFec, declaration: Instantane2035V2 | null): DemandeDeValidation {
   return {
     p_lignes: n.lignes.map((l) => ({
       id: l.ecriture.id, journal: l.journal, numero: l.numero, piece_ref: l.pieceRef, piece_date: l.pieceDate,
@@ -222,8 +222,15 @@ export function demandeDeValidation(n: NumerotationFec, declaration: Instantane2
 // renommée. L'instantané porte donc ce qui a été déclaré — les montants au centime case par case, ceux que le
 // formulaire imprime à l'euro, les postes et l'identité du déclarant — et l'écran d'un exercice validé le relit
 // au lieu de recalculer.
-export interface Instantane2035 {
-  version: 1
+//
+// DEUX VERSIONS (étape VF7d, ligne 28.65). La 1, écrite jusqu'à VF7d, porte pour chaque poste ses pièces et ses mouvements ;
+// la 2, écrite depuis, y ajoute ses encaissements de factures (`nbEncaissements`). Une 2035 validée en version 1 se relit
+// TELLE QUELLE — rien ne la réécrit ni ne la complète : le nombre qu'elle ne porte pas se dit « — », jamais un zéro deviné
+// (`postesDeLInstantane`). La base n'en lit que les montants (`centimes_de_la_2035_validee`, `lireLa2035Validee`), ni la
+// version ni les nombres : `exercices_valides.declaration` est un `jsonb`, et rien n'y change.
+interface PosteDeLInstantaneV1 { poste: string; nature: 'recette' | 'depense'; montant: number; nbPieces: number; nbMouvements: number }
+export interface PosteDeLInstantane extends PosteDeLInstantaneV1 { nbEncaissements: number }
+interface Instantane2035Commun {
   annee: number
   // Au centime, toutes les cases du formulaire, calculées comprises (`valeursDesCases`).
   cases: Record<string, number>
@@ -232,9 +239,11 @@ export interface Instantane2035 {
   totalRecettes: number
   totalDepenses: number
   resultat: number
-  postes: { poste: string; nature: 'recette' | 'depense'; montant: number; nbPieces: number; nbMouvements: number }[]
   entete: EnteteDeclaration
 }
+export interface Instantane2035V1 extends Instantane2035Commun { version: 1; postes: PosteDeLInstantaneV1[] }
+export interface Instantane2035V2 extends Instantane2035Commun { version: 2; postes: PosteDeLInstantane[] }
+export type Instantane2035 = Instantane2035V1 | Instantane2035V2
 
 export function instantane2035(
   declaration: Declaration2035,
@@ -243,9 +252,9 @@ export function instantane2035(
   valeurs: ReadonlyMap<string, number>,
   formulaire: ReadonlyMap<string, number>,
   entete: EnteteDeclaration,
-): Instantane2035 {
+): Instantane2035V2 {
   return {
-    version: 1,
+    version: 2,
     annee: declaration.annee,
     cases: Object.fromEntries([...valeurs].sort(([a], [b]) => a.localeCompare(b))),
     formulaire: Object.fromEntries([...formulaire].sort(([a], [b]) => a.localeCompare(b))),
@@ -254,13 +263,15 @@ export function instantane2035(
     resultat: declaration.resultat,
     postes: [...declaration.recettes, ...declaration.depenses].map((l) => ({
       poste: l.poste, nature: l.nature, montant: l.montant, nbPieces: l.nbPieces, nbMouvements: l.nbMouvements,
+      nbEncaissements: l.nbEncaissements,
     })),
     entete: { nom: entete.nom, activite: entete.activite, siret: entete.siret },
   }
 }
 
 // Relit un instantané gardé en base, et le REFUSE plutôt que de deviner : un instantané illisible ne doit pas
-// s'afficher comme une 2035 vide, et l'écran le dit. La base ne garantit que « un objet ».
+// s'afficher comme une 2035 vide, et l'écran le dit. La base ne garantit que « un objet ». La version 1 se juge comme
+// avant VF7d, et se rend telle quelle ; la 2 exige en plus, à chaque poste, ses trois nombres, des comptes.
 export function lireInstantane2035(valeur: unknown): Instantane2035 | null {
   if (!valeur || typeof valeur !== 'object' || Array.isArray(valeur)) return null
   const v = valeur as Record<string, unknown>
@@ -268,16 +279,45 @@ export function lireInstantane2035(valeur: unknown): Instantane2035 | null {
     !!o && typeof o === 'object' && !Array.isArray(o) && Object.values(o).every((x) => typeof x === 'number' && Number.isFinite(x))
   const texteOuNul = (x: unknown) => x === null || typeof x === 'string'
   const entete = v.entete as Record<string, unknown> | null | undefined
-  if (v.version !== 1 || typeof v.annee !== 'number' || !nombres(v.cases) || !nombres(v.formulaire)) return null
+  if ((v.version !== 1 && v.version !== 2) || typeof v.annee !== 'number' || !nombres(v.cases) || !nombres(v.formulaire)) return null
   if (![v.totalRecettes, v.totalDepenses, v.resultat].every((x) => typeof x === 'number' && Number.isFinite(x))) return null
   if (!Array.isArray(v.postes) || !v.postes.every((p) => !!p && typeof p === 'object'
     && typeof (p as Record<string, unknown>).poste === 'string'
     && ((p as Record<string, unknown>).nature === 'recette' || (p as Record<string, unknown>).nature === 'depense')
     && typeof (p as Record<string, unknown>).montant === 'number')) return null
+  if (v.version === 2 && !v.postes.every((p) => ['nbPieces', 'nbMouvements', 'nbEncaissements']
+    .every((cle) => estUnCompte((p as Record<string, unknown>)[cle])))) return null
   if (!entete || typeof entete !== 'object' || !texteOuNul(entete.nom) || !texteOuNul(entete.activite) || !texteOuNul(entete.siret)) {
     return null
   }
   return valeur as Instantane2035
+}
+
+function estUnCompte(x: unknown): x is number {
+  return typeof x === 'number' && Number.isInteger(x) && x >= 0
+}
+
+// LES POSTES D'UNE 2035 VALIDÉE, avec ce que chacun compte, pour son récapitulatif (Clôture). Un nombre que l'instantané ne
+// porte pas est nul, et l'écran le dit « — » : les encaissements d'une version 1, toujours — même si un poste en portait un,
+// ce n'est pas sa forme —, et ses pièces ou ses mouvements quand ils ne se lisent pas comme des comptes (la version 1 ne les
+// vérifiait pas). Jamais un zéro deviné : un exercice validé en version 1 pouvait compter des encaissements.
+export interface PosteRelu {
+  poste: string
+  nature: 'recette' | 'depense'
+  montant: number
+  nbPieces: number | null
+  nbMouvements: number | null
+  nbEncaissements: number | null
+}
+export function postesDeLInstantane(instantane: Instantane2035): PosteRelu[] {
+  return instantane.postes.map((p) => {
+    const lu = p as unknown as Record<string, unknown>
+    const compte = (cle: string) => (estUnCompte(lu[cle]) ? lu[cle] : null)
+    return {
+      poste: p.poste, nature: p.nature, montant: p.montant, nbPieces: compte('nbPieces'), nbMouvements: compte('nbMouvements'),
+      nbEncaissements: instantane.version === 2 ? compte('nbEncaissements') : null,
+    }
+  })
 }
 
 // Une Map de cases, pour les fonctions du formulaire (`remplir2035`, `FormulaireAnnuel`).

@@ -4,7 +4,8 @@ import {
   POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE,
   POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES, categorieDesFraisBancaires,
 } from './declaration2035'
-import { caseDuPoste, valeursDesCases } from './cases2035'
+import { arrondirPourFormulaire, caseDuPoste, valeursDesCases } from './cases2035'
+import { instantane2035, lireInstantane2035 } from './validationExercice'
 import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
 import type { Categorie, CotisationDeclaree, DeclarationTva, Immobilisation, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire } from './types'
 import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
@@ -300,7 +301,7 @@ describe('calculerDeclaration2035 — les mouvements du relevé affectés sans j
     const d = calcul({ mouvements: releve(affecte({ id: 'cpam', categorie_id: 'c-recettes', montant: 250 })) })
     expect(d.totalRecettes).toBe(250)
     expect(d.resultat).toBe(250)
-    expect(d.recettes).toEqual([{ poste: 'Recettes', nature: 'recette', montant: 250, nbPieces: 0, nbMouvements: 1 }])
+    expect(d.recettes).toEqual([{ poste: 'Recettes', nature: 'recette', montant: 250, nbPieces: 0, nbMouvements: 1, nbEncaissements: 0 }])
   })
 
   it('le compte l’année de sa date, et ne dit rien d’un mouvement d’un autre exercice', () => {
@@ -318,7 +319,7 @@ describe('calculerDeclaration2035 — les mouvements du relevé affectés sans j
       pieces: [piece({ id: 'a', montant_ht: 100 })],
       mouvements: releve(affecte({ id: 'carte', categorie_id: 'c-achats', montant: -30 })),
     })
-    expect(d.depenses).toEqual([{ poste: 'Achats', nature: 'depense', montant: 130, nbPieces: 1, nbMouvements: 1 }])
+    expect(d.depenses).toEqual([{ poste: 'Achats', nature: 'depense', montant: 130, nbPieces: 1, nbMouvements: 1, nbEncaissements: 0 }])
   })
 
   it('un remboursement reçu diminue sa charge au lieu de devenir une recette', () => {
@@ -369,8 +370,8 @@ describe('calculerDeclaration2035 — les échéances d’emprunt rapprochées',
   it('compte les intérêts en frais financiers et l’assurance en primes, jamais le capital', () => {
     const d = calcul({ mouvements: releve(echeance()) })
     expect(d.depenses).toEqual([
-      { poste: 'Frais financiers', nature: 'depense', montant: 36, nbPieces: 0, nbMouvements: 1 },
-      { poste: "Primes d'assurance", nature: 'depense', montant: 21.03, nbPieces: 0, nbMouvements: 1 },
+      { poste: 'Frais financiers', nature: 'depense', montant: 36, nbPieces: 0, nbMouvements: 1, nbEncaissements: 0 },
+      { poste: "Primes d'assurance", nature: 'depense', montant: 21.03, nbPieces: 0, nbMouvements: 1, nbEncaissements: 0 },
     ])
     expect(d.totalDepenses).toBe(57.03)
     expect(d.totalRecettes).toBe(0)
@@ -381,7 +382,7 @@ describe('calculerDeclaration2035 — les échéances d’emprunt rapprochées',
       mouvements: releve(echeance(), paiement({ id: 'frais', piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', montant: -8.5 })),
     })
     expect(d.depenses.find((l) => l.poste === 'Frais financiers'))
-      .toEqual({ poste: 'Frais financiers', nature: 'depense', montant: 44.5, nbPieces: 0, nbMouvements: 2 })
+      .toEqual({ poste: 'Frais financiers', nature: 'depense', montant: 44.5, nbPieces: 0, nbMouvements: 2, nbEncaissements: 0 })
   })
 
   it('à la date du prélèvement, pas à celle de l’échéance', () => {
@@ -427,7 +428,7 @@ describe('calculerDeclaration2035 — les mouvements ventilés sur plusieurs com
       ]),
     })
     expect(d.depenses).toEqual([
-      { poste: 'Frais postaux et de télécommunications', nature: 'depense', montant: 84, nbPieces: 0, nbMouvements: 1 },
+      { poste: 'Frais postaux et de télécommunications', nature: 'depense', montant: 84, nbPieces: 0, nbMouvements: 1, nbEncaissements: 0 },
     ])
     expect(d.totalDepenses).toBe(84)
   })
@@ -452,7 +453,7 @@ describe('calculerDeclaration2035 — les mouvements ventilés sur plusieurs com
       ]),
     })
     expect(d.depenses).toEqual([
-      { poste: 'Frais postaux et de télécommunications', nature: 'depense', montant: 120, nbPieces: 0, nbMouvements: 1 },
+      { poste: 'Frais postaux et de télécommunications', nature: 'depense', montant: 120, nbPieces: 0, nbMouvements: 1, nbEncaissements: 0 },
     ])
   })
 
@@ -747,7 +748,7 @@ describe('calculerDeclaration2035 — l’arrondi de la liquidation de la TVA', 
 
   it('un arrondi en faveur du dossier est un gain divers, au 758000', () => {
     const d = calcul({ declarationsTva: [declaration()] })
-    expect(d.recettes).toEqual([{ poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette', montant: 0.8, nbPieces: 0, nbMouvements: 0 }])
+    expect(d.recettes).toEqual([{ poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette', montant: 0.8, nbPieces: 0, nbMouvements: 0, nbEncaissements: 0 }])
     expect(d.resultat).toBe(0.8)
     expect(d.contributions).toEqual([{
       source: { type: 'declaration', id: 'q1', declaration: declaration() }, poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette',
@@ -757,7 +758,7 @@ describe('calculerDeclaration2035 — l’arrondi de la liquidation de la TVA', 
 
   it('un arrondi qui fait payer plus est une charge, au 658000', () => {
     const d = calcul({ declarationsTva: [declaration({ tva_collectee: 99.20 })] })
-    expect(d.depenses).toEqual([{ poste: POSTE_ARRONDIS_TVA_CHARGE, nature: 'depense', montant: 0.4, nbPieces: 0, nbMouvements: 0 }])
+    expect(d.depenses).toEqual([{ poste: POSTE_ARRONDIS_TVA_CHARGE, nature: 'depense', montant: 0.4, nbPieces: 0, nbMouvements: 0, nbEncaissements: 0 }])
     expect(d.contributions.map((c) => [c.compte, c.centimes])).toEqual([['658000', 40]])
   })
 
@@ -775,7 +776,7 @@ describe('calculerDeclaration2035 — l’arrondi de la liquidation de la TVA', 
       paiementsDesPieces([], [], []), [], [declaration()], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
       { etat: 'sans_bascule' },
     )
-    expect(d.recettes).toEqual([{ poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette', montant: 10.8, nbPieces: 1, nbMouvements: 0 }])
+    expect(d.recettes).toEqual([{ poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette', montant: 10.8, nbPieces: 1, nbMouvements: 0, nbEncaissements: 0 }])
   })
 })
 
@@ -1015,14 +1016,14 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
 
   it('un remboursement sans dépense de l’exercice diminue les dépenses au lieu de s’y ajouter', () => {
     const d = calculReleve(affecte({ id: 'geste', montant: 3 }))
-    expect(d.depenses).toEqual([{ poste: 'Frais financiers', nature: 'depense', montant: -3, nbPieces: 0, nbMouvements: 1 }])
+    expect(d.depenses).toEqual([{ poste: 'Frais financiers', nature: 'depense', montant: -3, nbPieces: 0, nbMouvements: 1, nbEncaissements: 0 }])
     expect(d.totalDepenses).toBe(-3)
     expect(d.resultat).toBe(3)
   })
 
   it('un rejet sans recette de l’exercice diminue les recettes', () => {
     const d = calculReleve(affecte({ id: 'rejet', categorie_id: 'c-recettes', montant: -40 }))
-    expect(d.recettes).toEqual([{ poste: 'Recettes', nature: 'recette', montant: -40, nbPieces: 0, nbMouvements: 1 }])
+    expect(d.recettes).toEqual([{ poste: 'Recettes', nature: 'recette', montant: -40, nbPieces: 0, nbMouvements: 1, nbEncaissements: 0 }])
     expect(d.resultat).toBe(-40)
   })
 
@@ -1037,7 +1038,7 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
     // l'année disparaissait du résultat.
     const rembt = cotisation({ id: 'r', echeance: '2025-06-05', montant_verse: null, montant_appele: -300, montant_csg_crds: null })
     const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' })
-    expect(d.depenses).toEqual([{ poste: POSTE_COTISATIONS, nature: 'depense', montant: -300, nbPieces: 0, nbMouvements: 0 }])
+    expect(d.depenses).toEqual([{ poste: POSTE_COTISATIONS, nature: 'depense', montant: -300, nbPieces: 0, nbMouvements: 0, nbEncaissements: 0 }])
     expect(d.resultat).toBe(300)
   })
 })
@@ -1072,8 +1073,8 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
     const v = ventes()
     const en2025 = avec(v, { annee: 2025 })
     const en2026 = avec(v, { annee: 2026 })
-    expect(en2025.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 500, nbPieces: 0, nbMouvements: 0 }])
-    expect(en2026.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 500, nbPieces: 0, nbMouvements: 0 }])
+    expect(en2025.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 500, nbPieces: 0, nbMouvements: 0, nbEncaissements: 1 }])
+    expect(en2026.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 500, nbPieces: 0, nbMouvements: 0, nbEncaissements: 1 }])
     // Une contribution par part, sous sa source : l'encaissement et sa facture nommée ; au compte que la composition de ses
     // écritures écrit pour des services (étape VF4c3).
     expect(desVentes(en2025)).toEqual([{
@@ -1100,13 +1101,52 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
     expect(avec(v, { annee: 2025 }).totalRecettes).toBe(300)
   })
 
+  // LES ENCAISSEMENTS QUE LA LIGNE COMPTE (étape VF7d) : la preuve d'une vente facturée est le registre, ni une pièce ni un
+  // mouvement. Un encaissement, pas une part : réparti sur deux taux, il compte une fois ; une contre-passation est une
+  // entrée du registre, elle compte aussi, dans l'année de sa date.
+  it('une ligne compte ses encaissements : un par entrée du registre, pas par part, dans l’année de sa date', () => {
+    const f2 = factureVendue({ id: 'f2', numero: 'F2025-0002', date_emission: '2025-11-12' })
+    const e3 = encaissementVendu({ id: 'e3', facture_id: 'f2', date_encaissement: '2025-12-16', montant: 1750 })
+    const part10 = { encaissement_id: 'e3', dossier_id: 'd1', taux: 10, montant: 550 }
+    const v = ventes({
+      factures: [F1, f2], lignes: [...LIGNES_F1, ligneVendue('f2', 1000, 20), ligneVendue('f2', 500, 10, 2)],
+      encaissements: [e1.encaissement, e2.encaissement, e3.encaissement],
+      parts: [e1.part, e2.part, { ...e3.part, montant: 1200 }, part10],
+    })
+    const en2025 = avec(v, { annee: 2025 })
+    // e1 (500 € HT) et e3 (1 000 + 500 € HT, sur deux taux) : trois parts, deux encaissements.
+    expect(desVentes(en2025)).toHaveLength(3)
+    expect(en2025.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 2000, nbPieces: 0, nbMouvements: 0, nbEncaissements: 2 }])
+    expect(avec(v, { annee: 2026 }).recettes.map((l) => l.nbEncaissements)).toEqual([1])
+    // En 2026 : e2 (+500 € HT), un encaissement de f2 (+1 000 € HT) et la contre-passation de e1 (−500 € HT) — trois
+    // entrées du registre derrière 1 000 €.
+    const e4 = encaissementVendu({ id: 'e4', facture_id: 'f2', date_encaissement: '2026-01-25', montant: 1200 })
+    const c = encaissementVendu({ id: 'c', date_encaissement: '2026-02-01', montant: -600, annule_id: 'e1' })
+    const avecC = ventes({
+      factures: [F1, f2], lignes: [...LIGNES_F1, ligneVendue('f2', 1000, 20)],
+      encaissements: [e1.encaissement, e2.encaissement, e4.encaissement, c.encaissement], parts: [e1.part, e2.part, e4.part, c.part],
+    })
+    expect(avec(avecC, { annee: 2026 }).recettes).toEqual([
+      { poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 1000, nbPieces: 0, nbMouvements: 0, nbEncaissements: 3 },
+    ])
+    expect(avec(avecC, { annee: 2025 }).recettes.map((l) => l.nbEncaissements)).toEqual([1])
+  })
+
+  it('une ligne de pièces ne compte aucun encaissement, ni dans la même ligne que des ventes facturées', () => {
+    const vente = piece({ id: 'pv', type_piece: 'vente', categorie_id: 'c-recettes', montant_ht: 300, montant_ttc: 300, date_piece: '2025-03-01' })
+    expect(avec(ventesFactureesVides('d1'), { annee: 2025, pieces: [vente] }).recettes)
+      .toEqual([{ poste: 'Recettes', nature: 'recette', montant: 300, nbPieces: 1, nbMouvements: 0, nbEncaissements: 0 }])
+    expect(avec(ventes(), { annee: 2025, pieces: [vente] }).recettes.map((l) => [l.poste, l.nbPieces, l.nbEncaissements]))
+      .toEqual([[POSTE_VENTES_FACTUREES, 0, 1], ['Recettes', 1, 0]])
+  })
+
   it('une contre-passation est une part négative : elle diminue le poste, dans l’année de sa date', () => {
     const e = encaissementVendu({ id: 'e', date_encaissement: '2025-12-15', montant: 1200 })
     const c = encaissementVendu({ id: 'c', date_encaissement: '2026-02-01', montant: -1200, annule_id: 'e' })
     const v = ventes({ encaissements: [e.encaissement, c.encaissement], parts: [e.part, c.part] })
     expect(avec(v, { annee: 2025 }).totalRecettes).toBe(1000)
     const en2026 = avec(v, { annee: 2026 })
-    expect(en2026.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: -1000, nbPieces: 0, nbMouvements: 0 }])
+    expect(en2026.recettes).toEqual([{ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: -1000, nbPieces: 0, nbMouvements: 0, nbEncaissements: 1 }])
     expect(en2026.resultat).toBe(-1000)
     expect(desVentes(en2026).map((x) => [x.source.type === 'encaissement' && x.source.id, x.centimes])).toEqual([['c', -100_000]])
     // Le même jour, l'encaissement et sa contre-passation s'annulent : le poste nul ne se déclare pas.
@@ -1147,7 +1187,7 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
     const avecUneFactureNonSource = avec(ventes({ factures: [avant], encaissements: [], parts: [] }), { pieces: [vente] })
     const hier = avec(ventesFactureesVides('d1'), { pieces: [vente] })
     expect(avecUneFactureNonSource).toEqual(hier)
-    expect(hier.recettes).toEqual([{ poste: 'Recettes', nature: 'recette', montant: 300, nbPieces: 1, nbMouvements: 0 }])
+    expect(hier.recettes).toEqual([{ poste: 'Recettes', nature: 'recette', montant: 300, nbPieces: 1, nbMouvements: 0, nbEncaissements: 0 }])
     expect(hier.exclusions.exemplairesDeFacturesSources).toEqual([])
   })
 
@@ -1237,12 +1277,29 @@ describe('calculerDeclaration2035 — les frais d’un mouvement d’encaissemen
       poste: 'Frais financiers', nature: 'depense', compte: '627000', centimes: 200,
     }])
     // Le mouvement compte parmi ceux du poste : sa preuve est le relevé.
-    expect(d.depenses).toEqual([{ poste: 'Frais financiers', nature: 'depense', montant: 2, nbPieces: 0, nbMouvements: 1 }])
+    expect(d.depenses).toEqual([{ poste: 'Frais financiers', nature: 'depense', montant: 2, nbPieces: 0, nbMouvements: 1, nbEncaissements: 0 }])
     expect(d.totalDepenses).toBe(2)
     expect(d.resultat).toBe(Math.round((d.totalRecettes - 2) * 100) / 100)
     expect(d.exclusions.fraisSansPoste).toEqual([])
     // En case BN, ligne 31 du 2035-A.
     expect(valeursDesCases(d).valeurs.get('BN')).toBe(2)
+  })
+
+  // L'INSTANTANÉ VALIDÉ LE GARDE (étape VF7d) : le poste des frais compte le mouvement d'encaissements parmi ses mouvements,
+  // et aucun encaissement ; celui des ventes facturées, ses encaissements de l'exercice et aucun mouvement. Relu après un
+  // aller-retour par la base, tel quel.
+  it('l’instantané validé garde le mouvement du poste des frais, et les encaissements du poste des ventes', () => {
+    const d = declarer(sources())
+    const valeurs = valeursDesCases(d).valeurs
+    const i = instantane2035(d, valeurs, arrondirPourFormulaire(valeurs, 2025), { nom: 'Dossier fictif', activite: null, siret: null })
+    const encaissementsDe2025 = new Set(d.contributions.flatMap((c) => (c.source.type === 'encaissement' ? [c.source.id] : [])))
+    expect(encaissementsDe2025.size).toBeGreaterThan(1)
+    expect(i.version).toBe(2)
+    expect(i.postes.find((p) => p.poste === 'Frais financiers'))
+      .toEqual({ poste: 'Frais financiers', nature: 'depense', montant: 2, nbPieces: 0, nbMouvements: 1, nbEncaissements: 0 })
+    expect(i.postes.find((p) => p.poste === POSTE_VENTES_FACTUREES))
+      .toMatchObject({ nature: 'recette', nbPieces: 0, nbMouvements: 0, nbEncaissements: encaissementsDe2025.size })
+    expect(lireInstantane2035(JSON.parse(JSON.stringify(i)))).toEqual(i)
   })
 
   it('exactement les lignes du compte des services bancaires que la composition écrit pour le mouvement', () => {

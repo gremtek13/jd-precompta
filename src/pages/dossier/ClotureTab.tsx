@@ -38,7 +38,7 @@ import { ecrituresDesVentesPourLa2035, etatsDesVentesFacturees, mouvementsClasse
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import {
   casesDeLInstantane, casesQuiDifferent, demandeDeValidation, exerciceQuiFige, frontiereDeValidation, instantane2035, lireInstantane2035,
-  type Instantane2035,
+  postesDeLInstantane, type Instantane2035, type PosteRelu,
 } from '../../lib/validationExercice'
 import { ventesDeLaChecklist } from '../../lib/ventesDeLaChecklist'
 import type {
@@ -1631,7 +1631,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                   valeurs={instantane ? casesDeLInstantane(instantane.cases) : f.valeurs}
                   formulaire={instantane ? casesDeLInstantane(instantane.formulaire) : undefined}
                   validee={validation.valide && instantane
-                    ? { le: validation.valide.valide_le, casesDifferentes: casesQuiDifferent(instantane, f.valeurs) }
+                    ? {
+                      le: validation.valide.valide_le, casesDifferentes: casesQuiDifferent(instantane, f.valeurs),
+                      postes: postesDeLInstantane(instantane), version: instantane.version,
+                    }
                     : undefined}
                   genere={genere === annee}
                   onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe)}
@@ -1691,8 +1694,9 @@ function FormulaireAnnuel({
   valeurs: Map<string, number>
   // Les cases à l'euro d'une 2035 VALIDÉE, telles que la base les garde ; sinon calculées depuis `valeurs`.
   formulaire?: Map<string, number>
-  // Une 2035 validée : quand, et les cases qu'un calcul d'aujourd'hui ne retrouverait plus.
-  validee?: { le: string; casesDifferentes: string[] }
+  // Une 2035 validée : quand, les cases qu'un calcul d'aujourd'hui ne retrouverait plus, et ses postes tels qu'elle les
+  // garde, avec ce que chacun compte (étape VF7d) — `version` dit si elle portait déjà les encaissements.
+  validee?: { le: string; casesDifferentes: string[]; postes: PosteRelu[]; version: 1 | 2 }
   genere: boolean
   onTelecharger: () => void
   // L'annexe 2035-E de l'exercice (lib/declaration2035E.ts) : due ou non, le formulaire la porte quand elle l'est.
@@ -1754,6 +1758,7 @@ function FormulaireAnnuel({
               l'application a évolué. C'est la 2035 validée qui fait foi.
             </p>
           )}
+          <RecapitulatifValide postes={validee.postes} version={validee.version} />
         </div>
       )}
       <div className="table-scroll">
@@ -1791,6 +1796,49 @@ function FormulaireAnnuel({
         <VoletSocialCard dossierId={dossierId} annee={annee} valeurs={valeurs} blocage={blocage} />
       )}
     </div>
+  )
+}
+
+// LE RÉCAPITULATIF D'UNE 2035 VALIDÉE (étape VF7d, ligne 28.65) : poste par poste, ce qu'elle compte — ses pièces, ses
+// mouvements du relevé sans pièce, ses encaissements de factures —, tel que l'instantané le garde, rien recalculé. Une 2035
+// validée en version 1 ne portait pas les encaissements : « — », et la phrase le dit ; jamais un zéro, qui affirmerait
+// qu'aucun encaissement n'a compté.
+function RecapitulatifValide({ postes, version }: { postes: PosteRelu[]; version: 1 | 2 }) {
+  const nombre = (n: number | null) => (n === null ? '—' : String(n))
+  return (
+    <details style={{ marginTop: 8 }}>
+      <summary>Ce que compte la 2035 validée, poste par poste</summary>
+      {version === 1 && (
+        <p className="muted" style={{ margin: '6px 0' }}>
+          Validée avant que l’application compte les encaissements de factures, elle se relit telle quelle : « — » dit un
+          nombre qu’elle ne porte pas, pas un zéro.
+        </p>
+      )}
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Poste</th>
+              <th style={{ textAlign: 'right' }}>Montant</th>
+              <th style={{ textAlign: 'right' }}>Pièces</th>
+              <th style={{ textAlign: 'right' }}>Mouvements du relevé</th>
+              <th style={{ textAlign: 'right' }}>Encaissements de factures</th>
+            </tr>
+          </thead>
+          <tbody>
+            {postes.map((p, i) => (
+              <tr key={`${p.nature}:${p.poste}:${i}`}>
+                <td>{p.poste}</td>
+                <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(p.montant)}</td>
+                <td style={{ textAlign: 'right' }}>{nombre(p.nbPieces)}</td>
+                <td style={{ textAlign: 'right' }}>{nombre(p.nbMouvements)}</td>
+                <td style={{ textAlign: 'right' }}>{nombre(p.nbEncaissements)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
   )
 }
 

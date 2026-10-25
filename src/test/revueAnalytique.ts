@@ -23,7 +23,7 @@ export function explication(o: Partial<RevisionExplication>): RevisionExplicatio
 }
 
 export function posteDeclare(o: Partial<LigneDeclaration>): LigneDeclaration {
-  return { poste: 'Poste fictif', nature: 'depense', montant: 0, nbPieces: 0, nbMouvements: 0, ...o }
+  return { poste: 'Poste fictif', nature: 'depense', montant: 0, nbPieces: 0, nbMouvements: 0, nbEncaissements: 0, ...o }
 }
 
 // Une part du relevé comptée sans pièce : le mouvement entier pour une affectation, la part pour une ventilation.

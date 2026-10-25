@@ -279,6 +279,9 @@ export interface CaseRemplie {
   // deux fois — les postes ne portent qu'un nombre, pas les mouvements eux-mêmes. Aucun écran ne
   // l'affiche aujourd'hui ; le jour où l'un le fera, c'est ici qu'il faudra porter les identifiants.
   nbMouvements: number
+  // Et la somme des encaissements de factures de ses postes (étape VF7d) : un même encaissement ne porte qu'un poste, celui
+  // des ventes facturées, et n'y compte donc qu'une fois.
+  nbEncaissements: number
 }
 
 export interface PosteNonRattache {
@@ -327,10 +330,12 @@ export function repartirEnCases(declaration: Declaration2035): RepartitionCases 
       actuel.postes.push(ligne.poste)
       actuel.nbPieces += ligne.nbPieces
       actuel.nbMouvements += ligne.nbMouvements
+      actuel.nbEncaissements += ligne.nbEncaissements
       continue
     }
     parCode.set(c.code, {
       case: c, montant: ligne.montant, postes: [ligne.poste], nbPieces: ligne.nbPieces, nbMouvements: ligne.nbMouvements,
+      nbEncaissements: ligne.nbEncaissements,
     })
   }
 

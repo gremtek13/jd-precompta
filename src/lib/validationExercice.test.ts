@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   biensFiges, casesDeLInstantane, casesQuiDifferent, dateFigee, defautsDeNumerotation, demandeDeValidation, estFigee,
-  exerciceQuiFige, frontiereDeValidation, instantane2035, lireInstantane2035, piecesFigees,
+  exerciceQuiFige, frontiereDeValidation, instantane2035, lireInstantane2035, piecesFigees, postesDeLInstantane,
 } from './validationExercice'
 import { numeroterFec, type NumerotationFec } from './fec'
 import { COMPTE_BANQUE } from './comptes'
@@ -199,8 +199,8 @@ describe('demandeDeValidation — ce que `valider_exercice` reçoit', () => {
 describe('l’instantané de la 2035 — la déclaration telle qu’elle a été validée', () => {
   const declaration: Declaration2035 = {
     annee: 2025,
-    recettes: [{ poste: 'Recettes', nature: 'recette', montant: 5000.4, nbPieces: 3, nbMouvements: 12 }],
-    depenses: [{ poste: 'Achats', nature: 'depense', montant: 120.6, nbPieces: 2, nbMouvements: 0 }],
+    recettes: [{ poste: 'Recettes', nature: 'recette', montant: 5000.4, nbPieces: 3, nbMouvements: 12, nbEncaissements: 4 }],
+    depenses: [{ poste: 'Achats', nature: 'depense', montant: 120.6, nbPieces: 2, nbMouvements: 0, nbEncaissements: 0 }],
     totalRecettes: 5000.4,
     totalDepenses: 120.6,
     resultat: 4879.8,
@@ -220,7 +220,7 @@ describe('l’instantané de la 2035 — la déclaration telle qu’elle a été
   it('garde les cases au centime, celles du formulaire, les postes et le déclarant', () => {
     const i = instantane2035(declaration, valeurs, formulaire, entete)
     expect(i).toEqual({
-      version: 1,
+      version: 2,
       annee: 2025,
       cases: { AG: 5000.4, BA: 120.6, CP: 4879.8 },
       formulaire: { AG: 5000, BA: 121, CP: 4879 },
@@ -228,8 +228,8 @@ describe('l’instantané de la 2035 — la déclaration telle qu’elle a été
       totalDepenses: 120.6,
       resultat: 4879.8,
       postes: [
-        { poste: 'Recettes', nature: 'recette', montant: 5000.4, nbPieces: 3, nbMouvements: 12 },
-        { poste: 'Achats', nature: 'depense', montant: 120.6, nbPieces: 2, nbMouvements: 0 },
+        { poste: 'Recettes', nature: 'recette', montant: 5000.4, nbPieces: 3, nbMouvements: 12, nbEncaissements: 4 },
+        { poste: 'Achats', nature: 'depense', montant: 120.6, nbPieces: 2, nbMouvements: 0, nbEncaissements: 0 },
       ],
       entete,
     })
@@ -247,13 +247,64 @@ describe('l’instantané de la 2035 — la déclaration telle qu’elle a été
     const i = instantane2035(declaration, valeurs, formulaire, entete)
     expect(lireInstantane2035(null)).toBeNull()
     expect(lireInstantane2035([])).toBeNull()
-    expect(lireInstantane2035({ ...i, version: 2 })).toBeNull()
+    expect(lireInstantane2035({ ...i, version: 3 })).toBeNull()
+    expect(lireInstantane2035({ ...i, version: '2' })).toBeNull()
     expect(lireInstantane2035({ ...i, cases: { AG: '5000' } })).toBeNull()
     expect(lireInstantane2035({ ...i, formulaire: null })).toBeNull()
     expect(lireInstantane2035({ ...i, resultat: Number.NaN })).toBeNull()
     expect(lireInstantane2035({ ...i, postes: [{ poste: 'x', nature: 'autre', montant: 1 }] })).toBeNull()
     expect(lireInstantane2035({ ...i, entete: { nom: 3, activite: null, siret: null } })).toBeNull()
     expect(lireInstantane2035({ ...i, entete: undefined })).toBeNull()
+  })
+
+  // LA VERSION 2 (étape VF7d) porte les nombres de chaque poste : écrite par l'application, elle se refuse si l'un manque ou
+  // ne se lit pas comme un compte, plutôt que d'afficher un nombre deviné.
+  it('refuse une version 2 dont un poste ne porte pas ses trois nombres, entiers et positifs', () => {
+    const i = instantane2035(declaration, valeurs, formulaire, entete)
+    const avecPoste = (o: Record<string, unknown>) => ({ ...i, postes: [i.postes[0], { ...i.postes[1], ...o }] })
+    expect(lireInstantane2035(avecPoste({}))).toEqual(i)
+    for (const cle of ['nbPieces', 'nbMouvements', 'nbEncaissements']) {
+      const sans = { ...i.postes[1] } as Record<string, unknown>
+      delete sans[cle]
+      expect(lireInstantane2035({ ...i, postes: [i.postes[0], sans] }), cle).toBeNull()
+      expect(lireInstantane2035(avecPoste({ [cle]: '1' })), cle).toBeNull()
+      expect(lireInstantane2035(avecPoste({ [cle]: -1 })), cle).toBeNull()
+      expect(lireInstantane2035(avecPoste({ [cle]: 1.5 })), cle).toBeNull()
+      expect(lireInstantane2035(avecPoste({ [cle]: null })), cle).toBeNull()
+    }
+  })
+
+  // LA VERSION 1, validée avant VF7d, se relit TELLE QUELLE : ni réécrite ni complétée. Elle ne portait pas les
+  // encaissements : le nombre absent se dit « — » (nul), jamais un zéro deviné — un exercice validé d'alors pouvait en
+  // compter. Ses autres nombres, qu'aucune règle ne vérifiait, se disent s'ils se lisent comme des comptes, sinon nuls aussi.
+  const V1 = {
+    version: 1, annee: 2024, cases: { AG: 900 }, formulaire: { AG: 900 }, totalRecettes: 900, totalDepenses: 0, resultat: 900,
+    postes: [{ poste: 'Recettes', nature: 'recette', montant: 900, nbPieces: 2, nbMouvements: 5 }],
+    entete: { nom: 'Validé en 2025', activite: null, siret: null },
+  }
+  it('relit la version 1 telle quelle, sans lui prêter de nombre d’encaissements', () => {
+    const gardee = JSON.parse(JSON.stringify(V1))
+    const lue = lireInstantane2035(gardee)
+    expect(lue).toBe(gardee)
+    expect(lue).toEqual(V1)
+    expect(lue && 'nbEncaissements' in lue.postes[0]).toBe(false)
+    expect(postesDeLInstantane(lue!)).toEqual([
+      { poste: 'Recettes', nature: 'recette', montant: 900, nbPieces: 2, nbMouvements: 5, nbEncaissements: null },
+    ])
+    // Une version 1 n'apprend rien d'un nombre d'encaissements qu'elle porterait quand même : ce n'est pas sa forme.
+    expect(postesDeLInstantane(lireInstantane2035({ ...V1, postes: [{ ...V1.postes[0], nbEncaissements: 3 }] })!)[0].nbEncaissements).toBeNull()
+    // Ses autres nombres illisibles se taisent aussi, sans refuser l'instantané (la version 1 ne les vérifiait pas).
+    const sansNombres = lireInstantane2035({ ...V1, postes: [{ poste: 'Recettes', nature: 'recette', montant: 900 }] })
+    expect(sansNombres && postesDeLInstantane(sansNombres)).toEqual([
+      { poste: 'Recettes', nature: 'recette', montant: 900, nbPieces: null, nbMouvements: null, nbEncaissements: null },
+    ])
+  })
+
+  it('dit les trois nombres de chaque poste d’une version 2', () => {
+    expect(postesDeLInstantane(instantane2035(declaration, valeurs, formulaire, entete))).toEqual([
+      { poste: 'Recettes', nature: 'recette', montant: 5000.4, nbPieces: 3, nbMouvements: 12, nbEncaissements: 4 },
+      { poste: 'Achats', nature: 'depense', montant: 120.6, nbPieces: 2, nbMouvements: 0, nbEncaissements: 0 },
+    ])
   })
 
   // La 2035 validée fait foi ; recalculée aujourd'hui, elle peut ne plus s'y retrouver — un poste de catégorie

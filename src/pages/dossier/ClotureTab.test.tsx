@@ -1874,12 +1874,18 @@ describe('ClotureTab — valider l’exercice', () => {
     expect(params.p_declaration?.resultat).toBe(-120)
     expect(params.p_declaration?.formulaire.BA).toBe(120)
     expect(params.p_declaration?.entete).toEqual({ nom: 'Dossier de test', activite: 'Infirmier', siret: '12345678901234' })
+    // En version 2 (étape VF7d) : chaque poste porte ses encaissements — aucun ici, l'achat est une pièce.
+    expect((params.p_declaration as unknown as { version: number; postes: unknown[] }).version).toBe(2)
+    expect((params.p_declaration as unknown as { postes: unknown[] }).postes)
+      .toEqual([{ poste: 'Achats', nature: 'depense', montant: 120, nbPieces: 1, nbMouvements: 0, nbEncaissements: 0 }])
     // Relu, l'exercice est validé, sa 2035 est celle qui a été envoyée — et un calcul d'aujourd'hui la retrouve :
     // aucun écart n'est dit (le garde symétrique de la 2035 qui diffère, plus bas).
     await screen.findByText(/^Exercice 2025 validé/)
     screen.getByText(/2035 validée le 15\/01\/2026 : elle est relue telle qu'elle a été validée/)
     expect(screen.queryAllByText(/Recalculée aujourd'hui, elle diffère/)).toHaveLength(0)
     expect(screen.queryAllByRole('button', { name: 'Valider l’exercice 2025' })).toHaveLength(0)
+    // Et son récapitulatif, relu de la version 2 envoyée : des nombres, aucun « — ».
+    expect(cellules(await recapitulatif(), 'Achats').slice(2)).toEqual(['1', '0', '0'])
     // Relue elle aussi, l'ouverture que la validation a écrite.
     screen.getByText('Sa validation a écrit l’ouverture de l’exercice 2026 : 2 soldes reportés au 01/01/2026, qui ouvrent son FEC (journal AN) et sa balance.')
     // La page relit les exercices validés : la frontière a bougé pour tous les onglets du dossier.
@@ -1993,6 +1999,46 @@ describe('ClotureTab — valider l’exercice', () => {
     screen.getByText(/Validé le 15\/01\/2026 — 1 écriture\(s\), 2 ligne\(s\)/)
     screen.getByText(/premier exercice validé du dossier/)
     expect(screen.queryAllByRole('button', { name: 'Valider l’exercice 2025' })).toHaveLength(0)
+  })
+
+  // LE RÉCAPITULATIF D'UN EXERCICE VALIDÉ (étape VF7d) : poste par poste, ce que la 2035 validée compte — pièces,
+  // mouvements du relevé, encaissements de factures. Une 2035 validée en version 1 ne portait pas les encaissements : elle
+  // se relit telle quelle, et le nombre absent se dit « — », jamais 0.
+  const recapitulatif = async () => {
+    const titre = await screen.findByText('Ce que compte la 2035 validée, poste par poste')
+    return titre.closest('details') as HTMLElement
+  }
+  const cellules = (recap: HTMLElement, poste: string) =>
+    within(within(recap).getByText(poste).closest('tr') as HTMLElement).getAllByRole('cell').map((c) => c.textContent)
+
+  it('dit, poste par poste, les pièces, les mouvements et les encaissements d’une 2035 validée en version 2', async () => {
+    poserTenu()
+    faux.parTable.exercices_valides = [{
+      ...VALIDE,
+      declaration: {
+        ...INSTANTANE, version: 2, cases: { AA: 1_500, BA: 999 }, formulaire: { AA: 1_500, BA: 999 }, totalRecettes: 1_500, resultat: 501,
+        postes: [
+          { poste: 'Recettes encaissées y compris les remboursements de frais', nature: 'recette', montant: 1_500, nbPieces: 0, nbMouvements: 0, nbEncaissements: 3 },
+          { poste: 'Achats', nature: 'depense', montant: 999, nbPieces: 1, nbMouvements: 2, nbEncaissements: 0 },
+        ],
+      },
+    }]
+    monterAvec()
+    const recap = await recapitulatif()
+    expect(cellules(recap, 'Recettes encaissées y compris les remboursements de frais').slice(2)).toEqual(['0', '0', '3'])
+    expect(cellules(recap, 'Achats').slice(2)).toEqual(['1', '2', '0'])
+    expect(within(recap).queryByText(/ne porte pas/)).toBeNull()
+  })
+
+  it('relit une 2035 validée en version 1 telle quelle : ses encaissements se disent « — », jamais 0', async () => {
+    poserTenu()
+    faux.parTable.exercices_valides = [{ ...VALIDE, declaration: INSTANTANE }]
+    monterAvec()
+    const recap = await recapitulatif()
+    expect(cellules(recap, 'Achats').slice(2)).toEqual(['1', '0', '—'])
+    within(recap).getByText(/Validée avant que l’application compte les encaissements de factures/)
+    // La 2035 elle-même ne change pas : ses cases relues telles qu'elles ont été validées.
+    within(screen.getByText('BA').closest('tr') as HTMLElement).getByText(/^999,00\s€$/)
   })
 
   it('tire l’annexe 2035-E d’un exercice validé de la 2035 validée, pas d’un calcul d’aujourd’hui', async () => {
@@ -2868,6 +2914,39 @@ describe('ClotureTab — les ventes facturées', () => {
     monter(2025, true, true)
     const v = await carteDeValidation()
     v.getByText("L'exercice 2025 porte un encaissement de la facture F2025-0042 par virement du 10/05/2025, sans son mouvement : il manque au relevé, ou n'y est pas rattaché — le rattacher avant la validation.")
+  })
+
+  // L'INSTANTANÉ VALIDÉ COMPTE SES ENCAISSEMENTS (étape VF7d) : la 2035 envoyée à la base, en version 2, dit l'encaissement
+  // derrière la recette facturée et le mouvement derrière les frais ; relue validée, son récapitulatif le redit.
+  it('basculé, la validation envoie une 2035 qui compte ses encaissements, et son récapitulatif les relit', async () => {
+    poserLesFrais()
+    // Sans la pièce d'achat (qu'aucun paiement ne règle) ni son exemplaire : l'exercice n'a que sa vente, et se valide.
+    faux.parTable.pieces = []
+    faux.parTable.ecritures_brouillon = (faux.parTable.ecritures_brouillon as { id: string }[]).filter((l) => l.id !== 'e-achat')
+    faux.reponses.valider_exercice = { data: { annee: 2025, lignes: 6, ecritures: 2 }, error: null }
+    faux.apresValidation = {
+      dossier_id: 'dossier-de-test', annee: 2025, valide_le: '2026-01-15T10:00:00Z', valide_par: 'chef', mode_comptable: 'tresorerie',
+      nb_lignes: 6, nb_ecritures: 2, total_debit: 1, total_credit: 1, empreinte_precedente: null, empreinte: 'a'.repeat(64),
+    }
+    faux.estChef = true
+    vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    monter(2025, true, true)
+    const v = await carteDeValidation()
+    v.getByText(/Rien n.empêche de valider cet exercice/)
+    await act(async () => { fireEvent.click(v.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    const params = faux.appels.find((a) => a.nom === 'valider_exercice')!.params as {
+      p_declaration: { version: number; postes: { poste: string; nbPieces: number; nbMouvements: number; nbEncaissements: number }[] }
+    }
+    expect(params.p_declaration.version).toBe(2)
+    expect(params.p_declaration.postes.map((p) => [p.poste, p.nbPieces, p.nbMouvements, p.nbEncaissements])).toEqual([
+      ['Recettes encaissées y compris les remboursements de frais', 0, 0, 1],
+      ['Frais financiers', 0, 1, 0],
+    ])
+    const recap = (await screen.findByText('Ce que compte la 2035 validée, poste par poste')).closest('details') as HTMLElement
+    const nombres = (poste: string) =>
+      within(within(recap).getByText(poste).closest('tr') as HTMLElement).getAllByRole('cell').slice(2).map((c) => c.textContent)
+    expect(nombres('Recettes encaissées y compris les remboursements de frais')).toEqual(['0', '0', '1'])
+    expect(nombres('Frais financiers')).toEqual(['0', '1', '0'])
   })
 
   it('une facture source dans un dossier qui ne se dit pas basculé : les lectures ne se tiennent pas, aucune 2035', async () => {
