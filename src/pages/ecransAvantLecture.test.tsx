@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { etat, libererRetenues, libererTout, reinitialiser } from '../test/clientRetenu'
-import { MENTIONS_VIDES } from '../test/factures'
+import { MENTIONS_VIDES, NON_BASCULE } from '../test/factures'
 import { versionParametres } from '../test/parametresFacturation'
 import type { Dossier, FactureEmise, Piece } from '../lib/types'
 import type { ModeleComptable } from '../lib/engagement'
@@ -322,11 +322,11 @@ const ECRANS: Ecran[] = [
     <Dossier1><FactureApercu facture={facture()} dossier={{ statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false }} onClose={rien} /></Dossier1>
   ) },
   { nom: 'FactureAvoirModal', fichier: 'pages/dossier/FactureAvoirModal.tsx', rendre: () => (
-    <Dossier1><FactureAvoirModal espace="cabinet" dossierId="d1" factureOrigine={facture()} credite={null} onClose={rien} onCreated={rien} /></Dossier1>
+    <Dossier1><FactureAvoirModal reglageDesVentes={NON_BASCULE} espace="cabinet" dossierId="d1" factureOrigine={facture()} credite={null} onClose={rien} onCreated={rien} /></Dossier1>
   ) },
   { nom: 'FactureFormModal', fichier: 'pages/dossier/FactureFormModal.tsx', rendre: () => (
     <Dossier1>
-      <FactureFormModal espace="cabinet"
+      <FactureFormModal reglageDesVentes={NON_BASCULE} espace="cabinet"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} facture={facture({ statut: 'brouillon', numero: null })}
         onAdresseUpdated={rien} onClose={rien} onSaved={rien}
@@ -336,7 +336,7 @@ const ECRANS: Ecran[] = [
   // Le même formulaire dans l'espace du client « Ventes » (étape A2b : un article dans la facture, lu EN ENTIER à l'ouverture).
   { nom: 'FactureFormModal (client)', fichier: 'pages/dossier/FactureFormModal.tsx', rendre: () => (
     <Dossier1>
-      <FactureFormModal espace="client"
+      <FactureFormModal reglageDesVentes={NON_BASCULE} espace="client"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} facture={facture({ statut: 'brouillon', numero: null })}
         onClose={rien} onSaved={rien}
@@ -345,7 +345,7 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'FacturesTab', fichier: 'pages/dossier/FacturesTab.tsx', rendre: () => (
     <Dossier1>
-      <FacturesTab espace="cabinet"
+      <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} onAdresseUpdated={rien}
       />

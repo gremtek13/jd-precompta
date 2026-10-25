@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
 import { facture as factureCii } from '../../test/facturesCii'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
+import { NON_BASCULE } from '../../test/factures'
 
 // « PAR LE CLIENT » DANS L'ONGLET FACTURES DU CABINET (espace client, étape P4c). Le cabinet voit tout ce que le client fait,
 // et QUI : le compte qui a validé une facture, ou qui a rédigé un brouillon, se reconnaît parmi les accès du dossier
@@ -151,7 +152,7 @@ const commun = {
   articleExoneration: null, numeroTvaAttribue: false, tvaSurDebits: false,
 }
 const cabinet = (dossierId = 'd1') => (
-  <FacturesTab espace="cabinet" onAdresseUpdated={() => {}} dossierId={dossierId} {...commun} />
+  <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} dossierId={dossierId} {...commun} />
 )
 
 async function monter(attendre = 'Client A') {
@@ -350,7 +351,7 @@ describe('FacturesTab — les accès lus passent aux fenêtres, une seule fois ;
 
   it('dans « Mes ventes », rien n’est lu, aucun filtre, aucune pastille, et les fenêtres n’ont pas d’accès', async () => {
     poser()
-    render(<FacturesTab espace="client" banque={false} dossierId="d1" {...commun} />)
+    render(<FacturesTab reglageDesVentes={NON_BASCULE} espace="client" banque={false} dossierId="d1" {...commun} />)
     await screen.findByText('Client A')
     expect(faux.lectures).not.toContain('memberships')
     expect(screen.queryByRole('checkbox', { name: 'Émises par le client' })).toBeNull()

@@ -30,7 +30,7 @@ vi.mock('./dossier/FacturesTab', () => ({
     <p>
       Onglet Factures — {String(p.espace)} — banque {String(p.banque)} — {String(p.dossierNom)} — {String(p.statutTva)} —
       {' '}{String(p.dossierAdresse)} — numéro {String(p.numeroTvaAttribue)} — débits {String(p.tvaSurDebits)}
-      {'onAdresseUpdated' in p ? ' — adresse du dossier modifiable' : ''}
+      {'onAdresseUpdated' in p ? ' — adresse du dossier modifiable' : ''} — réglage {JSON.stringify(p.reglageDesVentes)}
     </p>
   ),
 }))
@@ -69,7 +69,8 @@ vi.mock('../lib/supabase', async () => {
 
 const SOCIETE = {
   id: 'd1', nom: 'Atelier fictif', siret: '12345678200010', adresse: '1 rue Fictive, 75001 Paris', statut_tva: 'redevable',
-  article_exoneration: null, numero_tva_attribue: false, tva_sur_debits: true,
+  article_exoneration: null, numero_tva_attribue: false, tva_sur_debits: true, ventes_par_les_factures: false,
+  mode_comptable: 'tresorerie',
 }
 
 function monter() {
@@ -96,13 +97,14 @@ describe('ClientVentes — la société lue, puis l’onglet Factures en mode cl
     expect(screen.queryAllByRole('button')).toEqual([])
     // Les deux lectures partent ensemble : la société, colonnes nommées, et les cases du dossier affiché.
     expect(faux.demandes).toEqual([
-      'dossiers nom, siret, adresse, statut_tva, article_exoneration, numero_tva_attribue, tva_sur_debits',
+      'dossiers nom, siret, adresse, statut_tva, article_exoneration, numero_tva_attribue, tva_sur_debits, ventes_par_les_factures, mode_comptable',
       'rpc:droits_sur_le_dossier:d1',
     ])
     await act(async () => { faux.retenir = false; for (const r of faux.enAttente.splice(0)) r() })
     const onglet = await screen.findByText(/Onglet Factures/)
     expect(onglet.textContent).toBe(
-      'Onglet Factures — client — banque false — Atelier fictif — redevable — 1 rue Fictive, 75001 Paris — numéro false — débits true',
+      'Onglet Factures — client — banque false — Atelier fictif — redevable — 1 rue Fictive, 75001 Paris — numéro false — débits true'
+        + ' — réglage {"etat":"non_bascule","anneesValidees":"illisibles"}',
     )
     screen.getByRole('heading', { name: 'Mes ventes' })
     // « Factures » et « Règlements » sont nommés par le sélecteur de l'onglet (étape A3), plus par un titre de la page.
@@ -119,6 +121,26 @@ describe('ClientVentes — la société lue, puis l’onglet Factures en mode cl
     faux.societe = { ...SOCIETE, statut_tva: null, tva_sur_debits: null }
     monter()
     expect((await screen.findByText(/Onglet Factures/)).textContent).toContain('— null — 1 rue')
+  })
+})
+
+// LA SOURCE DE SES VENTES (étape VF8c), lue avec la société : basculée, l'onglet la reçoit avec les exercices validés
+// illisibles — le client ne les lit pas, la base juge la frontière ; une colonne absente se dit illisible, et le formulaire
+// d'une facture n'offre alors pas la validation (FactureFormModalSource.test.tsx).
+describe('ClientVentes — la source des ventes de la société', () => {
+  it('basculée : le réglage, le modèle comptable, et les exercices validés illisibles', async () => {
+    faux.societe = { ...SOCIETE, ventes_par_les_factures: true, mode_comptable: 'engagement' }
+    monter()
+    expect((await screen.findByText(/Onglet Factures/)).textContent)
+      .toContain('— réglage {"etat":"bascule","modeComptable":"engagement","anneesValidees":"illisibles"}')
+  })
+
+  it('une colonne absente n’est pas « pas basculé » : le réglage illisible, avec son motif', async () => {
+    const { ventes_par_les_factures: _omise, ...sansReglage } = SOCIETE
+    faux.societe = sansReglage
+    monter()
+    expect((await screen.findByText(/Onglet Factures/)).textContent)
+      .toContain('— réglage {"etat":"illisible","motif":"le réglage n’est pas lisible"}')
   })
 })
 

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
 import { SUPPRESSION_BROUILLON_EXPORTEE } from '../../lib/factures'
 import type { ReleveStatuts } from '../../lib/receptionPlateforme'
-import { MENTIONS_VIDES } from '../../test/factures'
+import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import type {
   ArticleExoneration, EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureLigne, FactureSuperpdpEvent,
@@ -237,7 +237,7 @@ function poser(factures: FactureEmise[]) {
 
 function monter(statutTva: StatutTva | null = 'redevable', articleExoneration: ArticleExoneration | null = null, numeroTvaAttribue = false) {
   return render(
-    <FacturesTab espace="cabinet"
+    <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet"
       dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234"
       dossierAdresse={null} statutTva={statutTva} articleExoneration={articleExoneration} numeroTvaAttribue={numeroTvaAttribue}
       tvaSurDebits={false} onAdresseUpdated={() => {}}

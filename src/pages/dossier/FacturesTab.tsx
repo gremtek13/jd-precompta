@@ -44,6 +44,7 @@ import {
   type AccesDuDossier,
 } from '../../lib/auteursVentes'
 import { lireLesAccesDuDossier } from '../../lib/auteursVentesLecture'
+import type { ReglageDesVentes } from '../../lib/sourceDeLaVente'
 
 // QUI REGARDE (espace client, étape P4a) : le cabinet, depuis l'onglet Factures d'un dossier, qui peut aussi enregistrer
 // l'adresse du dossier depuis une facture ; ou le client qui porte la case « Ventes », depuis « Mes ventes › Factures »,
@@ -68,6 +69,9 @@ type Props = QuiRegarde & {
   numeroTvaAttribue: boolean
   // L'option du dossier pour le paiement de la TVA d'après les débits, que la validation fige sur la facture.
   tvaSurDebits: boolean
+  // La source des ventes du dossier, lue avec lui, et ses exercices validés — illisibles chez le client (étape VF8c ;
+  // lib/sourceDeLaVente.ts, `reglageDesVentes`) : les fenêtres d'une facture et d'un avoir en disent les refus avant le clic.
+  reglageDesVentes: ReglageDesVentes
 }
 
 // Facturation du dossier — émet soi-même des factures conformes, en complément de la réception déjà
@@ -76,7 +80,7 @@ type Props = QuiRegarde & {
 // imprimée/exportée en PDF pour être envoyée manuellement : la transmission électronique n'est jamais
 // obligatoire ici (un client particulier, une plateforme pas encore reliée).
 export default function FacturesTab(props: Props) {
-  const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, espace } = props
+  const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, reglageDesVentes, espace } = props
   const dire = (texte: string) => pourLEspace(espace, texte)
   const [factures, setFactures] = useState<FactureEmise[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
@@ -626,6 +630,7 @@ export default function FacturesTab(props: Props) {
           articleExoneration={articleExoneration}
           numeroTvaAttribue={numeroTvaAttribue}
           tvaSurDebits={tvaSurDebits}
+          reglageDesVentes={reglageDesVentes}
           facture={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={load}
@@ -648,6 +653,7 @@ export default function FacturesTab(props: Props) {
           // Sur la liste ENTIÈRE du dossier, toutes années confondues : un avoir de l'an prochain crédite la
           // facture de cette année. Lue en partie, on ne sait pas ce qui a été crédité, et c'est la base qui juge.
           credite={lectureIncomplete ? null : dejaCredite(avoirDe.id, factures)}
+          reglageDesVentes={reglageDesVentes}
           onClose={() => setAvoirDe(null)}
           onCreated={load}
         />

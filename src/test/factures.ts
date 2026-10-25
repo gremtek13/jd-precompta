@@ -1,4 +1,9 @@
 import type { MentionsFacture } from '../lib/types'
+import type { ReglageDesVentes } from '../lib/sourceDeLaVente'
+
+// Le réglage d'un dossier qui n'a pas basculé (étape VF8c), aucun exercice validé : le formulaire d'une facture ou d'un avoir
+// y est celui d'hier. Les cas d'un dossier basculé sont dans FactureFormModalSource.test.tsx et FactureAvoirModal.test.tsx.
+export const NON_BASCULE: ReglageDesVentes = { etat: 'non_bascule', anneesValidees: [] }
 
 // Les mentions de la facture électronique (ligne 28.5, étape c), NULLES : l'état d'une facture d'avant leur
 // saisie. Un jeu d'essai les étale plutôt que de recopier quatorze champs nuls — une mention ajoutée demain ne

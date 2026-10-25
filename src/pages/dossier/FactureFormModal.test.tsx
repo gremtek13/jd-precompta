@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FactureFormModal from './FactureFormModal'
-import { MENTIONS_VIDES } from '../../test/factures'
+import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
 import { SIREN_CLIENT, SIRET_CLIENT, SIRET_VENDEUR } from '../../test/facturesCii'
 import type { ArticleExoneration, FactureEmise, StatutTva } from '../../lib/types'
 import { LIBELLE_NOTES_FACTURE } from '../../lib/droitsAcces'
@@ -69,7 +69,7 @@ function monter(
   faux.appels = []
   faux.resoudre = null
   render(
-    <FactureFormModal espace="cabinet"
+    <FactureFormModal reglageDesVentes={NON_BASCULE} espace="cabinet"
       dossierId="d1"
       dossierNom="Cabinet de test"
       dossierSiret={autres.dossierSiret ?? null}

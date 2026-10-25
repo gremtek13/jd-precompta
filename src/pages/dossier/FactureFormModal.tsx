@@ -24,6 +24,7 @@ import {
   echeanceARecalculer, infoDesSoinsDansLaFacture, mentionsAvecLeClient, peutEnregistrerCommeContact, phraseDeLEcheanceARecalculer,
   phraseDuFichierVide, refusDesSoinsDuClient, saisieDuClient, suiviDeLEcheance, type ChoixDeContact, type SuiviDeLEcheance,
 } from '../../lib/contactsFacture'
+import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import ArticleChoixModal from './ArticleChoixModal'
 import ArticleSaisieModal from './ArticleSaisieModal'
@@ -98,6 +99,10 @@ type Props = QuiRedige & {
   numeroTvaAttribue: boolean
   // L'option du dossier pour le paiement de la TVA d'après les débits : la validation la fige sur la facture.
   tvaSurDebits: boolean
+  // La source des ventes du dossier (étape VF8c ; lib/sourceDeLaVente.ts, `reglageDesVentes`), lue par l'écran qui ouvre le
+  // formulaire avec le dossier et ses exercices validés — ceux-ci illisibles chez le client. Sans valeur par défaut : un écran
+  // qui oublierait de la lire ne compile pas, et une facture source se validerait sans que ses refus se disent avant.
+  reglageDesVentes: ReglageDesVentes
   facture: FactureEmise | null // null = nouvelle facture ; jamais une facture déjà validée (voir FacturesTab)
   onClose: () => void
   onSaved: () => void
@@ -108,7 +113,7 @@ type Props = QuiRedige & {
 // tout modifier librement. "Valider" attribue le numéro définitif (voir lib/factures.ts) et ferme la
 // possibilité de reéditer — geste volontairement séparé d'un simple enregistrement de brouillon.
 export default function FactureFormModal(props: Props) {
-  const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, facture, onClose, onSaved } = props
+  const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, reglageDesVentes, facture, onClose, onSaved } = props
   const { espace } = props
   // Le geste du cabinet seul : retenir l'adresse de l'émetteur comme celle du dossier. Nul pour le client.
   const onAdresseUpdated = props.espace === 'cabinet' ? props.onAdresseUpdated : null
@@ -298,6 +303,14 @@ export default function FactureFormModal(props: Props) {
     aujourdHui: aujourdHuiSql(),
   })
   const nonTransmissible = apercu?.cas === 'a_completer' && versEntreprise(mentions.typeClient) ? apercu : null
+  // LA FACTURE D'UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF8c ; lib/sourceDeLaVente.ts) : ce que la validation d'une facture
+  // SOURCE refuserait de plus — la nature absente, la facture mixte, la frontière d'un exercice validé (au cabinet seul : le
+  // client ne la lit pas, la base la juge) —, jugé par le module sur l'en-tête TEL QU'IL PART, et la phrase qui confirme la
+  // validation. Le brouillon n'est jamais retenu : la source ne se fixe qu'à la validation. Un dossier qui n'a pas basculé n'y
+  // trouve rien.
+  const jugementSource = jugementDeLaValidation(
+    espace, { type: 'facture', nature_operation: entete.nature_operation, date_emission: entete.date_emission }, reglageDesVentes, null,
+  )
 
   // Verrou en `useRef`, et POSÉ AVANT LE `try` : `saving` est un état React, donc `disabled={!!saving}`
   // ne prend effet qu'au rendu SUIVANT et laisse passer deux envois rapprochés (CLAUDE.md). Dans le
@@ -664,15 +677,26 @@ export default function FactureFormModal(props: Props) {
       setError(refusMentions[0])
       return
     }
+    // Seconde ceinture : le bouton de validation est déjà grisé sur un refus de la source, dit avant le clic.
+    if (statutCible === 'validee' && jugementSource.refus) {
+      setError(jugementSource.refus)
+      return
+    }
     if (enregistrementEnCours.current || gesteArticleEnCours.current || gesteContactEnCours.current) return
     // Une facture adressée à une entreprise ou à un organisme public, que rien ne pourrait plus transmettre une fois
-    // validée : la validation se confirme, et la confirmation dit ce qu'on perd.
+    // validée : la validation se confirme, et la confirmation dit ce qu'on perd. Une facture source aussi : la phrase du module
+    // dit quand elle comptera (étape VF8c) — une seule confirmation, qui dit les deux.
     if (statutCible === 'validee' && nonTransmissible) {
       const premier = pourLEspace(espace, nonTransmissible.refus[0] ?? 'régler la TVA, comme le formulaire le signale.')
       const n = nonTransmissible.refus.length + nonTransmissible.ailleurs
       const points = n === 1 ? 'un point à compléter :' : `${n} points à compléter, dont :`
-      if (!window.confirm(`Validée ainsi, cette facture ne pourra pas partir par une plateforme agréée — ${points} ${premier}\n\n`
-        + 'Une facture validée ne se corrige plus que par un avoir. La valider quand même ?')) return
+      // La phrase de la source dit déjà qu'une facture validée ne se corrige plus que par un avoir.
+      const suite = jugementSource.confirmation
+        ? `${jugementSource.confirmation}\n\nLa valider quand même ?`
+        : 'Une facture validée ne se corrige plus que par un avoir. La valider quand même ?'
+      if (!window.confirm(`Validée ainsi, cette facture ne pourra pas partir par une plateforme agréée — ${points} ${premier}\n\n${suite}`)) return
+    } else if (statutCible === 'validee' && jugementSource.confirmation) {
+      if (!window.confirm(`${jugementSource.confirmation}\n\nLa valider ?`)) return
     }
     enregistrementEnCours.current = true
     setSaving(statutCible === 'validee' ? 'validation' : 'brouillon')
@@ -919,6 +943,8 @@ export default function FactureFormModal(props: Props) {
                 )}
               </div>
             )}
+            {jugementSource.refus && <p className="error-text">{jugementSource.refus}</p>}
+            {jugementSource.avis && <p className="note-info" role="note">{jugementSource.avis}</p>}
             {refusMentions.length > 0 && (
               <div className="error-text" role="alert">
                 {refusMentions.map((r) => <p key={r} style={{ margin: '0 0 4px' }}>{pourLEspace(espace, r)}</p>)}
@@ -1076,7 +1102,7 @@ export default function FactureFormModal(props: Props) {
               <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusMentions.length > 0} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusMentions.length > 0 || jugementSource.refus != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>

@@ -1,7 +1,7 @@
 import { act, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FacturesTab from './FacturesTab'
-import { MENTIONS_VIDES } from '../../test/factures'
+import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
 import type { FactureEmise } from '../../lib/types'
 
 // LA SUPPRESSION D'UN BROUILLON, DANS LES DEUX ÉTATS DU DRAPEAU (espace client, étape P2). `supprimer_brouillon_facture`
@@ -101,7 +101,7 @@ function brouillon(o: Partial<FactureEmise> = {}): FactureEmise {
 
 function monter() {
   return render(
-    <FacturesTab espace="cabinet"
+    <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet"
       dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234"
       dossierAdresse={null} statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false}
       tvaSurDebits={false} onAdresseUpdated={() => {}}

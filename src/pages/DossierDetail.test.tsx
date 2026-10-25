@@ -181,12 +181,13 @@ vi.mock('./dossier/PiecesTab', () => ({
 // Factures propose la mention de TVA d'une facture et refuse une ligne taxée selon le statut du dossier
 // (lib/statutTva.ts) : doublé pour montrer le statut et l'article qu'il REÇOIT.
 vi.mock('./dossier/FacturesTab', () => ({
-  default: ({ statutTva, articleExoneration, numeroTvaAttribue }: {
-    statutTva: string | null; articleExoneration: string | null; numeroTvaAttribue: boolean
+  default: ({ statutTva, articleExoneration, numeroTvaAttribue, reglageDesVentes }: {
+    statutTva: string | null; articleExoneration: string | null; numeroTvaAttribue: boolean; reglageDesVentes: unknown
   }) => (
     <p>
       Factures — statut {statutTva ?? 'à préciser'} — {articleExoneration ?? 'sans article'}
       {' '}— {numeroTvaAttribue ? 'numéro de TVA' : 'sans numéro de TVA'}
+      <span data-testid="reglage-des-ventes">{JSON.stringify(reglageDesVentes)}</span>
     </p>
   ),
 }))
@@ -943,6 +944,27 @@ describe('Page d’un dossier — le plan comptable', () => {
 
   // Ligne 28.65 : la situation du Financement compte les frais d'un mouvement d'encaissements d'un dossier basculé, au compte
   // des services bancaires de SON plan. Le réglage absent de la ligne lue n'est jamais une bascule.
+  // Ligne 28.65, étape VF8c : l'onglet Factures reçoit la source des ventes, lue avec le dossier, et ses exercices validés,
+  // lus en entier avant qu'il se monte ; le réglage absent de la ligne lue est illisible, jamais « pas basculé ».
+  it('Factures reçoit la source des ventes et les exercices validés du dossier', async () => {
+    faux.dossiers.d1 = { ...faux.dossiers.d1, ventes_par_les_factures: false }
+    await afficher('/dossiers/d1/factures')
+    expect(screen.getByTestId('reglage-des-ventes').textContent).toBe('{"etat":"non_bascule","anneesValidees":[]}')
+    cleanup()
+
+    faux.dossiers.d2 = { ...faux.dossiers.d2, ventes_par_les_factures: true }
+    faux.valides.d2 = [2024, 2025]
+    await afficher('/dossiers/d2/factures')
+    expect(JSON.parse(screen.getByTestId('reglage-des-ventes').textContent ?? ''))
+      .toEqual({ etat: 'bascule', modeComptable: faux.dossiers.d2.mode_comptable, anneesValidees: [2024, 2025] })
+    cleanup()
+
+    const { ventes_par_les_factures: _omise, ...sansReglage } = faux.dossiers.d1
+    faux.dossiers.d1 = sansReglage
+    await afficher('/dossiers/d1/factures')
+    expect(screen.getByTestId('reglage-des-ventes').textContent).toBe('{"etat":"illisible","motif":"le réglage n’est pas lisible"}')
+  })
+
   it('le Financement reçoit le plan du dossier et le réglage de la bascule', async () => {
     faux.plans = { d1: { ...(await decale()) } }
     faux.dossiers.d1.compte_notes_de_frais = '455100' as never

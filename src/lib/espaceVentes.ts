@@ -129,6 +129,16 @@ export const REECRITURES_CLIENT: readonly { de: string; vers: string }[] = [
       + 'de réception.',
   },
   { de: 'le SIREN du dossier', vers: 'le SIREN de ta société' },
+  // lib/sourceDeLaVente.ts, `REFUS_VALIDATION_SOURCE` (étape VF8c) : les deux refus qui nomment « un dossier » ; le troisième,
+  // la frontière, ne se dit au client qu'après l'envoi, sous la phrase d'`exercice_fige`, sans dossier.
+  {
+    de: 'Dans un dossier dont les factures sont la source de leurs ventes, une facture qui mêle biens et services',
+    vers: 'Tes factures étant la source de tes ventes, une facture qui mêle biens et services',
+  },
+  {
+    de: 'Dans un dossier dont les factures sont la source de leurs ventes, une facture dit',
+    vers: 'Tes factures étant la source de tes ventes, chacune dit',
+  },
   // lib/contacts.ts, `REFUS_ENREGISTREMENT_CONTACT` et `REFUS_REPRISE_CONTACT` (étape A4b1) : les deux refus de la règle des soins
   // parlent d'« un dossier » et de « ses patients » ; les vingt-cinq autres se lisent tels quels. Aucun des deux ne renvoie à un
   // onglet : le client ne range pas un particulier, ni un client établi hors de France, dans SES clients.

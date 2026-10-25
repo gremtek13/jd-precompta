@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { messageErreur } from '../lib/messageErreur'
 import { lireLesDroitsVentes, type DroitsDeLaBase } from '../lib/espaceVentes'
+import { ANNEES_ILLISIBLES } from '../lib/encaissementsFactures'
+import { reglageDesVentes } from '../lib/sourceDeLaVente'
 import type { ArticleExoneration, StatutTva } from '../lib/types'
 import FacturesTab from './dossier/FacturesTab'
 
@@ -25,9 +27,14 @@ interface SocieteLue {
   article_exoneration: ArticleExoneration | null
   numero_tva_attribue: boolean
   tva_sur_debits: boolean
+  // La source de ses ventes et son modèle comptable (étape VF8c) : jugés par lib/sourceDeLaVente.ts (`reglageDesVentes`), qui
+  // dit illisible une valeur absente — la validation d'une facture ne s'offre alors pas.
+  ventes_par_les_factures: unknown
+  mode_comptable: unknown
 }
 
-const COLONNES_SOCIETE = 'nom, siret, adresse, statut_tva, article_exoneration, numero_tva_attribue, tva_sur_debits'
+// Une seule chaîne littérale : le client Supabase type la ligne d'après elle.
+const COLONNES_SOCIETE = 'nom, siret, adresse, statut_tva, article_exoneration, numero_tva_attribue, tva_sur_debits, ventes_par_les_factures, mode_comptable'
 
 type Etat =
   | { etat: 'chargement' }
@@ -103,6 +110,8 @@ export default function ClientVentes() {
             articleExoneration={lecture.societe.article_exoneration}
             numeroTvaAttribue={lecture.societe.numero_tva_attribue === true}
             tvaSurDebits={lecture.societe.tva_sur_debits === true}
+            // Les exercices validés ne s'ouvrent qu'au cabinet : la frontière, chez le client, la base la juge.
+            reglageDesVentes={reglageDesVentes(lecture.societe, ANNEES_ILLISIBLES)}
           />
         </>
       )}
