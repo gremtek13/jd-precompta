@@ -1,13 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { partsDuReleve } from './partsDuReleve'
 import {
-  chargesParPostePourAnnee, ecartPct, projectionAnnuelle, RECETTES_FACTUREES_NON_COMPTEES, recettesFactureesDuDossier, totauxPourAnnee,
+  chargesParPostePourAnnee, ecartPct, fraisSansPosteDeLAnnee, projectionAnnuelle, RECETTES_FACTUREES_NON_COMPTEES, recettesFactureesDuDossier, totauxPourAnnee,
 } from './estimation'
-import type { Categorie, CotisationDeclaree, LigneBancaire, Piece } from './types'
+import type { Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece } from './types'
 import { paiementsDesPieces } from './rattachement'
 import { cotisationsComptees } from './cotisationRapprochee'
 import { encaissementVendu, factureVendue, ligneVendue, recettesFactureesVides, ventesFactureesVides } from '../test/ventesFacturees'
 import { recettesFactureesDeLaPeriode, recettesFactureesParMois, ventesFacturees } from './ventesFacturees'
+import type { EcrituresDesVentesDeLa2035 } from './declaration2035'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
+import { fraisDesMouvements } from './ecrituresVentesFacturees'
+import type { MouvementDesEcritures, SourcesDesEcrituresDeVente } from './ecrituresVentesFactureesEcran'
+import { D_BASCULE, composition, sourcesDuDossierBascule } from '../test/dossierBascule'
+
+// Un dossier qui n'a pas basculé : aucun frais d'un mouvement d'encaissements (étape VF8g).
+const SANS_BASCULE: EcrituresDesVentesDeLa2035 = { etat: 'sans_bascule' }
+const categorie = (o: Partial<Categorie>): Categorie => ({
+  id: 'c', dossier_id: null, code: 'autre', libelle: 'Catégorie', ordre: 1, compte_comptable: null, poste_2035: null, ...o,
+})
 
 const piece = (o: Partial<Piece>): Piece => ({
   id: 'p', dossier_id: 'd1', nom_fichier: 'x.pdf', statut: 'validee', type_piece: 'vente',
@@ -58,11 +69,11 @@ describe('les repères comptent une pièce à la date de son paiement', () => {
   })
 
   it("compte une charge payée l'année suivante dans l'année du paiement", () => {
-    const cat = [{ id: 'c-loyer', poste_2035: 'Loyer' }]
+    const cat = [categorie({ id: 'c-loyer', poste_2035: 'Loyer' })]
     const loyer = [piece({ id: 'a', type_piece: 'achat', categorie_id: 'c-loyer', date_piece: '2025-12-30', montant_ttc: 800 })]
     const payee = [paiement('a', '2026-01-02', -800)]
-    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2025, true, paiementsDesPieces(payee, [], []), 'tresorerie', []).get('Loyer')).toBeUndefined()
-    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2026, true, paiementsDesPieces(payee, [], []), 'tresorerie', []).get('Loyer')).toBe(800)
+    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2025, true, paiementsDesPieces(payee, [], []), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBeUndefined()
+    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2026, true, paiementsDesPieces(payee, [], []), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBe(800)
   })
 })
 
@@ -118,7 +129,7 @@ describe('les repères comptent les mouvements du relevé affectés sans justifi
       mouvement('orphelin', 'c-sans-poste', '2026-03-12', -30),
       mouvement('an-dernier', 'c-frais', '2025-12-31', -8.5),
     )
-    const postes = chargesParPostePourAnnee([], categories, new Set(), 2026, false, new Map(), 'tresorerie', mouvements)
+    const postes = chargesParPostePourAnnee([], categories, new Set(), 2026, false, new Map(), 'tresorerie', mouvements, PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect([...postes]).toEqual([['Frais financiers', 17]])
   })
 
@@ -134,7 +145,7 @@ describe('les repères comptent les mouvements du relevé affectés sans justifi
       emprunt_id: 'emp1', emprunt_echeance: null, emprunt_interets: 0, emprunt_assurance: 0,
     }
     const parts = releve(echeance, deblocage, mouvement('frais', 'c-frais', '2026-03-12', -8.5))
-    expect([...chargesParPostePourAnnee([], categories, new Set(), 2026, false, new Map(), 'tresorerie', parts)])
+    expect([...chargesParPostePourAnnee([], categories, new Set(), 2026, false, new Map(), 'tresorerie', parts, PLAN_PAR_DEFAUT, SANS_BASCULE)])
       .toEqual([['Frais financiers', 44.5], ["Primes d'assurance", 21.03]])
     expect(totauxPourAnnee([], [], 2026, false, new Map(), 'tresorerie', parts, recettesFactureesVides()).ca).toBe(0)
   })
@@ -155,11 +166,11 @@ describe('en engagement, les repères comptent une pièce à la date de sa FACTU
   })
 
   it('compte une charge dans l’année de sa facture, payée ou non', () => {
-    const cat = [{ id: 'c-loyer', poste_2035: 'Loyer' }]
+    const cat = [categorie({ id: 'c-loyer', poste_2035: 'Loyer' })]
     const loyer = [piece({ id: 'a', type_piece: 'achat', categorie_id: 'c-loyer', date_piece: '2025-12-30', montant_ttc: 800 })]
     const payee = [paiement('a', '2026-01-02', -800)]
-    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2025, true, paiementsDesPieces(payee, [], []), 'engagement', []).get('Loyer')).toBe(800)
-    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2026, true, paiementsDesPieces(payee, [], []), 'engagement', []).get('Loyer')).toBeUndefined()
+    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2025, true, paiementsDesPieces(payee, [], []), 'engagement', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBe(800)
+    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2026, true, paiementsDesPieces(payee, [], []), 'engagement', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBeUndefined()
   })
 })
 
@@ -323,7 +334,7 @@ describe('ecartPct', () => {
 // été exercée. Ce qui la rend digne d'être corrigée est qu'une fois deux lignes écrites par les deux
 // chemins, rien ne dirait laquelle suit quelle convention.
 describe('chargesParPostePourAnnee', () => {
-  const cat = (id: string, poste: string | null) => ({ id, poste_2035: poste })
+  const cat = (id: string, poste: string | null) => categorie({ id, poste_2035: poste })
   const CATEGORIES = [cat('c-loyer', 'Loyer'), cat('c-hono', 'Honoraires'), cat('c-sans', null)]
   const achat = (o: Partial<Piece>): Piece =>
     ({
@@ -333,12 +344,12 @@ describe('chargesParPostePourAnnee', () => {
 
   it('retient la TVA comprise pour un dossier exonéré, le hors taxes pour un assujetti', () => {
     const pieces = [achat({ montant_tva: 20 })]
-    expect(chargesParPostePourAnnee(pieces, CATEGORIES, new Set(), 2025, false, new Map(), 'tresorerie', []).get('Loyer')).toBe(120)
-    expect(chargesParPostePourAnnee(pieces, CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', []).get('Loyer')).toBe(100)
+    expect(chargesParPostePourAnnee(pieces, CATEGORIES, new Set(), 2025, false, new Map(), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBe(120)
+    expect(chargesParPostePourAnnee(pieces, CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBe(100)
   })
 
   it('rend des montants POSITIFS, comme la saisie manuelle', () => {
-    const totaux = chargesParPostePourAnnee([achat({})], CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [])
+    const totaux = chargesParPostePourAnnee([achat({})], CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(totaux.get('Loyer')).toBe(100)
   })
 
@@ -346,7 +357,7 @@ describe('chargesParPostePourAnnee', () => {
     // Même règle que `declaration2035` : on additionne le montant tel quel. Une valeur absolue
     // ferait d'un remboursement une charge de plus.
     const totaux = chargesParPostePourAnnee(
-      [achat({ id: 'a' }), achat({ id: 'b', montant_ht: -30 })], CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [])
+      [achat({ id: 'a' }), achat({ id: 'b', montant_ht: -30 })], CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(totaux.get('Loyer')).toBe(70)
   })
 
@@ -357,7 +368,7 @@ describe('chargesParPostePourAnnee', () => {
     // `references_annuelles`.
     const totaux = chargesParPostePourAnnee(
       [achat({ id: 'v', type_piece: 'vente', categorie_id: 'c-hono', montant_ht: 4500 })],
-      CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [])
+      CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(totaux.has('Honoraires')).toBe(false)
     expect(totaux.size).toBe(0)
   })
@@ -365,20 +376,20 @@ describe('chargesParPostePourAnnee', () => {
   it('écarte une pièce immobilisée', () => {
     // Sinon une dépense capitalisée serait comptée une fois en charge courante ET une fois en
     // amortissement.
-    const totaux = chargesParPostePourAnnee([achat({ id: 'i' })], CATEGORIES, new Set(['i']), 2025, true, new Map(), 'tresorerie', [])
+    const totaux = chargesParPostePourAnnee([achat({ id: 'i' })], CATEGORIES, new Set(['i']), 2025, true, new Map(), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(totaux.size).toBe(0)
   })
 
   it('écarte une pièce d’un autre exercice, et une sans poste', () => {
     const totaux = chargesParPostePourAnnee(
       [achat({ id: 'a', date_piece: '2024-12-31' }), achat({ id: 'b', categorie_id: 'c-sans' })],
-      CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [])
+      CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(totaux.size).toBe(0)
   })
 
   it('retombe sur le TTC quand le HT n’est pas lu, comme le moteur de la 2035', () => {
     const totaux = chargesParPostePourAnnee(
-      [achat({ montant_ht: null, montant_ttc: 120 })], CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [])
+      [achat({ montant_ht: null, montant_ttc: 120 })], CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect(totaux.get('Loyer')).toBe(120)
   })
 
@@ -392,7 +403,7 @@ describe('chargesParPostePourAnnee', () => {
         achat({ id: 'b', montant_ht: 250, date_piece: '2025-07-04' }),
         achat({ id: 'c', categorie_id: 'c-hono', montant_ht: 80 }),
       ],
-      CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [])
+      CATEGORIES, new Set(), 2025, true, new Map(), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE)
     expect([...totaux].sort()).toEqual([['Honoraires', 80], ['Loyer', 350]])
   })
 })
@@ -497,5 +508,95 @@ describe('l’estimation et les ventes facturées', () => {
     const autre = piece({ id: 'r', type_piece: 'vente', date_piece: '2026-02-01', montant_ht: 250, montant_ttc: 300 })
     const tresorerie = recettesFactureesDuDossier(VENTES, 'tresorerie')
     expect(totauxPourAnnee([autre, exemplaire], [], 2026, true, new Map(), 'tresorerie', [], tresorerie).ca).toBe(1250)
+  })
+})
+
+// LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS DANS LE DÉTAIL PAR POSTE (ligne 28.65, chantier EC-Q3, étape VF8g ; la règle de la
+// 2035, VF4C3-Q1, et de la situation intermédiaire) : quand la banque crédite un peu moins que les encaissements qu'un
+// mouvement règle, l'écriture du mouvement porte la différence au compte des services bancaires — une charge de l'exercice
+// du MOUVEMENT, sous le poste de la catégorie « Frais bancaires » du dossier, lue par les mêmes fonctions. Les sources sont
+// celles du dossier basculé d'essai (src/test/dossierBascule.ts) : le virement m1 du 20/11/2025 crédité de 118 € pour 120 €
+// encaissés, la remise de chèques m2 du 22/11/2025 de 98 € pour 100 € — 2 € de frais chacun. Données FICTIVES.
+describe('chargesParPostePourAnnee — les frais d’un mouvement d’encaissements (étape VF8g)', () => {
+  const categorieFrais = (o: Partial<Categorie> = {}): Categorie => categorie({
+    id: 'c-frais', code: 'frais_bancaires', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers', ...o,
+  })
+  const COMMUNE = categorieFrais()
+  const DU_DOSSIER = categorieFrais({ id: 'c-frais-d1', dossier_id: D_BASCULE, poste_2035: 'Autres frais divers de gestion' })
+  const D_UN_AUTRE = categorieFrais({ id: 'c-frais-autre', dossier_id: 'd-autre', poste_2035: 'Achats' })
+  const sources = (o: { m2?: Partial<MouvementDesEcritures> } = {}): SourcesDesEcrituresDeVente => {
+    const s = sourcesDuDossierBascule()
+    return {
+      ...s,
+      mouvements: s.mouvements.map((m) => (m.id === 'm1' ? { ...m, montant: 118 } : { ...m, montant: 98, ...o.m2 })),
+    }
+  }
+  const ecritures = (o: { s?: SourcesDesEcrituresDeVente; mode?: ModeComptable; plan?: PlanComptable } = {}): EcrituresDesVentesDeLa2035 =>
+    ({ etat: 'composees', composition: composition(o.s ?? sources(), o.mode ?? 'tresorerie', o.plan ?? PLAN_PAR_DEFAUT) })
+  const postes = (annee: number, o: {
+    categories?: Categorie[]; pieces?: Piece[]; plan?: PlanComptable; ecritures?: EcrituresDesVentesDeLa2035
+  } = {}) => [...chargesParPostePourAnnee(
+    o.pieces ?? [], o.categories ?? [COMMUNE], new Set(), annee, true, new Map(), 'tresorerie', [], o.plan ?? PLAN_PAR_DEFAUT,
+    o.ecritures ?? ecritures(),
+  )]
+  const achat = (o: Partial<Piece>) => piece({ dossier_id: D_BASCULE, type_piece: 'achat', ...o })
+
+  it('une charge POSITIVE de l’exercice du mouvement, sous le poste de la catégorie « Frais bancaires »', () => {
+    expect(postes(2025)).toEqual([['Frais financiers', 4]])
+    // L'exercice d'avant et celui d'après n'en ont aucun, et aucune ligne à zéro ne se crée.
+    expect(postes(2024)).toEqual([])
+    expect(postes(2026)).toEqual([])
+  })
+
+  it('exactement ce que `fraisDesMouvements` lit dans la composition, ajouté au poste qu’une autre source porte', () => {
+    const s = sources({ m2: { montant: 98.5 } })
+    expect(fraisDesMouvements(composition(s, 'tresorerie', PLAN_PAR_DEFAUT), PLAN_PAR_DEFAUT).map((f) => f.centimes)).toEqual([200, 150])
+    expect(postes(2025, { ecritures: ecritures({ s }) })).toEqual([['Frais financiers', 3.5]])
+    const agios = categorie({ id: 'c-agios', code: 'agios', poste_2035: 'Frais financiers' })
+    const piece = achat({ id: 'ag', categorie_id: 'c-agios', montant_ht: 10, montant_ttc: 10, date_piece: '2025-06-01' })
+    expect(postes(2025, { ecritures: ecritures({ s }), pieces: [piece], categories: [COMMUNE, agios] })).toEqual([['Frais financiers', 13.5]])
+  })
+
+  it('au compte des services bancaires du plan du dossier : la composition d’un plan décalé, lue au plan par défaut, n’en a aucun', () => {
+    expect(postes(2025, { plan: PLAN_DECALE, ecritures: ecritures({ plan: PLAN_DECALE }) })).toEqual([['Frais financiers', 4]])
+    expect(postes(2025, { plan: PLAN_PAR_DEFAUT, ecritures: ecritures({ plan: PLAN_DECALE }) })).toEqual([])
+  })
+
+  it('la catégorie propre au dossier l’emporte sur la commune du même code ; celle d’un autre dossier ne compte jamais', () => {
+    expect(postes(2025, { categories: [COMMUNE, DU_DOSSIER] })).toEqual([['Autres frais divers de gestion', 4]])
+    expect(postes(2025, { categories: [DU_DOSSIER, COMMUNE] })).toEqual([['Autres frais divers de gestion', 4]])
+    expect(postes(2025, { categories: [D_UN_AUTRE, COMMUNE] })).toEqual([['Frais financiers', 4]])
+  })
+
+  it('sans poste, ou sans catégorie « Frais bancaires » : sur aucune ligne, et dit pour l’exercice seulement — jamais un poste deviné', () => {
+    const sansPoste = [categorieFrais({ poste_2035: null })]
+    expect(postes(2025, { categories: sansPoste })).toEqual([])
+    expect(fraisSansPosteDeLAnnee(sansPoste, 2025, PLAN_PAR_DEFAUT, ecritures())
+      .map((f) => [f.frais.ligneBancaireId, f.frais.date, f.frais.centimes, f.categorie?.id ?? null]))
+      .toEqual([['m1', '2025-11-20', 200, 'c-frais'], ['m2', '2025-11-22', 200, 'c-frais']])
+    expect(postes(2025, { categories: [D_UN_AUTRE] })).toEqual([])
+    expect(fraisSansPosteDeLAnnee([D_UN_AUTRE], 2025, PLAN_PAR_DEFAUT, ecritures()).map((f) => [f.frais.ligneBancaireId, f.categorie]))
+      .toEqual([['m1', null], ['m2', null]])
+    // Un autre exercice n'a rien à dire, ni une catégorie qui a son poste.
+    expect(fraisSansPosteDeLAnnee([D_UN_AUTRE], 2026, PLAN_PAR_DEFAUT, ecritures())).toEqual([])
+    expect(fraisSansPosteDeLAnnee([COMMUNE], 2025, PLAN_PAR_DEFAUT, ecritures())).toEqual([])
+  })
+
+  it('en engagement : les mêmes frais, au même poste', () => {
+    expect(postes(2025, { ecritures: ecritures({ mode: 'engagement' }) })).toEqual([['Frais financiers', 4]])
+  })
+
+  it('sans bascule, aucun frais ; et une composition sans frais ne change rien au détail', () => {
+    expect(postes(2025, { ecritures: SANS_BASCULE })).toEqual([])
+    expect(fraisSansPosteDeLAnnee([], 2025, PLAN_PAR_DEFAUT, SANS_BASCULE)).toEqual([])
+    const loyer = [achat({ id: 'l', categorie_id: 'c-frais', montant_ht: 50, montant_ttc: 60, date_piece: '2025-03-01' })]
+    expect(postes(2025, { pieces: loyer, ecritures: ecritures({ s: sourcesDuDossierBascule() }) }))
+      .toEqual(postes(2025, { pieces: loyer, ecritures: SANS_BASCULE }))
+    expect(postes(2025, { pieces: loyer, ecritures: SANS_BASCULE })).toEqual([['Frais financiers', 50]])
+  })
+
+  it('le plan et les écritures des ventes sont obligatoires : aucun appel ne compile sans eux, et rien ne les remplace en silence', () => {
+    // @ts-expect-error — le plan et les écritures des ventes facturées omis
+    expect(() => chargesParPostePourAnnee([], [COMMUNE], new Set(), 2025, true, new Map(), 'tresorerie', [])).toThrow()
   })
 })

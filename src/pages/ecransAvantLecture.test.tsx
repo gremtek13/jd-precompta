@@ -317,7 +317,10 @@ const ECRANS: Ecran[] = [
   { nom: 'EreportingModal', fichier: 'pages/dossier/EreportingModal.tsx', rendre: () => (
     <Dossier1><EreportingModal dossierId="d1" dossier={DOSSIER_EREPORTING} onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
-  { nom: 'EstimationTab', fichier: 'pages/dossier/EstimationTab.tsx', rendre: () => <Dossier1><EstimationTab dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
+  { nom: 'EstimationTab', fichier: 'pages/dossier/EstimationTab.tsx', rendre: () => <Dossier1><EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
+  // Basculé (étape VF8g) : il lit aussi les sources des écritures de ses ventes facturées, d'où le détail par poste tire les
+  // frais d'un mouvement d'encaissements — retenues avec le reste, elles ne laissent rien affirmer ni écrire.
+  { nom: 'EstimationTab (basculé)', fichier: 'pages/dossier/EstimationTab.tsx', rendre: () => <Dossier1><EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'FactureApercu', fichier: 'pages/dossier/FactureApercu.tsx', rendre: () => (
     <Dossier1><FactureApercu facture={facture()} dossier={{ statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false }} onClose={rien} /></Dossier1>
   ) },
@@ -1096,7 +1099,7 @@ describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
   })
   afterAll(() => { vi.restoreAllMocks() })
 
-  for (const nom of ['ClotureTab', 'ClotureTab (basculé)', 'RevisionTab', 'TvaTab', 'FinancementTab', 'FinancementTab (basculé)', 'EstimationTab']) {
+  for (const nom of ['ClotureTab', 'ClotureTab (basculé)', 'RevisionTab', 'TvaTab', 'FinancementTab', 'FinancementTab (basculé)', 'EstimationTab', 'EstimationTab (basculé)']) {
     it(`${nom} : les ventes facturées retenues seules, rien ne s’offre ni ne s’écrit ; revenues, l’attente se lève`, async () => {
       const ecran = ECRANS.find((e) => e.nom === nom)!
       const journal = vi.spyOn(console, 'error').mockImplementation(() => {})

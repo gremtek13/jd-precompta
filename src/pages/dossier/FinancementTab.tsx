@@ -19,7 +19,7 @@ import { cotisationsComptees, type CotisationComptee } from '../../lib/cotisatio
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 import type { VentesFacturees } from '../../lib/ventesFacturees'
 import type { SituationIntermediaire } from '../../lib/situationIntermediaire'
-import type { EcrituresDesVentesDeLa2035, FraisSansPoste } from '../../lib/declaration2035'
+import type { EcrituresDesVentesDeLa2035 } from '../../lib/declaration2035'
 import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFactureesEcran'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import type { PlanComptable } from '../../lib/planComptable'
@@ -27,6 +27,7 @@ import type {
   ANouveau, Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import FraisSansPosteNonComptes from '../../components/FraisSansPosteNonComptes'
 
 // `ligne_bancaire_id` : le mouvement du relevé dont l'écriture est la contrepartie — de quoi reconnaître
 // celles d'un DÉBLOCAGE d'emprunt, que le solde compte et la moyenne des encaissements non.
@@ -883,7 +884,7 @@ function VentesFactureesDeLaSituation({ situation }: { situation: SituationInter
   const { ventesFactureesEcartees: ecartees, ventesFactureesEnExcedent: excedents, exemplairesDeFacturesSources: exemplaires } = situation
   return (
     <>
-      <FraisSansPosteDeLaSituation frais={situation.fraisSansPoste} quoi="la situation" />
+      <FraisSansPosteNonComptes frais={situation.fraisSansPoste} quoi="la situation" />
       {ecartees.length > 0 && (
         <p className="muted" style={{ marginBottom: 0 }}>
           Ventes facturées que la situation ne compte pas ({ecartees.length}) :{' '}
@@ -904,24 +905,6 @@ function VentesFactureesDeLaSituation({ situation }: { situation: SituationInter
         </p>
       )}
     </>
-  )
-}
-
-// LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS QUE NULLE LIGNE NE PORTE (ligne 28.65 ; lib/situationIntermediaire.ts,
-// `fraisSansPoste`) : une ligne discrète, comme les ventes écartées, seulement quand il y en a — les mots de la carte de
-// Clôture. Un vrai trou dans les charges : la ligne dit pourquoi, et où le combler.
-function FraisSansPosteDeLaSituation({ frais, quoi }: { frais: readonly FraisSansPoste[]; quoi: string }) {
-  if (frais.length === 0) return null
-  return (
-    <p className="muted" style={{ marginBottom: 0 }}>
-      Frais d’encaissements que {quoi} ne compte pas ({frais.length}) :{' '}
-      {frais.map(({ frais: f }) => `${formatDate(f.date)} « ${f.libelle} », ${formatMoney(f.centimes / 100)}`).join(' ; ')}
-      {' '}— retenus par la banque sur des mouvements que leurs encaissements de factures classent, ils vont sous le poste de
-      la catégorie « Frais bancaires » du dossier
-      {frais.some((f) => f.categorie === null)
-        ? ', que le dossier n’a pas : aucune catégorie de code « frais_bancaires ».'
-        : ', qui n’a pas de poste 2035 (Clôture, carte « Postes manquants »).'}
-    </p>
   )
 }
 
@@ -1029,7 +1012,7 @@ function PrevisionnelModal({ dossierId, assujettiTva, modeComptable, previsionne
         )}
         {situationDeReference !== null && situationDeReference.fraisSansPoste.length > 0 && (
           <div style={{ marginTop: -6, marginBottom: 14 }}>
-            <FraisSansPosteDeLaSituation frais={situationDeReference.fraisSansPoste} quoi="le préremplissage" />
+            <FraisSansPosteNonComptes frais={situationDeReference.fraisSansPoste} quoi="le préremplissage" />
           </div>
         )}
 

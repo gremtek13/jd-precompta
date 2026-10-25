@@ -37,6 +37,13 @@ const faux = vi.hoisted(() => ({
   datesPieces: {} as Record<string, string[]>,
   retenuesAnnees: {} as Record<string, Promise<void>>,
   erreurAnnees: null as string | null,
+  // Les ventes facturées de chaque dossier (étape VF8g), d'où la page tire aussi ses exercices : les factures (validées ou
+  // non, sources ou non) et les encaissements (retirés ou non, d'une facture source ou non). Le faux client APPLIQUE les
+  // filtres de la page sur ces deux tables : un filtre oublié ferait paraître une année qui n'a rien d'une vente facturée.
+  // Une lecture d'une de ces deux tables se refuse à la demande.
+  factures: {} as Record<string, { id: string; date_emission: string; date_prestation: string | null; statut: string; source_de_la_vente: boolean }[]>,
+  encaissements: {} as Record<string, { id: string; date_encaissement: string; retire_le: string | null; factures_emises: { source_de_la_vente: boolean } }[]>,
+  refusVentes: null as { table: string; message: string } | null,
   // La mise à jour d'un dossier (le code NAF détecté), retenue puis refusée à la demande.
   retenueMaj: null as Promise<void> | null,
   erreurMaj: null as { message: string } | null,
@@ -85,13 +92,23 @@ vi.mock('../lib/supabase', () => ({
       let maj = false
       let id = ''
       let dossierId = ''
+      // Les filtres des ventes facturées, appliqués : `.eq` (un chemin pointé suit la jointure) et `.is(colonne, null)`.
+      const filtres: ((ligne: Record<string, unknown>) => boolean)[] = []
+      const valeurDe = (ligne: Record<string, unknown>, chemin: string) =>
+        chemin.split('.').reduce<unknown>((v, cle) => (v as Record<string, unknown> | undefined)?.[cle], ligne)
       const chaine: Record<string, unknown> = {}
       Object.assign(chaine, {
         select: () => chaine,
         update: () => { maj = true; return chaine },
-        eq: (colonne: string, valeur: string) => {
-          if (colonne === 'id') id = valeur
-          if (colonne === 'dossier_id') dossierId = valeur
+        eq: (colonne: string, valeur: unknown) => {
+          if (colonne === 'id') id = valeur as string
+          if (colonne === 'dossier_id') dossierId = valeur as string
+          else filtres.push((l) => valeurDe(l, colonne) === valeur)
+          return chaine
+        },
+        is: (colonne: string, valeur: null) => {
+          if (valeur !== null) throw new Error(`forme inconnue du faux client : is(${colonne}, ${String(valeur)})`)
+          filtres.push((l) => valeurDe(l, colonne) == null)
           return chaine
         },
         not: () => chaine,
@@ -133,6 +150,13 @@ vi.mock('../lib/supabase', () => ({
                 ? { data: null, error: { message: faux.erreurAnnees }, count: null }
                 : { data: pieces, error: null, count: pieces.length }))
               .then(suite)
+          }
+          if (table === 'factures_emises' || table === 'encaissements_factures') {
+            const toutes = ((table === 'factures_emises' ? faux.factures[dossierId] : faux.encaissements[dossierId]) ?? []) as unknown as Record<string, unknown>[]
+            const lignes = toutes.filter((l) => filtres.every((f) => f(l)))
+            return Promise.resolve(faux.refusVentes?.table === table
+              ? { data: null, error: { message: faux.refusVentes.message }, count: null }
+              : { data: lignes, error: null, count: lignes.length }).then(suite)
           }
           return Promise.resolve({ data: [], error: null, count: 0 }).then(suite)
         },
@@ -284,7 +308,18 @@ vi.mock('./dossier/ClotureTab', async () => {
     },
   }
 })
-vi.mock('./dossier/EstimationTab', () => doubleTva('Estimation'))
+// L'Estimation aussi, depuis l'étape VF8g : son détail par poste compte les frais d'un mouvement d'encaissements.
+vi.mock('./dossier/EstimationTab', () => ({
+  default: (props: { assujettiTva: boolean; modeComptable: string; ventesParLesFactures: boolean; plan: { services_bancaires: string } }) => {
+    const { default: Tva } = doubleTva('Estimation')
+    return (
+      <>
+        <Tva assujettiTva={props.assujettiTva} modeComptable={props.modeComptable} />
+        <p>Estimation — {props.ventesParLesFactures ? 'basculé' : 'non basculé'} — services bancaires {props.plan.services_bancaires}</p>
+      </>
+    )
+  },
+}))
 // Le Financement reçoit aussi, depuis la ligne 28.65, le réglage de la bascule et le plan du dossier : sa situation compte les
 // frais d'un mouvement d'encaissements au compte des services bancaires du plan. Doublé pour montrer ce qu'il REÇOIT.
 vi.mock('./dossier/FinancementTab', () => ({
@@ -449,6 +484,9 @@ beforeEach(() => {
   faux.datesPieces = { d1: ['2025-03-01', '2026-02-01'], d2: ['2023-05-01', '2024-06-01'] }
   faux.retenuesAnnees = {}
   faux.erreurAnnees = null
+  faux.factures = {}
+  faux.encaissements = {}
+  faux.refusVentes = null
   faux.retenueMaj = null
   faux.retenueStatut = null
   faux.statutsRendus = 0
@@ -620,7 +658,46 @@ describe('Page d’un dossier — les exercices du sélecteur', () => {
   it('lus en partie, ils le disent : un exercice peut manquer au sélecteur', async () => {
     faux.erreurAnnees = 'refus simulé'
     await afficher('/dossiers/d1/checklist')
-    expect(screen.getByText(/Les dates des justificatifs, relevés et écritures n'ont pas pu être lues en entier \(lecture interrompue après 0 ligne\(s\) : refus simulé\)/)).toBeTruthy()
+    expect(screen.getByText(/Les dates des justificatifs, relevés, écritures, factures et encaissements n'ont pas pu être lues en entier \(lecture interrompue après 0 ligne\(s\) : refus simulé\)/)).toBeTruthy()
+  })
+
+  // LES VENTES FACTURÉES (ligne 28.65, chantier EC-Q3, étape VF8g) : un dossier basculé peut avoir un exercice que seules ses
+  // factures sources et leurs encaissements portent. Données FICTIVES.
+  const exercices = () => within(screen.getByRole('tablist', { name: 'Exercice' })).getAllByRole('tab').map((t) => t.textContent)
+  const facture = (o: Partial<{ id: string; date_emission: string; date_prestation: string | null; statut: string; source_de_la_vente: boolean }>) => ({
+    id: 'f', date_emission: '2026-01-01', date_prestation: null, statut: 'validee', source_de_la_vente: true, ...o,
+  })
+  const encaissement = (o: Partial<{ id: string; date_encaissement: string; retire_le: string | null; source: boolean }>) => ({
+    id: o.id ?? 'e', date_encaissement: o.date_encaissement ?? '2026-01-01', retire_le: o.retire_le ?? null,
+    factures_emises: { source_de_la_vente: o.source ?? true },
+  })
+
+  it('une année d’encaissements seuls, de la facture source, sa livraison : chacune proposée au sélecteur', async () => {
+    faux.factures = { d1: [facture({ id: 'fs', date_emission: '2023-12-15' }), facture({ id: 'fb', date_emission: '2023-11-02', date_prestation: '2022-12-20' })] }
+    faux.encaissements = { d1: [encaissement({ id: 'e1', date_encaissement: '2024-01-10' })] }
+    await afficher('/dossiers/d1/pieces')
+    expect(exercices()).toEqual(['Toutes', '2026', '2025', '2024', '2023', '2022'])
+    expect(screen.queryAllByText(/n'ont pas pu être lues en entier/)).toHaveLength(0)
+  })
+
+  it('ni une facture qui n’est pas source, ni un brouillon, ni un encaissement retiré ou d’une facture qui n’est pas source', async () => {
+    faux.factures = { d1: [facture({ id: 'fp', date_emission: '2021-03-01', source_de_la_vente: false }), facture({ id: 'fbr', date_emission: '2020-03-01', statut: 'brouillon' })] }
+    faux.encaissements = { d1: [
+      encaissement({ id: 'er', date_encaissement: '2019-03-01', retire_le: '2019-03-02T10:00:00Z' }),
+      encaissement({ id: 'ep', date_encaissement: '2018-03-01', source: false }),
+    ] }
+    // Et les ventes facturées d'un autre dossier n'atteignent pas celui-ci.
+    faux.encaissements.d2 = [encaissement({ id: 'e2', date_encaissement: '2017-03-01' })]
+    await afficher('/dossiers/d1/pieces')
+    expect(exercices()).toEqual(['Toutes', '2026', '2025'])
+  })
+
+  it.each(['factures_emises', 'encaissements_factures'])('lue en partie (%s) : le motif d’aujourd’hui, sans rien affirmer', async (table) => {
+    faux.encaissements = { d1: [encaissement({ id: 'e1', date_encaissement: '2024-01-10' })] }
+    faux.refusVentes = { table, message: 'refus simulé des ventes' }
+    await afficher('/dossiers/d1/pieces')
+    expect(screen.getByText(/Les dates des justificatifs, relevés, écritures, factures et encaissements n'ont pas pu être lues en entier \(lecture interrompue après 0 ligne\(s\) : refus simulé des ventes\)/)).toBeTruthy()
+    expect(screen.getByText(/un exercice absent de la liste n’est pas forcément vide/)).toBeTruthy()
   })
 
   it('lus en entier, ils se taisent', async () => {
@@ -975,6 +1052,18 @@ describe('Page d’un dossier — le plan comptable', () => {
     faux.dossiers.d2 = { ...faux.dossiers.d2, ventes_par_les_factures: true }
     await afficher('/dossiers/d2/financement')
     expect(screen.getByText('Financement — basculé — services bancaires 627000')).toBeTruthy()
+  })
+
+  it('l’Estimation reçoit le plan du dossier et le réglage de la bascule (étape VF8g)', async () => {
+    faux.plans = { d1: { ...(await decale()) } }
+    faux.dossiers.d1.compte_notes_de_frais = '455100' as never
+    await afficher('/dossiers/d1/estimation')
+    expect(screen.getByText('Estimation — non basculé — services bancaires 627100')).toBeTruthy()
+    cleanup()
+
+    faux.dossiers.d2 = { ...faux.dossiers.d2, ventes_par_les_factures: true }
+    await afficher('/dossiers/d2/estimation')
+    expect(screen.getByText('Estimation — basculé — services bancaires 627000')).toBeTruthy()
   })
 
   it('pendant sa lecture, aucun onglet ne se monte ; revenu, l’onglet reçoit le plan', async () => {
