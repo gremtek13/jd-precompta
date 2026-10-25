@@ -482,22 +482,27 @@ migrations, empreinte globale `19c0e53c5514e71e7af8c80874106e79` des deux côté
 tous les essais ont été joués entiers ; en production, un contrôle ciblé de la table neuve, aucun essai entier
 (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 
-**Deux fichiers sous une version PROVISOIRE, pas appliqués (25/10/2026)** : `20261024120000_registre_virement_mixte.sql`
-(chantier EC-Q3, étape VF5h2) et `20261025120000_frontiere_des_encaissements.sql` (étape VF7a), chacun en attente de
-l'accord du cabinet ; ils s'appliquent dans cet ordre ou l'un sans l'autre (la seconde ne touche à aucune fonction de la
-première, et chacune vérifie d'abord les corps qu'elle remplace). Tant qu'ils ne sont pas appliqués, la dérive se lit
-sur les fichiers privés d'eux : 148, `19c0e53c…`, la production. Appliqué, chacun prend la version de sa ligne
-d'historique, fichier renommé, texte inchangé (`65c118eb…` pour le premier, `387889c034a62b5a63ce62102d295ab0` pour le
-second, fins de ligne ramenées à `\n`) ; les deux appliqués, la dérive se rejoue entière : 150 fichiers, 150 migrations,
-une empreinte globale égale des deux côtés, qui dépend des versions. Sur la réplique de VF7a, munie des deux à leurs versions
-provisoires : 150, `0a60d9885d01a6cf61e9cad35a512036` des deux côtés. Le socle ne change pas (80 instructions,
-`5d53eea2…`) ; l'inventaire passe de 2 155 objets (`855735ea…`, `registre_virement_mixte` n'en ajoutant aucun) à 2 158
-(`69c64886477e34f856b96508ce61a801`, des deux côtés sur la réplique) : `frontiere_des_encaissements` ajoute une fonction,
-`garder_frontiere_des_encaissements`, et ses deux déclencheurs, et remplace `rattacher_mouvement_encaissement` sous le même
-nom. `signature.sql`, après les deux : les déclencheurs (69, `e35f54305d686aa7248d6af354c934ed`), les fonctions (198,
-`2d18305ef24db762993f35a671de913e` ; `e2b8d636cf3f306680c5519c8945c5e8` sans `registre_virement_mixte`) et leurs droits
-(198, `44f208f9f76a4f437d04389e24bf74de`) changent ; les six autres familles gardent l'empreinte d'aujourd'hui
-(HISTORIQUE.md, « LA FRONTIÈRE DES ENCAISSEMENTS, EN BASE »).
+**Trois fichiers sous une version PROVISOIRE, pas appliqués (25/10/2026)** : `20261024120000_registre_virement_mixte.sql`
+(chantier EC-Q3, étape VF5h2), `20261025120000_frontiere_des_encaissements.sql` (étape VF7a) et
+`20261025180000_validation_des_ventes_facturees.sql` (étape VF7b), chacun en attente de l'accord du cabinet ; ils
+s'appliquent dans cet ordre ou l'un sans les autres (aucun ne touche à une fonction d'un autre, et chacun vérifie d'abord
+les corps qu'il remplace ou redit). Tant qu'ils ne sont pas appliqués, la dérive se lit sur les fichiers privés d'eux :
+148, `19c0e53c…`, la production. Appliqué, chacun prend la version de sa ligne d'historique, fichier renommé, texte
+inchangé (`65c118eb…` pour le premier, `387889c034a62b5a63ce62102d295ab0` pour le second,
+`b5c3dad446ff6cbbb96ef6045ed816ce` pour le troisième, fins de ligne ramenées à `\n`) ; les trois appliqués, la dérive se
+rejoue entière : 151 fichiers, 151 migrations, une empreinte globale égale des deux côtés, qui dépend des versions. Sur la
+réplique de VF7b, munie des trois à leurs versions provisoires : 151, `cc768c5d36e48f4a456d92cc6a616489` des deux côtés. Le
+socle ne change pas (80 instructions, `5d53eea2…`) ; l'inventaire passe de 2 155 objets (`855735ea…`,
+`registre_virement_mixte` n'en ajoutant aucun) à 2 158 (`69c64886477e34f856b96508ce61a801`) avec
+`frontiere_des_encaissements` — une fonction, `garder_frontiere_des_encaissements`, et ses deux déclencheurs ; le
+rattachement remplacé sous le même nom —, puis à 2 160 (`0eab3cd71d822b1093d440b554d0760a`, des deux côtés sur la
+réplique) avec `validation_des_ventes_facturees` — deux fonctions, `ecritures_attendues_de_la_periode` et
+`ventes_facturees_de_l_exercice` ; la validation remplacée sous le même nom. `signature.sql`, après les trois : les
+déclencheurs (69, `e35f54305d686aa7248d6af354c934ed`), les fonctions (200, `33d27039eedab7c30e51ab13c8cec7e6`) et leurs
+droits (200, `8583d4e0b9d91510a4fa790d9fef582c`) changent ; les six autres familles gardent l'empreinte d'aujourd'hui. La
+troisième seule, sur la production d'aujourd'hui : les fonctions (199, `d4e192bf52d158252bc9a76d2cc74e71`) et leurs droits
+(199, `d6def6e4c799662bc860837117240c36`) ; les sept autres familles inchangées (HISTORIQUE.md, « LA FRONTIÈRE DES
+ENCAISSEMENTS, EN BASE », « LA VALIDATION REFUSE LES MANQUES DES VENTES FACTURÉES »).
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
