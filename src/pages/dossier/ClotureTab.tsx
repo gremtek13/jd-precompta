@@ -31,14 +31,16 @@ import type { ModeleComptable } from '../../lib/engagement'
 import type { DossierTab } from '../../lib/ongletsDossier'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
-import { prealablesDeValidation, prochainExerciceAValider } from '../../lib/prealablesValidation'
+import { prealablesDeValidation, prochainExerciceAValider, type EtatsDesVentesDeLaValidation } from '../../lib/prealablesValidation'
 import type { FacturePourJumelle, TransmissionPourJumelle } from '../../lib/ventesJumelles'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
-import { ecrituresDesVentesPourLa2035, mouvementsClassesParEncaissements } from '../../lib/ecrituresVentesFactureesEcran'
+import { ecrituresDesVentesPourLa2035, etatsDesVentesFacturees, mouvementsClassesParEncaissements } from '../../lib/ecrituresVentesFactureesEcran'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import {
-  casesDeLInstantane, casesQuiDifferent, demandeDeValidation, exerciceQuiFige, instantane2035, lireInstantane2035, type Instantane2035,
+  casesDeLInstantane, casesQuiDifferent, demandeDeValidation, exerciceQuiFige, frontiereDeValidation, instantane2035, lireInstantane2035,
+  type Instantane2035,
 } from '../../lib/validationExercice'
+import { ventesDeLaChecklist } from '../../lib/ventesDeLaChecklist'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, ExerciceValide, Immobilisation,
   LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
@@ -467,9 +469,25 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // validés aussi — sinon une année vide, ou qui ne porte qu'une échéance de cotisation, manquerait à la liste, et la
   // validation de tous les exercices suivants l'attendrait sans que rien n'y mène.
   const anneesValidees = exercicesValides.map((e) => e.annee)
+  // LES VENTES FACTURÉES D'UN DOSSIER BASCULÉ, TELLES QUE LA VALIDATION LES REÇOIT (étape VF7c ; lib/prealablesValidation.ts) :
+  // sur la lecture que l'écran fait déjà (`lectureSourcesVentes`) et le brouillon entier, les états de la section « Ventes
+  // facturées » de l'onglet Écritures et ce que la Vue d'ensemble en dit — la même composition, les mêmes jugements, jamais
+  // une règle recopiée. Lus pour CE dossier seulement : pas encore revenus, nuls, et la validation attend ; lus en partie,
+  // ou qui ne se tiennent pas, elle se suspend en le disant (`lecture-partielle`). Un dossier qui n'a pas basculé ne lit
+  // rien de plus : « sans objet ».
+  const sourcesDesVentesDuDossier = lectureSourcesVentes !== null && lectureSourcesVentes.dossierId === dossierId ? lectureSourcesVentes : null
+  const etatsDesVentes: EtatsDesVentesDeLaValidation | null = !ventesParLesFactures ? { etat: 'sans_objet' }
+    : sourcesDesVentesDuDossier === null ? null
+      : sourcesDesVentesDuDossier.etat === 'incomplete' ? { etat: 'incomplete', motif: sourcesDesVentesDuDossier.motif }
+        : etatsDesVentesFacturees({
+          sources: sourcesDesVentesDuDossier.sources, brouillon: ecritures, mode: modeComptable, plan: modele.plan, anneesValidees,
+          ventesParLesFactures,
+        })
+  const ventesDeLaVueDEnsemble = !ventesParLesFactures ? ventesDeLaChecklist(null, null)
+    : sourcesDesVentesDuDossier === null ? null : ventesDeLaChecklist(sourcesDesVentesDuDossier, frontiereDeValidation(anneesValidees))
   const prochainAValider = prochainExerciceAValider({
     anneeCourante, modele, anneesValidees, aNouveaux, ecritures,
-    lignes: toutesLesLignes, reglements, encaissees, piecesValidees, piecesAValider, cotisations, vehicules, immobilisations,
+    lignes: toutesLesLignes, reglements, encaissees, piecesValidees, piecesAValider, cotisations, vehicules, immobilisations, etatsDesVentes,
   })
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
@@ -657,6 +675,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       periodiciteTva, relevesIncoherents, doublonsTexte, facturesEmises, transmissions,
       // Les factures sources lues en entier pour CE dossier, ou rien : la validation se suspend alors (étape VF6a).
       facturesSources: ventesLues?.sources ?? null,
+      etatsDesVentes, ventesDeLaChecklist: ventesDeLaVueDEnsemble,
       declaration: formulaire?.declaration ?? null,
       concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
     })

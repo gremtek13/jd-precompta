@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  CARTES_DE_CLOTURE, NOM_DU_MOYEN_SANS_MOUVEMENT, POINTS_DE_LA_CHECKLIST_ECARTES, prealablesDeValidation, prochainExerciceAValider,
-  REFUS_VENTES_FACTUREES_DE_LA_VALIDATION, type DonneesDeValidation,
+  CARTES_DE_CLOTURE, motsDeLaBase, NOM_DU_MOYEN_SANS_MOUVEMENT, POINTS_DE_LA_CHECKLIST_ECARTES, prealablesDeValidation,
+  prochainExerciceAValider, REFUS_VENTES_FACTUREES_DE_LA_VALIDATION, type DonneesDeValidation,
 } from './prealablesValidation'
 import { calculerDeclaration2035 } from './declaration2035'
 import { concordance2035 } from './concordance2035'
@@ -28,6 +28,12 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { argumentsSql, codesSql, messagesSql } from '../test/raiseSql'
 import { etapesDe } from '../test/essaiSql'
 import { correspondAuModele } from '../test/essaiVentesFacturees'
+import { brouillonDesVentes, composition, ligneBancaire, sourcesDuDossierBascule } from '../test/dossierBascule'
+import { encaissementVendu } from '../test/ventesFacturees'
+import { etatsDesVentesFacturees, type SourcesDesEcrituresDeVente } from './ecrituresVentesFactureesEcran'
+import { ventesDeLaChecklist } from './ventesDeLaChecklist'
+import { ventesFacturees } from './ventesFacturees'
+import { frontiereDeValidation } from './validationExercice'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -127,7 +133,8 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
-    doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE, ...o,
+    doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE,
+    etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, ...o,
   }
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
   const paiements = paiementsDesPieces(base.lignes, base.reglements, base.encaissees)
@@ -909,6 +916,9 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
         'mouvements-ignores',
         // Un avertissement encore : une CA12 ou une déclaration faite ailleurs. Son cas est plus bas.
         'periodes-tva-non-declarees',
+        // Un avertissement d'un dossier basculé (étape VF7c) : un chèque, une carte ou un effet en cours au 511. Son cas est
+        // avec les ventes facturées, plus bas.
+        'encaissements-en-cours',
       ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])
@@ -1203,17 +1213,17 @@ describe('prealablesDeValidation — la couverture des points de la Checklist', 
     expect(pointsEnErreur(source)).toEqual(['b'])
   })
 
-  // LES DEUX POINTS DES VENTES FACTURÉES (ligne 28.65, étape VF5f) : en « attention », ÉCARTÉS des préalables jusqu'à VF7,
-  // qui les rendra préalables (conception d'EC-Q3, § 11 : bloquant pour un virement ou un prélèvement, une information pour
-  // un chèque, un effet ou une carte). Le jour où VF7 les reprend, ce test tombe, et se réécrit avec elle.
-  it('tient « mouvements réservés » et « encaissements sans mouvement » en attention, écartés des préalables jusqu’à VF7', () => {
+  // LES DEUX POINTS DES VENTES FACTURÉES (ligne 28.65, étape VF5f) : en « attention » dans la Vue d'ensemble — ils disent
+  // un geste à faire, pas une anomalie du brouillon —, et REPRIS par la validation depuis l'étape VF7c (conception de VF7,
+  // § 3 d), comme elle reprend les mouvements à traiter : sous leurs identifiants, aux mots de la base, ni écartés.
+  it('tient « mouvements réservés » et « encaissements sans mouvement » en attention, et les reprend dans la validation (VF7c)', () => {
     const points = readFileSync(new URL('./pointsDeLaChecklist.ts', import.meta.url), 'utf8')
     for (const id of ['mouvements-reserves', 'encaissements-sans-mouvement']) {
       const debut = points.indexOf(`id: '${id}'`)
       expect(debut, `« ${id} » n'est pas un point de la Checklist`).toBeGreaterThan(0)
       expect(points.slice(debut, points.indexOf('}', debut))).toContain("severite: 'attention'")
       expect(pointsEnErreur(checklist)).not.toContain(id)
-      expect(repris(id), `« ${id} » est repris par la validation avant VF7`).toBe(false)
+      expect(repris(id), `« ${id} » n'est pas repris par la validation`).toBe(true)
       expect(id in POINTS_DE_LA_CHECKLIST_ECARTES).toBe(false)
     }
   })
@@ -1428,5 +1438,282 @@ describe('les refus de la validation pour les ventes facturées (étape VF7b) �
     expect(texte).not.toMatch(/\b(drop|delete|truncate|grant)\b/i)
     expect(texte).not.toMatch(/\b(create|alter) (table|policy|trigger)\b/i)
     expect(texte).not.toContain('\\')
+  })
+})
+
+// ── LES VENTES FACTURÉES D'UN DOSSIER BASCULÉ, DITES AVANT LE CLIC (chantier EC-Q3, étape VF7c) ─────────────────────────
+// Le dossier basculé de src/test/dossierBascule.ts (trois factures de services, un avoir, un virement du même jour, un chèque
+// crédité le lendemain), composé, écrit comme la fonction de VF4b l'écrit, puis jugé. Chaque préalable de ses deux côtés :
+// présent sous les mots de la base, absent quand la base ne refuserait pas — hors de l'exercice, ou dans un dossier qui n'a
+// pas basculé, où rien ne change. Données FICTIVES.
+describe('prealablesDeValidation — les ventes facturées d’un dossier basculé (VF7c)', () => {
+  const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+  const FRAIS_BANCAIRES: Categorie = {
+    id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 3, compte_comptable: '627000',
+    poste_2035: 'Frais financiers',
+  }
+  type EncaissementDesSources = SourcesDesEcrituresDeVente['encaissements'][number]
+
+  interface Bascule {
+    sources?: SourcesDesEcrituresDeVente
+    // Le brouillon que la fonction de VF4b écrirait pour la composition, retouché.
+    brouillon?: (ecrit: EcritureBrouillon[]) => EcritureBrouillon[]
+    modele?: ModeleComptable
+    categories?: Categorie[]
+    anneesValidees?: number[]
+    autres?: Surcharges
+  }
+  function bascule(o: Bascule = {}): DonneesDeValidation {
+    const sources = o.sources ?? sourcesDuDossierBascule()
+    const modele = o.modele ?? ENGAGEMENT
+    const c = composition(sources, modele.mode, modele.plan)
+    const ecrit = brouillonDesVentes(c)
+    const brouillon = o.brouillon ? o.brouillon(ecrit) : ecrit
+    const anneesValidees = o.anneesValidees ?? []
+    const ventes = ventesFacturees({
+      dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
+    })
+    const categories = o.categories ?? []
+    const base = donnees({
+      modele, assujettiTva: true, piecesValidees: [], categories, ecritures: brouillon, lignes: sources.mouvements.map(ligneBancaire),
+      anneesValidees, facturesSources: ventes.sources,
+      etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode: modele.mode, plan: modele.plan, anneesValidees, ventesParLesFactures: true }),
+      ventesDeLaChecklist: ventesDeLaChecklist({ dossierId: sources.dossierId, etat: 'lue', sources }, frontiereDeValidation(anneesValidees)),
+      ...o.autres,
+    })
+    if (modele.mode === 'engagement') return base
+    // En trésorerie, la 2035 qui lit les ventes facturées et leurs écritures, et sa concordance avec le brouillon.
+    const declaration = calculerDeclaration2035(
+      2025, [], categories, [], [], [], true, paiementsDesPieces([], [], []), [], [], modele.plan, ventes, { etat: 'composees', composition: c },
+    )
+    const concordance = concordance2035(declaration, base.ecritures, {
+      piecesValidees: new Set(), piecesImmobilisees: new Set(),
+      mouvementsDesVentesFacturees: new Set(sources.mouvements.filter((m) => m.encaissements_de_factures).map((m) => m.id)),
+    }, null)
+    return { ...base, declaration, concordance }
+  }
+  const bloquants = (d: DonneesDeValidation) => prealablesDeValidation(d).prealables.filter((p) => p.bloquant).map((p) => p.id)
+  // Un encaissement que rien ne rattache au relevé, et son mouvement retiré du relevé.
+  const sansMouvement = (s: SourcesDesEcrituresDeVente, id: string, o: Partial<EncaissementDesSources> = {}): SourcesDesEcrituresDeVente => {
+    const e = s.encaissements.find((x) => x.id === id)!
+    return {
+      ...s,
+      encaissements: s.encaissements.map((x) => (x.id === id ? { ...x, ligne_bancaire_id: null, ...o } : x)),
+      mouvements: s.mouvements.filter((m) => m.id !== e.ligne_bancaire_id),
+    }
+  }
+  // Le virement m1 laissé à traiter : réservé à l'encaissement e1 qui le cite.
+  const avecReserve = (): SourcesDesEcrituresDeVente => {
+    const s = sourcesDuDossierBascule()
+    return { ...s, mouvements: s.mouvements.map((m) => (m.id === 'm1' ? { ...m, statut: 'non_rapprochee' as const, encaissements_de_factures: false } : m)) }
+  }
+  const unEncaissementDePlus = (s: SourcesDesEcrituresDeVente, o: Parameters<typeof encaissementVendu>[0]): SourcesDesEcrituresDeVente => {
+    const { encaissement, part } = encaissementVendu(o)
+    return { ...s, encaissements: [...s.encaissements, { ...encaissement, compte_contrepartie: null, cree_par: null }], parts: [...s.parts, part] }
+  }
+
+  it('un exercice tenu : aucun préalable bloquant, et chaque écriture de vente numérotée — dans les deux modèles', () => {
+    for (const modele of [ENGAGEMENT, TRESORERIE]) {
+      const d = bascule({ modele })
+      const etat = prealablesDeValidation(d)
+      expect(etat.prealables.filter((p) => p.bloquant)).toEqual([])
+      expect(etat.validable).toBe(true)
+      expect(etat.numerotation!.horsFec).toEqual([])
+      expect(etat.numerotation!.lignes.map((l) => l.ecriture.id).sort()).toEqual(d.ecritures.map((e) => e.id).sort())
+    }
+  })
+
+  it('mouvements-reserves : sous les mots de la base, avant les mouvements à traiter, qui ne le comptent plus', () => {
+    const d = bascule({ sources: avecReserve() })
+    const p = prealable(d, 'mouvements-reserves')!
+    expect(p.bloquant).toBe(true)
+    expect(p.message).toBe(motsDeLaBase('mouvement_reserve_credit', [2025, '20/11/2025', 'F2025-0001']))
+    expect(p.message).toBe("L'exercice 2025 porte un mouvement du 20/11/2025 réservé à l'encaissement de la facture F2025-0001 : le classer par ses encaissements avant la validation.")
+    expect(p.detail).toMatch(/^1 mouvement concerné : le 20\/11\/2025/)
+    expect(ids(d)).not.toContain('mouvements-a-traiter')
+    // Un autre mouvement à traiter se dit toujours, et lui seul.
+    const reserve = avecReserve()
+    const autre = bascule({ sources: reserve, autres: { lignes: [...reserve.mouvements.map(ligneBancaire), ligne('l9', { statut: 'non_rapprochee', date: '2025-12-01' })] } })
+    expect(ids(autre).indexOf('mouvements-reserves')).toBeLessThan(ids(autre).indexOf('mouvements-a-traiter'))
+    expect(prealable(autre, 'mouvements-a-traiter')?.detail).toBe('1 mouvement concerné')
+  })
+
+  it('mouvements-reserves : un débit, sous les mots de ses contre-passations', () => {
+    const d = bascule({ sources: avecReserve() })
+    const lue = d.ventesDeLaChecklist!
+    if (lue.etat !== 'lue') throw new Error('la Vue d’ensemble n’a pas lu les ventes')
+    const debit = { ...d, ventesDeLaChecklist: { ...lue, reserves: lue.reserves.map((m) => ({ ...m, montant: -120 })) } }
+    expect(prealable(debit, 'mouvements-reserves')?.message).toBe(
+      "L'exercice 2025 porte un mouvement du 20/11/2025 réservé à la contre-passation d'un encaissement de la facture F2025-0001 : le classer par ses contre-passations avant la validation.",
+    )
+  })
+
+  it('mouvements-reserves : de l’autre côté, ni un réservé de l’exercice suivant, ni un dossier qui n’a pas basculé', () => {
+    const s = avecReserve()
+    const enJanvier = {
+      ...s,
+      encaissements: s.encaissements.map((e) => (e.id === 'e1' ? { ...e, date_encaissement: '2026-01-05' } : e)),
+      mouvements: s.mouvements.map((m) => (m.id === 'm1' ? { ...m, date: '2026-01-05' } : m)),
+    }
+    const d = bascule({ sources: enJanvier })
+    expect(ids(d)).not.toContain('mouvements-reserves')
+    expect(ids(d)).not.toContain('mouvements-a-traiter')
+    // Le même mouvement dans un dossier qui n'a pas basculé : un mouvement à traiter, comme hier.
+    const hier = donnees({ lignes: [L1, ligne('l9', { statut: 'non_rapprochee', date: '2025-11-20' })] })
+    expect(ids(hier)).toContain('mouvements-a-traiter')
+    expect(ids(hier)).not.toContain('mouvements-reserves')
+  })
+
+  it('encaissements-sans-mouvement : un virement ou un prélèvement sans son mouvement, sous les mots de la base', () => {
+    const virement = bascule({ sources: sansMouvement(sourcesDuDossierBascule(), 'e1') })
+    const p = prealable(virement, 'encaissements-sans-mouvement')!
+    expect(p.bloquant).toBe(true)
+    expect(p.message).toBe("L'exercice 2025 porte un encaissement de la facture F2025-0001 par virement du 20/11/2025, sans son mouvement : il manque au relevé, ou n'y est pas rattaché — le rattacher avant la validation.")
+    expect(p.detail).toMatch(/^1 encaissement concerné : F2025-0001 \(virement du 20\/11\/2025, 120,00\s€\)/)
+    const prelevement = bascule({ sources: sansMouvement(sourcesDuDossierBascule(), 'e1', { moyen: 'prelevement' }) })
+    expect(prealable(prelevement, 'encaissements-sans-mouvement')?.message).toMatch(/par prélèvement du 20\/11\/2025, sans son mouvement/)
+    expect(ids(prelevement)).not.toContain('encaissements-en-cours')
+  })
+
+  it('encaissements-sans-mouvement : de l’autre côté, un chèque en cours au 511 (un avertissement nommé), un virement de l’exercice suivant', () => {
+    const cheque = bascule({ sources: sansMouvement(sourcesDuDossierBascule(), 'e2') })
+    expect(bloquants(cheque)).toEqual([])
+    expect(prealablesDeValidation(cheque).validable).toBe(true)
+    const p = prealable(cheque, 'encaissements-en-cours')!
+    expect(p).toMatchObject({ bloquant: false, nb: 1, cible: 'banque' })
+    expect(p.message).toMatch(/au 31 décembre 2025 : un en-cours, au 511/)
+    expect(p.detail).toMatch(/^F2025-0002 \(chèque du 21\/11\/2025, 100,00\s€\)\.$/)
+    const s = sourcesDuDossierBascule()
+    const enJanvier = sansMouvement({
+      ...s, encaissements: s.encaissements.map((e) => (e.id === 'e1' ? { ...e, date_encaissement: '2026-01-05' } : e)),
+    }, 'e1')
+    expect(ids(bascule({ sources: enJanvier }))).not.toContain('encaissements-sans-mouvement')
+  })
+
+  it('ventes-facturees-a-ecrire : à écrire, la première nommée sous les mots de la base, et rien parmi les orphelines', () => {
+    const d = bascule({ brouillon: (b) => b.filter((l) => l.encaissement_id !== 'e2') })
+    const p = prealable(d, 'ventes-facturees-a-ecrire')!
+    expect(p).toMatchObject({ bloquant: true, cible: 'ecritures', nb: null })
+    expect(p.message).toMatch(/^L'exercice 2025 porte une vente facturée qui n'est pas écrite : l’encaissement du 21\/11\/2025 de la facture F2025-0002 \(Clinique du Parc, chèque, 100,00\s€\) — l'écrire avant la validation\.$/)
+    expect(p.detail).toMatch(/^1 vente facturée concernée : .* \(à écrire\)\. Dans Écritures, la section « Ventes facturées »/)
+    expect(ids(d)).not.toContain('ecritures-orphelines')
+  })
+
+  it('ventes-facturees-a-ecrire : à réécrire et à retirer — leurs lignes hors de la numérotation, nommées ici, pas orphelines', () => {
+    const reecrire = bascule({ brouillon: (b) => b.map((l) => (l.encaissement_id === 'e1' && l.sens === 'credit' ? { ...l, montant: l.montant + 1 } : l)) })
+    const etat = prealablesDeValidation(reecrire)
+    expect(etat.numerotation!.horsFec.length).toBeGreaterThan(0)
+    expect(etat.numerotation!.horsFec.every((e) => e.encaissement_id === 'e1')).toBe(true)
+    expect(ids(reecrire)).not.toContain('ecritures-orphelines')
+    expect(prealable(reecrire, 'ventes-facturees-a-ecrire')?.message).toMatch(/dont l'écriture proposée n'est plus celle que sa source commande : l’encaissement du 20\/11\/2025 de la facture F2025-0001 .* — la réécrire avant la validation\.$/)
+    // Un encaissement retiré dont les lignes restent au brouillon : à retirer.
+    const s = sourcesDuDossierBascule()
+    const ecrites = brouillonDesVentes(composition(s, 'engagement', PLAN_PAR_DEFAUT))
+    const retire = bascule({
+      sources: { ...s, encaissements: s.encaissements.map((e) => (e.id === 'e2' ? { ...e, retire_le: '2025-12-01T10:00:00Z' } : e)) },
+      brouillon: () => ecrites,
+    })
+    expect(prealablesDeValidation(retire).numerotation!.horsFec.length).toBeGreaterThan(0)
+    expect(ids(retire)).not.toContain('ecritures-orphelines')
+    expect(prealable(retire, 'ventes-facturees-a-ecrire')?.message).toMatch(/porte l'écriture proposée d'une vente facturée qui n'a plus rien à écrire : l’encaissement du 21\/11\/2025 de la facture F2025-0002 .* — la retirer avant la validation\.$/)
+  })
+
+  it('ventes-facturees-a-ecrire : une vente qui ne s’écrit pas — le compte d’une compensation à choisir', () => {
+    const avecCompensation = unEncaissementDePlus(sourcesDuDossierBascule(), {
+      id: 'e3', facture_id: 'f2', date_encaissement: '2025-12-01', montant: 20, moyen: 'compensation',
+    })
+    const p = prealable(bascule({ sources: avecCompensation }), 'ventes-facturees-a-ecrire')!
+    expect(p.message).toMatch(/^L'exercice 2025 porte une vente facturée qui ne s'écrit pas : l’encaissement du 01\/12\/2025 de la facture F2025-0002 .* — lever ce qui la retient avant la validation\.$/)
+    expect(p.detail).toMatch(/\(ne s’écrit pas\)/)
+  })
+
+  it('ventes-facturees-a-ecrire : de l’autre côté, une source de l’exercice suivant, et l’orpheline d’un dossier qui n’a pas basculé', () => {
+    const enJanvier = unEncaissementDePlus(sourcesDuDossierBascule(), {
+      id: 'e4', facture_id: 'f2', date_encaissement: '2026-01-10', montant: 40, moyen: 'cheque',
+    })
+    const d = bascule({ sources: enJanvier, brouillon: (b) => b.filter((l) => l.encaissement_id !== 'e4') })
+    expect(ids(d)).not.toContain('ventes-facturees-a-ecrire')
+    expect(prealablesDeValidation(d).validable).toBe(true)
+    // Écrit, ou écrit puis devenu à réécrire : ses lignes de janvier ne regardent pas 2025.
+    expect(ids(bascule({ sources: enJanvier }))).not.toContain('ventes-facturees-a-ecrire')
+    const perime = bascule({ sources: enJanvier, brouillon: (b) => b.map((l) => (l.encaissement_id === 'e4' && l.sens === 'debit' ? { ...l, montant: l.montant + 1 } : l)) })
+    expect(ids(perime)).not.toContain('ventes-facturees-a-ecrire')
+    // Une vente qui ne s'écrit pas, datée de janvier suivant, ou d'un exercice que la validation fige déjà : pas en 2025.
+    for (const [date, anneesValidees] of [['2026-01-15', []], ['2024-12-01', [2024]]] as const) {
+      const compensation = unEncaissementDePlus(sourcesDuDossierBascule(), {
+        id: 'e5', facture_id: 'f2', date_encaissement: date, montant: 20, moyen: 'compensation',
+      })
+      const x = bascule({ sources: compensation, anneesValidees: [...anneesValidees], autres: { anneesValidees: [...anneesValidees] } })
+      expect(x.etatsDesVentes?.etat === 'lus' && x.etatsDesVentes.sources.some((v) => v.cle === 'encaissement|e5' && v.etat === 'ne_s_ecrit_pas')).toBe(true)
+      expect(ids(x), date).not.toContain('ventes-facturees-a-ecrire')
+    }
+    // La même ligne dans un dossier qui n'a pas basculé : rien ne la rattache, comme hier.
+    const hier = donnees({ ecritures: [E1, E2, ecriture('v1', { piece_id: null, encaissement_id: 'e1', compte: '411000', sens: 'credit', montant: 120 })] })
+    expect(prealable(hier, 'ecritures-orphelines')?.nb).toBe(1)
+    expect(ids(hier)).not.toContain('ventes-facturees-a-ecrire')
+    // Et dans un dossier basculé, une ligne que rien ne rattache, sans vente, reste orpheline.
+    const orpheline = bascule({
+      brouillon: (b) => [...b, ecriture('o1', { piece_id: null, date: '2025-06-01' }), ecriture('o2', { piece_id: null, date: '2025-06-01', compte: COMPTE_BANQUE, sens: 'credit' })],
+    })
+    expect(prealable(orpheline, 'ecritures-orphelines')?.nb).toBe(2)
+  })
+
+  it('la concordance des frais d’un mouvement d’encaissements reste bloquante sur un exercice numéroté', () => {
+    const s = sourcesDuDossierBascule()
+    const avecFrais = { ...s, mouvements: s.mouvements.map((m) => ({ ...m, montant: m.montant - 2 })) }
+    const tenu = bascule({ sources: avecFrais, modele: TRESORERIE, categories: [FRAIS_BANCAIRES] })
+    const etat = prealablesDeValidation(tenu)
+    expect(etat.validable).toBe(true)
+    expect(etat.numerotation!.lignes.filter((l) => l.ecriture.compte === '627000')).toHaveLength(2)
+    // Sans catégorie « Frais bancaires », la 2035 ne compte pas les frais que les écritures portent : numérotées, elles
+    // n'en sont pas moins en écart — la concordance retient la validation, et rien d'autre ne s'en charge à sa place.
+    const sansPoste = bascule({ sources: avecFrais, modele: TRESORERIE, categories: [] })
+    expect(bloquants(sansPoste)).toEqual(['concordance', 'exclusions-2035'])
+    expect(prealable(sansPoste, 'concordance')!.nb).toBeGreaterThan(0)
+    expect(prealablesDeValidation(sansPoste).numerotation!.horsFec).toEqual([])
+  })
+
+  it('anneesActives apprend les dates des ventes facturées : un exercice qui n’a qu’elles se valide d’abord', () => {
+    const s = sourcesDuDossierBascule()
+    const en2024: SourcesDesEcrituresDeVente = {
+      ...s,
+      factures: s.factures.map((f) => ({ ...f, date_emission: f.date_emission.replace('2025', '2024') })),
+      encaissements: s.encaissements.map((e) => ({ ...e, date_encaissement: e.date_encaissement.replace('2025', '2024'), ligne_bancaire_id: null })),
+      mouvements: [],
+    }
+    // Ni écriture ni mouvement de 2024 : seules les ventes facturées y sont datées.
+    const d = bascule({ sources: en2024, autres: { piecesValidees: [P1], lignes: [L1], ecritures: [E1, E2] } })
+    expect(prochainExerciceAValider(d)).toBe(2024)
+    expect(prealable(d, 'exercice-anterieur-d-abord')?.exercice).toBe(2024)
+    expect(prochainExerciceAValider({ ...d, etatsDesVentes: { etat: 'sans_objet' } })).toBe(2025)
+    // En trésorerie, une facture de services que rien n'encaisse encore n'écrit rien : son émission date l'exercice quand même.
+    const seule: SourcesDesEcrituresDeVente = {
+      ...en2024, factures: en2024.factures.filter((f) => f.id === 'f1'), lignes: en2024.lignes.filter((l) => l.facture_id === 'f1'),
+      encaissements: [], parts: [],
+    }
+    const t = bascule({ sources: seule, modele: TRESORERIE, autres: { piecesValidees: [P1], lignes: [L1], ecritures: [E1, E2] } })
+    expect(t.etatsDesVentes?.etat === 'lus' && t.etatsDesVentes.contexte.composition.ecritures).toEqual([])
+    expect(prochainExerciceAValider(t)).toBe(2024)
+  })
+
+  it('lecture-partielle : des ventes facturées pas encore lues, lues en partie, ou qui ne se tiennent pas', () => {
+    const d = bascule()
+    expect(d.ventesDeLaChecklist?.etat).toBe('lue')
+    const cas: [Partial<DonneesDeValidation>, RegExp][] = [
+      [{ etatsDesVentes: null }, /les ventes facturées ne sont pas encore lues/],
+      [{ ventesDeLaChecklist: null }, /les ventes facturées ne sont pas encore lues/],
+      [{ etatsDesVentes: { etat: 'incomplete', motif: 'les encaissements : lecture refusée' } }, /les ventes facturées : les encaissements : lecture refusée/],
+      [{ etatsDesVentes: { etat: 'incoherent', dossierId: 'd1', motif: 'une écriture cite une facture inconnue' } }, /une écriture cite une facture inconnue/],
+      [{ ventesDeLaChecklist: { etat: 'incomplete', motif: 'les mouvements du relevé' } }, /les ventes facturées : les mouvements du relevé/],
+      [{ etatsDesVentes: { etat: 'sans_objet' } }, /ne se tiennent pas entre elles/],
+      [{ ventesDeLaChecklist: { etat: 'sans_objet' } }, /ne se tiennent pas entre elles/],
+    ]
+    for (const [o, motif] of cas) {
+      const etat = prealablesDeValidation({ ...d, ...o })
+      expect(etat.prealables.map((p) => p.id)).toEqual(['lecture-partielle'])
+      expect(etat.prealables[0].message).toMatch(motif)
+      expect(etat.numerotation).toBeNull()
+    }
   })
 })

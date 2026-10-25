@@ -11,7 +11,12 @@ import { paiementsDesPieces } from './rattachement'
 import { calculerSituationIntermediaire } from './situationIntermediaire'
 import type { EcritureBrouillon, ModeComptable } from './types'
 import { ventesFacturees } from './ventesFacturees'
-import { brouillonDesVentes, composition, sourcesDuDossierBascule } from '../test/dossierBascule'
+import { brouillonDesVentes, composition, ligneBancaire, sourcesDuDossierBascule } from '../test/dossierBascule'
+import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
+import { formaterFec, genererFec, numerotationValidee } from './fec'
+import { prealablesDeValidation, type DonneesDeValidation } from './prealablesValidation'
+import { demandeDeValidation, frontiereDeValidation } from './validationExercice'
+import { ventesDeLaChecklist } from './ventesDeLaChecklist'
 
 // UN DOSSIER QUI A BASCULÉ, DE BOUT EN BOUT (chantier EC-Q3, étape VF4c3) : les lignes de la base (src/test/dossierBascule.ts
 // — trois factures de services, un avoir, un virement du même jour, un chèque remis la veille de son crédit), la composition
@@ -193,5 +198,116 @@ describe.each(PLANS)('la situation de l’année et la 2035 comptent les mêmes 
     expect(situation.charges).toBe(0)
     expect(situation.fraisSansPoste).toEqual(declaration.exclusions.fraisSansPoste)
     expect(situation.fraisSansPoste.map((f) => f.frais.ligneBancaireId)).toEqual(['m1', 'm2'])
+  })
+})
+
+// COMPOSER, ÉCRIRE, NUMÉROTER (chantier EC-Q3, étape VF7c) : le même dossier basculé, sa composition écrite comme la fonction de
+// VF4b l'écrit, puis la demande que Clôture enverrait à `valider_exercice` pour 2025. Elle couvre EXACTEMENT les écritures de
+// l'exercice, et chacune passe les règles de la base, rejouées ici sur la demande elle-même (le texte de `valider_exercice` :
+// journaux AC, VE, BQ, OD ; numéros qui se suivent dans l'ordre des dates ; une écriture équilibrée au centime, d'une pièce et
+// d'une date ; un libellé par compte et par auxiliaire). Le FEC qu'elle produit est celui que l'onglet Écritures exporte, et
+// celui que l'exercice validé relira de ses colonnes figées, ValidDate près. Sous les deux plans, dans les deux modèles.
+// Données FICTIVES.
+describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d’un dossier basculé — %s', (_, plan) => {
+  function laDemande(mode: ModeComptable) {
+    const sources = sourcesDuDossierBascule()
+    const c = composition(sources, mode, plan)
+    const brouillon = brouillonDesVentes(c)
+    const lignes = sources.mouvements.map(ligneBancaire)
+    const ventes = ventesFacturees({
+      dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
+    })
+    const ouvert = (o: Partial<DonneesDeValidation>): DonneesDeValidation => ({
+      annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode, compteNotesDeFrais: plan.associe, plan }, assujettiTva: true,
+      anneesValidees: [], lectureIncomplete: null, piecesValidees: [], piecesAValider: [], categories: [], immobilisations: [], natures: [],
+      ecritures: brouillon, lignes, ventilations: [], reglements: [], encaissees: [], cotisations: [], vehicules: [], emprunts: [],
+      aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [], doublonsTexte: [],
+      facturesEmises: [], transmissions: [], facturesSources: ventes.sources,
+      etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true }),
+      ventesDeLaChecklist: ventesDeLaChecklist({ dossierId: sources.dossierId, etat: 'lue', sources }, frontiereDeValidation([])),
+      declaration: null, concordance: null, ...o,
+    })
+    let declaration = null
+    let concordance = null
+    if (mode === 'tresorerie') {
+      declaration = calculerDeclaration2035(2025, [], [], [], [], [], true, paiementsDesPieces([], [], []), [], [], plan, ventes, { etat: 'composees', composition: c })
+      concordance = concordance2035(declaration, brouillon, {
+        piecesValidees: new Set(), piecesImmobilisees: new Set(), mouvementsDesVentesFacturees: mouvementsClassesParEncaissements(sources.mouvements),
+      }, null)
+    }
+    const etat = prealablesDeValidation(ouvert({ declaration, concordance }))
+    return { c, brouillon, lignes, etat, ouvert }
+  }
+
+  it.each(['tresorerie', 'engagement'] as const)('en %s : la demande couvre toutes les écritures de l’exercice, aux règles de la base', (mode) => {
+    const { brouillon, etat } = laDemande(mode)
+    expect(etat.prealables.filter((p) => p.bloquant)).toEqual([])
+    expect(etat.validable).toBe(true)
+    const demande = demandeDeValidation(etat.numerotation!, null)
+    // Exactement les écritures de l'exercice : ni une de plus, ni une de moins.
+    expect(demande.p_lignes.map((l) => l.id).sort()).toEqual(brouillon.filter((e) => e.date.startsWith('2025')).map((e) => e.id).sort())
+    expect(brouillon.every((e) => e.date.startsWith('2025'))).toBe(true)
+    const parId = new Map(brouillon.map((e) => [e.id, e]))
+    const ecritures = new Map<string, { centimes: number; pieces: Set<string>; datesPiece: Set<string>; dates: Set<string> }>()
+    for (const l of demande.p_lignes) {
+      expect(['AC', 'VE', 'BQ', 'OD']).toContain(l.journal)
+      expect(l.piece_ref.trim()).not.toBe('')
+      expect(l.compte_lib.trim()).not.toBe('')
+      expect(l.comp_aux_num === null).toBe(l.comp_aux_lib === null)
+      const e = parId.get(l.id)!
+      const cle = `${l.journal}|${l.numero}`
+      const g = ecritures.get(cle) ?? { centimes: 0, pieces: new Set(), datesPiece: new Set(), dates: new Set() }
+      g.centimes += Math.round(e.montant * 100) * (e.sens === 'debit' ? 1 : -1)
+      g.pieces.add(l.piece_ref)
+      g.datesPiece.add(l.piece_date)
+      g.dates.add(e.date)
+      ecritures.set(cle, g)
+    }
+    for (const [cle, g] of ecritures) {
+      expect(g.centimes, `${cle} équilibrée`).toBe(0)
+      expect([g.pieces.size, g.datesPiece.size, g.dates.size], `${cle} d'une pièce et d'une date`).toEqual([1, 1, 1])
+    }
+    // Les numéros d'un journal se suivent à partir de 1, dans l'ordre des dates.
+    for (const journal of new Set(demande.p_lignes.map((l) => l.journal))) {
+      const numeros = [...new Set(demande.p_lignes.filter((l) => l.journal === journal).map((l) => l.numero))].sort((a, b) => a - b)
+      expect(numeros).toEqual(numeros.map((_, i) => i + 1))
+      const premieres = numeros.map((n) => [...ecritures.get(`${journal}|${n}`)!.dates][0])
+      expect(premieres).toEqual([...premieres].sort())
+    }
+    // Un libellé par compte, et par compte auxiliaire.
+    const libelles = new Map<string, Set<string>>()
+    for (const l of demande.p_lignes) {
+      const compte = parId.get(l.id)!.compte
+      libelles.set(compte, (libelles.get(compte) ?? new Set()).add(l.compte_lib))
+      if (l.comp_aux_num !== null) libelles.set(`aux|${l.comp_aux_num}`, (libelles.get(`aux|${l.comp_aux_num}`) ?? new Set()).add(l.comp_aux_lib ?? ''))
+    }
+    expect([...libelles.values()].every((x) => x.size === 1)).toBe(true)
+    // L'auxiliaire du client au 411, en engagement — sous le plan par défaut : `auxiliaireDuTiers` ne connaît encore que le
+    // 411000 (lib/engagement.ts, le plan comptable personnalisable, § 2.4), et un 411100 n'en reçoit pas, avant comme après.
+    if (mode === 'engagement') expect(demande.p_lignes.some((l) => l.comp_aux_num !== null)).toBe(plan === PLAN_PAR_DEFAUT)
+  })
+
+  it.each(['tresorerie', 'engagement'] as const)('en %s : le FEC de la demande est celui de l’onglet Écritures, et celui de l’exercice validé, ValidDate près', (mode) => {
+    const { c, brouillon, lignes, etat } = laDemande(mode)
+    const n = etat.numerotation!
+    const SANS_LETTRAGE = new Map()
+    const sansValidDate = (f: string) => f.split('\n').map((r) => r.split('\t').filter((_, i) => i !== 15).join('\t'))
+    const avant = formaterFec(n, SANS_LETTRAGE)
+    expect(avant).toBe(genererFec(brouillon, [], [], [], mode, lignes, SANS_LETTRAGE, c.ecritures))
+    const VALIDE_LE = '2026-03-15T10:00:00Z'
+    const figees = n.lignes.map((l): EcritureBrouillon => ({
+      ...l.ecriture, statut: 'validee', valide_le: VALIDE_LE, journal_code: l.journal, numero_ecriture: l.numero, piece_ref: l.pieceRef,
+      piece_date: l.pieceDate, compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
+    }))
+    const apres = formaterFec(numerotationValidee(figees, [], VALIDE_LE), SANS_LETTRAGE)
+    expect(sansValidDate(apres)).toEqual(sansValidDate(avant))
+    expect(apres.split('\n').length).toBe(brouillon.length + 1 + (avant.endsWith('\n') ? 1 : 0))
+  })
+
+  it('un dossier qui n’a pas basculé, le même brouillon : rien n’est numéroté de la vente, tout est orphelin — comme hier', () => {
+    const { brouillon, ouvert } = laDemande('engagement')
+    const etat = prealablesDeValidation(ouvert({ facturesSources: SANS_FACTURE_SOURCE, etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' } }))
+    expect(etat.numerotation!.horsFec).toHaveLength(brouillon.length)
+    expect(etat.prealables.find((p) => p.id === 'ecritures-orphelines')?.nb).toBe(brouillon.length)
   })
 })

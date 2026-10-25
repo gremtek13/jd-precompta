@@ -2839,6 +2839,37 @@ describe('ClotureTab — les ventes facturées', () => {
     expect(screen.queryByText(/Les ventes facturées du dossier n'ont pas pu être lues en entier/)).toBeNull()
   })
 
+  // LA VALIDATION D'UN DOSSIER BASCULÉ (étape VF7c) : l'écran compose ses ventes facturées sur la lecture qu'il fait déjà et
+  // les passe aux préalables. Écrites à jour, leurs lignes sont numérotées — aucune « écriture que rien ne rattache » — ;
+  // pas encore écrites, ou un virement sans son mouvement, la validation le dit sous les mots de la base.
+  const carteDeValidation = async () =>
+    within((await screen.findByRole('heading', { name: 'Valider l’exercice 2025' })).closest('.card') as HTMLElement)
+
+  it('basculé, les écritures de la vente à jour : numérotées, aucune ne se dit orpheline ni à écrire', async () => {
+    poserLesFrais()
+    monter(2025, true, true)
+    const v = await carteDeValidation()
+    expect(v.queryByText(/que rien ne rattache/)).toBeNull()
+    expect(v.queryByText(/vente facturée/)).toBeNull()
+    expect(v.queryByText(/sans son mouvement/)).toBeNull()
+  })
+
+  it('basculé, l’encaissement pas encore écrit : la validation le nomme, sous les mots de la base', async () => {
+    poserLesFrais({ ecrits: false })
+    monter(2025, true, true)
+    const v = await carteDeValidation()
+    v.getByText(/^L'exercice 2025 porte une vente facturée qui n'est pas écrite : l’encaissement du 10\/05\/2025 de la facture F2025-0042 \(CLIENT FICTIF, virement, 1\s?200,00\s€\) — l'écrire avant la validation\.$/)
+    v.getByText(/Dans Écritures, la section « Ventes facturées »/)
+    expect(v.queryByText(/que rien ne rattache/)).toBeNull()
+  })
+
+  it('basculé, un virement sans son mouvement : la validation le refuse avant le clic', async () => {
+    poserLesVentes()
+    monter(2025, true, true)
+    const v = await carteDeValidation()
+    v.getByText("L'exercice 2025 porte un encaissement de la facture F2025-0042 par virement du 10/05/2025, sans son mouvement : il manque au relevé, ou n'y est pas rattaché — le rattacher avant la validation.")
+  })
+
   it('une facture source dans un dossier qui ne se dit pas basculé : les lectures ne se tiennent pas, aucune 2035', async () => {
     poserLesVentes()
     monter(2025, true, false)

@@ -6,7 +6,7 @@ import {
 import { NON_VALIDEE } from '../test/ecritures'
 import { anomaliesDgfip, colonnes, desequilibresDgfip } from '../test/fecDgfip'
 import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
-import { genererFec, numeroterFec, numerotationValidee } from './fec'
+import { formaterFec, genererFec, numeroterFec, numerotationValidee } from './fec'
 import { lignesPourPiece } from './ecritures'
 import { formatMoney } from './format'
 import { comptesDeTiers, lettrages, lettragesDesFactures, phraseDuLettrage } from './lettrage'
@@ -263,14 +263,35 @@ describe('le FEC d’un dossier qui a basculé', () => {
     expect(colonnes(f).slice(1).some((r) => r[10].includes('Clinique du Parc') && r[0] === 'BQ' && r[3] === '20251121')).toBe(false)
   })
 
-  it('sans la composition, chaque ligne d’une vente facturée est hors du fichier — ce que les préalables de la validation passent jusqu’à VF7', () => {
+  // Sans la composition, chaque ligne d'une vente facturée est hors du fichier : c'est pourquoi la numérotation que la
+  // validation envoie la reçoit, depuis l'étape VF7c (lib/prealablesValidation.ts ; dossierBasculeBoutEnBout.test.ts).
+  it('sans la composition, chaque ligne d’une vente facturée est hors du fichier — la validation la reçoit depuis VF7c', () => {
     const { brouillon } = jeu('engagement')
     const n = numeroterFec(brouillon, [], [], [], 'engagement', [], SANS_ECRITURE_DE_VENTE)
     expect(n.lignes).toEqual([])
     expect(n.horsFec).toHaveLength(brouillon.length)
   })
 
-  it('le FEC d’un exercice validé ne change pas : il se relit des colonnes que la validation fige (VF7 les remplira)', () => {
+  // CE QUE LA VALIDATION FIGE (étape VF7c) : `valider_exercice` écrit sur chaque ligne ce que la numérotation a décidé — le
+  // journal, le numéro, la pièce, les libellés et l'auxiliaire —, et le FEC de l'exercice validé se relit de ces colonnes
+  // seules. Pour les ventes facturées comme pour le reste, il est celui d'avant, ValidDate près.
+  it.each(MODES)('%s : le FEC d’un exercice validé est celui d’avant la validation, ValidDate près', (mode) => {
+    const { c, brouillon } = jeu(mode)
+    const avant = numeroterFec(brouillon, [], [], [], mode, [], c.ecritures)
+    expect(avant.horsFec).toEqual([])
+    const VALIDE_LE = '2026-01-20T10:00:00Z'
+    const figees = avant.lignes.map((l): EcritureBrouillon => ({
+      ...l.ecriture, statut: 'validee', valide_le: VALIDE_LE, journal_code: l.journal, numero_ecriture: l.numero, piece_ref: l.pieceRef,
+      piece_date: l.pieceDate, compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
+    }))
+    const apres = numerotationValidee([...figees].reverse(), [], VALIDE_LE)
+    expect(apres.horsFec).toEqual([])
+    const sansValidDate = (f: string) => colonnes(f).map((r) => r.filter((_, i) => i !== 15))
+    expect(sansValidDate(formaterFec(apres, SANS_LETTRAGE))).toEqual(sansValidDate(formaterFec(avant, SANS_LETTRAGE)))
+    expect(sansValidDate(formaterFec(avant, SANS_LETTRAGE))).toEqual(sansValidDate(fec(brouillon, mode)))
+  })
+
+  it('le FEC d’un exercice validé se relit des colonnes que la validation fige, jamais de la composition', () => {
     const { brouillon } = jeu('engagement')
     // Une ligne d'une vente facturée validée sans ce que la validation fige ne se numérote pas, comme toute autre.
     const validee = { ...brouillon[0], statut: 'validee' as const, valide_le: '2026-01-20T10:00:00Z' }

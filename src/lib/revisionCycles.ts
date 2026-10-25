@@ -178,6 +178,10 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'ventes-hors-factures-a-verifier': 'recettes',
   // Un encaissement de facture qui attend son mouvement (étape VF5f) : le registre des ventes, que le relevé confirme.
   'encaissements-sans-mouvement': 'recettes',
+  // Les préalables de la validation d'un dossier basculé (étape VF7c) : un chèque, une carte ou un effet en cours au 511, et
+  // une vente facturée qui n'est pas écrite à jour — le registre des ventes et ce qu'il écrit.
+  'encaissements-en-cours': 'recettes',
+  'ventes-facturees-a-ecrire': 'recettes',
   // Les dépenses : les pièces, leurs écritures, leurs postes.
   'pieces-a-valider': 'depenses',
   'pieces-sans-date': 'depenses',
