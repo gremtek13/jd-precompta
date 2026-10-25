@@ -35168,3 +35168,225 @@ d'EC-Q3 (§ 3 et 17). Plan comptable général (règlement ANC n° 2014-03 conso
 `garder_transmission_encaissement`, `ecrire_vente_facturee`, `retirer_ecriture_vente_facturee`,
 `centimes_de_la_2035_validee`, `soldes_a_reporter`, `empreinte_exercice`, et les lignes de la frontière des fonctions du
 registre. Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées.
+
+### 25/10/2026 — LA FRONTIÈRE DES ENCAISSEMENTS, EN BASE — CHANTIER EC-Q3, VF7A (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF7a sur `8d80f16`, la branche locale `vf7a-frontiere`, en deux commits : la migration,
+le module, les tests et les essais ; puis cette documentation. Créés : la migration
+`supabase/schema/20261025120000_frontiere_des_encaissements.sql`, l'essai `supabase/essais/frontiereDesEncaissements.sql`
+(sur une réplique seulement). Modifiés : `encaissementsFactures.ts`, `mouvementsDesVentes.ts`, `ventesDeLaChecklist.ts`,
+`espaceVentes.ts` (un commentaire), `EncaissementsFactureModal.tsx` ; neuf fichiers de tests (`encaissementsFactures`,
+`encaissementsVenteFacturee`, `candidatsDuReleve`, `gestesDuCredit`, `ventesDeLaChecklist`, `espaceVentes`,
+`ecritureVenteFacturee`, `EncaissementsFactureModal`, `ChecklistTab`) ; cinq essais (`ventesFacturees.sql`,
+`encaissementsFactures.sql`, `ecrituresVentesFacturees.sql`, `validationExercice.sql`, `rls.sql`) ;
+`supabase/schema/README.md` ; CLAUDE.md. La migration est dans l'export sous une version PROVISOIRE, `20261025120000`,
+et n'est PAS appliquée : elle attend l'accord du cabinet. En production, des SELECT de comptes, du catalogue et
+d'empreintes de corps, aucune valeur, aucune écriture.)
+
+**LA DÉCISION.** La conception de VF7 (§ 3 a et b, § 5, § 7) : la frontière d'un exercice validé — son 31 décembre, et
+tout ce qui le précède — se tient EN BASE pour l'encaissement d'une facture SOURCE, par tout chemin, et le rattachement
+la juge sur le MOUVEMENT : le chèque remis le 31 décembre d'un exercice validé se rattache au crédit de janvier qui le
+paie, son écriture de l'exercice validé intacte (le 511), et celle du crédit solde le 511 (EC3-Q7). Rien d'autre.
+
+**CE QUE LA BASE FAISAIT.** La frontière n'était tenue que par les fonctions du registre et du relevé ; leur garde
+(`garder_encaissement_facture`, aux droits de l'appelant, sans le verrou de la validation) ne la connaissait pas : le
+propriétaire ou le rôle des Edge Functions, écrivant sans elles, pouvaient poser un encaissement dans un exercice validé,
+retirer celui qui y est daté, changer son compte de contrepartie, lui ajouter une part, citer un mouvement figé. Et
+`rattacher_mouvement_encaissement` refusait dès que l'ENCAISSEMENT était daté d'un exercice validé : l'en-cours du 511
+au 31 décembre ne se serait jamais soldé.
+
+**L'ÉTAT DE LA PRODUCTION, RELEVÉ LE 25/10/2026** (des comptes et des empreintes) : 148 migrations, `19c0e53c…`, sans
+`registre_virement_mixte` ni celle-ci ; le corps de `rattacher_mouvement_encaissement` est celui qu'elle exige
+(`5abd8919…`), son commentaire `cfb8690a…` ; aucun dossier basculé, aucune facture source, aucun encaissement ni aucune
+part, aucun exercice validé. La migration y est NEUTRE : aucun refus neuf ne peut s'y rencontrer.
+
+**LA MIGRATION** `frontiere_des_encaissements` (24 948 caractères, 25 351 octets, 368 lignes, md5
+`387889c034a62b5a63ce62102d295ab0`, ni barre oblique inverse ni retour chariot) :
+- Une garde d'abord : le corps de `rattacher_mouvement_encaissement` au caractère près (`5abd8919…`, celui
+  d'`encaissements_de_la_vente_facturee` ; les retours chariot d'un collage écartés), sinon un refus qui la nomme — une
+  seconde application se refuse de même. Elle ne lit ni ne touche les quatre fonctions de VF5h2 : elle s'applique avec
+  ou sans elle, éprouvé des deux façons.
+- `garder_frontiere_des_encaissements`, NEUVE (corps `d6f6c82b…`) : `security definer` comme `garder_mouvement_valide`
+  (le client « Ventes » ne lit pas `exercices_valides`), `search_path = public`, exécutée par aucun rôle de l'API
+  (`revoke` de `public`, `anon`, `authenticated` ; le rôle des Edge Functions la garde par les privilèges par défaut,
+  comme les autres gardes), sous le verrou partagé de la validation. Pour l'encaissement — ou la contre-passation — d'une
+  facture source seulement, en 23514, dans l'ordre de son texte : une part d'un encaissement figé, ni ajoutée, ni
+  changée, ni retirée (l'encaissement qu'elle quitte et celui qu'elle rejoint) ; un encaissement, une contre-passation à
+  sa propre date, qui naîtrait daté d'un exercice figé ; d'un encaissement qui en est daté, le retrait, le compte de
+  contrepartie, tout autre changement et la suppression — seul le rattachement, de nul à un mouvement et rien d'autre,
+  passe —, et le rattachement quand son écriture en changerait (ci-dessous) ; un mouvement figé cité, à la naissance ou
+  au rattachement. La suppression d'un dossier passe : pendant sa cascade, ses lignes ne voient déjà plus le dossier.
+  Elle n'écrit rien, et ni `anon` ni `authenticated` ne l'exécutent : l'advisor des fonctions `SECURITY DEFINER`
+  exécutables ne la relèvera pas.
+- Ses deux déclencheurs, `encaissements_factures_gardes_frontiere` et `encaissements_factures_taux_gardes_frontiere`,
+  `before insert or update or delete`.
+- `rattacher_mouvement_encaissement` (corps `a50f01fe…`) : la définition d'hier au caractère près, hors du rang 6 (sa
+  condition : daté d'un exercice figé, par compensation ou par un autre moyen seulement, sous ses mots d'hier) et du rang
+  9, NEUF (un mouvement daté d'un exercice figé, après le mouvement trouvé dans le dossier et avant le débit et le crédit,
+  sous l'exercice du MOUVEMENT) ; les rangs suivants avancent d'un cran (10 à 17) ; `create or replace` garde l'OID et
+  les droits ; son commentaire réécrit.
+- Les mots, ceux de la fonction qui fait le même geste quand elle existe : « L'exercice 2025 est validé : un
+  encaissement de cette facture ne s'y date plus. » (et « … une contre-passation ne s'y date plus. »), « … cet
+  encaissement ne se retire plus. », « … le compte de contrepartie de cet encaissement ne change plus. », « … cet
+  encaissement ne change plus. », « … cet encaissement ne se rattache plus à un mouvement. » (le rang 6 d'hier), « … ce
+  mouvement ne se cite plus. » (le rang 9, en 22023 ; la garde, en 23514), « … la répartition de cet encaissement ne
+  change plus. ».
+- Ce que le texte retire : rien. « delete » n'y paraît que dans `tg_op = 'DELETE'` et les événements des déclencheurs.
+  Si `apply_migration` attend pourtant une confirmation, le texte à coller est prêt
+  (`collage_frontiere_des_encaissements.sql`, 26 602 caractères, `cfb1ad91fc56567bcc2fbdc358e7157a`) : une transaction
+  qui vérifie sa propre empreinte (les fins de ligne Windows ramenées), refuse une seconde application, s'exécute — sa
+  garde exige le rattachement d'hier — et pose la ligne d'historique sous la version de l'heure du collage, au nom de
+  l'auteur d'`encaissements_de_la_vente_facturee`. Son retour arrière (`retour_frontiere_des_encaissements.sql`, 10 000
+  caractères, `b8afeeb3ac129b7e451c30f08dd15629`) retire les deux déclencheurs et la garde, rend la définition et le
+  commentaire d'hier du rattachement, et retire la ligne d'historique — deux `drop trigger`, un `drop function` et une
+  suppression dans l'historique, JAMAIS SANS L'ACCORD DU CABINET ; aucune donnée ne se perd, mais un encaissement
+  rattaché entre-temps à un mouvement d'après la frontière le reste ; il se refuse si la migration n'est pas dans
+  l'historique, ou si la garde ou le rattachement ne sont plus ceux qu'elle a posés. Tous deux dans le bloc-notes de la
+  session (`…/scratchpad/vf7a/collage/`).
+
+**TROIS ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- L'ORDRE DES DÉCLENCHEURS. La conception plaçait la garde de la frontière AVANT celle des encaissements
+  (`encaissements_factures_frontiere`) ; elle passe APRÈS (`…_gardes_frontiere`). Une insertion se juge par les
+  déclencheurs `before` AVANT la RLS (documentation de PostgreSQL, « CREATE POLICY » : les expressions `WITH CHECK`
+  s'appliquent après les déclencheurs `BEFORE`) ; la garde d'hier lit la facture aux droits de l'appelant et refuse qui
+  ne la voit pas, sans lui dire si elle existe ; une garde aux droits du propriétaire placée avant elle dirait à
+  n'importe quel compte — l'anonyme compris, qui a le droit d'insérer sur la table, la RLS jugeant après — qu'une facture
+  qu'il nomme est source et datée d'un exercice validé. `rls.sql` le prouve (FE5 : l'anonyme et un compte rattaché à rien
+  lisent le refus d'hier ; sa mutation M-FE3, la garde renommée pour passer avant : l'anonyme lit la raison de la
+  frontière). Le prix : une modification ou une suppression directe d'un encaissement figé bute d'abord sur la garde
+  d'hier, qui refuse toute modification hors des réglages de ses fonctions ; les règles de la frontière qu'elle masque
+  se jouent sur une réplique, ses deux gardes désactivées (`frontiereDesEncaissements.sql`), pour le jour où elle
+  changerait.
+- AUCUNE EXCEPTION POUR L'INSERTION DU SUPER-ADMINISTRATEUR. La restauration réinsère `exercices_valides` en DERNIER
+  (`ORDRE_RESTAURATION`, gardé par `sauvegarde.test.ts`) : tant qu'ils n'y sont pas, aucune frontière n'existe, et les
+  encaissements se réinsèrent comme d'autres lignes (`ventesFacturees.sql`, « 0. le jeu (VF7a) » : le super-administrateur
+  pose ses encaissements avant la validation) ; après, il bute sur la frontière (146c). Une exception ne servirait
+  qu'ailleurs, et sur ce projet le super-administrateur est aussi le chef du cabinet (« UN EXERCICE VALIDÉ SE FIGE EN
+  BASE », la migration `restauration_des_exercices_valides`) : elle lui rouvrirait la frontière.
+- LE RATTACHEMENT QUI CHANGERAIT UNE ÉCRITURE VALIDÉE reste refusé. La conception jugeait le rattachement sur le
+  mouvement « et non plus » sur l'encaissement ; or le compte de trésorerie d'un encaissement
+  (`ecrituresVentesFacturees.ts`) est la banque d'un mouvement de son jour, sinon le 511 (le 53 pour des espèces) — et,
+  sans mouvement, par compensation ou par un autre moyen, le compte de contrepartie choisi (VF4A-Q2) ; une
+  contre-passation sans mouvement défait son encaissement là où il a été écrit. Tout mouvement que la frontière laisse
+  citer est d'un autre jour qu'un encaissement figé : rattaché, celui-ci s'écrit au 511 (ou au 53), son écriture
+  inchangée — sauf par compensation ou par un autre moyen (le rang 6 garde ses mots, et la garde le refuse aussi), et sauf
+  la contre-passation figée dont l'encaissement cite un mouvement de son jour (sur la banque de ce mouvement, elle
+  passerait au 511). Ce dernier cas, la fonction le refuse plus tôt (le rang 16 : le mouvement de l'encaissement
+  contre-passé est classé, ce que la validation impose) ; la garde, pour une écriture directe (147f, 147g). La
+  contre-passation figée d'un chèque sans mouvement, elle, se rattache au débit d'après (147h, 187).
+
+**CE QUE LA GARDE NE JUGE PAS, ET QUI LE TIENT.**
+- Une ligne qui DEVIENDRAIT celle d'un exercice figé par une mise à jour — redatée, changée de facture ou de dossier : la
+  garde juge une mise à jour par la ligne qu'elle change. La garde des encaissements refuse déjà toute modification
+  autre que le retrait, le compte et le rattachement, sous les réglages de leurs fonctions — à tous, propriétaire
+  compris (« Un encaissement ne se modifie pas ») ; si elle s'assouplissait un jour, la règle de la ligne d'arrivée
+  viendrait avec.
+- La contre-passation sans mouvement, datée APRÈS la frontière, posée par une écriture directe sur un encaissement que
+  compte un mouvement figé (donc classé) : l'ouverture de VF5H2-Q1, que la fonction refuse (rang 20) et que la migration
+  de VF5H2-Q1 fermerait, pour tout mouvement classé.
+- Les déclarations du statut « Encaissée » (`transmissions_encaissements`) : hors de la frontière, comme la conception
+  l'a tranché (§ 7).
+
+**LE MODULE ET LES ÉCRANS.**
+- `encaissementsFactures.ts` : `REFUS_RATTACHEMENT` reçoit `mouvement_fige`, après `mouvement_hors_dossier` (22023) ;
+  `refusRattachement` juge le rang 6 sur `MOYENS_SUR_LEUR_CONTREPARTIE` (`compensation`, `autre`) et le rang 9 sur la
+  date du mouvement lu, sous l'exercice du mouvement ; ses encaissements portent leur moyen
+  (`EncaissementPourRattachement`). `REFUS_GARDE_FRONTIERE` redit les huit refus de la garde, dans l'ordre de son
+  texte, sous ses mots et son code. `rattachableApresLaFrontiere` désigne, côté cabinet, l'encaissement d'une facture
+  source sans mouvement, daté d'un exercice validé, qui se rattache encore (ni retiré, ni contre-passation, ni par
+  compensation ou par un autre moyen) ; jamais côté client, qui ne lit pas les exercices validés.
+- `mouvementsDesVentes.ts` : un tel encaissement reste candidat d'un crédit libre, et la contre-passation figée d'un
+  chèque sans mouvement, d'un débit libre (`candidatsDuMouvement`, par `refusRattachement`) ; la confirmation du
+  rattachement, sur la fiche du crédit, dit que l'écriture de l'encaissement ne change pas, et que celle du crédit
+  soldera les valeurs à l'encaissement (la caisse pour des espèces).
+- `ventesDeLaChecklist.ts` : le point des encaissements sans mouvement du relevé compte aussi ceux d'un exercice validé,
+  en « attention », et son détail dit qu'ils se rattachent encore.
+- `EncaissementsFactureModal.tsx` : sous la colonne « Mouvement », au cabinet seul, la phrase
+  `RATTACHEMENT_APRES_LA_FRONTIERE` pour un tel encaissement.
+- `espaceVentes.ts` : aucune réécriture — les mots de la garde, que les fonctions du client atteignent, ne nomment ni
+  le cabinet ni un onglet et ne vouvoient pas (`espaceVentes.test.ts` le garde).
+
+**LES PREUVES.**
+- La réplique : une copie à froid de celle de VF5h2 (PostgreSQL 16, UTF8), dans son propre répertoire de données, sur son
+  propre port (5577), arrêtée par son répertoire de données ; sa base égale à la production — `signature.sql`, les neuf
+  familles, et l'historique, 148, `19c0e53c…` — ; munie de `registre_virement_mixte` comme l'outil l'aurait fait (149,
+  `94ee888f…`), puis de la migration (150, `0a60d988…`) ; à part, la production munie de la seule migration (149,
+  `94eaf5ef…`). Trois familles changent, les mêmes des deux façons : les déclencheurs (67 → 69, `10f1a74a…` →
+  `e35f5430…`), les fonctions (197 → 198 : `99843aa9…` → `2d18305e…` après VF5h2, `d3d1a53e…` → `e2b8d636…` sans elle)
+  et leurs droits (197 → 198, `98e0d5c9…` → `44f208f9…`) ; les six autres gardent l'empreinte de la production. La
+  réplique ne porte que 21 des 134 commentaires de fonctions de la production, que `signature.sql` ne lit pas : le
+  commentaire que le retour arrière rend au rattachement se compare donc à la production même (`cfb8690a…`, égal).
+- Les essais, chacun sur une copie fraîche, sans puis avec la migration, VF5h2 en base des deux côtés.
+  `ventesFacturees.sql` : 272 verdicts (235 et trente-sept neufs) ; sans elle, 23 en faute — 105, 145c à 145h, 146 à
+  146e, 147 à 147d, 147f à 147h, 148 à 148c et 155, exactement — ; avec elle, 0, rien n'est resté, et les autres lignes
+  rendent ce qu'elles rendaient ; avec elle mais sans VF5h2, les douze de VF5h2 en faute (93b, 140 à 140c, 141, 141b,
+  142, 143b, 143c, 144 à 144c), et eux seuls ; en une requête comme l'outil, sans ses lignes de commentaire : 96 200
+  caractères, `58037c913afacf195babb11a4ef2c3d8`, 272 justes. `encaissementsFactures.sql` : 113 ; sans elle, 95 et 96
+  en faute ; avec, 0 (64 339 caractères, `f52635d7…`). `ecrituresVentesFacturees.sql` : 205 ; sans elle, 170 et 173 à
+  176 ; avec, 0 (89 884 caractères, `adff7a71…`). `validationExercice.sql`, en super-utilisateur et en une
+  transaction : 152 ; sans elle, 141 seul (41 déclencheurs) ; avec, 0 (43 déclencheurs ; 75 376 caractères,
+  `b24871a8…`). Ces quatre, avec la migration et sans VF5h2 : 0 en faute, hors des douze de VF5h2. Les cinquante autres
+  essais du dépôt, dont les dix du relevé semés du jeu de départ : identiques ligne à ligne des deux côtés, leurs fautes
+  connues comprises (`forfaitKilometrique.sql` 32, `ventesClient.sql` 0c, `reportDesSoldes.sql` hors du
+  super-utilisateur). `rls.sql` ENTIER, par psql : sans la migration, 47 lignes (la ligne FE « EN ATTENTE » de plus), 0
+  en faute, 43 mutations sur 43 ; avec elle, 52 lignes, 0 en faute, 46 mutations sur 46 (M-FE1 à M-FE3) — seules les
+  lignes FE diffèrent. `restauration.sql` (75 tables IDENTIQUES, 23 lignes), `logoDesFacturesSuppression.sql` (19) et
+  `reportDesSoldes.sql` (53, en super-utilisateur) : identiques des deux côtés — `restauration.sql` ne porte pas les
+  déclencheurs (son en-tête le dit) : la garde à la restauration se prouve par l'essai de son mécanisme (le jeu de R,
+  146c) et par l'ordre. `frontiereDesEncaissements.sql` (réplique seulement, les deux gardes d'hier désactivées le temps
+  de son bloc) : 13 verdicts ; sans la migration, 7 en faute (S1 à S4, S6 à S8) ; avec elle, 0, rien n'est resté, les
+  gardes d'hier actives ; de même sans VF5h2.
+- Quarante-six mutations de la migration (chaque clause de la garde, ses bornes `<=`, ses codes, ses mots, son verrou,
+  sa sécurité et son chemin, ses déclencheurs et leurs événements, l'ordre de leurs noms, ses droits ; le rang 6, le
+  rang 9, leur ordre, leur exercice ; sa garde de tête), chacune appliquée sur une copie fraîche puis jouée contre six
+  essais (`ventesFacturees.sql`, `encaissementsFactures.sql`, `ecrituresVentesFacturees.sql`,
+  `frontiereDesEncaissements.sql`, et, selon la clause, `validationExercice.sql` ou `rls.sql`) : quarante-deux tuées —
+  dont une empreinte changée (refusée sur la base d'aujourd'hui) et la garde de tête neutralisée (appliquée sur une base
+  dont le rattachement a changé, où la migration se refuse) ; `frontiereDesEncaissements.sql` seul en tue quatre — ;
+  quatre équivalentes, déclarées d'avance avec leur raison : le verrou partagé retiré, de la garde et du rattachement
+  (une session seule ne voit pas la concurrence), `tg_op = 'DELETE' or` retiré (pour une suppression, NEW est nul et la
+  comparaison suffit), `old.annule_id is not null and` retiré (un `annule_id` nul ne trouve aucun encaissement).
+- Le texte à coller, sur des copies fraîches : collé, la même signature que l'application par l'outil (neuf familles),
+  sa ligne d'historique rendant `387889c0…` ; collé deux fois, refusé la seconde ; altéré d'un caractère, refusé, rien
+  d'appliqué ; en fins de ligne Windows, appliqué, la même empreinte ; sans VF5h2, appliqué, la même signature que l'outil
+  sur la production seule. Le retour arrière : sur la base collée, la base d'avant (neuf familles ; 149, `94ee888f…`) ;
+  sans VF5h2, la production (148, `19c0e53c…`) ; refusé sans la migration ; refusé quand la garde a changé depuis.
+- Les trois contrôles de l'export : avec le fichier, sous sa version provisoire, 150 fichiers, `0a60d988…`, égale à
+  l'historique de la réplique munie des deux migrations à leurs versions provisoires ; le socle inchangé (80
+  instructions, `5d53eea2…`, des deux côtés) ; l'inventaire, 2 158 objets, `69c64886477e34f856b96508ce61a801`, des deux
+  côtés (2 155, `855735ea…`, sans elle) : la migration crée une fonction et deux déclencheurs.
+- Le TypeScript : les tests neufs et changés ROUGES d'abord — sur le module d'hier, 9 tests en faute dans six fichiers,
+  et deux fichiers (`encaissementsVenteFacturee.test.ts`, `espaceVentes.test.ts`) qui ne se chargent plus (ils lisent
+  `REFUS_GARDE_FRONTIERE`) ; sur le module, l'export et les essais d'hier, 10 dans sept fichiers, et les deux mêmes.
+  Vingt-trois mutations du module et de la fenêtre (chaque rang, sa condition, son ordre, ses mots, son code, la clause
+  du chèque figé, la confirmation de la fiche d'un crédit, la Checklist, la phrase de la fenêtre) : vingt-deux tuées,
+  une équivalente déclarée d'avance (la condition d'espace de la phrase : côté client, la fenêtre ne lit pas les
+  exercices validés, et `rattachableApresLaFrontiere` y rend toujours faux).
+- La suite comparée test par test, sous Paris : avant, l'arbre de `8d80f16` exporté, 14 317 tests justes
+  (`clesSupabase.test.ts`, qui lit la liste des fichiers suivis du dépôt, ne s'y charge pas) ; après, 466 fichiers et
+  14 357 tests justes ; quinze tests neufs (deux dans `candidatsDuReleve.test.ts`, deux dans
+  `encaissementsVenteFacturee.test.ts`, huit dans `espaceVentes.test.ts` — un par refus de la garde —, un dans chacun
+  de `ecritureVenteFacturee.test.ts`, `gestesDuCredit.test.ts` et `EncaissementsFactureModal.test.tsx`), un renommé
+  (`ventesDeLaChecklist.test.ts` : le chèque figé se compte encore), aucun verdict changé d'état ; les vingt-cinq de
+  `clesSupabase.test.ts`, qui se charge dans le dépôt.
+- La barrière, sous le Node 22.23.3 de la CI : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les 63 avertissements
+  d'avant (les mêmes, fichier et règle) ; `npm run test:fuseaux` 0, 466 fichiers et 14 357 tests justes sous chacun des
+  quatre fuseaux ; `npm run build` 0 (`index-DX-uK710.js`).
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) Présenter `frontiere_des_encaissements` au cabinet (une garde neuve et
+ses deux déclencheurs, le rattachement remplacé ; aucune donnée, aucune table, aucune policy) — après
+`registre_virement_mixte` ou sans elle ; sur son accord, l'appliquer par `apply_migration`, sous le nom
+`frontiere_des_encaissements`, le texte du fichier tel quel ; si l'outil attend une confirmation, donner le texte à
+coller dans le message final du tour. (2) Renommer le fichier sous la version de sa ligne d'historique, texte inchangé ;
+la ligne doit rendre `387889c034a62b5a63ce62102d295ab0` (fins de ligne ramenées à `\n`). (3) `signature.sql` en
+production : les déclencheurs (69, `e35f5430…`), les fonctions (198, `2d18305e…` après VF5h2, `e2b8d636…` sans elle)
+et leurs droits (198, `44f208f9…`) ; les six autres familles inchangées ; rejouer `ventesFacturees.sql` sans ses lignes
+de commentaire (96 200 caractères, `58037c91…` : 272 justes, rien ne reste) si la session le juge utile ; `rls.sql` n'y
+trouverait aucune policy changée. (4) Les trois contrôles de l'export, et leur passage au README, à la place du
+paragraphe des deux fichiers provisoires. (5) CLAUDE.md : la migration dite appliquée, sa version ; la ligne 28.65 de la
+feuille de route. (6) VF7b, qui dépend de VF7a.
+
+**LES QUESTIONS AU CABINET.** Aucune neuve : les trois écarts sont tranchés par ce qu'ils protègent (l'ordre des
+déclencheurs, la frontière du chef super-administrateur, une écriture validée), et les ouvertures qui restent relèvent de
+VF5H2-Q1, ouverte — la retenir fermerait aussi, pour un mouvement figé, l'insertion directe d'une contre-passation sans
+mouvement.

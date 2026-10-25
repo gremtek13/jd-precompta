@@ -125,8 +125,9 @@ supabase/
                   socle.py/.sql et inventaire.py/.sql (après chaque migration) ; signature.sql (réplique ↔
                   production) ; un essai par mécanisme, à rejouer après toute migration qui touche ses
                   fonctions, ses tables ou les contraintes de lignes_bancaires et ecritures_brouillon ;
-                  bornesStockage en lecture seule ; logoDesFacturesSuppression sur une réplique seulement ;
-                  validationExercice, liquidationTva et factures en UNE transaction (psql -1).
+                  bornesStockage en lecture seule ; logoDesFacturesSuppression et frontiereDesEncaissements
+                  sur une réplique seulement ; validationExercice, liquidationTva et factures en UNE
+                  transaction (psql -1).
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
   config.toml     le réglage verify_jwt de chaque Edge Function, et rien d'autre.
@@ -509,9 +510,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   l'encaissement d'une facture d'avant ne cite plus un virement mixte classé, ni ne se retire ou ne se contre-passe sans
   débit quand celui-ci le compte → « LES REFUS DU REGISTRE POUR LA FACTURE D'AVANT D'UN VIREMENT MIXTE ». VF7 conçue
   le 25/10/2026 (cinq lots, VF7a à VF7e, dont trois migrations ; question VF7-Q1) → « VF7, LA VALIDATION FIGE LA
-  SOURCE : LA CONCEPTION ». Restent VF7a à VF7e, VF8 et VF9 (EC3-Q9, la facture reprise, va à A8) ; « Ma banque »
-  nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la simulation recevra
-  dit aussi quelle pièce ignorer.
+  SOURCE : LA CONCEPTION ». VF7a PRÉPARÉE le 25/10/2026, pas appliquée — sa migration (`frontiere_des_encaissements`)
+  dans l'export à sa version provisoire, avec ou sans VF5h2 : une garde neuve tient la frontière pour l'encaissement d'une
+  facture source, par tout chemin, et le rattachement la juge sur le MOUVEMENT (le chèque du 31 décembre se rattache au
+  crédit de janvier) → « LA FRONTIÈRE DES ENCAISSEMENTS, EN BASE ». Restent VF7b à VF7e, VF8 et VF9 (EC3-Q9, la facture
+  reprise, va à A8) ; « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à
+  VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
