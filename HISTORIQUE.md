@@ -36479,3 +36479,62 @@ basculé par le super-administrateur sans date la garde nulle (la restauration r
 un dossier basculé. Le propriétaire ne baisse plus le réglage sous un accès « Ventes » : il retire d'abord le droit, par
 `changer_droits_acces` (190). Le retour arrière perd la date des bascules faites entre-temps. Le type de la colonne est
 FACULTATIF : VF8b la lira en distinguant l'absente de la nulle.
+
+### 25/10/2026 — LA FACTURE D'UN DOSSIER BASCULÉ, À L'ÉCRAN — CHANTIER EC-Q3, VF8C (LIGNE 28.65)
+
+(Écrite par l'agent dev de VF8c sur `cb82490` — `main` plus VF5h2, VF7a à VF7e, la conception de VF8 et VF8a, leurs
+migrations préparées et non appliquées —, la branche locale `vf8c-facture`, en deux commits : le code et les tests
+(`48989b5`), puis cette documentation. Aucune base : ni lue, ni écrite.)
+
+**CE QUE VF8C FAIT** (conception de VF8, § 3 c et § 5). Le formulaire d'une facture (`FactureFormModal.tsx`) et celui
+d'un avoir (`FactureAvoirModal.tsx`), dans les deux espaces, reçoivent la source des ventes du dossier, une propriété
+OBLIGATOIRE (`reglageDesVentes`), et disent avant le clic ce que la validation d'une facture source refuserait, par
+`refusValidationSource` elle-même, sur l'en-tête TEL QU'IL PART (la nature de `mentionsAEnregistrer`, la date saisie) :
+la nature absente, la facture mixte (« des biens et des services » reste offert et se dit refusé, EC3-Q8), la frontière
+d'un exercice validé — au cabinet ; chez le client, qui ne lit pas les exercices validés, la base la juge et l'écran le
+dit (`FRONTIERE_JUGEE_PAR_LA_BASE`, le patron d'`ANNEES_ILLISIBLES`). « Valider » se grise, le brouillon reste offert
+(la source ne se fixe qu'à la validation). La validation d'une facture source se confirme sous la phrase du module : elle
+comptera dans la comptabilité à ses encaissements (trésorerie) ou à sa date (engagement), sans reprise par le cabinet ;
+avec la confirmation d'une facture non transmissible, une seule fenêtre dit les deux. Un dossier qui n'a pas basculé ne
+change pas : aucun refus, aucun avis, aucune confirmation de plus.
+
+**LE MODULE** (`sourceDeLaVente.ts`, pur) : `reglageDesVentes` (la ligne du dossier et ses exercices → `non_bascule`,
+`bascule` avec le modèle comptable, ou `illisible` avec son motif ; un réglage qui n'est pas un booléen est illisible,
+jamais « pas basculé » ; basculé, le modèle comptable et les exercices doivent avoir été lus), `jugementDeLaValidation`
+(la source, le refus sous les mots de l'espace, l'avis, la confirmation), et ses phrases (`confirmationDeLaSource`,
+`phraseDeLAvoirDAvant`, `phraseDuReglageIllisible`, `FRONTIERE_NON_LUE_AU_CABINET`). `REECRITURES_CLIENT` reçoit les
+deux refus qui nomment « un dossier » ; la frontière n'atteint le client qu'après l'envoi, sous la phrase
+d'`exercice_fige`.
+
+**QUATRE ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- **L'avoir passe par `FactureAvoirModal`**, que la conception ne nommait pas : un avoir n'est jamais un brouillon, et ne
+  s'ouvre jamais dans `FactureFormModal`. L'avoir d'une facture source n'y rencontre que la frontière (il porte la nature
+  de sa facture) et se confirme (« il réduira cette vente ») ; celui d'une facture d'avant la bascule n'est pas source,
+  rien ne le refuse, et l'écran le dit (« se compte comme elle, par sa pièce »).
+- **Le réglage n'est pas relu par le formulaire** : il vient avec le dossier, lu par l'écran qui l'ouvre — au cabinet,
+  `DossierDetail` (la ligne entière et les exercices validés, lus EN ENTIER avant qu'aucun onglet se monte) ; chez le
+  client, `ClientVentes`, deux colonnes de plus dans la lecture de la société (`ventes_par_les_factures`,
+  `mode_comptable`, que « Ma simulation » lit déjà). Aucune requête neuve.
+- **Un réglage illisible retient la validation seule** : le brouillon reste offert, la base ne juge la source qu'à la
+  validation. La phrase le dit, avec son motif.
+- **La confirmation d'un avoir source** : la conception ne la disait que pour une facture ; un avoir source réduit la
+  vente de sa facture, et le dire avant ce geste irréversible coûte une fenêtre.
+
+**LES PREUVES.** Le module : 11 cas neufs (`sourceDeLaVente.test.ts`), chaque refus dans les deux espaces, les phrases
+du client sans aucune forme du cabinet (`motsDuCabinet`) ; `espaceVentes.test.ts` confronte les deux réécritures à
+`REFUS_VALIDATION_SOURCE`. L'écran : `FactureFormModalSource.test.tsx` (11 cas : non basculé inchangé dans les deux
+espaces, nature absente, mixte, frontière au cabinet, confirmation refusée puis acceptée, réglage illisible, et chez le
+client les refus réécrits, la frontière jugée par la base, la confirmation tutoyée), écrits avant le câblage (8 rouges, 3
+témoins verts) ; `FactureAvoirModal.test.tsx` (5 cas neufs, rouges sur le formulaire d'avant : l'avoir d'avant dans les
+deux espaces, la frontière d'un avoir source, sa confirmation chez le client, le réglage illisible) ;
+`ClientVentes.test.tsx` (2 : basculé, colonne absente) ; `DossierDetail.test.tsx` (1 : non basculé, basculé avec ses
+exercices, colonne absente). Les quatorze autres fichiers de tests passent `NON_BASCULE` (`src/test/factures.ts`).
+Mutations : 27, toutes tuées (12 du module et des réécritures, 6 du formulaire, 5 de l'avoir, 2 de chaque écran qui lit
+le réglage) — deux survivaient d'abord (un réglage non booléen accepté ; l'avis de l'avoir d'avant hors bascule) : le jeu
+d'essai était en cause, renforcé, elles meurent. La suite, test par test : 14 438 avant, 14 468 après (30 neufs, aucun
+disparu, aucun changé). Ni `index.css` ni la coque touchés : pas de banc.
+
+**CE QUE L'APPLICATION CHANGERA EN PRODUCTION.** Rien qui se voie : aucun dossier n'a basculé. Chez le client, la lecture
+de la société nomme deux colonnes de plus.
+
+**AUCUNE QUESTION AU CABINET.** **CE QUI RESTE** : VF8b, VF8d à VF8h, puis VF9 ; VF8b et VF8d attendent VF8a appliquée.

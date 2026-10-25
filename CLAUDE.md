@@ -530,8 +530,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   Q3) → « VF8, LA BASCULE : LA CONCEPTION ». VF8a PRÉPARÉE le 25/10/2026, pas appliquée (`reglage_des_ventes`, version
   provisoire, avec ou sans les quatre ; VF8-Q1 suivie sur sa recommandation) : depuis une session, le chef du cabinet
   seul pose ou baisse le réglage (la condition : `est_chef_du_cabinet(old.cabinet_id)`), un accès « Ventes » en retient
-  la baisse, la garde date la bascule (`ventes_par_les_factures_depuis`) → « LE RÉGLAGE DES VENTES, GARDÉ ». Restent
-  VF8b à VF8h et VF9 (EC3-Q9, la facture reprise, va à A8).
+  la baisse, la garde date la bascule (`ventes_par_les_factures_depuis`) → « LE RÉGLAGE DES VENTES, GARDÉ ». VF8c le
+  25/10/2026, à l'écran, neutre : facture et avoir, deux espaces, disent avant le clic les refus d'une facture source et
+  confirment sa validation (`jugementDeLaValidation`) → « LA FACTURE D'UN DOSSIER BASCULÉ, À L'ÉCRAN ». Restent VF8b,
+  VF8d à VF8h et VF9 (EC3-Q9, la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
