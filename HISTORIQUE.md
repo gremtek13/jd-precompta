@@ -36538,3 +36538,55 @@ disparu, aucun changé). Ni `index.css` ni la coque touchés : pas de banc.
 de la société nomme deux colonnes de plus.
 
 **AUCUNE QUESTION AU CABINET.** **CE QUI RESTE** : VF8b, VF8d à VF8h, puis VF9 ; VF8b et VF8d attendent VF8a appliquée.
+
+### 25/10/2026 — LE SÉLECTEUR D'EXERCICE ET LES FRAIS DE L'ESTIMATION — CHANTIER EC-Q3, VF8G (LIGNE 28.65)
+
+(Écrite par l'agent dev de VF8g sur `e41ba6b` — `main` plus la pile préparée d'EC-Q3, VF8c compris —, la branche locale
+`vf8g-selecteur`, en deux commits : le code et les tests (`faa3c72`), puis cette documentation. Aucune base : ni lue, ni
+écrite.)
+
+**CE QUE VF8G FAIT** (conception de VF8, § 3 g et § 5 ; la note de VF3b1 sur le sélecteur, celle des frais dans
+l'estimation laissée par « LA SITUATION INTERMÉDIAIRE COMPTE LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS »).
+
+- **Le sélecteur d'exercice** (`DossierDetail.tsx`) lit cinq collections au lieu de trois, dans la même vague, chacune
+  en entier par `lireTout` : les dates des factures et avoirs VALIDÉS SOURCES (`date_emission`, et `date_prestation`
+  quand elle existe — l'exigibilité de la TVA sur des biens, à la livraison), et celles de leurs encaissements non retirés
+  (`factures_emises!inner(source_de_la_vente)`, filtré en base). Une facture qui n'est pas source compte sa vente par sa
+  pièce, déjà lue ; un encaissement retiré ne compte nulle part (`ventesFacturees.ts`). Un dossier non basculé n'a aucune
+  facture source (la base le garde) : ces lectures ne lui ajoutent aucune année. Lues en partie, le motif de la première
+  qui manque, sous le bandeau d'aujourd'hui, qui nomme désormais « les dates des justificatifs, relevés, écritures,
+  factures et encaissements ».
+- **Le détail par poste de l'Estimation** compte les frais d'un mouvement d'encaissements de l'exercice du MOUVEMENT, au
+  poste de `categorieDesFraisBancaires`, exactement ce que `fraisDesMouvements` lit dans la composition — les fonctions
+  de la 2035 et de la situation, aucune règle recopiée ; positifs, comme le reste de ce détail ; aucune ligne à zéro.
+  `chargesParPostePourAnnee` reçoit le plan et `EcrituresDesVentesDeLa2035`, obligatoires, sans défaut, et ses
+  catégories entières (`Categorie`). Sans catégorie ou sans poste : sur aucune ligne, et `fraisSansPosteDeLAnnee` les
+  rend pour que l'écran le dise AVANT le clic, pour l'année saisie, par la ligne du Financement extraite en composant
+  (`components/FraisSansPosteNonComptes.tsx`, le texte au caractère près).
+- **L'onglet** reçoit `plan` et `ventesParLesFactures` de la page (obligatoires) ; basculé seulement, il lit
+  `lireLesSourcesDesEcrituresDeVente` dans le même `Promise.all`, et relit à la bascule ; `ecrituresDesVentesPourLa2035`
+  en tire l'état, comme Clôture et le Financement. Non basculé : `sans_bascule`, et le détail d'hier, que des ventes
+  facturées lues en partie ne suspendent toujours pas. Basculé, sources partielles, refusées ou qui ne se composent pas
+  (ou une facture source dans un dossier qui ne se dit pas basculé) : un bandeau propre (« Les écritures des ventes
+  facturées du dossier », tu quand celui des ventes parle déjà), une ligne sous les boutons, « Calculer le détail par
+  poste » grisé ; le chiffre d'affaires reste offert.
+
+**ÉCART À LA CONCEPTION.** Un seul, mineur : le sélecteur lit aussi la date de livraison d'une facture de biens, que le
+§ 3 g ne nomme pas (« les dates d'émission ») ; une CA3 de l'exercice d'une livraison doit pouvoir s'y choisir.
+
+**LES PREUVES.** La suite comparée test par test, sous Paris, avant (`e41ba6b`, 467 fichiers, 14 468 tests) et après
+(467 fichiers, 14 491 tests) : aucun verdict changé ni disparu, 23 tests neufs (le module 8, l'onglet 7, la page 5, le
+garde des écrans avant lecture 3, l'entrée « EstimationTab (basculé) »). Les tests d'avant ne reçoivent que les
+paramètres et les props (`PLAN_PAR_DEFAUT`, `sans_bascule`, catégories entières) ; une seule assertion change de sens :
+dans « sans les ventes facturées entières », l'onglet d'un dossier basculé grise désormais le détail par poste, car les
+sources de ses écritures relisent les mêmes tables et manquent avec elles. Rouges d'abord : les 8 du module sur
+l'ancien `estimation.ts`, 5 de l'onglet sur l'ancien `EstimationTab.tsx`, 3 de la page sur l'ancien `DossierDetail.tsx` (et le bandeau renommé)
+(les autres sont des gardes de filtres, éprouvées par mutation). Mutations : 33, 32 tuées (le module 10, la page 11,
+l'onglet 11) ; la survivante, `aria-busy` retiré du bouton : l'état « en attente » ne paraît que dans le rendu qui
+précède la relecture d'une bascule, où l'onglet est déjà « Chargement… » — le terme reste, défensif, comme au
+Financement. Lint : les 63 avertissements d'avant, identiques. La barrière est dans le rapport de l'agent.
+
+**CE QUE L'APPLICATION CHANGERA EN PRODUCTION.** Rien qui se voie : aucun dossier n'a basculé, aucune facture n'est
+source. Chaque page de dossier fait deux lectures de plus, vides.
+
+**AUCUNE QUESTION AU CABINET.** **CE QUI RESTE** : VF8b, VF8d à VF8f, VF8h, puis VF9.
