@@ -521,8 +521,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   aux mots de la base, le mouvement réservé, le virement sans mouvement et la vente pas écrite à jour → « LES PRÉALABLES
   DE LA VALIDATION DISENT LES VENTES FACTURÉES ». VF7d le 25/10/2026, à l'écran, neutre : une ligne de la 2035 compte
   ses encaissements (`nbEncaissements`), l'instantané validé passe à la version 2, la 1 se relit telle quelle (« — »,
-  jamais 0), et Clôture le dit poste par poste → « L'INSTANTANÉ VALIDÉ COMPTE SES ENCAISSEMENTS ». Restent VF7e, VF8 et
-  VF9 (EC3-Q9, la facture reprise, va à A8) ;
+  jamais 0), et Clôture le dit poste par poste → « L'INSTANTANÉ VALIDÉ COMPTE SES ENCAISSEMENTS ». VF7e PRÉPARÉE le
+  25/10/2026, pas appliquée (`gel_des_designations`, version provisoire ; VF7-Q1 suivie sur sa recommandation, (B)) : la
+  validation de l'exercice d'une facture source fige la désignation de son exemplaire, et une telle facture ne reçoit plus
+  qu'une première désignation, d'une pièce que rien ne marque (`v_deja_marquee`) → « LE GEL DES DÉSIGNATIONS ». Restent
+  VF8 et VF9 (EC3-Q9, la facture reprise, va à A8) ;
   « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la
   simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.

@@ -35818,3 +35818,213 @@ tant qu'aucun exercice basculé n'est validé.
 
 **CE QUI RESTE.** VF7e (le gel des désignations, VF7-Q1), et l'application des migrations de VF5h2, VF7a et VF7b sur
 l'accord du cabinet ; puis VF8 et VF9.
+
+### 25/10/2026 — LE GEL DES DÉSIGNATIONS — CHANTIER EC-Q3, VF7E (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF7e sur `b18462c` — `main` plus VF5h2, VF7a et VF7b préparées, VF7c et VF7d —, la
+branche locale `vf7e-gel`, en deux commits : la migration, le module, les tests et les essais ; puis cette
+documentation. Créée : la migration `supabase/schema/20261026090000_gel_des_designations.sql`. Modifiés :
+`exemplairesDesFactures.ts`, `marquesDeLaPiece.ts`, `marquesDeLaPieceLecture.ts`, `exemplairesDesFacturesEcran.ts`,
+`ExemplaireDeLaFacture.tsx` et leurs cinq fichiers de tests ; l'essai `exemplairesDesFactures.sql` ;
+`supabase/schema/README.md` ; CLAUDE.md. La migration est dans l'export sous une version PROVISOIRE, `20261026090000`,
+et n'est PAS appliquée : elle attend l'accord du cabinet. En production, des SELECT de comptes, du catalogue et
+d'empreintes de corps, aucune valeur, aucune écriture.)
+
+**LA DÉCISION.** La conception de VF7 (§ 3 f, § 5, § 6) : la validation de l'exercice d'une facture SOURCE fige la
+désignation de son exemplaire, qui ne porte jamais d'écriture (G4) et que le gel de la pièce ne figeait donc jamais.
+VF7-Q1, PAS ENCORE TRANCHÉE, écrite sur sa recommandation, l'option (B) : l'exemplaire d'une facture d'un exercice
+validé se désigne encore une PREMIÈRE fois — l'original d'une facture de décembre revenu de la plateforme après la
+validation, qui sans elle ne se validerait pas (G3) et ne pourrait que se supprimer —, mais aucune désignation ne s'y
+change ni ne s'y retire. « Première » : la pièce ne porte encore aucune marque, ni désignation ni déclaration (une
+déclaration est une marque de la même famille, que les quatre fonctions et le journal tiennent ensemble). LA CONDITION
+QUI PORTE VF7-Q1 est `v_deja_marquee` (en base) et `dejaMarquee` (dans le module), `v_piece.facture_id is not null or
+v_piece.vente_hors_des_factures` : l'option (A), tout se fige, la remplace par `true` ; l'option (C), rien ne se fige du
+côté de la facture, par `false`. Le côté de la pièce — défaire, remplacer ou déclarer une désignation que la validation
+fige — n'appartient pas à VF7-Q1 (conception, § 3 f, et VF6, § 7).
+
+**CE QUE LA BASE FAISAIT.** Les quatre fonctions du cabinet jugeaient le gel par `exercice_figeant_la_piece` seule, qui
+ne lit que les écritures validées de la pièce et du bien qu'elle justifie : l'exemplaire d'une facture source n'en a
+jamais. Joué sans la migration, l'essai neuf le montre : après la validation de 2024 et de 2025, la désignation de
+l'exemplaire d'une facture source figée se défaisait, se remplaçait et se déclarait (410, 411, 412, 415, 416, 432 à 434,
+438 : acceptés) ; une pièce déjà marquée — désignée à une facture d'un exercice ouvert, ou déclarée — devenait
+l'exemplaire d'une facture figée (421, 422, 423, 427) ; trois refus venaient d'ailleurs : « déjà l'exemplaire de cette
+facture » avant le gel (413), l'exercice du bien d'une pièce, 2025, quand la facture qu'elle désigne est figée par 2024
+(417), le pont avant le côté de la facture (421b) ; et le catalogue n'avait pas les deux fonctions (444 à 448).
+
+**L'ÉTAT DE LA PRODUCTION, RELEVÉ LE 25/10/2026** (des comptes et des empreintes) : 148 migrations, `19c0e53c…`, sans
+les trois préparées ni celle-ci ; les neuf familles de `signature.sql` égales au relevé de VF7b ; les quatre corps que
+la garde exige sont ceux de la production — `designer_exemplaire_facture` `d12b3a5e…`, `defaire_exemplaire_facture`
+`cb92d15c…`, `declarer_vente_hors_des_factures` `5d63a232…`, `retirer_declaration_hors_des_factures` `e08232d6…` (tous
+de `jumelle_inversee`) — ; `exercice_figeant_la_piece` `78624664…` ; aucun dossier basculé, aucune facture source, aucun
+exercice validé (donc aucune écriture validée), aucune pièce désignée ni déclarée, aucune ligne au journal. La migration
+y est NEUTRE : `exercice_figeant_la_facture_source` n'y rend rien, et les quatre fonctions y jugent comme hier.
+
+**LA MIGRATION** `gel_des_designations` (32 924 caractères, 33 643 octets, 493 lignes, md5
+`3a1cf57ac45fc9829a116126730c6502`, ni barre oblique inverse ni retour chariot) :
+- Une garde d'abord : les quatre corps de `jumelle_inversee` au caractère près (les retours chariot d'un collage
+  écartés), sinon un refus qui nomme la fonction ; une seconde application se refuse de même. Elle ne lit ni ne touche
+  les fonctions de VF5h2, VF7a et VF7b : elle s'applique avec ou sans elles, éprouvé des deux façons.
+- `exercice_figeant_la_facture_source(facture)`, NEUVE (corps `31016162…`) : le premier exercice validé du dossier qui
+  couvre la date d'émission d'une facture ou d'un avoir source — tout ce qui précède le premier exercice validé est figé
+  avec lui, le critère d'`exercice_fige` et de `fixer_source_de_la_vente` — ; nulle pour une facture qui n'est pas
+  source.
+- `exercice_figeant_la_designation(pièce)`, NEUVE (corps `538a7be3…`) : le plus ancien de celui de
+  `exercice_figeant_la_piece` et de celui de la facture source que la pièce désigne (`least`, qui écarte un nul).
+- Les deux, `language sql stable`, aux droits de l'appelant, exécutées par aucun rôle de l'API (`revoke` de `public`,
+  `anon`, `authenticated`) : seules les quatre fonctions du cabinet les lisent, en propriétaire, après leur contrôle
+  d'accès et sous le verrou partagé de la validation.
+- Les quatre fonctions REMPLACÉES, la définition de `jumelle_inversee` au caractère près — ses lignes sont une
+  sous-suite de la nouvelle, la ligne du gel lue comme la nouvelle — : à leur rang du gel (4 pour la désignation, 5 pour
+  les trois autres), `exercice_figeant_la_designation` au lieu d'`exercice_figeant_la_piece` ; quand l'exercice qui fige
+  n'est pas celui de la pièce, la facture se nomme — « Cette pièce est l'exemplaire de la facture F2024-0101, figée par
+  la validation de l'exercice 2024 : sa désignation ne change plus. » —, sinon les mots d'hier ; pour le retrait d'une
+  déclaration, la fonction lue change seule (une pièce déclarée ne désigne aucune facture). Et la désignation reçoit un
+  rang 7 bis, après le brouillon et avant le pont : une facture source figée ne reçoit pas une pièce déjà marquée — « La
+  facture F2025-0101 est figée par la validation de l'exercice 2025 : elle ne reçoit plus qu'une première désignation,
+  d'une pièce qui n'est encore ni l'exemplaire d'une facture ni déclarée — retirer d'abord sa désignation ou sa
+  déclaration (validée, la pièce se remet d'abord à valider). » (22023). `create or replace` garde les OID et les
+  droits ; trois commentaires réécrits (celui du retrait de la déclaration ne change pas).
+- Ce qui ne change pas : `exercice_figeant_la_piece` (la fiche d'un achat hors de France la lit aussi),
+  `garder_piece_validee`, les montants de l'exemplaire, la pièce déclarée (ses écritures validées la figent déjà), le
+  statut d'un exemplaire (remis à valider, G3 le rejuge), l'exemplaire d'une facture d'avant payé par un virement mixte
+  (l'écriture validée que VF5h lui écrit le fige). Aucune table, colonne, contrainte, policy ni déclencheur ; aucune
+  donnée ; ni `drop`, ni suppression, ni `grant`.
+- Si `apply_migration` attend pourtant une confirmation, le texte à coller est prêt (`collage_gel_des_designations.sql`,
+  34 517 caractères, 35 256 octets, `45c5cfc1ff5dea69901cb4e57cf04a4e`) : une transaction qui vérifie sa propre
+  empreinte (les fins de ligne Windows ramenées), refuse une seconde application, s'exécute — sa garde exige les quatre
+  corps — et pose la ligne d'historique sous la version de l'heure du collage, au nom de l'auteur de `jumelle_inversee`.
+  Son retour arrière (`retour_gel_des_designations.sql`, 23 259 caractères, 23 503 octets,
+  `71967032c2cf341f6192b4db95a5b892`) rend les quatre définitions et les trois commentaires de `jumelle_inversee`,
+  retire les deux fonctions et la ligne d'historique — deux `drop function` et une suppression dans l'historique, JAMAIS
+  SANS L'ACCORD DU CABINET ; aucune donnée ne se perd, mais la désignation de l'exemplaire d'une facture source
+  redevient modifiable après la validation ; il se refuse si la migration n'est pas dans l'historique, ou si l'une des
+  six fonctions n'est plus celle qu'elle a posée. Tous deux dans le bloc-notes de la session
+  (`…/scratchpad/vf7e/collage/`).
+
+**TROIS ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- DEUX FONCTIONS NEUVES, ET NON UNE. La conception nommait `exercice_figeant_la_designation(pièce)` ; le côté de la
+  facture juge l'exercice qui fige la facture CHOISIE, la même règle que celle qui fige la facture désignée. Écrite une
+  fois (`exercice_figeant_la_facture_source`), lue des deux côtés : deux copies d'une règle divergent en silence.
+- « PREMIÈRE DÉSIGNATION » LUE SUR LA PIÈCE, MARQUÉE OU NON. Désigner, remplacer une désignation d'un exercice ouvert ou
+  une déclaration ajoutent tous un exemplaire à la facture figée sans rien retirer d'un exercice arrêté (le rang 4 a
+  déjà refusé ce qui le serait) ; la lettre de (B) — une première désignation — ne laisse passer que la pièce que rien
+  ne marque. Écrite ainsi, fermée du côté sûr ; l'autre lecture se pose au cabinet (VF7E-Q1).
+- LE RANG 7 BIS AVANT LE PONT. La conception ne plaçait pas le côté de la facture ; il suit le rang 7 (une facture
+  source est validée) et précède le pont : une pièce marquée que son identité rattache à une autre facture s'entend dire
+  que la facture figée ne la reçoit pas, la cause la plus proche de son geste (421b, et la mutation O1 qui l'inverse).
+
+**LE MODULE ET L'ÉCRAN.**
+- `exemplairesDesFactures.ts` : `exerciceFigeantLaFactureSource` et `exerciceFigeantLaDesignation`, qui redisent les
+  deux fonctions sur ce que l'écran a lu ; `designation_figee` (rang 4 ou 5, avant les mots d'hier) dans les listes de
+  la désignation, du retrait et de la déclaration, `facture_figee` (7 bis) dans celle de la désignation, leurs mots et
+  leurs codes ; `ContexteDesMarques` reçoit `exercicesValides`, obligatoire, et ses factures leur date d'émission
+  (`FacturePourLesGestes`, à part de `FacturePourMarquer`, que les lots de VF6d lisent sans date).
+- `marquesDeLaPieceLecture.ts` : dans un dossier basculé seulement, les exercices validés du dossier, tout ou rien comme
+  le reste (« les exercices validés : … ») ; hors de lui, aucun (aucune facture n'y est source).
+- `exemplairesDesFacturesEcran.ts` et la section « Ce que cette pièce est » : une désignation figée se dit sous les mots
+  de la base, et aucun geste ne s'offre ; le choix dit d'une facture source figée qu'elle l'est (« — figée par la
+  validation de l'exercice 2025 », l'avoir accordé) ; à une pièce marquée, son refus se dit avant le clic ; à une pièce
+  que rien ne marque, la confirmation dit sa première désignation « aussitôt figée — elle ne se changera ni ne se
+  retirera » ; pour une autre facture source, que la désignation se fige à la validation de l'exercice de la facture.
+
+**LES PREUVES.**
+- La réplique : une copie à froid de celle de VF7b (PostgreSQL 16, UTF8), sur son propre port (5599), arrêtée par son
+  répertoire de données ; sa base égale à la production — `signature.sql`, les neuf familles, et l'historique, 148,
+  `19c0e53c…` — ; munie de VF5h2, VF7a et VF7b comme l'outil l'aurait fait (151, `cc768c5d…`, la signature de la
+  réplique de VF7b), puis de la migration (152, `1ea7ce64…`) ; à part, la production munie de la seule migration (149,
+  `4734a766…`). Deux familles changent, les mêmes des deux façons : les fonctions (200 → 202, `33d27039…` →
+  `5a4a4849…` ; seule, 197 → 199, `d3d1a53e…` → `8e8094be…`) et leurs droits (200 → 202, `8583d4e0…` → `f61b1cd0…` ;
+  seule, 197 → 199, `98e0d5c9…` → `2560a417…`) ; les sept autres gardent l'empreinte de la production.
+- `exemplairesDesFactures.sql`, étendu (400 à 451 : deux dossiers de plus, DG qui bascule et DN qui ne bascule pas,
+  leurs exercices validés et les écritures validées de trois pièces posés par la porte de la restauration ; chaque geste
+  avant, entre les écritures de la pièce et l'exercice de sa facture, puis après ; le plus ancien des deux exercices ;
+  le côté de la facture, un avoir et une facture d'avant le premier exercice validé compris ; la première désignation de
+  l'original revenu après la validation, aussitôt figée, puis validée ; un dossier qui n'a pas basculé ; les deux
+  fonctions, facture par facture et pièce par pièce ; le catalogue ; deux mutations) : 323 lignes de verdict ; sans la
+  migration, 21 en faute — 410 à 413, 415 à 417, 421, 421b, 422, 423, 427, 432 à 434, 438, 444 à 448, exactement — ;
+  avec elle, 0, rien n'est resté ; de même sur la production seule munie de la migration ; sans ses lignes de
+  commentaire, en une transaction : 139 077 caractères, `4b5da909da29030ddaab8ca412c8d980`, 323 justes. L'essai d'hier
+  (265 lignes) est juste des deux côtés. Les comptes de cette entrée sont des lignes de résultat : le résumé des essais
+  de la réplique, hérité, compte aussi la ligne d'en-tête de psql (324 pour 323) — d'où les « 266 justes » que l'en-tête
+  de l'essai et l'entrée de VF6b disent de ses 265 lignes ; les comptes d'autres entrées tirés du même résumé portent
+  sans doute le même un de trop.
+- `piecesHorsDeFrance.sql`, rejoué inchangé : 197 justes des deux côtés, et sur la production seule munie de la
+  migration. `validationExercice.sql`, en super-utilisateur et en une transaction : 151 justes des deux côtés,
+  identiques. Les cinquante-six autres essais du dépôt : identiques ligne à ligne des deux côtés, leurs fautes connues
+  comprises ; `reportDesSoldes.sql` (52), `recompositionDesVentes.sql` (8) et `logoDesFacturesSuppression.sql` (19), en
+  super-utilisateur : identiques. `rls.sql` ENTIER, par psql, en une transaction, sur la réplique munie des trois (151)
+  puis des quatre (152), le journal des désignations semé de trois lignes : 56 lignes d'invariants, 0 en faute, 48
+  mutations sur 48 qui mordent, des deux côtés, sorties identiques — la migration ne touche aucune policy, et ses deux
+  fonctions ne s'exécutent par aucun rôle de l'API.
+- `restauration.sql`, contre le dossier de VF7b semé de deux pièces de plus — l'une désignée exemplaire de F2025-0002
+  avant la validation de 2025, l'autre, l'original revenu après, désignée ensuite (sa première désignation) — :
+  IDENTIQUE, 75 tables, 56 lignes, le contrôle de la désignation 2 sur 2, la clé recopiée, des deux côtés.
+- Trente-trois mutations de la migration, chacune appliquée sur une copie fraîche puis jouée contre l'essai : trente et
+  une tuées (la garde de tête : une empreinte changée, refusée sur la base d'aujourd'hui, et neutralisée, appliquée sur
+  une base dont un corps a changé ; les clauses des deux fonctions — `>=`, `min`, la source, le dossier, `least` et
+  chacune de ses moitiés ; les rangs du gel des quatre fonctions — la fonction lue, la branche qui nomme la facture, un
+  mot ; la condition de VF7-Q1 à `true`, à `false`, chacune de ses moitiés ; au rang 7 bis, la fonction lue, la facture
+  nommée, le code ; l'ordre du 7 bis et du pont ; les droits, la sécurité, la volatilité) ; deux équivalentes, déclarées
+  d'avance avec leur raison : l'existence d'`exercice_figeant_la_piece` (la garde ne peut pas s'y lever) et le numéro lu
+  dans le dossier (le rang 6 l'a trouvé). Le retrait de la déclaration lisant le gel d'hier, équivalent par ce qu'il
+  juge (une pièce déclarée ne désigne rien), meurt par le catalogue (448) : son attendu, « survit », est corrigé.
+- Le TypeScript : les tests neufs ROUGES d'abord — sur le module d'hier, 24 tests en faute dans les cinq fichiers ; sur
+  le module, l'export et l'essai d'hier, 23 dans les cinq. Vingt-cinq mutations du module, de sa lecture, de ses mots et
+  de l'écran : vingt-quatre tuées ; une équivalente, déclarée d'avance (le retrait de la déclaration lisant
+  `anneeFigeante` : une pièce déclarée ne désigne aucune facture). Le rejeu de l'essai dans le module : 81 appels à la
+  désignation, 37 au retrait, 25 à la déclaration, 8 au retrait de la déclaration, chacun au mot près ; le gel du module
+  égal, facture par facture (444) et pièce par pièce (445), à ce que la base a rendu ; un exercice planté dans l'essai
+  (2023 pour 2024) fait tomber les sept contrôles qu'il change, et eux seuls.
+- Le texte à coller, sur des copies fraîches : collé, la même signature que l'application par l'outil (neuf familles),
+  sa ligne d'historique rendant `3a1cf57a…` ; collé deux fois, refusé la seconde ; altéré d'un caractère, refusé, rien
+  d'appliqué ; en fins de ligne Windows, appliqué, la même empreinte ; sur la production seule, appliqué, la même
+  signature que l'outil. Le retour arrière : sur la base collée, la base d'avant (neuf familles ; 151, `cc768c5d…`), les
+  trois commentaires rendus (ceux de la production) ; sur la production seule collée, la production (148, `19c0e53c…`) ;
+  refusé sans la migration ; refusé quand une fonction a changé depuis.
+- Les trois contrôles de l'export : avec le fichier, sous sa version provisoire, 152 fichiers, `1ea7ce64…`, égale à
+  l'historique de la réplique munie des quatre migrations à leurs versions provisoires ; le socle inchangé (80
+  instructions, `5d53eea2…`) ; l'inventaire, 2 162 objets, `c068c7d4bac17696dfe0c0ffd0a15cf7`, des deux côtés (2 160,
+  `0eab3cd7…`, sans elle) : deux fonctions de plus.
+- La suite comparée test par test, sous Paris : avant, l'arbre de `b18462c` exporté, 14 383 tests justes
+  (`clesSupabase.test.ts`, qui lit la liste des fichiers suivis du dépôt, ne s'y charge pas) ; après, 14 425 justes,
+  deux fois, la seconde sur les sources finales ; dix-sept tests neufs et deux renommés (la confrontation des quatre
+  fonctions au texte exporté, le contexte hors d'un dossier basculé), aucun verdict changé d'état ; les vingt-cinq de
+  `clesSupabase.test.ts`, qui se charge dans le dépôt.
+- La barrière, sous le Node 22.23.3 de la CI : sur la tête finale, après le commit de cette entrée — qui ne change que
+  de la documentation, qu'aucun test ne lit —, son résultat et son SHA sont au rapport de l'agent.
+
+**CE QUE L'APPLICATION CHANGERA EN PRODUCTION.** Rien qui se voie tant qu'aucun dossier n'a basculé : la fiche d'une
+pièce ne lit les exercices validés que dans un dossier basculé, et aucune facture n'est source. Appliquée, la migration
+change deux familles de `signature.sql` (ci-dessus) ; le socle et les policies, rien.
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) Présenter `gel_des_designations` au cabinet (deux fonctions neuves,
+quatre remplacées ; aucune donnée, aucune table, aucune policy), avec VF7-Q1 et VF7E-Q1 — après VF5h2, VF7a et VF7b, ou
+sans elles ; sur son accord, l'appliquer par `apply_migration`, sous le nom `gel_des_designations`, le texte du fichier
+tel quel ; si l'outil attend une confirmation, donner le texte à coller dans le message final du tour. Une autre réponse
+à VF7-Q1 change `v_deja_marquee` (A : `true` ; C : `false`) dans la migration et `dejaMarquee` dans le module, l'essai
+et ses tests avec eux, avant l'application. (2) Renommer le fichier sous la version de sa ligne d'historique, texte
+inchangé ; la ligne doit rendre `3a1cf57ac45fc9829a116126730c6502` (fins de ligne ramenées à `\n`). (3) `signature.sql`
+en production : les fonctions (202, `5a4a4849…`, après les quatre ; 199, `8e8094be…`, seule) et leurs droits (202,
+`f61b1cd0…` ; 199, `2560a417…`), les sept autres familles inchangées ; rejouer `exemplairesDesFactures.sql` sans ses
+lignes de commentaire (139 077 caractères, `4b5da909…` : 323 justes, rien ne reste) si la session le juge utile ;
+`rls.sql` n'y trouverait aucune policy changée. (4) Les trois contrôles de l'export, et leur passage au README. (5)
+CLAUDE.md : la migration dite appliquée, sa version ; la ligne 28.65 de la feuille de route. (6) VF8.
+
+**LES QUESTIONS AU CABINET.**
+- VF7-Q1 (ouverte, sur la page des arbitrages) : écrite sur sa recommandation, (B).
+- VF7E-Q1 — Une pièce déjà marquée peut-elle devenir, d'un seul geste, l'exemplaire d'une facture source figée ? Une
+  pièce désignée à une facture d'un exercice ouvert, ou déclarée vente hors des factures, que rien ne fige. Désigner,
+  pour elle, ajoute un exemplaire à la facture figée sans rien retirer d'un exercice arrêté ; mais c'est une désignation
+  qui CHANGE, que la lettre de (B) — une première désignation — refuse. Options : (A) non, comme écrit : la marque se
+  retire d'abord (une pièce validée se remet d'abord à valider), chaque geste au journal ; (B) oui pour une pièce
+  déclarée seulement (`v_deja_marquee := v_piece.facture_id is not null`) ; (C) oui dans les deux cas (`v_deja_marquee`
+  à `false` : l'option C de VF7-Q1 pour ce côté). Recommandé : (A) — le cas est rare (une pièce mal marquée dont la
+  bonne facture est dans un exercice arrêté), le chemin existe et chaque geste se lit au journal, et l'ouvrir ensuite ne
+  change qu'une condition ; son coût, trois ou quatre gestes au lieu d'un dans ce cas-là.
+
+**LES RISQUES.** La migration ne refuse rien en production tant qu'aucune facture n'est source. Après la première
+validation d'un dossier basculé, la désignation de l'exemplaire d'une facture figée ne se change ni ne se retire plus,
+pas même la pièce remise à valider : c'est le gel voulu ; une erreur découverte après relève de l'opération découverte
+après coup (ligne 26.6). Le retour arrière rouvre ce gel, sans perte de donnée. La sauvegarde ne change pas (aucune
+table, aucune colonne), et la restauration réinsère une pièce désignée par la porte du super-administrateur, que le gel
+ne regarde pas (les quatre fonctions seules le jugent).
