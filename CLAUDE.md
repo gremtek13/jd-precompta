@@ -499,10 +499,15 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   « Valider la sélection » et « Valider et rapprocher » écartent avant le clic ce que G3 refuserait, et ni les lots du
   relevé, ni la fiche d'un mouvement, ni le règlement groupé ne prennent l'exemplaire d'une facture source (G4) ; une
   proposition du client qui le cite se dit sous les mots de la garde → « LES LOTS ET LE RELEVÉ ÉCARTENT L'EXEMPLAIRE
-  D'UNE FACTURE SOURCE ». Restent VF5h2 (VF5H-Q2 : les refus du registre pour la facture d'avant d'un virement mixte
-  classé, une migration, avant la première bascule réelle), VF6e (avec lui, trois préalables qui jugent encore
-  l'exemplaire), puis VF7 à VF9 (EC3-Q9, la facture reprise, va à A8) ; « Ma banque » nomme la facture d'avant d'un
-  virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
+  D'UNE FACTURE SOURCE ». VF6e le 24/10/2026, neutre : le pont juge par régime (une facture source compte sa vente
+  elle-même : ses exemplaires ne la doublent pas, une pièce validée qui n'en est pas l'exemplaire, si), les marques
+  « Exemplaire de la facture … », « À désigner : c’est la facture … » et « Vente hors des factures de l’application », le
+  bilan d'un import, deux points d'attention (`exemplaires-a-designer`, le symptôme de VF6-Q4) ; `comptes-manquants`,
+  `postes-manquants` et `pieces-payees-en-trop` écartent l'exemplaire → « LE PONT, SES MARQUES ET LA CHECKLIST DEVANT LA
+  JUMELLE INVERSÉE ». Restent VF5h2 (VF5H-Q2 : les refus du registre pour la facture d'avant d'un virement mixte
+  classé, une migration, avant la première bascule réelle), puis VF7 à VF9 (EC3-Q9, la facture reprise, va à A8) ;
+  « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la
+  simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -865,7 +870,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Réception par la plateforme du client** : le point de reprise ne recule jamais → « LA RÉCEPTION PAR LA PLATEFORME DU
   CLIENT ». **La pièce jumelle** : une facture émise ne compte nulle part, sa vente entre par la pièce qui revient,
   marquée, jamais refusée ; le lien se DÉDUIT, jamais d'un montant, d'une date ni d'un nom → « UNE VENTE PEUT ENTRER
-  DEUX FOIS ». **L'exemplaire d'une facture** (`pieces.facture_id`) : la jumelle ou le PDF, DÉSIGNÉ par le cabinet seul
+  DEUX FOIS ». Le pont juge par RÉGIME (`RegimeDuPont`, la bascule et les sources en paramètres obligatoires) : une
+  facture source compte sa vente elle-même, et seule une pièce validée qui n'est pas son exemplaire la double ; dans un
+  dossier basculé, la pièce qu'il rattache sans désignation est « à désigner » → « LE PONT, SES MARQUES ET LA CHECKLIST
+  DEVANT LA JUMELLE INVERSÉE ». **L'exemplaire d'une facture** (`pieces.facture_id`) : la jumelle ou le PDF, DÉSIGNÉ par le cabinet seul
   (`designer_exemplaire_facture`, `defaire_exemplaire_facture`), sur une facture VALIDÉE du même dossier et une pièce de
   VENTE, figé avec la pièce ; la garde refuse toute autre écriture, sauf la restauration ; la quatrième preuve du pont,
   dite la première, sans faire taire les autres ; l'exemplaire d'une facture SOURCE ne compte plus (VF3b), celui d'une
