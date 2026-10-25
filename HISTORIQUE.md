@@ -34636,3 +34636,366 @@ coût des marques était déjà celui d'une recherche de facture par pièce.
 
 **CE QUI RESTE.** VF5h2 (VF5H-Q2, une migration, avant la première bascule réelle) ; puis VF7 à VF9. Aucune question nouvelle au
 cabinet.
+
+### 25/10/2026 — VF7, LA VALIDATION FIGE LA SOURCE : LA CONCEPTION — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(Conception de l'agent architecte, sur `f8a9eea` ; rien d'écrit, ni dans le code ni en base. Production lue le
+25/10/2026 en SELECT seulement : des comptes, le catalogue et le texte des fonctions (`pg_proc.prosrc`), aucune valeur.
+VF5h2 (« LES REFUS DU REGISTRE POUR LA FACTURE D'AVANT D'UN VIREMENT MIXTE », sur la branche de la session, sa migration
+`registre_virement_mixte` préparée et non appliquée) est tenue pour acquise. Lus avant d'écrire : la conception d'EC-Q3
+(§ 5, 7, 11, 14, 15), VF2, VF3b1, VF4b, VF4c1 à VF4c3, les frais d'un mouvement d'encaissements, la conception de VF5
+(§ 4 et 5), VF5b, VF5f, VF5h, VF5h2, la conception de VF6 (§ 3 et 7), VF6b, et toutes les notes « Pour VF7 » et
+« jusqu'à VF7 » de ces entrées (§ 4) ; `prealablesValidation.ts`, `validationExercice.ts`, `ClotureTab.tsx`,
+`pointsDeLaChecklist.ts`, `ventesDeLaChecklist.ts`, `encaissementsFactures.ts`, `mouvementsDesVentes.ts`,
+`ecrituresVentesFacturees.ts`, `ecrituresVentesFactureesEcran.ts`, `fec.ts`, `revueAnalytique.ts`. Sources au § 10.)
+
+#### 0. Le résumé
+
+1. Aujourd'hui, la validation d'un exercice qui porte des ventes facturées n'est refusée que PAR ACCIDENT, et pas
+   toujours : l'écran passe une composition vide à la numérotation, et une ligne d'une vente facturée devient « une
+   écriture que rien ne rattache ». Un exercice dont les ventes facturées n'ont AUCUNE écriture n'est retenu ni par
+   l'écran en engagement (aucune concordance n'y existe), ni, dans les deux modèles, par la base (§ 2). Latent : aucun
+   dossier n'a basculé.
+2. La frontière des encaissements n'est tenue que par les fonctions du registre ; leur garde ne la connaît pas, et
+   `rattacher_mouvement_encaissement` la juge sur la date de l'ENCAISSEMENT, ce qui interdit de rattacher en janvier le
+   chèque remis le 30 décembre d'un exercice validé — l'en-cours que porte le 511 (EC3-Q7) ne se solderait jamais (§ 2).
+3. VF7 fait trois choses en base (trois migrations ; aucune table, aucune colonne, aucune policy) : une garde de la
+   frontière des encaissements et le rattachement jugé sur le mouvement (VF7a) ; `valider_exercice` qui refuse les trois
+   manques de G5 — une vente facturée qui n'est pas écrite à jour, un mouvement réservé, un virement ou un prélèvement
+   sans son mouvement (VF7b) ; le gel de la désignation de l'exemplaire d'une facture source (VF7e).
+4. Et deux à l'écran : les préalables numérotent les lignes des ventes facturées et disent les manques sous leur nom
+   (VF7c) ; l'instantané validé de la 2035 compte ses encaissements (VF7d).
+5. Cinq lots, VF7a à VF7e, chacun neutre en production tant qu'aucun dossier n'a basculé. Une question au cabinet,
+   VF7-Q1 : l'exemplaire d'une facture d'un exercice validé peut-il encore se désigner ?
+
+#### 1. La mesure (production, 25/10/2026 ; des comptes)
+
+148 migrations, la dernière `jumelle_inversee` (`registre_virement_mixte` n'y est pas). Aucun dossier basculé, aucune
+facture source, aucun encaissement, aucun exercice validé, aucune pièce désignée ni déclarée, aucune ligne au journal des
+désignations, aucune écriture qui porte une facture ou un encaissement. Le rôle `authenticated` porte
+`statement_timeout = 8s` (`pg_roles.rolconfig`) : c'est le budget de `valider_exercice`, que le navigateur appelle.
+
+#### 2. Ce que font aujourd'hui la base et les écrans
+
+**La base** (`valider_exercice`, texte relu en production) : le chef du cabinet seul ; l'exercice clos, dans l'ordre,
+après l'ouverture ; aucune écriture antérieure proposée ; aucun mouvement `non_rapprochee` jusqu'au 31 décembre ; la 2035
+selon le modèle ; une numérotation qui couvre EXACTEMENT les écritures de l'exercice, journaux AC, VE, BQ, OD, chaque
+écriture équilibrée, d'une pièce et d'une date ; puis le statut « validée », les soldes à reporter, l'empreinte.
+Rien n'y nomme une vente facturée. Ce qui en tient lieu :
+- Un mouvement RÉSERVÉ (G2) est `non_rapprochee` et ne peut devenir ni ignoré ni classé autrement
+  (`garder_mouvement_reserve`, `mouvement_libre`) : il retient la validation sous les mots génériques « des mouvements
+  bancaires à traiter ». Juste, sous un nom qui ne dit pas quoi faire.
+- Une ligne PROPOSÉE d'une vente facturée doit être numérotée comme toute écriture ; G5
+  (`garder_lignes_de_la_vente_facturee`) laisse déjà la validation poser le statut et les colonnes de numérotation, et
+  `garder_ecritures_validees` fige ensuite la ligne : numéroter et figer ne demandent rien de plus en base.
+- Rien ne vérifie qu'une source a ses écritures, ni qu'elles sont à jour (R3 de VF4b), ni qu'un virement a son
+  mouvement.
+- La frontière d'un exercice validé est jugée, pour une facture source, par `enregistrer_encaissement`,
+  `retirer_encaissement`, `annuler_encaissement`, `rattacher_mouvement_encaissement`, `choisir_compte_contrepartie`,
+  `classer_mouvement_par_encaissements` et `retirer_classement_par_encaissements` (le texte de chacune) ; leur garde,
+  `garder_encaissement_facture` (aux droits de l'appelant, sans le verrou de la validation), ne la juge pas : une
+  écriture directe du propriétaire ou du rôle des Edge Functions la passe. Le rattachement est refusé dès que
+  l'ENCAISSEMENT est daté d'un exercice validé, quelle que soit la date du mouvement.
+- L'exemplaire d'une facture source ne porte jamais d'écriture (G4) : `exercice_figeant_la_piece`, qui ne lit que des
+  écritures validées, ne le fige jamais, et sa désignation reste modifiable après la validation de l'exercice de sa
+  facture (le rang du gel des quatre fonctions de VF6b ne le voit pas). `exercice_figeant_la_piece` sert aussi
+  `enregistrer_fiche_hors_de_france`, `retirer_fiche_hors_de_france` et `garder_fiche_hors_de_france` ;
+  `garder_piece_validee` en recopie la requête au lieu de l'appeler.
+
+**Les écrans** (`prealablesValidation.ts`, appelé par `ClotureTab.tsx`) : les préalables ne reçoivent des ventes
+facturées que les factures sources (VF6a) et les parts encaissées des virements mixtes (VF5h). La numérotation reçoit
+`[]` pour composition (le commentaire « SANS LES VENTES FACTURÉES, jusqu'à l'étape VF7 ») : toute ligne d'une vente
+facturée est hors numérotation, comptée sous `ecritures-orphelines` (« le reste d'une pièce supprimée », un message faux
+pour elle). En trésorerie, la concordance de la 2035 dit en écart une vente facturée non écrite, à réécrire ou à retirer,
+et les frais d'un mouvement d'encaissements (VF4c3) — bloquante. En engagement, rien : ni 2035 ni concordance. Les deux
+points de VF5f (`mouvements-reserves`, `encaissements-sans-mouvement`) restent en « attention », et
+`prealablesValidation.test.ts` les tient pour écartés ; un mouvement réservé compte parmi `mouvements-a-traiter`.
+`anneesActives` (l'exercice qui se valide d'abord) ignore les dates des ventes facturées. L'instantané de la 2035 porte
+`nbPieces` et `nbMouvements` par poste, pas d'encaissements (VF3b1).
+
+En somme : fermée du côté sûr quand une ligne de vente facturée existe ; OUVERTE quand aucune n'a été écrite — en
+engagement toujours, en trésorerie pour la TVA d'une facture de biens ou sur les débits (411 et 44571, hors du résultat,
+que la concordance ne compare pas).
+
+#### 3. Ce que VF7 doit faire, point par point
+
+- **(a) La frontière des encaissements, en base** (conception d'EC-Q3, § 11 ; VF2 : « la frontière dans les fonctions
+  (sa garde est VF7) »). Une garde NEUVE, `garder_frontiere_des_encaissements`, `SECURITY DEFINER` comme
+  `garder_mouvement_valide` (le client « Ventes » ne lit pas `exercices_valides` : une garde à ses droits ne verrait pas
+  la frontière), sous le verrou partagé de la validation, avant l'insertion ou la mise à jour d'un encaissement d'une
+  facture SOURCE : naître daté d'un exercice validé (une contre-passation, à sa propre date) ; se retirer, ou changer de
+  compte de contrepartie, s'il en est daté ; se rattacher à un mouvement qui en est daté. La même garde sur
+  `encaissements_factures_taux` : une part ne s'ajoute pas à un encaissement figé. Exceptions : l'insertion du
+  super-administrateur (la restauration réinsère un état déjà gardé), la suppression d'un dossier. Une garde à part
+  plutôt qu'un remplacement de `garder_encaissement_facture` : VF5h2, et VF5H2-Q1 si le cabinet la retient, remplacent
+  cette fonction-là, et deux chantiers ne se disputent pas un corps. Les déclencheurs s'exécutent dans l'ordre de leur
+  nom : `encaissements_factures_frontiere` passe avant `encaissements_factures_gardes`.
+- **(b) Le rattachement jugé sur le mouvement** (conception § 5 et EC3-Q7 : un encaissement que cite un mouvement d'un
+  autre jour s'écrit au 511, et son écriture ne change pas quand il se rattache — `ecrituresVentesFacturees.ts`, « le même
+  jour » ou le 511). `rattacher_mouvement_encaissement` refuse un MOUVEMENT daté d'un exercice validé, et non plus un
+  encaissement : le chèque remis le 30 décembre d'un exercice validé se rattache en janvier, et le mouvement de janvier
+  solde le 511 (le 512 au débit, le 511 au crédit, le 627 de l'écart). Rien de l'exercice validé ne change. Le module
+  (`refusRattachement`) et les candidats du relevé (`candidatsDuMouvement` : un encaissement sans mouvement figé reste
+  candidat d'un crédit libre) suivent ; la Checklist (`ventesDeLaChecklist`, `sansMouvement`) dit encore un chèque figé
+  qui attend son mouvement, en « attention ».
+- **(c) `valider_exercice` refuse les trois manques de G5** (conception § 7 et § 11 ; VF4b, R3). Pour un dossier basculé,
+  dans cet ordre, avant la numérotation :
+  1. un mouvement RÉSERVÉ daté jusqu'au 31 décembre, sous son nom (« réservé à l'encaissement de la facture … : le
+     classer par ses encaissements avant la validation »), AVANT les mouvements à traiter ;
+  2. un encaissement vivant d'une facture source (ni retiré, ni annulé par une contre-passation sans mouvement), par
+     VIREMENT ou PRÉLÈVEMENT, daté jusqu'au 31 décembre, sans mouvement : il manque au relevé, ou n'y est pas rattaché ;
+  3. une SOURCE (facture, avoir, encaissement, mouvement classé par ses encaissements) dont ce qui s'écrit entre la
+     frontière et le 31 décembre n'est pas EXACTEMENT ce qui est proposé — recomposée par
+     `ecriture_attendue_vente_facturee`, comparée en multiensemble sous la forme de `ecrire_vente_facturee`
+     (`date|compte|sens|centimes|mouvement`) aux lignes proposées de la source : à écrire, à réécrire, à retirer ; ou
+     dont la composition rend un motif (« ne s'écrit pas » : le compte à choisir ou refusé, un mouvement pas classé ou
+     hors de l'écart des frais, une vente ÉCARTÉE) quand l'une de ses dates tombe dans cette période. La fenêtre part de
+     la frontière, pas du 1er janvier : un premier exercice validé sans que le précédent l'ait été (l'ordre que seul
+     l'écran impose, `exercice-anterieur-d-abord`) ne fige pas un manque d'avant.
+  Le calcul vit dans une fonction à part, `ventes_facturees_de_l_exercice(dossier, annee)` (exécutable par personne,
+  comme les `garder_*`), qui rend chaque source en défaut avec son état ; l'essai la lit, la validation refuse la
+  première. Les chèques, cartes et effets sans mouvement ne retiennent pas (le 511 du 31 décembre, EC3-Q7).
+- **(d) La numérotation et les préalables, à l'écran** (VF4c2 : « numéroter et figer ces lignes à la validation, les
+  préalables du § 11, et le message « écritures orphelines » » ; VF4c3 ; VF5f ; VF5a2). `prealablesDeValidation`
+  reçoit, obligatoires et sans valeur par défaut, les états de la section « Ventes facturées » (`etatsDesVentesFacturees`,
+  sur la lecture que Clôture fait déjà, `lireLesSourcesDesEcrituresDeVente`) et la lecture de la Vue d'ensemble
+  (`ventesDeLaChecklist`) ; la numérotation reçoit la composition (le paramètre `ventesFacturees` de `numeroterFec`), et
+  les lignes rattachées (`rattachementDesVentes`) y prennent le journal, la pièce et l'auxiliaire du FEC — le FEC d'après
+  la validation est celui d'avant, ValidDate près. Préalables neufs, aux mots de la base et dans son ordre :
+  `mouvements-reserves` (retiré du compte de `mouvements-a-traiter`), `encaissements-sans-mouvement` (bloquant pour un
+  virement ou un prélèvement ; un AVERTISSEMENT nommé pour un chèque, une carte ou un effet : un en-cours au 31 décembre,
+  au 511), `ventes-facturees-a-ecrire` (à écrire, à réécrire, à retirer, ne s'écrit pas, chacune nommée, avec un renvoi à
+  la section). `ecritures-orphelines` ne compte plus une ligne qui porte une facture ou un encaissement
+  (`porteUneSourceDeVente`), ni celle d'un mouvement que ses encaissements classent (`ligneDUneVenteFacturee`) : elles
+  vont à `ventes-facturees-a-ecrire`. `anneesActives` apprend les dates des ventes facturées (émission des factures et
+  avoirs sources, encaissements, mouvements classés) : un exercice qui n'a qu'elles se valide d'abord. Les deux points de
+  VF5f restent en « attention » dans la Checklist ; les préalables les reprennent, comme ils reprennent les mouvements à
+  traiter.
+- **(e) L'instantané validé** (§ 11 : `nbEncaissements` ; VF3b1 ; les frais d'un mouvement d'encaissements : « le compte
+  de mouvements du poste « Frais financiers » inclut ces mouvements ; l'instantané validé le gardera »). Une ligne de la
+  2035 compte ses encaissements (`nbEncaissements`, dans `declaration2035.ts` et `cases2035.ts`) ; l'instantané passe à
+  la `version: 2`, qui la porte ; `lireInstantane2035` relit la version 1 telle quelle (le nombre absent se dit « — »,
+  jamais un zéro deviné) et la 2 ; `centimes_de_la_2035_validee` et `lireLa2035Validee` ne lisent ni la version ni les
+  nombres, et ne changent pas. Les frais : le `nbMouvements` du poste des frais compte déjà ces mouvements ; un test le
+  garde dans l'instantané.
+- **(f) Le gel des désignations** (§ 11 ; conception de VF6, § 7 ; VF6b : « VF7 : sans le gel… » ; `virement_mixte` :
+  « la validation figera les désignations »). Une fonction NEUVE, `exercice_figeant_la_designation(piece)` : le plus
+  ancien exercice validé parmi celui de `exercice_figeant_la_piece` et celui de la date d'émission de la facture SOURCE
+  que la pièce désigne, si une validation le couvre. Les quatre fonctions du cabinet (`designer_exemplaire_facture`,
+  `defaire_exemplaire_facture`, `declarer_vente_hors_des_factures`, `retirer_declaration_hors_des_factures`) l'appellent
+  à leur rang du gel, au lieu de `exercice_figeant_la_piece`. Écartée : apprendre la règle à `exercice_figeant_la_piece`
+  elle-même (la lettre du § 7 de VF6) — elle sert aussi la fiche d'un achat hors de France, que la désignation d'une vente
+  ne regarde pas. Le CÔTÉ D'EN FACE (« Un contrôle qui part d'un côté d'une relation ne voit pas l'autre ») : désigner À
+  une facture source figée, selon VF7-Q1. Ni `garder_piece_validee` ni les montants de l'exemplaire ne changent : ils ne
+  comptent nulle part, seul ce que la pièce EST se fige. La pièce DÉCLARÉE vente hors des factures compte, et ses
+  écritures validées la figent déjà. L'exemplaire d'une facture d'AVANT payé par un virement mixte est figé par
+  l'écriture validée que VF5h lui écrit, et VF5H-Q1 le tient tant que le mouvement est classé — un mouvement d'un
+  exercice validé ne se déclasse plus.
+- **(g) La restauration** (conception § 15 ; § 14 : `restauration.sql`). Aucune table neuve : la sauvegarde ne change
+  pas. Les gardes neuves laissent passer l'insertion du super-administrateur ; `garder_ecritures_validees` admet déjà des
+  écritures validées réinsérées avant `exercices_valides`. À PROUVER sur une réplique : un dossier basculé semé d'un
+  exercice validé qui porte des lignes de ventes facturées, d'un chèque rattaché après la frontière et d'un exemplaire
+  désigné et figé se restaure à l'identique.
+
+#### 4. Les notes « Pour VF7 » et « jusqu'à VF7 », une par une
+
+- VF2 — la garde de la frontière : (a), VF7a.
+- VF3b1 — une vente facturée écartée ne retient pas la validation, « VF7 dira sur quel exercice » : chaque exercice où
+  tombe l'une de ses dates — émission de la facture ou d'un avoir, encaissement (c3, VF7b ; `ventes-facturees-a-ecrire`,
+  VF7c). Ses remèdes existent (retirer ou contre-passer l'encaissement illisible) ; une facture source sans nature ne se
+  valide pas depuis VF2.
+- VF3b1 — `nbEncaissements` et l'instantané : (e), VF7d.
+- VF3b1 — « un exemplaire sans aucune date ne se dit dans aucun exercice » : ÉCARTÉE, déjà tenue — `pieces-sans-date`
+  retient toute validation tant qu'une pièce des deux piles n'a pas de date.
+- VF3b1 — le sélecteur d'exercice de la page, qui ne propose pas une année d'encaissements seuls : à VF8 (un écran ; la
+  validation la nomme déjà d'un clic par `exercice`, que VF7c fait paraître par `anneesActives`).
+- VF3b1 — le poste des ventes facturées distinct de « Recettes » dans la revue analytique : ÉCARTÉE, sans rapport avec la
+  validation (deux lignes, toutes deux en case AA ; l'instantané les garde telles).
+- VF4b, R3 — les écritures périmées que « VF7 refusera » : (c3), VF7b, et (d), VF7c.
+- VF4c1 — la source « validée » sans écriture, « un manque que VF7 refusera » : (c3) le rend inatteignable par
+  l'application ; l'état reste en témoin à l'écran. « Un encaissement retiré dans un exercice validé ne se juge que par
+  ses lignes validées » : (a) interdit ce retrait, même par une écriture directe.
+- VF4c2 — numéroter et figer, les préalables du § 11, le message « écritures orphelines » : (d), VF7c ; figer est déjà
+  tenu en base (§ 2).
+- VF4c2 — « les préalables reçoivent une composition VIDE jusqu'à VF7 » : (d), VF7c ; les deux tests qui le disent
+  (`ventesFactureesDesExports.test.ts`) se réécrivent.
+- VF4c3 — « la concordance d'un exercice sera alors bloquante pour les frais » : elle l'est déjà (`concordance` compte
+  tous les écarts, le motif `frais_d_encaissements` compris) ; VF7c le prouve sur un exercice numéroté, et (c3) le tient
+  en base par la source « mouvement », qui porte le 627.
+- VF4c3 — la règle de la CA3 tenue par l'écran seul (`enregistrer_declaration_tva` ne lit pas le brouillon) : ÉCARTÉE de
+  VF7, sans lien avec la validation de l'exercice ; l'avertissement `periodes-tva-non-declarees` dit une période non
+  déclarée avant le clic.
+- Les frais d'un mouvement d'encaissements — « l'instantané validé le gardera » : (e), VF7d.
+- VF5a2 — un mouvement réservé compté parmi `mouvements-a-traiter`, « VF7 le dira sous son nom » : (c1), VF7b, et (d),
+  VF7c.
+- VF5b, conception de VF5 § 7 — le geste qui rendrait un mouvement inclassable, « dit et non refusé, à revoir avec
+  VF7 » : ÉCARTÉE, il reste dit et non refusé. Le registre enregistre un fait (un paiement reçu) ; le refuser obligerait à
+  taire un encaissement réel pour garder un mouvement classable. Ce qu'il coûte ne se fige jamais : le mouvement réservé
+  non classé retient la validation (c1), sous son nom.
+- VF5f — les deux points « que VF7 rendra préalables », et le test qui « tombe et se réécrit avec elle » : (c1), (c2),
+  (d), VF7b et VF7c.
+- VF5h, `virement_mixte` — « la validation figera les désignations » : (f), VF7e ; déjà tenu pour la facture d'avant.
+- VF5H-Q1 — « écarté : attendre VF7, où la validation figera les désignations d'un exercice validé seulement » : tranchée
+  (le refus pendant le classement, écrit par VF6b) ; VF7 n'y revient pas.
+- VF6, § 7, et VF6b — le gel de l'exemplaire d'une facture source : (f), VF7e, et VF7-Q1.
+- EC-Q3, § 11 — « une facture source datée avant la frontière ne se valide plus » : déjà tenu (`fixer_source_de_la_vente`,
+  VF2) ; « leurs rattachements datés jusqu'à la frontière » : (a) et (b), avec la correction du chèque.
+- EC-Q3, § 14 — les preuves de VF7 (`validationExercice.sql`, `restauration.sql`, `prealablesValidation.test.ts`) : au
+  § 5, lot par lot.
+
+#### 5. Le découpage
+
+Chaque lot est NEUTRE en production : aucun dossier n'a basculé (aucune source, aucun encaissement, aucun mouvement
+réservé), aucun exercice n'est validé (aucune frontière). Chaque migration vérifie d'abord le corps de ce qu'elle
+remplace (l'empreinte de `prosrc`, le patron de VF6b et de VF5h2) et s'arrête si un autre chantier l'a changé ; aucune
+ne supprime de donnée, de table, de colonne ni de policy. Chaque refus neuf vit dans le module qui redit la base,
+confronté au texte exporté et à l'essai (ordre, mots, codes, une dérive plantée).
+
+- **VF7a — La frontière des encaissements, en base.** Migration `frontiere_des_encaissements` : la garde
+  `garder_frontiere_des_encaissements` et ses deux déclencheurs (`encaissements_factures`, `encaissements_factures_taux`),
+  `rattacher_mouvement_encaissement` remplacée (la frontière sur le mouvement) ; aucun `drop` ; collée par le cabinet si
+  `apply_migration` retient le texte (le patron de VF4b). Fichiers : la migration dans l'export, `encaissementsFactures.ts`
+  (`refusRattachement`, la garde et ses mots), `mouvementsDesVentes.ts` (`candidatsDuMouvement`),
+  `ventesDeLaChecklist.ts`, les réécritures du client (`REECRITURES_CLIENT`, pour la garde atteinte par ses fonctions),
+  `EncaissementsFactureModal.tsx` et la fiche d'un crédit (le rattachement offert pour un chèque figé),
+  `supabase/schema/README.md`. Preuves : `encaissementsFactures.sql` et `ventesFacturees.sql` étendus (chaque écriture
+  directe refusée à la frontière, par le propriétaire et par le rôle des Edge Functions ; l'insertion du
+  super-administrateur admise ; le chèque du 30 décembre rattaché au crédit de janvier, l'écriture de l'exercice validé
+  intacte et celle du mouvement de janvier composée) ; `ecrituresVentesFacturees.sql` ; `validationExercice.sql` en une
+  transaction (son contrôle 141 compte deux déclencheurs de plus) ; `restauration.sql` sur une réplique ; `rls.sql`
+  ENTIER (l'écriture d'un client « Ventes » refusée à la frontière, avec sa raison) ; `signature.sql` ; les trois
+  contrôles de l'export ; les mutations de la migration et du module ; la suite comparée test par test. Agent :
+  architecte, effort maximal. Dépend de : rien (indépendant de VF5h2 par construction) ; avant VF7b.
+- **VF7b — `valider_exercice` refuse les manques de G5.** Migration `validation_des_ventes_facturees` :
+  `ventes_facturees_de_l_exercice` neuve, `valider_exercice` remplacée (ses refus d'hier au caractère près, trois de plus,
+  § 3 c, avant la numérotation). Fichiers : la migration, `prealablesValidation.ts` (la partie « ce que la base
+  refusera » : ses mots seulement, l'écran les branche en VF7c), `validationExercice.sql`, `ventesFacturees.sql`,
+  `ecrituresVentesFacturees.sql`, `restauration.sql`. Preuves : chaque refus sur un dossier basculé jetable (un réservé ;
+  un virement, un prélèvement sans mouvement ; un chèque qui ne retient pas ; une source à écrire, à réécrire, à retirer,
+  écartée, au compte à choisir ; une source d'avant la frontière ignorée ; un premier exercice qui ne fige pas un manque
+  d'avant), puis l'exercice validé, ses lignes numérotées et figées, l'écriture et le retrait refusés ensuite ; la
+  restauration d'un tel dossier, à l'identique ; LE TEMPS : `valider_exercice` mesurée sur une réplique, sur un dossier
+  fictif de trois mille encaissements et mille factures sources, sous le rôle `authenticated` et ses huit secondes — la
+  recomposition se fait facture par facture (une fois `calcul_vente_facturee` par facture, non par source) ; au-delà
+  d'une seconde, le lot s'arrête et le dit. Mutations, `signature.sql`, les trois contrôles. Agent : architecte, effort
+  maximal. Dépend de : VF7a.
+- **VF7c — Les préalables et la numérotation.** § 3 d. Fichiers : `prealablesValidation.ts` (deux entrées obligatoires,
+  trois préalables, `ecritures-orphelines` resserré, `anneesActives`), `ClotureTab.tsx` (la lecture qu'il fait déjà,
+  composée et passée ; partielle ou incohérente, la validation se suspend sous `lecture-partielle`),
+  `ventesFactureesDesExports.test.ts`, `prealablesValidation.test.ts` (le test de VF5f réécrit : les deux points repris),
+  `dossierBasculeBoutEnBout.test.ts` (composer, écrire, numéroter : la demande de validation couvre toutes les écritures
+  de l'exercice, chacune équilibrée, d'une pièce et d'une date, aux règles de la base rejouées ; le FEC identique avant
+  et après), `ClotureTab.test.tsx`, `ecransAvantLecture.test.tsx`. Avant d'importer le module d'écran des ventes
+  facturées dans `prealablesValidation.ts`, vérifier `ventesFactureesEcrituresCabinetSeul.test.ts` (un module atteint par
+  l'espace du client ne l'importe pas, même un type ; sinon une forme décrite à part et confrontée par un test, comme pour
+  la liquidation). Base : non. Preuves : chaque préalable de ses deux côtés, la concordance des frais bloquante sur un
+  exercice numéroté, un dossier non basculé inchangé (la suite comparée test par test), mutations, le banc (une visite de
+  Clôture d'un dossier basculé, avant celles de l'e-reporting). TOUCHE DES PRÉALABLES BLOQUANTS (`ecritures-orphelines`,
+  `mouvements-a-traiter`) : leur compte ne change que pour un dossier basculé. Agent : architecte, effort élevé. Dépend
+  de : VF7b (les mots de la base).
+- **VF7d — L'instantané validé compte ses encaissements.** § 3 e. Fichiers : `declaration2035.ts`, `cases2035.ts`,
+  `validationExercice.ts` (`Instantane2035` en version 2, `lireInstantane2035` qui relit les deux), Clôture (le
+  récapitulatif d'un exercice validé), `revueAnalytique.ts` (vérifier qu'il ne lit ni la version ni les nombres), leurs
+  tests et les fabriques. Base : non (`exercices_valides.declaration` est un `jsonb`, et `centimes_de_la_2035_validee`
+  n'en lit que les montants). Preuves : une 2035 qui compte des encaissements, l'instantané v1 relu tel quel, le poste des
+  frais et ses mouvements, mutations. Agent : architecte (un instantané figé en base), effort élevé. Dépend de : VF7c (le
+  même écran, la même demande de validation).
+- **VF7e — Le gel des désignations.** § 3 f et VF7-Q1. Migration `gel_des_designations` :
+  `exercice_figeant_la_designation` neuve, les quatre fonctions du cabinet remplacées (le rang du gel ; le côté de la
+  facture selon VF7-Q1), leurs corps de VF6b vérifiés d'abord. Fichiers : la migration, `exemplairesDesFactures.ts` (les
+  refus neufs sous leurs mots), `marquesDeLaPieceLecture.ts` et la section « Ce que cette pièce est » de la fiche d'une
+  pièce (« figée par la validation de l'exercice … », aucun geste offert là où la base refuserait), leurs tests.
+  Preuves : `exemplairesDesFactures.sql` étendu (chaque geste avant et après la validation de l'exercice de la facture,
+  dans les deux sortes de dossiers), `piecesHorsDeFrance.sql` rejoué (inchangé), `validationExercice.sql` en une
+  transaction, `restauration.sql`, `rls.sql` entier, `signature.sql`, les trois contrôles, mutations. Agent :
+  architecte, effort maximal. Dépend de : VF7-Q1 ; de rien d'autre en base (VF6b est appliquée) ; en parallèle de VF7c
+  et VF7d (fichiers disjoints).
+
+L'ordre : VF7a, VF7b, puis VF7c et VF7d l'un après l'autre (Clôture et la demande de validation leur sont communes) ;
+VF7e dès que VF7-Q1 est tranchée, en parallèle. Trois migrations, chacune présentée au cabinet avant d'être appliquée.
+Aucun lot ne convient à un agent en Sonnet : chacun touche une garde, un préalable bloquant ou un instantané figé.
+Chaque lot met à jour CLAUDE.md, HISTORIQUE.md et la ligne 28.65 de la feuille de route ; RGPD.md ne change pas (aucune
+donnée neuve).
+
+#### 6. La question au cabinet
+
+- **VF7-Q1 — L'exemplaire d'une facture d'un exercice validé : peut-on encore le désigner ?** Désigner ne change aucun
+  chiffre ; changer ou retirer une désignation changerait la preuve que la piste d'audit cite pour un exercice arrêté. Le
+  cas réel : l'original d'une facture de décembre revient de la plateforme du client après la validation — non désigné,
+  il ne se valide pas (G3), et ne pourrait que se supprimer. Options : (A) tout se fige ; (B) une première désignation
+  s'ajoute encore, aucune ne se change ni ne se retire ; (C) rien ne se fige. Recommandé : (B) ; son coût, une règle de
+  plus dans la migration de VF7e et sa phrase à l'écran.
+
+#### 7. Tranché sans question, et pourquoi
+
+- La frontière des encaissements pour une facture SOURCE seulement : l'encaissement d'une facture qui n'est pas source
+  ne s'écrit nulle part (sa vente se compte par sa pièce) ; celui qu'un virement mixte compte est déjà tenu par VF5h2 (le
+  mouvement classé) et par le gel du mouvement. Le registre d'une facture d'avant reste libre pour son statut
+  « Encaissée », comme hier.
+- Le rattachement jugé sur le mouvement (§ 3 b) : ce n'est pas rouvrir EC3-Q7, c'est la rendre praticable au passage
+  de l'année — l'écriture de l'exercice validé ne bouge pas, et la règle d'hier rendait l'en-cours insoldable.
+- Les chèques, cartes et effets sans mouvement au 31 décembre : un avertissement, pas un refus (conception § 11 ; EC3-Q7 :
+  le 511 du 31 décembre est un en-cours légitime). Un virement ou un prélèvement sans mouvement retient : encaissé à
+  l'inscription au crédit, son mouvement est du même exercice.
+- Les déclarations du statut « Encaissée » (`transmissions_encaissements`) ne se figent pas : ce qui a été dit à
+  l'administration ne change déjà plus (`garder_transmission_encaissement`), et déclarer après la validation est un acte
+  envers l'administration, pas une écriture.
+- La vérification « à jour » EN BASE, et pas à l'écran seul : la base sait recomposer chaque source
+  (`ecriture_attendue_vente_facturee`) ; « ce que la base ne voit pas, l'application le refuse à sa place » ne vaut que
+  pour ce qu'elle ne sait pas calculer (la 2035). Le risque est le temps (§ 8), mesuré dans VF7b.
+- Une garde NEUVE plutôt que la garde des encaissements remplacée (§ 3 a) ; une fonction NEUVE plutôt que
+  `exercice_figeant_la_piece` changée (§ 3 f) ; l'instantané en version 2 plutôt qu'un champ facultatif (une version 1
+  relue n'affirme pas zéro encaissement).
+- Les deux points de VF5f restent en « attention » dans la Checklist : en cours d'année, un relevé importé en retard les
+  allume légitimement ; c'est la validation qui les rend bloquants, comme les mouvements à traiter.
+
+#### 8. Les risques
+
+- **Le temps de `valider_exercice`** : huit secondes pour le rôle `authenticated`, et la recomposition de toutes les
+  sources de l'exercice. Un dépassement fait échouer la validation (rien n'est écrit : fermé du côté sûr), mais la rend
+  impossible. Parade : la recomposition par facture, la mesure de VF7b sur trois mille encaissements ; si elle ne tient
+  pas, un `statement_timeout` propre à la fonction ne suffit pas (le minuteur part avec l'instruction) — il faudrait une
+  vérification préalable par le cabinet, sous le même verrou, conçue et dite avant d'écrire.
+- **Un virement reçu sur un compte bancaire que le dossier ne suit pas** : enregistré « virement », il retiendrait la
+  validation pour toujours. Remède existant : l'enregistrer par le moyen « autre », sur le compte de contrepartie de ce
+  compte bancaire (VF4A-Q2) ; la phrase du préalable le dit.
+- **VF7b change ce que la base refuse à la validation** : pour un dossier non basculé, rien (la fonction neuve ne rend
+  rien) ; l'essai de la validation le prouve en rejouant ses verdicts d'hier.
+- **VF7c change deux préalables bloquants** : pour un dossier basculé seulement ; la suite comparée test par test.
+- **Le gel (VF7e) et la remise à valider d'un exemplaire** : sa désignation se fige, pas son statut ; G3 le rejuge à sa
+  validation suivante, et il passe, désigné.
+- **VF5H2-Q1** (ouverte) : si le cabinet la retient, sa migration remplace `garder_encaissement_facture`, que VF7a ne
+  touche pas ; aucun ordre imposé entre elles.
+- **Les retours arrière** : chacune des trois migrations rend les définitions d'hier et retire ses objets neufs (une
+  garde et deux déclencheurs ; une fonction ; une fonction) — aucune donnée ne se perd, mais la ligne d'historique se
+  retire : sur l'accord du cabinet seulement. Après la première validation d'un exercice basculé, un retour arrière de
+  VF7b laisserait des lignes validées qu'aucune règle n'aurait vérifiées : sans objet tant qu'aucun dossier n'a basculé.
+- La pièce déclarée à tort, la pièce validée avant la bascule : des affirmations humaines, inchangées (VF6, § 4).
+
+#### 9. Ce qui reste à VF8 et à VF9
+
+- **VF8, la bascule** : le réglage à l'écran (Informations), dit avant le clic, irréversible ; les phrases de l'onglet
+  Accès et de « Mes ventes » ; « Ma simulation » (EC3-Q11), ce qu'elle reçoit et quelle pièce ignorer ; la case
+  « Ventes » refusée sur un dossier non basculé (EC3-Q2) ; « Ma banque » qui nomme la facture d'avant d'un virement mixte
+  (VF5H-Q3) ; la fenêtre des encaissements qui n'offre plus une contre-passation sans issue (VF5h2, « À REVOIR ») ; le
+  sélecteur d'exercice de la page pour une année d'encaissements seuls (VF3b1).
+- **VF9, l'assistant** : ses copies (la source, les écritures, les points, la validation), dont celles de
+  `piecesPayeesEnTrop`, `categoriesSansCompte` et `categoriesSansPoste` qui ignorent les factures sources (VF6e) ; avec
+  PC3b.
+- Hors d'EC-Q3, rappelés : EC3-Q9 à A8 ; la règle de la CA3 en base (`enregistrer_declaration_tva`).
+
+#### 10. Sources
+
+CGI, art. 93, 1 (la recette encaissée, à la date de sa libre disposition : le chèque à sa remise, le virement à
+l'inscription au crédit) et art. 269, 2-c (la TVA des services à l'encaissement), cités par la doctrine qui les
+reproduit : BOI-BNC-BASE-20-10-10 (§ 1 à 40) ; BOI-TVA-BASE-20-20 (§ 40 : le chèque, et l'impayé imputé sur la
+déclaration suivante ; § 50 : le virement à l'inscription au compte) — non relus ce jour, cités par la conception
+d'EC-Q3 (§ 3 et 17). Plan comptable général (règlement ANC n° 2014-03 consolidé au 1er janvier 2026), art. 1215-51 (le
+511, valeurs à l'encaissement, débité des chèques remis), cité par la même conception. LPF, art. A47 A-1 (le FEC : une
+écriture, une date, une pièce). Lus ce jour en production : `valider_exercice`, `garder_ecritures_validees`,
+`garder_lignes_de_la_vente_facturee`, `garder_encaissement_facture`, `garder_encaissement_facture_taux`,
+`garder_mouvement_valide`, `garder_mouvement_reserve`, `mouvement_libre`, `garder_piece_validee`,
+`exercice_figeant_la_piece` et ses sept appelants, `garder_exemplaire_facture`, `garder_vente_d_un_dossier_bascule`,
+`garder_transmission_encaissement`, `ecrire_vente_facturee`, `retirer_ecriture_vente_facturee`,
+`centimes_de_la_2035_validee`, `soldes_a_reporter`, `empreinte_exercice`, et les lignes de la frontière des fonctions du
+registre. Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées.
