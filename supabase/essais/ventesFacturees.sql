@@ -30,7 +30,7 @@
 --   - LA GARDE DES ENCAISSEMENTS sans les fonctions (60 à 67) ;
 --   - LES REFUS NEUFS des fonctions, à leur rang : enregistrer (11, 17, 28, 30 — 27 et 29 avant l'étape VF5h2),
 --     retirer (6, 7), contre-passer (12, 15 à 20, le cinquième paramètre ; et 2, le droit « Banque » que ce débit
---     demande depuis la migration `contre_passation_banque` : 94 à 96), rattacher (1 à 16), classer (1 à 11), retirer
+--     demande depuis la migration `contre_passation_banque` : 94 à 96), rattacher (1 à 17), classer (1 à 11), retirer
 --     le classement (1 à 4) ; et, pour une facture qui n'est pas source, ce qu'hier rendait : ni frontière, ni
 --     mouvement réservé, les plafonds bruts ;
 --   - L'IMPAYÉ D'UN ENCAISSEMENT JAMAIS DÉCLARÉ (97 à 97l ; migration `impaye_non_declare`, étape VF5d2) : celui d'une
@@ -51,9 +51,21 @@
 --     cabinet ; sur un mouvement libre ou classé autrement, comme hier ; un débit, fût-il classé par ses
 --     contre-passations, se refuse d'abord comme débit (le rang 16) ; la facture source du même virement, ses refus
 --     d'hier, sous leurs mots ;
+--   - LA FRONTIÈRE DES ENCAISSEMENTS (105, 145 à 149b, posés en dernier dans R ; migration
+--     `frontiere_des_encaissements`, étape VF7a) : daté d'un exercice validé, un chèque se rattache encore au crédit de
+--     janvier, qui se classe par lui (105, 145f, 145g) ; le rang 6 ne refuse plus que la compensation et un autre moyen
+--     (145, 145b) ; le rang 9, neuf, refuse un mouvement figé, après le rang 8 et avant le 10, sous l'exercice du
+--     MOUVEMENT (145c à 145e, 145h) ; sans les fonctions — le propriétaire, le rôle des Edge Functions, le
+--     super-administrateur —, la garde refuse un encaissement ou une contre-passation datés d'un exercice validé, un
+--     mouvement figé cité, le retrait, le compte, le rattachement par un autre moyen, celui d'une contre-passation dont
+--     l'encaissement cite un mouvement de son jour (que la fonction refuse plus tôt, au rang 16), et une part (146 à
+--     148) ; la contre-passation figée d'un chèque sans mouvement se rattache (147h) ; le client « Ventes » s'y heurte
+--     comme le cabinet, la raison dite (148b, 148c) ; une facture qui n'est pas source, et ce qui suit la frontière,
+--     comme hier (149, 149b) ;
 --   - LE CATALOGUE (150 à 157) : les six rôles et leurs défauts, aucune racine qui en commence une autre, les colonnes,
 --     les contraintes, les déclencheurs, la sécurité et les droits des fonctions, les réglages et qui les nomme ;
---   - LES MUTATIONS (160 à 176, puis 177 à 182 pour l'étape VF5h2) : chacune rejoue un contrôle avec un profil, une
+--   - LES MUTATIONS (160 à 176, puis 177 à 182 pour l'étape VF5h2, 183 à 187 pour l'étape VF7a) : chacune rejoue un
+--     contrôle avec un profil, une
 --     cible ou un réglage délibérément faux, et doit MORDRE ;
 --   - et que RIEN ne reste en base (199).
 --
@@ -152,6 +164,19 @@
 -- vingt-cinq par cet essai, deux à l'application (une empreinte de sa garde changée, sa garde de tête retirée) — ; les six
 -- survivantes sont équivalentes, déclarées d'avance (HISTORIQUE.md, « LES REFUS DU REGISTRE POUR LA FACTURE D'AVANT D'UN
 -- VIREMENT MIXTE »).
+--
+-- 25/10/2026, migration `frontiere_des_encaissements` (PRÉPARÉE, pas appliquée ; chantier EC-Q3, étape VF7a) : la
+-- frontière d'un exercice validé tenue par une garde neuve pour l'encaissement d'une facture source, et le rattachement
+-- jugé sur le mouvement. 105 dit désormais que le chèque se rattache au mouvement d'après (hier, le rang 6 le
+-- refusait) ; 155 compte la garde ; trente-sept verdicts de plus : les six étapes du jeu de R, 145 à 149b, et les
+-- mutations 183 à 187, posés en dernier. Sur une réplique dont `signature.sql` égalait la production à 148 migrations
+-- (les neuf familles, et l'historique), munie de `registre_virement_mixte` (VF5h2) : sans la migration, 272
+-- verdicts, 23 en faute — 105, 145c à 145h, 146 à 146e, 147 à 147d, 147f à 147h, 148 à 148c et 155, exactement — ;
+-- avec elle, 272 justes, rien n'est resté, et les contrôles d'hier rendent, verdict et observation, ce qu'ils
+-- rendaient, hors de 105 et 155 ; avec elle sans VF5h2, les douze de VF5h2 en faute, et eux seuls. Le texte sans ses
+-- lignes de commentaire, envoyé en une requête : 96 200 caractères, empreinte 58037c913afacf195babb11a4ef2c3d8, 272
+-- justes. Quarante-six mutations de la migration, jouées contre cet essai et cinq autres : quarante-deux tuées, quatre
+-- équivalentes déclarées d'avance (HISTORIQUE.md, « LA FRONTIÈRE DES ENCAISSEMENTS, EN BASE »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -196,6 +221,15 @@ begin
       'MA', '5f200000-0000-4000-8000-0000000000c1', 'MD', '5f200000-0000-4000-8000-0000000000c2',
       'MK', '5f200000-0000-4000-8000-0000000000c3', 'M0', '5f200000-0000-4000-8000-0000000000bf', 'M13', '5f200000-0000-4000-8000-0000000000c4',
       'MV', '5f200000-0000-4000-8000-0000000000c5')
+    -- La frontière des encaissements (étape VF7a), dans R : six encaissements, deux contre-passations et six mouvements.
+    || jsonb_build_object(
+      'ER1', '5f200000-0000-4000-8000-0000000000a1', 'ER2', '5f200000-0000-4000-8000-0000000000a2',
+      'ER3', '5f200000-0000-4000-8000-0000000000a3', 'MR1', '5f200000-0000-4000-8000-0000000000a4', 'ER4', '5f200000-0000-4000-8000-0000000000a7',
+      'MR2', '5f200000-0000-4000-8000-0000000000a5', 'MR3', '5f200000-0000-4000-8000-0000000000a6',
+      'ER5', '5f200000-0000-4000-8000-0000000000a8', 'CP5', '5f200000-0000-4000-8000-0000000000a9',
+      'ER6', '5f200000-0000-4000-8000-0000000000aa', 'CP6', '5f200000-0000-4000-8000-0000000000ab',
+      'MR4', '5f200000-0000-4000-8000-0000000000ac', 'MR5', '5f200000-0000-4000-8000-0000000000ad',
+      'MR6', '5f200000-0000-4000-8000-0000000000ae')
     || jsonb_build_object(
       'FJ1', $m$'{"tiers_nom":"ESSAI","tiers_siret":"12345678900012","emetteur_nom":"ESSAI","montant_ht":100,"montant_tva":20,"montant_ttc":120}'::jsonb$m$,
       'FJ2', $m$'{"tiers_nom":"ESSAI","tiers_siret":"12345678900012","emetteur_nom":"ESSAI","montant_ht":200,"montant_tva":25.5,"montant_ttc":225.5}'::jsonb$m$,
@@ -438,7 +472,7 @@ begin
     array['controle', '102. rang 3 : retiré', 'chef', $q${RET}'{T}', '{ES2}'); {RAT}'{T}', '{ES2}', '{M5}')$q$, '22023', 'Cet encaissement est retiré : il ne se rattache plus à un mouvement.'],
     array['controle', '103. rang 4 : il cite déjà un mouvement', 'chef', $q${RAT}'{T}', '{E1}', '{M5}')$q$, '22023', 'Cet encaissement cite déjà un mouvement : il ne se rattache qu''une fois.'],
     array['controle', '104. rang 5 : une facture qui n''est pas source', 'chef', $q${RAT}'{A}', '{EA25}', '{MA}')$q$, '22023', '{SEU}'],
-    array['controle', '105. rang 6 : daté d''un exercice validé', 'chef', $q${RAT}'{T}', '{E25b}', '{M5}')$q$, '22023', 'L''exercice 2025 est validé : cet encaissement ne se rattache plus à un mouvement.'],
+    array['controle', '105. rang 6 : daté d''un exercice validé, un chèque se rattache encore au mouvement d''après (étape VF7a)', 'chef', $q${RAT}'{T}', '{E25b}', '{M5}')$q$, 'OK', ''],
     array['controle', '106. rang 7 : aucun mouvement désigné', 'chef', $q${RAT}'{T}', '{ES2}', null)$q$, '22023', 'Le mouvement à rattacher est à désigner.'],
     array['controle', '107. rang 8 : un mouvement d''un autre dossier', 'chef', $q${RAT}'{T}', '{ES2}', '{MA}')$q$, '22023', 'Ce mouvement n''est pas un mouvement de ce dossier.'],
     array['controle', '108. rang 9 : zéro, ni un débit, pour un encaissement', 'chef', $q${RAT}'{T}', '{ES2}', '{M0}')$q$, '22023', '{CRE}'],
@@ -519,8 +553,8 @@ begin
       'CREATE INDEX ecritures_brouillon_encaissement_id_idx ON public.ecritures_brouillon USING btree (encaissement_id) WHERE (encaissement_id IS NOT NULL) | CREATE INDEX ecritures_brouillon_facture_id_idx ON public.ecritures_brouillon USING btree (facture_id) WHERE (facture_id IS NOT NULL)'],
     array['valeur', '154. les quatre déclencheurs, actifs', 'postgres', $q$select string_agg(pg_get_triggerdef(oid) || ' ' || tgenabled::text, ' | ' order by tgname) from pg_trigger where not tgisinternal and tgname in ('dossiers_ventes_par_les_factures', 'factures_emises_source_de_la_vente', 'ecritures_brouillon_vente_facturee', 'lignes_bancaires_reservees_aux_encaissements')$q$, '',
       'CREATE TRIGGER dossiers_ventes_par_les_factures BEFORE UPDATE OF ventes_par_les_factures ON public.dossiers FOR EACH ROW EXECUTE FUNCTION garder_ventes_par_les_factures() O | CREATE TRIGGER ecritures_brouillon_vente_facturee BEFORE INSERT OR UPDATE OF encaissement_id, facture_id ON public.ecritures_brouillon FOR EACH ROW EXECUTE FUNCTION garder_ecriture_vente_facturee() O | CREATE TRIGGER factures_emises_source_de_la_vente BEFORE INSERT OR UPDATE ON public.factures_emises FOR EACH ROW EXECUTE FUNCTION fixer_source_de_la_vente() O | CREATE TRIGGER lignes_bancaires_reservees_aux_encaissements BEFORE INSERT OR UPDATE ON public.lignes_bancaires FOR EACH ROW EXECUTE FUNCTION garder_mouvement_reserve() O'],
-    array['valeur', '155. sécurité, chemin et droits des fonctions', 'postgres', $q$select string_agg(proname || ':' || prosecdef || ':' || coalesce(array_to_string(proconfig, ','), '-') || ':' || has_function_privilege('anon', oid, 'execute') || ':' || has_function_privilege('authenticated', oid, 'execute'), ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and proname in ('annuler_encaissement', 'classer_mouvement_par_encaissements', 'encaissement_justifie_son_mouvement', 'enregistrer_encaissement', 'fixer_source_de_la_vente', 'garder_ecriture_vente_facturee', 'garder_encaissement_facture', 'garder_mouvement_reserve', 'garder_ventes_par_les_factures', 'mouvement_libre', 'rattacher_mouvement_encaissement', 'retirer_classement_par_encaissements', 'retirer_encaissement')$q$, '',
-      'annuler_encaissement:true:search_path=public:false:true,classer_mouvement_par_encaissements:true:search_path=public:false:true,encaissement_justifie_son_mouvement:false:search_path=public:false:false,enregistrer_encaissement:true:search_path=public:false:true,fixer_source_de_la_vente:true:search_path=public:false:false,garder_ecriture_vente_facturee:false:search_path=public:false:false,garder_encaissement_facture:false:search_path=public:false:false,garder_mouvement_reserve:true:search_path=public:false:false,garder_ventes_par_les_factures:true:search_path=public:false:false,mouvement_libre:false:search_path=public:false:true,rattacher_mouvement_encaissement:true:search_path=public:false:true,retirer_classement_par_encaissements:true:search_path=public:false:true,retirer_encaissement:true:search_path=public:false:true'],
+    array['valeur', '155. sécurité, chemin et droits des fonctions', 'postgres', $q$select string_agg(proname || ':' || prosecdef || ':' || coalesce(array_to_string(proconfig, ','), '-') || ':' || has_function_privilege('anon', oid, 'execute') || ':' || has_function_privilege('authenticated', oid, 'execute'), ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and proname in ('annuler_encaissement', 'classer_mouvement_par_encaissements', 'encaissement_justifie_son_mouvement', 'enregistrer_encaissement', 'fixer_source_de_la_vente', 'garder_ecriture_vente_facturee', 'garder_encaissement_facture', 'garder_frontiere_des_encaissements', 'garder_mouvement_reserve', 'garder_ventes_par_les_factures', 'mouvement_libre', 'rattacher_mouvement_encaissement', 'retirer_classement_par_encaissements', 'retirer_encaissement')$q$, '',
+      'annuler_encaissement:true:search_path=public:false:true,classer_mouvement_par_encaissements:true:search_path=public:false:true,encaissement_justifie_son_mouvement:false:search_path=public:false:false,enregistrer_encaissement:true:search_path=public:false:true,fixer_source_de_la_vente:true:search_path=public:false:false,garder_ecriture_vente_facturee:false:search_path=public:false:false,garder_encaissement_facture:false:search_path=public:false:false,garder_frontiere_des_encaissements:true:search_path=public:false:false,garder_mouvement_reserve:true:search_path=public:false:false,garder_ventes_par_les_factures:true:search_path=public:false:false,mouvement_libre:false:search_path=public:false:true,rattacher_mouvement_encaissement:true:search_path=public:false:true,retirer_classement_par_encaissements:true:search_path=public:false:true,retirer_encaissement:true:search_path=public:false:true'],
     array['valeur', '156. contre-passer : une seule signature, à cinq paramètres', 'postgres', $q$select string_agg(pg_get_function_identity_arguments(oid), ' | ') from pg_proc where pronamespace = 'public'::regnamespace and proname = 'annuler_encaissement'$q$, '', 'p_dossier_id uuid, p_encaissement_id uuid, p_date date, p_motif text, p_ligne_bancaire_id uuid'],
     array['valeur', '157. qui nomme les trois réglages', 'postgres', $q$select string_agg(r || ':' || (select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc like '%' || r || '%' and proname not in ('ecrire_vente_facturee', 'garder_lignes_de_la_vente_facturee', 'retirer_ecriture_vente_facturee')), ' | ' order by r) from unnest(array['jd.classement_encaissements', 'jd.ecriture_vente_facturee', 'jd.rattachement_encaissement']) r$q$, '',
       'jd.classement_encaissements:classer_mouvement_par_encaissements,garder_mouvement_reserve,retirer_classement_par_encaissements | jd.ecriture_vente_facturee:garder_ecriture_vente_facturee | jd.rattachement_encaissement:garder_encaissement_facture,rattacher_mouvement_encaissement'],
@@ -573,7 +607,62 @@ begin
     array['controle', '144c. … ni ne contre-passe EV2 sans débit', 'client_v', $q${ANN}'{T}', '{EV2}', '2026-03-17', 'ESSAI')$q$, '22023', '{ANV}'],
     array['controle', '180. MUTATION de 143b : le classement de M5 retiré, le retrait direct passe', 'postgres', $q$select set_config('jd.classement_encaissements', '{M5}', true); update lignes_bancaires set encaissements_de_factures = false, statut = 'non_rapprochee' where id = '{M5}'; select set_config('jd.classement_encaissements', '', true); update encaissements_factures set retire_le = now() where id = '{EW2}'$q$, 'OK', ''],
     array['controle', '181. MUTATION de 144b : le classement retiré par le cabinet, EW2 se retire', 'chef', $q${RCL}'{T}', '{M5}'); {RET}'{T}', '{EW2}')$q$, 'OK', ''],
-    array['controle', '182. MUTATION de 144c : le classement retiré par le cabinet, EV2 se contre-passe sans débit', 'chef', $q${RCL}'{T}', '{MV}'); {ANN}'{T}', '{EV2}', '2026-03-17', 'ESSAI')$q$, 'OK', '']
+    array['controle', '182. MUTATION de 144c : le classement retiré par le cabinet, EV2 se contre-passe sans débit', 'chef', $q${RCL}'{T}', '{MV}'); {ANN}'{T}', '{EV2}', '2026-03-17', 'ESSAI')$q$, 'OK', ''],
+
+    -- ══ 145 à 149. VF7a : la frontière des encaissements, posée EN DERNIER, dans R ══════════
+    -- Migration `frontiere_des_encaissements`. R a basculé et ne porte encore aucun exercice validé : le relevé y reçoit
+    -- MR1 (+10 €) et MR3 (−10 €) au 31 décembre 2025, MR2 (+10 €) au 5 janvier 2026 ; le cabinet y valide F2025-0001 (FR)
+    -- par sa fonction ; la restauration du super-administrateur y pose, sans frontière qui la retienne, le chèque du
+    -- 31 décembre (ER1, 10 €) et un encaissement par un autre moyen du même jour (ER2, 5 €) — la frontière même —, sans
+    -- répartition. Pour les contre-passations : le relevé reçoit MR4 (+10 €) au 31 décembre, MR5 (−10 €) et MR6 (−5 €)
+    -- en janvier ; la restauration pose ER5, un chèque de 10 € du 31 décembre sur MR4, du même jour, et ER6, un chèque de
+    -- 5 € sans mouvement ; le cabinet classe MR4 par ER5 ; puis la restauration pose CP5 et CP6, leurs contre-passations
+    -- sans mouvement du même jour (CP5, la fonction l'aurait refusée sur MR4 classé ; une écriture directe le peut,
+    -- VF5H2-Q1). Puis le propriétaire valide l'exercice 2025, et le cabinet pose un chèque du 2 janvier 2026 (ER4, 5 €).
+    -- Posé plus tôt, R aurait changé ce que voient les contrôles d'avant (20 et 160 l'emploient). Tout s'annule avec
+    -- l'essai. Leurs mutations : 183 à 187.
+    array['jeu', 'VF7a : MR1, MR3 et MR2', 'postgres', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{MR1}', '{R}', '2025-12-31', 'ESSAI', 10, 'non_rapprochee'), ('{MR3}', '{R}', '2025-12-31', 'ESSAI', -10, 'non_rapprochee'), ('{MR2}', '{R}', '2026-01-05', 'ESSAI', 10, 'non_rapprochee')$q$, '', ''],
+    array['fait', '0. le jeu (VF7a) : FR, F2025-0001 de R', 'chef', $q${ENF}'{R}', null, {FJ1} || '{"date_emission":"2025-06-01","nature_operation":"services"}', {L1}, true)$q$, 'OK', ''],
+    array['retenir', 'FR', 'postgres', $q$select id::text from factures_emises where dossier_id = '{R}' and numero = 'F2025-0001'$q$, '', ''],
+    array['fait', '0. le jeu (VF7a) : la restauration pose ER1 et ER2, aucune frontière ne la retenant', 'chef', $q${ENI} ('{ER1}', '{R}', '{FR}', '2025-12-31', 10, 'cheque', null, null, null), ('{ER2}', '{R}', '{FR}', '2025-12-31', 5, 'autre', null, null, null)$q$, 'OK', ''],
+    array['jeu', 'VF7a : MR4 au 31 décembre 2025, MR5 et MR6 en janvier 2026', 'postgres', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{MR4}', '{R}', '2025-12-31', 'ESSAI', 10, 'non_rapprochee'), ('{MR5}', '{R}', '2026-01-06', 'ESSAI', -10, 'non_rapprochee'), ('{MR6}', '{R}', '2026-01-07', 'ESSAI', -5, 'non_rapprochee')$q$, '', ''],
+    array['fait', '0. le jeu (VF7a) : la restauration pose ER5, un chèque sur MR4, du même jour, et ER6, un chèque sans mouvement', 'chef', $q${ENI} ('{ER5}', '{R}', '{FR}', '2025-12-31', 10, 'cheque', '{MR4}', null, null), ('{ER6}', '{R}', '{FR}', '2025-12-31', 5, 'cheque', null, null, null)$q$, 'OK', ''],
+    array['fait', '0. le jeu (VF7a) : le cabinet classe MR4 par ER5', 'chef', $q${CLA}'{R}', '{MR4}')$q$, 'OK', ''],
+    array['fait', '0. le jeu (VF7a) : la restauration pose CP5 et CP6, leurs contre-passations sans mouvement', 'chef', $q${ENI} ('{CP5}', '{R}', '{FR}', '2025-12-31', -10, 'cheque', null, '{ER5}', 'ESSAI'), ('{CP6}', '{R}', '{FR}', '2025-12-31', -5, 'cheque', null, '{ER6}', 'ESSAI')$q$, 'OK', ''],
+    array['jeu', 'VF7a : l''exercice 2025 validé dans R', 'postgres', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{R}', 2025, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}')$q$, '', ''],
+    array['fait', '0. le jeu (VF7a) : ER4, un chèque du 2 janvier 2026, après la frontière', 'chef', $q${ENI} ('{ER4}', '{R}', '{FR}', '2026-01-02', 5, 'cheque', null, null, null)$q$, 'OK', ''],
+    array['controle', '145. rattacher, rang 6 : daté d''un exercice validé, par un autre moyen, il ne se rattache plus', 'chef', $q${RAT}'{R}', '{ER2}', '{MR2}')$q$, '22023', 'L''exercice 2025 est validé : cet encaissement ne se rattache plus à un mouvement.'],
+    array['controle', '145b. … le rang 6 avant le rang 7 (aucun mouvement désigné)', 'chef', $q${RAT}'{R}', '{ER2}', null)$q$, '22023', 'L''exercice 2025 est validé : cet encaissement ne se rattache plus à un mouvement.'],
+    array['controle', '145c. rang 9, neuf : un mouvement daté d''un exercice validé ne se cite plus', 'chef', $q${RAT}'{R}', '{ER1}', '{MR1}')$q$, '22023', 'L''exercice 2025 est validé : ce mouvement ne se cite plus.'],
+    array['controle', '145d. … le rang 9 avant le rang 10 (un débit, pour un encaissement)', 'chef', $q${RAT}'{R}', '{ER1}', '{MR3}')$q$, '22023', 'L''exercice 2025 est validé : ce mouvement ne se cite plus.'],
+    array['controle', '145h. … l''exercice que nomme le rang 9 est celui du MOUVEMENT (l''encaissement, de 2026)', 'chef', $q${RAT}'{R}', '{ER4}', '{MR1}')$q$, '22023', 'L''exercice 2025 est validé : ce mouvement ne se cite plus.'],
+    array['controle', '145e. … le rang 8 avant le rang 9 (le mouvement figé d''un autre dossier)', 'chef', $q${RAT}'{R}', '{ER1}', '{MB}')$q$, '22023', 'Ce mouvement n''est pas un mouvement de ce dossier.'],
+    array['lecture', '145f. le chèque du 31 décembre se rattache au crédit de janvier', 'chef', $q$select (e.ligne_bancaire_id = '{MR2}')::text from rattacher_mouvement_encaissement('{R}', '{ER1}', '{MR2}') e$q$, '', 'true'],
+    array['controle', '145g. … et le crédit de janvier se classe par lui', 'chef', $q${RAT}'{R}', '{ER1}', '{MR2}'); {CLA}'{R}', '{MR2}')$q$, 'OK', ''],
+    -- La garde, sans les fonctions : le propriétaire, le rôle des Edge Functions, le super-administrateur.
+    array['controle', '146. la garde : un encaissement ne naît pas daté d''un exercice validé (le propriétaire)', 'postgres', $q${ENC} ('{R}', '{FR}', '2025-12-31', 1, 'cheque', null, null, null)$q$, '23514', 'L''exercice 2025 est validé : un encaissement de cette facture ne s''y date plus.'],
+    array['controle', '146b. … ni par le rôle des Edge Functions', 'service', $q${ENC} ('{R}', '{FR}', '2025-12-31', 1, 'cheque', null, null, null)$q$, '23514', 'L''exercice 2025 est validé : un encaissement de cette facture ne s''y date plus.'],
+    array['controle', '146c. … ni par le super-administrateur : la restauration passe avant les exercices validés, jamais après', 'chef', $q${ENC} ('{R}', '{FR}', '2025-12-31', 1, 'cheque', null, null, null)$q$, '23514', 'L''exercice 2025 est validé : un encaissement de cette facture ne s''y date plus.'],
+    array['controle', '146d. … ni une contre-passation, à sa propre date', 'postgres', $q${ENC} ('{R}', '{FR}', '2025-12-31', -10, 'cheque', null, '{ER1}', 'ESSAI')$q$, '23514', 'L''exercice 2025 est validé : une contre-passation ne s''y date plus.'],
+    array['controle', '146e. un mouvement daté d''un exercice validé ne se cite pas à la naissance', 'service', $q${ENC} ('{R}', '{FR}', '2026-01-05', 1, 'virement', '{MR1}', null, null)$q$, '23514', 'L''exercice 2025 est validé : ce mouvement ne se cite plus.'],
+    array['controle', '147. la garde : un encaissement figé ne se retire pas', 'service', $q$update encaissements_factures set retire_le = now() where id = '{ER1}'$q$, '23514', 'L''exercice 2025 est validé : cet encaissement ne se retire plus.'],
+    array['controle', '147b. … ne change pas de compte de contrepartie, sous le réglage de la fonction', 'postgres', $q$select set_config('jd.contrepartie_encaissement', '{ER2}', true); update encaissements_factures set compte_contrepartie = '467000' where id = '{ER2}'$q$, '23514', 'L''exercice 2025 est validé : le compte de contrepartie de cet encaissement ne change plus.'],
+    array['controle', '147c. … ne se rattache pas, par un autre moyen, sous le réglage du rattachement', 'postgres', $q$select set_config('jd.rattachement_encaissement', '{ER2}', true); update encaissements_factures set ligne_bancaire_id = '{MR2}' where id = '{ER2}'$q$, '23514', 'L''exercice 2025 est validé : cet encaissement ne se rattache plus à un mouvement.'],
+    array['controle', '147d. … ni à un mouvement figé', 'service', $q$select set_config('jd.rattachement_encaissement', '{ER1}', true); update encaissements_factures set ligne_bancaire_id = '{MR1}' where id = '{ER1}'$q$, '23514', 'L''exercice 2025 est validé : ce mouvement ne se cite plus.'],
+    array['controle', '147e. le chèque figé se rattache au crédit de janvier, sans la fonction aussi', 'service', $q$select set_config('jd.rattachement_encaissement', '{ER1}', true); update encaissements_factures set ligne_bancaire_id = '{MR2}' where id = '{ER1}'$q$, 'OK', ''],
+    array['controle', '147f. … ni une contre-passation figée dont l''encaissement cite un mouvement de son jour : elle le défait sur la banque de ce mouvement, et rattachée, elle s''écrirait au 511', 'service', $q$select set_config('jd.rattachement_encaissement', '{CP5}', true); update encaissements_factures set ligne_bancaire_id = '{MR5}' where id = '{CP5}'$q$, '23514', 'L''exercice 2025 est validé : cet encaissement ne se rattache plus à un mouvement.'],
+    array['controle', '147g. … ce que la fonction du cabinet refuse plus tôt : le mouvement de l''encaissement contre-passé est classé (le rang 16)', 'chef', $q${RAT}'{R}', '{CP5}', '{MR5}')$q$, '22023', 'Le mouvement de l''encaissement contre-passé est classé : rattachée à un débit, la contre-passation le lui ferait justifier de nouveau — le cabinet retire d''abord ce classement.'],
+    array['controle', '147h. la contre-passation figée d''un chèque sans mouvement se rattache au débit de janvier, par la fonction du cabinet : son écriture, au 511, ne change pas', 'chef', $q${RAT}'{R}', '{CP6}', '{MR6}')$q$, 'OK', ''],
+    array['controle', '148. la garde : une part ne s''ajoute pas à un encaissement figé', 'service', $q$insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant) values ('{ER1}', '{R}', 20, 1)$q$, '23514', 'L''exercice 2025 est validé : la répartition de cet encaissement ne change plus.'],
+    array['controle', '148b. le client « Ventes » et « Banque » : sa fonction s''y heurte, et la raison est dite', 'client_vb', $q${ENE}'{T}', '{F1}', '2026-03-05', 1, 'virement', '{MB}', '[{"taux":20,"montant":1}]')$q$, '23514', 'L''exercice 2025 est validé : ce mouvement ne se cite plus.'],
+    array['controle', '148c. … comme celle du cabinet', 'chef', $q${ENE}'{T}', '{F1}', '2026-03-05', 1, 'virement', '{MB}', '[{"taux":20,"montant":1}]')$q$, '23514', 'L''exercice 2025 est validé : ce mouvement ne se cite plus.'],
+    array['controle', '149. ce qui ne change pas : l''encaissement d''une facture qui n''est pas source, dans un exercice validé', 'postgres', $q${ENC} ('{A}', '{FA1}', '2025-12-30', 1, 'cheque', null, null, null)$q$, 'OK', ''],
+    array['controle', '149b. … ni ce qui suit la frontière : un encaissement de 2026, sa part, son retrait', 'service', $q${ENI} ('{ER3}', '{R}', '{FR}', '2026-01-02', 5, 'cheque', null, null, null); insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant) values ('{ER3}', '{R}', 20, 5); update encaissements_factures set retire_le = now() where id = '{ER3}'$q$, 'OK', ''],
+    array['controle', '183. MUTATION de 146 : le lendemain de la frontière, il naît', 'postgres', $q${ENC} ('{R}', '{FR}', '2026-01-01', 1, 'cheque', null, null, null)$q$, 'OK', ''],
+    array['controle', '184. MUTATION de 145 : daté de 2026, par un autre moyen, il se rattache', 'chef', $q${ENI} ('{ER3}', '{R}', '{FR}', '2026-01-02', 5, 'autre', null, null, null); {RAT}'{R}', '{ER3}', '{MR2}')$q$, 'OK', ''],
+    array['controle', '185. MUTATION de 146e : un mouvement de 2026 se cite à la naissance', 'service', $q${ENC} ('{R}', '{FR}', '2026-01-05', 1, 'virement', '{MR2}', null, null)$q$, 'OK', ''],
+    array['controle', '186. MUTATION de 148b : le client cite un mouvement libre de 2026', 'client_vb', $q${ENE}'{T}', '{F1}', '2026-03-05', 1, 'virement', '{M2}', '[{"taux":20,"montant":1}]')$q$, 'OK', ''],
+    array['controle', '187. MUTATION de 147f : l''encaissement contre-passé sans mouvement, la contre-passation figée se rattache, sans la fonction aussi', 'service', $q$select set_config('jd.rattachement_encaissement', '{CP6}', true); update encaissements_factures set ligne_bancaire_id = '{MR6}' where id = '{CP6}'$q$, 'OK', '']
   ];
 
   begin

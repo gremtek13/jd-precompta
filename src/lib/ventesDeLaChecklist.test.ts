@@ -152,13 +152,15 @@ describe('ventesDeLaChecklist : les encaissements sans mouvement du relevé', ()
     ]))).toEqual(['e1'])
   })
 
-  it('un encaissement daté dans un exercice que la validation fige ne se compte plus ; le lendemain de la frontière, si', () => {
+  it('un encaissement daté dans un exercice que la validation fige se compte encore : il se rattache au mouvement d’après (VF7a)', () => {
     const l = lue([], [
-      encaissement({ id: 'e1', facture_id: 'f1', montant: 100, date_encaissement: '2025-12-31' }),
+      encaissement({ id: 'e1', facture_id: 'f1', montant: 100, moyen: 'cheque', date_encaissement: '2025-12-30' }),
       encaissement({ id: 'e2', facture_id: 'f1', montant: 100, date_encaissement: '2026-01-01' }),
+      // Par compensation ou par un autre moyen, il ne se rattache plus — et ce ne sont pas des moyens du relevé.
+      encaissement({ id: 'e3', facture_id: 'f1', montant: 10, moyen: 'autre', date_encaissement: '2025-12-30' }),
     ])
     expect(sansMouvementDe(l, null)).toEqual(['e1', 'e2'])
-    expect(sansMouvementDe(l, '2025-12-31')).toEqual(['e2'])
+    expect(sansMouvementDe(l, '2025-12-31')).toEqual(['e1', 'e2'])
   })
 
   it('le détail nomme chacun — facture, moyen, date, montant —, six au plus, et dit où les trouver', () => {
@@ -171,6 +173,7 @@ describe('ventesDeLaChecklist : les encaissements sans mouvement du relevé', ()
     expect(detail).toContain('Dans Factures, vue « Règlements », leur colonne « Mouvement » porte « — » :')
     expect(detail).toContain('F2026-0014 (chèque du 05/03/2026, 120,50 €), F2026-0015 (virement du 06/03/2026, 300,00 €).')
     expect(detail).toContain('dans Banque')
+    expect(detail).toContain('même quand l’encaissement est daté d’un exercice validé : son écriture n’en change pas.')
     expect(detail).not.toContain('autre(s)')
     const huit = ventesDeLaChecklist(lue([], Array.from({ length: 8 }, (_, i) => encaissement({ id: `e${i}`, facture_id: 'f1', montant: 10 }))), null)
     if (huit.etat !== 'lue') throw new Error('lue')

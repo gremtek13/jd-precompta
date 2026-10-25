@@ -17,7 +17,8 @@ import { REFUS_ENREGISTREMENT_CONTACT, REFUS_REPRISE_CONTACT } from './contacts'
 import { manqueMentionTva, motifExoneration, refusTauxPositif } from './statutTva'
 import { refusEmission } from './factureCii'
 import {
-  REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_RETRAIT, obligationEncaissee,
+  REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_GARDE_FRONTIERE, REFUS_RETRAIT,
+  obligationEncaissee,
 } from './encaissementsFactures'
 import { bilanDuReleve, refusDuReleve, verificationAvantDeclaration } from './statutsLus'
 import { libelleCanal, libelleCourtCanal } from './transmissionsFactures'
@@ -167,6 +168,15 @@ describe('les réécritures du client', () => {
     expect(pourLEspace('client', cabinet ?? '')).toBe(client)
     expect(pourLEspace('cabinet', cabinet ?? '')).toBe(cabinet)
   })
+
+  // La garde de la frontière des encaissements (étape VF7a) : ses fonctions atteignent l'un de ses refus (un mouvement figé
+  // cité — supabase/essais/ventesFacturees.sql, 148b), et toutes ses phrases peuvent remonter jusqu'à lui par une erreur.
+  // Elles se lisent telles quelles : ni le cabinet, ni un onglet, ni le vouvoiement — aucune réécriture n'y touche.
+  it.each(REFUS_GARDE_FRONTIERE.map((r) => [r.cle, r.modele.replace('%', 'L\'exercice 2025 est validé')]))(
+    'la garde de la frontière (%s) : le client la lit telle quelle', (_cle, phrase) => {
+      expect(motsDuCabinet(phrase), phrase).toEqual([])
+      expect(pourLEspace('client', phrase)).toBe(phrase)
+    })
 
   it('le texte du cabinet reste le sien, au caractère près', () => {
 

@@ -19,6 +19,7 @@
 --     qu'une annulation vivante le vise ; DÉCLARÉ (étape d4), il ne se retire ni par la fonction ni en direct ;
 --   - CE QUE LA TABLE ET SES DÉCLENCHEURS REFUSENT SEULS, à une écriture directe : chaque contrainte par son nom, chaque
 --     règle du déclencheur par son message, l'unicité de l'annulation vivante, l'immuabilité, la répartition ;
+--   - LA FRONTIÈRE DES ENCAISSEMENTS (étape VF7a), pour une facture qui n'est pas source : rien ne change (5b) ;
 --   - CE QUE LE CATALOGUE DIT, faute de pouvoir le jouer ici : les policies, les clés et leur action à la suppression,
 --     la garde de suppression, les droits d'exécution ; et quelques montants par taux relevés sur l'application ;
 --   - et que RIEN ne reste en base après l'essai.
@@ -86,6 +87,17 @@
 -- 9860ab4868d215f8bfa080e88ccec8a9, 110 justes. Après l'application, la session n'a rejoué en production que
 -- ventesFacturees.sql (187 justes), qui y éprouve `annuler_encaissement` pour une facture source comme pour une autre :
 -- les fonctions que cet essai éprouve d'autre n'ont pas changé.
+--
+-- 25/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `frontiere_des_encaissements`, préparée, pas appliquée ;
+-- chantier EC-Q3, étape VF7a) : le contrôle 5b — l'exercice de l'année d'avant validé le temps du contrôle,
+-- l'encaissement de la facture d'essai, qui n'est pas source, daté de son 31 décembre, s'écrit, se répartit et se
+-- retire sans la fonction comme hier : la garde de la frontière ne garde que la facture source, que
+-- ventesFacturees.sql éprouve (145 à 149) ; 95 compte ses deux déclencheurs, après ceux d'hier ; 96, la garde hors de
+-- portée en RPC. L'essai se rejoue donc aussi après une migration qui touche la garde de la frontière. Sur une
+-- réplique égale à la production (148 migrations) munie de `registre_virement_mixte` : sans la migration, 113
+-- verdicts, 2 en faute — 95 et 96 — ; avec elle, 113 justes, rien laissé en base, les autres inchangés. Le texte sans
+-- ses lignes de commentaire, envoyé en une requête : 64 339 caractères, empreinte f52635d7f70f0cd12c57d332b70c4e06,
+-- 113 justes.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -228,6 +240,30 @@ begin
   reset role;
   verdicts := verdicts || jsonb_build_object('controle', '5. le rôle des Edge Functions écrit un encaissement valide et sa part',
     'observe', coalesce(code_recu, '?') || ' ' || coalesce(message_recu, ''), 'ok', accepte and code_recu = 'P0001');
+
+  -- ══ 5b. La frontière des encaissements (étape VF7a) ne garde que la facture SOURCE ══════════
+  -- L'exercice de l'année d'avant validé le temps du contrôle : l'encaissement de la facture d'essai, qui n'est pas source,
+  -- daté de son 31 décembre, s'écrit sans la fonction, se répartit et se retire comme hier — la garde de la frontière le
+  -- laisse passer (supabase/essais/ventesFacturees.sql, 145 à 149, éprouve la facture source).
+  accepte := false; code_recu := null; message_recu := null;
+  begin
+    insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit,
+      total_credit, empreinte, declaration)
+      values (dossier_f, extract(year from aujourd_hui)::integer - 1, now(), chef, 'tresorerie', 0, 0, 0, 0, repeat('e', 64), '{}');
+    set local role service_role;
+    insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen)
+      values (dossier_f, facture_v, make_date(extract(year from aujourd_hui)::integer - 1, 12, 31), 2.5, 'especes') returning id into ident;
+    insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant) values (ident, dossier_f, taux_v, 2.5);
+    update encaissements_factures set retire_le = now() where id = ident;
+    accepte := true;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message_recu := sqlerrm;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '5b. une facture qui n''est pas source, dans un exercice validé : écrite, répartie et retirée comme hier (VF7a)',
+    'observe', coalesce(code_recu, '?') || ' ' || coalesce(message_recu, '') || ' ; source : '
+      || coalesce((select f.source_de_la_vente::text from factures_emises f where f.id = facture_v), '?'),
+    'ok', accepte and code_recu = 'P0001' and not (select f.source_de_la_vente from factures_emises f where f.id = facture_v));
 
   -- ══ Les factures, les mouvements et l'état d'essai : nés ici, annulés à la fin du bloc ══════════
   begin
@@ -816,9 +852,11 @@ begin
 
   select string_agg(pg_get_triggerdef(t.oid), ' | ' order by t.tgname) into obs
     from pg_trigger t where t.tgrelid in ('public.encaissements_factures'::regclass, 'public.encaissements_factures_taux'::regclass) and not t.tgisinternal;
-  verdicts := verdicts || jsonb_build_object('controle', '95. catalogue : les deux gardes veillent aussi sur la suppression (jouée sur la réplique)',
+  verdicts := verdicts || jsonb_build_object('controle', '95. catalogue : les quatre gardes — les deux d''hier, puis celles de la frontière (étape VF7a) — veillent aussi sur la suppression (jouée sur la réplique)',
     'observe', obs, 'ok', obs = 'CREATE TRIGGER encaissements_factures_gardes BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures FOR EACH ROW EXECUTE FUNCTION garder_encaissement_facture()'
-      || ' | CREATE TRIGGER encaissements_factures_taux_gardes BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures_taux FOR EACH ROW EXECUTE FUNCTION garder_encaissement_facture_taux()');
+      || ' | CREATE TRIGGER encaissements_factures_gardes_frontiere BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures FOR EACH ROW EXECUTE FUNCTION garder_frontiere_des_encaissements()'
+      || ' | CREATE TRIGGER encaissements_factures_taux_gardes BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures_taux FOR EACH ROW EXECUTE FUNCTION garder_encaissement_facture_taux()'
+      || ' | CREATE TRIGGER encaissements_factures_taux_gardes_frontiere BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures_taux FOR EACH ROW EXECUTE FUNCTION garder_frontiere_des_encaissements()');
 
   select (select relrowsecurity from pg_class where oid = 'public.encaissements_factures'::regclass)::text || ' '
       || (select relrowsecurity from pg_class where oid = 'public.encaissements_factures_taux'::regclass)::text || ' '
@@ -826,10 +864,10 @@ begin
            || has_function_privilege('authenticated', p.oid, 'execute')::text, ' ' order by p.proname) into obs
     from pg_proc p where p.pronamespace = 'public'::regnamespace
      and p.proname in ('garder_encaissement_facture', 'garder_encaissement_facture_taux', 'centimes_ligne_facture',
-                       'montants_par_taux_facture', 'encaissement_declare');
+                       'montants_par_taux_facture', 'encaissement_declare', 'garder_frontiere_des_encaissements');
   verdicts := verdicts || jsonb_build_object('controle', '96. catalogue : RLS activée ; les gardes et les calculs hors de portée en RPC',
     'observe', obs, 'ok', obs = 'true true centimes_ligne_facture:false/false encaissement_declare:false/false garder_encaissement_facture:false/false '
-      || 'garder_encaissement_facture_taux:false/false montants_par_taux_facture:false/false');
+      || 'garder_encaissement_facture_taux:false/false garder_frontiere_des_encaissements:false/false montants_par_taux_facture:false/false');
 
   select string_agg(p.proname || ':' || p.prosecdef::text || ' ' || coalesce(array_to_string(p.proconfig, ','), '-') || ' '
            || has_function_privilege('anon', p.oid, 'execute')::text || '/' || has_function_privilege('authenticated', p.oid, 'execute')::text,

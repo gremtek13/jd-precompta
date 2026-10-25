@@ -1,7 +1,7 @@
 import { libelleExploitable, motsDuLibelle, motsIdentifiants, motsSeConfirment, tiersConfirmeParBanque } from './appariementBanque'
 import { estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
-  ecartDeFrais, encaissementsDAvantDuMouvement, encaissementsDeclares, encaissementsDuMouvement, exemplaireUnique,
+  ANNEES_ILLISIBLES, ecartDeFrais, encaissementsDAvantDuMouvement, encaissementsDeclares, encaissementsDuMouvement, exemplaireUnique,
   justifieSonMouvement, mouvementLibre, MOYENS_ENCAISSEMENT, ordreDesEncaissements, refusClassement, refusContrePassationVente,
   refusDuClassementDuReleve, refusRattachement, refusRetraitDuClassement, resteAEncaisserVente, SEUIL_PLAFOND_CENTIMES,
   type CleRefusGardeMouvements, type ContexteVente, type DeclarationLue, type EncaissementDuReleve, type EncaissementLu,
@@ -694,6 +694,14 @@ function complementDuCredit(
 ): ComplementDuCredit {
   const sources = new Set(s.factures.filter((f) => f.dossier_id === dossierId && f.source_de_la_vente).map((f) => f.id))
   const cite = (e: EncaissementDuMouvementLu) => clientCite(e.facture_id, s.factures, libelle)
+  // Daté d'un exercice validé, l'encaissement se rattache encore au crédit d'après qui le paie (étape VF7a) : la confirmation
+  // dit que son écriture, figée, n'en change pas, et ce que le crédit soldera — le 511 d'un chèque, le 53 d'espèces.
+  const fige = (e: EncaissementDuMouvementLu) => {
+    const phrase = vente.anneesValidees === ANNEES_ILLISIBLES ? null : dateFigee(e.date_encaissement, vente.anneesValidees)
+    return phrase === null ? ''
+      : `${phrase} : l’écriture de cet encaissement n’y change pas, et celle de ce crédit soldera `
+        + `${e.moyen === 'especes' ? 'la caisse' : 'les valeurs à l’encaissement'}. `
+  }
   // Des encaissements — pas des contre-passations, qui se justifient par un débit — de factures sources, sans mouvement, non
   // retirés, et que rien ne dit « n'avoir pas eu lieu » : une contre-passation sans mouvement qui les annule les ferait
   // rattacher sans qu'ils pèsent rien sur le crédit.
@@ -712,7 +720,7 @@ function complementDuCredit(
         refus: refusRattachement(dossierId, e.id, m.id, s.encaissements, s.mouvements, vente)?.message ?? null,
         confirmation: `Rattacher à ${leCredit(m)} l’encaissement suivant ?\n\n— ${libelle} : ${formatMoney(e.montant)}\n\n`
           + 'Un encaissement ne se rattache qu’une fois : il citera ce mouvement, que la base réserve alors à ses '
-          + `encaissements. ${apresLeRattachement(dossierId, m, e, s, vente)}`,
+          + `encaissements. ${fige(e)}${apresLeRattachement(dossierId, m, e, s, vente)}`,
       }
     })
   const factures = s.factures
@@ -1095,7 +1103,8 @@ export function gestesDuDebit(
 // qu'aucun exercice validé ne fige — peut être celui qu'une vente attend :
 //   - un CRÉDIT : une facture source OUVERTE (validée, dont le reste net de ses avoirs est positif, `resteAEncaisserVente`) ;
 //     un ENCAISSEMENT d'une facture source enregistré sans mouvement (le chèque saisi avant sa remise, l'encaissement d'un
-//     client sans « Banque ») ;
+//     client sans « Banque »), fût-il daté d'un exercice validé — depuis l'étape VF7a, la base le rattache au mouvement
+//     d'après qui le paie, sauf par compensation ou par un autre moyen, et `refusRattachement` le dit ;
 //   - un DÉBIT : une CONTRE-PASSATION d'une facture source enregistrée sans mouvement (le chèque revenu impayé saisi depuis
 //     la facture). Rien de plus pour un débit : un impayé ne se devine pas.
 // UN CANDIDAT N'EST PROPOSÉ QUE SI LA BASE L'ACCEPTERAIT, par le jugement du module qui la redit, jamais par une règle

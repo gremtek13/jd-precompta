@@ -5,6 +5,7 @@ import { facture as factureCii } from '../../test/facturesCii'
 import { LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT, LIBELLE_NOTE_DECLARATION } from '../../lib/droitsAcces'
 import { ACCES_EN_COURS, type AccesDuDossier } from '../../lib/auteursVentes'
 import { motsDuCabinet } from '../../lib/espaceVentes'
+import { RATTACHEMENT_APRES_LA_FRONTIERE } from '../../lib/encaissementsFactures'
 
 import type {
   EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureSuperpdpEvent, LigneBancaire, Piece, ReglementGroupe,
@@ -1362,6 +1363,20 @@ describe('EncaissementsFactureModal — une facture source de sa vente : ce qui 
     await saisirSansMouvement()
     expect(screen.queryByText(/est validé/)).toBeNull()
     expect(await bouton()).toHaveProperty('disabled', false)
+  })
+
+  it('le chèque d’un exercice validé, sans mouvement : il se rattache encore au crédit qui le paie (étape VF7a)', async () => {
+    // Le chèque du 05/10/2027, l'exercice 2027 validé : sa ligne le dit, au cabinet.
+    monter({ facture: SOURCE, exercices: [2027], encaissements: [encaissement()], parts: [part()] })
+    const l = await ligneDe(RATTACHEMENT_APRES_LA_FRONTIERE)
+    expect(within(l).getByText(RATTACHEMENT_APRES_LA_FRONTIERE)).toBeTruthy()
+    // Par un autre moyen, il ne se rattache plus : rien n'est dit. Ni d'un exercice qui n'est pas validé.
+    for (const o of [{ encaissements: [encaissement({ moyen: 'autre' })] }, { exercices: [] as number[] }]) {
+      cleanup()
+      monter({ facture: SOURCE, exercices: [2027], encaissements: [encaissement()], parts: [part()], ...o })
+      await bouton()
+      expect(screen.queryByText(RATTACHEMENT_APRES_LA_FRONTIERE)).toBeNull()
+    }
   })
 
   it('seul un mouvement LIBRE se propose ; la pièce jumelle ne propose plus son paiement', async () => {

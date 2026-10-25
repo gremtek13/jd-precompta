@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF, seuilAlignement } from './alignementBanque'
 import {
   BORNE_MONTANT_EUROS, DATE_PLANCHER, ETATS_DECLARANTS, LONGUEUR_MAX_TEXTE, MOYENS_ENCAISSEMENT, REFUS_CLASSEMENT,
-  REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_GARDE_MOUVEMENTS, REFUS_RATTACHEMENT, REFUS_RETRAIT,
-  REFUS_RETRAIT_CLASSEMENT, SEUIL_PLAFOND_CENTIMES, SEUIL_POUR_CENT, STATUT_DEPOSEE_SUPERPDP,
+  REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_GARDE_FRONTIERE, REFUS_GARDE_MOUVEMENTS,
+  REFUS_RATTACHEMENT, REFUS_RETRAIT, REFUS_RETRAIT_CLASSEMENT, SEUIL_PLAFOND_CENTIMES, SEUIL_POUR_CENT, STATUT_DEPOSEE_SUPERPDP,
   centimesExacts, contrePassationDe, echeanceDeDeclaration, ecartDeFrais, encaissementsDeclares, euroCommeLaBase,
   obligationEncaissee, piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement,
   refusContrePassation, refusDeclaration, refusDeLaFacture, refusEnregistrement, refusRetrait, remplirModele,
@@ -1227,8 +1227,10 @@ describe('l’impayé d’un encaissement jamais déclaré (migration impaye_non
 
 describe('les trois fonctions neuves du cabinet et la garde des mouvements, telles que la migration les écrit', () => {
   const FONCTIONS = [
-    ['rattacher_mouvement_encaissement', REFUS_RATTACHEMENT, 16, {
+    // Dix-sept depuis l'étape VF7a (migration frontiere_des_encaissements) : le rang 9, le mouvement figé.
+    ['rattacher_mouvement_encaissement', REFUS_RATTACHEMENT, 17, {
       frontiere: ['public.exercice_fige(p_dossier_id, extract(year from v_encaissement.date_encaissement)::integer)'],
+      mouvement_fige: ['public.exercice_fige(p_dossier_id, extract(year from v_mouvement.date)::integer)'],
       mouvement_depasse: [MONTANT_SQL('v_mouvement.montant'), MONTANT_SQL('v_total')],
       contre_passations_depassent: [MONTANT_SQL('abs(v_mouvement.montant)'), MONTANT_SQL('abs(v_total)')],
       origine_depassee: [MONTANT_SQL('v_origine.montant'), MONTANT_SQL('v_total')],
@@ -1246,6 +1248,17 @@ describe('les trois fonctions neuves du cabinet et la garde des mouvements, tell
       frontiere: ['public.exercice_fige(p_dossier_id, extract(year from v_mouvement.date)::integer)'],
     }],
     ['garder_mouvement_reserve', REFUS_GARDE_MOUVEMENTS, 4, { reserve: ['v_numero'] }],
+    // La garde de la frontière des encaissements (étape VF7a) : chaque refus nomme l'exercice qui fige la date jugée.
+    ['garder_frontiere_des_encaissements', REFUS_GARDE_FRONTIERE, 8, {
+      repartition_figee: ['public.exercice_fige(v_encaissement.dossier_id, extract(year from v_encaissement.date_encaissement)::integer)'],
+      frontiere_encaissement: ['public.exercice_fige(v_dossier, extract(year from new.date_encaissement)::integer)'],
+      frontiere_contre_passation: ['public.exercice_fige(v_dossier, extract(year from new.date_encaissement)::integer)'],
+      retrait_fige: ['public.exercice_fige(v_dossier, extract(year from old.date_encaissement)::integer)'],
+      compte_fige: ['public.exercice_fige(v_dossier, extract(year from old.date_encaissement)::integer)'],
+      encaissement_fige: ['public.exercice_fige(v_dossier, extract(year from old.date_encaissement)::integer)'],
+      rattachement_fige: ['public.exercice_fige(v_dossier, extract(year from old.date_encaissement)::integer)'],
+      mouvement_fige: ['public.exercice_fige(v_dossier, extract(year from v_date)::integer)'],
+    }],
   ] as const
 
   it('les mêmes messages, dans le même ordre, sous les mêmes codes, leurs valeurs écrites comme le module les écrit', () => {
