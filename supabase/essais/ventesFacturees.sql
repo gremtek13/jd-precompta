@@ -13,6 +13,12 @@
 -- que src/lib/sourceDeLaVente.test.ts et src/lib/encaissementsVenteFacturee.test.ts relisent ici :
 --   - LE RÉGLAGE (1 à 5) : le cabinet le pose par sa policy ; le client ne le touche pas ; il ne se baisse plus dès
 --     qu'une facture source existe, ni pour le cabinet ni pour le propriétaire, la facture nommée ; avant, il se baisse ;
+--   - LE RÉGLAGE GARDÉ (6 à 9 ; migration `reglage_des_ventes`, étape VF8a, VF8-Q1 sur sa recommandation) : le membre
+--     affecté ne le pose ni ne le baisse, la facture source se disant d'abord, et réécrit le reste du dossier comme hier ;
+--     le chef, le chef simple, le propriétaire et le rôle des Edge Functions le posent ; le droit « Ventes » d'un accès en
+--     retient la baisse, pour le propriétaire aussi, après la facture source — un accès « Banque » seul, celui d'un autre
+--     dossier, rien ; la date posée quand il monte, effacée quand il descend, gardée sinon, quoi qu'une écriture y mette ;
+--     à l'insertion, posée par la garde, sauf pour le super-administrateur, qui la réinsère telle qu'elle a été ;
 --   - LA SOURCE FIXÉE À LA VALIDATION (10 à 24) : la facture validée d'un dossier qui a basculé est source, son avoir
 --     aussi ; une facture validée avant la bascule ne l'est pas, ni son avoir ; un dossier qui n'a pas basculé valide
 --     comme hier (sans nature, mixte, dans un exercice validé) ; dans un dossier qui a basculé, la validation se refuse
@@ -63,10 +69,10 @@
 --     148) ; la contre-passation figée d'un chèque sans mouvement se rattache (147h) ; le client « Ventes » s'y heurte
 --     comme le cabinet, la raison dite (148b, 148c) ; une facture qui n'est pas source, et ce qui suit la frontière,
 --     comme hier (149, 149b) ;
---   - LE CATALOGUE (150 à 157) : les six rôles et leurs défauts, aucune racine qui en commence une autre, les colonnes,
+--   - LE CATALOGUE (150 à 158b) : les six rôles et leurs défauts, aucune racine qui en commence une autre, les colonnes,
 --     les contraintes, les déclencheurs, la sécurité et les droits des fonctions, les réglages et qui les nomme ;
---   - LES MUTATIONS (160 à 176, puis 177 à 182 pour l'étape VF5h2, 183 à 187 pour l'étape VF7a) : chacune rejoue un
---     contrôle avec un profil, une
+--   - LES MUTATIONS (160 à 176, puis 177 à 182 pour l'étape VF5h2, 183 à 187 pour l'étape VF7a, 189 à 191 pour l'étape
+--     VF8a) : chacune rejoue un contrôle avec un profil, une
 --     cible ou un réglage délibérément faux, et doit MORDRE ;
 --   - et que RIEN ne reste en base (199).
 --
@@ -74,7 +80,8 @@
 -- (T et R ont basculé, A et N non), au sein d'un bloc qui s'annule entièrement à la fin (`ANNULATION_ESSAI_GLOBALE`) ;
 -- chaque contrôle dans sa sous-transaction, annulée elle aussi (`ANNULATION_ESSAI`, P0001) — le moteur d'étapes de
 -- exemplairesDesFactures.sql, ses six genres et ses profils : « chef » (super-administrateur), « chef_simple » (le compte
--- client rattaché au cabinet comme chef, le temps du contrôle), « membre » (le même, affecté au dossier T), « client_vb »
+-- client rattaché au cabinet comme chef, le temps du contrôle), « membre » (le même, affecté aux dossiers T, A et R — A et
+-- R depuis l'étape VF8a, pour le réglage), « client_vb »
 -- (un accès du compte client à T, avec « Ventes » et « Banque »), « client_v » (le même accès, avec « Ventes » seul :
 -- migration `contre_passation_banque`), « service » (le rôle des Edge Functions), « postgres »
 -- (le propriétaire) ; le moteur connaît aussi « client », « inconnu » et « anon », que rien n'emploie ici (l'accès de
@@ -187,6 +194,18 @@
 -- qu'ils rendaient. Le texte sans ses lignes de commentaire, envoyé en une requête : 96 784 caractères, empreinte
 -- 888fc6c56b993634c2ba97ea8312f4b6, 273 justes (HISTORIQUE.md, « LA VALIDATION REFUSE LES MANQUES DES VENTES
 -- FACTURÉES »).
+--
+-- 25/10/2026, migration `reglage_des_ventes` (PRÉPARÉE, pas appliquée ; chantier EC-Q3, étape VF8a ; VF8-Q1 suivie sur
+-- sa recommandation) : le réglage gardé — depuis une session, le chef du cabinet seul le pose ou le baisse, le droit
+-- « Ventes » d'un accès en retient la baisse, et la garde date la bascule. 154 dit désormais le déclencheur étendu à
+-- l'insertion et à la colonne neuve ; vingt-huit verdicts de plus : 6 à 9f, 158, 158b et les mutations 189 à 191 ; le
+-- profil « membre » est affecté aussi à A et à R, et la macro {CLIENT} nomme le compte client. Sur une réplique égale à la
+-- production munie de VF5h2, VF7a, VF7b et VF7e (152) : sans la migration, 301 verdicts, 21 en faute — 6, 6b, 6d, 6e, 6g,
+-- 7 à 7d, 8, 8b, 9 à 9f, 154, 158, 158b et 191, exactement — ; avec elle, 301 justes, rien n'est resté, et les contrôles
+-- d'hier rendent, verdict et observation, ce qu'ils rendaient, hors de 154 ; sur la production seule munie de la seule
+-- migration, les mêmes 21 se lèvent et rien d'autre ne change. Le texte sans ses lignes de commentaire, envoyé en une
+-- requête : 105 609 caractères, empreinte 4abf04e55e0312daa48d28cc5778aa08, 301 justes. Trente-cinq mutations de la
+-- migration, jouées contre cet essai : trente-cinq tuées (HISTORIQUE.md, « LE RÉGLAGE DES VENTES, GARDÉ »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -219,7 +238,7 @@ begin
       'W', '5f200000-0000-4000-8000-0000000000e1', 'CP', '5f200000-0000-4000-8000-0000000000e2',
       'Y1', '5f200000-0000-4000-8000-0000000000e3', 'Y2', '5f200000-0000-4000-8000-0000000000e4',
       'PE1', '5f200000-0000-4000-8000-0000000000f1', 'PE2', '5f200000-0000-4000-8000-0000000000f2',
-      'PE3', '5f200000-0000-4000-8000-0000000000f3')
+      'PE3', '5f200000-0000-4000-8000-0000000000f3', 'D8', '5f200000-0000-4000-8000-0000000000d8')
     || jsonb_build_object(
       'M1', '5f200000-0000-4000-8000-0000000000b1', 'M2', '5f200000-0000-4000-8000-0000000000b2',
       'M3', '5f200000-0000-4000-8000-0000000000b3', 'M4', '5f200000-0000-4000-8000-0000000000b4',
@@ -261,6 +280,10 @@ begin
       'DRA', $m$Un mouvement ne se classe par ses encaissements, et ne cesse de l'être, que par la fonction du cabinet.$m$,
       'SRC', $m$La source de la vente se fixe à la validation de la facture : elle ne se pose pas.$m$,
       'REG', $m$Les factures de ce dossier sont la source de leurs ventes depuis la facture F2025-0001 : ce réglage ne se défait pas.$m$,
+      'CHF', $m$Seul le chef du cabinet change la source des ventes d'un dossier.$m$,
+      'VTE', $m$Un accès client de ce dossier porte le droit « Ventes », qui suppose que ses factures soient la source de leurs ventes : retirer d'abord ce droit.$m$,
+      'AVE', $m$insert into memberships (user_id, dossier_id, role, droit_ventes, droit_banque) values ('{CLIENT}', $m$,
+      'DOS', $m$insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures, ventes_par_les_factures_depuis) values ('5f200000-0000-4000-8000-0000000000d8', 'ESSAI VF2 D8', $m$,
       'FR5', $m$L'exercice 2025 est validé : une facture source de sa vente, ou son avoir, ne s'y valide plus.$m$,
       'SEU', $m$Seul l'encaissement d'une facture source de sa vente se rattache après coup au mouvement qui le prouve.$m$,
       'DEB', $m$Une contre-passation se justifie par un débit : ce mouvement n'en est pas un.$m$,
@@ -345,6 +368,42 @@ begin
     array['controle', '3. le réglage ne se baisse plus, la première source nommée', 'chef', $q$update dossiers set ventes_par_les_factures = false where id = '{T}'$q$, '23514', '{REG}'],
     array['controle', '4. … ni pour le propriétaire', 'postgres', $q$update dossiers set ventes_par_les_factures = false where id = '{T}'$q$, '23514', '{REG}'],
     array['controle', '5. avant toute facture source, il se pose et se baisse', 'chef', $q$update dossiers set ventes_par_les_factures = true where id = '{A}'; update dossiers set ventes_par_les_factures = false where id = '{A}'$q$, 'OK', ''],
+
+    -- ══ 6 à 9. Le réglage gardé (étape VF8a, migration `reglage_des_ventes`) : qui le change, ce qui le retient, sa date ══
+    -- VF8-Q1, sur sa recommandation : depuis une session, le chef du cabinet seul — le super-administrateur compris — ; le
+    -- membre affecté (à T, A et R) ne le pose ni ne le baisse ; sans session — le propriétaire, le rôle des Edge Functions
+    -- —, rien ne se juge, comme sous une policy. L'ordre de la garde : la facture source d'abord (le refus d'hier), qui
+    -- ensuite, le droit « Ventes » enfin. La date : posée quand le réglage monte, effacée quand il descend, gardée sinon ;
+    -- réinsérée telle par le super-administrateur. R a basculé à son insertion et ne porte encore aucune facture ; A, ni
+    -- basculé ni source. Chaque contrôle s'annule.
+    array['controle', '6. le membre affecté ne pose pas le réglage', 'membre', $q$update dossiers set ventes_par_les_factures = true where id = '{A}'$q$, '42501', '{CHF}'],
+    array['controle', '6b. … ni ne le baisse, sans facture source', 'membre', $q$update dossiers set ventes_par_les_factures = false where id = '{R}'$q$, '42501', '{CHF}'],
+    array['controle', '6c. … et la facture source se dit d''abord : le refus d''hier, le premier', 'membre', $q$update dossiers set ventes_par_les_factures = false where id = '{T}'$q$, '23514', '{REG}'],
+    array['lecture', '6d. la date qu''il écrit seule ne s''écrit pas', 'membre', $q$with u as (update dossiers set ventes_par_les_factures_depuis = now() where id = '{A}' returning ventes_par_les_factures_depuis d) select coalesce(d::text, '∅') from u$q$, '', '∅'],
+    array['lecture', '6e. … ni sur un dossier basculé : elle reste celle de sa bascule', 'membre', $q$with avant as (select ventes_par_les_factures_depuis d from dossiers where id = '{R}'), u as (update dossiers set ventes_par_les_factures_depuis = '2020-01-01 00:00:00+00' where id = '{R}' returning ventes_par_les_factures_depuis d) select ((select d from u) = (select d from avant))::text$q$, '', 'true'],
+    array['lecture', '6f. il réécrit le dossier comme hier, le réglage à sa valeur compris', 'membre', $q$with u as (update dossiers set nom = nom, ventes_par_les_factures = false where id = '{A}' returning 1) select count(*)::text from u$q$, '', '1'],
+    array['controle', '6g. sous un accès « Ventes », la personne se dit avant le droit', 'membre', $q${AVE}'{R}', 'client', true, false); update dossiers set ventes_par_les_factures = false where id = '{R}'$q$, '42501', '{CHF}'],
+    array['lecture', '7. le chef le pose : la date posée', 'chef', $q$with u as (update dossiers set ventes_par_les_factures = true where id = '{A}' returning ventes_par_les_factures_depuis d) select (d = now())::text from u$q$, '', 'true'],
+    array['lecture', '7b. le chef simple le pose puis le baisse : la date posée, puis effacée', 'chef_simple', $q$update dossiers set ventes_par_les_factures = true where id = '{A}'; with avant as (select ventes_par_les_factures_depuis d from dossiers where id = '{A}'), u as (update dossiers set ventes_par_les_factures = false where id = '{A}' returning ventes_par_les_factures_depuis d) select (select (d = now())::text from avant) || ' -> ' || coalesce((select d::text from u), '∅')$q$, '', 'true -> ∅'],
+    array['lecture', '7c. la date écrite avec le réglage ne compte pas : la garde la pose', 'chef', $q$with u as (update dossiers set ventes_par_les_factures = true, ventes_par_les_factures_depuis = '2020-01-01 00:00:00+00' where id = '{A}' returning ventes_par_les_factures_depuis d) select (d = now())::text from u$q$, '', 'true'],
+    array['valeur', '7d. un dossier inséré basculé, ou qui a basculé, porte sa date ; les autres, aucune', 'postgres', $q$select string_agg(nom || '=' || coalesce((ventes_par_les_factures_depuis = now())::text, '∅'), ',' order by nom collate "C") from dossiers where id in ('{T}', '{A}', '{R}', '{N}')$q$, '',
+      'ESSAI VF2 A=∅,ESSAI VF2 N=∅,ESSAI VF2 R=true,ESSAI VF2 T=true'],
+    array['controle', '8. le droit « Ventes » d''un accès retient la baisse', 'chef', $q${AVE}'{R}', 'client', true, false); update dossiers set ventes_par_les_factures = false where id = '{R}'$q$, '23514', '{VTE}'],
+    array['controle', '8b. … pour le propriétaire aussi', 'postgres', $q${AVE}'{R}', 'client', true, false); update dossiers set ventes_par_les_factures = false where id = '{R}'$q$, '23514', '{VTE}'],
+    array['controle', '8c. … après la facture source, qui se dit d''abord', 'chef', $q${AVE}'{T}', 'client', true, false); update dossiers set ventes_par_les_factures = false where id = '{T}'$q$, '23514', '{REG}'],
+    array['controle', '8d. un accès « Banque » seul ne retient rien', 'chef', $q${AVE}'{R}', 'client', false, true); update dossiers set ventes_par_les_factures = false where id = '{R}'$q$, 'OK', ''],
+    array['controle', '8e. ni l''accès « Ventes » d''un autre dossier', 'chef', $q${AVE}'{T}', 'client', true, false); update dossiers set ventes_par_les_factures = false where id = '{R}'$q$, 'OK', ''],
+    array['controle', '8f. ni, pour le poser, l''accès « Ventes » d''un dossier qui n''a pas basculé', 'chef', $q${AVE}'{A}', 'client', true, false); update dossiers set ventes_par_les_factures = true where id = '{A}'$q$, 'OK', ''],
+    array['lecture', '9. le propriétaire passe la garde de la personne : il le pose, la date posée', 'postgres', $q$with u as (update dossiers set ventes_par_les_factures = true where id = '{A}' returning ventes_par_les_factures_depuis d) select (d = now())::text from u$q$, '', 'true'],
+    array['lecture', '9b. … et le rôle des Edge Functions', 'service', $q$with u as (update dossiers set ventes_par_les_factures = true where id = '{A}' returning ventes_par_les_factures_depuis d) select (d = now())::text from u$q$, '', 'true'],
+    array['lecture', '9c. la restauration : le super-administrateur réinsère un dossier basculé, sa date telle', 'chef', $q${DOS}'{CAB}', 'tresorerie', '455000', true, '2026-01-02 03:04:05+00'); select (ventes_par_les_factures_depuis = '2026-01-02 03:04:05+00')::text from dossiers where id = '{D8}'$q$, '', 'true'],
+    array['lecture', '9d. … et une date nulle, nulle : une sauvegarde d''avant l''étape VF8a', 'chef', $q${DOS}'{CAB}', 'tresorerie', '455000', true, null); select coalesce(ventes_par_les_factures_depuis::text, '∅') from dossiers where id = '{D8}'$q$, '', '∅'],
+    array['lecture', '9e. toute autre insertion : la garde pose la date, quoi qu''on y mette', 'chef_simple', $q${DOS}'{CAB}', 'tresorerie', '455000', true, '2026-01-02 03:04:05+00'); select (ventes_par_les_factures_depuis = now())::text from dossiers where id = '{D8}'$q$, '', 'true'],
+    array['lecture', '9f. … et l''efface d''un dossier qui n''a pas basculé', 'postgres', $q${DOS}'{CAB}', 'tresorerie', '455000', false, '2026-01-02 03:04:05+00'); select coalesce(ventes_par_les_factures_depuis::text, '∅') from dossiers where id = '{D8}'$q$, '', '∅'],
+    -- Leurs mutations (étape VF8a) : le même geste par un chef, sans le droit, ou par une autre porte — chacune doit mordre.
+    array['controle', '189. MUTATION de 6 et 6b : le chef simple pose le réglage de A, et baisse celui de R', 'chef_simple', $q$update dossiers set ventes_par_les_factures = true where id = '{A}'; update dossiers set ventes_par_les_factures = false where id = '{R}'$q$, 'OK', ''],
+    array['controle', '190. MUTATION de 8 : le droit « Ventes » retiré par la fonction du cabinet, la baisse passe', 'chef', $q${AVE}'{R}', 'client', true, false); select changer_droits_acces((select m.id from memberships m where m.dossier_id = '{R}' and m.user_id = '{CLIENT}'), false, null); update dossiers set ventes_par_les_factures = false where id = '{R}'$q$, 'OK', ''],
+    array['lecture', '191. MUTATION de 9c : la même insertion par le chef simple, la date posée par la garde', 'chef_simple', $q${DOS}'{CAB}', 'tresorerie', '455000', true, '2026-01-02 03:04:05+00'); select (ventes_par_les_factures_depuis = '2026-01-02 03:04:05+00')::text from dossiers where id = '{D8}'$q$, '', 'false'],
 
     -- ══ 11 à 26. La source à la validation ══════════
     array['controle', '11. basculé : sans nature, elle ne se valide pas', 'chef', $q${ENF}'{T}', null, {FJ1} || '{"date_emission":"2026-03-20"}', {L1}, true)$q$, '23514', 'Dans un dossier dont les factures sont la source de leurs ventes, une facture dit si elle porte sur des biens ou sur des services : la nature de ses opérations est à renseigner avant sa validation.'],
@@ -562,12 +621,17 @@ begin
     array['valeur', '153b. les deux index partiels des écritures', 'postgres', $q$select string_agg(d, ' | ' order by d) from (select pg_get_indexdef(indexrelid) d from pg_index where indrelid = 'public.ecritures_brouillon'::regclass) x where d ~ '(encaissement|facture)_id\)'$q$, '',
       'CREATE INDEX ecritures_brouillon_encaissement_id_idx ON public.ecritures_brouillon USING btree (encaissement_id) WHERE (encaissement_id IS NOT NULL) | CREATE INDEX ecritures_brouillon_facture_id_idx ON public.ecritures_brouillon USING btree (facture_id) WHERE (facture_id IS NOT NULL)'],
     array['valeur', '154. les quatre déclencheurs, actifs', 'postgres', $q$select string_agg(pg_get_triggerdef(oid) || ' ' || tgenabled::text, ' | ' order by tgname) from pg_trigger where not tgisinternal and tgname in ('dossiers_ventes_par_les_factures', 'factures_emises_source_de_la_vente', 'ecritures_brouillon_vente_facturee', 'lignes_bancaires_reservees_aux_encaissements')$q$, '',
-      'CREATE TRIGGER dossiers_ventes_par_les_factures BEFORE UPDATE OF ventes_par_les_factures ON public.dossiers FOR EACH ROW EXECUTE FUNCTION garder_ventes_par_les_factures() O | CREATE TRIGGER ecritures_brouillon_vente_facturee BEFORE INSERT OR UPDATE OF encaissement_id, facture_id ON public.ecritures_brouillon FOR EACH ROW EXECUTE FUNCTION garder_ecriture_vente_facturee() O | CREATE TRIGGER factures_emises_source_de_la_vente BEFORE INSERT OR UPDATE ON public.factures_emises FOR EACH ROW EXECUTE FUNCTION fixer_source_de_la_vente() O | CREATE TRIGGER lignes_bancaires_reservees_aux_encaissements BEFORE INSERT OR UPDATE ON public.lignes_bancaires FOR EACH ROW EXECUTE FUNCTION garder_mouvement_reserve() O'],
+      'CREATE TRIGGER dossiers_ventes_par_les_factures BEFORE INSERT OR UPDATE OF ventes_par_les_factures, ventes_par_les_factures_depuis ON public.dossiers FOR EACH ROW EXECUTE FUNCTION garder_ventes_par_les_factures() O | CREATE TRIGGER ecritures_brouillon_vente_facturee BEFORE INSERT OR UPDATE OF encaissement_id, facture_id ON public.ecritures_brouillon FOR EACH ROW EXECUTE FUNCTION garder_ecriture_vente_facturee() O | CREATE TRIGGER factures_emises_source_de_la_vente BEFORE INSERT OR UPDATE ON public.factures_emises FOR EACH ROW EXECUTE FUNCTION fixer_source_de_la_vente() O | CREATE TRIGGER lignes_bancaires_reservees_aux_encaissements BEFORE INSERT OR UPDATE ON public.lignes_bancaires FOR EACH ROW EXECUTE FUNCTION garder_mouvement_reserve() O'],
     array['valeur', '155. sécurité, chemin et droits des fonctions', 'postgres', $q$select string_agg(proname || ':' || prosecdef || ':' || coalesce(array_to_string(proconfig, ','), '-') || ':' || has_function_privilege('anon', oid, 'execute') || ':' || has_function_privilege('authenticated', oid, 'execute'), ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and proname in ('annuler_encaissement', 'classer_mouvement_par_encaissements', 'encaissement_justifie_son_mouvement', 'enregistrer_encaissement', 'fixer_source_de_la_vente', 'garder_ecriture_vente_facturee', 'garder_encaissement_facture', 'garder_frontiere_des_encaissements', 'garder_mouvement_reserve', 'garder_ventes_par_les_factures', 'mouvement_libre', 'rattacher_mouvement_encaissement', 'retirer_classement_par_encaissements', 'retirer_encaissement')$q$, '',
       'annuler_encaissement:true:search_path=public:false:true,classer_mouvement_par_encaissements:true:search_path=public:false:true,encaissement_justifie_son_mouvement:false:search_path=public:false:false,enregistrer_encaissement:true:search_path=public:false:true,fixer_source_de_la_vente:true:search_path=public:false:false,garder_ecriture_vente_facturee:false:search_path=public:false:false,garder_encaissement_facture:false:search_path=public:false:false,garder_frontiere_des_encaissements:true:search_path=public:false:false,garder_mouvement_reserve:true:search_path=public:false:false,garder_ventes_par_les_factures:true:search_path=public:false:false,mouvement_libre:false:search_path=public:false:true,rattacher_mouvement_encaissement:true:search_path=public:false:true,retirer_classement_par_encaissements:true:search_path=public:false:true,retirer_encaissement:true:search_path=public:false:true'],
     array['valeur', '156. contre-passer : une seule signature, à cinq paramètres', 'postgres', $q$select string_agg(pg_get_function_identity_arguments(oid), ' | ') from pg_proc where pronamespace = 'public'::regnamespace and proname = 'annuler_encaissement'$q$, '', 'p_dossier_id uuid, p_encaissement_id uuid, p_date date, p_motif text, p_ligne_bancaire_id uuid'],
     array['valeur', '157. qui nomme les trois réglages', 'postgres', $q$select string_agg(r || ':' || (select string_agg(proname, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and prosrc like '%' || r || '%' and proname not in ('ecrire_vente_facturee', 'garder_lignes_de_la_vente_facturee', 'retirer_ecriture_vente_facturee')), ' | ' order by r) from unnest(array['jd.classement_encaissements', 'jd.ecriture_vente_facturee', 'jd.rattachement_encaissement']) r$q$, '',
       'jd.classement_encaissements:classer_mouvement_par_encaissements,garder_mouvement_reserve,retirer_classement_par_encaissements | jd.ecriture_vente_facturee:garder_ecriture_vente_facturee | jd.rattachement_encaissement:garder_encaissement_facture,rattacher_mouvement_encaissement'],
+    -- L'étape VF8a : la colonne de la date, et la garde qui ne juge la personne qu'à un endroit — la condition de VF8-Q1.
+    array['valeur', '158. la date de la bascule : un instant, nul par défaut', 'postgres', $q$select string_agg(format_type(a.atttypid, a.atttypmod) || ' ' || a.attnotnull || ' ' || coalesce(pg_get_expr(d.adbin, d.adrelid), '-'), ',') from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum where a.attrelid = 'public.dossiers'::regclass and a.attname = 'ventes_par_les_factures_depuis' and not a.attisdropped$q$, '',
+      'timestamp with time zone false -'],
+    array['valeur', '158b. la garde juge la personne une fois, par le chef du cabinet du dossier (VF8-Q1)', 'postgres', $q$select (length(prosrc) - length(replace(prosrc, 'est_chef_du_cabinet', ''))) / length('est_chef_du_cabinet') || ' ' || (prosrc like '%if auth.uid() is not null and not public.est_chef_du_cabinet(old.cabinet_id) then%') from pg_proc where oid = 'public.garder_ventes_par_les_factures()'::regprocedure$q$, '',
+      '1 true'],
 
     -- ══ 160 à 173. Les mutations : chacune doit MORDRE ══════════
     array['controle', '160. MUTATION de 3 : sans facture source, il se baisse', 'chef', $q$update dossiers set ventes_par_les_factures = false where id = '{R}'$q$, 'OK', ''],
@@ -683,7 +747,7 @@ begin
     foreach etape slice 1 in array etapes loop
       s := etape[4];
       attendu := etape[6];
-      for cle, valeur in select key, value from jsonb_each_text(ids || jsonb_build_object('CHEF', chef)) loop
+      for cle, valeur in select key, value from jsonb_each_text(ids || jsonb_build_object('CHEF', chef, 'CLIENT', client)) loop
         s := replace(s, '{' || cle || '}', valeur);
         attendu := replace(attendu, '{' || cle || '}', valeur);
       end loop;
@@ -721,7 +785,9 @@ begin
             insert into cabinet_admins (user_id, cabinet_id, role)
               values (client, cabinet, case etape[3] when 'membre' then 'comptable' else 'comptable_en_chef' end);
             if etape[3] = 'membre' then
-              insert into dossier_assignations (dossier_id, user_id) values ((ids ->> 'T')::uuid, client);
+              -- A et R depuis l'étape VF8a : le réglage d'un dossier qui n'a pas basculé, et d'un qui a basculé sans facture.
+              insert into dossier_assignations (dossier_id, user_id)
+                values ((ids ->> 'T')::uuid, client), ((ids ->> 'A')::uuid, client), ((ids ->> 'R')::uuid, client);
             end if;
           elsif etape[3] = 'client_vb' then
             insert into memberships (user_id, dossier_id, role, droit_ventes, droit_banque) values (client, (ids ->> 'T')::uuid, 'client', true, true);
