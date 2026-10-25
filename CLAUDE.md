@@ -524,10 +524,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   jamais 0), et Clôture le dit poste par poste → « L'INSTANTANÉ VALIDÉ COMPTE SES ENCAISSEMENTS ». VF7e PRÉPARÉE le
   25/10/2026, pas appliquée (`gel_des_designations`, version provisoire ; VF7-Q1 suivie sur sa recommandation, (B)) : la
   validation de l'exercice d'une facture source fige la désignation de son exemplaire, et une telle facture ne reçoit plus
-  qu'une première désignation, d'une pièce que rien ne marque (`v_deja_marquee`) → « LE GEL DES DÉSIGNATIONS ». Restent
-  VF8 et VF9 (EC3-Q9, la facture reprise, va à A8) ;
-  « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la
-  simulation recevra dit aussi quelle pièce ignorer.
+  qu'une première désignation, d'une pièce que rien ne marque (`v_deja_marquee`) → « LE GEL DES DÉSIGNATIONS ». VF8
+  conçue le 25/10/2026 (huit lots, VF8a à VF8h, dont trois migrations, le resserrement en dernier ; questions VF8-Q1 à
+  Q3) → « VF8, LA BASCULE : LA CONCEPTION ». Restent VF8 et VF9 (EC3-Q9, la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
