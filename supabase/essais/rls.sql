@@ -518,6 +518,17 @@
 -- verdict (la ligne FE « EN ATTENTE » de plus), 0 en faute, 43 mutations sur 43 qui mordent ; avec elle, 52 lignes,
 -- 0 en faute, 46 mutations sur 46 — seules les lignes FE diffèrent. Le passage en production suivra l'application et
 -- se notera ici.
+--
+-- 25/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (chantier EC-Q3, étape VF7b : migration
+-- `validation_des_ventes_facturees`, préparée, non appliquée), qui ne crée ni ne change aucune policy, mais deux fonctions
+-- qui lisent tout un dossier aux droits de l'appelant, et une validation qui nomme désormais ce qu'un dossier basculé
+-- porte : le bloc VB (VB1 à VB3, M-VB1, M-VB2) les rejoue — ni l'une ni l'autre ne s'exécute en RPC, et le client « Ventes »
+-- et « Banque » reçoit le refus d'hier avant toute lecture. Joué ENTIER par psql sur la réplique de l'étape (la
+-- production à 148 migrations, `registre_virement_mixte` et `frontiere_des_encaissements` appliquées comme l'outil
+-- l'aurait fait, le journal semé) : sans la migration, 53 lignes de verdict (la ligne VB « EN ATTENTE » de plus), 0 en
+-- faute, 46 mutations sur 46 qui mordent ; avec elle, 56 lignes, 0 en faute, 48 mutations sur 48 — seules les lignes VB
+-- diffèrent. M-VB1 voit l'appel buter ensuite sur `frontiere_validation`, que l'API n'exécute pas non plus : une défense
+-- de plus, pas celle que VB1 juge. Le passage en production suivra l'application et se notera ici.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -2247,6 +2258,146 @@ begin
     'cible', 'garder_frontiere_des_encaissements', 'observe', case when n = 1 then 'security definer, ni anon ni authenticated' else 'EXÉCUTABLE OU ABSENTE' end,
     'ok', n = 1);
   verdicts := verdicts || jsonb_build_object('controle', 'FE. le jeu d''essai de la frontière s''est construit', 'cible', 'frontière',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ VB. La validation des ventes facturées (chantier EC-Q3, étape VF7b ; migration `validation_des_ventes_facturees`) ══
+-- Deux fonctions neuves, `ecritures_attendues_de_la_periode` et `ventes_facturees_de_l_exercice`, lisent tout un dossier
+-- aux droits de l'appelant : seule la validation les appelle, aux droits du propriétaire. Elles ne s'exécutent donc pas
+-- en RPC — ni par l'anonyme, ni par un client, ni par le chef du cabinet (VB1, VB3). Et `valider_exercice`, qui refuse
+-- désormais un mouvement réservé sous son nom, refuse le client « Ventes » et « Banque » sur son propre dossier basculé
+-- sous les mots d'hier, AVANT toute lecture : il n'apprend pas qu'un mouvement y est réservé à l'encaissement d'une facture
+-- (VB2) — ce que la mutation M-VB2, le client fait chef du cabinet le temps d'un appel, fait lire.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  refus_chef text := 'Seul le chef du cabinet valide un exercice.';
+  f_source uuid; m_reserve uuid; cabinet_du_client uuid; profil text; fonction text; n bigint;
+  accepte boolean; motif text; message text; erreur text; construit boolean := false; obs text;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.ventes_facturees_de_l_exercice(uuid, integer)') is null then
+    insert into rls_verdict values ('VB. la validation des ventes facturées : EN ATTENTE de la migration validation_des_ventes_facturees',
+      'ventes_facturees_de_l_exercice', 'absente : ses droits se jugent dès que la migration y est', true);
+    return;
+  end if;
+  select d.cabinet_id into cabinet_du_client from dossiers d where d.id = dossier_du_client;
+  begin
+    -- ── Le jeu : le dossier du client bascule ; une facture source de 2025, son encaissement par virement sur un crédit de
+    -- son jour, que rien ne classe — le mouvement est réservé. ──
+    update memberships set droit_ventes = true, droit_banque = true where user_id = client;
+    update dossiers set ventes_par_les_factures = true where id = dossier_du_client;
+    insert into lignes_bancaires (dossier_id, date, libelle, montant, statut)
+      values (dossier_du_client, '2025-03-10', 'ESSAI RLS VB', 120, 'non_rapprochee') returning id into m_reserve;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
+      '{"tiers_nom":"ESSAI RLS VB","date_emission":"2025-03-01","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
+    perform enregistrer_encaissement(dossier_du_client, f_source, '2025-03-10', 120, 'virement', m_reserve, '[{"taux":20,"montant":120}]'::jsonb);
+    reset role;
+    construit := true;
+
+    -- VB1 : les deux fonctions neuves, en RPC, par l'anonyme, un compte rattaché à rien, le client, le chef.
+    foreach fonction in array array['ventes_facturees_de_l_exercice', 'ecritures_attendues_de_la_periode'] loop
+      foreach profil in array array['anon', 'inconnu', 'client', 'chef'] loop
+        accepte := false; motif := null; message := null;
+        begin
+          execute format('set local role %I', case profil when 'anon' then 'anon' else 'authenticated' end);
+          perform set_config('request.jwt.claims', case profil when 'anon' then '{"role":"anon"}'
+            else json_build_object('sub', case profil when 'inconnu' then inconnu when 'client' then client else chef end,
+                                   'role', 'authenticated')::text end, true);
+          if fonction = 'ventes_facturees_de_l_exercice' then
+            perform count(*) from ventes_facturees_de_l_exercice(dossier_du_client, 2025);
+          else
+            perform count(*) from ecritures_attendues_de_la_periode(dossier_du_client, null, '2025-12-31');
+          end if;
+          accepte := true;
+          raise exception 'ANNULATION_ESSAI';
+        exception when others then motif := sqlstate; message := sqlerrm;
+        end;
+        reset role;
+        verdicts := verdicts || jsonb_build_object('controle', 'VB1. les deux fonctions neuves ne s''exécutent pas en RPC, pas même par le chef du cabinet',
+          'cible', fonction || ' / ' || profil, 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+          'ok', not accepte and motif = '42501' and message = 'permission denied for function ' || fonction);
+      end loop;
+    end loop;
+
+    -- M-VB1 : les deux fonctions ouvertes à `authenticated` (la première appelle la seconde) — l'appel du client ne bute
+    -- plus sur elles, et VB1 le verrait (ce qu'il rencontre ensuite, une fonction plus profonde qu'il n'exécute pas, est
+    -- une défense de plus, pas celle que VB1 juge).
+    obs := null;
+    begin
+      grant execute on function public.ventes_facturees_de_l_exercice(uuid, integer) to authenticated;
+      grant execute on function public.ecritures_attendues_de_la_periode(uuid, date, date) to authenticated;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform count(*) from ventes_facturees_de_l_exercice(dossier_du_client, 2025);
+      obs := 'accepté';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-VB1 — VB1 rejoué, les deux fonctions ouvertes à authenticated',
+      'attendu', 'l''appel ne bute plus sur la fonction des sources en défaut', 'observe', coalesce(obs, '?'),
+      'mord', obs is distinct from '42501 permission denied for function ventes_facturees_de_l_exercice');
+
+    -- VB2 : le client « Ventes » et « Banque », sur son propre dossier basculé : le refus d'hier, avant toute lecture.
+    accepte := false; motif := null; message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform valider_exercice(dossier_du_client, 2025, '[]'::jsonb, '[]'::jsonb, '{}'::jsonb);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'VB2. le client « Ventes » et « Banque » ne valide pas son dossier basculé, et ne lit pas qu''un mouvement y est réservé',
+      'cible', 'valider_exercice', 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+      'ok', not accepte and motif = '42501' and message = refus_chef);
+
+    -- M-VB2 : le client fait chef du cabinet le temps de l'appel — il passe le refus d'hier, et lit la suite.
+    obs := null;
+    begin
+      insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet_du_client, 'comptable_en_chef');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform valider_exercice(dossier_du_client, 2025, '[]'::jsonb, '[]'::jsonb, '{}'::jsonb);
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then obs := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-VB2 — VB2 rejoué, le client fait chef du cabinet',
+      'attendu', 'un autre refus que celui du chef', 'observe', coalesce(obs, '?'),
+      'mord', obs is distinct from '42501 ' || refus_chef);
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+
+  -- VB3 : lecture du catalogue — aux droits de l'appelant, et exécutables par personne de l'API.
+  select count(*) into n from pg_proc p
+   where p.oid in (to_regprocedure('public.ventes_facturees_de_l_exercice(uuid, integer)'),
+                   to_regprocedure('public.ecritures_attendues_de_la_periode(uuid, date, date)'))
+     and not p.prosecdef
+     and not has_function_privilege('anon', p.oid, 'execute') and not has_function_privilege('authenticated', p.oid, 'execute');
+  verdicts := verdicts || jsonb_build_object('controle', 'VB3. les deux fonctions neuves, aux droits de l''appelant, exécutables par personne de l''API (lecture du catalogue)',
+    'cible', 'ventes_facturees_de_l_exercice, ecritures_attendues_de_la_periode',
+    'observe', n || ' sur 2', 'ok', n = 2);
+  verdicts := verdicts || jsonb_build_object('controle', 'VB. le jeu d''essai de la validation des ventes facturées s''est construit', 'cible', 'validation',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 

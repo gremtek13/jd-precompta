@@ -215,6 +215,58 @@ export function prochainExerciceAValider(d: SuiteDesExercices): number | null {
   return Number.isFinite(prochain) && prochain < d.anneeCourante ? prochain : null
 }
 
+// CE QUE LA BASE REFUSE AUSSI POUR LES VENTES FACTURÉES D'UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF7b ; migration
+// `validation_des_ventes_facturees`) : les refus que `valider_exercice` y ajoute, DANS L'ORDRE DE SON TEXTE, SOUS SES MOTS
+// ET SON CODE. Un mouvement RÉSERVÉ à des encaissements de factures sources (un crédit ; un débit, à leurs
+// contre-passations), dit AVANT les mouvements à traiter, sous son nom ; puis, après eux, un encaissement par virement ou
+// par prélèvement sans son mouvement ; puis la PREMIÈRE source en défaut de l'exercice (`ventes_facturees_de_l_exercice`,
+// de la frontière au 31 décembre), sous les mots de son état. Chaque « % » est une valeur de la base : l'exercice, une date
+// (JJ/MM/AAAA), un numéro de facture, le nom du moyen (`NOM_DU_MOYEN_SANS_MOUVEMENT`), ou le nom de la source (« la
+// facture F2025-0001 », « l'encaissement du 10/03/2025 de la facture F2025-0001 », « la contre-passation du … », « le
+// mouvement du … »). Ses MOTS SEULEMENT : les préalables les diront avant le clic à l'étape VF7c ; jusque-là, la base
+// refuse seule, et `prealablesValidation.test.ts` confronte cette liste au texte exporté et à l'essai
+// (supabase/essais/validationDesVentesFacturees.sql).
+export const REFUS_VENTES_FACTUREES_DE_LA_VALIDATION = [
+  {
+    cle: 'mouvement_reserve_credit',
+    modele: "L'exercice % porte un mouvement du % réservé à l'encaissement de la facture % : le classer par ses encaissements avant la validation.",
+    code: '23514',
+  },
+  {
+    cle: 'mouvement_reserve_debit',
+    modele: "L'exercice % porte un mouvement du % réservé à la contre-passation d'un encaissement de la facture % : le classer par ses contre-passations avant la validation.",
+    code: '23514',
+  },
+  {
+    cle: 'encaissement_sans_mouvement',
+    modele: "L'exercice % porte un encaissement de la facture % par % du %, sans son mouvement : il manque au relevé, ou n'y est pas rattaché — le rattacher avant la validation.",
+    code: '23514',
+  },
+  { cle: 'a_ecrire', modele: "L'exercice % porte une vente facturée qui n'est pas écrite : % — l'écrire avant la validation.", code: '23514' },
+  {
+    cle: 'a_reecrire',
+    modele: "L'exercice % porte une vente facturée dont l'écriture proposée n'est plus celle que sa source commande : % — la réécrire avant la validation.",
+    code: '23514',
+  },
+  {
+    cle: 'a_retirer',
+    modele: "L'exercice % porte l'écriture proposée d'une vente facturée qui n'a plus rien à écrire : % — la retirer avant la validation.",
+    code: '23514',
+  },
+  {
+    cle: 'ne_s_ecrit_pas',
+    modele: "L'exercice % porte une vente facturée qui ne s'écrit pas : % — lever ce qui la retient avant la validation.",
+    code: '23514',
+  },
+] as const
+
+export type CleRefusVentesFactureesDeLaValidation = (typeof REFUS_VENTES_FACTUREES_DE_LA_VALIDATION)[number]['cle']
+
+// Les moyens d'un encaissement qui, sans mouvement au 31 décembre, retiennent la validation — encaissé à l'inscription au
+// crédit, son mouvement est de son exercice —, et leur nom dans le refus. Un chèque, une carte ou un effet sans mouvement
+// est un en-cours, aux valeurs à l'encaissement (EC3-Q7) : il ne retient pas.
+export const NOM_DU_MOYEN_SANS_MOUVEMENT = { virement: 'virement', prelevement: 'prélèvement' } as const
+
 export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation {
   const debut = `${d.annee}-01-01`
   const fin = `${d.annee}-12-31`
