@@ -251,8 +251,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   électronique, la vue de la banque — pour un accès qui en porte le DROIT, tenu en base, jamais par l'écran seul ; le
   client y écrit par les fonctions du cabinet, et une policy qui lui ouvre une lecture se présente au cabinet avant
   d'être appliquée.
-- **Les droits sont en base** : `memberships.droit_ventes` et `droit_banque`, faux par défaut, posés par
-  `changer_droits_acces` seule (un droit nul y est inchangé) ; prédicats `client_du_dossier`, `gere_les_ventes`,
+- **Les droits sont en base** : `memberships.droit_ventes` et `droit_banque`, faux par défaut, changés par
+  `changer_droits_acces` seule (un droit nul y est inchangé) — une insertion du cabinet les pose aussi, la policy ne
+  regardant que le dossier (VF8f la gardera) ; prédicats `client_du_dossier`, `gere_les_ventes`,
   `gere_la_banque`, `droits_sur_le_dossier`. « Banque » ouvre la banque du client ; « Ventes » ses ventes et leurs
   gestes (un mouvement désigné demande aussi « Banque », le débit qu'une contre-passation cite compris → « LA
   CONTRE-PASSATION NE CITE UN MOUVEMENT QU'AVEC « BANQUE » »), articles, adresse de réception, clients, paramètres (un
@@ -526,7 +527,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   validation de l'exercice d'une facture source fige la désignation de son exemplaire, et une telle facture ne reçoit plus
   qu'une première désignation, d'une pièce que rien ne marque (`v_deja_marquee`) → « LE GEL DES DÉSIGNATIONS ». VF8
   conçue le 25/10/2026 (huit lots, VF8a à VF8h, dont trois migrations, le resserrement en dernier ; questions VF8-Q1 à
-  Q3) → « VF8, LA BASCULE : LA CONCEPTION ». Restent VF8 et VF9 (EC3-Q9, la facture reprise, va à A8).
+  Q3) → « VF8, LA BASCULE : LA CONCEPTION ». VF8a PRÉPARÉE le 25/10/2026, pas appliquée (`reglage_des_ventes`, version
+  provisoire, avec ou sans les quatre ; VF8-Q1 suivie sur sa recommandation) : depuis une session, le chef du cabinet
+  seul pose ou baisse le réglage (la condition : `est_chef_du_cabinet(old.cabinet_id)`), un accès « Ventes » en retient
+  la baisse, la garde date la bascule (`ventes_par_les_factures_depuis`) → « LE RÉGLAGE DES VENTES, GARDÉ ». Restent
+  VF8b à VF8h et VF9 (EC3-Q9, la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;

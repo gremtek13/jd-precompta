@@ -36302,3 +36302,180 @@ bascule change la pièce qui compte, pas la méthode), non relu ce jour. Ordonna
 cabinet EC3-Q1, Q2, Q5, Q8, Q11, VF5-Q3 et VF5H-Q3. Lus ce jour en production : les policies de `dossiers` et de
 `memberships`, leurs déclencheurs, les droits par colonne de `memberships`, `changer_droits_acces`, les comptes du § 1.
 Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées.
+
+### 25/10/2026 — LE RÉGLAGE DES VENTES, GARDÉ — CHANTIER EC-Q3, VF8A (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF8a sur `0eed234` — `main` plus VF5h2, VF7a, VF7b et VF7e préparées, VF7c et VF7d, la
+conception de VF8 —, la branche locale `vf8a-reglage`, en deux commits : la migration, le module, les tests et les
+essais ; puis cette documentation. Créée : la migration `supabase/schema/20261026120000_reglage_des_ventes.sql`.
+Modifiés : `sourceDeLaVente.ts`, `types.ts`, `sauvegarde.ts` (un commentaire) et deux fichiers de tests
+(`sourceDeLaVente.test.ts`, `sauvegardeVenteFacturee.test.ts`) ; les essais `ventesFacturees.sql` et
+`restauration.sql` ; RGPD.md ; `supabase/schema/README.md` ; CLAUDE.md. La migration est dans l'export sous une version
+PROVISOIRE, `20261026120000`, et n'est PAS appliquée : elle attend l'accord du cabinet. En production, des SELECT de
+comptes, du catalogue, d'empreintes de corps et de commentaires, aucune valeur d'une ligne, aucune écriture.)
+
+**LA DÉCISION.** La conception de VF8 (§ 3 a, § 5, § 7) : le réglage `dossiers.ventes_par_les_factures`, gardé, daté,
+retenu par un accès « Ventes ». VF8-Q1, PAS ENCORE TRANCHÉE, écrite sur sa recommandation : depuis une session, le chef
+du cabinet seul — et le super-administrateur, que `est_chef_du_cabinet` inclut — pose ou baisse le réglage ; un membre
+de l'équipe assigné au dossier ne le peut plus (il réécrit le reste du dossier comme hier, le réglage à sa valeur
+compris). LA CONDITION QUI PORTE VF8-Q1 est `public.est_chef_du_cabinet(old.cabinet_id)`, au rang 2 de la garde, et
+`contexte.chefDuCabinet` dans le module : « tout membre assigné au dossier » la remplace par
+`public.admin_du_dossier(old.id)` — l'appelant du module y passant ce que dit `admin_du_dossier` —, et rien d'autre ne
+change. L'essai le montre : la mutation P4, qui fait exactement ce remplacement, fait virer 6, 6b, 6g et 158b, et eux
+seuls.
+
+**CE QUE LA BASE FAISAIT.** Joué sans la migration, l'essai étendu le montre : le membre affecté posait et baissait le
+réglage (6, 6b, 6g : acceptés), un accès « Ventes » ne retenait rien, pas même pour le propriétaire (8, 8b), et la date
+n'existait pas (6d, 6e, 7 à 7d, 9 à 9f, 191 : 42703) ; 154 lisait l'ancien déclencheur, 158 et 158b rien.
+
+**L'ÉTAT DE LA PRODUCTION, RELEVÉ LE 25/10/2026** : 148 migrations, `19c0e53c…`, sans les quatre préparées ni celle-ci ;
+les neuf familles de `signature.sql` égales à la réplique ; la garde `garder_ventes_par_les_factures`, corps `6d9776e4…`
+(de `source_de_la_vente`), son déclencheur avant la mise à jour du seul réglage ; les commentaires de la garde et du
+réglage, ceux de l'export (`d7ecbf72…`, `417bc933…`) ; quatre dossiers, aucun basculé, aucune facture source, aucun
+accès « Ventes » ; aucun déclencheur sur `memberships`. La migration y est NEUTRE : la colonne y naît nulle partout, et
+la garde n'y refuse rien qu'un écran fasse.
+
+**LA MIGRATION** `reglage_des_ventes` (11 881 caractères, 12 224 octets, 155 lignes, md5
+`783cf05937bb40c1e0478471c94977eb`, ni barre oblique inverse ni retour chariot, aucun `drop`, `delete` ni `truncate`) :
+- Une garde d'abord : le corps de `source_de_la_vente` au caractère près (les retours chariot d'un collage écartés), et
+  son déclencheur tel qu'elle l'a posé (avant la mise à jour du seul réglage) ; sinon un refus qui les nomme ; une
+  seconde application se refuse de même. Elle ne lit ni ne touche les fonctions de VF5h2, VF7a, VF7b et VF7e : elle
+  s'applique avec ou sans elles, éprouvé des deux façons.
+- (a) La colonne `dossiers.ventes_par_les_factures_depuis`, un instant, nulle par défaut ; son commentaire, et celui du
+  réglage, réécrit (le chef seul, l'accès « Ventes », la date).
+- (b) La garde REMPLACÉE (corps `2d532a70…`), les lignes de celle d'hier une sous-suite de la nouvelle. À l'insertion,
+  la date suit le réglage, sauf pour le super-administrateur (la restauration la réinsère telle qu'elle a été). À la
+  mise à jour, dans cet ordre, du plus définitif au plus réparable : 1. le réglage baissé quand une facture source
+  existe — le refus d'hier, au caractère près, pour tout auteur (23514) ; 2. le réglage posé ou baissé par une session
+  qui n'est ni le chef du cabinet du dossier ni le super-administrateur — « Seul le chef du cabinet change la source des
+  ventes d'un dossier. » (42501) ; 3. le réglage baissé quand un accès client du dossier porte « Ventes », pour tout
+  auteur — « Un accès client de ce dossier porte le droit « Ventes », qui suppose que ses factures soient la source de
+  leurs ventes : retirer d'abord ce droit. » (23514) ; puis la date, posée quand le réglage monte, effacée quand il
+  descend, gardée quand il ne change pas, quoi que l'écriture y mette. `create or replace` garde l'OID et les droits ;
+  son commentaire réécrit.
+- (c) Son déclencheur ÉTENDU, sous son nom (`create or replace trigger`) : avant l'insertion, et la mise à jour du
+  réglage ou de la colonne neuve. Il suit `dossiers_set_cabinet_id` (l'ordre des noms) : à l'insertion, le cabinet est
+  déjà posé.
+- Ce qui ne change pas : la policy `dossiers_update` ; `fixer_source_de_la_vente`, qui lit le réglage `for share` ;
+  `changer_droits_acces`. Aucune table, contrainte, index, policy ni droit ; aucune donnée.
+- Si `apply_migration` attend pourtant une confirmation, le texte à coller est prêt (`collage_reglage_des_ventes.sql`,
+  13 497 caractères, 13 860 octets, `0547b2c337290caf6a6e372a2f7ef821`) : une transaction qui vérifie sa propre
+  empreinte (les fins de ligne Windows ramenées), refuse une seconde application, s'exécute — sa garde exige la garde et
+  le déclencheur de `source_de_la_vente` — et pose la ligne d'historique sous la version de l'heure du collage, au nom
+  de l'auteur de `jumelle_inversee`. Son retour arrière (`retour_reglage_des_ventes.sql`, 4 436 caractères, 4 490
+  octets, `5017caa069827cfe520edcaa50b1fe54`) rend la garde, son déclencheur et les deux commentaires de
+  `source_de_la_vente`, puis retire la colonne et la ligne d'historique — une suppression de colonne (la date de chaque
+  bascule s'y perd) et une suppression dans l'historique, JAMAIS SANS L'ACCORD DU CABINET ; rendue, la garde ne réserve
+  plus le réglage au chef ni ne le retient sous un accès « Ventes » ; il se refuse si la migration n'est pas dans
+  l'historique, ou si la garde ou son déclencheur ne sont plus ceux qu'elle a posés. Tous deux dans le bloc-notes de la
+  session (`…/scratchpad/vf8a/collage/`).
+
+**SIX ÉCARTS À LA CONCEPTION, OU CE QU'ELLE NE DISAIT PAS, ET POURQUOI.**
+- LA DATE ÉCRITE NE SE REFUSE PAS, ELLE SE RECALCULE. « Aucune écriture ne la pose à sa place » : la garde la pose,
+  l'efface ou la garde elle-même, quoi qu'une écriture y mette (6d, 6e, 7c) — le patron de `deduire_assujetti_tva` sur
+  la même table —, et les refus restent trois, comme la conception les compte. Le commentaire de la colonne le dit.
+- L'INSERTION NE JUGE PAS LA PERSONNE. La policy `dossiers_write` réserve déjà la création d'un dossier au chef ; et la
+  juger aurait demandé à VF8-Q1 une seconde condition (`admin_du_dossier` ne voit pas la ligne qui naît).
+- « UNE SESSION », C'EST `auth.uid()` CONNU. Les fonctions d'accès lisent la même identité ; un rôle `authenticated`
+  sans identité ne passe pas la policy `dossiers_update` ; `auth.role()` n'existe pas sur la réplique. Le propriétaire
+  et le rôle des Edge Functions passent la garde de la personne (9, 9b), comme sous une policy.
+- L'ORDRE DES TROIS REFUS. La conception plaçait la facture source d'abord, sans placer la personne : du plus définitif
+  au plus réparable — ce qui ne se défait pas (vrai pour tous), qui le change, ce qui se retire d'abord. Le membre qui
+  baisse le réglage d'un dossier aux factures sources s'entend dire qu'il ne se défait pas (6c), et, sous un accès
+  « Ventes », qu'il n'est pas le chef (6g) : jamais un refus qu'un autre geste lèverait pour rien.
+- LE PROPRIÉTAIRE EST RETENU PAR LE DROIT « VENTES » (8b), comme par la facture source (hier, 4) : un invariant des
+  données, pas une question de personne.
+- LA GARDE DE TÊTE LIT AUSSI LE DÉCLENCHEUR qu'elle étend (son type, sa colonne), pas seulement le corps qu'elle
+  remplace.
+
+**LE MODULE.** `sourceDeLaVente.ts` : les deux refus neufs dans `REFUS_SOURCE_DE_LA_VENTE`, à leur rang, et la liste
+dans l'ordre des textes ; `refusDuReglage(avant, apres, factures, contexte)` — `ContexteDuReglage` : `chefDuCabinet` (la
+condition de VF8-Q1) et les accès du dossier, lus en entier, obligatoires — juge dans l'ordre de la garde ; aucun
+appelant avant VF8b. `types.ts` : `ventes_par_les_factures_depuis?`, FACULTATIVE (absente de toute lecture tant que la
+migration n'est pas appliquée, et d'une sauvegarde d'avant elle). `sauvegarde.ts` : un commentaire — la colonne voyage
+avec la ligne du dossier et se réinsère telle ; le plan ne change pas.
+
+**LES PREUVES.**
+- La réplique : une copie à froid de celle de VF7e (PostgreSQL 16, UTF8), sur son propre port (5611), arrêtée par son
+  répertoire de données ; sa base égale à la production — `signature.sql`, les neuf familles, et l'historique, 148,
+  `19c0e53c…` — ; munie des quatre migrations préparées, fichiers de l'export, comme l'outil l'aurait fait (152,
+  `1ea7ce64…`, les neuf familles de la réplique de VF7e), puis de la migration (153, `ef644683…`) ; à part, la
+  production munie de la seule migration (149, `98dd8d25…`). Trois familles changent, de même des deux façons : les
+  colonnes (865 → 866, `f353a5aa…` → `23b2bc60…`), les déclencheurs (69, `e35f5430…` → `aa7a762c…` ; seule, 67,
+  `10f1a74a…` → `36b5e607…`) et les fonctions (202, `5a4a4849…` → `0837e89d…` ; seule, 197, `d3d1a53e…` → `0cb9c6a1…`) ;
+  les six autres gardent leur empreinte (les droits des fonctions : 202 `f61b1cd0…`, seule 197 `98e0d5c9…`).
+- `ventesFacturees.sql`, étendu (6 à 9f, 158, 158b, les mutations 189 à 191 ; 154 lit le déclencheur étendu ; le membre
+  affecté aussi à A et à R ; la macro `{CLIENT}`) : 301 lignes de verdict, la ligne d'information comprise ; sans la
+  migration, 21 en faute — 6, 6b, 6d, 6e, 6g, 7 à 7d, 8, 8b, 9 à 9f, 154, 158, 158b et 191, exactement — ; avec elle, 0,
+  rien n'est resté ; sur la production seule, 57 puis 36 en faute, les mêmes 21 levés, les 36 autres étant ceux des
+  quatre migrations absentes ; le texte sans ses lignes de commentaire, en une requête : 105 609 caractères,
+  `4abf04e55e0312daa48d28cc5778aa08`, 301 justes.
+- Les cinquante-six autres essais du dépôt : identiques ligne à ligne des deux côtés, leurs fautes connues comprises ;
+  `validationExercice.sql`, `reportDesSoldes.sql`, `recompositionDesVentes.sql` et `logoDesFacturesSuppression.sql`, en
+  super-utilisateur et en une transaction : 152, 53, 9 et 19 lignes de verdict, 0 en faute, identiques. `rls.sql`
+  ENTIER, par psql, en une transaction, sur la réplique munie des quatre (152) puis des cinq (153), le journal des
+  désignations semé de trois lignes : 56 lignes d'invariants, 0 en faute, 48 mutations sur 48 qui mordent, sorties
+  identiques (109 lignes) — la migration ne touche aucune policy.
+- `restauration.sql`, son contrôle neuf (la date du dossier restauré, ou EN ATTENTE sans la colonne), contre le dossier
+  de VF7e qui naît sans avoir basculé et que le chef bascule aussitôt : IDENTIQUE, 75 tables, 56 lignes, des deux
+  côtés ; la date, 1 sur 1 avec la migration, EN ATTENTE sans elle ; les autres contrôles inchangés.
+- Trente-cinq mutations de la migration, chacune appliquée sur une copie fraîche puis jouée contre l'essai : trente-cinq
+  tuées — la garde de tête (une empreinte ou un type changés, refusés ; neutralisée, appliquée sur une base dont la
+  garde ou le déclencheur ont changé), la colonne (son type, un défaut), l'insertion (la restauration, l'effacement, le
+  `return`), l'ordre et la personne (la facture source après la personne ; la personne retirée, jugée sans session, par
+  `admin_du_dossier`, sur la ligne d'après, à chaque écriture ; son code, ses mots), le droit « Ventes » (retiré,
+  « Banque » compté, un autre dossier, au moment de poser, avant la personne ; son code, ses mots), la date (non posée,
+  non effacée, écrite par l'écriture, effacée sans raison, à l'horloge), la sécurité et le chemin, le déclencheur (sans
+  l'insertion, sans la colonne, après). Trois ne meurent que par le catalogue (158b, 155) : la personne jugée sur
+  `new.cabinet_id` (aucune écriture de l'essai ne change le cabinet d'un dossier), la garde sans `security definer` ou
+  sans chemin fixé.
+- Le TypeScript : les tests neufs ROUGES d'abord — sur le module, l'export et les essais d'hier, 14 tests en faute dans
+  les deux fichiers ; avec le module, sur l'export et les essais d'hier, 11. Dix-sept mutations du module : dix-sept
+  tuées. L'essai rejoué par le module : douze contrôles (6 à 6g, 8 à 8f, 189, 190), chacun au mot et au code près.
+- Les trois contrôles de l'export : avec le fichier, sous sa version provisoire, 153 fichiers, `ef644683…`, égale à
+  l'historique de la réplique munie des cinq migrations à leurs versions provisoires ; le socle inchangé (80
+  instructions, `5d53eea2…`) ; l'inventaire, 2 163 objets, `b20a312cfd61acc4cebeeb7737e05325`, des deux côtés (2 162,
+  `c068c7d4…`, sans elle) : une colonne de plus.
+- La suite comparée test par test, sous Paris : avant, l'arbre de `0eed234` exporté, 14 400 tests justes
+  (`clesSupabase.test.ts`, qui lit la liste des fichiers suivis du dépôt, ne s'y charge pas) ; après, 14 438 justes ;
+  treize tests neufs et un renommé (les définitions de la garde, dans les deux migrations), aucun verdict changé
+  d'état ; les vingt-cinq de `clesSupabase.test.ts`, qui se charge dans le dépôt. Le lint : 0 erreur, les 63
+  avertissements d'avant ; `tsc -b --force` sans erreur.
+- La barrière, sous le Node 22.23.3 de la CI : sur la tête finale, après le commit de cette entrée — qui ne change que
+  de la documentation —, son résultat et son SHA sont au rapport de l'agent.
+
+**CE QUE L'APPLICATION CHANGERA EN PRODUCTION.** Rien qui se voie : aucun écran ne pose le réglage, la colonne naît
+nulle, et la garde ne refuse que ce qu'aucun écran ne fait (un membre qui écrirait le réglage directement). Appliquée
+après les quatre, elle change trois familles de `signature.sql` (ci-dessus) ; appliquée seule, les mêmes ; le socle, les
+policies et les droits, rien.
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) Présenter `reglage_des_ventes` au cabinet (une colonne, une garde
+remplacée, son déclencheur étendu ; aucune donnée, aucune policy), avec VF8-Q1 — après les quatre, ou sans elles. Une
+autre réponse à VF8-Q1 change `public.est_chef_du_cabinet(old.cabinet_id)` en `public.admin_du_dossier(old.id)` dans la
+migration, le nom de `chefDuCabinet` dans le module, et l'essai (6 à 6g, 158b) avec eux, avant l'application. (2) Sur
+son accord, l'appliquer par `apply_migration`, sous le nom `reglage_des_ventes`, le texte du fichier tel quel ; si
+l'outil attend une confirmation, donner le texte à coller dans le message final du tour. (3) Renommer le fichier sous la
+version de sa ligne d'historique, texte inchangé ; la ligne doit rendre `783cf05937bb40c1e0478471c94977eb`. (4)
+`signature.sql` en production : les colonnes (866, `23b2bc60…`), les déclencheurs (69 `aa7a762c…` après les quatre ; 67
+`36b5e607…` seule), les fonctions (202 `0837e89d…` ; 197 `0cb9c6a1…` seule), les six autres inchangées ; rejouer
+`ventesFacturees.sql` sans ses lignes de commentaire (105 609 caractères, `4abf04e5…` : 301 justes après les quatre) si
+la session le juge utile ; `rls.sql` n'y trouverait aucune policy changée. (5) Les trois contrôles de l'export, et leur
+passage au README. (6) CLAUDE.md, la ligne 28.65 de la feuille de route. (7) VF8b (la bascule à l'écran, derrière
+`BASCULE_OFFERTE`) et la suite de VF8.
+
+**UNE LIGNE DE CLAUDE.MD ÉTAIT FAUSSE, CORRIGÉE.** « Les droits sont en base : `memberships.droit_ventes` et
+`droit_banque`, faux par défaut, posés par `changer_droits_acces` seule » : un accès qui EXISTE ne change ses droits que
+par elle (aucune policy de mise à jour) ; mais la policy d'insertion ne regarde que le dossier, et le cabinet — le chef
+comme le membre assigné — insère un accès qui porte « Ventes » directement : l'essai le fait (8, 8b à 8f, 6g, 190 :
+acceptés), comme la conception de VF8 l'avait mesuré au catalogue (§ 1). La ligne le dit désormais, et que VF8f la
+gardera.
+
+**LES QUESTIONS AU CABINET.** VF8-Q1 (ouverte, sur la page des arbitrages) : écrite sur sa recommandation. Aucune
+question neuve.
+
+**LES RISQUES.** Une course reste ouverte jusqu'à VF8f : un accès qui reçoit « Ventes » pendant qu'on baisse le réglage
+n'est pas vu de la garde avant son engagement ; VF8f, qui lira le réglage `for share`, la ferme. Un dossier inséré
+basculé par le super-administrateur sans date la garde nulle (la restauration rend ce qui a été) ; aucun écran ne crée
+un dossier basculé. Le propriétaire ne baisse plus le réglage sous un accès « Ventes » : il retire d'abord le droit, par
+`changer_droits_acces` (190). Le retour arrière perd la date des bascules faites entre-temps. Le type de la colonne est
+FACULTATIF : VF8b la lira en distinguant l'absente de la nulle.

@@ -511,6 +511,23 @@ leurs droits (199, `2560a4171403f60e0cf637ad6a7ae2b8`) ; les sept autres famille
 FRONTIÈRE DES ENCAISSEMENTS, EN BASE », « LA VALIDATION REFUSE LES MANQUES DES VENTES FACTURÉES », « LE GEL DES
 DÉSIGNATIONS »).
 
+**Un cinquième fichier sous une version PROVISOIRE, pas appliqué (25/10/2026)** :
+`20261026120000_reglage_des_ventes.sql` (chantier EC-Q3, étape VF8a), en attente de l'accord du cabinet ; il s'applique
+après les quatre ou sans eux (il ne touche à aucune de leurs fonctions, et vérifie d'abord la garde et le déclencheur
+qu'il reprend de `source_de_la_vente`). Tant
+qu'il n'est pas appliqué, la dérive se lit sur les fichiers privés des cinq : 148, `19c0e53c…`, la production. Appliqué,
+il prend la version de sa ligne d'historique, fichier renommé, texte inchangé (`783cf05937bb40c1e0478471c94977eb`, fins
+de ligne ramenées à `\n`). Sur la réplique de VF8a, munie des cinq à leurs versions provisoires : 153,
+`ef644683a13e04bc78a1ce260b340eff` des deux côtés (152, `1ea7ce64…`, sans lui). Le socle ne change pas (80 instructions,
+`5d53eea2…`) ; l'inventaire passe de 2 162 objets (`c068c7d4…`) à 2 163 (`b20a312cfd61acc4cebeeb7737e05325`, des deux
+côtés sur la réplique) — une colonne, `dossiers.ventes_par_les_factures_depuis` ; la garde et son déclencheur remplacés
+sous leur nom. `signature.sql`, après les cinq : les colonnes (866, `23b2bc604fbbf4f428935a1624334abb`), les
+déclencheurs (69, `aa7a762cb26608b8e896e9dbb7d43ab6`) et les fonctions (202, `0837e89d80030779d95675e63213e243`)
+changent ; les six autres familles gardent l'empreinte qu'elles ont après les quatre. Lui seul, sur la production
+d'aujourd'hui : les colonnes (866, `23b2bc60…`), les déclencheurs (67, `36b5e607ae642c397dea8588a7642b0d`) et les
+fonctions (197, `0cb9c6a19ffebe08be4972ea59e88455`) ; les six autres familles inchangées (HISTORIQUE.md, « LE RÉGLAGE
+DES VENTES, GARDÉ »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
