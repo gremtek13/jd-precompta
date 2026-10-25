@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
 import {
-  chargesParPostePourAnnee, ecartPct, projectionAnnuelle, recettesFactureesDuDossier, totauxPourAnnee,
+  chargesParPostePourAnnee, ecartPct, fraisSansPosteDeLAnnee, projectionAnnuelle, recettesFactureesDuDossier, totauxPourAnnee,
 } from '../../lib/estimation'
 import { partsDuReleve } from '../../lib/partsDuReleve'
 import { paiementsDesPieces } from '../../lib/rattachement'
@@ -14,8 +14,12 @@ import type {
 } from '../../lib/types'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import FraisSansPosteNonComptes from '../../components/FraisSansPosteNonComptes'
 import { messageErreur } from '../../lib/messageErreur'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
+import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFactureesEcran'
+import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
+import type { PlanComptable } from '../../lib/planComptable'
 
 // L'exercice qui précède, lu à l'appel : la valeur initiale des formulaires de repère. Une constante
 // de module le figerait pour toute la session (voir src/lib/maintenantFige.test.ts).
@@ -30,7 +34,12 @@ function anneePrecedente(): string {
 // brouillon de précomptabilité. Simulateur officiel des impôts déjà disponible pour ce volet.
 // `modeComptable` : en engagement, les repères et la projection comptent une pièce à la date de sa
 // FACTURE, et non de son encaissement (lib/rattachement.ts, `rattachements`).
-export default function EstimationTab({ dossierId, assujettiTva, modeComptable }: { dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable }) {
+// `plan` et `ventesParLesFactures` (ligne 28.65, chantier EC-Q3, étape VF8g) : pour un dossier qui a basculé, le détail par
+// poste compte les frais d'un mouvement d'encaissements comme la 2035 et la situation intermédiaire, au compte des services
+// bancaires du plan — obligatoires, sans valeur par défaut, de la page du dossier.
+export default function EstimationTab({ dossierId, assujettiTva, modeComptable, plan, ventesParLesFactures }: {
+  dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable; plan: PlanComptable; ventesParLesFactures: boolean
+}) {
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Deux jeux, deux filtres, et les noms le disent désormais. `recettesValidees` est restreint aux
   // pièces de VENTE validées, `piecesValidees` à toutes les validées. Le second s'appelait
@@ -83,6 +92,10 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   // exemplaire ne compte plus. Nulles tant qu'elles ne sont pas revenues : l'onglet attend. Lues en partie, ni projection ni
   // repère calculé : une assiette sans ses ventes facturées a l'air d'une bonne nouvelle.
   const [lectureVentes, setLectureVentes] = useState<LectureVentesFacturees | null>(null)
+  // LES SOURCES DES ÉCRITURES DES VENTES FACTURÉES (étape VF8g ; lib/ecrituresVentesFactureesLecture.ts), lues avec le reste
+  // pour un dossier basculé seulement : le détail par poste en tire les frais d'un mouvement d'encaissements, par la
+  // composition, comme la 2035. Nulles tant qu'elles ne sont pas revenues, ou pour un dossier qui n'a pas basculé.
+  const [lectureSourcesVentes, setLectureSourcesVentes] = useState<LectureSourcesDesEcrituresDeVente | null>(null)
   // LA DERNIÈRE LECTURE DEMANDÉE ÉCRIT SEULE : celle d'un dossier quitté, ou celle d'avant un enregistrement, ne remplace
   // pas en arrivant après celle qui l'a suivie. Le numéro se prend avant la première attente.
   const derniereLecture = useRef(0)
@@ -102,6 +115,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
       lectureVentilations,
       lectureReglements,
       ventesLues,
+      sourcesLues,
     ] = await Promise.all([
       lireTout<CotisationDeclaree>((debut, fin) =>
         supabase.from('cotisations_declarees').select('*', { count: 'exact' })
@@ -155,9 +169,12 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
       ),
       // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
       lireLesVentesFacturees(dossierId),
+      // Ne rejette jamais non plus ; jamais lue pour un dossier qui n'a pas basculé.
+      ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
     ])
     if (demande !== derniereLecture.current) return
     setLectureVentes(ventesLues)
+    setLectureSourcesVentes(sourcesLues)
     setCotisations(lectureCotisations.lignes)
     setRecettesValidees(lectureRecettes.lignes)
     setPiecesValidees(lecturePieces.lignes)
@@ -186,7 +203,8 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [dossierId])
+  // Un dossier qui bascule relit ses ventes facturées, et les sources de leurs écritures.
+  useEffect(() => { load() }, [dossierId, ventesParLesFactures])
 
   // Règle usuelle simple : ce qui est déjà là cette année, ramené à 12 mois. Pas de lissage saisonnier
   // ni de logique de régularisation URSSAF (calcul provisionnel réel bien plus complexe) — juste un
@@ -214,6 +232,23 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   // Le calcul du chiffre d'affaires d'un repère est suspendu sur une lecture partielle, celle des ventes facturées comprise ;
   // le détail par poste ne lit que des charges, et ne suit que les autres.
   const calculDuCaSuspendu = lectureIncomplete ?? ventesIncompletes
+  // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (étape VF8g) : ce que le détail par poste reçoit des écritures des ventes
+  // facturées, sur les lectures de CE dossier — la règle de Clôture et du Financement (lib/ecrituresVentesFactureesEcran.ts,
+  // `ecrituresDesVentesPourLa2035`). Un dossier qui n'a pas basculé : `sans_bascule`, et le détail d'hier, que des ventes
+  // facturées lues en partie ne suspendent pas (elles ne lui apportent rien) ; lues entières, elles ne peuvent compter une
+  // facture source, sinon les lectures ne se tiennent pas. Basculé : les sources lues EN ENTIER pour ce dossier ; pas
+  // revenues, le détail attend ; partielles, refusées ou qui ne se composent pas, il est suspendu, avec le motif.
+  const pourLeDetail = ecrituresDesVentesPourLa2035({
+    dossierId, ventesParLesFactures, facturesSources: ventesFacturees?.sources ?? new Set<string>(), lecture: lectureSourcesVentes,
+    mode: modeComptable, plan,
+  })
+  const ecrituresDuDetail = pourLeDetail.etat === 'pret' ? pourLeDetail.ecritures : null
+  const ecrituresIncompletes = pourLeDetail.etat === 'incomplete' ? pourLeDetail.motif : null
+  const detailEnAttente = pourLeDetail.etat === 'en_attente'
+  // Ce que le détail de l'année à calculer ne range sur aucun poste, dit AVANT le clic, pour l'année saisie.
+  const anneeDuDetail = parseInt(anneeACalculer, 10)
+  const fraisSansPoste = ecrituresDuDetail === null || !anneeDuDetail ? []
+    : fraisSansPosteDeLAnnee(categories, anneeDuDetail, plan, ecrituresDuDetail)
 
   // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
   // ressaisir les chiffres à la main — jamais un enregistrement automatique, juste un préremplissage
@@ -320,11 +355,13 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
 
   async function calculerPostesDepuisAppli() {
     const annee = parseInt(anneeACalculer, 10)
-    if (!annee || lectureIncomplete) return
+    if (!annee || lectureIncomplete || ecrituresDuDetail === null) return
     setCalculatingPostes(true)
     setError(null)
     try {
-      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva, paiements, modeComptable, parts)
+      const totaux = chargesParPostePourAnnee(
+        piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva, paiements, modeComptable, parts, plan, ecrituresDuDetail,
+      )
       if (totaux.size === 0) {
         setError("Aucune pièce ni aucun mouvement affecté avec un poste 2035 renseigné pour cette année — complète d'abord les postes manquants dans l'onglet Clôture.")
         return
@@ -396,6 +433,15 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
         consequence={
           'La projection et le calcul du chiffre d’affaires d’un repère sont suspendus : sans elles, une assiette de ' +
           'cotisations sous-évaluée aurait l’air d’une bonne nouvelle. Recharge la page.'
+        }
+      />
+      {/* Les sources des écritures relisent les mêmes tables : quand les ventes facturées manquent déjà, leur bandeau suffit. */}
+      <BandeauLecturePartielle
+        quoi="Les écritures des ventes facturées du dossier"
+        motif={ventesIncompletes === null ? ecrituresIncompletes : null}
+        consequence={
+          'Le calcul du détail par poste est suspendu : sans elles, il oublierait les frais que la banque retient sur les ' +
+          'encaissements des factures. Recharge la page.'
         }
       />
 
@@ -476,7 +522,10 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
           <button className="btn btn-outline btn-sm" disabled={calculating || calculDuCaSuspendu !== null} onClick={calculerDepuisAppli}>
             {calculating ? 'Calcul…' : 'Calculer CA + cotisations'}
           </button>
-          <button className="btn btn-outline btn-sm" disabled={calculatingPostes || lectureIncomplete !== null} onClick={calculerPostesDepuisAppli}>
+          <button
+            className="btn btn-outline btn-sm" disabled={calculatingPostes || lectureIncomplete !== null || ecrituresDuDetail === null}
+            aria-busy={detailEnAttente || undefined} onClick={calculerPostesDepuisAppli}
+          >
             {calculatingPostes ? 'Calcul…' : 'Calculer le détail par poste'}
           </button>
         </div>
@@ -493,6 +542,18 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
             ({ventesIncompletes}). Un repère calculé sans elles serait enregistré trop bas. Recharge la page — la saisie à la
             main reste possible ci-dessous.
           </p>
+        )}
+        {lectureIncomplete === null && ecrituresIncompletes !== null && (
+          <p className="error-text" style={{ marginTop: -8 }}>
+            Calcul du détail par poste suspendu : les écritures des ventes facturées du dossier ne se lisent pas en entier
+            ({ecrituresIncompletes}). Un détail calculé sans elles oublierait les frais que la banque retient sur leurs
+            encaissements. Recharge la page — la saisie à la main reste possible ci-dessous.
+          </p>
+        )}
+        {lectureIncomplete === null && fraisSansPoste.length > 0 && (
+          <div style={{ marginTop: -8, marginBottom: 16 }}>
+            <FraisSansPosteNonComptes frais={fraisSansPoste} quoi="le détail par poste" />
+          </div>
         )}
 
         <div className="field" style={{ marginBottom: 16 }}>

@@ -183,7 +183,7 @@ export default function DossierDetail() {
     setValides(await lireExercicesValides(id))
   }, [id, lireExercicesValides])
 
-  // Années réellement disponibles sur les trois sources datées qui alimentent les onglets partageant
+  // Années réellement disponibles sur les cinq sources datées qui alimentent les onglets partageant
   // l'exercice (voir TABS_AVEC_EXERCICE) — juste la colonne date de chacune, pas les lignes entières :
   // chaque onglet continue de charger ses propres données pour son propre affichage, cette requête ne
   // sert qu'à calculer l'exercice par défaut et la liste de boutons de l'en-tête.
@@ -207,16 +207,36 @@ export default function DossierDetail() {
         supabase.from('ecritures_brouillon').select('date', { count: 'exact' })
           .eq('dossier_id', id).order('id').range(debut, fin),
       ),
-    ]).then(([pcs, lgs, ecr]) => {
+      // LES VENTES FACTURÉES (ligne 28.65, chantier EC-Q3, étape VF8g ; VF3b1 le laissait au sélecteur) : un dossier basculé
+      // peut avoir un exercice que seules ses factures sources portent — la facture et ses avoirs à leur date d'émission (en
+      // engagement), sa livraison (l'exigibilité de la TVA sur des biens), ses encaissements (en trésorerie) —, sans pièce,
+      // ni relevé, ni écriture. Les factures et avoirs VALIDÉS SOURCES seulement, et les encaissements de ceux-là, non
+      // retirés : une facture qui n'est pas source compte sa vente par sa pièce, déjà lue au-dessus. Un dossier qui n'a pas
+      // basculé n'a aucune facture source (la base le garde) : ces deux lectures ne lui ajoutent aucune année.
+      lireTout<{ date_emission: string; date_prestation: string | null }>((debut, fin) =>
+        supabase.from('factures_emises').select('date_emission, date_prestation', { count: 'exact' })
+          .eq('dossier_id', id).eq('statut', 'validee').eq('source_de_la_vente', true).order('id').range(debut, fin),
+      ),
+      lireTout<{ date_encaissement: string }>((debut, fin) =>
+        supabase.from('encaissements_factures').select('date_encaissement, factures_emises!inner(source_de_la_vente)', { count: 'exact' })
+          .eq('dossier_id', id).eq('factures_emises.source_de_la_vente', true).is('retire_le', null).order('id').range(debut, fin),
+      ),
+    ]).then(([pcs, lgs, ecr, fct, enc]) => {
       if (annule) return
       const annees = new Set<number>()
       for (const p of pcs.lignes) if (p.date_piece) annees.add(anneeDe(p.date_piece))
       for (const l of lgs.lignes) annees.add(anneeDe(l.date))
       for (const e of ecr.lignes) annees.add(anneeDe(e.date))
+      for (const f of fct.lignes) {
+        annees.add(anneeDe(f.date_emission))
+        if (f.date_prestation) annees.add(anneeDe(f.date_prestation))
+      }
+      for (const e of enc.lignes) annees.add(anneeDe(e.date_encaissement))
       setAnnees({
         id,
         liste: [...annees].sort((a, b) => b - a),
-        motif: [pcs, lgs, ecr].find((l) => !l.complete)?.motif ?? null,
+        // Lues en partie, le motif d'aujourd'hui, de la première qui a manqué : rien ne s'affirme.
+        motif: [pcs, lgs, ecr, fct, enc].find((l) => !l.complete)?.motif ?? null,
       })
     })
     return () => { annule = true }
@@ -350,7 +370,7 @@ export default function DossierDetail() {
             {cockpit}
             <DossierParcours tab={tab} onChange={allerA} />
             <BandeauLecturePartielle
-              quoi="Les dates des justificatifs, relevés et écritures"
+              quoi="Les dates des justificatifs, relevés, écritures, factures et encaissements"
               motif={motifAnnees}
               consequence={
                 'Le sélecteur d’exercice de l’en-tête peut donc omettre une année — un exercice absent de ' +
@@ -444,7 +464,15 @@ export default function DossierDetail() {
                 onNavigate={allerA}
               />
             )}
-            {tab === 'estimation' && modele && <EstimationTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
+            {tab === 'estimation' && dossier && modele && (
+              <EstimationTab
+                dossierId={id}
+                assujettiTva={dossier.assujetti_tva}
+                modeComptable={modele.mode}
+                plan={modele.plan}
+                ventesParLesFactures={dossier.ventes_par_les_factures === true}
+              />
+            )}
             {tab === 'financement' && dossier && modele && (
               <FinancementTab
                 dossierId={id}

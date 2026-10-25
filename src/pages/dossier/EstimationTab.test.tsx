@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EstimationTab from './EstimationTab'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import type {
   Categorie, CotisationDeclaree, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel,
 } from '../../lib/types'
@@ -163,7 +164,7 @@ function valeur(libelle: string): string {
 }
 
 async function rendre(assujettiTva = true, modeComptable: ModeComptable = 'tresorerie') {
-  render(<EstimationTab dossierId="dossier-de-test" assujettiTva={assujettiTva} modeComptable={modeComptable} />)
+  render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={assujettiTva} modeComptable={modeComptable} />)
   return screen.findByRole('button', { name: 'Calculer le détail par poste' })
 }
 

@@ -1,7 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import EstimationTab from './EstimationTab'
-import type { Piece } from '../../lib/types'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import type { Categorie, LigneBancaire, Piece } from '../../lib/types'
+import { COLONNES_MOUVEMENTS_ECRITURES } from '../../lib/ecrituresVentesFactureesLecture'
+import { ligneBancaire, mouvementDesVentes } from '../../test/dossierBascule'
 import type { Predicat } from '../../test/filtresPostgrest'
 
 // LES VENTES FACTURÉES DANS L'ESTIMATION (ligne 28.6, chantier EC-Q3, étape VF3b3). Le calcul est éprouvé à part
@@ -12,6 +15,11 @@ import type { Predicat } from '../../test/filtresPostgrest'
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
   muet: {} as Record<string, number>,
+  // Le même, pour une seule lecture d'une table, désignée par ses colonnes (étape VF8g) : les sources des écritures relisent
+  // des tables que l'onglet lit déjà, et seule la leur doit manquer.
+  muetSelonColonnes: {} as Record<string, number>,
+  // Chaque lecture partie, `table|colonnes` : de quoi dire qu'une lecture n'est PAS demandée.
+  demandes: [] as string[],
   attentes: {} as Record<string, Promise<void> | undefined>,
   upserts: [] as { table: string; valeur: Record<string, unknown> }[],
 }))
@@ -24,16 +32,17 @@ vi.mock('../../lib/supabase', async () => {
     let debut = 0
     let fin = Number.MAX_SAFE_INTEGER
     let ecriture = false
+    let colonnes = '*'
     const c: Record<string, unknown> = {}
     const reponse = () => {
       if (ecriture) return { data: null, error: null }
       const toutes = filtrer(faux.parTable[table] ?? [], predicats)
-      const muet = faux.muet[table]
+      const muet = faux.muetSelonColonnes[`${table}|${colonnes}`] ?? faux.muet[table]
       const borne = muet == null ? toutes.length : Math.min(toutes.length, muet)
       return { data: toutes.slice(debut, Math.min(fin + 1, borne)), error: null, count: toutes.length }
     }
     Object.assign(c, {
-      select: () => c, order: () => c,
+      select: (lues?: string) => { colonnes = lues ?? '*'; return c }, order: () => c,
       // Les filtres des ventes facturées et le type des pièces sont appliqués : l'onglet lit les recettes à part.
       eq: (colonne: string, valeur: unknown) => {
         if (TABLES_DES_VENTES.includes(table) || table === 'pieces') predicats.push(predicatEq(colonne, valeur))
@@ -48,6 +57,7 @@ vi.mock('../../lib/supabase', async () => {
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       upsert: (valeur: Record<string, unknown>) => { ecriture = true; faux.upserts.push({ table, valeur }); return c },
       then: (suite: (r: unknown) => unknown) => {
+        if (!ecriture) faux.demandes.push(`${table}|${colonnes}`)
         const attente = faux.attentes[table]
         return (attente ? attente.then(reponse) : Promise.resolve(reponse())).then(suite)
       },
@@ -91,6 +101,8 @@ const AUTRE = piece({ id: 'v2', date_piece: '2026-04-02', montant_ht: 300, monta
 
 function poser() {
   faux.muet = {}
+  faux.muetSelonColonnes = {}
+  faux.demandes = []
   faux.attentes = {}
   faux.upserts = []
   faux.parTable = {
@@ -121,7 +133,7 @@ afterEach(() => { cleanup() })
 
 describe('EstimationTab — les ventes facturées', () => {
   it('la projection compte la part encaissée, et l’exemplaire ne compte plus', async () => {
-    render(<EstimationTab dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
     await screen.findByText('Projection 2026')
     // 500 € facturés encaissés + 300 € d'une autre recette ; compté, l'exemplaire en aurait ajouté 1 000.
     expect(valeur('CA encaissé à date')).toMatch(/^800,00\s€$/)
@@ -129,13 +141,13 @@ describe('EstimationTab — les ventes facturées', () => {
   })
 
   it('en engagement, la facture compte à sa date d’émission (EC3-Q12)', async () => {
-    render(<EstimationTab dossierId={D} assujettiTva={true} modeComptable="engagement" />)
+    render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId={D} assujettiTva={true} modeComptable="engagement" />)
     await screen.findByText('Projection 2026')
     expect(valeur('CA facturé à date')).toMatch(/^1\s?300,00\s€$/)
   })
 
   it('le repère calculé compte la vente facturée de l’année, et ignore l’exemplaire', async () => {
-    render(<EstimationTab dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
     await screen.findByText('Projection 2026')
     fireEvent.change(screen.getByLabelText('Année à calculer depuis ce dossier'), { target: { value: '2026' } })
     await act(async () => { boutonCa().click() })
@@ -145,12 +157,12 @@ describe('EstimationTab — les ventes facturées', () => {
 
   it('dit les ventes écartées, et se tait sans elles', async () => {
     faux.parTable.factures_emises = [FACTURE_SOURCE, { ...FACTURE_SOURCE, id: 'fv', numero: 'F2026-0043', tiers_nom: 'CLIENT SANS LIGNE' }]
-    render(<EstimationTab dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
     const ligne = await screen.findByText(/Ventes facturées que l’estimation ne compte pas \(1\)/)
     expect(ligne.textContent).toContain("F2026-0043 (CLIENT SANS LIGNE) — la facture n'a aucune ligne")
     cleanup()
     poser()
-    render(<EstimationTab dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
     await screen.findByText('Projection 2026')
     expect(screen.queryByText(/Ventes facturées que l’estimation ne compte pas/)).toBeNull()
   })
@@ -181,7 +193,7 @@ describe('EstimationTab — le virement mixte date l’exemplaire de la facture 
       declaration_tva_id: null, source_fichier: 'releve-fictif.csv', libelle_brut: null, id_externe: null,
       created_at: '2026-03-20T08:00:00Z', encaissements_de_factures: true,
     }]
-    render(<EstimationTab dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
     await screen.findByText('Projection 2026')
     // 500 € facturés encaissés, 300 € d'une autre recette, 100 € de l'exemplaire payé par le virement.
     expect(valeur('CA encaissé à date')).toMatch(/^900,00\s€$/)
@@ -191,15 +203,17 @@ describe('EstimationTab — le virement mixte date l’exemplaire de la facture 
 describe('EstimationTab — sans les ventes facturées entières, ni projection ni repère calculé', () => {
   it.each(TABLES_DES_VENTES)('lue en partie (%s) : le bandeau, ni projection ni calcul du chiffre d’affaires', async (table) => {
     faux.muet = { [table]: 0 }
-    render(<EstimationTab dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
     await screen.findByText(/Les ventes facturées du dossier n.ont pas pu être lues en entier/)
     expect(screen.queryByText('Projection 2026')).toBeNull()
     expect(screen.queryByText('CA encaissé à date')).toBeNull()
     screen.getByText(/La projection attend les ventes facturées du dossier/)
     expect(boutonCa().disabled).toBe(true)
     screen.getByText(/Calcul du chiffre d’affaires suspendu : les ventes facturées du dossier n’ont pas pu être lues en entier/)
-    // Le détail par poste ne lit que des charges : il reste offert. Et le clic sur le calcul grisé n'écrit rien.
-    expect(boutonPostes().disabled).toBe(false)
+    // Le dossier a basculé : les sources des écritures, d'où le détail par poste tire les frais d'un mouvement d'encaissements
+    // (étape VF8g), relisent ces tables et manquent aussi — le détail attend avec elles. Et le clic sur le calcul grisé
+    // n'écrit rien.
+    expect(boutonPostes().disabled).toBe(true)
     await act(async () => { fireEvent.click(boutonCa()) })
     expect(faux.upserts).toEqual([])
   })
@@ -207,7 +221,7 @@ describe('EstimationTab — sans les ventes facturées entières, ni projection 
   it('pas encore revenue : « Chargement… », et rien de l’onglet ; revenue, la projection', async () => {
     let liberer: () => void = () => {}
     faux.attentes.encaissements_factures_taux = new Promise<void>((r) => { liberer = r })
-    render(<EstimationTab dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
     await act(async () => {})
     expect(screen.getByText('Chargement…')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Calculer CA + cotisations' })).toBeNull()
@@ -226,15 +240,114 @@ describe('EstimationTab — sans les ventes facturées entières, ni projection 
     faux.parTable.pieces = [AUTRE]
     let liberer: () => void = () => {}
     faux.attentes.factures_emises = new Promise<void>((r) => { liberer = r })
-    const vue = render(<EstimationTab dossierId="dossier-quitte" assujettiTva={true} modeComptable="tresorerie" />)
+    const vue = render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId="dossier-quitte" assujettiTva={true} modeComptable="tresorerie" />)
     await act(async () => {})
     // Le dossier ouvert répond tout de suite ; celui qu'on a quitté, après lui.
     faux.attentes = {}
-    vue.rerender(<EstimationTab dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    vue.rerender(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
     await screen.findByText('Projection 2026')
     await act(async () => { liberer() })
     expect(valeur('CA encaissé à date')).toMatch(/^300,00\s€$/)
     expect(screen.queryByText(/CLIENT QUITTÉ/)).toBeNull()
     expect(screen.queryByText(/Ventes facturées que l’estimation ne compte pas/)).toBeNull()
+  })
+})
+
+// LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS DANS LE DÉTAIL PAR POSTE (ligne 28.65, chantier EC-Q3, étape VF8g ; le calcul est
+// éprouvé par estimation.test.ts). Le virement m1 du 20 mars crédite 598 € pour l'encaissement de 600 € qu'il justifie : 2 €
+// de frais, que la composition porte au compte des services bancaires. Données FICTIVES.
+describe('EstimationTab — le détail par poste compte les frais d’un mouvement d’encaissements (étape VF8g)', () => {
+  const frais = (o: Partial<Categorie> = {}): Categorie => ({
+    id: 'cat-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 2, compte_comptable: '627000',
+    poste_2035: 'Frais financiers', ...o,
+  })
+  const M1: LigneBancaire = ligneBancaire(mouvementDesVentes({ id: 'm1', dossier_id: D, date: '2026-03-20', montant: 598 }))
+  const SOURCES_DU_RELEVE = `lignes_bancaires|${COLONNES_MOUVEMENTS_ECRITURES}`
+  const sansPoste = /Frais d’encaissements que le détail par poste ne compte pas \(1\) : 20\/03\/2026 « VIR CLIENT FICTIF », 2,00\s€/
+  function poserLeMouvement(categorieFrais: Categorie | null = frais()) {
+    poser()
+    faux.parTable.encaissements_factures = [{ ...ENCAISSEMENT, ligne_bancaire_id: 'm1' }]
+    faux.parTable.lignes_bancaires = [M1]
+    faux.parTable.categories = categorieFrais ? [categorieFrais] : []
+  }
+  async function calculerLeDetail(annee: string, ventesParLesFactures = true) {
+    render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={ventesParLesFactures} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    await screen.findByText('Projection 2026')
+    fireEvent.change(screen.getByLabelText('Année à calculer depuis ce dossier'), { target: { value: annee } })
+  }
+  const postesEcrits = () => faux.upserts.filter((u) => u.table === 'references_postes_annuels').map((u) => [u.valeur.poste, u.valeur.montant])
+
+  it('les frais de l’année entrent au poste de la catégorie « Frais bancaires », lus avec le reste', async () => {
+    poserLeMouvement()
+    await calculerLeDetail('2026')
+    expect(faux.demandes).toContain(SOURCES_DU_RELEVE)
+    expect(screen.queryByText(/Frais d’encaissements/)).toBeNull()
+    await act(async () => { boutonPostes().click() })
+    await waitFor(() => expect(postesEcrits()).toEqual([['Frais financiers', 2]]))
+  })
+
+  it('sans poste : sur aucune ligne, et dit avant le clic pour l’année saisie seulement', async () => {
+    poserLeMouvement(frais({ poste_2035: null }))
+    await calculerLeDetail('2026')
+    expect(screen.getByText(sansPoste).textContent).toMatch(/qui n’a pas de poste 2035 \(Clôture, carte « Postes manquants »\)\.$/)
+    await act(async () => { boutonPostes().click() })
+    expect(postesEcrits()).toEqual([])
+    fireEvent.change(screen.getByLabelText('Année à calculer depuis ce dossier'), { target: { value: '2025' } })
+    expect(screen.queryByText(/Frais d’encaissements/)).toBeNull()
+  })
+
+  it('sans catégorie « Frais bancaires » : dit aussi', async () => {
+    poserLeMouvement(null)
+    await calculerLeDetail('2026')
+    expect(screen.getByText(sansPoste).textContent).toMatch(/que le dossier n’a pas : aucune catégorie de code « frais_bancaires »\.$/)
+  })
+
+  it('les sources lues en partie : le bandeau, le détail suspendu et dit ; le chiffre d’affaires reste offert', async () => {
+    poserLeMouvement()
+    faux.muetSelonColonnes = { [SOURCES_DU_RELEVE]: 0 }
+    await calculerLeDetail('2026')
+    const bandeau = screen.getByText(/Les écritures des ventes facturées du dossier n.ont pas pu être lues en entier/)
+    expect(bandeau.closest('div')?.textContent).toMatch(/les mouvements du relevé/)
+    expect(boutonPostes().disabled).toBe(true)
+    screen.getByText(/Calcul du détail par poste suspendu : les écritures des ventes facturées du dossier ne se lisent pas en entier/)
+    expect(boutonCa().disabled).toBe(false)
+    expect(screen.queryByText(/Les recettes et dépenses validées/)).toBeNull()
+    await act(async () => { fireEvent.click(boutonPostes()) })
+    expect(postesEcrits()).toEqual([])
+  })
+
+  it('un dossier qui n’a pas basculé ne lit pas les sources, et son détail est celui d’hier', async () => {
+    poser()
+    for (const table of TABLES_DES_VENTES) faux.parTable[table] = []
+    faux.parTable.pieces = [AUTRE]
+    faux.parTable.lignes_bancaires = [M1]
+    faux.parTable.categories = [frais()]
+    await calculerLeDetail('2026', false)
+    expect(faux.demandes).not.toContain(SOURCES_DU_RELEVE)
+    expect(boutonPostes().disabled).toBe(false)
+  })
+
+  it('une facture source dans un dossier qui ne se dit pas basculé : les lectures ne se tiennent pas, le détail est suspendu', async () => {
+    poserLeMouvement()
+    await calculerLeDetail('2026', false)
+    screen.getByText(/Calcul du détail par poste suspendu : .*les lectures ne se tiennent pas/)
+    expect(boutonPostes().disabled).toBe(true)
+    expect(faux.demandes).not.toContain(SOURCES_DU_RELEVE)
+  })
+
+  it('un dossier qui bascule, onglet ouvert : les sources se lisent, et tant qu’elles ne sont pas revenues, le détail attend', async () => {
+    poser()
+    for (const table of TABLES_DES_VENTES) faux.parTable[table] = []
+    faux.parTable.pieces = [AUTRE]
+    const vue = render(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    await screen.findByText('Projection 2026')
+    expect(faux.demandes).not.toContain(SOURCES_DU_RELEVE)
+    let liberer: () => void = () => {}
+    faux.attentes.lignes_bancaires = new Promise<void>((r) => { liberer = r })
+    vue.rerender(<EstimationTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId={D} assujettiTva={true} modeComptable="tresorerie" />)
+    await act(async () => {})
+    expect(faux.demandes).toContain(SOURCES_DU_RELEVE)
+    await act(async () => { liberer() })
+    await waitFor(() => expect(boutonPostes().disabled).toBe(false))
   })
 })

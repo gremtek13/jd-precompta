@@ -4,7 +4,10 @@ import { montantRetenu } from './montantRetenu'
 import { partDansLaPeriode, rattachements, type PaiementsDesPieces } from './rattachement'
 import { moisEcoulesDeLAnnee } from './situationIntermediaire'
 import type { CotisationComptee } from './cotisationRapprochee'
-import type { ModeComptable, Piece } from './types'
+import { categorieDesFraisBancaires, type EcrituresDesVentesDeLa2035, type FraisSansPoste } from './declaration2035'
+import { fraisDesMouvements } from './ecrituresVentesFacturees'
+import type { PlanComptable } from './planComptable'
+import type { Categorie, ModeComptable, Piece } from './types'
 import { exemplaireDUneFactureSource, recettesFactureesParMois, type VentesFacturees } from './ventesFacturees'
 
 // Calculs partagés entre l'Estimation cabinet (EstimationTab, un dossier à la fois) et la Simulation
@@ -214,7 +217,9 @@ export function ecartPct(valeurN: number, valeurN1: number | null): string {
  */
 export function chargesParPostePourAnnee(
   piecesValidees: Piece[],
-  categories: { id: string; poste_2035: string | null }[],
+  // Entières, `code` et `dossier_id` compris : la catégorie « Frais bancaires » du dossier s'y choisit
+  // (`categorieDesFraisBancaires`).
+  categories: readonly Categorie[],
   immobilisationPieceIds: ReadonlySet<string>,
   annee: number,
   assujettiTva: boolean,
@@ -225,6 +230,12 @@ export function chargesParPostePourAnnee(
   // Les dépenses payées sans justificatif — les frais bancaires, les intérêts et l'assurance d'une
   // échéance d'emprunt — à la date du mouvement, dans leur poste (lib/partsDuReleve.ts).
   partsDuReleve: readonly PartDuReleve[],
+  // Le plan du dossier et les écritures de ses ventes facturées (étape VF8g) : les frais d'un mouvement d'encaissements,
+  // voir `fraisDEncaissementsDeLAnnee`. Sans valeur par défaut, comme dans la 2035 et la situation : un appelant qui les
+  // oublierait enregistrerait le repère d'un dossier basculé sans ses frais bancaires ; l'absence de bascule se DIT
+  // (`sans_bascule`).
+  plan: Pick<PlanComptable, 'services_bancaires'>,
+  ecrituresDesVentes: EcrituresDesVentesDeLa2035,
 ): Map<string, number> {
   const totaux = new Map<string, number>()
   for (const p of piecesValidees) {
@@ -240,5 +251,43 @@ export function chargesParPostePourAnnee(
     if (part.nature !== 'depense' || anneeDe(part.ligne.date) !== annee || !part.poste) continue
     totaux.set(part.poste, (totaux.get(part.poste) ?? 0) + part.montantPoste)
   }
+  const frais = fraisDEncaissementsDeLAnnee(categories, annee, plan, ecrituresDesVentes)
+  if (frais.poste !== null && frais.centimes !== 0) totaux.set(frais.poste, (totaux.get(frais.poste) ?? 0) + frais.centimes / 100)
   return totaux
+}
+
+// LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (ligne 28.65, chantier EC-Q3, étape VF8g ; la règle de la 2035, VF4C3-Q1, et de la
+// situation intermédiaire) : quand la banque crédite un peu moins que les encaissements de factures sources qu'un mouvement
+// règle, l'écriture du mouvement porte la différence au compte des services bancaires — une charge de l'exercice du
+// MOUVEMENT. Les MÊMES fonctions que la 2035 et la situation, jamais une règle recopiée : `fraisDesMouvements` lit la sortie
+// de la composition, rien n'est recalculé ; `categorieDesFraisBancaires` choisit la catégorie (celle du dossier, sinon la
+// commune), dont le poste reçoit la charge, POSITIVE comme le reste de ce détail. Sans catégorie ou sans poste : sur aucune
+// ligne, et dit (`fraisSansPosteDeLAnnee`), jamais un poste deviné. En centimes entiers jusqu'au poste. Sans bascule, rien.
+function fraisDEncaissementsDeLAnnee(
+  categories: readonly Categorie[], annee: number, plan: Pick<PlanComptable, 'services_bancaires'>,
+  ecrituresDesVentes: EcrituresDesVentesDeLa2035,
+): { poste: string | null; centimes: number; sansPoste: FraisSansPoste[] } {
+  if (ecrituresDesVentes.etat !== 'composees') return { poste: null, centimes: 0, sansPoste: [] }
+  const composition = ecrituresDesVentes.composition
+  const categorie = categorieDesFraisBancaires(categories, composition.dossierId)
+  const poste = categorie?.poste_2035 || null
+  let centimes = 0
+  const sansPoste: FraisSansPoste[] = []
+  for (const frais of fraisDesMouvements(composition, plan)) {
+    if (anneeDe(frais.date) !== annee) continue
+    if (poste === null) sansPoste.push({ frais, categorie })
+    else centimes += frais.centimes
+  }
+  return { poste, centimes, sansPoste }
+}
+
+/**
+ * Les frais d'un mouvement d'encaissements de l'exercice que le détail par poste ne range sur aucune ligne — la catégorie
+ * « Frais bancaires » du dossier sans poste 2035, ou aucune catégorie de ce code —, pour que l'écran le DISE avant le clic.
+ */
+export function fraisSansPosteDeLAnnee(
+  categories: readonly Categorie[], annee: number, plan: Pick<PlanComptable, 'services_bancaires'>,
+  ecrituresDesVentes: EcrituresDesVentesDeLa2035,
+): FraisSansPoste[] {
+  return fraisDEncaissementsDeLAnnee(categories, annee, plan, ecrituresDesVentes).sansPoste
 }
