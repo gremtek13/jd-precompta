@@ -4,6 +4,7 @@ import FacturesTab from './FacturesTab'
 import { facture as factureCii, SIRET_VENDEUR } from '../../test/facturesCii'
 import { contact } from '../../test/contacts'
 import type { ArticleExoneration, FactureEmise } from '../../lib/types'
+import { NON_BASCULE } from '../../test/factures'
 
 // LA VUE « CLIENTS » DANS L'ONGLET FACTURES (espace client, étape A4b1), avec la VRAIE vue et son faux client. Ce que ces cas
 // gardent : le sélecteur nomme « Clients » à la suite de « Factures », « Règlements » et « Articles », au cabinet et au client
@@ -111,8 +112,8 @@ async function monter(espace: 'cabinet' | 'client', articleExoneration: ArticleE
     statutTva: 'redevable' as const, articleExoneration, numeroTvaAttribue: false, tvaSurDebits: false,
   }
   render(espace === 'client'
-    ? <FacturesTab espace="client" banque={false} {...commun} />
-    : <FacturesTab espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
+    ? <FacturesTab reglageDesVentes={NON_BASCULE} espace="client" banque={false} {...commun} />
+    : <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
   await screen.findByText('F2027-0001')
 }
 

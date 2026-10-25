@@ -7,6 +7,7 @@ import type {
   EncaissementFacture, EncaissementFactureTaux, FactureEmise, LigneBancaire, StatutTva, TransmissionEncaissement,
   TransmissionFacture,
 } from '../../lib/types'
+import { NON_BASCULE } from '../../test/factures'
 
 // L'ONGLET FACTURES EN MODE CLIENT — « Mes ventes › Factures » (espace client, étape P4a). L'onglet et ses VRAIES fenêtres,
 // montés pour le client qui porte la case « Ventes », et pour le cabinet en regard. Ce que ces cas gardent :
@@ -213,8 +214,8 @@ async function monter(espace: Espace, m: Montage = {}) {
     tvaSurDebits: m.debits ?? false,
   }
   render(espace === 'client'
-    ? <FacturesTab espace="client" banque={m.banque ?? false} {...commun} />
-    : <FacturesTab espace="cabinet" onAdresseUpdated={adresseEnregistree} {...commun} />)
+    ? <FacturesTab reglageDesVentes={NON_BASCULE} espace="client" banque={m.banque ?? false} {...commun} />
+    : <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={adresseEnregistree} {...commun} />)
   await screen.findByText('F2027-0001')
 }
 

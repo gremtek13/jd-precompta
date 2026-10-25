@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
-  REFUS_SOURCE_DE_LA_VENTE, REFUS_VALIDATION_SOURCE, refusDuReglage, refusValidationSource, sourceALaValidation,
+  REFUS_SOURCE_DE_LA_VENTE, REFUS_VALIDATION_SOURCE, FRONTIERE_NON_LUE_AU_CABINET, confirmationDeLaSource, jugementDeLaValidation, phraseDeLAvoirDAvant,
+  phraseDuReglageIllisible, reglageDesVentes, refusDuReglage, refusValidationSource, sourceALaValidation,
   type ContexteDuReglage, type FacturePourReglage,
 } from './sourceDeLaVente'
+import { ANNEES_ILLISIBLES, FRONTIERE_JUGEE_PAR_LA_BASE } from './encaissementsFactures'
+import { motsDuCabinet, pourLEspace } from './espaceVentes'
+import type { FactureEmise } from './types'
 import { correspondAuModele, etapesDeLEssai, refusExigesParLEssai } from '../test/essaiVentesFacturees'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
@@ -428,5 +432,135 @@ describe('l’essai de la vente facturée, rejoué par le module', () => {
     // Le profil de chaque contrôle rejoué : le membre affecté pour 6 à 6g, un chef ou le propriétaire pour les autres.
     expect(cas.map(([n]) => etape(n).profil)).toEqual(
       ['membre', 'membre', 'membre', 'membre', 'chef', 'postgres', 'chef', 'chef', 'chef', 'chef', 'chef_simple', 'chef'])
+  })
+})
+
+// LA FACTURE D'UN DOSSIER BASCULÉ, À L'ÉCRAN (étape VF8c) : le réglage lu, et ce que la validation d'une facture ou d'un avoir
+// rencontre de plus — chaque refus par `refusValidationSource` elle-même, sous les mots de chaque espace.
+describe('reglageDesVentes — le réglage tel que l’écran d’une facture l’a lu', () => {
+  it('pas basculé : rien d’autre n’est exigé, ni le modèle comptable, ni les exercices validés', () => {
+    expect(reglageDesVentes({ ventes_par_les_factures: false }, null)).toEqual({ etat: 'non_bascule', anneesValidees: ANNEES_ILLISIBLES })
+    expect(reglageDesVentes({ ventes_par_les_factures: false, mode_comptable: 'x' }, [2025]))
+      .toEqual({ etat: 'non_bascule', anneesValidees: [2025] })
+  })
+
+  it('basculé : le modèle comptable et les exercices validés, ou les exercices illisibles du client', () => {
+    expect(reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: 'engagement' }, [2024]))
+      .toEqual({ etat: 'bascule', modeComptable: 'engagement', anneesValidees: [2024] })
+    expect(reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: 'tresorerie' }, ANNEES_ILLISIBLES))
+      .toEqual({ etat: 'bascule', modeComptable: 'tresorerie', anneesValidees: ANNEES_ILLISIBLES })
+  })
+
+  it('une colonne absente n’est pas nulle : rien de lu, un réglage, un modèle ou des exercices illisibles', () => {
+    expect(reglageDesVentes(null, []).etat).toBe('illisible')
+    // Le modèle comptable lisible : seul le réglage est en cause.
+    for (const v of [undefined, null, 'true', 1, 0, '']) {
+      expect(reglageDesVentes({ ventes_par_les_factures: v, mode_comptable: 'tresorerie' }, []).etat, String(v)).toBe('illisible')
+    }
+    for (const m of [undefined, null, 'mixte']) {
+      expect(reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: m }, []).etat, String(m)).toBe('illisible')
+    }
+    expect(reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: 'tresorerie' }, null))
+      .toEqual({ etat: 'illisible', motif: 'les exercices validés n’ont pas été lus' })
+  })
+})
+
+describe('jugementDeLaValidation — ce que la validation d’une facture rencontre de plus, dans chaque espace', () => {
+  const NON_BASCULE = reglageDesVentes({ ventes_par_les_factures: false }, [2025])
+  const BASCULE = reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: 'tresorerie' }, [2025])
+  const BASCULE_ENGAGEMENT = reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: 'engagement' }, [2025])
+  const BASCULE_CLIENT = reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: 'tresorerie' }, ANNEES_ILLISIBLES)
+  const facture = (f: Partial<Pick<FactureEmise, 'type' | 'nature_operation' | 'date_emission'>> = {}) =>
+    ({ type: 'facture' as const, nature_operation: 'services' as const, date_emission: '2026-03-01', ...f })
+  const ESPACES = ['cabinet', 'client'] as const
+  const message = (cle: string, ...valeurs: string[]) => {
+    const r = REFUS_VALIDATION_SOURCE.find((x) => x.cle === cle) as { modele: string }
+    return valeurs.reduce((m, v) => m.replace('%', v), r.modele)
+  }
+
+  it('un dossier qui n’a pas basculé : rien de plus, dans les deux espaces, quelle que soit la saisie', () => {
+    for (const espace of ESPACES) {
+      for (const f of [facture(), facture({ nature_operation: null }), facture({ nature_operation: 'mixte', date_emission: '2025-06-01' })]) {
+        expect(jugementDeLaValidation(espace, f, NON_BASCULE, null)).toEqual({ source: false, refus: null, avis: null, confirmation: null })
+      }
+      // L'avoir d'une facture qui n'est pas source, dans un dossier qui n'a pas basculé : aucun avis, comme hier.
+      expect(jugementDeLaValidation(espace, facture({ type: 'avoir' }), NON_BASCULE, { source_de_la_vente: false }))
+        .toEqual({ source: false, refus: null, avis: null, confirmation: null })
+    }
+  })
+
+  it('basculé, la nature absente, puis la facture mixte, au cabinet sous les mots de la base', () => {
+    expect(jugementDeLaValidation('cabinet', facture({ nature_operation: null }), BASCULE, null).refus).toBe(message('nature_absente'))
+    expect(jugementDeLaValidation('cabinet', facture({ nature_operation: 'mixte' }), BASCULE, null).refus).toBe(message('mixte'))
+    expect(jugementDeLaValidation('cabinet', facture({ nature_operation: null, date_emission: '2025-01-01' }), BASCULE, null).refus)
+      .toBe(message('nature_absente'))
+  })
+
+  it('basculé, la frontière d’un exercice validé, au cabinet : le 31 décembre refusé, le 1er janvier non', () => {
+    expect(jugementDeLaValidation('cabinet', facture({ date_emission: '2025-12-31' }), BASCULE, null).refus)
+      .toBe(message('frontiere', 'L\'exercice 2025 est validé'))
+    expect(jugementDeLaValidation('cabinet', facture({ date_emission: '2026-01-01' }), BASCULE, null).refus).toBeNull()
+  })
+
+  it('chez le client, les mêmes refus réécrits, tutoyés, sans onglet ; la frontière jugée par la base, et dite', () => {
+    const nature = jugementDeLaValidation('client', facture({ nature_operation: null }), BASCULE_CLIENT, null)
+    expect(nature.refus).toBe(pourLEspace('client', message('nature_absente')))
+    expect(nature.refus).not.toBe(message('nature_absente'))
+    const mixte = jugementDeLaValidation('client', facture({ nature_operation: 'mixte' }), BASCULE_CLIENT, null)
+    expect(mixte.refus).toBe(pourLEspace('client', message('mixte')))
+    expect(mixte.refus).not.toBe(message('mixte'))
+    const frontiere = jugementDeLaValidation('client', facture({ date_emission: '2020-01-01' }), BASCULE_CLIENT, null)
+    expect(frontiere.refus).toBeNull()
+    expect(frontiere.avis).toBe(FRONTIERE_JUGEE_PAR_LA_BASE)
+    for (const j of [nature, mixte, frontiere]) {
+      for (const texte of [j.refus, j.avis, j.confirmation]) if (texte) expect(motsDuCabinet(texte), texte).toEqual([])
+    }
+  })
+
+  it('la confirmation d’une facture source : à ses encaissements en trésorerie, à sa date en engagement', () => {
+    const tresorerie = jugementDeLaValidation('cabinet', facture(), BASCULE, null)
+    expect(tresorerie).toMatchObject({ source: true, refus: null, avis: null })
+    expect(tresorerie.confirmation).toBe(confirmationDeLaSource('cabinet', 'facture', 'tresorerie'))
+    expect(tresorerie.confirmation).toContain('à ses encaissements')
+    expect(jugementDeLaValidation('cabinet', facture(), BASCULE_ENGAGEMENT, null).confirmation).toContain('à sa date,')
+    const client = jugementDeLaValidation('client', facture(), BASCULE_CLIENT, null).confirmation as string
+    expect(client).toContain('ta comptabilité à ses encaissements')
+    expect(motsDuCabinet(client)).toEqual([])
+  })
+
+  it('l’avoir d’une facture d’avant la bascule : pas source, rien de refusé, même mixte ou au-delà de la frontière ; un avis', () => {
+    for (const espace of ESPACES) {
+      const reglage = espace === 'client' ? BASCULE_CLIENT : BASCULE
+      const j = jugementDeLaValidation(espace, facture({ type: 'avoir', nature_operation: 'mixte', date_emission: '2025-06-01' }), reglage, { source_de_la_vente: false })
+      expect(j).toEqual({ source: false, refus: null, avis: phraseDeLAvoirDAvant(espace), confirmation: null })
+      // Sans la facture lue, comme la base qui ne la trouverait pas : pas source.
+      expect(jugementDeLaValidation(espace, facture({ type: 'avoir' }), reglage, null).source).toBe(false)
+    }
+    expect(motsDuCabinet(phraseDeLAvoirDAvant('client'))).toEqual([])
+  })
+
+  it('l’avoir d’une facture source : la frontière seule, au cabinet ; sa confirmation dans chaque espace', () => {
+    const origine = { source_de_la_vente: true }
+    expect(jugementDeLaValidation('cabinet', facture({ type: 'avoir', date_emission: '2025-12-31' }), BASCULE, origine).refus)
+      .toBe(message('frontiere', 'L\'exercice 2025 est validé'))
+    const j = jugementDeLaValidation('cabinet', facture({ type: 'avoir', date_emission: '2026-02-01' }), BASCULE, origine)
+    expect(j).toEqual({ source: true, refus: null, avis: null, confirmation: confirmationDeLaSource('cabinet', 'avoir', null) })
+    const c = jugementDeLaValidation('client', facture({ type: 'avoir', date_emission: '2020-02-01' }), BASCULE_CLIENT, origine)
+    expect(c).toEqual({ source: true, refus: null, avis: FRONTIERE_JUGEE_PAR_LA_BASE, confirmation: confirmationDeLaSource('client', 'avoir', null) })
+    // Au cabinet, des exercices qui ne lui seraient pas parvenus : la même réserve, vouvoyée.
+    const sansExercices = reglageDesVentes({ ventes_par_les_factures: false }, null)
+    expect(jugementDeLaValidation('cabinet', facture({ type: 'avoir' }), sansExercices, origine).avis).toBe(FRONTIERE_NON_LUE_AU_CABINET)
+  })
+
+  it('le réglage illisible : la validation retenue, la phrase de chaque espace, son motif dit', () => {
+    const illisible = reglageDesVentes({ ventes_par_les_factures: undefined }, [])
+    for (const espace of ESPACES) {
+      for (const f of [facture(), facture({ type: 'avoir' })]) {
+        const j = jugementDeLaValidation(espace, f, illisible, { source_de_la_vente: false })
+        expect(j).toEqual({ source: null, refus: phraseDuReglageIllisible(espace, 'le réglage n’est pas lisible'), avis: null, confirmation: null })
+        expect(j.refus).toContain('le réglage n’est pas lisible')
+      }
+    }
+    expect(motsDuCabinet(phraseDuReglageIllisible('client', 'x'))).toEqual([])
   })
 })

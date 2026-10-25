@@ -23,6 +23,7 @@ import {
 import { bilanDuReleve, refusDuReleve, verificationAvantDeclaration } from './statutsLus'
 import { libelleCanal, libelleCourtCanal } from './transmissionsFactures'
 import { REFUS_DECLARATION_ADRESSE } from './adressesReception'
+import { REFUS_VALIDATION_SOURCE } from './sourceDeLaVente'
 import type { ReleveStatuts } from './receptionPlateforme'
 import { donnees, ligne } from '../test/facturesCii'
 
@@ -76,6 +77,9 @@ const PRODUITES: Record<string, () => string> = {
   // Le refus du rang 7 du classement (le virement mixte, étape VF5h), que la fenêtre cite au client quand son geste
   // laisserait un mouvement inclassable : il vouvoie, et nomme ce que le cabinet seul fait.
   'REFUS_CLASSEMENT, rang 7': () => REFUS_CLASSEMENT.find((r) => r.cle === 'exemplaire_a_designer')?.modele ?? '',
+  // Les refus de la validation d'une facture source que le formulaire dit au client avant le clic (étape VF8c) : deux nomment
+  // « un dossier ».
+  'REFUS_VALIDATION_SOURCE': () => REFUS_VALIDATION_SOURCE.map((r) => r.modele).join('\n'),
   // Les messages d'un module qui appelle le client Supabase : lus dans sa source, que ce test n'importe pas.
 
   'receptionPlateforme (source)': () => readFileSync(resolve(process.cwd(), 'src/lib/receptionPlateforme.ts'), 'utf8'),

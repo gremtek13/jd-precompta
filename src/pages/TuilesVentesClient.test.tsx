@@ -12,6 +12,7 @@ import { facture as factureCii, SIRET_VENDEUR } from '../test/facturesCii'
 import type {
   EncaissementFacture, EncaissementFactureTaux, FactureEmise, TransmissionEncaissement, TransmissionFacture,
 } from '../lib/types'
+import { NON_BASCULE } from '../test/factures'
 
 // « À ENCAISSER » ET « À DÉCLARER » SUR L'ACCUEIL DU CLIENT (espace client, étape P4b). Ce que ces cas gardent :
 //  1. sans la case « Ventes » relue à la base : rien — ni tuile, ni squelette une fois lu ;
@@ -274,7 +275,7 @@ describe('les tuiles des ventes, avant d’être lues et sans le droit', () => {
 async function pastillesDeLOnglet() {
   render(
     <MemoryRouter>
-      <FacturesTab
+      <FacturesTab reglageDesVentes={NON_BASCULE}
         espace="client" banque={false} dossierId="d1" dossierNom="Atelier fictif" dossierSiret={SIRET_VENDEUR}
         dossierAdresse={null} statutTva="redevable" articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false}
       />

@@ -6,7 +6,7 @@ import { mentionsLegalesParDefaut } from '../../lib/factures'
 import { motsDuCabinet, pourLEspace } from '../../lib/espaceVentes'
 import { MENTION_FRANCHISE } from '../../lib/statutTva'
 import { LIBELLE_DESIGNATION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE_CLIENT } from '../../lib/droitsAcces'
-import { MENTIONS_VIDES } from '../../test/factures'
+import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
 import { article } from '../../test/articles'
 import type { Article, ArticleExoneration, FactureEmise, StatutTva } from '../../lib/types'
 
@@ -144,7 +144,7 @@ async function monter(espace: 'cabinet' | 'client', o: Options = {}) {
     dossierId: 'd1', dossierNom: 'Dossier fictif', dossierSiret: null, dossierAdresse: null, statutTva: o.statut === undefined ? 'redevable' : o.statut,
     articleExoneration: o.exo ?? null, numeroTvaAttribue: false, tvaSurDebits: false, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   } as const
-  render(espace === 'client' ? <FactureFormModal espace="client" {...props} /> : <FactureFormModal espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
+  render(espace === 'client' ? <FactureFormModal reglageDesVentes={NON_BASCULE} espace="client" {...props} /> : <FactureFormModal reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
   if (o.facture) await screen.findByText('Adresse de l\'émetteur', { exact: false })
 }
 

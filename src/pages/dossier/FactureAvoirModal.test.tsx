@@ -1,7 +1,13 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import FactureAvoirModal from './FactureAvoirModal'
-import { MENTIONS_VIDES } from '../../test/factures'
+import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
+import { ANNEES_ILLISIBLES, FRONTIERE_JUGEE_PAR_LA_BASE } from '../../lib/encaissementsFactures'
+import { motsDuCabinet } from '../../lib/espaceVentes'
+import {
+  confirmationDeLaSource, phraseDeLAvoirDAvant, phraseDuReglageIllisible, reglageDesVentes, type ReglageDesVentes,
+} from '../../lib/sourceDeLaVente'
+import type { EspaceVentes } from '../../lib/espaceVentes'
 import type { FactureEmise } from '../../lib/types'
 import { LIBELLE_MOTIF_AVOIR } from '../../lib/droitsAcces'
 
@@ -90,15 +96,17 @@ const factureOrigine: FactureEmise = {
 const UNE_LIGNE = [{ designation: 'Consultation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }]
 
 async function monter(
-  { credite = 0, lignes = UNE_LIGNE, origine = factureOrigine }:
-    { credite?: number | null; lignes?: typeof UNE_LIGNE; origine?: FactureEmise } = {},
+  { credite = 0, lignes = UNE_LIGNE, origine = factureOrigine, reglage = NON_BASCULE, espace = 'cabinet' }:
+    { credite?: number | null; lignes?: typeof UNE_LIGNE; origine?: FactureEmise; reglage?: ReglageDesVentes; espace?: EspaceVentes } = {},
 ) {
   faux.appelsRpc = []
   faux.resoudreRpc = null
   faux.lectureLignesRefusee = false
   faux.lignes = lignes
   render(
-    <FactureAvoirModal espace="cabinet" dossierId="d1" factureOrigine={origine} credite={credite} onClose={() => {}} onCreated={() => {}} />,
+    <FactureAvoirModal
+      espace={espace} dossierId="d1" factureOrigine={origine} credite={credite} reglageDesVentes={reglage} onClose={() => {}} onCreated={() => {}}
+    />,
   )
   // Les lignes se chargent de façon asynchrone (useEffect) avant que le bouton ne devienne utile —
   // affichées dans des `<input>`, donc `findByDisplayValue` et non `findByText`.
@@ -262,7 +270,7 @@ describe('FactureAvoirModal — une lecture refusée ne passe pas pour « rien �
     faux.appelsRpc = []
     faux.lectureLignesRefusee = true
     render(
-      <FactureAvoirModal espace="cabinet" dossierId="d1" factureOrigine={factureOrigine} credite={0} onClose={() => {}} onCreated={() => {}} />,
+      <FactureAvoirModal espace="cabinet" dossierId="d1" factureOrigine={factureOrigine} credite={0} reglageDesVentes={NON_BASCULE} onClose={() => {}} onCreated={() => {}} />,
     )
     expect(await screen.findByText(/JWT expired/)).toBeTruthy()
     expect(screen.getByText(/on ne l'a pas lue/)).toBeTruthy()
@@ -295,5 +303,57 @@ describe('FactureAvoirModal — le motif se dit lu par le client qui porte la ca
     fireEvent.change(champ, { target: { value: 'Erreur de quantité' } })
     await act(async () => { bouton.click() })
     expect((faux.appelsRpc[0].params as { p_facture: Record<string, unknown> }).p_facture).toMatchObject({ notes: 'Erreur de quantité' })
+  })
+})
+
+// L'AVOIR D'UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF8c). Un avoir prend la source de la facture qu'il corrige : celui d'une
+// facture d'avant la bascule n'est pas source, rien ne le refuse et l'écran le dit ; celui d'une facture source ne se valide
+// pas au-delà de la frontière d'un exercice validé (au cabinet ; chez le client, la base la juge) et se confirme.
+describe('FactureAvoirModal — l’avoir d’un dossier basculé', () => {
+  const BASCULE = reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: 'tresorerie' }, [2026])
+  const BASCULE_CLIENT = reglageDesVentes({ ventes_par_les_factures: true, mode_comptable: 'tresorerie' }, ANNEES_ILLISIBLES)
+  const SOURCE: FactureEmise = { ...factureOrigine, source_de_la_vente: true, nature_operation: 'services' }
+  afterEach(() => { vi.restoreAllMocks() })
+
+  for (const espace of ['cabinet', 'client'] as const) {
+    it(`${espace} : l’avoir d’une facture d’avant la bascule se valide comme hier, sans confirmation, et l’écran le dit`, async () => {
+      const confirmer = vi.spyOn(window, 'confirm')
+      const bouton = await monter({ espace, reglage: espace === 'client' ? BASCULE_CLIENT : BASCULE })
+      screen.getByText(phraseDeLAvoirDAvant(espace))
+      expect(bouton.disabled).toBe(false)
+      await act(async () => { bouton.click() })
+      expect(confirmer).not.toHaveBeenCalled()
+      expect(faux.appelsRpc).toHaveLength(1)
+    })
+  }
+
+  it('cabinet : l’avoir d’une facture source, daté dans un exercice validé, est refusé avant le clic sous la phrase de la base', async () => {
+    const bouton = await monter({ reglage: BASCULE, origine: SOURCE })
+    fireEvent.change(document.querySelector('#avoir-date')!, { target: { value: '2026-12-31' } })
+    screen.getByText("L'exercice 2026 est validé : une facture source de sa vente, ou son avoir, ne s'y valide plus.")
+    expect(bouton.disabled).toBe(true)
+    fireEvent.change(document.querySelector('#avoir-date')!, { target: { value: '2027-01-04' } })
+    expect(screen.queryByText(/ne s'y valide plus/)).toBeNull()
+    expect(bouton.disabled).toBe(false)
+  })
+
+  it('l’avoir d’une facture source se confirme : refusé, rien ne part ; le client, tutoyé, la frontière jugée par la base', async () => {
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const bouton = await monter({ espace: 'client', reglage: BASCULE_CLIENT, origine: SOURCE })
+    screen.getByText(FRONTIERE_JUGEE_PAR_LA_BASE)
+    await act(async () => { bouton.click() })
+    const phrase = confirmer.mock.calls[0][0] as string
+    expect(phrase).toBe(`${confirmationDeLaSource('client', 'avoir', null)}\n\nLe valider ?`)
+    expect(motsDuCabinet(phrase)).toEqual([])
+    expect(faux.appelsRpc).toHaveLength(0)
+    confirmer.mockReturnValue(true)
+    await act(async () => { bouton.click() })
+    expect(faux.appelsRpc).toHaveLength(1)
+  })
+
+  it('le réglage illisible : la phrase, aucune validation', async () => {
+    const bouton = await monter({ reglage: reglageDesVentes(null, [2026]) })
+    screen.getByText(phraseDuReglageIllisible('cabinet', 'rien n’en a été lu'))
+    expect(bouton.disabled).toBe(true)
   })
 })

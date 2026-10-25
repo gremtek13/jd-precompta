@@ -36,6 +36,7 @@ import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { anneeDe } from '../lib/format'
 import { lireTout } from '../lib/lectureComplete'
 import { messageErreur } from '../lib/messageErreur'
+import { reglageDesVentes } from '../lib/sourceDeLaVente'
 
 // L'onglet actif fait partie de l'URL (voir la route /dossiers/:id/:tab dans App.tsx) plutôt qu'un
 // simple état React : sans ça, ouvrir une pièce dans un nouvel onglet puis faire "retour" ramenait
@@ -373,6 +374,9 @@ export default function DossierDetail() {
                 articleExoneration={dossier?.article_exoneration ?? null}
                 numeroTvaAttribue={dossier?.numero_tva_attribue ?? false}
                 tvaSurDebits={dossier?.tva_sur_debits ?? false}
+                // La source des ventes, lue avec le dossier, et ses exercices validés, lus EN ENTIER avant que l'onglet se monte
+                // (étape VF8c) : une colonne absente se dit illisible, jamais « pas basculé ».
+                reglageDesVentes={reglageDesVentes(dossier, exercicesValides ? exercicesValides.map((e) => e.annee) : null)}
                 onAdresseUpdated={(adresse) => modifierDossier(id, { adresse })}
               />
             )}

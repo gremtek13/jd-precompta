@@ -6,7 +6,7 @@ import FactureFormModal from './FactureFormModal'
 import { motsDuCabinet, pourLEspace } from '../../lib/espaceVentes'
 import { REFUS_ENREGISTREMENT_CONTACT } from '../../lib/contacts'
 import { LIBELLE_NOM_CONTACT, LIBELLE_NOM_CONTACT_CLIENT } from '../../lib/droitsAcces'
-import { MENTIONS_VIDES } from '../../test/factures'
+import { MENTIONS_VIDES, NON_BASCULE } from '../../test/factures'
 import { contact } from '../../test/contacts'
 import type { ArticleExoneration, Contact, FactureEmise, StatutTva } from '../../lib/types'
 
@@ -154,7 +154,7 @@ async function monter(espace: 'cabinet' | 'client', o: Options = {}) {
     dossierId: 'd1', dossierNom: 'Dossier fictif', dossierSiret: null, dossierAdresse: null, statutTva: o.statut === undefined ? 'redevable' : o.statut,
     articleExoneration: o.exo ?? null, numeroTvaAttribue: false, tvaSurDebits: false, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   } as const
-  render(espace === 'client' ? <FactureFormModal espace="client" {...props} /> : <FactureFormModal espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
+  render(espace === 'client' ? <FactureFormModal reglageDesVentes={NON_BASCULE} espace="client" {...props} /> : <FactureFormModal reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...props} />)
   if (o.facture) await screen.findByText('Adresse de l\'émetteur', { exact: false })
   // La date d'émission du jour changerait les échéances d'un test à l'autre : elle est posée, comme le ferait une saisie.
   if (o.emission !== null && !o.facture) fireEvent.change(champ('#date-emission'), { target: { value: o.emission ?? '2027-11-01' } })

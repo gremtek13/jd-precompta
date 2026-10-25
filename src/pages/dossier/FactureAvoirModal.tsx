@@ -6,6 +6,7 @@ import type { FactureEmise, FactureLigne } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_AVOIR_CLIENT } from '../../lib/droitsAcces'
 import { pourLEspaceSiTexte, type EspaceVentes } from '../../lib/espaceVentes'
+import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
 
 interface LigneAvoirEdit {
   designation: string
@@ -25,6 +26,9 @@ interface Props {
   // Ce que les autres avoirs de cette facture ont déjà crédité (lib/factures.ts:dejaCredite) ; null quand la liste
   // des factures n'a pas été lue en entier — on ne sait pas, et c'est alors la base qui juge du plafond.
   credite: number | null
+  // La source des ventes du dossier et ses exercices validés (étape VF8c ; lib/sourceDeLaVente.ts) : un avoir prend la source
+  // de la facture qu'il corrige, et un avoir source ne se valide pas au-delà de la frontière d'un exercice validé.
+  reglageDesVentes: ReglageDesVentes
   onClose: () => void
   onCreated: () => void
 }
@@ -46,7 +50,7 @@ interface Props {
 // montants restent positifs à l'écran ("je crédite 120 €") mais sont stockés négatifs en base (voir
 // creerAvoir) : sommer tous les montant_ttc d'un dossier/année annule alors automatiquement l'effet de
 // l'avoir sur le total, sans cas particulier à coder ailleurs (FactureApercu, un futur export...).
-export default function FactureAvoirModal({ dossierId, espace, factureOrigine, credite, onClose, onCreated }: Props) {
+export default function FactureAvoirModal({ dossierId, espace, factureOrigine, credite, reglageDesVentes, onClose, onCreated }: Props) {
   const [dateEmission, setDateEmission] = useState(aujourdHuiSql())
   const [motif, setMotif] = useState('')
   const [mentionsLegales, setMentionsLegales] = useState(factureOrigine.mentions_legales ?? '')
@@ -106,8 +110,15 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
   // l'en-tête tel qu'il est envoyé, et un total qui compterait une ligne écartée contredirait les lignes de l'avoir.
   const { valides: lignesValides, ecartees: lignesEcartees } = lignesSaisies(lignesNumeriques)
   const totaux = calculerTotaux(lignesValides)
-  // Ce que la base refuserait, dit avant le clic (lib/factures.ts:refusAvoir).
-  const refus = refusAvoir(factureOrigine, dateEmission, lignesValides, credite)
+  // L'AVOIR D'UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF8c ; lib/sourceDeLaVente.ts) : un avoir est source quand la facture
+  // qu'il corrige l'est ; il porte sa nature, et seule la frontière d'un exercice validé peut alors le refuser (au cabinet ; le
+  // client ne la lit pas, la base la juge). L'avoir d'une facture d'avant la bascule n'est pas source : rien de refusé, un avis.
+  const jugementSource = jugementDeLaValidation(
+    espace, { type: 'avoir', nature_operation: factureOrigine.nature_operation, date_emission: dateEmission }, reglageDesVentes, factureOrigine,
+  )
+  // Ce que la base refuserait, dit avant le clic (lib/factures.ts:refusAvoir), puis ce que la source refuserait de plus — la
+  // base juge l'avoir, puis fixe sa source.
+  const refus = refusAvoir(factureOrigine, dateEmission, lignesValides, credite) ?? jugementSource.refus
 
   // Verrou en `useRef`, et POSÉ AVANT LE `try` : dans le `try`, le `return` du deuxième clic
   // sortirait par le `finally`, qui relâcherait le verrou du PREMIER, encore en cours — il faut
@@ -126,6 +137,8 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
       return
     }
     if (creationEnCours.current) return
+    // Un avoir source se confirme, sous la phrase du module : il réduira la vente de sa facture.
+    if (jugementSource.confirmation && !window.confirm(`${jugementSource.confirmation}\n\nLe valider ?`)) return
     creationEnCours.current = true
     setSaving(true)
     setError(null)
@@ -238,6 +251,7 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
               <textarea id="avoir-mentions" rows={2} value={mentionsLegales} onChange={(e) => setMentionsLegales(e.target.value)} />
             </div>
 
+            {jugementSource.avis && <p className="note-info" role="note">{jugementSource.avis}</p>}
             {(error ?? refus) && <p className="error-text">{pourLEspaceSiTexte(espace, error ?? refus)}</p>}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>

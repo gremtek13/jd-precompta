@@ -6,6 +6,7 @@ import { facture as factureCii, SIRET_VENDEUR } from '../../test/facturesCii'
 import type {
   EncaissementFacture, EncaissementFactureTaux, FactureEmise, LigneBancaire, TransmissionEncaissement, TransmissionFacture,
 } from '../../lib/types'
+import { NON_BASCULE } from '../../test/factures'
 
 // « RÈGLEMENTS » (espace client, étape A3) : la vue de l'onglet Factures, montée pour le cabinet et pour le client « Ventes »,
 // avec la VRAIE fenêtre des encaissements. Ce que ces cas gardent, et qu'aucun calcul pur ne voit :
@@ -163,8 +164,8 @@ async function monter(espace: 'cabinet' | 'client', banque = false) {
     statutTva: 'redevable' as const, articleExoneration: null, numeroTvaAttribue: false, tvaSurDebits: false,
   }
   render(espace === 'client'
-    ? <FacturesTab espace="client" banque={banque} {...commun} />
-    : <FacturesTab espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
+    ? <FacturesTab reglageDesVentes={NON_BASCULE} espace="client" banque={banque} {...commun} />
+    : <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
   await screen.findByText('F2027-0001')
 }
 
