@@ -34517,3 +34517,122 @@ tiers de chaque pièce au libellé de chaque mouvement (À REVOIR).
 
 **CE QUI RESTE À LA SESSION.** La barrière complète sur la tête, la demande de fusion, la feuille de route (la ligne 28.65 :
 VF6d fait). Aucune question au cabinet.
+
+### 24/10/2026 — LE PONT, SES MARQUES ET LA CHECKLIST DEVANT LA JUMELLE INVERSÉE — CHANTIER EC-Q3, VF6E (LIGNE 28.65)
+
+(Écrite par l'agent architecte du lot sur `df1dc56` — la tête de `main`, VF6c et VF6d fusionnés ; rien de VF5h2 —, branche
+`vf6e-pont`, en trois commits : le code et ses tests (`0fde9a2`), deux tests renforcés par les mutations, puis cette
+documentation. Créé : `ventesJumellesRegime.test.ts`. Modifiés : `ventesJumelles.ts`, `ventesJumellesLecture.ts`, `pointsDeLaChecklist.ts`, `checklistLecture.ts`,
+`revisionCycles.ts`, `prealablesValidation.ts`, `marquesDeLaPiece.ts` (un commentaire), `PiecesTab.tsx` (les marques, le
+badge de la devise, la recopie de la déclaration), `PlateformeClientModal.tsx` (le bilan d'un import), `EcrituresTab.tsx` et
+`ClotureTab.tsx` (une ligne chacun, les cartes « Comptes manquants » et « Postes manquants ») ; leurs tests ; le banc
+(`fauxSupabase.ts`, `debordements.mjs`). Ni base, ni migration, ni policy, ni Edge Function ; la production n'a pas été lue :
+la mesure de VF6b (24/10/2026 : aucun dossier basculé, aucune facture source, aucune pièce désignée ni déclarée) vaut, et le
+lot y est NEUTRE.)
+
+**LA DÉLIMITATION.** La puce VF6e du § 5 de « VF6, LA JUMELLE INVERSÉE : LA CONCEPTION » et son § 3 h ; VF6-Q4 (le symptôme,
+tranchée le 23/10/2026 à la recommandation) ; les trois points que VF6a laissait juger l'exemplaire d'une facture source
+(`comptes-manquants`, `postes-manquants`, `pieces-payees-en-trop`) ; l'« à revoir » de VF6b (une transmission connue après la
+validation d'une pièce : G3 ne la rejuge pas, le pont la dit) ; la note de VF6c (`relirePiece` recopie la déclaration).
+
+**CE QUI CHANGE.**
+- **Le pont juge par régime** (`lib/ventesJumelles.ts`, `RegimeDuPont` : la bascule du dossier et ses factures sources, sans
+  valeur par défaut). `ventesEnDouble` reçoit les sources et le statut des pièces, OBLIGATOIRES : une facture qui n'est pas
+  source (tout dossier qui n'a pas basculé, une facture d'avant la bascule) est en double quand plusieurs pièces la portent —
+  inchangé ; une facture SOURCE compte sa vente elle-même, et c'est une pièce VALIDÉE que le pont lui rattache sans être son
+  exemplaire désigné qui la compte une seconde fois (`parLaFacture`). Deux exemplaires désignés d'une facture source — la
+  jumelle et le PDF — ne sont plus « comptés deux fois », ce qu'ils ne sont pas ; une pièce à valider ne compte pas encore.
+  `piecesADesigner` : dans un dossier basculé, chaque pièce que le pont rattache à une facture (source ou d'avant) sans
+  désignation, hors d'un double. `ventesHorsFacturesAVerifier` : le symptôme de VF6-Q4 — une pièce déclarée dont le TTC est,
+  au centime et signe compris, celui d'une facture source de la même année qu'aucun exemplaire VALIDÉ ne porte ; sur les deux
+  piles ; une recherche par (année, centimes), jamais dans le pont, qui ne rapproche jamais un montant.
+- **Les marques** (Justificatifs, la ligne et la fiche) : « Exemplaire de la facture F… » (neutre ; « de l’avoir A… » pour un
+  avoir), « La vente est comptée par la facture, source de sa vente : la pièce ne compte nulle part » ; « À désigner : c’est la
+  facture F… » (attention), qui dit ce que la pièce comptera désignée (rien pour une facture source, la vente comme
+  aujourd'hui pour une facture d'avant), et, validée sans désignation — avant la bascule, ou avant que sa transmission soit
+  connue —, qu'elle compte comme une pièce ; déclarée et pourtant rattachée, elle le dit, et que la désignation remplace la
+  déclaration ; « Comptée deux fois » d'une facture source (danger), son remède : la désigner ; « Vente hors des factures de
+  l’application » (neutre), ce que la déclaration fait compter selon le régime. Les marques d'hier restent pour une facture qui
+  n'est pas source. Le badge « Devise non convertie » écarte l'exemplaire d'une facture source dès que le pont est lu en
+  entier (`sourcesDuPont`) ; pas encore revenu ou lu en partie, la règle d'hier.
+- **La lecture du pont** (`ventesJumellesLecture.ts`) lit `source_de_la_vente` ; sa forme reste celle que l'onglet Banque et la
+  fiche d'une pièce lisent (un sur-ensemble). `LectureJumelles.sources`, nulles comme les jumelles sur une lecture partielle.
+- **Le bilan d'un import** (`PlateformeClientModal`, la bascule en propriété OBLIGATOIRE du cabinet) : une vente reconnue d'une
+  facture source n'est jamais « déjà portée » (son exemplaire ne compte pas, et la pièce neuve désignée ne comptera pas) ; dans
+  un dossier basculé, « à désigner exemplaire de sa facture à la validation ».
+- **La Checklist** : `ventes-en-double` (erreur) par régime, son détail nomme une facture source « source de sa vente » et dit
+  son remède ; deux points neufs en ATTENTION, rangés aux recettes par la Révision : `exemplaires-a-designer` et
+  `ventes-hors-factures-a-verifier`, muets sur une lecture partielle des pièces, des factures ou des transmissions. La bascule
+  s'y lit à `ventesFacturees` non nulle (la lecture ne la fait que pour un dossier basculé) ; la lecture des factures prend leur
+  montant.
+- **Les préalables** : `ventes-en-double` reste BLOQUANT dans les deux régimes, chacun par sa règle ; les deux points neufs ne
+  le sont pas (une pièce à désigner ne se valide pas sans sa marque — G3 — et, validée avant la bascule, compte comme hier ;
+  le symptôme ne décide rien).
+- **Les trois points que VF6a laissait** : `comptes-manquants` et `postes-manquants` (Checklist, et les cartes « Comptes
+  manquants » d'Écritures et « Postes manquants » de Clôture) et `pieces-payees-en-trop` (Checklist et préalable bloquant)
+  écartent l'exemplaire d'une facture source — il ne s'écrit pas, la 2035 l'écarte, il ne se règle pas. Écarté CHEZ L'APPELANT
+  (`horsDesExemplairesDesSources`), et non par un paramètre des fonctions : `agent-comptable` porte une copie gardée de
+  `categoriesSansCompte` et `categoriesSansPoste` (`agentComptableAffectation.test.ts`), que ce lot ne redéploie pas.
+- **`relirePiece`** (Justificatifs) recopie aussi `vente_hors_des_factures` dans la fiche ouverte (la note de VF6c) : la fiche
+  garde sa propre relecture, qui reste la garde de tout autre appelant.
+
+**LES ÉCARTS À LA CONCEPTION, DITS.**
+- La synchronisation Super PDP n'a pas de bilan des jumelles : `superpdp-sync` ne rend que des comptes, pas les pièces
+  créées, et l'en doter toucherait une Edge Function. Les marques de Justificatifs et la Checklist disent les mêmes pièces.
+  Recommandé : à son prochain redéploiement pour une autre raison, rendre les identifiants des pièces créées, et dire le même
+  bilan.
+- La lecture du pont ne lit pas `vente_hors_des_factures` : les écrans qui la jugent (Justificatifs, la Checklist) lisent la
+  pièce entière, et le bilan d'un import ne juge que des pièces neuves.
+- Les deux fonctions des catégories gardent leur signature (la copie d'`agent-comptable`) : l'écart se fait chez les trois
+  appelants.
+
+**LA MESURE** (3 000 pièces de vente, 600 factures dont 300 sources ; Node 22, médiane de cinq passages après un
+d'échauffement) : `ventesEnDouble` 0,8 → 5,1 ms ; `marquesDesPieces` 14,4 → 21,8 ms ; `piecesADesigner` 0,7 ms ;
+le symptôme 0,6 ms ; le bilan d'un import 0,6 ms, inchangé. Ce qui s'ajoute est linéaire (des tables par identifiant) ; le
+coût des marques était déjà celui d'une recherche de facture par pièce.
+
+**LES PREUVES.**
+- Tests neufs : 50 (un fichier neuf, `ventesJumellesRegime.test.ts`, 25 : les doubles par régime, les pièces à désigner, chaque
+  marque et sa pastille, le symptôme, les détails de la Checklist, le bilan d'un import, les `@ts-expect-error` des paramètres
+  obligatoires ; `pointsDeLaChecklist.test.ts` 7 ; `prealablesValidation.test.ts` 3 ; écrans : `PiecesTab.test.tsx` 6 — les
+  marques dans les deux régimes, le double d'une facture source, le badge de la devise, le pont lu en partie, la recopie de
+  la déclaration —, `ChecklistTab.test.tsx` 4, `PlateformeClientModal.test.tsx` 3, `EcrituresTab.exemplaires.test.tsx` 1,
+  `ClotureTab.test.tsx` 1). Le faux client de `ChecklistTab.test.tsx` rend désormais les seules colonnes demandées des
+  factures émises : sans cela, une lecture qui oublierait leur montant n'aurait rien fait tomber. Les 51 cas d'hier de
+  `ventesJumelles.test.ts` jouent sous le régime d'hier, leurs attentes inchangées ; seul l'inventaire des pastilles
+  s'étend aux trois genres neufs.
+- ROUGE AVANT : les tests neufs et modifiés joués sur le code de `df1dc56` (une copie extraite) : 44 en faute, chacun pour
+  sa raison ; les verts sont les gardes symétriques (hors d'un dossier basculé, le pont lu en partie, une pièce à vérifier
+  déclarée, une catégorie qu'une autre pièce emploie).
+- La suite comparée test par test, sous Paris, à `df1dc56` : aucun verdict changé, aucun test disparu ; 50 neufs (et les
+  25 de `clesSupabase.test.ts`, que la copie sans `.git` ne charge pas).
+- Mutations : 53, chacune seule dans le vrai fichier, jouée contre les dix fichiers de tests du lot, le fichier remis et
+  vérifié à l'empreinte, témoins verts avant et après — le pont 31, la Checklist 9, les préalables 2, les lectures 4, les
+  écrans 7. 52 tuées ; une équivalente, déclarée avant d'être jouée : le retour anticipé du symptôme sans facture candidate
+  (une optimisation). Deux autres ont survécu à la première campagne et ont fait renforcer leurs tests : les doubles passés
+  vides aux pièces à désigner de la Checklist (un double d'une facture source s'y comptait aussi « à désigner »), et la
+  recopie de la déclaration par `relirePiece` (le test regardait un bouton que l'échec de la relecture de la fiche retirait
+  de toute façon ; il regarde désormais ce que le formulaire dit de la nature de la pièce) ; rejouées, tuées.
+- La barrière, sous le Node 22.23.3 de la CI : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les 63 avertissements
+  d'avant, les mêmes fichier par fichier et règle par règle ; `npm run test:fuseaux` 0, 465 fichiers et 14 314 tests sous
+  Paris, UTC, New York et Auckland ; `npm run build` 0 (`index-Bcctnvys.js`).
+- Le banc (une copie de `0fde9a2` servie sur le port 5399, le navigateur sans le mandataire) : 0 débordement à 1 440 (panneau
+  ouvert), 1 280, 1 024, 720 et 390 px, aux volets extrêmes (barre 2 000, panneau 2 000, les deux, la barre 2 000 panneau
+  fermé), et aux passes du client (« Ventes » à 390 px, « Ventes » et « Banque » à 390 et 1 440 px) ; 0 bouton recouvert sur
+  285 sondés dans 61 fenêtres (114 et 122 chez le client). Les deux visites neuves, `justificatifs-bascules/marques` et
+  `checklist-basculee/jumelle-inversee`, ne débordent à aucune passe.
+
+**À REVOIR.**
+- `agent-comptable` (ses copies de `piecesPayeesEnTrop`, `categoriesSansCompte`, `categoriesSansPoste`) ne connaît pas les
+  factures sources : l'assistant compterait l'exemplaire d'une facture source. Aucun dossier n'a basculé ; à son prochain
+  redéploiement.
+- Les marques de Justificatifs se recalculent à chaque rendu (déjà avant ce lot) : 22 ms sur 3 000 pièces. Un `useMemo` s'il le
+  faut sur le premier dossier réel.
+- `exemplaires-a-designer` compte aussi les pièces validées avant la bascule que le pont rattache à une facture d'avant : la
+  lettre de la conception (§ 3 h). Un dossier qui bascule avec beaucoup de ventes passées les verra en attention jusqu'à leur
+  désignation — utile au virement mixte (VF5h exige l'exemplaire unique), sans effet sur ce qui se compte.
+- Le symptôme compare des montants SIGNÉS : un avoir source de −60 € ne répond qu'à une pièce de −60 €. Le signe d'une pièce
+  d'avoir de vente n'est pas relevé ici.
+
+**CE QUI RESTE.** VF5h2 (VF5H-Q2, une migration, avant la première bascule réelle) ; puis VF7 à VF9. Aucune question nouvelle au
+cabinet.
