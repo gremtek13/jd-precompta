@@ -35390,3 +35390,258 @@ feuille de route. (6) VF7b, qui dépend de VF7a.
 déclencheurs, la frontière du chef super-administrateur, une écriture validée), et les ouvertures qui restent relèvent de
 VF5H2-Q1, ouverte — la retenir fermerait aussi, pour un mouvement figé, l'insertion directe d'une contre-passation sans
 mouvement.
+
+### 25/10/2026 — LA VALIDATION REFUSE LES MANQUES DES VENTES FACTURÉES — CHANTIER EC-Q3, VF7B (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF7b sur `8503057`, la branche locale `vf7b-validation`, en deux commits : la
+migration, le module, les tests et les essais ; puis cette documentation. Créés : la migration
+`supabase/schema/20261025180000_validation_des_ventes_facturees.sql`, les essais
+`supabase/essais/validationDesVentesFacturees.sql` et `supabase/essais/recompositionDesVentes.sql` (sur une réplique
+seulement). Modifiés : `prealablesValidation.ts` et son test ; trois essais (`ventesFacturees.sql`,
+`ecrituresVentesFacturees.sql`, `rls.sql`) ; `supabase/schema/README.md` ; CLAUDE.md. La migration est dans l'export
+sous une version PROVISOIRE, `20261025180000`, et n'est PAS appliquée : elle attend l'accord du cabinet. En production,
+des SELECT de comptes, du catalogue et d'empreintes de corps, aucune valeur, aucune écriture. VF7B-Q1 et VF7B-Q2,
+portées à la page des arbitrages en route, suivies à leur recommandation.)
+
+**LA DÉCISION.** La conception de VF7 (§ 3 c, § 5, § 8) : pour un dossier BASCULÉ, `valider_exercice` refuse, avant la
+numérotation et sous leur nom, les trois manques de G5 — un mouvement réservé, un virement ou un prélèvement sans son
+mouvement, une vente facturée qui n'est pas écrite à jour — ; pour un dossier qui n'a pas basculé, rien de neuf. Deux
+arbitrages en route : VF7B-Q1 (B), la vérification recomposée d'un bloc, une seconde écriture de la règle gardée par une
+batterie ; VF7B-Q2 (A), le seuil d'une seconde jugé sur ce que VF7b ajoute.
+
+**CE QUE LA BASE FAISAIT.** `valider_exercice` ne nommait aucune vente facturée. L'essai neuf, joué sans la migration,
+le montre : elle validait un exercice dont un virement ou un prélèvement d'une facture source n'avait pas son mouvement
+(8, 12, 31c), dont une source n'était pas écrite, ne l'était plus à jour, ou ne s'écrivait pas (15, 18, 20, 22, 26, 29,
+31d, 31f, 41, 53, 56, 58) — ses lignes proposées numérotées et figées telles quelles, une recette ou une TVA de moins ou
+de trop dans un exercice clos ; et elle disait « des mouvements bancaires à traiter » d'un mouvement réservé, qui ne se
+traite que par ses encaissements (2, 4, 10, 31b).
+
+**L'ÉTAT DE LA PRODUCTION, RELEVÉ LE 25/10/2026** (des comptes et des empreintes) : 148 migrations, `19c0e53c…`, sans
+`registre_virement_mixte` ni `frontiere_des_encaissements` ; les quatre corps que la garde exige sont ceux de la
+production — `valider_exercice` `8c4c7a5a…` (de `report_des_soldes`), `ecriture_attendue_vente_facturee` `e956e19e…` (de
+`virement_mixte`), `calcul_vente_facturee` `d2f0312e…` (d'`ecritures_de_la_vente_facturee`),
+`encaissement_justifie_son_mouvement` `5d8ac5a1…` (d'`encaissements_de_la_vente_facturee`) — ; aucun dossier basculé,
+aucune facture source, aucun encaissement, aucun exercice validé, aucune ligne validée ; les deux fonctions neuves
+absentes. La migration y est NEUTRE : ses refus ne se rencontrent que dans un dossier basculé.
+
+**LA MIGRATION** `validation_des_ventes_facturees` (61 816 caractères, 62 518 octets, 1 012 lignes, md5
+`b5c3dad446ff6cbbb96ef6045ed816ce`, ni barre oblique inverse ni retour chariot) :
+- Une garde d'abord : les quatre corps au caractère près (les retours chariot d'un collage écartés), sinon un refus qui
+  nomme la fonction et la migration qui l'a posée ; une seconde application se refuse de même, la validation ayant
+  changé. Elle ne lit ni ne touche les fonctions de VF5h2 et de VF7a : elle s'applique avec ou sans elles, éprouvé des
+  deux façons.
+- `ecritures_attendues_de_la_periode(dossier, frontière, fin)`, NEUVE : pour toutes les sources d'une période — celles
+  dont une date y tombe (l'émission d'une facture ou d'un avoir source, la livraison d'une facture, un encaissement
+  d'une facture source, un mouvement que l'un d'eux cite, classé ou libre) et celles dont le brouillon y propose une
+  ligne —, chacune avec son motif, son détail et ses lignes sous la forme d'`ecrire_vente_facturee`
+  (`date|compte|sens|centimes|mouvement`). Elle redit d'un bloc la règle du cumul (`calcul_vente_facturee` : les parts,
+  la TVA au cumul arrondie le demi loin de zéro, les contre-passations, les documents, les exigibilités ; une récursion
+  par facture et par taux) et la composition (`ecriture_attendue_vente_facturee`). Une requête planifiée à chaque appel
+  sur ses valeurs (`return query execute … using`), jointe par hachage (`enable_nestloop = off` : des boucles imbriquées
+  la rendaient quadratique, 1,2 à 1,9 s au lieu de 0,25 à 0,4 s), sans compilation à la volée (`jit = off` : la
+  production n'en emploie pas, et elle coûtait ici dix secondes de plus que la requête) ; `stable`, aux droits de
+  l'appelant, exécutée par aucun rôle de l'API.
+- `ventes_facturees_de_l_exercice(dossier, année)`, NEUVE : pour un dossier basculé, les sources en défaut entre la
+  frontière (exclue ; le début des temps sans exercice validé) et le 31 décembre — ce qui s'écrit dans cette fenêtre,
+  comparé en multiensemble, trié octet par octet, aux lignes PROPOSÉES de la source dans la même fenêtre : à écrire, à
+  réécrire, à retirer ; ou qui ne s'écrit pas (un motif) quand sa date y tombe —, chacune avec son jour (la première
+  ligne qui diffère, sinon la date de la source), son motif, son détail et son nom (« la facture F2025-0001 », « l'avoir
+  … », « l'encaissement du 10/06/2024 de la facture … », « la contre-passation du … », « le mouvement du … »), dans
+  l'ordre du jour, du genre et de l'identifiant. Rien pour un dossier qui n'a pas basculé, ni sans exercice ; exécutée
+  par aucun rôle de l'API.
+- `valider_exercice`, remplacée : la définition d'hier au caractère près (ses lignes sont une sous-suite de la nouvelle,
+  et ses messages ceux de la nouvelle moins sept), et, pour un dossier basculé, sept refus en 23514, sous l'exercice de
+  la date nommée : avant les mouvements à traiter, le mouvement réservé — un crédit (« … un mouvement du 10/03/2025
+  réservé à l'encaissement de la facture … : le classer par ses encaissements avant la validation. »), un débit (« …
+  réservé à la contre-passation d'un encaissement de la facture … : le classer par ses contre-passations … ») — ; après
+  eux, l'encaissement vivant par virement ou par prélèvement sans son mouvement (« … il manque au relevé, ou n'y est pas
+  rattaché — le rattacher avant la validation. ») — un chèque, une carte ou un effet ne retiennent pas, un en-cours au
+  511 (EC3-Q7) — ; puis la première source de `ventes_facturees_de_l_exercice` : à écrire, à réécrire, à retirer, qui ne
+  s'écrit pas ; tous avant la 2035 et la numérotation. `create or replace` garde l'OID et les droits ; son commentaire
+  réécrit.
+- Les droits : `revoke execute` des deux fonctions neuves de `public`, `anon` et `authenticated` ; leurs commentaires.
+- Ce que le texte retire : rien — ni `drop`, ni suppression, ni table, ni colonne, ni policy, ni déclencheur. Si
+  `apply_migration` attend pourtant une confirmation, le texte à coller est prêt
+  (`collage_validation_des_ventes_facturees.sql`, 63 490 caractères, 64 211 octets, `4428f795bf61a9fd9f9ea86b1a8beceb`)
+  : une transaction qui vérifie sa propre empreinte (les fins de ligne Windows ramenées), refuse une seconde
+  application, s'exécute — sa garde exige les quatre corps — et pose la ligne d'historique sous la version de l'heure du
+  collage, au nom de l'auteur de `report_des_soldes`. Son retour arrière (`retour_validation_des_ventes_facturees.sql`,
+  17 576 caractères, 17 715 octets, `e9d489b876ffe3ad69f061ed1eab0c7e`) rend la définition et le commentaire d'hier de
+  la validation, retire les deux fonctions et la ligne d'historique — deux `drop function` et une suppression dans
+  l'historique, JAMAIS SANS L'ACCORD DU CABINET ; aucune donnée ne se perd, mais après la première validation d'un
+  exercice basculé il laisserait des lignes validées qu'aucune règle n'aurait vérifiées (conception, § 8) ; il se refuse
+  si la migration n'est pas dans l'historique, ou si la validation n'est plus celle qu'elle a posée. Tous deux dans le
+  bloc-notes de la session (`…/scratchpad/vf7b/collage/`).
+
+**QUATRE ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- UNE SECONDE ÉCRITURE DE LA RÈGLE (VF7B-Q1). La conception recomposait chaque source par
+  `ecriture_attendue_vente_facturee`, « facture par facture ». Mesuré sur un exercice de 3 000 encaissements (7 000
+  sources) : refaite pour chaque source, 24,5 s ; la règle du cumul une fois par facture, 4,9 à 5,6 s pour la
+  vérification et 6,5 à 6,7 s pour la validation entière — sous les huit secondes du rôle `authenticated`, loin
+  au-dessus de la seconde. VF7B-Q1 offrait de garder ce dessin (A), une recomposition d'un bloc (B), une vérification
+  préalable par tranches et un certificat (C, une table et un geste de plus), une règle optimisée et un seuil relevé
+  (D), l'écran seul (E, écarté par la conception, § 7) ; (B) suivie : 0,22 à 0,40 s. Son prix : la règle s'écrit
+  désormais deux fois en base — d'un bloc pour la vérification, source par source pour l'écriture (VF4b), qui reste la
+  référence —, en plus du module de l'application. Ce qui les tient égales : la batterie `recompositionDesVentes.sql`
+  (ci-dessous), les contrôles 188 de `ventesFacturees.sql`, 9c et 177 d'`ecrituresVentesFacturees.sql`, les 7 000
+  sources de la mesure (0 écart) et les mutations de la section ; toute migration qui touche la règle, la composition ou
+  la recomposition rejoue la batterie (son en-tête, et la ligne des essais de CLAUDE.md).
+- LE SEUIL (VF7B-Q2). La conception arrêtait le lot au-delà d'une seconde. La validation entière en prend 1,8 à 3,5 sur
+  3 000 encaissements, mais elle en prenait déjà 1,65 à 3,04 sans VF7b : VF7b y ajoute sa vérification, 0,3 à 0,4 s (la
+  validation entière, 0,2 à 0,3 s de plus en moyenne), le reste est la validation d'hier, pour l'essentiel ses gardes
+  par ligne (ci-dessous). Le lot s'est arrêté et l'a dit ; (A) suivie : le seuil se juge sur ce que VF7b ajoute, et le
+  coût des gardes va sur une ligne de la feuille de route — (B) aurait d'abord allégé les gardes (une garde par
+  instruction sur ses tables de transition, la clé du verrou calculée une fois), un lot qui touche au gel des exercices
+  et à G5 ; (C), un autre seuil pour la validation entière.
+- UNE SOURCE QUI NE S'ÉCRIT PAS SE NOMME À SA DATE. La conception la retenait « quand l'une de ses dates tombe dans
+  cette période » ; la migration, quand SA date y tombe — pour une facture, son émission, jamais sa livraison. Sur ce
+  que les fonctions laissent atteindre, les deux refusent les mêmes exercices : une facture source ne se valide plus
+  dans un exercice validé (`fixer_source_de_la_vente`), et ce qui l'écarte ensuite — un encaissement illisible, une
+  contre-passation qui n'est pas l'opposé de son encaissement, un encaissement sur un taux que ses avoirs annulent — est
+  une source datée après la frontière, qui se nomme elle-même. Elles diffèrent par ce qu'elles nomment : la migration
+  nomme la cause, à lever, jamais une facture d'un exercice déjà validé. L'essai le fixe (PE, 57 et 58 : la facture du
+  31 décembre 2024, livrée en janvier, écartée par un chèque illisible de février ; la validation de 2025 nomme le
+  chèque, sous 2025), et la mutation qui retire la frontière pour ces sources (J11) en meurt.
+- LES ESSAIS. La conception étendait `validationExercice.sql` et nommait `restauration.sql`. Les refus se prouvent dans
+  un essai NEUF, `validationDesVentesFacturees.sql`, sur le moteur d'étapes de `ventesFacturees.sql` (un dossier basculé
+  demande des factures sources, des encaissements, des mouvements et des écritures composées) ; `validationExercice.sql`
+  reste tel qu'il était, et ses 152 verdicts identiques des deux côtés prouvent que rien ne change pour un dossier qui
+  n'a pas basculé (conception, § 8). `restauration.sql` ne change pas non plus : il se rejoue, sur la réplique, contre
+  un dossier basculé en engagement dont l'exercice 2025 a été validé par la validation neuve (le semis, dans le
+  bloc-notes). Et `rls.sql` reçoit un bloc que la conception ne prévoyait pas (VB) : deux fonctions neuves lisent tout
+  un dossier aux droits de l'appelant.
+
+**LA RECOMPOSITION D'UN BLOC ET SA BATTERIE.** `recompositionDesVentes.sql`, sur une réplique seulement, par le
+super-utilisateur, en une transaction : quatre-vingts dossiers basculés, en trésorerie et en engagement, tirés d'une
+graine fixe (`setseed(0.20261025)`, identifiants compris) — huit à quinze factures de services ou de biens chacun (au
+hasard, certaines sans nature, « mixtes », sans option pour les débits ou sans ligne), un à trois taux, des avoirs
+(certains annulant un taux), zéro à trois encaissements par facture, chacun par l'un des huit moyens (quelques-uns
+illisibles, retirés, ou du jour même d'un avoir), des contre-passations avec ou sans débit, des mouvements du même jour
+ou d'un autre, classés ou libres, seuls ou partagés (une remise de chèques, un virement mixte et zéro, un ou deux
+exemplaires), des frais autour des deux bornes de l'écart (2 % et 5 €) et au-delà, des comptes de contrepartie absents,
+choisis ou refusés, un tiers des dossiers à l'exercice 2025 validé et un chèque du 30 décembre rattaché en janvier, des
+écritures proposées à jour, faussées d'un centime ou périmées. Ce qu'elle rend : sur toute leur histoire, 3 310 sources,
+0 écart ; après la frontière, 2 729, 0 écart ; aucune source ne manque au bloc ; les quatre genres et les treize motifs,
+et l'absence de motif ; les dix comptes de la composition ; le jugement de la validation refait source par source sur la
+voie de VF4b, 160 exercices, 2 872 sources en défaut, 0 écart ; les quatre états ; rien n'est resté. UN TIRAGE QUI NE SE
+REJOUAIT PAS : un tirage qui porte sur plusieurs lignes les prenait dans l'ordre d'un parcours de table, que le plan
+choisit, ou dans une sous-requête `in (…)`, qu'il peut rejouer pour chaque ligne (et `random()` avec elle) ; sous
+charge, ou sur une base que les jeux annulés chargent de lignes mortes, le tirage changeait d'un jeu à l'autre (de 3 210
+à 3 387 sources selon le jeu), et une mutation que les jeux au calme laissaient vivre mourait (J11). Chaque tirage sur
+plusieurs lignes suit désormais l'ordre de leurs identifiants (ou de leur contenu), et se fait d'une requête : quatre
+jeux — trois de suite sur la même base, puis sur une copie fraîche — rendent les mêmes tables semées, table par table,
+et les mêmes sorties.
+
+**LE MODULE.** `prealablesValidation.ts` : `REFUS_VENTES_FACTUREES_DE_LA_VALIDATION`, les sept refus dans l'ordre du
+texte de la validation (`mouvement_reserve_credit`, `mouvement_reserve_debit`, `encaissement_sans_mouvement`,
+`a_ecrire`, `a_reecrire`, `a_retirer`, `ne_s_ecrit_pas`), leurs mots (un « % » par valeur) et leur code, et
+`NOM_DU_MOYEN_SANS_MOUVEMENT` ; rien ne les lit encore — VF7c les branche dans les préalables (§ 3 d). Dix tests neufs
+(`prealablesValidation.test.ts`) les confrontent au texte exporté de `valider_exercice` (les mêmes messages, dans
+l'ordre, sous les mêmes codes ; leur place, le réservé juste avant les mouvements à traiter, les autres juste après,
+avant la 2035 ; les valeurs que la base y met ; une dérive plantée vire au rouge) et à l'essai (chaque refus exigé sous
+ses mots et son code, chaque refus qu'il attend présent dans les fonctions ; une dérive plantée) ; et ils gardent la
+migration : la définition d'hier au caractère près, les empreintes de sa garde, les droits retirés, aucune fonction
+neuve `security definer`, ni `drop`, ni suppression, ni `truncate`, ni `grant`, ni table, ni policy, ni déclencheur, ni
+barre oblique inverse.
+
+**LA MESURE** (sur la réplique, aux réglages de la production — sans compilation à la volée, `work_mem` à 2 184 kB —,
+sous le rôle `authenticated` et ses huit secondes, chaque validation dans une transaction annulée) :
+- Un exercice de 3 000 encaissements, 1 000 factures sources et 3 000 mouvements (7 000 sources ; 9 000 lignes en
+  trésorerie, 15 000 en engagement) : la recomposition seule, 0,22 à 0,32 s en trésorerie, 0,26 à 0,31 s en engagement ;
+  le jugement, 0,27 à 0,37 et 0,34 à 0,40 s ; la validation, 1,82 à 2,03 s et 2,87 à 3,49 s, contre 1,65 à 1,82 s et
+  2,77 à 3,04 s sans la migration ; refusée au premier défaut, 0,35 et 0,41 s.
+- UNE facture de 300 encaissements, la récursion la plus longue (601 sources ; 900 et 1 203 lignes) : la recomposition
+  seule, 39 à 59 ms (en trésorerie) ; le jugement, 48 à 82 ms ; la validation, 0,20 à 0,24 s en trésorerie et 0,28 à
+  0,31 s en engagement ; refusée, 0,05 à 0,07 s. Sous la seconde, entière.
+- Les gardes par ligne de la validation (deux passages chacun, les déclencheurs désactivés le temps d'une transaction
+  annulée, sur la réplique seulement) : en trésorerie (9 000 lignes), 1,83 à 2,13 s avec tout ; sans la garde des
+  écritures validées (`ecritures_brouillon_intangibles`, `garder_ecritures_validees`), 1,30 à 1,37 ; sans G5
+  (`ecritures_brouillon_vente_facturee_lignes`, `garder_lignes_de_la_vente_facturee`), 1,44 ; sans les deux, 0,91 à
+  0,93. En engagement (15 000 lignes) : 2,88 à 2,90 ; 1,83 à 2,05 ; 2,04 à 2,17 ; 1,20 à 1,22. Les deux gardes coûtent
+  0,9 à 1,7 s, la moitié de la validation ou plus, environ un dixième de milliseconde par ligne ; `cle_validation`,
+  elle, ne coûte rien (30 000 appels en 2,9 à 4,0 ms, à peine plus que le hachage seul, 2,6 à 2,8 ms) : le prix est le
+  PL/pgSQL de chaque garde, une fois par ligne (son verrou partagé, la frontière relue, ses `exists`). Au même rythme,
+  la validation atteindrait les huit secondes vers 35 000 à 40 000 lignes d'un exercice, tous journaux compris : la
+  ligne de la feuille de route de VF7B-Q2 (A).
+
+**LES PREUVES.**
+- La réplique : PostgreSQL 16, UTF8, dans son propre répertoire de données, sur son propre port (5588), arrêtée par son
+  répertoire de données ; sa base égale à la production — `signature.sql`, les neuf familles, et l'historique, 148,
+  `19c0e53c…` — ; munie de VF5h2 et de VF7a comme l'outil l'aurait fait (150, `0a60d988…`), puis de la migration (151,
+  `cc768c5d…`) ; à part, la production munie de la seule migration (149, `2f6199c0…`). Deux familles changent, les mêmes
+  des deux façons : les fonctions (198 → 200, `2d18305e…` → `33d27039…` ; seule, 197 → 199, `d3d1a53e…` → `d4e192bf…`)
+  et leurs droits (198 → 200, `44f208f9…` → `8583d4e0…` ; seule, 197 → 199, `98e0d5c9…` → `d6def6e4…`) ; les sept autres
+  gardent l'empreinte de la production.
+- Les essais, sans puis avec la migration, VF5h2 et VF7a en base des deux côtés. `validationDesVentesFacturees.sql` (six
+  dossiers jetables) : sans elle, 81 verdicts, 45 en faute ; avec elle, 77, 0, rien n'est resté — de même sur la
+  production seule munie de la migration ; en une requête comme l'outil, sans ses lignes de commentaire : 37 258
+  caractères, `3ef35843…`, 77 justes. `ventesFacturees.sql` : 273 ; sans elle, 188 seul ; avec, 0 (96 784 caractères,
+  `888fc6c5…`). `ecrituresVentesFacturees.sql` : 207 ; sans elle, 9c et 177 ; avec, 0 (91 000 caractères, `652baa56…`).
+  `validationExercice.sql` (152) et `reportDesSoldes.sql` (53), en super-utilisateur : identiques des deux côtés. Les
+  autres essais du dépôt : identiques ligne à ligne des deux côtés, leurs fautes connues comprises
+  (`forfaitKilometrique.sql`, `ventesClient.sql`, `reportDesSoldes.sql` hors du super-utilisateur). `rls.sql` ENTIER,
+  par psql : sans la migration, 53 lignes (la ligne VB « EN ATTENTE » de plus), 0 en faute, 46 mutations sur 46 ; avec
+  elle, 56 lignes, 0 en faute, 48 mutations sur 48 — seules les lignes VB diffèrent. `restauration.sql`, contre le
+  dossier semé (deux factures sources, un virement classé, une compensation sur le compte choisi, un chèque du 30
+  décembre, 2025 validé, puis le chèque rattaché en janvier) : IDENTIQUE, 75 tables, 52 lignes, ses contrôles des
+  colonnes de la vente facturée prouvés (`encaissement_id` 12 sur 12, `facture_id` 6 sur 6, le compte de contrepartie,
+  la source, le classement par les encaissements, la bascule), des deux côtés.
+- Les mutations de la migration : cinquante-deux, chacune appliquée sur une copie fraîche (la garde de tête : une
+  empreinte changée, la garde neutralisée sur une base dont un corps redit a changé ; les réglages de la recomposition ;
+  chaque clause du jugement, ses bornes, son ordre, ses noms ; chaque refus de la validation, sa place, sa condition,
+  ses mots, son code, la bascule ; les droits retirés), puis jouée contre l'essai de la validation, la batterie,
+  `validationExercice.sql` ou `rls.sql` selon la clause : quarante-trois tuées — l'empreinte changée refusée sur la base
+  d'aujourd'hui, la garde neutralisée appliquée là où la migration se refuse — ; neuf équivalentes, déclarées d'avance
+  avec leur raison : les deux réglages du plan (`enable_nestloop`, `jit` : la performance seule), le statut « proposee »
+  retiré de l'une des trois branches (le statut ne connaît que « proposee » et « validee », et une ligne validée est à
+  la frontière ou avant), « except » pour « except all » d'un côté (la composition ne rend aucune ligne en double), la
+  garde du dossier qui n'a pas basculé et celle de l'année nulle dans la fonction neuve (sans elles, rien ne se trouve),
+  le dossier tenu pour basculé dans la validation (un dossier qui n'a pas basculé n'a aucune facture source). Deux jeux
+  avaient tué J11 par la batterie, trois l'avaient laissée vivre : c'est ainsi que le tirage variable s'est vu ; l'essai
+  la tue désormais par 57 et 58.
+- Les mutations de la recomposition (section 1) : quinze, chacune appliquée sur une copie fraîche puis jouée contre la
+  batterie (la règle du cumul — l'arrondi du demi, son premier terme, ce qui est déjà porté, le terme du cumul, V et T,
+  l'ordre de la chaîne et celui des encaissements, l'avoir du jour même, la contre-passation, le fait générateur — ; la
+  banque du même jour ; le seuil et le plafond des frais ; l'exemplaire) : quatorze tuées, de 2 à 346 écarts sur 3 310
+  sources ; une équivalente, déclarée d'avance (le signe du cumul pris sur la part seule : une part qui passe par la
+  règle est positive, une contre-passation suit l'autre branche).
+- Le TypeScript : les dix tests neufs ROUGES d'abord — sur le module d'hier, leur fichier ne se charge plus ; sur
+  l'export d'hier (la migration écartée le temps du jeu), huit en faute, les deux autres confrontant le module à
+  l'essai, neuf lui aussi. Neuf mutations du module (un mot, deux refus permutés, un code, un moyen, un refus retiré,
+  une clé, un moyen de plus, la date retirée, le nom retiré) : neuf tuées.
+- Le texte à coller, sur des copies fraîches : collé, la même signature que l'application par l'outil (neuf familles),
+  sa ligne d'historique rendant `b5c3dad4…` ; collé deux fois, refusé la seconde ; altéré d'un caractère, refusé, rien
+  d'appliqué ; en fins de ligne Windows, appliqué, la même empreinte ; sans VF5h2 ni VF7a, appliqué, la même signature
+  que l'outil sur la production seule. Le retour arrière : sur la base collée, la base d'avant (neuf familles ; 150,
+  `0a60d988…`), le commentaire de la validation rendu (`c4515257…`, celui de la production) ; sans VF5h2 ni VF7a, la
+  production (148, `19c0e53c…`) ; refusé sans la migration ; refusé quand la validation a changé depuis.
+- Les trois contrôles de l'export : avec le fichier, sous sa version provisoire, 151 fichiers,
+  `cc768c5d36e48f4a456d92cc6a616489`, égale à l'historique de la réplique munie des trois migrations à leurs versions
+  provisoires ; le socle inchangé (80 instructions, `5d53eea2…`) ; l'inventaire, 2 160 objets,
+  `0eab3cd71d822b1093d440b554d0760a`, des deux côtés (2 158, `69c64886…`, sans elle) : deux fonctions de plus.
+- La suite comparée test par test, sous Paris : avant, l'arbre de `8503057` exporté, 14 332 tests justes
+  (`clesSupabase.test.ts`, qui lit la liste des fichiers suivis du dépôt, ne s'y charge pas) ; après, 14 367 justes ;
+  les dix tests neufs de `prealablesValidation.test.ts`, aucun verdict changé d'état ; les vingt-cinq de
+  `clesSupabase.test.ts`, qui se charge dans le dépôt.
+- La barrière, sous le Node 22.23.3 de la CI, sur la tête finale : `npx tsc -b --force` 0 ; `npm run lint` 0 erreur, les
+  63 avertissements d'avant (les mêmes, fichier et règle) ; `npm run test:fuseaux` 0, 466 fichiers et 14 367 tests
+  justes sous chacun des quatre fuseaux ; `npm run build` 0 (`index-DX-uK710.js`, le paquet d'avant : rien de
+  l'application ne lit encore les mots neufs).
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) Présenter `validation_des_ventes_facturees` au cabinet (deux fonctions
+neuves, la validation remplacée ; aucune donnée, aucune table, aucune policy) — après VF5h2 et VF7a, ou sans elles ; sur
+son accord, l'appliquer par `apply_migration`, sous le nom `validation_des_ventes_facturees`, le texte du fichier tel
+quel ; si l'outil attend une confirmation, donner le texte à coller dans le message final du tour. (2) Renommer le
+fichier sous la version de sa ligne d'historique, texte inchangé ; la ligne doit rendre
+`b5c3dad446ff6cbbb96ef6045ed816ce` (fins de ligne ramenées à `\n`). (3) `signature.sql` en production : les fonctions
+(200, `33d27039…`, après les trois ; 199, `d4e192bf…`, seule) et leurs droits (200, `8583d4e0…` ; 199, `d6def6e4…`), les
+sept autres familles inchangées ; rejouer `validationDesVentesFacturees.sql` sans ses lignes de commentaire (37 258
+caractères, `3ef35843…` : 77 justes, rien ne reste) ; `rls.sql` y verrait le bloc VB passer d'« EN ATTENTE » à ses trois
+contrôles. (4) Les trois contrôles de l'export, et leur passage au README. (5) CLAUDE.md : la migration dite appliquée,
+sa version ; la ligne 28.65 de la feuille de route ; et une ligne neuve pour les gardes par ligne de la validation (leur
+coût, les huit secondes vers 35 000 à 40 000 lignes). (6) VF7c, les préalables et la numérotation (§ 3 d), qui branche
+`REFUS_VENTES_FACTUREES_DE_LA_VALIDATION`.
+
+**LES QUESTIONS AU CABINET.** Aucune neuve : VF7B-Q1 et VF7B-Q2 sont sur la page des arbitrages, suivies à leur
+recommandation ; une autre réponse à VF7B-Q1 retirerait la recomposition d'un bloc (la migration se récrirait), une
+autre à VF7B-Q2 ouvrirait d'abord le lot des gardes par ligne.
