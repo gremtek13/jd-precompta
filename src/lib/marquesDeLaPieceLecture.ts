@@ -18,8 +18,10 @@ import {
 //     facture n'est source, aucun mouvement n'est classé par ses encaissements, et aucun refus ne lit le pont —, le pont de
 //     la pièce sans sa désignation (les factures validées et leurs transmissions, lib/ventesJumellesLecture.ts), ses quatre
 //     liens de G4 (rapprochée, réglée, écrite, lettrée), le registre des encaissements et les mouvements classés par leurs
-//     encaissements (le virement mixte). TOUT OU RIEN : une lecture partielle, refusée ou rompue, et le contexte est
-//     « incomplet », avec le motif de la première qui a manqué — un lien manqué ferait offrir un geste que la base refuse ;
+//     encaissements (le virement mixte), et les exercices validés du dossier, qui figent la désignation d'une facture
+//     source (le gel des désignations, étape VF7e ; leur policy les ouvre au cabinet seul, que la fiche sert). TOUT OU RIEN :
+//     une lecture partielle, refusée ou rompue, et le contexte est « incomplet », avec le motif de la première qui a manqué
+//     — un lien ou un exercice manqué ferait offrir un geste que la base refuse ;
 //   - le journal de la pièce, sous la policy de CHAQUE ligne (`admin_du_dossier` de son dossier) : aucun filtre sur le
 //     dossier, pour voir les lignes restées dans celui d'où la pièce vient (VF6B-Q1), et le nom de ces dossiers ;
 //   - l'équipe que ce compte voit, pour nommer les auteurs — seulement quand le journal de ce dossier a des lignes.
@@ -43,7 +45,7 @@ async function lireLeContexte(dossierId: string, piece: PieceALire | null): Prom
 
     // Ce qui lie la pièce au relevé et au brouillon (G4) : quatre tables qui citent `piece_id`, lues sur la pièce seule, comme
     // la base les cherche, sans filtre sur le dossier.
-    const [ventes, rapprochements, parts, ecritures, lettrages, registre, classes] = await Promise.all([
+    const [ventes, rapprochements, parts, ecritures, lettrages, registre, classes, exercices] = await Promise.all([
       lireVentesEmises(dossierId),
       lireTout<{ id: string }>((debut, fin) =>
         supabase.from('lignes_bancaires').select('id', { count: 'exact' }).eq('piece_id', piece.id).order('id').range(debut, fin),
@@ -65,6 +67,11 @@ async function lireLeContexte(dossierId: string, piece: PieceALire | null): Prom
         supabase.from('lignes_bancaires').select('id', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('encaissements_de_factures', true).order('id').range(debut, fin),
       ),
+      // Les exercices validés, triés par leur clé (l'année, puis le dossier).
+      lireTout<{ annee: number }>((debut, fin) =>
+        supabase.from('exercices_valides').select('annee', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('annee').order('dossier_id').range(debut, fin),
+      ),
     ])
     if (ventes.motif !== null) return { etat: 'incomplet', motif: `les factures émises et leurs transmissions : ${ventes.motif}` }
     // Dans l'ordre des rangs 10 à 13 de `designer_exemplaire_facture` : le premier lien qui manque se nomme.
@@ -78,6 +85,7 @@ async function lireLeContexte(dossierId: string, piece: PieceALire | null): Prom
     if (!classes.complete) {
       return { etat: 'incomplet', motif: `les mouvements classés par leurs encaissements : ${classes.motif ?? 'lecture incomplète'}` }
     }
+    if (!exercices.complete) return { etat: 'incomplet', motif: `les exercices validés : ${exercices.motif ?? 'lecture incomplète'}` }
     // Le pont sans la désignation : celui que `factures_du_pont` calcule en base (ventesJumellesJumeau.test.ts).
     const pont = verdictDuPontDeLaPiece(jumellesDuDossier(ventes.factures, ventes.transmissions, [piece]), piece.id)
     return {
@@ -90,6 +98,7 @@ async function lireLeContexte(dossierId: string, piece: PieceALire | null): Prom
           ecrite: ecritures.lignes.length > 0, lettree: lettrages.lignes.length > 0,
         },
         facturesDuVirementMixte: facturesDuVirementMixte(dossierId, registre.lignes, new Set(classes.lignes.map((m) => m.id))),
+        exercicesValides: exercices.lignes.map((x) => x.annee),
       },
     }
   } catch (err) {

@@ -8,8 +8,9 @@ import type { DesignationDeLaPiece, GesteDuJournal, Piece } from './types'
 // la section « Ce que cette pièce est » de la fiche d'une pièce) :
 //   - ce que les refus de la jumelle inversée reçoivent (lib/exemplairesDesFactures.ts, `ContexteDesMarques`) et que l'écran
 //     d'aujourd'hui n'avait pas : la bascule du dossier, le pont de la pièce sans sa désignation, ses liens au relevé et au
-//     brouillon (G4), les factures d'un virement mixte classé (VF5H-Q1) — tout ou rien : une seule lecture partielle et le
-//     contexte est « incomplet », et aucun geste ne s'offre ;
+//     brouillon (G4), les factures d'un virement mixte classé (VF5H-Q1), les exercices validés qui figent une facture
+//     source (le gel des désignations, VF7e) — tout ou rien : une seule lecture partielle et le contexte est « incomplet »,
+//     et aucun geste ne s'offre ;
 //   - le JOURNAL de la pièce (`designations_des_pieces`, VF6-Q3) : les gestes de ce dossier, dans l'ordre où ils ont été
 //     faits, et ceux qui sont restés dans un autre dossier quand la pièce en vient (VF6B-Q1, tranchée le 24/10/2026 :
 //     « les laisser, et le dire ») ; qui les a faits, nommé seulement d'après ce qui a été lu.
@@ -46,6 +47,9 @@ export interface ContexteLu {
   /** Les factures dont un encaissement vivant, qui justifie son mouvement, est compté par un mouvement classé par ses
    *  encaissements : vide hors d'un dossier basculé, où aucun mouvement ne se classe ainsi. */
   facturesDuVirementMixte: ReadonlySet<string>
+  /** Les exercices validés du dossier (`exercices_valides.annee`), qui figent la désignation d'une facture source (le gel des
+   *  désignations, étape VF7e) : vides hors d'un dossier basculé, où aucune facture n'est source. */
+  exercicesValides: readonly number[]
 }
 
 export type LectureDuContexte = { etat: 'lu'; contexte: ContexteLu } | { etat: 'incomplet'; motif: string }
@@ -56,6 +60,7 @@ export const CONTEXTE_D_UN_DOSSIER_NON_BASCULE: ContexteLu = {
   pont: { genre: 'aucune' },
   liens: { rapprochee: false, reglee: false, ecrite: false, lettree: false },
   facturesDuVirementMixte: new Set(),
+  exercicesValides: [],
 }
 
 /**

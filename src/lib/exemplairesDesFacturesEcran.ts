@@ -25,9 +25,21 @@ export function descriptionDeLaFacture(f: Pick<FactureProposee, 'tiers_nom' | 'm
   return `${f.tiers_nom}, ${formatMoney(f.montant_ttc)} TTC, émise le ${formatDate(f.date_emission)}`
 }
 
-/** La ligne du choix : de quoi retrouver la facture sans en connaître le numéro. */
-export function ligneDuChoix(f: Pick<FactureProposee, 'type' | 'numero' | 'tiers_nom' | 'montant_ttc' | 'date_emission'>): string {
+/** « figée » ou « figé » : l'accord avec la facture ou l'avoir. */
+function figeeOuFige(f: Pick<FactureProposee, 'type'>): string {
+  return f.type === 'avoir' ? 'figé' : 'figée'
+}
+
+/**
+ * La ligne du choix : de quoi retrouver la facture sans en connaître le numéro — et, pour une facture source que la
+ * validation d'un exercice fige (`gel`, `exerciceFigeantLaFactureSource` ; étape VF7e), qu'elle l'est : elle ne reçoit plus
+ * qu'une première désignation.
+ */
+export function ligneDuChoix(
+  f: Pick<FactureProposee, 'type' | 'numero' | 'tiers_nom' | 'montant_ttc' | 'date_emission'>, gel: number | null,
+): string {
   return `${f.type === 'avoir' ? 'Avoir' : 'Facture'} ${f.numero ?? '(sans numéro)'} — ${formatDate(f.date_emission)} — ${f.tiers_nom} — ${formatMoney(f.montant_ttc)}`
+    + (gel === null ? '' : ` — ${figeeOuFige(f)} par la validation de l’exercice ${gel}`)
 }
 
 // CE QUI SE COMPTE DÉPEND DE LA FACTURE (étape VF3b3). Depuis que la 2035, la CA3, la situation intermédiaire et l'estimation
@@ -111,9 +123,14 @@ export type CeQuElleEtait = { genre: 'rien' } | { genre: 'designee'; facture: Fa
  * La confirmation de la désignation — ou de son REMPLACEMENT (VF6-Q1 : une désignation à une autre facture, ou une
  * déclaration, se remplace d'un seul geste) : elle NOMME la pièce et la facture (numéro, client, montant TTC), ce que la
  * pièce cesse d'être, et dit ce que le geste change à ce qui se compte, selon la facture qu'elle prend ET celle qu'elle
- * quitte. Le gel de la pièce fige la désignation : l'exercice validé qui la porte ne la laisse plus changer.
+ * quitte. Le gel fige la désignation : l'exercice validé qui porte une écriture de la pièce, ou — pour une facture source,
+ * dont l'exemplaire ne porte aucune écriture — celui de la facture (étape VF7e). `gelDeLaFacture` : l'exercice validé qui fige
+ * déjà la facture choisie (`exerciceFigeantLaFactureSource`), nul sinon ; une telle facture ne reçoit qu'une première
+ * désignation (VF7-Q1, option B), aussitôt figée, et la confirmation le dit.
  */
-export function confirmationDeLaDesignation(nomFichier: string, facture: FactureProposee, avant: CeQuElleEtait): string {
+export function confirmationDeLaDesignation(
+  nomFichier: string, facture: FactureProposee, avant: CeQuElleEtait, gelDeLaFacture: number | null,
+): string {
   const quittee = avant.genre === 'designee' ? avant.facture : null
   const remplacement = avant.genre === 'designee'
     ? `Elle ne sera plus l’exemplaire de ${nomDeLaFacture(avant.facture)} (${descriptionDeLaFacture(avant.facture)}) : la `
@@ -142,10 +159,16 @@ export function confirmationDeLaDesignation(nomFichier: string, facture: Facture
       + 'qui n’est pas désignée compte encore, en plus de la facture.'
     : 'Si une autre pièce porte déjà la même facture, la vente s’affichera « Comptée deux fois » : une vente ne se compte '
       + 'qu’une fois, il n’en faut garder qu’une.'
+  const gel = gelDeLaFacture !== null
+    ? `${enTete(nomDeLaFacture(facture))} est ${figeeOuFige(facture)} par la validation de l’exercice ${gelDeLaFacture} : cette `
+      + 'première désignation se fige aussitôt — elle ne se changera ni ne se retirera.'
+    : facture.source_de_la_vente
+      ? `La désignation se fige quand l’exercice de ${nomDeLaFacture(facture)} est validé.`
+      : 'La désignation se fige avec la pièce quand un exercice qui la porte est validé.'
   return `Désigner la pièce « ${nomFichier} » comme l’exemplaire de ${nomDeLaFacture(facture)} (${descriptionDeLaFacture(facture)}) ?\n\n`
     + remplacement
     + `La pièce sera marquée comme portant cette facture. ${enDouble}\n\n`
-    + `${ceQuiSeCompte} La désignation se fige avec la pièce quand un exercice qui la porte est validé.`
+    + `${ceQuiSeCompte} ${gel}`
 }
 
 /**

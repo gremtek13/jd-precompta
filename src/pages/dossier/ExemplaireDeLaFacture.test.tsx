@@ -717,3 +717,58 @@ describe('Ce que cette pièce est — le journal', () => {
     expect(designer()).toBeTruthy()
   })
 })
+
+// LE GEL DES DÉSIGNATIONS (étape VF7e ; VF7-Q1, option B, suivie sur la recommandation) : la validation de l'exercice d'une
+// facture SOURCE fige la désignation de son exemplaire. La section le dit sous les mots de la base — « … figée par la
+// validation de l'exercice … » — et n'offre aucun geste qui la changerait ; le choix dit d'une facture source figée qu'elle
+// l'est ; une pièce que rien ne marque la désigne encore, et la confirmation dit cette première désignation aussitôt figée ;
+// une pièce déjà marquée ne la prend pas, et le refus se dit avant le clic.
+describe('Ce que cette pièce est — le gel des désignations (VF7e)', () => {
+  const s25 = facture({ id: 's25', numero: 'F2025-0042', date_emission: '2025-12-15', source_de_la_vente: true })
+  const s26 = facture({ id: 's26', numero: 'F2026-0001', date_emission: '2026-01-10', source_de_la_vente: true })
+  const lues: Partial<DonneesExemplaire> = { factures: { lignes: [s25, s26], complete: true, motif: null } }
+  const GELE: Partial<ContexteLu> = { exercicesValides: [2025] }
+
+  it('la désignation d’une facture source figée : dite sous les mots de la base, et aucun geste ne la change', () => {
+    monterBascule(piece({ facture_id: 's25' }), GELE, lues)
+    expect(screen.getByText(message(REFUS_DESIGNATION_JUMELLE, 'designation_figee', 'F2025-0042', '2025'))).toBeTruthy()
+    aucunGeste()
+  })
+
+  it('la même, l’exercice de sa facture pas encore validé : rien ne la fige, elle se défait et se remplace', () => {
+    monterBascule(piece({ facture_id: 's25' }), { exercicesValides: [] }, lues)
+    expect(screen.queryByText(/figée par la validation/)).toBeNull()
+    expect(defaire()).toBeTruthy()
+    expect(choix()).toBeTruthy()
+  })
+
+  it('une pièce que rien ne marque : le choix dit la facture figée, et sa première désignation se confirme, aussitôt figée', () => {
+    monterBascule(piece(), GELE, lues)
+    const options = [...choix().options].map((o) => o.textContent ?? '')
+    expect(options.find((o) => o.startsWith('Facture F2025-0042'))).toMatch(/ — figée par la validation de l’exercice 2025$/)
+    expect(options.find((o) => o.startsWith('Facture F2026-0001'))).not.toMatch(/figée/)
+    fireEvent.change(choix(), { target: { value: 's25' } })
+    expect(designer().disabled).toBe(false)
+    fireEvent.click(designer())
+    expect(confirmation).toHaveBeenCalledTimes(1)
+    expect(String(confirmation.mock.calls[0][0])).toContain('La facture F2025-0042 est figée par la validation de l’exercice 2025 : '
+      + 'cette première désignation se fige aussitôt — elle ne se changera ni ne se retirera.')
+    expect(faux.rpcs).toEqual([{ nom: 'designer_exemplaire_facture', args: argumentsDeLaDesignation(D, 'p1', 's25') }])
+  })
+
+  it('une pièce déjà marquée ne prend pas une facture source figée : le refus de la base, avant le clic, et rien ne part', () => {
+    monterBascule(piece({ facture_id: 's26' }), GELE, lues)
+    fireEvent.change(choix(), { target: { value: 's25' } })
+    expect(screen.getByText(message(REFUS_DESIGNATION_JUMELLE, 'facture_figee', 'F2025-0042', '2025'))).toBeTruthy()
+    expect(designer().disabled).toBe(true)
+    fireEvent.click(designer())
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(faux.rpcs).toEqual([])
+    // Déclarée, de même.
+    cleanup()
+    monterBascule(piece({ vente_hors_des_factures: true }), GELE, lues)
+    fireEvent.change(choix(), { target: { value: 's25' } })
+    expect(screen.getByText(message(REFUS_DESIGNATION_JUMELLE, 'facture_figee', 'F2025-0042', '2025'))).toBeTruthy()
+    expect(designer().disabled).toBe(true)
+  })
+})

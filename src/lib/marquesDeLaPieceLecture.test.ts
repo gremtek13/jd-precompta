@@ -3,7 +3,8 @@ import { lireCeQueLaPieceEst, relireLesMarquesDeLaPiece, type PieceALire } from 
 
 // CE QUE LA FICHE D'UNE PIÈCE LIT POUR DIRE CE QU'ELLE EST (lib/marquesDeLaPieceLecture.ts, étape VF6c) : la bascule ; dans un
 // dossier basculé seulement, le pont, les liens de G4 et le virement mixte — tout ou rien ; le journal sous la policy de
-// chaque ligne et les dossiers où il est resté ; l'équipe, quand il y a quelqu'un à nommer. Le faux client APPLIQUE les
+// chaque ligne et les dossiers où il est resté ; l'équipe, quand il y a quelqu'un à nommer ; et, depuis l'étape VF7e, les
+// exercices validés d'un dossier basculé, qui figent la désignation d'une facture source. Le faux client APPLIQUE les
 // filtres (src/test/filtresPostgrest.ts), ne rend que les colonnes demandées, annonce un compte. Données FICTIVES.
 const faux = vi.hoisted(() => ({
   tables: {} as Record<string, Record<string, unknown>[]>,
@@ -78,6 +79,8 @@ beforeEach(() => {
     ],
     designations_des_pieces: [],
     cabinet_admins: [{ user_id: 'u2', email: 'collegue@cabinet-fictif.fr' }, { user_id: 'u3', email: null }],
+    // Ceux du dossier, et un d'un autre dossier que le filtre écarte.
+    exercices_valides: [{ dossier_id: D, annee: 2024 }, { dossier_id: D, annee: 2025 }, { dossier_id: 'ancien', annee: 2023 }],
   }
 })
 
@@ -94,7 +97,7 @@ describe('lireCeQueLaPieceEst — le contexte des gestes', () => {
       etat: 'lu',
       contexte: {
         dossierBascule: false, pont: { genre: 'aucune' }, liens: { rapprochee: false, reglee: false, ecrite: false, lettree: false },
-        facturesDuVirementMixte: new Set(),
+        facturesDuVirementMixte: new Set(), exercicesValides: [],
       },
     })
     expect(faux.demandes.filter((t) => t !== 'designations_des_pieces')).toEqual(['dossiers'])
@@ -107,9 +110,18 @@ describe('lireCeQueLaPieceEst — le contexte des gestes', () => {
       contexte: {
         dossierBascule: true, pont: { genre: 'une', factureId: 'f1' },
         liens: { rapprochee: true, reglee: false, ecrite: true, lettree: false },
-        facturesDuVirementMixte: new Set(['f1']),
+        facturesDuVirementMixte: new Set(['f1']), exercicesValides: [2024, 2025],
       },
     })
+  })
+
+  it('un dossier basculé : ses exercices validés, ceux du dossier seul (le gel des désignations, VF7e)', async () => {
+    faux.tables.exercices_valides = []
+    const sans = await lireCeQueLaPieceEst(D, PIECE)
+    expect(sans.contexte.etat === 'lu' && sans.contexte.contexte.exercicesValides).toEqual([])
+    faux.tables.exercices_valides = [{ dossier_id: 'ancien', annee: 2025 }, { dossier_id: D, annee: 2026 }]
+    const avec = await lireCeQueLaPieceEst(D, PIECE)
+    expect(avec.contexte.etat === 'lu' && avec.contexte.contexte.exercicesValides).toEqual([2026])
   })
 
   it('un dossier basculé, une pièce que rien ne rattache : aucune facture, aucun lien', async () => {
@@ -159,6 +171,14 @@ describe('lireCeQueLaPieceEst — le contexte des gestes', () => {
     expect((await lireCeQueLaPieceEst(D, PIECE)).contexte).toEqual({ etat: 'incomplet', motif: expect.stringContaining('le rapprochement') })
     faux.refus = { transmissions_factures: 'refusé' }
     expect((await lireCeQueLaPieceEst(D, PIECE)).contexte.etat).toBe('incomplet')
+    // Les exercices validés, refusés ou lus en partie : on ne saurait plus ce qui fige une désignation (VF7e).
+    faux.refus = { exercices_valides: 'refusé' }
+    expect((await lireCeQueLaPieceEst(D, PIECE)).contexte).toEqual({
+      etat: 'incomplet', motif: 'les exercices validés : lecture interrompue après 0 ligne(s) : refusé',
+    })
+    faux.refus = {}
+    faux.muetApres = { exercices_valides: 1 }
+    expect((await lireCeQueLaPieceEst(D, PIECE)).contexte).toEqual({ etat: 'incomplet', motif: expect.stringContaining('les exercices validés') })
   })
 
   it('les mouvements classés lus en partie : incomplet', async () => {

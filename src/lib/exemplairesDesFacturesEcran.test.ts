@@ -33,13 +33,19 @@ describe('le nom et le choix d’une facture', () => {
   })
 
   it('la ligne du choix retrouve la facture sans en connaître le numéro', () => {
-    expect(ligneDuChoix(facture())).toBe(`Facture F2026-0007 — 14/03/2026 — CLIENT FICTIF SAS — ${formatMoney(1200)}`)
-    expect(ligneDuChoix(avoir)).toBe(`Avoir A2026-0001 — 02/04/2026 — CLIENT FICTIF SAS — ${formatMoney(-300)}`)
+    expect(ligneDuChoix(facture(), null)).toBe(`Facture F2026-0007 — 14/03/2026 — CLIENT FICTIF SAS — ${formatMoney(1200)}`)
+    expect(ligneDuChoix(avoir, null)).toBe(`Avoir A2026-0001 — 02/04/2026 — CLIENT FICTIF SAS — ${formatMoney(-300)}`)
+  })
+
+  it('… et dit d’une facture source que la validation d’un exercice fige qu’elle l’est (VF7e), l’avoir accordé', () => {
+    expect(ligneDuChoix(facture(), 2026))
+      .toBe(`Facture F2026-0007 — 14/03/2026 — CLIENT FICTIF SAS — ${formatMoney(1200)} — figée par la validation de l’exercice 2026`)
+    expect(ligneDuChoix(avoir, 2026)).toMatch(/— figé par la validation de l’exercice 2026$/)
   })
 })
 
 describe('la confirmation de la désignation', () => {
-  const texte = confirmationDeLaDesignation('vente-0007.pdf', facture(), RIEN)
+  const texte = confirmationDeLaDesignation('vente-0007.pdf', facture(), RIEN, null)
 
   it('nomme la pièce et la facture : son numéro, son client, son montant TTC', () => {
     expect(texte).toContain('« vente-0007.pdf »')
@@ -55,7 +61,7 @@ describe('la confirmation de la désignation', () => {
   })
 
   it('un avoir se nomme avoir', () => {
-    expect(confirmationDeLaDesignation('avoir.pdf', avoir, RIEN)).toContain('l’avoir A2026-0001')
+    expect(confirmationDeLaDesignation('avoir.pdf', avoir, RIEN, null)).toContain('l’avoir A2026-0001')
   })
 })
 
@@ -119,20 +125,22 @@ describe('ce que désigner ou défaire change à ce qui se compte', () => {
   const LES_ETATS = 'la 2035, la CA3, la situation intermédiaire et l’estimation'
 
   it('désigner l’exemplaire d’une facture source : la pièce cessera de compter, la facture compte la vente', () => {
-    const texte = confirmationDeLaDesignation('vente-0007.pdf', source, RIEN)
+    const texte = confirmationDeLaDesignation('vente-0007.pdf', source, RIEN, null)
     expect(texte).toContain('La facture F2026-0007 est la source de sa vente')
     expect(texte).toContain(`la pièce cessera de compter dans ${LES_ETATS}, où la vente ne sera plus comptée que par la facture F2026-0007.`)
     expect(texte).not.toContain('ne change rien')
     // Ce qui compte de trop, pour une facture source, est une pièce qui n'est PAS désignée.
     expect(texte).toContain('« Comptée deux fois » : une pièce de cette facture qui n’est pas désignée compte encore, en plus de la facture.')
-    expect(texte).toContain('se fige avec la pièce')
+    // L'exemplaire d'une facture source ne porte aucune écriture : c'est l'exercice de la facture qui fige sa désignation (VF7e).
+    expect(texte).toContain('La désignation se fige quand l’exercice de la facture F2026-0007 est validé.')
+    expect(texte).not.toContain('se fige avec la pièce')
     // Et elle nomme encore la pièce et la facture.
     expect(texte).toContain('« vente-0007.pdf »')
     expect(texte).toContain(`${formatMoney(1200)} TTC`)
   })
 
   it('désigner l’exemplaire d’une facture qui n’est pas source : rien ne change, et la phrase ne parle pas de source', () => {
-    const texte = confirmationDeLaDesignation('vente-0007.pdf', facture(), RIEN)
+    const texte = confirmationDeLaDesignation('vente-0007.pdf', facture(), RIEN, null)
     expect(texte).toContain('Désigner ne change rien à ce qui se compte aujourd’hui.')
     expect(texte).not.toContain('source')
     expect(texte).not.toContain('cessera de compter')
@@ -140,9 +148,18 @@ describe('ce que désigner ou défaire change à ce qui se compte', () => {
   })
 
   it('un avoir source se nomme avoir, en tête de phrase aussi', () => {
-    const texte = confirmationDeLaDesignation('avoir.pdf', avoirSource, RIEN)
+    const texte = confirmationDeLaDesignation('avoir.pdf', avoirSource, RIEN, null)
     expect(texte).toContain('L’avoir A2026-0001 est la source de sa vente')
     expect(texte).toContain('ne sera plus comptée que par l’avoir A2026-0001.')
+  })
+
+  it('désigner À une facture source que la validation d’un exercice fige (VF7e, VF7-Q1 B) : sa première désignation, aussitôt figée', () => {
+    const texte = confirmationDeLaDesignation('original.pdf', source, RIEN, 2026)
+    expect(texte).toContain('La facture F2026-0007 est figée par la validation de l’exercice 2026 : cette première désignation se fige '
+      + 'aussitôt — elle ne se changera ni ne se retirera.')
+    expect(texte).not.toContain('La désignation se fige quand')
+    expect(texte).toContain('la pièce cessera de compter')
+    expect(confirmationDeLaDesignation('avoir.pdf', avoirSource, RIEN, 2026)).toContain('L’avoir A2026-0001 est figé par la validation de l’exercice 2026')
   })
 
   it('défaire pour une facture source : la pièce compte de nouveau, en plus de la facture — la vente deux fois', () => {
@@ -200,13 +217,13 @@ describe('le remplacement d’une désignation ou d’une déclaration (VF6-Q1)'
   const LES_ETATS = 'la 2035, la CA3, la situation intermédiaire et l’estimation'
 
   it('rien à remplacer : aucune phrase de remplacement', () => {
-    const texte = confirmationDeLaDesignation('vente.pdf', facture(), RIEN)
+    const texte = confirmationDeLaDesignation('vente.pdf', facture(), RIEN, null)
     expect(texte).not.toContain('remplacée d’un seul geste')
     expect(texte).not.toContain('ne sera plus')
   })
 
   it('une désignation remplacée : la facture quittée nommée (numéro, client, montant), le geste unique dit', () => {
-    const texte = confirmationDeLaDesignation('vente.pdf', avoir, { genre: 'designee', facture: facture() })
+    const texte = confirmationDeLaDesignation('vente.pdf', avoir, { genre: 'designee', facture: facture() }, null)
     expect(texte).toContain('Elle ne sera plus l’exemplaire de la facture F2026-0007 (CLIENT FICTIF SAS, ')
     expect(texte).toContain(`${formatMoney(1200)} TTC, émise le 14/03/2026) : la désignation est remplacée d’un seul geste.`)
     expect(texte).toContain('comme l’exemplaire de l’avoir A2026-0001')
@@ -214,25 +231,25 @@ describe('le remplacement d’une désignation ou d’une déclaration (VF6-Q1)'
   })
 
   it('une déclaration remplacée : dit, sans facture inventée', () => {
-    const texte = confirmationDeLaDesignation('vente.pdf', facture(), { genre: 'declaree' })
+    const texte = confirmationDeLaDesignation('vente.pdf', facture(), { genre: 'declaree' }, null)
     expect(texte).toContain('Elle ne sera plus déclarée vente hors des factures de l’application : la déclaration est remplacée d’un seul geste.')
     expect(texte).toContain('Désigner ne change rien à ce qui se compte aujourd’hui.')
   })
 
   it('d’une facture qui n’est pas source à une facture source : la pièce cessera de compter', () => {
-    const texte = confirmationDeLaDesignation('vente.pdf', source, { genre: 'designee', facture: facture() })
+    const texte = confirmationDeLaDesignation('vente.pdf', source, { genre: 'designee', facture: facture() }, null)
     expect(texte).toContain(`la pièce cessera de compter dans ${LES_ETATS}, où la vente ne sera plus comptée que par la facture F2026-0042.`)
   })
 
   it('d’une facture source à une autre facture source : la pièce ne comptait pas, ne comptera pas davantage', () => {
-    const texte = confirmationDeLaDesignation('vente.pdf', autreSource, { genre: 'designee', facture: source })
+    const texte = confirmationDeLaDesignation('vente.pdf', autreSource, { genre: 'designee', facture: source }, null)
     expect(texte).toContain('La facture F2026-0043 est la source de sa vente, comme la facture F2026-0042 : la pièce, qui ne comptait pas, ne comptera pas davantage')
     expect(texte).not.toContain('cessera de compter')
     expect(texte).not.toContain('ne change rien')
   })
 
   it('d’une facture source à une facture qui ne l’est pas : la pièce comptera de nouveau — la vente peut-être deux fois', () => {
-    const texte = confirmationDeLaDesignation('vente.pdf', facture(), { genre: 'designee', facture: source })
+    const texte = confirmationDeLaDesignation('vente.pdf', facture(), { genre: 'designee', facture: source }, null)
     expect(texte).toContain(`La facture F2026-0042 est la source de sa vente, et la compte : la pièce, qui ne comptait pas, comptera de nouveau dans ${LES_ETATS}, comme la vente de la facture F2026-0007`)
     expect(texte).toContain('cette vente serait comptée deux fois.')
     expect(texte).not.toContain('ne change rien')
