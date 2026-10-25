@@ -6,7 +6,8 @@
 -- (`garder_vente_d_un_dossier_bascule`) et G4 (`garder_exemplaire_d_une_source`), le journal `designations_des_pieces`,
 -- les policies ou les gardes de `pieces`, `lignes_bancaires`, `reglements_groupes`, `ecritures_brouillon` et
 -- `lettrages_manuels`, la garde des factures validées, `exercice_figeant_la_piece`, le classement d'un mouvement par ses
--- encaissements, `admin_du_dossier`, `memberships` ou `cabinet_admins`.
+-- encaissements, `admin_du_dossier`, `memberships` ou `cabinet_admins` — et, depuis l'étape VF7e (migration
+-- `gel_des_designations`), `exercice_figeant_la_designation`, `exercice_figeant_la_facture_source` ou `exercices_valides`.
 --
 -- Ce qui se prouve ici, et ne se relit pas :
 --   - QUI DÉSIGNE ET DÉFAIT, par impersonation : un anonyme n'a pas le droit d'appeler ; un compte rattaché à rien, le
@@ -74,6 +75,23 @@
 --     la restauration), rien ne le réécrit ;
 --   - LE CATALOGUE (370 à 379).
 --
+-- LE GEL DES DÉSIGNATIONS (étape VF7e, migration `gel_des_designations` ; HISTORIQUE.md, « VF7, LA VALIDATION FIGE LA
+-- SOURCE : LA CONCEPTION », § 3 f ; VF7-Q1, option B, suivie sur la recommandation), dans un dossier DG qui bascule et un
+-- dossier DN qui ne bascule pas, aux exercices validés posés par la porte de la restauration (contrôles 400 à 451) :
+--   - CHAQUE GESTE, AVANT ET APRÈS : avant les validations, tout se défait, se remplace, se déclare (400 à 405) ; les
+--     écritures de la pièce validées, pas encore l'exercice de sa facture, le gel est celui de la pièce (406 à 408) ;
+--     après, la désignation d'une facture source figée ne se défait, ne se remplace ni ne se déclare plus, la facture nommée
+--     — avant « déjà l'exemplaire de cette facture », après « validée dans un dossier basculé » (410 à 416) ;
+--   - LE PLUS ANCIEN des deux exercices, celui de la pièce et celui de sa facture, et ses mots (417 à 420) ;
+--   - LE CÔTÉ DE LA FACTURE (VF7-Q1, B) : une facture source figée — un avoir, une facture d'une année qui précède le
+--     premier exercice validé — ne reçoit pas une pièce déjà marquée, désignée ou déclarée, et le dit avant le pont (421b) ;
+--     l'exercice d'un autre dossier ne la fige pas (DN valide 2026, F2026-0101 de DG reste libre) ; une facture d'avant la
+--     bascule, une facture que rien ne fige, si ; une pièce que rien ne marque, si — sa première désignation, aussitôt
+--     figée, puis validée (421 à 438) ;
+--   - DANS UN DOSSIER QUI N'A PAS BASCULÉ, rien de neuf : aucune facture n'y est source (439 à 443) ;
+--   - les deux fonctions neuves, facture par facture et pièce par pièce, et le catalogue (444 à 449) ; deux mutations
+--     (450, 451).
+--
 -- SANS LA MIGRATION `exemplaires_des_factures`, une seule ligne le dit, « EN ATTENTE », SANS être une faute. Elle EN EST
 -- UNE si l'historique porte `exemplaires_des_factures` sans la colonne — sauf si une ligne
 -- `retour_exemplaires_des_factures`, plus récente, dit son retour arrière. SANS LA MIGRATION `jumelle_inversee`, l'essai se
@@ -86,8 +104,9 @@
 -- cascade de sa pièce ou de son dossier), et deux désignations concurrentes de la même pièce — l'outil d'exécution soumet
 -- une suppression à une confirmation qui n'arrive pas ici.
 --
--- Tout se joue dans trois dossiers JETABLES du cabinet du dossier `test` (T et A, qui n'ont pas basculé ; J, qui bascule
--- après avoir validé quatre pièces), au sein d'un bloc qui s'annule entièrement à la fin (`ANNULATION_ESSAI_GLOBALE`) ;
+-- Tout se joue dans cinq dossiers JETABLES du cabinet du dossier `test` (T et A, qui n'ont pas basculé ; J, qui bascule
+-- après avoir validé quatre pièces ; DG et DN, pour le gel), au sein d'un bloc qui s'annule entièrement à la fin
+-- (`ANNULATION_ESSAI_GLOBALE`) ;
 -- chaque contrôle dans sa sous-transaction, annulée elle aussi (`ANNULATION_ESSAI`, P0001) — le moteur d'étapes de
 -- regimesEreporting.sql, ses six genres (`jeu`, `controle`, `fait`, `valeur`, `retenir`, `lecture`) et ses profils
 -- (« membre » affecté au dossier T, « membre_ailleurs » affecté au dossier A, « chef_simple », chef du cabinet sans être
@@ -106,6 +125,11 @@
 -- 24/10/2026 — la migration `jumelle_inversee` APPLIQUÉE en production (`20261024052424`) : ce fichier n'y a pas été
 -- rejoué entier ; la signature des neuf familles en production égale celle de la réplique où il a rendu ses 266 justes,
 -- et un contrôle ciblé du journal y a été joué (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
+-- 25/10/2026 — étendu au gel des désignations (étape VF7e), joué sur une réplique égale à la production munie de
+-- `registre_virement_mixte`, `frontiere_des_encaissements` et `validation_des_ventes_facturees`, sans puis avec la
+-- migration `gel_des_designations` (PRÉPARÉE, pas appliquée) : 323 lignes de verdict, 21 en faute sans elle, aucune
+-- avec (avant l'extension, 265 lignes : les « 266 justes » ci-dessus comptaient la ligne d'en-tête de psql) ;
+-- HISTORIQUE.md, « LE GEL DES DÉSIGNATIONS ».
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -120,7 +144,7 @@ declare
   cle text; valeur text; s text; attendu text; n bigint;
   tables text[] := array['dossiers', 'pieces', 'factures_emises', 'ecritures_brouillon', 'cabinet_admins', 'dossier_assignations',
     'memberships', 'facture_numerotation', 'transmissions_factures', 'lignes_bancaires', 'reglements_groupes', 'lettrages_manuels',
-    'encaissements_factures', 'designations_des_pieces'];
+    'encaissements_factures', 'designations_des_pieces', 'exercices_valides', 'immobilisations'];
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
   verdicts jsonb := '[]'::jsonb;
@@ -206,7 +230,26 @@ begin
       'PJ21', 'f1a00000-0000-4000-8006-000000000015', 'PJ22', 'f1a00000-0000-4000-8006-000000000016',
       'M2', 'f1a00000-0000-4000-8007-000000000006',
       'EA1', 'f1a00000-0000-4000-8008-000000000021', 'EA2', 'f1a00000-0000-4000-8008-000000000022',
-      'EA3', 'f1a00000-0000-4000-8008-000000000023');
+      'EA3', 'f1a00000-0000-4000-8008-000000000023')
+    -- Le gel des désignations (étape VF7e) : deux dossiers, leurs factures, leurs pièces, deux biens, quatre écritures (8009).
+    || jsonb_build_object(
+      'DG', 'f1a00000-0000-4000-8009-0000000000d1', 'DN', 'f1a00000-0000-4000-8009-0000000000d2',
+      'FG23', 'f1a00000-0000-4000-8009-000000000101', 'FG24', 'f1a00000-0000-4000-8009-000000000102',
+      'FG25', 'f1a00000-0000-4000-8009-000000000103', 'FGAV', 'f1a00000-0000-4000-8009-000000000104',
+      'FG26', 'f1a00000-0000-4000-8009-000000000105', 'FGP', 'f1a00000-0000-4000-8009-000000000106',
+      'FN25', 'f1a00000-0000-4000-8009-000000000107', 'FN26', 'f1a00000-0000-4000-8009-000000000108')
+    || jsonb_build_object(
+      'PG1', 'f1a00000-0000-4000-8009-000000000201', 'PG2', 'f1a00000-0000-4000-8009-000000000202',
+      'PG3', 'f1a00000-0000-4000-8009-000000000203', 'PG4', 'f1a00000-0000-4000-8009-000000000204',
+      'PG5', 'f1a00000-0000-4000-8009-000000000205', 'PG6', 'f1a00000-0000-4000-8009-000000000206',
+      'PG7', 'f1a00000-0000-4000-8009-000000000207', 'PG8', 'f1a00000-0000-4000-8009-000000000208',
+      'PGI1', 'f1a00000-0000-4000-8009-000000000209', 'PGI2', 'f1a00000-0000-4000-8009-00000000020a',
+      'PN1', 'f1a00000-0000-4000-8009-00000000020b', 'PN2', 'f1a00000-0000-4000-8009-00000000020c',
+      'PG9', 'f1a00000-0000-4000-8009-00000000020d')
+    || jsonb_build_object(
+      'IG1', 'f1a00000-0000-4000-8009-000000000301', 'IG2', 'f1a00000-0000-4000-8009-000000000302',
+      'EG7', 'f1a00000-0000-4000-8009-000000000401', 'EGI1', 'f1a00000-0000-4000-8009-000000000402',
+      'EGI2', 'f1a00000-0000-4000-8009-000000000403', 'EN2', 'f1a00000-0000-4000-8009-000000000404');
 
   -- Le compte de chaque table que l'essai touche, avant et après ; le journal seulement s'il existe (sans la migration de
   -- l'étape VF6b, l'essai se joue, ses contrôles neufs en faute).
@@ -836,7 +879,136 @@ begin
     array['controle', '395. MUTATION — le contrôle 307 dans J : il doit passer', 'chef', $q$select declarer_vente_hors_des_factures('{J}', '{PJ9}')$q$, 'OK', ''],
     array['controle', '396. MUTATION — le contrôle 285 son classement retiré : il doit passer', 'chef', $q$select retirer_classement_par_encaissements('{J}', '{MX}'); select designer_exemplaire_facture('{J}', '{PX0C}', '{FA1}')$q$, 'OK', ''],
     array['controle', '397. MUTATION — le contrôle 330 sous le réglage de SA pièce : il doit passer (seule la fonction le pose)', 'postgres', $q$select set_config('jd.exemplaire_facture', '{PJ9}', true); update pieces set vente_hors_des_factures = true where id = '{PJ9}'$q$, 'OK', ''],
-    array['lecture', '398. MUTATION — le contrôle 352 joué par le chef : il doit voir le journal', 'chef', $q$select (count(*) > 0)::text from designations_des_pieces where dossier_id = '{J}'$q$, '', 'true']
+    array['lecture', '398. MUTATION — le contrôle 352 joué par le chef : il doit voir le journal', 'chef', $q$select (count(*) > 0)::text from designations_des_pieces where dossier_id = '{J}'$q$, '', 'true'],
+
+    -- ══ 400 à 459. LE GEL DES DÉSIGNATIONS (étape VF7e, migration gel_des_designations ; VF7-Q1, option B) ══════════
+    -- Deux dossiers jetables de plus : DG, qui bascule, et DN, qui ne bascule pas. Leurs factures, et les écritures validées
+    -- qui figent trois pièces de DG et une de DN, entrent par la porte de la restauration AVANT leurs exercices validés
+    -- (2024 et 2025 dans DG, 2025 dans DN). Chaque geste se joue avant (400 à 405), entre les deux — les écritures de la
+    -- pièce validées, pas encore l'exercice de sa facture (406 à 408) —, puis après (410 à 443).
+    array['jeu', 'VF7e : deux dossiers jetables, DG et DN', 'postgres', $q$insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures) values
+      ('{DG}', 'ESSAI EXEMPLAIRES DG', '{CAB}', 'tresorerie', '455000', false), ('{DN}', 'ESSAI EXEMPLAIRES DN', '{CAB}', 'tresorerie', '455000', false)$q$, '', ''],
+    array['fait', '0. le jeu (VF7e) : DG bascule, par la policy des dossiers', 'chef', $q$update dossiers set ventes_par_les_factures = true where id = '{DG}'$q$, 'OK', ''],
+    array['fait', '0. le jeu (VF7e) : les factures de DG — sources, et une d''avant la bascule — et celles de DN, par la porte de la restauration', 'chef', $q$insert into factures_emises (id, dossier_id, numero, statut, type, facture_origine_id, date_emission, tiers_nom, montant_ht, montant_tva, montant_ttc, emetteur_siret, validated_at, source_de_la_vente) values
+      ('{FG23}', '{DG}', 'F2023-0101', 'validee', 'facture', null, '2023-03-01', 'CLIENT ESSAI', 100, 20, 120, '12345678900012', '2023-03-01 10:00:00+00', true),
+      ('{FG24}', '{DG}', 'F2024-0101', 'validee', 'facture', null, '2024-06-01', 'CLIENT ESSAI', 100, 20, 120, '12345678900012', '2024-06-01 10:00:00+00', true),
+      ('{FG25}', '{DG}', 'F2025-0101', 'validee', 'facture', null, '2025-12-15', 'CLIENT ESSAI', 100, 20, 120, '12345678900012', '2025-12-15 10:00:00+00', true),
+      ('{FGAV}', '{DG}', 'A2025-0101', 'validee', 'avoir', '{FG25}', '2025-12-20', 'CLIENT ESSAI', -100, -20, -120, '12345678900012', '2025-12-20 10:00:00+00', true),
+      ('{FG26}', '{DG}', 'F2026-0101', 'validee', 'facture', null, '2026-01-10', 'CLIENT ESSAI', 100, 20, 120, '12345678900012', '2026-01-10 10:00:00+00', true),
+      ('{FGP}', '{DG}', 'F2025-0102', 'validee', 'facture', null, '2025-11-01', 'CLIENT ESSAI', 50, 10, 60, '12345678900012', '2025-11-01 10:00:00+00', false),
+      ('{FN25}', '{DN}', 'F2025-0201', 'validee', 'facture', null, '2025-06-01', 'CLIENT ESSAI', 50, 10, 60, '98765432100019', '2025-06-01 10:00:00+00', false),
+      ('{FN26}', '{DN}', 'F2026-0201', 'validee', 'facture', null, '2026-02-01', 'CLIENT ESSAI', 50, 10, 60, '98765432100019', '2026-02-01 10:00:00+00', false)$q$, 'OK', ''],
+    array['jeu', 'VF7e : les pièces de vente de DG et de DN, à valider', 'postgres', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, date_piece, montant_ttc) values
+      ('{PG2}', '{DG}', '{DG}/essai-vf7e-pg2.pdf', 'essai-vf7e-pg2.pdf', 'vente', 'a_valider', '2024-06-01', 120),
+      ('{PG3}', '{DG}', '{DG}/essai-vf7e-pg3.pdf', 'essai-vf7e-pg3.pdf', 'vente', 'a_valider', '2026-01-10', 120),
+      ('{PG4}', '{DG}', '{DG}/essai-vf7e-pg4.pdf', 'essai-vf7e-pg4.pdf', 'vente', 'a_valider', '2025-12-16', 80),
+      ('{PG5}', '{DG}', '{DG}/essai-vf7e-pg5.pdf', 'essai-vf7e-pg5.pdf', 'vente', 'a_valider', '2023-03-01', 120),
+      ('{PG6}', '{DG}', '{DG}/essai-vf7e-pg6.pdf', 'essai-vf7e-pg6.pdf', 'vente', 'a_valider', '2025-12-15', 120),
+      ('{PG7}', '{DG}', '{DG}/essai-vf7e-pg7.pdf', 'essai-vf7e-pg7.pdf', 'vente', 'a_valider', '2025-11-01', 60),
+      ('{PG8}', '{DG}', '{DG}/essai-vf7e-pg8.pdf', 'essai-vf7e-pg8.pdf', 'vente', 'a_valider', '2025-12-20', -120),
+      ('{PGI1}', '{DG}', '{DG}/essai-vf7e-pgi1.pdf', 'essai-vf7e-pgi1.pdf', 'vente', 'a_valider', '2025-12-15', 120),
+      ('{PGI2}', '{DG}', '{DG}/essai-vf7e-pgi2.pdf', 'essai-vf7e-pgi2.pdf', 'vente', 'a_valider', '2024-06-01', 120),
+      ('{PN1}', '{DN}', '{DN}/essai-vf7e-pn1.pdf', 'essai-vf7e-pn1.pdf', 'vente', 'a_valider', '2025-06-01', 60),
+      ('{PN2}', '{DN}', '{DN}/essai-vf7e-pn2.pdf', 'essai-vf7e-pn2.pdf', 'vente', 'a_valider', '2025-06-01', 60)$q$, '', ''],
+    array['jeu', 'VF7e : PG9, une pièce que le pont rattache à F2026-0101 par son identité', 'postgres', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, source, identite_numero, identite_siren_vendeur, identite_date, identite_nature) values
+      ('{PG9}', '{DG}', '{DG}/essai-vf7e-pg9.pdf', 'essai-vf7e-pg9.pdf', 'vente', 'a_valider', 'superpdp', 'F2026-0101', '123456789', '2026-01-10', 'facture')$q$, '', ''],
+    array['jeu', 'VF7e : les biens que PGI1 et PGI2 justifient (le gel de la pièce passe aussi par eux)', 'postgres', $q$insert into immobilisations (id, dossier_id, piece_id, libelle, valeur, date_acquisition, duree_annees) values
+      ('{IG1}', '{DG}', '{PGI1}', 'ESSAI BIEN 1', 1000, '2024-01-15', 5), ('{IG2}', '{DG}', '{PGI2}', 'ESSAI BIEN 2', 1000, '2024-01-15', 5)$q$, '', ''],
+    array['fait', '0. le jeu (VF7e) : PG2 et PGI2 exemplaires de F2024-0101, PG3 de F2026-0101, PG6 et PGI1 de F2025-0101, PG7 de F2025-0102 (d''avant la bascule), PN2 de F2025-0201, PG9 de F2026-0101 (celle de son identité)', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG9}', '{FG26}'), designer_exemplaire_facture('{DG}', '{PG2}', '{FG24}'), designer_exemplaire_facture('{DG}', '{PGI2}', '{FG24}'), designer_exemplaire_facture('{DG}', '{PG3}', '{FG26}'), designer_exemplaire_facture('{DG}', '{PG6}', '{FG25}'), designer_exemplaire_facture('{DG}', '{PGI1}', '{FG25}'), designer_exemplaire_facture('{DG}', '{PG7}', '{FGP}'), designer_exemplaire_facture('{DN}', '{PN2}', '{FN25}')$q$, 'OK', ''],
+    array['fait', '0. le jeu (VF7e) : PG4 déclarée vente hors des factures de l''application', 'chef', $q$select declarer_vente_hors_des_factures('{DG}', '{PG4}')$q$, 'OK', ''],
+    array['fait', '0. le jeu (VF7e) : PG6 validée, désignée (G3)', 'chef', $q$update pieces set statut = 'validee' where id = '{PG6}'$q$, 'OK', ''],
+    array['controle', '400. avant les validations : PG2 se défait (F2024-0101, que rien ne fige encore)', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PG2}')$q$, 'OK', ''],
+    array['controle', '401. … PG3 désigne F2025-0101 à la place de F2026-0101', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG3}', '{FG25}')$q$, 'OK', ''],
+    array['controle', '402. … PG2 se déclare à la place de sa désignation', 'chef', $q$select declarer_vente_hors_des_factures('{DG}', '{PG2}')$q$, 'OK', ''],
+    array['controle', '403. … PG4, déclarée, désigne F2025-0101 à la place de sa déclaration', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG4}', '{FG25}')$q$, 'OK', ''],
+    array['controle', '404. … PGI2 se défait', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PGI2}')$q$, 'OK', ''],
+    array['controle', '405. … dans DN, PN2 se défait', 'chef', $q$select defaire_exemplaire_facture('{DN}', '{PN2}')$q$, 'OK', ''],
+    array['fait', '0. le jeu (VF7e) : les écritures validées de PG7 (2025), du bien de PGI1 (2024), de celui de PGI2 (2025) et de PN2 (2025), par la porte de la restauration', 'chef', $q$insert into ecritures_brouillon (id, dossier_id, piece_id, immobilisation_id, date, compte, libelle, montant, sens, statut, valide_le, journal_code, numero_ecriture, piece_ref, piece_date, compte_lib) values
+      ('{EG7}', '{DG}', '{PG7}', null, '2025-11-01', '706000', 'ESSAI PG7', 60, 'credit', 'validee', '2026-01-20 10:00:00+00', 'VE', 1, 'ESSAI PG7', '2025-11-01', 'Prestations'),
+      ('{EGI1}', '{DG}', null, '{IG1}', '2024-12-31', '681120', 'ESSAI DOTATION 1', 200, 'debit', 'validee', '2025-01-20 10:00:00+00', 'OD', 1, 'ESSAI IG1', '2024-12-31', 'Dotations'),
+      ('{EGI2}', '{DG}', null, '{IG2}', '2025-12-31', '681120', 'ESSAI DOTATION 2', 200, 'debit', 'validee', '2026-01-20 10:00:00+00', 'OD', 2, 'ESSAI IG2', '2025-12-31', 'Dotations'),
+      ('{EN2}', '{DN}', '{PN2}', null, '2025-06-01', '706000', 'ESSAI PN2', 60, 'credit', 'validee', '2026-01-20 10:00:00+00', 'VE', 1, 'ESSAI PN2', '2025-06-01', 'Prestations')$q$, 'OK', ''],
+    array['controle', '406. les écritures de la pièce validées, pas encore l''exercice de sa facture : PGI2 ne se défait plus, sous l''exercice de son bien', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PGI2}')$q$,
+      '22023', 'Cette pièce porte une écriture validée de l''exercice 2025 : sa désignation ne change plus.'],
+    array['controle', '407. … PGI1 non plus', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PGI1}')$q$,
+      '22023', 'Cette pièce porte une écriture validée de l''exercice 2024 : sa désignation ne change plus.'],
+    array['controle', '408. … PG2, qui ne porte rien, se défait encore', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PG2}')$q$, 'OK', ''],
+    array['jeu', 'VF7e : les exercices 2024 et 2025 validés dans DG, 2025 et 2026 dans DN (une facture source de DG ne se fige pas par l''exercice d''un autre dossier)', 'postgres', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values
+      ('{DG}', 2024, '2025-01-20 10:00:00+00', '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('d', 64), '{}'), ('{DG}', 2025, '2026-01-20 10:00:00+00', '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('e', 64), '{}'),
+      ('{DN}', 2025, '2026-01-20 10:00:00+00', '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('f', 64), '{}'), ('{DN}', 2026, '2026-10-01 10:00:00+00', '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('a', 64), '{}')$q$, '', ''],
+    array['jeu', 'VF7e : PG1, l''original de F2025-0101 revenu de la plateforme APRÈS la validation', 'postgres', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, date_piece, montant_ttc) values
+      ('{PG1}', '{DG}', '{DG}/essai-vf7e-pg1.pdf', 'essai-vf7e-pg1.pdf', 'vente', 'a_valider', '2025-12-15', 120)$q$, '', ''],
+    array['controle', '410. après : PG2 ne se défait plus — F2024-0101 est figée par la validation de 2024', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PG2}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2024-0101, figée par la validation de l''exercice 2024 : sa désignation ne change plus.'],
+    array['controle', '411. … ne désigne pas à sa place F2026-0101, que rien ne fige', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG2}', '{FG26}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2024-0101, figée par la validation de l''exercice 2024 : sa désignation ne change plus.'],
+    array['controle', '412. … ne se déclare pas à la place de sa désignation', 'chef', $q$select declarer_vente_hors_des_factures('{DG}', '{PG2}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2024-0101, figée par la validation de l''exercice 2024 : sa désignation ne change plus.'],
+    array['controle', '413. … le gel avant « déjà l''exemplaire de cette facture »', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG2}', '{FG24}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2024-0101, figée par la validation de l''exercice 2024 : sa désignation ne change plus.'],
+    array['controle', '414. PG6, validée : « validée dans un dossier basculé » avant le gel, pour défaire', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PG6}')$q$,
+      '22023', 'Cette pièce est validée dans un dossier dont les factures sont la source de leurs ventes : elle ne perd pas sa désignation — désignez l''autre facture, ou déclarez-la vente hors des factures de l''application.'],
+    array['controle', '415. … le gel pour la remplacer', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG6}', '{FG26}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2025-0101, figée par la validation de l''exercice 2025 : sa désignation ne change plus.'],
+    array['controle', '416. … et pour la déclarer', 'chef', $q$select declarer_vente_hors_des_factures('{DG}', '{PG6}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2025-0101, figée par la validation de l''exercice 2025 : sa désignation ne change plus.'],
+    array['controle', '417. le plus ancien : PGI2 — son bien validé en 2025, F2024-0101 figée par 2024 — nomme la facture', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PGI2}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2024-0101, figée par la validation de l''exercice 2024 : sa désignation ne change plus.'],
+    array['controle', '418. le plus ancien : PGI1 — son bien validé en 2024, F2025-0101 figée par 2025 — garde les mots d''hier', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PGI1}')$q$,
+      '22023', 'Cette pièce porte une écriture validée de l''exercice 2024 : sa désignation ne change plus.'],
+    array['controle', '419. l''exercice de la pièce seul : PG7, exemplaire de F2025-0102 (d''avant la bascule, qui n''est pas source), son écriture validée en 2025', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PG7}')$q$,
+      '22023', 'Cette pièce porte une écriture validée de l''exercice 2025 : sa désignation ne change plus.'],
+    array['controle', '420. … la déclaration, sous ses mots d''hier', 'chef', $q$select declarer_vente_hors_des_factures('{DG}', '{PG7}')$q$,
+      '22023', 'Cette pièce porte une écriture validée de l''exercice 2025 : sa déclaration ne change plus.'],
+    array['controle', '421. le côté de la facture : PG3, exemplaire de F2026-0101, ne désigne pas F2025-0101, figée — une pièce déjà marquée', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG3}', '{FG25}')$q$,
+      '22023', 'La facture F2025-0101 est figée par la validation de l''exercice 2025 : elle ne reçoit plus qu''une première désignation, d''une pièce qui n''est encore ni l''exemplaire d''une facture ni déclarée — retirer d''abord sa désignation ou sa déclaration (validée, la pièce se remet d''abord à valider).'],
+    array['controle', '421b. … le rang 7 bis avant le pont : PG9, que son identité rattache à F2026-0101, qu''elle désigne', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG9}', '{FG25}')$q$,
+      '22023', 'La facture F2025-0101 est figée par la validation de l''exercice 2025 : elle ne reçoit plus qu''une première désignation, d''une pièce qui n''est encore ni l''exemplaire d''une facture ni déclarée — retirer d''abord sa désignation ou sa déclaration (validée, la pièce se remet d''abord à valider).'],
+    array['controle', '422. … ni l''avoir A2025-0101, figé de même', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG3}', '{FGAV}')$q$,
+      '22023', 'La facture A2025-0101 est figée par la validation de l''exercice 2025 : elle ne reçoit plus qu''une première désignation, d''une pièce qui n''est encore ni l''exemplaire d''une facture ni déclarée — retirer d''abord sa désignation ou sa déclaration (validée, la pièce se remet d''abord à valider).'],
+    array['controle', '423. … ni F2023-0101, d''une année qui précède le premier exercice validé : figée par 2024', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG3}', '{FG23}')$q$,
+      '22023', 'La facture F2023-0101 est figée par la validation de l''exercice 2024 : elle ne reçoit plus qu''une première désignation, d''une pièce qui n''est encore ni l''exemplaire d''une facture ni déclarée — retirer d''abord sa désignation ou sa déclaration (validée, la pièce se remet d''abord à valider).'],
+    array['controle', '424. … mais elle prend F2025-0102, d''avant la bascule, qui n''est pas source', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG3}', '{FGP}')$q$, 'OK', ''],
+    array['controle', '425. … sa désignation, que rien ne fige, se défait', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PG3}')$q$, 'OK', ''],
+    array['controle', '426. … et se déclare', 'chef', $q$select declarer_vente_hors_des_factures('{DG}', '{PG3}')$q$, 'OK', ''],
+    array['controle', '427. PG4, déclarée, ne désigne pas F2025-0101, figée : une déclaration est une marque', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG4}', '{FG25}')$q$,
+      '22023', 'La facture F2025-0101 est figée par la validation de l''exercice 2025 : elle ne reçoit plus qu''une première désignation, d''une pièce qui n''est encore ni l''exemplaire d''une facture ni déclarée — retirer d''abord sa désignation ou sa déclaration (validée, la pièce se remet d''abord à valider).'],
+    array['controle', '428. … mais F2026-0101, que rien ne fige, à la place de sa déclaration', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG4}', '{FG26}')$q$, 'OK', ''],
+    array['controle', '429. … et sa déclaration se retire', 'chef', $q$select retirer_declaration_hors_des_factures('{DG}', '{PG4}')$q$, 'OK', ''],
+    array['controle', '430. une pièce que rien ne marque : PG8 désigne l''avoir A2025-0101, figé — sa première désignation', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG8}', '{FGAV}')$q$, 'OK', ''],
+    array['fait', '431. l''original revenu après la validation : PG1 désigne F2025-0101, figée — sa première désignation', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG1}', '{FG25}')$q$, 'OK', ''],
+    array['controle', '432. … puis ne se défait plus', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PG1}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2025-0101, figée par la validation de l''exercice 2025 : sa désignation ne change plus.'],
+    array['controle', '433. … ne se remplace pas', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG1}', '{FG26}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2025-0101, figée par la validation de l''exercice 2025 : sa désignation ne change plus.'],
+    array['controle', '434. … ne se déclare pas', 'chef', $q$select declarer_vente_hors_des_factures('{DG}', '{PG1}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2025-0101, figée par la validation de l''exercice 2025 : sa désignation ne change plus.'],
+    array['controle', '435. … et se valide, désignée (G3)', 'chef', $q$update pieces set statut = 'validee' where id = '{PG1}'$q$, 'OK', ''],
+    array['lecture', '436. … son journal : la première désignation', 'chef', $q$select string_agg(geste || ':' || coalesce(facture_id::text, '-'), ',' order by fait_le, id) from designations_des_pieces where piece_id = '{PG1}'$q$, '',
+      'designation:{FG25}'],
+    array['fait', '437. PG5, que rien ne marque, désigne F2023-0101, figée par 2024', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG5}', '{FG23}')$q$, 'OK', ''],
+    array['controle', '438. … puis ne se défait plus, sous l''exercice qui la fige : 2024', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PG5}')$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2023-0101, figée par la validation de l''exercice 2024 : sa désignation ne change plus.'],
+    array['controle', '439. dans DN, qui n''a pas basculé : PN1 désigne F2025-0201, d''un exercice validé, qui n''est pas source', 'chef', $q$select designer_exemplaire_facture('{DN}', '{PN1}', '{FN25}')$q$, 'OK', ''],
+    array['fait', '440. … PN1 désigne F2026-0201', 'chef', $q$select designer_exemplaire_facture('{DN}', '{PN1}', '{FN26}')$q$, 'OK', ''],
+    array['controle', '441. … puis F2025-0201 à sa place : aucune facture de DN n''est source, rien ne fige ce côté', 'chef', $q$select designer_exemplaire_facture('{DN}', '{PN1}', '{FN25}')$q$, 'OK', ''],
+    array['controle', '442. … sa désignation se défait', 'chef', $q$select defaire_exemplaire_facture('{DN}', '{PN1}')$q$, 'OK', ''],
+    array['controle', '443. PN2, son écriture validée en 2025 : les mots d''hier, inchangés', 'chef', $q$select defaire_exemplaire_facture('{DN}', '{PN2}')$q$,
+      '22023', 'Cette pièce porte une écriture validée de l''exercice 2025 : sa désignation ne change plus.'],
+    array['valeur', '444. l''exercice qui fige chaque facture : pour une source, le premier exercice validé qui couvre sa date d''émission ; rien pour une autre', 'postgres', $q$select string_agg(f.numero || '=' || coalesce(exercice_figeant_la_facture_source(f.id)::text, '-'), ' ' order by f.numero collate "C") from factures_emises f where f.dossier_id in ('{DG}', '{DN}')$q$, '',
+      'A2025-0101=2025 F2023-0101=2024 F2024-0101=2024 F2025-0101=2025 F2025-0102=- F2025-0201=- F2026-0101=- F2026-0201=-'],
+    array['valeur', '445. l''exercice qui fige chaque pièce de DG et de DN : sa désignation, puis la pièce seule', 'postgres', $q$select string_agg(p.nom_fichier || '=' || coalesce(exercice_figeant_la_designation(p.id)::text, '-') || '/' || coalesce(exercice_figeant_la_piece(p.id)::text, '-'), ' ' order by p.nom_fichier collate "C") from pieces p where p.dossier_id in ('{DG}', '{DN}')$q$, '',
+      'essai-vf7e-pg1.pdf=2025/- essai-vf7e-pg2.pdf=2024/- essai-vf7e-pg3.pdf=-/- essai-vf7e-pg4.pdf=-/- essai-vf7e-pg5.pdf=2024/- essai-vf7e-pg6.pdf=2025/- essai-vf7e-pg7.pdf=2025/2025 essai-vf7e-pg8.pdf=-/- essai-vf7e-pg9.pdf=-/- essai-vf7e-pgi1.pdf=2024/2024 essai-vf7e-pgi2.pdf=2024/2025 essai-vf7e-pn1.pdf=-/- essai-vf7e-pn2.pdf=2025/2025'],
+    array['valeur', '446. les deux fonctions neuves : aux droits de l''appelant, stables, le chemin fixé, un exercice', 'postgres', $q$select string_agg(p.proname || ':' || p.prosecdef || ':' || p.provolatile::text || ':' || coalesce(array_to_string(p.proconfig, ','), '-') || ':' || pg_get_function_result(p.oid) || ':' || l.lanname, ',' order by p.proname collate "C") from pg_proc p join pg_language l on l.oid = p.prolang where p.pronamespace = 'public'::regnamespace and p.proname in ('exercice_figeant_la_facture_source', 'exercice_figeant_la_designation')$q$, '',
+      'exercice_figeant_la_designation:false:s:search_path=public:integer:sql,exercice_figeant_la_facture_source:false:s:search_path=public:integer:sql'],
+    array['valeur', '447. … qu''aucun rôle de l''API n''exécute (anonyme, connecté)', 'postgres', $q$select string_agg(f || ':' || has_function_privilege('anon', 'public.' || f || '(uuid)', 'execute') || ':' || has_function_privilege('authenticated', 'public.' || f || '(uuid)', 'execute'), ',' order by f collate "C") from unnest(array['exercice_figeant_la_designation', 'exercice_figeant_la_facture_source']) f$q$, '',
+      'exercice_figeant_la_designation:false:false,exercice_figeant_la_facture_source:false:false'],
+    array['valeur', '448. le gel des quatre fonctions du cabinet lit la désignation ; celui de la fiche hors de France, la pièce, comme hier', 'postgres', $q$select string_agg(proname || ':' || (strpos(prosrc, 'v_annee := public.exercice_figeant_la_designation(p_piece_id);') > 0)::text || ':' || (strpos(prosrc, 'v_annee := public.exercice_figeant_la_piece(') > 0)::text, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and (strpos(prosrc, 'exercice_figeant_la_piece(') > 0 or strpos(prosrc, 'exercice_figeant_la_designation(') > 0) and proname not like 'exercice!_figeant!_la!_%' escape '!'$q$, '',
+      'declarer_vente_hors_des_factures:true:false,defaire_exemplaire_facture:true:false,designer_exemplaire_facture:true:false,enregistrer_fiche_hors_de_france:false:true,garder_fiche_hors_de_france:false:true,retirer_declaration_hors_des_factures:true:false,retirer_fiche_hors_de_france:false:true'],
+    array['valeur', '449. exercice_figeant_la_piece ne change pas (le corps de la migration pieces_hors_de_france)', 'postgres', $q$select md5(replace(prosrc, chr(13), '')) from pg_proc where oid = 'public.exercice_figeant_la_piece(uuid)'::regprocedure$q$, '',
+      '78624664a1794b06816acb2e70436802'],
+    array['controle', '450. MUTATION — le contrôle 421 sur PG8, que rien ne marque : il doit passer', 'chef', $q$select designer_exemplaire_facture('{DG}', '{PG8}', '{FG25}')$q$, 'OK', ''],
+    array['controle', '451. MUTATION — le contrôle 410 sur PG3, exemplaire de F2026-0101 que rien ne fige : il doit passer', 'chef', $q$select defaire_exemplaire_facture('{DG}', '{PG3}')$q$, 'OK', '']
   ];
 
   begin

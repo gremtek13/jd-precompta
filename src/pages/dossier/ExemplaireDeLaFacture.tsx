@@ -5,8 +5,8 @@ import type { LectureComplete } from '../../lib/lectureComplete'
 import type { Piece } from '../../lib/types'
 import {
   argumentsDeLaDeclaration, argumentsDeLaDesignation, argumentsDuRetraitDeLaDeclaration, argumentsDuRetraitDeLaDesignation,
-  refusDeLaDeclaration, refusDeLaDesignationMarquee, refusDuRetraitDeLaDeclaration, refusDuRetraitMarque,
-  type ContexteDesMarques,
+  exerciceFigeantLaFactureSource, refusDeLaDeclaration, refusDeLaDesignationMarquee, refusDuRetraitDeLaDeclaration,
+  refusDuRetraitMarque, type ContexteDesMarques,
 } from '../../lib/exemplairesDesFactures'
 import type { FactureProposee } from '../../lib/exemplairesDesFacturesLecture'
 import {
@@ -36,6 +36,10 @@ import { auteurDuGeste, journalDeLaPiece, type LectureDeCeQueLaPieceEst } from '
 //   ne peut pas dire) — la base reste juge, et un refus qu'elle oppose quand même se dit à son tour (`messageErreur`) ;
 // - rien proposé à la place du cabinet : aucune facture n'est choisie d'avance. Dans un dossier basculé, le pont DIT la
 //   facture qu'il prouve (le refus de la déclaration la nomme) ; ce qu'il ne peut pas déduire, le cabinet le désigne ;
+// - rien d'offert que la validation d'un exercice a figé (le gel des désignations, étape VF7e) : une désignation figée se dit
+//   sous les mots de la base — « … figée par la validation de l'exercice … » — et aucun geste ne la change ; le choix dit
+//   d'une facture source figée qu'elle l'est, et elle ne reçoit plus qu'une première désignation (VF7-Q1, option B), que la
+//   confirmation dit aussitôt figée ;
 // - rien d'affirmé du journal qu'elle n'a pas lu en entier : illisible, il le dit ; un auteur qu'elle ne peut pas nommer est
 //   « un autre compte ».
 //
@@ -160,9 +164,11 @@ export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, ceQuE
   const bascule = lu.dossierBascule
   const facture = designee === null ? null : lues.find((f) => f.id === designee) ?? null
   const contexte: ContexteDesMarques = {
-    dossierId, anneeFigeante, factures: lues, dossierBascule: bascule, pont: lu.pont, liens: lu.liens,
-    facturesDuVirementMixte: lu.facturesDuVirementMixte,
+    dossierId, anneeFigeante, factures: lues, exercicesValides: lu.exercicesValides, dossierBascule: bascule, pont: lu.pont,
+    liens: lu.liens, facturesDuVirementMixte: lu.facturesDuVirementMixte,
   }
+  // L'exercice validé qui fige une facture source (VF7e) : le choix et la confirmation le disent.
+  const gelDe = (f: FactureProposee) => exerciceFigeantLaFactureSource(f, lu.exercicesValides)
   const avant: CeQuElleEtait = facture !== null ? { genre: 'designee', facture } : declaree ? { genre: 'declaree' } : { genre: 'rien' }
 
   // On ne sait pas si la pièce est figée, la dernière relecture de la pièce a échoué, ou la facture qu'elle désigne manque à
@@ -221,7 +227,8 @@ export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, ceQuE
     const cible = lues.find((f) => f.id === choix)
     if (!cible) return
     void executer('designer_exemplaire_facture', argumentsDeLaDesignation(dossierId, piece.id, choix),
-      confirmationDeLaDesignation(piece.nom_fichier, cible, avant), 'La pièce n’a pas pu être désignée.', () => setChoix(''))
+      confirmationDeLaDesignation(piece.nom_fichier, cible, avant, gelDe(cible)), 'La pièce n’a pas pu être désignée.',
+      () => setChoix(''))
   }
 
   function defaire() {
@@ -283,7 +290,7 @@ export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, ceQuE
             </label>
             <select id="exemplaire-facture" value={choix} disabled={occupee} onChange={(e) => setChoix(e.target.value)}>
               <option value="">— Choisir la facture —</option>
-              {lues.map((f) => <option key={f.id} value={f.id}>{ligneDuChoix(f)}</option>)}
+              {lues.map((f) => <option key={f.id} value={f.id}>{ligneDuChoix(f, gelDe(f))}</option>)}
             </select>
           </div>
           {refusDuChoix !== null && <p className="fiche-hdf-refus">{refusDuChoix.message}</p>}

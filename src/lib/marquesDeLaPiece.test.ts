@@ -61,10 +61,12 @@ describe('facturesDuVirementMixte — un encaissement vivant, sur un mouvement c
     expect([...facturesDuVirementMixte(D, annule, classes)]).toEqual([])
   })
 
-  it('hors d’un dossier basculé, le contexte n’a aucune facture d’un virement mixte, aucun lien, aucun pont', () => {
+  it('hors d’un dossier basculé, le contexte n’a aucune facture d’un virement mixte, aucun lien, aucun pont, aucun exercice qui fige', () => {
+    // Aucune facture n'y est source : rien ne fige une désignation de ce côté (le gel des désignations, VF7e).
     expect(CONTEXTE_D_UN_DOSSIER_NON_BASCULE).toEqual({
       dossierBascule: false, pont: { genre: 'aucune' },
       liens: { rapprochee: false, reglee: false, ecrite: false, lettree: false }, facturesDuVirementMixte: new Set(),
+      exercicesValides: [],
     })
   })
 })

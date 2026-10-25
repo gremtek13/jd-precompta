@@ -23,6 +23,8 @@ import {
   argumentsDeLaDesignation,
   argumentsDuRetraitDeLaDeclaration,
   argumentsDuRetraitDeLaDesignation,
+  exerciceFigeantLaDesignation,
+  exerciceFigeantLaFactureSource,
   refusDeLaDeclaration,
   refusDeLaDesignation,
   refusDeLaDesignationMarquee,
@@ -36,7 +38,7 @@ import {
   verdictDuPont,
   type ContexteDesMarques,
   type FacturePourExemplaire,
-  type FacturePourMarquer,
+  type FacturePourLesGestes,
   type LiensDeLaPiece,
   type PieceDesignable,
   type PieceMarquable,
@@ -63,6 +65,13 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 // accepté (§ 3). Le drapeau `JUMELLE_INVERSEE_EXPORTEE` levé, il se confronte aussi au texte exporté (§ 5). CHAQUE AUTRE
 // ATTENDU EST ÉCRIT À LA MAIN, depuis la migration (son en-tête dit l'ordre des refus) et la conception (HISTORIQUE.md,
 // « VF6, LA JUMELLE INVERSÉE : LA CONCEPTION », § 3).
+//
+// LE GEL DES DÉSIGNATIONS (étape VF7e ; migration `gel_des_designations`, PRÉPARÉE : dans l'export sous une version
+// provisoire, pas encore en production) : les définitions qui font foi sont désormais les siennes. L'essai l'éprouve dans
+// deux dossiers de plus (400 à 451), que le rejeu rejoue aussi — les exercices validés, les biens qu'une pièce justifie —,
+// et le gel du module se confronte, facture par facture et pièce par pièce, à ce que les deux fonctions neuves ont rendu
+// (444, 445) ; le § 5 garde la migration : sa garde sur les corps de VF6b, la définition de VF6b ligne à ligne dans la
+// nouvelle, les droits, la condition qui porte VF7-Q1.
 
 const ESSAI = readFileSync(new URL('../../supabase/essais/exemplairesDesFactures.sql', import.meta.url), 'utf8')
 
@@ -70,19 +79,20 @@ const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('h
 
 // LES COMPTES DE L'ESSAI, relevés sur son texte et sur son rejeu : des planchers, qui distinguent « aucun écart »
 // d'« aveugle ». Un contrôle ajouté à l'essai les change, et ce test le dit.
-const COMPTES_PAR_GENRE = [9, 10, 196, 35, 22, 0]
-const MUTATIONS_DE_L_ESSAI = 19
-const CONTROLES_NUMEROTES = 253
+const COMPTES_PAR_GENRE = [15, 19, 238, 36, 28, 0]
+const MUTATIONS_DE_L_ESSAI = 21
+const CONTROLES_NUMEROTES = 305
 const PIECES_DE_J = 36
 const FACTURES_DE_J = 8
-const APPELS_REJOUES = [53, 20, 18, 7]
-const ECRITURES_REJOUEES = [10, 18]
-const LIENS_REJOUES = [9, 1, 6, 1]
-const ACCEPTES_ET_ACCES = [[19, 7], [5, 7], [1, 7], [0, 3]]
+const APPELS_REJOUES = [81, 37, 25, 8]
+const ECRITURES_REJOUEES = [10, 20]
+const LIENS_REJOUES = [9, 1, 10, 1]
+const ACCEPTES_ET_ACCES = [[38, 7], [12, 7], [4, 7], [1, 3]]
 const PLANTE_SANS_DESIGNATION = ['17', '76', '77', '148']
 const PLANTE_PONT = ['211', '270', '313']
 const PLANTE_LIEN = ['260']
 const PLANTE_MIXTE = ['285', '286', '287', '288', '289']
+const PLANTE_GEL = ['410', '411', '412', '413', '417', '423', '438']
 
 const modeles = (liste: readonly { modele: string }[]) => liste.map((r) => r.modele)
 
@@ -283,9 +293,18 @@ function etatsReleves(essai: string, noms: ReadonlyMap<string, string>) {
   return { pieces, factures }
 }
 
+/** Ce que le rejeu sait au moment d'une étape `valeur` : de quoi confronter au module ce que la base y a rendu (444, 445). */
+interface EtatDuRejeu {
+  factures: readonly FacturePourLesGestes[]
+  pieces: ReadonlyMap<string, PieceRejouee>
+  figees: ReadonlyMap<string, number>
+  exercices: ReadonlyMap<string, readonly number[]>
+}
+
 /**
  * L'essai rejoué : ce qu'il a construit en base au moment de chaque étape — ses dossiers et leur bascule, ses factures et
- * leur source, ses pièces et leurs marques, les écritures validées qui en figent, et, dès que l'essai la relève (231, 232),
+ * leur source, ses pièces et leurs marques, les écritures validées qui en figent (celles de la pièce, et celles du bien
+ * qu'elle justifie), les exercices validés (le gel des désignations, VF7e), et, dès que l'essai la relève (231, 232),
  * l'état de J entier : ce que le pont prouve de chaque pièce, ses liens, le virement mixte. Les étapes de J qui précèdent ce
  * relevé posent le jeu, que l'essai exige « OK » : elles ne se rejouent pas. Puis, pour chaque appel aux quatre fonctions,
  * chaque écriture directe d'une pièce (la garde, puis G3) et chaque lien posé ou changé sur les quatre tables de G4, ce que
@@ -294,13 +313,15 @@ function etatsReleves(essai: string, noms: ReadonlyMap<string, string>) {
  * à T, avec ou sans cases —, le compte rattaché à rien et l'anonyme, nulle part ; un dossier qui n'existe pas, pour
  * personne.
  */
-function rejouer(essai: string): Rejeu[] {
+function rejouer(essai: string, surValeur?: (etape: Etape, etat: EtatDuRejeu) => void): Rejeu[] {
   const noms = nomsDe(essai)
   const dossiers = new Set<string>()
   const bascules = new Set<string>()
-  const factures: FacturePourMarquer[] = []
+  const factures: FacturePourLesGestes[] = []
   const pieces = new Map<string, PieceRejouee>()
   const figees = new Map<string, number>()
+  const exercices = new Map<string, number[]>()
+  const biens = new Map<string, string>()
   const virementMixte = new Set<string>()
   let etatDeJ = false
   const rejeux: Rejeu[] = []
@@ -317,7 +338,7 @@ function rejouer(essai: string): Rejeu[] {
         if (statut == null) throw new Error(`Statut de facture inconnu : ${String(f.statut)}`)
         factures.push({
           id: String(f.id), dossier_id: String(f.dossier_id), statut, numero: f.numero == null ? null : String(f.numero),
-          source_de_la_vente: f.source_de_la_vente === true,
+          source_de_la_vente: f.source_de_la_vente === true, date_emission: String(f.date_emission),
         })
       }
       for (const p of lignesInserees(e.appel, 'pieces', noms)) {
@@ -330,13 +351,20 @@ function rejouer(essai: string): Rejeu[] {
           facture_id: null, vente_hors_des_factures: p.vente_hors_des_factures === true, pont: AUCUNE, liens: SANS_LIEN,
         })
       }
+      for (const b of lignesInserees(e.appel, 'immobilisations', noms)) if (b.piece_id != null) biens.set(String(b.id), String(b.piece_id))
       for (const x of lignesInserees(e.appel, 'ecritures_brouillon', noms)) {
-        if (x.statut !== 'validee' || x.piece_id == null) continue
+        // La pièce que l'écriture fige : la sienne, ou celle du bien qu'elle amortit (le critère d'exercice_figeant_la_piece).
+        const fige = x.piece_id != null ? String(x.piece_id) : x.immobilisation_id != null ? biens.get(String(x.immobilisation_id)) : undefined
+        if (x.statut !== 'validee' || fige === undefined) continue
         const annee = Number(String(x.date).slice(0, 4))
-        const avant = figees.get(String(x.piece_id))
-        figees.set(String(x.piece_id), avant === undefined ? annee : Math.min(avant, annee))
+        const avant = figees.get(fige)
+        figees.set(fige, avant === undefined ? annee : Math.min(avant, annee))
+      }
+      for (const v of lignesInserees(e.appel, 'exercices_valides', noms)) {
+        exercices.set(String(v.dossier_id), [...(exercices.get(String(v.dossier_id)) ?? []), Number(v.annee)])
       }
     }
+    if (e.genre === 'valeur' && surValeur !== undefined) surValeur(e, { factures, pieces, figees, exercices })
     // L'état de J, tel que l'essai le relève : il remplace ce que le jeu en a dit.
     if (e.genre === 'valeur' && e.numero === '232') {
       const releve = etatsReleves(essai, noms)
@@ -412,8 +440,10 @@ function rejouer(essai: string): Rejeu[] {
       }
       if (Object.values(modification).some((v) => v === undefined)) throw new Error(`Valeur inconnue : ${e.appel}`)
       const arrivee = String(dossier ?? piece.dossier_id)
-      dire('écriture directe de la pièce', [...REFUS_GARDE_JUMELLE, ...REFUS_VALIDATION_D_UNE_VENTE], 'OK',
-        refusDeLaModificationMarquee(piece, modification, { factures, basculeDuDossier: bascules.has(arrivee), pont: piece.pont }))
+      const refus = refusDeLaModificationMarquee(piece, modification, { factures, basculeDuDossier: bascules.has(arrivee), pont: piece.pont })
+      dire('écriture directe de la pièce', [...REFUS_GARDE_JUMELLE, ...REFUS_VALIDATION_D_UNE_VENTE], 'OK', refus)
+      // Faite et acceptée, elle change la pièce que le rejeu connaît (PG6 validée, étape VF7e).
+      if (fait && refus === null) Object.assign(piece, modification)
       continue
     }
 
@@ -456,8 +486,8 @@ function rejouer(essai: string): Rejeu[] {
       const piece = v[1] == null ? null : pieces.get(String(v[1])) ?? null
       const contexte: ContexteDesMarques = {
         dossierId: dossier, anneeFigeante: piece == null ? null : figees.get(piece.id) ?? null, factures,
-        dossierBascule: bascules.has(dossier), pont: piece?.pont ?? AUCUNE, liens: piece?.liens ?? SANS_LIEN,
-        facturesDuVirementMixte: virementMixte,
+        exercicesValides: exercices.get(dossier) ?? [], dossierBascule: bascules.has(dossier), pont: piece?.pont ?? AUCUNE,
+        liens: piece?.liens ?? SANS_LIEN, facturesDuVirementMixte: virementMixte,
       }
       if (f === 'designer_exemplaire_facture') {
         const factureId = v[2] == null ? null : String(v[2])
@@ -548,6 +578,34 @@ describe('l’essai joué sur la réplique, rejoué appel par appel dans le bloc
     expect(planter('{PJ1}:vente:a_valider:-:false:{FS1}:-:-', '{PJ1}:vente:a_valider:-:false:-:-:-')).toEqual(PLANTE_PONT)
     expect(planter('{PL}:vente:a_valider:-:false:-:r:-', '{PL}:vente:a_valider:-:false:-:-:-')).toEqual(PLANTE_LIEN)
     expect(planter('{FA0}:validee:facture:F2026-0004:false:true', '{FA0}:validee:facture:F2026-0004:false:false')).toEqual(PLANTE_MIXTE)
+    // Le gel (VF7e) : l'exercice 2024 de DG validé en 2023 — chaque contrôle dont l'exercice qui fige change.
+    expect(planter("('{DG}', 2024, '2025-01-20 10:00:00+00'", "('{DG}', 2023, '2025-01-20 10:00:00+00'")).toEqual(PLANTE_GEL)
+  })
+
+  it('le gel du module est celui que la base a rendu (VF7e) : facture par facture (444), pièce par pièce (445)', () => {
+    const vus: string[] = []
+    const dossiers = ['DG', 'DN']
+    rejouer(ESSAI, (e, etat) => {
+      if (e.numero === '444') {
+        expect(etat.factures.filter((f) => dossiers.includes(f.dossier_id))
+          .map((f) => `${f.numero ?? ''}=${exerciceFigeantLaFactureSource(f, etat.exercices.get(f.dossier_id) ?? []) ?? '-'}`)
+          .sort().join(' ')).toBe(e.attendu)
+        vus.push(e.numero)
+      }
+      if (e.numero === '445') {
+        expect([...etat.pieces.values()].filter((p) => dossiers.includes(p.dossier_id))
+          .map((p) => {
+            const piece = etat.figees.get(p.id) ?? null
+            const designation = exerciceFigeantLaDesignation(p, {
+              anneeFigeante: piece, factures: etat.factures, exercicesValides: etat.exercices.get(p.dossier_id) ?? [],
+            })
+            return `${p.nom_fichier}=${designation ?? '-'}/${piece ?? '-'}`
+          })
+          .sort().join(' ')).toBe(e.attendu)
+        vus.push(e.numero)
+      }
+    })
+    expect(vus).toEqual(['444', '445'])
   })
 })
 
@@ -678,16 +736,16 @@ function pieceM(o: Partial<PieceMarquable> = {}): PieceMarquable {
   return { id: 'p1', dossier_id: D, type_piece: 'vente', statut: 'a_valider', nom_fichier: 'vente-1.pdf', facture_id: null,
     vente_hors_des_factures: false, ...o }
 }
-function factureM(o: Partial<FacturePourMarquer> = {}): FacturePourMarquer {
-  return { id: 'f1', dossier_id: D, statut: 'validee', numero: 'F2026-0007', source_de_la_vente: false, ...o }
+function factureM(o: Partial<FacturePourLesGestes> = {}): FacturePourLesGestes {
+  return { id: 'f1', dossier_id: D, statut: 'validee', numero: 'F2026-0007', source_de_la_vente: false, date_emission: '2026-03-14', ...o }
 }
 // f1 et f2 : d'avant la bascule ; s1 et s2 : sources ; un brouillon ; une facture d'un autre dossier.
 const FACTURES_M = [factureM(), factureM({ id: 'f2', numero: 'F2026-0008' }),
   factureM({ id: 's1', numero: 'F2026-0009', source_de_la_vente: true }), factureM({ id: 's2', numero: 'F2026-0010', source_de_la_vente: true }),
   factureM({ id: 'fb', statut: 'brouillon', numero: null }), factureM({ id: 'fa', dossier_id: 'd2', numero: 'F2026-0001' })]
 function ctxM(o: Partial<ContexteDesMarques> = {}): ContexteDesMarques {
-  return { dossierId: D, anneeFigeante: null, factures: FACTURES_M, dossierBascule: true, pont: AUCUNE, liens: SANS_LIEN,
-    facturesDuVirementMixte: new Set<string>(), ...o }
+  return { dossierId: D, anneeFigeante: null, factures: FACTURES_M, exercicesValides: [], dossierBascule: true, pont: AUCUNE,
+    liens: SANS_LIEN, facturesDuVirementMixte: new Set<string>(), ...o }
 }
 const lie = (o: Partial<LiensDeLaPiece>): LiensDeLaPiece => ({ ...SANS_LIEN, ...o })
 
@@ -848,6 +906,104 @@ describe('refusDuRetraitDeLaDeclaration — ce que retirer_declaration_hors_des_
     expect(cle(refusDuRetraitDeLaDeclaration(pieceM({ vente_hors_des_factures: true }), ctxM({ anneeFigeante: 2024 })))).toBe('piece_figee')
     expect(cle(refusDuRetraitDeLaDeclaration(pieceM({ vente_hors_des_factures: true, statut: 'validee' }), ctxM({ anneeFigeante: 2024 }))))
       .toBe('validee_dans_un_dossier_bascule')
+  })
+})
+
+// LE GEL DES DÉSIGNATIONS (étape VF7e ; VF7-Q1, option B, suivie sur la recommandation) : la validation de l'exercice d'une
+// facture SOURCE fige la désignation de son exemplaire — qui ne porte jamais d'écriture (G4) —, et une telle facture ne
+// reçoit plus qu'une première désignation, d'une pièce que rien ne marque. Les mots de la base, dans son ordre.
+describe('le gel des désignations (VF7e) — l’exercice qui fige une facture source, et la désignation de son exemplaire', () => {
+  // s25 : une facture source de décembre 2025 ; a25 : son avoir ; s23 : une facture source de 2023 ; p25 : une facture d'avant
+  // la bascule, de 2025 ; s26 : une facture source de 2026.
+  const s25 = factureM({ id: 's25', numero: 'F2025-0042', source_de_la_vente: true, date_emission: '2025-12-15' })
+  const a25 = factureM({ id: 'a25', numero: 'A2025-0003', source_de_la_vente: true, date_emission: '2025-12-20' })
+  const s23 = factureM({ id: 's23', numero: 'F2023-0001', source_de_la_vente: true, date_emission: '2023-03-01' })
+  const p25 = factureM({ id: 'p25', numero: 'F2025-0007', source_de_la_vente: false, date_emission: '2025-11-01' })
+  const s26 = factureM({ id: 's26', numero: 'F2026-0001', source_de_la_vente: true, date_emission: '2026-01-10' })
+  const factures = [...FACTURES_M, s25, a25, s23, p25, s26]
+  const gele = (o: Partial<ContexteDesMarques> = {}) => ctxM({ factures, exercicesValides: [2024, 2025], ...o })
+  const FIGEE_2025 = "Cette pièce est l'exemplaire de la facture F2025-0042, figée par la validation de l'exercice 2025 : sa désignation "
+    + 'ne change plus.'
+
+  it('exerciceFigeantLaFactureSource : le premier exercice validé qui couvre sa date d’émission, ou la suit ; rien pour une facture qui n’est pas source', () => {
+    expect(exerciceFigeantLaFactureSource(s25, [2024, 2025])).toBe(2025)
+    expect(exerciceFigeantLaFactureSource(s25, [2025, 2026])).toBe(2025)
+    // Ce qui précède le premier exercice validé est figé avec lui.
+    expect(exerciceFigeantLaFactureSource(s23, [2024, 2025])).toBe(2024)
+    expect(exerciceFigeantLaFactureSource(s26, [2024, 2025])).toBeNull()
+    expect(exerciceFigeantLaFactureSource(s25, [])).toBeNull()
+    expect(exerciceFigeantLaFactureSource(s25, [2024])).toBeNull()
+    expect(exerciceFigeantLaFactureSource(p25, [2024, 2025])).toBeNull()
+    expect(exerciceFigeantLaFactureSource(undefined, [2025])).toBeNull()
+  })
+
+  it('exerciceFigeantLaDesignation : le plus ancien de celui de la pièce et de celui de la facture source qu’elle désigne', () => {
+    expect(exerciceFigeantLaDesignation(pieceM({ facture_id: 's25' }), gele())).toBe(2025)
+    expect(exerciceFigeantLaDesignation(pieceM({ facture_id: 's25' }), gele({ anneeFigeante: 2024 }))).toBe(2024)
+    expect(exerciceFigeantLaDesignation(pieceM({ facture_id: 's23' }), gele({ anneeFigeante: 2025 }))).toBe(2024)
+    expect(exerciceFigeantLaDesignation(pieceM({ facture_id: 'p25' }), gele())).toBeNull()
+    expect(exerciceFigeantLaDesignation(pieceM({ facture_id: 'p25' }), gele({ anneeFigeante: 2025 }))).toBe(2025)
+    expect(exerciceFigeantLaDesignation(pieceM(), gele({ anneeFigeante: 2026 }))).toBe(2026)
+    expect(exerciceFigeantLaDesignation(pieceM({ facture_id: 's26' }), gele())).toBeNull()
+    // Une facture que la liste ne porte pas ne fige rien ici : l'écran ne propose alors aucun geste (la fiche le dit).
+    expect(exerciceFigeantLaDesignation(pieceM({ facture_id: 'absente' }), gele())).toBeNull()
+  })
+
+  it('désigner : la désignation figée ne se remplace pas — la facture nommée quand c’est elle qui fige, les mots d’hier sinon', () => {
+    expect(refusDeLaDesignationMarquee(pieceM({ facture_id: 's25' }), 's26', gele())).toEqual({ cle: 'designation_figee', message: FIGEE_2025 })
+    // Le gel avant « déjà l'exemplaire de cette facture ».
+    expect(cle(refusDeLaDesignationMarquee(pieceM({ facture_id: 's25' }), 's25', gele()))).toBe('designation_figee')
+    // La pièce figée plus tôt que sa facture : les mots d'hier, et son année.
+    expect(refusDeLaDesignationMarquee(pieceM({ facture_id: 's25' }), 's26', gele({ anneeFigeante: 2024 }))?.message)
+      .toBe("Cette pièce porte une écriture validée de l'exercice 2024 : sa désignation ne change plus.")
+    // La facture plus tôt que la pièce : la facture, et son année ; à égalité, les mots d'hier.
+    expect(refusDeLaDesignationMarquee(pieceM({ facture_id: 's23' }), 's26', gele({ anneeFigeante: 2025 }))?.message)
+      .toBe("Cette pièce est l'exemplaire de la facture F2023-0001, figée par la validation de l'exercice 2024 : sa désignation ne change plus.")
+    expect(cle(refusDeLaDesignationMarquee(pieceM({ facture_id: 's25' }), 's26', gele({ anneeFigeante: 2025 })))).toBe('piece_figee')
+    // Une facture d'avant la bascule ne fige rien de ce côté ; une facture source que rien ne fige non plus.
+    expect(refusDeLaDesignationMarquee(pieceM({ facture_id: 'p25' }), 's26', gele())).toBeNull()
+    expect(refusDeLaDesignationMarquee(pieceM({ facture_id: 's26' }), 'f1', gele())).toBeNull()
+    // Sans exercice validé, rien ne se fige.
+    expect(refusDeLaDesignationMarquee(pieceM({ facture_id: 's25' }), 's26', gele({ exercicesValides: [] }))).toBeNull()
+  })
+
+  it('désigner À une facture source figée (7 bis) : une première désignation seulement, d’une pièce que rien ne marque', () => {
+    expect(refusDeLaDesignationMarquee(pieceM(), 's25', gele())).toBeNull()
+    expect(refusDeLaDesignationMarquee(pieceM(), 'a25', gele())).toBeNull()
+    expect(refusDeLaDesignationMarquee(pieceM(), 's23', gele())).toBeNull()
+    expect(refusDeLaDesignationMarquee(pieceM({ facture_id: 's26' }), 's25', gele())).toEqual({
+      cle: 'facture_figee',
+      message: "La facture F2025-0042 est figée par la validation de l'exercice 2025 : elle ne reçoit plus qu'une première désignation, "
+        + "d'une pièce qui n'est encore ni l'exemplaire d'une facture ni déclarée — retirer d'abord sa désignation ou sa déclaration "
+        + "(validée, la pièce se remet d'abord à valider).",
+    })
+    expect(refusDeLaDesignationMarquee(pieceM({ vente_hors_des_factures: true }), 'a25', gele())?.message)
+      .toMatch(/^La facture A2025-0003 est figée par la validation de l'exercice 2025 : /)
+    expect(refusDeLaDesignationMarquee(pieceM({ facture_id: 'f1' }), 's23', gele())?.message)
+      .toMatch(/^La facture F2023-0001 est figée par la validation de l'exercice 2024 : /)
+    // Une facture d'avant la bascule, d'un exercice validé : elle n'est pas source, ce côté ne la fige pas.
+    expect(refusDeLaDesignationMarquee(pieceM({ facture_id: 's26' }), 'p25', gele())).toBeNull()
+    // Une facture source que rien ne fige reçoit une pièce marquée.
+    expect(refusDeLaDesignationMarquee(pieceM({ facture_id: 'f1' }), 's26', gele())).toBeNull()
+    // Dans l'ordre : après le brouillon, avant le pont et les liens.
+    expect(cle(refusDeLaDesignationMarquee(pieceM({ facture_id: 's26' }), 'fb', gele()))).toBe('facture_brouillon')
+    expect(cle(refusDeLaDesignationMarquee(pieceM({ facture_id: 's26' }), 's25',
+      gele({ pont: { genre: 'une', factureId: 's26' }, liens: lie({ rapprochee: true }) })))).toBe('facture_figee')
+    // Sa désignation figée d'abord : le rang 4 avant le 7 bis.
+    expect(cle(refusDeLaDesignationMarquee(pieceM({ facture_id: 's25' }), 'a25', gele()))).toBe('designation_figee')
+  })
+
+  it('défaire et déclarer : la désignation figée ne se défait ni ne se remplace par une déclaration ; la validation d’abord', () => {
+    expect(refusDuRetraitMarque(pieceM({ facture_id: 's25' }), gele())).toEqual({ cle: 'designation_figee', message: FIGEE_2025 })
+    expect(cle(refusDuRetraitMarque(pieceM({ facture_id: 's25', statut: 'validee' }), gele()))).toBe('validee_dans_un_dossier_bascule')
+    expect(refusDuRetraitMarque(pieceM({ facture_id: 's26' }), gele())).toBeNull()
+    expect(refusDeLaDeclaration(pieceM({ facture_id: 's25' }), gele())).toEqual({ cle: 'designation_figee', message: FIGEE_2025 })
+    expect(cle(refusDeLaDeclaration(pieceM({ facture_id: 's25' }), gele({ dossierBascule: false })))).toBe('dossier_non_bascule')
+    expect(refusDeLaDeclaration(pieceM({ facture_id: 's26' }), gele())).toBeNull()
+    // Une pièce déclarée ne désigne aucune facture : son gel reste celui de la pièce, sous les mots d'hier.
+    expect(refusDuRetraitDeLaDeclaration(pieceM({ vente_hors_des_factures: true }), gele())).toBeNull()
+    expect(refusDuRetraitDeLaDeclaration(pieceM({ vente_hors_des_factures: true }), gele({ anneeFigeante: 2025 }))?.message)
+      .toBe("Cette pièce porte une écriture validée de l'exercice 2025 : sa déclaration ne change plus.")
   })
 })
 
@@ -1023,14 +1179,17 @@ describe('les drapeaux, et les deux modules confrontés au texte exporté', () =
 
   // ── VF6b : le texte de SA migration, et les définitions qui font foi depuis qu'elle est la dernière ──
 
-  it('VF6b, exportée : les quatre fonctions du cabinet — les mêmes messages, dans le même ordre, sous les mêmes codes, aux mêmes valeurs', () => {
+  it('VF6b puis VF7e, exportées : les quatre fonctions du cabinet — les mêmes messages, dans le même ordre, sous les mêmes codes, aux mêmes valeurs', () => {
     if (!JUMELLE_INVERSEE_EXPORTEE) return
     const numero = "coalesce(v_numero, '(sans numéro)')"
+    // Les définitions qui font foi sont celles de la migration du gel des désignations (VF7e), la dernière de l'export : le
+    // rang 4 ou 5 du gel dit la facture et l'exercice, puis les mots d'hier ; le rang 7 bis de la désignation, la facture et
+    // l'exercice.
     const attendus: Record<Fonction, string[][]> = {
-      designer_exemplaire_facture: [[], [], [], ['v_annee'], ['v_numero'], [], [], ['v_numero'], [], ['v_numero'], ['v_numero'],
-        ['v_numero'], ['v_numero'], [numero], [numero]],
-      defaire_exemplaire_facture: [[], [], [], [], ['v_annee'], [numero]],
-      declarer_vente_hors_des_factures: [[], [], [], [], ['v_annee'], [], ['v_numero'], [], [numero]],
+      designer_exemplaire_facture: [[], [], [], ['v_numero', 'v_annee'], ['v_annee'], ['v_numero'], [], [], ['v_numero', 'v_annee'],
+        ['v_numero'], [], ['v_numero'], ['v_numero'], ['v_numero'], ['v_numero'], [numero], [numero]],
+      defaire_exemplaire_facture: [[], [], [], [], ['v_numero', 'v_annee'], ['v_annee'], [numero]],
+      declarer_vente_hors_des_factures: [[], [], [], [], ['v_numero', 'v_annee'], ['v_annee'], [], ['v_numero'], [], [numero]],
       retirer_declaration_hors_des_factures: [[], [], [], [], ['v_annee']],
     }
     for (const f of FONCTIONS) {
@@ -1115,6 +1274,74 @@ describe('les drapeaux, et les deux modules confrontés au texte exporté', () =
     for (const [nom, empreinte] of [...VF6B.matchAll(/\('public\.(\w+)\([^)]*\)', '([0-9a-f]{32})'\)/g)].map((m) => [m[1], m[2]])) {
       expect(md5(corps(nom)), nom).toBe(empreinte)
     }
+  })
+
+  // ── VF7e : le gel des désignations, PRÉPARÉ — sa migration dans l'export sous une version provisoire ──
+
+  const VF7E = fichiers.find((f) => /\/\d{14}_gel_des_designations\.sql$/.test(f.chemin))?.texte
+
+  it('VF7e, exportée : sa garde ne remplace que les corps de VF6b — ceux que la production exécute —, au caractère près', () => {
+    expect(VF7E).toBeDefined()
+    if (VF7E === undefined || VF6B === undefined) return
+    const corps = (nom: string) => {
+      const def = definitionDans(VF6B, nom)
+      return def.slice(def.indexOf('$$') + 2)
+    }
+    const garde = [...VF7E.matchAll(/\('public\.(\w+)\([^)]*\)', '([0-9a-f]{32})'\)/g)].map((m) => [m[1], m[2]])
+    expect(garde.map(([nom]) => nom)).toEqual([...FONCTIONS])
+    for (const [nom, empreinte] of garde) expect(md5(corps(nom)), nom).toBe(empreinte)
+  })
+
+  it('VF7e, exportée : chaque définition de VF6b, ligne à ligne, dans la nouvelle — la ligne du gel lue comme la nouvelle', () => {
+    if (VF7E === undefined || VF6B === undefined) return
+    const GEL_HIER = 'v_annee := public.exercice_figeant_la_piece(p_piece_id);'
+    const GEL_NEUF = 'v_annee := public.exercice_figeant_la_designation(p_piece_id);'
+    for (const f of FONCTIONS) {
+      const hier = definitionDans(VF6B, f).replace('create function', 'create or replace function').replace(GEL_HIER, GEL_NEUF)
+      const neuf = definitionDans(VF7E, f)
+      const neuves = neuf.split('\n')
+      let k = 0
+      for (const ligne of hier.split('\n')) {
+        while (k < neuves.length && neuves[k] !== ligne) k++
+        expect(k < neuves.length, `${f} : ${ligne}`).toBe(true)
+        k++
+      }
+      // Le gel se lit une fois, par la fonction neuve ; celui d'hier, à ce rang, plus jamais.
+      expect(neuf.split(GEL_NEUF), f).toHaveLength(2)
+      expect(neuf, f).not.toContain('v_annee := public.exercice_figeant_la_piece(')
+    }
+  })
+
+  it('VF7e, exportée : deux fonctions neuves aux droits de l’appelant, qu’aucun rôle de l’API n’exécute ; rien que le détecteur retiendrait', () => {
+    if (VF7E === undefined) return
+    for (const nom of ['exercice_figeant_la_facture_source', 'exercice_figeant_la_designation']) {
+      const def = derniereDefinitionSql(nom)
+      expect(def, nom).toMatch(new RegExp(`^create function public\\.${nom}\\(p_\\w+ uuid\\) returns integer\\nlanguage sql stable set search_path = public as`))
+      expect(def, nom).not.toContain('security definer')
+      expect(VF7E, nom).toContain(`revoke execute on function public.${nom}(uuid) from public, anon, authenticated;`)
+    }
+    expect(VF7E).not.toMatch(/\b(drop|delete|truncate|grant)\b/i)
+    expect(VF7E).not.toMatch(/\b(create|alter) (table|policy|trigger)\b/i)
+    expect(VF7E).not.toContain('\\')
+    // Ce qui ne change pas : le gel de la pièce, que sert aussi la fiche d'un achat hors de France ; la garde des pièces figées.
+    expect(VF7E).not.toMatch(/function public\.(exercice_figeant_la_piece|garder_piece_validee)\(/)
+  })
+
+  it('VF7e, exportée : la condition qui porte VF7-Q1, une seule et nommée — l’option (A) la remplace par true, l’option (C) par false', () => {
+    if (VF7E === undefined) return
+    const sql = derniereDefinitionSql('designer_exemplaire_facture')
+    expect(sql.split('\n').filter((l) => /\bv_deja_marquee\b/.test(l) && !l.trim().startsWith('--'))).toEqual([
+      '  v_deja_marquee boolean;',
+      '  v_deja_marquee := v_piece.facture_id is not null or v_piece.vente_hors_des_factures;',
+      '  if v_annee is not null and v_deja_marquee then',
+    ])
+    // Le rang qu'elle garde suit le 7 et précède le pont ; il lit l'exercice de la facture choisie.
+    const corps = sql.slice(sql.indexOf('\nbegin\n'))
+    const rang7 = corps.indexOf("raise exception 'Seule une facture validée a un exemplaire")
+    const lu = corps.indexOf('v_annee := public.exercice_figeant_la_facture_source(p_facture_id);')
+    const rang7bis = corps.indexOf('if v_annee is not null and v_deja_marquee then')
+    const pont = corps.indexOf('from public.factures_du_pont(v_piece)')
+    expect([rang7 > 0, lu > rang7, rang7bis > lu, pont > rang7bis]).toEqual([true, true, true, true])
   })
 
   it('les paramètres, dans l’ordre des signatures exportées, et tels que le module les envoie (les drapeaux baissés comme levés)', () => {

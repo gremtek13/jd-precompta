@@ -238,7 +238,11 @@ export function argumentsDuRetraitDeLaDesignation(dossierId: string, pieceId: st
 //     lettré — et l'autre côté : une pièce liée ne se désigne pas à une facture source ;
 //   - le virement mixte (VF5H-Q1) : la désignation qui date l'exemplaire d'une facture d'avant ne change pas sous un
 //     mouvement classé qui compte son encaissement ;
-//   - le JOURNAL, `designations_des_pieces` (VF6-Q3) : qui a fait quel geste, et quand ; au cabinet seul.
+//   - le JOURNAL, `designations_des_pieces` (VF6-Q3) : qui a fait quel geste, et quand ; au cabinet seul ;
+//   - depuis l'étape VF7e (migration `gel_des_designations`, PRÉPARÉE : dans l'export sous une version provisoire, pas
+//     encore en production, où elle ne changerait rien — aucune facture source, aucun exercice validé) : le GEL de la
+//     désignation d'une facture source par la validation de l'exercice de sa facture, et le côté de la facture (VF7-Q1,
+//     option B, suivie sur la recommandation) — `exerciceFigeantLaDesignation`, `exerciceFigeantLaFactureSource`.
 // Ce bloc redit chaque refus neuf, dans l'ordre de la base et sous ses mots, pour les écrans de VF6c et VF6d. Les fonctions
 // d'avant (plus haut) restent celles de la production tant que la migration n'y est pas : la fiche d'une pièce (VF1b) les
 // lit, et sur un dossier qui n'a pas basculé elles disent la même chose que celles-ci d'une pièce que rien ne désigne.
@@ -258,18 +262,33 @@ export const JUMELLE_INVERSEE_EXPORTEE: boolean = true
 const MOTS_DU_VIREMENT_MIXTE = "Un encaissement de la facture % est compté par un mouvement classé par ses encaissements, qui "
   + "date son exemplaire : retirer d'abord ce classement."
 
-/** Les refus de `designer_exemplaire_facture` telle que la migration `jumelle_inversee` la remplace, dans son ordre et sous
- * ses mots : le rang 5 ne refuse plus que la MÊME facture (une autre se remplace, VF6-Q1) ; huit rangs suivent le 7. */
+/** Le gel d'une désignation que la facture source désignée fige avant tout ce que la pièce porte (étape VF7e) : les mêmes
+ *  mots aux trois fonctions qui changeraient la désignation — la remplacer, la défaire, la remplacer par une déclaration. */
+const MOTS_DE_LA_DESIGNATION_FIGEE = "Cette pièce est l'exemplaire de la facture %, figée par la validation de l'exercice % : sa "
+  + 'désignation ne change plus.'
+
+/** Les refus de `designer_exemplaire_facture` telle que la migration `jumelle_inversee` la remplace — puis celle du gel des
+ * désignations (VF7e) —, dans son ordre et sous ses mots : le rang 5 ne refuse plus que la MÊME facture (une autre se
+ * remplace, VF6-Q1) ; le rang 4 nomme la facture source qui fige la désignation ; le rang 7 bis ferme une facture source
+ * figée à une pièce déjà marquée ; huit rangs suivent. */
 export const REFUS_DESIGNATION_JUMELLE = [
   { cle: 'acces', modele: 'Accès refusé à ce dossier.', code: '42501' },
   { cle: 'piece_introuvable', modele: 'Pièce introuvable dans ce dossier.', code: 'P0002' },
   { cle: 'pas_une_vente', modele: "Seule une pièce de vente est l'exemplaire d'une facture émise.", code: '22023' },
+  { cle: 'designation_figee', modele: MOTS_DE_LA_DESIGNATION_FIGEE, code: '22023' },
   { cle: 'piece_figee', modele: "Cette pièce porte une écriture validée de l'exercice % : sa désignation ne change plus.", code: '22023' },
   { cle: 'deja_cette_facture', modele: "Cette pièce est déjà l'exemplaire de la facture %.", code: '22023' },
   { cle: 'facture_introuvable', modele: 'Facture introuvable dans ce dossier.', code: 'P0002' },
   {
     cle: 'facture_brouillon',
     modele: "Seule une facture validée a un exemplaire : un brouillon n'est pas encore une facture émise.",
+    code: '22023',
+  },
+  {
+    cle: 'facture_figee',
+    modele: "La facture % est figée par la validation de l'exercice % : elle ne reçoit plus qu'une première désignation, d'une "
+      + "pièce qui n'est encore ni l'exemplaire d'une facture ni déclarée — retirer d'abord sa désignation ou sa déclaration "
+      + "(validée, la pièce se remet d'abord à valider).",
     code: '22023',
   },
   {
@@ -324,6 +343,7 @@ export const REFUS_RETRAIT_DESIGNATION_JUMELLE = [
       + "désignation — désignez l'autre facture, ou déclarez-la vente hors des factures de l'application.",
     code: '22023',
   },
+  { cle: 'designation_figee', modele: MOTS_DE_LA_DESIGNATION_FIGEE, code: '22023' },
   { cle: 'piece_figee', modele: "Cette pièce porte une écriture validée de l'exercice % : sa désignation ne change plus.", code: '22023' },
   { cle: 'virement_mixte', modele: MOTS_DU_VIREMENT_MIXTE, code: '22023' },
 ] as const
@@ -341,6 +361,7 @@ export const REFUS_DECLARATION = [
       + 'leurs ventes.',
     code: '22023',
   },
+  { cle: 'designation_figee', modele: MOTS_DE_LA_DESIGNATION_FIGEE, code: '22023' },
   { cle: 'piece_figee', modele: "Cette pièce porte une écriture validée de l'exercice % : sa déclaration ne change plus.", code: '22023' },
   { cle: 'deja_declaree', modele: "Cette pièce est déjà déclarée vente hors des factures de l'application.", code: '22023' },
   {
@@ -516,6 +537,10 @@ export type PieceMarquable = Pick<Piece, 'id' | 'dossier_id' | 'type_piece' | 's
 /** Une facture émise, telle que ces refus la lisent : sa source compte (G4, le virement mixte). */
 export type FacturePourMarquer = FacturePourExemplaire & Pick<FactureEmise, 'source_de_la_vente'>
 
+/** Une facture émise, telle que les quatre gestes de la fiche la lisent : sa date d'émission aussi, qui dit l'exercice qui la
+ *  fige (le gel des désignations, étape VF7e). */
+export type FacturePourLesGestes = FacturePourMarquer & Pick<FactureEmise, 'date_emission'>
+
 /**
  * Ce que le pont prouve d'une pièce SANS sa désignation — le verdict du jumeau en base, `factures_du_pont` : aucune facture,
  * une seule (de sa nature), ou des preuves qui se contredisent (plusieurs factures, ou une identité de l'autre nature).
@@ -553,7 +578,10 @@ export interface ContexteDesMarques {
   /** L'exercice qui fige la pièce (`exercice_figeant_la_piece`), nul si rien ne la fige. */
   anneeFigeante: number | null
   /** Les factures émises du dossier, lues EN ENTIER. */
-  factures: readonly FacturePourMarquer[]
+  factures: readonly FacturePourLesGestes[]
+  /** Les exercices validés du dossier annoncé (`exercices_valides.annee`), lus EN ENTIER — ce qui fige une facture source
+   *  (VF7e) ; vides hors d'un dossier basculé, où aucune facture n'est source et où rien ne se fige de ce côté. */
+  exercicesValides: readonly number[]
   /** Le dossier annoncé a basculé : ses factures sont la source de leurs ventes (`dossiers.ventes_par_les_factures`). */
   dossierBascule: boolean
   /** Ce que le pont prouve de la pièce, sans sa désignation. */
@@ -568,6 +596,55 @@ function factureDe(factures: readonly FacturePourMarquer[], id: string | null | 
   return id == null ? undefined : factures.find((f) => f.id === id)
 }
 
+// ── Le gel des désignations (étape VF7e) ──────────────────────────────────────────────────────────────────────────────
+// La migration `gel_des_designations` (conception : HISTORIQUE.md, « VF7, LA VALIDATION FIGE LA SOURCE : LA CONCEPTION »,
+// § 3 f ; VF7-Q1, option B, suivie sur la recommandation) : l'exemplaire d'une facture SOURCE ne porte jamais d'écriture
+// (G4), et le gel de la pièce ne le figeait jamais ; la validation de l'exercice de sa facture fige désormais sa
+// désignation. Ces deux fonctions redisent les deux fonctions neuves de la base, sur ce que l'écran a lu.
+
+/**
+ * L'exercice validé qui fige une facture — ou un avoir — SOURCE de sa vente : le premier exercice validé du dossier dont
+ * l'année couvre sa date d'émission, ou la suit (tout ce qui précède le premier exercice validé est figé avec lui) ; nul pour
+ * une facture qui n'est pas source, ou que rien ne fige. `exercice_figeant_la_facture_source` en base.
+ * `exercicesValides` : ceux du dossier de la facture.
+ */
+export function exerciceFigeantLaFactureSource(
+  facture: Pick<FactureEmise, 'source_de_la_vente' | 'date_emission'> | undefined, exercicesValides: readonly number[],
+): number | null {
+  if (facture === undefined || !facture.source_de_la_vente) return null
+  const annee = Number(facture.date_emission.slice(0, 4))
+  const couvrants = exercicesValides.filter((a) => a >= annee)
+  return couvrants.length === 0 ? null : Math.min(...couvrants)
+}
+
+/**
+ * L'exercice qui fige la désignation d'une pièce : le plus ancien de celui qui fige la pièce (`anneeFigeante`, ses écritures
+ * validées et celles du bien qu'elle justifie) et de celui qui fige la facture source qu'elle désigne ; nul si rien ne fige
+ * ni l'une ni l'autre. `exercice_figeant_la_designation` en base.
+ */
+export function exerciceFigeantLaDesignation(
+  piece: Pick<PieceMarquable, 'facture_id'>,
+  contexte: Pick<ContexteDesMarques, 'anneeFigeante' | 'factures' | 'exercicesValides'>,
+): number | null {
+  const parLaFacture = exerciceFigeantLaFactureSource(
+    piece.facture_id == null ? undefined : contexte.factures.find((f) => f.id === piece.facture_id), contexte.exercicesValides)
+  const annees = [contexte.anneeFigeante, parLaFacture].filter((a): a is number => a !== null)
+  return annees.length === 0 ? null : Math.min(...annees)
+}
+
+/** Le refus du rang du gel, aux mots de la base : la facture source nommée quand c'est elle qui fige la désignation avant
+ *  tout ce que la pièce porte, sinon les mots d'hier — ou null quand rien ne la fige. */
+function refusDuGel<R>(
+  piece: Pick<PieceMarquable, 'facture_id'>,
+  contexte: Pick<ContexteDesMarques, 'anneeFigeante' | 'factures' | 'exercicesValides'>,
+  non: (cle: 'designation_figee' | 'piece_figee', ...valeurs: string[]) => R,
+): R | null {
+  const gel = exerciceFigeantLaDesignation(piece, contexte)
+  if (gel === null) return null
+  if (gel !== contexte.anneeFigeante) return non('designation_figee', numeroDe(contexte.factures, piece.facture_id ?? ''), String(gel))
+  return non('piece_figee', String(gel))
+}
+
 /** La facture qui n'est pas source et dont un encaissement est compté par le virement mixte : le geste attend le retrait
  *  de ce classement. */
 function datee(contexte: Pick<ContexteDesMarques, 'factures' | 'facturesDuVirementMixte'>, id: string | null | undefined): string | null {
@@ -580,8 +657,8 @@ function datee(contexte: Pick<ContexteDesMarques, 'factures' | 'facturesDuVireme
 
 /**
  * POURQUOI CETTE PIÈCE NE SE DÉSIGNERAIT PAS EXEMPLAIRE DE CETTE FACTURE — ou ne la remplacerait pas —, dit avant le clic,
- * dans l'ordre de `designer_exemplaire_facture` (migration `jumelle_inversee`) et sous ses mots, sauf l'accès. Null : la
- * base l'accepterait, et remplacerait ce que la pièce désignait ou sa déclaration.
+ * dans l'ordre de `designer_exemplaire_facture` (migrations `jumelle_inversee`, puis `gel_des_designations`) et sous ses
+ * mots, sauf l'accès. Null : la base l'accepterait, et remplacerait ce que la pièce désignait ou sa déclaration.
  */
 export function refusDeLaDesignationMarquee(
   piece: PieceMarquable | null,
@@ -589,10 +666,12 @@ export function refusDeLaDesignationMarquee(
   contexte: ContexteDesMarques,
 ): RefusExemplaire<CleRefusDesignationJumelle> | null {
   const non = (cle: CleRefusDesignationJumelle, ...valeurs: string[]) => dire(REFUS_DESIGNATION_JUMELLE, cle, ...valeurs)
-  // 2. La pièce, dans le dossier annoncé ; 3. une vente ; 4. le gel.
+  // 2. La pièce, dans le dossier annoncé ; 3. une vente ; 4. le gel — la facture source qu'elle désigne nommée quand c'est
+  // elle qui le fige (VF7e).
   if (piece == null || piece.dossier_id !== contexte.dossierId) return non('piece_introuvable')
   if (piece.type_piece !== 'vente') return non('pas_une_vente')
-  if (contexte.anneeFigeante != null) return non('piece_figee', String(contexte.anneeFigeante))
+  const gel = refusDuGel(piece, contexte, non)
+  if (gel !== null) return gel
   // 5. Déjà l'exemplaire de CETTE facture ; d'une autre, elle la remplace.
   const designee = piece.facture_id ?? null
   if (designee !== null && designee === factureId) return non('deja_cette_facture', numeroDe(contexte.factures, designee))
@@ -600,6 +679,12 @@ export function refusDeLaDesignationMarquee(
   const facture = contexte.factures.find((f) => f.id === factureId && f.dossier_id === contexte.dossierId)
   if (factureId == null || facture === undefined) return non('facture_introuvable')
   if (facture.statut !== 'validee') return non('facture_brouillon')
+  // 7 bis (VF7e). Le côté de la facture : une facture source figée ne reçoit plus qu'une PREMIÈRE désignation, celle d'une
+  // pièce que rien ne marque (VF7-Q1, option B). LA CONDITION QUI PORTE VF7-Q1 est `dejaMarquee`, comme `v_deja_marquee`
+  // en base : l'option (A), tout se fige, la remplace par `true` ; l'option (C), rien ne se fige de ce côté, par `false`.
+  const dejaMarquee = designee !== null || (piece.vente_hors_des_factures ?? false)
+  const gelDeLaFacture = exerciceFigeantLaFactureSource(facture, contexte.exercicesValides)
+  if (gelDeLaFacture !== null && dejaMarquee) return non('facture_figee', facture.numero ?? SANS_NUMERO, String(gelDeLaFacture))
   // 8. et 9. Dans un dossier basculé, le pont.
   if (contexte.dossierBascule) {
     if (contexte.pont.genre === 'une' && contexte.pont.factureId !== factureId) {
@@ -625,19 +710,21 @@ export function refusDeLaDesignationMarquee(
 
 // ── Défaire ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** POURQUOI CETTE DÉSIGNATION NE SE DÉFERAIT PAS, dans l'ordre de `defaire_exemplaire_facture` (migration
- *  `jumelle_inversee`) et sous ses mots, sauf l'accès. Null : la base l'accepterait. */
+/** POURQUOI CETTE DÉSIGNATION NE SE DÉFERAIT PAS, dans l'ordre de `defaire_exemplaire_facture` (migrations
+ *  `jumelle_inversee`, puis `gel_des_designations`) et sous ses mots, sauf l'accès. Null : la base l'accepterait. */
 export function refusDuRetraitMarque(
   piece: PieceMarquable | null,
-  contexte: Pick<ContexteDesMarques, 'dossierId' | 'anneeFigeante' | 'factures' | 'dossierBascule' | 'facturesDuVirementMixte'>,
+  contexte: Pick<ContexteDesMarques, 'dossierId' | 'anneeFigeante' | 'factures' | 'exercicesValides' | 'dossierBascule'
+    | 'facturesDuVirementMixte'>,
 ): RefusExemplaire<CleRefusRetraitDesignationJumelle> | null {
   const non = (cle: CleRefusRetraitDesignationJumelle, ...valeurs: string[]) => dire(REFUS_RETRAIT_DESIGNATION_JUMELLE, cle, ...valeurs)
   if (piece == null || piece.dossier_id !== contexte.dossierId) return non('piece_introuvable')
   const designee = piece.facture_id ?? null
   if (designee === null) return non('pas_designee')
-  // 4. Validée dans un dossier basculé, elle se remplace (VF6-Q1).
+  // 4. Validée dans un dossier basculé, elle se remplace (VF6-Q1) ; 5. le gel (VF7e : la facture source qui le fige, nommée).
   if (piece.statut === 'validee' && contexte.dossierBascule) return non('validee_dans_un_dossier_bascule')
-  if (contexte.anneeFigeante != null) return non('piece_figee', String(contexte.anneeFigeante))
+  const gel = refusDuGel(piece, contexte, non)
+  if (gel !== null) return gel
   const quittee = datee(contexte, designee)
   if (quittee !== null) return non('virement_mixte', quittee)
   return null
@@ -650,13 +737,16 @@ export function refusDuRetraitMarque(
  *  désignation. */
 export function refusDeLaDeclaration(
   piece: PieceMarquable | null,
-  contexte: Pick<ContexteDesMarques, 'dossierId' | 'anneeFigeante' | 'factures' | 'dossierBascule' | 'pont' | 'facturesDuVirementMixte'>,
+  contexte: Pick<ContexteDesMarques, 'dossierId' | 'anneeFigeante' | 'factures' | 'exercicesValides' | 'dossierBascule' | 'pont'
+    | 'facturesDuVirementMixte'>,
 ): RefusExemplaire<CleRefusDeclaration> | null {
   const non = (cle: CleRefusDeclaration, ...valeurs: string[]) => dire(REFUS_DECLARATION, cle, ...valeurs)
   if (piece == null || piece.dossier_id !== contexte.dossierId) return non('piece_introuvable')
   if (piece.type_piece !== 'vente') return non('pas_une_vente')
   if (!contexte.dossierBascule) return non('dossier_non_bascule')
-  if (contexte.anneeFigeante != null) return non('piece_figee', String(contexte.anneeFigeante))
+  // 5. Le gel : déclarer remplacerait la désignation, que la facture source qu'elle désigne fige peut-être (VF7e).
+  const gel = refusDuGel(piece, contexte, non)
+  if (gel !== null) return gel
   if (piece.vente_hors_des_factures ?? false) return non('deja_declaree')
   // 7. Le pont la rattache à une facture : elle s'en désigne l'exemplaire ; 8. ses preuves se contredisent.
   if (contexte.pont.genre === 'une') return non('pont_une_facture', numeroDe(contexte.factures, contexte.pont.factureId))
@@ -670,13 +760,16 @@ export function refusDeLaDeclaration(
  *  mots, sauf l'accès. Null : la base l'accepterait. */
 export function refusDuRetraitDeLaDeclaration(
   piece: PieceMarquable | null,
-  contexte: Pick<ContexteDesMarques, 'dossierId' | 'anneeFigeante' | 'dossierBascule'>,
+  contexte: Pick<ContexteDesMarques, 'dossierId' | 'anneeFigeante' | 'factures' | 'exercicesValides' | 'dossierBascule'>,
 ): RefusExemplaire<CleRefusRetraitDeclaration> | null {
   const non = (cle: CleRefusRetraitDeclaration, ...valeurs: string[]) => dire(REFUS_RETRAIT_DECLARATION, cle, ...valeurs)
   if (piece == null || piece.dossier_id !== contexte.dossierId) return non('piece_introuvable')
   if (!(piece.vente_hors_des_factures ?? false)) return non('pas_declaree')
   if (piece.statut === 'validee' && contexte.dossierBascule) return non('validee_dans_un_dossier_bascule')
-  if (contexte.anneeFigeante != null) return non('piece_figee', String(contexte.anneeFigeante))
+  // 5. Le gel (VF7e : la fonction de la désignation, comme en base) — une pièce déclarée ne désigne aucune facture : c'est
+  // celui de la pièce, sous les mots d'hier.
+  const gel = exerciceFigeantLaDesignation(piece, contexte)
+  if (gel !== null) return non('piece_figee', String(gel))
   return null
 }
 
