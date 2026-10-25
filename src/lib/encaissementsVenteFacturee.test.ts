@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { TEXTE_ESSAI_VENTES_FACTUREES, correspondAuModele, etapesDeLEssai, refusExigesParLEssai } from '../test/essaiVentesFacturees'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import {
+  ANNEES_ILLISIBLES, MOYENS_ENCAISSEMENT, MOYENS_SUR_LEUR_CONTREPARTIE, REFUS_GARDE_FRONTIERE,
   REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT, REFUS_GARDE_MOUVEMENTS, REFUS_RATTACHEMENT, REFUS_RETRAIT,
   REFUS_RETRAIT_CLASSEMENT, debitObligatoire, exemplaireUnique, factureSansExemplaire, justifieSonMouvement, mouvementLibre,
   paireNonDeclaree, partsEncaissees, refusClassement,
   refusContrePassation, refusContrePassationAvantLaDate, refusContrePassationVente, refusDuClassementDuReleve,
-  refusEnregistrement, refusEnregistrementVente, refusRattachement, refusRetrait, refusRetraitDuClassement, refusRetraitVente,
+  rattachableApresLaFrontiere, refusEnregistrement, refusEnregistrementVente, refusRattachement, refusRetrait,
+  refusRetraitDuClassement, refusRetraitVente,
   type ContexteFacture, type ContexteVente, type EncaissementDuReleve, type EncaissementLu, type EncaissementPourContrePassation,
-  type ExemplaireLu,
+  type EncaissementPourRattachement, type ExemplaireLu,
   type FactureDuDossier, type FacturePourEncaissement, type LigneDeFacture, type MouvementClasse, type SaisieEncaissement,
 } from './encaissementsFactures'
 
@@ -75,10 +77,10 @@ function mouvement(o: Partial<MouvementClasse> = {}): MouvementClasse {
   }
 }
 
-function encaissement(o: Partial<EncaissementPourContrePassation> = {}): EncaissementPourContrePassation {
+function encaissement(o: Partial<EncaissementPourRattachement> = {}): EncaissementPourRattachement {
   return {
     id: 'e1', dossier_id: D, facture_id: 'f1', montant: 100, ligne_bancaire_id: null, annule_id: null, retire_le: null,
-    date_encaissement: '2027-10-15', ...o,
+    date_encaissement: '2027-10-15', moyen: 'virement', ...o,
   }
 }
 
@@ -571,19 +573,22 @@ describe('paireNonDeclaree — la paire d’un encaissement jamais déclaré et 
 
 describe('refusRattachement — rattacher_mouvement_encaissement, une fois, de nul à un mouvement', () => {
   it('un encaissement, rang par rang, chaque refus encore en faute derrière celui qu’on corrige', () => {
-    let encaissements: EncaissementPourContrePassation[] = [encaissement({ dossier_id: 'd2', retire_le: '2027-10-20T10:00:00Z', ligne_bancaire_id: 'm9', facture_id: 'f2', date_encaissement: '2026-06-01' })]
+    // Daté de l'exercice 2026 validé, par un autre moyen : le rang 6 (étape VF7a). Devenu chèque, il se rattache encore, au
+    // mouvement d'après : la frontière se juge alors sur le mouvement (le rang 9).
+    let encaissements: EncaissementPourRattachement[] = [encaissement({ dossier_id: 'd2', retire_le: '2027-10-20T10:00:00Z', ligne_bancaire_id: 'm9', facture_id: 'f2', date_encaissement: '2026-06-01', moyen: 'autre' })]
     let ligne: string | null = null
-    let mouvements = [mouvement({ id: 'm1', montant: -10, statut: 'rapprochee', piece_id: 'p' }), mouvement({ id: 'm2', montant: 98, statut: 'rapprochee', piece_id: 'p' })]
-    let v = vente({ anneesValidees: [2026] })
+    let mouvements = [mouvement({ id: 'm1', date: '2026-12-31', montant: -10, statut: 'rapprochee', piece_id: 'p' }), mouvement({ id: 'm2', montant: 98, statut: 'rapprochee', piece_id: 'p' })]
+    const v = vente({ anneesValidees: [2026] })
     const pris = encaissement({ id: 'e2', montant: 98, ligne_bancaire_id: 'm2' })
     const etapes: [string, () => void][] = [
       ['encaissement_introuvable', () => { encaissements = [{ ...encaissements[0], dossier_id: D }] }],
       ['retire', () => { encaissements = [{ ...encaissements[0], retire_le: null }] }],
       ['deja_rattache', () => { encaissements = [{ ...encaissements[0], ligne_bancaire_id: null }] }],
       ['facture_non_source', () => { encaissements = [{ ...encaissements[0], facture_id: 'f1' }] }],
-      ['frontiere', () => { v = vente() }],
+      ['frontiere', () => { encaissements = [{ ...encaissements[0], moyen: 'cheque' }] }],
       ['mouvement_absent', () => { ligne = 'inconnu' }],
       ['mouvement_hors_dossier', () => { ligne = 'm1' }],
+      ['mouvement_fige', () => { mouvements = [{ ...mouvements[0], date: '2027-01-05' }, mouvements[1]] }],
       ['mouvement_debit', () => { ligne = 'm2' }],
       ['mouvement_classe', () => { mouvements = [mouvements[0], { ...mouvements[1], statut: 'non_rapprochee', piece_id: null }]; encaissements = [...encaissements, pris] }],
       ['mouvement_deja_pris', () => { encaissements = [encaissements[0], { ...pris, facture_id: 'f3' }] }],
@@ -600,9 +605,16 @@ describe('refusRattachement — rattacher_mouvement_encaissement, une fois, de n
   })
 
   it('les mots : la frontière, le dépassement, ce que le mouvement justifierait — cet encaissement compris s’il le justifie', () => {
-    const e = encaissement({ date_encaissement: '2026-06-01' })
+    const e = encaissement({ date_encaissement: '2026-06-01', moyen: 'compensation' })
     expect(refusRattachement(D, 'e1', 'm1', [e], [mouvement()], vente({ anneesValidees: [2026] }))?.message)
       .toBe("L'exercice 2026 est validé : cet encaissement ne se rattache plus à un mouvement.")
+    expect(refusRattachement(D, 'e1', 'm1', [encaissement({ date_encaissement: '2026-12-30', moyen: 'cheque' })],
+      [mouvement({ date: '2026-12-31' })], vente({ anneesValidees: [2026] }))?.message)
+      .toBe("L'exercice 2026 est validé : ce mouvement ne se cite plus.")
+    // L'exercice 2025 figé par la validation de 2026 : la phrase d'`exercice_fige`.
+    expect(refusRattachement(D, 'e1', 'm1', [encaissement({ date_encaissement: '2025-12-30' })],
+      [mouvement({ date: '2025-12-31' })], vente({ anneesValidees: [2026] }))?.message)
+      .toBe("L'exercice 2025 est figé par la validation de l'exercice 2026 : ce mouvement ne se cite plus.")
     const autre = encaissement({ id: 'e2', facture_id: 'f3', montant: 1300, ligne_bancaire_id: 'm1' })
     expect(refusRattachement(D, 'e1', 'm1', [encaissement(), autre], [mouvement()], vente())).toEqual({
       cle: 'mouvement_depasse',
@@ -615,12 +627,46 @@ describe('refusRattachement — rattacher_mouvement_encaissement, une fois, de n
     expect(refusRattachement(D, 'e1', 'm1', [encaissement({ montant: 57.5 }), autre], [mouvement()], vente())).toBeNull()
   })
 
+  it('daté d’un exercice validé, il se rattache encore au mouvement d’après, sauf par compensation ou par un autre moyen (VF7a)', () => {
+    const v = vente({ anneesValidees: [2026] })
+    const janvier = mouvement({ date: '2027-01-05', montant: 100 })
+    for (const { moyen } of MOYENS_ENCAISSEMENT) {
+      const fige = encaissement({ date_encaissement: '2026-12-30', moyen })
+      expect(refusRattachement(D, 'e1', 'm1', [fige], [janvier], v)?.cle ?? 'aucun', moyen)
+        .toBe(MOYENS_SUR_LEUR_CONTREPARTIE.includes(moyen) ? 'frontiere' : 'aucun')
+      // Le lendemain de la frontière, tout moyen se rattache ; un mouvement figé, aucun.
+      expect(refusRattachement(D, 'e1', 'm1', [{ ...fige, date_encaissement: '2027-01-02' }], [janvier], v), moyen).toBeNull()
+      expect(refusRattachement(D, 'e1', 'm1', [{ ...fige, date_encaissement: '2027-01-02' }], [{ ...janvier, date: '2026-12-31' }], v)?.cle, moyen)
+        .toBe('mouvement_fige')
+    }
+    expect([...MOYENS_SUR_LEUR_CONTREPARTIE]).toEqual(['compensation', 'autre'])
+    // Une contre-passation figée sans mouvement, de même, sur un débit d'après.
+    const c = encaissement({ id: 'c1', montant: -100, annule_id: 'e0', date_encaissement: '2026-12-30', moyen: 'cheque' })
+    const origine = encaissement({ id: 'e0', date_encaissement: '2026-12-20', moyen: 'cheque' })
+    const debit = mouvement({ id: 'm_debit', date: '2027-01-05', montant: -100 })
+    expect(refusRattachement(D, 'c1', 'm_debit', [origine, c], [debit], v)).toBeNull()
+    expect(refusRattachement(D, 'c1', 'm_debit', [origine, { ...c, moyen: 'autre' }], [debit], v)?.cle).toBe('frontiere')
+    // Le client ne lit pas les exercices validés : le module se tait, la base juge (et le client ne rattache pas).
+    const client = vente({ anneesValidees: ANNEES_ILLISIBLES })
+    expect(refusRattachement(D, 'e1', 'm1', [encaissement({ date_encaissement: '2026-12-30', moyen: 'autre' })],
+      [{ ...janvier, date: '2026-12-31' }], client)).toBeNull()
+    // Ce que la fenêtre des encaissements en dit au cabinet : le chèque figé, sans mouvement, d'une facture source, seul.
+    const cheque = encaissement({ date_encaissement: '2026-12-30', moyen: 'cheque' })
+    expect(rattachableApresLaFrontiere(cheque, v)).toBe(true)
+    for (const [cas, e, contexte] of [
+      ['par un autre moyen', { ...cheque, moyen: 'autre' }, v], ['retiré', { ...cheque, retire_le: '2027-01-02T10:00:00Z' }, v],
+      ['une contre-passation', { ...cheque, annule_id: 'e0' }, v], ['qui cite déjà un mouvement', { ...cheque, ligne_bancaire_id: 'm1' }, v],
+      ['le lendemain de la frontière', { ...cheque, date_encaissement: '2027-01-02' }, v],
+      ['une facture qui n’est pas source', { ...cheque, facture_id: 'f2' }, v], ['côté client', cheque, client],
+    ] as const) expect(rattachableApresLaFrontiere(e, contexte), cas).toBe(false)
+  })
+
   it('une contre-passation : un débit, libre, que ses contre-passations ne dépassent pas ; le mouvement d’origine, libre et pas dépassé', () => {
     const origine = encaissement({ id: 'e0', montant: 100, ligne_bancaire_id: 'm1' })
     const c = encaissement({ id: 'c1', montant: -100, annule_id: 'e0' })
     const credit = mouvement({ id: 'm1', montant: 100 })
     const debit = mouvement({ id: 'm_debit', montant: -100 })
-    const r = (o: { enc?: EncaissementPourContrePassation[]; m?: MouvementClasse[]; ligne?: string } = {}) =>
+    const r = (o: { enc?: EncaissementPourRattachement[]; m?: MouvementClasse[]; ligne?: string } = {}) =>
       refusRattachement(D, 'c1', o.ligne ?? 'm_debit', o.enc ?? [origine, c], o.m ?? [credit, debit], vente())
     expect(r()).toBeNull()
     expect(r({ ligne: 'm1' })?.cle).toBe('mouvement_credit')
@@ -883,16 +929,22 @@ describe('l’essai de la vente facturée, confronté au module et au texte des 
   // du virement mixte (étape VF5h2, migration registre_virement_mixte) ; celui que la migration contre_passation_banque
   // ajoute à la contre-passation — un débit cité sans « Banque » —, en 42501.
   const venteFacturee = (r: object) => ('venteFacturee' in r && r.venteFacturee === true) || ('virementMixte' in r && r.virementMixte === true)
+  // La garde de la frontière des encaissements (étape VF7a) : chacun de ses refus, sauf celui que la garde des encaissements
+  // rend hors d'atteinte — elle passe avant, et refuse toute autre modification, et toute suppression, d'un encaissement :
+  // « cet encaissement ne change plus » se joue sur la réplique, la garde d'hier désactivée (HISTORIQUE.md, « LA FRONTIÈRE
+  // DES ENCAISSEMENTS, EN BASE »).
+  const HORS_D_ATTEINTE_DE_L_ESSAI = ['encaissement_fige']
   const NEUFS: readonly (readonly [string, string])[] = [
     ...[...REFUS_ENREGISTREMENT, ...REFUS_RETRAIT, ...REFUS_CONTRE_PASSATION].filter(venteFacturee).map((r) => [r.modele, '22023'] as const),
     ...REFUS_CONTRE_PASSATION.filter((r) => 'contrePassationBanque' in r).map((r) => [r.modele, '42501'] as const),
     ...[...REFUS_RATTACHEMENT, ...REFUS_CLASSEMENT, ...REFUS_RETRAIT_CLASSEMENT, ...REFUS_GARDE_MOUVEMENTS].map((r) => [r.modele, r.code] as const),
+    ...REFUS_GARDE_FRONTIERE.filter((r) => !HORS_D_ATTEINTE_DE_L_ESSAI.includes(r.cle)).map((r) => [r.modele, r.code] as const),
   ]
   const FONCTIONS = [
     'garder_mouvement_reserve', 'garder_encaissement_facture', 'enregistrer_encaissement', 'retirer_encaissement',
     'annuler_encaissement', 'rattacher_mouvement_encaissement', 'classer_mouvement_par_encaissements',
     'retirer_classement_par_encaissements', 'garder_ventes_par_les_factures', 'fixer_source_de_la_vente',
-    'garder_ecriture_vente_facturee', 'garder_factures_validees',
+    'garder_ecriture_vente_facturee', 'garder_factures_validees', 'garder_frontiere_des_encaissements',
   ]
   const raiseSql = FONCTIONS.flatMap((nom) => {
     const sql = derniereDefinitionSql(nom)
@@ -904,12 +956,24 @@ describe('l’essai de la vente facturée, confronté au module et au texte des 
     expect(etapesDeLEssai().length).toBeGreaterThan(140)
     expect(refus.length).toBeGreaterThan(80)
     // Quarante-neuf depuis l'étape VF5h : le rang 7 du classement, l'exemplaire à désigner ; cinquante-deux depuis l'étape
-    // VF5h2 : les rangs 18, 8 et 21 d'enregistrer, de retirer et de contre-passer.
-    expect(NEUFS.length).toBe(52)
+    // VF5h2 : les rangs 18, 8 et 21 d'enregistrer, de retirer et de contre-passer ; soixante depuis l'étape VF7a : le rang 9
+    // du rattachement, et sept des huit refus de la garde de la frontière.
+    expect(NEUFS.length).toBe(60)
   })
 
   it('chaque refus neuf du module y est exigé de la base, sous ses mots et son code', () => {
     for (const [modele, code] of NEUFS) expect(exige(modele, code), `${code} ${modele}`).toBe(true)
+  })
+
+  it('le refus que l’essai ne peut pas atteindre, il ne l’exige pas : la garde des encaissements refuse avant', () => {
+    for (const cle of HORS_D_ATTEINTE_DE_L_ESSAI) {
+      const r = REFUS_GARDE_FRONTIERE.find((x) => x.cle === cle) as (typeof REFUS_GARDE_FRONTIERE)[number]
+      expect(exige(r.modele, r.code), cle).toBe(false)
+    }
+    // Ce qu'elle refuse avant : toute autre modification d'un encaissement, et sa suppression — sous les mots d'hier.
+    const garde = derniereDefinitionSql('garder_encaissement_facture')
+    expect(garde).toContain("raise exception 'Un encaissement ne se supprime pas")
+    expect(garde).toContain("raise exception 'Un encaissement ne se modifie pas")
   })
 
   it('chaque refus qu’il exige est dans le texte d’une fonction, sous le même code, ou nomme une contrainte de l’export', () => {

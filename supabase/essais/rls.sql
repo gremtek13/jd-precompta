@@ -508,6 +508,16 @@
 -- transaction annulée : le super-administrateur y pose et y lit une ligne de restauration, le client d'essai, un compte
 -- rattaché à rien et l'anonyme n'en lisent rien et n'y écrivent pas (42501), rien n'est resté ; la RLS active, les deux
 -- policies à `authenticated` seul (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
+--
+-- 25/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (chantier EC-Q3, étape VF7a : migration
+-- `frontiere_des_encaissements`, préparée, non appliquée), qui ne crée ni ne change aucune policy, mais une garde aux
+-- droits du propriétaire que les fonctions du client « Ventes » atteignent : le bloc FE (FE1 à FE5, M-FE1 à M-FE3) la
+-- rejoue, sa raison jugée, et l'ordre des déclencheurs qui la tient hors de portée de l'anonyme. Joué ENTIER par psql
+-- sur la réplique de l'étape (signature.sql : les neuf familles, et l'historique, égaux à la production à 148
+-- migrations ; puis `registre_virement_mixte`, de l'étape VF5h2, et le journal semé) : sans la migration, 47 lignes de
+-- verdict (la ligne FE « EN ATTENTE » de plus), 0 en faute, 43 mutations sur 43 qui mordent ; avec elle, 52 lignes,
+-- 0 en faute, 46 mutations sur 46 — seules les lignes FE diffèrent. Le passage en production suivra l'application et
+-- se notera ici.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -2042,6 +2052,201 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', 'SV6. aucune policy de mise à jour n''atteint le seau des ventes (lecture du catalogue)',
     'cible', 'storage.objects', 'observe', n || ' policy(s)', 'ok', n = 0);
   verdicts := verdicts || jsonb_build_object('controle', 'SV. le jeu d''essai du seau des ventes s''est construit', 'cible', 'ventes',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ═══ La frontière des encaissements (chantier EC-Q3, étape VF7a) ═══════════════════════════════════════════════
+--
+-- Depuis la migration `frontiere_des_encaissements`, une garde aux droits du propriétaire
+-- (`garder_frontiere_des_encaissements`) refuse, pour l'encaissement d'une facture SOURCE, ce que la frontière d'un
+-- exercice validé fige — par n'importe quel chemin, les fonctions que le client « Ventes » appelle comprises. Elle
+-- contourne la RLS : elle se rejoue, et son refus se juge à sa RAISON.
+--   FE1. Le client qui porte « Ventes » et « Banque » ne date pas, par sa fonction, un encaissement dans un exercice
+--        validé : refusé (22023), sous la raison de la frontière.
+--   FE2. Ni n'y cite un mouvement que la frontière fige : la fonction le laisse passer, la garde le refuse (23514), sous
+--        sa raison.
+--   FE3. Le contrôle POSITIF : le même encaissement, daté après la frontière, sans mouvement, s'enregistre.
+--   FE4. La garde ne s'exécute pas en RPC, ni pour l'anonyme ni pour un compte connecté (lecture du catalogue).
+--   FE5. L'anonyme et un compte rattaché à rien qui nomment la facture source, en insertion directe : le refus de la garde
+--        d'hier, qui lit la facture à LEURS droits — jamais la raison de la frontière, qui leur dirait que la facture est
+--        source et qu'un exercice est validé. C'est pourquoi la garde de la frontière passe APRÈS celle d'hier (l'ordre des
+--        noms) : une insertion se juge avant la RLS.
+-- Le jeu, dans le dossier du client, le temps d'une sous-transaction annulée : le dossier bascule ; le relevé reçoit un
+-- crédit au 31 décembre 2025 ; le chef valide une facture source de 2025 ; puis le propriétaire valide l'exercice 2025.
+-- Trois mutations, qui doivent mordre : M-FE1 (avant l'exercice validé, la date passe), M-FE2 (un mouvement d'après la
+-- frontière se cite), M-FE3 (la garde de la frontière renommée pour passer AVANT celle d'hier : l'anonyme lit la raison
+-- de la frontière). Avant la migration, une ligne dit que la frontière attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  raison_date text := 'L''exercice 2025 est validé : un encaissement de cette facture ne s''y date plus.';
+  raison_mouvement text := 'L''exercice 2025 est validé : ce mouvement ne se cite plus.';
+  repartition jsonb := '[{"taux":20,"montant":1}]';
+  f_source uuid; m_fige uuid; m_apres uuid; profil text; n bigint;
+  accepte boolean; motif text; message text; erreur text; construit boolean := false; obs text;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.garder_frontiere_des_encaissements()') is null then
+    insert into rls_verdict values ('FE. la frontière des encaissements : EN ATTENTE de la migration frontiere_des_encaissements',
+      'garder_frontiere_des_encaissements', 'absente : la frontière se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu ──
+    update memberships set droit_ventes = true, droit_banque = true where user_id = client;
+    update dossiers set ventes_par_les_factures = true where id = dossier_du_client;
+    insert into lignes_bancaires (dossier_id, date, libelle, montant, statut)
+      values (dossier_du_client, '2025-12-31', 'ESSAI RLS FE', 10, 'non_rapprochee') returning id into m_fige;
+    insert into lignes_bancaires (dossier_id, date, libelle, montant, statut)
+      values (dossier_du_client, '2026-01-05', 'ESSAI RLS FE', 10, 'non_rapprochee') returning id into m_apres;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
+      '{"tiers_nom":"ESSAI RLS FE","date_emission":"2025-06-15","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
+    reset role;
+
+    -- M-FE1 : avant l'exercice validé, le client date l'encaissement du 30 décembre — la frontière seule le refusera.
+    accepte := false;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_encaissement(dossier_du_client, f_source, '2025-12-30', 1, 'cheque', null, repartition);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then null;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-FE1 — FE1 rejoué avant que l''exercice 2025 soit validé',
+      'attendu', 'l''encaissement du 30 décembre accepté', 'observe', case when accepte then 'accepté' else 'refusé' end, 'mord', accepte);
+
+    insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit,
+      total_credit, empreinte, declaration)
+      values (dossier_du_client, 2025, now(), chef, (select d.mode_comptable from dossiers d where d.id = dossier_du_client),
+        0, 0, 0, 0, repeat('f', 64), '{}');
+    construit := true;
+
+    -- FE1 : la date, par sa fonction.
+    accepte := false; motif := null; message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_encaissement(dossier_du_client, f_source, '2025-12-30', 1, 'cheque', null, repartition);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'FE1. le client « Ventes » ne date pas, par sa fonction, un encaissement dans un exercice validé — la raison dite',
+      'cible', 'enregistrer_encaissement', 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+      'ok', not accepte and motif = '22023' and message = raison_date);
+
+    -- FE2 : un mouvement figé cité, après la frontière — la garde.
+    accepte := false; motif := null; message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_encaissement(dossier_du_client, f_source, '2026-01-05', 1, 'virement', m_fige, repartition);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'FE2. … ni n''y cite un mouvement figé : la garde le refuse, la raison dite',
+      'cible', 'garder_frontiere_des_encaissements', 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+      'ok', not accepte and motif = '23514' and message = raison_mouvement);
+
+    -- M-FE2 : un mouvement d'après la frontière se cite.
+    accepte := false;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_encaissement(dossier_du_client, f_source, '2026-01-05', 1, 'virement', m_apres, repartition);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then null;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-FE2 — FE2 rejoué sur un mouvement du 5 janvier 2026',
+      'attendu', 'l''encaissement accepté', 'observe', case when accepte then 'accepté' else 'refusé' end, 'mord', accepte);
+
+    -- FE3 : le contrôle positif.
+    accepte := false; motif := null; message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_encaissement(dossier_du_client, f_source, '2026-01-05', 1, 'virement', null, repartition);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'FE3. le contrôle positif : daté après la frontière, sans mouvement, il s''enregistre',
+      'cible', 'enregistrer_encaissement', 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+      'ok', accepte and motif = 'P0001');
+
+    -- FE5 : l'anonyme et un compte rattaché à rien, en insertion directe, ne lisent pas la raison de la frontière.
+    foreach profil in array array['anon', 'inconnu'] loop
+      accepte := false; motif := null; message := null;
+      begin
+        execute format('set local role %I', case profil when 'anon' then 'anon' else 'authenticated' end);
+        perform set_config('request.jwt.claims', case profil when 'anon' then '{"role":"anon"}'
+          else json_build_object('sub', inconnu, 'role', 'authenticated')::text end, true);
+        insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen)
+          values (dossier_du_client, f_source, '2025-12-30', 1, 'cheque');
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'FE5. l''anonyme et un compte rattaché à rien : le refus de la garde d''hier, jamais la raison de la frontière',
+        'cible', profil, 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+        'ok', not accepte and motif = '23514' and message like 'Seule une facture validée de son dossier reçoit un encaissement%');
+    end loop;
+
+    -- M-FE3 : la garde de la frontière renommée pour passer AVANT celle d'hier — l'anonyme lirait sa raison.
+    obs := null;
+    begin
+      alter trigger encaissements_factures_gardes_frontiere on public.encaissements_factures rename to encaissements_factures_a_frontiere;
+      begin
+        set local role anon;
+        perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+        insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen)
+          values (dossier_du_client, f_source, '2025-12-30', 1, 'cheque');
+      exception when others then obs := sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then null;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-FE3 — FE5 rejoué, la garde de la frontière passant avant celle d''hier',
+      'attendu', 'l''anonyme lit la raison de la frontière', 'observe', coalesce(obs, 'accepté'), 'mord', obs = raison_date);
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+
+  -- FE4 : la garde hors de portée en RPC (lecture du catalogue).
+  select count(*) into n from pg_proc p
+   where p.oid = to_regprocedure('public.garder_frontiere_des_encaissements()') and p.prosecdef
+     and not has_function_privilege('anon', p.oid, 'execute') and not has_function_privilege('authenticated', p.oid, 'execute');
+  verdicts := verdicts || jsonb_build_object('controle', 'FE4. la garde de la frontière ne s''exécute pas en RPC (lecture du catalogue)',
+    'cible', 'garder_frontiere_des_encaissements', 'observe', case when n = 1 then 'security definer, ni anon ni authenticated' else 'EXÉCUTABLE OU ABSENTE' end,
+    'ok', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'FE. le jeu d''essai de la frontière s''est construit', 'cible', 'frontière',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 

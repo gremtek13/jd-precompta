@@ -19,8 +19,11 @@ import { estFigee } from './validationExercice'
 //     par le relevé : virement, prélèvement, chèque, carte, effet. Les espèces, la compensation et « autre » n'ont pas de
 //     mouvement à attendre ; une contre-passation non plus (elle ne se compte pas parmi les ENCAISSEMENTS, et sans mouvement
 //     elle dit, pour la base, que l'encaissement n'a pas eu lieu).
-// Ni l'un ni l'autre d'un exercice que la validation fige : rien ne les classe ni ne les rattache plus (les refus de la base),
-// et VF7 rendra les deux points préalables à la validation — d'ici là, ils sont en « attention ».
+// Un mouvement daté d'un exercice que la validation fige ne se compte plus : rien ne le classe plus (les refus de la base).
+// Un encaissement qui en est daté, si : depuis l'étape VF7a (migration `frontiere_des_encaissements`), il se rattache encore
+// au mouvement d'après qui le paie — le chèque remis le 30 décembre, crédité en janvier —, son écriture inchangée ; la
+// compensation et « autre », qui s'écrivent sur leur compte de contrepartie et ne se rattachent plus, ne sont pas des
+// moyens du relevé. VF7 rendra les deux points préalables à la validation — d'ici là, ils sont en « attention ».
 //
 // LE TOUT OU RIEN : la lecture est celle de l'onglet Banque (lib/ecrituresVentesFactureesLecture.ts), lue en entier ou
 // « incomplète ». Incomplète, les deux points se TAISENT — un silence que l'écran dit par son bandeau — et rien n'est retiré
@@ -39,7 +42,7 @@ export type VentesDeLaChecklist =
     etat: 'lue'
     /** Les mouvements réservés, hors des exercices figés, dans l'ordre du relevé lu. */
     reserves: readonly MouvementDeVente[]
-    /** Les encaissements qui attendent leur mouvement, hors des exercices figés, dans l'ordre du registre lu. */
+    /** Les encaissements qui attendent leur mouvement, figés ou non (étape VF7a), dans l'ordre du registre lu. */
     sansMouvement: readonly EncaissementDuMouvementLu[]
     /** Le numéro de chaque facture du dossier, par identifiant : le détail du point les nomme. */
     numeros: ReadonlyMap<string, string>
@@ -63,9 +66,9 @@ export function ventesDeLaChecklist(lecture: LectureDesVentesDuReleve | null, fr
       const vente = ventes.mouvements.get(m.id)
       return vente?.etat === 'reserve' && !estFigee(m.date, frontiere) ? [vente] : []
     }),
+    // Figés ou non : celui qu'un exercice validé fige se rattache encore au mouvement d'après (étape VF7a).
     sansMouvement: encaissementsEnregistresSansMouvement(s)
-      .filter((e) => e.annule_id == null && (MOYENS_DU_RELEVE as readonly string[]).includes(e.moyen)
-        && !estFigee(e.date_encaissement, frontiere)),
+      .filter((e) => e.annule_id == null && (MOYENS_DU_RELEVE as readonly string[]).includes(e.moyen)),
     numeros: new Map(s.factures.map((f) => [f.id, f.numero ?? 'sans numéro'])),
   }
 }
@@ -83,6 +86,7 @@ export function detailDesEncaissementsSansMouvement(v: Extract<VentesDeLaCheckli
   const reste = v.sansMouvement.length - cites.length
   const liste = cites.length === 0 ? '.' : ` : ${cites.join(', ')}${reste > 0 ? ` et ${reste} autre(s)` : ''}.`
   return `Dans Factures, vue « Règlements », leur colonne « Mouvement » porte « — »${liste} Le crédit qui en porte un se `
-    + 'rattache depuis sa fiche, dans Banque — remis d’abord à traiter s’il a été ignoré. Un chèque remis et pas encore '
-    + 'crédité attend son mouvement à bon droit.'
+    + 'rattache depuis sa fiche, dans Banque — remis d’abord à traiter s’il a été ignoré —, même quand l’encaissement est '
+    + 'daté d’un exercice validé : son écriture n’en change pas. Un chèque remis et pas encore crédité attend son mouvement '
+    + 'à bon droit.'
 }

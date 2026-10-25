@@ -2895,7 +2895,8 @@ describe('ChecklistTab — les ventes facturées d’un dossier qui a basculé (
     monter(false, TRESORERIE, [2026], 'trimestrielle', 'exonere', () => {}, true)
     expect((await screen.findByText(NON_RAPPROCHEES)).textContent).toMatch(/^2 /)
     expect(screen.queryByText(RESERVES)).toBeNull()
-    expect(screen.queryByText(SANS_MOUVEMENT)).toBeNull()
+    // Le chèque figé qui attend son mouvement se dit encore : il se rattache au crédit d'après (étape VF7a).
+    expect((await screen.findByText(SANS_MOUVEMENT)).textContent).toMatch(/^1 /)
   })
 })
 

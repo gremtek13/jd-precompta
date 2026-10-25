@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   TEXTE_ESSAI_ECRITURES, TRIPLETS_DU_CUMUL, attenduEnClairDeLEssai, compositionDuJeu, cumulDuModule, empreinteDAttendu,
-  jeuDuDossier, jeuPourLaBase, jourDuJeu, macroDeLEssai, partsDuJeu, sourcesDuControleVue, sourcesDuJeu, uuidEssai,
+  jeuDuDossier, jeuPourLaBase, jourDuJeu, macroDeLEssai, partsDuJeu, PREFIXE_ESSAI, sourcesDuControleVue, sourcesDuJeu, uuidEssai,
   vueDesSources,
 } from '../test/essaiEcrituresVentesFacturees'
 import { correspondAuModele, etapesDeLEssai } from '../test/essaiVentesFacturees'
@@ -492,6 +492,36 @@ describe('l’essai des écritures d’une vente facturée, confronté au module
   it('les parts du jeu : celles du module', () => {
     expect(valeur('2. ').attendu).toBe(empreinteDAttendu(partsDuJeu()))
     expect(attenduEnClairDeLEssai('2')).toBe(partsDuJeu())
+  })
+
+  it('VF7a : le chèque de l’exercice validé, rattaché au crédit de janvier — le module compose ce que la base recompose', () => {
+    // Les contrôles 170 à 176 de l'essai (migration frontiere_des_encaissements) : {U}00524, le chèque du 31 décembre 2025,
+    // rattaché à {U}00430, le crédit du 5 janvier 2026, classé par lui.
+    const j = jeuDuDossier(1)
+    const cheque = uuidEssai(524)
+    const credit = uuidEssai(430)
+    const composer = (encaissements: typeof j.encaissements, mouvements: typeof j.mouvements) => ecrituresDesVentesFacturees({
+      sources: { dossierId: j.dossierId, factures: j.factures, lignes: j.lignes, encaissements, parts: j.parts },
+      mouvements, comptesDeContrepartie: j.comptes, exemplaires: j.exemplaires, mode: j.mode, plan: PLAN_PAR_DEFAUT,
+    })
+    const lignes = (r: ReturnType<typeof composer>, genre: 'encaissement' | 'mouvement', id: string) => r.ecritures
+      .filter((e) => (e.source.genre === 'encaissement' && genre === 'encaissement' && e.source.encaissementId === id)
+        || (e.source.genre === 'mouvement' && genre === 'mouvement' && e.source.ligneBancaireId === id))
+      .flatMap((e) => e.lignes.map((l) => `${e.date}|${l.compte}|${l.sens}|${l.centimes}|${l.ligneBancaireId ?? ''}`))
+      .sort()
+    const avant = composer(j.encaissements, j.mouvements)
+    const apres = composer(
+      j.encaissements.map((e) => (e.id === cheque ? { ...e, ligne_bancaire_id: credit } : e)),
+      [...j.mouvements, { id: credit, dossier_id: j.dossierId, date: '2026-01-05', montant: 30, libelle: 'ESSAI', source_fichier: null, encaissements_de_factures: true }],
+    )
+    // Le chèque : la même écriture, le 511 au 31 décembre de l'exercice validé.
+    expect(lignes(apres, 'encaissement', cheque)).toEqual(lignes(avant, 'encaissement', cheque))
+    expect(lignes(avant, 'encaissement', cheque)).toContain('2025-12-31|511000|debit|3000|')
+    // Le crédit de janvier : ce que l'essai attend de la base (174) — la banque au débit, le 511 au crédit.
+    const attendu = valeur('174. ').attendu.split('{U}').join(PREFIXE_ESSAI).split(';').sort()
+    expect(attendu).toHaveLength(2)
+    expect(lignes(apres, 'mouvement', credit)).toEqual(attendu)
+    expect(lignes(avant, 'mouvement', credit)).toEqual([])
   })
 
   it('chaque source du jeu, une fois, rendue comme le module la compose dans les deux modèles', () => {

@@ -73,6 +73,9 @@ export const REECRITURES_CLIENT: readonly { de: string; vers: string }[] = [
   { de: "le cabinet retire d'abord ce classement", vers: "ton cabinet retire d'abord ce classement" },
   { de: "— retirer d'abord ce classement", vers: "— ton cabinet retire d'abord ce classement" },
   { de: "retirez d'abord celle-ci", vers: "retire d'abord celle-ci" },
+  // La garde de la frontière des encaissements (étape VF7a, `REFUS_GARDE_FRONTIERE`), que les fonctions du client
+  // atteignent (un mouvement figé cité) : ses mots ne nomment ni le cabinet ni un onglet, et ne vouvoient pas — aucune
+  // réécriture ; espaceVentes.test.ts le garde.
   // lib/encaissementsFactures.ts, le refus du rang 7 du classement (le virement mixte, étape VF5h) : la fenêtre le cite au
   // client quand son geste laisserait un mouvement inclassable (`inclassableApres`) ; l'exemplaire d'une facture, c'est son
   // cabinet qui le désigne.

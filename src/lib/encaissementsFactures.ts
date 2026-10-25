@@ -1032,6 +1032,9 @@ export function plateformeDeLaDeclaration(
 /** Un encaissement, tel que la contre-passation le lit : sa date compte. */
 export type EncaissementPourContrePassation = EncaissementLu & Pick<EncaissementFacture, 'date_encaissement'>
 
+/** Un encaissement tel que le rattachement le juge : son moyen dit, à la frontière, si son écriture changerait (étape VF7a). */
+export type EncaissementPourRattachement = EncaissementPourContrePassation & Pick<EncaissementFacture, 'moyen'>
+
 /**
  * Ce que `annuler_encaissement` refuserait : le PREMIER refus, dans l'ordre de la base et sous son message, ou null.
  * `date` : celle du DÉCAISSEMENT — le jour où l'encaissement est défait (le chèque revenu impayé, la somme rendue), ou,
@@ -1606,7 +1609,10 @@ function refusDe<C extends string>(liste: ListeAvecCodes, cle: C, ...valeurs: st
 // Les refus de `rattacher_mouvement_encaissement`, DANS SON ORDRE, SOUS SES MOTS ET SES CODES : un encaissement — ou une
 // contre-passation — d'une facture source enregistré sans mouvement se rattache UNE FOIS, de nul à un mouvement, par le
 // cabinet seul (`admin_du_dossier`) : le chèque remis avant son crédit, les encaissements d'un client sans « Banque »,
-// l'impayé constaté au relevé.
+// l'impayé constaté au relevé. Depuis l'étape VF7a (migration `frontiere_des_encaissements`), la frontière d'un exercice
+// validé se juge sur le MOUVEMENT (le rang 9) : le chèque remis le 30 décembre d'un exercice validé se rattache au crédit
+// de janvier, son écriture inchangée (le 511) ; sur l'encaissement (le rang 6), seulement par compensation ou par un autre
+// moyen — son écriture, sur son compte de contrepartie, changerait (`MOYENS_SUR_LEUR_CONTREPARTIE`).
 export const REFUS_RATTACHEMENT = [
   { cle: 'acces', modele: 'Accès refusé à ce dossier.', code: '42501' },
   { cle: 'encaissement_introuvable', modele: 'Encaissement introuvable dans ce dossier.', code: 'P0002' },
@@ -1620,6 +1626,7 @@ export const REFUS_RATTACHEMENT = [
   { cle: 'frontiere', modele: '% : cet encaissement ne se rattache plus à un mouvement.', code: '22023' },
   { cle: 'mouvement_absent', modele: 'Le mouvement à rattacher est à désigner.', code: '22023' },
   { cle: 'mouvement_hors_dossier', modele: "Ce mouvement n'est pas un mouvement de ce dossier.", code: '22023' },
+  { cle: 'mouvement_fige', modele: '% : ce mouvement ne se cite plus.', code: '22023' },
   { cle: 'mouvement_debit', modele: "Un encaissement se justifie par un crédit : ce mouvement n'en est pas un.", code: '22023' },
   { cle: 'mouvement_credit', modele: "Une contre-passation se justifie par un débit : ce mouvement n'en est pas un.", code: '22023' },
   {
@@ -1738,10 +1745,38 @@ export const REFUS_GARDE_MOUVEMENTS = [
 export type CleRefusGardeMouvements = (typeof REFUS_GARDE_MOUVEMENTS)[number]['cle']
 
 /**
+ * Les moyens d'un encaissement qui, sans mouvement, s'écrit sur le compte de contrepartie que le cabinet choisit
+ * (`choisir_compte_contrepartie`, lib/ecrituresVentesFacturees.ts) : rattaché, il s'écrirait sur les valeurs à
+ * l'encaissement. Daté d'un exercice validé, il ne se rattache donc plus (étape VF7a).
+ */
+export const MOYENS_SUR_LEUR_CONTREPARTIE: readonly MoyenEncaissement[] = ['compensation', 'autre']
+
+// Les refus de la garde de la frontière des encaissements (`garder_frontiere_des_encaissements`, étape VF7a ; migration
+// `frontiere_des_encaissements`), DANS L'ORDRE DE SON TEXTE, SOUS SES MOTS ET SES CODES : pour l'encaissement d'une facture
+// source, ce qu'aucune écriture — fût-elle du propriétaire de la base, du rôle des Edge Functions ou du super-administrateur
+// — ne fait plus à un exercice validé. Chacun a les mots de la fonction qui fait le même geste (enregistrer, contre-passer,
+// retirer, choisir le compte, rattacher), en 23514. Les fonctions du cabinet et du client jugent avant elle ce qu'elles
+// savent juger ; ce qu'elles laisseraient passer — un mouvement cité qui serait figé sans être classé, ce que la validation
+// ne laisse jamais —, la garde le refuse sous ces mots, que le client lit tels quels (espaceVentes.test.ts).
+export const REFUS_GARDE_FRONTIERE = [
+  { cle: 'repartition_figee', modele: '% : la répartition de cet encaissement ne change plus.', code: '23514' },
+  { cle: 'frontiere_encaissement', modele: "% : un encaissement de cette facture ne s'y date plus.", code: '23514' },
+  { cle: 'frontiere_contre_passation', modele: "% : une contre-passation ne s'y date plus.", code: '23514' },
+  { cle: 'retrait_fige', modele: '% : cet encaissement ne se retire plus.', code: '23514' },
+  { cle: 'compte_fige', modele: '% : le compte de contrepartie de cet encaissement ne change plus.', code: '23514' },
+  { cle: 'encaissement_fige', modele: '% : cet encaissement ne change plus.', code: '23514' },
+  { cle: 'rattachement_fige', modele: '% : cet encaissement ne se rattache plus à un mouvement.', code: '23514' },
+  { cle: 'mouvement_fige', modele: '% : ce mouvement ne se cite plus.', code: '23514' },
+] as const
+
+export type CleRefusGardeFrontiere = (typeof REFUS_GARDE_FRONTIERE)[number]['cle']
+
+/**
  * Ce que `rattacher_mouvement_encaissement` refuserait : le PREMIER refus, dans l'ordre de la base et sous son message, ou
  * null — l'accès (refus 1), seule la base le juge : le cabinet seul rattache. Dans l'ordre : l'encaissement introuvable,
- * retiré, qui cite déjà un mouvement, d'une facture qui n'est pas source, daté d'un exercice que la frontière fige ; aucun
- * mouvement désigné, un mouvement d'un autre dossier, un débit pour un encaissement, un crédit pour une contre-passation,
+ * retiré, qui cite déjà un mouvement, d'une facture qui n'est pas source, daté d'un exercice que la frontière fige par
+ * compensation ou par un autre moyen ; aucun mouvement désigné, un mouvement d'un autre dossier, un mouvement daté d'un
+ * exercice que la frontière fige, un débit pour un encaissement, un crédit pour une contre-passation,
  * un mouvement déjà classé ; pour un encaissement, un mouvement qui justifie déjà un encaissement de cette facture, puis
  * l'écart des frais sur ce qu'il justifierait — cet encaissement compris s'il le justifie ; pour une contre-passation,
  * l'écart des frais sur les contre-passations du débit, puis le mouvement de l'encaissement qu'elle annule — classé, ou
@@ -1752,7 +1787,7 @@ export function refusRattachement(
   dossierId: string,
   encaissementId: string,
   ligneBancaireId: string | null,
-  encaissements: readonly EncaissementPourContrePassation[],
+  encaissements: readonly EncaissementPourRattachement[],
   mouvements: readonly MouvementClasse[],
   vente: ContexteVente,
 ): RefusEncaissement<CleRefusRattachement> | null {
@@ -1762,11 +1797,15 @@ export function refusRattachement(
   if (!compte(e)) return refusA('retire')
   if (e.ligne_bancaire_id != null) return refusA('deja_rattache')
   if (!factureSource(e.facture_id, vente)) return refusA('facture_non_source')
+  // Daté d'un exercice validé, il se rattache encore au mouvement d'après qui le paie (étape VF7a) — sauf s'il s'écrit sur
+  // son compte de contrepartie, que le rattachement lui ferait quitter.
   const fige = dateFigeePourLaVente(e.date_encaissement, vente.anneesValidees)
-  if (fige) return refusA('frontiere', fige)
+  if (fige && MOYENS_SUR_LEUR_CONTREPARTIE.includes(e.moyen)) return refusA('frontiere', fige)
   if (ligneBancaireId == null) return refusA('mouvement_absent')
   const m = mouvements.find((x) => x.id === ligneBancaireId && x.dossier_id === dossierId)
   if (!m) return refusA('mouvement_hors_dossier')
+  const mouvementFige = dateFigeePourLaVente(m.date, vente.anneesValidees)
+  if (mouvementFige) return refusA('mouvement_fige', mouvementFige)
   const contrePassation = e.annule_id != null
   if (!contrePassation && m.montant <= 0) return refusA('mouvement_debit')
   if (contrePassation && m.montant >= 0) return refusA('mouvement_credit')
@@ -2041,6 +2080,21 @@ export function frontiereJugeeParLaBase(
   vente: Pick<ContexteVente, 'anneesValidees'>,
 ): boolean {
   return facture.source_de_la_vente && vente.anneesValidees === ANNEES_ILLISIBLES
+}
+
+/** Ce que la fenêtre du CABINET dit d'un encaissement que `rattachableApresLaFrontiere` désigne (étape VF7a). */
+export const RATTACHEMENT_APRES_LA_FRONTIERE = 'Daté d’un exercice validé, il se rattache encore au crédit qui le paie, '
+  + 'depuis la fiche de ce crédit dans Banque : son écriture n’en change pas.'
+
+/**
+ * Un encaissement d'une facture source, sans mouvement, daté d'un exercice validé, qui se rattache encore au mouvement
+ * d'après (étape VF7a, `rattacher_mouvement_encaissement`) : le chèque remis le 30 décembre, crédité en janvier. Ni retiré,
+ * ni une contre-passation (elle attend un débit, et la fiche d'un débit la propose), ni par compensation ou par un autre
+ * moyen (le rang 6 du rattachement le refuse). Jamais côté client : il ne lit pas les exercices validés, et ne rattache pas.
+ */
+export function rattachableApresLaFrontiere(e: EncaissementPourRattachement, vente: ContexteVente): boolean {
+  return e.ligne_bancaire_id == null && compte(e) && e.annule_id == null && factureSource(e.facture_id, vente)
+    && !MOYENS_SUR_LEUR_CONTREPARTIE.includes(e.moyen) && dateFigeePourLaVente(e.date_encaissement, vente.anneesValidees) !== null
 }
 
 /**

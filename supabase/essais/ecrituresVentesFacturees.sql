@@ -73,6 +73,9 @@
 --     (une suppression directe), ne se joue que sur la réplique ;
 --   - LE COMPTE DE CONTREPARTIE (100 à 119) : ses refus à leur rang, la fonction qui le pose et le remplace, la garde des
 --     encaissements qui ne le laisse naître qu'à la restauration et changer que sous son réglage ;
+--   - LA FRONTIÈRE DES ENCAISSEMENTS (170 à 176, posés en dernier ; migration `frontiere_des_encaissements`, étape
+--     VF7a) : le chèque de l'exercice validé de R, rattaché au crédit de janvier, garde sa recomposition et son
+--     écriture validée ; le crédit se classe par lui, se compose — la banque au débit, le 511 au crédit — et s'écrit ;
 --   - LE CATALOGUE (150 à 155 ; 155, les quatre contraintes qui font, sur une ligne qui porte un mouvement, des quatre
 --     autres colonnes de source des colonnes nulles : ce que le filtre de R1 suppose) ; LES MUTATIONS (160 à 166) :
 --     chacune rejoue un contrôle avec une cible ou un profil délibérément juste, et doit passer ; et que RIEN ne reste en
@@ -154,6 +157,15 @@
 -- 24/10/2026 — les migrations `virement_mixte` et `jumelle_inversee` APPLIQUÉES en production (`20261024052038`,
 -- `20261024052424`) : ce fichier n'y a pas été rejoué entier ; la signature des neuf familles en production égale celle
 -- de la réplique où il a rendu ses 198 justes (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
+--
+-- 25/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `frontiere_des_encaissements`, préparée, pas appliquée ;
+-- chantier EC-Q3, étape VF7a) : 170 à 176 — le chèque de 30 € de F2025-0001, daté du 31 décembre 2025 dans
+-- l'exercice validé de R, sans mouvement, se rattache au crédit de janvier ; sa recomposition reste celle d'avant (le
+-- 511, au 31 décembre), son écriture validée est intacte, et le crédit de janvier se classe par lui, se compose et
+-- s'écrit ; le module compose le même crédit (src/lib/ecritureVenteFacturee.test.ts). Sur une réplique égale à la
+-- production (148 migrations) munie de `registre_virement_mixte` : sans la migration, 205 contrôles, 5 en faute — 170,
+-- 173 à 176 — ; avec elle, 205 justes, rien n'est resté, et les 198 d'hier inchangés. Le texte sans ses lignes de
+-- commentaire, envoyé en une requête : 89 884 caractères, empreinte adff7a718db8f96a3a77994fa5531683, 205 justes.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -671,7 +683,25 @@ begin
   array['controle', '162. MUTATION de 50a : sans exercice validé', 'chef', $q$select {W}'{D2}', 'encaissement', '{U}01524', '{PG}')$q$, 'OK', ''],
   array['controle', '163. MUTATION de 64b : cité par un encaissement retiré', 'chef', $q$select retirer_classement_par_encaissements('{D1}', '{U}00402'); select retirer_encaissement('{D1}', '{U}00503'); {R1}mouvement', '{U}00402')$q$, 'OK', ''],
   array['controle', '165. MUTATION de 72 : sur un mouvement libre', 'chef_simple', $q${L411}$q$, 'OK', ''],
-  array['controle', '166. MUTATION de 79a : la même ligne, sans sa pièce, est une ligne du mouvement', 'membre', $q$insert into ecritures_brouillon (dossier_id, ligne_bancaire_id, date, compte, libelle, montant, sens) values ('{D1}', '{U}00420', '2026-03-28', '512000', 'ESSAI', 120, 'debit')$q$, '42501', '{INS}']
+  array['controle', '166. MUTATION de 79a : la même ligne, sans sa pièce, est une ligne du mouvement', 'membre', $q$insert into ecritures_brouillon (dossier_id, ligne_bancaire_id, date, compte, libelle, montant, sens) values ('{D1}', '{U}00420', '2026-03-28', '512000', 'ESSAI', 120, 'debit')$q$, '42501', '{INS}'],
+
+  -- ══ 170 à 176. VF7a : le chèque de l'exercice validé, rattaché au crédit de janvier (posé EN DERNIER) ══════════
+  -- Migration `frontiere_des_encaissements`. {U}00524, le chèque de 30 € de F2025-0001 daté du 31 décembre 2025, sans
+  -- mouvement, porte l'écriture validée de l'exercice 2025 de D1 (le 511 au débit). Le relevé reçoit en janvier le crédit
+  -- {U}00430, de 30 € ; le cabinet y rattache le chèque, puis classe le crédit par lui. Ce qui se prouve : la recomposition
+  -- du chèque est celle d'avant (le 511, au 31 décembre), son écriture validée est intacte, et le crédit de janvier se
+  -- compose — la banque au débit, le 511 au crédit — et s'écrit. Le module compose le même crédit
+  -- (src/lib/ecritureVenteFacturee.test.ts). Posé en dernier : aucun contrôle d'avant ne le voit.
+  array['jeu', 'VF7a : le crédit de janvier {U}00430', 'postgres', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{U}00430', '{D1}', '2026-01-05', 'ESSAI', 30, 'non_rapprochee')$q$, '', ''],
+  array['retenir', 'AV524', 'postgres', $q$select array_to_string((ecriture_attendue_vente_facturee('{D1}', 'encaissement', '{U}00524')).lignes, ';')$q$, '', ''],
+  array['fait', '170. le cabinet rattache le chèque du 31 décembre de l''exercice validé au crédit de janvier', 'chef', $q$select rattacher_mouvement_encaissement('{D1}', '{U}00524', '{U}00430')$q$, 'OK', ''],
+  array['valeur', '171. sa recomposition est celle d''avant : le 511, au 31 décembre', 'postgres', $q$select array_to_string((ecriture_attendue_vente_facturee('{D1}', 'encaissement', '{U}00524')).lignes, ';')$q$, '', '{AV524}'],
+  array['valeur', '172. son écriture validée est intacte', 'postgres', $q$select string_agg(concat_ws('|', date, compte, sens, trim_scale(montant), statut, numero_ecriture), ';') from ecritures_brouillon where encaissement_id = '{U}00524'$q$, '', '2025-12-31|511000|debit|30|validee|1'],
+  array['fait', '173. le cabinet classe le crédit de janvier par le chèque', 'chef', $q$select classer_mouvement_par_encaissements('{D1}', '{U}00430')$q$, 'OK', ''],
+  array['valeur', '174. le crédit de janvier se compose : le 511 au crédit, la banque au débit', 'postgres', $q$select array_to_string((ecriture_attendue_vente_facturee('{D1}', 'mouvement', '{U}00430')).lignes, ';')$q$, '', '2026-01-05|511000|credit|3000|{U}00430;2026-01-05|512000|debit|3000|{U}00430'],
+  array['retenir', 'PJ', 'postgres', $q$select ({PRO}'{D1}', 'mouvement', '{U}00430'{ORP})::text$q$, '', ''],
+  array['fait', '175. et s''écrit', 'chef', $q${W1}mouvement', '{U}00430', '{PJ}')$q$, 'OK', ''],
+  array['valeur', '176. ses lignes proposées, sur le crédit de janvier', 'postgres', $q$select string_agg(concat_ws('|', date, compte, sens, trim_scale(montant), statut), ';' order by compte collate "C") from ecritures_brouillon where ligne_bancaire_id = '{U}00430'$q$, '', '2026-01-05|511000|credit|30|proposee;2026-01-05|512000|debit|30|proposee']
   ];
 
   begin

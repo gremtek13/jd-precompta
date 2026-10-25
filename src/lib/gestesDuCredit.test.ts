@@ -363,6 +363,30 @@ describe('un crédit LIBRE : rattacher un encaissement, ou enregistrer celui d�
     expect(par.get('e4')?.confirmation).toContain(`— Facture F2026-0014 (SARL Horizon) — espèces du 02/03/2026 : ${fm(120)}`)
   })
 
+  it('daté d’un exercice validé, le chèque se rattache au crédit d’après : son écriture n’y change pas, le crédit solde le 511 (VF7a)', () => {
+    const cheque = encaissement({ id: 'e9', facture_id: 'f3', montant: 300, moyen: 'cheque', date_encaissement: '2025-12-30' })
+    const especes = encaissement({ id: 'e8', facture_id: 'f3', montant: 300, moyen: 'especes', date_encaissement: '2025-12-29' })
+    const autre = encaissement({ id: 'e7', facture_id: 'f3', montant: 300, moyen: 'autre', date_encaissement: '2025-12-28' })
+    const janvier = sources({
+      mouvements: [mouvement({ id: 'm1', montant: 300, date: '2026-01-05' })],
+      encaissements: [cheque, especes, autre], parts: partsDe([cheque, especes, autre]),
+    })
+    const g = gestes(janvier, 'm1', [2025])
+    if (g.etat !== 'libre') throw new Error(g.etat)
+    const par = new Map(g.complement.rattachables.map((e) => [e.id, e]))
+    expect(par.get('e9')?.refus).toBeNull()
+    expect(par.get('e9')?.confirmation).toContain('L\'exercice 2025 est validé : l’écriture de cet encaissement n’y change pas, et '
+      + 'celle de ce crédit soldera les valeurs à l’encaissement. ')
+    expect(par.get('e8')?.refus).toBeNull()
+    expect(par.get('e8')?.confirmation).toContain('et celle de ce crédit soldera la caisse. ')
+    // Par un autre moyen, il s'écrit sur son compte de contrepartie : la base le refuse, sous ses mots d'hier.
+    expect(par.get('e7')?.refus).toBe(refus(REFUS_RATTACHEMENT, 'frontiere', 'L\'exercice 2025 est validé'))
+    // Le lendemain de la frontière, la confirmation ne dit rien de l'exercice.
+    const g2 = gestes(janvier, 'm1', [])
+    if (g2.etat !== 'libre') throw new Error(g2.etat)
+    expect(g2.complement.rattachables.find((e) => e.id === 'e9')?.confirmation).not.toContain('validé')
+  })
+
   it('le crédit porte déjà l’encaissement d’une facture d’avant la bascule : le rattachement et le classement le comptent', () => {
     const avecAvant = {
       ...s,

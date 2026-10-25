@@ -10,7 +10,8 @@ import { pourLEspace, pourLEspaceSiTexte, type EspaceVentes } from '../../lib/es
 import type { LectureComplete } from '../../lib/lectureComplete'
 import BandeauLecturePartielle, { type AccordLecture } from '../../components/BandeauLecturePartielle'
 import {
-  ANNEES_ILLISIBLES, ETATS_DECLARANTS, FRONTIERE_JUGEE_PAR_LA_BASE, MOYENS_ENCAISSEMENT, REFUS_DECLARATION, centimesExacts,
+  ANNEES_ILLISIBLES, ETATS_DECLARANTS, FRONTIERE_JUGEE_PAR_LA_BASE, MOYENS_ENCAISSEMENT, RATTACHEMENT_APRES_LA_FRONTIERE,
+  REFUS_DECLARATION, centimesExacts, rattachableApresLaFrontiere,
   contrePassationDe, debitObligatoire, debitsCitables, echeanceDeDeclaration, encaissementsDeclares, frontiereJugeeParLaBase,
   inclassableApresContrePassation, inclassableApresEnregistrement, obligationEncaissee, paireNonDeclaree, partsEncaissees,
   piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement, refusContrePassationAvantLaDate,
@@ -1039,6 +1040,10 @@ function Contenu({
                         {!gereLaBanque && e.ligne_bancaire_id != null
                           ? 'Un mouvement du relevé, que ton accès ne montre pas'
                           : libelleMouvement(mouvement(e.ligne_bancaire_id))}
+                        {/* Le chèque remis le 30 décembre d'un exercice validé (étape VF7a) : au cabinet, il se rattache encore. */}
+                        {espace === 'cabinet' && rattachableApresLaFrontiere(e, vente) && (
+                          <div className="muted">{RATTACHEMENT_APRES_LA_FRONTIERE}</div>
+                        )}
                       </td>
                       <td data-libelle="Répartition">
                         <span>{partsDe(e.id).map((p) => `${tauxAffiche(p.taux)} : ${formatMoney(p.montant)}`).join(' · ') || '—'}</span>

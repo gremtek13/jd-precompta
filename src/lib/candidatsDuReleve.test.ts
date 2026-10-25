@@ -246,6 +246,20 @@ describe('candidatsDuMouvement : un CRÉDIT libre', () => {
     expect(candidatsDuMouvement(candidatsDe(sources([m], [e]), []), m).map((x) => x.id)).toEqual(['e3'])
   })
 
+  it('un encaissement figé reste candidat d’un crédit libre d’après, sauf par compensation ou par un autre moyen (VF7a)', () => {
+    // Le chèque remis le 30 décembre d'un exercice validé, crédité en janvier : la base le rattache, son écriture inchangée.
+    const m = mouvement({ id: 'm', montant: 300, date: '2026-01-05', libelle: 'REMISE CHEQUE LIBRAIRIE ROCHER' })
+    const cheque = encaissement({ id: 'e3', facture_id: 'f3', montant: 300, moyen: 'cheque', date_encaissement: '2025-12-30' })
+    expect(candidatsDuMouvement(candidatsDe(sources([m], [cheque]), [2025]), m).map((x) => [x.id, x.genre]))
+      .toEqual([['e3', 'encaissement']])
+    // Par un autre moyen, il s'écrit sur son compte de contrepartie, que le rattachement lui ferait quitter : la base le
+    // refuse, et il n'est pas proposé — il le serait le lendemain de la frontière.
+    const autre = { ...cheque, moyen: 'autre' as const }
+    expect(candidatsDuMouvement(candidatsDe(sources([m], [autre]), [2025]), m).filter((x) => x.genre === 'encaissement')).toEqual([])
+    expect(candidatsDuMouvement(candidatsDe(sources([m], [autre]), []), m).filter((x) => x.genre === 'encaissement')
+      .map((x) => x.id)).toEqual(['e3'])
+  })
+
   it('le plus petit écart d’abord, quel que soit le genre', () => {
     const m = mouvement({ id: 'm', montant: 297, libelle: 'VIR LIBRAIRIE ROCHER HORIZON' })
     // F2026-0016 (300 €) à 3 € ; un encaissement de F2026-0014 de 200 € à 97 €, désigné par le nom ; le reste de
@@ -327,6 +341,23 @@ describe('candidatsDuMouvement : un DÉBIT libre — la contre-passation seule',
 
   it('une contre-passation que la base ne rattacherait pas (le débit plus petit au-delà des frais) : rien', () => {
     expect(surLeDebit(mouvement({ id: 'd', montant: -500, libelle: 'IMPAYE SARL HORIZON' })).liste).toEqual([])
+  })
+
+  it('une contre-passation figée reste candidate d’un débit libre d’après, sauf par compensation ou par un autre moyen (VF7a)', () => {
+    // Le chèque remis le 30 décembre d'un exercice validé, revenu impayé en janvier : sa contre-passation sans mouvement,
+    // datée du 31 décembre, se rattache au débit de janvier — elle défait le chèque au 511, et y reste.
+    const origine = encaissement({ id: 'o1', facture_id: 'f1', montant: 600, moyen: 'cheque', date_encaissement: '2025-12-30' })
+    const cp = encaissement({
+      id: 'cp1', facture_id: 'f1', montant: -600, moyen: 'cheque', annule_id: 'o1', date_encaissement: '2025-12-31',
+    })
+    const d = mouvement({ id: 'd', montant: -600, date: '2026-01-07', libelle: 'IMPAYE CHQ 0001234' })
+    expect(candidatsDuMouvement(candidatsDe(sources([CREDIT, d], [origine, cp]), [2025]), d).map((x) => [x.id, x.genre]))
+      .toEqual([['cp1', 'contre_passation']])
+    // Par un autre moyen, elle défait son encaissement sur son compte de contrepartie, que le rattachement lui ferait
+    // quitter : la base le refuse, et elle n'est pas proposée — elle le serait le lendemain de la frontière.
+    const autres = [{ ...origine, moyen: 'autre' as const }, { ...cp, moyen: 'autre' as const }]
+    expect(candidatsDuMouvement(candidatsDe(sources([CREDIT, d], autres), [2025]), d)).toEqual([])
+    expect(candidatsDuMouvement(candidatsDe(sources([CREDIT, d], autres), []), d).map((x) => x.id)).toEqual(['cp1'])
   })
 })
 
