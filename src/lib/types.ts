@@ -78,9 +78,15 @@ export interface Dossier {
   // LES FACTURES DU DOSSIER SONT-ELLES LA SOURCE DE LEURS VENTES ? (chantier EC-Q3, étape VF2 ; migration
   // `source_de_la_vente`, en base et dans l'export depuis le 18/10/2026 ; lib/sourceDeLaVente.ts.) Faux par défaut ; posé
   // par le cabinet (la policy `dossiers_update`) ; irréversible dès qu'une facture source existe
-  // (`garder_ventes_par_les_factures`). Aucun écran ne le lit ni ne l'écrit avant l'étape VF8 ; les lectures qui typent une
-  // ligne entière sur ce type la lisent par `select('*')`, qui la porte.
+  // (`garder_ventes_par_les_factures`). Aucun écran ne l'écrit avant l'étape VF8b ; les lectures qui typent une ligne entière
+  // sur ce type la lisent par `select('*')`, qui la porte.
   ventes_par_les_factures: boolean
+  // DEPUIS QUAND (étape VF8a ; migration `reglage_des_ventes`, PRÉPARÉE, pas appliquée ; lib/sourceDeLaVente.ts) : un instant,
+  // que la garde du réglage pose quand il monte et efface quand il descend — aucune écriture ne le pose à sa place, hors de
+  // la restauration du super-administrateur, qui le réinsère tel qu'il a été. Nul tant que le réglage est faux. FACULTATIVE
+  // dans ce type : absente de toute lecture tant que la migration n'est pas appliquée, et d'une sauvegarde faite avant elle
+  // — une colonne absente n'est pas une colonne nulle. Aucun écran ne la lit avant l'étape VF8b.
+  ventes_par_les_factures_depuis?: string | null
 }
 
 export interface Categorie {

@@ -1,6 +1,6 @@
 import { remplirModele, type RefusEncaissement } from './encaissementsFactures'
 import { anneeDe } from './format'
-import type { FactureEmise } from './types'
+import type { FactureEmise, Membership } from './types'
 import { exerciceQuiFige, frontiereDeValidation } from './validationExercice'
 
 // LA FACTURE VALIDÉE, SOURCE DE SA VENTE (ligne 28.6, chantier EC-Q3, étape VF2 ; décision du cabinet du 18/10/2026 ;
@@ -17,9 +17,16 @@ import { exerciceQuiFige, frontiereDeValidation } from './validationExercice'
 // la validation d'une facture source ; et les colonnes `encaissement_id` et `facture_id` des écritures, FERMÉES jusqu'à
 // l'étape VF4 (`garder_ecriture_vente_facturee`).
 //
-// LA RÉFÉRENCE : le texte des trois fonctions dans l'export, auquel sourceDeLaVente.test.ts confronte chaque liste —
-// messages, ordre, codes et valeurs —, et l'essai supabase/essais/ventesFacturees.sql, qui exige de la base chaque refus,
-// code ET mots, et que le même test confronte à ces listes.
+// LE RÉGLAGE GARDÉ (étape VF8a ; migration `reglage_des_ventes`, PRÉPARÉE, pas appliquée ; HISTORIQUE.md, « LE RÉGLAGE DES
+// VENTES, GARDÉ ») : la garde du réglage, remplacée, refuse de plus, dans son ordre, après la facture source d'hier, un
+// réglage posé ou baissé par une session qui n'est pas le chef du cabinet (VF8-Q1, sur sa recommandation), puis un réglage
+// baissé quand un accès client porte « Ventes » ; et elle date la bascule (`dossiers.ventes_par_les_factures_depuis`).
+// `refusDuReglage` les redit, pour que l'écran de la bascule (étape VF8b) les dise avant le clic.
+//
+// LA RÉFÉRENCE : le texte des trois fonctions dans l'export — la dernière définition de chacune —, auquel
+// sourceDeLaVente.test.ts confronte chaque liste — messages, ordre, codes et valeurs —, et l'essai
+// supabase/essais/ventesFacturees.sql, qui exige de la base chaque refus, code ET mots, et que le même test confronte à ces
+// listes.
 
 // ── Les refus ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -41,13 +48,20 @@ export const REFUS_VALIDATION_SOURCE = [
 
 export type CleRefusValidationSource = (typeof REFUS_VALIDATION_SOURCE)[number]['cle']
 
-/** Les autres refus de la migration, dans l'ordre de son texte : celui du réglage, qu'un écran dira avant le clic
- * (étape VF8), puis ceux qu'on ne rencontre qu'en écrivant hors des fonctions — une restauration dans un dossier qui n'a
+/** Les autres refus, dans l'ordre du texte de leurs fonctions : les trois du réglage — celui d'hier (migration
+ * `source_de_la_vente`), puis les deux de l'étape VF8a (migration `reglage_des_ventes`) —, qu'un écran dira avant le clic
+ * (étape VF8b), puis ceux qu'on ne rencontre qu'en écrivant hors des fonctions — une restauration dans un dossier qui n'a
  * pas basculé, la source posée à la main, une écriture qui porterait une facture ou un encaissement. */
 export const REFUS_SOURCE_DE_LA_VENTE = [
   {
     cle: 'reglage_irreversible',
     modele: 'Les factures de ce dossier sont la source de leurs ventes depuis la facture % : ce réglage ne se défait pas.',
+    code: '23514',
+  },
+  { cle: 'reglage_reserve_au_chef', modele: "Seul le chef du cabinet change la source des ventes d'un dossier.", code: '42501' },
+  {
+    cle: 'reglage_retenu_par_ventes',
+    modele: "Un accès client de ce dossier porte le droit « Ventes », qui suppose que ses factures soient la source de leurs ventes : retirer d'abord ce droit.",
     code: '23514',
   },
   {
@@ -129,24 +143,47 @@ function ordreC(a: string | null, b: string | null): number {
   return a < b ? -1 : 1
 }
 
+/** Ce que la garde du réglage lit, en plus des factures : qui écrit, et les accès clients du dossier (étape VF8a). */
+export interface ContexteDuReglage {
+  /**
+   * La session est-elle celle du chef du cabinet du dossier, ou du super-administrateur (`est_chef_du_cabinet`) ? LA
+   * CONDITION QUI PORTE VF8-Q1, écrite sur sa recommandation : sous « tout membre assigné au dossier », l'appelant y
+   * passerait ce que dit `admin_du_dossier`, et ce nom changerait avec elle. Un écran parle toujours depuis une session : le
+   * propriétaire et le rôle des Edge Functions, que la garde ne juge pas sur ce point, n'ont pas de place ici.
+   */
+  chefDuCabinet: boolean
+  /** Les accès clients du dossier, lus EN ENTIER : un seul qui porte « Ventes » retient la baisse du réglage. */
+  acces: readonly Pick<Membership, 'droit_ventes'>[]
+}
+
 /**
- * Ce que la garde du réglage (`garder_ventes_par_les_factures`) refuserait d'un réglage baissé : une facture source existe
- * déjà dans le dossier (EC3-Q1, irréversible). `factures` : celles du dossier, lues EN ENTIER. La facture nommée est la
- * première source validée — par l'instant de sa validation, une facture avant son avoir qu'une même transaction
- * validerait au même instant, puis par son numéro, octet par octet —, comme la base la nomme. La base départage encore
- * par l'identifiant ; le message n'en dit rien, un numéro étant unique dans son dossier (`factures_emises_numero_dossier_idx`).
- * Poser le réglage, ou le baisser avant toute facture source, passe.
+ * Ce que la garde du réglage (`garder_ventes_par_les_factures`) refuserait d'un réglage qui change, dans son ordre — du plus
+ * définitif au plus réparable :
+ *   1. le baisser quand une facture source existe déjà dans le dossier (EC3-Q1, irréversible) — pour tout auteur ;
+ *   2. le poser ou le baisser sans être le chef du cabinet (VF8-Q1) ;
+ *   3. le baisser quand un accès client du dossier porte « Ventes » (sinon la case survivrait à son dossier).
+ * `factures` : celles du dossier, lues EN ENTIER. La facture nommée est la première source validée — par l'instant de sa
+ * validation, une facture avant son avoir qu'une même transaction validerait au même instant, puis par son numéro, octet
+ * par octet —, comme la base la nomme. La base départage encore par l'identifiant ; le message n'en dit rien, un numéro
+ * étant unique dans son dossier (`factures_emises_numero_dossier_idx`). Un réglage qui ne change pas ne se juge pas ;
+ * le chef le pose, et le baisse avant toute facture source quand aucun accès ne porte « Ventes ».
  */
 export function refusDuReglage(
   avant: boolean,
   apres: boolean,
   factures: readonly FacturePourReglage[],
+  contexte: ContexteDuReglage,
 ): RefusEncaissement<CleRefusSourceDeLaVente> | null {
-  if (!avant || apres) return null
-  const premiere = factures.filter((f) => f.source_de_la_vente).sort((a, b) =>
-    ordreC(a.validated_at, b.validated_at)
-    || Number(a.type === 'avoir') - Number(b.type === 'avoir')
-    || ordreC(a.numero, b.numero))[0]
-  // Une facture validée porte toujours son numéro (`factures_emises_figees`) ; un `%` nul, `raise` l'écrirait `<NULL>`.
-  return premiere ? refusDe(REFUS_SOURCE_DE_LA_VENTE, 'reglage_irreversible', premiere.numero ?? '<NULL>') : null
+  if (avant === apres) return null
+  if (avant) {
+    const premiere = factures.filter((f) => f.source_de_la_vente).sort((a, b) =>
+      ordreC(a.validated_at, b.validated_at)
+      || Number(a.type === 'avoir') - Number(b.type === 'avoir')
+      || ordreC(a.numero, b.numero))[0]
+    // Une facture validée porte toujours son numéro (`factures_emises_figees`) ; un `%` nul, `raise` l'écrirait `<NULL>`.
+    if (premiere) return refusDe(REFUS_SOURCE_DE_LA_VENTE, 'reglage_irreversible', premiere.numero ?? '<NULL>')
+  }
+  if (!contexte.chefDuCabinet) return refusDe(REFUS_SOURCE_DE_LA_VENTE, 'reglage_reserve_au_chef')
+  if (avant && contexte.acces.some((a) => a.droit_ventes)) return refusDe(REFUS_SOURCE_DE_LA_VENTE, 'reglage_retenu_par_ventes')
+  return null
 }

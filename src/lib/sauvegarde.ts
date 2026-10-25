@@ -460,6 +460,14 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // ligne se réinsère telle quelle, son auteur et son instant compris, par la policy du super-administrateur. Le jour où sa
 // table existe, l'essai de restauration la met à cette place : seuls les rangs des devis et d'`exercices_valides`
 // changent. `sauvegardeDesignations.test.ts` garde cet ordre.
+//
+// Le réglage de la source des ventes d'un dossier et sa date (chantier EC-Q3, étapes VF2 et VF8a ; migrations
+// `source_de_la_vente` et `reglage_des_ventes`, la seconde préparée) : deux colonnes de `dossiers`, recopiées avec sa ligne
+// entière (`select('*')`) et réinsérées TELLES — la date n'est pas une colonne générée (`COLONNES_GENEREES`), et la garde du
+// réglage, qui la pose et l'efface à toute autre écriture, laisse celle que le super-administrateur réinsère. Une
+// sauvegarde faite avant la migration ne porte pas la date : la base la laisse nulle — inconnue —, et la relecture n'y voit
+// aucun écart. Le dossier précède ses accès ; le droit « Ventes » d'un accès ne retient que la BAISSE du réglage, qu'aucune
+// restauration ne fait. Rien ne change à l'ordre ; `sauvegardeVenteFacturee.test.ts` le garde.
 export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'cabinets',
   'super_admins',

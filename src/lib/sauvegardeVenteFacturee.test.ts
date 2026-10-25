@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { fichiersDuSchema, relationsDuSchema } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema, relationsDuSchema } from '../test/schema'
 import {
   COLONNES_GENEREES,
   liensPerdus,
@@ -107,6 +107,45 @@ describe('ce que `liensPerdus` dit d’une écriture dont l’encaissement ou la
       { table: 'ecritures_brouillon', colonne: 'facture_id', parent: 'factures_emises', valeur: 'f9', effacable: false },
     ])
     expect(liensPerdus(contenu('enc9', 'f9')).map((l) => l.colonne).sort()).toEqual(['encaissement_id', 'facture_id'])
+  })
+})
+
+// LE RÉGLAGE GARDÉ (étape VF8a ; migration `reglage_des_ventes`, préparée) : la date de la bascule, une colonne de
+// `dossiers`, que la sauvegarde recopie avec la ligne et que la restauration envoie telle ; la garde du réglage la laisse au
+// super-administrateur qui restaure, et la pose à toute autre insertion.
+describe('la date de la bascule (étape VF8a), réinsérée telle', () => {
+  const migration = fichiersDuSchema().filter((f) => /\/\d{14}_reglage_des_ventes\.sql$/.test(f.chemin))
+
+  it('une colonne ordinaire de `dossiers` dans l’export : ni générée, ni retirée de la ligne envoyée', () => {
+    expect(migration).toHaveLength(1)
+    expect(migration[0].texte).toContain('alter table public.dossiers add column ventes_par_les_factures_depuis timestamptz;')
+    expect(COLONNES_GENEREES.dossiers ?? []).not.toContain('ventes_par_les_factures_depuis')
+    const ligne = { id: 'd1', ventes_par_les_factures: true, ventes_par_les_factures_depuis: '2026-01-02T03:04:05+00:00' }
+    expect(sansColonnesGenerees('dossiers', [ligne])).toEqual([ligne])
+  })
+
+  it('la garde laisse l’insertion du super-administrateur telle, et pose la date de toute autre insertion', () => {
+    const garde = derniereDefinitionSql('garder_ventes_par_les_factures')
+    expect(garde).toMatch(new RegExp(
+      "if tg_op = 'INSERT' then\\n(\\s*--[^\\n]*\\n)*\\s*if not public\\.is_super_admin\\(\\) then\\n"
+      + '\\s*new\\.ventes_par_les_factures_depuis := case when new\\.ventes_par_les_factures then now\\(\\) end;\\n'
+      + '\\s*end if;\\n\\s*return new;\\n'))
+  })
+
+  it('le dossier précède ses accès, dans le plan prévu comme dans celui du jour', () => {
+    for (const ordre of [ORDRE_RESTAURATION_PREVU, ORDRE_RESTAURATION]) {
+      expect(ordre.indexOf('dossiers')).toBeGreaterThanOrEqual(0)
+      expect(ordre.indexOf('dossiers')).toBeLessThan(ordre.indexOf('memberships'))
+    }
+  })
+
+  it('l’essai de restauration contrôle la date du dossier restauré, et attend la migration sans elle', () => {
+    const essai = readFileSync(new URL('../../supabase/essais/restauration.sql', import.meta.url), 'utf8')
+    const bloc = essai.slice(essai.indexOf('-- LA DATE DE LA BASCULE (chantier EC-Q3, étape VF8a'), essai.indexOf('select controle, attendu, observe'))
+    expect(bloc.length).toBeGreaterThan(0)
+    expect(bloc).toContain("attname = 'ventes_par_les_factures_depuis'")
+    expect(bloc).toContain('EN ATTENTE de la migration reglage_des_ventes')
+    expect(bloc).toContain('e.ventes_par_les_factures_depuis = s.ventes_par_les_factures_depuis')
   })
 })
 

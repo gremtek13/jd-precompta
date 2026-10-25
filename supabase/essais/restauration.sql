@@ -319,6 +319,16 @@
 -- super-administrateur, et leurs refus, sont joués par exemplairesDesFactures.sql (contrôles 336 à 339, 360 à 363) ; la
 -- suppression d'une ligne du journal — refusée hors de la cascade de sa pièce ou de son dossier —, par une sonde sur la
 -- réplique seulement.
+--
+-- 25/10/2026, chantier EC-Q3, étape VF8a (migration `reglage_des_ventes`, préparée, non appliquée) : aucune table ni clé
+-- de plus — une colonne de `dossiers`, la date de la bascule (`ventes_par_les_factures_depuis`), recopiée avec la ligne du
+-- dossier ; le plan ne change pas. Un contrôle de plus suit le verdict : le dossier basculé restauré avec sa date et son
+-- réglage, ou EN ATTENTE sans la colonne. Rejoué sur la réplique de l'étape (égale à la production munie des quatre
+-- migrations préparées, puis de celle-ci), sur une copie jetable, contre le dossier de VF7e qui naît sans avoir basculé et
+-- que le chef bascule aussitôt (la garde pose alors sa date) : IDENTIQUE, 75 tables, 56 lignes, des deux côtés ; la date,
+-- 1 sur 1 avec la migration, EN ATTENTE sans elle ; les autres contrôles inchangés. Ce script recopie les tables, pas leurs
+-- gardes : que la garde laisse la date que le super-administrateur réinsère, et pose celle de toute autre insertion,
+-- ventesFacturees.sql le prouve (9c à 9f, 191).
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -856,6 +866,30 @@ begin
   insert into essai_restauration._controles values ('encaissements_factures.compte_contrepartie : chaque encaissement qui le porte, restauré le portant',
     case when n > 0 then n || ' sur ' || n else 'au moins un encaissement' end,
     case when n > 0 then egales || ' sur ' || n else 'aucun compte de contrepartie dans le dossier : rien n''est prouvé' end);
+end $$;
+
+-- LA DATE DE LA BASCULE (chantier EC-Q3, étape VF8a ; migration `reglage_des_ventes`, préparée) : une colonne de plus de
+-- `dossiers`, recopiée avec sa ligne, que la restauration envoie telle (elle n'est pas générée). Ce contrôle dit que le
+-- dossier basculé a été restauré avec sa date, telle qu'elle était — un dossier daté, ou rien n'est prouvé, et il le dit ;
+-- avant la migration, la colonne n'existe pas et le contrôle attend. Ce script recopie les tables, pas leurs gardes : que la
+-- garde du réglage laisse la date que le super-administrateur réinsère, et pose celle de toute autre insertion,
+-- ventesFacturees.sql le prouve (9c à 9f, 191).
+do $$
+declare d uuid := (select dossier from essai_restauration._cible); n bigint; egales bigint;
+begin
+  if not exists (select 1 from pg_attribute where attrelid = 'public.dossiers'::regclass
+                  and attname = 'ventes_par_les_factures_depuis' and not attisdropped) then
+    insert into essai_restauration._controles values
+      ('dossiers.ventes_par_les_factures_depuis : EN ATTENTE de la migration reglage_des_ventes', 'absente', 'absente');
+    return;
+  end if;
+  execute 'select count(*), count(*) filter (where e.ventes_par_les_factures_depuis = s.ventes_par_les_factures_depuis'
+          || ' and e.ventes_par_les_factures = s.ventes_par_les_factures) from public.dossiers s'
+          || ' left join essai_restauration.dossiers e on e.id = s.id where s.id = $1 and s.ventes_par_les_factures_depuis is not null'
+    into n, egales using d;
+  insert into essai_restauration._controles values ('dossiers.ventes_par_les_factures_depuis : le dossier basculé, restauré avec sa date et son réglage',
+    case when n > 0 then n || ' sur ' || n else 'un dossier daté' end,
+    case when n > 0 then egales || ' sur ' || n else 'aucune date de bascule dans le dossier : rien n''est prouvé' end);
 end $$;
 
 select controle, attendu, observe, observe = attendu as ok from essai_restauration._controles order by controle;
