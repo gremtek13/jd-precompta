@@ -108,6 +108,11 @@ export interface LigneDeclaration {
   // les pièces ferait chercher des pièces qui n'existent pas. Un mouvement, pas une part : ventilé sur
   // deux catégories du même poste, il compte une fois.
   nbMouvements: number
+  // Et d'encaissements de factures (étape VF7d, ligne 28.65) : la preuve d'une vente facturée est le registre des
+  // encaissements, ni une pièce ni un mouvement. Une entrée du registre, pas une part : réparti sur deux taux, un
+  // encaissement compte une fois ; une contre-passation est une entrée du registre, elle compte aussi, dans l'année de sa
+  // date. Le mouvement qu'un encaissement cite ne s'y ajoute pas aux mouvements : il est réservé à ses encaissements (G2).
+  nbEncaissements: number
 }
 
 // Ce qui n'a PAS été pris dans le calcul, avec la raison. Sur une déclaration fiscale, une pièce
@@ -407,19 +412,24 @@ export function calculerDeclaration2035(
   // et `cadreCompatible` (lib/cases2035.ts), qui refuse une recette dans une case de dépenses, ne voyait
   // plus que la ligne fusionnée. Séparées, la ligne du mauvais sens tombe dans les postes sans case, que
   // Clôture montre et que la validation d'un exercice refuse.
-  const totaux = new Map<string, { poste: string; nature: 'recette' | 'depense'; centimes: number; nbPieces: number; mouvements: Set<string> }>()
+  const totaux = new Map<string, {
+    poste: string; nature: 'recette' | 'depense'; centimes: number; nbPieces: number; mouvements: Set<string>; encaissements: Set<string>
+  }>()
 
-  const ajouter = (contribution: ContributionDeclaration, nbPieces: number, mouvementId: string | null = null) => {
+  const ajouter = (
+    contribution: ContributionDeclaration, nbPieces: number, mouvementId: string | null = null, encaissementId: string | null = null,
+  ) => {
     contributions.push(contribution)
     const cle = `${contribution.nature}:${contribution.poste}`
     let actuel = totaux.get(cle)
     if (!actuel) {
-      actuel = { poste: contribution.poste, nature: contribution.nature, centimes: 0, nbPieces: 0, mouvements: new Set() }
+      actuel = { poste: contribution.poste, nature: contribution.nature, centimes: 0, nbPieces: 0, mouvements: new Set(), encaissements: new Set() }
       totaux.set(cle, actuel)
     }
     actuel.centimes += contribution.centimes
     actuel.nbPieces += nbPieces
     if (mouvementId) actuel.mouvements.add(mouvementId)
+    if (encaissementId) actuel.encaissements.add(encaissementId)
   }
   const enCentimes = (montant: number) => Math.round(montant * 100)
 
@@ -527,7 +537,7 @@ export function calculerDeclaration2035(
       nature: 'recette',
       compte: compteDuProduit(p.regime, plan),
       centimes: p.htCentimes,
-    }, 0)
+    }, 0, null, p.encaissementId)
   }
 
   // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (ligne 28.65, VF4C3-Q1, faite sur la recommandation sans réponse du cabinet).
@@ -652,6 +662,7 @@ export function calculerDeclaration2035(
       montant: t.centimes / 100,
       nbPieces: t.nbPieces,
       nbMouvements: t.mouvements.size,
+      nbEncaissements: t.encaissements.size,
     }))
 
   const recettes = lignes.filter((l) => l.nature === 'recette').sort((a, b) => b.montant - a.montant)

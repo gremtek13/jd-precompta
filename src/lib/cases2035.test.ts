@@ -15,7 +15,7 @@ import {
 } from './cases2035'
 import {
   calculerDeclaration2035, POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS,
-  POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM,
+  POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
 } from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
 import type { Categorie, CotisationDeclaree, Piece, VehiculeDossier } from './types'
@@ -24,7 +24,7 @@ import { PLAN_PAR_DEFAUT } from './planComptable'
 import { ventesFactureesVides } from '../test/ventesFacturees'
 
 const ligne = (o: Partial<LigneDeclaration>): LigneDeclaration =>
-  ({ poste: 'Achats', nature: 'depense', montant: 100, nbPieces: 1, nbMouvements: 0, ...o })
+  ({ poste: 'Achats', nature: 'depense', montant: 100, nbPieces: 1, nbMouvements: 0, nbEncaissements: 0, ...o })
 
 const declaration = (o: Partial<Declaration2035>): Declaration2035 => ({
   annee: 2025,
@@ -186,6 +186,20 @@ describe('répartition d’une déclaration dans les cases', () => {
     // Les mouvements du relevé se comptent à part : leur preuve est le relevé, pas une pièce.
     expect(cases[0].nbMouvements).toBe(3)
     expect(cases[0].postes).toHaveLength(2)
+  })
+
+  // Les encaissements des ventes facturées aussi (étape VF7d) : leur preuve est le registre.
+  it('additionne les encaissements des postes d’une case', () => {
+    const { cases } = repartirEnCases(declaration({
+      recettes: [
+        // Le poste des ventes facturées d'abord : la case part de SES encaissements.
+        ligne({ poste: POSTE_VENTES_FACTUREES, nature: 'recette', montant: 500, nbPieces: 0, nbMouvements: 0, nbEncaissements: 3 }),
+        ligne({ poste: 'Recettes', nature: 'recette', montant: 300, nbPieces: 2, nbMouvements: 1, nbEncaissements: 0 }),
+        ligne({ poste: 'Recettes', nature: 'recette', montant: 1, nbPieces: 0, nbMouvements: 0, nbEncaissements: 4 }),
+      ],
+      depenses: [],
+    }))
+    expect(cases.map((c) => [c.case.code, c.nbPieces, c.nbMouvements, c.nbEncaissements])).toEqual([['AA', 2, 1, 7]])
   })
 
   it('LA CSG DÉDUCTIBLE ATTERRIT EN BV, SÉPARÉE DE LA LIGNE 25', () => {

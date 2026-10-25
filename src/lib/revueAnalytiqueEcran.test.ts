@@ -162,7 +162,7 @@ describe('donneesDeLaRevueAnalytique', () => {
       reperes: { annuels: [], postes: [] }, seuils: [], explications: [], ventesFacturees: ventes, encaissees: [],
     }
     const avec = donneesDeLaRevueAnalytique(2025, 2026, TRESORERIE, false, { ...sources, ecrituresDesVentes })
-    expect(avec.declaration?.depenses).toEqual([{ poste: 'Frais financiers', nature: 'depense', montant: 2, nbPieces: 0, nbMouvements: 1 }])
+    expect(avec.declaration?.depenses).toEqual([{ poste: 'Frais financiers', nature: 'depense', montant: 2, nbPieces: 0, nbMouvements: 1, nbEncaissements: 0 }])
     expect(avec.declaration).toEqual(declarationPourLaRevue(2025, TRESORERIE, false, sources.dossier, ventes, ecrituresDesVentes, []))
     expect(donneesDeLaRevueAnalytique(2025, 2026, TRESORERIE, false, { ...sources, ecrituresDesVentes: null }).declaration).toBeNull()
   })
