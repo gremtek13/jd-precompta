@@ -1359,6 +1359,22 @@ const VISITES = [
       await aDesigner.scrollIntoViewIfNeeded()
     },
   },
+  // LA VALIDATION D'UN DOSSIER BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF7c), sur la consultante d12 : la carte « Valider
+  // l'exercice » de Clôture dit, sous les mots de la base, le premier mouvement réservé, le premier virement sans son
+  // mouvement et la première vente facturée pas écrite à jour, chacun suivi de la liste qui les nomme — les phrases les plus
+  // longues de la carte. Avant l'e-reporting, qui fige l'horloge.
+  {
+    dossier: 'd12', onglet: 'cloture', nom: 'cloture-basculee/validation',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      const reserve = page.getByText(/porte un mouvement du \d\d\/\d\d\/\d{4} réservé à l'encaissement de la facture/)
+      await reserve.first().waitFor({ timeout: 10000 })
+      await page.getByText(/porte une vente facturée|porte l'écriture proposée d'une vente facturée/).first().waitFor({ timeout: 10000 })
+      await reserve.first().scrollIntoViewIfNeeded()
+    },
+  },
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à

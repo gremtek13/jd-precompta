@@ -275,6 +275,10 @@ const ECRANS: Ecran[] = [
   { nom: 'ClotureTab', fichier: 'pages/dossier/ClotureTab.tsx', rendre: () => (
     <Dossier1><ClotureTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
+  // Étape VF7c : basculé, Clôture compose les ventes facturées pour la validation — ni préalable ni geste avant leur retour.
+  { nom: 'ClotureTab (basculé)', fichier: 'pages/dossier/ClotureTab.tsx', rendre: () => (
+    <Dossier1><ClotureTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures modele={TRESORERIE} onNavigate={rien} /></Dossier1>
+  ) },
   { nom: 'ConnexionBancaireCard', fichier: 'pages/dossier/ConnexionBancaireCard.tsx', rendre: () => (
     <Dossier1><ConnexionBancaireCard dossierId="d1" lignes={[]} regles={[]} suspension={null} lectureEnCours={false} frontiere={null} onImported={rien} /></Dossier1>
   ) },
@@ -1092,7 +1096,7 @@ describe('les ventes facturées : ni 2035 ni geste avant leur retour', () => {
   })
   afterAll(() => { vi.restoreAllMocks() })
 
-  for (const nom of ['ClotureTab', 'RevisionTab', 'TvaTab', 'FinancementTab', 'FinancementTab (basculé)', 'EstimationTab']) {
+  for (const nom of ['ClotureTab', 'ClotureTab (basculé)', 'RevisionTab', 'TvaTab', 'FinancementTab', 'FinancementTab (basculé)', 'EstimationTab']) {
     it(`${nom} : les ventes facturées retenues seules, rien ne s’offre ni ne s’écrit ; revenues, l’attente se lève`, async () => {
       const ecran = ECRANS.find((e) => e.nom === nom)!
       const journal = vi.spyOn(console, 'error').mockImplementation(() => {})

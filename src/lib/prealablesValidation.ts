@@ -7,7 +7,6 @@ import type { DoublonDeTexte } from './doublonsTexte'
 import type { Emprunt } from './emprunts'
 import { numeroterFec, type NumerotationFec } from './fec'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
-import { anneeDe } from './format'
 import { confronterLOuverture, ouvertureEnEcart } from './ouvertureConfrontee'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
 import {
@@ -26,10 +25,15 @@ import { acquisitionsDesBiens, dotationDeLExercice, dotationsDuRegistre, dotatio
 import { amortissementsSousLeBareme, forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces, type PartEncaissee } from './rattachement'
-import { defautsDeNumerotation, frontiereDeValidation } from './validationExercice'
+import { defautsDeNumerotation, estFigee, frontiereDeValidation } from './validationExercice'
 import { mouvementsDeCloture, ouvertureDeLExercice, soldesAReporter, type ReportDesSoldes } from './reportDesSoldes'
 import { jumellesDuDossier, ventesEnDouble, type FacturePourJumelle, type TransmissionPourJumelle } from './ventesJumelles'
 import { exemplairesDesSources, horsDesExemplairesDesSources, type FacturesSources } from './facturesSources'
+import { memeEcritureQueLeBrouillon } from './ecrituresVentesFacturees'
+import { LIBELLE_ETAT_SOURCE, type EtatsDesVentes, type SourceDeVenteEtat } from './ecrituresVentesFactureesEcran'
+import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
+import { anneeDe, formatDate, formatMoney } from './format'
+import type { VentesDeLaChecklist } from './ventesDeLaChecklist'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
   LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
@@ -143,6 +147,15 @@ export interface DonneesDeValidation {
   // attendrait son écriture, sa catégorie ou sa conversion, que rien ne lit. NULLES quand on ne les a pas lues en entier :
   // la validation se suspend, comme sur toute lecture partielle. Sans valeur par défaut.
   facturesSources: FacturesSources | null
+  // LES VENTES FACTURÉES D'UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF7c), sur la lecture que Clôture fait déjà
+  // (lib/ecrituresVentesFactureesLecture.ts) et le brouillon entier : les états de la section « Ventes facturées » de
+  // l'onglet Écritures (`etatsDesVentesFacturees` — la composition que la numérotation reçoit, et chaque source à écrire,
+  // à réécrire, à retirer ou qui ne s'écrit pas) et ce que la Vue d'ensemble en dit (`ventesDeLaChecklist` — les mouvements
+  // réservés, les encaissements sans mouvement). « Sans objet » pour un dossier qui n'a pas basculé ; NULS tant qu'ils ne
+  // sont pas revenus pour ce dossier — la validation se suspend alors, comme sur toute lecture partielle. Sans valeur par
+  // défaut : oubliés, les écritures d'un dossier basculé sortiraient de la numérotation que la base exige entière.
+  etatsDesVentes: EtatsDesVentesDeLaValidation | null
+  ventesDeLaChecklist: VentesDeLaChecklist | null
   // En trésorerie, la 2035 de l'exercice et sa concordance avec les écritures ; RIEN en engagement, où la 2035 ne se
   // produit pas — l'appelant ne la calcule pas, et la base refuserait de la recevoir.
   declaration: Declaration2035 | null
@@ -177,13 +190,15 @@ function datesDesEcrituresAttendues(piece: Piece, paiements: PaiementsDesPieces,
 // Ce qui décide de l'ordre des exercices : ce qui est validé, l'ouverture, et ce que chaque année porte.
 export type SuiteDesExercices = Pick<DonneesDeValidation,
   'anneeCourante' | 'modele' | 'anneesValidees' | 'aNouveaux' | 'ecritures' | 'lignes' | 'reglements' | 'encaissees'
-  | 'piecesValidees' | 'piecesAValider' | 'cotisations' | 'vehicules' | 'immobilisations'>
+  | 'piecesValidees' | 'piecesAValider' | 'cotisations' | 'vehicules' | 'immobilisations' | 'etatsDesVentes'>
 
 // Les années qui portent quelque chose : une écriture, un mouvement qui n'est pas ignoré (un virement personnel
 // l'est, et s'écrit), une pièce validée à la date où elle s'écrit, une pièce à valider, une échéance de
 // cotisation là où elle compte — au prélèvement qui la paie, sinon à son échéance (lib/cotisationRapprochee.ts) :
 // une échéance de décembre prélevée en janvier ne fait pas de décembre un exercice à valider —, un forfait
-// kilométrique, la mise en service d'un bien.
+// kilométrique, la mise en service d'un bien. Et, d'un dossier basculé (étape VF7c), les dates des ventes facturées :
+// l'émission d'une facture ou d'un avoir source, un encaissement — contre-passation comprise —, un mouvement que ses
+// encaissements classent ; un exercice qui n'a qu'elles se valide d'abord, comme un autre.
 function anneesActives(d: SuiteDesExercices, paiements: PaiementsDesPieces): Set<number> {
   const annees = new Set<number>()
   const noter = (date: string | null) => { if (date) annees.add(anneeDe(date)) }
@@ -194,7 +209,21 @@ function anneesActives(d: SuiteDesExercices, paiements: PaiementsDesPieces): Set
   for (const c of cotisationsComptees(d.cotisations, d.lignes, d.modele.mode)) noter(c.date)
   for (const v of d.vehicules) if (v.km_professionnel > 0) annees.add(v.annee)
   for (const i of d.immobilisations) noter(i.date_mise_en_service ?? i.date_acquisition)
+  for (const date of datesDesVentesFacturees(d.etatsDesVentes)) noter(date)
   return annees
+}
+
+// Les dates des ventes facturées d'un dossier basculé, sur la composition de ses états : l'émission de chaque facture ou avoir
+// source (ses documents), chaque encaissement et contre-passation (ses parts), chaque écriture composée — un mouvement que ses
+// encaissements classent compris —, et la date de chaque source que les états nomment (une vente écartée, qui n'a ni
+// document ni part). Aucune pour un dossier qui n'a pas basculé, ni sur des états qui ne sont pas lus.
+function datesDesVentesFacturees(etats: EtatsDesVentesDeLaValidation | null): string[] {
+  if (etats?.etat !== 'lus') return []
+  const { ventes, ecritures } = etats.contexte.composition
+  return [
+    ...ventes.documents.map((x) => x.date), ...ventes.parts.map((x) => x.date), ...ecritures.map((e) => e.date),
+    ...etats.sources.map((s) => s.date),
+  ]
 }
 
 // LE PROCHAIN EXERCICE À VALIDER, celui que les préalables d'ordre réclament : l'exercice qui suit le dernier
@@ -267,6 +296,105 @@ export type CleRefusVentesFactureesDeLaValidation = (typeof REFUS_VENTES_FACTURE
 // est un en-cours, aux valeurs à l'encaissement (EC3-Q7) : il ne retient pas.
 export const NOM_DU_MOYEN_SANS_MOUVEMENT = { virement: 'virement', prelevement: 'prélèvement' } as const
 
+// ── LES VENTES FACTURÉES D'UN DOSSIER BASCULÉ, DITES AVANT LE CLIC (chantier EC-Q3, étape VF7c) ─────────────────────────
+// La conception : HISTORIQUE.md, « VF7, LA VALIDATION FIGE LA SOURCE : LA CONCEPTION », § 3 (d). Trois préalables neufs,
+// sous les mots de la base et dans son ordre (`REFUS_VENTES_FACTUREES_DE_LA_VALIDATION`) : `mouvements-reserves` (avant les
+// mouvements à traiter, qui ne les comptent plus), puis `encaissements-sans-mouvement` (un virement ou un prélèvement ; un
+// chèque, une carte ou un effet sans mouvement est un en-cours au 511, dit en AVERTISSEMENT sous
+// `encaissements-en-cours`), puis `ventes-facturees-a-ecrire`. La numérotation reçoit la composition : les lignes
+// rattachées prennent le journal, la pièce et l'auxiliaire du FEC, celles qui ne le sont plus vont à
+// `ventes-facturees-a-ecrire` et non plus à `ecritures-orphelines`. Pour un dossier qui n'a pas basculé, rien ne change :
+// aucun de ces trois préalables, une composition vide, les orphelines comptées comme hier.
+
+/** Ce que la validation reçoit de la section « Ventes facturées » de l'onglet Écritures : ses états, ou pourquoi il n'y en a pas. */
+export type EtatsDesVentesDeLaValidation =
+  // Le dossier n'a pas basculé : rien n'est lu de plus, rien ne change.
+  | { etat: 'sans_objet' }
+  // Basculé, les sources lues en partie ou refusées.
+  | { etat: 'incomplete'; motif: string }
+  // Basculé : les états (lib/ecrituresVentesFactureesEcran.ts), ou des lectures qui ne se tiennent pas (« incohérent »).
+  | EtatsDesVentes
+
+type EtatEnDefaut = Extract<CleRefusVentesFactureesDeLaValidation, 'a_ecrire' | 'a_reecrire' | 'a_retirer' | 'ne_s_ecrit_pas'>
+
+/** Une source d'une vente facturée que la validation de l'exercice refuserait, et pourquoi. */
+export interface VenteFactureeEnDefaut {
+  source: SourceDeVenteEtat
+  etat: EtatEnDefaut
+  /** Le jour que la base nomme : la première date qui diffère, sinon celle de la source. */
+  jour: string
+  /** Les lignes PROPOSÉES de la source jusqu'au 31 décembre : celles qui se réécrivent ou se retirent. */
+  lignes: readonly string[]
+}
+
+const ORDRE_DES_GENRES: Readonly<Record<SourceDeVenteEtat['source']['genre'], number>> = { facture: 0, avoir: 1, encaissement: 2, mouvement: 3 }
+
+const premiere = (dates: readonly string[]) => dates.reduce((a, b) => (b < a ? b : a))
+
+/**
+ * LES SOURCES EN DÉFAUT JUSQU'AU 31 DÉCEMBRE DE L'EXERCICE, comme `ventes_facturees_de_l_exercice` les juge (migration
+ * `validation_des_ventes_facturees`) : ce que la composition écrit après la frontière et jusqu'à `fin`, confronté aux lignes
+ * proposées de la source dans la même fenêtre, date par date (`memeEcritureQueLeBrouillon`) — à écrire, à réécrire, à
+ * retirer ; ou une source qui ne s'écrit pas, quand SA date y tombe. Une source « à écrire » en janvier suivant ne retient
+ * pas l'exercice. Dans l'ordre de la base : le jour, le genre, puis la clé.
+ */
+export function ventesFactureesEnDefaut(
+  sources: readonly SourceDeVenteEtat[], fin: string, frontiere: string | null,
+): VenteFactureeEnDefaut[] {
+  const defauts: VenteFactureeEnDefaut[] = []
+  for (const s of sources) {
+    if (s.etat === 'ne_s_ecrit_pas') {
+      if (s.date <= fin && !estFigee(s.date, frontiere)) defauts.push({ source: s, etat: 'ne_s_ecrit_pas', jour: s.date, lignes: [] })
+      continue
+    }
+    const attendues = s.aEcrire.filter((e) => e.date <= fin)
+    const proposees = s.proposees.filter((l) => l.date <= fin)
+    const lignes = proposees.map((l) => l.id)
+    if (attendues.length === 0 && proposees.length === 0) continue
+    if (proposees.length === 0) {
+      defauts.push({ source: s, etat: 'a_ecrire', jour: premiere(attendues.map((e) => e.date)), lignes })
+    } else if (attendues.length === 0) {
+      defauts.push({ source: s, etat: 'a_retirer', jour: premiere(proposees.map((l) => l.date)), lignes })
+    } else {
+      const datesAttendues = new Set(attendues.map((e) => e.date))
+      const differentes = [
+        ...attendues.filter((e) => !memeEcritureQueLeBrouillon(e, proposees.filter((l) => l.date === e.date))).map((e) => e.date),
+        ...proposees.filter((l) => !datesAttendues.has(l.date)).map((l) => l.date),
+      ]
+      if (differentes.length > 0) defauts.push({ source: s, etat: 'a_reecrire', jour: premiere(differentes), lignes })
+    }
+  }
+  return defauts.sort((a, b) => (a.jour < b.jour ? -1 : a.jour > b.jour ? 1 : 0)
+    || ORDRE_DES_GENRES[a.source.source.genre] - ORDRE_DES_GENRES[b.source.source.genre]
+    || (a.source.cle < b.source.cle ? -1 : a.source.cle > b.source.cle ? 1 : 0))
+}
+
+/** Les mots d'un refus de la base, chaque « % » remplacé dans l'ordre par sa valeur. */
+export function motsDeLaBase(cle: CleRefusVentesFactureesDeLaValidation, valeurs: readonly (string | number)[]): string {
+  const modele = REFUS_VENTES_FACTUREES_DE_LA_VALIDATION.find((r) => r.cle === cle)!.modele
+  let i = 0
+  return modele.replace(/%/g, () => String(valeurs[i++]))
+}
+
+// Ce qui suspend la validation d'un dossier basculé : ses ventes facturées pas encore revenues, lues en partie, ou des
+// lectures qui ne se tiennent pas — entre elles (un état « sans objet » et l'autre non), ou avec le brouillon.
+function ventesIllisibles(d: Pick<DonneesDeValidation, 'etatsDesVentes' | 'ventesDeLaChecklist'>): string | null {
+  const e = d.etatsDesVentes
+  const c = d.ventesDeLaChecklist
+  if (e === null || c === null) return 'les ventes facturées ne sont pas encore lues'
+  if (e.etat === 'incomplete' || e.etat === 'incoherent') return `les ventes facturées : ${e.motif}`
+  if (c.etat === 'incomplete') return `les ventes facturées : ${c.motif}`
+  if ((e.etat === 'sans_objet') !== (c.etat === 'sans_objet')) return 'les ventes facturées lues ne se tiennent pas entre elles'
+  return null
+}
+
+const AU_PLUS = 6
+const libelleDuMoyen = (moyen: string) => (MOYENS_ENCAISSEMENT.find((m) => m.moyen === moyen)?.libelle ?? moyen).toLowerCase()
+function enumeration(noms: readonly string[]): string {
+  const cites = noms.slice(0, AU_PLUS)
+  return `${cites.join(' ; ')}${noms.length > cites.length ? ` ; et ${noms.length - cites.length} autre(s)` : ''}`
+}
+
 export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation {
   const debut = `${d.annee}-01-01`
   const fin = `${d.annee}-12-31`
@@ -279,8 +407,12 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // ── Une lecture partielle d'abord : rien de ce qui suit ne vaudrait. ─────────────────────────────────────
   // Les factures sources non lues en entier en sont une : un exemplaire qu'on ne saurait pas reconnaître serait jugé comme
   // une pièce qui compte.
-  const lectureIncomplete = d.lectureIncomplete ?? (d.facturesSources === null ? 'les factures sources de leurs ventes ne sont pas lues en entier' : null)
-  if (lectureIncomplete !== null || d.facturesSources === null) {
+  // Les ventes facturées d'un dossier basculé aussi (étape VF7c) : sans elles, la numérotation laisserait leurs écritures
+  // dehors, et les trois préalables qui les disent se tairaient.
+  const lectureIncomplete = d.lectureIncomplete
+    ?? (d.facturesSources === null ? 'les factures sources de leurs ventes ne sont pas lues en entier' : null)
+    ?? ventesIllisibles(d)
+  if (lectureIncomplete !== null || d.facturesSources === null || d.etatsDesVentes === null || d.ventesDeLaChecklist === null) {
     prealables.push({
       id: 'lecture-partielle', nb: null, cible: 'cloture', bloquant: true,
       message: `La lecture du dossier est restée partielle (${lectureIncomplete}) : une validation ne se fait que sur tout le dossier. Recharger la page.`,
@@ -288,6 +420,10 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     return { prealables, numerotation: null, report: null, validable: false }
   }
   const sources = d.facturesSources
+  // Les états de la section « Ventes facturées » et ce que la Vue d'ensemble en dit, lus pour un dossier basculé ; rien
+  // pour un autre (`ventesIllisibles` a écarté tout le reste).
+  const etatsDesVentes = d.etatsDesVentes.etat === 'lus' ? d.etatsDesVentes : null
+  const ventesDuReleve = d.ventesDeLaChecklist.etat === 'lue' ? d.ventesDeLaChecklist : null
 
   // ── Ce que la base refusera, avec ses mots. ─────────────────────────────────────────────────────────────
   const derniere = d.anneesValidees.length > 0 ? Math.max(...d.anneesValidees) : null
@@ -324,7 +460,29 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
         : `L'exercice ${premiere} porte des écritures qui ne sont pas validées : les exercices se valident dans l'ordre.`,
     })
   }
-  const aTraiter = d.lignes.filter((l) => l.statut === 'non_rapprochee' && l.date <= fin)
+  // LES MOUVEMENTS RÉSERVÉS À DES ENCAISSEMENTS DE FACTURES SOURCES (G2 ; étape VF7c) : la base les refuse AVANT les
+  // mouvements à traiter, sous leur nom — ils ne se traitent que par leurs encaissements, un débit par ses
+  // contre-passations. Ceux que la Vue d'ensemble compte (`ventesDeLaChecklist`, hors des exercices figés), datés jusqu'au
+  // 31 décembre ; et les mouvements à traiter ne les comptent plus. Un dossier qui n'a pas basculé n'en a aucun.
+  const dateDuMouvement = new Map(d.lignes.map((l) => [l.id, l.date]))
+  const idsReserves = new Set((ventesDuReleve?.reserves ?? []).map((m) => m.id))
+  // Un réservé que le relevé lu n'aurait pas — défensif : les deux lectures sont faites ensemble — se compte, sans date.
+  const reserves = (ventesDuReleve?.reserves ?? [])
+    .map((m) => ({ m, date: dateDuMouvement.get(m.id) ?? '' }))
+    .filter((r) => r.date <= fin)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) || (a.m.id < b.m.id ? -1 : a.m.id > b.m.id ? 1 : 0))
+  if (reserves.length > 0) {
+    const { m, date } = reserves[0]
+    bloque({
+      id: 'mouvements-reserves', nb: null, cible: 'banque',
+      message: motsDeLaBase(m.montant >= 0 ? 'mouvement_reserve_credit' : 'mouvement_reserve_debit', [
+        date === '' ? d.annee : anneeDe(date), formatDate(date || null), m.factures[0] ?? 'sans numéro',
+      ]),
+      detail: `${pluriel(reserves.length, 'mouvement concerné', 'mouvements concernés')} : ${enumeration(reserves.map((r) =>
+        `le ${formatDate(r.date || null)}, ${formatMoney(r.m.montant)} (${r.m.factures.join(', ') || 'sans numéro'})`))}. Dans Banque, sa fiche le classe par ses encaissements.`,
+    })
+  }
+  const aTraiter = d.lignes.filter((l) => l.statut === 'non_rapprochee' && l.date <= fin && !idsReserves.has(l.id))
   if (aTraiter.length > 0) {
     const premiere = Math.min(...aTraiter.map((l) => anneeDe(l.date)))
     bloque({
@@ -332,6 +490,43 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       message: anneeOuverture !== null && premiere < anneeOuverture
         ? "Des mouvements bancaires antérieurs à l'ouverture du dossier restent à traiter : les ignorer avant la validation."
         : `L'exercice ${premiere} porte des mouvements bancaires à traiter : ils se traitent avant la validation.`,
+    })
+  }
+  // UN ENCAISSEMENT PAR VIREMENT OU PAR PRÉLÈVEMENT SANS SON MOUVEMENT (étape VF7c) : encaissé à l'inscription au crédit, son
+  // mouvement est de son exercice — il manque au relevé, ou n'y est pas rattaché. La base le refuse après les mouvements à
+  // traiter ; un chèque, une carte ou un effet n'en est pas (un en-cours au 511, EC3-Q7), dit plus bas en avertissement.
+  const sansMouvement = (ventesDuReleve?.sansMouvement ?? []).filter((e) => e.date_encaissement <= fin)
+    .sort((a, b) => (a.date_encaissement < b.date_encaissement ? -1 : a.date_encaissement > b.date_encaissement ? 1 : 0)
+      || (a.cree_le < b.cree_le ? -1 : a.cree_le > b.cree_le ? 1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  const numeroDeLaFacture = (factureId: string) => ventesDuReleve?.numeros.get(factureId) ?? 'sans numéro'
+  const nomDeLEncaissement = (e: (typeof sansMouvement)[number]) =>
+    `${numeroDeLaFacture(e.facture_id)} (${libelleDuMoyen(e.moyen)} du ${formatDate(e.date_encaissement)}, ${formatMoney(e.montant)})`
+  const sansMouvementQuiRetient = sansMouvement.filter((e) => e.moyen === 'virement' || e.moyen === 'prelevement')
+  if (sansMouvementQuiRetient.length > 0) {
+    const e = sansMouvementQuiRetient[0]
+    bloque({
+      id: 'encaissements-sans-mouvement', nb: null, cible: 'banque',
+      message: motsDeLaBase('encaissement_sans_mouvement', [
+        anneeDe(e.date_encaissement), numeroDeLaFacture(e.facture_id),
+        NOM_DU_MOYEN_SANS_MOUVEMENT[e.moyen as keyof typeof NOM_DU_MOYEN_SANS_MOUVEMENT], formatDate(e.date_encaissement),
+      ]),
+      detail: `${pluriel(sansMouvementQuiRetient.length, 'encaissement concerné', 'encaissements concernés')} : `
+        + `${enumeration(sansMouvementQuiRetient.map(nomDeLEncaissement))}. Le crédit qui le porte se rattache depuis sa fiche, dans `
+        + 'Banque — remis d’abord à traiter s’il a été ignoré. Un virement reçu sur un compte bancaire que le dossier ne suit '
+        + 'pas s’enregistre par le moyen « autre », sur le compte de contrepartie de ce compte.',
+    })
+  }
+  // UNE VENTE FACTURÉE QUI N'EST PAS ÉCRITE À JOUR (étape VF7c) : à écrire, à réécrire, à retirer, ou qui ne s'écrit pas —
+  // jusqu'au 31 décembre, de la frontière, comme la base la juge ; chacune nommée, la première sous les mots de la base.
+  const ventesEnDefaut = etatsDesVentes === null ? [] : ventesFactureesEnDefaut(etatsDesVentes.sources, fin, frontiereDeValidation(d.anneesValidees))
+  if (ventesEnDefaut.length > 0) {
+    const v = ventesEnDefaut[0]
+    bloque({
+      id: 'ventes-facturees-a-ecrire', nb: null, cible: 'ecritures',
+      message: motsDeLaBase(v.etat, [anneeDe(v.jour), v.source.nom]),
+      detail: `${pluriel(ventesEnDefaut.length, 'vente facturée concernée', 'ventes facturées concernées')} : `
+        + `${enumeration(ventesEnDefaut.map((x) => `${x.source.nom} (${LIBELLE_ETAT_SOURCE[x.etat]})`))}. Dans Écritures, la `
+        + 'section « Ventes facturées » écrit, réécrit ou retire chacune d’un clic, et dit ce qui retient celle qui ne s’écrit pas.',
     })
   }
   const paiements = paiementsDesPieces(d.lignes, d.reglements, d.encaissees)
@@ -370,16 +565,20 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
 
   // ── La numérotation de l'exercice : celle que la validation enverra. ────────────────────────────────────
   const ecrituresDeLExercice = d.ecritures.filter((e) => dansLExercice(e.date))
-  // SANS LES VENTES FACTURÉES, jusqu'à l'étape VF7 (chantier EC-Q3) : la validation qui numérotera leurs écritures et les
-  // préalables qui les diront (§ 11 de la conception) sont à elle. Jusque-là, une écriture d'une vente facturée reste hors
-  // de cette numérotation et compte parmi les écritures que rien ne rattache : la validation d'un exercice qui en porte se
-  // refuse — fermée du côté sûr, comme la base, qui refuse une numérotation qui ne couvre pas toutes les écritures.
+  // AVEC LES VENTES FACTURÉES d'un dossier basculé (étape VF7c) : la composition même de la section « Ventes facturées »,
+  // et chaque ligne qui la porte telle quelle (`rattachementDesVentes`) prend le journal, la pièce et l'auxiliaire du FEC —
+  // le FEC d'après la validation est celui d'avant, ValidDate près. Une ligne qui ne la porte plus reste hors de la
+  // numérotation, comme la base la refuserait ; elle se dit sous `ventes-facturees-a-ecrire`, qui nomme sa source, et non
+  // parmi les écritures que rien ne rattache. Un dossier qui n'a pas basculé n'a aucune composition : rien ne change.
   const numerotation = numeroterFec(
     ecrituresDeLExercice, d.piecesValidees, [...d.categories], ouvertureDeLExercice(d.aNouveaux, d.soldesReportes, d.annee),
-    d.modele.mode, d.lignes, [],
+    d.modele.mode, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [],
   )
+  // Les lignes que `ventes-facturees-a-ecrire` nomme — à réécrire ou à retirer —, et elles seules : une ligne d'une vente
+  // facturée qu'aucune source en défaut ne porterait (défensif) reste une écriture que rien ne rattache.
+  const lignesDesVentesEnDefaut = new Set(ventesEnDefaut.flatMap((v) => v.lignes))
   bloque({
-    id: 'ecritures-orphelines', nb: numerotation.horsFec.length, cible: 'ecritures',
+    id: 'ecritures-orphelines', nb: numerotation.horsFec.filter((e) => !lignesDesVentesEnDefaut.has(e.id)).length, cible: 'ecritures',
     message: "écriture(s) que rien ne rattache — ni pièce, ni mouvement, ni bien, ni véhicule, ni déclaration de TVA (le reste d'une pièce supprimée) : les retirer avant la validation.",
   })
   const defauts = defautsDeNumerotation(numerotation)
@@ -697,6 +896,17 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     prealables.push({
       id: 'echeances-emprunt-non-rapprochees', nb: echeancesManquantes.length, cible: 'banque', bloquant: false,
       message: "échéance(s) d'emprunt de l'exercice qu'aucun mouvement ne paie — leurs intérêts ne sont pas comptés. Une fois l'exercice validé, ils ne le seront plus.",
+    })
+  }
+  // UN CHÈQUE, UNE CARTE OU UN EFFET SANS MOUVEMENT AU 31 DÉCEMBRE (étape VF7c ; EC3-Q7) : un en-cours, écrit au 511, que la
+  // base ne refuse pas — le mouvement de l'exercice suivant le soldera en s'y rattachant. Un avertissement, nommé : un
+  // chèque remis et jamais crédité est aussi un impayé à reprendre.
+  const enCours = sansMouvement.filter((e) => e.moyen !== 'virement' && e.moyen !== 'prelevement')
+  if (enCours.length > 0) {
+    prealables.push({
+      id: 'encaissements-en-cours', nb: enCours.length, cible: 'banque', bloquant: false,
+      message: `encaissement(s) de factures par chèque, carte ou effet sans mouvement du relevé au 31 décembre ${d.annee} : un en-cours, au 511, que le mouvement de son crédit soldera en s'y rattachant, même après la validation. Un chèque jamais crédité est un impayé, à contre-passer.`,
+      detail: `${enumeration(enCours.map(nomDeLEncaissement))}.`,
     })
   }
   // LES MOUVEMENTS IGNORÉS DE L'EXERCICE ne sont écrits nulle part (lib/controles.ts) : juste pour un doublon, faux pour un

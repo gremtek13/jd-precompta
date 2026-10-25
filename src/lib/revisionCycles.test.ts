@@ -275,6 +275,9 @@ describe('le rangement des contrôles existants', () => {
       // Étape VF6e : la pièce de vente à désigner exemplaire de sa facture, et la vente déclarée dont le montant est celui
       // d'une facture source sans exemplaire.
       'exemplaires-a-designer', 'ventes-hors-factures-a-verifier',
+      // Étape VF7c : les préalables de la validation d'un dossier basculé — le chèque en cours au 511, la vente facturée à
+      // écrire.
+      'encaissements-en-cours', 'ventes-facturees-a-ecrire',
     ],
     depenses: [
       'pieces-a-valider', 'pieces-sans-date', 'date-impossible', 'sans-categorie', 'comptes-manquants', 'postes-manquants',
