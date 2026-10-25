@@ -271,6 +271,10 @@ describe('pointsDeLaChecklist : le pont par régime (VF6e)', () => {
     })
     // Hors d'un dossier basculé : rien.
     expect(point(d, 'exemplaires-a-designer')?.nb).toBe(0)
+    // La jumelle VALIDÉE d'une facture source, sans désignation : comptée deux fois, en erreur — pas « à désigner » aussi.
+    const validee = { piecesValidees: [piece({ id: 'p1', statut: 'validee', superpdp_invoice_id: 21 })] }
+    expect(point({ ...BASCULE, ...validee }, 'ventes-en-double')?.nb).toBe(1)
+    expect(point({ ...BASCULE, ...validee }, 'exemplaires-a-designer')?.nb).toBe(0)
     // Pièces, factures ou transmissions lues en partie : le point se tait.
     expect(point({ ...BASCULE, ...d, jumellesPartielles: true }, 'exemplaires-a-designer')?.nb).toBe(0)
   })

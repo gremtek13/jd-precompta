@@ -1900,11 +1900,19 @@ describe('PiecesTab — l’exemplaire d’une facture émise', () => {
       expect(marque.className).toBe('badge badge-neutral')
       await ouvrir('CLIENT FICTIF')
       const retirer = await within(volet()).findByRole('button', { name: 'Retirer la déclaration' })
+      // Le formulaire d'une pièce déclarée dit que sa nature ne change pas (la garde étendue) : le témoin de ce qu'elle porte.
+      const NATURE = /^Cette pièce est déclarée vente hors des factures de l'application : elle reste une pièce de vente/
+      const type = within(volet()).getByLabelText('Type') as HTMLSelectElement
+      fireEvent.change(type, { target: { value: 'achat' } })
+      expect(within(volet()).getByText(NATURE)).toBeTruthy()
+      fireEvent.change(type, { target: { value: 'vente' } })
       faux.relecturesRefusees = 1
       await act(async () => { retirer.click() })
       expect(faux.rpcs).toEqual([{ nom: 'retirer_declaration_hors_des_factures', args: { p_dossier_id: D, p_piece_id: 'p-formation' } }])
       expect(within(ligne('CLIENT FICTIF')).queryByText('Vente hors des factures de l’application')).toBeNull()
-      expect(within(volet()).queryByRole('button', { name: 'Retirer la déclaration' })).toBeNull()
+      // La relecture de la fiche refusée, seule la recopie de l'onglet lui apprend que la pièce n'est plus déclarée.
+      fireEvent.change(within(volet()).getByLabelText('Type'), { target: { value: 'achat' } })
+      expect(within(volet()).queryByText(NATURE)).toBeNull()
     })
 
     it('défait : la confirmation nomme, un appel, la ligne perd sa marque et la fiche revient au choix', async () => {
