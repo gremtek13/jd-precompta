@@ -469,7 +469,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   relevé — une facture source ouverte ou un encaissement sans mouvement pour un crédit libre, une contre-passation sans
   mouvement pour un débit, acceptés par les jugements de la base — mettent le crédit « à rapprocher » dans le lot des
   règles, l'écartent des trois autres lots et se proposent en tête de sa fiche → « LES CANDIDATS DU RELEVÉ ». VF5f le
-  23/10/2026, neutre : la Checklist et la Révision disent, en « attention » jusqu'à VF7, les mouvements réservés à des
+  23/10/2026, neutre : la Checklist et la Révision disent, en « attention », les mouvements réservés à des
   encaissements de factures, à classer (Banque), et les encaissements par un moyen du relevé sans mouvement (Factures,
   vue « Règlements », que Banque ne liste pas) ; lues en partie, les ventes taisent les deux points et un bandeau le
   dit ; un réservé ne se compte plus parmi les non rapprochées → « LA CHECKLIST ET LA RÉVISION DISENT LES MOUVEMENTS
@@ -516,9 +516,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   crédit de janvier) → « LA FRONTIÈRE DES ENCAISSEMENTS, EN BASE ». VF7b PRÉPARÉE le 25/10/2026, pas appliquée
   (`validation_des_ventes_facturees`, version provisoire) : `valider_exercice` refuse un mouvement réservé, un virement
   ou un prélèvement sans mouvement, une vente facturée pas écrite à jour, recomposée d'un bloc (VF7B-Q1, confrontée par
-  `recompositionDesVentes.sql`) → « LA VALIDATION REFUSE LES MANQUES DES VENTES FACTURÉES ». Restent VF7c à VF7e, VF8 et
-  VF9 (EC3-Q9, la facture reprise, va à A8) ; « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard
-  avec VF8 (VF5H-Q3) ; à VF8, ce que la simulation recevra dit aussi quelle pièce ignorer.
+  `recompositionDesVentes.sql`) → « LA VALIDATION REFUSE LES MANQUES DES VENTES FACTURÉES ». VF7c le 25/10/2026, à
+  l'écran, neutre : la numérotation de la validation reçoit la composition, et trois préalables disent avant le clic,
+  aux mots de la base, le mouvement réservé, le virement sans mouvement et la vente pas écrite à jour → « LES PRÉALABLES
+  DE LA VALIDATION DISENT LES VENTES FACTURÉES ». Restent VF7d, VF7e, VF8 et VF9 (EC3-Q9, la facture reprise, va à A8) ;
+  « Ma banque » nomme la facture d'avant d'un virement mixte au plus tard avec VF8 (VF5H-Q3) ; à VF8, ce que la
+  simulation recevra dit aussi quelle pièce ignorer.
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -926,8 +929,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   (`rattachementDesVentes`, `lib/ventesFactureesDesExports.ts`), dont elle prend le journal, la pièce et l'auxiliaire du
   411 ; une ligne qui ne se rattache plus reste hors du FEC, et le badge le dit ; un dossier basculé dont les ventes ne
   sont pas lues en entier n'exporte rien ; la piste d'audit cite la facture et l'empreinte de son exemplaire ou du CII
-  transmis, le registre, le relevé ; le 411 se lettre par facture ; jusqu'à VF7, un exercice qui porte ces lignes ne se
-  valide pas → « LE FEC, LA PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES ». **Connexion bancaire** : 90
+  transmis, le registre, le relevé ; le 411 se lettre par facture ; la validation les numérote (VF7c), son FEC celui
+  d'avant → « LE FEC, LA PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES ». **Connexion bancaire** : 90
   jours sans nouvel accord → « LA CONNEXION BANCAIRE RÉCUPÈRE ».
 - **Les ventes du client** : les essais exigent un client d'essai SANS « Ventes » → « LES VENTES DU CLIENT, EN BASE ».
   **Les devis** : `devis.sql` est la RÉFÉRENCE des refus tant que l'export ne porte pas leurs migrations. **Articles,
