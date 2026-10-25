@@ -36028,3 +36028,277 @@ pas même la pièce remise à valider : c'est le gel voulu ; une erreur découve
 après coup (ligne 26.6). Le retour arrière rouvre ce gel, sans perte de donnée. La sauvegarde ne change pas (aucune
 table, aucune colonne), et la restauration réinsère une pièce désignée par la porte du super-administrateur, que le gel
 ne regarde pas (les quatre fonctions seules le jugent).
+
+### 25/10/2026 — VF8, LA BASCULE : LA CONCEPTION — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(Conception de l'agent architecte, sur `ab5921b` — `main` plus VF5h2 et VF7a à VF7e, quatre migrations préparées et non
+appliquées ; rien d'écrit, ni dans le code ni en base. Production lue le 25/10/2026 en SELECT seulement : des comptes,
+le catalogue, les policies, les droits par colonne et le texte d'une fonction (`changer_droits_acces`), aucune valeur
+d'une ligne. Lus avant d'écrire : la conception d'EC-Q3 (§ 5, 7, 9, 10, 11, 14, 15), VF2 (`source_de_la_vente`), VF3b1,
+VF3b3, les frais d'un mouvement d'encaissements, VF5h, VF5h2 (son « À REVOIR, PUIS FAIT »), la conception de VF6 (§ 7),
+la conception de VF7 (§ 4 et 9), et toutes les notes « VF8 » de ce fichier (§ 4) ; `sourceDeLaVente.ts`,
+`estimation.ts`, `ventesFacturees.ts` (`recettesFactureesParMois`), `rattachement.ts`, `droitsAcces.ts`,
+`ClientSimulation.tsx`, `InformationsTab.tsx`, `DossierDetail.tsx`, `FactureFormModal.tsx`, `sauvegarde.ts`. Sources au
+§ 10.)
+
+#### 0. Le résumé
+
+1. Aujourd'hui, rien à l'écran ne bascule un dossier : le réglage `dossiers.ventes_par_les_factures` existe depuis VF2,
+   faux partout, et TOUT membre assigné au dossier peut le poser par une écriture directe (`dossiers_update`,
+   `admin_du_dossier`), sans phrase, sans date, sans rien qui le retienne quand un accès porte « Ventes » (§ 2).
+2. Et un dossier basculé serait mal servi à trois endroits : le formulaire d'une facture ne dit AVANT le clic aucun des
+   trois refus d'une facture source (`refusValidationSource` existe depuis VF2, aucun écran ne l'appelle) ; « Ma
+   simulation » ne compte pas les ventes facturées ; la case « Ventes » se coche sur un dossier qui n'a pas basculé.
+3. VF8 fait trois choses en base (trois migrations ; une colonne, une fonction de lecture, deux gardes ; aucune policy
+   changée) : le réglage gardé, daté, réservé au chef du cabinet et retenu par un accès « Ventes » (VF8a) ; la lecture
+   des ventes facturées de « Ma simulation », présentée (VF8e) ; le resserrement, une garde sur `memberships` qui refuse
+   « Ventes » sur un dossier non basculé (VF8f, le dernier).
+4. Et cinq à l'écran : la carte de la bascule dans Informations (VF8b) ; la facture qui dit ses refus de source avant le
+   clic (VF8c) ; les phrases de l'onglet Accès et de « Mes ventes », la case « Ventes » refusée avant le clic (VF8d) ;
+   le sélecteur d'exercice et les frais dans l'estimation (VF8g) ; « Ma banque » qui nomme la facture d'avant d'un
+   virement mixte (VF8h).
+5. Huit lots, VF8a à VF8h, dont trois migrations ; chacun neutre en production tant qu'aucun dossier n'a basculé. La
+   bascule à l'écran reste derrière un drapeau tant que VF5h2, VF7a, VF7b et VF7e ne sont pas appliquées. Trois
+   questions au cabinet, VF8-Q1 à VF8-Q3.
+
+#### 1. La mesure (production, 25/10/2026 ; des comptes)
+
+148 migrations, la dernière `jumelle_inversee` (ni `registre_virement_mixte`, ni `frontiere_des_encaissements`, ni
+`validation_des_ventes_facturees`, ni `gel_des_designations`). Quatre dossiers, aucun basculé ; six factures, toutes
+validées, aucune source ; aucun encaissement, aucun exercice validé, aucune pièce désignée. Trois accès clients, aucun
+ne porte « Ventes » ni « Banque » : le resserrement ne retire rien à personne. Le catalogue : `memberships` a des
+policies de lecture, d'insertion (`admin_du_dossier`, sans regard sur les deux cases) et de suppression, aucune de mise
+à jour, aucun déclencheur ; `authenticated` a le droit d'insérer chacune de ses colonnes, `droit_ventes` compris.
+`dossiers` a une policy de mise à jour sur `admin_du_dossier(id)` — le chef ET le membre assigné —, et un seul
+déclencheur regarde le réglage (`garder_ventes_par_les_factures`, qui ne refuse que de le baisser après une facture
+source). Les policies de ces deux tables visent encore `public` (des prédicats faux sans session : connu, sans objet
+ici).
+
+#### 2. Ce que font aujourd'hui la base et les écrans
+
+**La base.** Le réglage se pose par une mise à jour directe d'un admin du dossier ; il se baisse tant qu'aucune facture
+source n'existe (EC3-Q1). Chaque facture prend à sa validation le réglage de son dossier (`fixer_source_de_la_vente`,
+sous `for share`), et refuse alors une nature absente, une facture mixte, une date figée par la frontière.
+`changer_droits_acces` pose « Ventes » et « Banque » sans regarder le réglage ; une insertion directe d'un accès par le
+cabinet les poserait aussi (la policy d'insertion ne regarde que le dossier). Rien ne date la bascule.
+
+**Les écrans.** Aucun ne pose le réglage (la migration de VF2 le disait : « aucun écran ne le fait avant l'étape VF8 »).
+Le formulaire d'une facture (`FactureFormModal.tsx`, les deux espaces) offre la nature des opérations dans ses mentions,
+« des biens et des services » compris, et ne lit pas le réglage : sur un dossier basculé, la base refuserait APRÈS le
+clic une facture sans nature ou mixte. « Ma simulation » lit le réglage avec le statut de TVA et, basculé, passe « non
+comptées » et le dit (`SIMULATION_SANS_VENTES_FACTUREES`) : elle compte l'exemplaire d'une facture source comme une
+pièce, la vente ne l'étant qu'une fois — par la pièce. L'onglet Accès ne lit pas le dossier. Le sélecteur d'exercice de
+la page lit les dates des pièces, du relevé et des écritures, jamais celles des factures ni des encaissements. Le détail
+par poste de l'Estimation ignore les frais d'un mouvement d'encaissements. « Ma banque » ne nomme que les factures
+sources d'un mouvement (`venteDuMouvement`).
+
+#### 3. Ce que VF8 doit faire, point par point
+
+- **(a) Le réglage, gardé** (VF8a). La garde du réglage, remplacée : le poser ou le baisser est réservé au chef du
+  cabinet et au super-administrateur (VF8-Q1) quand l'écriture vient d'une session (`authenticated`) — le propriétaire
+  et la restauration passent, comme sous une policy ; le baisser se refuse de plus quand un accès du dossier porte «
+  Ventes » (sinon la case survivrait à son dossier) — le refus d'hier (une facture source) d'abord, au caractère près.
+  Une colonne neuve, `dossiers.ventes_par_les_factures_depuis` (un instant), que la garde pose quand le réglage monte et
+  efface quand il descend, et qu'aucune écriture ne pose à sa place (la restauration du super-administrateur la réinsère
+  telle qu'elle a été). Pas de fonction : une colonne d'une ligne s'écrit d'un tenant, la garde dit qui et date.
+- **(b) La bascule à l'écran** (VF8b). Une carte « Source des ventes » dans Informations, côté cabinet : l'état (« par
+  ses pièces » ; « par ses factures depuis le … ») ; avant le clic, ce qui change — chaque facture validée ensuite est
+  la source de sa vente, celles déjà validées restent comptées par leurs pièces, aucune pièce n'est reprise (celles à
+  valider se désigneront ou se déclareront à leur validation, VF6 § 7), un crédit qui paie une facture source est
+  réservé à ses encaissements, la case « Ventes » s'ouvre —, ce qui la rend irréversible (la première facture validée)
+  et le moment conseillé (avant la première facture, ou le premier jour d'un exercice ; VF8-Q3) ; la confirmation NOMME
+  les chiffres lus (factures validées de l'exercice qui resteront comptées par leurs pièces, pièces de vente à valider).
+  « Revenir » n'est offert que là où la base le permet (aucune facture source, aucun accès « Ventes »), le refus dit
+  avant le clic par le module qui redit la garde (`refusDuReglage`, étendu). Lecture du dossier, des factures et des
+  accès EN ENTIER ; lue en partie, aucun geste. Sous un drapeau, `BASCULE_OFFERTE`, faux tant que VF5h2, VF7a, VF7b et
+  VF7e ne sont pas appliquées : un dossier basculé sans elles aurait un registre, une validation et un gel incomplets.
+- **(c) La facture d'un dossier basculé** (VF8c). Le formulaire lit le réglage et, pour un avoir, la source de sa
+  facture (`sourceALaValidation`) ; il dit avant le clic, sur la saisie telle qu'elle part, les refus de
+  `refusValidationSource` (nature absente, mixte ; la frontière côté cabinet — chez le client, qui ne lit pas les
+  exercices validés, la base seule la juge, le patron de `ANNEES_ILLISIBLES`) ; « des biens et des services » reste
+  offert et se dit refusé à la validation (EC3-Q8, jusqu'à A7). La confirmation de la validation d'une facture source
+  dit qu'elle comptera dans la comptabilité à son encaissement (en trésorerie) ou à sa date (en engagement), sans
+  reprise par le cabinet. Les deux espaces, `MOTS_DU_CABINET` pour le client.
+- **(d) Les phrases et la case « Ventes »** (VF8d). `ceQueDisentLesCases` reçoit l'état du réglage : basculé, « Ventes »
+  dit que les factures que le client valide comptent dans la 2035, la CA3 et les états dès leur encaissement, sans visa
+  (EC3-Q5), et que les écritures s'écrivent sur le clic du cabinet ; non basculé, la case « Ventes » est grisée et dit
+  pourquoi (« s'ouvre quand les factures de ce dossier sont la source de leurs ventes, onglet Informations ») — décocher
+  reste offert ; réglage illisible, aucun geste sur « Ventes ». « Mes ventes » dit au client, une ligne, que ses
+  factures validées sont la source de ses ventes et ne se corrigent que par un avoir. C'est la bascule de l'application
+  qui précède le resserrement.
+- **(e) « Ma simulation »** (VF8e ; EC3-Q11, VF8-Q2). Une fonction de lecture,
+  `ventes_facturees_de_la_simulation(p_dossier_id, p_annee)`, `security definer`, pour un client du dossier qui porte «
+  Banque » ou un admin du dossier (sinon 42501, sa raison dite) : pour un dossier basculé, le total hors taxe des ventes
+  facturées PAR MOIS de l'année (la règle de `recettesFactureesParMois`, tirée de `calcul_vente_facturee`, dont VF4b a
+  confronté les parts et les documents à `ventesFacturees.ts`, dans le modèle comptable du dossier) et la liste des
+  identifiants des factures et avoirs sources — ce qui suffit à ignorer l'exemplaire, la pièce portant déjà
+  `facture_id`, que le client lit ; rien d'autre (ni numéro, ni client, ni montant par facture). Non basculé : rien.
+  C'est exactement la forme « comptées » de `RecettesFacturees`, sans type nouveau. L'écran passe « comptées » quand la
+  lecture est revenue entière ; sinon le bandeau, aucune projection, et la phrase d'aujourd'hui.
+- **(f) Le resserrement** (VF8f ; EC3-Q2). Une garde neuve, `garder_droit_ventes`, sur `memberships` (insertion, et mise
+  à jour de `droit_ventes`) : « Ventes » vrai se refuse sur un dossier non basculé (23514), le réglage lu `for share` ;
+  l'insertion du super-administrateur passe (la restauration rend ce qui a été). Une garde plutôt que
+  `changer_droits_acces` seule : la policy d'insertion laisse un admin poser la case directement (§ 1). La migration
+  vérifie d'abord qu'aucun accès ne porte « Ventes » sur un dossier non basculé, et s'arrête sinon. `droitsAcces.ts`
+  redit le refus.
+- **(g) Le cabinet** (VF8g). Le sélecteur d'exercice lit aussi les dates d'émission des factures validées et les dates
+  des encaissements (une année d'encaissements seuls, VF3b1) ; le détail par poste de l'Estimation compte les frais d'un
+  mouvement d'encaissements au poste de « Frais bancaires » (`fraisDesMouvements`, comme la situation intermédiaire).
+- **(h) « Ma banque »** (VF8h ; VF5H-Q3). Un client « Banque » et « Ventes » lit aussi la facture d'avant qu'un virement
+  mixte classé paie : `venteDuMouvement` la nomme, sous la même ligne que les factures sources.
+
+#### 4. Les notes « VF8 », une par une
+
+- Conception d'EC-Q3, § 14 (la puce VF8) : (a) à (f). § 15 (« après VF8, un dossier basculé ne revient pas ») : (a), le
+  retour n'existe qu'avant la première facture source.
+- VF2, délimitation (« ni un écran, VF5, VF8 ») et le commentaire de sa migration (« aucun écran ne le fait avant VF8 »)
+  : (b).
+- VF2, EC3-Q11 tranchée (« Ma simulation » reçoit le total mensuel seul, à VF8), et VF3b (« rien avant VF8 ») : (e).
+- VF3b3, « la forme que Ma simulation recevra de la base » : (e) rend exactement cette forme.
+- VF3b3, À REVOIR (« le total mensuel ne dira pas quelle pièce est l'exemplaire ») : (e), la liste des sources (VF8-Q2).
+- Les frais d'un mouvement d'encaissements (trois notes) : l'estimation, (g) ; « Ma simulation » : ÉCARTÉE, elle ne
+  projette que les recettes et les cotisations, aucune charge ; le plan de trésorerie : ÉCARTÉE, déjà exact.
+- VF5, « VF5h avant VF8 » : tenue (appliquée le 24/10/2026).
+- VF6, § 2 (« Ma simulation » compte l'exemplaire jusqu'à VF8) : (e). § 7 (la bascule ne reprend aucune pièce, la phrase
+  d'Informations le dira) : (b).
+- VF5h, délimitation (« ni Ma banque ni Ma simulation, VF8 ») : (h) et (e). « Ma simulation passe une liste vide » (les
+  parts des virements mixtes) : TRANCHÉE, elle reste vide — le total mensuel seul (EC3-Q11), rien de plus pour « Banque
+  » seul (VF5-Q3) : l'exemplaire d'une facture d'avant payé par un virement mixte se date à sa pièce dans la simulation,
+  au lieu du virement ; le code le dit.
+- VF5H-Q3 (deux notes) : (h).
+- VF3b1 et la conception de VF7, § 4 (le sélecteur d'exercice) : (g).
+- Conception de VF7, § 9 : (b), (d), (e), (f), (g), (h) ; la fenêtre des encaissements qui offrait une contre-passation
+  sans issue : SANS OBJET, corrigée par le troisième commit de VF5h2 (`8d80f16`, « À REVOIR, PUIS FAIT »).
+- VF7d, VF7e (« puis VF8 ») : cette conception.
+
+#### 5. Le découpage
+
+Chaque lot est NEUTRE en production : aucun dossier n'a basculé, aucun accès ne porte « Ventes ». Chaque migration
+vérifie d'abord le corps de ce qu'elle remplace (l'empreinte de `prosrc`, le patron de VF6b) et s'arrête si un autre
+chantier l'a changé ; aucune ne supprime de donnée, de table, de colonne ni de policy. Chaque refus neuf vit dans le
+module qui redit la base, confronté au texte exporté et à l'essai.
+
+- **VF8a — Le réglage, gardé.** Migration `reglage_des_ventes` : la colonne `ventes_par_les_factures_depuis`,
+  `garder_ventes_par_les_factures` remplacée (le chef, l'accès « Ventes », la date ; le refus d'hier inchangé), son
+  déclencheur étendu à la colonne neuve et à l'insertion. Fichiers : la migration dans l'export, `sourceDeLaVente.ts`
+  (`refusDuReglage` : trois refus, dans l'ordre de la garde), `types.ts`, `sauvegarde.ts` (la colonne, réinsérée telle),
+  RGPD.md (aucune donnée personnelle). Preuves : `ventesFacturees.sql` étendu (un membre assigné refusé, le chef admis,
+  la date posée puis effacée, la baisse refusée sous un accès « Ventes », le propriétaire admis), `rls.sql` ENTIER,
+  `restauration.sql` sur une réplique, `signature.sql`, les trois contrôles, les mutations. Agent : architecte, effort
+  maximal. Dépend de : rien ; avant VF8b.
+- **VF8b — La bascule à l'écran.** `lib/basculeDesVentes.ts` (pur : l'état, les phrases, la confirmation, les refus) et
+  sa lecture ; la carte dans `InformationsTab.tsx` (verrou `useRef`, écriture `.select().maybeSingle()` relue) ;
+  `BASCULE_OFFERTE`, ses deux états éprouvés. Aucune base. Preuves : le module, l'écran (lecture partielle sans geste,
+  double clic, confirmation qui nomme), `ecransAvantLecture`, le banc (Informations, quatre largeurs). Agent : dev en
+  Opus, effort élevé. Dépend de : VF8a appliquée ; le drapeau levé après VF5h2, VF7a, VF7b et VF7e.
+- **VF8c — La facture d'un dossier basculé.** `FactureFormModal.tsx` (les deux espaces) branché sur `sourceDeLaVente.ts`
+  ; la phrase de la confirmation dans le module ; les réécritures du client. Aucune base. Preuves : le module, l'écran
+  (nature absente, mixte, frontière côté cabinet, avoir d'une facture d'avant), mutations. Agent : dev en Opus, effort
+  élevé. Dépend de : rien.
+- **VF8d — Les phrases de l'onglet Accès et de « Mes ventes ».** `droitsAcces.ts` (`ceQueDisentLesCases`, le refus de la
+  case avant le clic), `AccesTab.tsx` (la lecture du réglage, entière), `ClientVentes.tsx` ou l'accueil des ventes (la
+  ligne du client). Aucune base. Preuves : le module confronté à l'export, l'écran (réglage illisible : aucun geste sur
+  « Ventes » ; décocher toujours offert), mutations. Agent : dev en Opus, effort élevé. Dépend de : VF8a (l'état lu).
+  Avant VF8f, et en ligne avant elle.
+- **VF8e — « Ma simulation » reçoit ses ventes facturées.** Migration `simulation_des_ventes_facturees` (une fonction
+  `security definer`, présentée au cabinet avant d'être appliquée : VF8-Q2) ; `lib/simulationVentesFacturees.ts` (la
+  lecture, vers `RecettesFacturees`) ; `ClientSimulation.tsx`. Preuves : un essai neuf,
+  `simulationDesVentesFacturees.sql`, qui confronte la fonction à `recettesFactureesParMois` sur les mêmes jeux
+  (trésorerie, engagement, avoir, paiement partiel, facture écartée, contre-passation) ; `rls.sql` ENTIER (le client «
+  Banque » lit ; sans « Banque », 42501 et sa raison ; l'autre dossier et l'appel sans session refusés) ; la mesure du
+  temps sous les 8 s du rôle `authenticated` ; `signature.sql` ; les trois contrôles ; l'écran (lecture partielle,
+  réglage faux, exemplaire ignoré). Agent : architecte, effort maximal (la fonction) ; l'écran peut suivre en dev Opus.
+  Dépend de : rien en base ; avant la première bascule réelle d'un dossier dont un client porte « Banque ».
+- **VF8f — Le resserrement.** Migration `ventes_sur_dossier_bascule` : `garder_droit_ventes` et son déclencheur, la
+  vérification préalable. Fichiers : `droitsAcces.ts` (le refus redit), les essais qui cochent « Ventes » sur le dossier
+  d'essai (`droitsAcces.sql`, 35 occurrences ; `rls.sql`, 11 ; `banqueClient.sql`, 3 ; `piecesJointesEcartees.sql`, 1),
+  qui basculent d'abord leur dossier dans leur transaction annulée — et dont les factures d'essai validées reçoivent
+  alors une nature. Preuves : ces essais rejoués ENTIERS, `rls.sql` d'abord, `restauration.sql` (l'accès « Ventes »
+  réinséré par le super-administrateur), `signature.sql`, les trois contrôles, les mutations. Agent : architecte, effort
+  maximal. Dépend de : VF8a, VF8d en ligne ; le dernier.
+- **VF8g — Le sélecteur d'exercice et les frais de l'estimation.** `DossierDetail.tsx` (deux lectures de plus, entières,
+  dans la même vague ; lues en partie, le motif d'aujourd'hui), `EstimationTab.tsx` et `estimation.ts`
+  (`chargesParPostePourAnnee` reçoit les frais, obligatoires). Aucune base. Preuves : `DossierDetail.test.tsx`, le
+  module de l'estimation, mutations. Agent : dev en Opus, effort élevé. Dépend de : rien.
+- **VF8h — « Ma banque » nomme la facture d'avant.** `banqueClient.ts`, `ClientBanque.tsx`. Aucune base. Preuves : le
+  module, l'écran (deux droits ; registre lu en partie : l'état se tait), le banc (`client-banque`). Agent : dev en
+  Opus, effort élevé. Dépend de : rien.
+
+L'ordre recommandé : VF8a, puis VF8c, VF8g et VF8h (indépendants), VF8d, VF8b, VF8e, et VF8f en dernier — ce qui
+s'ajoute, la bascule de l'application, puis le resserrement. Avant la première bascule RÉELLE : VF5h2, VF7a, VF7b, VF7e
+et VF8a appliquées, VF8b et VF8e en ligne.
+
+#### 6. Les questions au cabinet
+
+- **VF8-Q1 — Qui bascule un dossier ?** Aujourd'hui, tout membre de l'équipe assigné au dossier le pourrait. La bascule
+  est irréversible dès la première facture, comme la validation d'un exercice, que seul le chef du cabinet fait.
+  Recommandé : le chef du cabinet seul.
+- **VF8-Q2 — Ce que « Ma simulation » d'un client « Banque » reçoit d'un dossier basculé.** EC3-Q11 a fixé le total
+  mensuel ; pour ne pas compter deux fois une vente dont il a aussi déposé le PDF, il faut de plus lui dire quelles
+  factures sont sources (des identifiants, rien de leur contenu). C'est une lecture neuve ouverte au client : elle se
+  présente avant d'être appliquée. Recommandé : le total par mois et cette liste.
+- **VF8-Q3 — La bascule en cours d'exercice.** Elle est juste par construction (les factures d'avant restent comptées
+  par leurs pièces, un virement mixte se classe) ; mais un exercice compté de deux façons se révise moins bien.
+  Recommandé : la permettre, et dire avant le clic combien de factures de l'exercice resteront comptées par leurs pièces
+  ; écarté : la refuser dès qu'une facture de l'exercice en cours est validée.
+
+#### 7. Tranché sans question, et pourquoi
+
+- Pas de fonction pour basculer : une colonne se pose d'un tenant, la garde dit qui et date ; une fonction n'ajouterait
+  qu'une porte de plus à garder.
+- L'auteur de la bascule n'est pas gardé, seulement l'instant : la colonne est lue par le client (`dossiers_select`), et
+  qui a fait quoi relève d'un journal du cabinet (P1-trace), pas de la fiche du dossier.
+- La garde de la personne ne vise que les sessions (`authenticated`) : le propriétaire et les essais la passent, comme
+  sous une policy ; la restauration réinsère.
+- Revenir avant la première facture source reste permis (EC3-Q1) ; un accès « Ventes » le retient, dit avant le clic.
+- La simulation ne reçoit ni les parts des virements mixtes ni les frais : EC3-Q11 et VF5-Q3 ; elle ne projette aucune
+  charge.
+- Le resserrement par une garde, pas par `changer_droits_acces` seule ni par une policy : la policy d'insertion laisse
+  poser la case directement, et une policy de mise à jour n'existe pas.
+- Un accès « Ventes » restauré sur un dossier non basculé passe (le super-administrateur) : la restauration rend ce qui
+  a été ; l'onglet Accès le dira grisé, décochable.
+- Le formulaire continue d'offrir « des biens et des services » : la base refuse une facture source mixte jusqu'à A7
+  (EC3-Q8), et le formulaire le dit avant le clic — retirer l'option toucherait les dossiers non basculés.
+
+#### 8. Les risques
+
+- **L'ordre du resserrement.** Aucun accès ne porte « Ventes » aujourd'hui. Si le cabinet en coche un sur un dossier non
+  basculé avant VF8f, la migration s'arrête : la session présente alors le choix (basculer, ou décocher par
+  `changer_droits_acces`, son accord donné) — jamais une case décochée en silence. Un client dont la case serait retirée
+  verrait « Mes ventes » se fermer à sa prochaine lecture des droits. VF8d doit être EN LIGNE avant, sans quoi l'onglet
+  Accès offrirait une case que la base refuse.
+- **Les essais de VF8f** : une cinquantaine de lignes qui cochent « Ventes » sur le dossier d'essai ; le basculer change
+  la validation de leurs factures (nature exigée, source fixée) et peut changer des verdicts : rejouer chacun ENTIER,
+  avant et après, verdict par verdict.
+- **La simulation et la 2035 qui divergent** : la fonction de VF8e recompose en SQL ce que `recettesFactureesParMois`
+  calcule ; confrontée sur les mêmes jeux (« même calcul, en entiers »), une facture écartée comprise. Le temps : la
+  recomposition par facture, sous les 8 s.
+- **Une bascule sans les migrations préparées** : le drapeau `BASCULE_OFFERTE` la retient à l'écran ; une écriture
+  directe du chef resterait possible — la garde ne connaît pas les migrations ; la session ne lève le drapeau qu'après
+  elles.
+- **La numérotation du mandataire (G1.45)** n'est pas un préalable de la bascule, mais d'une facture réelle validée par
+  le cabinet : à rappeler avant le premier dossier réel.
+- **VF5H2-Q1** (l'insertion directe d'un encaissement), si elle n'est pas tranchée : sa petite migration, avant la
+  première bascule réelle.
+- **Les retours arrière** : VF8a rend la garde d'hier et retire la colonne (une suppression de colonne, sur l'accord du
+  cabinet ; la date de bascule s'y perd) ; VF8e retire sa fonction ; VF8f retire sa garde (un élargissement, sur
+  l'accord du cabinet). Après la première facture source d'un dossier, il ne revient pas, par décision (EC3-Q1).
+
+#### 9. Ce qui reste à VF9
+
+- L'assistant : ses copies (la source, les écritures, les points, la validation), dont `piecesPayeesEnTrop`,
+  `categoriesSansCompte`, `categoriesSansPoste` et `paiementsDesPieces` à trois paramètres ; avec PC3b.
+- Hors d'EC-Q3, rappelés : EC3-Q9 à A8 ; la règle de la CA3 en base ; P1-trace (qui a changé les droits, et qui a
+  basculé) ; A9 (la série du mandataire).
+
+#### 10. Sources
+
+CGI, art. 93, 1 (la recette au jour de sa libre disposition) et art. 269, 2-c (la TVA des services à l'encaissement),
+par la doctrine qui les reproduit (BOI-BNC-BASE-20-10-10 ; BOI-TVA-BASE-20-20), cités par la conception d'EC-Q3 (§ 3 et
+17), non relus ce jour. Plan comptable général (règlement ANC n° 2014-03 consolidé au 1er janvier 2026), art. 121-5 (la
+permanence des méthodes : la raison de conseiller la bascule au premier jour d'un exercice, invoquée par analogie — la
+bascule change la pièce qui compte, pas la méthode), non relu ce jour. Ordonnance n° 45-2138 du 19 septembre 1945, art.
+2 (la tenue de la comptabilité d'autrui réservée aux experts-comptables : la bascule reste au cabinet). Les décisions du
+cabinet EC3-Q1, Q2, Q5, Q8, Q11, VF5-Q3 et VF5H-Q3. Lus ce jour en production : les policies de `dossiers` et de
+`memberships`, leurs déclencheurs, les droits par colonne de `memberships`, `changer_droits_acces`, les comptes du § 1.
+Les normes AFNOR XP Z12-012 et XP Z12-013 n'ont été ni lues ni citées.
