@@ -36657,3 +36657,64 @@ restent, pour une base sans la migration.
 **CE QUI RESTE.** VF8h, VF8d, VF8b (avec VF8-Q3), VF8e (avec VF8-Q2, une migration), VF8f (le resserrement, une
 migration, en dernier), puis VF9 ; la migration de VF5H2-Q1, avant la première bascule réelle ; les deux lots de
 23Q2Q2-Q1 et 23Q2Q2-Q3.
+
+### 26/10/2026 — « MA BANQUE » NOMME LA FACTURE D'AVANT D'UN VIREMENT MIXTE — CHANTIER EC-Q3, VF8H (LIGNE 28.65)
+
+(Écrite par l'agent dev de VF8h sur `2da6e28` — `main` plus la pile d'EC-Q3, les cinq migrations de VF5h2, VF7 et VF8a
+appliquées —, la branche locale `vf8h-ma-banque`, en deux commits : le code et les tests (`9276089`), puis cette
+documentation. Aucune base : ni lue, ni écrite ; l'export seul.)
+
+**CE QUE VF8H FAIT** (conception de VF8, § 3 h et § 5 ; VF5H-Q3, tranchée « Oui » le 24/10/2026 ; la délimitation de
+VF5h, « ni Ma banque… »). Sur un mouvement que ses encaissements CLASSENT, `venteDuMouvement` (`banqueClient.ts`) ajoute
+aux encaissements des factures sources ceux des factures d'avant la bascule que le classement compte
+(`encaissementsDAvantDuMouvement`, la fonction même de la fiche du cabinet, `mouvementsDesVentes.ts`) : ensemble, dans
+l'ordre de la garde (la création, puis l'identifiant), sans doublon. Le détail d'un virement mixte classé dit donc, sous
+la phrase d'hier, « Facture(s) : F2025-…, F2026-… » — la facture d'avant sur la même ligne que les factures sources, sans
+mot qui la distingue : le client ne connaît pas la source d'une vente, et l'encaissement est le sien. `ClientBanque.tsx`
+l'affiche par la ligne d'hier ; seul son commentaire change. Rien de plus n'est lu : les deux lectures de VF5g portent
+déjà toutes les factures et tout le registre.
+
+**CE QUI NE CHANGE PAS.** Un mouvement RÉSERVÉ nomme ses factures sources seules (voir la question). « Banque » seul :
+rien de plus (VF5-Q3). Le registre ou les factures lus en partie, refusés ou rompus : un mouvement classé dit « Traité
+par ton cabinet », sans facture, comme hier ; un libre se tait. Ni l'état, ni les filtres, ni le résumé, ni aucun geste.
+Le côté cabinet, rien.
+
+**CE QUE LA BASE LAISSE LIRE, DANS L'EXPORT.** `factures_emises_lecture_ventes` et `encaissements_factures_lecture_ventes`
+(migration `ventes_du_client`) : `for select to authenticated using (client_du_dossier(dossier_id, 'ventes'))`, sans
+condition sur la source d'une facture ; aucune migration postérieure ne les remplace ni ne retire un droit de colonne
+sur ces deux tables. La facture d'avant et son encaissement se lisent donc comme une facture source : rien à ouvrir.
+RGPD.md ne change pas : le numéro d'une facture d'avant s'affichait déjà dans « Mes ventes ».
+
+**LE BANC.** Dans le dossier basculé d12, ajoutés par `push` : F2026-0012 (facture d'avant, pas source, et son PDF
+validé, son exemplaire unique), F2026-0029 (source), et le virement de 780 € qui les règle, CLASSÉ par ses encaissements ;
+ni réservé, ni encaissement sans mouvement de plus — les comptes des visites du cabinet ne bougent pas. Une visite neuve,
+`client/ma-banque-virement-mixte`, attend « Facture(s) : F2026-0012, F2026-0029. ». Le serveur sur le 5899, la copie du
+script ne différant que par l'adresse, le navigateur sans le mandataire : `client-banque` à 390, 720, 1 024, 1 280 et
+1 440 px, 0 débordement chaque fois (122 boutons sondés, 31 fenêtres) ; la passe du cabinet à 1 440 px, panneau fermé,
+0 (285 boutons, 61 fenêtres), ses vingt-quatre visites du dossier basculé trouvant leur texte.
+
+**LES PREUVES.**
+- La suite comparée test par test, sous Paris : avant (`2da6e28`) 467 fichiers et 14 491 tests ; après 467 fichiers et
+  14 499 tests ; aucun verdict changé ni disparu, 8 tests neufs (le module 4 : le classé, nommé ensemble dans l'ordre de
+  la garde, sans doublon ni encaissement retiré ni autre mouvement ; le réservé, ses sources seules ; « Banque » seul et le
+  registre partiel ; les situations et la phrase, tutoyée, sans un mot du cabinet — l'écran 4 : les deux droits, et les
+  deux lectures partielles). Rouges d'abord sur l'ancien `banqueClient.ts` : 3 (le module 2, l'écran 1) ; les 5 autres
+  gardent ce qui ne change pas, éprouvés par mutation.
+- Mutations : 42 écrites, 41 appliquées, 41 tuées — six neuves (la facture d'avant jamais nommée, nommée aussi sur un
+  réservé, sans l'ordre de la garde, tout encaissement du mouvement retiré compris, seule sans les sources, l'écran qui
+  ne nomme que la première) et les 36 de VF5g rejouées ; celle de VF5g sur l'ordre de la garde ne s'applique plus, son
+  texte a changé : la troisième neuve la remplace.
+- Lint : les 63 avertissements de la référence, identiques fichier par fichier et règle par règle. La barrière est dans
+  le rapport de l'agent.
+
+**CE QUE L'APPLICATION CHANGERA EN PRODUCTION.** Rien qui se voie : aucun dossier n'a basculé, aucun mouvement n'est
+classé par ses encaissements.
+
+**QUESTION AU CABINET.** VF8H-Q1 — Un mouvement RÉSERVÉ (l'encaissement d'une facture source enregistré, pas encore
+classé) qui porte aussi celui d'une facture d'avant : « Ma banque » doit-elle nommer cette facture d'avant dès la
+réserve ? La conception ne la nomme que sur un virement mixte CLASSÉ ; la fiche du cabinet la nomme dès la réserve, et le
+client a pu enregistrer lui-même cet encaissement. (A) Non, comme la conception : la garde ne regarde que les factures
+sources, et le classement peut encore refuser la facture d'avant (son exemplaire à désigner). (B) Oui : le registre le
+dit, et la phrase du réservé reste vraie — une ligne du module. Recommandé : (B).
+
+**CE QUI RESTE** : VF8b, VF8d à VF8f, puis VF9 ; VF8H-Q1.
