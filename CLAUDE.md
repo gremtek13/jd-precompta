@@ -545,10 +545,16 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`gesteDeLaCase`, `ceQueDisentLesCases` au réglage obligatoire) ; « Mes ventes » d'un client basculé dit que ses
   factures validées sont la source de ses ventes → « LA CASE « VENTES » SUIT LA SOURCE DES VENTES, À L'ÉCRAN ». VF8b le
   26/10/2026, à l'écran, neutre : la carte « Source des ventes » de l'onglet Informations dit l'état daté et — drapeau
-  `BASCULE_OFFERTE` levé, au chef seul — ce que la bascule change, sa confirmation nommant les chiffres lus (VF8-Q3),
-  ou le refus de la garde ; le drapeau reste FAUX jusqu'à la migration de VF5H2-Q1 et VF8e en ligne, et la phrase de
-  l'onglet Accès le suit → « LA BASCULE DES VENTES, À L'ÉCRAN ». Restent la levée du drapeau, VF8e, VF8f et VF9
-  (EC3-Q9, la facture reprise, va à A8).
+  `BASCULE_OFFERTE` levé, au chef seul — ce que la bascule change, sa confirmation nommant les chiffres lus (VF8-Q3), ou
+  le refus de la garde ; le drapeau reste FAUX jusqu'à la migration de VF5H2-Q1 et VF8e en ligne, et la phrase de
+  l'onglet Accès le suit → « LA BASCULE DES VENTES, À L'ÉCRAN ». La migration de VF5H2-Q1
+  (`insertion_des_encaissements`), PRÉPARÉE le 26/10/2026 sous une version provisoire, PAS appliquée : sans les
+  fonctions, ni une insertion, la restauration exceptée, ni un rattachement (VF5H2Q1-Q1) ne citent plus un mouvement
+  classé par ses encaissements, et la contre-passation sans mouvement d'un encaissement qui en cite un ne s'insère
+  plus ; une petite migration à part refusera l'exception du super-administrateur sur un mouvement figé, avant la
+  première validation d'un exercice d'un dossier basculé (VF5H2Q1-Q2) — deux questions écrites sur la recommandation, le
+  26/10/2026 → « L'INSERTION DIRECTE D'UN ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS ». Restent son
+  application, cette petite migration, la levée du drapeau, VF8e, VF8f et VF9 (EC3-Q9, la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
