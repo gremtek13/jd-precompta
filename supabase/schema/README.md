@@ -499,17 +499,15 @@ neuf familles égalent celles de la réplique de VF8a munie des cinq migrations,
 (`f61b1cd0…`), les cinq autres familles inchangées ; en production, aucun essai entier : aucune des cinq ne crée ni ne
 change de policy ni de droit d'une table (HISTORIQUE.md, « LES CINQ MIGRATIONS DE VF5H2, VF7 ET VF8A EN PRODUCTION »).
 
-**Préparé le 26/10/2026, PAS ENCORE APPLIQUÉ : `insertion_des_encaissements`** (chantier EC-Q3, VF5H2-Q1 et
-VF5H2Q1-Q1). Son fichier porte une version PROVISOIRE, `20261027120000` : `apply_migration` lui donnera la sienne, et le
-fichier se RENOMME à cette version, texte inchangé — sa ligne d'historique doit rendre
-`2bd728f7dccc41c7ddae9c08e087e17f`, fins de ligne ramenées à `\n`. Tant qu'il n'est pas appliqué, la dérive se lit sans
-lui : 153 fichiers, 153 migrations, `e63d2d17…`, la production. Sur la réplique de l'étape (la production à 153
-migrations, ses neuf familles égales), munie de la migration à sa version provisoire : 154 fichiers, 154 migrations,
-`2d68f10978c04e6cc3fb3ff20d96b0f4` des deux côtés. Le socle (80 instructions, `5d53eea2…`) et l'inventaire (2 163
-objets, `b20a312c…`) sont inchangés, des deux côtés : la migration ne crée aucun objet, elle remplace le corps d'une
-garde sous son nom. `signature.sql` : seule la famille « fonctions » change (202, `0837e89d…` puis
-`d9a632284f551bdf9adb2a93edf19f58`) (HISTORIQUE.md, « L'INSERTION DIRECTE D'UN ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR
-SES ENCAISSEMENTS »).
+**Rejoué le 26/10/2026 après `insertion_des_encaissements`** (chantier EC-Q3, VF5H2-Q1 et VF5H2Q1-Q1), appliquée par
+`apply_migration` sous la version `20261026150044`, sur l'accord du cabinet, sans confirmation demandée ; son fichier a
+quitté la version provisoire `20261027120000` pour celle-ci, texte inchangé — sa ligne d'historique rend
+`2bd728f7dccc41c7ddae9c08e087e17f`, celle du fichier éprouvé. 154 fichiers, 154 migrations, empreinte globale
+`9549d833111e4ef18949ba48f7061e66` des deux côtés. Le socle (80 instructions, `5d53eea2…`) et l'inventaire (2 163
+objets, `b20a312c…`) sont inchangés, des deux côtés : la migration remplace le corps d'une garde sous son nom.
+`signature.sql` : seule la famille « fonctions » change (202, `0837e89d…` puis `d9a632284f551bdf9adb2a93edf19f58`), la
+valeur de la réplique de l'étape, où tous les essais ont été joués entiers (HISTORIQUE.md, « L'INSERTION DIRECTE D'UN
+ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS », « LA MIGRATION DE VF5H2-Q1 EN PRODUCTION »).
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
