@@ -27,14 +27,16 @@ import { motsDuCabinet, pourLEspace } from './espaceVentes'
 // FICTIVES.
 //
 // La garde des encaissements a été reprise depuis par la migration `insertion_des_encaissements` (VF5H2-Q1 et
-// VF5H2Q1-Q1, deux règles de plus, à l'insertion et au rattachement) : ce garde-ci confronte la définition que CETTE
-// migration lui donne ; insertionDesEncaissements.test.ts confronte la suivante à celle-ci.
+// VF5H2Q1-Q1, deux règles de plus, à l'insertion et au rattachement), puis par `contre_passation_sur_mouvement_fige`
+// (VF5H2Q1-Q2 et VF5H2Q1Q2-Q1, deux de plus) : ce garde-ci confronte la définition que CETTE migration lui donne ;
+// insertionDesEncaissements.test.ts confronte la suivante à celle-ci, contrePassationSurMouvementFige.test.ts la
+// dernière à la précédente.
 
 const MIGRATION = /\/\d{14}_registre_virement_mixte\.sql$/
 const texteDeLaMigration = () => fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))?.texte ?? ''
 
 // Les fonctions qu'une migration POSTÉRIEURE a reprises, et le fichier qui en porte désormais la dernière définition.
-const REPRISES_DEPUIS = new Map([['garder_encaissement_facture', /\/\d{14}_insertion_des_encaissements\.sql$/]])
+const REPRISES_DEPUIS = new Map([['garder_encaissement_facture', /\/\d{14}_contre_passation_sur_mouvement_fige\.sql$/]])
 
 // Ce que cette migration a posé : la définition que son texte donne à une fonction — la dernière de l'export, sauf pour
 // une fonction reprise depuis.

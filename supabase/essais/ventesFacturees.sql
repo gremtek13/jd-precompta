@@ -40,7 +40,13 @@
 --     contre-passation citerait —, ni ne posent la contre-passation sans mouvement d'un encaissement qui cite un tel
 --     mouvement ; la restauration du super-administrateur les réinsère ; les règles d'hier se disent d'abord ; et, au
 --     rattachement sous son réglage, pour tous, le super-administrateur compris (68g, 68i, 68j : VF5H2Q1-Q1), la
---     fonction du cabinet le refusant la première, sous ses mots (110b) ;
+--     fonction du cabinet le refusant la première, sous ses mots (110b) ; et, depuis la migration
+--     `contre_passation_sur_mouvement_fige`, sur un mouvement classé et FIGÉ, au super-administrateur aussi : la
+--     contre-passation sans mouvement d'un encaissement qu'il compte, de toute facture (VF5H2Q1-Q2 : 146f, 146g, 146i ;
+--     aux autres, la règle de VF5H2-Q1 se dit d'abord : 146h ; pas celle qui cite un débit : 146j), et l'encaissement
+--     d'une facture qui n'est pas source qui le cite (VF5H2Q1Q2-Q1 : 146k, 146l, 146o ; d'abord la règle de VF5H2-Q1 :
+--     146m ; pour une facture source, la garde de la frontière : 146n), la restauration, qui pose les siens avant les
+--     exercices validés, passant (le jeu de R, 198, 198c) ;
 --   - LES REFUS NEUFS des fonctions, à leur rang : enregistrer (11, 17, 28, 30 — 27 et 29 avant l'étape VF5h2),
 --     retirer (6, 7), contre-passer (12, 15 à 20, le cinquième paramètre ; et 2, le droit « Banque » que ce débit
 --     demande depuis la migration `contre_passation_banque` : 94 à 96), rattacher (1 à 17), classer (1 à 11), retirer
@@ -78,8 +84,8 @@
 --   - LE CATALOGUE (150 à 158b) : les six rôles et leurs défauts, aucune racine qui en commence une autre, les colonnes,
 --     les contraintes, les déclencheurs, la sécurité et les droits des fonctions, les réglages et qui les nomme ;
 --   - LES MUTATIONS (160 à 176, puis 177 à 182 pour l'étape VF5h2, 183 à 187 pour l'étape VF7a, 189 à 191 pour l'étape
---     VF8a, 192 à 197 pour VF5H2-Q1) : chacune rejoue un contrôle avec un profil, une
---     cible ou un réglage délibérément faux, et doit MORDRE ;
+--     VF8a, 192 à 197 pour VF5H2-Q1, 198 à 198e pour VF5H2Q1-Q2 et VF5H2Q1Q2-Q1) : chacune rejoue un contrôle avec un
+--     profil, une cible ou un réglage délibérément faux, et doit MORDRE ;
 --   - et que RIEN ne reste en base (199).
 --
 -- Un seul état : les deux migrations en base. Tout se joue dans quatre dossiers JETABLES du cabinet du dossier `test`
@@ -229,6 +235,21 @@
 -- a6567da4ac0ead6bb142006c9a814cff, 0 en faute. Vingt-six mutations de la migration, jouées contre cet essai et cinq
 -- autres : vingt-trois tuées, trois équivalentes déclarées d'avance (HISTORIQUE.md, « L'INSERTION DIRECTE D'UN
 -- ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS »).
+--
+-- 26/10/2026, migration `contre_passation_sur_mouvement_fige` (PRÉPARÉE sous la version provisoire `20261027140000`,
+-- pas appliquée ; chantier EC-Q3, VF5H2Q1-Q2, « La refuser (petite migration à part) », et VF5H2Q1Q2-Q1, écrite sur la
+-- recommandation le même jour) : sur un mouvement classé par ses encaissements et FIGÉ, la contre-passation sans
+-- mouvement d'un encaissement qu'il compte, de toute facture, et l'encaissement d'une facture qui n'est pas source qui
+-- le cite ne s'insèrent plus, le super-administrateur compris. Quinze verdicts de plus, avant que R ne valide 2025 :
+-- 146f à 146o, chacun posant ce qu'il juge, la validation comprise, puis s'annulant, et les mutations 198 à 198e ; le
+-- pas du jeu où la restauration pose CP5 et CP6, avant les exercices validés, passe comme hier. Sur une réplique égale
+-- à la production à 154 migrations (les neuf familles, et l'historique) : la sortie rend 339 lignes (338 verdicts et la
+-- ligne d'information ; 324 hier) ; sans la migration, 6 en faute — 146f, 146g, 146i, 146k, 146l et 146o,
+-- exactement — ; avec elle, 0, rien n'est resté, et les contrôles d'hier rendent, verdict et observation, ce qu'ils
+-- rendaient. Le texte sans ses lignes de commentaire, envoyé en une requête : 123 311 caractères, empreinte
+-- 2dd6eb95f7bfaf6f6d31d002bd11cbd8, 0 en faute. Quarante-six mutations de la migration, jouées contre cet essai, sept
+-- autres et deux épreuves à deux sessions (une validation en cours) : trente-neuf tuées, sept équivalentes déclarées
+-- d'avance (HISTORIQUE.md, « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -273,7 +294,9 @@ begin
       'MA', '5f200000-0000-4000-8000-0000000000c1', 'MD', '5f200000-0000-4000-8000-0000000000c2',
       'MK', '5f200000-0000-4000-8000-0000000000c3', 'M0', '5f200000-0000-4000-8000-0000000000bf', 'M13', '5f200000-0000-4000-8000-0000000000c4',
       'MV', '5f200000-0000-4000-8000-0000000000c5')
-    -- La frontière des encaissements (étape VF7a), dans R : six encaissements, deux contre-passations et six mouvements.
+    -- La frontière des encaissements (étape VF7a), dans R : six encaissements, deux contre-passations et six
+    -- mouvements ; et, pour VF5H2Q1-Q2 et VF5H2Q1Q2-Q1, MR7, ER7, CP7, MD7 et MX (dans T), que leurs contrôles posent
+    -- et que chacun annule.
     || jsonb_build_object(
       'ER1', '5f200000-0000-4000-8000-0000000000a1', 'ER2', '5f200000-0000-4000-8000-0000000000a2',
       'ER3', '5f200000-0000-4000-8000-0000000000a3', 'MR1', '5f200000-0000-4000-8000-0000000000a4', 'ER4', '5f200000-0000-4000-8000-0000000000a7',
@@ -281,7 +304,10 @@ begin
       'ER5', '5f200000-0000-4000-8000-0000000000a8', 'CP5', '5f200000-0000-4000-8000-0000000000a9',
       'ER6', '5f200000-0000-4000-8000-0000000000aa', 'CP6', '5f200000-0000-4000-8000-0000000000ab',
       'MR4', '5f200000-0000-4000-8000-0000000000ac', 'MR5', '5f200000-0000-4000-8000-0000000000ad',
-      'MR6', '5f200000-0000-4000-8000-0000000000ae')
+      'MR6', '5f200000-0000-4000-8000-0000000000ae',
+      'MR7', '5f200000-0000-4000-8000-0000000000af', 'ER7', '5f200000-0000-4000-8000-0000000000c6',
+      'CP7', '5f200000-0000-4000-8000-0000000000c7', 'MD7', '5f200000-0000-4000-8000-0000000000c8',
+      'MX', '5f200000-0000-4000-8000-0000000000c9')
     || jsonb_build_object(
       'FJ1', $m$'{"tiers_nom":"ESSAI","tiers_siret":"12345678900012","emetteur_nom":"ESSAI","montant_ht":100,"montant_tva":20,"montant_ttc":120}'::jsonb$m$,
       'FJ2', $m$'{"tiers_nom":"ESSAI","tiers_siret":"12345678900012","emetteur_nom":"ESSAI","montant_ht":200,"montant_tva":25.5,"montant_ttc":225.5}'::jsonb$m$,
@@ -318,6 +344,8 @@ begin
       'RVM', $m$Le mouvement dont dépend cet encaissement est classé par ses encaissements : le cabinet retire d'abord ce classement.$m$,
       'ANV', $m$Le mouvement de l'encaissement contre-passé est classé par ses encaissements : le cabinet retire d'abord ce classement.$m$,
       'ICL', $m$Un mouvement classé par ses encaissements ne se cite pas : ce qu'il justifie ne change plus — le cabinet retire d'abord ce classement.$m$,
+      'IFG', $m$Le mouvement de l'encaissement contre-passé est figé par la validation d'un exercice : ce qu'il justifie ne change plus.$m$,
+      'IFC', $m$Un mouvement figé par la validation d'un exercice ne se cite plus : ce qu'il justifie ne change plus.$m$,
       'DEX', $m$select designer_exemplaire_facture('5f200000-0000-4000-8000-0000000000d1', $m$)
     || jsonb_build_object(
       'ENE', $m$select enregistrer_encaissement($m$,
@@ -764,6 +792,38 @@ begin
     array['fait', '0. le jeu (VF7a) : la restauration pose ER5, un chèque sur MR4, du même jour, et ER6, un chèque sans mouvement', 'chef', $q${ENI} ('{ER5}', '{R}', '{FR}', '2025-12-31', 10, 'cheque', '{MR4}', null, null), ('{ER6}', '{R}', '{FR}', '2025-12-31', 5, 'cheque', null, null, null)$q$, 'OK', ''],
     array['fait', '0. le jeu (VF7a) : le cabinet classe MR4 par ER5', 'chef', $q${CLA}'{R}', '{MR4}')$q$, 'OK', ''],
     array['fait', '0. le jeu (VF7a) : la restauration pose CP5 et CP6, leurs contre-passations sans mouvement', 'chef', $q${ENI} ('{CP5}', '{R}', '{FR}', '2025-12-31', -10, 'cheque', null, '{ER5}', 'ESSAI'), ('{CP6}', '{R}', '{FR}', '2025-12-31', -5, 'cheque', null, '{ER6}', 'ESSAI')$q$, 'OK', ''],
+    -- VF5H2Q1-Q2 (migration `contre_passation_sur_mouvement_fige`) : la contre-passation sans mouvement d'un
+    -- encaissement que compte un mouvement classé par ses encaissements et FIGÉ ne s'insère plus, le
+    -- super-administrateur compris, pour toute facture. Le pas d'au-dessus, où la restauration pose CP5 et CP6 AVANT
+    -- que R ne valide 2025, passe comme hier : c'est l'ordre de la restauration, les exercices validés en dernier. Les
+    -- contrôles de R posent MR7 (+7 €, au 31 décembre 2025) et ER7, son chèque du même jour, par la restauration,
+    -- classent MR7 par ER7 (le cabinet), réinsèrent l'exercice 2025 validé (la restauration), puis posent CP7, la
+    -- contre-passation de ER7 datée de 2026 — sans mouvement, ou citant MD7, un débit de 2026 (146j) — et tout
+    -- s'annule : posé au jeu, MR7 changerait la recomposition de 188. Celui de T (146i) réinsère 2026 validé et
+    -- contre-passe sans mouvement EV2, l'encaissement d'une facture d'avant que compte le virement mixte MV. Leurs
+    -- mutations : 198 et 198b.
+    array['controle', '146f. VF5H2Q1-Q2 : MR7, classé par ER7, figé par la validation de 2025 — le contrôle les pose, valide, puis s''annule — : le super-administrateur ne pose plus en direct la contre-passation sans mouvement de ER7, datée de 2026', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{MR7}', '{R}', '2025-12-31', 'ESSAI', 7, 'non_rapprochee'); {ENI} ('{ER7}', '{R}', '{FR}', '2025-12-31', 7, 'cheque', '{MR7}', null, null); {CLA}'{R}', '{MR7}'); insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{R}', 2025, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); {ENI} ('{CP7}', '{R}', '{FR}', '2026-01-08', -7, 'cheque', null, '{ER7}', 'ESSAI')$q$, '23514', '{IFG}'],
+    array['controle', '146g. … ni le rôle des Edge Functions, sous sa session', 'service', $q$select set_config('request.jwt.claims', json_build_object('sub', '{CHEF}', 'role', 'authenticated')::text, true); insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{MR7}', '{R}', '2025-12-31', 'ESSAI', 7, 'non_rapprochee'); {ENI} ('{ER7}', '{R}', '{FR}', '2025-12-31', 7, 'cheque', '{MR7}', null, null); {CLA}'{R}', '{MR7}'); insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{R}', 2025, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); {ENI} ('{CP7}', '{R}', '{FR}', '2026-01-08', -7, 'cheque', null, '{ER7}', 'ESSAI')$q$, '23514', '{IFG}'],
+    array['controle', '146h. … les autres butent d''abord sur la règle de VF5H2-Q1 (le propriétaire)', 'postgres', $q$select set_config('request.jwt.claims', json_build_object('sub', '{CHEF}', 'role', 'authenticated')::text, true); insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{MR7}', '{R}', '2025-12-31', 'ESSAI', 7, 'non_rapprochee'); {ENI} ('{ER7}', '{R}', '{FR}', '2025-12-31', 7, 'cheque', '{MR7}', null, null); {CLA}'{R}', '{MR7}'); insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{R}', 2025, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); select set_config('request.jwt.claims', '', true); {ENI} ('{CP7}', '{R}', '{FR}', '2026-01-08', -7, 'cheque', null, '{ER7}', 'ESSAI')$q$, '23514', '{ANV}'],
+    array['controle', '146i. … toute facture : 2026 validé dans T, la contre-passation sans mouvement de EV2, l''encaissement d''une facture d''avant que compte le virement mixte MV (143g, sur un exercice validé)', 'chef', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{T}', 2026, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); {ENI} ('{CP}', '{T}', '{FP}', '2026-03-17', -50, 'virement', null, '{EV2}', 'ESSAI')$q$, '23514', '{IFG}'],
+    array['controle', '146j. … la contre-passation qui cite un débit passe, elle : MR7 justifie toujours ER7, et MD7, de 2026, n''est pas figé', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{MR7}', '{R}', '2025-12-31', 'ESSAI', 7, 'non_rapprochee'); {ENI} ('{ER7}', '{R}', '{FR}', '2025-12-31', 7, 'cheque', '{MR7}', null, null); {CLA}'{R}', '{MR7}'); insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{R}', 2025, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{MD7}', '{R}', '2026-01-08', 'ESSAI', -7, 'non_rapprochee'); {ENI} ('{CP7}', '{R}', '{FR}', '2026-01-08', -7, 'cheque', '{MD7}', '{ER7}', 'ESSAI')$q$, 'OK', ''],
+    array['controle', '198. MUTATION de 146f : 2025 pas encore validé dans R — l''ordre de la restauration ; T et A l''ont validé —, le super-administrateur pose la contre-passation sans mouvement de ER7', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{MR7}', '{R}', '2025-12-31', 'ESSAI', 7, 'non_rapprochee'); {ENI} ('{ER7}', '{R}', '{FR}', '2025-12-31', 7, 'cheque', '{MR7}', null, null); {CLA}'{R}', '{MR7}'); {ENI} ('{CP7}', '{R}', '{FR}', '2026-01-08', -7, 'cheque', null, '{ER7}', 'ESSAI')$q$, 'OK', ''],
+    array['controle', '198b. MUTATION de 146f : MR7 réservé, pas classé, la contre-passation sans mouvement passe', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{MR7}', '{R}', '2025-12-31', 'ESSAI', 7, 'non_rapprochee'); {ENI} ('{ER7}', '{R}', '{FR}', '2025-12-31', 7, 'cheque', '{MR7}', null, null); insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{R}', 2025, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); {ENI} ('{CP7}', '{R}', '{FR}', '2026-01-08', -7, 'cheque', null, '{ER7}', 'ESSAI')$q$, 'OK', ''],
+    -- VF5H2Q1Q2-Q1, écrite sur la recommandation, le 26/10/2026 (la même migration) : l'encaissement d'une facture qui
+    -- n'est pas source ne cite plus un mouvement classé par ses encaissements et FIGÉ, le super-administrateur compris.
+    -- Les contrôles de T réinsèrent l'exercice 2026 validé (la restauration), puis posent en direct l'encaissement de
+    -- F2026-0001, la facture d'avant (FP), sur le virement mixte MV, classé par ses encaissements — et tout s'annule.
+    -- 146n pose celui de F2026-0002, une facture source, que la garde de la frontière refuse sous ses mots ; 146o cite
+    -- MX, né classé (la restauration) au 31 décembre 2026. Leurs mutations : 198c (2026 pas encore validé : l'ordre de
+    -- la restauration), 198d (M4, classé autrement) et 198e (2026 validé dans R, un autre dossier).
+    array['controle', '146k. VF5H2Q1Q2-Q1 : 2026 validé dans T — le contrôle le réinsère, puis s''annule — : le super-administrateur ne pose plus en direct l''encaissement de F2026-0001, la facture d''avant, sur le virement mixte MV, figé', 'chef', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{T}', 2026, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); {ENC} ('{T}', '{FP}', '2026-03-16', 1, 'virement', '{MV}', null, null)$q$, '23514', '{IFC}'],
+    array['controle', '146l. … ni le rôle des Edge Functions, sous sa session', 'service', $q$select set_config('request.jwt.claims', json_build_object('sub', '{CHEF}', 'role', 'authenticated')::text, true); insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{T}', 2026, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); {ENC} ('{T}', '{FP}', '2026-03-16', 1, 'virement', '{MV}', null, null)$q$, '23514', '{IFC}'],
+    array['controle', '146m. … les autres butent d''abord sur la règle de VF5H2-Q1 (le propriétaire)', 'postgres', $q$select set_config('request.jwt.claims', json_build_object('sub', '{CHEF}', 'role', 'authenticated')::text, true); insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{T}', 2026, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); select set_config('request.jwt.claims', '', true); {ENC} ('{T}', '{FP}', '2026-03-16', 1, 'virement', '{MV}', null, null)$q$, '23514', '{ICL}'],
+    array['controle', '146n. … pour une facture source (F2026-0002), la garde de la frontière refuse, sous ses mots', 'chef', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{T}', 2026, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); {ENC} ('{T}', '{F1}', '2026-03-16', 1, 'virement', '{MV}', null, null)$q$, '23514', 'L''exercice 2026 est validé : un encaissement de cette facture ne s''y date plus.'],
+    array['controle', '146o. … au 31 décembre de l''exercice validé : MX, né classé par ses encaissements (la restauration)', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, encaissements_de_factures) values ('{MX}', '{T}', '2026-12-31', 'ESSAI', 1, 'rapprochee', true); insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{T}', 2026, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); {ENC} ('{T}', '{FP}', '2026-12-31', 1, 'virement', '{MX}', null, null)$q$, '23514', '{IFC}'],
+    array['controle', '198c. MUTATION de 146k : 2026 pas encore validé dans T — l''ordre de la restauration —, le super-administrateur pose en direct l''encaissement de FP sur MV', 'chef', $q${ENC} ('{T}', '{FP}', '2026-03-16', 1, 'virement', '{MV}', null, null)$q$, 'OK', ''],
+    array['controle', '198d. MUTATION de 146k : M4, classé autrement et figé, la facture d''avant le cite en direct, comme hier', 'chef', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{T}', 2026, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); {ENC} ('{T}', '{FP}', '2026-03-04', 1, 'virement', '{M4}', null, null)$q$, 'OK', ''],
+    array['controle', '198e. MUTATION de 146k : 2026 validé dans R, un autre dossier, pas dans T : l''encaissement de FP sur MV passe', 'chef', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{R}', 2026, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}'); {ENC} ('{T}', '{FP}', '2026-03-16', 1, 'virement', '{MV}', null, null)$q$, 'OK', ''],
     array['jeu', 'VF7a : l''exercice 2025 validé dans R', 'postgres', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration) values ('{R}', 2025, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('c', 64), '{}')$q$, '', ''],
     array['fait', '0. le jeu (VF7a) : ER4, un chèque du 2 janvier 2026, après la frontière', 'chef', $q${ENI} ('{ER4}', '{R}', '{FR}', '2026-01-02', 5, 'cheque', null, null, null)$q$, 'OK', ''],
     array['controle', '145. rattacher, rang 6 : daté d''un exercice validé, par un autre moyen, il ne se rattache plus', 'chef', $q${RAT}'{R}', '{ER2}', '{MR2}')$q$, '22023', 'L''exercice 2025 est validé : cet encaissement ne se rattache plus à un mouvement.'],
