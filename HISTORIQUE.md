@@ -37666,3 +37666,135 @@ Elles lisent le classement du mouvement sans le verrouiller (comme celles de VF5
 écrit en direct. Sur un mouvement classé et figé, un encaissement ne se défait plus que par la contre-passation qui cite
 le débit qui l'a défait, dans l'exercice ouvert — celle d'une facture source —, et l'encaissement d'une facture d'avant
 ne s'y ajoute plus : la règle d'un exercice validé. Le retour arrière rend les ouvertures d'hier.
+
+### 26/10/2026 — L'ÉQUIPE NE CHANGE QUE PAR SON RÔLE — 23Q2Q2-Q3 (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par l'agent architecte sur `6e50851` — `main`, la migration de VF5H2-Q1 appliquée ; l'index des avoirs, VF8e et
+VF5H2Q1-Q2 préparés —, la branche locale `equipe-23q2q2`, en trois commits : la signature du schéma, qui lit désormais les
+droits par colonne ; la migration, son test et l'essai ; puis cette documentation. Créés :
+`supabase/schema/20261027150000_equipe_par_son_role.sql`, sous une version PROVISOIRE, et
+`src/lib/equipeParSonRole.test.ts`. Modifiés : `supabase/essais/rls.sql` (le bloc EQ), `supabase/essais/signature.sql`,
+`supabase/schema/README.md`, CLAUDE.md. Ni module, ni écran, ni Edge Function ; RGPD.md ne change pas : aucun traitement
+ne change, un droit d'écriture se resserre. La migration n'est PAS appliquée : elle attend l'accord du cabinet. En
+production, des SELECT seulement : des comptes, le catalogue, l'historique (version et nom).)
+
+**LA DÉCISION.** 23Q2Q2-Q3, tranchée par le cabinet le 26/10/2026 à la recommandation (page des arbitrages) : la mise à
+jour de `cabinet_admins` depuis le navigateur se restreint à la colonne `role` — `revoke update`, puis `grant update
+(role)` à `authenticated`. C'est le « trouvé en passant » de « L'ÉQUIPE N'ACCUEILLE PAS LE CLIENT D'UN AUTRE CABINET ».
+
+**CE QUE LA BASE FAISAIT** (le catalogue de la production, le 26/10/2026). `cabinet_admins` : la clé primaire `user_id`
+(une personne, un cabinet), `cabinet_id` vers `cabinets` sans action, `role` sous contrainte, `email` ; trois policies
+sans `to` — lecture, mise à jour, suppression ; aucune d'insertion — et aucun déclencheur. `authenticated` et `anon`
+portent tous les droits de la table (donneur : `postgres`, le propriétaire), aucune colonne du schéma public ne porte de
+droit à elle, et `authenticated` n'hérite d'aucun rôle. La policy de mise à jour ne juge que
+`est_chef_du_cabinet(cabinet_id)`, avant et après : un chef changeait, depuis une session, le COMPTE d'une ligne de son
+équipe — pour celui d'un client de ses dossiers, donc aussi du client d'un autre cabinet rattaché sur confirmation
+(23-Q2) —, sans `create-team-member` ni ses refus (23Q2-Q2) ; ou l'adresse que la page de l'équipe affiche.
+
+**LES CHEMINS QUI ÉCRIVENT L'ÉQUIPE, ÉTABLIS AVANT D'ÉCRIRE : AUCUN NE CASSE.**
+- L'application : la page de l'équipe seule. `changerRole` écrit `{ role }` — la forme que PostgREST compose, `set
+  "role"` et rien d'autre, jouée sur la réplique sous la session du chef, en `return=minimal` comme en
+  `return=representation` : une ligne — ; « Retirer » supprime la ligne, et ce droit ne touche pas la suppression.
+  `AuthContext`, `SuperAdminPage` et la lecture des marques d'une pièce ne font que lire.
+- Les Edge Functions : `create-team-member` et `create-cabinet` n'y font qu'insérer, avec la clé secrète (`service_role`,
+  dont les droits ne changent pas) ; `delete-cabinet` ne supprime que le cabinet, que la clé étrangère retient tant qu'il
+  garde une équipe.
+- La sauvegarde et la restauration : une table de niveau cabinet, hors de l'export d'un dossier (`CHEMINS_DOSSIER`,
+  `acces: 'cabinet'`) ; la restauration n'y écrit rien — sa seconde passe ne remet que les liens des avoirs, par leur
+  `id`, que `cabinet_admins` n'a pas. `restauration.sql` ne la nomme que dans son ordre.
+- Les fonctions SQL : aucune ne l'écrit (quatre la lisent, `pg_proc` relu en production) ; aucun déclencheur ne la
+  vise. Les trente et un essais qui y écrivent le font en propriétaire ou en super-utilisateur.
+- `equipeParSonRole.test.ts` tient cet inventaire, de toute la source : une écriture neuve de l'équipe — une autre
+  colonne, une autre forme, une insertion du navigateur, une écriture d'Edge Function sans la clé secrète — le fait
+  rougir.
+
+**LA MIGRATION** (`equipe_par_son_role` ; 5 927 caractères, 6 300 octets, 85 lignes, md5
+`59c621d0f9f18cc1ce6fd51fb0d52673` ; ni barre oblique inverse, ni retour chariot, ni aucun des mots que le détecteur
+d'`apply_migration` peut retenir — `atttypid <> 0` écarte une colonne ôtée, sans les écrire) :
+- une garde de tête : `authenticated` porte UPDATE sur la table, et aucune colonne ne porte de droit à elle — lu à ses
+  ENTRÉES (`aclexplode`) : un droit retiré peut laisser un `attacl` vide —, sinon un refus qui le dit ; une seconde
+  application se refuse par la première condition ;
+- `revoke update on table public.cabinet_admins from authenticated;` puis `grant update (role) on table
+  public.cabinet_admins to authenticated;` ;
+- une garde de fin : les colonnes qu'`authenticated` met encore à jour sont `role`, et elle seule — lu par
+  `has_column_privilege`, qui voit aussi un droit de table, un droit donné à PUBLIC, par un autre donneur ou hérité, que
+  le retrait n'ôterait pas —, sinon rien n'est appliqué.
+- Une écriture qui nomme une autre colonne se refuse alors en 42501, « permission denied for table cabinet_admins »,
+  avant toute ligne lue et quelle que soit la valeur : le droit se juge avant la policy.
+
+**CE QUI NE CHANGE PAS, ET POURQUOI.** Les trois policies : la décision ne les vise pas, et le droit se juge avant elles.
+Les droits d'`anon` sur la table : comme sur toute table du schéma, aucune policy ne l'admet sans session
+(`est_chef_du_cabinet` y est faux) — l'essai le joue (EQ5) ; les lui retirer sur cette seule table serait une autre
+décision. Les autres droits d'`authenticated` (lecture, insertion que nulle policy n'admet, suppression), et ceux de
+`service_role`.
+
+**LA SIGNATURE APPREND À LIRE LES DROITS PAR COLONNE** (un commit à part). `signature.sql` ne lisait, pour les droits
+d'une table, que `relacl` ; un droit par colonne vit dans `pg_attribute.attacl`. Sur la réplique, la migration et la même
+amputée de son droit sur `role` — qui ôterait au chef le changement de rôle de son équipe — rendaient la même famille
+« droits_tables » (`acb82184…`). La ligne d'une table reçoit désormais, après ses droits de table, ceux de ses colonnes,
+triés — seulement quand une colonne en porte : une table sans eux garde sa ligne d'avant. En production, le 26/10/2026,
+avant toute migration (SELECT seulement) : la requête étendue rend les neuf valeurs d'avant, droits_tables 81
+`79e266f1…`. Sur la réplique munie de la migration : `c58e26d3cf2f938e22b5f9fc7cd45b8b` ; amputée : `acb82184…`.
+
+**LES PREUVES.**
+- La réplique : une copie À FROID de celle de VF5H2-Q1 (PostgreSQL 16, UTF8), sur le port 5655, déclarée à
+  `pg_ctlcluster` (`/etc/postgresql/16/equipe` : son répertoire de données, son port, son socket), arrêtée par son
+  répertoire de données. Sa base de production (`b_p154`) : 154 migrations, `9549d833…`, et les neuf familles égales une
+  à une à celles de la production — aucun essai d'hier ne l'avait changée ; ses lignes sont le jeu fictif de la réplique.
+- Munie de la migration comme l'outil l'aurait fait : 155 migrations, `0da2ac068f870afcd62e568d9e778db9` ; seule la
+  famille « droits_tables » change (`79e266f1…` → `c58e26d3…`) ; avant ou après les trois migrations préparées, la même
+  base au bout (158, `7d996c1b560182184ebd10996b624cd3`).
+- `rls.sql` ENTIER (212 860 caractères, md5 `8eceba234b9809aa527f8bb6d71991a1`), en une transaction, en
+  super-utilisateur, le journal des désignations semé : sans la migration, 58 lignes d'invariants (la ligne EQ « EN
+  ATTENTE »), 0 en faute, 48 mutations sur 48 qui mordent ; avec elle, 63 lignes, 0 en faute, 53 sur 53 ; hors du bloc
+  EQ, les 105 lignes identiques des deux côtés, et identiques à celles du fichier d'hier. Le bloc : EQ1, le chef change
+  le rôle d'un membre (le contrôle positif) ; EQ2, ni `user_id`, ni `cabinet_id` remis à eux-mêmes, ni `email`, ni le
+  rôle avec l'adresse (42501, sa raison exigée) ; EQ3, il retire toujours un membre ; EQ4, le catalogue (`role` seul,
+  sans le transmettre ; lecture et suppression gardées ; `service_role` gardé) ; EQ5, l'anonyme ne change aucune ligne.
+  Ses cinq mutations mordent : la table rendue, le droit sur `role` retiré, une colonne inconnue (42703, jugée EN
+  FAUTE), EQ1 joué par le membre lui-même (aucune ligne), EQ5 joué par le chef.
+- Quinze mutations de la migration, chacune seule sur une copie fraîche, jugées par l'application, le bloc EQ, une
+  seconde application et trois états altérés : quinze tuées. Le retrait oublié, le droit oublié, posé sur `email`, sur
+  `role` et `email`, donné à `anon`, le retrait fait à `anon` : la garde de fin refuse l'application. Le retrait fait aussi
+  à `service_role`, le droit transmissible : EQ4. La garde de tête sans l'une ou l'autre condition, ou qui ne lit que les
+  colonnes ôtées : appliquée sur un état qu'elle doit refuser (UPDATE déjà retiré ; une colonne qui porte un droit). La
+  garde de fin retirée : appliquée quand PUBLIC porte UPDATE. Mal écrite (attend `email`, lit `anon`, ne lit que le droit
+  de table) : l'application refusée.
+- Les essais d'hier, sans puis avec la migration, chacun sur une copie fraîche : 59 joués, tous identiques ligne à ligne,
+  leurs fautes connues comprises (`forfaitKilometrique.sql`, `ventesClient.sql`, et les six de `ventesFacturees.sql` que
+  la migration de VF5H2Q1-Q2, pas appliquée, attend). Quatre ne se jouent pas sur ce jeu (ESSAI_IMPOSSIBLE, les deux
+  côtés) : `devis.sql` (P5 n'est pas en base), `notesInternes.sql` (des notes de production), `droitsAcces.sql` et
+  `simulationDesVentesFacturees.sql` — ces deux-là rejoués sur un jeu qui les admet (un second accès du client ; la
+  réplique munie de VF8e) : 46 et 31 verdicts justes, identiques des deux côtés.
+- Le texte à coller (`collage_equipe_par_son_role.sql` : 7 562 caractères, md5 `9fb1a9bb82d77f45a2e98f0d12fcd4f3`) et
+  son retour arrière (`retour_equipe_par_son_role.sql` : 3 283 caractères, `c2bb9cdee02d03fb4232ac7e51ab1fbd`), dans le
+  bloc-notes de la session, sur des copies fraîches : collé, la signature de l'outil (neuf familles), sa ligne
+  d'historique rendant `59c621d0…`, 155 migrations ; collé deux fois, refusé la seconde ; altéré d'un caractère, refusé,
+  rien d'appliqué ; en fins de ligne Windows, appliqué, la même ligne et la même signature ; collé après l'outil,
+  refusé. Le retour : sur la base collée et sur celle de l'outil, la production (neuf familles ; 154, `9549d833…` ; aucun
+  droit par colonne) ; refusé sans la migration ; refusé quand les droits ont changé depuis. La migration rejouée par
+  l'outil : refusée par sa garde de tête.
+- Les trois contrôles de l'export : l'export entier, 158 fichiers, `7d996c1b…`, égal à l'historique de la réplique munie
+  des quatre migrations préparées ; sans les trois d'avant, 155, `0da2ac06…`, égal à celle munie de la seule migration ;
+  sans les quatre, 154, `9549d833…`, la production. Le socle (80 instructions, `5d53eea2…`) et l'inventaire (2 163
+  objets, `b20a312c…` ; 2 165, `2fd670d3…`, avec l'index et VF8e) sont inchangés des deux côtés : la migration ne crée
+  aucun objet, et ni l'un ni l'autre ne lit les droits.
+- Le TypeScript : `equipeParSonRole.test.ts`, onze tests, rouges à cinq sans le fichier de la migration ; les 68 fichiers
+  de test qui lisent l'export ou `rls.sql`, 2 907 tests, verts.
+
+**CE QUE L'APPLICATION CHANGERA EN PRODUCTION.** Rien qui se voie : la page de l'équipe n'écrit que `role`. La signature :
+la seule famille « droits_tables » (`79e266f1…` → `c58e26d3…`), dans l'un ou l'autre ordre avec les migrations
+préparées ; le socle, l'inventaire, les policies : rien.
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) Présenter `equipe_par_son_role` au cabinet (un droit retiré, un droit
+rendu sur une colonne ; aucune donnée, aucun objet, aucune policy). (2) Sur son accord, l'appliquer par
+`apply_migration`, sous ce nom, le texte du fichier tel quel ; si l'outil attend une confirmation, donner le texte à
+coller dans le message final du tour. (3) Renommer le fichier sous la version de sa ligne d'historique, texte inchangé ;
+la ligne doit rendre `59c621d0f9f18cc1ce6fd51fb0d52673`. (4) `signature.sql` en production : la seule famille
+« droits_tables ». (5) Les trois contrôles de l'export, et leur passage au README, à la place du paragraphe « Préparé ».
+(6) Le bloc EQ en production (la copie adaptée de `rls.sql`, ou le bloc seul par impersonation, la transaction
+annulée). (7) CLAUDE.md, la feuille de route, la page des arbitrages.
+
+**LES RISQUES.** Un écran ou une fonction qui écrirait demain, depuis une session, une autre colonne de l'équipe serait
+refusé en 42501 — `equipeParSonRole.test.ts` rougit avant. Le retour arrière rend l'ouverture d'hier, et retire une ligne
+de l'historique : il ne se joue que sur l'accord du cabinet.

@@ -550,6 +550,21 @@ avec eux) sont inchangés : la migration remplace le corps d'une garde sous son 
 203 `af77709d…` puis `68fb1b62ba09ebf84c0e774503170649` si elle passe après eux — et au bout des trois, `68fb1b62…`
 dans l'un et l'autre ordre (HISTORIQUE.md, « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ »).
 
+**Préparé le 26/10/2026, PAS ENCORE APPLIQUÉ : `equipe_par_son_role`** (23Q2Q2-Q3, tranchée par le cabinet le même jour à
+la recommandation). Son fichier porte une version PROVISOIRE, `20261027150000`, après celles des trois migrations
+préparées avant lui, dont il ne dépend pas : il s'applique avant ou après elles, et la base est la même au bout.
+`apply_migration` lui donnera sa version, et le fichier se RENOMME à cette version, texte inchangé — sa ligne d'historique
+doit rendre `59c621d0f9f18cc1ce6fd51fb0d52673`, fins de ligne ramenées à `\n`. Tant que ces quatre fichiers ne sont pas
+appliqués, la dérive se lit sans eux : 154 fichiers, 154 migrations, `9549d833…`, la production. Sur la réplique de
+l'étape (la production à 154, son historique et ses neuf familles égaux à ceux de la production), munie de la seule
+migration : 155 fichiers, 155 migrations, `0da2ac068f870afcd62e568d9e778db9` des deux côtés ; munie des trois d'avant
+puis d'elle : 158, `7d996c1b560182184ebd10996b624cd3` des deux côtés. Le socle (80 instructions, `5d53eea2…`) et
+l'inventaire (2 163 objets, `b20a312c…`, sans l'index ni VF8e ; 2 165, `2fd670d3…`, avec eux) sont inchangés : la
+migration retire un droit et en rend un sur une colonne, et ni l'un ni l'autre contrôle ne lit les droits.
+`signature.sql`, qui lit depuis ce jour les droits par colonne (les neuf valeurs de la production inchangées) : seule la
+famille « droits_tables » change, `79e266f1…` puis `c58e26d3cf2f938e22b5f9fc7cd45b8b`, dans l'un ou l'autre ordre
+(HISTORIQUE.md, « L'ÉQUIPE NE CHANGE QUE PAR SON RÔLE »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
