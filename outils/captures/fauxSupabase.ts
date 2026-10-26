@@ -120,6 +120,9 @@ const dossiers: Ligne[] = [
   // La source des ventes (chantier EC-Q3) : non nulle et fausse par défaut en base, comme ici ; seul d12, plus bas, a basculé.
   // L'onglet Accès la lit (étape VF8d) et dit illisible une colonne absente : la case « Ventes » ne s'y jugerait pas.
   ventes_par_les_factures: false,
+  // Sa date (étape VF8a, lue par la carte « Source des ventes » de l'onglet Informations, étape VF8b) : nulle tant que le
+  // réglage est faux, comme la garde la tient.
+  ventes_par_les_factures_depuis: null,
 }))
 
 // Le code e-mail d'un vrai dossier est son nom en tirets suivi de six caractères de son identifiant (`generate_code_email`) :
@@ -140,7 +143,7 @@ dossiers.push({
   ...(dossiers.find((d) => d.id === 'd7') as Ligne),
   id: 'd12', nom: 'Clara Fontaine Conseil', siret: '44455566600019', code_naf: '70.22Z',
   libelle_naf: 'Conseil pour les affaires et autres conseils de gestion', code_email: 'd12', archive: true,
-  ventes_par_les_factures: true, ...IDENTITE_LEGALE_VIDE,
+  ventes_par_les_factures: true, ventes_par_les_factures_depuis: '2026-09-01T07:30:00+00:00', ...IDENTITE_LEGALE_VIDE,
 })
 
 // Les postes sont ceux que le formulaire connaît (lib/cases2035.ts), comme un cabinet les saisit — sauf

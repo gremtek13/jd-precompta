@@ -11,6 +11,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import VehiculesCard from './VehiculesCard'
 import SauvegardeCard from './SauvegardeCard'
 import BalanceCard from './BalanceCard'
+import SourceDesVentesCard, { type ReglageRendu } from './SourceDesVentesCard'
 import { messageErreur } from '../../lib/messageErreur'
 import { ouvrirApercu } from '../../lib/apercu'
 import { chargerInformationsDossier, enregistrerInformationsDossier } from '../../lib/informationsDossier'
@@ -57,11 +58,14 @@ interface Props {
   modele: ModeleComptable
   // Les colonnes écrites, TELLES QUE LA BASE LES A RENDUES (les six, ou le SIRET et l'adresse seuls).
   onIdentiteUpdated: (identite: Partial<IdentiteRendue>) => void
+  // La source des ventes, telle que la base l'a rendue après la bascule (carte « Source des ventes », étape VF8b), pour le
+  // dossier écrit : la page la fusionne dans sa ligne, et les onglets qui la lisent la voient sans relecture.
+  onReglageUpdated: (dossierId: string, reglage: ReglageRendu) => void
 }
 
 export default function InformationsTab({
   dossierId, dossierNom, dossierSiret, dossierAdresse, dossierDenomination, dossierRcsVille, dossierFormeJuridique, dossierCapital,
-  modele, onIdentiteUpdated,
+  modele, onIdentiteUpdated, onReglageUpdated,
 }: Props) {
   const { estChef } = useAuth()
   const navigate = useNavigate()
@@ -369,6 +373,10 @@ export default function InformationsTab({
         </div>
       </form>
     </div>
+
+    {/* La source des ventes (chantier EC-Q3, étape VF8b) : un réglage du dossier, comme son identité, et qui commande ce que
+        comptent ses factures — juste après elle. La carte lit et écrit seule (SourceDesVentesCard.tsx). */}
+    <SourceDesVentesCard dossierId={dossierId} onReglageRendu={onReglageUpdated} />
 
     <div className="card" style={{ maxWidth: 640 }}>
       <h3 style={{ marginTop: 0 }}>Informations du client</h3>

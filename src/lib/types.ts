@@ -83,10 +83,11 @@ export interface Dossier {
   ventes_par_les_factures: boolean
   // DEPUIS QUAND (étape VF8a ; migration `reglage_des_ventes`, appliquée le 26/10/2026 ; lib/sourceDeLaVente.ts) : un instant,
   // que la garde du réglage pose quand il monte et efface quand il descend — aucune écriture ne le pose à sa place, hors de
-  // la restauration du super-administrateur, qui le réinsère tel qu'il a été. Nul tant que le réglage est faux. FACULTATIVE
-  // dans ce type jusqu'à l'étape VF8b, le premier écran qui la lit : une sauvegarde faite avant la migration ne la porte
-  // pas — une colonne absente n'est pas une colonne nulle.
-  ventes_par_les_factures_depuis?: string | null
+  // la restauration du super-administrateur, qui le réinsère tel qu'il a été. Nul tant que le réglage est faux. OBLIGATOIRE
+  // depuis l'étape VF8b, qui la lit (la carte « Source des ventes », lib/basculeDesVentes.ts) : le type décrit la table. Une
+  // sauvegarde faite avant la migration ne la porte pas, et se restaure pourtant — la ligne part sans elle, la base la pose
+  // nulle (`lotsDEcriture`, sauvegardeVenteFacturee.test.ts) ; la carte lit une colonne absente sans la croire nulle.
+  ventes_par_les_factures_depuis: string | null
 }
 
 export interface Categorie {

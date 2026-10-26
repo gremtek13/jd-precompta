@@ -64,6 +64,7 @@ import PiecesTab from './dossier/PiecesTab'
 import PlateformeClientModal from './dossier/PlateformeClientModal'
 import RevisionTab from './dossier/RevisionTab'
 import StatistiquesTab from './dossier/StatistiquesTab'
+import SourceDesVentesCard from './dossier/SourceDesVentesCard'
 import SuperPdpModal from './dossier/SuperPdpModal'
 import SupplementsTab from './dossier/SupplementsTab'
 import TransmissionFactureModal from './dossier/TransmissionFactureModal'
@@ -141,7 +142,7 @@ function dossier(o: Partial<Dossier> = {}): Dossier {
     notes: null, archive: false, created_at: '2026-01-05T09:00:00Z', code_email: 'abc123', assujetti_tva: true,
     statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false, tva_periodicite: 'trimestrielle',
     tva_sur_debits: false, mode_comptable: 'tresorerie', compte_notes_de_frais: '108000', code_naf: null, libelle_naf: null,
-    adresse: null, ventes_par_les_factures: false, ...o,
+    adresse: null, ventes_par_les_factures: false, ventes_par_les_factures_depuis: null, ...o,
   }
 }
 
@@ -406,7 +407,7 @@ const ECRANS: Ecran[] = [
   { nom: 'FinancementTab (basculé)', fichier: 'pages/dossier/FinancementTab.tsx', rendre: () => <Dossier1><FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'ImmobilisationsTab', fichier: 'pages/dossier/ImmobilisationsTab.tsx', rendre: () => <Dossier1><ImmobilisationsTab dossierId="d1" assujettiTva={false} plan={PLAN_PAR_DEFAUT} /></Dossier1> },
   { nom: 'InformationsTab', fichier: 'pages/dossier/InformationsTab.tsx', rendre: () => (
-    <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} dossierDenomination={null} dossierRcsVille={null} dossierFormeJuridique={null} dossierCapital={null} modele={TRESORERIE} onIdentiteUpdated={rien} /></Dossier1>
+    <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} dossierDenomination={null} dossierRcsVille={null} dossierFormeJuridique={null} dossierCapital={null} modele={TRESORERIE} onIdentiteUpdated={rien} onReglageUpdated={rien} /></Dossier1>
   ) },
   { nom: 'PacksTab', fichier: 'pages/dossier/PacksTab.tsx', rendre: () => <Dossier1><PacksTab dossierId="d1" dossierNom="Dossier fictif" /></Dossier1> },
   { nom: 'PiecesTab', fichier: 'pages/dossier/PiecesTab.tsx', rendre: () => <Dossier1><PiecesTab dossierId="d1" ventesParLesFactures={false} /></Dossier1> },
@@ -424,6 +425,7 @@ const ECRANS: Ecran[] = [
   { nom: 'StatistiquesTab (engagement)', fichier: 'pages/dossier/StatistiquesTab.tsx', rendre: () => (
     <Dossier1><StatistiquesTab dossierId="d1" onNavigate={rien} modeComptable="engagement" /></Dossier1>
   ) },
+  { nom: 'SourceDesVentesCard', fichier: 'pages/dossier/SourceDesVentesCard.tsx', rendre: () => <Dossier1><SourceDesVentesCard dossierId="d1" onReglageRendu={rien} /></Dossier1> },
   { nom: 'SuperPdpModal', fichier: 'pages/dossier/SuperPdpModal.tsx', rendre: () => <Dossier1><SuperPdpModal espace="cabinet" dossierId="d1" onClose={rien} onImported={rien} /></Dossier1> },
   // Les connexions du client (étape P4b) : la section de « Mes ventes », et les deux fenêtres en mode client.
   { nom: 'ConnexionsClient', fichier: 'pages/dossier/ConnexionsClient.tsx', rendre: () => (

@@ -54,6 +54,8 @@ const faux = vi.hoisted(() => ({
   aucuneLigne: false,
   reponseIdentite: null as ((mise: Record<string, unknown>) => Record<string, unknown>) | null,
   identitesRendues: [] as unknown[],
+  // Ce que la carte « Source des ventes » a passé à la page (étape VF8b) : le dossier écrit et le réglage rendu.
+  reglagesRendus: [] as unknown[],
 }))
 
 vi.mock('../../lib/informationsDossier', () => ({
@@ -91,6 +93,21 @@ vi.mock('./VehiculesCard', () => ({
   ),
 }))
 vi.mock('./SauvegardeCard', () => ({ default: () => null }))
+// La carte « Source des ventes » (étape VF8b) lit et écrit seule, et a ses propres tests (SourceDesVentesCard.test.tsx) :
+// doublée pour montrer ce que l'onglet lui PASSE — son dossier, et le chemin du réglage rendu jusqu'à la page.
+vi.mock('./SourceDesVentesCard', () => ({
+  default: ({ dossierId, onReglageRendu }: {
+    dossierId: string
+    onReglageRendu: (id: string, r: { ventes_par_les_factures: boolean; ventes_par_les_factures_depuis: string | null }) => void
+  }) => (
+    <button
+      type="button"
+      onClick={() => onReglageRendu(dossierId, { ventes_par_les_factures: true, ventes_par_les_factures_depuis: '2026-10-26T09:00:00+00:00' })}
+    >
+      Source des ventes — {dossierId}
+    </button>
+  ),
+}))
 vi.mock('./BalanceCard', () => ({ default: () => null }))
 vi.mock('../../lib/packGenerator', () => ({
   generatePack: async () => {
@@ -178,6 +195,7 @@ function monter(
       dossierCapital={null}
       modele={modele}
       onIdentiteUpdated={(rendue) => { faux.identitesRendues.push(rendue) }}
+      onReglageUpdated={(id, reglage) => { faux.reglagesRendus.push([id, reglage]) }}
       {...identite}
     />,
   )
@@ -369,6 +387,18 @@ describe('informations du client : on n’écrase jamais ce qu’on n’a pas su
     expect((screen.getByLabelText('Véhicule') as HTMLSelectElement).value).toBe('personnel_ik')
     expect((screen.getByLabelText(/Jours travaillés/) as HTMLInputElement).value).toBe('218')
     expect((screen.getByLabelText(/Autres informations/) as HTMLTextAreaElement).value).toBe('Local partagé')
+  })
+})
+
+describe('la carte « Source des ventes » (étape VF8b)', () => {
+  it('se monte avec le dossier de l’onglet, et le réglage qu’elle rend va à la page, avec le dossier écrit', async () => {
+    faux.reglagesRendus = []
+    monter()
+    const carte = await screen.findByRole('button', { name: 'Source des ventes — d1' })
+    await act(async () => { carte.click() })
+    expect(faux.reglagesRendus).toEqual([
+      ['d1', { ventes_par_les_factures: true, ventes_par_les_factures_depuis: '2026-10-26T09:00:00+00:00' }],
+    ])
   })
 })
 

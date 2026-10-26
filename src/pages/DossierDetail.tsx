@@ -498,6 +498,9 @@ export default function DossierDetail() {
                 modele={modele}
                 // Les valeurs que la base a RENDUES après l'écriture : le dossier lu les prend telles quelles.
                 onIdentiteUpdated={(identite) => modifierDossier(id, identite)}
+                // La source des ventes RENDUE par la base après la bascule, pour le dossier écrit (`modifierDossier` ne
+                // touche que lui) : les onglets qui lisent le réglage le voient sans relire le dossier.
+                onReglageUpdated={(dossierEcrit, reglage) => modifierDossier(dossierEcrit, reglage)}
               />
             )}
             {tab === 'virements' && modele && <VirementsTab dossierId={id} modele={modele} />}

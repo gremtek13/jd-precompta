@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   AUCUN_DROIT, CE_QUE_DONNE_UN_ACCES, DOMAINES, LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_CONTRE_PASSATION,
   LIBELLE_ESCOMPTE_PARAMETRES, LIBELLE_ESCOMPTE_PARAMETRES_CLIENT, LIBELLE_MENTIONS_PARAMETRES, LIBELLE_MENTIONS_PARAMETRES_CLIENT,
@@ -9,9 +9,10 @@ import {
   LIBELLE_ADRESSE_IDENTITE, LIBELLE_DENOMINATION_IDENTITE, LIBELLE_RCS_VILLE_IDENTITE,
   LIBELLE_ADRESSE_CONTACT, LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOM_CONTACT, LIBELLE_NOTE_DECLARATION, LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDisentLesCasesDuDossier, ceQueDonneUnAcces, changementApplique, definitionDe,
   demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus, type ReglageDuDossier,
-  CARTE_DE_LA_BASCULE_OUVERTE, CE_QUE_COMPTENT_SES_FACTURES, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
+  CE_QUE_COMPTENT_SES_FACTURES, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
   raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier,
 } from './droitsAcces'
+import { BASCULE_OFFERTE } from './basculeDesVentes'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CHANGEMENT_DE_RIB_EXPORTE, DUREE_DE_L_AVIS_EN_JOURS } from './changementDeRib'
@@ -32,6 +33,14 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 // Les phrases des drapeaux se jouent sur un dossier basculé : son réglage ajoute la même phrase à chaque état (étape VF8d,
 // plus bas, joue les trois réglages).
 const BASCULE: ReglageDuDossier = { etat: 'bascule' }
+
+// LE DRAPEAU DE LA BASCULE (étape VF8b, lib/basculeDesVentes.ts), joué dans ses deux états : la phrase de l'onglet Accès suit
+// le GESTE que la carte « Source des ventes » offre, pas son existence. Nul, le drapeau est celui du module.
+const drapeau = vi.hoisted(() => ({ offerte: null as boolean | null }))
+vi.mock('./basculeDesVentes', async (original) => {
+  const vrai = await original<typeof import('./basculeDesVentes')>()
+  return { ...vrai, get BASCULE_OFFERTE() { return drapeau.offerte ?? vrai.BASCULE_OFFERTE } }
+})
 
 const MIGRATION = readFileSync(resolve(process.cwd(), 'supabase/schema/20261009224031_droits_des_acces_clients.sql'), 'utf8')
 
@@ -1173,14 +1182,14 @@ describe('la case « Ventes » et la source des ventes du dossier (étape VF8d)'
   it('« Ventes » : basculé, les deux gestes ; non basculé, décocher seulement, et pourquoi ; illisible, aucun, et pourquoi', () => {
     expect(gesteDeLaCase('ventes', BASCULE)).toEqual({ cocher: true, decocher: true, raison: null })
     expect(gesteDeLaCase('ventes', NON_BASCULE)).toEqual({
-      cocher: false, decocher: true, raison: raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE),
+      cocher: false, decocher: true, raison: raisonDuDossierNonBascule(BASCULE_OFFERTE),
     })
     expect(gesteDeLaCase('ventes', ILLISIBLE)).toEqual({
       cocher: false, decocher: false, raison: raisonDuReglageIllisible('lecture refusée'),
     })
     expect(refusDeLaCase('ventes', true, BASCULE)).toBeNull()
     expect(refusDeLaCase('ventes', false, BASCULE)).toBeNull()
-    expect(refusDeLaCase('ventes', true, NON_BASCULE)).toBe(raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE))
+    expect(refusDeLaCase('ventes', true, NON_BASCULE)).toBe(raisonDuDossierNonBascule(BASCULE_OFFERTE))
     expect(refusDeLaCase('ventes', false, NON_BASCULE)).toBeNull()
     expect(refusDeLaCase('ventes', true, ILLISIBLE)).toBe(raisonDuReglageIllisible('lecture refusée'))
     expect(refusDeLaCase('ventes', false, ILLISIBLE)).toBe(raisonDuReglageIllisible('lecture refusée'))
@@ -1195,7 +1204,7 @@ describe('la case « Ventes » et la source des ventes du dossier (étape VF8d)'
     expect(raisonDuReglageIllisible('le dossier n’a pas été trouvé')).toBe('La source des ventes de ce dossier ne se lit pas '
       + '(le dossier n’a pas été trouvé) : la case « Ventes » ne se coche ni ne se décoche d’ici. Recharge la page pour la relire.')
     expect(phraseDuReglage(BASCULE)).toBe(CE_QUE_COMPTENT_SES_FACTURES)
-    expect(phraseDuReglage(NON_BASCULE)).toBe(raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE))
+    expect(phraseDuReglage(NON_BASCULE)).toBe(raisonDuDossierNonBascule(BASCULE_OFFERTE))
     expect(phraseDuReglage(ILLISIBLE)).toBe(raisonDuReglageIllisible('lecture refusée'))
     // EC3-Q5 : sans visa ; les écritures sur le clic du cabinet ; ce qu'elles comptent, et quand.
     expect(CE_QUE_COMPTENT_SES_FACTURES).toContain('celles que le client valide comptent dans la 2035, la CA3 et les états du '
@@ -1233,9 +1242,27 @@ describe('la case « Ventes » et la source des ventes du dossier (étape VF8d)'
     expect(fichiersDuSchema().some((f) => /garder_droit_ventes/.test(f.texte))).toBe(false)
   })
 
-  it('la carte de la bascule n’est pas encore dans l’onglet Informations : la phrase ne l’y renvoie pas', () => {
+  it('la phrase suit le geste que la carte de la bascule offre, pas son existence : les deux états du drapeau', () => {
+    // La carte est dans l'onglet Informations, et c'est ce drapeau qui y retient le geste.
     const informations = readFileSync(resolve(process.cwd(), 'src/pages/dossier/InformationsTab.tsx'), 'utf8')
-    expect(/ventes_par_les_factures|basculeDesVentes/.test(informations), 'la carte de la bascule est-elle arrivée ? (étape VF8b)')
-      .toBe(CARTE_DE_LA_BASCULE_OUVERTE)
+    expect(informations).toContain('<SourceDesVentesCard dossierId={dossierId}')
+    const carte = readFileSync(resolve(process.cwd(), 'src/pages/dossier/SourceDesVentesCard.tsx'), 'utf8')
+    expect(carte).toContain('offerte: BASCULE_OFFERTE')
+    try {
+      for (const offerte of [false, true]) {
+        drapeau.offerte = offerte
+        const raison = raisonDuDossierNonBascule(offerte)
+        expect(phraseDuReglage(NON_BASCULE), `offerte ${offerte}`).toBe(raison)
+        expect(gesteDeLaCase('ventes', NON_BASCULE), `offerte ${offerte}`).toEqual({ cocher: false, decocher: true, raison })
+        expect(refusDeLaCase('ventes', true, NON_BASCULE), `offerte ${offerte}`).toBe(raison)
+        expect(raison.includes('ne s’offre pas encore'), `offerte ${offerte}`).toBe(!offerte)
+        expect(raison.includes('(onglet Informations)'), `offerte ${offerte}`).toBe(offerte)
+        // Ni le dossier basculé, ni le réglage illisible ne regardent le drapeau.
+        expect(phraseDuReglage(BASCULE)).toBe(CE_QUE_COMPTENT_SES_FACTURES)
+        expect(gesteDeLaCase('ventes', ILLISIBLE).raison).toBe(raisonDuReglageIllisible('lecture refusée'))
+      }
+    } finally {
+      drapeau.offerte = null
+    }
   })
 })
