@@ -10,6 +10,14 @@
 -- MAINTAIN des tables, que PostgreSQL 17 ajoute et que la réplique (16) ne connaît pas. Les fins de ligne `\r\n` d'un
 -- corps de fonction sont ramenées à `\n` (une migration collée dans l'éditeur SQL de Supabase les y laisse).
 --
+-- LES DROITS PAR COLONNE (26/10/2026, 23Q2Q2-Q3). Un droit donné sur une colonne (`grant update (role) on …`) vit dans
+-- `pg_attribute.attacl`, et non dans `pg_class.relacl`, la seule que la famille « droits_tables » lisait : la migration
+-- `equipe_par_son_role` et la même amputée de son droit sur `role` — qui ôtait au chef le changement de rôle de son
+-- équipe — y rendaient la même empreinte (vu sur la réplique). La ligne d'une table reçoit donc, après ses droits de
+-- table, ceux de ses colonnes, « |colonne:rôle=DROIT », triés — et seulement quand une colonne en porte : une table sans
+-- eux garde sa ligne d'avant, octet pour octet. Relevé en production le 26/10/2026, avant cette migration : aucune
+-- colonne du schéma public n'en porte, et les neuf valeurs sont celles d'avant ce changement.
+--
 -- Elle ne MONTE pas la réplique : le procédé, et pourquoi il n'est pas dans le dépôt, dans HISTORIQUE.md, entrée de
 -- l'étape d4.
 --
@@ -53,7 +61,11 @@ aclf as (
 aclt as (
   select c.relname || '|' || coalesce((
     select string_agg(x, ',' order by x) from (select case when a.grantee = 0 then 'public' else pg_get_userbyid(a.grantee) end || '=' || a.privilege_type as x
-    from aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a where a.grantee <> c.relowner and a.privilege_type <> 'MAINTAIN') q), '') as s
+    from aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a where a.grantee <> c.relowner and a.privilege_type <> 'MAINTAIN') q), '')
+    || coalesce((
+    select '|' || string_agg(x, ',' order by x) from (select att.attname || ':' || case when a.grantee = 0 then 'public' else pg_get_userbyid(a.grantee) end || '=' || a.privilege_type as x
+    from pg_attribute att cross join lateral aclexplode(att.attacl) a
+    where att.attrelid = c.oid and att.attnum > 0 and not att.attisdropped and a.grantee <> c.relowner) q), '') as s
   from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r')
 select 'colonnes' as famille, count(*) as n, md5(string_agg(s, E'\n' order by s)) as empreinte from col
 union all select 'contraintes', count(*), md5(string_agg(s, E'\n' order by s)) from con
