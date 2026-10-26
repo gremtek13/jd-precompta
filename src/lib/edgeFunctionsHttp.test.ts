@@ -479,12 +479,52 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
       'await accesClientDansUnAutreCabinet(admin, userId, cabinetId)',
       'await accesClientDansUnAutreCabinet(admin, userId, adminRow?.cabinet_id ?? cabinetId)',
     ]],
-    scenario: 'super-admin, chef du premier cabinet, pour l’autre : un compte client de cet autre cabinet seulement y entre, tel qu’il est',
+    scenario: 'super-admin, chef du premier cabinet, pour l’autre : un compte client de cet autre cabinet seulement y entre sur confirmation, tel qu’il est',
   },
   {
     slug: 'create-team-member', quoi: 'tout accès client pris pour un accès ailleurs (le dossier comparé au cabinet)',
     remplacements: [['    .neq("dossiers.cabinet_id", cabinetId)\n', '    .neq("dossier_id", cabinetId)\n']],
-    scenario: 'le client de deux dossiers de ce cabinet : repris tel qu’il est — seul un accès dans un AUTRE cabinet le retient',
+    scenario: 'le client de deux dossiers de ce cabinet : repris sur confirmation, tel qu’il est — seul un accès dans un AUTRE cabinet le retient',
+  },
+  // LE CLIENT D'UN DOSSIER DE CE CABINET N'ENTRE DANS L'ÉQUIPE QU'APRÈS UNE CONFIRMATION (23Q2Q2-Q1) : la confirmation
+  // oubliée, l'équipe écrite avant elle, la confirmation admise sous une autre forme, la ligne d'équipe en panne prise pour
+  // un « non », et le marqueur posé sur le membre d'une équipe.
+  {
+    slug: 'create-team-member', quoi: 'le client de ce cabinet admis sans confirmation',
+    remplacements: [['    if (!membre && !entreeConfirmee) {\n', '    if (false) {\n']],
+    scenario: 'le client du dossier, sans confirmation : 409, la phrase et son marqueur, personne n’entre, le compte intact',
+  },
+  {
+    slug: 'create-team-member', quoi: 'l’équipe écrite avant la confirmation',
+    remplacements: [[
+      '    const membre = await ligneDEquipe(admin, userId)\n',
+      '    await admin.from("cabinet_admins").insert({ user_id: userId, cabinet_id: cabinetId, role, email })\n'
+      + '    const membre = await ligneDEquipe(admin, userId)\n',
+    ]],
+    scenario: 'le client d’un autre de ses dossiers, rattaché sur confirmation (23-Q2), sans confirmation : 409, la phrase et son marqueur, personne n’entre, le compte intact',
+  },
+  {
+    slug: 'create-team-member', quoi: 'la confirmation admise en texte',
+    remplacements: [
+      ['  if (!booleenOuAbsent(confirmationLue)) {\n', '  if (false) {\n'],
+      ['  const entreeConfirmee = confirmationLue === true\n', '  const entreeConfirmee = !!confirmationLue\n'],
+    ],
+    scenario: 'la confirmation de l’entrée reçue en texte (« oui ») : 400 en français, aucun compte cherché, personne n’entre',
+  },
+  {
+    slug: 'create-team-member', quoi: 'la ligne d’équipe en panne prise pour un « non »',
+    remplacements: [['  if (erreurLigne) return null\n', '']],
+    scenario: 'la ligne d’équipe illisible, pour le client du dossier, sans confirmation : 500 qui le dit, sans marqueur, personne n’entre',
+  },
+  {
+    slug: 'create-team-member', quoi: 'le marqueur posé sur le membre d’une équipe',
+    remplacements: [['    if (!membre && !entreeConfirmee) {\n', '    if (!entreeConfirmee) {\n']],
+    scenario: 'un membre déjà dans l’équipe : 409, rien n’a changé, son mot de passe non plus',
+  },
+  {
+    slug: 'create-team-member', quoi: 'l’adresse du client écrite au journal avant le refus',
+    remplacements: [['    if (!membre && !entreeConfirmee) {\n', '    if (!membre && !entreeConfirmee) {\n      console.log("entrée à confirmer :", email)\n']],
+    scenario: 'le client du dossier, la confirmation à false : 409, la phrase et son marqueur, personne n’entre',
   },
   {
     slug: 'create-team-member', quoi: 'la phrase qui dit que le compte est client d’un autre cabinet',

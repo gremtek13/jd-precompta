@@ -9,6 +9,7 @@
 // que le cabinet lui envoie depuis l'onglet Accès. Aucun appel ici : les écrans appellent, ce module décide de ce qui se
 // dit (comme `recuperationMotDePasse.ts`), et de ce qui part.
 import { CE_QUE_DONNE_UN_ACCES, DOMAINES } from './droitsAcces'
+import type { RoleCabinetAdmin } from './types'
 
 /** Ce que la réponse dit du compte : créé (le mot de passe saisi est le sien), existant (il n'a pas servi), ou rien de sûr. */
 export type CompteDeLaCreation = 'cree' | 'existant' | 'inconnu'
@@ -80,10 +81,15 @@ export function corpsDeLaCreation(dossierId: string, email: string, password: st
   return confirme ? { dossierId, email, password, [CHAMP_DE_LA_CONFIRMATION]: true } : { dossierId, email, password }
 }
 
+/** Le corps d'un refus porte-t-il ce marqueur ? Seul le booléen `true`, sur un objet, le porte. */
+function porteLeMarqueur(corps: unknown, marqueur: string): boolean {
+  if (corps === null || typeof corps !== 'object' || Array.isArray(corps)) return false
+  return (corps as Record<string, unknown>)[marqueur] === true
+}
+
 /** Le corps d'un refus dit-il qu'une confirmation est possible ? Seul le booléen `true`, sur un objet, le dit. */
 export function rattachementAConfirmer(corps: unknown): boolean {
-  if (corps === null || typeof corps !== 'object' || Array.isArray(corps)) return false
-  return (corps as Record<string, unknown>)[MARQUEUR_DU_RATTACHEMENT] === true
+  return porteLeMarqueur(corps, MARQUEUR_DU_RATTACHEMENT)
 }
 
 /**
@@ -95,15 +101,20 @@ export function copieDuRefus(erreur: unknown): Response | null {
   return contexte instanceof Response && !contexte.bodyUsed ? contexte.clone() : null
 }
 
-/** La copie porte-t-elle le marqueur ? Absente, illisible ou d'une autre forme, elle ne le porte pas. */
-export async function refusARattacher(copie: Response | null): Promise<boolean> {
+/** La copie d'un refus porte-t-elle ce marqueur ? Absente, illisible ou d'une autre forme, elle ne le porte pas. */
+async function copiePorteLeMarqueur(copie: Response | null, marqueur: string): Promise<boolean> {
   if (copie === null) return false
   try {
-    return rattachementAConfirmer(await copie.json())
+    return porteLeMarqueur(await copie.json(), marqueur)
   } catch {
     // Un corps qui n'est pas du JSON (un délai de la plateforme Supabase) ne porte aucun marqueur.
     return false
   }
+}
+
+/** La copie porte-t-elle le marqueur du rattachement ? Absente, illisible ou d'une autre forme, elle ne le porte pas. */
+export async function refusARattacher(copie: Response | null): Promise<boolean> {
+  return copiePorteLeMarqueur(copie, MARQUEUR_DU_RATTACHEMENT)
 }
 
 export interface ConfirmationDuRattachement {
@@ -137,5 +148,96 @@ export function confirmationDuRattachement(adresse: string, dossierNom: string):
         + `ne s'en souvient plus, envoie-lui un lien depuis la liste des accès (${BOUTON_DU_LIEN}).`,
     ],
     bouton: 'Rattacher ce compte',
+  }
+}
+
+// ── L'ENTRÉE DANS L'ÉQUIPE D'UN CLIENT DE CE CABINET (23Q2Q2-Q1) ────────────────────────────────────────────────────────
+// Décision du cabinet du 26/10/2026, à la recommandation : « le confirmer, en nommant l'adresse, le rôle et ce qu'il
+// perd ». AuthContext range du côté du cabinet tout compte qui a une ligne d'équipe, avant de lire ses accès : entré dans
+// l'équipe, le client d'un dossier de ce cabinet perdait son espace client sans que rien ne le dise, et une adresse mal
+// tapée suffisait — choisi « Comptable en chef », il voyait tous les dossiers du cabinet. `create-team-member` refuse le
+// premier appel en 409, avec le seul marqueur `entreeAConfirmer: true` ; la page de l'équipe ouvre alors sa
+// confirmation ; confirmé, le second appel porte `entreeConfirmee: true` — le booléen, et lui seul —, avec l'adresse, le
+// mot de passe et le rôle du premier. Le patron de 23-Q2, plus haut : `copieDuRefus` vaut pour les deux.
+
+/** Le champ du corps qui confirme l'entrée dans l'équipe : la fonction n'y lit que le booléen `true`. */
+export const CHAMP_DE_L_ENTREE = 'entreeConfirmee'
+
+/** Le marqueur du refus d'un client de ce cabinet : son entrée dans l'équipe attend une confirmation. */
+export const MARQUEUR_DE_L_ENTREE = 'entreeAConfirmer'
+
+/** Le corps d'un appel de `create-team-member` : la confirmation n'y figure qu'au second appel, et y vaut `true`. */
+export function corpsDuMembre(email: string, password: string, role: RoleCabinetAdmin, confirme: boolean): Record<string, unknown> {
+  return confirme ? { email, password, role, [CHAMP_DE_L_ENTREE]: true } : { email, password, role }
+}
+
+/** Le corps d'un refus dit-il que l'entrée attend une confirmation ? Seul le booléen `true`, sur un objet, le dit. */
+export function entreeAConfirmer(corps: unknown): boolean {
+  return porteLeMarqueur(corps, MARQUEUR_DE_L_ENTREE)
+}
+
+/** La copie porte-t-elle le marqueur de l'entrée ? Absente, illisible ou d'une autre forme, elle ne le porte pas. */
+export async function refusAConfirmerLEntree(copie: Response | null): Promise<boolean> {
+  return copiePorteLeMarqueur(copie, MARQUEUR_DE_L_ENTREE)
+}
+
+/** Le nom d'un rôle de l'équipe, tel que la page le montre. */
+export const LIBELLE_DU_ROLE: Readonly<Record<RoleCabinetAdmin, string>> = {
+  comptable_en_chef: 'Comptable en chef',
+  comptable: 'Comptable',
+}
+
+// Ce qu'un rôle ouvre, lu dans la base : `admin_du_dossier` ouvre au chef du cabinet tous ses dossiers, et
+// `est_chef_du_cabinet` son équipe ; à un comptable, les dossiers qui lui sont assignés (migration `hierarchie_comptables`).
+// « verra », jamais « ne verra que » : la liste des dossiers lui montre AUSSI ceux dont elle reste cliente — `dossiers_select`
+// lit ses accès, et `lib/listeDossiers.ts` ne filtre pas sur le cabinet — avec ses seuls droits de cliente (23Q2Q2Q1-Q1).
+const CE_QUE_DONNE_LE_ROLE: Readonly<Record<RoleCabinetAdmin, string>> = {
+  comptable_en_chef: 'elle verra et tiendra tous les dossiers du cabinet, et gérera son équipe',
+  comptable: 'elle verra les dossiers que tu lui assignes',
+}
+
+/**
+ * Ce que perd le client qui entre dans l'équipe, vérifié dans le code : AuthContext ne lit plus ses accès dès qu'il a une
+ * ligne d'équipe, et l'application ne monte plus les écrans du client (App.tsx) ni leur navigation (Layout.tsx). AuthContext
+ * ne relit les rôles qu'au changement d'identifiant — une ouverture de l'application, une connexion —, jamais sous une
+ * session ouverte : d'où « dès qu'elle rouvrira l'application », et non « tout de suite ».
+ */
+export const CE_QUE_PERD_LE_CLIENT = "Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
+  + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
+  + "réponses à tes précisions), « Mes informations », « Ma simulation » et, selon les cases de ses accès, « Mes ventes » et "
+  + '« Ma banque » —, pour chacune de ses sociétés.'
+
+/** Ce qui reste : ses accès, en base, que l'application lui rouvre dès qu'il n'a plus de ligne d'équipe. */
+export const CE_QUI_RESTE_AU_CLIENT = "Ses accès restent dans l'onglet Accès de ses dossiers : la retirer de l'équipe "
+  + "(« Retirer ») lui rend son espace client, dès qu'elle rouvre l'application."
+
+export interface ConfirmationDeLEntree {
+  titre: string
+  /** La phrase qui nomme l'adresse, en trois morceaux : l'écran met l'adresse dans `.courriel`, qui ne la coupe pas. */
+  adresse: { avant: string; adresse: string; apres: string }
+  paragraphes: readonly string[]
+  bouton: string
+}
+
+/**
+ * Ce que dit la fenêtre de confirmation, avec l'adresse et le rôle TELS QU'ILS PARTIRONT (ceux du premier appel, que le
+ * second renvoie) : qui entre, comme quoi, et ce que la personne y perd.
+ */
+export function confirmationDeLEntree(adresse: string, role: RoleCabinetAdmin): ConfirmationDeLEntree {
+  return {
+    titre: "Faire entrer ce client dans l'équipe ?",
+    adresse: {
+      avant: "L'adresse ",
+      adresse,
+      apres: " est celle d'un client d'un dossier de ce cabinet. Vérifie que c'est bien celle de la personne que tu veux "
+        + `faire entrer dans l'équipe : elle y entrera comme « ${LIBELLE_DU_ROLE[role]} », et ${CE_QUE_DONNE_LE_ROLE[role]}.`,
+    },
+    paragraphes: [
+      CE_QUE_PERD_LE_CLIENT,
+      CE_QUI_RESTE_AU_CLIENT,
+      "Le mot de passe que tu as saisi ne sert pas : ce compte garde le sien, et rien n'y est changé. Si elle ne s'en "
+        + "souvient plus, « Mot de passe oublié », sur l'écran de connexion, lui envoie un lien pour en choisir un autre.",
+    ],
+    bouton: "Faire entrer dans l'équipe",
   }
 }
