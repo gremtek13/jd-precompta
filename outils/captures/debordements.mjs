@@ -1844,10 +1844,12 @@ const VISITES_BANQUE_CLIENT = [
   // « MA BANQUE » D'UN CLIENT « VENTES » (ligne 28.65, étape VF5g), sur le même dossier basculé : le relevé, où un virement
   // réservé se dit « Encaissement enregistré — ton cabinet le classe » et un virement classé « Encaissement de tes
   // factures » ; puis le détail du crédit réservé, sans pièce à envoyer, et celui du débit réservé par une contre-passation.
+  // Étape VF8h : le détail du virement mixte classé, qui nomme la facture d'avant avec la facture source, sur la même ligne.
   ...[
     { nom: 'client/ma-banque-ventes', libelle: null, attendu: 'Encaissement enregistré — ton cabinet le classe' },
     { nom: 'client/ma-banque-credit-reserve', libelle: 'VIR SEPA SARL HORIZON LOGISTIQUE', attendu: /Facture\(s\) : F2026-0022\.$/ },
     { nom: 'client/ma-banque-debit-reserve', libelle: 'RETOUR DE 2 CHEQUES IMPAYES', attendu: /est enregistré sur ce débit : ton cabinet le classera/ },
+    { nom: 'client/ma-banque-virement-mixte', libelle: 'VIR SEPA BUREAU ETUDES DU CANAL', attendu: /Facture\(s\) : F2026-0012, F2026-0029\.$/ },
   ].map(({ nom, libelle, attendu }) => ({
     chemin: '#/ma-banque', nom, nav: true,
     apres: async (page) => {

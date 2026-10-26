@@ -486,6 +486,76 @@ describe('les encaissements des factures d’un client « Ventes »', () => {
   })
 })
 
+describe('la facture d’avant d’un virement mixte (étape VF8h ; VF5H-Q3)', () => {
+  // Un crédit de 900 € que le cabinet a CLASSÉ par ses encaissements : F2026-0002, source de sa vente, et deux factures
+  // d'avant la bascule, qui ne le sont pas — F2025-0187 en deux encaissements, F2025-0190. Puis un crédit libre que
+  // l'encaissement de F2026-0002 RÉSERVE, et qui porte aussi celui d'une facture d'avant.
+  const classe = mouvement({ id: 'l2', montant: 900, statut: 'rapprochee', encaissements_de_factures: true })
+  const reserve = mouvement({ id: 'l3', montant: 300 })
+  const registre: VentesDuClient = {
+    droit: 'ventes', lues: true,
+    factures: [
+      facture({ id: 'f2', numero: 'F2026-0002' }),
+      facture({ id: 'fa', numero: 'F2025-0187', source_de_la_vente: false }),
+      facture({ id: 'fb', numero: 'F2025-0190', source_de_la_vente: false }),
+      facture({ id: 'fc', numero: 'F2025-0199', source_de_la_vente: false }),
+    ],
+    encaissements: [
+      // Dans l'ordre de la garde : ea1 (le 20), e2 (le 21), ea2 (le 22), eb (le 23) — la liste reçue dans un autre ordre.
+      encaissement({ id: 'eb', facture_id: 'fb', ligne_bancaire_id: 'l2', montant: 200, cree_le: '2026-09-23T08:00:00Z' }),
+      encaissement({ id: 'e2', facture_id: 'f2', ligne_bancaire_id: 'l2', montant: 400, cree_le: '2026-09-21T08:00:00Z' }),
+      encaissement({ id: 'ea2', facture_id: 'fa', ligne_bancaire_id: 'l2', montant: 100, cree_le: '2026-09-22T08:00:00Z' }),
+      encaissement({ id: 'ea1', facture_id: 'fa', ligne_bancaire_id: 'l2', montant: 200, cree_le: '2026-09-20T08:00:00Z' }),
+      // Ce qui ne se nomme pas : l'encaissement retiré d'une autre facture d'avant, et un autre mouvement.
+      encaissement({ id: 'ex', facture_id: 'fc', ligne_bancaire_id: 'l2', retire_le: '2026-09-24T08:00:00Z' }),
+      encaissement({ id: 'ey', facture_id: 'fb', ligne_bancaire_id: 'l9', cree_le: '2026-09-19T08:00:00Z' }),
+      // Le crédit réservé : l'encaissement de F2026-0002, et celui de F2025-0190, enregistré avant lui.
+      encaissement({ id: 'e3', facture_id: 'f2', ligne_bancaire_id: 'l3', montant: 200, cree_le: '2026-09-25T08:00:00Z' }),
+      encaissement({ id: 'eb3', facture_id: 'fb', ligne_bancaire_id: 'l3', montant: 100, cree_le: '2026-09-24T09:00:00Z' }),
+    ],
+  }
+  const PARTIEL: VentesDuClient = { droit: 'ventes', lues: false, motif: ENCAISSEMENTS_LUS_EN_PARTIE }
+
+  it('classé : les factures d’avant nommées avec les factures sources, ensemble, dans l’ordre de la garde, sans doublon', () => {
+    expect(venteDuMouvement(classe, registre)).toEqual({ vente: 'classe', factures: ['F2025-0187', 'F2026-0002', 'F2025-0190'] })
+    // Sans facture d'avant, la ligne d'hier.
+    const sansAvant: VentesDuClient = { ...registre, encaissements: registre.encaissements.filter((e) => e.facture_id === 'f2') }
+    expect(venteDuMouvement(classe, sansAvant)).toEqual({ vente: 'classe', factures: ['F2026-0002'] })
+  })
+
+  it('réservé : les factures sources seules — la garde ne regarde qu’elles, et le classement peut encore refuser la facture d’avant', () => {
+    expect(venteDuMouvement(reserve, registre)).toEqual({ vente: 'reserve', factures: ['F2026-0002'] })
+    // La facture d'avant seule ne réserve rien : le mouvement reste libre.
+    const avantSeule: VentesDuClient = { ...registre, encaissements: registre.encaissements.filter((e) => e.id === 'eb3') }
+    expect(venteDuMouvement(reserve, avantSeule)).toEqual({ vente: null, factures: [] })
+  })
+
+  it('« Banque » seul : rien (VF5-Q3) ; le registre lu en partie : le classé garde ce que dit le relevé seul', () => {
+    expect(venteDuMouvement(classe, BANQUE_SEULE)).toEqual({ vente: null, factures: [] })
+    expect(venteDuMouvement(classe, PARTIEL)).toEqual({ vente: null, factures: [] })
+    expect(venteDuMouvement(reserve, PARTIEL)).toEqual({ vente: 'tue' })
+  })
+
+  it('dans les situations du relevé, et dans la phrase du détail : la même ligne, tutoyée', () => {
+    const sources = (v: VentesDuClient) => ({
+      mouvements: lue([classe, reserve]), propositions: lue<JustificatifPropose>([]), precisions: lue<PrecisionMouvement>([]),
+      reglements: lue<ReglementGroupe>([]), ventes: v,
+    })
+    const s = situationsDuReleve(sources(registre))
+    if (!s.lues) throw new Error('muettes')
+    expect(s.parMouvement.get('l2')?.etat).toBe('encaissement_factures')
+    expect(s.parMouvement.get('l2')?.facturesDeLaVente).toEqual(['F2025-0187', 'F2026-0002', 'F2025-0190'])
+    expect(s.parMouvement.get('l3')?.facturesDeLaVente).toEqual(['F2026-0002'])
+    const banque = situationsDuReleve(sources(BANQUE_SEULE))
+    if (!banque.lues) throw new Error('muettes')
+    expect(banque.parMouvement.get('l2')).toMatchObject({ etat: 'traite', facturesDeLaVente: [] })
+    const phrase = sensDeLaVente('encaissement_factures', classe.montant, s.parMouvement.get('l2')?.facturesDeLaVente ?? [])
+    expect(phrase).toBe('Ton cabinet a classé ce mouvement par les encaissements de tes factures : il n’attend rien de toi. '
+      + 'Facture(s) : F2025-0187, F2026-0002, F2025-0190.')
+    expect(motsDuCabinet(phrase)).toEqual([])
+  })
+})
+
 // ── Le solde, la couverture ──────────────────────────────────────────────────────────────────────────────────────
 describe('le solde, LU au dernier relevé contrôlé', () => {
   it('le plus récent des relevés cohérents et datés', () => {
