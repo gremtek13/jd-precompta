@@ -36723,3 +36723,83 @@ dans l'ordre de la garde, comme celui des situations, et la règle d'avant les f
 remettrait cette condition, rien d'autre.
 
 **CE QUI RESTE** : VF8b, VF8d à VF8f, puis VF9 ; la réponse du cabinet à VF8H-Q1.
+
+### 26/10/2026 — LA CASE « VENTES » SUIT LA SOURCE DES VENTES, À L'ÉCRAN — CHANTIER EC-Q3, VF8D (LIGNE 28.65)
+
+(Écrite par l'agent dev de VF8d sur `933a18f` — `main` plus VF8h, les cinq migrations de VF5h2, VF7 et VF8a appliquées
+—, la branche locale `vf8d-acces`, en deux commits : le code et les tests (`82b5260`), puis cette documentation. Aucune
+base : ni lue, ni écrite ; l'export seul.)
+
+**CE QUE VF8D FAIT** (conception de VF8, § 3 d et § 5 ; EC3-Q2, EC3-Q5 ; VF8-Q1). L'onglet Accès lit le réglage du
+dossier (`dossiers.ventes_par_les_factures`) avec la liste des accès, dans la même vague et à chaque relecture
+(`lib/reglageDuDossierLecture.ts` : une ligne par sa clé, qui ne rejette jamais ; la réponse porte le dossier lu, et
+l'écran ne la prend que pour le sien). Rien ne s'offre avant son retour, ni case ni phrase des cases. Le module
+(`lib/droitsAcces.ts`) le juge : `reglageDuDossier` (seuls vrai et faux se lisent ; une ligne absente, une colonne
+absente, nulle ou d'un autre type est ILLISIBLE, jamais « pas basculé »), `gesteDeLaCase` et `refusDeLaCase` (« Banque »
+garde ses deux gestes ; « Ventes » sur un dossier basculé aussi ; non basculé, décocher seulement ; illisible, aucun),
+et `ceQueDisentLesCases` reçoit le réglage en dixième paramètre, OBLIGATOIRE — la constante d'hier devient
+`ceQueDisentLesCasesDuDossier(reglage)`. Avec les ventes ouvertes, la phrase dit, après la banque et avant « ensuite »,
+ce que la case devient sur CE dossier : basculé, « celles que le client valide comptent dans la 2035, la CA3 et les
+états du dossier dès leur encaissement (à leur date, dans un dossier tenu en engagement), sans que tu les vises, et
+leurs écritures s'écrivent sur ton clic, dans l'onglet Écritures » ; non basculé, pourquoi « Ventes » ne se coche pas,
+et qu'un accès qui la porte se décoche ; illisible, le motif et « Recharge la page ». À l'écran, une case dont le geste
+manque est grisée, porte sa raison en titre et désigne la phrase (`aria-describedby`) ; si un clic l'atteignait quand
+même, `changerDroit` dit le refus du module avant tout appel. « Mes ventes » (`ClientVentes.tsx`) dit au client,
+au-dessus de ses factures, quand le jugement de VF8c (`reglageDesVentes`) dit sa société basculée : « Tes factures
+validées sont la source de tes ventes dans ta comptabilité : une fois validée, une facture ne se corrige plus que par un
+avoir. » (`SOURCE_DE_TES_VENTES`, passée au garde des mots du client).
+
+**DEUX PRÉCISIONS À LA CONCEPTION, ET LEUR RAISON.** (1) « Dès leur encaissement » : la conception le dit d'un dossier
+en trésorerie ; en engagement, la composition de VF4 écrit la créance à la date de la facture — la phrase le dit entre
+parenthèses, comme la confirmation de VF8c. (2) « Onglet Informations » : la carte qui bascule un dossier est VF8b, qui
+n'est pas écrite ; tant qu'elle manque, la phrase dit « un réglage que le chef du cabinet posera dans l'onglet
+Informations, où il ne s'offre pas encore » (`CARTE_DE_LA_BASCULE_OUVERTE`, faux). droitsAcces.test.ts confronte cette
+constante à `InformationsTab.tsx` : le jour où la carte y lit le réglage, le test tombe, et la constante passe à vrai —
+la phrase devient celle de la conception, « (onglet Informations) ».
+
+**CE QUE LA BASE FAIT, DANS L'EXPORT.** Rien ne change : `changer_droits_acces` pose encore « Ventes » sur un dossier
+non basculé, et aucune garde ne lit le réglage (`garder_droit_ventes` n'existe pas) ; l'écran est plus strict que la
+base, jamais moins, jusqu'au resserrement (VF8f), qui fera tomber le test qui le constate. La colonne est non nulle,
+fausse par défaut (migration `source_de_la_vente`) ; le chef seul la change depuis une session
+(`garder_ventes_par_les_factures`, VF8a) — les deux confrontés au texte exporté.
+
+**LE BANC.** Le faux Supabase donnait aux dossiers une ligne SANS la colonne : l'onglet l'aurait dite illisible. Ils
+portent désormais `ventes_par_les_factures: false`, comme la base ; seul d12 a basculé. Effet de bord voulu : « Mes
+ventes » de l'atelier (d7, passe client) lit un réglage « pas basculé » au lieu d'« illisible », et son formulaire offre
+la validation, comme en production. Une visite neuve, `acces/dossier-bascule` (d12, l'accès « Ventes » et « Banque » de
+la titulaire, la phrase du dossier basculé attendue) ; celle d'hier, `acces` sur d1, montre l'état non basculé (la case
+cochée de la première titulaire se décoche, celle du secrétariat est grisée). Le serveur sur le 5898, la copie du script
+ne différant que par l'adresse, le navigateur sans le mandataire : la passe du cabinet à 1 440 px (panneau ouvert, puis
+fermé), 1 280 (ouvert), 1 024, 720 et 390 px, 0 débordement chaque fois (285 boutons sondés, 61 fenêtres) ; la passe
+`client` à 390, 720, 1 024, 1 280 et 1 440 px, 0 (114 boutons, 29 fenêtres). Hors du banc, deux captures lues : l'onglet
+Accès de d1 (la case du secrétariat grisée, la phrase du dossier non basculé) et de d12, et « Mes ventes » de la passe
+du dossier basculé, la ligne au-dessus des factures (et pas sur l'atelier).
+
+**LES PREUVES.**
+- La suite comparée test par test, sous Paris : avant (`933a18f`) 467 fichiers et 14 499 tests ; après 468 fichiers et
+  14 524 tests, tous verts ; aucun verdict changé, un test renommé (« la phrase de l'état des neuf drapeaux et du
+  réglage lu »), 25 neufs : le module 7 (la lecture du réglage, les gestes de « Banque » et de « Ventes », les raisons,
+  la place de la phrase, l'export, la carte de VF8b), la lecture 5, la ligne du client 1 au module et 5 à l'écran,
+  l'onglet Accès 7 (basculé, non basculé décoché puis coché, illisible, rien avant le réglage, la garde du dossier, la
+  relecture). Les 55 appels de `ceQueDisentLesCases` des tests d'hier passent sur un dossier basculé, leurs attentes
+  intactes.
+- Mutations : 32 écrites, 32 appliquées, 31 tuées — le module 15 (la lecture du réglage, les gestes, le refus, la
+  phrase, sa place, la carte), la lecture 4, l'écran 9, « Mes ventes » 3, sa phrase 1. Survit, ÉQUIVALENTE : le refus
+  que `changerDroit` dit avant l'appel, retiré — c'est la seconde barrière, comme le verrou des cases (« LES DROITS D'UN
+  ACCÈS CLIENT, TENUS EN BASE ») : une case grisée ne transmet aucun clic. Jouée avec la case laissée libre (ordre
+  deux), elle est tuée.
+- Lint : les 63 avertissements de la référence, identiques fichier par fichier et règle par règle. La barrière sur la
+  tête finale : le rapport de l'agent la dit (elle se joue après ce commit).
+
+**CE QUE L'APPLICATION CHANGERA EN PRODUCTION.** Aucun dossier n'a basculé : sur chacun, la case « Ventes » décochée est
+grisée, et la phrase dit pourquoi. Aucun accès ne porte « Ventes » (mesure de la conception, § 1) : rien n'est à
+décocher. Jusqu'à VF8b, AUCUNE case « Ventes » ne se coche depuis l'écran — c'est VF8D-Q1.
+
+**QUESTION AU CABINET.** VF8D-Q1 — Entre la mise en ligne de VF8d et celle de VF8b (la carte qui bascule un dossier), la
+case « Ventes » ne se coche plus sur aucun dossier depuis l'onglet Accès : aucun n'a basculé, et rien à l'écran ne le
+bascule encore. (A) Mettre VF8d en ligne dès maintenant : les données sont fictives, aucun accès ne porte « Ventes », et
+l'écran suit déjà la règle que VF8f posera en base. (B) La retenir pour la mettre en ligne avec VF8b. Recommandé : (A),
+VF8b ensuite.
+
+**CE QUI RESTE** : VF8b (et la constante `CARTE_DE_LA_BASCULE_OUVERTE` avec elle), VF8e, VF8f, puis VF9 ; la réponse du
+cabinet à VF8D-Q1.
