@@ -539,7 +539,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   familles, 153 migrations) → « LES CINQ MIGRATIONS DE VF5H2, VF7 ET VF8A EN PRODUCTION ». VF8h le 26/10/2026, à
   l'écran, neutre : « Ma banque » d'un client « Banque » et « Ventes » nomme, sur un virement mixte classé ou réservé,
   la facture d'avant avec les factures sources (VF5H-Q3 ; VF8H-Q1, écrite sur la recommandation) → « « MA BANQUE » NOMME
-  LA FACTURE D'AVANT D'UN VIREMENT MIXTE ». Restent VF8b, VF8d à VF8f et VF9 (EC3-Q9, la facture reprise, va à A8).
+  LA FACTURE D'AVANT D'UN VIREMENT MIXTE ». VF8d le 26/10/2026, à l'écran, neutre en base : l'onglet Accès lit le
+  réglage avec ses accès, « Ventes » ne se coche que sur un dossier basculé, se décoche toujours, ne se change pas sur
+  un réglage illisible, et la phrase le dit (`gesteDeLaCase`, `ceQueDisentLesCases` au réglage obligatoire) ; « Mes
+  ventes » d'un client basculé dit que ses factures validées sont la source de ses ventes (VF8D-Q1 ouverte) → « LA
+  CASE « VENTES » SUIT LA SOURCE DES VENTES, À L'ÉCRAN ». Restent VF8b, VF8e, VF8f et VF9 (EC3-Q9, la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
