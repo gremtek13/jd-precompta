@@ -1983,6 +1983,9 @@ const TABLES: Record<string, Ligne[]> = {
       : []),
     // La titulaire du dossier basculé (d12), « Ventes » et « Banque » : l'onglet Banque la reconnaît comme « le client ».
     { id: 'm-clara-d12', user_id: 'u-clara', dossier_id: 'd12', role: 'client', email: 'clara.fontaine@exemple-fictif.fr', droit_ventes: true, droit_banque: true, created_at: '2026-01-07T09:00:00Z' },
+    // Le client du dossier archivé (d11), qu'aucune autre visite ne montre : la page de l'équipe reçoit son adresse, longue, et la
+    // fonction du banc le reconnaît à cet accès — elle refuse alors avec le marqueur de l'entrée à confirmer (23Q2Q2-Q1).
+    { id: 'm-equipe-d11', user_id: 'u-equipe', dossier_id: 'd11', role: 'client', email: 'secretariat.de-la-societe-civile-de-moyens@example.test', droit_ventes: false, droit_banque: false, created_at: '2026-01-08T09:00:00Z' },
   ],
   notes_internes: NOTES_INTERNES,
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
@@ -2606,6 +2609,22 @@ export const supabase = {
       if (nom === 'superpdp-credentials') {
         const configured = options?.body?.dossierId === 'd1' || options?.body?.dossierId === 'd7'
         return Promise.resolve({ data: { configured, client_id: configured ? 'app-superpdp-moreau' : null }, error: null })
+      }
+      // L'entrée dans l'équipe d'un client d'un dossier du cabinet (23Q2Q2-Q1) : l'adresse d'un accès du banc est celle d'un
+      // client ; sans confirmation, la fonction refuse en 409, son corps portant le marqueur que la page de l'équipe lit pour
+      // ouvrir sa confirmation — la fenêtre que le banc mesure. Confirmé, il entre ; toute autre adresse reste une maquette.
+      if (nom === 'create-team-member') {
+        const adresse = String(options?.body?.email ?? '').toLowerCase()
+        const client = (TABLES.memberships ?? []).some((m) => String(m.email ?? '').toLowerCase() === adresse)
+        if (client && options?.body?.entreeConfirmee !== true) {
+          const corps = {
+            error: "Cette adresse est celle d'un client d'un dossier de ce cabinet : il n'entre dans l'équipe qu'après ta confirmation, et rien n'a été changé.",
+            entreeAConfirmer: true,
+          }
+          const reponse = new Response(JSON.stringify(corps), { status: 409, headers: { 'Content-Type': 'application/json' } })
+          return Promise.resolve({ data: null, error: { name: 'FunctionsHttpError', message: 'Edge Function returned a non-2xx status code', context: reponse } })
+        }
+        if (client) return Promise.resolve({ data: { ok: true, compte: 'existant' }, error: null })
       }
       return Promise.resolve({ data: null, error: { message: 'maquette' } })
     },

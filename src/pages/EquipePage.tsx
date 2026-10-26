@@ -5,14 +5,13 @@ import { extraireErreurFonction } from '../lib/invokeErreur'
 import type { CabinetAdmin, Dossier, DossierAssignation, RoleCabinetAdmin } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
+import ConfirmationArticle from './dossier/ConfirmationArticle'
 import { messageErreur } from '../lib/messageErreur'
-import { avisDuMembreAjoute, compteDeLaReponse } from '../lib/creationDesComptes'
+import {
+  LIBELLE_DU_ROLE, avisDuMembreAjoute, compteDeLaReponse, confirmationDeLEntree, copieDuRefus, corpsDuMembre,
+  refusAConfirmerLEntree,
+} from '../lib/creationDesComptes'
 import { LONGUEUR_MINIMALE_MOT_DE_PASSE, REGLE_DU_MOT_DE_PASSE, refusDeLaRegle } from '../lib/recuperationMotDePasse'
-
-const LABEL_ROLE: Record<RoleCabinetAdmin, string> = {
-  comptable_en_chef: 'Comptable en chef',
-  comptable: 'Comptable',
-}
 
 // Gestion de l'équipe du cabinet — réservée aux chefs de cabinet (voir Layout, lien affiché seulement
 // si estChef) : un "comptable en chef" voit tous les dossiers du cabinet, un simple "comptable"
@@ -38,9 +37,14 @@ export default function EquipePage() {
   // Ce que le dernier ajout a fait du compte (décision du cabinet du 10/10/2026 : un compte qui existe déjà garde son mot
   // de passe) — sans cet avis, le chef communiquerait un mot de passe qui n'a pas été posé.
   const [avisAjout, setAvisAjout] = useState<string | null>(null)
+  // L'entrée dans l'équipe d'un client d'un dossier de ce cabinet (23Q2Q2-Q1, décision du cabinet du 26/10/2026) : la
+  // fonction a refusé l'ajout en disant qu'une confirmation est possible. L'adresse, le mot de passe et le rôle sont gardés
+  // TELS QU'ILS SONT PARTIS : la fenêtre nomme ce que le second appel enverra, quoi qu'il arrive ensuite aux champs.
+  const [aConfirmer, setAConfirmer] = useState<{ email: string; password: string; role: RoleCabinetAdmin } | null>(null)
   // Verrou d'exécution de l'ajout, en `useRef` : `setEnregistrement(true)` ne prend effet qu'au rendu suivant, donc
   // `disabled={enregistrement}` laissait passer deux soumissions rapprochées. Le second `create-team-member` trouve le
-  // compte que le premier vient de créer et répond une ERREUR sur un membre bien ajouté (même défaut qu'`AccesTab`).
+  // compte que le premier vient de créer et répond une ERREUR sur un membre bien ajouté (même défaut qu'`AccesTab`). La
+  // confirmation de l'entrée d'un client passe sous le MÊME verrou.
   const ajoutEnCours = useRef(false)
 
   const [gestionDossiersDe, setGestionDossiersDe] = useState<CabinetAdmin | null>(null)
@@ -92,27 +96,69 @@ export default function EquipePage() {
     ajoutEnCours.current = true
     setEnregistrement(true)
     setErreur(null)
-    // L'avis de l'ajout précédent s'efface : rien ne dit « a rejoint l'équipe » d'un ajout encore en vol.
+    // L'avis de l'ajout précédent s'efface : rien ne dit « a rejoint l'équipe » d'un ajout encore en vol. Une
+    // confirmation restée ouverte cède aussi : elle nommait l'adresse d'un envoi précédent.
     setAvisAjout(null)
-    const adresse = email.trim()
+    setAConfirmer(null)
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; compte?: string; error?: string }>('create-team-member', {
-        body: { email: adresse, password, role },
-      })
-      if (data?.error || invokeError) {
-        setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de la création du compte."))
-        return
-      }
-      setAvisAjout(avisDuMembreAjoute(adresse, compteDeLaReponse(data)))
-      setEmail('')
-      setPassword('')
-      setRole('comptable')
-      setAjout(false)
-      load()
+      await envoyerLAjout(email.trim(), password, role, false)
+    } catch (err) {
+      setErreur(messageErreur(err, 'Échec de la création du compte.'))
     } finally {
       ajoutEnCours.current = false
       setEnregistrement(false)
     }
+  }
+
+  // « Faire entrer dans l'équipe » (23Q2Q2-Q1) : le second appel, confirmé, sous le MÊME verrou que l'ajout — posé avant
+  // le `try`, relâché dans le `finally` —, avec l'adresse, le mot de passe et le rôle du premier. La fenêtre reste ouverte
+  // pendant l'appel, ses deux boutons en attente, puis se ferme : un refus se dit sous le formulaire, comme celui d'un
+  // ajout, même s'il portait encore le marqueur.
+  async function confirmerLEntree() {
+    if (ajoutEnCours.current) return
+    const demande = aConfirmer
+    if (demande === null) return
+    ajoutEnCours.current = true
+    setEnregistrement(true)
+    setErreur(null)
+    try {
+      await envoyerLAjout(demande.email, demande.password, demande.role, true)
+    } catch (err) {
+      setErreur(messageErreur(err, 'Échec de la création du compte.'))
+    } finally {
+      setAConfirmer(null)
+      ajoutEnCours.current = false
+      setEnregistrement(false)
+    }
+  }
+
+  // L'appel de create-team-member, toujours sous le verrou de son appelant : l'ajout (`confirme` faux), ou l'entrée
+  // confirmée d'un client de ce cabinet (`confirme` vrai, 23Q2Q2-Q1). L'adresse, le mot de passe et le rôle sont ceux qui
+  // PARTENT : l'avis nomme l'adresse envoyée. Lève sur un refus, qui se dit.
+  async function envoyerLAjout(adresse: string, motDePasse: string, roleChoisi: RoleCabinetAdmin, confirme: boolean) {
+    const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; compte?: string; error?: string }>(
+      'create-team-member',
+      { body: corpsDuMembre(adresse, motDePasse, roleChoisi, confirme) },
+    )
+    if (data?.error) throw new Error(data.error)
+    if (invokeError) {
+      // Le corps d'un refus ne se lit qu'une fois : sa copie pour le marqueur, l'original à `extraireErreurFonction`.
+      const copie = copieDuRefus(invokeError)
+      const message = await extraireErreurFonction(invokeError, 'Échec de la création du compte.')
+      // Le marqueur ne vaut qu'au PREMIER appel : un appel déjà confirmé qui le rendrait encore ne rouvre pas la fenêtre
+      // (aucune boucle), il se dit comme tout refus.
+      if (!confirme && await refusAConfirmerLEntree(copie)) {
+        setAConfirmer({ email: adresse, password: motDePasse, role: roleChoisi })
+        return
+      }
+      throw new Error(message)
+    }
+    setAvisAjout(avisDuMembreAjoute(adresse, compteDeLaReponse(data)))
+    setEmail('')
+    setPassword('')
+    setRole('comptable')
+    setAjout(false)
+    load()
   }
 
   async function changerRole(m: CabinetAdmin, nouveauRole: RoleCabinetAdmin) {
@@ -196,7 +242,7 @@ export default function EquipePage() {
                     <select
                       value={m.role}
                       onChange={(e) => changerRole(m, e.target.value as RoleCabinetAdmin)}
-                      aria-label={`Rôle actuel : ${LABEL_ROLE[m.role]}`}
+                      aria-label={`Rôle actuel : ${LIBELLE_DU_ROLE[m.role]}`}
                       // maxWidth 100% : sans ça un <select> prend la largeur de sa plus longue option
                       // ("Comptable en chef") indépendamment de sa cellule — sur mobile, où
                       // table-layout:fixed serre les colonnes, ça le faisait déborder par-dessus la
@@ -254,8 +300,9 @@ export default function EquipePage() {
               </div>
               {erreur && <p className="error-text">{erreur}</p>}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
-                <button type="button" className="btn btn-outline" onClick={() => setAjout(false)} disabled={enregistrement}>Annuler</button>
-                <button type="submit" className="btn btn-primary" disabled={enregistrement}>
+                {/* Pendant la confirmation de l'entrée d'un client (23Q2Q2-Q1), le formulaire attend sa réponse. */}
+                <button type="button" className="btn btn-outline" onClick={() => setAjout(false)} disabled={enregistrement || aConfirmer !== null}>Annuler</button>
+                <button type="submit" className="btn btn-primary" disabled={enregistrement || aConfirmer !== null}>
                   {enregistrement ? 'Création…' : 'Créer le compte'}
                 </button>
               </div>
@@ -263,6 +310,25 @@ export default function EquipePage() {
           </div>
         </div>
       )}
+
+      {/* La confirmation de l'entrée dans l'équipe d'un client de ce cabinet (23Q2Q2-Q1) : une fenêtre de la page, jamais
+          `window.confirm` — elle nomme l'adresse et le rôle tels qu'ils partiront, et ce que la personne perd. « Annuler »
+          n'envoie rien, et laisse le formulaire rempli. */}
+      {aConfirmer && (() => {
+        const confirmation = confirmationDeLEntree(aConfirmer.email, aConfirmer.role)
+        return (
+          <ConfirmationArticle
+            titre={confirmation.titre} boutonLabel={confirmation.bouton} occupe={enregistrement} refus={null} erreur={null}
+            onConfirmer={() => { void confirmerLEntree() }}
+            onAnnuler={() => setAConfirmer(null)}
+          >
+            <p>
+              {confirmation.adresse.avant}<strong className="courriel">{confirmation.adresse.adresse}</strong>{confirmation.adresse.apres}
+            </p>
+            {confirmation.paragraphes.map((p) => <p key={p}>{p}</p>)}
+          </ConfirmationArticle>
+        )
+      })()}
 
       {gestionDossiersDe && (
         <div style={overlayStyle}>

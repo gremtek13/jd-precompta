@@ -84,8 +84,8 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
       'les deux vérifications du rôle de l’APPELANT (chef de cabinet, super-admin). Sans réponse, l’appelant ' +
       'n’a que le droit que l’autre lecture lui reconnaît — sinon 403, ou, pour un super-admin sans cabinet ' +
       'désigné ni lu, 400 « requis » : ne rien savoir ne donne aucun droit. Les lectures qui disent le compte ' +
-      'connu d’ici, ou client d’un autre cabinet (23Q2-Q2), ne sont pas dispensées : elles lisent leur erreur, ' +
-      'en 500, rien d’écrit',
+      'connu d’ici, client d’un autre cabinet (23Q2-Q2), ou déjà dans une équipe (23Q2Q2-Q1, la ligne qui décide ' +
+      'de la confirmation), ne sont pas dispensées : elles lisent leur erreur, en 500, rien d’écrit',
   },
   'delete-cabinet': {
     nombre: 1,

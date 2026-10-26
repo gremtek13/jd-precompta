@@ -19,11 +19,23 @@
 // lire ses accès) : entré dans l'équipe, un compte qui porte un accès client dans un dossier d'un AUTRE cabinet y
 // perdrait son espace client — chez cet autre cabinet aussi. Depuis 23-Q2, un tel compte peut être connu d'ici
 // (create-client-access le rattache sur la confirmation du cabinet) ; il est refusé en 409, avant toute écriture, sous
-// une phrase qui ne dit ni quel cabinet ni qu'il y est client (voir accesClientDansUnAutreCabinet). Le client d'un
-// dossier de CE cabinet est repris comme avant.
+// une phrase qui ne dit ni quel cabinet ni qu'il y est client (voir accesClientDansUnAutreCabinet).
 //
-// NE PAS SAVOIR N'EST PAS UN « NON » (le « À REVOIR » de 23-Q2) : une lecture qui décide qu'un compte est connu, ou client
-// d'un autre cabinet, lit son erreur ; en panne, la fonction refuse en 500, avant tout autre geste, et rien n'est écrit.
+// LE CLIENT D'UN DOSSIER DE CE CABINET N'ENTRE DANS L'ÉQUIPE QU'APRÈS UNE CONFIRMATION (23Q2Q2-Q1, décision du cabinet du
+// 26/10/2026, à la recommandation : « le confirmer, en nommant l'adresse, le rôle et ce qu'il perd »). Entré dans
+// l'équipe, il perd son espace client (AuthContext, plus haut), et une adresse mal tapée suffisait : choisi « comptable en
+// chef », il voit tous les dossiers du cabinet. Le patron de 23-Q2, dans create-client-access : le PREMIER appel refuse en
+// 409 — rien n'est écrit, ni sur le compte ni dans l'équipe — et son corps porte le marqueur `entreeAConfirmer: true`, que
+// la page de l'équipe lit pour ouvrir sa confirmation ; le SECOND porte `entreeConfirmee: true` — le booléen `true`, et lui
+// seul ; toute autre forme se refuse en 400, avant tout compte cherché — et le compte entre dans l'équipe TEL QU'IL EST. La
+// confirmation ne passe outre aucun contrôle : la session, le rôle de l'appelant, le corps, le mot de passe, le service
+// d'authentification, le refus d'un compte inconnu et celui du client d'un autre cabinet viennent avant elle. Elle ne vaut
+// que pour un compte sans ligne d'équipe (voir ligneDEquipe) : un membre d'une équipe n'a pas d'espace client à perdre, et
+// la clé primaire le refuse comme avant.
+//
+// NE PAS SAVOIR N'EST PAS UN « NON » (le « À REVOIR » de 23-Q2) : une lecture qui décide qu'un compte est connu, client
+// d'un autre cabinet, ou membre d'une équipe, lit son erreur ; en panne, la fonction refuse en 500, avant tout autre geste,
+// et rien n'est écrit.
 
 import { createClient } from "npm:@supabase/supabase-js@2"
 
@@ -44,6 +56,16 @@ function json(body: unknown, status = 200) {
 function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
   return valeur == null || typeof valeur === "string"
 }
+
+/** Un champ du corps qui se lit comme une confirmation : un booléen, ou rien (absent, nul — qui ne confirment pas). */
+function booleenOuAbsent(valeur: unknown): valeur is boolean | null | undefined {
+  return valeur == null || typeof valeur === "boolean"
+}
+
+// Une vérification d'un compte existant en panne, avant son entrée dans l'équipe : une seule phrase pour les deux lectures
+// qui la font (l'accès client ailleurs, la ligne d'équipe).
+const VERIFICATION_EN_PANNE =
+  "Ce compte n'a pas pu être vérifié avant son entrée dans l'équipe : personne n'a été ajouté, et rien n'a été changé. Réessaie dans un instant."
 
 // Correctif audit sécurité (compte utilisateurs, Haute) — voir create-client-access, même fonction
 // dupliquée ici (fichiers auto-porteurs, voir en-tête) : un compte Auth existant ne rejoint l'équipe
@@ -100,6 +122,25 @@ async function accesClientDansUnAutreCabinet(
     .limit(1)
   if (erreurAilleurs || !acces) return null
   return acces.length > 0
+}
+
+// UNE LIGNE D'ÉQUIPE, DANS N'IMPORTE QUEL CABINET (23Q2Q2-Q1, voir l'en-tête) : c'est elle qui range un compte du côté du
+// cabinet — AuthContext la lit avant ses accès, et l'espace client ne s'ouvre jamais pour lui. Sans elle, un compte connu
+// d'ici (`appartientDejaAuCabinet`) ne l'est que par un accès client d'un dossier de ce cabinet — ses accès ailleurs venant
+// d'être refusés (`accesClientDansUnAutreCabinet`) — : il se sert de son espace client, et le perdrait. La clé primaire
+// de `cabinet_admins` est le compte : une ligne au plus. Vrai ou faux, null si la lecture a échoué — l'appelant refuse alors
+// en 500 : ne pas savoir n'ajoute personne, ni ne demande une confirmation qui dirait faux.
+async function ligneDEquipe(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<boolean | null> {
+  const { data: ligne, error: erreurLigne } = await admin
+    .from("cabinet_admins")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle()
+  if (erreurLigne) return null
+  return !!ligne
 }
 
 // ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
@@ -248,7 +289,7 @@ Deno.serve(async (req: Request) => {
   if (corps === null || typeof corps !== "object" || Array.isArray(corps)) {
     return json({ error: "Corps de requête invalide : un objet JSON est attendu." }, 400)
   }
-  const payload = corps as { email?: unknown; password?: unknown; role?: unknown; cabinetId?: unknown }
+  const payload = corps as { email?: unknown; password?: unknown; role?: unknown; cabinetId?: unknown; entreeConfirmee?: unknown }
   // Même porte pour un champ reçu sous une autre forme qu'un texte (un nombre) : `.trim()` y levait — sur
   // l'adresse, et sur le cabinet que désigne un super-admin —, et un mot de passe en nombre passait le
   // contrôle de longueur. `role` n'en a pas besoin : seuls deux textes passent la comparaison plus bas,
@@ -257,6 +298,7 @@ Deno.serve(async (req: Request) => {
   const password = payload.password
   const role = payload.role
   const cabinetIdLu = payload.cabinetId
+  const confirmationLue = payload.entreeConfirmee
   if (!texteOuAbsent(emailLu)) {
     return json({ error: "email doit être un texte." }, 400)
   }
@@ -266,6 +308,13 @@ Deno.serve(async (req: Request) => {
   if (!texteOuAbsent(cabinetIdLu)) {
     return json({ error: "cabinetId doit être un texte." }, 400)
   }
+  // La confirmation de l'entrée dans l'équipe d'un client de ce cabinet (23Q2Q2-Q1, voir l'en-tête) : SEUL le booléen
+  // `true` confirme. Toute autre forme — le texte « true », un nombre, un objet — se refuse ici, avec les champs texte,
+  // avant tout compte cherché ; absente, nulle ou `false`, elle ne confirme pas.
+  if (!booleenOuAbsent(confirmationLue)) {
+    return json({ error: "entreeConfirmee doit être un booléen (true pour confirmer l'entrée dans l'équipe)." }, 400)
+  }
+  const entreeConfirmee = confirmationLue === true
 
   const email = emailLu?.trim()
   const cabinetId = (superAdminRow && cabinetIdLu?.trim()) || adminRow?.cabinet_id
@@ -329,11 +378,27 @@ Deno.serve(async (req: Request) => {
     // un signal pour qui lit ce code, public : le prix que dit HISTORIQUE.md, et que le cabinet arbitre (23Q2Q2-Q2).
     const clientAilleurs = await accesClientDansUnAutreCabinet(admin, userId, cabinetId)
     if (clientAilleurs === null) {
-      return json({ error: "Ce compte n'a pas pu être vérifié avant son entrée dans l'équipe : personne n'a été ajouté, et rien n'a été changé. Réessaie dans un instant." }, 500)
+      return json({ error: VERIFICATION_EN_PANNE }, 500)
     }
     if (clientAilleurs) {
       return json({
         error: "Ce compte ne peut pas entrer dans l'équipe de ce cabinet, et rien n'y a été changé. Demande à cette personne d'utiliser une autre adresse e-mail.",
+      }, 409)
+    }
+    // Le client d'un dossier de CE cabinet n'entre dans l'équipe qu'après une confirmation (23Q2Q2-Q1, voir l'en-tête) :
+    // jugé après les deux refus d'hier, et avant toute écriture. Sans ligne d'équipe, ce compte connu d'ici l'est par un
+    // accès client d'un dossier de ce cabinet (voir ligneDEquipe) : sans confirmation, 409 et le seul marqueur, rien
+    // d'écrit ; confirmé, il entre comme tout compte repris. Un membre d'une équipe passe outre, sans marqueur : la clé
+    // primaire le refuse plus bas, comme avant. La phrase ne dit rien que le chef ne lise déjà dans l'onglet Accès de ses
+    // dossiers : ni lequel.
+    const membre = await ligneDEquipe(admin, userId)
+    if (membre === null) {
+      return json({ error: VERIFICATION_EN_PANNE }, 500)
+    }
+    if (!membre && !entreeConfirmee) {
+      return json({
+        error: "Cette adresse est celle d'un client d'un dossier de ce cabinet : il n'entre dans l'équipe qu'après ta confirmation, et rien n'a été changé.",
+        entreeAConfirmer: true,
       }, 409)
     }
     // Repris TEL QU'IL EST, mot de passe compris (voir l'en-tête) : aucune écriture sur le compte, ni

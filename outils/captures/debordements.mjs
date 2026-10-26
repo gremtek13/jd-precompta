@@ -934,6 +934,22 @@ const VISITES = [
       await page.evaluate(() => localStorage.removeItem('banc-rib-liste'))
     },
   },
+  // L'ENTRÉE DANS L'ÉQUIPE D'UN CLIENT D'UN DOSSIER DU CABINET (23Q2Q2-Q1), sur la page de l'équipe : le formulaire d'ajout rempli
+  // de l'adresse — longue — de l'accès du dossier archivé (d11), le rôle « Comptable en chef » ; la fonction du banc refuse avec son
+  // marqueur (voir fauxSupabase.ts), et la page ouvre sa confirmation, qui nomme l'adresse, le rôle et ce que la personne perd.
+  // La fenêtre se mesure contre sa carte, ses deux boutons sondés.
+  {
+    chemin: '#/equipe', nom: 'equipe/entree-a-confirmer', sansAssistant: true, fenetre: FENETRE_ARTICLE,
+    apres: async (page) => {
+      await page.getByRole('button', { name: '+ Ajouter un membre' }).click()
+      await page.getByLabel('Email').fill('secretariat.de-la-societe-civile-de-moyens@example.test')
+      await page.getByLabel('Mot de passe').fill('Mot-de-passe-fictif-1')
+      // `exact` : le sélecteur du rôle de chaque membre s'appelle « Rôle actuel : … ».
+      await page.getByLabel('Rôle', { exact: true }).selectOption('comptable_en_chef')
+      await page.getByRole('button', { name: 'Créer le compte' }).click()
+      await page.getByRole('alertdialog').getByRole('heading', { name: "Faire entrer ce client dans l'équipe ?" }).waitFor({ timeout: 10000 })
+    },
+  },
   // « UN ARTICLE DANS LA FACTURE » (espace client, étape A2b), sur l'atelier (d7, redevable) et son catalogue : le choix ouvert (cinq
   // articles en cours, la recherche), une ligne remplie par un article à la désignation longue (sa provenance, « Mettre l'article à
   // ce prix » dès que le prix change), la confirmation d'une ligne déjà saisie, celle du nouveau prix d'un article au prix à six

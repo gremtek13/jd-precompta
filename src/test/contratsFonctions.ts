@@ -1,6 +1,8 @@
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { AuthApiError, AuthWeakPasswordError } from '@supabase/supabase-js'
-import { CHAMP_DE_LA_CONFIRMATION, MARQUEUR_DU_RATTACHEMENT, corpsDeLaCreation } from '../lib/creationDesComptes'
+import {
+  CHAMP_DE_LA_CONFIRMATION, CHAMP_DE_L_ENTREE, MARQUEUR_DE_L_ENTREE, MARQUEUR_DU_RATTACHEMENT, corpsDeLaCreation, corpsDuMembre,
+} from '../lib/creationDesComptes'
 import { refusDuMotDePasse } from '../lib/recuperationMotDePasse'
 import { SIRET_VENDEUR_RECU, messageRecu } from './cdarRecu'
 import { facture as factureEnBase, ligne as ligneDeFacture } from './facturesCii'
@@ -1929,16 +1931,19 @@ function clientsDUnAutreCabinetDansLEquipe(): Scenario[] {
       requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { ...MEMBRE, email: PERSONNES.inscrit.email, cabinetId: ID.autreCabinet } }),
       attendu: refuse,
     },
+    // Client de ce cabinet-là, il n'y entre qu'après sa confirmation (23Q2Q2-Q1, plus bas) : le second appel, confirmé.
     {
-      nom: 'super-admin, chef du premier cabinet, pour l’autre : un compte client de cet autre cabinet seulement y entre, tel qu’il est',
+      nom: 'super-admin, chef du premier cabinet, pour l’autre : un compte client de cet autre cabinet seulement y entre sur confirmation, tel qu’il est',
       preparer: (m) => { motDePasseSecret(m); superAdminChefDuPremierCabinet(m); accesClientDans('inscrit', ID.dossierAutreCabinet)(m) },
-      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { ...MEMBRE, email: PERSONNES.inscrit.email, cabinetId: ID.autreCabinet } }),
+      requete: (s) => requeteDe(s, {
+        personne: 'superAdmin', corps: { ...corpsDuMembre(PERSONNES.inscrit.email, MOT_DE_PASSE, 'comptable', true), cabinetId: ID.autreCabinet },
+      }),
       attendu: reprisDans(PERSONNES.inscrit.email, ID.autreCabinet),
     },
     {
-      nom: 'le client de deux dossiers de ce cabinet : repris tel qu’il est — seul un accès dans un AUTRE cabinet le retient',
+      nom: 'le client de deux dossiers de ce cabinet : repris sur confirmation, tel qu’il est — seul un accès dans un AUTRE cabinet le retient',
       preparer: (m) => { motDePasseSecret(m); accesClientDans('client', ID.dossierVoisin)(m) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.client.email } }),
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES.client.email, MOT_DE_PASSE, 'comptable', true) }),
       attendu: reprisDans(PERSONNES.client.email, ID.cabinet),
     },
     {
@@ -1968,14 +1973,15 @@ function clientsDUnAutreCabinetDansLEquipe(): Scenario[] {
         statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'],
         verifier: (r, m) => [
           ...refusExact(phraseDeLaSource('create-team-member', 'Cette personne appartient déjà à un cabinet'))(r),
-          ...equipeIntacte(r, m), ...compteIntact(r, m),
+          ...equipeIntacte(r, m), ...compteIntact(r, m), ...sansMarqueurDeLEntree(r),
         ],
       },
     },
     {
-      nom: 'le super-administrateur, sans ligne d’équipe et client d’un dossier de ce cabinet : repris dans l’équipe, inchangé par 23Q2-Q2',
+      // Sans ligne d'équipe, l'application le range parmi les clients (AuthContext) : il entre sur confirmation (23Q2Q2-Q1).
+      nom: 'le super-administrateur, sans ligne d’équipe et client d’un dossier de ce cabinet : repris dans l’équipe sur confirmation, inchangé par 23Q2-Q2',
       preparer: (m) => { motDePasseSecret(m); accesClientDans('superAdmin', ID.dossierVoisin)(m) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.superAdmin.email } }),
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES.superAdmin.email, MOT_DE_PASSE, 'comptable', true) }),
       attendu: reprisDans(PERSONNES.superAdmin.email, ID.cabinet),
     },
   ]
@@ -2014,10 +2020,209 @@ function liensIllisiblesDeLEquipe(): Scenario[] {
   }))
 }
 
+// ── LE CLIENT D'UN DOSSIER DE CE CABINET N'ENTRE DANS L'ÉQUIPE QU'APRÈS UNE CONFIRMATION (create-team-member, 23Q2Q2-Q1) ──
+// Décision du cabinet du 26/10/2026, à la recommandation : « le confirmer, en nommant l'adresse, le rôle et ce qu'il
+// perd ». Entré dans l'équipe, un client perd son espace client (AuthContext range du côté du cabinet tout compte qui a une
+// ligne d'équipe). Le patron de 23-Q2 : le PREMIER appel — sans confirmation, à `false` ou nulle — refuse en 409, rien
+// d'écrit, le compte intact, sous la phrase unique de la source et le seul marqueur `entreeAConfirmer: true` ; le SECOND
+// porte `entreeConfirmee: true`, le corps même de la page (`corpsDuMembre`), et le compte entre tel qu'il est, sous le rôle
+// demandé, dans le cabinet visé. Seul le booléen `true` confirme : toute autre forme se refuse en 400 avant tout compte. La
+// confirmation ne passe outre aucun contrôle — le rôle de l'appelant, le mot de passe, le refus d'un compte inconnu ou du
+// client d'un autre cabinet, la clé primaire qui refuse un membre d'une équipe —, et la lecture de la ligne d'équipe, qui
+// la décide, lit son erreur : en panne, 500, rien d'écrit. Et l'adresse du compte ne sort ni dans un refus ni au journal.
+
+const PHRASE_DE_L_ENTREE = 'Cette adresse est celle d\'un client d\'un dossier de ce cabinet'
+
+/** Le marqueur de l'entrée n'est que sur le premier refus d'un client de ce cabinet : jamais ailleurs. */
+const sansMarqueurDeLEntree = (r: Resultat) =>
+  (MARQUEUR_DE_L_ENTREE in corpsDe(r) ? [`la réponse ${r.statut} porte le marqueur de l’entrée : ${r.texte.slice(0, 160)}`] : [])
+
+/** Le premier refus d'un client de ce cabinet : la phrase unique de la source sous `error`, et le seul marqueur, `true`. */
+const refusAConfirmer = (r: Resultat) => {
+  const corps = corpsDe(r)
+  const cles = Object.keys(corps).sort()
+  const fautes = JSON.stringify(cles) === JSON.stringify([MARQUEUR_DE_L_ENTREE, 'error'].sort())
+    ? [] : [`le refus porte d’autres clés que « error » et le marqueur : ${cles.join(', ')}`]
+  if (corps[MARQUEUR_DE_L_ENTREE] !== true) fautes.push(`le marqueur n’est pas le booléen true : ${JSON.stringify(corps[MARQUEUR_DE_L_ENTREE])}`)
+  const attendue = phraseDeLaSource('create-team-member', PHRASE_DE_L_ENTREE)
+  if (messageDe(r) !== attendue) fautes.push(`refus « ${String(messageDe(r)).slice(0, 160)} » au lieu de « ${attendue.slice(0, 160)} »`)
+  return fautes
+}
+
+/** Entré sur confirmation : sa ligne dans le cabinet visé, sous le rôle demandé, et elle seule ; la réponse exacte ; le compte intact. */
+const entreSurConfirmation = (personne: Personne, cabinetId: string, role: string) => (r: Resultat, m: Monde) => {
+  const lignesDuCompte = lignes(m, 'cabinet_admins').filter((c) => c.user_id === PERSONNES[personne].id)
+  const fautes = lignesDuCompte.length === 1 && lignesDuCompte[0].cabinet_id === cabinetId && lignesDuCompte[0].role === role
+    ? [] : [`${PERSONNES[personne].email} attendu dans l’équipe de ${cabinetId} comme ${role}, et une fois : ${JSON.stringify(lignesDuCompte)}`]
+  return [...fautes, ...reponseDeCreation('existant')(r), ...compteIntact(r, m), ...sansMarqueurDeLEntree(r)]
+}
+
+/**
+ * L'adresse du compte ne sort ni dans un refus ni au journal : ajoutée aux valeurs sensibles du monde, le juge commun
+ * la cherche dans toute réponse de refus (statut 400 et plus) et dans chaque ligne du journal (`fuitesDans`).
+ */
+const adresseQuiNeSortPas = (personne: Personne) => (m: Monde) => { m.sensibles.push(PERSONNES[personne].email) }
+
+/** Des clients de ce cabinet, sans ligne d'équipe, chacun d'une autre façon : tous attendent la confirmation. */
+const CLIENTS_DE_CE_CABINET: { quoi: string; personne: Personne; preparer?: (m: Monde) => void }[] = [
+  { quoi: 'le client du dossier', personne: 'client' },
+  { quoi: 'le client de deux dossiers de ce cabinet', personne: 'client', preparer: accesClientDans('client', ID.dossierVoisin) },
+  { quoi: 'le client d’un autre de ses dossiers, rattaché sur confirmation (23-Q2)', personne: 'inscrit', preparer: accesClientDans('inscrit', ID.dossierVoisin) },
+  { quoi: 'le super-administrateur sans ligne d’équipe, client d’un dossier de ce cabinet', personne: 'superAdmin', preparer: accesClientDans('superAdmin', ID.dossierVoisin) },
+]
+
+/** La confirmation sous une autre forme que le booléen : un nombre, un texte, un objet, un tableau. */
+const ENTREES_DE_TRAVERS: [string, unknown][] = [
+  ['nombre (1)', 1],
+  ['nombre (0)', 0],
+  ['texte (« true »)', 'true'],
+  ['texte (« oui »)', 'oui'],
+  ['objet', { valeur: true }],
+  ['tableau', [true]],
+]
+
+function entreesDesClientsDeCeCabinet(): Scenario[] {
+  const premier: Attendu = {
+    statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+    verifier: (r, m) => [...refusAConfirmer(r), ...equipeIntacte(r, m), ...compteIntact(r, m)],
+  }
+  const entre = (personne: Personne, cabinetId: string, role = 'comptable'): Attendu => ({
+    statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'],
+    verifier: entreSurConfirmation(personne, cabinetId, role),
+  })
+  const sansMarqueurEtIntacte = (r: Resultat, m: Monde) => [...sansMarqueurDeLEntree(r), ...equipeIntacte(r, m), ...compteIntact(r, m)]
+  return [
+    ...CLIENTS_DE_CE_CABINET.flatMap(({ quoi, personne, preparer }): Scenario[] => [
+      {
+        nom: `${quoi}, sans confirmation : 409, la phrase et son marqueur, personne n’entre, le compte intact`,
+        preparer: (m) => { motDePasseSecret(m); adresseQuiNeSortPas(personne)(m); preparer?.(m); retenirLEquipe(m) },
+        requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES[personne].email, MOT_DE_PASSE, 'comptable', false) }),
+        attendu: premier,
+      },
+      {
+        nom: `${quoi}, entrée confirmée : il entre tel qu’il est, sous le rôle demandé, la réponse dit « existant »`,
+        preparer: (m) => { motDePasseSecret(m); adresseQuiNeSortPas(personne)(m); preparer?.(m) },
+        requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES[personne].email, MOT_DE_PASSE, 'comptable', true) }),
+        attendu: entre(personne, ID.cabinet),
+      },
+    ]),
+    // À `false` ou nulle, la confirmation ne confirme pas : le premier refus, tel quel.
+    ...([['à false', false], ['nulle', null]] as const).map(([forme, valeur]): Scenario => ({
+      nom: `le client du dossier, la confirmation ${forme} : 409, la phrase et son marqueur, personne n’entre`,
+      preparer: (m) => { motDePasseSecret(m); adresseQuiNeSortPas('client')(m); retenirLEquipe(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.client.email, [CHAMP_DE_L_ENTREE]: valeur } }),
+      attendu: premier,
+    })),
+    {
+      nom: 'le client du dossier, entrée confirmée comme comptable en chef : il entre sous ce rôle',
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES.client.email, MOT_DE_PASSE, 'comptable_en_chef', true) }),
+      attendu: entre('client', ID.cabinet, 'comptable_en_chef'),
+    },
+    // Le cabinet visé est celui que désigne le super-administrateur : le client de cet autre cabinet y attend la sienne.
+    {
+      nom: 'super-admin, pour l’autre cabinet : son client, sans confirmation, 409 et le marqueur ; personne n’entre',
+      preparer: (m) => {
+        motDePasseSecret(m)
+        adresseQuiNeSortPas('inscrit')(m)
+        superAdminChefDuPremierCabinet(m)
+        accesClientDans('inscrit', ID.dossierAutreCabinet)(m)
+        retenirLEquipe(m)
+      },
+      requete: (s) => requeteDe(s, { personne: 'superAdmin', corps: { ...corpsDuMembre(PERSONNES.inscrit.email, MOT_DE_PASSE, 'comptable', false), cabinetId: ID.autreCabinet } }),
+      attendu: premier,
+    },
+    // La ligne d'équipe, qui décide de la confirmation, lit son erreur. Pour le client du dossier, la première lecture de
+    // l'équipe est celle du rôle de l'appelant (son lien se lit à ses accès) : la panne, passagère, la passe (`sauter`).
+    ...[false, true].map((confirmation): Scenario => ({
+      nom: `la ligne d’équipe illisible, pour le client du dossier, ${confirmation ? 'entrée confirmée' : 'sans confirmation'} : 500 qui le dit, sans marqueur, personne n’entre`,
+      preparer: (m) => {
+        motDePasseSecret(m)
+        adresseQuiNeSortPas('client')(m)
+        m.pannes.push({ table: 'cabinet_admins', operation: 'select', sauter: 1, fois: 1, erreur: { message: 'délai dépassé' } })
+        retenirLEquipe(m)
+      },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES.client.email, MOT_DE_PASSE, 'comptable', confirmation) }),
+      attendu: {
+        statut: 500, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+        verifier: (r, m) => [
+          ...refusExact(phraseDeLaSource('create-team-member', 'Ce compte n\'a pas pu être vérifié avant son entrée dans l\'équipe'))(r),
+          ...sansMarqueurEtIntacte(r, m),
+        ],
+      },
+    })),
+    // La confirmation ne passe outre aucun contrôle.
+    {
+      nom: 'un compte inscrit seul, que ce cabinet ne connaît pas, entrée confirmée : 409, le même refus, sans marqueur',
+      preparer: (m) => { motDePasseSecret(m); retenirLEquipe(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES.inscrit.email, MOT_DE_PASSE, 'comptable', true) }),
+      attendu: {
+        statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+        verifier: (r, m) => [...neDitQueLExistence('create-team-member', false)(r), ...sansMarqueurEtIntacte(r, m)],
+      },
+    },
+    {
+      nom: 'le client du dossier, client aussi d’un autre cabinet, entrée confirmée : 409, la phrase de 23Q2-Q2, sans marqueur',
+      preparer: (m) => { motDePasseSecret(m); accesClientDans('client', ID.dossierAutreCabinet)(m); retenirLEquipe(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES.client.email, MOT_DE_PASSE, 'comptable', true) }),
+      attendu: {
+        statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers'],
+        verifier: (r, m) => [...neDitRienDeLAutreCabinet(r), ...sansMarqueurEtIntacte(r, m)],
+      },
+    },
+    ...([
+      ['un membre de son équipe', 'comptableNonAssigne', undefined],
+      ['un membre de son équipe, client d’un de ses dossiers', 'comptableNonAssigne', accesClientDans('comptableNonAssigne', ID.dossierVoisin)],
+      ['le chef d’un autre cabinet, client d’un dossier de ce cabinet', 'chefAutreCabinet', accesClientDans('chefAutreCabinet', ID.dossierVoisin)],
+    ] as const).flatMap(([quoi, personne, preparer]) => [false, true].map((confirmation): Scenario => ({
+      nom: `${quoi}, ${confirmation ? 'entrée confirmée' : 'sans confirmation'} : 409 « appartient déjà à un cabinet », sans marqueur, rien n’a changé`,
+      preparer: (m) => { motDePasseSecret(m); preparer?.(m); retenirLEquipe(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES[personne].email, MOT_DE_PASSE, 'comptable', confirmation) }),
+      attendu: {
+        statut: 409, refusEnFrancais: true, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'],
+        verifier: (r, m) => [
+          ...refusExact(phraseDeLaSource('create-team-member', 'Cette personne appartient déjà à un cabinet'))(r),
+          ...sansMarqueurEtIntacte(r, m),
+        ],
+      },
+    }))),
+    {
+      nom: 'une adresse neuve, entrée confirmée : le compte se crée comme sans confirmation',
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(NOUVEL_EMAIL, MOT_DE_PASSE, 'comptable', true) }),
+      attendu: {
+        statut: 200, depenses: ['comptes createUser', 'écriture insert cabinet_admins'],
+        verifier: (r, m) => [...(membreDe(m, NOUVEL_EMAIL)?.cabinet_id === ID.cabinet ? [] : ['membre absent']), ...reponseDeCreation('cree')(r)],
+      },
+    },
+    {
+      nom: 'un comptable, entrée confirmée : 403, la confirmation n’ouvre rien, rien ne part',
+      preparer: motDePasseSecret,
+      requete: (s) => requeteDe(s, { personne: 'comptableAssigne', corps: corpsDuMembre(PERSONNES.client.email, MOT_DE_PASSE, 'comptable', true) }),
+      attendu: { statut: 403, refusEnFrancais: true, aucuneDepense: true, corpsNonLu: true },
+    },
+    {
+      nom: 'un mot de passe de moins de dix caractères, entrée confirmée : 400, aucun compte cherché, rien d’écrit',
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES.client.email, 'court', 'comptable', true) }),
+      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+    },
+    // Seul le booléen `true` confirme : toute autre forme se refuse, avant tout compte.
+    ...ENTREES_DE_TRAVERS.map(([quoi, valeur]): Scenario => ({
+      nom: `la confirmation de l’entrée reçue en ${quoi} : 400 en français, aucun compte cherché, personne n’entre`,
+      preparer: (m) => { motDePasseSecret(m); adresseQuiNeSortPas('client')(m) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.client.email, [CHAMP_DE_L_ENTREE]: valeur } }),
+      attendu: {
+        statut: 400, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (r) => refusExact(phraseDeLaSource('create-team-member', 'entreeConfirmee doit être un booléen'))(r),
+      },
+    })),
+  ]
+}
+
 const CREATE_TEAM_MEMBER: ContratFonction = {
   slug: 'create-team-member',
   navigateur: true,
-  porte: 'une session, puis un chef de cabinet (cabinet_admins) ou un super-admin, avant de lire le corps ; un compte existant n’est repris que s’il est déjà lié au cabinet et ne porte aucun accès client dans un dossier d’un autre cabinet (23Q2-Q2), et tel qu’il est : son mot de passe n’est jamais touché',
+  porte: 'une session, puis un chef de cabinet (cabinet_admins) ou un super-admin, avant de lire le corps ; un compte existant n’est repris que s’il est déjà lié au cabinet et ne porte aucun accès client dans un dossier d’un autre cabinet (23Q2-Q2), le client d’un dossier de ce cabinet sur confirmation seulement (23Q2Q2-Q1), et tel qu’il est : son mot de passe n’est jamais touché',
   scenarios: [
     preflight(),
     ...sansSession('create-team-member', MEMBRE),
@@ -2064,10 +2269,11 @@ const CREATE_TEAM_MEMBER: ContratFonction = {
     ...refusDesComptesDAilleurs('create-team-member', (email) => ({ ...MEMBRE, email })),
     ...clientsDUnAutreCabinetDansLEquipe(),
     ...liensIllisiblesDeLEquipe(),
+    ...entreesDesClientsDeCeCabinet(),
     {
-      nom: 'un compte existant déjà lié au cabinet (un client de ses dossiers) : repris tel qu’il est, et la réponse le dit',
+      nom: 'un compte existant déjà lié au cabinet (un client de ses dossiers) : repris tel qu’il est sur confirmation, et la réponse le dit',
       preparer: motDePasseSecret,
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.client.email } }),
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES.client.email, MOT_DE_PASSE, 'comptable', true) }),
       attendu: {
         statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'],
         verifier: (r, m) => [
@@ -2089,7 +2295,7 @@ const CREATE_TEAM_MEMBER: ContratFonction = {
     {
       nom: 'l’équipe ne s’écrit pas (panne de la base) pour un compte repris : 500, et le compte n’a pas été touché',
       preparer: (m) => { motDePasseSecret(m); m.pannes.push({ table: 'cabinet_admins', operation: 'insert', erreur: { message: 'délai dépassé' } }) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...MEMBRE, email: PERSONNES.client.email } }),
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: corpsDuMembre(PERSONNES.client.email, MOT_DE_PASSE, 'comptable', true) }),
       attendu: { statut: 500, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'], verifier: compteIntact },
     },
     {
@@ -2100,7 +2306,7 @@ const CREATE_TEAM_MEMBER: ContratFonction = {
       attendu: {
         statut: 409, refusEnFrancais: true,
         depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert cabinet_admins'],
-        verifier: compteIntact,
+        verifier: (r, m) => [...compteIntact(r, m), ...sansMarqueurDeLEntree(r)],
       },
     },
     {
@@ -2115,7 +2321,9 @@ const CREATE_TEAM_MEMBER: ContratFonction = {
     },
     ...refusDuServiceDesComptes({
       personne: 'chef',
-      corps: (email, motDePasse) => ({ ...MEMBRE, email, password: motDePasse }),
+      // Depuis 23Q2Q2-Q1, un compte existant n'entre plus dans l'équipe que confirmé — le client d'un dossier de ce cabinet,
+      // l'adresse « déjà inscrite » de ces scénarios : son corps porte la confirmation, comme le second appel de la page.
+      corps: (email, motDePasse) => corpsDuMembre(email, motDePasse, 'comptable', email === PERSONNES.client.email),
       inscrite: PERSONNES.client.email,
       depensesDuRefus: ['comptes createUser'],
       dejaInscrite: {
@@ -2128,10 +2336,10 @@ const CREATE_TEAM_MEMBER: ContratFonction = {
       },
       rienEcrit: (m) => (membreDe(m, NOUVEL_EMAIL) ? ['un membre a été ajouté'] : []),
     }),
-    ...corpsMalFormes('chef', ['email', 'password', 'role']),
+    ...corpsMalFormes('chef', ['email', 'password', 'role', CHAMP_DE_L_ENTREE]),
     // La batterie met TOUS les champs de travers, et le premier contrôle y masque les autres : chaque champ seul de
-    // travers, les autres lisibles, prouve que son contrôle tient par lui-même. Le cabinet désigné ne se lit que pour un
-    // super-admin : c'est lui qui l'envoie.
+    // travers, les autres lisibles, prouve que son contrôle tient par lui-même (celui de la confirmation de l'entrée, plus
+    // haut, `entreesDesClientsDeCeCabinet`). Le cabinet désigné ne se lit que pour un super-admin : c'est lui qui l'envoie.
     ...(['email', 'password'] as const).map((champ): Scenario => ({
       nom: `${champ} seul reçu en nombre : 400 en français, rien de dépensé`,
       preparer: motDePasseSecret,
