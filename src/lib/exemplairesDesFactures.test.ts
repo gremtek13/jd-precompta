@@ -66,8 +66,8 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 // ATTENDU EST ÉCRIT À LA MAIN, depuis la migration (son en-tête dit l'ordre des refus) et la conception (HISTORIQUE.md,
 // « VF6, LA JUMELLE INVERSÉE : LA CONCEPTION », § 3).
 //
-// LE GEL DES DÉSIGNATIONS (étape VF7e ; migration `gel_des_designations`, PRÉPARÉE : dans l'export sous une version
-// provisoire, pas encore en production) : les définitions qui font foi sont désormais les siennes. L'essai l'éprouve dans
+// LE GEL DES DÉSIGNATIONS (étape VF7e ; migration `gel_des_designations`, appliquée en production le 26/10/2026 sous
+// la version `20261026000808`) : les définitions qui font foi sont désormais les siennes. L'essai l'éprouve dans
 // deux dossiers de plus (400 à 451), que le rejeu rejoue aussi — les exercices validés, les biens qu'une pièce justifie —,
 // et le gel du module se confronte, facture par facture et pièce par pièce, à ce que les deux fonctions neuves ont rendu
 // (444, 445) ; le § 5 garde la migration : sa garde sur les corps de VF6b, la définition de VF6b ligne à ligne dans la
@@ -1276,7 +1276,7 @@ describe('les drapeaux, et les deux modules confrontés au texte exporté', () =
     }
   })
 
-  // ── VF7e : le gel des désignations, PRÉPARÉ — sa migration dans l'export sous une version provisoire ──
+  // ── VF7e : le gel des désignations — sa migration appliquée le 26/10/2026 (`20261026000808`) ──
 
   const VF7E = fichiers.find((f) => /\/\d{14}_gel_des_designations\.sql$/.test(f.chemin))?.texte
 

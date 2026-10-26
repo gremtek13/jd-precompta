@@ -127,7 +127,7 @@
 -- et un contrôle ciblé du journal y a été joué (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 -- 25/10/2026 — étendu au gel des désignations (étape VF7e), joué sur une réplique égale à la production munie de
 -- `registre_virement_mixte`, `frontiere_des_encaissements` et `validation_des_ventes_facturees`, sans puis avec la
--- migration `gel_des_designations` (PRÉPARÉE, pas appliquée) : 323 lignes de verdict, 21 en faute sans elle, aucune
+-- migration `gel_des_designations` (appliquée le 26/10/2026) : 323 lignes de verdict, 21 en faute sans elle, aucune
 -- avec (avant l'extension, 265 lignes : les « 266 justes » ci-dessus comptaient la ligne d'en-tête de psql) ;
 -- HISTORIQUE.md, « LE GEL DES DÉSIGNATIONS ».
 do $essai$

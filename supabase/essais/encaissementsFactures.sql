@@ -88,7 +88,7 @@
 -- ventesFacturees.sql (187 justes), qui y éprouve `annuler_encaissement` pour une facture source comme pour une autre :
 -- les fonctions que cet essai éprouve d'autre n'ont pas changé.
 --
--- 25/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `frontiere_des_encaissements`, préparée, pas appliquée ;
+-- 25/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `frontiere_des_encaissements`, appliquée le 26/10/2026 ;
 -- chantier EC-Q3, étape VF7a) : le contrôle 5b — l'exercice de l'année d'avant validé le temps du contrôle,
 -- l'encaissement de la facture d'essai, qui n'est pas source, daté de son 31 décembre, s'écrit, se répartit et se
 -- retire sans la fonction comme hier : la garde de la frontière ne garde que la facture source, que

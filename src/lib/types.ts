@@ -81,11 +81,11 @@ export interface Dossier {
   // (`garder_ventes_par_les_factures`). Aucun écran ne l'écrit avant l'étape VF8b ; les lectures qui typent une ligne entière
   // sur ce type la lisent par `select('*')`, qui la porte.
   ventes_par_les_factures: boolean
-  // DEPUIS QUAND (étape VF8a ; migration `reglage_des_ventes`, PRÉPARÉE, pas appliquée ; lib/sourceDeLaVente.ts) : un instant,
+  // DEPUIS QUAND (étape VF8a ; migration `reglage_des_ventes`, appliquée le 26/10/2026 ; lib/sourceDeLaVente.ts) : un instant,
   // que la garde du réglage pose quand il monte et efface quand il descend — aucune écriture ne le pose à sa place, hors de
   // la restauration du super-administrateur, qui le réinsère tel qu'il a été. Nul tant que le réglage est faux. FACULTATIVE
-  // dans ce type : absente de toute lecture tant que la migration n'est pas appliquée, et d'une sauvegarde faite avant elle
-  // — une colonne absente n'est pas une colonne nulle. Aucun écran ne la lit avant l'étape VF8b.
+  // dans ce type jusqu'à l'étape VF8b, le premier écran qui la lit : une sauvegarde faite avant la migration ne la porte
+  // pas — une colonne absente n'est pas une colonne nulle.
   ventes_par_les_factures_depuis?: string | null
 }
 

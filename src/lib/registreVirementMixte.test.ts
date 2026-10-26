@@ -12,7 +12,7 @@ import {
 import { motsDuCabinet, pourLEspace } from './espaceVentes'
 
 // LES REFUS DU REGISTRE POUR LA FACTURE D'AVANT D'UN VIREMENT MIXTE (chantier EC-Q3, ligne 28.65, étape VF5h2 ; VF5H-Q2 ;
-// migration `registre_virement_mixte`, dans l'export à sa version provisoire, PRÉPARÉE et non appliquée). Le virement
+// migration `registre_virement_mixte`, appliquée en production le 26/10/2026, `20261026000145`). Le virement
 // mixte (étape VF5h) classe par ses encaissements un crédit qui paie une facture source ET une facture d'avant la bascule,
 // qui n'est pas source ; pour celle-ci, la base laissait encore citer ce mouvement, retirer l'encaissement qu'il compte, ou
 // le contre-passer sans débit — chaque geste changeait ce que le mouvement justifie. La migration reprend quatre fonctions

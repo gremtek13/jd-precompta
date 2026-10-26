@@ -110,7 +110,7 @@ describe('ce que `liensPerdus` dit d’une écriture dont l’encaissement ou la
   })
 })
 
-// LE RÉGLAGE GARDÉ (étape VF8a ; migration `reglage_des_ventes`, préparée) : la date de la bascule, une colonne de
+// LE RÉGLAGE GARDÉ (étape VF8a ; migration `reglage_des_ventes`, appliquée) : la date de la bascule, une colonne de
 // `dossiers`, que la sauvegarde recopie avec la ligne et que la restauration envoie telle ; la garde du réglage la laisse au
 // super-administrateur qui restaure, et la pose à toute autre insertion.
 describe('la date de la bascule (étape VF8a), réinsérée telle', () => {

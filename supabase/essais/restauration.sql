@@ -320,7 +320,7 @@
 -- suppression d'une ligne du journal — refusée hors de la cascade de sa pièce ou de son dossier —, par une sonde sur la
 -- réplique seulement.
 --
--- 25/10/2026, chantier EC-Q3, étape VF8a (migration `reglage_des_ventes`, préparée, non appliquée) : aucune table ni clé
+-- 25/10/2026, chantier EC-Q3, étape VF8a (migration `reglage_des_ventes`, appliquée le 26/10/2026) : aucune table ni clé
 -- de plus — une colonne de `dossiers`, la date de la bascule (`ventes_par_les_factures_depuis`), recopiée avec la ligne du
 -- dossier ; le plan ne change pas. Un contrôle de plus suit le verdict : le dossier basculé restauré avec sa date et son
 -- réglage, ou EN ATTENTE sans la colonne. Rejoué sur la réplique de l'étape (égale à la production munie des quatre
@@ -868,7 +868,7 @@ begin
     case when n > 0 then egales || ' sur ' || n else 'aucun compte de contrepartie dans le dossier : rien n''est prouvé' end);
 end $$;
 
--- LA DATE DE LA BASCULE (chantier EC-Q3, étape VF8a ; migration `reglage_des_ventes`, préparée) : une colonne de plus de
+-- LA DATE DE LA BASCULE (chantier EC-Q3, étape VF8a ; migration `reglage_des_ventes`, appliquée) : une colonne de plus de
 -- `dossiers`, recopiée avec sa ligne, que la restauration envoie telle (elle n'est pas générée). Ce contrôle dit que le
 -- dossier basculé a été restauré avec sa date, telle qu'elle était — un dossier daté, ou rien n'est prouvé, et il le dit ;
 -- avant la migration, la colonne n'existe pas et le contrôle attend. Ce script recopie les tables, pas leurs gardes : que la
