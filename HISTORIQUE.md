@@ -36804,3 +36804,88 @@ Recommandé : (A), VF8b ensuite — suivie le 26/10/2026, la question restant ou
 arbitrages.
 
 **CE QUI RESTE** : VF8b (et la constante `CARTE_DE_LA_BASCULE_OUVERTE` avec elle), VF8e, VF8f, puis VF9.
+
+### 26/10/2026 — LA BASCULE DES VENTES, À L'ÉCRAN — CHANTIER EC-Q3, VF8B (LIGNE 28.65)
+
+(Écrite par l'agent dev de VF8b sur `0d53329` — `main` plus VF8h et VF8d, les cinq migrations de VF5h2, VF7 et VF8a
+appliquées —, la branche locale `vf8b-bascule`, en deux commits : le code et les tests (`bc96251`), puis cette
+documentation. Aucune base : ni lue, ni écrite ; l'export seul.)
+
+**CE QUE VF8B FAIT** (conception de VF8, § 3 b et § 5 ; VF8-Q1, VF8-Q3). L'onglet Informations porte, sous l'identité du
+dossier, une carte « Source des ventes » (`SourceDesVentesCard.tsx`). Elle dit l'état — « Les ventes de ce dossier se
+comptent par leurs pièces » ou « Les factures de ce dossier sont la source de leurs ventes depuis le JJ/MM/AAAA », le
+jour que la garde a daté, dit au calendrier de Paris (une date nulle ou illisible se dit telle, jamais confondues) — et,
+le drapeau levé, avant le clic : ce que la bascule change (chaque facture validée ensuite est la source de sa vente ;
+les factures déjà validées restent comptées par leurs pièces, avec le nombre de celles de l'exercice en cours, avoirs
+compris — VF8-Q3 ; aucune pièce n'est reprise, avec le nombre des pièces de vente à valider ; un crédit qui paie une
+facture source est réservé à ses encaissements ; la case « Ventes » s'ouvre), ce qui la rend irréversible (la première
+facture validée) et le moment conseillé (avant la première facture, ou le premier jour d'un exercice). La confirmation
+NOMME les deux chiffres lus. « Revenir aux pièces » ne s'offre que là où la garde le permet : ses refus — la facture
+source qui l'a rendue irréversible, nommée ; la personne ; l'accès « Ventes » — se disent avant le clic par
+`refusDuReglage`, dans l'ordre de la garde, sans rien recopier. Le chef du cabinet (ou le super-administrateur) seul a
+le geste (VF8-Q1, `estChef`) ; le membre de l'équipe voit l'état, ce qui change et la raison.
+
+**LE MODULE ET SA LECTURE.** `lib/basculeDesVentes.ts`, pur : `carteDeLaBascule(lecture, contexte)` rend l'état, ce qui
+change, l'irréversibilité, le moment, le geste et sa confirmation, ou la raison qui le retient, dans cet ordre : le
+réglage illisible, le drapeau baissé, une liste lue en partie, le refus de la garde. Le drapeau, l'appartenance au chef
+et le jour (À PARIS, `aujourdHuiAParis`) sont des paramètres. `lib/basculeDesVentesLecture.ts` lit, dans la même vague,
+la ligne du dossier par sa clé — le réglage jugé par `reglageDuDossier` (VF8d), sans troisième jugement de la colonne,
+et la date TELLE QUE LUE —, puis en entier (`lireTout`, tri par la clé primaire) les factures du dossier, ses accès et
+ses pièces de vente à valider ; il ne rejette jamais ; la réponse porte le dossier lu.
+
+**L'ÉCRITURE.** Sous un verrou `useRef` posé avant le `try`, relâché dans le `finally` après la relecture : la
+confirmation, puis la seule colonne du réglage, `.select('ventes_par_les_factures, ventes_par_les_factures_depuis')
+.maybeSingle()` ; un refus se dit par `messageErreur`, aucune ligne rendue se dit sans rien prétendre ; la carte relit
+tout, quoi qu'il arrive, et ne prend la relecture que pour le dossier affiché. Le réglage RENDU va à la page avec le
+dossier écrit (`onReglageUpdated`), qui le fusionne dans CE dossier (`modifierDossier`) : Factures, Justificatifs, Accès
+le voient sans relire la ligne.
+
+**LE DRAPEAU `BASCULE_OFFERTE` RESTE FAUX.** Son commentaire nomme les deux conditions qui le lèveront, et la session le
+lèvera : la migration de VF5H2-Q1 appliquée (« Oui, la fermer », avant la première bascule réelle), et VF8e en ligne.
+Faux, la carte dit l'état et « La source des ventes ne se change pas encore d'ici… », sans geste, dans les deux sens.
+`CARTE_DE_LA_BASCULE_OUVERTE` (VF8d) disparaît : la phrase de l'onglet Accès suit `BASCULE_OFFERTE`, le GESTE, et non
+l'existence de la carte — elle dit donc toujours que le réglage « ne s'offre pas encore ». `droitsAcces.test.ts` éprouve
+ses deux états (`vi.mock` et un accesseur), et confronte la carte montée dans `InformationsTab.tsx`.
+
+**LA DATE DE LA BASCULE DANS LE TYPE.** `Dossier.ventes_par_les_factures_depuis` devient obligatoire (le type décrit la
+table) : la restauration reste tolérante à son absence, éprouvé (`sauvegardeDonnees.test.ts`) — une sauvegarde d'avant
+la migration envoie la ligne du dossier sans la colonne, la base la pose nulle, et `verifierRestauration` ne relève rien
+; une sauvegarde qui la porte la rend telle. La carte, elle, distingue toujours une colonne absente d'une nulle.
+
+**TROIS PRÉCISIONS À LA CONCEPTION, ET LEUR RAISON.** (1) La carte vit dans son propre composant, monté par
+`InformationsTab.tsx` (la conception la disait « dans » l'onglet) : elle lit et écrit seule, comme les cartes voisines,
+et ses tests ne dépendent pas des six autres écritures de l'onglet. (2) « L'exercice en cours » est l'année
+d'aujourd'hui À PARIS, et les factures comptées sont les factures ET avoirs validés datés de cette année (la phrase le
+dit, « avoirs compris ») : ce sont les documents que l'exercice comptera par leurs pièces. (3) Drapeau baissé, rien ne
+s'offre non plus pour revenir aux pièces : un dossier basculé ne peut l'être, d'ici là, que par une écriture directe.
+
+**LE BANC.** Le faux Supabase porte la date (nulle partout, le 01/09/2026 pour d12) ; deux visites neuves,
+`informations/source-des-ventes` (d1) et `informations/source-des-ventes-basculee` (d12). Le serveur sur le 5897, la
+copie du script ne différant que par l'adresse, le navigateur sans le mandataire. Drapeau baissé : la passe du cabinet à
+1 440 px (panneau fermé, puis ouvert), 1 280 (ouvert), 1 024, 720 et 390 px, 0 débordement chaque fois (285 boutons
+sondés, 61 fenêtres), les deux visites trouvant leur texte. Drapeau levé le temps d'un banc seulement (la constante
+rendue à faux ensuite, l'arbre vérifié) : les huit visites de l'onglet Informations (l'onglet, les cinq de l'identité,
+les deux de la carte) aux mêmes six passes, 0 débordement chaque fois ; quatre captures lues, à 1 440 et 390 px (d1 : ce
+qui change, chiffres compris, le moment et le geste ; d12 : le refus de la garde qui nomme sa première facture source).
+
+**LES PREUVES.**
+- La suite comparée test par test, sous Paris : avant (`0d53329`) 468 fichiers et 14 524 tests ; après 471 fichiers et
+  14 572 tests, tous verts ; aucun verdict changé, un test remplacé (la confrontation de la carte, dans
+  `droitsAcces.test.ts`, qui joue désormais les deux états du drapeau), 49 neufs : le module 19, la lecture 6, la carte
+  18, l'onglet 1, la page 1, la restauration 1, les deux gardes des écrans avant lecture 2, le drapeau dans l'onglet
+  Accès 1.
+- Mutations : 56 écrites, 56 appliquées, 56 tuées — le module 22, la lecture 12, la carte 16, la phrase de l'onglet
+  Accès 2, l'onglet 2, la page 2. Deux survivaient d'abord, chacune la seconde barrière de l'autre (la lecture d'un
+  autre dossier affichée, l'effet jamais annulé) : le jeu d'essai était en cause — deux lectures revenues dans l'ordre
+  inverse, et le dossier suivant pendant sa lecture —, renforcé, elles meurent. Une mutation se joue sous UTC : le jour
+  de la bascule au fuseau du poste, qu'aucun test sous Paris ne distinguerait.
+- Lint : les 63 avertissements de la référence, identiques fichier par fichier et règle par règle. La barrière sur la
+  tête finale : son résultat est au rapport de l'agent.
+
+**CE QUE L'APPLICATION CHANGE EN PRODUCTION.** Une carte de plus dans l'onglet Informations de chaque dossier : l'état
+(aucun dossier n'a basculé : « par leurs pièces ») et pourquoi il ne se change pas encore. Aucun geste, aucune écriture,
+tant que le drapeau est baissé. Trois lectures de plus à l'ouverture de l'onglet (les factures, les accès, les pièces de
+vente à valider), sans rien en afficher.
+
+**AUCUNE QUESTION AU CABINET.** **CE QUI RESTE** : lever `BASCULE_OFFERTE` (la migration de VF5H2-Q1, VF8e en ligne),
+VF8e, VF8f, puis VF9.
