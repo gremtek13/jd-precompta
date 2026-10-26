@@ -537,9 +537,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   migrations, accordées par le cabinet le 26/10/2026 avec VF5H2-Q1, VF7-Q1, VF7B-Q1, VF7B-Q2, VF7E-Q1 et VF8-Q1 à Q3
   (toutes à la recommandation), appliquées le même jour dans cet ordre, la production égale à la réplique éprouvée (neuf
   familles, 153 migrations) → « LES CINQ MIGRATIONS DE VF5H2, VF7 ET VF8A EN PRODUCTION ». VF8h le 26/10/2026, à
-  l'écran, neutre : « Ma banque » d'un client « Banque » et « Ventes » nomme, sur un virement mixte classé, la facture
-  d'avant avec les factures sources (VF5H-Q3) → « « MA BANQUE » NOMME LA FACTURE D'AVANT D'UN VIREMENT MIXTE ». Restent
-  VF8b, VF8d à VF8f et VF9 (EC3-Q9, la facture reprise, va à A8).
+  l'écran, neutre : « Ma banque » d'un client « Banque » et « Ventes » nomme, sur un virement mixte classé ou réservé,
+  la facture d'avant avec les factures sources (VF5H-Q3 ; VF8H-Q1, écrite sur la recommandation) → « « MA BANQUE » NOMME
+  LA FACTURE D'AVANT D'UN VIREMENT MIXTE ». Restent VF8b, VF8d à VF8f et VF9 (EC3-Q9, la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
