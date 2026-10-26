@@ -509,6 +509,31 @@ objets, `b20a312c…`) sont inchangés, des deux côtés : la migration remplace
 valeur de la réplique de l'étape, où tous les essais ont été joués entiers (HISTORIQUE.md, « L'INSERTION DIRECTE D'UN
 ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS », « LA MIGRATION DE VF5H2-Q1 EN PRODUCTION »).
 
+**Préparé le 26/10/2026, PAS ENCORE APPLIQUÉ : `index_des_avoirs`** (chantier EC-Q3, VF8E-Q1, écrite sur la
+recommandation, le 26/10/2026). Son fichier porte une version PROVISOIRE, `20261027125000`, après celle de
+`insertion_des_encaissements` et avant celle de `simulation_des_ventes_facturees` : il s'applique AVANT celle-ci, qui ne
+le suppose pas. `apply_migration` lui donnera sa version, et le fichier se RENOMME à cette version, texte inchangé — sa
+ligne d'historique doit rendre `512638ba6449edbbc89db08e7405296b`, fins de ligne ramenées à `\n`. Il pose un index
+partiel, `factures_emises_facture_origine_idx`, et rien d'autre. Sur la réplique de l'étape, il ne change que la famille
+« index » de `signature.sql` (237 `08ef14df…` puis 238 `b9aae28f2e5278de99fc4e617687a011`), avec ou sans
+`simulation_des_ventes_facturees` ; l'inventaire gagne un objet (ci-dessous), le socle est inchangé (HISTORIQUE.md,
+« « MA SIMULATION » REÇOIT SES VENTES FACTURÉES »).
+
+**Préparé le 26/10/2026, PAS ENCORE APPLIQUÉ : `simulation_des_ventes_facturees`** (chantier EC-Q3, VF8e ; VF8-Q2). Son
+fichier porte une version PROVISOIRE, `20261027130000`, après celles de `insertion_des_encaissements` et de
+`index_des_avoirs`, dont il ne dépend pas : `apply_migration` lui donnera la sienne, et le fichier se RENOMME à cette
+version, texte inchangé — sa ligne d'historique doit rendre `af60959ca9b13192e43ad588d47b9372`, fins de ligne ramenées à
+`\n`. Tant que ces deux fichiers ne sont pas appliqués, la dérive se lit sans eux : 154 fichiers, 154 migrations,
+`9549d833…`, la production. Sur la réplique de l'étape (la production munie de `insertion_des_encaissements` sous sa
+version, son historique et ses neuf familles égaux à ceux de la production), munie de l'index puis de VF8e à leurs
+versions provisoires : 156 fichiers, 156 migrations, `fbbca6186227f02df8ae2423d63a8f25` des deux côtés. Le socle est
+inchangé (80 instructions, `5d53eea2…`) ; l'inventaire compte 2 165 objets (`2fd670d3adffb76e3e91ed6887d55875`, des deux
+côtés, 2 163 avant) — l'index et la fonction neuve. `signature.sql`, après les deux : trois familles changent,
+« fonctions » (202 `d9a63228…` puis 203 `af77709d031abfe1f1b12222eba56e2b`), « droits des fonctions » (202 `f61b1cd0…`
+puis 203 `9a52af9e70d503d0f49955c58d164cf7`) et « index » (237 `08ef14df…` puis 238
+`b9aae28f2e5278de99fc4e617687a011`) ; les six autres sont inchangées (HISTORIQUE.md, « « MA SIMULATION » REÇOIT SES
+VENTES FACTURÉES »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
