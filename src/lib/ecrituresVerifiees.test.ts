@@ -93,6 +93,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'simulation » (P7). `lib/couvertureReleve.ts` attend la requête et lit son erreur : un refus ' +
       'FERME l’écran, avec son motif',
   },
+  lireLesVentesDeLaSimulation: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `ventes_facturees_de_la_simulation` LIT, d’un dossier basculé, le total hors taxe de ' +
+      'chaque mois de l’année et ses factures et avoirs sources (étape VF8e), pour « Ma simulation » d’un client « Banque ». ' +
+      '`lib/simulationVentesFacturees.ts` attend la requête et lit son erreur : un refus, une valeur illisible ou une requête ' +
+      'qui lève rendent une lecture INCOMPLÈTE, que l’écran dit sans rien projeter, jamais des recettes nulles',
+  },
   lireLesDroitsVentes: {
     // 2 depuis l'étape P4b : les tuiles « À encaisser » et « À déclarer » de l'accueil relisent aussi les cases ; 3 depuis
     // l'étape VF5g : « Ma banque » lit « Banque » et « Ventes », qui ouvre la lecture des encaissements de ses factures.

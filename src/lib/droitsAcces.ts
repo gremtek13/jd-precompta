@@ -30,6 +30,7 @@ import { COUVERTURE_EXPORTEE } from './couvertureReleve'
 import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
+import { SIMULATION_VENTES_FACTUREES_EXPORTEE } from './simulationVentesFacturees'
 
 export type Domaine = 'ventes' | 'banque'
 
@@ -148,6 +149,12 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
       + 'et les packs ne lui sont pas montrés.'
 }
 
+// Ce que la case « Banque » ouvre de plus à la simulation du client quand ses ventes facturées sont en base (étape VF8e,
+// `SIMULATION_VENTES_FACTUREES_EXPORTEE`) : elle prend la place de « La case lui ouvre aussi sa simulation. ».
+export const PHRASE_DES_VENTES_DE_LA_SIMULATION = ' La case lui ouvre aussi sa simulation, qui compte ses ventes facturées : '
+  + 'd’un dossier dont les factures sont la source de leurs ventes, la base lui rend le total hors taxe de chaque mois et la '
+  + 'liste de ses factures et avoirs qui comptent eux-mêmes leur vente — leurs identifiants, sans leur contenu.'
+
 // LA SECONDE DIT CE QU'UNE CASE CHANGE, ET CE N'EST PAS UNE AFFAIRE D'ÉCRANS (contrôle croisé P2 × P7, 10/10/2026 : elle
 // ne lisait que le drapeau de P7, et aurait dit qu'une case ne change rien une fois les ventes du client en base). Deux
 // étapes ouvrent un droit à la SESSION du client avant tout écran :
@@ -211,6 +218,13 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // « Ventes » devient sur CE dossier (`phraseDuReglage`) : basculé, ce que comptent les factures que le client valide ; non
 // basculé, pourquoi la case ne se coche pas ; illisible, pourquoi elle ne se change pas. Sans les ventes, la case ne change
 // encore rien au client, et la phrase n'en dit rien de plus.
+// DEPUIS L'ÉTAPE VF8e (chantier EC-Q3), un onzième paramètre : la migration `simulation_des_ventes_facturees`
+// (`SIMULATION_VENTES_FACTUREES_EXPORTEE`, lib/simulationVentesFacturees.ts) — préparée, présentée au cabinet avant d'être
+// appliquée (VF8-Q2) — ouvre à la case « Banque », par une fonction de lecture de la base, d'un dossier dont les factures
+// sont la source de leurs ventes, le total hors taxe de chaque mois de ses ventes facturées et la liste de ses factures et
+// avoirs sources — des identifiants, rien de leur contenu ; « Ma simulation » les compte. La phrase le dit à la place de
+// « La case lui ouvre aussi sa simulation. », dans ce que « Banque » ouvre, donc avec la banque du client (P7) : sans elle,
+// ce drapeau ne change rien à la phrase. « Ventes » n'y gagne rien : elle lit déjà ses factures.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -222,6 +236,7 @@ export function ceQueDisentLesCases(
   changementDeRibOuvert: boolean,
   logoOuvert: boolean,
   reglage: ReglageDuDossier,
+  simulationVentesOuverte: boolean,
 ): string {
   const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
   if (!simulationSousBanque && !ventesOuvertes) {
@@ -297,7 +312,7 @@ export function ceQueDisentLesCases(
       + (ventesOuvertes
         ? ', y écrire des précisions sur un mouvement et, avec « Ventes », désigner celui qui prouve un encaissement.'
         : ' et y écrire des précisions sur un mouvement.')
-      + ' La case lui ouvre aussi sa simulation.'
+      + (simulationVentesOuverte ? PHRASE_DES_VENTES_DE_LA_SIMULATION : ' La case lui ouvre aussi sa simulation.')
       + (ventesOuvertes && parametresOuverts && changementDeRibOuvert
         ? ' Par la base, elle lui dit aussi le jour, l’auteur — toi, ou un accès client, jamais la personne — et l’état du '
           + 'dernier changement du RIB de ses factures, sans jamais lui montrer ce RIB ; son accueil le lui dit '
@@ -334,11 +349,13 @@ export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 // contacts, de la leur (étape A4a) ; celui de l'import des contacts, de la sienne (étape A4b3a) ; celui des paramètres de
 // facturation, de la leur (étape A5a) ; celui du dernier changement du RIB, de la sienne (étape A5b3a) ; celui du logo des
 // factures, de la sienne (étape A5c1). Le réglage du dossier, l'onglet le lit (étape VF8d) : la phrase n'est plus une
-// constante, mais celle des neuf drapeaux et de ce réglage.
+// constante, mais celle des drapeaux et de ce réglage ; celui des ventes facturées de la simulation, de la sienne (étape
+// VF8e), faux tant qu'elle n'est pas appliquée.
 export function ceQueDisentLesCasesDuDossier(reglage: ReglageDuDossier): string {
   return ceQueDisentLesCases(
     COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
     IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE, reglage,
+    SIMULATION_VENTES_FACTUREES_EXPORTEE,
   )
 }
 

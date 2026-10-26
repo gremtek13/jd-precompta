@@ -65,6 +65,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     raison: 'Les cases de l’appelant sur un dossier (fonction `stable`, `security definer`, sans écriture ; étape P1), '
       + 'au montage de « Ma simulation » (P7).',
   },
+  'rpc:ventes_facturees_de_la_simulation': {
+    nature: 'lecture',
+    raison: 'Le total hors taxe de chaque mois de l’année et les factures et avoirs sources d’un dossier basculé (fonction '
+      + '`stable`, `security definer`, sans écriture ; migration `simulation_des_ventes_facturees`, étape VF8e, préparée), au '
+      + 'montage de « Ma simulation » — derrière `SIMULATION_VENTES_FACTUREES_EXPORTEE`.',
+  },
   'rpc:pieces_jointes_ecartees_du_client': {
     nature: 'lecture',
     raison: 'Le jour, la raison et le poids des pièces jointes écartées d’un dossier (fonction `stable`, `security definer`, '

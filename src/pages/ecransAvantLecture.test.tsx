@@ -854,9 +854,12 @@ const LECTURES_PAR_FONCTION = new Set([
 // cabinet et de l'accueil du client « Ventes » ou « Banque » : une fonction de LECTURE (`stable`), qui n'écrit rien.
 // Et les dossiers dont un RIB proposé attend le cabinet (`dossiers_au_rib_a_confirmer`, étape A5b3d), lus par son tableau de bord :
 // une lecture aussi (`stable`).
+// Et les ventes facturées de « Ma simulation » (`ventes_facturees_de_la_simulation`, chantier EC-Q3, étape VF8e), dès que la
+// fonction est en base (`SIMULATION_VENTES_FACTUREES_EXPORTEE`) : une lecture (`stable`), qui n'écrit rien.
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
   'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib', 'rpc:dossiers_au_rib_a_confirmer',
+  'rpc:ventes_facturees_de_la_simulation',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.

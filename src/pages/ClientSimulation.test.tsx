@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientSimulation from './ClientSimulation'
 import type {
@@ -27,7 +27,19 @@ const faux = vi.hoisted(() => ({
   // Le serveur qui cesse de rendre une table au-delà de N lignes tout en annonçant le vrai total :
   // la panne qui produit une lecture INCOMPLÈTE (voir lib/lectureComplete.ts).
   muet: {} as Record<string, number>,
+  // Les ventes facturées de la simulation (étape VF8e) : le drapeau de leur migration — baissé, comme dans ce lot, sauf
+  // dans le bloc qui le lève —, ce que la fonction rend, et les appels faits.
+  drapeau: false,
+  ventes: { data: { par_mois: {}, sources: [] }, error: null } as { data: unknown; error: unknown },
+  // Une réponse retenue de cette fonction, que le test rend quand il le décide : l'ordre des réponses.
+  ventesRetenues: null as Promise<{ data: unknown; error: unknown }> | null,
+  appels: [] as { nom: string; args: unknown }[],
 }))
+
+vi.mock('../lib/simulationVentesFacturees', async (original) => {
+  const vrai = await original<typeof import('../lib/simulationVentesFacturees')>()
+  return { ...vrai, get SIMULATION_VENTES_FACTUREES_EXPORTEE() { return faux.drapeau } }
+})
 
 vi.mock('../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../test/filtresPostgrest')
@@ -84,9 +96,14 @@ vi.mock('../lib/supabase', async () => {
       // Les cases de l'appelant vues par la base (espace client, étape P7) : la case « Banque », comme la doublure du
       // contexte — ce fichier vaut drapeau levé comme baissé (`COUVERTURE_EXPORTEE`). Ce qui distingue les deux états :
       // espaceClientAvantCouverture.test.tsx et ClientSimulation.banque.test.tsx.
-      rpc: (nom: string) => Promise.resolve(nom === 'droits_sur_le_dossier'
-        ? { data: { cabinet: false, membre: true, ventes: false, banque: true }, error: null }
-        : { data: null, error: { message: `fonction inattendue : ${nom}` } }),
+      rpc: (nom: string, args?: unknown) => {
+        faux.appels.push({ nom, args })
+        return Promise.resolve(nom === 'droits_sur_le_dossier'
+          ? { data: { cabinet: false, membre: true, ventes: false, banque: true }, error: null }
+          : nom === 'ventes_facturees_de_la_simulation'
+            ? (faux.ventesRetenues ?? faux.ventes)
+            : { data: null, error: { message: `fonction inattendue : ${nom}` } })
+      },
     },
   }
 })
@@ -152,6 +169,10 @@ function poser(o: {
   }
   faux.refusees = new Set()
   faux.muet = {}
+  faux.drapeau = false
+  faux.ventes = { data: { par_mois: {}, sources: [] }, error: null }
+  faux.ventesRetenues = null
+  faux.appels = []
 }
 
 // Le montant affiché sous un libellé, espaces normalisés : `Intl` sépare les milliers par une espace
@@ -554,5 +575,134 @@ describe('ClientSimulation — les ventes facturées', () => {
     espion.mockRestore()
     expect(tables).toContain('dossiers')
     expect(tables.filter((t) => ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux'].includes(t))).toEqual([])
+    // Le drapeau de l'étape VF8e baissé, comme dans ce lot : sa fonction non plus.
+    expect(faux.appels.map((a) => a.nom)).toEqual(['droits_sur_le_dossier'])
+  })
+})
+
+// LES VENTES FACTURÉES, LE DRAPEAU LEVÉ (chantier EC-Q3, étape VF8e ; VF8-Q2). La base rend, d'un dossier basculé, le total
+// hors taxe de chaque mois de l'année et ses factures et avoirs sources (lib/simulationVentesFacturees.ts) : l'écran les
+// compte quand la lecture est revenue entière, et l'exemplaire d'une facture source n'y compte plus comme une pièce ; sinon,
+// il dit le manque, ne projette rien et garde la phrase d'aujourd'hui. Le drapeau est faux dans ce lot : ce bloc le lève par
+// la doublure du module ; le bloc d'au-dessus garde l'état baissé.
+describe('ClientSimulation — les ventes facturées, le drapeau levé (VF8e)', () => {
+  const SOURCE = 'aaaaaaaa-0000-4000-8000-000000000101'
+  const AUTRE = 'aaaaaaaa-0000-4000-8000-000000000999'
+  const PHRASE = /^Cette simulation ne compte pas encore les factures validées dans l’application/
+  const BANDEAU = 'Tes factures validées dans l’application n\'ont pas pu être affichées en entier. Recharge la page : ta '
+    + 'projection ne s’affiche pas sans elles.'
+
+  // Le 30 juin 2026, un dossier basculé : l'exemplaire de la facture source SOURCE (600 €) et celui d'une facture qui ne
+  // l'est pas (300 €), deux pièces de vente validées.
+  function poserLeve(o: Parameters<typeof poser>[0] = {}, reglage: boolean = true) {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-06-30T10:00:00Z'))
+    poser({ recettes: [recette({ facture_id: SOURCE }), recette({ id: 'r2', montant_ttc: 300, facture_id: AUTRE })], ...o })
+    faux.parTable.dossiers = [{ assujetti_tva: false, mode_comptable: o.modeComptable ?? 'tresorerie', ventes_par_les_factures: reglage }]
+    faux.drapeau = true
+  }
+
+  it('compte le total de chaque mois écoulé, et l’exemplaire d’une facture source ne compte plus — celui d’une autre, si', async () => {
+    poserLeve()
+    faux.ventes = { data: { par_mois: { '2026-02': 10000, '2026-05': 5000, '2026-07': 99900 }, sources: [SOURCE] }, error: null }
+    await monter()
+    // 300 € de la pièce qui n'est pas l'exemplaire d'une source, 100 € et 50 € des mois écoulés ; juillet n'est pas encore là.
+    expect(valeur('CA encaissé à date')).toBe('450,00 €')
+    expect(faux.appels.filter((a) => a.nom === 'ventes_facturees_de_la_simulation'))
+      .toEqual([{ nom: 'ventes_facturees_de_la_simulation', args: { p_dossier_id: 'dossier-de-test', p_annee: 2026 } }])
+    expect(screen.queryByText(PHRASE)).toBeNull()
+    expect(screen.queryByText(BANDEAU)).toBeNull()
+  })
+
+  it('en engagement, le CA facturé à date', async () => {
+    poserLeve({ modeComptable: 'engagement' })
+    faux.ventes = { data: { par_mois: { '2026-06': 12345 }, sources: [SOURCE] }, error: null }
+    await monter()
+    expect(valeur('CA facturé à date')).toBe('423,45 €')
+  })
+
+  it('un dossier qui n’a pas basculé : rien à compter, la pièce désignée compte comme hier, et la phrase se tait', async () => {
+    poserLeve({}, false)
+    faux.ventes = { data: { par_mois: {}, sources: [] }, error: null }
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('900,00 €')
+    expect(screen.queryByText(PHRASE)).toBeNull()
+  })
+
+  it('la lecture refusée : le bandeau, aucune projection, et la phrase d’aujourd’hui', async () => {
+    poserLeve()
+    faux.ventes = { data: null, error: { message: 'Accès refusé à ce dossier.', code: '42501' } }
+    await monter()
+    expect(screen.getByText(BANDEAU).getAttribute('title')).toBe('ventes facturées refusées : Accès refusé à ce dossier.')
+    expect(screen.getByRole('heading', { name: 'Projection 2026' })).toBeTruthy()
+    for (const libelle of ['CA encaissé à date', 'CA projeté sur l\'année', 'Cotisations appelées à date', 'Cotisations projetées sur l\'année']) {
+      expect(screen.queryByText(libelle)).toBeNull()
+    }
+    expect(screen.queryByText(/€/)).toBeNull()
+    screen.getByText(PHRASE)
+  })
+
+  it('une valeur illisible — un mois d’une autre année — : de même', async () => {
+    poserLeve()
+    faux.ventes = { data: { par_mois: { '2025-12': 100 }, sources: [] }, error: null }
+    await monter()
+    expect(screen.getByText(BANDEAU).getAttribute('title')).toBe('ventes facturées illisibles')
+    expect(screen.queryByText('CA encaissé à date')).toBeNull()
+    screen.getByText(PHRASE)
+  })
+
+  it('l’écran resté ouvert au passage d’une année relit les ventes de la nouvelle, et n’en compte aucune d’une autre', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-12-31T10:00:00Z'))
+    poser()
+    faux.parTable.dossiers = [{ assujetti_tva: false, mode_comptable: 'tresorerie', ventes_par_les_factures: true }]
+    faux.drapeau = true
+    faux.ventes = { data: { par_mois: { '2026-12': 20000 }, sources: [] }, error: null }
+    const { rerender } = render(<ClientSimulation />)
+    await screen.findByRole('heading', { name: 'Projection 2026' })
+    expect(valeur('CA encaissé à date')).toBe('200,00 €')
+    vi.setSystemTime(new Date('2027-02-15T10:00:00Z'))
+    faux.ventes = { data: { par_mois: { '2027-01': 7000 }, sources: [] }, error: null }
+    rerender(<ClientSimulation />)
+    // Tant que celles de 2027 ne sont pas revenues, les ventes lues pour 2026 ne valent pas : l'écran attend.
+    expect(screen.getByText('Chargement…')).toBeTruthy()
+    await screen.findByRole('heading', { name: 'Projection 2027' })
+    expect(valeur('CA encaissé à date')).toBe('70,00 €')
+    expect(faux.appels.filter((a) => a.nom === 'ventes_facturees_de_la_simulation').map((a) => (a.args as { p_annee: number }).p_annee))
+      .toEqual([2026, 2027])
+  })
+
+  it('une lecture plus lente, celle d’une année passée, n’écrit pas après celle qui l’a remplacée', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-12-31T10:00:00Z'))
+    poser()
+    faux.parTable.dossiers = [{ assujetti_tva: false, mode_comptable: 'tresorerie', ventes_par_les_factures: true }]
+    faux.drapeau = true
+    let rendre2026: (r: { data: unknown; error: unknown }) => void = () => undefined
+    faux.ventesRetenues = new Promise((r) => { rendre2026 = r })
+    const { rerender } = render(<ClientSimulation />)
+    vi.setSystemTime(new Date('2027-02-15T10:00:00Z'))
+    faux.ventesRetenues = null
+    faux.ventes = { data: { par_mois: { '2027-01': 7000 }, sources: [] }, error: null }
+    rerender(<ClientSimulation />)
+    await screen.findByRole('heading', { name: 'Projection 2027' })
+    expect(valeur('CA encaissé à date')).toBe('70,00 €')
+    // La réponse de 2026 arrive après celle de 2027 : elle n'écrit rien.
+    await act(async () => { rendre2026({ data: { par_mois: { '2026-12': 20000 }, sources: [] }, error: null }) })
+    expect(screen.getByRole('heading', { name: 'Projection 2027' })).toBeTruthy()
+    expect(valeur('CA encaissé à date')).toBe('70,00 €')
+    expect(faux.appels.filter((a) => a.nom === 'ventes_facturees_de_la_simulation').map((a) => (a.args as { p_annee: number }).p_annee))
+      .toEqual([2026, 2027])
+  })
+
+  it('ne demande toujours rien des factures ni de leurs encaissements : la seule fonction de la base', async () => {
+    const { supabase } = await import('../lib/supabase')
+    const espion = vi.spyOn(supabase, 'from')
+    poserLeve()
+    await monter()
+    const tables = espion.mock.calls.map(([t]) => String(t))
+    espion.mockRestore()
+    expect(tables.filter((t) => ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux'].includes(t))).toEqual([])
+    expect(faux.appels.map((a) => a.nom).sort()).toEqual(['droits_sur_le_dossier', 'ventes_facturees_de_la_simulation'])
   })
 })
