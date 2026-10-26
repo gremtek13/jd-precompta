@@ -529,6 +529,18 @@
 -- faute, 46 mutations sur 46 qui mordent ; avec elle, 56 lignes, 0 en faute, 48 mutations sur 48 — seules les lignes VB
 -- diffèrent. M-VB1 voit l'appel buter ensuite sur `frontiere_validation`, que l'API n'exécute pas non plus : une défense
 -- de plus, pas celle que VB1 juge. Le passage en production suivra l'application et se notera ici.
+--
+-- 26/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (chantier EC-Q3, étape VF8e : migration
+-- `simulation_des_ventes_facturees`, PRÉPARÉE, pas appliquée), qui ne crée ni ne change aucune policy, mais une
+-- fonction de lecture `security definer` qui ouvre à l'accès client qui porte « Banque », d'un dossier basculé, le
+-- total hors taxe de chaque mois de ses ventes facturées et les identifiants de ses factures et avoirs sources : le
+-- bloc SI (SI1 à SI5, M-SI1 à M-SI3) la rejoue — le client « Banque » lit (le contrôle positif), « Ventes » seul puis
+-- aucune case reçoivent « Accès refusé à ce dossier. » (42501), l'autre dossier et un compte rattaché à rien aussi,
+-- l'anonyme n'exécute pas la fonction, le catalogue la dit `security definer` ; EN ATTENTE sans la migration. Joué
+-- ENTIER par psql sur la réplique de l'étape (la production à 153 migrations, puis munie de
+-- `insertion_des_encaissements`, le journal semé) : sans la migration, 57 lignes de verdict (la ligne SI « EN
+-- ATTENTE »), 0 en faute, 48 mutations sur 48 qui mordent ; avec elle, 62 lignes, 0 en faute, 51 mutations sur 51 —
+-- seules les lignes SI diffèrent. Le passage en production suivra l'application et se notera ici.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -2398,6 +2410,194 @@ begin
     'cible', 'ventes_facturees_de_l_exercice, ecritures_attendues_de_la_periode',
     'observe', n || ' sur 2', 'ok', n = 2);
   verdicts := verdicts || jsonb_build_object('controle', 'VB. le jeu d''essai de la validation des ventes facturées s''est construit', 'cible', 'validation',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ SI. La simulation des ventes facturées (chantier EC-Q3, étape VF8e ; migration `simulation_des_ventes_facturees`) ══
+-- Une fonction neuve, `ventes_facturees_de_la_simulation`, lit aux droits de son propriétaire les factures d'un dossier,
+-- leurs lignes, leurs encaissements et leurs parts, et ne rend que le total hors taxe de chaque mois de l'année et les
+-- identifiants des factures et avoirs sources — à qui la case « Banque » ouvre le dossier (VF8-Q2). Elle contourne la
+-- RLS : elle se rejoue, chaque refus jugé à sa RAISON.
+--   SI1. Le client qui porte « Banque » sur son dossier basculé la lit, et y trouve le hors-taxe de sa facture source et
+--        son identifiant — le contrôle POSITIF : sans lui, une fonction qui refuserait tout le monde passerait la suite.
+--   SI2. Sans « Banque » — « Ventes » seule, puis aucune case —, sur son propre dossier : « Accès refusé à ce dossier. »
+--        (42501).
+--   SI3. L'autre dossier, où il n'a aucun accès, ses deux cases posées sur le sien : refusé de même.
+--   SI4. L'anonyme bute sur le droit d'exécution (42501, « permission denied for function … ») ; un compte rattaché à rien,
+--        sur la raison de la fonction.
+--   SI5. Le catalogue : `security definer`, son chemin fixé ; exécutable par les connectés, ni par l'anonyme ni par PUBLIC.
+-- Trois mutations, qui doivent mordre : M-SI1 (SI1 rejoué sans « Banque » : refusé), M-SI2 (SI2 rejoué avec « Banque » :
+-- accepté), M-SI3 (l'exécution rendue à l'anonyme : il lit la raison de la fonction, plus le droit d'exécution). Le jeu,
+-- dans le dossier du client, le temps d'une sous-transaction annulée : le dossier bascule ; le chef y valide une facture
+-- source de janvier 2026, de 100 € hors taxe, et son encaissement du même mois. Avant la migration, une ligne dit que la
+-- simulation attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  autre_dossier     uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
+  refus text := 'Accès refusé à ce dossier.';
+  f_source uuid; profil text; n bigint; v jsonb;
+  accepte boolean; motif text; message text; erreur text; construit boolean := false; obs text;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.ventes_facturees_de_la_simulation(uuid, integer)') is null then
+    insert into rls_verdict values ('SI. la simulation des ventes facturées : EN ATTENTE de la migration simulation_des_ventes_facturees',
+      'ventes_facturees_de_la_simulation', 'absente : ses droits se jugent dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu, sans session : le propriétaire bascule le dossier (la garde du réglage ne juge que les sessions) ──
+    perform set_config('request.jwt.claims', '', true);
+    update memberships set droit_ventes = false, droit_banque = true where user_id = client;
+    update dossiers set ventes_par_les_factures = true where id = dossier_du_client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
+      '{"tiers_nom":"ESSAI RLS SI","date_emission":"2026-01-10","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
+    perform enregistrer_encaissement(dossier_du_client, f_source, '2026-01-15', 120, 'cheque', null, '[{"taux":20,"montant":120}]'::jsonb);
+    reset role;
+    construit := true;
+
+    -- SI1 : le client « Banque », sur son dossier basculé.
+    accepte := false; motif := null; message := null; v := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      v := ventes_facturees_de_la_simulation(dossier_du_client, 2026);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SI1. le client « Banque » lit la simulation de son dossier basculé (contrôle positif)',
+      'cible', 'ventes_facturees_de_la_simulation', 'observe', case when accepte then coalesce(v::text, '∅') else motif || ' ' || message end,
+      'ok', accepte and motif = 'P0001' and (v -> 'par_mois' ->> '2026-01')::bigint = 10000 and (v -> 'sources') ? f_source::text);
+
+    -- M-SI1 : le même, sans « Banque ».
+    obs := null;
+    begin
+      update memberships set droit_banque = false where user_id = client;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform ventes_facturees_de_la_simulation(dossier_du_client, 2026);
+      obs := 'accepté';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-SI1 — SI1 rejoué sans la case « Banque »',
+      'attendu', 'refusé', 'observe', obs, 'mord', obs = '42501 ' || refus);
+
+    -- SI2 : sans « Banque » — « Ventes » seule, puis aucune case.
+    foreach profil in array array['ventes', 'aucune'] loop
+      accepte := false; motif := null; message := null;
+      begin
+        update memberships set droit_ventes = (profil = 'ventes'), droit_banque = false where user_id = client;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        perform ventes_facturees_de_la_simulation(dossier_du_client, 2026);
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'SI2. sans la case « Banque », le client ne lit pas la simulation de son dossier',
+        'cible', profil, 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+        'ok', not accepte and motif = '42501' and message = refus);
+    end loop;
+
+    -- M-SI2 : SI2 rejoué avec « Banque ».
+    obs := null;
+    begin
+      update memberships set droit_ventes = true, droit_banque = true where user_id = client;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform ventes_facturees_de_la_simulation(dossier_du_client, 2026);
+      obs := 'accepté';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-SI2 — SI2 rejoué avec la case « Banque »',
+      'attendu', 'accepté', 'observe', obs, 'mord', obs = 'accepté');
+
+    -- SI3 : l'autre dossier, ses deux cases posées sur le sien.
+    accepte := false; motif := null; message := null;
+    begin
+      update memberships set droit_ventes = true, droit_banque = true where user_id = client;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform ventes_facturees_de_la_simulation(autre_dossier, 2026);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'SI3. le client ne lit pas la simulation d''un autre dossier',
+      'cible', 'autre dossier', 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+      'ok', not accepte and motif = '42501' and message = refus);
+
+    -- SI4 : l'anonyme, puis un compte rattaché à rien.
+    foreach profil in array array['anon', 'inconnu'] loop
+      accepte := false; motif := null; message := null;
+      begin
+        execute format('set local role %I', case profil when 'anon' then 'anon' else 'authenticated' end);
+        perform set_config('request.jwt.claims', case profil when 'anon' then '{"role":"anon"}'
+          else json_build_object('sub', inconnu, 'role', 'authenticated')::text end, true);
+        perform ventes_facturees_de_la_simulation(dossier_du_client, 2026);
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'SI4. l''anonyme n''exécute pas la fonction ; un compte rattaché à rien est refusé',
+        'cible', profil, 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+        'ok', not accepte and motif = '42501'
+          and message = case profil when 'anon' then 'permission denied for function ventes_facturees_de_la_simulation' else refus end);
+    end loop;
+
+    -- M-SI3 : l'exécution rendue à l'anonyme — il lit la raison de la fonction, plus le droit d'exécution.
+    obs := null;
+    begin
+      grant execute on function public.ventes_facturees_de_la_simulation(uuid, integer) to anon;
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      perform ventes_facturees_de_la_simulation(dossier_du_client, 2026);
+      obs := 'accepté';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-SI3 — SI4 rejoué, l''exécution rendue à l''anonyme',
+      'attendu', 'un autre refus que le droit d''exécution', 'observe', coalesce(obs, '?'),
+      'mord', obs is distinct from '42501 permission denied for function ventes_facturees_de_la_simulation');
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+
+  -- SI5 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.oid = to_regprocedure('public.ventes_facturees_de_la_simulation(uuid, integer)') and p.prosecdef
+     and p.proconfig @> array['search_path=public']
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0);
+  verdicts := verdicts || jsonb_build_object('controle', 'SI5. security definer, son chemin fixé ; les connectés l''exécutent, ni l''anonyme ni PUBLIC (lecture du catalogue)',
+    'cible', 'ventes_facturees_de_la_simulation', 'observe', case when n = 1 then 'conforme' else 'NON CONFORME' end, 'ok', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'SI. le jeu d''essai de la simulation s''est construit', 'cible', 'simulation',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 

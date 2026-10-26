@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { aujourdHuiSql, formatMoney } from '../lib/format'
+import { anneeDe, aujourdHuiSql, formatMoney } from '../lib/format'
+import { ecartPct, projectionAnnuelle, SIMULATION_SANS_VENTES_FACTUREES } from '../lib/estimation'
 import {
-  ecartPct, projectionAnnuelle, RECETTES_FACTUREES_NON_COMPTEES, SIMULATION_SANS_VENTES_FACTUREES,
-  simulationDitNePasCompterLesVentesFacturees,
-} from '../lib/estimation'
+  QUOI_DES_VENTES_DE_LA_SIMULATION, SANS_PROJECTION, SIMULATION_VENTES_FACTUREES_EXPORTEE, lectureDeLaSimulation,
+  lireLesVentesDeLaSimulation, ventesDeLaSimulation, type LectureDeLaSimulation,
+} from '../lib/simulationVentesFacturees'
 import { partsDuReleve } from '../lib/partsDuReleve'
 import { paiementsDesPieces } from '../lib/rattachement'
 import { cotisationsComptees } from '../lib/cotisationRapprochee'
@@ -72,19 +73,32 @@ export default function ClientSimulation() {
   // non de son encaissement (lib/rattachement.ts). Lu sur la même ligne que le statut TVA.
   const [modeComptable, setModeComptable] = useState<ModeComptable>('tresorerie')
   // LES VENTES FACTURÉES (ligne 28.6, chantier EC-Q3, étape VF3b3 ; EC3-Q11) : la session du client ne lit pas les
-  // factures — sans « Ventes », aucune —, donc ni lesquelles sont sources ni quelle pièce en est l'exemplaire. Jusqu'à VF8,
-  // qui lui rendra le total mensuel seul, la simulation ne les compte pas, et le DIT quand le dossier a basculé : le réglage
-  // se lit sur la même ligne que le statut TVA, que sa policy lui ouvre déjà. Nul tant qu'il n'est pas lu.
+  // factures — sans « Ventes », aucune —, donc ni lesquelles sont sources ni quelle pièce en est l'exemplaire. Avant VF8e,
+  // la simulation ne les comptait pas, et le DISAIT quand le dossier a basculé : le réglage se lit sur la même ligne que le
+  // statut TVA, que sa policy lui ouvre déjà. Nul tant qu'il n'est pas lu. C'est encore ce qu'elle fait tant que
+  // `SIMULATION_VENTES_FACTUREES_EXPORTEE` est faux.
   const [ventesParLesFactures, setVentesParLesFactures] = useState<boolean | null>(null)
+  // DEPUIS L'ÉTAPE VF8e (VF8-Q2), le drapeau levé : la base lui rend, d'un dossier basculé, le total hors taxe de chaque mois
+  // de l'année et les factures et avoirs sources (lib/simulationVentesFacturees.ts), dans la même vague de lectures. La
+  // lecture porte le dossier et l'année qu'elle a lus : elle ne vaut que pour eux (`lectureDeLaSimulation`).
+  const [lectureVentes, setLectureVentes] = useState<LectureDeLaSimulation | null>(null)
   const [loading, setLoading] = useState(true)
+  // Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés de la projection viennent du même instant, et
+  // l'année des ventes facturées lues aussi — l'écran resté ouvert au passage d'une année relit les siennes.
+  const dateDuJour = aujourdHuiSql()
+  const annee = anneeDe(dateDuJour)
 
   useEffect(() => {
     // Sans la case « Banque », rien n'est demandé à la base : l'écran le dit (plus bas).
     if (!dossierId || !ouverte) return
+    // Le dossier et l'année que la vague lit : les ventes facturées les portent (`lectureDeLaSimulation`).
+    const dossierLu = dossierId
+    // Une lecture plus lente, celle d'une année passée, n'écrit pas après celle qui l'a remplacée ; ni après un démontage.
+    let annule = false
     async function load() {
       const [
         lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lectureDossier, lecturePaiements,
-        lectureCategories, lectureVentilations, lectureReglements, droitDeLaBase,
+        lectureCategories, lectureVentilations, lectureReglements, droitDeLaBase, lectureDesVentes,
       ] = await Promise.all([
         lireTout<CotisationDeclaree>((debut, fin) =>
           supabase.from('cotisations_declarees').select('*', { count: 'exact' })
@@ -129,7 +143,13 @@ export default function ClientSimulation() {
         COUVERTURE_EXPORTEE
           ? lireLeDroitBanque(supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId }))
           : Promise.resolve({ banque: true, motif: null }),
+        // Les ventes facturées de l'année (étape VF8e), sous la même case : la fonction refuse qui ne la porte pas.
+        SIMULATION_VENTES_FACTUREES_EXPORTEE
+          ? lireLesVentesDeLaSimulation(dossierLu, annee,
+            supabase.rpc('ventes_facturees_de_la_simulation', { p_dossier_id: dossierLu, p_annee: annee }))
+          : Promise.resolve(null),
       ])
+      if (annule) return
       if (!droitDeLaBase.banque) {
         // Ce qui a été lu n'est pas montré : sans la case, la base a pu rendre un relevé vide sans le dire.
         setFermee(droitDeLaBase.motif ? SIMULATION_BANQUE_INVERIFIABLE : SIMULATION_SANS_BANQUE)
@@ -149,6 +169,7 @@ export default function ClientSimulation() {
       setAssujettiTva(lectureDossier.data?.assujetti_tva ?? false)
       setModeComptable(lectureDossier.data?.mode_comptable ?? 'tresorerie')
       setVentesParLesFactures(lectureDossier.data?.ventes_par_les_factures ?? null)
+      setLectureVentes(lectureDesVentes)
       // Jumelle d'`EstimationTab` : tronquées, ces lectures rendent une simulation plausible et BASSE.
       // Le statut TVA non lu la rend incertaine aussi — il décide du montant de chaque recette — et
       // le dire vaut mieux que de supposer : le repli « exonéré » est le cas de la plupart des
@@ -166,7 +187,8 @@ export default function ClientSimulation() {
       setLoading(false)
     }
     load()
-  }, [dossierId, ouverte])
+    return () => { annule = true }
+  }, [dossierId, ouverte, annee])
 
   if (!dossierId) {
     return <p className="muted">Aucun dossier ne t'est encore rattaché — contacte ton cabinet comptable.</p>
@@ -182,22 +204,29 @@ export default function ClientSimulation() {
     )
   }
   if (loading) return <p className="muted">Chargement…</p>
+  // Les ventes facturées (étape VF8e) : comptées, la lecture revenue entière pour ce dossier et cette année ; non comptées,
+  // le drapeau baissé, comme avant ; ou manquantes — le bandeau, aucune projection, et la phrase d'aujourd'hui. Pas encore
+  // revenues pour cette année (l'écran resté ouvert au passage d'une année) : l'écran attend leur relecture.
+  const ventes = ventesDeLaSimulation(
+    SIMULATION_VENTES_FACTUREES_EXPORTEE, lectureDeLaSimulation(lectureVentes, dossierId, annee), ventesParLesFactures,
+  )
+  if (ventes === null) return <p className="muted">Chargement…</p>
 
-  // Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés viennent du même instant.
   // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
   // Les cotisations comptent à la date du prélèvement qui les paie, sinon à leur échéance — comme au cabinet.
-  const projection = projectionAnnuelle(
-    recettesValidees, cotisationsComptees(cotisations, mouvementsRapproches, modeComptable), aujourdHuiSql(), assujettiTva,
+  const projection = ventes.recettes === null ? null : projectionAnnuelle(
+    recettesValidees, cotisationsComptees(cotisations, mouvementsRapproches, modeComptable), dateDuJour, assujettiTva,
     // Ni ce que les virements mixtes paient de leurs exemplaires (étape VF5h) : la session du client ne lit ni les factures
-    // ni leurs encaissements, et l'exemplaire qu'un tel virement paie s'y date à sa facture. Jusqu'à VF8, comme les ventes
-    // facturées : un virement mixte n'existe que sur un dossier basculé, où la simulation dit déjà ce qu'elle compte
-    // (`SIMULATION_SANS_VENTES_FACTUREES`).
+    // ni leurs encaissements, et l'exemplaire d'une facture d'avant qu'un tel virement paie s'y date à sa facture, au lieu
+    // du virement — EC3-Q11 et VF5-Q3 : le total mensuel seul, rien de plus pour « Banque ». Un virement mixte n'existe que
+    // sur un dossier basculé, dont la simulation compte les ventes facturées par mois (VF8e) ou dit qu'elle ne les compte
+    // pas (`SIMULATION_SANS_VENTES_FACTUREES`).
     paiementsDesPieces(mouvementsRapproches, reglements, []), modeComptable,
     partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva),
     // Un état choisi, et dit plus bas : pas une valeur par défaut.
-    RECETTES_FACTUREES_NON_COMPTEES,
+    ventes.recettes,
   )
-  const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
+  const referenceN1 = references.find((r) => r.annee === annee - 1) ?? null
 
   return (
     <>
@@ -209,6 +238,12 @@ export default function ClientSimulation() {
           'Recharge la page : cette simulation peut ne porter que sur une partie de tes recettes et de tes dépenses.'
         }
       />
+      <BandeauLecturePartielle
+        quoi={QUOI_DES_VENTES_DE_LA_SIMULATION}
+        motif={ventes.motif}
+        technique={false}
+        consequence={SANS_PROJECTION}
+      />
       <div className="topbar"><h1>Ma simulation</h1></div>
 
       <div className="brouillon-banner">
@@ -219,40 +254,44 @@ export default function ClientSimulation() {
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0 }}>Projection {projection.annee}</h3>
-        <p className="muted" style={{ marginTop: -8 }}>
-          {projection.caProjete === null
-            ? "Moins d'un mois s'est écoulé depuis le 1er janvier : la projection s'affichera à la fin janvier."
-            : `D'après les ${projection.moisEcoules.toFixed(1).replace('.', ',')} mois écoulés cette année, `
-              + 'ramenés à 12 mois — une règle simple, pas une prévision fine.'}
-        </p>
-        <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-          <div>
-            {/* En engagement, la facture fait le chiffre d'affaires, encaissée ou non : « encaissé » y
-                serait faux (lib/rattachement.ts). */}
-            <span className="muted" style={{ display: 'block' }}>{modeComptable === 'engagement' ? 'CA facturé à date' : 'CA encaissé à date'}</span>
-            <strong>{formatMoney(projection.ca)}</strong>
-          </div>
-          <div>
-            <span className="muted" style={{ display: 'block' }}>CA projeté sur l'année</span>
-            <strong>{projection.caProjete === null ? '—' : formatMoney(projection.caProjete)}</strong>
-            {projection.caProjete !== null && referenceN1?.chiffre_affaires != null && (
-              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.caProjete, referenceN1.chiffre_affaires)} vs {projection.annee - 1})</span>
-            )}
-          </div>
-          <div>
-            <span className="muted" style={{ display: 'block' }}>Cotisations appelées à date</span>
-            <strong>{formatMoney(projection.cotis)}</strong>
-          </div>
-          <div>
-            <span className="muted" style={{ display: 'block' }}>Cotisations projetées sur l'année</span>
-            <strong>{projection.cotisationsProjetees === null ? '—' : formatMoney(projection.cotisationsProjetees)}</strong>
-            {projection.cotisationsProjetees !== null && referenceN1?.total_cotisations_sociales != null && (
-              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.cotisationsProjetees, referenceN1.total_cotisations_sociales)} vs {projection.annee - 1})</span>
-            )}
-          </div>
-        </div>
-        {simulationDitNePasCompterLesVentesFacturees(ventesParLesFactures) && (
+        <h3 style={{ marginTop: 0 }}>Projection {annee}</h3>
+        {projection && (
+          <>
+            <p className="muted" style={{ marginTop: -8 }}>
+              {projection.caProjete === null
+                ? "Moins d'un mois s'est écoulé depuis le 1er janvier : la projection s'affichera à la fin janvier."
+                : `D'après les ${projection.moisEcoules.toFixed(1).replace('.', ',')} mois écoulés cette année, `
+                  + 'ramenés à 12 mois — une règle simple, pas une prévision fine.'}
+            </p>
+            <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+              <div>
+                {/* En engagement, la facture fait le chiffre d'affaires, encaissée ou non : « encaissé » y
+                    serait faux (lib/rattachement.ts). */}
+                <span className="muted" style={{ display: 'block' }}>{modeComptable === 'engagement' ? 'CA facturé à date' : 'CA encaissé à date'}</span>
+                <strong>{formatMoney(projection.ca)}</strong>
+              </div>
+              <div>
+                <span className="muted" style={{ display: 'block' }}>CA projeté sur l'année</span>
+                <strong>{projection.caProjete === null ? '—' : formatMoney(projection.caProjete)}</strong>
+                {projection.caProjete !== null && referenceN1?.chiffre_affaires != null && (
+                  <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.caProjete, referenceN1.chiffre_affaires)} vs {annee - 1})</span>
+                )}
+              </div>
+              <div>
+                <span className="muted" style={{ display: 'block' }}>Cotisations appelées à date</span>
+                <strong>{formatMoney(projection.cotis)}</strong>
+              </div>
+              <div>
+                <span className="muted" style={{ display: 'block' }}>Cotisations projetées sur l'année</span>
+                <strong>{projection.cotisationsProjetees === null ? '—' : formatMoney(projection.cotisationsProjetees)}</strong>
+                {projection.cotisationsProjetees !== null && referenceN1?.total_cotisations_sociales != null && (
+                  <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.cotisationsProjetees, referenceN1.total_cotisations_sociales)} vs {annee - 1})</span>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+        {ventes.phrase && (
           <p className="muted" style={{ marginBottom: 0, fontSize: '0.85rem' }}>{SIMULATION_SANS_VENTES_FACTUREES}</p>
         )}
       </div>
