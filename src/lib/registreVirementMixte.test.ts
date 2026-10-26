@@ -25,9 +25,26 @@ import { motsDuCabinet, pourLEspace } from './espaceVentes'
 // encaissementsVenteFacturee.test.ts parcourt les rangs d'une facture source ; encaissementsFenetreVente.test.ts cerne,
 // sur un tirage, chaque écart d'avec les jugements d'hier ; espaceVentes.test.ts dit les phrases du client. Données
 // FICTIVES.
+//
+// La garde des encaissements a été reprise depuis par la migration `insertion_des_encaissements` (VF5H2-Q1 et
+// VF5H2Q1-Q1, deux règles de plus, à l'insertion et au rattachement) : ce garde-ci confronte la définition que CETTE
+// migration lui donne ; insertionDesEncaissements.test.ts confronte la suivante à celle-ci.
 
 const MIGRATION = /\/\d{14}_registre_virement_mixte\.sql$/
 const texteDeLaMigration = () => fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))?.texte ?? ''
+
+// Les fonctions qu'une migration POSTÉRIEURE a reprises, et le fichier qui en porte désormais la dernière définition.
+const REPRISES_DEPUIS = new Map([['garder_encaissement_facture', /\/\d{14}_insertion_des_encaissements\.sql$/]])
+
+// Ce que cette migration a posé : la définition que son texte donne à une fonction — la dernière de l'export, sauf pour
+// une fonction reprise depuis.
+function definitionPosee(nom: string): string {
+  if (!REPRISES_DEPUIS.has(nom)) return derniereDefinitionSql(nom)
+  const texte = texteDeLaMigration()
+  const debut = texte.indexOf(`create or replace function public.${nom}(`)
+  expect(debut, nom).toBeGreaterThan(0)
+  return texte.slice(debut, texte.indexOf('$$;', debut))
+}
 
 // La définition d'une fonction telle que la dernière migration AVANT celle-ci la laisse — celle que la production exécute
 // aujourd'hui —, et le fichier qui la porte.
@@ -123,11 +140,10 @@ describe('la migration registre_virement_mixte reprend quatre fonctions d’hier
     expect(texte).toContain("md5(replace((select p.prosrc from pg_proc p where p.oid = to_regprocedure(v.fonction)), chr(13), '')) <> v.empreinte then")
   })
 
-  it('chacune est sa dernière définition, celle d’hier au caractère près, ses lignes insérées en plus', () => {
+  it('chacune est celle d’hier au caractère près, ses lignes insérées en plus ; la dernière de l’export, sauf la garde, reprise depuis', () => {
     for (const [nom, ligne, fragment] of INSERTIONS) {
-      expect(fichierDeLaDerniereDefinition(nom), nom).toMatch(MIGRATION)
-      const demain = derniereDefinitionSql(nom)
-      expect(insertion(avantLaMigration(nom).definition, demain), nom).toEqual({ ligne, fragment })
+      expect(fichierDeLaDerniereDefinition(nom), nom).toMatch(REPRISES_DEPUIS.get(nom) ?? MIGRATION)
+      expect(insertion(avantLaMigration(nom).definition, definitionPosee(nom)), nom).toEqual({ ligne, fragment })
     }
     expect(INSERTIONS.map(([nom]) => nom)).toEqual(REPRISES.map(([nom]) => nom))
   })
@@ -152,7 +168,7 @@ describe('la migration registre_virement_mixte reprend quatre fonctions d’hier
     ] as const
     for (const [nom, neuf, code, precedent, suivant] of attendus) {
       const hier = avantLaMigration(nom).definition
-      const demain = derniereDefinitionSql(nom)
+      const demain = definitionPosee(nom)
       const k = messagesSql(demain).indexOf(neuf)
       expect(k, nom).toBeGreaterThan(0)
       expect(messagesSql(demain).filter((m) => m === neuf), nom).toHaveLength(1)
