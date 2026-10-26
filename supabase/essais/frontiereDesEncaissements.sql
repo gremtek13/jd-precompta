@@ -34,6 +34,12 @@
 -- suppression d'un dossier, le rattachement mêlé à une autre colonne, tout autre changement d'un encaissement figé —, et
 -- en tue sept autres avec les essais qui se jouent aussi en production (HISTORIQUE.md, « LA FRONTIÈRE DES
 -- ENCAISSEMENTS, EN BASE »).
+--
+-- 26/10/2026, migration `insertion_des_encaissements` (VF5H2-Q1 et VF5H2Q1-Q1, préparée, pas appliquée) : la garde des
+-- encaissements change, à l'insertion et au rattachement, pour un mouvement classé par ses encaissements — désactivée
+-- le temps des contrôles S, elle ne masque rien de plus ici, et ce qu'elle masquait (la modification, la suppression,
+-- les parts) reste masqué. Rejoué sur la réplique, sans puis avec elle : 13 verdicts, 0 en faute, identiques
+-- (HISTORIQUE.md, « L'INSERTION DIRECTE D'UN ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
