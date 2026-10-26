@@ -37798,3 +37798,155 @@ annulée). (7) CLAUDE.md, la feuille de route, la page des arbitrages.
 **LES RISQUES.** Un écran ou une fonction qui écrirait demain, depuis une session, une autre colonne de l'équipe serait
 refusé en 42501 — `equipeParSonRole.test.ts` rougit avant. Le retour arrière rend l'ouverture d'hier, et retire une ligne
 de l'historique : il ne se joue que sur l'accord du cabinet.
+
+### 26/10/2026 — LE CLIENT D'UN DOSSIER DU CABINET N'ENTRE DANS L'ÉQUIPE QU'APRÈS UNE CONFIRMATION — 23Q2Q2-Q1
+
+(Écrite par l'agent architecte sur la branche locale `equipe-23q2q2`, à la suite de 23Q2Q2-Q3, en deux commits : le code
+et les tests, puis cette documentation. Modifiés : `supabase/functions/create-team-member/index.ts`,
+`src/lib/creationDesComptes.ts`, `src/pages/EquipePage.tsx`, `src/pages/dossier/ConfirmationArticle.tsx`, leurs tests,
+`src/test/contratsFonctions.ts`, `src/lib/edgeFunctionsHttp.test.ts`, `src/lib/edgeFunctionsLectures.test.ts`, le banc
+(`outils/captures/fauxSupabase.ts`, `debordements.mjs`), CLAUDE.md. Ni migration ni policy ; `supabase/config.toml`
+inchangé (`create-team-member` reste à `verify_jwt = false`). La fonction n'est PAS déployée : elle part après la
+fusion. RGPD.md ne change pas : aucun traitement ne change — la fonction lit une ligne de plus d'une table qu'elle
+lisait déjà (la ligne d'équipe du compte), n'écrit rien de plus, et ne journalise rien.)
+
+**LA DÉCISION.** 23Q2Q2-Q1, tranchée par le cabinet le 26/10/2026 à la recommandation (page des arbitrages) : « le
+confirmer, en nommant l'adresse, le rôle et ce qu'il perd ». Le patron : 23-Q2 (« UN COMPTE QUE LE CABINET NE CONNAÎT
+PAS SE RATTACHE APRÈS UNE CONFIRMATION »), dans `create-client-access` et l'onglet Accès.
+
+**CE QUI SE PASSAIT.** `AuthContext` lit la ligne d'équipe d'un compte AVANT ses accès : en a-t-il une, il est du côté
+du cabinet, et ses accès ne sont plus lus — le rôle se relit au changement d'identifiant (une ouverture de
+l'application, une connexion), jamais sous une session ouverte. `create-team-member` reprenait sans rien demander le
+client d'un dossier de ce cabinet, connu d'ici par ses accès : il perdait son espace client sans que rien ne le dise au
+chef, et une adresse mal tapée suffisait — choisi « Comptable en chef », il voyait et tenait tous les dossiers du
+cabinet.
+
+**CE QU'IL PERD, AU VU DU CODE.** Les écrans que l'application ne monte que pour un client (`App.tsx`, sous `role ===
+'client'`), sous les noms de leur navigation (`Layout.tsx`) : l'accueil, « Mes pièces » (le dépôt de ses pièces et de
+ses documents, ses réponses aux précisions du cabinet), « Mes informations », « Ma simulation » et, selon les cases de
+ses accès, « Mes ventes » et « Ma banque » — pour chacune de ses sociétés. Ses accès restent en base (`memberships` et
+leurs deux cases), dans l'onglet Accès de ses dossiers : « Retirer » de l'équipe lui rend son espace client à la
+réouverture de l'application. Un test confronte la phrase aux routes de `App.tsx` et à leurs noms dans `Layout.tsx` : un
+écran du client ajouté demain, que la fenêtre tairait, le fait rougir.
+
+**LA FONCTION.**
+- Un champ neuf, `entreeConfirmee`. Seul le booléen `true` confirme ; un texte (« true », « oui »), un nombre, un objet
+  ou un tableau se refusent en 400, en français, avec les champs texte, avant tout compte cherché ; absente, nulle ou
+  `false`, elle ne confirme pas.
+- Après les deux refus d'hier — le compte que ce cabinet ne connaît pas (la même phrase pour tous), le client d'un autre
+  cabinet (23Q2-Q2, sa phrase neutre) — et avant toute écriture : la ligne d'équipe du compte, dans n'importe quel
+  cabinet (`ligneDEquipe` ; la clé primaire de `cabinet_admins` est le compte), lue avec son erreur — en panne, 500, la
+  phrase de la vérification (`VERIFICATION_EN_PANNE`, désormais commune aux deux lectures), rien d'écrit.
+- Sans ligne d'équipe, un compte connu d'ici l'est par un accès client d'un dossier de ce cabinet. Sans confirmation :
+  409, une phrase qui ne dit ni lequel, ni l'adresse (« Cette adresse est celle d'un client d'un dossier de ce cabinet :
+  il n'entre dans l'équipe qu'après ta confirmation, et rien n'a été changé. »), et le seul marqueur `entreeAConfirmer:
+  true` ; rien n'est écrit, ni sur le compte ni dans l'équipe. Confirmé : il entre TEL QU'IL EST, mot de passe compris,
+  sous le rôle demandé, dans le cabinet visé, et la réponse dit « existant ».
+- Un membre d'une équipe, d'ici ou d'ailleurs, n'a pas d'espace client à perdre : ni marqueur ni confirmation, la clé
+  primaire le refuse comme avant (« appartient déjà à un cabinet »). Le super-administrateur sans ligne d'équipe, client
+  d'un dossier d'ici, est rangé parmi les clients par `AuthContext` : il attend la confirmation comme eux.
+- La confirmation ne passe outre aucun contrôle : la session, le rôle de l'appelant (un comptable : 403, le corps non
+  lu), le corps, le mot de passe, le service d'authentification et les deux refus d'hier viennent avant elle. Une
+  adresse neuve se crée comme avant, la confirmation ignorée.
+
+**LA PAGE DE L'ÉQUIPE.**
+- Le premier appel ne porte aucune confirmation (`corpsDuMembre`, `lib/creationDesComptes.ts`). Sur un refus, la page
+  prend une COPIE du corps (`copieDuRefus`, le patron de 23-Q2) avant qu'`extraireErreurFonction` ne lise l'original ;
+  un marqueur `true` sur un objet, et lui seul — ni celui du rattachement de l'onglet Accès, ni un texte —, ouvre la
+  fenêtre.
+- La fenêtre (`ConfirmationArticle`, jamais `window.confirm`) nomme l'adresse telle qu'elle est partie (dans
+  `.courriel`), le rôle et ce qu'il ouvre (« Comptable en chef » : elle verra et tiendra tous les dossiers du cabinet,
+  et gérera son équipe ; « Comptable » : elle verra les dossiers que tu lui assignes — « verra », pas « ne verra que » :
+  voir 23Q2Q2Q1-Q1), ce que la personne perd, ce qui lui reste, et que le mot de passe saisi ne sert pas. « Faire entrer
+  dans l'équipe » envoie le second appel — `entreeConfirmee: true`, avec l'adresse, le mot de passe et le rôle du
+  PREMIER, retenus à l'ouverture de la fenêtre, quoi qu'il arrive ensuite aux champs — sous le MÊME verrou que l'ajout
+  (`ajoutEnCours`, un `useRef` posé avant le `try`, relâché dans le `finally`).
+- Pendant l'appel, la fenêtre reste ouverte, ses deux boutons en attente ; puis elle se ferme. Un refus du second appel
+  se dit sous le formulaire, même s'il porte encore le marqueur (aucune boucle). Le formulaire attend sous la fenêtre,
+  ses boutons grisés ; « Annuler » n'envoie rien et le laisse rempli ; une nouvelle soumission ferme une fenêtre restée
+  ouverte.
+- LA CARTE DE `ConfirmationArticle` DÉFILE désormais (`maxHeight: '92vh'`, `overflowY: 'auto'`, la convention des autres
+  fenêtres). Le voile est fixe, ne défile pas, et centre la carte : plus haute que l'écran, elle en débordait en haut
+  comme en bas. Mesuré contre le serveur du banc, par un script à part (les passes du banc ont 900 pixels de haut), à
+  375 × 667 pixels : une carte de 888 pixels commençait 111 pixels au-dessus de l'écran, son titre caché, « Faire entrer
+  dans l'équipe » hors d'atteinte ; à 320 × 568, 1 021 pixels. Après : 614 pixels, dans l'écran, qui défilent ; le
+  bouton, amené par ce défilement, est bien celui que le doigt touche (sondé au centre) ; à 320 × 568, 523 pixels, de
+  même. La confirmation du rattachement (23-Q2), aussi longue, était exposée de même ; les autres usages du composant
+  (l'article et le client d'une facture, les paramètres) ne changent que si leur carte dépasse 92 % de la hauteur.
+
+**LES PREUVES.**
+- Le contrat HTTP de `create-team-member` : 56 scénarios → 87. Les 31 neufs : quatre clients de ce cabinet (le client du
+  dossier ; celui de deux dossiers ; celui d'un autre dossier, rattaché sur confirmation ; le super-administrateur sans
+  ligne d'équipe), chacun sans confirmation (409, la phrase de la source, le seul marqueur `true`, l'équipe et le compte
+  intacts) puis confirmé (il entre, une ligne, le rôle demandé, « existant ») ; la confirmation à `false` ou nulle ;
+  confirmé comme comptable en chef ; un super-administrateur pour l'autre cabinet ; la ligne d'équipe en panne, sans et
+  avec confirmation (500, sans marqueur) ; et, confirmés, un compte inconnu (le refus d'hier, sans marqueur), le client
+  d'un autre cabinet (la phrase de 23Q2-Q2), trois membres d'une équipe — d'ici, d'ici et client, le chef d'un autre
+  cabinet client d'ici — sans et avec confirmation (la clé primaire, sans marqueur), une adresse neuve (créée), un
+  comptable (403, le corps non lu), un mot de passe court (400), et six formes de travers (400, rien de dépensé). Dans
+  chacun, les dépenses sont exactes — avant un refus, rien que les deux appels au service des comptes qui disent
+  l'adresse déjà inscrite et la retrouvent, aucune écriture (pour un membre d'une équipe, l'insertion que la clé
+  primaire refuse, comme hier) —, et l'adresse du compte est rangée parmi les valeurs sensibles : ni le refus ni le
+  journal ne la portent (la fonction ne journalise rien). Dix scénarios d'hier, qui reprenaient un client de ce cabinet,
+  envoient désormais le second appel, confirmé — dont les cinq des refus du service d'authentification qui passent par
+  l'adresse déjà inscrite — ; quatre changent de nom (« … sur confirmation »).
+- Défauts plantés : 17 → 23. Six neufs — le client admis sans confirmation, l'équipe écrite avant elle, la confirmation
+  admise en texte, la ligne d'équipe en panne prise pour un « non », le marqueur posé sur un membre d'une équipe,
+  l'adresse écrite au journal —, tous vus, et rien sur la vraie source.
+- Rouges avant : les tests finals joués contre la fonction et la page d'hier (le module et les tests d'aujourd'hui) — 27
+  en échec, 15 du contrat, 1 du module (le champ et le marqueur lus dans la source), 11 de la page, et les six défauts
+  plantés neufs sans leur ancre ; verts après.
+- Les mutations, chacune seule. La fonction : 30 en mémoire, contre les 87 scénarios — 29 tuées ; une équivalente, la
+  confirmation lue `!!v` au lieu de `v === true` : après le contrôle du type, la valeur est un booléen, nulle ou
+  absente. L'écran, son module et `ConfirmationArticle` : 37 sur le fichier, chacune jouée par les tests de la page (et
+  du module), le fichier rendu ensuite à son empreinte — 33 tuées. Quatre équivalentes : l'adresse retenue sans `trim()`
+  (le champ est `type="email"`, dont le navigateur retire les blancs de bord) ; le rôle lu dans la fermeture du rendu
+  (c'est celui que l'ajout a passé) ; la demande nulle non vérifiée (le bouton n'existe que tant qu'une demande attend,
+  et le verrou arrête les clics suivants) ; l'erreur non effacée à la confirmation (aucune ne peut s'afficher sous la
+  fenêtre : le formulaire, seul à en poser, attend grisé, et sa soumission implicite avec lui).
+- La suite, test par test, sous Paris et le Node 22 de la CI, avant ce lot (sur la tête de 23Q2Q2-Q3) et après : 14 667
+  tests verts → 14 726 verts, 475 fichiers ; aucun en échec ni changé d'état ; quatre disparus — les quatre scénarios
+  renommés — et 63 apparus (41 du contrat : les 31 scénarios, les quatre renommés, les six défauts plantés ; 8 du
+  module ; 14 de la page).
+- Le banc (`outils/captures/`) : une visite neuve, `equipe/entree-a-confirmer` — la page de l'équipe, le formulaire
+  rempli de l'adresse, longue, de l'accès d'un dossier archivé (d11, qu'aucune autre visite ne montre), le rôle
+  « Comptable en chef » ; la fonction du banc refuse avec le marqueur, et la fenêtre se mesure contre sa carte, ses
+  boutons sondés. 0 débordement et 0 bouton recouvert à 390, 720, 1 024, 1 280 et 1 440 pixels (197 visites et 287
+  boutons sondés dans 62 fenêtres à chaque passe), et dans les deux passes du client à 390 pixels, celle de « Ventes »
+  (39 visites, 114 boutons dans 29 fenêtres) puis celle de « Ventes » et « Banque » (48 visites, 122 boutons dans 31
+  fenêtres) — les autres usages de `ConfirmationArticle`, l'article, le client et les paramètres de facturation, s'y
+  mesurent des deux côtés, contre leur carte ; le navigateur n'a reçu aucun mandataire (aucune option `proxy`), toute
+  requête hors du serveur local coupée. Les petits écrans, hors des passes du banc (leur hauteur est de 900 pixels),
+  sont mesurés à part : plus haut.
+
+**CE QUI CHANGERA EN PRODUCTION.** Rien en base. Après la fusion, la page publiée (`deploy.yml`) puis la fonction
+déployée. Dans CET ordre : la page neuve n'envoie aucune confirmation au premier appel — devant la fonction d'hier, un
+client entre comme hier, sans fenêtre. Dans l'ordre inverse, la page d'hier (ou une page gardée par le navigateur)
+dirait la phrase du 409 sans pouvoir confirmer : le chef ne ferait plus entrer un client de ses dossiers avant d'avoir
+rechargé, rien d'écrit.
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) Fusionner ; la page part avec `deploy.yml`. (2) Déployer
+`create-team-member` par `deploy_edge_function`, `verify_jwt` à `false` (la valeur de `supabase/config.toml`, vérifiée
+contre `list_edge_functions`) : la copie déployée comparée au dépôt avant d'écraser, les bordures par `bordures.py`,
+puis `allerretour.py`. (3) Le premier essai réel du cabinet : ajouter à l'équipe l'adresse d'un client de test, lire la
+fenêtre, annuler ; puis confirmer, et « Retirer ». (4) CLAUDE.md, la feuille de route, la page des arbitrages
+(23Q2Q2Q1-Q1).
+
+**LES RISQUES.** Une confirmation donnée par erreur fait perdre au client son espace à sa prochaine ouverture de
+l'application : « Retirer » le lui rend, ses accès étant restés en base. `ConfirmationArticle` sert aussi le
+rattachement (23-Q2), l'article et le client d'une facture, les paramètres : seule une carte plus haute que 92 % de
+l'écran change (elle défile) — le banc les mesure toutes. Le retour arrière : le commit défait, et la fonction d'hier
+redéployée (sa source est dans l'historique) ; aucune donnée.
+
+**23Q2Q2Q1-Q1, POSÉE AU CABINET.** Un comptable de l'équipe resté client d'un dossier voit ce dossier dans sa liste.
+`dossiers_select` (lu en production, le catalogue seul) ouvre un dossier à qui en a un accès client, et la liste du
+cabinet (`lib/listeDossiers.ts`, le tableau de bord) ne filtre ni sur le cabinet ni sur l'assignation : entré comme
+« Comptable », le client garde dans sa liste les dossiers dont il est client, même non assignés ; ouverts dans les
+onglets du cabinet, ils montrent ce que ses droits de client lisent (ses pièces, les catégories ; selon ses cases, ses
+ventes et sa banque) et taisent le reste — les écritures, les déclarations de TVA, que la base ne lui ouvre pas — comme
+si c'était vide. C'était déjà vrai avant ce lot ; un chef, qui tient tous les dossiers du cabinet, n'est pas concerné.
+(A) Garder, et le dire dans la fenêtre. (B) La liste d'un membre de l'équipe ne montre que les dossiers que le cabinet
+lui ouvre — tous pour un chef, les assignés pour un comptable —, un lot d'écran, sans migration. (C) Retirer ses accès
+client à l'entrée : une suppression, écartée. Recommandation : (B) — un écran du cabinet ne doit pas affirmer un vide
+que la RLS fabrique ; ses accès restent, et « Retirer » lui rend son espace client. En attendant, la fenêtre dit « elle
+verra », jamais « ne verra que ».
