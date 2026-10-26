@@ -1572,6 +1572,37 @@ PIECES_D12.push(
   }),
 )
 
+// « MA BANQUE » NOMME LA FACTURE D'AVANT D'UN VIREMENT MIXTE (ligne 28.65, chantier EC-Q3, étape VF8h), dans le dossier
+// basculé d12. Un bureau d'études règle d'un seul virement F2026-0012, émise avant la bascule — elle n'est pas source de sa
+// vente, et son PDF validé en est l'exemplaire unique —, et F2026-0029, source : le cabinet a CLASSÉ ce virement par ses
+// encaissements (le virement mixte, étape VF5h). Le détail du client « Ventes » et « Banque » nomme les deux factures.
+// Ajoutés par `push`, comme ci-dessus : ni réservé, ni encaissement sans mouvement de plus. Tous FICTIFS.
+LIGNES_D12.fb0 = [{ designation: 'Étude préalable à la refonte des procédures — juillet 2026', quantite: 2, prix_unitaire_ht: 225, taux_tva: 20 }]
+LIGNES_D12.fb9 = [{ designation: 'Suivi de la refonte des procédures — octobre 2026', quantite: 1, prix_unitaire_ht: 200, taux_tva: 20 }]
+FACTURES_D12.push(
+  { ...factureD12('fb0', 'F2026-0012', '2026-07-15', 'Bureau d’études Fictif du Canal'), source_de_la_vente: false },
+  factureD12('fb9', 'F2026-0029', '2026-10-01', 'Bureau d’études Fictif du Canal'),
+)
+LIGNES_DES_FACTURES_D12.push(...lignesDeFacture('fb0', LIGNES_D12.fb0), ...lignesDeFacture('fb9', LIGNES_D12.fb9))
+const VIREMENT_MIXTE_D12: EncaissementFacture[] = [
+  encaissementDuBanc({
+    id: 'eb0', dossier_id: 'd12', facture_id: 'fb0', date_encaissement: '2026-10-23', montant: 540, ligne_bancaire_id: 'b12',
+    cree_le: '2026-10-23T09:00:00Z',
+  }),
+  encaissementDuBanc({
+    id: 'eb9', dossier_id: 'd12', facture_id: 'fb9', date_encaissement: '2026-10-23', montant: 240, ligne_bancaire_id: 'b12',
+    cree_le: '2026-10-23T09:05:00Z',
+  }),
+]
+ENCAISSEMENTS_D12.push(...VIREMENT_MIXTE_D12)
+PARTS_D12.push(...VIREMENT_MIXTE_D12.map((e) => ({ encaissement_id: e.id, dossier_id: 'd12', taux: 20, montant: e.montant })))
+RELEVE_D12.push(mouvementDe('d12', 'b12', '2026-10-23', 'VIR SEPA BUREAU ETUDES DU CANAL F2026-0012 F2026-0029', 780, 'rapprochee', {
+  encaissements_de_factures: true,
+}))
+PIECES_D12.push(pieceDeVenteD12('pb6', 'Bureau d’études du Canal, PDF de F2026-0012', 540, {
+  nom_fichier: 'F2026-0012.pdf', date_piece: '2026-07-15', statut: 'validee', facture_id: 'fb0',
+}))
+
 const pieceEreporting = (o: Ligne): Ligne => ({
   ...piece('p-er', '2027-10-05', 'Editeur Logiciel', 120, 0, 'c8', 'a_valider'),
   dossier_id: 'd7', storage_path: 'd7/er.pdf', nom_fichier: 'er.pdf', ...o,

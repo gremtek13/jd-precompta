@@ -32,9 +32,17 @@
 // un mouvement classé reste « Traité par ton cabinet ». Le registre lu en partie : rien n'est deviné — un mouvement que le
 // cabinet n'a pas encore classé (`mouvementLibre`) peut être réservé, son état se tait et rien ne s'y offre ; un mouvement
 // classé par ses encaissements garde ce que dit le relevé seul, « Traité par ton cabinet ».
+//
+// LA FACTURE D'AVANT D'UN VIREMENT MIXTE (chantier EC-Q3, étape VF8h ; VF5H-Q3, tranchée « Oui » le 24/10/2026). Un crédit
+// qui paie une facture source ET une facture d'avant la bascule (qui n'est pas source de sa vente) se classe par ses
+// encaissements, celui de la facture d'avant compris (le virement mixte, étape VF5h) : classé, le mouvement nomme aussi
+// cette facture, sous la même ligne que les factures sources, dans l'ordre de la garde — ce que la fiche du cabinet nomme
+// (`encaissementsDAvantDuMouvement`, lib/mouvementsDesVentes.ts). Réservé, seules les factures sources : le classement peut
+// encore refuser la facture d'avant (son exemplaire à désigner, rang 7), et G2 ne regarde qu'elles. Un client « Banque »
+// seul, ou un registre lu en partie : rien de plus, comme pour les factures sources.
 import { mouvementJustifieParLeReleve } from './affectationBanque'
 import {
-  encaissementsDuMouvement, mouvementLibre, ordreDesEncaissements, refusDuClassementDuReleve, type EncaissementDuReleve,
+  encaissementsDAvantDuMouvement, encaissementsDuMouvement, mouvementLibre, ordreDesEncaissements, refusDuClassementDuReleve, type EncaissementDuReleve,
   type FactureDuDossier,
 } from './encaissementsFactures'
 import { dateAParis } from './format'
@@ -70,8 +78,9 @@ export const COLONNES_DE_LA_PIECE = 'id, dossier_id, nom_fichier, created_at'
 export type PieceDuClient = Pick<Piece, 'id' | 'dossier_id' | 'nom_fichier' | 'created_at'>
 
 // ── Ce que l'écran lit des ventes, pour un client « Ventes » (étape VF5g) ──────────────────────────────────────────────
-// Les colonnes que la garde G2 lit, et elles seules : ni montant ni client d'une facture, ni moyen ni auteur d'un
-// encaissement — l'écran n'en montre que le numéro des factures.
+// Les colonnes que la garde G2 lit, et elles seules — celles aussi qui disent l'encaissement d'une facture d'avant sur un
+// virement mixte (étape VF8h) : ni montant ni client d'une facture, ni moyen ni auteur d'un encaissement — l'écran n'en
+// montre que le numéro des factures.
 export const COLONNES_DES_FACTURES = 'id, dossier_id, numero, type, statut, facture_origine_id, source_de_la_vente'
 export type FactureDuClient = FactureDuDossier
 export const COLONNES_DES_ENCAISSEMENTS = 'id, dossier_id, facture_id, montant, ligne_bancaire_id, annule_id, retire_le, cree_le'
@@ -159,7 +168,8 @@ export function etatDuMouvement(
 /**
  * Ce que les ventes du client disent d'un mouvement (étape VF5g) : classé par ses encaissements, réservé à eux, rien
  * (`null`), ou « tue » — le registre lu en partie, et un mouvement libre qu'il réserve peut-être. Avec les numéros des
- * factures de ses encaissements, sans doublon, dans l'ordre de la garde.
+ * factures de ses encaissements, sans doublon, dans l'ordre de la garde — classé, ceux de ses factures d'avant compris (le
+ * virement mixte, étape VF8h).
  */
 export type VenteDuMouvement =
   | { vente: 'classe' | 'reserve' | null; factures: readonly string[] }
@@ -171,7 +181,11 @@ export function venteDuMouvement(m: MouvementDuClient, ventes: VentesDuClient): 
   const refus = refusDuClassementDuReleve(m, ventes.encaissements, ventes)
   const vente = refus?.cle === 'classe_par_ses_encaissements' ? 'classe' : refus?.cle === 'reserve' ? 'reserve' : null
   if (vente === null) return { vente: null, factures: [] }
-  const numeros = encaissementsDuMouvement(m.id, ventes.encaissements, ventes).sort(ordreDesEncaissements)
+  const portes = [
+    ...encaissementsDuMouvement(m.id, ventes.encaissements, ventes),
+    ...(vente === 'classe' ? encaissementsDAvantDuMouvement(m.id, ventes.encaissements, ventes) : []),
+  ]
+  const numeros = portes.sort(ordreDesEncaissements)
     .map((e) => ventes.factures.find((f) => f.id === e.facture_id)?.numero ?? null)
     .filter((n): n is string => n !== null)
   return { vente, factures: [...new Set(numeros)] }
@@ -233,7 +247,8 @@ export interface SituationDuMouvement {
   // Les pièces qui justifient un mouvement rapproché (la sienne, ou les parts d'un virement qui en règle plusieurs) ;
   // nul quand les parts n'ont pas été lues en entier — on ne nomme pas une partie pour le tout.
   piecesQuiJustifient: string[] | null
-  // Les numéros des factures dont les encaissements classent ou réservent le mouvement ; vide sinon (étape VF5g).
+  // Les numéros des factures dont les encaissements classent ou réservent le mouvement — classé, ses factures d'avant
+  // comprises (étape VF8h) ; vide sinon (étape VF5g).
   facturesDeLaVente: readonly string[]
 }
 

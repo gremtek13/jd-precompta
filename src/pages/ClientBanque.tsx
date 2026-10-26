@@ -43,7 +43,9 @@ import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 // encaissements se dit « Encaissement de tes factures » ; réservé à eux, « Encaissement enregistré — ton cabinet le
 // classe », sans pièce à envoyer (lib/banqueClient.ts). Le registre lu en partie : les mouvements que le cabinet n'a pas
 // encore classés taisent leur état et n'offrent rien, le résumé se tait, le bandeau le dit. Un client « Banque » seul ne
-// lit rien de plus (VF5-Q3).
+// lit rien de plus (VF5-Q3). Le détail d'un virement mixte classé nomme aussi la facture d'avant la bascule qu'il paie, dans
+// la même ligne « Facture(s) » que les factures sources (étape VF8h, VF5H-Q3) : le module la tire du même registre, lu par
+// les mêmes deux lectures — rien de plus n'est lu.
 
 type Lecture = {
   mouvements: LectureComplete<MouvementDuClient>

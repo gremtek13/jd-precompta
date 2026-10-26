@@ -478,6 +478,67 @@ describe('les encaissements de tes factures (étape VF5g)', () => {
   })
 })
 
+describe('la facture d’avant d’un virement mixte (étape VF8h ; VF5H-Q3)', () => {
+  const etat = (libelle: string) => within(ligne(libelle)).getByText((_, e) => e?.matches('td[data-libelle="État"]') ?? false).textContent
+  const VENTES_ET_BANQUE = { cabinet: false, membre: true, ventes: true, banque: true }
+  const MIXTE = 'VIR FICTIF BUREAU MIXTE'
+
+  // Sur le dossier basculé de VF5g, un virement de 900 € que le cabinet a CLASSÉ par ses encaissements : F2026-0023, source
+  // de sa vente, et F2025-0187, facture d'avant la bascule, dont l'encaissement a été enregistré le premier.
+  function poserLeVirementMixte() {
+    poserLesVentes()
+    faux.tables.lignes_bancaires.push(...nues([
+      mouvement({ id: 'lv3', date: '2026-09-26', libelle: MIXTE, montant: 900, statut: 'rapprochee', encaissements_de_factures: true }),
+    ]))
+    faux.tables.factures_emises.push(...nues([
+      facture({ id: 'f3', numero: 'F2026-0023' }),
+      facture({ id: 'fa', numero: 'F2025-0187', source_de_la_vente: false }),
+    ]))
+    faux.tables.encaissements_factures.push(...nues([
+      encaissement({ id: 'e3', facture_id: 'f3', ligne_bancaire_id: 'lv3', montant: 500, cree_le: '2026-09-26T10:00:00Z' }),
+      encaissement({ id: 'ea', facture_id: 'fa', ligne_bancaire_id: 'lv3', montant: 400, cree_le: '2026-09-25T10:00:00Z' }),
+    ]))
+  }
+
+  it('« Banque » et « Ventes » : le détail nomme la facture d’avant avec la facture source, dans l’ordre de la garde', async () => {
+    poserLeVirementMixte()
+    faux.droits = VENTES_ET_BANQUE
+    await monter()
+    expect(etat(MIXTE)).toBe('Encaissement de tes factures')
+    // La ligne du tableau ne nomme aucune facture : seul le détail le fait.
+    expect(texte()).not.toContain('F2025-0187')
+    await ouvrir(MIXTE)
+    expect(texte()).toContain('Encaissement de tes factures. Ton cabinet a classé ce mouvement par les encaissements de tes '
+      + 'factures : il n’attend rien de toi. Facture(s) : F2025-0187, F2026-0023.')
+    // Le virement d'une facture source seule garde sa ligne d'hier.
+    await ouvrir('VIR FICTIF DURAND F2026-0021')
+    expect(texte()).toContain('Facture(s) : F2026-0021.')
+    expect(motsDuCabinet(texte())).toEqual([])
+  })
+
+  it('« Banque » seul : rien de plus — « Traité par ton cabinet », aucune facture nommée (VF5-Q3)', async () => {
+    poserLeVirementMixte()
+    await monter()
+    expect(faux.lectures).not.toContain('factures_emises')
+    expect(etat(MIXTE)).toBe('Traité par ton cabinet')
+    await ouvrir(MIXTE)
+    expect(texte()).toContain('Traité par ton cabinet.')
+    expect(texte()).not.toMatch(/F2025-0187|F2026-0023|Facture\(s\)/)
+  })
+
+  it.each(['factures_emises', 'encaissements_factures'])('%s lu en partie : le virement mixte dit ce que dit le relevé seul, '
+    + 'sans facture', async (table) => {
+    poserLeVirementMixte()
+    faux.droits = VENTES_ET_BANQUE
+    faux.muetApres = { [table]: 1 }
+    await monter()
+    expect(screen.getByText(/^Tes factures et leurs encaissements/)).toBeTruthy()
+    expect(etat(MIXTE)).toBe('Traité par ton cabinet')
+    await ouvrir(MIXTE)
+    expect(texte()).not.toMatch(/F2025-0187|F2026-0023|Facture\(s\)/)
+  })
+})
+
 describe('les refus, dits avant le clic', () => {
   it('une pièce déjà envoyée pour ce mouvement ne se choisit pas ; une pièce d’une autre société n’est pas offerte', async () => {
     await monter()
