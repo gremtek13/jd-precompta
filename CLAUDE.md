@@ -393,12 +393,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Mot de passe oublié** : le premier essai réel du cabinet (iPhone), et celui du lien envoyé depuis l'onglet Accès ;
   au tableau de bord, la longueur minimale à 10 (à relever) et le modèle d'e-mail en français. Un compte dont le dernier
   accès au cabinet a été retiré se rattache de nouveau après une confirmation (23-Q2, écrit le 23/10/2026 ; 23Q2-Q1 et
-  23Q2-Q2, écrites sur la recommandation, confirmées par le cabinet le 26/10/2026, avec 23Q2Q2-Q2 ; restent deux lots,
-  23Q2Q2-Q1 — le client d'un dossier du cabinet n'entre dans l'équipe qu'après une confirmation qui nomme l'adresse, le
-  rôle et l'espace client perdu — et 23Q2Q2-Q3 — l'équipe ne se modifie que par son rôle : la migration
-  `equipe_par_son_role`, préparée le 26/10/2026, attend l'accord du cabinet) → « UN COMPTE QUE LE CABINET NE CONNAÎT PAS
-  SE RATTACHE APRÈS UNE CONFIRMATION », « L'ÉQUIPE N'ACCUEILLE PAS LE CLIENT D'UN AUTRE CABINET », « L'ÉQUIPE NE CHANGE
-  QUE PAR SON RÔLE ».
+  23Q2-Q2, écrites sur la recommandation, confirmées par le cabinet le 26/10/2026, avec 23Q2Q2-Q2 ; 23Q2Q2-Q1, écrit le
+  26/10/2026 : le client d'un dossier du cabinet n'entre dans l'équipe qu'après une confirmation qui nomme l'adresse, le
+  rôle et l'espace client perdu, `create-team-member` à déployer après la fusion, la page d'abord, 23Q2Q2Q1-Q1 posée ;
+  reste 23Q2Q2-Q3 — l'équipe ne se modifie que par son rôle : la migration `equipe_par_son_role`, préparée le
+  26/10/2026, attend l'accord du cabinet) → « UN COMPTE QUE LE CABINET NE CONNAÎT PAS SE RATTACHE APRÈS UNE
+  CONFIRMATION », « L'ÉQUIPE N'ACCUEILLE PAS LE CLIENT D'UN AUTRE CABINET », « LE CLIENT D'UN DOSSIER DU CABINET N'ENTRE
+  DANS L'ÉQUIPE QU'APRÈS UNE CONFIRMATION », « L'ÉQUIPE NE CHANGE QUE PAR SON RÔLE ».
 - **Facturation électronique** (ligne 28.5) : (a) à (c) en ligne, la réception et le dépôt à éprouver sur la plateforme
   réelle d'un client ; (d) « Encaissée » : d1 à d4 en ligne ; d5, le message CDAR, en module (ses quatre choix et MDT-95
   tranchés par le premier essai réel ; le matricule d'une plateforme, une colonne de la connexion) ; d6 reste (les Edge
