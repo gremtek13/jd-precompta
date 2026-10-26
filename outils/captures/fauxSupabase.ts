@@ -117,6 +117,9 @@ const dossiers: Ligne[] = [
   ...(IDENTITE_LEGALE_DU_BANC[id as string] ?? IDENTITE_LEGALE_VIDE),
   tva_periodicite: 'trimestrielle', tva_sur_debits: false,
   mode_comptable: id === 'd8' ? 'engagement' : 'tresorerie', compte_notes_de_frais: '455000',
+  // La source des ventes (chantier EC-Q3) : non nulle et fausse par défaut en base, comme ici ; seul d12, plus bas, a basculé.
+  // L'onglet Accès la lit (étape VF8d) et dit illisible une colonne absente : la case « Ventes » ne s'y jugerait pas.
+  ventes_par_les_factures: false,
 }))
 
 // Le code e-mail d'un vrai dossier est son nom en tirets suivi de six caractères de son identifiant (`generate_code_email`) :

@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import ClientVentes from './ClientVentes'
+import { SOURCE_DE_TES_VENTES } from '../lib/sourceDeLaVente'
 
 // « MES VENTES » (espace client, étape P4a) : l'écran lit la société affichée et ses cases à la base AVANT d'offrir quoi
 // que ce soit. Ce que ces cas gardent : « Chargement… » d'abord ; l'onglet Factures en mode client, avec la société lue et
@@ -133,6 +134,33 @@ describe('ClientVentes — la source des ventes de la société', () => {
     monter()
     expect((await screen.findByText(/Onglet Factures/)).textContent)
       .toContain('— réglage {"etat":"bascule","modeComptable":"engagement","anneesValidees":"illisibles"}')
+  })
+
+  // La ligne de la source (étape VF8d) : dite au-dessus des factures d'une société basculée, et d'elle seule.
+  it('basculée : la ligne dit au client que ses factures validées sont la source de ses ventes', async () => {
+    faux.societe = { ...SOCIETE, ventes_par_les_factures: true }
+    monter()
+    await screen.findByText(/Onglet Factures/)
+    const ligne = screen.getByText(SOURCE_DE_TES_VENTES)
+    expect(ligne.compareDocumentPosition(screen.getByText(/Onglet Factures/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it.each([
+    ['pas basculée', { ventes_par_les_factures: false }],
+    ['au réglage illisible', { ventes_par_les_factures: null }],
+    ['basculée, au modèle comptable illisible', { ventes_par_les_factures: true, mode_comptable: null }],
+  ])('%s : aucune ligne de la source', async (_cas, ecart) => {
+    faux.societe = { ...SOCIETE, ...ecart }
+    monter()
+    await screen.findByText(/Onglet Factures/)
+    expect(screen.queryByText(SOURCE_DE_TES_VENTES)).toBeNull()
+  })
+
+  it('aucune ligne de la source avant la lecture de la société', () => {
+    faux.retenir = true
+    faux.societe = { ...SOCIETE, ventes_par_les_factures: true }
+    monter()
+    expect(screen.queryByText(SOURCE_DE_TES_VENTES)).toBeNull()
   })
 
   it('une colonne absente n’est pas « pas basculé » : le réglage illisible, avec son motif', async () => {

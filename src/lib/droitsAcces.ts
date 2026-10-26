@@ -205,6 +205,11 @@ export function ceQueDonneUnAcces(simulationSousBanque: boolean): string {
 // le chef du cabinet en supprime, avec le dossier. Elle exige celle des paramètres, donc celles des ventes : sans elles, ce
 // drapeau ne change rien à la phrase. L'écran du logo est dans « Mes ventes › Paramètres » depuis l'étape A5c2a : la phrase
 // l'y situe, et ne le dit plus à venir.
+// DEPUIS L'ÉTAPE VF8d (chantier EC-Q3), un dixième paramètre, OBLIGATOIRE : le réglage du dossier affiché
+// (`reglageDuDossier`), lu par l'onglet. Avec les ventes ouvertes, la phrase dit, AVANT « ensuite », ce que la case
+// « Ventes » devient sur CE dossier (`phraseDuReglage`) : basculé, ce que comptent les factures que le client valide ; non
+// basculé, pourquoi la case ne se coche pas ; illisible, pourquoi elle ne se change pas. Sans les ventes, la case ne change
+// encore rien au client, et la phrase n'en dit rien de plus.
 export function ceQueDisentLesCases(
   simulationSousBanque: boolean,
   ventesOuvertes: boolean,
@@ -215,6 +220,7 @@ export function ceQueDisentLesCases(
   parametresOuverts: boolean,
   changementDeRibOuvert: boolean,
   logoOuvert: boolean,
+  reglage: ReglageDuDossier,
 ): string {
   const cases = `« ${DOMAINES[0].libelle} » (${DOMAINES[0].ouvrira}) et « ${DOMAINES[1].libelle} » (${DOMAINES[1].ouvrira}) : `
   if (!simulationSousBanque && !ventesOuvertes) {
@@ -313,8 +319,11 @@ export function ceQueDisentLesCases(
     : (ventesOuvertes
       ? ' L’écran « Banque » de son espace viendra ensuite.'
       : ' Les écrans « Ventes » et « Banque » de son espace viendront ensuite.')
+  // Le réglage du dossier (étape VF8d) se dit après la banque et avant ce qui vient ensuite : ce qu'il change tient à CE
+  // dossier, quand ce qui précède tient à la case.
+  const dossier = ventesOuvertes ? ' ' + phraseDuReglage(reglage) : ''
   return cases + 'une case cochée enregistre dès aujourd’hui un droit.' + ventes + articles + adresses + contacts
-    + importContacts + parametres + logo + banque + ventesFermees + aVenir
+    + importContacts + parametres + logo + banque + ventesFermees + dossier + aVenir
 }
 
 export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
@@ -323,11 +332,105 @@ export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 // des articles, celui de leur migration (étape A1) ; celui des adresses de réception, de la leur (étape A6a) ; celui des
 // contacts, de la leur (étape A4a) ; celui de l'import des contacts, de la sienne (étape A4b3a) ; celui des paramètres de
 // facturation, de la leur (étape A5a) ; celui du dernier changement du RIB, de la sienne (étape A5b3a) ; celui du logo des
-// factures, de la sienne (étape A5c1).
-export const CE_QUE_DISENT_LES_CASES = ceQueDisentLesCases(
-  COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
-  IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE,
-)
+// factures, de la sienne (étape A5c1). Le réglage du dossier, l'onglet le lit (étape VF8d) : la phrase n'est plus une
+// constante, mais celle des neuf drapeaux et de ce réglage.
+export function ceQueDisentLesCasesDuDossier(reglage: ReglageDuDossier): string {
+  return ceQueDisentLesCases(
+    COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
+    IMPORT_CONTACTS_EXPORTE, PARAMETRES_FACTURATION_EXPORTES, CHANGEMENT_DE_RIB_EXPORTE, LOGO_DES_FACTURES_EXPORTE, reglage,
+  )
+}
+
+// ── La case « Ventes » et la source des ventes du dossier (chantier EC-Q3, étape VF8d) ─────────────────────────────────
+// HISTORIQUE.md, « VF8, LA BASCULE : LA CONCEPTION », § 3 (d), et « LA CASE « VENTES » SUIT LA SOURCE DES VENTES, À
+// L'ÉCRAN ». La case « Ventes » ne s'ouvre qu'à un dossier dont les factures sont la source de leurs ventes
+// (`dossiers.ventes_par_les_factures`, EC3-Q2) : l'onglet Accès la refuse AVANT le clic dès cette étape ; la base la refusera
+// à l'étape VF8f (`garder_droit_ventes`), la dernière — ce qui s'ajoute, la bascule de l'application, puis le resserrement.
+// Jusque-là, `changer_droits_acces` pose « Ventes » sans regarder le réglage (droitsAcces.test.ts le confronte à l'export) :
+// l'écran est plus strict que la base, jamais moins. DÉCOCHER reste offert sur un dossier qui n'a pas basculé — un accès
+// coché avant cette étape, ou rendu par une restauration, se défait. Sur un réglage illisible, aucun geste sur « Ventes », ni
+// cocher ni décocher : la case ne se juge pas. « Banque » ne regarde pas le réglage.
+
+/** Le réglage du dossier tel que l'onglet Accès l'a lu (lib/reglageDuDossierLecture.ts). */
+export type ReglageDuDossier =
+  | { etat: 'bascule' }
+  | { etat: 'non_bascule' }
+  | { etat: 'illisible'; motif: string }
+
+/**
+ * Le réglage d'une ligne du dossier (`null` : aucune ligne rendue). Seuls `true` et `false` se lisent : une colonne absente,
+ * nulle ou d'un autre type est ILLISIBLE, jamais « pas basculé » — en base la colonne est non nulle, fausse par défaut.
+ */
+export function reglageDuDossier(ligne: { readonly ventes_par_les_factures?: unknown } | null): ReglageDuDossier {
+  if (ligne == null) return { etat: 'illisible', motif: 'le dossier n’a pas été trouvé' }
+  if (ligne.ventes_par_les_factures === true) return { etat: 'bascule' }
+  if (ligne.ventes_par_les_factures === false) return { etat: 'non_bascule' }
+  return { etat: 'illisible', motif: 'le réglage n’est pas lisible' }
+}
+
+// LA CARTE QUI BASCULE UN DOSSIER (étape VF8b, onglet Informations) N'EXISTE PAS ENCORE : la phrase ne renvoie pas le cabinet
+// vers un onglet où rien ne s'offre. droitsAcces.test.ts confronte cette constante à InformationsTab.tsx — le jour où la carte
+// y lit le réglage, le test tombe, et la constante passe à vrai avec elle.
+export const CARTE_DE_LA_BASCULE_OUVERTE: boolean = false
+
+/** Ce qui ouvre la case « Ventes », et où se pose le réglage — selon que la carte de la bascule existe. */
+export function ouvertureDeLaCaseVentes(carteOuverte: boolean): string {
+  return 'La case « Ventes » s’ouvre quand les factures de ce dossier sont la source de leurs ventes'
+    + (carteOuverte
+      ? ' (onglet Informations)'
+      : ' — un réglage que le chef du cabinet posera dans l’onglet Informations, où il ne s’offre pas encore')
+}
+
+/** Pourquoi la case « Ventes » ne se coche pas sur un dossier qui n'a pas basculé. */
+export function raisonDuDossierNonBascule(carteOuverte: boolean): string {
+  return `${ouvertureDeLaCaseVentes(carteOuverte)} : d’ici là, elle ne se coche pas, et un accès qui la porte déjà se décoche.`
+}
+
+/** Pourquoi la case « Ventes » ne se change pas sur un réglage illisible. */
+export function raisonDuReglageIllisible(motif: string): string {
+  return `La source des ventes de ce dossier ne se lit pas (${motif}) : la case « Ventes » ne se coche ni ne se décoche `
+    + 'd’ici. Recharge la page pour la relire.'
+}
+
+/** Ce que comptent les factures d'un dossier basculé, et qui écrit leurs écritures (EC3-Q5 : sans visa). */
+export const CE_QUE_COMPTENT_SES_FACTURES = 'Les factures de ce dossier sont la source de leurs ventes : celles que le '
+  + 'client valide comptent dans la 2035, la CA3 et les états du dossier dès leur encaissement (à leur date, dans un dossier '
+  + 'tenu en engagement), sans que tu les vises, et leurs écritures s’écrivent sur ton clic, dans l’onglet Écritures.'
+
+/** Ce que la phrase de l'onglet dit de la case « Ventes » sur CE dossier, selon son réglage. */
+export function phraseDuReglage(reglage: ReglageDuDossier): string {
+  if (reglage.etat === 'bascule') return CE_QUE_COMPTENT_SES_FACTURES
+  if (reglage.etat === 'non_bascule') return raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE)
+  return raisonDuReglageIllisible(reglage.motif)
+}
+
+/** Ce qu'une case offre, selon le réglage du dossier : cocher, décocher, et pourquoi l'un des deux manque. */
+export interface GesteDeLaCase {
+  cocher: boolean
+  decocher: boolean
+  /** Pourquoi un geste manque ; nul quand les deux sont offerts. */
+  raison: string | null
+}
+
+const LES_DEUX_GESTES: GesteDeLaCase = { cocher: true, decocher: true, raison: null }
+
+/**
+ * Les gestes d'une case : « Banque » les a toujours ; « Ventes » sur un dossier basculé aussi ; sur un dossier qui n'a pas
+ * basculé, décocher seulement ; sur un réglage illisible, aucun.
+ */
+export function gesteDeLaCase(domaine: Domaine, reglage: ReglageDuDossier): GesteDeLaCase {
+  if (domaine !== 'ventes' || reglage.etat === 'bascule') return LES_DEUX_GESTES
+  if (reglage.etat === 'non_bascule') {
+    return { cocher: false, decocher: true, raison: raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE) }
+  }
+  return { cocher: false, decocher: false, raison: raisonDuReglageIllisible(reglage.motif) }
+}
+
+/** Le refus d'une case cliquée vers `valeur`, dit avant tout appel ; nul quand le geste est offert. */
+export function refusDeLaCase(domaine: Domaine, valeur: boolean, reglage: ReglageDuDossier): string | null {
+  const geste = gesteDeLaCase(domaine, reglage)
+  return (valeur ? geste.cocher : geste.decocher) ? null : geste.raison
+}
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */
 export function libelleDeLaCase(domaine: Domaine, personne: string): string {

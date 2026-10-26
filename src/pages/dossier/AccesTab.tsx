@@ -11,9 +11,10 @@ import {
   questionDuLienEnvoye, refusDeLaRegle,
 } from '../../lib/recuperationMotDePasse'
 import {
-  CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES, DOMAINES, changementApplique, demandeDeChangement, droitsDeLaLigne,
-  libelleDeLaCase, messageDuRefus, type Domaine,
+  CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCasesDuDossier, changementApplique, demandeDeChangement, droitsDeLaLigne,
+  gesteDeLaCase, libelleDeLaCase, messageDuRefus, refusDeLaCase, type Domaine,
 } from '../../lib/droitsAcces'
+import { lireLeReglageDuDossier, type LectureDuReglage } from '../../lib/reglageDuDossierLecture'
 import {
   avisDeLAccesCree, compteDeLaReponse, confirmationDuRattachement, copieDuRefus, corpsDeLaCreation, refusARattacher,
 } from '../../lib/creationDesComptes'
@@ -58,6 +59,11 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // Le numéro de la dernière lecture partie : une lecture plus lente qu'une suivante (une création puis un retrait
   // rapprochés) ne réécrit pas la liste après elle.
   const derniereLecture = useRef(0)
+  // Le réglage du dossier (`ventes_par_les_factures`, chantier EC-Q3, étape VF8d), lu avec la liste, dans la même vague :
+  // la case « Ventes » ne se coche que sur un dossier basculé, ne se change pas sur un réglage illisible
+  // (lib/droitsAcces.ts, `gesteDeLaCase`). Gardé AVEC le dossier lu : une réponse pour un autre dossier ne juge pas celui-ci.
+  // Rien ne s'offre avant son retour : ni case, ni phrase des cases.
+  const [reglageLu, setReglageLu] = useState<LectureDuReglage | null>(null)
 
   // Verrou d'exécution en `useRef`, pas en état React : `setInviting(true)` ne prend effet qu'au
   // rendu suivant, donc `disabled={inviting}` laisse passer deux soumissions rapprochées — sur un
@@ -97,14 +103,19 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     setRelecture(true)
     // Par `lireTout`, qui dit si la liste est COMPLÈTE : une poignée de personnes aujourd'hui, mais ses cases écrivent
     // depuis elle, et « Aucun accès » est une affirmation.
-    const lecture = await lireTout<AccesLu>((debut, fin) => supabase
-      .from('memberships')
-      .select('id, user_id, email, droit_ventes, droit_banque', { count: 'exact' })
-      .eq('dossier_id', dossierId)
-      .order('created_at')
-      .order('id')
-      .range(debut, fin))
+    // Le réglage, dans la même vague : la lecture ne rejette jamais (un échec le rend illisible, avec son motif).
+    const [lecture, reglageRelu] = await Promise.all([
+      lireTout<AccesLu>((debut, fin) => supabase
+        .from('memberships')
+        .select('id, user_id, email, droit_ventes, droit_banque', { count: 'exact' })
+        .eq('dossier_id', dossierId)
+        .order('created_at')
+        .order('id')
+        .range(debut, fin)),
+      lireLeReglageDuDossier(dossierId),
+    ])
     if (numero !== derniereLecture.current) return
+    setReglageLu(reglageRelu)
     const rien = !lecture.complete && lecture.lignes.length === 0
     setErreurLecture(rien ? `La liste des accès n'a pas pu être lue (${lecture.motif ?? 'raison inconnue'}).` : null)
     setLecturePartielle(!lecture.complete && !rien ? lecture.motif : null)
@@ -208,12 +219,22 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // mise à jour, et un `update` direct ne toucherait aucune ligne sans rien dire. N'envoie que le droit cliqué
   // (`demandeDeChangement`) : l'autre reste tel qu'en base. Refusé, le refus se dit avec la personne et le droit visés ;
   // la relecture remet la case comme la base l'a gardée.
+  //
+  // La case grisée ne s'offre pas (étape VF8d) ; si un geste arrivait quand même jusqu'ici, le refus du module se dit, avec la
+  // personne et le droit, et rien ne part — un réglage pas encore lu, ou lu pour un autre dossier, ne juge rien.
   async function changerDroit(acces: AccesLu, domaine: Domaine, valeur: boolean) {
     if (ecritureDroitsEnCours.current) return
+    const personne = acces.email ?? acces.user_id
+    const refusAvant = reglage === null
+      ? 'la source des ventes du dossier n’est pas encore lue.'
+      : refusDeLaCase(domaine, valeur, reglage)
+    if (refusAvant !== null) {
+      setErreurDroits(messageDuRefus(domaine, personne, refusAvant))
+      return
+    }
     ecritureDroitsEnCours.current = true
     setDroitEnCours({ id: acces.id, domaine, valeur })
     setErreurDroits(null)
-    const personne = acces.email ?? acces.user_id
     try {
       const { data, error: erreurEcriture } = await supabase.rpc('changer_droits_acces', demandeDeChangement(acces.id, domaine, valeur))
       if (erreurEcriture) {
@@ -288,7 +309,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // Les cases ne s'offrent que sur une liste lue EN ENTIER ; lue en partie, chaque droit se lit, sans se changer. Le lien
   // de réinitialisation suit la même règle : il part vers l'adresse d'une ligne, et une liste tronquée ou pas encore
   // revenue n'en est pas une que le cabinet a pu vérifier.
-  const casesOffertes = !chargement && erreurLecture === null && lecturePartielle === null
+  // Et sur le réglage du dossier revenu, lu pour CE dossier : avant lui, la case « Ventes » ne se jugerait pas.
+  const reglage = reglageLu !== null && reglageLu.dossierId === dossierId ? reglageLu.reglage : null
+  const casesOffertes = !chargement && erreurLecture === null && lecturePartielle === null && reglage !== null
 
   return (
     <>
@@ -344,7 +367,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       </div>
 
       <h3>Accès actuels</h3>
-      <p className="muted" style={{ marginTop: -8 }}>{CE_QUE_DISENT_LES_CASES}</p>
+      {reglage !== null && (
+        <p className="muted" id="ce-que-disent-les-cases" style={{ marginTop: -8 }}>{ceQueDisentLesCasesDuDossier(reglage)}</p>
+      )}
       {rows.length > 0 && (
         <BandeauLecturePartielle
           quoi="La liste des accès" accord="lue" motif={lecturePartielle}
@@ -378,21 +403,30 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
                 return (
                   <tr key={r.id}>
                     <td data-libelle="Utilisateur">{personne}</td>
-                    {DOMAINES.map((d) => (
-                      <td key={d.domaine} data-libelle={d.libelle}>
-                        {casesOffertes ? (
-                          <input
-                            type="checkbox"
-                            aria-label={libelleDeLaCase(d.domaine, personne)}
-                            checked={droitEnCours?.id === r.id && droitEnCours.domaine === d.domaine ? droitEnCours.valeur : droits[d.domaine]}
-                            disabled={droitEnCours !== null || relecture}
-                            onChange={(e) => changerDroit(r, d.domaine, e.target.checked)}
-                          />
-                        ) : (
-                          <span>{droits[d.domaine] ? 'Oui' : 'Non'}</span>
-                        )}
-                      </td>
-                    ))}
+                    {DOMAINES.map((d) => {
+                      // Le geste que le réglage laisse à CETTE case, dans son état lu : une case « Ventes » cochée d'un
+                      // dossier non basculé se décoche, décochée elle est grisée ; illisible, grisée dans les deux états. Sa
+                      // raison est dans la phrase au-dessus de la liste, que la case désigne.
+                      const geste = reglage === null ? null : gesteDeLaCase(d.domaine, reglage)
+                      const offert = geste !== null && (droits[d.domaine] ? geste.decocher : geste.cocher)
+                      return (
+                        <td key={d.domaine} data-libelle={d.libelle}>
+                          {casesOffertes ? (
+                            <input
+                              type="checkbox"
+                              aria-label={libelleDeLaCase(d.domaine, personne)}
+                              aria-describedby={offert ? undefined : 'ce-que-disent-les-cases'}
+                              title={offert ? undefined : geste?.raison ?? undefined}
+                              checked={droitEnCours?.id === r.id && droitEnCours.domaine === d.domaine ? droitEnCours.valeur : droits[d.domaine]}
+                              disabled={droitEnCours !== null || relecture || !offert}
+                              onChange={(e) => changerDroit(r, d.domaine, e.target.checked)}
+                            />
+                          ) : (
+                            <span>{droits[d.domaine] ? 'Oui' : 'Non'}</span>
+                          )}
+                        </td>
+                      )
+                    })}
                     <td className="td-actions">
                       {r.email && (
                         <button className="btn btn-outline btn-sm" onClick={() => setRelanceDe(r)}>Relancer</button>

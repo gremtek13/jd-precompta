@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   REFUS_SOURCE_DE_LA_VENTE, REFUS_VALIDATION_SOURCE, FRONTIERE_NON_LUE_AU_CABINET, confirmationDeLaSource, jugementDeLaValidation, phraseDeLAvoirDAvant,
-  phraseDuReglageIllisible, reglageDesVentes, refusDuReglage, refusValidationSource, sourceALaValidation,
+  SOURCE_DE_TES_VENTES, phraseDuReglageIllisible, reglageDesVentes, refusDuReglage, refusValidationSource, sourceALaValidation,
   type ContexteDuReglage, type FacturePourReglage,
 } from './sourceDeLaVente'
 import { ANNEES_ILLISIBLES, FRONTIERE_JUGEE_PAR_LA_BASE } from './encaissementsFactures'
@@ -562,5 +562,14 @@ describe('jugementDeLaValidation — ce que la validation d’une facture rencon
       }
     }
     expect(motsDuCabinet(phraseDuReglageIllisible('client', 'x'))).toEqual([])
+  })
+})
+
+// LA LIGNE DE « MES VENTES » (étape VF8d) : une phrase du client — tutoiement, aucun onglet —, qui dit la source et l'avoir.
+describe('la ligne de « Mes ventes » d’un client dont les factures sont la source de ses ventes (étape VF8d)', () => {
+  it('dit la source et l’avoir, dans les mots du client', () => {
+    expect(SOURCE_DE_TES_VENTES).toBe('Tes factures validées sont la source de tes ventes dans ta comptabilité : une fois '
+      + 'validée, une facture ne se corrige plus que par un avoir.')
+    expect(motsDuCabinet(SOURCE_DE_TES_VENTES)).toEqual([])
   })
 })
