@@ -541,6 +541,16 @@
 -- `insertion_des_encaissements`, le journal semé) : sans la migration, 57 lignes de verdict (la ligne SI « EN
 -- ATTENTE »), 0 en faute, 48 mutations sur 48 qui mordent ; avec elle, 62 lignes, 0 en faute, 51 mutations sur 51 —
 -- seules les lignes SI diffèrent. Le passage en production suivra l'application et se notera ici.
+--
+-- 26/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (23Q2Q2-Q3 : migration `equipe_par_son_role`, PRÉPARÉE, pas
+-- appliquée), qui ne crée ni ne change aucune policy, mais retire à `authenticated` le droit UPDATE sur la table
+-- `cabinet_admins` et ne le lui rend que sur la colonne `role` : le bloc EQ (EQ1 à EQ5, M-EQ1 à M-EQ5) le rejoue — le
+-- chef change le rôle d'un membre de son équipe (le contrôle positif), mais ni le compte, ni le cabinet, ni l'adresse
+-- (42501, sa raison exigée), il retire toujours un membre, l'anonyme ne change aucune ligne, et le catalogue le dit — ;
+-- EN ATTENTE sans la migration. Joué ENTIER par psql sur la réplique de l'étape (la production à 154 migrations, ses
+-- neuf familles égales à celles de la production, le journal semé) : sans la migration, 58 lignes de verdict (la ligne
+-- EQ « EN ATTENTE »), 0 en faute, 48 mutations sur 48 qui mordent ; avec elle, 63 lignes, 0 en faute, 53 mutations sur
+-- 53 — seules les lignes EQ diffèrent. Le passage en production suivra l'application et se notera ici.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -2598,6 +2608,239 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', 'SI5. security definer, son chemin fixé ; les connectés l''exécutent, ni l''anonyme ni PUBLIC (lecture du catalogue)',
     'cible', 'ventes_facturees_de_la_simulation', 'observe', case when n = 1 then 'conforme' else 'NON CONFORME' end, 'ok', n = 1);
   verdicts := verdicts || jsonb_build_object('controle', 'SI. le jeu d''essai de la simulation s''est construit', 'cible', 'simulation',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ EQ. L'équipe ne change que par son rôle (23Q2Q2-Q3 ; migration `equipe_par_son_role`) ═══════════════════════════════
+-- La policy de mise à jour de `cabinet_admins` ne juge que le cabinet (`est_chef_du_cabinet`), avant et après l'écriture :
+-- tant qu'`authenticated` portait UPDATE sur la table entière, un chef changeait le COMPTE d'une ligne de son équipe pour
+-- celui d'un client de ses dossiers, sans passer par `create-team-member` (le « trouvé en passant » de 23Q2-Q2). Depuis la
+-- migration, le droit ne vaut plus que pour la colonne `role` : il se juge avant la policy, et refuse en 42501 toute
+-- écriture qui nomme une autre colonne, quelle que soit la valeur.
+--   EQ1. Le contrôle POSITIF : le chef change le rôle d'un membre de son équipe — une ligne touchée ; sans lui, un droit
+--        retiré à tous passerait la suite, et la page de l'équipe ne changerait plus aucun rôle.
+--   EQ2. Ni le compte (`user_id`), ni le cabinet (`cabinet_id`), ni l'adresse (`email`) : chacun refusé par le droit
+--        (42501, « permission denied for table cabinet_admins »), même remis à sa propre valeur — le droit se juge avant
+--        toute contrainte —, et le rôle avec l'adresse dans la même écriture aussi.
+--   EQ3. Le chef retire toujours un membre (« Retirer ») : une ligne ôtée — la suppression n'a pas bougé.
+--   EQ4. Le catalogue : `authenticated` ne met plus à jour la table, seulement `role`, sans pouvoir transmettre ce droit,
+--        et garde la lecture et la suppression ; `service_role` (les Edge Functions) garde l'insertion et la mise à jour
+--        de la table.
+--   EQ5. L'anonyme ne change aucune ligne : il garde ses droits de table, comme sur toute table du schéma, et la policy,
+--        qu'aucune session ne satisfait, n'en laisse passer aucune.
+-- Cinq mutations, qui doivent mordre : M-EQ1 (UPDATE rendu sur la table, la migration défaite : les quatre écritures
+-- d'EQ2 passent), M-EQ2 (le droit sur `role` retiré : EQ1 se refuse), M-EQ3 (EQ2 jugé sur un échec sans rapport — une
+-- colonne qui n'existe pas, 42703 —, qui doit être EN FAUTE : la RAISON est exigée), M-EQ4 (EQ1 joué par le membre
+-- lui-même, un comptable : aucune ligne), M-EQ5 (EQ5 joué par le chef : le rôle change). Le jeu, le temps d'une
+-- sous-transaction annulée : le client entre dans l'équipe du cabinet du chef, comme comptable, sous une adresse
+-- fictive. Avant la migration, une ligne dit que l'équipe attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  refus text := 'permission denied for table cabinet_admins';
+  -- Les écritures d'EQ2 sur la ligne du membre : une colonne autre que `role`, remise à sa propre valeur quand une autre
+  -- buterait sur une contrainte (le droit se juge avant elle, et M-EQ1 les accepte toutes sans lui), puis le rôle avec
+  -- l'adresse.
+  ecritures text[] := array[
+    'user_id = user_id',
+    'cabinet_id = cabinet_id',
+    'email = ''autre-membre@example.test''',
+    'role = ''comptable_en_chef'', email = ''autre-membre@example.test'''];
+  ecriture text; cabinet_du_chef uuid; touchees int; n bigint;
+  accepte boolean; motif text; message text; erreur text; construit boolean := false; obs text;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if has_table_privilege('authenticated', 'public.cabinet_admins', 'UPDATE')
+     and not exists (select 1 from pg_attribute a cross join lateral aclexplode(a.attacl) d
+                      where a.attrelid = 'public.cabinet_admins'::regclass and a.attnum > 0 and not a.attisdropped) then
+    insert into rls_verdict values ('EQ. l''équipe ne change que par son rôle : EN ATTENTE de la migration equipe_par_son_role',
+      'cabinet_admins', 'UPDATE sur la table, aucun droit par colonne : ses droits se jugent dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : le client entre dans l'équipe du cabinet du chef, comme comptable ──
+    select ca.cabinet_id into cabinet_du_chef from cabinet_admins ca where ca.user_id = chef;
+    insert into cabinet_admins (user_id, cabinet_id, role, email)
+      values (client, cabinet_du_chef, 'comptable', 'membre-essai@example.test');
+    construit := true;
+
+    -- EQ1 : le chef change le rôle du membre.
+    touchees := 0; motif := null; message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      update cabinet_admins set role = 'comptable_en_chef' where user_id = client;
+      get diagnostics touchees = row_count;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'EQ1. le chef change le rôle d''un membre de son équipe (contrôle positif)',
+      'cible', 'role', 'observe', touchees || ' ligne(s), ' || coalesce(motif, '?') || ' ' || coalesce(message, '?'),
+      'ok', touchees = 1 and motif = 'P0001' and message = 'ANNULATION_ESSAI');
+
+    -- EQ2 : ni le compte, ni le cabinet, ni l'adresse.
+    foreach ecriture in array ecritures loop
+      accepte := false; motif := null; message := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+        execute format('update public.cabinet_admins set %s where user_id = $1', ecriture) using client;
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'EQ2. ni le compte, ni le cabinet, ni l''adresse : le droit refuse (42501), le rôle avec l''adresse aussi',
+        'cible', ecriture, 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+        'ok', not accepte and motif = '42501' and message = refus);
+    end loop;
+
+    -- M-EQ1 : UPDATE rendu sur la table (la migration défaite) — les quatre écritures d'EQ2 passent.
+    obs := '';
+    begin
+      grant update on table public.cabinet_admins to authenticated;
+      foreach ecriture in array ecritures loop
+        accepte := false;
+        begin
+          set local role authenticated;
+          perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+          execute format('update public.cabinet_admins set %s where user_id = $1', ecriture) using client;
+          get diagnostics touchees = row_count;
+          accepte := touchees = 1;
+          raise exception 'ANNULATION_ESSAI';
+        exception when others then null;
+        end;
+        reset role;
+        obs := obs || case when accepte then 'acceptée ' else 'refusée ' end;
+      end loop;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then null;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-EQ1 — EQ2 rejoué, UPDATE rendu sur la table (la migration défaite)',
+      'attendu', 'les quatre écritures acceptées', 'observe', obs, 'mord', obs = 'acceptée acceptée acceptée acceptée ');
+
+    -- M-EQ2 : le droit sur `role` retiré — EQ1 se refuse.
+    obs := null;
+    begin
+      revoke update (role) on table public.cabinet_admins from authenticated;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      update cabinet_admins set role = 'comptable_en_chef' where user_id = client;
+      obs := 'accepté';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-EQ2 — EQ1 rejoué, le droit sur role retiré',
+      'attendu', 'refusé par le droit', 'observe', obs, 'mord', obs = '42501 ' || refus);
+
+    -- M-EQ3 : le jugement d'EQ2 sur un échec sans rapport — une colonne qui n'existe pas (42703) : il doit être EN FAUTE.
+    accepte := false; motif := null; message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      execute format('update public.cabinet_admins set %s where user_id = $1', 'colonne_qui_n_existe_pas = 1') using client;
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-EQ3 — EQ2 jugé sur un échec sans rapport (une colonne qui n''existe pas)',
+      'attendu', 'EN FAUTE', 'observe', 'sqlstate ' || coalesce(motif, '?'),
+      'mord', not (not accepte and motif = '42501' and message = refus));
+
+    -- M-EQ4 : EQ1 joué par le membre lui-même, un comptable — la policy ne lui ouvre aucune ligne.
+    touchees := 0; motif := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      update cabinet_admins set role = 'comptable_en_chef' where user_id = client;
+      get diagnostics touchees = row_count;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-EQ4 — EQ1 joué par le membre lui-même, un comptable',
+      'attendu', 'aucune ligne', 'observe', touchees || ' ligne(s), ' || coalesce(motif, '?'), 'mord', touchees = 0 and motif = 'P0001');
+
+    -- EQ3 : le chef retire toujours un membre.
+    touchees := 0; motif := null; message := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      delete from cabinet_admins where user_id = client;
+      get diagnostics touchees = row_count;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'EQ3. le chef retire toujours un membre de son équipe (« Retirer »)',
+      'cible', 'cabinet_admins', 'observe', touchees || ' ligne(s), ' || coalesce(motif, '?') || ' ' || coalesce(message, '?'),
+      'ok', touchees = 1 and motif = 'P0001' and message = 'ANNULATION_ESSAI');
+
+    -- EQ5 : l'anonyme ne change aucune ligne — ni le rôle, ni le compte.
+    foreach ecriture in array array['role = ''comptable_en_chef''', 'user_id = user_id'] loop
+      touchees := 0; motif := null; message := null;
+      begin
+        set local role anon;
+        perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+        execute format('update public.cabinet_admins set %s where user_id = $1', ecriture) using client;
+        get diagnostics touchees = row_count;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'EQ5. l''anonyme ne change aucune ligne de l''équipe (la policy, sans session)',
+        'cible', ecriture, 'observe', touchees || ' ligne(s), ' || coalesce(motif, '?') || ' ' || coalesce(message, '?'),
+        'ok', touchees = 0);
+    end loop;
+
+    -- M-EQ5 : EQ5 joué par le chef — le rôle change.
+    touchees := 0;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      update cabinet_admins set role = 'comptable_en_chef' where user_id = client;
+      get diagnostics touchees = row_count;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then null;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-EQ5 — EQ5 joué par le chef',
+      'attendu', 'une ligne', 'observe', touchees || ' ligne(s)', 'mord', touchees = 1);
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+
+  -- EQ4 : le catalogue, après les mutations (qui n'y ont rien laissé).
+  select count(*) into n
+   where not has_table_privilege('authenticated', 'public.cabinet_admins', 'UPDATE')
+     and (select string_agg(a.attname, ',' order by a.attname) from pg_attribute a
+           where a.attrelid = 'public.cabinet_admins'::regclass and a.attnum > 0 and not a.attisdropped
+             and has_column_privilege('authenticated', 'public.cabinet_admins', a.attname, 'UPDATE')) = 'role'
+     and has_table_privilege('authenticated', 'public.cabinet_admins', 'SELECT')
+     and has_table_privilege('authenticated', 'public.cabinet_admins', 'DELETE')
+     and has_table_privilege('service_role', 'public.cabinet_admins', 'INSERT')
+     and has_table_privilege('service_role', 'public.cabinet_admins', 'UPDATE')
+     -- Le droit sur `role` ne se transmet pas : `authenticated` ne le donne à personne.
+     and not exists (select 1 from pg_attribute a cross join lateral aclexplode(a.attacl) d
+                      where a.attrelid = 'public.cabinet_admins'::regclass and a.attnum > 0 and not a.attisdropped and d.is_grantable);
+  verdicts := verdicts || jsonb_build_object('controle', 'EQ4. authenticated ne met à jour que role, sans le transmettre, lit et retire toujours ; service_role garde la table (lecture du catalogue)',
+    'cible', 'cabinet_admins', 'observe', case when n = 1 then 'conforme' else 'NON CONFORME' end, 'ok', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'EQ. le jeu d''essai de l''équipe s''est construit', 'cible', 'équipe',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 
