@@ -127,8 +127,8 @@
 -- Joué en super-utilisateur sur la réplique de l'étape, égale à la production à 146 migrations plus celle de VF5h
 -- (signature.sql) : sans la migration, 151 contrôles sur 152, le 141 seul tombe (40 déclencheurs) ; avec elle, 152 sur 152.
 --
--- 25/10/2026, ligne 28.65, étape VF7a (migration `frontiere_des_encaissements`, préparée, à appliquer avant que ce
--- fichier ne soit rejoué) : la lecture de la cascade (141) attend 43 déclencheurs — les deux de la frontière des
+-- 25/10/2026, ligne 28.65, étape VF7a (migration `frontiere_des_encaissements`, appliquée le 26/10/2026, que ce
+-- fichier suppose) : la lecture de la cascade (141) attend 43 déclencheurs — les deux de la frontière des
 -- encaissements, `encaissements_factures_gardes_frontiere` et `encaissements_factures_taux_gardes_frontiere`, de la
 -- forme `dossier` (la cascade d'un dossier qu'on supprime passe : le dossier n'est déjà plus là). Joué en
 -- super-utilisateur et en une transaction sur la réplique de l'étape, égale à la production à 148 migrations plus celle

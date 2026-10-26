@@ -510,17 +510,17 @@
 -- policies à `authenticated` seul (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 --
 -- 25/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (chantier EC-Q3, étape VF7a : migration
--- `frontiere_des_encaissements`, préparée, non appliquée), qui ne crée ni ne change aucune policy, mais une garde aux
+-- `frontiere_des_encaissements`, appliquée le 26/10/2026), qui ne crée ni ne change aucune policy, mais une garde aux
 -- droits du propriétaire que les fonctions du client « Ventes » atteignent : le bloc FE (FE1 à FE5, M-FE1 à M-FE3) la
 -- rejoue, sa raison jugée, et l'ordre des déclencheurs qui la tient hors de portée de l'anonyme. Joué ENTIER par psql
 -- sur la réplique de l'étape (signature.sql : les neuf familles, et l'historique, égaux à la production à 148
 -- migrations ; puis `registre_virement_mixte`, de l'étape VF5h2, et le journal semé) : sans la migration, 47 lignes de
 -- verdict (la ligne FE « EN ATTENTE » de plus), 0 en faute, 43 mutations sur 43 qui mordent ; avec elle, 52 lignes,
--- 0 en faute, 46 mutations sur 46 — seules les lignes FE diffèrent. Le passage en production suivra l'application et
--- se notera ici.
+-- 0 en faute, 46 mutations sur 46 — seules les lignes FE diffèrent. Appliquée sans que ce fichier soit rejoué en
+-- production : HISTORIQUE.md, « LES CINQ MIGRATIONS DE VF5H2, VF7 ET VF8A EN PRODUCTION ».
 --
 -- 25/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (chantier EC-Q3, étape VF7b : migration
--- `validation_des_ventes_facturees`, préparée, non appliquée), qui ne crée ni ne change aucune policy, mais deux fonctions
+-- `validation_des_ventes_facturees`, appliquée le 26/10/2026), qui ne crée ni ne change aucune policy, mais deux fonctions
 -- qui lisent tout un dossier aux droits de l'appelant, et une validation qui nomme désormais ce qu'un dossier basculé
 -- porte : le bloc VB (VB1 à VB3, M-VB1, M-VB2) les rejoue — ni l'une ni l'autre ne s'exécute en RPC, et le client « Ventes »
 -- et « Banque » reçoit le refus d'hier avant toute lecture. Joué ENTIER par psql sur la réplique de l'étape (la

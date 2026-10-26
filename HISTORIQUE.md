@@ -36590,3 +36590,70 @@ Financement. Lint : les 63 avertissements d'avant, identiques. La barrière est 
 source. Chaque page de dossier fait deux lectures de plus, vides.
 
 **AUCUNE QUESTION AU CABINET.** **CE QUI RESTE** : VF8b, VF8d à VF8f, VF8h, puis VF9.
+
+### 26/10/2026 — LES CINQ MIGRATIONS DE VF5H2, VF7 ET VF8A EN PRODUCTION — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(Écrite par la session. Les cinq migrations préparées les 24 et 25/10/2026, accordées par le cabinet, appliquées en
+production ; leurs fichiers dans l'export sous leur version. Aucun écran ne change : aucun dossier n'a basculé.)
+
+**LES ACCORDS.** Sur la page des arbitrages, le 25/10/2026 vers 23 h 16 UTC (le 26 à Paris), toutes à la
+recommandation : les cinq migrations (« Oui, l'appliquer ») ; VF7-Q1 ((B), ce que VF7e écrivait déjà), VF7B-Q1 ((B), la
+recomposition d'un bloc, confrontée), VF7B-Q2 ((A) : le temps se juge sur ce que VF7b ajoute ; alléger les contrôles par
+ligne reste un chantier à part, la ligne 28.66), VF7E-Q1 ((A) : une pièce déjà marquée ne devient pas d'un seul geste
+l'exemplaire d'une facture source figée), VF8-Q1 (le chef du cabinet seul, ce que VF8a écrivait déjà) ; trois qui
+commandent un travail neuf : VF5H2-Q1 (« Oui, la fermer » : l'insertion directe d'un encaissement sur un mouvement
+classé par ses encaissements se refuse pour toute facture, la restauration exceptée — une petite migration à part, avant
+la première bascule réelle), VF8-Q2 (« Ma simulation » d'un client « Banque » reçoit le total par mois ET la liste des
+factures qui comptent elles-mêmes leur vente : VF8e) et VF8-Q3 (un dossier qui a validé des factures dans l'exercice en
+cours peut basculer, et la carte le dit avant le clic, avec le nombre de factures de l'exercice qui resteront comptées
+par leurs pièces : VF8b). Et sept plus anciennes : 23-identifiantEmail (le garder), 23Q2-Q1 (garder le refus), 23Q2-Q2
+(le refuser), O33-Q3 (oui, en erreur) — chacune déjà écrite ainsi — ; 23Q2Q2-Q2 (l'accepter : rien à écrire) ; 23Q2Q2-Q1
+(le client d'un dossier du cabinet n'entre dans l'équipe qu'après une confirmation qui nomme l'adresse, le rôle et
+l'espace client qu'il perd) et 23Q2Q2-Q3 (l'équipe ne se modifie que par son rôle, une migration de resserrement), deux
+lots à écrire.
+
+**AVANT.** 148 migrations, `19c0e53c5514e71e7af8c80874106e79` ; les neuf familles de `signature.sql` égales, une à une,
+à celles de la réplique d'avant (colonnes 865 `f353a5aa…`, contraintes 670 `d63ab39f…`, déclencheurs 67 `10f1a74a…`,
+fonctions 197 `d3d1a53e…` et leurs droits `98e0d5c9…`, index 237 `08ef14df…`, policies 159 `c6aae852…`, RLS 81
+`6450be96…`, droits des tables 81 `79e266f1…`) ; aucun dossier basculé, aucun encaissement, aucun exercice validé.
+
+**L'APPLICATION**, par `apply_migration`, le texte des fichiers tel quel, sans qu'aucune confirmation soit demandée,
+dans l'ordre de leur préparation — chacune vérifiait d'abord, en tête, les corps qu'elle remplace ou redit :
+`registre_virement_mixte` sous la version `20261026000145` (sa ligne d'historique rend
+`65c118eb783c46f2230e4543c1ca0c17`), `frontiere_des_encaissements` sous `20261026000313`
+(`387889c034a62b5a63ce62102d295ab0`), `validation_des_ventes_facturees` sous `20261026000623`
+(`b5c3dad446ff6cbbb96ef6045ed816ce`), `gel_des_designations` sous `20261026000808` (`3a1cf57ac45fc9829a116126730c6502`),
+`reglage_des_ventes` sous `20261026000858` (`783cf05937bb40c1e0478471c94977eb`) — chaque empreinte celle du fichier
+éprouvé. 153 migrations, empreinte globale `e63d2d172770ace9fcdcbcfcb52a8820`.
+
+**LA PREUVE QUE LA PRODUCTION EST LA RÉPLIQUE ÉPROUVÉE.** `signature.sql` en production, après les cinq : les neuf
+familles égales à celles de la réplique de VF8a munie des cinq — colonnes 866 (`23b2bc60…`), déclencheurs 69
+(`aa7a762c…`), fonctions 202 (`0837e89d…`) et leurs droits 202 (`f61b1cd0…`), les cinq autres inchangées. Sur les
+répliques de chaque lot ont été joués entiers, avec leur migration, les essais que chaque entrée nomme (« LES REFUS DU
+REGISTRE POUR LA FACTURE D'AVANT D'UN VIREMENT MIXTE », « LA FRONTIÈRE DES ENCAISSEMENTS, EN BASE », « LA VALIDATION
+REFUSE LES MANQUES DES VENTES FACTURÉES », « LE GEL DES DÉSIGNATIONS », « LE RÉGLAGE DES VENTES, GARDÉ »), `rls.sql`
+compris.
+
+**CE QUI N'A PAS ÉTÉ REJOUÉ EN PRODUCTION, ET POURQUOI.** Aucun essai entier, pour la raison du 24/10/2026 (« LE
+VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION ») : chacun se transmet en une seule requête de 75 000 à 106 000
+caractères, que la session recopierait caractère pour caractère, et la signature égale établit que leur base est
+celle-ci. Aucune des cinq ne crée ni ne change de policy, ni de droit d'une table. À la place, un contrôle du
+catalogue : aucune des cinq fonctions neuves (`garder_frontiere_des_encaissements`, `ecritures_attendues_de_la_periode`,
+`ventes_facturees_de_l_exercice`, `exercice_figeant_la_facture_source`, `exercice_figeant_la_designation`) ne s'exécute
+par l'anonyme ni par un connecté ; les deux déclencheurs de la frontière sont actifs ; la colonne neuve,
+`dossiers.ventes_par_les_factures_depuis`, n'a pas de droits propres — elle suit ceux de sa table, la RLS des dossiers
+et la garde du réglage — et n'est posée nulle part.
+
+**LES TROIS CONTRÔLES DE L'EXPORT.** Les cinq fichiers renommés de leur version provisoire à la leur, texte inchangé :
+153 fichiers, 153 migrations, `e63d2d17…` des deux côtés ; le socle inchangé (80 instructions, `5d53eea2…`) ;
+l'inventaire 2 163 objets, `b20a312cfd61acc4cebeeb7737e05325`, des deux côtés (2 155 avant).
+
+**LE DÉPÔT.** Les commentaires qui disaient ces migrations préparées les disent appliquées (`exemplairesDesFactures.ts`,
+`sourceDeLaVente.ts`, `sauvegarde.ts`, `types.ts` et quatre en-têtes de tests ; quinze mentions dans les en-têtes de huit
+essais) ; le README de l'export ; CLAUDE.md. Aucun drapeau ne les attendait. `dossiers.ventes_par_les_factures_depuis`
+reste facultative dans `types.ts` jusqu'à VF8b, le premier écran qui la lit ; les branches « EN ATTENTE » des essais
+restent, pour une base sans la migration.
+
+**CE QUI RESTE.** VF8h, VF8d, VF8b (avec VF8-Q3), VF8e (avec VF8-Q2, une migration), VF8f (le resserrement, une
+migration, en dernier), puis VF9 ; la migration de VF5H2-Q1, avant la première bascule réelle ; les deux lots de
+23Q2Q2-Q1 et 23Q2Q2-Q3.

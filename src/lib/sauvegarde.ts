@@ -462,7 +462,7 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // changent. `sauvegardeDesignations.test.ts` garde cet ordre.
 //
 // Le réglage de la source des ventes d'un dossier et sa date (chantier EC-Q3, étapes VF2 et VF8a ; migrations
-// `source_de_la_vente` et `reglage_des_ventes`, la seconde préparée) : deux colonnes de `dossiers`, recopiées avec sa ligne
+// `source_de_la_vente` et `reglage_des_ventes`, appliquées) : deux colonnes de `dossiers`, recopiées avec sa ligne
 // entière (`select('*')`) et réinsérées TELLES — la date n'est pas une colonne générée (`COLONNES_GENEREES`), et la garde du
 // réglage, qui la pose et l'efface à toute autre écriture, laisse celle que le super-administrateur réinsère. Une
 // sauvegarde faite avant la migration ne porte pas la date : la base la laisse nulle — inconnue —, et la relecture n'y voit

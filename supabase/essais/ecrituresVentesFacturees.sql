@@ -160,7 +160,7 @@
 -- `20261024052424`) : ce fichier n'y a pas été rejoué entier ; la signature des neuf familles en production égale celle
 -- de la réplique où il a rendu ses 198 justes (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 --
--- 25/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `frontiere_des_encaissements`, préparée, pas appliquée ;
+-- 25/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `frontiere_des_encaissements`, appliquée le 26/10/2026 ;
 -- chantier EC-Q3, étape VF7a) : 170 à 176 — le chèque de 30 € de F2025-0001, daté du 31 décembre 2025 dans
 -- l'exercice validé de R, sans mouvement, se rattache au crédit de janvier ; sa recomposition reste celle d'avant (le
 -- 511, au 31 décembre), son écriture validée est intacte, et le crédit de janvier se classe par lui, se compose et
@@ -169,7 +169,7 @@
 -- 173 à 176 — ; avec elle, 205 justes, rien n'est resté, et les 198 d'hier inchangés. Le texte sans ses lignes de
 -- commentaire, envoyé en une requête : 89 884 caractères, empreinte adff7a718db8f96a3a77994fa5531683, 205 justes.
 --
--- 25/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `validation_des_ventes_facturees`, préparée, pas appliquée ;
+-- 25/10/2026, SUR UNE RÉPLIQUE, PAS EN PRODUCTION (migration `validation_des_ventes_facturees`, appliquée le 26/10/2026 ;
 -- chantier EC-Q3, étape VF7b) : 9c et 177 confrontent la recomposition d'un bloc (`ecritures_attendues_de_la_periode`),
 -- source par source, à `ecriture_attendue_vente_facturee` — les 198 sources des trois dossiers au départ, les 199 que
 -- l'essai laisse à la fin, après tout ce qu'il a écrit, retiré et classé : 0 écart. Sur une réplique égale à la

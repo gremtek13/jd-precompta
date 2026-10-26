@@ -158,7 +158,7 @@
 -- fichier n'y a pas été rejoué entier ; la signature des neuf familles en production égale celle de la réplique où il a
 -- rendu ses 198 justes (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 --
--- 24/10/2026, migration `registre_virement_mixte` (PRÉPARÉE, pas appliquée ; chantier EC-Q3, étape VF5h2, VF5H-Q2) : pour
+-- 24/10/2026, migration `registre_virement_mixte` (appliquée le 26/10/2026 ; chantier EC-Q3, étape VF5h2, VF5H-Q2) : pour
 -- une facture qui n'est pas source, sur un mouvement classé par ses encaissements — un virement mixte —, le rang 18
 -- d'`enregistrer_encaissement` (les plafonds nets passent aux rangs 28 et 30), le rang 8 de `retirer_encaissement`, le
 -- rang 21 d'`annuler_encaissement` et la garde au retrait direct (23514). 93b dit désormais le rang 21 (hier, la
@@ -173,7 +173,7 @@
 -- survivantes sont équivalentes, déclarées d'avance (HISTORIQUE.md, « LES REFUS DU REGISTRE POUR LA FACTURE D'AVANT D'UN
 -- VIREMENT MIXTE »).
 --
--- 25/10/2026, migration `frontiere_des_encaissements` (PRÉPARÉE, pas appliquée ; chantier EC-Q3, étape VF7a) : la
+-- 25/10/2026, migration `frontiere_des_encaissements` (appliquée le 26/10/2026 ; chantier EC-Q3, étape VF7a) : la
 -- frontière d'un exercice validé tenue par une garde neuve pour l'encaissement d'une facture source, et le rattachement
 -- jugé sur le mouvement. 105 dit désormais que le chèque se rattache au mouvement d'après (hier, le rang 6 le
 -- refusait) ; 155 compte la garde ; trente-sept verdicts de plus : les six étapes du jeu de R, 145 à 149b, et les
@@ -186,7 +186,7 @@
 -- justes. Quarante-six mutations de la migration, jouées contre cet essai et cinq autres : quarante-deux tuées, quatre
 -- équivalentes déclarées d'avance (HISTORIQUE.md, « LA FRONTIÈRE DES ENCAISSEMENTS, EN BASE »).
 --
--- 25/10/2026, migration `validation_des_ventes_facturees` (PRÉPARÉE, pas appliquée ; chantier EC-Q3, étape VF7b) : 188,
+-- 25/10/2026, migration `validation_des_ventes_facturees` (appliquée le 26/10/2026 ; chantier EC-Q3, étape VF7b) : 188,
 -- posé en dernier, confronte la recomposition d'un bloc (`ecritures_attendues_de_la_periode`), source par source, à
 -- `ecriture_attendue_vente_facturee`, sur les quatre dossiers tels que l'essai les laisse : 27 sources, 0 écart. Sur une
 -- réplique égale à la production munie de VF5h2 et de VF7a : sans la migration, 273 verdicts, 1 en faute — 188,
@@ -195,7 +195,7 @@
 -- 888fc6c56b993634c2ba97ea8312f4b6, 273 justes (HISTORIQUE.md, « LA VALIDATION REFUSE LES MANQUES DES VENTES
 -- FACTURÉES »).
 --
--- 25/10/2026, migration `reglage_des_ventes` (PRÉPARÉE, pas appliquée ; chantier EC-Q3, étape VF8a ; VF8-Q1 suivie sur
+-- 25/10/2026, migration `reglage_des_ventes` (appliquée le 26/10/2026 ; chantier EC-Q3, étape VF8a ; VF8-Q1 suivie sur
 -- sa recommandation) : le réglage gardé — depuis une session, le chef du cabinet seul le pose ou le baisse, le droit
 -- « Ventes » d'un accès en retient la baisse, et la garde date la bascule. 154 dit désormais le déclencheur étendu à
 -- l'insertion et à la colonne neuve ; vingt-huit verdicts de plus : 6 à 9f, 158, 158b et les mutations 189 à 191 ; le

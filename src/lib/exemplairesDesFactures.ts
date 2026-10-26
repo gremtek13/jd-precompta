@@ -239,8 +239,8 @@ export function argumentsDuRetraitDeLaDesignation(dossierId: string, pieceId: st
 //   - le virement mixte (VF5H-Q1) : la désignation qui date l'exemplaire d'une facture d'avant ne change pas sous un
 //     mouvement classé qui compte son encaissement ;
 //   - le JOURNAL, `designations_des_pieces` (VF6-Q3) : qui a fait quel geste, et quand ; au cabinet seul ;
-//   - depuis l'étape VF7e (migration `gel_des_designations`, PRÉPARÉE : dans l'export sous une version provisoire, pas
-//     encore en production, où elle ne changerait rien — aucune facture source, aucun exercice validé) : le GEL de la
+//   - depuis l'étape VF7e (migration `gel_des_designations`, appliquée en production le 26/10/2026, où elle n'a rien
+//     changé — aucune facture source, aucun exercice validé) : le GEL de la
 //     désignation d'une facture source par la validation de l'exercice de sa facture, et le côté de la facture (VF7-Q1,
 //     option B, suivie sur la recommandation) — `exerciceFigeantLaDesignation`, `exerciceFigeantLaFactureSource`.
 // Ce bloc redit chaque refus neuf, dans l'ordre de la base et sous ses mots, pour les écrans de VF6c et VF6d. Les fonctions

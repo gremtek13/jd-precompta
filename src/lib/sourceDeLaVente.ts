@@ -18,7 +18,7 @@ import { exerciceQuiFige, frontiereDeValidation } from './validationExercice'
 // la validation d'une facture source ; et les colonnes `encaissement_id` et `facture_id` des écritures, FERMÉES jusqu'à
 // l'étape VF4 (`garder_ecriture_vente_facturee`).
 //
-// LE RÉGLAGE GARDÉ (étape VF8a ; migration `reglage_des_ventes`, PRÉPARÉE, pas appliquée ; HISTORIQUE.md, « LE RÉGLAGE DES
+// LE RÉGLAGE GARDÉ (étape VF8a ; migration `reglage_des_ventes`, appliquée le 26/10/2026 ; HISTORIQUE.md, « LE RÉGLAGE DES
 // VENTES, GARDÉ ») : la garde du réglage, remplacée, refuse de plus, dans son ordre, après la facture source d'hier, un
 // réglage posé ou baissé par une session qui n'est pas le chef du cabinet (VF8-Q1, sur sa recommandation), puis un réglage
 // baissé quand un accès client porte « Ventes » ; et elle date la bascule (`dossiers.ventes_par_les_factures_depuis`).

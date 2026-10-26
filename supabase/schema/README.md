@@ -482,51 +482,22 @@ migrations, empreinte globale `19c0e53c5514e71e7af8c80874106e79` des deux côté
 tous les essais ont été joués entiers ; en production, un contrôle ciblé de la table neuve, aucun essai entier
 (HISTORIQUE.md, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »).
 
-**Quatre fichiers sous une version PROVISOIRE, pas appliqués (25/10/2026)** : `20261024120000_registre_virement_mixte.sql`
-(chantier EC-Q3, étape VF5h2), `20261025120000_frontiere_des_encaissements.sql` (étape VF7a),
-`20261025180000_validation_des_ventes_facturees.sql` (étape VF7b) et `20261026090000_gel_des_designations.sql` (étape
-VF7e), chacun en attente de l'accord du cabinet ; ils s'appliquent dans cet ordre ou l'un sans les autres (aucun ne touche
-à une fonction d'un autre, et chacun vérifie d'abord les corps qu'il remplace ou redit). Tant qu'ils ne sont pas
-appliqués, la dérive se lit sur les fichiers privés d'eux : 148, `19c0e53c…`, la production. Appliqué, chacun prend la
-version de sa ligne d'historique, fichier renommé, texte inchangé (`65c118eb…` pour le premier,
-`387889c034a62b5a63ce62102d295ab0` pour le second, `b5c3dad446ff6cbbb96ef6045ed816ce` pour le troisième,
-`3a1cf57ac45fc9829a116126730c6502` pour le quatrième, fins de ligne ramenées à `\n`) ; les quatre appliqués, la dérive se
-rejoue entière : 152 fichiers, 152 migrations, une empreinte globale égale des deux côtés, qui dépend des versions. Sur la
-réplique de VF7e, munie des quatre à leurs versions provisoires : 152, `1ea7ce64f0a562b86ad5ebf6c0aa2406` des deux côtés
-(151, `cc768c5d36e48f4a456d92cc6a616489`, sans le quatrième). Le socle ne change pas (80 instructions, `5d53eea2…`) ;
-l'inventaire passe de 2 155 objets (`855735ea…`, `registre_virement_mixte` n'en ajoutant aucun) à 2 158
-(`69c64886477e34f856b96508ce61a801`) avec `frontiere_des_encaissements` — une fonction,
-`garder_frontiere_des_encaissements`, et ses deux déclencheurs ; le rattachement remplacé sous le même nom —, à 2 160
-(`0eab3cd71d822b1093d440b554d0760a`) avec `validation_des_ventes_facturees` — deux fonctions,
-`ecritures_attendues_de_la_periode` et `ventes_facturees_de_l_exercice` ; la validation remplacée sous le même nom —, puis
-à 2 162 (`c068c7d4bac17696dfe0c0ffd0a15cf7`, des deux côtés sur la réplique) avec `gel_des_designations` — deux
-fonctions, `exercice_figeant_la_facture_source` et `exercice_figeant_la_designation` ; les quatre fonctions du cabinet
-remplacées sous leur nom. `signature.sql`, après les quatre : les déclencheurs (69, `e35f54305d686aa7248d6af354c934ed`),
-les fonctions (202, `5a4a484996cf3897221ff6b836dc5f6c`) et leurs droits (202, `f61b1cd0d27096b5bc4f10f7d13fbc34`)
-changent ; les six autres familles gardent l'empreinte d'aujourd'hui (après les trois premières seulement : les fonctions
-200, `33d27039eedab7c30e51ab13c8cec7e6`, et leurs droits 200, `8583d4e0b9d91510a4fa790d9fef582c`). La troisième seule, sur
-la production d'aujourd'hui : les fonctions (199, `d4e192bf52d158252bc9a76d2cc74e71`) et leurs droits (199,
-`d6def6e4c799662bc860837117240c36`) ; la quatrième seule : les fonctions (199, `8e8094be83d457fe7f8589ced4f63c8d`) et
-leurs droits (199, `2560a4171403f60e0cf637ad6a7ae2b8`) ; les sept autres familles inchangées (HISTORIQUE.md, « LA
-FRONTIÈRE DES ENCAISSEMENTS, EN BASE », « LA VALIDATION REFUSE LES MANQUES DES VENTES FACTURÉES », « LE GEL DES
-DÉSIGNATIONS »).
-
-**Un cinquième fichier sous une version PROVISOIRE, pas appliqué (25/10/2026)** :
-`20261026120000_reglage_des_ventes.sql` (chantier EC-Q3, étape VF8a), en attente de l'accord du cabinet ; il s'applique
-après les quatre ou sans eux (il ne touche à aucune de leurs fonctions, et vérifie d'abord la garde et le déclencheur
-qu'il reprend de `source_de_la_vente`). Tant
-qu'il n'est pas appliqué, la dérive se lit sur les fichiers privés des cinq : 148, `19c0e53c…`, la production. Appliqué,
-il prend la version de sa ligne d'historique, fichier renommé, texte inchangé (`783cf05937bb40c1e0478471c94977eb`, fins
-de ligne ramenées à `\n`). Sur la réplique de VF8a, munie des cinq à leurs versions provisoires : 153,
-`ef644683a13e04bc78a1ce260b340eff` des deux côtés (152, `1ea7ce64…`, sans lui). Le socle ne change pas (80 instructions,
-`5d53eea2…`) ; l'inventaire passe de 2 162 objets (`c068c7d4…`) à 2 163 (`b20a312cfd61acc4cebeeb7737e05325`, des deux
-côtés sur la réplique) — une colonne, `dossiers.ventes_par_les_factures_depuis` ; la garde et son déclencheur remplacés
-sous leur nom. `signature.sql`, après les cinq : les colonnes (866, `23b2bc604fbbf4f428935a1624334abb`), les
-déclencheurs (69, `aa7a762cb26608b8e896e9dbb7d43ab6`) et les fonctions (202, `0837e89d80030779d95675e63213e243`)
-changent ; les six autres familles gardent l'empreinte qu'elles ont après les quatre. Lui seul, sur la production
-d'aujourd'hui : les colonnes (866, `23b2bc60…`), les déclencheurs (67, `36b5e607ae642c397dea8588a7642b0d`) et les
-fonctions (197, `0cb9c6a19ffebe08be4972ea59e88455`) ; les six autres familles inchangées (HISTORIQUE.md, « LE RÉGLAGE
-DES VENTES, GARDÉ »).
+**Rejoué le 26/10/2026 après `registre_virement_mixte`, `frontiere_des_encaissements`,
+`validation_des_ventes_facturees`, `gel_des_designations` et `reglage_des_ventes`** (chantier EC-Q3, étapes VF5h2, VF7a,
+VF7b, VF7e et VF8a), accordées par le cabinet. Appliquées dans cet ordre par `apply_migration`, sans confirmation
+demandée, sous les versions `20261026000145`, `20261026000313`, `20261026000623`, `20261026000808` et `20261026000858` ;
+leurs fichiers ont quitté les versions PROVISOIRES `20261024120000`, `20261025120000`, `20261025180000`,
+`20261026090000` et `20261026120000` sous lesquelles leurs répliques les avaient éprouvées, et portent les textes
+appliqués, octet pour octet (aucun retour chariot) : leurs lignes d'historique rendent
+`65c118eb783c46f2230e4543c1ca0c17`, `387889c034a62b5a63ce62102d295ab0`, `b5c3dad446ff6cbbb96ef6045ed816ce`,
+`3a1cf57ac45fc9829a116126730c6502` et `783cf05937bb40c1e0478471c94977eb`. 153 fichiers, 153 migrations, empreinte
+globale `e63d2d172770ace9fcdcbcfcb52a8820` des deux côtés, aucune divergence. Le socle est inchangé (80 instructions,
+`5d53eea2…`) ; l'inventaire compte 2 163 objets (`b20a312cfd61acc4cebeeb7737e05325`, des deux côtés, 2 155 avant) — une
+fonction et deux déclencheurs de VF7a, deux fonctions de VF7b, deux de VF7e, une colonne de VF8a. `signature.sql` : les
+neuf familles égalent celles de la réplique de VF8a munie des cinq migrations, où tous les essais ont été joués entiers
+— colonnes 866 (`23b2bc60…`), déclencheurs 69 (`aa7a762c…`), fonctions 202 (`0837e89d…`) et leurs droits 202
+(`f61b1cd0…`), les cinq autres familles inchangées ; en production, aucun essai entier : aucune des cinq ne crée ni ne
+change de policy ni de droit d'une table (HISTORIQUE.md, « LES CINQ MIGRATIONS DE VF5H2, VF7 ET VF8A EN PRODUCTION »).
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 

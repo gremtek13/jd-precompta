@@ -28,7 +28,7 @@
 --
 -- ÉPROUVÉ LE 25/10/2026 SUR LA RÉPLIQUE DE L'ÉTAPE (PostgreSQL 16, UTF8 ; `signature.sql` : les neuf familles, et
 -- l'historique, égaux à la production à 148 migrations ; puis `registre_virement_mixte`, de l'étape VF5h2), migration
--- `frontiere_des_encaissements` PRÉPARÉE, pas appliquée : sans elle, 13 verdicts, 7 en faute — S1 à S4, S6 à S8 — ;
+-- `frontiere_des_encaissements`, appliquée le 26/10/2026 : sans elle, 13 verdicts, 7 en faute — S1 à S4, S6 à S8 — ;
 -- avec elle, 13 justes, rien n'est resté, les gardes d'hier actives ; de même sur la production sans VF5h2. Des
 -- quarante-six mutations de la migration, il est seul à en tuer quatre — l'encaissement qu'une part quitte, la
 -- suppression d'un dossier, le rattachement mêlé à une autre colonne, tout autre changement d'un encaissement figé —, et

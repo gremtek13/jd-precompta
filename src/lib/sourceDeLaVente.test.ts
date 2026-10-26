@@ -39,7 +39,7 @@ const FONCTIONS = [
 ] as const
 
 // Les fichiers de l'export qui définissent chaque fonction : la migration `source_de_la_vente`, et, pour la garde du
-// réglage, la migration `reglage_des_ventes` de l'étape VF8a (préparée, sous une version provisoire), qui la remplace.
+// réglage, la migration `reglage_des_ventes` de l'étape VF8a (appliquée le 26/10/2026), qui la remplace.
 const migration = (nom: string) => {
   const fichiers = fichiersDuSchema().filter((f) => new RegExp(`/\\d{14}_${nom}\\.sql$`).test(f.chemin))
   expect(fichiers, nom).toHaveLength(1)
