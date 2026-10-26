@@ -220,6 +220,7 @@ vi.mock('./dossier/InformationsTab', async () => {
   return {
     default: function InformationsDouble({
       dossierSiret, dossierAdresse, dossierDenomination, dossierRcsVille, dossierFormeJuridique, dossierCapital, modele, onIdentiteUpdated,
+      onReglageUpdated,
     }: {
       dossierSiret: string | null
       dossierAdresse: string | null
@@ -229,6 +230,7 @@ vi.mock('./dossier/InformationsTab', async () => {
       dossierCapital: number | null | undefined
       modele: { mode: string; compteNotesDeFrais: string }
       onIdentiteUpdated: (identite: Record<string, unknown>) => void
+      onReglageUpdated: (dossierId: string, reglage: { ventes_par_les_factures: boolean; ventes_par_les_factures_depuis: string | null }) => void
     }) {
       const [siret] = useState(dossierSiret ?? '')
       // Ce que la page PASSE : une colonne que la lecture n'a pas portée arrive `undefined` (dite « non lue »), jamais nulle.
@@ -247,6 +249,11 @@ vi.mock('./dossier/InformationsTab', async () => {
             forme_juridique: '5710', capital: 1500.5,
           })}>Écrire l’identité (double)</button>
           <button onClick={() => onIdentiteUpdated({ siret: '44444444444444', adresse: null })}>Écrire le SIRET seul (double)</button>
+          {/* La source des ventes que la base a RENDUE après la bascule (carte « Source des ventes », étape VF8b), avec le
+              dossier écrit : la page la fusionne dans CE dossier-là. */}
+          <button onClick={() => onReglageUpdated('d1', { ventes_par_les_factures: true, ventes_par_les_factures_depuis: '2026-10-26T09:15:00+00:00' })}>
+            Basculer d1 (double)
+          </button>
         </>
       )
     },
@@ -1040,6 +1047,27 @@ describe('Page d’un dossier — le plan comptable', () => {
     faux.dossiers.d1 = sansReglage
     await afficher('/dossiers/d1/factures')
     expect(screen.getByTestId('reglage-des-ventes').textContent).toBe('{"etat":"illisible","motif":"le réglage n’est pas lisible"}')
+  })
+
+  // Étape VF8b : la carte « Source des ventes » de l'onglet Informations rend à la page le réglage écrit, avec le dossier écrit ;
+  // la page le fusionne dans CE dossier, et l'onglet Factures le voit sans relire la ligne.
+  it('la source des ventes rendue par la carte se fusionne dans le dossier écrit, et Factures la voit', async () => {
+    faux.dossiers.d1 = { ...faux.dossiers.d1, ventes_par_les_factures: false }
+    faux.dossiers.d2 = { ...faux.dossiers.d2, ventes_par_les_factures: false }
+    await afficher('/dossiers/d1/informations')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Basculer d1 (double)' })) })
+    const arbre = screen.getByRole('region', { name: 'Dossier ouvert' })
+    await act(async () => { fireEvent.click(within(arbre).getByRole('link', { name: 'Factures émises' })) })
+    expect(JSON.parse(screen.getByTestId('reglage-des-ventes').textContent ?? ''))
+      .toEqual({ etat: 'bascule', modeComptable: faux.dossiers.d1.mode_comptable, anneesValidees: [] })
+    cleanup()
+
+    // Écrite pour d1 pendant que d2 est affiché : d2 n'en reçoit rien.
+    await afficher('/dossiers/d2/informations')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Basculer d1 (double)' })) })
+    const arbre2 = screen.getByRole('region', { name: 'Dossier ouvert' })
+    await act(async () => { fireEvent.click(within(arbre2).getByRole('link', { name: 'Factures émises' })) })
+    expect(screen.getByTestId('reglage-des-ventes').textContent).toBe('{"etat":"non_bascule","anneesValidees":[]}')
   })
 
   it('le Financement reçoit le plan du dossier et le réglage de la bascule', async () => {

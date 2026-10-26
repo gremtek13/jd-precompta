@@ -71,7 +71,7 @@ function dossier(o: Partial<Dossier> = {}): Dossier {
     notes: null, archive: false, created_at: '2026-01-05T09:00:00Z', code_email: 'abc123', assujetti_tva: true,
     statut_tva: 'redevable', article_exoneration: null, numero_tva_attribue: false, tva_periodicite: 'trimestrielle',
     tva_sur_debits: false, mode_comptable: 'tresorerie', compte_notes_de_frais: '108000', code_naf: null, libelle_naf: null,
-    adresse: null, ventes_par_les_factures: false, ...o,
+    adresse: null, ventes_par_les_factures: false, ventes_par_les_factures_depuis: null, ...o,
   }
 }
 

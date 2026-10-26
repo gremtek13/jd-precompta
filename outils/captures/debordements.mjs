@@ -1120,6 +1120,25 @@ const VISITES = [
       await page.getByText(/n’ont pas été lus avec ce dossier/u).waitFor({ timeout: 10000 })
     },
   },
+  // LA CARTE « SOURCE DES VENTES » (chantier EC-Q3, étape VF8b), sous l'identité du dossier : le cabinet infirmier (d1),
+  // dont les ventes se comptent par leurs pièces, et la consultante d12, basculée. Drapeau baissé, l'état et sa raison ;
+  // levé le temps d'un banc, ce que la bascule change, le moment conseillé et le geste — ou le refus qui le retient.
+  {
+    dossier: 'd1', onglet: 'informations', nom: 'informations/source-des-ventes',
+    apres: async (page) => {
+      const etat = page.getByText(/^Les ventes de ce dossier se comptent par leurs pièces/u)
+      await etat.waitFor({ timeout: 10000 })
+      await etat.scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd12', onglet: 'informations', nom: 'informations/source-des-ventes-basculee',
+    apres: async (page) => {
+      const etat = page.getByText(/^Les factures de ce dossier sont la source de leurs ventes depuis le/u)
+      await etat.waitFor({ timeout: 10000 })
+      await etat.scrollIntoViewIfNeeded()
+    },
+  },
   // L'ONGLET ACCÈS D'UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF8d) : la consultante d12, dont l'accès porte « Ventes » et
   // « Banque », et la phrase qui dit ce que comptent les factures du client. Celui du cabinet infirmier (d1, non basculé : la
   // case « Ventes » cochée se décoche, décochée elle est grisée) est la visite `acces` des onglets.

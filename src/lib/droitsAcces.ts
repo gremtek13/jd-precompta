@@ -22,6 +22,7 @@
 // de son champ (les libellés en fin de module).
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
+import { BASCULE_OFFERTE } from './basculeDesVentes'
 import { CHANGEMENT_DE_RIB_EXPORTE } from './changementDeRib'
 import { CONTACTS_EXPORTES } from './contacts'
 import { IMPORT_CONTACTS_EXPORTE } from './contactsImport'
@@ -368,22 +369,22 @@ export function reglageDuDossier(ligne: { readonly ventes_par_les_factures?: unk
   return { etat: 'illisible', motif: 'le réglage n’est pas lisible' }
 }
 
-// LA CARTE QUI BASCULE UN DOSSIER (étape VF8b, onglet Informations) N'EXISTE PAS ENCORE : la phrase ne renvoie pas le cabinet
-// vers un onglet où rien ne s'offre. droitsAcces.test.ts confronte cette constante à InformationsTab.tsx — le jour où la carte
-// y lit le réglage, le test tombe, et la constante passe à vrai avec elle.
-export const CARTE_DE_LA_BASCULE_OUVERTE: boolean = false
+// LA PHRASE SUIT LE GESTE OFFERT, PAS L'EXISTENCE DE LA CARTE (étape VF8b) : la carte « Source des ventes » de l'onglet
+// Informations existe, mais tant que `BASCULE_OFFERTE` (lib/basculeDesVentes.ts) est faux elle ne bascule rien — la phrase
+// ne renvoie donc pas le cabinet vers un geste qui ne s'offre pas, et dit que le réglage « ne s'offre pas encore ».
+// droitsAcces.test.ts éprouve ses deux états.
 
-/** Ce qui ouvre la case « Ventes », et où se pose le réglage — selon que la carte de la bascule existe. */
-export function ouvertureDeLaCaseVentes(carteOuverte: boolean): string {
+/** Ce qui ouvre la case « Ventes », et où se pose le réglage — selon que la bascule s'offre dans l'onglet Informations. */
+export function ouvertureDeLaCaseVentes(basculeOfferte: boolean): string {
   return 'La case « Ventes » s’ouvre quand les factures de ce dossier sont la source de leurs ventes'
-    + (carteOuverte
+    + (basculeOfferte
       ? ' (onglet Informations)'
       : ' — un réglage que le chef du cabinet posera dans l’onglet Informations, où il ne s’offre pas encore')
 }
 
 /** Pourquoi la case « Ventes » ne se coche pas sur un dossier qui n'a pas basculé. */
-export function raisonDuDossierNonBascule(carteOuverte: boolean): string {
-  return `${ouvertureDeLaCaseVentes(carteOuverte)} : d’ici là, elle ne se coche pas, et un accès qui la porte déjà se décoche.`
+export function raisonDuDossierNonBascule(basculeOfferte: boolean): string {
+  return `${ouvertureDeLaCaseVentes(basculeOfferte)} : d’ici là, elle ne se coche pas, et un accès qui la porte déjà se décoche.`
 }
 
 /** Pourquoi la case « Ventes » ne se change pas sur un réglage illisible. */
@@ -400,7 +401,7 @@ export const CE_QUE_COMPTENT_SES_FACTURES = 'Les factures de ce dossier sont la 
 /** Ce que la phrase de l'onglet dit de la case « Ventes » sur CE dossier, selon son réglage. */
 export function phraseDuReglage(reglage: ReglageDuDossier): string {
   if (reglage.etat === 'bascule') return CE_QUE_COMPTENT_SES_FACTURES
-  if (reglage.etat === 'non_bascule') return raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE)
+  if (reglage.etat === 'non_bascule') return raisonDuDossierNonBascule(BASCULE_OFFERTE)
   return raisonDuReglageIllisible(reglage.motif)
 }
 
@@ -421,7 +422,7 @@ const LES_DEUX_GESTES: GesteDeLaCase = { cocher: true, decocher: true, raison: n
 export function gesteDeLaCase(domaine: Domaine, reglage: ReglageDuDossier): GesteDeLaCase {
   if (domaine !== 'ventes' || reglage.etat === 'bascule') return LES_DEUX_GESTES
   if (reglage.etat === 'non_bascule') {
-    return { cocher: false, decocher: true, raison: raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE) }
+    return { cocher: false, decocher: true, raison: raisonDuDossierNonBascule(BASCULE_OFFERTE) }
   }
   return { cocher: false, decocher: false, raison: raisonDuReglageIllisible(reglage.motif) }
 }

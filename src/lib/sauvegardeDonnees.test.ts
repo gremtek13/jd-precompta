@@ -920,6 +920,29 @@ describe('un lot dont les lignes ne nomment pas les mêmes colonnes', () => {
     expect(await verifierRestauration(sauvegarde)).toEqual([])
   })
 
+  // LA DATE DE LA BASCULE (chantier EC-Q3, étape VF8b, qui la rend obligatoire dans `Dossier` : le type décrit la table).
+  // Une sauvegarde faite avant la migration `reglage_des_ventes` ne la porte pas, et se restaure pourtant : la ligne du
+  // dossier part sans elle, et la base la pose nulle — la colonne est un `timestamptz` sans `not null`, et la garde laisse
+  // au super-administrateur qui restaure ce qu'il insère (sauvegardeVenteFacturee.test.ts). Celle qui la porte la rend telle.
+  it('la date de la bascule : absente d’une sauvegarde d’avant, la ligne part sans elle et la base la pose nulle ; présente, telle', async () => {
+    for (const depuis of [undefined, '2026-10-26T09:15:00+00:00']) {
+      base.tables = { cabinets: [{ id: CABINET, nom: 'JD Consult' }], dossiers: [] }
+      base.defauts = { dossiers: { ventes_par_les_factures_depuis: null } }
+      for (const table of Object.keys(envoyees)) delete envoyees[table]
+      const dossier: Ligne = { id: DOSSIER, nom: 'Cabinet Martin', cabinet_id: CABINET, ventes_par_les_factures: true }
+      if (depuis !== undefined) dossier.ventes_par_les_factures_depuis = depuis
+      const sauvegarde = {
+        manifeste: { ...manifesteVide(), dossierId: DOSSIER, cabinetId: CABINET },
+        contenu: { dossiers: [dossier] } as Record<string, Ligne[]>,
+      }
+      await restaurerSauvegarde(sauvegarde)
+      expect(Object.keys(envoyees.dossiers[0]).includes('ventes_par_les_factures_depuis'), String(depuis)).toBe(depuis !== undefined)
+      expect(base.tables.dossiers.map((d) => [d.ventes_par_les_factures, d.ventes_par_les_factures_depuis]), String(depuis))
+        .toEqual([[true, depuis ?? null]])
+      expect(await verifierRestauration(sauvegarde), String(depuis)).toEqual([])
+    }
+  })
+
   it('une sauvegarde lue par `select(\'*\')` part comme avant : des tranches de TAILLE_LOT_ECRITURE, ses lignes telles quelles', () => {
     const lignes = Array.from({ length: TAILLE_LOT_ECRITURE * 2 + 50 }, (_, i) => ({ id: `l${i}`, dossier_id: DOSSIER, montant: i }))
     const lots = lotsDEcriture(lignes)

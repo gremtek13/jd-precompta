@@ -3,9 +3,10 @@ import { AuthWeakPasswordError, FunctionsHttpError } from '@supabase/supabase-js
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
 import {
-  CARTE_DE_LA_BASCULE_OUVERTE, CE_QUE_COMPTENT_SES_FACTURES, CE_QUE_DONNE_UN_ACCES, ceQueDisentLesCasesDuDossier,
+  CE_QUE_COMPTENT_SES_FACTURES, CE_QUE_DONNE_UN_ACCES, ceQueDisentLesCasesDuDossier,
   raisonDuDossierNonBascule, raisonDuReglageIllisible,
 } from '../../lib/droitsAcces'
+import { BASCULE_OFFERTE } from '../../lib/basculeDesVentes'
 import { REGLE_DU_MOT_DE_PASSE, refusDuMotDePasse } from '../../lib/recuperationMotDePasse'
 import { CE_QUE_DIT_LA_COLLECTE } from '../../lib/piecesJointesEcarteesClient'
 
@@ -1329,9 +1330,9 @@ describe('AccesTab — la case « Ventes » suit la source des ventes du dossier
     const grisee = caseDe('Ventes', 'secretariat@exemple.fr')
     expect(grisee.disabled).toBe(true)
     expect(grisee.getAttribute('aria-describedby')).toBe('ce-que-disent-les-cases')
-    expect(grisee.title).toBe(raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE))
+    expect(grisee.title).toBe(raisonDuDossierNonBascule(BASCULE_OFFERTE))
     expect(phraseAffichee()).toBe(ceQueDisentLesCasesDuDossier({ etat: 'non_bascule' }))
-    expect(phraseAffichee()).toContain(raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE))
+    expect(phraseAffichee()).toContain(raisonDuDossierNonBascule(BASCULE_OFFERTE))
     await act(async () => { grisee.click() })
     expect(faux.appelsRpc).toEqual([])
     expect(grisee.checked).toBe(false)
