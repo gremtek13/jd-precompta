@@ -36789,17 +36789,18 @@ du dossier basculé, la ligne au-dessus des factures (et pas sur l'atelier).
   ACCÈS CLIENT, TENUS EN BASE ») : une case grisée ne transmet aucun clic. Jouée avec la case laissée libre (ordre
   deux), elle est tuée.
 - Lint : les 63 avertissements de la référence, identiques fichier par fichier et règle par règle. La barrière sur la
-  tête finale : le rapport de l'agent la dit (elle se joue après ce commit).
+  tête finale, verte : `tsc -b`, le lint, `test:fuseaux` (14 524 tests dans chacun des quatre fuseaux) et le build.
 
-**CE QUE L'APPLICATION CHANGERA EN PRODUCTION.** Aucun dossier n'a basculé : sur chacun, la case « Ventes » décochée est
-grisée, et la phrase dit pourquoi. Aucun accès ne porte « Ventes » (mesure de la conception, § 1) : rien n'est à
-décocher. Jusqu'à VF8b, AUCUNE case « Ventes » ne se coche depuis l'écran — c'est VF8D-Q1.
+**CE QUE L'APPLICATION CHANGE EN PRODUCTION.** Aucun dossier n'a basculé : sur chacun, la case « Ventes » décochée est
+grisée, et la phrase dit pourquoi. Aucun accès ne porte « Ventes » (relevé le 26/10/2026 : trois accès, aucun
+« Ventes », aucun dossier basculé) : rien n'est à décocher. Jusqu'à VF8b, AUCUNE case « Ventes » ne se coche depuis
+l'écran.
 
-**QUESTION AU CABINET.** VF8D-Q1 — Entre la mise en ligne de VF8d et celle de VF8b (la carte qui bascule un dossier), la
-case « Ventes » ne se coche plus sur aucun dossier depuis l'onglet Accès : aucun n'a basculé, et rien à l'écran ne le
-bascule encore. (A) Mettre VF8d en ligne dès maintenant : les données sont fictives, aucun accès ne porte « Ventes », et
-l'écran suit déjà la règle que VF8f posera en base. (B) La retenir pour la mettre en ligne avec VF8b. Recommandé : (A),
-VF8b ensuite.
+**VF8D-Q1, ÉCRITE SUR LA RECOMMANDATION.** Entre la mise en ligne de VF8d et celle de VF8b (la carte qui bascule un
+dossier), la case « Ventes » ne se coche plus sur aucun dossier depuis l'onglet Accès : aucun n'a basculé, et rien à
+l'écran ne le bascule encore. (A) Mettre VF8d en ligne dès maintenant : les données sont fictives, aucun accès ne porte
+« Ventes », et l'écran suit déjà la règle que VF8f posera en base. (B) La retenir pour la mettre en ligne avec VF8b.
+Recommandé : (A), VF8b ensuite — suivie le 26/10/2026, la question restant ouverte au cabinet sur la page des
+arbitrages.
 
-**CE QUI RESTE** : VF8b (et la constante `CARTE_DE_LA_BASCULE_OUVERTE` avec elle), VF8e, VF8f, puis VF9 ; la réponse du
-cabinet à VF8D-Q1.
+**CE QUI RESTE** : VF8b (et la constante `CARTE_DE_LA_BASCULE_OUVERTE` avec elle), VF8e, VF8f, puis VF9.
