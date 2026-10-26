@@ -523,8 +523,8 @@ describe('la facture d’avant d’un virement mixte (étape VF8h ; VF5H-Q3)', (
     expect(venteDuMouvement(classe, sansAvant)).toEqual({ vente: 'classe', factures: ['F2026-0002'] })
   })
 
-  it('réservé : les factures sources seules — la garde ne regarde qu’elles, et le classement peut encore refuser la facture d’avant', () => {
-    expect(venteDuMouvement(reserve, registre)).toEqual({ vente: 'reserve', factures: ['F2026-0002'] })
+  it('réservé : la facture d’avant nommée aussi, dans l’ordre de la garde (VF8H-Q1, écrite sur la recommandation)', () => {
+    expect(venteDuMouvement(reserve, registre)).toEqual({ vente: 'reserve', factures: ['F2025-0190', 'F2026-0002'] })
     // La facture d'avant seule ne réserve rien : le mouvement reste libre.
     const avantSeule: VentesDuClient = { ...registre, encaissements: registre.encaissements.filter((e) => e.id === 'eb3') }
     expect(venteDuMouvement(reserve, avantSeule)).toEqual({ vente: null, factures: [] })
@@ -545,7 +545,7 @@ describe('la facture d’avant d’un virement mixte (étape VF8h ; VF5H-Q3)', (
     if (!s.lues) throw new Error('muettes')
     expect(s.parMouvement.get('l2')?.etat).toBe('encaissement_factures')
     expect(s.parMouvement.get('l2')?.facturesDeLaVente).toEqual(['F2025-0187', 'F2026-0002', 'F2025-0190'])
-    expect(s.parMouvement.get('l3')?.facturesDeLaVente).toEqual(['F2026-0002'])
+    expect(s.parMouvement.get('l3')?.facturesDeLaVente).toEqual(['F2025-0190', 'F2026-0002'])
     const banque = situationsDuReleve(sources(BANQUE_SEULE))
     if (!banque.lues) throw new Error('muettes')
     expect(banque.parMouvement.get('l2')).toMatchObject({ etat: 'traite', facturesDeLaVente: [] })
