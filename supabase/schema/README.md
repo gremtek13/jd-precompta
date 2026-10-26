@@ -534,6 +534,22 @@ puis 203 `9a52af9e70d503d0f49955c58d164cf7`) et « index » (237 `08ef14df…` p
 `b9aae28f2e5278de99fc4e617687a011`) ; les six autres sont inchangées (HISTORIQUE.md, « « MA SIMULATION » REÇOIT SES
 VENTES FACTURÉES »).
 
+**Préparé le 26/10/2026, PAS ENCORE APPLIQUÉ : `contre_passation_sur_mouvement_fige`** (chantier EC-Q3, VF5H2Q1-Q2,
+« La refuser (petite migration à part) », et VF5H2Q1Q2-Q1, écrite sur la recommandation le même jour). Son fichier porte
+une version PROVISOIRE, `20261027140000`, après celles de `index_des_avoirs` et de `simulation_des_ventes_facturees`,
+dont il ne dépend pas : il s'applique avant ou après eux, et la base est la même au bout. `apply_migration` lui donnera
+sa version, et le fichier se RENOMME à cette version, texte inchangé — sa ligne d'historique doit rendre
+`98cf7f7ce93f87746af9a188a7dd5b43`, fins de ligne ramenées à `\n`. Tant que ces trois fichiers ne sont pas appliqués,
+la dérive se lit sans eux : 154 fichiers, 154 migrations, `9549d833…`, la production. Sur la réplique de l'étape (la
+production à 154, son historique et ses neuf familles égaux à ceux de la production), munie de la seule migration : 155
+fichiers, 155 migrations, `f15688c035ca5f05ebfa531f43fdb2c9` des deux côtés ; munie de l'index, de VF8e puis d'elle, à
+leurs versions provisoires : 157 fichiers, 157 migrations, `d61f4a33a6300cd5eb0412074db2ae1d` des deux côtés. Le socle
+(80 instructions, `5d53eea2…`) et l'inventaire (2 163 objets, `b20a312c…`, sans l'index ni VF8e ; 2 165, `2fd670d3…`,
+avec eux) sont inchangés : la migration remplace le corps d'une garde sous son nom. `signature.sql` : seule la famille
+« fonctions » change — 202 `d9a63228…` puis `58a80d4179e19b2fa21bac12c486c776` si elle passe avant l'index et VF8e ;
+203 `af77709d…` puis `68fb1b62ba09ebf84c0e774503170649` si elle passe après eux — et au bout des trois, `68fb1b62…`
+dans l'un et l'autre ordre (HISTORIQUE.md, « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

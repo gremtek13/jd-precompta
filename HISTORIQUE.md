@@ -37414,3 +37414,255 @@ l'index d'abord. Les retours arrière suppriment, l'un l'index, l'autre la fonct
 d'historique — des suppressions, JAMAIS SANS L'ACCORD DU CABINET — ; celui de la simulation, le drapeau baissé d'abord,
 sans quoi l'écran dit ses ventes facturées refusées, sans projection ; celui de l'index rend le temps d'avant ; aucune
 donnée ne se perd.
+
+### 26/10/2026 — LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ — CHANTIER EC-Q3, VF5H2Q1-Q2 ET VF5H2Q1Q2-Q1 (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF5H2Q1-Q2 sur `e4291a1` — `main` avec la migration de VF5H2-Q1 appliquée, l'index des
+avoirs et VF8e préparés —, la branche locale `vf5h2q1q2-figes`, en deux commits : la migration, les tests et l'essai ;
+puis cette documentation. Une première version, qui ne fermait que la contre-passation, a été reprise le même jour sur
+VF5H2Q1Q2-Q1 : les deux commits ont été réécrits, rien n'avait été poussé. Créés : la migration
+`supabase/schema/20261027140000_contre_passation_sur_mouvement_fige.sql` et
+`src/lib/contrePassationSurMouvementFige.test.ts`. Modifiés : `src/lib/insertionDesEncaissements.test.ts` et
+`src/lib/registreVirementMixte.test.ts` (la garde reprise depuis) ; l'essai `ventesFacturees.sql` ;
+`supabase/schema/README.md` ; CLAUDE.md. Ni module, ni écran, ni Edge Function ; RGPD.md ne change pas. La migration est
+dans l'export sous une version PROVISOIRE, `20261027140000`, et n'est PAS appliquée : elle attend l'accord du cabinet.
+En production, des SELECT de comptes, du catalogue, de corps de fonctions et de l'historique (version et nom), aucune
+valeur d'une ligne, aucune écriture.)
+
+**LES DÉCISIONS.** VF5H2Q1-Q2, « La refuser (petite migration à part) » (page des arbitrages, le 26/10/2026 à 13 h 01
+UTC : « LA MIGRATION DE VF5H2-Q1 EN PRODUCTION ») : l'exception de la restauration ne laisse plus le
+super-administrateur poser en direct la contre-passation sans mouvement d'un encaissement qu'un mouvement figé compte ;
+à écrire avant la première validation d'un exercice d'un dossier basculé. La consigne de la session : établir d'abord,
+sur la restauration réelle, si un tel refus la casserait. Puis la question que la première version a posée, écrite sur
+la recommandation, le 26/10/2026 : VF5H2Q1Q2-Q1, (A) — dans cette migration, avant son application, le
+super-administrateur ne pose plus non plus en direct l'encaissement d'une facture d'avant sur un virement mixte figé, la
+restauration intacte.
+
+**CE QUE LA BASE FAISAIT.** Les deux règles de VF5H2-Q1 refusent à tous, hors le super-administrateur à l'insertion
+(`not public.is_super_admin()` ; la restauration), de citer un mouvement classé par ses encaissements, et la
+contre-passation sans mouvement d'un encaissement qui en cite un. La garde de la frontière (VF7a) ne juge que
+l'encaissement d'une facture source — un mouvement figé cité, une date figée —, et une contre-passation à sa propre
+date ; pour une facture d'avant la bascule, elle rend la main aussitôt. Le super-administrateur — sur ce projet, aussi
+le chef du cabinet — posait donc en direct, datée après la frontière, la contre-passation sans mouvement d'un
+encaissement que compte un mouvement classé d'un exercice validé, celui d'une facture source comme celui de la facture
+d'avant d'un virement mixte ; et l'encaissement d'une facture d'avant sur un virement mixte figé. Chaque fois, il
+changeait ce que ce mouvement justifie : sa composition, figée avec ses écritures, ne le portait plus. Vu sur la
+réplique, la production à 154 migrations : sur le dossier semé de la restauration (2025 validé par `valider_exercice`,
+l'encaissement d'un virement sur un crédit de mars 2025, classé par ses encaissements), sa contre-passation sans
+mouvement, datée de 2026, est acceptée ; dans l'essai, 146f, 146g (le rôle des Edge Functions sous la session du
+super-administrateur), 146i (la facture d'avant du virement mixte MV, 2026 validé dans T), 146k, 146l et 146o
+(l'encaissement de la facture d'avant sur MV, et sur MX, né classé au 31 décembre) aussi.
+
+**LA RESTAURATION, ÉTABLIE D'ABORD : LES REFUS NE LA CASSENT PAS.**
+- `restaurerSauvegarde` (src/lib/sauvegardeDonnees.ts) n'écrit que dans un dossier qui n'existe pas (« … existe déjà
+  dans cette base. La restauration n'écrase jamais. »), refusé avant la première écriture — `sauvegardeDonnees.test.ts`
+  le joue (« une restauration refusée ne dépose rien »).
+- Elle réinsère les tables dans l'ordre d'`ORDRE_RESTAURATION` (src/lib/sauvegarde.ts) : les mouvements, puis les
+  encaissements — leurs contre-passations par vagues, à leur rang (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`, `annule_id`) —,
+  et `exercices_valides` EN DERNIER (« ferme la marche », gardé par `sauvegarde.test.ts`). La seconde passe, qui suit
+  toutes les tables, ne repose que les liens des avoirs (`factures_emises.facture_origine_id`), par une mise à jour :
+  aucun encaissement ne s'insère après les exercices validés.
+- L'essai de restauration recopie cet ordre (`_ordre` de `restauration.sql`, confronté au code par
+  `restaurationEssai.test.ts`) : les mouvements au rang 48, les encaissements au 51, les exercices validés au 76, le
+  dernier ; joué sur la réplique, avec les tables que la base porte, 49, 52 (une vague) et 81, le dernier.
+- Tant que les exercices validés d'un dossier ne sont pas réinsérés, aucun de ses mouvements n'est figé : les règles ne
+  peuvent rien refuser à une restauration. C'est le principe que la migration `restauration_des_exercices_valides` a
+  posé le 04/10/2026 (« L'exception n'était pas nécessaire : la restauration réinsère les exercices validés EN
+  DERNIER »), et que la garde de la frontière suit.
+- L'essai le joue, déclencheurs compris. La contre-passation : dans le jeu de R, la restauration pose CP5 et CP6,
+  contre-passations sans mouvement d'encaissements que compte un mouvement classé, AVANT que l'exercice 2025 ne soit
+  validé — elles passent avec la migration, sous le verrou et la lecture des exercices validés ; la mutation 198 (la
+  même contre-passation, 2025 pas encore validé dans R) passe ; 146f, la même après la validation, se refuse.
+  L'encaissement : 68f, la restauration qui réinsère sur M1 l'encaissement de la facture d'avant, passe comme hier ; la
+  mutation 198c (celui de FP sur MV, 2026 pas encore validé dans T) passe ; 146k, le même après la validation, se
+  refuse. `restauration.sql` ne porte pas les déclencheurs : la garde à la restauration se prouve par l'essai de son
+  mécanisme.
+- Aucune question au cabinet sur la restauration.
+
+**LA MIGRATION** `contre_passation_sur_mouvement_fige` (20 183 caractères, 20 521 octets, 285 lignes, md5
+`98cf7f7ce93f87746af9a188a7dd5b43`, ni barre oblique inverse ni retour chariot ; ni `drop`, ni `delete from`, ni
+`truncate`, ni droit rejoué), composée par un script qui RECOPIE la définition de l'export et n'y insère que deux
+règles :
+- Une garde d'abord : le corps de la garde des encaissements au caractère près, celui d'`insertion_des_encaissements`
+  (`922c8559…`, la production ; les retours chariot d'un collage écartés), sinon un refus qui le dit ; une seconde
+  application se refuse de même.
+- La garde reprise (`create or replace` : OID, propriétaire, droits et déclencheur gardés), sa définition d'hier au
+  caractère près hors de deux règles INSÉRÉES, chacune après la règle de VF5H2-Q1 de son bloc, en 23514, sur un
+  mouvement classé par ses encaissements et FIGÉ — daté au plus tard du 31 décembre d'un exercice validé de son dossier,
+  donc du dernier —, le super-administrateur compris. (1) À la fin du bloc du mouvement cité : l'encaissement d'une
+  facture qui n'est pas source (`v_source is not true`, du côté fermé) ne le cite pas — « Un mouvement figé par la
+  validation d'un exercice ne se cite plus : ce qu'il justifie ne change plus. » ; pour une facture source, la garde de
+  la frontière, comme hier. (2) À la fin du bloc de l'annulation, avant le `return` de l'insertion : la contre-passation
+  SANS MOUVEMENT, de toute facture, d'un encaissement qu'il compte — « Le mouvement de l'encaissement contre-passé est
+  figé par la validation d'un exercice : ce qu'il justifie ne change plus. » Les règles de VF5H2-Q1 refusent les autres
+  d'abord, sous leurs mots : seul le super-administrateur vient jusqu'ici.
+- Chaque règle prend d'abord le verrou partagé de la validation — la clé de `cle_validation` écrite en ligne, l'appelant
+  n'exécutant pas cette fonction (le précédent de `la_base_lit_le_plan_1`) —, puis lit la frontière dans
+  `exercices_valides` aux droits de l'appelant, `frontiere_validation` ne lui étant pas ouverte : le
+  super-administrateur les lit tous (`exercices_valides_lecture`), le propriétaire et le rôle des Edge Functions passent
+  la RLS. Une validation en cours finit d'abord ; la règle lit ensuite ce qu'elle a validé.
+- Le corps neuf : 13 317 caractères, `16af585818378356e7b4e58521dbe665`.
+- Si `apply_migration` attend pourtant une confirmation, le texte à coller est prêt
+  (`collage_contre_passation_sur_mouvement_fige.sql`, 21 938 caractères, `a07ec485566c6e343cce47a0406b7556`) : une
+  transaction qui vérifie sa propre empreinte (les fins de ligne Windows ramenées), refuse une seconde application,
+  s'exécute — sa garde exige le corps d'`insertion_des_encaissements` — et pose la ligne d'historique sous la version de
+  l'heure du collage, au nom de l'auteur d'`insertion_des_encaissements`. Son retour arrière
+  (`retour_contre_passation_sur_mouvement_fige.sql`, 12 354 caractères, `b5e1525c28c35a06b1bb3fbea2afd2d0`) rend la
+  garde d'`insertion_des_encaissements` et retire la ligne d'historique — une suppression dans l'historique, JAMAIS SANS
+  L'ACCORD DU CABINET ; aucune donnée ne se perd, mais les ouvertures reviennent — ; il se refuse si la migration n'est
+  pas dans l'historique, ou si la garde n'est plus celle qu'elle a posée (`16af5858…`). Tous deux dans le bloc-notes de
+  la session (`…/scratchpad/vf5h2q1q2/collage/`).
+
+**CE QUI NE CHANGE PAS, ET POURQUOI.**
+- Les fonctions : `enregistrer_encaissement` refuse avant d'insérer, pour tous, un mouvement classé par ses
+  encaissements (les rangs 17 et 18), et `annuler_encaissement` la contre-passation sans débit d'un encaissement qu'un
+  tel mouvement compte (les rangs 20 et 21) ; elles ne viennent jamais jusqu'ici. Aucun module ne redit cette garde,
+  aucun écran ne l'atteint : seule une écriture directe la rencontre.
+- L'encaissement d'une facture source : la garde de la frontière le refuse, à tous, sous ses mots (146n) ; la règle
+  neuve ne la double pas, et la mutation qui l'étend à toute facture tombe sur 146n.
+- Une contre-passation qui CITE un débit : le crédit figé justifie toujours son encaissement, le débit de l'exercice
+  ouvert le défait — 146j passe, et la mutation qui oublie « sans mouvement » tombe sur lui. Un mouvement réservé, libre
+  ou classé autrement : comme hier (198b ; 198d, M4, classé autrement et figé). L'exercice validé d'un AUTRE dossier ne
+  fige rien : T et A ont validé 2025 quand 198 se joue, R valide 2026 dans 198e, et les mutations qui oublient le
+  dossier tombent sur eux.
+- Le rattachement, la modification, le retrait, la suppression — celle d'un dossier comprise : comme hier. La garde de
+  la frontière, ni lue ni touchée ; elle passe après celle-ci, qui refuse donc la première, sous ses mots.
+- CE QUI CONTOURNE LA RLS : rien de plus — la garde n'est pas `security definer`, et ne lit les exercices validés
+  qu'après les règles de VF5H2-Q1, pour le seul super-administrateur, qui les lit déjà.
+
+**LES CHOIX ÉCARTÉS.**
+- Étendre les conditions des règles de VF5H2-Q1 (« pas le super-administrateur, sauf sur un mouvement figé ») : un
+  message pour deux raisons ; une règle à part dit au super-administrateur pourquoi elle le refuse, et laisse celles
+  d'hier telles quelles.
+- La garde de la frontière, jugeant le mouvement de l'encaissement contre-passé, ou l'encaissement de toute facture :
+  elle ne juge que les factures sources (« celui d'une autre ne s'écrit nulle part ») ; la décision vise l'exception de
+  la garde des encaissements.
+- La règle de l'encaissement pour toute facture : pour une facture source, elle doublerait la garde de la frontière et
+  changerait ses mots (146n) ; la décision vise la facture d'avant.
+- `frontiere_validation` et `cle_validation` appelées : l'appelant ne les exécute pas (droits retirés à
+  `authenticated`), et la session du super-administrateur y aurait buté en 42501, la restauration comprise. La garde en
+  `security definer` : tout son modèle de lecture changerait.
+- La date de la contre-passation ou de l'encaissement, comme la garde de la frontière : c'est le MOUVEMENT qui est figé.
+- Un réglage de session pour la restauration : inutile (l'ordre suffit), et une porte de plus.
+- Sans verrou : une validation en cours ne serait pas vue (les épreuves à deux sessions, ci-dessous).
+
+**LES PREUVES.**
+- La réplique : celle de VF5H2-Q1 (PostgreSQL 16, UTF8, port 5622, arrêtée par son répertoire de données), la ligne
+  d'historique d'`insertion_des_encaissements` alignée sur sa version de production (`20261026150044`) : 154 migrations,
+  `9549d833…`, et les neuf familles de `signature.sql` égales à celles de la production, une à une (« fonctions » 202
+  `d9a63228…`). Munie de la migration comme l'outil l'aurait fait : 155, `f15688c035ca5f05ebfa531f43fdb2c9` ; seule la
+  famille « fonctions » change (202, `d9a63228…` puis `58a80d4179e19b2fa21bac12c486c776`) ; la garde garde son OID et
+  ses droits.
+- Après l'index et VF8e : la réplique munie de l'index, de VF8e puis d'elle, et celle munie d'elle puis des deux autres,
+  égales sur les neuf familles (« fonctions » 203, `af77709d…` puis `68fb1b62ba09ebf84c0e774503170649`, rien d'autre) et
+  sur l'historique (157, `d61f4a33…`, celui de l'export) : la migration s'applique avant ou après eux, la même base au
+  bout ; le texte à coller s'y applique aussi.
+- `ventesFacturees.sql`. Quinze verdicts de plus, avant que R ne valide 2025. La contre-passation : 146f à 146h (MR7,
+  classé par ER7 et figé par la validation de 2025 réinsérée : le super-administrateur et le rôle des Edge Functions
+  sous sa session se refusent ; le propriétaire bute d'abord sur la règle de VF5H2-Q1), 146i (la contre-passation sans
+  mouvement d'EV2, la facture d'avant de MV, 2026 validé dans T), 146j (la contre-passation qui cite MD7, un débit de
+  2026 : acceptée). L'encaissement : 146k à 146m (celui de FP sur MV, 2026 validé dans T : le super-administrateur et le
+  rôle des Edge Functions se refusent ; le propriétaire bute d'abord sur la règle de VF5H2-Q1), 146n (celui de
+  F2026-0002, une facture source : la garde de la frontière, sous ses mots), 146o (MX, né classé au 31 décembre 2026).
+  Les mutations 198 (2025 pas encore validé : l'ordre de la restauration), 198b (MR7 réservé, pas classé), 198c (2026
+  pas encore validé dans T), 198d (M4, classé autrement) et 198e (2026 validé dans R, pas dans T). La sortie rend 339
+  lignes (338 verdicts et la ligne d'information ; 324 hier) ; sans la migration, 6 en faute — 146f, 146g, 146i, 146k,
+  146l et 146o, exactement — ; avec elle, 0, rien n'est resté ; contrôle par contrôle, contre l'essai d'hier sans la
+  migration, les contrôles d'hier rendent ce qu'ils rendaient, et quinze s'ajoutent ; l'essai d'hier, avec la migration,
+  rend ses 324 lignes, identiques. En une requête comme l'outil, sans ses lignes de commentaire : 123 311 caractères,
+  `2dd6eb95f7bfaf6f6d31d002bd11cbd8`, 0 en faute.
+- Les essais d'hier, chacun sur une copie fraîche, sans puis avec la migration : 59 joués (tous, hors de `rls.sql`, de
+  `restauration.sql` et des trois contrôles) ; 58 identiques ligne à ligne, leurs fautes connues comprises
+  (`forfaitKilometrique.sql`, `ventesClient.sql`) — `transmissionsFactures.sql` montrait un identifiant tiré au hasard,
+  fait de chiffres seuls, et rejoué, il est identique — ; celui de la vente facturée ne diffère qu'aux contrôles neufs
+  qui se retournent. `rls.sql` ENTIER (inchangé, `76de9bbc…`), en une transaction, en super-utilisateur, le journal des
+  désignations semé : 57 lignes d'invariants, 0 en faute, 48 mutations sur 48 qui mordent, sorties identiques (110
+  lignes). `restauration.sql`, sur le dossier basculé semé : 75 tables IDENTIQUES, sorties identiques, des deux côtés.
+- Les épreuves à deux sessions, une validation en cours : A tient le verrou exclusif de la validation du dossier, y
+  insère l'exercice 2026 validé, attend trois secondes, puis valide ; B, le super-administrateur, écrit en direct. La
+  contre-passation, sur le dossier semé de la restauration (sans mouvement, de l'encaissement que compte le crédit de
+  janvier 2026, classé, datée de 2027) : sans la migration, B attend (la garde de la frontière), puis passe ; avec elle,
+  B attend, lit 2026 validé, se refuse. L'encaissement, sur un dossier semé pour elle (la facture d'avant, validée avant
+  la bascule ; un virement mixte de février 2026, né classé par la restauration) : sans la migration, B passe aussitôt ;
+  avec elle, B attend, puis se refuse. Le verrou retiré, sous une autre clé, tenté sans attendre, ou pris après la
+  lecture de la frontière : B passe.
+- Quarante-six mutations de la migration, chacune sur une copie fraîche — la garde de tête (quatre), `create` sans `or
+  replace` ; pour la règle de l'encaissement : retirée, ses conditions (six), son verrou (six), sa frontière (cinq), ses
+  mots, son code, sa place ; pour celle de la contre-passation : retirée, ses conditions (quatre), son verrou (six), sa
+  frontière (six), ses mots, son code, sa place —, puis huit essais (`ventesFacturees.sql`, `encaissementsFactures.sql`,
+  `ecrituresVentesFacturees.sql`, `transmissionsEncaissements.sql`, `ventesClient.sql`, `exemplairesDesFactures.sql`,
+  `validationDesVentesFacturees.sql`, `frontiereDesEncaissements.sql`) et les deux épreuves à deux sessions :
+  trente-neuf tuées — chaque verrou retiré, sous une autre clé, tenté sans attendre ou pris après la lecture de la
+  frontière, par la seule épreuve d'une validation en cours ; la règle de l'encaissement étendue à toute facture, par
+  146n seul — ; sept équivalentes, déclarées d'avance : les deux verrous exclusifs (ils attendent la validation de même,
+  et ne feraient que sérialiser entre elles les écritures directes d'un dossier) ; dans la règle de l'encaissement, le
+  mouvement lu sur `new` et le verrou pris sur le dossier de `v_ligne` (à l'insertion comme au rattachement, la garde
+  pose `v_ligne := new`, et ce bloc ne se joue pas ailleurs), et la frontière lue sur le dossier de l'encaissement (le
+  mouvement qu'il cite est un crédit de son dossier : la règle du crédit, juste au-dessus, que personne ne passe) ; dans
+  celle de la contre-passation, le verrou pris sur le dossier de l'encaissement contre-passé et la frontière lue sur le
+  dossier de la contre-passation (la même facture, le même dossier). Les quarante-six, jouées aussi contre les trois
+  tests TypeScript : quarante-six tuées, les équivalentes comprises, que le texte du garde voit.
+- Le texte à coller, sur des copies fraîches : collé, la même signature que l'outil (neuf familles), sa ligne
+  d'historique rendant `98cf7f7c…`, 155 migrations ; collé deux fois, refusé la seconde ; altéré d'un caractère, refusé,
+  rien d'appliqué (la production) ; en fins de ligne Windows, appliqué, la même empreinte et la même signature ; sur la
+  production d'avant VF5H2-Q1 (153), refusé par sa garde de tête, rien d'appliqué ; sur la réplique munie de l'index et
+  de VF8e, appliqué, égal à l'outil. Le retour arrière : sur la base collée, la production (neuf familles ; 154,
+  `9549d833…`), la garde d'`insertion_des_encaissements` sous le même OID ; refusé sans la migration ; refusé quand la
+  garde a changé depuis.
+- Les trois contrôles de l'export : la production et la migration, 155 fichiers, `f15688c0…`, égale à l'historique de la
+  réplique munie d'elle ; l'export entier, 157 fichiers, `d61f4a33…`, égale à celle munie des trois ; sans eux, 154,
+  `9549d833…`, la production ; le socle inchangé (80 instructions, `5d53eea2…`) ; l'inventaire inchangé (2 163 objets,
+  `b20a312c…`, sans l'index ni VF8e ; 2 165, `2fd670d3…`, avec eux) : la migration ne crée aucun objet.
+- Le TypeScript. `contrePassationSurMouvementFige.test.ts`, vingt et un tests : la garde de tête ; la garde, celle
+  d'`insertion_des_encaissements` au caractère près, deux règles en plus, à leur place ; leurs conditions — celle de la
+  contre-passation, la condition de VF5H2-Q1 sans l'exception ; celle de l'encaissement, la facture qui n'est pas
+  source —, et la garde de la frontière qui juge la facture source ; les verrous, celui de la validation, avant la
+  frontière, qui est celle de `frontiere_validation`, et les droits qui obligent à les écrire en ligne ; les refus, en
+  23514, rien d'autre ne bouge ; le texte ; les fonctions qui enregistrent et contre-passent refusent avant, pour tous ;
+  l'ordre de la restauration, dans le code et dans l'essai de restauration, et son refus d'un dossier existant ; l'essai
+  — les refus du super-administrateur et du rôle des Edge Functions, les règles de VF5H2-Q1 d'abord, la facture source,
+  le débit, les mutations, le pas de la restauration avant la validation — ; des dérives plantées.
+  `insertionDesEncaissements.test.ts` lit désormais la garde que pose SA migration, et dit que la dernière est celle-ci
+  (146h et 146m y rejoignent les refus de VF5H2-Q1) ; `registreVirementMixte.test.ts`, de même. ROUGES d'abord : sur
+  l'arbre de `e4291a1`, 18 tests en faute sur 59 (quatorze des vingt et un neufs — les sept autres décrivent ce qui ne
+  change pas : les règles de VF5H2-Q1, la garde de la frontière, les fonctions et la restauration —, et quatre des
+  adaptés) ; la migration ajoutée mais l'essai d'hier, 9 (ceux qui confrontent l'essai).
+- La suite comparée test par test, sous Paris : avant, l'arbre de `e4291a1` exporté, 14 610 tests justes
+  (`clesSupabase.test.ts`, qui lit la liste des fichiers suivis du dépôt, ne s'y charge pas) ; après, dans le dépôt,
+  14 656 tests justes ; vingt et un tests neufs (`contrePassationSurMouvementFige.test.ts`), un renommé
+  (`insertionDesEncaissements.test.ts`), aucun verdict changé d'état ; les vingt-cinq de `clesSupabase.test.ts`, qui se
+  charge dans le dépôt.
+- La barrière, sous le Node 22.23.3 de la CI, sur la tête finale, après le commit de cette entrée — qui ne change que de
+  la documentation — : son résultat et son SHA sont au rapport de l'agent.
+
+**CE QUE L'APPLICATION CHANGERA EN PRODUCTION.** Rien qui se voie : aucun écran, aucune fonction, aucune Edge Function
+n'écrit un encaissement sans les fonctions, et la restauration passe. `signature.sql` : la seule famille « fonctions »
+(`58a80d41…` avant l'index et VF8e, `68fb1b62…` après eux) ; le socle, l'inventaire, les policies, les droits : rien.
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) Présenter `contre_passation_sur_mouvement_fige` au cabinet (la garde
+reprise, deux règles ; aucune donnée, aucun objet, aucune policy). (2) Sur son accord, l'appliquer par
+`apply_migration`, sous ce nom, le texte du fichier tel quel ; si l'outil attend une confirmation, donner le texte à
+coller dans le message final du tour. (3) Renommer le fichier sous la version de sa ligne d'historique, texte inchangé ;
+la ligne doit rendre `98cf7f7ce93f87746af9a188a7dd5b43` (fins de ligne ramenées à `\n`). (4) `signature.sql` en
+production : la seule famille « fonctions » change. (5) Les trois contrôles de l'export, et leur passage au README, à la
+place du paragraphe « Préparé ». (6) CLAUDE.md, la migration dite appliquée ; la ligne 28.65 de la feuille de route ; à
+la page des arbitrages, VF5H2Q1Q2-Q1 écrite sur la recommandation, le 26/10/2026. (7) Tout cela avant la première
+validation d'un exercice d'un dossier basculé.
+
+**LA QUESTION, ÉCRITE SUR LA RECOMMANDATION, LE 26/10/2026.**
+- VF5H2Q1Q2-Q1 — L'encaissement d'une facture d'avant, posé en direct par le super-administrateur sur un virement mixte
+  figé ? La règle du mouvement cité (VF5H2-Q1) excuse le super-administrateur à l'insertion — la restauration ; pour une
+  facture source, la garde de la frontière refuse ensuite un mouvement figé, mais pour une facture d'avant la bascule
+  elle rend la main : le super-administrateur — aussi le chef du cabinet — pouvait encore poser en direct l'encaissement
+  d'une facture d'avant sur un virement mixte classé d'un exercice validé (vu sur la réplique, la première version
+  appliquée : accepté), et changer ce que ce mouvement justifie — la même ouverture que la contre-passation, par l'autre
+  porte ; la fonction du cabinet, `enregistrer_encaissement`, le refuse avant d'insérer (le rang 18). (A) Le refuser
+  aussi, dans cette migration, avant son application ; (B) le laisser. Écrite : (A) — le même principe dans la même
+  garde, une seule application ; la restauration passe pour la même raison ; rien de l'application ne change.
+
+**LES RISQUES.** Les règles reposent sur l'ordre de la restauration : un ordre qui réinsérerait `exercices_valides`
+avant les encaissements la casserait, comme les gardes d'avant — `sauvegarde.test.ts` et le garde neuf le tiennent.
+Elles lisent le classement du mouvement sans le verrouiller (comme celles de VF5H2-Q1) ; seul le super-administrateur
+écrit en direct. Sur un mouvement classé et figé, un encaissement ne se défait plus que par la contre-passation qui cite
+le débit qui l'a défait, dans l'exercice ouvert — celle d'une facture source —, et l'encaissement d'une facture d'avant
+ne s'y ajoute plus : la règle d'un exercice validé. Le retour arrière rend les ouvertures d'hier.
