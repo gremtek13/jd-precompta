@@ -37146,3 +37146,33 @@ d'un classement peut passer entre les deux (les fonctions, elles, verrouillent) 
 Functions n'écrivent aucun encaissement aujourd'hui. Jusqu'à la petite migration de VF5H2Q1-Q2, le super-administrateur
 peut encore poser en direct une contre-passation sans mouvement sur un mouvement figé. Le retour arrière rend les
 ouvertures d'hier.
+
+### 26/10/2026 — LA MIGRATION DE VF5H2-Q1 EN PRODUCTION — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(Écrite par la session. La migration préparée le même jour, accordée par le cabinet, appliquée en production ; son
+fichier dans l'export sous sa version. Aucun écran ne change : aucun dossier n'a basculé.)
+
+**L'ACCORD.** Sur la page des arbitrages, le 26/10/2026 à 13 h 01 UTC, toutes à la recommandation : la migration (« Oui,
+l'appliquer ») ; VF5H2Q1-Q1 (« Oui, au rattachement aussi », ce que la migration écrivait déjà) et VF5H2Q1-Q2 (« La
+refuser (petite migration à part) », à écrire avant la première validation d'un exercice d'un dossier basculé) ; et deux
+plus anciennes, VF8H-Q1 (« Oui, dès la réserve ») et VF8D-Q1 (« Oui, maintenant »), chacune déjà écrite ainsi.
+
+**AVANT.** 153 migrations, `e63d2d172770ace9fcdcbcfcb52a8820` ; la garde des encaissements `21c11ef2…`, celle que la
+migration exige ; les neuf familles de `signature.sql` égales à celles de la réplique de l'étape (colonnes 866
+`23b2bc60…`, contraintes 670 `d63ab39f…`, déclencheurs 69 `aa7a762c…`, fonctions 202 `0837e89d…` et leurs droits 202
+`f61b1cd0…`, index 237 `08ef14df…`, policies 159 `c6aae852…`, RLS 81 `6450be96…`, droits des tables 81 `79e266f1…`) ;
+aucun dossier basculé, aucun encaissement.
+
+**L'APPLICATION**, par `apply_migration`, le texte du fichier tel quel, sans qu'aucune confirmation soit demandée :
+version `20261026150044` ; sa ligne d'historique rend `2bd728f7dccc41c7ddae9c08e087e17f`, l'empreinte du fichier
+éprouvé. 154 migrations, `9549d833111e4ef18949ba48f7061e66`.
+
+**LA PREUVE.** Le corps de la garde en base, `922c8559…`, est celui de la réplique. `signature.sql` : seule la famille
+« fonctions » change, à `d9a632284f551bdf9adb2a93edf19f58`, la valeur attendue ; les huit autres sont inchangées. Les
+trois contrôles de l'export, le fichier renommé : 154 fichiers et 154 migrations, `9549d833…` des deux côtés ; socle 80,
+`5d53eea2…` ; inventaire 2 163, `b20a312c…`, des deux côtés. Aucun essai rejoué en production, pour la raison du
+24/10/2026 (« LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION ») : la signature égale établit que la base est
+celle de la réplique, où ils ont été joués entiers.
+
+**CE QUI RESTE.** La petite migration de VF5H2Q1-Q2 ; l'index des avoirs (VF8E-Q1) et VF8e, à présenter au cabinet ;
+puis la levée de `BASCULE_OFFERTE` ; VF8f et VF9.

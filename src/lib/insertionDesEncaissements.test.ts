@@ -7,7 +7,7 @@ import { REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT } from './encaissementsFac
 
 // L'INSERTION DIRECTE D'UN ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS (chantier EC-Q3, ligne 28.65 ;
 // VF5H2-Q1, « Oui, la fermer » ; VF5H2Q1-Q1, écrite sur la recommandation le 26/10/2026 : la même règle au rattachement ;
-// migration `insertion_des_encaissements`, PRÉPARÉE sous une version provisoire, pas appliquée). La migration reprend la
+// migration `insertion_des_encaissements`, appliquée le 26/10/2026 sous la version 20261026150044). La migration reprend la
 // garde des encaissements (`garder_encaissement_facture`) telle que la migration `registre_virement_mixte` l'a laissée, et
 // n'y fait qu'INSÉRER deux règles : un mouvement classé par ses encaissements ne se cite pas — à l'insertion, pour qui n'est
 // pas le super-administrateur, et au rattachement, pour tous (la condition de la règle de la facture source) ; la

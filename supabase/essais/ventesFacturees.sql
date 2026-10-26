@@ -213,8 +213,8 @@
 -- requête : 105 609 caractères, empreinte 4abf04e55e0312daa48d28cc5778aa08, 301 justes. Trente-cinq mutations de la
 -- migration, jouées contre cet essai : trente-cinq tuées (HISTORIQUE.md, « LE RÉGLAGE DES VENTES, GARDÉ »).
 --
--- 26/10/2026, migration `insertion_des_encaissements` (PRÉPARÉE sous la version provisoire `20261027120000`, pas
--- appliquée ; chantier EC-Q3, VF5H2-Q1, « Oui, la fermer » ; VF5H2Q1-Q1, écrite sur la recommandation le même jour) : à
+-- 26/10/2026, migration `insertion_des_encaissements` (appliquée le 26/10/2026 sous la version `20261026150044` ;
+-- chantier EC-Q3, VF5H2-Q1, « Oui, la fermer » ; VF5H2Q1-Q1, écrite sur la recommandation le même jour) : à
 -- l'insertion, pour qui n'est pas le super-administrateur, la garde des encaissements refuse un mouvement classé par
 -- ses encaissements cité — par l'encaissement de toute facture, ou par la contre-passation qui citerait un débit ainsi
 -- classé — et la contre-passation sans mouvement d'un encaissement qui cite un tel mouvement ; au rattachement sous son

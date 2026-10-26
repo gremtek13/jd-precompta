@@ -35,7 +35,7 @@
 -- en tue sept autres avec les essais qui se jouent aussi en production (HISTORIQUE.md, « LA FRONTIÈRE DES
 -- ENCAISSEMENTS, EN BASE »).
 --
--- 26/10/2026, migration `insertion_des_encaissements` (VF5H2-Q1 et VF5H2Q1-Q1, préparée, pas appliquée) : la garde des
+-- 26/10/2026, migration `insertion_des_encaissements` (VF5H2-Q1 et VF5H2Q1-Q1, appliquée le 26/10/2026) : la garde des
 -- encaissements change, à l'insertion et au rattachement, pour un mouvement classé par ses encaissements — désactivée
 -- le temps des contrôles S, elle ne masque rien de plus ici, et ce qu'elle masquait (la modification, la suppression,
 -- les parts) reste masqué. Rejoué sur la réplique, sans puis avec elle : 13 verdicts, 0 en faute, identiques
