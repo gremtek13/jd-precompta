@@ -1120,6 +1120,13 @@ const VISITES = [
       await page.getByText(/n’ont pas été lus avec ce dossier/u).waitFor({ timeout: 10000 })
     },
   },
+  // L'ONGLET ACCÈS D'UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF8d) : la consultante d12, dont l'accès porte « Ventes » et
+  // « Banque », et la phrase qui dit ce que comptent les factures du client. Celui du cabinet infirmier (d1, non basculé : la
+  // case « Ventes » cochée se décoche, décochée elle est grisée) est la visite `acces` des onglets.
+  {
+    dossier: 'd12', onglet: 'acces', nom: 'acces/dossier-bascule',
+    apres: async (page) => { await page.getByText(/Les factures de ce dossier sont la source de leurs ventes/u).first().waitFor({ timeout: 10000 }) },
+  },
   // LE RELEVÉ D'UN DOSSIER BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5a1), sur la consultante d12 — archivé, il n'est vu
   // que de ces visites : la pastille d'un mouvement RÉSERVÉ à l'encaissement d'une facture, « proposé par le client », puis le
   // relevé entier et celle, verte, d'un mouvement CLASSÉ par ses encaissements ; enfin la fiche de chacun, sans section de

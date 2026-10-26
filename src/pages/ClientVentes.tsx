@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { messageErreur } from '../lib/messageErreur'
 import { lireLesDroitsVentes, type DroitsDeLaBase } from '../lib/espaceVentes'
 import { ANNEES_ILLISIBLES } from '../lib/encaissementsFactures'
-import { reglageDesVentes } from '../lib/sourceDeLaVente'
+import { SOURCE_DE_TES_VENTES, reglageDesVentes } from '../lib/sourceDeLaVente'
 import type { ArticleExoneration, StatutTva } from '../lib/types'
 import FacturesTab from './dossier/FacturesTab'
 
@@ -97,23 +97,30 @@ export default function ClientVentes() {
         </p>
       ) : (
         // « Factures », « Règlements » (étape A3), « Articles » (étape A2a) et « Clients » (étape A4b1) : les vues de l'onglet, que son
-        // sélecteur nomme — un titre « Factures » au-dessus mentirait sur les autres.
-        <>
-          <FacturesTab
-            espace="client"
-            banque={lecture.droits.banque}
-            dossierId={dossierId}
-            dossierNom={lecture.societe.nom}
-            dossierSiret={lecture.societe.siret}
-            dossierAdresse={lecture.societe.adresse}
-            statutTva={lecture.societe.statut_tva}
-            articleExoneration={lecture.societe.article_exoneration}
-            numeroTvaAttribue={lecture.societe.numero_tva_attribue === true}
-            tvaSurDebits={lecture.societe.tva_sur_debits === true}
-            // Les exercices validés ne s'ouvrent qu'au cabinet : la frontière, chez le client, la base la juge.
-            reglageDesVentes={reglageDesVentes(lecture.societe, ANNEES_ILLISIBLES)}
-          />
-        </>
+        // sélecteur nomme — un titre « Factures » au-dessus mentirait sur les autres. Le réglage jugé UNE fois, pour la ligne
+        // de la source (étape VF8d) et pour l'onglet : la ligne ne se dit que d'un dossier que ce jugement dit basculé.
+        (() => {
+          const reglage = reglageDesVentes(lecture.societe, ANNEES_ILLISIBLES)
+          return (
+            <>
+              {reglage.etat === 'bascule' && <p className="muted">{SOURCE_DE_TES_VENTES}</p>}
+              <FacturesTab
+                espace="client"
+                banque={lecture.droits.banque}
+                dossierId={dossierId}
+                dossierNom={lecture.societe.nom}
+                dossierSiret={lecture.societe.siret}
+                dossierAdresse={lecture.societe.adresse}
+                statutTva={lecture.societe.statut_tva}
+                articleExoneration={lecture.societe.article_exoneration}
+                numeroTvaAttribue={lecture.societe.numero_tva_attribue === true}
+                tvaSurDebits={lecture.societe.tva_sur_debits === true}
+                // Les exercices validés ne s'ouvrent qu'au cabinet : la frontière, chez le client, la base la juge.
+                reglageDesVentes={reglage}
+              />
+            </>
+          )
+        })()
       )}
     </>
   )

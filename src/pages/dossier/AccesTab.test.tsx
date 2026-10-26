@@ -2,7 +2,10 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { AuthWeakPasswordError, FunctionsHttpError } from '@supabase/supabase-js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
-import { CE_QUE_DISENT_LES_CASES, CE_QUE_DONNE_UN_ACCES } from '../../lib/droitsAcces'
+import {
+  CARTE_DE_LA_BASCULE_OUVERTE, CE_QUE_COMPTENT_SES_FACTURES, CE_QUE_DONNE_UN_ACCES, ceQueDisentLesCasesDuDossier,
+  raisonDuDossierNonBascule, raisonDuReglageIllisible,
+} from '../../lib/droitsAcces'
 import { REGLE_DU_MOT_DE_PASSE, refusDuMotDePasse } from '../../lib/recuperationMotDePasse'
 import { CE_QUE_DIT_LA_COLLECTE } from '../../lib/piecesJointesEcarteesClient'
 
@@ -134,6 +137,23 @@ vi.mock('../../lib/supabase', async () => {
   }
 })
 
+// Le réglage du dossier (étape VF8d), doublé : son état, le dossier que la réponse dit avoir lu (une réponse pour un autre
+// dossier), et une porte pour la retenir. Basculé par défaut : la case « Ventes » s'offre comme avant VF8d. La lecture
+// elle-même a son test (reglageDuDossierLecture.test.ts).
+const reglageFaux = vi.hoisted(() => ({
+  reglage: { etat: 'bascule' } as { etat: 'bascule' } | { etat: 'non_bascule' } | { etat: 'illisible'; motif: string },
+  dossierLu: null as string | null,
+  porte: null as Promise<void> | null,
+  lectures: 0,
+}))
+vi.mock('../../lib/reglageDuDossierLecture', () => ({
+  lireLeReglageDuDossier: async (dossierId: string) => {
+    reglageFaux.lectures += 1
+    if (reglageFaux.porte) await reglageFaux.porte
+    return { dossierId: reglageFaux.dossierLu ?? dossierId, reglage: reglageFaux.reglage }
+  },
+}))
+
 // La modale de relance fait ses propres appels et n'a rien à voir avec ce qu'on garde ici.
 vi.mock('../../components/EnvoyerEmailModal', () => ({ default: () => null }))
 
@@ -203,6 +223,10 @@ beforeEach(() => {
   faux.erreurLien = null
   faux.exceptionLien = null
   window.confirm = () => true
+  reglageFaux.reglage = { etat: 'bascule' }
+  reglageFaux.dossierLu = null
+  reglageFaux.porte = null
+  reglageFaux.lectures = 0
 })
 
 describe('« Aucun accès » est une affirmation, pas un écran vide', () => {
@@ -897,7 +921,7 @@ describe('AccesTab — ce que la phrase promet', () => {
     monter()
     await screen.findByText('client@exemple.fr')
     expect(screen.getByText(CE_QUE_DONNE_UN_ACCES)).toBeTruthy()
-    expect(screen.getByText(CE_QUE_DISENT_LES_CASES)).toBeTruthy()
+    expect(screen.getByText(ceQueDisentLesCasesDuDossier({ etat: 'bascule' }))).toBeTruthy()
     // L'ancienne phrase promettait ce que le code ne tenait pas : la simulation du client montre des montants.
     expect(screen.queryAllByText(/aucun accès aux montants/)).toHaveLength(0)
   })
@@ -1270,5 +1294,117 @@ describe('AccesTab — rattacher un compte que ce cabinet ne connaît pas, ou pl
     await act(async () => { faux.resoudre?.({ data: { ok: true, compte: 'cree' }, error: null }) })
     await laisserPasserUnTour()
     expect(avisDeCreation()).toEqual(["L'accès de ancien@exemple.fr est créé : communique-lui le mot de passe initial que tu as saisi."])
+  })
+})
+
+// LA CASE « VENTES » SUIT LA SOURCE DES VENTES DU DOSSIER (chantier EC-Q3, étape VF8d) : l'onglet lit le réglage du dossier
+// avec la liste, et rien ne s'offre avant son retour. Basculé, les deux cases comme hier ; non basculé, « Ventes » décochée
+// est grisée et la phrase dit pourquoi, cochée elle se décoche ; illisible, « Ventes » ne se change dans aucun état. « Banque »
+// ne regarde pas le réglage. Rien de tout cela ne change ce que la base accepte : l'écran refuse avant le clic.
+describe('AccesTab — la case « Ventes » suit la source des ventes du dossier (étape VF8d)', () => {
+  beforeEach(() => {
+    faux.lignes = [
+      acces({ id: 'm1', user_id: 'u1', email: 'client@exemple.fr', droit_ventes: true }),
+      acces({ id: 'm2', user_id: 'u2', email: 'secretariat@exemple.fr', created_at: '2026-10-02T08:00:00Z' }),
+    ]
+  })
+
+  const phraseAffichee = () => document.getElementById('ce-que-disent-les-cases')?.textContent ?? null
+
+  it('basculé : les quatre cases s’offrent, et la phrase dit ce que comptent les factures du client', async () => {
+    monter()
+    await screen.findByText('client@exemple.fr')
+    for (const c of screen.getAllByRole<HTMLInputElement>('checkbox')) expect(c.disabled, c.getAttribute('aria-label') ?? '').toBe(false)
+    expect(phraseAffichee()).toBe(ceQueDisentLesCasesDuDossier({ etat: 'bascule' }))
+    expect(phraseAffichee()).toContain(CE_QUE_COMPTENT_SES_FACTURES)
+    await act(async () => { caseDe('Ventes', 'secretariat@exemple.fr').click() })
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm2', p_ventes: true, p_banque: null }])
+    expect(caseDe('Ventes', 'secretariat@exemple.fr').checked).toBe(true)
+  })
+
+  it('non basculé : « Ventes » décochée est grisée et désigne sa raison ; rien ne part au clic', async () => {
+    reglageFaux.reglage = { etat: 'non_bascule' }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const grisee = caseDe('Ventes', 'secretariat@exemple.fr')
+    expect(grisee.disabled).toBe(true)
+    expect(grisee.getAttribute('aria-describedby')).toBe('ce-que-disent-les-cases')
+    expect(grisee.title).toBe(raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE))
+    expect(phraseAffichee()).toBe(ceQueDisentLesCasesDuDossier({ etat: 'non_bascule' }))
+    expect(phraseAffichee()).toContain(raisonDuDossierNonBascule(CARTE_DE_LA_BASCULE_OUVERTE))
+    await act(async () => { grisee.click() })
+    expect(faux.appelsRpc).toEqual([])
+    expect(grisee.checked).toBe(false)
+    // « Banque » ne regarde pas le réglage.
+    expect(caseDe('Banque', 'secretariat@exemple.fr').disabled).toBe(false)
+    expect(caseDe('Banque').disabled).toBe(false)
+  })
+
+  it('non basculé : « Ventes » cochée se décoche, et seulement elle part', async () => {
+    reglageFaux.reglage = { etat: 'non_bascule' }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    const cochee = caseDe('Ventes')
+    expect(cochee.checked).toBe(true)
+    expect(cochee.disabled).toBe(false)
+    expect(cochee.getAttribute('aria-describedby')).toBeNull()
+    await act(async () => { cochee.click() })
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm1', p_ventes: false, p_banque: null }])
+    // Décochée, elle ne se recoche plus : la relecture l'a rendue grisée.
+    expect(caseDe('Ventes').checked).toBe(false)
+    expect(caseDe('Ventes').disabled).toBe(true)
+  })
+
+  it('illisible : « Ventes » ne se change dans aucun état, la phrase dit pourquoi avec le motif ; « Banque », si', async () => {
+    reglageFaux.reglage = { etat: 'illisible', motif: 'lecture refusée' }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    for (const personne of ['client@exemple.fr', 'secretariat@exemple.fr']) {
+      const ventes = caseDe('Ventes', personne)
+      expect(ventes.disabled, personne).toBe(true)
+      expect(ventes.title).toBe(raisonDuReglageIllisible('lecture refusée'))
+      await act(async () => { ventes.click() })
+      expect(caseDe('Banque', personne).disabled, personne).toBe(false)
+    }
+    expect(faux.appelsRpc).toEqual([])
+    expect(caseDe('Ventes').checked).toBe(true)
+    expect(phraseAffichee()).toContain('ne se lit pas (lecture refusée)')
+    await act(async () => { caseDe('Banque').click() })
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm1', p_ventes: null, p_banque: true }])
+  })
+
+  it('aucune case ni phrase des cases tant que le réglage n’est pas revenu, même la liste lue', async () => {
+    let ouvrir = () => {}
+    reglageFaux.porte = new Promise<void>((resolve) => { ouvrir = resolve })
+    monter()
+    await laisserPasserUnTour()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    expect(phraseAffichee()).toBeNull()
+    await act(async () => { ouvrir() })
+    expect(await screen.findAllByRole('checkbox')).toHaveLength(4)
+    expect(phraseAffichee()).toBe(ceQueDisentLesCasesDuDossier({ etat: 'bascule' }))
+  })
+
+  it('un réglage rendu pour un autre dossier ne juge pas celui-ci : aucune case, les droits se lisent', async () => {
+    reglageFaux.dossierLu = 'd2'
+    monter()
+    expect(await screen.findByText('client@exemple.fr')).toBeTruthy()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    const ligne = screen.getByText('client@exemple.fr').closest('tr')!
+    expect(within(ligne).getAllByText(/^(Oui|Non)$/).map((e) => e.textContent)).toEqual(['Oui', 'Non'])
+    expect(phraseAffichee()).toBeNull()
+  })
+
+  it('le réglage se relit avec la liste : changé entre deux lectures, la case suit la relecture', async () => {
+    reglageFaux.reglage = { etat: 'non_bascule' }
+    monter()
+    await screen.findByText('client@exemple.fr')
+    expect(caseDe('Ventes', 'secretariat@exemple.fr').disabled).toBe(true)
+    reglageFaux.reglage = { etat: 'bascule' }
+    // Un retrait relit la liste — et le réglage avec elle.
+    await act(async () => { within(screen.getByText('client@exemple.fr').closest('tr')!).getByRole('button', { name: /^Retirer$/ }).click() })
+    await laisserPasserUnTour()
+    expect(reglageFaux.lectures).toBe(2)
+    expect(caseDe('Ventes', 'secretariat@exemple.fr').disabled).toBe(false)
   })
 })

@@ -250,6 +250,15 @@ export function phraseDuReglageIllisible(espace: EspaceVentes, motif: string): s
       + 'pas avant le clic. Rouvrez le dossier pour la relire.'
 }
 
+/**
+ * La ligne de « Mes ventes » pour un client dont les factures sont la source de ses ventes (chantier EC-Q3, étape VF8d ;
+ * HISTORIQUE.md, « VF8, LA BASCULE : LA CONCEPTION », § 3 (d)) : dite une fois, au-dessus de ses factures, dans les mots du
+ * client (tutoiement, aucun onglet : sourceDeLaVente.test.ts la passe au garde des mots). Un dossier qui n'a pas basculé, ou
+ * dont le réglage ne se lit pas, n'en a pas : l'écran d'une facture dit déjà, lui, le réglage illisible.
+ */
+export const SOURCE_DE_TES_VENTES = 'Tes factures validées sont la source de tes ventes dans ta comptabilité : une fois '
+  + 'validée, une facture ne se corrige plus que par un avoir.'
+
 /** Ce que l'écran du CABINET dit quand les exercices validés ne lui sont pas parvenus (le patron du client, vouvoyé). */
 export const FRONTIERE_NON_LUE_AU_CABINET = 'Les exercices validés du dossier ne sont pas lus ici : une date que l’un d’eux '
   + 'fige ne se dit donc pas avant l’envoi — la base la refusera, et son refus se dira ici.'
