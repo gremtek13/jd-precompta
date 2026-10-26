@@ -19,9 +19,23 @@ import { REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT } from './encaissementsFac
 // propriétaire ET par le rôle des Edge Functions, l'admet à l'insertion pour le super-administrateur (la restauration), et
 // l'exige au rattachement sous sa session aussi. Récit : HISTORIQUE.md, « L'INSERTION DIRECTE D'UN ENCAISSEMENT SUR UN
 // MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS ». Données FICTIVES.
+//
+// La garde a été reprise depuis par la migration `contre_passation_sur_mouvement_fige` (VF5H2Q1-Q2 et VF5H2Q1Q2-Q1,
+// deux règles de plus, pour le super-administrateur, quand le mouvement est figé) : ce garde-ci confronte la définition
+// que CETTE migration lui donne ; contrePassationSurMouvementFige.test.ts confronte la suivante à celle-ci.
 
 const MIGRATION = /\/\d{14}_insertion_des_encaissements\.sql$/
 const texteDeLaMigration = () => fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))?.texte ?? ''
+// La migration POSTÉRIEURE qui a repris la garde, et en porte désormais la dernière définition.
+const REPRISE_DEPUIS = /\/\d{14}_contre_passation_sur_mouvement_fige\.sql$/
+
+// Ce que cette migration a posé : la définition que son texte donne à la garde.
+function definitionPosee(): string {
+  const texte = texteDeLaMigration()
+  const debut = texte.indexOf('create or replace function public.garder_encaissement_facture(')
+  expect(debut).toBeGreaterThan(0)
+  return texte.slice(debut, texte.indexOf('$$;', debut))
+}
 const corps = (definition: string) => definition.slice(definition.indexOf('as $$') + 'as $$'.length)
 const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('hex')
 
@@ -104,14 +118,14 @@ describe('la migration insertion_des_encaissements reprend la garde des encaisse
     expect(texte).toContain("where p.oid = to_regprocedure('public.garder_encaissement_facture()')), chr(13), ''))")
   })
 
-  it('la garde est sa dernière définition : celle de registre_virement_mixte au caractère près, deux règles en plus', () => {
-    expect(fichierDeLaDerniereDefinition('garder_encaissement_facture')).toMatch(MIGRATION)
-    const demain = derniereDefinitionSql('garder_encaissement_facture')
+  it('la garde qu’elle pose : celle de registre_virement_mixte au caractère près, deux règles en plus ; reprise depuis', () => {
+    expect(fichierDeLaDerniereDefinition('garder_encaissement_facture')).toMatch(REPRISE_DEPUIS)
+    const demain = definitionPosee()
     expect(sansLesRegles(demain)).toBe(avantLaMigration('garder_encaissement_facture').definition)
   })
 
   it('chacune après les règles d’hier de son bloc : le mouvement cité, puis la contre-passation', () => {
-    const lignes = derniereDefinitionSql('garder_encaissement_facture').split('\n')
+    const lignes = definitionPosee().split('\n')
     const [debutA, finA] = bornes(lignes, REGLE_DU_MOUVEMENT) as [number, number]
     const [debutB, finB] = bornes(lignes, REGLE_DE_LA_CONTRE_PASSATION) as [number, number]
     // Le mouvement cité : après la règle de la facture source, à la fin du bloc du mouvement cité.
@@ -126,7 +140,7 @@ describe('la migration insertion_des_encaissements reprend la garde des encaisse
   })
 
   it('la première juge à l’insertion comme au rattachement, sous la condition de la règle de la facture source', () => {
-    const sql = derniereDefinitionSql('garder_encaissement_facture')
+    const sql = definitionPosee()
     // La règle de la facture source, juste avant, porte la même condition (VF5H2Q1-Q1) : personne ne la passe au
     // rattachement, le super-administrateur la passe à l'insertion.
     expect(sql).toContain(`    if coalesce(v_source, false) and ${CONDITION_DE_LA_SOURCE} and exists (`)
@@ -146,7 +160,7 @@ describe('la migration insertion_des_encaissements reprend la garde des encaisse
 
   it('les refus : deux de plus, à leur place, en 23514 — rien d’autre ne bouge', () => {
     const hier = avantLaMigration('garder_encaissement_facture').definition
-    const demain = derniereDefinitionSql('garder_encaissement_facture')
+    const demain = definitionPosee()
     const messages = messagesSql(demain)
     const i = messages.indexOf(NEUF_MOUVEMENT)
     const j = messages.indexOf(NEUF_CONTRE_PASSATION)
@@ -247,8 +261,10 @@ describe('l’essai exige chaque refus neuf de la base, sans les fonctions, et l
 
   it('le mouvement cité : par le propriétaire et par le rôle des Edge Functions, pour toute facture, pour un débit, au rattachement', () => {
     expect(profils(NEUF_MOUVEMENT)).toEqual(['postgres', 'service'])
+    // 146m : le propriétaire, sur un virement mixte que la validation fige aussi (VF5H2Q1Q2-Q1) — cette règle se dit
+    // d'abord.
     expect(refusParLaGarde(NEUF_MOUVEMENT).map((e) => e.controle.split('.')[0]).sort())
-      .toEqual(['64b', '68', '68b', '68c', '68d', '68e', '68g', '68i', '68j'])
+      .toEqual(['146m', '64b', '68', '68b', '68c', '68d', '68e', '68g', '68i', '68j'])
     // Au rattachement (VF5H2Q1-Q1), sous son réglage : le rôle des Edge Functions, le propriétaire, et la session du
     // super-administrateur, que la restauration n'excuse pas ici.
     for (const n of ['68g', '68i', '68j']) {
@@ -259,8 +275,9 @@ describe('l’essai exige chaque refus neuf de la base, sans les fonctions, et l
 
   it('la contre-passation sans mouvement : par le propriétaire et par le rôle des Edge Functions, source ou non', () => {
     expect(profils(NEUF_CONTRE_PASSATION)).toEqual(['postgres', 'service'])
+    // 146h : le propriétaire, sur un mouvement que la validation fige aussi (VF5H2Q1-Q2) — cette règle se dit d'abord.
     expect(refusParLaGarde(NEUF_CONTRE_PASSATION).map((e) => e.controle.split('.')[0]).sort())
-      .toEqual(['143e', '143f', '69', '69b'])
+      .toEqual(['143e', '143f', '146h', '69', '69b'])
   })
 
   it('la restauration du super-administrateur les réinsère ; les règles d’hier se disent d’abord ; les mutations mordent', () => {
@@ -279,7 +296,7 @@ describe('l’essai exige chaque refus neuf de la base, sans les fonctions, et l
   })
 
   it('vire au rouge sur une dérive plantée : un mot de la garde hors des règles, une règle changée, un refus que l’essai n’exige plus', () => {
-    const demain = derniereDefinitionSql('garder_encaissement_facture')
+    const demain = definitionPosee()
     const hier = avantLaMigration('garder_encaissement_facture').definition
     const mot = demain.replace("'Un encaissement ne se supprime pas", "'Un encaissement ne se retire pas")
     expect(mot).not.toBe(demain)
