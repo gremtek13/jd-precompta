@@ -37176,3 +37176,241 @@ celle de la réplique, où ils ont été joués entiers.
 
 **CE QUI RESTE.** La petite migration de VF5H2Q1-Q2 ; l'index des avoirs (VF8E-Q1) et VF8e, à présenter au cabinet ;
 puis la levée de `BASCULE_OFFERTE` ; VF8f et VF9.
+
+### 26/10/2026 — « MA SIMULATION » REÇOIT SES VENTES FACTURÉES — CHANTIER EC-Q3, VF8E (LIGNE 28.65)
+
+(Écrite par l'agent architecte de VF8e sur `d2c42c1` — `main` avec VF8b, et la migration de VF5H2-Q1 préparée —, puis
+reprise sur `5ca71f9`, où la session l'a appliquée ; la branche locale `vf8e-simulation`, en trois commits : l'index des
+avoirs d'une facture (VF8E-Q1) ; la migration de VF8e, le module, l'écran, la phrase de l'onglet Accès, les tests et
+l'essai ; puis cette documentation. Créés : les migrations `supabase/schema/20261027125000_index_des_avoirs.sql` et
+`supabase/schema/20261027130000_simulation_des_ventes_facturees.sql`, le module `src/lib/simulationVentesFacturees.ts`
+et son test, la fabrique `src/test/essaiSimulationVentesFacturees.ts`, l'essai
+`supabase/essais/simulationDesVentesFacturees.sql`. Modifiés : `src/pages/ClientSimulation.tsx` et son test ;
+`src/lib/droitsAcces.ts`, son test et `AccesTab.casesOuvertes.test.tsx` (la phrase de l'onglet Accès) ;
+`ecrituresVerifiees.test.ts`, `verrousEcritures.test.ts` et `ecransAvantLecture.test.tsx` (le consommateur, la porte et
+la lecture neuve) ; `ClientSimulation.banque.test.tsx` et `espaceClientAvantCouverture.test.tsx` (qui valent dans les
+deux états du drapeau) ; `rls.sql` (le bloc SI) ; `supabase/schema/README.md`, RGPD.md, CLAUDE.md. Aucune Edge Function.
+Les deux migrations sont dans l'export sous des versions PROVISOIRES, `20261027125000` puis `20261027130000`, après
+celle de VF5H2-Q1 (`20261026150044`), et ne sont PAS appliquées : celle de VF8e ouvre au client « Banque » une lecture
+qu'il n'a pas, et se présente au cabinet avant. Le drapeau `SIMULATION_VENTES_FACTUREES_EXPORTEE` est FAUX : l'écran et
+l'onglet Accès disent ce qu'ils disaient. En production, des SELECT de comptes, du catalogue et de l'historique (version
+et nom), aucune valeur d'une ligne, aucune écriture.)
+
+**LES DÉCISIONS.** VF8-Q2 (26/10/2026, à la recommandation ; « VF8, LA BASCULE : LA CONCEPTION », § 3 (e)) : « Ma
+simulation » d'un client « Banque » reçoit, d'un dossier BASCULÉ, le total hors taxe de chaque mois de ses ventes
+facturées ET la liste des factures et avoirs qui comptent eux-mêmes leur vente — des identifiants, rien de leur contenu.
+EC3-Q11 avait fixé le total mensuel seul ; la liste lui permet de ne pas compter deux fois une vente dont il a aussi
+déposé le PDF : la pièce désignée comme l'exemplaire d'une facture source porte cette facture (`pieces.facture_id`, que
+sa session lit déjà avec ses pièces), et ne compte plus. Puis VF8E-Q1, que le travail a posée, écrite sur la
+recommandation, le 26/10/2026 : (A), l'index des avoirs d'une facture, dans une petite migration à part (plus bas).
+
+**CE QUE L'ÉCRAN FAISAIT.** Depuis VF3b3, la session du client ne lisant aucune facture sans « Ventes », « Ma
+simulation » ne comptait pas les ventes facturées, et le disait d'un dossier basculé
+(`SIMULATION_SANS_VENTES_FACTUREES`) : elle comptait l'exemplaire d'une facture source comme une pièce, faute de savoir
+lequel l'était, et la vente d'une facture sans pièce pas du tout. Le CA projeté d'un dossier basculé était faux dans les
+deux sens. L'onglet Accès disait, de la case « Banque », « La case lui ouvre aussi sa simulation. ».
+
+**L'ÉTAT DE LA PRODUCTION, RELEVÉ LE 26/10/2026** (des comptes, le catalogue, des empreintes) : 153 migrations,
+`e63d2d17…` (les noms, `2427910d…`) ; les neuf familles de `signature.sql` (colonnes 866 `23b2bc60…`, contraintes 670
+`d63ab39f…`, déclencheurs 69 `aa7a762c…`, fonctions 202 `0837e89d…` et leurs droits `f61b1cd0…`, index 237 `08ef14df…`,
+policies 159 `c6aae852…`, RLS 81 `6450be96…`, droits des tables 81 `79e266f1…`) ; aucun dossier basculé, aucune facture
+source, aucun accès qui porte « Banque », la fonction absente ; les corps de `calcul_vente_facturee` et de
+`gere_la_banque` ceux que la garde de tête exige ; les droits par défaut du schéma `public` (`pg_default_acl`) accordent
+l'exécution d'une fonction neuve de `postgres` à `anon`, `authenticated` et `service_role`. Les deux migrations y sont
+NEUTRES. Pendant le travail, la session y a appliqué VF5H2-Q1 (`20261026150044` ; « LA MIGRATION DE VF5H2-Q1 EN
+PRODUCTION »). Relue à la fin : 154 migrations, `9549d833…`, la ligne de VF5H2-Q1 rendant l'empreinte de son fichier
+(`2bd728f7…`) ; les neuf familles égales à celles de la réplique munie de VF5H2-Q1 (« fonctions » 202 `d9a63228…`, les
+huit autres inchangées) ; toujours aucun dossier basculé, aucune facture source, aucun accès qui porte « Banque », ni la
+fonction ni l'index, aucun index qui commence par `facture_origine_id` ; les deux corps que la garde de tête exige,
+inchangés. Les deux migrations y restent NEUTRES.
+
+**LA MIGRATION** `simulation_des_ventes_facturees` (10 680 caractères, 10 980 octets, 156 lignes, md5
+`af60959ca9b13192e43ad588d47b9372`, ni barre oblique inverse ni retour chariot ; ni `drop`, ni `delete`, ni `truncate`,
+aucune table, colonne, contrainte, policy, aucun droit d'une table) :
+- Une garde d'abord : la règle du cumul (`calcul_vente_facturee`, le corps de `ecritures_de_la_vente_facturee`,
+  `d2f0312e…`) et le prédicat de la banque du client (`gere_la_banque`, celui de `droits_des_acces_clients`,
+  `003c9545…`) au caractère près, les retours chariot d'un collage écartés, sinon un refus qui le dit ; une seconde
+  application se refuse de même.
+- La fonction `ventes_facturees_de_la_simulation(p_dossier_id, p_annee)` (`security definer`, `stable`, son chemin
+  fixé ; corps de 3 358 caractères, `8e78262f2599046db78a19d2c3fcaf57`) : l'accès d'abord, sur le dossier
+  annoncé — `gere_la_banque` (le cabinet du dossier, ou un accès client qui porte « Banque ») et un dossier qui
+  existe —, sinon « Accès refusé à ce dossier. » (42501), comme aux fonctions voisines ; puis l'année (« Exercice
+  invalide. », 22023, hors de 2000 à 2100). D'un dossier qui n'a pas basculé, les deux clés, vides. D'un dossier
+  basculé, UNE valeur `jsonb` à deux clés : `par_mois` — « AAAA-MM » → le hors-taxe en centimes de chaque mois de
+  l'année qui porte un événement, par la règle du cumul, dans le modèle comptable du DOSSIER (en trésorerie les parts de
+  ses encaissements comptés, à leur date ; en engagement la facture et ses avoirs sources, à leur date d'émission), un
+  mois dont les événements s'annulent à zéro — et `sources` — les identifiants des factures et avoirs validés sources,
+  de toute année, triés. Rien d'autre : ni numéro, ni client, ni date, ni montant par facture.
+- L'exécution retirée à PUBLIC et à l'anonyme, accordée aux connectés ; un commentaire.
+
+**L'INDEX DES AVOIRS D'UNE FACTURE** `index_des_avoirs` (VF8E-Q1 ; 3 099 caractères, 3 201 octets, 44 lignes, md5
+`512638ba6449edbbc89db08e7405296b`, ni barre oblique inverse ni retour chariot ; aucune instruction qui retire) : la
+règle du cumul cherche les avoirs d'une facture par leur facture d'origine, pour chaque facture et, à chaque
+encaissement, pour le reste qu'il laisse ; `facture_origine_id` n'avait pas d'index, et chaque recherche parcourait
+toutes les factures du dossier. Une garde d'abord : aucun index de `factures_emises` ne commence déjà par
+`facture_origine_id`, sinon « … ne le double pas » — une seconde application, ou un index posé à la main, s'y arrêtent.
+Puis `factures_emises_facture_origine_idx`, PARTIEL (`where facture_origine_id is not null` : seuls les avoirs portent
+une facture d'origine, et une recherche par égalité ne trouve jamais une ligne nulle), sans `concurrently` (la migration
+est une transaction ; la table n'est fermée aux écritures que le temps de le construire), et son commentaire. Il sert
+aussi l'écriture d'une vente facturée et la validation d'un exercice, qui recomposent par la même règle, et la clé
+étrangère des avoirs à la suppression d'une facture. Il ne change que le chemin des lectures, jamais ce qu'elles
+rendent. Sa version provisoire le place entre VF5H2-Q1 et VF8e : il s'applique avant la simulation, qui ne le suppose
+pas.
+
+**LES CHOIX, ET CE QUI A ÉTÉ ÉCARTÉ.**
+- Une fonction, et non une policy de lecture des factures pour « Banque » : elle aurait ouvert toutes les colonnes de
+  toutes les factures — numéros, clients, montants —, ce que VF5-Q3 et EC3-Q11 refusent (« rien de plus pour
+  « Banque » ») ; écartée de même pour `dernier_changement_de_rib` (A5-Q2).
+- Une seule valeur, et non des lignes : PostgREST plafonne les lignes qu'il rend sans le dire, pas une valeur (le patron
+  de `couverture_du_releve`).
+- La règle du cumul de la base, et non un calcul refait : `calcul_vente_facturee` est celle que les essais de VF4b
+  confrontent au module ; la fonction ne fait que sommer ce qu'elle rend, par mois, comme `recettesFactureesParMois`. Un
+  tri préalable ne la refait que pour les factures qui ont un événement dans l'année ; il n'écarte que ce qui ne compte
+  pas (ses mutations qui l'élargissent survivent, celles qui le resserrent sont tuées).
+- Les sources de toute année, et non celles de l'année : l'exemplaire d'une facture d'une autre année peut se dater dans
+  celle-ci (la pièce se compte à la date de son paiement) ; c'est l'ensemble `sources` du module.
+- Un dossier qui n'a pas basculé rend les deux clés vides, et non `null` : côté écran, toute autre forme est
+  « illisible ».
+- L'index dans une migration à part (VF8E-Q1, (A)), et non dans celle de la simulation : il sert trois chemins, et la
+  simulation, telle qu'elle a été présentée (une fonction de lecture, rien d'autre), n'en dépend pas ; partiel, et non
+  entier ; écartée, l'attente d'un dossier réel chargé (B).
+
+**LE MODULE, L'ÉCRAN ET L'ONGLET ACCÈS.** `lib/simulationVentesFacturees.ts`, pur : la valeur lue sous la forme
+« comptées » de `RecettesFacturees` (aucun type neuf) — deux clés exactement, des mois de l'année demandée en centimes
+entiers, des identifiants sans doublon, sinon `null` ; la lecture ATTEND la requête, ne rejette jamais, rend
+« incomplète » avec son motif (refusée, illisible, une requête qui lève) ; elle porte le dossier et l'année qu'elle a
+lus, et ne vaut que pour eux ; `ventesDeLaSimulation` dit ce que l'écran en fait selon le drapeau.
+`ClientSimulation.tsx` : la lecture entre dans la vague des dix autres, sous le drapeau ; une vague remplacée (l'année
+qui change, un démontage) n'écrit plus ; l'année est celle de la date du rendu ; drapeau levé, une lecture entière
+compte les ventes facturées et fait taire la phrase, l'exemplaire d'une facture source ne compte plus ; incomplète, un
+second bandeau dit le manque, AUCUNE projection, la phrase d'aujourd'hui ; pas revenue pour cette année,
+« Chargement… » ; drapeau baissé, rien n'est appelé et l'écran dit ce qu'il disait. L'onglet Accès
+(`ceQueDisentLesCases`, un onzième paramètre, le drapeau ; `ceQueDisentLesCasesDuDossier` lui passe celui du module)
+dit, drapeau levé et la banque du client en base (P7), à la place de « La case lui ouvre aussi sa simulation. » :
+`PHRASE_DES_VENTES_DE_LA_SIMULATION` — sa simulation compte ses ventes facturées : d'un dossier dont les factures sont
+la source de leurs ventes, la base lui rend le total hors taxe de chaque mois et la liste de ses factures et avoirs qui
+comptent eux-mêmes leur vente, leurs identifiants, sans leur contenu ; drapeau baissé, rien ne change.
+
+**CE QUI A ÉTÉ VÉRIFIÉ.**
+- La réplique : une copie à froid de celle de VF5H2-Q1 (PostgreSQL 16, UTF8, son propre port) ; la production copiée
+  égale à la production (neuf familles, l'historique et ses noms). VF8e s'applique sur la production (154 migrations,
+  `d925a479…`), sur la production munie de VF5H2-Q1 (155, `22fc663a…`), et de même avec l'index avant elle (155,
+  `4117a562…` ; 156, `4963dbd9…`) — VF5H2-Q1 sous sa version provisoire, `20261027120000`. Sous sa version de
+  production, la réplique munie de VF5H2-Q1 rend l'historique de la production (154, `9549d833…`), et munie de l'index
+  puis de VF8e, 156, `fbbca618…`.
+- L'essai `simulationDesVentesFacturees.sql` : 31 verdicts, 0 en faute, rien de resté, avec et sans VF5H2-Q1, avec et
+  sans l'index ; sans la migration, `ESSAI_IMPOSSIBLE`. Ses lectures 1 à 10 sont, mot pour mot, ce que le module calcule
+  du même jeu (`simulationVentesFacturees.test.ts` l'exige) : la trésorerie et l'engagement ; un paiement partiel en
+  trois fois ; quatre avoirs (entre deux encaissements, deux du jour d'un encaissement, de l'année suivante) ; trois
+  contre-passations (le mois suivant, le même mois, l'année suivante) ; un encaissement retiré ; six factures écartées,
+  une par motif ; un bien livré après sa facture ; une franchise ; deux taux ; une facture validée avant la bascule ;
+  les deux bords d'une année ; puis qui lit, un dossier non basculé et un dossier basculé sans facture, les refus, les
+  bornes, le catalogue.
+- Les cinquante-huit autres essais, chacun sur une copie fraîche, en une transaction — dont tous ceux qui touchent
+  `factures_emises` — : sans puis avec VF8e, puis sans puis avec l'index (VF5H2-Q1 et VF8e posées des deux côtés) :
+  identiques ligne à ligne, leurs fautes connues comprises (`forfaitKilometrique.sql` et `ventesClient.sql`, une chacun,
+  des deux côtés).
+- `rls.sql` ENTIER, le fichier transmis (201 319 octets, `76de9bbc06f04df6502145757f103a5f`), sur les deux paires de
+  bases : sans VF8e, 57 lignes de verdict (la ligne SI « EN ATTENTE »), 0 en faute, 48 mutations sur 48 ; avec elle, 62
+  lignes, 0 en faute, 51 sur 51 — seules les lignes SI diffèrent ; avec l'index en plus, les mêmes 62 lignes et 51
+  mutations, identiques.
+- La batterie, le module contre la fonction, sur des dossiers tirés de quatre graines fixes (266 dossiers, 19 120
+  factures, 40 468 encaissements) : 1 330 lectures, 0 écart, les six motifs d'écart rencontrés, 25 mois à zéro.
+- Le temps, aux réglages de la production, sous le rôle `authenticated` et ses huit secondes. Sans l'index : un dossier
+  de 1 549 factures sources et 3 252 encaissements dans l'année, 3,6 à 4,2 s en trésorerie, 4,4 à 5,0 s en engagement ;
+  une facture de 300 encaissements, 0,2 s ; un dossier de 4 700 factures par an sur trois ans dépassait les huit
+  secondes pour l'année la plus chargée. Avec l'index de la migration : le premier, 1,9 à 2,0 s en trésorerie, 2,5 à 3,1
+  s en engagement ; le second, 2,6 à 3,1 s pour l'année la plus chargée, 2,0 à 3,1 s pour la première ; la facture de
+  300 encaissements, 0,2 à 0,3 s.
+- `signature.sql` : l'index ne change que la famille « index » (237 `08ef14df…` puis 238
+  `b9aae28f2e5278de99fc4e617687a011`), avec ou sans VF5H2-Q1 et VF8e ; VF8e, « fonctions » (203 ; `af77709d…` avec
+  VF5H2-Q1, `8bbac7d0…` sans) et « droits des fonctions » (203, `9a52af9e…`). Après les trois migrations, dans
+  l'ordre — VF5H2-Q1, l'index, VF8e — : « fonctions » 203 `af77709d031abfe1f1b12222eba56e2b`, « droits des fonctions »
+  203 `9a52af9e70d503d0f49955c58d164cf7`, « index » 238 `b9aae28f2e5278de99fc4e617687a011`, les six autres inchangées ;
+  l'historique, 156 migrations, `fbbca6186227f02df8ae2423d63a8f25`, VF5H2-Q1 sous sa version de production (`4963dbd9…`
+  sous sa version provisoire).
+- Les trois contrôles de l'export, repris sur `5ca71f9` (le fichier de VF5H2-Q1 sous sa version) : 156 fichiers,
+  `fbbca618…`, égale à la réplique munie des trois migrations ; sans les deux fichiers, 154, `9549d833…`, la
+  production ; le socle inchangé (80 instructions, `5d53eea2…`) ; l'inventaire, 2 165 objets
+  (`2fd670d3adffb76e3e91ed6887d55875`, des deux côtés ; 2 163 avant) — l'index et la fonction neuve.
+- Les textes à coller, sur des copies fraîches. Celui de VF8e : collé sur la production et sur la production munie de
+  VF5H2-Q1, la même signature que l'outil (neuf familles), sa ligne d'historique rendant `af60959c…` ; collé deux fois,
+  refusé la seconde ; altéré d'un caractère, refusé, rien d'appliqué ; en fins de ligne Windows, appliqué, la même
+  empreinte ; sur une base où la règle du cumul a changé, refusé par la garde de tête. Celui de l'index : de même
+  (`512638ba…`), et refusé sur une base qui porte déjà un index sur la colonne ; collé, puis celui de VF8e aussitôt
+  après, la même signature que les deux posées par l'outil. Ce dernier essai a fait reprendre les deux textes : collés
+  dans la même seconde, ils prenaient la même version, et le second se heurtait à la clé de l'historique (refusé, rien
+  d'appliqué) ; chacun prend désormais l'heure du collage, ou la seconde qui suit la dernière version. Les retours
+  arrière : sur la base collée, la base d'avant (neuf familles) ; refusés sans leur migration ; refusés quand la
+  fonction, ou l'index, a changé depuis.
+- Les mutations. De la migration de VF8e, soixante-deux, chacune appliquée sur une copie fraîche puis jugée par
+  l'essai : cinquante-trois tuées (quarante-huit par l'essai, cinq par la garde de tête sur des bases faites pour elle :
+  la règle changée, absente, recréée en fins de ligne Windows) ; neuf équivalentes, déclarées d'avance — la garde
+  « existe déjà » (`create function` refuse aussi), le retour d'un dossier non basculé (il n'a aucune facture source :
+  la base le garantit), quatre élargissements du tri préalable (le temps seul), deux conditions « validée » (une facture
+  n'est source que validée), l'octroi aux connectés (les droits par défaut l'accordent). Du module et de l'écran,
+  quarante et une : trente-neuf tuées, deux équivalentes (`Number.isSafeInteger` refuse ce qui n'est pas un nombre ; les
+  clés d'un tableau sont ses indices). Elles ont fait ajouter trois cas : une clé de trop qui se trie après `sources`,
+  un dossier basculé sans facture (11b), et une réponse d'une année passée qui arrive après celle de l'année nouvelle.
+  De la phrase de l'onglet Accès, six : six tuées.
+- La suite comparée test par test, sous Paris : avant, l'arbre de `d2c42c1` exporté, 14 561 tests justes
+  (`clesSupabase.test.ts` ne s'y charge pas) ; après, dans le dépôt, 473 fichiers et 14 635 tests justes ; quarante-neuf
+  neufs (`simulationVentesFacturees.test.ts` 29, `ClientSimulation.test.tsx` 8, `droitsAcces.test.ts` 12) et un renommé
+  (« des dix drapeaux »), aucun verdict changé d'état ; les vingt-cinq de `clesSupabase.test.ts`, qui se charge dans le
+  dépôt.
+- Le drapeau levé, en SIMULATION, la suite entière : la première fois, cinq tests en faute — le test qui le veut faux
+  dans ce lot (attendu : la session l'inverse en le levant), et quatre que leur doublure rendait muets devant la
+  fonction neuve : deux de `ClientSimulation.banque.test.tsx` (sa fonction de la base répondait aux ventes facturées par
+  les droits : « illisibles », plus de projection), celui de `ecransAvantLecture.test.tsx` (tout `rpc` y est une
+  écriture possible, sauf les lectures nommées) et celui d'`espaceClientAvantCouverture.test.tsx` (le monde d'avant P7,
+  où cette lecture n'existait pas : le drapeau s'y force faux, comme celui des pièces jointes écartées). Corrigés, puis
+  la phrase de l'onglet Accès écrite : 14 635 tests, un seul en faute, celui qui le veut faux ; aucun autre verdict
+  changé.
+- Le banc : le serveur sur le 5933 (le 5199 est à la session), la copie du script de mesure ne différant que par
+  l'adresse, effacée après : la passe `client-banque` à 390, 720, 1 024, 1 280 et 1 440 px, 0 débordement chaque fois
+  (122 boutons sondés, 31 fenêtres), « Ma simulation » comprise. Le drapeau levé en simulation : `client-banque` à 390
+  et 1 440 px, 0 — le faux Supabase ne connaissant pas la fonction, l'écran montre le bandeau, aucune projection et la
+  phrase d'aujourd'hui, relus sur une capture — ; la passe du cabinet à 390 et 1 440 px, 0 (285 boutons sondés, 61
+  fenêtres), l'onglet Accès disant, relu, ce que la case « Banque » ouvre de plus.
+- La barrière, sous le Node 22.23.3 de la CI, sur la tête finale, après le commit de cette entrée — qui ne change que de
+  la documentation — : son résultat et son SHA sont au rapport de l'agent ; sur la tête d'avant la reprise, elle était
+  juste : `tsc -b --force`, le lint (les 63 avertissements de la référence), 473 fichiers et 14 635 tests sous chacun
+  des quatre fuseaux, le build. Un premier passage, que `tsc -b --force` a arrêté, avait trouvé une faute de type : la
+  requête sans promesse du test de la lecture, mal typée (un `then` sans son second argument) ; corrigée, ses trois
+  mutations rejouées, toujours tuées.
+
+**CE QUE L'APPLICATION CHANGERA EN PRODUCTION.** L'index d'abord, puis la fonction de lecture, que rien n'appelle tant
+que le drapeau est faux ; aucun dossier basculé ni aucun accès « Banque » aujourd'hui. `signature.sql` : « index », puis
+« fonctions » et « droits des fonctions » ; le socle, les policies, les droits des tables : rien.
+
+**CE QUI RESTE À LA SESSION, DANS L'ORDRE.** (1) Présenter les deux migrations au cabinet : la simulation ouvre à
+l'accès « Banque », d'un dossier basculé, le total hors taxe de chaque mois de ses ventes facturées et les identifiants
+de ses factures et avoirs sources (VF8-Q2) ; l'index ne change que le temps (VF8E-Q1). (2) Sur son accord, les appliquer
+par `apply_migration`, l'index d'abord, sous les noms `index_des_avoirs` et `simulation_des_ventes_facturees`, les
+textes des fichiers tels quels ; si l'outil attend une confirmation, donner le texte à coller dans le message final du
+tour, un seul à la fois. (3) Renommer chaque fichier sous la version de sa ligne d'historique, texte inchangé ; les
+lignes doivent rendre `512638ba6449edbbc89db08e7405296b` et `af60959ca9b13192e43ad588d47b9372` (fins de ligne ramenées à
+`\n`). (4) En production : `signature.sql` (les familles ci-dessus) ; l'essai de la simulation par `execute_sql`, sans
+ses lignes de commentaire (21 366 caractères, `9ea612d5a8406e9aa7cbf02b920bb5ae` : 31 verdicts, 0 en faute, rien ne
+reste) ; `rls.sql` entier (62 lignes, 51 mutations). (5) Les trois contrôles de l'export, au README à la place des
+paragraphes « Préparé ». (6) RGPD.md, la migration appliquée. (7) Lever le drapeau — le test qui le veut faux
+s'inverse ; levé en simulation, la suite ne rend que lui en faute, et l'onglet Accès dit alors ce que la case « Banque »
+ouvre de plus — ; CLAUDE.md, la ligne 28.65 de la feuille de route ; à la page des arbitrages, VF8E-Q1 écrite sur la
+recommandation. (8) Puis `BASCULE_OFFERTE`, VF5H2-Q1 appliquée le 26/10/2026.
+
+**LA QUESTION, ÉCRITE SUR LA RECOMMANDATION, LE 26/10/2026.**
+- VF8E-Q1 — Un index sur `factures_emises.facture_origine_id` ? La règle du cumul cherche les avoirs d'une facture parmi
+  toutes celles de son dossier, à chaque facture et à chaque encaissement : le temps croît comme le nombre de factures
+  de l'année fois celui du dossier. Un dossier très chargé (4 700 factures par an, trois ans) dépassait les huit
+  secondes ; avec un index, environ 2 à 3 s. Le même coût pèse sur l'écriture d'une vente facturée et sur la validation
+  d'un exercice, qui recomposent par la même règle. (A) Une petite migration à part, avant ou avec celle-ci : l'index,
+  rien d'autre, ses mesures et `signature.sql` (la famille « index ») ; (B) attendre un dossier réel chargé. Écrite :
+  (A) — `index_des_avoirs`, plus haut.
+
+**LES RISQUES.** La règle du cumul que la fonction somme : une migration qui la changerait changerait ce que la
+simulation compte, sans que la garde de tête — qui ne joue qu'à l'application — le voie ; l'essai, qui la confronte au
+module, se rejoue alors. Appliquée sans l'index, la simulation d'un dossier très chargé peut passer les huit secondes :
+l'index d'abord. Les retours arrière suppriment, l'un l'index, l'autre la fonction, et chacun sa ligne
+d'historique — des suppressions, JAMAIS SANS L'ACCORD DU CABINET — ; celui de la simulation, le drapeau baissé d'abord,
+sans quoi l'écran dit ses ventes facturées refusées, sans projection ; celui de l'index rend le temps d'avant ; aucune
+donnée ne se perd.

@@ -554,8 +554,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   ; une petite migration à part refusera l'exception du super-administrateur sur un mouvement figé, avant la première
   validation d'un exercice d'un dossier basculé (VF5H2Q1-Q2) — deux questions écrites sur la recommandation, le
   26/10/2026 → « L'INSERTION DIRECTE D'UN ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS », « LA MIGRATION
-  DE VF5H2-Q1 EN PRODUCTION ». Restent cette petite migration, la levée du drapeau, VF8e, VF8f et VF9 (EC3-Q9, la
-  facture reprise, va à A8).
+  DE VF5H2-Q1 EN PRODUCTION ». VF8e (`simulation_des_ventes_facturees`), PRÉPARÉE le 26/10/2026, PAS appliquée : « Ma
+  simulation » d'un client « Banque » reçoit le total mensuel et les sources d'un dossier basculé, et l'onglet Accès le
+  dit, sous un drapeau faux ; l'index des avoirs d'une facture (`index_des_avoirs`, VF8E-Q1, écrite sur la
+  recommandation, le 26/10/2026) la précède, une migration à part → « « MA SIMULATION » REÇOIT SES VENTES FACTURÉES ».
+  Restent leur application, cette petite migration, la levée des drapeaux, VF8f et VF9 (EC3-Q9, la facture reprise, va à
+  A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;

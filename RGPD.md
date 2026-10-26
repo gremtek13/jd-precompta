@@ -437,6 +437,20 @@ Ce qui est **prouvé**, pas seulement affirmé :
   changement trente jours (décision du cabinet A5B3-Q4). Une lecture par écran, à son ouverture et pour son dossier ; un
   client sans l'une des deux cases n'appelle pas la fonction. Aucune marque « vu », aucune table, aucune donnée de plus
   stockée ni transmise : l'avis se calcule de la valeur lue et du jour de Paris, à chaque affichage.
+- **Les ventes facturées de « Ma simulation »** (chantier EC-Q3, étape VF8e : la migration
+  `simulation_des_ventes_facturees`, PRÉPARÉE le 26/10/2026 et éprouvée sur une réplique, PAS appliquée — elle se
+  présente au cabinet avant ; décision du cabinet VF8-Q2 ; art. 5 § 1 c, 25 § 2 et 32 § 1 b) : une fonction de lecture
+  seule, `ventes_facturees_de_la_simulation` (`SECURITY DEFINER`, l'accès vérifié avant toute lecture — le cabinet du
+  dossier, ou l'accès client qui porte « Banque »), rend, d'un dossier dont les factures sont la source des ventes et
+  pour une année, le total hors taxe de chaque mois de ses ventes facturées et les identifiants de ses factures et
+  avoirs sources ; jamais un numéro, un client, une date ni un montant par facture — l'essai
+  `supabase/essais/simulationDesVentesFacturees.sql` exige chaque réponse mot pour mot. C'est une lecture NEUVE pour
+  l'accès qui ne porte que « Banque », qui ne lit aucune facture : il en apprend ces totaux — l'activité de sa propre
+  société, aucune donnée de plus sur une personne, ni sur ses clients — et des identifiants, que la ligne d'une pièce
+  désignée comme l'exemplaire d'une facture lui montre déjà (`pieces.facture_id`). Écartée : une policy de lecture des
+  factures, qui lui aurait ouvert toutes leurs colonnes. Rien ne s'écrit ; aucune table, aucune donnée de plus stockée
+  ni transmise ; « Ma simulation » la lit à son ouverture, derrière `SIMULATION_VENTES_FACTUREES_EXPORTEE`, FAUX
+  jusqu'à l'application — et, avant qu'il se lève, l'onglet Accès dira ce que la case « Banque » ouvre de plus.
 - **Le logo des factures d'un dossier, et le seau des ventes** (espace client, étape A5c1 : la migration
   `logo_des_factures`, préparée le 17/10/2026 et éprouvée sur une réplique, présentée au cabinet, appliquée sur son
   accord le 17/10/2026 sous la version `20261017120403` (A5C-Q1) ; art. 5 § 1 c et f, 25 § 2 et 32 § 1 b) : un quatrième
