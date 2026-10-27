@@ -575,7 +575,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   se refuse en base, le réglage lu `for share` (la course de VF8a fermée, à deux sessions), et `droitsAcces.ts` redit le
   refus à la lettre → « « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ » ; la production égale aux répliques (159
   migrations, avec `equipe_par_son_role`), `droitsAcces.sql` et les blocs EQ et VS de `rls.sql` joués en production
-  → « LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION ». Reste VF9 (EC3-Q9, la facture reprise, va à A8).
+  → « LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION ». VF9 conçue le 27/10/2026 : quatre lots, VF9a à VF9d,
+  sans migration ; une garde provisoire d'abord ; les écritures lues dans la base, pas recopiées ; PC3b après, à part ;
+  VF9-Q1 à la page des arbitrages → « VF9, L'ASSISTANT DEVANT LES VENTES FACTURÉES : LA CONCEPTION ». Reste VF9 (EC3-Q9,
+  la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
