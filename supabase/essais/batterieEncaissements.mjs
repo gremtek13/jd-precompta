@@ -221,6 +221,12 @@ end $$;`)
 // 4 bis. La passe du client (étape P2) : son accès à son dossier au seul droit « Ventes », le temps de la transaction ;
 // chaque saisie de ce dossier jouée en client et annulée, comme celles du chef.
 if (passeDuClient) {
+  // « Ventes » ne se porte que sur un accès d'un dossier basculé (garder_droit_ventes, étape VF8f) : ce dossier bascule
+  // d'abord, le temps de la transaction, par le propriétaire sans session ; ses factures, nées hors de la bascule, ne
+  // deviennent pas sources pour autant (la source se fixe à la validation).
+  sql.push(`do $$ begin perform set_config('request.jwt.claims', '', true); end $$;`)
+  sql.push(`update public.dossiers set ventes_par_les_factures = true
+    where id = ${lit(DOSSIERS[DOSSIER_DU_CLIENT])} and not ventes_par_les_factures;`)
   sql.push(`update public.memberships set droit_ventes = true, droit_banque = false
     where user_id = ${lit(CLIENT)} and dossier_id = ${lit(DOSSIERS[DOSSIER_DU_CLIENT])};`)
   for (let i = 0; i < casClient.length; i += 500) {

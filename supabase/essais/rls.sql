@@ -560,6 +560,21 @@
 -- un membre hors de ses dossiers, un compte rattaché à rien et le rôle des Edge Functions reçoivent « Accès refusé à ce
 -- dossier. » (42501), l'anonyme n'exécute pas la fonction : ce que le bloc SI juge, profil par profil. Le bloc SI ne se
 -- dit plus EN ATTENTE en production.
+--
+-- 27/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (chantier EC-Q3, étape VF8f : migration `ventes_sur_dossier_bascule`,
+-- PRÉPARÉE, pas appliquée), qui ne crée ni ne change aucune policy, mais une garde `security definer` sur `memberships` :
+-- « Ventes » ne se porte que sur un accès d'un dossier dont les factures sont la source de leurs ventes. Chaque bloc qui
+-- coche « Ventes » bascule donc d'abord TOUS les dossiers du client — il en a deux en production —, dans sa
+-- sous-transaction, par le propriétaire sans session (3ter, 4ter, M3ter, la banque du client, les ventes du client, le seau
+-- des ventes ; FE et VB, qui basculaient le seul dossier du client APRÈS avoir coché la case ; SI, qui le basculait seul).
+-- Et le bloc VS (VS1 à VS3, M-VS1, M-VS2) rejoue la garde : un compte que la policy refuse n'apprend pas si le dossier a
+-- basculé, le cabinet reçoit sa raison, le catalogue la dit hors de portée en RPC ; EN ATTENTE sans la migration. Joué
+-- ENTIER par psql sur la réplique de l'étape (la production à 157 migrations, ses neuf familles égales à celles de la
+-- production, le journal semé ; avec un, puis deux accès du client) : sans la migration, 64 lignes de verdict (la ligne VS
+-- « EN ATTENTE »), 0 en faute, 51 mutations sur 51 qui mordent ; avec elle, 67 lignes, 0 en faute, 53 mutations sur 53 —
+-- seules les lignes VS diffèrent, et les autres sont celles du fichier d'avant sur la base d'avant, au caractère près. Le
+-- fichier d'avant, sur la base munie de la migration, s'arrête à 3ter (23514). Le passage en production suivra
+-- l'application et se notera ici.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -647,6 +662,11 @@ begin
   -- ils n'ouvrent rien, et c'est ce qu'il établit, table par table — l'étape qui ouvrira une lecture à un droit (P2, P7)
   -- le verra ici si elle ouvre plus que les dossiers du client.
   begin
+    -- « Ventes » ne se porte que sur un accès d'un dossier basculé (garder_droit_ventes, étape VF8f) : les dossiers du
+    -- client basculent d'abord, par le propriétaire sans session, le temps de la sous-transaction.
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true
+     where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
     update memberships set droit_ventes = true, droit_banque = true where user_id = client;
     select count(*) into porteurs from memberships where user_id = client and droit_ventes and droit_banque;
     select count(*) into ses_pieces from pieces p where p.dossier_id in (select m.dossier_id from memberships m where m.user_id = client);
@@ -729,6 +749,11 @@ begin
   for t in select * from (values ('factures_emises'), ('lignes_bancaires')) as v(nom) loop
     accepte := false; motif := null;
     begin
+      -- « Ventes » ne se porte que sur un accès d'un dossier basculé (garder_droit_ventes, étape VF8f) : les dossiers
+      -- du client basculent d'abord, par le propriétaire sans session, le temps de la sous-transaction.
+      perform set_config('request.jwt.claims', '', true);
+      update dossiers set ventes_par_les_factures = true
+       where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
       update memberships set droit_ventes = true, droit_banque = true where user_id = client;
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
@@ -987,6 +1012,11 @@ begin
   -- cabinet. Elle doit trouver des tables en faute : sinon, sous ce profil-là non plus, elle ne regarderait rien.
   en_faute := 0;
   begin
+    -- « Ventes » ne se porte que sur un accès d'un dossier basculé (garder_droit_ventes, étape VF8f) : les dossiers du
+    -- client basculent d'abord, par le propriétaire sans session, le temps de la sous-transaction.
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true
+     where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
     update memberships set droit_ventes = true, droit_banque = true where user_id = client;
     for t in select c.relname as nom from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
              join pg_attribute a on a.attrelid = c.oid and a.attname = 'dossier_id' and a.attnum > 0 and not a.attisdropped
@@ -1271,6 +1301,12 @@ begin
       (dossier_du_client, mvt_client, piece_client, client, 'client'), (autre_dossier, mvt_autre, piece_autre, chef, 'cabinet');
     insert into precisions_mouvements (dossier_id, ligne_bancaire_id, auteur_id, origine, texte) values
       (dossier_du_client, mvt_client, client, 'client', 'essai rls banque'), (autre_dossier, mvt_autre, chef, 'cabinet', 'essai rls banque');
+
+    -- « Ventes » ne se porte que sur un accès d'un dossier basculé (garder_droit_ventes, étape VF8f) : les dossiers du
+    -- client basculent, le jeu posé, par le propriétaire sans session, le temps de la sous-transaction.
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true
+     where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
 
     -- ── 3bis : la case « Ventes » sans la case « Banque » ──
     update memberships set droit_ventes = true, droit_banque = false where user_id = client;
@@ -1682,6 +1718,12 @@ begin
         jsonb_build_object('nom', 'parametres_facturation', 'ordre', format('update parametres_facturation set escompte = escompte where dossier_id = %L', dossier_du_client)));
     end if;
     construit := true;
+    -- « Ventes » ne se porte que sur un accès d'un dossier basculé (garder_droit_ventes, étape VF8f) : les dossiers du
+    -- client basculent, le jeu posé — ses factures, validées avant, restent comptées par leurs pièces —, par le
+    -- propriétaire sans session, le temps de la sous-transaction.
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true
+     where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
 
     -- ── 3bis. Ce que le client lit, sans droit, avec « Banque » seul, avec « Ventes » ──
     foreach reglage in array array['aucun', 'banque', 'ventes'] loop
@@ -1933,6 +1975,11 @@ begin
     insert into storage.objects (bucket_id, name, metadata) values
       ('ventes', chemin_sien, '{"size": 10, "mimetype": "image/png"}'), ('ventes', chemin_autre, '{"size": 10, "mimetype": "image/png"}');
     construit := true;
+    -- « Ventes » ne se porte que sur un accès d'un dossier basculé (garder_droit_ventes, étape VF8f) : les dossiers du
+    -- client basculent, par le propriétaire sans session, le temps de la sous-transaction.
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true
+     where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
 
     -- SV1 et SV2 : l'anonyme, puis un compte rattaché à rien.
     set local role anon;
@@ -2144,8 +2191,11 @@ begin
   end if;
   begin
     -- ── Le jeu ──
+    -- Les dossiers du client basculent AVANT que « Ventes » ne s'y porte (garder_droit_ventes, étape VF8f) — tous, le
+    -- client pouvant en avoir plus d'un.
+    update dossiers set ventes_par_les_factures = true
+     where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
     update memberships set droit_ventes = true, droit_banque = true where user_id = client;
-    update dossiers set ventes_par_les_factures = true where id = dossier_du_client;
     insert into lignes_bancaires (dossier_id, date, libelle, montant, statut)
       values (dossier_du_client, '2025-12-31', 'ESSAI RLS FE', 10, 'non_rapprochee') returning id into m_fige;
     insert into lignes_bancaires (dossier_id, date, libelle, montant, statut)
@@ -2325,8 +2375,11 @@ begin
   begin
     -- ── Le jeu : le dossier du client bascule ; une facture source de 2025, son encaissement par virement sur un crédit de
     -- son jour, que rien ne classe — le mouvement est réservé. ──
+    -- Les dossiers du client basculent AVANT que « Ventes » ne s'y porte (garder_droit_ventes, étape VF8f) — tous, le
+    -- client pouvant en avoir plus d'un.
+    update dossiers set ventes_par_les_factures = true
+     where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
     update memberships set droit_ventes = true, droit_banque = true where user_id = client;
-    update dossiers set ventes_par_les_factures = true where id = dossier_du_client;
     insert into lignes_bancaires (dossier_id, date, libelle, montant, statut)
       values (dossier_du_client, '2025-03-10', 'ESSAI RLS VB', 120, 'non_rapprochee') returning id into m_reserve;
     set local role authenticated;
@@ -2477,7 +2530,10 @@ begin
     -- ── Le jeu, sans session : le propriétaire bascule le dossier (la garde du réglage ne juge que les sessions) ──
     perform set_config('request.jwt.claims', '', true);
     update memberships set droit_ventes = false, droit_banque = true where user_id = client;
-    update dossiers set ventes_par_les_factures = true where id = dossier_du_client;
+    -- Tous ses dossiers : « Ventes » s'y porte ensuite sur chacun de ses accès (SI2, M-SI2, SI3 ; garder_droit_ventes,
+    -- étape VF8f).
+    update dossiers set ventes_par_les_factures = true
+     where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
@@ -2850,6 +2906,159 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', 'EQ4. authenticated ne met à jour que role, sans le transmettre, lit et retire toujours ; service_role garde la table (lecture du catalogue)',
     'cible', 'cabinet_admins', 'observe', case when n = 1 then 'conforme' else 'NON CONFORME' end, 'ok', n = 1);
   verdicts := verdicts || jsonb_build_object('controle', 'EQ. le jeu d''essai de l''équipe s''est construit', 'cible', 'équipe',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ VS. « Ventes » ne se porte que sur un dossier basculé (chantier EC-Q3, étape VF8f ; migration
+-- `ventes_sur_dossier_bascule`) ══════════════════════════════════════════════════════════════════════════════════
+-- Une garde neuve, `garder_droit_ventes`, aux droits du propriétaire, lit le réglage du dossier d'un accès qui reçoit
+-- « Ventes » et le refuse sur un dossier qui n'a pas basculé (23514). Elle contourne la RLS : elle se rejoue. Elle passe
+-- APRÈS l'écriture, donc après la policy d'insertion de `memberships` : à qui la policy refuse, elle ne dit rien.
+--   VS1. L'anonyme, un compte rattaché à rien et le client, qui insèrent chacun un accès « Ventes » sur un dossier qui a
+--        basculé puis sur un dossier qui n'a pas basculé : refusés (42501), et chacun reçoit la MÊME réponse des deux
+--        côtés — aucun n'apprend si le dossier a basculé.
+--   VS2. Le contrôle POSITIF : le client rangé chef du cabinet, qui n'est pas super-administrateur (l'insertion de
+--        celui-ci passe : la restauration), insère l'accès « Ventes » d'un compte : sur le dossier qui n'a pas basculé, la
+--        raison de la garde ; sur celui qui a basculé, accepté. Sans lui, une garde qui refuserait tout passerait VS1.
+--   VS3. La garde ne s'exécute pas en RPC, ni pour l'anonyme ni pour un compte connecté (lecture du catalogue).
+-- Deux mutations, qui doivent mordre : M-VS1 (la garde posée AUSSI avant l'insertion, le temps d'une sous-transaction :
+-- l'anonyme reçoit deux réponses différentes), M-VS2 (VS2 joué par le super-administrateur : sur le dossier qui n'a pas
+-- basculé, son insertion passe). Le jeu, le temps d'une sous-transaction annulée, dans le cabinet du dossier du client :
+-- deux dossiers jetables, l'un basculé par le propriétaire sans session, l'autre non. Avant la migration, une ligne dit que
+-- le resserrement attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  inconnu uuid := gen_random_uuid();
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  dj uuid := 'f8f00000-0000-4000-8000-0000000000e1';
+  dk uuid := 'f8f00000-0000-4000-8000-0000000000e2';
+  raison text := 'Le droit « Ventes » suppose que les factures de ce dossier soient la source de leurs ventes, ce qu''elles ne sont pas : changer d''abord la source des ventes du dossier.';
+  cabinet_du_client uuid; profil text; cible uuid; reponses jsonb; n bigint;
+  erreur text; construit boolean := false; obs text;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.garder_droit_ventes()') is null then
+    insert into rls_verdict values ('VS. « Ventes » sur un dossier basculé : EN ATTENTE de la migration ventes_sur_dossier_bascule',
+      'garder_droit_ventes', 'absente : la garde se juge dès que la migration y est', true);
+    return;
+  end if;
+  select d.cabinet_id into cabinet_du_client from dossiers d where d.id = dossier_du_client;
+  begin
+    -- ── Le jeu, sans session ──
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id, ventes_par_les_factures) values
+      (dj, 'ESSAI RLS VS DJ', cabinet_du_client, false), (dk, 'ESSAI RLS VS DK', cabinet_du_client, true);
+    construit := true;
+
+    -- VS1 : l'anonyme, un compte rattaché à rien, le client — sur DK (basculé), puis sur DJ (non).
+    foreach profil in array array['anon', 'inconnu', 'client'] loop
+      reponses := '[]'::jsonb;
+      foreach cible in array array[dk, dj] loop
+        obs := null;
+        begin
+          execute format('set local role %I', case profil when 'anon' then 'anon' else 'authenticated' end);
+          perform set_config('request.jwt.claims', case profil when 'anon' then '{"role":"anon"}'
+            else json_build_object('sub', case profil when 'inconnu' then inconnu else client end, 'role', 'authenticated')::text end, true);
+          insert into memberships (user_id, dossier_id, role, email, droit_ventes)
+            values (client, cible, 'client', 'essai-rls-vs@example.test', true);
+          obs := 'ACCEPTÉ';
+          raise exception 'ANNULATION_ESSAI';
+        exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+        end;
+        reset role;
+        reponses := reponses || to_jsonb(obs);
+      end loop;
+      verdicts := verdicts || jsonb_build_object('controle', 'VS1. un compte que la policy refuse n''apprend pas si le dossier a basculé',
+        'cible', profil, 'observe', 'basculé : ' || (reponses ->> 0) || ' | non basculé : ' || (reponses ->> 1),
+        'ok', (reponses ->> 0) = (reponses ->> 1) and (reponses ->> 0) like '42501 %');
+    end loop;
+
+    -- VS2 : le client rangé chef du cabinet, qui n'est pas super-administrateur.
+    reponses := '[]'::jsonb;
+    foreach cible in array array[dj, dk] loop
+      obs := null;
+      begin
+        insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet_du_client, 'comptable_en_chef');
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        insert into memberships (user_id, dossier_id, role, email, droit_ventes)
+          values (chef, cible, 'client', 'essai-rls-vs@example.test', true);
+        obs := 'ACCEPTÉ';
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+      end;
+      reset role;
+      reponses := reponses || to_jsonb(obs);
+    end loop;
+    verdicts := verdicts || jsonb_build_object('controle', 'VS2. le cabinet du dossier : la raison de la garde sur un dossier qui n''a pas basculé, accepté sur un dossier basculé (contrôle positif)',
+      'cible', 'chef qui n''est pas super-administrateur', 'observe', 'non basculé : ' || (reponses ->> 0) || ' | basculé : ' || (reponses ->> 1),
+      'ok', (reponses ->> 0) = '23514 ' || raison and (reponses ->> 1) = 'ACCEPTÉ');
+
+    -- M-VS1 : la garde posée AUSSI avant l'insertion — elle passe alors avant la policy, et parle à l'anonyme.
+    reponses := '[]'::jsonb;
+    begin
+      create trigger rls_mutation_garde_avant before insert on public.memberships
+        for each row execute function public.garder_droit_ventes();
+      foreach cible in array array[dk, dj] loop
+        obs := null;
+        begin
+          set local role anon;
+          perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+          insert into memberships (user_id, dossier_id, role, email, droit_ventes)
+            values (client, cible, 'client', 'essai-rls-vs@example.test', true);
+          obs := 'ACCEPTÉ';
+          raise exception 'ANNULATION_ESSAI';
+        exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+        end;
+        reset role;
+        reponses := reponses || to_jsonb(obs);
+      end loop;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then null;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-VS1 — VS1 rejoué, la garde posée aussi avant l''insertion',
+      'attendu', 'deux réponses différentes', 'observe', 'basculé : ' || coalesce(reponses ->> 0, '?') || ' | non basculé : ' || coalesce(reponses ->> 1, '?'),
+      'mord', (reponses ->> 0) is distinct from (reponses ->> 1));
+
+    -- M-VS2 : VS2 joué par le super-administrateur, sur le dossier qui n'a pas basculé — la restauration passe.
+    obs := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into memberships (user_id, dossier_id, role, email, droit_ventes)
+        values (client, dj, 'client', 'essai-rls-vs@example.test', true);
+      obs := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-VS2 — VS2 joué par le super-administrateur',
+      'attendu', 'accepté', 'observe', obs, 'mord', obs = 'ACCEPTÉ');
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+
+  -- VS3 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.oid = to_regprocedure('public.garder_droit_ventes()') and p.prosecdef and p.proconfig @> array['search_path=public']
+     and not has_function_privilege('anon', p.oid, 'execute') and not has_function_privilege('authenticated', p.oid, 'execute');
+  verdicts := verdicts || jsonb_build_object('controle', 'VS3. la garde du droit « Ventes » ne s''exécute pas en RPC (lecture du catalogue)',
+    'cible', 'garder_droit_ventes', 'observe', case when n = 1 then 'security definer, ni anon ni authenticated' else 'EXÉCUTABLE OU ABSENTE' end,
+    'ok', n = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'VS. le jeu d''essai du droit « Ventes » s''est construit', 'cible', 'dossiers jetables',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 

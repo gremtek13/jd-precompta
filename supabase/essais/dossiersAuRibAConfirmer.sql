@@ -134,14 +134,16 @@ begin
       ('j1', 'jeu', 'deux cabinets jetables, K1 et K2', 'proprietaire', null,
         $q$insert into cabinets (id, nom) values ('{K1}', 'Cabinet jetable A5b3c un'), ('{K2}', 'Cabinet jetable A5b3c deux')$q$, 'OK', null),
       -- Insérés à rebours de leurs identifiants : l'ordre où la base les range n'est jamais celui que la fonction doit rendre.
+      -- Les sept dossiers où le client a un accès naissent basculés : « Ventes » ne se porte que sur un accès d'un dossier
+      -- dont les factures sont la source de leurs ventes (garder_droit_ventes, étape VF8f) ; la liste n'en dépend pas.
       ('j2', 'jeu', 'onze dossiers jetables : dix dans K1 (D8 archivé), un dans K2', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, archive) values
-          ('{DB}', 'Jetable A5b3c 11', '{K2}', 'redevable', true, false), ('{DA}', 'Jetable A5b3c 10', '{K1}', 'redevable', true, false),
-          ('{D9}', 'Jetable A5b3c 09', '{K1}', 'redevable', true, false), ('{D8}', 'Jetable A5b3c 08', '{K1}', 'redevable', true, true),
-          ('{D7}', 'Jetable A5b3c 07', '{K1}', 'redevable', true, false), ('{D6}', 'Jetable A5b3c 06', '{K1}', 'redevable', true, false),
-          ('{D5}', 'Jetable A5b3c 05', '{K1}', 'redevable', true, false), ('{D4}', 'Jetable A5b3c 04', '{K1}', 'redevable', true, false),
-          ('{D3}', 'Jetable A5b3c 03', '{K1}', 'redevable', true, false), ('{D2}', 'Jetable A5b3c 02', '{K1}', 'redevable', true, false),
-          ('{D1}', 'Jetable A5b3c 01', '{K1}', 'redevable', true, false)$q$, 'OK', null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, archive, ventes_par_les_factures) values
+          ('{DB}', 'Jetable A5b3c 11', '{K2}', 'redevable', true, false, false), ('{DA}', 'Jetable A5b3c 10', '{K1}', 'redevable', true, false, true),
+          ('{D9}', 'Jetable A5b3c 09', '{K1}', 'redevable', true, false, false), ('{D8}', 'Jetable A5b3c 08', '{K1}', 'redevable', true, true, false),
+          ('{D7}', 'Jetable A5b3c 07', '{K1}', 'redevable', true, false, false), ('{D6}', 'Jetable A5b3c 06', '{K1}', 'redevable', true, false, true),
+          ('{D5}', 'Jetable A5b3c 05', '{K1}', 'redevable', true, false, true), ('{D4}', 'Jetable A5b3c 04', '{K1}', 'redevable', true, false, true),
+          ('{D3}', 'Jetable A5b3c 03', '{K1}', 'redevable', true, false, true), ('{D2}', 'Jetable A5b3c 02', '{K1}', 'redevable', true, false, true),
+          ('{D1}', 'Jetable A5b3c 01', '{K1}', 'redevable', true, false, true)$q$, 'OK', null),
       ('j3', 'jeu', 'les accès d''essai du client à D1, D2, D3, D4, D5, D6 et DA, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values
           ('{ACCES1}', '{CLIENT}', '{D1}', 'client', 'acces-a5b3c@exemple.invalid'), ('{ACCES2}', '{CLIENT}', '{D2}', 'client', 'acces-a5b3c@exemple.invalid'),

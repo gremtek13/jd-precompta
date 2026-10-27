@@ -1171,8 +1171,11 @@ begin
       end;
       reset role;
 
-      -- Le client, les deux cases de son accès cochées.
+      -- Le client, les deux cases de son accès cochées — son dossier basculé d'abord, le temps du contrôle : « Ventes » ne se
+      -- porte que sur un accès d'un dossier dont les factures sont la source de leurs ventes (garder_droit_ventes, VF8f).
       begin
+        perform set_config('request.jwt.claims', '', true);
+        update dossiers set ventes_par_les_factures = true where id = dossier_client and not ventes_par_les_factures;
         update memberships set droit_ventes = true, droit_banque = true where user_id = client and dossier_id = dossier_client;
         set local role authenticated;
         perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);

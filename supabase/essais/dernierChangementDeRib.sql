@@ -124,10 +124,12 @@ begin
       -- La version courante d'un dossier : celle qu'aucune ne remplace (« courante » ci-dessous, écrite en entier).
 
       -- ══ Le jeu : trois dossiers jetables, un accès d'essai sans droit ══════════
+      -- A naît basculé : « Ventes » ne se porte que sur un accès d'un dossier dont les factures sont la source de leurs
+      -- ventes (garder_droit_ventes, étape VF8f) ; ses paramètres de facturation n'en dépendent pas.
       ('j1', 'jeu', 'dossiers jetables A, B et C', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva) values
-          ('{DA}', 'ESSAI DERNIER RIB A', '{CAB}', 'redevable', true), ('{DB}', 'ESSAI DERNIER RIB B', '{CAB}', 'redevable', true),
-          ('{DC}', 'ESSAI DERNIER RIB C', '{CAB}', 'redevable', true)$q$, 'OK', null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures) values
+          ('{DA}', 'ESSAI DERNIER RIB A', '{CAB}', 'redevable', true, true), ('{DB}', 'ESSAI DERNIER RIB B', '{CAB}', 'redevable', true, false),
+          ('{DC}', 'ESSAI DERNIER RIB C', '{CAB}', 'redevable', true, false)$q$, 'OK', null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-dernier-rib@exemple.invalid')$q$, 'OK', null),
 

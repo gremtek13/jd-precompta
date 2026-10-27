@@ -129,9 +129,11 @@ begin
       -- proposée n'a pas de RIB, ou quand toute la chaîne l'est.
 
       -- ══ Le jeu : deux dossiers jetables, un accès d'essai sans droit ══════════
+      -- A naît basculé : « Ventes » ne se porte que sur un accès d'un dossier dont les factures sont la source de leurs
+      -- ventes (garder_droit_ventes, étape VF8f) ; ses paramètres de facturation n'en dépendent pas.
       ('j1', 'jeu', 'dossiers jetables A et B', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva) values
-          ('{DA}', 'ESSAI PARAMETRES A', '{CAB}', 'redevable', true), ('{DB}', 'ESSAI PARAMETRES B', '{CAB}', 'redevable', true)$q$, 'OK', null, null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures) values
+          ('{DA}', 'ESSAI PARAMETRES A', '{CAB}', 'redevable', true, true), ('{DB}', 'ESSAI PARAMETRES B', '{CAB}', 'redevable', true, false)$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-parametres@exemple.invalid')$q$, 'OK', null, null),
 

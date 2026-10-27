@@ -1054,6 +1054,9 @@ begin
           elsif etape[3] = 'chef_simple' then
             insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
           elsif etape[3] in ('client_t', 'client_t_ventes') then
+            -- « Ventes » sur T, qui n'a pas basculé : seule la porte de la restauration — le super-administrateur — l'y
+            -- pose (garder_droit_ventes, étape VF8f) ; c'est l'état que rend la restauration d'une sauvegarde d'avant.
+            perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
             insert into memberships (user_id, dossier_id, role, droit_ventes, droit_banque)
               values (client, (ids ->> 'T')::uuid, 'client', etape[3] = 'client_t_ventes', etape[3] = 'client_t_ventes');
           end if;

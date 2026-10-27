@@ -119,11 +119,13 @@ begin
       -- membre_affecte (le même, affecté au dossier B).
 
       -- ══ Le jeu : six dossiers jetables, un accès d'essai sans droit, une facture brouillon au nom d'un client ══════════
+      -- A naît basculé : « Ventes » ne se porte que sur un accès d'un dossier dont les factures sont la source de leurs
+      -- ventes (garder_droit_ventes, étape VF8f) ; ses contacts n'en dépendent pas.
       ('j1', 'jeu', 'dossiers jetables A à F', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, article_exoneration) values
-          ('{DA}', 'ESSAI CONTACTS A', '{CAB}', 'redevable', true, null), ('{DB}', 'ESSAI CONTACTS B', '{CAB}', 'redevable', true, null),
-          ('{DC}', 'ESSAI CONTACTS C', '{CAB}', 'exonere', false, 'cgi_261_4_1'), ('{DD}', 'ESSAI CONTACTS D', '{CAB}', 'redevable', true, 'cgi_261_4_1'),
-          ('{DE}', 'ESSAI CONTACTS E', '{CAB}', 'franchise', false, null), ('{DF}', 'ESSAI CONTACTS F', '{CAB}', 'exonere', false, 'cgi_261_4_4_a')$q$, 'OK', null, null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, article_exoneration, ventes_par_les_factures) values
+          ('{DA}', 'ESSAI CONTACTS A', '{CAB}', 'redevable', true, null, true), ('{DB}', 'ESSAI CONTACTS B', '{CAB}', 'redevable', true, null, false),
+          ('{DC}', 'ESSAI CONTACTS C', '{CAB}', 'exonere', false, 'cgi_261_4_1', false), ('{DD}', 'ESSAI CONTACTS D', '{CAB}', 'redevable', true, 'cgi_261_4_1', false),
+          ('{DE}', 'ESSAI CONTACTS E', '{CAB}', 'franchise', false, null, false), ('{DF}', 'ESSAI CONTACTS F', '{CAB}', 'exonere', false, 'cgi_261_4_4_a', false)$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-contacts@exemple.invalid')$q$, 'OK', null, null),
       ('j3', 'jeu', 'une facture brouillon du dossier A au nom du client que le contact rangera', 'proprietaire', null,

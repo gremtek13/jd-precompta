@@ -3,8 +3,8 @@ import { AuthWeakPasswordError, FunctionsHttpError } from '@supabase/supabase-js
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
 import {
-  CE_QUE_COMPTENT_SES_FACTURES, CE_QUE_DONNE_UN_ACCES, ceQueDisentLesCasesDuDossier,
-  raisonDuDossierNonBascule, raisonDuReglageIllisible,
+  CE_QUE_COMPTENT_SES_FACTURES, CE_QUE_DONNE_UN_ACCES, ceQueDisentLesCasesDuDossier, messageDuRefus,
+  raisonDuDossierNonBascule, raisonDuReglageIllisible, REFUS_VENTES_DOSSIER_NON_BASCULE,
 } from '../../lib/droitsAcces'
 import { BASCULE_OFFERTE } from '../../lib/basculeDesVentes'
 import { REGLE_DU_MOT_DE_PASSE, refusDuMotDePasse } from '../../lib/recuperationMotDePasse'
@@ -1407,5 +1407,49 @@ describe('AccesTab — la case « Ventes » suit la source des ventes du dossier
     await laisserPasserUnTour()
     expect(reglageFaux.lectures).toBe(2)
     expect(caseDe('Ventes', 'secretariat@exemple.fr').disabled).toBe(false)
+  })
+})
+
+// LE RESSERREMENT (chantier EC-Q3, étape VF8f) : la base refuse « Ventes » qui ARRIVE sur un accès d'un dossier qui n'a pas
+// basculé (`garder_droit_ventes`). L'écran ne l'offre pas sur un tel dossier ; mais le réglage baissé dans un autre onglet
+// après la lecture laisse la case libre ici. La base refuse alors (23514, ses mots, que le module redit à la lettre :
+// `REFUS_VENTES_DOSSIER_NON_BASCULE`), l'écran dit son refus avec la personne et le droit, et la relecture rend la case
+// grisée. La réponse de la base est imposée : le faux client ne rejoue pas la garde, que son essai éprouve en base
+// (supabase/essais/droitsAcces.sql, contrôles 70 à 83).
+describe('AccesTab — la base refuse « Ventes » sur un dossier qui n’a pas basculé (étape VF8f)', () => {
+  beforeEach(() => {
+    faux.lignes = [
+      acces({ id: 'm1', user_id: 'u1', email: 'client@example.test', droit_ventes: true }),
+      acces({ id: 'm2', user_id: 'u2', email: 'secretariat@example.test', created_at: '2026-10-02T08:00:00Z' }),
+    ]
+  })
+
+  it('le réglage baissé ailleurs après la lecture : le refus de la base se dit à ses mots, et la case relue est grisée', async () => {
+    monter()
+    await screen.findByText('secretariat@example.test')
+    const libre = caseDe('Ventes', 'secretariat@example.test')
+    expect(libre.disabled).toBe(false)
+    // Un autre onglet baisse le réglage : la base le porte, l'écran ne l'a pas relu.
+    reglageFaux.reglage = { etat: 'non_bascule' }
+    faux.reponseRpc = {
+      data: null, error: { message: REFUS_VENTES_DOSSIER_NON_BASCULE.message, code: REFUS_VENTES_DOSSIER_NON_BASCULE.code },
+    }
+    await act(async () => { libre.click() })
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm2', p_ventes: true, p_banque: null }])
+    expect(screen.getByRole('alert').textContent)
+      .toBe(messageDuRefus('ventes', 'secretariat@example.test', REFUS_VENTES_DOSSIER_NON_BASCULE.message))
+    // La relecture : le réglage avec la liste. La case reste décochée, grisée, et dit pourquoi.
+    expect(reglageFaux.lectures).toBe(2)
+    const relue = caseDe('Ventes', 'secretariat@example.test')
+    expect(relue.checked).toBe(false)
+    expect(relue.disabled).toBe(true)
+    expect(relue.title).toBe(raisonDuDossierNonBascule(BASCULE_OFFERTE))
+    // L'accès qui portait déjà « Ventes » se décoche encore : la base ne juge que ce qui arrive.
+    faux.reponseRpc = null
+    expect(caseDe('Ventes', 'client@example.test').disabled).toBe(false)
+    await act(async () => { caseDe('Ventes', 'client@example.test').click() })
+    expect(faux.appelsRpc.map((a) => a.args).at(-1)).toEqual({ p_membership_id: 'm1', p_ventes: false, p_banque: null })
+    expect(caseDe('Ventes', 'client@example.test').checked).toBe(false)
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
   })
 })

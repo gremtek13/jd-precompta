@@ -111,12 +111,14 @@ begin
       -- membre_affecte (le même, affecté au dossier B).
 
       -- ══ Le jeu : quatre dossiers jetables, un accès d'essai sans droit, les connexions plantées ══════════
+      -- A naît basculé : « Ventes » ne se porte que sur un accès d'un dossier dont les factures sont la source de leurs
+      -- ventes (garder_droit_ventes, étape VF8f) ; son adresse de réception n'en dépend pas.
       ('j1', 'jeu', 'dossiers jetables A, B, C (sans SIRET) et D (SIRET aux espaces insécables)', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, siret) values
-          ('{DA}', 'ESSAI ADRESSES A', '{CAB}', 'redevable', true, '12345678200010'),
-          ('{DB}', 'ESSAI ADRESSES B', '{CAB}', 'redevable', true, '987654321'),
-          ('{DC}', 'ESSAI ADRESSES C', '{CAB}', 'redevable', true, null),
-          ('{DD}', 'ESSAI ADRESSES D', '{CAB}', 'redevable', true, E'123\u00a0456 782\u202f00010')$q$, 'OK', null, null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, siret, ventes_par_les_factures) values
+          ('{DA}', 'ESSAI ADRESSES A', '{CAB}', 'redevable', true, '12345678200010', true),
+          ('{DB}', 'ESSAI ADRESSES B', '{CAB}', 'redevable', true, '987654321', false),
+          ('{DC}', 'ESSAI ADRESSES C', '{CAB}', 'redevable', true, null, false),
+          ('{DD}', 'ESSAI ADRESSES D', '{CAB}', 'redevable', true, E'123\u00a0456 782\u202f00010', false)$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-adresses@exemple.invalid')$q$, 'OK', null, null),
       ('j3', 'jeu', 'A : une plateforme agréée et Super PDP reliés, chaque identifiant, secret, adresse, organisation et portée PLANTÉS ; B : Super PDP seul', 'proprietaire', null,
