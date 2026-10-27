@@ -5,7 +5,7 @@ import { fichiersDuSchema } from '../test/schema'
 import { CHEMINS_DOSSIER_PREVUS } from './sauvegarde'
 
 // L'ÉQUIPE NE CHANGE QUE PAR SON RÔLE (23Q2Q2-Q3, tranchée par le cabinet le 26/10/2026 à la recommandation ; migration
-// `equipe_par_son_role`, PRÉPARÉE sous la version provisoire 20261027150000, pas appliquée). La policy de mise à jour de
+// `equipe_par_son_role`, appliquée le 27/10/2026 sous la version 20261027163235). La policy de mise à jour de
 // `cabinet_admins` ne juge que le cabinet, avant et après : tant qu'`authenticated` portait UPDATE sur la table entière, un
 // chef changeait le COMPTE d'une ligne de son équipe — pour celui d'un client de ses dossiers — sans passer par
 // `create-team-member`. La migration retire le droit sur la table et le rend sur la seule colonne `role`. Ce garde la
@@ -44,10 +44,9 @@ function blocs(texte: string): { blocs: string[]; dehors: string } {
 }
 
 describe('la migration equipe_par_son_role', () => {
-  it('est dans l’export, une fois, sous une version provisoire postérieure à la dernière migration appliquée', () => {
+  it('est dans l’export, une fois, sous la version de sa ligne d’historique (appliquée le 27/10/2026)', () => {
     const chemins = fichiersDuSchema().map((f) => f.chemin).filter((c) => MIGRATION.test(c))
-    expect(chemins).toHaveLength(1)
-    expect(chemins[0] > 'supabase/schema/20261027055337_contre_passation_sur_mouvement_fige.sql').toBe(true)
+    expect(chemins).toEqual(['supabase/schema/20261027163235_equipe_par_son_role.sql'])
   })
 
   it('n’exécute que le retrait du droit sur la table puis le droit sur `role`, entre ses deux gardes', () => {

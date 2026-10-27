@@ -41,7 +41,7 @@
 -- fonction `security invoker`, « rien à changer » accepté, la casse ignorée), font toutes virer au moins un verdict.
 --
 -- « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF8f ; migration `ventes_sur_dossier_bascule`,
--- PRÉPARÉE le 27/10/2026, pas encore appliquée). La garde `garder_droit_ventes` refuse, en 23514, « Ventes » qui arrive sur
+-- appliquée le 27/10/2026, 20261027163348). La garde `garder_droit_ventes` refuse, en 23514, « Ventes » qui arrive sur
 -- un accès d'un dossier dont les factures ne sont pas la source de leurs ventes, pour tout auteur, hors de l'insertion du
 -- super-administrateur (la restauration). Les contrôles qui cochent « Ventes » sur les dossiers du client les basculent
 -- donc d'abord, dans leur sous-transaction ; les contrôles 70 à 83 et les mutations 90 à 95 jouent la garde elle-même, sur un
@@ -49,6 +49,12 @@
 -- resté » (60) compte aussi les dossiers basculés. Sans la migration, les refus de la garde manquent : ses contrôles sont
 -- en faute, et eux seuls. Ce que deux sessions concurrentes rencontrent (le réglage baissé pendant que « Ventes » arrive) se
 -- joue sur une réplique, hors du dépôt (HISTORIQUE.md, « « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ »).
+--
+-- Passage du 27/10/2026, en production, juste après les migrations `equipe_par_son_role` et
+-- `ventes_sur_dossier_bascule` (versions 20261027163235 et 20261027163348) : 65 lignes, toutes justes — 63 contrôles,
+-- dont les vingt de la garde (70 à 83, 90 à 95), et 2 lignes d'information ; rien de resté en base ; le texte reçu est
+-- ce fichier sans ses lignes de commentaire ni son dernier saut de ligne (53 876 caractères, empreinte
+-- 2f8b8661f1983beabda57cb8a8b7619b) (HISTORIQUE.md, « LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION »).
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
