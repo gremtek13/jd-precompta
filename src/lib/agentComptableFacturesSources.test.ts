@@ -22,7 +22,8 @@ import type { FactureEmise, Piece } from './types'
 // SEUL (un nom qu'il emprunterait au reste du fichier lèverait), le confronter à src/lib sur une table de cas nommés et sur
 // une batterie tirée d'une graine fixe, et planter dans la vraie source une dérive par fonction pour prouver qu'il sait
 // encore échouer. `agentComptableAnalyse.test.ts` garde le générateur qui les reçoit ; ce fichier garde aussi, par le
-// harnais HTTP, leur câblage dans `points_a_traiter` — derrière le refus de VF9a, que VF9c retirera.
+// harnais HTTP, leur câblage dans `points_a_traiter` — derrière le refus de VF9a sous VF9b ; depuis VF9c, pour une source
+// des ventes lue vraie, sans lui.
 //
 // CE QU'UNE DÉRIVE COÛTERAIT : sur un dossier basculé, l'assistant dirait « à régénérer » l'écriture juste de l'exemplaire
 // qu'un virement mixte paie, réclamerait le compte de la catégorie ou la TVA de l'exemplaire d'une facture source — que sa
@@ -471,12 +472,11 @@ describe('les gardes des blocs FACTURES SOURCES et VIREMENT MIXTE savent encore 
 
 // ── LE CÂBLAGE DANS `points_a_traiter`, PAR LE HARNAIS HTTP ───────────────────────────────────────────────────────────
 // La vraie source, chargée devant un monde factice (src/test/fonctionsEdge.ts) : le modèle, factice aussi, appelle
-// `points_a_traiter`, puis répond. Un dossier qui n'a pas basculé ne lit rien de plus qu'hier ; un dossier basculé est
-// refusé avant toute lecture (VF9a). Ce que VF9b câble derrière ce refus se joue sur une copie EN MÉMOIRE dont le refus est
-// levé — ce que VF9c fera —, jamais sur le fichier servi. Le jour où VF9c le lève, l'ancre disparaît et `muter` lève : ces
-// cas se jouent alors sur la vraie source.
+// `points_a_traiter`, puis répond. Un dossier qui n'a pas basculé ne lit rien de plus qu'hier. Sous VF9b, un dossier basculé
+// était refusé avant toute lecture (VF9a), et ce que VF9b câblait derrière ce refus se jouait sur une copie EN MÉMOIRE dont
+// le refus était levé ; VF9c l'a levé dans le fichier servi pour une source des ventes LUE vraie : ces cas se jouent sur la
+// vraie source, et le refus, qui ne vaut plus que pour une source illisible, s'y juge à part.
 
-const REFUS_DE_VF9A = '    if (ventes) {\n      return { erreur: `${ventes.constat}. L\'assistant ne lit pas encore les ventes facturées : ses contrôles'
 const QUESTION = { dossierId: ID.dossier, message: 'Quels points restent à traiter ?' }
 const MARQUEUR_CLIENT = 'Marqueur fictif du client des factures'
 
@@ -622,12 +622,11 @@ const clesDesVentes = (p: Record<string, unknown>) => ({
 
 const LES_VENTES = ['factures_emises', 'encaissements_factures']
 
-describe('points_a_traiter, derrière le refus de VF9a (étape VF9b, par le harnais HTTP)', () => {
+// Sous VF9b : « points_a_traiter, derrière le refus de VF9a (étape VF9b, par le harnais HTTP) ».
+describe('points_a_traiter, les ventes d’un dossier basculé lues (étapes VF9b et VF9c, par le harnais HTTP)', () => {
   const sourceReelle = sourceDe('agent-comptable')
-  const sourceSansRefus = muter(sourceReelle, [[REFUS_DE_VF9A, REFUS_DE_VF9A.replace('if (ventes) {', 'if (false) {')]])
   beforeAll(() => {
     prechauffer(sourceReelle)
-    prechauffer(sourceSansRefus)
   }, 60_000)
 
   it('un dossier qui n’a pas basculé ne lit ni ses factures ni le registre, et ses contrôles jugent comme hier', async () => {
@@ -646,15 +645,22 @@ describe('points_a_traiter, derrière le refus de VF9a (étape VF9b, par le harn
     })
   })
 
-  it('un dossier basculé est refusé avant toute lecture, ses ventes comprises (VF9a tient)', async () => {
-    const { points, lues } = await jouer(mondeDesVentes(true), sourceReelle)
+  // Sous VF9b : « un dossier basculé est refusé avant toute lecture, ses ventes comprises (VF9a tient) ». Depuis VF9c, le
+  // refus ne vaut plus que pour une source des ventes qui ne se lit pas — le côté fermé de VF9a.
+  it('une source des ventes illisible est refusée avant toute lecture, ses ventes comprises (le côté fermé de VF9a)', async () => {
+    const monde = mondeDesVentes(true)
+    const dossier = (monde.base.dossiers ?? []).find((d) => d.id === ID.dossier)
+    if (!dossier) throw new Error('le dossier du monde de référence a disparu')
+    delete dossier.ventes_par_les_factures
+    const { points, lues } = await jouer(monde, sourceReelle)
     expect(Object.keys(points)).toEqual(['erreur'])
-    expect(String(points.erreur)).toMatch(/^Ce dossier compte ses ventes par ses factures depuis le 05\/01\/2026\. L'assistant ne lit pas encore/)
+    expect(String(points.erreur)).toMatch(/^La source des ventes de ce dossier n'a pas pu être lue : ses ventes se comptent peut-être par ses factures\. L'assistant ne lit pas encore/)
     expect(lues.filter((l) => [...LES_VENTES, 'declarations_tva', 'lignes_bancaires'].includes(l.table))).toEqual([])
   })
 
-  it('le refus levé, un dossier basculé lit ses factures et son registre en entier, et juge comme la Checklist', async () => {
-    const { points, lues, demandes } = await jouer(mondeDesVentes(true), sourceSansRefus)
+  // Sous VF9b : « le refus levé, … » sur une copie en mémoire ; depuis VF9c, la vraie source.
+  it('un dossier basculé lit ses factures et son registre en entier, et juge comme la Checklist', async () => {
+    const { points, lues, demandes } = await jouer(mondeDesVentes(true), sourceReelle)
     expect(lues.filter((l) => LES_VENTES.includes(l.table))).toEqual([
       { table: 'factures_emises', filtres: [`eq dossier_id ${ID.dossier}`] },
       { table: 'encaissements_factures', filtres: [`eq dossier_id ${ID.dossier}`] },
@@ -675,10 +681,11 @@ describe('points_a_traiter, derrière le refus de VF9a (étape VF9b, par le harn
   })
 
   for (const table of LES_VENTES) {
-    it(`le refus levé, ${table} lue en partie : la lecture partielle se dit, aucun contrôle ne se rend`, async () => {
+    // Sous VF9b : « le refus levé, … » sur une copie en mémoire ; depuis VF9c, la vraie source.
+    it(`un dossier basculé, ${table} lue en partie : la lecture partielle se dit, aucun contrôle ne se rend`, async () => {
       const monde = mondeDesVentes(true)
       monde.pannes.push({ table, operation: 'select', erreur: { message: 'panne fictive' } })
-      const { points } = await jouer(monde, sourceSansRefus)
+      const { points } = await jouer(monde, sourceReelle)
       expect(Object.keys(points)).toEqual(['erreur'])
       expect(String(points.erreur)).toMatch(/^Lecture partielle : lecture interrompue après 0 ligne\(s\) : panne fictive — ne tire aucune conclusion/)
     })

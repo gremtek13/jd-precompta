@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import {
+  COMPTE_BANQUE, COMPTE_CAISSE, COMPTE_CLIENTS, COMPTE_PRESTATIONS_DE_SERVICES, COMPTE_SERVICES_BANCAIRES, COMPTE_TVA_COLLECTEE,
+  COMPTE_TVA_COLLECTEE_EN_ATTENTE, COMPTE_VALEURS_A_L_ENCAISSEMENT, COMPTE_VENTES_DE_BIENS,
+} from './comptes'
 import { DEBUT_EMISSION_PME, DEBUT_RECEPTION, declarationDuNonRedevable, obligationsFacturationElectronique } from './statutTva'
 import { DEBUT_EREPORTING_PME } from './periodesEreporting'
 
@@ -67,22 +71,46 @@ describe('la consigne de l’assistant', () => {
     expect(texte).toContain('L\'application ne prépare pas encore cette déclaration, ni l\'autoliquidation dans la CA3 d\'un redevable')
   })
 
-  // LA GARDE PROVISOIRE DES VENTES FACTURÉES (VF9a, chantier EC-Q3, ligne 28.65) : un dossier dont les factures sont la
-  // source de leurs ventes reçoit UNE ligne, qui lui dit de ne rien conclure sur ses ventes ; tout autre dossier, la
-  // consigne d'aujourd'hui, au caractère près. Ici la source : la ligne vit dans `repereVentes`, VIDE sans garde, que la
-  // consigne cite une fois, en fin de ligne ; la garde n'est nulle que pour un réglage LU faux. La consigne ENVOYÉE,
-  // dossier basculé ou non, réglage illisible, se juge au contrat HTTP de l'assistant (src/test/contratsFonctions.ts).
-  it('ne porte la ligne des ventes facturées que pour un dossier basculé', () => {
+  // LES VENTES FACTURÉES (chantier EC-Q3, ligne 28.65). Sous VF9a, un dossier dont les factures sont la source de leurs
+  // ventes recevait UNE ligne, la garde, qui lui disait de ne rien conclure sur ses ventes. Depuis VF9c, la source des
+  // ventes LUE vraie reçoit un PARAGRAPHE — ce que sont la vente facturée, ses écritures et ses comptes, et ce que les outils
+  // en disent —, et la ligne de la garde ne vaut plus que pour une source illisible ; tout autre dossier, la consigne
+  // d'aujourd'hui, au caractère près. Ici la source : les deux textes vivent dans `repereVentes`, VIDE pour un réglage LU
+  // faux, que la consigne cite une fois, en fin de ligne. La consigne ENVOYÉE, dossier basculé ou non, réglage illisible,
+  // se juge au contrat HTTP de l'assistant (src/test/contratsFonctions.ts).
+  it('porte le paragraphe des ventes facturées pour un dossier basculé, la ligne de la garde pour une source illisible, rien pour un autre', () => {
     const source = readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
-    const ligne = /\n {2}const repereVentes = ventes\n {4}\? `\\n- \$\{ventes\.constat\}\. ([^`$]+)`\n {4}: ""\n/.exec(source)
-    expect(ligne, '`repereVentes` introuvable ou réécrit — garde à remettre à jour').not.toBeNull()
-    expect(ligne![1]).toMatch(/^L'assistant ne lit pas encore les VENTES FACTURÉES : ne conclus RIEN sur les ventes de ce dossier/)
-    expect(ligne![1]).toContain('renvoie à la Vue d\'ensemble et à l\'onglet Écritures.')
+    const repere = /\n {2}const repereVentes = ventes\?\.reglage === true\n {4}\? `\\n- Les VENTES FACTURÉES : \$\{ventes\.constat\}\. ([^`]+)`\n {4}: ventes\n {6}\? `\\n- \$\{ventes\.constat\}\. ([^`$]+)`\n {6}: ""\n/.exec(source)
+    expect(repere, '`repereVentes` introuvable ou réécrit — garde à remettre à jour').not.toBeNull()
+    // Le paragraphe d'un dossier basculé (VF9c).
+    expect(repere![1]).toMatch(/^Chaque facture validée depuis est la SOURCE de sa vente ; ses écritures n'ont pas de pièce, ce n'est pas une anomalie\./)
+    expect(repere![1]).toContain('L\'EXEMPLAIRE d\'une facture source la prouve et ne compte pas : ne l\'additionne jamais à la vente.')
+    expect(repere![1]).toContain('Un mouvement RÉSERVÉ à des encaissements attend que le cabinet le classe par eux, dans Banque.')
+    expect(repere![1]).toContain('Une facture se nomme par son numéro, jamais par son client')
+    expect(repere![1]).toContain('ne cite ni le chiffre d\'affaires ni la TVA collectée sans le dire.')
+    // La ligne de la garde (VF9a), pour une source des ventes illisible.
+    expect(repere![2]).toMatch(/^L'assistant ne lit pas encore les VENTES FACTURÉES : ne conclus RIEN sur les ventes de ce dossier/)
+    expect(repere![2]).toContain('renvoie à la Vue d\'ensemble et à l\'onglet Écritures.')
     expect(texte.split('${repereVentes}').length - 1).toBe(1)
     expect(texte).toContain('ce qu\'un exercice validé a figé.${repereVentes}\n- Modèle comptable du dossier : ${repereModele}')
     expect(source).toContain('  const ventes = gardeDesVentes(dossierRow.ventes_par_les_factures, dossierRow.ventes_par_les_factures_depuis)\n')
     expect(source).toMatch(/\nfunction gardeDesVentes\(reglage: unknown, depuis: unknown\): GardeDesVentes \| null \{\n {2}if \(reglage === false\) return null\n {2}if \(reglage !== true\) \{\n/)
-    // La consigne ne parle des ventes facturées qu'à travers cette ligne.
+    // La consigne ne parle des ventes facturées qu'à travers `repereVentes`.
     expect(texte).not.toMatch(/ventes facturées|ventes par ses factures/i)
+  })
+
+  // Les comptes que le paragraphe nomme sont ceux de la vente facturée, dupliqués de src/lib/comptes.ts (étape VF4a) :
+  // une valeur qui y change fait tomber ce test avant que l'assistant ne nomme un autre compte que l'écran.
+  it('nomme, pour la vente facturée, les comptes de src/lib/comptes.ts', () => {
+    const source = readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
+    const paragraphe = /`\\n- Les VENTES FACTURÉES : ([^`]+)`/.exec(source)?.[1] ?? ''
+    const attendus: Record<string, string> = {
+      COMPTE_PRESTATIONS_DE_SERVICES, COMPTE_VENTES_DE_BIENS, COMPTE_TVA_COLLECTEE_EN_ATTENTE, COMPTE_VALEURS_A_L_ENCAISSEMENT,
+      COMPTE_CAISSE, COMPTE_SERVICES_BANCAIRES, COMPTE_TVA_COLLECTEE, COMPTE_CLIENTS, COMPTE_BANQUE,
+    }
+    for (const [nom, valeur] of Object.entries(attendus)) {
+      expect(source, nom).toContain(`\nconst ${nom} = "${valeur}"\n`)
+      expect(paragraphe, nom).toContain(`\${${nom}}`)
+    }
   })
 })

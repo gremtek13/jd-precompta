@@ -1279,16 +1279,21 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
   })
 
   // Un dossier qui n'a pas basculé ne lit rien de plus : ses factures et son registre ne se lisent que si la source de ses
-  // ventes n'est pas LUE fausse (`lireLesVentes`), et derrière le refus de VF9a, qui reste le premier geste de l'outil.
+  // ventes n'est pas LUE fausse (`lireLesVentes`), et derrière le refus de VF9a, qui reste le premier geste de l'outil —
+  // depuis VF9c pour une source des ventes ILLISIBLE seulement ; lue vraie, elle ne refuse plus rien. Et depuis VF9c, les deux
+  // lectures portent aussi le dossier d'une facture, et le moyen, la date et la création d'un encaissement (bloc VENTES DU
+  // RELEVÉ).
   it('lit les factures et le registre des encaissements d’un dossier qui les lit seulement, sous le même refus de lecture partielle — jamais le client d’une facture', () => {
     const source = sourceDeployee()
     const corps = source.slice(source.indexOf('if (nom === "points_a_traiter")'), source.indexOf('return { erreur: `Outil inconnu'))
-    expect(corps).toMatch(/\n    const lireLesVentes = ventes !== null\n(?:\s*\/\/[^\n]*\n)*\s*if \(ventes\) \{\n      return \{ erreur: `\$\{ventes\.constat\}\. L'assistant ne lit pas encore les ventes facturées/)
-    expect(corps.indexOf('    if (ventes) {\n')).toBeLessThan(corps.indexOf('await Promise.all(['))
-    expect(corps).toContain('      lireLesVentes\n        ? lireTout<FactureRow>((d, f) =>\n          admin.from("factures_emises").select("id, statut, numero, source_de_la_vente", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))\n        : rienALire<FactureRow>(),\n')
-    expect(corps).toContain('      lireLesVentes\n        ? lireTout<EncaissementRow>((d, f) =>\n          admin.from("encaissements_factures").select("id, dossier_id, facture_id, montant, ligne_bancaire_id, annule_id, retire_le", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))\n        : rienALire<EncaissementRow>(),\n')
-    // Le client d'une facture nommerait un patient (RGPD.md, § 8.7) : aucune lecture de l'outil ne le demande.
+    expect(corps).toMatch(/\n    const lireLesVentes = ventes !== null\n(?:\s*\/\/[^\n]*\n)*\s*if \(ventes\?\.reglage === null\) \{\n      return \{ erreur: `\$\{ventes\.constat\}\. L'assistant ne lit pas encore les ventes facturées/)
+    expect(corps.indexOf('    if (ventes?.reglage === null) {\n')).toBeLessThan(corps.indexOf('await Promise.all(['))
+    expect(corps).toContain('      lireLesVentes\n        ? lireTout<FactureRow & FactureDuReleveRow>((d, f) =>\n          admin.from("factures_emises").select("id, dossier_id, statut, numero, source_de_la_vente", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))\n        : rienALire<FactureRow & FactureDuReleveRow>(),\n')
+    expect(corps).toContain('      lireLesVentes\n        ? lireTout<EncaissementDuReleveRow>((d, f) =>\n          admin.from("encaissements_factures").select("id, dossier_id, facture_id, montant, ligne_bancaire_id, annule_id, retire_le, date_encaissement, moyen, cree_le", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))\n        : rienALire<EncaissementDuReleveRow>(),\n')
+    // Le client d'une facture nommerait un patient (RGPD.md, § 8.7) : aucune lecture de l'outil ne le demande — ni, depuis
+    // VF9c, aucune ligne de code de la fonction, hors des commentaires qui le disent.
     expect(corps.match(/\.select\("[^"]*"/g)?.filter((s) => s.includes('tiers_nom')) ?? []).toEqual([])
+    expect(source.split('\n').filter((l) => !l.trimStart().startsWith('//') && l.includes('tiers_nom'))).toEqual([])
     // Rien à lire, c'est une lecture complète et vide — jamais une lecture ratée prise pour un vide.
     expect(source).toContain('function rienALire<T>(): Promise<LectureComplete<T>> {\n  return Promise.resolve({ lignes: [], complete: true, motif: null })\n}\n')
   })

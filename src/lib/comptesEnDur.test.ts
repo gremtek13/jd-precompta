@@ -168,7 +168,7 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
       + 'des rôles `services_bancaires` et `prestations_de_services`, sans en être l’emploi.',
   },
   'supabase/functions/agent-comptable/index.ts': {
-    nombre: 121,
+    nombre: 137,
     raison: 'PC3b — l’assistant, Edge Function auto-portée, recopie les constantes dans ses blocs gardés et nomme les '
       + 'comptes dans sa consigne ; il lira le plan du dossier à l’étape PC3b, avec son redéploiement.',
   },

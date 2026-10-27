@@ -1384,11 +1384,382 @@ function gardeAbsente(consigne: string, r: ResultatsDesOutils): string[] {
   ]
 }
 
+// LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (VF9c, chantier EC-Q3, ligne 28.65) : la source des ventes LUE vraie lève
+// la garde de VF9a, et chaque outil dit ce que la conception lui demande (HISTORIQUE.md, « VF9, L'ASSISTANT DEVANT LES
+// VENTES FACTURÉES : LA CONCEPTION », § 2). Le monde : deux factures sources et un avoir source, une facture d'avant la
+// bascule, un registre — un virement qui RÉSERVE son crédit (m1), un virement et un chèque sans mouvement, des espèces et
+// leur contre-passation sans mouvement, un chèque retiré, une carte qu'un mouvement CLASSÉ par ses encaissements porte
+// (m2), l'encaissement d'une facture d'avant —, un débit affecté à une catégorie (m4), l'exemplaire désigné d'une facture
+// source (p1) et celui, à valider, d'une autre (p4), une pièce de vente libre (p2) et l'exemplaire d'une facture d'avant
+// (p3), les écritures d'une vente facturée au brouillon — leur libellé cite le client, comme l'application l'écrit ; deux
+// citent une facture et un encaissement que la lecture ne rend pas, une la contre-passation des espèces —, et trois
+// sources que la base juge en défaut (plus une d'un autre dossier). Le client de chaque facture, son nom dans un libellé,
+// le tiers et le fichier des exemplaires portent un MARQUEUR, qui n'atteint jamais le modèle.
+
+const MARQUEUR_DU_CLIENT = 'Quelmorin Vastepratte'
+const V = {
+  fs1: 'f9c00000-0000-4000-8000-000000000001', fs2: 'f9c00000-0000-4000-8000-000000000002', av1: 'f9c00000-0000-4000-8000-000000000003',
+  fa: 'f9c00000-0000-4000-8000-000000000004', brouillon: 'f9c00000-0000-4000-8000-000000000005',
+  e1: 'e9c00000-0000-4000-8000-000000000001', e2: 'e9c00000-0000-4000-8000-000000000002', e3: 'e9c00000-0000-4000-8000-000000000003',
+  e4: 'e9c00000-0000-4000-8000-000000000004', e5: 'e9c00000-0000-4000-8000-000000000005', e6: 'e9c00000-0000-4000-8000-000000000006',
+  e7: 'e9c00000-0000-4000-8000-000000000007', e8: 'e9c00000-0000-4000-8000-000000000008', e9: 'e9c00000-0000-4000-8000-000000000009',
+  f9: 'f9c00000-0000-4000-8000-000000000009', c1: 'e9c00000-0000-4000-8000-00000000000c',
+  m1: 'b9c00000-0000-4000-8000-000000000001', m2: 'b9c00000-0000-4000-8000-000000000002', m3: 'b9c00000-0000-4000-8000-000000000003',
+  m4: 'b9c00000-0000-4000-8000-000000000004',
+  p1: 'a9c00000-0000-4000-8000-000000000001', p2: 'a9c00000-0000-4000-8000-000000000002', p3: 'a9c00000-0000-4000-8000-000000000003',
+  p4: 'a9c00000-0000-4000-8000-000000000004', fournitures: 'ca9c0000-0000-4000-8000-000000000001',
+} as const
+
+/** Un encaissement du registre du dossier basculé. */
+function encaissementBascule(id: string, factureId: string, montant: number, moyen: string, o: Record<string, unknown> = {}) {
+  return {
+    id, dossier_id: D, facture_id: factureId, montant, moyen, date_encaissement: '2026-03-10', ligne_bancaire_id: null, annule_id: null,
+    retire_le: null, cree_le: '2026-03-10T09:00:00Z', ...o,
+  }
+}
+
+/** Un mouvement du relevé du dossier basculé. */
+function mouvementBascule(id: string, date: string, montant: number, o: Record<string, unknown>) {
+  return {
+    id, dossier_id: D, date, libelle: 'VIR CLIENT FICTIF', montant, statut: 'non_rapprochee', piece_id: null, reglement_groupe: false,
+    cotisation_id: null, categorie_id: null, compte_bilan: null, prelevement_personnel: false, emprunt_id: null, ventilee: false,
+    encaissements_de_factures: false, declaration_tva_id: null, ...o,
+  }
+}
+
+/** Le monde d'un dossier qui compte ses ventes par ses factures, en trésorerie et redevable. */
+function mondeBascule(m: Monde, depuis: unknown) {
+  const dossier = lignes(m, 'dossiers').find((d) => d.id === D)!
+  Object.assign(dossier, {
+    mode_comptable: 'tresorerie', compte_notes_de_frais: '108000', assujetti_tva: true, statut_tva: 'redevable', article_exoneration: null,
+    tva_periodicite: 'trimestrielle', ventes_par_les_factures: true, ventes_par_les_factures_depuis: depuis,
+  })
+  const facture = (id: string, numero: string | null, o: Record<string, unknown> = {}) => ({
+    id, dossier_id: D, statut: 'validee', type: 'facture', numero, source_de_la_vente: true, facture_origine_id: null,
+    tiers_nom: MARQUEUR_DU_CLIENT, date_emission: '2026-03-01', ...o,
+  })
+  m.base.factures_emises = [
+    facture(V.fs1, 'F2026-0001'),
+    facture(V.fs2, 'F2026-0002'),
+    facture(V.av1, 'A2026-0001', { type: 'avoir', facture_origine_id: V.fs1 }),
+    facture(V.fa, 'F2025-0099', { source_de_la_vente: false, date_emission: '2025-12-01' }),
+    facture(V.brouillon, null, { statut: 'brouillon', source_de_la_vente: false }),
+  ]
+  const encaissement = encaissementBascule
+  m.base.encaissements_factures = [
+    // Un virement que son crédit attend : m1 lui est RÉSERVÉ, pas encore classé.
+    encaissement(V.e1, V.fs1, 120, 'virement', { ligne_bancaire_id: V.m1 }),
+    // Un virement sans mouvement — qui manque au relevé —, et des espèces, qui n'en attendent pas.
+    encaissement(V.e2, V.fs2, 50, 'virement', { date_encaissement: '2026-03-12' }),
+    encaissement(V.e3, V.fs2, 20, 'especes'),
+    // Un chèque retiré : il ne compte plus.
+    encaissement(V.e4, V.fs1, 30, 'cheque', { retire_le: '2026-03-11T09:00:00Z' }),
+    // Une carte que m2 porte, classé par ses encaissements.
+    encaissement(V.e5, V.fs2, 300, 'carte', { ligne_bancaire_id: V.m2, date_encaissement: '2026-03-20' }),
+    // L'encaissement d'une facture d'avant la bascule, sans mouvement : sa vente se compte par sa pièce.
+    encaissement(V.e6, V.fa, 60, 'virement'),
+    // Un chèque remis, pas encore crédité : il attend son mouvement, comme le virement e2.
+    encaissement(V.e7, V.fs1, 40, 'cheque', { date_encaissement: '2026-03-14' }),
+    // La contre-passation, sans mouvement, des espèces e3 : une ligne du registre qui n'est pas un encaissement.
+    encaissement(V.c1, V.fs2, -20, 'especes', { annule_id: V.e3, date_encaissement: '2026-03-11' }),
+  ]
+  const mouvement = mouvementBascule
+  m.base.lignes_bancaires = [
+    mouvement(V.m1, '2026-03-10', 120, {}),
+    mouvement(V.m2, '2026-03-20', 298, { statut: 'rapprochee', encaissements_de_factures: true }),
+    // Un débit affecté à une catégorie : ses écritures n'ont pas de pièce, et il n'est pas classé par ses encaissements.
+    mouvement(V.m4, '2026-04-02', -45, { libelle: 'CB FOURNITURES FICTIVES', statut: 'rapprochee', categorie_id: V.fournitures, taux_tva: null }),
+  ]
+  m.base.categories = [
+    { id: V.fournitures, dossier_id: D, code: 'fournitures-fictives', libelle: 'Fournitures fictives', compte_comptable: '606000', poste_2035: 'BA' },
+  ]
+  const piece = (id: string, factureId: string | null, tiers: string, nomFichier: string, ht: number, o: Record<string, unknown> = {}) => ({
+    id, dossier_id: D, statut: 'validee', type_piece: 'vente', tiers, nom_fichier: nomFichier, date_piece: '2026-03-01',
+    montant_ht: ht, montant_tva: ht / 5, montant_ttc: ht * 1.2, categorie_id: null, facture_id: factureId, confiance: 'haute',
+    created_at: '2026-03-02T08:00:00Z', ...o,
+  })
+  m.base.pieces = [
+    piece(V.p1, V.fs1, MARQUEUR_DU_CLIENT, `facture ${MARQUEUR_DU_CLIENT}.pdf`, 100),
+    piece(V.p2, null, 'Client fictif libre', 'vente-libre.pdf', 50),
+    piece(V.p3, V.fa, 'Client fictif d’avant', 'vente-avant.pdf', 50),
+    // L'exemplaire, à valider, d'une autre facture source : il ne compte pas non plus, et ne se dit pas exemplaire validé.
+    piece(V.p4, V.fs2, MARQUEUR_DU_CLIENT, `facture 2 ${MARQUEUR_DU_CLIENT}.pdf`, 30, { statut: 'a_valider' }),
+  ]
+  const ecriture = (n: number, date: string, compte: string, sens: 'debit' | 'credit', montant: number, libelle: string, o: Record<string, unknown> = {}) => ({
+    id: `ec9c0000-0000-4000-8000-${String(n).padStart(12, '0')}`, dossier_id: D, date, compte, libelle, sens, montant, piece_id: null,
+    ligne_bancaire_id: null, facture_id: null, encaissement_id: null, ...o,
+  })
+  const deLaCarte = `Encaissement, facture F2026-0002 — ${MARQUEUR_DU_CLIENT}`
+  m.base.ecritures_brouillon = [
+    // Une vente de 2025 : l'exercice 2026 attend son ouverture.
+    ecriture(1, '2025-12-15', '706000', 'credit', 80, 'Vente fictive'),
+    ecriture(2, '2025-12-15', '512000', 'debit', 80, 'Vente fictive'),
+    // La carte de F2026-0002, portée par m2 le jour même, et les frais de m2.
+    ecriture(3, '2026-03-20', '512000', 'debit', 300, deLaCarte, { encaissement_id: V.e5, ligne_bancaire_id: V.m2 }),
+    ecriture(4, '2026-03-20', '706000', 'credit', 250, deLaCarte, { encaissement_id: V.e5 }),
+    ecriture(5, '2026-03-20', '445710', 'credit', 50, deLaCarte, { encaissement_id: V.e5 }),
+    ecriture(6, '2026-03-20', '627000', 'debit', 2, 'VIR CLIENT FICTIF', { ligne_bancaire_id: V.m2 }),
+    ecriture(7, '2026-03-20', '512000', 'credit', 2, 'VIR CLIENT FICTIF', { ligne_bancaire_id: V.m2 }),
+    // Une ligne de l'avoir source, et l'écriture de la pièce libre.
+    ecriture(8, '2026-03-05', '411000', 'credit', 12, `Avoir A2026-0001 — ${MARQUEUR_DU_CLIENT}`, { facture_id: V.av1 }),
+    ecriture(9, '2026-03-01', '706000', 'credit', 50, 'Vente libre fictive', { piece_id: V.p2 }),
+    // Le débit affecté : sans pièce, ni facture, ni encaissement, sur un mouvement que ses encaissements ne classent pas.
+    ecriture(10, '2026-04-02', '606000', 'debit', 45, 'CB FOURNITURES FICTIVES', { ligne_bancaire_id: V.m4 }),
+    ecriture(11, '2026-04-02', '512000', 'credit', 45, 'CB FOURNITURES FICTIVES', { ligne_bancaire_id: V.m4 }),
+    // Une facture et un encaissement que la lecture ne rend pas : aucun libellé à recomposer, et celui du brouillon ne part pas.
+    ecriture(12, '2026-03-25', '411000', 'debit', 7, `Facture F2026-0404 — ${MARQUEUR_DU_CLIENT}`, { facture_id: V.f9 }),
+    ecriture(13, '2026-03-26', '512000', 'debit', 8, `Encaissement, facture F2026-0404 — ${MARQUEUR_DU_CLIENT}`, { encaissement_id: V.e9 }),
+    // La contre-passation des espèces e3, à la caisse.
+    ecriture(14, '2026-03-11', '530000', 'credit', 20, `Contre-passation, facture F2026-0002 — ${MARQUEUR_DU_CLIENT}`, { encaissement_id: V.c1 }),
+  ]
+  m.sourcesEnDefaut = [
+    { dossier_id: D, source: 'encaissement', source_id: V.e2, jour: '2026-03-12', etat: 'a_ecrire', motif: null, detail: null, nom: 'l’encaissement du 12/03/2026 de la facture F2026-0002' },
+    { dossier_id: D, source: 'mouvement', source_id: V.m1, jour: '2026-03-10', etat: 'ne_s_ecrit_pas', motif: 'mouvement_non_classe', detail: null, nom: 'le mouvement du 10/03/2026' },
+    { dossier_id: D, source: 'facture', source_id: V.fs1, jour: '2026-03-10', etat: 'a_reecrire', motif: null, detail: null, nom: 'la facture F2026-0001' },
+    { dossier_id: ID.dossierVoisin, source: 'facture', source_id: V.brouillon, jour: '2026-03-01', etat: 'a_ecrire', motif: null, detail: null, nom: 'la facture d’un autre dossier' },
+  ]
+  m.sensibles.push(MARQUEUR_DU_CLIENT)
+}
+
+/** Ce que la base juge en défaut dans ce monde, tel que `points_a_traiter` le rend : l'ordre de la base, six au plus. */
+const VENTES_EN_DEFAUT = {
+  nombre: 3,
+  par_etat: { a_ecrire: 1, a_reecrire: 1, a_retirer: 0, ne_s_ecrit_pas: 1 },
+  premieres: [
+    { nom: 'la facture F2026-0001', jour: '2026-03-10', etat: 'a_reecrire', motif: null, detail: null },
+    { nom: 'le mouvement du 10/03/2026', jour: '2026-03-10', etat: 'ne_s_ecrit_pas', motif: 'mouvement_non_classe', detail: null },
+    { nom: 'l’encaissement du 12/03/2026 de la facture F2026-0002', jour: '2026-03-12', etat: 'a_ecrire', motif: null, detail: null },
+  ],
+}
+const DEBUT_DES_VENTES_EN_DEFAUT = '3 source(s) de vente facturée — facture, avoir, encaissement ou mouvement — n\'ont pas leurs écritures à jour jusqu\'au 31/12/'
+// Plus de six sources en défaut, dont cinq le même jour : leur ordre dans la base (le jour, le genre — la facture, l'avoir,
+// l'encaissement, le mouvement —, l'identifiant) n'est ni celui de leurs identifiants, ni celui du genre écrit en texte, sur
+// lequel l'assistant pagine.
+const uneSourceEnDefaut = (source_id: string, source: string, jour: string, etat: string, o: Record<string, unknown> = {}) => ({
+  dossier_id: D, source, source_id, jour, etat, motif: null, detail: null, nom: `${source} ${source_id}`, ...o,
+})
+const HUIT_SOURCES = [
+  uneSourceEnDefaut('a1', 'mouvement', '2026-02-01', 'ne_s_ecrit_pas', { motif: 'mouvement_non_classe' }),
+  uneSourceEnDefaut('a2', 'encaissement', '2026-02-01', 'a_ecrire'),
+  uneSourceEnDefaut('a3', 'avoir', '2026-02-01', 'a_retirer'),
+  uneSourceEnDefaut('a5', 'facture', '2026-02-01', 'a_reecrire'),
+  uneSourceEnDefaut('a4', 'facture', '2026-02-01', 'a_ecrire', { detail: 'un détail fictif' }),
+  uneSourceEnDefaut('b1', 'facture', '2026-01-15', 'a_ecrire'),
+  uneSourceEnDefaut('b2', 'encaissement', '2026-03-01', 'a_ecrire'),
+  uneSourceEnDefaut('b3', 'mouvement', '2026-03-02', 'a_retirer'),
+]
+const premiere = (id: string) => {
+  const l = HUIT_SOURCES.find((x) => x.source_id === id)!
+  return { nom: l.nom, jour: l.jour, etat: l.etat, motif: l.motif, detail: l.detail }
+}
+const HUIT_EN_DEFAUT = {
+  nombre: 8,
+  par_etat: { a_ecrire: 4, a_reecrire: 1, a_retirer: 2, ne_s_ecrit_pas: 1 },
+  premieres: ['b1', 'a4', 'a5', 'a3', 'a2', 'a1'].map(premiere),
+}
+const AUCUNE_EN_DEFAUT = { nombre: 0, par_etat: { a_ecrire: 0, a_reecrire: 0, a_retirer: 0, ne_s_ecrit_pas: 0 }, premieres: [] }
+// Les outils d'un dossier basculé : ceux des ventes, et la balance de 2025 — un exercice que les sources en défaut, toutes de
+// 2026, ne touchent pas.
+const OUTILS_DU_DOSSIER_BASCULE = [...OUTILS_DES_VENTES, { id: 'comptes-2025', name: 'lister_comptes', input: { annee: 2025 } }]
+const CLES_DU_RESUME_BASCULE = [
+  ...CLES_DU_RESUME, 'ventes_par_les_factures', 'ventes_par_les_factures_depuis', 'factures_sources', 'avoirs_sources',
+  'encaissements_vivants_de_factures_sources', 'pieces_validees_exemplaires_d_une_facture_source',
+]
+
+/** Un dossier basculé, le modèle qui appelle `outils` au premier tour, puis répond. */
+function scenarioDuDossierBascule(
+  nom: string,
+  preparer: (m: Monde) => void,
+  outils: readonly { id: string; name: string; input: Record<string, unknown> }[],
+  verifier: (consigne: string, resultats: ResultatsDesOutils, monde: Monde) => string[],
+): Scenario {
+  return {
+    nom,
+    preparer: (m) => {
+      preparer(m)
+      let tour = 0
+      m.modele = (demande) => {
+        ;(m.notes.demandesAuModele ??= []).push(demande)
+        tour += 1
+        if (tour > 1) return reponseModele('Voici ce que je sais.')
+        return {
+          content: outils.map((o) => ({ type: 'tool_use', id: o.id, name: o.name, input: o.input })),
+          stop_reason: 'tool_use', usage: { input_tokens: 10, output_tokens: 10 },
+        }
+      }
+    },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+    attendu: {
+      statut: 200, depenses: ['modèle', 'modèle'],
+      verifier: (_r, m) => {
+        const resultats = resultatsDesOutils(m)
+        const manquants = outils.filter((o) => !resultats[o.id]).map((o) => o.id)
+        return manquants.length > 0 ? [`outils sans résultat : ${manquants.join(', ')}`] : verifier(consigneEnvoyee(m), resultats, m)
+      },
+    },
+  }
+}
+
+/** Chaque outil devant un dossier basculé, comme le dit le § 2 de la conception ; `constat`, la phrase de la bascule. */
+function ventesLues(constat: string, depuis: string | null) {
+  return (consigne: string, r: ResultatsDesOutils, m: Monde): string[] => {
+    const ecritures = (r.ecritures.ecritures ?? []) as Record<string, unknown>[]
+    const ligneNumero = (n: number) => ecritures.find((e) => e.montant === n)
+    const pieces = (r.pieces.pieces ?? []) as Record<string, unknown>[]
+    const exemplaire = pieces.find((p) => p.exemplaire_de !== undefined)
+    const rpc = m.journal.filter((e) => e.genre === 'rpc' && e.nom === 'ventes_facturees_de_l_exercice')
+    return [
+      // La consigne : le paragraphe, ses comptes, rien de la garde.
+      ...verifie(consigne.includes(`\n- Les VENTES FACTURÉES : ${constat}. Chaque facture validée depuis est la SOURCE de sa vente`), 'la consigne ne porte pas le paragraphe des ventes facturées'),
+      ...['706000', '707000', '445800', '511000', '530000', '627000'].flatMap((c) => verifie(new RegExp(`\\b${c}\\b`).test(consigne), `la consigne ne nomme pas le ${c}`)),
+      ...verifie(!/ne lit pas encore/.test(consigne + JSON.stringify(r)), 'la garde de VF9a parle encore'),
+      // resume_dossier : la bascule, sa date, ses comptes.
+      ...verifie(JSON.stringify(Object.keys(r.resume)) === JSON.stringify(CLES_DU_RESUME_BASCULE), `resume_dossier rend : ${JSON.stringify(Object.keys(r.resume))}`),
+      ...verifie(r.resume.ventes_par_les_factures === true && r.resume.ventes_par_les_factures_depuis === depuis, `resume_dossier : la bascule ${JSON.stringify([r.resume.ventes_par_les_factures, r.resume.ventes_par_les_factures_depuis])}`),
+      ...verifie(JSON.stringify([r.resume.factures_sources, r.resume.avoirs_sources, r.resume.encaissements_vivants_de_factures_sources, r.resume.pieces_validees_exemplaires_d_une_facture_source, r.resume.pieces_validees]) === '[2,1,5,1,3]',
+        `resume_dossier compte : ${JSON.stringify([r.resume.factures_sources, r.resume.avoirs_sources, r.resume.encaissements_vivants_de_factures_sources, r.resume.pieces_validees_exemplaires_d_une_facture_source, r.resume.pieces_validees])}`),
+      // lister_comptes : les sources en défaut, jointes à l'avertissement d'aujourd'hui.
+      ...verifie(texteDe(r['comptes-exercice'].avertissement).startsWith(`${EN_ATTENTE_D_OUVERTURE} ${DEBUT_DES_VENTES_EN_DEFAUT}2026 (`), `lister_comptes (2026) : ${texteDe(r['comptes-exercice'].avertissement).slice(0, 200)}`),
+      ...verifie(/^3 source\(s\) de vente facturée — .* jusqu'au 31\/12\/20\d\d \(.*les écrit\.$/.test(texteDe(r.comptes.avertissement)), `lister_comptes : ${texteDe(r.comptes.avertissement).slice(0, 200)}`),
+      ...verifie(Array.isArray(r.comptes.comptes), 'lister_comptes ne rend plus ses comptes'),
+      ...verifie(!/source\(s\) de vente facturée|n'ont pas pu être vérifiées/.test(texteDe(r['comptes-2025'].avertissement)), `lister_comptes (2025) : ${texteDe(r['comptes-2025'].avertissement).slice(0, 200)}`),
+      // lister_pieces : l'exemplaire sous le numéro de sa facture, sans tiers ni fichier ; les autres comme hier.
+      ...verifie(JSON.stringify(exemplaire?.exemplaire_de) === '{"facture":"F2026-0001","ne_compte_pas":"sa facture compte la vente"}', `lister_pieces, l’exemplaire : ${JSON.stringify(exemplaire)}`),
+      ...verifie(exemplaire?.tiers === null && exemplaire?.nom_fichier === null, 'lister_pieces nomme le client de l’exemplaire'),
+      ...verifie(pieces.length === 4 && pieces.filter((p) => 'exemplaire_de' in p).map((p) => (p.exemplaire_de as { facture?: unknown }).facture).join(',') === 'F2026-0001,F2026-0002', 'lister_pieces : l’exemplaire d’une facture d’avant ou une pièce libre est dit exemplaire d’une source, ou celui d’une source à valider ne l’est pas'),
+      ...verifie(JSON.stringify(Object.keys(exemplaire ?? {})) === JSON.stringify([...Object.keys(pieces.find((p) => p.tiers === 'Client fictif libre') ?? {}), 'exemplaire_de']), `lister_pieces, les champs de l’exemplaire : ${JSON.stringify(Object.keys(exemplaire ?? {}))}`),
+      ...verifie(pieces.some((p) => p.tiers === 'Client fictif d’avant') && !('facture_id' in (pieces[0] ?? {})), 'lister_pieces : une pièce qui n’est pas l’exemplaire d’une source a changé'),
+      ...verifie(r['pieces-tronquees'].avertissement === 'Liste tronquée : 1 lignes renvoyées sur 4. N\'en tire aucun total ni comptage — resserre le filtre (compte, tiers, année) ou utilise lister_comptes / points_a_traiter, qui agrègent sans plafond.', `lister_pieces tronquée : ${texteDe(r['pieces-tronquees'].avertissement).slice(0, 160)}`),
+      // lister_ecritures : la source de chaque ligne, et le libellé d'une vente facturée recomposé de son numéro.
+      ...verifie(ecritures.length === 14 && ecritures.every((e) => 'source' in e), 'lister_ecritures : une ligne sans sa source'),
+      ...verifie(ligneNumero(20)?.source === 'encaissement' && ligneNumero(20)?.libelle === 'Contre-passation, facture F2026-0002', `lister_ecritures, la contre-passation : ${JSON.stringify(ligneNumero(20))}`),
+      ...verifie(ligneNumero(300)?.source === 'encaissement' && ligneNumero(300)?.libelle === 'Encaissement, facture F2026-0002', `lister_ecritures, l’encaissement : ${JSON.stringify(ligneNumero(300))}`),
+      ...verifie(ligneNumero(12)?.source === 'avoir' && ligneNumero(12)?.libelle === 'Avoir A2026-0001', `lister_ecritures, l’avoir : ${JSON.stringify(ligneNumero(12))}`),
+      ...verifie(ligneNumero(2)?.source === 'mouvement_d_encaissements' && ligneNumero(2)?.libelle === 'VIR CLIENT FICTIF', `lister_ecritures, le mouvement : ${JSON.stringify(ligneNumero(2))}`),
+      ...verifie(ecritures.filter((e) => e.montant === 50).map((e) => e.source).sort().join(',') === 'encaissement,piece', 'lister_ecritures : la pièce libre ou la TVA de l’encaissement'),
+      ...verifie(ecritures.filter((e) => e.montant === 80 || e.montant === 45).length === 4 && ecritures.filter((e) => e.montant === 80 || e.montant === 45).every((e) => e.source === null), 'lister_ecritures : une écriture sans pièce d’un autre genre a reçu une source'),
+      ...verifie(ligneNumero(7)?.source === 'facture' && ligneNumero(7)?.libelle === null && ligneNumero(8)?.source === 'encaissement' && ligneNumero(8)?.libelle === null,
+        `lister_ecritures, une facture ou un encaissement que la lecture ne rend pas : ${JSON.stringify([ligneNumero(7), ligneNumero(8)])}`),
+      ...verifie(!('facture_id' in (ecritures[0] ?? {})) && !('encaissement_id' in (ecritures[0] ?? {})), 'lister_ecritures rend des identifiants'),
+      // points_a_traiter : les trois clés, et celles d'hier.
+      ...verifie(!('erreur' in r.points) && Object.keys(r.points).length >= 31, `points_a_traiter rend : ${JSON.stringify(r.points).slice(0, 160)}`),
+      ...verifie(r.points.mouvements_reserves_a_des_encaissements_de_factures_a_classer === 1, `mouvements réservés : ${JSON.stringify(r.points.mouvements_reserves_a_des_encaissements_de_factures_a_classer)}`),
+      ...verifie(r.points.encaissements_de_factures_par_un_moyen_du_releve_sans_mouvement === 2, `encaissements sans mouvement : ${JSON.stringify(r.points.encaissements_de_factures_par_un_moyen_du_releve_sans_mouvement)}`),
+      ...verifie(JSON.stringify(r.points.ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer) === JSON.stringify(VENTES_EN_DEFAUT), `ventes facturées en défaut : ${JSON.stringify(r.points.ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer)}`),
+      // La fonction de la base : au rôle du service, sur ce dossier, une fois par outil qui la lit.
+      ...verifie(rpc.length === 4 && rpc.every((e) => e.genre === 'rpc' && e.role === 'service'), `ventes_facturees_de_l_exercice : ${rpc.map(decrire).join(' ; ')}`),
+      // Chaque lecture des outils, fermée sur le dossier vérifié.
+      ...m.journal.slice(m.journal.findIndex((e) => e.genre === 'modele'))
+        .flatMap((e) => (e.genre === 'lecture' && (e.role !== 'service' || !e.filtres.some((f) => f === `eq dossier_id ${D}` || (f.startsWith('or ') && f.includes(`dossier_id.eq.${D}`))))
+          ? [`lecture de ${e.table} non fermée sur le dossier : ${e.filtres.join(' ; ')}`] : [])),
+    ]
+  }
+}
+
+/** Le client d'une facture — sa ligne, le libellé d'une écriture, l'exemplaire —, jamais au modèle ; et le monde le porte. */
+function clientJamaisAuModele(_consigne: string, _r: ResultatsDesOutils, m: Monde): string[] {
+  const demandes = JSON.stringify(m.notes.demandesAuModele ?? [])
+  const porte = JSON.stringify([m.base.factures_emises, m.base.ecritures_brouillon, m.base.pieces])
+  return [
+    ...verifie(porte.split(MARQUEUR_DU_CLIENT).length - 1 >= 9, 'le monde ne porte plus le marqueur : la preuve serait vide'),
+    ...verifie(!demandes.includes(MARQUEUR_DU_CLIENT) && !demandes.includes(MARQUEUR_DU_CLIENT.slice(0, 8)), 'le client d’une facture est parvenu au modèle'),
+  ]
+}
+
+/** La fonction des ventes facturées en panne : sa clé, et l'avertissement de la balance, le disent ; le reste répond. */
+function fonctionEnPanne(_consigne: string, r: ResultatsDesOutils): string[] {
+  const indisponible = 'indisponible : lecture interrompue après 0 ligne(s) : panne fictive de la fonction'
+  return [
+    ...verifie(r.points.ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer === indisponible, `la clé : ${JSON.stringify(r.points.ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer)}`),
+    ...verifie(r.points.mouvements_reserves_a_des_encaissements_de_factures_a_classer === 1 && r.points.encaissements_de_factures_par_un_moyen_du_releve_sans_mouvement === 2, 'les deux points de la Checklist se sont tus avec la fonction'),
+    ...verifie(!('erreur' in r.points) && typeof r.points.ecritures_desequilibrees === 'number', 'points_a_traiter a refusé pour une panne qui ne nourrit qu’une clé'),
+    ...verifie(texteDe(r.comptes.avertissement).startsWith('Les écritures des ventes facturées de ce dossier n\'ont pas pu être vérifiées (lecture interrompue après 0 ligne(s) : panne fictive de la fonction) : ces totaux les comptent peut-être mal'), `lister_comptes : ${texteDe(r.comptes.avertissement).slice(0, 200)}`),
+    ...verifie(Array.isArray(r.comptes.comptes), 'lister_comptes ne rend plus ses comptes'),
+  ]
+}
+
+/** Le registre des encaissements en panne : il nourrit les clés d'hier (l'exemplaire, le virement mixte), l'outil refuse. */
+function registreEnPanne(_consigne: string, r: ResultatsDesOutils, m: Monde): string[] {
+  return [
+    ...verifie(JSON.stringify(Object.keys(r.points)) === '["erreur"]', `points_a_traiter rend : ${JSON.stringify(Object.keys(r.points))}`),
+    ...verifie(texteDe(r.points.erreur).startsWith('Lecture partielle : lecture interrompue après 0 ligne(s) : panne fictive du registre — ne tire aucune conclusion'), `points_a_traiter : ${texteDe(r.points.erreur).slice(0, 160)}`),
+    // Refusé avant de demander quoi que ce soit à la base de ses ventes.
+    ...verifie(!m.journal.some((e) => e.genre === 'rpc' && e.nom === 'ventes_facturees_de_l_exercice'), 'la fonction des ventes facturées a été appelée sur une lecture partielle'),
+  ]
+}
+
 const SCENARIOS_DES_VENTES: Scenario[] = [
-  scenarioDesVentes('un dossier basculé : resume_dossier le dit et sa date (le jour de Paris), points_a_traiter refuse sans rien lire, lister_comptes et lister_pieces l’avertissent sans écraser leur avertissement, la consigne porte sa ligne',
-    { valeur: true }, BASCULE_A, gardeAppliquee(CONSTAT_BASCULE, '2026-10-27', true)),
-  scenarioDesVentes('un dossier basculé dont la date ne se lit pas : la garde s’applique, et la phrase le dit',
-    { valeur: true }, null, gardeAppliquee(CONSTAT_SANS_DATE, null, true)),
+  // Ces deux scénarios étaient, sous VF9a, ceux de la garde sur un dossier basculé (« points_a_traiter refuse sans rien
+  // lire », « la garde s’applique, et la phrase le dit ») : VF9c lève la garde pour un réglage LU vrai, et ils jugent
+  // désormais ce que chaque outil dit des ventes facturées.
+  scenarioDuDossierBascule('un dossier basculé : chaque outil dit ses ventes facturées — resume_dossier sa bascule, sa date (le jour de Paris) et ses comptes, lister_comptes les ventes pas écrites à jour, lister_pieces l’exemplaire par son numéro, lister_ecritures la source de chaque ligne, points_a_traiter trois clés de plus — et la consigne son paragraphe',
+    (m) => mondeBascule(m, BASCULE_A), OUTILS_DU_DOSSIER_BASCULE, ventesLues(CONSTAT_BASCULE, '2026-10-27')),
+  scenarioDuDossierBascule('un dossier basculé dont la date ne se lit pas : ses ventes se lisent, et la phrase dit la date illisible',
+    (m) => mondeBascule(m, null), OUTILS_DU_DOSSIER_BASCULE, ventesLues(CONSTAT_SANS_DATE, null)),
+  scenarioDuDossierBascule('un dossier basculé : le client d’une facture n’atteint jamais le modèle — ni lu, ni par le libellé d’une écriture de vente facturée, ni par l’exemplaire d’une facture source',
+    (m) => mondeBascule(m, BASCULE_A), OUTILS_DU_DOSSIER_BASCULE, clientJamaisAuModele),
+  scenarioDuDossierBascule('une source des ventes illisible : lister_ecritures recompose aussi le libellé d’une vente facturée, et le client n’atteint pas le modèle',
+    (m) => { mondeBascule(m, BASCULE_A); delete lignes(m, 'dossiers').find((d) => d.id === D)!.ventes_par_les_factures },
+    [{ id: 'ecritures', name: 'lister_ecritures', input: {} }],
+    (consigne, r, m) => {
+      const ecritures = (r.ecritures.ecritures ?? []) as Record<string, unknown>[]
+      return [
+        ...clientJamaisAuModele(consigne, r, m),
+        ...verifie(consigne.includes(`\n- ${CONSTAT_ILLISIBLE}. L'assistant ne lit pas encore les VENTES FACTURÉES`), 'la consigne ne porte pas la ligne de la garde'),
+        ...verifie(ecritures.find((e) => e.montant === 300)?.libelle === 'Encaissement, facture F2026-0002' && ecritures.find((e) => e.montant === 12)?.libelle === 'Avoir A2026-0001',
+          `lister_ecritures : ${JSON.stringify(ecritures.filter((e) => e.montant === 300 || e.montant === 12))}`),
+        ...verifie(!('avertissement' in r.ecritures), 'lister_ecritures porte un avertissement'),
+      ]
+    }),
+  scenarioDuDossierBascule('un dossier basculé dont l’exercice 2025 est validé : un mouvement réservé que la validation fige ne se compte plus, celui de 2026 si',
+    (m) => {
+      mondeBascule(m, BASCULE_A)
+      m.base.exercices_valides = [{ dossier_id: D, annee: 2025 }]
+      lignes(m, 'lignes_bancaires').push(mouvementBascule(V.m3, '2025-12-20', 90, {}))
+      lignes(m, 'encaissements_factures').push(encaissementBascule(V.e8, V.fs1, 90, 'virement', { date_encaissement: '2025-12-20', ligne_bancaire_id: V.m3 }))
+    },
+    [{ id: 'points', name: 'points_a_traiter', input: {} }],
+    (_c, r) => verifie(r.points.mouvements_reserves_a_des_encaissements_de_factures_a_classer === 1, `mouvements réservés : ${JSON.stringify(r.points.mouvements_reserves_a_des_encaissements_de_factures_a_classer)}`)),
+  scenarioDuDossierBascule('un dossier basculé : plus de six sources en défaut — leur nombre, leur nombre par état, et les six premières dans l’ordre de la base',
+    (m) => { mondeBascule(m, BASCULE_A); m.sourcesEnDefaut = HUIT_SOURCES },
+    [{ id: 'points', name: 'points_a_traiter', input: {} }],
+    (_c, r) => verifie(JSON.stringify(r.points.ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer) === JSON.stringify(HUIT_EN_DEFAUT), `ventes facturées en défaut : ${JSON.stringify(r.points.ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer)}`)),
+  scenarioDuDossierBascule('un dossier basculé dont toutes les ventes facturées sont écrites à jour : la clé dit zéro, et la balance ne dit rien de plus',
+    (m) => { mondeBascule(m, BASCULE_A); m.sourcesEnDefaut = [] },
+    [{ id: 'points', name: 'points_a_traiter', input: {} }, { id: 'comptes', name: 'lister_comptes', input: {} }],
+    (_c, r) => [
+      ...verifie(JSON.stringify(r.points.ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer) === JSON.stringify(AUCUNE_EN_DEFAUT), `ventes facturées en défaut : ${JSON.stringify(r.points.ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer)}`),
+      ...verifie(!('avertissement' in r.comptes) && Array.isArray(r.comptes.comptes), `lister_comptes : ${texteDe(r.comptes.avertissement).slice(0, 200)}`),
+    ]),
+  ...[
+    ['le compte de ses encaissements', { table: 'encaissements_factures', operation: 'select' as const }],
+    ['le compte de ses exemplaires', { table: 'pieces', operation: 'select' as const, sauter: 2 }],
+  ].map(([quoi, panne]) => scenarioDuDossierBascule(`un dossier basculé, ${quoi} refusé : resume_dossier dit sa lecture partielle`,
+    (m) => { mondeBascule(m, BASCULE_A); m.pannes.push({ ...(panne as { table: string }), erreur: { message: 'panne fictive du compte' } }) },
+    [{ id: 'resume', name: 'resume_dossier', input: {} }],
+    (_c, r, m) => [
+      ...verifie(JSON.stringify(Object.keys(r.resume)) === '["erreur"]' && texteDe(r.resume.erreur).startsWith('Lecture partielle : panne fictive du compte — ne tire aucune conclusion chiffrée'),
+        `resume_dossier : ${JSON.stringify(r.resume).slice(0, 200)}`),
+      // Refusé par les comptes de VF9c, après les comptes d'hier : les deux pièces d'hier, puis l'exemplaire, ont été lus.
+      ...verifie(m.journal.filter((e) => e.genre === 'lecture' && e.table === 'pieces').length === 3, 'resume_dossier a refusé avant ses comptes de VF9c'),
+    ])),
+  ...['factures_emises', 'encaissements_factures', 'lignes_bancaires'].map((table) => scenarioDuDossierBascule(
+    `un dossier basculé, ${table} lue en partie par lister_ecritures : l’outil refuse, aucun libellé ne part`,
+    (m) => { mondeBascule(m, BASCULE_A); m.pannes.push({ table, operation: 'select', erreur: { message: 'panne fictive' } }) },
+    [{ id: 'ecritures', name: 'lister_ecritures', input: {} }],
+    (_c, r) => verifie(JSON.stringify(Object.keys(r.ecritures)) === '["erreur"]' && texteDe(r.ecritures.erreur).startsWith('Lecture partielle : lecture interrompue après 0 ligne(s) : panne fictive — les écritures des ventes facturées ne se disent pas sans leurs numéros'),
+      `lister_ecritures : ${JSON.stringify(r.ecritures).slice(0, 200)}`))),
+  scenarioDuDossierBascule('un dossier basculé, ses factures lues en partie par lister_pieces : l’outil refuse',
+    (m) => { mondeBascule(m, BASCULE_A); m.pannes.push({ table: 'factures_emises', operation: 'select', erreur: { message: 'panne fictive' } }) },
+    [{ id: 'pieces', name: 'lister_pieces', input: {} }],
+    (_c, r) => verifie(JSON.stringify(Object.keys(r.pieces)) === '["erreur"]' && texteDe(r.pieces.erreur).startsWith('Factures illisibles : lecture interrompue après 0 ligne(s) : panne fictive — ne conclus rien sur les pièces de vente'),
+      `lister_pieces : ${JSON.stringify(r.pieces).slice(0, 200)}`)),
+  scenarioDuDossierBascule('un dossier basculé, la fonction des ventes facturées en panne : sa clé dit « indisponible », sous son nom, les autres répondent, et la balance le dit',
+    (m) => { mondeBascule(m, BASCULE_A); m.pannes.push({ rpc: 'ventes_facturees_de_l_exercice', erreur: { message: 'panne fictive de la fonction' } }) },
+    [{ id: 'points', name: 'points_a_traiter', input: {} }, { id: 'comptes', name: 'lister_comptes', input: {} }], fonctionEnPanne),
+  scenarioDuDossierBascule('un dossier basculé, le registre des encaissements en panne : points_a_traiter refuse en lecture partielle, sans appeler la fonction',
+    (m) => { mondeBascule(m, BASCULE_A); m.pannes.push({ table: 'encaissements_factures', operation: 'select', erreur: { message: 'panne fictive du registre' } }) },
+    [{ id: 'points', name: 'points_a_traiter', input: {} }], registreEnPanne),
   scenarioDesVentes('un dossier qui n’a pas basculé : les réponses d’aujourd’hui, inchangées, et la consigne sans la ligne',
     { valeur: false }, null, (consigne, r) => gardeAbsente(consigne, r)),
   scenarioDesVentes('la source des ventes absente de la ligne du dossier : la garde s’applique, côté fermé, et dit qu’elle n’a pas pu être lue',

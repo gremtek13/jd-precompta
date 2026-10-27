@@ -205,6 +205,13 @@ export interface Monde {
   sensibles: string[]
   /** Ce qu'un scénario relève en chemin (une demande faite au modèle, un appel d'une fonction à une autre). */
   notes: Record<string, unknown[]>
+  /**
+   * Les sources de vente facturée que la base juge EN DÉFAUT (`ventes_facturees_de_l_exercice`), une ligne par source :
+   * `dossier_id`, puis les colonnes que la fonction rend (`source`, `source_id`, `jour`, `etat`, `motif`, `detail`, `nom`).
+   * La recomposition qui les juge ne se refait pas ici — `recompositionDesVentes.sql` la garde en base — : le scénario les
+   * pose, et le faux tient la porte de la fonction, sa période et son ordre.
+   */
+  sourcesEnDefaut: Ligne[]
 }
 
 export function nouveauMonde(): Monde {
@@ -231,6 +238,7 @@ export function nouveauMonde(): Monde {
     secrets: [CLE_SECRETE, SECRET_AWS, CLE_RESEND, SECRET_WEBHOOK],
     sensibles: [],
     notes: {},
+    sourcesEnDefaut: [],
   }
 }
 
@@ -343,10 +351,42 @@ const POLITIQUES_LECTURE: Record<string, Politique> = {
   categories: (l, u, m) => !!u && (l.dossier_id == null || adminDuDossier(m, u, l.dossier_id) || membreDuDossier(m, u, l.dossier_id)),
 }
 
-// Les fonctions SQL qu'une fonction appelle par `rpc`, avec ce que fait leur corps. Une autre LÈVE.
-const FONCTIONS_SQL: Record<string, (monde: Monde, utilisateur: string | null, args: Record<string, unknown>) => unknown> = {
-  admin_du_dossier: (monde, utilisateur, args) => adminDuDossier(monde, utilisateur, args.p_dossier_id),
-  droits_sur_le_dossier: (monde, utilisateur, args) => droitsSurLeDossier(monde, utilisateur, args.p_dossier_id),
+/** Qui appelle une fonction SQL : le compte de la session (nul sous une clé seule), et le rôle sous lequel PostgREST la sert. */
+interface Appelant { utilisateur: string | null; role: Role }
+
+// L'ordre de `ventes_facturees_de_l_exercice` : le genre de la source, après son jour.
+const RANG_DU_GENRE: Readonly<Record<string, number>> = { facture: 0, avoir: 1, encaissement: 2 }
+
+// Les fonctions SQL qu'une fonction appelle par `rpc`, avec ce que fait leur corps. Une autre LÈVE. Un corps lève une
+// `ErreurPostgrest` pour un refus de la base (un droit d'exécution qui manque), rendu en `{ error }` comme le vrai.
+const FONCTIONS_SQL: Record<string, (monde: Monde, appelant: Appelant, args: Record<string, unknown>) => unknown> = {
+  admin_du_dossier: (monde, { utilisateur }, args) => adminDuDossier(monde, utilisateur, args.p_dossier_id),
+  droits_sur_le_dossier: (monde, { utilisateur }, args) => droitsSurLeDossier(monde, utilisateur, args.p_dossier_id),
+  // `ventes_facturees_de_l_exercice(p_dossier_id, p_annee)` (migration `validation_des_ventes_facturees`) : exécutable
+  // par le rôle du service SEUL — la migration la retire à `public`, `anon` et `authenticated`, et le relevé du catalogue
+  // du 27/10/2026 le confirme —, aux droits de l'appelant. Rien pour une année nulle, ni pour un dossier qui n'a pas
+  // basculé (`coalesce(ventes_par_les_factures, false)`) ; sinon, les sources en défaut de la période qui va de la
+  // frontière des exercices validés (`frontiere_validation`, exclue) au 31 décembre de l'année, dans l'ordre de la base —
+  // le jour, le genre, l'identifiant. Ce qu'elle juge en défaut, le scénario le pose (`monde.sourcesEnDefaut`).
+  ventes_facturees_de_l_exercice: (monde, { role }, args) => {
+    if (role !== 'service') {
+      throw new ErreurPostgrest({ code: '42501', message: 'permission denied for function ventes_facturees_de_l_exercice', status: 403 })
+    }
+    const { p_dossier_id: dossierId, p_annee: annee } = args
+    if (typeof dossierId !== 'string' || (annee !== null && !Number.isInteger(annee)) || Object.keys(args).length !== 2) {
+      throw new Error(`Faux PostgREST : ventes_facturees_de_l_exercice(${JSON.stringify(args)}) n'est pas modélisé`)
+    }
+    const dossier = (monde.base.dossiers ?? []).find((d) => d.id === dossierId)
+    if (annee === null || dossier?.ventes_par_les_factures !== true) return []
+    const validees = (monde.base.exercices_valides ?? []).filter((e) => e.dossier_id === dossierId).map((e) => Number(e.annee))
+    const frontiere = validees.length > 0 ? `${Math.max(...validees)}-12-31` : null
+    const fin = `${String(annee)}-12-31`
+    const rang = (genre: unknown) => RANG_DU_GENRE[String(genre)] ?? 3
+    return monde.sourcesEnDefaut
+      .filter((s) => s.dossier_id === dossierId && String(s.jour) <= fin && (frontiere === null || String(s.jour) > frontiere))
+      .sort((a, b) => comparer(a.jour, b.jour) || rang(a.source) - rang(b.source) || comparer(a.source_id, b.source_id))
+      .map((s) => Object.fromEntries(Object.entries(s).filter(([colonne]) => colonne !== 'dossier_id')))
+  },
 }
 
 const PGRST116 = (n: number): ErreurFactice => ({
@@ -640,21 +680,7 @@ class RequeteFactice {
   }
 
   private trier(lignes: Ligne[]): Ligne[] {
-    if (this.ordres.length === 0) return lignes
-    return [...lignes].sort((a, b) => {
-      for (const o of this.ordres) {
-        const x = a[o.colonne]
-        const y = b[o.colonne]
-        if (x == null && y == null) continue
-        // Postgres : NULLS LAST en ordre croissant, NULLS FIRST en ordre décroissant, sauf demande contraire.
-        const nullsEnPremier = o.nullsEnPremier ?? !o.croissant
-        if (x == null) return nullsEnPremier ? -1 : 1
-        if (y == null) return nullsEnPremier ? 1 : -1
-        const c = comparer(x, y)
-        if (c !== 0) return o.croissant ? c : -c
-      }
-      return 0
-    })
+    return trierLignes(lignes, this.ordres)
   }
 
   private rendre(lignes: Ligne[] | null, compte: number | null, status: number): ReponseBase {
@@ -750,6 +776,101 @@ class RequeteFactice {
     if (this.retour === null) return { data: null, error: null, count: null, status: this.operation === 'insert' ? 201 : 204, statusText: 'OK' }
     const selection = analyserSelection(this.table, this.retour)
     return this.rendre(touchees.map((l) => projeter(l, selection)), null, 200)
+  }
+}
+
+interface Ordre { colonne: string; croissant: boolean; nullsEnPremier: boolean | undefined }
+
+/** Le tri de PostgREST, colonne après colonne : NULLS LAST en ordre croissant, NULLS FIRST en ordre décroissant. */
+function trierLignes(lignes: Ligne[], ordres: readonly Ordre[]): Ligne[] {
+  if (ordres.length === 0) return lignes
+  return [...lignes].sort((a, b) => {
+    for (const o of ordres) {
+      const x = a[o.colonne]
+      const y = b[o.colonne]
+      if (x == null && y == null) continue
+      // Postgres : NULLS LAST en ordre croissant, NULLS FIRST en ordre décroissant, sauf demande contraire.
+      const nullsEnPremier = o.nullsEnPremier ?? !o.croissant
+      if (x == null) return nullsEnPremier ? -1 : 1
+      if (y == null) return nullsEnPremier ? 1 : -1
+      const c = comparer(x, y)
+      if (c !== 0) return o.croissant ? c : -c
+    }
+    return 0
+  })
+}
+
+/**
+ * L'appel d'une fonction SQL (`rpc`), qui part au `then` comme la vraie requête. Le résultat d'une fonction qui rend des
+ * LIGNES se trie, se tranche et se compte comme une table — PostgREST lui applique `order`, `range`, `limit`, le compte
+ * annoncé (`count: "exact"`) et son plafond de lignes (« Max rows ») sans le dire. Sur une fonction qui rend une valeur,
+ * rien de cela n'est modélisé : demandé, il LÈVE.
+ */
+class AppelFactice {
+  private readonly ordres: Ordre[] = []
+  private plage: [number, number] | null = null
+  private limite: number | null = null
+  private readonly nom: string
+  private readonly args: Record<string, unknown>
+  private readonly compte: boolean
+  private readonly contexte: ContexteClient
+
+  constructor(nom: string, args: Record<string, unknown>, compte: boolean, contexte: ContexteClient) {
+    this.nom = nom
+    this.args = args
+    this.compte = compte
+    this.contexte = contexte
+  }
+
+  order(colonne: string, options?: { ascending?: boolean; nullsFirst?: boolean }) {
+    this.ordres.push({ colonne, croissant: options?.ascending !== false, nullsEnPremier: options?.nullsFirst })
+    return this
+  }
+
+  range(debut: number, fin: number) {
+    this.plage = [debut, fin]
+    return this
+  }
+
+  limit(n: number) {
+    this.limite = n
+    return this
+  }
+
+  then<A = ReponseBase, B = never>(
+    accepte?: ((r: ReponseBase) => A | PromiseLike<A>) | null,
+    rejette?: ((e: unknown) => B | PromiseLike<B>) | null,
+  ): Promise<A | B> {
+    return Promise.resolve().then(() => this.executer()).then(accepte, rejette)
+  }
+
+  private executer(): ReponseBase {
+    const { monde, role, utilisateur, refus } = this.contexte
+    monde.journal.push({ genre: 'rpc', nom: this.nom, role })
+    if (refus) return echec(refus)
+    const panne = panneDe(monde, (p) => 'rpc' in p && p.rpc === this.nom)
+    if (panne) return echec(panne)
+    const corps = FONCTIONS_SQL[this.nom]
+    if (!corps) throw new Error(`Faux PostgREST : la fonction SQL « ${this.nom} » n'est pas modélisée`)
+    let rendu: unknown
+    try {
+      rendu = corps(monde, { utilisateur, role }, this.args)
+    } catch (e) {
+      if (e instanceof ErreurPostgrest) return echec(e.erreur)
+      throw e
+    }
+    if (!Array.isArray(rendu)) {
+      if (this.ordres.length > 0 || this.plage || this.limite !== null || this.compte) {
+        throw new Error(`Faux PostgREST : un tri, une tranche ou un compte sur « ${this.nom} », qui ne rend pas de lignes`)
+      }
+      return { data: rendu, error: null, count: null, status: 200, statusText: 'OK' }
+    }
+    const total = rendu.length
+    let lignes = trierLignes(rendu as Ligne[], this.ordres)
+    if (this.plage) lignes = lignes.slice(this.plage[0], this.plage[1] + 1)
+    if (this.limite !== null) lignes = lignes.slice(0, this.limite)
+    lignes = lignes.slice(0, monde.maxLignes)
+    return { data: lignes, error: null, count: this.compte ? total : null, status: 200, statusText: 'OK' }
   }
 }
 
@@ -912,15 +1033,10 @@ function clientSupabase(monde: Monde, env: Environnement, url: unknown, cleRecue
   const contexte = () => contexteDe(monde, cle, autorisation)
   return {
     from: (table: string) => new RequeteFactice(table, contexte()),
-    rpc: async (nom: string, args: Record<string, unknown> = {}) => {
-      const c = contexte()
-      monde.journal.push({ genre: 'rpc', nom, role: c.role })
-      if (c.refus) return echec(c.refus)
-      const panne = panneDe(monde, (p) => 'rpc' in p && p.rpc === nom)
-      if (panne) return echec(panne)
-      const corps = FONCTIONS_SQL[nom]
-      if (!corps) throw new Error(`Faux PostgREST : la fonction SQL « ${nom} » n'est pas modélisée`)
-      return { data: corps(monde, c.utilisateur, args), error: null, count: null, status: 200, statusText: 'OK' }
+    rpc: (nom: string, args: Record<string, unknown> = {}, options?: { count?: string }) => {
+      if (options && Object.keys(options).some((cle) => cle !== 'count')) throw new Error('Faux PostgREST : options de rpc non modélisées')
+      if (options?.count !== undefined && options.count !== 'exact') throw new Error(`Faux PostgREST : count « ${options.count} » n'est pas modélisé`)
+      return new AppelFactice(nom, args, options?.count === 'exact', contexte())
     },
     auth: serviceAuthentification(monde, { cle, autorisation }),
     storage: {

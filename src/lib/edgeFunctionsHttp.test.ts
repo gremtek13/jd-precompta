@@ -221,17 +221,23 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     scenario: 'le plafond de blocage atteint : 402, et pas un appel au modèle',
   },
   // LA GARDE PROVISOIRE DES VENTES FACTURÉES (VF9a) : jamais posée, posée sur tout dossier, ouverte sur un réglage
-  // illisible, la date prise à Greenwich ou inventée, un outil qui l'oublie, un avertissement d'aujourd'hui écrasé.
+  // illisible, la date prise à Greenwich ou inventée, un outil qui l'oublie, un avertissement d'aujourd'hui écrasé. Depuis
+  // VF9c, la garde ne vaut plus que pour un réglage illisible : ce qui la jugeait sur un dossier basculé se juge sur un
+  // réglage absent de la ligne, et ce qui oublie la bascule, sur ce que chaque outil dit des ventes facturées. Et VF9c :
+  // les trois clés, la panne de la fonction, le client d'une facture, le refus sur un dossier basculé, la balance.
   ...((): DefautPlante[] => {
     const slug = 'agent-comptable'
-    const bascule = 'un dossier basculé : resume_dossier le dit et sa date (le jour de Paris), points_a_traiter refuse sans rien lire, lister_comptes et lister_pieces l’avertissent sans écraser leur avertissement, la consigne porte sa ligne'
+    const bascule = 'un dossier basculé : chaque outil dit ses ventes facturées — resume_dossier sa bascule, sa date (le jour de Paris) et ses comptes, lister_comptes les ventes pas écrites à jour, lister_pieces l’exemplaire par son numéro, lister_ecritures la source de chaque ligne, points_a_traiter trois clés de plus — et la consigne son paragraphe'
+    const client = 'un dossier basculé : le client d’une facture n’atteint jamais le modèle — ni lu, ni par le libellé d’une écriture de vente facturée, ni par l’exemplaire d’une facture source'
+    const panne = 'un dossier basculé, la fonction des ventes facturées en panne : sa clé dit « indisponible », sous son nom, les autres répondent, et la balance le dit'
     const inchange = 'un dossier qui n’a pas basculé : les réponses d’aujourd’hui, inchangées, et la consigne sans la ligne'
     const absente = 'la source des ventes absente de la ligne du dossier : la garde s’applique, côté fermé, et dit qu’elle n’a pas pu être lue'
     const enTexte = 'la source des ventes ni vraie ni fausse (« false » en texte) : la garde s’applique, côté fermé, et dit qu’elle n’a pas pu être lue'
-    const sansDate = 'un dossier basculé dont la date ne se lit pas : la garde s’applique, et la phrase le dit'
+    const sansDate = 'un dossier basculé dont la date ne se lit pas : ses ventes se lisent, et la phrase dit la date illisible'
     const garde = '  const ventes = gardeDesVentes(dossierRow.ventes_par_les_factures, dossierRow.ventes_par_les_factures_depuis)\n'
     const ouverte = '  if (reglage === false) return null\n'
     const jour = '  const jour = instant && !Number.isNaN(instant.getTime()) ? jourAParis(instant) : null\n'
+    const refus = '    if (ventes?.reglage === null) {\n      return { erreur: `${ventes.constat}.'
     return [
       { slug, quoi: 'la garde jamais posée', remplacements: [[garde, garde.replace('= gardeDesVentes(', '= null && gardeDesVentes(')]], scenario: bascule },
       { slug, quoi: 'la garde posée sur tout dossier', remplacements: [[ouverte, '  if (reglage === "faux") return null\n']], scenario: inchange },
@@ -240,16 +246,31 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
       { slug, quoi: 'le jour de la bascule pris à Greenwich', remplacements: [[jour, jour.replace('jourAParis(instant)', '(depuis as string).slice(0, 10)')]], scenario: bascule },
       { slug, quoi: 'une date absente lue comme un instant', remplacements: [['  const instant = typeof depuis === "string" ? new Date(depuis) : null\n', '  const instant = new Date(depuis as string)\n']], scenario: sansDate },
       { slug, quoi: 'resume_dossier tait la bascule', remplacements: [['    if (!ventes) return resume\n', '    return resume\n']], scenario: bascule },
-      { slug, quoi: 'points_a_traiter répond sur un dossier basculé', remplacements: [['    if (ventes) {\n      return { erreur: `${ventes.constat}.', '    if (false) {\n      return { erreur: `${ventes.constat}.']], scenario: bascule },
-      { slug, quoi: 'lister_comptes sans la garde', remplacements: [[' periode),\n      ventes,\n', ' periode),\n      null,\n']], scenario: bascule },
-      { slug, quoi: 'lister_pieces sans la garde', remplacements: [['      resultatListe(avecCategorie, count, "pieces"),\n      ventes,\n', '      resultatListe(avecCategorie, count, "pieces"),\n      null,\n']], scenario: bascule },
+      { slug, quoi: 'points_a_traiter répond sur une source des ventes illisible', remplacements: [[refus, refus.replace('if (ventes?.reglage === null) {', 'if (false) {')]], scenario: absente },
+      { slug, quoi: 'lister_comptes sans la garde', remplacements: [[' periode),\n      ventes,\n', ' periode),\n      null,\n']], scenario: absente },
+      { slug, quoi: 'lister_pieces sans la garde', remplacements: [['      resultatListe(avecCategorie, count, "pieces"),\n      ventes,\n', '      resultatListe(avecCategorie, count, "pieces"),\n      null,\n']], scenario: absente },
       {
         slug, quoi: 'l’avertissement d’aujourd’hui écrasé par celui de la garde',
         remplacements: [['avertissement: typeof resultat.avertissement === "string" ? `${resultat.avertissement} ${phrase}` : phrase', 'avertissement: phrase']],
-        scenario: bascule,
+        scenario: absente,
       },
-      { slug, quoi: 'la ligne de la consigne pour tout dossier', remplacements: [['    : ""\n  // L\'application est multi-cabinets', '    : "\\n- Ce dossier compte ses ventes par ses factures."\n  // L\'application est multi-cabinets']], scenario: inchange },
+      { slug, quoi: 'la ligne de la consigne pour tout dossier', remplacements: [['      : ""\n  // L\'application est multi-cabinets', '      : "\\n- Ce dossier compte ses ventes par ses factures."\n  // L\'application est multi-cabinets']], scenario: inchange },
       { slug, quoi: 'la consigne sans sa ligne', remplacements: [['a figé.${repereVentes}\n', 'a figé.\n']], scenario: bascule },
+      // VF9c.
+      { slug, quoi: 'le refus de VF9a sur un dossier basculé', remplacements: [[refus, refus.replace('if (ventes?.reglage === null) {', 'if (ventes) {')]], scenario: bascule },
+      { slug, quoi: 'points_a_traiter sans les trois clés des ventes facturées', remplacements: [['      ...(releve && enDefaut ? clesDesVentesFacturees(releve, enDefaut) : {}),\n', '']], scenario: bascule },
+      {
+        slug, quoi: 'la panne de la fonction des ventes facturées dite zéro',
+        remplacements: [['"motif" in enDefaut ? `indisponible : ${enDefaut.motif}` : ventesFactureesEnDefaut(enDefaut.lues)', '"motif" in enDefaut ? 0 : ventesFactureesEnDefaut(enDefaut.lues)']],
+        scenario: panne,
+      },
+      { slug, quoi: 'lister_comptes sans les ventes facturées en défaut', remplacements: [['      return phrase === null ? balance : joindreAvertissement(balance, phrase)\n', '      return balance\n']], scenario: bascule },
+      {
+        slug, quoi: 'lister_ecritures rend le libellé d’une vente facturée tel que le brouillon le porte',
+        remplacements: [['    libelle = f ? `${f.type === "avoir" ? "Avoir" : "Facture"} ${numero(f)}` : null\n', '    libelle = e.libelle\n']],
+        scenario: client,
+      },
+      { slug, quoi: 'l’exemplaire d’une facture source rendu avec son tiers', remplacements: [['          ...reste, tiers: null, nom_fichier: null, categorie,\n', '          ...reste, categorie,\n']], scenario: client },
     ]
   })(),
   {
