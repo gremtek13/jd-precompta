@@ -509,61 +509,41 @@ objets, `b20a312c…`) sont inchangés, des deux côtés : la migration remplace
 valeur de la réplique de l'étape, où tous les essais ont été joués entiers (HISTORIQUE.md, « L'INSERTION DIRECTE D'UN
 ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS », « LA MIGRATION DE VF5H2-Q1 EN PRODUCTION »).
 
-**Préparé le 26/10/2026, PAS ENCORE APPLIQUÉ : `index_des_avoirs`** (chantier EC-Q3, VF8E-Q1, écrite sur la
-recommandation, le 26/10/2026). Son fichier porte une version PROVISOIRE, `20261027125000`, après celle de
-`insertion_des_encaissements` et avant celle de `simulation_des_ventes_facturees` : il s'applique AVANT celle-ci, qui ne
-le suppose pas. `apply_migration` lui donnera sa version, et le fichier se RENOMME à cette version, texte inchangé — sa
-ligne d'historique doit rendre `512638ba6449edbbc89db08e7405296b`, fins de ligne ramenées à `\n`. Il pose un index
-partiel, `factures_emises_facture_origine_idx`, et rien d'autre. Sur la réplique de l'étape, il ne change que la famille
-« index » de `signature.sql` (237 `08ef14df…` puis 238 `b9aae28f2e5278de99fc4e617687a011`), avec ou sans
-`simulation_des_ventes_facturees` ; l'inventaire gagne un objet (ci-dessous), le socle est inchangé (HISTORIQUE.md,
-« « MA SIMULATION » REÇOIT SES VENTES FACTURÉES »).
+**Rejoué le 27/10/2026 après `index_des_avoirs`, `simulation_des_ventes_facturees` et
+`contre_passation_sur_mouvement_fige`** (chantier EC-Q3, VF8E-Q1, VF8e, VF5H2Q1-Q2 et VF5H2Q1Q2-Q1), accordées par le
+cabinet le même jour. Appliquées dans cet ordre par `apply_migration`, sans confirmation demandée, sous les versions
+`20261027055007`, `20261027055129` et `20261027055337` ; leurs fichiers ont quitté les versions PROVISOIRES
+`20261027125000`, `20261027130000` et `20261027140000`, texte inchangé — leurs lignes d'historique rendent
+`512638ba6449edbbc89db08e7405296b`, `af60959ca9b13192e43ad588d47b9372` et `98cf7f7ce93f87746af9a188a7dd5b43`, celles des
+fichiers éprouvés. 157 fichiers, 157 migrations, empreinte globale `2efe95460fac2c1ce0831142a7509c2d` des deux côtés
+(155 et `a167b589…` après l'index, 156 et `603970bc…` après VF8e). Le socle est inchangé (80 instructions,
+`5d53eea2…`) ; l'inventaire compte 2 165 objets (`2fd670d3adffb76e3e91ed6887d55875`, des deux côtés, 2 163 avant) —
+l'index et la fonction de VF8e ; la garde des encaissements change de corps sous son nom. `signature.sql`, migration par
+migration, les valeurs des répliques de l'étape : après l'index, la seule famille « index » (237 `08ef14df…` puis 238
+`b9aae28f2e5278de99fc4e617687a011`) ; après VF8e, « fonctions » (202 `d9a63228…` puis 203
+`af77709d031abfe1f1b12222eba56e2b`) et « droits des fonctions » (202 `f61b1cd0…` puis 203
+`9a52af9e70d503d0f49955c58d164cf7`) ; après la garde, la seule famille « fonctions » (203,
+`68fb1b62ba09ebf84c0e774503170649`) ; les six autres familles inchangées. En production, l'essai de la simulation
+(`simulationDesVentesFacturees.sql`, sans ses lignes de commentaire) : ses 29 contrôles justes, rien n'est resté ;
+`rls.sql` n'y est pas rejoué entier — aucune des trois ne crée ni ne change de policy ni de droit d'une table, et
+l'essai rejoue en production, profil par profil, ce que son bloc SI juge (HISTORIQUE.md, « LES TROIS MIGRATIONS DE
+VF8E-Q1, VF8E ET VF5H2Q1-Q2 EN PRODUCTION »).
 
-**Préparé le 26/10/2026, PAS ENCORE APPLIQUÉ : `simulation_des_ventes_facturees`** (chantier EC-Q3, VF8e ; VF8-Q2). Son
-fichier porte une version PROVISOIRE, `20261027130000`, après celles de `insertion_des_encaissements` et de
-`index_des_avoirs`, dont il ne dépend pas : `apply_migration` lui donnera la sienne, et le fichier se RENOMME à cette
-version, texte inchangé — sa ligne d'historique doit rendre `af60959ca9b13192e43ad588d47b9372`, fins de ligne ramenées à
-`\n`. Tant que ces deux fichiers ne sont pas appliqués, la dérive se lit sans eux : 154 fichiers, 154 migrations,
-`9549d833…`, la production. Sur la réplique de l'étape (la production munie de `insertion_des_encaissements` sous sa
-version, son historique et ses neuf familles égaux à ceux de la production), munie de l'index puis de VF8e à leurs
-versions provisoires : 156 fichiers, 156 migrations, `fbbca6186227f02df8ae2423d63a8f25` des deux côtés. Le socle est
-inchangé (80 instructions, `5d53eea2…`) ; l'inventaire compte 2 165 objets (`2fd670d3adffb76e3e91ed6887d55875`, des deux
-côtés, 2 163 avant) — l'index et la fonction neuve. `signature.sql`, après les deux : trois familles changent,
-« fonctions » (202 `d9a63228…` puis 203 `af77709d031abfe1f1b12222eba56e2b`), « droits des fonctions » (202 `f61b1cd0…`
-puis 203 `9a52af9e70d503d0f49955c58d164cf7`) et « index » (237 `08ef14df…` puis 238
-`b9aae28f2e5278de99fc4e617687a011`) ; les six autres sont inchangées (HISTORIQUE.md, « « MA SIMULATION » REÇOIT SES
-VENTES FACTURÉES »).
-
-**Préparé le 26/10/2026, PAS ENCORE APPLIQUÉ : `contre_passation_sur_mouvement_fige`** (chantier EC-Q3, VF5H2Q1-Q2,
-« La refuser (petite migration à part) », et VF5H2Q1Q2-Q1, écrite sur la recommandation le même jour). Son fichier porte
-une version PROVISOIRE, `20261027140000`, après celles de `index_des_avoirs` et de `simulation_des_ventes_facturees`,
-dont il ne dépend pas : il s'applique avant ou après eux, et la base est la même au bout. `apply_migration` lui donnera
-sa version, et le fichier se RENOMME à cette version, texte inchangé — sa ligne d'historique doit rendre
-`98cf7f7ce93f87746af9a188a7dd5b43`, fins de ligne ramenées à `\n`. Tant que ces trois fichiers ne sont pas appliqués,
-la dérive se lit sans eux : 154 fichiers, 154 migrations, `9549d833…`, la production. Sur la réplique de l'étape (la
-production à 154, son historique et ses neuf familles égaux à ceux de la production), munie de la seule migration : 155
-fichiers, 155 migrations, `f15688c035ca5f05ebfa531f43fdb2c9` des deux côtés ; munie de l'index, de VF8e puis d'elle, à
-leurs versions provisoires : 157 fichiers, 157 migrations, `d61f4a33a6300cd5eb0412074db2ae1d` des deux côtés. Le socle
-(80 instructions, `5d53eea2…`) et l'inventaire (2 163 objets, `b20a312c…`, sans l'index ni VF8e ; 2 165, `2fd670d3…`,
-avec eux) sont inchangés : la migration remplace le corps d'une garde sous son nom. `signature.sql` : seule la famille
-« fonctions » change — 202 `d9a63228…` puis `58a80d4179e19b2fa21bac12c486c776` si elle passe avant l'index et VF8e ;
-203 `af77709d…` puis `68fb1b62ba09ebf84c0e774503170649` si elle passe après eux — et au bout des trois, `68fb1b62…`
-dans l'un et l'autre ordre (HISTORIQUE.md, « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ »).
-
-**Préparé le 26/10/2026, PAS ENCORE APPLIQUÉ : `equipe_par_son_role`** (23Q2Q2-Q3, tranchée par le cabinet le même jour à
-la recommandation). Son fichier porte une version PROVISOIRE, `20261027150000`, après celles des trois migrations
-préparées avant lui, dont il ne dépend pas : il s'applique avant ou après elles, et la base est la même au bout.
-`apply_migration` lui donnera sa version, et le fichier se RENOMME à cette version, texte inchangé — sa ligne d'historique
-doit rendre `59c621d0f9f18cc1ce6fd51fb0d52673`, fins de ligne ramenées à `\n`. Tant que ces quatre fichiers ne sont pas
-appliqués, la dérive se lit sans eux : 154 fichiers, 154 migrations, `9549d833…`, la production. Sur la réplique de
-l'étape (la production à 154, son historique et ses neuf familles égaux à ceux de la production), munie de la seule
-migration : 155 fichiers, 155 migrations, `0da2ac068f870afcd62e568d9e778db9` des deux côtés ; munie des trois d'avant
-puis d'elle : 158, `7d996c1b560182184ebd10996b624cd3` des deux côtés. Le socle (80 instructions, `5d53eea2…`) et
-l'inventaire (2 163 objets, `b20a312c…`, sans l'index ni VF8e ; 2 165, `2fd670d3…`, avec eux) sont inchangés : la
-migration retire un droit et en rend un sur une colonne, et ni l'un ni l'autre contrôle ne lit les droits.
-`signature.sql`, qui lit depuis ce jour les droits par colonne (les neuf valeurs de la production inchangées) : seule la
-famille « droits_tables » change, `79e266f1…` puis `c58e26d3cf2f938e22b5f9fc7cd45b8b`, dans l'un ou l'autre ordre
-(HISTORIQUE.md, « L'ÉQUIPE NE CHANGE QUE PAR SON RÔLE »).
+**Préparé le 26/10/2026, PAS ENCORE APPLIQUÉ : `equipe_par_son_role`** (23Q2Q2-Q3, tranchée par le cabinet le même jour
+à la recommandation). Son fichier porte une version PROVISOIRE, `20261027150000`, après celles des trois migrations
+appliquées le 27/10/2026, dont il ne dépend pas : il s'applique avant ou après elles, et la base est la même au bout.
+`apply_migration` lui donnera sa version, et le fichier se RENOMME à cette version, texte inchangé — sa ligne
+d'historique doit rendre `59c621d0f9f18cc1ce6fd51fb0d52673`, fins de ligne ramenées à `\n`. Tant que ce fichier n'est
+pas appliqué, la dérive se lit sans lui : 157 fichiers, 157 migrations, `2efe9546…`, la production (depuis le
+27/10/2026). Sur la réplique de l'étape (la production à 154, son historique et ses neuf familles égaux à ceux de la
+production), munie de la seule migration : 155 fichiers, 155 migrations, `0da2ac068f870afcd62e568d9e778db9` des deux
+côtés ; munie des trois d'avant à leurs versions provisoires, puis d'elle : 158, `7d996c1b560182184ebd10996b624cd3` des
+deux côtés — leurs versions réelles le changeront. Le socle (80 instructions, `5d53eea2…`) et l'inventaire (2 163
+objets, `b20a312c…`, sans l'index ni VF8e ; 2 165, `2fd670d3…`, avec eux) sont inchangés : la migration retire un droit
+et en rend un sur une colonne, et ni l'un ni l'autre contrôle ne lit les droits. `signature.sql`, qui lit depuis ce jour
+les droits par colonne (les neuf valeurs de la production inchangées) : seule la famille « droits_tables » change,
+`79e266f1…` puis `c58e26d3cf2f938e22b5f9fc7cd45b8b`, dans l'un ou l'autre ordre (HISTORIQUE.md, « L'ÉQUIPE NE CHANGE QUE
+PAR SON RÔLE »).
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
