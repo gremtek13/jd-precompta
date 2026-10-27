@@ -38776,3 +38776,107 @@ répétition n'ayant prouvé que le décompte, et la forme marquée n'est toujou
 contenu relu à l'empreinte du fichier (`fbda4c30…`) ; un appel sans session rend 401 « Non authentifié. », sans que le
 modèle soit appelé. Le site n'a pas changé (`index-DS1txBk0.js`) : la fusion ne touchait que la fonction, ses tests et
 la documentation.
+
+### 27/10/2026 — VF9B, LA SOURCE, LES EXEMPLAIRES ET LES PAIEMENTS DE L'ASSISTANT — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(`supabase/functions/agent-comptable/index.ts` ; `src/lib/agentComptableFacturesSources.test.ts`, neuf ;
+`src/lib/agentComptableAnalyse.test.ts`, `src/lib/agentComptableReglementGroupe.test.ts`,
+`src/lib/agentComptableAffectation.test.ts`, `src/lib/agentComptableVentilation.test.ts`, `src/test/ventesFacturees.ts`.
+Le deuxième lot de « VF9, L'ASSISTANT DEVANT LES VENTES FACTURÉES : LA CONCEPTION », § 6 ; aucune migration, aucune
+écriture en base, aucun écran ; au dépôt, déployé avec VF9c et VF9d. En production, le catalogue seul a été lu — les
+colonnes, leurs types, les droits du service — et des comptes : aucun dossier basculé, aucune facture source, aucun
+encaissement, aucune pièce désignée, aucun mouvement classé par ses encaissements.)
+
+**CE QUE LE LOT FAIT.**
+- Deux blocs neufs, copiés de `src/lib` entre leurs bornes : FACTURES SOURCES, les quatre fonctions de
+  `facturesSources.ts` (l'exemplaire désigné d'une facture source ne compte nulle part) ; VIREMENT MIXTE,
+  `partsEncaissees` et ce qu'elle appelle d'`encaissementsFactures.ts` (`compte`, `justifieSonMouvement`,
+  `factureSource`, `ordreC`, `exemplaireUnique`) : ce qu'un crédit classé par ses encaissements paie à l'exemplaire
+  unique et validé d'une facture d'avant la bascule.
+- Le générateur reprend les trois signatures de `src/lib`, chaque paramètre obligatoire :
+  `piecesAComptabiliser(…, sources)` écarte l'exemplaire d'une source avant tout le reste ;
+  `paiementsDesPieces(lignes, reglements, encaissees)` compte la part d'un virement mixte (origine `encaissements`) sur
+  un mouvement rapproché ET classé par ses encaissements ; `analyserEcritures(…, exemplaires)` ne juge plus l'écriture
+  d'un exemplaire. Aucun autre bloc borné ne change.
+- `points_a_traiter` : un dossier dont la source des ventes n'est pas LUE fausse (`lireLesVentes`) lit ses factures
+  (`factures_emises` : identifiant, statut, numéro, source — jamais `tiers_nom`) et le registre ENTIER de leurs
+  encaissements (`encaissements_factures`, les sept colonnes d'`EncaissementLu`), par `lireTout`, sous le refus général
+  des lectures partielles ; un autre ne lit rien de plus (`rienALire`, une lecture complète et vide). La lecture des
+  pièces validées porte aussi `facture_id`, celle du relevé `encaissements_de_factures`. Puis, comme la Checklist
+  (`pointsDeLaChecklist.ts`) : les sources, les exemplaires, les pièces qui comptent — passées aux catégories sans
+  compte ou sans poste, à la TVA non renseignée et au payé en trop —, les parts des virements mixtes.
+- Le refus de VF9a reste le premier geste de l'outil, avant toute lecture : aucun dossier qui lirait ses ventes
+  n'atteint ce code avant VF9c.
+
+La fonction : +246 lignes, −25 (105 de code, 123 de commentaire), dont les deux blocs (134 lignes, bordures comprises) ;
+`historiqueDuClient`, CLÉS SUPABASE, les descriptions des outils et la consigne inchangés.
+
+**OÙ LE LOT S'ÉCARTE DE LA CONCEPTION.** (1) `facture_id` n'entre que dans la lecture des pièces VALIDÉES, pas dans
+celle des pièces à valider : aucun calcul de VF9b ne le lit sur elles — la confiance basse et les lettrages prennent
+toutes les pièces à valider, comme la Checklist —, et l'exemplaire unique d'un virement mixte est une pièce validée ;
+VF9d, dont le pont lit les deux piles, l'y ajoutera. (2) Les deux lectures se font pour un réglage qui n'est pas lu FAUX
+— basculé, ou illisible —, et non « pour un dossier basculé seulement » : le côté fermé, sans effet tant que le refus de
+VF9a les précède, et VF9c décidera du réglage illisible sans recâbler. (3) Les pièces désignées que juge l'exemplaire
+unique se tirent des pièces validées déjà lues — leur dossier et leur statut, ceux des filtres de la lecture — au lieu
+d'une lecture de plus.
+
+**CE QUI RESTE DERRIÈRE LE REFUS, POUR VF9C.** Retirer `if (ventes) { … }` de `points_a_traiter`, en décidant du réglage
+illisible (refuser encore, ou juger sur les factures lues : la base refuse toute facture source hors bascule) ; le bloc
+VENTES DU RELEVÉ et ses deux clés, l'appel de `ventes_facturees_de_l_exercice` et sa clé, qui demanderont aux deux
+lectures d'autres colonnes (le moyen, la date et la création d'un encaissement ; le type et la facture d'origine d'un
+avoir) ; les outils du § 2 et la consigne. Les deux lectures, leur refus et le câblage du générateur sont en place.
+
+**LES PREUVES.**
+- `agentComptableFacturesSources.test.ts` (34 tests) : chaque bloc extrait, transpilé et exécuté SEUL ; confronté à
+  `src/lib` sur une table de cas nommés (6 et 16) et sur une batterie tirée d'une graine fixe (600 dossiers, 1 500
+  registres : la casse, la ponctuation et les accents qui départagent l'ordre de la base de `localeCompare`, deux
+  dossiers, des factures non lues, des contre-passations avec et sans mouvement), chaque filtre exercé là où il décide
+  seul ; dix-huit dérives plantées dans la vraie source, au moins une par fonction des deux blocs, toutes vues ; et, par
+  le harnais HTTP, `points_a_traiter` : un dossier qui n'a pas basculé ne lit ni ses factures ni le registre (le
+  témoin : sans facture lue, une écriture « en attente de rapprochement », une « déséquilibrée », deux « à régénérer »,
+  une catégorie sans compte ni poste, une pièce sans TVA ; l'« en attente », la « déséquilibrée » et l'un des « à
+  régénérer » viennent des écritures des exemplaires, que G4 refuse en base, posées pour prouver qu'elles s'écartent) ;
+  un dossier basculé est refusé avant toute lecture ; le refus levé EN MÉMOIRE — ce que VF9c fera —, ses deux lectures
+  filtrées sur le dossier, ses clés justes (les exemplaires écartés, l'écriture que date le virement mixte juste, le
+  paiement en double dit), une panne de l'une ou de l'autre refusée en lecture partielle, le client d'une facture jamais
+  au modèle.
+- `agentComptableAnalyse.test.ts` et `agentComptableReglementGroupe.test.ts` confrontés AVEC des factures sources, des
+  exemplaires et des virements mixtes : les dix-huit troisièmes paramètres vides deviennent une batterie de quatre
+  régimes (la note « VF9 » retirée), et trois dérives plantées de plus ; `agentComptableAffectation.test.ts` et
+  `agentComptableVentilation.test.ts` : le câblage, les pièces qui comptent.
+- Le contrat HTTP inchangé : ses 36 scénarios de l'assistant, `DEFAUTS_CONNUS` (2).
+- Quarante-trois mutations du câblage, jouées une à une sur une copie hors du dépôt — la fonction mutée, l'original
+  remis à son empreinte — contre les gardes de l'assistant, le contrat HTTP et les scanners (1 487 tests au témoin) :
+  toutes tuées. Trente-neuf par un comportement ou un scanner (le test neuf, les gardes de copie, le contrat,
+  `triTotal`, `edgeFunctionsPaginees`, `lecturesSignalees`, `edgeFunctionsCodeMort`) ; quatre par les seules assertions
+  de câblage, équivalentes en comportement sur une base qui tient ses gardes : les pièces désignées sans le filtre
+  `facture_id != null` (une pièce sans facture n'est l'exemplaire d'aucune) ; `partsEncaissees` sans les factures
+  (l'encaissement d'une facture source paierait l'exemplaire de cette source, qu'aucun contrôle ne lit) ; le générateur
+  sans les sources, et le payé en trop sur toutes les pièces (G4 : l'exemplaire d'une facture source ne porte ni
+  écriture, ni rapprochement, ni part de virement groupé).
+- Au caractère près, hors du dépôt : la source de BASE (`63324eb`) et celle de la branche, dans le même monde, rendent
+  au modèle la même demande — consigne, outils, chaque résultat d'outil — et lisent les mêmes tables sous les mêmes
+  filtres, pour les 36 scénarios du contrat de l'assistant et pour quatre mondes qui appellent les sept outils : un
+  dossier qui n'a pas basculé, en trésorerie puis en engagement, factures et registre en base (39 250 et 39 414
+  caractères, 39 lectures de chaque côté) ; un dossier basculé, le refus de VF9a tenant (21 lectures). Seule la durée
+  d'un appel au modèle, au journal, est masquée. Le même comparateur voit la branche dont le refus est levé en mémoire :
+  40 489 caractères contre 42 006, 21 lectures contre 41.
+- `bordures.py` sur le fichier final : 34 bordures (30 et 4 neuves), les quatre neuves à 100 caractères comme leurs
+  voisines.
+- La suite comparée test par test à BASE : 14 813 tests avant, 14 857 après, tous verts ; 46 nouveaux, dont deux titres
+  reformulés (les paiements « et des virements mixtes », l'appel d'`analyserEcritures` « et les exemplaires des factures
+  sources »), aucun perdu. `tsc -p tsconfig.edge.json` : les mêmes 25 erreurs qu'avant, aux numéros de ligne près.
+
+**RGPD.md ne change pas** : rien de neuf n'entre en base, et VF9b ne transmet rien de plus au modèle —
+`points_a_traiter` rend les mêmes clés, des comptes et des libellés de catégorie ; une facture se lit sans son client.
+La ligne que prévoit la conception (§ 6 : des numéros de facture et des montants au modèle) viendra avec la clé de VF9c
+qui les nomme.
+
+**AUCUNE QUESTION AU CABINET.** Une avait été pressentie — l'écriture passée de l'exemplaire d'une facture source, que
+VF9b cesse de dire « en attente » ou « à régénérer » et que l'assistant ne dirait plus du tout, quand la Checklist la
+dit « sans objet » et que la validation la refuse — : elle est sans objet. G4 (VF6b, en base depuis le 24/10/2026)
+refuse toute écriture, tout rapprochement et tout règlement groupé à l'exemplaire d'une facture source, et
+`designer_exemplaire_facture` refuse de désigner une pièce qui en porte ; la source se fixe à la validation de la
+facture, sans effet rétroactif. Ces écritures n'existent donc pas sur une base qui tient ses gardes : l'assistant les
+écarte, comme `src/lib`, par défense. Le réglage illisible, une fois le refus levé, reste un choix technique de VF9c
+(fermer, comme VF9a).

@@ -583,7 +583,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   27/10/2026, en ligne le même jour (`agent-comptable` v48) : devant un dossier basculé, l'assistant dit qu'il ne lit
   pas encore ses ventes facturées — `points_a_traiter` refuse, trois outils et la consigne le disent ; un autre
   dossier, rien de changé au caractère près ; un réglage illisible ferme → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT
-  DEVANT UN DOSSIER BASCULÉ ». Restent VF9b à VF9d (EC3-Q9, la facture reprise, va à A8).
+  DEVANT UN DOSSIER BASCULÉ ». VF9b le 27/10/2026, au dépôt, à déployer avec VF9c et VF9d : derrière ce refus,
+  `points_a_traiter` lit les factures et le registre des encaissements d'un dossier basculé, écarte l'exemplaire d'une
+  facture source et date ce qu'un virement mixte paie ; un autre dossier ne lit rien de plus, rien de changé au
+  caractère près → « VF9B, LA SOURCE, LES EXEMPLAIRES ET LES PAIEMENTS DE L'ASSISTANT ». Restent VF9c et VF9d (EC3-Q9,
+  la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
