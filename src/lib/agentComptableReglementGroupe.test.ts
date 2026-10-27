@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import { paiementsDesPieces, type LignePayante, type PaiementsDesPieces, type PartReglee } from './rattachement'
+import { paiementsDesPieces, type PaiementsDesPieces, type PartEncaissee, type PartReglee } from './rattachement'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import type { LigneBancaire, Piece } from './types'
 
@@ -28,10 +28,8 @@ type Ligne = Pick<LigneBancaire, 'id' | 'montant' | 'statut' | 'reglement_groupe
 interface Copie {
   reglementsGroupesIncoherents: (l: readonly Ligne[], r: readonly PartReglee[]) => { ligne: Ligne; raison: string; montant: number }[]
   piecesPayeesEnTrop: (p: readonly Pick<Piece, 'id' | 'montant_ttc'>[], paiements: PaiementsDesPieces) => { piece: { id: string }; paye: number; enTrop: number }[]
-  // La copie de l'Edge Function n'a que les deux premiers paramètres : elle ne connaît pas encore ce que les virements
-  // mixtes paient de leurs exemplaires (étape VF5h ; ses blocs se reprennent à l'étape VF9). Elle se confronte au module
-  // sans virement mixte, la seule forme qu'elle sache lire.
-  paiementsDesPieces: (lignes: readonly LignePayante[], reglements: readonly PartReglee[]) => PaiementsDesPieces
+  // Les trois paramètres de src/lib depuis l'étape VF9b : les parts des virements groupés ET des virements mixtes.
+  paiementsDesPieces: typeof paiementsDesPieces
 }
 
 // Le bloc lit `seuilAlignement` et `paiementsDesPieces` du bloc copié de src/lib/rattachement.ts : on reprend
@@ -88,18 +86,38 @@ const CAS_INCOHERENTS: [string, LigneBancaire[], PartReglee[]][] = [
   ]],
 ]
 
-// Chaque cas : les pièces fournies, le relevé, les parts.
-const CAS_EN_TROP: [string, Pick<Piece, 'id' | 'montant_ttc'>[], LigneBancaire[], PartReglee[]][] = [
+// Une part d'un VIREMENT MIXTE (étape VF5h) : l'encaissement d'une facture d'avant, cité sur un crédit classé par ses
+// encaissements, qui paie l'exemplaire unique de sa facture.
+const encaissee = (ligneId: string, pieceId: string, montant: number): PartEncaissee => ({ ligne_bancaire_id: ligneId, piece_id: pieceId, montant })
+// Le crédit d'un virement mixte : rapproché, classé par ses encaissements de factures.
+const mixte = (o: Partial<LigneBancaire> = {}) => ligne({ id: 'vm', reglement_groupe: false, encaissements_de_factures: true, montant: 300, ...o })
+
+// Chaque cas : les pièces fournies, le relevé, les parts des virements groupés, celles des virements mixtes (étape VF9b :
+// la copie lit les trois, comme src/lib).
+const CAS_EN_TROP: [string, Pick<Piece, 'id' | 'montant_ttc'>[], LigneBancaire[], PartReglee[], PartEncaissee[]][] = [
   ['une pièce payée par un rapprochement ET par la part d’un virement groupé', [piece('fa', 1000)],
-    [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1000 }), ligne({ montant: -1000 })], [part('g', 'fa', -1000)]],
-  ['un frais sous l’écart d’alignement', [piece('fa', 1000)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1005 })], []],
-  ['un écart juste au-delà de l’écart d’alignement', [piece('fa', 1000)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1005.01 })], []],
+    [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1000 }), ligne({ montant: -1000 })], [part('g', 'fa', -1000)], []],
+  ['un frais sous l’écart d’alignement', [piece('fa', 1000)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1005 })], [], []],
+  ['un écart juste au-delà de l’écart d’alignement', [piece('fa', 1000)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1005.01 })], [], []],
   ['un avoir remboursé deux fois', [piece('av', -100)],
-    [ligne({ id: 's', piece_id: 'av', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: 100 }), ligne({ id: 't', piece_id: 'av', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: 100 })], []],
-  ['une pièce sans montant lu', [piece('fa', null)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1000 })], []],
-  ['une pièce que rien ne paie', [piece('fa', 1000)], [], []],
+    [ligne({ id: 's', piece_id: 'av', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: 100 }), ligne({ id: 't', piece_id: 'av', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: 100 })], [], []],
+  ['une pièce sans montant lu', [piece('fa', null)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1000 })], [], []],
+  ['une pièce que rien ne paie', [piece('fa', 1000)], [], [], []],
   ['une pièce payée en deux fois, exactement', [piece('fa', 1000)],
-    [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -400 }), ligne({ montant: -600 })], [part('g', 'fa', -600)]],
+    [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -400 }), ligne({ montant: -600 })], [part('g', 'fa', -600)], []],
+  // LE VIREMENT MIXTE (étape VF9b) : l'exemplaire d'une facture d'avant que paient un rapprochement ET un virement mixte ;
+  // qu'un acompte et un virement mixte paient exactement ; qu'un crédit seulement réservé, ou rapproché d'une autre pièce
+  // sans être classé par ses encaissements, ne paie pas.
+  ['un exemplaire payé par un rapprochement ET par un virement mixte', [piece('pv', 120)],
+    [ligne({ id: 's', piece_id: 'pv', reglement_groupe: false, montant: 120 }), mixte()], [], [encaissee('vm', 'pv', 120)]],
+  ['un exemplaire qu’un acompte et un virement mixte paient, exactement', [piece('pv', 120)],
+    [ligne({ id: 's', piece_id: 'pv', reglement_groupe: false, montant: 40 }), mixte()], [], [encaissee('vm', 'pv', 80)]],
+  ['un exemplaire qu’un crédit seulement réservé ne paie pas', [piece('pv', 120)],
+    [ligne({ id: 's', piece_id: 'pv', reglement_groupe: false, montant: 120 }), mixte({ statut: 'non_rapprochee', encaissements_de_factures: false })], [],
+    [encaissee('vm', 'pv', 120)]],
+  ['un exemplaire qu’un crédit rapproché d’une autre pièce ne paie pas', [piece('pv', 120)],
+    [ligne({ id: 's', piece_id: 'pv', reglement_groupe: false, montant: 120 }), mixte({ piece_id: 'autre', encaissements_de_factures: false })], [],
+    [encaissee('vm', 'pv', 120)]],
 ]
 
 describe('agent-comptable / bloc RÈGLEMENT GROUPÉ (copie déployée)', () => {
@@ -116,10 +134,10 @@ describe('agent-comptable / bloc RÈGLEMENT GROUPÉ (copie déployée)', () => {
   })
 
   it('dit les mêmes pièces payées en trop, avec les mêmes montants', () => {
-    for (const [cas, pieces, lignes, parts] of CAS_EN_TROP) {
-      // Chaque côté tire les paiements de SA copie de `paiementsDesPieces`.
-      expect(formeEnTrop(deployee.piecesPayeesEnTrop(pieces, deployee.paiementsDesPieces(lignes, parts))), cas)
-        .toEqual(formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, []))))
+    for (const [cas, pieces, lignes, parts, encaissees] of CAS_EN_TROP) {
+      // Chaque côté tire les paiements de SA copie de `paiementsDesPieces`, virements mixtes compris.
+      expect(formeEnTrop(deployee.piecesPayeesEnTrop(pieces, deployee.paiementsDesPieces(lignes, parts, encaissees))), cas)
+        .toEqual(formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, encaissees))))
     }
   })
 
@@ -135,8 +153,9 @@ describe('agent-comptable / bloc RÈGLEMENT GROUPÉ (copie déployée)', () => {
       'g:parts_sans_reglement:-900.00',
       'h:part_sans_piece:300.00',
     ])
-    const enTrop = CAS_EN_TROP.flatMap(([, pieces, lignes, parts]) => formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, []))))
-    expect(enTrop).toEqual(['fa:2000.00:1000.00', 'fa:1005.01:5.01', 'av:200.00:100.00'])
+    const enTrop = CAS_EN_TROP.flatMap(([, pieces, lignes, parts, encaissees]) =>
+      formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, encaissees))))
+    expect(enTrop).toEqual(['fa:2000.00:1000.00', 'fa:1005.01:5.01', 'av:200.00:100.00', 'pv:240.00:120.00'])
   })
 })
 
@@ -152,10 +171,12 @@ describe('agent-comptable / points_a_traiter lit les parts des virements groupé
 
   it('compte les virements par MOUVEMENT et les pièces payées en trop, comme la Checklist', () => {
     // Une part sans pièce et une somme qui ne tombe plus juste sont deux raisons pour UN virement : compter
-    // les raisons dirait deux virements là où la Checklist en dit un.
-    expect(corps).toContain('const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes)')
+    // les raisons dirait deux virements là où la Checklist en dit un. Et, depuis l'étape VF9b, les paiements comptent ce
+    // que les virements mixtes paient aux exemplaires, et le payé en trop ne juge que les pièces qui comptent :
+    // l'exemplaire d'une facture source ne se règle pas, sa facture s'encaisse.
+    expect(corps).toContain('const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes, encaissees)')
     expect(corps).toContain('const reglementsFaux = new Set(reglementsGroupesIncoherents(rReleve.lignes, rReglements.lignes).map((r) => r.ligne.id))')
-    expect(corps).toContain('const payeesEnTrop = piecesPayeesEnTrop(piecesTyped, paiements)')
+    expect(corps).toContain('const payeesEnTrop = piecesPayeesEnTrop(piecesQuiComptent, paiements)')
     expect(corps).toMatch(/virements_groupes_dont_une_part_ne_justifie_plus_rien_ou_dont_les_parts_ne_font_plus_le_mouvement: reglementsFaux\.size/)
     expect(corps).toMatch(/pieces_payees_plus_que_leur_montant: payeesEnTrop\.length/)
   })
@@ -213,10 +234,10 @@ describe('le garde-fou du bloc RÈGLEMENT GROUPÉ sait encore échouer', () => {
   })
 
   const enTropDerive = (copie: Copie, nom: string) => {
-    const [, pieces, lignes, parts] = CAS_EN_TROP.find(([n]) => n === nom)!
+    const [, pieces, lignes, parts, encaissees] = CAS_EN_TROP.find(([n]) => n === nom)!
     return {
-      la: formeEnTrop(copie.piecesPayeesEnTrop(pieces, copie.paiementsDesPieces(lignes, parts))),
-      ici: formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, []))),
+      la: formeEnTrop(copie.piecesPayeesEnTrop(pieces, copie.paiementsDesPieces(lignes, parts, encaissees))),
+      ici: formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, encaissees))),
     }
   }
 
@@ -238,6 +259,20 @@ describe('le garde-fou du bloc RÈGLEMENT GROUPÉ sait encore échouer', () => {
     )
     const { la, ici } = enTropDerive(derivee, 'une pièce payée par un rapprochement ET par la part d’un virement groupé')
     expect(la).not.toEqual(ici)
+  })
+
+  // Le virement mixte (étape VF9b) : une copie qui oublierait ses parts, ou les prendrait d'un crédit que ses encaissements
+  // ne classent pas, tairait ou inventerait l'exemplaire payé en trop.
+  it('attrape une copie qui oublie les parts des virements mixtes, ou les prend d’un crédit que ses encaissements ne classent pas', () => {
+    const oubliees = planter(
+      '    if (!mouvement || mouvement.statut !== "rapprochee" || !mouvement.encaissements_de_factures) continue\n', '    continue\n',
+      'la lecture des parts des virements mixtes',
+    )
+    const payeDeuxFois = enTropDerive(oubliees, 'un exemplaire payé par un rapprochement ET par un virement mixte')
+    expect(payeDeuxFois.la).not.toEqual(payeDeuxFois.ici)
+    const sansDrapeau = planter(' || !mouvement.encaissements_de_factures) continue\n', ') continue\n', 'le drapeau du virement mixte')
+    const autrePiece = enTropDerive(sansDrapeau, 'un exemplaire qu’un crédit rapproché d’une autre pièce ne paie pas')
+    expect(autrePiece.la).not.toEqual(autrePiece.ici)
   })
 
   it('et il ne crie PAS au loup sur la copie réellement déployée', () => {
