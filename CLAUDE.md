@@ -255,7 +255,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   d'être appliquée.
 - **Les droits sont en base** : `memberships.droit_ventes` et `droit_banque`, faux par défaut, changés par
   `changer_droits_acces` seule (un droit nul y est inchangé) — une insertion du cabinet les pose aussi, la policy ne
-  regardant que le dossier (VF8f la gardera) ; prédicats `client_du_dossier`, `gere_les_ventes`,
+  regardant que le dossier ; « Ventes » ne se porte que sur un dossier basculé (`garder_droit_ventes`, VF8f, préparée,
+  pas appliquée : 23514 pour tout auteur, l'insertion du super-administrateur exceptée — la restauration) → « « VENTES »
+  NE SE PORTE QUE SUR UN DOSSIER BASCULÉ » ; prédicats `client_du_dossier`, `gere_les_ventes`,
   `gere_la_banque`, `droits_sur_le_dossier`. « Banque » ouvre la banque du client ; « Ventes » ses ventes et leurs
   gestes (un mouvement désigné demande aussi « Banque », le débit qu'une contre-passation cite compris → « LA
   CONTRE-PASSATION NE CITE UN MOUVEMENT QU'AVEC « BANQUE » »), articles, adresse de réception, clients, paramètres (un
@@ -567,7 +569,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   l'encaissement d'une facture d'avant (VF5H2Q1Q2-Q1, écrite sur la recommandation, le 26/10/2026), la restauration
   passant → « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ ». Les trois en production le 27/10/2026, égale
   aux répliques (157 migrations), et les drapeaux de « Ma simulation » et de la bascule levés le même jour → « LES TROIS
-  MIGRATIONS DE VF8E-Q1, VF8E ET VF5H2Q1-Q2 EN PRODUCTION ». Restent VF8f et VF9 (EC3-Q9, la facture reprise, va à A8).
+  MIGRATIONS DE VF8E-Q1, VF8E ET VF5H2Q1-Q2 EN PRODUCTION ». VF8f, le resserrement, préparé le 27/10/2026
+  (`ventes_sur_dossier_bascule`, pas appliquée, sur l'accord du cabinet, VF8F-Q1) : « Ventes » qui arrive sur un accès
+  d'un dossier non basculé se refuse en base, le réglage lu `for share` (la course de VF8a fermée, à deux sessions), et
+  `droitsAcces.ts` redit le refus à la lettre → « « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ ». Restent son
+  application et VF9 (EC3-Q9, la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
