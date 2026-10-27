@@ -38880,3 +38880,142 @@ refuse toute écriture, tout rapprochement et tout règlement groupé à l'exemp
 facture, sans effet rétroactif. Ces écritures n'existent donc pas sur une base qui tient ses gardes : l'assistant les
 écarte, comme `src/lib`, par défense. Le réglage illisible, une fois le refus levé, reste un choix technique de VF9c
 (fermer, comme VF9a).
+
+### 27/10/2026 — VF9C, LES POINTS ET LES OUTILS DE L'ASSISTANT — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(`supabase/functions/agent-comptable/index.ts` ; `src/lib/agentComptableVentesDuReleve.test.ts`, neuf ;
+`src/lib/agentComptableFacturesSources.test.ts`, `src/lib/agentComptableAnalyse.test.ts`,
+`src/lib/agentComptableConsigne.test.ts`, `src/lib/edgeFunctionsHttp.test.ts`, `src/lib/triTotal.test.ts`,
+`src/lib/comptesEnDur.test.ts`, `src/test/fonctionsEdge.ts`, `src/test/fonctionsEdge.test.ts`,
+`src/test/contratsFonctions.ts` ; RGPD.md. Le troisième lot de « VF9, L'ASSISTANT DEVANT LES VENTES FACTURÉES : LA
+CONCEPTION », § 6 ; aucune migration, aucune écriture en base, aucun écran ; au dépôt, à déployer avec VF9b et VF9d. En
+production, le catalogue seul a été lu — la définition et les droits de `ventes_facturees_de_l_exercice` et des sept
+fonctions qu'elle appelle, exécutables par `service_role`, et les clés étrangères vers `factures_emises` ; la fonction
+n'y a pas été appelée.)
+
+**CE QUE LE LOT FAIT.**
+- Un bloc neuf, VENTES DU RELEVÉ (170 lignes, bordures comprises), copié de `ventesDeLaChecklist.ts`,
+  `mouvementsDesVentes.ts` et `encaissementsFactures.ts` : les deux derniers refus de la garde G2
+  (`REFUS_GARDE_MOUVEMENTS`), `remplirModele`, `refusDeLaGarde`, `ordreDesEncaissements`, `encaissementsDuMouvement`,
+  `refusDuClassementDuReleve`, `mouvementDeVente`, `ventesDuReleve`, `encaissementsEnregistresSansMouvement`,
+  `MOYENS_DU_RELEVE`, `ventesDeLaChecklist`. Il lit `compte`, `justifieSonMouvement`, `factureSource` et `ordreC` du
+  bloc VIREMENT MIXTE, `estFigee` du bloc VALIDATION ; les dix-sept autres blocs bornés ne changent pas.
+- Le refus de VF9a ne vaut plus que pour une source des ventes ILLISIBLE (`ventes?.reglage === null`), son texte
+  inchangé ; LUE vraie, chaque outil dit la vente facturée (§ 2 de la conception) :
+  - `points_a_traiter` : les deux lectures de VF9b portent aussi le dossier d'une facture et le moyen, la date et la
+    création d'un encaissement ; trois clés neuves — `mouvements_reserves_a_des_encaissements_de_factures_a_classer` et
+    `encaissements_de_factures_par_un_moyen_du_releve_sans_mouvement`, les deux points de la Checklist, hors des
+    exercices figés pour le premier ; et `ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer`,
+    `{ nombre, par_etat, premieres }` — les quatre états toujours dits, les six premières dans l'ordre de la base,
+    nommées par elle —, ou « indisponible : <motif> » quand la fonction ne répond pas : l'outil, lui, répond ;
+  - `ventes_facturees_de_l_exercice(dossier, année courante du cabinet)` se lit par `lireTout` — PostgREST plafonne les
+    lignes rendues par une fonction comme celles d'une table —, sur un tri total (le jour, le genre en texte,
+    l'identifiant : une source s'y dit une fois), l'ordre de la base (le genre par son rang) refait sur la liste
+    entière ;
+  - `resume_dossier` : la bascule, son jour, et quatre comptes sans ligne (`head`) — les factures et les avoirs sources
+    validés, les encaissements de factures sources ni retirés ni contre-passations, les pièces validées exemplaires
+    d'une facture source (`factures_emises!inner`, la seule clé étrangère de `pieces` et d'`encaissements_factures`
+    vers `factures_emises`) ; un compte refusé, et l'outil refuse en lecture partielle ;
+  - `lister_comptes` : la balance, et l'avertissement des sources en défaut jusqu'au 31 décembre de l'exercice demandé
+    (de l'année courante, sans exercice), joint à celui d'aujourd'hui ; la fonction en panne, il le dit ; rien quand
+    tout est à jour ;
+  - `lister_pieces` : l'exemplaire d'une facture source sous le numéro de sa facture
+    (`exemplaire_de : { facture, ne_compte_pas }`), son tiers et le nom de son fichier à `null` ; les factures lues en
+    entier, ou l'outil refuse ;
+  - `lister_ecritures` : la SOURCE de chaque ligne (`piece`, `facture`, `avoir`, `encaissement`,
+    `mouvement_d_encaissements`, ou `null` pour une autre écriture sans pièce) et le libellé d'une facture, d'un avoir
+    ou d'un encaissement RECOMPOSÉ de son numéro (« Facture F… », « Avoir A… », « Encaissement, facture F… »,
+    « Contre-passation, facture F… ») — jamais celui du brouillon, qui cite le client ; une facture ou un encaissement
+    que la lecture ne rend pas : aucun libellé. Trois lectures de plus, en entier ou l'outil refuse ;
+  - la consigne : le paragraphe « VENTES FACTURÉES » (1 519 caractères), ses comptes par six constantes neuves,
+    dupliquées de `src/lib/comptes.ts` ; la description de `points_a_traiter` dit les trois clés (+696 caractères, pour
+    tout dossier).
+- Un dossier dont la source des ventes est LUE fausse ne lit rien de plus, et chaque résultat d'outil et la consigne
+  restent ceux d'aujourd'hui au caractère près ; seule change, pour lui aussi, la description de `points_a_traiter`.
+
+La fonction : +439 lignes, −26 (270 de code, 137 de commentaire), 3 947 lignes ; `historiqueDuClient`, CLÉS SUPABASE et
+le pont (VF9d) inchangés.
+
+**OÙ LE LOT S'ÉCARTE DE LA CONCEPTION.** (1) Le bloc pèse 170 lignes, pas « environ 230 » : copié sans ce qui ne décide
+d'aucun compte — l'auteur, que la conception écartait déjà, ce que la fiche d'un mouvement montre de ses encaissements,
+les numéros que la Checklist cite dans son détail. (2) `lister_ecritures` change aussi pour une source des ventes
+ILLISIBLE : le libellé d'une vente facturée citerait le client, et VF9a ne gardait pas cet outil ; ses lignes y portent
+leur source, le reste de VF9a inchangé. (3) Une source de plus que le § 2, `avoir`, et `null`. (4) L'exemplaire d'une
+facture source part sans son tiers ni son fichier : son tiers est le client de la facture (§ 2, point 8). (5) Le réglage
+illisible garde le côté fermé de VF9a, ses phrases comprises — « ne lit pas encore » reste vrai d'une source qu'il ne
+lit pas (décision de la session, sans question). (6) Le harnais ne rendait d'un `rpc` qu'une promesse : il reçoit un
+constructeur (`AppelFactice` : le tri, la tranche, le compte annoncé, le plafond de lignes, et une forme non modélisée
+qui lève) ; `triTotal` lisait une fermeture `.rpc(` comme une table illisible : il y lit la fonction, et la clé de son
+résultat se déclare (`CLES_DES_FONCTIONS`, chaque colonne confrontée à la dernière définition exportée).
+
+**LES PREUVES.**
+- `agentComptableVentesDuReleve.test.ts` (41 tests) : le bloc extrait avec les trois qu'il lit, transpilé, exécuté SEUL,
+  et confronté à `src/lib` (`ventesDeLaChecklist`, `ventesDuReleve`, `mouvementDeVente`, `refusDuClassementDuReleve`,
+  `encaissementsDuMouvement`, `ordreDesEncaissements`, `encaissementsEnregistresSansMouvement`, les moyens, les deux
+  refus et la mise en forme `%`) sur les jeux de `ventesDeLaChecklist.test.ts` et cinq de plus (21 cas nommés, leurs
+  résultats attendus écrits), puis sur une batterie de 1 500 dossiers tirés d'une graine fixe, chaque filtre exercé là
+  où il décide seul, l'ordre de la garde départagé de celui de la locale ; vingt-neuf dérives plantées dans la vraie
+  source, au moins une par fonction et par constante du bloc, toutes vues ; et l'export : la fonction s'exécute aux
+  droits de l'appelant, la migration la retire à toute session, aucune instruction ne retire à `service_role`
+  l'exécution de sa chaîne (huit fonctions, la sienne comprise), et l'assistant l'appelle par ses paramètres, trie sur
+  ses colonnes, lit ce qu'elle rend.
+- `fonctionsEdge.test.ts` (+5) : le faux de la fonction — le rôle du service seul, rien hors bascule ni pour une année
+  nulle, la période (frontière exclue, 31 décembre), l'ordre, la tranche, le compte, le plafond tu, une forme qui lève.
+- Le contrat de l'assistant : 49 scénarios, dont 13 neufs et deux de VF9a repris (« un dossier basculé : … »,
+  « … dont la date ne se lit pas … ») — un monde basculé où chaque outil rend ce que dit le § 2, la date illisible, le
+  client d'une facture jamais au modèle (un marqueur dans `tiers_nom`, le libellé, le tiers et le fichier), une source
+  illisible dont `lister_ecritures` recompose le libellé, un mouvement réservé que la validation fige, huit sources en
+  défaut, aucune, la fonction en panne (sa clé seule), le registre en panne (l'outil refuse sans l'appeler), deux
+  comptes de `resume_dossier` refusés, trois lectures de `lister_ecritures` et une de `lister_pieces` en panne. Des
+  défauts plantés de VF9a, quatre se rejugent sur une source illisible et un se réancre ; six neufs. `DEFAUTS_CONNUS`
+  inchangé (2).
+- `agentComptableFacturesSources.test.ts` : les cas de VF9b qui se jouaient sur une copie en mémoire, le refus levé, se
+  jouent sur la vraie source, et le refus sur une source illisible (le `describe` et trois titres reformulés, l'ancien
+  titre en commentaire) ; `agentComptableAnalyse.test.ts` et `agentComptableConsigne.test.ts` : le câblage neuf, aucune
+  ligne de code de la fonction qui nomme `tiers_nom`, les comptes du paragraphe confrontés à `src/lib/comptes.ts`.
+- `comptesEnDur.test.ts` : 137 au lieu de 121 (six numéros, dix emplois dans le paragraphe), la raison inchangée
+  (« PC3b »).
+- Soixante-neuf mutations du câblage — hors du bloc, que ses dérives plantées gardent —, jouées une à une sur une copie
+  hors du dépôt, la fonction mutée puis remise à son texte, contre les gardes de l'assistant, le contrat HTTP et les
+  scanners (1 443 tests au témoin) : soixante-cinq tuées, par un comportement (le contrat, les gardes de copie) ou un
+  scanner (`edgeFunctionsCodeMort`, `lecturesSignalees`, `triTotal`) ; deux survivaient faute d'une contre-passation
+  dans le monde du contrat (les encaissements comptés avec elles ; son libellé dit « Encaissement ») — le monde en porte
+  une, et son écriture, et, rejouées sur une copie de l'état final, elles sont tuées ; deux sont équivalentes sur une
+  base qui tient ses gardes : les factures sources comptées sans le statut validée
+  (`factures_emises_source_d_une_facture_validee` : une facture source est validée), et le numéro absent d'une
+  facture remplacé par son identifiant (une facture validée porte toujours le sien, et seule la vente facturée écrit
+  `facture_id` au brouillon).
+- Au caractère près, hors du dépôt : la source de BASE (`6ff0266`) et celle de la branche, dans le même monde, la
+  description de `points_a_traiter` masquée (46 fois) — les 32 scénarios du contrat qui ne basculent pas et deux mondes
+  qui appellent les sept outils sur un dossier qui n'a pas basculé (39 250 et 39 414 caractères, 39 lectures de chaque
+  côté) rendent au modèle la même demande et lisent les mêmes tables sous les mêmes filtres ; les 17 d'un dossier
+  basculé ou d'une source illisible diffèrent à dessein, et le témoin aussi (40 489 caractères contre 42 964, 21
+  lectures contre 50). Et le contrat neuf, joué sur la source de BASE, tombe sur les quinze scénarios que VF9c change
+  (les treize neufs et les deux repris), et sur eux seuls : les 34 autres passent.
+- `bordures.py` sur le fichier final : 36 bordures (34 et 2 neuves), les deux neuves à 100 caractères comme leurs
+  voisines.
+- La suite comparée test par test à BASE : 14 857 tests avant, 14 927 après, tous verts ; 79 nouveaux, dont neuf
+  reformulés (un titre de la consigne, le `describe` de VF9b et ses titres, deux scénarios et un défaut planté de VF9a),
+  aucun perdu. `tsc -p tsconfig.edge.json` : les mêmes 25 erreurs qu'avant, aux numéros de ligne près.
+
+**LES RISQUES.** Le droit de `service_role` sur la chaîne de la fonction, implicite : retiré, la clé se dit
+« indisponible » et la balance le dit — le test de l'export le refuse avant. `points_a_traiter` fait vingt lectures,
+comme sous VF9b, et un appel d'environ 0,4 s, loin du mur de 150 s. La description de l'outil coûte 696 caractères à
+chaque tour de tout dossier, le paragraphe 1 519 à ceux d'un dossier basculé. `lister_pieces` filtré par un tiers
+retrouve l'exemplaire masqué d'une facture source : il ne rend que son numéro, sous un nom que l'utilisateur a lui-même
+écrit. Le retour arrière : redéployer la version précédente, gardée par la comparaison d'avant écrasement ; rien
+d'autre.
+
+**RGPD.md** : la ligne d'AWS Bedrock (§ 3) dit que, devant un dossier basculé, l'assistant transmet au modèle les
+numéros, les dates et les montants des factures, des avoirs et des encaissements, jamais le client d'une facture, et que
+les autres pièces partent comme avant, leur tiers compris.
+
+**UNE QUESTION AU CABINET — VF9C-Q1, le tiers d'une pièce de vente au modèle.** Hors de l'exemplaire d'une facture
+source, une pièce de vente part au modèle avec son tiers et le nom de son fichier (`lister_pieces`), et ses écritures
+avec un libellé qui recopie ce tiers (`lister_ecritures` ; `src/lib/ecritures.ts` : `piece.tiers ?? piece.nom_fichier`),
+pour tout dossier, depuis que l'assistant existe ; chez un praticien, ce tiers peut nommer un patient (RGPD.md, § 8.7).
+(A) Ne plus transmettre, pour toute pièce de vente de tout dossier, ni son tiers, ni son fichier, ni le libellé de ses
+écritures — l'assistant les nomme par leur date et leur montant ; (B) seulement pour un dossier qui dispense des soins
+exonérés ; (C) rien. Recommandation : (A) — aucune réponse de l'assistant n'a besoin du nom d'un client, le fournisseur
+d'une pièce d'achat reste dit, et (B) laisserait au statut de TVA, que le cabinet peut ne pas avoir réglé, la garde d'un
+nom de patient. Elle change la réponse d'un dossier qui n'a pas basculé : hors de VF9c, d'où la question.
