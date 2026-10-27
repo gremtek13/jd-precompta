@@ -220,6 +220,38 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     remplacements: [['  if (plafond.bloque) {', '  if (false) {']],
     scenario: 'le plafond de blocage atteint : 402, et pas un appel au modèle',
   },
+  // LA GARDE PROVISOIRE DES VENTES FACTURÉES (VF9a) : jamais posée, posée sur tout dossier, ouverte sur un réglage
+  // illisible, la date prise à Greenwich ou inventée, un outil qui l'oublie, un avertissement d'aujourd'hui écrasé.
+  ...((): DefautPlante[] => {
+    const slug = 'agent-comptable'
+    const bascule = 'un dossier basculé : resume_dossier le dit et sa date (le jour de Paris), points_a_traiter refuse sans rien lire, lister_comptes et lister_pieces l’avertissent sans écraser leur avertissement, la consigne porte sa ligne'
+    const inchange = 'un dossier qui n’a pas basculé : les réponses d’aujourd’hui, inchangées, et la consigne sans la ligne'
+    const absente = 'la source des ventes absente de la ligne du dossier : la garde s’applique, côté fermé, et dit qu’elle n’a pas pu être lue'
+    const enTexte = 'la source des ventes ni vraie ni fausse (« false » en texte) : la garde s’applique, côté fermé, et dit qu’elle n’a pas pu être lue'
+    const sansDate = 'un dossier basculé dont la date ne se lit pas : la garde s’applique, et la phrase le dit'
+    const garde = '  const ventes = gardeDesVentes(dossierRow.ventes_par_les_factures, dossierRow.ventes_par_les_factures_depuis)\n'
+    const ouverte = '  if (reglage === false) return null\n'
+    const jour = '  const jour = instant && !Number.isNaN(instant.getTime()) ? jourAParis(instant) : null\n'
+    return [
+      { slug, quoi: 'la garde jamais posée', remplacements: [[garde, garde.replace('= gardeDesVentes(', '= null && gardeDesVentes(')]], scenario: bascule },
+      { slug, quoi: 'la garde posée sur tout dossier', remplacements: [[ouverte, '  if (reglage === "faux") return null\n']], scenario: inchange },
+      { slug, quoi: 'un réglage absent lu comme faux', remplacements: [[ouverte, '  if (reglage !== true) return null\n']], scenario: absente },
+      { slug, quoi: 'un réglage en texte lu comme le texte le dit', remplacements: [[ouverte, '  if (reglage === false || reglage === "false") return null\n']], scenario: enTexte },
+      { slug, quoi: 'le jour de la bascule pris à Greenwich', remplacements: [[jour, jour.replace('jourAParis(instant)', '(depuis as string).slice(0, 10)')]], scenario: bascule },
+      { slug, quoi: 'une date absente lue comme un instant', remplacements: [['  const instant = typeof depuis === "string" ? new Date(depuis) : null\n', '  const instant = new Date(depuis as string)\n']], scenario: sansDate },
+      { slug, quoi: 'resume_dossier tait la bascule', remplacements: [['    if (!ventes) return resume\n', '    return resume\n']], scenario: bascule },
+      { slug, quoi: 'points_a_traiter répond sur un dossier basculé', remplacements: [['    if (ventes) {\n      return { erreur: `${ventes.constat}.', '    if (false) {\n      return { erreur: `${ventes.constat}.']], scenario: bascule },
+      { slug, quoi: 'lister_comptes sans la garde', remplacements: [[' periode),\n      ventes,\n', ' periode),\n      null,\n']], scenario: bascule },
+      { slug, quoi: 'lister_pieces sans la garde', remplacements: [['      resultatListe(avecCategorie, count, "pieces"),\n      ventes,\n', '      resultatListe(avecCategorie, count, "pieces"),\n      null,\n']], scenario: bascule },
+      {
+        slug, quoi: 'l’avertissement d’aujourd’hui écrasé par celui de la garde',
+        remplacements: [['avertissement: typeof resultat.avertissement === "string" ? `${resultat.avertissement} ${phrase}` : phrase', 'avertissement: phrase']],
+        scenario: bascule,
+      },
+      { slug, quoi: 'la ligne de la consigne pour tout dossier', remplacements: [['    : ""\n  // L\'application est multi-cabinets', '    : "\\n- Ce dossier compte ses ventes par ses factures."\n  // L\'application est multi-cabinets']], scenario: inchange },
+      { slug, quoi: 'la consigne sans sa ligne', remplacements: [['a figé.${repereVentes}\n', 'a figé.\n']], scenario: bascule },
+    ]
+  })(),
   {
     slug: 'evaluer-extraction', quoi: 'la fenêtre datée oubliée',
     remplacements: [['    if (limite > 0 && Date.now() > Date.parse(ESSAI_OUVERT_JUSQU_A)) {', '    if (false) {']],

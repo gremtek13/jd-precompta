@@ -2430,6 +2430,8 @@ interface OutilContexte {
     statut_tva: "redevable" | "franchise" | "exonere" | null
     article_exoneration: string | null
   }
+  // La garde provisoire des ventes facturées (VF9a, voir `gardeDesVentes`) : nulle pour un dossier qui n'a pas basculé.
+  ventes: GardeDesVentes | null
 }
 
 const TOOLS: Anthropic.Tool[] = [
@@ -2516,18 +2518,67 @@ function resultatListe<T>(lignes: T[] | null, total: number | null, cle: string)
 // `formatToParts` plutôt qu'un format de locale : c'est le séparateur qui varie d'une locale à
 // l'autre, pas les composantes.
 function aujourdHuiCabinet(): string {
+  return jourAParis(new Date())
+}
+
+// Le jour de Paris d'un instant, « AAAA-MM-JJ » : celui d'aujourd'hui, et celui de la bascule d'un dossier.
+function jourAParis(instant: Date): string {
   const parties = new Intl.DateTimeFormat("fr-FR", {
     timeZone: "Europe/Paris",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date())
+  }).formatToParts(instant)
   const valeur = (type: string) => parties.find((p) => p.type === type)?.value ?? ""
   return `${valeur("year")}-${valeur("month")}-${valeur("day")}`
 }
 
+// LA GARDE PROVISOIRE DES VENTES FACTURÉES (VF9a, chantier EC-Q3, ligne 28.65).
+//
+// Un dossier dont les factures validées sont la source de leurs ventes (`dossiers.ventes_par_les_factures`, la bascule
+// de VF8) se lit autrement : l'exemplaire d'une facture source ne compte pas, la recette s'écrit à l'encaissement par
+// sa facture, sans pièce, et la validation refuse trois manques que les contrôles de l'assistant ne voient pas. Tant
+// qu'il ne lit pas ces ventes (VF9b à VF9d), l'assistant le DIT au lieu de conclure faux : `resume_dossier` dit la
+// bascule et sa date, `points_a_traiter` refuse de répondre, `lister_comptes` et `lister_pieces` portent un
+// avertissement, joint à celui qu'ils portaient déjà, et la consigne une ligne. Un dossier qui n'a pas basculé — le
+// réglage LU à `false` — n'y voit rien : ni lecture, ni clé, ni ligne de plus. Toute autre valeur tombe du côté FERMÉ :
+// la garde s'applique, et sa phrase dit que la source des ventes n'a pas pu être lue — jamais une conclusion tirée
+// d'une valeur non lue. La bascule est un INSTANT (`timestamptz`) : elle se dit au jour de Paris.
+interface GardeDesVentes {
+  // `true` lu, ou `null` : une valeur qui ne se lit pas ne se donne ni pour vraie ni pour fausse.
+  reglage: true | null
+  // Le jour de Paris de la bascule (« AAAA-MM-JJ »), ou `null` quand il ne se lit pas.
+  depuis: string | null
+  // La première phrase de tout ce que la garde dit, sans point final.
+  constat: string
+}
+
+function gardeDesVentes(reglage: unknown, depuis: unknown): GardeDesVentes | null {
+  if (reglage === false) return null
+  if (reglage !== true) {
+    return { reglage: null, depuis: null, constat: "La source des ventes de ce dossier n'a pas pu être lue : ses ventes se comptent peut-être par ses factures" }
+  }
+  const instant = typeof depuis === "string" ? new Date(depuis) : null
+  const jour = instant && !Number.isNaN(instant.getTime()) ? jourAParis(instant) : null
+  return {
+    reglage: true,
+    depuis: jour,
+    constat: jour
+      ? `Ce dossier compte ses ventes par ses factures depuis le ${jour.slice(8, 10)}/${jour.slice(5, 7)}/${jour.slice(0, 4)}`
+      : "Ce dossier compte ses ventes par ses factures, depuis une date qui n'a pas pu être lue",
+  }
+}
+
+// L'avertissement de la garde, JOINT à celui que le résultat portait déjà (une liste tronquée, une ouverture en
+// attente) : aucun n'écrase l'autre.
+function avecLaGarde(resultat: Record<string, unknown>, ventes: GardeDesVentes | null, suite: string): Record<string, unknown> {
+  if (!ventes) return resultat
+  const phrase = `${ventes.constat}. ${suite}`
+  return { ...resultat, avertissement: typeof resultat.avertissement === "string" ? `${resultat.avertissement} ${phrase}` : phrase }
+}
+
 async function executerOutil(ctx: OutilContexte, nom: string, input: Record<string, unknown>): Promise<unknown> {
-  const { admin, dossierId, dossier } = ctx
+  const { admin, dossierId, dossier, ventes } = ctx
 
   if (nom === "resume_dossier") {
     const [r1, r2, r3, r4, r5, r6] = await Promise.all([
@@ -2567,7 +2618,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       return { erreur: `Lecture partielle : ${r6.motif} — ne tire aucune conclusion chiffrée de ce résultat, dis à l'utilisateur que ces données sont indisponibles pour l'instant.` }
     }
     const annees = [...new Set(r4.lignes.map((r) => r.date.slice(0, 4)))].sort()
-    return {
+    const resume = {
       nom: dossier.nom,
       statut_tva: dossier.statut_tva,
       article_exoneration: dossier.article_exoneration,
@@ -2579,6 +2630,13 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       annees_avec_ecritures: annees,
       a_nouveaux: r5.lignes.length > 0 ? { date: r5.lignes[0].date, nombre_de_lignes: r5.lignes.length } : null,
       exercices_valides: r6.lignes.map((v) => v.annee),
+    }
+    if (!ventes) return resume
+    return {
+      ...resume,
+      ventes_par_les_factures: ventes.reglage,
+      ventes_par_les_factures_depuis: ventes.depuis,
+      avertissement: `${ventes.constat}. L'assistant ne lit pas encore les ventes facturées : pieces_validees compte aussi les exemplaires des factures, qui ne comptent pas, et points_a_traiter n'est pas disponible — ne conclus rien sur les ventes de ce dossier, renvoie à la Vue d'ensemble et à l'onglet Écritures.`,
     }
   }
 
@@ -2608,7 +2666,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const luValides = await lireTout<{ annee: number }>((debut, fin) =>
       admin.from("exercices_valides").select("annee", { count: "exact" }).eq("dossier_id", dossierId).order("annee").order("dossier_id").range(debut, fin))
     if (!luValides.complete) return { erreur: `Exercices validés illisibles (${luValides.motif}) — ne conclus rien sur les soldes des comptes de ce dossier.` }
-    return balanceDesComptes(lu.lignes, luANouveaux.lignes, luReportes.lignes, luValides.lignes.map((v) => v.annee), periode)
+    return avecLaGarde(
+      balanceDesComptes(lu.lignes, luANouveaux.lignes, luReportes.lignes, luValides.lignes.map((v) => v.annee), periode),
+      ventes,
+      "Les ventes facturées n'y sont pas distinguées : leurs écritures n'y comptent que passées et à jour, ce que l'assistant ne vérifie pas encore — ne conclus rien sur les ventes, les recettes ni le chiffre d'affaires de ce dossier, renvoie à l'onglet Écritures.",
+    )
   }
 
   if (nom === "lister_ecritures") {
@@ -2646,10 +2708,19 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       ...reste,
       categorie: typeof categorie_id === "string" ? libelleParCategorie.get(categorie_id) ?? null : null,
     }))
-    return resultatListe(avecCategorie, count, "pieces")
+    return avecLaGarde(
+      resultatListe(avecCategorie, count, "pieces"),
+      ventes,
+      "Les ventes facturées n'y sont pas distinguées : l'exemplaire d'une facture y paraît comme une pièce de vente, alors que c'est sa facture qui compte la vente — n'additionne pas ces pièces et ne conclus rien sur les ventes de ce dossier, renvoie à la Vue d'ensemble.",
+    )
   }
 
   if (nom === "points_a_traiter") {
+    // Un dossier basculé : ces contrôles le jugeraient faux (l'exemplaire « à comptabiliser », la pièce d'un virement
+    // mixte « sans paiement ») et tairaient ce que sa validation refuse. Refusé avant toute lecture (VF9a).
+    if (ventes) {
+      return { erreur: `${ventes.constat}. L'assistant ne lit pas encore les ventes facturées : ses contrôles ne sont pas disponibles pour ce dossier — ne tire aucune conclusion sur son état, et renvoie l'utilisateur à la Vue d'ensemble et à l'onglet Écritures, qui les disent.` }
+    }
     const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter. Et tout ce qu'en
       // tire le GÉNÉRATEUR, qui dit ce qu'une pièce coupée par la frontière de validation doit encore porter, ligne
@@ -3037,7 +3108,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: dossierRow, error: dossierError } = await admin
     .from("dossiers")
-    .select("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais, tva_periodicite, statut_tva, article_exoneration")
+    .select("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais, tva_periodicite, statut_tva, article_exoneration, ventes_par_les_factures, ventes_par_les_factures_depuis")
     .eq("id", dossierId)
     .single()
   if (dossierError || !dossierRow) {
@@ -3070,6 +3141,11 @@ Deno.serve(async (req: Request) => {
   const repereModele = dossierRow.mode_comptable === "engagement"
     ? `engagement (BIC, IS) — une facture crée une dette en 401000 Fournisseurs (404000 Fournisseurs d'immobilisations pour celle d'un bien) ou une créance en 411000 Clients à sa date, et son paiement la solde à sa propre date ; une note de frais payée par le dirigeant passe par le compte ${dossierRow.compte_notes_de_frais}. La 2035 n'est pas produite pour ce dossier.`
     : "trésorerie (BNC, 2035) — une pièce compte à la date de son paiement, sa date de facture à défaut ; une note de frais que l'exploitant a payée de sa poche s'écrit face au 108000 Compte de l'exploitant, sans mouvement bancaire, sauf la part qu'un virement du compte professionnel lui rembourse."
+  // La garde provisoire des ventes facturées (VF9a) : une ligne de consigne pour un dossier basculé, rien pour un autre.
+  const ventes = gardeDesVentes(dossierRow.ventes_par_les_factures, dossierRow.ventes_par_les_factures_depuis)
+  const repereVentes = ventes
+    ? `\n- ${ventes.constat}. L'assistant ne lit pas encore les VENTES FACTURÉES : ne conclus RIEN sur les ventes de ce dossier — chiffre d'affaires, recettes, encaissements, pièces de vente, TVA collectée —, et une écriture sans pièce d'une facture ou d'un encaissement n'y est pas une anomalie ; resume_dossier, lister_comptes et lister_pieces le rappellent, points_a_traiter n'est pas disponible : renvoie à la Vue d'ensemble et à l'onglet Écritures.`
+    : ""
   // L'application est multi-cabinets : la consigne ne nomme aucun cabinet (elle nommait le premier, pour tous).
   const systemPrompt = `Tu es l'assistant comptable interne du cabinet qui suit le dossier "${dossierRow.nom}" (précomptabilité — un brouillon à vérifier, jamais une comptabilité tenue).
 
@@ -3096,7 +3172,7 @@ Règles impératives :
 - Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.
 - Une ÉCHÉANCE DE COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant (un apport) s'écrit au jour de ce paiement, sans pièce ni mouvement, au journal des opérations diverses : la cotisation au 646000 face au compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais + ", toute l'échéance" : "108000 Compte de l'exploitant, pour l'échéance hors CSG-CRDS : sa CSG-CRDS, qui irait au 108000, s'y compense avec l'apport"}${dossierRow.mode_comptable === "engagement" ? "" : " ; elle compte dans la 2035 à la date du paiement"}. Une échéance ne se paie que d'une façon : par un mouvement rapproché ou par le compte personnel. Ce n'est pas une anomalie.${dossierRow.mode_comptable === "engagement" ? "\n- Des pièces d'un même tiers peuvent être LETTRÉES À LA MAIN (une facture et l'avoir qui la solde, sans mouvement bancaire) : elles n'attendent aucun règlement, ce n'est pas une anomalie. Un lettrage fait à la main qui ne se solde plus (points_a_traiter) n'est pas porté au FEC, et la facture qu'il soldait reparaît ouverte : la liste « Lettrages faits à la main », sous les comptes de tiers de la Balance des comptes, dit pourquoi et le défait." : ""}
 - La VALIDATION d'un exercice écrit l'OUVERTURE de l'exercice suivant — ses SOLDES REPORTÉS, au 1er janvier, journal AN, pièce « Exercice AAAA validé » : chaque compte de bilan y reprend son solde ; ${dossierRow.mode_comptable === "engagement" && dossierRow.compte_notes_de_frais !== "108000" ? "le résultat y attend son affectation, au 120000 pour un bénéfice et au 129000 pour une perte" : "le compte de l'exploitant et le résultat passent au 101000 Capital individuel, et l'exercice repart d'un compte de l'exploitant vide"}. Ce ne sont pas des écritures du brouillon (lister_ecritures ne les montre pas) ; lister_comptes les compte dans l'exercice qu'ils ouvrent. Tant qu'un exercice n'est pas validé, le suivant n'a pas d'ouverture : ses comptes de bilan partent de zéro, et lister_comptes le dit.
-- Un EXERCICE VALIDÉ (resume_dossier et points_a_traiter : exercices_valides) est FIGÉ : ses écritures ne se modifient ni ne se retirent plus, ni les pièces, mouvements, biens, véhicules et échéances qui les ont produites — la base le refuse. Rien de ce qui précède le 31 décembre du dernier exercice validé n'est réclamé par points_a_traiter : une erreur trouvée après la validation se corrige sur l'exercice suivant. Ne propose jamais de régénérer, de réécrire, de rapprocher ou de retirer ce qu'un exercice validé a figé.
+- Un EXERCICE VALIDÉ (resume_dossier et points_a_traiter : exercices_valides) est FIGÉ : ses écritures ne se modifient ni ne se retirent plus, ni les pièces, mouvements, biens, véhicules et échéances qui les ont produites — la base le refuse. Rien de ce qui précède le 31 décembre du dernier exercice validé n'est réclamé par points_a_traiter : une erreur trouvée après la validation se corrige sur l'exercice suivant. Ne propose jamais de régénérer, de réécrire, de rapprocher ou de retirer ce qu'un exercice validé a figé.${repereVentes}
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).
 - Réponds en français, de façon concise, avec des montants exacts et la période concernée. Utilise des puces si ça aide.`
@@ -3118,6 +3194,7 @@ Règles impératives :
       statut_tva: dossierRow.statut_tva,
       article_exoneration: dossierRow.article_exoneration,
     },
+    ventes,
   }
   const outilsUtilises: string[] = []
   // Cumul sur tous les tours de la boucle d'outils (voir plus bas) : une question qui déclenche

@@ -1358,6 +1358,8 @@ export const PERSONNES: Record<Personne, { id: string; email: string; jeton: str
   superAdmin: { id: 'a7000000-0000-4000-8000-000000000007', email: 'super@plateforme.invalid', jeton: 'jeton-de-session-super' },
 }
 
+const SANS_BASCULE = { ventes_par_les_factures: false, ventes_par_les_factures_depuis: null }
+
 /**
  * Deux cabinets, trois dossiers, et les sept personnes : un chef et deux comptables du premier cabinet (l'un assigné au
  * dossier, l'autre à son voisin seulement), le chef du second, un client du dossier, un compte inscrit seul, et le
@@ -1372,10 +1374,12 @@ export function mondeDeReference(): Monde {
       { id: ID.cabinet, nom: 'Cabinet fictif un', limite_ia_alerte_usd: null, limite_ia_blocage_usd: null },
       { id: ID.autreCabinet, nom: 'Cabinet fictif deux', limite_ia_alerte_usd: null, limite_ia_blocage_usd: null },
     ],
+    // La source des ventes (`ventes_par_les_factures`, NOT NULL, faux par défaut ; sa date, nulle) telle que la table la
+    // pose : une valeur absente de la ligne se lirait nulle, et l'assistant appliquerait sa garde (VF9a) à tout dossier.
     dossiers: [
-      { id: ID.dossier, nom: 'Dossier fictif', cabinet_id: ID.cabinet, code_email: 'dossier-fictif' },
-      { id: ID.dossierAutreCabinet, nom: 'Dossier d’un autre cabinet', cabinet_id: ID.autreCabinet, code_email: 'autre-cabinet' },
-      { id: ID.dossierVoisin, nom: 'Dossier voisin', cabinet_id: ID.cabinet, code_email: 'dossier-voisin' },
+      { id: ID.dossier, nom: 'Dossier fictif', cabinet_id: ID.cabinet, code_email: 'dossier-fictif', ...SANS_BASCULE },
+      { id: ID.dossierAutreCabinet, nom: 'Dossier d’un autre cabinet', cabinet_id: ID.autreCabinet, code_email: 'autre-cabinet', ...SANS_BASCULE },
+      { id: ID.dossierVoisin, nom: 'Dossier voisin', cabinet_id: ID.cabinet, code_email: 'dossier-voisin', ...SANS_BASCULE },
     ],
     cabinet_admins: [
       { user_id: PERSONNES.chef.id, cabinet_id: ID.cabinet, role: 'comptable_en_chef', email: PERSONNES.chef.email },

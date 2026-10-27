@@ -1023,7 +1023,7 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
 
   it('lit le modèle comptable du dossier, le passe aux outils et le dit au modèle', () => {
     const source = sourceDeployee()
-    expect(source).toMatch(/\.from\("dossiers"\)\s*\.select\("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais, tva_periodicite, statut_tva, article_exoneration"\)/)
+    expect(source).toMatch(/\.from\("dossiers"\)\s*\.select\("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais, tva_periodicite, statut_tva, article_exoneration, ventes_par_les_factures, ventes_par_les_factures_depuis"\)/)
     expect(source).toMatch(/mode_comptable: dossierRow\.mode_comptable,\s*compte_notes_de_frais: dossierRow\.compte_notes_de_frais,/)
     expect(source).toMatch(/const repereModele = dossierRow\.mode_comptable === "engagement"/)
     expect(source).toContain('- Modèle comptable du dossier : ${repereModele}')
