@@ -38358,3 +38358,72 @@ dossier réel basculé. Après l'accord : `apply_migration`, le fichier renommé
 (`retour_ventes_sur_dossier_bascule.sql`, 3 864 caractères, `8a19fc2326426d990ef3c004294be94b` : la garde et son
 déclencheur retirés, le commentaire d'hier rendu, la ligne d'historique supprimée — un ÉLARGISSEMENT, JAMAIS SANS
 L'ACCORD DU CABINET ; aucune donnée) sont dans le bloc-notes de la session (`…/scratchpad/vf8f/collage/`). Puis VF9.
+
+### 27/10/2026 — LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION — CHANTIER EC-Q3 (LIGNE 28.65) ET LIGNE 23
+
+(Écrite par la session. `equipe_par_son_role` (23Q2Q2-Q3) et `ventes_sur_dossier_bascule` (VF8f), préparées les 26 et
+27/10/2026, accordées par le cabinet le 27/10/2026, appliquées en production dans cet ordre ; leurs fichiers dans
+l'export sous leurs versions ; `droitsAcces.sql` et les blocs EQ et VS de `rls.sql` joués en production.)
+
+**L'ACCORD.** Le cabinet a écrit « C'est fait » après la fiche de VF8f, mais la page des arbitrages n'avait rien
+enregistré pour les deux fiches de migration : aucun document `VF8f-migration` ni `23Q2Q2-Q3-migration` dans `reponses`,
+la collection relue en entier trois fois, puis chaque document demandé par son identifiant. La question lui a donc été
+posée dans la conversation, et il a répondu « Oui, l'appliquer (Recommandé) » aux deux, le 27/10/2026 vers 11 h 30 UTC.
+Ses deux réponses ont été inscrites sur la page, chacune avec une note qui le dit.
+
+**AVANT.** 157 migrations, `2efe95460fac2c1ce0831142a7509c2d`, la dernière `20261027055337`. Ce que les gardes de tête
+exigent, relu au catalogue : `authenticated` porte UPDATE sur la table `cabinet_admins`, aucune colonne ne porte de
+droit à elle ; ni la garde du droit « Ventes » ni son déclencheur ; `garder_ventes_par_les_factures` `2d532a70…`,
+`is_super_admin` `a9159138…`, `changer_droits_acces` `7ce3d5f0…`, le déclencheur du réglage tel que VF8a l'a posé ;
+aucun accès « Ventes » sur un dossier qui n'a pas basculé. Des comptes : trois accès, aucun ne porte « Ventes » ; quatre
+dossiers, aucun n'a basculé ; une ligne d'équipe. Les neuf familles de `signature.sql` : colonnes 866 `23b2bc60…`,
+contraintes 670 `d63ab39f…`, déclencheurs 69 `aa7a762c…`, fonctions 203 `68fb1b62…` et leurs droits 203 `9a52af9e…`,
+index 238 `b9aae28f…`, policies 159 `c6aae852…`, RLS 81 `6450be96…`, droits des tables 81 `79e266f1…`.
+
+**L'APPLICATION**, par `apply_migration`, le texte de chaque fichier tel quel, sans qu'aucune confirmation soit
+demandée, l'une après l'autre, la première vérifiée avant la seconde :
+- `equipe_par_son_role`, version `20261027163235` : sa ligne d'historique rend `59c621d0f9f18cc1ce6fd51fb0d52673`,
+  l'empreinte du fichier ; 158 migrations, `263ea84af4687210be2ee9643659758b` ; `authenticated` ne met plus à jour que
+  `role` ; `signature.sql` : la seule famille « droits_tables » change, 81 `c58e26d3cf2f938e22b5f9fc7cd45b8b` ;
+- `ventes_sur_dossier_bascule`, version `20261027163348` : `2bd30520d0a476b5dc398504f0e5e8f3` ; 159,
+  `b70ba907b6a1d1c1d5add7be7580ec20` ; la garde et son déclencheur en place ; « déclencheurs » 70
+  `31f83f17445c6e1c5d04f6d92dafdde5`, « fonctions » 204 `9dbbaf011e085b810dd069181df59a50` et « droits des fonctions »
+  204 `a2b5e8ad9d4bc00d03e94dadf6d280d1`.
+Chaque fois, les valeurs que la préparation avait relevées sur sa réplique, les autres familles inchangées. Les versions
+réelles suivent l'ordre des provisoires (`20261027150000` et `20261027160000`) : celui des fichiers ne change pas.
+
+**LA PREUVE.** Les fichiers renommés à leurs versions, texte inchangé : la dérive rend 158 puis 159 fichiers et
+l'empreinte de la production à chaque étape ; socle 80, `5d53eea2…`, inchangé ; inventaire 2 167,
+`bb1ddbf6fce1bf2b5e0a0a4593c143c7` (2 165 avant : la garde et son déclencheur), des deux côtés. En production, par
+l'outil d'exécution :
+- les blocs EQ et VS de `rls.sql`, d'un seul appel, les deux tables de résultats `on commit drop` et une ligne TEXTE
+  ajoutée — sans le contrôle EQ3 (le chef retire un membre : une SUPPRESSION) ni la mutation M-EQ2 (un RETRAIT de
+  droit), que l'outil retient en attendant une confirmation qui ne vient pas ; la migration ne touche ni à l'un ni à
+  l'autre, et la réplique les a jugés. La base a reçu 17 864 caractères, `62b73106489bc62b8967a7747bd376d6`, le texte
+  construit ; 9 lignes de verdict (EQ1 ; EQ2 sur ses quatre écritures ; EQ4 ; EQ5 sur deux ; VS1 sur trois profils ;
+  VS2 ; VS3 ; les deux jeux construits), 0 en faute ; 6 mutations sur 6 qui mordent (M-EQ1, M-EQ3 à M-EQ5, M-VS1,
+  M-VS2) ;
+- `droitsAcces.sql` entier, sans ses lignes de commentaire : 53 876 caractères, `2f8b8661f1983beabda57cb8a8b7619b`, le
+  fichier sans son dernier saut de ligne ; 65 lignes, toutes justes — 63 contrôles, dont les vingt de la garde (70 à 83,
+  et les mutations 90 à 95), et 2 lignes d'information ;
+- rien n'est resté : trois accès, aucun « Ventes » ; une ligne d'équipe ; quatre dossiers, aucun basculé ni jetable ;
+  aucun déclencheur de mutation ; `authenticated` toujours sans UPDATE sur la table.
+
+**CE QUI N'EST PAS REJOUÉ.** `rls.sql` entier (près de 130 000 caractères sans ses commentaires) : les deux migrations
+ne créent ni ne changent aucune policy, et la signature de la production égale celle des répliques où il a été joué
+entier (la raison du 24/10/2026, « LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION »). `restauration.sql` et les
+autres essais que VF8f a retouchés : une réplique, comme leur préparation ; en production, aucun dossier n'a basculé et
+aucun accès ne porte « Ventes ».
+
+**CE QUI CHANGE.** Rien qui se voie. La page de l'équipe n'écrit que `role`, et un chef ne change plus le compte, le
+cabinet ni l'adresse d'une ligne de son équipe depuis une session (42501). L'onglet Accès refusait déjà « Ventes » avant
+le clic sur un dossier qui n'a pas basculé ; la base le refuse désormais par tout chemin (23514), l'insertion du
+super-administrateur exceptée, et la baisse du réglage et « Ventes » ne se croisent plus. Le retour arrière de chacune
+est un élargissement : il ne se joue que sur l'accord du cabinet.
+
+**LE DÉPÔT.** Les deux fichiers renommés ; `equipeParSonRole.test.ts` et `ventesSurDossierBascule.test.ts` les attendent
+sous leurs versions réelles ; le README de l'export (« Rejoué le 27/10/2026 »), `rls.sql`, `droitsAcces.sql`,
+`restauration.sql` et CLAUDE.md disent l'application. RGPD.md ne change pas : aucun traitement nouveau.
+
+**CE QUI RESTE.** VF9, l'assistant devant les ventes facturées, dont la conception est rendue et reste à intégrer ;
+EC3-Q9 va à A8. La feuille de route : les lignes 28.65 et 23.2.

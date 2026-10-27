@@ -7,7 +7,7 @@ import { REFUS_VENTES_DOSSIER_NON_BASCULE } from './droitsAcces'
 import { ORDRE_RESTAURATION } from './sauvegarde'
 
 // « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ (chantier EC-Q3, ligne 28.65, étape VF8f, le resserrement ; décision
-// EC3-Q2 ; migration `ventes_sur_dossier_bascule`, PRÉPARÉE sous la version provisoire 20261027160000, pas appliquée). Une
+// EC3-Q2 ; migration `ventes_sur_dossier_bascule`, appliquée le 27/10/2026 sous la version 20261027163348). Une
 // garde neuve, `garder_droit_ventes`, APRÈS l'insertion et la mise à jour de `droit_ventes` ou de `dossier_id` de
 // `memberships`, refuse en 23514 « Ventes » qui arrive sur un accès d'un dossier dont les factures ne sont pas la source de
 // leurs ventes, pour tout auteur, hors de l'insertion du super-administrateur (la restauration) ; elle lit le réglage du
@@ -63,10 +63,10 @@ function corpsExporte(nom: string): string {
 const REFUS_SQL = REFUS_VENTES_DOSSIER_NON_BASCULE.message.replace(/'/g, "''")
 
 describe('la migration ventes_sur_dossier_bascule', () => {
-  it('est dans l’export, une fois, sous une version provisoire postérieure à celle d’equipe_par_son_role', () => {
+  it('est dans l’export, une fois, sous la version de sa ligne d’historique, après celle d’equipe_par_son_role', () => {
     const chemins = fichiersDuSchema().map((f) => f.chemin).filter((c) => MIGRATION.test(c))
-    expect(chemins).toHaveLength(1)
-    expect(chemins[0] > 'supabase/schema/20261027150000_equipe_par_son_role.sql').toBe(true)
+    expect(chemins).toEqual(['supabase/schema/20261027163348_ventes_sur_dossier_bascule.sql'])
+    expect(chemins[0] > 'supabase/schema/20261027163235_equipe_par_son_role.sql').toBe(true)
   })
 
   it('n’exécute que sa garde de tête, la garde, son commentaire, le retrait de son exécution, le commentaire de la colonne et le déclencheur', () => {

@@ -330,7 +330,7 @@
 -- gardes : que la garde laisse la date que le super-administrateur réinsère, et pose celle de toute autre insertion,
 -- ventesFacturees.sql le prouve (9c à 9f, 191).
 --
--- 27/10/2026, chantier EC-Q3, étape VF8f (migration `ventes_sur_dossier_bascule`, préparée, non appliquée) : aucune table,
+-- 27/10/2026, chantier EC-Q3, étape VF8f (migration `ventes_sur_dossier_bascule`, appliquée le même jour) : aucune table,
 -- colonne ni clé de plus — une garde sur `memberships`, qui refuse « Ventes » sur un accès d'un dossier qui n'a pas basculé,
 -- sauf à l'insertion du super-administrateur. Le plan ne change pas. Un contrôle de plus suit le verdict : chaque accès
 -- « Ventes » du dossier restauré le portant, son dossier restauré au même réglage, écrit AVANT ses accès (l'ordre). Rejoué sur
@@ -903,7 +903,7 @@ begin
     case when n > 0 then egales || ' sur ' || n else 'aucune date de bascule dans le dossier : rien n''est prouvé' end);
 end $$;
 
--- LE DROIT « VENTES » D'UN ACCÈS (chantier EC-Q3, étape VF8f ; migration `ventes_sur_dossier_bascule`, préparée) : la garde
+-- LE DROIT « VENTES » D'UN ACCÈS (chantier EC-Q3, étape VF8f ; migration `ventes_sur_dossier_bascule`, appliquée) : la garde
 -- `garder_droit_ventes` refuse « Ventes » sur un accès d'un dossier qui n'a pas basculé, sauf à l'insertion du
 -- super-administrateur — la restauration rend ce qui a été. Ce script ne porte pas les déclencheurs : ce contrôle dit que
 -- chaque accès « Ventes » du dossier est restauré le portant, son dossier restauré avec le même réglage, et que l'ordre de la

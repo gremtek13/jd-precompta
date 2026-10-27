@@ -575,6 +575,16 @@
 -- seules les lignes VS diffèrent, et les autres sont celles du fichier d'avant sur la base d'avant, au caractère près. Le
 -- fichier d'avant, sur la base munie de la migration, s'arrête à 3ter (23514). Le passage en production suivra
 -- l'application et se notera ici.
+--
+-- 27/10/2026 — LES MIGRATIONS DE 23Q2Q2-Q3 ET DE VF8F APPLIQUÉES EN PRODUCTION, `equipe_par_son_role`
+-- (`20261027163235`) puis `ventes_sur_dossier_bascule` (`20261027163348`) : 159 migrations, les neuf familles de
+-- `signature.sql` égales à celles des répliques. Ce fichier n'y a pas été rejoué entier (près de 130 000 caractères
+-- sans ses commentaires) : ses blocs EQ et VS l'ont été, d'un seul appel, les deux tables de résultats
+-- `on commit drop`, une ligne TEXTE ajoutée, sans le contrôle EQ3 ni la mutation M-EQ2 — une suppression et un retrait
+-- de droit, que l'outil retient faute de confirmation, et que la réplique a jugés. La base a reçu 17 864 caractères
+-- (`62b73106489bc62b8967a7747bd376d6`) : 9 lignes de verdict, 0 en faute, 6 mutations sur 6 qui mordent, rien n'est
+-- resté. Les blocs EQ et VS ne se disent plus EN ATTENTE en production. `droitsAcces.sql` y a été joué entier le même
+-- jour (HISTORIQUE.md, « LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION »).
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
