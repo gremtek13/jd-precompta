@@ -545,6 +545,23 @@ les droits par colonne (les neuf valeurs de la production inchangées) : seule l
 `79e266f1…` puis `c58e26d3cf2f938e22b5f9fc7cd45b8b`, dans l'un ou l'autre ordre (HISTORIQUE.md, « L'ÉQUIPE NE CHANGE QUE
 PAR SON RÔLE »).
 
+**Préparé le 27/10/2026, PAS ENCORE APPLIQUÉ : `ventes_sur_dossier_bascule`** (chantier EC-Q3, étape VF8f, ligne 28.65 :
+« Ventes » ne se porte que sur un dossier basculé, EC3-Q2). Son fichier porte une version PROVISOIRE, `20261027160000`,
+après celle d'`equipe_par_son_role`, dont il ne dépend pas : il s'applique avant ou après elle, et la base est la même au
+bout. `apply_migration` lui donnera sa version, et le fichier se RENOMME à cette version, texte inchangé — sa ligne
+d'historique doit rendre `2bd30520d0a476b5dc398504f0e5e8f3`, fins de ligne ramenées à `\n`. Tant que ni lui ni
+`equipe_par_son_role` ne sont appliqués, la dérive se lit sans eux : 157 fichiers, 157 migrations, `2efe9546…`, la
+production. Sur la réplique de l'étape (la production à 157, son historique et ses neuf familles égaux à ceux de la
+production), munie de la seule migration : 158 fichiers, 158 migrations, `26a064696d2691f88baab5cbd79c90d5` des deux
+côtés ; munie aussi d'`equipe_par_son_role` : 159, `ba264b1c464f0d32793827b216b9d6a7` des deux côtés. Le socle est
+inchangé (80 instructions, `5d53eea2…`) ; l'inventaire compte 2 167 objets (`bb1ddbf6fce1bf2b5e0a0a4593c143c7`, des deux
+côtés, 2 165 avant) — la garde et son déclencheur ; `equipe_par_son_role` n'y change rien. `signature.sql` : trois familles
+changent, « déclencheurs » (69 `aa7a762c…` puis 70 `31f83f17445c6e1c5d04f6d92dafdde5`), « fonctions » (203 `68fb1b62…`
+puis 204 `9dbbaf011e085b810dd069181df59a50`) et « droits des fonctions » (203 `9a52af9e…` puis 204
+`a2b5e8ad9d4bc00d03e94dadf6d280d1`) ; avec `equipe_par_son_role`, « droits_tables » aussi, à sa valeur à elle
+(`c58e26d3…`) — les cinq autres familles inchangées (HISTORIQUE.md, « « VENTES » NE SE PORTE QUE SUR UN DOSSIER
+BASCULÉ »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
