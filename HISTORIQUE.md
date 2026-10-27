@@ -38763,3 +38763,16 @@ garde, fermée, s'appliquerait à tout dossier du harnais.
 `list_edge_functions` ; la copie déployée comparée au dépôt AVANT d'écraser ; `bordures.py` sur le texte envoyé ;
 `allerretour.py` après. Puis VF9b à VF9d, qui lèvent la garde. RGPD.md ne change pas : aucune donnée nouvelle n'entre en
 base, et le modèle ne reçoit de plus qu'un réglage du dossier et un jour.
+
+**DÉPLOYÉE LE MÊME JOUR, APRÈS LA FUSION** (demande de fusion #230, `main` `a2b8f17`). La version en production, la 47,
+a d'abord été comparée à `main` d'avant VF9a : identique (aller-retour sans différence sur 3 236 lignes). Les trente
+bordures ont été répétées sous leur forme comptée (`bordures.py` : une faute au premier passage, « FIN CLÉS SUPABASE »
+écrite à 74 traits pour 75, puis « RÉPÉTITION JUSTE »), et les huit lignes de tirets de même, contre la source ligne
+pour ligne. La session a transcrit elle-même, aucun agent ne déployant ; son appel a porté, comme celui de l'exécutant
+du 10/10/2026, tout caractère non ASCII en échappement — les bordures en échappements continus, pas sous la forme
+comptée, et les tirets en traits continus. Le compte est pourtant juste : c'est l'aller-retour qui le prouve, la
+répétition n'ayant prouvé que le décompte, et la forme marquée n'est toujours pas éprouvée DANS l'appel. Version 48,
+`verify_jwt` à `false` comme le veut `config.toml` ; aller-retour : zéro différence résiduelle sur 3 313 lignes, le
+contenu relu à l'empreinte du fichier (`fbda4c30…`) ; un appel sans session rend 401 « Non authentifié. », sans que le
+modèle soit appelé. Le site n'a pas changé (`index-DS1txBk0.js`) : la fusion ne touchait que la fonction, ses tests et
+la documentation.

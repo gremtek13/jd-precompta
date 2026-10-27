@@ -580,10 +580,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   → « LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION ». VF9 conçue le 27/10/2026 : quatre lots, VF9a à VF9d,
   sans migration ; une garde provisoire d'abord ; les écritures lues dans la base, pas recopiées ; PC3b après, à part ;
   VF9-Q1 à la page des arbitrages → « VF9, L'ASSISTANT DEVANT LES VENTES FACTURÉES : LA CONCEPTION ». VF9a le
-  27/10/2026, à déployer : devant un dossier basculé, l'assistant dit qu'il ne lit pas encore ses ventes facturées —
-  `points_a_traiter` refuse, trois outils et la consigne le disent ; un autre dossier, rien de changé au caractère
-  près ; un réglage illisible ferme → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ ». Reste VF9
-  (EC3-Q9, la facture reprise, va à A8).
+  27/10/2026, en ligne le même jour (`agent-comptable` v48) : devant un dossier basculé, l'assistant dit qu'il ne lit
+  pas encore ses ventes facturées — `points_a_traiter` refuse, trois outils et la consigne le disent ; un autre
+  dossier, rien de changé au caractère près ; un réglage illisible ferme → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT
+  DEVANT UN DOSSIER BASCULÉ ». Restent VF9b à VF9d (EC3-Q9, la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
