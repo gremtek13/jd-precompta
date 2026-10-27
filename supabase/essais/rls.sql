@@ -551,6 +551,15 @@
 -- neuf familles égales à celles de la production, le journal semé) : sans la migration, 58 lignes de verdict (la ligne
 -- EQ « EN ATTENTE »), 0 en faute, 48 mutations sur 48 qui mordent ; avec elle, 63 lignes, 0 en faute, 53 mutations sur
 -- 53 — seules les lignes EQ diffèrent. Le passage en production suivra l'application et se notera ici.
+--
+-- 27/10/2026 — LA MIGRATION DE VF8E APPLIQUÉE EN PRODUCTION, `simulation_des_ventes_facturees` (`20261027055129`, après
+-- `index_des_avoirs`, `20261027055007`, et avant `contre_passation_sur_mouvement_fige`, `20261027055337`) : 157
+-- migrations. Ce fichier n'a pas été rejoué en production : aucune des trois ne crée ni ne change de policy ni de droit
+-- d'une table. `simulationDesVentesFacturees.sql`, lui, y a été joué le même jour : ses 29 contrôles justes, rien n'est
+-- resté — le client « Banque » et un membre affecté au dossier lisent, « Ventes » seul, aucune case, l'autre dossier,
+-- un membre hors de ses dossiers, un compte rattaché à rien et le rôle des Edge Functions reçoivent « Accès refusé à ce
+-- dossier. » (42501), l'anonyme n'exécute pas la fonction : ce que le bloc SI juge, profil par profil. Le bloc SI ne se
+-- dit plus EN ATTENTE en production.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 

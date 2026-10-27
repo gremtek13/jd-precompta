@@ -40,13 +40,20 @@
 -- se joue en UNE transaction (`psql -1`). Aucune instruction de suppression, aucune mise à jour. Données FICTIVES.
 --
 -- ÉPROUVÉ LE 26/10/2026 SUR LA RÉPLIQUE DE L'ÉTAPE (PostgreSQL 16, UTF8 ; `signature.sql` : les neuf familles, et
--- l'historique, égaux à la production à 153 migrations), migration `simulation_des_ventes_facturees` PRÉPARÉE, pas
--- appliquée : sans elle, ESSAI_IMPOSSIBLE, rien de joué ; avec elle, 31 verdicts justes et rien n'est resté — sur la
--- production comme sur la production munie de `insertion_des_encaissements` (VF5H2-Q1). Des soixante-deux mutations
--- de la migration, cinquante-trois sont tuées — quarante-huit par cet essai, cinq par la garde de tête —, et les neuf
--- autres sont équivalentes, chacune avec sa raison. Le même calcul, sur 1 330 lectures d'une batterie tirée de quatre
--- graines fixes (266 dossiers, 19 120 factures, 40 468 encaissements), rendu mot pour mot par le module (HISTORIQUE.md,
--- « « MA SIMULATION » REÇOIT SES VENTES FACTURÉES »).
+-- l'historique, égaux à la production à 153 migrations), migration `simulation_des_ventes_facturees` alors PRÉPARÉE,
+-- pas appliquée : sans elle, ESSAI_IMPOSSIBLE, rien de joué ; avec elle, ses 29 contrôles justes (30 lignes, avec celle
+-- de l'information) et rien n'est resté — sur la production comme sur la production munie de
+-- `insertion_des_encaissements` (VF5H2-Q1). Des soixante-deux mutations de la migration, cinquante-trois sont tuées —
+-- quarante-huit par cet essai, cinq par la garde de tête —, et les neuf autres sont équivalentes, chacune avec sa
+-- raison. Le même calcul, sur 1 330 lectures d'une batterie tirée de quatre graines fixes (266 dossiers, 19 120
+-- factures, 40 468 encaissements), rendu mot pour mot par le module (HISTORIQUE.md, « « MA SIMULATION » REÇOIT SES
+-- VENTES FACTURÉES »).
+--
+-- JOUÉ EN PRODUCTION LE 27/10/2026, la migration appliquée sous la version `20261027055129`, après `index_des_avoirs`
+-- (`20261027055007`) : par l'outil d'exécution, le texte sans ses lignes de commentaire en tête de ligne (21 366
+-- caractères, `9ea612d5a8406e9aa7cbf02b920bb5ae` ; la base en a reçu 21 365, `bba86b5b06b998cdc85672e68c2a99d3`, le
+-- même sans son dernier saut de ligne) : les 29 contrôles justes, ligne pour ligne ceux de la réplique, et rien n'est
+-- resté (HISTORIQUE.md, « LES TROIS MIGRATIONS DE VF8E-Q1, VF8E ET VF5H2Q1-Q2 EN PRODUCTION »).
 --
 do $essai$
 declare

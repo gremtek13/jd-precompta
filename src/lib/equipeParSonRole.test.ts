@@ -44,10 +44,10 @@ function blocs(texte: string): { blocs: string[]; dehors: string } {
 }
 
 describe('la migration equipe_par_son_role', () => {
-  it('est dans l’export, une fois, sous une version provisoire postérieure aux migrations préparées avant elle', () => {
+  it('est dans l’export, une fois, sous une version provisoire postérieure à la dernière migration appliquée', () => {
     const chemins = fichiersDuSchema().map((f) => f.chemin).filter((c) => MIGRATION.test(c))
     expect(chemins).toHaveLength(1)
-    expect(chemins[0] > 'supabase/schema/20261027140000_contre_passation_sur_mouvement_fige.sql').toBe(true)
+    expect(chemins[0] > 'supabase/schema/20261027055337_contre_passation_sur_mouvement_fige.sql').toBe(true)
   })
 
   it('n’exécute que le retrait du droit sur la table puis le droit sur `role`, entre ses deux gardes', () => {

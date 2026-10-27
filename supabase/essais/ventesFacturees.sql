@@ -236,20 +236,22 @@
 -- autres : vingt-trois tuées, trois équivalentes déclarées d'avance (HISTORIQUE.md, « L'INSERTION DIRECTE D'UN
 -- ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS »).
 --
--- 26/10/2026, migration `contre_passation_sur_mouvement_fige` (PRÉPARÉE sous la version provisoire `20261027140000`,
--- pas appliquée ; chantier EC-Q3, VF5H2Q1-Q2, « La refuser (petite migration à part) », et VF5H2Q1Q2-Q1, écrite sur la
--- recommandation le même jour) : sur un mouvement classé par ses encaissements et FIGÉ, la contre-passation sans
--- mouvement d'un encaissement qu'il compte, de toute facture, et l'encaissement d'une facture qui n'est pas source qui
--- le cite ne s'insèrent plus, le super-administrateur compris. Quinze verdicts de plus, avant que R ne valide 2025 :
--- 146f à 146o, chacun posant ce qu'il juge, la validation comprise, puis s'annulant, et les mutations 198 à 198e ; le
--- pas du jeu où la restauration pose CP5 et CP6, avant les exercices validés, passe comme hier. Sur une réplique égale
--- à la production à 154 migrations (les neuf familles, et l'historique) : la sortie rend 339 lignes (338 verdicts et la
--- ligne d'information ; 324 hier) ; sans la migration, 6 en faute — 146f, 146g, 146i, 146k, 146l et 146o,
--- exactement — ; avec elle, 0, rien n'est resté, et les contrôles d'hier rendent, verdict et observation, ce qu'ils
--- rendaient. Le texte sans ses lignes de commentaire, envoyé en une requête : 123 311 caractères, empreinte
--- 2dd6eb95f7bfaf6f6d31d002bd11cbd8, 0 en faute. Quarante-six mutations de la migration, jouées contre cet essai, sept
--- autres et deux épreuves à deux sessions (une validation en cours) : trente-neuf tuées, sept équivalentes déclarées
--- d'avance (HISTORIQUE.md, « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ »).
+-- 26/10/2026, migration `contre_passation_sur_mouvement_fige` (préparée sous la version provisoire `20261027140000`,
+-- appliquée le 27/10/2026 sous la version `20261027055337` ; chantier EC-Q3, VF5H2Q1-Q2, « La refuser (petite migration
+-- à part) », et VF5H2Q1Q2-Q1, écrite sur la recommandation le même jour) : sur un mouvement classé par ses
+-- encaissements et FIGÉ, la contre-passation sans mouvement d'un encaissement qu'il compte, de toute facture, et
+-- l'encaissement d'une facture qui n'est pas source qui le cite ne s'insèrent plus, le super-administrateur compris.
+-- Quinze verdicts de plus, avant que R ne valide 2025 : 146f à 146o, chacun posant ce qu'il juge, la validation
+-- comprise, puis s'annulant, et les mutations 198 à 198e ; le pas du jeu où la restauration pose CP5 et CP6, avant les
+-- exercices validés, passe comme hier. Sur une réplique égale à la production à 154 migrations (les neuf familles, et
+-- l'historique) : la sortie rend 339 lignes (338 verdicts et la ligne d'information ; 324 hier) ; sans la migration, 6
+-- en faute — 146f, 146g, 146i, 146k, 146l et 146o, exactement — ; avec elle, 0, rien n'est resté, et les contrôles
+-- d'hier rendent, verdict et observation, ce qu'ils rendaient. Le texte sans ses lignes de commentaire, envoyé en une
+-- requête : 123 311 caractères, empreinte 2dd6eb95f7bfaf6f6d31d002bd11cbd8, 0 en faute. Quarante-six mutations de la
+-- migration, jouées contre cet essai, sept autres et deux épreuves à deux sessions (une validation en cours) :
+-- trente-neuf tuées, sept équivalentes déclarées d'avance (HISTORIQUE.md, « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN
+-- MOUVEMENT FIGÉ »). En production, cet essai n'est pas rejoué : la signature de la base, migration appliquée, égale
+-- celle de la réplique où il l'a été (« LES TROIS MIGRATIONS DE VF8E-Q1, VF8E ET VF5H2Q1-Q2 EN PRODUCTION »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';

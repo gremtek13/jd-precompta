@@ -9,7 +9,7 @@ import { ORDRE_RESTAURATION, ORDRE_RESTAURATION_PREVU, TABLES_AUTO_REFERENCEES, 
 
 // LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ (chantier EC-Q3, ligne 28.65 ; VF5H2Q1-Q2, « La refuser
 // (petite migration à part) », et VF5H2Q1Q2-Q1, écrite sur la recommandation, le 26/10/2026 ; migration
-// `contre_passation_sur_mouvement_fige`, PRÉPARÉE sous la version provisoire 20261027140000, pas appliquée). Les règles de
+// `contre_passation_sur_mouvement_fige`, appliquée le 27/10/2026 sous la version 20261027055337). Les règles de
 // VF5H2-Q1 excusent le super-administrateur — la restauration — à l'insertion ; la migration reprend la garde des
 // encaissements (`garder_encaissement_facture`) telle qu'`insertion_des_encaissements` l'a laissée, et n'y fait qu'INSÉRER
 // deux règles, pour un mouvement classé par ses encaissements et FIGÉ — daté au plus tard du 31 décembre du dernier
