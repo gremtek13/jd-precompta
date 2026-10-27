@@ -550,23 +550,24 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   factures validées sont la source de ses ventes → « LA CASE « VENTES » SUIT LA SOURCE DES VENTES, À L'ÉCRAN ». VF8b le
   26/10/2026, à l'écran, neutre : la carte « Source des ventes » de l'onglet Informations dit l'état daté et — drapeau
   `BASCULE_OFFERTE` levé, au chef seul — ce que la bascule change, sa confirmation nommant les chiffres lus (VF8-Q3), ou
-  le refus de la garde ; le drapeau reste FAUX jusqu'à la migration de VF5H2-Q1 et VF8e en ligne, et la phrase de
-  l'onglet Accès le suit → « LA BASCULE DES VENTES, À L'ÉCRAN ». La migration de VF5H2-Q1
+  le refus de la garde ; le drapeau est levé depuis le 27/10/2026, la migration de VF5H2-Q1 et VF8e en ligne, et la
+  phrase de l'onglet Accès le suit → « LA BASCULE DES VENTES, À L'ÉCRAN ». La migration de VF5H2-Q1
   (`insertion_des_encaissements`, `20261026150044`), appliquée le 26/10/2026 sur l'accord du cabinet : sans les
   fonctions, ni une insertion, la restauration exceptée, ni un rattachement (VF5H2Q1-Q1) ne citent plus un mouvement
-  classé par ses encaissements, et la contre-passation sans mouvement d'un encaissement qui en cite un ne s'insère plus
-  ; une petite migration à part refusera l'exception du super-administrateur sur un mouvement figé, avant la première
-  validation d'un exercice d'un dossier basculé (VF5H2Q1-Q2) — deux questions écrites sur la recommandation, le
+  classé par ses encaissements, et la contre-passation sans mouvement d'un encaissement qui en cite un ne s'insère
+  plus ; une petite migration à part refusera l'exception du super-administrateur sur un mouvement figé, avant la
+  première validation d'un exercice d'un dossier basculé (VF5H2Q1-Q2) — deux questions écrites sur la recommandation, le
   26/10/2026 → « L'INSERTION DIRECTE D'UN ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS », « LA MIGRATION
-  DE VF5H2-Q1 EN PRODUCTION ». VF8e (`simulation_des_ventes_facturees`), PRÉPARÉE le 26/10/2026, PAS appliquée : « Ma
+  DE VF5H2-Q1 EN PRODUCTION ». VF8e (`simulation_des_ventes_facturees`), appliquée le 27/10/2026 sur l'accord du
+  cabinet, après l'index des avoirs d'une facture (`index_des_avoirs`, VF8E-Q1), une migration à part : « Ma
   simulation » d'un client « Banque » reçoit le total mensuel et les sources d'un dossier basculé, et l'onglet Accès le
-  dit, sous un drapeau faux ; l'index des avoirs d'une facture (`index_des_avoirs`, VF8E-Q1, écrite sur la
-  recommandation, le 26/10/2026) la précède, une migration à part → « « MA SIMULATION » REÇOIT SES VENTES FACTURÉES ».
-  La petite migration de VF5H2Q1-Q2 (`contre_passation_sur_mouvement_fige`), PRÉPARÉE le 26/10/2026, PAS appliquée : sur
-  un mouvement classé et figé, le super-administrateur non plus ne contre-passe sans mouvement un encaissement qu'il
-  compte, ni n'y cite l'encaissement d'une facture d'avant (VF5H2Q1Q2-Q1, écrite sur la recommandation, le 26/10/2026),
-  la restauration passant → « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ ». Restent l'application des
-  trois, la levée des drapeaux, VF8f et VF9 (EC3-Q9, la facture reprise, va à A8).
+  dit → « « MA SIMULATION » REÇOIT SES VENTES FACTURÉES ». La petite migration de VF5H2Q1-Q2
+  (`contre_passation_sur_mouvement_fige`), appliquée le 27/10/2026 sur l'accord du cabinet : sur un mouvement classé et
+  figé, le super-administrateur non plus ne contre-passe sans mouvement un encaissement qu'il compte, ni n'y cite
+  l'encaissement d'une facture d'avant (VF5H2Q1Q2-Q1, écrite sur la recommandation, le 26/10/2026), la restauration
+  passant → « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ ». Les trois en production le 27/10/2026, égale
+  aux répliques (157 migrations), et les drapeaux de « Ma simulation » et de la bascule levés le même jour → « LES TROIS
+  MIGRATIONS DE VF8E-Q1, VF8E ET VF5H2Q1-Q2 EN PRODUCTION ». Restent VF8f et VF9 (EC3-Q9, la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -952,7 +953,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   jour (`refusDesVentesFacturees`), jamais sur une exigibilité écartée ; les frais d'un mouvement d'encaissements y
   entrent tels que la composition les écrit, sous le poste de « Frais bancaires » (VF4C3-Q1), dans la 2035 comme dans la
   situation intermédiaire (ligne 28.65). L'estimation la reçoit en total hors taxe par mois, ou « non comptées », un
-  état que l'appelant choisit et que son écran dit (« Ma simulation », jusqu'à VF8) → « LA 2035 LIT LES VENTES
+  état que l'appelant choisit et que son écran dit (« Ma simulation », jusqu'à VF8e) → « LA 2035 LIT LES VENTES
   FACTURÉES », « LA CA3 LIT LES VENTES FACTURÉES », « LA SITUATION, L'ESTIMATION ET LA SIMULATION LISENT LES VENTES
   FACTURÉES », « LA 2035 ET LA CA3 LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE », « LA 2035 COMPTE LES FRAIS D'UN
   MOUVEMENT D'ENCAISSEMENTS », « LA SITUATION INTERMÉDIAIRE COMPTE LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS ». Ses

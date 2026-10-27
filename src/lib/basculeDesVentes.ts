@@ -15,17 +15,19 @@ import type { FactureEmise, Membership } from './types'
 // source (irréversible), la personne (VF8-Q1 : le chef du cabinet seul, ou le super-administrateur), l'accès « Ventes ».
 // Rien n'en est recopié ici.
 
-// LA BASCULE N'EST PAS ENCORE OFFERTE À L'ÉCRAN. La conception la retenait jusqu'à VF5h2, VF7a, VF7b et VF7e, appliquées le
-// 26/10/2026. Deux conditions restent, et la session lèvera ce drapeau elle-même quand elles seront remplies :
-//   1. la petite migration de VF5H2-Q1 (« Oui, la fermer », tranchée le 26/10/2026) appliquée — l'insertion directe d'un
-//      encaissement sur un mouvement classé par ses encaissements refusée pour toute facture, la restauration exceptée ;
-//      le cabinet l'a voulue avant la première bascule réelle ;
-//   2. VF8e en ligne — « Ma simulation » d'un client « Banque » reçoit les ventes facturées d'un dossier basculé (VF8-Q2) ;
-//      sans elle, sa simulation compterait l'exemplaire d'une facture source comme une pièce, et la vente qu'elle ne lit pas.
-// Faux, la carte dit l'état et pourquoi la source des ventes ne se change pas encore d'ici, sans aucun geste, dans les deux
-// sens ; l'onglet Accès dit de même que le réglage « ne s'offre pas encore » (`raisonDuDossierNonBascule`). Chaque fonction
-// de ce module reçoit le drapeau en paramètre : ses deux états s'éprouvent sans toucher à cette constante.
-export const BASCULE_OFFERTE: boolean = false
+// LA BASCULE EST OFFERTE À L'ÉCRAN DEPUIS LE 27/10/2026. La conception la retenait jusqu'à VF5h2, VF7a, VF7b et VF7e,
+// appliquées le 26/10/2026, puis jusqu'à deux conditions, que la session a vues remplies avant de lever ce drapeau :
+//   1. la petite migration de VF5H2-Q1 (« Oui, la fermer », tranchée le 26/10/2026) appliquée le même jour —
+//      l'insertion directe d'un encaissement sur un mouvement classé par ses encaissements refusée pour toute facture,
+//      la restauration exceptée ; le cabinet l'a voulue avant la première bascule réelle ;
+//   2. VF8e en ligne — sa migration appliquée le 27/10/2026, son drapeau (`SIMULATION_VENTES_FACTUREES_EXPORTEE`)
+//      levé dans la même mise en ligne que celui-ci : « Ma simulation » d'un client « Banque » reçoit les ventes
+//      facturées d'un dossier basculé (VF8-Q2).
+// Levé, la carte offre au chef du cabinet seul (VF8-Q1) de basculer, sa confirmation nommant les chiffres lus
+// (VF8-Q3), ou dit le refus de la garde ; l'onglet Accès renvoie la case « Ventes » vers l'onglet Informations
+// (`raisonDuDossierNonBascule`). Faux, la carte dirait l'état sans aucun geste. Chaque fonction de ce module reçoit le
+// drapeau en paramètre : ses deux états s'éprouvent toujours sans toucher à cette constante.
+export const BASCULE_OFFERTE: boolean = true
 
 /** Une facture du dossier telle que la carte la lit : ce que la garde du réglage lit, sa date et son statut. */
 export type FactureDeLaBascule = FacturePourReglage & Pick<FactureEmise, 'statut' | 'date_emission'>

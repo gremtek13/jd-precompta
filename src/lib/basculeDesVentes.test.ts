@@ -225,11 +225,11 @@ describe('ce qui retient tout geste, dans l’ordre', () => {
 })
 
 describe('le drapeau de la bascule', () => {
-  it('reste faux dans ce lot, et son commentaire nomme les deux conditions qui le lèveront', () => {
-    // La session le lève elle-même, ces deux conditions remplies : ce test change avec lui.
-    expect(BASCULE_OFFERTE).toBe(false)
+  it('est levé, et son commentaire nomme les deux conditions remplies', () => {
+    // La session l'a levé elle-même, ces deux conditions remplies le 27/10/2026 : ce test a changé avec lui.
+    expect(BASCULE_OFFERTE).toBe(true)
     const texte = readFileSync(resolve(process.cwd(), 'src/lib/basculeDesVentes.ts'), 'utf8')
-    const commentaire = texte.slice(texte.indexOf('// LA BASCULE N\'EST PAS ENCORE OFFERTE'), texte.indexOf('export const BASCULE_OFFERTE'))
+    const commentaire = texte.slice(texte.indexOf('// LA BASCULE EST OFFERTE'), texte.indexOf('export const BASCULE_OFFERTE'))
     expect(commentaire).toContain('VF5H2-Q1')
     expect(commentaire).toContain('VF8e en ligne')
   })
