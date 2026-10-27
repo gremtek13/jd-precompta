@@ -56,7 +56,9 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
 - **Coque d'ordinateur en trois volets** : barre latérale (`Layout.tsx`, `BarreDossiers.tsx`), réductible (la barre
   d'onglets `DossierParcours` réapparaît alors) ; `.main` ; panneau de droite. Menu du compte et menu « … » du téléphone
   écrits une fois (`entreesDuCompte`). **Le mobile ne change pas** : barre du haut, navigation en bas. La liste des
-  dossiers (`lib/listeDossiers.ts`), tronquée ou refusée, le dit.
+  dossiers (`lib/listeDossiers.ts`), tronquée ou refusée, le dit ; elle ne montre que les dossiers que le cabinet ouvre
+  au compte (`lib/dossiersOuverts.ts`, `admin_du_dossier`), jamais un dossier lu par un seul accès client, dont
+  l'adresse directe le dit → « LA LISTE D'UN MEMBRE DE L'ÉQUIPE NE MONTRE QUE LES DOSSIERS QUE LE CABINET LUI OUVRE ».
 - **Le panneau de droite** (`components/PanneauDroit.tsx`) : rendu par PORTAIL, un seul contenu désigné par son nom ;
   `fermer()` ne ferme que s'il occupe encore le volet ; vide, l'emplacement n'existe pas (`:empty`). Sous 1 280 px il se
   superpose ; sur mobile, carte flottante. **Garde de sortie** (`useGardePanneau`) : `ouvrir()` et `fermer()` la
@@ -395,9 +397,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   accès au cabinet a été retiré se rattache de nouveau après une confirmation (23-Q2, écrit le 23/10/2026 ; 23Q2-Q1 et
   23Q2-Q2, écrites sur la recommandation, confirmées par le cabinet le 26/10/2026, avec 23Q2Q2-Q2 ; 23Q2Q2-Q1, écrit le
   26/10/2026 : le client d'un dossier du cabinet n'entre dans l'équipe qu'après une confirmation qui nomme l'adresse, le
-  rôle et l'espace client perdu, `create-team-member` à déployer après la fusion, la page d'abord, 23Q2Q2Q1-Q1 posée ;
-  reste 23Q2Q2-Q3 — l'équipe ne se modifie que par son rôle : la migration `equipe_par_son_role`, préparée le
-  26/10/2026, attend l'accord du cabinet) → « UN COMPTE QUE LE CABINET NE CONNAÎT PAS SE RATTACHE APRÈS UNE
+  rôle et l'espace client perdu, `create-team-member` à déployer après la fusion, la page d'abord ; 23Q2Q2Q1-Q1, écrit
+  le 27/10/2026 ; reste 23Q2Q2-Q3 — l'équipe ne se modifie que par son rôle : la migration `equipe_par_son_role`,
+  préparée le 26/10/2026, attend l'accord du cabinet) → « UN COMPTE QUE LE CABINET NE CONNAÎT PAS SE RATTACHE APRÈS UNE
   CONFIRMATION », « L'ÉQUIPE N'ACCUEILLE PAS LE CLIENT D'UN AUTRE CABINET », « LE CLIENT D'UN DOSSIER DU CABINET N'ENTRE
   DANS L'ÉQUIPE QU'APRÈS UNE CONFIRMATION », « L'ÉQUIPE NE CHANGE QUE PAR SON RÔLE ».
 - **Facturation électronique** (ligne 28.5) : (a) à (c) en ligne, la réception et le dépôt à éprouver sur la plateforme
