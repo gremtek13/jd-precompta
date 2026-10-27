@@ -189,11 +189,12 @@ export const LIBELLE_DU_ROLE: Readonly<Record<RoleCabinetAdmin, string>> = {
 
 // Ce qu'un rôle ouvre, lu dans la base : `admin_du_dossier` ouvre au chef du cabinet tous ses dossiers, et
 // `est_chef_du_cabinet` son équipe ; à un comptable, les dossiers qui lui sont assignés (migration `hierarchie_comptables`).
-// « verra », jamais « ne verra que » : la liste des dossiers lui montre AUSSI ceux dont elle reste cliente — `dossiers_select`
-// lit ses accès, et `lib/listeDossiers.ts` ne filtre pas sur le cabinet — avec ses seuls droits de cliente (23Q2Q2Q1-Q1).
+// « ne verra que », depuis 23Q2Q2Q1-Q1 : la liste des dossiers d'un membre de l'équipe ne montre que ceux que le cabinet lui
+// ouvre (lib/dossiersOuverts.ts), jamais un dossier qu'elle ne lirait que par son accès client — ceux dont elle est cliente
+// n'y paraissent donc que si tu les lui assignes, et leur adresse directe dit qu'ils ne lui sont pas ouverts.
 const CE_QUE_DONNE_LE_ROLE: Readonly<Record<RoleCabinetAdmin, string>> = {
   comptable_en_chef: 'elle verra et tiendra tous les dossiers du cabinet, et gérera son équipe',
-  comptable: 'elle verra les dossiers que tu lui assignes',
+  comptable: 'elle ne verra que les dossiers que tu lui assignes, même parmi ceux dont elle est cliente',
 }
 
 /**

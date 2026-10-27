@@ -178,7 +178,8 @@ function Coque() {
     setCheminPrecedent(pathname)
     if (pathname === '/dossiers') setRelecture((r) => r + 1)
   }
-  const liste = useListeDossiers(role === 'cabinet', relecture)
+  // Le compte connecté, côté cabinet seulement : la liste ne garde que les dossiers que le cabinet lui ouvre (23Q2Q2Q1-Q1).
+  const liste = useListeDossiers(role === 'cabinet' ? session?.user.id ?? null : null, relecture)
   if (
     role === 'cabinet' && idOuvert && idOuvert !== idCherche && !liste.chargement
     && !liste.dossiers.some((d) => d.id === idOuvert)

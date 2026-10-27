@@ -37,6 +37,8 @@ import { anneeDe } from '../lib/format'
 import { lireTout } from '../lib/lectureComplete'
 import { messageErreur } from '../lib/messageErreur'
 import { reglageDesVentes } from '../lib/sourceDeLaVente'
+import { DOSSIER_FERME_PAR_LE_CABINET, POUR_OUVRIR_LE_DOSSIER, ouvertureIllisible, type OuvertureLue } from '../lib/dossiersOuverts'
+import { lireLOuverture } from '../lib/dossiersOuvertsLecture'
 
 // L'onglet actif fait partie de l'URL (voir la route /dossiers/:id/:tab dans App.tsx) plutôt qu'un
 // simple état React : sans ça, ouvrir une pièce dans un nouvel onglet puis faire "retour" ramenait
@@ -96,6 +98,16 @@ export default function DossierDetail() {
   const [planLu, setPlanLu] = useState<{ id: string; lecture: LectureDuPlan } | null>(null)
   const plan = planLu && planLu.id === id ? planLu.lecture.plan : null
   const erreurPlan = planLu && planLu.id === id ? planLu.lecture.motif : null
+  // L'OUVERTURE DU DOSSIER AU COMPTE CONNECTÉ (23Q2Q2Q1-Q1, voir lib/dossiersOuverts.ts), lue comme son identité : avec
+  // l'identifiant pour lequel elle l'a été. La base rend aussi à un membre de l'équipe les dossiers où il n'a qu'un accès
+  // client, que l'espace du cabinet n'ouvre pas : une adresse directe y mène encore. Sans ouverture lue et vraie, aucun
+  // onglet ne se monte — ils n'en montreraient que ce qu'un client lit, et diraient vide le reste.
+  const [ouvertureLue, setOuvertureLue] = useState<{ id: string; ouverture: OuvertureLue } | null>(null)
+  const ouverture = ouvertureLue && ouvertureLue.id === id ? ouvertureLue.ouverture : null
+  const erreurOuverture = ouverture && 'illisible' in ouverture ? ouverture.illisible : null
+  const ouvert = ouverture !== null && 'ouvert' in ouverture && ouverture.ouvert
+  // Rendu, et pas ouvert : il ne se lit que par un accès client (`dossiers_select`). Introuvable, l'identité le dit déjà.
+  const fermeParLeCabinet = dossier !== null && ouverture !== null && 'ouvert' in ouverture && !ouverture.ouvert
   // Un exercice validé reste au sélecteur de l'en-tête même quand rien ne le porte plus : un exercice vide se
   // valide, et il doit rester où le retrouver.
   const anneesDisponibles = annees && annees.id === id && exercicesValides
@@ -113,10 +125,13 @@ export default function DossierDetail() {
   const lectureDuModele = dossier && plan ? modeleDuDossier(dossier, plan) : null
   const modele = lectureDuModele?.modele ?? null
   const erreurModele = lectureDuModele?.refus ?? null
+  // Les refus qui suivent de la fermeture — le plan s'y refuse (42501) — ne se disent qu'une fois le dossier ouvert : avant le
+  // retour de son ouverture, ils annonceraient une panne là où la page dira qu'il n'est pas ouvert au compte.
+  const erreurDuDossierOuvert = ouvert ? erreurValides ?? erreurPlan ?? erreurModele : null
   // Aucun onglet ne se monte avant le plan : aucun geste n'écrit avant qu'il soit lu, et chaque onglet qui compose une
   // écriture le reçoit, entier.
   const pret = !erreurDossier && !erreurValides && !erreurPlan && !erreurModele && dossier !== null
-    && anneesDisponibles !== null && modele !== null
+    && anneesDisponibles !== null && modele !== null && ouvert
 
   // Change ce dossier-là et lui seul : une réponse qui revient après qu'on a changé de dossier ne
   // doit pas écrire l'ancien sur le nouveau.
@@ -165,6 +180,16 @@ export default function DossierDetail() {
     lireExercicesValides(id).then((lus) => { if (!annule) setValides(lus) })
     return () => { annule = true }
   }, [id, essaiDossier, lireExercicesValides])
+
+  // Son ouverture au compte, par la fonction de la base qui ouvre ses onglets (`admin_du_dossier`) ; « Réessayer » la relit.
+  useEffect(() => {
+    if (!id) return
+    let annule = false
+    lireLOuverture(id).then((lue) => {
+      if (!annule) setOuvertureLue({ id, ouverture: lue })
+    })
+    return () => { annule = true }
+  }, [id, essaiDossier])
 
   // Le plan effectif du dossier, par la fonction de la base qui le dit à ses fonctions d'écriture (`plan_du_dossier`) :
   // l'application compose avec le plan que la base vérifiera. « Réessayer » le relit avec l'identité.
@@ -335,14 +360,30 @@ export default function DossierDetail() {
       {/* Les onglets ne se montent qu'avec l'identité du dossier de l'URL : plusieurs la RECOPIENT au
           montage (le formulaire d'Informations, par exemple), et montés trop tôt ils garderaient un
           SIRET vide — ou celui du dossier précédent — que le premier « Enregistrer » écrirait. */}
-      {erreurDossier || erreurValides || erreurPlan || erreurModele ? (
+      {fermeParLeCabinet ? (
+        // Ni l'en-tête du dossier, ni ses gestes (la profession, l'assistant) : rien ne s'y fait depuis l'espace du cabinet.
+        <>
+          <header className="cockpit">
+            <div className="cockpit-identite">
+              <Avatar nom={dossier.nom} taille={56} />
+              <div style={{ minWidth: 0 }}><h1>{dossier.nom}</h1></div>
+            </div>
+          </header>
+          <div className="card" role="status">
+            <p style={{ marginTop: 0 }}>{DOSSIER_FERME_PAR_LE_CABINET}</p>
+            <p className="muted" style={{ marginBottom: 0 }}>{POUR_OUVRIR_LE_DOSSIER}</p>
+          </div>
+        </>
+      ) : erreurDossier || erreurOuverture || erreurDuDossierOuvert ? (
         <>
           {cockpit}
           <div className="card">
             <p className="error-text" style={{ marginTop: 0 }}>
               {erreurDossier
                 ? `Ce dossier n’a pas pu être lu (${erreurDossier}). Ses écrans ne s’affichent pas : ils partiraient d’une identité vide — un SIRET vide sur une facture, par exemple.`
-                : erreurValides
+                : erreurOuverture
+                  ? ouvertureIllisible(erreurOuverture)
+                  : erreurValides
                   ? `Les exercices validés de ce dossier n’ont pas pu être lus (${erreurValides}). Ses écrans ne s’affichent pas : ils proposeraient de modifier ce qu’une validation a figé.`
                   : erreurPlan
                     ? `Le plan comptable de ce dossier n’a pas pu être lu (${erreurPlan}). Ses écrans ne s’affichent pas : aucune écriture ne se compose sans lui, et un compte deviné pourrait ne pas être celui du dossier.`
@@ -509,7 +550,7 @@ export default function DossierDetail() {
         </ExercicesValidesProvider>
       )}
 
-      <AssistantDossier dossierId={id} dossierNom={dossier?.nom ?? null} />
+      {!fermeParLeCabinet && <AssistantDossier dossierId={id} dossierNom={dossier?.nom ?? null} />}
     </>
   )
 }

@@ -221,7 +221,7 @@ describe('l’entrée dans l’équipe d’un client de ce cabinet (23Q2Q2-Q1)',
   })
 
   it.each([
-    ['comptable', 'Comptable', 'elle verra les dossiers que tu lui assignes'],
+    ['comptable', 'Comptable', 'elle ne verra que les dossiers que tu lui assignes, même parmi ceux dont elle est cliente'],
     ['comptable_en_chef', 'Comptable en chef', 'elle verra et tiendra tous les dossiers du cabinet, et gérera son équipe'],
   ] as const)('la fenêtre nomme l’adresse telle qu’elle partira, le rôle (%s) et ce qu’il ouvre', (role, libelle, ouvre) => {
     const adresse = 'Client.Du+Cabinet@example.test'

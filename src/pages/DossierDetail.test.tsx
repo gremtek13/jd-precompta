@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Layout from '../components/Layout'
 import DossierDetail from './DossierDetail'
+import { DOSSIER_FERME_PAR_LE_CABINET, POUR_OUVRIR_LE_DOSSIER } from '../lib/dossiersOuverts'
 
 // La vraie page d'un dossier, montée dans la vraie coque. Deux choses que rien d'autre ne voit :
 //
@@ -64,6 +65,14 @@ const faux = vi.hoisted(() => ({
   erreurPlan: null as string | null,
   rolesAbsents: [] as string[],
   lecturesPlan: 0,
+  // LES DOSSIERS QUE LE CABINET OUVRE AU COMPTE (23Q2Q2Q1-Q1) : ses accès client (`memberships`, dont la lecture filtre le
+  // compte, et le faux client APPLIQUE ce filtre), et l'ouverture de chaque dossier (`admin_du_dossier`) — vraie par défaut, le
+  // compte étant le chef du cabinet ; fausse pour un dossier qu'il ne lit que par un accès client ; refusée à la demande ; sa
+  // lecture retenue à la demande, et leur nombre. Comme la base, le plan d'un dossier qu'il n'ouvre pas se refuse (42501).
+  acces: [] as { id: string; user_id: string; dossier_id: string }[],
+  ouvertures: {} as Record<string, boolean | { erreur: string }>,
+  retenuesOuverture: {} as Record<string, Promise<void>>,
+  lecturesOuverture: 0,
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -71,11 +80,19 @@ vi.mock('../lib/supabase', () => ({
     // Le plan effectif d'un dossier, un rôle par ligne dans l'ordre du catalogue, comme la base le rend.
     rpc: (nom: string, args: { p_dossier_id: string }) => {
       const identifiant = args.p_dossier_id
+      if (nom === 'admin_du_dossier') {
+        faux.lecturesOuverture++
+        return (faux.retenuesOuverture[identifiant] ?? Promise.resolve()).then(() => {
+          const reponse = faux.ouvertures[identifiant] ?? true
+          return typeof reponse === 'object' ? { data: null, error: { message: reponse.erreur } } : { data: reponse, error: null }
+        })
+      }
       faux.lecturesPlan++
       return (faux.retenuesPlan[identifiant] ?? Promise.resolve())
         .then(() => import('../lib/planComptable'))
         .then(({ ROLES_COMPTABLES }) => {
           if (nom !== 'plan_du_dossier') return { data: null, error: { message: `fonction inconnue du faux client : ${nom}` } }
+          if (faux.ouvertures[identifiant] === false) return { data: null, error: { message: 'Accès refusé à ce dossier.', code: '42501' } }
           if (faux.erreurPlan) return { data: null, error: { message: faux.erreurPlan } }
           const plan = faux.plans[identifiant]
           return {
@@ -150,6 +167,10 @@ vi.mock('../lib/supabase', () => ({
                 ? { data: null, error: { message: faux.erreurAnnees }, count: null }
                 : { data: pieces, error: null, count: pieces.length }))
               .then(suite)
+          }
+          if (table === 'memberships') {
+            const lignes = (faux.acces as unknown as Record<string, unknown>[]).filter((l) => filtres.every((f) => f(l)))
+            return Promise.resolve({ data: lignes, error: null, count: lignes.length }).then(suite)
           }
           if (table === 'factures_emises' || table === 'encaissements_factures') {
             const toutes = ((table === 'factures_emises' ? faux.factures[dossierId] : faux.encaissements[dossierId]) ?? []) as unknown as Record<string, unknown>[]
@@ -427,7 +448,7 @@ vi.mock('../lib/remplir2035', () => ({
 }))
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
-    session: { user: { email: 'chef@cabinet-de-test.fr' } },
+    session: { user: { id: 'u-equipe', email: 'chef@cabinet-de-test.fr' } },
     role: 'cabinet', isSuperAdmin: false, estChef: true, mesSocietes: [], dossierActifId: null,
     setDossierActifId: () => {}, signOut: async () => {},
   }),
@@ -507,6 +528,10 @@ beforeEach(() => {
   faux.erreurPlan = null
   faux.rolesAbsents = []
   faux.lecturesPlan = 0
+  faux.acces = []
+  faux.ouvertures = {}
+  faux.retenuesOuverture = {}
+  faux.lecturesOuverture = 0
 })
 
 describe('Page d’un dossier — l’assistant dans le panneau de droite', () => {
@@ -1157,5 +1182,126 @@ describe('Page d’un dossier — le plan comptable', () => {
 
     await act(async () => { p.relacher() })
     expect(await screen.findByText('Vue d’ensemble — banque 512000')).toBeTruthy()
+  })
+})
+
+// UN DOSSIER QUE LE CABINET N'OUVRE PAS AU COMPTE (23Q2Q2Q1-Q1, voir lib/dossiersOuverts.ts). La base rend à un membre de
+// l'équipe les dossiers dont il est client, et une adresse directe y mène encore ; leurs écrans n'en montreraient que ce qu'un
+// client lit — ses pièces, rien des écritures ni de la TVA — et le plan s'y refuse. La page le dit, sans onglet, sans parcours,
+// sans assistant ; illisible, son ouverture retient les écrans et se relit. Données FICTIVES.
+describe('Page d’un dossier — un dossier que le cabinet n’ouvre pas au compte', () => {
+  const ferme = () => screen.queryByText(DOSSIER_FERME_PAR_LE_CABINET)
+
+  it('ouvert par son adresse, il le dit, sans onglet, parcours, geste ni assistant', async () => {
+    faux.acces = [{ id: 'm1', user_id: 'u-equipe', dossier_id: 'd1' }]
+    faux.ouvertures = { d1: false }
+    await afficher('/dossiers/d1/checklist')
+    expect(titre()).toBe('Cabinet Hélène')
+    expect(screen.getByRole('status').textContent).toBe(DOSSIER_FERME_PAR_LE_CABINET + POUR_OUVRIR_LE_DOSSIER)
+    expect(screen.queryByText('Vue d’ensemble du dossier')).toBeNull()
+    // Le plan s'y refuse : la page dit pourquoi les écrans manquent, pas que le plan n'a pas pu être lu.
+    expect(screen.queryByText(/Le plan comptable de ce dossier n’a pas pu être lu/)).toBeNull()
+    expect(screen.queryByRole('tablist', { name: 'Exercice' })).toBeNull()
+    // Ni la barre des onglets du dossier (DossierParcours), qui ne mènerait qu'à cette même page.
+    expect(document.querySelector('.nav-groupes')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^TVA :|^Comptabilité :|Détecter la profession/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Assistant' })).toBeNull()
+    // Ni la bulle du téléphone : l'assistant de ce dossier n'est pas monté.
+    expect(screen.queryByRole('button', { name: "Ouvrir l'assistant" })).toBeNull()
+    // La barre ne le connaît pas : il n'est pas parmi les dossiers que le cabinet ouvre au compte.
+    expect(within(screen.getByRole('region', { name: 'Dossier ouvert' })).getByText('Ce dossier')).toBeTruthy()
+  })
+
+  it('dont il est client, et que le cabinet lui ouvre aussi, il se monte comme les autres', async () => {
+    faux.acces = [{ id: 'm1', user_id: 'u-equipe', dossier_id: 'd1' }]
+    faux.ouvertures = { d1: true }
+    await afficher('/dossiers/d1/checklist')
+    expect(screen.getByText('Vue d’ensemble du dossier')).toBeTruthy()
+    expect(ferme()).toBeNull()
+    expect(screen.getByRole('button', { name: 'Assistant' })).toBeTruthy()
+  })
+
+  it('son ouverture illisible, la page le dit et ne monte aucun écran ; « Réessayer » la relit', async () => {
+    faux.ouvertures = { d1: { erreur: 'canceling statement due to statement timeout' } }
+    await afficher('/dossiers/d1/checklist')
+    expect(screen.getByText('L’ouverture de ce dossier à ton compte n’a pas pu être vérifiée (canceling statement due to statement '
+      + 'timeout). Ses écrans ne s’affichent pas : ils pourraient n’en montrer que ce qu’un client lit.')).toBeTruthy()
+    expect(screen.queryByText('Vue d’ensemble du dossier')).toBeNull()
+    expect(ferme()).toBeNull()
+    const lectures = faux.lecturesOuverture
+
+    faux.ouvertures = {}
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Réessayer' })) })
+    expect(faux.lecturesOuverture).toBe(lectures + 1)
+    expect(screen.getByText('Vue d’ensemble du dossier')).toBeTruthy()
+  })
+
+  // Une liste lue AVANT que le chef retire l'assignation : la page ne la croit pas, elle relit l'ouverture. Et l'assistant
+  // ouvert sur le dossier précédent ne passe pas sur celui-ci.
+  it('une assignation retirée après la lecture de la liste : la page le dit, et l’assistant se retire', async () => {
+    faux.acces = [{ id: 'm2', user_id: 'u-equipe', dossier_id: 'd2' }]
+    faux.ouvertures = { d2: true }
+    await afficher('/dossiers/d1/checklist')
+    const volet = screen.getByRole('complementary', { name: 'Panneau contextuel' })
+    const entete = screen.getByRole('heading', { level: 1, name: 'Cabinet Hélène' }).closest('header')!
+    await act(async () => { fireEvent.click(within(entete).getByRole('button', { name: 'Assistant' })) })
+    expect(within(volet).getByText('Assistant de Cabinet Hélène (d1)')).toBeTruthy()
+
+    faux.ouvertures = { d2: false }
+    await allerAuDossier('Bravo Santé')
+    expect(await screen.findByText(DOSSIER_FERME_PAR_LE_CABINET)).toBeTruthy()
+    expect(titre()).toBe('Bravo Santé')
+    expect(within(volet).queryByText(/^Assistant de/)).toBeNull()
+  })
+
+  // L'ouverture se garde AVEC le dossier lu : celle du dossier quitté ne vaut pas pour le suivant.
+  it('pendant la lecture de l’ouverture du dossier suivant, la fermeture du précédent ne s’y affiche pas', async () => {
+    faux.acces = [{ id: 'm1', user_id: 'u-equipe', dossier_id: 'd1' }]
+    faux.ouvertures = { d1: false }
+    await afficher('/dossiers/d1/checklist')
+    expect(ferme()).toBeTruthy()
+
+    const o = retenue()
+    faux.retenuesOuverture.d2 = o.promesse
+    await allerAuDossier('Bravo Santé')
+    expect(titre()).toBe('Bravo Santé')
+    expect(ferme()).toBeNull()
+    expect(screen.queryByText('Vue d’ensemble du dossier')).toBeNull()
+
+    await act(async () => { o.relacher() })
+    expect(await screen.findByText('Vue d’ensemble du dossier')).toBeTruthy()
+  })
+
+  // Le plan d'un dossier fermé se refuse, souvent AVANT le retour de l'ouverture : son refus ne se dit pas comme une panne.
+  it('avant le retour de son ouverture, le refus de son plan ne se dit pas ; revenue, la page dit la fermeture', async () => {
+    faux.acces = [{ id: 'm1', user_id: 'u-equipe', dossier_id: 'd1' }]
+    faux.ouvertures = { d1: false }
+    const o = retenue()
+    faux.retenuesOuverture.d1 = o.promesse
+    await afficher('/dossiers/d1/checklist')
+    expect(titre()).toBe('Cabinet Hélène')
+    expect(faux.lecturesPlan).toBeGreaterThan(0)
+    expect(screen.queryByText(/Le plan comptable de ce dossier n’a pas pu être lu/)).toBeNull()
+    expect(ferme()).toBeNull()
+    expect(screen.getByLabelText('Chargement')).toBeTruthy()
+
+    await act(async () => { o.relacher() })
+    expect(await screen.findByText(DOSSIER_FERME_PAR_LE_CABINET)).toBeTruthy()
+    expect(screen.queryByText(/Le plan comptable de ce dossier n’a pas pu être lu/)).toBeNull()
+  })
+
+  // Une lecture plus lente écrit en dernier : l'ouverture du dossier quitté, revenue APRÈS celle du suivant, ne la remplace pas
+  // — elle remettrait la page du suivant en attente, sans plus rien pour l'en sortir.
+  it('l’ouverture du dossier quitté, revenue après celle du suivant, ne la remplace pas', async () => {
+    const o = retenue()
+    faux.retenuesOuverture.d1 = o.promesse
+    await afficher('/dossiers/d1/checklist')
+    await allerAuDossier('Bravo Santé')
+    expect(await screen.findByText('Vue d’ensemble du dossier')).toBeTruthy()
+
+    await act(async () => { o.relacher() })
+    await act(async () => { await o.promesse })
+    expect(titre()).toBe('Bravo Santé')
+    expect(screen.getByText('Vue d’ensemble du dossier')).toBeTruthy()
   })
 })
