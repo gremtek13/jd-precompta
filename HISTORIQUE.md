@@ -37950,3 +37950,126 @@ lui ouvre — tous pour un chef, les assignés pour un comptable —, un lot d'�
 client à l'entrée : une suppression, écartée. Recommandation : (B) — un écran du cabinet ne doit pas affirmer un vide
 que la RLS fabrique ; ses accès restent, et « Retirer » lui rend son espace client. En attendant, la fenêtre dit « elle
 verra », jamais « ne verra que ».
+
+### 27/10/2026 — LA LISTE D'UN MEMBRE DE L'ÉQUIPE NE MONTRE QUE LES DOSSIERS QUE LE CABINET LUI OUVRE — 23Q2Q2Q1-Q1
+
+(Écrite par l'agent architecte sur la branche locale `equipe-23q2q2`, à la suite de 23Q2Q2-Q1, en deux commits : le code
+et les tests, puis cette documentation. Neufs : `src/lib/dossiersOuverts.ts` (la règle, pure),
+`src/lib/dossiersOuvertsLecture.ts` (ses deux lectures), leurs tests, `src/lib/listeDossiers.test.tsx`,
+`src/pages/DossiersList.ouverture.test.tsx`. Modifiés : `src/lib/listeDossiers.ts`, `src/components/Layout.tsx`,
+`src/pages/DossiersList.tsx`, `src/pages/DossierDetail.tsx`, `src/lib/creationDesComptes.ts`, leurs tests,
+`src/pages/ecransAvantLecture.test.tsx`, `src/lib/verrousEcritures.test.ts`, le banc (`outils/captures/fauxSupabase.ts`,
+`debordements.mjs`), CLAUDE.md. Ni migration, ni policy, ni Edge Function. RGPD.md ne change pas : aucun traitement ne
+change — l'écran lit les accès client du compte connecté, qu'il pouvait déjà lire, et demande à la base un booléen par
+dossier.)
+
+**LA DÉCISION.** 23Q2Q2Q1-Q1, tranchée par le cabinet le 26/10/2026 sur la recommandation (B) : la liste des dossiers
+d'un membre de l'équipe ne montre que ceux que le cabinet lui ouvre — tous pour le chef, ses dossiers assignés pour un
+comptable —, jamais un dossier qu'il ne lit que par un accès client. Un lot d'écran, sans migration : `dossiers_select`
+lit toujours les accès client.
+
+**CE QUI SE PASSAIT.** `dossiers_select` rend un dossier à qui `admin_du_dossier` l'ouvre OU à qui en a un accès client.
+La liste du cabinet — la barre latérale (`lib/listeDossiers.ts`), le tableau de bord (`DossiersList`) — ne filtrait ni
+sur le cabinet ni sur l'assignation : un comptable resté client d'un dossier (23Q2Q2-Q1) le voyait parmi ses dossiers,
+et ses onglets s'y ouvraient sur ses seuls droits de client — ses pièces, les catégories —, taisant comme vides les
+écritures, la TVA, que la base ne lui ouvre pas ; le plan du dossier s'y refusait (42501), et la page le disait comme
+une panne. La phrase de la page Équipe (« un comptable ne voit que ceux qui lui sont assignés explicitement
+ci-dessous ») était fausse pour lui ; elle est vraie désormais.
+
+**LES ENDROITS, ÉTABLIS.** Côté cabinet, trois écrans listent ou ouvrent des dossiers : la barre latérale, le tableau de
+bord (ses lignes, ses tuiles — « Dossiers suivis », « Pièces à valider », « À régler » —, ses priorités, son activité
+récente) et la page d'un dossier (une adresse directe). Hors d'atteinte ou déjà justes : la page de l'équipe (le chef,
+filtrée sur son cabinet), l'export d'un cabinet et la page du super-administrateur (ouverts à tout), les RIB à confirmer
+(`dossiers_au_rib_a_confirmer` filtre lui-même sur `admin_du_dossier`), le nom d'un dossier dans le journal d'une pièce
+(`marquesDeLaPieceLecture`, les noms seuls), la recherche (elle filtre ces listes), l'espace client (`AuthContext`).
+
+**LA RÈGLE (`lib/dossiersOuverts.ts`, pure).** Un dossier rendu où le compte n'a AUCUN accès client lui est ouvert par
+`admin_du_dossier` : c'est la seule autre branche de la policy. Un dossier où il en a un ne reste que si la base le dit,
+par `admin_du_dossier` elle-même, demandée pour lui seul (`dossiersAVerifier`) — la fonction qui ouvre les onglets,
+jamais une règle recopiée : un comptable ne lit pas ses assignations (`dossier_assignations_all`, au chef seul). Un
+échec tombe du côté FERMÉ : des accès lus en partie, aucun dossier, « faute de savoir lesquels le cabinet lui ouvre » ;
+une ouverture illisible ou jamais demandée, pas ce dossier ; et le motif le dit — jamais un vide. Ce que la règle
+suppose de la base est confronté à l'export (`dossiersOuverts.test.ts`) : une seule policy de lecture sur `dossiers`, à
+ces deux branches, et une `admin_du_dossier` qui ouvre au super-administrateur, au chef et au membre assigné sans lire
+`memberships` ; la production, lue au catalogue seul le 27/10/2026, est identique (la policy, son texte ; la fonction,
+exécutable par `authenticated`, ne lit pas `memberships`).
+
+**LES LECTURES (`lib/dossiersOuvertsLecture.ts`).** Les accès client du compte, lus EN ENTIER (`lireTout`) et filtrés
+sur lui — un chef lit aussi ceux des clients de ses dossiers (`memberships_select`) ; l'ouverture par
+`supabase.rpc('admin_du_dossier')`, dont seul un booléen se lit (un refus, une réponse d'un autre type, une requête qui
+lève : illisible, avec son motif). Aucune ne rejette.
+
+**LES ÉCRANS.**
+- La barre latérale : `useListeDossiers` reçoit le compte connecté (nul pour un client : rien ne se lit) ; elle garde la
+  liste AVEC le compte pour lequel elle l'a lue (un autre compte repart en chargement) ; le motif d'une vérification
+  ratée rejoint celui d'une liste tronquée (« Liste des dossiers incomplète (…) »), et « Aucun dossier pour l'instant »
+  ne se dit que d'une liste vérifiée.
+- Le tableau de bord : ses lignes, ses tuiles, ses priorités et ses dépôts récents ne portent que les dossiers ouverts ;
+  une vérification ratée se dit comme une liste lue en partie — la carte « Données indisponibles », son motif,
+  « Réessayer » —, et aucun chiffre ne s'affiche.
+- La page d'un dossier lit son ouverture avec son identité (gardée avec l'identifiant lu ; « Réessayer » la relit ; une
+  réponse du dossier quitté ne s'écrit pas sur le suivant). Fermé au compte : son nom, puis « Ce dossier ne t'est pas
+  ouvert dans l'espace du cabinet : tu ne le vois que par l'accès client de ton compte, que cet espace n'ouvre pas. Ses
+  écrans ne s'affichent pas ici — ils n'en montreraient que ce qu'un client lit, et le reste paraîtrait vide. » et
+  « S'il appartient à ton cabinet, le chef du cabinet peut te l'assigner depuis la page Équipe. » — ni onglet, ni barre
+  d'onglets, ni geste de l'en-tête, ni assistant. Illisible : la page le dit, ne monte rien, et « Réessayer » relit.
+  Avant le retour de l'ouverture, les refus qui en découlent (le plan, en 42501) ne se disent pas : la page attend.
+- La fenêtre de 23Q2Q2-Q1 dit désormais, du rôle « Comptable » : « elle ne verra que les dossiers que tu lui assignes,
+  même parmi ceux dont elle est cliente » — vrai de la liste, du tableau de bord et de la barre ; l'adresse directe d'un
+  autre dit qu'il ne lui est pas ouvert.
+
+**LES PREUVES.**
+- Rouges avant : les tests finals joués contre les sources d'hier (les deux modules neufs et les tests d'aujourd'hui en
+  place) — 19 en échec sur 381 dans les neuf fichiers : 4 de la barre latérale, 5 de la page d'un dossier, 4 du tableau
+  de bord, 2 du garde transversal, 2 du crochet de la liste, 1 du module des comptes et 1 de la page de l'équipe (la
+  phrase) ; verts après. Passent contre hier, comme il se doit : les gardes symétriques (un dossier dont il est client
+  et que le cabinet lui ouvre reste ; l'accès d'un autre compte ne retire rien ; un client ne lit rien ; l'ouverture du
+  dossier quitté, revenue tard, ne remplace rien) et les tests des deux modules, seuls.
+- Les mutations, chacune seule, posées sur le fichier, jouées par les tests de son module et de ses écrans (le garde
+  transversal filtré sur la page d'un dossier), le fichier rendu ensuite à son empreinte : 48, toutes tuées — la règle
+  13 (l'ouverture demandée partout, en double, sur des accès illisibles ; ces accès qui laissent tout passer ; un
+  dossier sans accès retiré ; un fermé gardé ; une ouverture illisible ou jamais demandée gardée ; les motifs, leur
+  nombre, leur première raison, leur accord), les lectures 10 (le filtre sur le compte, une lecture partielle prise pour
+  entière, une réponse non booléenne, le refus ignoré ou sans son message, la fonction ou l'argument changés, une
+  requête qui lève prise pour une ouverture ou pour aucun accès, l'ouverture demandée partout), le crochet 6 (sans
+  filtre, les deux motifs, la liste d'un compte servie à un autre, une lecture sans compte, la lecture plus lente), la
+  coque 1 (la liste lue pour un client), le tableau de bord 6 (ses lignes, ses dépôts, la panne tue, l'accès supposé
+  sans compte, le chargement et « Réessayer » sans le compte), la page d'un dossier 11 (la fermeture tue, les onglets
+  sans l'ouverture, l'ouverture du dossier quitté valant pour le suivant ou écrite en dernier, le refus du plan dit trop
+  tôt, l'ouverture illisible tue, l'assistant monté, « Réessayer » qui ne relit pas, l'en-tête et ses gestes, la phrase
+  de ce qui l'ouvrirait, la raison d'une ouverture illisible), la phrase de la fenêtre 1.
+- Le garde des verrous (`verrousEcritures.test.ts`) a vu la RPC neuve : un `rpc` y est une écriture tant que sa nature
+  n'est pas déclarée ; `rpc:admin_du_dossier` l'est, en lecture, avec sa raison. Le garde transversal la compte parmi
+  les lectures, et le faux client y répond comme la base au chef.
+- Le lint : 63 avertissements, les mêmes (fichier, règle) que la référence. Un 64ᵉ était venu — `exhaustive-deps` sur le
+  `load` du tableau de bord, qui lisait le compte dans le rendu — : `load` reçoit désormais le compte, et le chargement
+  le suit (`[compte]`).
+- La suite, test par test, sous Paris et le Node 22 de la CI, avant ce lot (sur la tête de 23Q2Q2-Q1) et après : 14 726
+  tests verts → 14 778 verts, 475 → 479 fichiers ; aucun en échec, disparu ni changé d'état ; 52 apparus (15 de la
+  règle, 13 des lectures, 3 du crochet, 7 de la barre, 7 de la page d'un dossier, 5 du tableau de bord, 2 du garde
+  transversal).
+- Le banc (`outils/captures/`) : une passe neuve, `membre` (`debordements.mjs <largeur> membre`) — le compte du banc en
+  « Comptable », assigné au cabinet infirmier (d1) et à l'atelier (d7), client de Marc Petit (d3) ; la fonction du banc
+  `admin_du_dossier` répond comme la base, et la table des dossiers rend au membre ce que `dossiers_select` lui
+  rendrait. Ses trois visites VÉRIFIENT ce qu'elles mesurent — le tableau de bord sans Marc Petit, la barre latérale
+  sans lui, la page de d3 qui dit sa fermeture, sans barre d'onglets ni assistant — : 0 débordement à 390, 720, 1 024,
+  1 280 et 1 440 pixels. Jouée contre les sources d'hier, serveur relancé sur elles (le défaut planté), elle tombe à la
+  première visite : « tableau de bord du membre : Atelier Bernard Conseil, Cabinet infirmier Moreau, Marc Petit ». Les
+  passes d'hier : 0 débordement et 0 bouton recouvert à 390, 720, 1 024, 1 280 et 1 440 pixels (197 visites, 287 boutons
+  sondés dans 62 fenêtres à chaque passe — la page de chaque dossier s'y ouvre au chef), et dans les deux passes du
+  client à 390 pixels (39 visites, 114 boutons dans 29 fenêtres ; 48 visites, 122 boutons dans 31 fenêtres). Après le
+  dernier changement du tableau de bord, la passe du membre rejouée à 390 et 1 440 pixels, et celle du cabinet à 1 440 :
+  de même. Le navigateur n'a reçu aucun mandataire (aucune option `proxy`), toute requête hors du serveur local coupée.
+- La production, lue au catalogue seul le 27/10/2026, aucune valeur d'une ligne : `dossiers_select`, seule policy de
+  lecture de `dossiers`, au texte de l'export ; `memberships_select` ouvre au compte ses propres accès ;
+  `admin_du_dossier`, exécutable par `authenticated`, ne lit pas `memberships`.
+
+**CE QUI CHANGERA EN PRODUCTION.** Rien en base. Après la fusion, la page publiée par `deploy.yml`. Pour un chef, rien
+de visible — une lecture de ses accès client, en général vide, et, à l'ouverture de chaque dossier, un appel
+d'`admin_du_dossier` ; pour un comptable resté client d'un dossier non assigné, ce dossier quitte sa liste et son
+tableau de bord.
+
+**LES RISQUES.** La page d'un dossier ne monte plus ses onglets sans la réponse d'`admin_du_dossier` : une panne de
+cette lecture retient tous les dossiers, dite et réessayable — le côté fermé, voulu. La barre garde, pour un dossier
+fermé ouvert par son adresse, « Ce dossier » et l'arbre de ses écrans, qui mènent tous à la même page qui le dit. Le
+retour arrière : le commit défait ; aucune donnée.
