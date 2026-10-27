@@ -37,8 +37,9 @@
 // src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/ventilationBanque.ts,
 // src/lib/tvaDuReleve.ts, src/lib/reglementGroupe.ts, src/lib/cotisationRapprochee.ts, src/lib/compteDeBilan.ts, src/lib/amortissements.ts,
 // src/lib/baremeKilometrique.ts, src/lib/forfaitKilometrique.ts, src/lib/validationExercice.ts, src/lib/format.ts et src/lib/controles.ts
-// — et, depuis l'étape VF9b (chantier EC-Q3, ligne 28.65), src/lib/facturesSources.ts et src/lib/encaissementsFactures.ts —
-// plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
+// — et, depuis l'étape VF9b (chantier EC-Q3, ligne 28.65), src/lib/facturesSources.ts et src/lib/encaissementsFactures.ts ;
+// depuis l'étape VF9c, src/lib/ventesDeLaChecklist.ts et src/lib/mouvementsDesVentes.ts — plutôt qu'importées, ces
+// fichiers n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
 // extrait `piecesAComptabiliser`, `paiementsDesPieces`, `rattachementsTresorerie` et `analyserEcritures`
 // et les exécute contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que
@@ -59,7 +60,9 @@
 // d'écritures — ce qu'une pièce doit produire, ligne pour ligne, copié de src/lib/ecritures.ts et
 // src/lib/engagement.ts — par src/lib/agentComptableAnalyse.test.ts. Les blocs FACTURES SOURCES et VIREMENT MIXTE
 // (l'exemplaire d'une facture source, qui ne compte nulle part, et ce qu'un virement mixte paie aux exemplaires) le sont
-// par src/lib/agentComptableFacturesSources.test.ts, et avec le générateur par src/lib/agentComptableAnalyse.test.ts.
+// par src/lib/agentComptableFacturesSources.test.ts, et avec le générateur par src/lib/agentComptableAnalyse.test.ts. Le
+// bloc VENTES DU RELEVÉ (les mouvements réservés à des encaissements de factures, et les encaissements sans mouvement) l'est
+// par src/lib/agentComptableVentesDuReleve.test.ts.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
@@ -298,6 +301,177 @@ function partsEncaissees(
     .map((x) => x.part)
 }
 // ── FIN VIREMENT MIXTE ───────────────────────────────────────────────────────────────────────────
+
+// ── DÉBUT VENTES DU RELEVÉ ───────────────────────────────────────────────────────────────────────
+// LES MOUVEMENTS RÉSERVÉS ET LES ENCAISSEMENTS SANS MOUVEMENT — copié de src/lib/ventesDeLaChecklist.ts, de
+// src/lib/mouvementsDesVentes.ts et de src/lib/encaissementsFactures.ts (chantier EC-Q3, étapes VF5a1, VF5e et VF5f ; repris
+// par l'assistant à l'étape VF9c, ligne 28.65). Deux points de la Checklist d'un dossier qui a basculé, que
+// `points_a_traiter` redit sous leurs libellés :
+//   - les mouvements RÉSERVÉS à des encaissements de factures, à classer : un encaissement vivant d'une facture source les
+//     cite et les justifie, et rien ne les classe encore par leurs encaissements — la garde G2 ne leur laisse aucun autre
+//     classement (`refusDuClassementDuReleve`, ses deux derniers refus) ; datés d'un exercice que la validation fige, ils ne
+//     se comptent plus : rien ne les classe plus ;
+//   - les ENCAISSEMENTS de factures sources enregistrés SANS MOUVEMENT, par un moyen du relevé (virement, prélèvement,
+//     chèque, carte, effet) : ni retirés, ni contre-passations, ni « n'ayant pas eu lieu » (une contre-passation vivante sans
+//     mouvement le dit) ; figés ou non — daté d'un exercice validé, un encaissement se rattache encore au mouvement d'après
+//     qui le paie (étape VF7a).
+// COPIÉ SANS CE QUI NE DÉCIDE D'AUCUN COMPTE : ni l'auteur d'un encaissement (« proposé par le client » : aucune clé ne le
+// dit, et il demanderait les accès du dossier), ni ce que la fiche d'un mouvement en montre (ses encaissements, leurs
+// factures) — son état seul se compte. Le bloc lit `compte`, `justifieSonMouvement`, `factureSource`, `ordreC`,
+// `EncaissementRow` et `VenteDuDossier` du bloc VIREMENT MIXTE, `FactureRow` du bloc FACTURES SOURCES, et `estFigee` du
+// bloc VALIDATION.
+//
+// Gardé par src/lib/agentComptableVentesDuReleve.test.ts, qui extrait ce bloc avec ces trois-là et l'exécute contre src/lib.
+
+// Un mouvement du relevé tel que la garde le lit : s'il est classé par ses encaissements, sa date, son dossier.
+interface MouvementDuReleveRow {
+  id: string; dossier_id: string; date: string; montant: number; encaissements_de_factures: boolean
+}
+
+// Un encaissement du registre, retirés et contre-passations compris, avec son moyen, sa date et l'instant de sa création :
+// l'ordre de la garde.
+interface EncaissementDuReleveRow extends EncaissementRow { date_encaissement: string; moyen: string; cree_le: string }
+
+// Une facture du dossier, telle que la garde la nomme : sa source et son numéro — jamais son client.
+interface FactureDuReleveRow extends Pick<FactureRow, "id" | "numero" | "source_de_la_vente"> { dossier_id: string }
+
+// Les ventes facturées du dossier, lues EN ENTIER : ses factures, le registre entier de leurs encaissements, son relevé.
+interface SourcesDuReleve {
+  dossierId: string
+  factures: readonly FactureDuReleveRow[]
+  encaissements: readonly EncaissementDuReleveRow[]
+  mouvements: readonly MouvementDuReleveRow[]
+}
+
+// La lecture : lue, ou incomplète avec le motif de son premier manque.
+type LectureDesVentesDuReleve =
+  | { dossierId: string; etat: "lue"; sources: SourcesDuReleve }
+  | { dossierId: string; etat: "incomplete"; motif: string }
+
+// Un mouvement classé par ses encaissements, ou réservé à eux.
+interface MouvementDeVente { id: string; etat: "classe" | "reserve" }
+
+type VentesDuReleve =
+  // La lecture d'un autre dossier que celui demandé : rien ne s'en décide.
+  | { etat: "en_cours" }
+  | { etat: "incomplete"; motif: string }
+  | { etat: "lue"; mouvements: ReadonlyMap<string, MouvementDeVente> }
+
+type VentesDeLaChecklist =
+  | { etat: "sans_objet" }
+  | { etat: "incomplete"; motif: string }
+  | { etat: "lue"; reserves: readonly MouvementDeVente[]; sansMouvement: readonly EncaissementDuReleveRow[] }
+
+// Les deux refus de la garde des mouvements (`garder_mouvement_reserve`, G2) qu'elle oppose à tout autre classement d'un
+// mouvement, sous leurs mots.
+const REFUS_GARDE_MOUVEMENTS = [
+  {
+    cle: "classe_par_ses_encaissements",
+    modele: "Ce mouvement est classé par ses encaissements : il ne reçoit aucun autre classement — le cabinet retire d'abord celui-ci.",
+  },
+  {
+    cle: "reserve",
+    modele: "Ce mouvement justifie un encaissement de la facture %, source de sa vente : il se classe par ses encaissements, et par rien d'autre.",
+  },
+] as const
+
+type CleRefusGardeMouvements = (typeof REFUS_GARDE_MOUVEMENTS)[number]["cle"]
+
+// La mise en forme de RAISE en PL/pgSQL : chaque « % » reçoit la valeur suivante, « %% » s'écrit « % ».
+function remplirModele(modele: string, valeurs: readonly string[]): string {
+  let i = 0
+  const texte = modele.replace(/%%|%/g, (m) => (m === "%%" ? "%" : valeurs[i++] ?? ""))
+  if (i !== valeurs.length) throw new Error(`${valeurs.length} valeur(s) pour ${i} « % » : ${modele}`)
+  return texte
+}
+
+function refusDeLaGarde(cle: CleRefusGardeMouvements, ...valeurs: string[]): { cle: CleRefusGardeMouvements; message: string } {
+  const { modele } = REFUS_GARDE_MOUVEMENTS.find((r) => r.cle === cle) as (typeof REFUS_GARDE_MOUVEMENTS)[number]
+  return { cle, message: remplirModele(modele, valeurs) }
+}
+
+// L'ordre de la garde des mouvements : par la création, puis l'identifiant, octet par octet.
+function ordreDesEncaissements(a: Pick<EncaissementDuReleveRow, "cree_le" | "id">, b: Pick<EncaissementDuReleveRow, "cree_le" | "id">): number {
+  return ordreC(a.cree_le, b.cree_le) || ordreC(a.id, b.id)
+}
+
+// Les encaissements — contre-passations comprises — de factures SOURCES, non retirés, qui citent ce mouvement et le
+// justifient : ceux que la garde regarde pour le dire réservé. Dans l'ordre de la liste reçue.
+function encaissementsDuMouvement<E extends EncaissementRow>(mouvementId: string, encaissements: readonly E[], vente: VenteDuDossier): E[] {
+  return encaissements.filter((x) => x.ligne_bancaire_id === mouvementId && compte(x)
+    && factureSource(x.facture_id, vente) && justifieSonMouvement(x, encaissements))
+}
+
+// Ce que la garde des mouvements opposerait à tout autre classement de ce mouvement : classé par ses encaissements, il ne
+// reçoit rien d'autre ; réservé, il ne se classe que par eux, et la base nomme la facture du premier, par sa création puis
+// son identifiant. Null : la garde laisse passer, comme hier.
+function refusDuClassementDuReleve(
+  mouvement: Pick<MouvementDuReleveRow, "id" | "encaissements_de_factures">,
+  encaissements: readonly EncaissementDuReleveRow[],
+  vente: Pick<SourcesDuReleve, "factures">,
+): { cle: CleRefusGardeMouvements; message: string } | null {
+  if (mouvement.encaissements_de_factures) return refusDeLaGarde("classe_par_ses_encaissements")
+  const premier = encaissementsDuMouvement(mouvement.id, encaissements, vente).sort(ordreDesEncaissements)[0]
+  if (!premier) return null
+  // Une facture validée porte toujours son numéro ; un `%` nul, `raise` l'écrirait `<NULL>`.
+  const numero = vente.factures.find((f) => f.id === premier.facture_id)?.numero ?? "<NULL>"
+  return refusDeLaGarde("reserve", numero)
+}
+
+// Le mouvement, s'il est classé par ses encaissements ou réservé à eux ; null sinon.
+function mouvementDeVente(m: MouvementDuReleveRow, sources: Pick<SourcesDuReleve, "factures" | "encaissements">): MouvementDeVente | null {
+  const refus = refusDuClassementDuReleve(m, sources.encaissements, sources)
+  if (refus === null) return null
+  return { id: m.id, etat: refus.cle === "classe_par_ses_encaissements" ? "classe" : "reserve" }
+}
+
+// Ce que le relevé d'un dossier basculé sait de ses ventes facturées : ses mouvements classés ou réservés, par
+// identifiant. La lecture d'un autre dossier vaut une lecture pas encore revenue : rien ne s'en décide.
+function ventesDuReleve(dossierId: string, lecture: LectureDesVentesDuReleve | null): VentesDuReleve {
+  if (lecture === null || lecture.dossierId !== dossierId) return { etat: "en_cours" }
+  if (lecture.etat === "incomplete") return { etat: "incomplete", motif: lecture.motif }
+  if (lecture.sources.dossierId !== dossierId) return { etat: "en_cours" }
+  const mouvements = new Map<string, MouvementDeVente>()
+  for (const m of lecture.sources.mouvements) {
+    if (m.dossier_id !== dossierId) continue
+    const vente = mouvementDeVente(m, lecture.sources)
+    if (vente) mouvements.set(m.id, vente)
+  }
+  return { etat: "lue", mouvements }
+}
+
+// Les encaissements (contre-passations comprises) de factures sources du dossier enregistrés sans mouvement : non retirés,
+// de factures sources, et que rien ne dit « n'avoir pas eu lieu ».
+function encaissementsEnregistresSansMouvement(s: Pick<SourcesDuReleve, "dossierId" | "factures" | "encaissements">): EncaissementDuReleveRow[] {
+  const sources = new Set(s.factures.filter((f) => f.dossier_id === s.dossierId && f.source_de_la_vente).map((f) => f.id))
+  return s.encaissements.filter((e) => e.dossier_id === s.dossierId && e.ligne_bancaire_id == null
+    && e.retire_le == null && sources.has(e.facture_id) && justifieSonMouvement(e, s.encaissements))
+}
+
+// Les moyens d'un encaissement dont le relevé porte le mouvement.
+const MOYENS_DU_RELEVE: readonly string[] = ["virement", "prelevement", "cheque", "carte", "effet"]
+
+// Les ventes facturées telles que la Vue d'ensemble les dit. `lecture` : nulle pour un dossier qui n'a pas basculé ;
+// `frontiere` : celle des exercices validés (bloc VALIDATION).
+function ventesDeLaChecklist(lecture: LectureDesVentesDuReleve | null, frontiere: string | null): VentesDeLaChecklist {
+  if (lecture === null) return { etat: "sans_objet" }
+  if (lecture.etat === "incomplete") return { etat: "incomplete", motif: lecture.motif }
+  const ventes = ventesDuReleve(lecture.dossierId, lecture)
+  // Une lecture d'un autre dossier que celui qu'elle dit : rien ne s'en décide.
+  if (ventes.etat !== "lue") return { etat: "incomplete", motif: "la lecture rendue n’est pas celle de ce dossier" }
+  const s = lecture.sources
+  return {
+    etat: "lue",
+    // Dans l'ordre du relevé lu, chacun jugé à SA date.
+    reserves: s.mouvements.flatMap((m) => {
+      const vente = ventes.mouvements.get(m.id)
+      return vente?.etat === "reserve" && !estFigee(m.date, frontiere) ? [vente] : []
+    }),
+    // Figés ou non : celui qu'un exercice validé fige se rattache encore au mouvement d'après (étape VF7a).
+    sansMouvement: encaissementsEnregistresSansMouvement(s).filter((e) => e.annule_id == null && MOYENS_DU_RELEVE.includes(e.moyen)),
+  }
+}
+// ── FIN VENTES DU RELEVÉ ─────────────────────────────────────────────────────────────────────────
 
 // Où une pièce s'écrit : le compte de sa catégorie, ou — pour la facture d'un bien IMMOBILISÉ — le compte
 // d'immobilisation de sa nature (l'écriture d'ACQUISITION). L'immobilisation décide aussi du compte de TVA
@@ -2653,7 +2827,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : le statut de TVA du dossier quand il est à préciser, écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, déclarations de TVA dont l'écriture de liquidation manque ou ne suit plus la déclaration, paiements ou remboursements de TVA dont l'écriture ne suit plus le mouvement, périodes de TVA dont la déclaration n'est pas enregistrée (dossier assujetti), et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : le statut de TVA du dossier quand il est à préciser, écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, déclarations de TVA dont l'écriture de liquidation manque ou ne suit plus la déclaration, paiements ou remboursements de TVA dont l'écriture ne suit plus le mouvement, périodes de TVA dont la déclaration n'est pas enregistrée (dossier assujetti), et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Pour un dossier qui compte ses ventes par ses factures (resume_dossier : ventes_par_les_factures), aussi les mouvements réservés à des encaissements de factures, à classer, et les encaissements de factures par un moyen du relevé (virement, prélèvement, chèque, carte, effet) sans mouvement — deux points de la Checklist — ; et ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer, qui n'en est pas un : ce que la validation de l'exercice refuserait, et que l'onglet Écritures dit — { nombre, par_etat (a_ecrire, a_reecrire, a_retirer, ne_s_ecrit_pas : une source que son motif retient), premieres : les six premières, nommées par leur numéro }, ou « indisponible : … » quand la base ne l'a pas dit. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -2719,6 +2893,9 @@ function jourAParis(instant: Date): string {
 // réglage LU à `false` — n'y voit rien : ni lecture, ni clé, ni ligne de plus. Toute autre valeur tombe du côté FERMÉ :
 // la garde s'applique, et sa phrase dit que la source des ventes n'a pas pu être lue — jamais une conclusion tirée
 // d'une valeur non lue. La bascule est un INSTANT (`timestamptz`) : elle se dit au jour de Paris.
+// DEPUIS L'ÉTAPE VF9c, la garde ne vaut plus que pour ce réglage ILLISIBLE : LU vrai, les outils lisent les ventes
+// facturées et les disent (voir « LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ », plus bas) ; un réglage qui ne se lit
+// pas ne se donne pas pour vrai, et garde le côté fermé de VF9a.
 interface GardeDesVentes {
   // `true` lu, ou `null` : une valeur qui ne se lit pas ne se donne ni pour vraie ni pour fausse.
   reglage: true | null
@@ -2748,7 +2925,12 @@ function gardeDesVentes(reglage: unknown, depuis: unknown): GardeDesVentes | nul
 // attente) : aucun n'écrase l'autre.
 function avecLaGarde(resultat: Record<string, unknown>, ventes: GardeDesVentes | null, suite: string): Record<string, unknown> {
   if (!ventes) return resultat
-  const phrase = `${ventes.constat}. ${suite}`
+  return joindreAvertissement(resultat, `${ventes.constat}. ${suite}`)
+}
+
+// Un avertissement JOINT à celui que le résultat portait déjà : celui de la garde (VF9a), celui des ventes facturées pas
+// écrites à jour (VF9c).
+function joindreAvertissement(resultat: Record<string, unknown>, phrase: string): Record<string, unknown> {
   return { ...resultat, avertissement: typeof resultat.avertissement === "string" ? `${resultat.avertissement} ${phrase}` : phrase }
 }
 
@@ -2758,6 +2940,132 @@ function avecLaGarde(resultat: Record<string, unknown>, ventes: GardeDesVentes |
 // par ses encaissements : ni exemplaire écarté, ni virement mixte. Le vide y est un fait, et le dossier ne lit rien de plus.
 function rienALire<T>(): Promise<LectureComplete<T>> {
   return Promise.resolve({ lignes: [], complete: true, motif: null })
+}
+
+// LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (VF9c, chantier EC-Q3, ligne 28.65 ; conception : HISTORIQUE.md, « VF9,
+// L'ASSISTANT DEVANT LES VENTES FACTURÉES : LA CONCEPTION », § 2 et 3). Un réglage LU vrai lève la garde de VF9a : les
+// outils lisent les ventes facturées et les disent — `resume_dossier` les compte, `lister_ecritures` dit la source de
+// chaque ligne, `lister_pieces` l'exemplaire d'une facture source, `lister_comptes` les ventes dont les écritures ne sont
+// pas à jour, `points_a_traiter` juge comme la Checklist et dit trois clés de plus ; la consigne porte un paragraphe. Un
+// réglage illisible garde le côté fermé de VF9a ; un dossier qui n'a pas basculé ne lit rien de plus.
+//
+// UNE FACTURE SE NOMME PAR SON NUMÉRO, JAMAIS PAR SON CLIENT (§ 2, point 8) : `tiers_nom` nommerait un patient (RGPD.md,
+// § 8.7). Aucune lecture ne le demande. Mais le libellé qu'une écriture de vente facturée porte au brouillon le CITE
+// (« Encaissement, facture F… — <client> », src/lib/ecrituresVentesFacturees.ts) : `lister_ecritures` le recompose du
+// numéro, sans jamais rendre celui du brouillon ; et l'exemplaire d'une facture source paraît sous ce numéro, sans le tiers
+// ni le nom de fichier qui nommeraient son client.
+
+// Les comptes que la consigne nomme pour la vente facturée — dupliqués de src/lib/comptes.ts (étape VF4a) : le produit
+// d'une facture source, des services puis des biens, la TVA collectée en attente, les valeurs à l'encaissement et la caisse
+// qui reçoivent un encaissement, les services bancaires qui reçoivent les frais d'un mouvement classé par ses encaissements.
+const COMPTE_PRESTATIONS_DE_SERVICES = "706000"
+const COMPTE_VENTES_DE_BIENS = "707000"
+const COMPTE_TVA_COLLECTEE_EN_ATTENTE = "445800"
+const COMPTE_VALEURS_A_L_ENCAISSEMENT = "511000"
+const COMPTE_CAISSE = "530000"
+const COMPTE_SERVICES_BANCAIRES = "627000"
+
+// Une source de vente facturée en défaut, telle que `ventes_facturees_de_l_exercice` la rend : à écrire, à réécrire, à
+// retirer, ou qui ne s'écrit pas — ce que la validation de l'exercice refuserait (VF7b). Son nom ne porte que des numéros
+// et des dates (« la facture F… », « l'encaissement du … de la facture … », « le mouvement du … »).
+interface SourceEnDefautRow {
+  source: string; source_id: string; jour: string; etat: string; motif: string | null; detail: string | null; nom: string | null
+}
+
+// LES VENTES FACTURÉES QUE LA VALIDATION REFUSERAIT, LUES DANS LA BASE : `ventes_facturees_de_l_exercice` (migration
+// `validation_des_ventes_facturees`) recompose d'un bloc ce que chaque source écrit et le juge, de la frontière des exercices
+// validés (exclue) au 31 décembre de l'exercice donné — une règle que la base tient déjà, que l'assistant ne recopie pas
+// (conception, § 3). Elle s'exécute aux droits de l'appelant, que le rôle du service seul détient (relevé au catalogue le
+// 27/10/2026 ; src/lib/agentComptableVentesDuReleve.test.ts refuse tout retrait de ce droit dans l'export), sur le dossier
+// que le serveur a vérifié, jamais sur un paramètre du modèle. Elle rend des LIGNES : PostgREST les plafonne comme celles
+// d'une table, d'où la pagination, sur un tri total — une source s'y dit une fois, par son genre et son identifiant.
+async function sourcesEnDefaut(
+  admin: ReturnType<typeof createClient>, dossierId: string, annee: number,
+): Promise<{ lues: SourceEnDefautRow[] } | { motif: string }> {
+  const lecture = await lireTout<SourceEnDefautRow>((debut, fin) =>
+    admin.rpc("ventes_facturees_de_l_exercice", { p_dossier_id: dossierId, p_annee: annee }, { count: "exact" })
+      .order("jour").order("source").order("source_id").range(debut, fin))
+  return lecture.complete ? { lues: lecture.lignes } : { motif: lecture.motif ?? "lecture incomplète" }
+}
+
+// L'ordre de la base : le jour, le genre — la facture, l'avoir, l'encaissement, puis le mouvement —, l'identifiant. Les
+// pages se lisent sur un autre tri total (le genre en texte) : celui-ci se refait sur la liste entière.
+const RANG_DU_GENRE: Readonly<Record<string, number>> = { facture: 0, avoir: 1, encaissement: 2 }
+
+// La clé de `points_a_traiter` : leur nombre, leur nombre par état — les quatre toujours dits, zéro compris —, et les six
+// premières dans l'ordre de la base, nommées.
+function ventesFactureesEnDefaut(lignes: readonly SourceEnDefautRow[]) {
+  const parEtat: Record<string, number> = { a_ecrire: 0, a_reecrire: 0, a_retirer: 0, ne_s_ecrit_pas: 0 }
+  for (const l of lignes) parEtat[l.etat] = (parEtat[l.etat] ?? 0) + 1
+  const ordonnees = [...lignes].sort((a, b) => ordreC(a.jour, b.jour)
+    || (RANG_DU_GENRE[a.source] ?? 3) - (RANG_DU_GENRE[b.source] ?? 3) || ordreC(a.source_id, b.source_id))
+  return {
+    nombre: lignes.length,
+    par_etat: parEtat,
+    premieres: ordonnees.slice(0, 6).map((l) => ({ nom: l.nom, jour: l.jour, etat: l.etat, motif: l.motif, detail: l.detail })),
+  }
+}
+
+// Les trois clés de `points_a_traiter` d'un dossier qui a basculé. Les deux premières sont des points de la Checklist,
+// sous leurs libellés : les mouvements réservés (Banque, filtre « Non rapprochés », leur fiche les classe) et les
+// encaissements sans mouvement (Factures, vue « Règlements »). La troisième n'en est pas un : un préalable de la validation
+// (VF7c), que l'onglet Écritures dit. Ce qui ne se lit pas se dit « indisponible », sous la clé qu'il aurait remplie —
+// jamais un zéro.
+function clesDesVentesFacturees(releve: VentesDeLaChecklist, enDefaut: { lues: SourceEnDefautRow[] } | { motif: string }) {
+  const nonLu = releve.etat === "lue" ? null : `indisponible : ${releve.etat === "incomplete" ? releve.motif : "les ventes facturées ne sont pas lues"}`
+  return {
+    mouvements_reserves_a_des_encaissements_de_factures_a_classer: releve.etat === "lue" ? releve.reserves.length : nonLu,
+    encaissements_de_factures_par_un_moyen_du_releve_sans_mouvement: releve.etat === "lue" ? releve.sansMouvement.length : nonLu,
+    ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer: "motif" in enDefaut ? `indisponible : ${enDefaut.motif}` : ventesFactureesEnDefaut(enDefaut.lues),
+  }
+}
+
+// Ce que `lister_comptes` dit des ventes facturées d'un dossier basculé, jusqu'au 31 décembre de l'exercice vérifié : ses
+// totaux ne comptent une vente facturée que telle qu'elle est écrite. Rien quand toutes sont à jour.
+function avertissementDesVentes(enDefaut: { lues: SourceEnDefautRow[] } | { motif: string }, exercice: number): string | null {
+  if ("motif" in enDefaut) {
+    return `Les écritures des ventes facturées de ce dossier n'ont pas pu être vérifiées (${enDefaut.motif}) : ces totaux les comptent peut-être mal — ne cite ni le chiffre d'affaires, ni les recettes, ni la TVA collectée de ce dossier sans le dire, et renvoie à l'onglet Écritures, section « Ventes facturées ».`
+  }
+  if (enDefaut.lues.length === 0) return null
+  return `${enDefaut.lues.length} source(s) de vente facturée — facture, avoir, encaissement ou mouvement — n'ont pas leurs écritures à jour jusqu'au 31/12/${exercice} (à écrire, à réécrire, à retirer, ou qui ne s'écrivent pas ; points_a_traiter les nomme) : ces totaux n'en comptent que ce qui est écrit. Ne cite ni le chiffre d'affaires, ni les recettes, ni la TVA collectée de ce dossier sans le dire ; l'onglet Écritures, section « Ventes facturées », les écrit.`
+}
+
+// Une facture ou un avoir, tels que `lister_ecritures` les nomme : leur numéro et leur type — jamais leur client.
+interface FactureNommeeRow { id: string; type: string; numero: string | null }
+// Un encaissement, tel que `lister_ecritures` le nomme : sa facture, et s'il en est la contre-passation.
+interface EncaissementNommeRow { id: string; facture_id: string; annule_id: string | null }
+// Une ligne du brouillon telle que `lister_ecritures` la lit sur un dossier qui compte ses ventes par ses factures.
+interface LigneDeVenteRow {
+  date: string; compte: string; libelle: string; sens: string; montant: number; piece_id: string | null
+  facture_id: string | null; encaissement_id: string | null; ligne_bancaire_id: string | null
+}
+
+// Une ligne du brouillon et sa SOURCE : la pièce, la facture, l'avoir, l'encaissement, le mouvement que ses encaissements
+// classent — ou rien (`null`), une autre écriture sans pièce que la consigne décrit (un mouvement affecté, une dotation…).
+// Le libellé d'une facture, d'un avoir ou d'un encaissement se RECOMPOSE de son numéro, comme l'application l'écrit moins
+// son client ; celui du brouillon ne se rend jamais. Une facture que la lecture n'a pas rendue : aucun libellé.
+function ligneEtSaSource(
+  e: LigneDeVenteRow, factures: ReadonlyMap<string, FactureNommeeRow>, encaissements: ReadonlyMap<string, EncaissementNommeRow>,
+  classes: ReadonlySet<string>,
+) {
+  const numero = (f: FactureNommeeRow) => f.numero ?? "sans numéro"
+  let libelle: string | null = e.libelle
+  let source: string | null = null
+  if (e.facture_id != null) {
+    const f = factures.get(e.facture_id)
+    source = f?.type === "avoir" ? "avoir" : "facture"
+    libelle = f ? `${f.type === "avoir" ? "Avoir" : "Facture"} ${numero(f)}` : null
+  } else if (e.encaissement_id != null) {
+    const encaissement = encaissements.get(e.encaissement_id)
+    const f = encaissement ? factures.get(encaissement.facture_id) : undefined
+    source = "encaissement"
+    libelle = encaissement && f ? `${encaissement.annule_id == null ? "Encaissement" : "Contre-passation"}, facture ${numero(f)}` : null
+  } else if (e.piece_id != null) {
+    source = "piece"
+  } else if (e.ligne_bancaire_id != null && classes.has(e.ligne_bancaire_id)) {
+    source = "mouvement_d_encaissements"
+  }
+  return { date: e.date, compte: e.compte, libelle, sens: e.sens, montant: e.montant, piece_id: e.piece_id, source }
 }
 
 async function executerOutil(ctx: OutilContexte, nom: string, input: Record<string, unknown>): Promise<unknown> {
@@ -2815,6 +3123,31 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       exercices_valides: r6.lignes.map((v) => v.annee),
     }
     if (!ventes) return resume
+    // VF9c : un dossier qui compte ses ventes par ses factures dit sa bascule et sa date, et compte ses factures et ses
+    // avoirs sources, les encaissements vivants de ses factures sources (ni retirés, ni contre-passations), et, à part de
+    // pieces_validees, les pièces validées qui sont l'exemplaire d'une facture source — elles ne comptent pas. Des comptes
+    // sans ligne (`head`), chacun lu ou refusé : jamais un zéro sur ce qui n'a pas été compté.
+    if (ventes.reglage === true) {
+      const [c1, c2, c3, c4] = await Promise.all([
+        admin.from("factures_emises").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "validee").eq("source_de_la_vente", true).eq("type", "facture"),
+        admin.from("factures_emises").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "validee").eq("source_de_la_vente", true).eq("type", "avoir"),
+        admin.from("encaissements_factures").select("id, factures_emises!inner(id)", { count: "exact", head: true }).eq("dossier_id", dossierId).is("retire_le", null).is("annule_id", null).eq("factures_emises.source_de_la_vente", true),
+        admin.from("pieces").select("id, factures_emises!inner(id)", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "validee").eq("factures_emises.source_de_la_vente", true),
+      ])
+      const nonComptes = [c1, c2, c3, c4].filter((c) => c.error || typeof c.count !== "number")
+      if (nonComptes.length > 0) {
+        return { erreur: `Lecture partielle : ${nonComptes.map((c) => c.error?.message ?? "compte non annoncé").join(" ; ")} — ne tire aucune conclusion chiffrée de ce résultat, dis à l'utilisateur que ces données sont indisponibles pour l'instant.` }
+      }
+      return {
+        ...resume,
+        ventes_par_les_factures: true,
+        ventes_par_les_factures_depuis: ventes.depuis,
+        factures_sources: c1.count,
+        avoirs_sources: c2.count,
+        encaissements_vivants_de_factures_sources: c3.count,
+        pieces_validees_exemplaires_d_une_facture_source: c4.count,
+      }
+    }
     return {
       ...resume,
       ventes_par_les_factures: ventes.reglage,
@@ -2849,6 +3182,15 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const luValides = await lireTout<{ annee: number }>((debut, fin) =>
       admin.from("exercices_valides").select("annee", { count: "exact" }).eq("dossier_id", dossierId).order("annee").order("dossier_id").range(debut, fin))
     if (!luValides.complete) return { erreur: `Exercices validés illisibles (${luValides.motif}) — ne conclus rien sur les soldes des comptes de ce dossier.` }
+    // VF9c : un dossier qui compte ses ventes par ses factures dit, avec sa balance, les sources de vente facturée dont les
+    // écritures ne sont pas à jour jusqu'au 31 décembre de l'exercice demandé — de l'exercice en cours, toutes années
+    // confondues —, que la base juge (`sourcesEnDefaut`) ; illisibles, l'avertissement le dit. Jointe à celui d'aujourd'hui.
+    if (ventes?.reglage === true) {
+      const exercice = annee ?? Number(aujourdHuiCabinet().slice(0, 4))
+      const phrase = avertissementDesVentes(await sourcesEnDefaut(admin, dossierId, exercice), exercice)
+      const balance = balanceDesComptes(lu.lignes, luANouveaux.lignes, luReportes.lignes, luValides.lignes.map((v) => v.annee), periode)
+      return phrase === null ? balance : joindreAvertissement(balance, phrase)
+    }
     return avecLaGarde(
       balanceDesComptes(lu.lignes, luANouveaux.lignes, luReportes.lignes, luValides.lignes.map((v) => v.annee), periode),
       ventes,
@@ -2860,20 +3202,45 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const annee = typeof input.annee === "number" ? input.annee : undefined
     const { date_debut, date_fin } = bornesAnnee(annee)
     const limite = Math.min(typeof input.limite === "number" ? input.limite : 100, 200)
-    let q = admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id", { count: "exact" }).eq("dossier_id", dossierId)
+    // VF9c : un dossier dont la source des ventes n'est pas LUE fausse — il a basculé, ou elle ne se lit pas — lit aussi ce
+    // qui désigne la source de chaque ligne : une écriture de vente facturée n'a pas de pièce, et son libellé cite le
+    // client de sa facture, qui ne part jamais au modèle. Un dossier qui n'a pas basculé : la lecture et la liste d'hier.
+    const lireLesVentes = ventes !== null
+    let q = admin.from("ecritures_brouillon").select(lireLesVentes ? "date, compte, libelle, sens, montant, piece_id, facture_id, encaissement_id, ligne_bancaire_id" : "date, compte, libelle, sens, montant, piece_id", { count: "exact" }).eq("dossier_id", dossierId)
     if (typeof input.compte === "string" && input.compte) q = q.eq("compte", input.compte)
     if (date_debut) q = q.gte("date", date_debut).lte("date", date_fin!)
     const { data, error, count } = await q.order("date", { ascending: false }).limit(limite)
     if (error) return { erreur: error.message }
-    return resultatListe(data, count, "ecritures")
+    if (!lireLesVentes) return resultatListe(data, count, "ecritures")
+    // Les numéros des factures et des avoirs, la facture de chaque encaissement, et les mouvements que leurs encaissements
+    // classent : lus en entier, ou l'outil refuse — jamais un libellé du brouillon rendu faute de pouvoir le recomposer.
+    const [rFacturesNommees, rEncaissementsNommes, rClasses] = await Promise.all([
+      lireTout<FactureNommeeRow>((d, f) =>
+        admin.from("factures_emises").select("id, type, numero", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      lireTout<EncaissementNommeRow>((d, f) =>
+        admin.from("encaissements_factures").select("id, facture_id, annule_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      lireTout<{ id: string }>((d, f) =>
+        admin.from("lignes_bancaires").select("id", { count: "exact" }).eq("dossier_id", dossierId).eq("encaissements_de_factures", true).order("id").range(d, f)),
+    ])
+    const manquantes = [rFacturesNommees, rEncaissementsNommes, rClasses].filter((r) => !r.complete)
+    if (manquantes.length > 0) {
+      return { erreur: `Lecture partielle : ${manquantes.map((r) => r.motif).join(" ; ")} — les écritures des ventes facturées ne se disent pas sans leurs numéros ; ne conclus rien de ce résultat, dis à l'utilisateur que ces écritures sont indisponibles pour l'instant.` }
+    }
+    const factures = new Map(rFacturesNommees.lignes.map((f) => [f.id, f]))
+    const encaissements = new Map(rEncaissementsNommes.lignes.map((e) => [e.id, e]))
+    const classes = new Set(rClasses.lignes.map((m) => m.id))
+    const ecritures = ((data ?? []) as LigneDeVenteRow[]).map((e) => ligneEtSaSource(e, factures, encaissements, classes))
+    return resultatListe(ecritures, count, "ecritures")
   }
 
   if (nom === "lister_pieces") {
     const annee = typeof input.annee === "number" ? input.annee : undefined
     const { date_debut, date_fin } = bornesAnnee(annee)
     const limite = Math.min(typeof input.limite === "number" ? input.limite : 100, 100)
+    // VF9c : un dossier qui compte ses ventes par ses factures lit aussi la facture dont une pièce est l'exemplaire.
+    const basculee = ventes?.reglage === true
     let q = admin.from("pieces")
-      .select("date_piece, tiers, nom_fichier, montant_ht, montant_tva, montant_ttc, type_piece, statut, confiance, categorie_id", { count: "exact" })
+      .select(basculee ? "date_piece, tiers, nom_fichier, montant_ht, montant_tva, montant_ttc, type_piece, statut, confiance, categorie_id, facture_id" : "date_piece, tiers, nom_fichier, montant_ht, montant_tva, montant_ttc, type_piece, statut, confiance, categorie_id", { count: "exact" })
       .eq("dossier_id", dossierId)
     if (typeof input.statut === "string" && input.statut) q = q.eq("statut", input.statut)
     if (typeof input.tiers === "string" && input.tiers) q = q.ilike("tiers", `%${input.tiers}%`)
@@ -2887,6 +3254,25 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       admin.from("categories").select("id, libelle", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(debut, fin))
     if (!lectureCategories.complete) return { erreur: `Catégories illisibles : ${lectureCategories.motif} — ne conclus rien sur la catégorisation des pièces de ce dossier.` }
     const libelleParCategorie = new Map(lectureCategories.lignes.map((c) => [c.id, c.libelle]))
+    // VF9c : l'exemplaire d'une facture source paraît sous le numéro de sa facture, et la phrase qui dit qu'il ne compte pas —
+    // sa facture compte la vente (bloc FACTURES SOURCES, le prédicat du générateur) ; sans le tiers ni le nom de fichier, qui
+    // nommeraient le client de la facture. Les factures se lisent en entier, ou l'outil refuse.
+    if (basculee) {
+      const lectureFactures = await lireTout<FactureRow>((debut, fin) =>
+        admin.from("factures_emises").select("id, statut, numero, source_de_la_vente", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(debut, fin))
+      if (!lectureFactures.complete) return { erreur: `Factures illisibles : ${lectureFactures.motif} — ne conclus rien sur les pièces de vente de ce dossier.` }
+      const sources = facturesSourcesDe(lectureFactures.lignes)
+      const numeros = new Map(lectureFactures.lignes.map((f) => [f.id, f.numero]))
+      const pieces = ((data ?? []) as Record<string, unknown>[]).map(({ categorie_id, facture_id, ...reste }) => {
+        const categorie = typeof categorie_id === "string" ? libelleParCategorie.get(categorie_id) ?? null : null
+        if (typeof facture_id !== "string" || !exemplaireDUneSource({ facture_id }, sources)) return { ...reste, categorie }
+        return {
+          ...reste, tiers: null, nom_fichier: null, categorie,
+          exemplaire_de: { facture: numeros.get(facture_id) ?? "sans numéro", ne_compte_pas: "sa facture compte la vente" },
+        }
+      })
+      return resultatListe(pieces, count, "pieces")
+    }
     const avecCategorie = ((data ?? []) as Record<string, unknown>[]).map(({ categorie_id, ...reste }) => ({
       ...reste,
       categorie: typeof categorie_id === "string" ? libelleParCategorie.get(categorie_id) ?? null : null,
@@ -2899,14 +3285,13 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    // LES VENTES FACTURÉES SE LISENT DERRIÈRE LE REFUS QUI SUIT (VF9b) : un dossier dont la source des ventes n'est pas LUE
-    // fausse — il a basculé, ou elle ne se lit pas, et l'on ne devine pas — lit aussi ses factures et le registre de leurs
-    // encaissements, plus bas, et ses contrôles les jugent comme la Checklist. Tant que le refus de VF9a tient, aucun
-    // dossier qui les lirait ne l'atteint ; VF9c le retire. Un dossier qui n'a pas basculé ne lit rien de plus.
+    // LES VENTES FACTURÉES (VF9b, VF9c) : un dossier dont la source des ventes est LUE vraie lit aussi ses factures et le
+    // registre de leurs encaissements, plus bas ; ses contrôles les jugent comme la Checklist, et il dit trois clés de plus.
+    // Un dossier qui n'a pas basculé ne lit rien de plus.
     const lireLesVentes = ventes !== null
-    // Un dossier basculé : ces contrôles le jugeraient faux (l'exemplaire « à comptabiliser », la pièce d'un virement
-    // mixte « sans paiement ») et tairaient ce que sa validation refuse. Refusé avant toute lecture (VF9a).
-    if (ventes) {
+    // Une source des ventes qui ne se lit pas : le dossier a peut-être basculé, et ces contrôles le jugeraient faux sans le
+    // savoir. Le côté fermé de VF9a, refusé avant toute lecture ; lue vraie, la source des ventes ne refuse plus rien (VF9c).
+    if (ventes?.reglage === null) {
       return { erreur: `${ventes.constat}. L'assistant ne lit pas encore les ventes facturées : ses contrôles ne sont pas disponibles pour ce dossier — ne tire aucune conclusion sur son état, et renvoie l'utilisateur à la Vue d'ensemble et à l'onglet Écritures, qui les disent.` }
     }
     const [rPieces, rPiecesAValider, rFactures, rEncaissements, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations] = await Promise.all([
@@ -2927,15 +3312,16 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // client, `tiers_nom`, qui nommerait un patient — ; le REGISTRE ENTIER des encaissements, retirés et
       // contre-passations compris (bloc VIREMENT MIXTE). Lus en partie, ils fausseraient les clés d'aujourd'hui —
       // l'exemplaire d'une facture source compté, la pièce d'un virement mixte sans paiement — : d'où le même refus que
-      // les autres lectures.
+      // les autres lectures. Et, depuis l'étape VF9c, le dossier d'une facture, et le moyen, la date et l'instant de création
+      // d'un encaissement : ce que le bloc VENTES DU RELEVÉ juge.
       lireLesVentes
-        ? lireTout<FactureRow>((d, f) =>
-          admin.from("factures_emises").select("id, statut, numero, source_de_la_vente", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))
-        : rienALire<FactureRow>(),
+        ? lireTout<FactureRow & FactureDuReleveRow>((d, f) =>
+          admin.from("factures_emises").select("id, dossier_id, statut, numero, source_de_la_vente", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))
+        : rienALire<FactureRow & FactureDuReleveRow>(),
       lireLesVentes
-        ? lireTout<EncaissementRow>((d, f) =>
-          admin.from("encaissements_factures").select("id, dossier_id, facture_id, montant, ligne_bancaire_id, annule_id, retire_le", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))
-        : rienALire<EncaissementRow>(),
+        ? lireTout<EncaissementDuReleveRow>((d, f) =>
+          admin.from("encaissements_factures").select("id, dossier_id, facture_id, montant, ligne_bancaire_id, annule_id, retire_le, date_encaissement, moyen, cree_le", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))
+        : rienALire<EncaissementDuReleveRow>(),
       lireTout<CategorieRow>((d, f) =>
         admin.from("categories").select("id, libelle, compte_comptable, poste_2035", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(d, f)),
       // `statut` et `immobilisation_id` : une DOTATION aux amortissements (bloc AMORTISSEMENT) est une écriture
@@ -3107,6 +3493,27 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const periodesTvaEnRetard = dossier.assujetti_tva
       ? periodesEnRetard(rDeclarations.lignes, dossier.tva_periodicite, anneesActives, `${aujourdHuiCabinet().slice(0, 7)}-01`, ouverture, frontiere)
       : []
+    // LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (VF9c), comme la Checklist (src/lib/pointsDeLaChecklist.ts) : sur ses
+    // ventes lues en entier — le refus général ci-dessus les a vérifiées —, les mouvements réservés à des encaissements de
+    // factures, hors des exercices figés, et les encaissements par un moyen du relevé qui attendent leur mouvement (bloc
+    // VENTES DU RELEVÉ) ; le relevé est celui de ce dossier, le dossier de chaque mouvement celui du filtre de sa lecture.
+    // Puis ce que la validation refuserait, que la base juge jusqu'au 31 décembre de l'exercice en cours (`sourcesEnDefaut`) :
+    // sa panne ne tait que sa clé, sous son nom. Un dossier qui n'a pas basculé ne lit ni ne dit rien de plus.
+    const releve = lireLesVentes
+      ? ventesDeLaChecklist({
+        dossierId,
+        etat: "lue",
+        sources: {
+          dossierId,
+          factures: rFactures.lignes,
+          encaissements: rEncaissements.lignes,
+          mouvements: rReleve.lignes.map((l) => ({
+            id: l.id, dossier_id: dossierId, date: l.date, montant: l.montant, encaissements_de_factures: l.encaissements_de_factures,
+          })),
+        },
+      }, frontiere)
+      : null
+    const enDefaut = lireLesVentes ? await sourcesEnDefaut(admin, dossierId, anneeCourante) : null
 
     return {
       // Les exercices VALIDÉS : rien de ce qu'ils figent n'est réclamé ci-dessous, comme dans la Checklist — la base
@@ -3184,6 +3591,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       declarations_de_tva_dont_l_ecriture_de_liquidation_manque_ou_ne_suit_plus_la_declaration: liquidationsPerimees.length,
       paiements_ou_remboursements_de_tva_dont_l_ecriture_ne_suit_plus_le_mouvement: paiementsTvaPerimes.length,
       periodes_de_tva_dont_la_declaration_n_est_pas_enregistree: periodesTvaEnRetard.map((p) => p.libelle),
+      // VF9c : les deux points de la Checklist d'un dossier qui a basculé, sous leurs libellés, et ce que la validation de
+      // l'exercice refuserait — que l'onglet Écritures dit, et que la base juge.
+      ...(releve && enDefaut ? clesDesVentesFacturees(releve, enDefaut) : {}),
     }
   }
 
@@ -3362,11 +3772,14 @@ Deno.serve(async (req: Request) => {
   const repereModele = dossierRow.mode_comptable === "engagement"
     ? `engagement (BIC, IS) — une facture crée une dette en 401000 Fournisseurs (404000 Fournisseurs d'immobilisations pour celle d'un bien) ou une créance en 411000 Clients à sa date, et son paiement la solde à sa propre date ; une note de frais payée par le dirigeant passe par le compte ${dossierRow.compte_notes_de_frais}. La 2035 n'est pas produite pour ce dossier.`
     : "trésorerie (BNC, 2035) — une pièce compte à la date de son paiement, sa date de facture à défaut ; une note de frais que l'exploitant a payée de sa poche s'écrit face au 108000 Compte de l'exploitant, sans mouvement bancaire, sauf la part qu'un virement du compte professionnel lui rembourse."
-  // La garde provisoire des ventes facturées (VF9a) : une ligne de consigne pour un dossier basculé, rien pour un autre.
+  // Les ventes facturées dans la consigne : un paragraphe pour un dossier qui compte ses ventes par ses factures (VF9c), la
+  // ligne de la garde provisoire (VF9a) pour une source des ventes qui ne se lit pas, rien pour un dossier qui n'a pas basculé.
   const ventes = gardeDesVentes(dossierRow.ventes_par_les_factures, dossierRow.ventes_par_les_factures_depuis)
-  const repereVentes = ventes
-    ? `\n- ${ventes.constat}. L'assistant ne lit pas encore les VENTES FACTURÉES : ne conclus RIEN sur les ventes de ce dossier — chiffre d'affaires, recettes, encaissements, pièces de vente, TVA collectée —, et une écriture sans pièce d'une facture ou d'un encaissement n'y est pas une anomalie ; resume_dossier, lister_comptes et lister_pieces le rappellent, points_a_traiter n'est pas disponible : renvoie à la Vue d'ensemble et à l'onglet Écritures.`
-    : ""
+  const repereVentes = ventes?.reglage === true
+    ? `\n- Les VENTES FACTURÉES : ${ventes.constat}. Chaque facture validée depuis est la SOURCE de sa vente ; ses écritures n'ont pas de pièce, ce n'est pas une anomalie. En trésorerie, la recette s'écrit à chaque encaissement — le hors taxe au ${COMPTE_PRESTATIONS_DE_SERVICES} Prestations de services (${COMPTE_VENTES_DE_BIENS} Ventes de marchandises pour des biens), la TVA au ${COMPTE_TVA_COLLECTEE} quand elle est due ; en engagement, la créance au ${COMPTE_CLIENTS} à la date de la facture, sa TVA au ${COMPTE_TVA_COLLECTEE_EN_ATTENTE} jusqu'à ce qu'elle soit due, et l'encaissement la solde. Un encaissement va au ${COMPTE_BANQUE} sur le mouvement de son jour, sinon au ${COMPTE_VALEURS_A_L_ENCAISSEMENT} Valeurs à l'encaissement (${COMPTE_CAISSE} Caisse pour des espèces) ; le mouvement CLASSÉ PAR SES ENCAISSEMENTS les reporte au ${COMPTE_BANQUE}, et leurs frais au ${COMPTE_SERVICES_BANCAIRES}. Un mouvement RÉSERVÉ à des encaissements attend que le cabinet le classe par eux, dans Banque. L'EXEMPLAIRE d'une facture source la prouve et ne compte pas : ne l'additionne jamais à la vente. Un VIREMENT MIXTE, crédit qui paie aussi une facture d'avant la bascule, date la pièce de cette facture-là, qui compte comme avant. Une facture se nomme par son numéro, jamais par son client (lister_pieces : exemplaire_de ; lister_ecritures : source — piece, facture, avoir, encaissement, mouvement_d_encaissements, ou null pour une autre écriture sans pièce que décrit cette consigne). Tant que points_a_traiter ou lister_comptes disent des ventes facturées à écrire, à réécrire ou à retirer, ne cite ni le chiffre d'affaires ni la TVA collectée sans le dire.`
+    : ventes
+      ? `\n- ${ventes.constat}. L'assistant ne lit pas encore les VENTES FACTURÉES : ne conclus RIEN sur les ventes de ce dossier — chiffre d'affaires, recettes, encaissements, pièces de vente, TVA collectée —, et une écriture sans pièce d'une facture ou d'un encaissement n'y est pas une anomalie ; resume_dossier, lister_comptes et lister_pieces le rappellent, points_a_traiter n'est pas disponible : renvoie à la Vue d'ensemble et à l'onglet Écritures.`
+      : ""
   // L'application est multi-cabinets : la consigne ne nomme aucun cabinet (elle nommait le premier, pour tous).
   const systemPrompt = `Tu es l'assistant comptable interne du cabinet qui suit le dossier "${dossierRow.nom}" (précomptabilité — un brouillon à vérifier, jamais une comptabilité tenue).
 

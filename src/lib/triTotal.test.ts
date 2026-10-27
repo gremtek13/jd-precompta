@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { clesPrimairesDuSchema, fichiersDuSchema } from '../test/schema'
+import { clesPrimairesDuSchema, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { lireTout } from './lectureComplete'
 
 // UN TRI QUI N'EST PAS TOTAL REND UNE LECTURE DE LA BONNE LONGUEUR ET DU MAUVAIS CONTENU — ET
@@ -81,6 +81,9 @@ export interface SiteTri {
   chemin: string
   ligne: number
   table: string | null
+  // Une lecture paginée peut lire une FONCTION de la base qui rend une table (`.rpc('nom', …)`, étape VF9c) : elle n'a
+  // pas de clé primaire, et la clé qui départage ses lignes se déclare dans `CLES_DES_FONCTIONS`.
+  fonction: string | null
   ordres: string[]
 }
 
@@ -105,9 +108,10 @@ export function sitesDeLecturePaginee(virtuelles: Record<string, string> = {}): 
       if (texte[j] !== '(') continue
       const corps = texte.slice(j, finDuGroupe(texte, j, '(', ')') + 1)
       const table = /\.from\(\s*['"](\w+)['"]/.exec(corps)?.[1] ?? null
+      const fonction = table == null ? /\.rpc\(\s*['"](\w+)['"]/.exec(corps)?.[1] ?? null : null
       const ordres = [...corps.matchAll(/\.order\(\s*['"]([\w.]+)['"]/g)].map((o) => o[1])
       const ligne = texte.slice(0, m.index).split('\n').length
-      sites.push({ cle: `${chemin} [${table ?? '?'}]`, chemin, ligne, table, ordres })
+      sites.push({ cle: `${chemin} [${table ?? (fonction ? `rpc ${fonction}` : '?')}]`, chemin, ligne, table, fonction, ordres })
     }
   }
   return sites
@@ -118,6 +122,20 @@ export function sitesDeLecturePaginee(virtuelles: Record<string, string> = {}): 
 // fichier dispensé l'est ENTIÈREMENT, or les fichiers dispensés ici portent aussi des lectures
 // correctes. Une de plus est une rechute, une de moins est une raison morte.
 const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {}
+
+// LA CLÉ DU RÉSULTAT D'UNE FONCTION QUI REND UNE TABLE, lue par une lecture paginée : ce qui y tient lieu de clé primaire.
+// Une fonction n'en a pas dans le schéma ; sa clé se DÉCLARE ici, avec la raison qui la fait unique, et chaque colonne
+// doit être une sortie de la dernière définition exportée (vérifié plus bas). Une fonction lue sans clé déclarée est une
+// faute, comme une table inconnue du schéma.
+export const CLES_DES_FONCTIONS: Record<string, { colonnes: string[]; raison: string }> = {
+  ventes_facturees_de_l_exercice: {
+    colonnes: ['source', 'source_id'],
+    raison: 'une ligne par source : ses candidates (`ecritures_attendues_de_la_periode`) sont une UNION, sans doublon, de '
+      + '(genre, id, date, facture), dont la date et la facture se tirent de la ligne source, et chaque jointure qui suit se '
+      + 'fait sur une clé unique (supabase/schema/20261026000623_validation_des_ventes_facturees.sql) — l’assistant la lit '
+      + 'depuis l’étape VF9c.',
+  },
+}
 
 /**
  * Les sites dont le tri n'est PAS total, avec la raison.
@@ -131,12 +149,28 @@ export function triNonTotal(
   virtuelles: Record<string, string> = {},
   cles: Map<string, string[]> = clesPrimairesDuSchema(fichiersDuSchema()),
   exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
+  clesDesFonctions: Record<string, { colonnes: string[]; raison: string }> = CLES_DES_FONCTIONS,
 ): string[] {
   const vus = new Map<string, number>()
   const fautes: string[] = []
   for (const site of sitesDeLecturePaginee(virtuelles)) {
     vus.set(site.cle, (vus.get(site.cle) ?? 0) + 1)
     if (exceptions[site.cle]) continue
+    if (site.table == null && site.fonction != null) {
+      const cle = clesDesFonctions[site.fonction]
+      if (!cle) {
+        fautes.push(`${site.chemin}:${site.ligne} — la fonction « ${site.fonction} » n'a aucune clé de résultat déclarée`)
+        continue
+      }
+      const manquantes = cle.colonnes.filter((c) => !site.ordres.includes(c))
+      if (manquantes.length > 0) {
+        fautes.push(
+          `${site.chemin}:${site.ligne} — tri non total sur la fonction « ${site.fonction} » : ` +
+            `order(${site.ordres.join(', ') || '—'}) ne départage pas ${manquantes.join(', ')}`,
+        )
+      }
+      continue
+    }
     if (site.table == null) {
       fautes.push(`${site.chemin}:${site.ligne} — table illisible dans la fermeture`)
       continue
@@ -251,6 +285,50 @@ describe('tri total des lectures paginées', () => {
   it('refuse une exception qui ne correspond à aucune lecture réelle', () => {
     const vus = new Set(sites.map((s) => s.cle))
     for (const cle of Object.keys(EXCEPTIONS)) expect(vus.has(cle)).toBe(true)
+  })
+
+  // LA LECTURE D'UNE FONCTION (étape VF9c : l'assistant lit `ventes_facturees_de_l_exercice` par tranches). Sans ce cas,
+  // la fermeture d'un `.rpc(` n'avait pas de table, et le scanner la déclarait « illisible » : une faute, jamais un saut.
+  it('attrape une lecture de fonction dont le tri ne départage pas sa clé', () => {
+    const fautes = triNonTotal({
+      'src/fonction.ts': `
+        await lireTout((debut, fin) =>
+          admin.rpc('ventes_facturees_de_l_exercice', { p_dossier_id: id, p_annee: 2026 }, { count: 'exact' })
+            .order('jour').order('source').range(debut, fin))`,
+    })
+    expect(fautes.filter((f) => f.includes('src/fonction.ts'))).toEqual([
+      'src/fonction.ts:2 — tri non total sur la fonction « ventes_facturees_de_l_exercice » : order(jour, source) ne départage pas source_id',
+    ])
+  })
+
+  it('ne crie pas au loup sur une lecture de fonction triée jusqu’à sa clé', () => {
+    const fautes = triNonTotal({
+      'src/fonction.ts': `
+        await lireTout((debut, fin) =>
+          admin.rpc("ventes_facturees_de_l_exercice", { p_dossier_id: id, p_annee: 2026 }, { count: "exact" })
+            .order("jour").order("source").order("source_id").range(debut, fin))`,
+    })
+    expect(fautes.filter((f) => f.includes('src/fonction.ts'))).toEqual([])
+  })
+
+  it('traite une fonction sans clé déclarée comme une FAUTE, pas comme un saut', () => {
+    const fautes = triNonTotal({
+      'src/fonction.ts': `await lireTout((d, f) => admin.rpc('fonction_absente', {}).order('id').range(d, f))`,
+    })
+    expect(fautes).toContain('src/fonction.ts:1 — la fonction « fonction_absente » n\'a aucune clé de résultat déclarée')
+  })
+
+  // La clé déclarée doit être une sortie de la fonction telle que la base l'exécute (sa dernière définition exportée) :
+  // une colonne renommée ou retirée ferait trier sur un nom qui n'existe plus, ce que PostgREST refuserait en panne.
+  it('déclare pour chaque fonction des colonnes qu’elle rend, et seulement pour une fonction lue', () => {
+    const lues = new Set(sites.map((s) => s.fonction).filter((f) => f != null))
+    for (const [nom, { colonnes, raison }] of Object.entries(CLES_DES_FONCTIONS)) {
+      expect(lues.has(nom), `${nom} : clé déclarée pour une fonction qu'aucune lecture paginée ne lit`).toBe(true)
+      expect(raison.length).toBeGreaterThan(40)
+      const sortie = /\breturns table \(([^)]*)\)/.exec(derniereDefinitionSql(nom))?.[1] ?? ''
+      const rendues = sortie.split(',').map((c) => c.trim().split(/\s+/)[0])
+      for (const c of colonnes) expect(rendues, `${nom}.${c}`).toContain(c)
+    }
   })
 })
 

@@ -257,6 +257,78 @@ describe('la base applique ce qu’on lui demande', () => {
   })
 })
 
+// `ventes_facturees_de_l_exercice` (étape VF9c : l'assistant la lit par tranches). Le faux ne recompose rien — le scénario
+// pose les sources en défaut — : il tient la porte de la fonction (le rôle du service seul), sa période (la frontière des
+// exercices validés exclue, le 31 décembre de l'année), son ordre, et ce que PostgREST fait de lignes rendues par une
+// fonction comme de celles d'une table : le tri demandé, la tranche, le compte annoncé, le plafond sans le dire.
+describe('ventes_facturees_de_l_exercice : la porte, la période, l’ordre et les tranches (étape VF9c)', () => {
+  const source = (o: { jour: string; source: string; source_id: string; dossier_id?: string }) => ({
+    dossier_id: ID.dossier, etat: 'a_ecrire', motif: null, detail: null, nom: `nom de ${o.source_id}`, ...o,
+  })
+  function bascule(): Monde {
+    const monde = mondeDeReference()
+    Object.assign(monde.base.dossiers[0], { ventes_par_les_factures: true, ventes_par_les_factures_depuis: '2025-01-05T09:00:00Z' })
+    monde.base.exercices_valides = [{ dossier_id: ID.dossier, annee: 2024 }]
+    monde.sourcesEnDefaut = [
+      source({ jour: '2026-03-02', source: 'mouvement', source_id: 'b-1' }),
+      source({ jour: '2026-03-02', source: 'encaissement', source_id: 'c-1' }),
+      source({ jour: '2026-03-02', source: 'facture', source_id: 'z-1' }),
+      source({ jour: '2026-03-02', source: 'avoir', source_id: 'a-1' }),
+      source({ jour: '2026-01-15', source: 'facture', source_id: 'y-1' }),
+      source({ jour: '2026-01-15', source: 'facture', source_id: 'x-1' }),
+      // Figée par l'exercice 2024, et au-delà du 31 décembre 2026 : hors de la période.
+      source({ jour: '2024-12-31', source: 'facture', source_id: 'fige' }),
+      source({ jour: '2027-01-01', source: 'facture', source_id: 'apres' }),
+      // Celle d'un autre dossier : jamais rendue.
+      source({ jour: '2026-02-01', source: 'facture', source_id: 'voisin', dossier_id: ID.dossierVoisin }),
+    ]
+    return monde
+  }
+  const appel = (cle: 'client' | 'appelant', suite = '', args = `{ p_dossier_id: "${ID.dossier}", p_annee: 2026 }`) =>
+    `const r = await ${cle}.rpc("ventes_facturees_de_l_exercice", ${args}, { count: "exact" })${suite}; return { data: r.data, error: r.error, count: r.count }`
+
+  it('le rôle du service seul l’exécute : une session, même du chef du cabinet, reçoit 42501', async () => {
+    expect(await sonde(appel('appelant'), bascule()).rendre('chef'))
+      .toMatchObject({ data: null, error: { code: '42501', message: 'permission denied for function ventes_facturees_de_l_exercice' } })
+    expect((await sonde(appel('client'), bascule()).rendre('chef')).error).toBeNull()
+  })
+
+  it('rend, dans l’ordre de la base — le jour, le genre, l’identifiant —, les sources de la période, sans le dossier', async () => {
+    const r = await sonde(appel('client'), bascule()).rendre('chef')
+    expect((r.data as { source_id: string }[]).map((l) => l.source_id)).toEqual(['x-1', 'y-1', 'z-1', 'a-1', 'c-1', 'b-1'])
+    expect(r.count).toBe(6)
+    expect(Object.keys((r.data as Record<string, unknown>[])[0]).sort()).toEqual(['detail', 'etat', 'jour', 'motif', 'nom', 'source', 'source_id'])
+  })
+
+  it('rien pour un dossier qui n’a pas basculé, ni pour une année nulle', async () => {
+    const monde = bascule()
+    monde.base.dossiers[0].ventes_par_les_factures = false
+    expect(await sonde(appel('client'), monde).rendre('chef')).toMatchObject({ data: [], count: 0 })
+    expect(await sonde(appel('client', '', `{ p_dossier_id: "${ID.dossier}", p_annee: null }`), bascule()).rendre('chef'))
+      .toMatchObject({ data: [], count: 0 })
+  })
+
+  it('trie, tranche et compte comme une table ; son plafond tronque sans le dire, le compte annoncé reste le total', async () => {
+    const tranche = await sonde(appel('client', '.order("jour").order("source").order("source_id").range(1, 2)'), bascule()).rendre('chef')
+    expect((tranche.data as { source_id: string }[]).map((l) => l.source_id)).toEqual(['y-1', 'a-1'])
+    expect(tranche.count).toBe(6)
+    const monde = bascule()
+    monde.maxLignes = 4
+    const plafonnee = await sonde(appel('client'), monde).rendre('chef')
+    expect((plafonnee.data as unknown[]).length).toBe(4)
+    expect(plafonnee.count).toBe(6)
+  })
+
+  it('une forme qu’il ne modélise pas LÈVE : un argument de trop, un tri sur une fonction qui rend une valeur, une fonction inconnue', async () => {
+    await expect(sonde(appel('client', '', `{ p_dossier_id: "${ID.dossier}", p_annee: 2026, p_autre: 1 }`), bascule()).rendre('chef'))
+      .rejects.toThrow(/ventes_facturees_de_l_exercice\(.*\) n'est pas modélisé/)
+    await expect(sonde(`return (await client.rpc("admin_du_dossier", { p_dossier_id: "${ID.dossier}" }).order("id")).data`).rendre('chef'))
+      .rejects.toThrow(/un tri, une tranche ou un compte sur « admin_du_dossier »/)
+    await expect(sonde('return (await client.rpc("fonction_inconnue", {})).data').rendre('chef'))
+      .rejects.toThrow(/la fonction SQL « fonction_inconnue » n'est pas modélisée/)
+  })
+})
+
 describe('le service d’authentification et l’administration des comptes', () => {
   it('lit le jeton porteur comme GoTrue : « Bearer » ou « bearer », une espace, rien après', async () => {
     const lire = 'return (await appelant.auth.getUser()).data.user?.id ?? null'
