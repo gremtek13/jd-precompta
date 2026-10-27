@@ -173,10 +173,12 @@ function appelDe(ordre: string): Appel | null {
 }
 
 // Les SIRET des dossiers jetables, lus dans l'insertion du jeu (j1) : un texte, un E'…' aux échappements Unicode, ou nul.
+// Le réglage des ventes suit le SIRET depuis l'étape VF8f (A naît basculé : « Ventes » ne se porte que sur un dossier
+// basculé) ; il ne change rien à l'adresse de réception.
 function siretsDuJeu(): Map<string, string | null> {
   const j1 = etape('j1').ordre
   const sirets = new Map<string, string | null>()
-  for (const ligne of j1.matchAll(/\('\{(\w+)\}', '[^']*', '\{CAB\}', '\w+', \w+, (null|'[^']*'|E'[^']*')\)/g)) {
+  for (const ligne of j1.matchAll(/\('\{(\w+)\}', '[^']*', '\{CAB\}', '\w+', \w+, (null|'[^']*'|E'[^']*'), (?:true|false)\)/g)) {
     const brut = ligne[2]
     sirets.set(`{${ligne[1]}}`, brut === 'null' ? null : brut.startsWith('E')
       ? brut.slice(2, -1).replace(/\\u([0-9a-f]{4})/g, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))

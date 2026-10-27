@@ -362,12 +362,17 @@ export function ceQueDisentLesCasesDuDossier(reglage: ReglageDuDossier): string 
 // ── La case « Ventes » et la source des ventes du dossier (chantier EC-Q3, étape VF8d) ─────────────────────────────────
 // HISTORIQUE.md, « VF8, LA BASCULE : LA CONCEPTION », § 3 (d), et « LA CASE « VENTES » SUIT LA SOURCE DES VENTES, À
 // L'ÉCRAN ». La case « Ventes » ne s'ouvre qu'à un dossier dont les factures sont la source de leurs ventes
-// (`dossiers.ventes_par_les_factures`, EC3-Q2) : l'onglet Accès la refuse AVANT le clic dès cette étape ; la base la refusera
-// à l'étape VF8f (`garder_droit_ventes`), la dernière — ce qui s'ajoute, la bascule de l'application, puis le resserrement.
-// Jusque-là, `changer_droits_acces` pose « Ventes » sans regarder le réglage (droitsAcces.test.ts le confronte à l'export) :
-// l'écran est plus strict que la base, jamais moins. DÉCOCHER reste offert sur un dossier qui n'a pas basculé — un accès
-// coché avant cette étape, ou rendu par une restauration, se défait. Sur un réglage illisible, aucun geste sur « Ventes », ni
-// cocher ni décocher : la case ne se juge pas. « Banque » ne regarde pas le réglage.
+// (`dossiers.ventes_par_les_factures`, EC3-Q2) : l'onglet Accès la refuse AVANT le clic depuis cette étape. La base la
+// refuse aussi avec la migration de l'étape VF8f, le resserrement (`ventes_sur_dossier_bascule` : la garde
+// `garder_droit_ventes`, après la RLS, pour tout auteur, hors de l'insertion du super-administrateur, la restauration) ; avant
+// elle, `changer_droits_acces` posait « Ventes » sans regarder le réglage, et l'écran était plus strict que la base, jamais
+// moins. Le module REDIT son refus, à la lettre (`REFUS_VENTES_DOSSIER_NON_BASCULE`) : cocher « Ventes » sur un dossier qui
+// n'a pas basculé se refuse avant le clic aux mots que la base opposerait après — une case cochée dans un onglet resté
+// ouvert pendant qu'un autre baissait le réglage —, sans recopier sa règle (qui écrit, l'exception de la restauration, la
+// ligne emportée vers un autre dossier) : l'écran juge sur le réglage qu'il a lu, la base sur celui qu'elle verrouille.
+// DÉCOCHER reste offert sur un dossier qui n'a pas basculé — un accès rendu par une restauration se défait, et la base ne
+// juge que ce qui arrive. Sur un réglage illisible, aucun geste sur « Ventes », ni cocher ni décocher : la case ne se juge
+// pas, et la base n'a pas de refus pour cela. « Banque » ne regarde pas le réglage.
 
 /** Le réglage du dossier tel que l'onglet Accès l'a lu (lib/reglageDuDossierLecture.ts). */
 export type ReglageDuDossier =
@@ -444,10 +449,25 @@ export function gesteDeLaCase(domaine: Domaine, reglage: ReglageDuDossier): Gest
   return { cocher: false, decocher: false, raison: raisonDuReglageIllisible(reglage.motif) }
 }
 
-/** Le refus d'une case cliquée vers `valeur`, dit avant tout appel ; nul quand le geste est offert. */
+/**
+ * Le refus de la base quand « Ventes » ARRIVE sur un accès d'un dossier dont les factures ne sont pas la source de leurs
+ * ventes (étape VF8f : `garder_droit_ventes`, migration `ventes_sur_dossier_bascule`), à la lettre, apostrophes droites
+ * comprises — ventesSurDossierBascule.test.ts le confronte au texte de la migration et à ses essais.
+ */
+export const REFUS_VENTES_DOSSIER_NON_BASCULE = {
+  code: '23514',
+  message: "Le droit « Ventes » suppose que les factures de ce dossier soient la source de leurs ventes, ce qu'elles ne sont pas : changer d'abord la source des ventes du dossier.",
+} as const
+
+/**
+ * Le refus d'une case cliquée vers `valeur`, dit avant tout appel ; nul quand le geste est offert. Sur un dossier qui n'a
+ * pas basculé, le seul geste qui manque — cocher « Ventes » — se refuse aux mots de la base (étape VF8f) : avant le clic ou
+ * après, le cabinet lit la même phrase. Un réglage illisible dit sa raison : ce n'est pas un refus de la base.
+ */
 export function refusDeLaCase(domaine: Domaine, valeur: boolean, reglage: ReglageDuDossier): string | null {
   const geste = gesteDeLaCase(domaine, reglage)
-  return (valeur ? geste.cocher : geste.decocher) ? null : geste.raison
+  if (valeur ? geste.cocher : geste.decocher) return null
+  return reglage.etat === 'non_bascule' ? REFUS_VENTES_DOSSIER_NON_BASCULE.message : geste.raison
 }
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */

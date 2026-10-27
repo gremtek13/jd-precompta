@@ -10,7 +10,7 @@ import {
   LIBELLE_ADRESSE_CONTACT, LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOM_CONTACT, LIBELLE_NOTE_DECLARATION, LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDisentLesCasesDuDossier, ceQueDonneUnAcces, changementApplique, definitionDe,
   demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus, type ReglageDuDossier,
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
-  raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier,
+  raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE,
 } from './droitsAcces'
 import { BASCULE_OFFERTE } from './basculeDesVentes'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
@@ -143,10 +143,14 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(() => definitionDe('achats' as never)).toThrow('Domaine inconnu')
   })
 
-  it('ce que l’écran dit d’un droit est ce que dit le commentaire de sa colonne en base', () => {
+  it('ce que l’écran dit d’un droit est ce que dit le commentaire de sa colonne en base — le dernier que l’export pose', () => {
     for (const { colonne, libelle, ouvrira } of DOMAINES) {
-      const commentaire = new RegExp(`comment on column public\\.memberships\\.${colonne} is\\s+'([^']*)'`).exec(MIGRATION)?.[1]
-      expect(commentaire, colonne).toContain(`Le droit « ${libelle} » de cet accès (${ouvrira})`)
+      // Le dernier commentaire, fichiers dans l'ordre de leur nom puis texte dans l'ordre : celui de la colonne en base. Une
+      // apostrophe s'y double (`''`) ; l'étape VF8f réécrit celui de `droit_ventes`.
+      const motif = new RegExp(`comment on column public\\.memberships\\.${colonne} is\\s+'((?:[^']|'')*)'`, 'g')
+      const commentaires = fichiersDuSchema().flatMap((f) => [...f.texte.matchAll(motif)].map((m) => m[1].replace(/''/g, "'")))
+      expect(commentaires.length, colonne).toBeGreaterThanOrEqual(1)
+      expect(commentaires.at(-1), colonne).toContain(`Le droit « ${libelle} » de cet accès (${ouvrira})`)
     }
   })
 
@@ -1256,7 +1260,9 @@ describe('la case « Ventes » et la source des ventes du dossier (étape VF8d)'
     })
     expect(refusDeLaCase('ventes', true, BASCULE)).toBeNull()
     expect(refusDeLaCase('ventes', false, BASCULE)).toBeNull()
-    expect(refusDeLaCase('ventes', true, NON_BASCULE)).toBe(raisonDuDossierNonBascule(BASCULE_OFFERTE))
+    // Cocher « Ventes » sur un dossier qui n'a pas basculé : le refus de la base, à la lettre (étape VF8f) — pas la raison de
+    // la case grisée, qui dit où le réglage se pose.
+    expect(refusDeLaCase('ventes', true, NON_BASCULE)).toBe(REFUS_VENTES_DOSSIER_NON_BASCULE.message)
     expect(refusDeLaCase('ventes', false, NON_BASCULE)).toBeNull()
     expect(refusDeLaCase('ventes', true, ILLISIBLE)).toBe(raisonDuReglageIllisible('lecture refusée'))
     expect(refusDeLaCase('ventes', false, ILLISIBLE)).toBe(raisonDuReglageIllisible('lecture refusée'))
@@ -1295,18 +1301,21 @@ describe('la case « Ventes » et la source des ventes du dossier (étape VF8d)'
     }
   })
 
-  it('ce que la phrase redit de la base : la colonne, le chef du cabinet, et une base qui ne refuse pas encore « Ventes »', () => {
+  it('ce que la phrase et le refus redisent de la base : la colonne, le chef du cabinet, et la garde de « Ventes » (VF8f)', () => {
     // La colonne : booléenne, non nulle, fausse par défaut — « illisible » ne vient que d'une ligne qu'on n'a pas lue.
     expect(fichiersDuSchema().some((f) => f.texte.includes(
       'alter table public.dossiers add column ventes_par_les_factures boolean not null default false;'))).toBe(true)
     // « Un réglage que le chef du cabinet posera » : la garde du réglage (VF8a, VF8-Q1) le réserve au chef depuis une session.
     expect(derniereDefinitionSql('garder_ventes_par_les_factures'))
       .toContain('if auth.uid() is not null and not public.est_chef_du_cabinet(old.cabinet_id) then')
-    // L'écran est plus strict que la base, jamais moins : la base pose encore « Ventes » sur un dossier non basculé — ni
-    // `changer_droits_acces` ni aucune garde ne lit le réglage. Le resserrement (VF8f) fera tomber ce test : la phrase et ce
-    // commentaire diront alors que la base refuse aussi.
+    // Le resserrement (VF8f) : la base refuse « Ventes » qui arrive sur un dossier non basculé, par une garde que
+    // `changer_droits_acces` ne connaît pas — la fonction ne lit toujours pas le réglage. Le refus du module est le sien, à
+    // la lettre ; ventesSurDossierBascule.test.ts confronte le reste (la garde, son déclencheur, ses essais).
     expect(derniereDefinitionSql('changer_droits_acces')).not.toMatch(/ventes_par_les_factures/)
-    expect(fichiersDuSchema().some((f) => /garder_droit_ventes/.test(f.texte))).toBe(false)
+    const garde = derniereDefinitionSql('garder_droit_ventes')
+    expect(garde).toContain(`raise exception '${REFUS_VENTES_DOSSIER_NON_BASCULE.message.replace(/'/g, "''")}'`)
+    expect(garde).toContain(`using errcode = '${REFUS_VENTES_DOSSIER_NON_BASCULE.code}';`)
+    expect(garde).toContain('from public.dossiers d where d.id = new.dossier_id for share;')
   })
 
   it('la phrase suit le geste que la carte de la bascule offre, pas son existence : les deux états du drapeau', () => {
@@ -1321,7 +1330,8 @@ describe('la case « Ventes » et la source des ventes du dossier (étape VF8d)'
         const raison = raisonDuDossierNonBascule(offerte)
         expect(phraseDuReglage(NON_BASCULE), `offerte ${offerte}`).toBe(raison)
         expect(gesteDeLaCase('ventes', NON_BASCULE), `offerte ${offerte}`).toEqual({ cocher: false, decocher: true, raison })
-        expect(refusDeLaCase('ventes', true, NON_BASCULE), `offerte ${offerte}`).toBe(raison)
+        // Le refus, lui, est celui de la base : il ne suit pas le drapeau (étape VF8f).
+        expect(refusDeLaCase('ventes', true, NON_BASCULE), `offerte ${offerte}`).toBe(REFUS_VENTES_DOSSIER_NON_BASCULE.message)
         expect(raison.includes('ne s’offre pas encore'), `offerte ${offerte}`).toBe(!offerte)
         expect(raison.includes('(onglet Informations)'), `offerte ${offerte}`).toBe(offerte)
         // Ni le dossier basculé, ni le réglage illisible ne regardent le drapeau.

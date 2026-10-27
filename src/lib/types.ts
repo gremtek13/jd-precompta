@@ -949,7 +949,9 @@ export interface Cabinet {
 
 // Un accès client à un dossier. Le client ne lit que SES lignes (`memberships_select`), droits compris ; aucune policy de
 // mise à jour, pour personne : les deux droits (espace client, étape P1, migration droits_des_acces_clients) ne changent
-// que par `changer_droits_acces`, réservée au cabinet du dossier — voir lib/droitsAcces.ts. Faux par défaut.
+// que par `changer_droits_acces`, réservée au cabinet du dossier — voir lib/droitsAcces.ts. Faux par défaut. « Ventes » ne
+// se porte que sur un dossier dont les factures sont la source de leurs ventes (`garder_droit_ventes`, étape VF8f), hors de
+// l'insertion du super-administrateur : une restauration rend l'accès tel qu'il a été.
 export interface Membership {
   id: string
   user_id: string

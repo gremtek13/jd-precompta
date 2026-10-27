@@ -66,9 +66,11 @@ begin
 
   begin
     for s in select * from (values
+      -- A naît basculé : « Ventes » ne se porte que sur un accès d'un dossier dont les factures sont la source de leurs
+      -- ventes (garder_droit_ventes, étape VF8f) ; le seau et ses logos n'en dépendent pas.
       ('j1', 'jeu', 'dossiers jetables A et B, et un cabinet jetable C', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva) values
-          ('{DA}', 'ESSAI LOGO A', '{CAB}', 'redevable', true), ('{DB}', 'ESSAI LOGO B', '{CAB}', 'redevable', true)
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures) values
+          ('{DA}', 'ESSAI LOGO A', '{CAB}', 'redevable', true, true), ('{DB}', 'ESSAI LOGO B', '{CAB}', 'redevable', true, false)
           §§ insert into cabinets (id, nom) values ('{CC}', 'ESSAI LOGO C')$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-logo@exemple.invalid')$q$, 'OK', null, null),

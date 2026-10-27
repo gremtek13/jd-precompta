@@ -162,6 +162,10 @@ begin
     array['jeu', 'un dossier du client sans aucun mouvement', 'postgres',
       $q$insert into dossiers (id, nom, cabinet_id, code_email) values ('{E}', 'ESSAI BANQUE CLIENT VIDE', '{CABINET}', 'essai-banque-client-vide')$q$, '', ''],
     array['jeu', '', 'postgres', $q$insert into memberships (user_id, dossier_id, role) values ('{CLIENT}', '{E}', 'client')$q$, '', ''],
+    -- « Ventes » ne se porte que sur un accès d'un dossier dont les factures sont la source de leurs ventes
+    -- (garder_droit_ventes, étape VF8f) : les dossiers du client basculent, le temps de l'essai ; sa banque n'en dépend pas.
+    array['jeu', 'les dossiers du client basculent', 'postgres',
+      $q$update dossiers set ventes_par_les_factures = true where id in (select m.dossier_id from memberships m where m.user_id = '{CLIENT}') and not ventes_par_les_factures$q$, '', ''],
     array['jeu', 'le client, sans droit', 'postgres', $q$update memberships set droit_ventes = false, droit_banque = false where user_id = '{CLIENT}'$q$, '', ''],
 
     -- ══ 10 à 13. Le cabinet propose et précise ══════════════════════════════════════════════════════════════════

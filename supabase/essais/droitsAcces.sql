@@ -39,6 +39,16 @@
 -- l'écriture sans contrôle d'accès, un accès inconnu dit « introuvable », un droit nul écrit nul, une autre colonne
 -- écrite, l'exécution laissée à anon ou à PUBLIC, une policy de mise à jour, l'exécution retirée à authenticated, une
 -- fonction `security invoker`, « rien à changer » accepté, la casse ignorée), font toutes virer au moins un verdict.
+--
+-- « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ (chantier EC-Q3, étape VF8f ; migration `ventes_sur_dossier_bascule`,
+-- PRÉPARÉE le 27/10/2026, pas encore appliquée). La garde `garder_droit_ventes` refuse, en 23514, « Ventes » qui arrive sur
+-- un accès d'un dossier dont les factures ne sont pas la source de leurs ventes, pour tout auteur, hors de l'insertion du
+-- super-administrateur (la restauration). Les contrôles qui cochent « Ventes » sur les dossiers du client les basculent
+-- donc d'abord, dans leur sous-transaction ; les contrôles 70 à 83 et les mutations 90 à 95 jouent la garde elle-même, sur un
+-- dossier jetable qui n'a pas basculé (DJ) et un autre qui a basculé (DK), créés dans chaque sous-transaction ; « rien n'est
+-- resté » (60) compte aussi les dossiers basculés. Sans la migration, les refus de la garde manquent : ses contrôles sont
+-- en faute, et eux seuls. Ce que deux sessions concurrentes rencontrent (le réglage baissé pendant que « Ventes » arrive) se
+-- joue sur une réplique, hors du dépôt (HISTORIQUE.md, « « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ »).
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -47,7 +57,14 @@ declare
 
   cabinet uuid; dossier_client uuid; dossier_client_2 uuid; autre_dossier uuid; troisieme_dossier uuid;
   acces_client uuid; acces_client_2 uuid; acces_essai uuid;
-  instantane jsonb; admins_avant int; assignations_avant int; supers_avant int;
+  instantane jsonb; admins_avant int; assignations_avant int; supers_avant int; bascules_avant int; dossiers_avant int;
+  -- Étape VF8f : deux dossiers jetables du cabinet, DJ qui n'a pas basculé et DK qui a basculé, et l'accès d'essai du client
+  -- à chacun, sans droit — créés dans la sous-transaction de chaque contrôle qui s'en sert, annulés avec elle.
+  dj uuid := 'f8f00000-0000-4000-8000-0000000000d1';
+  dk uuid := 'f8f00000-0000-4000-8000-0000000000d2';
+  acces_dj uuid := 'f8f00000-0000-4000-8000-0000000000a1';
+  acces_dk uuid := 'f8f00000-0000-4000-8000-0000000000a2';
+  refus_ventes text := 'Le droit « Ventes » suppose que les factures de ce dossier soient la source de leurs ventes, ce qu''elles ne sont pas : changer d''abord la source des ventes du dossier.';
   t record; n int; m int; sig text; code_recu text; message text; obs text; avant jsonb; apres jsonb; rendu jsonb;
   verdicts jsonb := '[]'::jsonb;
 begin
@@ -72,6 +89,7 @@ begin
   select count(*) into admins_avant from cabinet_admins;
   select count(*) into assignations_avant from dossier_assignations;
   select count(*) into supers_avant from super_admins;
+  select count(*), count(*) filter (where d.ventes_par_les_factures) into dossiers_avant, bascules_avant from dossiers d;
 
   -- ══ 0 à 4. Le catalogue ═════════════════════════════════════════════════════════════════════════════════════
   select count(*) filter (where droit_ventes), count(*) filter (where droit_banque) into n, m from memberships;
@@ -173,6 +191,12 @@ begin
     ) as v(num, profil, sujet, dossier, reglage, attendu) loop
     sig := null; code_recu := null; message := null;
     begin
+      -- « Ventes » ne se porte que sur un dossier basculé (étape VF8f) : ses dossiers basculent d'abord, le temps du
+      -- contrôle, par le propriétaire sans session.
+      if t.reglage in ('ventes', 'deux', 'tous') then
+        perform set_config('request.jwt.claims', '', true);
+        update dossiers set ventes_par_les_factures = true where id in (dossier_client, dossier_client_2) and not ventes_par_les_factures;
+      end if;
       case t.reglage
         when 'aucun' then null;
         when 'sans' then update memberships set droit_ventes = false, droit_banque = false where user_id = client;
@@ -209,6 +233,8 @@ begin
   -- Un mot que la fonction ne connaît pas ne vaut rien, même quand l'accès porte les deux droits.
   n := null; code_recu := null;
   begin
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true where id in (dossier_client, dossier_client_2) and not ventes_par_les_factures;
     update memberships set droit_ventes = true, droit_banque = true where user_id = client;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
@@ -326,9 +352,12 @@ begin
     'ok', coalesce(n = 0 and avant = apres and code_recu = 'P0001', false));
 
   -- ══ 38 à 44. Ce qui écrit les droits ════════════════════════════════════════════════════════════════════════
-  -- Le chef : accepté, l'accès rendu est celui qu'on relit, et seules les deux colonnes ont changé.
+  -- Le chef : accepté, l'accès rendu est celui qu'on relit, et seules les deux colonnes ont changé. Les contrôles 38 à 44
+  -- et les mutations 51 à 57 qui cochent « Ventes » basculent d'abord le dossier de l'accès (étape VF8f).
   code_recu := null; message := null; avant := null; apres := null; rendu := null;
   begin
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true where id = dossier_client and not ventes_par_les_factures;
     update memberships set droit_ventes = false, droit_banque = false where id = acces_client;
     select to_jsonb(mb) into avant from memberships mb where mb.id = acces_client;
     set local role authenticated;
@@ -351,6 +380,8 @@ begin
   -- Un droit nul reste tel quel : « Ventes » seul, puis « Banque » seul — le premier n'est pas défait par le second.
   obs := null; code_recu := null; message := null;
   begin
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true where id = dossier_client and not ventes_par_les_factures;
     update memberships set droit_ventes = false, droit_banque = false where id = acces_client;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
@@ -421,6 +452,8 @@ begin
   -- Ce que le cabinet a posé, le client le LIT sur sa ligne : c'est ce qu'AuthContext lira.
   n := null; code_recu := null;
   begin
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true where id = dossier_client and not ventes_par_les_factures;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     perform changer_droits_acces(acces_client, true, false);
@@ -453,6 +486,8 @@ begin
   -- 51. Le contrôle 18 joué sur le dossier du client : `membre` et les deux droits doivent valoir vrai.
   sig := null;
   begin
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true where id in (dossier_client, dossier_client_2) and not ventes_par_les_factures;
     update memberships set droit_ventes = true, droit_banque = true where user_id = client;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
@@ -468,6 +503,8 @@ begin
   -- 52. Le contrôle 32 joué sous le chef : l'écriture passe.
   code_recu := null; rendu := null;
   begin
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true where id = dossier_client and not ventes_par_les_factures;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select to_jsonb(r) into rendu from changer_droits_acces(acces_client, true, true) r;
@@ -481,6 +518,8 @@ begin
   -- 53. Le contrôle 35 sans le changement de rôle (le propriétaire passe la RLS) : la ligne est touchée.
   n := null;
   begin
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true where id = dossier_client and not ventes_par_les_factures;
     perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
     update memberships set droit_ventes = true, droit_banque = true where id = acces_client;
     get diagnostics n = row_count;
@@ -511,6 +550,8 @@ begin
   -- 55. Le contrôle 38 quand une autre colonne change aussi (l'adresse, écrite par le propriétaire) : la comparaison le voit.
   avant := null; apres := null;
   begin
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true where id = dossier_client and not ventes_par_les_factures;
     select to_jsonb(mb) into avant from memberships mb where mb.id = acces_client;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
@@ -529,6 +570,8 @@ begin
   -- 56. Le contrôle 41 sur un accès qui existe : l'écriture passe.
   rendu := null;
   begin
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true where id = dossier_client_2 and not ventes_par_les_factures;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select to_jsonb(r) into rendu from changer_droits_acces(acces_client_2, true, true) r;
@@ -542,6 +585,8 @@ begin
   -- 57. Le contrôle 34 avec l'affectation au BON dossier : l'écriture passe.
   rendu := null;
   begin
+    perform set_config('request.jwt.claims', '', true);
+    update dossiers set ventes_par_les_factures = true where id = autre_dossier and not ventes_par_les_factures;
     insert into memberships (user_id, dossier_id, role, email) values (chef, autre_dossier, 'client', 'essai-droits@exemple.invalid')
       returning id into acces_essai;
     insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
@@ -570,6 +615,216 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '58. MUTATION — le contrôle 6 joué sous le chef : il doit voir les deux accès du dossier',
     'observe', coalesce(n::text, '?') || ' ligne(s)', 'ok', coalesce(n = 2, false));
 
+  -- ══ 70 à 83. « Ventes » ne se porte que sur un dossier basculé (étape VF8f) ══════════════════════════════════
+  -- La garde `garder_droit_ventes`, après la RLS et aux droits du propriétaire : « Ventes » qui ARRIVE sur un accès —
+  -- porté à son insertion, coché, emporté vers un autre dossier — se refuse sur un dossier qui n'a pas basculé (23514, ses
+  -- mots), pour tout auteur ; seule passe l'insertion du super-administrateur (la restauration). Chaque contrôle crée dans
+  -- sa sous-transaction DJ (qui n'a pas basculé), DK (qui a basculé) et l'accès d'essai du client à chacun, sans droit, par
+  -- le propriétaire sans session ; un refus s'exige par son code ET ses mots, et la ligne visée est RELUE après.
+  for t in select * from (values
+      ('70', 'le chef du cabinet (super-administrateur), par la fonction, coche « Ventes » sur un dossier qui n''a pas basculé', 'chef', 'fonction_ventes', 'dj', 'refus'),
+      ('71', 'le chef du cabinet qui n''est pas super-administrateur, par la fonction', 'client_chef', 'fonction_ventes', 'dj', 'refus'),
+      ('72', 'le membre du cabinet affecté au dossier, par la fonction', 'client_membre', 'fonction_ventes', 'dj', 'refus'),
+      ('73', 'le chef du cabinet, par la fonction, coche « Banque » seul sur le même accès : la garde ne regarde que « Ventes »', 'chef', 'fonction_banque', 'dj', 'accepte'),
+      ('74', 'le chef du cabinet qui n''est pas super-administrateur insère directement un accès qui porte « Ventes »', 'client_chef', 'insertion_ventes', 'dj', 'refus'),
+      ('75', 'le super-administrateur insère un accès qui porte « Ventes » (la restauration rend ce qui a été)', 'chef', 'insertion_ventes', 'dj', 'accepte'),
+      ('76', 'le propriétaire, sans session, coche « Ventes » par une mise à jour', 'proprietaire', 'mise_a_jour_ventes', 'dj', 'refus'),
+      ('77', 'le propriétaire, sans session, insère un accès qui porte « Ventes »', 'proprietaire', 'insertion_ventes', 'dj', 'refus'),
+      ('78', 'le rôle des Edge Functions insère un accès qui porte « Ventes »', 'service', 'insertion_ventes', 'dj', 'refus'),
+      ('79', 'le rôle des Edge Functions insère l''accès de create-client-access, sans droit : accepté', 'service', 'insertion_sans_droit', 'dj', 'accepte'),
+      ('80', 'sur un dossier qui a basculé, le chef du cabinet coche « Ventes » par la fonction : accepté', 'chef', 'fonction_ventes', 'dk', 'accepte'),
+      ('81', 'sur un dossier qui a basculé, le chef du cabinet qui n''est pas super-administrateur insère un accès « Ventes » : accepté', 'client_chef', 'insertion_ventes', 'dk', 'accepte')
+    ) as v(num, quoi, qui, geste, cible, attendu) loop
+    code_recu := null; message := null; avant := null; apres := null; rendu := null; obs := null;
+    begin
+      perform set_config('request.jwt.claims', '', true);
+      insert into dossiers (id, nom, cabinet_id, ventes_par_les_factures) values
+        (dj, 'ESSAI VF8F DJ', cabinet, false), (dk, 'ESSAI VF8F DK', cabinet, true);
+      insert into memberships (id, user_id, dossier_id, role, email) values
+        (acces_dj, client, dj, 'client', 'essai-vf8f@example.test'), (acces_dk, client, dk, 'client', 'essai-vf8f@example.test');
+      if t.qui = 'client_chef' then
+        insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+      elsif t.qui = 'client_membre' then
+        insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+        insert into dossier_assignations (dossier_id, user_id) values (dj, client), (dk, client);
+      end if;
+      select to_jsonb(mb) into avant from memberships mb
+       where mb.id = case t.cible when 'dj' then acces_dj else acces_dk end;
+      begin
+        if t.qui in ('chef', 'client_chef', 'client_membre') then
+          set local role authenticated;
+          perform set_config('request.jwt.claims',
+            json_build_object('sub', case t.qui when 'chef' then chef else client end, 'role', 'authenticated')::text, true);
+        elsif t.qui = 'service' then
+          set local role service_role;
+          perform set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
+        end if;
+        case t.geste
+          when 'fonction_ventes' then
+            select to_jsonb(r) into rendu from changer_droits_acces(case t.cible when 'dj' then acces_dj else acces_dk end, true, null) r;
+          when 'fonction_banque' then
+            select to_jsonb(r) into rendu from changer_droits_acces(case t.cible when 'dj' then acces_dj else acces_dk end, null, true) r;
+          when 'mise_a_jour_ventes' then
+            update memberships set droit_ventes = true where id = case t.cible when 'dj' then acces_dj else acces_dk end
+              returning to_jsonb(memberships.*) into rendu;
+          when 'insertion_ventes' then
+            -- L'accès du compte du chef, qui n'en a aucun (le jeu de départ l'exige).
+            insert into memberships (user_id, dossier_id, role, email, droit_ventes)
+              values (chef, case t.cible when 'dj' then dj else dk end, 'client', 'essai-vf8f@example.test', true)
+              returning to_jsonb(memberships.*) into rendu;
+          when 'insertion_sans_droit' then
+            insert into memberships (user_id, dossier_id, role, email)
+              values (chef, case t.cible when 'dj' then dj else dk end, 'client', 'essai-vf8f@example.test')
+              returning to_jsonb(memberships.*) into rendu;
+        end case;
+        code_recu := 'ACCEPTÉ';
+      exception when others then code_recu := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      perform set_config('request.jwt.claims', '', true);
+      select to_jsonb(mb) into apres from memberships mb
+       where mb.id = case t.cible when 'dj' then acces_dj else acces_dk end;
+      obs := case when t.geste in ('insertion_ventes', 'insertion_sans_droit')
+                  then 'accès ' || case when rendu is null then 'absent' else 'inséré, « Ventes » ' || (rendu ->> 'droit_ventes') end
+                  else 'ligne relue ' || case when avant = apres then 'inchangée' else '« Ventes » ' || coalesce(apres ->> 'droit_ventes', '?')
+                       || ', « Banque » ' || coalesce(apres ->> 'droit_banque', '?') end end;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then
+      if sqlstate <> 'P0001' or sqlerrm <> 'ANNULATION_ESSAI' then code_recu := sqlstate; message := sqlerrm; end if;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', t.num || '. ' || t.quoi
+        || case t.attendu when 'refus' then ' : refusé (23514), rien d''écrit' else '' end,
+      'observe', coalesce(code_recu, '?') || coalesce(' ' || message, '') || ', ' || coalesce(obs, '?'),
+      'ok', coalesce(case t.attendu
+        when 'refus' then code_recu = '23514' and message = refus_ventes
+          and (t.geste like 'insertion%' or avant = apres)
+        else code_recu = 'ACCEPTÉ'
+          and case t.geste
+                when 'fonction_ventes' then rendu = apres and (apres ->> 'droit_ventes') = 'true'
+                when 'fonction_banque' then rendu = apres and (apres ->> 'droit_ventes') = 'false' and (apres ->> 'droit_banque') = 'true'
+                when 'insertion_ventes' then (rendu ->> 'droit_ventes') = 'true'
+                when 'insertion_sans_droit' then (rendu ->> 'droit_ventes') = 'false'
+                else false end
+        end, false));
+  end loop;
+
+  -- 82. Un accès qui porte déjà « Ventes » sur un dossier qui n'a pas basculé (posé par la restauration : le propriétaire sous
+  -- la session du super-administrateur) : « Banque » s'y change, « Ventes » s'y décoche, et ne s'y recoche plus — par la
+  -- fonction, sous le super-administrateur, ni par le propriétaire. Puis un autre accès « Ventes » restauré sur DJ, emporté
+  -- vers DK, qui a basculé : accepté ; ramené vers DJ : refusé.
+  obs := null; code_recu := null; message := null;
+  begin
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id, ventes_par_les_factures) values
+      (dj, 'ESSAI VF8F DJ', cabinet, false), (dk, 'ESSAI VF8F DK', cabinet, true);
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    insert into memberships (id, user_id, dossier_id, role, email, droit_ventes) values
+      (acces_dj, client, dj, 'client', 'essai-vf8f@example.test', true),
+      (acces_dk, chef, dj, 'client', 'essai-vf8f@example.test', true);
+    set local role authenticated;
+    select 'Banque ' || r.droit_ventes::int || r.droit_banque::int into obs from changer_droits_acces(acces_dj, null, true) r;
+    select obs || ' ; décoché ' || r.droit_ventes::int || r.droit_banque::int into obs from changer_droits_acces(acces_dj, false, null) r;
+    begin
+      perform changer_droits_acces(acces_dj, true, null);
+      obs := obs || ' ; recoché ACCEPTÉ';
+    exception when others then obs := obs || ' ; recoché ' || sqlstate || case when sqlerrm = refus_ventes then ' (ses mots)' else ' ' || sqlerrm end;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    begin
+      update memberships set droit_ventes = true where id = acces_dj;
+      obs := obs || ' ; propriétaire ACCEPTÉ';
+    exception when others then obs := obs || ' ; propriétaire ' || sqlstate || case when sqlerrm = refus_ventes then ' (ses mots)' else ' ' || sqlerrm end;
+    end;
+    begin
+      update memberships set dossier_id = dk where id = acces_dk;
+      obs := obs || ' ; emporté vers DK ACCEPTÉ';
+    exception when others then obs := obs || ' ; emporté vers DK ' || sqlstate || ' ' || sqlerrm;
+    end;
+    begin
+      update memberships set dossier_id = dj where id = acces_dk;
+      obs := obs || ' ; ramené vers DJ ACCEPTÉ';
+    exception when others then obs := obs || ' ; ramené vers DJ ' || sqlstate || case when sqlerrm = refus_ventes then ' (ses mots)' else ' ' || sqlerrm end;
+    end;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then
+    if sqlstate <> 'P0001' or sqlerrm <> 'ANNULATION_ESSAI' then code_recu := sqlstate; message := sqlerrm; end if;
+  end;
+  reset role;
+  verdicts := verdicts || jsonb_build_object('controle', '82. un accès « Ventes » restauré sur un dossier qui n''a pas basculé : « Banque » s''y change, « Ventes » s''y décoche et ne s''y recoche plus ; un accès « Ventes » emporté vers ce dossier, refusé',
+    'observe', coalesce(obs, '?') || coalesce(', ' || code_recu || ' ' || message, ''),
+    'ok', coalesce(obs = 'Banque 11 ; décoché 01 ; recoché 23514 (ses mots) ; propriétaire 23514 (ses mots) ; emporté vers DK ACCEPTÉ ; ramené vers DJ 23514 (ses mots)'
+      and code_recu is null, false));
+
+  -- 83. Le catalogue : la garde, aux droits du propriétaire, chemin fixé, qu'aucun rôle de l'API n'exécute ; son déclencheur,
+  -- APRÈS l'insertion et la mise à jour de `droit_ventes` ou de `dossier_id`, ligne par ligne, actif.
+  select p.prosecdef || ' ' || p.provolatile::text || ' ' || coalesce(array_to_string(p.proconfig, ','), '') || ' ' || l.lanname
+         || ' anon ' || has_function_privilege('anon', p.oid, 'execute')
+         || ' authenticated ' || has_function_privilege('authenticated', p.oid, 'execute')
+         || ' public ' || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')
+         || ' | ' || coalesce((select string_agg(pg_get_triggerdef(tg.oid) || ' ' || tg.tgenabled::text, ' ; ') from pg_trigger tg
+                                where tg.tgrelid = 'public.memberships'::regclass and not tg.tgisinternal), 'aucun déclencheur')
+    into obs
+    from pg_proc p join pg_language l on l.oid = p.prolang where p.oid = to_regprocedure('public.garder_droit_ventes()');
+  verdicts := verdicts || jsonb_build_object('controle', '83. la garde : security definer, chemin fixé, exécutée par aucun rôle de l''API ; son déclencheur, après l''insertion et la mise à jour de droit_ventes ou de dossier_id',
+    'observe', coalesce(obs, 'garde absente'),
+    'ok', coalesce(obs = 'true v search_path=public plpgsql anon false authenticated false public false | CREATE TRIGGER memberships_droit_ventes AFTER INSERT OR UPDATE OF droit_ventes, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_ventes() O', false));
+
+  -- ══ 90 à 95. Les mutations de la garde : chacune doit MORDRE ════════════════════════════════════════════════
+  for t in select * from (values
+      ('90', 'le contrôle 70 joué sur le dossier qui a basculé : le chef coche « Ventes »', 'chef', 'fonction_ventes', 'dk', 'accepte'),
+      ('91', 'le contrôle 74 joué sur le dossier qui a basculé : l''insertion du cabinet passe', 'client_chef', 'insertion_ventes', 'dk', 'accepte'),
+      ('92', 'le contrôle 75 joué par le propriétaire, sans la session du super-administrateur : l''insertion se refuse', 'proprietaire', 'insertion_ventes', 'dj', 'refus'),
+      ('93', 'le contrôle 76 joué sur le dossier qui a basculé : la mise à jour du propriétaire passe', 'proprietaire', 'mise_a_jour_ventes', 'dk', 'accepte'),
+      ('94', 'le contrôle 78 joué sur le dossier qui a basculé : l''insertion du rôle des Edge Functions passe', 'service', 'insertion_ventes', 'dk', 'accepte'),
+      ('95', 'le contrôle 73 joué avec « Ventes » au lieu de « Banque » : refusé', 'chef', 'fonction_ventes', 'dj', 'refus')
+    ) as v(num, quoi, qui, geste, cible, attendu) loop
+    code_recu := null; message := null; rendu := null;
+    begin
+      perform set_config('request.jwt.claims', '', true);
+      insert into dossiers (id, nom, cabinet_id, ventes_par_les_factures) values
+        (dj, 'ESSAI VF8F DJ', cabinet, false), (dk, 'ESSAI VF8F DK', cabinet, true);
+      insert into memberships (id, user_id, dossier_id, role, email) values
+        (acces_dj, client, dj, 'client', 'essai-vf8f@example.test'), (acces_dk, client, dk, 'client', 'essai-vf8f@example.test');
+      if t.qui = 'client_chef' then
+        insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+      end if;
+      begin
+        if t.qui in ('chef', 'client_chef') then
+          set local role authenticated;
+          perform set_config('request.jwt.claims',
+            json_build_object('sub', case t.qui when 'chef' then chef else client end, 'role', 'authenticated')::text, true);
+        elsif t.qui = 'service' then
+          set local role service_role;
+          perform set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
+        end if;
+        case t.geste
+          when 'fonction_ventes' then
+            select to_jsonb(r) into rendu from changer_droits_acces(case t.cible when 'dj' then acces_dj else acces_dk end, true, null) r;
+          when 'mise_a_jour_ventes' then
+            update memberships set droit_ventes = true where id = case t.cible when 'dj' then acces_dj else acces_dk end
+              returning to_jsonb(memberships.*) into rendu;
+          when 'insertion_ventes' then
+            insert into memberships (user_id, dossier_id, role, email, droit_ventes)
+              values (chef, case t.cible when 'dj' then dj else dk end, 'client', 'essai-vf8f@example.test', true)
+              returning to_jsonb(memberships.*) into rendu;
+        end case;
+        code_recu := 'ACCEPTÉ';
+      exception when others then code_recu := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then
+      if sqlstate <> 'P0001' or sqlerrm <> 'ANNULATION_ESSAI' then code_recu := sqlstate; message := sqlerrm; end if;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', t.num || '. MUTATION — ' || t.quoi,
+      'observe', coalesce(code_recu, '?') || coalesce(' ' || message, ''),
+      'ok', coalesce(case t.attendu when 'refus' then code_recu = '23514' and message = refus_ventes
+                     else code_recu = 'ACCEPTÉ' and (rendu ->> 'droit_ventes') = 'true' end, false));
+  end loop;
+
   -- ══ 60. Rien n'est resté ════════════════════════════════════════════════════════════════════════════════════
   select coalesce(jsonb_agg(to_jsonb(mb) order by mb.id), '[]'::jsonb) into apres from memberships mb;
   verdicts := verdicts || jsonb_build_object('controle', '60. rien n''est resté en base',
@@ -577,11 +832,15 @@ begin
       || ', chefs et membres ' || admins_avant || ' -> ' || (select count(*) from cabinet_admins)
       || ', affectations ' || assignations_avant || ' -> ' || (select count(*) from dossier_assignations)
       || ', super-administrateurs ' || supers_avant || ' -> ' || (select count(*) from super_admins)
+      || ', dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers)
+      || ', dont basculés ' || bascules_avant || ' -> ' || (select count(*) from dossiers where ventes_par_les_factures)
       || ', droit d''exécution d''anon ' || has_function_privilege('anon', 'public.changer_droits_acces(uuid, boolean, boolean)', 'execute'),
     'ok', coalesce(apres = instantane
       and admins_avant = (select count(*) from cabinet_admins)
       and assignations_avant = (select count(*) from dossier_assignations)
       and supers_avant = (select count(*) from super_admins)
+      and dossiers_avant = (select count(*) from dossiers)
+      and bascules_avant = (select count(*) from dossiers where ventes_par_les_factures)
       and not exists (select 1 from cabinet_admins where user_id = client)
       and not has_function_privilege('anon', 'public.changer_droits_acces(uuid, boolean, boolean)', 'execute'), false));
 

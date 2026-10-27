@@ -109,9 +109,11 @@ begin
       -- Les fichiers que chacun voit : ceux de A / ceux de B / celui dont le chemin ne commence pas par un dossier.
 
       -- ══ Le jeu : deux dossiers jetables, un accès d'essai sans droit, des fichiers d'essai dans le seau ══════════
+      -- A naît basculé : « Ventes » ne se porte que sur un accès d'un dossier dont les factures sont la source de leurs
+      -- ventes (garder_droit_ventes, étape VF8f) ; le seau et ses logos n'en dépendent pas.
       ('j1', 'jeu', 'dossiers jetables A et B', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva) values
-          ('{DA}', 'ESSAI LOGO A', '{CAB}', 'redevable', true), ('{DB}', 'ESSAI LOGO B', '{CAB}', 'redevable', true)$q$, 'OK', null, null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures) values
+          ('{DA}', 'ESSAI LOGO A', '{CAB}', 'redevable', true, true), ('{DB}', 'ESSAI LOGO B', '{CAB}', 'redevable', true, false)$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-logo@exemple.invalid')$q$, 'OK', null, null),
       ('j3', 'jeu', 'les fichiers d''essai : huit logos et un autre fichier dans A, un logo dans B, un chemin sans dossier, un logo rangé dans le seau des pièces et un pack dans celui des packs', 'proprietaire', null,

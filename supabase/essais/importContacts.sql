@@ -113,10 +113,12 @@ begin
       -- membre_affecte (le même, affecté au dossier B).
 
       -- ══ Le jeu : trois dossiers jetables, un accès d'essai sans droit ══════════
+      -- A naît basculé : « Ventes » ne se porte que sur un accès d'un dossier dont les factures sont la source de leurs
+      -- ventes (garder_droit_ventes, étape VF8f) ; l'import de ses contacts n'en dépend pas.
       ('j1', 'jeu', 'dossiers jetables A, B et C (C dispense des soins exonérés)', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, article_exoneration) values
-          ('{DA}', 'ESSAI IMPORT A', '{CAB}', 'redevable', true, null), ('{DB}', 'ESSAI IMPORT B', '{CAB}', 'redevable', true, null),
-          ('{DC}', 'ESSAI IMPORT C', '{CAB}', 'exonere', false, 'cgi_261_4_1')$q$, 'OK', null, null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, article_exoneration, ventes_par_les_factures) values
+          ('{DA}', 'ESSAI IMPORT A', '{CAB}', 'redevable', true, null, true), ('{DB}', 'ESSAI IMPORT B', '{CAB}', 'redevable', true, null, false),
+          ('{DC}', 'ESSAI IMPORT C', '{CAB}', 'exonere', false, 'cgi_261_4_1', false)$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-import@exemple.invalid')$q$, 'OK', null, null),
 

@@ -105,9 +105,12 @@ begin
       -- séparent par « §§ » ; {RENDU} y vaut ce que le précédent a rendu ; la clé garde ce que l'étape a rendu.
 
       -- ══ Le jeu : deux dossiers jetables, un accès d'essai sans droit, deux mouvements ══════════
+      -- A naît basculé : « Ventes » ne se porte que sur un accès d'un dossier dont les factures sont la source de leurs
+      -- ventes (garder_droit_ventes, étape VF8f). Ses factures validées y sont donc la source de leur vente, et portent la
+      -- nature de leurs opérations, que leur validation exige (un avoir prend celle de sa facture).
       ('j1', 'jeu', 'dossiers jetables A et B', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva) values
-          ('{DA}', 'ESSAI VENTES A', '{CAB}', 'redevable', true), ('{DB}', 'ESSAI VENTES B', '{CAB}', 'redevable', true)$q$, 'OK', null, null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures) values
+          ('{DA}', 'ESSAI VENTES A', '{CAB}', 'redevable', true, true), ('{DB}', 'ESSAI VENTES B', '{CAB}', 'redevable', true, false)$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-ventes@exemple.invalid')$q$, 'OK', null, null),
       ('j3', 'jeu', 'un crédit dans chaque dossier', 'proprietaire', null,
@@ -164,7 +167,7 @@ begin
 
       -- ══ 7 à 17. La numérotation : le cabinet, puis le client, puis le cabinet ══════════
       ('7', 'fait', 'le chef valide F1', 'chef', null,
-        $q$select facture_id::text from enregistrer_facture('{DA}', null, '{"tiers_nom":"ESSAI VENTES F1","date_emission":"2026-03-01","montant_ht":100,"montant_tva":20,"montant_ttc":120}'::jsonb, '[{"designation":"f1","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true)$q$,
+        $q$select facture_id::text from enregistrer_facture('{DA}', null, '{"tiers_nom":"ESSAI VENTES F1","date_emission":"2026-03-01","montant_ht":100,"montant_tva":20,"montant_ttc":120,"nature_operation":"services"}'::jsonb, '[{"designation":"f1","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true)$q$,
         'OK', null, 'F1'),
       ('7b', 'valeur', 'F1 porte le premier numéro de la série', 'proprietaire', null,
         $q$select numero from factures_emises where id = '{F1}'$q$, 'OK', 'F2026-0001', null),
@@ -176,10 +179,10 @@ begin
            §§ select (id = '{B1}' and montant_ttc = 240 and (select count(*) from facture_lignes l where l.facture_id = '{B1}') = 2)::text from factures_emises where id = '{RENDU}'$q$,
         'OK', 'true', null),
       ('10', 'fait', 'il le valide : le numéro suivant de la série', 'client', 'ventes',
-        $q$select numero from enregistrer_facture('{DA}', '{B1}', '{"tiers_nom":"ESSAI VENTES B1","date_emission":"2026-03-02","montant_ht":200,"montant_tva":40,"montant_ttc":240}'::jsonb, '[{"designation":"b1","quantite":1,"prix_unitaire_ht":150,"taux_tva":20},{"designation":"b1 bis","quantite":1,"prix_unitaire_ht":50,"taux_tva":20}]'::jsonb, true)$q$,
+        $q$select numero from enregistrer_facture('{DA}', '{B1}', '{"tiers_nom":"ESSAI VENTES B1","date_emission":"2026-03-02","montant_ht":200,"montant_tva":40,"montant_ttc":240,"nature_operation":"services"}'::jsonb, '[{"designation":"b1","quantite":1,"prix_unitaire_ht":150,"taux_tva":20},{"designation":"b1 bis","quantite":1,"prix_unitaire_ht":50,"taux_tva":20}]'::jsonb, true)$q$,
         'OK', 'F2026-0002', null),
       ('11', 'fait', 'le chef valide F3', 'chef', null,
-        $q$select facture_id::text from enregistrer_facture('{DA}', null, '{"tiers_nom":"ESSAI VENTES F3","date_emission":"2026-03-03","montant_ht":300,"montant_tva":60,"montant_ttc":360}'::jsonb, '[{"designation":"f3","quantite":3,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true)$q$,
+        $q$select facture_id::text from enregistrer_facture('{DA}', null, '{"tiers_nom":"ESSAI VENTES F3","date_emission":"2026-03-03","montant_ht":300,"montant_tva":60,"montant_ttc":360,"nature_operation":"services"}'::jsonb, '[{"designation":"f3","quantite":3,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true)$q$,
         'OK', null, 'F3'),
       ('11b', 'valeur', 'F3 porte le troisième', 'proprietaire', null,
         $q$select numero from factures_emises where id = '{F3}'$q$, 'OK', 'F2026-0003', null),
@@ -246,11 +249,11 @@ begin
       -- valide_par est celui qui VALIDE, jamais celui qui a créé : un brouillon du client validé par le chef, et l'inverse
       -- (deux contrôles annulés, qui laissent B4 et B2 en brouillon pour la suite).
       ('22l', 'controle', 'le chef valide un brouillon du client : valide_par dit le chef, l''auteur reste le client', 'chef', null,
-        $q$select numero from enregistrer_facture('{DA}', '{B4}', '{"tiers_nom":"ESSAI VENTES B4","date_emission":"2026-03-06","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"b4","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)
+        $q$select numero from enregistrer_facture('{DA}', '{B4}', '{"tiers_nom":"ESSAI VENTES B4","date_emission":"2026-03-06","montant_ht":10,"montant_tva":2,"montant_ttc":12,"nature_operation":"services"}'::jsonb, '[{"designation":"b4","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)
            §§ select (valide_par = '{CHEF}' and created_by = '{CLIENT}')::text from factures_emises where id = '{B4}'$q$,
         'OK', 'true', null),
       ('22m', 'controle', 'le client portant « Ventes » valide un brouillon du chef : valide_par dit le client, l''auteur reste le chef', 'client', 'ventes',
-        $q$select numero from enregistrer_facture('{DA}', '{B2}', '{"tiers_nom":"ESSAI VENTES B2","date_emission":"2026-03-06","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"b2","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)
+        $q$select numero from enregistrer_facture('{DA}', '{B2}', '{"tiers_nom":"ESSAI VENTES B2","date_emission":"2026-03-06","montant_ht":10,"montant_tva":2,"montant_ttc":12,"nature_operation":"services"}'::jsonb, '[{"designation":"b2","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)
            §§ select (valide_par = '{CLIENT}' and created_by = '{CHEF}')::text from factures_emises where id = '{B2}'$q$,
         'OK', 'true', null),
       ('22', 'controle', 'l''anonyme n''exécute pas supprimer_brouillon_facture', 'anon', null,

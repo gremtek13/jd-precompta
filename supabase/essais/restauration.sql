@@ -329,6 +329,17 @@
 -- 1 sur 1 avec la migration, EN ATTENTE sans elle ; les autres contrôles inchangés. Ce script recopie les tables, pas leurs
 -- gardes : que la garde laisse la date que le super-administrateur réinsère, et pose celle de toute autre insertion,
 -- ventesFacturees.sql le prouve (9c à 9f, 191).
+--
+-- 27/10/2026, chantier EC-Q3, étape VF8f (migration `ventes_sur_dossier_bascule`, préparée, non appliquée) : aucune table,
+-- colonne ni clé de plus — une garde sur `memberships`, qui refuse « Ventes » sur un accès d'un dossier qui n'a pas basculé,
+-- sauf à l'insertion du super-administrateur. Le plan ne change pas. Un contrôle de plus suit le verdict : chaque accès
+-- « Ventes » du dossier restauré le portant, son dossier restauré au même réglage, écrit AVANT ses accès (l'ordre). Rejoué sur
+-- la réplique de l'étape (la production à 157 migrations, ses neuf familles égales à celles de la production, puis munie de
+-- la migration), sur une copie jetable, contre le dossier de VF7e semé de l'accès du client, « Ventes » coché par le chef,
+-- par la fonction, sur le dossier basculé : les tables, les lignes et les autres contrôles comme avant, des deux côtés ; le
+-- contrôle neuf, 1 sur 1. Ce script recopie les tables, pas leurs gardes : l'insertion du super-administrateur d'un accès
+-- « Ventes » sur un dossier qui n'a pas basculé — la restauration d'une sauvegarde d'avant le resserrement —, et le refus
+-- de toute autre écriture, droitsAcces.sql les prouve (70 à 82, 90 à 95).
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -890,6 +901,29 @@ begin
   insert into essai_restauration._controles values ('dossiers.ventes_par_les_factures_depuis : le dossier basculé, restauré avec sa date et son réglage',
     case when n > 0 then n || ' sur ' || n else 'un dossier daté' end,
     case when n > 0 then egales || ' sur ' || n else 'aucune date de bascule dans le dossier : rien n''est prouvé' end);
+end $$;
+
+-- LE DROIT « VENTES » D'UN ACCÈS (chantier EC-Q3, étape VF8f ; migration `ventes_sur_dossier_bascule`, préparée) : la garde
+-- `garder_droit_ventes` refuse « Ventes » sur un accès d'un dossier qui n'a pas basculé, sauf à l'insertion du
+-- super-administrateur — la restauration rend ce qui a été. Ce script ne porte pas les déclencheurs : ce contrôle dit que
+-- chaque accès « Ventes » du dossier est restauré le portant, son dossier restauré avec le même réglage, et que l'ordre de la
+-- restauration écrit le dossier AVANT ses accès — un accès « Ventes » d'un dossier basculé se réinsère donc sur un dossier
+-- déjà basculé, sans l'exception. Celle-ci, pour l'accès d'une sauvegarde d'avant le resserrement sur un dossier qui n'a pas
+-- basculé, se joue dans droitsAcces.sql (75, 82, 92).
+do $$
+declare d uuid := (select dossier from essai_restauration._cible); n bigint; egales bigint; ordre_juste boolean;
+begin
+  select (select o.rang from essai_restauration._ordre o where o.table_nom = 'dossiers')
+         < (select o.rang from essai_restauration._ordre o where o.table_nom = 'memberships') into ordre_juste;
+  execute 'select count(*), count(*) filter (where e.droit_ventes and ed.ventes_par_les_factures = sd.ventes_par_les_factures)'
+          || ' from public.memberships s join public.dossiers sd on sd.id = s.dossier_id'
+          || ' left join essai_restauration.memberships e on e.id = s.id left join essai_restauration.dossiers ed on ed.id = s.dossier_id'
+          || ' where s.dossier_id = $1 and s.droit_ventes'
+    into n, egales using d;
+  insert into essai_restauration._controles values ('memberships.droit_ventes : chaque accès « Ventes » restauré le portant, son dossier avant lui, au même réglage',
+    case when n > 0 then n || ' sur ' || n || ', le dossier avant ses accès' else 'au moins un accès « Ventes »' end,
+    case when n > 0 then egales || ' sur ' || n || ', ' || case when ordre_juste then 'le dossier avant ses accès' else 'LES ACCÈS AVANT LEUR DOSSIER' end
+         else 'aucun accès « Ventes » dans le dossier : rien n''est prouvé' end);
 end $$;
 
 select controle, attendu, observe, observe = attendu as ok from essai_restauration._controles order by controle;
