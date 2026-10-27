@@ -363,7 +363,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
 
   it('lit les mouvements rapprochés portant une catégorie, avec leur taux, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, categorie_id, taux_tva"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)\.not\("categorie_id", "is", null\)/)
-    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rFactures, rEncaissements, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('passe les mouvements aux catégories sans compte ou sans poste, et rend les deux points de la Checklist', () => {
@@ -371,16 +371,38 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
     // VENTILATION, gardé par agentComptableVentilation.test.ts).
     // Et la pièce de chaque bien du registre, que sa catégorie ne décide plus (bloc AMORTISSEMENT,
     // `acquisitionsDesBiens`) — l'ouverture d'un dossier repris dit lesquels la balance reprise porte déjà.
-    expect(corps).toContain('categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
-    expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
+    // Et les pièces qui COMPTENT (étape VF9b) : l'exemplaire d'une facture source ne s'écrit pas, et sa catégorie ne
+    // décide de rien — comme dans la Checklist, il sort à l'appel, pas dans les deux fonctions copiées.
+    expect(corps).toContain('categoriesSansCompte(categoriesTyped, piecesQuiComptent, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
+    expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesQuiComptent, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
     expect(corps).toContain('const acquisitions = acquisitionsDesBiens(rImmobilisations.lignes, rNatures.lignes, ouverture)')
     expect(corps).toContain('const pieceIdsImmobilisees = new Set(acquisitions.keys())')
-    expect(corps).toContain('piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions)')
+    expect(corps).toContain('piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)')
     expect(corps).toContain('mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)')
     expect(corps).toContain('mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere)')
     expect(corps).toContain('recettesAffecteesSansTaux(affectes, dossier.assujetti_tva, frontiere)')
     expect(corps).toMatch(/mouvements_affectes_a_reaffecter: affectesAReaffecter\.length/)
     expect(corps).toMatch(/encaissements_affectes_ou_ventiles_en_recette_sans_taux_de_tva_sur_dossier_assujetti: recettesAffecteesSansTva\.length \+ recettesVentileesSansTva\.length/)
+  })
+
+  // LES PIÈCES QUI COMPTENT (étape VF9b, chantier EC-Q3, ligne 28.65), comme la Checklist (lib/pointsDeLaChecklist.ts,
+  // `validesQuiComptent`) : les validées, moins l'exemplaire d'une facture source — sa catégorie, sa TVA et son règlement
+  // sont ceux de sa facture. Les catégories (ci-dessus), la TVA et le payé en trop (agentComptableReglementGroupe.test.ts)
+  // ne jugent qu'elles ; le brouillon, lui, reçoit les factures sources (`piecesAComptabiliser`).
+  it('ne passe aux catégories et à la TVA que les pièces qui comptent, l’exemplaire d’une facture source écarté', () => {
+    expect(corps).toContain('    const piecesQuiComptent = horsDesExemplairesDesSources(piecesTyped, sources)\n')
+    expect(corps).toContain('    const sansTva = piecesSansTva(piecesQuiComptent, dossier.assujetti_tva)\n')
+    // Et rien d'autre de ce qui juge une pièce par ses montants ne lit encore toutes les validées.
+    const restes = corps.split('\n').filter((l) => /\bpiecesTyped\b/.test(l) && !/^\s*\/\//.test(l)).map((l) => l.trim())
+    expect(restes).toEqual([
+      'const piecesTyped = rPieces.lignes',
+      'const exemplaires = exemplairesDesSources(piecesTyped, sources)',
+      'const piecesQuiComptent = horsDesExemplairesDesSources(piecesTyped, sources)',
+      'const designees: ExemplaireRow[] = piecesTyped',
+      'const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)',
+      'const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele.mode)',
+      '...piecesTyped.flatMap((p) => (p.date_piece ? [Number(p.date_piece.slice(0, 4))] : [])),',
+    ])
   })
 
   it('dit au modèle qu’une recette d’un dossier assujetti porte son taux, et qu’elle compte au hors taxe', () => {

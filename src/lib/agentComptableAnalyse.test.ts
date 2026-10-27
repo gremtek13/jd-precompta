@@ -1,13 +1,15 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import { SANS_FACTURE_SOURCE, SANS_EXEMPLAIRE } from '../test/ventesFacturees'
+import { SANS_VIREMENT_MIXTE } from '../test/ventesFacturees'
 import type { AcquisitionDuBien } from './amortissements'
 import { analyserEcritures, lignesPourPiece, piecesAComptabiliser, type CibleComptable, type LigneAGenerer } from './ecritures'
+import { partsEncaissees, type EncaissementLu, type ExemplaireLu, type FactureDuDossier } from './encaissementsFactures'
 import { lignesEngagementPourPiece, type ModeleComptable } from './engagement'
+import { exemplairesDesSources, facturesSourcesDe, type FacturesSources } from './facturesSources'
 import { montantRetenu } from './montantRetenu'
 import {
-  rattachementsTresorerie, paiementsDesPieces, type LignePayante, type PaiementDePiece, type PaiementsDesPieces, type PartReglee,
+  rattachementsTresorerie, paiementsDesPieces, type PaiementDePiece, type PaiementsDesPieces, type PartEncaissee, type PartReglee,
 } from './rattachement'
 import type { Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { dateAParis } from './format'
@@ -50,6 +52,14 @@ import { PLAN_PAR_DEFAUT } from './planComptable'
 // suivre un par un, au montant de chacun. Une copie restée aux seuls rapprochements dirait « en attente de
 // rapprochement » une pièce réglée par un virement groupé, et « à régénérer » son écriture juste.
 //
+// ET LA SOURCE DES VENTES (27/10/2026, chantier EC-Q3, étape VF9b, ligne 28.65). Le générateur reprend ses trois signatures
+// d'aujourd'hui : les factures sources (`piecesAComptabiliser`), les exemplaires (`analyserEcritures`) et les parts des
+// virements mixtes (`paiementsDesPieces`, origine `encaissements`). Chaque cas se compare donc aussi sous quatre RÉGIMES de
+// ventes — aucune facture source ; chaque pièce exemplaire d'une facture source ; exemplaire d'une facture qui ne l'est pas ;
+// exemplaire d'une facture d'avant qu'un virement mixte paie —, chaque côté tirant les sources, les exemplaires et les parts
+// de SES copies des blocs FACTURES SOURCES et VIREMENT MIXTE. Une copie qui compterait l'exemplaire, ou oublierait le
+// virement mixte, dirait « à régénérer » ce que la Checklist tait.
+//
 // Le garde est volontairement FRAGILE, comme ses huit aînés : renommer une fonction ou changer une
 // signature le casse bruyamment, ce qui vaut mieux qu'une copie qui dérive en silence.
 function sourceDeployee(): string {
@@ -60,9 +70,9 @@ function sourceDeployee(): string {
 // une source où une dérive a été PLANTÉE, et donc de prouver que ce garde-fou sait encore échouer.
 function extraire(source: string) {
   // DE LA PREMIÈRE COPIE DE src/lib/ecritures.ts À LA FIN D'`analyserEcritures` : les constantes
-  // comptables, `piecesAComptabiliser`, le bloc copié de src/lib/rattachement.ts (qui décide de la
-  // DATE qu'une écriture doit porter) et `analyserEcritures`. Tout vient de la MÊME source : une
-  // dérive sur un numéro de compte, sur le seuil d'alignement ou sur la tolérance d'équilibre doit
+  // comptables, les blocs FACTURES SOURCES et VIREMENT MIXTE, `piecesAComptabiliser`, le bloc copié de
+  // src/lib/rattachement.ts (qui décide de la DATE qu'une écriture doit porter) et `analyserEcritures`. Tout vient de
+  // la MÊME source : une dérive sur un numéro de compte, sur le seuil d'alignement ou sur la tolérance d'équilibre doit
   // mordre ici aussi, pas seulement une dérive d'algorithme.
   const debut = source.indexOf('// ---- Dupliqué depuis src/lib/ecritures.ts')
   expect(debut, 'le bloc copié de src/lib/ecritures.ts est introuvable — garde-fou à remettre à jour')
@@ -78,7 +88,9 @@ function extraire(source: string) {
     'function compteTvaDe(', 'function compteDeTiers(', 'function engagementDesynchronise(',
     'function desequilibresEngagement(', 'function paiementsDesPieces(', 'function banqueSuitLesPaiements(',
     'function frontiereDeValidation(', 'function estFigee(', 'function lignesPourPiece(', 'function partieOuverteDesynchronisee(',
-    'function dateDuDepot(',
+    'function dateDuDepot(', '// ── DÉBUT FACTURES SOURCES ', '// ── FIN FACTURES SOURCES ', '// ── DÉBUT VIREMENT MIXTE ',
+    '// ── FIN VIREMENT MIXTE ', 'function exemplaireDUneSource(', 'function facturesSourcesDe(', 'function exemplairesDesSources(',
+    'function partsEncaissees(', 'function exemplaireUnique(',
   ] as const) {
     expect(bloc, `« ${attendu} » absent du bloc gardé`).toContain(attendu)
   }
@@ -87,11 +99,13 @@ function extraire(source: string) {
   // compilateur du projet plutôt que d'en retirer les types à la main — une traduction écrite à la
   // main mentirait au premier cas tordu.
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot, montantRetenu }`)() as {
-    piecesAComptabiliser: (p: Piece[], c: Categorie[], biens: ReadonlyMap<string, AcquisitionDuBien>) => ({ piece: Piece } & CibleComptable)[]
+  return new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot, montantRetenu, facturesSourcesDe, exemplairesDesSources, partsEncaissees }`)() as {
+    piecesAComptabiliser: (
+      p: Piece[], c: Categorie[], biens: ReadonlyMap<string, AcquisitionDuBien>, sources: FacturesSources,
+    ) => ({ piece: Piece } & CibleComptable)[]
     analyserEcritures: (
       e: EcritureBrouillon[], a: ({ piece: Piece } & CibleComptable)[], assujettiTva: boolean, paiements: PaiementsDesPieces,
-      modele: ModeleComptable, frontiere: string | null,
+      modele: ModeleComptable, frontiere: string | null, exemplaires: ReadonlySet<string>,
     ) => {
       nbSansContrepartie: number
       piecesSansContrepartie: string[]
@@ -99,10 +113,10 @@ function extraire(source: string) {
       piecesDesynchronisees: Piece[]
     }
     rattachementsTresorerie: typeof rattachementsTresorerie
-    // La copie de l'Edge Function n'a que les deux premiers paramètres : elle ne connaît pas encore ce que les virements
-    // mixtes paient de leurs exemplaires (étape VF5h ; ses blocs se reprennent à l'étape VF9). Elle se confronte au module
-    // sans virement mixte, la seule forme qu'elle sache lire.
-    paiementsDesPieces: (lignes: readonly LignePayante[], reglements: readonly PartReglee[]) => PaiementsDesPieces
+    paiementsDesPieces: typeof paiementsDesPieces
+    facturesSourcesDe: typeof facturesSourcesDe
+    exemplairesDesSources: typeof exemplairesDesSources
+    partsEncaissees: typeof partsEncaissees
     frontiereDeValidation: typeof frontiereDeValidation
     estFigee: typeof estFigee
     lignesPourPiece: (
@@ -183,6 +197,102 @@ function groupeConforme(id: string, o: { compte?: string; tva?: number; date?: s
 /** Le mouvement qui paie la pièce `id` en entier, le jour de son écriture conforme. */
 const payee = (id: string, date = '2025-03-10') => paiement({ id: `l-${id}`, piece_id: id, date })
 
+// LES VENTES FACTURÉES D'UN CAS (étape VF9b) : les factures du dossier et le registre de leurs encaissements, tels que
+// `points_a_traiter` les lit pour un dossier qui a basculé ; les pièces du cas portent leur désignation (`facture_id`).
+interface VentesDuCas {
+  factures: FactureDuDossier[]
+  encaissements: EncaissementLu[]
+}
+
+/** Un cas tel qu'un régime le donne : ses pièces, son relevé, ses ventes. */
+interface CasDesVentes {
+  pieces: Piece[]
+  paiements: LigneBancaire[]
+  ventes: VentesDuCas
+}
+
+const factureDuCas = (o: Partial<FactureDuDossier>): FactureDuDossier => ({
+  id: 'f1', dossier_id: 'd1', numero: 'F2025-0001', type: 'facture', statut: 'validee', facture_origine_id: null,
+  source_de_la_vente: true, ...o,
+})
+const encaissementDuCas = (o: Partial<EncaissementLu>): EncaissementLu => ({
+  id: 'e1', dossier_id: 'd1', facture_id: 'f1', montant: 100, ligne_bancaire_id: null, annule_id: null, retire_le: null, ...o,
+})
+
+/**
+ * LES QUATRE RÉGIMES DES VENTES sous lesquels chaque cas compare aussi les deux copies (étape VF9b) — le premier rend
+ * son résultat :
+ *  - aucune facture source, ce que voit un dossier qui n'a pas basculé ;
+ *  - chaque pièce, exemplaire désigné d'une facture SOURCE : elle ne s'écrit plus, et son écriture n'est plus jugée ;
+ *  - chaque pièce, exemplaire d'une facture qui n'est PAS source : elle compte comme hier ;
+ *  - chaque pièce, exemplaire d'une facture d'avant que paie un VIREMENT MIXTE — un crédit classé par ses encaissements,
+ *    daté du 20 avril, qui porte aussi l'encaissement d'une facture source : une pièce de vente y gagne un paiement, à
+ *    la date du mouvement et au montant de l'encaissement ; une autre n'en gagne aucun (l'exemplaire unique est une pièce
+ *    de vente validée).
+ */
+const REGIMES: { nom: string; appliquer: (pieces: Piece[], paiements: LigneBancaire[]) => CasDesVentes }[] = [
+  { nom: 'sans facture source', appliquer: (pieces, paiements) => ({ pieces, paiements, ventes: { factures: [], encaissements: [] } }) },
+  {
+    nom: 'chaque pièce exemplaire d’une facture source',
+    appliquer: (pieces, paiements) => ({
+      pieces: pieces.map((p) => ({ ...p, facture_id: `fs-${p.id}` })),
+      paiements,
+      ventes: { factures: pieces.map((p) => factureDuCas({ id: `fs-${p.id}`, numero: `FS-${p.id}` })), encaissements: [] },
+    }),
+  },
+  {
+    nom: 'chaque pièce exemplaire d’une facture qui n’est pas source',
+    appliquer: (pieces, paiements) => ({
+      pieces: pieces.map((p) => ({ ...p, facture_id: `fa-${p.id}` })),
+      paiements,
+      ventes: {
+        factures: pieces.map((p) => factureDuCas({ id: `fa-${p.id}`, numero: `FA-${p.id}`, source_de_la_vente: false })),
+        encaissements: [],
+      },
+    }),
+  },
+  {
+    nom: 'chaque pièce exemplaire d’une facture d’avant qu’un virement mixte paie',
+    appliquer: (pieces, paiements) => ({
+      pieces: pieces.map((p) => ({ ...p, facture_id: `fa-${p.id}` })),
+      paiements: [...paiements, ...pieces.map((p) => paiement({
+        id: `vm-${p.id}`, piece_id: null, date: '2025-04-20', montant: Math.abs(p.montant_ttc ?? 0) + 50, encaissements_de_factures: true,
+      }))],
+      ventes: {
+        factures: [
+          factureDuCas({ id: 'fs-mixte', numero: 'FS-MIXTE' }),
+          ...pieces.map((p) => factureDuCas({ id: `fa-${p.id}`, numero: `FA-${p.id}`, source_de_la_vente: false })),
+        ],
+        encaissements: pieces.flatMap((p) => [
+          encaissementDuCas({ id: `es-${p.id}`, facture_id: 'fs-mixte', montant: 50, ligne_bancaire_id: `vm-${p.id}` }),
+          encaissementDuCas({ id: `ea-${p.id}`, facture_id: `fa-${p.id}`, montant: Math.abs(p.montant_ttc ?? 0), ligne_bancaire_id: `vm-${p.id}` }),
+        ]),
+      },
+    }),
+  },
+]
+
+/** Les paiements de chaque pièce, sous une forme comparable : par pièce, dans l'ordre de leur identifiant. */
+const enObjet = (m: PaiementsDesPieces) => Object.fromEntries([...m.entries()].sort(([a], [b]) => a.localeCompare(b)))
+
+type CopiesDesVentes = Pick<typeof deployee, 'facturesSourcesDe' | 'exemplairesDesSources' | 'partsEncaissees'>
+const VENTES_DE_SRC_LIB: CopiesDesVentes = { facturesSourcesDe, exemplairesDesSources, partsEncaissees }
+
+/**
+ * Ce que `points_a_traiter` tire des ventes d'un cas, par les copies d'UN côté : les factures sources, les pièces qui en
+ * sont l'exemplaire, et ce que les virements mixtes paient — les pièces désignées lues avec leur statut et leur type.
+ */
+function entreesDesVentes(cas: CasDesVentes, copies: CopiesDesVentes) {
+  const sources = copies.facturesSourcesDe(cas.ventes.factures)
+  const designees: ExemplaireLu[] = cas.pieces.filter((p) => p.facture_id != null)
+    .map((p) => ({ id: p.id, dossier_id: 'd1', facture_id: p.facture_id, statut: p.statut, type_piece: p.type_piece }))
+  return {
+    sources,
+    exemplaires: copies.exemplairesDesSources(cas.pieces, sources),
+    encaissees: copies.partsEncaissees('d1', cas.ventes.encaissements, { factures: cas.ventes.factures }, designees),
+  }
+}
+
 /**
  * Les deux copies doivent rendre EXACTEMENT la même chose — on compare les ids, pas les objets.
  *
@@ -197,32 +307,51 @@ const payee = (id: string, date = '2025-03-10') => paiement({ id: `l-${id}`, pie
  * ET LES DEUX COPIES SONT COMPARÉES SOUS CHAQUE FRONTIÈRE DE VALIDATION de `FRONTIERES` — aucune, puis des frontières
  * qui coupent les dates de la batterie —, pas seulement sous celle qu'on demande : chaque cas ci-dessous éprouve
  * ainsi la branche d'une pièce que la frontière coupe. Le résultat rendu est celui de `frontiere`.
+ *
+ * ET SOUS CHAQUE RÉGIME DES VENTES de `REGIMES` (étape VF9b), chaque côté tirant les factures sources, les exemplaires
+ * et les parts des virements mixtes de SES copies — sauf quand le cas donne ses propres ventes (`ventes`), qui sont
+ * alors les seules comparées et celles du résultat.
  */
 function memeResultat(
   ecritures: EcritureBrouillon[], pieces: Piece[], biens: [string, AcquisitionDuBien][] = [], copie = deployee, assujettiTva = true,
   paiements: LigneBancaire[] = [], modele: ModeleComptable = TRESORERIE, parts: PartReglee[] = [], frontiere: string | null = null,
+  ventes: VentesDuCas | null = null,
 ) {
-  // `biens` : la pièce de chaque bien du registre, et ce que sa facture écrit — le compte de sa nature, ou rien
-  // (sans nature, ou acquis avant l'ouverture d'un dossier repris).
-  const ici = piecesAComptabiliser(pieces, categories, new Map(biens), SANS_FACTURE_SOURCE)
-  const la = copie.piecesAComptabiliser(pieces, categories, new Map(biens))
   const resume = (a: ({ piece: Piece } & CibleComptable)[]) => a.map((x) => `${x.piece.id}:${x.compte}:${x.immobilisation}`)
-  expect(resume(la), 'piecesAComptabiliser a dérivé').toEqual(resume(ici))
-
   const forme = (r: Pick<ReturnType<typeof analyserEcritures>, 'nbSansContrepartie' | 'groupesDesequilibres' | 'piecesDesynchronisees'>) => ({
     nbSansContrepartie: r.nbSansContrepartie,
     groupesDesequilibres: r.groupesDesequilibres.map((g) => `${g.pieceId}:${g.solde.toFixed(2)}`),
     piecesDesynchronisees: r.piecesDesynchronisees.map((p) => p.id),
   })
-  for (const f of new Set([...FRONTIERES, frontiere])) {
-    const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts, []), modele, f, SANS_EXEMPLAIRE)
-    const r2 = copie.analyserEcritures(ecritures, la, assujettiTva, copie.paiementsDesPieces(paiements, parts), modele, f)
-    expect(forme(r2), `analyserEcritures a dérivé (frontière ${f})`).toEqual(forme(r1))
-    // Les pièces elles-mêmes, et pas seulement leur nombre : en engagement, celles d'un lettrage fait à la main qui
-    // tient en sont retirées (bloc LETTRAGE MANUEL), donc deux listes de même longueur peuvent dire deux choses.
-    expect(r2.piecesSansContrepartie, `piecesSansContrepartie a dérivé (frontière ${f})`).toEqual(r1.piecesSansContrepartie)
+  const regimes = ventes
+    ? [{ nom: 'les ventes du cas', cas: { pieces, paiements, ventes } }]
+    : REGIMES.map((r) => ({ nom: r.nom, cas: r.appliquer(pieces, paiements) }))
+  let rendu: ReturnType<typeof forme> | null = null
+  for (const { nom, cas } of regimes) {
+    const ventesIci = entreesDesVentes(cas, VENTES_DE_SRC_LIB)
+    const ventesLa = entreesDesVentes(cas, copie)
+    expect([...ventesLa.sources], `facturesSourcesDe a dérivé (${nom})`).toEqual([...ventesIci.sources])
+    expect([...ventesLa.exemplaires], `exemplairesDesSources a dérivé (${nom})`).toEqual([...ventesIci.exemplaires])
+    expect(ventesLa.encaissees, `partsEncaissees a dérivé (${nom})`).toEqual(ventesIci.encaissees)
+    // `biens` : la pièce de chaque bien du registre, et ce que sa facture écrit — le compte de sa nature, ou rien
+    // (sans nature, ou acquis avant l'ouverture d'un dossier repris).
+    const ici = piecesAComptabiliser(cas.pieces, categories, new Map(biens), ventesIci.sources)
+    const la = copie.piecesAComptabiliser(cas.pieces, categories, new Map(biens), ventesLa.sources)
+    expect(resume(la), `piecesAComptabiliser a dérivé (${nom})`).toEqual(resume(ici))
+    const paiementsIci = paiementsDesPieces(cas.paiements, parts, ventesIci.encaissees)
+    const paiementsLa = copie.paiementsDesPieces(cas.paiements, parts, ventesLa.encaissees)
+    expect(enObjet(paiementsLa), `paiementsDesPieces a dérivé (${nom})`).toEqual(enObjet(paiementsIci))
+    for (const f of new Set([...FRONTIERES, frontiere])) {
+      const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiementsIci, modele, f, ventesIci.exemplaires)
+      const r2 = copie.analyserEcritures(ecritures, la, assujettiTva, paiementsLa, modele, f, ventesLa.exemplaires)
+      expect(forme(r2), `analyserEcritures a dérivé (${nom}, frontière ${f})`).toEqual(forme(r1))
+      // Les pièces elles-mêmes, et pas seulement leur nombre : en engagement, celles d'un lettrage fait à la main qui
+      // tient en sont retirées (bloc LETTRAGE MANUEL), donc deux listes de même longueur peuvent dire deux choses.
+      expect(r2.piecesSansContrepartie, `piecesSansContrepartie a dérivé (${nom}, frontière ${f})`).toEqual(r1.piecesSansContrepartie)
+    }
+    rendu ??= forme(analyserEcritures(ecritures, ici, assujettiTva, paiementsIci, modele, frontiere, ventesIci.exemplaires))
   }
-  return forme(analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts, []), modele, frontiere, SANS_EXEMPLAIRE))
+  return rendu!
 }
 
 describe('agent-comptable / analyserEcritures (copie déployée)', () => {
@@ -340,7 +469,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
   it('accepte une pièce réglée en partie, répartie sur ses deux dates', () => {
     const partiel = [paiement({ montant: -48 })]
     const p = piece({ id: 'p1' })
-    const reparties = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces(partiel, [], []).get('p1') ?? [], TRESORERIE)
+    const reparties = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces(partiel, [], SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `r${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(reparties, [p], [], deployee, true, partiel).piecesDesynchronisees).toEqual([])
     // Et la même écriture tout entière au paiement ne l'est pas.
@@ -359,7 +488,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     const p = piece({ id: 'p1' })
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, []).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `g${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(genere, [p], [], deployee, true, [groupe], TRESORERIE, parts)).toEqual({
       nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [],
@@ -374,7 +503,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     const acompte = paiement({ id: 'a', date: '2025-03-20', montant: -48 })
     const groupe = paiement({ id: 'g', date: '2025-04-15', piece_id: null, montant: -272, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -72 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -200 }]
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, groupe], parts, []).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, groupe], parts, SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `d${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(genere, [p], [], deployee, true, [acompte, groupe], TRESORERIE, parts).piecesDesynchronisees).toEqual([])
     const unSeul = genere.filter((e) => !(e.compte === COMPTE_BANQUE && e.ligne_bancaire_id === 'g'))
@@ -391,7 +520,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const avant: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -118 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -182 }]
     const apres: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const ancienne = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], avant, []).get('p1') ?? [], TRESORERIE)
+    const ancienne = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], avant, SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `o${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(ancienne, [p], [], deployee, true, [groupe], TRESORERIE, apres).piecesDesynchronisees).toEqual(['p1'])
   })
@@ -417,10 +546,12 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     expect(r.nbSansContrepartie).toBe(0)
   })
 
-  it('tire les mêmes paiements que src/lib du relevé et des parts', () => {
+  it('tire les mêmes paiements que src/lib du relevé, des parts et des virements mixtes', () => {
     // Rapprochements et parts mêlés, dans le désordre ; une part sans pièce, une part d'un mouvement qui ne
     // règle plus en groupe, une part d'un mouvement remis à traiter, une part dont le mouvement n'est pas lu,
-    // et un rapprochement remis à traiter.
+    // et un rapprochement remis à traiter. Et les parts des VIREMENTS MIXTES (étape VF9b) : sur un crédit classé par ses
+    // encaissements, deux pièces, dont une payée aussi par un rapprochement ; sur un crédit seulement réservé, sur un
+    // drapeau resté sans le statut, sur un mouvement rapproché d'une pièce mais pas classé, et sur un mouvement non lu.
     const lignes: LigneBancaire[] = [
       paiement({ id: 'b', date: '2025-05-02', piece_id: 'p1', montant: -40 }),
       paiement({ id: 'g', date: '2025-04-01', piece_id: null, montant: -300, reglement_groupe: true }),
@@ -428,6 +559,11 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
       paiement({ id: 'n', date: '2025-04-03', piece_id: null, montant: -90 }),
       paiement({ id: 't', date: '2025-04-04', piece_id: null, montant: -70, statut: 'non_rapprochee', reglement_groupe: true }),
       paiement({ id: 'x', date: '2025-04-05', piece_id: 'p3', montant: -10, statut: 'non_rapprochee' }),
+      paiement({ id: 'vm', date: '2025-04-08', piece_id: null, montant: 500, encaissements_de_factures: true }),
+      paiement({ id: 'vr', date: '2025-04-09', piece_id: null, montant: 60, statut: 'non_rapprochee' }),
+      paiement({ id: 'vd', date: '2025-04-10', piece_id: null, montant: 60, statut: 'non_rapprochee', encaissements_de_factures: true }),
+      paiement({ id: 'vp', date: '2025-04-11', piece_id: 'p6', montant: 75 }),
+      paiement({ id: 'ac', date: '2025-03-28', piece_id: 'p4', montant: 30 }),
     ]
     const parts: PartReglee[] = [
       { ligne_bancaire_id: 'g', piece_id: 'p1', montant: -60 },
@@ -437,16 +573,32 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
       { ligne_bancaire_id: 't', piece_id: 'p3', montant: -70 },
       { ligne_bancaire_id: 'inconnu', piece_id: 'p3', montant: -5 },
     ]
-    const enObjet = (m: PaiementsDesPieces) => Object.fromEntries([...m.entries()].sort(([a], [b]) => a.localeCompare(b)))
-    expect(enObjet(deployee.paiementsDesPieces(lignes, parts))).toEqual(enObjet(paiementsDesPieces(lignes, parts, [])))
-    // La batterie exerce bien ce qui décide : deux pièces payées, dans l'ordre des dates puis des mouvements.
-    expect(enObjet(paiementsDesPieces(lignes, parts, []))).toEqual({
+    const encaissees: PartEncaissee[] = [
+      { ligne_bancaire_id: 'vm', piece_id: 'p5', montant: 120 },
+      { ligne_bancaire_id: 'vm', piece_id: 'p4', montant: 90 },
+      { ligne_bancaire_id: 'vr', piece_id: 'p7', montant: 60 },
+      { ligne_bancaire_id: 'vd', piece_id: 'p7', montant: 60 },
+      { ligne_bancaire_id: 'vp', piece_id: 'p8', montant: 75 },
+      { ligne_bancaire_id: 'absent', piece_id: 'p8', montant: 5 },
+    ]
+    for (const [quoi, avec] of [['sans virement mixte', SANS_VIREMENT_MIXTE], ['avec ses virements mixtes', encaissees]] as const) {
+      expect(enObjet(deployee.paiementsDesPieces(lignes, parts, avec)), quoi).toEqual(enObjet(paiementsDesPieces(lignes, parts, avec)))
+    }
+    // La batterie exerce bien ce qui décide : les pièces payées, dans l'ordre des dates puis des mouvements — et seul le
+    // crédit classé par ses encaissements paie un exemplaire, celui d'une pièce que paie aussi un acompte compris.
+    expect(enObjet(paiementsDesPieces(lignes, parts, encaissees))).toEqual({
       p1: [
         { id: 'a', date: '2025-04-01', montant: -20, origine: 'rapprochement' },
         { id: 'g', date: '2025-04-01', montant: -60, origine: 'groupe' },
         { id: 'b', date: '2025-05-02', montant: -40, origine: 'rapprochement' },
       ],
       p2: [{ id: 'g', date: '2025-04-01', montant: -200, origine: 'groupe' }],
+      p4: [
+        { id: 'ac', date: '2025-03-28', montant: 30, origine: 'rapprochement' },
+        { id: 'vm', date: '2025-04-08', montant: 90, origine: 'encaissements' },
+      ],
+      p5: [{ id: 'vm', date: '2025-04-08', montant: 120, origine: 'encaissements' }],
+      p6: [{ id: 'vp', date: '2025-04-11', montant: 75, origine: 'rapprochement' }],
     })
   })
 
@@ -493,12 +645,12 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
 
   it('se tait sur l’acquisition telle que src/lib la génère, et voit la charge restée sur la catégorie', () => {
     const p = piece({ id: 'p1' })
-    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], []).get('p1') ?? [], TRESORERIE)
+    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `a${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(acquisition.map((e) => e.compte)).toEqual(['218300', '445620', COMPTE_BANQUE])
     expect(memeResultat(acquisition, [p], [['p1', acq('218300')]], deployee, true, [paiement()]).piecesDesynchronisees).toEqual([])
     // La même pièce écrite en charge avant d'être immobilisée : « à régénérer » des deux côtés.
-    const charge = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([paiement()], [], []).get('p1') ?? [], TRESORERIE)
+    const charge = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `c${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(charge, [p], [['p1', acq('218300')]], deployee, true, [paiement()]).piecesDesynchronisees).toEqual(['p1'])
     // Et l'acquisition d'un bien qu'on retire du registre l'est aussi : elle repasse en charge.
@@ -655,7 +807,7 @@ describe('agent-comptable / analyserEcritures en engagement (copie déployée)',
 function brouillonTresorerie(
   p: Piece, mouvements: LigneBancaire[], o: { assujettiTva?: boolean; compte?: string } = {},
 ): EcritureBrouillon[] {
-  const paiementsPiece = paiementsDesPieces(mouvements, [], []).get(p.id) ?? []
+  const paiementsPiece = paiementsDesPieces(mouvements, [], SANS_VIREMENT_MIXTE).get(p.id) ?? []
   return lignesPourPiece('d1', p, cible(o.compte ?? COMPTE_ACHATS), o.assujettiTva ?? true, paiementsPiece, TRESORERIE)
     .map((l, i) => ecriture({ ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 }
@@ -760,6 +912,82 @@ describe('agent-comptable / la note de frais en trésorerie (copie déployée)',
   })
 })
 
+// LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (étape VF9b, chantier EC-Q3, ligne 28.65) : l'exemplaire d'une facture
+// source ne compte nulle part, et le virement mixte date l'exemplaire unique d'une facture d'avant — dans les deux
+// modèles, comme src/lib. Les ventes sont celles du cas : `memeResultat` les compare seules.
+describe('agent-comptable / les ventes facturées (copie déployée, étape VF9b)', () => {
+  const sourcesDe = (...ids: string[]): VentesDuCas => ({ factures: ids.map((id) => factureDuCas({ id, numero: id.toUpperCase() })), encaissements: [] })
+
+  // Sans ce témoin, des régimes qui ne déclencheraient rien laisseraient les deux copies « d'accord » sur du vide.
+  it('la batterie des régimes exerce bien ce qui décide : un exemplaire écarté, un exemplaire qui compte, un virement mixte qui paie', () => {
+    const v = piece({ id: 'pv', type_piece: 'vente' })
+    const [sans, sources, pasSource, mixte] = REGIMES.map((r) => entreesDesVentes(r.appliquer([v], []), VENTES_DE_SRC_LIB))
+    expect([...sans.sources, ...sans.exemplaires, ...sans.encaissees]).toEqual([])
+    expect([...sources.sources]).toEqual(['fs-pv'])
+    expect([...sources.exemplaires]).toEqual(['pv'])
+    expect([...pasSource.sources, ...pasSource.exemplaires, ...pasSource.encaissees]).toEqual([])
+    expect([...mixte.sources]).toEqual(['fs-mixte'])
+    expect([...mixte.exemplaires]).toEqual([])
+    expect(mixte.encaissees).toEqual([{ ligne_bancaire_id: 'vm-pv', piece_id: 'pv', montant: 120 }])
+    // Une pièce qui n'est pas de vente n'est l'exemplaire unique de rien : le virement mixte ne la paie pas.
+    expect(entreesDesVentes(REGIMES[3].appliquer([piece({ id: 'pa' })], []), VENTES_DE_SRC_LIB).encaissees).toEqual([])
+  })
+
+  it('écarte l’exemplaire d’une facture source : ni sans contrepartie, ni déséquilibré, ni à régénérer — celui d’une autre facture compte', () => {
+    // p1 : une écriture sans banque (« en attente de rapprochement ») ; p2 : payée, sur un autre compte et déséquilibrée
+    // (« à régénérer », « déséquilibrée ») ; p3 : une pièce ordinaire, qui garde son point.
+    const ecritures = [
+      ...groupeConforme('p1', { banque: false }),
+      ...groupeConforme('p2', { compte: '628000' }), ecriture({ id: 'x', piece_id: 'p2', montant: 5 }),
+      ...groupeConforme('p3', { banque: false }),
+    ]
+    const pieces = [piece({ id: 'p1', facture_id: 'fs1' }), piece({ id: 'p2', facture_id: 'fs2' }), piece({ id: 'p3' })]
+    const payes = [payee('p2')]
+    // Sans facture source, les trois comptent.
+    expect(memeResultat(ecritures, pieces, [], deployee, true, payes, TRESORERIE, [], null, sourcesDe())).toEqual({
+      nbSansContrepartie: 2, groupesDesequilibres: ['p2:5.00'], piecesDesynchronisees: ['p2'],
+    })
+    // Exemplaires de deux factures sources, p1 et p2 ne comptent plus.
+    expect(memeResultat(ecritures, pieces, [], deployee, true, payes, TRESORERIE, [], null, sourcesDe('fs1', 'fs2'))).toEqual({
+      nbSansContrepartie: 1, groupesDesequilibres: [], piecesDesynchronisees: [],
+    })
+    // L'exemplaire d'une facture qui n'est pas source, et celui d'un brouillon (jamais source), comptent comme hier.
+    const pasSources: VentesDuCas = {
+      factures: [factureDuCas({ id: 'fs1', statut: 'brouillon' }), factureDuCas({ id: 'fs2', source_de_la_vente: false })], encaissements: [],
+    }
+    expect(memeResultat(ecritures, pieces, [], deployee, true, payes, TRESORERIE, [], null, pasSources)).toEqual({
+      nbSansContrepartie: 2, groupesDesequilibres: ['p2:5.00'], piecesDesynchronisees: ['p2'],
+    })
+  })
+
+  it('date l’exemplaire d’une facture d’avant par le virement mixte qui le paie, en trésorerie comme en engagement', () => {
+    const v = piece({ id: 'pv', type_piece: 'vente', facture_id: 'fa1' })
+    const credit = paiement({ id: 'vm', piece_id: null, date: '2025-04-20', montant: 300, encaissements_de_factures: true })
+    const ventes: VentesDuCas = {
+      factures: [factureDuCas({ id: 'fs1' }), factureDuCas({ id: 'fa1', numero: 'F2024-0099', source_de_la_vente: false })],
+      encaissements: [
+        encaissementDuCas({ id: 'es', facture_id: 'fs1', montant: 180, ligne_bancaire_id: 'vm' }),
+        encaissementDuCas({ id: 'ea', facture_id: 'fa1', montant: 120, ligne_bancaire_id: 'vm' }),
+      ],
+    }
+    const parts = partsEncaissees('d1', ventes.encaissements, ventes, [{ id: 'pv', dossier_id: 'd1', facture_id: 'fa1', statut: 'validee', type_piece: 'vente' }])
+    expect(parts).toEqual([{ ligne_bancaire_id: 'vm', piece_id: 'pv', montant: 120 }])
+    for (const modele of [TRESORERIE, ENGAGEMENT]) {
+      const juste = lignesPourPiece('d1', v, cible(COMPTE_ACHATS), true, paiementsDesPieces([credit], [], parts).get('pv') ?? [], modele)
+        .map((l, i) => ecriture({ ...l, id: `v${i}`, piece_id: 'pv', ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+      expect(juste.some((e) => e.ligne_bancaire_id === 'vm' && e.date === '2025-04-20'), modele.mode).toBe(true)
+      // Payée par le virement mixte, son écriture datée du crédit est juste…
+      expect(memeResultat(juste, [v], [], deployee, true, [credit], modele, [], null, ventes), modele.mode).toEqual(RIEN)
+      // … et sans le registre, la même écriture est à régénérer : la pièce retomberait sans paiement.
+      expect(memeResultat(juste, [v], [], deployee, true, [credit], modele, [], null, { ...ventes, encaissements: [] }).piecesDesynchronisees, modele.mode)
+        .toEqual(['pv'])
+      // Seulement réservé à ses encaissements, le crédit ne date rien.
+      const reserve = paiement({ ...credit, statut: 'non_rapprochee', encaissements_de_factures: false })
+      expect(memeResultat(juste, [v], [], deployee, true, [reserve], modele, [], null, ventes).piecesDesynchronisees, modele.mode).toEqual(['pv'])
+    }
+  })
+})
+
 // LE GÉNÉRATEUR DE LA COPIE (04/10/2026, ligne 26.6, étape d). Une pièce que la frontière de validation coupe se juge
 // sur sa part OUVERTE, ligne pour ligne contre ce que la génération produirait aujourd'hui : la copie porte donc tout
 // le générateur de src/lib — trésorerie, note de frais face au 108000, engagement, biens —, et il doit rendre les
@@ -808,21 +1036,32 @@ function batterieDuGenerateur(copie: typeof deployee): string[][] {
     const signe = p.type_piece === 'vente' ? 1 : -1
     const ttc = p.montant_ttc!
     const part = (f: number) => Math.round(signe * ttc * f * 100) / 100
-    const reglements: [LigneBancaire[], PartReglee[]][] = [
-      [[], []],
-      [[paiement({ id: 'l1', date: '2025-03-10', montant: part(1) })], []],
-      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1) })], []],
-      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(0.5) })], []],
-      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1 / 3) }), paiement({ id: 'l2', date: '2025-05-02', montant: part(1 / 3) })], []],
-      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1) - signe * 1 })], []],
+    const reglements: [LigneBancaire[], PartReglee[], PartEncaissee[]][] = [
+      [[], [], []],
+      [[paiement({ id: 'l1', date: '2025-03-10', montant: part(1) })], [], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1) })], [], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(0.5) })], [], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1 / 3) }), paiement({ id: 'l2', date: '2025-05-02', montant: part(1 / 3) })], [], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1) - signe * 1 })], [], []],
       [[paiement({ id: 'g', piece_id: null, date: '2025-04-15', montant: part(1) - signe * 50, reglement_groupe: true })],
-        [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: part(1) }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -signe * 50 }]],
-      [[paiement({ id: 'l1', date: '2025-04-02', montant: 0 })], []],
-      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1.1) })], []],
+        [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: part(1) }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -signe * 50 }], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: 0 })], [], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1.1) })], [], []],
+      // LE VIREMENT MIXTE (étape VF9b) : le crédit classé par ses encaissements paie la pièce au montant de l'encaissement
+      // de sa facture d'avant, seul ou après un acompte rapproché ; seulement réservé, il ne paie rien.
+      [[paiement({ id: 'vm', piece_id: null, date: '2025-04-20', montant: part(1) + signe * 80, encaissements_de_factures: true })], [],
+        [{ ligne_bancaire_id: 'vm', piece_id: 'p1', montant: part(1) }]],
+      [[paiement({ id: 'l1', date: '2025-03-10', montant: part(0.5) }),
+        paiement({ id: 'vm', piece_id: null, date: '2025-04-20', montant: part(0.5) + signe * 80, encaissements_de_factures: true })], [],
+      [{ ligne_bancaire_id: 'vm', piece_id: 'p1', montant: part(0.5) }]],
+      [[paiement({ id: 'vm', piece_id: null, date: '2025-04-20', montant: part(1), statut: 'non_rapprochee' })], [],
+        [{ ligne_bancaire_id: 'vm', piece_id: 'p1', montant: part(1) }]],
     ]
     for (const c of cibles) {
-      for (const [mouvements, parts] of reglements) {
-        const paiementsPiece = paiementsDesPieces(mouvements, parts, []).get(p.id) ?? []
+      for (const [mouvements, parts, encaissees] of reglements) {
+        const paiementsPiece = paiementsDesPieces(mouvements, parts, encaissees).get(p.id) ?? []
+        // Les paiements de la pièce, chaque copie les tirant du même relevé : ils datent tout ce qui suit.
+        expect(copie.paiementsDesPieces(mouvements, parts, encaissees).get(p.id) ?? [], 'paiementsDesPieces a dérivé').toEqual(paiementsPiece)
         for (const modele of modeles) {
           for (const assujettiTva of [true, false]) {
             const ici = projeter(lignesPourPiece('d1', p, c, assujettiTva, paiementsPiece, modele))
@@ -848,6 +1087,8 @@ describe('agent-comptable / le générateur (copie déployée)', () => {
     }
     expect(sorties.some((lignes) => new Set(lignes.map((l) => l.split('|')[0])).size >= 3), 'aucune pièce sur trois dates').toBe(true)
     expect(sorties.some((lignes) => lignes.some((l) => l.startsWith('2025-03-15|'))), 'aucune ligne datée du dépôt').toBe(true)
+    // Et le virement mixte (étape VF9b) : une ligne datée du crédit classé par ses encaissements, qui le désigne.
+    expect(sorties.some((lignes) => lignes.some((l) => l.startsWith('2025-04-20|') && l.endsWith('|vm'))), 'aucune ligne du virement mixte').toBe(true)
   })
 
   // `montantRetenu` n'est appelé, dans la copie, que sur une pièce dont la TVA se ventile — d'un dossier assujetti :
@@ -931,7 +1172,7 @@ describe('agent-comptable / la frontière de validation (copie déployée)', () 
 function brouillon(
   p: Piece, c: CibleComptable, mouvements: LigneBancaire[], modele: ModeleComptable, prefixe: string = p.id,
 ): EcritureBrouillon[] {
-  const paiementsPiece = paiementsDesPieces(mouvements, [], []).get(p.id) ?? []
+  const paiementsPiece = paiementsDesPieces(mouvements, [], SANS_VIREMENT_MIXTE).get(p.id) ?? []
   return lignesPourPiece('d1', p, c, true, paiementsPiece, modele)
     .map((l, i) => ecriture({ ...l, id: `${prefixe}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 }
@@ -1015,10 +1256,41 @@ describe('agent-comptable / le statut de TVA du dossier', () => {
 })
 
 describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle comptable du dossier', () => {
-  it('appelle analyserEcritures avec dossier.assujetti_tva, les paiements des pièces, le modèle du dossier et la frontière de validation', () => {
+  it('appelle analyserEcritures avec dossier.assujetti_tva, les paiements des pièces — virements mixtes compris —, le modèle du dossier, la frontière de validation et les exemplaires des factures sources', () => {
     expect(sourceDeployee()).toMatch(
-      /const modele = modeleDuDossier\(dossier\)\n\s*const paiements = paiementsDesPieces\(rReleve\.lignes, rReglements\.lignes\)\n(?:\s*\/\/[^\n]*\n)*\s*const frontiere = frontiereDeValidation\(rValides\.lignes\.map\(\(v\) => v\.annee\)\)\n\s*const \{ piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees \} = analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, paiements, modele, frontiere\)/,
+      /const modele = modeleDuDossier\(dossier\)\n\s*const paiements = paiementsDesPieces\(rReleve\.lignes, rReglements\.lignes, encaissees\)\n(?:\s*\/\/[^\n]*\n)*\s*const frontiere = frontiereDeValidation\(rValides\.lignes\.map\(\(v\) => v\.annee\)\)\n\s*const \{ piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees \} = analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, paiements, modele, frontiere, exemplaires\)/,
     )
+  })
+
+  // LES VENTES FACTURÉES (étape VF9b, chantier EC-Q3, ligne 28.65), comme la Checklist (lib/pointsDeLaChecklist.ts) : les
+  // factures sources tirées des factures du dossier, les exemplaires tirés des pièces validées, les parts des virements
+  // mixtes tirées du registre, et la liste à comptabiliser sans l'exemplaire d'une facture source.
+  it('tire les factures sources, les exemplaires et les parts des virements mixtes, et les passe au générateur', () => {
+    const source = sourceDeployee()
+    const corps = source.slice(source.indexOf('if (nom === "points_a_traiter")'), source.indexOf('return { erreur: `Outil inconnu'))
+    expect(corps).toContain('    const sources = facturesSourcesDe(rFactures.lignes)\n')
+    expect(corps).toContain('    const exemplaires = exemplairesDesSources(piecesTyped, sources)\n')
+    expect(corps).toContain('    const piecesQuiComptent = horsDesExemplairesDesSources(piecesTyped, sources)\n')
+    // Les pièces désignées, des validées seules — l'exemplaire unique d'une facture d'avant est une pièce validée —, au
+    // dossier et au statut de leur lecture.
+    expect(corps).toContain('    const designees: ExemplaireRow[] = piecesTyped\n      .filter((p) => p.facture_id != null)\n      .map((p) => ({ id: p.id, dossier_id: dossierId, facture_id: p.facture_id, statut: "validee", type_piece: p.type_piece }))\n')
+    expect(corps).toContain('    const encaissees = partsEncaissees(dossierId, rEncaissements.lignes, { factures: rFactures.lignes }, designees)\n')
+    expect(corps).toContain('    const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)\n')
+  })
+
+  // Un dossier qui n'a pas basculé ne lit rien de plus : ses factures et son registre ne se lisent que si la source de ses
+  // ventes n'est pas LUE fausse (`lireLesVentes`), et derrière le refus de VF9a, qui reste le premier geste de l'outil.
+  it('lit les factures et le registre des encaissements d’un dossier qui les lit seulement, sous le même refus de lecture partielle — jamais le client d’une facture', () => {
+    const source = sourceDeployee()
+    const corps = source.slice(source.indexOf('if (nom === "points_a_traiter")'), source.indexOf('return { erreur: `Outil inconnu'))
+    expect(corps).toMatch(/\n    const lireLesVentes = ventes !== null\n(?:\s*\/\/[^\n]*\n)*\s*if \(ventes\) \{\n      return \{ erreur: `\$\{ventes\.constat\}\. L'assistant ne lit pas encore les ventes facturées/)
+    expect(corps.indexOf('    if (ventes) {\n')).toBeLessThan(corps.indexOf('await Promise.all(['))
+    expect(corps).toContain('      lireLesVentes\n        ? lireTout<FactureRow>((d, f) =>\n          admin.from("factures_emises").select("id, statut, numero, source_de_la_vente", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))\n        : rienALire<FactureRow>(),\n')
+    expect(corps).toContain('      lireLesVentes\n        ? lireTout<EncaissementRow>((d, f) =>\n          admin.from("encaissements_factures").select("id, dossier_id, facture_id, montant, ligne_bancaire_id, annule_id, retire_le", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))\n        : rienALire<EncaissementRow>(),\n')
+    // Le client d'une facture nommerait un patient (RGPD.md, § 8.7) : aucune lecture de l'outil ne le demande.
+    expect(corps.match(/\.select\("[^"]*"/g)?.filter((s) => s.includes('tiers_nom')) ?? []).toEqual([])
+    // Rien à lire, c'est une lecture complète et vide — jamais une lecture ratée prise pour un vide.
+    expect(source).toContain('function rienALire<T>(): Promise<LectureComplete<T>> {\n  return Promise.resolve({ lignes: [], complete: true, motif: null })\n}\n')
   })
 
   it('lit le modèle comptable du dossier, le passe aux outils et le dit au modèle', () => {
@@ -1043,12 +1315,13 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
     // groupé passerait pour non payée.
     const source = sourceDeployee()
     // Et le GÉNÉRATEUR, qui dit ce qu'une pièce coupée par la frontière doit encore porter, lit le hors taxe (qui prime
-    // sur le TTC moins la TVA) et le dépôt (qui date ce que rien d'autre ne date).
-    expect(source).toMatch(/select\("id, date_piece, tiers, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at"/)
+    // sur le TTC moins la TVA) et le dépôt (qui date ce que rien d'autre ne date). Et, depuis l'étape VF9b, la facture dont
+    // une pièce validée est l'exemplaire, et le drapeau d'un mouvement classé par ses encaissements (le virement mixte).
+    expect(source).toMatch(/select\("id, date_piece, tiers, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at, facture_id"/)
     expect(source).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id[,"]/)
-    expect(source).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, [^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
+    expect(source).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, [^"]*\bencaissements_de_factures\b[^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(source).toMatch(/from\("reglements_groupes"\)\.select\("ligne_bancaire_id, piece_id, montant", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(source).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(source).toMatch(/\[rPieces, rPiecesAValider, rFactures, rEncaissements, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   // LES EXERCICES VALIDÉS, lus par les deux outils qui disent l'état du dossier : `resume_dossier` les nomme, et
@@ -1186,7 +1459,7 @@ describe('le garde-fou sait encore échouer', () => {
       'le compte de TVA d’un bien',
     ))
     const p = piece({ id: 'p1' })
-    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], []).get('p1') ?? [], TRESORERIE)
+    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `a${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(() => memeResultat(acquisition, [p], [['p1', acq('218300')]], derivee, true, [paiement()])).toThrow()
   })
@@ -1245,7 +1518,7 @@ describe('le garde-fou sait encore échouer', () => {
     const p = piece({ id: 'p1' })
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, []).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `g${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(() => memeResultat(genere, [p], [], derivee, true, [groupe], TRESORERIE, parts)).toThrow()
   })
@@ -1256,7 +1529,33 @@ describe('le garde-fou sait encore échouer', () => {
     ))
     const simple = [paiement({ id: 'n', piece_id: null, montant: -90 })]
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'n', piece_id: 'p2', montant: -90 }]
-    expect(derivee.paiementsDesPieces(simple, parts)).not.toEqual(paiementsDesPieces(simple, parts, []))
+    expect(derivee.paiementsDesPieces(simple, parts, SANS_VIREMENT_MIXTE)).not.toEqual(paiementsDesPieces(simple, parts, SANS_VIREMENT_MIXTE))
+  })
+
+  // LES DÉRIVES DES VENTES FACTURÉES (étape VF9b) : la copie qui compterait l'exemplaire d'une facture source, jugerait son
+  // écriture, oublierait le virement mixte ou le prendrait d'un crédit seulement réservé. Chaque fois, l'un des régimes de
+  // `memeResultat` ou un cas des ventes facturées la sépare de src/lib.
+  it('attrape une copie qui met l’exemplaire d’une facture source à comptabiliser', () => {
+    const derivee = deriver('    if (exemplaireDUneSource(piece, sources)) return []\n', '', 'l’exemplaire écarté du brouillon')
+    echoue(() => memeResultat(groupeConforme('p1'), [piece({ id: 'p1' })], [], derivee, true, [payee('p1')]))
+  })
+
+  it('attrape une copie qui juge l’écriture d’un exemplaire', () => {
+    const derivee = deriver('    if (!e.piece_id || exemplaires.has(e.piece_id)) continue\n', '    if (!e.piece_id) continue\n', 'les exemplaires écartés des groupes')
+    echoue(() => memeResultat(groupeConforme('p1', { banque: false }), [piece({ id: 'p1' })], [], derivee))
+  })
+
+  it('attrape une copie qui oublie les parts des virements mixtes, ou les prend d’un crédit seulement réservé', () => {
+    const oubliees = deriver(
+      '    if (!mouvement || mouvement.statut !== "rapprochee" || !mouvement.encaissements_de_factures) continue\n', '    continue\n',
+      'la lecture des parts des virements mixtes',
+    )
+    const vente = piece({ id: 'p1', type_piece: 'vente', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
+    echoue(() => memeResultat([], [vente], [], oubliees))
+    const reservees = deriver(' || !mouvement.encaissements_de_factures) continue\n', ') continue\n', 'le drapeau du virement mixte')
+    const reserve = [paiement({ id: 'vm', piece_id: null, montant: 120, encaissements_de_factures: false })]
+    const encaissees: PartEncaissee[] = [{ ligne_bancaire_id: 'vm', piece_id: 'p1', montant: 120 }]
+    echoue(() => expect(reservees.paiementsDesPieces(reserve, [], encaissees)).toEqual(paiementsDesPieces(reserve, [], encaissees)))
   })
 
   it('attrape une copie qui ne compare pas les contreparties aux paiements', () => {
@@ -1269,7 +1568,7 @@ describe('le garde-fou sait encore échouer', () => {
     const p = piece({ id: 'p1' })
     const acompte = paiement({ id: 'a', date: '2025-03-20', montant: -48 })
     const solde = paiement({ id: 's', date: '2025-04-15', montant: -72 })
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, solde], [], []).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, solde], [], SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `d${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     const unSeul = genere.filter((e) => !(e.compte === COMPTE_BANQUE && e.ligne_bancaire_id === 's'))
     expect(() => memeResultat(unSeul, [p], [], derivee, true, [acompte, solde])).toThrow()
@@ -1330,7 +1629,7 @@ describe('le garde-fou sait encore échouer', () => {
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const avant: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -100 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -200 }]
     const apres: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const ancien = brouillonEngagement(p, [...(paiementsDesPieces([groupe], avant, []).get('p1') ?? [])])
+    const ancien = brouillonEngagement(p, [...(paiementsDesPieces([groupe], avant, SANS_VIREMENT_MIXTE).get('p1') ?? [])])
     expect(memeResultat(ancien, [p], [], deployee, true, [groupe], ENGAGEMENT, apres).piecesDesynchronisees).toEqual(['p1'])
     expect(() => memeResultat(ancien, [p], [], derivee, true, [groupe], ENGAGEMENT, apres)).toThrow()
   })

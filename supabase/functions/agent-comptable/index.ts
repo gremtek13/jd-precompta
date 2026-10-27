@@ -37,6 +37,7 @@
 // src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/ventilationBanque.ts,
 // src/lib/tvaDuReleve.ts, src/lib/reglementGroupe.ts, src/lib/cotisationRapprochee.ts, src/lib/compteDeBilan.ts, src/lib/amortissements.ts,
 // src/lib/baremeKilometrique.ts, src/lib/forfaitKilometrique.ts, src/lib/validationExercice.ts, src/lib/format.ts et src/lib/controles.ts
+// — et, depuis l'étape VF9b (chantier EC-Q3, ligne 28.65), src/lib/facturesSources.ts et src/lib/encaissementsFactures.ts —
 // plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
 // extrait `piecesAComptabiliser`, `paiementsDesPieces`, `rattachementsTresorerie` et `analyserEcritures`
@@ -56,7 +57,9 @@
 // par src/lib/agentComptableForfait.test.ts. Le bloc VALIDATION (la frontière des exercices validés, copiée de
 // src/lib/validationExercice.ts) l'est par chacun de ces tests, qui l'extraient avec leur bloc, et le GÉNÉRATEUR
 // d'écritures — ce qu'une pièce doit produire, ligne pour ligne, copié de src/lib/ecritures.ts et
-// src/lib/engagement.ts — par src/lib/agentComptableAnalyse.test.ts.
+// src/lib/engagement.ts — par src/lib/agentComptableAnalyse.test.ts. Les blocs FACTURES SOURCES et VIREMENT MIXTE
+// (l'exemplaire d'une facture source, qui ne compte nulle part, et ce qu'un virement mixte paie aux exemplaires) le sont
+// par src/lib/agentComptableFacturesSources.test.ts, et avec le générateur par src/lib/agentComptableAnalyse.test.ts.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
@@ -124,6 +127,10 @@ interface PieceRow {
   // Le DÉPÔT : la date d'une écriture que rien d'autre ne date — ni paiement, ni date de pièce (voir
   // `dateDuDepot`).
   created_at: string
+  // La facture dont la pièce est l'EXEMPLAIRE désigné (`pieces.facture_id`, étape VF1) : celui d'une facture source ne
+  // compte nulle part (bloc FACTURES SOURCES), celui d'une facture d'avant se paie par un virement mixte (bloc VIREMENT
+  // MIXTE). Nul pour une pièce que rien ne désigne.
+  facture_id: string | null
 }
 interface CategorieRow { id: string; libelle: string; compte_comptable: string | null; poste_2035: string | null }
 
@@ -156,6 +163,142 @@ function estFigee(date: string, frontiere: string | null): boolean {
 }
 // ── FIN VALIDATION ───────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT FACTURES SOURCES ───────────────────────────────────────────────────────────────────────
+// L'EXEMPLAIRE D'UNE FACTURE SOURCE NE COMPTE NULLE PART — copié de src/lib/facturesSources.ts (chantier EC-Q3, étape
+// VF6a ; repris par l'assistant à l'étape VF9b, ligne 28.65). Désignée exemplaire d'une facture ou d'un avoir SOURCE de sa
+// vente (`pieces.facture_id`, étape VF1 ; `factures_emises.source_de_la_vente`, étape VF2), une pièce prouve la vente et
+// ne la compte plus : c'est la facture qui la compte, par ses encaissements en trésorerie, par elle-même en engagement, et
+// ses écritures sont celles de la vente facturée. La Checklist l'écarte du brouillon et de ses contrôles, des catégories,
+// de la TVA et du payé en trop ; l'assistant aussi, par le même prédicat. Une pièce désignée à une facture qui n'est PAS
+// source compte comme hier.
+//
+// LES FACTURES SOURCES SE LISENT, ELLES NE SE SUPPOSENT PAS : chaque fonction qui juge une pièce les reçoit en paramètre
+// OBLIGATOIRE. Un ensemble vide est une affirmation — « ce dossier n'a aucune facture source » —, le fait d'un dossier qui
+// n'a pas basculé (la base y refuse toute facture source, `fixer_source_de_la_vente`) ; ailleurs, elle ne se dit que
+// d'une lecture faite en entier.
+//
+// Gardé par src/lib/agentComptableFacturesSources.test.ts, qui extrait ce bloc et l'exécute contre src/lib, et par
+// src/lib/agentComptableAnalyse.test.ts, qui l'extrait avec le générateur.
+
+// Les identifiants des factures et avoirs validés SOURCES de leur vente, lus en entier.
+type FacturesSources = ReadonlySet<string>
+
+// Une facture ou un avoir du dossier, tel que l'assistant le lit (`factures_emises`) : jamais son client (`tiers_nom`), qui
+// nommerait un patient (RGPD.md, § 8.7).
+interface FactureRow { id: string; statut: string; numero: string | null; source_de_la_vente: boolean }
+
+// La pièce est-elle l'exemplaire désigné d'une facture source ?
+function exemplaireDUneSource(piece: Pick<PieceRow, "facture_id">, sources: FacturesSources): boolean {
+  return piece.facture_id != null && sources.has(piece.facture_id)
+}
+
+// Les pièces qui comptent : toutes, moins les exemplaires des factures sources.
+function horsDesExemplairesDesSources<P extends Pick<PieceRow, "facture_id">>(
+  pieces: readonly P[], sources: FacturesSources,
+): P[] {
+  return pieces.filter((p) => !exemplaireDUneSource(p, sources))
+}
+
+// Les pièces, par identifiant, qui sont l'exemplaire d'une facture source : pour un contrôle qui part de l'ÉCRITURE et ne
+// connaît que la pièce qu'elle cite (`analyserEcritures`).
+function exemplairesDesSources(pieces: readonly Pick<PieceRow, "id" | "facture_id">[], sources: FacturesSources): ReadonlySet<string> {
+  return new Set(pieces.filter((p) => exemplaireDUneSource(p, sources)).map((p) => p.id))
+}
+
+// Les factures sources parmi des factures émises lues EN ENTIER : validées, et source de leur vente. Le filtre est celui de
+// la base (`factures_emises_source_d_une_facture_validee` : un brouillon n'est jamais source), refait ici pour qu'une
+// lecture plus large que l'appelant ne l'a voulu ne compte pas une facture qui ne l'est pas.
+function facturesSourcesDe(factures: readonly Pick<FactureRow, "id" | "statut" | "source_de_la_vente">[]): FacturesSources {
+  return new Set(factures.filter((f) => f.statut === "validee" && f.source_de_la_vente === true).map((f) => f.id))
+}
+// ── FIN FACTURES SOURCES ─────────────────────────────────────────────────────────────────────────
+
+// ── DÉBUT VIREMENT MIXTE ─────────────────────────────────────────────────────────────────────────
+// LE VIREMENT MIXTE — copié de src/lib/encaissementsFactures.ts (chantier EC-Q3, étape VF5h ; VF2-Q2, selon VF5-Q2 : la
+// manière A ; repris par l'assistant à l'étape VF9b, ligne 28.65). Un crédit qui paie une facture source ET une facture
+// d'avant la bascule (une facture qui n'est pas source de sa vente) se classe par ses encaissements : celui de la facture
+// d'avant y compte aussi, quand cette facture a EXACTEMENT UN exemplaire désigné, une pièce de vente validée du dossier.
+// Sa vente reste comptée par cette pièce, et ce mouvement la date : un PAIEMENT de son exemplaire, à la date du mouvement
+// et au montant de l'encaissement (`paiementsDesPieces`, origine `encaissements`) — la règle de la 2035 (CGI, art. 93, 1 :
+// les recettes encaissées). Sans ce bloc, l'assistant dirait « à régénérer » l'écriture juste de cette pièce, datée du
+// mouvement, et « en attente de rapprochement » une pièce que le virement paie.
+//
+// Gardé par src/lib/agentComptableFacturesSources.test.ts, qui extrait ce bloc et l'exécute contre src/lib, et par
+// src/lib/agentComptableAnalyse.test.ts, qui l'extrait avec le générateur.
+
+// Un encaissement du registre (`encaissements_factures`), les retirés et les contre-passations compris : c'est ce bloc qui
+// décide de ce qui compte, et une contre-passation se juge sur l'encaissement qu'elle annule.
+interface EncaissementRow {
+  id: string; dossier_id: string; facture_id: string; montant: number; ligne_bancaire_id: string | null
+  annule_id: string | null; retire_le: string | null
+}
+
+// Une pièce telle que le virement mixte la lit : l'exemplaire désigné d'une facture (`pieces.facture_id`, étape VF1).
+interface ExemplaireRow { id: string; dossier_id: string; facture_id: string | null; statut: string; type_piece: string }
+
+// Les factures du dossier, leur source comprise : celle d'un encaissement dit s'il est d'une facture source.
+interface VenteDuDossier { factures: readonly Pick<FactureRow, "id" | "source_de_la_vente">[] }
+
+// Un encaissement qui compte : non retiré. Les annulations comptent aussi, en négatif — c'est la règle de la base, qui juge
+// ses plafonds sur des montants NETS.
+const compte = (e: Pick<EncaissementRow, "retire_le">) => e.retire_le == null
+
+// L'encaissement JUSTIFIE-T-IL le mouvement qu'il cite (`encaissement_justifie_son_mouvement` en base) ? Oui, tant
+// qu'aucune contre-passation vivante SANS MOUVEMENT ne l'annule : celle-là dit que l'encaissement n'a pas eu lieu sur ce
+// mouvement — une erreur, une somme jamais reçue. Une contre-passation qui cite un DÉBIT dit au contraire que l'argent est
+// venu, puis reparti (le chèque revenu impayé) : l'encaissement reste justifié par son crédit.
+function justifieSonMouvement(e: Pick<EncaissementRow, "id">, encaissements: readonly EncaissementRow[]): boolean {
+  return !encaissements.some((c) => c.annule_id === e.id && compte(c) && c.ligne_bancaire_id == null)
+}
+
+function factureSource(factureId: string, vente: VenteDuDossier): boolean {
+  return vente.factures.some((f) => f.id === factureId && f.source_de_la_vente)
+}
+
+// Un texte comparé comme la base le compare sous `collate "C"`, ou comme elle compare un identifiant : octet par octet —
+// jamais `localeCompare`, qui range la ponctuation autrement.
+function ordreC(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+// L'EXEMPLAIRE UNIQUE ET VALIDÉ d'une facture : la seule pièce de vente validée de ce dossier désignée à elle — ce que la
+// base exige pour qu'un mouvement compte l'encaissement d'une facture qui n'est pas source (le virement mixte), et la pièce
+// que ce mouvement paie alors. Aucune, ou plusieurs : null.
+function exemplaireUnique(dossierId: string, factureId: string, exemplaires: readonly ExemplaireRow[]): string | null {
+  const siens = exemplaires.filter((p) => p.facture_id === factureId && p.dossier_id === dossierId && p.statut === "validee"
+    && p.type_piece === "vente")
+  return siens.length === 1 ? siens[0].id : null
+}
+
+// LES PAIEMENTS QU'UN VIREMENT MIXTE FAIT AUX EXEMPLAIRES : pour chaque encaissement d'une facture qui n'est pas source de
+// sa vente, non retiré, qui cite un mouvement et le justifie, la pièce qu'il paie, l'exemplaire unique et validé de sa
+// facture, et son montant — ce que `paiementsDesPieces` reçoit, et qui ne compte que sur un mouvement CLASSÉ par ses
+// encaissements, que lui seul relit. Un encaissement dont la facture n'a pas son exemplaire unique ne paie rien (le
+// classement de son mouvement le refuse) ; une contre-passation non plus : celle d'une facture qui n'est pas source ne cite
+// jamais de mouvement (la garde `garder_encaissement_facture` le refuse), ce filtre ne fait que redire la garde. Les
+// encaissements d'un autre dossier sont écartés. Dans l'ordre du mouvement, de la pièce, puis de l'encaissement, octet par
+// octet : deux lectures du même registre rendent la même liste.
+function partsEncaissees(
+  dossierId: string,
+  encaissements: readonly EncaissementRow[],
+  vente: VenteDuDossier,
+  exemplaires: readonly ExemplaireRow[],
+): PartEncaisseeRow[] {
+  const parts: { encaissement: string; part: PartEncaisseeRow }[] = []
+  for (const e of encaissements) {
+    if (e.dossier_id !== dossierId || e.ligne_bancaire_id == null || e.annule_id != null || !compte(e)
+      || factureSource(e.facture_id, vente) || !justifieSonMouvement(e, encaissements)) continue
+    const piece = exemplaireUnique(dossierId, e.facture_id, exemplaires)
+    if (piece === null) continue
+    parts.push({ encaissement: e.id, part: { ligne_bancaire_id: e.ligne_bancaire_id, piece_id: piece, montant: e.montant } })
+  }
+  return parts
+    .sort((a, b) => ordreC(a.part.ligne_bancaire_id, b.part.ligne_bancaire_id) || ordreC(a.part.piece_id, b.part.piece_id)
+      || ordreC(a.encaissement, b.encaissement))
+    .map((x) => x.part)
+}
+// ── FIN VIREMENT MIXTE ───────────────────────────────────────────────────────────────────────────
+
 // Où une pièce s'écrit : le compte de sa catégorie, ou — pour la facture d'un bien IMMOBILISÉ — le compte
 // d'immobilisation de sa nature (l'écriture d'ACQUISITION). L'immobilisation décide aussi du compte de TVA
 // (445620) et, en engagement, du compte de tiers (404000).
@@ -173,13 +316,18 @@ interface PieceAComptabiliser extends CibleComptable {
 // les mêmes pièces mais JETAIT le compte attendu, ce qui rendait trois des quatre comparaisons
 // ci-dessous impossibles à écrire. `acquisitions` : la pièce de chaque bien du registre et le compte de
 // sa nature — ou rien, pour un bien sans nature et pour un bien acquis avant l'ouverture d'un dossier
-// repris, qui ne s'écrivent pas (bloc AMORTISSEMENT, `acquisitionsDesBiens`).
+// repris, qui ne s'écrivent pas (bloc AMORTISSEMENT, `acquisitionsDesBiens`). `sources` : les factures sources du dossier
+// (bloc FACTURES SOURCES), sans valeur par défaut — l'exemplaire de l'une d'elles sort AVANT tout le reste, sa vente
+// s'écrivant par sa facture : le dire « à régénérer » ou « en attente de rapprochement » enverrait écrire, ou régler, une
+// vente que sa facture compte déjà.
 function piecesAComptabiliser(
   piecesValidees: PieceRow[],
   categories: CategorieRow[],
   acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
+  sources: FacturesSources,
 ): PieceAComptabiliser[] {
   return piecesValidees.flatMap((piece): PieceAComptabiliser[] => {
+    if (exemplaireDUneSource(piece, sources)) return []
     // Une pièce à 0 € n'a rien à comptabiliser : la base refuse une ligne nulle, et la compter la laissait « sans
     // écriture » pour toujours.
     if (piece.montant_ttc == null || piece.montant_ttc === 0) return []
@@ -206,11 +354,22 @@ function compteTvaDe(piece: Pick<PieceRow, "type_piece">, immobilisation: boolea
 // LES PAIEMENTS D'UNE PIÈCE : un mouvement RAPPROCHÉ de la pièce, ou la PART d'un virement qui règle
 // plusieurs pièces (ligne 26, `reglements_groupes`). Sans les parts, une pièce réglée par un virement
 // groupé passerait pour « en attente de rapprochement », et son écriture juste pour « à régénérer ».
-interface LignePayanteRow { id: string; piece_id: string | null; date: string; montant: number; statut: string; reglement_groupe: boolean }
+// Et, depuis l'étape VF9b (chantier EC-Q3, ligne 28.65), l'ENCAISSEMENT d'une facture d'avant la bascule cité sur un
+// mouvement classé par ses encaissements — le virement mixte (bloc VIREMENT MIXTE) : un paiement de l'exemplaire de sa
+// facture, à la date du mouvement, comme la part d'un virement groupé.
+interface LignePayanteRow {
+  id: string; piece_id: string | null; date: string; montant: number; statut: string; reglement_groupe: boolean
+  // Classé par ses encaissements de factures (étape VF2) : seul un tel mouvement paie l'exemplaire d'une facture d'avant.
+  encaissements_de_factures: boolean
+}
 interface PartRegleeRow { ligne_bancaire_id: string; piece_id: string | null; montant: number }
+// Ce qu'un virement mixte paie : le mouvement, l'exemplaire unique et validé de la facture d'avant, et le montant de son
+// encaissement, signé comme le relevé — ce que `partsEncaissees` (bloc VIREMENT MIXTE) tire du registre.
+interface PartEncaisseeRow { ligne_bancaire_id: string; piece_id: string; montant: number }
 // `id` : le mouvement — la contrepartie banque en trésorerie, le règlement en engagement. `montant` : ce
-// que CE mouvement paie de CETTE pièce, signé comme le relevé.
-interface PaiementDePiece { id: string; date: string; montant: number; origine: "rapprochement" | "groupe" }
+// que CE mouvement paie de CETTE pièce, signé comme le relevé. `origine` : `groupe`, la part d'un virement groupé ;
+// `encaissements`, celle d'un virement mixte.
+interface PaiementDePiece { id: string; date: string; montant: number; origine: "rapprochement" | "groupe" | "encaissements" }
 
 const SEUIL_ALIGNEMENT_RELATIF = 0.02
 const SEUIL_ALIGNEMENT_PLAFOND_EUR = 5
@@ -220,9 +379,15 @@ function seuilAlignement(montantPiece: number): number {
 }
 
 // Seul un mouvement RAPPROCHÉ paie une pièce, et une part ne compte que si son mouvement est lu, rapproché
-// et réglé en groupe. Chaque liste est triée par date puis par mouvement, pour que deux lectures du même
-// relevé rendent la même chose quel que soit l'ordre de la requête.
-function paiementsDesPieces(lignes: readonly LignePayanteRow[], reglements: readonly PartRegleeRow[]): Map<string, PaiementDePiece[]> {
+// et réglé en groupe ; celle d'un virement mixte, que si son mouvement est lu, rapproché et CLASSÉ PAR SES
+// ENCAISSEMENTS — un mouvement seulement réservé, ou dont le classement est retiré, ne date rien. Les deux sortes de
+// parts sont OBLIGATOIRES, sans valeur par défaut : oubliées, la pièce qu'elles paient retomberait sans paiement, à sa
+// date de facture. Une pièce payée aussi par un autre mouvement additionne ses paiements, et compte une fois. Chaque
+// liste est triée par date puis par mouvement, pour que deux lectures du même relevé rendent la même chose quel que
+// soit l'ordre de la requête.
+function paiementsDesPieces(
+  lignes: readonly LignePayanteRow[], reglements: readonly PartRegleeRow[], encaissees: readonly PartEncaisseeRow[],
+): Map<string, PaiementDePiece[]> {
   const mouvements = new Map(lignes.map((l) => [l.id, l]))
   const parPiece = new Map<string, PaiementDePiece[]>()
   const ajouter = (pieceId: string, paiement: PaiementDePiece) => {
@@ -239,6 +404,11 @@ function paiementsDesPieces(lignes: readonly LignePayanteRow[], reglements: read
     const mouvement = mouvements.get(part.ligne_bancaire_id)
     if (!mouvement || mouvement.statut !== "rapprochee" || !mouvement.reglement_groupe) continue
     ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: "groupe" })
+  }
+  for (const part of encaissees) {
+    const mouvement = mouvements.get(part.ligne_bancaire_id)
+    if (!mouvement || mouvement.statut !== "rapprochee" || !mouvement.encaissements_de_factures) continue
+    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: "encaissements" })
   }
   for (const liste of parPiece.values()) liste.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
   return parPiece
@@ -692,15 +862,20 @@ function partieOuverteDesynchronisee(
   return presentes.length !== ouvertes.length || presentes.some((c, i) => c !== ouvertes[i])
 }
 
-// `paiements` : ceux de chaque pièce, parts des virements groupés comprises (`paiementsDesPieces`). `frontiere` : celle
-// de la validation (bloc VALIDATION), qui fait juger une pièce qu'elle coupe sur sa seule part ouverte.
+// `paiements` : ceux de chaque pièce, parts des virements groupés et des virements mixtes comprises (`paiementsDesPieces`).
+// `frontiere` : celle de la validation (bloc VALIDATION), qui fait juger une pièce qu'elle coupe sur sa seule part
+// ouverte. `exemplaires` : les pièces exemplaires d'une facture source (bloc FACTURES SOURCES, `exemplairesDesSources`),
+// sans valeur par défaut — leur écriture est sans objet : la dire « en attente de rapprochement » enverrait chercher dans
+// Banque le paiement d'une pièce qui ne se règle plus, c'est sa facture qui s'encaisse ; la dire « déséquilibrée »
+// enverrait la régénérer.
 function analyserEcritures(
   ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean,
   paiements: ReadonlyMap<string, readonly PaiementDePiece[]>, modele: ModeleComptable, frontiere: string | null,
+  exemplaires: ReadonlySet<string>,
 ) {
   const piecesParGroupe = new Map<string, EcritureRow[]>()
   for (const e of ecritures) {
-    if (!e.piece_id) continue
+    if (!e.piece_id || exemplaires.has(e.piece_id)) continue
     piecesParGroupe.set(e.piece_id, [...(piecesParGroupe.get(e.piece_id) ?? []), e])
   }
   // Une pièce dont aucune ligne ne touche la banque ET qu'aucun paiement ne règle : en trésorerie, la
@@ -2577,6 +2752,14 @@ function avecLaGarde(resultat: Record<string, unknown>, ventes: GardeDesVentes |
   return { ...resultat, avertissement: typeof resultat.avertissement === "string" ? `${resultat.avertissement} ${phrase}` : phrase }
 }
 
+// UNE LECTURE QU'UN DOSSIER N'A PAS À FAIRE (VF9b) : complète, et vide. Ce n'est pas une lecture ratée prise pour un vide :
+// elle ne sert qu'aux factures et au registre des encaissements d'un dossier dont le réglage est LU faux — il n'a pas
+// basculé, la base lui refuse toute facture source (`fixer_source_de_la_vente`), et sans elle aucun mouvement n'est classé
+// par ses encaissements : ni exemplaire écarté, ni virement mixte. Le vide y est un fait, et le dossier ne lit rien de plus.
+function rienALire<T>(): Promise<LectureComplete<T>> {
+  return Promise.resolve({ lignes: [], complete: true, motif: null })
+}
+
 async function executerOutil(ctx: OutilContexte, nom: string, input: Record<string, unknown>): Promise<unknown> {
   const { admin, dossierId, dossier, ventes } = ctx
 
@@ -2716,22 +2899,43 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
+    // LES VENTES FACTURÉES SE LISENT DERRIÈRE LE REFUS QUI SUIT (VF9b) : un dossier dont la source des ventes n'est pas LUE
+    // fausse — il a basculé, ou elle ne se lit pas, et l'on ne devine pas — lit aussi ses factures et le registre de leurs
+    // encaissements, plus bas, et ses contrôles les jugent comme la Checklist. Tant que le refus de VF9a tient, aucun
+    // dossier qui les lirait ne l'atteint ; VF9c le retire. Un dossier qui n'a pas basculé ne lit rien de plus.
+    const lireLesVentes = ventes !== null
     // Un dossier basculé : ces contrôles le jugeraient faux (l'exemplaire « à comptabiliser », la pièce d'un virement
     // mixte « sans paiement ») et tairaient ce que sa validation refuse. Refusé avant toute lecture (VF9a).
     if (ventes) {
       return { erreur: `${ventes.constat}. L'assistant ne lit pas encore les ventes facturées : ses contrôles ne sont pas disponibles pour ce dossier — ne tire aucune conclusion sur son état, et renvoie l'utilisateur à la Vue d'ensemble et à l'onglet Écritures, qui les disent.` }
     }
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations] = await Promise.all([
+    const [rPieces, rPiecesAValider, rFactures, rEncaissements, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter. Et tout ce qu'en
       // tire le GÉNÉRATEUR, qui dit ce qu'une pièce coupée par la frontière de validation doit encore porter, ligne
       // pour ligne : le hors taxe lu, qui prime sur le TTC moins la TVA pour un dossier assujetti — et pour la
       // contrepartie d'une note de frais au 108000 —, et le DÉPÔT, qui date ce que rien d'autre ne date. Et le TIERS de
       // toutes les pièces, validées ou non : un lettrage fait à la main ne tient qu'entre pièces d'un même tiers (bloc
-      // LETTRAGE MANUEL).
+      // LETTRAGE MANUEL). Et la facture dont une pièce validée est l'EXEMPLAIRE (VF9b) : celui d'une facture source ne
+      // compte nulle part, celui d'une facture d'avant se paie par un virement mixte — nulle sans facture source, elle ne
+      // décide de rien.
       lireTout<PieceRow>((d, f) =>
-        admin.from("pieces").select("id, date_piece, tiers, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
+        admin.from("pieces").select("id, date_piece, tiers, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at, facture_id", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
       lireTout<{ id: string; tiers: string | null; confiance: string | null }>((d, f) =>
         admin.from("pieces").select("id, tiers, confiance", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "a_valider").order("id").range(d, f)),
+      // LES VENTES FACTURÉES (VF9b), d'un dossier qui les lit seulement (`lireLesVentes`) ; un autre ne lit rien de plus
+      // (`rienALire`). Les FACTURES du dossier, avec leur source (bloc FACTURES SOURCES) et leur numéro — jamais leur
+      // client, `tiers_nom`, qui nommerait un patient — ; le REGISTRE ENTIER des encaissements, retirés et
+      // contre-passations compris (bloc VIREMENT MIXTE). Lus en partie, ils fausseraient les clés d'aujourd'hui —
+      // l'exemplaire d'une facture source compté, la pièce d'un virement mixte sans paiement — : d'où le même refus que
+      // les autres lectures.
+      lireLesVentes
+        ? lireTout<FactureRow>((d, f) =>
+          admin.from("factures_emises").select("id, statut, numero, source_de_la_vente", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))
+        : rienALire<FactureRow>(),
+      lireLesVentes
+        ? lireTout<EncaissementRow>((d, f) =>
+          admin.from("encaissements_factures").select("id, dossier_id, facture_id, montant, ligne_bancaire_id, annule_id, retire_le", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f))
+        : rienALire<EncaissementRow>(),
       lireTout<CategorieRow>((d, f) =>
         admin.from("categories").select("id, libelle, compte_comptable, poste_2035", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(d, f)),
       // `statut` et `immobilisation_id` : une DOTATION aux amortissements (bloc AMORTISSEMENT) est une écriture
@@ -2762,11 +2966,13 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // trésorerie et décident de leurs lignes de banque dans les deux modèles. Et ce qui paie une ÉCHÉANCE
       // DE COTISATION (bloc COTISATION), avec ce qui empêcherait son écriture. Et les mouvements écrits sur un
       // COMPTE DE BILAN ou IGNORÉS (bloc COMPTE DE BILAN) : le compte, le statut, le virement personnel. Et ceux qui
-      // paient ou remboursent une DÉCLARATION DE TVA (bloc LIQUIDATION TVA), dont l'écriture doit suivre le montant.
+      // paient ou remboursent une DÉCLARATION DE TVA (bloc LIQUIDATION TVA), dont l'écriture doit suivre le montant. Et
+      // ceux que leurs encaissements de factures CLASSENT (VF9b) : seul un tel mouvement paie l'exemplaire d'une facture
+      // d'avant, le virement mixte.
       lireTout<EmpruntRow>((d, f) =>
         admin.from("emprunts").select("id, nom, capital_initial, taux_annuel, date_debut, duree_mois", { count: "exact" }).eq("dossier_id", dossierId).order("date_debut").order("id").range(d, f)),
       lireTout<MouvementEmpruntRow & MouvementVentileRow & LignePayanteRow & MouvementCotisationRow & MouvementCompteBilanRow & MouvementTvaRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+        admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee, encaissements_de_factures, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les PARTS des mouvements ventilés (bloc VENTILATION) : leurs catégories comptent comme celles des
       // pièces, et l'écriture du mouvement doit les suivre.
       lireTout<PartVentilationRow>((d, f) =>
@@ -2812,7 +3018,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations]
+    const incompletes = [rPieces, rPiecesAValider, rFactures, rEncaissements, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -2827,12 +3033,25 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const ouverture = rANouveaux.lignes[0]?.date ?? null
     const acquisitions = acquisitionsDesBiens(rImmobilisations.lignes, rNatures.lignes, ouverture)
     const pieceIdsImmobilisees = new Set(acquisitions.keys())
-    const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions)
+    // LES VENTES FACTURÉES (VF9b), comme la Checklist (src/lib/pointsDeLaChecklist.ts). L'exemplaire d'une facture source
+    // ne compte nulle part (bloc FACTURES SOURCES) : ni au brouillon, ni dans les points qui jugent une pièce par ses
+    // montants ou ses paiements — sa TVA, son montant et son règlement sont ceux de sa facture. Et un virement mixte paie
+    // l'exemplaire unique et validé de sa facture d'avant (bloc VIREMENT MIXTE) : les pièces désignées se tirent des
+    // validées, seules à pouvoir l'être, au dossier et au statut de leur lecture. Sans facture lue — un dossier qui n'a pas
+    // basculé —, aucune source, aucun exemplaire écarté, aucun virement mixte : chaque contrôle juge comme hier.
+    const sources = facturesSourcesDe(rFactures.lignes)
+    const exemplaires = exemplairesDesSources(piecesTyped, sources)
+    const piecesQuiComptent = horsDesExemplairesDesSources(piecesTyped, sources)
+    const designees: ExemplaireRow[] = piecesTyped
+      .filter((p) => p.facture_id != null)
+      .map((p) => ({ id: p.id, dossier_id: dossierId, facture_id: p.facture_id, statut: "validee", type_piece: p.type_piece }))
+    const encaissees = partsEncaissees(dossierId, rEncaissements.lignes, { factures: rFactures.lignes }, designees)
+    const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)
     const modele = modeleDuDossier(dossier)
-    const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes)
+    const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes, encaissees)
     // La frontière de validation : rien de ce qu'elle fige ne se réclame plus, comme dans la Checklist.
     const frontiere = frontiereDeValidation(rValides.lignes.map((v) => v.annee))
-    const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele, frontiere)
+    const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele, frontiere, exemplaires)
     // Les lettrages faits à la main (bloc LETTRAGE MANUEL), revérifiés sur TOUTES les pièces du dossier, comme dans la
     // Checklist : une facture qu'un lettrage qui tient solde avec son avoir n'attend plus de règlement. En trésorerie
     // rien ne se lettre, et la liste est vide.
@@ -2840,10 +3059,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const lettreesALaMain = piecesLettreesALaMain(etatsLettrages)
     const sansReglement = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
     const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === "basse")
-    // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
-    const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
-    const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
-    const sansTva = piecesSansTva(piecesTyped, dossier.assujetti_tva)
+    // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés. L'exemplaire d'une facture
+    // source n'y compte pas (VF9b) : il ne s'écrit pas et la 2035 l'écarte — sa catégorie ne décide de rien ; ni sa TVA.
+    const catSansCompte = categoriesSansCompte(categoriesTyped, piecesQuiComptent, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
+    const catSansPoste = categoriesSansPoste(categoriesTyped, piecesQuiComptent, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
+    const sansTva = piecesSansTva(piecesQuiComptent, dossier.assujetti_tva)
     const affectes = mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)
     const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere)
     const recettesAffecteesSansTva = recettesAffecteesSansTaux(affectes, dossier.assujetti_tva, frontiere)
@@ -2858,7 +3078,8 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // Comptés par MOUVEMENT, comme la Checklist : une part sans pièce et une somme qui ne tombe plus juste
     // sont deux raisons pour un seul virement à reprendre.
     const reglementsFaux = new Set(reglementsGroupesIncoherents(rReleve.lignes, rReglements.lignes).map((r) => r.ligne.id))
-    const payeesEnTrop = piecesPayeesEnTrop(piecesTyped, paiements)
+    // Ni l'exemplaire d'une facture source (VF9b) : il ne se règle pas, sa facture s'encaisse.
+    const payeesEnTrop = piecesPayeesEnTrop(piecesQuiComptent, paiements)
     const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)
     const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)
     // L'exercice en cours, dans le fuseau du cabinet : sa dotation ne manque pas encore.

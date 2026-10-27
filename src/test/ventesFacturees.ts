@@ -4,6 +4,7 @@ import type { RecettesFacturees } from '../lib/estimation'
 import type { EcritureVenteFacturee } from '../lib/ecrituresVentesFacturees'
 import type { JustificatifsDesVentes } from '../lib/pisteAudit'
 import type { FacturesSources } from '../lib/facturesSources'
+import type { PartEncaissee } from '../lib/rattachement'
 
 // LES VENTES FACTURÉES DES TESTS (ligne 28.6, chantier EC-Q3, étape VF3b1). Les moteurs reçoivent les ventes facturées en
 // paramètre OBLIGATOIRE, sans valeur par défaut (lib/declaration2035.ts) : le code de production n'en fabrique aucune, et
@@ -33,6 +34,13 @@ export const SANS_FACTURE_SOURCE: FacturesSources = new Set<string>()
 
 /** Aucune pièce exemplaire d'une facture source (`exemplairesDesSources`), pour `analyserEcritures`. */
 export const SANS_EXEMPLAIRE: ReadonlySet<string> = new Set<string>()
+
+/**
+ * Aucun virement mixte (étape VF5h, lib/rattachement.ts) : ce que `paiementsDesPieces` reçoit d'un jeu d'essai dont aucun
+ * encaissement d'une facture d'avant ne cite un mouvement classé par ses encaissements — l'écriture de référence d'un cas
+ * qui ne parle pas des ventes facturées (étape VF9b, les gardes de la copie d'`agent-comptable`).
+ */
+export const SANS_VIREMENT_MIXTE: readonly PartEncaissee[] = []
 
 /** Aucune facture source : ni part, ni exigibilité, ni document, ni écart, ni excédent. */
 export function ventesFactureesVides(dossierId: string): VentesFacturees {
