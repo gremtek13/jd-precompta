@@ -83,8 +83,9 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
   - `agent-comptable` — assistant IA (Bedrock), plafond de coût mensuel par cabinet ; aucun nom de cabinet
     (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant un dossier
-    basculé, une garde provisoire jusqu'à VF9d (VF9a) → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER
-    BASCULÉ ».
+    basculé, une garde provisoire (VF9a, en ligne), que VF9c lève au dépôt — elle ne ferme plus qu'une source des
+    ventes illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES
+    OUTILS DE L'ASSISTANT ».
   - `create-cabinet`, `delete-cabinet` (super-admin) ; `create-team-member`, `create-client-access`.
   - `extract-piece` — OCR (Textract) puis citation des champs ; réservée à un compte RATTACHÉ et à `receive-email` (clé
     secrète en `apikey`).
@@ -586,8 +587,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   DEVANT UN DOSSIER BASCULÉ ». VF9b le 27/10/2026, au dépôt, à déployer avec VF9c et VF9d : derrière ce refus,
   `points_a_traiter` lit les factures et le registre des encaissements d'un dossier basculé, écarte l'exemplaire d'une
   facture source et date ce qu'un virement mixte paie ; un autre dossier ne lit rien de plus, rien de changé au
-  caractère près → « VF9B, LA SOURCE, LES EXEMPLAIRES ET LES PAIEMENTS DE L'ASSISTANT ». Restent VF9c et VF9d (EC3-Q9,
-  la facture reprise, va à A8).
+  caractère près → « VF9B, LA SOURCE, LES EXEMPLAIRES ET LES PAIEMENTS DE L'ASSISTANT ». VF9c le 27/10/2026, au dépôt,
+  à déployer avec VF9b et VF9d : le refus levé pour une source des ventes LUE vraie — `points_a_traiter` dit, comme la
+  Checklist, les mouvements réservés et les encaissements sans mouvement, et ce que la validation refuserait, lu dans la
+  base (`ventes_facturees_de_l_exercice`, sa panne ne taisant que sa clé) ; les quatre autres outils et la consigne
+  disent la vente facturée, une facture nommée par son numéro, jamais par son client ; un réglage illisible garde le
+  côté fermé ; un autre dossier, rien de changé au caractère près, hors la description de l'outil ; VF9C-Q1 (le tiers
+  d'une pièce de vente au modèle) à porter à la page des arbitrages → « VF9C, LES POINTS ET LES OUTILS DE L'ASSISTANT ».
+  Reste VF9d (EC3-Q9, la facture reprise, va à A8).
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
