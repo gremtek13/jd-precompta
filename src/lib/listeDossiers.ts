@@ -8,9 +8,14 @@
 // autres parcours — et un dossier ouvert que la liste ne connaît pas encore. La CRÉATION reste sur le
 // tableau de bord, donc n'y « revient » pas : elle prévient par `signalerMajDossiers()`, même bus
 // d'événements que la charte graphique (voir lib/branding.ts, signalerMajBranding).
+//
+// ELLE NE MONTRE QUE LES DOSSIERS QUE LE CABINET OUVRE AU COMPTE (23Q2Q2Q1-Q1, voir lib/dossiersOuverts.ts) : la base
+// rend aussi ceux où il a un accès client, que l'espace du cabinet n'ouvre pas. Ce qui n'a pas pu être vérifié manque, et
+// le motif le dit, comme une lecture incomplète.
 import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
+import { garderLesDossiersOuverts, lireLesAccesDuCompte } from './dossiersOuvertsLecture'
 
 export interface DossierDeBarre { id: string; nom: string }
 
@@ -29,8 +34,12 @@ export function signalerMajDossiers() {
   window.dispatchEvent(new Event(EVENEMENT_MAJ))
 }
 
-export function useListeDossiers(actif: boolean, relecture: number): ListeDossiers {
-  const [etat, setEtat] = useState<ListeDossiers>({ dossiers: [], motif: null, chargement: true })
+/**
+ * `userId` : le compte connecté, côté cabinet ; nul, rien ne se lit (un client n'a pas de liste des dossiers). La liste se
+ * garde AVEC le compte pour lequel elle a été lue : un autre compte repart en chargement, jamais sur la liste du précédent.
+ */
+export function useListeDossiers(userId: string | null, relecture: number): ListeDossiers {
+  const [etat, setEtat] = useState<ListeDossiers & { pour: string | null }>({ dossiers: [], motif: null, chargement: true, pour: null })
   const [signal, setSignal] = useState(0)
 
   useEffect(() => {
@@ -40,22 +49,28 @@ export function useListeDossiers(actif: boolean, relecture: number): ListeDossie
   }, [])
 
   useEffect(() => {
-    if (!actif) return
+    if (!userId) return
     // Une lecture plus lente écrit en DERNIER : sans ce drapeau, une relecture partie plus tôt et
     // revenue plus tard remplacerait la liste fraîche par l'ancienne — la course déjà corrigée sur
     // l'aperçu d'un pack (voir PacksTab).
     let annule = false
-    lireTout<DossierDeBarre>((debut, fin) =>
-      // Mêmes dossiers que le tableau de bord (non archivés), et tri TOTAL : `nom` n'est unique que
-      // par hasard, sans `id` deux tranches pourraient se recouvrir ou sauter une ligne.
-      supabase.from('dossiers').select('id, nom', { count: 'exact' })
-        .eq('archive', false).order('nom').order('id').range(debut, fin),
-    ).then((lecture) => {
+    Promise.all([
+      lireTout<DossierDeBarre>((debut, fin) =>
+        // Mêmes dossiers que le tableau de bord (non archivés), et tri TOTAL : `nom` n'est unique que
+        // par hasard, sans `id` deux tranches pourraient se recouvrir ou sauter une ligne.
+        supabase.from('dossiers').select('id, nom', { count: 'exact' })
+          .eq('archive', false).order('nom').order('id').range(debut, fin),
+      ),
+      lireLesAccesDuCompte(userId),
+    ]).then(async ([lecture, acces]) => {
+      const ouverts = await garderLesDossiersOuverts(lecture.lignes, acces)
       if (annule) return
-      setEtat({ dossiers: lecture.lignes, motif: lecture.complete ? null : lecture.motif, chargement: false })
+      const motifs = [lecture.complete ? null : lecture.motif, ouverts.motif].filter((m): m is string => m !== null)
+      setEtat({ dossiers: ouverts.dossiers, motif: motifs.length > 0 ? motifs.join(' ; ') : null, chargement: false, pour: userId })
     })
     return () => { annule = true }
-  }, [actif, relecture, signal])
+  }, [userId, relecture, signal])
 
-  return etat
+  if (etat.pour !== userId) return { dossiers: [], motif: null, chargement: true }
+  return { dossiers: etat.dossiers, motif: etat.motif, chargement: etat.chargement }
 }

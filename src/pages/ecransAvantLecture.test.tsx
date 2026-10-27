@@ -664,6 +664,9 @@ beforeAll(() => {
   etat.rendusRpc['rpc:plan_du_dossier'] = ROLES_COMPTABLES.map((r) => ({
     role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
   }))
+  // L'OUVERTURE DU DOSSIER AU COMPTE (23Q2Q2Q1-Q1) : un booléen ou rien. Lue « vide » — une liste —, elle serait illisible, et la
+  // page dirait sa lecture ratée au lieu de monter ses onglets ; le faux client répond comme la base au chef du cabinet.
+  etat.rendusRpc['rpc:admin_du_dossier'] = true
 })
 
 describe('aucun écran n’affirme le vide avant d’avoir lu', () => {
@@ -856,10 +859,12 @@ const LECTURES_PAR_FONCTION = new Set([
 // une lecture aussi (`stable`).
 // Et les ventes facturées de « Ma simulation » (`ventes_facturees_de_la_simulation`, chantier EC-Q3, étape VF8e), dès que la
 // fonction est en base (`SIMULATION_VENTES_FACTUREES_EXPORTEE`) : une lecture (`stable`), qui n'écrit rien.
+// Et l'ouverture d'un dossier au compte (`admin_du_dossier`, 23Q2Q2Q1-Q1), que la page d'un dossier lit avec lui, et la liste
+// des dossiers (la coque, le tableau de bord) pour un dossier où le compte a un accès client : un prédicat (`stable`).
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
   'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib', 'rpc:dossiers_au_rib_a_confirmer',
-  'rpc:ventes_facturees_de_la_simulation',
+  'rpc:ventes_facturees_de_la_simulation', 'rpc:admin_du_dossier',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.
@@ -1084,6 +1089,65 @@ describe('le plan comptable du dossier : aucun onglet, donc aucun geste, avant s
     await act(async () => { libererTout('refus'); libererRetenues() })
     await laisserPasser()
     expect(document.body.textContent).toMatch(/Le plan comptable de ce dossier n’a pas pu être lu \(plan comptable refusé : lecture refusée par le faux client\)/)
+    expect(etat.demandes.has(ONGLET_MONTE)).toBe(false)
+    expect(attendEncore(), 'le refus lève l’attente').toBe(false)
+    journal.mockRestore()
+  })
+})
+
+// L'OUVERTURE DU DOSSIER AU COMPTE (23Q2Q2Q1-Q1, voir lib/dossiersOuverts.ts) : comme le plan, aucun onglet ne se monte avant
+// elle — un dossier qu'un membre de l'équipe ne lit que par un accès client n'en montrerait que ce qu'un client lit. Le reste
+// revient ; l'ouverture, retenue, revient la DERNIÈRE. Refusée, la page le dit et ne monte rien.
+describe('l’ouverture du dossier au compte : aucun onglet, donc aucun geste, avant sa lecture', () => {
+  const page = () => ECRANS.find((e) => e.nom === 'DossierDetail')!
+  const ONGLET_MONTE = 'cotisations_declarees'
+  const HORS_DES_ONGLETS = /Détecter la profession|Assistant/
+
+  beforeAll(() => {
+    vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+  })
+  afterAll(() => { vi.restoreAllMocks() })
+
+  async function monterSansLOuverture() {
+    reinitialiser('retenir')
+    etat.lignesUniques = { dossiers: dossier() }
+    etat.toujoursRetenues = new Set(['rpc:admin_du_dossier'])
+    render(<>{page().rendre()}</>)
+    await laisserPasser()
+    await act(async () => { libererTout('vide') })
+    await laisserPasser()
+  }
+
+  it('DossierDetail : ouverture retenue, aucun onglet ni geste qui écrive ; revenue, l’onglet se monte et lit', async () => {
+    const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await monterSansLOuverture()
+    expect(etat.demandes.has('rpc:admin_du_dossier'), 'l’ouverture se demande avec le dossier').toBe(true)
+    expect(etat.demandes.has('rpc:plan_du_dossier'), 'le plan, lui, est revenu').toBe(true)
+    expect(etat.demandes.has(ONGLET_MONTE), 'aucun onglet ne se monte sans l’ouverture').toBe(false)
+    expect(document.querySelector('[aria-busy="true"]'), 'la page attend, en squelettes').not.toBeNull()
+    let tentes = 0
+    for (const el of gestesOfferts().filter((g) => !HORS_DES_ONGLETS.test(nomDuGeste(g)))) {
+      remplirLesChamps()
+      await tenter(el)
+      tentes++
+    }
+    expect(tentes, 'les gestes de l’en-tête et du parcours ont été tentés').toBeGreaterThan(0)
+    expect(etat.ecritures.filter((e) => !LECTURES_PAR_RPC.has(e) && !LECTURES_PAR_FONCTION.has(e)), 'une écriture avant l’ouverture').toEqual([])
+    expect(etat.demandes.has(ONGLET_MONTE), 'aucun geste ne monte un onglet sans l’ouverture').toBe(false)
+
+    await act(async () => { libererRetenues() })
+    await laisserPasser()
+    expect(etat.demandes.has(ONGLET_MONTE), 'l’ouverture revenue, l’onglet se monte et lit').toBe(true)
+    journal.mockRestore()
+  })
+
+  it('DossierDetail : ouverture refusée, la page le dit et ne monte aucun onglet', async () => {
+    const journal = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await monterSansLOuverture()
+    await act(async () => { libererTout('refus'); libererRetenues() })
+    await laisserPasser()
+    expect(document.body.textContent).toMatch(/L’ouverture de ce dossier à ton compte n’a pas pu être vérifiée \(lecture refusée par le faux client\)/)
     expect(etat.demandes.has(ONGLET_MONTE)).toBe(false)
     expect(attendEncore(), 'le refus lève l’attente').toBe(false)
     journal.mockRestore()

@@ -66,6 +66,15 @@ const VENTES_DU_BANC = typeof localStorage === 'undefined' ? null : localStorage
 // chargement. Les autres visites du client ne la voient pas.
 const CLIENT_DU_DOSSIER_BASCULE = typeof localStorage === 'undefined' ? false : localStorage.getItem('banc-client-basculee') === '1'
 
+// LE MEMBRE DE L'ÉQUIPE QUI EST AUSSI CLIENT D'UN DOSSIER (23Q2Q2Q1-Q1) : une clé, posée par la passe `membre` de debordements.mjs,
+// fait du compte du banc un « Comptable » du cabinet, assigné au cabinet infirmier (d1) et à l'atelier (d7), et client de Marc
+// Petit (d3), qui ne lui est pas assigné. La base lui rend alors ces trois dossiers (`dossiers_select` : `admin_du_dossier`, ou un
+// accès client) — le banc fait de même —, et `admin_du_dossier` ne lui ouvre que les deux premiers : la liste du cabinet tait
+// le troisième, et son adresse directe dit qu'il ne lui est pas ouvert.
+const MEMBRE_DU_BANC = typeof localStorage === 'undefined' ? false : localStorage.getItem('banc-membre') === '1'
+const DOSSIERS_ASSIGNES_AU_MEMBRE = ['d1', 'd7']
+const DOSSIER_DONT_LE_MEMBRE_EST_CLIENT = 'd3'
+
 // L'identité LÉGALE des dossiers du banc (étape A5b2, onglet Informations) : quatre colonnes de `dossiers`, que l'onglet lit et écrit
 // avec le SIRET et l'adresse. Une société (forme et capital), un entrepreneur individuel (sa dénomination en « EI », aucun
 // capital), et la catégorie dont le libellé de l'INSEE est le plus long (141 caractères : le `<select>` à 390 px) ; le dossier
@@ -1962,7 +1971,11 @@ const TABLES: Record<string, Ligne[]> = {
     message(3, 'user', 'Il reste une pièce sans catégorie ?'),
     message(4, 'assistant', 'Oui, une seule : LogiSoins, 29,00 € le 18/08/2026. C’est un abonnement de logiciel : une catégorie « Logiciels et abonnements » conviendrait.', ['lister_pieces']),
   ],
-  cabinet_admins: CLIENT_DU_BANC ? [] : [{ user_id: 'u1', cabinet_id: 'cab1', role: 'comptable_en_chef' }],
+  cabinet_admins: CLIENT_DU_BANC ? [] : [{ user_id: 'u1', cabinet_id: 'cab1', role: MEMBRE_DU_BANC ? 'comptable' : 'comptable_en_chef' }],
+  // Les assignations du membre de l'équipe (23Q2Q2Q1-Q1) ; aucune pour le chef, qui tient tous les dossiers du cabinet.
+  dossier_assignations: MEMBRE_DU_BANC
+    ? DOSSIERS_ASSIGNES_AU_MEMBRE.map((dossierId) => ({ id: `da-u1-${dossierId}`, dossier_id: dossierId, user_id: 'u1', created_at: '2026-01-05T09:00:00Z' }))
+    : [],
   // Les accès du cabinet infirmier et leurs deux droits (espace client, étape P1) : l'onglet Accès montre leurs cases —
   // l'une cochée, et une adresse longue, qui éprouve la fiche repliée sur téléphone. En client, le compte du banc y a le
   // sien, sans droit ; AuthContext le trouve par son identifiant, l'onglet par le dossier.
@@ -1986,10 +1999,17 @@ const TABLES: Record<string, Ligne[]> = {
     // Le client du dossier archivé (d11), qu'aucune autre visite ne montre : la page de l'équipe reçoit son adresse, longue, et la
     // fonction du banc le reconnaît à cet accès — elle refuse alors avec le marqueur de l'entrée à confirmer (23Q2Q2-Q1).
     { id: 'm-equipe-d11', user_id: 'u-equipe', dossier_id: 'd11', role: 'client', email: 'secretariat.de-la-societe-civile-de-moyens@example.test', droit_ventes: false, droit_banque: false, created_at: '2026-01-08T09:00:00Z' },
+    // Le membre de l'équipe, client d'un dossier qui ne lui est pas assigné (23Q2Q2Q1-Q1).
+    ...(MEMBRE_DU_BANC
+      ? [{ id: 'm-u1-d3', user_id: 'u1', dossier_id: DOSSIER_DONT_LE_MEMBRE_EST_CLIENT, role: 'client', email: 'membre.client@example.test', droit_ventes: false, droit_banque: false, created_at: '2026-01-05T09:00:00Z' }]
+      : []),
   ],
   notes_internes: NOTES_INTERNES,
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
-  dossiers,
+  // Pour le membre de l'équipe, ce que `dossiers_select` lui rend : ses dossiers assignés, et celui dont il est client.
+  dossiers: MEMBRE_DU_BANC
+    ? dossiers.filter((d) => [...DOSSIERS_ASSIGNES_AU_MEMBRE, DOSSIER_DONT_LE_MEMBRE_EST_CLIENT].includes(String(d.id)))
+    : dossiers,
   categories,
   pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces, ...SOURCES_D9.pieces, ...SOURCES_D10.pieces, ...PIECES_EREPORTING, ...PIECES_D12],
   // Le journal des désignations (étape VF6c) : la base le rend sous `admin_du_dossier` de chaque ligne, ici le cabinet du banc
@@ -2557,6 +2577,14 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
         .map((e) => ({ jour: jourAParis(String(e.recue_le)), raison: e.raison, octets: e.octets })),
       error: null,
     }
+  }
+  // `admin_du_dossier` (23Q2Q2Q1-Q1), comme la fonction en base (migration `hierarchie_comptables`) : le dossier est ouvert au compte
+  // s'il est dans l'équipe du cabinet du dossier, chef, ou assigné à ce dossier — jamais par un accès client.
+  if (nom === 'admin_du_dossier') {
+    const dossier = (TABLES.dossiers ?? []).find((d) => d.id === dossierId)
+    const equipe = (TABLES.cabinet_admins ?? []).find((a) => a.user_id === session.user.id && a.cabinet_id === dossier?.cabinet_id)
+    const assigne = (TABLES.dossier_assignations ?? []).some((a) => a.dossier_id === dossierId && a.user_id === session.user.id)
+    return { data: equipe !== undefined && (equipe.role === 'comptable_en_chef' || assigne), error: null }
   }
   return { data: nom === 'verifier_exercice_valide', error: null }
 }

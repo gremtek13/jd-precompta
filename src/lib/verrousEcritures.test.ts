@@ -89,6 +89,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     raison: 'Le plan comptable effectif d’un dossier (fonction `stable`, sans `security definer`, sans écriture ; migration '
       + '`plan_comptable_des_dossiers`, ligne 43, étape PC1), lu avec le dossier par `DossierDetail` (étape PC3).',
   },
+  'rpc:admin_du_dossier': {
+    nature: 'lecture',
+    raison: 'Le prédicat qui ouvre un dossier au compte connecté, un booléen (fonction `stable`, `security definer`, sans '
+      + 'écriture ; migration `hierarchie_comptables`), lu par la liste des dossiers — la barre latérale, le tableau de bord — '
+      + 'et la page d’un dossier (`lib/dossiersOuvertsLecture.ts`, 23Q2Q2Q1-Q1).',
+  },
   'rpc:dernier_changement_de_rib': {
     nature: 'lecture',
     raison: 'Le jour, l’auteur et l’état du dernier changement du RIB des factures d’un dossier, jamais l’IBAN (fonction '

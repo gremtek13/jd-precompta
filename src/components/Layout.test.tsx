@@ -25,37 +25,79 @@ const faux = vi.hoisted(() => ({
   // pendant que la barre était déjà chargée.
   apparaitALaRelecture: null as { id: string; nom: string } | null,
   lectures: 0,
+  // Les accès client que la base rend (`memberships_select`) : ceux du compte connecté, et ceux des clients de ses dossiers,
+  // qu'un chef lit aussi — le filtre `user_id` de la lecture les écarte, et le faux client l'APPLIQUE (23Q2Q2Q1-Q1).
+  acces: [] as { id: string; user_id: string; dossier_id: string }[],
+  erreurAcces: null as string | null,
+  // Ce qu'`admin_du_dossier` répond, dossier par dossier. Un dossier absent de la table fait lever le faux client : la liste
+  // ne doit demander l'ouverture que d'un dossier où le compte a un accès client.
+  ouvertures: {} as Record<string, boolean | { erreur: string }>,
+  ouverturesDemandees: [] as string[],
+  lecturesAcces: 0,
 }))
 
-vi.mock('../lib/supabase', () => ({
-  supabase: {
-    from: (table: string) => {
-      if (table === 'dossiers') faux.lectures++
-      const chaine: Record<string, unknown> = {}
-      let debut = 0
-      let fin = Number.MAX_SAFE_INTEGER
-      Object.assign(chaine, {
-        select: () => chaine,
-        eq: () => chaine,
-        order: () => chaine,
-        range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        then: (suite: (r: unknown) => unknown) => {
-          if (faux.erreur) {
-            return Promise.resolve({ data: null, error: { message: faux.erreur }, count: null }).then(suite)
-          }
-          const connus = faux.apparaitALaRelecture && faux.lectures >= 2
-            ? [...faux.dossiers, faux.apparaitALaRelecture]
-            : faux.dossiers
-          const servies = faux.muetApres === null ? connus : connus.slice(0, faux.muetApres)
-          return Promise.resolve({
-            data: servies.slice(debut, fin + 1), error: null, count: connus.length,
-          }).then(suite)
-        },
-      })
-      return chaine
+vi.mock('../lib/supabase', async () => {
+  const { filtrer, predicatEq } = await import('../test/filtresPostgrest')
+  return {
+    supabase: {
+      from: (table: string) => {
+        if (table === 'memberships') {
+          faux.lecturesAcces++
+          const predicats: ReturnType<typeof predicatEq>[] = []
+          let debut = 0
+          let fin = Number.MAX_SAFE_INTEGER
+          const acces: Record<string, unknown> = {}
+          Object.assign(acces, {
+            select: () => acces,
+            eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return acces },
+            order: () => acces,
+            range: (d: number, f: number) => { debut = d; fin = f; return acces },
+            then: (suite: (r: unknown) => unknown) => {
+              if (faux.erreurAcces) {
+                return Promise.resolve({ data: null, error: { message: faux.erreurAcces }, count: null }).then(suite)
+              }
+              const lignes = filtrer(faux.acces, predicats)
+              return Promise.resolve({ data: lignes.slice(debut, fin + 1), error: null, count: lignes.length }).then(suite)
+            },
+          })
+          return acces
+        }
+        if (table !== 'dossiers') throw new Error(`Faux client : la table ${table} n’est pas attendue.`)
+        faux.lectures++
+        const chaine: Record<string, unknown> = {}
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
+        Object.assign(chaine, {
+          select: () => chaine,
+          eq: () => chaine,
+          order: () => chaine,
+          range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+          then: (suite: (r: unknown) => unknown) => {
+            if (faux.erreur) {
+              return Promise.resolve({ data: null, error: { message: faux.erreur }, count: null }).then(suite)
+            }
+            const connus = faux.apparaitALaRelecture && faux.lectures >= 2
+              ? [...faux.dossiers, faux.apparaitALaRelecture]
+              : faux.dossiers
+            const servies = faux.muetApres === null ? connus : connus.slice(0, faux.muetApres)
+            return Promise.resolve({
+              data: servies.slice(debut, fin + 1), error: null, count: connus.length,
+            }).then(suite)
+          },
+        })
+        return chaine
+      },
+      rpc: (nom: string, args: { p_dossier_id: string }) => {
+        if (nom !== 'admin_du_dossier') throw new Error(`Faux client : la fonction ${nom} n’est pas attendue.`)
+        faux.ouverturesDemandees.push(args.p_dossier_id)
+        const reponse = faux.ouvertures[args.p_dossier_id]
+        if (reponse === undefined) throw new Error(`Faux client : l’ouverture de ${args.p_dossier_id} n’est pas prévue.`)
+        if (typeof reponse === 'object') return Promise.resolve({ data: null, error: { message: reponse.erreur } })
+        return Promise.resolve({ data: reponse, error: null })
+      },
     },
-  },
-}))
+  }
+})
 
 // Monter un `AuthProvider` complet ferait dépendre ce test d'une session Supabase ; la charte et le
 // thème, eux, touchent au navigateur (`matchMedia` n'existe pas sous jsdom).
@@ -64,7 +106,7 @@ vi.mock('../lib/supabase', () => ({
 const compte = vi.hoisted(() => ({ estChef: true, role: 'cabinet' as 'cabinet' | 'client' }))
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
-    session: { user: { email: 'chef@cabinet-de-test.fr' } },
+    session: { user: { id: 'u-equipe', email: 'chef@cabinet-de-test.fr' } },
     role: compte.role,
     isSuperAdmin: false,
     estChef: compte.estChef,
@@ -128,6 +170,11 @@ beforeEach(() => {
   faux.muetApres = null
   faux.apparaitALaRelecture = null
   faux.lectures = 0
+  faux.acces = []
+  faux.erreurAcces = null
+  faux.ouvertures = {}
+  faux.ouverturesDemandees = []
+  faux.lecturesAcces = 0
 })
 
 describe('Barre latérale — le dossier ouvert et ses écrans', () => {
@@ -226,6 +273,74 @@ describe('Barre latérale — la liste des dossiers', () => {
   it('« Nouveau dossier » ouvre le formulaire du tableau de bord, par l’URL', async () => {
     await afficher('/dossiers/d1/pieces')
     expect(screen.getByRole('link', { name: 'Nouveau dossier' }).getAttribute('href')).toBe('/dossiers?nouveau=1')
+  })
+})
+
+// LA LISTE NE MONTRE QUE LES DOSSIERS QUE LE CABINET OUVRE AU COMPTE (23Q2Q2Q1-Q1, voir lib/dossiersOuverts.ts). La base rend
+// aussi à un membre de l'équipe les dossiers dont il est client ; la barre ne les montre que si `admin_du_dossier` les lui
+// ouvre, demandée pour eux seuls. Ce qui n'a pas pu être vérifié manque, et la barre le dit — jamais « aucun dossier ».
+describe('Barre latérale — les dossiers que le cabinet ouvre au compte', () => {
+  const liste = () => screen.getByRole('region', { name: 'Dossiers' })
+  // Les noms seuls : le lien porte aussi les initiales de sa pastille.
+  const nomsAffiches = () => [...liste().querySelectorAll('.barre-nom')].map((nom) => nom.textContent)
+
+  it('ne montre pas un dossier que le compte ne lit que par son accès client', async () => {
+    faux.acces = [{ id: 'm1', user_id: 'u-equipe', dossier_id: 'd2' }]
+    faux.ouvertures = { d2: false }
+    await afficher('/dossiers')
+    expect(nomsAffiches()).toEqual(['Cabinet Hélène', 'Clinique Ébène'])
+    expect(faux.ouverturesDemandees).toEqual(['d2'])
+    expect(screen.queryByText(/Liste des dossiers incomplète/)).toBeNull()
+  })
+
+  it('garde un dossier dont il est client quand le cabinet le lui ouvre aussi', async () => {
+    faux.acces = [{ id: 'm1', user_id: 'u-equipe', dossier_id: 'd2' }]
+    faux.ouvertures = { d2: true }
+    await afficher('/dossiers')
+    expect(nomsAffiches()).toEqual(['Cabinet Hélène', 'Bravo Santé', 'Clinique Ébène'])
+  })
+
+  // Un chef lit aussi les accès des clients de ses dossiers : ils ne sont pas les siens, et ne retirent rien.
+  it('l’accès client d’un autre compte ne retire rien, et ne fait rien demander', async () => {
+    faux.acces = [{ id: 'm1', user_id: 'u-client', dossier_id: 'd2' }]
+    await afficher('/dossiers')
+    expect(nomsAffiches()).toEqual(['Cabinet Hélène', 'Bravo Santé', 'Clinique Ébène'])
+    expect(faux.ouverturesDemandees).toEqual([])
+  })
+
+  it('des accès illisibles : aucun dossier, et la barre le dit, jamais « aucun dossier »', async () => {
+    faux.erreurAcces = 'permission denied for table memberships'
+    await afficher('/dossiers')
+    expect(nomsAffiches()).toEqual([])
+    expect(screen.getByText(/Liste des dossiers incomplète \(les accès client de ce compte .*permission denied/)).toBeTruthy()
+    expect(screen.queryByText(/Aucun dossier pour l’instant/)).toBeNull()
+  })
+
+  it('une ouverture illisible : ce dossier manque, et la barre le dit', async () => {
+    faux.acces = [{ id: 'm1', user_id: 'u-equipe', dossier_id: 'd2' }]
+    faux.ouvertures = { d2: { erreur: 'canceling statement due to statement timeout' } }
+    await afficher('/dossiers')
+    expect(nomsAffiches()).toEqual(['Cabinet Hélène', 'Clinique Ébène'])
+    expect(screen.getByText(/Liste des dossiers incomplète \(l’ouverture d’un dossier .*statement timeout/)).toBeTruthy()
+  })
+
+  // Le dossier fermé ouvert par son adresse : la barre ne le connaît pas, se relit UNE fois, et ne l'ajoute pas.
+  it('ouvert par son adresse, un dossier fermé ne paraît pas dans la liste et ne la fait relire qu’une fois', async () => {
+    faux.acces = [{ id: 'm1', user_id: 'u-equipe', dossier_id: 'd2' }]
+    faux.ouvertures = { d2: false }
+    await afficher('/dossiers/d2/pieces')
+    expect(faux.lectures).toBe(2)
+    expect(within(screen.getByRole('region', { name: 'Dossier ouvert' })).queryByText('Bravo Santé')).toBeNull()
+    expect(nomsAffiches()).toEqual(['Cabinet Hélène', 'Clinique Ébène'])
+  })
+
+  it('un compte client ne lit ni les dossiers ni ses accès', async () => {
+    compte.role = 'client'
+    faux.acces = [{ id: 'm1', user_id: 'u-equipe', dossier_id: 'd2' }]
+    await afficher('/accueil')
+    expect(faux.lectures).toBe(0)
+    expect(faux.lecturesAcces).toBe(0)
+    expect(faux.ouverturesDemandees).toEqual([])
   })
 })
 

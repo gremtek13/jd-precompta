@@ -332,7 +332,7 @@ describe('EquipePage — l’entrée dans l’équipe d’un client de ce cabine
   it('le rôle « Comptable » se nomme avec ce qu’il ouvre', async () => {
     faux.suite = [marqueur]
     await soumettre('comptable')
-    expect(fenetre()!.textContent).toContain('elle y entrera comme « Comptable », et elle verra les dossiers que tu lui assignes.')
+    expect(fenetre()!.textContent).toContain('elle y entrera comme « Comptable », et elle ne verra que les dossiers que tu lui assignes, même parmi ceux dont elle est cliente.')
   })
 
   // Le voile est fixe et ne défile pas : une carte plus haute que l'écran laissait « Faire entrer dans l'équipe » hors

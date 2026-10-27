@@ -1845,6 +1845,42 @@ const VISITES_CLIENT = [
 // « Ma banque » (espace client, étape P9), pour la seule passe `client-banque` : le relevé, puis le détail d'un mouvement
 // sur lequel le cabinet a posé une question (le fil, la précision à écrire, les pièces à envoyer), puis celui d'un
 // mouvement pour lequel une pièce est déjà envoyée.
+// LA PASSE DU MEMBRE DE L'ÉQUIPE QUI EST AUSSI CLIENT D'UN DOSSIER (23Q2Q2Q1-Q1) : « Comptable » du cabinet, assigné au cabinet
+// infirmier (d1) et à l'atelier (d7), client de Marc Petit (d3). La liste du cabinet — le tableau de bord et la barre latérale —
+// ne montre que les deux premiers ; l'adresse directe du troisième dit qu'il ne lui est pas ouvert, sans onglet ni assistant.
+// Chaque visite VÉRIFIE ce qu'elle mesure : une liste qui montrerait Marc Petit, ou une page qui monterait ses onglets, fait
+// tomber le banc au lieu d'être mesurée.
+const NOMS_DU_MEMBRE = ['Atelier Bernard Conseil', 'Cabinet infirmier Moreau']
+const VISITES_MEMBRE = [
+  {
+    nom: 'membre/tableau-de-bord', chemin: '#/dossiers', sansAssistant: true,
+    apres: async (page) => {
+      await page.locator('.cellule-identite-nom').first().waitFor()
+      const noms = (await page.locator('.cellule-identite-nom').allTextContents()).sort()
+      if (JSON.stringify(noms) !== JSON.stringify(NOMS_DU_MEMBRE)) throw new Error(`tableau de bord du membre : ${noms.join(', ')}`)
+      if ((await page.getByText('Marc Petit').count()) > 0) throw new Error('tableau de bord du membre : Marc Petit paraît')
+    },
+  },
+  {
+    nom: 'membre/barre-laterale', dossier: 'd1', onglet: 'pieces',
+    apres: async (page) => {
+      // Sur téléphone, la barre latérale devient la barre du haut, sans liste des dossiers : la vérification ne vaut qu'au-delà.
+      const liste = page.getByRole('region', { name: 'Dossiers' })
+      if (!(await liste.isVisible())) return
+      await liste.getByText('Atelier Bernard Conseil').waitFor()
+      if ((await liste.getByText('Marc Petit').count()) > 0) throw new Error('barre latérale du membre : Marc Petit paraît')
+    },
+  },
+  {
+    nom: 'membre/dossier-ferme', dossier: 'd3', onglet: 'checklist', sansAssistant: true,
+    apres: async (page) => {
+      await page.getByText(/ne t’est pas ouvert dans l’espace du cabinet/).waitFor()
+      if ((await page.locator('.nav-groupes').count()) > 0) throw new Error('dossier fermé : la barre des onglets paraît')
+      if ((await page.getByRole('button', { name: 'Assistant', exact: true }).count()) > 0) throw new Error('dossier fermé : l’assistant paraît')
+    },
+  },
+]
+
 const VISITES_BANQUE_CLIENT = [
   { chemin: '#/ma-banque', nom: 'client/ma-banque', nav: true },
   ...[
@@ -2087,6 +2123,8 @@ async function mesurerLesBoutons(page, fenetre) {
 const largeur = Number(process.argv[2] ?? 1440)
 // La passe du client : `client` (la case « Ventes » seule) ou `client-banque` (et « Banque »).
 const passeClient = process.argv.slice(3).find((a) => a === 'client' || a === 'client-banque') ?? null
+// La passe du membre de l'équipe qui est aussi client d'un dossier (23Q2Q2Q1-Q1) : `membre`.
+const passeMembre = passeClient === null && process.argv.slice(3).includes('membre')
 const avecPanneau = process.argv[3] !== 'sans' && passeClient === null
 // LE PANNEAU DE DROITE N'EST OUVERT QUE LÀ OÙ IL RÉTRÉCIT LE PANNEAU CENTRAL (08/10/2026). Sous 1 280 pixels
 // (`SEUIL_VOLET_EN_LIGNE`, lib/largeurVolets.ts) il se SUPERPOSE à la page (voir CLAUDE.md, « Le panneau de droite ») :
@@ -2107,16 +2145,18 @@ const executable = process.env.CHROMIUM ?? (revision ? `${RACINE_NAVIGATEURS}/${
 const BASE = 'http://127.0.0.1:5199/'
 const navigateur = await chromium.launch({ executablePath: executable })
 const contexte = await navigateur.newContext({ viewport: { width: largeur, height: 900 } })
-await contexte.addInitScript(({ barre, panneau, client }) => {
+await contexte.addInitScript(({ barre, panneau, client, membre }) => {
   if (barre) localStorage.setItem('jd-precompta-largeur-barre', barre)
   if (panneau) localStorage.setItem('jd-precompta-largeur-panneau', panneau)
+  // Le compte du banc en « Comptable » du cabinet, assigné à d1 et d7, client de d3 (voir fauxSupabase.ts).
+  if (membre) localStorage.setItem('banc-membre', '1')
   // Le compte du banc en client, rattaché à l'atelier avec « Ventes » (voir fauxSupabase.ts), qui est la société affichée.
   if (client) {
     localStorage.setItem('banc-client', '1')
     localStorage.setItem('banc-client-ventes', client === 'client-banque' ? 'banque' : 'sans-banque')
     localStorage.setItem('jd-precompta-dossier-actif', 'd7')
   }
-}, { barre: choisies.barre ?? null, panneau: choisies.panneau ?? null, client: passeClient })
+}, { barre: choisies.barre ?? null, panneau: choisies.panneau ?? null, client: passeClient, membre: passeMembre })
 // Aucune requête hors du serveur local (voir le piège du mandataire dans vitrine.mjs).
 await contexte.route(/^https?:\/\//, (r) => (r.request().url().startsWith(BASE) ? r.continue() : r.abort()))
 const page = await contexte.newPage()
@@ -2125,7 +2165,7 @@ let fenetresSondees = 0
 let boutonsSondes = 0
 let boutonsRecouverts = 0
 const visitesDuClient = passeClient === 'client-banque' ? [...VISITES_CLIENT, ...VISITES_BANQUE_CLIENT] : VISITES_CLIENT
-for (const { dossier, onglet, chemin, nom, apres, fenetre, nav, sansAssistant } of passeClient ? visitesDuClient : VISITES) {
+for (const { dossier, onglet, chemin, nom, apres, fenetre, nav, sansAssistant } of passeMembre ? VISITES_MEMBRE : passeClient ? visitesDuClient : VISITES) {
   await page.goto(`${BASE}${chemin ?? `#/dossiers/${dossier}/${onglet}`}`)
   await page.waitForTimeout(900)
   // Le bouton « Assistant » est celui d'un dossier : le tableau de bord n'en a pas (`sansAssistant`), son volet de droite reste fermé.
@@ -2281,5 +2321,5 @@ const etatDuPanneau = panneauOuvert ? 'ouvert'
   : avecPanneau ? `fermé (sous ${LARGEUR_DU_PANNEAU_A_COTE} px il se superpose au lieu de rétrécir le panneau central : l’ouvrir ne mesurerait rien de plus)`
   : 'fermé'
 console.log(`\n${boutonsRecouverts} bouton(s) de fenêtre superposée recouvert(s), sur ${boutonsSondes} sondés dans ${fenetresSondees} fenêtre(s).`)
-console.log(`\n${total} débordement(s) à ${largeur} px, panneau de droite ${etatDuPanneau}${volets ? ` (largeurs choisies : ${volets})` : ''}${passeClient ? `, passe du client (${passeClient})` : ''}.`)
+console.log(`\n${total} débordement(s) à ${largeur} px, panneau de droite ${etatDuPanneau}${volets ? ` (largeurs choisies : ${volets})` : ''}${passeClient ? `, passe du client (${passeClient})` : ''}${passeMembre ? ', passe du membre de l’équipe' : ''}.`)
 process.exitCode = total > 0 ? 1 : 0

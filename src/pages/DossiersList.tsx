@@ -13,6 +13,7 @@ import { lireTout } from '../lib/lectureComplete'
 import { signalerMajDossiers } from '../lib/listeDossiers'
 import { useAuth } from '../context/AuthContext'
 import { useDossiersAuRibAConfirmer } from '../lib/dossiersAuRibAConfirmerLecture'
+import { garderLesDossiersOuverts, lireLesAccesDuCompte } from '../lib/dossiersOuvertsLecture'
 import RibsAConfirmer from '../components/RibsAConfirmer'
 
 interface DossierRow extends Dossier {
@@ -65,7 +66,10 @@ export default function DossiersList() {
   // repart de « en cours » —, que le tableau de bord n'attend pas et que la panne de ses autres lectures ne tait pas (ni
   // l'inverse). `null` sans session : aucun appel.
   const { session } = useAuth()
-  const ribsAConfirmer = useDossiersAuRibAConfirmer(session?.user.id ?? null)
+  // Le compte connecté : le tableau de bord ne montre que les dossiers que le cabinet lui ouvre (23Q2Q2Q1-Q1, voir
+  // lib/dossiersOuverts.ts) — la base rend aussi ceux où il a un accès client. Passé à `load`, qui ne lit rien du rendu.
+  const compte = session?.user.id ?? null
+  const ribsAConfirmer = useDossiersAuRibAConfirmer(compte)
   const [dossiers, setDossiers] = useState<DossierRow[]>([])
   const [depotsRecents, setDepotsRecents] = useState<DepotRecent[]>([])
   const [loading, setLoading] = useState(true)
@@ -94,7 +98,7 @@ export default function DossiersList() {
   // jamais ; gardée dans l'état, elle suit chaque rechargement de la liste.
   const [anneeChargee, setAnneeChargee] = useState(() => anneeEtMoisEcoules().annee)
 
-  async function load() {
+  async function load(userId: string | null) {
     setLoading(true)
     setErreurChargement(null)
     setErreurIndicateurs(false)
@@ -103,7 +107,7 @@ export default function DossiersList() {
     const debutAnnee = `${annee}-01-01`
     const debutTendance = new Date(debutSemaine(new Date()).getTime() - (NB_SEMAINES_TENDANCE - 1) * 7 * 24 * 3600 * 1000).toISOString()
 
-    const [dossiersRes, piecesRes, lignesRes, cotisationsRes, depotsRes] = await Promise.all([
+    const [dossiersRes, piecesRes, lignesRes, cotisationsRes, depotsRes, accesRes] = await Promise.all([
       // LA LISTE ELLE-MÊME, qui manquait : les trois lectures satellites ci-dessous avaient été
       // portées, pas celle-ci — alors que c'est elle que CLAUDE.md désignait comme « la première
       // qui touchera le plafond ». Tri TOTAL : `nom` n'est unique que par hasard.
@@ -132,7 +136,12 @@ export default function DossiersList() {
         supabase.from('pieces').select('dossier_id, nom_fichier, created_at, statut', { count: 'exact' })
           .gte('created_at', debutTendance).order('created_at', { ascending: false }).order('id').range(debut, fin),
       ),
+      userId ? lireLesAccesDuCompte(userId) : Promise.resolve({ illisibles: 'aucun compte connecté' }),
     ])
+    // Les dossiers que le cabinet ouvre au compte, eux seuls : leurs lignes, leurs chiffres et leurs dépôts. Ce qui n'a pas
+    // pu être vérifié manque — la panne se dit comme une liste incomplète, et rien ne s'affirme.
+    const ouverts = await garderLesDossiersOuverts(dossiersRes.lignes, accesRes)
+    const idsOuverts = new Set(ouverts.dossiers.map((d) => d.id))
 
     // Une lecture incomplète mène au MÊME avertissement qu'une lecture en échec : dans les deux cas
     // les chiffres affichés sont partiels, et c'est la seule chose que le cabinet doit savoir.
@@ -140,6 +149,10 @@ export default function DossiersList() {
     // tronquée, elle ne fausse pas un compteur, elle fait DISPARAÎTRE des clients de l'écran.
     if (!dossiersRes.complete) {
       setErreurChargement(`La liste des dossiers n'a pas pu être lue en entier (${dossiersRes.motif}). Des clients peuvent manquer ci-dessous.`)
+    } else if (ouverts.motif) {
+      // Le motif dit ce qui manque ; rien ne s'affiche sous lui : les chiffres du cabinet ne se disent que de dossiers tous
+      // vérifiés, comme d'une liste lue en entier.
+      setErreurChargement(ouverts.motif)
     }
     if (![piecesRes, lignesRes, cotisationsRes, depotsRes].every((r) => r.complete)) {
       setErreurIndicateurs(true)
@@ -161,7 +174,7 @@ export default function DossiersList() {
     // Posée dans le même lot que les lignes : l'en-tête et les chiffres changent d'année ensemble.
     setAnneeChargee(annee)
     setDossiers(
-      dossiersRes.lignes.map((d) => ({
+      ouverts.dossiers.map((d) => ({
         ...d,
         nbAValider: aValider.get(d.id) ?? 0,
         moisPresents: moisParDossier.get(d.id)?.size ?? 0,
@@ -169,13 +182,13 @@ export default function DossiersList() {
         cotisationsOk: cotisationsOk.has(d.id),
       })),
     )
-    setDepotsRecents(depotsRes.lignes)
+    setDepotsRecents(depotsRes.lignes.filter((p) => idsOuverts.has(p.dossier_id)))
     setLoading(false)
   }
 
   useEffect(() => {
-    load()
-  }, [])
+    load(compte)
+  }, [compte])
 
   // Même moteur de recherche que partout ailleurs (lib/recherche) : insensible aux accents et aux
   // majuscules, et multi-termes. Cherche aussi sur le SIRET et le contact, pas seulement le nom —
@@ -233,7 +246,7 @@ export default function DossiersList() {
           <div className="empty-state">
             Données indisponibles — impossible de charger la liste des dossiers ({erreurChargement}).
             <div style={{ marginTop: 12 }}>
-              <button type="button" className="btn btn-primary btn-sm" onClick={load}>Réessayer</button>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => load(compte)}>Réessayer</button>
             </div>
           </div>
         </div>
@@ -341,7 +354,7 @@ export default function DossiersList() {
             <p className="error-text" style={{ marginBottom: 14 }}>
               Certains indicateurs (pièces, relevés bancaires, cotisations ou activité) n'ont pas pu être chargés —
               les chiffres concernés peuvent être incomplets le temps de ce chargement.{' '}
-              <button type="button" className="btn btn-outline btn-sm" onClick={load}>Réessayer</button>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => load(compte)}>Réessayer</button>
             </p>
           )}
 
@@ -429,7 +442,7 @@ export default function DossiersList() {
           // La barre latérale tient sa propre liste des dossiers : la création reste sur le tableau de
           // bord, donc ne l'y ramène pas — sans ce signal, le nouveau dossier n'y apparaîtrait qu'au
           // prochain rechargement de la page.
-          onCreated={() => { load(); signalerMajDossiers() }}
+          onCreated={() => { load(compte); signalerMajDossiers() }}
         />
       )}
     </>
