@@ -66,4 +66,23 @@ describe('la consigne de l’assistant', () => {
     expect(texte).toContain('même en franchise ou exonéré (art. 283, 2 du CGI) : il la déclare alors, avec un numéro de TVA intracommunautaire')
     expect(texte).toContain('L\'application ne prépare pas encore cette déclaration, ni l\'autoliquidation dans la CA3 d\'un redevable')
   })
+
+  // LA GARDE PROVISOIRE DES VENTES FACTURÉES (VF9a, chantier EC-Q3, ligne 28.65) : un dossier dont les factures sont la
+  // source de leurs ventes reçoit UNE ligne, qui lui dit de ne rien conclure sur ses ventes ; tout autre dossier, la
+  // consigne d'aujourd'hui, au caractère près. Ici la source : la ligne vit dans `repereVentes`, VIDE sans garde, que la
+  // consigne cite une fois, en fin de ligne ; la garde n'est nulle que pour un réglage LU faux. La consigne ENVOYÉE,
+  // dossier basculé ou non, réglage illisible, se juge au contrat HTTP de l'assistant (src/test/contratsFonctions.ts).
+  it('ne porte la ligne des ventes facturées que pour un dossier basculé', () => {
+    const source = readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
+    const ligne = /\n {2}const repereVentes = ventes\n {4}\? `\\n- \$\{ventes\.constat\}\. ([^`$]+)`\n {4}: ""\n/.exec(source)
+    expect(ligne, '`repereVentes` introuvable ou réécrit — garde à remettre à jour').not.toBeNull()
+    expect(ligne![1]).toMatch(/^L'assistant ne lit pas encore les VENTES FACTURÉES : ne conclus RIEN sur les ventes de ce dossier/)
+    expect(ligne![1]).toContain('renvoie à la Vue d\'ensemble et à l\'onglet Écritures.')
+    expect(texte.split('${repereVentes}').length - 1).toBe(1)
+    expect(texte).toContain('ce qu\'un exercice validé a figé.${repereVentes}\n- Modèle comptable du dossier : ${repereModele}')
+    expect(source).toContain('  const ventes = gardeDesVentes(dossierRow.ventes_par_les_factures, dossierRow.ventes_par_les_factures_depuis)\n')
+    expect(source).toMatch(/\nfunction gardeDesVentes\(reglage: unknown, depuis: unknown\): GardeDesVentes \| null \{\n {2}if \(reglage === false\) return null\n {2}if \(reglage !== true\) \{\n/)
+    // La consigne ne parle des ventes facturées qu'à travers cette ligne.
+    expect(texte).not.toMatch(/ventes facturées|ventes par ses factures/i)
+  })
 })

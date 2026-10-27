@@ -1243,6 +1243,160 @@ function autreDossierMarque(monde: Monde) {
   monde.base.lignes_bancaires = [{ id: identifiantGenere(), dossier_id: autre, date: '2026-02-01', libelle: MARQUEUR_AUTRE_DOSSIER, montant: -12, statut: 'rapprochee' }]
 }
 
+// LA GARDE PROVISOIRE DES VENTES FACTURÉES (VF9a, chantier EC-Q3, ligne 28.65). Un dossier dont les factures validées
+// sont la source de leurs ventes : l'assistant ne lit pas encore ses ventes facturées, et le DIT — `resume_dossier` dit
+// la bascule et sa date, `points_a_traiter` refuse de répondre, `lister_comptes` et `lister_pieces` portent un
+// avertissement, JOINT à celui qu'ils portaient déjà, et la consigne une ligne. Un dossier qui n'a pas basculé : les
+// réponses d'aujourd'hui, chaque texte écrit ici en entier. Un réglage qui n'est ni vrai ni faux tombe du côté FERMÉ.
+
+/** L'instant de la bascule, tel que PostgREST rend un `timestamptz` : 23 h 30 à Greenwich le 26, déjà le 27 à Paris. */
+const BASCULE_A = '2026-10-26T23:30:00.123456+00:00'
+const CONSTAT_BASCULE = 'Ce dossier compte ses ventes par ses factures depuis le 27/10/2026'
+const CONSTAT_SANS_DATE = "Ce dossier compte ses ventes par ses factures, depuis une date qui n'a pas pu être lue"
+const CONSTAT_ILLISIBLE = "La source des ventes de ce dossier n'a pas pu être lue : ses ventes se comptent peut-être par ses factures"
+const NON_DISTINGUEES = "Les ventes facturées n'y sont pas distinguées"
+
+/** Les avertissements d'aujourd'hui, mot pour mot : ceux d'un dossier qui n'a pas basculé ne bougent pas d'un caractère. */
+const EN_ATTENTE_D_OUVERTURE = 'L\'exercice 2026 n\'a pas encore d\'ouverture : elle s\'écrira à la validation de l\'exercice 2025. Ses comptes de bilan partent donc de zéro dans ces totaux — la banque n\'y porte que les mouvements de 2026. N\'en tire aucun solde de bilan : redemande la balance toutes années confondues (sans annee), qui cumule les exercices.'
+const LISTE_TRONQUEE = 'Liste tronquée : 1 lignes renvoyées sur 2. N\'en tire aucun total ni comptage — resserre le filtre (compte, tiers, année) ou utilise lister_comptes / points_a_traiter, qui agrègent sans plafond.'
+const CLES_DU_RESUME = ['nom', 'statut_tva', 'article_exoneration', 'assujetti_tva', 'modele_comptable', 'pieces_a_valider', 'pieces_validees', 'ecritures_brouillon', 'annees_avec_ecritures', 'a_nouveaux', 'exercices_valides']
+
+/** Chaque outil, et deux fois ceux qui portent déjà un avertissement : une fois avec, une fois sans. */
+const OUTILS_DES_VENTES: { id: string; name: string; input: Record<string, unknown> }[] = [
+  { id: 'resume', name: 'resume_dossier', input: {} },
+  { id: 'comptes-exercice', name: 'lister_comptes', input: { annee: 2026 } },
+  { id: 'comptes', name: 'lister_comptes', input: {} },
+  { id: 'pieces-tronquees', name: 'lister_pieces', input: { limite: 1 } },
+  { id: 'pieces', name: 'lister_pieces', input: {} },
+  { id: 'ecritures', name: 'lister_ecritures', input: {} },
+  { id: 'points', name: 'points_a_traiter', input: {} },
+]
+
+type ResultatsDesOutils = Record<string, Record<string, unknown>>
+
+/** Ce que chaque outil a rendu au modèle, par l'identifiant de son appel. */
+function resultatsDesOutils(monde: Monde): ResultatsDesOutils {
+  const demande = (monde.notes.demandesAuModele ?? [])[1] as { messages?: { content?: unknown }[] } | undefined
+  const blocs = demande?.messages?.at(-1)?.content
+  const sortie: ResultatsDesOutils = {}
+  if (Array.isArray(blocs)) {
+    for (const b of blocs as { tool_use_id?: unknown; content?: unknown }[]) {
+      if (typeof b.tool_use_id === 'string' && typeof b.content === 'string') sortie[b.tool_use_id] = JSON.parse(b.content) as Record<string, unknown>
+    }
+  }
+  return sortie
+}
+
+const consigneEnvoyee = (monde: Monde) => String(((monde.notes.demandesAuModele ?? [])[0] as { system?: unknown } | undefined)?.system ?? '')
+
+/**
+ * Le dossier du scénario, ses deux ventes de 2026 et une vente écrite en 2025 (l'exercice 2026 attend donc son
+ * ouverture) ; le modèle appelle les sept outils au premier tour, puis répond. `reglage` absent : la colonne n'est pas
+ * dans la ligne, comme une base qui ne la porterait pas.
+ */
+function scenarioDesVentes(
+  nom: string,
+  reglage: { valeur: unknown } | null,
+  depuis: unknown,
+  verifier: (consigne: string, resultats: ResultatsDesOutils, monde: Monde) => string[],
+): Scenario {
+  return {
+    nom,
+    preparer: (m) => {
+      const dossier = lignes(m, 'dossiers').find((d) => d.id === D)!
+      Object.assign(dossier, {
+        mode_comptable: 'tresorerie', compte_notes_de_frais: '108000', assujetti_tva: false, statut_tva: 'exonere',
+        article_exoneration: null, tva_periodicite: 'trimestrielle', ventes_par_les_factures_depuis: depuis,
+      })
+      if (reglage) dossier.ventes_par_les_factures = reglage.valeur
+      else delete dossier.ventes_par_les_factures
+      m.base.pieces = [1, 2].map((i) => ({
+        id: identifiantGenere(), dossier_id: D, tiers: `Client fictif ${i}`, nom_fichier: `vente-${i}.pdf`, statut: 'validee',
+        type_piece: 'vente', montant_ht: 100 * i, montant_tva: 0, montant_ttc: 100 * i, date_piece: `2026-0${i}-15`,
+        created_at: `2026-0${i}-15T08:00:00Z`,
+      }))
+      m.base.ecritures_brouillon = [
+        { id: identifiantGenere(), dossier_id: D, date: '2025-12-15', compte: '706000', libelle: 'Vente fictive', sens: 'credit', montant: 80 },
+        { id: identifiantGenere(), dossier_id: D, date: '2025-12-15', compte: '512000', libelle: 'Vente fictive', sens: 'debit', montant: 80 },
+      ]
+      let tour = 0
+      m.modele = (demande) => {
+        ;(m.notes.demandesAuModele ??= []).push(demande)
+        tour += 1
+        if (tour > 1) return reponseModele('Voici ce que je sais.')
+        return {
+          content: OUTILS_DES_VENTES.map((o) => ({ type: 'tool_use', id: o.id, name: o.name, input: o.input })),
+          stop_reason: 'tool_use', usage: { input_tokens: 10, output_tokens: 10 },
+        }
+      }
+    },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+    attendu: {
+      statut: 200, depenses: ['modèle', 'modèle'],
+      verifier: (_r, m) => {
+        const resultats = resultatsDesOutils(m)
+        const manquants = OUTILS_DES_VENTES.filter((o) => !resultats[o.id]).map((o) => o.id)
+        return manquants.length > 0 ? [`outils sans résultat : ${manquants.join(', ')}`] : verifier(consigneEnvoyee(m), resultats, m)
+      },
+    },
+  }
+}
+
+const verifie = (vrai: boolean, faute: string) => (vrai ? [] : [faute])
+const texteDe = (valeur: unknown) => (typeof valeur === 'string' ? valeur : '')
+
+/** Ce que la garde dit d'un dossier, pour un constat donné : chaque outil, et la consigne. */
+function gardeAppliquee(constat: string, depuis: string | null, reglage: true | null) {
+  return (consigne: string, r: ResultatsDesOutils, m: Monde): string[] => [
+    ...verifie(consigne.includes(`\n- ${constat}. L'assistant ne lit pas encore les VENTES FACTURÉES`), 'la consigne ne porte pas la ligne des ventes facturées'),
+    ...verifie(r.resume.ventes_par_les_factures === reglage, `resume_dossier : ventes_par_les_factures = ${JSON.stringify(r.resume.ventes_par_les_factures)}`),
+    ...verifie(r.resume.ventes_par_les_factures_depuis === depuis, `resume_dossier : depuis = ${JSON.stringify(r.resume.ventes_par_les_factures_depuis)}`),
+    ...verifie(texteDe(r.resume.avertissement).startsWith(`${constat}. `), `resume_dossier : ${texteDe(r.resume.avertissement).slice(0, 120)}`),
+    ...verifie(r.resume.pieces_validees === 2, 'resume_dossier ne compte plus ses pièces'),
+    ...verifie(texteDe(r['comptes-exercice'].avertissement).startsWith(`${EN_ATTENTE_D_OUVERTURE} ${constat}. ${NON_DISTINGUEES}`), `lister_comptes, l’avertissement d’aujourd’hui perdu ou écrasé : ${texteDe(r['comptes-exercice'].avertissement).slice(0, 160)}`),
+    ...verifie(texteDe(r.comptes.avertissement).startsWith(`${constat}. ${NON_DISTINGUEES}`), `lister_comptes : ${texteDe(r.comptes.avertissement).slice(0, 120)}`),
+    ...verifie(Array.isArray(r.comptes.comptes), 'lister_comptes ne rend plus ses comptes'),
+    ...verifie(texteDe(r['pieces-tronquees'].avertissement).startsWith(`${LISTE_TRONQUEE} ${constat}. ${NON_DISTINGUEES}`), `lister_pieces, l’avertissement d’aujourd’hui perdu ou écrasé : ${texteDe(r['pieces-tronquees'].avertissement).slice(0, 160)}`),
+    ...verifie(r['pieces-tronquees'].tronque === true, 'lister_pieces ne dit plus qu’elle est tronquée'),
+    ...verifie(texteDe(r.pieces.avertissement).startsWith(`${constat}. ${NON_DISTINGUEES}`), `lister_pieces : ${texteDe(r.pieces.avertissement).slice(0, 120)}`),
+    ...verifie(Array.isArray(r.pieces.pieces) && (r.pieces.pieces as unknown[]).length === 2, 'lister_pieces ne rend plus ses pièces'),
+    ...verifie(!('avertissement' in r.ecritures), 'lister_ecritures a changé'),
+    ...verifie(JSON.stringify(Object.keys(r.points)) === '["erreur"]', `points_a_traiter rend : ${JSON.stringify(Object.keys(r.points))}`),
+    ...verifie(texteDe(r.points.erreur).startsWith(`${constat}. L'assistant ne lit pas encore les ventes facturées`), `points_a_traiter : ${texteDe(r.points.erreur).slice(0, 120)}`),
+    ...verifie(/Vue d'ensemble/.test(texteDe(r.points.erreur)) && /onglet Écritures/.test(texteDe(r.points.erreur)), 'points_a_traiter ne renvoie ni à la Vue d’ensemble ni à l’onglet Écritures'),
+    // Le refus part AVANT les dix-huit lectures : aucune déclaration de TVA n'est lue, elles ne servent qu'aux points.
+    ...verifie(!m.journal.some((e) => e.genre === 'lecture' && e.table === 'declarations_tva'), 'points_a_traiter a lu le dossier avant de refuser'),
+  ]
+}
+
+/** Un dossier qui n'a pas basculé : rien de la garde, et les réponses d'aujourd'hui, texte pour texte. */
+function gardeAbsente(consigne: string, r: ResultatsDesOutils): string[] {
+  return [
+    ...verifie(!/ventes par ses factures|VENTES FACTURÉES|source des ventes/i.test(consigne), 'la consigne d’un dossier qui n’a pas basculé parle des ventes facturées'),
+    ...verifie(!/ventes_par_les_factures|ventes par ses factures|ventes facturées|source des ventes/i.test(JSON.stringify(r)), 'un outil d’un dossier qui n’a pas basculé parle des ventes facturées'),
+    ...verifie(JSON.stringify(Object.keys(r.resume)) === JSON.stringify(CLES_DU_RESUME), `resume_dossier rend : ${JSON.stringify(Object.keys(r.resume))}`),
+    ...verifie(r['comptes-exercice'].avertissement === EN_ATTENTE_D_OUVERTURE, `lister_comptes : ${texteDe(r['comptes-exercice'].avertissement).slice(0, 160)}`),
+    ...verifie(!('avertissement' in r.comptes), 'lister_comptes porte un avertissement qu’il ne portait pas'),
+    ...verifie(r['pieces-tronquees'].avertissement === LISTE_TRONQUEE, `lister_pieces : ${texteDe(r['pieces-tronquees'].avertissement).slice(0, 160)}`),
+    ...verifie(!('avertissement' in r.pieces), 'lister_pieces porte un avertissement qu’il ne portait pas'),
+    ...verifie(!('avertissement' in r.ecritures), 'lister_ecritures a changé'),
+    ...verifie(!('erreur' in r.points) && Object.keys(r.points).length >= 28, `points_a_traiter rend : ${JSON.stringify(r.points).slice(0, 160)}`),
+  ]
+}
+
+const SCENARIOS_DES_VENTES: Scenario[] = [
+  scenarioDesVentes('un dossier basculé : resume_dossier le dit et sa date (le jour de Paris), points_a_traiter refuse sans rien lire, lister_comptes et lister_pieces l’avertissent sans écraser leur avertissement, la consigne porte sa ligne',
+    { valeur: true }, BASCULE_A, gardeAppliquee(CONSTAT_BASCULE, '2026-10-27', true)),
+  scenarioDesVentes('un dossier basculé dont la date ne se lit pas : la garde s’applique, et la phrase le dit',
+    { valeur: true }, null, gardeAppliquee(CONSTAT_SANS_DATE, null, true)),
+  scenarioDesVentes('un dossier qui n’a pas basculé : les réponses d’aujourd’hui, inchangées, et la consigne sans la ligne',
+    { valeur: false }, null, (consigne, r) => gardeAbsente(consigne, r)),
+  scenarioDesVentes('la source des ventes absente de la ligne du dossier : la garde s’applique, côté fermé, et dit qu’elle n’a pas pu être lue',
+    null, null, gardeAppliquee(CONSTAT_ILLISIBLE, null, null)),
+  scenarioDesVentes('la source des ventes ni vraie ni fausse (« false » en texte) : la garde s’applique, côté fermé, et dit qu’elle n’a pas pu être lue',
+    { valeur: 'false' }, BASCULE_A, gardeAppliquee(CONSTAT_ILLISIBLE, null, null)),
+]
+
 const AGENT_COMPTABLE: ContratFonction = {
   slug: 'agent-comptable',
   navigateur: true,
@@ -1376,6 +1530,7 @@ const AGENT_COMPTABLE: ContratFonction = {
         },
       },
     },
+    ...SCENARIOS_DES_VENTES,
     {
       nom: 'le modèle refuse de répondre : 502 qui le dit',
       preparer: (m) => { m.modele = () => ({ content: [], stop_reason: 'refusal', usage: { input_tokens: 1, output_tokens: 0 } }) },

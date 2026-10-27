@@ -357,7 +357,8 @@ describe('agent-comptable — les outils lisent les à-nouveaux et les soldes re
 
   it('lister_comptes rend `balanceDesComptes` sur le brouillon, les à-nouveaux, les soldes reportés et les exercices validés', () => {
     const branche = brancheDe('lister_comptes')
-    expect(branche).toContain('return balanceDesComptes(lu.lignes, luANouveaux.lignes, luReportes.lignes, luValides.lignes.map((v) => v.annee), periode)')
+    // Enveloppé par la garde provisoire des ventes facturées (VF9a), qui ne change rien à un dossier qui n'a pas basculé.
+    expect(branche).toContain('return avecLaGarde(\n      balanceDesComptes(lu.lignes, luANouveaux.lignes, luReportes.lignes, luValides.lignes.map((v) => v.annee), periode),\n      ventes,\n')
     // Chacune de ces lectures, incomplète, fait refuser : une ouverture amputée fausse les soldes de bilan, et des
     // exercices validés lus en partie diraient en attente une ouverture écrite.
     for (const lecture of ['lu', 'luANouveaux', 'luReportes', 'luValides']) {
