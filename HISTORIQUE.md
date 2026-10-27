@@ -38073,3 +38073,67 @@ tableau de bord.
 cette lecture retient tous les dossiers, dite et réessayable — le côté fermé, voulu. La barre garde, pour un dossier
 fermé ouvert par son adresse, « Ce dossier » et l'arbre de ses écrans, qui mènent tous à la même page qui le dit. Le
 retour arrière : le commit défait ; aucune donnée.
+
+### 27/10/2026 — LES TROIS MIGRATIONS DE VF8E-Q1, VF8E ET VF5H2Q1-Q2 EN PRODUCTION — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(Écrite par la session. Les trois migrations préparées le 26/10/2026, accordées par le cabinet le 27/10/2026, appliquées
+en production dans l'ordre de leurs versions provisoires ; leurs fichiers dans l'export sous leurs versions ; l'essai de
+la simulation joué en production ; les drapeaux de « Ma simulation » et de la bascule levés.)
+
+**L'ACCORD.** Sur la page des arbitrages, le 27/10/2026 entre 5 h 45 et 5 h 47 UTC, toutes à la recommandation : VF8E-Q1
+(« Oui, une petite migration à part », ce que la préparation avait écrit) et sa migration (« Oui, l'appliquer ») ; la
+migration de VF8e (« Oui, l'appliquer ») ; celle de VF5H2Q1-Q2 (« Oui, l'appliquer ») et VF5H2Q1Q2-Q1 (« Le refuser
+aussi », ce que la migration écrivait déjà). Restent sans réponse la migration de 23Q2Q2-Q3 (`equipe_par_son_role`) et
+23Q2Q2Q1-Q1, écrite sur la recommandation.
+
+**AVANT.** 154 migrations, `9549d833111e4ef18949ba48f7061e66`, la dernière `20261026150044` ; ce que les gardes de tête
+exigent : la garde des encaissements `922c8559…` (celle de VF5H2-Q1), la règle du cumul `d2f0312e…`, le prédicat de la
+banque `003c9545…` ; ni l'index ni la fonction ; aucun dossier basculé, aucun accès qui porte « Banque », aucun exercice
+validé, aucun encaissement. Les neuf familles de `signature.sql` égales à celles des répliques de l'étape : colonnes 866
+`23b2bc60…`, contraintes 670 `d63ab39f…`, déclencheurs 69 `aa7a762c…`, fonctions 202 `d9a63228…` et leurs droits 202
+`f61b1cd0…`, index 237 `08ef14df…`, policies 159 `c6aae852…`, RLS 81 `6450be96…`, droits des tables 81 `79e266f1…`.
+
+**L'APPLICATION**, par `apply_migration`, le texte de chaque fichier tel quel, sans qu'aucune confirmation soit
+demandée, une à une, chacune vérifiée avant la suivante :
+- `index_des_avoirs`, version `20261027055007` : sa ligne d'historique rend `512638ba6449edbbc89db08e7405296b`,
+  l'empreinte du fichier ; 155 migrations, `a167b58908bb6c7793ec62e1704acd01` ; `signature.sql` : la seule famille
+  « index » change, 238 `b9aae28f2e5278de99fc4e617687a011` ;
+- `simulation_des_ventes_facturees`, version `20261027055129` : `af60959ca9b13192e43ad588d47b9372` ; 156,
+  `603970bcd21a84f4a1dc46fc866f52ab` ; la fonction `security definer`, son chemin fixé, exécutable par `authenticated`
+  et le rôle des Edge Functions, ni par l'anonyme ni par PUBLIC ; « fonctions » 203 `af77709d031abfe1f1b12222eba56e2b`
+  et « droits des fonctions » 203 `9a52af9e70d503d0f49955c58d164cf7` ;
+- `contre_passation_sur_mouvement_fige`, version `20261027055337` : `98cf7f7ce93f87746af9a188a7dd5b43` ; 157,
+  `2efe95460fac2c1ce0831142a7509c2d` ; le corps de la garde `16af5858…`, toujours attaché à son déclencheur ;
+  « fonctions » 203 `68fb1b62ba09ebf84c0e774503170649`.
+Chaque fois, les valeurs que la préparation avait relevées sur sa réplique ; les six autres familles inchangées.
+
+**LA PREUVE.** Les fichiers renommés à leurs versions : la dérive rend 155, 156 puis 157 fichiers et l'empreinte de la
+production à chaque étape (le fichier de `equipe_par_son_role`, pas appliqué, mis à part) ; socle 80, `5d53eea2…` ;
+inventaire 2 165, `2fd670d3…` (2 163 avant : l'index et la fonction), des deux côtés. L'essai de la simulation, joué en
+production par l'outil d'exécution, le texte sans ses lignes de commentaire en tête de ligne : la base en a reçu 21 365
+caractères (`bba86b5b06b998cdc85672e68c2a99d3`, le texte attendu sans son dernier saut de ligne) ; 30 lignes, les 29
+contrôles justes — le même calcul que le module sur les deux dossiers basculés, le client « Banque » et un membre
+affecté au dossier qui lisent ; « Ventes » seul, aucune case, l'autre dossier, un membre hors de ses dossiers, un compte
+rattaché à rien, le rôle des Edge Functions et un dossier qui n'existe pas refusés (42501) ; l'anonyme qui n'exécute pas
+la fonction ; l'année jugée après l'accès —, et rien n'est resté (les huit tables comptées avant et après). C'est, ligne
+pour ligne, la sortie de la réplique (le « 31 verdicts » de la préparation comptait les lignes d'une sortie de psql
+d'avant le contrôle 11b).
+
+**CE QUI N'EST PAS REJOUÉ.** `rls.sql` entier : aucune des trois ne crée ni ne change de policy ni de droit d'une table,
+et l'essai de la simulation rejoue en production, profil par profil, ce que son bloc SI juge (le principe du 12/10/2026,
+`dossier_permanent`). `ventesFacturees.sql`, l'essai de VF5H2Q1-Q2 : la signature de la base égale celle de la réplique
+où il a été joué entier — la raison du 24/10/2026 (« LE VIREMENT MIXTE ET LA JUMELLE INVERSÉE EN PRODUCTION ») et du
+26/10/2026 ; en production, aucun exercice n'est validé ni aucun encaissement enregistré : ses refus neufs ne s'y
+rencontrent pas.
+
+**LES DRAPEAUX.** `SIMULATION_VENTES_FACTUREES_EXPORTEE` levé : « Ma simulation » d'un client « Banque » d'un dossier
+basculé lit la fonction, et l'onglet Accès dit ce que la case ouvre de plus ; son test « reste faux » s'inverse, ses
+deux états restent éprouvés par paramètre. `BASCULE_OFFERTE` levé, ses deux conditions remplies — la migration de
+VF5H2-Q1 (26/10/2026) et VF8e en ligne, ce lot même : la carte « Source des ventes » offre au chef du cabinet seul de
+basculer, la confirmation nommant les chiffres lus, et l'onglet Accès renvoie la case « Ventes » vers l'onglet
+Informations ; son test s'inverse, ses deux états restent éprouvés par accesseur. Le banc les avait rendus levés tous
+deux (VF8e, 0 débordement), et le code de ces écrans n'a pas changé depuis. Aucun dossier n'a basculé : la bascule reste
+un clic du chef du cabinet, irréversible dès la première facture source.
+
+**CE QUI RESTE.** La migration de 23Q2Q2-Q3 (`equipe_par_son_role`), qui attend l'accord du cabinet ; après la fusion,
+le déploiement de `create-team-member` (23Q2Q2-Q1) ; VF8f (le resserrement, en dernier) et VF9.

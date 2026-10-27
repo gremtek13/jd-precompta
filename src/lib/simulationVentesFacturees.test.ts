@@ -167,14 +167,14 @@ const corpsDe = (definition: string) => definition.slice(definition.indexOf('as 
 const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('hex')
 
 describe('le drapeau', () => {
-  it('reste faux dans ce lot : la migration est préparée, pas appliquée — la session le lève, elle appliquée', () => {
-    // Ce test change avec lui. Levé avant l'application, chaque simulation d'un client « Banque » appellerait une fonction
-    // que la base n'a pas, et ne projetterait plus rien.
-    expect(SIMULATION_VENTES_FACTUREES_EXPORTEE).toBe(false)
+  it('est levé : la migration est appliquée, et son commentaire dit sous quelle version', () => {
+    // Ce test a changé avec lui, la migration appliquée le 27/10/2026. Faux, la simulation d'un client « Banque » d'un
+    // dossier basculé compterait l'exemplaire d'une facture source comme une pièce, et pas la vente qu'elle ne lit pas.
+    expect(SIMULATION_VENTES_FACTUREES_EXPORTEE).toBe(true)
     const texte = readFileSync(resolve(process.cwd(), 'src/lib/simulationVentesFacturees.ts'), 'utf8')
-    const commentaire = texte.slice(texte.indexOf('// LA FONCTION N\'EST PAS ENCORE EN BASE'), texte.indexOf('export const SIMULATION_VENTES_FACTUREES_EXPORTEE'))
-    expect(commentaire).toContain('PRÉPARÉE')
-    expect(commentaire).toContain('La session le lèvera elle-même, la migration appliquée.')
+    const commentaire = texte.slice(texte.indexOf('// LA FONCTION EST EN BASE'), texte.indexOf('export const SIMULATION_VENTES_FACTUREES_EXPORTEE'))
+    expect(commentaire).toContain('appliquée sous la version 20261027055129')
+    expect(FICHIERS_DE_LA_MIGRATION).toEqual(['20261027055129_simulation_des_ventes_facturees.sql'])
   })
 
   it('la migration est dans l’export, une fois, et y définit la fonction que l’écran appellera le drapeau levé', () => {

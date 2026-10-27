@@ -24,11 +24,12 @@ import { messageErreur } from './messageErreur'
 // « comptées » de `RecettesFacturees`, gardée avec le dossier ET l'année pour lesquels elle a été lue
 // (`lectureDeLaSimulation`) : une réponse tardive d'un dossier quitté, ou d'une année passée, ne vaut pas.
 
-// LA FONCTION N'EST PAS ENCORE EN BASE. Sa migration est PRÉPARÉE, présentée au cabinet (VF8-Q2 l'a voulue, sa lecture neuve
-// se présente avant d'être appliquée), et pas appliquée : l'écran ne l'appelle pas tant que ce drapeau est faux, et dit ce
-// qu'il disait avant VF8e. La session le lèvera elle-même, la migration appliquée. Chaque fonction de ce module qui en
-// dépend reçoit le drapeau en paramètre : ses deux états s'éprouvent sans toucher à cette constante.
-export const SIMULATION_VENTES_FACTUREES_EXPORTEE: boolean = false
+// LA FONCTION EST EN BASE DEPUIS LE 27/10/2026. Sa migration, présentée au cabinet (VF8-Q2 l'a voulue, sa lecture
+// neuve se présentait avant d'être appliquée) et accordée par lui, est appliquée sous la version 20261027055129, son
+// essai joué en production : la session a levé ce drapeau. Faux, l'écran ne l'appellerait pas, et dirait ce qu'il
+// disait avant VF8e. Chaque fonction de ce module qui en dépend reçoit le drapeau en paramètre : ses deux états
+// s'éprouvent toujours sans toucher à cette constante.
+export const SIMULATION_VENTES_FACTUREES_EXPORTEE: boolean = true
 
 /** Les ventes facturées que « Ma simulation » a lues, pour un dossier et une année ; ou le motif de leur manque. */
 export type LectureDeLaSimulation =

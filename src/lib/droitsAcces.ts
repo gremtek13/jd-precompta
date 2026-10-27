@@ -350,7 +350,7 @@ export const CE_QUE_DONNE_UN_ACCES = ceQueDonneUnAcces(COUVERTURE_EXPORTEE)
 // facturation, de la leur (étape A5a) ; celui du dernier changement du RIB, de la sienne (étape A5b3a) ; celui du logo des
 // factures, de la sienne (étape A5c1). Le réglage du dossier, l'onglet le lit (étape VF8d) : la phrase n'est plus une
 // constante, mais celle des drapeaux et de ce réglage ; celui des ventes facturées de la simulation, de la sienne (étape
-// VF8e), faux tant qu'elle n'est pas appliquée.
+// VF8e), levé depuis son application, le 27/10/2026.
 export function ceQueDisentLesCasesDuDossier(reglage: ReglageDuDossier): string {
   return ceQueDisentLesCases(
     COUVERTURE_EXPORTEE, VENTES_DU_CLIENT_EXPORTEES, ARTICLES_EXPORTES, ADRESSES_RECEPTION_EXPORTEES, CONTACTS_EXPORTES,
