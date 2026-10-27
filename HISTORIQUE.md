@@ -38689,3 +38689,77 @@ clés d'hier, le silence nommé sur celle qui n'en nourrit qu'une (§ 2, 7).
 `supabase/schema/20261026000623_validation_des_ventes_facturees.sql` (la fonction et ses droits) ; le catalogue de
 production du 27/10/2026 (`pg_proc`, `has_function_privilege`) ; RGPD.md, § 8.7 (le patient) ; la conception d'EC-Q3,
 § 13 à 15 ; celle de VF8, § 9. Aucune source fiscale neuve : VF9 ne change aucune règle, il les fait dire.
+
+### 27/10/2026 — VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(`supabase/functions/agent-comptable/index.ts` ; `src/lib/agentComptableConsigne.test.ts`,
+`src/test/contratsFonctions.ts`, `src/test/fonctionsEdge.ts`, `src/lib/edgeFunctionsHttp.test.ts`. Le premier lot de
+« VF9, L'ASSISTANT DEVANT LES VENTES FACTURÉES : LA CONCEPTION », § 4 ; aucune migration, aucune écriture en base, aucun
+écran. Rien n'a été lu en production : le type des deux colonnes vient de `src/lib/types.ts` et de l'export.)
+
+**LE DÉFAUT QUE LA GARDE COUVRE.** L'assistant ignorait la bascule : sur un dossier dont les factures validées sont la
+source de leurs ventes, il comptait l'exemplaire d'une facture source comme une vente, disait « sans paiement » la pièce
+d'avant d'un virement mixte, prenait les écritures sans pièce d'une vente facturée pour des anomalies, et taisait les
+trois manques que la validation refuse (la conception, § 1 et 2). Aucun dossier n'a basculé, mais la bascule est offerte
+au chef du cabinet depuis le matin, et irréversible ; VF9b à VF9d demandent plusieurs jours.
+
+**CE QUE LA GARDE FAIT.** La ligne du dossier que l'assistant lit déjà porte aussi `ventes_par_les_factures` et
+`ventes_par_les_factures_depuis` ; `gardeDesVentes` en tire, une fois par question, la garde ou rien :
+- un réglage LU à `false` : rien. Ni lecture, ni clé, ni ligne de plus ;
+- `true` : la garde, dont la première phrase dit « Ce dossier compte ses ventes par ses factures depuis le JJ/MM/AAAA ».
+  La date est un INSTANT (`timestamptz`) : elle se dit au jour de Paris, par `Intl` (`jourAParis`, qui sert aussi
+  `aujourdHuiCabinet`, sans changer son résultat). Illisible ou absente, la phrase dit « depuis une date qui n'a pas pu
+  être lue » ;
+- toute autre valeur (nulle, absente de la ligne, un texte) : la garde, côté FERMÉ, et sa phrase dit que la source des
+  ventes du dossier n'a pas pu être lue.
+
+Puis, la garde posée : `resume_dossier` rend aussi `ventes_par_les_factures` (`true`, ou `null` pour une valeur non
+lue), `ventes_par_les_factures_depuis` (le jour de Paris, ou `null`) et un `avertissement` (pieces_validees compte aussi
+les exemplaires, points_a_traiter n'est pas disponible) ; `points_a_traiter` rend une `erreur` AVANT ses dix-huit
+lectures, qui renvoie à la Vue d'ensemble et à l'onglet Écritures ; `lister_comptes` et `lister_pieces` portent un
+`avertissement` (« Les ventes facturées n'y sont pas distinguées »), JOINT à celui qu'ils portaient déjà — l'ouverture
+en attente, la liste tronquée — par `avecLaGarde`, qui n'en écrase aucun ; la consigne porte une ligne, `repereVentes`,
+vide sans garde : ne conclure RIEN sur les ventes du dossier, et une écriture sans pièce d'une facture ou d'un
+encaissement n'y est pas une anomalie. `lister_ecritures` ne change pas (la conception ne le nommait pas ; la ligne de
+la consigne couvre ses lignes sans pièce). La fonction : +84 lignes, −7 (59 de code, 21 de commentaire) ; aucun des
+quinze blocs bornés ni `historiqueDuClient` touché, les trente bordures inchangées.
+
+**OÙ LE LOT S'ÉCARTE DE LA CONCEPTION.** (1) Les descriptions des outils ne changent pas : elles partent avec CHAQUE
+question, et la réponse d'un dossier qui n'a pas basculé devait rester la même au caractère près ; l'avertissement se
+dit lui-même. (2) `resume_dossier` porte aussi un avertissement, pas seulement la bascule et sa date. (3) Le refus de
+`points_a_traiter` part avant toute lecture (rien à lire pour refuser). (4) Une valeur illisible : la conception ne la
+traitait pas ; elle ferme. (5) Environ 40 lignes estimées, 59 de code écrites : la date illisible, la valeur illisible
+et la jonction des avertissements.
+
+**LE MONDE DES CONTRATS.** Ses trois dossiers portent désormais `ventes_par_les_factures: false` et une date nulle,
+comme la table les pose (NOT NULL, faux par défaut) : sans eux, la colonne absente de la ligne se lirait nulle, et la
+garde, fermée, s'appliquerait à tout dossier du harnais.
+
+**LES PREUVES.**
+- `agentComptableConsigne.test.ts` (+1, six tests) : la ligne vit dans `repereVentes`, vide sans garde, citée une fois
+  en fin de ligne ; la garde n'est nulle que pour un réglage lu faux ; la consigne ne parle des ventes facturées que par
+  elle.
+- Le contrat HTTP de l'assistant, cinq scénarios (29 → 34) qui appellent les sept outils au premier tour (deux fois ceux
+  qui portent déjà un avertissement) : un dossier basculé à 23 h 30 à Greenwich le 26 octobre (le 27 à Paris), chaque
+  outil et la consigne ; basculé sans date lisible ; qui n'a pas basculé — les avertissements d'aujourd'hui écrits en
+  entier, les clés de `resume_dossier`, aucun mot de la garde nulle part ; le réglage absent de la ligne ; le réglage
+  « false » en texte. `DEFAUTS_CONNUS` inchangé (2).
+- Treize défauts plantés dans la vraie source (`edgeFunctionsHttp.test.ts`), tous vus : la garde jamais posée, posée sur
+  tout dossier, un réglage absent lu faux, un texte lu comme il le dit, le jour pris à Greenwich, une date absente lue
+  comme un instant, `resume_dossier` qui tait la bascule, `points_a_traiter` qui répond, `lister_comptes` ou
+  `lister_pieces` sans la garde, l'avertissement d'aujourd'hui écrasé, la ligne de consigne pour tout dossier, la
+  consigne sans sa ligne.
+- Au caractère près, une fois, hors du dépôt : la source de BASE (`4aee0b5`) et celle de la branche devant le même monde
+  d'un dossier qui n'a pas basculé rendent au modèle la même demande — consigne, outils et chaque résultat d'outil —, 42
+  705 caractères des deux côtés pour les sept outils du scénario neuf, 39 093 pour celui des outils qui ne font que
+  lire ; le même comparateur voit la différence d'un dossier basculé (42 705 contre 44 369).
+- `bordures.py` sur le fichier final : trente bordures, « RÉPÉTITION JUSTE ».
+- Deux assertions de câblage suivent la source : la ligne du dossier lue (`agentComptableAnalyse.test.ts`) et
+  `lister_comptes` enveloppé par `avecLaGarde` (`agentComptableBalance.test.ts`) ; aucune garde de copie touchée. La
+  suite comparée test par test à BASE : 14 794 tests avant, 14 813 après (+19 : un de la consigne, cinq scénarios,
+  treize défauts plantés), aucun perdu.
+
+**CE QUI RESTE.** Le déploiement, seul (conception, § 6) : `verify_jwt` à faux, passé explicitement et relu dans
+`list_edge_functions` ; la copie déployée comparée au dépôt AVANT d'écraser ; `bordures.py` sur le texte envoyé ;
+`allerretour.py` après. Puis VF9b à VF9d, qui lèvent la garde. RGPD.md ne change pas : aucune donnée nouvelle n'entre en
+base, et le modèle ne reçoit de plus qu'un réglage du dossier et un jour.
