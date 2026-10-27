@@ -38137,3 +38137,22 @@ un clic du chef du cabinet, irréversible dès la première facture source.
 
 **CE QUI RESTE.** La migration de 23Q2Q2-Q3 (`equipe_par_son_role`), qui attend l'accord du cabinet ; après la fusion,
 le déploiement de `create-team-member` (23Q2Q2-Q1) ; VF8f (le resserrement, en dernier) et VF9.
+
+### 27/10/2026 — CREATE-TEAM-MEMBER DÉPLOYÉE, LA PAGE D'ABORD — 23Q2Q2-Q1
+
+(Écrite par la session. Le déploiement que la demande de fusion n° 227 annonçait, après sa mise en ligne ; aucune
+migration.)
+
+**L'ORDRE.** La page de l'équipe d'abord : la demande de fusion n° 227 fusionnée (« Rebase and merge », `main` à
+`379df1e`), le site a servi `index-pTWcx_-o.js`, octet pour octet le paquet construit par la barrière sur le même arbre,
+et qui porte la confirmation de l'entrée dans l'équipe (`entreeAConfirmer`, `entreeConfirmee`). Puis la fonction :
+servie avant la page, son 409 neuf serait arrivé sur un écran qui ne savait pas le lire.
+
+**LE DÉPLOIEMENT.** La copie déployée d'avant (v12) égale le fichier de `main` d'avant la fusion, aller-retour sans
+aucune différence sur 363 lignes ; les quatre bordures répétées justes (73, 75, 87 et 89 traits) ; `create-team-member`
+v13, `verify_jwt` faux comme le dit `supabase/config.toml` ; relue, aller-retour sans aucune différence sur 428 lignes ;
+sans session, 401 « Non authentifié. ».
+
+**CE QUI RESTE.** L'essai réel du cabinet : ajouter à l'équipe l'adresse d'un client d'un de ses dossiers — la fenêtre
+de confirmation doit nommer l'adresse, le rôle et l'espace client perdu ; « Annuler » ne change rien. Puis 23Q2Q2-Q3, la
+migration `equipe_par_son_role`, qui attend l'accord du cabinet.
