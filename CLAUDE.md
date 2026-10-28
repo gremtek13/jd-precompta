@@ -90,9 +90,10 @@ partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER 
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
   - `agent-comptable` — assistant IA (Bedrock), plafond de coût mensuel par cabinet ; aucun nom de cabinet
     (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant un dossier
-    basculé, une garde provisoire (VF9a, en ligne), que VF9c lève au dépôt — elle ne ferme plus qu'une source des
-    ventes illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES
-    OUTILS DE L'ASSISTANT ».
+    basculé, une garde provisoire (VF9a, en ligne), que VF9c lève au dépôt — elle ne ferme plus qu'une source des ventes
+    illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES OUTILS
+    DE L'ASSISTANT » ; une pièce de vente, de tout dossier, sans son client — ni tiers, ni fichier, ni libellé —, par le
+    seul passage du bloc PIÈCES DE VENTE (VF9C-Q1, au dépôt) → « VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE VENTE AU MODÈLE ».
   - `create-cabinet`, `delete-cabinet` (super-admin) ; `create-team-member`, `create-client-access`.
   - `extract-piece` — OCR (Textract) puis citation des champs ; réservée à un compte RATTACHÉ et à `receive-email` (clé
     secrète en `apikey`).
@@ -602,8 +603,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   par son numéro, jamais par son client ; un réglage illisible garde le côté fermé ; un autre dossier, rien de changé au
   caractère près, hors la description de l'outil ; VF9C-Q1 tranchée le 28/10/2026 à la recommandation (A) : ni le tiers,
   ni le fichier, ni le libellé d'une pièce de vente au modèle, pour tout dossier → « VF9C, LES POINTS ET LES OUTILS DE
-  L'ASSISTANT ». Restent VF9C-Q1, puis VF9d, et le déploiement des quatre lots (EC3-Q9, la facture reprise, va à A8) →
-  « TROIS RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 ».
+  L'ASSISTANT ». VF9C-Q1 le 28/10/2026, au dépôt, à déployer avec VF9b et VF9c avant les premières données réelles :
+  pour tout dossier, une pièce de vente part au modèle sans son tiers, son fichier ni le libellé de ses écritures,
+  nommée par sa date et son montant, par un seul passage, le bloc PIÈCES DE VENTE, que garde un scanner parti de toutes
+  les lectures de la fonction ; le fournisseur d'un achat reste dit ; deux questions au cabinet, VF9CQ1-Q1 (le libellé
+  du relevé d'un crédit) et VF9CQ1-Q2 (l'écriture restée d'une pièce supprimée) → « VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE
+  VENTE AU MODÈLE ». Restent ce déploiement, puis VF9d après le MVP (EC3-Q9, la facture reprise, va à A8) → « TROIS
+  RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 ».
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;

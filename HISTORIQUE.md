@@ -39087,3 +39087,182 @@ l'expert-comptable importe le FEC de l'application dans son logiciel pour dépos
 champs (lignes 26.5 et 26.6, étape e) et un essai d'import chez lui entrent dans le MVP, avant mars 2027, hors du chemin
 de la mi-décembre, et la 2035 de l'application devient le contre-calcul de la sienne. MVP-D4 attend sa réponse. Notion
 suit : douze lignes cochées (26.5 et 26.6 de plus), l'encadré « Le MVP » et les lignes 20.65 et 29.8 réécrits.
+
+### 28/10/2026 — VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE VENTE AU MODÈLE — CHANTIER EC-Q3 (LIGNE 28.65)
+
+(`supabase/functions/agent-comptable/index.ts` ; `src/lib/agentComptablePiecesDeVente.test.ts`, neuf ;
+`src/lib/agentComptableConsigne.test.ts`, `src/lib/edgeFunctionsHttp.test.ts`, `src/test/contratsFonctions.ts`,
+`src/test/fonctionsEdge.ts`, `src/test/fonctionsEdge.test.ts` ; RGPD.md. La réponse (A) du cabinet à VF9C-Q1 → « TROIS
+RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 » ; aucune migration, aucune écriture en base, aucun écran ; au
+dépôt, à déployer avec VF9b et VF9c avant les premières données réelles (le MVP du 28/10/2026 met VF9d après). En
+production, le catalogue seul a été lu : `pieces.type_piece`, texte non nul, `achat` par défaut, sous la contrainte
+`pieces_type_piece_check` (achat, vente, note_frais, autre) ; une seule clé étrangère entre `ecritures_brouillon` et
+`pieces` (`piece_id`, ON DELETE SET NULL), et aucune table qui cite l'une et l'autre — la pièce embarquée dans une ligne
+n'est pas ambiguë.)
+
+**LA RÈGLE.** Pour toute pièce de vente (`type_piece = 'vente'`) de tout dossier — qu'il ait basculé ou non, que la
+source de ses ventes se lise ou non —, ni son tiers, ni le nom de son fichier, ni le libellé de ses écritures, qui
+recopie l'un ou l'autre (`piece.tiers ?? piece.nom_fichier`, src/lib/ecritures.ts et src/lib/engagement.ts : la charge
+ou le produit, la TVA, la banque d'un paiement, la facture et chaque règlement en engagement), ne partent au modèle.
+Elle se nomme par sa date et son montant TTC, avec l'identifiant que l'outil donne déjà (`piece_id`, dans
+`lister_ecritures`). Le fournisseur d'une pièce d'achat, d'une note de frais ou d'une pièce « autre » part comme avant.
+Aucun calcul ne change : le générateur et ses comparaisons lisent les pièces et le brouillon tels qu'ils sont ; seul
+change ce qui sort.
+
+**L'INVENTAIRE, OUTIL PAR OUTIL**, chaque fois pour un dossier dont la source des ventes est lue fausse, lue vraie, ou
+ne se lit pas :
+- `lister_pieces` : le tiers et le fichier de chaque pièce, celles de vente comprises, dans les trois cas — sauf, depuis
+  VF9c, l'exemplaire d'une facture source d'un dossier basculé. Traité : le passage. Son filtre par tiers (`ilike`)
+  filtre encore, en base ; le résultat ne recopie jamais le tiers d'une pièce de vente, et ce qui reste au modèle est le
+  mot qu'il a lui-même écrit — un oracle d'appartenance, qu'il ne peut éprouver que sur un nom qu'il propose : la
+  consigne (« ne le devine pas ») et la description du filtre (« sur le nom que l'utilisateur a écrit ») le bornent.
+- `lister_ecritures` : le libellé de chaque ligne ; celles d'une pièce de vente recopient son client, dans les trois
+  cas — VF9c ne recomposait que celles d'une facture, d'un avoir et d'un encaissement. Traité : chaque ligne se lit avec
+  sa pièce (`pieces(type_piece, date_piece, montant_ttc)`, par sa clé étrangère, une jointure à gauche) et passe par le
+  passage, avant `ligneEtSaSource` pour un dossier basculé ou illisible.
+- `resume_dossier` : des comptes et le nom du dossier. Rien à traiter.
+- `lister_comptes` : des totaux par compte ; `ouverture_de_l_exercice.source` est le nom du fichier d'une balance
+  reprise (`a_nouveaux.source_nom`), pas une pièce. Rien à traiter.
+- `points_a_traiter` : il lit le tiers des pièces validées et à valider, que le lettrage fait à la main compare (bloc
+  LETTRAGE MANUEL), et le libellé du brouillon (`EcritureRow`) ; il ne rend que des nombres, des libellés de catégorie
+  et de période, et des noms que la base compose de numéros et de dates (VF9c). Rien à traiter : déclaré au scanner,
+  prouvé au contrat.
+- La consigne et les descriptions : celles de `lister_pieces`, de son filtre et de `lister_ecritures` parlent du tiers
+  et du libellé ; la consigne gagne sa phrase. Les messages d'erreur : des textes de la base ou de PostgREST, un motif
+  de lecture, le nom d'un outil — jamais une valeur lue. Rien à traiter.
+
+**CE QUE LE LOT FAIT.**
+- Un bloc neuf, PIÈCES DE VENTE (61 lignes, bordures comprises), le seul passage vers le modèle : `nomDUnePieceDeVente`
+  (« Pièce de vente du 15/01/2026, 120,00 € », « sans date », « sans montant »), `pieceVueParLeModele`,
+  `ecritureVueParLeModele`, et `TYPES_DONT_LE_TIERS_SE_DIT` — le côté fermé : un tiers ne part que d'une pièce LUE d'un
+  type qui le dit (achat, note_frais, autre) ; un type que la base gagnerait se tait jusqu'à ce qu'on l'ait jugé ; une
+  ligne qui cite une pièce que la lecture n'a pas rendue, ou lue sans sa pièce, n'a aucun libellé (null, comme une
+  facture que VF9c ne retrouve pas). Il ne copie aucun module : c'est une règle de l'assistant.
+- `lister_pieces` passe chaque pièce par le passage avant tout le reste ; la branche de l'exemplaire d'une facture
+  source ne met plus elle-même son tiers et son fichier à null — une pièce de vente, que `garder_exemplaire_facture`
+  garde telle.
+- `lister_ecritures` lit la pièce de chaque ligne dans la même requête — ni le compte ni la tranche ne changent — et
+  passe chaque ligne par le passage ; d'un dossier qui n'a pas basculé, une ligne garde ses champs d'hier, dans le même
+  ordre.
+- La consigne, pour tout dossier : une pièce de vente se nomme par sa date et son montant ; son client n'est pas
+  transmis ; ne le demande pas, ne le devine pas ; le fournisseur d'une pièce d'achat l'est. Les descriptions de
+  `lister_pieces`, de son filtre et de `lister_ecritures` le disent.
+- Le harnais (`src/test/fonctionsEdge.ts`) modélise la ressource embarquée sans `!inner` : la ligne sans elle reste, à
+  null.
+
+La fonction : +93 lignes (40 de code, 47 de commentaire, 6 vides), −16 (10 de code, 6 de commentaire), 4 024 lignes (3
+947 avant) ; les dix-huit autres blocs bornés, `historiqueDuClient` et CLÉS SUPABASE compris, identiques au caractère
+près ; rien de VF9d.
+
+**OÙ LE LOT S'ÉCARTE DE LA CONSIGNE.** (1) Le côté fermé dépasse la vente : une pièce d'un type que la base n'a pas, ou
+lue sans son type, se tait aussi ; sur les quatre types d'aujourd'hui la règle vise juste, et le test confronte la liste
+à la contrainte du schéma exporté. (2) Une ligne qui cite une pièce que la lecture n'a pas rendue perd son libellé : un
+état que la clé étrangère interdit, où l'assistant refuse de deviner. (3) Un seul passage : la branche de l'exemplaire
+d'une facture source ne masque plus elle-même, et le défaut planté de VF9c qui la visait (« l'exemplaire d'une facture
+source rendu avec son tiers ») est réancré sur le passage.
+
+**LES PREUVES.**
+- `agentComptablePiecesDeVente.test.ts` (32 tests). Le bloc, extrait, transpilé et exécuté seul, sur 29 cas nommés ;
+  treize dérives plantées, au moins une par fonction et par constante, toutes vues ; ses types confrontés à la
+  contrainte du schéma exporté, écrite une fois. Puis le scanner : il part de toutes les lectures de la fonction (45, le
+  plancher ; chaque outil et hors des outils), lit chaque sélection — un texte, ou le choix entre deux textes ; toute
+  autre forme est une faute, `*` aussi —, et relève les cinq qui rapportent un tiers, un fichier ou un libellé du
+  brouillon. Deux passent par le passage : leur sélection porte ce qu'il lit — la pièce de chaque ligne embarquée telle
+  quelle, à gauche : une jointure interne ferait disparaître la ligne sans pièce —, et le corps de leur outil ne se sert
+  de `data` que pour la lire puis la passer. Trois se déclarent, sous deux raisons et leur nombre (le tiers des pièces
+  de `points_a_traiter`, deux ; le libellé de son brouillon, un). Le client d'une facture (`tiers_nom`) ne se lit
+  jamais ; un outil que le scanner ne connaît pas est une faute. Treize défauts plantés dans la vraie source, tous vus —
+  dont la jointure interne et le scanner aveugle, sous son plancher.
+- Le contrat de l'assistant : 53 scénarios, dont quatre neufs — un dossier qui n'a pas basculé, en trésorerie et en
+  engagement, un dossier basculé, une source illisible —, sur six pièces de vente dont le tiers porte un marqueur — le
+  fichier de cinq d'entre elles aussi, et le libellé de leurs écritures ; la sixième, à valider, ne le porte qu'en
+  tiers, que le filtre la trouve par lui seul —, une pièce d'achat et une pièce « autre » dont le tiers part, un
+  mouvement affecté ; les cinq outils sous dix appels (le filtre par tiers sous un mot que le modèle a écrit, une liste
+  tronquée, un compte, une année). Le marqueur n'atteint jamais le modèle, ni par aucun morceau de huit caractères ; le
+  fournisseur l'atteint ; chaque ligne d'une pièce de vente porte son nom exact, et les deux lignes sans pièce du
+  mouvement affecté restent, le total avec elles ; le filtre rend les six pièces de vente, et elles seules ;
+  `points_a_traiter` remplit chaque clé qui compte une pièce de vente (à régénérer, en attente ou sans règlement, sans
+  TVA, faible confiance, payée en trop, et le lettrage qui ne se solde plus), sans nommer personne. Deux juges de VF9c,
+  qui reconnaissaient une pièce de vente à son tiers, la reconnaissent à ce qu'elle n'est pas un exemplaire, et la
+  disent sans son client. Douze défauts plantés (onze neufs, un réancré), tous vus. `DEFAUTS_CONNUS` inchangé (2).
+- `agentComptableConsigne.test.ts` (+1) : la phrase, une fois, pour tout dossier, avant `repereVentes` ; les trois
+  descriptions ; celles des trois autres outils inchangées. `fonctionsEdge.test.ts` (+1) : la jointure à gauche, la
+  jointure interne, et une relation que le schéma ne porte pas, qui lève.
+- Trente et une mutations, jouées une à une sur une copie hors du dépôt, la source mutée puis remise à son texte (son
+  empreinte vérifiée), contre les gardes de l'assistant, le contrat HTTP et les scanners (451 tests au témoin) : seize
+  du câblage, hors du bloc (les deux outils sans le passage ou servis avant lui, la pièce embarquée oubliée, lue sans sa
+  date ou en jointure interne, la phrase de la consigne et les trois descriptions, le filtre par tiers oublié ou posé
+  sur le fichier), treize dans le bloc, deux du faux PostgREST (la jointure à gauche prise pour une jointure interne, ou
+  non modélisée). Toutes tuées par un comportement ou un scanner, chacune par au moins un juge que la mutation n'efface
+  pas — l'ancre d'un défaut planté qu'elle fait disparaître ne compte pas. La jointure interne ne l'était d'abord que
+  par ses ancres : une ligne sans pièce disparaissait de `lister_ecritures`, son compte avec elle, sans qu'aucun juge le
+  dise ; le scanner exige depuis la pièce embarquée telle quelle, à gauche, et le contrat les deux lignes sans pièce et
+  le total ; rejouée avec les trente autres sur l'état final, elle est tuée par l'un et l'autre.
+- Au caractère près, hors du dépôt : la source de BASE (`a45766b`) et celle de la branche, dans le même monde, pour les
+  53 scénarios du contrat de l'assistant (54 demandes au modèle). BASE, corrigée des seules différences voulues — la
+  phrase de la consigne insérée (54 fois), les trois descriptions remplacées (162), le tiers et le fichier d'une pièce
+  de vente mis à null (78 et 78, et 12 exemplaires que VF9c masquait déjà), le libellé d'une ligne de pièce de vente
+  recomposé par une formule écrite dans le banc, sans rien emprunter à la fonction (60) —, égale la branche au caractère
+  près, sur chaque demande ; les lectures (tables, rôles, filtres et nombre — seule la sélection de `lister_ecritures`
+  gagne la pièce embarquée, dans la même requête), les statuts, les réponses et les journaux sont identiques sans
+  correction. Le témoin : sans le monde des pièces, ou avec la seule consigne corrigée, BASE diffère. Et le contrat de
+  la branche, joué sur BASE, tombe sur six scénarios — les quatre neufs et les deux de VF9c adaptés —, et sur eux seuls.
+- `bordures.py` sur le fichier final : 38 bordures (36, et 2 neuves à 100 caractères comme leurs voisines).
+- La suite comparée test par test à BASE : 14 927 tests avant, 14 976 après, tous verts ; 49 nouveaux (32 du fichier
+  neuf, quinze du contrat — quatre scénarios et onze défauts plantés —, un de la consigne, un du faux PostgREST), aucun
+  perdu ni changé : les deux scénarios de VF9c adaptés et le défaut planté réancré gardent leur titre. `tsc -p
+  tsconfig.edge.json` : les mêmes 25 erreurs qu'avant, aux numéros de ligne près.
+
+**LES RISQUES.** Le coût : +749 caractères à chaque demande au modèle, pour tout dossier (la phrase de la consigne,
+326 ; les trois descriptions, 423). La lecture : `lister_ecritures` lit la pièce de chaque ligne par sa clé étrangère,
+dans la même requête ; une seconde clé entre ces deux tables rendrait l'embarquement ambigu, l'outil répondrait son
+erreur — le côté fermé —, et le scanner, qui lit la sélection, verrait la forme changer. Ce que le modèle perd : le nom
+du client d'une vente, dont aucune réponse comptable n'a besoin ; une vente que l'utilisateur nomme se retrouve encore
+par le filtre. Le retour arrière : le lot ne vit que dans la fonction ; le défaire, c'est retirer ses commits et
+redéployer — il part avec VF9b et VF9c, d'un seul déploiement, et VF9d, écrit plus tard sous sa garde, en dépendra ;
+aucune donnée, aucune migration, aucun écran à reprendre.
+
+**RGPD.md** : la ligne d'AWS Bedrock (§ 3) dit que, pour tout dossier, une pièce de vente part sans son tiers, sans le
+nom de son fichier et sans le libellé de ses écritures, nommée par sa date et son montant ; et ce qui part encore : le
+tiers d'une pièce d'achat, d'une note de frais ou d'une pièce « autre », et le libellé du relevé des écritures sans
+pièce.
+
+**CE QUI RESTE HORS DE LA DÉCISION** (inventorié, rien de changé) :
+- le libellé du relevé : `lister_ecritures` rend, pour tout dossier, celui que la banque a donné au mouvement sur les
+  lignes que le relevé justifie sans pièce — un mouvement affecté, ventilé, un virement personnel, et, d'un dossier
+  basculé, le mouvement que ses encaissements classent (`libelleExploitable(ligne) || ligne.libelle`,
+  src/lib/affectationBanque.ts ; `m.libelle`, src/lib/ecrituresVentesFacturees.ts). Celui d'un crédit nomme souvent qui
+  a payé : chez un praticien, un patient qui règle par virement — VF9CQ1-Q1 ;
+- l'écriture restée d'une pièce de vente supprimée : `ecritures_brouillon.piece_id` est ON DELETE SET NULL, et la ligne
+  garde le libellé qui nomme le client ; sans pièce, le passage ne sait plus que c'était une vente — VF9CQ1-Q2 ;
+- une pièce « autre » : son tiers part (la décision vise la vente ; une pièce « autre » n'est d'aucune vente) ;
+- une pièce de vente que la classification a laissée « achat », le défaut de la colonne : son tiers part tant que le
+  cabinet ne l'a pas retypée — le type est sa parole, vérifiée à la validation, et la même erreur l'écrirait en charge ;
+- le fil du navigateur (`historique`, que `historiqueDuClient` filtre sans le lire) et le message de l'utilisateur : ses
+  mots sont les siens, et une réponse d'avant ce lot peut nommer un client — l'assistant n'a servi que deux fois (mesuré
+  à la conception de VF9), sur des données fictives ;
+- les autres noms qui partent : celui du dossier (la consigne, `resume_dossier`), les libellés de catégorie, le fichier
+  d'une balance reprise — des noms du cabinet ou de son client, jamais d'un client de vente.
+
+**DEUX QUESTIONS AU CABINET.**
+- **VF9CQ1-Q1 — le libellé d'un mouvement du relevé au modèle.** `lister_ecritures` rend, pour tout dossier, le libellé
+  que la banque a donné à un mouvement, sur les lignes que le relevé justifie sans pièce : un mouvement affecté à une
+  catégorie, ventilé, un virement personnel, et, d'un dossier basculé, le mouvement que ses encaissements classent.
+  Celui d'un crédit nomme souvent qui a payé — chez un praticien, un patient qui règle par virement (« VIR M. … »). (A)
+  Recomposer, pour tout dossier, le libellé de toute ligne d'un mouvement créditeur : sa date et son montant ; un débit
+  garde le sien, qui nomme un fournisseur. (B) Seulement pour une recette — un crédit écrit sur un compte de produit —
+  et pour le mouvement que ses encaissements classent. (C) Rien : le relevé est la parole de la banque, et le modèle
+  s'en sert pour reconnaître l'Assurance maladie, un virement interne ou un remboursement. Recommandation : (A) — la
+  raison de VF9C-Q1 : aucune réponse de l'assistant n'a besoin du nom de qui paie, et le compte de la ligne dit ce
+  qu'est le crédit ; le sens du mouvement décide seul, là où (B) demanderait de classer les comptes ligne par ligne.
+  Elle change la réponse de tout dossier, hors de la décision : d'où la question.
+- **VF9CQ1-Q2 — l'écriture restée d'une pièce de vente supprimée.** Supprimer une pièce laisse ses écritures non figées
+  au brouillon, sans pièce (ON DELETE SET NULL) ; elles gardent le libellé qui nomme son client, et `lister_ecritures`
+  le rend comme celui de toute écriture sans pièce. La Checklist les dit déjà en erreur, une rupture de la piste
+  d'audit, et le FEC les écarte. (A) L'assistant tait le libellé d'une ligne rattachée à rien — ni pièce, ni mouvement,
+  ni facture, ni encaissement, ni bien, ni véhicule, ni déclaration, ni cotisation : une rupture ; la ligne de banque
+  d'une vente supprimée, rattachée à son crédit, se tait avec VF9CQ1-Q1 (A). (B) La suppression d'une pièce retire aussi
+  ses écritures non figées : une migration (la clé passe à ON DELETE CASCADE), et la confirmation de la suppression le
+  dit. (C) Rien : un état d'erreur que la Checklist dit, à corriger avant de questionner l'assistant. Recommandation :
+  (A) — dans l'assistant seul, sans toucher à la suppression d'une pièce ni à la piste d'audit, qui garde la rupture
+  visible ; (B) rouvrirait l'adjudication de la famille `ON DELETE SET NULL` (23/09/2026).
