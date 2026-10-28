@@ -40474,3 +40474,56 @@ caisse négative refusée sans rien deviner.
 - [S6] Celles de la conception du 28/10/2026, § 12 : CGI, art. 93 et 99 ; BOI-BNC-DECLA-10-20 ; BOI-BNC-BASE-20-10-10,
   § 10 ; le PCG au 1er janvier 2026, art. 1032-2, 1211-10, 1215-53.
 - Dans le dépôt et en base : les fichiers et les entrées du préambule ; le catalogue de production du 28/10/2026.
+
+### 28/10/2026 — HUIT RÉPONSES DU CABINET : A7-Q1 À Q3, VF9CQ1B-Q1, CAISSE2-Q1 À Q4
+
+(Page des arbitrages, relue en entier le 28/10/2026 au soir : 285 réponses, huit neuves depuis midi. Rien de changé au
+code ni en base ; la feuille de route Notion suit. Sept réponses suivent la recommandation ; CAISSE2-Q3 va contre.)
+
+**LA FACTURE QUI FIGE SES MENTIONS.** A7-Q1, (A) : la base refuse la validation d'une facture par un accès « Ventes »
+quand la forme juridique du dossier manque, pas celle du cabinet, que l'écran préviendra avant le clic — la migration
+`mentions_figees` telle qu'elle est préparée. A7-Q2, (B) : pour une validation par un accès « Ventes », la base refuse
+un SIRET ou une adresse d'émetteur qui ne sont pas ceux du dossier, et l'impression prend la dénomination figée ; un
+dossier sans adresse ne se facture plus depuis l'espace client avant que le cabinet la pose. Cela s'écrit dans
+`mentions_figees` avant son collage : la migration change, ses essais et son empreinte se refont, puis elle se présente
+au cabinet. A7-Q3, (B) : un texte libre des paramètres de facturation — pied de page, mentions, escompte, pénalités,
+mention légale — qui porte un IBAN valide, reconnu par sa clé de contrôle, se refuse en base et avant le clic, quel que
+soit son auteur : un IBAN ne s'imprime que par le RIB confirmé (MEG1-Q12), et un pied de page garderait l'ancien après
+un changement de RIB. Une petite migration à part, préparée avec la reprise de `mentions_figees` → « LA FACTURE FIGE SES
+MENTIONS, EN BASE ».
+
+**L'ASSISTANT.** VF9CQ1B-Q1, (A) : pour tout dossier, un débit qui rend ou défait l'argent d'un client part au modèle
+sous sa date et son montant, comme un crédit — ceux que la base reconnaît sans deviner : affectés ou ventilés sur un
+compte de produit, ou classés par les contre-passations d'un encaissement ; les autres débits gardent leur libellé, qui
+nomme un fournisseur ou un organisme. Un petit lot de l'assistant, par le même passage, écrit avant son déploiement
+unique, qui part alors avec VF9b, VF9c, VF9C-Q1 et VF9CQ1, avant les données réelles du 20 novembre → « VF9CQ1, NI LE
+LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE ».
+
+**LA CAISSE.** CAISSE2-Q1, (A) : une saisie du praticien compte dès qu'il l'enregistre, écrite avec son écriture et
+marquée « par le client » ; le cabinet la retire ou la remplace s'il la juge fausse, la validation de l'exercice est sa
+revue, et un point d'information de la Vue d'ensemble compte les saisies du client depuis la dernière visite de l'onglet
+Caisse. CAISSE2-Q2, (B) : ses recettes vont dans une catégorie que le cabinet fixe pour le dossier — une colonne de
+`dossiers`, dans la migration `caisse_du_client` —, sans choix pour lui, et la règle d'écran qui lui cache les
+catégories reste entière ; le cabinet remplace une recette qui n'en est pas une. CAISSE2-Q4, (A) : le praticien
+enregistre lui-même le paiement par sa caisse d'une pièce de « Mes pièces », à sa date et à son montant, jugé par la
+base comme celui du cabinet, qui le voit « par le client » et le remplace au besoin. CAISSE2-Q3, (B), contre la
+recommandation : la saisie du client s'ouvre aussi à un dossier en franchise en base, que la loi exclut du 3° bis comme
+celui qui n'effectue que des opérations exonérées (CGI, art. 286, II, 2, cité par BOI-TVA-DECLA-30-10-30, § 25) → « LA
+CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE (CAISSE-Q1 ET Q4) ».
+
+**CE QUE CAISSE2-Q3 CHANGE.** Partout où la conception reprise juge le statut « exonéré », elle juge l'ensemble des deux
+statuts exclus, « exonéré » et « franchise » : `garder_droit_caisse` (la case n'arrive que sur un tel dossier),
+`garder_statut_tva_de_la_caisse` (quitter l'ensemble se refuse tant qu'un accès porte la case ; passer de l'un à l'autre
+passe), `qui_ecrit_la_caisse` et son refus défensif, `gesteDeLaCase`, les phrases de l'onglet Caisse et de « Ma
+caisse », et la confirmation qui coche la case : pour un dossier en franchise, elle fait déclarer au cabinet qu'il en
+bénéficie, et lui dit que le jour où il la perd — son chiffre d'affaires dépasse le seuil majoré —, il décoche la case
+avant de changer le statut. Le risque que nommait la recommandation reste, accepté avec la réponse : la base ne date pas
+le statut de TVA, et des saisies faites entre le dépassement et le changement du statut l'auraient été sans
+l'exclusion ; c'est au cabinet de suivre le seuil, que l'application ne surveille pas. Une recette d'un dossier en
+franchise ne porte pas de taux, comme celle d'un dossier exonéré. Tout tient dans la migration 5 et les lots C10 à C12 ;
+rien ne change de C1 à C9, ni au calendrier.
+
+**LA SUITE, DANS L'ORDRE.** Le lot de VF9CQ1B-Q1, puis le déploiement unique de l'assistant ; la reprise de
+`mentions_figees` (A7-Q2) et la migration d'A7-Q3, préparées sur une réplique et présentées au cabinet, la première à
+coller ; la caisse, à partir de C1, sa migration `caisse` présentée au cabinet avant d'être appliquée par l'outil, dans
+la première semaine de novembre ; A7b après le collage de `mentions_figees`, pour le jour J.
