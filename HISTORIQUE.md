@@ -39266,3 +39266,488 @@ pièce.
   dit. (C) Rien : un état d'erreur que la Checklist dit, à corriger avant de questionner l'assistant. Recommandation :
   (A) — dans l'assistant seul, sans toucher à la suppression d'une pièce ni à la piste d'audit, qui garde la rupture
   visible ; (B) rouvrirait l'adjudication de la famille `ON DELETE SET NULL` (23/09/2026).
+
+### 28/10/2026 — LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION — MVP-D2 (LIGNE 26.6)
+
+(Conception de l'agent architecte, sur `e6b5dd4`, VF9C-Q1 compris ; rien d'écrit, ni dans le code ni en base. Production
+lue le 28/10/2026 en SELECT seulement : le catalogue (colonnes, contraintes, déclencheurs, policies, définitions de
+fonctions) et des comptes, aucune valeur d'une ligne. Lus avant d'écrire : « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS
+LA MI-DÉCEMBRE 2026 » et ses réponses ; « LA RÉVISION DES COMPTES : LA CONCEPTION », § 1.8 (« l'application n'a pas de
+caisse ») ; « LA 2035 COMPTE UNE PIÈCE À LA DATE DE SON PAIEMENT » ; « UN MOUVEMENT DU RELEVÉ S'ÉCRIT SUR UN COMPTE DE
+BILAN » ; « LES ENCAISSEMENTS D'UNE FACTURE ÉMISE » ; « LES ÉCRITURES D'UNE VENTE FACTURÉE, EN MODULE » ; « UN EXERCICE
+VALIDÉ SE FIGE EN BASE » ; « LE FEC SUIT L'ARTICLE A47 A-1 » ; « UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL
+S'ÉCRIT », le patron le plus proche ; « VF6, LA JUMELLE INVERSÉE : LA CONCEPTION » ; la règle des drapeaux
+`*_PREVU(E)S`. Le code : `declaration2035.ts`, `partsDuReleve.ts`, `cases2035.ts`, `concordance2035.ts`, `fec.ts`,
+`prealablesValidation.ts`, `compteDeBilan.ts`, `ecrituresVentesFacturees.ts`, `encaissementsFactures.ts`,
+`aNouveaux.ts`, `sauvegarde.ts`, `revisionRevue.ts`, `TvaTab.tsx` et l'assistant ; les fonctions et les déclencheurs de
+la base. Sources au § 12.)
+
+#### 0. Le résumé
+
+1. L'application ne tient pas de caisse, mais elle en écrit déjà la moitié : depuis VF4 (EC3-Q7), l'encaissement en
+   espèces d'une facture source porte le 530000 au débit, et rien ne le crédite. Une recette en espèces sans facture
+   n'entre dans la 2035 que si son dépôt en banque s'affecte en recette — à la date du dépôt, pour la seule part
+   déposée, et deux fois pour les espèces d'une facture source ; sinon le versement s'écrit au 580000 (le 53 est refusé
+   comme « autre compte de trésorerie ») ou s'ignore. Latent : aucun encaissement, aucun dossier basculé, rien au 53
+   (§ 1).
+2. Le droit tranche presque tout (§ 2) : un total par jour et par nature, appuyé d'un récapitulatif (PCG, art. 1032-2 ;
+   BOI-BNC-DECLA-10-20, § 70) ; aucune identité dans l'application, le détail restant au registre du praticien, sous le
+   secret (§ 280, et la décision du cabinet du 24/09/2026) ; un solde de caisse « soit débiteur soit nul » (PCG,
+   art. 1215-53) ; la recette au jour où les espèces sont reçues.
+3. Le modèle (§ 3) : une table, `operations_caisse`, au cabinet seul — la recette en espèces sans facture de
+   l'application, l'apport et le prélèvement de l'exploitant —, chaque opération écrite avec son écriture par une
+   fonction qui la recompose. Le versement en banque n'est pas une opération : c'est le crédit du relevé classé sur le
+   compte de la caisse, par le chemin du compte de bilan (512 au débit, 53 au crédit).
+4. Le double compte (§ 4) se ferme en base pour le versement : un seul classement par mouvement, et une caisse jamais
+   négative, jugée jour par jour par des déclencheurs. Pour une facture réglée en espèces, rien ne relie un billet à une
+   facture : la base sépare les deux voies et exige que la saisie d'un jour reconnaisse les espèces des factures de ce
+   jour ; l'écran les montre ; une recette dont le jour a changé retient la validation.
+5. La 2035 compte la recette à sa date, dans le poste de sa catégorie — ligne 1, case AA pour des honoraires —, par un
+   paramètre obligatoire des six moteurs ; la concordance la retrouve par son opération ; le FEC la met au journal des
+   ventes ; la validation la fige sans que `valider_exercice` change, avec les journaux recommandés (§ 5).
+6. Trois migrations : `caisse`, par l'outil ; le retrait et le versement, À COLLER (une suppression du brouillon dans le
+   corps de deux fonctions) ; le resserrement, en dernier (§ 8). Huit lots, C1, C1b et C2 à C7 : environ dix jours de
+   développement pour le MVP, soit deux semaines, la borne haute de l'estimation donnée au cabinet (§ 9). Quatre
+   questions, CAISSE-Q1 à Q4 (§ 10).
+
+#### 1. L'inventaire, mesuré
+
+**EN PRODUCTION** (28/10/2026, des comptes) : 159 migrations, la dernière `ventes_sur_dossier_bascule` ; quatre
+dossiers, tous en trésorerie, aucun basculé ; aucun encaissement de facture, donc aucun en espèces ; aucun mouvement
+écrit sur un compte de bilan, aucun au 53 ; aucune ligne du brouillon ni aucun à-nouveau sur un compte 53 ; aucun
+exercice validé, aucun plan réglé, aucun accès « Banque » ni « Ventes ». Aucune table ne tient une caisse. Tout ce qui
+suit est LATENT, et chaque lot reste neutre jusqu'à la première opération de caisse.
+
+**CE QUE L'APPLICATION SAIT DÉJÀ DES ESPÈCES.**
+- Le rôle `caisse` du plan, posé par VF2 (migration `source_de_la_vente` : racine 53, défaut 530000, rang 310 ; 531000
+  dans le plan décalé des essais), lu par `compte_du_role` et `plan.caisse` ; `COMPTE_CAISSE` et le libellé « Caisse »
+  (`lib/comptes.ts`).
+- Le moyen `especes` du registre des encaissements, « le jour où les espèces sont reçues » (`encaissementsFactures.ts`).
+- Sa composition (EC3-Q7, `ecrituresVentesFacturees.ts`) : un encaissement en espèces sans mouvement porte le 53 à sa
+  date, face au produit ; rattaché au crédit d'un autre jour, ce crédit, classé par ses encaissements, solde le 53 ;
+  rattaché au crédit du même jour, il porte la banque. Une contre-passation sans mouvement reprend le compte de
+  l'encaissement qu'elle annule.
+- `refus_compte_de_contrepartie` refuse la caisse comme compte d'une compensation. Les encaissements sans mouvement que
+  la Checklist et la validation réclament ne sont que ceux des moyens du relevé (`MOYENS_DU_RELEVE`, VF5f) — les espèces
+  n'attendent pas de mouvement —, mais un encaissement en espèces reste candidat d'un crédit (VF5e, « À REVOIR »).
+- Le bilan tient une caisse créditrice pour une erreur (`bilan.ts`) ; la révision propose « Demander s'il existe des
+  encaissements ou des paiements en espèces » (`tresorerie-especes`) et ne calcule rien ; l'onglet TVA dit qu'une
+  recette encaissée en espèces « se reporte à la main », et qu'un achat payé hors du compte professionnel se classe en
+  note de frais.
+
+**CE QUI MANQUE, CHEMIN PAR CHEMIN.**
+- Le relevé : `refus_compte_de_bilan` refuse `^5[1-4]`, caisse comprise, et renvoie au 580000 — une décision du
+  06/10/2026, prise pour des comptes que l'application ne tient pas. Le versement d'espèces s'y écrit 512/580 : le 580
+  garde un solde que rien n'apparie, et le 53 d'une facture réglée en espèces ne se solde jamais.
+- La 2035 : ses sources (`SourceDeclaration`) sont la pièce, le mouvement, le bien, le véhicule, la cotisation, la CSG,
+  la déclaration de TVA, l'encaissement d'une facture source et les frais d'un mouvement d'encaissements — aucune
+  recette en espèces sans facture ; les espèces gardées hors de la banque n'entrent nulle part. La CA3, la situation
+  intermédiaire, l'estimation, la simulation du client et la revue analytique lisent la même forme du relevé
+  (`partsDuReleve`) : rien non plus.
+- Les écritures : aucune colonne d'`ecritures_brouillon` ne désigne une opération de caisse. Une pièce payée en espèces
+  garde une écriture sans contrepartie, que la validation refuse (`ecritures-desequilibrees`, et `valider_exercice`) ;
+  le seul paiement d'une pièce hors de la banque est la note de frais, face au 108000.
+- Le FEC et la validation : une écriture d'une source inconnue y serait orpheline (un préalable bloquant) ; les journaux
+  sont fermés à AC, VE, BQ et OD, dans `valider_exercice` et dans la contrainte
+  `ecritures_brouillon_validation_complete`.
+- La Checklist, la révision, la reprise, la sauvegarde : aucun point, aucune preuve du 53, aucune racine 53 rangée sur
+  le rôle (`COMPTES_DE_ROLE`, `aNouveaux.ts`), aucune table à porter.
+
+#### 2. Ce que la loi exige, et ce qu'elle tranche
+
+- **Le livre-journal d'un BNC** (CGI, art. 99 [S1]) est « servi au jour le jour » et présente le détail des recettes,
+  avec « l'identité déclarée par le client ainsi que le montant, la date et la forme du versement des honoraires ». Il
+  suit l'ordre des dates (BOI-BNC-DECLA-10-20, § 50 [S2]) et détaille les recettes quel que soit leur mode
+  d'encaissement (§ 60) ; « un registre récapitulant en fin d'année un montant d'honoraires global » n'en est pas un
+  (§ 140).
+- **Le total d'un jour.** « Un enregistrement global des recettes en fin de journée ne peut être jugé suffisant »
+  (§ 70), sauf pour des recettes d'un montant unitaire inférieur au seuil du 3° du I de l'article 286 du CGI, payées en
+  espèces au comptant, dont les justificatifs du détail (notes d'honoraires, brouillard de caisse) sont conservés. Ce
+  seuil est de 76 € TTC, et sa tolérance vaut pour les titulaires de revenus non commerciaux (réponse ministérielle
+  n° 15936, JOAN du 12/03/2019, p. 2408 [S3]). En comptabilité, « les opérations de même nature, réalisées en un même
+  lieu et au cours d'une même journée, peuvent être récapitulées sur une pièce justificative unique » (PCG au 1er
+  janvier 2026, art. 1032-2 [S4]), et tout enregistrement précise « les références de la pièce justificative qui
+  l'appuie » (art. 1032-1).
+- **Le secret.** Une profession qui y est soumise peut porter au livre-journal, au lieu de l'identité, « une référence à
+  un document annexe permettant de retrouver l'identité du client » (BOI-BNC-DECLA-10-20, § 280), communiqué sur simple
+  demande (§ 290) ; la nature de ses prestations ne lui est pas demandée (§ 310). D'où la règle : la caisse de
+  l'application ne porte ni identité ni texte libre ; le détail, recette par recette — celles de 76 € et plus comprises,
+  qu'un total ne couvre pas —, vit dans le registre du praticien, son livre-journal sous le secret. C'est la décision du
+  24/09/2026 (« le détail patient par patient reste dans le logiciel du praticien »), qui ne se rouvre pas.
+- **La date.** Une somme est encaissée « à la date où le bénéficiaire en a la libre disposition », quel que soit le mode
+  de perception, espèces comprises (BOI-BNC-BASE-20-10-10, § 1 et § 10 [S5]) : le jour où les espèces sont reçues.
+- **Le compte.** « Le compte 53 « Caisse » est débité du montant des espèces encaissées par l'entité. Il est crédité du
+  montant des espèces décaissées. Son solde est soit débiteur soit nul. » (PCG, art. 1215-53). Les comptes 58
+  centralisent, sans risque de double emploi, les virements d'une caisse à une banque et toute opération enregistrée
+  dans plusieurs journaux auxiliaires (art. 1215-58). Les apports et les retraits personnels de l'exploitant vont au 108
+  en cours d'exercice (art. 1211-10, I).
+- **Le système de caisse** (CGI, art. 286, I, 3° bis [S6]). « Un logiciel ou système de caisse est un système
+  informatique doté d'une fonctionnalité de caisse » (BOI-TVA-DECLA-30-10-30, § 30 [S7]) : il enregistre des paiements
+  reçus hors de la comptabilité, et un logiciel comptable qui les enregistre en brouillard, modifiable avant son
+  intégration définitive, en porte une, quelle que soit son étiquette (§ 30, § 40). Elle est soumise à des conditions
+  d'inaltérabilité, de sécurisation, de conservation et d'archivage, justifiées par un certificat ou, depuis le
+  21/02/2026, par une attestation individuelle de l'éditeur (§ 270). En sont exclus les assujettis en franchise en base
+  et ceux qui n'effectuent que des opérations exonérées (§ 25) ; un journal de caisse papier n'y est pas soumis. C'est
+  le poids de CAISSE-Q1.
+
+#### 3. Le modèle
+
+**ÉCARTÉ, ET POURQUOI.**
+- La caisse comme un second relevé (`lignes_bancaires` avec un compte) : elle hériterait de l'affectation, des règles et
+  des lots, mais l'application ne tient qu'un relevé par dossier ; les dix-huit fonctions du relevé, le contrôle de
+  solde, l'import, la connexion bancaire, G2 et « Ma banque » — où le client « Banque » verrait la caisse —
+  apprendraient un compte, et la banque de chaque écriture du relevé est le 512 du plan. Trop large, et risqué.
+- Le versement par le 58 (512/58 au relevé, puis 58/53 à la caisse) : le PCG s'en sert quand une opération s'enregistre
+  dans deux journaux ; ici, elle ne s'enregistre qu'une fois, depuis le relevé. Et le 580000 de l'application garde déjà
+  le solde des virements vers l'épargne (ligne 26.7) : un écart de versement s'y cacherait.
+- Une recette de caisse comme une pièce de vente sans fichier : une pièce est un document déposé (son empreinte, sa
+  lecture, G3 dans un dossier basculé), et son paiement passe par le relevé.
+- Une ligne par patient, avec une référence : la décision du 24/09/2026 ; et un champ libre recevrait un jour un nom.
+
+**RETENU : `operations_caisse`**, une table du dossier, au cabinet seul.
+- Ses colonnes : `id` ; `dossier_id`, en cascade ; `genre` — `recette`, `apport` ou `prelevement` ; `date` ; `montant`,
+  au centime — signé pour une recette (négatif : des espèces rendues), positif pour un apport ou un prélèvement ;
+  `categorie_id`, pour une recette seulement — sa nature, une catégorie du dossier ou commune dont le compte est un
+  produit ; `taux_tva`, pour une recette d'un dossier assujetti seulement — 0, 5,5, 8,5, 10 ou 20, comme le relevé
+  (`recettes_assujetties_du_releve`) ; `encaissements_du_jour`, pour une recette — les encaissements en espèces que la
+  saisie a reconnus (§ 4) ; `cree_le`, `cree_par`, `retire_le`, `retire_par`, sans clé vers `auth.users`, comme les
+  encaissements. AUCUNE colonne de texte : le libellé de l'écriture se compose (« Recettes en espèces du 12/03/2026 —
+  Ventes / prestations », « Apport en caisse de l'exploitant », « Prélèvement en espèces de l'exploitant »).
+- Une recette est le TOTAL des espèces reçues un jour sans facture de l'application, pour une nature et un taux, tel que
+  le brouillard du praticien le porte ; plusieurs par jour sont admises. Sa pièce est le récapitulatif de ce jour
+  (art. 1032-2), que le praticien garde : rien ne se dépose — aucun fichier, la décision HDS du 24/09/2026 —, et sa
+  référence se compose de la date (« Brouillard de caisse du 12/03/2026 »).
+- L'apport fait le fonds de caisse, et ouvre une caisse que le dossier tenait déjà : les espèces en main au premier jour
+  tenu. Une ouverture reprise d'une balance (le 53 des à-nouveaux) en tient lieu.
+- Le prélèvement : les espèces que l'exploitant garde pour lui. Une dépense payée en espèces reste une note de frais (la
+  charge face au 108000), avec le prélèvement des espèces qui l'ont payée — même résultat que la charge face au 53, sans
+  geste neuf (CAISSE-Q4).
+- Rien ne se supprime : une opération se RETIRE, avec son écriture, tant que son exercice n'est pas figé ; elle ne se
+  modifie pas, elle se retire et se saisit de nouveau.
+- En trésorerie seulement, dans le MVP : la base refuse un dossier en engagement, où l'écriture serait la même mais où
+  rien d'autre n'est conçu.
+
+**LE VERSEMENT EN BANQUE N'EST PAS UNE OPÉRATION DE LA TABLE.** C'est le crédit du relevé classé sur le compte de la
+caisse, par le chemin du compte de bilan (`lignes_bancaires.compte_bilan` porte le compte du rôle `caisse`). Ce chemin
+écrit déjà le compte face à la banque, au montant, à la date et dans le sens du mouvement — 512 au débit, 53 au
+crédit —, au journal de banque avec le relevé pour pièce ; le versement se fige avec son mouvement
+(`garder_mouvement_valide` compare la ligne entière) et « Remettre à traiter » le défait. Un débit sur ce compte — des
+espèces retirées pour la caisse, 53 face au 512 — passe de même. Seul changement : `ecrire_mouvement_compte_bilan`
+accepte EXACTEMENT le compte de la caisse du plan, que `refus_compte_de_bilan` refuse aujourd'hui avec tout le 53 ; la
+phrase de ce refus change pour un autre compte 53, qui n'est pas la caisse du dossier. « Ma banque » d'un client
+« Banque » dit le versement justifié par le relevé, comme un virement vers l'épargne, et n'apprend rien de la caisse.
+
+**LA CAISSE LUE**, jour par jour : l'ouverture (le 53 des à-nouveaux), les opérations non retirées, les mouvements
+classés sur le compte de la caisse, les encaissements en espèces des factures SOURCES sans mouvement et leurs
+contre-passations sans mouvement — exactement ce que la composition écrit au 53 (EC3-Q7). L'encaissement d'une facture
+qui n'est pas source ne s'écrit pas (VF2-Q2) : il n'y entre pas.
+
+#### 4. Le double compte
+
+**(a) LA RECETTE DÉPOSÉE EN BANQUE.** Le crédit du versement est classé sur la caisse : la contrainte
+`lignes_bancaires_un_seul_rapprochement` lui interdit tout autre classement, donc d'être aussi une recette ; et un
+compte de bilan n'entre pas dans la 2035 (ligne 26.7). EN BASE : ce seul classement, et la caisse jamais négative (c).
+AVANT LE CLIC : la fiche d'un crédit propose « Versement d'espèces » avec le solde de la caisse ce jour-là, ou le refus
+sous les mots de la base. Dans un dossier qui a des opérations de caisse, un crédit dont le libellé dit un versement
+d'espèces (« VERSEMENT ESPECES », « VRST ESP »…) n'entre dans aucun lot (`horsDesLots`), sa fiche le dit avant qu'on le
+range en recette, et la Checklist le dit en « attention » s'il l'a été : un symptôme, jamais une preuve. Ce qui reste :
+un versement rangé en recette malgré tout — la caisse grossit, et seul le comptage du 31 décembre (C7) le verrait, à
+condition que les prélèvements ne servent pas d'appoint.
+
+**(b) LA FACTURE RÉGLÉE EN ESPÈCES.** Dans un dossier basculé, son encaissement (moyen « Espèces ») compte la vente à sa
+date et porte le 53 : il entre dans la caisse de lui-même. Rien ne relie un billet à une facture : la base ne peut pas
+prouver qu'une recette de caisse n'en contient pas. Elle garantit ce qui se garantit :
+- deux voies séparées — une recette de caisse ne cite aucune facture, une facture ne s'encaisse que par son registre, et
+  un encaissement en espèces ne cite aucun crédit (C6) : ses espèces restent dans la caisse jusqu'à un versement ou un
+  prélèvement, gestes de la caisse ;
+- la saisie RECONNAÎT les espèces des factures du jour — `enregistrer_operation_caisse` reçoit l'ensemble des
+  encaissements en espèces de factures sources, non retirés, datés de ce jour, que l'écran a montrés, et refuse s'il
+  diffère de celui de la base (« un encaissement en espèces de la facture F… du même jour a été enregistré depuis ta
+  lecture : relis la caisse ») ; l'ensemble reconnu reste sur la recette ;
+- une recette dont le jour a changé depuis — un encaissement enregistré ou retiré après elle — se dit « à revoir », en
+  point de la Checklist et en préalable bloquant de la validation, levé en la retirant et en la saisissant de nouveau.
+
+AVANT LE CLIC : la caisse se montre jour par jour, les encaissements des factures compris (lus, sans geste) ; le
+formulaire d'une recette nomme ceux de son jour (« Les 120,00 € de la facture F-2026-0012, reçus ce jour-là, sont déjà
+dans la caisse : ce total ne les compte pas »). Dans un dossier qui n'a pas basculé, une facture réglée en espèces garde
+son chemin d'aujourd'hui — sa pièce de vente, qu'aucun paiement ne règle et que la validation refuse sans contrepartie —
+jusqu'à « régler une pièce par la caisse » (CAISSE-Q4). L'autre voie, le total du jour factures comprises, est
+CAISSE-Q2.
+
+**(c) LA CAISSE JAMAIS NÉGATIVE** (PCG, art. 1215-53). EN BASE : une fonction (`premier_jour_negatif_de_la_caisse`, que
+n'exécute aucun rôle de l'API) rejoue la caisse lue au § 3, jour par jour — le solde à la fin de chaque jour,
+l'ouverture comprise —, et des déclencheurs AFTER l'appellent, sous un verrou consultatif exclusif propre à la caisse du
+dossier, quand une écriture change l'un de ses flux : une opération insérée ou retirée, le compte de bilan d'un
+mouvement qui va vers la caisse ou en vient, un encaissement en espèces d'une facture source (son retrait, sa
+contre-passation sans mouvement), les à-nouveaux de la caisse. Le refus nomme le jour et le solde (« Ce versement de
+500,00 € rendrait la caisse négative le 12/03/2026 (−120,00 €) : saisis d'abord les recettes en espèces qui le
+précèdent. »), sous le code 23514. La restauration passe (le super-administrateur, dans un dossier sans exercice validé,
+sans le réglage des fonctions) : elle réinsère un état que la garde a déjà jugé. AVANT LE CLIC : le module refait le
+même calcul, et chaque formulaire — le versement, le prélèvement, le retrait d'une recette ou d'un apport, le retrait ou
+la contre-passation d'un encaissement en espèces — dit le jour où la caisse passerait sous zéro ; refusé à un client
+« Ventes », le geste lui dit que la caisse est tenue par son cabinet. Défensif : un point de la Checklist et un
+préalable, pour une caisse lue négative (une restauration d'un état fautif).
+
+#### 5. Les écritures, la 2035, le FEC, la validation
+
+- **La voie d'écriture.** `enregistrer_operation_caisse(dossier, genre, date, montant, catégorie, taux, encaissements du
+  jour, écriture)`, SECURITY DEFINER, sur le patron d'`enregistrer_paiement_personnel_cotisation` : l'accès au dossier
+  annoncé avant toute lecture ; les refus dans l'ordre que le module redit sous les mêmes mots — le dossier en
+  trésorerie, le genre, la date (renseignée, pas avant 2000, pas dans l'avenir à Paris, pas avant l'ouverture d'un
+  dossier repris, pas dans un exercice figé), le montant, la catégorie et son compte de produit, le taux, l'ensemble du
+  jour, l'écriture ; l'écriture composée par l'application RECOMPOSÉE en centimes entiers (`tva_incluse` pour un taux)
+  et comparée en multiensemble, puis écrite d'un tenant avec l'opération, sous le réglage `jd.caisse` que la garde du
+  brouillon exige, le verrou partagé de la validation (`cle_validation`) et celui de la caisse. Les comptes viennent du
+  plan, jamais en dur : le rôle `caisse`, le compte de l'exploitant (`compte_du_dirigeant`), le rôle `tva_collectee`, le
+  compte de la catégorie. Une recette : la caisse au débit, le produit hors taxe et sa TVA au crédit (l'inverse pour des
+  espèces rendues) ; un apport : la caisse face à l'exploitant ; un prélèvement : l'inverse.
+- **La saisie d'un mois.** `enregistrer_operations_de_caisse(dossier, opérations)` applique la même fonction à chaque
+  ligne, tout ou rien, le premier refus nommé par son jour — le patron d'`importer_contacts`. Un praticien, c'est
+  environ 250 recettes par an.
+- **Les gardes.** `garder_operation_caisse` : insérée par la fonction ou par la restauration ; ne change que par son
+  retrait ; au-delà de la frontière de la validation, ni insérée, ni retirée, ni supprimée ; la cascade du dossier
+  passe. `garder_ecriture_de_caisse`, sur `ecritures_brouillon` : une ligne qui désigne une opération ne s'écrit, ne
+  change et ne part qu'avec elle — le patron de `garder_ecriture_paiement_personnel`. La contrainte
+  `ecritures_brouillon_caisse_sans_autre_source`.
+- **La 2035.** La recette compte à sa date (CGI, art. 93, 1 ; § 2), dans le poste de sa catégorie et la nature de son
+  compte : des honoraires en ligne 1, case AA (« Recettes encaissées y compris les remboursements de frais »), donc dans
+  la ligne 4 (AD) que le volet social reprend ; des débours en ligne 2 (AB), des produits financiers en ligne 5 (AE),
+  des gains divers en ligne 6 (AF) (`cases2035.ts`). Hors taxe sur un dossier assujetti, au total sinon, comme une
+  recette du relevé. L'apport, le prélèvement et le versement n'y entrent pas. Une source neuve (`type: 'caisse'`) et un
+  compte par ligne (`nbOperationsDeCaisse`).
+- **La forme des moteurs.** Une forme à part, `RecettesDeCaisse`, paramètre OBLIGATOIRE de la 2035, de la CA3, de la
+  situation intermédiaire, de l'estimation, de la simulation du client et de la revue analytique — plutôt qu'élargir
+  `PartDuReleve`, dont la `ligne` est un mouvement : chacun de ses usages devrait apprendre une recette sans mouvement.
+  Le compilateur force chaque appelant, comme pour les ventes facturées (VF3). Une caisse lue en partie : pas de 2035,
+  et l'écran le dit. « Ma simulation » ne lit pas la caisse — le client n'y a pas droit — et le dit.
+- **La concordance** retrouve la recette dans le brouillon par `operation_caisse_id`, sur le compte de sa catégorie
+  (`cleDeSource`, `referenceDeLEcriture`).
+- **La CA3**, pour un dossier assujetti : la recette à sa date et à son taux, comme une recette du relevé ; exonérée
+  (0), en E2. **Financement** : la recette de caisse entre dans la moyenne des encaissements, le versement en reste
+  écarté (ligne 26.7) — sans quoi les recettes en espèces sortiraient du taux d'endettement.
+- **Le FEC.** Une clé `caisse|opération|date` ; le journal selon CAISSE-Q3 — recommandé : VE pour une recette, comme
+  l'encaissement de trésorerie d'une vente facturée, OD pour un apport ou un prélèvement, BQ pour le versement, comme
+  aujourd'hui ; PieceRef « Brouillard de caisse du JJ/MM/AAAA » ou « Caisse du JJ/MM/AAAA », PieceDate la date ;
+  EcritureLib composé, sans nom. Au FEC à vingt-deux champs d'un BNC (MVP-D5 ; ligne 26.6, étape e) : DateRglt la date,
+  ModeRglt les espèces, NatOp la nature, IdClient vide — un total de jour ne nomme personne (§ 70).
+- **La piste d'audit** : pour justificatif, le brouillard du praticien, hors de l'application, sans empreinte plutôt
+  qu'une preuve qu'il n'y a pas — le patron du paiement personnel.
+- **La validation.** Une comptabilité informatisée n'est définitive qu'après une validation qui interdit toute
+  modification (PCG, art. 1031-3) ; avec les journaux recommandés, rien ne change dans `valider_exercice` : les
+  écritures de la caisse sont numérotées par l'application et figées avec les autres ; l'opération se fige à la
+  frontière (sa garde), le versement avec son mouvement ; le 53 se reporte à l'ouverture suivante (`soldes_a_reporter`).
+  Trois préalables bloquants : `caisse-a-reprendre` (une écriture qui manque ou ne suit plus sa composition — un plan
+  changé, un statut de TVA changé, une restauration) et `caisse-negative`, défensifs ; `recettes-de-caisse-a-revoir`
+  (§ 4 b).
+- **La reprise** : la racine 53 entre dans `COMPTES_DE_ROLE` (`aNouveaux.ts`), rangée sur le compte de la caisse du
+  plan.
+- **La révision** (C7, après le MVP, avant la validation de 2026) : une preuve proposée du 53 au 31 décembre — le solde
+  des écritures, celui de la caisse lue, le comptage que le praticien déclare —, et le travail `tresorerie-especes`
+  réécrit.
+
+#### 6. Qui saisit
+
+- **Le MVP : le cabinet seul** (CAISSE-Q1, (A)), depuis le brouillard que le praticien lui remet chaque mois. La table
+  n'a qu'une policy de lecture, `to authenticated` sur `admin_du_dossier`, et une d'insertion pour la restauration
+  (`is_super_admin()`) ; tout s'écrit par les fonctions. Le client n'en lit rien.
+- **Le praticien, plus tard** (B), demanderait : un droit en base — une case « Caisse » sur l'accès, ou « Banque »
+  élargie —, changé par `changer_droits_acces` ; une policy de lecture présentée au cabinet avant d'être appliquée ; les
+  fonctions ouvertes au client sous `droits_sur_le_dossier`, sur le patron de « Mes ventes » ; un écran de l'espace
+  client ; et, pour un dossier redevable qui encaisse des particuliers, l'examen du 3° bis : une caisse que le praticien
+  saisit au fil des paiements, en brouillard modifiable, est une fonctionnalité de caisse (BOI-TVA-DECLA-30-10-30, § 30)
+  — certificat, ou attestation de l'éditeur. Le praticien du MVP en est exclu si tous ses actes sont exonérés (§ 25).
+  Trois à cinq jours de plus, hors du MVP.
+
+#### 7. La sauvegarde et la restauration
+
+- `operations_caisse` entre au plan derrière son drapeau, `CAISSE_EXPORTEE` (`lib/caisse.ts`), sur le patron des
+  articles et des contacts : déclarée dans `RELATIONS_PREVUES` (le dossier, en cascade ; la catégorie),
+  `ORDRE_RESTAURATION_PREVU` (après les catégories, avant `ecritures_brouillon`), `CHEMINS_DOSSIER_PREVUS` et
+  `CLES_PRIMAIRES_PREVUES` (`id`), filtrée par `auPlanDeLaCaisse`, réunie par `auPlanAujourdHui` — la lire avant sa
+  migration ferait échouer toute sauvegarde. La relation neuve d'`ecritures_brouillon` (`operation_caisse_id`) suit le
+  même drapeau, sur le patron de `RELATIONS_DES_EXEMPLAIRES`. `sauvegardeCaisse.test.ts` éprouve les deux états ;
+  `restauration.sql` met la table au plan quand elle existe ; le drapeau se lève d'abord en simulation (le fichier posé
+  dans l'export, la suite entière).
+- La restauration réinsère les opérations telles quelles, retirées comprises, puis leurs écritures ; les gardes la
+  laissent passer (le super-administrateur, dans un dossier sans exercice validé) ; `exercices_valides` reste restaurée
+  en dernier.
+- PLAN_DE_REPRISE.md (§ 4) et RGPD.md : une table de montants, de dates et de natures, sans identité, conservée comme
+  les livres, dix ans (LPF, art. L102 B), et partie avec le dossier.
+
+#### 8. Les migrations
+
+1. **`caisse`**, par `apply_migration` — aucune suppression, aucun `drop` : la table, ses contraintes, ses deux policies
+   et son commentaire ; `ecritures_brouillon.operation_caisse_id` (clé en cascade) et sa contrainte ;
+   `enregistrer_operation_caisse`, `enregistrer_operations_de_caisse`, `premier_jour_negatif_de_la_caisse` ; les deux
+   gardes ; les déclencheurs de la caisse sur la table, sur `lignes_bancaires` (le compte de bilan), sur
+   `encaissements_factures` et sur `a_nouveaux` ; les fonctions d'écriture exécutables par `authenticated`, celle du
+   solde par personne. Ce qu'elle touche d'existant : une colonne nulle, et des déclencheurs qui ne jugent que les
+   lignes de la caisse — aucune en production. Retour arrière : une migration qui retire tout cela, un `drop` de table
+   et de colonne, à accorder par le cabinet ; avant la première opération, elle ne détruit rien.
+2. **`caisse_retrait_et_versement`**, À COLLER par le cabinet avec sa ligne d'historique — le corps de deux fonctions
+   supprime des lignes du brouillon, et l'outil attend une confirmation qui n'arrive pas : `retirer_operation_caisse`
+   (pose `retire_le`, retire l'écriture ; la garde juge le retrait d'une recette ou d'un apport) ;
+   `ecrire_mouvement_compte_bilan` remplacée, qui accepte le compte de la caisse du plan ; la phrase du 53 dans
+   `refus_compte_de_bilan`. Elle ne détruit rien en s'appliquant. Retour arrière : les deux textes d'avant, collés de
+   même, et la fonction de retrait retirée — un versement déjà classé se remet d'abord à traiter.
+3. **`especes_sans_mouvement`**, par l'outil, EN DERNIER (un resserrement) : un déclencheur refuse qu'un encaissement en
+   espèces cite un crédit — sa contre-passation, qui cite le débit qui l'a rendu, reste admise —, la restauration
+   exceptée. Aucune ligne ne le viole. Retour arrière : retirer le déclencheur.
+
+Après chacune : son fichier dans l'export et les trois contrôles (dérive, socle, inventaire) ; `rls.sql` entier — la
+table neuve entre dans sa boucle, et un bloc exige le refus du client ; l'essai `caisse.sql` ; et, la colonne et les
+déclencheurs touchant `lignes_bancaires` et `ecritures_brouillon`, les 35 essais sur 64 qui les éprouvent, rejoués sur
+une réplique, puis en production pour ceux qui le peuvent. Si CAISSE-Q3 retient (B), une quatrième migration : la
+contrainte des journaux remplacée (un `drop constraint`) et `valider_exercice` réécrite.
+
+#### 9. Les lots
+
+Chaque lot reste neutre jusqu'à la première opération ; ils suivent l'ordre de leurs dépendances.
+
+- **C1 — La base** (migration 1). Preuves : `supabase/essais/caisse.sql` — chaque refus dans l'ordre et sous ses mots,
+  une écriture fausse refusée, la caisse négative par chacun de ses chemins, la frontière, la restauration, l'ensemble
+  du jour, le client et un autre cabinet refusés, des mutations qui mordent ; deux sessions sur une réplique (un
+  prélèvement et un versement concurrents : la seconde attend la première, puis la voit) ; la réplique égale à la
+  production avant et après (`signature.sql`) ; les 35 essais voisins. Dépend de : CAISSE-Q1 à Q3. Effort maximal,
+  `architecte`. Deux jours et demi.
+- **C1b — Le retrait et le versement** (migration 2, à coller). Preuves : l'essai du retrait ; `compteBilan.sql` rejoué,
+  le 580000 et le 275000 inchangés ; l'empreinte de l'historique, les fins de ligne ramenées à `\n`. Dépend de : C1.
+  Effort maximal. Une demi-journée, et le geste du cabinet.
+- **C2 — Le module, la lecture, la sauvegarde.** `lib/caisse.ts`, pur : les refus de la base dans l'ordre, la
+  composition au plan, les soldes jour par jour, le premier jour négatif, l'ensemble du jour ; `lib/caisseLecture.ts`
+  (`lireTout`) ; `types.ts` ; la sauvegarde derrière `CAISSE_EXPORTEE` ; « Versement d'espèces » dans
+  `comptesDeBilanProposes` et le refus du mouvement ; `aNouveaux.ts`. Preuves : `caisse.test.ts`, confronté à l'essai
+  puis au texte exporté ; `compositionsAuPlan.test.ts` (le plan décalé) ; `comptesEnDur.test.ts` ;
+  `sauvegardeCaisse.test.ts` ; `compteDeBilan.test.ts` (l'interprète de la fonction SQL, la phrase neuve). Dépend de :
+  rien, le drapeau baissé. Effort élevé, `architecte`. Un jour et demi.
+- **C3 — Les moteurs et les contrôles.** La 2035, la concordance, la CA3, la situation, l'estimation, Financement, la
+  revue analytique ; le FEC, la piste d'audit ; les préalables et les points de la Checklist (`caisse-a-reprendre`,
+  `caisse-negative`, `recettes-de-caisse-a-revoir`, `versements-especes-en-recette`). Preuves : une recette de caisse
+  dans chaque moteur (sa date, son poste, sa case), la concordance au centime, le FEC (ses journaux, sa forme,
+  `anomaliesDgfip`), le tirage, des mutations. Dépend de : C2. Effort élevé, `architecte`. Deux jours.
+- **C4 — Les écrans.** Un onglet « Caisse » après Banque (`TABS_VALIDES`, `GROUPES_PARCOURS`, `ICONES_PARCOURS`) : la
+  caisse jour par jour et son solde, la saisie d'un jour ou d'un mois, l'apport, le prélèvement, le retrait (une
+  confirmation qui nomme ce qui part), les espèces des factures du jour ; dans Banque, « Versement d'espèces » sur la
+  fiche d'un crédit ; Clôture, Écritures, « Ma simulation », la phrase de l'onglet TVA. Preuves : tests d'écran
+  (verrous, lecture partielle, rien avant le retour, le refus avant le clic) ; le banc, 0 débordement. Dépend de : C1,
+  C1b, C3. Effort élevé, `dev`. Deux jours.
+- **C5 — L'assistant.** La consigne (une opération de caisse au 530000, sans pièce, n'est pas une anomalie, et ne nomme
+  personne), la source « caisse » de `lister_ecritures` ; pour les points de la caisse, `points_a_traiter` renvoie à la
+  Vue d'ensemble, sans recopier le module (aucune copie neuve à garder) ; déployé avec C4, avant la première opération.
+  Preuves : `agentComptableConsigne.test.ts`, le contrat HTTP. Effort élevé. Une demi-journée à un jour.
+- **C6 — Le resserrement** (migration 3) : plus de candidat en espèces pour un crédit (VF5e), ni dans le complément d'un
+  crédit ni dans la fenêtre des encaissements ; puis la migration. Dépend de : C4. Une demi-journée.
+- **C7 — La révision**, après le MVP, avant la validation de 2026 : la preuve du 53 au 31 décembre et le comptage. Un
+  jour.
+
+**LE CALENDRIER, HONNÊTEMENT.** C1 à C6 : environ dix jours de développement, et trois gestes du cabinet — les réponses,
+le collage de la migration 2, l'accord des deux autres. Deux semaines, pas une : la borne haute de l'estimation donnée
+au cabinet (MVP-D2). Une semaine ne tiendrait qu'en retirant la CA3, la situation et l'estimation — qui devraient alors
+dire qu'elles taisent la caisse — et l'assistant. CAISSE-Q3 (B) ajoute un jour, Q4 (B) deux à trois, Q1 (B) trois à
+cinq. L'ordre du MVP met la caisse après la répétition générale : C1 à C4 devraient la précéder, ou la répétition gagner
+un scénario d'espèces.
+
+#### 10. Les questions au cabinet
+
+- **CAISSE-Q1 — Qui saisit la caisse.** Le praticien encaisse des espèces hors de la banque (MVP-D2) ; qui les
+  enregistre dans l'application ?
+  - (A) Le cabinet seul, dans le MVP : le praticien lui remet chaque mois son brouillard, un total par jour et par
+    nature.
+  - (B) Aussi le praticien, depuis son espace client, sous un droit en base et une policy présentée au cabinet.
+  - Recommandation : (A). C'est la réponse la plus simple qui tienne, et la seule qui n'ouvre rien au client ; elle
+    écarte aussi la question du système de caisse, la caisse de l'application étant alors une écriture comptable faite
+    après coup, le brouillard restant chez le praticien. (B) coûte trois à cinq jours et, pour un dossier redevable qui
+    encaisse des particuliers, l'examen du 3° bis du I de l'article 286 du CGI (§ 2) ; le praticien du MVP en serait
+    exclu si tous ses actes sont exonérés, ce qui reste à confirmer.
+- **CAISSE-Q2 — Une facture de l'application réglée en espèces, face au total du jour.** Le brouillard du praticien
+  compte toutes ses espèces ; l'encaissement d'une facture réglée en espèces compte déjà sa vente.
+  - (A) Le total saisi ne compte que les espèces sans facture ; l'encaissement de la facture entre dans la caisse de
+    lui-même ; la saisie d'un jour reconnaît, en base, les espèces des factures de ce jour, et une recette dont le jour
+    a changé se revoit avant la validation.
+  - (B) Le total saisi compte toutes les espèces du jour, comme le brouillard ; l'application en retranche celles des
+    factures, taux par taux, et la validation refuse un encaissement en espèces qu'aucun total ne couvre.
+  - Recommandation : (A). Aucune ne prouve qu'un billet n'est pas celui d'une facture : chacune ne tient que si le
+    cabinet sait ce que le total contient. (A) ne lie pas les encaissements du praticien aux relevés du cabinet, n'a
+    rien à retrancher par taux, et met la vérification au jour même, en base. (B) recopie le brouillard tel quel et
+    compense dans l'année une erreur de date, mais elle refuse un encaissement daté d'un autre jour que ses espèces,
+    retranche deux fois d'un total qui ne les comptait pas, et demande un total par taux à un dossier redevable.
+- **CAISSE-Q3 — Le journal de la caisse dans le FEC.** L'expert-comptable importe le FEC de l'application (MVP-D5) ; ses
+  journaux sont aujourd'hui AC, VE, BQ et OD.
+  - (A) Les journaux d'aujourd'hui : VE pour une recette, OD pour un apport ou un prélèvement, BQ pour un versement.
+  - (B) Un journal « CA » (Caisse) pour les opérations de la caisse.
+  - Recommandation : (A), revue à l'essai d'import chez l'expert-comptable. Le FEC n'impose aucun code de journal, et VE
+    est déjà celui de l'encaissement de trésorerie d'une facture, au 53 compris. (B) suit l'usage de bien des logiciels,
+    mais il élargit une contrainte (un `drop constraint`) et réécrit `valider_exercice` : un jour de plus, et une
+    migration de plus.
+- **CAISSE-Q4 — Une pièce payée en espèces.** Aujourd'hui, une pièce qu'aucun mouvement ne règle retient la validation,
+  sauf la note de frais.
+  - (A) Hors du MVP : une dépense payée en espèces reste une note de frais, avec le prélèvement des espèces qui l'ont
+    payée ; une pièce de vente réglée en espèces ne se valide pas — sa recette est dans la caisse — et se range dans les
+    documents.
+  - (B) Dans le MVP : « régler une pièce par la caisse » — la caisse devient un troisième moyen de payer une pièce
+    (`paiementsDesPieces`), et un dossier qui n'a pas basculé règle ainsi la pièce d'une facture payée en espèces.
+  - Recommandation : (A). Le dossier du MVP a basculé (MVP-D1 : le praticien valide ses factures) ; ses espèces sans
+    facture n'ont pas de pièce, et le détour de la note de frais donne le même résultat et le même 108. (B) touche la
+    règle de date de la 2035, de la CA3 et du lettrage : deux à trois jours, mieux faits après le jour J.
+
+Tranché sans question, et pourquoi : aucun nom ni texte libre (la consigne ; BOI-BNC-DECLA-10-20, § 280 et § 310 ; la
+décision du 24/09/2026) ; un total par jour, appuyé du récapitulatif que le praticien garde (PCG, art. 1032-2 ; § 70) ;
+le versement 512/53 au relevé, sans le 58 (art. 1215-58 : une seule écriture) ; la caisse jamais négative
+(art. 1215-53) ; le taux d'une recette sur un dossier assujetti (la règle du relevé) ; la trésorerie seule dans le MVP ;
+un encaissement en espèces qui ne cite aucun crédit — son dépôt passe par le versement, et le « À REVOIR » de VF5e se
+ferme ; une forme à part, obligatoire, pour les moteurs ; l'ouverture par un apport ou par les à-nouveaux.
+
+#### 11. Les risques, et ce qui reste hors de la caisse
+
+- **Des déclencheurs sur quatre tables qui en ont déjà** (`lignes_bancaires`, `encaissements_factures`, `a_nouveaux`,
+  `ecritures_brouillon`) : un défaut refuserait une écriture légitime — le classement d'un mouvement, le retrait d'un
+  encaissement. Ils ne jugent que les lignes de la caisse, et les 35 essais voisins se rejouent avant et après.
+- **`ecrire_mouvement_compte_bilan` remplacée** : une régression casserait aussi le 580000 et le 275000 ;
+  `compteBilan.sql` et l'interprète de `compteDeBilan.test.ts` la tiennent.
+- **La porte de la restauration** : le super-administrateur — le chef du cabinet en production — écrit en direct dans un
+  dossier sans exercice validé, hors des contrôles des fonctions, comme pour les encaissements et les factures ; un
+  scanner refuse tout `.insert` sur `operations_caisse` hors de la restauration.
+- **Le double compte d'une facture réglée en espèces** n'est pas prouvable (§ 4 b) : la base exige qu'on ait vu, pas
+  qu'on ait retranché. Un versement rangé en recette ne se voit que par son libellé.
+- **Le volume** : environ 250 recettes par an et par praticien, d'où la saisie d'un mois ; un import du brouillard
+  viendra plus tard.
+- **L'assistant** dirait une écriture de caisse orpheline tant que C5 n'est pas en ligne : C5 part avec C4, avant la
+  première opération.
+- **Le calendrier** : dix jours qui s'ajoutent au reste du MVP ; la mi-décembre suppose les réponses vers le 7 novembre
+  et la migration 2 collée dans la semaine où elle est présentée.
+- **Hors de la caisse** : régler une pièce par la caisse (CAISSE-Q4) ; l'ouverture au praticien (CAISSE-Q1) ; un journal
+  « CA » (CAISSE-Q3) ; l'engagement ; l'import du brouillard ; le comptage et la preuve du 53 (C7) ; les vingt-deux
+  champs du FEC (MVP-D5) ; l'e-reporting des ventes au comptant d'un assujetti, non examiné.
+
+**CE QUI ATTEND LE CABINET, HORS DES QUESTIONS.** La consigne au praticien, comme pour les données de santé : il tient
+son brouillard au jour le jour — chaque recette en espèces avec sa date, son montant, sa forme et la référence de sa
+fiche, jamais un nom dans ce qu'il remet —, garde ses justificatifs, et remet au cabinet le total de chaque jour ; puis
+les espèces qu'il avait en caisse au 1er janvier 2026 (l'apport d'ouverture) et ses prélèvements en espèces. L'accord
+des trois migrations, dont une à coller.
+
+#### 12. Points non vérifiés, et sources
+
+- NON VÉRIFIÉ : le texte du 3° et du 3° bis du I de l'article 286 du CGI, lu à travers la réponse ministérielle et le
+  BOFiP, Légifrance refusant la lecture automatique (403) ; l'article 99 est cité tel que l'entrée du 09/10/2026 l'a
+  relu. Le BOFiP ne dit pas si un total journalier saisi après coup par l'expert-comptable dans un logiciel comptable
+  porte une fonctionnalité de caisse : la lecture retenue (une écriture comptable, le brouillard restant le système) est
+  celle d'un architecte, pas d'un juriste. Le seuil de 76 € n'a pas été revalorisé, d'après les questions écrites
+  trouvées. Que le praticien du MVP n'effectue que des opérations exonérées. L'e-reporting des ventes au comptant d'un
+  assujetti.
+- [S1] Code général des impôts, art. 99, version du 21/02/2026 au 01/01/2027, cité par « LA RÉVISION DES COMPTES : LA
+  CONCEPTION » (ses sources, [S7]).
+- [S2] BOFiP, BOI-BNC-DECLA-10-20, 12/09/2012 : § 10, 50, 60, 70, 140, 280, 290, 310.
+  https://bofip.impots.gouv.fr/bofip/4809-PGP
+- [S3] Assemblée nationale, question écrite n° 15936, XVe législature, réponse publiée au JO le 12/03/2019, p. 2408 : le
+  3° du I de l'article 286 du CGI, le seuil de 76 € TTC, son extension aux revenus non commerciaux.
+  https://questions.assemblee-nationale.fr/dyn/15/questions/QANR5L15QE15936.pdf
+- [S4] Autorité des normes comptables, règlement n° 2014-03 relatif au plan comptable général, version au 1er janvier
+  2026 : art. 1031-3, 1032-1, 1032-2, 1211-10, 1215-53, 1215-58, lu le 28/10/2026 hors du dépôt.
+  https://www.anc.gouv.fr/files/anc/files/1_Normes_fran%C3%A7aises/recueil/2026/PCG--1er-janvier-2026.pdf
+- [S5] BOFiP, BOI-BNC-BASE-20-10-10, 06/07/2016 : § 1, § 10, § 20. https://bofip.impots.gouv.fr/bofip/6440-PGP
+- [S6] Code général des impôts, art. 286, I, 3° et 3° bis, à travers [S3] et [S7].
+- [S7] BOFiP, BOI-TVA-DECLA-30-10-30, versions du 01/10/2025 et du 25/03/2026 : § 10, 25, 30, 40, 180, 270.
+  https://bofip.impots.gouv.fr/bofip/10691-PGP
+- Dans le dépôt : les fichiers du préambule ; les migrations `source_de_la_vente`, `encaissements_des_factures`,
+  `compte_de_bilan_du_releve`, `refus_tva_par_sa_declaration`, `lignes_propres_au_mouvement`,
+  `validation_des_ventes_facturees` ; le catalogue de production du 28/10/2026.
