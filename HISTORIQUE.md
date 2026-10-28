@@ -39019,3 +39019,23 @@ pour tout dossier, depuis que l'assistant existe ; chez un praticien, ce tiers p
 exonérés ; (C) rien. Recommandation : (A) — aucune réponse de l'assistant n'a besoin du nom d'un client, le fournisseur
 d'une pièce d'achat reste dit, et (B) laisserait au statut de TVA, que le cabinet peut ne pas avoir réglé, la garde d'un
 nom de patient. Elle change la réponse d'un dossier qui n'a pas basculé : hors de VF9c, d'où la question.
+
+### 28/10/2026 — TROIS RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1
+
+Relevées sur la page des arbitrages le 28/10/2026 au matin, la collection `reponses` relue en entier (262 réponses,
+trois neuves, aucune autre changée). Les trois suivent la recommandation.
+
+- **VF9-Q1 — le pont dans l'assistant** : (A), « Les quatre points, pour tout dossier ». VF9d dira, pour tout dossier,
+  `ventes-en-double`, `jumelles-incoherentes`, `exemplaires-a-designer` et `ventes-hors-factures-a-verifier`, jugés par
+  régime comme la Checklist ; il change la réponse d'un dossier qui n'a pas basculé (deux clés neuves) → « VF9,
+  L'ASSISTANT DEVANT LES VENTES FACTURÉES : LA CONCEPTION », § 6 et 7.
+- **VF9C-Q1 — le tiers d'une pièce de vente au modèle** : (A), « Ne plus les transmettre, pour toute pièce de vente ».
+  Pour tout dossier, une pièce de vente part au modèle sans son tiers ni le nom de son fichier, et ses écritures sans le
+  libellé qui recopie ce tiers ; l'assistant la nomme par sa date et son montant, et le fournisseur d'une pièce d'achat
+  reste dit → « VF9C, LES POINTS ET LES OUTILS DE L'ASSISTANT ». Un lot à part, AVANT VF9d : le pont nomme des pièces de
+  vente, et il naîtra sous cette règle et sous sa garde. Les quatre lots (VF9b, VF9c, VF9C-Q1, VF9d) partent en
+  production d'un seul déploiement.
+- **23Q2Q2Q1-Q1 — la liste d'un membre de l'équipe** : (B), « Ne montrer que les dossiers ouverts par le cabinet » — ce
+  que le lot du 27/10/2026 a écrit ; rien à changer au code. L'entrée « LA LISTE D'UN MEMBRE DE L'ÉQUIPE NE MONTRE QUE
+  LES DOSSIERS QUE LE CABINET LUI OUVRE » la disait « tranchée par le cabinet le 26/10/2026 » : c'était la
+  recommandation, écrite avant que la page reçoive la réponse ; celle-ci est du 28/10/2026.
