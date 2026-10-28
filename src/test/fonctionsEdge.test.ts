@@ -179,7 +179,39 @@ describe('la base applique ce qu’on lui demande', () => {
     })
     expect(Object.keys((r.gauche as { data: Record<string, unknown>[] }).data[0])).toEqual(['libelle', 'piece_id', 'pieces'])
     expect(r.interne).toMatchObject({ count: 1, data: [{ libelle: 'Alpha', pieces: { tiers: 'Alpha' } }] })
-    await expect(sonde('return await client.from("pieces").select("id, ecritures_brouillon(libelle)")').rendre()).rejects.toThrow(/aucune clé de « pieces » vers « ecritures_brouillon »/)
+    // Adapté à VF9CQ1B : l'embarquement inverse est modélisé (le test suivant) ; une relation que le schéma ne porte pas lève.
+    await expect(sonde('return await client.from("pieces").select("id, memberships(role)")').rendre()).rejects.toThrow(/aucune clé entre « pieces » et « memberships »/)
+  })
+
+  // VF9CQ1B : le mouvement d'une ligne du brouillon embarque ses propres lignes — une ressource embarquée dans une autre, et
+  // par la clé étrangère qui la cite : PostgREST rend alors une LISTE, vide quand rien ne cite la ligne. Deux clés entre deux
+  // tables (une table qui se cite elle-même) rendraient l'embarquement ambigu, et une jointure interne imbriquée n'est pas
+  // modélisée : les deux lèvent.
+  it('une ressource embarquée dans une autre, et des enfants embarqués : une liste, vide quand rien ne cite la ligne', async () => {
+    const monde = base()
+    const M1 = 'ba000000-0000-4000-8000-000000000001'
+    const M2 = 'ba000000-0000-4000-8000-000000000002'
+    monde.base.lignes_bancaires = [
+      { id: M1, dossier_id: ID.dossier, date: '2026-01-05', montant: -45, encaissements_de_factures: false },
+      { id: M2, dossier_id: ID.dossier, date: '2026-01-06', montant: 30, encaissements_de_factures: false },
+    ]
+    monde.base.ecritures_brouillon = [
+      { id: 'ec000000-0000-4000-8000-000000000001', dossier_id: ID.dossier, date: '2026-01-05', compte: '706000', ligne_bancaire_id: M1, facture_id: null, libelle: 'Alpha' },
+      { id: 'ec000000-0000-4000-8000-000000000002', dossier_id: ID.dossier, date: '2026-01-05', compte: '512000', ligne_bancaire_id: M1, facture_id: null, libelle: 'Alpha' },
+      { id: 'ec000000-0000-4000-8000-000000000003', dossier_id: ID.dossier, date: '2026-01-07', compte: '681100', ligne_bancaire_id: null, facture_id: null, libelle: 'Dotation' },
+    ]
+    const { rendre } = sonde(`return {
+      imbrique: await client.from("ecritures_brouillon").select("compte, lignes_bancaires(montant, ecritures_brouillon(compte, facture_id))").order("id"),
+      enfants: await client.from("lignes_bancaires").select("id, ecritures_brouillon(compte)", { count: "exact" }).order("id"),
+      interne: await client.from("lignes_bancaires").select("id, ecritures_brouillon!inner(compte)", { count: "exact" }).order("id"),
+    }`, monde)
+    const r = await rendre()
+    const deM1 = { montant: -45, ecritures_brouillon: [{ compte: '706000', facture_id: null }, { compte: '512000', facture_id: null }] }
+    expect(r.imbrique).toMatchObject({ error: null, data: [{ compte: '706000', lignes_bancaires: deM1 }, { compte: '512000', lignes_bancaires: deM1 }, { compte: '681100', lignes_bancaires: null }] })
+    expect(r.enfants).toMatchObject({ count: 2, data: [{ id: M1, ecritures_brouillon: [{ compte: '706000' }, { compte: '512000' }] }, { id: M2, ecritures_brouillon: [] }] })
+    expect(r.interne).toMatchObject({ count: 1, data: [{ id: M1 }] })
+    await expect(sonde('return await client.from("encaissements_factures").select("id, encaissements_factures(id)")').rendre()).rejects.toThrow(/plusieurs clés entre « encaissements_factures » et « encaissements_factures »/)
+    await expect(sonde('return await client.from("ecritures_brouillon").select("id, lignes_bancaires(id, ecritures_brouillon!inner(compte))")').rendre()).rejects.toThrow(/jointure interne imbriquée/)
   })
 
   it('une table que le schéma exporté ne connaît pas : PGRST205, comme PostgREST', async () => {

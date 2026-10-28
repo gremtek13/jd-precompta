@@ -120,6 +120,11 @@ describe('la consigne de l’assistant', () => {
     for (const outil of ['resume_dossier', 'lister_comptes', 'points_a_traiter']) expect(description(outil), outil).not.toMatch(/pièce de vente/i)
   })
 
+  // La phrase de la consigne, et celle de la description de `lister_ecritures`, sur le débit qui rend ou défait l'argent d'un
+  // client (VF9CQ1B).
+  const PHRASE_DU_DEBIT = 'De même, un DÉBIT qui rend ou défait l\'argent d\'un client — écrit en tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d\'un encaissement — se nomme par sa date et son montant : à qui l\'argent est rendu n\'est pas transmis.'
+  const DESCRIPTION_DU_DEBIT = 'de même celui d\'une ligne d\'un débit qui rend ou défait l\'argent d\'un client — écrit en tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d\'un encaissement — (« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui l\'argent est rendu n\'est pas transmis ; celui d\'un autre débit reste.'
+
   // QUI A PAYÉ UN CRÉDIT DU RELEVÉ (VF9CQ1-Q1 : la réponse (A) du cabinet du 28/10/2026). Pour tout dossier, la ligne d'un
   // mouvement créditeur part au modèle sous la date et le montant du mouvement, celle d'un débit sous son libellé ; et une ligne
   // rattachée à rien, sans libellé (VF9CQ1-Q2). La consigne le dit, une fois, pour tout dossier, juste après la phrase des
@@ -128,13 +133,30 @@ describe('la consigne de l’assistant', () => {
   // La consigne ENVOYÉE se juge au contrat HTTP de l'assistant (« VF9CQ1 »).
   it('dit, pour tout dossier, qu’un crédit du relevé se nomme par sa date et son montant, sans qui a payé — et lister_ecritures aussi', () => {
     const source = readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
-    const phrase = '\n- Un CRÉDIT du relevé (un mouvement qui entre en banque) se nomme par sa date et son montant : qui a payé n\'est pas transmis (lister_ecritures recompose le libellé des écritures de ce mouvement) ; ne le demande pas, ne le devine pas. Le libellé d\'un débit, lui, est transmis.\n'
+    // Adaptée à VF9CQ1B : la ligne dit aussi, avant sa dernière phrase, le débit qui rend ou défait l'argent d'un client.
+    const phrase = `\n- Un CRÉDIT du relevé (un mouvement qui entre en banque) se nomme par sa date et son montant : qui a payé n'est pas transmis (lister_ecritures recompose le libellé des écritures de ce mouvement) ; ne le demande pas, ne le devine pas. ${PHRASE_DU_DEBIT} Le libellé d'un autre débit, lui, est transmis.\n`
     expect(texte.split(phrase).length - 1).toBe(1)
     expect(texte.indexOf(phrase)).toBeLessThan(texte.indexOf('${repereVentes}'))
     expect(texte).toContain('Le fournisseur d\'une pièce d\'achat, lui, est transmis.' + phrase + '- Si les données sont insuffisantes')
     const description = (outil: string) => /description: "([^"]*)"/.exec(source.slice(source.indexOf(`    name: "${outil}",`)))?.[1] ?? ''
-    expect(description('lister_ecritures')).toContain('Celui d\'une ligne d\'un crédit du relevé se recompose de la date et du montant du mouvement (« Crédit du relevé du JJ/MM/AAAA, 0,00 € ») : qui a payé n\'est pas transmis ; celui d\'un débit reste. Une ligne rattachée à rien (l\'écriture restée d\'une pièce supprimée) n\'a pas de libellé.')
+    // Adaptée à VF9CQ1B, de même.
+    expect(description('lister_ecritures')).toContain(`Celui d'une ligne d'un crédit du relevé se recompose de la date et du montant du mouvement (« Crédit du relevé du JJ/MM/AAAA, 0,00 € ») : qui a payé n'est pas transmis ; ${DESCRIPTION_DU_DEBIT} Une ligne rattachée à rien (l'écriture restée d'une pièce supprimée) n'a pas de libellé.`)
     for (const outil of ['resume_dossier', 'lister_comptes', 'lister_pieces', 'points_a_traiter']) expect(description(outil), outil).not.toMatch(/crédit du relevé|rattachée à rien/i)
+  })
+
+  // À QUI UN DÉBIT REND OU DÉFAIT L'ARGENT D'UN CLIENT (VF9CQ1B-Q1 : la réponse (A) du cabinet du 28/10/2026). Pour tout
+  // dossier, la ligne d'un débit que la base reconnaît — une ligne propre sur un produit ou un client, ou son classement par les
+  // contre-passations d'un encaissement — part au modèle sous la date et le montant du mouvement. La consigne le dit, une fois,
+  // dans la ligne du crédit du relevé, et la description de `lister_ecritures` aussi ; les quatre autres outils n'en parlent
+  // pas. La consigne ENVOYÉE se juge au contrat HTTP de l'assistant (« VF9CQ1B »).
+  it('dit, pour tout dossier, qu’un débit qui rend ou défait l’argent d’un client se nomme par sa date et son montant — et lister_ecritures aussi', () => {
+    const source = readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
+    expect(texte.split(PHRASE_DU_DEBIT).length - 1).toBe(1)
+    expect(texte.indexOf(PHRASE_DU_DEBIT)).toBeLessThan(texte.indexOf('${repereVentes}'))
+    expect(texte).toContain(`ne le demande pas, ne le devine pas. ${PHRASE_DU_DEBIT} Le libellé d'un autre débit, lui, est transmis.`)
+    const description = (outil: string) => /description: "([^"]*)"/.exec(source.slice(source.indexOf(`    name: "${outil}",`)))?.[1] ?? ''
+    expect(description('lister_ecritures').split(DESCRIPTION_DU_DEBIT).length - 1).toBe(1)
+    for (const outil of ['resume_dossier', 'lister_comptes', 'lister_pieces', 'points_a_traiter']) expect(description(outil), outil).not.toMatch(/débit du relevé|rend ou défait/i)
   })
 
   // Les comptes que le paragraphe nomme sont ceux de la vente facturée, dupliqués de src/lib/comptes.ts (étape VF4a) :

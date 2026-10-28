@@ -6,14 +6,17 @@ import { fichiersDuSchema, relationsDuSchema } from '../test/schema'
 
 // LE CLIENT D'UNE PIÈCE DE VENTE NE PART PAS AU MODÈLE (VF9C-Q1 : la réponse (A) du cabinet du 28/10/2026 ; chantier EC-Q3,
 // ligne 28.65). NI QUI A PAYÉ UN CRÉDIT DU RELEVÉ, NI LE LIBELLÉ D'UNE LIGNE RATTACHÉE À RIEN (VF9CQ1 : les réponses (A) du
-// cabinet du 28/10/2026 à VF9CQ1-Q1 et Q2).
+// cabinet du 28/10/2026 à VF9CQ1-Q1 et Q2). NI À QUI UN DÉBIT REND OU DÉFAIT L'ARGENT D'UN CLIENT (VF9CQ1B : la réponse (A) du
+// cabinet du 28/10/2026 à VF9CQ1B-Q1).
 //
 // Le tiers d'une pièce de vente est son client — chez un praticien, un patient (RGPD.md, § 8.7) —, le nom de son fichier
 // le porte souvent, et le libellé de ses écritures le recopie (`piece.tiers ?? piece.nom_fichier`, src/lib/ecritures.ts et
 // src/lib/engagement.ts). Le libellé qu'une ligne du brouillon tient d'un mouvement du relevé est celui de la banque, et celui
 // d'un crédit nomme souvent qui a payé ; l'écriture restée d'une pièce supprimée garde le libellé qui nomme son client. Pour
 // tout dossier, `agent-comptable` nomme une pièce de vente par sa date et son montant, une ligne d'un crédit par la date et le
-// montant du mouvement, et tait celui d'une ligne rattachée à rien ; un débit garde le sien. Tout ce que le modèle reçoit d'une
+// montant du mouvement, et tait celui d'une ligne rattachée à rien ; un débit qui rend ou défait l'argent d'un client — une ligne
+// propre sur un compte de produit ou de client, ou classé par les contre-passations d'un encaissement — se nomme de même par sa
+// date et son montant, un autre débit garde son libellé. Tout ce que le modèle reçoit d'une
 // pièce, ou d'une ligne du brouillon, passe par UN passage, le bloc `── DÉBUT/FIN PIÈCES DE VENTE` de la fonction. Ce test le
 // garde de trois façons :
 //   - le bloc, extrait, transpilé et exécuté SEUL — un nom qu'il emprunterait au reste du fichier lèverait —, sur une table
@@ -62,6 +65,9 @@ interface Bloc {
   RATTACHEMENTS_D_UNE_LIGNE: readonly string[]
   nomDUnePieceDeVente: (piece: { date_piece: unknown; montant_ttc: unknown }) => string
   nomDUnCreditDuReleve: (mouvement: { date: unknown; montant: unknown }) => string
+  RACINES_DES_COMPTES_D_UN_CLIENT: readonly string[]
+  nomDUnDebitDuReleve: (mouvement: { date: unknown; montant: unknown }) => string
+  debitQuiRendLArgentDUnClient: (mouvement: Record<string, unknown>) => boolean
   pieceVueParLeModele: (piece: Record<string, unknown>) => Record<string, unknown>
   libelleDuBrouillon: (ligne: Record<string, unknown>) => string | null
   libelleDUneLigneDePiece: (ligne: Record<string, unknown>) => string | null
@@ -73,9 +79,10 @@ interface Bloc {
 const NOMS = [
   'TYPES_DONT_LE_TIERS_SE_DIT', 'RATTACHEMENTS_D_UNE_LIGNE', 'nomDUnePieceDeVente', 'nomDUnCreditDuReleve', 'pieceVueParLeModele',
   'libelleDuBrouillon', 'libelleDUneLigneDePiece', 'libelleDUneLigneDuReleve', 'libelleEtSource', 'ecritureVueParLeModele',
+  'RACINES_DES_COMPTES_D_UN_CLIENT', 'nomDUnDebitDuReleve', 'debitQuiRendLArgentDUnClient',
 ] as const
-/** Les types que le bloc déclare : ce qu'il nomme d'une pièce, d'un mouvement, des factures et des encaissements. */
-const TYPES_DU_BLOC = ['PieceNommee', 'MouvementNomme', 'FactureNommeeRow', 'EncaissementNommeRow', 'VentesNommees']
+/** Les types que le bloc déclare : ce qu'il nomme d'une pièce, d'un mouvement, des factures et des encaissements ; ce qu'il lit d'une ligne d'un mouvement. */
+const TYPES_DU_BLOC = ['PieceNommee', 'MouvementNomme', 'LigneDuMouvementLue', 'FactureNommeeRow', 'EncaissementNommeRow', 'VentesNommees']
 
 /** Le bloc transpilé puis exécuté SEUL, en mode strict : il ne voit rien du reste du fichier. */
 function executer(code: string): Bloc {
@@ -106,9 +113,23 @@ const ligne = (o: Record<string, unknown>) => ({
 })
 /** Une ligne sans pièce : celle d'un mouvement, d'une vente facturée, d'une écriture composée, ou rattachée à rien. */
 const sansPiece = (o: Record<string, unknown>) => ligne({ piece_id: null, pieces: null, ...o })
-/** La ligne d'un mouvement du relevé, de ce montant, que la ligne ne porte pas forcément elle-même. */
-const duMouvement = (montant: unknown, o: Record<string, unknown> = {}) =>
-  sansPiece({ ligne_bancaire_id: ID_MOUVEMENT, lignes_bancaires: { date: '2026-02-10', montant }, ...o })
+/** Les lignes d'un mouvement, telles que `lister_ecritures` les lit avec lui (VF9CQ1B) : propres, sur ces comptes. */
+const lignesDuMouvement = (...comptes: string[]) => comptes.map((compte) => ({ compte, facture_id: null, encaissement_id: null }))
+/** Le mouvement lu tel qu'un débit d'un fournisseur : ni classé par ses encaissements, ses lignes propres sur une charge et la banque. */
+const DEBIT_D_UN_FOURNISSEUR = { encaissements_de_factures: false, ecritures_brouillon: lignesDuMouvement('606000', '512000') }
+/**
+ * La ligne d'un mouvement du relevé, de ce montant, que la ligne ne porte pas forcément elle-même ; lu avec son classement et ses
+ * lignes (`lu`), par défaut ceux d'un débit d'un fournisseur (VF9CQ1B).
+ */
+const duMouvement = (montant: unknown, o: Record<string, unknown> = {}, lu: Record<string, unknown> = DEBIT_D_UN_FOURNISSEUR) =>
+  sansPiece({ ligne_bancaire_id: ID_MOUVEMENT, lignes_bancaires: { date: '2026-02-10', montant, ...lu }, ...o })
+/** La ligne de la banque d'un débit de 45 € lu avec ce classement et ces lignes, sous un libellé qui nomme un client. */
+const debitLu = (lu: Record<string, unknown>, o: Record<string, unknown> = {}) =>
+  duMouvement(-45, { compte: '512000', sens: 'credit', montant: 45, libelle: 'VIR REMBOURSEMENT CLIENT FICTIF', ...o }, lu)
+const NOM_DU_DEBIT = 'Débit du relevé du 10/02/2026, 45,00 €'
+const LIBELLE_DU_DEBIT = 'VIR REMBOURSEMENT CLIENT FICTIF'
+/** Un débit lu en entier, ni classé par ses encaissements, sur ces lignes. */
+const surLesLignes = (...lignes: unknown[]) => ({ encaissements_de_factures: false, ecritures_brouillon: lignes })
 const achat = (o: Record<string, unknown> = {}) =>
   ligne({ libelle: 'Fournisseur fictif', pieces: { type_piece: 'achat', date_piece: '2026-01-15', montant_ttc: 120 }, ...o })
 const debit = () => duMouvement(-45, { compte: '606000', sens: 'debit', montant: 45, libelle: 'CB FOURNITURES FICTIVES' })
@@ -260,9 +281,10 @@ const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu
   ['la ligne d’un crédit que ses encaissements classent : son nom, sa source',
     (b) => b.ecritureVueParLeModele(sansPiece({ ligne_bancaire_id: ID_CLASSE, lignes_bancaires: { date: '2026-02-10', montant: 300 }, libelle: 'VIR M FICTIF' }), VENTES),
     vue(sansPiece({}), NOM_DU_CREDIT, 'mouvement_d_encaissements')],
-  ['la ligne d’un débit que ses contre-passations classent : son libellé, sa source',
-    (b) => b.ecritureVueParLeModele(sansPiece({ ligne_bancaire_id: ID_CLASSE, lignes_bancaires: { date: '2026-02-10', montant: -20 }, libelle: 'REJET VIR FICTIF' }), VENTES),
-    vue(sansPiece({}), 'REJET VIR FICTIF', 'mouvement_d_encaissements')],
+  // Adapté à VF9CQ1B : un débit que ses contre-passations classent défait l'argent d'un client, et se nomme.
+  ['la ligne d’un débit que ses contre-passations classent : son nom, sa source',
+    (b) => b.ecritureVueParLeModele(sansPiece({ ligne_bancaire_id: ID_CLASSE, lignes_bancaires: { date: '2026-02-10', montant: -20, encaissements_de_factures: true, ecritures_brouillon: lignesDuMouvement('511200', '512000') }, libelle: 'REJET VIR FICTIF' }), VENTES),
+    vue(sansPiece({}), 'Débit du relevé du 10/02/2026, 20,00 €', 'mouvement_d_encaissements')],
   ['la ligne d’un crédit que ses encaissements ne classent pas, d’un dossier qui lit ses ventes : son nom, aucune source',
     (b) => b.ecritureVueParLeModele(duMouvement(300, { libelle: 'VIR M FICTIF' }), VENTES), vue(sansPiece({}), NOM_DU_CREDIT, null)],
   ['la ligne d’une pièce, d’un dossier qui lit ses ventes : son nom, sa source', (b) => b.ecritureVueParLeModele(ligne({}), VENTES), vue(ligne({}), NOM_DE_LA_PIECE, 'piece')],
@@ -271,6 +293,65 @@ const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu
     vue(sansPiece({}), null, null)],
   ['une ligne lue sans un de ses rattachements, d’un dossier qui lit ses ventes : ni libellé ni source',
     (b) => b.ecritureVueParLeModele(sans(sansPiece({ facture_id: 'f1' }), 'cotisation_id'), VENTES), vue(sansPiece({}), null, null)],
+  // VF9CQ1B : le nom d'un débit qui rend ou défait l'argent d'un client — la date et le montant du mouvement, sans signe.
+  ['le nom d’un débit : une date et un montant, sans signe', (b) => b.nomDUnDebitDuReleve({ date: '2026-01-15', montant: -45 }), 'Débit du relevé du 15/01/2026, 45,00 €'],
+  ['le nom d’un débit : des centimes, sans séparateur de milliers', (b) => b.nomDUnDebitDuReleve({ date: '2026-12-31', montant: -1234.5 }), 'Débit du relevé du 31/12/2026, 1234,50 €'],
+  ['le nom d’un débit : sans date', (b) => b.nomDUnDebitDuReleve({ date: null, montant: -45 }), 'Débit du relevé sans date, 45,00 €'],
+  ['le nom d’un débit : une date mal formée', (b) => b.nomDUnDebitDuReleve({ date: '2026-1-5', montant: -45 }), 'Débit du relevé sans date, 45,00 €'],
+  ['le nom d’un débit : un instant au lieu d’une date', (b) => b.nomDUnDebitDuReleve({ date: '2026-01-15T10:00:00Z', montant: -45 }), 'Débit du relevé sans date, 45,00 €'],
+  // Ce que la base a écrit du débit le reconnaît : une ligne propre sur un produit ou un client, ou son classement par ses
+  // contre-passations ; chaque ligne qui tient le libellé de la banque se nomme alors, celle de la banque comme les autres.
+  ['un débit affecté à un produit (un trop-perçu remboursé) : la ligne de la banque se nomme',
+    (b) => b.ecritureVueParLeModele(debitLu(surLesLignes(...lignesDuMouvement('706000', '512000'))), null), vue(debitLu({}), NOM_DU_DEBIT)],
+  ['un débit affecté à un produit : la ligne du produit se nomme aussi',
+    (b) => b.ecritureVueParLeModele(debitLu(surLesLignes(...lignesDuMouvement('706000', '512000')), { compte: '706000', sens: 'debit' }), null),
+    vue(debitLu({}, { compte: '706000', sens: 'debit' }), NOM_DU_DEBIT)],
+  ['un débit ventilé en partie sur un produit : sa ligne de charge se nomme aussi',
+    (b) => b.ecritureVueParLeModele(debitLu(surLesLignes(...lignesDuMouvement('627000', '709000', '512000')), { compte: '627000', sens: 'debit', montant: 2 }), null),
+    vue(debitLu({}, { compte: '627000', sens: 'debit', montant: 2 }), NOM_DU_DEBIT)],
+  ['un débit dont une ligne propre est sur un client (411, en engagement) : se nomme',
+    (b) => b.ecritureVueParLeModele(debitLu(surLesLignes(...lignesDuMouvement('411000', '512000'))), null), vue(debitLu({}), NOM_DU_DEBIT)],
+  ['un débit dont une ligne propre est sur un client créditeur (419) : se nomme',
+    (b) => b.ecritureVueParLeModele(debitLu(surLesLignes(...lignesDuMouvement('419100', '512000'))), null), vue(debitLu({}), NOM_DU_DEBIT)],
+  ['un débit que ses contre-passations classent, d’un dossier qui ne lit pas ses ventes : se nomme, sans source',
+    (b) => b.ecritureVueParLeModele(debitLu({ encaissements_de_factures: true, ecritures_brouillon: lignesDuMouvement('511200', '512000') }), null), vue(debitLu({}), NOM_DU_DEBIT)],
+  ['un débit d’un fournisseur (pièce supprimée, en engagement : 401) : son libellé',
+    (b) => b.ecritureVueParLeModele(debitLu(surLesLignes(...lignesDuMouvement('401000', '512000'))), null), vue(debitLu({}), LIBELLE_DU_DEBIT)],
+  ['un virement personnel au débit (108) : son libellé',
+    (b) => b.ecritureVueParLeModele(debitLu(surLesLignes(...lignesDuMouvement('108000', '512000'))), null), vue(debitLu({}), LIBELLE_DU_DEBIT)],
+  ['une échéance d’emprunt (164, 661, 616) : son libellé',
+    (b) => b.ecritureVueParLeModele(debitLu(surLesLignes(...lignesDuMouvement('164000', '661100', '616800', '512000'))), null), vue(debitLu({}), LIBELLE_DU_DEBIT)],
+  ['une ligne d’une facture ou d’un encaissement, sur un produit ou un client, n’est pas propre : le débit garde son libellé',
+    (b) => b.ecritureVueParLeModele(debitLu(surLesLignes({ compte: '706000', facture_id: 'f1', encaissement_id: null },
+      { compte: '411000', facture_id: null, encaissement_id: 'c1' }, ...lignesDuMouvement('627000', '512000'))), null), vue(debitLu({}), LIBELLE_DU_DEBIT)],
+  ['une ligne qui n’est pas propre, au compte illisible : le débit garde son libellé',
+    (b) => b.ecritureVueParLeModele(debitLu(surLesLignes({ compte: null, facture_id: null, encaissement_id: 'c1' }, ...lignesDuMouvement('627000', '512000'))), null),
+    vue(debitLu({}), LIBELLE_DU_DEBIT)],
+  ['la ligne d’une pièce d’achat sur un débit qui se nomme : son fournisseur — la pièce avant le mouvement',
+    (b) => b.ecritureVueParLeModele(achat({ compte: '512000', sens: 'credit', ligne_bancaire_id: ID_MOUVEMENT, lignes_bancaires: { date: '2026-02-10', montant: -48, ...surLesLignes(...lignesDuMouvement('706000', '512000')) } }), null),
+    vue(achat({ compte: '512000', sens: 'credit' }), 'Fournisseur fictif')],
+  ['un crédit, quoi que disent ses lignes : le nom d’un crédit',
+    (b) => b.ecritureVueParLeModele(duMouvement(300, { libelle: 'VIR M FICTIF' }, { encaissements_de_factures: true, ecritures_brouillon: lignesDuMouvement('706000') }), null),
+    vue(duMouvement(300), NOM_DU_CREDIT)],
+  // Le côté fermé : le classement, les lignes, l'une d'elles ou son compte non lus — le débit se nomme.
+  ...([
+    ['le classement par ses encaissements absent', { ecritures_brouillon: lignesDuMouvement('606000', '512000') }],
+    ['le classement nul', { encaissements_de_factures: null, ecritures_brouillon: lignesDuMouvement('606000', '512000') }],
+    ['le classement en texte', { encaissements_de_factures: 'false', ecritures_brouillon: lignesDuMouvement('606000', '512000') }],
+    ['ses lignes absentes', { encaissements_de_factures: false }],
+    ['ses lignes nulles', { encaissements_de_factures: false, ecritures_brouillon: null }],
+    ['ses lignes, une liste vide', surLesLignes()],
+    ['ses lignes rendues sous un objet', { encaissements_de_factures: false, ecritures_brouillon: { compte: '606000', facture_id: null, encaissement_id: null } }],
+    ['une ligne nulle', surLesLignes(null, ...lignesDuMouvement('512000'))],
+    ['une ligne lue sans sa facture', surLesLignes({ compte: '606000', encaissement_id: null }, ...lignesDuMouvement('512000'))],
+    ['une ligne lue sans son encaissement', surLesLignes({ compte: '606000', facture_id: null }, ...lignesDuMouvement('512000'))],
+    ['une ligne propre sans son compte', surLesLignes({ facture_id: null, encaissement_id: null }, ...lignesDuMouvement('512000'))],
+    ['une ligne propre au compte qui n’est pas un texte', surLesLignes({ compte: 606000, facture_id: null, encaissement_id: null }, ...lignesDuMouvement('512000'))],
+  ] as const).map(([quoi, lu]) => [`un débit, ${quoi} : son nom (le côté fermé)`, (b: Bloc) => b.ecritureVueParLeModele(debitLu(lu), null), vue(debitLu({}), NOM_DU_DEBIT)] as const),
+  ['la reconnaissance, seule : un débit d’un fournisseur lu en entier n’en est pas un', (b) => b.debitQuiRendLArgentDUnClient(DEBIT_D_UN_FOURNISSEUR), false],
+  ['la reconnaissance, seule : la racine commence le compte (607 et 401700 portent un 7, 104100 un 41)',
+    (b) => b.debitQuiRendLArgentDUnClient(surLesLignes(...lignesDuMouvement('607000', '401700', '104100', '512000'))), false],
+  ['la reconnaissance, seule : une ligne propre sur un produit suffit, quel que soit son rang', (b) => b.debitQuiRendLArgentDUnClient(surLesLignes(...lignesDuMouvement('512000', '627000', '708000'))), true],
   // Ce qui est rendu tel quel l'est vraiment : ni copie ni clé ajoutée.
   ['une pièce d’achat : le même objet', (b) => {
     const p = piece({ type_piece: 'achat' })
@@ -371,10 +452,11 @@ describe('le bloc PIÈCES DE VENTE sait encore échouer', () => {
     ['libelleDUneLigneDePiece : une pièce d’achat sous le nom d’une vente',
       'TYPES_DONT_LE_TIERS_SE_DIT.includes(lue.type_piece)) return libelleDuBrouillon(ligne)\n',
       'TYPES_DONT_LE_TIERS_SE_DIT.includes(lue.type_piece)) return nomDUnePieceDeVente({ date_piece: lue.date_piece ?? null, montant_ttc: lue.montant_ttc ?? null })\n'],
-    ['libelleDUneLigneDuReleve : un crédit sous le libellé du brouillon', '  return nomDUnCreditDuReleve({ date:', '  return libelleDuBrouillon(ligne) ?? nomDUnCreditDuReleve({ date:'],
-    ['libelleDUneLigneDuReleve : un débit recomposé lui aussi', '  if (lu.montant < 0) return libelleDuBrouillon(ligne)\n', ''],
-    ['libelleDUneLigneDuReleve : le sens de la ligne pris pour celui du mouvement', '  if (lu.montant < 0) return libelleDuBrouillon(ligne)\n',
-      '  if (ligne.sens === "credit") return libelleDuBrouillon(ligne)\n'],
+    // Les trois dérives du sens, réancrées à VF9CQ1B : le débit a sa branche, et le crédit prend le mouvement nommé.
+    ['libelleDUneLigneDuReleve : un crédit sous le libellé du brouillon', '  return nomDUnCreditDuReleve(nomme)\n', '  return libelleDuBrouillon(ligne) ?? nomDUnCreditDuReleve(nomme)\n'],
+    ['libelleDUneLigneDuReleve : un débit recomposé lui aussi',
+      '  if (lu.montant < 0) {\n    return debitQuiRendLArgentDUnClient(mouvement as Record<string, unknown>) ? nomDUnDebitDuReleve(nomme) : libelleDuBrouillon(ligne)\n  }\n', ''],
+    ['libelleDUneLigneDuReleve : le sens de la ligne pris pour celui du mouvement', '  if (lu.montant < 0) {\n', '  if (ligne.sens === "credit") {\n'],
     ['libelleDUneLigneDuReleve : un mouvement non rendu pris pour un débit',
       '  if (mouvement === null || typeof mouvement !== "object") return null\n', '  if (mouvement === null || typeof mouvement !== "object") return libelleDuBrouillon(ligne)\n'],
     ['libelleDUneLigneDuReleve : un montant nul pris pour un crédit', ' || lu.montant === 0) return null', ') return null'],
@@ -388,6 +470,31 @@ describe('le bloc PIÈCES DE VENTE sait encore échouer', () => {
     ['libelleEtSource : une vente facturée sous le libellé du brouillon, faute de ses ventes', '${numero(f)}` : null, source:', '${numero(f)}` : libelleDuBrouillon(ligne), source:'],
     ['libelleEtSource : une ligne lue sans son mouvement embarqué jugée quand même', ' || !("lignes_bancaires" in ligne)', ''],
     ['libelleEtSource : la source d’un crédit classé perdue', 'source: classe ? "mouvement_d_encaissements" : null', 'source: null'],
+    // VF9CQ1B.
+    ['libelleDUneLigneDuReleve : tout débit sous son libellé, comme hier',
+      '? nomDUnDebitDuReleve(nomme) : libelleDuBrouillon(ligne)\n', '? libelleDuBrouillon(ligne) : libelleDuBrouillon(ligne)\n'],
+    ['libelleDUneLigneDuReleve : tout débit recomposé', '? nomDUnDebitDuReleve(nomme) : libelleDuBrouillon(ligne)\n', '? nomDUnDebitDuReleve(nomme) : nomDUnDebitDuReleve(nomme)\n'],
+    ['libelleDUneLigneDuReleve : un débit reconnu sous le libellé du brouillon, s’il en a un',
+      '? nomDUnDebitDuReleve(nomme) : libelleDuBrouillon(ligne)\n', '? libelleDuBrouillon(ligne) ?? nomDUnDebitDuReleve(nomme) : libelleDuBrouillon(ligne)\n'],
+    ['RACINES_DES_COMPTES_D_UN_CLIENT : le client en sort', '["7", "41"]', '["7"]'],
+    ['RACINES_DES_COMPTES_D_UN_CLIENT : le produit en sort', '["7", "41"]', '["41"]'],
+    ['RACINES_DES_COMPTES_D_UN_CLIENT : le fournisseur y entre', '["7", "41"]', '["7", "4"]'],
+    ['nomDUnDebitDuReleve : le montant signé', 'montant: Math.abs(mouvement.montant) })', 'montant: mouvement.montant })'],
+    ['nomDUnDebitDuReleve : le mot du crédit', '.replace(/^Crédit/, "Débit")', ''],
+    ['debitQuiRendLArgentDUnClient : un classement non lu pris pour un débit ordinaire',
+      '  if (mouvement.encaissements_de_factures !== false) return true\n', '  if (mouvement.encaissements_de_factures === true) return true\n'],
+    ['debitQuiRendLArgentDUnClient : le classement par ses contre-passations oublié', '  if (mouvement.encaissements_de_factures !== false) return true\n', ''],
+    ['debitQuiRendLArgentDUnClient : des lignes non lues prises pour un débit ordinaire',
+      '  if (!Array.isArray(lignes) || lignes.length === 0) return true\n', '  if (!Array.isArray(lignes) || lignes.length === 0) return false\n'],
+    ['debitQuiRendLArgentDUnClient : une liste vide prise pour lue', '  if (!Array.isArray(lignes) || lignes.length === 0) return true\n', '  if (!Array.isArray(lignes)) return true\n'],
+    ['debitQuiRendLArgentDUnClient : une ligne non lue prise pour une ligne ordinaire',
+      '    if (l === null || typeof l !== "object" || !("facture_id" in l) || !("encaissement_id" in l)) return true\n',
+      '    if (l === null || typeof l !== "object" || !("facture_id" in l) || !("encaissement_id" in l)) return false\n'],
+    ['debitQuiRendLArgentDUnClient : une ligne lue sans sa facture prise pour propre', ' || !("facture_id" in l)', ''],
+    ['debitQuiRendLArgentDUnClient : une ligne d’une facture ou d’un encaissement comptée comme propre',
+      '    if (lue.facture_id != null || lue.encaissement_id != null) return false\n', ''],
+    ['debitQuiRendLArgentDUnClient : un compte illisible pris pour une charge', '    return typeof lue.compte !== "string" || RACINES', '    return typeof lue.compte === "string" && RACINES'],
+    ['debitQuiRendLArgentDUnClient : la racine cherchée partout dans le compte', '(lue.compte as string).startsWith(r)', '(lue.compte as string).includes(r)'],
   ]
   for (const [quoi, avant, apres] of DERIVES) {
     it(`attrape ${quoi}`, () => {
@@ -441,14 +548,18 @@ const CE_QUE_LE_PASSAGE_LIT: Readonly<Record<Passage, readonly string[]>> = {
   ecritureVueParLeModele: [
     'ecritures_brouillon.libelle', ...deployee.RATTACHEMENTS_D_UNE_LIGNE.map((c) => `ecritures_brouillon.${c}`),
     'pieces.type_piece', 'pieces.date_piece', 'pieces.montant_ttc', 'lignes_bancaires.date', 'lignes_bancaires.montant',
+    'lignes_bancaires.encaissements_de_factures',
   ],
 }
 /**
  * Et la forme exacte de la pièce et du mouvement que `ecritureVueParLeModele` reçoit avec chaque ligne : embarqués À GAUCHE —
  * une ligne sans pièce, d'un mouvement du relevé ou d'une vente facturée, reste dans la liste, comme une ligne sans mouvement —,
- * et rien d'autre qu'eux : ni le tiers, ni le libellé de la banque.
+ * et rien d'autre qu'eux : ni le tiers, ni le libellé de la banque. Le mouvement, depuis VF9CQ1B, avec son classement par ses
+ * encaissements et ses lignes — leur compte, leur facture, leur encaissement, jamais leur libellé ni ce que la validation y
+ * fige —, à gauche aussi : un mouvement sans ligne resterait.
  */
-const EMBARQUES = ['pieces(type_piece, date_piece, montant_ttc)', 'lignes_bancaires(date, montant)']
+const MOUVEMENT_EMBARQUE = 'lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))'
+const EMBARQUES = ['pieces(type_piece, date_piece, montant_ttc)', MOUVEMENT_EMBARQUE]
 /** L'appel du passage, tel que l'outil le fait sur ses lignes lues : une fois, et lui seul. */
 const APPEL_DU_PASSAGE: Readonly<Record<Passage, string>> = {
   pieceVueParLeModele: '((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)',
@@ -476,7 +587,8 @@ const LECTURES_QUI_NOMMENT: readonly LectureDeclaree[] = [
   {
     zone: 'lister_ecritures', table: 'ecritures_brouillon', nomme: ['ecritures_brouillon.libelle'], nombre: 1, passage: 'ecritureVueParLeModele',
     raison: 'les lignes que l’outil rend, lues avec leurs rattachements, leur pièce et leur mouvement : chacune passe par le passage, qui écrit ce '
-      + 'qui en sort — le libellé d’une ligne de pièce de vente et d’un crédit recomposé, celui d’une ligne rattachée à rien tu',
+      + 'qui en sort — le libellé d’une ligne de pièce de vente, d’un crédit et d’un débit qui rend ou défait l’argent d’un client '
+      + 'recomposé, celui d’une ligne rattachée à rien tu ; le mouvement lu avec son classement et les comptes de ses lignes',
   },
   {
     zone: 'points_a_traiter', table: 'pieces', nomme: ['pieces.tiers'], nombre: 2, passage: null,
@@ -505,11 +617,14 @@ function entrees(texte: string): string[] {
   return out
 }
 
-/** Les colonnes d'une sélection, `table.colonne`, ressources embarquées comprises ; une forme inconnue lève. */
+/**
+ * Les colonnes d'une sélection, `table.colonne`, ressources embarquées comprises — à toute profondeur : depuis VF9CQ1B, le
+ * mouvement d'une ligne embarque ses propres lignes ; une forme inconnue lève.
+ */
 function colonnesDe(table: string, selection: string): string[] {
   return entrees(selection).flatMap((e) => {
     if (/^\w+$/.test(e)) return [`${table}.${e}`]
-    const embarquee = /^(\w+)(?:!inner)?\(([^()]*)\)$/.exec(e)
+    const embarquee = /^(\w+)(?:!inner)?\((.*)\)$/s.exec(e)
     if (embarquee) return colonnesDe(embarquee[1], embarquee[2])
     throw new Error(`une sélection que le scanner ne sait pas lire : « ${e} »`)
   })
@@ -587,8 +702,11 @@ function fautesDe(source: string): string[] {
     // Ce que le passage lit, chaque sélection le porte.
     for (const l of siennes) {
       for (const t of l.selections) {
+        // Une colonne de la table lue se cherche à son premier niveau (VF9CQ1B) : les lignes du mouvement, embarquées, portent
+        // aussi une facture et un encaissement, qui ne sont pas les rattachements de la ligne.
         const lues = colonnesDe(d.table, t)
-        const manque = CE_QUE_LE_PASSAGE_LIT[d.passage].filter((c) => !lues.includes(c))
+        const premierNiveau = entrees(t).filter((e) => /^\w+$/.test(e)).map((e) => `${d.table}.${e}`)
+        const manque = CE_QUE_LE_PASSAGE_LIT[d.passage].filter((c) => !(c.startsWith(`${d.table}.`) ? premierNiveau : lues).includes(c))
         if (manque.length > 0) fautes.push(`${d.zone} : une sélection sans ${manque.join(', ')}, que ${d.passage} lit`)
         if (d.passage === 'ecritureVueParLeModele') {
           for (const forme of EMBARQUES) {
@@ -638,7 +756,7 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
   // Un scanner qui rend « aucune faute » sur la vraie source n'a rien prouvé tant qu'on ne l'a pas vu en rendre : chaque
   // défaut ci-dessous est posé dans la vraie source, en mémoire.
   const source = sourceDeployee()
-  const SELECTION_DES_LIGNES = 'piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant)"'
+  const SELECTION_DES_LIGNES = 'piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"'
   const DEFAUTS: readonly (readonly [quoi: string, mutee: () => string])[] = [
     ['une lecture de plus du tiers, dans resume_dossier', () => muter(source, [[
       'admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "a_valider"),',
@@ -652,7 +770,7 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
     ['la pièce embarquée qui rapporte son tiers', () => muter(source, [[
       'pieces(type_piece, date_piece, montant_ttc), lignes_bancaires', 'pieces(type_piece, date_piece, montant_ttc, tiers), lignes_bancaires']])],
     ['la pièce embarquée oubliée d’une des deux sélections', () => muter(source, [[
-      ', pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant)"', ', lignes_bancaires(date, montant)"']])],
+      `, pieces(type_piece, date_piece, montant_ttc), ${MOUVEMENT_EMBARQUE}"`, `, ${MOUVEMENT_EMBARQUE}"`]])],
     ['la pièce embarquée en jointure interne : une ligne sans pièce disparaîtrait', () => muter(source, [[
       'pieces(type_piece, date_piece, montant_ttc), lignes_bancaires', 'pieces!inner(type_piece, date_piece, montant_ttc), lignes_bancaires']])],
     ['une sélection par une variable', () => muter(source, [[
@@ -669,11 +787,25 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
       'admin.from("soldes_reportes").select(', 'admin.from(tableDesSoldes).select(']])],
     ['le scanner aveugle : plus aucune lecture reconnue', () => source.replaceAll('.from(', '.de(')],
     // VF9CQ1 : le mouvement de chaque ligne, ses rattachements, le libellé de la banque, ce que la validation fige au brouillon.
-    ['le mouvement embarqué qui rapporte son libellé', () => muter(source, [['lignes_bancaires(date, montant)"', 'lignes_bancaires(date, montant, libelle)"']])],
-    ['le mouvement embarqué qui rapporte son libellé brut', () => muter(source, [['lignes_bancaires(date, montant)"', 'lignes_bancaires(date, montant, libelle_brut)"']])],
-    ['le mouvement de chaque ligne oublié', () => muter(source, [[', lignes_bancaires(date, montant)"', '"']])],
-    ['le mouvement de chaque ligne lu sans son montant', () => muter(source, [['lignes_bancaires(date, montant)"', 'lignes_bancaires(date)"']])],
-    ['le mouvement de chaque ligne en jointure interne : une ligne sans mouvement disparaîtrait', () => muter(source, [['lignes_bancaires(date, montant)"', 'lignes_bancaires!inner(date, montant)"']])],
+    // Réancrés à VF9CQ1B : le mouvement embarqué porte aussi son classement et ses lignes.
+    ['le mouvement embarqué qui rapporte son libellé', () => muter(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires(date, montant, libelle, ']])],
+    ['le mouvement embarqué qui rapporte son libellé brut', () => muter(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires(date, montant, libelle_brut, ']])],
+    ['le mouvement de chaque ligne oublié', () => muter(source, [[`, ${MOUVEMENT_EMBARQUE}"`, '"']])],
+    ['le mouvement de chaque ligne lu sans son montant', () => muter(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires(date, ']])],
+    ['le mouvement de chaque ligne en jointure interne : une ligne sans mouvement disparaîtrait', () => muter(source, [['lignes_bancaires(date, montant, ', 'lignes_bancaires!inner(date, montant, ']])],
+    // VF9CQ1B : le classement du mouvement et ses lignes, lus avec lui ; jamais leur libellé ni ce que la validation y fige.
+    ['le classement du mouvement non lu', () => muter(source, [['lignes_bancaires(date, montant, encaissements_de_factures, ', 'lignes_bancaires(date, montant, ']])],
+    ['les lignes du mouvement non lues', () => muter(source, [['encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"', 'encaissements_de_factures)"']])],
+    ['les lignes du mouvement lues sans leur compte', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement lues sans leur facture', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, encaissement_id))"']])],
+    ['les lignes du mouvement lues sans leur encaissement', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, facture_id))"']])],
+    ['les lignes du mouvement lues avec leur libellé', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, libelle, facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement lues avec leur référence de pièce figée', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, piece_ref, facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement lues avec leur compte auxiliaire figé', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(compte, comp_aux_lib, facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement en jointure interne', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon!inner(compte, facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement désignées sous une forme que le scanner ne sait pas lire', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon!ligne_bancaire_id(compte, facture_id, encaissement_id))"']])],
+    ['les lignes du mouvement lues en entier (*)', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(*))"']])],
+    ['le mouvement de chaque ligne embarquant aussi ses encaissements', () => muter(source, [['encaissement_id))"', 'encaissement_id), encaissements_factures(id))"']])],
     ...['ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id'].map((c) => [
       `le rattachement ${c} non lu`, () => muter(source, [[SELECTION_DES_LIGNES, SELECTION_DES_LIGNES.replace(`, ${c}`, '')]]),
     ] as const),
