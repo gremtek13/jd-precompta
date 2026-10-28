@@ -37,11 +37,12 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
 données vers la mi-décembre 2026 (sinon la mi-janvier 2027), la 2035 déposée en mai 2027 par l'expert-comptable, qui
 importe le FEC (MVP-D5). La répétition générale rejoue son année 2025 réelle, dans le même dossier (MVP-D7), comparée à
 la 2035 déposée (MVP-D6) : ses données entrent vers le 20 novembre, leurs préalables avant. Le praticien valide ses
-factures (MVP-D1), la caisse entre (MVP-D2 ; conçue le 28/10/2026, huit lots et trois migrations ; le praticien la
-saisit aussi et une pièce s'y règle, CAISSE-Q1 et Q4, à reprendre → « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION »), le
-plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y
-comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS
-LA MI-DÉCEMBRE 2026 ».
+factures (MVP-D1), la caisse entre (MVP-D2 ; conçue puis reprise le 28/10/2026 : le praticien la saisit aussi, sur un
+dossier exonéré ou en franchise, et une pièce s'y règle — environ vingt jours, cinq migrations → « LA CAISSE D'UN
+DOSSIER BNC : LA CONCEPTION », « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE »), le plan Pro de
+Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y comptent, souvent
+pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE
+2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
@@ -102,8 +103,9 @@ LA MI-DÉCEMBRE 2026 ».
     DE L'ASSISTANT » ; une pièce de vente, de tout dossier, sans son client — ni tiers, ni fichier, ni libellé —, par le
     seul passage du bloc PIÈCES DE VENTE (VF9C-Q1, au dépôt) → « VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE VENTE AU
     MODÈLE » ; par le même passage, la ligne d'un crédit du relevé sous la date et le montant du mouvement, jamais qui a
-    payé, et une ligne rattachée à rien sans libellé ; un débit garde le sien (VF9CQ1, au dépôt) → « VF9CQ1, NI LE
-    LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE ».
+    payé, et une ligne rattachée à rien sans libellé ; un débit garde le sien (VF9CQ1, au dépôt), sauf celui qui rend ou
+    défait l'argent d'un client (VF9CQ1B-Q1, à écrire) → « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE
+    RATTACHÉE À RIEN AU MODÈLE ».
   - `create-cabinet`, `delete-cabinet` (super-admin) ; `create-team-member`, `create-client-access`.
   - `extract-piece` — OCR (Textract) puis citation des champs ; réservée à un compte RATTACHÉ et à `receive-email` (clé
     secrète en `apikey`).
@@ -623,11 +625,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   D'UNE PIÈCE DE VENTE AU MODÈLE ». VF9CQ1 le 28/10/2026, au dépôt, à déployer avec les trois autres : pour tout
   dossier, la ligne d'un crédit du relevé part au modèle sous la date et le montant du mouvement, celle d'un débit sous
   son libellé, une ligne rattachée à rien sans libellé, par le même passage, qui écrit ce qui sort de chaque ligne et
-  lit ses huit rattachements ; une question au cabinet, VF9CQ1B-Q1 (le libellé d'un débit qui rend l'argent d'un client)
-  → « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE ». Restent le déploiement des
-  quatre ensemble avant les données réelles, puis VF9d après le MVP (EC3-Q9, la facture reprise, va à A8) → « TROIS
-  RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 », « NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8,
-  CAISSE-Q1 À Q4, 28.5E-Q1 ».
+  lit ses huit rattachements ; une question au cabinet, VF9CQ1B-Q1 (le libellé d'un débit qui rend l'argent d'un
+  client), tranchée le 28/10/2026 à la recommandation : un tel débit sous sa date et son montant, pour tout dossier →
+  « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE ». Restent ce petit lot, le
+  déploiement des cinq ensemble avant les données réelles, puis VF9d après le MVP (EC3-Q9, la facture reprise, va à A8)
+  → « TROIS RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 », « NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7
+  ET D8, CAISSE-Q1 À Q4, 28.5E-Q1 », « HUIT RÉPONSES DU CABINET : A7-Q1 À Q3, VF9CQ1B-Q1, CAISSE2-Q1 À Q4 ».
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
