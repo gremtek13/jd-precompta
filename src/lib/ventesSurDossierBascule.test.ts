@@ -283,7 +283,7 @@ describe('les essais qui cochent « Ventes »', () => {
       'articles.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
       'dossiersAuRibAConfirmer.sql', 'droitsAcces.sql', 'ecrituresVentesFacturees.sql', 'etatFactureElectronique.sql',
       'exemplairesDesFactures.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
-      'parametresFacturation.sql', 'piecesJointesEcartees.sql', 'rls.sql', 'simulationDesVentesFacturees.sql',
+      'mentionsFigees.sql', 'parametresFacturation.sql', 'piecesJointesEcartees.sql', 'rls.sql', 'simulationDesVentesFacturees.sql',
       'ventesClient.sql', 'ventesFacturees.sql',
     ])
     for (const n of ecrivent) expect(BASCULE.some((m) => m.test(lire(`supabase/essais/${n}`))), n).toBe(true)

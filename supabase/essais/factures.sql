@@ -63,6 +63,13 @@
 -- sur les factures, `factures_emises_source_de_la_vente` (avant l'insertion et la modification, ligne par ligne : 23),
 -- qui fixe la source de la vente à la validation. Le contrôle 105 le compte ; rien d'autre ne change — aucun dossier
 -- de l'essai n'a basculé, ses factures se valident comme hier. supabase/essais/ventesFacturees.sql éprouve le reste.
+--
+-- ADAPTÉ LE 28/10/2026 À L'ÉTAPE A7a (espace client, ligne 51.5 ; migration `mentions_figees`, PRÉPARÉE, pas encore en
+-- base ; son témoin : la colonne `factures_emises.mentions_figees`) : le numéro d'engagement s'ouvre à tout acheteur
+-- (C. com., art. L441-9, I : le numéro du bon de commande établi par l'acheteur), le code service restant à l'organisme
+-- public. Le contrôle 28 attend l'état où la base se trouve — refusé avant la migration, accepté après ; le 27 ne change
+-- pas. Le reste de l'étape — la provenance des lignes, ce que la validation fige, la garde — se joue dans
+-- supabase/essais/mentionsFigees.sql.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -76,6 +83,7 @@ declare
   cle text; valeur text; s text;
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
+  mentions_figees boolean;
   verdicts jsonb := '[]'::jsonb;
 begin
   select m.dossier_id into dossier_client from memberships m where m.user_id = client order by m.dossier_id limit 1;
@@ -90,6 +98,10 @@ begin
   if exists (select 1 from memberships m where m.user_id = client and m.droit_ventes) then
     raise exception 'ESSAI_IMPOSSIBLE : le client d''essai porte le droit « Ventes » sur un de ses dossiers (voir ventesClient.sql)';
   end if;
+  -- Depuis la migration `mentions_figees` (étape A7a ; son témoin : la colonne `factures_emises.mentions_figees`), le
+  -- numéro d'engagement s'ouvre à tout acheteur : le contrôle 28 attend l'état où la base se trouve.
+  select exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'mentions_figees'
+                 and not attisdropped) into mentions_figees;
 
   ids := jsonb_build_object('CAB', cabinet, 'DC', dossier_client, 'CLIENT', client,
     'A', 'e55a2000-0000-4000-8000-0000000000a1', 'B', 'e55a2000-0000-4000-8000-0000000000a2',
@@ -158,7 +170,7 @@ begin
     array['controle', '26. une adresse électronique pour un particulier', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, type_client, tiers_adresse_electronique) values ('{A}', 'ESSAI CONTRAINTE', 'non_assujetti', '123456789')$q$, '23514', '%"factures_emises_adresse_electronique_routee"%'],
     array['controle', '26b. une adresse électronique sans client', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, tiers_adresse_electronique) values ('{A}', 'ESSAI CONTRAINTE', '123456789')$q$, '23514', '%"factures_emises_adresse_electronique_routee"%'],
     array['controle', '27. un code service pour un client qui n''est pas un organisme public', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, type_client, code_service) values ('{A}', 'ESSAI CONTRAINTE', 'assujetti', 'SERVICE')$q$, '23514', '%"factures_emises_organisme_public"%'],
-    array['controle', '28. un numéro d''engagement sans client', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, numero_engagement) values ('{A}', 'ESSAI CONTRAINTE', 'EJ-1')$q$, '23514', '%"factures_emises_organisme_public"%'],
+    array['controle', '28. un numéro d''engagement sans client : refusé avant l''étape A7a, accepté depuis', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, numero_engagement) values ('{A}', 'ESSAI CONTRAINTE', 'EJ-1')$q$, case when mentions_figees then 'OK' else '23514' end, case when mentions_figees then '' else '%"factures_emises_organisme_public"%' end],
     array['controle', '29. un code service de 101 caractères', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, type_client, code_service) values ('{A}', 'ESSAI CONTRAINTE', 'organisme_public', repeat('S', 101))$q$, '23514', '%"factures_emises_code_service_check"%'],
     array['controle', '30. un code service blanc', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, type_client, code_service) values ('{A}', 'ESSAI CONTRAINTE', 'organisme_public', '   ')$q$, '23514', '%"factures_emises_code_service_check"%'],
     array['controle', '31. un numéro d''engagement de 51 caractères', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, type_client, numero_engagement) values ('{A}', 'ESSAI CONTRAINTE', 'organisme_public', repeat('E', 51))$q$, '23514', '%"factures_emises_numero_engagement_check"%'],
