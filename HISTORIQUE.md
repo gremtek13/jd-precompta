@@ -39039,3 +39039,42 @@ trois neuves, aucune autre changée). Les trois suivent la recommandation.
   que le lot du 27/10/2026 a écrit ; rien à changer au code. L'entrée « LA LISTE D'UN MEMBRE DE L'ÉQUIPE NE MONTRE QUE
   LES DOSSIERS QUE LE CABINET LUI OUVRE » la disait « tranchée par le cabinet le 26/10/2026 » : c'était la
   recommandation, écrite avant que la page reçoive la réponse ; celle-ci est du 28/10/2026.
+
+### 28/10/2026 — LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026
+
+(Décision du cabinet du 28/10/2026, dans la conversation. Rien de changé au code ni en base ; la feuille de route Notion
+et la page des arbitrages mises à jour sur son accord ; le plan imprimable, à la charte de JD Consult, déposé sous
+l'encadré « Le MVP » de la page de tête de la feuille de route, hors du dépôt.)
+
+**LA DÉCISION.** Un MVP : un premier dossier BNC réel, un praticien en trésorerie, de la pièce jusqu'à la 2035 de
+l'exercice 2026, avec la facturation et le relevé importé par fichier. La 2035 de 2026 ne se fait qu'en 2027 (le relevé
+de décembre, le formulaire 2027, le barème kilométrique publié au printemps ; due vers la mi-mai 2027) : la mi-décembre
+est la date où l'application doit être prête à recevoir les vraies données.
+
+**LE CLASSEMENT.** Les 50 lignes restantes, chacune « indispensable au MVP » ou « après ». Indispensables, souvent pour
+une partie : 28.65 (VF9C-Q1 et le déploiement de l'assistant ; VF9d, le pont, après), 51.5 (A7 seulement, la facture qui
+fige ses mentions — aujourd'hui elle n'imprime ni « EI » après le nom d'un entrepreneur individuel, ni les paramètres
+saisis ; A9 et P4 si le cabinet facture au nom du praticien), 28.55 (réglée par A7), 23.3 (la 2035 et les
+amortissements), 21 (l'accord de Resend, la clause RGPD et la consigne au praticien), 23.4 (la désactivation des clés
+historiques). Quatre lignes neuves, pour ce qui ne se code pas : la sauvegarde éprouvée (20.65), la répétition générale
+(23.35), le jour J (29.7), la 2035 de l'exercice 2026 (29.8). La caisse (26.6) entre si le praticien encaisse des
+espèces hors de la banque (MVP-D2). Tout le reste après, chaque ligne avec sa raison dans le plan imprimable.
+
+**L'ORDRE.** VF9C-Q1 et le déploiement de l'assistant ; A7 ; la sauvegarde et une restauration jouée sur une réplique ;
+la répétition générale, un praticien fictif sur toute l'année 2026 avec le vrai format d'export de sa banque ; les
+écarts du contre-calcul dès les chiffres de l'expert ; selon les réponses, la caisse et le mandataire ; le jour J vers
+le 14 décembre (les dossiers de test supprimés, les autorisations de la session resserrées) ; puis, de janvier à mai
+2027, la validation de 2026 et la 2035.
+
+**LA DATE.** Mi-décembre tient, sans marge, à trois conditions : les chiffres de l'expert pour la 2035 et les
+amortissements avant le 20 novembre ; les décisions MVP-D1 à D4 d'ici le 7 novembre et la migration d'A7 collée dans la
+semaine où elle est présentée ; rien d'autre que la liste d'ici là. Sinon, la mi-janvier 2027, sans effet sur la 2035.
+Le code n'est pas ce qui freine (trois à cinq semaines de développement au rythme ralenti) : ce sont les chiffres de
+l'expert et les gestes du cabinet.
+
+**CE QUI A CHANGÉ HORS DU DÉPÔT.** Dans Notion, la case « MVP » (sa description dit la décision), cochée sur dix lignes,
+les quatre lignes neuves, un encadré « Le MVP » sous les barres, qui dit quelle partie de chaque ligne compte, et les
+barres recomptées par requête : 144 lignes faites sur 194 (74 %), et 144 sur 181 pour un dossier BNC (80 %) — elles
+baissent parce que quatre lignes entrent. Dans la page des arbitrages (version 42, 293 fiches), les cinq décisions
+MVP-D1 à MVP-D5 — qui valide les factures du praticien, les espèces, la sauvegarde, le premier praticien, le dépôt de la
+2035 — et un geste, la longueur minimale des mots de passe à relever à dix.
