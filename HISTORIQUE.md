@@ -40700,3 +40700,58 @@ d'une pièce de vente supprimée, en trésorerie).
   le cabinet le classe sur un produit, et il se nomme. (B) Nommer tout débit qu'une contre-passation, même retirée, a
   cité : une lecture de plus (les encaissements de chaque mouvement), et un retrait qui ne compte plus. Recommandation :
   (A) — la base ne reconnaît plus ce débit, et (B) jugerait contre le geste du cabinet.
+
+### 28/10/2026 — L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT — EC-Q3 (LIGNE 28.65)
+
+(Chantier EC-Q3, ligne 28.65. En production : `agent-comptable` version 49, `verify_jwt` faux, `ezbr_sha256`
+`e394873c…`. Au dépôt : `supabase/essais/allerretour.py`, CLAUDE.md. Ce qui est parti, d'un seul déploiement, avant les
+données réelles du 20 novembre : VF9b, VF9c, VF9C-Q1, VF9CQ1 et VF9CQ1B → « VF9B, LA SOURCE, LES EXEMPLAIRES ET LES
+PAIEMENTS DE L'ASSISTANT », « VF9C, LES POINTS ET LES OUTILS DE L'ASSISTANT », « VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE
+VENTE AU MODÈLE », « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE », « VF9CQ1B,
+LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE ET SON MONTANT ». Le modèle n'a pas été appelé.)
+
+**LA RECOPIE NE PASSAIT PLUS.** Jusqu'ici, déployer une Edge Function, c'était recopier son fichier au caractère près
+dans un paramètre de l'outil, puis relire la copie en ligne (`allerretour.py`). Celui de `main` au commit `66eb5c8` fait
+4 144 lignes et 298 339 octets (md5 `dc5ef87d…`). Trois agents n'ont pas pu le recopier : deux ont refusé d'essayer, le
+jugeant trop long, alors que la version 48 (3 313 lignes) était passée d'un seul appel la veille ; le troisième, chargé
+d'essayer pour de bon, a été coupé pendant sa lecture par un filtre de sécurité — le fichier porte la consigne donnée au
+modèle de l'assistant, et une longue recopie mot pour mot d'un tel texte le déclenche. La session n'avait pas non plus
+la place de le lire en entier. Faire recopier ce fichier par un modèle n'est donc plus fiable, et le sera de moins en
+moins à mesure qu'il grandit.
+
+**LA VOIE : IMPORTER LE FICHIER DU DÉPÔT À UN COMMIT.** Le fichier déployé ne compte plus que deux lignes de commentaire
+et une ligne de code, `import
+"https://raw.githubusercontent.com/gremtek13/jd-precompta/<commit>/supabase/functions/agent-comptable/index.ts"`, le
+commit écrit en entier. L'outil reste `deploy_edge_function`, `verify_jwt` passé à faux ; c'est le déploiement qui va
+chercher le module et ses trois imports `npm:`, et les compose dans le paquet de la fonction. L'empreinte entière fige
+le contenu : un commit ne change pas, un nom de branche bougerait. Le dépôt étant public, l'import ne révèle rien qui
+n'y soit déjà.
+
+**MESURÉ AVANT D'ÉCRASER.** (1) Le fichier servi à cette adresse au commit `66eb5c8` : md5 `dc5ef87d…`, celui de `main`,
+en `text/plain; charset=utf-8` — Deno en tire le type de l'extension `.ts` ; au commit `688994a`, celui de la v48 :
+`fbda4c30…`. (2) Deno 2.5.6, en local : `deno info` résout le module distant et ses imports `npm:` (86 dépendances),
+mais seulement dans un dossier qu'aucun `package.json` ne coiffe — sous le projet npm du dépôt, Deno cherche les paquets
+dans `node_modules` et échoue. (3) La même ligne démarrée en local (`--cached-only`, le réseau limité au port qu'elle
+sert) : un POST sans session rend 401 « Non authentifié. », un GET 405. (4) La v48 en ligne n'avait pas changé depuis
+son déploiement vérifié (version 48, `ezbr_sha256` `fe62066b…`) : sa comparaison au dépôt, faite alors, tenait encore.
+
+**EN LIGNE.** Version 49, `verify_jwt` faux, `ezbr_sha256` `e394873c…`. `get_edge_function` ne rend plus que les trois
+lignes ; le module importé n'y figure pas. Sans session, un POST rend 401 « Non authentifié. » et un GET 405 : la
+fonction démarre, et c'est le module importé qui répond. La v48 répondait de même : ce qui a changé vit derrière une
+session et le modèle, qu'une vérification n'appelle pas. Ce qui dit le code en ligne, c'est le commit nommé dans la
+copie déployée, que `allerretour.py` compare au dépôt.
+
+**`allerretour.py` SUIT L'IMPORT.** Une copie déployée faite d'une seule ligne de code qui importe ce dépôt à un commit
+entier se compare autrement : le fichier de CE commit, lu dans le clone (`git show`), octet pour octet contre le fichier
+du dépôt. Un commit abrégé, un nom de branche, un autre dépôt ou une seconde ligne de code ne sont pas reconnus : la
+comparaison d'une recopie s'applique alors, et elle échoue. Défauts plantés : le commit de la v48 rend la différence
+d'un fichier plus ancien ; un autre fichier importé est refusé ; un commit absent du clone demande `git fetch`. Sur la
+v49 : « la copie déployée importe supabase/functions/agent-comptable/index.ts au commit 66eb5c8, identique au dépôt
+(4144 lignes) ; rien n'a été recopié ».
+
+**CE QUI CHANGE POUR LA SUITE.** `agent-comptable` se déploie désormais ainsi, au commit de `main` qui porte la version
+fusionnée ; `bordures.py` et le décodage des `\uXXXX` ne le concernent plus, rien n'étant recopié. Revenir à la v48 : la
+même ligne au commit `688994a9cf8c41192269c04419c4aaec347ded56`. Les limites : le déploiement a besoin de GitHub et d'un
+dépôt public — un import refusé fait échouer le déploiement, la version en ligne reste ; `get_edge_function` ne montre
+plus le code, le commit le dit ; `npm:@supabase/supabase-js@2` se résout au déploiement, comme avant. Les autres
+fonctions gardent la recopie, qui passe encore ; la même voie leur est ouverte le jour où elle échouera.

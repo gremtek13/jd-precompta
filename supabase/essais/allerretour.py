@@ -33,6 +33,13 @@ transcription est la plus longue, donc la plus exposée.
 CE QU'IL PROUVE : la transcription. CE QU'IL NE PROUVE PAS : que la fonction s'exécute, ni ce qu'elle
 a le DROIT de faire chez AWS (voir `edgeFunctionsIam.test.ts`), ni son `verify_jwt` — qui se relit
 dans le résultat du déploiement et se repasse explicitement à chaque fois.
+
+ET UNE COPIE DÉPLOYÉE PEUT N'ÊTRE QU'UN IMPORT DU DÉPÔT. Depuis le 28/10/2026 (`agent-comptable` v49),
+une fonction trop longue pour être recopiée par un modèle se déploie par une seule ligne qui importe
+son fichier du dépôt public, à un commit nommé par son empreinte entière : rien n'est transcrit, et le
+contenu d'un commit ne change pas. La comparaison porte alors sur ce qui peut encore différer : le
+fichier de CE commit, lu dans le clone, octet pour octet contre le fichier du dépôt — un commit plus
+ancien que le fichier, ou un autre fichier importé, ressort comme une différence.
 """
 import json
 import os
@@ -118,6 +125,49 @@ def source_deployee(fonction: str, marqueur: str | None) -> str | None:
                 raise
 
 
+# La seule ligne de code d'une copie déployée qui importe le dépôt (voir l'en-tête) ; les commentaires et
+# les lignes vides autour ne comptent pas. Le commit s'écrit en entier : un nom de branche bougerait.
+IMPORT_DU_DEPOT = re.compile(
+    r'import "https://raw\.githubusercontent\.com/gremtek13/jd-precompta/([0-9a-f]{40})/([^"\s]+)";?')
+
+
+def import_du_depot(deploye: str) -> tuple[str, str] | None:
+    """(commit, chemin) quand la copie déployée n'est qu'un import du dépôt, None sinon."""
+    code = [l.strip() for l in deploye.split('\n') if l.strip() and not l.strip().startswith('//')]
+    if len(code) != 1:
+        return None
+    trouve = IMPORT_DU_DEPOT.fullmatch(code[0])
+    return (trouve.group(1), trouve.group(2)) if trouve else None
+
+
+def comparer_au_commit(commit: str, chemin_importe: str, chemin: str) -> int:
+    """Le fichier du commit importé, lu dans le clone, comparé octet pour octet au fichier du dépôt."""
+    racine = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True,
+                            cwd=os.path.dirname(os.path.abspath(chemin))).stdout.strip()
+    relatif = os.path.relpath(os.path.abspath(chemin), racine)
+    if relatif != chemin_importe:
+        print(f"La copie déployée importe {chemin_importe}, pas {relatif}")
+        return 1
+    importe = subprocess.run(['git', 'show', f'{commit}:{chemin_importe}'], cwd=racine, capture_output=True)
+    if importe.returncode != 0:
+        print(f"Le commit {commit[:7]} n'est pas dans ce clone : `git fetch origin`, puis rejouer")
+        return 1
+    with open(chemin, 'rb') as f:
+        depot = f.read()
+    if importe.stdout != depot:
+        with tempfile.NamedTemporaryFile('wb', suffix='.ts', delete=False) as f:
+            f.write(importe.stdout)
+        resultat = subprocess.run(['diff', '-u', f.name, chemin], capture_output=True, text=True)
+        os.unlink(f.name)
+        print(f"La copie déployée importe le commit {commit[:7]}, dont le fichier diffère du dépôt :")
+        print(resultat.stdout[:8000])
+        return 1
+    lignes = depot.count(b'\n')
+    print(f"ALLER-RETOUR : la copie déployée importe {chemin_importe} au commit {commit[:7]}, "
+          f"identique au dépôt ({lignes} lignes) ; rien n'a été recopié")
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         raise SystemExit(__doc__)
@@ -129,6 +179,10 @@ def main() -> int:
         print("INTROUVABLE dans le journal — le résultat de get_edge_function n'y est pas encore écrit"
               + (", ou aucun ne porte le marqueur" if marqueur else ""))
         return 1
+
+    importe = import_du_depot(deploye)
+    if importe is not None:
+        return comparer_au_commit(*importe, chemin)
 
     brut = open(chemin, encoding='utf8').read()
     # Déployer par l'outil MCP DÉCODE les échappements `\\uXXXX` : on applique le même décodage à la

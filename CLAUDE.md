@@ -96,17 +96,16 @@ pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER
   toute migration : y ajouter son fichier et rejouer les trois contrôles de `supabase/schema/README.md` (dérive, socle,
   inventaire).
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
-  - `agent-comptable` — assistant IA (Bedrock), plafond de coût mensuel par cabinet ; aucun nom de cabinet
-    (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant un dossier
-    basculé, une garde provisoire (VF9a, en ligne), que VF9c lève au dépôt — elle ne ferme plus qu'une source des ventes
+  - `agent-comptable` — assistant IA (Bedrock), v49 depuis le 28/10/2026, plafond de coût mensuel par cabinet ; aucun
+    nom de cabinet (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant
+    un dossier basculé, une garde provisoire (VF9a), que VF9c a levée — elle ne ferme plus qu'une source des ventes
     illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES OUTILS
     DE L'ASSISTANT » ; une pièce de vente, de tout dossier, sans son client — ni tiers, ni fichier, ni libellé —, par le
-    seul passage du bloc PIÈCES DE VENTE (VF9C-Q1, au dépôt) → « VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE VENTE AU
-    MODÈLE » ; par le même passage, la ligne d'un crédit du relevé sous la date et le montant du mouvement, jamais qui a
-    payé, et une ligne rattachée à rien sans libellé ; un débit garde le sien (VF9CQ1, au dépôt), sauf celui qui rend ou
-    défait l'argent d'un client, nommé de même (VF9CQ1B, au dépôt) → « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE
-    ÉCRITURE RATTACHÉE À RIEN AU MODÈLE », « VF9CQ1B, LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE ET
-    SON MONTANT ».
+    seul passage du bloc PIÈCES DE VENTE (VF9C-Q1) → « VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE VENTE AU MODÈLE » ; par le
+    même passage, la ligne d'un crédit du relevé sous la date et le montant du mouvement, jamais qui a payé, et une
+    ligne rattachée à rien sans libellé ; un débit garde le sien (VF9CQ1), sauf celui qui rend ou défait l'argent d'un
+    client, nommé de même (VF9CQ1B) → « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU
+    MODÈLE », « VF9CQ1B, LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE ET SON MONTANT ».
   - `create-cabinet`, `delete-cabinet` (super-admin) ; `create-team-member`, `create-client-access`.
   - `extract-piece` — OCR (Textract) puis citation des champs ; réservée à un compte RATTACHÉ et à `receive-email` (clé
     secrète en `apikey`).
@@ -607,36 +606,34 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`agent-comptable` v48) : devant un dossier basculé, l'assistant dit qu'il ne lit pas encore ses ventes facturées —
   `points_a_traiter` refuse, trois outils et la consigne le disent ; un autre dossier, rien de changé au caractère
   près ; un réglage illisible ferme → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ ». VF9b le
-  27/10/2026, au dépôt, à déployer avec VF9c et VF9d : derrière ce refus, `points_a_traiter` lit les factures et le
-  registre des encaissements d'un dossier basculé, écarte l'exemplaire d'une facture source et date ce qu'un virement
-  mixte paie ; un autre dossier ne lit rien de plus, rien de changé au caractère près → « VF9B, LA SOURCE, LES
-  EXEMPLAIRES ET LES PAIEMENTS DE L'ASSISTANT ». VF9c le 27/10/2026, au dépôt, à déployer avec VF9b et VF9d : le refus
-  levé pour une source des ventes LUE vraie — `points_a_traiter` dit, comme la Checklist, les mouvements réservés et les
-  encaissements sans mouvement, et ce que la validation refuserait, lu dans la base (`ventes_facturees_de_l_exercice`,
-  sa panne ne taisant que sa clé) ; les quatre autres outils et la consigne disent la vente facturée, une facture nommée
-  par son numéro, jamais par son client ; un réglage illisible garde le côté fermé ; un autre dossier, rien de changé au
-  caractère près, hors la description de l'outil ; VF9C-Q1 tranchée le 28/10/2026 à la recommandation (A) : ni le tiers,
-  ni le fichier, ni le libellé d'une pièce de vente au modèle, pour tout dossier → « VF9C, LES POINTS ET LES OUTILS DE
-  L'ASSISTANT ». VF9C-Q1 le 28/10/2026, au dépôt, à déployer avec VF9b et VF9c avant les premières données réelles :
-  pour tout dossier, une pièce de vente part au modèle sans son tiers, son fichier ni le libellé de ses écritures,
-  nommée par sa date et son montant, par un seul passage, le bloc PIÈCES DE VENTE, que garde un scanner parti de toutes
-  les lectures de la fonction ; le fournisseur d'un achat reste dit ; deux questions au cabinet, VF9CQ1-Q1 (le libellé
-  du relevé d'un crédit) et VF9CQ1-Q2 (l'écriture restée d'une pièce supprimée), tranchées le 28/10/2026 à la
-  recommandation : le libellé de tout crédit recomposé, celui d'une ligne rattachée à rien tu → « VF9C-Q1, AUCUN CLIENT
-  D'UNE PIÈCE DE VENTE AU MODÈLE ». VF9CQ1 le 28/10/2026, au dépôt, à déployer avec les trois autres : pour tout
-  dossier, la ligne d'un crédit du relevé part au modèle sous la date et le montant du mouvement, celle d'un débit sous
-  son libellé, une ligne rattachée à rien sans libellé, par le même passage, qui écrit ce qui sort de chaque ligne et
-  lit ses huit rattachements ; une question au cabinet, VF9CQ1B-Q1 (le libellé d'un débit qui rend l'argent d'un
-  client), tranchée le 28/10/2026 à la recommandation : un tel débit sous sa date et son montant, pour tout dossier →
-  « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE ». VF9CQ1B le 28/10/2026, au
-  dépôt, à déployer avec les quatre autres : pour tout dossier, un débit qui rend ou défait l'argent d'un client — une
-  ligne propre sur un compte de produit ou de client, ou classé par les contre-passations d'un encaissement — part au
-  modèle sous sa date et son montant, par le même passage, le mouvement lu avec son classement et les comptes de ses
-  lignes ; un autre débit garde son libellé → « VF9CQ1B, LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE
-  ET SON MONTANT ». Restent le déploiement des cinq ensemble avant les données réelles, puis VF9d après le MVP (EC3-Q9,
-  la facture reprise, va à A8) → « TROIS RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 », « NEUF RÉPONSES DU
-  CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8, CAISSE-Q1 À Q4, 28.5E-Q1 », « HUIT RÉPONSES DU CABINET : A7-Q1 À Q3,
-  VF9CQ1B-Q1, CAISSE2-Q1 À Q4 ».
+  27/10/2026 : derrière ce refus, `points_a_traiter` lit les factures et le registre des encaissements d'un dossier
+  basculé, écarte l'exemplaire d'une facture source et date ce qu'un virement mixte paie ; un autre dossier ne lit rien
+  de plus, rien de changé au caractère près → « VF9B, LA SOURCE, LES EXEMPLAIRES ET LES PAIEMENTS DE L'ASSISTANT ». VF9c
+  le 27/10/2026 : le refus levé pour une source des ventes LUE vraie — `points_a_traiter` dit, comme la Checklist, les
+  mouvements réservés et les encaissements sans mouvement, et ce que la validation refuserait, lu dans la base
+  (`ventes_facturees_de_l_exercice`, sa panne ne taisant que sa clé) ; les quatre autres outils et la consigne disent la
+  vente facturée, une facture nommée par son numéro, jamais par son client ; un réglage illisible garde le côté fermé ;
+  un autre dossier, rien de changé au caractère près, hors la description de l'outil ; VF9C-Q1 tranchée le 28/10/2026 à
+  la recommandation (A) : ni le tiers, ni le fichier, ni le libellé d'une pièce de vente au modèle, pour tout dossier →
+  « VF9C, LES POINTS ET LES OUTILS DE L'ASSISTANT ». VF9C-Q1 le 28/10/2026 : pour tout dossier, une pièce de vente part
+  au modèle sans son tiers, son fichier ni le libellé de ses écritures, nommée par sa date et son montant, par un seul
+  passage, le bloc PIÈCES DE VENTE, que garde un scanner parti de toutes les lectures de la fonction ; le fournisseur
+  d'un achat reste dit ; deux questions au cabinet, VF9CQ1-Q1 (le libellé du relevé d'un crédit) et VF9CQ1-Q2
+  (l'écriture restée d'une pièce supprimée), tranchées le 28/10/2026 à la recommandation : le libellé de tout crédit
+  recomposé, celui d'une ligne rattachée à rien tu → « VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE VENTE AU MODÈLE ». VF9CQ1 le
+  28/10/2026 : pour tout dossier, la ligne d'un crédit du relevé part au modèle sous la date et le montant du mouvement,
+  celle d'un débit sous son libellé, une ligne rattachée à rien sans libellé, par le même passage, qui écrit ce qui sort
+  de chaque ligne et lit ses huit rattachements ; une question au cabinet, VF9CQ1B-Q1 (le libellé d'un débit qui rend
+  l'argent d'un client), tranchée le 28/10/2026 à la recommandation : un tel débit sous sa date et son montant, pour
+  tout dossier → « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE ». VF9CQ1B le
+  28/10/2026 : pour tout dossier, un débit qui rend ou défait l'argent d'un client — une ligne propre sur un compte de
+  produit ou de client, ou classé par les contre-passations d'un encaissement — part au modèle sous sa date et son
+  montant, par le même passage, le mouvement lu avec son classement et les comptes de ses lignes ; un autre débit garde
+  son libellé → « VF9CQ1B, LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE ET SON MONTANT ». Les cinq en
+  ligne ensemble le 28/10/2026 (`agent-comptable` v49, une ligne qui importe le fichier du dépôt) → « L'ASSISTANT SE
+  DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT » ; reste VF9d après le MVP (EC3-Q9, la facture reprise, va à A8) → « TROIS
+  RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 », « NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8,
+  CAISSE-Q1 À Q4, 28.5E-Q1 », « HUIT RÉPONSES DU CABINET : A7-Q1 À Q3, VF9CQ1B-Q1, CAISSE2-Q1 À Q4 ».
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
@@ -795,9 +792,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `verify_jwt` ».
 - **Un déploiement se vérifie** : la copie déployée comparée au dépôt AVANT d'écraser, puis `allerretour.py` ; l'outil
   décode les `\uXXXX` → « Déployer une Edge Function via l'outil MCP décode les échappements » ; les bordures `─`
-  répétées d'abord par `bordures.py`, le texte ENVOYÉ relu dans le journal → « LES BORDURES SE RECOPIENT ». **Un commit
-  n'est pas un déploiement, un déploiement n'est pas une autorisation** ; `bright-task` (410, hors du dépôt) : à
-  supprimer quand un outil le permettra, ne pas réenquêter → « UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS ».
+  répétées d'abord par `bordures.py`, le texte ENVOYÉ relu dans le journal → « LES BORDURES SE RECOPIENT ».
+  `agent-comptable` ne se recopie plus (300 Ko qui portent la consigne de son modèle : la recopie est refusée ou
+  coupée) : une ligne IMPORTE son fichier du dépôt public à un commit écrit en entier, `allerretour.py` compare le
+  fichier de ce commit au dépôt, et revenir en arrière ne change que le commit → « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE
+  QUI IMPORTE LE DÉPÔT ». **Un commit n'est pas un déploiement, un déploiement n'est pas une autorisation** ;
+  `bright-task` (410, hors du dépôt) : à supprimer quand un outil le permettra, ne pas réenquêter → « UN DÉPLOIEMENT
+  N'EST PAS UN COMMIT NON PLUS ».
 - **Clés de Supabase** : les historiques sont quittées ; le bloc `cleSupabase` lit les nouvelles ; une fonction appelée
   sans session passe à `verify_jwt = false` avec son propre contrôle → « LES CLÉS HISTORIQUES DE SUPABASE SONT
   QUITTÉES ». **`extract-piece`** : un compte RATTACHÉ ou la clé secrète en `apikey`, avant le corps ; l'inscription
