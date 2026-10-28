@@ -287,19 +287,21 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
         const illisibleVente = 'une source des ventes illisible : le client d’une pièce de vente n’atteint pas le modèle (VF9C-Q1)'
         const types = 'const TYPES_DONT_LE_TIERS_SE_DIT: readonly string[] = ["achat", "note_frais", "autre"]\n'
         // Réancrés à VF9CQ1 : une seule sélection pour tout dossier, la pièce et le mouvement de chaque ligne embarqués ; le
-        // passage reçoit ce que le dossier sait de ses ventes, et l'outil n'a plus qu'un retour.
+        // passage reçoit ce que le dossier sait de ses ventes, et l'outil n'a plus qu'un retour. Réancrés à VF9CQ1B : le
+        // mouvement embarqué porte aussi son classement et ses lignes.
         const lignes = '    const lignes = ((data ?? []) as Record<string, unknown>[]).map((ligne) => ecritureVueParLeModele(ligne, nommees))\n'
-        const embarquee = ', pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant)"'
+        const mouvement = 'lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))'
+        const embarquee = `, pieces(type_piece, date_piece, montant_ttc), ${mouvement}"`
         return [
           { slug, quoi: 'lister_pieces sans le passage vers le modèle', remplacements: [['    const lues = ((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)\n', '    const lues = ((data ?? []) as Record<string, unknown>[])\n']], scenario: nonBascule },
           { slug, quoi: 'lister_ecritures sans le passage vers le modèle', remplacements: [[lignes, lignes.replace('.map((ligne) => ecritureVueParLeModele(ligne, nommees))', '')]], scenario: nonBascule },
           {
             slug, quoi: 'lister_ecritures lue sans la pièce de chaque ligne, sur un dossier qui n’a pas basculé',
-            remplacements: [[embarquee, ', lignes_bancaires(date, montant)"']], scenario: nonBascule,
+            remplacements: [[embarquee, `, ${mouvement}"`]], scenario: nonBascule,
           },
           {
             slug, quoi: 'lister_ecritures lue sans la pièce de chaque ligne, sur un dossier basculé',
-            remplacements: [[embarquee, ', lignes_bancaires(date, montant)"']], scenario: basculeVente,
+            remplacements: [[embarquee, `, ${mouvement}"`]], scenario: basculeVente,
           },
           {
             slug, quoi: 'lister_ecritures, dossier basculé, ses lignes prises avant le passage',
@@ -327,10 +329,11 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
         const engagement = tresorerie.replace('en trésorerie', 'en engagement')
         const basculeReleve = 'un dossier basculé : ni qui a payé un crédit — classé par ses encaissements, d’un virement mixte, ou de toute autre sorte — ni le libellé d’une ligne rattachée à rien n’atteignent le modèle, et chaque ligne garde sa source (VF9CQ1)'
         const illisibleReleve = 'une source des ventes illisible : ni qui a payé un crédit ni le libellé d’une ligne rattachée à rien n’atteignent le modèle (VF9CQ1)'
-        const debit = '  if (lu.montant < 0) return libelleDuBrouillon(ligne)\n'
+        // Réancrés à VF9CQ1B : le débit a sa branche, et le crédit prend le mouvement nommé.
+        const debit = '  if (lu.montant < 0) {\n    return debitQuiRendLArgentDUnClient(mouvement as Record<string, unknown>) ? nomDUnDebitDuReleve(nomme) : libelleDuBrouillon(ligne)\n  }\n'
         return [
-          { slug, quoi: 'le libellé d’un crédit rendu tel que le brouillon le porte', remplacements: [['  return nomDUnCreditDuReleve({ date:', '  return libelleDuBrouillon(ligne) ?? nomDUnCreditDuReleve({ date:']], scenario: tresorerie },
-          { slug, quoi: 'le crédit jugé sur le sens de la ligne, pas sur le mouvement', remplacements: [[debit, '  if (ligne.sens === "credit") return libelleDuBrouillon(ligne)\n']], scenario: engagement },
+          { slug, quoi: 'le libellé d’un crédit rendu tel que le brouillon le porte', remplacements: [['  return nomDUnCreditDuReleve(nomme)\n', '  return libelleDuBrouillon(ligne) ?? nomDUnCreditDuReleve(nomme)\n']], scenario: tresorerie },
+          { slug, quoi: 'le crédit jugé sur le sens de la ligne, pas sur le mouvement', remplacements: [['  if (lu.montant < 0) {\n', '  if (ligne.sens === "credit") {\n']], scenario: engagement },
           { slug, quoi: 'le débit recomposé lui aussi : la règle vise trop large', remplacements: [[debit, '']], scenario: tresorerie },
           { slug, quoi: 'une ligne rattachée à rien qui garde son libellé', remplacements: [['  return { libelle: null, source: null }\n}\n\n// Ce que le modèle reçoit', '  return { libelle: libelleDuBrouillon(ligne), source: null }\n}\n\n// Ce que le modèle reçoit']], scenario: tresorerie },
           {
@@ -339,10 +342,10 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
           },
           {
             slug, quoi: 'un mouvement de zéro euro pris pour un débit',
-            remplacements: [[' || lu.montant === 0) return null', ') return null'], [debit, '  if (lu.montant <= 0) return libelleDuBrouillon(ligne)\n']], scenario: tresorerie,
+            remplacements: [[' || lu.montant === 0) return null', ') return null'], ['  if (lu.montant < 0) {\n', '  if (lu.montant <= 0) {\n']], scenario: tresorerie,
           },
           { slug, quoi: 'les écritures composées sans pièce ni mouvement tues : la règle vise trop large', remplacements: [['    return { libelle: libelleDuBrouillon(ligne), source: null }\n  }\n', '    return { libelle: null, source: null }\n  }\n']], scenario: tresorerie },
-          { slug, quoi: 'lister_ecritures lue sans le mouvement de chaque ligne', remplacements: [[', lignes_bancaires(date, montant)"', '"']], scenario: tresorerie },
+          { slug, quoi: 'lister_ecritures lue sans le mouvement de chaque ligne', remplacements: [[`, ${'lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))'}"`, '"']], scenario: tresorerie },
           {
             slug, quoi: 'la ligne d’un crédit classé par ses encaissements sous le libellé du brouillon',
             remplacements: [['    return { libelle: libelleDUneLigneDuReleve(ligne), source:', '    return { libelle: classe ? libelleDuBrouillon(ligne) : libelleDUneLigneDuReleve(ligne), source:']], scenario: basculeReleve,
@@ -354,6 +357,31 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
           },
           { slug, quoi: 'la consigne sans la phrase du crédit du relevé', remplacements: [['\n- Un CRÉDIT du relevé (un mouvement qui entre en banque) se nomme', '\n- Un crédit du relevé se nomme']], scenario: tresorerie },
           { slug, quoi: 'la description de lister_ecritures sans le nom d’un crédit', remplacements: [[' (« Crédit du relevé du JJ/MM/AAAA, 0,00 € ») : qui a payé', ' : qui a payé']], scenario: tresorerie },
+        ]
+      })(),
+      // VF9CQ1B : à qui un débit rend ou défait l'argent d'un client, au modèle — par la règle du débit, ses deux
+      // reconnaissances, le côté fermé, l'outil qui lit sans le classement ou sans les lignes du mouvement, la consigne ou la
+      // description ; la règle qui vise trop large (tout débit nommé, le fournisseur pris pour un client).
+      ...((): DefautPlante[] => {
+        const tresorerie = 'un dossier qui n’a pas basculé, en trésorerie : ni qui a payé un crédit du relevé ni le libellé d’une ligne rattachée à rien n’atteignent le modèle — chaque ligne d’un crédit, de toute sorte, se nomme par la date et le montant du mouvement —, le libellé d’un débit et d’une écriture composée l’atteignent, et un sens illisible tombe du côté fermé (VF9CQ1)'
+        const engagement = tresorerie.replace('en trésorerie', 'en engagement')
+        const basculeReleve = 'un dossier basculé : ni qui a payé un crédit — classé par ses encaissements, d’un virement mixte, ou de toute autre sorte — ni le libellé d’une ligne rattachée à rien n’atteignent le modèle, et chaque ligne garde sa source (VF9CQ1)'
+        const reconnu = '? nomDUnDebitDuReleve(nomme) : libelleDuBrouillon(ligne)\n'
+        const racines = 'const RACINES_DES_COMPTES_D_UN_CLIENT: readonly string[] = ["7", "41"]\n'
+        const classement = '  if (mouvement.encaissements_de_factures !== false) return true\n'
+        return [
+          { slug, quoi: 'tout débit sous son libellé, comme hier', remplacements: [[reconnu, '? libelleDuBrouillon(ligne) : libelleDuBrouillon(ligne)\n']], scenario: tresorerie },
+          { slug, quoi: 'tout débit sous son libellé, d’un dossier basculé', remplacements: [[reconnu, '? libelleDuBrouillon(ligne) : libelleDuBrouillon(ligne)\n']], scenario: basculeReleve },
+          { slug, quoi: 'tout débit nommé : la règle vise trop large', remplacements: [[reconnu, '? nomDUnDebitDuReleve(nomme) : nomDUnDebitDuReleve(nomme)\n']], scenario: tresorerie },
+          { slug, quoi: 'le produit oublié des comptes d’un client', remplacements: [[racines, racines.replace('["7", "41"]', '["41"]')]], scenario: tresorerie },
+          { slug, quoi: 'le client oublié des comptes d’un client', remplacements: [[racines, racines.replace('["7", "41"]', '["7"]')]], scenario: engagement },
+          { slug, quoi: 'le fournisseur pris pour un client : la règle vise trop large', remplacements: [[racines, racines.replace('["7", "41"]', '["7", "4"]')]], scenario: engagement },
+          { slug, quoi: 'le classement par les contre-passations oublié', remplacements: [[classement, '']], scenario: basculeReleve },
+          { slug, quoi: 'un classement illisible pris pour un débit ordinaire', remplacements: [[classement, classement.replace('!== false', '=== true')]], scenario: tresorerie },
+          { slug, quoi: 'lister_ecritures lue sans le classement du mouvement', remplacements: [['lignes_bancaires(date, montant, encaissements_de_factures, ', 'lignes_bancaires(date, montant, ']], scenario: tresorerie },
+          { slug, quoi: 'lister_ecritures lue sans les lignes du mouvement', remplacements: [['encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"', 'encaissements_de_factures)"']], scenario: tresorerie },
+          { slug, quoi: 'la consigne sans le débit qui rend l’argent d’un client', remplacements: [['De même, un DÉBIT qui rend ou défait l\'argent d\'un client', 'De même, un débit']], scenario: tresorerie },
+          { slug, quoi: 'la description de lister_ecritures sans le nom d’un débit', remplacements: [[' (« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui', ' : à qui']], scenario: tresorerie },
         ]
       })(),
     ]

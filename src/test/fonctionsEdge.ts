@@ -398,10 +398,16 @@ const PGRST116 = (n: number): ErreurFactice => ({
 
 interface Jointure {
   relation: string
-  colonnes: string
-  colonneLocale: string
-  // `relation!inner(…)` écarte le parent sans elle ; `relation(…)` le garde, elle à null — la jointure à gauche de PostgREST
-  // (étape VF9C-Q1 : `lister_ecritures` lit la pièce de chaque ligne, une ligne sans pièce comprise).
+  selection: Selection
+  // Le sens de la clé étrangère, lue dans le schéma : `parent` — la table lue la cite, la ressource est une ligne ou null ;
+  // `enfants` — elle cite la table lue, la ressource est une LISTE, vide quand rien ne la cite (VF9CQ1B : le mouvement d'une
+  // ligne du brouillon embarque ses propres lignes).
+  sens: 'parent' | 'enfants'
+  // La colonne de la clé, dans l'enfant : la table lue pour un parent, la ressource pour des enfants.
+  colonne: string
+  // `relation!inner(…)` écarte la ligne sans elle (sans aucun enfant) ; `relation(…)` la garde, elle à null (ou une liste
+  // vide) — la jointure à gauche de PostgREST (étape VF9C-Q1 : `lister_ecritures` lit la pièce de chaque ligne, une ligne
+  // sans pièce comprise). Au premier niveau seulement : plus bas, elle n'est pas modélisée.
   interne: boolean
 }
 
@@ -424,20 +430,32 @@ function entreesDeSelection(texte: string): string[] {
   return out
 }
 
-function analyserSelection(table: string, texte: string): Selection {
+function analyserSelection(table: string, texte: string, profondeur = 0): Selection {
   const colonnes: string[] = []
   const jointures: Jointure[] = []
   let tout = false
   for (const entree of entreesDeSelection(texte)) {
     if (entree === '*') { tout = true; continue }
     if (/^\w+$/.test(entree)) { colonnes.push(entree); continue }
-    const jointure = /^(\w+)(!inner)?\(([^()]*)\)$/.exec(entree)
+    const jointure = /^(\w+)(!inner)?\(([\s\S]*)\)$/.exec(entree)
     if (jointure) {
-      // Une ressource embarquée se rattache par la clé étrangère de la table vers elle — lue dans le schéma, jamais
-      // supposée. Une jointure dans l'autre sens rendrait un tableau : pas modélisée.
-      const relation = schema().relations.find((r) => r.enfant === table && r.parent === jointure[1])
-      if (!relation) throw new Error(`Faux PostgREST : aucune clé de « ${table} » vers « ${jointure[1]} » dans le schéma exporté`)
-      jointures.push({ relation: jointure[1], colonnes: jointure[3], colonneLocale: relation.colonne, interne: jointure[2] === '!inner' })
+      // Une ressource embarquée se rattache par LA clé étrangère entre les deux tables — lue dans le schéma, jamais
+      // supposée —, dans un sens ou dans l'autre ; deux clés rendraient l'embarquement ambigu, ce que PostgREST refuse
+      // (PGRST201) : pas modélisé.
+      const versLeParent = schema().relations.filter((r) => r.enfant === table && r.parent === jointure[1])
+      const versLesEnfants = schema().relations.filter((r) => r.enfant === jointure[1] && r.parent === table)
+      if (versLeParent.length + versLesEnfants.length === 0) {
+        throw new Error(`Faux PostgREST : aucune clé entre « ${table} » et « ${jointure[1]} » dans le schéma exporté`)
+      }
+      if (versLeParent.length + versLesEnfants.length > 1) {
+        throw new Error(`Faux PostgREST : plusieurs clés entre « ${table} » et « ${jointure[1]} » — un embarquement ambigu, pas modélisé`)
+      }
+      if (jointure[2] === '!inner' && profondeur > 0) throw new Error(`Faux PostgREST : « ${entree} », une jointure interne imbriquée, n'est pas modélisée`)
+      const [cle, sens] = versLeParent.length === 1 ? [versLeParent[0], 'parent' as const] : [versLesEnfants[0], 'enfants' as const]
+      jointures.push({
+        relation: jointure[1], selection: analyserSelection(jointure[1], jointure[3], profondeur + 1), sens, colonne: cle.colonne,
+        interne: jointure[2] === '!inner',
+      })
       continue
     }
     throw new Error(`Faux PostgREST : la sélection « ${entree} » n'est pas modélisée`)
@@ -450,10 +468,17 @@ function projeter(ligne: Ligne, selection: Selection): Ligne {
   if (selection.colonnes === '*') Object.assign(sortie, ligne)
   else for (const c of selection.colonnes) sortie[c] = ligne[c] ?? null
   for (const j of selection.jointures) {
-    const embarquee = ligne[j.relation] as Ligne | null
-    sortie[j.relation] = embarquee ? projeter(embarquee, analyserSelection(j.relation, j.colonnes)) : null
+    const embarquee = ligne[j.relation]
+    sortie[j.relation] = j.sens === 'enfants'
+      ? (Array.isArray(embarquee) ? embarquee.map((e) => projeter(e as Ligne, j.selection)) : [])
+      : embarquee && typeof embarquee === 'object' ? projeter(embarquee as Ligne, j.selection) : null
   }
   return sortie
+}
+
+/** La ressource embarquée est-elle là : une ligne, ou au moins un enfant. */
+function presente(valeur: unknown): boolean {
+  return Array.isArray(valeur) ? valeur.length > 0 : valeur != null
 }
 
 /** Une comparaison de PostgREST : un NULL ne compare jamais, un nombre se compare en nombre, le reste en texte. */
@@ -664,7 +689,7 @@ class RequeteFactice {
       lignes = lignes.filter((l) => politique(l, role === 'authentifie' ? utilisateur : null, monde))
     }
     lignes = lignes.filter((l) => this.filtres.every((f) => f.predicat(l)))
-    for (const j of selection.jointures) if (j.interne) lignes = lignes.filter((l) => l[j.relation] != null)
+    for (const j of selection.jointures) if (j.interne) lignes = lignes.filter((l) => presente(l[j.relation]))
     const total = lignes.length
     lignes = this.trier(lignes)
     if (this.plage) lignes = lignes.slice(this.plage[0], this.plage[1] + 1)
@@ -674,10 +699,16 @@ class RequeteFactice {
     return this.rendre(this.tete ? null : rendues, this.compte ? total : null, 200)
   }
 
+  /** Attache à la ligne chaque ressource que la sélection embarque, à toute profondeur : son parent, ou ses enfants. */
   private embarquer(ligne: Ligne, selection: Selection): Ligne {
     for (const j of selection.jointures) {
-      const parent = (this.contexte.monde.base[j.relation] ?? []).find((p) => p.id === ligne[j.colonneLocale])
-      ligne[j.relation] = parent ? { ...parent } : null
+      const table = this.contexte.monde.base[j.relation] ?? []
+      if (j.sens === 'parent') {
+        const parent = table.find((p) => p.id === ligne[j.colonne])
+        ligne[j.relation] = parent ? this.embarquer({ ...parent }, j.selection) : null
+      } else {
+        ligne[j.relation] = ligne.id == null ? [] : table.filter((e) => e[j.colonne] === ligne.id).map((e) => this.embarquer({ ...e }, j.selection))
+      }
     }
     return ligne
   }

@@ -1962,11 +1962,19 @@ const SCENARIOS_DES_PIECES_DE_VENTE: Scenario[] = [
 // kilométrique, une liquidation de TVA et une cotisation payée depuis le compte personnel. Le modèle appelle les cinq outils,
 // `lister_ecritures` sous ses filtres, et chaque ligne du monde se juge à ce qu'elle doit porter, écrit ICI sans rien emprunter
 // à la fonction.
+//
+// NI À QUI UN DÉBIT REND OU DÉFAIT L'ARGENT D'UN CLIENT (VF9CQ1B : la réponse (A) du cabinet du 28/10/2026 à VF9CQ1B-Q1). Le
+// même monde porte, sous un cinquième marqueur, les débits que la base reconnaît sans deviner : affecté à un produit (un
+// trop-perçu remboursé), ventilé en partie sur un produit, le règlement d'une vente supprimée resté au 411 (en engagement),
+// classé par les contre-passations d'un encaissement (d'un dossier basculé), et un débit dont le classement ne se lit pas (le
+// côté fermé) ; chacun se nomme « Débit du relevé du … », et son marqueur n'atteint jamais le modèle. Les débits ordinaires —
+// un fournisseur, un organisme, un virement personnel, un emprunt — gardent le leur, qui l'atteint.
 
 const MARQUEUR_D_UN_CREDIT = 'Vorlanche Quibrastel'
 const MARQUEUR_D_UN_DEBIT = 'Fournisseur fictif Sabredouve'
 const MARQUEUR_D_UNE_LIGNE_ORPHELINE = 'Lumvérac Dastrogne'
 const MARQUEUR_D_UN_SENS_ILLISIBLE = 'Prévaudre Kermilan'
+const MARQUEUR_D_UN_CLIENT_REMBOURSE = 'Ostravelle Pimbrecaux'
 /** Les libellés des écritures que l'application compose sans pièce ni mouvement : ils atteignent le modèle. */
 const LIBELLES_COMPOSES = [
   'Dotation 2026 — Bien fictif Ostrelade', 'Indemnités kilométriques 2026 — Voiture fictive Brennelac', 'CA3 1er trimestre 2026',
@@ -1981,6 +1989,11 @@ const RL = {
   frais: 'b9c20000-0000-4000-8000-000000000011', prelevement: 'b9c20000-0000-4000-8000-000000000012',
   echeance: 'b9c20000-0000-4000-8000-000000000013', zero: 'b9c20000-0000-4000-8000-000000000021',
   absent: 'b9c20000-0000-4000-8000-000000000022',
+  rembourse: 'b9c20000-0000-4000-8000-000000000031', remboursePart: 'b9c20000-0000-4000-8000-000000000032',
+  regleAuClient: 'b9c20000-0000-4000-8000-000000000033', defait: 'b9c20000-0000-4000-8000-000000000034',
+  classementIllisible: 'b9c20000-0000-4000-8000-000000000035', urssaf: 'b9c20000-0000-4000-8000-000000000036',
+  regleAuFournisseur: 'b9c20000-0000-4000-8000-000000000037',
+  contrePassation: 'e9c20000-0000-4000-8000-000000000011',
   recettes: 'ca9c2000-0000-4000-8000-000000000001', fraisBancaires: 'ca9c2000-0000-4000-8000-000000000002',
   emprunt: 'e9c20000-0000-4000-8000-000000000001', echeanceCotisation: 'e9c20000-0000-4000-8000-000000000002',
   cotisationPersonnelle: 'e9c20000-0000-4000-8000-000000000003', declaration: 'e9c20000-0000-4000-8000-000000000004',
@@ -1992,10 +2005,15 @@ const RL = {
 const PREFIXE_DES_LIGNES_DU_RELEVE = 'ec9c2000-'
 const RATTACHEMENTS_DU_BROUILLON = ['piece_id', 'ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id'] as const
 
-/** Ajoute au dossier du monde les mouvements marqués, leurs écritures, et ce qui les classe ; `bascule` : le crédit classé et le virement mixte. */
-function mouvementsDuReleveMarques(m: Monde, bascule: boolean) {
+/**
+ * Ajoute au dossier du monde les mouvements marqués, leurs écritures, et ce qui les classe ; `bascule` : le crédit classé, le
+ * virement mixte et le débit classé par ses contre-passations ; `mode` : en engagement, le règlement d'une vente supprimée resté
+ * au 411.
+ */
+function mouvementsDuReleveMarques(m: Monde, bascule: boolean, mode: 'tresorerie' | 'engagement' = 'tresorerie') {
   const c = MARQUEUR_D_UN_CREDIT
   const d = MARQUEUR_D_UN_DEBIT
+  const r = MARQUEUR_D_UN_CLIENT_REMBOURSE
   const mouvement = (id: string, date: string, montant: number, libelle: string, o: Record<string, unknown>) => ({
     id, dossier_id: D, date, libelle, montant, statut: 'rapprochee', piece_id: null, reglement_groupe: false, cotisation_id: null,
     categorie_id: null, compte_bilan: null, prelevement_personnel: false, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
@@ -2016,10 +2034,20 @@ function mouvementsDuReleveMarques(m: Monde, bascule: boolean) {
     mouvement(RL.echeance, '2026-02-25', -150, `ECH PRET ${d}`, { emprunt_id: RL.emprunt, emprunt_echeance: 1, emprunt_interets: 20, emprunt_assurance: 5 }),
     // Un mouvement de zéro euro : son sens ne se lit pas.
     mouvement(RL.zero, '2026-02-27', 0, `${MARQUEUR_D_UN_SENS_ILLISIBLE} ZERO`, { categorie_id: RL.fraisBancaires }),
+    // VF9CQ1B : un débit d'un organisme, qui garde son libellé ; et les débits qui rendent ou défont l'argent d'un client.
+    mouvement(RL.urssaf, '2026-02-26', -321, `PRLV URSSAF ${d}`, { categorie_id: RL.fraisBancaires }),
+    mouvement(RL.rembourse, '2026-04-02', -40, `VIR ${r} TROP PERCU`, { categorie_id: RL.recettes }),
+    mouvement(RL.remboursePart, '2026-04-04', -50, `VIR ${r} REMBOURSEMENT`, { ventilee: true }),
+    // Son classement ne se lit pas : le côté fermé.
+    mouvement(RL.classementIllisible, '2026-04-08', -7, `CB ${r} ILLISIBLE`, { categorie_id: RL.fraisBancaires, encaissements_de_factures: null }),
+    ...(mode === 'engagement'
+      ? [mouvement(RL.regleAuClient, '2026-04-06', -30, `VIR ${r} AVOIR`, {}), mouvement(RL.regleAuFournisseur, '2026-04-07', -48, `PRLV ${d} FOURNISSEUR`, {})]
+      : []),
     ...(bascule
       ? [
         mouvement(RL.classe, '2026-03-03', 190, `REMISE CB ${c}`, { encaissements_de_factures: true }),
         mouvement(RL.mixte, '2026-03-06', 148, `VIR ${c} DEUX FACTURES`, { encaissements_de_factures: true }),
+        mouvement(RL.defait, '2026-03-12', -26, `REJET ${r} CB`, { encaissements_de_factures: true }),
       ]
       : []),
   )
@@ -2030,6 +2058,8 @@ function mouvementsDuReleveMarques(m: Monde, bascule: boolean) {
   ;(m.base.ventilations_bancaires ??= []).push(
     { id: identifiantGenere(), dossier_id: D, ligne_bancaire_id: RL.ventile, categorie_id: RL.recettes, part_personnelle: false, montant: 224.42, taux_tva: null },
     { id: identifiantGenere(), dossier_id: D, ligne_bancaire_id: RL.ventile, categorie_id: RL.fraisBancaires, part_personnelle: false, montant: -2.2, taux_tva: null },
+    { id: identifiantGenere(), dossier_id: D, ligne_bancaire_id: RL.remboursePart, categorie_id: RL.recettes, part_personnelle: false, montant: -45, taux_tva: null },
+    { id: identifiantGenere(), dossier_id: D, ligne_bancaire_id: RL.remboursePart, categorie_id: RL.fraisBancaires, part_personnelle: false, montant: -5, taux_tva: null },
   )
   ;(m.base.emprunts ??= []).push({ id: RL.emprunt, dossier_id: D, nom: 'Emprunt fictif', capital_initial: 555.55, taux_annuel: 0.05, date_debut: '2026-02-11', duree_mois: 4 })
   ;(m.base.cotisations_declarees ??= []).push(
@@ -2083,6 +2113,27 @@ function mouvementsDuReleveMarques(m: Monde, bascule: boolean) {
     ligne('2026-02-25', '661100', 'debit', 20, `ECH PRET ${d}`, du(RL.echeance)),
     ligne('2026-02-25', '616800', 'debit', 5, `ECH PRET ${d}`, du(RL.echeance)),
     ligne('2026-02-25', '512000', 'credit', 150, `ECH PRET ${d}`, du(RL.echeance)),
+    // VF9CQ1B : le débit d'un organisme garde son libellé ; ceux qui rendent ou défont l'argent d'un client le taisent, chaque
+    // ligne — un produit, une charge, la banque —, et celui dont le classement ne se lit pas aussi.
+    ligne('2026-02-26', '627000', 'debit', 321, `PRLV URSSAF ${d}`, du(RL.urssaf)),
+    ligne('2026-02-26', '512000', 'credit', 321, `PRLV URSSAF ${d}`, du(RL.urssaf)),
+    ligne('2026-04-02', '706000', 'debit', 40, `VIR ${r} TROP PERCU`, du(RL.rembourse)),
+    ligne('2026-04-02', '512000', 'credit', 40, `VIR ${r} TROP PERCU`, du(RL.rembourse)),
+    ligne('2026-04-04', '706000', 'debit', 45, `VIR ${r} REMBOURSEMENT`, du(RL.remboursePart)),
+    ligne('2026-04-04', '627000', 'debit', 5, `VIR ${r} REMBOURSEMENT`, du(RL.remboursePart)),
+    ligne('2026-04-04', '512000', 'credit', 50, `VIR ${r} REMBOURSEMENT`, du(RL.remboursePart)),
+    ligne('2026-04-08', '627000', 'debit', 7, `CB ${r} ILLISIBLE`, du(RL.classementIllisible)),
+    ligne('2026-04-08', '512000', 'credit', 7, `CB ${r} ILLISIBLE`, du(RL.classementIllisible)),
+    // En engagement, le règlement d'une vente supprimée (un avoir remboursé) : ses deux lignes ont perdu leur pièce, et gardent
+    // le client qu'elle leur a donné ; la ligne du 411 dit que le débit est allé à un client. Et celui d'un achat supprimé, au
+    // 401 : un fournisseur, qui garde son libellé.
+    ...(mode === 'engagement'
+      ? [
+        ligne('2026-04-06', '411000', 'debit', 30, r, du(RL.regleAuClient)), ligne('2026-04-06', '512000', 'credit', 30, r, du(RL.regleAuClient)),
+        ligne('2026-04-07', '401000', 'debit', 48, `PRLV ${d} FOURNISSEUR`, du(RL.regleAuFournisseur)),
+        ligne('2026-04-07', '512000', 'credit', 48, `PRLV ${d} FOURNISSEUR`, du(RL.regleAuFournisseur)),
+      ]
+      : []),
     // Les sens illisibles : un mouvement de zéro euro, et un mouvement que la lecture ne rend pas.
     ligne('2026-02-27', '627000', 'debit', 1.11, `${MARQUEUR_D_UN_SENS_ILLISIBLE} ZERO`, du(RL.zero)),
     ligne('2026-02-28', '627000', 'debit', 2.22, `${MARQUEUR_D_UN_SENS_ILLISIBLE} ABSENT`, du(RL.absent)),
@@ -2111,6 +2162,12 @@ function mouvementsDuReleveMarques(m: Monde, bascule: boolean) {
         ligne('2026-03-06', '512000', 'debit', 60, 'Client fictif d’avant', { piece_id: V.p3, ligne_bancaire_id: RL.mixte }),
         ligne('2026-03-06', '627000', 'debit', 2, `VIR ${c} DEUX FACTURES`, du(RL.mixte)),
         ligne('2026-03-06', '512000', 'credit', 2, `VIR ${c} DEUX FACTURES`, du(RL.mixte)),
+        // VF9CQ1B : le débit qui défait l'encaissement classé, classé par sa contre-passation, et les frais du rejet sous le
+        // libellé de la banque.
+        ligne('2026-03-12', '512000', 'credit', 25, `Contre-passation, facture F2026-0001 — ${MARQUEUR_DU_CLIENT}`, { encaissement_id: RL.contrePassation, ligne_bancaire_id: RL.defait }),
+        ligne('2026-03-12', '706000', 'debit', 25, `Contre-passation, facture F2026-0001 — ${MARQUEUR_DU_CLIENT}`, { encaissement_id: RL.contrePassation }),
+        ligne('2026-03-12', '627000', 'debit', 1, `REJET ${r} CB`, du(RL.defait)),
+        ligne('2026-03-12', '512000', 'credit', 1, `REJET ${r} CB`, du(RL.defait)),
       ]
       : []),
   )
@@ -2119,16 +2176,18 @@ function mouvementsDuReleveMarques(m: Monde, bascule: boolean) {
       encaissementBascule(RL.encaissementClasse, V.fs1, 192, 'carte', { ligne_bancaire_id: RL.classe, date_encaissement: '2026-03-03' }),
       encaissementBascule(RL.encaissementMixte, V.fs1, 90, 'virement', { ligne_bancaire_id: RL.mixte, date_encaissement: '2026-03-06' }),
       encaissementBascule(RL.encaissementAvant, V.fa, 60, 'virement', { ligne_bancaire_id: RL.mixte, date_encaissement: '2026-03-06' }),
+      encaissementBascule(RL.contrePassation, V.fs1, -25, 'carte', { ligne_bancaire_id: RL.defait, date_encaissement: '2026-03-12', annule_id: RL.encaissementClasse }),
     )
   }
-  m.sensibles.push(MARQUEUR_D_UN_CREDIT, MARQUEUR_D_UNE_LIGNE_ORPHELINE, MARQUEUR_D_UN_SENS_ILLISIBLE)
+  m.sensibles.push(MARQUEUR_D_UN_CREDIT, MARQUEUR_D_UNE_LIGNE_ORPHELINE, MARQUEUR_D_UN_SENS_ILLISIBLE, MARQUEUR_D_UN_CLIENT_REMBOURSE)
 }
 
 /**
  * Ce qu'une ligne du monde doit porter au modèle — son libellé, et sa source d'un dossier qui lit ses ventes —, écrit ICI sans
  * rien emprunter à la fonction : la facture ou l'avoir et l'encaissement sous leur numéro, la pièce sous son nom ou son
- * libellé, un crédit sous la date et le montant du mouvement, un débit sous son libellé, une écriture composée sous le sien,
- * le reste sans libellé.
+ * libellé, un crédit sous la date et le montant du mouvement, un débit qui rend ou défait l'argent d'un client de même (VF9CQ1B :
+ * classé par ses encaissements, ou ce classement illisible ; une ligne du mouvement, sans facture ni encaissement, sur un
+ * produit ou un client), un autre débit sous son libellé, une écriture composée sous le sien, le reste sans libellé.
  */
 function ceQueLaLigneDoitPorter(l: Record<string, unknown>, m: Monde, lit: boolean): { libelle: string | null; source: string | null } {
   const trouver = (table: string, id: unknown) => lignes(m, table).find((x) => x.id === id)
@@ -2152,7 +2211,10 @@ function ceQueLaLigneDoitPorter(l: Record<string, unknown>, m: Monde, lit: boole
   if (l.ligne_bancaire_id != null) {
     const mv = trouver('lignes_bancaires', l.ligne_bancaire_id)
     const montant = typeof mv?.montant === 'number' ? mv.montant : 0
-    const libelle = montant > 0 ? `Crédit du relevé ${enClair(mv?.date)}, ${euros(montant)}` : montant < 0 ? String(l.libelle) : null
+    const auClient = mv?.encaissements_de_factures !== false || lignes(m, 'ecritures_brouillon').some((x) => x.ligne_bancaire_id === mv?.id
+      && x.facture_id == null && x.encaissement_id == null && /^(7|41)/.test(String(x.compte)))
+    const libelle = montant > 0 ? `Crédit du relevé ${enClair(mv?.date)}, ${euros(montant)}`
+      : montant < 0 ? (auClient ? `Débit du relevé ${enClair(mv?.date)}, ${euros(-montant)}` : String(l.libelle)) : null
     return { libelle, source: lit && mv?.encaissements_de_factures === true ? 'mouvement_d_encaissements' : null }
   }
   if (l.immobilisation_id != null || l.vehicule_id != null || l.declaration_tva_id != null || l.cotisation_id != null) return { libelle: String(l.libelle), source: null }
@@ -2168,7 +2230,8 @@ const OUTILS_DU_RELEVE = [
   { id: 'pieces', name: 'lister_pieces', input: {} },
   { id: 'points', name: 'points_a_traiter', input: {} },
 ]
-const PHRASE_DU_CREDIT = '\n- Un CRÉDIT du relevé (un mouvement qui entre en banque) se nomme par sa date et son montant : qui a payé n\'est pas transmis (lister_ecritures recompose le libellé des écritures de ce mouvement) ; ne le demande pas, ne le devine pas. Le libellé d\'un débit, lui, est transmis.\n'
+// Adaptée à VF9CQ1B : la phrase dit aussi le débit qui rend ou défait l'argent d'un client.
+const PHRASE_DU_CREDIT = '\n- Un CRÉDIT du relevé (un mouvement qui entre en banque) se nomme par sa date et son montant : qui a payé n\'est pas transmis (lister_ecritures recompose le libellé des écritures de ce mouvement) ; ne le demande pas, ne le devine pas. De même, un DÉBIT qui rend ou défait l\'argent d\'un client — écrit en tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d\'un encaissement — se nomme par sa date et son montant : à qui l\'argent est rendu n\'est pas transmis. Le libellé d\'un autre débit, lui, est transmis.\n'
 
 /**
  * Ni qui a payé un crédit, ni le libellé d'une ligne rattachée à rien, ni celui d'un mouvement au sens illisible n'atteignent
@@ -2186,13 +2249,16 @@ function releveNomme(lit: boolean) {
     const cles = lit ? [...CLES_D_UNE_LIGNE, 'source'] : CLES_D_UNE_LIGNE
     return [
       ...verifie(porte.split(MARQUEUR_D_UN_CREDIT).length - 1 >= 20, 'le monde ne porte plus le marqueur du crédit : la preuve serait vide'),
-      ...[MARQUEUR_D_UN_CREDIT, MARQUEUR_D_UNE_LIGNE_ORPHELINE, MARQUEUR_D_UN_SENS_ILLISIBLE].flatMap((x) =>
+      ...verifie(porte.split(MARQUEUR_D_UN_CLIENT_REMBOURSE).length - 1 >= (lit ? 13 : 10), 'le monde ne porte plus le marqueur du client remboursé : la preuve serait vide'),
+      ...[MARQUEUR_D_UN_CREDIT, MARQUEUR_D_UNE_LIGNE_ORPHELINE, MARQUEUR_D_UN_SENS_ILLISIBLE, MARQUEUR_D_UN_CLIENT_REMBOURSE].flatMap((x) =>
         verifie(morceauxDe(x).every((morceau) => !demandes.includes(morceau)), `« ${x} » est parvenu au modèle`)),
       ...verifie(demandes.includes(MARQUEUR_D_UN_DEBIT), 'le libellé d’un débit n’atteint plus le modèle : la règle vise trop large'),
       ...LIBELLES_COMPOSES.flatMap((x) => verifie(demandes.includes(x), `le libellé d’une écriture composée ne parvient plus au modèle : ${x}`)),
       ...verifie(consigne.includes(PHRASE_DU_CREDIT), 'la consigne ne dit pas qu’un crédit du relevé se nomme par sa date et son montant'),
       ...verifie((outils.find((o) => o.name === 'lister_ecritures')?.description ?? '').includes('(« Crédit du relevé du JJ/MM/AAAA, 0,00 € ») : qui a payé n\'est pas transmis'),
         'la description de lister_ecritures ne dit pas le nom d’un crédit'),
+      ...verifie((outils.find((o) => o.name === 'lister_ecritures')?.description ?? '').includes('(« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui l\'argent est rendu n\'est pas transmis ; celui d\'un autre débit reste.'),
+        'la description de lister_ecritures ne dit pas le nom d’un débit qui rend l’argent d’un client'),
       // Chaque ligne du monde : rendue une fois, sous ce qu'elle doit porter.
       ...verifie(lesMiennes.length >= (lit ? 48 : 37), `le monde ne porte plus ses lignes : ${lesMiennes.length}`),
       ...lesMiennes.flatMap((l) => {
@@ -2217,7 +2283,7 @@ function releveNomme(lit: boolean) {
 const SCENARIOS_DU_RELEVE: Scenario[] = [
   ...(['tresorerie', 'engagement'] as const).map((mode) => scenarioDuDossierBascule(
     `un dossier qui n’a pas basculé, en ${mode === 'tresorerie' ? 'trésorerie' : 'engagement'} : ni qui a payé un crédit du relevé ni le libellé d’une ligne rattachée à rien n’atteignent le modèle — chaque ligne d’un crédit, de toute sorte, se nomme par la date et le montant du mouvement —, le libellé d’un débit et d’une écriture composée l’atteignent, et un sens illisible tombe du côté fermé (VF9CQ1)`,
-    (m) => { dossierQuiNaPasBascule(m, mode); mouvementsDuReleveMarques(m, false) },
+    (m) => { dossierQuiNaPasBascule(m, mode); mouvementsDuReleveMarques(m, false, mode) },
     OUTILS_DU_RELEVE,
     (consigne, r, m) => [
       ...releveNomme(false)(consigne, r, m),
