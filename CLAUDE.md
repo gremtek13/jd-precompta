@@ -201,8 +201,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Aucun appel réseau externe silencieux** : toute API tierce part d'un clic, jamais au chargement ; les polices sont
   servies par l'application (`polices.test.ts`). **Rien n'est jamais validé ni importé automatiquement** : tout document
   importé arrive « à valider ».
-- **Une facture validée est figée** par la base : un avoir puis une nouvelle facture, jamais en place. **Doublons** :
-  SHA-256 du fichier avant tout dépôt ; l'empreinte du TEXTE OCR attrape deux exports du même document.
+- **Une facture validée est figée** par la base : un avoir puis une nouvelle facture, jamais en place ; elle figera
+  aussi ce qu'elle imprime, des VALEURS lues en base, jamais un texte de l'appelant (A7a, préparée → « LA FACTURE FIGE
+  SES MENTIONS, EN BASE »). **Doublons** : SHA-256 du fichier avant tout dépôt ; l'empreinte du TEXTE OCR attrape deux
+  exports du même document.
 - **Edge Functions** : fichiers plats, un `Deno.serve`, helpers locaux au fichier.
 
 ## Décisions techniques déjà prises
@@ -328,10 +330,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     CHOIX, la règle des soins se DIT et ne refuse rien → « UN CLIENT DANS LA FACTURE ». L'import : le fichier ne part
     nulle part, son encodage dit ; tout ou rien, « ne se défait pas » → « IMPORTER DES CLIENTS, À L'ÉCRAN ». L'export :
     une copie FIDÈLE que l'import relit → « EXPORTER LA FICHE D'UN CLIENT ».
-  - « Paramètres » : aucune facture ne les lit encore (A7) ; un RIB proposé retouché par le cabinet est confirmé
-    d'emblée, dit avant le clic (`CONSEIL_VERIFICATION_RIB`) → « LES PARAMÈTRES DE FACTURATION, À L'ÉCRAN ». « Identité
-    du dossier » : relue après écriture ; un entrepreneur individuel a son capital REMIS À NUL ; une colonne absente
-    n'est pas nulle → « L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN ».
+  - « Paramètres » : aucune facture ne les lit encore — la validation les figera, le RIB CONFIRMÉ seul (A7a, préparée →
+    « LA FACTURE FIGE SES MENTIONS, EN BASE ») ; un RIB proposé retouché par le cabinet est confirmé d'emblée, dit avant
+    le clic (`CONSEIL_VERIFICATION_RIB`) → « LES PARAMÈTRES DE FACTURATION, À L'ÉCRAN ». « Identité du dossier » : relue
+    après écriture ; un entrepreneur individuel a son capital REMIS À NUL ; une colonne absente n'est pas nulle →
+    « L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN ».
   - L'avis d'un changement de RIB : un RIB proposé reste chez le cabinet tant qu'il est le dernier changement, le reste
     trente jours ; illisible, une ligne discrète, jamais le silence → « L'AVIS D'UN CHANGEMENT DE RIB, À L'ÉCRAN ». Les
     RIB à confirmer, en tête du tableau de bord, hors de la grille → « LES RIB À CONFIRMER, SUR LE TABLEAU DE BORD ». Le
@@ -662,10 +665,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     (combien de temps garder les documents du cabinet et ses demandes), ouverte → « L'ESPACE CLIENT, LOGICIEL DE GESTION
     DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
   - Du premier groupe, faits : A1 à A6 (sauf ce qui suit). Restent, dans l'ordre recommandé : A4B3-Q6 (la ligne
-    d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; puis A7 (la facture fige ses mentions
-    — l'unité, la référence et l'article sur la ligne enregistrée, le contact d'où vient son client, le RIB et les
-    conditions en vigueur, le logo qu'elle imprime, les autres mentions de R123-237 (A5-Q9) —, une migration) ; la liste
-    des clients sans activité depuis trois ans, qui lit les factures d'un contact (A7 les relie) ; la suite du premier
+    d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; puis A7, la facture fige ses
+    mentions : A7a, la base, PRÉPARÉE le 28/10/2026 (`mentions_figees`, à reprendre pour A7-Q2 puis à coller ; A7-Q3,
+    une petite migration à part ; A7-Q1 à Q3 tranchées le 28/10/2026 à la recommandation), A7b l'écran derrière
+    `MENTIONS_FIGEES_EXPORTEES`, A7c le CII après le MVP → « LA FACTURE FIGE SES MENTIONS, EN BASE » ; la liste des
+    clients sans activité depuis trois ans, qui lit les factures d'un contact (A7 les relie) ; la suite du premier
     groupe, dont A9, la numérotation (MEG1-Q5 : deux séries par dossier, celle du client et celle du mandataire, choisie
     selon qui valide, et la série de l'ancien logiciel qui continue ; rien n'en est écrit) ; les devis (P5) ; P1-trace.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
@@ -970,7 +974,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   décide de la mention et du motif → « LE STATUT DE TVA DU DOSSIER ». En franchise ou exonéré, le numéro de TVA tient à
   une case (`numero_tva_attribue`) ; sans elle, ses factures sans TVA ne partent pas (G1.47).
 - **Le générateur CII** refuse avant le clic → « LA FACTURE ÉLECTRONIQUE S'ÉCRIT EN CII ». **Une facture validée est
-  figée en base** ; la numérotation par `enregistrer_facture` seule → « UNE FACTURE VALIDÉE SE FIGE EN BASE ».
+  figée en base** ; la numérotation par `enregistrer_facture` seule → « UNE FACTURE VALIDÉE SE FIGE EN BASE ». À sa
+  validation, elle figera son statut et son numéro de TVA, l'identité légale, les paramètres, le RIB confirmé, le logo
+  et le mandataire, et ses lignes leur provenance (A7a, préparée) → « LA FACTURE FIGE SES MENTIONS, EN BASE ».
 - **Le dépôt** : une seule transmission ACTIVE par facture, RÉSERVÉE avant l'envoi ; une issue inconnue n'est jamais
   réessayée, elle s'abandonne après un quart d'heure (`DELAI_AVANT_ABANDON_MS`) → « LA FACTURE ÉLECTRONIQUE SE DÉPOSE ».
   Une facture rejetée ou refusée ne repart pas : un avoir interne, non transmis ; chez Super PDP, 213 et 501 rejettent,

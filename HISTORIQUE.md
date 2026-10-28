@@ -40755,3 +40755,232 @@ même ligne au commit `688994a9cf8c41192269c04419c4aaec347ded56`. Les limites : 
 dépôt public — un import refusé fait échouer le déploiement, la version en ligne reste ; `get_edge_function` ne montre
 plus le code, le commit le dit ; `npm:@supabase/supabase-js@2` se résout au déploiement, comme avant. Les autres
 fonctions gardent la recopie, qui passe encore ; la même voie leur est ouverte le jour où elle échouera.
+
+### 28/10/2026 — LA FACTURE FIGE SES MENTIONS, EN BASE — ESPACE CLIENT, A7A (LIGNE 51.5) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par l'agent architecte d'A7a sur `dc8324e` — `main` (`acdf247`) et deux commits de documentation —, la branche
+locale `a7a-factures-figees`, en deux commits : la migration, les tests et les essais ; puis cette documentation.
+Créés : la migration `supabase/schema/20261028120000_mentions_figees.sql`, `src/lib/mentionsFigees.ts` et son test,
+l'essai `supabase/essais/mentionsFigees.sql`. Modifiés : `src/lib/types.ts` (les colonnes neuves, facultatives),
+`src/lib/ventesSurDossierBascule.test.ts` (l'essai neuf coche « Ventes ») ; trois essais (`factures.sql`,
+`ventesClient.sql`, `restauration.sql`) ; `supabase/schema/README.md` ; CLAUDE.md ; RGPD.md (ce que la facture copiera).
+Ni écran, ni Edge Function. La migration est dans l'export sous une version PROVISOIRE, `20261028120000`, et n'est PAS
+appliquée : elle se COLLE, sur l'accord du cabinet. En production, des SELECT de comptes, du catalogue (les corps des
+quatre fonctions supposées, la définition de la contrainte remplacée, deux commentaires, la collation de la base) et de
+l'historique (nombre, empreinte agrégée, dernière version) ; aucune valeur d'une ligne, aucune écriture.)
+
+**POURQUOI MAINTENANT.** Le MVP du 28/10/2026 : vers la mi-décembre, le praticien du premier dossier réel valide
+lui-même ses factures depuis « Mes ventes » (MVP-D1), sous « Ventes », sur un dossier basculé. Or une facture validée ne
+figeait pas tout ce qu'elle imprime : ni « EI » après le nom d'un entrepreneur individuel (C. com., art. R526-27, depuis
+le 15/05/2022), ni le RIB, les conditions ou le logo saisis à l'étape A5, et son numéro de TVA se recalculait à chaque
+impression. Le découpage : A7a, la base (ce lot) ; A7b, l'écran, derrière `MENTIONS_FIGEES_EXPORTEES` ; A7c, le CII et
+ses deux copies, après le MVP.
+
+**L'INVENTAIRE, MESURÉ : CE QUE LA FACTURE IMPRIME AUJOURD'HUI, ET D'OÙ.** L'aperçu (`FactureApercu.tsx`) est le
+document qu'on imprime et qu'on envoie, le même dans l'onglet Factures et dans « Mes ventes » (`ClientVentes` monte
+`FacturesTab`) ; la facture électronique se compose par `donneesDeLaFacture` (src/lib/factureCii.ts).
+- Figé depuis le 07/10/2026 par la garde (`garder_factures_validees`, toute colonne hors de `v_modifiables`), mais REÇU
+  DE L'APPELANT : l'émetteur — le nom (l'écran envoie le nom INTERNE du dossier, `dossiers.nom`), le SIRET
+  (`dossiers.siret`) et l'adresse (un champ que le client peut aussi changer) —, le client, les dates, les lignes, les
+  montants, la mention légale (un texte libre) et les mentions de la ligne 28.5 ; l'option pour les débits est lue en
+  base à la validation.
+- Recalculé à chaque impression : le numéro de TVA (`numeroTvaImprime`), du statut de TVA du dossier LU CE JOUR-LÀ et du
+  SIRET figé ; la facture électronique de même (« le statut de TVA est celui du dossier aujourd'hui, que la facture ne
+  fige pas »).
+- Jamais imprimé : l'identité légale de l'étape A5b2 (dénomination, forme, capital, ville du greffe), les conditions de
+  paiement, le RIB, le logo, le pied de page et les mentions complémentaires de l'étape A5, le mandataire ; l'unité et
+  la référence d'une ligne (le CII écrit `C62` partout) ; le numéro d'engagement, qu'à un organisme public. Le CII ne
+  porte aucune instruction de paiement.
+
+**LES CHEMINS QUI ÉCRIVENT `factures_emises` ET `facture_lignes`, ÉTABLIS D'ABORD.**
+- `enregistrer_facture` (`security definer`, le cabinet du dossier ou un accès « Ventes », `gere_les_ventes`) : le
+  brouillon, l'avoir (créé validé), la validation, qui numérote ; `supprimer_brouillon_facture`, un brouillon et ses
+  lignes.
+- L'écriture directe du cabinet sous la RLS : un brouillon, que la garde laisse ; rien d'une facture validée hors de
+  `v_modifiables`, ni une facture qui naîtrait validée. L'onglet Factures supprime encore un brouillon par là, derrière
+  `SUPPRESSION_BROUILLON_EXPORTEE`.
+- Les Edge Functions : `send-email` (`tiers_email`) et `superpdp-emit` (`superpdp_invoice_id`,
+  `superpdp_dernier_statut`), les trois colonnes de `v_modifiables` ; `plateforme-agreee` ne fait que lire.
+- `fixer_source_de_la_vente` (VF2), qui pose la source de la vente à la validation.
+- La restauration, par la porte du super-administrateur (`restauration_des_factures` : un dossier sans compteur) : une
+  insertion générique de lignes entières (`select('*')`, lots de même forme).
+- Les essais, en propriétaire ou en chef.
+
+**LE MODÈLE : DES VALEURS, JAMAIS UN TEXTE COMPOSÉ.** La base ne fige aucun texte qu'elle ne peut pas juger : à la
+validation, `enregistrer_facture` LIT chaque valeur dans la table qui la juge — `dossiers` (que le cabinet seul écrit),
+la version des paramètres (leurs fonctions et leurs contraintes ; un RIB n'y est confirmé que par le cabinet),
+`cabinets` —, jamais chez l'appelant ; l'application (A7b) composera le texte imprimé depuis ces valeurs. Un accès
+« Ventes » qui valide ne fige donc que ce que la base tient.
+- `dossiers.mentions_identite` : les AUTRES mentions de l'identité légale (R123-237 : liquidation, location-gérance,
+  capital variable, répertoire des métiers, agrément ; A5-Q9), cinq cents caractères, jamais blancs, que le cabinet seul
+  écrit (`dossiers_update`).
+- Sur `factures_emises`, ce que la VALIDATION fige — nul sur un brouillon (une contrainte), puis tenu par la garde
+  d'hier : `mentions_figees` (vrai pour une facture qui a figé ses mentions, faux pour une facture d'avant, qui garde
+  ses colonnes nulles) ; `statut_tva`, `article_exoneration`, `numero_tva_attribue` et `numero_tva_imprime`, calculé ICI
+  (`numero_tva_du_vendeur`) comme `numeroTvaImprime` le calcule, sur le SIRET que la facture fige ;
+  `denomination_imprimee`, `forme_juridique`, `capital`, `rcs_ville`, `mentions_identite` ; la version COURANTE des
+  paramètres (`parametres_id`) et ce qu'elle porte (`moyen_prefere`, `escompte`, `penalites`,
+  `mentions_complementaires`, `pied_de_page`, `logo_chemin`, `logo_sha256`) ; le RIB CONFIRMÉ en vigueur
+  (`iban_imprime`, `bic_imprime`, `titulaire_imprime`, et la version qui le porte, `rib_parametres_id`) — celui de la
+  courante s'il est confirmé, sinon, au-delà des versions où il n'est que proposé, celui de la première version qui en a
+  un confirmé, aucun quand cette version n'en a pas (`ribEnVigueur`) ; `mandataire_nom`, le nom du cabinet quand c'est
+  lui qui valide, nul pour un accès « Ventes » (MEG1-Q15 ; l'imprimer est P4). Et, dès le brouillon, `contact_id`, le
+  contact d'où vient le client : une provenance, sans clé, comme `valide_par`.
+- Sur `facture_lignes`, la provenance de chaque ligne (MEG1-Q2) : `unite` (BT-130, la liste fermée des articles),
+  `reference` (BT-155, la forme de celle d'un article), `article_id` (sans clé) et `nature`, biens ou services (§ 13
+  d'EC-Q3) — une colonne figée, exigée de personne : le refus d'une facture source mixte (EC3-Q8) reste.
+- Sept contraintes de la ligne : figée, une facture est validée ; non figée, elle ne porte rien de figé ; figée, elle a
+  lu la case du numéro de TVA ; le numéro a sa forme (`FR` et onze chiffres) ; le RIB figé est entier et dit sa
+  version ; le logo, son chemin et son empreinte ensemble ; une valeur des paramètres dit sa version. Trois sur la ligne
+  (l'unité, la référence, la nature), une sur `dossiers`.
+- `numero_tva_du_vendeur` (immuable, `plpgsql`, chemin fixé ; aucun rôle de l'API ne l'exécute) : aucun numéro pour un
+  statut à préciser, ni pour une franchise ou une exonération sans la case ; sinon `FR`, la clé (12 + 3 × (SIREN modulo
+  97)) modulo 97 sur deux chiffres, le SIREN — tiré du SIRET ses blancs retirés (les vingt-cinq que `\s` désigne en
+  JavaScript), neuf ou quatorze chiffres, sa clé de Luhn vérifiée (CGI, art. 286 ter). Le test confronte les vingt cas
+  de l'essai, jugés par la base, au module, et la liste des blancs à `\s`, point de code par point de code.
+- `porte_la_mention_ei` (immuable, `sql`) : les initiales « EI » ou « E.I. », en capitales, ou les mots « entrepreneur
+  individuel » au masculin ou au féminin, la casse indifférente, détachés des lettres voisines (`[[:alpha:]]`, que la
+  collation ICU de la base, `en_US.UTF-8` en production, lit comme les lettres d'Unicode) — vingt cas de l'essai,
+  confrontés au module.
+- Le numéro d'engagement (BT-13 ; C. com., art. L441-9, I : le numéro du bon de commande établi par l'acheteur) s'ouvre
+  à tout acheteur : la contrainte `factures_emises_organisme_public` est REMPLACÉE, sous son nom, plus large que
+  l'ancienne — le code service reste à l'organisme public —, et le commentaire de la colonne le dit. Une contrainte
+  remplacée se présente au cabinet.
+
+**LES REFUS D'`enregistrer_facture`.** Ceux d'hier d'abord, dans le même ordre et sous les mêmes mots (le test le
+confronte au texte d'hier) ; puis, avant toute écriture, la provenance — l'unité, la référence, la nature de chaque
+ligne, dans l'ordre des lignes (22023), le contact (P0002 ; un avoir prend celui de sa facture et ne juge pas celui de
+la saisie), l'article de chaque ligne (P0002) ; et à la validation, avant la numérotation et avant les refus de la
+source de la vente : le contact que la facture garde (P0002 : une écriture directe a pu le poser sur le brouillon) ;
+pour un accès « Ventes », une identité sans forme juridique (22023 : le cabinet la règle, et elle est le préalable de
+l'identité imprimée, MEG1-Q14) — le cabinet valide encore, l'écran le lui disant, et un avoir qui reprend l'identité de
+sa facture n'en juge rien ; la forme d'un entrepreneur individuel (1000) sous une dénomination qui ne porte pas la
+mention (22023 ; R526-27). `mentionsFigees.ts` redit chacun, dans le même ordre et sous les mêmes mots
+(`refusDeLaProvenance`, `refusDeLaValidationFigee`, `porteLaMentionEI`), et dit ce que la validation figera
+(`mentionsAFiger`) ; le test rejoue chaque appel de l'essai à la fonction et rend la réponse de la base.
+
+**UN AVOIR** prend de la facture qu'il corrige, quand elle les a figés, son statut et son numéro de TVA et l'identité
+qu'elle imprime — comme il en reprend déjà l'émetteur, les parties et l'option pour les débits : il défait une opération
+telle qu'elle a été facturée ; il fige du jour les paramètres, le RIB, le logo et son mandataire, et reprend le contact
+de sa facture. L'avoir d'une facture d'avant fige tout du jour.
+
+**OÙ ELLE S'ÉCARTE DE LA SPÉCIFICATION (« A.5.3 »), ET POURQUOI.**
+- Des valeurs au lieu de deux textes imprimés (`mentions_identite`, « RCS, forme, capital, EI », et
+  `conditions_paiement`) : la base ne sait pas juger un texte composé par l'appelant, et un accès « Ventes » y figerait
+  n'importe quoi. L'échéance est déjà figée ; l'indemnité de 40 € (C. com., art. D441-5) se compose du type de client
+  figé.
+- Des colonnes de plus : le statut de TVA, son article et la case du numéro (le motif d'exonération et la mention de la
+  franchise en dépendent), `logo_chemin` (pour retrouver le fichier), les deux provenances des paramètres, les mentions
+  complémentaires et le pied de page, `mentions_figees` (une facture d'avant se distingue d'une facture d'après),
+  `dossiers.mentions_identite` (A5-Q9).
+- La nature de chaque ligne (§ 13) : une colonne, rien de plus — elle ne coûtait qu'une colonne figée.
+- Trois refus que la spécification ne disait pas : la dénomination d'un entrepreneur individuel (la loi), la forme pour
+  un accès « Ventes » (MEG1-Q14), le contact gardé (une écriture directe).
+- Hors du lot, comme le découpage le veut : le CII et ses copies (A7c), le formulaire et l'aperçu (A7b), les devis (P5,
+  pas appliquée : `enregistrer_devis` et `facturer_devis` ne changent pas), la série du mandataire (A9, MEG1-Q5 ; la
+  numérotation ne change pas), l'impression du mandataire (P4), la facture mixte (EC3-Q8).
+- L'émetteur reste celui que l'appelant envoie (A7-Q2).
+
+**LA MIGRATION** `mentions_figees` (46 888 caractères, 47 605 octets, 715 lignes, md5
+`4d9f6227941812cd031f311aa144d6d6` ; aucun retour chariot ; ni table, ni colonne, ni donnée supprimée ; une contrainte
+remplacée ; ni policy, ni droit accordé) : une garde de tête, qui refuse une seconde application, une colonne déjà là,
+une fonction supposée qui aurait changé — `enregistrer_facture` (`984c4886…`), `garder_factures_validees` (`e3dfa6dc…`),
+`garder_lignes_facture_validee` (`c0d4a640…`), `fixer_source_de_la_vente` (`c7a13e49…`), relues ce jour en production à
+ces valeurs, une seule de chaque nom, et confrontées par le test aux corps de l'export —, la contrainte remplacée qui ne
+serait plus celle d'hier (`1c8bac3d…`), une base sans les étapes A1, A4 et A5 ; puis les colonnes, les contraintes, les
+deux fonctions et `enregistrer_facture` recréée — reprise au caractère près hors de ce que ses commentaires « A7 »
+annoncent, ses refus d'hier remontés avant toute écriture (corps `8fa95f94…`). Elle se COLLE : son corps supprime les
+lignes qu'il remplace, comme hier.
+
+**LA SAUVEGARDE ET LA RESTAURATION.** La lecture est `select('*')` : les colonnes voyagent dès qu'elles sont en base ;
+une sauvegarde d'avant ne les porte pas, et ses factures se réinsèrent avec leurs colonnes nulles — une facture d'avant
+(l'essai, `j5` et `110`) ; une facture figée se réinsère telle qu'elle a été figée, par la porte du
+super-administrateur, sous ses contraintes (l'essai, `100` à `108`, `M9`) ; `restauration.sql` gagne un contrôle (les
+vingt-quatre colonnes de chaque facture figée, les quatre de chaque ligne, les autres mentions du dossier), EN ATTENTE
+sans la migration. Le format de la sauvegarde ne change pas. `types.ts` décrit les colonnes telles qu'elles seront,
+FACULTATIVES tant que la migration n'est pas en base : une colonne absente d'une lecture n'est pas une colonne nulle ;
+`MENTIONS_FIGEES_EXPORTEES` reste faux, aucun écran n'envoie ni ne lit rien de neuf, et la suite est vraie dans les deux
+états — le module est pur, son test lit l'export.
+
+**LES PREUVES.**
+- La réplique : la grappe de VF8f copiée À FROID, sur son propre port, amenée à la production d'aujourd'hui — 159
+  migrations, `equipe_par_son_role` et `ventes_sur_dossier_bascule` sous leurs versions réelles et leurs empreintes ;
+  son historique (`b70ba907…`) et les neuf familles de `signature.sql` égaux à ceux de la production, relus ce jour ;
+  arrêtée par son répertoire de données en partant.
+- Les essais, chacun ENTIER sur une copie fraîche, en une transaction — ceux de BASE et ceux du worktree, sans puis avec
+  la migration, 60 fichiers : sans elle, 5 411 verdicts de part et d'autre, deux en faute, ceux d'avant
+  (`forfaitKilometrique.sql` 32 ; `ventesClient.sql` 0c, la liste des fonctions de la vente, qui n'a pas suivi les
+  étapes A1 à A5) ; avec elle, les essais du worktree rendent 5 522 verdicts, les deux mêmes en faute, et ceux de BASE
+  trente — le contrôle 28 de `factures.sql` (le numéro d'engagement, ouvert à tout acheteur) et vingt-sept de
+  `ventesClient.sql` (son client « Ventes » valide dans un dossier sans forme juridique) — d'où leurs deux adaptations,
+  chacune datée dans l'en-tête de son essai ; tout le reste identique, verdict par verdict, hors des heures que cite
+  `parametresFacturation.sql`. `mentionsFigees.sql`, impossible sans la migration : 111 verdicts justes avec elle (85
+  contrôles et valeurs, 14 faits, 12 mutations qui mordent), rien n'est resté.
+- `rls.sql` ENTIER, inchangé (`a49f8a49…`) : 72 lignes d'invariants, 0 en faute, 58 mutations sur 58, avant et après la
+  migration, ses 130 lignes de verdict identiques.
+- `restauration.sql`, sur le dossier semé de VF7e et de VF8f, plus, avec la migration, une facture de 2026 validée par
+  le chef — son contact, sa ligne venue d'un article, ses paramètres, son RIB confirmé, son logo, son identité — : 75
+  tables IDENTIQUES des quatre côtés (57 lignes sans la migration, 63 avec) ; le contrôle neuf, 3 factures sur 3, 1
+  ligne sur 1, 1 dossier sur 1, EN ATTENTE sans la migration ; planté — la copie restaurée d'une facture, d'une ligne et
+  du dossier retouchée avant lui —, il le voit (2 sur 3, 0 sur 1, 0 sur 1).
+- Le texte à coller (48 636 caractères, md5 `c6cb42f9f5d04819eeca8b1263402150`) et son retour (21 656 caractères,
+  `2c682b16bcf0da0b8703ca34f0ff9644`), chacun sur une copie fraîche de la production de la réplique : par l'outil,
+  collée une fois, en fins de ligne Windows, la même base — quatre familles changées, la ligne d'historique
+  `4d9f6227…` ; rejouée par l'outil, collée après l'outil, collée une seconde fois : refusées, sous leurs mots ; altérée
+  d'un caractère : refusée, rien d'appliqué ; le retour, sur la base collée, sur celle de l'outil et sur celle des fins
+  de ligne Windows : la production, historique et neuf familles ; sans la migration, après une facture figée, ou une
+  fonction changée depuis : refusé, rien de rendu ; la garde de tête devant sept états altérés (une fonction neuve déjà
+  là, une colonne déjà là, une des fonctions supposées changée, une seconde `fixer_source_de_la_vente`, la contrainte
+  qui n'est plus celle d'hier, le logo de l'étape A5c absent) : refusée, sous ses mots.
+- Les mutations : de la migration, 73 — 72 tuées par l'application, les trois essais ou la garde de tête, une
+  équivalente (le type JSON d'un contact : un identifiant qui n'est pas un texte n'égale jamais `c.id::text`, la
+  recherche le refuse sous le même code et les mêmes mots) ; du module, 25 — 23 tuées, deux équivalentes (le numéro de
+  TVA d'un avoir recalculé sur le SIRET de sa facture, qu'il recopie, est celui qu'elle a figé ; les refus de la forme
+  et de l'entrepreneur individuel s'excluent).
+- Les trois contrôles de l'export et `signature.sql` : voir `supabase/schema/README.md`, « Préparé le 28/10/2026 ».
+- La suite, comparée test par test, sous Paris : avant, l'arbre de `dc8324e` exporté, 14 951 tests justes
+  (`clesSupabase.test.ts`, qui lit les fichiers suivis du dépôt, ne s'y charge pas) ; après, dans le dépôt, 15 006 tests
+  justes, 3 190 suites ; trente tests neufs (`mentionsFigees.test.ts`), aucun verdict changé d'état, les vingt-cinq de
+  `clesSupabase.test.ts`. La barrière, sur la tête finale : son résultat et son SHA sont au rapport de l'agent.
+
+**LES QUESTIONS AU CABINET.**
+- **A7-Q1 — La forme juridique, préalable de la validation pour qui ?** MEG1-Q14 en fait le préalable de l'identité
+  imprimée ; A7a refuse la validation d'un accès « Ventes » quand l'identité n'a pas de forme, pas celle du cabinet. (A)
+  tel quel ; (B) pour tous, le cabinet compris (une douzaine d'essais qui valident sans forme à adapter) ; (C) personne,
+  l'écran seul le dit. *Recommandation : (A), écrite ainsi — le praticien du MVP valide lui-même (MVP-D1) : sans forme,
+  sa facture figerait une identité sans « EI » ; le cabinet règle la forme en un geste, et l'écran (A7b) le lui dira
+  avant le clic.*
+- **A7-Q2 — L'émetteur d'une facture, vérifié par la base ?** Depuis le 07/10/2026 la facture fige le nom, le SIRET et
+  l'adresse de l'émetteur que l'appelant envoie ; A7a calcule le numéro de TVA sur ce SIRET ; un accès « Ventes » peut
+  figer un autre SIRET ou une autre adresse que ceux du dossier. (A) rien de plus ; (B) à la validation par un accès
+  « Ventes », la base refuse un SIRET ou une adresse d'émetteur qui ne sont pas ceux du dossier, et A7b imprime la
+  dénomination figée à la place du nom interne ; (C) la base recopie l'émetteur du dossier. *Recommandation : (B), dans
+  A7a avant son collage, les preuves rejouées — la règle même d'A7 : un accès « Ventes » ne fige que ce que le cabinet a
+  réglé ; un dossier sans adresse ne se facturerait plus depuis l'espace client avant que le cabinet la pose.*
+- **A7-Q3 — Un IBAN dans un texte libre.** A7 fige les textes des paramètres (escompte, pénalités, mentions
+  complémentaires, pied de page), qu'un accès « Ventes » pose sans confirmation, et A7b les imprimera, avec la mention
+  légale libre de la facture : un IBAN glissé là contournerait la confirmation du RIB (MEG1-Q12). (A) imprimer tel
+  quel ; (B) refuser un texte libre qui porte un IBAN valide (sa clé ISO 13616) — dans
+  `enregistrer_parametres_facturation`, une migration à part, et avant le clic dans le formulaire de la facture ; (C) un
+  texte posé par le client reste proposé jusqu'à la confirmation du cabinet, comme le RIB. *Recommandation : (B) — le
+  même rempart que MEG1-Q12, sans geste de plus pour le cabinet ; (C) alourdirait chaque retouche d'un pied de page.*
+
+**CE QUE A7B ET A7C AURONT À FAIRE.** A7b : le formulaire envoie l'unité, la référence, l'article, la nature et le
+contact, jugés avant le clic par `refusDeLaProvenance`, et dit les refus de la validation ; l'aperçu n'imprime d'une
+facture figée que ses colonnes figées — la dénomination (« EI »), l'identité, le numéro de TVA, les conditions de
+paiement, le RIB, le logo, le numéro d'engagement pour tout acheteur —, une facture d'avant comme hier, dit comme tel ;
+le drapeau se lève au collage. A7c : le CII et ses deux copies lisent les valeurs figées (BT-130 et BT-155, BT-13 pour
+tout acheteur, BG-16 quand un IBAN est figé, BT-20, l'escompte en note `AAB`, le numéro de TVA et le motif figés), le
+validateur officiel rejoué ; pas avant le MVP : une petite entreprise n'émet de factures électroniques qu'à partir du
+1er septembre 2027 (CGI, art. 289 bis ; loi n° 2023-1322 du 29 décembre 2023, art. 91), et le praticien facture surtout
+des particuliers — d'ici là, la facture qu'il envoie est le PDF qu'A7b imprime.
+
+**LES RISQUES, ET LE RETOUR.** Appliquée, la migration change la réponse d'`enregistrer_facture` au client « Ventes »
+d'un dossier sans forme juridique (refusé) et ouvre le numéro d'engagement à tout acheteur ; la production n'a ni
+facture à numéro d'engagement, ni code service, ni dossier basculé, et ses six factures, validées avant elle, gardent
+leurs colonnes nulles. Le retour arrière (dans le bloc-notes) rend `enregistrer_facture` d'hier, la contrainte et le
+commentaire d'hier, retire les deux fonctions, les sept contraintes et les vingt-neuf colonnes et la ligne d'historique
+— un ÉLARGISSEMENT, destructif, sur l'accord du cabinet seulement — et se refuse dès qu'une donnée en dépend (une
+facture figée, un contact, une provenance, un numéro d'engagement hors d'un organisme public, d'autres mentions) : après
+une première facture figée, on corrige en avant. Une sauvegarde faite après la migration ne se restaurerait plus dans
+une base revenue en arrière (ses colonnes inconnues).
