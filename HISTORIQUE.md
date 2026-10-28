@@ -39085,8 +39085,52 @@ une table neuve et sa migration, plutôt une à deux semaines que les trois à c
 Pro de Supabase, et une copie mensuelle des fichiers hors de Google Drive. MVP-D5, contre la recommandation :
 l'expert-comptable importe le FEC de l'application dans son logiciel pour déposer la 2035 ; le FEC conforme à ses 22
 champs (lignes 26.5 et 26.6, étape e) et un essai d'import chez lui entrent dans le MVP, avant mars 2027, hors du chemin
-de la mi-décembre, et la 2035 de l'application devient le contre-calcul de la sienne. MVP-D4 attend sa réponse. Notion
-suit : douze lignes cochées (26.5 et 26.6 de plus), l'encadré « Le MVP » et les lignes 20.65 et 29.8 réécrits.
+de la mi-décembre, et la 2035 de l'application devient le contre-calcul de la sienne. Notion suit : douze lignes cochées
+(26.5 et 26.6 de plus), l'encadré « Le MVP » et les lignes 20.65 et 29.8 réécrits. Plus tard le même jour, MVP-D4 : le
+premier praticien est choisi, et un mois d'export de sa banque, anonymisé, suivra ; MVP-D6, à la recommandation : la
+répétition générale se fait sur son année 2025 réelle, avec son accord, comparée à la 2035 de 2025 que son
+expert-comptable a déposée.
+
+**CE QUE CHANGE LA RÉPÉTITION SUR L'ANNÉE 2025 (MVP-D6).** Chaque écart entre la 2035 que l'application calcule et celle
+qui a été déposée montre un défaut de l'application ou une saisie différente : c'est le meilleur contre-calcul possible.
+L'application a ce qu'il faut pour rejouer 2025 — sa 2035 est la 2035-SD du millésime 2026, celle des revenus de 2025
+(`cases2035.ts`), et le barème kilométrique de 2025 est saisi (`baremeKilometrique.ts`) ; A7 n'y sert pas. Les données
+réelles avancent donc vers le 20 novembre, et leurs préalables avec elles : l'assistant déployé, qui ne transmet plus le
+nom d'un patient (VF9b, VF9c, VF9C-Q1, et VF9CQ1-Q1 et Q2 selon les réponses) ; les clés historiques de Supabase
+désactivées (ligne 23.4) ; l'accord de sous-traitance de Resend et sa durée de conservation (RGPD.md, § 8.2 ; ligne
+21) ; la lettre de mission, sa clause RGPD, la consigne au praticien et son accord écrit (ligne 21) ; le plan Pro et une
+restauration éprouvée (ligne 20.65) ; la longueur minimale des mots de passe relevée à dix avant que son accès soit
+créé ; et la relecture de ce que rend chaque essai joué en production, dont aucun ne doit rendre une valeur d'une ligne
+du dossier réel. À la mi-novembre, le mois d'export anonymisé éprouve le format de sa banque avant toute donnée réelle
+(MVP-D4). La caisse entre dans la comparaison : les espèces de 2025, au jour, d'après son brouillard — une caisse ne
+devient jamais négative, et un total du mois daté de son dernier jour serait refusé dès qu'un versement en banque le
+précède ; C1 à C4 doivent donc précéder la clôture de la comparaison, début décembre. A7 reste pour le jour J, quand la
+facturation de 2026 commence.
+
+**LES DOSSIERS FICTIFS DONT LES ESSAIS SE SERVENT.** La décision du 18/10/2026 supprime les dossiers de test le jour où
+le premier dossier réel arrive : ce jour devient le 20 novembre. Or 60 des 69 fichiers de `supabase/essais/`, rejoués en
+production après chaque migration — la caisse en apporte trois, A7 une —, agissent sur l'un d'eux ou sur le compte
+client d'essai : 37 sur `test` (`001c7ed7`), 55 sur ce compte, dont les deux accès sont sur deux des trois bacs à sable
+abandonnés (l'un, `ac538d93`, nommé dans quatre essais) ; le quatrième dossier n'est cité par aucun fichier du dépôt
+(relevé en production le 28/10/2026 : des identifiants seulement, sur des données fictives). La question du 18/10/2026
+disait que les mesures et les vérifications d'écran ne dépendaient plus de `test`, ce qui était vrai ; elle ne disait
+pas que les essais de la base en dépendaient. La facturation du praticien, elle, ne se répète pas sur 2025, facturée
+ailleurs, ni sur le dossier réel, où une facture validée serait figée et numérotée. D'où deux questions au cabinet, sur
+la page des arbitrages : MVP-D7, le même dossier pour 2025 et 2026 (recommandé : 2025 validé une fois chaque écart
+expliqué, 2026 ouvert par le report des soldes, et la première validation réelle d'un exercice cinq mois avant celle de
+2026) ; MVP-D8, garder les trois dossiers fictifs dont les essais se servent — `test` servant aussi à répéter la
+facturation avec A7 —, supprimer le quatrième le 20 novembre et resserrer quand même ce jour-là les autorisations
+permanentes de la session, ce que le resserrement retire étant présenté au cabinet d'ici là (recommandé), ou tout
+supprimer après avoir déplacé les essais sur une réplique semée d'un jeu fictif, trois à cinq jours de plus avant le 20
+novembre.
+
+**L'ORDRE, REVU.** VF9CQ1-Q1 et Q2, puis le déploiement unique de l'assistant ; la sauvegarde et la restauration
+éprouvée, dès le plan Pro ; la relecture des essais ; à la mi-novembre, le format de la banque ; vers le 20 novembre,
+les données de 2025 — le dossier réel, l'accès du praticien, ses relevés et ses pièces ; la caisse, C1 à C4, puis C5 et
+C6 ; A7 ; les écarts de la comparaison, au fil de l'eau ; le jour J vers le 14 décembre, quand la facturation de 2026
+commence. Le 20 novembre tient si les réponses et les gestes du cabinet arrivent dans la première quinzaine de
+novembre ; la mi-décembre, si la comparaison ne révèle aucun défaut de fond — sinon la mi-janvier 2027, sans effet sur
+la 2035 de 2026.
 
 ### 28/10/2026 — VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE VENTE AU MODÈLE — CHANTIER EC-Q3 (LIGNE 28.65)
 

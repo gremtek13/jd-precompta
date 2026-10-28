@@ -35,10 +35,12 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
 **Le MVP, fixé par le cabinet le 28/10/2026** : un premier dossier BNC réel — un praticien en trésorerie —, de la pièce
 à la 2035 de l'exercice 2026, avec la facturation et le relevé importé par fichier ; l'application prête à recevoir ses
 données vers la mi-décembre 2026 (sinon la mi-janvier 2027), la 2035 déposée en mai 2027 par l'expert-comptable, qui
-importe le FEC (MVP-D5). Le praticien valide ses factures (MVP-D1), la caisse entre (MVP-D2 ; conçue le 28/10/2026, huit
-lots et trois migrations → « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION »), le plan Pro de Supabase sauvegarde la base
-(MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une partie, et rien
-d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
+importe le FEC (MVP-D5). La répétition générale rejoue son année 2025 réelle, comparée à la 2035 déposée (MVP-D6) : ses
+données entrent vers le 20 novembre, leurs préalables avant. Le praticien valide ses factures (MVP-D1), la caisse entre
+(MVP-D2 ; conçue le 28/10/2026, huit lots et trois migrations → « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION »), le plan
+Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y comptent,
+souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA
+MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
@@ -49,7 +51,9 @@ d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS 
 - Un défaut trouvé dans un ancien dossier reste un défaut du CODE, mais ne se raconte pas comme un préjudice comptable.
 - RGPD.md décrit la FORME de ce que l'application stockera, pas une exposition constatée (son §4).
 - Les dossiers de test se suppriment le jour où le premier dossier réel arrive, et les autorisations permanentes de la
-  session se resserrent alors (décision du cabinet du 18/10/2026).
+  session se resserrent alors (décision du cabinet du 18/10/2026). Ce jour avance vers le 20 novembre (MVP-D6) ; mais 60
+  des 69 fichiers de `supabase/essais/` agissent sur trois de ces dossiers ou sur le compte client d'essai, et MVP-D8 en
+  décide → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
 ## Architecture actuelle
 
