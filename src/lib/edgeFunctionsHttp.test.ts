@@ -270,7 +270,52 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
         remplacements: [['    libelle = f ? `${f.type === "avoir" ? "Avoir" : "Facture"} ${numero(f)}` : null\n', '    libelle = e.libelle\n']],
         scenario: client,
       },
-      { slug, quoi: 'l’exemplaire d’une facture source rendu avec son tiers', remplacements: [['          ...reste, tiers: null, nom_fichier: null, categorie,\n', '          ...reste, categorie,\n']], scenario: client },
+      // Réancré à VF9C-Q1 : l'exemplaire d'une facture source, une pièce de vente, perd son tiers et son fichier au seul
+      // passage vers le modèle (bloc PIÈCES DE VENTE), et non plus dans sa propre branche de `lister_pieces`.
+      {
+        slug, quoi: 'l’exemplaire d’une facture source rendu avec son tiers',
+        remplacements: [['    const lues = ((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)\n', '    const lues = ((data ?? []) as Record<string, unknown>[])\n']],
+        scenario: client,
+      },
+      // VF9C-Q1 : le client d'une pièce de vente — son tiers, son fichier, le libellé de ses écritures — au modèle, par l'un
+      // ou l'autre outil, sur un dossier qui n'a pas basculé, basculé, ou dont la source des ventes ne se lit pas ; la règle
+      // qui vise trop large (l'achat) ; le nom recomposé faux ; la consigne sans sa phrase ; le filtre par tiers oublié.
+      ...((): DefautPlante[] => {
+        const nonBascule = 'un dossier qui n’a pas basculé, en trésorerie : le client d’une pièce de vente n’atteint jamais le modèle — ni son tiers, ni son fichier, ni le libellé de ses écritures —, elle se nomme par sa date et son montant, sous chaque filtre et dans chaque clé qui la compte, et le fournisseur d’une pièce d’achat, lui, l’atteint (VF9C-Q1)'
+        const basculeVente = 'un dossier basculé : le client d’une pièce de vente libre n’atteint pas le modèle, ni celui d’une facture, et sa ligne dit sa source (VF9C-Q1)'
+        const illisibleVente = 'une source des ventes illisible : le client d’une pièce de vente n’atteint pas le modèle (VF9C-Q1)'
+        const types = 'const TYPES_DONT_LE_TIERS_SE_DIT: readonly string[] = ["achat", "note_frais", "autre"]\n'
+        const lignes = '    const lignes = ((data ?? []) as Record<string, unknown>[]).map(ecritureVueParLeModele)\n'
+        const embarquee = ', pieces(type_piece, date_piece, montant_ttc)"'
+        return [
+          { slug, quoi: 'lister_pieces sans le passage vers le modèle', remplacements: [['    const lues = ((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)\n', '    const lues = ((data ?? []) as Record<string, unknown>[])\n']], scenario: nonBascule },
+          { slug, quoi: 'lister_ecritures sans le passage vers le modèle', remplacements: [[lignes, lignes.replace('.map(ecritureVueParLeModele)', '')]], scenario: nonBascule },
+          {
+            slug, quoi: 'lister_ecritures lue sans la pièce de chaque ligne, sur un dossier qui n’a pas basculé',
+            remplacements: [[`: "date, compte, libelle, sens, montant, piece_id${embarquee}`, ': "date, compte, libelle, sens, montant, piece_id"']], scenario: nonBascule,
+          },
+          {
+            slug, quoi: 'lister_ecritures lue sans la pièce de chaque ligne, sur un dossier basculé',
+            remplacements: [[`ligne_bancaire_id${embarquee}`, 'ligne_bancaire_id"']], scenario: basculeVente,
+          },
+          {
+            slug, quoi: 'lister_ecritures, dossier basculé, ses lignes prises avant le passage',
+            remplacements: [['(lignes as unknown as LigneDeVenteRow[]).map(', '((data ?? []) as LigneDeVenteRow[]).map(']], scenario: illisibleVente,
+          },
+          { slug, quoi: 'la vente prise pour un type qui dit son tiers', remplacements: [[types, types.replace('"autre"]', '"autre", "vente"]')]], scenario: nonBascule },
+          { slug, quoi: 'l’achat pris pour une vente : la règle vise trop large', remplacements: [[types, types.replace('["achat", ', '[')]], scenario: nonBascule },
+          {
+            slug, quoi: 'la ligne d’une pièce de vente sous le libellé du brouillon',
+            remplacements: [['    libelle: lue.type_piece === "vente" ? nomDUnePieceDeVente(', '    libelle: lue.type_piece === "vente" ? ligne.libelle ?? nomDUnePieceDeVente(']], scenario: nonBascule,
+          },
+          {
+            slug, quoi: 'la date d’une pièce de vente telle que la base l’écrit',
+            remplacements: [['    ? `du ${piece.date_piece.slice(8, 10)}/${piece.date_piece.slice(5, 7)}/${piece.date_piece.slice(0, 4)}`\n', '    ? `du ${piece.date_piece}`\n']], scenario: nonBascule,
+          },
+          { slug, quoi: 'la consigne sans la phrase des pièces de vente', remplacements: [['\n- Une PIÈCE DE VENTE (type_piece « vente ») se nomme par sa date et son montant', '\n- Une pièce de vente se nomme comme on veut']], scenario: nonBascule },
+          { slug, quoi: 'le filtre par tiers oublié', remplacements: [['    if (typeof input.tiers === "string" && input.tiers) q = q.ilike("tiers", `%${input.tiers}%`)\n', '']], scenario: nonBascule },
+        ]
+      })(),
     ]
   })(),
   {

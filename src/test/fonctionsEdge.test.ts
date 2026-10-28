@@ -156,6 +156,32 @@ describe('la base applique ce qu’on lui demande', () => {
     expect(((await rendre()).data as unknown[]).length).toBe(2)
   })
 
+  // Une ressource embarquée par la clé étrangère de la table vers elle (étape VF9C-Q1 : `lister_ecritures` lit la pièce de
+  // chaque ligne) : `pieces(…)` est la jointure à gauche de PostgREST — la ligne sans pièce reste, sa pièce à null, et le
+  // compte annoncé ne bouge pas ; `pieces!inner(…)` l'écarte. Une relation que le schéma ne porte pas LÈVE.
+  it('une ressource embarquée : `relation(…)` garde la ligne sans elle, à null ; `relation!inner(…)` l’écarte', async () => {
+    const monde = base()
+    monde.base.ecritures_brouillon = [
+      { id: 'ec000000-0000-4000-8000-000000000001', dossier_id: ID.dossier, date: '2026-01-02', piece_id: 'b1000000-0000-4000-8000-000000000001', libelle: 'Alpha' },
+      { id: 'ec000000-0000-4000-8000-000000000002', dossier_id: ID.dossier, date: '2026-01-03', piece_id: null, libelle: 'Relevé' },
+    ]
+    const { rendre } = sonde(`return {
+      gauche: await client.from("ecritures_brouillon").select("libelle, piece_id, pieces(tiers, montant_ttc)", { count: "exact" }).order("date"),
+      interne: await client.from("ecritures_brouillon").select("libelle, pieces!inner(tiers)", { count: "exact" }).order("date"),
+    }`, monde)
+    const r = await rendre()
+    expect(r.gauche).toMatchObject({
+      count: 2, error: null,
+      data: [
+        { libelle: 'Alpha', piece_id: 'b1000000-0000-4000-8000-000000000001', pieces: { tiers: 'Alpha', montant_ttc: 10 } },
+        { libelle: 'Relevé', piece_id: null, pieces: null },
+      ],
+    })
+    expect(Object.keys((r.gauche as { data: Record<string, unknown>[] }).data[0])).toEqual(['libelle', 'piece_id', 'pieces'])
+    expect(r.interne).toMatchObject({ count: 1, data: [{ libelle: 'Alpha', pieces: { tiers: 'Alpha' } }] })
+    await expect(sonde('return await client.from("pieces").select("id, ecritures_brouillon(libelle)")').rendre()).rejects.toThrow(/aucune clé de « pieces » vers « ecritures_brouillon »/)
+  })
+
   it('une table que le schéma exporté ne connaît pas : PGRST205, comme PostgREST', async () => {
     const { rendre } = sonde('return await client.from("cabinet_admin").select("user_id")')
     expect(await rendre()).toMatchObject({ data: null, error: { code: 'PGRST205' } })
