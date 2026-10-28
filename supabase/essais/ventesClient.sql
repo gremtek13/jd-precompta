@@ -53,6 +53,13 @@
 -- il disait 89 verdicts et 12 valeurs, une valeur oubliée au compte (le fichier n'avait pas changé) ; rejoué sur une
 -- réplique sans les migrations, ses deux gardes retirées, il rend 62 verdicts en faute sur 90, et avec elles il se dit
 -- impossible.
+--
+-- ADAPTÉ LE 28/10/2026 À L'ÉTAPE A7a (migration `mentions_figees`, PRÉPARÉE, pas encore en base) : un accès « Ventes » ne
+-- valide plus une facture d'un dossier dont l'identité n'a pas de forme juridique (le cabinet la règle, elle en est le
+-- préalable : MEG1-Q14). Le dossier A naît donc avec la sienne — 5710, une société par actions simplifiée, qui n'appelle
+-- aucune mention d'entrepreneur individuel ; la colonne est en base depuis l'étape A5, et avant la migration rien ne
+-- change. Le reste de l'étape — la provenance des lignes, ce que la validation fige, la garde — se joue dans
+-- supabase/essais/mentionsFigees.sql.
 do $essai$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -109,8 +116,8 @@ begin
       -- ventes (garder_droit_ventes, étape VF8f). Ses factures validées y sont donc la source de leur vente, et portent la
       -- nature de leurs opérations, que leur validation exige (un avoir prend celle de sa facture).
       ('j1', 'jeu', 'dossiers jetables A et B', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures) values
-          ('{DA}', 'ESSAI VENTES A', '{CAB}', 'redevable', true, true), ('{DB}', 'ESSAI VENTES B', '{CAB}', 'redevable', true, false)$q$, 'OK', null, null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures, forme_juridique) values
+          ('{DA}', 'ESSAI VENTES A', '{CAB}', 'redevable', true, true, '5710'), ('{DB}', 'ESSAI VENTES B', '{CAB}', 'redevable', true, false, null)$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-ventes@exemple.invalid')$q$, 'OK', null, null),
       ('j3', 'jeu', 'un crédit dans chaque dossier', 'proprietaire', null,

@@ -340,6 +340,16 @@
 -- contrôle neuf, 1 sur 1. Ce script recopie les tables, pas leurs gardes : l'insertion du super-administrateur d'un accès
 -- « Ventes » sur un dossier qui n'a pas basculé — la restauration d'une sauvegarde d'avant le resserrement —, et le refus
 -- de toute autre écriture, droitsAcces.sql les prouve (70 à 82, 90 à 95).
+--
+-- 28/10/2026, espace client, étape A7a (migration `mentions_figees`, PRÉPARÉE, pas encore collée) : aucune table ni clé de
+-- plus — vingt-quatre colonnes de `factures_emises` (ce que la validation fige, et le contact d'où vient le client), quatre
+-- de `facture_lignes` (la provenance de la ligne) et une de `dossiers` (`mentions_identite`), sans clé (des provenances),
+-- recopiées avec leurs lignes et leurs contraintes ; le plan ne change pas. Un contrôle de plus suit le verdict : chaque
+-- facture qui a figé ses mentions restaurée telle qu'elle les a figées, colonne par colonne, chaque ligne avec sa
+-- provenance, le dossier avec ses autres mentions — ou EN ATTENTE sans la migration. Ce script recopie les tables, pas
+-- leurs gardes : que la porte de la restauration réinsère une facture figée telle quelle, que les contraintes de la ligne
+-- la jugent, et qu'une facture d'une sauvegarde d'avant (ses colonnes absentes) se réinsère avec les colonnes nulles,
+-- mentionsFigees.sql le prouve (j5, 100 à 110, M9).
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -924,6 +934,50 @@ begin
     case when n > 0 then n || ' sur ' || n || ', le dossier avant ses accès' else 'au moins un accès « Ventes »' end,
     case when n > 0 then egales || ' sur ' || n || ', ' || case when ordre_juste then 'le dossier avant ses accès' else 'LES ACCÈS AVANT LEUR DOSSIER' end
          else 'aucun accès « Ventes » dans le dossier : rien n''est prouvé' end);
+end $$;
+
+-- CE QUE LA FACTURE FIGE (espace client, étape A7a ; migration `mentions_figees`) : des colonnes de plus de trois tables au
+-- plan, sans clé, recopiées avec leurs lignes. Ces contrôles disent que chaque facture qui a figé ses mentions a été
+-- restaurée avec chacune de ses vingt-quatre colonnes telle qu'elle était, chaque ligne qui porte une provenance avec ses
+-- quatre colonnes, et le dossier avec ses autres mentions — au moins une de chaque, ou rien n'est prouvé, et ils le disent ;
+-- avant la migration, les colonnes n'existent pas et le contrôle attend.
+do $$
+declare
+  d uuid := (select dossier from essai_restauration._cible); n bigint; egales bigint;
+  figees text[] := array['mentions_figees', 'statut_tva', 'article_exoneration', 'numero_tva_attribue', 'numero_tva_imprime',
+    'denomination_imprimee', 'forme_juridique', 'capital', 'rcs_ville', 'mentions_identite', 'moyen_prefere', 'escompte',
+    'penalites', 'mentions_complementaires', 'pied_de_page', 'iban_imprime', 'bic_imprime', 'titulaire_imprime', 'logo_chemin',
+    'logo_sha256', 'parametres_id', 'rib_parametres_id', 'mandataire_nom', 'contact_id'];
+  provenance text[] := array['unite', 'reference', 'article_id', 'nature'];
+  egal text;
+begin
+  if not exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass
+                  and attname = 'mentions_figees' and not attisdropped) then
+    insert into essai_restauration._controles values
+      ('factures_emises.mentions_figees : EN ATTENTE de la migration mentions_figees', 'absente', 'absente');
+    return;
+  end if;
+  select string_agg(format('e.%1$I is not distinct from s.%1$I', c), ' and ') into egal from unnest(figees) as c;
+  execute 'select count(*), count(*) filter (where ' || egal || ') from public.factures_emises s'
+          || ' left join essai_restauration.factures_emises e on e.id = s.id where s.dossier_id = $1 and s.mentions_figees'
+    into n, egales using d;
+  insert into essai_restauration._controles values ('factures_emises.mentions_figees : chaque facture qui a figé ses mentions, restaurée avec ses 24 colonnes',
+    case when n > 0 then n || ' sur ' || n else 'au moins une facture figée' end,
+    case when n > 0 then egales || ' sur ' || n else 'aucune facture figée dans le dossier : rien n''est prouvé' end);
+  select string_agg(format('e.%1$I is not distinct from s.%1$I', c), ' and ') into egal from unnest(provenance) as c;
+  execute 'select count(*), count(*) filter (where ' || egal || ') from public.facture_lignes s'
+          || ' join public.factures_emises f on f.id = s.facture_id left join essai_restauration.facture_lignes e on e.id = s.id'
+          || ' where f.dossier_id = $1 and num_nonnulls(s.unite, s.reference, s.article_id, s.nature) > 0'
+    into n, egales using d;
+  insert into essai_restauration._controles values ('facture_lignes : chaque ligne qui porte sa provenance, restaurée avec ses 4 colonnes',
+    case when n > 0 then n || ' sur ' || n else 'au moins une ligne' end,
+    case when n > 0 then egales || ' sur ' || n else 'aucune ligne qui porte sa provenance dans le dossier : rien n''est prouvé' end);
+  execute 'select count(*), count(*) filter (where e.mentions_identite = s.mentions_identite) from public.dossiers s'
+          || ' left join essai_restauration.dossiers e on e.id = s.id where s.id = $1 and s.mentions_identite is not null'
+    into n, egales using d;
+  insert into essai_restauration._controles values ('dossiers.mentions_identite : le dossier restauré avec ses autres mentions',
+    case when n > 0 then n || ' sur ' || n else 'un dossier qui en porte' end,
+    case when n > 0 then egales || ' sur ' || n else 'aucune autre mention dans le dossier : rien n''est prouvé' end);
 end $$;
 
 select controle, attendu, observe, observe = attendu as ok from essai_restauration._controles order by controle;

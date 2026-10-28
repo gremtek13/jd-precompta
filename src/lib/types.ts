@@ -75,6 +75,11 @@ export interface Dossier {
   rcs_ville?: string | null
   forme_juridique?: string | null
   capital?: number | null
+  // LES AUTRES MENTIONS DE L'IDENTITÉ LÉGALE (C. com., art. R123-237 : liquidation, location-gérance, capital variable,
+  // répertoire des métiers, agrément ; A5-Q9 ; étape A7a, migration `mentions_figees`, PRÉPARÉE, pas encore collée) : un
+  // texte de cinq cents caractères au plus, que le cabinet seul écrit (la policy `dossiers_update`), et que chaque facture
+  // fige à sa validation. FACULTATIVE tant que la migration n'est pas en base ; aucun écran ne l'écrit encore.
+  mentions_identite?: string | null
   // LES FACTURES DU DOSSIER SONT-ELLES LA SOURCE DE LEURS VENTES ? (chantier EC-Q3, étape VF2 ; migration
   // `source_de_la_vente`, en base et dans l'export depuis le 18/10/2026 ; lib/sourceDeLaVente.ts.) Faux par défaut ; posé
   // par le cabinet (la policy `dossiers_update`) ; irréversible dès qu'une facture source existe
@@ -1080,6 +1085,44 @@ export interface FactureEmise {
   // d'une facture validée par un compte qui porte un accès client du dossier (lib/auteursVentes.ts). La colonne est en
   // base et dans l'export depuis P2 : la sauvegarde et la restauration la portent déjà (`select('*')`).
   valide_par: string | null
+  // CE QUE LA FACTURE FIGE À SA VALIDATION (espace client, étape A7a ; migration `mentions_figees`, PRÉPARÉE, pas encore
+  // collée ; lib/mentionsFigees.ts). `enregistrer_facture` seule les écrit, dans la transaction qui numérote, depuis ce que
+  // la base tient — le dossier, la version courante des paramètres, le RIB CONFIRMÉ en vigueur, le cabinet —, jamais depuis
+  // l'appelant ; la garde des factures validées les fige ; nulles sur un brouillon. Une facture validée avant la migration a
+  // `mentions_figees` faux et le reste nul : elle imprime ce qu'elle a toujours imprimé. Un avoir prend de sa facture, quand
+  // elle les a figés, le statut et le numéro de TVA et l'identité légale. `contact_id` seul se pose dès le brouillon : le
+  // contact d'où vient le client, une provenance sans clé. FACULTATIVES dans ce type tant que la migration n'est pas en
+  // base : une lecture `select('*')` ne les porte pas encore, et une sauvegarde faite avant elle non plus — une colonne
+  // absente d'une lecture n'est pas une colonne nulle. L'écran ne les lit ni ne les envoie avant l'étape A7b, derrière
+  // `MENTIONS_FIGEES_EXPORTEES`.
+  mentions_figees?: boolean
+  statut_tva?: StatutTva | null
+  article_exoneration?: ArticleExoneration | null
+  numero_tva_attribue?: boolean | null
+  // Calculé en base à la validation comme `numeroTvaImprime` (lib/factureCii.ts), sur le SIRET figé de la facture.
+  numero_tva_imprime?: string | null
+  denomination_imprimee?: string | null
+  forme_juridique?: string | null
+  capital?: number | null
+  rcs_ville?: string | null
+  mentions_identite?: string | null
+  // La version COURANTE des paramètres de facturation à la validation, et ce que la facture en a figé.
+  parametres_id?: string | null
+  moyen_prefere?: MoyenEncaissement | null
+  escompte?: string | null
+  penalites?: string | null
+  mentions_complementaires?: string | null
+  pied_de_page?: string | null
+  logo_chemin?: string | null
+  logo_sha256?: string | null
+  // Le RIB CONFIRMÉ en vigueur à la validation, et la version qui le porte — jamais un RIB seulement proposé.
+  iban_imprime?: string | null
+  bic_imprime?: string | null
+  titulaire_imprime?: string | null
+  rib_parametres_id?: string | null
+  // Le nom du cabinet quand c'est lui qui a validé (EC-Q2, MEG1-Q15 ; l'imprimer est l'étape P4) ; nul pour un accès « Ventes ».
+  mandataire_nom?: string | null
+  contact_id?: string | null
 }
 
 // Les mentions de la facture électronique, à part du reste : le module qui les juge et l'écran qui les saisit
@@ -1141,6 +1184,15 @@ export interface FactureLigne {
   prix_unitaire_ht: number
   // Pourcentage (0, 5.5, 10, 20...), pas un montant.
   taux_tva: number
+  // LA PROVENANCE DE LA LIGNE (étape A7a ; migration `mentions_figees`, PRÉPARÉE, pas encore collée) : l'unité (BT-130, la
+  // liste fermée des articles), la référence (BT-155), l'article qui l'a pré-remplie (sans clé : la ligne garde sa copie)
+  // et sa nature, biens ou services (exigée de personne tant que la facture mixte se refuse, EC3-Q8). Écrites par
+  // `enregistrer_facture`, figées avec la facture ; nulles sur une ligne d'avant. FACULTATIVES tant que la migration n'est
+  // pas en base, comme celles de FactureEmise.
+  unite?: UniteArticle | null
+  reference?: string | null
+  article_id?: string | null
+  nature?: NatureArticle | null
 }
 
 // Un encaissement d'une facture émise validée (`encaissements_factures`, ligne 28.5, étape d1), ou l'ANNULATION d'un
