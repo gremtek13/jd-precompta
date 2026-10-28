@@ -547,6 +547,22 @@ lignes justes, rien n'est resté ; les blocs EQ et VS de `rls.sql`, sans le cont
 suppression et un retrait de droit, que l'outil retient), 0 en faute, 6 mutations sur 6 (HISTORIQUE.md, « LES DEUX
 MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION »).
 
+**Préparé le 28/10/2026, PAS ENCORE APPLIQUÉ : `mentions_figees`** (espace client, étape A7a, ligne 51.5 : la facture
+fige ses mentions). Son fichier porte une version PROVISOIRE, `20261028120000`, après `ventes_sur_dossier_bascule`. Elle
+se COLLE — le corps d'`enregistrer_facture` supprime les lignes qu'il remplace — : le texte à coller pose la ligne
+d'historique sous la version de l'heure du collage, et le fichier se RENOMME à cette version, texte inchangé ; la ligne
+d'historique doit rendre `4d9f6227941812cd031f311aa144d6d6`, fins de ligne ramenées à `\n`. Tant qu'elle n'est pas
+appliquée, la dérive se lit sans elle : 159 fichiers, 159 migrations, `b70ba907…`, la production. Sur la réplique de
+l'étape (la production à 159 migrations, son historique et ses neuf familles égaux à ceux de la production), munie de la
+migration : 160 fichiers, 160 migrations, `2e916da89788b16a2aec99913bfde4d7` des deux côtés. Le socle est inchangé (80
+instructions, `5d53eea2…`) ; l'inventaire compte 2 209 objets (`943745663e3319cc013c4d5a9e43c1a3`, des deux côtés,
+2 167 avant) — vingt-neuf colonnes, onze contraintes, deux fonctions ; la contrainte remplacée et `enregistrer_facture`
+changent sous leur nom. `signature.sql` : quatre familles changent, « colonnes » (866 `23b2bc60…` puis 895
+`05cda372674c2e5cfbcf5f596972d85f`), « contraintes » (670 `d63ab39f…` puis 681 `5ade75836461197a3ea0a690d79ef1bf`),
+« fonctions » (204 `9dbbaf01…` puis 206 `a29afce98127a69e5975db5adbf9bfc6`) et « droits des fonctions » (204
+`a2b5e8ad…` puis 206 `cfa4e213509c544163ddb6bffabb8303`) — les cinq autres inchangées (HISTORIQUE.md, « LA FACTURE FIGE
+SES MENTIONS, EN BASE »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
