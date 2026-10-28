@@ -2,30 +2,36 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { muter } from '../test/fonctionsEdge'
-import { fichiersDuSchema } from '../test/schema'
+import { fichiersDuSchema, relationsDuSchema } from '../test/schema'
 
 // LE CLIENT D'UNE PIÈCE DE VENTE NE PART PAS AU MODÈLE (VF9C-Q1 : la réponse (A) du cabinet du 28/10/2026 ; chantier EC-Q3,
-// ligne 28.65).
+// ligne 28.65). NI QUI A PAYÉ UN CRÉDIT DU RELEVÉ, NI LE LIBELLÉ D'UNE LIGNE RATTACHÉE À RIEN (VF9CQ1 : les réponses (A) du
+// cabinet du 28/10/2026 à VF9CQ1-Q1 et Q2).
 //
 // Le tiers d'une pièce de vente est son client — chez un praticien, un patient (RGPD.md, § 8.7) —, le nom de son fichier
 // le porte souvent, et le libellé de ses écritures le recopie (`piece.tiers ?? piece.nom_fichier`, src/lib/ecritures.ts et
-// src/lib/engagement.ts). Pour toute pièce de vente de tout dossier, aucun des trois ne part au modèle : `agent-comptable`
-// la nomme par sa date et son montant. Tout ce que le modèle reçoit d'une pièce, ou d'une ligne du brouillon qui en cite
-// une, passe par UN passage, le bloc `── DÉBUT/FIN PIÈCES DE VENTE` de la fonction. Ce test le garde de deux façons :
+// src/lib/engagement.ts). Le libellé qu'une ligne du brouillon tient d'un mouvement du relevé est celui de la banque, et celui
+// d'un crédit nomme souvent qui a payé ; l'écriture restée d'une pièce supprimée garde le libellé qui nomme son client. Pour
+// tout dossier, `agent-comptable` nomme une pièce de vente par sa date et son montant, une ligne d'un crédit par la date et le
+// montant du mouvement, et tait celui d'une ligne rattachée à rien ; un débit garde le sien. Tout ce que le modèle reçoit d'une
+// pièce, ou d'une ligne du brouillon, passe par UN passage, le bloc `── DÉBUT/FIN PIÈCES DE VENTE` de la fonction. Ce test le
+// garde de trois façons :
 //   - le bloc, extrait, transpilé et exécuté SEUL — un nom qu'il emprunterait au reste du fichier lèverait —, sur une table
 //     de cas nommés, et une dérive plantée par fonction et par constante pour prouver qu'elle sait encore échouer ; ses
-//     types confrontés à la contrainte du schéma exporté ;
+//     types confrontés à la contrainte du schéma exporté, et ses RATTACHEMENTS à chaque clé étrangère du brouillon ;
 //   - un SCANNER qui part de TOUTES les lectures de la fonction (`.from(`), en lit la sélection — un texte, ou le choix entre
-//     deux textes ; toute autre forme est une faute —, et relève celles qui rapportent un tiers, un nom de fichier ou un
-//     libellé du brouillon. Chacune passe par le passage, et le corps de son outil ne rend ses lignes que passées par lui ;
-//     ou elle se déclare, avec sa raison ET son nombre (une de plus est une rechute, une de moins une raison morte). Le
-//     client d'une facture (`tiers_nom`) ne se lit jamais. Un plancher distingue « zéro faute » d'« aveugle », et chaque
-//     défaut que le scanner craint est planté dans la vraie source.
+//     deux textes ; toute autre forme est une faute —, et relève celles qui rapportent un tiers, un nom de fichier, un
+//     libellé du brouillon ou du relevé. Chacune passe par le passage, et le corps de son outil ne rend ses lignes que passées
+//     par lui ; ou elle se déclare, avec sa raison ET son nombre (une de plus est une rechute, une de moins une raison morte).
+//     Le client d'une facture (`tiers_nom`), le libellé que la banque a donné et ce que la validation fige au brouillon pour le
+//     FEC ne se lisent jamais. Un plancher distingue « zéro faute » d'« aveugle », et chaque défaut que le scanner craint est
+//     planté dans la vraie source.
 //
 // Ce que le scanner ne voit pas, dit plutôt que deviné : ce qu'un outil fait d'une lecture DÉCLARÉE interne (le tiers des
 // pièces de `points_a_traiter`, que le lettrage fait à la main compare). Le contrat HTTP de l'assistant le juge, lui, sur des
-// mondes qui remplissent chaque clé qui compte une pièce de vente (src/test/contratsFonctions.ts, « VF9C-Q1 ») : le scanner
-// voit ce qu'on LIT, le contrat ce qui ATTEINT le modèle.
+// mondes qui remplissent chaque clé qui compte une pièce de vente, et sur des mondes où chaque sorte de mouvement du relevé
+// porte un marqueur (src/test/contratsFonctions.ts, « VF9C-Q1 » et « VF9CQ1 ») : le scanner voit ce qu'on LIT, le contrat ce
+// qui ATTEINT le modèle.
 
 function sourceDeployee(): string {
   return readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
@@ -44,14 +50,32 @@ function bloc(source: string): string {
   return source.slice(i, j)
 }
 
-interface Bloc {
-  TYPES_DONT_LE_TIERS_SE_DIT: readonly string[]
-  nomDUnePieceDeVente: (piece: { date_piece: unknown; montant_ttc: unknown }) => string
-  pieceVueParLeModele: (piece: Record<string, unknown>) => Record<string, unknown>
-  ecritureVueParLeModele: (ligne: Record<string, unknown>) => Record<string, unknown>
+/** Ce qu'un dossier qui lit ses ventes facturées en sait (VF9c), tel que `lister_ecritures` le passe au bloc. */
+interface VentesNommees {
+  factures: ReadonlyMap<string, { id: string; type: string; numero: string | null }>
+  encaissements: ReadonlyMap<string, { id: string; facture_id: string; annule_id: string | null }>
+  classes: ReadonlySet<string>
 }
 
-const NOMS = ['TYPES_DONT_LE_TIERS_SE_DIT', 'nomDUnePieceDeVente', 'pieceVueParLeModele', 'ecritureVueParLeModele'] as const
+interface Bloc {
+  TYPES_DONT_LE_TIERS_SE_DIT: readonly string[]
+  RATTACHEMENTS_D_UNE_LIGNE: readonly string[]
+  nomDUnePieceDeVente: (piece: { date_piece: unknown; montant_ttc: unknown }) => string
+  nomDUnCreditDuReleve: (mouvement: { date: unknown; montant: unknown }) => string
+  pieceVueParLeModele: (piece: Record<string, unknown>) => Record<string, unknown>
+  libelleDuBrouillon: (ligne: Record<string, unknown>) => string | null
+  libelleDUneLigneDePiece: (ligne: Record<string, unknown>) => string | null
+  libelleDUneLigneDuReleve: (ligne: Record<string, unknown>) => string | null
+  libelleEtSource: (ligne: Record<string, unknown>, ventes: VentesNommees | null) => { libelle: string | null; source: string | null }
+  ecritureVueParLeModele: (ligne: Record<string, unknown>, ventes: VentesNommees | null) => Record<string, unknown>
+}
+
+const NOMS = [
+  'TYPES_DONT_LE_TIERS_SE_DIT', 'RATTACHEMENTS_D_UNE_LIGNE', 'nomDUnePieceDeVente', 'nomDUnCreditDuReleve', 'pieceVueParLeModele',
+  'libelleDuBrouillon', 'libelleDUneLigneDePiece', 'libelleDUneLigneDuReleve', 'libelleEtSource', 'ecritureVueParLeModele',
+] as const
+/** Les types que le bloc déclare : ce qu'il nomme d'une pièce, d'un mouvement, des factures et des encaissements. */
+const TYPES_DU_BLOC = ['PieceNommee', 'MouvementNomme', 'FactureNommeeRow', 'EncaissementNommeRow', 'VentesNommees']
 
 /** Le bloc transpilé puis exécuté SEUL, en mode strict : il ne voit rien du reste du fichier. */
 function executer(code: string): Bloc {
@@ -64,15 +88,48 @@ const deployee = executer(bloc(sourceDeployee()))
 // ── LE BLOC : CE QU'IL REND, CAS PAR CAS ────────────────────────────────────────────────────────────────────────────────
 
 const ID_PIECE = 'a1000000-0000-4000-8000-000000000001'
+const ID_MOUVEMENT = 'b1000000-0000-4000-8000-000000000001'
+const ID_CLASSE = 'b1000000-0000-4000-8000-000000000002'
 const piece = (o: Record<string, unknown>) => ({
   date_piece: '2026-01-15', tiers: 'Client fictif', nom_fichier: 'facture du client fictif.pdf', montant_ht: 100, montant_tva: 20,
   montant_ttc: 120, type_piece: 'vente', statut: 'validee', confiance: 'haute', ...o,
 })
+/**
+ * Une ligne telle que `lister_ecritures` la lit : ses colonnes, ses huit rattachements — ici, une ligne de pièce de vente —,
+ * sa pièce et son mouvement embarqués.
+ */
 const ligne = (o: Record<string, unknown>) => ({
   date: '2026-01-20', compte: '706000', libelle: 'Client fictif', sens: 'credit', montant: 100, piece_id: ID_PIECE,
-  pieces: { type_piece: 'vente', date_piece: '2026-01-15', montant_ttc: 120 }, ...o,
+  ligne_bancaire_id: null, facture_id: null, encaissement_id: null, immobilisation_id: null, vehicule_id: null,
+  declaration_tva_id: null, cotisation_id: null,
+  pieces: { type_piece: 'vente', date_piece: '2026-01-15', montant_ttc: 120 }, lignes_bancaires: null, ...o,
 })
-const sansLaPiece = ({ pieces: _pieces, ...reste }: Record<string, unknown>) => reste
+/** Une ligne sans pièce : celle d'un mouvement, d'une vente facturée, d'une écriture composée, ou rattachée à rien. */
+const sansPiece = (o: Record<string, unknown>) => ligne({ piece_id: null, pieces: null, ...o })
+/** La ligne d'un mouvement du relevé, de ce montant, que la ligne ne porte pas forcément elle-même. */
+const duMouvement = (montant: unknown, o: Record<string, unknown> = {}) =>
+  sansPiece({ ligne_bancaire_id: ID_MOUVEMENT, lignes_bancaires: { date: '2026-02-10', montant }, ...o })
+const achat = (o: Record<string, unknown> = {}) =>
+  ligne({ libelle: 'Fournisseur fictif', pieces: { type_piece: 'achat', date_piece: '2026-01-15', montant_ttc: 120 }, ...o })
+const debit = () => duMouvement(-45, { compte: '606000', sens: 'debit', montant: 45, libelle: 'CB FOURNITURES FICTIVES' })
+const dotation = () => sansPiece({ immobilisation_id: 'i1', compte: '681100', sens: 'debit', date: '2026-12-31', libelle: 'Dotation 2026 — Bien fictif' })
+/** La ligne lue sans une de ses colonnes. */
+const sans = (l: Record<string, unknown>, cle: string): Record<string, unknown> => Object.fromEntries(Object.entries(l).filter(([k]) => k !== cle))
+/** Ce que le modèle reçoit d'une ligne : ses colonnes d'hier, dans leur ordre, sous ce libellé ; et sa source, d'un dossier qui lit ses ventes. */
+const vue = (l: Record<string, unknown>, libelle: unknown, ...source: [unknown?]) => ({
+  date: l.date, compte: l.compte, libelle, sens: l.sens, montant: l.montant, piece_id: l.piece_id, ...(source.length > 0 ? { source: source[0] } : {}),
+})
+const NOM_DU_CREDIT = 'Crédit du relevé du 10/02/2026, 300,00 €'
+const NOM_DE_LA_PIECE = 'Pièce de vente du 15/01/2026, 120,00 €'
+/** Les ventes d'un dossier qui les lit : deux factures (l'une un avoir sans numéro), un encaissement, sa contre-passation, un encaissement dont la facture n'est pas rendue, un mouvement classé. */
+const VENTES: VentesNommees = {
+  factures: new Map([['f1', { id: 'f1', type: 'facture', numero: 'F-1' }], ['a1', { id: 'a1', type: 'avoir', numero: null }]]),
+  encaissements: new Map([
+    ['e1', { id: 'e1', facture_id: 'f1', annule_id: null }], ['c1', { id: 'c1', facture_id: 'f1', annule_id: 'e1' }],
+    ['e9', { id: 'e9', facture_id: 'f404', annule_id: null }],
+  ]),
+  classes: new Set([ID_CLASSE]),
+}
 
 /** Chaque cas : ce que le bloc rend, mis en texte (l'ordre des clés compte : c'est ce qui part au modèle), et l'attendu. */
 const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu: unknown])[] = [
@@ -87,6 +144,12 @@ const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu
   ['le nom : sans montant', (b) => b.nomDUnePieceDeVente({ date_piece: '2026-01-15', montant_ttc: null }), 'Pièce de vente du 15/01/2026, sans montant'],
   ['le nom : un montant qui n’est pas un nombre', (b) => b.nomDUnePieceDeVente({ date_piece: '2026-01-15', montant_ttc: Number.NaN }), 'Pièce de vente du 15/01/2026, sans montant'],
   ['le nom : un montant en texte', (b) => b.nomDUnePieceDeVente({ date_piece: '2026-01-15', montant_ttc: '120' }), 'Pièce de vente du 15/01/2026, sans montant'],
+  // Le nom d'un crédit du relevé : la date et le montant du mouvement (VF9CQ1-Q1).
+  ['le nom d’un crédit : une date et un montant', (b) => b.nomDUnCreditDuReleve({ date: '2026-01-15', montant: 120 }), 'Crédit du relevé du 15/01/2026, 120,00 €'],
+  ['le nom d’un crédit : des centimes, sans séparateur de milliers', (b) => b.nomDUnCreditDuReleve({ date: '2026-12-31', montant: 1234.5 }), 'Crédit du relevé du 31/12/2026, 1234,50 €'],
+  ['le nom d’un crédit : sans date', (b) => b.nomDUnCreditDuReleve({ date: null, montant: 120 }), 'Crédit du relevé sans date, 120,00 €'],
+  ['le nom d’un crédit : une date mal formée', (b) => b.nomDUnCreditDuReleve({ date: '2026-1-5', montant: 120 }), 'Crédit du relevé sans date, 120,00 €'],
+  ['le nom d’un crédit : un instant au lieu d’une date', (b) => b.nomDUnCreditDuReleve({ date: '2026-01-15T10:00:00Z', montant: 120 }), 'Crédit du relevé sans date, 120,00 €'],
   // Une pièce, telle que `lister_pieces` la rend.
   ['une pièce de vente : ni tiers ni fichier, le reste à sa place',
     (b) => JSON.stringify(b.pieceVueParLeModele(piece({}))), JSON.stringify(piece({ tiers: null, nom_fichier: null }))],
@@ -98,38 +161,116 @@ const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu
   ['un type que la base n’a pas : le côté fermé', (b) => JSON.stringify(b.pieceVueParLeModele(piece({ type_piece: 'avoir_client' }))),
     JSON.stringify(piece({ type_piece: 'avoir_client', tiers: null, nom_fichier: null }))],
   ['un type non lu : le côté fermé', (b) => JSON.stringify(b.pieceVueParLeModele(piece({ type_piece: null }))), JSON.stringify(piece({ type_piece: null, tiers: null, nom_fichier: null }))],
-  // Une ligne du brouillon, telle que `lister_ecritures` la rend.
-  ['la ligne d’une pièce de vente : son nom, sans la pièce lue', (b) => JSON.stringify(b.ecritureVueParLeModele(ligne({}))),
-    JSON.stringify(sansLaPiece(ligne({ libelle: 'Pièce de vente du 15/01/2026, 120,00 €' })))],
-  ['la ligne d’une pièce de vente sans date ni montant', (b) => JSON.stringify(b.ecritureVueParLeModele(ligne({ pieces: { type_piece: 'vente', date_piece: null, montant_ttc: null } }))),
-    JSON.stringify(sansLaPiece(ligne({ libelle: 'Pièce de vente sans date, sans montant' })))],
-  ['la ligne d’une pièce d’achat : son libellé, sans la pièce lue',
-    (b) => JSON.stringify(b.ecritureVueParLeModele(ligne({ libelle: 'Fournisseur fictif', pieces: { type_piece: 'achat', date_piece: '2026-01-15', montant_ttc: 120 } }))),
-    JSON.stringify(sansLaPiece(ligne({ libelle: 'Fournisseur fictif' })))],
+  // La ligne d'une pièce, telle que `lister_ecritures` la rend (VF9C-Q1) : sa source est la pièce, même sur un crédit.
+  ['la ligne d’une pièce de vente : son nom, sans la pièce lue', (b) => b.ecritureVueParLeModele(ligne({}), null), vue(ligne({}), NOM_DE_LA_PIECE)],
+  ['la ligne d’une pièce de vente sans date ni montant', (b) => b.ecritureVueParLeModele(ligne({ pieces: { type_piece: 'vente', date_piece: null, montant_ttc: null } }), null),
+    vue(ligne({}), 'Pièce de vente sans date, sans montant')],
+  ['la ligne d’une pièce d’achat : son libellé, sans la pièce lue', (b) => b.ecritureVueParLeModele(achat(), null), vue(achat(), 'Fournisseur fictif')],
   ['la ligne d’une note de frais : son libellé',
-    (b) => JSON.stringify(b.ecritureVueParLeModele(ligne({ libelle: 'Restaurant fictif', pieces: { type_piece: 'note_frais', date_piece: null, montant_ttc: 9 } }))),
-    JSON.stringify(sansLaPiece(ligne({ libelle: 'Restaurant fictif' })))],
-  ['une ligne sans pièce (un mouvement du relevé, une vente facturée…) : son libellé', (b) => JSON.stringify(b.ecritureVueParLeModele(ligne({ libelle: 'VIR FICTIF', piece_id: null, pieces: null }))),
-    JSON.stringify(sansLaPiece(ligne({ libelle: 'VIR FICTIF', piece_id: null })))],
-  ['une ligne qui cite une pièce que la lecture n’a pas rendue : aucun libellé', (b) => JSON.stringify(b.ecritureVueParLeModele(ligne({ pieces: null }))),
-    JSON.stringify(sansLaPiece(ligne({ libelle: null })))],
-  ['une ligne lue sans sa pièce : aucun libellé', (b) => JSON.stringify(b.ecritureVueParLeModele(sansLaPiece(ligne({ piece_id: null })))),
-    JSON.stringify(sansLaPiece(ligne({ piece_id: null, libelle: null })))],
-  ['une ligne lue sans sa colonne piece_id : aucun libellé', (b) => {
-    const { piece_id: _piece, ...sansColonne } = ligne({ libelle: 'Fournisseur fictif', pieces: null })
-    return JSON.stringify(b.ecritureVueParLeModele(sansColonne))
-  }, JSON.stringify({ date: '2026-01-20', compte: '706000', libelle: null, sens: 'credit', montant: 100 })],
-  ['la ligne d’une pièce d’un type inconnu : aucun libellé', (b) => JSON.stringify(b.ecritureVueParLeModele(ligne({ pieces: { type_piece: 'avoir_client', date_piece: null, montant_ttc: 1 } }))),
-    JSON.stringify(sansLaPiece(ligne({ libelle: null })))],
-  ['la ligne d’une pièce rendue sous une forme inattendue (une liste) : aucun libellé', (b) => JSON.stringify(b.ecritureVueParLeModele(ligne({ pieces: [{ type_piece: 'achat' }] }))),
-    JSON.stringify(sansLaPiece(ligne({ libelle: null })))],
-  ['les colonnes d’une ligne d’un dossier basculé gardées, à leur place', (b) => JSON.stringify(b.ecritureVueParLeModele({
-    date: '2026-03-20', compte: '512000', libelle: 'Encaissement, facture F-1 — Client fictif', sens: 'debit', montant: 300, piece_id: null,
-    facture_id: null, encaissement_id: 'e1', ligne_bancaire_id: 'm1', pieces: null,
-  })), JSON.stringify({
-    date: '2026-03-20', compte: '512000', libelle: 'Encaissement, facture F-1 — Client fictif', sens: 'debit', montant: 300, piece_id: null,
-    facture_id: null, encaissement_id: 'e1', ligne_bancaire_id: 'm1',
-  })],
+    (b) => b.ecritureVueParLeModele(ligne({ libelle: 'Restaurant fictif', pieces: { type_piece: 'note_frais', date_piece: null, montant_ttc: 9 } }), null),
+    vue(ligne({}), 'Restaurant fictif')],
+  ['la ligne d’une pièce « autre » : son libellé',
+    (b) => b.ecritureVueParLeModele(ligne({ libelle: 'Organisme fictif', pieces: { type_piece: 'autre', date_piece: null, montant_ttc: 0 } }), null),
+    vue(ligne({}), 'Organisme fictif')],
+  ['une ligne qui cite une pièce que la lecture n’a pas rendue : aucun libellé', (b) => b.ecritureVueParLeModele(ligne({ pieces: null }), null), vue(ligne({}), null)],
+  ['la ligne d’une pièce d’un type inconnu : aucun libellé',
+    (b) => b.ecritureVueParLeModele(ligne({ pieces: { type_piece: 'avoir_client', date_piece: null, montant_ttc: 1 } }), null), vue(ligne({}), null)],
+  ['la ligne d’une pièce rendue sous une forme inattendue (une liste) : aucun libellé',
+    (b) => b.ecritureVueParLeModele(ligne({ pieces: [{ type_piece: 'achat' }] }), null), vue(ligne({}), null)],
+  ['la ligne de banque d’une pièce de vente, sur un crédit : le nom de la pièce, pas celui du crédit',
+    (b) => b.ecritureVueParLeModele(ligne({ compte: '512000', sens: 'debit', ligne_bancaire_id: ID_MOUVEMENT, lignes_bancaires: { date: '2026-02-10', montant: 300 } }), null),
+    vue(ligne({ compte: '512000', sens: 'debit' }), NOM_DE_LA_PIECE)],
+  ['la ligne de banque d’une pièce d’achat, sur un crédit (un avoir remboursé) : son fournisseur',
+    (b) => b.ecritureVueParLeModele(achat({ compte: '512000', sens: 'debit', ligne_bancaire_id: ID_MOUVEMENT, lignes_bancaires: { date: '2026-02-10', montant: 300 } }), null),
+    vue(achat({ compte: '512000', sens: 'debit' }), 'Fournisseur fictif')],
+  // La ligne d'un mouvement du relevé (VF9CQ1-Q1) : le crédit se juge sur le mouvement, jamais sur le sens de la ligne.
+  ['la ligne d’un crédit : son nom — la date et le montant du mouvement, pas ceux de la ligne',
+    (b) => b.ecritureVueParLeModele(duMouvement(300, { date: '2026-02-11', montant: 290, libelle: 'VIR M FICTIF' }), null),
+    vue(duMouvement(300, { date: '2026-02-11', montant: 290 }), NOM_DU_CREDIT)],
+  ['la ligne de banque d’un crédit, au débit : le même nom',
+    (b) => b.ecritureVueParLeModele(duMouvement(300, { compte: '512000', sens: 'debit', montant: 300, libelle: 'VIR M FICTIF' }), null),
+    vue(duMouvement(300, { compte: '512000', sens: 'debit', montant: 300 }), NOM_DU_CREDIT)],
+  ['la ligne d’un débit : son libellé, au caractère près',
+    (b) => b.ecritureVueParLeModele(duMouvement(-45, { compte: '606000', sens: 'debit', montant: 45, libelle: '  CB FOURNITURES\tFICTIVES  ' }), null),
+    vue(debit(), '  CB FOURNITURES\tFICTIVES  ')],
+  ['la ligne de banque d’un débit, au crédit : son libellé',
+    (b) => b.ecritureVueParLeModele(duMouvement(-45, { compte: '512000', sens: 'credit', montant: 45, libelle: 'CB FOURNITURES FICTIVES' }), null),
+    vue(duMouvement(-45, { compte: '512000', sens: 'credit', montant: 45 }), 'CB FOURNITURES FICTIVES')],
+  ['la ligne d’un débit dont le libellé n’est pas un texte : aucun libellé', (b) => b.ecritureVueParLeModele(duMouvement(-45, { libelle: 45 }), null), vue(duMouvement(-45), null)],
+  ['la ligne restée d’une pièce supprimée, sur un crédit : le nom du crédit, jamais le client resté au brouillon',
+    (b) => b.ecritureVueParLeModele(duMouvement(300, { compte: '512000', sens: 'debit', montant: 300, libelle: 'Client fictif' }), null),
+    vue(duMouvement(300, { compte: '512000', sens: 'debit', montant: 300 }), NOM_DU_CREDIT)],
+  ['un crédit lu sans sa date : « sans date »', (b) => b.ecritureVueParLeModele(sansPiece({ ligne_bancaire_id: ID_MOUVEMENT, lignes_bancaires: { montant: 300 } }), null),
+    vue(sansPiece({}), 'Crédit du relevé sans date, 300,00 €')],
+  // Le côté fermé : un mouvement dont le sens ne se lit pas ne donne aucun libellé.
+  ['un mouvement que la lecture n’a pas rendu : aucun libellé', (b) => b.ecritureVueParLeModele(sansPiece({ ligne_bancaire_id: ID_MOUVEMENT, libelle: 'VIR M FICTIF' }), null),
+    vue(sansPiece({}), null)],
+  ['un mouvement de zéro euro : aucun libellé', (b) => b.ecritureVueParLeModele(duMouvement(0, { libelle: 'VIR M FICTIF' }), null), vue(duMouvement(0), null)],
+  ['un mouvement au montant en texte : aucun libellé', (b) => b.ecritureVueParLeModele(duMouvement('300', { libelle: 'VIR M FICTIF' }), null), vue(duMouvement(0), null)],
+  ['un mouvement au montant qui n’est pas un nombre : aucun libellé', (b) => b.ecritureVueParLeModele(duMouvement(Number.NaN, { libelle: 'VIR M FICTIF' }), null), vue(duMouvement(0), null)],
+  ['un mouvement au montant infini : aucun libellé', (b) => b.ecritureVueParLeModele(duMouvement(Number.NEGATIVE_INFINITY, { libelle: 'VIR M FICTIF' }), null), vue(duMouvement(0), null)],
+  ['un mouvement lu sans son montant : aucun libellé',
+    (b) => b.ecritureVueParLeModele(sansPiece({ ligne_bancaire_id: ID_MOUVEMENT, lignes_bancaires: { date: '2026-02-10' }, libelle: 'VIR M FICTIF' }), null), vue(sansPiece({}), null)],
+  ['un mouvement rendu sous une forme inattendue (une liste) : aucun libellé',
+    (b) => b.ecritureVueParLeModele(sansPiece({ ligne_bancaire_id: ID_MOUVEMENT, lignes_bancaires: [{ date: '2026-02-10', montant: -45 }], libelle: 'CB FICTIVE' }), null), vue(sansPiece({}), null)],
+  // Une écriture que l'application compose sans pièce ni mouvement garde son libellé ; une ligne rattachée à rien n'en a aucun (VF9CQ1-Q2).
+  ['la ligne d’une dotation : son libellé', (b) => b.ecritureVueParLeModele(dotation(), null), vue(dotation(), 'Dotation 2026 — Bien fictif')],
+  ['la ligne d’un forfait kilométrique : son libellé', (b) => b.ecritureVueParLeModele(sansPiece({ vehicule_id: 'v1', libelle: 'Indemnités kilométriques 2026 — Voiture 5 CV' }), null),
+    vue(sansPiece({}), 'Indemnités kilométriques 2026 — Voiture 5 CV')],
+  ['la ligne d’une liquidation de TVA : son libellé', (b) => b.ecritureVueParLeModele(sansPiece({ declaration_tva_id: 'd1', libelle: 'CA3 1er trimestre 2026' }), null),
+    vue(sansPiece({}), 'CA3 1er trimestre 2026')],
+  ['la ligne d’une cotisation payée depuis le compte personnel : son libellé',
+    (b) => b.ecritureVueParLeModele(sansPiece({ cotisation_id: 'c1', libelle: 'Cotisation, échéance du 15/02/2026, payée depuis le compte personnel' }), null),
+    vue(sansPiece({}), 'Cotisation, échéance du 15/02/2026, payée depuis le compte personnel')],
+  ['une ligne rattachée à rien, restée d’une pièce supprimée : aucun libellé', (b) => b.ecritureVueParLeModele(sansPiece({ libelle: 'Client fictif' }), null), vue(sansPiece({}), null)],
+  // Le côté fermé : une ligne lue sans l'un de ses rattachements, sans sa pièce ou sans son mouvement, n'a aucun libellé —
+  // chaque fois sur une ligne qui en aurait un, sans la garde.
+  ...['piece_id', 'ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id'].map((c) => {
+    const lue = sans(c === 'ligne_bancaire_id' ? dotation() : debit(), c)
+    return [`une ligne lue sans sa colonne ${c} : aucun libellé`, (b: Bloc) => b.ecritureVueParLeModele(lue, null), vue(lue, null)] as const
+  }),
+  ['la ligne d’un débit lue sans sa pièce embarquée : aucun libellé', (b) => b.ecritureVueParLeModele(sans(debit(), 'pieces'), null), vue(debit(), null)],
+  ['la ligne d’une pièce d’achat lue sans son mouvement embarqué : aucun libellé', (b) => b.ecritureVueParLeModele(sans(achat(), 'lignes_bancaires'), null), vue(achat(), null)],
+  ['ce qui sort est écrit : aucune autre colonne de la ligne lue ne part',
+    (b) => b.ecritureVueParLeModele(ligne({ id: 'x1', statut: 'validee', piece_ref: 'facture Client fictif.pdf', comp_aux_lib: 'Client fictif' }), null), vue(ligne({}), NOM_DE_LA_PIECE)],
+  // Les ventes facturées (VF9c) : d'un dossier qui ne les lit pas, aucun libellé ni source ; d'un dossier qui les lit, leur
+  // numéro et leur source, dans l'ordre des rattachements.
+  ['d’un dossier qui ne lit pas ses ventes, la ligne d’une facture : aucun libellé, aucune source',
+    (b) => b.ecritureVueParLeModele(sansPiece({ facture_id: 'f1', libelle: 'Facture F-1 — Client fictif' }), null), vue(sansPiece({}), null)],
+  ['d’un dossier qui ne lit pas ses ventes, la ligne d’un encaissement : aucun libellé',
+    (b) => b.ecritureVueParLeModele(sansPiece({ encaissement_id: 'e1', libelle: 'Encaissement, facture F-1 — Client fictif' }), null), vue(sansPiece({}), null)],
+  ['la ligne d’une facture : son numéro, sa source', (b) => b.ecritureVueParLeModele(sansPiece({ facture_id: 'f1', libelle: 'Facture F-1 — Client fictif' }), VENTES),
+    vue(sansPiece({}), 'Facture F-1', 'facture')],
+  ['la ligne d’un avoir sans numéro', (b) => b.ecritureVueParLeModele(sansPiece({ facture_id: 'a1', libelle: 'Avoir — Client fictif' }), VENTES), vue(sansPiece({}), 'Avoir sans numéro', 'avoir')],
+  ['une facture que la lecture n’a pas rendue : aucun libellé', (b) => b.ecritureVueParLeModele(sansPiece({ facture_id: 'f404', libelle: 'Facture F-404 — Client fictif' }), VENTES),
+    vue(sansPiece({}), null, 'facture')],
+  ['la ligne d’un encaissement : son numéro, sa source', (b) => b.ecritureVueParLeModele(sansPiece({ encaissement_id: 'e1', libelle: 'Encaissement — Client fictif' }), VENTES),
+    vue(sansPiece({}), 'Encaissement, facture F-1', 'encaissement')],
+  ['la ligne d’une contre-passation', (b) => b.ecritureVueParLeModele(sansPiece({ encaissement_id: 'c1', libelle: 'Contre-passation — Client fictif' }), VENTES),
+    vue(sansPiece({}), 'Contre-passation, facture F-1', 'encaissement')],
+  ['un encaissement dont la facture n’est pas rendue : aucun libellé', (b) => b.ecritureVueParLeModele(sansPiece({ encaissement_id: 'e9', libelle: 'Client fictif' }), VENTES),
+    vue(sansPiece({}), null, 'encaissement')],
+  ['un encaissement que la lecture n’a pas rendu : aucun libellé', (b) => b.ecritureVueParLeModele(sansPiece({ encaissement_id: 'e404', libelle: 'Client fictif' }), VENTES),
+    vue(sansPiece({}), null, 'encaissement')],
+  ['la ligne d’une facture sur un crédit : son numéro — la facture avant le mouvement',
+    (b) => b.ecritureVueParLeModele(duMouvement(300, { facture_id: 'f1', libelle: 'Facture F-1 — Client fictif' }), VENTES), vue(sansPiece({}), 'Facture F-1', 'facture')],
+  ['la ligne d’un encaissement sur un crédit classé : son numéro — l’encaissement avant le mouvement',
+    (b) => b.ecritureVueParLeModele(sansPiece({ encaissement_id: 'e1', ligne_bancaire_id: ID_CLASSE, lignes_bancaires: { date: '2026-02-10', montant: 300 }, libelle: 'Client fictif' }), VENTES),
+    vue(sansPiece({}), 'Encaissement, facture F-1', 'encaissement')],
+  ['la ligne d’un crédit que ses encaissements classent : son nom, sa source',
+    (b) => b.ecritureVueParLeModele(sansPiece({ ligne_bancaire_id: ID_CLASSE, lignes_bancaires: { date: '2026-02-10', montant: 300 }, libelle: 'VIR M FICTIF' }), VENTES),
+    vue(sansPiece({}), NOM_DU_CREDIT, 'mouvement_d_encaissements')],
+  ['la ligne d’un débit que ses contre-passations classent : son libellé, sa source',
+    (b) => b.ecritureVueParLeModele(sansPiece({ ligne_bancaire_id: ID_CLASSE, lignes_bancaires: { date: '2026-02-10', montant: -20 }, libelle: 'REJET VIR FICTIF' }), VENTES),
+    vue(sansPiece({}), 'REJET VIR FICTIF', 'mouvement_d_encaissements')],
+  ['la ligne d’un crédit que ses encaissements ne classent pas, d’un dossier qui lit ses ventes : son nom, aucune source',
+    (b) => b.ecritureVueParLeModele(duMouvement(300, { libelle: 'VIR M FICTIF' }), VENTES), vue(sansPiece({}), NOM_DU_CREDIT, null)],
+  ['la ligne d’une pièce, d’un dossier qui lit ses ventes : son nom, sa source', (b) => b.ecritureVueParLeModele(ligne({}), VENTES), vue(ligne({}), NOM_DE_LA_PIECE, 'piece')],
+  ['une dotation, d’un dossier qui lit ses ventes : son libellé, aucune source', (b) => b.ecritureVueParLeModele(dotation(), VENTES), vue(dotation(), 'Dotation 2026 — Bien fictif', null)],
+  ['une ligne rattachée à rien, d’un dossier qui lit ses ventes : ni libellé ni source', (b) => b.ecritureVueParLeModele(sansPiece({ libelle: 'Client fictif' }), VENTES),
+    vue(sansPiece({}), null, null)],
+  ['une ligne lue sans un de ses rattachements, d’un dossier qui lit ses ventes : ni libellé ni source',
+    (b) => b.ecritureVueParLeModele(sans(sansPiece({ facture_id: 'f1' }), 'cotisation_id'), VENTES), vue(sansPiece({}), null, null)],
   // Ce qui est rendu tel quel l'est vraiment : ni copie ni clé ajoutée.
   ['une pièce d’achat : le même objet', (b) => {
     const p = piece({ type_piece: 'achat' })
@@ -158,7 +299,7 @@ describe('agent-comptable / bloc PIÈCES DE VENTE (le seul passage vers le modè
   it('s’exécute seul, et ne définit que ce que ce test confronte ou plante', () => {
     const texte = bloc(sourceDeployee())
     const declares = [...texte.matchAll(/^(?:function|const|interface)\s+(\w+)/gm)].map((m) => m[1]).sort()
-    expect(declares).toEqual(['PieceNommee', ...NOMS].sort())
+    expect(declares).toEqual([...TYPES_DU_BLOC, ...NOMS].sort())
     for (const nom of NOMS) expect(typeof deployee[nom], nom).not.toBe('undefined')
   })
 
@@ -175,6 +316,18 @@ describe('agent-comptable / bloc PIÈCES DE VENTE (le seul passage vers le modè
     expect([...definitions[0]].sort()).toEqual(['achat', 'autre', 'note_frais', 'vente'])
     expect([...deployee.TYPES_DONT_LE_TIERS_SE_DIT].sort()).toEqual(definitions[0].filter((t) => t !== 'vente').sort())
     expect(fichiersDuSchema().filter((f) => /pieces_type_piece_check/.test(f.texte)).map((f) => f.chemin)).toEqual([])
+  })
+
+  // VF9CQ1 : « rattachée à rien » se définit par ce relevé. Une ligne du brouillon que la base gagnerait le droit de citer —
+  // une clé étrangère neuve, la caisse du MVP par exemple — ferait tomber ce test : jusque-là, une ligne qui ne cite qu'elle
+  // passe pour rattachée à rien, et se tait (le côté fermé), et la source qu'elle désigne sera jugée avant de parler.
+  it('les rattachements d’une ligne : chaque clé étrangère d’ecritures_brouillon du schéma exporté, le dossier excepté', () => {
+    const relations = relationsDuSchema(fichiersDuSchema()).filter((r) => r.enfant === 'ecritures_brouillon')
+    expect(relations.some((r) => r.colonne === 'dossier_id' && r.parent === 'dossiers'), 'la clé du dossier, seule exceptée').toBe(true)
+    const cles = relations.filter((r) => r.parent !== 'dossiers').map((r) => r.colonne).sort()
+    expect(cles.length, 'le plancher : les huit sources d’aujourd’hui').toBeGreaterThanOrEqual(8)
+    expect([...deployee.RATTACHEMENTS_D_UNE_LIGNE].sort()).toEqual(cles)
+    expect(new Set(deployee.RATTACHEMENTS_D_UNE_LIGNE).size).toBe(deployee.RATTACHEMENTS_D_UNE_LIGNE.length)
   })
 })
 
@@ -193,17 +346,48 @@ describe('le bloc PIÈCES DE VENTE sait encore échouer', () => {
     ['pieceVueParLeModele : un type non lu pris pour un type qui dit son tiers',
       '  return typeof piece.type_piece === "string" && TYPES_DONT_LE_TIERS_SE_DIT.includes(piece.type_piece)\n',
       '  return piece.type_piece !== "vente"\n'],
-    ['ecritureVueParLeModele : la pièce lue rendue avec la ligne', '  const { pieces: piece, ...reste } = ligne\n', '  const { pieces: piece } = ligne\n  const reste = { ...ligne }\n'],
+    // Les cinq dérives de VF9C-Q1 sur la ligne d'une pièce, réancrées à VF9CQ1 : la vue s'écrit, et la pièce se juge dans
+    // `libelleDUneLigneDePiece`, la garde des rattachements dans `libelleEtSource`.
+    ['ecritureVueParLeModele : la pièce lue rendue avec la ligne',
+      '  const vue = { date: ligne.date, compte: ligne.compte, libelle, sens: ligne.sens, montant: ligne.montant, piece_id: ligne.piece_id }\n',
+      '  const vue = { ...ligne, libelle }\n'],
     ['ecritureVueParLeModele : la ligne d’une pièce de vente sous son libellé',
-      '    libelle: lue.type_piece === "vente" ? nomDUnePieceDeVente(', '    libelle: lue.type_piece === "vente" ? ligne.libelle ?? nomDUnePieceDeVente('],
+      '  return lue.type_piece === "vente" ? nomDUnePieceDeVente(', '  return lue.type_piece === "vente" ? libelleDuBrouillon(ligne) ?? nomDUnePieceDeVente('],
     ['ecritureVueParLeModele : une pièce que la lecture n’a pas rendue prise pour une ligne sans pièce',
-      '  if (piece === null || typeof piece !== "object") return ligne.piece_id == null ? reste : { ...reste, libelle: null }\n',
-      '  if (piece === null || typeof piece !== "object") return reste\n'],
-    ['ecritureVueParLeModele : une ligne lue sans sa pièce prise pour une ligne sans pièce',
-      '  if (!("piece_id" in ligne) || !("pieces" in ligne)) return { ...reste, libelle: null }\n', ''],
+      '  if (piece === null || typeof piece !== "object") return null\n', '  if (piece === null || typeof piece !== "object") return libelleDuBrouillon(ligne)\n'],
+    ['ecritureVueParLeModele : une ligne lue sans sa pièce prise pour une ligne sans pièce', ' || !("pieces" in ligne)', ''],
     ['ecritureVueParLeModele : un type inconnu qui garde son libellé',
-      '    libelle: lue.type_piece === "vente" ? nomDUnePieceDeVente({ date_piece: lue.date_piece ?? null, montant_ttc: lue.montant_ttc ?? null }) : null,\n',
-      '    libelle: lue.type_piece === "vente" ? nomDUnePieceDeVente({ date_piece: lue.date_piece ?? null, montant_ttc: lue.montant_ttc ?? null }) : ligne.libelle,\n'],
+      'montant_ttc: lue.montant_ttc ?? null }) : null\n', 'montant_ttc: lue.montant_ttc ?? null }) : libelleDuBrouillon(ligne)\n'],
+    // VF9CQ1.
+    ['ecritureVueParLeModele : la source rendue à un dossier qui ne lit pas ses ventes', '  return ventes === null ? vue : { ...vue, source }\n', '  return { ...vue, source }\n'],
+    ['ecritureVueParLeModele : la source tue d’un dossier qui lit ses ventes', '  return ventes === null ? vue : { ...vue, source }\n', '  return vue\n'],
+    ['RATTACHEMENTS_D_UNE_LIGNE : le mouvement en sort', '  "piece_id", "ligne_bancaire_id", "facture_id",', '  "piece_id", "facture_id",'],
+    ['RATTACHEMENTS_D_UNE_LIGNE : la cotisation en sort', '"declaration_tva_id",\n  "cotisation_id",\n]', '"declaration_tva_id",\n]'],
+    ['nomDUnCreditDuReleve : la date telle que la base l’écrit',
+      '    ? `du ${mouvement.date.slice(8, 10)}/${mouvement.date.slice(5, 7)}/${mouvement.date.slice(0, 4)}`\n', '    ? `du ${mouvement.date}`\n'],
+    ['nomDUnCreditDuReleve : un instant pris pour une date', '/^\\d{4}-\\d{2}-\\d{2}$/.test(mouvement.date)', '/^\\d{4}-\\d{2}-\\d{2}/.test(mouvement.date)'],
+    ['nomDUnCreditDuReleve : le montant à l’anglaise', '${mouvement.montant.toFixed(2).replace(".", ",")} €', '${mouvement.montant.toFixed(2)} €'],
+    ['libelleDuBrouillon : un libellé qui n’est pas un texte rendu tel quel', '  return typeof ligne.libelle === "string" ? ligne.libelle : null\n', '  return ligne.libelle as string\n'],
+    ['libelleDUneLigneDePiece : une pièce d’achat sous le nom d’une vente',
+      'TYPES_DONT_LE_TIERS_SE_DIT.includes(lue.type_piece)) return libelleDuBrouillon(ligne)\n',
+      'TYPES_DONT_LE_TIERS_SE_DIT.includes(lue.type_piece)) return nomDUnePieceDeVente({ date_piece: lue.date_piece ?? null, montant_ttc: lue.montant_ttc ?? null })\n'],
+    ['libelleDUneLigneDuReleve : un crédit sous le libellé du brouillon', '  return nomDUnCreditDuReleve({ date:', '  return libelleDuBrouillon(ligne) ?? nomDUnCreditDuReleve({ date:'],
+    ['libelleDUneLigneDuReleve : un débit recomposé lui aussi', '  if (lu.montant < 0) return libelleDuBrouillon(ligne)\n', ''],
+    ['libelleDUneLigneDuReleve : le sens de la ligne pris pour celui du mouvement', '  if (lu.montant < 0) return libelleDuBrouillon(ligne)\n',
+      '  if (ligne.sens === "credit") return libelleDuBrouillon(ligne)\n'],
+    ['libelleDUneLigneDuReleve : un mouvement non rendu pris pour un débit',
+      '  if (mouvement === null || typeof mouvement !== "object") return null\n', '  if (mouvement === null || typeof mouvement !== "object") return libelleDuBrouillon(ligne)\n'],
+    ['libelleDUneLigneDuReleve : un montant nul pris pour un crédit', ' || lu.montant === 0) return null', ') return null'],
+    ['libelleDUneLigneDuReleve : un montant en texte lu comme un nombre',
+      'typeof lu.montant !== "number" || !Number.isFinite(lu.montant)', '!Number.isFinite(Number(lu.montant))'],
+    ['libelleEtSource : une ligne rattachée à rien sous son libellé',
+      '  return { libelle: null, source: null }\n}\n\n// Ce que le modèle reçoit', '  return { libelle: libelleDuBrouillon(ligne), source: null }\n}\n\n// Ce que le modèle reçoit'],
+    ['libelleEtSource : les écritures composées sans pièce ni mouvement tues',
+      '    return { libelle: libelleDuBrouillon(ligne), source: null }\n  }\n', '    return { libelle: null, source: null }\n  }\n'],
+    ['libelleEtSource : le mouvement jugé avant la pièce', '  if (ligne.piece_id != null) return {', '  if (ligne.piece_id != null && ligne.ligne_bancaire_id == null) return {'],
+    ['libelleEtSource : une vente facturée sous le libellé du brouillon, faute de ses ventes', '${numero(f)}` : null, source:', '${numero(f)}` : libelleDuBrouillon(ligne), source:'],
+    ['libelleEtSource : une ligne lue sans son mouvement embarqué jugée quand même', ' || !("lignes_bancaires" in ligne)', ''],
+    ['libelleEtSource : la source d’un crédit classé perdue', 'source: classe ? "mouvement_d_encaissements" : null', 'source: null'],
   ]
   for (const [quoi, avant, apres] of DERIVES) {
     it(`attrape ${quoi}`, () => {
@@ -229,27 +413,47 @@ function code(source: string): string {
 const OUTILS = ['resume_dossier', 'lister_comptes', 'lister_ecritures', 'lister_pieces', 'points_a_traiter'] as const
 const HORS_DES_OUTILS = 'hors des outils'
 
-/** Les colonnes qui peuvent nommer le client d'une vente : le tiers et le fichier d'une pièce, le libellé du brouillon. */
+/**
+ * Les colonnes qui peuvent nommer le client d'une vente ou qui a payé : le tiers et le fichier d'une pièce, le libellé du
+ * brouillon et ce que la validation y fige pour le FEC (la référence de la pièce — son fichier —, le compte auxiliaire et son
+ * libellé — son tiers), le libellé que la banque a donné à un mouvement, le client d'une facture.
+ */
 const QUI_NOMMENT: Readonly<Record<string, readonly string[]>> = {
   pieces: ['tiers', 'nom_fichier'],
-  ecritures_brouillon: ['libelle'],
+  ecritures_brouillon: ['libelle', 'piece_ref', 'comp_aux_num', 'comp_aux_lib'],
+  lignes_bancaires: ['libelle', 'libelle_brut'],
   factures_emises: ['tiers_nom'],
 }
-/** Ce qui ne se lit jamais, ni déclaré ni passé : le client d'une facture (VF9c). */
-const JAMAIS = ['factures_emises.tiers_nom']
+/**
+ * Ce qui ne se lit jamais, ni déclaré ni passé : le client d'une facture (VF9c) ; le libellé de la banque (VF9CQ1 : il ne
+ * parvient au modèle que recopié au brouillon, et passé) ; ce que la validation fige au brouillon pour le FEC.
+ */
+const JAMAIS = [
+  'factures_emises.tiers_nom', 'lignes_bancaires.libelle', 'lignes_bancaires.libelle_brut',
+  'ecritures_brouillon.piece_ref', 'ecritures_brouillon.comp_aux_num', 'ecritures_brouillon.comp_aux_lib',
+]
 
 type Passage = 'pieceVueParLeModele' | 'ecritureVueParLeModele'
 
-/** Ce qu'un passage demande à la lecture qu'il reçoit, dans chacune de ses sélections. */
+/** Ce qu'un passage demande à la lecture qu'il reçoit, dans chacune de ses sélections : les rattachements, tels que le bloc les énumère. */
 const CE_QUE_LE_PASSAGE_LIT: Readonly<Record<Passage, readonly string[]>> = {
   pieceVueParLeModele: ['pieces.type_piece'],
-  ecritureVueParLeModele: ['ecritures_brouillon.piece_id', 'pieces.type_piece', 'pieces.date_piece', 'pieces.montant_ttc'],
+  ecritureVueParLeModele: [
+    'ecritures_brouillon.libelle', ...deployee.RATTACHEMENTS_D_UNE_LIGNE.map((c) => `ecritures_brouillon.${c}`),
+    'pieces.type_piece', 'pieces.date_piece', 'pieces.montant_ttc', 'lignes_bancaires.date', 'lignes_bancaires.montant',
+  ],
 }
 /**
- * Et la forme exacte de la pièce que `ecritureVueParLeModele` reçoit avec chaque ligne : embarquée À GAUCHE — une ligne
- * sans pièce, d'un mouvement du relevé ou d'une vente facturée, reste dans la liste —, et rien d'autre qu'elle.
+ * Et la forme exacte de la pièce et du mouvement que `ecritureVueParLeModele` reçoit avec chaque ligne : embarqués À GAUCHE —
+ * une ligne sans pièce, d'un mouvement du relevé ou d'une vente facturée, reste dans la liste, comme une ligne sans mouvement —,
+ * et rien d'autre qu'eux : ni le tiers, ni le libellé de la banque.
  */
-const PIECE_EMBARQUEE = 'pieces(type_piece, date_piece, montant_ttc)'
+const EMBARQUES = ['pieces(type_piece, date_piece, montant_ttc)', 'lignes_bancaires(date, montant)']
+/** L'appel du passage, tel que l'outil le fait sur ses lignes lues : une fois, et lui seul. */
+const APPEL_DU_PASSAGE: Readonly<Record<Passage, string>> = {
+  pieceVueParLeModele: '((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)',
+  ecritureVueParLeModele: '((data ?? []) as Record<string, unknown>[]).map((ligne) => ecritureVueParLeModele(ligne, nommees))',
+}
 
 interface LectureDeclaree {
   zone: string
@@ -271,7 +475,8 @@ const LECTURES_QUI_NOMMENT: readonly LectureDeclaree[] = [
   },
   {
     zone: 'lister_ecritures', table: 'ecritures_brouillon', nomme: ['ecritures_brouillon.libelle'], nombre: 1, passage: 'ecritureVueParLeModele',
-    raison: 'les lignes que l’outil rend, lues avec leur pièce : chacune passe d’abord par le passage, qui recompose le libellé d’une ligne de pièce de vente',
+    raison: 'les lignes que l’outil rend, lues avec leurs rattachements, leur pièce et leur mouvement : chacune passe par le passage, qui écrit ce '
+      + 'qui en sort — le libellé d’une ligne de pièce de vente et d’un crédit recomposé, celui d’une ligne rattachée à rien tu',
   },
   {
     zone: 'points_a_traiter', table: 'pieces', nomme: ['pieces.tiers'], nombre: 2, passage: null,
@@ -385,8 +590,10 @@ function fautesDe(source: string): string[] {
         const lues = colonnesDe(d.table, t)
         const manque = CE_QUE_LE_PASSAGE_LIT[d.passage].filter((c) => !lues.includes(c))
         if (manque.length > 0) fautes.push(`${d.zone} : une sélection sans ${manque.join(', ')}, que ${d.passage} lit`)
-        if (d.passage === 'ecritureVueParLeModele' && !entrees(t).includes(PIECE_EMBARQUEE)) {
-          fautes.push(`${d.zone} : la pièce de chaque ligne ne se lit pas sous la forme ${PIECE_EMBARQUEE} (à gauche, et elle seule)`)
+        if (d.passage === 'ecritureVueParLeModele') {
+          for (const forme of EMBARQUES) {
+            if (!entrees(t).includes(forme)) fautes.push(`${d.zone} : la sélection ne porte pas ${forme} (à gauche, et rien d’autre)`)
+          }
         }
       }
     }
@@ -395,7 +602,7 @@ function fautesDe(source: string): string[] {
     const corps = zone ? texte.slice(zone.debut, zone.fin) : ''
     const usages = [...corps.matchAll(/\bdata\b/g)].length
     const lue = (corps.match(/const \{ data, error, count \} = await q\./g) ?? []).length
-    const passee = corps.split(`((data ?? []) as Record<string, unknown>[]).map(${d.passage})`).length - 1
+    const passee = corps.split(APPEL_DU_PASSAGE[d.passage]).length - 1
     if (lue !== 1 || passee !== 1 || usages !== 2) {
       fautes.push(`${d.zone} : ses lignes lues ne partent pas toutes par ${d.passage} (lues ${lue}, passées ${passee}, ${usages} usage(s) de data)`)
     }
@@ -431,21 +638,23 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
   // Un scanner qui rend « aucune faute » sur la vraie source n'a rien prouvé tant qu'on ne l'a pas vu en rendre : chaque
   // défaut ci-dessous est posé dans la vraie source, en mémoire.
   const source = sourceDeployee()
+  const SELECTION_DES_LIGNES = 'piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant)"'
   const DEFAUTS: readonly (readonly [quoi: string, mutee: () => string])[] = [
     ['une lecture de plus du tiers, dans resume_dossier', () => muter(source, [[
       'admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "a_valider"),',
       'admin.from("pieces").select("id, tiers", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "a_valider"),']])],
     ['lister_pieces rend ses pièces sans le passage', () => muter(source, [[
       '    const lues = ((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)\n', '    const lues = ((data ?? []) as Record<string, unknown>[])\n']])],
+    // Réancré à VF9CQ1 : l'outil n'a plus qu'un retour, après le passage.
     ['lister_ecritures rend aussi les lignes lues, sans le passage', () => muter(source, [[
-      '    if (!lireLesVentes) return resultatListe(lignes, count, "ecritures")\n', '    if (!lireLesVentes) return resultatListe(data, count, "ecritures")\n']])],
+      '    return resultatListe(lignes, count, "ecritures")\n', '    return resultatListe(nommees ? lignes : data, count, "ecritures")\n']])],
+    // Les trois défauts de la pièce embarquée, réancrés à VF9CQ1 : une seule sélection, la pièce et le mouvement embarqués.
     ['la pièce embarquée qui rapporte son tiers', () => muter(source, [[
-      ': "date, compte, libelle, sens, montant, piece_id, pieces(type_piece, date_piece, montant_ttc)"',
-      ': "date, compte, libelle, sens, montant, piece_id, pieces(type_piece, date_piece, montant_ttc, tiers)"']])],
+      'pieces(type_piece, date_piece, montant_ttc), lignes_bancaires', 'pieces(type_piece, date_piece, montant_ttc, tiers), lignes_bancaires']])],
     ['la pièce embarquée oubliée d’une des deux sélections', () => muter(source, [[
-      'ligne_bancaire_id, pieces(type_piece, date_piece, montant_ttc)"', 'ligne_bancaire_id"']])],
+      ', pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant)"', ', lignes_bancaires(date, montant)"']])],
     ['la pièce embarquée en jointure interne : une ligne sans pièce disparaîtrait', () => muter(source, [[
-      'ligne_bancaire_id, pieces(type_piece, date_piece, montant_ttc)"', 'ligne_bancaire_id, pieces!inner(type_piece, date_piece, montant_ttc)"']])],
+      'pieces(type_piece, date_piece, montant_ttc), lignes_bancaires', 'pieces!inner(type_piece, date_piece, montant_ttc), lignes_bancaires']])],
     ['une sélection par une variable', () => muter(source, [[
       'admin.from("categories").select("id, libelle", { count: "exact" })', 'admin.from("categories").select(colonnes, { count: "exact" })']])],
     ['une pièce lue en entier (*)', () => muter(source, [[
@@ -459,6 +668,23 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
     ['une table nommée par une variable', () => muter(source, [[
       'admin.from("soldes_reportes").select(', 'admin.from(tableDesSoldes).select(']])],
     ['le scanner aveugle : plus aucune lecture reconnue', () => source.replaceAll('.from(', '.de(')],
+    // VF9CQ1 : le mouvement de chaque ligne, ses rattachements, le libellé de la banque, ce que la validation fige au brouillon.
+    ['le mouvement embarqué qui rapporte son libellé', () => muter(source, [['lignes_bancaires(date, montant)"', 'lignes_bancaires(date, montant, libelle)"']])],
+    ['le mouvement embarqué qui rapporte son libellé brut', () => muter(source, [['lignes_bancaires(date, montant)"', 'lignes_bancaires(date, montant, libelle_brut)"']])],
+    ['le mouvement de chaque ligne oublié', () => muter(source, [[', lignes_bancaires(date, montant)"', '"']])],
+    ['le mouvement de chaque ligne lu sans son montant', () => muter(source, [['lignes_bancaires(date, montant)"', 'lignes_bancaires(date)"']])],
+    ['le mouvement de chaque ligne en jointure interne : une ligne sans mouvement disparaîtrait', () => muter(source, [['lignes_bancaires(date, montant)"', 'lignes_bancaires!inner(date, montant)"']])],
+    ...['ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id'].map((c) => [
+      `le rattachement ${c} non lu`, () => muter(source, [[SELECTION_DES_LIGNES, SELECTION_DES_LIGNES.replace(`, ${c}`, '')]]),
+    ] as const),
+    ['le libellé de la banque lu par points_a_traiter', () => muter(source, [[
+      'admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe,', 'admin.from("lignes_bancaires").select("id, date, libelle, montant, statut, piece_id, reglement_groupe,']])],
+    ['la référence de pièce que la validation fige, lue', () => muter(source, [[
+      'select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut,', 'select("date, compte, libelle, sens, montant, piece_id, piece_ref, ligne_bancaire_id, statut,']])],
+    ['le compte auxiliaire que la validation fige, lu', () => muter(source, [[
+      'select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut,', 'select("date, compte, libelle, sens, montant, piece_id, comp_aux_lib, ligne_bancaire_id, statut,']])],
+    ['lister_ecritures passe ses lignes sans ce que le dossier sait de ses ventes', () => muter(source, [[
+      '.map((ligne) => ecritureVueParLeModele(ligne, nommees))', '.map((ligne) => ecritureVueParLeModele(ligne, null))']])],
   ]
   for (const [quoi, mutee] of DEFAUTS) {
     it(`voit ${quoi}`, () => {
