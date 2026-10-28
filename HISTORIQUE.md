@@ -40044,3 +40044,433 @@ débit, le tiers et le fichier d'un achat, d'une note de frais ou d'une pièce �
   nom du client qu'on rembourse, et la base le reconnaît sans deviner ; (B) défairait la part de la décision qui garde
   les fournisseurs. La ligne de banque restée d'une vente supprimée sur un débit ne se reconnaît pas : seule (B) la
   tairait.
+
+### 28/10/2026 — LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE (CAISSE-Q1 ET Q4)
+
+(Conception de l'agent architecte, sur `1c9491d` ; rien d'écrit, ni dans le code ni en base, aucune migration, aucun
+commit. Elle COMPLÈTE « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION — MVP-D2 (LIGNE 26.6) », ses § 0 à 12, qu'elle ne
+réécrit pas, sur les deux réponses du cabinet qui vont contre la recommandation : CAISSE-Q1 (B), le praticien saisit
+aussi ses espèces depuis son espace client ; CAISSE-Q4 (B), une pièce payée en espèces se règle par la caisse dès le
+MVP → « NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8, CAISSE-Q1 À Q4, 28.5E-Q1 ». CAISSE-Q2 (A) et Q3 (A)
+tiennent. Lus avant d'écrire : « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 » ; « LES DROITS D'UN
+ACCÈS CLIENT, TENUS EN BASE » ; « LES FONCTIONS DE LA VENTE ACCEPTENT LE CLIENT » ; les règles communes des écrans de
+l'espace client (CLAUDE.md) ; « LA 2035 COMPTE UNE PIÈCE À LA DATE DE SON PAIEMENT », « UNE NOTE DE FRAIS EN
+TRÉSORERIE », « LE LETTRAGE SE DÉDUIT DU RAPPROCHEMENT », « UN EXERCICE VALIDÉ SE FIGE EN BASE » ; et A7a, « LA FACTURE
+FIGE SES MENTIONS, EN BASE », préparée et pas appliquée, lue sur son commit `72c13e9` de la branche
+`a7a-factures-figees`, qui n'est pas dans `1c9491d`. Le code : `droitsAcces.ts`, `rattachement.ts`
+(`paiementsDesPieces`), `contrepartieBanque.ts`, `lettrage.ts`, `prealablesValidation.ts`, `statutTva.ts`,
+`banqueClient.ts`, `espaceVentes.ts`. Production lue le 28/10/2026 en SELECT sur le catalogue seulement (signatures,
+corps et empreintes de fonctions, colonnes, contraintes, déclencheurs, policies) et des comptes ; aucune valeur d'une
+ligne. Sources au § 13.)
+
+#### 0. Le résumé
+
+1. Le droit : une case à elle, « Caisse », sur l'accès (`memberships.droit_caisse`, faux par défaut), changée par
+   `changer_droits_acces` seule — tranché (§ 3). Ni « Ventes » ni « Banque » : un droit d'écrire n'arrive à aucun accès
+   existant sans un geste du cabinet, et la condition du système de caisse se pose sur ce droit-là sans restreindre les
+   deux autres.
+2. Le système de caisse (§ 2), vérifié au BOFiP du 25/03/2026 : en sont exclus la franchise en base et l'assujetti qui
+   n'effectue que des opérations exonérées ; une saisie au fil des paiements, écrite en brouillard modifiable, est une
+   fonctionnalité de caisse. La base tient la décision du cabinet : la case ne se coche, et la saisie du client ne
+   passe, que sur un dossier au statut « exonéré » ; et ce statut ne se quitte pas tant qu'un accès porte la case.
+3. Ce que la base ouvre au client (§ 4) : une policy de lecture des opérations de sa caisse, et une fonction qui lui
+   rend la caisse jour par jour — les versements en banque et les espèces de ses factures en totaux, sans libellé ni
+   nom. Les deux se présentent au cabinet avant d'être appliquées ; leur texte est écrit ici.
+4. La pièce réglée par la caisse (§ 8) : une opération `paiement` qui cite la pièce, à sa date et à son montant ; la
+   caisse devient un paiement de la pièce dans `paiementsDesPieces` (un quatrième paramètre obligatoire), et la
+   contrepartie s'écrit au compte de la caisse comme celle de la banque. La 2035, la CA3 et la piste d'audit suivent
+   sans règle neuve ; le lettrage ne change pas en trésorerie.
+5. Deux migrations de plus, toutes deux par l'outil — le droit et l'ouverture au client, présentés au cabinet ; le
+   paiement d'une pièce — et la première revue (§ 9). Six lots neufs, C8 à C13 : environ dix jours de plus, la caisse
+   entière autour de vingt jours, plus que les quinze à dix-huit annoncés (§ 10).
+6. Quatre questions, CAISSE2-Q1 à Q4 (§ 11).
+
+#### 1. Ce qui a été relu, et l'état de la base
+
+**EN PRODUCTION** (28/10/2026) : 159 migrations, la dernière `ventes_sur_dossier_bascule` ; aucune table de caisse.
+`memberships` a huit colonnes, dont `droit_ventes` et `droit_banque` (booléens non nuls, faux par défaut) et un seul
+déclencheur, `memberships_droit_ventes`. `changer_droits_acces(p_membership_id, p_ventes, p_banque)` : un droit nul est
+inchangé. `droits_sur_le_dossier` rend quatre clés (cabinet, membre, ventes, banque) ; `client_du_dossier` lit
+« membre », « ventes » et « banque », tout autre mot rend faux. `dossiers.statut_tva` vaut `redevable`, `franchise`,
+`exonere` ou nul (à préciser) ; `assujetti_tva` en est déduit, et cinq déclencheurs gardent `dossiers`, aucun sur ce
+statut. Le client ne lit ni le brouillon (`ecritures_brouillon_all`, `admin_du_dossier`), ni les à-nouveaux, ni les
+exercices validés ; il lit les catégories et les pièces de son dossier, le relevé avec « Banque », les encaissements
+avec « Ventes ». Le patron d'une écriture du client sous le contrôle du cabinet existe : `proposer_justificatif`, dont
+la ligne porte `origine` (« cabinet » ou « client ») et se retire.
+
+**A7A** (« LA FACTURE FIGE SES MENTIONS, EN BASE ») touche `factures_emises`, `facture_lignes`,
+`dossiers.mentions_identite` et `enregistrer_facture` ; la caisse ne touche à aucun des quatre. A7a fige à la validation
+le statut de TVA du dossier sur la facture ; la garde neuve du § 6 n'empêche que de quitter « exonéré » tant qu'un accès
+porte « Caisse » : elle ne change rien à ce qu'A7a lit. L'encaissement en espèces d'une facture figée suit le chemin du
+§ 4 b de la conception, inchangé. Aucune contradiction ; les deux migrations s'appliquent dans n'importe quel ordre.
+
+#### 2. Le système de caisse, vérifié aux sources
+
+- **Ce qu'il est.** « Un logiciel ou système de caisse est un système informatique doté d'une fonctionnalité de
+  caisse » : il enregistre des paiements reçus en contrepartie d'une vente ; un logiciel qui enregistre un paiement et
+  en tire une écriture en mode « brouillard », que l'utilisateur peut encore modifier avant son intégration définitive,
+  y est soumis, quelle que soit sa qualification — de caisse, comptable, de gestion ou de facturation
+  (BOI-TVA-DECLA-30-10-30, § 30 et § 40 [S1]). Les données visées sont toutes celles d'une transaction, son règlement
+  compris (§ 50).
+- **Qui y est tenu.** L'assujetti qui encaisse des clients non assujettis — le praticien qui reçoit des particuliers
+  (§ 10). **Qui en est exclu** (CGI, art. 286, II, 2, cité au § 25) : l'assujetti en franchise en base (art. 293 B et
+  293 B bis), celui du remboursement forfaitaire agricole, et celui qui n'effectue que des opérations exonérées.
+- **Ce qu'il doit faire.** Inaltérabilité : une correction passe par des opérations de « plus » et de « moins », jamais
+  par la donnée d'origine (§ 80, § 90) ; sécurisation : ni suppression ni modification sans trace (§ 130) ; clôtures
+  journalière, mensuelle et annuelle, cumulatives, avec le grand total (§ 170) ; conservation de toutes les données
+  ligne par ligne (§ 180), six ans (§ 155) ; archivage au plus annuel, un fichier d'archive complet avant toute purge
+  (§ 220, § 250) ; l'accès de l'administration à l'ensemble des données (§ 60).
+- **La preuve.** Un certificat d'un organisme accrédité, obtenu par l'éditeur, ou, de nouveau depuis le 21/02/2026 (loi
+  n° 2026-103 du 19/02/2026, art. 125), une attestation INDIVIDUELLE de l'éditeur, qui nomme le logiciel, sa version et
+  sa date d'acquisition ; une mention des conditions générales n'en est pas une (§ 270, § 290, § 370, § 375). Sans elle,
+  l'amende de l'article 1770 duodecies (§ 420) ; une fausse attestation relève de l'article 441-1 du code pénal (§ 400).
+  Le montant de l'amende, 7 500 € par logiciel, n'est pas au BOFiP : il vient de sources secondaires, non vérifié.
+- **Ce qu'en tire l'application.**
+  - La saisie du client — un total d'un jour, au fil des jours, écrit avec son écriture au brouillon, corrigeable
+    jusqu'à la validation — est une fonctionnalité de caisse au sens du § 30 : l'application ne l'ouvre qu'à un dossier
+    exclu. La décision du cabinet n'en retient qu'un des deux cas, l'exonération (CAISSE2-Q3 pose l'autre, la
+    franchise).
+  - Comment la base le juge : `dossiers.statut_tva = 'exonere'`, que le cabinet seul écrit. Ce qu'il ne dit pas : que
+    TOUTES les opérations sont exonérées. Un praticien exonéré qui aurait une opération taxable accessoire (une
+    expertise, une vente de produits, une sous-location) devrait être « redevable » ; le statut est la parole du
+    cabinet, et la confirmation qui coche la case le lui fait dire (§ 3).
+  - Pour un dossier qui n'est pas exclu : la saisie du client y est fermée en base ; la caisse reste celle du cabinet,
+    une écriture comptable faite après coup d'après le brouillard du praticien, qui reste le système — un journal papier
+    n'y est pas soumis, un logiciel doit être certifié ou attesté. L'onglet Caisse le dit, pour un dossier redevable ou
+    à préciser. L'application ne se présente jamais comme un système de caisse, et ne délivre aucune attestation.
+  - Ce que la saisie du client fait quand même des exigences, sans y être tenue : rien ne se modifie ni ne se supprime,
+    une correction retire et remplace en gardant la version remplacée (§ 5), l'auteur et l'heure de chaque geste sont
+    gardés, un exercice validé fige tout. Ni clôture journalière, ni grand total, ni archive : ce serait le chantier
+    d'une attestation, hors du MVP (§ 12).
+  - Paiements faits, pas reçus : le paiement d'une pièce d'achat par la caisse n'est pas un encaissement d'un client ;
+    seuls la recette et le paiement d'une pièce de vente le sont.
+
+#### 3. Le droit « Caisse »
+
+**TRANCHÉ : UNE CASE À ELLE.** Écartés : (a) sous « Ventes » — « Ventes » suppose un dossier basculé (VF8f), une
+condition étrangère à la caisse, et ouvre des devis et des factures ; la caisse porte aussi les apports et les
+prélèvements de l'exploitant et le paiement de ses achats, qui ne sont pas des ventes ; (b) sous « Banque » — tout accès
+« Banque » d'un dossier exonéré gagnerait un droit d'ÉCRIRE sans qu'on le lui ait donné (contraire à la protection par
+défaut, RGPD, art. 25, § 2), et la condition d'exonération restreindrait « Banque » sur les autres dossiers. Une case
+neuve suit les deux autres, pièce par pièce :
+
+- `memberships.droit_caisse`, booléen non nul, faux par défaut, son commentaire disant ce qu'il ouvre ;
+  `client_du_dossier` gagne le mot « caisse » ; `gere_la_caisse(d)` = `admin_du_dossier(d) or client_du_dossier(d,
+  'caisse')` ; `droits_sur_le_dossier` gagne la clé `caisse` — une clé de plus, sans changer la signature (P1), et les
+  quatre Edge Functions de la vente ne ferment rien sur une case de plus (P3).
+- `changer_droits_acces` : la signature ne change pas sans un `drop`. D'où une seconde forme à quatre paramètres, sans
+  valeur par défaut (`p_caisse`), qui écrit les trois colonnes ; la forme à trois est REMPLACÉE par un appel de la forme
+  à quatre, `p_caisse` nul — un seul corps écrit `memberships`, les deux formes ne sont pas ambiguës pour PostgREST (des
+  noms de paramètres différents, aucun défaut). Le refus 22023 dit les trois mots. Retirer la forme à trois serait un
+  `drop`, présenté au cabinet, et inutile : elle reste.
+- `garder_droit_caisse`, sur `memberships`, le patron de `garder_droit_ventes` : « Caisse » qui ARRIVE sur un accès
+  (insertion, case cochée, accès déplacé) se refuse en 23514 sur un dossier dont le statut n'est pas « exonéré », le
+  dossier lu `for share` ; l'insertion du super-administrateur passe (la restauration).
+- À l'écran : `Domaine` gagne `caisse`, `DOMAINES` sa ligne (« caisse : recettes en espèces, apports, prélèvements,
+  pièces payées en espèces »), `droitsDeLaLigne` lit la colonne sans jamais l'accorder par défaut, `ceQueDisentLesCases`
+  dit ce que la base ouvre (§ 4), et `gesteDeLaCase` la refuse avant le clic sur un dossier qui n'est pas exonéré, ou
+  dont le statut est illisible, comme « Ventes » sur un dossier non basculé. Cocher « Caisse » se confirme, et la
+  confirmation nomme l'adresse, ce que la case ouvre, et la condition : « Tu déclares que toutes les opérations de ce
+  dossier sont exonérées de TVA : sinon, sa saisie des espèces devrait passer par un logiciel de caisse certifié ou
+  attesté (CGI, art. 286, I, 3° bis). » `AuthContext` lit la colonne dans la même requête que les accès, derrière le
+  drapeau de la migration (une colonne absente ferait échouer la lecture de tout accès).
+
+#### 4. Ce que la base ouvre au client en lecture
+
+À présenter au cabinet avant d'être appliqué, tel quel :
+
+```sql
+create policy operations_caisse_lecture_caisse on public.operations_caisse
+  for select to authenticated
+  using (public.client_du_dossier(dossier_id, 'caisse'));
+```
+
+**CE QU'ELLE OUVRE** : à un accès « Caisse », toutes les opérations de la caisse de son dossier, celles du cabinet et
+les retirées comprises, chaque colonne — le genre, la date, le montant, la catégorie (son identifiant), le taux, les
+encaissements reconnus (des identifiants), la pièce payée (un identifiant), l'opération remplacée, l'origine, les
+auteurs (`cree_par`, `retire_par` : des identifiants de comptes, sans adresse) et les heures. Rien d'autre : ni le
+brouillon, ni le relevé, ni les encaissements, ni les exercices validés. Une seconde policy permissive, sans `drop` de
+la première (`admin_du_dossier`) : aucune écriture directe ne s'ouvre, la table n'ayant d'insertion que pour la
+restauration.
+
+**ET UNE FONCTION DE LECTURE**, `caisse_du_client(p_dossier_id uuid, p_annee integer)`, `stable`, SECURITY DEFINER,
+chemin fixé, exécutable par `authenticated` : l'accès `gere_la_caisse` d'abord (42501), puis une ligne par jour de
+l'année qui porte un flux — l'ouverture (le 53 des à-nouveaux, au premier jour), le total des opérations non retirées,
+le total des versements en banque (les mouvements classés sur le compte de la caisse : leur montant, jamais leur
+libellé), le total des espèces des factures sources et leurs identifiants d'encaissement (sans numéro ni client : un
+client « Ventes » les lit par ses écrans), le solde à la fin du jour, et `fige`, vrai pour un jour au plus à la
+frontière de la validation — la frontière jugée par la base, comme la fenêtre des encaissements pour le client (VF5b).
+**CE QU'ELLE OUVRE DE PLUS** : à un accès « Caisse » sans « Banque », le total, jour par jour, de ce que le relevé a
+versé depuis la caisse ou retiré pour elle ; sans « Ventes », le total des espèces de ses factures par jour ; à tout
+accès « Caisse », le solde du 53 des à-nouveaux. C'est le prix d'un solde juste, et la phrase de l'onglet Accès le dit.
+Le client lit déjà les catégories du dossier (`categories_select`) : rien de plus.
+
+#### 5. Les fonctions qui acceptent le client, et ce qu'il peut corriger
+
+- **Le contrôle, d'abord.** Une fonction interne, `qui_ecrit_la_caisse(p_dossier_id)` — aucun rôle de l'API ne l'exécute
+  — rend « cabinet » (`admin_du_dossier`), « client » (`client_du_dossier(d, 'caisse')` ET le statut « exonéré », relu
+  `for share`), sinon lève 42501 « Accès refusé à ce dossier. », un dossier qui n'existe pas sous les mêmes mots. La
+  migration `caisse` la pose au cabinet seul ; celle du client (§ 9, n° 5) ne remplace que son corps : les fonctions
+  d'écriture, dont deux se collent, ne changent pas une seconde fois. Défensif : un accès « Caisse » sur un dossier qui
+  n'est plus exonéré (une restauration) lève 23514 « La saisie des espèces depuis ton espace suppose un dossier dont
+  toutes les opérations sont exonérées de TVA : ton cabinet tient ta caisse. ».
+- **Les fonctions.** `enregistrer_operation_caisse`, `enregistrer_operations_de_caisse` (un mois, tout ou rien),
+  `retirer_operation_caisse`, `remplacer_operation_caisse` (neuve) et `regler_piece_par_la_caisse` (§ 8) : le contrôle
+  avant toute lecture, puis les refus de la conception dans le même ordre. L'opération porte `origine` (« cabinet » ou
+  « client », posée par la base, jamais reçue) et `cree_par`. Le client ne lit pas le plan comptable : pour lui, la
+  fonction écrit l'écriture qu'elle compose elle-même (elle la recompose déjà en centimes pour la comparer, § 5 de la
+  conception) ; le cabinet envoie toujours la sienne, comparée en multiensemble, que son écran a montrée.
+- **Ce que le client saisit.** Une recette (le total d'un jour, sans facture, pour une nature — CAISSE2-Q2 — et, son
+  dossier étant exonéré, sans taux), un apport, un prélèvement, le paiement d'une pièce (CAISSE2-Q4). La reconnaissance
+  des espèces du jour (CAISSE-Q2, (A)) vaut pour lui comme pour le cabinet : il passe les identifiants que
+  `caisse_du_client` lui a rendus pour ce jour, et la base refuse un ensemble qui a changé (« des espèces d'une facture
+  de ce jour ont été enregistrées depuis ta lecture : relis ta caisse »).
+- **Ce qu'il corrige, et comment. TRANCHÉ** : ses propres opérations seulement (`origine = 'client'` et `cree_par =
+  auth.uid()`) ; celles du cabinet et d'un autre accès se refusent (« Cette opération a été saisie par ton cabinet :
+  demande-lui de la corriger. »). Le cabinet corrige tout. Rien ne se modifie : une opération se RETIRE, ou se REMPLACE
+  d'un seul geste — `remplacer_operation_caisse(dossier, opération remplacée, nouvelle opération…)` retire l'ancienne et
+  insère la nouvelle, qui porte `remplace_id` ; elle refuse une opération déjà retirée ou remplacée depuis la lecture
+  (P0002, « Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse. ») — la saisie retient la
+  version qu'elle remplace. Au-delà de la frontière de la validation, ni l'un ni l'autre, pour personne (« L'exercice
+  2026 est validé : sa caisse ne change plus. »).
+- **La caisse jamais négative se juge à la fin de la transaction.** Remplacer une recette, ou saisir un mois dont un
+  jour retire avant qu'un autre ajoute, passerait un instant sous zéro : les déclencheurs de la caisse (§ 4 c de la
+  conception) deviennent des déclencheurs de CONTRAINTE, différés à la validation de la transaction (`deferrable
+  initially deferred`), toujours sous le verrou de la caisse du dossier. Le refus garde ses mots et son code ; le module
+  refait le calcul avant le clic.
+- **« Par le client » se dit au cabinet** : l'onglet Caisse marque chaque opération de son origine, « saisie par le
+  client » ou « remplacée par le client », sur une lecture faite en entier ; et un point de la Vue d'ensemble, en
+  information, compte les opérations saisies par le client depuis la dernière visite de l'onglet — sans état de revue en
+  base (CAISSE2-Q1).
+
+#### 6. Quand le statut de TVA change
+
+`garder_statut_tva_de_la_caisse`, sur `dossiers` (BEFORE UPDATE OF `statut_tva`) : quitter « exonéré » se refuse en
+23514 tant qu'un accès du dossier porte « Caisse » (« Un accès de ce dossier porte la case « Caisse », qui suppose un
+dossier exonéré : décoche-la d'abord. »), les accès lus `for share` — la course avec `garder_droit_caisse` se ferme
+comme celle de VF8a et VF8f, chacun verrouillant ce que l'autre lit. Le cabinet décoche, puis change le statut. Ce qui
+reste : les opérations saisies par le client restent, avec leur origine et leurs écritures, comptées comme les autres ;
+le client ne saisit plus, son écran dit que la caisse est tenue par son cabinet. Aucune opération ne se retire
+d'elle-même. Un statut qui était faux depuis le début (une opération taxable que personne n'avait dite) ne se défait pas
+en base : ses saisies ont été faites dans un outil que le 3° bis visait, et la confirmation de la case l'avait fait
+déclarer au cabinet.
+
+#### 7. Les écrans
+
+- **« Ma caisse », dans l'espace client**, sous les règles communes : `maCaisseOuverte(caisseExportee, droitCaisse)`,
+  sur la société AFFICHÉE, le drapeau `CAISSE_DU_CLIENT_EXPORTEE` de la migration ; la règle et les mots dans un module
+  pur (`lib/caisseClient.ts` : les refus de la base dans l'ordre, sur la saisie TELLE QU'ELLE PART, le solde d'après, le
+  premier jour négatif, les phrases tutoyées), la lecture à part (`lib/caisseClientLecture.ts` : ses opérations par
+  `lireTout`, puis `caisse_du_client`, gardées avec le dossier lu, sans jamais rejeter) ; rien avant le retour, aucun
+  geste sur une lecture partielle, refusée ou rompue, et l'écran le dit ; chaque geste passe la fonction seule, sous un
+  verrou `useRef` relâché après la relecture ; une confirmation nomme ce qui part (« Retirer la recette du 12/03/2026,
+  85,00 € ? Ta caisse de ce jour-là passera à 40,00 €. ») ; les refus par `REECRITURES_CLIENT`, les mots par
+  `MOTS_DU_CABINET` (aucun onglet nommé). La vue : le mois, jour par jour, le solde lu, les espèces de ses factures
+  « déjà dans ta caisse », ses versements, les opérations de son cabinet sans geste ; la saisie d'un jour ou d'un mois,
+  l'apport, le prélèvement ; et un rappel fixe : « Garde ton brouillard : le détail, recette par recette, reste chez
+  toi. Aucun nom ici. » Aucun champ de texte libre. Une tuile de l'accueil.
+- **Côté cabinet** : l'onglet Caisse (C4) dit l'origine ; l'onglet Accès porte la troisième case (§ 3) ; l'onglet
+  Informations dit, sous le statut de TVA, qu'il retient la case.
+
+#### 8. La pièce réglée par la caisse (CAISSE-Q4, (B))
+
+- **Le lien.** Une opération de genre `paiement`, qui cite la pièce (`operations_caisse.piece_id`), à SA date (le jour
+  où les espèces sont sorties, ou entrées pour une pièce de vente), d'un montant signé comme le relevé — négatif pour
+  une sortie. Une pièce peut avoir plusieurs paiements, de la caisse et de la banque mêlés : payée en partie en espèces,
+  elle additionne ses paiements comme aujourd'hui (`partsDesPaiements`). Par `regler_piece_par_la_caisse`, SECURITY
+  DEFINER, et ses refus dans l'ordre : le contrôle (§ 5) ; le dossier en trésorerie ; la pièce du dossier ; une note de
+  frais (« Une note de frais est payée de ta poche ; payée par la caisse, c'est un achat : change d'abord son type. ») ;
+  l'exemplaire d'une facture, et toute pièce de vente d'un dossier basculé (« Ses ventes viennent de ses factures :
+  enregistre l'encaissement en espèces de la facture. ») ; la date, comme une opération ; le sens (une sortie pour une
+  pièce d'achat, une entrée pour une pièce de vente, l'inverse pour un avoir) ; le montant — pour une pièce validée, les
+  paiements par la caisse non retirés ne dépassent pas son montant TTC, sans dire le montant au client ; la frontière.
+  Pas d'écriture écrite par la fonction : voir plus bas.
+- **La pièce gardée.** `operations_caisse.piece_id` est une clé `on delete restrict` : une pièce qu'un paiement cite,
+  retiré ou non, ne se supprime plus — écrite, une opération ne perd pas sa pièce (la piste d'audit) ; la confirmation
+  de la suppression le dit avant le clic, et le cabinet retype la pièce en « autre » au besoin. Une garde sur `pieces`
+  refuse qu'une pièce qu'un paiement non retiré cite devienne une note de frais ou l'exemplaire d'une facture.
+- **L'écriture : la contrepartie, comme celle de la banque. TRANCHÉ.** La pièce écrit sa charge (ou son produit) et sa
+  TVA par l'onglet Écritures, comme aujourd'hui ; son paiement par la caisse y ajoute une ligne au compte du rôle
+  `caisse`, à la date du paiement, de sa part, `operation_caisse_id` posé avec `piece_id` —
+  `synchroniserContrepartieBanque` généralisée à un paiement, banque ou caisse, et « Régénérer » qui la recompose.
+  Écarté : l'écrire dans la fonction — un client ne peut pas écrire au brouillon, la pièce peut n'être pas encore
+  validée ni générée, et deux chemins pour la contrepartie d'une pièce divergeraient. La garde du brouillon
+  (`garder_ecriture_de_caisse`) admet, pour un paiement, une ligne écrite par le cabinet sous la RLS si elle porte le
+  compte de la caisse du plan, la pièce et la date de l'opération, et une part au plus de son montant ; la contrainte
+  `ecritures_brouillon_caisse_sans_autre_source` admet `piece_id` avec `operation_caisse_id`, aucune autre source. Le
+  retrait du paiement retire ses lignes (la fonction de la migration à coller, générique).
+- **La 2035, la CA3, la situation, l'estimation.** `paiementsDesPieces` prend un quatrième paramètre OBLIGATOIRE, les
+  paiements par la caisse (lus, non retirés) ; `PaiementDePiece` devient une union discriminée : la variante `caisse`
+  porte `operation_caisse_id` et PAS d'`id` de mouvement, pour que chaque usage d'un paiement comme mouvement (la
+  contrepartie, l'engagement, l'alignement, la fiche d'un mouvement) cesse de compiler et soit jugé. La pièce compte
+  alors à la date de son paiement par la caisse (CGI, art. 93, 1 ; BOI-BNC-BASE-20-10-10, § 10), et la TVA d'un dossier
+  redevable devient exigible ou déductible à cette date pour une prestation de services, par la même formule
+  (`partsDesPaiements`). Aucune règle neuve : le paiement de la caisse est un paiement.
+- **Le double compte d'une pièce de vente réglée en espèces** (un dossier qui n'a pas basculé) : son paiement par la
+  caisse compte la vente ; le total du jour ne doit pas la compter aussi. L'ensemble reconnu par la saisie d'une recette
+  (CAISSE-Q2, (A)) s'étend aux paiements par la caisse de pièces de vente du même jour, et une recette dont le jour a
+  changé se revoit, comme pour une facture.
+- **La caisse jamais négative.** Une dépense en espèces qui viderait la caisse se REFUSE, en 23514, à la fin de la
+  transaction, sous les mots : « Ce paiement de 80,00 € rendrait la caisse négative le 12/03/2026 (−35,00 €) : saisis
+  d'abord les recettes en espèces qui le précèdent ; si tu as payé de ta poche, ce n'est pas la caisse : c'est une note
+  de frais. » Rien n'est deviné : ni apport supposé, ni note de frais créée, ni date déplacée ; le cabinet ou le client
+  saisit ce qui manque, puis recommence. Le module le dit avant le clic.
+- **Le lettrage.** En trésorerie, rien n'est lettré (`lettrage.ts`), la caisse non plus. En engagement, le règlement par
+  la caisse serait un règlement au compte de tiers : le MVP refuse la caisse à un dossier en engagement, et le règlement
+  viendra avec elle.
+- **La piste d'audit et le FEC.** La contrepartie va au journal de la pièce (AC ou VE), sa pièce pour référence ; la
+  piste cite la pièce, le paiement par la caisse (date, origine, auteur) et le brouillard du praticien, hors de
+  l'application. Au FEC à vingt-deux champs (MVP-D5) : DateRglt la date du paiement, ModeRglt les espèces.
+- **Les préalables de la validation.** Aujourd'hui, une pièce qu'aucun mouvement ne règle laisse une écriture sans
+  contrepartie, que la validation refuse (`ecritures-desequilibrees`), la note de frais exceptée (sa contrepartie au
+  108000). Payée par la caisse, la pièce a sa contrepartie : rien ne la retient. Ce qui retient : `caisse-a-reprendre`
+  compte aussi le paiement dont la contrepartie manque ou ne suit plus l'opération ; `pieces-a-valider` attrape la pièce
+  à valider qu'un paiement cite ; `pieces-payees-en-trop` voit la caisse par `paiementsDesPieces`.
+- **Ce que voit le client** (CAISSE2-Q4, (A)) : dans « Mes pièces », sur une pièce qu'il y voit, « Payée en espèces de
+  ta caisse » — une date et un montant, les siens : l'écran ne lui montre pas le montant de la pièce ; puis « Payée en
+  espèces le 12/03/2026, 80,00 € (par toi) », retirer ou remplacer tant que l'exercice n'est pas validé ; refusé, la
+  phrase de la base. Dans « Ma caisse », la sortie du jour, nommée par la date de dépôt de la pièce, jamais par un
+  fournisseur ni un fichier.
+
+#### 9. Les migrations, revues
+
+1. **`caisse`**, par l'outil, revue : la table gagne `piece_id` (clé `on delete restrict`), `origine`, `remplace_id`
+   (clé vers elle-même) et le genre `paiement` dans sa contrainte DÈS MAINTENANT — l'ajouter plus tard remplacerait une
+   contrainte ; `qui_ecrit_la_caisse` au cabinet seul ; les déclencheurs de la caisse en déclencheurs de contrainte
+   différés. Gagne : aucune contrainte à remplacer ensuite. Retour arrière : celui de la conception.
+2. **`caisse_retrait_et_versement`**, À COLLER, inchangée sauf ceci : le retrait est générique — il retire toutes les
+   lignes qui citent l'opération, paiement compris — et `remplacer_operation_caisse` y vient : son corps retire
+   l'écriture de l'ancienne opération.
+3. **`especes_sans_mouvement`**, par l'outil, le resserrement de la partie du cabinet, après C6, inchangée.
+4. **`paiement_par_la_caisse`**, NEUVE, par l'outil — ni `drop`, ni suppression, ni policy :
+   `regler_piece_par_la_caisse`, la garde de `pieces`, `garder_ecriture_de_caisse` et la contrainte du brouillon pour
+   une contrepartie de paiement (`create or replace` ; la contrainte posée en 1 l'admet déjà), l'ensemble reconnu
+   étendu. Ce qu'elle touche d'existant : un déclencheur neuf sur `pieces`, qui ne juge qu'une pièce citée — aucune en
+   production. Retour arrière : retirer la fonction et le déclencheur (un `drop` de fonction, à accorder ; rien ne se
+   perd avant le premier paiement).
+5. **`caisse_du_client`**, NEUVE, par l'outil, PRÉSENTÉE au cabinet (elle ouvre une lecture et un droit d'écrire) :
+   `droit_caisse` ; `client_du_dossier`, `droits_sur_le_dossier` remplacées, `gere_la_caisse` ; `changer_droits_acces` à
+   quatre paramètres, la forme à trois remplacée par un appel ; `garder_droit_caisse`,
+   `garder_statut_tva_de_la_caisse` ; la policy du § 4 ; `caisse_du_client` ; `qui_ecrit_la_caisse` remplacée pour
+   accepter le client ; et, si CAISSE2-Q2 retient (B), la catégorie des recettes du praticien, une colonne de
+   `dossiers`. Ce qu'elle touche d'existant : `memberships` (une colonne fausse partout), `dossiers` (un déclencheur qui
+   ne juge qu'un dossier dont un accès porte la case — aucun), quatre fonctions des droits, dont les essais
+   `droitsAcces.sql` et le bloc VS de `rls.sql` rejouent la table de vérité. Retour arrière : la colonne et les
+   fonctions retirées — destructif dès qu'une case est cochée, à accorder.
+
+**L'ORDRE** : 1, puis 2 (collée), C1 à C4 ; 3 après C6 ; puis 4, l'application qui règle une pièce par la caisse (C9) ;
+puis 5, présentée, et l'écran du client derrière son drapeau (C11, C12). Ce qui s'ajoute vient avant l'application qui
+s'en sert ; aucune des deux neuves ne resserre. Après chacune : son fichier dans l'export, les trois contrôles,
+`rls.sql` ENTIER (un profil « client portant Caisse », un bloc qui exige ses refus et sa lecture, des mutations qui
+mordent), les essais `caisse.sql` et, pour la 5, `droitsAcces.sql`.
+
+#### 10. Les lots, et le calendrier
+
+Revus : **C1** — la table complète (§ 9, n° 1), le remplacement, les déclencheurs différés : deux jours et demi → trois.
+**C2** — le module apprend le remplacement et l'origine ; C3 à C7 inchangés.
+
+Neufs, chacun neutre jusqu'à son premier usage :
+
+- **C8 — Le paiement d'une pièce par la caisse, en base** (migration 4). Preuves : `caisse.sql` étendu — chaque refus
+  dans l'ordre, la caisse négative par un paiement, la pièce gardée, la contrepartie admise et refusée (compte, date,
+  part, pièce), l'ensemble reconnu d'une pièce de vente, des mutations qui mordent. Dépend de : C1, C1b. Effort maximal,
+  `architecte`. Un jour et demi.
+- **C9 — Le paiement d'une pièce par la caisse, à l'écran du cabinet.** `paiementsDesPieces` et l'union discriminée (la
+  vingtaine d'appelants jugés un à un), la contrepartie généralisée, « Régénérer », la lecture des paiements dans les
+  lectures qui lisent le relevé, la fiche d'une pièce (« Régler par la caisse »), les points `caisse-a-reprendre` et la
+  Checklist, la piste d'audit. Preuves : une pièce payée par la caisse dans chaque moteur (sa date, sa case, sa TVA), en
+  partie par la banque, en trop ; le chemin du compilateur ; mutations. Dépend de : C3, C8. Effort élevé, `architecte`.
+  Deux jours et demi.
+- **C10 — Le droit « Caisse », en base** (migration 5). Preuves : `droitsAcces.sql` (la table de vérité à cinq mots),
+  `rls.sql` entier, `caisse.sql` sous le profil client (ses gestes, ses refus, la lecture de la policy et de
+  `caisse_du_client`, ce qu'elle ne rend pas), les deux courses sur une réplique (la case et le statut). Dépend de : C8.
+  Effort maximal. Un jour et demi.
+- **C11 — Le droit à l'écran du cabinet.** `droitsAcces.ts`, l'onglet Accès et sa confirmation, `AuthContext`,
+  `ceQueDisentLesCases`, le faux `droits_sur_le_dossier` des Edge Functions (`src/test/fonctionsEdge.ts`) confronté à
+  l'export, « par le client » dans l'onglet Caisse et son point d'information. Dépend de : C10. Effort élevé. Un jour.
+- **C12 — « Ma caisse ».** Le module, la lecture, l'écran, la tuile, le paiement d'une pièce dans « Mes pièces » ; tests
+  d'écran (verrous, lecture partielle, rien avant le retour, refus avant le clic, `MOTS_DU_CABINET`) ; le banc, 0
+  débordement, la passe du client. Dépend de : C10, C11. Effort élevé, `dev`. Deux jours et demi.
+- **C13 — L'assistant devant le paiement et le client** : la source `operation_caisse_id` jugée par le passage de VF9CQ1
+  (sinon une ligne qui ne cite qu'elle se tait), la contrepartie d'un paiement nommée comme sa pièce. Avec C5. Une
+  demi-journée.
+
+**LE CALENDRIER, HONNÊTEMENT.** La partie du cabinet, C1 à C4 : environ neuf jours (un demi de plus pour C1), à finir
+avant la clôture de la comparaison avec 2025, début décembre ; elle tient si elle commence dans la première semaine de
+novembre et si la migration 2 est collée dans la semaine où elle est présentée. C5 doit partir avant la première
+opération réelle, donc avant que le cabinet saisisse les espèces de 2025 : un second déploiement de l'assistant après
+celui du 20 novembre, ou C5 avancé dans celui-là. C6, C7 après. A7 pour le jour J. Puis, de la mi-décembre au début de
+janvier : la pièce réglée par la caisse, C8 et C9, quatre jours — tient ; la saisie du praticien, C10 à C12 et C13, six
+jours, et le geste du cabinet sur la migration 5 — sur trois semaines qui comptent les fêtes, elle glisse plutôt vers la
+mi-janvier. Ensemble, environ dix jours de plus que la conception (Q4 : quatre jours, au lieu de deux à trois ; Q1 :
+six, au lieu de trois à cinq) : la caisse entière autour de vingt jours. Rien de la 2035 de 2026 n'en dépend : jusqu'à
+ce que « Ma caisse » ouvre, le cabinet saisit les totaux d'après le brouillard.
+
+#### 11. Les questions au cabinet
+
+- **CAISSE2-Q1 — Une saisie du praticien compte-t-elle tout de suite ?** Le praticien saisit ses espèces depuis son
+  espace (CAISSE-Q1, (B)). (A) Elle compte dès qu'il l'enregistre, écrite avec son écriture, marquée « par le client » ;
+  le cabinet la retire ou la remplace s'il la juge fausse, et la validation de l'exercice est sa revue. (B) Elle reste
+  « proposée » jusqu'à ce que le cabinet l'accepte, une par une ; seules les acceptées comptent et entrent dans le
+  solde. Recommandation : (A) — c'est la parole du praticien sur ses propres espèces, comme une facture qu'il valide
+  (MVP-D1) ; (B) doublerait le travail du cabinet (environ 250 recettes par an), et un solde fait des seules acceptées
+  mentirait au praticien sur sa caisse du jour ; (A) garde tout, l'auteur et la version remplacée.
+- **CAISSE2-Q2 — La nature d'une recette saisie par le praticien.** Une recette se range dans une catégorie de produit,
+  qui décide de sa ligne de la 2035 (honoraires en AA, débours en AB…). Le client lit déjà les catégories en base, mais
+  ses écrans ne les montrent pas. (A) Il choisit parmi les catégories de produit du dossier et communes, sous leur
+  libellé — une exception à la règle d'écran, sous la case. (B) Il ne choisit rien : ses recettes vont dans une
+  catégorie que le cabinet fixe pour le dossier (une colonne de plus, dans la migration 5), et le cabinet remplace
+  celles qui n'en sont pas. Recommandation : (B) — un praticien encaisse presque toujours des honoraires, la nature est
+  le métier du cabinet, et la règle d'écran reste entière ; (A) se justifierait pour un dossier aux recettes variées.
+- **CAISSE2-Q3 — La franchise en base aussi ?** La loi exclut du 3° bis l'assujetti en franchise comme celui qui
+  n'effectue que des opérations exonérées (§ 2) ; la décision du cabinet n'ouvre la saisie qu'au second. (A) L'exonéré
+  seul. (B) L'exonéré et la franchise. Recommandation : (A), revue quand un dossier en franchise le demandera — la
+  franchise se perd en cours d'année, au jour du dépassement du seuil majoré, et la base ne date pas le statut de TVA :
+  des saisies faites entre ce jour et le changement du statut l'auraient été sans l'exclusion.
+- **CAISSE2-Q4 — Le paiement d'une pièce par le praticien.** (A) Il l'enregistre lui-même, sur une pièce de « Mes
+  pièces », à sa date et à son montant ; la base le juge comme celui du cabinet ; le cabinet le voit « par le client »
+  et le remplace au besoin (par un prélèvement, si la dépense n'est pas professionnelle). (B) Il indique seulement, au
+  dépôt, que la pièce est payée en espèces, et le cabinet enregistre le paiement. Recommandation : (A) — sa caisse
+  serait sinon fausse jusqu'au passage du cabinet, et c'est lui qui a vu sortir les espèces ; (B) coûte un état de plus
+  sur la pièce, à garder en base, pour un geste que le cabinet referait.
+
+Tranché sans question, et pourquoi : la case à elle (§ 3) ; le statut « exonéré » jugé par la base, la case et le statut
+se retenant l'un l'autre (§ 6) ; le client ne corrige que ses opérations, par retrait ou remplacement (§ 5) ; la
+contrepartie d'un paiement écrite comme celle de la banque (§ 8) ; une note de frais jamais payée par la caisse ; une
+caisse négative refusée sans rien deviner.
+
+#### 12. Les risques, et ce qui reste incertain
+
+- **Juridique.** Que le total d'un jour saisi par le praticien soit une fonctionnalité de caisse est la lecture prudente
+  du § 30 ; elle ne gêne pas, le dossier étant exclu. Qu'une saisie après coup du cabinet n'en soit pas une, sur un
+  dossier redevable, reste la lecture d'un architecte (§ 12 de la conception). Le statut « exonéré » ne prouve pas que
+  toutes les opérations le sont. L'article 286 n'a pas été lu sur Légifrance (403) : cité par le BOFiP. Rendre la saisie
+  du client conforme pour un dossier redevable — clôtures, grand total, archive, et une attestation que le cabinet
+  délivrerait comme éditeur, sous sa responsabilité — est un chantier à part, après le MVP, que rien ne demande
+  aujourd'hui.
+- **Des déclencheurs de contrainte différés** : un refus arrive à la validation de la transaction ; une fonction qui
+  enchaînerait d'autres écritures après la caisse les verrait annulées avec elle — voulu, et éprouvé par l'essai.
+- **L'union discriminée** fait tomber la compilation d'une vingtaine de modules : c'est le but, et le coût de C9.
+- **Une seconde forme de `changer_droits_acces`** : deux entrées vers le même corps ; un scanner de
+  `droitsAcces.test.ts` exige que la forme à trois n'écrive rien elle-même.
+- **Ce que la fonction de lecture ouvre** à un accès « Caisse » sans « Banque » (les versements du jour) : à dire au
+  cabinet avec la policy.
+- **Le calendrier** de la saisie du praticien (§ 10) ; le geste du cabinet sur la migration 5.
+- **Hors de la reprise** : la caisse en engagement ; l'import du brouillard ; le comptage du 31 décembre (C7) ;
+  l'e-reporting des ventes au comptant d'un assujetti ; une liste de comptes de caisse (une seule caisse par dossier).
+
+#### 13. Sources
+
+- [S1] BOFiP, BOI-TVA-DECLA-30-10-30-20260325, version du 25/03/2026, consultée le 28/10/2026 : § 1, 10, 20, 25, 30, 40,
+  50, 60, 70, 80, 90, 120, 130, 155, 170, 180, 220, 250, 270, 290, 300, 315, 320 à 340, 360 à 390, 400, 420.
+  https://bofip.impots.gouv.fr/bofip/10691-PGP
+- [S2] Loi n° 2026-103 du 19/02/2026, art. 125 (l'attestation de l'éditeur rétablie au 21/02/2026), citée par [S1],
+  § 270 ; non lue sur Légifrance.
+- [S3] Code général des impôts, art. 286, I, 3° bis et II, 2, à travers [S1] (Légifrance refuse la lecture automatique,
+  403, le 28/10/2026) ; art. 1770 duodecies, cité par [S1], § 420 — son montant, 7 500 €, par des sources secondaires,
+  non vérifié.
+- [S4] Code pénal, art. 441-1, cité par [S1], § 400.
+- [S5] Règlement (UE) 2016/679, art. 25, § 2 (la protection par défaut), comme pour les deux premières cases (P1).
+- [S6] Celles de la conception du 28/10/2026, § 12 : CGI, art. 93 et 99 ; BOI-BNC-DECLA-10-20 ; BOI-BNC-BASE-20-10-10,
+  § 10 ; le PCG au 1er janvier 2026, art. 1032-2, 1211-10, 1215-53.
+- Dans le dépôt et en base : les fichiers et les entrées du préambule ; le catalogue de production du 28/10/2026.
