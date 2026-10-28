@@ -1623,12 +1623,16 @@ function ventesLues(constat: string, depuis: string | null) {
       ...verifie(/^3 source\(s\) de vente facturée — .* jusqu'au 31\/12\/20\d\d \(.*les écrit\.$/.test(texteDe(r.comptes.avertissement)), `lister_comptes : ${texteDe(r.comptes.avertissement).slice(0, 200)}`),
       ...verifie(Array.isArray(r.comptes.comptes), 'lister_comptes ne rend plus ses comptes'),
       ...verifie(!/source\(s\) de vente facturée|n'ont pas pu être vérifiées/.test(texteDe(r['comptes-2025'].avertissement)), `lister_comptes (2025) : ${texteDe(r['comptes-2025'].avertissement).slice(0, 200)}`),
-      // lister_pieces : l'exemplaire sous le numéro de sa facture, sans tiers ni fichier ; les autres comme hier.
+      // lister_pieces : l'exemplaire sous le numéro de sa facture, sans tiers ni fichier ; les autres comme hier — depuis
+      // VF9C-Q1, sans leur tiers ni leur fichier non plus : ce sont des pièces de vente. Les deux juges qui les
+      // reconnaissaient à leur tiers (« Client fictif libre », « Client fictif d’avant ») les reconnaissent à ce qu'elles
+      // ne sont pas des exemplaires d'une source, et disent qu'elles partent sans leur client.
       ...verifie(JSON.stringify(exemplaire?.exemplaire_de) === '{"facture":"F2026-0001","ne_compte_pas":"sa facture compte la vente"}', `lister_pieces, l’exemplaire : ${JSON.stringify(exemplaire)}`),
       ...verifie(exemplaire?.tiers === null && exemplaire?.nom_fichier === null, 'lister_pieces nomme le client de l’exemplaire'),
       ...verifie(pieces.length === 4 && pieces.filter((p) => 'exemplaire_de' in p).map((p) => (p.exemplaire_de as { facture?: unknown }).facture).join(',') === 'F2026-0001,F2026-0002', 'lister_pieces : l’exemplaire d’une facture d’avant ou une pièce libre est dit exemplaire d’une source, ou celui d’une source à valider ne l’est pas'),
-      ...verifie(JSON.stringify(Object.keys(exemplaire ?? {})) === JSON.stringify([...Object.keys(pieces.find((p) => p.tiers === 'Client fictif libre') ?? {}), 'exemplaire_de']), `lister_pieces, les champs de l’exemplaire : ${JSON.stringify(Object.keys(exemplaire ?? {}))}`),
-      ...verifie(pieces.some((p) => p.tiers === 'Client fictif d’avant') && !('facture_id' in (pieces[0] ?? {})), 'lister_pieces : une pièce qui n’est pas l’exemplaire d’une source a changé'),
+      ...verifie(JSON.stringify(Object.keys(exemplaire ?? {})) === JSON.stringify([...Object.keys(pieces.find((p) => !('exemplaire_de' in p)) ?? {}), 'exemplaire_de']), `lister_pieces, les champs de l’exemplaire : ${JSON.stringify(Object.keys(exemplaire ?? {}))}`),
+      ...verifie(pieces.filter((p) => !('exemplaire_de' in p)).length === 2 && pieces.filter((p) => !('exemplaire_de' in p)).every((p) => p.type_piece === 'vente' && p.tiers === null && p.nom_fichier === null)
+        && !('facture_id' in (pieces[0] ?? {})), 'lister_pieces : une pièce de vente qui n’est pas l’exemplaire d’une source a changé, ou rend son client (VF9C-Q1)'),
       ...verifie(r['pieces-tronquees'].avertissement === 'Liste tronquée : 1 lignes renvoyées sur 4. N\'en tire aucun total ni comptage — resserre le filtre (compte, tiers, année) ou utilise lister_comptes / points_a_traiter, qui agrègent sans plafond.', `lister_pieces tronquée : ${texteDe(r['pieces-tronquees'].avertissement).slice(0, 160)}`),
       // lister_ecritures : la source de chaque ligne, et le libellé d'une vente facturée recomposé de son numéro.
       ...verifie(ecritures.length === 14 && ecritures.every((e) => 'source' in e), 'lister_ecritures : une ligne sans sa source'),
@@ -1687,6 +1691,261 @@ function registreEnPanne(_consigne: string, r: ResultatsDesOutils, m: Monde): st
     ...verifie(!m.journal.some((e) => e.genre === 'rpc' && e.nom === 'ventes_facturees_de_l_exercice'), 'la fonction des ventes facturées a été appelée sur une lecture partielle'),
   ]
 }
+
+// LE CLIENT D'UNE PIÈCE DE VENTE N'ATTEINT JAMAIS LE MODÈLE (VF9C-Q1 : la réponse (A) du cabinet du 28/10/2026 ; chantier
+// EC-Q3, ligne 28.65). Pour toute pièce de vente de tout dossier — qu'il ait basculé ou non, que la source de ses ventes se
+// lise ou non —, ni son tiers, ni le nom de son fichier, ni le libellé de ses écritures (qui recopie l'un ou l'autre) ne
+// partent au modèle : la pièce se nomme par sa date et son montant. Le fournisseur d'une pièce d'achat, lui, part comme
+// avant : la règle vise juste. Le monde : six pièces de vente qui portent un MARQUEUR dans leur tiers, leur fichier et le
+// libellé de leurs écritures — payée, sans paiement, sans TVA et mal écrite, à valider à faible confiance, payée en trop, et
+// un avoir qu'un lettrage fait à la main apparie à une facture (en engagement) —, une pièce d'achat et une pièce « autre »
+// dont le tiers part, et un mouvement affecté : de quoi remplir les clés de `points_a_traiter` qui comptent des pièces de
+// vente, et faire passer chaque ligne par chaque branche du passage. Le modèle appelle les cinq outils, `lister_pieces` et
+// `lister_ecritures` sous leurs filtres — dont le tiers, sous un mot que le modèle a écrit (`MOT_DU_FILTRE`, plus court que
+// tout morceau du marqueur que le juge cherche).
+
+const MARQUEUR_D_UNE_VENTE = 'Ardelune Pivrachon'
+const MOT_DU_FILTRE = 'Pivrach'
+const MARQUEUR_D_UN_ACHAT = 'Fournisseur fictif Calbrenor'
+const TIERS_D_UNE_PIECE_AUTRE = 'Organisme fictif Ostravelle'
+const PV = {
+  payee: 'a9c10000-0000-4000-8000-000000000001', sansPaiement: 'a9c10000-0000-4000-8000-000000000002',
+  malEcrite: 'a9c10000-0000-4000-8000-000000000003', aValider: 'a9c10000-0000-4000-8000-000000000004',
+  payeeEnTrop: 'a9c10000-0000-4000-8000-000000000005', avoir: 'a9c10000-0000-4000-8000-000000000006',
+  achat: 'a9c10000-0000-4000-8000-000000000007', autre: 'a9c10000-0000-4000-8000-000000000008',
+  m1: 'b9c10000-0000-4000-8000-000000000001', m2: 'b9c10000-0000-4000-8000-000000000002',
+  m3: 'b9c10000-0000-4000-8000-000000000003', m4: 'b9c10000-0000-4000-8000-000000000004',
+  ventes: 'ca9c1000-0000-4000-8000-000000000001', achats: 'ca9c1000-0000-4000-8000-000000000002',
+  frais: 'ca9c1000-0000-4000-8000-000000000003', groupe: 'e9c10000-0000-4000-8000-000000000001',
+} as const
+/** Les pièces de vente du monde, et leur nom tel que le passage le recompose : leur date et leur montant TTC. */
+const NOMS_DES_PIECES_DE_VENTE: Record<string, string> = {
+  [PV.payee]: 'Pièce de vente du 15/01/2026, 120,00 €',
+  [PV.malEcrite]: 'Pièce de vente du 05/03/2026, 30,00 €',
+  [PV.sansPaiement]: 'Pièce de vente du 10/02/2026, 60,00 €',
+  [PV.avoir]: 'Pièce de vente du 20/02/2026, -50,00 €',
+}
+const PHRASE_DE_LA_CONSIGNE = '\n- Une PIÈCE DE VENTE (type_piece « vente ») se nomme par sa date et son montant : son client n\'est pas transmis (lister_pieces la rend sans son tiers ni le nom de son fichier, lister_ecritures recompose le libellé de ses écritures) ; ne le demande pas, ne le devine pas. Le fournisseur d\'une pièce d\'achat, lui, est transmis.\n'
+
+/** Ajoute au dossier du monde les pièces de vente marquées, leurs écritures et ce qui les paie, en trésorerie ou en engagement. */
+function piecesDeVenteMarquees(m: Monde, mode: 'tresorerie' | 'engagement') {
+  const piece = (id: string, type: string, tiers: string, nomFichier: string, date: string, ht: number, tva: number | null, o: Record<string, unknown> = {}) => ({
+    id, dossier_id: D, statut: 'validee', type_piece: type, tiers, nom_fichier: nomFichier, date_piece: date, montant_ht: ht, montant_tva: tva,
+    montant_ttc: ht + (tva ?? 0), categorie_id: type === 'vente' ? PV.ventes : PV.achats, facture_id: null, confiance: 'haute',
+    created_at: `${date}T08:00:00Z`, ...o,
+  })
+  const vente = (id: string, fichier: string, date: string, ht: number, tva: number | null, o: Record<string, unknown> = {}) =>
+    piece(id, 'vente', MARQUEUR_D_UNE_VENTE, fichier, date, ht, tva, o)
+  ;(m.base.pieces ??= []).push(
+    vente(PV.payee, `facture ${MARQUEUR_D_UNE_VENTE}.pdf`, '2026-01-15', 100, 20),
+    vente(PV.sansPaiement, `${MARQUEUR_D_UNE_VENTE} février.pdf`, '2026-02-10', 50, 10),
+    // Ni TVA renseignée ni écriture juste : à régénérer, et sans TVA sur un dossier redevable.
+    vente(PV.malEcrite, `${MARQUEUR_D_UNE_VENTE} mars.pdf`, '2026-03-05', 30, null),
+    // Son fichier ne porte pas le marqueur : le filtre par tiers la trouve par son tiers, et par lui seul.
+    vente(PV.aValider, 'piece a valider.pdf', '2026-03-20', 80, null, { statut: 'a_valider', confiance: 'basse' }),
+    vente(PV.payeeEnTrop, `${MARQUEUR_D_UNE_VENTE} avril.pdf`, '2026-04-02', 200, 40),
+    vente(PV.avoir, `avoir ${MARQUEUR_D_UNE_VENTE}.pdf`, '2026-02-20', -50, 0),
+    piece(PV.achat, 'achat', MARQUEUR_D_UN_ACHAT, `facture ${MARQUEUR_D_UN_ACHAT}.pdf`, '2026-01-25', 40, 8),
+    piece(PV.autre, 'autre', TIERS_D_UNE_PIECE_AUTRE, 'attestation fictive.pdf', '2026-03-01', 0, null, { statut: 'a_valider', categorie_id: null }),
+  )
+  ;(m.base.categories ??= []).push(
+    { id: PV.ventes, dossier_id: D, code: 'ventes-vf9cq1', libelle: 'Ventes fictives', compte_comptable: '706000', poste_2035: 'AA' },
+    { id: PV.achats, dossier_id: D, code: 'achats-vf9cq1', libelle: 'Achats fictifs', compte_comptable: '606000', poste_2035: 'BA' },
+    { id: PV.frais, dossier_id: D, code: 'frais-vf9cq1', libelle: 'Frais bancaires fictifs', compte_comptable: '627000', poste_2035: 'BL' },
+  )
+  const mouvement = (id: string, date: string, montant: number, libelle: string, o: Record<string, unknown>) => ({
+    id, dossier_id: D, date, libelle, montant, statut: 'rapprochee', piece_id: null, reglement_groupe: false, cotisation_id: null,
+    categorie_id: null, compte_bilan: null, prelevement_personnel: false, emprunt_id: null, ventilee: false, encaissements_de_factures: false,
+    declaration_tva_id: null, taux_tva: null, ...o,
+  })
+  ;(m.base.lignes_bancaires ??= []).push(
+    mouvement(PV.m1, '2026-01-20', 120, 'VIR RECU FICTIF', { piece_id: PV.payee }),
+    // Payée 500 € pour 240 € : une pièce payée plus que son montant.
+    mouvement(PV.m2, '2026-04-02', 500, 'VIR RECU FICTIF', { piece_id: PV.payeeEnTrop }),
+    mouvement(PV.m3, '2026-01-25', -48, 'PRLV FOURNISSEUR FICTIF', { piece_id: PV.achat }),
+    // Un mouvement affecté : ses écritures n'ont pas de pièce, et gardent le libellé du relevé (hors de la décision).
+    mouvement(PV.m4, '2026-02-28', -15, 'FRAIS BANCAIRES FICTIFS', { categorie_id: PV.frais }),
+  )
+  let n = 0
+  const ligne = (pieceId: string | null, date: string, compte: string, sens: 'debit' | 'credit', montant: number, libelle: string, mouvementId: string | null = null) => {
+    n += 1
+    return {
+      id: `ec9c1000-0000-4000-8000-${String(n).padStart(12, '0')}`, dossier_id: D, date, compte, libelle, sens, montant, piece_id: pieceId,
+      ligne_bancaire_id: mouvementId, statut: 'proposee', facture_id: null, encaissement_id: null,
+    }
+  }
+  const v = MARQUEUR_D_UNE_VENTE
+  const ecritures = mode === 'tresorerie'
+    ? [
+      // La payée, juste : à la date de son paiement, face à sa banque.
+      ligne(PV.payee, '2026-01-20', '706000', 'credit', 100, v), ligne(PV.payee, '2026-01-20', '445710', 'credit', 20, v),
+      ligne(PV.payee, '2026-01-20', '512000', 'debit', 120, v, PV.m1),
+      // Sans paiement : en attente de rapprochement.
+      ligne(PV.sansPaiement, '2026-02-10', '706000', 'credit', 50, v), ligne(PV.sansPaiement, '2026-02-10', '445710', 'credit', 10, v),
+      // Mal écrite : à régénérer.
+      ligne(PV.malEcrite, '2026-03-05', '706000', 'credit', 25, `${v} mars.pdf`),
+      ligne(PV.avoir, '2026-02-20', '706000', 'debit', 50, v),
+      ligne(PV.achat, '2026-01-25', '606000', 'debit', 40, MARQUEUR_D_UN_ACHAT), ligne(PV.achat, '2026-01-25', '445660', 'debit', 8, MARQUEUR_D_UN_ACHAT),
+      ligne(PV.achat, '2026-01-25', '512000', 'credit', 48, MARQUEUR_D_UN_ACHAT, PV.m3),
+    ]
+    : [
+      // La payée : sa facture à sa date, son règlement à celle du mouvement.
+      ligne(PV.payee, '2026-01-15', '706000', 'credit', 100, v), ligne(PV.payee, '2026-01-15', '445710', 'credit', 20, v),
+      ligne(PV.payee, '2026-01-15', '411000', 'debit', 120, v),
+      ligne(PV.payee, '2026-01-20', '411000', 'credit', 120, v, PV.m1), ligne(PV.payee, '2026-01-20', '512000', 'debit', 120, v, PV.m1),
+      // Sans règlement : la facture qu'un lettrage fait à la main apparie à l'avoir, et qui ne se solde plus avec lui.
+      ligne(PV.sansPaiement, '2026-02-10', '706000', 'credit', 50, v), ligne(PV.sansPaiement, '2026-02-10', '445710', 'credit', 10, v),
+      ligne(PV.sansPaiement, '2026-02-10', '411000', 'debit', 60, v),
+      ligne(PV.avoir, '2026-02-20', '706000', 'debit', 50, v), ligne(PV.avoir, '2026-02-20', '411000', 'credit', 50, v),
+      // Mal écrite : à régénérer.
+      ligne(PV.malEcrite, '2026-03-05', '706000', 'credit', 25, `${v} mars.pdf`), ligne(PV.malEcrite, '2026-03-05', '411000', 'debit', 25, `${v} mars.pdf`),
+      ligne(PV.achat, '2026-01-25', '606000', 'debit', 40, MARQUEUR_D_UN_ACHAT), ligne(PV.achat, '2026-01-25', '445660', 'debit', 8, MARQUEUR_D_UN_ACHAT),
+      ligne(PV.achat, '2026-01-25', '401000', 'credit', 48, MARQUEUR_D_UN_ACHAT),
+      ligne(PV.achat, '2026-01-25', '401000', 'debit', 48, MARQUEUR_D_UN_ACHAT, PV.m3), ligne(PV.achat, '2026-01-25', '512000', 'credit', 48, MARQUEUR_D_UN_ACHAT, PV.m3),
+    ]
+  ;(m.base.ecritures_brouillon ??= []).push(
+    ...ecritures,
+    ligne(null, '2026-02-28', '627000', 'debit', 15, 'FRAIS BANCAIRES FICTIFS', PV.m4),
+    ligne(null, '2026-02-28', '512000', 'credit', 15, 'FRAIS BANCAIRES FICTIFS', PV.m4),
+  )
+  if (mode === 'engagement') {
+    ;(m.base.lettrages_manuels ??= []).push(
+      { id: 'e9c10000-0000-4000-8000-00000000000a', dossier_id: D, groupe: PV.groupe, piece_id: PV.sansPaiement, compte: '411000' },
+      { id: 'e9c10000-0000-4000-8000-00000000000b', dossier_id: D, groupe: PV.groupe, piece_id: PV.avoir, compte: '411000' },
+    )
+  }
+  m.sensibles.push(MARQUEUR_D_UNE_VENTE)
+}
+
+/** Le dossier du monde, en trésorerie ou en engagement, redevable, qui n'a pas basculé. */
+function dossierQuiNaPasBascule(m: Monde, mode: 'tresorerie' | 'engagement') {
+  Object.assign(lignes(m, 'dossiers').find((d) => d.id === D)!, {
+    mode_comptable: mode, compte_notes_de_frais: mode === 'engagement' ? '455000' : '108000', assujetti_tva: true, statut_tva: 'redevable',
+    article_exoneration: null, tva_periodicite: 'trimestrielle',
+  })
+}
+
+const OUTILS_DES_PIECES_DE_VENTE = [
+  { id: 'resume', name: 'resume_dossier', input: {} },
+  { id: 'comptes', name: 'lister_comptes', input: { annee: 2026 } },
+  { id: 'ecritures', name: 'lister_ecritures', input: {} },
+  { id: 'ecritures-706', name: 'lister_ecritures', input: { compte: '706000', annee: 2026 } },
+  { id: 'ecritures-tronquees', name: 'lister_ecritures', input: { limite: 2 } },
+  { id: 'pieces', name: 'lister_pieces', input: {} },
+  { id: 'pieces-a-valider', name: 'lister_pieces', input: { statut: 'a_valider' } },
+  { id: 'pieces-filtrees', name: 'lister_pieces', input: { tiers: MOT_DU_FILTRE } },
+  { id: 'pieces-tronquees', name: 'lister_pieces', input: { limite: 1 } },
+  { id: 'points', name: 'points_a_traiter', input: {} },
+]
+
+/** Chaque morceau de huit caractères d'un marqueur : le juge des fuites du harnais (`fuitesDans`) les cherche de même. */
+const morceauxDe = (marqueur: string) => Array.from({ length: Math.max(1, marqueur.length - 7) }, (_, i) => marqueur.slice(i, i + 8))
+
+/**
+ * Le client d'une pièce de vente n'atteint jamais le modèle — ni dans la consigne, ni dans les outils, ni dans aucun résultat
+ * —, et le monde le porte (la preuve n'est pas vide) ; le fournisseur d'une pièce d'achat, lui, l'atteint.
+ */
+function clientDUneVenteJamaisAuModele(consigne: string, r: ResultatsDesOutils, m: Monde): string[] {
+  const demandes = JSON.stringify(m.notes.demandesAuModele ?? [])
+  const porte = JSON.stringify([m.base.pieces, m.base.ecritures_brouillon])
+  return [
+    ...verifie(porte.split(MARQUEUR_D_UNE_VENTE).length - 1 >= 12, 'le monde ne porte plus le marqueur : la preuve serait vide'),
+    ...verifie(morceauxDe(MARQUEUR_D_UNE_VENTE).every((x) => !demandes.includes(x)), 'le client d’une pièce de vente est parvenu au modèle'),
+    ...verifie(demandes.includes(MARQUEUR_D_UN_ACHAT), 'le fournisseur d’une pièce d’achat n’atteint plus le modèle : la règle vise trop large'),
+    ...verifie(consigne.includes(PHRASE_DE_LA_CONSIGNE), 'la consigne ne dit pas qu’une pièce de vente se nomme par sa date et son montant'),
+    ...verifie(JSON.stringify(r).includes('Pièce de vente du '), 'aucun libellé recomposé n’est parvenu au modèle'),
+  ]
+}
+
+/** Ce que `lister_pieces` et `lister_ecritures` rendent de chaque pièce, sous chacun de leurs filtres ; et les points. */
+function piecesDeVenteNommees(mode: 'tresorerie' | 'engagement', clesDesEcritures: readonly string[]) {
+  return (consigne: string, r: ResultatsDesOutils, m: Monde): string[] => {
+    const pieces = (id: string) => (r[id]?.pieces ?? []) as Record<string, unknown>[]
+    const ecritures = (id: string) => (r[id]?.ecritures ?? []) as Record<string, unknown>[]
+    const toutes = [...['pieces', 'pieces-a-valider', 'pieces-filtrees', 'pieces-tronquees'].flatMap(pieces)]
+    const lignesRendues = [...['ecritures', 'ecritures-706', 'ecritures-tronquees'].flatMap(ecritures)]
+    const filtrees = pieces('pieces-filtrees')
+    return [
+      ...clientDUneVenteJamaisAuModele(consigne, r, m),
+      // lister_pieces : une pièce de vente sans son tiers ni son fichier ; les autres comme hier.
+      ...verifie(toutes.filter((p) => p.type_piece === 'vente').length >= 10
+        && toutes.filter((p) => p.type_piece === 'vente').every((p) => p.tiers === null && p.nom_fichier === null), 'lister_pieces rend le tiers ou le fichier d’une pièce de vente'),
+      ...verifie(pieces('pieces').some((p) => p.type_piece === 'achat' && p.tiers === MARQUEUR_D_UN_ACHAT && p.nom_fichier === `facture ${MARQUEUR_D_UN_ACHAT}.pdf`), 'lister_pieces : la pièce d’achat a perdu son tiers ou son fichier'),
+      ...verifie(pieces('pieces-a-valider').some((p) => p.type_piece === 'autre' && p.tiers === TIERS_D_UNE_PIECE_AUTRE), 'lister_pieces : la pièce « autre » a perdu son tiers'),
+      ...verifie(JSON.stringify(Object.keys(pieces('pieces')[0] ?? {})) === '["date_piece","tiers","nom_fichier","montant_ht","montant_tva","montant_ttc","type_piece","statut","confiance","categorie"]',
+        `lister_pieces, les champs d’une pièce : ${JSON.stringify(Object.keys(pieces('pieces')[0] ?? {}))}`),
+      // Le filtre par tiers filtre encore : les six pièces de vente, sous le mot du modèle, et elles seules — sans leur tiers.
+      ...verifie(filtrees.length === 6 && r['pieces-filtrees'].total_disponible === 6 && filtrees.every((p) => p.type_piece === 'vente' && p.tiers === null),
+        `lister_pieces filtré par « ${MOT_DU_FILTRE} » : ${JSON.stringify(filtrees.map((p) => [p.type_piece, p.tiers, p.montant_ttc]))}`),
+      ...verifie(r['pieces-tronquees'].tronque === true && pieces('pieces-tronquees').length === 1, 'lister_pieces ne dit plus qu’elle est tronquée'),
+      // lister_ecritures : le libellé d'une ligne de pièce de vente recomposé de sa date et de son montant, celui d'une pièce
+      // d'achat et d'un mouvement affecté gardé ; la pièce lue avec chaque ligne ne part pas.
+      ...lignesRendues.flatMap((e) => {
+        const attendu = typeof e.piece_id === 'string' && NOMS_DES_PIECES_DE_VENTE[e.piece_id]
+        if (attendu) return verifie(e.libelle === attendu, `lister_ecritures, une ligne de pièce de vente : ${JSON.stringify(e)}`)
+        if (e.piece_id === PV.achat) return verifie(e.libelle === MARQUEUR_D_UN_ACHAT, `lister_ecritures, une ligne d’achat : ${JSON.stringify(e)}`)
+        if (e.piece_id === null) return verifie(e.libelle === 'FRAIS BANCAIRES FICTIFS', `lister_ecritures, une ligne sans pièce : ${JSON.stringify(e)}`)
+        return [`lister_ecritures, une ligne d’une pièce inattendue : ${JSON.stringify(e)}`]
+      }),
+      ...verifie(lignesRendues.length >= 10 && lignesRendues.every((e) => JSON.stringify(Object.keys(e)) === JSON.stringify(clesDesEcritures)),
+        `lister_ecritures, les champs d’une ligne : ${JSON.stringify(lignesRendues.map((e) => Object.keys(e)).find((k) => JSON.stringify(k) !== JSON.stringify(clesDesEcritures)))}`),
+      // Les deux lignes sans pièce du mouvement affecté restent : la pièce se lit À GAUCHE de chaque ligne.
+      ...verifie(ecritures('ecritures').filter((e) => e.piece_id === null).length === 2 && r.ecritures.total_disponible === ecritures('ecritures').length,
+        `lister_ecritures : les lignes sans pièce ${JSON.stringify(ecritures('ecritures').filter((e) => e.piece_id === null))}, ${JSON.stringify(r.ecritures.total_disponible)} au total`),
+      ...verifie(ecritures('ecritures-706').length > 0 && ecritures('ecritures-706').every((e) => e.compte === '706000'), 'lister_ecritures filtré par compte : un autre compte'),
+      ...verifie(r['ecritures-tronquees'].tronque === true, 'lister_ecritures ne dit plus qu’elle est tronquée'),
+      // points_a_traiter : les clés qui comptent des pièces de vente sont remplies — et ne nomment personne.
+      ...verifie(Number(r.points.ecritures_a_regenerer_pieces_modifiees) >= 1, `points_a_traiter, à régénérer : ${JSON.stringify(r.points.ecritures_a_regenerer_pieces_modifiees)}`),
+      ...verifie(r.points.pieces_a_faible_confiance_extraction === 1, `points_a_traiter, faible confiance : ${JSON.stringify(r.points.pieces_a_faible_confiance_extraction)}`),
+      ...verifie(Number(r.points.pieces_validees_sans_tva_renseignee) >= 1, `points_a_traiter, sans TVA : ${JSON.stringify(r.points.pieces_validees_sans_tva_renseignee)}`),
+      ...verifie(r.points.pieces_payees_plus_que_leur_montant === 1, `points_a_traiter, payée en trop : ${JSON.stringify(r.points.pieces_payees_plus_que_leur_montant)}`),
+      ...(mode === 'tresorerie'
+        ? verifie(Number(r.points.ecritures_en_attente_de_rapprochement_bancaire) >= 1, `points_a_traiter, en attente : ${JSON.stringify(r.points.ecritures_en_attente_de_rapprochement_bancaire)}`)
+        : [
+          ...verifie(Number(r.points.factures_sans_reglement_rapproche) >= 1, `points_a_traiter, sans règlement : ${JSON.stringify(r.points.factures_sans_reglement_rapproche)}`),
+          ...verifie(r.points.lettrages_faits_a_la_main_qui_ne_se_soldent_plus === 1, `points_a_traiter, lettrage : ${JSON.stringify(r.points.lettrages_faits_a_la_main_qui_ne_se_soldent_plus)}`),
+        ]),
+    ]
+  }
+}
+
+const CLES_D_UNE_LIGNE = ['date', 'compte', 'libelle', 'sens', 'montant', 'piece_id']
+
+const SCENARIOS_DES_PIECES_DE_VENTE: Scenario[] = [
+  ...(['tresorerie', 'engagement'] as const).map((mode) => scenarioDuDossierBascule(
+    `un dossier qui n’a pas basculé, en ${mode === 'tresorerie' ? 'trésorerie' : 'engagement'} : le client d’une pièce de vente n’atteint jamais le modèle — ni son tiers, ni son fichier, ni le libellé de ses écritures —, elle se nomme par sa date et son montant, sous chaque filtre et dans chaque clé qui la compte, et le fournisseur d’une pièce d’achat, lui, l’atteint (VF9C-Q1)`,
+    (m) => { dossierQuiNaPasBascule(m, mode); piecesDeVenteMarquees(m, mode) },
+    OUTILS_DES_PIECES_DE_VENTE, piecesDeVenteNommees(mode, CLES_D_UNE_LIGNE))),
+  scenarioDuDossierBascule('un dossier basculé : le client d’une pièce de vente libre n’atteint pas le modèle, ni celui d’une facture, et sa ligne dit sa source (VF9C-Q1)',
+    (m) => { mondeBascule(m, BASCULE_A); piecesDeVenteMarquees(m, 'tresorerie') },
+    OUTILS_DES_PIECES_DE_VENTE,
+    (consigne, r, m) => {
+      const lignesRendues = ((r.ecritures.ecritures ?? []) as Record<string, unknown>[])
+      return [
+        ...clientDUneVenteJamaisAuModele(consigne, r, m),
+        ...clientJamaisAuModele(consigne, r, m),
+        ...verifie(lignesRendues.filter((e) => e.piece_id === PV.payee).length === 3
+          && lignesRendues.filter((e) => e.piece_id === PV.payee).every((e) => e.libelle === NOMS_DES_PIECES_DE_VENTE[PV.payee] && e.source === 'piece'),
+        `lister_ecritures, la pièce de vente libre : ${JSON.stringify(lignesRendues.filter((e) => e.piece_id === PV.payee))}`),
+        // La pièce libre de VF9c, elle aussi une pièce de vente : sa ligne sous son nom.
+        ...verifie(lignesRendues.find((e) => e.piece_id === V.p2)?.libelle === 'Pièce de vente du 01/03/2026, 60,00 €', `lister_ecritures, la pièce libre de VF9c : ${JSON.stringify(lignesRendues.find((e) => e.piece_id === V.p2))}`),
+        ...verifie(((r.pieces.pieces ?? []) as Record<string, unknown>[]).every((p) => p.type_piece !== 'vente' || (p.tiers === null && p.nom_fichier === null)), 'lister_pieces rend le client d’une pièce de vente'),
+      ]
+    }),
+  scenarioDuDossierBascule('une source des ventes illisible : le client d’une pièce de vente n’atteint pas le modèle (VF9C-Q1)',
+    (m) => {
+      mondeBascule(m, BASCULE_A)
+      delete lignes(m, 'dossiers').find((d) => d.id === D)!.ventes_par_les_factures
+      piecesDeVenteMarquees(m, 'tresorerie')
+    },
+    OUTILS_DES_PIECES_DE_VENTE,
+    (consigne, r, m) => [
+      ...clientDUneVenteJamaisAuModele(consigne, r, m),
+      ...verifie(JSON.stringify(Object.keys(r.points)) === '["erreur"]', `points_a_traiter rend : ${JSON.stringify(Object.keys(r.points))}`),
+      ...verifie(((r.ecritures.ecritures ?? []) as Record<string, unknown>[]).filter((e) => e.piece_id === PV.malEcrite).every((e) => e.libelle === NOMS_DES_PIECES_DE_VENTE[PV.malEcrite]),
+        'lister_ecritures rend le libellé d’une ligne de pièce de vente'),
+    ]),
+]
 
 const SCENARIOS_DES_VENTES: Scenario[] = [
   // Ces deux scénarios étaient, sous VF9a, ceux de la garde sur un dossier basculé (« points_a_traiter refuse sans rien
@@ -1902,6 +2161,7 @@ const AGENT_COMPTABLE: ContratFonction = {
       },
     },
     ...SCENARIOS_DES_VENTES,
+    ...SCENARIOS_DES_PIECES_DE_VENTE,
     {
       nom: 'le modèle refuse de répondre : 502 qui le dit',
       preparer: (m) => { m.modele = () => ({ content: [], stop_reason: 'refusal', usage: { input_tokens: 1, output_tokens: 0 } }) },
