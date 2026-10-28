@@ -39843,3 +39843,204 @@ activité non exonérée, (b) quelques-uns facturent des clients établis hors d
 services à l'étranger. L'étape e8, l'e-reporting des recettes sans facture, et l'étape e7, celui des ventes à
 l'étranger, se construiront donc, après le MVP : l'e-reporting démarre avec les opérations du 1er septembre 2027. (c)
 confirme les achats hors de France, en place depuis e1 à e6 → « L'E-REPORTING : LA CONCEPTION ».
+
+### 28/10/2026 — VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE — EC-Q3
+
+(Chantier EC-Q3, ligne 28.65. `supabase/functions/agent-comptable/index.ts` ;
+`src/lib/agentComptablePiecesDeVente.test.ts`, `src/lib/agentComptableConsigne.test.ts`,
+`src/lib/edgeFunctionsHttp.test.ts`, `src/test/contratsFonctions.ts` ; RGPD.md. Les réponses (A) du cabinet à VF9CQ1-Q1
+et Q2 → « NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8, CAISSE-Q1 À Q4, 28.5E-Q1 » ; les fiches → « VF9C-Q1,
+AUCUN CLIENT D'UNE PIÈCE DE VENTE AU MODÈLE ». Aucune migration, aucune écriture en base, aucun écran ; au dépôt, à
+déployer avec VF9b, VF9c et VF9C-Q1, d'un seul déploiement, avant les données réelles du 20 novembre. En production, le
+catalogue seul a été lu : les vingt-cinq colonnes d'`ecritures_brouillon`, ses neuf clés étrangères (le dossier, et huit
+sources) et ses contraintes ; les vingt-quatre colonnes de `lignes_bancaires` (`montant` numérique, non nul, sans
+contrainte de signe ni de zéro hors du découpage d'un emprunt) ; une seule clé entre le brouillon et le relevé
+(`ligne_bancaire_id`, ON DELETE SET NULL), aucune table qui cite le brouillon, d'où un mouvement embarqué sans
+ambiguïté ; et, dans le texte des douze fonctions qui écrivent au brouillon, les colonnes qu'elles remplissent.)
+
+**LA RÈGLE.** Pour tout dossier — qu'il ait basculé ou non, que la source de ses ventes se lise ou non —, une ligne du
+brouillon dont la SOURCE est un mouvement CRÉDITEUR du relevé part au modèle sous la date et le montant de ce mouvement
+(« Crédit du relevé du 15/01/2026, 120,00 € », « sans date » si elle ne se lit pas) : le libellé que la banque lui a
+donné, que la ligne recopie (`libelleExploitable(ligne) || ligne.libelle` dans les modules du relevé, `m.libelle` dans
+src/lib/ecrituresVentesFacturees.ts), nomme souvent qui a payé — chez un praticien, un patient qui règle par virement.
+Le crédit se juge sur le MOUVEMENT, son montant lu positif, jamais sur le sens de la ligne : les lignes d'un crédit sont
+au débit (la banque) et au crédit (le produit, le compte de bilan, le compte du dirigeant). La ligne d'un DÉBIT garde
+son libellé, au caractère près : il nomme un fournisseur ou un organisme. Une ligne rattachée à RIEN — ni pièce, ni
+mouvement, ni facture, ni encaissement, ni bien, ni véhicule, ni déclaration, ni cotisation — part sans libellé (null).
+Aucun calcul ne change : `points_a_traiter` lit le brouillon tel qu'il est ; seul change ce qui sort.
+
+**LES SOURCES D'UNE LIGNE, COLONNE PAR COLONNE.** Une ligne du brouillon cite ce qui l'a produite par huit clés
+étrangères, celle du dossier exceptée : `piece_id`, `ligne_bancaire_id`, `facture_id`, `encaissement_id`,
+`immobilisation_id`, `vehicule_id`, `declaration_tva_id`, `cotisation_id`. Qui les remplit :
+
+- le navigateur (onglet Écritures, src/lib/contrepartieBanque.ts), pour une pièce : `piece_id`, et `ligne_bancaire_id`
+  sur la ligne de banque d'un paiement en trésorerie et sur les deux lignes d'un règlement en engagement ; le libellé
+  est celui de la pièce (`piece.tiers ?? piece.nom_fichier`), jamais celui de la banque ;
+- sept fonctions du relevé — `affecter_mouvement_bancaire`, `ventiler_mouvement_bancaire`, `classer_virement_personnel`,
+  `ecrire_mouvement_compte_bilan`, `rapprocher_echeance_emprunt`, `rapprocher_cotisation`, `rapprocher_declaration_tva`
+  — : `ligne_bancaire_id` seul, sous le libellé de la banque ;
+- `ecrire_vente_facturee` : `facture_id` (une facture, un avoir) ou `encaissement_id`, avec `ligne_bancaire_id` sur la
+  ligne de trésorerie d'un encaissement du jour de son mouvement, sous un libellé qui cite le client de la facture ;
+  pour le mouvement que ses encaissements classent, `ligne_bancaire_id` seul, sous le libellé de la banque ;
+- `ecrire_dotation_amortissement` (`immobilisation_id`, « Dotation AAAA — <bien> »), `ecrire_forfait_kilometrique`
+  (`vehicule_id`, « Indemnités kilométriques AAAA — <véhicule> »), `ecrire_liquidation_tva` (`declaration_tva_id`, « CA3
+  <période> ») et `enregistrer_paiement_personnel_cotisation` (`cotisation_id`, « Cotisation, échéance du …, payée
+  depuis le compte personnel ») : leur seule clé, la base refusant qu'une telle ligne porte une pièce ou un mouvement ;
+- la restauration d'une sauvegarde, toute forme.
+
+À la suppression, `piece_id` et `ligne_bancaire_id` tombent à nul (ON DELETE SET NULL), `cotisation_id` emporte ses
+lignes (CASCADE), les cinq autres retiennent ce qu'elles citent. Une ligne RATTACHÉE À RIEN porte les huit à nul :
+l'écriture restée d'une pièce supprimée (ses lignes de produit, de charge, de TVA ; sa ligne de banque garde son
+mouvement), ou d'un mouvement supprimé. Comment cela se lit : `lister_ecritures` lit les huit colonnes avec chaque
+ligne, pour tout dossier ; le bloc les énumère (`RATTACHEMENTS_D_UNE_LIGNE`), et le test les confronte à chaque clé
+étrangère du brouillon dans le schéma exporté — une clé neuve, la caisse du MVP par exemple, le fait tomber, et une
+ligne qui ne citerait qu'elle se tait d'ici là.
+
+**L'INVENTAIRE, OUTIL PAR OUTIL**, chaque fois pour un dossier dont la source des ventes est lue fausse, lue vraie, ou
+ne se lit pas :
+
+- `lister_ecritures` : le libellé de la banque, dans les trois cas, sur les lignes d'un mouvement affecté, ventilé, d'un
+  virement personnel, d'un compte de bilan, d'un emprunt, d'une cotisation, de la TVA ; d'un dossier basculé ou
+  illisible, aussi sur celles du mouvement que ses encaissements classent, virement mixte compris (VF9c les rendait
+  « mouvement_d_encaissements » sous ce libellé) ; et le libellé d'une ligne rattachée à rien, dans les trois cas.
+  Traité : le passage.
+- `points_a_traiter` : il lit le libellé du brouillon (`EcritureRow`) sans qu'aucune clé ne le rende, et le relevé sans
+  son libellé. Rien à traiter : déclaré au scanner.
+- `resume_dossier`, `lister_comptes`, `lister_pieces` : aucun libellé du relevé ni du brouillon.
+- la consigne et les descriptions : la consigne gagne sa phrase, la description de `lister_ecritures`, le seul outil qui
+  rende un libellé du relevé, aussi. Les messages d'erreur : jamais une valeur lue.
+
+**CE QUE LE LOT FAIT.**
+
+- Le bloc PIÈCES DE VENTE, étendu, reste le seul passage : `nomDUnCreditDuReleve`, `libelleDUneLigneDuReleve` (un débit
+  garde son libellé, un crédit prend son nom, un mouvement que la lecture n'a pas rendu, de zéro euro ou au montant
+  illisible n'en donne aucun), `libelleDUneLigneDePiece` (la règle de VF9C-Q1, inchangée), `libelleEtSource`, et
+  `ecritureVueParLeModele(ligne, ventes)`, qui ÉCRIT ce qui sort d'une ligne — ses six colonnes d'hier, et sa source
+  d'un dossier qui lit ses ventes — au lieu d'en retirer ce qui ne sort pas. `ligneEtSaSource` (VF9c) y entre : le
+  libellé d'une facture, d'un avoir ou d'un encaissement s'y recompose de son numéro, comme hier, et ne se dit pas d'un
+  dossier qui ne lit pas ses ventes.
+- `lister_ecritures` lit, pour tout dossier, une seule sélection : les colonnes d'hier, les huit rattachements, la pièce
+  et le mouvement (`lignes_bancaires(date, montant)`) embarqués à gauche — le libellé de la banque ne se lit jamais. Un
+  dossier qui lit ses ventes lit ensuite ses factures, ses encaissements et ses mouvements classés, comme hier et dans
+  le même ordre, puis passe chaque ligne une fois, avec eux ; ni le compte ni la tranche ne changent.
+- La consigne, pour tout dossier, juste après la phrase des pièces de vente : « Un CRÉDIT du relevé (un mouvement qui
+  entre en banque) se nomme par sa date et son montant : qui a payé n'est pas transmis […] ; ne le demande pas, ne le
+  devine pas. Le libellé d'un débit, lui, est transmis. » (276 caractères). La description de `lister_ecritures` dit le
+  nom d'un crédit et la ligne rattachée à rien (283).
+
+La fonction : +156 lignes, −86 au `git diff` (code +87 −57, commentaire +63 −27, lignes vides +6 −2 ; `ligneEtSaSource`
+déplacée compte deux fois), 4 024 → 4 094 lignes ; les dix-huit autres blocs bornés, `historiqueDuClient` et CLÉS
+SUPABASE compris, identiques au caractère près ; aucune bordure neuve (38, celles de BASE) ; rien de VF9d.
+
+**OÙ LE LOT PRÉCISE LA DÉCISION.** (1) « Toute ligne d'un mouvement créditeur » se lit par la SOURCE de la ligne, dans
+l'ordre de VF9c : la facture ou l'avoir, l'encaissement, la pièce, puis le mouvement. Une ligne de pièce ou de vente
+facturée posée sur un crédit garde le libellé de sa pièce ou le numéro de sa facture : aucune ne recopie celui de la
+banque. Écarté : juger toute ligne par son mouvement — le fournisseur d'un achat remboursé par un crédit, et le numéro
+de la facture d'un encaissement, se perdraient sans qu'aucun libellé de la banque se taise de plus. (2) Une ligne
+rattachée à rien se TAIT (null) : la décision le dit, sa date et son montant sont déjà dans la ligne, et null est la
+convention de VF9C-Q1 et de VF9c pour une source qu'on ne peut pas dire ; la description de l'outil le dit au modèle.
+(3) Le côté fermé : un mouvement dont le sens ne se lit pas ne donne aucun libellé — le dire « crédit » affirmerait ce
+qu'on n'a pas lu ; une ligne lue sans l'un de ses rattachements, ou sans sa pièce ou son mouvement embarqués, non plus.
+(4) D'un dossier qui ne lit pas ses ventes, la ligne d'une facture ou d'un encaissement — un état que la base interdit —
+n'a aucun libellé : celui du brouillon cite le client. (5) Le scanner refuse aussi la lecture des trois colonnes que la
+validation fige au brouillon pour le FEC (`piece_ref`, le fichier d'une pièce ; `comp_aux_num` et `comp_aux_lib`, son
+tiers) : aucune lecture ne les prend aujourd'hui, et elles nommeraient le client d'une vente dès le premier exercice
+validé (MVP-D7).
+
+**LES PREUVES.**
+
+- `agentComptablePiecesDeVente.test.ts` (32 → 70 tests). Le bloc, exécuté seul, sur 81 cas nommés (29 hier) : chaque
+  sorte de ligne, le sens jugé sur le mouvement (la ligne de banque d'un crédit au débit, d'un débit au crédit), les
+  sens illisibles (non rendu, zéro, texte, infini, sans montant, une liste), chaque écriture composée, la ligne
+  rattachée à rien, chacun des huit rattachements absent sur une ligne qui parlerait sans la garde, les ventes facturées
+  d'un dossier qui les lit ou non, la source. 34 dérives plantées (les 13 de VF9C-Q1, dont 5 réancrées dans le code
+  neuf, et 21 neuves), au moins une par fonction et par constante, toutes vues. Les rattachements confrontés aux clés
+  étrangères du brouillon dans le schéma exporté. Le scanner : `lignes_bancaires.libelle`, `libelle_brut`, `piece_ref`,
+  `comp_aux_num` et `comp_aux_lib` ne se lisent jamais ; chaque sélection de `lister_ecritures` porte les huit
+  rattachements et les deux ressources embarquées, telles quelles ; l'outil passe ses lignes une fois, avec ce qu'il
+  sait des ventes ; 29 défauts plantés (13 de VF9C-Q1, dont 4 réancrés, et 16 neufs), tous vus.
+- Le contrat de l'assistant : 57 scénarios, dont quatre neufs — un dossier qui n'a pas basculé, en trésorerie et en
+  engagement, un dossier basculé, une source illisible —, sur un monde où un crédit de chaque sorte (affecté, ventilé,
+  un apport, un compte de bilan, un déblocage d'emprunt, un remboursement de cotisation, un remboursement de TVA, le
+  paiement d'une vente supprimée ; d'un dossier basculé, un crédit classé par ses encaissements et un virement mixte)
+  porte un marqueur, comme chaque ligne qui le recopie ; trois débits sous un autre marqueur ; les lignes restées d'une
+  vente supprimée, un mouvement de zéro euro et une ligne dont le mouvement n'existe pas sous deux autres ; une
+  dotation, un forfait, une liquidation, une cotisation payée depuis le compte personnel. Les cinq outils sous sept
+  appels : aucun morceau de huit caractères des trois marqueurs n'atteint le modèle, ni la consigne, ni les outils, ni
+  un résultat ; le débit et les écritures composées l'atteignent ; chaque ligne du monde porte exactement ce qu'elle
+  doit, écrit dans le test, sa source comprise. Un juge de VF9c adapté (le crédit classé, « VIR CLIENT FICTIF », se
+  nomme désormais « Crédit du relevé du 20/03/2026, 298,00 € ») ; 13 défauts plantés neufs, 6 de VF9C-Q1 et de VF9c
+  réancrés, tous vus ; `DEFAUTS_CONNUS` inchangé (2). `agentComptableConsigne.test.ts` (+1) : la phrase, une fois, pour
+  tout dossier, et la description ; le test de VF9C-Q1 suit la ligne qui suit la sienne.
+- Les mutations, jouées une à une sur un banc hors du dépôt devant les gardes de l'assistant, le contrat HTTP et les
+  scanners (552 tests au témoin, vert, sur la fonction de la branche ; chaque mutation défaite, l'empreinte vérifiée) :
+  49, dont 22 du câblage — le mouvement non lu, en jointure interne, sans sa date, sans son montant, ou lu avec son
+  libellé sans qu'il serve ; chacun des sept autres rattachements et la pièce non lus ; le passage sans ce que le
+  dossier sait de ses ventes, absent, ou contourné par un dossier qui lit ses ventes ; les ventes jamais remplies ; la
+  consigne et la description amputées ; `lister_pieces` sans le passage, rejouée — et 27 du bloc — un crédit sous le
+  libellé du brouillon, le débit recomposé, le crédit jugé sur le sens de la ligne, un mouvement non rendu, de zéro euro
+  ou au montant en texte, la ligne rattachée à rien sous son libellé, les écritures composées tues, le mouvement jugé
+  avant la pièce, une vente facturée d'un dossier qui ne lit pas ses ventes, les gardes de la pièce et du mouvement
+  embarqués, la source d'un crédit classé, perdue ou mal rendue, la vue qui rend la ligne entière, un rattachement
+  retiré de la liste, la forme du nom, un libellé du brouillon qui n'est pas un texte, une pièce d'achat sous le nom
+  d'une vente, la date ou le montant de la ligne au lieu de ceux du mouvement, la garde des rattachements oubliée.
+  Toutes tuées par un comportement ou un scanner, aucune par sa seule ancre : 39 par le contrat HTTP (avec d'autres
+  juges), 10 sans lui — ce que PostgREST ne rend pas ou que le monde ne distingue pas (un montant en texte, un libellé
+  qui n'est pas un texte, une ligne lue sans ses ressources embarquées ou sans l'un de ses rattachements, la date de la
+  ligne) par les cas du bloc exécuté seul, et un rattachement retiré de la liste aussi par sa confrontation au schéma ;
+  la description amputée de la ligne rattachée à rien par la garde de la consigne ; le libellé de la banque lu sans
+  servir (C5) par le scanner, qui en interdit la lecture, et lui seul — le comportement est le même.
+- Au caractère près, hors du dépôt : la source de BASE (`01dbf94`) et celle de la branche, dans le même monde, pour les
+  57 scénarios du contrat (62 demandes au modèle). BASE, corrigée des seules différences voulues — la phrase de la
+  consigne insérée (62 fois), la description de `lister_ecritures` (62), 126 libellés de crédit recomposés par une
+  formule écrite dans le banc, 30 lignes rattachées à rien et 8 sens illisibles mis à null, aucune ligne ambiguë — égale
+  la branche au caractère près ; les lectures (tables, rôles, filtres et nombre), les statuts, les réponses et les
+  journaux sont identiques sans correction. Le témoin : sans le monde, ou avec la seule consigne corrigée, BASE diffère.
+  Et le contrat de la branche, joué sur BASE, tombe sur six scénarios — les quatre neufs et les deux de VF9c adaptés —,
+  et sur eux seuls.
+- La suite, sous Paris, comparée test par test à BASE : 14 976 → 15 032 tests, tous verts ; 56 nouveaux (38 du bloc et
+  du scanner, 1 de la consigne, 17 du contrat : 4 scénarios et 13 défauts plantés), aucun perdu, aucun changé d'état —
+  le juge adapté et les défauts réancrés gardent leur nom ; `comptesEnDur.test.ts`, la consigne et les gardes de copie
+  compris.
+
+**LES RISQUES.** Le coût : +559 caractères à chaque demande au modèle, pour tout dossier. Ce que le modèle perd : le nom
+de qui paie un crédit — il ne reconnaît plus l'Assurance maladie à son libellé, le compte de la ligne dit ce qu'est le
+crédit — et le libellé d'une écriture restée d'une pièce supprimée, que la Vue d'ensemble dit en rupture. La lecture :
+un mouvement embarqué par la seule clé entre les deux tables (vérifiée au catalogue) ; une seconde rendrait
+l'embarquement ambigu, l'outil répondrait son erreur — le côté fermé — et le scanner verrait la sélection changer. Une
+source neuve du brouillon (la caisse du MVP) tait ses lignes jusqu'à ce qu'on la juge, et fait tomber le test des
+rattachements. Le retour arrière : le lot ne vit que dans la fonction ; le défaire, c'est retirer ses commits et
+redéployer — il part avec VF9b, VF9c et VF9C-Q1, d'un seul déploiement, et VF9d, écrit plus tard sous sa garde, en
+dépendra ; aucune donnée, aucune migration, aucun écran à reprendre.
+
+**RGPD.md** : la ligne d'AWS Bedrock (§ 3) dit que, pour tout dossier, l'écriture d'un crédit du relevé part sous la
+date et le montant du mouvement, une écriture rattachée à rien sans libellé ; et ce qui part encore : le libellé d'un
+débit, le tiers et le fichier d'un achat, d'une note de frais ou d'une pièce « autre ».
+
+**CE QUI RESTE HORS DE LA DÉCISION** (inventorié, rien de changé) :
+
+- le libellé d'un débit qui rend ou défait l'argent d'un client : le remboursement d'un trop-perçu à un patient, affecté
+  ou ventilé sur un compte de produit, ou le débit d'un encaissement défait (un impayé, une somme rendue) que ses
+  contre-passations classent (VF5d) — il nomme ce client, et la règle d'un débit le laisse partir → VF9CQ1B-Q1 ;
+- la ligne de banque restée d'une pièce de vente supprimée, posée sur un DÉBIT (un avoir remboursé, puis supprimé) :
+  elle garde le client que la pièce lui a donné — la règle d'un débit, sur un cas rare ;
+- une pièce de vente laissée « achat » par la classification, une pièce « autre » : leur tiers part (VF9C-Q1) ;
+- les mots du cabinet : le libellé d'un bien (une dotation), le modèle d'un véhicule (un forfait), les libellés de
+  catégorie, le nom du dossier, le fichier d'une balance reprise ; et le fil du navigateur, les mots de l'utilisateur.
+
+**UNE QUESTION AU CABINET.**
+
+- **VF9CQ1B-Q1 — le libellé d'un débit qui rend ou défait l'argent d'un client.** La décision du 28/10/2026 garde le
+  libellé d'un débit, « qui nomme un fournisseur ou un organisme ». Un débit peut aussi rendre de l'argent à un client —
+  chez un praticien, le trop-perçu d'un patient, remboursé par virement (« VIR M. … REMBOURSEMENT ») — ou défaire un
+  encaissement (un chèque impayé, un virement rejeté, une somme rendue) : son libellé nomme alors ce client, et part au
+  modèle. La base sait reconnaître ces débits : affectés ou ventilés sur un compte de produit (classe 7), ou classés par
+  les contre-passations d'un encaissement (VF5d). (A) Les nommer, pour tout dossier, comme un crédit, par leur date et
+  leur montant (« Débit du relevé du … ») : un petit lot de l'assistant, comme celui-ci — le mouvement lu avec sa
+  catégorie et ses parts —, avant le déploiement unique. (B) Taire le libellé de tout mouvement du relevé, débit
+  compris : plus aucun libellé de la banque ne part ; le modèle perd aussi le fournisseur ou l'organisme des lignes sans
+  pièce (frais bancaires, prélèvements de l'Urssaf, loyers), que la décision gardait. (C) Rien : la décision du
+  28/10/2026 tient, un tel débit est rare. Recommandation : (A) — la raison de VF9CQ1-Q1 : aucune réponse n'a besoin du
+  nom du client qu'on rembourse, et la base le reconnaît sans deviner ; (B) défairait la part de la décision qui garde
+  les fournisseurs. La ligne de banque restée d'une vente supprimée sur un débit ne se reconnaît pas : seule (B) la
+  tairait.
