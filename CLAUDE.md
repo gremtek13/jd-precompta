@@ -32,6 +32,13 @@ fiable possible, même si c'est long. Tenir la comptabilité d'autrui étant ré
 l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la sienne ; un cabinet non inscrit en reste
 à la précomptabilité.
 
+**Le MVP, fixé par le cabinet le 28/10/2026** : un premier dossier BNC réel — un praticien en trésorerie —, de la pièce
+à la 2035 de l'exercice 2026, avec la facturation et le relevé importé par fichier ; l'application prête à recevoir ses
+données vers la mi-décembre 2026 (sinon la mi-janvier 2027), la 2035 déposée en mai 2027. La case « MVP » de la feuille
+de route marque les dix lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles ; ses
+décisions, MVP-D1 à D5, sont à la page des arbitrages → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE
+2026 ».
+
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
 **La base ne contient que des données FICTIVES**, et un seul dossier est vivant : `test` (`001c7ed7`, créé le
@@ -652,6 +659,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   date, ce que le travail a changé, coûté ou révélé). Les autres lignes gardent leur `Ordre`.
 - **Une ligne dit l'état et ce qui reste, en résumé** ; le récit va dans HISTORIQUE.md, jamais dans la ligne (décision
   du cabinet du 18/10/2026, qui a fait résumer les longues lignes, leurs étapes restantes intactes).
+- **La case « MVP »** (28/10/2026) : cochée sur ce qui compte pour le premier dossier réel ; l'encadré « Le MVP » de la
+  page de tête dit quelle partie de chaque ligne, et suit chaque changement de la case.
 - **Un chantier apparu en route reçoit sa ligne** (souvent un défaut trouvé en passant), avec sa case « Hors BNC ».
 - **Deux barres d'avancement en tête de page**, recomptées dans la même édition que la ligne, par une requête sur la
   base (`GROUP BY "Phase", "État"`), jamais de tête : la part des lignes à `État = Fait` parmi celles qui ne sont pas en
