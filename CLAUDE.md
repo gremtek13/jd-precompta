@@ -35,12 +35,13 @@ l'Ordre, l'application est leur logiciel, ou celui d'un praticien qui tient la s
 **Le MVP, fixé par le cabinet le 28/10/2026** : un premier dossier BNC réel — un praticien en trésorerie —, de la pièce
 à la 2035 de l'exercice 2026, avec la facturation et le relevé importé par fichier ; l'application prête à recevoir ses
 données vers la mi-décembre 2026 (sinon la mi-janvier 2027), la 2035 déposée en mai 2027 par l'expert-comptable, qui
-importe le FEC (MVP-D5). La répétition générale rejoue son année 2025 réelle, comparée à la 2035 déposée (MVP-D6) : ses
-données entrent vers le 20 novembre, leurs préalables avant. Le praticien valide ses factures (MVP-D1), la caisse entre
-(MVP-D2 ; conçue le 28/10/2026, huit lots et trois migrations → « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION »), le plan
-Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y comptent,
-souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA
-MI-DÉCEMBRE 2026 ».
+importe le FEC (MVP-D5). La répétition générale rejoue son année 2025 réelle, dans le même dossier (MVP-D7), comparée à
+la 2035 déposée (MVP-D6) : ses données entrent vers le 20 novembre, leurs préalables avant. Le praticien valide ses
+factures (MVP-D1), la caisse entre (MVP-D2 ; conçue le 28/10/2026, huit lots et trois migrations ; le praticien la
+saisit aussi et une pièce s'y règle, CAISSE-Q1 et Q4, à reprendre → « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION »), le
+plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y
+comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS
+LA MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
@@ -51,9 +52,10 @@ MI-DÉCEMBRE 2026 ».
 - Un défaut trouvé dans un ancien dossier reste un défaut du CODE, mais ne se raconte pas comme un préjudice comptable.
 - RGPD.md décrit la FORME de ce que l'application stockera, pas une exposition constatée (son §4).
 - Les dossiers de test se suppriment le jour où le premier dossier réel arrive, et les autorisations permanentes de la
-  session se resserrent alors (décision du cabinet du 18/10/2026). Ce jour avance vers le 20 novembre (MVP-D6) ; mais 60
-  des 69 fichiers de `supabase/essais/` agissent sur trois de ces dossiers ou sur le compte client d'essai, et MVP-D8 en
-  décide → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
+  session se resserrent alors (décision du cabinet du 18/10/2026). Ce jour avance vers le 20 novembre (MVP-D6) ; les
+  trois dossiers dont 60 des 69 fichiers de `supabase/essais/` se servent restent, `test` compris, avec le compte client
+  d'essai, et le quatrième se supprime ce jour-là (MVP-D8) → « NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8,
+  CAISSE-Q1 À Q4, 28.5E-Q1 ».
 
 ## Architecture actuelle
 
@@ -428,7 +430,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   faire ; l'essai réel sur le bac à sable de Super PDP. (e) l'e-reporting, onze étapes (le point 15 en hypothèse ;
   E6-Q8 : l'identifiant tiré au téléchargement, donné ensuite à la base, une migration) ; restent e5b2 (Q6, la fiche
   déclarée qui retient sa pièce), e6b (le bouton qui télécharge le fichier) et la suite (e7 : une facture à un client
-  étranger ; e9 : `fluxEreporting` recopié dans `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER
+  étranger ; e8 : les recettes sans facture vendues à des particuliers — e7 et e8 se construiront après le MVP,
+  28.5e-Q1 ; e9 : `fluxEreporting` recopié dans `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER
   D'UNE DÉCLARATION D'E-REPORTING ».
 - **Défauts connus des Edge Functions** (2, `DEFAUTS_CONNUS`) : `taux-change-bce` sans contrôle d'appelant : la
   désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ». `receive-email`
@@ -612,9 +615,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   pour tout dossier, une pièce de vente part au modèle sans son tiers, son fichier ni le libellé de ses écritures,
   nommée par sa date et son montant, par un seul passage, le bloc PIÈCES DE VENTE, que garde un scanner parti de toutes
   les lectures de la fonction ; le fournisseur d'un achat reste dit ; deux questions au cabinet, VF9CQ1-Q1 (le libellé
-  du relevé d'un crédit) et VF9CQ1-Q2 (l'écriture restée d'une pièce supprimée) → « VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE
-  VENTE AU MODÈLE ». Restent ce déploiement, puis VF9d après le MVP (EC3-Q9, la facture reprise, va à A8) → « TROIS
-  RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 ».
+  du relevé d'un crédit) et VF9CQ1-Q2 (l'écriture restée d'une pièce supprimée), tranchées le 28/10/2026 à la
+  recommandation : le libellé de tout crédit recomposé, celui d'une ligne rattachée à rien tu → « VF9C-Q1, AUCUN CLIENT
+  D'UNE PIÈCE DE VENTE AU MODÈLE ». Restent ce petit lot, le déploiement des quatre ensemble avant les données réelles,
+  puis VF9d après le MVP (EC3-Q9, la facture reprise, va à A8) → « TROIS RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET
+  23Q2Q2Q1-Q1 », « NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8, CAISSE-Q1 À Q4, 28.5E-Q1 ».
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;

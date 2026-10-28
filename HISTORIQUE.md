@@ -39795,3 +39795,51 @@ des trois migrations, dont une à coller.
 - Dans le dépôt : les fichiers du préambule ; les migrations `source_de_la_vente`, `encaissements_des_factures`,
   `compte_de_bilan_du_releve`, `refus_tva_par_sa_declaration`, `lignes_propres_au_mouvement`,
   `validation_des_ventes_facturees` ; le catalogue de production du 28/10/2026.
+
+### 28/10/2026 — NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8, CAISSE-Q1 À Q4, 28.5E-Q1
+
+(Page des arbitrages, relue en entier le 28/10/2026 à midi : 277 réponses, neuf neuves depuis le matin. Rien de changé
+au code ni en base ; la feuille de route Notion suit. Les réponses à VF9CQ1-Q1 et Q2, MVP-D7, MVP-D8, CAISSE-Q2 et
+CAISSE-Q3 suivent la recommandation ; CAISSE-Q1 et CAISSE-Q4 vont contre ; 28.5e-Q1 n'en avait pas.)
+
+**L'ASSISTANT.** VF9CQ1-Q1, (A) : pour tout dossier, le libellé de toute ligne d'un mouvement créditeur se recompose
+depuis sa date et son montant avant de partir au modèle ; un débit garde le sien. VF9CQ1-Q2, (A) : l'assistant tait le
+libellé d'une ligne rattachée à rien, l'écriture restée d'une pièce supprimée ; la rupture reste dite par la Vue
+d'ensemble, et le FEC l'écarte toujours. Les deux font un petit lot de l'assistant, écrit avant son déploiement unique —
+VF9b, VF9c, VF9C-Q1 et ce lot ensemble —, lui-même avant les données réelles du 20 novembre → « VF9C-Q1, AUCUN CLIENT
+D'UNE PIÈCE DE VENTE AU MODÈLE ».
+
+**LE PREMIER DOSSIER RÉEL.** MVP-D7, (A) : l'année 2025 du premier praticien se saisit dans son dossier réel, celui de
+2026 ; 2025 ne se valide qu'une fois chaque écart avec la 2035 déposée expliqué, et sa validation ouvre 2026 par le
+report des soldes — la première validation réelle d'un exercice. MVP-D8, (A) : les trois dossiers fictifs dont les
+essais de la base se servent restent (`test`, et les deux où le compte client d'essai a ses accès), `test` servant aussi
+à répéter la facturation avec A7 avant le jour J ; le quatrième, que rien ne cite, se supprime le 20 novembre, et les
+autorisations permanentes de la session se resserrent ce jour-là, ce que le resserrement retire étant présenté au
+cabinet d'ici là. Cela amende la décision du 18/10/2026, qui supprimait tous les dossiers de test le jour du premier
+dossier réel → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
+
+**LA CAISSE.** CAISSE-Q2, (A) : le total d'un jour ne compte que les espèces sans facture, et la saisie reconnaît en
+base les espèces des factures de ce jour. CAISSE-Q3, (A) : les journaux d'aujourd'hui, VE pour une recette, OD pour un
+apport ou un prélèvement, BQ pour un versement en banque, à revoir à l'essai d'import chez l'expert-comptable.
+CAISSE-Q1, (B), contre la recommandation : le praticien saisit aussi ses espèces depuis son espace client. Il y faut un
+droit tenu en base — une case à lui, ou sous « Ventes », à concevoir —, une fonction qui accepte le client comme celles
+de la vente, ce qu'elle lui ouvre présenté au cabinet avant d'être appliqué, et un écran de l'espace client sous les
+règles communes ; et d'abord l'examen, aux sources publiques, du 3° bis du I de l'article 286 du CGI (le logiciel de
+caisse certifié d'un assujetti qui enregistre les paiements de clients non professionnels) : tant qu'il n'est pas fait,
+la saisie du client ne s'ouvre qu'à un dossier dont toutes les opérations sont exonérées. Trois à cinq jours de plus.
+CAISSE-Q4, (B), contre la recommandation : une pièce payée en espèces se règle par la caisse dès le MVP ; la 2035, la
+CA3 et le lettrage la datent alors de son paiement par la caisse. Deux à trois jours de plus → « LA CAISSE D'UN DOSSIER
+BNC : LA CONCEPTION ».
+
+**CE QUE LES DEUX RÉPONSES CONTRAIRES CHANGENT.** La caisse passe d'environ dix jours de développement à quinze à
+dix-huit, et sa conception se reprend sur ces deux points avant ses lots. L'ordre retenu : C1 à C4, le côté du cabinet,
+avant la clôture de la comparaison avec 2025, début décembre ; A7 pour le jour J ; la saisie du praticien et la pièce
+réglée par la caisse juste après, de la mi-décembre au début de janvier, avant qu'il ne saisisse lui-même ses espèces de
+2026 — la 2035 de 2026, due en mai 2027, n'en dépend pas. Si le cabinet préfère qu'elles précèdent le jour J, celui-ci
+glisse d'environ une semaine.
+
+**L'E-REPORTING.** 28.5e-Q1, sans réponse recommandée : (a) beaucoup de vrais dossiers vendent à des particuliers une
+activité non exonérée, (b) quelques-uns facturent des clients établis hors de France, (c) la plupart achètent des
+services à l'étranger. L'étape e8, l'e-reporting des recettes sans facture, et l'étape e7, celui des ventes à
+l'étranger, se construiront donc, après le MVP : l'e-reporting démarre avec les opérations du 1er septembre 2027. (c)
+confirme les achats hors de France, en place depuis e1 à e6 → « L'E-REPORTING : LA CONCEPTION ».
