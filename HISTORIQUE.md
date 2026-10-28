@@ -39078,3 +39078,12 @@ barres recomptées par requête : 144 lignes faites sur 194 (74 %), et 144 sur 1
 baissent parce que quatre lignes entrent. Dans la page des arbitrages (version 42, 293 fiches), les cinq décisions
 MVP-D1 à MVP-D5 — qui valide les factures du praticien, les espèces, la sauvegarde, le premier praticien, le dépôt de la
 2035 — et un geste, la longueur minimale des mots de passe à relever à dix.
+
+**LES RÉPONSES, LE MÊME JOUR** (page des arbitrages). MVP-D1 : le praticien valide lui-même ses factures depuis « Mes
+ventes » ; A9 et P4 restent après. MVP-D2 : il encaisse des espèces hors de la banque, et la caisse entre dans le MVP —
+une table neuve et sa migration, plutôt une à deux semaines que les trois à cinq jours dits d'abord. MVP-D3 : le plan
+Pro de Supabase, et une copie mensuelle des fichiers hors de Google Drive. MVP-D5, contre la recommandation :
+l'expert-comptable importe le FEC de l'application dans son logiciel pour déposer la 2035 ; le FEC conforme à ses 22
+champs (lignes 26.5 et 26.6, étape e) et un essai d'import chez lui entrent dans le MVP, avant mars 2027, hors du chemin
+de la mi-décembre, et la 2035 de l'application devient le contre-calcul de la sienne. MVP-D4 attend sa réponse. Notion
+suit : douze lignes cochées (26.5 et 26.6 de plus), l'encadré « Le MVP » et les lignes 20.65 et 29.8 réécrits.
