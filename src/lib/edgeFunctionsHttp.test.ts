@@ -265,9 +265,10 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
         scenario: panne,
       },
       { slug, quoi: 'lister_comptes sans les ventes facturées en défaut', remplacements: [['      return phrase === null ? balance : joindreAvertissement(balance, phrase)\n', '      return balance\n']], scenario: bascule },
+      // Réancré à VF9CQ1 : le libellé d'une vente facturée se recompose dans le seul passage (bloc PIÈCES DE VENTE).
       {
         slug, quoi: 'lister_ecritures rend le libellé d’une vente facturée tel que le brouillon le porte',
-        remplacements: [['    libelle = f ? `${f.type === "avoir" ? "Avoir" : "Facture"} ${numero(f)}` : null\n', '    libelle = e.libelle\n']],
+        remplacements: [['libelle: f ? `${f.type === "avoir" ? "Avoir" : "Facture"} ${numero(f)}` : null, source', 'libelle: libelleDuBrouillon(ligne), source']],
         scenario: client,
       },
       // Réancré à VF9C-Q1 : l'exemplaire d'une facture source, une pièce de vente, perd son tiers et son fichier au seul
@@ -285,28 +286,30 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
         const basculeVente = 'un dossier basculé : le client d’une pièce de vente libre n’atteint pas le modèle, ni celui d’une facture, et sa ligne dit sa source (VF9C-Q1)'
         const illisibleVente = 'une source des ventes illisible : le client d’une pièce de vente n’atteint pas le modèle (VF9C-Q1)'
         const types = 'const TYPES_DONT_LE_TIERS_SE_DIT: readonly string[] = ["achat", "note_frais", "autre"]\n'
-        const lignes = '    const lignes = ((data ?? []) as Record<string, unknown>[]).map(ecritureVueParLeModele)\n'
-        const embarquee = ', pieces(type_piece, date_piece, montant_ttc)"'
+        // Réancrés à VF9CQ1 : une seule sélection pour tout dossier, la pièce et le mouvement de chaque ligne embarqués ; le
+        // passage reçoit ce que le dossier sait de ses ventes, et l'outil n'a plus qu'un retour.
+        const lignes = '    const lignes = ((data ?? []) as Record<string, unknown>[]).map((ligne) => ecritureVueParLeModele(ligne, nommees))\n'
+        const embarquee = ', pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant)"'
         return [
           { slug, quoi: 'lister_pieces sans le passage vers le modèle', remplacements: [['    const lues = ((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)\n', '    const lues = ((data ?? []) as Record<string, unknown>[])\n']], scenario: nonBascule },
-          { slug, quoi: 'lister_ecritures sans le passage vers le modèle', remplacements: [[lignes, lignes.replace('.map(ecritureVueParLeModele)', '')]], scenario: nonBascule },
+          { slug, quoi: 'lister_ecritures sans le passage vers le modèle', remplacements: [[lignes, lignes.replace('.map((ligne) => ecritureVueParLeModele(ligne, nommees))', '')]], scenario: nonBascule },
           {
             slug, quoi: 'lister_ecritures lue sans la pièce de chaque ligne, sur un dossier qui n’a pas basculé',
-            remplacements: [[`: "date, compte, libelle, sens, montant, piece_id${embarquee}`, ': "date, compte, libelle, sens, montant, piece_id"']], scenario: nonBascule,
+            remplacements: [[embarquee, ', lignes_bancaires(date, montant)"']], scenario: nonBascule,
           },
           {
             slug, quoi: 'lister_ecritures lue sans la pièce de chaque ligne, sur un dossier basculé',
-            remplacements: [[`ligne_bancaire_id${embarquee}`, 'ligne_bancaire_id"']], scenario: basculeVente,
+            remplacements: [[embarquee, ', lignes_bancaires(date, montant)"']], scenario: basculeVente,
           },
           {
             slug, quoi: 'lister_ecritures, dossier basculé, ses lignes prises avant le passage',
-            remplacements: [['(lignes as unknown as LigneDeVenteRow[]).map(', '((data ?? []) as LigneDeVenteRow[]).map(']], scenario: illisibleVente,
+            remplacements: [['    return resultatListe(lignes, count, "ecritures")\n', '    return resultatListe(nommees ? data : lignes, count, "ecritures")\n']], scenario: illisibleVente,
           },
           { slug, quoi: 'la vente prise pour un type qui dit son tiers', remplacements: [[types, types.replace('"autre"]', '"autre", "vente"]')]], scenario: nonBascule },
           { slug, quoi: 'l’achat pris pour une vente : la règle vise trop large', remplacements: [[types, types.replace('["achat", ', '[')]], scenario: nonBascule },
           {
             slug, quoi: 'la ligne d’une pièce de vente sous le libellé du brouillon',
-            remplacements: [['    libelle: lue.type_piece === "vente" ? nomDUnePieceDeVente(', '    libelle: lue.type_piece === "vente" ? ligne.libelle ?? nomDUnePieceDeVente(']], scenario: nonBascule,
+            remplacements: [['  return lue.type_piece === "vente" ? nomDUnePieceDeVente(', '  return lue.type_piece === "vente" ? libelleDuBrouillon(ligne) ?? nomDUnePieceDeVente(']], scenario: nonBascule,
           },
           {
             slug, quoi: 'la date d’une pièce de vente telle que la base l’écrit',
@@ -314,6 +317,43 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
           },
           { slug, quoi: 'la consigne sans la phrase des pièces de vente', remplacements: [['\n- Une PIÈCE DE VENTE (type_piece « vente ») se nomme par sa date et son montant', '\n- Une pièce de vente se nomme comme on veut']], scenario: nonBascule },
           { slug, quoi: 'le filtre par tiers oublié', remplacements: [['    if (typeof input.tiers === "string" && input.tiers) q = q.ilike("tiers", `%${input.tiers}%`)\n', '']], scenario: nonBascule },
+        ]
+      })(),
+      // VF9CQ1 : qui a payé un crédit, ou le libellé d'une ligne rattachée à rien, au modèle — par la règle du crédit, du sens,
+      // de la ligne rattachée à rien, du côté fermé, par l'outil qui lit sans le mouvement, la consigne ou la description ; la
+      // règle qui vise trop large (le débit, les écritures composées) ; la source d'un crédit classé perdue.
+      ...((): DefautPlante[] => {
+        const tresorerie = 'un dossier qui n’a pas basculé, en trésorerie : ni qui a payé un crédit du relevé ni le libellé d’une ligne rattachée à rien n’atteignent le modèle — chaque ligne d’un crédit, de toute sorte, se nomme par la date et le montant du mouvement —, le libellé d’un débit et d’une écriture composée l’atteignent, et un sens illisible tombe du côté fermé (VF9CQ1)'
+        const engagement = tresorerie.replace('en trésorerie', 'en engagement')
+        const basculeReleve = 'un dossier basculé : ni qui a payé un crédit — classé par ses encaissements, d’un virement mixte, ou de toute autre sorte — ni le libellé d’une ligne rattachée à rien n’atteignent le modèle, et chaque ligne garde sa source (VF9CQ1)'
+        const illisibleReleve = 'une source des ventes illisible : ni qui a payé un crédit ni le libellé d’une ligne rattachée à rien n’atteignent le modèle (VF9CQ1)'
+        const debit = '  if (lu.montant < 0) return libelleDuBrouillon(ligne)\n'
+        return [
+          { slug, quoi: 'le libellé d’un crédit rendu tel que le brouillon le porte', remplacements: [['  return nomDUnCreditDuReleve({ date:', '  return libelleDuBrouillon(ligne) ?? nomDUnCreditDuReleve({ date:']], scenario: tresorerie },
+          { slug, quoi: 'le crédit jugé sur le sens de la ligne, pas sur le mouvement', remplacements: [[debit, '  if (ligne.sens === "credit") return libelleDuBrouillon(ligne)\n']], scenario: engagement },
+          { slug, quoi: 'le débit recomposé lui aussi : la règle vise trop large', remplacements: [[debit, '']], scenario: tresorerie },
+          { slug, quoi: 'une ligne rattachée à rien qui garde son libellé', remplacements: [['  return { libelle: null, source: null }\n}\n\n// Ce que le modèle reçoit', '  return { libelle: libelleDuBrouillon(ligne), source: null }\n}\n\n// Ce que le modèle reçoit']], scenario: tresorerie },
+          {
+            slug, quoi: 'un mouvement que la lecture n’a pas rendu pris pour un débit',
+            remplacements: [['  if (mouvement === null || typeof mouvement !== "object") return null\n', '  if (mouvement === null || typeof mouvement !== "object") return libelleDuBrouillon(ligne)\n']], scenario: tresorerie,
+          },
+          {
+            slug, quoi: 'un mouvement de zéro euro pris pour un débit',
+            remplacements: [[' || lu.montant === 0) return null', ') return null'], [debit, '  if (lu.montant <= 0) return libelleDuBrouillon(ligne)\n']], scenario: tresorerie,
+          },
+          { slug, quoi: 'les écritures composées sans pièce ni mouvement tues : la règle vise trop large', remplacements: [['    return { libelle: libelleDuBrouillon(ligne), source: null }\n  }\n', '    return { libelle: null, source: null }\n  }\n']], scenario: tresorerie },
+          { slug, quoi: 'lister_ecritures lue sans le mouvement de chaque ligne', remplacements: [[', lignes_bancaires(date, montant)"', '"']], scenario: tresorerie },
+          {
+            slug, quoi: 'la ligne d’un crédit classé par ses encaissements sous le libellé du brouillon',
+            remplacements: [['    return { libelle: libelleDUneLigneDuReleve(ligne), source:', '    return { libelle: classe ? libelleDuBrouillon(ligne) : libelleDUneLigneDuReleve(ligne), source:']], scenario: basculeReleve,
+          },
+          { slug, quoi: 'la source d’un crédit classé par ses encaissements perdue', remplacements: [['source: classe ? "mouvement_d_encaissements" : null', 'source: null']], scenario: basculeReleve },
+          {
+            slug, quoi: 'lister_ecritures passe ses lignes sans ce que le dossier sait de ses ventes',
+            remplacements: [['.map((ligne) => ecritureVueParLeModele(ligne, nommees))', '.map((ligne) => ecritureVueParLeModele(ligne, null))']], scenario: illisibleReleve,
+          },
+          { slug, quoi: 'la consigne sans la phrase du crédit du relevé', remplacements: [['\n- Un CRÉDIT du relevé (un mouvement qui entre en banque) se nomme', '\n- Un crédit du relevé se nomme']], scenario: tresorerie },
+          { slug, quoi: 'la description de lister_ecritures sans le nom d’un crédit', remplacements: [[' (« Crédit du relevé du JJ/MM/AAAA, 0,00 € ») : qui a payé', ' : qui a payé']], scenario: tresorerie },
         ]
       })(),
     ]
