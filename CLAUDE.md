@@ -403,11 +403,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   23Q2-Q2, écrites sur la recommandation, confirmées par le cabinet le 26/10/2026, avec 23Q2Q2-Q2 ; 23Q2Q2-Q1, écrit le
   26/10/2026 : le client d'un dossier du cabinet n'entre dans l'équipe qu'après une confirmation qui nomme l'adresse, le
   rôle et l'espace client perdu, `create-team-member` déployée le 27/10/2026 (v13), après la page ; 23Q2Q2Q1-Q1, écrit
-  le 27/10/2026 ; 23Q2Q2-Q3 — l'équipe ne se modifie que par son rôle : la migration `equipe_par_son_role`, appliquée
-  le 27/10/2026 sur l'accord du cabinet) → « UN COMPTE QUE LE CABINET NE CONNAÎT PAS SE RATTACHE APRÈS UNE
-  CONFIRMATION », « L'ÉQUIPE N'ACCUEILLE PAS LE CLIENT D'UN AUTRE CABINET », « LE CLIENT D'UN DOSSIER DU CABINET N'ENTRE
-  DANS L'ÉQUIPE QU'APRÈS UNE CONFIRMATION », « L'ÉQUIPE NE CHANGE QUE PAR SON RÔLE », « LES DEUX MIGRATIONS DE 23Q2Q2-Q3
-  ET VF8F EN PRODUCTION ».
+  le 27/10/2026 sur la recommandation, confirmé par le cabinet le 28/10/2026 ; 23Q2Q2-Q3 — l'équipe ne se modifie que
+  par son rôle : la migration `equipe_par_son_role`, appliquée le 27/10/2026 sur l'accord du cabinet) → « UN COMPTE QUE
+  LE CABINET NE CONNAÎT PAS SE RATTACHE APRÈS UNE CONFIRMATION », « L'ÉQUIPE N'ACCUEILLE PAS LE CLIENT D'UN AUTRE
+  CABINET », « LE CLIENT D'UN DOSSIER DU CABINET N'ENTRE DANS L'ÉQUIPE QU'APRÈS UNE CONFIRMATION », « L'ÉQUIPE NE CHANGE
+  QUE PAR SON RÔLE », « LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION ».
 - **Facturation électronique** (ligne 28.5) : (a) à (c) en ligne, la réception et le dépôt à éprouver sur la plateforme
   réelle d'un client ; (d) « Encaissée » : d1 à d4 en ligne ; d5, le message CDAR, en module (ses quatre choix et MDT-95
   tranchés par le premier essai réel ; le matricule d'une plateforme, une colonne de la connexion) ; d6 reste (les Edge
@@ -580,21 +580,23 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   migrations, avec `equipe_par_son_role`), `droitsAcces.sql` et les blocs EQ et VS de `rls.sql` joués en production
   → « LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION ». VF9 conçue le 27/10/2026 : quatre lots, VF9a à VF9d,
   sans migration ; une garde provisoire d'abord ; les écritures lues dans la base, pas recopiées ; PC3b après, à part ;
-  VF9-Q1 à la page des arbitrages → « VF9, L'ASSISTANT DEVANT LES VENTES FACTURÉES : LA CONCEPTION ». VF9a le
-  27/10/2026, en ligne le même jour (`agent-comptable` v48) : devant un dossier basculé, l'assistant dit qu'il ne lit
-  pas encore ses ventes facturées — `points_a_traiter` refuse, trois outils et la consigne le disent ; un autre
-  dossier, rien de changé au caractère près ; un réglage illisible ferme → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT
-  DEVANT UN DOSSIER BASCULÉ ». VF9b le 27/10/2026, au dépôt, à déployer avec VF9c et VF9d : derrière ce refus,
-  `points_a_traiter` lit les factures et le registre des encaissements d'un dossier basculé, écarte l'exemplaire d'une
-  facture source et date ce qu'un virement mixte paie ; un autre dossier ne lit rien de plus, rien de changé au
-  caractère près → « VF9B, LA SOURCE, LES EXEMPLAIRES ET LES PAIEMENTS DE L'ASSISTANT ». VF9c le 27/10/2026, au dépôt,
-  à déployer avec VF9b et VF9d : le refus levé pour une source des ventes LUE vraie — `points_a_traiter` dit, comme la
-  Checklist, les mouvements réservés et les encaissements sans mouvement, et ce que la validation refuserait, lu dans la
-  base (`ventes_facturees_de_l_exercice`, sa panne ne taisant que sa clé) ; les quatre autres outils et la consigne
-  disent la vente facturée, une facture nommée par son numéro, jamais par son client ; un réglage illisible garde le
-  côté fermé ; un autre dossier, rien de changé au caractère près, hors la description de l'outil ; VF9C-Q1 (le tiers
-  d'une pièce de vente au modèle) à porter à la page des arbitrages → « VF9C, LES POINTS ET LES OUTILS DE L'ASSISTANT ».
-  Reste VF9d (EC3-Q9, la facture reprise, va à A8).
+  VF9-Q1 tranchée le 28/10/2026 à la recommandation (A) : les quatre points du pont, pour tout dossier → « VF9,
+  L'ASSISTANT DEVANT LES VENTES FACTURÉES : LA CONCEPTION ». VF9a le 27/10/2026, en ligne le même jour
+  (`agent-comptable` v48) : devant un dossier basculé, l'assistant dit qu'il ne lit pas encore ses ventes facturées —
+  `points_a_traiter` refuse, trois outils et la consigne le disent ; un autre dossier, rien de changé au caractère
+  près ; un réglage illisible ferme → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ ». VF9b le
+  27/10/2026, au dépôt, à déployer avec VF9c et VF9d : derrière ce refus, `points_a_traiter` lit les factures et le
+  registre des encaissements d'un dossier basculé, écarte l'exemplaire d'une facture source et date ce qu'un virement
+  mixte paie ; un autre dossier ne lit rien de plus, rien de changé au caractère près → « VF9B, LA SOURCE, LES
+  EXEMPLAIRES ET LES PAIEMENTS DE L'ASSISTANT ». VF9c le 27/10/2026, au dépôt, à déployer avec VF9b et VF9d : le refus
+  levé pour une source des ventes LUE vraie — `points_a_traiter` dit, comme la Checklist, les mouvements réservés et les
+  encaissements sans mouvement, et ce que la validation refuserait, lu dans la base (`ventes_facturees_de_l_exercice`,
+  sa panne ne taisant que sa clé) ; les quatre autres outils et la consigne disent la vente facturée, une facture nommée
+  par son numéro, jamais par son client ; un réglage illisible garde le côté fermé ; un autre dossier, rien de changé au
+  caractère près, hors la description de l'outil ; VF9C-Q1 tranchée le 28/10/2026 à la recommandation (A) : ni le tiers,
+  ni le fichier, ni le libellé d'une pièce de vente au modèle, pour tout dossier → « VF9C, LES POINTS ET LES OUTILS DE
+  L'ASSISTANT ». Restent VF9C-Q1, puis VF9d, et le déploiement des quatre lots (EC3-Q9, la facture reprise, va à A8) →
+  « TROIS RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 ».
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
