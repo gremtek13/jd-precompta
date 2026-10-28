@@ -104,8 +104,9 @@ pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER
     seul passage du bloc PIÈCES DE VENTE (VF9C-Q1, au dépôt) → « VF9C-Q1, AUCUN CLIENT D'UNE PIÈCE DE VENTE AU
     MODÈLE » ; par le même passage, la ligne d'un crédit du relevé sous la date et le montant du mouvement, jamais qui a
     payé, et une ligne rattachée à rien sans libellé ; un débit garde le sien (VF9CQ1, au dépôt), sauf celui qui rend ou
-    défait l'argent d'un client (VF9CQ1B-Q1, à écrire) → « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE
-    RATTACHÉE À RIEN AU MODÈLE ».
+    défait l'argent d'un client, nommé de même (VF9CQ1B, au dépôt) → « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE
+    ÉCRITURE RATTACHÉE À RIEN AU MODÈLE », « VF9CQ1B, LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE ET
+    SON MONTANT ».
   - `create-cabinet`, `delete-cabinet` (super-admin) ; `create-team-member`, `create-client-access`.
   - `extract-piece` — OCR (Textract) puis citation des champs ; réservée à un compte RATTACHÉ et à `receive-email` (clé
     secrète en `apikey`).
@@ -627,10 +628,15 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   son libellé, une ligne rattachée à rien sans libellé, par le même passage, qui écrit ce qui sort de chaque ligne et
   lit ses huit rattachements ; une question au cabinet, VF9CQ1B-Q1 (le libellé d'un débit qui rend l'argent d'un
   client), tranchée le 28/10/2026 à la recommandation : un tel débit sous sa date et son montant, pour tout dossier →
-  « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE ». Restent ce petit lot, le
-  déploiement des cinq ensemble avant les données réelles, puis VF9d après le MVP (EC3-Q9, la facture reprise, va à A8)
-  → « TROIS RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 », « NEUF RÉPONSES DU CABINET : VF9CQ1-Q1 ET Q2, MVP-D7
-  ET D8, CAISSE-Q1 À Q4, 28.5E-Q1 », « HUIT RÉPONSES DU CABINET : A7-Q1 À Q3, VF9CQ1B-Q1, CAISSE2-Q1 À Q4 ».
+  « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE ». VF9CQ1B le 28/10/2026, au
+  dépôt, à déployer avec les quatre autres : pour tout dossier, un débit qui rend ou défait l'argent d'un client — une
+  ligne propre sur un compte de produit ou de client, ou classé par les contre-passations d'un encaissement — part au
+  modèle sous sa date et son montant, par le même passage, le mouvement lu avec son classement et les comptes de ses
+  lignes ; un autre débit garde son libellé → « VF9CQ1B, LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE
+  ET SON MONTANT ». Restent le déploiement des cinq ensemble avant les données réelles, puis VF9d après le MVP (EC3-Q9,
+  la facture reprise, va à A8) → « TROIS RÉPONSES DU CABINET : VF9-Q1, VF9C-Q1 ET 23Q2Q2Q1-Q1 », « NEUF RÉPONSES DU
+  CABINET : VF9CQ1-Q1 ET Q2, MVP-D7 ET D8, CAISSE-Q1 À Q4, 28.5E-Q1 », « HUIT RÉPONSES DU CABINET : A7-Q1 À Q3,
+  VF9CQ1B-Q1, CAISSE2-Q1 À Q4 ».
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
 - **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
   les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;

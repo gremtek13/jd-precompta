@@ -40527,3 +40527,176 @@ rien ne change de C1 à C9, ni au calendrier.
 `mentions_figees` (A7-Q2) et la migration d'A7-Q3, préparées sur une réplique et présentées au cabinet, la première à
 coller ; la caisse, à partir de C1, sa migration `caisse` présentée au cabinet avant d'être appliquée par l'outil, dans
 la première semaine de novembre ; A7b après le collage de `mentions_figees`, pour le jour J.
+
+### 28/10/2026 — VF9CQ1B, LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE ET SON MONTANT — EC-Q3 (LIGNE 28.65)
+
+(Chantier EC-Q3, ligne 28.65. `supabase/functions/agent-comptable/index.ts` ;
+`src/lib/agentComptablePiecesDeVente.test.ts`, `src/lib/agentComptableConsigne.test.ts`,
+`src/lib/edgeFunctionsHttp.test.ts`, `src/test/contratsFonctions.ts`, `src/test/fonctionsEdge.ts` et son test ; RGPD.md.
+La réponse (A) du cabinet à VF9CQ1B-Q1 → « HUIT RÉPONSES DU CABINET : A7-Q1 À Q3, VF9CQ1B-Q1, CAISSE2-Q1 À Q4 » ; la
+fiche → « VF9CQ1, NI LE LIBELLÉ D'UN CRÉDIT NI CELUI D'UNE ÉCRITURE RATTACHÉE À RIEN AU MODÈLE ». Aucune migration,
+aucune écriture en base, aucun écran ; au dépôt, à déployer avec VF9b, VF9c, VF9C-Q1 et VF9CQ1, d'un seul déploiement,
+avant les données réelles du 20 novembre. En production, le catalogue seul a été lu : les clés étrangères qui touchent
+`lignes_bancaires` et `ecritures_brouillon` (une seule entre les deux, `ligne_bancaire_id`, et aucune table qui cite le
+brouillon : l'embarquement du mouvement puis de ses lignes est sans ambiguïté), les contraintes de `lignes_bancaires`,
+`categories` et `ventilations_bancaires`, et, dans le texte des fonctions, ce qu'elles admettent comme compte.)
+
+**LA RÈGLE.** Pour tout dossier — qu'il ait basculé ou non, que la source de ses ventes se lise ou non —, une ligne du
+brouillon dont la SOURCE est un mouvement DÉBITEUR que la base reconnaît comme rendant ou défaisant l'argent d'un client
+part au modèle sous la date et le montant de ce mouvement : « Débit du relevé du 15/01/2026, 45,00 € », le montant sans
+signe — le mot dit le sens —, « sans date » si elle ne se lit pas, mis en forme par le nom d'un crédit. Son libellé,
+recopié de la banque (un remboursement de trop-perçu, un chèque impayé, un virement rejeté), nomme ce client — chez un
+praticien, un patient. Le mouvement entier se nomme dès qu'une de ses lignes le reconnaît : sa ligne de banque comme sa
+ligne de produit ou de frais. Un autre débit lu garde son libellé, au caractère près : il nomme un fournisseur ou un
+organisme. Aucun calcul ne change ; seul change ce qui sort.
+
+**CE QUE « RENDRE OU DÉFAIRE L'ARGENT D'UN CLIENT » VEUT DIRE EN BASE.** La base le reconnaît par ce qu'elle a écrit du
+mouvement, jamais par un mot de son libellé, son montant ni sa date. (1) Une ligne PROPRE au mouvement — celle d'aucune
+facture ni d'aucun encaissement, la définition de la migration `lignes_propres_au_mouvement` — sur un compte de produit,
+de classe 7 : `affecter_mouvement_bancaire` et `ventiler_mouvement_bancaire` n'admettent que des catégories de classe 6
+ou 7, et une part sur un produit suffit. (2) Le classement du débit par les contre-passations d'un encaissement,
+`lignes_bancaires.encaissements_de_factures` (VF5d) : une contre-passation ne cite un mouvement que pour une facture
+source (son refus 15) et un mouvement libre (son refus 18). (3) Appliquée sans question, parce qu'elle n'appelle aucun
+jugement : une ligne propre sur un compte de client, de classe 41 (« Clients et comptes rattachés » du plan comptable
+général : 411 clients, 419 clients créditeurs). Aucune fonction du relevé n'y écrit — `refus_compte_de_bilan` refuse les
+classes 40 et 41, l'affectation et la ventilation n'admettent que les classes 6 et 7 —, et une telle ligne ne naît que
+du règlement d'une pièce de vente en engagement, par le navigateur, sa pièce supprimée depuis (`piece_id` est ON DELETE
+SET NULL) : la ligne du 411 et celle de la banque gardent le client que la pièce leur a donné ; c'est une part du résidu
+que VF9CQ1 avait laissé. Les racines se jugent au début du compte (607 ou 401700 ne sont pas des produits ni des
+clients). Écartés : un débit qu'une contre-passation non retirée cite sans qu'il soit classé (réservé, G2) n'a aucune
+ligne propre, et ses lignes de contre-passation se nomment déjà par la facture (VF9c) — le reconnaître demanderait de
+lire les encaissements du mouvement pour ne rien changer ; le débit d'une contre-passation RETIRÉE, que le retrait
+libère et que le cabinet peut classer ailleurs, appelle un jugement — une question, ci-dessous ; un compte d'attente ou
+de tiers divers (467, 468) dirait n'importe qui.
+
+**LE CÔTÉ FERMÉ.** Un débit dont le classement par ses encaissements n'est pas lu comme faux (absent, nul, autre chose
+qu'un booléen), dont les lignes ne sont pas rendues comme une liste non vide (la ligne qu'on nomme en est une), dont une
+ligne n'est pas un objet ou n'a pas été lue avec sa facture et son encaissement, ou dont une ligne propre n'a pas de
+compte en texte, se nomme comme un débit qui rend l'argent d'un client. Une ligne qui n'est pas propre ne compte pas,
+quel que soit son compte.
+
+**L'INVENTAIRE, OUTIL PAR OUTIL**, sur BASE (`7c59035`), chaque fois pour un dossier qui n'a pas basculé (en trésorerie
+et en engagement), basculé, et dont la source des ventes ne se lit pas :
+
+- `lister_ecritures` : le libellé de la banque, recopié au brouillon, sur les lignes d'un débit affecté, ventilé, d'un
+  virement personnel, d'un compte de bilan, d'une échéance d'emprunt, d'une cotisation, du paiement de la TVA ; d'un
+  dossier basculé ou illisible, aussi sur les lignes propres d'un débit classé par ses contre-passations (ses frais),
+  rendues sous la source `mouvement_d_encaissements` — un dossier qui n'a pas basculé n'en a pas, la base refusant la
+  contre-passation qui cite un mouvement hors d'une facture source. La ligne d'un débit rapproché d'une pièce, ou d'un
+  règlement groupé, prend le libellé de sa pièce (VF9C-Q1) ; celle d'une contre-passation, le numéro de sa facture
+  (VF9c) ; la ligne restée d'une pièce supprimée, sur un débit, le libellé que la pièce lui a donné. Traité : le
+  passage.
+- `points_a_traiter` lit le libellé du brouillon sans qu'aucune clé ne le rende, et le relevé sans son libellé ;
+  `resume_dossier`, `lister_comptes`, `lister_pieces` ne rendent aucun libellé du relevé ni du brouillon ; les messages
+  d'erreur, jamais une valeur lue. Rien à traiter.
+- La consigne disait « Le libellé d'un débit, lui, est transmis », la description de `lister_ecritures` « celui d'un
+  débit reste » : les deux changent, rien d'autre.
+
+**CE QUE LE LOT FAIT.** Le bloc PIÈCES DE VENTE reste le seul passage et gagne `RACINES_DES_COMPTES_D_UN_CLIENT` (« 7 »,
+« 41 »), `nomDUnDebitDuReleve` (le nom d'un crédit, du montant absolu, sous le mot « Débit »),
+`debitQuiRendLArgentDUnClient` (les deux reconnaissances, la troisième et le côté fermé) et le type
+`LigneDuMouvementLue` ; `libelleDUneLigneDuReleve` nomme un tel débit. `lister_ecritures` lit, dans la même sélection
+que VF9CQ1, le classement du mouvement et ses lignes : `lignes_bancaires(date, montant, encaissements_de_factures,
+ecritures_brouillon(compte, facture_id, encaissement_id))`, à gauche — ni leur libellé, ni ce que la validation fige. La
+consigne, dans la ligne du crédit du relevé : « De même, un DÉBIT qui rend ou défait l'argent d'un client — écrit en
+tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d'un encaissement — se
+nomme par sa date et son montant : à qui l'argent est rendu n'est pas transmis. Le libellé d'un autre débit, lui, est
+transmis. » (+271 caractères) ; la description de `lister_ecritures` de même (+299). La fonction : +59 lignes, −9 (code
++24 −5, commentaire +32 −4, vides +3), 4 094 → 4 144 lignes ; les dix-huit autres blocs bornés, `historiqueDuClient` et
+CLÉS SUPABASE compris, identiques au caractère près ; aucune bordure neuve (38) ; aucune copie de `src/lib` touchée ;
+rien de VF9d ni de la caisse.
+
+Le faux PostgREST du harnais (`src/test/fonctionsEdge.ts`) embarque désormais à toute profondeur et dans les deux sens :
+une ressource que la table lue cite (une ligne, ou null), ou qui cite la table lue (une liste, vide quand rien ne la
+cite), par la seule clé entre les deux, lue dans le schéma ; deux clés (une table qui se cite elle-même) lèvent, comme
+PostgREST refuse un embarquement ambigu, et une jointure interne imbriquée n'est pas modélisée. Son test le garde (+1),
+et celui qui disait « aucune clé de pieces vers ecritures_brouillon » vise désormais une relation absente.
+
+**LES PREUVES.**
+
+- `agentComptablePiecesDeVente.test.ts` (70 → 99 tests). Le bloc exécuté seul sur 114 cas nommés (81 hier) : le nom d'un
+  débit, chaque reconnaissance — affecté et ventilé sur un produit, au 411 et au 419, classé par ses contre-passations
+  d'un dossier qui lit ses ventes ou non —, chaque débit ordinaire (401, 108, 164-661-616, une charge), une ligne d'une
+  facture ou d'un encaissement sur un produit ou un client, la pièce avant le mouvement, le crédit inchangé, douze côtés
+  fermés, la racine au début du compte. 51 dérives plantées (34 hier, dont trois réancrées), au moins une par fonction
+  et par constante. Le scanner lit une sélection à toute profondeur, exige la forme exacte du mouvement embarqué et les
+  rattachements au premier niveau de la ligne ; 41 défauts plantés (29 hier, dont cinq réancrés), dont douze neufs : le
+  classement ou les lignes du mouvement non lus, chacune de leurs trois colonnes oubliée, leur libellé, `piece_ref` ou
+  `comp_aux_lib` lus, une jointure interne, une forme que le scanner ne sait pas lire, `*`, les encaissements du
+  mouvement embarqués.
+- Le contrat de l'assistant : les quatre scénarios de VF9CQ1 (non basculé en trésorerie et en engagement, basculé,
+  source illisible ; cinq outils, sept appels) gardent leur nom, et leur monde gagne, sous un cinquième marqueur, un
+  débit affecté à un produit, un débit ventilé en partie sur un produit, un débit dont le classement ne se lit pas, en
+  engagement le règlement d'une vente supprimée resté au 411, et, d'un dossier basculé, un débit classé par la
+  contre-passation de l'encaissement classé ; et deux débits ordinaires de plus (un organisme, et en engagement le
+  règlement d'un achat supprimé resté au 401). Aucun morceau de huit caractères du marqueur n'atteint la demande
+  (consigne, outils, résultats), le marqueur des débits ordinaires l'atteint, chaque ligne porte ce qu'elle doit, écrit
+  dans le test. Adaptés : la phrase de la consigne attendue (`PHRASE_DU_CREDIT`), et la description.
+  `edgeFunctionsHttp.test.ts` : douze défauts plantés neufs, sept réancrés ; `DEFAUTS_CONNUS` inchangé (2).
+  `agentComptableConsigne.test.ts` (+1) : la phrase une fois, dans la ligne du crédit, et la description ; le test de
+  VF9CQ1 suit les deux textes.
+- Les mutations, jouées une à une sur un banc hors du dépôt devant les gardes de l'assistant, le contrat HTTP et les
+  scanners (601 tests au témoin, vert ; chaque mutation défaite, l'empreinte vérifiée) : 33, dont 10 du câblage — le
+  classement ou les lignes du mouvement non lus, chacune de leurs trois colonnes oubliée, leur libellé lu sans servir,
+  une jointure interne, la consigne amputée de sa phrase ou redevenue « un débit », la description amputée — et 23 du
+  bloc — tout débit sous son libellé, tout débit nommé, un débit reconnu sous le libellé du brouillon, le débit nommé
+  comme un crédit, chacune des trois racines changée, la racine cherchée partout, le classement oublié ou un classement
+  illisible pris pour faux, des lignes ou une ligne non lues prises pour lues (cinq formes), une ligne d'une facture ou
+  d'un encaissement comptée comme propre (deux), un compte illisible pris pour une charge, le nom signé, sous le mot du
+  crédit, de la date ou du montant de la ligne, la reconnaissance sur la ligne seule. Toutes tuées par un comportement,
+  un scanner ou la garde de la consigne, aucune par sa seule ancre : 23 par le contrat HTTP (avec d'autres juges), 10
+  sans lui — les huit côtés fermés et lignes non propres que PostgREST ne rend pas ou que la base n'écrit pas (une ligne
+  de facture ou d'encaissement sur un produit ne porte jamais le mouvement), et la date de la ligne, qui est celle du
+  mouvement dans le monde, par les cas du bloc exécuté seul ; le libellé des lignes lu sans servir par le scanner, et
+  lui seul — le comportement est le même. La jointure interne imbriquée est équivalente en vrai (un mouvement embarqué
+  par sa ligne a au moins cette ligne) : le scanner la refuse, et le faux PostgREST aussi.
+- Au caractère près, hors du dépôt : la source de BASE (`7c59035`) et celle de la branche, dans le même monde, pour les
+  57 scénarios du contrat (62 demandes au modèle). BASE, corrigée des seules différences voulues — la phrase de la
+  consigne (62 fois), la description de `lister_ecritures` (62), 49 libellés de débit recomposés par une formule écrite
+  dans le banc, aucune ligne ambiguë, 466 lignes inchangées — égale la branche au caractère près ; les lectures (tables,
+  rôles, filtres et nombre), les statuts, les réponses et les journaux sont identiques sans correction (le journal du
+  harnais ne porte pas la sélection, que le scanner garde). Le témoin : sans le monde, ou avec la seule consigne
+  corrigée, BASE diffère. Et le contrat de la branche, joué sur BASE, tombe sur les quatre scénarios du relevé, et sur
+  eux seuls.
+- La suite, sous Paris, comparée test par test à BASE : 15 007 → 15 075 tests, tous verts ; 43 nouveaux du lot (29 du
+  bloc et du scanner, 1 de la consigne, 12 du contrat, 1 du faux PostgREST) et les 25 de `clesSupabase.test.ts`, que la
+  copie de BASE, hors d'un dépôt git, ne peut pas jouer ; aucun perdu, aucun changé d'état — les défauts réancrés
+  gardent leur nom ; `comptesEnDur.test.ts`, la consigne et les gardes de copie compris.
+
+**LES RISQUES.** Le coût : +570 caractères à chaque demande au modèle, pour tout dossier, et une lecture plus large —
+chaque ligne de `lister_ecritures` embarque les lignes de son mouvement, dans la même requête : quelques-unes par
+mouvement (une échéance d'emprunt en écrit quatre). Ce que le modèle perd : le libellé d'un débit reconnu — il ne voit
+plus « REMBOURSEMENT » ni « IMPAYÉ » ; le compte de la ligne et sa source le disent. Ce qui vise plus large que la
+décision : un débit sur un autre produit (un intérêt négatif au 76, un produit exceptionnel) se nomme aussi — la classe
+7 de la décision, sans tri. Une seconde clé entre les deux tables, ou une table qui citerait le brouillon, rendrait
+l'embarquement ambigu : l'outil répondrait son erreur, le côté fermé, et le scanner verrait la sélection changer. Une
+source neuve du brouillon (la caisse du MVP) se tait d'ici là, et fait tomber le test des rattachements. Le retour
+arrière : le lot ne vit que dans la fonction ; le défaire, c'est retirer ses commits et redéployer — il part avec VF9b,
+VF9c, VF9C-Q1 et VF9CQ1, d'un seul déploiement ; aucune donnée, migration ni écran à reprendre.
+
+**RGPD.md** : la ligne d'AWS Bedrock (§ 3) dit que, pour tout dossier, l'écriture d'un débit qui rend ou défait l'argent
+d'un client part de même sous la date et le montant du mouvement, et ce qui part encore : le libellé d'un autre débit
+(un fournisseur, un organisme, un virement personnel, un emprunt, et, rarement, la ligne de banque restée sur un débit
+d'une pièce de vente supprimée, en trésorerie).
+
+**CE QUI RESTE HORS DE LA DÉCISION** (inventorié, rien de changé) :
+
+- en trésorerie, la ligne de banque restée sur un débit d'une pièce de vente supprimée (un avoir remboursé, puis
+  supprimé) : sa seule ligne est au 512, que rien ne relie plus à un client — seule (B) de VF9CQ1B-Q1 l'aurait tue ;
+- un débit qui rend l'argent d'un client, classé par le cabinet sur une charge (658, 627) : la base ne le reconnaît pas
+  sans deviner ; et le débit d'une contre-passation retirée, classé ailleurs → VF9CQ1B2-Q1 ;
+- le libellé d'un débit vers une personne qui n'est pas un client — un remplaçant que le praticien rétrocède, un
+  salarié, un prêteur — : la règle d'un débit ordinaire, que la décision garde ;
+- une pièce de vente laissée « achat » par la classification, une pièce « autre » : leur tiers part (VF9C-Q1) ;
+- les mots du cabinet : le libellé d'un bien, le modèle d'un véhicule, les libellés de catégorie, le nom du dossier, le
+  fichier d'une balance reprise ; et le fil du navigateur, les mots de l'utilisateur.
+
+**UNE QUESTION AU CABINET.**
+
+- **VF9CQ1B2-Q1 — le débit d'une contre-passation retirée.** Une contre-passation qui n'a pas été déclarée se retire ;
+  elle cite encore son débit (`retirer_encaissement` ne pose que `retire_le`), que le retrait libère : le cabinet peut
+  alors le classer ailleurs, et, sur une charge, son libellé — qui nommait peut-être le client de l'impayé — part au
+  modèle. (A) Rien : le retrait dit que ce débit n'était pas celui de l'encaissement ; s'il rend l'argent d'un client,
+  le cabinet le classe sur un produit, et il se nomme. (B) Nommer tout débit qu'une contre-passation, même retirée, a
+  cité : une lecture de plus (les encaissements de chaque mouvement), et un retrait qui ne compte plus. Recommandation :
+  (A) — la base ne reconnaît plus ce débit, et (B) jugerait contre le geste du cabinet.
