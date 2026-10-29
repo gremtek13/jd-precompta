@@ -299,6 +299,9 @@ incompréhensible trois étapes plus loin.
 8. **Les Edge Functions** — redéployer depuis `supabase/functions/` via l'outil MCP, chacune avec
    le `verify_jwt` que porte `supabase/config.toml`. L'outil met `true` quand on omet ce paramètre,
    et `receive-email` refuserait alors tous les e-mails entrants à la passerelle, sans un log.
+   `agent-comptable` ne se recopie pas (300 Ko, que l'outil refuse ou coupe) : il se déploie par une seule
+   ligne qui importe son fichier du dépôt public à un commit de `main` écrit en entier (CLAUDE.md, « Edge
+   Functions »), et `supabase/essais/allerretour.py` compare le fichier de ce commit à celui du dépôt.
 9. **L'application web** — remplacer dans `.env.production` l'URL et la clé publishable du nouveau
    projet, puis pousser sur `main` : c'est le build qui les écrit dans l'application (inventaire du
    §3). Tant que ce n'est pas fait, l'application en ligne parle à l'ancien projet — ou à rien.

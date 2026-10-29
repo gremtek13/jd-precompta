@@ -70,11 +70,12 @@ const TEXTES = () => entre(FONCTION, '-- A7-Q3. UN IBAN DANS UN TEXTE LIBRE', ' 
 
 // ── Le drapeau, la migration, sa garde de tête ─────────────────────────────────────────────────────────────────────
 describe('le drapeau et la migration', () => {
-  it('le drapeau reste faux dans ce lot : la migration est préparée, pas en base, et son commentaire le dit', () => {
-    // Levé, l'étape A7b enverrait des clés qu'`enregistrer_facture` d'aujourd'hui ignorerait et lirait des colonnes absentes.
-    expect(MENTIONS_FIGEES_EXPORTEES).toBe(false)
-    const commentaire = entre(MODULE, "// LA MIGRATION N'EST PAS ENCORE EN BASE.", 'export const MENTIONS_FIGEES_EXPORTEES')
-    expect(commentaire).toContain('La session le lèvera elle-même, la migration collée.')
+  it('le drapeau est levé : la migration est en base depuis le 29/10/2026, sous sa version, et son commentaire le dit', () => {
+    // Levé, l'étape A7b envoie les clés neuves et lit les colonnes figées, que la base porte désormais.
+    expect(MENTIONS_FIGEES_EXPORTEES).toBe(true)
+    const commentaire = entre(MODULE, '// LA MIGRATION EST EN BASE depuis le 29/10/2026', 'export const MENTIONS_FIGEES_EXPORTEES')
+    expect(commentaire).toContain('`mentions_figees`, collée par le cabinet (version 20261029214359)')
+    expect(MIGRATION.chemin).toMatch(/\/20261029214359_mentions_figees\.sql$/)
   })
 
   it('la migration est dans l’export, une fois, et seule à définir les trois fonctions neuves', () => {
