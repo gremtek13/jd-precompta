@@ -60,6 +60,12 @@
 -- aucune mention d'entrepreneur individuel ; la colonne est en base depuis l'étape A5, et avant la migration rien ne
 -- change. Le reste de l'étape — la provenance des lignes, ce que la validation fige, la garde — se joue dans
 -- supabase/essais/mentionsFigees.sql.
+--
+-- ADAPTÉ LE 29/10/2026 À LA REPRISE D'A7a (A7-Q2, réponse du cabinet du 28/10/2026 ; migration `mentions_figees`,
+-- PRÉPARÉE, pas encore en base) : un accès « Ventes » ne valide plus une facture que sous le SIRET et l'adresse du
+-- dossier, que le cabinet renseigne. Le dossier A naît donc avec les siens, et les deux validations du client (étapes 10
+-- et 22m) les envoient, comme « Mes ventes » les envoie ; son avoir reprend l'émetteur de sa facture, rien n'y change.
+-- Avant la migration, rien ne change non plus : la base ne compare rien.
 do $essai$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -116,8 +122,9 @@ begin
       -- ventes (garder_droit_ventes, étape VF8f). Ses factures validées y sont donc la source de leur vente, et portent la
       -- nature de leurs opérations, que leur validation exige (un avoir prend celle de sa facture).
       ('j1', 'jeu', 'dossiers jetables A et B', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures, forme_juridique) values
-          ('{DA}', 'ESSAI VENTES A', '{CAB}', 'redevable', true, true, '5710'), ('{DB}', 'ESSAI VENTES B', '{CAB}', 'redevable', true, false, null)$q$, 'OK', null, null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures, forme_juridique, siret, adresse) values
+          ('{DA}', 'ESSAI VENTES A', '{CAB}', 'redevable', true, true, '5710', '12345678200010', 'ESSAI VENTES ADRESSE A'),
+          ('{DB}', 'ESSAI VENTES B', '{CAB}', 'redevable', true, false, null, null, null)$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-ventes@exemple.invalid')$q$, 'OK', null, null),
       ('j3', 'jeu', 'un crédit dans chaque dossier', 'proprietaire', null,
@@ -186,7 +193,7 @@ begin
            §§ select (id = '{B1}' and montant_ttc = 240 and (select count(*) from facture_lignes l where l.facture_id = '{B1}') = 2)::text from factures_emises where id = '{RENDU}'$q$,
         'OK', 'true', null),
       ('10', 'fait', 'il le valide : le numéro suivant de la série', 'client', 'ventes',
-        $q$select numero from enregistrer_facture('{DA}', '{B1}', '{"tiers_nom":"ESSAI VENTES B1","date_emission":"2026-03-02","montant_ht":200,"montant_tva":40,"montant_ttc":240,"nature_operation":"services"}'::jsonb, '[{"designation":"b1","quantite":1,"prix_unitaire_ht":150,"taux_tva":20},{"designation":"b1 bis","quantite":1,"prix_unitaire_ht":50,"taux_tva":20}]'::jsonb, true)$q$,
+        $q$select numero from enregistrer_facture('{DA}', '{B1}', '{"tiers_nom":"ESSAI VENTES B1","date_emission":"2026-03-02","montant_ht":200,"montant_tva":40,"montant_ttc":240,"nature_operation":"services","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI VENTES ADRESSE A"}'::jsonb, '[{"designation":"b1","quantite":1,"prix_unitaire_ht":150,"taux_tva":20},{"designation":"b1 bis","quantite":1,"prix_unitaire_ht":50,"taux_tva":20}]'::jsonb, true)$q$,
         'OK', 'F2026-0002', null),
       ('11', 'fait', 'le chef valide F3', 'chef', null,
         $q$select facture_id::text from enregistrer_facture('{DA}', null, '{"tiers_nom":"ESSAI VENTES F3","date_emission":"2026-03-03","montant_ht":300,"montant_tva":60,"montant_ttc":360,"nature_operation":"services"}'::jsonb, '[{"designation":"f3","quantite":3,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true)$q$,
@@ -260,7 +267,7 @@ begin
            §§ select (valide_par = '{CHEF}' and created_by = '{CLIENT}')::text from factures_emises where id = '{B4}'$q$,
         'OK', 'true', null),
       ('22m', 'controle', 'le client portant « Ventes » valide un brouillon du chef : valide_par dit le client, l''auteur reste le chef', 'client', 'ventes',
-        $q$select numero from enregistrer_facture('{DA}', '{B2}', '{"tiers_nom":"ESSAI VENTES B2","date_emission":"2026-03-06","montant_ht":10,"montant_tva":2,"montant_ttc":12,"nature_operation":"services"}'::jsonb, '[{"designation":"b2","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)
+        $q$select numero from enregistrer_facture('{DA}', '{B2}', '{"tiers_nom":"ESSAI VENTES B2","date_emission":"2026-03-06","montant_ht":10,"montant_tva":2,"montant_ttc":12,"nature_operation":"services","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI VENTES ADRESSE A"}'::jsonb, '[{"designation":"b2","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)
            §§ select (valide_par = '{CLIENT}' and created_by = '{CHEF}')::text from factures_emises where id = '{B2}'$q$,
         'OK', 'true', null),
       ('22', 'controle', 'l''anonyme n''exécute pas supprimer_brouillon_facture', 'anon', null,

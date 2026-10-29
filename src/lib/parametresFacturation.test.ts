@@ -21,6 +21,7 @@ import {
   PROPOSITIONS_PAR_DEFAUT,
   RCS_VILLE_MAX,
   REFUS_CONFIRMATION_RIB,
+  REFUS_DE_L_IBAN_DES_PARAMETRES,
   REFUS_ENREGISTREMENT_PARAMETRES,
   REFUS_IDENTITE_LEGALE,
   TITULAIRE_MAX,
@@ -616,10 +617,14 @@ describe('la saisie, lue comme la base la reçoit', () => {
     expect(champsAdmisParLaBase(false)).toEqual(CHAMPS_DES_PARAMETRES)
     expect(champsAdmisParLaBase(true)).toEqual([...CHAMPS_DES_PARAMETRES, ...CHAMPS_DU_LOGO])
     expect(refusDeLEnregistrement(false)).toEqual(REFUS_ENREGISTREMENT_PARAMETRES)
-    expect(refusDeLEnregistrement(true)).toEqual([...REFUS_ENREGISTREMENT_PARAMETRES, ...REFUS_DU_LOGO])
-    // Les huit du logo forment le huitième rang, après le septième (le RIB) ; aucune clé ne se répète d'une liste à l'autre.
+    // Adapté le 29/10/2026 à A7-Q3 : la migration `iban_hors_des_parametres`, qui suppose celle du logo, ajoute un neuvième
+    // rang, un IBAN dans un texte libre (parametresFacturationIban.test.ts le juge).
+    expect(refusDeLEnregistrement(true)).toEqual([...REFUS_ENREGISTREMENT_PARAMETRES, ...REFUS_DU_LOGO, ...REFUS_DE_L_IBAN_DES_PARAMETRES])
+    // Les huit du logo forment le huitième rang, après le septième (le RIB), et l'IBAN le neuvième ; aucune clé ne se répète
+    // d'une liste à l'autre.
     expect(Math.max(...REFUS_ENREGISTREMENT_PARAMETRES.map((r) => r.rang))).toBe(7)
     expect(new Set(REFUS_DU_LOGO.map((r) => r.rang))).toEqual(new Set([8]))
+    expect(new Set(REFUS_DE_L_IBAN_DES_PARAMETRES.map((r) => r.rang))).toEqual(new Set([9]))
     const cles = refusDeLEnregistrement(true).map((r) => r.cle)
     expect(new Set(cles).size).toBe(cles.length)
   })

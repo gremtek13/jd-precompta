@@ -1,8 +1,10 @@
 -- LA FACTURE FIGE SES MENTIONS (espace client, étape A7a, ligne 51.5 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT,
 -- LOGICIEL DE GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », § A.5.3, et « LA FACTURE VALIDÉE, SOURCE DE
--- SA VENTE : LA CONCEPTION », § 13 ; MEG1-Q2, MEG1-Q15, A5-Q9). Préparée sous une version PROVISOIRE, à COLLER : le corps
--- d'`enregistrer_facture` supprime les lignes qu'il remplace, depuis toujours, et `apply_migration` attend alors une
--- confirmation qui ne lui parvient pas (CLAUDE.md, « Quand `apply_migration` attend une confirmation »).
+-- SA VENTE : LA CONCEPTION », § 13 ; MEG1-Q2, MEG1-Q15, A5-Q9 ; reprise sur les réponses du cabinet du 28/10/2026, A7-Q1 à
+-- A7-Q3). Préparée sous une version PROVISOIRE, à COLLER : le corps d'`enregistrer_facture` supprime les lignes qu'il
+-- remplace, depuis toujours, et `apply_migration` attend alors une confirmation qui ne lui parvient pas (CLAUDE.md, « Quand
+-- `apply_migration` attend une confirmation »). Une petite migration la suit, à part : `iban_hors_des_parametres`, qui
+-- refuse un IBAN dans les textes des paramètres de facturation et appelle la fonction posée ici (A7-Q3).
 --
 -- POURQUOI. Une facture validée figeait son émetteur, ses parties, ses mentions et ses lignes, mais pas tout ce qu'elle
 -- imprime : le numéro de TVA se recalculait à chaque impression du statut du jour (`numeroTvaImprime`), et rien de
@@ -42,6 +44,12 @@
 --   4. Le numéro d'engagement (BT-13 ; C. com., art. L441-9, I : « le numéro du bon de commande lorsqu'il a été
 --      préalablement établi par l'acheteur ») s'ouvre à tout acheteur : la contrainte `factures_emises_organisme_public`
 --      est REMPLACÉE, le code service restant réservé à l'organisme public.
+--   5. `porte_un_iban` (A7-Q3) : vrai quand un texte porte un IBAN VALIDE — reconnu par sa clé de contrôle (ISO 13616,
+--      ISO/IEC 7064 MOD 97-10), jamais par sa seule forme —, écrit sous sa forme électronique (un mot de quinze à
+--      trente-quatre lettres et chiffres, deux lettres et deux chiffres en tête) ou sous sa forme papier (des groupes de
+--      quatre séparés d'un seul blanc, le dernier plus court). Un IBAN ne s'imprime sur une facture que par le RIB
+--      confirmé des paramètres (MEG1-Q12) : un texte libre qui en porte un le contournerait, et garderait l'ancien après
+--      un changement de RIB. `enregistrer_facture` et la migration `iban_hors_des_parametres` l'appellent.
 --
 -- QUI COMPOSE LE TEXTE IMPRIMÉ : L'APPLICATION, depuis ces VALEURS figées. La base ne fige aucun texte qu'elle ne peut pas
 -- juger : chaque valeur est LUE par la fonction à la validation dans une table qui la juge — `dossiers` (ses contraintes ;
@@ -59,9 +67,16 @@
 -- (l'unité, la référence, la nature, ligne par ligne, 22023), le contact (P0002), les articles des lignes (P0002) ; et à la
 -- validation, avant la numérotation et avant les refus de la source de la vente (le déclencheur de l'étape VF2) : le contact
 -- que la facture garde (P0002 : il a pu être posé sur le brouillon par une écriture directe) ; puis, pour un accès
--- « Ventes », une identité sans forme juridique (22023 : le cabinet la règle, elle en est le préalable, MEG1-Q14) ; puis la
--- dénomination d'un entrepreneur individuel (la forme 1000 de l'INSEE) qui ne porte ni « EI » ni les mots « entrepreneur
--- individuel » (22023 ; C. com., art. R526-27, R123-237, 9° ; `porte_la_mention_ei`).
+-- « Ventes », une identité sans forme juridique (22023 : le cabinet la règle, elle en est le préalable, MEG1-Q14 et
+-- A7-Q1) ; puis la dénomination d'un entrepreneur individuel (la forme 1000 de l'INSEE) qui ne porte ni « EI » ni les mots
+-- « entrepreneur individuel » (22023 ; C. com., art. R526-27, R123-237, 9° ; `porte_la_mention_ei`). Les refus de la
+-- reprise (22023), dans cet ordre : à chaque enregistrement, après ceux de la provenance et l'écriture de la facture et
+-- de ses lignes, un texte libre qu'elle imprime et qui porte un IBAN (A7-Q3, tout auteur ; à la validation, il précède
+-- donc les refus qui la jugent) ; à la validation, après les refus d'A7a qui précèdent, pour un accès « Ventes », un
+-- dossier sans SIRET, un SIRET d'émetteur qui n'est pas celui du dossier, un dossier sans adresse, une adresse
+-- d'émetteur qui n'est pas celle du dossier (A7-Q2 ; le cabinet n'est pas jugé, un avoir reprend l'émetteur de sa
+-- facture) ; puis, pour tout auteur, l'identité du dossier ou un texte des paramètres en vigueur qui porte un IBAN
+-- (A7-Q3 : une version d'avant la migration `iban_hors_des_parametres` ne se fige pas).
 --
 -- CE QU'ELLE DÉTRUIT, en s'appliquant : rien — aucune table, aucune colonne, aucune donnée ; une contrainte remplacée (sous
 -- son nom, sans perte : elle admet tout ce que l'ancienne admettait). Appelée, `enregistrer_facture` remplace les lignes
@@ -83,7 +98,8 @@ declare
   v_fonction record;
 begin
   if to_regprocedure('public.numero_tva_du_vendeur(text, boolean, text)') is not null
-     or to_regprocedure('public.porte_la_mention_ei(text)') is not null then
+     or to_regprocedure('public.porte_la_mention_ei(text)') is not null
+     or to_regprocedure('public.porte_un_iban(text)') is not null then
     raise exception 'La migration mentions_figees est déjà en base : elle ne s''applique pas deux fois.';
   end if;
   for v_colonne in
@@ -322,10 +338,111 @@ revoke execute on function public.porte_la_mention_ei(text) from public, anon, a
 comment on function public.porte_la_mention_ei(text) is
   'Vrai quand une dénomination porte la mention d''un entrepreneur individuel (C. com., art. R526-27) : les initiales « EI » (ou « E.I. ») ou les mots « entrepreneur individuel », détachés des lettres voisines ; faux pour une dénomination absente. Appelée par enregistrer_facture à la validation d''une facture d''un dossier de la forme 1000.';
 
--- ══ 6. Enregistrer une facture : la provenance, puis ce que la validation fige ══════════
+-- ══ 6. Un IBAN dans un texte libre (A7-Q3) ══════════
+-- Un IBAN se reconnaît à sa CLÉ, jamais à sa seule forme (la réponse du cabinet) : les quatre premiers caractères passent
+-- à la fin, chaque lettre devient deux chiffres (A = 10 … Z = 35), et le nombre, divisé par 97, laisse 1 (ISO 13616-1,
+-- par l'ISO/IEC 7064 MOD 97-10 ; le calcul d'`enregistrer_parametres_facturation`, le même que `cleIbanValide`). Ce
+-- qu'on soumet à la clé — les candidats —, dans le texte où les vingt-six lettres minuscules sont passées en capitales
+-- (elles seules : une lettre accentuée, un chiffre d'une autre écriture séparent) et découpé en MOTS, les suites de
+-- lettres latines et de chiffres :
+--   - la forme électronique, un mot de quinze à trente-quatre caractères qui commence par deux lettres et deux chiffres —
+--     quinze, l'IBAN le plus court du registre de l'ISO 13616 (la Norvège), trente-quatre, la borne de la norme ;
+--   - la forme papier, des groupes de quatre séparés d'un seul blanc, le dernier d'un à quatre caractères (ISO 13616-1 ; le
+--     relevé d'identité bancaire l'imprime ainsi) : depuis un mot de deux lettres et deux chiffres, chaque mot qui suit
+--     après un seul blanc (ceux que `\s` désigne en JavaScript, comme pour le numéro de TVA) et qui n'a pas plus de quatre
+--     caractères s'ajoute, et la suite est candidate à chaque groupe, de quinze à trente-quatre caractères ; un mot de
+--     moins de quatre caractères la clôt.
+-- Ne se lisent pas : un IBAN collé à un mot, ses groupes séparés de tirets, de deux blancs ou autrement qu'en groupes de
+-- quatre, un RIB à l'ancienne (qui n'a pas de code pays) ; les lire ferait refuser des textes qui n'en portent pas. Un
+-- texte qui ne porte pas d'IBAN valide passe, quel qu'il soit. `porteUnIban` (src/lib/parametresFacturation.ts) la redit
+-- avant le clic ; src/lib/parametresFacturationIban.test.ts les confronte sur les cas de supabase/essais/mentionsFigees.sql.
+create function public.porte_un_iban(p_texte text)
+returns boolean
+language plpgsql
+immutable
+set search_path = public
+as $$
+declare
+  v_blancs constant text := chr(9) || chr(10) || chr(11) || chr(12) || chr(13) || chr(32) || chr(160) || chr(5760)
+    || chr(8192) || chr(8193) || chr(8194) || chr(8195) || chr(8196) || chr(8197) || chr(8198) || chr(8199) || chr(8200)
+    || chr(8201) || chr(8202) || chr(8232) || chr(8233) || chr(8239) || chr(8287) || chr(12288) || chr(65279);
+  v_signes constant text := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  v_mots text[] := '{}';
+  v_avant text[] := '{}';
+  v_mot text := '';
+  v_entre text := '';
+  v_car text;
+  v_candidats text[] := '{}';
+  v_candidat text;
+  v_converti text;
+  i int;
+  j int;
+begin
+  if p_texte is null then
+    return false;
+  end if;
+  -- Les mots, chacun avec ce qui le sépare du précédent.
+  foreach v_car in array string_to_array(translate(p_texte, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), null) loop
+    if strpos(v_signes, v_car) > 0 then
+      v_mot := v_mot || v_car;
+    else
+      if v_mot <> '' then
+        v_mots := v_mots || v_mot;
+        v_avant := v_avant || v_entre;
+        v_mot := '';
+        v_entre := '';
+      end if;
+      v_entre := v_entre || v_car;
+    end if;
+  end loop;
+  if v_mot <> '' then
+    v_mots := v_mots || v_mot;
+    v_avant := v_avant || v_entre;
+  end if;
+  -- Les candidats : la forme électronique, puis la forme papier.
+  for i in 1 .. coalesce(array_length(v_mots, 1), 0) loop
+    if char_length(v_mots[i]) between 15 and 34 and v_mots[i] ~ '^[A-Z]{2}[0-9]{2}' then
+      v_candidats := v_candidats || v_mots[i];
+    end if;
+    if v_mots[i] ~ '^[A-Z]{2}[0-9]{2}$' then
+      v_candidat := v_mots[i];
+      j := i + 1;
+      while j <= array_length(v_mots, 1) and char_length(v_avant[j]) = 1 and strpos(v_blancs, v_avant[j]) > 0
+            and char_length(v_mots[j]) <= 4 loop
+        v_candidat := v_candidat || v_mots[j];
+        exit when char_length(v_candidat) > 34;
+        if char_length(v_candidat) >= 15 then
+          v_candidats := v_candidats || v_candidat;
+        end if;
+        exit when char_length(v_mots[j]) < 4;
+        j := j + 1;
+      end loop;
+    end if;
+  end loop;
+  -- La clé de chacun.
+  foreach v_candidat in array v_candidats loop
+    v_converti := '';
+    foreach v_car in array string_to_array(substr(v_candidat, 5) || left(v_candidat, 4), null) loop
+      v_converti := v_converti || case when ascii(v_car) <= 57 then v_car else (ascii(v_car) - 55)::text end;
+    end loop;
+    if v_converti::numeric % 97 = 1 then
+      return true;
+    end if;
+  end loop;
+  return false;
+end
+$$;
+
+revoke execute on function public.porte_un_iban(text) from public, anon, authenticated;
+
+comment on function public.porte_un_iban(text) is
+  'Vrai quand un texte porte un IBAN valide, reconnu par sa clé (ISO 13616, MOD 97-10), sous sa forme électronique (un mot de quinze à trente-quatre lettres et chiffres) ou papier (des groupes de quatre séparés d''un seul blanc) ; faux pour un texte absent. Un IBAN ne s''imprime que par le RIB confirmé (A7-Q3, MEG1-Q12) : appelée par enregistrer_facture et enregistrer_parametres_facturation.';
+
+-- ══ 7. Enregistrer une facture : la provenance, puis ce que la validation fige ══════════
 -- Reprise de la migration ventes_du_client_facturation au caractère près, hors de ce que les commentaires « A7 »
 -- annoncent : les vérifications d'hier passent d'abord (l'avoir, puis le brouillon modifié), les refus neufs ensuite,
--- avant toute écriture, puis les écritures d'hier, chacune avec ses colonnes neuves ; à la validation, ce qu'elle fige.
+-- avant toute écriture, puis les écritures d'hier, chacune avec ses colonnes neuves ; les textes écrits, jugés (A7-Q3) ;
+-- à la validation, ce qu'elle fige, l'émetteur d'un accès « Ventes » jugé (A7-Q2).
 create or replace function public.enregistrer_facture(p_dossier_id uuid, p_facture_id uuid, p_facture jsonb, p_lignes jsonb, p_valider boolean default false)
  returns table(facture_id uuid, numero text)
  language plpgsql
@@ -362,6 +479,12 @@ declare
   v_rib_id uuid;
   v_mandataire text;
   v_cabinet boolean;
+  -- A7-Q2 et A7-Q3 : l'adresse de l'émetteur, ce qu'un refus nomme, les blancs (ceux de `numero_tva_du_vendeur`).
+  v_emetteur_adresse text;
+  v_libelle text;
+  v_blancs constant text := chr(9) || chr(10) || chr(11) || chr(12) || chr(13) || chr(32) || chr(160) || chr(5760)
+    || chr(8192) || chr(8193) || chr(8194) || chr(8195) || chr(8196) || chr(8197) || chr(8198) || chr(8199) || chr(8200)
+    || chr(8201) || chr(8202) || chr(8232) || chr(8233) || chr(8239) || chr(8287) || chr(12288) || chr(65279);
 begin
   if not public.gere_les_ventes(p_dossier_id) then
     raise exception 'Accès refusé à ce dossier.' using errcode = '42501';
@@ -602,6 +725,36 @@ begin
          l.valeur->>'nature'
   from jsonb_array_elements(p_lignes) with ordinality as l(valeur, ord);
 
+  -- A7-Q3. UN IBAN DANS UN TEXTE LIBRE QUE LA FACTURE IMPRIME, quel que soit l'auteur, à chaque enregistrement : sur la
+  -- facture telle qu'elle est écrite — ce qu'elle garde d'un brouillon compris —, dans l'ordre où elle s'imprime :
+  -- l'émetteur, le client, l'adresse de livraison, le code service et le numéro d'engagement, chaque ligne (sa désignation,
+  -- puis sa référence), la mention légale. D'un avoir, ses lignes et sa mention légale seules : le reste est la copie de
+  -- sa facture, qu'il ne rejuge pas. Les notes et l'adresse électronique du client ne s'impriment pas.
+  select t.libelle into v_libelle
+    from (select x.rang, 0 as ligne, x.libelle, x.valeur
+            from factures_emises f
+            cross join lateral (values
+              (1, 'le nom de l''émetteur', f.emetteur_nom), (2, 'l''adresse de l''émetteur', f.emetteur_adresse),
+              (3, 'le SIRET de l''émetteur', f.emetteur_siret), (4, 'le nom du client', f.tiers_nom),
+              (5, 'l''adresse du client', f.tiers_adresse), (6, 'le SIRET du client', f.tiers_siret),
+              (7, 'l''adresse de livraison', f.livraison_adresse), (8, 'le code postal de livraison', f.livraison_code_postal),
+              (9, 'la ville de livraison', f.livraison_ville), (10, 'le code service', f.code_service),
+              (11, 'le numéro d''engagement', f.numero_engagement), (13, 'la mention légale', f.mentions_legales)
+            ) as x(rang, libelle, valeur)
+           where f.id = v_id and (v_type <> 'avoir' or x.rang = 13)
+          union all
+          select 12, l.ordre * 2 + y.rang, y.quoi || ' de la ligne ' || (l.ordre + 1), y.valeur
+            from facture_lignes l
+            cross join lateral (values (1, 'la désignation', l.designation), (2, 'la référence', l.reference)) as y(rang, quoi, valeur)
+           where l.facture_id = v_id) as t
+   where public.porte_un_iban(t.valeur)
+   order by t.rang, t.ligne
+   limit 1;
+  if v_libelle is not null then
+    raise exception 'Un IBAN figure dans % : sur une facture, un IBAN ne s''imprime que dans le RIB des paramètres de facturation, confirmé par le cabinet.',
+      v_libelle using errcode = '22023';
+  end if;
+
   if p_valider then
     -- L'option pour les débits, FIGÉE ce jour-là : celle du dossier s'il est redevable de la TVA — l'option n'existe
     -- que pour lui. Un avoir garde celle de la facture qu'il corrige, quand elle l'a figée.
@@ -612,7 +765,8 @@ begin
     end if;
 
     -- A7. CE QUE LA VALIDATION FIGE, lu ici, jamais reçu de l'appelant.
-    select f.contact_id, f.emetteur_siret into v_contact, v_emetteur_siret from factures_emises f where f.id = v_id;
+    select f.contact_id, f.emetteur_siret, f.emetteur_adresse into v_contact, v_emetteur_siret, v_emetteur_adresse
+      from factures_emises f where f.id = v_id;
     -- Le contact que la facture garde : une écriture directe a pu le poser sur le brouillon, hors de cette fonction.
     if v_contact is not null and not exists (select 1 from contacts c where c.id = v_contact and c.dossier_id = p_dossier_id) then
       raise exception 'Le contact d''où vient le client de la facture est introuvable dans ce dossier.' using errcode = 'P0002';
@@ -655,6 +809,31 @@ begin
       raise exception 'La forme juridique du dossier est celle d''un entrepreneur individuel : sa dénomination imprimée, son nom précédé ou suivi des initiales « EI » ou des mots « entrepreneur individuel » (C. com., art. R526-27), est à renseigner par le cabinet avant de valider une facture.'
         using errcode = '22023';
     end if;
+    -- A7-Q2. Un accès « Ventes » ne valide une facture que sous le SIRET et l'adresse du DOSSIER, que le cabinet seul
+    -- renseigne (la policy `dossiers_update`), lus ici dans la transaction qui valide : un dossier qui n'en a pas ne se
+    -- facture pas depuis l'espace client avant que le cabinet les pose. « Les mêmes » : le SIRET, ses caractères, les
+    -- blancs retirés où qu'ils soient ; l'adresse, son texte, les blancs de ses bords retirés et ses fins de ligne
+    -- ramenées à une seule (`\r\n` et `\r` lus `\n`) — ce que « Mes ventes » envoie quand elle reprend le SIRET et l'adresse
+    -- du dossier sans les changer. Le cabinet n'est pas jugé ; un avoir reprend l'émetteur de sa facture et n'en juge rien.
+    if not v_cabinet and v_type <> 'avoir' then
+      if translate(coalesce(v_dossier.siret, ''), v_blancs, '') = '' then
+        raise exception 'Le SIRET du dossier n''est pas renseigné : le cabinet le renseigne avant qu''une facture se valide depuis l''espace client.'
+          using errcode = '22023';
+      end if;
+      if translate(coalesce(v_emetteur_siret, ''), v_blancs, '') <> translate(v_dossier.siret, v_blancs, '') then
+        raise exception 'Le SIRET de l''émetteur n''est pas celui du dossier : une facture validée depuis l''espace client porte le SIRET que le cabinet a renseigné.'
+          using errcode = '22023';
+      end if;
+      if btrim(coalesce(v_dossier.adresse, ''), v_blancs) = '' then
+        raise exception 'L''adresse du dossier n''est pas renseignée : le cabinet la renseigne avant qu''une facture se valide depuis l''espace client.'
+          using errcode = '22023';
+      end if;
+      if btrim(replace(replace(coalesce(v_emetteur_adresse, ''), E'\r\n', E'\n'), E'\r', E'\n'), v_blancs)
+         <> btrim(replace(replace(v_dossier.adresse, E'\r\n', E'\n'), E'\r', E'\n'), v_blancs) then
+        raise exception 'L''adresse de l''émetteur n''est pas celle du dossier : une facture validée depuis l''espace client porte l''adresse que le cabinet a renseignée.'
+          using errcode = '22023';
+      end if;
+    end if;
     -- Les paramètres en vigueur : la version COURANTE — celle qu'aucune ne remplace — et le RIB CONFIRMÉ : celui de la
     -- courante, sinon, au-delà des versions où il n'est que proposé, celui de la première version qui en a un confirmé ;
     -- aucun quand cette version n'en a pas (`ribEnVigueur`, src/lib/parametresFacturation.ts). Lus d'une seule instruction.
@@ -676,6 +855,28 @@ begin
     end if;
     if v_rib_id is not null then
       select p.* into v_rib from parametres_facturation p where p.id = v_rib_id and p.rib_etat = 'confirme';
+    end if;
+    -- A7-Q3. Ce que la validation figerait et que la facture imprime sans confirmation, pour tout auteur : l'identité du
+    -- dossier — sauf celle qu'un avoir reprend de sa facture —, puis les textes de la version des paramètres en vigueur,
+    -- dans l'ordre de leur saisie. Une version enregistrée avant la migration `iban_hors_des_parametres` peut en porter
+    -- un : elle ne se fige pas, une autre la remplace.
+    select x.libelle into v_libelle
+      from (values
+        (1, 'la dénomination du dossier', v_denomination),
+        (2, 'la ville du greffe du dossier', v_rcs_ville),
+        (3, 'les autres mentions de l''identité du dossier', v_mentions_identite),
+        (4, 'les conditions d''escompte des paramètres de facturation', v_courante.escompte),
+        (5, 'les pénalités de retard des paramètres de facturation', v_courante.penalites),
+        (6, 'les mentions complémentaires des paramètres de facturation', v_courante.mentions_complementaires),
+        (7, 'le pied de page des paramètres de facturation', v_courante.pied_de_page)
+      ) as x(rang, libelle, valeur)
+     where public.porte_un_iban(x.valeur)
+       and (x.rang > 3 or not (v_type = 'avoir' and coalesce(v_origine.mentions_figees, false)))
+     order by x.rang
+     limit 1;
+    if v_libelle is not null then
+      raise exception 'Un IBAN figure dans % : sur une facture, un IBAN ne s''imprime que dans le RIB des paramètres de facturation, confirmé par le cabinet.',
+        v_libelle using errcode = '22023';
     end if;
     -- Le mandataire : le cabinet qui valide au nom et pour le compte de son client ; personne quand c'est le client.
     if v_cabinet then
@@ -712,4 +913,4 @@ end;
 $$;
 
 comment on function public.enregistrer_facture(uuid, uuid, jsonb, jsonb, boolean) is
-  'Crée ou modifie un brouillon, crée un avoir validé, et valide : pour le cabinet du dossier ou un accès « Ventes » (42501). Ses refus d''hier, puis la provenance des lignes et du client (22023, P0002) ; à la validation, le contact gardé, la forme juridique pour un accès « Ventes » et la dénomination d''un entrepreneur individuel, puis la facture fige ses mentions (étape A7) : le statut et le numéro de TVA, l''identité légale, les paramètres et le RIB confirmé en vigueur, le logo, le mandataire.';
+  'Crée ou modifie un brouillon, crée un avoir validé, et valide : pour le cabinet du dossier ou un accès « Ventes » (42501). Ses refus d''hier, puis la provenance des lignes et du client (22023, P0002), puis un texte libre écrit qui porte un IBAN (A7-Q3) ; à la validation, le contact gardé, la forme juridique pour un accès « Ventes », la dénomination d''un entrepreneur individuel, le SIRET et l''adresse du dossier pour un accès « Ventes » (A7-Q2), l''identité et les paramètres en vigueur qui portent un IBAN, puis la facture fige ses mentions (étape A7) : le statut et le numéro de TVA, l''identité légale, les paramètres et le RIB confirmé en vigueur, le logo, le mandataire.';

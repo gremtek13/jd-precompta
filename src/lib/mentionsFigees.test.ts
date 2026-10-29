@@ -5,9 +5,11 @@ import { NATURES_ARTICLE, UNITES_ARTICLE } from './articles'
 import { numeroTvaImprime } from './factureCii'
 import {
   MENTIONS_FIGEES_EXPORTEES, NATURES_DE_LIGNE, REFERENCE_DE_LIGNE_MAX, REFUS_DE_LA_PROVENANCE, REFUS_DE_LA_VALIDATION_FIGEE,
-  UNITES_DE_LIGNE, mentionsAFiger, porteLaMentionEI, refusDeLaProvenance, refusDeLaValidationFigee,
-  type EntreeDesMentions, type MentionsDeLOrigine, type VersionAFiger,
+  REFUS_DES_TEXTES, TEXTES_DE_LA_LIGNE, TEXTES_DE_L_EN_TETE, TEXTES_FIGES_A_LA_VALIDATION, UNITES_DE_LIGNE, adresseNette,
+  mentionsAFiger, porteLaMentionEI, refusDeLaProvenance, refusDeLaValidationFigee, refusDesTextesDeLaFacture, siretSansBlancs,
+  type EntreeDesMentions, type MentionsDeLOrigine, type ValidationAJuger, type VersionAFiger,
 } from './mentionsFigees'
+import { MODELE_IBAN_DANS_UN_TEXTE } from './parametresFacturation'
 import type { StatutTva } from './types'
 import { correspondAuModele } from '../test/essaiVentesFacturees'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
@@ -57,7 +59,10 @@ const entre = (texte: string, debut: string, fin: string) => {
   return texte.slice(i, j)
 }
 const PROVENANCE = () => entre(FONCTION, '-- A7. LA PROVENANCE', "if p_facture_id is null and p_facture->>'type' = 'avoir' then\n    insert")
-const VALIDATION = () => entre(FONCTION, '-- A7. CE QUE LA VALIDATION FIGE', 'with recursive chaine')
+// Reprise sur A7-Q2 et A7-Q3 (29/10/2026) : la validation va jusqu'au mandataire, ses refus d'un IBAN compris ; les textes
+// écrits se jugent entre l'écriture des lignes et la validation.
+const VALIDATION = () => entre(FONCTION, '-- A7. CE QUE LA VALIDATION FIGE', '    -- Le mandataire :')
+const TEXTES = () => entre(FONCTION, '-- A7-Q3. UN IBAN DANS UN TEXTE LIBRE', '  if p_valider then')
 
 // ── Le drapeau, la migration, sa garde de tête ─────────────────────────────────────────────────────────────────────
 describe('le drapeau et la migration', () => {
@@ -68,9 +73,9 @@ describe('le drapeau et la migration', () => {
     expect(commentaire).toContain('La session le lèvera elle-même, la migration collée.')
   })
 
-  it('la migration est dans l’export, une fois, et seule à définir les deux fonctions neuves', () => {
+  it('la migration est dans l’export, une fois, et seule à définir les trois fonctions neuves', () => {
     expect(MIGRATIONS).toHaveLength(1)
-    for (const nom of ['numero_tva_du_vendeur', 'porte_la_mention_ei']) {
+    for (const nom of ['numero_tva_du_vendeur', 'porte_la_mention_ei', 'porte_un_iban']) {
       expect(fichiersDuSchema().filter((f) => new RegExp(`create (or replace )?function public\\.${nom}\\(`).test(f.texte))
         .map((f) => f.chemin), nom).toEqual([MIGRATION.chemin])
     }
@@ -100,17 +105,20 @@ describe('le drapeau et la migration', () => {
 // ── Les refus neufs, confrontés au texte de la fonction ────────────────────────────────────────────────────────────
 describe('les refus neufs d’enregistrer_facture, confrontés à son texte', () => {
   const PROV = ['unite', 'reference', 'nature', 'contact', 'article'] as const
-  const VALID = ['contact_garde', 'forme_a_regler', 'entrepreneur_individuel'] as const
+  const VALID = ['contact_garde', 'forme_a_regler', 'entrepreneur_individuel', 'siret_a_poser', 'siret_du_dossier', 'adresse_a_poser',
+    'adresse_du_dossier', 'iban_a_la_validation'] as const
 
-  it('ceux d’hier d’abord, dans le même ordre et sous les mêmes mots, puis la provenance, puis la validation', () => {
+  it('ceux d’hier d’abord, dans le même ordre et sous les mêmes mots, puis la provenance, les textes, la validation', () => {
     const hier = definitionDAvant('enregistrer_facture').texte
     expect(messagesSql(FONCTION)).toEqual([
       ...messagesSql(hier),
       ...REFUS_DE_LA_PROVENANCE.map((r) => r.modele),
+      ...REFUS_DES_TEXTES.map((r) => r.modele),
       ...REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.modele),
     ])
     expect(codesSql(FONCTION)).toEqual([
-      ...codesSql(hier), ...REFUS_DE_LA_PROVENANCE.map((r) => r.code), ...REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.code),
+      ...codesSql(hier), ...REFUS_DE_LA_PROVENANCE.map((r) => r.code), ...REFUS_DES_TEXTES.map((r) => r.code),
+      ...REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.code),
     ])
     expect(valeursSql(FONCTION).slice(0, messagesSql(hier).length)).toEqual(valeursSql(hier))
   })
@@ -125,21 +133,65 @@ describe('les refus neufs d’enregistrer_facture, confrontés à son texte', ()
     expect(REFUS_DE_LA_PROVENANCE.map((r) => r.rang)).toEqual([1, 1, 1, 2, 3])
   })
 
-  it('la validation : le contact gardé, la forme pour un accès « Ventes », l’entrepreneur individuel, avant la numérotation', () => {
+  it('la validation : le contact gardé, la forme, l’entrepreneur individuel, l’émetteur du dossier, un IBAN, avant la numérotation', () => {
     expect(REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.cle)).toEqual([...VALID])
     expect(messagesSql(VALIDATION())).toEqual(REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.modele))
     expect(codesSql(VALIDATION())).toEqual(REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.code))
-    expect(valeursSql(VALIDATION())).toEqual(['', '', ''])
-    expect(REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.rang)).toEqual([4, 5, 6])
+    expect(valeursSql(VALIDATION())).toEqual(['', '', '', '', '', '', '', 'v_libelle'])
+    expect(REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.rang)).toEqual([5, 6, 7, 8, 9, 10, 11, 12])
     expect(FONCTION.indexOf('-- A7. CE QUE LA VALIDATION FIGE')).toBeLessThan(FONCTION.indexOf('v_numero := attribuer_numero_facture('))
+    expect(FONCTION.indexOf('    -- Le mandataire :')).toBeLessThan(FONCTION.indexOf('v_numero := attribuer_numero_facture('))
     // Les conditions que le module rejoue, telles que la fonction les écrit : la forme jugée pour un accès « Ventes » seul,
     // hors d'un avoir qui reprend l'identité de sa facture ; le mandataire, le cabinet seul.
     expect(VALIDATION()).toContain('v_cabinet := public.admin_du_dossier(p_dossier_id);\n'
       + "    if v_forme_juridique is null and not v_cabinet and not (v_type = 'avoir' and v_origine.mentions_figees) then")
     expect(VALIDATION()).toContain("if v_forme_juridique = '1000' and not public.porte_la_mention_ei(v_denomination) then")
     expect(FONCTION).toContain('    if v_cabinet then\n      select c.nom into v_mandataire from cabinets c where c.id = v_dossier.cabinet_id;')
-    // Le refus du contact gardé est, mot pour mot, celui de la provenance : l'écran le dit d'une seule phrase.
+    // A7-Q2 : un accès « Ventes » et une facture seulement ; le SIRET, ses blancs retirés partout ; l'adresse, ses fins de ligne
+    // ramenées et les blancs de ses bords retirés — `siretSansBlancs` et `adresseNette`, que les cas ci-dessous jugent.
+    expect(VALIDATION()).toContain("    if not v_cabinet and v_type <> 'avoir' then\n"
+      + "      if translate(coalesce(v_dossier.siret, ''), v_blancs, '') = '' then")
+    expect(VALIDATION()).toContain("      if translate(coalesce(v_emetteur_siret, ''), v_blancs, '') <> translate(v_dossier.siret, v_blancs, '') then")
+    expect(VALIDATION()).toContain("      if btrim(coalesce(v_dossier.adresse, ''), v_blancs) = '' then")
+    expect(VALIDATION()).toContain("      if btrim(replace(replace(coalesce(v_emetteur_adresse, ''), E'\\r\\n', E'\\n'), E'\\r', E'\\n'), v_blancs)\n"
+      + "         <> btrim(replace(replace(v_dossier.adresse, E'\\r\\n', E'\\n'), E'\\r', E'\\n'), v_blancs) then")
+    expect(FONCTION).toContain('    select f.contact_id, f.emetteur_siret, f.emetteur_adresse into v_contact, v_emetteur_siret, v_emetteur_adresse\n'
+      + '      from factures_emises f where f.id = v_id;')
+    // A7-Q3 à la validation : l'identité, sauf celle qu'un avoir reprend, puis les textes de la version courante, dans l'ordre
+    // du module ; un libellé par texte.
+    const figes = [...VALIDATION().matchAll(/\((\d), '((?:[^']|'')*)', (v_\w+(?:\.\w+)?)\)/g)].map((m) => [Number(m[1]), chaineSql(m[2]), m[3]])
+    expect(figes).toEqual([[1, 'la dénomination du dossier', 'v_denomination'], [2, 'la ville du greffe du dossier', 'v_rcs_ville'],
+      [3, "les autres mentions de l'identité du dossier", 'v_mentions_identite'],
+      [4, "les conditions d'escompte des paramètres de facturation", 'v_courante.escompte'],
+      [5, 'les pénalités de retard des paramètres de facturation', 'v_courante.penalites'],
+      [6, 'les mentions complémentaires des paramètres de facturation', 'v_courante.mentions_complementaires'],
+      [7, 'le pied de page des paramètres de facturation', 'v_courante.pied_de_page']])
+    expect(figes.map(([rang, libelle]) => ({ rang, libelle }))).toEqual(TEXTES_FIGES_A_LA_VALIDATION.map((t) => ({ ...t })))
+    expect(VALIDATION()).toContain("       and (x.rang > 3 or not (v_type = 'avoir' and coalesce(v_origine.mentions_figees, false)))")
+    // Le refus du contact gardé est, mot pour mot, celui de la provenance : l'écran le dit d'une seule phrase ; celui d'un IBAN
+    // est celui des textes, et celui des paramètres de facturation.
     expect(REFUS_DE_LA_VALIDATION_FIGEE[0].modele).toBe(REFUS_DE_LA_PROVENANCE[3].modele)
+    expect(REFUS_DE_LA_VALIDATION_FIGEE[7].modele).toBe(MODELE_IBAN_DANS_UN_TEXTE)
+  })
+
+  it('les textes écrits : un IBAN dans un texte libre que la facture imprime, après les lignes, avant la validation', () => {
+    expect(REFUS_DES_TEXTES.map((r) => [r.cle, r.rang, r.code, r.modele])).toEqual([['iban_dans_un_texte', 4, '22023', MODELE_IBAN_DANS_UN_TEXTE]])
+    expect(messagesSql(TEXTES())).toEqual([MODELE_IBAN_DANS_UN_TEXTE])
+    expect(codesSql(TEXTES())).toEqual(['22023'])
+    expect(valeursSql(TEXTES())).toEqual(['v_libelle'])
+    expect(FONCTION.indexOf('insert into facture_lignes')).toBeLessThan(FONCTION.indexOf('-- A7-Q3. UN IBAN DANS UN TEXTE LIBRE'))
+    // L'en-tête dans l'ordre de l'impression, la colonne de chacun et son libellé, ceux du module ; les lignes au rang 12, la
+    // mention légale au 13 ; d'un avoir, la mention légale seule.
+    const entete = [...TEXTES().matchAll(/\((\d+), '((?:[^']|'')*)', f\.(\w+)\)/g)].map((m) => ({ rang: Number(m[1]), libelle: chaineSql(m[2]), cle: m[3] }))
+    expect(entete).toEqual(TEXTES_DE_L_EN_TETE.map(({ rang, libelle, cle }) => ({ rang, libelle, cle })))
+    expect(TEXTES()).toContain("where f.id = v_id and (v_type <> 'avoir' or x.rang = 13)")
+    expect(TEXTES()).toContain("select 12, l.ordre * 2 + y.rang, y.quoi || ' de la ligne ' || (l.ordre + 1), y.valeur")
+    const ligne = [...TEXTES().matchAll(/\((\d), '((?:[^']|'')*)', l\.(\w+)\)/g)].map((m) => ({ cle: m[3], libelle: chaineSql(m[2]) }))
+    expect(ligne).toEqual(TEXTES_DE_LA_LIGNE.map(({ cle, libelle }) => ({ cle, libelle })))
+    // Ce que la base garde d'un brouillon quand l'appel ne nomme pas la clé : les champs `?` de la mise à jour, ceux du module.
+    const gardes = [...FONCTION.matchAll(/ {6}(\w+) = case when p_facture \? '(\w+)'/g)].map((m) => m[1])
+    expect(TEXTES_DE_L_EN_TETE.filter((t) => t.garde).map((t) => t.cle).every((c) => gardes.includes(c))).toBe(true)
+    expect(TEXTES_DE_L_EN_TETE.filter((t) => !t.garde).every((t) => FONCTION.includes(`      ${t.cle} = p_facture->>'${t.cle}',`))).toBe(true)
   })
 
   // LA BORNE DU HARNAIS : une confrontation qui ne saurait pas virer au rouge ne prouverait rien.
@@ -191,10 +243,10 @@ describe('les unités, les natures et la référence d’une ligne sont celles d
 })
 
 // ── L'essai, lu ────────────────────────────────────────────────────────────────────────────────────────────────────
-interface EtapeDeLEssai { numero: string; genre: string; requete: string; code: string; attendu: string | null }
+interface EtapeDeLEssai { numero: string; genre: string; qui: string; requete: string; code: string; attendu: string | null }
 const ETAPES: EtapeDeLEssai[] = [...ESSAI.matchAll(
-  /\('(\w+)', '(\w+)', '(?:[^']|'')*', '\w+', (?:null|'\w+'),\s*\$q\$([\s\S]*?)\$q\$,\s*'(\w+)',\s*(null|'(?:[^']|'')*'),\s*(?:null|'\w+')\)/g,
-)].map((m) => ({ numero: m[1], genre: m[2], requete: m[3], code: m[4], attendu: m[5] === 'null' ? null : chaineSql(m[5].slice(1, -1)) }))
+  /\('(\w+)', '(\w+)', '(?:[^']|'')*', '(\w+)', (?:null|'\w+'),\s*\$q\$([\s\S]*?)\$q\$,\s*'(\w+)',\s*(null|'(?:[^']|'')*'),\s*(?:null|'\w+')\)/g,
+)].map((m) => ({ numero: m[1], genre: m[2], qui: m[3], requete: m[4], code: m[5], attendu: m[6] === 'null' ? null : chaineSql(m[6].slice(1, -1)) }))
 
 // Les identifiants de l'essai ; l'inconnu (tiré au hasard) prend ici un identifiant qu'aucun jeu ne pose.
 const IDS = new Map([...entre(ESSAI, 'ids := jsonb_build_object(', ';\n').matchAll(/'(\w+)', '([0-9a-f-]{36})'/g)].map((m) => [m[1], m[2]]))
@@ -203,11 +255,22 @@ const macro = (texte: string) => texte.replace(/\{(\w+)\}/g, (tout, cle: string)
 
 describe('l’essai exige chaque refus neuf, et le module rejoue ses appels comme la base y a répondu', () => {
   it('chaque refus du module est exigé par au moins un contrôle de l’essai, sous son code et ses mots', () => {
-    expect(ETAPES.length).toBeGreaterThan(90)
-    for (const r of [...REFUS_DE_LA_PROVENANCE, ...REFUS_DE_LA_VALIDATION_FIGEE]) {
+    expect(ETAPES.length).toBeGreaterThan(180)
+    for (const r of [...REFUS_DE_LA_PROVENANCE, ...REFUS_DES_TEXTES, ...REFUS_DE_LA_VALIDATION_FIGEE]) {
       expect(ETAPES.some((e) => e.genre === 'controle' && e.code === r.code && e.attendu !== null && correspondAuModele(r.modele, e.attendu)),
         r.cle).toBe(true)
     }
+    // Un IBAN : chaque texte que la facture imprime, et chaque texte que la validation figerait, a son contrôle — pour les
+    // textes, par le cabinet ET par le client.
+    const libellesExiges = (qui: string) => new Set(ETAPES.filter((e) => e.genre === 'controle' && e.qui === qui && e.code === '22023'
+      && e.attendu !== null && correspondAuModele(MODELE_IBAN_DANS_UN_TEXTE, e.attendu))
+      .map((e) => (e.attendu as string).slice('Un IBAN figure dans '.length).split(' : ')[0]))
+    for (const qui of ['chef', 'client']) {
+      for (const t of TEXTES_DE_L_EN_TETE) expect(libellesExiges(qui).has(t.libelle), `${qui} : ${t.libelle}`).toBe(true)
+      for (const t of TEXTES_DE_LA_LIGNE) expect(libellesExiges(qui).has(`${t.libelle} de la ligne 1`), `${qui} : ${t.libelle}`).toBe(true)
+    }
+    const aLaValidation = new Set([...libellesExiges('chef'), ...libellesExiges('client')])
+    expect(TEXTES_FIGES_A_LA_VALIDATION.filter((t) => aLaValidation.has(t.libelle)).map((t) => t.rang)).toEqual([1, 2, 3, 4, 5, 6, 7])
   })
 
   // Les contacts et les articles de chaque dossier de l'essai, tels que son jeu `j3` les pose.
@@ -221,7 +284,17 @@ describe('l’essai exige chaque refus neuf, et le module rejoue ses appels comm
 
   it('les appels de l’essai à enregistrer_facture, rejoués par le module : le même refus, ou aucun', () => {
     const APPEL = /enregistrer_facture\('\{(\w+)\}', (null|'\{\w+\}'), '((?:[^']|'')*)'::jsonb,\s*'((?:[^']|'')*)'::jsonb, (true|false)\)/
-    const neufs = [...REFUS_DE_LA_PROVENANCE, ...REFUS_DE_LA_VALIDATION_FIGEE]
+    // Le refus d'un IBAN est le même modèle pour les textes écrits et pour la validation : son libellé dit lequel.
+    const libelleDUnIban = (attendu: string) => attendu.slice('Un IBAN figure dans '.length).split(' : ')[0]
+    const aLaValidation = new Set<string>(TEXTES_FIGES_A_LA_VALIDATION.map((t) => t.libelle))
+    const neuf = (e: EtapeDeLEssai) => {
+      if (e.attendu === null) return undefined
+      const attendu = e.attendu
+      if (e.code === '22023' && correspondAuModele(MODELE_IBAN_DANS_UN_TEXTE, attendu)) {
+        return aLaValidation.has(libelleDUnIban(attendu)) ? REFUS_DE_LA_VALIDATION_FIGEE[7] : REFUS_DES_TEXTES[0]
+      }
+      return [...REFUS_DE_LA_PROVENANCE, ...REFUS_DE_LA_VALIDATION_FIGEE].find((r) => r.code === e.code && correspondAuModele(r.modele, attendu))
+    }
     let rejoues = 0
     const vus = new Set<string>()
     for (const e of ETAPES) {
@@ -229,11 +302,15 @@ describe('l’essai exige chaque refus neuf, et le module rejoue ses appels comm
       if (!appel) continue
       const facture = JSON.parse(macro(chaineSql(appel[3])))
       const lignes = JSON.parse(macro(chaineSql(appel[4])))
-      const rendu = refusDeLaProvenance({
-        avoir: appel[2] === 'null' && facture.type === 'avoir', facture, lignes,
-        contactsDuDossier: contactsDe(appel[1]), articlesDuDossier: articlesDe(appel[1]),
+      const avoir = appel[2] === 'null' && facture.type === 'avoir'
+      const provenance = refusDeLaProvenance({
+        avoir, facture, lignes, contactsDuDossier: contactsDe(appel[1]), articlesDuDossier: articlesDe(appel[1]),
       })
-      const attendu = e.code === 'OK' ? null : neufs.find((r) => r.code === e.code && e.attendu !== null && correspondAuModele(r.modele, e.attendu))
+      // Les textes se jugent après la provenance ; un brouillon modifié par l'essai garde ce que la saisie ne nomme pas, et
+      // celui qui y pose un IBAN en direct le fait dans un ordre à part (l'étape 185), que la recherche des appels n'atteint pas.
+      const textes = provenance ? null : refusDesTextesDeLaFacture({ avoir, facture, lignes, brouillon: null })
+      const rendu = provenance ?? textes
+      const attendu = e.code === 'OK' ? null : neuf(e)
       // Un refus d'hier (l'accès, l'avoir, la facture validée, une contrainte) passe avant le module : rien à rejouer.
       if (attendu === undefined) continue
       rejoues += 1
@@ -245,10 +322,10 @@ describe('l’essai exige chaque refus neuf, et le module rejoue ses appels comm
         vus.add(attendu.cle)
       }
     }
-    // Le plancher : l'essai ne s'est pas vidé, et chaque refus de la provenance y a été rejoué au moins une fois — la
-    // référence de cent un caractères (l'étape 44, composée en SQL) l'est par le test qui suit.
-    expect(rejoues).toBeGreaterThanOrEqual(25)
-    expect([...vus].sort()).toEqual(['article', 'contact', 'nature', 'reference', 'unite'])
+    // Le plancher : l'essai ne s'est pas vidé, et chaque refus de la provenance et des textes y a été rejoué au moins une
+    // fois — la référence de cent un caractères (l'étape 44, composée en SQL) l'est par le test qui suit.
+    expect(rejoues).toBeGreaterThanOrEqual(90)
+    expect([...vus].sort()).toEqual(['article', 'contact', 'iban_dans_un_texte', 'nature', 'reference', 'unite'])
   })
 })
 
@@ -299,12 +376,17 @@ describe('le numéro de TVA : le module et la base, cas par cas', () => {
     expect([...attendus.values()].filter((v) => v === '-').length).toBeGreaterThanOrEqual(8)
   })
 
-  it('les blancs que la base retire du SIRET sont ceux que `\\s` désigne en JavaScript, un par un', () => {
-    const declaration = entre(MIGRATION.texte, 'v_blancs constant text :=', ';\n')
-    const enBase = [...declaration.matchAll(/chr\((\d+)\)/g)].map((m) => Number(m[1]))
+  it('les blancs que la base retire du SIRET sont ceux que `\\s` désigne en JavaScript, un par un — dans chaque fonction', () => {
+    // Trois déclarations : `numero_tva_du_vendeur`, `porte_un_iban` et `enregistrer_facture` (A7-Q2), chacune la même liste.
+    const declarations = [...MIGRATION.texte.matchAll(/v_blancs constant text :=([^;]*);\n/g)].map((m) => m[1])
+    expect(declarations).toHaveLength(3)
     const enJs: number[] = []
     for (let c = 0; c <= 0xffff; c++) if (/\s/.test(String.fromCharCode(c))) enJs.push(c)
-    expect(enBase).toEqual(enJs)
+    for (const d of declarations) expect([...d.matchAll(/chr\((\d+)\)/g)].map((m) => Number(m[1]))).toEqual(enJs)
+    // `trim` retire de même aux bords, ceux-là et pas d'autres, et le module l'emploie (`adresseNette`).
+    const retires: number[] = []
+    for (let c = 0; c <= 0xffff; c++) if (`${String.fromCharCode(c)}x`.trim() === 'x') retires.push(c)
+    expect(retires).toEqual(enJs)
   })
 })
 
@@ -404,8 +486,10 @@ describe('porteLaMentionEI et refusDeLaValidationFigee', () => {
 
   it('le contact gardé d’abord, puis la forme pour un accès « Ventes », puis la dénomination d’un entrepreneur individuel', () => {
     const K = 'a7a00000-0000-4000-8000-0000000001a1'
-    const base = { contactGarde: null, contactsDuDossier: [K], formeJuridique: '1000', denomination: 'ESSAI DUPONT EI', cabinet: false,
-      reprise: false }
+    // Adapté le 29/10/2026 à A7-Q2 et A7-Q3 : la validation lit aussi l'émetteur, le dossier et les paramètres en vigueur.
+    const base: ValidationAJuger = { contactGarde: null, contactsDuDossier: [K], formeJuridique: '1000', denomination: 'ESSAI DUPONT EI',
+      rcsVille: null, mentionsIdentite: null, cabinet: false, avoir: false, reprise: false, emetteurSiret: '12345678200010',
+      emetteurAdresse: 'ESSAI ADRESSE', dossierSiret: '12345678200010', dossierAdresse: 'ESSAI ADRESSE', parametres: null }
     expect(refusDeLaValidationFigee(base)).toBeNull()
     expect(refusDeLaValidationFigee({ ...base, contactGarde: K })).toBeNull()
     expect(refusDeLaValidationFigee({ ...base, contactGarde: 'autre', formeJuridique: null })).toEqual({ cle: 'contact_garde',
@@ -420,6 +504,113 @@ describe('porteLaMentionEI et refusDeLaValidationFigee', () => {
     expect(refusDeLaValidationFigee({ ...base, formeJuridique: null, cabinet: true })).toBeNull()
     expect(refusDeLaValidationFigee({ ...base, formeJuridique: null, reprise: true })).toBeNull()
     expect(refusDeLaValidationFigee({ ...base, formeJuridique: '5710', denomination: null })).toBeNull()
+  })
+
+  const BASE_A7Q: ValidationAJuger = { contactGarde: null, contactsDuDossier: [], formeJuridique: '1000', denomination: 'ESSAI DUPONT EI',
+    rcsVille: null, mentionsIdentite: null, cabinet: false, avoir: false, reprise: false, emetteurSiret: '12345678200010',
+    emetteurAdresse: 'ESSAI ADRESSE\nESSAI VILLE', dossierSiret: '12345678200010', dossierAdresse: 'ESSAI ADRESSE\nESSAI VILLE', parametres: null }
+  const cle = (v: Partial<ValidationAJuger>) => refusDeLaValidationFigee({ ...BASE_A7Q, ...v })?.cle ?? null
+
+  it('A7-Q2 : le SIRET et l’adresse du dossier, aux blancs et aux fins de ligne près ; le cabinet et un avoir ne sont pas jugés', () => {
+    expect(cle({})).toBeNull()
+    expect(cle({ emetteurSiret: '123 456 782 00010', emetteurAdresse: ' ESSAI ADRESSE\r\nESSAI VILLE\r\n' })).toBeNull()
+    expect(cle({ emetteurSiret: `123456782${String.fromCharCode(0xa0)}00010` })).toBeNull()
+    expect(cle({ emetteurAdresse: 'ESSAI ADRESSE\rESSAI VILLE' })).toBeNull()
+    expect(cle({ emetteurSiret: '10000020700015' })).toBe('siret_du_dossier')
+    expect(cle({ emetteurSiret: null })).toBe('siret_du_dossier')
+    expect(cle({ emetteurAdresse: 'ESSAI AUTRE ADRESSE' })).toBe('adresse_du_dossier')
+    expect(cle({ emetteurAdresse: 'ESSAI  ADRESSE\nESSAI VILLE' })).toBe('adresse_du_dossier')
+    expect(cle({ emetteurAdresse: null })).toBe('adresse_du_dossier')
+    expect(cle({ dossierAdresse: ' \n\t' })).toBe('adresse_a_poser')
+    expect(cle({ dossierSiret: null })).toBe('siret_a_poser')
+    expect(cle({ dossierSiret: '   ', dossierAdresse: null })).toBe('siret_a_poser')
+    expect(cle({ emetteurSiret: '10000020700015', emetteurAdresse: 'ESSAI AUTRE ADRESSE' })).toBe('siret_du_dossier')
+    // Du côté du dossier de même (les étapes 149d à 149h de l'essai) : son SIRET en groupes, un blanc insécable compris, son
+    // adresse sur trois lignes — une fin de ligne Windows, puis un retour chariot seul —, un blanc et une fin de ligne au
+    // bout ; une fin de ligne n'est pas un espace ; un SIRET de blancs n'en est pas un.
+    const enGroupes = `123 456 782${String.fromCharCode(0xa0)}00010`
+    const surTroisLignes = 'ESSAI ADRESSE G\r\nESSAI SECONDE LIGNE G\rESSAI TROISIÈME LIGNE G \r\n'
+    const dossier = { dossierSiret: enGroupes, dossierAdresse: surTroisLignes }
+    expect(cle({ ...dossier, emetteurAdresse: 'ESSAI ADRESSE G\rESSAI SECONDE LIGNE G\nESSAI TROISIÈME LIGNE G' })).toBeNull()
+    expect(cle({ ...dossier, emetteurAdresse: 'ESSAI ADRESSE G\r\nESSAI SECONDE LIGNE G\r\nESSAI TROISIÈME LIGNE G' })).toBeNull()
+    expect(cle({ ...dossier, emetteurAdresse: 'ESSAI ADRESSE G ESSAI SECONDE LIGNE G ESSAI TROISIÈME LIGNE G' })).toBe('adresse_du_dossier')
+    expect(cle({ dossierSiret: ` ${String.fromCharCode(0xa0)}\t`, dossierAdresse: surTroisLignes })).toBe('siret_a_poser')
+    // L'ordre, aussi quand le dossier n'a pas d'adresse : un autre SIRET se dit d'abord (l'étape 143b).
+    expect(cle({ emetteurSiret: '10000020700015', dossierAdresse: null })).toBe('siret_du_dossier')
+    expect(cle({ formeJuridique: null, dossierSiret: null })).toBe('forme_a_regler')
+    expect(cle({ cabinet: true, dossierSiret: null, dossierAdresse: null, emetteurSiret: 'x' })).toBeNull()
+    expect(cle({ avoir: true, emetteurSiret: '10000020700015', emetteurAdresse: 'ESSAI AUTRE ADRESSE' })).toBeNull()
+    expect(refusDeLaValidationFigee({ ...BASE_A7Q, dossierSiret: null })).toEqual({ cle: 'siret_a_poser', code: '22023',
+      message: "Le SIRET du dossier n'est pas renseigné : le cabinet le renseigne avant qu'une facture se valide depuis l'espace client." })
+  })
+
+  it('« les mêmes » : le SIRET sans aucun blanc, l’adresse aux bords nets et aux fins de ligne ramenées', () => {
+    expect(siretSansBlancs(` 123\t456${String.fromCharCode(0x202f)}782 00010\n`)).toBe('12345678200010')
+    expect(siretSansBlancs(null)).toBe('')
+    expect(adresseNette(`${String.fromCharCode(0xfeff)} 12 rue X\r\n69001 Lyon\r\n `)).toBe('12 rue X\n69001 Lyon')
+    expect(adresseNette('12 rue X\r69001 Lyon')).toBe('12 rue X\n69001 Lyon')
+    expect(adresseNette(null)).toBe('')
+  })
+
+  it('A7-Q3 à la validation : l’identité, sauf celle qu’un avoir reprend, puis les paramètres en vigueur, pour tout auteur', () => {
+    const IBAN = 'FR13 9999 9000 0200 0000 0001 234'
+    const parametres = { escompte: null, penalites: null, mentions_complementaires: null, pied_de_page: `ESSAI, IBAN ${IBAN}` }
+    expect(refusDeLaValidationFigee({ ...BASE_A7Q, parametres })).toEqual({ cle: 'iban_a_la_validation', code: '22023',
+      message: `Un IBAN figure dans le pied de page des paramètres de facturation : sur une facture, un IBAN ne s'imprime que dans le RIB des paramètres de facturation, confirmé par le cabinet.` })
+    expect(cle({ cabinet: true, parametres })).toBe('iban_a_la_validation')
+    expect(cle({ parametres: { ...parametres, pied_de_page: 'FR14 9999 9000 0200 0000 0001 234' } })).toBeNull()
+    const libelle = (v: Partial<ValidationAJuger>) => refusDeLaValidationFigee({ ...BASE_A7Q, ...v })?.message.split(' : ')[0] ?? null
+    expect(libelle({ parametres: { ...parametres, escompte: IBAN } })).toBe("Un IBAN figure dans les conditions d'escompte des paramètres de facturation")
+    expect(libelle({ mentionsIdentite: IBAN, parametres })).toBe("Un IBAN figure dans les autres mentions de l'identité du dossier")
+    expect(libelle({ denomination: `ESSAI DUPONT EI ${IBAN}`, rcsVille: IBAN })).toBe('Un IBAN figure dans la dénomination du dossier')
+    expect(libelle({ rcsVille: `Lyon ${IBAN}` })).toBe('Un IBAN figure dans la ville du greffe du dossier')
+    // L'identité qu'un avoir reprend de sa facture ne se rejuge pas ; les paramètres du jour, si.
+    expect(cle({ avoir: true, reprise: true, mentionsIdentite: IBAN })).toBeNull()
+    expect(cle({ avoir: true, reprise: true, mentionsIdentite: IBAN, parametres })).toBe('iban_a_la_validation')
+    // L'émetteur d'un accès « Ventes » se juge avant.
+    expect(cle({ emetteurSiret: 'x', parametres })).toBe('siret_du_dossier')
+  })
+})
+
+describe('refusDesTextesDeLaFacture (A7-Q3)', () => {
+  const IBAN = 'FR13 9999 9000 0200 0000 0001 234'
+  const facture = { tiers_nom: 'ESSAI CLIENT', emetteur_nom: 'ESSAI', emetteur_siret: '12345678200010', montant_ttc: 12 }
+  const ligne = (champs: Record<string, unknown> = {}) => ({ designation: 'ESSAI SÉANCE', quantite: 1, prix_unitaire_ht: 10, taux_tva: 20, ...champs })
+  const juger = (f: Record<string, unknown>, lignes: unknown[] = [ligne()], avoir = false, brouillon: Record<string, string | null> | null = null) =>
+    refusDesTextesDeLaFacture({ avoir, facture: f, lignes, brouillon })?.message.split(' : ')[0] ?? null
+
+  it('un texte sans IBAN, ou à clé fausse, passe ; chaque texte que la facture imprime se juge, nommé', () => {
+    expect(juger(facture)).toBeNull()
+    expect(juger({ ...facture, mentions_legales: 'FR14 9999 9000 0200 0000 0001 234' })).toBeNull()
+    for (const t of TEXTES_DE_L_EN_TETE) expect(juger({ ...facture, [t.cle]: `ESSAI ${IBAN}` }), t.cle).toBe(`Un IBAN figure dans ${t.libelle}`)
+    expect(juger(facture, [ligne(), ligne({ reference: IBAN.replace(/ /g, '') })])).toBe('Un IBAN figure dans la référence de la ligne 2')
+    // Les notes et l'adresse électronique du client ne s'impriment pas.
+    expect(juger({ ...facture, notes: IBAN, tiers_email: IBAN })).toBeNull()
+  })
+
+  it('l’ordre : l’en-tête, puis chaque ligne (sa désignation, puis sa référence), puis la mention légale', () => {
+    expect(juger({ ...facture, emetteur_nom: IBAN, mentions_legales: IBAN }, [ligne({ designation: IBAN })])).toBe("Un IBAN figure dans le nom de l'émetteur")
+    expect(juger({ ...facture, mentions_legales: IBAN }, [ligne({ designation: IBAN })])).toBe('Un IBAN figure dans la désignation de la ligne 1')
+    expect(juger(facture, [ligne({ reference: 'FR1399999000020000000001234' }), ligne({ designation: IBAN })]))
+      .toBe('Un IBAN figure dans la référence de la ligne 1')
+    expect(juger({ ...facture, mentions_legales: IBAN, livraison_ville: IBAN })).toBe('Un IBAN figure dans la ville de livraison')
+  })
+
+  it('un avoir : ses lignes et sa mention légale seules ; un brouillon modifié garde ce que la saisie ne nomme pas', () => {
+    expect(juger({ type: 'avoir', tiers_nom: IBAN, tiers_adresse: IBAN }, [ligne({ quantite: -1 })], true)).toBeNull()
+    expect(juger({ type: 'avoir', mentions_legales: IBAN }, [ligne({ quantite: -1 })], true)).toBe('Un IBAN figure dans la mention légale')
+    expect(juger({ type: 'avoir' }, [ligne({ quantite: -1, designation: IBAN })], true)).toBe('Un IBAN figure dans la désignation de la ligne 1')
+    // La ville de livraison du brouillon, gardée quand la saisie ne la nomme pas ; remplacée quand elle la nomme, nulle comprise.
+    expect(juger(facture, [ligne()], false, { livraison_ville: `ESSAI ${IBAN}` })).toBe('Un IBAN figure dans la ville de livraison')
+    expect(juger({ ...facture, livraison_ville: null }, [ligne()], false, { livraison_ville: `ESSAI ${IBAN}` })).toBeNull()
+    // Le nom du client ne se garde pas : la mise à jour l'écrit de la saisie, nul quand elle ne le porte pas.
+    expect(juger({ emetteur_nom: 'ESSAI' }, [ligne()], false, { tiers_nom: IBAN } as Record<string, string>)).toBeNull()
+  })
+
+  it('la saisie telle que la base la lit : un nombre, un objet, une saisie qui n’est pas un objet', () => {
+    expect(juger({ ...facture, tiers_nom: 123 })).toBeNull()
+    expect(juger({ ...facture, tiers_nom: { iban: IBAN } })).toBe('Un IBAN figure dans le nom du client')
+    expect(refusDesTextesDeLaFacture({ avoir: false, facture: null, lignes: 'pas une liste', brouillon: null })).toBeNull()
   })
 })
 

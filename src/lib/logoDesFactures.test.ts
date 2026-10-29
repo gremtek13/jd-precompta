@@ -35,7 +35,8 @@ const {
   refusDuLogo, typeDuNomDuLogo,
 } = await import('./logoDesFactures')
 const {
-  REFUS_ENREGISTREMENT_PARAMETRES, champsAdmisParLaBase, refusDeLEnregistrement, refusEnregistrementParametres, versionCourante,
+  REFUS_DE_L_IBAN_DES_PARAMETRES, REFUS_ENREGISTREMENT_PARAMETRES, champsAdmisParLaBase, refusDeLEnregistrement,
+  refusEnregistrementParametres, versionCourante,
 } = await import('./parametresFacturation')
 const { champsChanges, parametresEnvoyes, refusDeLaSaisieParametres, saisieDeLaVersion } = await import('./parametresFacturationVue')
 const { TAILLE_MAX, TYPES_ADMIS } = await import('./bornesStockage')
@@ -125,13 +126,14 @@ const DB = nom('DB')
 const remplacer = (texte: string) => texte.replace(/\{(\w+)\}/g, (m, cle: string) => NOMS.get(cle) ?? m)
 
 describe('l’essai, lu', () => {
-  it('ses étapes, toutes : trois de jeu, 125 jugées dont onze mutations — le cent-vingt-sixième verdict est le bilan', () => {
+  it('ses étapes, toutes : trois de jeu, 126 jugées dont onze mutations — le cent-vingt-septième verdict est le bilan', () => {
     // Le plancher qui distingue « aucun écart » d'« aveugle » : un motif qui ne reconnaîtrait plus les étapes rendrait une
-    // liste vide, et toutes les confrontations ci-dessous passeraient sans rien confronter.
+    // liste vide, et toutes les confrontations ci-dessous passeraient sans rien confronter. Le 29/10/2026, une de plus :
+    // 0g2, ce qui suit les vingt-cinq messages (A7-Q3).
     const ouvertes = [...ESSAI.matchAll(/^\s*\('\w+', '(?:jeu|controle|fait|valeur|mutation)'/gm)].length
     expect(ETAPES).toHaveLength(ouvertes)
     expect(ETAPES.filter((e) => e.genre === 'jeu')).toHaveLength(3)
-    expect(ETAPES.filter((e) => e.genre !== 'jeu')).toHaveLength(125)
+    expect(ETAPES.filter((e) => e.genre !== 'jeu')).toHaveLength(126)
     expect(ETAPES.filter((e) => e.genre === 'mutation')).toHaveLength(11)
     expect(new Set(ETAPES.map((e) => e.num)).size).toBe(ETAPES.length)
     expect([DA, DB, nom('H1'), nom('HU')]).toEqual([
@@ -158,11 +160,16 @@ describe('l’essai, lu', () => {
     expect(contraintes.startsWith(`${CHAMPS_DU_LOGO.map((c) => `${c}:text`).join(',')} ;`)).toBe(true)
   })
 
-  it('les vingt-cinq messages de la fonction sont ceux du module, dans leur ordre : les dix-sept d’A5a puis les huit du logo', () => {
+  // Adapté le 29/10/2026 à A7-Q3 : la migration `iban_hors_des_parametres` ajoute un neuvième rang, après le logo ; l'essai
+  // juge les vingt-cinq premiers messages (0g), puis ce qui suit (0g2) — que parametresFacturationIban.test.ts confronte.
+  it('les vingt-cinq premiers messages de la fonction sont ceux du module, dans leur ordre : les dix-sept d’A5a puis les huit du logo', () => {
     const modeles = refusDeLEnregistrement(true).map((r) => r.modele)
-    expect(modeles).toHaveLength(25)
-    const empreinte = createHash('md5').update(modeles.map((m) => m.replace(/'/g, "''")).join('|')).digest('hex')
-    expect(`${modeles.length} ${empreinte}`).toBe(etape('0g').attendu)
+    expect(modeles).toHaveLength(25 + REFUS_DE_L_IBAN_DES_PARAMETRES.length)
+    const premiers = modeles.slice(0, 25)
+    const empreinte = createHash('md5').update(premiers.map((m) => m.replace(/'/g, "''")).join('|')).digest('hex')
+    expect(`${premiers.length} ${empreinte}`).toBe(etape('0g').attendu)
+    expect(modeles.slice(25)).toEqual(REFUS_DE_L_IBAN_DES_PARAMETRES.map((r) => r.modele))
+    expect(etape('0g2').ordre).toContain(`= '${REFUS_DE_L_IBAN_DES_PARAMETRES[0].modele.replace(/'/g, "''''")}'`)
   })
 
   it('les champs qu’admet la fonction sont ceux du module, dans leur ordre', () => {
