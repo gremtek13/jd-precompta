@@ -41375,3 +41375,21 @@ caisse (PC4) devra rejuger la caisse sous son nouveau compte. Une caisse se rejo
 opérations se saisissent en moins de deux secondes. Le retour arrière retire la table, la colonne, les déclencheurs, les
 huit fonctions et la ligne d'historique ; destructif, il se colle sur l'accord du cabinet et se refuse dès que la caisse
 a servi : après la première opération, on corrige en avant.
+
+### 29/10/2026 — DEUX RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1
+
+(Deux fiches de la page des arbitrages, tranchées le 29/10/2026 à midi, toutes deux à la recommandation. Les questions →
+« LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES (A7-Q2, A7-Q3) » pour la
+première, « VF9CQ1B, LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE ET SON MONTANT » pour la seconde.)
+
+**A7Q-Q1, (B) : UNE SOCIÉTÉ SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT.** Quand un accès « Ventes »
+valide une facture, la base refuse un dossier dont la dénomination n'est pas renseignée, quelle que soit sa forme
+juridique, comme elle refuse déjà un dossier sans forme juridique (A7-Q1) : le client ne fige que ce que le cabinet a
+réglé, et le nom légal en est la première mention (C. com., art. L441-9, I). Le cabinet n'est pas jugé ; un avoir
+reprend l'identité de sa facture. Le refus s'écrit dans `mentions_figees` avant son collage, avec son module, ses essais
+et le texte à coller refait : le collage attend ce lot. Le premier praticien du MVP, entrepreneur individuel, n'est pas
+touché, sa dénomination étant déjà exigée (la mention « EI »).
+
+**VF9CQ1B2-Q1, (A) : RIEN DE PLUS.** Le retrait d'une contre-passation fait foi : le débit qu'elle citait redevient
+libre et garde son libellé auprès de l'assistant, sauf si le cabinet le classe sur un compte de produit ou de client, où
+il se nomme par sa date et son montant (VF9CQ1B). Rien à écrire ni à redéployer.
