@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 
 // LE SCHÉMA EXPORTÉ, LU UNE SEULE FOIS POUR TOUT LE DÉPÔT.
 //
@@ -28,6 +28,19 @@ export function fichiersDuSchema(): { chemin: string; texte: string }[] {
     // Les migrations se rejouent dans l'ordre de leur nom, et le socle vient après : il n'ajoute que
     // les douze tables créées hors `apply_migration`, qui n'ont donc aucun `alter` avant elles.
     .sort((a, b) => (a.chemin < b.chemin ? -1 : 1))
+}
+
+// LES MIGRATIONS PRÉPARÉES HORS DE L'EXPORT (`supabase/preparees/`) : celles qui ne peuvent pas y entrer avant leur
+// application — une table neuve que le plan de sauvegarde ne lit pas encore (la caisse, ligne 26.6). Elles ne sont pas le
+// schéma : rien ne les lit comme lui, et un test qui en a besoin les nomme (une clé du brouillon en attente de
+// l'assistant, que sa migration doit déclarer). Dans l'ordre de leur nom ; aucune si le dossier n'existe pas.
+export function fichiersPrepares(): { chemin: string; texte: string }[] {
+  const racine = new URL('../../supabase/preparees/', import.meta.url).pathname
+  if (!existsSync(racine)) return []
+  return readdirSync(racine)
+    .filter((n) => n.endsWith('.sql'))
+    .sort()
+    .map((n) => ({ chemin: `supabase/preparees/${n}`, texte: readFileSync(racine + n, 'utf8') }))
 }
 
 /** Le contenu d'un groupe de parenthèses ouvert en `i`, parenthèses appariées. */

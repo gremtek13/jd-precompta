@@ -98,6 +98,11 @@
 -- verdicts, 2 en faute — 95 et 96 — ; avec elle, 113 justes, rien laissé en base, les autres inchangés. Le texte sans
 -- ses lignes de commentaire, envoyé en une requête : 64 339 caractères, empreinte f52635d7f70f0cd12c57d332b70c4e06,
 -- 113 justes.
+--
+-- ADAPTÉ LE 29/10/2026 À LA CAISSE (ligne 26.6, étape C1 ; migration `caisse`, PRÉPARÉE dans `supabase/preparees/`,
+-- pas encore en base) : elle pose sur les encaissements trois déclencheurs de contrainte, la caisse jamais négative. Le
+-- contrôle 95 lit les déclencheurs d'hier, les siens écartés ; 95b, les siens : rien sans elle, les trois avec elle.
+-- Avant la migration, rien ne change ; le reste se joue dans supabase/essais/caisse.sql.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -850,13 +855,29 @@ begin
     'observe', obs, 'ok', obs = 'encaissements_factures_annule_id_fkey:a, encaissements_factures_dossier_id_fkey:c, encaissements_factures_facture_id_fkey:c, '
       || 'encaissements_factures_ligne_bancaire_id_fkey:a, encaissements_factures_taux_dossier_id_fkey:c, encaissements_factures_taux_encaissement_id_fkey:c');
 
+  -- Les déclencheurs de la caisse (étape C1) à part, au contrôle 95b.
   select string_agg(pg_get_triggerdef(t.oid), ' | ' order by t.tgname) into obs
-    from pg_trigger t where t.tgrelid in ('public.encaissements_factures'::regclass, 'public.encaissements_factures_taux'::regclass) and not t.tgisinternal;
+    from pg_trigger t where t.tgrelid in ('public.encaissements_factures'::regclass, 'public.encaissements_factures_taux'::regclass) and not t.tgisinternal
+     and t.tgfoid is distinct from to_regprocedure('public.garder_la_caisse()')::oid;
   verdicts := verdicts || jsonb_build_object('controle', '95. catalogue : les quatre gardes — les deux d''hier, puis celles de la frontière (étape VF7a) — veillent aussi sur la suppression (jouée sur la réplique)',
     'observe', obs, 'ok', obs = 'CREATE TRIGGER encaissements_factures_gardes BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures FOR EACH ROW EXECUTE FUNCTION garder_encaissement_facture()'
       || ' | CREATE TRIGGER encaissements_factures_gardes_frontiere BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures FOR EACH ROW EXECUTE FUNCTION garder_frontiere_des_encaissements()'
       || ' | CREATE TRIGGER encaissements_factures_taux_gardes BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures_taux FOR EACH ROW EXECUTE FUNCTION garder_encaissement_facture_taux()'
       || ' | CREATE TRIGGER encaissements_factures_taux_gardes_frontiere BEFORE INSERT OR DELETE OR UPDATE ON public.encaissements_factures_taux FOR EACH ROW EXECUTE FUNCTION garder_frontiere_des_encaissements()');
+
+  -- La caisse (étape C1 ; migration `caisse`, préparée) : sans elle, rien ; avec elle, ses trois déclencheurs de
+  -- contrainte sur les encaissements, un par événement, différés, actifs — sa propre lecture du catalogue les détaille
+  -- (caisse.sql, 97 et 97d) —, et aucun sur leurs parts.
+  select coalesce(string_agg(t.tgname || ':' || t.tgrelid::regclass::text || ':' || t.tgdeferrable || ':' || t.tginitdeferred || ':' || t.tgenabled::text,
+           ', ' order by t.tgname collate "C"), 'aucun'),
+         case when to_regclass('public.operations_caisse') is null then count(*) = 0
+              else count(*) = 3 and bool_and(t.tgrelid = 'public.encaissements_factures'::regclass and t.tgdeferrable and t.tginitdeferred
+                                             and t.tgenabled = 'O') end
+    into obs, attendu
+    from pg_trigger t where t.tgrelid in ('public.encaissements_factures'::regclass, 'public.encaissements_factures_taux'::regclass)
+     and t.tgfoid = to_regprocedure('public.garder_la_caisse()')::oid;
+  verdicts := verdicts || jsonb_build_object('controle', '95b. catalogue : puis rien, ou, la migration caisse appliquée (étape C1), ses trois déclencheurs de contrainte sur les encaissements, différés, et aucun sur leurs parts',
+    'observe', obs, 'ok', coalesce(attendu, false));
 
   select (select relrowsecurity from pg_class where oid = 'public.encaissements_factures'::regclass)::text || ' '
       || (select relrowsecurity from pg_class where oid = 'public.encaissements_factures_taux'::regclass)::text || ' '

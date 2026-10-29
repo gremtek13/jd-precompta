@@ -176,6 +176,11 @@
 -- production munie de VF5h2 et de VF7a : sans la migration, 207 contrôles, 2 en faute — 9c et 177, exactement — ; avec
 -- elle, 207 justes, rien n'est resté, et les 205 d'hier inchangés. Le texte sans ses lignes de commentaire, envoyé en
 -- une requête : 91 000 caractères, empreinte 652baa561e5596fbc74d521686d13991, 207 justes.
+--
+-- ADAPTÉ LE 29/10/2026 À LA CAISSE (ligne 26.6, étape C1 ; migration `caisse`, PRÉPARÉE dans `supabase/preparees/`,
+-- pas encore en base) : elle pose sur le brouillon une garde de plus, `ecritures_brouillon_caisse`, qui passe avant G5
+-- (l'ordre des noms). Le contrôle 151 lit les gardes d'hier, la sienne écartée ; 151b, la sienne : rien sans elle ;
+-- avec elle, active, avant la ligne, et G5 la dernière. Avant la migration, rien ne change.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -679,8 +684,13 @@ begin
   -- ══ 150 à 154. Ce que le catalogue dit ══════════
   array['valeur', '150. la colonne et sa contrainte', 'postgres', $q$select (select format_type(atttypid, atttypmod) || ' ' || attnotnull || ' ' || atthasdef from pg_attribute where attrelid = conrelid and attname = 'compte_contrepartie') || ' | ' || pg_get_constraintdef(oid) from pg_constraint where conname = 'encaissements_factures_compte_contrepartie'$q$, '',
     'text false false | CHECK ((compte_contrepartie ~ ''^[1-5][0-9]{5,9}$''::text))'],
-  array['valeur', '151. G5, active, après les autres gardes', 'postgres', $q$select string_agg(tgname, ',' order by tgname) || ' | ' || (select pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text from pg_trigger t where t.tgname = 'ecritures_brouillon_vente_facturee_lignes') from pg_trigger where tgrelid = 'public.ecritures_brouillon'::regclass and not tgisinternal$q$, '',
+  array['valeur', '151. G5, active, après les autres gardes', 'postgres', $q$select string_agg(tgname, ',' order by tgname) || ' | ' || (select pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text from pg_trigger t where t.tgname = 'ecritures_brouillon_vente_facturee_lignes') from pg_trigger where tgrelid = 'public.ecritures_brouillon'::regclass and not tgisinternal and tgname <> 'ecritures_brouillon_caisse'$q$, '',
     'ecritures_brouillon_intangibles,ecritures_brouillon_paiement_personnel,ecritures_brouillon_sans_exemplaire_d_une_source,ecritures_brouillon_vente_facturee,ecritures_brouillon_vente_facturee_lignes | CREATE TRIGGER ecritures_brouillon_vente_facturee_lignes BEFORE INSERT OR DELETE OR UPDATE ON public.ecritures_brouillon FOR EACH ROW EXECUTE FUNCTION garder_lignes_de_la_vente_facturee() O'],
+  array['valeur', '151b. puis rien, ou, la migration caisse appliquée (étape C1), la garde de l''écriture d''une opération de caisse, active, avant G5, qui reste la dernière', 'postgres', $q$select (case when to_regclass('public.operations_caisse') is null
+      then not exists (select 1 from pg_trigger where tgrelid = 'public.ecritures_brouillon'::regclass and tgname = 'ecritures_brouillon_caisse')
+      else exists (select 1 from pg_trigger where tgrelid = 'public.ecritures_brouillon'::regclass and tgname = 'ecritures_brouillon_caisse' and tgenabled = 'O' and (tgtype & 2) <> 0)
+        and (select max(tgname collate "C") from pg_trigger where tgrelid = 'public.ecritures_brouillon'::regclass and not tgisinternal and (tgtype & 2) <> 0) = 'ecritures_brouillon_vente_facturee_lignes' end)::text$q$, '',
+    'true'],
   array['valeur', '152. sécurité, chemin et droits des fonctions', 'postgres', $q$select string_agg(proname || ':' || prosecdef::int || provolatile::text || coalesce(proconfig = '{search_path=public}', false)::int || has_function_privilege('anon', oid, 'execute')::int || has_function_privilege('authenticated', oid, 'execute')::int, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and proname in ('calcul_vente_facturee', 'choisir_compte_contrepartie', 'ecrire_vente_facturee', 'ecriture_attendue_vente_facturee', 'garder_lignes_de_la_vente_facturee', 'prorata_arrondi', 'refus_compte_de_contrepartie', 'retirer_ecriture_vente_facturee')$q$, '',
     'calcul_vente_facturee:0s100,choisir_compte_contrepartie:1v101,ecrire_vente_facturee:1v101,ecriture_attendue_vente_facturee:0s100,garder_lignes_de_la_vente_facturee:1v100,prorata_arrondi:0i100,refus_compte_de_contrepartie:0s100,retirer_ecriture_vente_facturee:1v101'],
   array['valeur', '153. une signature chacune', 'postgres', $q$select string_agg(proname || '(' || pg_get_function_identity_arguments(oid) || ')', ' ' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and proname in ('choisir_compte_contrepartie', 'ecrire_vente_facturee', 'retirer_ecriture_vente_facturee')$q$, '',

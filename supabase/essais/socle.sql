@@ -48,13 +48,17 @@ cols as (
   left join pg_attrdef d on d.adrelid = c.oid and d.adnum = a.attnum
   group by m.t
 ),
+-- Un déclencheur de CONTRAINTE (`create constraint trigger`) est aussi rangé dans `pg_constraint` (contype « t ») ;
+-- ce n'est pas une contrainte de la table : il se pose dans le fichier de sa migration, et `pg_get_constraintdef` n'en
+-- rend que « TRIGGER … », qu'aucun `create table` n'accepte. Il est écarté (29/10/2026 : la caisse, étape C1, en pose
+-- trois sur `lignes_bancaires`).
 cons as (
   select m.t,
          string_agg('  constraint ' || con.conname || ' ' || pg_get_constraintdef(con.oid),
                     E',\n' order by con.contype desc, con.conname) as def
   from manquantes m
   join pg_class c on c.relname = m.t and c.relnamespace = 'public'::regnamespace
-  join pg_constraint con on con.conrelid = c.oid
+  join pg_constraint con on con.conrelid = c.oid and con.contype <> 't'
   group by m.t
 ),
 instructions as (

@@ -61,6 +61,10 @@
 -- Les six rôles neufs ont chacun un libellé et aucun préfixe, sous leurs racines : les contrôles 2 et 6 les lisent comme
 -- les autres ; le plan décalé du contrôle 32 leur donne un compte, pour s'écrire encore tout entier.
 -- supabase/essais/ventesFacturees.sql les éprouve un par un.
+--
+-- ADAPTÉ LE 29/10/2026 À LA CAISSE (ligne 26.6, étape C1 ; migration `caisse`, PRÉPARÉE dans `supabase/preparees/`,
+-- pas encore en base) : `enregistrer_operation_caisse` lit le compte de l'exploitant par `compte_du_dirigeant`, une
+-- fois. Le contrôle 8 l'attend avec la migration, et sans elle attend les cinq d'hier ; rien d'autre ne change.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -75,7 +79,10 @@ declare
   -- (migrations `la_base_lit_le_plan_1` à `_6`), elles lisent `compte_du_dirigeant` à sa place ; la production et
   -- l'export les portent toutes : `pc2_exigee` est vrai, et le `case` recopié est une faute.
   pc2_exigee constant boolean := true;
+  -- La caisse (ligne 26.6, étape C1 ; migration `caisse`, préparée) en ajoute une sixième, qui lit le compte de
+  -- l'exploitant pour un apport ou un prélèvement : attendue avec elle seulement.
   cinq constant text := 'classer_virement_personnel,ecrire_forfait_kilometrique,ecrire_mouvement_compte_bilan,'
+                        || case when to_regclass('public.operations_caisse') is null then '' else 'enregistrer_operation_caisse,' end
                         || 'enregistrer_paiement_personnel_cotisation,ventiler_mouvement_bancaire';
   forme_du_case constant text :=
     '(case when (?:\w+\.)?mode_comptable = ''engagement'' then (?:\w+\.)?compte_notes_de_frais else ''108000'' end)';
@@ -187,7 +194,7 @@ begin
     into obs, texte, n, m, k, avec_case
     from pg_proc p where p.pronamespace = 'public'::regnamespace
      and (p.prosrc ~ 'else ''108000'' end' or p.prosrc ~ 'public\.compte_du_dirigeant\(');
-  verdicts := verdicts || jsonb_build_object('controle', '8. les cinq fonctions qui lisent le compte du dirigeant le lisent une fois chacune, par le case recopié (avant l''étape PC2) ou par compte_du_dirigeant (après), jamais les deux',
+  verdicts := verdicts || jsonb_build_object('controle', '8. les cinq fonctions qui lisent le compte du dirigeant (six avec la caisse, étape C1) le lisent une fois chacune, par le case recopié (avant l''étape PC2) ou par compte_du_dirigeant (après), jamais les deux',
     'observe', coalesce(obs, 'aucune') || ' ; ' || coalesce(n, 0) || ' case hors forme ou répété, ' || coalesce(m, 0)
       || ' compte_du_dirigeant répété, ' || coalesce(k, 0) || ' aux deux formes',
     'ok', coalesce(texte = cinq and n = 0 and m = 0 and k = 0 and (avec_case = 0 or not pc2_exigee), false));

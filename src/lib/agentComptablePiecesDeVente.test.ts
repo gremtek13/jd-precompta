@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { muter } from '../test/fonctionsEdge'
-import { fichiersDuSchema, relationsDuSchema } from '../test/schema'
+import { fichiersDuSchema, fichiersPrepares, relationsDuSchema } from '../test/schema'
 
 // LE CLIENT D'UNE PIÈCE DE VENTE NE PART PAS AU MODÈLE (VF9C-Q1 : la réponse (A) du cabinet du 28/10/2026 ; chantier EC-Q3,
 // ligne 28.65). NI QUI A PAYÉ UN CRÉDIT DU RELEVÉ, NI LE LIBELLÉ D'UNE LIGNE RATTACHÉE À RIEN (VF9CQ1 : les réponses (A) du
@@ -91,6 +91,16 @@ function executer(code: string): Bloc {
 }
 
 const deployee = executer(bloc(sourceDeployee()))
+
+/**
+ * Les clés étrangères du brouillon que l'assistant ne juge pas ENCORE, chacune avec la table qu'elle vise et sa raison :
+ * une ligne qui ne cite qu'elles passe pour rattachée à rien, et se tait — rien d'elle ne part au modèle, ni son libellé
+ * ni sa source. L'étape qui jugera la source d'une clé la fait passer d'ici aux RATTACHEMENTS du bloc, et redéploie.
+ */
+const EN_ATTENTE_DE_L_ASSISTANT: readonly (readonly [colonne: string, parent: string, raison: string])[] = [
+  ['operation_caisse_id', 'operations_caisse',
+    'la caisse d’un dossier BNC (ligne 26.6) : la migration `caisse` (étape C1) la pose ; l’assistant la jugera à l’étape C5'],
+]
 
 // ── LE BLOC : CE QU'IL REND, CAS PAR CAS ────────────────────────────────────────────────────────────────────────────────
 
@@ -293,6 +303,14 @@ const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu
     vue(sansPiece({}), null, null)],
   ['une ligne lue sans un de ses rattachements, d’un dossier qui lit ses ventes : ni libellé ni source',
     (b) => b.ecritureVueParLeModele(sans(sansPiece({ facture_id: 'f1' }), 'cotisation_id'), VENTES), vue(sansPiece({}), null, null)],
+  // La caisse (ligne 26.6, étape C1) : une ligne qui ne cite qu'une opération de caisse passe pour rattachée à rien, et se
+  // tait, jusqu'à l'étape C5 qui la jugera (EN_ATTENTE_DE_L_ASSISTANT, plus bas).
+  ['une ligne qui ne cite qu’une opération de caisse : aucun libellé, et rien de l’opération',
+    (b) => b.ecritureVueParLeModele(sansPiece({ operation_caisse_id: 'oc1', compte: '530000', sens: 'debit', libelle: 'Recettes en espèces du 02/03/2026 — Honoraires' }), null),
+    vue(sansPiece({ compte: '530000', sens: 'debit' }), null)],
+  ['la même, d’un dossier qui lit ses ventes : ni libellé ni source',
+    (b) => b.ecritureVueParLeModele(sansPiece({ operation_caisse_id: 'oc1', compte: '530000', sens: 'debit', libelle: 'Apport en caisse de l’exploitant' }), VENTES),
+    vue(sansPiece({ compte: '530000', sens: 'debit' }), null, null)],
   // VF9CQ1B : le nom d'un débit qui rend ou défait l'argent d'un client — la date et le montant du mouvement, sans signe.
   ['le nom d’un débit : une date et un montant, sans signe', (b) => b.nomDUnDebitDuReleve({ date: '2026-01-15', montant: -45 }), 'Débit du relevé du 15/01/2026, 45,00 €'],
   ['le nom d’un débit : des centimes, sans séparateur de milliers', (b) => b.nomDUnDebitDuReleve({ date: '2026-12-31', montant: -1234.5 }), 'Débit du relevé du 31/12/2026, 1234,50 €'],
@@ -400,15 +418,30 @@ describe('agent-comptable / bloc PIÈCES DE VENTE (le seul passage vers le modè
   })
 
   // VF9CQ1 : « rattachée à rien » se définit par ce relevé. Une ligne du brouillon que la base gagnerait le droit de citer —
-  // une clé étrangère neuve, la caisse du MVP par exemple — ferait tomber ce test : jusque-là, une ligne qui ne cite qu'elle
-  // passe pour rattachée à rien, et se tait (le côté fermé), et la source qu'elle désigne sera jugée avant de parler.
-  it('les rattachements d’une ligne : chaque clé étrangère d’ecritures_brouillon du schéma exporté, le dossier excepté', () => {
+  // une clé étrangère neuve — fait tomber ce test, sauf si elle est déclarée EN ATTENTE de l'assistant, avec sa raison : une
+  // ligne qui ne cite qu'elle passe pour rattachée à rien, et se tait (le côté fermé), et la source qu'elle désigne sera
+  // jugée avant de parler. La caisse du MVP est la première (ligne 26.6) : sa migration, préparée à l'étape C1 hors de
+  // l'export, entrera dans l'export à son application, sans que ce test tombe ni que l'assistant change ou se redéploie.
+  it('les rattachements d’une ligne : chaque clé étrangère d’ecritures_brouillon du schéma exporté, le dossier et l’attente exceptés', () => {
     const relations = relationsDuSchema(fichiersDuSchema()).filter((r) => r.enfant === 'ecritures_brouillon')
     expect(relations.some((r) => r.colonne === 'dossier_id' && r.parent === 'dossiers'), 'la clé du dossier, seule exceptée').toBe(true)
     const cles = relations.filter((r) => r.parent !== 'dossiers').map((r) => r.colonne).sort()
     expect(cles.length, 'le plancher : les huit sources d’aujourd’hui').toBeGreaterThanOrEqual(8)
-    expect([...deployee.RATTACHEMENTS_D_UNE_LIGNE].sort()).toEqual(cles)
+    const enAttente = EN_ATTENTE_DE_L_ASSISTANT.map(([colonne]) => colonne).filter((c) => cles.includes(c))
+    expect([...deployee.RATTACHEMENTS_D_UNE_LIGNE, ...enAttente].sort()).toEqual(cles)
     expect(new Set(deployee.RATTACHEMENTS_D_UNE_LIGNE).size).toBe(deployee.RATTACHEMENTS_D_UNE_LIGNE.length)
+  })
+
+  // Une clé en attente n'est pas une raison morte : une migration la déclare — appliquée (l'export) ou préparée
+  // (`supabase/preparees/`) —, vers la table qu'elle nomme ; et elle n'est pas parmi les rattachements, que l'étape qui la
+  // jugera lui fera rejoindre en la retirant d'ici.
+  it('une clé en attente de l’assistant : déclarée par une migration, appliquée ou préparée, et hors des rattachements', () => {
+    const declarees = relationsDuSchema([...fichiersDuSchema(), ...fichiersPrepares()]).filter((r) => r.enfant === 'ecritures_brouillon')
+    expect(EN_ATTENTE_DE_L_ASSISTANT.length, 'la liste n’est pas vide aujourd’hui : la caisse').toBeGreaterThanOrEqual(1)
+    for (const [colonne, parent] of EN_ATTENTE_DE_L_ASSISTANT) {
+      expect(declarees.some((r) => r.colonne === colonne && r.parent === parent), `${colonne} : aucune migration ne la déclare`).toBe(true)
+      expect(deployee.RATTACHEMENTS_D_UNE_LIGNE, colonne).not.toContain(colonne)
+    }
   })
 })
 
