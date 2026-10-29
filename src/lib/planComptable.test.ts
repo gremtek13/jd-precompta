@@ -379,10 +379,14 @@ describe('compte_du_dirigeant remplace le case que cinq fonctions recopiaient', 
     const lectrices = [...definitions]
       .filter(([nom, corps]) => nom !== 'compte_du_dirigeant' && /public\.compte_du_dirigeant\(/.test(corps))
       .map(([nom]) => nom).sort()
+    // La caisse (ligne 26.6, étape C1) : sa fonction d'écriture écrit un apport ou un prélèvement face au compte de
+    // l'exploitant, qu'elle lit ici. Sa migration est préparée hors de l'export (`supabase/preparees/`) ; elle y entre à
+    // son application, et sa lectrice avec elle.
+    const deLaCaisse = definitions.has('enregistrer_operation_caisse') ? ['enregistrer_operation_caisse'] : []
     expect(lectrices).toEqual([
       'classer_virement_personnel', 'ecrire_forfait_kilometrique', 'ecrire_mouvement_compte_bilan',
-      'enregistrer_paiement_personnel_cotisation', 'ventiler_mouvement_bancaire',
-    ])
+      'enregistrer_paiement_personnel_cotisation', 'ventiler_mouvement_bancaire', ...deLaCaisse,
+    ].sort())
     for (const nom of lectrices) {
       expect(definitions.get(nom)!.match(/public\.compte_du_dirigeant\(/g), nom).toHaveLength(1)
       // Et c'est la définition que `derniereDefinitionSql` lit aussi : les deux lecteurs s'accordent.

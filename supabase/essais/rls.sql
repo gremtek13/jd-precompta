@@ -585,6 +585,17 @@
 -- (`62b73106489bc62b8967a7747bd376d6`) : 9 lignes de verdict, 0 en faute, 6 mutations sur 6 qui mordent, rien n'est
 -- resté. Les blocs EQ et VS ne se disent plus EN ATTENTE en production. `droitsAcces.sql` y a été joué entier le même
 -- jour (HISTORIQUE.md, « LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION »).
+--
+-- 29/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (ligne 26.6, étape C1 : migration `caisse`, PRÉPARÉE, pas
+-- appliquée), qui crée `operations_caisse` et ses deux policies (la lecture sous `admin_du_dossier`, l'insertion de
+-- restauration sous `is_super_admin`) : la table entre dans la boucle des invariants 1, 2, 3 et 3ter, et le bloc CA
+-- (CA1 à CA4, M-CA1 à M-CA3) pose une opération dans le dossier même du client — il ne la lit pas, ni son écriture, et
+-- ne l'écrit ni par la fonction, ni en direct, ni sous le réglage d'une fonction ; le chef la lit (le contrôle
+-- positif) — ; EN ATTENTE sans la migration. Joué ENTIER par psql sur la réplique de l'étape (la production à 159
+-- migrations, ses neuf familles égales à celles de la production, le journal semé) : sans la migration, 73 lignes de
+-- verdict (la ligne CA « EN ATTENTE »), 0 en faute, 58 mutations sur 58 qui mordent ; avec elle, 77 lignes, 0 en faute,
+-- 61 mutations sur 61 — seules les lignes CA diffèrent, et les quatre boucles comptent une table de plus. Le passage en
+-- production suivra l'application.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -3069,6 +3080,187 @@ begin
     'cible', 'garder_droit_ventes', 'observe', case when n = 1 then 'security definer, ni anon ni authenticated' else 'EXÉCUTABLE OU ABSENTE' end,
     'ok', n = 1);
   verdicts := verdicts || jsonb_build_object('controle', 'VS. le jeu d''essai du droit « Ventes » s''est construit', 'cible', 'dossiers jetables',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ CA. La caisse d'un dossier (ligne 26.6, étape C1 ; migration `caisse`) ═══════════════════════════════════════════
+-- Une table du dossier, `operations_caisse`, que le cabinet lit (`admin_du_dossier`) et où personne n'écrit en direct —
+-- la restauration exceptée, le super-administrateur (la policy d'insertion), sous la garde de la table — ; le client
+-- n'en lit rien (CAISSE-Q1, (B) : sa lecture viendra avec son droit, une migration présentée au cabinet). Les
+-- invariants 1 à 3 la prennent déjà dans leur boucle, mais sur une table vide « refusé » et « rien à voir » se
+-- ressemblent : le bloc pose une opération dans le dossier même du client, le temps d'une sous-transaction annulée.
+--   CA1. Une opération de la caisse du dossier du client, saisie par le chef (la fonction) : le client ne la lit pas,
+--        ni les lignes de son écriture ; le chef les lit (le contrôle POSITIF).
+--   CA2. Le client n'écrit pas : la fonction lui refuse l'accès (42501, sa raison), l'insertion directe se refuse
+--        (42501, la garde) et, sous le réglage d'une fonction, la policy (42501).
+--   CA3. L'anonyme n'exécute aucune des deux fonctions d'écriture (42501).
+--   CA4. Le catalogue : la RLS active, deux policies exactement, `to authenticated` — la lecture sous
+--        `admin_du_dossier`, l'insertion de restauration sous `is_super_admin` —, aucune de mise à jour ni de
+--        suppression.
+-- Trois mutations, qui doivent mordre : M-CA1 (CA1 lu par le chef), M-CA2 (la lecture ouverte, le temps d'une
+-- sous-transaction, aux accès du dossier : le client voit l'opération), M-CA3 (CA2 joué par le super-administrateur
+-- sous le réglage : son insertion passe). Avant la migration, une ligne dit que la caisse attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  op uuid := 'ca155e00-0000-4000-8004-0000000000c1';
+  ecriture jsonb := '[{"compte":"530000","sens":"debit","montant":10},{"compte":"108000","sens":"credit","montant":10}]';
+  ses_operations bigint; ses_lignes bigint; vues_chef bigint; lignes_chef bigint; vues_mutation bigint;
+  fonction text; directe text; reglee text; anon_un text; anon_lot text; super text; n bigint;
+  erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.operations_caisse') is null then
+    insert into rls_verdict values ('CA. la caisse d''un dossier : EN ATTENTE de la migration caisse', 'operations_caisse',
+      'absente : la table se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : une opération de la caisse du dossier du client, saisie par le chef ──
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform enregistrer_operation_caisse(dossier_du_client, 'apport', '2026-03-03', 10, null, null, null, ecriture);
+    reset role;
+    construit := true;
+
+    -- CA1 : le client, puis le chef.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into ses_operations from operations_caisse where dossier_id = dossier_du_client;
+    select count(*) into ses_lignes from ecritures_brouillon where dossier_id = dossier_du_client and operation_caisse_id is not null;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into vues_chef from operations_caisse where dossier_id = dossier_du_client;
+    select count(*) into lignes_chef from ecritures_brouillon where dossier_id = dossier_du_client and operation_caisse_id is not null;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', 'CA1. le client ne lit pas la caisse de son dossier ; le chef la lit (contrôle positif)',
+      'cible', 'operations_caisse, ecritures_brouillon', 'observe', 'client : ' || ses_operations || ' opération, ' || ses_lignes
+        || ' ligne ; chef : ' || vues_chef || ' opération, ' || lignes_chef || ' lignes',
+      'ok', ses_operations = 0 and ses_lignes = 0 and vues_chef = 1 and lignes_chef = 2);
+
+    -- CA2 : le client écrit — par la fonction, en direct, sous le réglage.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_operation_caisse(dossier_du_client, 'apport', '2026-03-04', 10, null, null, null, ecriture);
+      fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if fonction is null then fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into operations_caisse (dossier_id, genre, date, montant, origine) values (dossier_du_client, 'apport', '2026-03-04', 10, 'client');
+      directe := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if directe is null then directe := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform set_config('jd.caisse', op::text, true);
+      insert into operations_caisse (id, dossier_id, genre, date, montant, origine) values (op, dossier_du_client, 'apport', '2026-03-04', 10, 'client');
+      reglee := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if reglee is null then reglee := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('jd.caisse', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'CA2. le client n''écrit pas la caisse de son dossier : ni par la fonction, ni en direct, ni sous le réglage',
+      'cible', 'operations_caisse', 'observe', 'fonction : ' || fonction || ' | directe : ' || directe || ' | réglée : ' || reglee,
+      'ok', fonction = '42501 Accès refusé à ce dossier.'
+        and directe = '42501 Une opération de caisse ne s''écrit que par les fonctions de la caisse, avec son écriture.'
+        and reglee = '42501 new row violates row-level security policy for table "operations_caisse"');
+
+    -- M-CA1 : CA1 lu par le chef — il voit l'opération (vues_chef, plus haut).
+    mutations := mutations || jsonb_build_object('mutation', 'M-CA1 — CA1 lu par le chef', 'attendu', 'une opération vue',
+      'observe', vues_chef::text, 'mord', vues_chef = 1);
+
+    -- M-CA2 : la lecture ouverte aux accès du dossier, le temps d'une sous-transaction.
+    begin
+      create policy rls_mutation_caisse_client on public.operations_caisse for select to authenticated
+        using (exists (select 1 from public.memberships m where m.dossier_id = operations_caisse.dossier_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into vues_mutation from operations_caisse where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then null;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-CA2 — la lecture de la caisse ouverte aux accès du dossier',
+      'attendu', 'le client voit l''opération', 'observe', coalesce(vues_mutation::text, '?'), 'mord', coalesce(vues_mutation = 1, false));
+
+    -- M-CA3 : CA2 joué par le super-administrateur, sous le réglage — la restauration passe.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform set_config('jd.caisse', op::text, true);
+      insert into operations_caisse (id, dossier_id, genre, date, montant, origine) values (op, dossier_du_client, 'apport', '2026-03-04', 10, 'cabinet');
+      super := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if super is null then super := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('jd.caisse', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-CA3 — CA2 joué par le super-administrateur, sous le réglage',
+      'attendu', 'accepté', 'observe', super, 'mord', super = 'ACCEPTÉ');
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- CA3 : l'anonyme.
+  begin
+    set local role anon;
+    perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+    perform enregistrer_operation_caisse(dossier_du_client, 'apport', '2026-03-04', 10, null, null, null, ecriture);
+    anon_un := 'ACCEPTÉ';
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if anon_un is null then anon_un := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  reset role;
+  begin
+    set local role anon;
+    perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+    perform enregistrer_operations_de_caisse(dossier_du_client, '[]'::jsonb);
+    anon_lot := 'ACCEPTÉ';
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if anon_lot is null then anon_lot := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  verdicts := verdicts || jsonb_build_object('controle', 'CA3. l''anonyme n''exécute aucune des deux fonctions d''écriture',
+    'cible', 'enregistrer_operation_caisse, enregistrer_operations_de_caisse', 'observe', anon_un || ' | ' || anon_lot,
+    'ok', anon_un = '42501 permission denied for function enregistrer_operation_caisse'
+      and anon_lot = '42501 permission denied for function enregistrer_operations_de_caisse');
+
+  -- CA4 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.tablename = 'operations_caisse' and p.roles = array['authenticated']::name[]
+     and ((p.policyname = 'operations_caisse_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = 'operations_caisse_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'CA4. la caisse : la RLS active, deux policies exactement, au compte connecté (lecture du catalogue)',
+    'cible', 'operations_caisse', 'observe', n || ' policies attendues sur ' || (select count(*) from pg_policies where tablename = 'operations_caisse')
+      || ', RLS ' || (select case when relrowsecurity then 'active' else 'INACTIVE' end from pg_class where oid = 'public.operations_caisse'::regclass),
+    'ok', n = 2 and (select count(*) from pg_policies where tablename = 'operations_caisse') = 2
+      and (select relrowsecurity from pg_class where oid = 'public.operations_caisse'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'CA. le jeu d''essai de la caisse s''est construit', 'cible', 'le dossier du client',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 
