@@ -8,15 +8,17 @@ import type { ArticleExoneration, Dossier, FactureEmise, ParametresFacturation, 
 
 // LA FACTURE FIGE SES MENTIONS (espace client, étape A7a, ligne 51.5 ; migration `mentions_figees` ; HISTORIQUE.md,
 // « LA FACTURE FIGE SES MENTIONS, EN BASE », reprise sur A7-Q1 à A7-Q3 : « LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU
-// DOSSIER ET L'IBAN HORS DES TEXTES LIBRES »). Un module PUR — il ne lit rien en base, n'appelle personne, ne lit pas
-// l'horloge — qui redit `enregistrer_facture` telle que la migration la recrée :
+// DOSSIER ET L'IBAN HORS DES TEXTES LIBRES », et sur A7Q-Q1 : « A7Q-Q1 : UNE SOCIÉTÉ SANS DÉNOMINATION NE SE FACTURE
+// PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION »). Un module PUR — il ne lit rien en base, n'appelle personne, ne lit
+// pas l'horloge — qui redit `enregistrer_facture` telle que la migration la recrée :
 //   - ses REFUS NEUFS, dans son ordre et sous ses mots, avant le clic : la provenance des lignes (l'unité, la référence, la
 //     nature, ligne par ligne), le contact d'où vient le client, l'article d'où vient chaque ligne (`refusDeLaProvenance`) ;
 //     puis un texte libre que la facture imprime et qui porte un IBAN (`refusDesTextesDeLaFacture`, A7-Q3) ; à la
 //     validation, le contact que garde le brouillon, la forme juridique pour un accès « Ventes », la dénomination d'un
-//     entrepreneur individuel, le SIRET et l'adresse du dossier pour un accès « Ventes » (A7-Q2), l'identité et les
-//     paramètres en vigueur qui portent un IBAN (`refusDeLaValidationFigee`, `porteLaMentionEI`). Les refus d'hier
-//     passent d'abord, sous leurs propres modules (`refusAvoir`, lib/factures.ts ; lib/sourceDeLaVente.ts) ;
+//     entrepreneur individuel, la dénomination du dossier pour un accès « Ventes » (A7Q-Q1), le SIRET et l'adresse du
+//     dossier pour un accès « Ventes » (A7-Q2), l'identité et les paramètres en vigueur qui portent un IBAN
+//     (`refusDeLaValidationFigee`, `porteLaMentionEI`). Les refus d'hier passent d'abord, sous leurs propres modules
+//     (`refusAvoir`, lib/factures.ts ; lib/sourceDeLaVente.ts) ;
 //   - CE QUE LA VALIDATION FIGE (`mentionsAFiger`) : le statut et le numéro de TVA (`numeroTvaImprime`, le calcul que la
 //     base refait dans `numero_tva_du_vendeur`), l'identité légale, les paramètres de la version courante, le RIB CONFIRMÉ
 //     en vigueur (`ribEnVigueur`) — jamais un RIB seulement proposé —, le logo, le mandataire. L'étape A7b le lira pour
@@ -58,8 +60,10 @@ export const REFUS_DES_TEXTES = [
 // À la validation, avant la numérotation et avant les refus de la source de la vente (lib/sourceDeLaVente.ts) : le
 // contact que la facture garde — un brouillon écrit en direct a pu le poser —, puis, pour un accès « Ventes », une identité
 // sans forme juridique (le cabinet la règle, elle en est le préalable : MEG1-Q14, A7-Q1), puis l'entrepreneur individuel ;
-// puis, pour un accès « Ventes » et une facture (A7-Q2), le SIRET et l'adresse du dossier ; puis, pour tout auteur, un IBAN
-// dans ce que la validation figerait (A7-Q3).
+// puis, pour un accès « Ventes », une dénomination absente ou de blancs, quelle que soit la forme (A7Q-Q1 : après
+// l'entrepreneur individuel, dont le refus dit aussi ce qu'elle doit porter ; un avoir qui reprend l'identité de sa
+// facture n'en juge rien) ; puis, pour un accès « Ventes » et une facture (A7-Q2), le SIRET et l'adresse du dossier ;
+// puis, pour tout auteur, un IBAN dans ce que la validation figerait (A7-Q3).
 export const REFUS_DE_LA_VALIDATION_FIGEE = [
   { cle: 'contact_garde', rang: 5, code: 'P0002', modele: "Le contact d'où vient le client de la facture est introuvable dans ce dossier." },
   {
@@ -74,25 +78,30 @@ export const REFUS_DE_LA_VALIDATION_FIGEE = [
       + 'le cabinet avant de valider une facture.',
   },
   {
-    cle: 'siret_a_poser', rang: 8, code: '22023',
+    cle: 'denomination_a_poser', rang: 8, code: '22023',
+    modele: "La dénomination du dossier n'est pas renseignée : le cabinet la renseigne avant qu'une facture se valide depuis "
+      + "l'espace client.",
+  },
+  {
+    cle: 'siret_a_poser', rang: 9, code: '22023',
     modele: "Le SIRET du dossier n'est pas renseigné : le cabinet le renseigne avant qu'une facture se valide depuis l'espace client.",
   },
   {
-    cle: 'siret_du_dossier', rang: 9, code: '22023',
+    cle: 'siret_du_dossier', rang: 10, code: '22023',
     modele: "Le SIRET de l'émetteur n'est pas celui du dossier : une facture validée depuis l'espace client porte le SIRET que le "
       + 'cabinet a renseigné.',
   },
   {
-    cle: 'adresse_a_poser', rang: 10, code: '22023',
+    cle: 'adresse_a_poser', rang: 11, code: '22023',
     modele: "L'adresse du dossier n'est pas renseignée : le cabinet la renseigne avant qu'une facture se valide depuis l'espace "
       + 'client.',
   },
   {
-    cle: 'adresse_du_dossier', rang: 11, code: '22023',
+    cle: 'adresse_du_dossier', rang: 12, code: '22023',
     modele: "L'adresse de l'émetteur n'est pas celle du dossier : une facture validée depuis l'espace client porte l'adresse que "
       + 'le cabinet a renseignée.',
   },
-  { cle: 'iban_a_la_validation', rang: 12, code: '22023', modele: MODELE_IBAN_DANS_UN_TEXTE },
+  { cle: 'iban_a_la_validation', rang: 13, code: '22023', modele: MODELE_IBAN_DANS_UN_TEXTE },
 ] as const
 
 export type CleRefusMentionsFigees =
@@ -281,6 +290,9 @@ export interface ValidationAJuger {
 // désigne, ceux de la base.
 export const siretSansBlancs = (siret: string | null): string => (siret ?? '').replace(/\s/g, '')
 export const adresseNette = (adresse: string | null): string => (adresse ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+// La dénomination que la facture figera (A7Q-Q1), comme la base la juge (`btrim(…, v_blancs) = ''`) : absente, ou faite
+// des seuls blancs que `\s` désigne — ceux que `trim` retire, ceux de la base.
+export const denominationAbsente = (denomination: string | null | undefined): boolean => (denomination ?? '').trim() === ''
 
 // Ce que la validation figerait et que la facture imprime sans confirmation, dans l'ordre de la base (A7-Q3).
 export const TEXTES_FIGES_A_LA_VALIDATION = [
@@ -298,6 +310,7 @@ export function refusDeLaValidationFigee(v: ValidationAJuger): RefusMentionsFige
   if (v.contactGarde !== null && !v.contactsDuDossier.includes(v.contactGarde)) return refus('contact_garde')
   if (v.formeJuridique == null && !v.cabinet && !v.reprise) return refus('forme_a_regler')
   if (v.formeJuridique === CATEGORIE_ENTREPRENEUR_INDIVIDUEL && !porteLaMentionEI(v.denomination)) return refus('entrepreneur_individuel')
+  if (denominationAbsente(v.denomination) && !v.cabinet && !v.reprise) return refus('denomination_a_poser')
   if (!v.cabinet && !v.avoir) {
     if (siretSansBlancs(v.dossierSiret) === '') return refus('siret_a_poser')
     if (siretSansBlancs(v.emetteurSiret) !== siretSansBlancs(v.dossierSiret)) return refus('siret_du_dossier')
