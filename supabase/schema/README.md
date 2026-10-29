@@ -547,27 +547,29 @@ lignes justes, rien n'est resté ; les blocs EQ et VS de `rls.sql`, sans le cont
 suppression et un retrait de droit, que l'outil retient), 0 en faute, 6 mutations sur 6 (HISTORIQUE.md, « LES DEUX
 MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION »).
 
-**Préparé le 28/10/2026, repris le 29/10/2026, PAS ENCORE APPLIQUÉ : `mentions_figees`, puis
-`iban_hors_des_parametres`** (espace client, étape A7a, ligne 51.5 : la facture fige ses mentions ; A7-Q1 à A7-Q3).
-Leurs fichiers portent des versions PROVISOIRES, `20261028120000` puis `20261028130000`, après
+**Préparé le 28/10/2026, repris deux fois le 29/10/2026, PAS ENCORE APPLIQUÉ : `mentions_figees`, puis
+`iban_hors_des_parametres`** (espace client, étape A7a, ligne 51.5 : la facture fige ses mentions ; A7-Q1 à A7-Q3,
+puis A7Q-Q1). Leurs fichiers portent des versions PROVISOIRES, `20261028120000` puis `20261028130000`, après
 `ventes_sur_dossier_bascule`. La première se COLLE — le corps d'`enregistrer_facture` supprime les lignes qu'il
 remplace — : le texte à coller pose la ligne d'historique sous la version de l'heure du collage, et le fichier se
-RENOMME à cette version, texte inchangé ; sa ligne d'historique doit rendre `40cca2f99929ff238772b47ae399bd58`, fins de
-ligne ramenées à `\n`. La seconde s'applique ENSUITE par l'outil — elle ne supprime rien, et sa garde refuse l'ordre
-inverse —, le fichier renommé de même à sa version ; sa ligne rend `582096c994fca10adc592f636aaeea77`. Tant qu'elles ne
-sont pas appliquées, la dérive se lit sans elles : 159 fichiers, 159 migrations, `b70ba907…`, la production. Sur la
-réplique de l'étape (la production à 159 migrations, son historique et ses neuf familles égaux à ceux de la production,
-relus le 29/10/2026) : munie de la première, 160 fichiers, 160 migrations, `0830995b93589e8b49c9a2399e790a8c` des deux
-côtés ; des deux, 161, `2b887e8b1c731782584db86b76cdc9eb`. Le socle est inchangé (80 instructions, `5d53eea2…`) ;
-l'inventaire compte 2 210 objets (`9c98c43514b87cafedad6d2324cee799`, des deux côtés, avec la première comme avec les
-deux ; 2 167 avant) — vingt-neuf colonnes, onze contraintes, trois fonctions ; la contrainte remplacée,
-`enregistrer_facture`, puis `enregistrer_parametres_facturation` changent sous leur nom. `signature.sql` : avec la
-première, quatre familles changent, « colonnes » (866 `23b2bc60…` puis 895 `05cda372674c2e5cfbcf5f596972d85f`),
-« contraintes » (670 `d63ab39f…` puis 681 `5ade75836461197a3ea0a690d79ef1bf`), « fonctions » (204 `9dbbaf01…` puis 207
-`2961975803f880a29e290e424e30893c`) et « droits des fonctions » (204 `a2b5e8ad…` puis 207
-`6438f4dc6a134b6b8acac03e52190997`) ; avec la seconde, la seule « fonctions » (207 `7515f3e8fc0e08a1d231f8ab1517a974`) —
-les autres inchangées (HISTORIQUE.md, « LA FACTURE FIGE SES MENTIONS, EN BASE » et « LA FACTURE FIGE SES MENTIONS :
-L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES »).
+RENOMME à cette version, texte inchangé ; sa ligne d'historique doit rendre `3951edd8840aa8e1a8f3b613bd0045a3` (depuis
+A7Q-Q1 ; `40cca2f9…` avant), fins de ligne ramenées à `\n`. La seconde s'applique ENSUITE par l'outil — elle ne
+supprime rien, et sa garde refuse l'ordre inverse —, le fichier renommé de même à sa version ; sa ligne rend
+`582096c994fca10adc592f636aaeea77`. Tant qu'elles ne sont pas appliquées, la dérive se lit sans elles : 159 fichiers,
+159 migrations, `b70ba907…`, la production. Sur la réplique de l'étape (la production à 159 migrations, son historique
+et ses neuf familles égaux à ceux de la production, relus le 29/10/2026) : munie de la première, 160 fichiers, 160
+migrations, `14246156b2eb308efed3daa81a35b3bc` des deux côtés ; des deux, 161, `1e64a2a7dfeea334844bb74c2826da3d`. Le
+socle est inchangé (80 instructions, `5d53eea2…`) ; l'inventaire compte 2 210 objets
+(`9c98c43514b87cafedad6d2324cee799`, des deux côtés, avec la première comme avec les deux ; 2 167 avant) — vingt-neuf
+colonnes, onze contraintes, trois fonctions ; la contrainte remplacée, `enregistrer_facture`, puis
+`enregistrer_parametres_facturation` changent sous leur nom. `signature.sql` : avec la première, quatre familles
+changent, « colonnes » (866 `23b2bc60…` puis 895 `05cda372674c2e5cfbcf5f596972d85f`), « contraintes » (670 `d63ab39f…`
+puis 681 `5ade75836461197a3ea0a690d79ef1bf`), « fonctions » (204 `9dbbaf01…` puis 207
+`23d6bf852caa4c2a0065ccde71aa80a2`) et « droits des fonctions » (204 `a2b5e8ad…` puis 207
+`6438f4dc6a134b6b8acac03e52190997`) ; avec la seconde, la seule « fonctions » (207 `2a91cbe0cd1568f0795826fdf8cf29fe`) —
+les autres inchangées (HISTORIQUE.md, « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES MENTIONS :
+L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES » et « A7Q-Q1 : UNE SOCIÉTÉ SANS DÉNOMINATION NE SE FACTURE PAS
+DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION »).
 
 **Préparé le 29/10/2026, PAS ENCORE APPLIQUÉ : `caisse`** (ligne 26.6, étape C1 : la caisse d'un dossier BNC, MVP-D2).
 Son fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version PROVISOIRE, `20261029120000`, après
@@ -584,8 +586,9 @@ trois contrôles sont ceux de la production. Sur la réplique de l'étape (la pr
 et ses neuf familles égaux à ceux de la production, relus le 29/10/2026), munie d'elle sous sa version provisoire, et
 sur un miroir de l'export qui la porte avec le socle régénéré : 160 fichiers, 160 migrations,
 `511623c998535817acf8933731c4fdb3` des deux côtés ; avec les deux d'A7, dans les trois ordres, 162,
-`5756720a24b1c02699f291851ea04bde`. L'inventaire compte 2 239 objets (`5593b39b1dc6c83adb9af83410259cbc`, des deux
-côtés ; 2 167 avant), 2 282 avec A7 (`fad54caa6f05492dfaacec2759190c44`) — seize colonnes, vingt-neuf contraintes (dont
+`24972780cdd2e299994c9d1823cf65d1` (`5756720a…` avant A7Q-Q1, qui change le texte de `mentions_figees`). L'inventaire
+compte 2 239 objets (`5593b39b1dc6c83adb9af83410259cbc`, des deux côtés ; 2 167 avant), 2 282 avec A7
+(`fad54caa6f05492dfaacec2759190c44`) — seize colonnes, vingt-neuf contraintes (dont
 les dix déclencheurs de contrainte, que le catalogue range aussi parmi elles), quatre index, douze déclencheurs, deux
 policies, huit fonctions et la RLS de la table. `signature.sql` : les neuf familles changent — « colonnes » (866
 `23b2bc60…` puis 882 `63eeb954a7edf0fdd2fb6592102c7a8d`), « contraintes » (670 `d63ab39f…` puis 699
