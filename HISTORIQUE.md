@@ -42005,3 +42005,103 @@ le 20 novembre ». La fiche reste ouverte, sa recommandation inchangée — son 
 et toute écriture ; les lectures partent seules. La session la lui repose le 17 novembre (un rappel programmé), puis
 applique et éprouve avec lui, avant le 20, le resserrement qu'il aura choisi. D'ici là, rien ne change aux autorisations
 de la session.
+
+### 29/10/2026 — LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE 26.6)
+
+Troisième lot de la caisse d'un dossier BNC (MVP-D2), après les deux migrations préparées (C1, `caisse` ; C1b,
+`caisse_retrait_et_versement`), qui ne changent pas et restent hors de l'export, dans `supabase/preparees/`. Tout ce qui
+suit est NEUTRE tant que `CAISSE_EXPORTEE` (`src/lib/caisse.ts`) reste baissé : aucun écran ne lit la caisse, la
+sauvegarde ne la nomme pas, le compte de bilan dit la phrase d'hier.
+
+**CE QUI EST POSÉ.**
+- `src/lib/caisse.ts`, PUR : les refus des quatre fonctions de la caisse (`enregistrer_operation_caisse`,
+  `enregistrer_operations_de_caisse`, `retirer_operation_caisse`, `remplacer_operation_caisse`), dans leur ordre, sous
+  leurs mots et leurs codes — la caisse jamais négative sous ceux de `texte_caisse_negative`, geste par geste ; la
+  composition de l'écriture au plan du dossier, en centimes entiers, la TVA incluse comme le relevé la calcule
+  (`tvaEnCentimes`, désormais exportée de `tvaDuReleve.ts`) ; les flux et les soldes de chaque jour, le premier jour
+  négatif comme `premier_jour_negatif_de_la_caisse` ; l'ensemble du jour qu'une recette reconnaît (CAISSE-Q2) ; la
+  saisie d'un mois, tout ou rien, un identifiant et une date lus comme Postgres les lit ; le retrait et le
+  remplacement ; la chaîne des versions d'une opération et l'origine dite au cabinet (CAISSE2-Q1).
+- `src/lib/caisseLecture.ts` : la caisse d'un dossier lue EN ENTIER (`lireTout`, tri total terminé par l'identifiant,
+  compte exact), une lecture partielle signalée, jamais de rejet, l'identifiant du dossier rendu avec ce qu'il a lu ;
+  drapeau baissé, rien n'est lu et le motif le dit. `types.ts` : `OperationCaisse`, et
+  `ecritures_brouillon.operation_caisse_id`, FACULTATIVE jusqu'à C3 (aucune écriture du navigateur ne la pose ; seules
+  les fonctions la remplissent).
+- La sauvegarde, derrière le drapeau, sur le patron des articles et des exemplaires : `operations_caisse` au plan prévu,
+  juste avant le brouillon qui la cite, ses relations (dossier en cascade, catégorie, pièce et opération remplacée
+  bloquantes, l'opération d'une ligne du brouillon en cascade), son chemin, et sa vague (`remplace_id`) ;
+  `sauvegardeCaisse.test.ts` joue les deux états et confronte les relations au texte de la migration, où qu'elle soit ;
+  `restauration.sql` met la table au plan quand elle existe, un bloc à part que `restaurationEssai.test.ts` confronte au
+  plan prévu.
+- `compteDeBilan.ts` : la phrase du 53 (seule la caisse du plan reçoit un mouvement de banque) et « Versement
+  d'espèces » parmi les comptes proposés en trésorerie, chacun selon l'état de l'export (`…Selon`), la caisse lue au
+  plan du dossier (`refusCompteDeBilanAuPlan`). `aNouveaux.ts` : une balance reprise range le 53 sur la caisse du plan,
+  et refuse une caisse d'ouverture au crédit net sous les mots de `texte_caisse_negative`.
+- PLAN_DE_REPRISE.md §4 et RGPD.md : la table (des montants, des dates, des natures, aucune identité ni texte libre), sa
+  conservation — celle des livres, dix ans (C. com., art. L123-22), le droit de contrôle six ans (LPF, art. L102 B) —,
+  partie avec son dossier.
+
+**LES ÉCARTS, ET POURQUOI.**
+- `FicheMouvement.tsx` est touché, sans effet drapeau baissé : il passe le plan du dossier au refus du compte de bilan,
+  sans quoi la caisse du plan ne pourrait pas y être reçue le jour venu.
+- `laBaseLitLePlan.sql` garde « banque » dans sa liste des quatorze, au lieu d'y écrire « banque,caisse » le jour de
+  l'application (ce que C1b prévoyait) : son contrôle 3 ajoute déjà `caisse` selon la base, et `planComptable.test.ts`
+  l'ajoute selon l'export ; le jour venu, rien ne se retouche. La caisse est l'un des six rôles de la vente facturée,
+  que le plan décalé de l'essai ne pose pas.
+- `restauration.sql` reçoit un septième bloc conditionnel (le geste des articles), et `sauvegardeDevis.test.ts` compose
+  le filtre de la caisse avec les autres ; `CLES_PRIMAIRES` ne la nomme pas (sa clé est `id`).
+
+**LA RESTAURATION D'UNE CAISSE, PAR LE CHEMIN DE L'APPLICATION.** La caisse jamais négative se juge par dix déclencheurs
+de contrainte DIFFÉRÉS, à la fin de chaque transaction — donc de chaque lot de la restauration, qui traverse des états
+partiels. Le banc (`SCRATCH/caisse_c2/restauration/`, copié le temps d'un passage dans `src/lib`, jamais commité) prend
+`exporterDossier`, `restaurerSauvegarde` et `verifierRestauration` tels quels, le drapeau levé, et ne remplace que le
+client : chaque requête PostgREST devient UNE transaction psql, sous `authenticated` et la session du
+super-administrateur, sur la réplique munie des deux migrations. Le dossier semé PAR LES FONCTIONS : une ouverture au
+530000, la saisie d'un mois (recettes, prélèvements, un apport), une recette retirée, une recette remplacée, une facture
+source et ses espèces reconnues par la recette du jour, un versement d'espèces classé sur la caisse, une
+contre-passation sans mouvement, un prélèvement qui ramène la caisse à zéro. Résultat : 13 étapes, 13 lots, 12
+insertions toutes acceptées (les catégories et natures communes ne se réinsèrent pas), les neuf opérations en deux
+vagues (8, puis la remplaçante), `verifierRestauration` sans écart, chaque table relue IDENTIQUE à la sauvegarde, la
+caisse jamais négative. Ce qui le permet : la porte de la restauration — une ligne réinsérée par le
+super-administrateur, dans un dossier sans exercice validé, datée d'avant la transaction (`cree_le`, `created_at`, que
+la sauvegarde recopie) n'est pas rejugée. Le TÉMOIN le prouve : la même sauvegarde privée de ses instants de création
+s'arrête au quatrième lot, « Restauration interrompue sur « lignes_bancaires » : Ce versement de 40,00 € rendrait la
+caisse négative le 08/03/2026 (−10,00 €) … » — le versement réinséré avant les recettes qui le couvrent. Aucune
+migration n'est donc à écrire ; le risque se dit dans PLAN_DE_REPRISE.md (ne jamais retirer ces colonnes d'une
+sauvegarde, ni restaurer dans une base dont l'horloge retarde), et `exercices_valides`, qui referme la porte, reste le
+dernier de l'ordre.
+
+**LES PREUVES.** La réplique de l'étape, copiée à froid de celle de VF8f : égale à la production à 159 migrations
+(`signature.sql`, les neuf familles ; l'historique, version et nom), munie de la migration 1 comme l'outil, puis du
+TEXTE À COLLER de la 2, tel quel.
+- `caisse.test.ts` juge le module deux fois : par l'ESSAI d'abord (`src/test/essaiCaisse.ts` rejoue `caisse.sql` étape
+  par étape sur le même jeu — 208 étapes jugées, toutes au verdict de la base, les autres comptées avec leur raison),
+  puis par le TEXTE des migrations (les mots et l'ordre de chaque refus relus dans le corps des fonctions, jamais
+  recopiés).
+- Sur la réplique munie des deux : `caisse.sql` 347 verdicts justes, `caisseSuppression.sql` 21, `compteBilan.sql` 66 et
+  `laBaseLitLePlan.sql` 55 (sur le jeu de départ du banc ; les mêmes nombres sans les migrations), `rls.sql` ENTIER 81
+  invariants, 0 en faute, 63 mutations sur 63 ; `restauration.sql` 76 tables IDENTIQUES sur le dossier de la caisse (50
+  lignes, les opérations en deux vagues), et sur le dossier `test` ; 75 sur la production (le plan d'hier).
+- Les mutations du module : 58, jouées contre `caisse.test.ts`, `compositionsAuPlan.test.ts` et
+  `sauvegardeCaisse.test.ts` — 57 tuées, 1 équivalente (la TVA d'un taux nul vaut zéro, et la ligne à zéro se retire).
+  Neuf ont fait naître les bords que l'essai ne touche pas (le 1er janvier 2000, le jour de l'ouverture, le taux 8,5, le
+  libellé des espèces rendues et leur caisse hors d'un mois, l'origine du client, l'ensemble d'un apport, mille
+  opérations, le 29 février).
+- La suite : comparée test par test sous Paris (Node 22), l'arbre de BASE (`3cb01c1`) exporté et indexé par un dépôt
+  jetable : 15 139 tests justes, 3 223 suites ; le worktree, 15 209 justes, 3 243 suites — aucun changé d'état, 72
+  apparus (39 de `caisse.test.ts`, 13 de `sauvegardeCaisse.test.ts`, 8 de `compteDeBilan.test.ts`, 5 de
+  `caisseLecture.test.ts`, 3 d'`aNouveaux.test.ts`, 2 de `restaurationEssai.test.ts`, un de `planComptable.test.ts` et
+  un de `compositionsAuPlan.test.ts`), 2 disparus qui ne sont que renommés (les comptes proposés, jugés désormais mode
+  par mode ; le plan des « six blocs », devenus sept).
+
+**LE JOUR DE L'APPLICATION.** Les deux migrations s'appliquent (la 1 par l'outil, la 2 collée), leurs fichiers entrent
+dans l'export sous les versions de leurs lignes, textes inchangés, le socle se régénère (la création
+d'`ecritures_brouillon` et son index neuf), et `CAISSE_EXPORTEE` se lève : c'est le seul geste du code. Simulé sur
+l'arbre de la tête : `tsc -b` vert, la suite ENTIÈRE verte, 15 209 tests, test pour test ceux du worktree (le premier
+passage avait montré une attente oubliée, la vague de la caisse dans `sauvegarde.test.ts`, corrigée depuis). Les trois
+contrôles, sur un miroir sans A7 confronté à la réplique : 161 fichiers et 161 migrations à la même dérive, socle 81
+`5d636a96…`, inventaire 2 241 `bd1bb32a…`, égaux des deux côtés.
+
+**CE QUI RESTE À C3.** Le premier écran de la caisse côté cabinet (la saisie, le mois, le retrait et le remplacement, la
+caisse dite avant le clic, le versement d'espèces sur la fiche d'un mouvement), qui lit `caisseLecture.ts` et juge par
+`caisse.ts`.
