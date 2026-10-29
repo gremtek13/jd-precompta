@@ -41959,3 +41959,49 @@ attend la migration 4 ; l'écriture que la fonction composera pour le client, la
 arrière rend les deux corps d'hier, retire les deux fonctions et la ligne d'historique ; destructif, il se colle sur
 l'accord du cabinet, et se refuse dès qu'un retrait, un remplacement ou un mouvement sur un compte 53 existe : après, on
 corrige en avant.
+
+### 29/10/2026 — LES DEUX MIGRATIONS D'A7 EN PRODUCTION — ESPACE CLIENT, ÉTAPE A7A (LIGNE 51.5)
+
+(La session, sur sa branche, après « A7Q-Q1 : UNE SOCIÉTÉ SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT,
+DANS LA MIGRATION ». Modifiés : les deux fichiers d'A7, renommés à leur version ; `lib/mentionsFigees.ts`, son drapeau
+levé, et son test ; un commentaire de `types.ts` ; `supabase/schema/README.md` ; CLAUDE.md. Aucune Edge Function.)
+
+**CE QUI EST EN PRODUCTION.** Le cabinet a collé `mentions_figees` dans l'éditeur SQL de Supabase le 29/10/2026 au soir,
+et donné son accord pour la petite migration qui la suit. La première porte la version de l'heure du collage,
+`20261029214359` ; sa ligne d'historique rend `3951edd8…`, l'empreinte attendue, que le texte collé avait vérifiée avant
+de s'exécuter. `iban_hors_des_parametres`, appliquée ensuite par l'outil (`20261029214732`), rend `582096c9…`. 161
+migrations. Les deux textes avaient été éprouvés avant de partir : une copie écrite de la même main que le bloc donné
+dans la conversation, puis que le texte de l'outil, rendait l'empreinte du fichier, octet pour octet.
+
+**LES CONTRÔLES, relus en production le jour même.** La dérive : 161 fichiers, 161 migrations, `ebc55ced…` des deux
+côtés. Le socle : 80 instructions, `5d53eea2…`, inchangé. L'inventaire : 2 210 objets, `9c98c435…` des deux côtés.
+`signature.sql` : « colonnes » 895 `05cda372…`, « contraintes » 681 `5ade7583…`, « fonctions » 207 `2a91cbe0…`, « droits
+des fonctions » 207 `6438f4dc…`, les cinq autres familles inchangées — exactement les valeurs de la réplique de l'étape
+munie des deux migrations, où `mentionsFigees.sql` et `ibanHorsDesParametres.sql` sont passés entiers. Le corps
+d'`enregistrer_facture` rend `fe4b5535…`, celui de la réplique. Aucune facture n'a figé ses mentions : celles de la
+production, validées avant, gardent leurs colonnes nulles.
+
+**LES ESSAIS EN PRODUCTION.** `ibanHorsDesParametres.sql`, sans son en-tête, une ligne d'information ajoutée au verdict
+— le texte reçu par la base, 18 140 caractères, `92f5ca81…`, celui de la copie transmise : 28 verdicts justes (la valeur
+du catalogue, deux faits, vingt et un contrôles, quatre mutations sur quatre qui mordent), et rien n'est resté en base
+(écarts nuls). `mentionsFigees.sql` (162 000 caractères sans son en-tête) n'est PAS rejoué en production ce jour : sa
+recopie dans l'outil serait la plus longue jamais transmise, et la production rend les neuf familles de la réplique où
+il est passé entier, le corps de chaque fonction compris. Il se rejouera en production au premier changement de ses
+fonctions, ou à la demande du cabinet.
+
+**CE QUI CHANGE DANS LE CODE.** Les fichiers, renommés à leur version, textes inchangés :
+`20261029214359_mentions_figees.sql`, `20261029214732_iban_hors_des_parametres.sql`. `MENTIONS_FIGEES_EXPORTEES` est
+levé, son commentaire et son test le disent ; aucun écran ne s'en sert encore — l'étape A7b, l'écran qui envoie les clés
+neuves et lit les colonnes figées, s'y rangera. Les colonnes figées restent facultatives dans `types.ts` : une
+sauvegarde faite avant la migration ne les porte pas.
+
+**CE QUI RESTE.** A7b, avant que le premier praticien facture (vers la mi-décembre) ; A7c, le CII, après le MVP. La
+caisse suit son cours : C1 et C1b préparées, C2 en cours, puis la migration 1 par l'outil et la 2 collée.
+
+### 29/10/2026 — MVP-D9, REPORTÉE PAR LE CABINET AU 20 NOVEMBRE
+
+La réponse du cabinet, dans la page des arbitrages, le 29/10/2026 : pas de décision pour l'instant, « à voir où on sera
+le 20 novembre ». La fiche reste ouverte, sa recommandation inchangée — son bouton pour les migrations, les déploiements
+et toute écriture ; les lectures partent seules. La session la lui repose le 17 novembre (un rappel programmé), puis
+applique et éprouve avec lui, avant le 20, le resserrement qu'il aura choisi. D'ici là, rien ne change aux autorisations
+de la session.

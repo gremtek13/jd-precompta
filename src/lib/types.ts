@@ -1085,16 +1085,15 @@ export interface FactureEmise {
   // d'une facture validée par un compte qui porte un accès client du dossier (lib/auteursVentes.ts). La colonne est en
   // base et dans l'export depuis P2 : la sauvegarde et la restauration la portent déjà (`select('*')`).
   valide_par: string | null
-  // CE QUE LA FACTURE FIGE À SA VALIDATION (espace client, étape A7a ; migration `mentions_figees`, PRÉPARÉE, pas encore
-  // collée ; lib/mentionsFigees.ts). `enregistrer_facture` seule les écrit, dans la transaction qui numérote, depuis ce que
-  // la base tient — le dossier, la version courante des paramètres, le RIB CONFIRMÉ en vigueur, le cabinet —, jamais depuis
-  // l'appelant ; la garde des factures validées les fige ; nulles sur un brouillon. Une facture validée avant la migration a
-  // `mentions_figees` faux et le reste nul : elle imprime ce qu'elle a toujours imprimé. Un avoir prend de sa facture, quand
-  // elle les a figés, le statut et le numéro de TVA et l'identité légale. `contact_id` seul se pose dès le brouillon : le
-  // contact d'où vient le client, une provenance sans clé. FACULTATIVES dans ce type tant que la migration n'est pas en
-  // base : une lecture `select('*')` ne les porte pas encore, et une sauvegarde faite avant elle non plus — une colonne
-  // absente d'une lecture n'est pas une colonne nulle. L'écran ne les lit ni ne les envoie avant l'étape A7b, derrière
-  // `MENTIONS_FIGEES_EXPORTEES`.
+  // CE QUE LA FACTURE FIGE À SA VALIDATION (espace client, étape A7a ; migration `mentions_figees`, en base depuis le
+  // 29/10/2026 ; lib/mentionsFigees.ts). `enregistrer_facture` seule les écrit, dans la transaction qui numérote, depuis
+  // ce que la base tient — le dossier, la version courante des paramètres, le RIB CONFIRMÉ en vigueur, le cabinet —,
+  // jamais depuis l'appelant ; la garde des factures validées les fige ; nulles sur un brouillon. Une facture validée
+  // avant la migration a `mentions_figees` faux et le reste nul : elle imprime ce qu'elle a toujours imprimé. Un avoir
+  // prend de sa facture, quand elle les a figés, le statut et le numéro de TVA et l'identité légale. `contact_id` seul se
+  // pose dès le brouillon : le contact d'où vient le client, une provenance sans clé. FACULTATIVES dans ce type : une
+  // sauvegarde faite avant la migration ne les porte pas — une colonne absente d'une lecture n'est pas une colonne nulle.
+  // L'écran ne les lit ni ne les envoie avant l'étape A7b, derrière `MENTIONS_FIGEES_EXPORTEES`, levé.
   mentions_figees?: boolean
   statut_tva?: StatutTva | null
   article_exoneration?: ArticleExoneration | null

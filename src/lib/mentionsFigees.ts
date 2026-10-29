@@ -26,11 +26,10 @@ import type { ArticleExoneration, Dossier, FactureEmise, ParametresFacturation, 
 // src/lib/mentionsFigees.test.ts confronte chaque refus au texte de la fonction dans l'export et à l'essai
 // supabase/essais/mentionsFigees.sql, le numéro de TVA et la mention de l'entrepreneur individuel aux cas de l'essai.
 
-// LA MIGRATION N'EST PAS ENCORE EN BASE. Elle est PRÉPARÉE et se COLLE (le corps d'`enregistrer_facture` supprime les
-// lignes qu'il remplace) ; d'ici là, la fonction en production ignore les clés neuves que l'écran enverrait, et aucune
-// colonne figée ne se lit. Tant que ce drapeau est faux, aucun écran n'envoie ni ne lit rien de neuf (l'étape A7b s'y
-// range). La session le lèvera elle-même, la migration collée. Chaque fonction de ce module se juge sans lui.
-export const MENTIONS_FIGEES_EXPORTEES: boolean = false
+// LA MIGRATION EST EN BASE depuis le 29/10/2026 : `mentions_figees`, collée par le cabinet (version 20261029214359),
+// puis `iban_hors_des_parametres`, par l'outil (version 20261029214732). Le drapeau est levé ; aucun écran n'envoie ni
+// ne lit encore rien de neuf : l'étape A7b, qui s'y range, le fera. Chaque fonction de ce module se juge sans lui.
+export const MENTIONS_FIGEES_EXPORTEES: boolean = true
 
 // ── Les listes de la base, celles des articles (supabase/schema, migration `articles`) ──────────────────────────────
 // Une ligne de facture prend l'unité, la référence et la nature d'un article : leurs formes sont les siennes, et le test le
