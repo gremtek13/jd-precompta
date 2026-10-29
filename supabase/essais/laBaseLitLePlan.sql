@@ -46,10 +46,19 @@
 -- Il ne porte AUCUNE instruction de suppression, ni de mise à jour sans `where` — l'outil d'exécution retient l'une et
 -- l'autre pour une confirmation qui n'arrive pas. Les objets d'essai (dossiers jetables, emprunt, échéances, bien,
 -- véhicule, déclarations) portent des identifiants fixes et vivent dans la sous-transaction de leur contrôle.
+--
+-- ADAPTÉ LE 29/10/2026 (ligne 26.6, étape C1b : la migration `caisse_retrait_et_versement`, PRÉPARÉE, à coller) : elle
+-- fait lire aussi à `ecrire_mouvement_compte_bilan` le compte de la caisse du plan (le versement d'espèces en banque).
+-- La liste des quatorze dit l'EXPORT, que src/lib/planComptable.test.ts confronte au texte exporté : elle garde
+-- « banque » ; le contrôle 3 attend, de la base munie de la migration, le rôle `caisse` en plus (`caisse_du_releve`).
+-- Le jour où la migration entre dans l'export, la liste porte « banque,caisse » et ce complément se retire (étape C2).
+-- Sans la migration, rien ne change.
 do $$
 declare
   -- Faux jusqu'à ce que la production porte les six migrations et que l'export les ait reçues ; vrai ensuite.
   pc2_exigee constant boolean := true;
+  -- La caisse du relevé (étape C1b) : sa migration en base, `ecrire_mouvement_compte_bilan` lit aussi le rôle `caisse`.
+  caisse_du_releve constant boolean := to_regprocedure('public.retirer_operation_caisse(uuid, uuid)') is not null;
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   -- Le dossier `test` ne prête que son cabinet aux dossiers jetables.
   dossier_test uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
@@ -201,7 +210,8 @@ begin
     continue when not (f->>'f' = any (prets));
     select p.prosrc into corps from pg_proc p where p.oid = to_regprocedure('public.' || (f->>'f'));
     select string_agg(r.role, ',' order by r.role collate "C") into roles_vus from roles_comptables r where corps ~ ('''' || r.role || '''');
-    if roles_vus is distinct from f->>'roles'
+    if roles_vus is distinct from (f->>'roles') || (case when caisse_du_releve and f->>'f' = 'ecrire_mouvement_compte_bilan(uuid, text, jsonb)'
+                                                          then ',caisse' else '' end)
        or (corps ~ 'public\.compte_du_dirigeant\(') is distinct from (f->>'dirigeant')::boolean
        or corps ~ 'else ''108000'' end' then
       n := n + 1;

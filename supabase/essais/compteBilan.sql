@@ -45,6 +45,12 @@
 -- REJOUÉ LE 06/10/2026 après `refus_tva_par_sa_declaration` : le contrôle 23 attend désormais le refus d'un
 -- compte de TVA qui renvoie à sa déclaration — le paiement et le remboursement se rapprochent d'elle depuis la
 -- fiche du mouvement (ligne 26.8).
+-- ADAPTÉ LE 29/10/2026 (ligne 26.6, étape C1b : la migration `caisse_retrait_et_versement`, PRÉPARÉE, à coller) :
+-- le contrôle 19 sort de la boucle des refus, et les comptes 53 ont leur bloc. Sans la migration, le 19 rend ce qu'il
+-- rendait, et trois contrôles neufs attendent la phrase d'hier — un autre compte 53 (19b), la caisse en engagement
+-- (19c), une régie d'avances (19d). Avec elle, le compte de la caisse du plan du dossier test reçoit un débit en
+-- trésorerie (19 : son écriture, la caisse au débit), un autre compte 53 se refuse sous la phrase de la caisse (19b),
+-- et l'engagement et la régie gardent celle d'hier. Les autres contrôles, dont le 580000 et le 275000, ne changent pas.
 create temp table essai_bilan (controle text, observe text, ok boolean) on commit drop;
 
 do $$
@@ -66,6 +72,11 @@ declare
   engagement_charges text := 'L''application ne passe pas l''écriture qui solderait ce compte (paie, impôts et taxes) : range le paiement dans une catégorie de charge.';
   deja_classe text := 'Ce mouvement est rapproché d''une pièce, d''une cotisation ou d''un emprunt, affecté à une catégorie, ventilé sur plusieurs comptes ou classé en virement personnel : annule d''abord ce classement.';
   ne_correspond_pas text := 'L''écriture proposée ne correspond pas à ce mouvement et à ce compte.';
+  -- La caisse (ligne 26.6, étape C1b) : avec la migration `caisse_retrait_et_versement`, le compte de la caisse du plan
+  -- reçoit un mouvement en trésorerie, et un autre compte 53 se refuse sous sa phrase ; sans elle, la phrase d'hier.
+  c1b boolean := to_regprocedure('public.retirer_operation_caisse(uuid, uuid)') is not null;
+  autre_tresorerie text := 'Un virement vers un autre compte de trésorerie du professionnel (autre banque, caisse, chèques postaux, régie d''avances) s''écrit au 580000, virements internes.';
+  phrase_caisse text := 'Seule la caisse du dossier, celle de son plan comptable, reçoit un mouvement de banque : un versement d''espèces, ou un retrait d''espèces pour la caisse, s''écrit sur son compte.';
 begin
   select * into debit from lignes_bancaires
    where dossier_id = dossier_test and statut = 'non_rapprochee' and montant < 0 order by date, id limit 1;
@@ -330,7 +341,6 @@ begin
       ('16. une charge (classe 6)', '606100', 'Un compte de charge ou de produit (classe 6 ou 7) s''affecte par une catégorie.'),
       ('17. la classe 8', '801000', 'Un compte de bilan est de classe 1 à 5.'),
       ('18. le 512 d''un autre compte', '512100', 'Le 512 est le compte du relevé lui-même. Un virement vers un autre compte du professionnel (épargne, second compte bancaire) s''écrit au 580000, virements internes.'),
-      ('19. la caisse (530)', '530000', 'Un virement vers un autre compte de trésorerie du professionnel (autre banque, caisse, chèques postaux, régie d''avances) s''écrit au 580000, virements internes.'),
       ('20. le compte de l''exploitant (108)', '108000', 'Les apports et les prélèvements du dirigeant passent par « Virement personnel », qui les écrit sur son compte (108000).'),
       ('21. l''emprunt (164)', '164000', 'Une échéance ou un déblocage d''emprunt se rapproche de son emprunt, qui sépare le capital, les intérêts et l''assurance : « Rapprocher d''un emprunt ».'),
       ('22. un fournisseur (401)', '401000', 'Un compte de fournisseur ou de client se solde en rapprochant la facture du mouvement.'),
@@ -362,6 +372,71 @@ begin
     insert into essai_bilan values (nom, coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
       not accepte and code_recu = '22023' and message = attendu);
   end loop;
+
+  -- ══ 19 à 19d. Les comptes 53 : la caisse (ligne 26.6, étapes C1 et C1b) ═══════════════════════
+  -- Sans la migration `caisse_retrait_et_versement`, tout compte 53 se refuse sous la phrase des autres comptes de
+  -- trésorerie, comme le 19 d'hier. Avec elle, en trésorerie, le compte de la caisse du plan du dossier test (530000 :
+  -- son plan ne règle aucun rôle) reçoit le mouvement — un débit, des espèces retirées pour la caisse, qui ne la vident
+  -- pas — et un autre compte 53 se refuse sous la phrase de la caisse ; en engagement, la phrase d'hier.
+  for nom, compte_essai, attendu in
+    select * from (values
+      ('19b. un compte 53 qui n''est pas la caisse du plan (531000), en trésorerie', '531000',
+       case when c1b then phrase_caisse else autre_tresorerie end),
+      ('19d. une régie d''avances (541000), en trésorerie : la phrase d''hier', '541000', autre_tresorerie)
+    ) as cas(c1, c2, c3)
+    union all
+    select '19. la caisse (530)', '530000', autre_tresorerie where not c1b
+  loop
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+    accepte := false; code_recu := null; message := null;
+    begin
+      perform ecrire_mouvement_compte_bilan(debit.id, compte_essai, jsonb_build_array(
+        jsonb_build_object('compte', compte_essai, 'sens', 'debit', 'montant', abs(debit.montant)),
+        jsonb_build_object('compte', '512000', 'sens', 'credit', 'montant', abs(debit.montant))));
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    insert into essai_bilan values (nom, coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+      not accepte and code_recu = '22023' and message = attendu);
+  end loop;
+  if c1b then
+    accepte := false; code_recu := null; message := null; obs := null;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+      perform ecrire_mouvement_compte_bilan(debit.id, '530000', jsonb_build_array(
+        jsonb_build_object('compte', '530000', 'sens', 'debit', 'montant', abs(debit.montant)),
+        jsonb_build_object('compte', '512000', 'sens', 'credit', 'montant', abs(debit.montant))));
+      select string_agg(e.compte || ':' || e.sens, ',' order by e.compte) into obs
+        from ecritures_brouillon e where e.ligne_bancaire_id = debit.id and e.piece_id is null;
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    insert into essai_bilan values ('19. la caisse du plan (530000), en trésorerie : reçue (étape C1b)',
+      coalesce(obs, coalesce(code_recu, '?') || ' ' || coalesce(message, '')),
+      accepte and code_recu = 'P0001' and obs = '512000:credit,530000:debit');
+  end if;
+  -- 19c. En engagement, où la caisse attend sa conception : la phrase d'hier, avec ou sans la migration.
+  accepte := false; code_recu := null; message := null;
+  begin
+    update dossiers set mode_comptable = 'engagement' where id = dossier_test;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+    perform ecrire_mouvement_compte_bilan(debit.id, '530000', jsonb_build_array(
+      jsonb_build_object('compte', '530000', 'sens', 'debit', 'montant', abs(debit.montant)),
+      jsonb_build_object('compte', '512000', 'sens', 'credit', 'montant', abs(debit.montant))));
+    accepte := true;
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then code_recu := sqlstate; message := sqlerrm;
+  end;
+  reset role;
+  insert into essai_bilan values ('19c. la caisse (530000) en engagement : la phrase d''hier', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+    not accepte and code_recu = '22023' and message = autre_tresorerie);
 
   -- ══ 34 à 39. Les écritures que la base refuse, chacune pour SA raison ═════════════════════════
   for nom, lignes_essai, attendu in
