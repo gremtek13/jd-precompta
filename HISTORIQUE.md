@@ -40984,3 +40984,209 @@ commentaire d'hier, retire les deux fonctions, les sept contraintes et les vingt
 facture figée, un contact, une provenance, un numéro d'engagement hors d'un organisme public, d'autres mentions) : après
 une première facture figée, on corrige en avant. Une sauvegarde faite après la migration ne se restaurerait plus dans
 une base revenue en arrière (ses colonnes inconnues).
+
+### 29/10/2026 — LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES (A7-Q2, A7-Q3)
+
+(Écrite par l'agent architecte de la reprise sur `9fed525` — `main` (`ea631dc`) et les deux commits d'A7a —, la branche
+locale `a7q-reprise`, en deux commits : les migrations, les tests et les essais ; puis cette documentation. Modifiés :
+la migration `supabase/schema/20261028120000_mentions_figees.sql`, toujours sous sa version provisoire,
+`src/lib/mentionsFigees.ts`, `src/lib/parametresFacturation.ts` et leurs tests, l'essai
+`supabase/essais/mentionsFigees.sql` ; adaptés, chacun daté dans son en-tête : `supabase/essais/ventesClient.sql`,
+`supabase/essais/logoDesFactures.sql`, `src/lib/logoDesFactures.test.ts`, `src/lib/parametresFacturation.test.ts`,
+`src/lib/ventesSurDossierBascule.test.ts` ; `src/pages/dossier/ParametresVue.test.tsx` gagne un test. Créés : la petite
+migration `supabase/schema/20261028130000_iban_hors_des_parametres.sql`, son essai
+`supabase/essais/ibanHorsDesParametres.sql`, `src/lib/parametresFacturationIban.test.ts`. Aucun écran, aucune Edge
+Function. Rien n'est appliqué : les deux migrations sont éprouvées sur une réplique. En production, des SELECT de
+comptes, du catalogue — les corps des cinq fonctions que les gardes supposent, la contrainte remplacée, les chemins qui
+écrivent les paramètres — et de l'historique ; aucune valeur d'une ligne, aucune écriture.)
+
+**LES TROIS RÉPONSES** du cabinet du 28/10/2026, toutes à la recommandation. A7-Q1, (A) : vérifié, rien n'a changé — un
+accès « Ventes » ne valide pas une facture d'un dossier sans forme juridique, le cabinet si (l'étape 149b de l'essai ;
+`refusDeLaValidationFigee`). A7-Q2, (B), et A7-Q3, (B) : ci-dessous, écrites DANS `mentions_figees` avant son collage,
+la seconde aussi dans une petite migration à part.
+
+**A7-Q2 : « LES MÊMES ».** À la validation par un accès « Ventes » — l'appelant n'est pas `admin_du_dossier`,
+super-administrateur compris —, `enregistrer_facture` compare l'émetteur de la facture TELLE QU'ELLE EST ÉCRITE
+(`emetteur_siret`, `emetteur_adresse`, relus après l'écriture du brouillon) au SIRET et à l'adresse du dossier
+(`dossiers.siret`, `dossiers.adresse`), lus dans la transaction qui valide, avec le reste de son identité.
+- Le SIRET : le même texte, les vingt-cinq blancs retirés où qu'ils soient — ceux que `\s` désigne en JavaScript, ceux
+  que `numero_tva_du_vendeur` retire déjà. Un identifiant de quatorze chiffres ne change pas d'être écrit en groupes, ni
+  d'un blanc insécable.
+- L'adresse : le même texte, ses fins de ligne Windows et ses retours chariot seuls ramenés à `\n`, les blancs de ses
+  bords retirés (`btrim` sur les mêmes vingt-cinq, ceux de `trim`). Le formulaire envoie `trim()` d'un champ dont le
+  navigateur ramène déjà les fins de ligne à `\n`, et un dossier a pu être écrit autrement ; au-dedans, rien d'autre —
+  deux espaces pour un, un espace pour une fin de ligne, une autre casse font une autre adresse imprimée, refusée.
+- Un dossier sans SIRET ou sans adresse (nuls, ou de blancs seuls) : la validation par le client se refuse, « le cabinet
+  le renseigne ». Le cabinet n'est pas jugé ; un avoir non plus — il recopie l'émetteur de sa facture, déjà jugée — ; un
+  brouillon non plus. Le nom ne se compare pas : l'impression prendra la dénomination figée (A7b, la réponse).
+- Ce que « Mes ventes » envoie aujourd'hui, relevé : `ClientVentes.tsx` lit le dossier (`COLONNES_SOCIETE`, « nom,
+  siret, adresse, … ») et monte `FacturesTab` avec `dossierSiret` et `dossierAdresse` ; `FactureFormModal.tsx` envoie
+  `emetteur_siret: dossierSiret || null` (aucun champ ne le change), `emetteur_nom: dossierNom || null` (le nom interne
+  du dossier) et `emetteur_adresse: emetteurAdresse.trim() || null`, d'un champ prérempli de
+  `facture?.emetteur_adresse ?? dossierAdresse` — que le client peut changer, et qu'un brouillon garde tel qu'il l'a
+  enregistré. Le SIRET et l'adresse du dossier, envoyés tels quels, passent toujours ; une adresse retouchée, ou celle
+  d'un brouillon quand le dossier a changé depuis, se refuse.
+
+**A7-Q3 : UN IBAN RECONNU PAR SA CLÉ.** `porte_un_iban` (immuable, `plpgsql`, chemin fixé ; aucun rôle de l'API ne
+l'exécute), posée par `mentions_figees` et appelée par les deux migrations ; `porteUnIban`
+(`src/lib/parametresFacturation.ts`) la redit avant le clic, sur `cleIbanValide`, la seule copie de la clé côté
+navigateur (la base a les siennes : celle d'`enregistrer_parametres_facturation`, depuis l'étape A5a, et celle de
+`porte_un_iban`). La clé : ISO 13616-1, par l'ISO/IEC 7064 MOD 97-10 — les quatre premiers caractères à la fin, A = 10 …
+Z = 35, et le nombre, divisé par 97, laisse un. Ce qu'on lui soumet, dans le texte dont les vingt-six lettres minuscules
+seules passent en capitales (une lettre accentuée ou d'une autre écriture sépare), découpé en mots de lettres latines et
+de chiffres :
+- la forme électronique, un mot de quinze à trente-quatre caractères, deux lettres et deux chiffres en tête — quinze, le
+  plus court du registre de la norme (la Norvège), trente-quatre, la borne de la norme ;
+- la forme papier, des groupes de quatre séparés d'un seul blanc, le dernier plus court : depuis un mot de deux lettres
+  et deux chiffres, chaque mot qui suit après un seul blanc et qui n'a pas plus de quatre caractères s'ajoute ; la suite
+  est candidate à chaque groupe, de quinze à trente-quatre caractères, et un mot de moins de quatre la clôt.
+
+Ne se lisent pas : un IBAN collé à un mot, des tirets, deux blancs, des groupes d'une autre taille, un RIB à l'ancienne
+(sans code pays : la réponse ne vise que l'IBAN) ; les lire ferait refuser des textes qui n'en portent pas, et un texte
+qui ne porte pas d'IBAN valide passe, quel qu'il soit. Écartée : une table des pays et de leurs longueurs (le registre
+de l'IBAN que tient SWIFT pour la norme) — une liste à tenir deux fois, en base et dans le module, qui laisserait passer
+le pays qu'elle ne connaîtrait pas encore. Cinquante-quatre cas dans l'essai, que le test confronte au module : les deux
+formes, la casse, plusieurs IBAN, au milieu d'une phrase, une clé fausse (le même compte, deux chiffres de contrôle
+d'une unité plus loin), un numéro de TVA, un SIRET, un RIB à l'ancienne à sa clé juste, neuf autres pays, des chiffres
+pleine chasse — et quatorze cas, les bornes des deux formes, leurs groupements et leurs séparateurs, que les mutations
+ont demandés (IBAN-41 à IBAN-54).
+
+**LES TEXTES QUE LA FACTURE IMPRIME, JUGÉS.** Dans `enregistrer_facture`, à chaque enregistrement et pour tout auteur,
+après l'écriture de la facture et de ses lignes — sur la ligne telle qu'elle est écrite : ce qu'un brouillon garde quand
+la saisie ne nomme pas sa clé, ou ce qu'une écriture directe du cabinet y a posé, y passe —, dans l'ordre de
+l'impression : le nom, l'adresse et le SIRET de l'émetteur ; le nom, l'adresse et le SIRET du client ; l'adresse, le
+code postal et la ville de livraison ; le code service ; le numéro d'engagement ; chaque ligne, sa désignation puis sa
+référence ; la mention légale. Le premier qui porte un IBAN se nomme dans le refus (22023, « Un IBAN figure dans … : sur
+une facture, un IBAN ne s'imprime que dans le RIB des paramètres de facturation, confirmé par le cabinet. »). D'un
+avoir, ses lignes et sa mention légale seules : le reste est la copie de sa facture. Ne s'impriment pas : les notes,
+l'adresse électronique du client et celle de sa facture électronique ; le SIREN du client, le pays de livraison et la
+nature des opérations sont des codes. À la validation, pour tout auteur, après les refus d'A7-Q2 : l'identité du dossier
+— la dénomination, la ville du greffe, les autres mentions ; pas celle qu'un avoir reprend de sa facture —, puis les
+quatre textes de la version courante des paramètres : une version d'avant la petite migration, ou restaurée, ne se fige
+pas, une autre la remplace.
+
+**LA PETITE MIGRATION `iban_hors_des_parametres`** (version provisoire `20261028130000`, après `mentions_figees`) :
+`enregistrer_parametres_facturation`, le texte de l'étape A5c1 au caractère près, plus une variable et un NEUVIÈME rang
+— après le logo, avant l'état du RIB et l'écriture : les conditions d'escompte, les pénalités de retard, les mentions
+complémentaires, le pied de page, dans l'ordre du quatrième rang, pour tout auteur, sous le même message. Les autres
+chemins qui écrivent ces textes, relevés au catalogue de la production : `confirmer_rib` (l'état du RIB seul, la garde
+des versions refusant le reste) et la restauration (l'insertion du super-administrateur, qui réinsère tel quel) ; aucune
+Edge Function, aucune autre policy d'écriture. Sa garde de tête refuse une seconde application, l'absence de
+`mentions_figees`, `porte_un_iban` changée depuis (`50e5381c…`) et une fonction remplacée qui ne serait plus celle
+d'A5c1 (`2fb248db…`, une seule de ce nom, relue en production ce jour). Elle s'applique par l'outil : elle ne supprime
+rien, et sa révocation redit des droits que la fonction n'a déjà plus, comme celle de `ventes_sur_dossier_bascule`, que
+l'outil a appliquée sans demander de confirmation. Son retour se colle (il retire sa ligne d'historique) et ÉLARGIT,
+jamais sans l'accord du cabinet.
+
+**L'ORDRE DES REFUS** d'`enregistrer_facture`, de bout en bout : ceux d'hier ; la provenance des lignes, du contact et
+des articles (A7a) ; un texte écrit qui porte un IBAN (A7-Q3) ; à la validation, le contact gardé, la forme pour un
+accès « Ventes », l'entrepreneur individuel (A7a), puis, pour un accès « Ventes », un dossier sans SIRET, un autre
+SIRET, un dossier sans adresse, une autre adresse (A7-Q2), puis l'identité et les paramètres en vigueur qui portent un
+IBAN (A7-Q3) ; puis la numérotation et les refus de la source de la vente, comme hier. `mentionsFigees.ts` les redit
+dans cet ordre et sous ces mots (`REFUS_DES_TEXTES` au rang 4, `REFUS_DE_LA_VALIDATION_FIGEE` aux rangs 5 à 12,
+`refusDesTextesDeLaFacture`, `refusDeLaValidationFigee`), et son test rejoue chaque appel de l'essai.
+
+**L'ÉCRAN DES PARAMÈTRES**, des deux espaces, dit le refus avant le clic, sur la saisie telle qu'elle part, sans une
+ligne de code d'écran : il juge déjà la saisie par `refusEnregistrementParametres`, que le neuvième rang complète ; son
+test d'écran le garde (les quatre textes nommés, leur ordre, une clé fausse qui passe, « Enregistrer » grisé, rien
+d'envoyé). L'écran le dit dès sa mise en ligne, la base dès la petite migration : entre les deux, l'écran est plus
+strict que la base, et rien d'autre n'écrit ces textes.
+
+**LES DONNÉES DE LA PRODUCTION**, des comptes : aucune version des paramètres de facturation ; six factures et six
+lignes, quatre dossiers, dont aucun texte ne porte même deux lettres suivies de deux chiffres, une condition plus large
+que tout candidat : rien à refuser, rien qui retienne une validation, rien à reprendre. Aucun accès « Ventes », aucun
+dossier basculé : A7-Q2 ne change rien aujourd'hui. Un dossier n'a pas de SIRET, aucun des quatre n'a d'adresse : le
+premier dossier réel du MVP recevra les siens, avec sa forme (1000) et sa dénomination « EI », avant la première
+validation du praticien.
+
+**LES PREUVES.**
+- La réplique : la grappe de VF8f copiée À FROID, sur son propre port, la production d'aujourd'hui — 159 migrations, son
+  historique (`b70ba907…`) et les neuf familles de `signature.sql` égaux à ceux de la production, relus ce jour en
+  production avant et après les preuves ; arrêtée par son répertoire de données en partant.
+- Les essais, chacun ENTIER sur une copie fraîche, en une transaction — ceux de BASE et ceux du worktree, sans puis avec
+  les migrations, 61 fichiers : sans elles, 5 411 verdicts pour BASE, 5 412 pour le worktree (un contrôle neuf de
+  `logoDesFactures.sql`), deux en faute de part et d'autre, ceux d'avant (`forfaitKilometrique.sql` 32 ;
+  `ventesClient.sql` 0c) ; avec `mentions_figees` seule, le worktree rend 5 626 verdicts, avec les deux 5 654, les deux
+  mêmes en faute. `mentionsFigees.sql`, impossible sans la migration : 214 verdicts justes (127 contrôles, 32 valeurs,
+  35 faits, 20 mutations qui mordent), rien n'est resté ; `ibanHorsDesParametres.sql`, impossible sans la petite : 28
+  (21 contrôles, une valeur, deux faits, 4 mutations). Les essais de BASE, avec les deux, 31 en faute : le contrôle 0g
+  de `logoDesFactures.sql` (vingt-six messages, et non plus vingt-cinq), le contrôle 78 de `mentionsFigees.sql` (son
+  client valide sous une autre adresse que celle du dossier), vingt-sept de `ventesClient.sql` (son client valide dans
+  un dossier sans SIRET ni adresse) — d'où leurs adaptations — et les deux d'avant ; tout le reste identique, verdict
+  par verdict. `devis.sql` et `notesInternes.sql` se disent impossibles avant comme après, leurs migrations n'étant pas
+  en base.
+- `rls.sql` ENTIER, inchangé (`a49f8a49…`) : 72 lignes d'invariants, 0 en faute, 58 mutations sur 58, sur la production,
+  avec la première migration et avec les deux, ses 130 lignes de verdict identiques.
+- `restauration.sql`, inchangé, sur le dossier semé de VF7e, de VF8f et d'A7a, plus, avec `porte_un_iban`, une version
+  des paramètres dont le pied de page porte un IBAN et un brouillon dont la mention légale en porte un, posés en
+  direct : 75 tables IDENTIQUES des trois côtés (57 lignes sur la production, 66 avec les migrations), les deux textes
+  réinsérés tels quels ; le contrôle d'A7a, 3 factures sur 3, 1 ligne sur 1, 1 dossier sur 1.
+- Le texte à coller (62 364 caractères, `a241ba62436e2fff2e440b52c0bfb501`) et son retour (22 727 caractères,
+  `2566a3188251cb10af7adb09df9c1a33`), chacun sur une copie fraîche de la production de la réplique : par l'outil,
+  collée une fois, en fins de ligne Windows, la même base — quatre familles changées, la ligne d'historique
+  `40cca2f9…` ; rejouée par l'outil, collée après l'outil, collée une seconde fois : refusées, sous leurs mots ; altérée
+  d'un caractère : refusée, rien d'appliqué ; le retour, sur la base collée, sur celle de l'outil et sur celle des fins
+  de ligne Windows : la production, historique et neuf familles ; sans la migration, après une facture figée,
+  `porte_un_iban` changée depuis, ou la petite migration en base : refusé, rien de rendu ; la garde de tête devant huit
+  états altérés (`porte_la_mention_ei` ou `porte_un_iban` déjà là, une colonne déjà là, une fonction supposée changée,
+  `enregistrer_facture` changée, une seconde `fixer_source_de_la_vente`, la contrainte qui n'est plus celle d'hier, le
+  logo absent) : refusée, sous ses mots.
+- La petite migration (le texte du fichier, 21 188 caractères, `582096c994fca10adc592f636aaeea77`) et son retour (17 416
+  caractères, `80d4a932b35c3369d27f86384c5c1f73`) : par l'outil après `mentions_figees`, collée ou par l'outil, la même
+  base — la seule famille « fonctions » changée, la ligne `582096c9…` ; rejouée : refusée ; seule, sur la production :
+  refusée par sa garde (`mentions_figees` d'abord) ; dans cet ordre-là ensuite, `mentions_figees` collée puis elle :
+  appliquée ; `mentions_figees` collée de nouveau, ou son retour, la petite en base : refusés ; son retour : la base
+  d'avant elle, puis celui de `mentions_figees` : la production ; son retour sans elle, ou sa fonction changée depuis :
+  refusé. Le scénario réel, dans le dossier `test` de la réplique, par le chef : une version dont le pied de page porte
+  un IBAN, enregistrée par la fonction avant la petite migration, passe ; après elle, la validation d'une facture se
+  refuse (« Un IBAN figure dans le pied de page des paramètres de facturation »), la même version redite aussi ; une
+  version sans IBAN la remplace, et la facture se valide.
+- `signature.sql` : avec `mentions_figees`, quatre familles changent — « colonnes » (866 `23b2bc60…` puis 895
+  `05cda372674c2e5cfbcf5f596972d85f`), « contraintes » (670 `d63ab39f…` puis 681 `5ade75836461197a3ea0a690d79ef1bf`),
+  « fonctions » (204 `9dbbaf01…` puis 207 `2961975803f880a29e290e424e30893c`) et « droits des fonctions » (204
+  `a2b5e8ad…` puis 207 `6438f4dc6a134b6b8acac03e52190997`) ; avec la petite, la seule « fonctions » (207
+  `7515f3e8fc0e08a1d231f8ab1517a974`) ; les autres inchangées. Les trois contrôles de l'export : voir
+  `supabase/schema/README.md`, « Préparé le 28/10/2026, repris le 29/10/2026 ».
+- Les mutations : des deux migrations, 179 — 160 de `mentions_figees` (les 73 d'A7a, rejouées, et 87 neuves : sa garde,
+  `porte_un_iban` point par point, chaque texte jugé, A7-Q2 et ses normalisations, chaque texte de la validation), 19 de
+  la petite — jugées par l'application, `mentionsFigees.sql`, `factures.sql`, `ventesClient.sql`, `logoDesFactures.sql`,
+  `parametresFacturation.sql` et `ibanHorsDesParametres.sql` ENTIERS, la petite migration appliquée par-dessus, et les
+  gardes devant leurs états altérés : 176 tuées, trois équivalentes — celle d'A7a (le type JSON d'un contact), et deux
+  droits que la petite redit et que `create or replace` garde de toute façon. Une d'A7a, dite équivalente, est tuée :
+  sans le filtre du RIB confirmé, une version courante sans RIB deviendrait « le RIB figé », et la contrainte
+  `factures_emises_rib_imprime_entier` refuse la validation. Trois survivaient d'abord, faute de juge — côté base, un
+  retour chariot seul dans l'adresse du dossier ; côté module, l'ordre d'un autre SIRET et d'une adresse absente (sa
+  jumelle de la base écrite ensuite), et la borne des trente-quatre caractères d'une suite de groupes — : l'essai et les
+  tests ont reçu leurs juges (les étapes 143b et 149d à 149h, deux assertions), comme les quatorze derniers cas d'IBAN,
+  écrits quand les mutations de `porte_un_iban` n'avaient pas de juge parmi les quarante premiers. Des modules, 82 — les
+  25 d'A7a, 57 neuves — : 78 tuées, quatre équivalentes (les deux d'A7a ; un texte vide, qui ne porte pas plus d'IBAN
+  qu'un texte nul ; la longueur d'un séparateur que `/^\s$/u` juge déjà).
+- La suite, comparée test par test sous Paris : avant, l'arbre de `9fed525` exporté, 15 080 tests justes, plus les 25 de
+  `clesSupabase.test.ts`, rejoués dans l'export indexé par un `git init` jetable (la liste des fichiers du commit) ;
+  après, dans le dépôt, 15 129 tests justes, 3 221 suites. Aucun test perdu ni changé d'état ; six renommés, chacun
+  parce que ce qu'il dit a changé (les vingt-cinq messages du logo, devenus les vingt-cinq premiers ; ses étapes ; deux
+  fonctions neuves, devenues trois ; les blancs du SIRET, dans chaque fonction ; l'ordre des refus, les textes compris ;
+  la validation, l'émetteur et un IBAN compris) ; 24 neufs (`parametresFacturationIban.test.ts`, 14 ; huit dans
+  `mentionsFigees.test.ts` ; deux dans `ParametresVue.test.tsx`, un par espace). La barrière, sur la tête finale : son
+  résultat et son SHA sont au rapport de l'agent.
+
+**CE QUE A7B AURA DE PLUS À FAIRE.** Le formulaire de la facture, des deux espaces, juge avant le clic, sur la saisie
+telle qu'elle part, `refusDesTextesDeLaFacture` (un IBAN dans un texte) et `refusDeLaValidationFigee` (l'émetteur du
+dossier, un IBAN de l'identité ou des paramètres en vigueur) ; dans « Mes ventes », l'adresse de l'émetteur est celle du
+dossier, montrée, plus saisie, et un dossier sans SIRET ou sans adresse dit que le cabinet doit les poser — la phrase
+d'aujourd'hui, « saisis-la ici pour cette facture », deviendrait fausse ; un brouillon reprend l'adresse du dossier ;
+l'aperçu imprime la dénomination figée ; l'onglet Informations dit, sous l'identité, qu'un IBAN y retiendrait la
+validation.
+
+**LA QUESTION AU CABINET.**
+- **A7Q-Q1 — Une facture validée par un accès « Ventes » sans dénomination imprimée.** La réponse à A7-Q2 fait imprimer
+  la dénomination figée à la place du nom interne du dossier. Or seule celle d'un entrepreneur individuel est exigée (la
+  mention « EI », C. com., art. R526-27) : pour une société, le cabinet peut ne pas l'avoir posée, et la facture qu'un
+  accès « Ventes » valide figerait une dénomination nulle — l'aperçu n'aurait pas de nom légal à imprimer (C. com., art.
+  L441-9, I : le nom des parties). Le dossier du MVP, un entrepreneur individuel, n'est pas concerné. (A) rien de plus
+  en base : A7b imprime alors le nom que l'appelant envoie, aujourd'hui le nom interne du dossier ; (B) la base refuse
+  la validation par un accès « Ventes » quand la dénomination imprimée manque, comme la forme juridique (A7-Q1), le
+  cabinet validant encore, l'écran le lui disant — un refus de plus dans `mentions_figees`, avant son collage ; (C)
+  l'aperçu imprime le nom interne du dossier, que le cabinet écrit. *Recommandation : (B) — la règle même d'A7 : un
+  accès « Ventes » ne fige que ce que le cabinet a réglé, et le nom légal en est la première mention ; quelques lignes,
+  et les essais où le client valide pour une société à adapter, sans effet sur le dossier du MVP.*

@@ -666,12 +666,15 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ ».
   - Du premier groupe, faits : A1 à A6 (sauf ce qui suit). Restent, dans l'ordre recommandé : A4B3-Q6 (la ligne
     d'en-tête et les noms des colonnes du fichier de l'ancien logiciel, ouverte) ; puis A7, la facture fige ses
-    mentions : A7a, la base, PRÉPARÉE le 28/10/2026 (`mentions_figees`, à reprendre pour A7-Q2 puis à coller ; A7-Q3,
-    une petite migration à part ; A7-Q1 à Q3 tranchées le 28/10/2026 à la recommandation), A7b l'écran derrière
-    `MENTIONS_FIGEES_EXPORTEES`, A7c le CII après le MVP → « LA FACTURE FIGE SES MENTIONS, EN BASE » ; la liste des
-    clients sans activité depuis trois ans, qui lit les factures d'un contact (A7 les relie) ; la suite du premier
-    groupe, dont A9, la numérotation (MEG1-Q5 : deux séries par dossier, celle du client et celle du mandataire, choisie
-    selon qui valide, et la série de l'ancien logiciel qui continue ; rien n'en est écrit) ; les devis (P5) ; P1-trace.
+    mentions : A7a, la base, PRÉPARÉE le 28/10/2026 et REPRISE le 29/10/2026 sur A7-Q1 à Q3 (tranchées le 28/10/2026 à
+    la recommandation : l'émetteur d'une facture validée par un accès « Ventes » est celui du dossier ; aucun texte
+    libre que la facture imprime ne porte un IBAN valide) — `mentions_figees`, à coller, puis
+    `iban_hors_des_parametres`, par l'outil, éprouvées sur une réplique, pas appliquées ; A7Q-Q1 ouverte —, A7b l'écran
+    derrière `MENTIONS_FIGEES_EXPORTEES`, A7c le CII après le MVP → « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA
+    FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES » ; la liste des clients sans
+    activité depuis trois ans, qui lit les factures d'un contact (A7 les relie) ; la suite du premier groupe, dont A9,
+    la numérotation (MEG1-Q5 : deux séries par dossier, celle du client et celle du mandataire, choisie selon qui
+    valide, et la série de l'ancien logiciel qui continue ; rien n'en est écrit) ; les devis (P5) ; P1-trace.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
   que le bilan lira : 33-Q6), l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ;
   sur l'ouverture, confronter une balance reprise (O33-Q2, plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU
