@@ -399,6 +399,34 @@ describe.each(['cabinet', 'client'] as const)('Paramètres — « Modifier les p
     expect(faux.rpcs).toEqual([])
   })
 
+  // A7-Q3 (29/10/2026) : un texte libre qui porte un IBAN valide se refuse avant le clic, sur la saisie telle qu'elle part
+  // (le neuvième rang d'`enregistrer_parametres_facturation`, migration `iban_hors_des_parametres`).
+  it('un IBAN dans un texte libre : refusé avant le clic, sous ses mots, « Enregistrer » grisé ; une clé fausse passe', async () => {
+    await ouvrir()
+    const refus = (texte: string) => `Un IBAN figure dans ${texte} : sur une facture, un IBAN ne s'imprime que dans le RIB des paramètres de facturation, confirmé par le cabinet.`
+    saisir(L.pied, '  Règlement sur fr13 9999 9000 0200 0000 0001 234  ')
+    expect(within(fenetre()).getByText(refus('le pied de page'))).toBeTruthy()
+    expect(enregistrer().disabled).toBe(true)
+    if (espace === 'client') expect(motsDuCabinet(fenetre().textContent ?? '')).toEqual([])
+    fireEvent.click(enregistrer())
+    expect(faux.rpcs).toEqual([])
+    // Une clé fausse ne se lit pas : la saisie part.
+    saisir(L.pied, 'Règlement sur FR14 9999 9000 0200 0000 0001 234')
+    expect(within(fenetre()).queryByText(refus('le pied de page'))).toBeNull()
+    expect(enregistrer().disabled).toBe(false)
+    // Dans l'ordre de la base : l'escompte avant le pied de page ; chaque texte nommé.
+    saisir(L.escompte, 'Escompte versé sur FR1399999000020000000001234')
+    saisir(L.pied, 'FR13 9999 9000 0200 0000 0001 234')
+    expect(within(fenetre()).getByText(refus("les conditions d'escompte"))).toBeTruthy()
+    saisir(L.escompte, 'Pas d’escompte.')
+    saisir(L.penalites, 'Pénalités : FR1399999000020000000001234')
+    expect(within(fenetre()).getByText(refus('les pénalités de retard'))).toBeTruthy()
+    saisir(L.penalites, '')
+    saisir(L.mentions, 'Coordonnées : FR13 9999 9000 0200 0000 0001 234')
+    expect(within(fenetre()).getByText(refus('les mentions complémentaires'))).toBeTruthy()
+    expect(enregistrer().disabled).toBe(true)
+  })
+
   it('l’enregistrement : la version RETENUE à l’ouverture, la saisie telle qu’elle part, puis la vue relue', async () => {
     await ouvrir()
     saisir(/^Délai de paiement/, ' 10 ')

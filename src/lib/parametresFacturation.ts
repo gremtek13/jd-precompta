@@ -88,6 +88,79 @@ export function cleIbanValide(iban: string): boolean {
   return reste === 1
 }
 
+// ── Un IBAN dans un texte libre (A7-Q3) ───────────────────────────────────────────────────────────────────────────
+// La réponse (B) du cabinet du 28/10/2026 : un texte libre que la facture imprime sans confirmation et qui porte un IBAN
+// VALIDE se refuse, en base et avant le clic, quel que soit son auteur — un IBAN ne s'imprime que par le RIB confirmé
+// (MEG1-Q12), et un pied de page garderait l'ancien après un changement de RIB. La base le juge par `porte_un_iban`
+// (migration `mentions_figees`), et ce module le redit au caractère près. Un IBAN se reconnaît à sa CLÉ (`cleIbanValide`),
+// jamais à sa seule forme ; ce qu'on soumet à la clé, ce sont les CANDIDATS du texte, une fois ses vingt-six lettres
+// minuscules passées en capitales (elles seules : une lettre accentuée, un chiffre d'une autre écriture séparent) et le
+// texte découpé en MOTS, les suites de lettres latines et de chiffres :
+//   - la forme électronique : un mot de quinze à trente-quatre caractères qui commence par deux lettres et deux chiffres
+//     (quinze, l'IBAN le plus court du registre de l'ISO 13616, la Norvège ; trente-quatre, la borne de la norme) ;
+//   - la forme papier, des groupes de quatre séparés d'un seul blanc, le dernier plus court (ISO 13616-1) : depuis un mot
+//     de deux lettres et deux chiffres, chaque mot qui suit après UN blanc (`\s`) et qui n'a pas plus de quatre caractères
+//     s'ajoute ; la suite est candidate à chaque groupe, de quinze à trente-quatre caractères, et un mot de moins de quatre
+//     la clôt.
+// Ne se lisent pas : un IBAN collé à un mot, ses groupes séparés de tirets, de deux blancs ou autrement qu'en quatre, un
+// RIB à l'ancienne (sans code pays). Les lire ferait refuser des textes qui n'en portent pas. src/lib/parametresFacturationIban.test.ts
+// confronte le module à la base sur les cas de supabase/essais/mentionsFigees.sql.
+export const IBAN_LONGUEUR_MIN = 15
+export const IBAN_LONGUEUR_MAX = 34
+const SIGNE_D_IBAN = /^[A-Z0-9]$/
+const DEBUT_D_IBAN = /^[A-Z]{2}[0-9]{2}/
+const GROUPE_DE_TETE = /^[A-Z]{2}[0-9]{2}$/
+const UN_BLANC = /^\s$/u
+
+/** Ce que le texte soumet à la clé d'un IBAN, dans l'ordre où la base les essaie. */
+export function candidatsIban(texte: string): string[] {
+  const capitales = texte.replace(/[a-z]/g, (c) => c.toUpperCase())
+  const mots: string[] = []
+  // Ce qui sépare chaque mot du précédent (vide pour un mot en tête du texte).
+  const avant: string[] = []
+  let mot = ''
+  let entre = ''
+  for (const c of capitales) {
+    if (SIGNE_D_IBAN.test(c)) {
+      mot += c
+    } else {
+      if (mot !== '') {
+        mots.push(mot)
+        avant.push(entre)
+        mot = ''
+        entre = ''
+      }
+      entre += c
+    }
+  }
+  if (mot !== '') {
+    mots.push(mot)
+    avant.push(entre)
+  }
+  const candidats: string[] = []
+  for (let i = 0; i < mots.length; i++) {
+    if (mots[i].length >= IBAN_LONGUEUR_MIN && mots[i].length <= IBAN_LONGUEUR_MAX && DEBUT_D_IBAN.test(mots[i])) candidats.push(mots[i])
+    if (!GROUPE_DE_TETE.test(mots[i])) continue
+    let candidat = mots[i]
+    for (let j = i + 1; j < mots.length && Array.from(avant[j]).length === 1 && UN_BLANC.test(avant[j]) && mots[j].length <= 4; j++) {
+      candidat += mots[j]
+      if (candidat.length > IBAN_LONGUEUR_MAX) break
+      if (candidat.length >= IBAN_LONGUEUR_MIN) candidats.push(candidat)
+      if (mots[j].length < 4) break
+    }
+  }
+  return candidats
+}
+
+/** Vrai quand le texte porte un IBAN valide (`porte_un_iban`) ; faux pour un texte absent. */
+export function porteUnIban(texte: string | null | undefined): boolean {
+  return texte != null && candidatsIban(texte).some(cleIbanValide)
+}
+
+// Le refus, le même dans `enregistrer_parametres_facturation` et dans `enregistrer_facture` : « % » nomme le texte.
+export const MODELE_IBAN_DANS_UN_TEXTE = "Un IBAN figure dans % : sur une facture, un IBAN ne s'imprime que dans le RIB des "
+  + 'paramètres de facturation, confirmé par le cabinet.'
+
 // ── Les refus de la base, dans son ordre et sous ses mots ───────────────────────────────────────────────────────────
 // La liste des `raise exception` de chaque fonction, dans l'ordre de son texte, avec son code (le test la confronte aux
 // messages que l'essai exige de la base, et au texte exporté quand `PARAMETRES_FACTURATION_EXPORTES` est levé). Sept RANGS
@@ -150,15 +223,29 @@ export const REFUS_CONFIRMATION_RIB = [
   { cle: 'deja_confirme', rang: 5, code: '22023', modele: 'Le RIB de cette version est déjà confirmé.' },
 ] as const
 
+// Le neuvième rang (A7-Q3, migration `iban_hors_des_parametres`) : un texte libre qui porte un IBAN, pour tout auteur, les
+// quatre textes dans l'ordre du quatrième rang, chacun nommé dans le refus.
+export const REFUS_DE_L_IBAN_DES_PARAMETRES = [
+  { cle: 'iban_dans_un_texte', rang: 9, code: '22023', modele: MODELE_IBAN_DANS_UN_TEXTE },
+] as const
+export const TEXTES_SANS_IBAN: readonly { champ: 'escompte' | 'penalites' | 'mentions_complementaires' | 'pied_de_page'; libelle: string }[] = [
+  { champ: 'escompte', libelle: "les conditions d'escompte" },
+  { champ: 'penalites', libelle: 'les pénalités de retard' },
+  { champ: 'mentions_complementaires', libelle: 'les mentions complémentaires' },
+  { champ: 'pied_de_page', libelle: 'le pied de page' },
+]
+
 export type CleRefusEnregistrementParametres = (typeof REFUS_ENREGISTREMENT_PARAMETRES)[number]['cle'] | CleRefusDuLogo
+  | (typeof REFUS_DE_L_IBAN_DES_PARAMETRES)[number]['cle']
 
 /**
  * Les refus d'`enregistrer_parametres_facturation` dans l'ordre de son texte, selon que la base porte la migration du logo
  * (étape A5c1, `LOGO_DES_FACTURES_EXPORTE`) : sans elle, les dix-sept d'A5a ; avec elle, les mêmes puis les huit du logo, au
- * huitième rang (src/lib/logoDesFactures.ts). Une fonction, et non une constante : le test juge les deux états.
+ * huitième rang (src/lib/logoDesFactures.ts), puis celui d'un IBAN dans un texte libre, au neuvième (A7-Q3 : la migration
+ * `iban_hors_des_parametres`, qui suppose celle du logo). Une fonction, et non une constante : le test juge les deux états.
  */
 export function refusDeLEnregistrement(logo: boolean): readonly { cle: CleRefusEnregistrementParametres; rang: number; code: string; modele: string }[] {
-  return logo ? [...REFUS_ENREGISTREMENT_PARAMETRES, ...REFUS_DU_LOGO] : REFUS_ENREGISTREMENT_PARAMETRES
+  return logo ? [...REFUS_ENREGISTREMENT_PARAMETRES, ...REFUS_DU_LOGO, ...REFUS_DE_L_IBAN_DES_PARAMETRES] : REFUS_ENREGISTREMENT_PARAMETRES
 }
 
 /** Les champs qu'admet la fonction : ceux d'une version, puis, la migration du logo en base, son chemin et son empreinte. */
@@ -255,7 +342,8 @@ export function avantEnPointsDeCode(a: string, b: string): number {
  * `versionsDuDossier` : les versions du dossier LUES EN ENTIER — la courante s'y juge ; sur une lecture partielle,
  * l'appelant ne demande rien à ce module ; `fichiersDuSeau` : les fichiers du seau des ventes que l'appelant connaît
  * (celui qu'il vient de déposer), où la base cherche le logo — vide pour une saisie sans logo. La saisie est jugée telle
- * que la base la reçoit, après l'aller-retour JSON ; le logo, au huitième rang, seulement la migration du logo en base.
+ * que la base la reçoit, après l'aller-retour JSON ; le logo, au huitième rang, seulement la migration du logo en base ; un
+ * IBAN dans un texte libre, au neuvième (A7-Q3).
  */
 export function refusEnregistrementParametres(
   dossierId: string,
@@ -313,6 +401,13 @@ export function refusEnregistrementParametres(
   if (LOGO_DES_FACTURES_EXPORTE) {
     const logo = refusDuLogo(dossierId, courante, recue, fichiersDuSeau)
     if (logo) return refus(logo.cle, ...logo.valeurs)
+  }
+  // 9. Un IBAN dans un texte libre (A7-Q3), les quatre dans l'ordre du quatrième rang — chacun, s'il est donné, est ici un
+  // texte que la base a accepté plus haut. Le module le dit avant le clic dès aujourd'hui, la décision du cabinet étant
+  // prise ; la base le refusera la migration `iban_hors_des_parametres` appliquée : rien de neuf ne s'écrit ni ne se lit.
+  for (const { champ, libelle } of TEXTES_SANS_IBAN) {
+    const texte = recue[champ]
+    if (typeof texte === 'string' && porteUnIban(texte)) return refus('iban_dans_un_texte', libelle)
   }
   return null
 }

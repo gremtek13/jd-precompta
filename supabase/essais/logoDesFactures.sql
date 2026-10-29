@@ -27,6 +27,10 @@
 --     du RIB (`dernier_changement_de_rib`) ;
 --   - et que RIEN ne reste en base.
 --
+-- ADAPTÉ LE 29/10/2026 À A7-Q3 (migration `iban_hors_des_parametres`, PRÉPARÉE, pas encore en base) : elle ajoute à
+-- `enregistrer_parametres_facturation` un neuvième rang, après le logo — un vingt-sixième message. Le contrôle 0g juge
+-- les vingt-cinq premiers, inchangés, et 0g2 ce qui suit : rien sans elle, son seul refus avec elle.
+--
 -- SANS LA MIGRATION `logo_des_factures`, une seule ligne la dit, « EN ATTENTE », SANS être une faute : la migration est
 -- présentée au cabinet avant d'être appliquée. Elle EN EST UNE si l'historique des migrations porte `logo_des_factures` sans
 -- que le seau ou les colonnes existent — sauf si une ligne `retour_logo_des_factures`, plus récente, dit son retour arrière.
@@ -162,11 +166,18 @@ begin
                || ' |' || regexp_replace(split_part(split_part(replace(p.prosrc, E'\r\n', E'\n'), E'\nbegin\n', 2), ';', 1), '\s+', ' ', 'g')
              from pg_proc p where p.oid = 'public.enregistrer_parametres_facturation(uuid, uuid, jsonb)'::regprocedure$q$,
         'OK', 'true search_path=public anon false authenticated true public false | if not public.gere_les_ventes(p_dossier_id) or not exists (select 1 from public.dossiers d where d.id = p_dossier_id) then raise exception ''Accès refusé à ce dossier.'' using errcode = ''42501''', null),
-      ('0g', 'valeur', 'ses vingt-cinq messages : les dix-sept d''A5a, à l''identique et dans leur ordre, puis les huit du logo (empreinte des messages)', 'proprietaire', null,
+      ('0g', 'valeur', 'ses vingt-cinq premiers messages : les dix-sept d''A5a, à l''identique et dans leur ordre, puis les huit du logo (empreinte des messages)', 'proprietaire', null,
         $q$select count(*) || ' ' || md5(string_agg(m[1], '|' order by n))
              from pg_proc p, regexp_matches(p.prosrc, 'raise exception ''((?:[^'']|'''')*)''', 'g') with ordinality as r(m, n)
-            where p.oid = 'public.enregistrer_parametres_facturation(uuid, uuid, jsonb)'::regprocedure$q$,
+            where p.oid = 'public.enregistrer_parametres_facturation(uuid, uuid, jsonb)'::regprocedure and r.n <= 25$q$,
         'OK', '25 dfc28d5f1bb8f8965fd0c64da2687623', null),
+      ('0g2', 'valeur', 'puis rien, ou, la migration iban_hors_des_parametres appliquée (A7-Q3), le seul refus de son neuvième rang', 'proprietaire', null,
+        $q$select (case when strpos(min(p.prosrc), 'porte_un_iban(') > 0
+                     then count(*) = 26 and max(m[1]) filter (where r.n = 26) = 'Un IBAN figure dans % : sur une facture, un IBAN ne s''''imprime que dans le RIB des paramètres de facturation, confirmé par le cabinet.'
+                     else count(*) = 25 end)::text
+             from pg_proc p, regexp_matches(p.prosrc, 'raise exception ''((?:[^'']|'''')*)''', 'g') with ordinality as r(m, n)
+            where p.oid = 'public.enregistrer_parametres_facturation(uuid, uuid, jsonb)'::regprocedure$q$,
+        'OK', 'true', null),
       ('0h', 'valeur', 'la liste des champs d''une version : ceux d''A5a, puis le chemin et l''empreinte du logo', 'proprietaire', null,
         $q$select regexp_replace((regexp_match(p.prosrc, 'where k not in \(([^)]*)\)'))[1], '\s+', ' ', 'g')
              from pg_proc p where p.oid = 'public.enregistrer_parametres_facturation(uuid, uuid, jsonb)'::regprocedure$q$,

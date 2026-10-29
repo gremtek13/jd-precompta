@@ -3,18 +3,20 @@ import { CATEGORIE_ENTREPRENEUR_INDIVIDUEL } from './categoriesJuridiques'
 import { commeLaBaseLaRecoit } from './contacts'
 import { remplirModele } from './encaissementsFactures'
 import { numeroTvaImprime } from './factureCii'
-import { ribEnVigueur, versionCourante, type VersionDuRib } from './parametresFacturation'
+import { MODELE_IBAN_DANS_UN_TEXTE, porteUnIban, ribEnVigueur, versionCourante, type VersionDuRib } from './parametresFacturation'
 import type { ArticleExoneration, Dossier, FactureEmise, ParametresFacturation, StatutTva } from './types'
 
 // LA FACTURE FIGE SES MENTIONS (espace client, étape A7a, ligne 51.5 ; migration `mentions_figees` ; HISTORIQUE.md,
-// « LA FACTURE FIGE SES MENTIONS, EN BASE »). Un module PUR — il ne lit rien en base, n'appelle personne, ne lit pas
+// « LA FACTURE FIGE SES MENTIONS, EN BASE », reprise sur A7-Q1 à A7-Q3 : « LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU
+// DOSSIER ET L'IBAN HORS DES TEXTES LIBRES »). Un module PUR — il ne lit rien en base, n'appelle personne, ne lit pas
 // l'horloge — qui redit `enregistrer_facture` telle que la migration la recrée :
 //   - ses REFUS NEUFS, dans son ordre et sous ses mots, avant le clic : la provenance des lignes (l'unité, la référence, la
 //     nature, ligne par ligne), le contact d'où vient le client, l'article d'où vient chaque ligne (`refusDeLaProvenance`) ;
-//     à la validation, le contact que garde le brouillon, la forme juridique pour un accès « Ventes » et la dénomination
-//     d'un entrepreneur individuel (`refusDeLaValidationFigee`, `porteLaMentionEI`). Les refus d'hier passent d'abord, sous
-//     leurs propres modules
-//     (`refusAvoir`, lib/factures.ts ; lib/sourceDeLaVente.ts) ;
+//     puis un texte libre que la facture imprime et qui porte un IBAN (`refusDesTextesDeLaFacture`, A7-Q3) ; à la
+//     validation, le contact que garde le brouillon, la forme juridique pour un accès « Ventes », la dénomination d'un
+//     entrepreneur individuel, le SIRET et l'adresse du dossier pour un accès « Ventes » (A7-Q2), l'identité et les
+//     paramètres en vigueur qui portent un IBAN (`refusDeLaValidationFigee`, `porteLaMentionEI`). Les refus d'hier
+//     passent d'abord, sous leurs propres modules (`refusAvoir`, lib/factures.ts ; lib/sourceDeLaVente.ts) ;
 //   - CE QUE LA VALIDATION FIGE (`mentionsAFiger`) : le statut et le numéro de TVA (`numeroTvaImprime`, le calcul que la
 //     base refait dans `numero_tva_du_vendeur`), l'identité légale, les paramètres de la version courante, le RIB CONFIRMÉ
 //     en vigueur (`ribEnVigueur`) — jamais un RIB seulement proposé —, le logo, le mandataire. L'étape A7b le lira pour
@@ -46,26 +48,56 @@ export const REFUS_DE_LA_PROVENANCE = [
   { cle: 'article', rang: 3, code: 'P0002', modele: "Ligne % : l'article d'où elle vient est introuvable dans ce dossier." },
 ] as const
 
+// Après l'écriture de la facture et de ses lignes, à chaque enregistrement et pour tout auteur (A7-Q3) : un texte libre
+// qu'elle imprime et qui porte un IBAN, le premier dans l'ordre de l'impression (`TEXTES_DE_L_EN_TETE`, chaque ligne, la
+// mention légale). « % » le nomme.
+export const REFUS_DES_TEXTES = [
+  { cle: 'iban_dans_un_texte', rang: 4, code: '22023', modele: MODELE_IBAN_DANS_UN_TEXTE },
+] as const
+
 // À la validation, avant la numérotation et avant les refus de la source de la vente (lib/sourceDeLaVente.ts) : le
 // contact que la facture garde — un brouillon écrit en direct a pu le poser —, puis, pour un accès « Ventes », une identité
-// sans forme juridique (le cabinet la règle, elle en est le préalable : MEG1-Q14), puis l'entrepreneur individuel.
+// sans forme juridique (le cabinet la règle, elle en est le préalable : MEG1-Q14, A7-Q1), puis l'entrepreneur individuel ;
+// puis, pour un accès « Ventes » et une facture (A7-Q2), le SIRET et l'adresse du dossier ; puis, pour tout auteur, un IBAN
+// dans ce que la validation figerait (A7-Q3).
 export const REFUS_DE_LA_VALIDATION_FIGEE = [
-  { cle: 'contact_garde', rang: 4, code: 'P0002', modele: "Le contact d'où vient le client de la facture est introuvable dans ce dossier." },
+  { cle: 'contact_garde', rang: 5, code: 'P0002', modele: "Le contact d'où vient le client de la facture est introuvable dans ce dossier." },
   {
-    cle: 'forme_a_regler', rang: 5, code: '22023',
+    cle: 'forme_a_regler', rang: 6, code: '22023',
     modele: "La forme juridique du dossier n'est pas renseignée : l'identité légale qu'une facture imprime est à régler par le "
       + "cabinet avant qu'une facture se valide depuis l'espace client.",
   },
   {
-    cle: 'entrepreneur_individuel', rang: 6, code: '22023',
+    cle: 'entrepreneur_individuel', rang: 7, code: '22023',
     modele: "La forme juridique du dossier est celle d'un entrepreneur individuel : sa dénomination imprimée, son nom précédé "
       + 'ou suivi des initiales « EI » ou des mots « entrepreneur individuel » (C. com., art. R526-27), est à renseigner par '
       + 'le cabinet avant de valider une facture.',
   },
+  {
+    cle: 'siret_a_poser', rang: 8, code: '22023',
+    modele: "Le SIRET du dossier n'est pas renseigné : le cabinet le renseigne avant qu'une facture se valide depuis l'espace client.",
+  },
+  {
+    cle: 'siret_du_dossier', rang: 9, code: '22023',
+    modele: "Le SIRET de l'émetteur n'est pas celui du dossier : une facture validée depuis l'espace client porte le SIRET que le "
+      + 'cabinet a renseigné.',
+  },
+  {
+    cle: 'adresse_a_poser', rang: 10, code: '22023',
+    modele: "L'adresse du dossier n'est pas renseignée : le cabinet la renseigne avant qu'une facture se valide depuis l'espace "
+      + 'client.',
+  },
+  {
+    cle: 'adresse_du_dossier', rang: 11, code: '22023',
+    modele: "L'adresse de l'émetteur n'est pas celle du dossier : une facture validée depuis l'espace client porte l'adresse que "
+      + 'le cabinet a renseignée.',
+  },
+  { cle: 'iban_a_la_validation', rang: 12, code: '22023', modele: MODELE_IBAN_DANS_UN_TEXTE },
 ] as const
 
 export type CleRefusMentionsFigees =
   | (typeof REFUS_DE_LA_PROVENANCE)[number]['cle']
+  | (typeof REFUS_DES_TEXTES)[number]['cle']
   | (typeof REFUS_DE_LA_VALIDATION_FIGEE)[number]['cle']
 
 export interface RefusMentionsFigees {
@@ -74,7 +106,7 @@ export interface RefusMentionsFigees {
   message: string
 }
 
-const TOUS_LES_REFUS = [...REFUS_DE_LA_PROVENANCE, ...REFUS_DE_LA_VALIDATION_FIGEE]
+const TOUS_LES_REFUS = [...REFUS_DE_LA_PROVENANCE, ...REFUS_DES_TEXTES, ...REFUS_DE_LA_VALIDATION_FIGEE]
 
 function refus(cle: CleRefusMentionsFigees, ...valeurs: string[]): RefusMentionsFigees {
   const r = TOUS_LES_REFUS.find((x) => x.cle === cle) as (typeof TOUS_LES_REFUS)[number]
@@ -131,6 +163,79 @@ export function refusDeLaProvenance(p: ProvenanceAJuger): RefusMentionsFigees | 
   return null
 }
 
+// ── Un IBAN dans un texte libre de la facture (A7-Q3) ───────────────────────────────────────────────────────────────
+// Les textes que la facture imprime, dans l'ordre où `enregistrer_facture` les juge — celui de l'impression : l'en-tête
+// (1 à 11), chaque ligne (12 : sa désignation, puis sa référence), la mention légale (13). `garde` : la base GARDE le
+// texte du brouillon quand la saisie ne nomme pas sa clé (`p_facture ? …`) ; les autres s'écrivent de la saisie, nuls
+// quand elle ne les porte pas. Les notes et l'adresse électronique du client ne s'impriment pas : rien ne les juge.
+export const TEXTES_DE_L_EN_TETE = [
+  { rang: 1, cle: 'emetteur_nom', libelle: "le nom de l'émetteur", garde: false },
+  { rang: 2, cle: 'emetteur_adresse', libelle: "l'adresse de l'émetteur", garde: false },
+  { rang: 3, cle: 'emetteur_siret', libelle: "le SIRET de l'émetteur", garde: false },
+  { rang: 4, cle: 'tiers_nom', libelle: 'le nom du client', garde: false },
+  { rang: 5, cle: 'tiers_adresse', libelle: "l'adresse du client", garde: false },
+  { rang: 6, cle: 'tiers_siret', libelle: 'le SIRET du client', garde: false },
+  { rang: 7, cle: 'livraison_adresse', libelle: "l'adresse de livraison", garde: true },
+  { rang: 8, cle: 'livraison_code_postal', libelle: 'le code postal de livraison', garde: true },
+  { rang: 9, cle: 'livraison_ville', libelle: 'la ville de livraison', garde: true },
+  { rang: 10, cle: 'code_service', libelle: 'le code service', garde: true },
+  { rang: 11, cle: 'numero_engagement', libelle: "le numéro d'engagement", garde: true },
+  { rang: 13, cle: 'mentions_legales', libelle: 'la mention légale', garde: false },
+] as const
+export const TEXTES_DE_LA_LIGNE = [
+  { cle: 'designation', libelle: 'la désignation' },
+  { cle: 'reference', libelle: 'la référence' },
+] as const
+
+type CleDUnTexteGarde = Extract<(typeof TEXTES_DE_L_EN_TETE)[number], { garde: true }>['cle']
+
+/** Ce qu'`enregistrer_facture` juge des textes, après les avoir écrits. */
+export interface TextesAJuger {
+  // L'appel crée un avoir : ses lignes et sa mention légale seules se jugent, le reste est la copie de sa facture.
+  avoir: boolean
+  // `p_facture` et `p_lignes`, tels que l'écran les enverrait.
+  facture: unknown
+  lignes: unknown
+  // Le brouillon que l'appel modifie, tel qu'il est en base : ce qu'il garde quand la saisie ne nomme pas la clé ; null
+  // pour une création (une facture neuve, un avoir).
+  brouillon: Partial<Pick<FactureEmise, CleDUnTexteGarde>> | null
+}
+
+// Un champ JSON tel que `->>` le rend en texte : un texte, lui-même ; un nombre ou un booléen, son écriture JSON ; un objet
+// ou un tableau, son JSON ; nul ou absent, rien.
+function texteDuJson(v: unknown): string | null {
+  if (absent(v)) return null
+  return typeof v === 'string' ? v : JSON.stringify(v)
+}
+
+/** Le premier texte que la facture imprimerait et qui porte un IBAN, dans l'ordre de la base ; null quand aucun n'en porte. */
+export function refusDesTextesDeLaFacture(t: TextesAJuger): RefusMentionsFigees | null {
+  const facture = commeLaBaseLaRecoit(t.facture)
+  const recues = commeLaBaseLaRecoit(t.lignes)
+  const lignes = Array.isArray(recues) ? recues : []
+  const ecrit = (cle: string, garde: boolean): string | null => {
+    if (!garde) return texteDuJson(champ(facture, cle))
+    // `nullif(p_facture->>'…', '')` ; dans un brouillon modifié, la valeur en place quand la clé manque.
+    if (t.brouillon !== null && !(estObjet(facture) && cle in facture)) return t.brouillon[cle as CleDUnTexteGarde] ?? null
+    const texte = texteDuJson(champ(facture, cle))
+    return texte === '' ? null : texte
+  }
+  const jugeTexte = (texte: string | null, libelle: string) => (porteUnIban(texte) ? refus('iban_dans_un_texte', libelle) : null)
+  for (const { rang, cle, libelle, garde } of TEXTES_DE_L_EN_TETE) {
+    if (rang === 13) break
+    if (t.avoir) continue
+    const r = jugeTexte(ecrit(cle, garde), libelle)
+    if (r) return r
+  }
+  for (const [i, ligne] of lignes.entries()) {
+    for (const { cle, libelle } of TEXTES_DE_LA_LIGNE) {
+      const r = jugeTexte(texteDuJson(champ(ligne, cle)), `${libelle} de la ligne ${i + 1}`)
+      if (r) return r
+    }
+  }
+  return jugeTexte(texteDuJson(champ(facture, 'mentions_legales')), 'la mention légale')
+}
+
 // ── L'entrepreneur individuel ───────────────────────────────────────────────────────────────────────────────────────
 // Sa dénomination incorpore son nom, « précédé ou suivi immédiatement des mots « entrepreneur individuel » ou des initiales
 // « EI » » (C. com., art. R526-27). La base ne connaît pas son nom d'état civil : elle exige la mention — les initiales en
@@ -153,17 +258,58 @@ export interface ValidationAJuger {
   // L'identité que la facture figera (celle du dossier, ou pour un avoir celle que sa facture a figée).
   formeJuridique: string | null | undefined
   denomination: string | null | undefined
+  rcsVille: string | null | undefined
+  mentionsIdentite: string | null | undefined
   // Qui valide : le cabinet du dossier (`admin_du_dossier`), ou un accès « Ventes ».
   cabinet: boolean
-  // Un avoir qui reprend l'identité que sa facture a figée : la forme n'en est pas rejugée.
+  // Un avoir (il reprend l'émetteur de sa facture), et un avoir qui reprend l'identité que sa facture a figée : ni la
+  // forme ni l'identité n'en sont rejugées.
+  avoir: boolean
   reprise: boolean
+  // L'émetteur que la facture porte après l'enregistrement (`emetteur_siret`, `emetteur_adresse`), et le SIRET et
+  // l'adresse du dossier, tels que la base les lit dans la transaction qui valide (A7-Q2).
+  emetteurSiret: string | null
+  emetteurAdresse: string | null
+  dossierSiret: string | null
+  dossierAdresse: string | null
+  // Les textes de la version COURANTE des paramètres (celle que la validation fige), null quand le dossier n'en a pas.
+  parametres: Pick<ParametresFacturation, 'escompte' | 'penalites' | 'mentions_complementaires' | 'pied_de_page'> | null
 }
+
+// « Les mêmes » (A7-Q2), comme la base les juge : le SIRET, ses caractères, les blancs (`\s`) retirés où qu'ils soient ;
+// l'adresse, son texte, ses fins de ligne ramenées à `\n`, les blancs de ses bords retirés — `trim` retire ceux que `\s`
+// désigne, ceux de la base.
+export const siretSansBlancs = (siret: string | null): string => (siret ?? '').replace(/\s/g, '')
+export const adresseNette = (adresse: string | null): string => (adresse ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+
+// Ce que la validation figerait et que la facture imprime sans confirmation, dans l'ordre de la base (A7-Q3).
+export const TEXTES_FIGES_A_LA_VALIDATION = [
+  { rang: 1, libelle: 'la dénomination du dossier' },
+  { rang: 2, libelle: 'la ville du greffe du dossier' },
+  { rang: 3, libelle: "les autres mentions de l'identité du dossier" },
+  { rang: 4, libelle: "les conditions d'escompte des paramètres de facturation" },
+  { rang: 5, libelle: 'les pénalités de retard des paramètres de facturation' },
+  { rang: 6, libelle: 'les mentions complémentaires des paramètres de facturation' },
+  { rang: 7, libelle: 'le pied de page des paramètres de facturation' },
+] as const
 
 /** Le premier refus neuf de la validation, dans l'ordre de la base ; null quand elle validerait. */
 export function refusDeLaValidationFigee(v: ValidationAJuger): RefusMentionsFigees | null {
   if (v.contactGarde !== null && !v.contactsDuDossier.includes(v.contactGarde)) return refus('contact_garde')
   if (v.formeJuridique == null && !v.cabinet && !v.reprise) return refus('forme_a_regler')
   if (v.formeJuridique === CATEGORIE_ENTREPRENEUR_INDIVIDUEL && !porteLaMentionEI(v.denomination)) return refus('entrepreneur_individuel')
+  if (!v.cabinet && !v.avoir) {
+    if (siretSansBlancs(v.dossierSiret) === '') return refus('siret_a_poser')
+    if (siretSansBlancs(v.emetteurSiret) !== siretSansBlancs(v.dossierSiret)) return refus('siret_du_dossier')
+    if (adresseNette(v.dossierAdresse) === '') return refus('adresse_a_poser')
+    if (adresseNette(v.emetteurAdresse) !== adresseNette(v.dossierAdresse)) return refus('adresse_du_dossier')
+  }
+  const valeurs = [v.denomination, v.rcsVille, v.mentionsIdentite, v.parametres?.escompte, v.parametres?.penalites,
+    v.parametres?.mentions_complementaires, v.parametres?.pied_de_page]
+  for (const [i, { rang, libelle }] of TEXTES_FIGES_A_LA_VALIDATION.entries()) {
+    if (rang <= 3 && v.reprise) continue
+    if (porteUnIban(valeurs[i])) return refus('iban_a_la_validation', libelle)
+  }
   return null
 }
 
