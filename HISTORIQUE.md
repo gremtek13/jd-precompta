@@ -41393,3 +41393,229 @@ touché, sa dénomination étant déjà exigée (la mention « EI »).
 **VF9CQ1B2-Q1, (A) : RIEN DE PLUS.** Le retrait d'une contre-passation fait foi : le débit qu'elle citait redevient
 libre et garde son libellé auprès de l'assistant, sauf si le cabinet le classe sur un compte de produit ou de client, où
 il se nomme par sa date et son montant (VF9CQ1B). Rien à écrire ni à redéployer.
+
+### 29/10/2026 — CE QUE RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION — MVP
+
+(Écrite par l'agent architecte de l'audit sur `d1d197b` — `main` (`ea631dc`), A7a et sa reprise, puis C1, rien
+d'appliqué —, la branche locale `audit-essais`, en deux commits : les corrections, le banc et le garde ; puis cette
+documentation. Créés : le banc du leurre, `outils/leurre/` (`banc.py`, `regles.json`, `leurre.sql`,
+`leurre_complement.sql`, `leurre_facture_zero.sql`, `detecteur.sql`, `temoin.sql` et quatre semis), et
+`src/lib/essaisEnProduction.test.ts`. Modifiés : soixante essais de `supabase/essais/`, chacun d'une correction et d'un
+commentaire daté. Ni migration, ni module, ni écran, ni Edge Function ; RGPD.md inchangé, aucun traitement ne change.
+En production, des SELECT de comptes, du catalogue et de l'historique ; aucun essai rejoué, aucune valeur d'une ligne.)
+
+**POURQUOI.** Vers le 20/11/2026, la production reçoit les données réelles d'un premier praticien (MVP-D6, MVP-D7). Les
+essais se rejouent en production après chaque migration, et ce qu'ils rendent — les lignes d'un SELECT, une NOTICE, un
+WARNING, le texte d'un refus — entre dans la conversation de la session, donc chez le fournisseur du modèle. Avec des
+données fictives, sans conséquence ; avec celles d'un praticien, un essai qui rendrait un nom, un libellé bancaire, un
+montant, ou seulement le nombre de ses pièces, les exposerait. Les trois dossiers fictifs que les essais citent restent
+(MVP-D8) : `test` et les deux du client d'essai.
+
+**LA MÉTHODE : UN LEURRE, TROIS PASSAGES.** Deux répliques, copies à froid de celle de VF8f : `audit` (port 5721), égale
+à la production — les neuf familles de `signature.sql` relues en production ce jour, l'historique (159 migrations,
+`b70ba907…`) —, et `audit_m` (5722), la même après les trois migrations préparées (le collage de `mentions_figees`,
+`iban_hors_des_parametres`, `caisse`), pour les trois essais qui les attendent. Sur chaque base modèle, le LEURRE :
+quatre dossiers « réels » aux valeurs fictives et reconnaissables — le marqueur LEURRE-7Q3, des adresses en
+`example.test`, des IBAN au code banque 99999, des SIREN 9997357x, des montants 7357,3x —, A et Z dans le cabinet de
+`test`, aux identifiants le plus petit et le plus grand, N dans un cabinet de plus avec son chef, V à son premier jour
+(sa fiche et l'accès de son client, au plus petit identifiant). A, Z et N portent chacun deux pièces et leurs textes
+OCR, deux mouvements, une facture validée et son encaissement, un contact, un article, des paramètres et leur RIB, des
+connexions et leurs secrets, des notes ; puis une ligne marquée dans CHAQUE table qui porte `dossier_id` (72 sur 72, 73
+avec la caisse), composée sur le catalogue, ses identifiants au préfixe du leurre. Chaque essai joué en production se
+rejoue trois fois, en une transaction, psql en mode verbeux, toute sa sortie gardée : P, la réplique telle quelle ; L,
+avec le leurre ; D, avec le leurre et un détecteur d'écritures (un déclencheur après chaque ligne de toute table, qui la
+dit par un WARNING, même dans une transaction annulée). Un essai est SÛR quand L rend exactement P — aux identifiants
+tirés, aux instants et aux durées près —, qu'aucun motif du leurre n'y paraît, et que D n'écrit aucune ligne du leurre.
+
+**L'INVENTAIRE.** Soixante-treize fichiers : 63 essais joués en production, 5 de réplique seulement, 5 outils.
+
+- Les outils (`allerretour.py`, `bordures.py`, `socle.py`, `inventaire.py`, `batterieEncaissements.mjs`) ne lisent
+  aucune ligne d'un dossier : SÛRS ; le dernier ne se joue que sur une réplique, son en-tête le dit.
+- Les essais de réplique seulement sont gardés de la production par leur en-tête (« SUR UNE RÉPLIQUE SEULEMENT »), et
+  deux par un mécanisme : `restauration.sql` porte une méta-commande de psql (`\set`, ligne 363), que l'outil
+  d'exécution ne joue pas, et `restaurationEssai.test.ts` ; `recompositionDesVentes.sql` pose
+  `session_replication_role`, refusé au rôle de la production, avant toute écriture. `caisseSuppression.sql`,
+  `frontiereDesEncaissements.sql` et `logoDesFacturesSuppression.sql` ne le sont que par leur en-tête : leurs
+  suppressions vivent dans des blocs, comme celles d'essais joués en production (AUDIT-Q1).
+- Ce que rendent les 63 joués en production : leurs verdicts, par un SELECT de tête — 47 depuis un réglage local à la
+  transaction (`essai.*` : le contrôle, juste ou non, l'observé), onze depuis une table temporaire, `rls.sql` ses
+  invariants et ses mutations (deux tables temporaires), `signature.sql`, `socle.sql` et `inventaire.sql` des empreintes
+  du catalogue, `bornesStockage.sql` ses seaux et leurs bornes ; aucune NOTICE ni aucun WARNING, hors des deux de
+  `rls.sql` (ses tables temporaires) ; un refus, le seul ESSAI_IMPOSSIBLE de `devis.sql`.
+- Des 63 joués en production, à BASE : quatre SÛRS (`signature.sql`, `socle.sql` et `inventaire.sql`, qui ne lisent
+  que le catalogue, et `devis.sql`, impossible sans ses migrations), 59 en FAUTE ; une occurrence du marqueur
+  (`planComptable.sql`, contrôle 16) ; onze écrivaient dans le leurre, de 4 à 516 lignes, annulées. Corrigés : 63
+  SÛRS, aucune occurrence, aucune écriture.
+
+Une ligne par fichier. Les formes : C, un compte de toute la base rendu avant et après ; P, « le premier » d'une table
+de toute la base, où l'essai écrit ; L, une liste, un compte ou une valeur sur tous les dossiers ; les numéros sont les
+lignes de BASE ; « écrit » compte les lignes du leurre que D a vues ; le marqueur, ses occurrences avant → après.
+
+| Fichier | En production | Ce qu'il rend | À BASE | Corrigé | Marqueur |
+| --- | --- | --- | --- | --- | --- |
+| abandonTransmission.sql | oui | 14 verdicts | FAUTE : P 44, C 190 ; écrit 13 | SÛR | 0 → 0 |
+| affectation.sql | oui | 36 verdicts | FAUTE : C 574 | SÛR | 0 → 0 |
+| allerretour.py | non, outil | la copie déployée d'une Edge Function, confrontée au dépôt | SÛR | — | — |
+| articles.sql | oui | 159 verdicts | FAUTE : C 676 | SÛR | 0 → 0 |
+| banqueClient.sql | oui | 87 verdicts | FAUTE : P 73-74, C 473 ; écrit 7 | SÛR | 0 → 0 |
+| batterieEncaissements.mjs | non, réplique (son en-tête) | les réponses de la base | gardée par son en-tête | — | — |
+| bordures.py | non, outil | les bordures d'une Edge Function, comptées | SÛR | — | — |
+| bornesStockage.sql | oui | 6 verdicts | FAUTE : L 66 | SÛR | 0 → 0 |
+| caisse.sql | oui | 234 verdicts | FAUTE : C 871 | SÛR | 0 → 0 |
+| caisseSuppression.sql | non, réplique (son en-tête) | — | gardé par son en-tête seul | — | — |
+| categoriesCommunes.sql | oui | 11 verdicts | FAUTE : C 152-154 | SÛR | 0 → 0 |
+| compteBilan.sql | oui | 63 verdicts | FAUTE : C 665 | SÛR | 0 → 0 |
+| connexionBancaire.sql | oui | 23 verdicts | FAUTE : P 77-80, C 309-310 ; écrit 4 | SÛR | 0 → 0 |
+| contacts.sql | oui | 224 verdicts | FAUTE : C 898 | SÛR | 0 → 0 |
+| cotisationPersonnelle.sql | oui | 92 verdicts | FAUTE : C 381 | SÛR | 0 → 0 |
+| cotisationRapprochee.sql | oui | 52 verdicts | FAUTE : C 769-771 | SÛR | 0 → 0 |
+| declarationsEreporting.sql | oui | 180 verdicts | FAUTE : C 687 | SÛR | 0 → 0 |
+| dernierChangementDeRib.sql | oui | 98 verdicts | FAUTE : C 560 | SÛR | 0 → 0 |
+| devis.sql | oui | ESSAI_IMPOSSIBLE | SÛR ; C 713 (latente : l’essai est impossible) | SÛR | 0 → 0 |
+| dossierPermanent.sql | oui | 190 verdicts | FAUTE : C 576 | SÛR | 0 → 0 |
+| dossiersAuRibAConfirmer.sql | oui | 65 verdicts | FAUTE : C 583 | SÛR | 0 → 0 |
+| dotations.sql | oui | 34 verdicts | FAUTE : C 513-515,517-518 | SÛR | 0 → 0 |
+| droitsAcces.sql | oui | 66 verdicts | FAUTE : P 82-85, L 101-103, C 838-842 ; écrit 16 | SÛR | 0 → 0 |
+| echeanceEmprunt.sql | oui | 51 verdicts | FAUTE : C 699-701 | SÛR | 0 → 0 |
+| ecrituresVentesFacturees.sql | oui | 208 verdicts | FAUTE : C 831 | SÛR | 0 → 0 |
+| encaissementsFactures.sql | oui | 114 verdicts | FAUTE : P 124-126, C 928 ; écrit 89 | SÛR | 0 → 0 |
+| etatFactureElectronique.sql | oui | 129 verdicts | FAUTE : C 710 | SÛR | 0 → 0 |
+| exemplairesDesFactures.sql | oui | 324 verdicts | FAUTE : C 1116 | SÛR | 0 → 0 |
+| factures.sql | oui | 119 verdicts | FAUTE : C 349 | SÛR | 0 → 0 |
+| forfaitKilometrique.sql | oui | 36 verdicts | FAUTE : P 481, C 511-514 | SÛR | 0 → 0 |
+| frontiereDesEncaissements.sql | non, réplique (son en-tête) | — | gardé par son en-tête seul | — | — |
+| ibanHorsDesParametres.sql | oui | 28 verdicts | FAUTE : C 229 | SÛR | 0 → 0 |
+| identiteFacturesRecues.sql | oui | 39 verdicts | FAUTE : C 325 | SÛR | 0 → 0 |
+| importContacts.sql | oui | 73 verdicts | FAUTE : C 452 | SÛR | 0 → 0 |
+| inventaire.py | non, outil | l'inventaire du catalogue, confronté à l'export | SÛR | — | — |
+| inventaire.sql | oui | le catalogue | SÛR | SÛR | 0 → 0 |
+| laBaseLitLePlan.sql | oui | 55 verdicts | FAUTE : C 823 | SÛR | 0 → 0 |
+| lettrageManuel.sql | oui | 29 verdicts | FAUTE : C 376-379 | SÛR | 0 → 0 |
+| liquidationTva.sql | oui | 76 verdicts | FAUTE : C 522 | SÛR | 0 → 0 |
+| logoDesFactures.sql | oui | 127 verdicts | FAUTE : C 630 | SÛR | 0 → 0 |
+| logoDesFacturesSuppression.sql | non, réplique (son en-tête) | — | gardé par son en-tête seul | — | — |
+| mentionsFigees.sql | oui | 214 verdicts | FAUTE : C 1212 | SÛR | 0 → 0 |
+| notesInternes.sql | oui | 31 verdicts | FAUTE : P 43, L 73-207, C 431-433 ; écrit 6 | SÛR | 0 → 0 |
+| parametresFacturation.sql | oui | 204 verdicts | FAUTE : C 895 | SÛR | 0 → 0 |
+| piecesHorsDeFrance.sql | oui | 198 verdicts | FAUTE : C 622 | SÛR | 0 → 0 |
+| piecesJointesEcartees.sql | oui | 82 verdicts | FAUTE : P 118, 1087, C 1396-1407 ; écrit 19 | SÛR | 0 → 0 |
+| planComptable.sql | oui | 60 verdicts | FAUTE : P 99-100, L 141-171, 377, C 752-758 ; écrit 64 | SÛR | 1 → 0 |
+| receptionPlateforme.sql | oui | 41 verdicts | FAUTE : C 383-385 | SÛR | 0 → 0 |
+| recompositionDesVentes.sql | non, réplique (son en-tête) | — | gardé : `session_replication_role` | — | — |
+| regimesEreporting.sql | oui | 187 verdicts | FAUTE : C 538 | SÛR | 0 → 0 |
+| reglementGroupe.sql | oui | 52 verdicts | FAUTE : C 735,737-738 | SÛR | 0 → 0 |
+| reglesAffectation.sql | oui | 26 verdicts | FAUTE : C 401 | SÛR | 0 → 0 |
+| reportDesSoldes.sql | oui | 53 verdicts | FAUTE : C 406 | SÛR | 0 → 0 |
+| restauration.sql | non, réplique (méta-commande) | — | gardé : `\set`, son test | — | — |
+| retraitPaiementPersonnel.sql | oui | 25 verdicts | FAUTE : C 186 | SÛR | 0 → 0 |
+| revisionCycles.sql | oui | 218 verdicts | FAUTE : C 454 | SÛR | 0 → 0 |
+| revisionSoldes.sql | oui | 167 verdicts | FAUTE : C 443 | SÛR | 0 → 0 |
+| revueAnalytique.sql | oui | 229 verdicts | FAUTE : C 520 | SÛR | 0 → 0 |
+| rls.sql | oui | invariants, mutations | FAUTE : L 842-1218 (sous le chef) | SÛR | 0 → 0 |
+| signature.sql | oui | le catalogue | SÛR | SÛR | 0 → 0 |
+| simulationDesVentesFacturees.sql | oui | 31 verdicts | FAUTE : C 239 | SÛR | 0 → 0 |
+| socle.py | non, outil | le socle, confronté au catalogue | SÛR | — | — |
+| socle.sql | oui | le catalogue | SÛR | SÛR | 0 → 0 |
+| statutTva.sql | oui | 23 verdicts | FAUTE : C 312 | SÛR | 0 → 0 |
+| statutsFacturesRecus.sql | oui | 63 verdicts | FAUTE : P 69-71, C 509 ; écrit 103 | SÛR | 0 → 0 |
+| transmissionsEncaissements.sql | oui | 132 verdicts | FAUTE : P 105-107, C 993 ; écrit 516 | SÛR | 0 → 0 |
+| transmissionsFactures.sql | oui | 44 verdicts | FAUTE : P 72-73, C 398-399 ; écrit 51 | SÛR | 0 → 0 |
+| validationDesVentesFacturees.sql | oui | 77 verdicts | FAUTE : C 386 | SÛR | 0 → 0 |
+| validationExercice.sql | oui | 153 verdicts | FAUTE : C 662 | SÛR | 0 → 0 |
+| ventesClient.sql | oui | 90 verdicts | FAUTE : C 500 | SÛR | 0 → 0 |
+| ventesFacturees.sql | oui | 340 verdicts | FAUTE : C 968 | SÛR | 0 → 0 |
+| ventilation.sql | oui | 69 verdicts | FAUTE : C 955,957-959 | SÛR | 0 → 0 |
+| virementPersonnel.sql | oui | 29 verdicts | FAUTE : C 484 | SÛR | 0 → 0 |
+
+**LES FAUTES ET LEURS CORRECTIONS.**
+
+- C, UN COMPTE DE TOUTE LA BASE, RENDU AVANT ET APRÈS : le contrôle « rien n'est resté » de 57 essais rendait jusqu'à
+  seize comptes — dossiers, pièces, écritures, encaissements, accès… — de toute la base ; avec un dossier réel, son
+  volume et le compte de ses factures. Il ne rend plus que l'écart, signé (`to_char(…, 'FMSG9999999990')`, « +0 ») ;
+  son verdict compare toujours les comptes entiers.
+- P, « LE PREMIER » D'UNE TABLE DE TOUTE LA BASE : la première facture validée de la base et « l'autre dossier »
+  (`abandonTransmission.sql`, `encaissementsFactures.sql`, `statutsFacturesRecus.sql`, `transmissionsEncaissements.sql`,
+  `transmissionsFactures.sql`) ; « un autre dossier du cabinet » (`banqueClient.sql`, `droitsAcces.sql`,
+  `piecesJointesEcartees.sql`, `planComptable.sql`), quand le cabinet de `test` recevra le dossier réel ; le premier
+  dossier sans connexion (`connexionBancaire.sql`), le plus annoté (`notesInternes.sql`), le premier bien
+  (`forfaitKilometrique.sql`). Un dossier réel au plus petit identifiant aurait reçu leurs écritures, annulées, et rendu
+  sa couverture. Ils se prennent désormais dans les dossiers d'essai, nommément, ou dans un dossier jetable que l'essai
+  crée et annule (`connexionBancaire.sql`, et le troisième dossier de `droitsAcces.sql` et de
+  `piecesJointesEcartees.sql`).
+- L, UNE LISTE OU UN COMPTE SUR TOUS LES DOSSIERS : `planComptable.sql` (« pour chaque dossier et chaque rôle », et
+  l'identifiant du premier dossier du cabinet, au contrôle 16 : la seule occurrence du marqueur), `notesInternes.sql`
+  (les notes, les pièces et les documents de toute la base), `droitsAcces.sql` (les accès et les dossiers basculés de
+  toute la base), `bornesStockage.sql` (les fichiers de tous les dossiers hors des bornes), `rls.sql` (sous le chef, qui
+  voit tout : le nombre de tables en faute, de fichiers visibles, et le plus grand numéro de facture). Bornés aux
+  dossiers d'essai, ou « au moins un » au lieu du nombre.
+- `devis.sql`, latent : son contrôle « rien n'est resté » rendrait les comptes de toute la base le jour de ses
+  migrations ; corrigé de même.
+
+Sur la réplique telle quelle, chaque essai rend les mêmes lignes qu'à BASE, au compte près, hors des 69 que la
+correction réécrit dans 59 essais (quatre libellés disent désormais « des dossiers d'essai ») : aucun verdict ne change.
+La suite, comparée test par test à BASE : aucun test perdu ni changé, les huit du garde en plus.
+
+**CE QU'UN ESSAI ÉCRIT HORS DE SES DOSSIERS, ET CE QU'UNE ÉCRITURE ANNULÉE PEUT FAIRE AU-DEHORS.** Corrigés, les essais
+n'écrivent plus, hors des dossiers d'essai, que dans des dossiers jetables qu'ils créent (45 essais) et dans des lignes
+sans dossier (37) : les lignes de leurs factures, des membres du cabinet (30), leurs fichiers, des cabinets jetables, le
+seau des logos (`logoDesFactures.sql`), une catégorie ou une nature communes (`caisse.sql`, `categoriesCommunes.sql`),
+un super-administrateur (`dossiersAuRibAConfirmer.sql`), un rôle du plan (`planComptable.sql`) ; toujours dans une
+transaction annulée, jamais dans le leurre, et le temps de l'essai seulement, sous ses verrous. Rien n'en sort : aucune
+séquence dans le schéma public, aucune colonne d'identité ni de série (relu en production, au catalogue), aucune
+fonction qui appelle le réseau, `pg_notify` ou `dblink` ; aucun essai n'appelle `nextval`, `net.http_*`, une file ou
+une tâche planifiée, ni n'écrit dans `auth.users` ; les lignes de `storage.objects` qu'un essai écrit, annulées, ne
+touchent pas les fichiers.
+
+**LES TABLES QU'UN ESSAI NE LIT PAS SUR UN DOSSIER RÉEL.** `piece_textes_ocr` : aucun essai joué en production ne la
+nomme ; seul `rls.sql` la parcourt, comme toute table, par `pg_class`, sous ses quatre profils — des comptes, que la
+correction ne rend plus. Les connexions et les secrets (`connexions_bancaires`, `connexions_plateformes`,
+`superpdp_credentials`) : des comptes avant et après, corrigés, et des lectures bornées aux dossiers d'essai ou aux
+lignes de l'essai (`connexionBancaire.sql`, `receptionPlateforme.sql`, `etatFactureElectronique.sql`). Le texte OCR et
+les secrets du leurre portent le marqueur : aucun n'a paru, à BASE non plus.
+
+**LES DEUX FAUTES CONNUES.** `forfaitKilometrique.sql`, contrôle 32, touche l'audit : il citait « le premier bien de la
+base ». Corrigé (un bien des dossiers d'essai), il reste juste en production, où le dossier du client d'essai en porte
+un (relu en production : un bien là, aucun dans `test`) — rejoué sur une réplique munie d'un tel bien, 36 sur 36 —, et
+en faute sur la réplique, qui n'en porte aucun, comme avant (AUDIT-Q2). `ventesClient.sql`, contrôle 0c (la liste des
+fonctions de la vente, au catalogue), n'y touche pas.
+
+**LE GARDE.**
+
+- LE BANC DU LEURRE, `outils/leurre/banc.py`, la méthode ci-dessus refaite d'une commande, sur une réplique. Il part de
+  TOUT : chaque fichier des essais se classe par sa forme (`regles.json` : la phrase du premier paragraphe de l'en-tête,
+  ou une méta-commande de psql — la phrase cherchée dans tout l'en-tête prenait `rls.sql`, qui parle plus bas d'un autre
+  essai) ; une autre forme l'arrête. Ce qui ne se rejoue pas sur la réplique telle quelle est un cas particulier, avec
+  sa raison : dix essais cherchent le jeu de départ que la production porte, un le second accès du client, deux un
+  journal ou des notes, trois veulent le super-utilisateur, trois une migration préparée, un est impossible (dix-neuf).
+  Ses semis — le jeu de départ de R1, repris tel quel, le second accès, le journal, les notes — rendent les bases que
+  les sessions semaient à la main, comparées table par table. Ses planchers : la couverture (toute table de dossier
+  porte une ligne de chacun des trois leurres garnis, sinon il s'arrête), le témoin (`temoin.sql`, un essai fautif
+  planté, vu de ses trois façons avant tout autre), chaque essai joué jusqu'au bout sur P ; ses normalisations disent
+  leur raison et leur nombre. Sur les essais de BASE : 59 fautes, en 111 secondes ; corrigés : 63 SÛRS, en 101. La CI
+  n'a pas de base : il se joue sur une réplique, comme les essais qui ne vont pas en production.
+- `src/lib/essaisEnProduction.test.ts`, ce que la suite tient sans base : la classification et ses nombres (cinq de
+  réplique seulement, cinq outils, au moins 63 joués en production) ; les dix-neuf cas particuliers, chacun un essai
+  joué en production, avec sa raison et son semis ; aucun motif du leurre dans les essais, tous dans le leurre ; et les
+  deux formes trouvées — « le premier » d'une table sans ancre sur une ligne connue de l'essai (le cabinet n'en est
+  pas une), lu à sa profondeur de parenthèses (105 sélections, aucune sans ancre, un plancher de 100), et le compte
+  « avant -> après » (cinq flèches restent, chacune avec sa raison) —, chacune éprouvée par un défaut planté. Rejoué sur
+  les essais de BASE, il y voit 18 « premiers » sans ancre dans douze essais, et des flèches dans 60.
+- POURQUOI AUCUN SCANNER NE SUFFIT : ce qu'un essai rend se calcule en PL/pgSQL, d'une lecture dont la portée tient à
+  une valeur (une variable qui porte un dossier, une requête composée par `format()`, le rôle de la session) ; un texte
+  ne dit pas si un compte est celui de toute la base ou d'un dossier d'essai. Le banc le voit ; le scanner ne garde que
+  les deux formes trouvées. D'où la règle de CLAUDE.md : le banc se rejoue après tout changement d'un essai.
+
+**CE QUI RESTE.**
+
+- Rejouer le banc après tout changement d'un essai, et avant le premier rejeu en production sur des données réelles ; le
+  jour où les trois migrations préparées s'appliquent, leurs essais quittent la famille « apres » de `regles.json`.
+- Le leurre garnit de lui-même toute table qui porte `dossier_id` ; une table neuve qui portera des données réelles
+  sans cette colonne (comme `mouvements_cca` ou `tiers_categories_cabinet`) se garnit à la main, dans
+  `leurre_complement.sql`.
+- Le banc ne juge pas les essais de réplique seulement, qui ne se jouent pas en production.
+- Deux questions au cabinet, sur la page des arbitrages par la session. AUDIT-Q1 : les trois essais de réplique
+  seulement que leur seul en-tête garde refuseraient-ils de se jouer hors d'une réplique (une garde de tête : le rôle
+  `proprietaire`, que la production n'a pas, relu au catalogue) ? Recommandé : oui, quelques lignes par essai, et une
+  erreur de la session ne les jouerait plus en production. AUDIT-Q2 : `forfaitKilometrique.sql` créerait-il son propre
+  bien, jetable, pour le contrôle 32 ? Recommandé : oui ; le contrôle ne dépendrait plus d'aucun bien de la base, et
+  passerait aussi sur la réplique — la faute connue se fermerait.

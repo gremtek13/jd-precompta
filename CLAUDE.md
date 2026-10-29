@@ -154,7 +154,10 @@ supabase/
                   fonctions, ses tables ou les contraintes de lignes_bancaires et ecritures_brouillon ;
                   bornesStockage en lecture seule ; logoDesFacturesSuppression, frontiereDesEncaissements et
                   recompositionDesVentes (une batterie tirée d'une graine fixe) sur une réplique seulement ;
-                  validationExercice, liquidationTva et factures en UNE transaction (psql -1).
+                  validationExercice, liquidationTva et factures en UNE transaction (psql -1). Joué en
+                  production, un essai ne rend rien qui dépende d'une ligne hors de ses dossiers (pas même un
+                  compte : l'écart seul) ; outils/leurre/banc.py le rejoue avec un leurre, sur une réplique, après
+                  tout changement d'un essai → « CE QUE RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION ».
   types/          prothèses de type des Edge Functions, HORS de functions/ (que des scanners énumèrent).
   schema/         export du schéma (voir PLAN_DE_REPRISE.md).
   config.toml     le réglage verify_jwt de chaque Edge Function, et rien d'autre.
