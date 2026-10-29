@@ -42,9 +42,10 @@ dossier exonéré ou en franchise, et une pièce s'y règle — environ vingt jo
 DOSSIER BNC : LA CONCEPTION », « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE » ; la première,
 `caisse` (C1), préparée le 29/10/2026 hors de l'export (`supabase/preparees/`), s'applique avec la sauvegarde de C2, son
 essai de suppression (`caisseSuppression.sql`) sur une réplique seulement → « LA CAISSE, EN BASE : LA MIGRATION `CAISSE`
-(C1, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque
-les lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER
-BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
+(C1, LIGNE 26.6) » ; la seconde (C1b), préparée de même, se colle après elle → « LA CAISSE, EN BASE : LE RETRAIT, LE
+REMPLACEMENT ET LE VERSEMENT D'ESPÈCES (C1B, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La
+case « MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe
+avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 

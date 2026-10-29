@@ -600,6 +600,29 @@ puis 212 `ddcdda6933f81c9e51ec32b5d0b9b26a`), « index » (238 `b9aae28f…` pui
 — et reviennent à la production, historique compris, après son retour arrière ; les trois ordres avec A7 rendent une
 même signature (HISTORIQUE.md, « LA CAISSE, EN BASE : LA MIGRATION `CAISSE` (C1, LIGNE 26.6) »).
 
+**Préparé le 29/10/2026, PAS ENCORE APPLIQUÉ : `caisse_retrait_et_versement`** (ligne 26.6, étape C1b : le retrait, le
+remplacement et le versement d'espèces). Son fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version
+PROVISOIRE, `20261029130000`, après celle de `caisse`, qu'il exige (sa garde de tête refuse une base sans elle). Il se
+COLLE — le corps de ses deux fonctions retire les lignes du brouillon d'une opération retirée — : le texte à coller
+vérifie son empreinte, refuse une seconde application et une base dont l'historique ne porte pas `caisse`, et pose la
+ligne d'historique sous la version de l'heure du collage ; le fichier entre alors ici RENOMMÉ à cette version, texte
+inchangé, avec `caisse` et l'étape C2, et sa ligne doit rendre `6104e62c7ed5ee81ce4f1c81c40eb5cd`, fins de ligne
+ramenées à `\n`. Tant qu'il n'est pas collé, l'export ne le porte pas, et ses trois contrôles sont ceux de la
+production. Sur la réplique de l'étape (la production à 159 migrations, son historique et ses neuf familles égaux à ceux
+de la production, relus le 29/10/2026), munie de `caisse` puis de lui par l'outil sous sa version provisoire, et sur un
+miroir de l'export qui porte les deux avec le socle régénéré de `caisse` : 161 fichiers, 161 migrations,
+`467b06632f13f2f8b6934a3e82ea8685` des deux côtés ; collé (version `20261029192809`), le fichier renommé à sa version,
+`e65694ca1227b8790131ea2d4715d8aa` des deux côtés ; avec les deux d'A7, dans les trois ordres, 163,
+`ea2050ef82470daa3322fdbc0ef0ded4`. Le socle est celui de `caisse` (81 instructions, `5d636a96…`) : il ne touche aucune
+table. L'inventaire compte 2 241 objets (`bd1bb32aab9a61a2c1cce99fd40a9ffe`, des deux côtés ; 2 239 avec `caisse`
+seule), 2 284 avec A7 (`efbc0207c63081b484ebfc07eb7a538c`) — ses deux fonctions ; `refus_compte_de_bilan` et
+`ecrire_mouvement_compte_bilan` changent sous leur nom. `signature.sql` : deux familles changent, « fonctions » (212
+`ebcdaf5d…` puis 214 `35f11dc2312bae3b36591ea1c7f9ed11`) et « droits des fonctions » (212 `ddcdda69…` puis 214
+`dba5babf0c9b5aac470f06fae25e7ded`), les sept autres inchangées ; collé ou appliqué par l'outil, la même signature ;
+elles reviennent à celles d'après `caisse`, historique compris, après son retour arrière ; les trois ordres avec A7
+rendent une même signature (HISTORIQUE.md, « LA CAISSE, EN BASE : LE RETRAIT, LE REMPLACEMENT ET LE VERSEMENT D'ESPÈCES
+(C1B, LIGNE 26.6) »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

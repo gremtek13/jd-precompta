@@ -41764,3 +41764,198 @@ comptes de toute la base avant et après — la forme que l'audit a corrigée da
 la garde tient désormais hors d'elle. `essaisEnProduction.test.ts` vert sans changement : aucun de ses dix-neuf cas
 particuliers ne nomme ces essais. La suite, comparée test par test sous Paris : comme au premier lot, 15 139 tests
 justes, celui d'A7Q-Q1 en plus de BASE, aucun disparu ni changé d'état.
+
+### 29/10/2026 — LA CAISSE, EN BASE : LE RETRAIT, LE REMPLACEMENT ET LE VERSEMENT D'ESPÈCES (C1B, LIGNE 26.6) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par l'agent architecte de C1b sur `ba59675`, la branche locale `caisse-c1b`, en deux commits : la migration et
+ses essais ; puis cette documentation. Créée : la migration
+`supabase/preparees/20261029130000_caisse_retrait_et_versement.sql`, À COLLER ; son texte à coller et son retour arrière
+sont dans le bloc-notes de l'agent, avec leurs empreintes. Modifiés : `caisse.sql` (étendu), `compteBilan.sql` et
+`laBaseLitLePlan.sql` (adaptés, datés dans leur en-tête), le bloc CR de `rls.sql`. La migration `caisse` (C1) intacte
+(`20bbd94f…`) ; ni module, ni écran, ni sauvegarde, ni Edge Function. La migration n'est PAS appliquée. En production,
+des SELECT de comptes, du catalogue et de l'historique ; aucune valeur d'une ligne, aucune écriture.)
+
+**L'ÉTAT RELEVÉ EN PRODUCTION** (29/10/2026, deux fois, la dernière en fin de journée) : 159 migrations, la dernière
+`20261027163348`, l'historique `b70ba907…`, égal à celui de la réplique, et ses neuf familles ; ni `caisse` ni les deux
+d'A7 ; aucune table de caisse, aucune des deux fonctions neuves. Les sept fonctions d'avant la caisse que la migration
+appelle ou remplace, une de chaque nom, à l'empreinte que sa garde de tête vérifie (`ecrire_mouvement_compte_bilan`
+`954cd1f0…`, `refus_compte_de_bilan` `e7b841f5…`, `cle_validation` `bcbb0336…`, `frontiere_validation` `24a04846…`,
+`exercice_fige` `b70cbdd4…`, `compte_du_role` `6108ab75…`, `compte_du_dirigeant` `c02c7517…`) ; le rôle `caisse` de
+racine 53, aucune ligne de plan d'un dossier (le 530000 du catalogue partout) ; aucun mouvement classé sur un compte de
+bilan, aucun sur un 53 ; aucun exercice validé ; les privilèges par défaut du schéma donnent l'exécution d'une fonction
+neuve à anon, authenticated et service_role. L'historique porte `created_by`, et la ligne
+d'`insertion_des_encaissements` a un auteur (un compte, jamais sa valeur). La migration est NEUTRE : rien ne change
+avant le premier retrait, le premier remplacement ou le premier versement d'espèces.
+
+**CE QUI EST POSÉ.**
+- `retirer_operation_caisse(dossier, opération)` : l'accès annoncé avant toute lecture (`qui_ecrit_la_caisse`), le
+  verrou partagé de la validation et celui, exclusif, de la caisse du dossier ; l'opération lue `for update` ; le
+  retrait sous le réglage de CETTE opération (`jd.caisse`), que la garde de la migration 1 exige, retiré aussitôt :
+  `retire_le`, `retire_par`, puis TOUTES les lignes du brouillon qui la citent, quel que soit son genre, le paiement
+  d'une pièce compris. La caisse se juge dans l'appel quand l'opération apportait des espèces, sous les mots de son
+  geste ; les déclencheurs de la migration 1 la jugent encore à la fin de la transaction. Elle rend l'opération retirée.
+- `remplacer_operation_caisse(dossier, opération, nouvelle opération…)`, d'un seul geste : les cinq premiers refus du
+  retrait sur l'ancienne, puis son retrait ; la nouvelle jugée et écrite par `enregistrer_operation_caisse` ELLE-MÊME,
+  dans une sous-transaction défaite aussitôt (un code d'erreur à elle, « JDC1B », qu'aucune fonction ne lève ailleurs),
+  puis réécrite telle quelle, son lien en plus (`remplace_id`), sous son propre réglage ; enfin la caisse, quand
+  l'ancienne apportait des espèces. Aucun refus ni aucune règle de la saisie n'y est recopié : ce
+  qu'`enregistrer_operation_caisse` apprendra, le remplacement le suit sans changer. Elle rend la nouvelle.
+- `ecrire_mouvement_compte_bilan`, son corps d'hier au caractère près, plus la caisse du PLAN du dossier (lue avec la
+  banque, sous le même verrou) : en trésorerie, un mouvement s'écrit sur elle sans passer par `refus_compte_de_bilan` —
+  un crédit, le versement d'espèces en banque (la banque au débit, la caisse au crédit) ; un débit, des espèces retirées
+  pour la caisse. L'écriture attendue ne change pas ; la caisse se juge à la fin de la transaction (« Ce versement de …
+  rendrait la caisse négative le … »), et « Remettre à traiter », inchangée, la rejuge.
+- `refus_compte_de_bilan`, son corps d'hier plus une branche : en trésorerie, un compte 53 qui n'est pas la caisse du
+  plan se refuse sous une phrase à lui ; en engagement, la phrase d'hier.
+- Les droits : les deux fonctions au compte connecté, ni à l'anonyme ni à PUBLIC (`security definer`, leur chemin
+  fixé) ; les deux remplacées gardent les leurs. Une garde de tête refuse une seconde application, une base sans la
+  migration 1 (sa table, ses huit fonctions à leur empreinte), une des sept d'avant qui aurait changé, une surcharge, un
+  rôle `caisse` qui ne serait plus de racine 53, une des six colonnes que les fonctions écrivent qui manquerait.
+
+**LES REFUS, RANG PAR RANG** — ceux que le module de C2 redira avant le clic, sous les mêmes mots :
+- le retrait : 1. l'accès, 42501 « Accès refusé à ce dossier. » (un dossier qui n'existe pas de même) ; 2. l'opération,
+  P0002 « Cette opération n'est pas dans la caisse de ce dossier : relis ta caisse. » (inconnue, nulle ou d'un autre
+  dossier) ; 3. pour un accès du client seulement, 42501 « Cette opération a été saisie par ton cabinet : demande-lui de
+  la corriger. », ou « … saisie depuis un autre accès à ce dossier : demande à ton cabinet de la corriger. » ; 4. P0002
+  « Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse. » ; 5. la frontière, 23514
+  « L'exercice 2025 est validé : sa caisse ne change plus. » ; 6. la caisse, 23514, `texte_caisse_negative` au geste
+  `retrait_recette`, `retrait_apport` ou `retrait_paiement` (« Retirer cet apport de 100,00 € rendrait la caisse
+  négative le 03/03/2026 (−40,00 €) : retire d'abord les sorties d'espèces qui le suivent. ») ;
+- le remplacement : les cinq premiers sur l'ancienne ; puis ceux d'`enregistrer_operation_caisse` sur la nouvelle, dans
+  son ordre et sous ses mots (la sortie neuve parle la première, sous ses mots à elle) ; enfin 23514 sous les mots du
+  retrait de l'ANCIENNE (« Retirer cette recette de 50,00 € … »), quand elle apportait des espèces que la nouvelle ne
+  rend pas ; un remplacement qui ne passe sous zéro qu'un instant passe ;
+- le versement : en trésorerie, la caisse du plan reçue, puis 23514 « Ce versement de … rendrait la caisse négative le
+  … : saisis d'abord les recettes en espèces qui le précèdent. » à la fin de la transaction ; un autre 53, 22023 « Seule
+  la caisse du dossier, celle de son plan comptable, reçoit un mouvement de banque : un versement d'espèces, ou un
+  retrait d'espèces pour la caisse, s'écrit sur son compte. » ; en engagement, la phrase d'hier ; le reste, inchangé.
+
+**OÙ ELLE S'ÉCARTE DE LA CONCEPTION, ET POURQUOI.**
+- Deux phrases pour le client, et non une : l'opération d'un AUTRE accès du dossier n'a pas été « saisie par ton
+  cabinet » ; le dire serait faux.
+- Deux P0002, et non un : une opération qui n'est pas dans la caisse du dossier — inconnue, nulle, d'un autre dossier —
+  n'a pas été « retirée ou remplacée depuis ta lecture ».
+- En ENGAGEMENT, un compte 53 garde la phrase d'hier, et la caisse du plan n'y est pas reçue : la caisse d'un dossier en
+  engagement attend sa conception (le MVP est un BNC en trésorerie).
+- La caisse jugée aussi DANS L'APPEL, comme `enregistrer_operation_caisse` le fait déjà : le refus vient du geste, sous
+  ses mots, et non de la fin de la transaction ; les déclencheurs restent le filet.
+- Le paiement d'une pièce (migration 4) se retire déjà, génériquement, et se remplace par une autre opération (un
+  prélèvement, CAISSE2-Q4) ; un paiement ne se REMPLACE pas par un paiement : `enregistrer_operation_caisse` ne connaît
+  pas ce genre (son refus du genre, 22023). La migration 4 le dira : soit elle apprend ce genre à
+  `enregistrer_operation_caisse` — sa signature change, et le remplacement avec elle —, soit elle pose le remplacement
+  d'un paiement à part. Le texte de la conception ne le tranchait pas.
+- Le retour arrière de la migration 1, s'il le faut, vient APRÈS le sien : ses deux fonctions rendent le type de la
+  table.
+- CAISSE2-Q1 à Q4 ne changent rien à la migration : Q1 (le cabinet retire ou remplace la saisie du client) et Q4 (le
+  paiement du client, que le cabinet remplace au besoin) sont ce qu'elle fait ; Q2 (la catégorie du client) et Q3 (la
+  franchise) appartiennent à la migration 5.
+
+**CE QUE C1B A TROUVÉ DANS C1.** La conception reprise (§ 5) veut que, pour le client, la fonction compose elle-même
+l'écriture ; `enregistrer_operation_caisse`, telle que C1 l'a préparée, l'exige de tout appelant. Son chemin du client
+dort jusqu'à la migration 5, qui devra donc changer aussi ce corps (ou C1 le compléter avant d'être appliquée), et non
+seulement celui de `qui_ecrit_la_caisse` — ce que CAISSE2-Q2, la catégorie du client lue dans le dossier, demandait
+déjà. Le remplacement, qui lui délègue la nouvelle, le suivra sans changer ; le retrait n'écrit aucune écriture.
+
+**LES ESSAIS.** `caisse.sql`, ÉTENDU : 130 étapes neuves, de genre « …2 » (78 contrôles, 18 faits, 17 valeurs, 14
+captures, 3 jeux), qui ne se jouent qu'avec la migration — sans elle, une ligne les dit EN ATTENTE, et le reste rend,
+verdict par verdict, ce qu'il rendait — : chaque refus du retrait et du remplacement dans l'ordre et sous ses mots, et
+leurs ordres croisés ; le retrait d'une recette, d'un apport, d'un prélèvement, d'espèces rendues et d'un paiement
+(toutes les lignes qui le citent) ; le remplacement (l'ancienne retirée, la nouvelle et son lien, l'écriture de l'une
+partie et celle de l'autre écrite, un genre ou un taux qui change, la chaîne des versions) ; la caisse négative par un
+retrait et par un remplacement qui ne passe sous zéro qu'un instant (accepté) ou pour de bon (refusé, sous les mots du
+retrait de l'ancienne, une recette remplacée par un apport compris) ; le retrait d'une sortie dans une transaction qu'un
+versement met sous zéro et qu'un apport répare (accepté : la caisse se juge à la fin) ; la frontière ; le versement
+d'espèces au 530000 et au 531000 d'un plan qui le tient, refusé quand il rend la caisse négative, couvert dans la même
+transaction, remis à traiter ; le retrait d'espèces pour la caisse ; un autre 53, l'engagement, un autre cabinet ; la
+restauration ; le catalogue. `compteBilan.sql` : le contrôle 19 — la caisse, hier refusée — se joue selon la migration ;
+trois neufs (un 53 qui n'est pas la caisse du plan, la caisse en engagement, une régie d'avances).
+`laBaseLitLePlan.sql` : le contrôle 3 attend, avec la migration, le rôle `caisse` parmi ceux
+qu'`ecrire_mouvement_compte_bilan` lit. `rls.sql`, le bloc CR : le client ne retire ni ne remplace une opération de la
+caisse de son dossier, et elle reste entière ; l'anonyme n'exécute ni l'un ni l'autre ; le catalogue ; deux mutations
+(le même geste par le chef, accepté) ; sans la migration, une ligne EN ATTENTE.
+
+**LES PREUVES.**
+- La réplique : la grappe de VF8f copiée À FROID, sur son propre port, égale à la production (son historique et ses neuf
+  familles) ; la migration 1 par l'outil, puis le texte à coller tel quel, par `psql -f` ; arrêtée par son répertoire de
+  données en partant.
+- Le texte à coller : collé une fois, la ligne d'historique sous la version de l'heure du collage, `6104e62c…`, son
+  auteur celui d'`insertion_des_encaissements` ; une seconde fois, refusé, rien changé ; altéré d'un caractère, refusé,
+  rien appliqué ; en fins de ligne Windows, accepté, la même empreinte ; sans la migration 1 dans l'historique, refusé ;
+  après l'outil, refusé. La garde de tête, devant vingt et un états altérés — chacune des quinze fonctions qu'elle lit,
+  changée d'une espace ; les deux fonctions neuves déjà là ; une seconde `compte_du_role` ; le rôle de racines 53 et
+  54 ; deux colonnes absentes — : vingt et un refus sous ses mots, rien appliqué ; et sur la production, sans la table,
+  refusé de même.
+- Le retour arrière (`drop`, donc à coller sur l'accord du cabinet) : sur la base collée, sur celle de l'outil, sur
+  celle des fins de ligne Windows, la signature et l'historique d'après la migration 1 rendus ; refusé sans la
+  migration, une seconde fois, après un retrait, un remplacement ou un versement sur la caisse, et quand une de ses
+  fonctions a changé ; rien rendu.
+- `caisse.sql` ENTIER : sans la migration 2, 235 verdicts justes, dont la ligne EN ATTENTE (130 étapes) ; avec elle, 347
+  — les 234 d'hier, inchangés verdict par verdict, et 113 neufs.
+- Le chemin du client, SIMULÉ sur une copie jetable (`qui_ecrit_la_caisse` remplacée par un corps qui reconnaît un accès
+  client, comme la migration 5 le fera ; un second compte client fictif) : le client retire et remplace ses propres
+  opérations ; celle du cabinet se refuse sous la première phrase, celle d'un autre accès sous la seconde, l'accès avant
+  tout ; le cabinet retire la sienne. Dix gestes, chacun sous ses mots.
+- Deux sessions, neuf scénarios — un remplacement et un retrait de la même opération dans les deux ordres, deux
+  remplacements ; un versement d'espèces et un prélèvement dans les deux ordres ; une validation de l'exercice face à un
+  retrait et à un remplacement de son exercice ; un retrait et un remplacement face à un prélèvement — : la seconde
+  attend la première (un verrou consultatif), puis refuse sous ses mots (P0002, la frontière, la caisse) ; l'état final
+  est celui de la première seule.
+- Les essais ENTIERS, chacun sur une copie fraîche, en une transaction — les 63 que la boucle joue, dont ceux qui
+  éprouvent `lignes_bancaires` ou `ecritures_brouillon` ; les cinq autres à part —, ceux de BASE et ceux du worktree,
+  sur la production, avec la migration 1 seule, puis avec 1 et 2 : sur la production, 5 446 verdicts pour BASE, 5 449
+  pour le worktree (les trois neufs de `compteBilan.sql`) ; avec la migration 1, 5 701 et 5 705 (la ligne EN ATTENTE) ;
+  avec 1 et 2, BASE rend 5 701 verdicts dont trois en faute — celle d'avant, `ventesClient.sql` 0c (une liste attendue
+  de huit fonctions, d'avant les articles, les contacts et les paramètres), et les deux que la migration change : le 19
+  de `compteBilan.sql` (la caisse, hier refusée) et le 3 de `laBaseLitLePlan.sql` (le rôle lu de plus) —, le worktree
+  5 817, la seule faute d'avant. Tout le reste identique, verdict par verdict. Avec A7 : 5 713 sans la caisse ; 5 969
+  avec la migration 1 ; 6 081 avec les deux, dans les trois ordres (A7 puis la caisse, la caisse puis A7, la
+  migration 1, A7, puis la 2), identiques d'un ordre à l'autre et égaux à ceux d'A7 seul plus ceux de la caisse.
+- `rls.sql` ENTIER (`f7e2a0f4…`) : sur la production, 74 lignes d'invariants, 0 en faute, 58 mutations sur 58 ; avec la
+  migration 1, 78, 0, 61 sur 61 ; avec 1 et 2, 81, 0, 63 sur 63 ; hors du bloc CR, ligne pour ligne, ce que rend le
+  fichier de BASE (`768dcdd8…`) ; avec A7, dans les trois ordres, les mêmes lignes.
+- `restauration.sql`, sur le dossier semé de VF7e et de VF8f : sur la production et avec A7, 75 tables IDENTIQUES ; avec
+  la migration 1, avec 1 et 2 et dans les deux ordres d'A7, il s'arrête EN FAUTE avant toute écriture, sous un même
+  message (les clés de la table de caisse, qui n'est pas au plan) : C2 l'y met, et les migrations ne s'appliquent
+  qu'avec elle.
+- `signature.sql`, les trois contrôles de l'export (un miroir muni des migrations 1 et 2, le socle régénéré de la 1) :
+  voir `supabase/schema/README.md`, « Préparé le 29/10/2026, PAS ENCORE APPLIQUÉ : `caisse_retrait_et_versement` ».
+- Le banc du leurre, sur les quatre essais changés, deux fois — sur la production de la réplique (`caisse.sql` sur sa
+  réplique munie d'A7 et des deux migrations), puis sur la réplique munie des deux migrations, telle que la production
+  sera après le collage — : SÛRS tous quatre, aucun écart entre la réplique et le leurre, aucun motif du leurre, aucune
+  de ses lignes écrite ; le témoin vu de ses trois façons.
+- Les mutations de la migration : 68, chacune appliquée après la migration 1 sur une copie fraîche, jugées par la garde
+  de tête (sept états altérés, et la base d'après la migration 1 où la référence s'applique), `caisse.sql`,
+  `compteBilan.sql` et `laBaseLitLePlan.sql` ENTIERS, `rls.sql` ENTIER, les neuf scénarios des deux sessions et le
+  chemin du client simulé — 59 tuées (46 par `caisse.sql`, 7 par la garde, 4 par le client simulé, 2 par les sessions),
+  9 équivalentes, chacune avec sa raison : le verrou partagé de la validation dans les deux fonctions (la garde de la
+  table le prend, et refuse au-delà de la frontière sous les mêmes mots), leur `for update` (le verrou exclusif de la
+  caisse, pris avant, sérialise déjà tout ce qui modifie une opération), le refus de la frontière dans les deux
+  fonctions (la garde refuse sous les mêmes mots, au même rang), le réglage de l'ancienne laissé jusqu'à la
+  sous-transaction (elle pose le sien, et sa fin rend celui d'avant), la ligne qui donne l'exécution aux comptes
+  connectés, dans les deux (les privilèges par défaut du schéma, relus en production, la donnent déjà ; elle les dit, et
+  tient s'ils changent). Trois étapes de `caisse.sql` sont nées de mutations qui survivaient : 113d, 123d et 124i.
+- La suite, comparée test par test sous Paris : avant, l'arbre de `ba59675` exporté, indexé par un `git init` jetable,
+  15 139 tests justes ; après, dans le worktree, les mêmes 15 139, 3 223 suites — aucun disparu, apparu ni changé
+  d'état : la migration n'entre pas dans l'export, et aucun test ne lit encore ses fonctions. Le jour de l'application,
+  simulé (une copie de la tête, les deux migrations déplacées dans l'export, le socle régénéré) : 15 139 tests, cinq en
+  échec, exactement ceux que C2 doit faire passer — les deux de la sauvegarde que C1 annonçait
+  (`sauvegardeTables.test.ts`, `sauvegardeRelations.test.ts`) et trois que la migration 2 ajoute : deux de
+  `compteDeBilan.test.ts` (la dix-neuvième branche de `refus_compte_de_bilan`, et le 530000 en trésorerie sous la phrase
+  du 53) et un de `planComptable.test.ts` (`ecrire_mouvement_compte_bilan` lit les rôles `banque` et `caisse`, la liste
+  `quatorze` de `laBaseLitLePlan.sql` le rôle `banque` seul).
+
+**CE QUI RESTE À C2.** `lib/caisse.ts` redit les refus du retrait et du remplacement, rang par rang ; le module du
+compte de bilan (`lib/compteDeBilan.ts`), la phrase du 53 et la caisse du plan reçue en trésorerie — puis le calcul de
+la caisse avant le clic, pour un versement comme pour une sortie ; la lecture, `types.ts`, la sauvegarde derrière son
+drapeau. Les deux migrations s'appliquent avec C2, jamais avant : la 1 par l'outil, puis la 2 collée ; leurs fichiers
+entrent dans l'export sous la version de leur ligne d'historique, textes inchangés. Ce jour-là, `compteDeBilan.test.ts`,
+qui lit la définition exportée, suit le module ; la liste `quatorze` de `laBaseLitLePlan.sql` donne à
+`ecrire_mouvement_compte_bilan` les rôles `banque,caisse` — son contrôle 3, qui les lit aujourd'hui selon la migration,
+redevient la liste seule —, et `planComptable.test.ts` la suit.
+
+**LES RISQUES, ET LE RETOUR.** Neutre jusqu'au premier geste. Ensuite : un retrait ou un remplacement ne se défait pas —
+on remplace de nouveau ; un mouvement versé sur la caisse se remet à traiter. Le paiement remplacé par un paiement
+attend la migration 4 ; l'écriture que la fonction composera pour le client, la migration 5 (ce qui précède). Le retour
+arrière rend les deux corps d'hier, retire les deux fonctions et la ligne d'historique ; destructif, il se colle sur
+l'accord du cabinet, et se refuse dès qu'un retrait, un remplacement ou un mouvement sur un compte 53 existe : après, on
+corrige en avant.
