@@ -379,10 +379,11 @@ begin
     'observe', obs, 'ok', obs = '{authenticated} INSERT');
 
   -- ══ 40. Rien n'est resté ══════════════════════════════════════════════════════════════════════════════════════
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '40. rien n''est resté en base',
-    'observe', 'connexions ' || connexions_avant || ' -> ' || (select count(*) from connexions_plateformes)
-      || ', pièces ' || pieces_avant || ' -> ' || (select count(*) from pieces)
-      || ', catégories ' || categories_avant || ' -> ' || (select count(*) from categories),
+    'observe', 'connexions ' || to_char((select count(*) from connexions_plateformes) - connexions_avant, 'FMSG9999999990')
+      || ', pièces ' || to_char((select count(*) from pieces) - pieces_avant, 'FMSG9999999990')
+      || ', catégories ' || to_char((select count(*) from categories) - categories_avant, 'FMSG9999999990'),
     'ok', connexions_avant = (select count(*) from connexions_plateformes)
       and pieces_avant = (select count(*) from pieces)
       and categories_avant = (select count(*) from categories));

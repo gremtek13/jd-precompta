@@ -480,8 +480,9 @@ begin
   select count(*) into nb_apres from ecritures_brouillon;
   select string_agg(concat_ws(':', l.id, l.statut, l.prelevement_personnel, l.montant), '|' order by l.id)
     into etat_apres from lignes_bancaires l where l.id in (debit.id, credit.id, ancien.id, ignoree.id, avec_piece.id);
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   insert into essai_virement values ('28. rien n''est resté en base',
-    'écritures ' || nb_avant || ' -> ' || nb_apres || ', mouvements ' || (etat_avant = etat_apres)::text
+    'écritures ' || to_char(nb_apres - nb_avant, 'FMSG9999999990') || ', mouvements ' || (etat_avant = etat_apres)::text
       || ', dossier ' || (select mode_comptable || ':' || compte_notes_de_frais from dossiers where id = dossier_test),
     nb_avant = nb_apres and etat_avant = etat_apres
       and (select mode_comptable = 'tresorerie' from dossiers where id = dossier_test));

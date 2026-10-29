@@ -509,13 +509,14 @@ begin
 
   -- ══ 32. Rien n'est resté ══════════════════════════════════════════════════════════════════════════
   select count(*) into nb_apres from ecritures_brouillon;
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   insert into essai_dotation values ('32. rien n''est resté en base',
-    'écritures ' || nb_avant || ' -> ' || nb_apres
-      || ', biens ' || biens_avant || ' -> ' || (select count(*) from immobilisations)
-      || ', natures ' || natures_avant || ' -> ' || (select count(*) from natures_immobilisation)
+    'écritures ' || to_char(nb_apres - nb_avant, 'FMSG9999999990')
+      || ', biens ' || to_char((select count(*) from immobilisations) - biens_avant, 'FMSG9999999990')
+      || ', natures ' || to_char((select count(*) from natures_immobilisation) - natures_avant, 'FMSG9999999990')
       || ', comptes des natures intacts ' || (select count(*) = 0 from natures_immobilisation where compte_immobilisation = '618000')::text
-      || ', dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers)
-      || ', ouvertures ' || ouvertures_avant || ' -> ' || (select count(*) from a_nouveaux),
+      || ', dossiers ' || to_char((select count(*) from dossiers) - dossiers_avant, 'FMSG9999999990')
+      || ', ouvertures ' || to_char((select count(*) from a_nouveaux) - ouvertures_avant, 'FMSG9999999990'),
     nb_avant = nb_apres
       and biens_avant = (select count(*) from immobilisations)
       and natures_avant = (select count(*) from natures_immobilisation)

@@ -372,11 +372,12 @@ begin
     'observe', obs, 'ok', obs = 'security invoker, anon false, authenticated true');
 
   -- ══ 28. Rien n'est resté ═══════════════════════════════════════════════════════════════════════════════
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '28. rien n''est resté en base',
-    'observe', 'lettrages ' || lettrages_avant || ' -> ' || (select count(*) from lettrages_manuels)
-      || ', dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers)
-      || ', pièces ' || pieces_avant || ' -> ' || (select count(*) from pieces)
-      || ', écritures ' || ecritures_avant || ' -> ' || (select count(*) from ecritures_brouillon),
+    'observe', 'lettrages ' || to_char((select count(*) from lettrages_manuels) - lettrages_avant, 'FMSG9999999990')
+      || ', dossiers ' || to_char((select count(*) from dossiers) - dossiers_avant, 'FMSG9999999990')
+      || ', pièces ' || to_char((select count(*) from pieces) - pieces_avant, 'FMSG9999999990')
+      || ', écritures ' || to_char((select count(*) from ecritures_brouillon) - ecritures_avant, 'FMSG9999999990'),
     'ok', lettrages_avant = (select count(*) from lettrages_manuels)
       and dossiers_avant = (select count(*) from dossiers)
       and pieces_avant = (select count(*) from pieces)

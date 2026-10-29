@@ -731,11 +731,12 @@ begin
     into etat_apres from lignes_bancaires l where l.id in (debit.id, credit.id, du_client.id, avec_piece.id);
   select string_agg(concat_ws(':', p.id, p.type_piece, p.montant_ttc), '|' order by p.id)
     into pieces_apres from pieces p where p.id in (piece_a.id, piece_b.id, piece_c.id, vente_a.id, vente_b.id, piece_client.id);
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   insert into essai_reglement_groupe values ('51. rien n''est resté en base',
-    'écritures ' || nb_avant || ' -> ' || nb_apres || ', parts ' || parts_avant || ' -> ' || (select count(*) from reglements_groupes)
+    'écritures ' || to_char(nb_apres - nb_avant, 'FMSG9999999990') || ', parts ' || to_char((select count(*) from reglements_groupes) - parts_avant, 'FMSG9999999990')
       || ', mouvements ' || (etat_avant = etat_apres)::text || ', pièces ' || (pieces_avant = pieces_apres)::text
-      || ', dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers)
-      || ', emprunts ' || emprunts_avant || ' -> ' || (select count(*) from emprunts),
+      || ', dossiers ' || to_char((select count(*) from dossiers) - dossiers_avant, 'FMSG9999999990')
+      || ', emprunts ' || to_char((select count(*) from emprunts) - emprunts_avant, 'FMSG9999999990'),
     nb_avant = nb_apres and etat_avant = etat_apres and pieces_avant = pieces_apres
       and parts_avant = (select count(*) from reglements_groupes)
       and dossiers_avant = (select count(*) from dossiers)

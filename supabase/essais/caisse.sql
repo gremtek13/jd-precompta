@@ -867,8 +867,9 @@ begin
     ((select count(*) from cabinets)), ((select count(*) from cabinet_admins)), ((select count(*) from facture_lignes)),
     ((select count(*) from facture_numerotation)), ((select count(*) from plan_comptable_dossier))
   ) as t(n);
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '99. rien n''est resté en base',
-    'observe', avant || ' -> ' || apres,
+    'observe', 'écarts ' || (select string_agg(to_char(ecart_.apres_::bigint - ecart_.avant_::bigint, 'FMSG9999999990'), '/' order by ecart_.rang_) from unnest(string_to_array(avant, '/'), string_to_array(apres, '/')) with ordinality as ecart_(avant_, apres_, rang_)),
     'ok', avant = apres and not exists (select 1 from dossiers where id::text like 'ca155e00-%')
       and not exists (select 1 from cabinet_admins where user_id = client)
       and coalesce(current_setting('jd.caisse', true), '') = '' and coalesce(current_setting('jd.caisse_d_un_lot', true), '') = '');

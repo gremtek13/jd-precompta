@@ -819,8 +819,9 @@ begin
     into apres;
   select string_agg(id || ':' || mode_comptable || ':' || compte_notes_de_frais || ':' || assujetti_tva, ',' order by id)
     into texte from dossiers;
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '99. rien n''est resté en base',
-    'observe', avant || ' -> ' || apres || ', dossiers ' || case when texte = config_avant then 'inchangés' else 'CHANGÉS' end,
+    'observe', 'écarts ' || (select string_agg(to_char(ecart_.apres_::bigint - ecart_.avant_::bigint, 'FMSG9999999990'), '/' order by ecart_.rang_) from unnest(string_to_array(avant, '/'), string_to_array(apres, '/')) with ordinality as ecart_(avant_, apres_, rang_)) || ', dossiers ' || case when texte = config_avant then 'inchangés' else 'CHANGÉS' end,
     'ok', avant = apres and texte = config_avant);
 
   perform set_config('essai.la_base_lit_le_plan', verdicts::text, true);

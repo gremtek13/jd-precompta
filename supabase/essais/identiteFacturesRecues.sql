@@ -321,8 +321,9 @@ begin
   -- ══ 37. Rien n'est resté ══════════
   select jsonb_build_object('pieces', (select count(*) from pieces),
     'identites', (select count(*) from pieces where identite_numero is not null)) into apres;
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '37. rien n''est resté en base',
-    'observe', avant::text || ' -> ' || apres::text, 'ok', avant = apres);
+    'observe', 'écarts ' || (select jsonb_object_agg(cle_, (apres ->> cle_)::numeric - (avant ->> cle_)::numeric) from jsonb_object_keys(avant) as cle_)::text, 'ok', avant = apres);
 
   perform set_config('essai.identite', verdicts::text, true);
 end $$;

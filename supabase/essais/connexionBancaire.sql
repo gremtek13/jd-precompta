@@ -73,12 +73,13 @@ begin
   -- Les connexions d'essai vont dans un dossier du cabinet qui n'en porte AUCUNE, pour que chaque refus
   -- vienne de la contrainte éprouvée : depuis l'essai du cabinet du 30/09/2026, le dossier `test` porte
   -- une vraie connexion, et la règle « une connexion par dossier » refusait alors la première ligne
-  -- avant elle. Le dossier du client doit en être libre aussi (contrôles 3, 13 et 14).
-  select d.id into dossier_libre from dossiers d
-   where d.cabinet_id = cabinet and d.id <> dossier_du_client
-     and not exists (select 1 from connexions_bancaires c where c.dossier_id = d.id)
-   order by d.id limit 1;
-  if dossier_libre is null or exists (select 1 from connexions_bancaires c where c.dossier_id = dossier_du_client) then
+  -- avant elle. Le dossier du client doit en être libre aussi (contrôles 3, 13 et 14). Ce dossier sans connexion est un
+  -- dossier JETABLE du cabinet, créé dans la sous-transaction de chaque contrôle qui s'en sert : « le premier dossier du
+  -- cabinet sans connexion » serait un dossier réel à son premier jour, où l'essai écrirait ses connexions (audit du
+  -- 29/10/2026).
+  dossier_libre := 'cb0c0000-0000-4000-8000-0000000000d1';
+  if exists (select 1 from dossiers where id = dossier_libre)
+     or exists (select 1 from connexions_bancaires c where c.dossier_id = dossier_du_client) then
     raise exception 'ESSAI_IMPOSSIBLE : il faut deux dossiers du cabinet sans connexion bancaire, dont celui du client';
   end if;
 
@@ -86,6 +87,7 @@ begin
   for obs in select unnest(array['1. anonyme', '2. rattaché à rien', '3. client, son propre dossier', '4. chef du cabinet']) loop
     accepte := false; code_recu := null; message := null; vus := null; n_maj := null; n_supp := null;
     begin
+      insert into dossiers (id, nom, cabinet_id) values (dossier_libre, 'Essai connexion libre', cabinet);
       insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, etat, session_id, valide_jusqu_au)
         values (case when obs like '4.%' then dossier_libre else dossier_du_client end,
                 'Mock ASPSP', 'FR', 'SANDBOX', 'active', 'essai-session-visible', now() + interval '90 days');
@@ -119,6 +121,7 @@ begin
   -- ══ 5. Le rôle de l'Edge Function écrit, relit, modifie et supprime ═══════════════════════════════
   accepte := false; code_recu := null; message := null; ok := false; obs := null; n_maj := null; n_supp := null;
   begin
+    insert into dossiers (id, nom, cabinet_id) values (dossier_libre, 'Essai connexion libre', cabinet);
     set local role service_role;
     insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, created_by)
       values (dossier_libre, 'Mock ASPSP', 'FR', 'SANDBOX', chef) returning id into connexion;
@@ -162,6 +165,7 @@ begin
     declare contrainte text := message; recu text; jeton uuid := gen_random_uuid();
     begin
       begin
+        insert into dossiers (id, nom, cabinet_id) values (dossier_libre, 'Essai connexion libre', cabinet);
         set local role service_role;
         if obs like '6.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, etat, session_id)
@@ -305,9 +309,9 @@ begin
   select count(*) into nb_connexions_apres from connexions_bancaires;
   select count(*) into nb_lignes_apres from lignes_bancaires;
   select count(*) into nb_dossiers_apres from dossiers;
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   insert into essai_connexion values ('22. rien n''est resté en base',
-    'connexions ' || nb_connexions_avant || ' -> ' || nb_connexions_apres || ', mouvements ' || nb_lignes_avant || ' -> '
-      || nb_lignes_apres || ', dossiers ' || nb_dossiers_avant || ' -> ' || nb_dossiers_apres,
+    'connexions ' || to_char(nb_connexions_apres - nb_connexions_avant, 'FMSG9999999990') || ', mouvements ' || to_char(nb_lignes_apres - nb_lignes_avant, 'FMSG9999999990') || ', dossiers ' || to_char(nb_dossiers_apres - nb_dossiers_avant, 'FMSG9999999990'),
     nb_connexions_avant = nb_connexions_apres and nb_lignes_avant = nb_lignes_apres and nb_dossiers_avant = nb_dossiers_apres);
 end $$;
 

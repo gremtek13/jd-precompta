@@ -96,8 +96,10 @@ declare
 begin
   select mb.dossier_id into dossier_client from memberships mb where mb.user_id = client order by mb.dossier_id limit 1;
   select cabinet_id into cabinet from dossiers where id = dossier_client;
+  -- Le dossier libre est le dossier `test`, nommément : « le premier dossier du cabinet sans écritures » serait un dossier
+  -- réel à son premier jour, où l'essai réglerait le plan et écrirait (audit du 29/10/2026).
   select d2.id into dossier_libre from dossiers d2
-   where d2.cabinet_id = cabinet
+   where d2.id = '001c7ed7-c23b-4590-901e-693489f8af24' and d2.cabinet_id = cabinet
      and not exists (select 1 from ecritures_brouillon e where e.dossier_id = d2.id)
      and not exists (select 1 from a_nouveaux a where a.dossier_id = d2.id)
      and not exists (select 1 from soldes_reportes s where s.dossier_id = d2.id)
@@ -138,8 +140,12 @@ begin
     'ok', coalesce(n = 0 and texte = 'capital_individuel,resultat_benefice,resultat_perte'
                    and obs = 'fournisseurs=F,fournisseurs_immobilisations=FI,clients=C', false));
 
-  verdicts := verdicts || jsonb_build_object('controle', '3. aucun dossier ne règle rien : le plan est vide',
-    'observe', plans_avant || ' ligne(s)', 'ok', plans_avant = 0);
+  -- Les dossiers d'essai seuls (`test` et ceux du client d'essai) : le plan de toute la base dirait celui d'un dossier réel
+  -- (audit du 29/10/2026).
+  select count(*) into n from plan_comptable_dossier p
+   where p.dossier_id = '001c7ed7-c23b-4590-901e-693489f8af24' or p.dossier_id in (select mb.dossier_id from memberships mb where mb.user_id = client);
+  verdicts := verdicts || jsonb_build_object('controle', '3. aucun dossier d''essai ne règle rien : le plan est vide',
+    'observe', n || ' ligne(s)', 'ok', n = 0);
 
   select count(*) filter (where po.polrelid = 'public.roles_comptables'::regclass and po.polcmd = 'r'
                             and po.polroles = array['authenticated'::regrole]::oid[] and pg_get_expr(po.polqual, po.polrelid) = 'true'),
@@ -167,8 +173,9 @@ begin
 
   -- ══ 6 à 11. La neutralité ══
   select count(*), count(*) filter (where public.compte_du_role(d2.id, r.role) is distinct from r.compte_defaut)
-    into total, ecarts from dossiers d2 cross join roles_comptables r;
-  verdicts := verdicts || jsonb_build_object('controle', '6. pour chaque dossier et chaque rôle, compte_du_role rend le défaut d''aujourd''hui',
+    into total, ecarts from dossiers d2 cross join roles_comptables r
+   where d2.id = '001c7ed7-c23b-4590-901e-693489f8af24' or d2.id in (select mb.dossier_id from memberships mb where mb.user_id = client);
+  verdicts := verdicts || jsonb_build_object('controle', '6. pour chaque dossier d''essai et chaque rôle, compte_du_role rend le défaut d''aujourd''hui',
     'observe', ecarts || ' écart(s) sur ' || total, 'ok', coalesce(ecarts = 0 and total >= 2 * roles_du_catalogue, false));
 
   code_recu := null; message := null;
@@ -374,7 +381,9 @@ begin
     insert into plan_comptable_dossier (dossier_id, role, compte) values (dossier_libre, 'banque', '512100'), (dossier_client, 'banque', '512200');
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-    select count(*) into m from plan_comptable_dossier;
+    -- Les lignes des deux dossiers de l'essai : le chef, super-administrateur, verrait celles de toute la base (audit du
+    -- 29/10/2026).
+    select count(*) into m from plan_comptable_dossier where dossier_id in (dossier_libre, dossier_client);
     select count(*), max(x.compte) filter (where x.role = 'banque') into n, valeur from public.plan_du_dossier(dossier_client) x;
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate;
@@ -748,14 +757,15 @@ begin
 
   -- ══ 99. Rien n'est resté ══
   select string_agg(id || ':' || mode_comptable || ':' || compte_notes_de_frais, ',' order by id) into texte from dossiers;
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '99. rien n''est resté en base',
-    'observe', 'plan ' || plans_avant || ' -> ' || (select count(*) from plan_comptable_dossier)
-      || ', rôles ' || roles_avant || ' -> ' || (select count(*) from roles_comptables)
-      || ', chefs et membres ' || admins_avant || ' -> ' || (select count(*) from cabinet_admins)
-      || ', affectations ' || assignations_avant || ' -> ' || (select count(*) from dossier_assignations)
-      || ', écritures ' || ecritures_avant || ' -> ' || (select count(*) from ecritures_brouillon)
-      || ', à-nouveaux ' || anouveaux_avant || ' -> ' || (select count(*) from a_nouveaux)
-      || ', soldes reportés ' || soldes_avant || ' -> ' || (select count(*) from soldes_reportes)
+    'observe', 'plan ' || to_char((select count(*) from plan_comptable_dossier) - plans_avant, 'FMSG9999999990')
+      || ', rôles ' || to_char((select count(*) from roles_comptables) - roles_avant, 'FMSG9999999990')
+      || ', chefs et membres ' || to_char((select count(*) from cabinet_admins) - admins_avant, 'FMSG9999999990')
+      || ', affectations ' || to_char((select count(*) from dossier_assignations) - assignations_avant, 'FMSG9999999990')
+      || ', écritures ' || to_char((select count(*) from ecritures_brouillon) - ecritures_avant, 'FMSG9999999990')
+      || ', à-nouveaux ' || to_char((select count(*) from a_nouveaux) - anouveaux_avant, 'FMSG9999999990')
+      || ', soldes reportés ' || to_char((select count(*) from soldes_reportes) - soldes_avant, 'FMSG9999999990')
       || ', modèles comptables ' || case when texte = config_avant then 'inchangés' else 'CHANGÉS' end,
     'ok', coalesce(plans_avant = (select count(*) from plan_comptable_dossier)
       and roles_avant = (select count(*) from roles_comptables)

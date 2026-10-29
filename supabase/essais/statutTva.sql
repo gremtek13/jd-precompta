@@ -308,8 +308,9 @@ begin
     'observe', obs, 'ok', coalesce(obs = 'security invoker, anon false, authenticated false', false));
 
   -- ══ 22. Rien n'est resté ═══════════════════════════════════════════════════════════════════════════════════
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '22. rien n''est resté en base',
-    'observe', 'dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers),
+    'observe', 'dossiers ' || to_char((select count(*) from dossiers) - dossiers_avant, 'FMSG9999999990'),
     'ok', coalesce(dossiers_avant = (select count(*) from dossiers) and not exists (select 1 from dossiers where nom = 'ESSAI STATUT TVA'), false));
 
   perform set_config('essai.statut_tva', verdicts::text, true);

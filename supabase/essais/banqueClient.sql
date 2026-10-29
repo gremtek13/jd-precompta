@@ -66,12 +66,13 @@ declare
   verdicts jsonb := '[]'::jsonb;
 begin
   -- Le dossier du client qui porte le MOINS de mouvements (la couverture s'y lit mieux), et un dossier du même cabinet où
-  -- il n'a pas d'accès.
+  -- il n'a pas d'accès : le dossier `test`, nommément — « le premier du cabinet » serait un dossier réel dès que son
+  -- identifiant précéderait celui de `test`, et l'essai y écrirait et en lirait la couverture (audit du 29/10/2026).
   select mb.dossier_id into dossier_client from memberships mb where mb.user_id = client
    order by (select count(*) from lignes_bancaires l where l.dossier_id = mb.dossier_id), mb.dossier_id limit 1;
   select cabinet_id into cabinet from dossiers where id = dossier_client;
-  select d.id into autre_dossier from dossiers d where d.cabinet_id = cabinet
-     and not exists (select 1 from memberships mb where mb.dossier_id = d.id and mb.user_id = client) order by d.id limit 1;
+  select d.id into autre_dossier from dossiers d where d.id = '001c7ed7-c23b-4590-901e-693489f8af24' and d.cabinet_id = cabinet
+     and not exists (select 1 from memberships mb where mb.dossier_id = d.id and mb.user_id = client);
   if dossier_client is null or cabinet is null or autre_dossier is null
      or not exists (select 1 from cabinet_admins where user_id = chef and cabinet_id = cabinet and role = 'comptable_en_chef')
      or not exists (select 1 from super_admins where user_id = chef)
@@ -468,9 +469,10 @@ begin
     ((select count(*) from justificatifs_proposes)), ((select count(*) from precisions_mouvements)),
     ((select count(*) from exercices_valides)), ((select count(*) from cabinet_admins)), ((select count(*) from dossier_assignations)),
     ((select count(*) from dossiers))) as t(x);
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '99. rien n''est resté en base',
     'observe', 'mouvements, pièces, parts, règlements, contrôles, propositions, précisions, exercices validés, membres, affectations, dossiers : '
-      || avant || ' -> ' || apres || ', accès '
+      || 'écarts ' || (select string_agg(to_char(ecart_.apres_::bigint - ecart_.avant_::bigint, 'FMSG9999999990'), '/' order by ecart_.rang_) from unnest(string_to_array(avant, '/'), string_to_array(apres, '/')) with ordinality as ecart_(avant_, apres_, rang_)) || ', accès '
       || case when (select coalesce(jsonb_agg(to_jsonb(mb) order by mb.id), '[]'::jsonb) from memberships mb) = instantane then 'identiques, droits compris' else 'CHANGÉS' end,
     'ok', coalesce(avant = apres and (select coalesce(jsonb_agg(to_jsonb(mb) order by mb.id), '[]'::jsonb) from memberships mb) = instantane
       and not exists (select 1 from cabinet_admins where user_id = client), false));
