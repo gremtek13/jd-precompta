@@ -40,6 +40,12 @@
 -- le temps des contrôles S, elle ne masque rien de plus ici, et ce qu'elle masquait (la modification, la suppression,
 -- les parts) reste masqué. Rejoué sur la réplique, sans puis avec elle : 13 verdicts, 0 en faute, identiques
 -- (HISTORIQUE.md, « L'INSERTION DIRECTE D'UN ENCAISSEMENT SUR UN MOUVEMENT CLASSÉ PAR SES ENCAISSEMENTS »).
+--
+-- 29/10/2026, AUDIT-Q1 : une garde de tête, la première instruction du bloc, refuse de le jouer hors d'une réplique
+-- (ESSAI_HORS_REPLIQUE), avant toute écriture : le rôle `proprietaire`, qui y tient la place du propriétaire des
+-- tables, manque à la production (relu au catalogue le 29/10/2026). L'en-tête seul ne gardait que son lecteur
+-- (HISTORIQUE.md, « CE QUE RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION », et la fin de « A7Q-Q1 : UNE SOCIÉTÉ
+-- SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION »).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -58,6 +64,10 @@ declare
   avant text; apres text; actives text;
   verdicts jsonb := '[]'::jsonb;
 begin
+  -- La garde de tête (AUDIT-Q1) : sur une réplique seulement, avant toute écriture.
+  if not exists (select 1 from pg_roles where rolname = 'proprietaire') then
+    raise exception 'ESSAI_HORS_REPLIQUE : cet essai supprime des lignes et ne se joue que sur une réplique ; le rôle proprietaire, que toute réplique porte, est absent : rien n''est écrit.';
+  end if;
   select cabinet_id into cab from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24';
   if cab is null or not exists (select 1 from super_admins where user_id = chef)
      or not exists (select 1 from cabinet_admins where user_id = chef and cabinet_id = cab and role = 'comptable_en_chef')

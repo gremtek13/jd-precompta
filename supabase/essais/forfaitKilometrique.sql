@@ -52,6 +52,12 @@
 -- `jd.validation_exercice` du dossier et avec les champs que lit son FEC — une écriture ne passe plus à
 -- `validee` autrement. 35 contrôles sur 35 en production, le texte transmis identique au fichier sans ses
 -- commentaires.
+--
+-- 29/10/2026, AUDIT-Q2 : le contrôle 32 inscrit son propre bien, jetable, dans sa sous-transaction, que le refus
+-- attendu annule avec lui, au lieu de prendre celui d'un dossier d'essai ; il ne dépend plus d'aucun bien de la
+-- base et juge la contrainte où qu'il se joue — sur la réplique, qui n'en porte aucun, il passe : la faute connue
+-- se ferme. Le contrôle 35 compte aussi les biens (HISTORIQUE.md, la fin de « A7Q-Q1 : UNE SOCIÉTÉ SANS
+-- DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION »).
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -59,9 +65,9 @@ declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   dossier_test uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
 
-  dossier_client uuid; cabinet uuid; vehicule uuid; dossier_jetable uuid;
+  dossier_client uuid; cabinet uuid; vehicule uuid; dossier_jetable uuid; bien uuid;
   accepte boolean; code_recu text; message text; obs text; ok boolean; n int;
-  nb_avant int; nb_apres int; vehicules_avant int; dossiers_avant int; ouvertures_avant int;
+  nb_avant int; nb_apres int; vehicules_avant int; dossiers_avant int; ouvertures_avant int; biens_avant int;
   annee_courante int := extract(year from (now() at time zone 'Europe/Paris'))::int;
   bareme_courant boolean;
   verdicts jsonb := '[]'::jsonb;
@@ -83,6 +89,7 @@ begin
   select count(*) into vehicules_avant from vehicules;
   select count(*) into dossiers_avant from dossiers;
   select count(*) into ouvertures_avant from a_nouveaux;
+  select count(*) into biens_avant from immobilisations;
 
   -- ══ 1 et 2. Anonyme : pas d'EXECUTE, sur aucune des deux fonctions ══════════════════════════════════
   for obs in select unnest(array['1. anonyme, écrire', '2. anonyme, retirer']) loop
@@ -475,13 +482,17 @@ begin
     begin
       insert into vehicules (dossier_id, annee, modele, type, puissance_fiscale, motorisation, km_professionnel)
       values (dossier_test, 2025, 'VÉHICULE ESSAI', 'voiture', 5, 'thermique', 12000) returning id into vehicule;
+      -- 32 : un bien jetable, inscrit ici et annulé avec le contrôle (AUDIT-Q2, 29/10/2026) — ni « le premier bien de
+      -- la base », qui serait celui d'un dossier réel, ni celui d'un dossier d'essai, qui manque à la réplique.
+      bien := null;
+      if obs like '32.%' then
+        insert into immobilisations (dossier_id, libelle, valeur, date_acquisition, duree_annees)
+        values (dossier_test, 'BIEN ESSAI FORFAIT', 1200, '2025-07-01', 3) returning id into bien;
+      end if;
       insert into ecritures_brouillon (dossier_id, vehicule_id, piece_id, immobilisation_id, date, compte, libelle, montant, sens)
       values (dossier_test, vehicule,
               case when obs like '31.%' then (select id from pieces where dossier_id = dossier_test order by id limit 1) end,
-              -- Un bien des dossiers d'essai seuls (`test` et ceux du client d'essai) : « le premier bien de la base »
-              -- serait celui d'un dossier réel (audit du 29/10/2026).
-              case when obs like '32.%' then (select i.id from immobilisations i where i.dossier_id = dossier_test
-                or i.dossier_id in (select m.dossier_id from memberships m where m.user_id = client) order by i.id limit 1) end,
+              bien,
               case when obs like '33.%' then date '2025-06-30' else date '2025-12-31' end,
               '625110', 'essai', 5679, 'debit');
       accepte := true;
@@ -515,12 +526,15 @@ begin
     'observe', 'écritures ' || to_char(nb_apres - nb_avant, 'FMSG9999999990')
       || ', véhicules ' || to_char((select count(*) from vehicules) - vehicules_avant, 'FMSG9999999990')
       || ', dossiers ' || to_char((select count(*) from dossiers) - dossiers_avant, 'FMSG9999999990')
-      || ', ouvertures ' || to_char((select count(*) from a_nouveaux) - ouvertures_avant, 'FMSG9999999990'),
+      || ', ouvertures ' || to_char((select count(*) from a_nouveaux) - ouvertures_avant, 'FMSG9999999990')
+      || ', biens ' || to_char((select count(*) from immobilisations) - biens_avant, 'FMSG9999999990'),
     'ok', nb_avant = nb_apres
       and vehicules_avant = (select count(*) from vehicules)
       and dossiers_avant = (select count(*) from dossiers)
       and ouvertures_avant = (select count(*) from a_nouveaux)
-      and not exists (select 1 from vehicules where modele = 'VÉHICULE ESSAI'));
+      and biens_avant = (select count(*) from immobilisations)
+      and not exists (select 1 from vehicules where modele = 'VÉHICULE ESSAI')
+      and not exists (select 1 from immobilisations where libelle = 'BIEN ESSAI FORFAIT'));
 
   perform set_config('essai.forfait', verdicts::text, true);
 end $$;

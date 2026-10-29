@@ -41743,3 +41743,24 @@ l'onglet Informations peut dire qu'un dossier sans dénomination ne se facture p
 posé la dénomination ne se facture plus depuis l'espace client — le message le dit au client, et le cabinet valide
 encore. Le retour arrière est celui de la reprise, son empreinte du corps de la fonction refaite ; destructif, il se
 colle sur l'accord du cabinet et se refuse dès qu'une facture a figé ses mentions.
+
+**29/10/2026, LE SECOND LOT : AUDIT-Q1 ET AUDIT-Q2** (tranchées par la session à la recommandation (A) → « CE QUE
+RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION » ; un commit à part). `caisseSuppression.sql`,
+`frontiereDesEncaissements.sql` et `logoDesFacturesSuppression.sql` ouvrent leur bloc par une garde de tête : sans le
+rôle `proprietaire`, que toute réplique porte et que la production n'a pas (relu ce jour au catalogue : aucun), l'essai
+refuse, « ESSAI_HORS_REPLIQUE », avant toute écriture. Le contrôle 32 de `forfaitKilometrique.sql` inscrit son propre
+bien, jetable, dans `test`, que le refus attendu annule avec lui ; le 35 compte aussi les biens. Sur la réplique, les
+trois essais gardés rendent les mêmes lignes qu'avant (20, 13 et 19 verdicts ; sans la caisse, `caisseSuppression.sql`
+impossible de même), le forfait aussi, hors du 32, qui passe — 35 sur 35, la faute connue fermée (36 au tableau de
+l'audit, l'en-tête compté) — et du 35, « biens +0 ». Le rôle renommé dans une transaction annulée (aucune autre grappe
+n'est montée), chaque garde refuse sous ses mots et le détecteur du banc ne voit aucune ligne écrite ; l'essai de BASE,
+ou la garde mutée sur `postgres`, que la production a aussi, se joue et écrit (52, 44 et 38 lignes) : l'épreuve mord ;
+le rôle relu intact après chaque passage. Le 32 est juste aussi sur la réplique munie d'un bien dans le dossier du
+client d'essai, comme la production, et en faute quand la contrainte perd sa clause du bien — ce que celui de BASE ne
+pouvait dire sur la réplique nue, où il l'était déjà. Le banc, par un pilote du bloc-notes qui importe `banc.py` tel
+quel et lui fait rejouer aussi les trois essais de réplique seulement, qu'il écarte par sa règle : 0 motif, 0 écriture
+du leurre pour les quatre ; le forfait SÛR ; les trois autres, un écart chacun, leur contrôle 99, qui rend encore les
+comptes de toute la base avant et après — la forme que l'audit a corrigée dans les essais joués en production, et que
+la garde tient désormais hors d'elle. `essaisEnProduction.test.ts` vert sans changement : aucun de ses dix-neuf cas
+particuliers ne nomme ces essais. La suite, comparée test par test sous Paris : comme au premier lot, 15 139 tests
+justes, celui d'A7Q-Q1 en plus de BASE, aucun disparu ni changé d'état.
