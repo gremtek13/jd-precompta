@@ -148,10 +148,11 @@ begin
   end loop;
 
   -- ══ 9. Rien n'est resté ════════════════════════════════════════════════════════════════════════════════════
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '9. rien n''est resté en base',
-    'observe', 'chefs ' || admins_avant || ' -> ' || (select count(*) from cabinet_admins)
-      || ', catégories ' || categories_avant || ' -> ' || (select count(*) from categories)
-      || ', natures ' || natures_avant || ' -> ' || (select count(*) from natures_immobilisation)
+    'observe', 'chefs ' || to_char((select count(*) from cabinet_admins) - admins_avant, 'FMSG9999999990')
+      || ', catégories ' || to_char((select count(*) from categories) - categories_avant, 'FMSG9999999990')
+      || ', natures ' || to_char((select count(*) from natures_immobilisation) - natures_avant, 'FMSG9999999990')
       || ', ligne commune intacte ' || (select (compte_comptable is not distinct from compte_avant and poste_2035 is not distinct from poste_avant)::text
                                         from categories where id = categorie_commune)
       || ', nature commune intacte ' || (select (compte_immobilisation = nature_avant)::text from natures_immobilisation where id = nature_commune),

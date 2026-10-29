@@ -478,7 +478,10 @@ begin
       insert into ecritures_brouillon (dossier_id, vehicule_id, piece_id, immobilisation_id, date, compte, libelle, montant, sens)
       values (dossier_test, vehicule,
               case when obs like '31.%' then (select id from pieces where dossier_id = dossier_test order by id limit 1) end,
-              case when obs like '32.%' then (select id from immobilisations order by id limit 1) end,
+              -- Un bien des dossiers d'essai seuls (`test` et ceux du client d'essai) : « le premier bien de la base »
+              -- serait celui d'un dossier réel (audit du 29/10/2026).
+              case when obs like '32.%' then (select i.id from immobilisations i where i.dossier_id = dossier_test
+                or i.dossier_id in (select m.dossier_id from memberships m where m.user_id = client) order by i.id limit 1) end,
               case when obs like '33.%' then date '2025-06-30' else date '2025-12-31' end,
               '625110', 'essai', 5679, 'debit');
       accepte := true;
@@ -507,11 +510,12 @@ begin
 
   -- ══ 35. Rien n'est resté ══════════════════════════════════════════════════════════════════════════════
   select count(*) into nb_apres from ecritures_brouillon;
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '35. rien n''est resté en base',
-    'observe', 'écritures ' || nb_avant || ' -> ' || nb_apres
-      || ', véhicules ' || vehicules_avant || ' -> ' || (select count(*) from vehicules)
-      || ', dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers)
-      || ', ouvertures ' || ouvertures_avant || ' -> ' || (select count(*) from a_nouveaux),
+    'observe', 'écritures ' || to_char(nb_apres - nb_avant, 'FMSG9999999990')
+      || ', véhicules ' || to_char((select count(*) from vehicules) - vehicules_avant, 'FMSG9999999990')
+      || ', dossiers ' || to_char((select count(*) from dossiers) - dossiers_avant, 'FMSG9999999990')
+      || ', ouvertures ' || to_char((select count(*) from a_nouveaux) - ouvertures_avant, 'FMSG9999999990'),
     'ok', nb_avant = nb_apres
       and vehicules_avant = (select count(*) from vehicules)
       and dossiers_avant = (select count(*) from dossiers)

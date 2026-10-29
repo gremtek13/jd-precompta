@@ -115,8 +115,10 @@ declare
 begin
   select mb.dossier_id into dossier_client from memberships mb where mb.user_id = client order by mb.dossier_id limit 1;
   select d.cabinet_id into cabinet from dossiers d where d.id = dossier_client;
-  select d.id into dossier_autre from dossiers d where d.cabinet_id = cabinet and d.id <> dossier_client
-    and not exists (select 1 from memberships mb where mb.user_id = client and mb.dossier_id = d.id) order by d.id limit 1;
+  -- L'autre dossier est le dossier `test`, nommément : « le premier du cabinet » serait un dossier réel dès que son
+  -- identifiant précéderait celui de `test`, et l'essai y écrirait et en lirait les pièces jointes (audit du 29/10/2026).
+  select d.id into dossier_autre from dossiers d where d.id = '001c7ed7-c23b-4590-901e-693489f8af24' and d.cabinet_id = cabinet
+    and d.id <> dossier_client and not exists (select 1 from memberships mb where mb.user_id = client and mb.dossier_id = d.id);
   if dossier_client is null or cabinet is null or dossier_autre is null
      or exists (select 1 from cabinet_admins where user_id = client) or exists (select 1 from super_admins where user_id = client)
      or not exists (select 1 from super_admins where user_id = chef)
@@ -1084,9 +1086,10 @@ begin
     -- Le second dossier du client, s'il en a un ; un troisième dossier du cabinet, ni le sien ni l'autre.
     select mb.dossier_id into dossier_second from memberships mb
      where mb.user_id = client and mb.dossier_id <> dossier_client order by mb.dossier_id limit 1;
-    select d.id into dossier_tiers from dossiers d
-     where d.cabinet_id = cabinet and d.id <> dossier_client and d.id <> dossier_autre
-       and not exists (select 1 from memberships mb where mb.user_id = client and mb.dossier_id = d.id) order by d.id limit 1;
+    -- Le troisième dossier est un dossier JETABLE du cabinet, créé au début du jeu, dans sa sous-transaction : « le premier
+    -- dossier du cabinet, ni le sien ni l'autre » serait un dossier réel, où l'essai poserait une pièce jointe écartée
+    -- (audit du 29/10/2026).
+    dossier_tiers := 'e5a70000-0000-4000-8000-0000000000d3';
     select md5(coalesce(string_agg(mb::text, ',' order by mb.id), '')) into acces_avant from memberships mb;
     -- Le jour d'une réception à 23 h 30 en temps universel, avant-hier : à Paris, c'est déjà hier (UTC+1 ou UTC+2).
     jour_utc := (now() at time zone 'UTC')::date - 2;
@@ -1125,6 +1128,7 @@ begin
     code_89 := null; refus_autre := null; refus_rien := null; refus_anon := null; refus_tiers := null; mutation_anon := null;
     lues_directement := null;
     begin
+      insert into dossiers (id, nom, cabinet_id) values (dossier_tiers, 'ESSAI PIÈCES JOINTES TROISIÈME DOSSIER', cabinet);
       insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte, recue_le, vue_le, vue_par) values
         (dossier_client, 'format', 4120, e1, now() - interval '1 day', null, null),
         (dossier_client, 'depot', null, e2, (jour_utc + time '23:30') at time zone 'UTC', null, null),
@@ -1390,21 +1394,23 @@ begin
     verdicts := verdicts || jsonb_build_object('controle', '49f. MUTATION — le contrôle 38e jugé au jour du temps universel : il doit refuser',
       'observe', 'jour universel ' || jour_utc || ', jour de Paris ' || jour_paris, 'ok', coalesce(jour_utc <> jour_paris, false));
 
+    -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
     verdicts := verdicts || jsonb_build_object('controle', '38q. rien de ce bloc n''est resté : les accès et leurs cases, les membres et leurs affectations, le droit de l''anonyme',
       'observe', case when acces_avant = (select md5(coalesce(string_agg(mb::text, ',' order by mb.id), '')) from memberships mb)
                       then 'accès inchangés' else 'accès CHANGÉS' end
-        || ', chefs et membres ' || admins_avant || ' -> ' || (select count(*) from cabinet_admins)
-        || ', affectations ' || assignations_avant || ' -> ' || (select count(*) from dossier_assignations),
+        || ', chefs et membres ' || to_char((select count(*) from cabinet_admins) - admins_avant, 'FMSG9999999990')
+        || ', affectations ' || to_char((select count(*) from dossier_assignations) - assignations_avant, 'FMSG9999999990'),
       'ok', coalesce(acces_avant = (select md5(coalesce(string_agg(mb::text, ',' order by mb.id), '')) from memberships mb)
         and admins_avant = (select count(*) from cabinet_admins) and assignations_avant = (select count(*) from dossier_assignations)
         and not has_function_privilege('anon', 'public.pieces_jointes_ecartees_du_client(uuid)', 'execute'), false));
   end if;
 
   -- ══ 50. Rien n'est resté ════════════════════════════════════════════════════════════════════════════════════
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '50. rien n''est resté en base',
-    'observe', 'pièces jointes écartées ' || lignes_avant || ' -> ' || (select count(*) from pieces_jointes_ecartees)
-      || ', chefs et membres ' || admins_avant || ' -> ' || (select count(*) from cabinet_admins)
-      || ', affectations ' || assignations_avant || ' -> ' || (select count(*) from dossier_assignations),
+    'observe', 'pièces jointes écartées ' || to_char((select count(*) from pieces_jointes_ecartees) - lignes_avant, 'FMSG9999999990')
+      || ', chefs et membres ' || to_char((select count(*) from cabinet_admins) - admins_avant, 'FMSG9999999990')
+      || ', affectations ' || to_char((select count(*) from dossier_assignations) - assignations_avant, 'FMSG9999999990'),
     'ok', coalesce(lignes_avant = (select count(*) from pieces_jointes_ecartees)
       and admins_avant = (select count(*) from cabinet_admins)
       and assignations_avant = (select count(*) from dossier_assignations)

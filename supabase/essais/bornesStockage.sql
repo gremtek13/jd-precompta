@@ -39,10 +39,18 @@ seaux as (
          (select array_agg(t order by t) from unnest(b.allowed_mime_types) t) as types_poses
   from attendu a left join storage.buckets b on b.id = a.seau
 ),
+-- Les fichiers des dossiers d'essai seuls (`test` et ceux du client d'essai ; pour les logos, le cabinet de `test`) :
+-- compter ceux de toute la base dirait ceux d'un dossier réel (audit du 29/10/2026).
+essai as (
+  select '001c7ed7-c23b-4590-901e-693489f8af24' as dossier
+  union select m.dossier_id::text from public.memberships m where m.user_id = '797fe440-df8d-4b8e-828b-d148927bfd60'
+  union select d.cabinet_id::text from public.dossiers d where d.id = '001c7ed7-c23b-4590-901e-693489f8af24'
+),
 hors_bornes as (
   select count(*) as nombre
   from storage.objects o join attendu a on a.seau = o.bucket_id
   where o.metadata is not null
+    and split_part(o.name, '/', 1) in (select dossier from essai)
     and ((o.metadata->>'size')::bigint > a.taille
          or lower(split_part(o.metadata->>'mimetype', ';', 1)) <> all (a.types))
 )
@@ -63,6 +71,6 @@ select 'seaux sans borne attendue',
        case when not exists (select 1 from storage.buckets b where b.id not in (select seau from attendu)) then 'ok'
             else 'EN FAUTE : ' || (select string_agg(b.id, ', ' order by b.id) from storage.buckets b where b.id not in (select seau from attendu)) end
 union all
-select 'fichiers déjà déposés hors des bornes',
+select 'fichiers des dossiers d''essai déjà déposés hors des bornes',
        case when nombre = 0 then 'ok' else 'À VOIR : ' || nombre || ' fichier(s)' end
 from hors_bornes;

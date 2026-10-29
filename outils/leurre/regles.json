@@ -1,0 +1,42 @@
+{
+  "_lire": "Les règles du banc du leurre (outils/leurre/banc.py), lues aussi par src/lib/essaisEnProduction.test.ts : comment un essai de supabase/essais se classe, les motifs du leurre, les identifiants qu'une sortie garde tels quels, et les cas particuliers du rejeu, chacun avec sa raison. HISTORIQUE.md, « CE QUE RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION ».",
+  "replique_seulement": {
+    "phrase": "SUR UNE RÉPLIQUE SEULEMENT",
+    "meta_commande": "^[ \\t]*\\\\[a-zA-Z]",
+    "raison": "Un essai qui ne se joue que sur une réplique le dit dans le PREMIER paragraphe de son en-tête (la phrase, en capitales ou non, coupée ou non par un retour à la ligne ; plus bas, un en-tête parle d'autres essais), ou porte une méta-commande de psql, que l'outil d'exécution de la production ne joue pas. Tout autre fichier .sql est joué en production, donc rejoué par le banc."
+  },
+  "motifs": {
+    "texte": "leurre[-_ ]?7q3",
+    "iban": "99999073577|9999 ?9073 ?5773",
+    "siren": "9997357[3-8]",
+    "montant": "7\\s?357[.,]3[123]|73573[123]\\b|8\\s?246[.,]4[234]",
+    "identifiant": "00000000-0000-4000-8000-0000000|fffffff0-0000-4000-8000-0000000|7e570000-0000-4000-8000-|7e57e000-0000-4000-8000-"
+  },
+  "identifiants_fixes": {
+    "001c7ed7-c23b-4590-901e-693489f8af24": "le dossier `test`",
+    "ac538d93-7da3-4403-bca6-2d7836810a6f": "le dossier du client d'essai",
+    "bd6bd047-0ef0-4c9d-a319-1b642aaf2162": "le chef du cabinet de `test`, super-administrateur",
+    "797fe440-df8d-4b8e-828b-d148927bfd60": "le client d'essai"
+  },
+  "particuliers": {
+    "affectation": {"famille": "jeu_de_depart", "raison": "cherche le jeu de départ que la production porte dans `test` et le dossier du client (ses préconditions, ESSAI_IMPOSSIBLE) : semis/jeu_de_depart.sql le sème, fictif"},
+    "compteBilan": {"famille": "jeu_de_depart", "raison": "cherche le jeu de départ que la production porte (semis/jeu_de_depart.sql)"},
+    "cotisationRapprochee": {"famille": "jeu_de_depart", "raison": "cherche le jeu de départ que la production porte (semis/jeu_de_depart.sql)"},
+    "dotations": {"famille": "jeu_de_depart", "raison": "cherche le jeu de départ que la production porte, dont la nature commune « Informatique » (semis/jeu_de_depart.sql)"},
+    "echeanceEmprunt": {"famille": "jeu_de_depart", "raison": "cherche le jeu de départ que la production porte (semis/jeu_de_depart.sql)"},
+    "laBaseLitLePlan": {"famille": "jeu_de_depart", "raison": "cherche le jeu de départ que la production porte (semis/jeu_de_depart.sql)"},
+    "reglementGroupe": {"famille": "jeu_de_depart", "raison": "cherche le jeu de départ que la production porte (semis/jeu_de_depart.sql)"},
+    "reglesAffectation": {"famille": "jeu_de_depart", "raison": "cherche le jeu de départ que la production porte (semis/jeu_de_depart.sql)"},
+    "ventilation": {"famille": "jeu_de_depart", "raison": "cherche le jeu de départ que la production porte (semis/jeu_de_depart.sql)"},
+    "virementPersonnel": {"famille": "jeu_de_depart", "raison": "cherche le jeu de départ que la production porte (semis/jeu_de_depart.sql)"},
+    "droitsAcces": {"famille": "second_acces", "raison": "joue le second accès du client d'essai, que la production porte (semis/second_acces.sql)"},
+    "notesInternes": {"famille": "notes", "raison": "relit les notes de pièces que la production porte dans `test` (semis/notes.sql)"},
+    "rls": {"famille": "journal", "role": "super", "raison": "lit le journal des désignations que la production porte (semis/journal.sql) ; joué par le super-utilisateur, comme son en-tête le veut"},
+    "validationExercice": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
+    "reportDesSoldes": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
+    "mentionsFigees": {"famille": "apres", "raison": "sa migration (`mentions_figees`) est préparée, pas appliquée : la réplique qui la porte, donnée par --modele apres=…"},
+    "ibanHorsDesParametres": {"famille": "apres", "raison": "sa migration (`iban_hors_des_parametres`) est préparée, pas appliquée : la réplique qui la porte"},
+    "caisse": {"famille": "apres", "raison": "sa migration (`caisse`, supabase/preparees/) est préparée, pas appliquée : la réplique qui la porte"},
+    "devis": {"attendu": "impossible", "raison": "ses migrations (les devis, étape P5) ne sont pas appliquées : l'essai le dit (ESSAI_IMPOSSIBLE) et n'écrit rien ; le banc compare alors ce refus"}
+  }
+}

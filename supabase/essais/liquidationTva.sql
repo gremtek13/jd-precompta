@@ -518,8 +518,9 @@ begin
   apres := concat_ws('/', (select count(*) from declarations_tva), (select count(*) from ecritures_brouillon),
     (select count(*) from lignes_bancaires), (select count(*) from dossiers), (select count(*) from exercices_valides),
     (select count(*) from a_nouveaux));
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '68. rien n''est resté en base',
-    'observe', 'déclarations/écritures/mouvements/dossiers/exercices validés/à-nouveaux ' || avant || ' -> ' || apres,
+    'observe', 'déclarations/écritures/mouvements/dossiers/exercices validés/à-nouveaux ' || 'écarts ' || (select string_agg(to_char(ecart_.apres_::bigint - ecart_.avant_::bigint, 'FMSG9999999990'), '/' order by ecart_.rang_) from unnest(string_to_array(avant, '/'), string_to_array(apres, '/')) with ordinality as ecart_(avant_, apres_, rang_)),
     'ok', avant = apres and not exists (select 1 from dossiers where id = d));
 
   insert into essai_tva select x.controle, x.observe, x.ok

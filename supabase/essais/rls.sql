@@ -838,8 +838,9 @@ begin
       (not accepte) and motif = '42501' and raison like 'permission denied for function%');
   end loop;
   select coalesce(max(dernier_numero), -1) into numero_apres from facture_numerotation;
+  -- L'écart du compteur, non plus le plus grand numéro de la base, qui serait celui d'un dossier réel (audit du 29/10/2026).
   insert into rls_verdict values ('5bis. le compteur n''a pas bougé', 'facture_numerotation',
-    numero_avant::text || ' -> ' || numero_apres::text, numero_avant = numero_apres);
+    'compteur ' || to_char(numero_apres - numero_avant, 'FMSG9999999990'), numero_avant = numero_apres);
 end $$;
 
 
@@ -997,7 +998,8 @@ begin
     reset role;
     if not (n <= 0) then en_faute := en_faute + 1; end if;
   end loop;
-  insert into rls_mutation values ('M1 — contrôle 1 joué sous le chef', 'des tables en faute', en_faute || ' tables', en_faute > 0);
+  -- Qu'il y en a, pas combien : sous le chef, qui voit tout, le nombre dirait ce que porte un dossier réel (audit du 29/10/2026).
+  insert into rls_mutation values ('M1 — contrôle 1 joué sous le chef', 'des tables en faute', case when en_faute > 0 then 'au moins une table' else 'aucune table' end, en_faute > 0);
 
   -- M2 : le contrôle 2 sans sa liste d'exceptions. Les 4 référentiels tolérés doivent ressortir —
   -- preuve que la boucle lit de vrais comptes, et non zéro parce que l'impersonation a échoué.
@@ -1027,7 +1029,8 @@ begin
     reset role;
     if hors <> 0 then en_faute := en_faute + 1; end if;
   end loop;
-  insert into rls_mutation values ('M3 — contrôle 3 joué sous le chef', 'des tables en faute', en_faute || ' tables', en_faute > 0);
+  -- Qu'il y en a, pas combien : sous le chef, qui voit tout, le nombre dirait ce que porte un dossier réel (audit du 29/10/2026).
+  insert into rls_mutation values ('M3 — contrôle 3 joué sous le chef', 'des tables en faute', case when en_faute > 0 then 'au moins une table' else 'aucune table' end, en_faute > 0);
 
   -- M3ter : le contrôle 3ter joué sous le chef — les droits posés de même, puis la boucle sous un profil qui voit tout le
   -- cabinet. Elle doit trouver des tables en faute : sinon, sous ce profil-là non plus, elle ne regarderait rien.
@@ -1055,7 +1058,8 @@ begin
   exception when sqlstate 'P0001' then null;
   end;
   reset role;
-  insert into rls_mutation values ('M3ter — contrôle 3ter joué sous le chef', 'des tables en faute', en_faute || ' tables', en_faute > 0);
+  -- Qu'il y en a, pas combien : sous le chef, qui voit tout, le nombre dirait ce que porte un dossier réel (audit du 29/10/2026).
+  insert into rls_mutation values ('M3ter — contrôle 3ter joué sous le chef', 'des tables en faute', case when en_faute > 0 then 'au moins une table' else 'aucune table' end, en_faute > 0);
 
   -- M4a : la validation de pièce tentée par le chef, à qui elle est permise.
   set local role authenticated;
@@ -1133,8 +1137,9 @@ begin
   select count(*) into n from information_schema.routine_privileges
    where routine_schema = 'public' and routine_name in ('prochain_numero_facture', 'attribuer_numero_facture')
      and grantee in ('PUBLIC', 'anon', 'authenticated', 'service_role');
+  -- L'écart du compteur, non plus le plus grand numéro de la base, qui serait celui d'un dossier réel (audit du 29/10/2026).
   insert into rls_mutation values ('M5bis — l''annulation efface la consommation et le droit', '0 ligne 2099, compteur inchangé, 0 droit',
-    restes || ' ligne(s) 2099, ' || numero_avant || ' -> ' || numero_apres || ', ' || n || ' droit(s)',
+    restes || ' ligne(s) 2099, compteur ' || to_char(numero_apres - numero_avant, 'FMSG9999999990') || ', ' || n || ' droit(s)',
     restes = 0 and numero_avant = numero_apres and n = 0);
 
   -- M5ter : le contrôle POSITIF. Sans lui, les refus de 5 et 5bis seraient satisfaits par une
@@ -1154,9 +1159,10 @@ begin
   reset role;
   select coalesce(max(dernier_numero), -1) into numero_apres from facture_numerotation;
   select count(*) into restes from facture_numerotation where annee = 2099;
+  -- L'écart du compteur, non plus le plus grand numéro de la base, qui serait celui d'un dossier réel (audit du 29/10/2026).
   insert into rls_mutation values ('M5ter — le chef numérote par enregistrer_facture', 'ACCEPTÉ',
     case when accepte then 'ACCEPTÉ ' || raison else 'refusé par ' || coalesce(motif,'?') end
-    || ', ' || restes || ' ligne(s) 2099, ' || numero_avant || ' -> ' || numero_apres,
+    || ', ' || restes || ' ligne(s) 2099, compteur ' || to_char(numero_apres - numero_avant, 'FMSG9999999990'),
     accepte and restes = 0 and numero_avant = numero_apres);
 
   -- M5quater : l'exigence de RAISON de 5 et 5bis n'est pas décorative. On fait échouer l'essai pour un
@@ -1197,7 +1203,8 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
   select count(*) into n from storage.objects where bucket_id in ('pieces','packs');
   reset role;
-  insert into rls_mutation values ('MS1 — S1 joué sous le chef', 'des fichiers visibles', n || ' fichiers', n > 0);
+  -- Qu'il y en a, pas combien : sous le chef, qui voit tout, le nombre dirait ce que porte un dossier réel (audit du 29/10/2026).
+  insert into rls_mutation values ('MS1 — S1 joué sous le chef', 'des fichiers visibles', case when n > 0 then 'au moins un fichier' else 'aucun fichier' end, n > 0);
 
   -- MS2 : S3bis joué sous un inconnu. Le contrôle positif doit tomber.
   set local role authenticated;
@@ -1215,7 +1222,8 @@ begin
    where o.bucket_id in ('pieces','packs')
      and ((storage.foldername(o.name))[1])::uuid not in (select m.dossier_id from memberships m where m.user_id = client);
   reset role;
-  insert into rls_mutation values ('MS3 — S3 joué sous le chef', 'des fichiers hors de ses dossiers', hors || ' fichiers', hors > 0);
+  -- Qu'il y en a, pas combien : sous le chef, qui voit tout, le nombre dirait ce que porte un dossier réel (audit du 29/10/2026).
+  insert into rls_mutation values ('MS3 — S3 joué sous le chef', 'des fichiers hors de ses dossiers', case when hors > 0 then 'au moins un fichier' else 'aucun fichier' end, hors > 0);
 
   -- MS4 : le dépôt chez un autre, tenté par le chef.
   set local role authenticated;

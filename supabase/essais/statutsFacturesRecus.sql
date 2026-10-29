@@ -66,9 +66,14 @@ declare
   avant jsonb; apres jsonb; ventes_du_client boolean;
   verdicts jsonb := '[]'::jsonb;
 begin
+  -- La facture d'essai et l'autre dossier se prennent dans les dossiers d'essai (`test` et ceux du client d'essai) :
+  -- « la première facture validée de la base » serait une facture réelle dès qu'une précéderait les leurs, et l'essai y
+  -- écrirait (audit du 29/10/2026).
   select f.id, f.dossier_id into facture_v, dossier_f from factures_emises f
-   where f.statut = 'validee' and f.type = 'facture' order by f.id limit 1;
-  select d.id into autre_dossier from dossiers d where d.id <> dossier_f order by d.id limit 1;
+   where f.statut = 'validee' and f.type = 'facture'
+     and (f.dossier_id = '001c7ed7-c23b-4590-901e-693489f8af24' or f.dossier_id in (select m.dossier_id from memberships m where m.user_id = client)) order by f.id limit 1;
+  select d.id into autre_dossier from dossiers d where d.id <> dossier_f
+   and (d.id = '001c7ed7-c23b-4590-901e-693489f8af24' or d.id in (select m.dossier_id from memberships m where m.user_id = client)) order by d.id limit 1;
   select exists (select 1 from super_admins s where s.user_id = chef) into chef_super;
   if facture_v is null or autre_dossier is null then
     raise exception 'ESSAI_IMPOSSIBLE : il faut une facture validée et un second dossier';
@@ -505,8 +510,9 @@ begin
     'transmissions', (select count(*) from transmissions_factures), 'evenements', (select count(*) from facture_superpdp_events),
     'connexions', (select count(*) from connexions_plateformes),
     'numerotation', (select coalesce(sum(dernier_numero), 0) from facture_numerotation)) into apres;
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '50. rien n''est resté en base',
-    'observe', avant::text || ' -> ' || apres::text, 'ok', avant = apres);
+    'observe', 'écarts ' || (select jsonb_object_agg(cle_, (apres ->> cle_)::numeric - (avant ->> cle_)::numeric) from jsonb_object_keys(avant) as cle_)::text, 'ok', avant = apres);
 
   perform set_config('essai.statuts', verdicts::text, true);
 end $$;

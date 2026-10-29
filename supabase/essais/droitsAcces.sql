@@ -79,11 +79,14 @@ begin
   select mb.dossier_id, mb.id into dossier_client_2, acces_client_2 from memberships mb where mb.user_id = client
     and mb.dossier_id <> dossier_client order by mb.dossier_id limit 1;
   select cabinet_id into cabinet from dossiers where id = dossier_client;
-  select d.id into autre_dossier from dossiers d where d.cabinet_id = cabinet
-    and not exists (select 1 from memberships mb where mb.dossier_id = d.id and mb.user_id = client) order by d.id limit 1;
-  select d.id into troisieme_dossier from dossiers d where d.cabinet_id = cabinet and d.id <> autre_dossier
-    and not exists (select 1 from memberships mb where mb.dossier_id = d.id and mb.user_id = client) order by d.id limit 1;
-  if dossier_client is null or dossier_client_2 is null or cabinet is null or autre_dossier is null or troisieme_dossier is null
+  -- L'autre dossier est le dossier `test`, nommément, et le troisième un dossier JETABLE du cabinet, créé dans la
+  -- sous-transaction de chaque contrôle qui s'en sert : choisis « les premiers dossiers du cabinet sans le client », ils
+  -- seraient un dossier réel (dès le 20/11/2026, le troisième l'est presque sûrement), où l'essai poserait des accès, des
+  -- affectations et sa bascule (audit du 29/10/2026).
+  select d.id into autre_dossier from dossiers d where d.id = '001c7ed7-c23b-4590-901e-693489f8af24' and d.cabinet_id = cabinet
+    and not exists (select 1 from memberships mb where mb.dossier_id = d.id and mb.user_id = client);
+  troisieme_dossier := 'f8f00000-0000-4000-8000-0000000000d3';
+  if dossier_client is null or dossier_client_2 is null or cabinet is null or autre_dossier is null or exists (select 1 from dossiers where id = troisieme_dossier)
      or (select cabinet_id from dossiers where id = dossier_client_2) <> cabinet
      or not exists (select 1 from cabinet_admins where user_id = chef and cabinet_id = cabinet and role = 'comptable_en_chef')
      or not exists (select 1 from super_admins where user_id = chef)
@@ -98,9 +101,11 @@ begin
   select count(*), count(*) filter (where d.ventes_par_les_factures) into dossiers_avant, bascules_avant from dossiers d;
 
   -- ══ 0 à 4. Le catalogue ═════════════════════════════════════════════════════════════════════════════════════
-  select count(*) filter (where droit_ventes), count(*) filter (where droit_banque) into n, m from memberships;
-  verdicts := verdicts || jsonb_build_object('controle', '0b. information : les accès en base et leurs droits',
-    'observe', (select count(*) from memberships) || ' accès, ' || n || ' avec « Ventes », ' || m || ' avec « Banque »', 'ok', true);
+  -- Les accès du client d'essai seuls : ceux de toute la base diraient ceux d'un dossier réel (audit du 29/10/2026).
+  select count(*) filter (where droit_ventes), count(*) filter (where droit_banque) into n, m from memberships where user_id = client;
+  verdicts := verdicts || jsonb_build_object('controle', '0b. information : les accès du client d''essai et leurs droits',
+    'observe', (select count(*) from memberships where user_id = client) || ' accès, ' || n || ' avec « Ventes », ' || m
+      || ' avec « Banque »', 'ok', true);
 
   select string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) || case when a.attnotnull then ' non nulle' else ' NULLABLE' end
            || ' défaut ' || coalesce(pg_get_expr(d.adbin, d.adrelid), 'aucun'), ', ' order by a.attname)
@@ -216,6 +221,7 @@ begin
           insert into dossier_assignations (dossier_id, user_id) values (autre_dossier, client);
         when 'membre_ailleurs' then
           insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+          insert into dossiers (id, nom, cabinet_id) values (troisieme_dossier, 'ESSAI DROITS TROISIÈME DOSSIER', cabinet);
           insert into dossier_assignations (dossier_id, user_id) values (troisieme_dossier, client);
       end case;
       set local role authenticated;
@@ -269,6 +275,7 @@ begin
         returning id into acces_essai;
       if t.reglage = 'membre_ailleurs' then
         insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+        insert into dossiers (id, nom, cabinet_id) values (troisieme_dossier, 'ESSAI DROITS TROISIÈME DOSSIER', cabinet);
         insert into dossier_assignations (dossier_id, user_id) values (troisieme_dossier, client);
       end if;
       select to_jsonb(mb) into avant from memberships mb where mb.id = case t.cible when 'client' then acces_client else acces_essai end;
@@ -833,13 +840,14 @@ begin
 
   -- ══ 60. Rien n'est resté ════════════════════════════════════════════════════════════════════════════════════
   select coalesce(jsonb_agg(to_jsonb(mb) order by mb.id), '[]'::jsonb) into apres from memberships mb;
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '60. rien n''est resté en base',
     'observe', 'accès ' || case when apres = instantane then 'identiques, droits compris' else 'CHANGÉS' end
-      || ', chefs et membres ' || admins_avant || ' -> ' || (select count(*) from cabinet_admins)
-      || ', affectations ' || assignations_avant || ' -> ' || (select count(*) from dossier_assignations)
-      || ', super-administrateurs ' || supers_avant || ' -> ' || (select count(*) from super_admins)
-      || ', dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers)
-      || ', dont basculés ' || bascules_avant || ' -> ' || (select count(*) from dossiers where ventes_par_les_factures)
+      || ', chefs et membres ' || to_char((select count(*) from cabinet_admins) - admins_avant, 'FMSG9999999990')
+      || ', affectations ' || to_char((select count(*) from dossier_assignations) - assignations_avant, 'FMSG9999999990')
+      || ', super-administrateurs ' || to_char((select count(*) from super_admins) - supers_avant, 'FMSG9999999990')
+      || ', dossiers ' || to_char((select count(*) from dossiers) - dossiers_avant, 'FMSG9999999990')
+      || ', dont basculés ' || to_char((select count(*) from dossiers where ventes_par_les_factures) - bascules_avant, 'FMSG9999999990')
       || ', droit d''exécution d''anon ' || has_function_privilege('anon', 'public.changer_droits_acces(uuid, boolean, boolean)', 'execute'),
     'ok', coalesce(apres = instantane
       and admins_avant = (select count(*) from cabinet_admins)

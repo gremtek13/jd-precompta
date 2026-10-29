@@ -37,10 +37,15 @@ declare
   notes_avant int; admins_avant int; assignations_avant int; total_notes int; total_dossier_notes int;
   annotees int; sans_ligne int; differentes int; reprises int; doublons int; n int; m int; rendue uuid; maj timestamptz;
   texte_relu text; code_recu text; message text; obs text; verdicts jsonb := '[]'::jsonb;
+  -- Les dossiers d'essai (`test` et ceux du client d'essai) : l'essai ne compte, ne recopie et ne choisit que dans eux ;
+  -- les notes, les pièces et les documents de toute la base diraient ceux d'un dossier réel (audit du 29/10/2026).
+  fictifs uuid[];
 begin
+  fictifs := array(select '001c7ed7-c23b-4590-901e-693489f8af24'::uuid union select mb.dossier_id from memberships mb where mb.user_id = client);
   select mb.dossier_id into dossier_client from memberships mb where mb.user_id = client order by mb.dossier_id limit 1;
   select cabinet_id into cabinet from dossiers where id = dossier_client;
   select ni.dossier_id into dossier_notes from notes_internes ni where ni.piece_id is not null
+    and ni.dossier_id = '001c7ed7-c23b-4590-901e-693489f8af24'
     group by ni.dossier_id order by count(*) desc, ni.dossier_id limit 1;
   select id into piece_client from pieces where dossier_id = dossier_client order by id limit 1;
   select ni.piece_id, ni.id into piece_notes, note_notes from notes_internes ni where ni.dossier_id = dossier_notes and ni.piece_id is not null
@@ -70,7 +75,8 @@ begin
          count(*) filter (where ni.id is not null and ni.updated_at = ni.created_at and ni.texte is distinct from p.notes),
          count(*) filter (where ni.id is not null and ni.updated_at <> ni.created_at)
     into annotees, sans_ligne, differentes, reprises
-    from pieces p left join notes_internes ni on ni.piece_id = p.id and ni.dossier_id = p.dossier_id;
+    from pieces p left join notes_internes ni on ni.piece_id = p.id and ni.dossier_id = p.dossier_id
+   where p.dossier_id = any (fictifs);
   verdicts := verdicts || jsonb_build_object('controle', '1. chaque note ancienne d''une pièce a sa ligne, identique tant que personne ne l''a reprise',
     'observe', annotees || ' annotée(s), ' || sans_ligne || ' sans ligne, ' || differentes || ' jamais reprise(s) mais différente(s), '
       || reprises || ' reprise(s) depuis',
@@ -81,7 +87,8 @@ begin
          count(*) filter (where ni.id is not null and ni.updated_at = ni.created_at and ni.texte is distinct from d.notes),
          count(*) filter (where ni.id is not null and ni.updated_at <> ni.created_at)
     into annotees, sans_ligne, differentes, reprises
-    from documents_divers d left join notes_internes ni on ni.document_id = d.id and ni.dossier_id = d.dossier_id;
+    from documents_divers d left join notes_internes ni on ni.document_id = d.id and ni.dossier_id = d.dossier_id
+   where d.dossier_id = any (fictifs);
   verdicts := verdicts || jsonb_build_object('controle', '2. chaque note ancienne d''un document a sa ligne, identique tant que personne ne l''a reprise',
     'observe', annotees || ' annotée(s), ' || sans_ligne || ' sans ligne, ' || differentes || ' jamais reprise(s) mais différente(s), '
       || reprises || ' reprise(s) depuis',
@@ -91,24 +98,26 @@ begin
   begin
     insert into notes_internes (dossier_id, piece_id, texte)
     select p.dossier_id, p.id, p.notes from pieces p
-    where p.notes is not null and btrim(p.notes, E' \t\n\r') <> ''
+    where p.notes is not null and btrim(p.notes, E' \t\n\r') <> '' and p.dossier_id = any (fictifs)
       and not exists (select 1 from notes_internes x where x.piece_id = p.id);
     get diagnostics n = row_count;
     insert into notes_internes (dossier_id, document_id, texte)
     select d.dossier_id, d.id, d.notes from documents_divers d
-    where d.notes is not null and btrim(d.notes, E' \t\n\r') <> ''
+    where d.notes is not null and btrim(d.notes, E' \t\n\r') <> '' and d.dossier_id = any (fictifs)
       and not exists (select 1 from notes_internes x where x.document_id = d.id);
     get diagnostics m = row_count;
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate;
   end;
-  select count(*) into doublons from (select piece_id from notes_internes where piece_id is not null group by piece_id having count(*) > 1
-    union all select document_id from notes_internes where document_id is not null group by document_id having count(*) > 1) x;
+  select count(*) into doublons from (select piece_id from notes_internes where piece_id is not null and dossier_id = any (fictifs)
+    group by piece_id having count(*) > 1
+    union all select document_id from notes_internes where document_id is not null and dossier_id = any (fictifs)
+    group by document_id having count(*) > 1) x;
   verdicts := verdicts || jsonb_build_object('controle', '3. rejouée, la recopie n''ajoute rien, et aucune cible n''a deux notes',
     'observe', coalesce(n || ' + ' || m || ' ligne(s) ajoutée(s), ', '') || doublons || ' cible(s) en double, ' || coalesce(code_recu, '?'),
     'ok', coalesce(n = 0 and m = 0 and doublons = 0 and code_recu = 'P0001', false));
 
-  select count(*) into n from dossiers where notes is not null;
+  select count(*) into n from dossiers where notes is not null and id = any (fictifs);
   verdicts := verdicts || jsonb_build_object('controle', '4. la fiche d''un dossier ne porte aucune note : rien n''est à recopier',
     'observe', n || ' dossier(s) annoté(s)', 'ok', n = 0);
 
@@ -132,12 +141,12 @@ begin
     'observe', coalesce(obs, 'aucune'), 'ok', coalesce(obs = 'enregistrer_facture, garder_piece_validee', false));
 
   -- ══ 7 et 8. L'anonyme et le compte rattaché à rien ════════════════════════════════════════════════════════
-  select count(*) into total_notes from notes_internes;
+  select count(*) into total_notes from notes_internes where dossier_id = any (fictifs);
   n := null;
   begin
     set local role anon;
     perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
-    select count(*) into n from notes_internes;
+    select count(*) into n from notes_internes where dossier_id = any (fictifs);
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate;
   end;
@@ -149,7 +158,7 @@ begin
   begin
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', gen_random_uuid(), 'role', 'authenticated')::text, true);
-    select count(*) into n from notes_internes;
+    select count(*) into n from notes_internes where dossier_id = any (fictifs);
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate;
   end;
@@ -204,7 +213,7 @@ begin
   begin
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-    select count(*) into n from notes_internes;
+    select count(*) into n from notes_internes where dossier_id = any (fictifs);
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate;
   end;
@@ -427,10 +436,11 @@ begin
     'observe', coalesce(n::text, '?') || ' vue(s)', 'ok', coalesce(n > 0, false));
 
   -- ══ 40. Rien n'est resté ════════════════════════════════════════════════════════════════════════════════════
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '40. rien n''est resté en base',
-    'observe', 'notes ' || notes_avant || ' -> ' || (select count(*) from notes_internes)
-      || ', chefs et membres ' || admins_avant || ' -> ' || (select count(*) from cabinet_admins)
-      || ', affectations ' || assignations_avant || ' -> ' || (select count(*) from dossier_assignations),
+    'observe', 'notes ' || to_char((select count(*) from notes_internes) - notes_avant, 'FMSG9999999990')
+      || ', chefs et membres ' || to_char((select count(*) from cabinet_admins) - admins_avant, 'FMSG9999999990')
+      || ', affectations ' || to_char((select count(*) from dossier_assignations) - assignations_avant, 'FMSG9999999990'),
     'ok', coalesce(notes_avant = (select count(*) from notes_internes)
       and admins_avant = (select count(*) from cabinet_admins)
       and assignations_avant = (select count(*) from dossier_assignations)

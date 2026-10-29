@@ -765,10 +765,11 @@ begin
   select string_agg(concat_ws(':', l.id, l.statut, l.piece_id, l.cotisation_id, l.categorie_id, l.prelevement_personnel,
                               l.montant, l.ventilee, l.reglement_groupe), '|' order by l.id)
     into etat_apres from lignes_bancaires l where l.id in (debit.id, debit2.id, credit.id, avec_piece.id, du_client.id);
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   insert into essai_cotisation values ('51. rien n''est resté en base',
-    'écritures ' || nb_avant || ' -> ' || nb_apres || ', mouvements ' || (etat_avant = etat_apres)::text
-      || ', échéances ' || cotisations_avant || ' -> ' || (select count(*) from cotisations_declarees)
-      || ', dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers)
+    'écritures ' || to_char(nb_apres - nb_avant, 'FMSG9999999990') || ', mouvements ' || (etat_avant = etat_apres)::text
+      || ', échéances ' || to_char((select count(*) from cotisations_declarees) - cotisations_avant, 'FMSG9999999990')
+      || ', dossiers ' || to_char((select count(*) from dossiers) - dossiers_avant, 'FMSG9999999990')
       || ', mouvements à zéro ' || (select count(*) from lignes_bancaires where libelle = 'MOUVEMENT ESSAI'),
     nb_avant = nb_apres and etat_avant = etat_apres
       and cotisations_avant = (select count(*) from cotisations_declarees)

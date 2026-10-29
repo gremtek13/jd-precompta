@@ -951,12 +951,13 @@ begin
   select string_agg(concat_ws(':', l.id, l.statut, l.piece_id, l.categorie_id, l.prelevement_personnel, l.montant,
                               l.emprunt_id, l.ventilee), '|' order by l.id)
     into etat_apres from lignes_bancaires l where l.id in (debit.id, credit.id, du_client.id, avec_piece.id);
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   insert into essai_ventilation values ('68. rien n''est resté en base',
-    'écritures ' || nb_avant || ' -> ' || nb_apres || ', parts ' || parts_avant || ' -> ' || (select count(*) from ventilations_bancaires)
+    'écritures ' || to_char(nb_apres - nb_avant, 'FMSG9999999990') || ', parts ' || to_char((select count(*) from ventilations_bancaires) - parts_avant, 'FMSG9999999990')
       || ', mouvements ' || (etat_avant = etat_apres)::text
-      || ', dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers)
-      || ', catégories ' || categories_avant || ' -> ' || (select count(*) from categories)
-      || ', emprunts ' || emprunts_avant || ' -> ' || (select count(*) from emprunts),
+      || ', dossiers ' || to_char((select count(*) from dossiers) - dossiers_avant, 'FMSG9999999990')
+      || ', catégories ' || to_char((select count(*) from categories) - categories_avant, 'FMSG9999999990')
+      || ', emprunts ' || to_char((select count(*) from emprunts) - emprunts_avant, 'FMSG9999999990'),
     nb_avant = nb_apres and etat_avant = etat_apres
       and parts_avant = (select count(*) from ventilations_bancaires)
       and dossiers_avant = (select count(*) from dossiers) and categories_avant = (select count(*) from categories)

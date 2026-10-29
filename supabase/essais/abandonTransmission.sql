@@ -41,7 +41,11 @@ declare
   anciennete interval; transmissions_avant int;
   verdicts jsonb := '[]'::jsonb;
 begin
-  select f.id, f.dossier_id into facture_v, dossier_f from factures_emises f where f.statut = 'validee' order by f.id limit 1;
+  -- La facture d'essai et l'autre dossier se prennent dans les dossiers d'essai (`test` et ceux du client d'essai) :
+  -- « la première facture validée de la base » serait une facture réelle dès qu'une précéderait les leurs, et l'essai y
+  -- écrirait (audit du 29/10/2026).
+  select f.id, f.dossier_id into facture_v, dossier_f from factures_emises f where f.statut = 'validee'
+   and (f.dossier_id = '001c7ed7-c23b-4590-901e-693489f8af24' or f.dossier_id in (select m.dossier_id from memberships m where m.user_id = client)) order by f.id limit 1;
   if facture_v is null then
     raise exception 'ESSAI_IMPOSSIBLE : il faut une facture validée';
   end if;
@@ -186,8 +190,9 @@ begin
     'observe', obs, 'ok', obs = 'true search_path=public false true');
 
   -- ══ 13. Rien n'est resté ══════════════════════════════════════════════════════════════════════════════════════
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '13. rien n''est resté en base',
-    'observe', 'transmissions ' || transmissions_avant || ' -> ' || (select count(*) from transmissions_factures),
+    'observe', 'transmissions ' || to_char((select count(*) from transmissions_factures) - transmissions_avant, 'FMSG9999999990'),
     'ok', transmissions_avant = (select count(*) from transmissions_factures));
 
   perform set_config('essai.abandon', verdicts::text, true);

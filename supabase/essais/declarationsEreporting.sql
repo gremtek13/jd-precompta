@@ -683,8 +683,9 @@ begin
     ((select count(*) from declarations_ereporting_sources)), ((select count(*) from cabinet_admins)),
     ((select count(*) from dossier_assignations)), ((select count(*) from memberships))
   ) as t(n);
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '199. rien n''est resté en base',
-    'observe', avant || ' -> ' || apres,
+    'observe', 'écarts ' || (select string_agg(to_char(ecart_.apres_::bigint - ecart_.avant_::bigint, 'FMSG9999999990'), '/' order by ecart_.rang_) from unnest(string_to_array(avant, '/'), string_to_array(apres, '/')) with ordinality as ecart_(avant_, apres_, rang_)),
     'ok', avant = apres and not exists (select 1 from dossiers where nom like 'ESSAI DECLARATIONS%')
       and not exists (select 1 from cabinet_admins where user_id = client));
 

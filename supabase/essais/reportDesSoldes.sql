@@ -402,8 +402,9 @@ begin
     ((select count(*) from ecritures_brouillon)), ((select count(*) from a_nouveaux)),
     ((select count(*) from exercices_valides)), ((select count(*) from soldes_reportes))
   ) as t(n);
+  -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '52. rien n''est resté en base',
-    'observe', avant || ' -> ' || apres,
+    'observe', 'écarts ' || (select string_agg(to_char(ecart_.apres_::bigint - ecart_.avant_::bigint, 'FMSG9999999990'), '/' order by ecart_.rang_) from unnest(string_to_array(avant, '/'), string_to_array(apres, '/')) with ordinality as ecart_(avant_, apres_, rang_)),
     'ok', avant = apres and not exists (select 1 from dossiers where nom like 'ESSAI REPORT%')
       and not exists (select 1 from cabinet_admins where user_id = client)
       and current_setting('session_replication_role') = 'origin');
