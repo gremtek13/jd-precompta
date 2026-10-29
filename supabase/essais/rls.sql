@@ -596,6 +596,12 @@
 -- verdict (la ligne CA « EN ATTENTE »), 0 en faute, 58 mutations sur 58 qui mordent ; avec elle, 77 lignes, 0 en faute,
 -- 61 mutations sur 61 — seules les lignes CA diffèrent, et les quatre boucles comptent une table de plus. Le passage en
 -- production suivra l'application.
+--
+-- 29/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (ligne 26.6, étape C1b : migration `caisse_retrait_et_versement`,
+-- PRÉPARÉE, à coller, après `caisse`), qui ne crée ni ne change aucune policy, mais deux fonctions aux droits du
+-- propriétaire qui écrivent la caisse : le bloc CR (CR1 à CR3, M-CR1 et M-CR2) — le client ne retire ni ne remplace une
+-- opération de la caisse de son dossier, et elle reste entière ; l'anonyme n'exécute aucune des deux ; le catalogue ; le
+-- chef retire et remplace (le contrôle positif) — ; EN ATTENTE sans la migration.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -3269,6 +3275,146 @@ begin
     'ok', n = 2 and (select count(*) from pg_policies where tablename = 'operations_caisse') = 2
       and (select relrowsecurity from pg_class where oid = 'public.operations_caisse'::regclass));
   verdicts := verdicts || jsonb_build_object('controle', 'CA. le jeu d''essai de la caisse s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ CR. Retirer et remplacer une opération de caisse (ligne 26.6, étape C1b ; migration `caisse_retrait_et_versement`) ══
+-- Deux fonctions aux droits du propriétaire, exécutables par les connectés, qui écrivent une table que personne ne met à
+-- jour en direct (aucune policy de mise à jour) : elles contournent la RLS, avec leur propre contrôle
+-- (`qui_ecrit_la_caisse`, au cabinet seul tant que la migration du droit du client ne l'a pas remplacée), avant toute
+-- lecture.
+--   CR1. Une opération de la caisse du dossier du client, saisie par le chef : le client ne la retire ni ne la remplace
+--        (42501, sa raison), et elle reste entière — non retirée, son écriture là.
+--   CR2. L'anonyme n'exécute aucune des deux (42501).
+--   CR3. Le catalogue : les deux, `security definer`, leur chemin fixé ; exécutables par les connectés, ni par
+--        l'anonyme ni par PUBLIC.
+-- Deux mutations, qui doivent mordre : M-CR1 (CR1 joué par le chef : le retrait passe), M-CR2 (CR1 joué par le chef :
+-- le remplacement passe). Avant la migration, une ligne dit que le bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  ecriture jsonb := '[{"compte":"530000","sens":"debit","montant":10},{"compte":"108000","sens":"credit","montant":10}]';
+  nouvelle jsonb := '[{"compte":"530000","sens":"debit","montant":12},{"compte":"108000","sens":"credit","montant":12}]';
+  op uuid; retrait text; remplacement text; intacte boolean; chef_retrait text; chef_remplacement text;
+  anon_retrait text; anon_remplacement text; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.retirer_operation_caisse(uuid, uuid)') is null
+     or to_regprocedure('public.remplacer_operation_caisse(uuid, uuid, text, date, numeric, uuid, numeric, uuid[], jsonb)') is null then
+    insert into rls_verdict values ('CR. retirer et remplacer une opération de caisse : EN ATTENTE de la migration caisse_retrait_et_versement',
+      'retirer_operation_caisse, remplacer_operation_caisse', 'absentes : elles se jugent dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : une opération de la caisse du dossier du client, saisie par le chef ──
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select o.id into op from enregistrer_operation_caisse(dossier_du_client, 'apport', '2026-03-03', 10, null, null, null, ecriture) o;
+    reset role;
+    construit := true;
+
+    -- CR1 : le client retire, puis remplace ; l'opération reste entière.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform retirer_operation_caisse(dossier_du_client, op);
+      retrait := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if retrait is null then retrait := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform remplacer_operation_caisse(dossier_du_client, op, 'apport', '2026-03-03', 12, null, null, null, nouvelle);
+      remplacement := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if remplacement is null then remplacement := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    select o.retire_le is null and (select count(*) from ecritures_brouillon b where b.operation_caisse_id = o.id) = 2
+      into intacte from operations_caisse o where o.id = op;
+    verdicts := verdicts || jsonb_build_object('controle', 'CR1. le client ne retire ni ne remplace une opération de la caisse de son dossier ; elle reste entière',
+      'cible', 'retirer_operation_caisse, remplacer_operation_caisse',
+      'observe', 'retrait : ' || retrait || ' | remplacement : ' || remplacement || ' | entière : ' || coalesce(intacte::text, '?'),
+      'ok', retrait = '42501 Accès refusé à ce dossier.' and remplacement = '42501 Accès refusé à ce dossier.' and coalesce(intacte, false));
+
+    -- M-CR1 et M-CR2 : CR1 joué par le chef — le retrait, puis le remplacement passent.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform retirer_operation_caisse(dossier_du_client, op);
+      chef_retrait := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if chef_retrait is null then chef_retrait := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform remplacer_operation_caisse(dossier_du_client, op, 'apport', '2026-03-03', 12, null, null, null, nouvelle);
+      chef_remplacement := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if chef_remplacement is null then chef_remplacement := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('jd.caisse', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-CR1 — CR1 joué par le chef : le retrait',
+      'attendu', 'accepté', 'observe', chef_retrait, 'mord', chef_retrait = 'ACCEPTÉ');
+    mutations := mutations || jsonb_build_object('mutation', 'M-CR2 — CR1 joué par le chef : le remplacement',
+      'attendu', 'accepté', 'observe', chef_remplacement, 'mord', chef_remplacement = 'ACCEPTÉ');
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- CR2 : l'anonyme.
+  begin
+    set local role anon;
+    perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+    perform retirer_operation_caisse(dossier_du_client, null);
+    anon_retrait := 'ACCEPTÉ';
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if anon_retrait is null then anon_retrait := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  reset role;
+  begin
+    set local role anon;
+    perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+    perform remplacer_operation_caisse(dossier_du_client, null, 'apport', '2026-03-03', 12, null, null, null, nouvelle);
+    anon_remplacement := 'ACCEPTÉ';
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if anon_remplacement is null then anon_remplacement := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  verdicts := verdicts || jsonb_build_object('controle', 'CR2. l''anonyme n''exécute ni le retrait ni le remplacement',
+    'cible', 'retirer_operation_caisse, remplacer_operation_caisse', 'observe', anon_retrait || ' | ' || anon_remplacement,
+    'ok', anon_retrait = '42501 permission denied for function retirer_operation_caisse'
+      and anon_remplacement = '42501 permission denied for function remplacer_operation_caisse');
+
+  -- CR3 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.oid in (to_regprocedure('public.retirer_operation_caisse(uuid, uuid)'),
+                   to_regprocedure('public.remplacer_operation_caisse(uuid, uuid, text, date, numeric, uuid, numeric, uuid[], jsonb)'))
+     and p.prosecdef and p.proconfig @> array['search_path=public']
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0);
+  verdicts := verdicts || jsonb_build_object('controle', 'CR3. security definer, leur chemin fixé ; les connectés les exécutent, ni l''anonyme ni PUBLIC (lecture du catalogue)',
+    'cible', 'retirer_operation_caisse, remplacer_operation_caisse', 'observe', n || ' sur 2', 'ok', n = 2);
+  verdicts := verdicts || jsonb_build_object('controle', 'CR. le jeu d''essai du retrait s''est construit', 'cible', 'le dossier du client',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 

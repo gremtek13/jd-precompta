@@ -53,6 +53,20 @@
 -- sessions concurrentes, il juge les 203 mutations de la migration : 193 tuées, dix équivalentes, chacune avec sa
 -- raison (HISTORIQUE.md, « LA CAISSE, EN BASE : LA MIGRATION `CAISSE` (C1, LIGNE 26.6) »). En production, il se
 -- rejoue entier après l'application.
+--
+-- ÉTENDU LE 29/10/2026 (ligne 26.6, étape C1b : la migration `caisse_retrait_et_versement`, À COLLER, préparée dans
+-- `supabase/preparees/`, après celle-ci). Les contrôles 100 à 163, sept dossiers jetables de plus (préfixe
+-- `ca155e00-0000-4000-8006`) : qui retire et remplace (l'anonyme, un compte rattaché à rien, le client, le chef d'un
+-- autre cabinet, le chef) ; chaque refus du retrait et du remplacement, dans l'ordre et sous ses mots ; ce que le retrait
+-- fait d'une recette, d'un apport, d'un prélèvement, d'espèces rendues et d'un paiement (toutes les lignes qui citent
+-- l'opération) ; le remplacement — l'ancienne retirée, la nouvelle et son `remplace_id`, l'écriture de l'une partie et
+-- celle de l'autre écrite, un genre ou un taux qui change, la chaîne des versions ; la caisse jamais négative, par un
+-- retrait et par un remplacement qui ne passe sous zéro qu'un instant (accepté) ou pour de bon (refusé) ; la frontière ;
+-- le versement d'espèces classé sur le compte de la caisse du plan, au 530000 et au 531000 d'un plan décalé, refusé quand
+-- il rend la caisse négative, et le retrait d'espèces pour elle ; un autre compte 53, l'engagement ; la restauration ; le
+-- catalogue. Une étape de genre « …2 » ne se joue qu'avec cette migration : sans elle, une ligne dit qu'ils attendent
+-- (EN ATTENTE), et le reste rend, verdict par verdict, ce qu'il rendait. Une étape « capture » lit, par le propriétaire,
+-- l'identifiant d'une opération que les fonctions ont tiré, et le range sous un nom entre accolades.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -74,6 +88,10 @@ declare
   ids jsonb;
   etapes text[];
   etape text[];
+  -- La migration de l'étape C1b : ses deux fonctions en base. Sans elle, ses étapes (genre « …2 ») attendent.
+  c1b boolean := to_regprocedure('public.retirer_operation_caisse(uuid, uuid)') is not null
+    and to_regprocedure('public.remplacer_operation_caisse(uuid, uuid, text, date, numeric, uuid, numeric, uuid[], jsonb)') is not null;
+  genre text; en_attente integer := 0;
   cle text; valeur text; s text;
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
@@ -130,7 +148,23 @@ begin
     || jsonb_build_object(
       'AN1', 'ca155e00-0000-4000-8005-000000000001', 'AN2', 'ca155e00-0000-4000-8005-000000000002',
       'AN3', 'ca155e00-0000-4000-8005-000000000003', 'AN4', 'ca155e00-0000-4000-8005-000000000004',
-      'AN5', 'ca155e00-0000-4000-8005-000000000005', 'AN6', 'ca155e00-0000-4000-8005-000000000006');
+      'AN5', 'ca155e00-0000-4000-8005-000000000005', 'AN6', 'ca155e00-0000-4000-8005-000000000006')
+    -- L'étape C1b : sept dossiers (le retrait, le remplacement, le versement, un plan décalé, la frontière, la
+    -- restauration, un dossier assujetti), leurs catégories, leurs mouvements, une pièce, quatre opérations restaurées.
+    || jsonb_build_object(
+      'R1', 'ca155e00-0000-4000-8006-000000000001', 'R2', 'ca155e00-0000-4000-8006-000000000002',
+      'R3', 'ca155e00-0000-4000-8006-000000000003', 'R4', 'ca155e00-0000-4000-8006-000000000004',
+      'R5', 'ca155e00-0000-4000-8006-000000000005', 'R6', 'ca155e00-0000-4000-8006-000000000006',
+      'R7', 'ca155e00-0000-4000-8006-000000000007',
+      'KR1', 'ca155e00-0000-4000-8006-000000000011', 'KR2', 'ca155e00-0000-4000-8006-000000000012',
+      'KR6', 'ca155e00-0000-4000-8006-000000000016', 'KR7', 'ca155e00-0000-4000-8006-000000000017')
+    || jsonb_build_object(
+      'V1', 'ca155e00-0000-4000-8007-000000000001', 'V2', 'ca155e00-0000-4000-8007-000000000002',
+      'V3', 'ca155e00-0000-4000-8007-000000000003', 'V4', 'ca155e00-0000-4000-8007-000000000004',
+      'V5', 'ca155e00-0000-4000-8007-000000000005', 'V6', 'ca155e00-0000-4000-8007-000000000006',
+      'V7', 'ca155e00-0000-4000-8007-000000000007', 'PR6', 'ca155e00-0000-4000-8007-000000000010',
+      'Y1', 'ca155e00-0000-4000-8008-000000000001', 'Y2', 'ca155e00-0000-4000-8008-000000000002',
+      'Y3', 'ca155e00-0000-4000-8008-000000000003', 'Y4', 'ca155e00-0000-4000-8008-000000000004');
 
   select string_agg(n::text, '/') into avant from (values
     ((select count(*) from dossiers)), ((select count(*) from operations_caisse)), ((select count(*) from ecritures_brouillon)),
@@ -794,23 +828,369 @@ begin
       || ' | Retirer l''ouverture de la caisse, 500,00 €, la rendrait négative le 05/03/2026 (−314,50 €) : retire d''abord les sorties d''espèces qui la suivent.'
       || ' | Ce changement de l''ouverture de la caisse la rendrait négative le 05/03/2026 (−314,50 €).'
       || ' | La caisse serait négative le 05/03/2026 (−314,50 €) : saisis d''abord les recettes en espèces qui précèdent ce jour.'
-      || ' | Cette écriture rendrait la caisse négative le 05/03/2026 (−314,50 €).']
+      || ' | Cette écriture rendrait la caisse négative le 05/03/2026 (−314,50 €).'],
+
+    -- ══ 100 à 163. Le retrait, le remplacement et le versement d'espèces (étape C1b) ══════════
+    array['jeu2', 'C1b : sept dossiers jetables, leurs catégories, leurs mouvements, une pièce', 'postgres', $q$insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, statut_tva, ventes_par_les_factures) values
+      ('{R1}', 'ESSAI CAISSE R1', '{CAB}', 'tresorerie', '455000', null, false), ('{R2}', 'ESSAI CAISSE R2', '{CAB}', 'tresorerie', '455000', null, false),
+      ('{R3}', 'ESSAI CAISSE R3', '{CAB}', 'tresorerie', '455000', null, false), ('{R4}', 'ESSAI CAISSE R4', '{CAB}', 'tresorerie', '455000', null, false),
+      ('{R5}', 'ESSAI CAISSE R5', '{CAB}', 'tresorerie', '455000', null, false), ('{R6}', 'ESSAI CAISSE R6', '{CAB}', 'tresorerie', '455000', null, false),
+      ('{R7}', 'ESSAI CAISSE R7', '{CAB}', 'tresorerie', '455000', 'redevable', false);
+      insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
+      ('{KR1}', '{R1}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KR2}', '{R2}', 'essai_hon', 'Honoraires', '706000', 'AA'),
+      ('{KR6}', '{R6}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KR7}', '{R7}', 'essai_hon', 'Honoraires', '706000', 'AA');
+      insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values
+      ('{V1}', '{R3}', '2026-03-05', 'ESSAI VERSEMENT ESPECES', 60, 'non_rapprochee'), ('{V2}', '{R3}', '2026-03-06', 'ESSAI VERSEMENT ESPECES', 50, 'non_rapprochee'),
+      ('{V3}', '{R3}', '2026-03-07', 'ESSAI RETRAIT DAB', -30, 'non_rapprochee'), ('{V4}', '{R4}', '2026-03-05', 'ESSAI VERSEMENT ESPECES', 30, 'non_rapprochee'),
+      ('{V5}', '{R4}', '2026-03-06', 'ESSAI VERSEMENT ESPECES', 5, 'non_rapprochee'), ('{V6}', '{E}', '2026-03-05', 'ESSAI VERSEMENT ESPECES', 20, 'non_rapprochee'),
+      ('{V7}', '{DC}', '2026-03-05', 'ESSAI VERSEMENT ESPECES', 10, 'non_rapprochee');
+      insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut) values
+      ('{PR6}', '{R6}', '{R6}/essai-caisse-r6.pdf', 'essai-caisse-r6.pdf', 'achat', 'a_valider')$q$, '', ''],
+    array['jeu2', 'C1b : le plan de R4, la caisse au 531000, restauré par le super-administrateur avant toute écriture', 'postgres', $q$select set_config('request.jwt.claims', json_build_object('sub', '{CHEF}', 'role', 'authenticated')::text, true);
+      insert into plan_comptable_dossier (dossier_id, role, compte, origine) values ('{R4}', 'caisse', '531000', 'dossier');
+      select set_config('request.jwt.claims', '', true)$q$, '', ''],
+    -- R1 : un apport de 100 € le 01/03, une recette de 40 € le 02/03, un prélèvement de 80 € le 03/03, des espèces
+    -- rendues de 10 € le 04/03 — la caisse à 100, 140, 60, puis 50 €.
+    array['fait2', '101. R1 : quatre opérations, saisies d''un mois', 'chef', $q$select enregistrer_operations_de_caisse('{R1}', '[
+      {"genre":"apport","date":"2026-03-01","montant":100,"ecritures":[{"compte":"530000","sens":"debit","montant":100},{"compte":"108000","sens":"credit","montant":100}]},
+      {"genre":"recette","date":"2026-03-02","montant":40,"categorie_id":"{KR1}","encaissements_du_jour":[],"ecritures":[{"compte":"530000","sens":"debit","montant":40},{"compte":"706000","sens":"credit","montant":40}]},
+      {"genre":"prelevement","date":"2026-03-03","montant":80,"ecritures":[{"compte":"108000","sens":"debit","montant":80},{"compte":"530000","sens":"credit","montant":80}]},
+      {"genre":"recette","date":"2026-03-04","montant":-10,"categorie_id":"{KR1}","encaissements_du_jour":[],"ecritures":[{"compte":"530000","sens":"credit","montant":10},{"compte":"706000","sens":"debit","montant":10}]}]')$q$, 'OK', ''],
+    array['capture2', 'l''apport de R1', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R1}' and o.genre = 'apport'$q$, 'R1AP', ''],
+    array['capture2', 'la recette de R1', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R1}' and o.genre = 'recette' and o.montant > 0$q$, 'R1RE', ''],
+    array['capture2', 'le prélèvement de R1', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R1}' and o.genre = 'prelevement'$q$, 'R1PR', ''],
+    array['capture2', 'les espèces rendues de R1', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R1}' and o.genre = 'recette' and o.montant < 0$q$, 'R1ER', ''],
+    array['capture2', 'l''opération du dossier du client, saisie par le chef (4)', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{DC}' and o.cree_le = now()$q$, 'DCOP', ''],
+    array['capture2', 'l''opération du dossier de l''autre cabinet (6b)', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{DA}'$q$, 'DAOP', ''],
+
+    -- ══ 102 à 106. Qui retire et remplace ══════════
+    array['controle2', '102. un anonyme n''exécute pas le retrait', 'anon', $q$select retirer_operation_caisse('{R1}', '{R1RE}')$q$,
+      '42501', 'permission denied for function retirer_operation_caisse'],
+    array['controle2', '102b. … ni le remplacement', 'anon', $q$select remplacer_operation_caisse('{R1}', '{R1RE}', 'recette', '2026-03-02', 45, '{KR1}', null, '{}', '[]')$q$,
+      '42501', 'permission denied for function remplacer_operation_caisse'],
+    array['controle2', '103. un compte rattaché à rien ne retire pas', 'inconnu', $q$select retirer_operation_caisse('{R1}', '{R1RE}')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle2', '103b. … ni ne remplace', 'inconnu', $q$select remplacer_operation_caisse('{R1}', '{R1RE}', 'recette', '2026-03-02', 45, '{KR1}', null, '{}', '[]')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle2', '104. le client ne retire pas une opération de la caisse de son dossier', 'client', $q$select retirer_operation_caisse('{DC}', '{DCOP}')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle2', '104b. … ni ne la remplace', 'client', $q$select remplacer_operation_caisse('{DC}', '{DCOP}', 'apport', '2026-03-03', 20, null, null, null, '[]')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle2', '104c. … ni une opération d''un autre dossier', 'client', $q$select retirer_operation_caisse('{R1}', '{R1RE}')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle2', '104d. ordre : l''accès avant l''opération (le client, un identifiant qui n''existe pas)', 'client', $q$select retirer_operation_caisse('{DC}', 'ca155e00-0000-4000-8008-0000000000ff')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle2', '105. le chef d''un autre cabinet ne retire pas', 'autre', $q$select retirer_operation_caisse('{R1}', '{R1RE}')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle2', '105b. … ni ne remplace', 'autre', $q$select remplacer_operation_caisse('{R1}', '{R1RE}', 'recette', '2026-03-02', 45, '{KR1}', null, '{}', '[]')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle2', '105c. … et retire dans son dossier (le contrôle POSITIF du profil)', 'autre', $q$select retirer_operation_caisse('{DA}', '{DAOP}')$q$,
+      'OK', ''],
+    array['controle2', '106. le chef retire dans le dossier même du client (le contrôle POSITIF)', 'chef', $q$select retirer_operation_caisse('{DC}', '{DCOP}')$q$,
+      'OK', ''],
+    array['controle2', '106b. un dossier qui n''existe pas, sous les mêmes mots, même pour le super-administrateur', 'chef', $q$select retirer_operation_caisse('ca155e00-0000-4000-8000-0000000000ff', '{R1RE}')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+
+    -- ══ 110 à 114. Les refus du retrait, dans l'ordre ══════════
+    array['controle2', '110. une opération d''un autre dossier', 'chef', $q$select retirer_operation_caisse('{R2}', '{R1RE}')$q$,
+      'P0002', 'Cette opération n''est pas dans la caisse de ce dossier : relis ta caisse.'],
+    array['controle2', '110b. un identifiant qui n''existe pas', 'chef', $q$select retirer_operation_caisse('{R1}', 'ca155e00-0000-4000-8008-0000000000ff')$q$,
+      'P0002', 'Cette opération n''est pas dans la caisse de ce dossier : relis ta caisse.'],
+    array['controle2', '110c. un identifiant nul', 'chef', $q$select retirer_operation_caisse('{R1}', null)$q$,
+      'P0002', 'Cette opération n''est pas dans la caisse de ce dossier : relis ta caisse.'],
+    array['controle2', '111. une opération déjà retirée, depuis la lecture', 'chef', $q$select retirer_operation_caisse('{R1}', '{R1RE}'); select retirer_operation_caisse('{R1}', '{R1RE}')$q$,
+      'P0002', 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.'],
+    array['controle2', '112. un apport dont les espèces ont servi', 'chef', $q$select retirer_operation_caisse('{R1}', '{R1AP}')$q$,
+      '23514', 'Retirer cet apport de 100,00 € rendrait la caisse négative le 03/03/2026 (−40,00 €) : retire d''abord les sorties d''espèces qui le suivent.'],
+    array['controle2', '112b. … le refus vient de la fonction, dans l''appel même', 'chef', $q$select retirer_operation_caisse('{R1}', '{R1AP}');
+      select 1 / 0$q$,
+      '23514', 'Retirer cet apport de 100,00 € rendrait la caisse négative le 03/03/2026 (−40,00 €) : retire d''abord les sorties d''espèces qui le suivent.'],
+    array['controle2', '112c. une recette dont les espèces ont servi (un prélèvement de 45 € le 05/03 la suit)', 'chef', $q$select enregistrer_operation_caisse('{R1}', 'prelevement', '2026-03-05', 45, null, null, null, '[{"compte":"108000","sens":"debit","montant":45},{"compte":"530000","sens":"credit","montant":45}]');
+      select retirer_operation_caisse('{R1}', '{R1RE}')$q$,
+      '23514', 'Retirer cette recette de 40,00 € rendrait la caisse négative le 05/03/2026 (−35,00 €) : retire d''abord les sorties d''espèces qui la suivent.'],
+    array['controle2', '112d. … sans le prélèvement qui la suit, la même recette se retire (les refus de 112 ne sont pas aveugles)', 'chef', $q$select retirer_operation_caisse('{R1}', '{R1RE}')$q$,
+      'OK', ''],
+    array['controle2', '113. un prélèvement se retire, sans être jugé (il rend des espèces à la caisse)', 'chef', $q$select retirer_operation_caisse('{R1}', '{R1PR}')$q$,
+      'OK', ''],
+    array['controle2', '113b. des espèces rendues se retirent de même', 'chef', $q$select retirer_operation_caisse('{R1}', '{R1ER}')$q$,
+      'OK', ''],
+    array['controle2', '113d. … même quand un versement du 05/03 met la caisse sous zéro dans la même transaction, et qu''un apport l''en sort : elle se juge à la fin', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut)
+        values ('ca155e00-0000-4000-8007-000000000008', '{R1}', '2026-03-05', 'ESSAI VERSEMENT ESPECES', 70, 'non_rapprochee');
+      select ecrire_mouvement_compte_bilan('ca155e00-0000-4000-8007-000000000008', '530000', '[{"compte":"512000","sens":"debit","montant":70},{"compte":"530000","sens":"credit","montant":70}]');
+      select retirer_operation_caisse('{R1}', '{R1ER}');
+      select enregistrer_operation_caisse('{R1}', 'apport', '2026-03-05', 20, null, null, null, '[{"compte":"530000","sens":"debit","montant":20},{"compte":"108000","sens":"credit","montant":20}]')$q$,
+      'OK', ''],
+    -- Une assertion lève par `1 / (random() * 0)::integer`, que le planificateur ne calcule pas d'avance : `1 / 0`, une
+    -- constante, il le replierait avant même de juger la condition, et l'assertion lèverait toujours.
+    array['controle2', '113c. le retrait rend l''opération retirée, sa date et son auteur posés', 'chef', $q$select case when (r).id <> '{R1PR}' or (r).retire_le is distinct from now() or (r).retire_par is distinct from '{CHEF}'::uuid then 1 / (random() * 0)::integer end
+      from (select retirer_operation_caisse('{R1}', '{R1PR}') as r) x$q$,
+      'OK', ''],
+
+    -- ══ 114 et 115. Ce que le retrait écrit : R1 perd sa recette ══════════
+    array['fait2', '114. le chef retire la recette de R1', 'chef', $q$select retirer_operation_caisse('{R1}', '{R1RE}')$q$, 'OK', ''],
+    array['valeur2', '114b. les opérations de R1 : la recette retirée, par le chef, maintenant ; rien d''autre ne change', 'postgres', $q$select string_agg(o.genre || '|' || o.montant || '|' || (o.retire_le is not null) || '|' || coalesce((o.retire_le = now())::text, '-')
+        || '|' || coalesce((o.retire_par = '{CHEF}')::text, '-') || '|' || coalesce(o.remplace_id::text, '-'), ',' order by o.date)
+      from operations_caisse o where o.dossier_id = '{R1}'$q$, '',
+      'apport|100|false|-|-|-,recette|40|true|true|true|-,prelevement|80|false|-|-|-,recette|-10|false|-|-|-'],
+    array['valeur2', '114c. … et ses lignes du brouillon parties avec elle, les autres intactes', 'postgres', $q$select string_agg(b.date || '|' || b.compte || '|' || b.sens || '|' || b.montant, ',' order by b.date, b.compte)
+      from ecritures_brouillon b where b.dossier_id = '{R1}'$q$, '',
+      '2026-03-01|108000|credit|100,2026-03-01|530000|debit|100,2026-03-03|108000|debit|80,2026-03-03|530000|credit|80,2026-03-04|530000|credit|10,2026-03-04|706000|debit|10'],
+    array['controle2', '114d. le réglage de la caisse ne survit ni au retrait ni au remplacement', 'chef', $q$select retirer_operation_caisse('{R1}', '{R1PR}');
+      select case when coalesce(current_setting('jd.caisse', true), '') <> '' then 1 / (random() * 0)::integer end;
+      select remplacer_operation_caisse('{R1}', '{R1ER}', 'recette', '2026-03-04', -5, '{KR1}', null, '{}', '[{"compte":"530000","sens":"credit","montant":5},{"compte":"706000","sens":"debit","montant":5}]');
+      select case when coalesce(current_setting('jd.caisse', true), '') <> '' then 1 / (random() * 0)::integer end$q$,
+      'OK', ''],
+    array['controle2', '115. la retirer de nouveau se refuse', 'chef', $q$select retirer_operation_caisse('{R1}', '{R1RE}')$q$,
+      'P0002', 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.'],
+    array['controle2', '115b. l''apport, sans la recette : la caisse plus bas encore', 'chef', $q$select retirer_operation_caisse('{R1}', '{R1AP}')$q$,
+      '23514', 'Retirer cet apport de 100,00 € rendrait la caisse négative le 03/03/2026 (−80,00 €) : retire d''abord les sorties d''espèces qui le suivent.'],
+
+    -- ══ 120 à 128. Le remplacement : R2, un apport de 100 € le 01/03, une recette de 50 € le 02/03, un prélèvement de
+    -- 140 € le 03/03 — la caisse à 100, 150, puis 10 € ══════════
+    array['fait2', '120. R2 : trois opérations, saisies d''un mois', 'chef', $q$select enregistrer_operations_de_caisse('{R2}', '[
+      {"genre":"apport","date":"2026-03-01","montant":100,"ecritures":[{"compte":"530000","sens":"debit","montant":100},{"compte":"108000","sens":"credit","montant":100}]},
+      {"genre":"recette","date":"2026-03-02","montant":50,"categorie_id":"{KR2}","encaissements_du_jour":[],"ecritures":[{"compte":"530000","sens":"debit","montant":50},{"compte":"706000","sens":"credit","montant":50}]},
+      {"genre":"prelevement","date":"2026-03-03","montant":140,"ecritures":[{"compte":"108000","sens":"debit","montant":140},{"compte":"530000","sens":"credit","montant":140}]}]')$q$, 'OK', ''],
+    array['capture2', 'l''apport de R2', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R2}' and o.genre = 'apport'$q$, 'R2AP', ''],
+    array['capture2', 'la recette de R2', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R2}' and o.genre = 'recette'$q$, 'R2RE', ''],
+    array['capture2', 'le prélèvement de R2', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R2}' and o.genre = 'prelevement'$q$, 'R2PR', ''],
+    -- Les refus de l'ancienne : ceux du retrait.
+    array['controle2', '121. remplacer une opération d''un autre dossier', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R1AP}', 'apport', '2026-03-01', 100, null, null, null, '[{"compte":"530000","sens":"debit","montant":100},{"compte":"108000","sens":"credit","montant":100}]')$q$,
+      'P0002', 'Cette opération n''est pas dans la caisse de ce dossier : relis ta caisse.'],
+    array['controle2', '121b. remplacer une opération déjà retirée', 'chef', $q$select retirer_operation_caisse('{R2}', '{R2PR}');
+      select remplacer_operation_caisse('{R2}', '{R2PR}', 'prelevement', '2026-03-03', 100, null, null, null, '[{"compte":"108000","sens":"debit","montant":100},{"compte":"530000","sens":"credit","montant":100}]')$q$,
+      'P0002', 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.'],
+    -- Les refus de la nouvelle : ceux d'`enregistrer_operation_caisse`, dans son ordre et sous ses mots.
+    array['controle2', '122. la nouvelle : un genre inconnu', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'don', '2026-03-02', 50, null, null, null, '[]')$q$,
+      '22023', 'Une opération de caisse est une recette en espèces, un apport ou un prélèvement de l''exploitant.'],
+    array['controle2', '122b. … le paiement d''une pièce, qui ne se remplace pas ici', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'paiement', '2026-03-02', -50, null, null, null, '[]')$q$,
+      '22023', 'Une opération de caisse est une recette en espèces, un apport ou un prélèvement de l''exploitant.'],
+    array['controle2', '122c. … une date nulle', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', null, 50, '{KR2}', null, '{}', '[]')$q$,
+      '22023', 'La date de l''opération de caisse est à renseigner.'],
+    array['controle2', '122d. … une date dans l''avenir, à Paris', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '{DEMAIN}', 50, '{KR2}', null, '{}', '[]')$q$,
+      '22023', 'Une opération de caisse ne se date pas dans l''avenir : nous sommes le __/__/20__.'],
+    array['controle2', '122e. … un montant de zéro euro', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-02', 0, '{KR2}', null, '{}', '[]')$q$,
+      '22023', 'Une opération de caisse de zéro euro n''a rien à écrire.'],
+    array['controle2', '122f. … une recette sans catégorie', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-02', 50, null, null, '{}', '[]')$q$,
+      '22023', 'La nature d''une recette en espèces est une catégorie de produit du dossier : à choisir.'],
+    array['controle2', '122g. … un taux sur un dossier qui n''est pas assujetti', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-02', 50, '{KR2}', 20, '{}', '[]')$q$,
+      '22023', 'Un taux de TVA ne s''applique qu''à une recette d''un dossier assujetti.'],
+    array['controle2', '122h. … une recette sans ensemble du jour', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-02', 50, '{KR2}', null, null, '[]')$q$,
+      '22023', 'La saisie d''une recette dit les encaissements en espèces de factures de son jour qu''elle a lus : une liste d''identifiants, vide s''il n''y en a aucun.'],
+    array['controle2', '122i. … une écriture qui n''est pas la sienne', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-02', 50, '{KR2}', null, '{}', '[{"compte":"512000","sens":"debit","montant":50},{"compte":"706000","sens":"credit","montant":50}]')$q$,
+      '22023', 'L''écriture proposée ne correspond pas à cette opération de caisse et au plan du dossier (la caisse : 530000).'],
+    array['controle2', '123. ordre : l''ancienne avant la nouvelle (une ancienne retirée, un genre inconnu)', 'chef', $q$select retirer_operation_caisse('{R2}', '{R2PR}');
+      select remplacer_operation_caisse('{R2}', '{R2PR}', 'don', null, null, null, null, null, '[]')$q$,
+      'P0002', 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.'],
+    array['controle2', '123b. ordre : l''opération avant la nouvelle (un identifiant qui n''existe pas, un genre inconnu)', 'chef', $q$select remplacer_operation_caisse('{R2}', 'ca155e00-0000-4000-8008-0000000000ff', 'don', null, null, null, null, null, '[]')$q$,
+      'P0002', 'Cette opération n''est pas dans la caisse de ce dossier : relis ta caisse.'],
+    array['controle2', '123c. ordre : l''accès avant tout (le client, un genre inconnu)', 'client', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'don', null, null, null, null, null, '[]')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle2', '123d. ordre : l''accès avant l''opération (un compte rattaché à rien, un identifiant qui n''existe pas)', 'inconnu', $q$select remplacer_operation_caisse('{R2}', 'ca155e00-0000-4000-8008-0000000000ff', 'apport', '2026-03-01', 10, null, null, null, '[]')$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    -- La caisse jamais négative, sur ce que le remplacement laisse.
+    array['controle2', '124. la recette de 50 € portée à 60 € : sous zéro un instant (le retrait), jamais à la fin — passe', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-02', 60, '{KR2}', null, '{}', '[{"compte":"530000","sens":"debit","montant":60},{"compte":"706000","sens":"credit","montant":60}]')$q$,
+      'OK', ''],
+    array['controle2', '124b. … ramenée à 30 € : sous zéro pour de bon, sous les mots du retrait de l''ancienne', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-02', 30, '{KR2}', null, '{}', '[{"compte":"530000","sens":"debit","montant":30},{"compte":"706000","sens":"credit","montant":30}]')$q$,
+      '23514', 'Retirer cette recette de 50,00 € rendrait la caisse négative le 03/03/2026 (−10,00 €) : retire d''abord les sorties d''espèces qui la suivent.'],
+    array['controle2', '124c. … le refus vient de la fonction, dans l''appel même', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-02', 30, '{KR2}', null, '{}', '[{"compte":"530000","sens":"debit","montant":30},{"compte":"706000","sens":"credit","montant":30}]');
+      select 1 / 0$q$,
+      '23514', 'Retirer cette recette de 50,00 € rendrait la caisse négative le 03/03/2026 (−10,00 €) : retire d''abord les sorties d''espèces qui la suivent.'],
+    array['controle2', '124d. … datée du 04/03, après le prélèvement qu''elle couvrait', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-04', 50, '{KR2}', null, '{}', '[{"compte":"530000","sens":"debit","montant":50},{"compte":"706000","sens":"credit","montant":50}]')$q$,
+      '23514', 'Retirer cette recette de 50,00 € rendrait la caisse négative le 03/03/2026 (−40,00 €) : retire d''abord les sorties d''espèces qui la suivent.'],
+    array['controle2', '124e. le prélèvement de 140 € porté à 160 € : refusé sous les mots de la nouvelle sortie', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2PR}', 'prelevement', '2026-03-03', 160, null, null, null, '[{"compte":"108000","sens":"debit","montant":160},{"compte":"530000","sens":"credit","montant":160}]')$q$,
+      '23514', 'Ce prélèvement de 160,00 € rendrait la caisse négative le 03/03/2026 (−10,00 €) : saisis d''abord les recettes en espèces qui le précèdent.'],
+    array['controle2', '124f. … porté à 150 € : la caisse vidée exactement à zéro, passe', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2PR}', 'prelevement', '2026-03-03', 150, null, null, null, '[{"compte":"108000","sens":"debit","montant":150},{"compte":"530000","sens":"credit","montant":150}]')$q$,
+      'OK', ''],
+    array['controle2', '124g. l''apport remplacé par un prélèvement : la sortie neuve parle la première', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2AP}', 'prelevement', '2026-03-01', 10, null, null, null, '[{"compte":"108000","sens":"debit","montant":10},{"compte":"530000","sens":"credit","montant":10}]')$q$,
+      '23514', 'Ce prélèvement de 10,00 € rendrait la caisse négative le 01/03/2026 (−10,00 €) : saisis d''abord les recettes en espèces qui le précèdent.'],
+    array['controle2', '124h. le remplacement rend la nouvelle opération, et son lien', 'chef', $q$select case when (r).remplace_id is distinct from '{R2PR}'::uuid or (r).genre <> 'prelevement' or (r).montant <> 150 or (r).retire_le is not null then 1 / (random() * 0)::integer end
+      from (select remplacer_operation_caisse('{R2}', '{R2PR}', 'prelevement', '2026-03-03', 150, null, null, null, '[{"compte":"108000","sens":"debit","montant":150},{"compte":"530000","sens":"credit","montant":150}]') as r) x$q$,
+      'OK', ''],
+    array['controle2', '124i. la recette remplacée par un apport de 30 € : sous zéro pour de bon, sous les mots du retrait de la recette', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'apport', '2026-03-02', 30, null, null, null, '[{"compte":"530000","sens":"debit","montant":30},{"compte":"108000","sens":"credit","montant":30}]')$q$,
+      '23514', 'Retirer cette recette de 50,00 € rendrait la caisse négative le 03/03/2026 (−10,00 €) : retire d''abord les sorties d''espèces qui la suivent.'],
+    -- Ce que le remplacement écrit.
+    array['fait2', '125. le chef porte la recette de R2 à 60 €', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-02', 60, '{KR2}', null, '{}', '[{"compte":"706000","sens":"credit","montant":60},{"compte":"530000","sens":"debit","montant":60,"libelle":"Recettes en espèces du 02/03/2026 — Honoraires"}]')$q$, 'OK', ''],
+    array['capture2', 'la recette de 60 € de R2', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R2}' and o.remplace_id = '{R2RE}'$q$, 'R2NV', ''],
+    array['valeur2', '125b. les opérations de R2 : l''ancienne retirée par le chef ; la nouvelle, du cabinet, par le chef, maintenant, qui la remplace', 'postgres', $q$select string_agg(o.genre || '|' || o.montant || '|' || (o.retire_le is not null) || '|' || coalesce((o.retire_par = '{CHEF}')::text, '-')
+        || '|' || coalesce((o.remplace_id = '{R2RE}')::text, '-') || '|' || o.origine || '|' || (o.cree_par = '{CHEF}') || '|' || (o.cree_le = now())
+        || '|' || coalesce(o.categorie_id::text, '-') || '|' || coalesce(o.encaissements_du_jour::text, '-'), ',' order by o.date, o.montant)
+      from operations_caisse o where o.dossier_id = '{R2}'$q$, '',
+      'apport|100|false|-|-|cabinet|true|true|-|-,recette|50|true|true|-|cabinet|true|true|ca155e00-0000-4000-8006-000000000012|{},recette|60|false|-|true|cabinet|true|true|ca155e00-0000-4000-8006-000000000012|{},prelevement|140|false|-|-|cabinet|true|true|-|-'],
+    array['valeur2', '125c. … l''écriture de l''ancienne partie, celle de la nouvelle écrite, sous le libellé de la base', 'postgres', $q$select string_agg(b.date || '|' || b.compte || '|' || b.sens || '|' || b.montant || '|' || b.libelle || '|' || b.statut || '|' || (b.operation_caisse_id = '{R2NV}'), ',' order by b.date, b.compte)
+      from ecritures_brouillon b where b.dossier_id = '{R2}'$q$, '',
+      '2026-03-01|108000|credit|100|Apport en caisse de l''exploitant|proposee|false,2026-03-01|530000|debit|100|Apport en caisse de l''exploitant|proposee|false,'
+      || '2026-03-02|530000|debit|60|Recettes en espèces du 02/03/2026 — Honoraires|proposee|true,2026-03-02|706000|credit|60|Recettes en espèces du 02/03/2026 — Honoraires|proposee|true,'
+      || '2026-03-03|108000|debit|140|Prélèvement en espèces de l''exploitant|proposee|false,2026-03-03|530000|credit|140|Prélèvement en espèces de l''exploitant|proposee|false'],
+    array['controle2', '126. l''ancienne ne se remplace plus', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2RE}', 'recette', '2026-03-02', 70, '{KR2}', null, '{}', '[{"compte":"530000","sens":"debit","montant":70},{"compte":"706000","sens":"credit","montant":70}]')$q$,
+      'P0002', 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.'],
+    array['controle2', '126b. … ni ne se retire', 'chef', $q$select retirer_operation_caisse('{R2}', '{R2RE}')$q$,
+      'P0002', 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.'],
+    array['fait2', '127. la nouvelle remplacée à son tour, par un apport de 60 € le même jour (un autre genre)', 'chef', $q$select remplacer_operation_caisse('{R2}', '{R2NV}', 'apport', '2026-03-02', 60, null, null, null, '[{"compte":"530000","sens":"debit","montant":60},{"compte":"108000","sens":"credit","montant":60}]')$q$, 'OK', ''],
+    array['valeur2', '127b. la chaîne des versions : l''apport remplace la recette de 60 €, qui remplaçait celle de 50 €', 'postgres', $q$select string_agg(o.genre || '|' || o.montant || '|' || (o.retire_le is not null) || '|' || coalesce((select p.genre || ':' || p.montant from operations_caisse p where p.id = o.remplace_id), '-'), ',' order by o.date, o.genre, o.montant)
+      from operations_caisse o where o.dossier_id = '{R2}' and o.date = '2026-03-02'$q$, '',
+      'apport|60|false|recette:60,recette|50|true|-,recette|60|true|recette:50'],
+    array['valeur2', '127c. … et l''écriture de l''apport, face au compte de l''exploitant', 'postgres', $q$select string_agg(b.compte || '|' || b.sens || '|' || b.montant || '|' || b.libelle, ',' order by b.compte)
+      from ecritures_brouillon b where b.dossier_id = '{R2}' and b.date = '2026-03-02'$q$, '',
+      '108000|credit|60|Apport en caisse de l''exploitant,530000|debit|60|Apport en caisse de l''exploitant'],
+    -- Un dossier assujetti : le taux d'une recette remplacée.
+    array['fait2', '128. R7, assujetti : une recette de 120 € à 20 %', 'chef', $q$select enregistrer_operation_caisse('{R7}', 'recette', '2026-03-02', 120, '{KR7}', 20, '{}', '[{"compte":"530000","sens":"debit","montant":120},{"compte":"706000","sens":"credit","montant":100},{"compte":"445710","sens":"credit","montant":20}]')$q$, 'OK', ''],
+    array['capture2', 'la recette de R7', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R7}'$q$, 'R7RE', ''],
+    array['controle2', '128b. … remplacée sans taux : le refus de la saisie', 'chef', $q$select remplacer_operation_caisse('{R7}', '{R7RE}', 'recette', '2026-03-02', 110, '{KR7}', null, '{}', '[]')$q$,
+      '22023', 'Sur un dossier assujetti à la TVA, une recette porte son taux : choisis-le, ou « exonérée ».'],
+    array['fait2', '128c. … remplacée par une recette de 110 € à 10 %', 'chef', $q$select remplacer_operation_caisse('{R7}', '{R7RE}', 'recette', '2026-03-02', 110, '{KR7}', 10, '{}', '[{"compte":"530000","sens":"debit","montant":110},{"compte":"706000","sens":"credit","montant":100},{"compte":"445710","sens":"credit","montant":10}]')$q$, 'OK', ''],
+    array['valeur2', '128d. … son écriture : le hors taxe et la TVA du nouveau taux', 'postgres', $q$select string_agg(o.taux_tva || ':' || coalesce((select string_agg(b.compte || '/' || b.sens || '/' || b.montant, ' ' order by b.compte) from ecritures_brouillon b where b.operation_caisse_id = o.id), '-'), ',' order by o.montant)
+      from operations_caisse o where o.dossier_id = '{R7}'$q$, '',
+      '10.00:445710/credit/10 530000/debit/110 706000/credit/100,20.00:-'],
+
+    -- ══ 130 à 136. La frontière : R5, deux apports de 2025, l'un retiré, un de 2026, puis l'exercice 2025 validé ══════════
+    array['fait2', '130. R5 : des apports le 01/06/2025, le 01/07/2025 et le 05/01/2026', 'chef', $q$select enregistrer_operations_de_caisse('{R5}', '[
+      {"genre":"apport","date":"2025-06-01","montant":100,"ecritures":[{"compte":"530000","sens":"debit","montant":100},{"compte":"108000","sens":"credit","montant":100}]},
+      {"genre":"apport","date":"2025-07-01","montant":20,"ecritures":[{"compte":"530000","sens":"debit","montant":20},{"compte":"108000","sens":"credit","montant":20}]},
+      {"genre":"apport","date":"2026-01-05","montant":10,"ecritures":[{"compte":"530000","sens":"debit","montant":10},{"compte":"108000","sens":"credit","montant":10}]}]')$q$, 'OK', ''],
+    array['capture2', 'l''apport de juin 2025 de R5', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R5}' and o.date = '2025-06-01'$q$, 'R5A', ''],
+    array['capture2', 'l''apport de juillet 2025 de R5', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R5}' and o.date = '2025-07-01'$q$, 'R5B', ''],
+    array['capture2', 'l''apport de 2026 de R5', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R5}' and o.date = '2026-01-05'$q$, 'R5C', ''],
+    array['fait2', '130b. l''apport de juillet 2025 retiré, avant la validation', 'chef', $q$select retirer_operation_caisse('{R5}', '{R5B}')$q$, 'OK', ''],
+    array['jeu2', 'l''exercice 2025 de R5, validé', 'postgres', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration)
+      values ('{R5}', 2025, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('a', 64), '{}')$q$, '', ''],
+    array['controle2', '131. une opération de l''exercice validé ne se retire plus, même par le super-administrateur', 'chef', $q$select retirer_operation_caisse('{R5}', '{R5A}')$q$,
+      '23514', 'L''exercice 2025 est validé : sa caisse ne change plus.'],
+    array['controle2', '131b. … ni ne se remplace', 'chef', $q$select remplacer_operation_caisse('{R5}', '{R5A}', 'apport', '2026-02-01', 100, null, null, null, '[{"compte":"530000","sens":"debit","montant":100},{"compte":"108000","sens":"credit","montant":100}]')$q$,
+      '23514', 'L''exercice 2025 est validé : sa caisse ne change plus.'],
+    array['controle2', '131c. ordre : une opération déjà retirée avant la frontière', 'chef', $q$select retirer_operation_caisse('{R5}', '{R5B}')$q$,
+      'P0002', 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.'],
+    array['controle2', '131d. ordre : la frontière de l''ancienne avant la nouvelle (un genre inconnu)', 'chef', $q$select remplacer_operation_caisse('{R5}', '{R5A}', 'don', null, null, null, null, null, '[]')$q$,
+      '23514', 'L''exercice 2025 est validé : sa caisse ne change plus.'],
+    array['controle2', '132. une opération de 2026 ne se remplace pas par une opération de l''exercice validé : le refus de la saisie', 'chef', $q$select remplacer_operation_caisse('{R5}', '{R5C}', 'apport', '2025-12-31', 10, null, null, null, '[{"compte":"530000","sens":"debit","montant":10},{"compte":"108000","sens":"credit","montant":10}]')$q$,
+      '23514', 'L''exercice 2025 est validé : sa caisse ne change plus.'],
+    array['controle2', '132b. … elle se retire (le 1er janvier qui suit et après : la frontière ne la touche pas)', 'chef', $q$select retirer_operation_caisse('{R5}', '{R5C}')$q$,
+      'OK', ''],
+    array['controle2', '132c. … et se remplace par une opération de 2026', 'chef', $q$select remplacer_operation_caisse('{R5}', '{R5C}', 'apport', '2026-01-06', 10, null, null, null, '[{"compte":"530000","sens":"debit","montant":10},{"compte":"108000","sens":"credit","montant":10}]')$q$,
+      'OK', ''],
+
+    -- ══ 140 à 148. Le versement d'espèces : R3, un apport de 100 € le 01/03 ; le crédit de 60 € du 05/03 ══════════
+    array['fait2', '140. R3 : un apport de 100 € le 01/03', 'chef', $q$select enregistrer_operation_caisse('{R3}', 'apport', '2026-03-01', 100, null, null, null, '[{"compte":"530000","sens":"debit","montant":100},{"compte":"108000","sens":"credit","montant":100}]')$q$, 'OK', ''],
+    array['fait2', '140b. le crédit de 60 € du 05/03, classé sur le compte de la caisse du plan : le versement d''espèces en banque', 'chef', $q$select ecrire_mouvement_compte_bilan('{V1}', '530000', '[{"compte":"512000","sens":"debit","montant":60,"libelle":"ESSAI VERSEMENT ESPECES"},{"compte":"530000","sens":"credit","montant":60,"libelle":"ESSAI VERSEMENT ESPECES"}]')$q$, 'OK', ''],
+    array['valeur2', '140c. … le mouvement rapproché sur la caisse, son écriture : la banque au débit, la caisse au crédit', 'postgres', $q$select l.statut || '|' || l.compte_bilan || '|' || (select string_agg(b.compte || '/' || b.sens || '/' || b.montant || '/' || b.date, ' ' order by b.compte) from ecritures_brouillon b where b.ligne_bancaire_id = l.id)
+      from lignes_bancaires l where l.id = '{V1}'$q$, '',
+      'rapprochee|530000|512000/debit/60/2026-03-05 530000/credit/60/2026-03-05'],
+    array['valeur2', '140d. … la caisse lue de R3 : aucun jour négatif', 'postgres', $q$select coalesce((select n.jour || ' ' || n.solde from premier_jour_negatif_de_la_caisse('{R3}') n), 'aucun')$q$, '', 'aucun'],
+    array['controle2', '141. le crédit de 50 € du 06/03 versé aussi : la caisse le refuse', 'chef', $q$select ecrire_mouvement_compte_bilan('{V2}', '530000', '[{"compte":"512000","sens":"debit","montant":50},{"compte":"530000","sens":"credit","montant":50}]')$q$,
+      '23514', 'Ce versement de 50,00 € rendrait la caisse négative le 06/03/2026 (−10,00 €) : saisis d''abord les recettes en espèces qui le précèdent.'],
+    array['controle2', '141b. … couvert dans la même transaction par un apport du même jour : la caisse se juge à la fin', 'chef', $q$select ecrire_mouvement_compte_bilan('{V2}', '530000', '[{"compte":"512000","sens":"debit","montant":50},{"compte":"530000","sens":"credit","montant":50}]');
+      select enregistrer_operation_caisse('{R3}', 'apport', '2026-03-06', 10, null, null, null, '[{"compte":"530000","sens":"debit","montant":10},{"compte":"108000","sens":"credit","montant":10}]')$q$,
+      'OK', ''],
+    array['fait2', '142. le débit de 30 € du 07/03, classé sur la caisse : des espèces retirées pour elle', 'chef', $q$select ecrire_mouvement_compte_bilan('{V3}', '530000', '[{"compte":"530000","sens":"debit","montant":30},{"compte":"512000","sens":"credit","montant":30}]')$q$, 'OK', ''],
+    array['valeur2', '142b. … son écriture : la caisse au débit, la banque au crédit', 'postgres', $q$select string_agg(b.compte || '/' || b.sens || '/' || b.montant, ' ' order by b.compte) from ecritures_brouillon b where b.ligne_bancaire_id = '{V3}'$q$, '',
+      '512000/credit/30 530000/debit/30'],
+    array['fait2', '143. un prélèvement de 60 € le 08/03, que le retrait d''espèces couvre', 'chef', $q$select enregistrer_operation_caisse('{R3}', 'prelevement', '2026-03-08', 60, null, null, null, '[{"compte":"108000","sens":"debit","montant":60},{"compte":"530000","sens":"credit","montant":60}]')$q$, 'OK', ''],
+    array['controle2', '144. « Remettre à traiter » le retrait d''espèces : la caisse le refuse', 'chef', $q$select retirer_mouvement_compte_bilan('{V3}')$q$,
+      '23514', 'Retirer ce retrait d''espèces de 30,00 € pour la caisse rendrait la caisse négative le 08/03/2026 (−20,00 €) : retire d''abord les sorties d''espèces qui le suivent.'],
+    array['controle2', '144b. « Remettre à traiter » le versement : il rend ses espèces à la caisse, passe', 'chef', $q$select retirer_mouvement_compte_bilan('{V1}')$q$,
+      'OK', ''],
+    array['controle2', '144c. … le reclasser au 580000 de même', 'chef', $q$select ecrire_mouvement_compte_bilan('{V1}', '580000', '[{"compte":"512000","sens":"debit","montant":60},{"compte":"580000","sens":"credit","montant":60}]')$q$,
+      'OK', ''],
+    array['controle2', '145. un compte 53 qui n''est pas la caisse du dossier : la phrase de la caisse', 'chef', $q$select ecrire_mouvement_compte_bilan('{V2}', '531000', '[{"compte":"512000","sens":"debit","montant":50},{"compte":"531000","sens":"credit","montant":50}]')$q$,
+      '22023', 'Seule la caisse du dossier, celle de son plan comptable, reçoit un mouvement de banque : un versement d''espèces, ou un retrait d''espèces pour la caisse, s''écrit sur son compte.'],
+    array['controle2', '145b. un autre compte de trésorerie (514, les chèques postaux) : la phrase d''hier', 'chef', $q$select ecrire_mouvement_compte_bilan('{V2}', '514000', '[{"compte":"512000","sens":"debit","montant":50},{"compte":"514000","sens":"credit","montant":50}]')$q$,
+      '22023', 'Un virement vers un autre compte de trésorerie du professionnel (autre banque, caisse, chèques postaux, régie d''avances) s''écrit au 580000, virements internes.'],
+    array['controle2', '145c. le compte de la caisse, une écriture d''un autre montant', 'chef', $q$select ecrire_mouvement_compte_bilan('{V2}', '530000', '[{"compte":"512000","sens":"debit","montant":49},{"compte":"530000","sens":"credit","montant":49}]')$q$,
+      '22023', 'L''écriture proposée ne correspond pas à ce mouvement et à ce compte.'],
+    array['controle2', '145d. … ou les sens inversés', 'chef', $q$select ecrire_mouvement_compte_bilan('{V2}', '530000', '[{"compte":"512000","sens":"credit","montant":50},{"compte":"530000","sens":"debit","montant":50}]')$q$,
+      '22023', 'L''écriture proposée ne correspond pas à ce mouvement et à ce compte.'],
+    -- R4 : un plan qui tient la caisse au 531000.
+    array['fait2', '146. R4 : un apport de 10 € au 531000, la caisse de son plan', 'chef', $q$select enregistrer_operation_caisse('{R4}', 'apport', '2026-03-01', 10, null, null, null, '[{"compte":"531000","sens":"debit","montant":10},{"compte":"108000","sens":"credit","montant":10}]')$q$, 'OK', ''],
+    array['controle2', '146b. le crédit de 30 € du 05/03, versé sur le 531000 : la caisse le refuse', 'chef', $q$select ecrire_mouvement_compte_bilan('{V4}', '531000', '[{"compte":"512000","sens":"debit","montant":30},{"compte":"531000","sens":"credit","montant":30}]')$q$,
+      '23514', 'Ce versement de 30,00 € rendrait la caisse négative le 05/03/2026 (−20,00 €) : saisis d''abord les recettes en espèces qui le précèdent.'],
+    array['fait2', '146c. le crédit de 5 € du 06/03, versé sur le 531000', 'chef', $q$select ecrire_mouvement_compte_bilan('{V5}', '531000', '[{"compte":"512000","sens":"debit","montant":5},{"compte":"531000","sens":"credit","montant":5}]')$q$, 'OK', ''],
+    array['valeur2', '146d. … son écriture, au compte du plan', 'postgres', $q$select string_agg(b.compte || '/' || b.sens || '/' || b.montant, ' ' order by b.compte) from ecritures_brouillon b where b.ligne_bancaire_id = '{V5}'$q$, '',
+      '512000/debit/5 531000/credit/5'],
+    array['controle2', '146e. … le 530000 n''y est pas la caisse : la phrase de la caisse', 'chef', $q$select ecrire_mouvement_compte_bilan('{V4}', '530000', '[{"compte":"512000","sens":"debit","montant":30},{"compte":"530000","sens":"credit","montant":30}]')$q$,
+      '22023', 'Seule la caisse du dossier, celle de son plan comptable, reçoit un mouvement de banque : un versement d''espèces, ou un retrait d''espèces pour la caisse, s''écrit sur son compte.'],
+    array['controle2', '147. en engagement, où la caisse attend sa conception, le compte de la caisse garde la phrase d''hier', 'chef', $q$select ecrire_mouvement_compte_bilan('{V6}', '530000', '[{"compte":"512000","sens":"debit","montant":20},{"compte":"530000","sens":"credit","montant":20}]')$q$,
+      '22023', 'Un virement vers un autre compte de trésorerie du professionnel (autre banque, caisse, chèques postaux, régie d''avances) s''écrit au 580000, virements internes.'],
+    array['controle2', '148. le client ne verse rien sur la caisse de son dossier', 'client', $q$select ecrire_mouvement_compte_bilan('{V7}', '530000', '[{"compte":"512000","sens":"debit","montant":10},{"compte":"530000","sens":"credit","montant":10}]')$q$,
+      '42501', 'Accès refusé à ce mouvement.'],
+    array['controle2', '148b. … ni le chef d''un autre cabinet sur un mouvement du cabinet', 'autre', $q$select ecrire_mouvement_compte_bilan('{V2}', '530000', '[{"compte":"512000","sens":"debit","montant":50},{"compte":"530000","sens":"credit","montant":50}]')$q$,
+      '42501', 'Accès refusé à ce mouvement.'],
+
+    -- ══ 150 à 153. La restauration : R6, sans exercice validé, par le super-administrateur ══════════
+    array['fait2', '150. R6 réinsérée : un apport, une recette retirée et celle qui la remplace, un paiement et sa contrepartie', 'chef', $q$insert into operations_caisse (id, dossier_id, genre, date, montant, origine, cree_le, cree_par) values ('{Y3}', '{R6}', 'apport', '2026-02-01', 50, 'cabinet', '2026-01-15 10:00+01', '{CHEF}');
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id) values
+        ('{R6}', '2026-02-01', '530000', 'Apport en caisse de l''exploitant', 50, 'debit', '{Y3}'), ('{R6}', '2026-02-01', '108000', 'Apport en caisse de l''exploitant', 50, 'credit', '{Y3}');
+      insert into operations_caisse (id, dossier_id, genre, date, montant, categorie_id, encaissements_du_jour, origine, cree_le, cree_par, retire_le, retire_par)
+        values ('{Y1}', '{R6}', 'recette', '2026-02-02', 40, '{KR6}', '{}', 'cabinet', '2026-01-15 10:00+01', '{CHEF}', '2026-01-16 10:00+01', '{CHEF}');
+      insert into operations_caisse (id, dossier_id, genre, date, montant, categorie_id, encaissements_du_jour, origine, remplace_id, cree_le, cree_par)
+        values ('{Y2}', '{R6}', 'recette', '2026-02-02', 45, '{KR6}', '{}', 'cabinet', '{Y1}', '2026-01-16 10:00+01', '{CHEF}');
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id) values
+        ('{R6}', '2026-02-02', '530000', 'Recettes en espèces du 02/02/2026 — Honoraires', 45, 'debit', '{Y2}'), ('{R6}', '2026-02-02', '706000', 'Recettes en espèces du 02/02/2026 — Honoraires', 45, 'credit', '{Y2}');
+      insert into operations_caisse (id, dossier_id, genre, date, montant, piece_id, origine, cree_le, cree_par) values ('{Y4}', '{R6}', 'paiement', '2026-02-05', -30, '{PR6}', 'cabinet', '2026-01-15 10:00+01', '{CHEF}');
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{R6}', '2026-02-05', '530000', 'essai', 30, 'credit', '{Y4}', '{PR6}')$q$,
+      'OK', ''],
+    array['controle2', '150b. la recette réinsérée retirée ne se retire plus', 'chef', $q$select retirer_operation_caisse('{R6}', '{Y1}')$q$,
+      'P0002', 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.'],
+    array['controle2', '150c. … ni ne se remplace', 'chef', $q$select remplacer_operation_caisse('{R6}', '{Y1}', 'recette', '2026-02-02', 40, '{KR6}', null, '{}', '[{"compte":"530000","sens":"debit","montant":40},{"compte":"706000","sens":"credit","montant":40}]')$q$,
+      'P0002', 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.'],
+    array['fait2', '151. le paiement réinséré se retire, sa contrepartie avec lui (le retrait est générique)', 'chef', $q$select retirer_operation_caisse('{R6}', '{Y4}')$q$, 'OK', ''],
+    array['fait2', '152. la recette qui en remplaçait une, réinsérée, se retire aussi', 'chef', $q$select retirer_operation_caisse('{R6}', '{Y2}')$q$, 'OK', ''],
+    array['valeur2', '153. ce qui reste de R6 : l''apport et son écriture ; la pièce n''est plus citée par aucune ligne', 'postgres', $q$select (select string_agg(o.genre || '|' || o.montant || '|' || (o.retire_le is not null), ',' order by o.date, o.montant) from operations_caisse o where o.dossier_id = '{R6}')
+        || ' / ' || (select string_agg(b.compte || '|' || b.sens || '|' || b.montant, ',' order by b.compte) from ecritures_brouillon b where b.dossier_id = '{R6}')
+        || ' / ' || (select count(*) from ecritures_brouillon b where b.piece_id = '{PR6}')$q$, '',
+      'apport|50|false,recette|40|true,recette|45|true,paiement|-30|true / 108000|credit|50,530000|debit|50 / 0'],
+
+    -- ══ 160 à 163. Ce que le catalogue dit ══════════
+    array['valeur2', '160. les droits d''exécution (anonyme, connecté) des deux fonctions de la caisse et des deux fonctions remplacées', 'postgres', $q$select string_agg(f || ':' || has_function_privilege('anon', 'public.' || f || a, 'execute') || ':' || has_function_privilege('authenticated', 'public.' || f || a, 'execute'), ',' order by f collate "C") from (values
+      ('ecrire_mouvement_compte_bilan', '(uuid, text, jsonb)'), ('refus_compte_de_bilan', '(text, text, text)'),
+      ('remplacer_operation_caisse', '(uuid, uuid, text, date, numeric, uuid, numeric, uuid[], jsonb)'), ('retirer_operation_caisse', '(uuid, uuid)')) as t(f, a)$q$, '',
+      'ecrire_mouvement_compte_bilan:false:true,refus_compte_de_bilan:false:true,remplacer_operation_caisse:false:true,retirer_operation_caisse:false:true'],
+    array['valeur2', '160b. … leur sécurité, leur volatilité, leur chemin : les deux de la caisse contournent la RLS, avec leur propre contrôle', 'postgres', $q$select string_agg(proname || ':' || prosecdef || ':' || provolatile::text || ':' || coalesce(array_to_string(proconfig, ','), '-'), ',' order by proname collate "C") from pg_proc
+      where pronamespace = 'public'::regnamespace and proname in ('ecrire_mouvement_compte_bilan', 'refus_compte_de_bilan', 'remplacer_operation_caisse', 'retirer_operation_caisse')$q$, '',
+      'ecrire_mouvement_compte_bilan:false:v:search_path=public,refus_compte_de_bilan:false:s:search_path=public,remplacer_operation_caisse:true:v:search_path=public,retirer_operation_caisse:true:v:search_path=public'],
+    array['valeur2', '161. les fonctions qui retirent les lignes du brouillon d''une opération : les deux de la caisse, et elles seules', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc
+      where pronamespace = 'public'::regnamespace and prosrc like '%delete from public.ecritures_brouillon where operation_caisse_id%'$q$, '',
+      'remplacer_operation_caisse,retirer_operation_caisse'],
+    array['valeur2', '162. les fonctions qui posent le réglage d''une opération : la saisie, le retrait, le remplacement', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc
+      where pronamespace = 'public'::regnamespace and prosrc like '%set_config(''jd.caisse'',%'$q$, '',
+      'enregistrer_operation_caisse,remplacer_operation_caisse,retirer_operation_caisse'],
+    array['valeur2', '163. le refus d''un compte 53 : la caisse en trésorerie, la phrase d''hier en engagement et pour les autres comptes de trésorerie', 'postgres', $q$select string_agg(c || '/' || m || ':' || left(coalesce(refus_compte_de_bilan(c, m, '108000'), 'accepté'), 24), ' | ' order by c, m) from unnest(array['514000', '530000', '531000', '541000']) c, unnest(array['engagement', 'tresorerie']) m$q$, '',
+      '514000/engagement:Un virement vers un autr | 514000/tresorerie:Un virement vers un autr | 530000/engagement:Un virement vers un autr | 530000/tresorerie:Seule la caisse du dossi | 531000/engagement:Un virement vers un autr | 531000/tresorerie:Seule la caisse du dossi | 541000/engagement:Un virement vers un autr | 541000/tresorerie:Un virement vers un autr']
   ];
 
   begin
     foreach etape slice 1 in array etapes loop
+      -- Une étape de l'étape C1b (genre « …2 ») ne se joue qu'avec sa migration ; sans elle, elle attend.
+      genre := etape[1];
+      if genre like '%2' then
+        if not c1b then
+          en_attente := en_attente + 1;
+          continue;
+        end if;
+        genre := left(genre, -1);
+      end if;
       s := etape[4];
       for cle, valeur in select key, value from jsonb_each_text(ids) loop
         s := replace(s, '{' || cle || '}', valeur);
       end loop;
       accepte := false; code_recu := null; message := null; obs := null;
-      if etape[1] = 'jeu' then
+      if genre = 'jeu' then
         begin
           execute s;
           execute immediat;
           execute differe;
         exception when others then
           verdicts := verdicts || jsonb_build_object('controle', '0. le jeu : ' || etape[2], 'observe', sqlstate || ' ' || sqlerrm, 'ok', false);
+        end;
+      elsif genre = 'capture' then
+        -- Un identifiant que les fonctions ont tiré, lu par le propriétaire, rangé sous son nom (etape[5]).
+        begin
+          execute s into obs;
+          if obs is null then
+            raise exception 'aucune valeur';
+          end if;
+          ids := ids || jsonb_build_object(etape[5], obs);
+        exception when others then
+          verdicts := verdicts || jsonb_build_object('controle', '0. la capture : ' || etape[2], 'observe', sqlstate || ' ' || sqlerrm, 'ok', false);
         end;
       else
         begin
@@ -820,7 +1200,7 @@ begin
               else json_build_object('sub', case etape[3] when 'chef' then chef when 'client' then client when 'autre' then client else inconnu end,
                                      'role', 'authenticated')::text end, true);
           end if;
-          if etape[1] = 'valeur' then
+          if genre = 'valeur' then
             execute s into obs;
           else
             execute s;
@@ -828,7 +1208,7 @@ begin
             execute immediat;
             execute differe;
             accepte := true;
-            if etape[1] = 'controle' then
+            if genre = 'controle' then
               raise exception 'ANNULATION_ESSAI';
             end if;
           end if;
@@ -837,18 +1217,22 @@ begin
         reset role;
         perform set_config('request.jwt.claims', '', true);
         perform set_config('jd.caisse', '', true);
-        if etape[1] = 'valeur' then
+        if genre = 'valeur' then
           verdicts := verdicts || jsonb_build_object('controle', etape[2],
             'observe', coalesce(obs, case when code_recu is not null then code_recu || ' ' || coalesce(message, '') else '∅' end),
             'ok', coalesce(obs = etape[6], false));
         else
           verdicts := verdicts || jsonb_build_object('controle', etape[2],
             'observe', case when accepte then 'accepté' else coalesce(code_recu, '?') || ' ' || coalesce(message, '') end,
-            'ok', case when etape[5] = 'OK' then accepte and (etape[1] = 'fait' or coalesce(code_recu = 'P0001', false))
+            'ok', case when etape[5] = 'OK' then accepte and (genre = 'fait' or coalesce(code_recu = 'P0001', false))
                        else not accepte and coalesce(code_recu = etape[5] and message like etape[6], false) end);
         end if;
       end if;
     end loop;
+    if en_attente > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '100. EN ATTENTE de la migration caisse_retrait_et_versement (étape C1b) : '
+        || en_attente || ' étapes du retrait, du remplacement et du versement d''espèces', 'observe', 'absente : elles se jouent dès qu''elle y est', 'ok', true);
+    end if;
     raise exception 'ANNULATION_ESSAI_GLOBALE';
   exception when others then
     if sqlerrm <> 'ANNULATION_ESSAI_GLOBALE' then
