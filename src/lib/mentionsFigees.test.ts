@@ -6,7 +6,8 @@ import { numeroTvaImprime } from './factureCii'
 import {
   MENTIONS_FIGEES_EXPORTEES, NATURES_DE_LIGNE, REFERENCE_DE_LIGNE_MAX, REFUS_DE_LA_PROVENANCE, REFUS_DE_LA_VALIDATION_FIGEE,
   REFUS_DES_TEXTES, TEXTES_DE_LA_LIGNE, TEXTES_DE_L_EN_TETE, TEXTES_FIGES_A_LA_VALIDATION, UNITES_DE_LIGNE, adresseNette,
-  mentionsAFiger, porteLaMentionEI, refusDeLaProvenance, refusDeLaValidationFigee, refusDesTextesDeLaFacture, siretSansBlancs,
+  denominationAbsente, mentionsAFiger, porteLaMentionEI, refusDeLaProvenance, refusDeLaValidationFigee, refusDesTextesDeLaFacture,
+  siretSansBlancs,
   type EntreeDesMentions, type MentionsDeLOrigine, type ValidationAJuger, type VersionAFiger,
 } from './mentionsFigees'
 import { MODELE_IBAN_DANS_UN_TEXTE } from './parametresFacturation'
@@ -22,6 +23,9 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('hex')
 const chaineSql = (s: string) => s.replace(/''/g, "'")
+// Le dernier refus de la validation, un IBAN dans ce qu'elle figerait (A7-Q3) : lu par sa place, que le test des rangs
+// garde (depuis A7Q-Q1, le neuvième).
+const IBAN_A_LA_VALIDATION = REFUS_DE_LA_VALIDATION_FIGEE[REFUS_DE_LA_VALIDATION_FIGEE.length - 1]
 
 const MIGRATIONS = fichiersDuSchema().filter((f) => /\/\d{14}_mentions_figees\.sql$/.test(f.chemin))
 const MIGRATION = MIGRATIONS.length === 1 ? MIGRATIONS[0] : { chemin: '', texte: '' }
@@ -105,8 +109,9 @@ describe('le drapeau et la migration', () => {
 // ── Les refus neufs, confrontés au texte de la fonction ────────────────────────────────────────────────────────────
 describe('les refus neufs d’enregistrer_facture, confrontés à son texte', () => {
   const PROV = ['unite', 'reference', 'nature', 'contact', 'article'] as const
-  const VALID = ['contact_garde', 'forme_a_regler', 'entrepreneur_individuel', 'siret_a_poser', 'siret_du_dossier', 'adresse_a_poser',
-    'adresse_du_dossier', 'iban_a_la_validation'] as const
+  // Repris le 29/10/2026 sur A7Q-Q1 : la dénomination du dossier, au huitième rang, après l'entrepreneur individuel.
+  const VALID = ['contact_garde', 'forme_a_regler', 'entrepreneur_individuel', 'denomination_a_poser', 'siret_a_poser',
+    'siret_du_dossier', 'adresse_a_poser', 'adresse_du_dossier', 'iban_a_la_validation'] as const
 
   it('ceux d’hier d’abord, dans le même ordre et sous les mêmes mots, puis la provenance, les textes, la validation', () => {
     const hier = definitionDAvant('enregistrer_facture').texte
@@ -137,8 +142,8 @@ describe('les refus neufs d’enregistrer_facture, confrontés à son texte', ()
     expect(REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.cle)).toEqual([...VALID])
     expect(messagesSql(VALIDATION())).toEqual(REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.modele))
     expect(codesSql(VALIDATION())).toEqual(REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.code))
-    expect(valeursSql(VALIDATION())).toEqual(['', '', '', '', '', '', '', 'v_libelle'])
-    expect(REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.rang)).toEqual([5, 6, 7, 8, 9, 10, 11, 12])
+    expect(valeursSql(VALIDATION())).toEqual(['', '', '', '', '', '', '', '', 'v_libelle'])
+    expect(REFUS_DE_LA_VALIDATION_FIGEE.map((r) => r.rang)).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13])
     expect(FONCTION.indexOf('-- A7. CE QUE LA VALIDATION FIGE')).toBeLessThan(FONCTION.indexOf('v_numero := attribuer_numero_facture('))
     expect(FONCTION.indexOf('    -- Le mandataire :')).toBeLessThan(FONCTION.indexOf('v_numero := attribuer_numero_facture('))
     // Les conditions que le module rejoue, telles que la fonction les écrit : la forme jugée pour un accès « Ventes » seul,
@@ -146,6 +151,19 @@ describe('les refus neufs d’enregistrer_facture, confrontés à son texte', ()
     expect(VALIDATION()).toContain('v_cabinet := public.admin_du_dossier(p_dossier_id);\n'
       + "    if v_forme_juridique is null and not v_cabinet and not (v_type = 'avoir' and v_origine.mentions_figees) then")
     expect(VALIDATION()).toContain("if v_forme_juridique = '1000' and not public.porte_la_mention_ei(v_denomination) then")
+    // A7Q-Q1 : la dénomination que la facture figera, absente ou de blancs (`denominationAbsente`), pour un accès
+    // « Ventes », hors d'un avoir qui reprend l'identité de sa facture — la condition même de la forme ; après
+    // l'entrepreneur individuel, avant l'émetteur (l'ordre des messages, ci-dessus).
+    expect(VALIDATION()).toContain("    if btrim(coalesce(v_denomination, ''), v_blancs) = '' and not v_cabinet\n"
+      + "       and not (v_type = 'avoir' and v_origine.mentions_figees) then")
+    expect(VALIDATION().indexOf("public.porte_la_mention_ei(v_denomination)"))
+      .toBeLessThan(VALIDATION().indexOf("btrim(coalesce(v_denomination, ''), v_blancs)"))
+    expect(VALIDATION().indexOf("btrim(coalesce(v_denomination, ''), v_blancs)"))
+      .toBeLessThan(VALIDATION().indexOf("    if not v_cabinet and v_type <> 'avoir' then"))
+    // La valeur jugée est celle que la validation écrit : lue une fois dans le dossier (ou reprise de la facture d'un
+    // avoir).
+    expect(VALIDATION()).toContain('      v_denomination := v_dossier.denomination_imprimee;')
+    expect(FONCTION).toContain('        denomination_imprimee = v_denomination, forme_juridique = v_forme_juridique, capital = v_capital,')
     expect(FONCTION).toContain('    if v_cabinet then\n      select c.nom into v_mandataire from cabinets c where c.id = v_dossier.cabinet_id;')
     // A7-Q2 : un accès « Ventes » et une facture seulement ; le SIRET, ses blancs retirés partout ; l'adresse, ses fins de ligne
     // ramenées et les blancs de ses bords retirés — `siretSansBlancs` et `adresseNette`, que les cas ci-dessous jugent.
@@ -171,7 +189,8 @@ describe('les refus neufs d’enregistrer_facture, confrontés à son texte', ()
     // Le refus du contact gardé est, mot pour mot, celui de la provenance : l'écran le dit d'une seule phrase ; celui d'un IBAN
     // est celui des textes, et celui des paramètres de facturation.
     expect(REFUS_DE_LA_VALIDATION_FIGEE[0].modele).toBe(REFUS_DE_LA_PROVENANCE[3].modele)
-    expect(REFUS_DE_LA_VALIDATION_FIGEE[7].modele).toBe(MODELE_IBAN_DANS_UN_TEXTE)
+    expect(IBAN_A_LA_VALIDATION.cle).toBe('iban_a_la_validation')
+    expect(IBAN_A_LA_VALIDATION.modele).toBe(MODELE_IBAN_DANS_UN_TEXTE)
   })
 
   it('les textes écrits : un IBAN dans un texte libre que la facture imprime, après les lignes, avant la validation', () => {
@@ -291,7 +310,7 @@ describe('l’essai exige chaque refus neuf, et le module rejoue ses appels comm
       if (e.attendu === null) return undefined
       const attendu = e.attendu
       if (e.code === '22023' && correspondAuModele(MODELE_IBAN_DANS_UN_TEXTE, attendu)) {
-        return aLaValidation.has(libelleDUnIban(attendu)) ? REFUS_DE_LA_VALIDATION_FIGEE[7] : REFUS_DES_TEXTES[0]
+        return aLaValidation.has(libelleDUnIban(attendu)) ? IBAN_A_LA_VALIDATION : REFUS_DES_TEXTES[0]
       }
       return [...REFUS_DE_LA_PROVENANCE, ...REFUS_DE_LA_VALIDATION_FIGEE].find((r) => r.code === e.code && correspondAuModele(r.modele, attendu))
     }
@@ -503,7 +522,10 @@ describe('porteLaMentionEI et refusDeLaValidationFigee', () => {
     expect(refusDeLaValidationFigee({ ...base, formeJuridique: undefined })?.cle).toBe('forme_a_regler')
     expect(refusDeLaValidationFigee({ ...base, formeJuridique: null, cabinet: true })).toBeNull()
     expect(refusDeLaValidationFigee({ ...base, formeJuridique: null, reprise: true })).toBeNull()
-    expect(refusDeLaValidationFigee({ ...base, formeJuridique: '5710', denomination: null })).toBeNull()
+    // Adapté le 29/10/2026 à A7Q-Q1 : une société sans dénomination ne se valide plus depuis l'espace client ; le
+    // cabinet, si (la règle entière, au test « A7Q-Q1 » ci-dessous).
+    expect(refusDeLaValidationFigee({ ...base, formeJuridique: '5710', denomination: null })?.cle).toBe('denomination_a_poser')
+    expect(refusDeLaValidationFigee({ ...base, formeJuridique: '5710', denomination: null, cabinet: true })).toBeNull()
   })
 
   const BASE_A7Q: ValidationAJuger = { contactGarde: null, contactsDuDossier: [], formeJuridique: '1000', denomination: 'ESSAI DUPONT EI',
@@ -550,6 +572,43 @@ describe('porteLaMentionEI et refusDeLaValidationFigee', () => {
     expect(adresseNette(`${String.fromCharCode(0xfeff)} 12 rue X\r\n69001 Lyon\r\n `)).toBe('12 rue X\n69001 Lyon')
     expect(adresseNette('12 rue X\r69001 Lyon')).toBe('12 rue X\n69001 Lyon')
     expect(adresseNette(null)).toBe('')
+  })
+
+  it('A7Q-Q1 : la dénomination du dossier, absente ou de blancs, pour un accès « Ventes » et quelle que soit la forme', () => {
+    const societe: Partial<ValidationAJuger> = { formeJuridique: '5710', denomination: 'ESSAI SOCIÉTÉ' }
+    expect(cle(societe)).toBeNull()
+    expect(cle({ ...societe, denomination: null })).toBe('denomination_a_poser')
+    expect(cle({ ...societe, denomination: undefined })).toBe('denomination_a_poser')
+    expect(cle({ ...societe, denomination: '' })).toBe('denomination_a_poser')
+    // Faite de blancs : ceux que `\s` désigne — l'insécable et l'espace fine insécable, que la contrainte de la colonne
+    // laisse passer (elle n'écarte que quatre blancs), comme la tabulation et les fins de ligne.
+    const blancs = `${String.fromCharCode(0xa0)}${String.fromCharCode(0x202f)}\t\r\n${String.fromCharCode(0x3000)}`
+    expect(cle({ ...societe, denomination: blancs })).toBe('denomination_a_poser')
+    expect(denominationAbsente(blancs)).toBe(true)
+    // Un caractère qui n'est pas un blanc suffit, même invisible : la base ne juge ici que l'absence.
+    expect(cle({ ...societe, denomination: ` ${String.fromCharCode(0x200b)} ` })).toBeNull()
+    expect(denominationAbsente(`${blancs}x${blancs}`)).toBe(false)
+    // Le cabinet n'est pas jugé ; un avoir qui reprend l'identité de sa facture non plus ; l'avoir d'une facture
+    // d'avant, qui fige l'identité du jour, l'est — comme la forme.
+    expect(cle({ ...societe, denomination: null, cabinet: true })).toBeNull()
+    expect(cle({ ...societe, denomination: null, avoir: true, reprise: true })).toBeNull()
+    expect(cle({ ...societe, denomination: null, avoir: true, reprise: false })).toBe('denomination_a_poser')
+    expect(cle({ formeJuridique: null, denomination: null, avoir: true, reprise: false })).toBe('forme_a_regler')
+    // L'ordre : la forme d'abord ; puis l'entrepreneur individuel, dont le refus dit ce que la dénomination doit
+    // porter, et qui vaut aussi pour le cabinet ; puis elle ; puis l'émetteur (A7-Q2), puis un IBAN (A7-Q3).
+    expect(cle({ formeJuridique: null, denomination: null })).toBe('forme_a_regler')
+    expect(cle({ formeJuridique: '1000', denomination: null })).toBe('entrepreneur_individuel')
+    expect(cle({ formeJuridique: '1000', denomination: blancs })).toBe('entrepreneur_individuel')
+    expect(cle({ formeJuridique: '1000', denomination: null, cabinet: true })).toBe('entrepreneur_individuel')
+    expect(cle({ ...societe, denomination: null, dossierSiret: null, dossierAdresse: null })).toBe('denomination_a_poser')
+    expect(cle({ ...societe, denomination: null, emetteurSiret: '10000020700015', emetteurAdresse: 'ESSAI AUTRE ADRESSE' }))
+      .toBe('denomination_a_poser')
+    const parametres = { escompte: null, penalites: null, mentions_complementaires: null, pied_de_page: 'FR13 9999 9000 0200 0000 0001 234' }
+    expect(cle({ ...societe, denomination: null, parametres })).toBe('denomination_a_poser')
+    expect(cle({ ...societe, denomination: null, parametres, cabinet: true })).toBe('iban_a_la_validation')
+    expect(refusDeLaValidationFigee({ ...BASE_A7Q, ...societe, denomination: null })).toEqual({ cle: 'denomination_a_poser',
+      code: '22023',
+      message: "La dénomination du dossier n'est pas renseignée : le cabinet la renseigne avant qu'une facture se valide depuis l'espace client." })
   })
 
   it('A7-Q3 à la validation : l’identité, sauf celle qu’un avoir reprend, puis les paramètres en vigueur, pour tout auteur', () => {

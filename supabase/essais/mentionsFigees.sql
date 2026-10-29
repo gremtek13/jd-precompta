@@ -37,6 +37,14 @@
 --     l'enregistrement ; une clé fausse, qui passe ; ce qu'un brouillon garde, jugé ; un avoir, qui ne rejuge pas ce qu'il
 --     recopie ; à la validation, l'identité du dossier et les paramètres en vigueur, dont une version d'avant la petite
 --     migration `iban_hors_des_parametres` (posée ici par le propriétaire) ; la restauration, qui réinsère tel quel ;
+--   - LA REPRISE SUR LA RÉPONSE DU CABINET DU 29/10/2026, A7Q-Q1 (section 17 ; le dossier H, une société basculée sans
+--     dénomination, un troisième accès « Ventes » du client à lui, une facture d'avant de 2025) : le client
+--     « Ventes » ne valide pas une facture d'un dossier sans dénomination — absente ou faite de blancs, quelle que soit
+--     sa forme —, son brouillon s'enregistre ; le cabinet valide, et sa facture fige une dénomination nulle ; l'avoir
+--     qui reprend cette identité passe ; l'avoir d'une facture d'avant, qui fige l'identité du jour, se refuse au
+--     client et passe au cabinet ; l'ordre : la forme, puis l'entrepreneur individuel (son refus parle le premier sans
+--     dénomination), puis la dénomination, puis l'émetteur ; la dénomination posée, la facture et l'avoir passent et la
+--     figent ;
 --   - et que RIEN ne reste en base.
 --
 -- Tout se joue dans des dossiers JETABLES du cabinet du chef, au sein d'un bloc qui s'annule entièrement à la fin
@@ -95,6 +103,8 @@ begin
     'VG4', 'a7a00000-0000-4000-8000-0000000003b4', 'VG5', 'a7a00000-0000-4000-8000-0000000003b5',
     'VG6', 'a7a00000-0000-4000-8000-0000000003b6', 'VR', 'a7a00000-0000-4000-8000-0000000003f1',
     'FRI', 'a7a00000-0000-4000-8000-0000000004f2', 'LRI', 'a7a00000-0000-4000-8000-0000000004f3',
+    'DH', 'a7a00000-0000-4000-8000-0000000000a3', 'ACCES3', 'a7a00000-0000-4000-8000-0000000000f4',
+    'FH0', 'a7a00000-0000-4000-8000-0000000004a3', 'LH0', 'a7a00000-0000-4000-8000-0000000004a4',
     'SHA', repeat('a7', 32), 'INCONNUE', gen_random_uuid());
 
   select string_agg(n::text, '/') into avant from (values
@@ -161,6 +171,22 @@ begin
              rib_confirme_par, rib_confirme_le, auteur) values
           ('{VG1}', '{DG}', 30, 'virement', 'ESSAI A7 PIED G', 'FR9399999000010000000000100', 'ESSAFR10', 'ESSAI A7 TITULAIRE G', 'confirme', '{CHEF}', now(), '{CHEF}')$q$,
         'OK', null, null),
+      -- H (A7Q-Q1, 29/10/2026) : une société par actions simplifiée redevable et basculée, son SIRET, son adresse,
+      -- sans dénomination ; un troisième accès « Ventes » du client, à lui ; une facture d'avant de 2025, restaurée
+      -- avant que H numérote (l'exercice de 2026 garde sa série).
+      ('j8', 'jeu', 'H, une société basculée sans dénomination ; un troisième accès « Ventes » du client, à lui', 'proprietaire', null,
+        $q$insert into dossiers (id, nom, cabinet_id, siret, adresse, statut_tva, assujetti_tva, article_exoneration, numero_tva_attribue,
+             ventes_par_les_factures, forme_juridique, denomination_imprimee) values
+          ('{DH}', 'ESSAI A7 H', '{CAB}', '12345678200010', 'ESSAI A7 ADRESSE H', 'redevable', true, null, false, true, '5710', null)
+        §§ insert into memberships (id, user_id, dossier_id, role, email, droit_ventes) values ('{ACCES3}', '{CLIENT}', '{DH}', 'client', 'essai-a7-h@example.test', true)$q$,
+        'OK', null, null),
+      ('j9', 'jeu', 'une facture d''avant de 2025, restaurée dans H par le super-administrateur, et sa ligne', 'chef', null,
+        $q$insert into factures_emises (id, dossier_id, type, statut, numero, date_emission, validated_at, tiers_nom, montant_ht, montant_tva, montant_ttc,
+             emetteur_nom, emetteur_siret, nature_operation)
+           values ('{FH0}', '{DH}', 'facture', 'validee', 'F2025-0001', '2025-09-01', now(), 'ESSAI A7 CLIENT H', 100, 20, 120,
+             'ESSAI A7 H', '12345678200010', 'services')
+        §§ insert into facture_lignes (id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva)
+           values ('{LH0}', '{FH0}', 0, 'ESSAI A7 LIGNE H', 1, 100, 20)$q$, 'OK', null, null),
 
       -- ══ 0. Le catalogue ══════════
       ('0a', 'valeur', 'factures_emises : les colonnes de l''étape, après la source de la vente', 'proprietaire', null,
@@ -1135,7 +1161,95 @@ begin
         $q$select p.id::text from public.enregistrer_parametres_facturation('{DR}', '{VR}', '{"pied_de_page":"ESSAI A7 PIED R2"}'::jsonb) p
         §§ select f.numero from enregistrer_facture('{DR}', null, '{"tiers_nom":"ESSAI A7 R","date_emission":"2026-10-21","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
              '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f$q$,
-        'OK', 'F2026-%', null)
+        'OK', 'F2026-%', null),
+
+      -- ══ 17. A7Q-Q1 : un accès « Ventes » ne valide pas sans dénomination (le dossier H) ══════════
+      -- Réponse du cabinet du 29/10/2026 : quelle que soit la forme juridique, comme sans forme (A7-Q1). La valeur
+      -- jugée est la dénomination que la facture figera, absente ou faite de blancs ; le cabinet n'est pas jugé ; un
+      -- avoir qui reprend l'identité de sa facture non plus, l'avoir d'une facture d'avant — qui fige l'identité du
+      -- jour — si. Après l'entrepreneur individuel, avant l'émetteur (A7-Q2).
+      ('220', 'controle', 'une société sans dénomination : le client « Ventes » ne valide pas', 'client', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"tiers_nom":"ESSAI A7 CLIENT H","type_client":"assujetti","nature_operation":"services","date_emission":"2026-10-24","emetteur_nom":"ESSAI A7 H","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI A7 ADRESSE H","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f$q$,
+        '22023', 'La dénomination du dossier n''est pas renseignée : le cabinet la renseigne avant qu''une facture se valide depuis l''espace client.', null),
+      ('221', 'controle', 'un brouillon, lui, s''enregistre', 'client', null,
+        $q$select (f.numero is null)::text from enregistrer_facture('{DH}', null, '{"tiers_nom":"ESSAI A7 CLIENT H","type_client":"assujetti","nature_operation":"services","date_emission":"2026-10-24","emetteur_nom":"ESSAI A7 H","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI A7 ADRESSE H","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, false) f$q$,
+        'OK', 'true', null),
+      ('M21', 'mutation', 'le contrôle 220 rejoué par le cabinet : il valide, sans dénomination', 'chef', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"tiers_nom":"ESSAI A7 CLIENT H","type_client":"assujetti","nature_operation":"services","date_emission":"2026-10-24","emetteur_nom":"ESSAI A7 H","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI A7 ADRESSE H","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f$q$,
+        'OK', 'F2026-%', null),
+      ('222', 'fait', 'le cabinet valide une facture de la société sans dénomination', 'chef', null,
+        $q$select f.facture_id::text from enregistrer_facture('{DH}', null, '{"tiers_nom":"ESSAI A7 CLIENT H","type_client":"assujetti","nature_operation":"services","date_emission":"2026-10-24","emetteur_nom":"ESSAI A7 H","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI A7 ADRESSE H","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f$q$,
+        'OK', null, 'FH1'),
+      ('223', 'valeur', '… elle fige une identité sans dénomination, la forme de la société, le cabinet pour mandataire', 'proprietaire', null,
+        $q$select concat_ws('|', numero, coalesce(denomination_imprimee, '-'), forme_juridique, (mandataire_nom = (select c.nom from cabinets c where c.id = '{CAB}'))::text)
+             from factures_emises where id = '{FH1}'$q$, 'OK', 'F2026-0001|-|5710|true', null),
+      ('224', 'controle', 'son avoir, par le client « Ventes » : il reprend cette identité, que rien ne rejuge', 'client', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"type":"avoir","facture_origine_id":"{FH1}","date_emission":"2026-10-25","montant_ht":-10,"montant_tva":-2,"montant_ttc":-12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":-1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f
+        §§ select numero || '|' || coalesce(denomination_imprimee, '-') || '|' || forme_juridique from factures_emises where facture_origine_id = '{FH1}'$q$,
+        'OK', 'A2026-%|-|5710', null),
+      ('225', 'controle', 'l''avoir de la facture d''avant fige l''identité du jour : sans dénomination, le client « Ventes » ne le valide pas', 'client', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"type":"avoir","facture_origine_id":"{FH0}","date_emission":"2026-10-25","montant_ht":-50,"montant_tva":-10,"montant_ttc":-60}'::jsonb,
+             '[{"designation":"ESSAI A7 LIGNE H","quantite":-0.5,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) f$q$,
+        '22023', 'La dénomination du dossier n''est pas renseignée : le cabinet la renseigne avant qu''une facture se valide depuis l''espace client.', null),
+      ('M22', 'mutation', 'le contrôle 225 rejoué par le cabinet : son avoir passe, sans dénomination', 'chef', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"type":"avoir","facture_origine_id":"{FH0}","date_emission":"2026-10-25","montant_ht":-50,"montant_tva":-10,"montant_ttc":-60}'::jsonb,
+             '[{"designation":"ESSAI A7 LIGNE H","quantite":-0.5,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) f$q$,
+        'OK', 'A2026-%', null),
+      ('226', 'fait', 'la dénomination de H n''est faite que de blancs, que la contrainte de la colonne laisse passer', 'proprietaire', null,
+        $q$update dossiers set denomination_imprimee = chr(160) || chr(8239) || chr(12288) where id = '{DH}'$q$,
+        'OK', null, null),
+      ('227', 'controle', 'une dénomination de blancs n''en est pas une : le client « Ventes » ne valide pas', 'client', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"tiers_nom":"ESSAI A7 CLIENT H","type_client":"assujetti","nature_operation":"services","date_emission":"2026-10-24","emetteur_nom":"ESSAI A7 H","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI A7 ADRESSE H","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f$q$,
+        '22023', 'La dénomination du dossier n''est pas renseignée : le cabinet la renseigne avant qu''une facture se valide depuis l''espace client.', null),
+      ('228', 'fait', 'la dénomination de H porte, entre deux blancs, un caractère invisible qui n''en est pas un', 'proprietaire', null,
+        $q$update dossiers set denomination_imprimee = chr(160) || chr(8203) || chr(160) where id = '{DH}'$q$,
+        'OK', null, null),
+      ('M23', 'mutation', 'le contrôle 227 rejoué sous cette dénomination : la base ne juge que l''absence, la facture passe', 'client', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"tiers_nom":"ESSAI A7 CLIENT H","type_client":"assujetti","nature_operation":"services","date_emission":"2026-10-24","emetteur_nom":"ESSAI A7 H","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI A7 ADRESSE H","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f$q$,
+        'OK', 'F2026-%', null),
+      ('229', 'fait', 'H perd sa dénomination, son SIRET et son adresse', 'proprietaire', null,
+        $q$update dossiers set denomination_imprimee = null, siret = null, adresse = null where id = '{DH}'$q$,
+        'OK', null, null),
+      ('230', 'controle', 'l''ordre : sans dénomination, ni SIRET, ni adresse, la dénomination d''abord', 'client', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"tiers_nom":"ESSAI A7 CLIENT H","type_client":"assujetti","nature_operation":"services","date_emission":"2026-10-24","emetteur_nom":"ESSAI A7 H","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI A7 ADRESSE H","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f$q$,
+        '22023', 'La dénomination du dossier n''est pas renseignée : le cabinet la renseigne avant qu''une facture se valide depuis l''espace client.', null),
+      ('231', 'fait', 'H perd aussi sa forme juridique', 'proprietaire', null,
+        $q$update dossiers set forme_juridique = null where id = '{DH}'$q$,
+        'OK', null, null),
+      ('232', 'controle', 'l''ordre : sans forme ni dénomination, la forme d''abord (A7-Q1)', 'client', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"tiers_nom":"ESSAI A7 CLIENT H","type_client":"assujetti","nature_operation":"services","date_emission":"2026-10-24","emetteur_nom":"ESSAI A7 H","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI A7 ADRESSE H","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f$q$,
+        '22023', 'La forme juridique du dossier n''est pas renseignée : l''identité légale qu''une facture imprime est à régler par le cabinet avant qu''une facture se valide depuis l''espace client.', null),
+      ('233', 'fait', 'H devient un entrepreneur individuel, toujours sans dénomination', 'proprietaire', null,
+        $q$update dossiers set forme_juridique = '1000' where id = '{DH}'$q$,
+        'OK', null, null),
+      ('234', 'controle', 'un entrepreneur individuel sans dénomination : le refus de l''entrepreneur individuel parle le premier, il dit ce qu''elle porte', 'client', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"tiers_nom":"ESSAI A7 CLIENT H","type_client":"assujetti","nature_operation":"services","date_emission":"2026-10-24","emetteur_nom":"ESSAI A7 H","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI A7 ADRESSE H","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f$q$,
+        '22023', 'La forme juridique du dossier est celle d''un entrepreneur individuel : sa dénomination imprimée, son nom précédé ou suivi des initiales « EI » ou des mots « entrepreneur individuel » (C. com., art. R526-27), est à renseigner par le cabinet avant de valider une facture.', null),
+      ('235', 'fait', 'H redevient une société, retrouve son SIRET et son adresse, et reçoit sa dénomination', 'proprietaire', null,
+        $q$update dossiers set forme_juridique = '5710', siret = '12345678200010', adresse = 'ESSAI A7 ADRESSE H', denomination_imprimee = 'ESSAI A7 SOCIÉTÉ H' where id = '{DH}'$q$,
+        'OK', null, null),
+      ('236', 'fait', 'avec sa dénomination, le client « Ventes » valide : la facture passe', 'client', null,
+        $q$select f.facture_id::text from enregistrer_facture('{DH}', null, '{"tiers_nom":"ESSAI A7 CLIENT H","type_client":"assujetti","nature_operation":"services","date_emission":"2026-10-24","emetteur_nom":"ESSAI A7 H","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI A7 ADRESSE H","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb,
+             '[{"designation":"ESSAI A7 PRESTATION","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) f$q$,
+        'OK', null, 'FH2'),
+      ('237', 'valeur', '… elle fige la dénomination de la société et sa forme, et n''a pas de mandataire', 'proprietaire', null,
+        $q$select concat_ws('|', numero, denomination_imprimee, forme_juridique, coalesce(mandataire_nom, '-')) from factures_emises where id = '{FH2}'$q$,
+        'OK', 'F2026-0002|ESSAI A7 SOCIÉTÉ H|5710|-', null),
+      ('238', 'controle', 'l''avoir de la facture d''avant, la dénomination posée : le client « Ventes » le valide, et il la fige', 'client', null,
+        $q$select f.numero from enregistrer_facture('{DH}', null, '{"type":"avoir","facture_origine_id":"{FH0}","date_emission":"2026-10-25","montant_ht":-50,"montant_tva":-10,"montant_ttc":-60}'::jsonb,
+             '[{"designation":"ESSAI A7 LIGNE H","quantite":-0.5,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) f
+        §§ select numero || '|' || denomination_imprimee || '|' || forme_juridique from factures_emises where facture_origine_id = '{FH0}'$q$,
+        'OK', 'A2026-%|ESSAI A7 SOCIÉTÉ H|5710', null)
     ) as x(num, genre, controle, qui, droits, ordre, code, attendu, cle)
     loop
       -- Les droits de l'accès d'essai, posés par le propriétaire avant l'étape qui les nomme.

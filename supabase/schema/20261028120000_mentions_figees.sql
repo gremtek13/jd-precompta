@@ -1,10 +1,11 @@
 -- LA FACTURE FIGE SES MENTIONS (espace client, étape A7a, ligne 51.5 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT,
 -- LOGICIEL DE GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », § A.5.3, et « LA FACTURE VALIDÉE, SOURCE DE
 -- SA VENTE : LA CONCEPTION », § 13 ; MEG1-Q2, MEG1-Q15, A5-Q9 ; reprise sur les réponses du cabinet du 28/10/2026, A7-Q1 à
--- A7-Q3). Préparée sous une version PROVISOIRE, à COLLER : le corps d'`enregistrer_facture` supprime les lignes qu'il
--- remplace, depuis toujours, et `apply_migration` attend alors une confirmation qui ne lui parvient pas (CLAUDE.md, « Quand
--- `apply_migration` attend une confirmation »). Une petite migration la suit, à part : `iban_hors_des_parametres`, qui
--- refuse un IBAN dans les textes des paramètres de facturation et appelle la fonction posée ici (A7-Q3).
+-- A7-Q3, et du 29/10/2026, A7Q-Q1). Préparée sous une version PROVISOIRE, à COLLER : le corps d'`enregistrer_facture`
+-- supprime les lignes qu'il remplace, depuis toujours, et `apply_migration` attend alors une confirmation qui ne lui
+-- parvient pas (CLAUDE.md, « Quand `apply_migration` attend une confirmation »). Une petite migration la suit, à part :
+-- `iban_hors_des_parametres`, qui refuse un IBAN dans les textes des paramètres de facturation et appelle la fonction
+-- posée ici (A7-Q3).
 --
 -- POURQUOI. Une facture validée figeait son émetteur, ses parties, ses mentions et ses lignes, mais pas tout ce qu'elle
 -- imprime : le numéro de TVA se recalculait à chaque impression du statut du jour (`numeroTvaImprime`), et rien de
@@ -73,10 +74,12 @@
 -- reprise (22023), dans cet ordre : à chaque enregistrement, après ceux de la provenance et l'écriture de la facture et
 -- de ses lignes, un texte libre qu'elle imprime et qui porte un IBAN (A7-Q3, tout auteur ; à la validation, il précède
 -- donc les refus qui la jugent) ; à la validation, après les refus d'A7a qui précèdent, pour un accès « Ventes », un
--- dossier sans SIRET, un SIRET d'émetteur qui n'est pas celui du dossier, un dossier sans adresse, une adresse
--- d'émetteur qui n'est pas celle du dossier (A7-Q2 ; le cabinet n'est pas jugé, un avoir reprend l'émetteur de sa
--- facture) ; puis, pour tout auteur, l'identité du dossier ou un texte des paramètres en vigueur qui porte un IBAN
--- (A7-Q3 : une version d'avant la migration `iban_hors_des_parametres` ne se fige pas).
+-- dossier sans dénomination, absente ou de blancs, quelle que soit sa forme (A7Q-Q1, réponse du 29/10/2026 ; le
+-- cabinet n'est pas jugé, un avoir qui reprend l'identité de sa facture non plus), un dossier sans SIRET, un SIRET
+-- d'émetteur qui n'est pas celui du dossier, un dossier sans adresse, une adresse d'émetteur qui n'est pas celle du
+-- dossier (A7-Q2 ; le cabinet n'est pas jugé, un avoir reprend l'émetteur de sa facture) ; puis, pour tout auteur,
+-- l'identité du dossier ou un texte des paramètres en vigueur qui porte un IBAN (A7-Q3 : une version d'avant la
+-- migration `iban_hors_des_parametres` ne se fige pas).
 --
 -- CE QU'ELLE DÉTRUIT, en s'appliquant : rien — aucune table, aucune colonne, aucune donnée ; une contrainte remplacée (sous
 -- son nom, sans perte : elle admet tout ce que l'ancienne admettait). Appelée, `enregistrer_facture` remplace les lignes
@@ -442,7 +445,7 @@ comment on function public.porte_un_iban(text) is
 -- Reprise de la migration ventes_du_client_facturation au caractère près, hors de ce que les commentaires « A7 »
 -- annoncent : les vérifications d'hier passent d'abord (l'avoir, puis le brouillon modifié), les refus neufs ensuite,
 -- avant toute écriture, puis les écritures d'hier, chacune avec ses colonnes neuves ; les textes écrits, jugés (A7-Q3) ;
--- à la validation, ce qu'elle fige, l'émetteur d'un accès « Ventes » jugé (A7-Q2).
+-- à la validation, ce qu'elle fige, la dénomination (A7Q-Q1) et l'émetteur (A7-Q2) d'un accès « Ventes » jugés.
 create or replace function public.enregistrer_facture(p_dossier_id uuid, p_facture_id uuid, p_facture jsonb, p_lignes jsonb, p_valider boolean default false)
  returns table(facture_id uuid, numero text)
  language plpgsql
@@ -809,6 +812,19 @@ begin
       raise exception 'La forme juridique du dossier est celle d''un entrepreneur individuel : sa dénomination imprimée, son nom précédé ou suivi des initiales « EI » ou des mots « entrepreneur individuel » (C. com., art. R526-27), est à renseigner par le cabinet avant de valider une facture.'
         using errcode = '22023';
     end if;
+    -- A7Q-Q1. La dénomination, le nom légal que la facture imprime (C. com., art. L441-9, I : le nom des
+    -- parties), est la première mention de l'identité, et le cabinet seul la renseigne (la policy
+    -- `dossiers_update`) : un accès « Ventes » ne valide pas une facture d'un dossier qui n'en a pas, quelle que
+    -- soit sa forme juridique, comme sans forme. La valeur jugée est celle que la facture figera,
+    -- `v_denomination` : la dénomination du dossier, lue dans cette transaction, absente ou faite des seuls
+    -- blancs de `v_blancs`. Le cabinet n'est pas jugé ; un avoir qui reprend l'identité de sa facture n'en juge
+    -- rien. Après l'entrepreneur individuel : sans dénomination, son refus, qui dit aussi ce qu'elle doit
+    -- porter, parle le premier ; avant l'émetteur, comme l'identité avant lui.
+    if btrim(coalesce(v_denomination, ''), v_blancs) = '' and not v_cabinet
+       and not (v_type = 'avoir' and v_origine.mentions_figees) then
+      raise exception 'La dénomination du dossier n''est pas renseignée : le cabinet la renseigne avant qu''une facture se valide depuis l''espace client.'
+        using errcode = '22023';
+    end if;
     -- A7-Q2. Un accès « Ventes » ne valide une facture que sous le SIRET et l'adresse du DOSSIER, que le cabinet seul
     -- renseigne (la policy `dossiers_update`), lus ici dans la transaction qui valide : un dossier qui n'en a pas ne se
     -- facture pas depuis l'espace client avant que le cabinet les pose. « Les mêmes » : le SIRET, ses caractères, les
@@ -913,4 +929,4 @@ end;
 $$;
 
 comment on function public.enregistrer_facture(uuid, uuid, jsonb, jsonb, boolean) is
-  'Crée ou modifie un brouillon, crée un avoir validé, et valide : pour le cabinet du dossier ou un accès « Ventes » (42501). Ses refus d''hier, puis la provenance des lignes et du client (22023, P0002), puis un texte libre écrit qui porte un IBAN (A7-Q3) ; à la validation, le contact gardé, la forme juridique pour un accès « Ventes », la dénomination d''un entrepreneur individuel, le SIRET et l''adresse du dossier pour un accès « Ventes » (A7-Q2), l''identité et les paramètres en vigueur qui portent un IBAN, puis la facture fige ses mentions (étape A7) : le statut et le numéro de TVA, l''identité légale, les paramètres et le RIB confirmé en vigueur, le logo, le mandataire.';
+  'Crée ou modifie un brouillon, crée un avoir validé, et valide : pour le cabinet du dossier ou un accès « Ventes » (42501). Ses refus d''hier, puis la provenance des lignes et du client (22023, P0002), puis un texte libre écrit qui porte un IBAN (A7-Q3) ; à la validation, le contact gardé, la forme juridique pour un accès « Ventes », la dénomination d''un entrepreneur individuel, la dénomination du dossier pour un accès « Ventes » (A7Q-Q1 : absente ou de blancs, le cabinet la renseigne ; un avoir qui reprend l''identité de sa facture n''en juge rien), le SIRET et l''adresse du dossier pour un accès « Ventes » (A7-Q2), l''identité et les paramètres en vigueur qui portent un IBAN, puis la facture fige ses mentions (étape A7) : le statut et le numéro de TVA, l''identité légale, les paramètres et le RIB confirmé en vigueur, le logo, le mandataire.';

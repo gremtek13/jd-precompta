@@ -66,6 +66,11 @@
 -- dossier, que le cabinet renseigne. Le dossier A naît donc avec les siens, et les deux validations du client (étapes 10
 -- et 22m) les envoient, comme « Mes ventes » les envoie ; son avoir reprend l'émetteur de sa facture, rien n'y change.
 -- Avant la migration, rien ne change non plus : la base ne compare rien.
+--
+-- ADAPTÉ LE 29/10/2026 À A7Q-Q1 (réponse du cabinet du 29/10/2026 ; migration `mentions_figees`, PRÉPARÉE, pas encore
+-- en base) : un accès « Ventes » ne valide plus une facture d'un dossier sans dénomination, quelle que soit sa
+-- forme. Le dossier A, une société, naît donc avec la sienne ; rien d'autre ne change, et avant la migration la base ne
+-- la lit pas.
 do $essai$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -122,9 +127,10 @@ begin
       -- ventes (garder_droit_ventes, étape VF8f). Ses factures validées y sont donc la source de leur vente, et portent la
       -- nature de leurs opérations, que leur validation exige (un avoir prend celle de sa facture).
       ('j1', 'jeu', 'dossiers jetables A et B', 'proprietaire', null,
-        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures, forme_juridique, siret, adresse) values
-          ('{DA}', 'ESSAI VENTES A', '{CAB}', 'redevable', true, true, '5710', '12345678200010', 'ESSAI VENTES ADRESSE A'),
-          ('{DB}', 'ESSAI VENTES B', '{CAB}', 'redevable', true, false, null, null, null)$q$, 'OK', null, null),
+        $q$insert into dossiers (id, nom, cabinet_id, statut_tva, assujetti_tva, ventes_par_les_factures, forme_juridique, siret, adresse,
+             denomination_imprimee) values
+          ('{DA}', 'ESSAI VENTES A', '{CAB}', 'redevable', true, true, '5710', '12345678200010', 'ESSAI VENTES ADRESSE A', 'ESSAI VENTES SAS'),
+          ('{DB}', 'ESSAI VENTES B', '{CAB}', 'redevable', true, false, null, null, null, null)$q$, 'OK', null, null),
       ('j2', 'jeu', 'l''accès d''essai du client au dossier A, sans droit', 'proprietaire', null,
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-ventes@exemple.invalid')$q$, 'OK', null, null),
       ('j3', 'jeu', 'un crédit dans chaque dossier', 'proprietaire', null,
