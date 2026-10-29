@@ -41619,3 +41619,127 @@ fonctions de la vente, au catalogue), n'y touche pas.
   erreur de la session ne les jouerait plus en production. AUDIT-Q2 : `forfaitKilometrique.sql` créerait-il son propre
   bien, jetable, pour le contrôle 32 ? Recommandé : oui ; le contrôle ne dépendrait plus d'aucun bien de la base, et
   passerait aussi sur la réplique — la faute connue se fermerait.
+
+### 29/10/2026 — A7Q-Q1 : UNE SOCIÉTÉ SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION
+
+(Écrite par l'agent architecte d'A7Q-Q1 sur `4d7dcb7` — `main` (`ea631dc`), A7a et sa reprise, C1, la consignation des
+réponses A7Q-Q1 et VF9CQ1B2-Q1, l'audit des essais ; rien d'appliqué —, la branche locale `a7q1`, en deux commits : la
+migration, le module et les essais ; puis cette documentation. Modifiés : la migration
+`supabase/schema/20261028120000_mentions_figees.sql`, toujours sous sa version provisoire, `src/lib/mentionsFigees.ts`
+et son test, l'essai `supabase/essais/mentionsFigees.sql` ; adapté, daté dans son en-tête,
+`supabase/essais/ventesClient.sql` ; `supabase/schema/README.md` ; CLAUDE.md. Ni écran, ni Edge Function ; la petite
+migration `iban_hors_des_parametres` et la caisse inchangées ; RGPD.md inchangé (la base juge une valeur qu'elle tient
+déjà). Rien n'est appliqué. En production, des SELECT de comptes, du catalogue et de l'historique ; aucune valeur d'une
+ligne, aucune écriture.)
+
+**LA RÉPONSE** (A7Q-Q1, (B), le 29/10/2026 → « DEUX RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1 »), écrite dans
+`mentions_figees` avant son collage. À la validation par un accès « Ventes » — l'appelant n'est pas `admin_du_dossier`,
+super-administrateur compris —, `enregistrer_facture` refuse (22023) un dossier dont la dénomination est absente ou
+faite de blancs, quelle que soit sa forme juridique : « La dénomination du dossier n'est pas renseignée : le cabinet la
+renseigne avant qu'une facture se valide depuis l'espace client. » Le nom légal est la première mention de l'identité
+que la facture imprime (C. com., art. L441-9, I : le nom des parties), et le cabinet seul l'écrit (`dossiers_update`).
+- La valeur jugée est celle que la facture figera, `v_denomination` : la dénomination du dossier
+  (`dossiers.denomination_imprimee`), lue par `select d.* into v_dossier` dans la transaction qui valide — la variable
+  même que la validation écrit ensuite dans `factures_emises.denomination_imprimee`. « De blancs » : ceux de
+  `v_blancs`, les vingt-cinq que `\s` désigne en JavaScript, retirés aux bords (`btrim`). La contrainte de la colonne
+  n'en écarte que quatre (`dossiers_denomination_imprimee_forme`) : une insécable seule y entre, et se refuse ici.
+- Qui : un accès « Ventes », comme pour la forme (A7-Q1). Le cabinet n'est pas jugé. Un avoir qui reprend l'identité
+  de sa facture (`v_type = 'avoir' and v_origine.mentions_figees`) n'en juge rien ; l'avoir d'une facture d'avant, qui
+  fige l'identité du jour, est jugé — la condition même de la forme : « un avoir reprend l'identité de sa facture »
+  n'est vrai que de celui-là, et la consigne « hors avoir » se lit ainsi.
+- Le rang : le huitième des refus de la validation, après la forme et l'entrepreneur individuel, avant l'émetteur
+  (A7-Q2) et l'IBAN de l'identité (A7-Q3). Après l'entrepreneur individuel plutôt qu'avant : sans dénomination, un
+  entrepreneur individuel tombe déjà sous ce refus-là, pour tout auteur, qui dit aussi ce que la dénomination doit
+  porter (son nom et « EI », R526-27) — le cabinet le règle en une fois ; placé avant, le refus neuf dirait au client
+  une phrase générale, et la mention « EI » ne se dirait qu'au second essai. Avant l'émetteur : l'identité avant lui,
+  comme A7a l'a rangée, et l'absence avant le contenu.
+- `mentionsFigees.ts` le redit au même rang, mot pour mot (`denomination_a_poser`, rang 8 ; `denominationAbsente`, sur
+  `trim`, qui retire les mêmes vingt-cinq blancs) ; les rangs suivants glissent d'un, l'IBAN au treizième. Le
+  commentaire de la fonction (`comment on function`) et l'en-tête de la migration le disent.
+
+**LES ESSAIS.** `mentionsFigees.sql` gagne sa section 17 : un dossier H — une société par actions simplifiée
+basculée, son SIRET, son adresse, sans dénomination —, un troisième accès « Ventes » du client à lui, une facture
+d'avant de 2025 restaurée avant que H numérote ; vingt-deux verdicts (neuf contrôles, deux valeurs, huit faits, trois
+mutations). Le client ne valide pas (220), son brouillon s'enregistre (221) ; le cabinet valide, et sa facture fige une
+dénomination nulle, le cabinet pour mandataire (M21, 222, 223) ; l'avoir qui reprend cette identité passe (224) ;
+l'avoir de la facture d'avant se refuse au client (225) et passe au cabinet (M22) ; une dénomination d'insécables et
+d'espaces idéographiques se refuse (226, 227), un caractère invisible qui n'est pas un blanc passe (228, M23) ;
+l'ordre — la dénomination avant le SIRET et l'adresse (230), la forme d'abord (232), l'entrepreneur individuel sans
+dénomination, dont le refus parle le premier (234) ; la dénomination posée, la facture (236, 237) et l'avoir de la
+facture d'avant (238) passent et la figent. `ventesClient.sql`, dont le client valide pour une société (la forme 5710),
+donne une dénomination à son dossier A, daté, rien d'autre changé ; aucun autre essai ne fait valider le client pour une
+société.
+
+**LES PREUVES.**
+- La réplique `a7q2` : la grappe de VF8f copiée À FROID, sur le port 5731, sa base de la production à 157 migrations
+  munie des deux dernières de la production sous leurs versions réelles — 159 migrations, `b70ba907…`, les neuf familles
+  de `signature.sql` égales à celles de la production, relues ce jour en production ; puis trente-cinq modèles, cinq
+  familles semées par les semis du banc (la production, le jeu de départ, le second accès, les notes, le journal),
+  chacune sans les migrations, avec la `mentions_figees` de BASE ou la neuve, la petite, la caisse ; arrêtée par son
+  répertoire de données en partant.
+- Les essais, chacun ENTIER sur une copie fraîche, en une transaction, 63 fichiers (cinq autres à part), huit
+  configurations : sans les migrations, BASE et le worktree rendent 5 399 verdicts, ligne pour ligne identiques, deux
+  en faute (`forfaitKilometrique.sql` 32 ; `ventesClient.sql` 0c) ; BASE sur les deux migrations de BASE, 5 641 ; le
+  worktree sur la neuve seule 5 635, sur les deux 5 663, puis la caisse 5 916 (BASE et la caisse, 5 894) — les deux
+  mêmes en faute. De BASE au worktree, à chaque niveau, seul change `mentionsFigees.sql` (ses vingt-deux verdicts
+  neufs) ; tout le reste est identique ligne pour ligne. Les essais de BASE sur les deux migrations du worktree : 29 en
+  faute, les deux d'avant et 27 de `ventesClient.sql` (son client valide pour une société sans dénomination, refusé
+  sous les mots neufs) — d'où son adaptation. Un verdict se compte sans la ligne d'en-tête de son résultat ; le banc
+  la compte quand une colonne s'appelle « ok » (234 pour `caisse.sql` dans le tableau de l'audit, 233 ici).
+- `rls.sql` ENTIER (`768dcdd8…`, le même dans BASE), semé du journal, par le super-utilisateur : 73 lignes
+  d'invariants, 0 en faute, 58 mutations sur 58, ses lignes identiques sans les migrations, avec la neuve, avec les
+  deux, avec celles de BASE ; avec la caisse, 77 et 61 sur 61 (le bloc CA).
+- `restauration.sql` (`c2e49780…`, inchangé), sur le dossier semé de VF7e, de VF8f et d'A7a : 75 tables IDENTIQUES (57
+  lignes sans les migrations, 66 avec la neuve, avec les deux, avec celles de BASE), le contrôle d'A7a 3 sur 3 ; avec
+  la caisse, il s'arrête EN FAUTE avant toute écriture sur ses clés, comme la C1 l'a dit (C2 la mettra au plan).
+- `caisse.sql` (233 verdicts) et `caisseSuppression.sql` (20), la caisse appliquée après les deux d'A7 : justes ; dans
+  les trois ordres (la caisse avant, entre, après elles, `mentions_figees` collée), les mêmes verdicts pour sept essais
+  et la même signature.
+- Le texte à coller (63 983 caractères, `4eb0897cea8a40036838310dcebfb339`) et son retour (22 757 caractères,
+  `6bd630869d992c30b1b5b791a73a2b42`), chacun sur une copie fraîche de la production de la réplique : par l'outil,
+  collée une fois, en fins de ligne Windows, la même base — quatre familles changées, la ligne d'historique
+  `3951edd8…` ; rejouée par l'outil, collée après l'outil, collée une seconde fois : refusées sous leurs mots ; altérée
+  d'un caractère : refusée, rien d'appliqué ; le retour, sur la base collée, sur celle de l'outil et sur celle des fins
+  de ligne Windows : la production, historique et neuf familles ; sans la migration, après une facture figée, ou
+  `porte_un_iban` changée depuis : refusé, rien de rendu ; la garde de tête devant huit états altérés : refusée sous ses
+  mots. La petite migration par-dessus, collée ou par l'outil : la seule famille « fonctions » ; seule, l'ordre faux :
+  refusée ; son retour, puis celui de `mentions_figees` : la production ; le scénario réel du pied de page à IBAN, comme
+  la reprise l'a joué.
+- `signature.sql`, ce qui change par rapport au rapport de la reprise : la seule famille « fonctions », 207
+  `23d6bf852caa4c2a0065ccde71aa80a2` avec la première (`29619758…` avant) et 207 `2a91cbe0cd1568f0795826fdf8cf29fe` avec
+  les deux (`7515f3e8…` avant) ; « colonnes » (895 `05cda372…`), « contraintes » (681 `5ade7583…`) et « droits des
+  fonctions » (207 `6438f4dc…`) comme la reprise les a relevées. Avec la caisse : « fonctions » 215 `866f0ee9…`
+  (`b1e65446…` avec la migration de BASE), les huit autres égales.
+- Les trois contrôles de l'export : la dérive, 160 fichiers et 160 migrations `14246156…`, 161 `1e64a2a7…`, des deux
+  côtés (`0830995b…` et `2b887e8b…` avant) ; avec la caisse, 162 `24972780…` (`5756720a…` avant) ; le socle inchangé
+  (80 instructions, `5d53eea2…`) ; l'inventaire inchangé, 2 210 objets `9c98c435…` (2 282 `fad54caa…` avec la caisse) —
+  il compte des noms, et le lot n'en ajoute aucun.
+- Les mutations : du refus en base, 16 — 13 tuées par `mentionsFigees.sql` et `ventesClient.sql` ENTIERS, trois
+  équivalentes (la dénomination du dossier pour `v_denomination` : hors d'un avoir qui reprend l'identité de sa facture,
+  que la condition écarte, c'est la même valeur ; `translate` pour `btrim` : une chaîne de blancs se vide des deux
+  façons ; `coalesce` sur `v_origine.mentions_figees`, jamais nulle pour un avoir) ; du module, 14 — 11 tuées par son
+  test, trois équivalentes (tous les `\s` retirés, ou `trimStart`, pour `trim` : les mêmes chaînes se vident ;
+  `reprise` borné par `avoir`, que le module ne reçoit jamais seul).
+- Le banc du leurre, après le changement de deux essais : `mentionsFigees.sql` (famille « apres » : la réplique munie
+  des trois migrations préparées) et `ventesClient.sql`, SÛRS — 0 écart, 0 motif, 0 écriture du leurre.
+- La suite, comparée test par test sous Paris : BASE, 15 138 tests justes dans 486 fichiers ; la tête du lot, 15 139,
+  le test d'A7Q-Q1 de `mentionsFigees.test.ts` en plus, aucun disparu, aucun changé d'état.
+
+**CE QUI CHANGERA EN PRODUCTION**, par rapport au rapport de la reprise : au collage, la validation d'une facture par un
+accès « Ventes » se refusera sans dénomination. Aujourd'hui, en production (des comptes, relus ce jour) : aucun accès
+« Ventes », aucun dossier basculé ; quatre dossiers, aucun avec une forme juridique, aucun avec une dénomination ; six
+factures, aucun avoir — rien ne change avant le premier dossier réel. Le praticien du MVP, entrepreneur individuel,
+recevra sa forme (1000) et sa dénomination « EI » avant sa première validation, que l'entrepreneur individuel exigeait
+déjà. Les empreintes : le fichier `3951edd8840aa8e1a8f3b613bd0045a3` (62 068 caractères, la ligne d'historique qu'il
+rendra), le corps d'`enregistrer_facture` `fe4b5535…` ; le texte à coller `4eb0897c…`, son retour `6bd63086…` ; la
+petite migration inchangée (`582096c9…`, son retour `80d4a932…`) — sa garde ne lit que `porte_un_iban`, inchangée, et
+`enregistrer_parametres_facturation`, jamais `enregistrer_facture`.
+
+**CE QUE A7B AURA DE PLUS À FAIRE.** Dans « Mes ventes », le formulaire de la facture dit avant le clic, sur une
+identité lue en entier, que le cabinet doit renseigner la dénomination (`refusDeLaValidationFigee`) ; côté cabinet,
+l'onglet Informations peut dire qu'un dossier sans dénomination ne se facture pas depuis l'espace client.
+
+**LES RISQUES, ET LE RETOUR.** Neutre jusqu'au premier accès « Ventes » ; ensuite, une société dont le cabinet n'a pas
+posé la dénomination ne se facture plus depuis l'espace client — le message le dit au client, et le cabinet valide
+encore. Le retour arrière est celui de la reprise, son empreinte du corps de la fonction refaite ; destructif, il se
+colle sur l'accord du cabinet et se refuse dès qu'une facture a figé ses mentions.
