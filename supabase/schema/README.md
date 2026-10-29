@@ -569,6 +569,34 @@ première, quatre familles changent, « colonnes » (866 `23b2bc60…` puis 895 
 les autres inchangées (HISTORIQUE.md, « LA FACTURE FIGE SES MENTIONS, EN BASE » et « LA FACTURE FIGE SES MENTIONS :
 L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES »).
 
+**Préparé le 29/10/2026, PAS ENCORE APPLIQUÉ : `caisse`** (ligne 26.6, étape C1 : la caisse d'un dossier BNC, MVP-D2).
+Son fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version PROVISOIRE, `20261029120000`, après
+celles d'A7 : il crée une table, que `sauvegardeTables.test.ts` et `sauvegardeRelations.test.ts` exigeraient au plan de
+sauvegarde du jour, et l'étape C2 l'y met, derrière son drapeau. Elle s'applique par l'outil — ni table, ni colonne, ni
+donnée retirée ; le mot n'y paraît que dans les clés, les événements des déclencheurs et `tg_op` —, avec C2, jamais
+avant. Le fichier entre alors ici sous la version que porte sa ligne d'historique, texte inchangé, et cette ligne doit
+rendre `20bbd94ff38cf78b297896c697ffdaea` ; le socle se RÉGÉNÈRE (la colonne d'`ecritures_brouillon`, sa clé, sa
+contrainte et son index) : 81 instructions, `5d636a96f2a2fb373d668da5c26f6554` des deux côtés, 80 avant. `socle.sql`
+écarte depuis ce jour les déclencheurs de contrainte (contype « t »), que `pg_get_constraintdef` rend « TRIGGER … » et
+qu'aucun `create table` n'accepte — la migration en pose trois sur `lignes_bancaires` — ; la production n'en a aucun sur
+une table du socle, et rend toujours 80, `5d53eea2…`. Tant qu'elle n'est pas appliquée, l'export ne la porte pas, et ses
+trois contrôles sont ceux de la production. Sur la réplique de l'étape (la production à 159 migrations, son historique
+et ses neuf familles égaux à ceux de la production, relus le 29/10/2026), munie d'elle sous sa version provisoire, et
+sur un miroir de l'export qui la porte avec le socle régénéré : 160 fichiers, 160 migrations,
+`511623c998535817acf8933731c4fdb3` des deux côtés ; avec les deux d'A7, dans les trois ordres, 162,
+`5756720a24b1c02699f291851ea04bde`. L'inventaire compte 2 239 objets (`5593b39b1dc6c83adb9af83410259cbc`, des deux
+côtés ; 2 167 avant), 2 282 avec A7 (`fad54caa6f05492dfaacec2759190c44`) — seize colonnes, vingt-neuf contraintes (dont
+les dix déclencheurs de contrainte, que le catalogue range aussi parmi elles), quatre index, douze déclencheurs, deux
+policies, huit fonctions et la RLS de la table. `signature.sql` : les neuf familles changent — « colonnes » (866
+`23b2bc60…` puis 882 `63eeb954a7edf0fdd2fb6592102c7a8d`), « contraintes » (670 `d63ab39f…` puis 699
+`0ff69a21901c397707f773dfb3bc7708`), « déclencheurs » (70 `31f83f17…` puis 82 `86c12843b3544c3dae5e1e1767c7ba7e`),
+« fonctions » (204 `9dbbaf01…` puis 212 `ebcdaf5dcba1f8a55d080755f86e5243`), « droits des fonctions » (204 `a2b5e8ad…`
+puis 212 `ddcdda6933f81c9e51ec32b5d0b9b26a`), « index » (238 `b9aae28f…` puis 244 `9704c1759b5115786dc9fa0a1fb7d2ce`),
+« policies » (159 `c6aae852…` puis 161 `6e6e070636b1770aaf5b955967753801`), « RLS » (81 `6450be96…` puis 82
+`5fb5dc41656d97b950a8b000736361e0`) et « droits des tables » (81 `c58e26d3…` puis 82 `36d9792358e1c399ac1fccf6d7bcc642`)
+— et reviennent à la production, historique compris, après son retour arrière ; les trois ordres avec A7 rendent une
+même signature (HISTORIQUE.md, « LA CAISSE, EN BASE : LA MIGRATION `CAISSE` (C1, LIGNE 26.6) »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
