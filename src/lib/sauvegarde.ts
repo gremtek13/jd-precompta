@@ -12,6 +12,7 @@
 
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
+import { CAISSE_EXPORTEE } from './caisse'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
@@ -105,13 +106,34 @@ export function auPlanDuJournalDesDesignations(table: string, jumelleExportee: b
   return jumelleExportee || !TABLES_DU_JOURNAL_DES_DESIGNATIONS.includes(table)
 }
 
+// LA CAISSE D'UN DOSSIER (ligne 26.6, étape C2 ; migrations `caisse` et `caisse_retrait_et_versement`, PRÉPARÉES dans
+// `supabase/preparees/`, appliquées avec ce lot) : le patron des articles, des contacts et des exemplaires, sous son propre
+// drapeau (`CAISSE_EXPORTEE`, src/lib/caisse.ts), BAISSÉ — la production n'a pas la table, et la lire ferait échouer
+// toute sauvegarde. Sa table est déclarée ci-dessous à sa place — ses quatre relations (le dossier en cascade, la
+// catégorie, la pièce, l'opération remplacée), son rang (après les pièces et les catégories, juste avant le brouillon qui
+// la cite), son chemin et sa vague (une opération en remplace une autre de son dossier, `remplace_id`) ; sa clé est la
+// commune, `id`. La migration pose aussi une COLONNE sur une table au plan, `ecritures_brouillon.operation_caisse_id`, et
+// sa clé en cascade, sur le patron de `RELATIONS_DES_EXEMPLAIRES` : la relation quitte le graphe du jour le drapeau
+// baissé. La sauvegarde recopie des lignes entières (`select('*')`) : une écriture de la caisse se réinsère avec son
+// opération, par la porte que la garde ouvre au super-administrateur dans un dossier sans exercice validé ; les
+// opérations aussi, retirées et remplacées comprises, chacune avec son instant de création — antérieur à la transaction
+// de la restauration, il ouvre la porte des déclencheurs de la caisse jamais négative, qui ne rejugent pas un état déjà
+// jugé. sauvegardeCaisse.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
+export const TABLES_DE_LA_CAISSE: readonly string[] = ['operations_caisse']
+
+/** Une table au plan, côté caisse : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
+export function auPlanDeLaCaisse(table: string, caisseExportee: boolean): boolean {
+  return caisseExportee || !TABLES_DE_LA_CAISSE.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
- *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations. */
+ *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse. */
 export function auPlanAujourdHui(table: string): boolean {
   return auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
     && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
     && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES)
     && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE)
+    && auPlanDeLaCaisse(table, CAISSE_EXPORTEE)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -130,6 +152,20 @@ export const RELATIONS_DES_EXEMPLAIRES: readonly Pick<Relation, 'enfant' | 'colo
 export function auGrapheDesExemplaires(relation: Pick<Relation, 'enfant' | 'colonne'>, exemplairesExportes: boolean): boolean {
   return exemplairesExportes
     || !RELATIONS_DES_EXEMPLAIRES.some((r) => r.enfant === relation.enfant && r.colonne === relation.colonne)
+}
+
+// LA SOURCE D'UNE ÉCRITURE DE LA CAISSE (ligne 26.6, étape C2) : `ecritures_brouillon.operation_caisse_id`, une colonne de
+// la migration `caisse` sur une table au plan. Sa relation ne vit au graphe que le drapeau levé (`CAISSE_EXPORTEE`) :
+// avant, ni la colonne ni la table qu'elle pointe ne sont en base.
+export const RELATIONS_DE_LA_CAISSE: readonly Pick<Relation, 'enfant' | 'colonne'>[] = [
+  { enfant: 'ecritures_brouillon', colonne: 'operation_caisse_id' },
+]
+
+/** Une relation au graphe, côté caisse : toutes, sauf la source d'une écriture de la caisse tant que sa migration n'est
+ *  pas exportée. */
+export function auGrapheDeLaCaisse(relation: Pick<Relation, 'enfant' | 'colonne'>, caisseExportee: boolean): boolean {
+  return caisseExportee
+    || !RELATIONS_DE_LA_CAISSE.some((r) => r.enfant === relation.enfant && r.colonne === relation.colonne)
 }
 
 // Le graphe complet des dépendances entre tables du schéma `public`. Les relations vers `auth.users`
@@ -299,13 +335,22 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'designations_des_pieces', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'designations_des_pieces', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'bloque' },
   { enfant: 'designations_des_pieces', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'cascade' },
+  // La caisse (ligne 26.6, étape C2) : son dossier, en cascade ; la catégorie d'une recette, sans action ; la pièce d'un
+  // paiement, `on delete restrict` (une pièce qu'un paiement cite ne se supprime plus) ; l'opération remplacée, sans
+  // action ; et la source d'une écriture de la caisse, en cascade.
+  { enfant: 'operations_caisse', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
+  { enfant: 'operations_caisse', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'operations_caisse', parent: 'operations_caisse', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  { enfant: 'operations_caisse', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'bloque' },
+  { enfant: 'ecritures_brouillon', parent: 'operations_caisse', colonne: 'operation_caisse_id', aLaSuppression: 'cascade' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
 // contacts, des paramètres de facturation ni du journal des désignations tant que leurs migrations ne sont pas exportées,
 // ni celle de l'exemplaire d'une facture tant que la sienne ne l'est pas.
 export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
-  .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES))
+  .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
+    && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
@@ -468,6 +513,14 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // sauvegarde faite avant la migration ne porte pas la date : la base la laisse nulle — inconnue —, et la relecture n'y voit
 // aucun écart. Le dossier précède ses accès ; le droit « Ventes » d'un accès ne retient que la BAISSE du réglage, qu'aucune
 // restauration ne fait. Rien ne change à l'ordre ; `sauvegardeVenteFacturee.test.ts` le garde.
+//
+// La caisse (ligne 26.6, étape C2) vient juste avant le brouillon, qui la cite (`operation_caisse_id`) : après les pièces
+// qu'un paiement cite et les catégories d'une recette. Ses opérations partent par VAGUES (`remplace_id`) : la garde, à
+// l'insertion, exige l'opération remplacée déjà écrite, dans le même dossier. Ni la garde ni les déclencheurs de la caisse
+// jamais négative ne refusent un état partiel de la restauration — la porte du super-administrateur dans un dossier sans
+// exercice validé, pour une ligne dont l'instant de création précède la transaction —, et `exercices_valides`, qui ferme
+// cette porte, vient en dernier. Le jour où sa table existe, l'essai de restauration la met à cette place et recule d'un
+// rang les tables qui suivent. `sauvegardeCaisse.test.ts` garde cet ordre.
 export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -529,6 +582,7 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'notes_internes',
   'pieces_hors_de_france',
   'pieces_hors_de_france_taux',
+  'operations_caisse',
   'ecritures_brouillon',
   'revision_justifications',
   'revision_preuves',
@@ -626,6 +680,9 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES: readonly { table: strin
   // dossier (`remplace_id`) ; immuable hors de la confirmation de son RIB, elle ne part pas à NULL, et sa garde lit la
   // version remplacée.
   { table: 'parametres_facturation', colonne: 'remplace_id' },
+  // La caisse d'un dossier (ligne 26.6, étape C2) : une opération en remplace une autre de son dossier (`remplace_id`,
+  // `remplacer_operation_caisse`) ; jamais modifiée, elle ne part pas à NULL, et sa garde lit l'opération remplacée.
+  { table: 'operations_caisse', colonne: 'remplace_id' },
 ]
 
 // Les vagues telles qu'elles s'appliquent AUJOURD'HUI : sans celle des adresses de réception, ni celle des paramètres de
@@ -1044,6 +1101,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   contacts: { acces: 'direct' },
   parametres_facturation: { acces: 'direct' },
   designations_des_pieces: { acces: 'direct' },
+  operations_caisse: { acces: 'direct' },
 }
 
 // Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception, des

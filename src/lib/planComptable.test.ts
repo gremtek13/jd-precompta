@@ -431,6 +431,20 @@ function quatorzeDeLEssai(): FonctionQuiLitLePlan[] {
   return JSON.parse(m[1]) as FonctionQuiLitLePlan[]
 }
 
+// LA CAISSE DU RELEVÉ (ligne 26.6, étapes C1b et C2) : la migration `caisse_retrait_et_versement` fait lire aussi à
+// `ecrire_mouvement_compte_bilan` le compte de la caisse du plan (le versement d'espèces en banque). La liste des quatorze
+// de l'essai garde « banque » — la caisse est l'un des six rôles de la vente facturée, que le plan décalé de l'essai ne
+// pose pas et qu'aucune des quatorze ne lisait —, et son contrôle 3 attend le rôle `caisse` en plus dès que la base porte
+// la migration (`caisse_du_releve`). Ici, le même complément, dès que l'EXPORT la porte : préparée, elle n'y est pas, et
+// la définition exportée ne lit que la banque ; le jour de son application, elle y entre, et lit les deux.
+const CAISSE_DU_RELEVE_EXPORTEE = readdirSync(new URL('supabase/schema/', RACINE)).some((n) => /^\d{14}_caisse_retrait_et_versement\.sql$/.test(n))
+
+/** Les rôles qu'une des quatorze lit dans l'export : ceux de l'essai, et la caisse du relevé quand l'export la porte. */
+function rolesAttendus(q: FonctionQuiLitLePlan): string[] {
+  const roles = q.roles.split(',')
+  return CAISSE_DU_RELEVE_EXPORTEE && q.f.startsWith('ecrire_mouvement_compte_bilan(') ? [...roles, 'caisse'].sort() : roles
+}
+
 function pc2Exigee(texte: string): boolean {
   const m = [...texte.matchAll(/\bpc2_exigee constant boolean := (true|false);/g)]
   if (m.length !== 1) throw new Error(`pc2_exigee introuvable ou en double (${m.length})`)
@@ -481,6 +495,15 @@ describe('l’essai de la base qui lit le plan (étape PC2)', () => {
     ])
   })
 
+  it('attend la caisse du relevé, ici selon l’export comme dans l’essai selon la base, d’`ecrire_mouvement_compte_bilan` seule', () => {
+    expect(ESSAI_PC2).toContain("caisse_du_releve constant boolean := to_regprocedure('public.retirer_operation_caisse(uuid, uuid)') is not null;")
+    expect(ESSAI_PC2).toContain("if roles_vus is distinct from (f->>'roles') || (case when caisse_du_releve and f->>'f' = 'ecrire_mouvement_compte_bilan(uuid, text, jsonb)'")
+    const quatorze = quatorzeDeLEssai()
+    expect(quatorze.find((q) => q.f.startsWith('ecrire_mouvement_compte_bilan('))?.roles).toBe('banque')
+    expect(quatorze.filter((q) => rolesAttendus(q).join(',') !== q.roles).map((q) => q.f))
+      .toEqual(CAISSE_DU_RELEVE_EXPORTEE ? ['ecrire_mouvement_compte_bilan(uuid, text, jsonb)'] : [])
+  })
+
   it('n’exige la lecture du plan, ici comme dans planComptable.sql, que lorsque l’export porte les six migrations', () => {
     expect(pc2Exigee(ESSAI_PC2)).toBe(PC2_EXPORTEE)
     expect(pc2Exigee(ESSAI)).toBe(PC2_EXPORTEE)
@@ -515,7 +538,7 @@ describe('les quatorze fonctions de la base lisent le plan (étape PC2)', () => 
       expect(/\blanguage\s+(\w+)/.exec(entete)?.[1], `${nom} : langage`).toBe(langage)
       expect(/\bset\s+search_path\s*(?:=|to)\s*'?public'?/.test(entete) ? 'search_path=public' : '', `${nom} : réglages`).toBe(reglages)
       // Ses rôles, exactement, tous au catalogue ; le dirigeant par compte_du_dirigeant, jamais le case recopié.
-      expect(ROLES.filter((role) => corps.includes(`'${role}'`)).sort(), nom).toEqual(q.roles.split(','))
+      expect(ROLES.filter((role) => corps.includes(`'${role}'`)).sort(), nom).toEqual(rolesAttendus(q))
       expect(corps.includes('public.compte_du_dirigeant('), nom).toBe(q.dirigeant)
       expect(corps, nom).not.toMatch(/else '108000' end/)
       // Aucun compte du catalogue entre apostrophes.

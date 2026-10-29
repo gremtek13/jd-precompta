@@ -21,6 +21,7 @@ import { compteTvaDe } from './montantRetenu'
 import { ecritureDeLaDotation, dotationsDuRegistre } from './amortissements'
 import { calculerDeclaration2035 } from './declaration2035'
 import { comptesDeBilanProposes, ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises } from './compteDeBilan'
+import { ecritureDeLOperation } from './caisse'
 import { compteDuResultat, compteQuiRecoit } from './reportDesSoldes'
 import { compteDeLApplication, compteQueLApplicationEcrit, preparerANouveaux } from './aNouveaux'
 import { envoisDuLot, type PropositionRegle } from './reglesAffectation'
@@ -168,6 +169,10 @@ describe('le plan est un paramètre OBLIGATOIRE', () => {
       comptesDeBilanProposes()
       // @ts-expect-error — omis
       ecritureDuCompteDeBilan(x.ligne, '580000')
+      // @ts-expect-error — omis
+      ecritureDeLOperation({ genre: 'apport', date: '2026-03-01', montant: 1, taux_tva: null, categorie: null })
+      // @ts-expect-error — le modèle du dossier, et le mode de son exercice, sans lesquels rien ne se propose
+      comptesDeBilanProposes(PLAN_PAR_DEFAUT)
       // @ts-expect-error — omis
       mouvementsSurUnCompteDeBilanDesynchronises(x.ecritures, [x.ligne], null)
       // @ts-expect-error — omis

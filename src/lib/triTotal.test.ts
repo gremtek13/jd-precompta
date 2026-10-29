@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { clesPrimairesDuSchema, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { clesPrimairesDuSchema, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
 import { lireTout } from './lectureComplete'
 
 // UN TRI QUI N'EST PAS TOTAL REND UNE LECTURE DE LA BONNE LONGUEUR ET DU MAUVAIS CONTENU — ET
@@ -147,7 +147,9 @@ export const CLES_DES_FONCTIONS: Record<string, { colonnes: string[]; raison: st
  */
 export function triNonTotal(
   virtuelles: Record<string, string> = {},
-  cles: Map<string, string[]> = clesPrimairesDuSchema(fichiersDuSchema()),
+  // Les clés de l'export, et celles des tables d'une migration PRÉPARÉE (`supabase/preparees/`) : une lecture écrite
+  // derrière son drapeau, avant l'application (la caisse, ligne 26.6), se juge déjà sur la clé que la migration pose.
+  cles: Map<string, string[]> = clesPrimairesDuSchema([...fichiersDuSchema(), ...fichiersPrepares()]),
   exceptions: Record<string, { nombre: number; raison: string }> = EXCEPTIONS,
   clesDesFonctions: Record<string, { colonnes: string[]; raison: string }> = CLES_DES_FONCTIONS,
 ): string[] {

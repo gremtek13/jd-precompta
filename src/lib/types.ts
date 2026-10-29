@@ -517,6 +517,15 @@ export interface EcritureBrouillon {
   compte_lib: string | null
   comp_aux_num: string | null
   comp_aux_lib: string | null
+  // L'OPÉRATION DE CAISSE dont cette écriture est l'écriture (ligne 26.6, étape C2 ; migration `caisse`, préparée hors de
+  // l'export, appliquée avec ce lot) : écrite avec son opération par les fonctions de la caisse seules, sous le réglage de
+  // CETTE opération, ou réinsérée par la restauration du super-administrateur (`garder_ecriture_de_caisse`) ; aucune autre
+  // source, la pièce admise pour la contrepartie d'un paiement (`ecritures_brouillon_caisse_sans_autre_source`). Clé en
+  // cascade : l'écriture n'existe que par son opération. FACULTATIVE dans ce type jusqu'à l'étape C3, et c'est la vérité
+  // des deux côtés de la migration : avant elle, `select('*')` ne rend pas la colonne ; après, il la rend, nulle sur toute
+  // autre écriture. Elle devient obligatoire avec le premier moteur qui la lit (C3), comme `pieces.facture_id` l'est
+  // devenue avec le premier écran qui la lisait (VF1b).
+  operation_caisse_id?: string | null
 }
 
 // Les journaux du FEC : achats, ventes, banque et opérations diverses. Les à-nouveaux ont le leur (AN), qui
@@ -1199,6 +1208,44 @@ export interface FactureLigne {
 // déclaré, il se RETIRE (`retire_le`, `retire_par`) et reste au registre ; déclaré, il se contre-passe. Le cabinet le
 // lit, et le client qui porte « Ventes » depuis l'étape P2 ; seules `enregistrer_encaissement` et `retirer_encaissement`
 // l'écrivent (et `annuler_encaissement`, une contre-passation).
+// UNE OPÉRATION DE LA CAISSE D'UN DOSSIER (`operations_caisse`, ligne 26.6 ; migration `caisse`, préparée hors de l'export
+// et appliquée avec l'étape C2 — lib/caisse.ts, `CAISSE_EXPORTEE`) : la recette en espèces sans facture de l'application
+// (le TOTAL d'un jour, pour une nature et un taux, tel que le brouillard du praticien le porte), l'apport et le prélèvement
+// de l'exploitant, le paiement d'une pièce par la caisse (la migration 4). AUCUNE colonne de texte, aucune identité : le
+// détail, recette par recette, reste au registre du praticien, sous le secret (BOI-BNC-DECLA-10-20, § 280). Lue par le
+// cabinet seul ; écrite avec son écriture par les fonctions de la caisse, réinsérée par la restauration ; jamais modifiée
+// ni supprimée (la cascade du dossier exceptée) : elle se RETIRE, une fois, ou se REMPLACE d'un seul geste.
+export type GenreOperationCaisse = 'recette' | 'apport' | 'prelevement' | 'paiement'
+// Qui a saisi : posée par la base (`qui_ecrit_la_caisse`), jamais reçue.
+export type OrigineOperationCaisse = 'cabinet' | 'client'
+export interface OperationCaisse {
+  id: string
+  dossier_id: string
+  genre: GenreOperationCaisse
+  // La date civile (AAAA-MM-JJ) du jour où les espèces sont reçues ou sorties.
+  date: string
+  // Au centime, non nul : SIGNÉ pour une recette (négatif : des espèces rendues) et pour un paiement (négatif : une
+  // sortie) ; positif pour un apport ou un prélèvement.
+  montant: number
+  // La nature d'une recette (une catégorie de produit du dossier, ou commune) ; nulle sur tout autre genre.
+  categorie_id: string | null
+  // Le taux d'une recette d'un dossier assujetti (0, 5,5, 8,5, 10 ou 20) ; nul ailleurs.
+  taux_tva: number | null
+  // Les encaissements en espèces de factures sources de son jour que la saisie d'une recette a reconnus (CAISSE-Q2, (A)),
+  // triés ; vide quand il n'y en avait aucun ; nul sur tout autre genre.
+  encaissements_du_jour: string[] | null
+  // La pièce que paie un paiement par la caisse ; nulle sur tout autre genre.
+  piece_id: string | null
+  origine: OrigineOperationCaisse
+  // L'opération que celle-ci remplace (`remplacer_operation_caisse`) ; une opération n'est remplacée qu'une fois.
+  remplace_id: string | null
+  cree_le: string
+  cree_par: string | null
+  // Son retrait, d'un instant et d'un auteur ; une opération remplacée est retirée.
+  retire_le: string | null
+  retire_par: string | null
+}
+
 export type MoyenEncaissement =
   | 'virement' | 'cheque' | 'carte' | 'prelevement' | 'especes' | 'effet' | 'compensation' | 'autre'
 export interface EncaissementFacture {

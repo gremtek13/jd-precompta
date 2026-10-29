@@ -5,21 +5,23 @@ import {
   COMPTE_BANQUE, COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, COMPTE_VIREMENTS_INTERNES, libelleDuPlanComptable,
 } from './comptes'
 import {
-  comptesDeBilanProposes, REFUS_COMPTE_DE_BILAN_CLASSE, ecritureDuCompteDeBilan, idsMouvementsSurUnCompteDeBilan,
-  libelleDuCompteDeBilan, lireCompteSaisi, mouvementsSurUnCompteDeBilanDesynchronises, refusCompteDeBilan,
-  refusCompteDeBilanDuMouvement, refusMouvementCompteDeBilan,
+  comptesDeBilanProposes, comptesDeBilanProposesSelon, REFUS_COMPTE_DE_BILAN_CLASSE, ecritureDuCompteDeBilan,
+  idsMouvementsSurUnCompteDeBilan, libelleDuCompteDeBilan, lireCompteSaisi, mouvementsSurUnCompteDeBilanDesynchronises,
+  refusCompteDeBilan, refusCompteDeBilanAuPlan, refusCompteDeBilanAuPlanSelon, refusCompteDeBilanDuMouvement,
+  refusCompteDeBilanSelon, refusMouvementCompteDeBilan,
 } from './compteDeBilan'
+import { CAISSE_EXPORTEE } from './caisse'
 import { montantsDesMouvementsIgnores, mouvementRapprocheSansObjet, mouvementsIgnoresHorsFec } from './controles'
 import { refusRapprochementCotisation } from './cotisationRapprochee'
 import { refusEcheanceEmprunt } from './echeanceEmprunt'
 import type { ModeleComptable } from './engagement'
-import { PLAN_PAR_DEFAUT } from './planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE, refusReglementGroupe } from './reglementGroupe'
 import type { EcritureBrouillon, ModeComptable } from './types'
 import { refusVentilation } from './ventilationBanque'
 import { refusVirementPersonnel } from './virementPersonnel'
 import { NON_VALIDEE } from '../test/ecritures'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
@@ -106,6 +108,28 @@ function batterie(): (string | null)[] {
 }
 
 const MODES: ModeComptable[] = ['tresorerie', 'engagement']
+
+// LA CAISSE DU RELEVÉ (ligne 26.6, étapes C1b et C2) : la migration `caisse_retrait_et_versement` donne une branche de plus
+// à `refus_compte_de_bilan` — le compte 53 d'un dossier en trésorerie qui n'est pas la caisse de son plan — et fait
+// accepter la caisse du plan par `ecrire_mouvement_compte_bilan`. Préparée, elle n'est pas dans l'export : la définition
+// exportée est celle d'hier, que `refusCompteDeBilan` suit drapeau baissé. Ses DEUX états se jouent ici quel que soit le
+// drapeau : la définition d'avant la migration (la dernière de l'export qui la précède) contre le module sans la caisse, et
+// celle de la migration — préparée ou exportée — contre le module avec elle.
+const CAISSE_DU_RELEVE = /\d{14}_caisse_retrait_et_versement\.sql$/
+const CAISSE_DU_RELEVE_EXPORTEE = fichiersDuSchema().some((f) => CAISSE_DU_RELEVE.test(f.chemin))
+const MIGRATIONS = [...fichiersDuSchema(), ...fichiersPrepares()]
+  .sort((a, b) => (a.chemin.split('/').pop()! < b.chemin.split('/').pop()! ? -1 : 1))
+
+/** La dernière définition d'une fonction parmi ces fichiers, dans l'ordre de leurs versions. */
+function definitionDans(fichiers: readonly { chemin: string; texte: string }[], nom: string): string {
+  const motif = new RegExp(`create (?:or replace )?function public\\.${nom}\\(`, 'g')
+  const fichier = fichiers.filter((f) => new RegExp(motif.source).test(f.texte)).pop()
+  if (!fichier) throw new Error(`${nom} introuvable`)
+  const debut = [...fichier.texte.matchAll(motif)].pop()!.index
+  return fichier.texte.slice(debut, fichier.texte.indexOf('$$;', debut))
+}
+const AVANT_LA_CAISSE = MIGRATIONS.slice(0, MIGRATIONS.findIndex((f) => CAISSE_DU_RELEVE.test(f.chemin)))
+const AVEC_LA_CAISSE = MIGRATIONS.filter((f) => CAISSE_DU_RELEVE.test(f.chemin))
 const DIRIGEANTS = ['108000', '455000', '467000']
 
 describe('lireCompteSaisi — la saisie d’un compte, sous la forme des comptes de l’application', () => {
@@ -147,7 +171,8 @@ describe('refusCompteDeBilan — le même ordre et les mêmes raisons que la fon
   const cas = casDuRefus(definitionSql('refus_compte_de_bilan'))
 
   it('lit toutes les branches de la fonction', () => {
-    expect(cas.length).toBe(18)
+    // Dix-huit hier ; dix-neuf avec la caisse du relevé, le jour où sa migration entre dans l'export.
+    expect(cas.length).toBe(CAISSE_DU_RELEVE_EXPORTEE ? 19 : 18)
   })
 
   it('rend, compte par compte, modèle par modèle, la phrase de la base ou rien quand elle n’en a pas', () => {
@@ -180,9 +205,11 @@ describe('refusCompteDeBilan — le même ordre et les mêmes raisons que la fon
     expect(() => conditionVraie("p_compte like '1%'", '100000', 'tresorerie', '108000')).toThrow('Condition SQL non reconnue')
   })
 
-  it('accepte les deux comptes proposés, dans les deux modèles et pour tout dirigeant', () => {
-    for (const { compte } of comptesDeBilanProposes(PLAN_PAR_DEFAUT)) {
-      for (const mode of MODES) for (const dirigeant of DIRIGEANTS) expect(refusCompteDeBilan(compte, mode, dirigeant)).toBeNull()
+  it('accepte les comptes proposés, dans chaque modèle et pour tout dirigeant, au plan du dossier', () => {
+    for (const mode of MODES) {
+      for (const { compte } of comptesDeBilanProposes(PLAN_PAR_DEFAUT, mode)) {
+        for (const dirigeant of DIRIGEANTS) expect(refusCompteDeBilanAuPlan(compte, mode, dirigeant, PLAN_PAR_DEFAUT), `${compte} ${mode}`).toBeNull()
+      }
     }
   })
 
@@ -215,6 +242,68 @@ describe('refusCompteDeBilan — le même ordre et les mêmes raisons que la fon
         }
       }
     }
+  })
+})
+
+describe('la caisse du relevé : les deux états de la migration `caisse_retrait_et_versement`', () => {
+  it('la migration est lue, préparée ou exportée, et l’état d’avant aussi', () => {
+    expect(AVEC_LA_CAISSE).toHaveLength(1)
+    expect(AVANT_LA_CAISSE.length).toBeGreaterThan(100)
+  })
+
+  for (const [etat, fichiers, caisseEnBase] of [['sans la caisse', AVANT_LA_CAISSE, false], ['avec la caisse', MIGRATIONS, true]] as const) {
+    it(`${etat} : refusCompteDeBilanSelon rend, compte par compte, la phrase de la fonction SQL de cet état`, () => {
+      const cas = casDuRefus(definitionDans(fichiers, 'refus_compte_de_bilan'))
+      expect(cas.length).toBe(caisseEnBase ? 19 : 18)
+      const atteints = new Set<number>()
+      for (const compte of batterie()) {
+        for (const mode of MODES) {
+          for (const dirigeant of DIRIGEANTS) {
+            const sql = refusSql(cas, compte, mode, dirigeant)
+            const ici = refusCompteDeBilanSelon(compte, mode, dirigeant, caisseEnBase)
+            expect(ici === null ? null : sansApostrophes(ici), `${compte} ${mode} ${dirigeant}`)
+              .toBe(sql.message === null ? null : sansApostrophes(sql.message))
+            atteints.add(sql.rang)
+          }
+        }
+      }
+      expect([...atteints].sort((a, b) => a - b)).toEqual([-1, ...cas.map((_, i) => i)])
+    })
+  }
+
+  it('avec la caisse : la fonction d’écriture reçoit la caisse du PLAN en trésorerie, sans passer par le refus', () => {
+    const sql = definitionDans(MIGRATIONS, 'ecrire_mouvement_compte_bilan')
+    expect(sql).toContain("v_caisse := public.compte_du_role(v_ligne.dossier_id, 'caisse');")
+    expect(sql).toContain("if v_mode = 'tresorerie' and p_compte = v_caisse then\n    v_refus := null;\n  else\n    v_refus := public.refus_compte_de_bilan(p_compte, v_mode, v_dirigeant);")
+    for (const plan of [PLAN_PAR_DEFAUT, PLAN_DECALE]) {
+      expect(refusCompteDeBilanAuPlanSelon(plan.caisse, 'tresorerie', '108000', plan, true)).toBeNull()
+      // Un autre compte 53, que la fonction ne reconnaît pas pour la caisse du plan, sous la phrase neuve.
+      expect(refusCompteDeBilanAuPlanSelon('532000', 'tresorerie', '108000', plan, true)).toContain('Seule la caisse du dossier')
+      // En engagement, la caisse attend sa conception : la phrase d'hier.
+      expect(refusCompteDeBilanAuPlanSelon(plan.caisse, 'engagement', '455000', plan, true)).toContain('s’écrit au 580000')
+    }
+    // Le plan décalé : le 530000 du catalogue n'est pas sa caisse.
+    expect(refusCompteDeBilanAuPlanSelon(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000', PLAN_DECALE, true)).toContain('Seule la caisse du dossier')
+  })
+
+  it('sans la caisse : la caisse du plan se refuse comme hier, sous la phrase des autres comptes de trésorerie', () => {
+    expect(refusCompteDeBilanAuPlanSelon(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000', PLAN_PAR_DEFAUT, false)).toContain('s’écrit au 580000')
+    expect(definitionDans(AVANT_LA_CAISSE, 'ecrire_mouvement_compte_bilan')).not.toContain("'caisse'")
+  })
+
+  it('« Versement d’espèces » se propose avec la caisse en base, en trésorerie seulement, sur la caisse du plan', () => {
+    for (const plan of [PLAN_PAR_DEFAUT, PLAN_DECALE]) {
+      expect(comptesDeBilanProposesSelon(plan, 'tresorerie', true).map((c) => `${c.compte} ${c.libelle}`))
+        .toEqual([`${plan.virements_internes} Virement entre comptes`, `${plan.depots_cautionnements_verses} Dépôt de garantie`, `${plan.caisse} Versement d’espèces`])
+      expect(comptesDeBilanProposesSelon(plan, 'engagement', true)).toHaveLength(2)
+      expect(comptesDeBilanProposesSelon(plan, 'tresorerie', false)).toHaveLength(2)
+    }
+    expect(comptesDeBilanProposes(PLAN_PAR_DEFAUT, 'tresorerie')).toHaveLength(CAISSE_EXPORTEE ? 3 : 2)
+  })
+
+  it('le mouvement se juge avec le plan du dossier : la caisse du plan reçue, selon le drapeau', () => {
+    expect(refusCompteDeBilanDuMouvement(mouvement({ montant: 200 }), PLAN_PAR_DEFAUT.caisse, TRESORERIE) === null).toBe(CAISSE_EXPORTEE)
+    expect(refusCompteDeBilan(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000')).toBe(refusCompteDeBilanSelon(PLAN_PAR_DEFAUT.caisse, 'tresorerie', '108000', CAISSE_EXPORTEE))
   })
 })
 

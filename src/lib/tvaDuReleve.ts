@@ -55,7 +55,7 @@ const enCentimes = (montant: number) => Math.round(Math.abs(montant) * 100)
 // le taux en dixièmes de point — c·t / (1000 + t) arrondi au plus proche, le demi vers le haut, sans un
 // seul nombre à virgule. Le reste de la division se retire avant de diviser : la division est alors
 // exacte, quel que soit le montant.
-function tvaEnCentimes(centimes: number, taux: number): number {
+export function tvaEnCentimes(centimes: number, taux: number): number {
   const t = Math.round(taux * 10)
   const numerateur = 2 * centimes * t + 1000 + t
   const denominateur = 2 * (1000 + t)

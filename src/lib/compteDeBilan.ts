@@ -1,6 +1,7 @@
 import {
   ecritureConforme, ecritureDuMouvement, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire,
 } from './affectationBanque'
+import { CAISSE_EXPORTEE } from './caisse'
 import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import type { ModeleComptable } from './engagement'
@@ -38,12 +39,23 @@ export interface CompteDeBilanPropose {
   aide: string
 }
 
-// LES DEUX COMPTES PROPOSÉS, ceux du PLAN du dossier (580000 et 275000 par défaut). Le compte des virements internes se
-// solde, dans un plan tenu en entier, quand l'autre compte enregistre le même virement en sens inverse ; l'application
-// ne tient qu'un relevé, donc il garde ici le solde de ce qui a été versé sur l'autre compte, que le relevé de cet autre
-// compte justifie.
-export function comptesDeBilanProposes(plan: PlanComptable): readonly CompteDeBilanPropose[] {
-  return [
+// LES COMPTES PROPOSÉS, ceux du PLAN du dossier (580000 et 275000 par défaut). Le compte des virements internes se solde,
+// dans un plan tenu en entier, quand l'autre compte enregistre le même virement en sens inverse ; l'application ne tient
+// qu'un relevé, donc il garde ici le solde de ce qui a été versé sur l'autre compte, que le relevé de cet autre compte
+// justifie.
+//
+// LE VERSEMENT D'ESPÈCES (ligne 26.6, étape C2 ; migration `caisse_retrait_et_versement`, C1b) : en trésorerie, et
+// seulement quand la caisse est en base (`CAISSE_EXPORTEE`), le compte de la caisse du PLAN se propose — un crédit, des
+// espèces déposées en banque ; un débit, des espèces retirées pour la caisse. La base l'accepte de ce dossier seul, et
+// juge la caisse à la fin de la transaction (`premier_jour_negatif_de_la_caisse`) : lib/caisse.ts le dit avant le clic.
+// En engagement, la caisse attend sa conception : rien de plus ne se propose.
+export function comptesDeBilanProposes(plan: PlanComptable, mode: ModeComptable): readonly CompteDeBilanPropose[] {
+  return comptesDeBilanProposesSelon(plan, mode, CAISSE_EXPORTEE)
+}
+
+/** Les comptes proposés selon que la caisse est en base ou non : les deux états du drapeau, que les tests jouent. */
+export function comptesDeBilanProposesSelon(plan: PlanComptable, mode: ModeComptable, caisseEnBase: boolean): readonly CompteDeBilanPropose[] {
+  const proposes: CompteDeBilanPropose[] = [
     {
       compte: plan.virements_internes,
       libelle: 'Virement entre comptes',
@@ -58,6 +70,16 @@ export function comptesDeBilanProposes(plan: PlanComptable): readonly CompteDeBi
         + 'ni charge ni recette.',
     },
   ]
+  if (caisseEnBase && mode === 'tresorerie') {
+    proposes.push({
+      compte: plan.caisse,
+      libelle: 'Versement d’espèces',
+      aide: `Des espèces de la caisse déposées en banque — ou retirées de la banque pour elle : le ${plan.caisse} face à la `
+        + 'banque, ni charge ni recette. Une recette en espèces se compte dans la caisse, jamais une seconde fois ici, et '
+        + 'la caisse ne passe jamais sous zéro.',
+    })
+  }
+  return proposes
 }
 
 // Le libellé d'un compte de bilan pour l'écran : celui que l'application lui donne quand elle le tient, sinon celui du
@@ -102,6 +124,15 @@ export function lireCompteSaisi(saisie: string): SaisieDeCompte {
 // de banque : ils naissent d'une écriture d'inventaire ou de l'affectation du résultat. Un compte d'attente non plus —
 // un mouvement qu'on ne sait pas encore classer reste à traiter, sans quoi il échapperait à la validation.
 export function refusCompteDeBilan(compte: string | null, mode: ModeComptable, dirigeant: string): string | null {
+  return refusCompteDeBilanSelon(compte, mode, dirigeant, CAISSE_EXPORTEE)
+}
+
+// LE MÊME, SELON QUE LA CAISSE EST EN BASE (ligne 26.6, étape C1b) : la migration `caisse_retrait_et_versement` donne au
+// compte 53 d'un dossier en trésorerie une phrase à lui — seule la caisse du plan reçoit un mouvement, et
+// `refusCompteDeBilanAuPlan` l'accepte avant d'appeler celle-ci —, et laisse au 53 en engagement la phrase d'hier.
+// `compteDeBilan.test.ts` exécute la fonction SQL de chaque état — celle de l'export, et celle de la migration préparée
+// tant qu'elle n'y est pas — sur les mêmes comptes, et compare.
+export function refusCompteDeBilanSelon(compte: string | null, mode: ModeComptable, dirigeant: string, caisseEnBase: boolean): string | null {
   if (compte == null || !/^[0-9]{6,10}$/.test(compte)) {
     return 'Ce numéro de compte n’a pas la forme d’un compte de l’application : six à dix chiffres.'
   }
@@ -110,6 +141,10 @@ export function refusCompteDeBilan(compte: string | null, mode: ModeComptable, d
   if (/^512/.test(compte)) {
     return 'Le 512 est le compte du relevé lui-même. Un virement vers un autre compte du professionnel (épargne, second '
       + 'compte bancaire) s’écrit au 580000, virements internes.'
+  }
+  if (caisseEnBase && /^53/.test(compte) && mode === 'tresorerie') {
+    return 'Seule la caisse du dossier, celle de son plan comptable, reçoit un mouvement de banque : un versement '
+      + 'd’espèces, ou un retrait d’espèces pour la caisse, s’écrit sur son compte.'
   }
   if (/^5[1-4]/.test(compte)) {
     return 'Un virement vers un autre compte de trésorerie du professionnel (autre banque, caisse, chèques postaux, régie '
@@ -157,6 +192,20 @@ export function refusCompteDeBilan(compte: string | null, mode: ModeComptable, d
   return null
 }
 
+// LE COMPTE JUGÉ COMME `ecrire_mouvement_compte_bilan` LE JUGE, avec le plan du dossier : en trésorerie, la caisse du
+// PLAN se reçoit sans passer par `refus_compte_de_bilan` (la migration `caisse_retrait_et_versement`) ; tout autre compte
+// — et la caisse en engagement — se juge comme hier. La caisse jamais négative se juge ensuite, à la fin de la transaction
+// (lib/caisse.ts).
+export function refusCompteDeBilanAuPlan(compte: string | null, mode: ModeComptable, dirigeant: string, plan: PlanComptable): string | null {
+  return refusCompteDeBilanAuPlanSelon(compte, mode, dirigeant, plan, CAISSE_EXPORTEE)
+}
+
+export function refusCompteDeBilanAuPlanSelon(compte: string | null, mode: ModeComptable, dirigeant: string, plan: PlanComptable,
+  caisseEnBase: boolean): string | null {
+  if (caisseEnBase && mode === 'tresorerie' && compte === plan.caisse) return null
+  return refusCompteDeBilanSelon(compte, mode, dirigeant, caisseEnBase)
+}
+
 // Le classement que la fonction d'écriture refuse AVANT de regarder le compte, dans son ordre : un règlement groupé,
 // tout autre lien du mouvement, un mouvement de zéro euro. Un mouvement déjà écrit sur un compte de bilan, lui, se
 // réécrit — la fonction remplace le compte et l'écriture. Un mouvement qui paie une déclaration de TVA, la fonction
@@ -186,7 +235,8 @@ export function refusCompteDeBilanDuMouvement(
   compte: string | null,
   modele: ModeleComptable,
 ): string | null {
-  return refusMouvementCompteDeBilan(ligne) ?? refusCompteDeBilan(compte, modele.mode, compteDuDirigeant(modele))
+  return refusMouvementCompteDeBilan(ligne)
+    ?? refusCompteDeBilanAuPlan(compte, modele.mode, compteDuDirigeant(modele), modele.plan)
 }
 
 // L'écriture d'un mouvement sur un compte de bilan : ce compte face à la banque du plan du dossier, dans le sens du
