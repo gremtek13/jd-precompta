@@ -547,21 +547,27 @@ lignes justes, rien n'est resté ; les blocs EQ et VS de `rls.sql`, sans le cont
 suppression et un retrait de droit, que l'outil retient), 0 en faute, 6 mutations sur 6 (HISTORIQUE.md, « LES DEUX
 MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION »).
 
-**Préparé le 28/10/2026, PAS ENCORE APPLIQUÉ : `mentions_figees`** (espace client, étape A7a, ligne 51.5 : la facture
-fige ses mentions). Son fichier porte une version PROVISOIRE, `20261028120000`, après `ventes_sur_dossier_bascule`. Elle
-se COLLE — le corps d'`enregistrer_facture` supprime les lignes qu'il remplace — : le texte à coller pose la ligne
-d'historique sous la version de l'heure du collage, et le fichier se RENOMME à cette version, texte inchangé ; la ligne
-d'historique doit rendre `4d9f6227941812cd031f311aa144d6d6`, fins de ligne ramenées à `\n`. Tant qu'elle n'est pas
-appliquée, la dérive se lit sans elle : 159 fichiers, 159 migrations, `b70ba907…`, la production. Sur la réplique de
-l'étape (la production à 159 migrations, son historique et ses neuf familles égaux à ceux de la production), munie de la
-migration : 160 fichiers, 160 migrations, `2e916da89788b16a2aec99913bfde4d7` des deux côtés. Le socle est inchangé (80
-instructions, `5d53eea2…`) ; l'inventaire compte 2 209 objets (`943745663e3319cc013c4d5a9e43c1a3`, des deux côtés,
-2 167 avant) — vingt-neuf colonnes, onze contraintes, deux fonctions ; la contrainte remplacée et `enregistrer_facture`
-changent sous leur nom. `signature.sql` : quatre familles changent, « colonnes » (866 `23b2bc60…` puis 895
-`05cda372674c2e5cfbcf5f596972d85f`), « contraintes » (670 `d63ab39f…` puis 681 `5ade75836461197a3ea0a690d79ef1bf`),
-« fonctions » (204 `9dbbaf01…` puis 206 `a29afce98127a69e5975db5adbf9bfc6`) et « droits des fonctions » (204
-`a2b5e8ad…` puis 206 `cfa4e213509c544163ddb6bffabb8303`) — les cinq autres inchangées (HISTORIQUE.md, « LA FACTURE FIGE
-SES MENTIONS, EN BASE »).
+**Préparé le 28/10/2026, repris le 29/10/2026, PAS ENCORE APPLIQUÉ : `mentions_figees`, puis
+`iban_hors_des_parametres`** (espace client, étape A7a, ligne 51.5 : la facture fige ses mentions ; A7-Q1 à A7-Q3).
+Leurs fichiers portent des versions PROVISOIRES, `20261028120000` puis `20261028130000`, après
+`ventes_sur_dossier_bascule`. La première se COLLE — le corps d'`enregistrer_facture` supprime les lignes qu'il
+remplace — : le texte à coller pose la ligne d'historique sous la version de l'heure du collage, et le fichier se
+RENOMME à cette version, texte inchangé ; sa ligne d'historique doit rendre `40cca2f99929ff238772b47ae399bd58`, fins de
+ligne ramenées à `\n`. La seconde s'applique ENSUITE par l'outil — elle ne supprime rien, et sa garde refuse l'ordre
+inverse —, le fichier renommé de même à sa version ; sa ligne rend `582096c994fca10adc592f636aaeea77`. Tant qu'elles ne
+sont pas appliquées, la dérive se lit sans elles : 159 fichiers, 159 migrations, `b70ba907…`, la production. Sur la
+réplique de l'étape (la production à 159 migrations, son historique et ses neuf familles égaux à ceux de la production,
+relus le 29/10/2026) : munie de la première, 160 fichiers, 160 migrations, `0830995b93589e8b49c9a2399e790a8c` des deux
+côtés ; des deux, 161, `2b887e8b1c731782584db86b76cdc9eb`. Le socle est inchangé (80 instructions, `5d53eea2…`) ;
+l'inventaire compte 2 210 objets (`9c98c43514b87cafedad6d2324cee799`, des deux côtés, avec la première comme avec les
+deux ; 2 167 avant) — vingt-neuf colonnes, onze contraintes, trois fonctions ; la contrainte remplacée,
+`enregistrer_facture`, puis `enregistrer_parametres_facturation` changent sous leur nom. `signature.sql` : avec la
+première, quatre familles changent, « colonnes » (866 `23b2bc60…` puis 895 `05cda372674c2e5cfbcf5f596972d85f`),
+« contraintes » (670 `d63ab39f…` puis 681 `5ade75836461197a3ea0a690d79ef1bf`), « fonctions » (204 `9dbbaf01…` puis 207
+`2961975803f880a29e290e424e30893c`) et « droits des fonctions » (204 `a2b5e8ad…` puis 207
+`6438f4dc6a134b6b8acac03e52190997`) ; avec la seconde, la seule « fonctions » (207 `7515f3e8fc0e08a1d231f8ab1517a974`) —
+les autres inchangées (HISTORIQUE.md, « LA FACTURE FIGE SES MENTIONS, EN BASE » et « LA FACTURE FIGE SES MENTIONS :
+L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES »).
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
