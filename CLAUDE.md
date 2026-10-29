@@ -39,10 +39,12 @@ importe le FEC (MVP-D5). La répétition générale rejoue son année 2025 réel
 la 2035 déposée (MVP-D6) : ses données entrent vers le 20 novembre, leurs préalables avant. Le praticien valide ses
 factures (MVP-D1), la caisse entre (MVP-D2 ; conçue puis reprise le 28/10/2026 : le praticien la saisit aussi, sur un
 dossier exonéré ou en franchise, et une pièce s'y règle — environ vingt jours, cinq migrations → « LA CAISSE D'UN
-DOSSIER BNC : LA CONCEPTION », « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE »), le plan Pro de
-Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y comptent, souvent
-pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE
-2026 ».
+DOSSIER BNC : LA CONCEPTION », « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE » ; la première,
+`caisse` (C1), préparée le 29/10/2026 hors de l'export (`supabase/preparees/`), s'applique avec la sauvegarde de C2, son
+essai de suppression (`caisseSuppression.sql`) sur une réplique seulement → « LA CAISSE, EN BASE : LA MIGRATION `CAISSE`
+(C1, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque
+les lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER
+BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
