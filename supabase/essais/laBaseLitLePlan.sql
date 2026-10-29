@@ -51,8 +51,9 @@
 -- fait lire aussi à `ecrire_mouvement_compte_bilan` le compte de la caisse du plan (le versement d'espèces en banque).
 -- La liste des quatorze dit l'EXPORT, que src/lib/planComptable.test.ts confronte au texte exporté : elle garde
 -- « banque » ; le contrôle 3 attend, de la base munie de la migration, le rôle `caisse` en plus (`caisse_du_releve`).
--- Le jour où la migration entre dans l'export, la liste porte « banque,caisse » et ce complément se retire (étape C2).
--- Sans la migration, rien ne change.
+-- Sans la migration, rien ne change. ÉTAPE C2 : la liste garde « banque » même le jour où la migration entre dans
+-- l'export — le test y ajoute alors `caisse` de lui-même, comme ce contrôle selon la base —, et rien ne se retouche ici
+-- ce jour-là (HISTORIQUE.md, « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE 26.6) »).
 do $$
 declare
   -- Faux jusqu'à ce que la production porte les six migrations et que l'export les ait reçues ; vrai ensuite.

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
+import { CAISSE_EXPORTEE } from './caisse'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
 import { JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
@@ -16,6 +17,7 @@ import {
   TABLES_AUTO_REFERENCEES,
   TABLES_AUTO_REFERENCEES_PAR_VAGUES,
   TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES,
+  TABLES_DE_LA_CAISSE,
   TABLES_DES_ADRESSES_RECEPTION,
   TABLES_DES_ARTICLES,
   TABLES_DES_CONTACTS,
@@ -287,12 +289,46 @@ function blocDuJournal(texte: string): BlocDesAdresses {
 /** Le plan que le script joue quand la table du journal existe : le même geste que pour les adresses. */
 const avecLeJournal = avecLesAdresses
 
-/** Le plan que le script joue avec les tables des six blocs, dans l'ordre où il les joue : les articles, les adresses
- *  de réception, les contacts, les paramètres de facturation, le journal des désignations, les devis. */
+// LA CAISSE (ligne 26.6, étape C2) : un septième bloc à part la met au plan quand sa table existe, juste après la table
+// qu'il nomme (`pieces_hors_de_france_taux`), les rangs qui suivent reculant d'autant — le geste des articles —, avec son
+// chemin et sa vague (`remplace_id`). Joué après le journal des désignations et avant les devis : sa vague vient après
+// celles des adresses et des paramètres, comme dans la liste du code.
+interface BlocDeLaCaisse extends BlocDesArticles {
+  vagues: { table: string; colonne: string }[]
+}
+
+const MARQUE_DE_LA_CAISSE = '-- ══ La caisse (ligne 26.6, étape C2) ══'
+
+function blocDeLaCaisse(texte: string): BlocDeLaCaisse {
+  const debut = texte.indexOf(MARQUE_DE_LA_CAISSE)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const vagues = /insert into essai_restauration\._vagues \(table_nom, colonne\) values\s*([^;]*);/.exec(corps)?.[1] ?? ''
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    vagues: [...vagues.matchAll(/\('(\w+)','(\w+)'\)/g)].map((m) => ({ table: m[1], colonne: m[2] })),
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.operations_caisse') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table de la caisse existe : la sienne après sa table d'ancrage, et sa vague. */
+function avecLaCaisse(plan: PlanDeLEssai, bloc: BlocDeLaCaisse): PlanDeLEssai {
+  const place = avecLesArticles(plan, bloc)
+  return { ...place, vagues: [...place.vagues, ...bloc.vagues] }
+}
+
+/** Le plan que le script joue avec les tables des sept blocs, dans l'ordre où il les joue : les articles, les adresses
+ *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, les devis. */
 const avecLesBlocs = (texte: string): PlanDeLEssai =>
-  avecLesDevis(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
+  avecLesDevis(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
-  blocDesDevis(texte))
+  blocDeLaCaisse(texte)), blocDesDevis(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -351,6 +387,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const contacts = blocDesContacts(texteDeLEssai)
   const parametres = blocDesParametres(texteDeLEssai)
   const journal = blocDuJournal(texteDeLEssai)
+  const caisse = blocDeLaCaisse(texteDeLEssai)
   // Le plan que le script joue sur une base qui a les tables des six blocs, et celui qu'il joue AUJOURD'HUI : le même que
   // le code, selon que `ARTICLES_EXPORTES`, `ADRESSES_RECEPTION_EXPORTEES`, `CONTACTS_EXPORTES`,
   // `PARAMETRES_FACTURATION_EXPORTES`, `JUMELLE_INVERSEE_EXPORTEE` et `DEVIS_EXPORTES` sont levés ou non.
@@ -360,7 +397,8 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLesContactsDuJour = CONTACTS_EXPORTES ? avecLesContacts(avecLesAdressesDuJour, contacts) : avecLesAdressesDuJour
   const avecLesParametresDuJour = PARAMETRES_FACTURATION_EXPORTES ? avecLesParametres(avecLesContactsDuJour, parametres) : avecLesContactsDuJour
   const avecLeJournalDuJour = JUMELLE_INVERSEE_EXPORTEE ? avecLeJournal(avecLesParametresDuJour, journal) : avecLesParametresDuJour
-  const courant = DEVIS_EXPORTES ? avecLesDevis(avecLeJournalDuJour, devis) : avecLeJournalDuJour
+  const avecLaCaisseDuJour = CAISSE_EXPORTEE ? avecLaCaisse(avecLeJournalDuJour, caisse) : avecLeJournalDuJour
+  const courant = DEVIS_EXPORTES ? avecLesDevis(avecLaCaisseDuJour, devis) : avecLaCaisseDuJour
 
   it('le script a été lu : une table par rang, un chemin par table, des vagues', () => {
     // Le plancher qui distingue « zéro écart » d'« aveugle » : un bloc que l'analyse ne reconnaîtrait plus rendrait des
@@ -437,7 +475,19 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(journal.conditionne).toBe(true)
   })
 
-  it('avec les tables des six blocs, le script joue le plan PRÉVU du code — quels que soient les drapeaux', () => {
+  it('le bloc de la caisse a été lu : sa table, son ancre, son chemin, sa vague, les rangs qui suivent reculés', () => {
+    expect(caisse.tables).toEqual([...TABLES_DE_LA_CAISSE])
+    expect(caisse.ancre).toBe(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(TABLES_DE_LA_CAISSE[0]) - 1])
+    expect(caisse.chemins).toEqual({ operations_caisse: { acces: 'direct', parent: null, colonne: null } })
+    expect(caisse.vagues).toEqual(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => TABLES_DE_LA_CAISSE.includes(a.table)))
+    expect(caisse.recule).toBe(true)
+    expect(caisse.conditionne).toBe(true)
+    // Joué après le journal et avant les devis : sa vague suit celles des autres blocs, comme dans la liste du code.
+    expect(texteDeLEssai.indexOf(MARQUE_DE_LA_CAISSE)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DU_JOURNAL))
+    expect(texteDeLEssai.indexOf(MARQUE_DE_LA_CAISSE)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_DEVIS))
+  })
+
+  it('avec les tables des sept blocs, le script joue le plan PRÉVU du code — quels que soient les drapeaux', () => {
     expect(ecartsAuCode(prevu, ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS, TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES)).toEqual([])
   })
 
@@ -462,6 +512,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     const horsDesBlocs = (t: string) => !TABLES_DES_DEVIS.includes(t) && !TABLES_DES_ARTICLES.includes(t)
       && !TABLES_DES_ADRESSES_RECEPTION.includes(t) && !TABLES_DES_CONTACTS.includes(t)
       && !TABLES_DES_PARAMETRES_FACTURATION.includes(t) && !TABLES_DU_JOURNAL_DES_DESIGNATIONS.includes(t)
+      && !TABLES_DE_LA_CAISSE.includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))

@@ -1,4 +1,5 @@
 import { classeDuCompte, type LigneBalance } from './balanceImport'
+import { CAISSE_EXPORTEE, texteCaisseNegative } from './caisse'
 import { COMPTE_BANQUE } from './comptes'
 import { formatMoney } from './format'
 import type { CleRoleComptable, PlanComptable } from './planComptable'
@@ -74,11 +75,23 @@ const significatif = (compte: string) => compte.replace(/0+$/, '')
 
 /**
  * Le compte de l'application sous lequel reprendre un compte lu dans une balance : tout 512… sur la banque du PLAN du
- * dossier, et, à des zéros près, sa TVA déductible et sa TVA collectée (lib/planComptable.ts).
+ * dossier, et, à des zéros près, sa TVA déductible et sa TVA collectée (lib/planComptable.ts) ; tout 53… sur la caisse du
+ * plan, quand la caisse est en base (`CAISSE_EXPORTEE`).
  */
 export function compteDeLApplication(numero: string, plan: PlanComptable): string {
+  return compteDeLApplicationSelon(numero, plan, CAISSE_EXPORTEE)
+}
+
+// LA CAISSE REPRISE (ligne 26.6, étape C2 ; conception de la caisse, § 5, « la reprise ») : l'ouverture de la caisse est
+// le 53 des à-nouveaux, et la base ne lit que celui du compte de la caisse du PLAN (`premier_jour_negatif_de_la_caisse`).
+// Un 531000 ou un 5300000 de la balance, repris sous son numéro, ouvrirait une caisse que l'application ne verrait pas :
+// la caisse partirait de zéro, et ses premières sorties se refuseraient. Tout compte 53… se range donc sur la caisse du
+// plan, comme tout 512… sur la banque — plusieurs comptes de caisse de la balance y sont réunis, et l'écran le dit
+// (`rapproches`). Le drapeau baissé, rien ne change : la caisse n'est pas en base, et la reprise d'hier reste.
+export function compteDeLApplicationSelon(numero: string, plan: PlanComptable, caisseEnBase: boolean): string {
   const compte = numero.trim()
   if (compte.startsWith('512')) return plan.banque
+  if (caisseEnBase && compte.startsWith('53')) return plan.caisse
   return [plan.banque, plan.tva_deductible, plan.tva_collectee].find((c) => significatif(c) === significatif(compte)) ?? compte
 }
 
@@ -122,8 +135,12 @@ const FAMILLES_DES_BIENS = /^(20|21|28)/
  * de bien. La banque, la TVA déductible et la TVA collectée « à des zéros près » sont déjà rangées par la reprise.
  */
 export function compteQueLApplicationEcrit(numero: string, plan: PlanComptable): string | null {
+  return compteQueLApplicationEcritSelon(numero, plan, CAISSE_EXPORTEE)
+}
+
+export function compteQueLApplicationEcritSelon(numero: string, plan: PlanComptable, caisseEnBase: boolean): string | null {
   const compte = numero.trim()
-  if (compteDeLApplication(compte, plan) !== compte) return null
+  if (compteDeLApplicationSelon(compte, plan, caisseEnBase) !== compte) return null
   const role = COMPTES_DE_ROLE.find((r) => compte.startsWith(r.racine))
   const ecrit = role ? plan[role.role]
     : FAMILLES_DES_BIENS.test(compte) ? significatif(compte).padEnd(6, '0')
@@ -149,6 +166,16 @@ export function dateOuverture(exercice: number): string {
 
 // Le plan du dossier décide où la reprise range la banque et la TVA, et sur quels comptes elle ouvre le résultat d'avant.
 export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuvert: number, plan: PlanComptable): PreparationANouveaux {
+  return preparerANouveauxSelon(balance, exerciceOuvert, plan, CAISSE_EXPORTEE)
+}
+
+// LA CAISSE N'OUVRE JAMAIS AU CRÉDIT (PCG, art. 1215-53 : « Son solde est soit débiteur soit nul. »). La caisse en base, la
+// base refuse une ouverture qui la rendrait négative (`garder_la_caisse`, le geste `ouverture_au_credit`) ; la reprise le
+// dit avant le clic, sous les mots de la base : le premier compte de caisse lu au crédit, le jour de l'ouverture, et le
+// solde de la caisse ce jour-là — celui de tous les comptes de caisse de la balance réunis. Un crédit qu'un débit couvre
+// passe : la base juge le solde, à la fin de la transaction.
+export function preparerANouveauxSelon(balance: readonly LigneBalance[], exerciceOuvert: number, plan: PlanComptable,
+  caisseEnBase: boolean): PreparationANouveaux {
   const lignes: LigneANouveau[] = []
   const rapproches: PreparationANouveaux['rapproches'] = []
   const nonRanges: PreparationANouveaux['nonRanges'] = []
@@ -178,9 +205,9 @@ export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuve
       continue
     }
     const origine = l.compte.trim()
-    const compte = compteDeLApplication(origine, plan)
+    const compte = compteDeLApplicationSelon(origine, plan, caisseEnBase)
     if (compte !== origine) rapproches.push({ compteOrigine: origine, libelle: l.libelle, compte })
-    const ecrit = compteQueLApplicationEcrit(origine, plan)
+    const ecrit = compteQueLApplicationEcritSelon(origine, plan, caisseEnBase)
     if (ecrit) nonRanges.push({ compteOrigine: origine, libelle: l.libelle, compte: ecrit })
     lignes.push({
       compte,
@@ -203,6 +230,10 @@ export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuve
   const totalDebit = lignes.filter((l) => l.sens === 'debit').reduce((s, l) => s + enCentimes(l.montant), 0)
   const totalCredit = lignes.filter((l) => l.sens === 'credit').reduce((s, l) => s + enCentimes(l.montant), 0)
 
+  const caisse = caisseEnBase ? lignes.filter((l) => l.compte === plan.caisse) : []
+  const soldeCaisse = caisse.reduce((s, l) => s + (l.sens === 'debit' ? 1 : -1) * enCentimes(l.montant), 0)
+  const caisseAuCredit = caisse.find((l) => l.sens === 'credit')
+
   let refus: string | null = null
   if (soldeClasse8 !== 0) {
     refus = `Les comptes de classe 8 de cette balance ne sont pas soldés (${formatMoney(Math.abs(soldeClasse8) / 100)}) : `
@@ -214,6 +245,8 @@ export function preparerANouveaux(balance: readonly LigneBalance[], exerciceOuve
       + 'l’ouverture du FEC — reprenez l’export avant de l’enregistrer.'
   } else if (lignes.length === 0) {
     refus = 'Aucun solde à reprendre : tous les comptes de bilan de cette balance sont soldés.'
+  } else if (soldeCaisse < 0 && caisseAuCredit) {
+    refus = texteCaisseNegative('ouverture_au_credit', enCentimes(caisseAuCredit.montant), dateOuverture(exerciceOuvert), soldeCaisse)
   }
 
   return {

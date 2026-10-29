@@ -1,11 +1,15 @@
 import { calculerDeclaration2035 } from '../lib/declaration2035'
 import { cotisationsComptees, cotisationsAEcrire, ecritureDeLaCotisation } from '../lib/cotisationRapprochee'
-import { comptesDeBilanProposes, ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises, refusCompteDeBilanDuMouvement } from '../lib/compteDeBilan'
+import {
+  comptesDeBilanProposes, comptesDeBilanProposesSelon, ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises,
+  refusCompteDeBilanAuPlanSelon, refusCompteDeBilanDuMouvement,
+} from '../lib/compteDeBilan'
+import { ecritureDeLOperation, jugerLaSaisie, premierJourNegatif, type DossierDeLaCaisse } from '../lib/caisse'
 import {
   argumentsDeLaDeclaration, avertissementRetraitPaiementPersonnel, confirmationPaiementPersonnel, ecritureDuPaiementPersonnel,
   paiementsPersonnelsAReprendre,
 } from '../lib/cotisationPersonnelle'
-import { compteDeLApplication, compteQueLApplicationEcrit, preparerANouveaux } from '../lib/aNouveaux'
+import { compteDeLApplication, compteDeLApplicationSelon, compteQueLApplicationEcrit, preparerANouveaux, preparerANouveauxSelon } from '../lib/aNouveaux'
 import { ecritureDeLaDotation, dotationsDuRegistre } from '../lib/amortissements'
 import { ecritureDeLEcheance, echeancesDesynchronisees } from '../lib/echeanceEmprunt'
 import {
@@ -395,7 +399,7 @@ const CAS_DES_MOUVEMENTS: CasDuPlan[] = [
     nom: 'le compte de bilan d’un mouvement : les comptes proposés, l’écriture, le refus qui cite le dirigeant',
     roles: ['virements_internes', 'depots_cautionnements_verses', 'banque', 'exploitant', 'associe'],
     composer: (plan) => [
-      comptesDeBilanProposes(plan),
+      comptesDeBilanProposes(plan, 'tresorerie'),
       ecritureDuCompteDeBilan(VERS_EPARGNE(plan), plan.virements_internes, plan),
       refusCompteDeBilanDuMouvement(mouvement({ id: 'l-x', montant: -10 }), plan.exploitant, modele(plan, 'tresorerie', 'exploitant')),
       refusCompteDeBilanDuMouvement(mouvement({ id: 'l-x', montant: -10 }), plan.associe, modele(plan, 'engagement', 'associe')),
@@ -644,7 +648,43 @@ const CAS_DE_LA_CLOTURE: CasDuPlan[] = [
   },
 ]
 
+// LA CAISSE (ligne 26.6, étape C2) : l'écriture d'une opération — la caisse, le compte de l'exploitant, le produit et la
+// TVA collectée —, la saisie jugée contre l'écriture composée sous le même plan, la caisse rejouée sur le compte du plan,
+// le « Versement d'espèces » proposé et reçu, la caisse reprise d'une balance. Joués avec la caisse en base, quel que soit
+// le drapeau du jour : le plan est la seule source de leurs comptes dès le jour où elle y entre.
+const CAS_DE_LA_CAISSE: CasDuPlan[] = [
+  {
+    nom: 'la caisse : l’écriture d’une opération, la saisie jugée, la caisse rejouée, le versement d’espèces, la reprise',
+    roles: ['caisse', 'exploitant', 'tva_collectee', 'virements_internes', 'depots_cautionnements_verses'],
+    composer: (plan) => {
+      const modele = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000', plan }
+      const honoraires = { libelle: 'Honoraires', compte_comptable: '706200' }
+      const recette = { genre: 'recette' as const, date: '2026-03-02', montant: 120, taux_tva: 20, categorie: honoraires }
+      const apport = { genre: 'apport' as const, date: '2026-03-01', montant: 100, taux_tva: null, categorie: null }
+      const prelevement = { genre: 'prelevement' as const, date: '2026-03-03', montant: 250, taux_tva: null, categorie: null }
+      const dossier: DossierDeLaCaisse = {
+        quiEcrit: 'cabinet', utilisateur: 'u', modele, assujetti: true, aujourdhui: '2026-10-29', ouverture: null, anneesValidees: [],
+        categories: [{ id: 'k', dossier_id: 'd', ...honoraires }],
+        caisse: {
+          compteCaisse: plan.caisse, ouvertures: [{ date: '2026-01-01', compte: plan.caisse, sens: 'debit', montant: 10 }],
+          operations: [], mouvements: [{ id: 'm', date: '2026-03-04', montant: 50, compte_bilan: plan.caisse }], encaissements: [], factures: [],
+        },
+      }
+      const saisie = { genre: 'recette', date: recette.date, montant: 120, categorie_id: 'k', taux_tva: 20, encaissements_du_jour: [], ecritures: ecritureDeLOperation(recette, modele) }
+      const jugee = jugerLaSaisie(saisie, dossier, false, 'n')
+      return [
+        ecritureDeLOperation(recette, modele), ecritureDeLOperation(apport, modele), ecritureDeLOperation(prelevement, modele),
+        jugee.refus ?? premierJourNegatif(jugee.caisse),
+        comptesDeBilanProposesSelon(plan, 'tresorerie', true),
+        refusCompteDeBilanAuPlanSelon(plan.caisse, 'tresorerie', plan.exploitant, plan, true),
+        compteDeLApplicationSelon('531', plan, true),
+        preparerANouveauxSelon([{ compte: '5310', libelle: 'Caisse fictive', debit: 0, credit: 40 }, { compte: '1010', libelle: 'Capital', debit: 40, credit: 0 }], 2026, plan, true).refus,
+      ]
+    },
+  },
+]
+
 export const CAS_DU_PLAN: readonly CasDuPlan[] = [
   ...CAS_DES_PIECES, ...CAS_DES_MOUVEMENTS, ...CAS_DE_LA_TVA, ...CAS_DE_L_INVENTAIRE, ...CAS_DE_LA_CLOTURE,
-  ...CAS_DES_VENTES_FACTUREES,
+  ...CAS_DES_VENTES_FACTUREES, ...CAS_DE_LA_CAISSE,
 ]

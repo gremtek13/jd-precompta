@@ -29,7 +29,7 @@ import type {
 } from '../../lib/types'
 import { ecritureDeLaCotisation, refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
 import {
-  comptesDeBilanProposes, libelleDuCompteDeBilan, lireCompteSaisi, refusCompteDeBilan, refusMouvementCompteDeBilan,
+  comptesDeBilanProposes, libelleDuCompteDeBilan, lireCompteSaisi, refusCompteDeBilanAuPlan, refusMouvementCompteDeBilan,
 } from '../../lib/compteDeBilan'
 import { montantSaisi, ventilationsIncoherentes, type PartSaisie } from '../../lib/ventilationBanque'
 import { dePeriode, libellePeriode } from '../../lib/declarationTva'
@@ -725,12 +725,12 @@ export default function FicheMouvement({
   const [changementCompteDeplie, setChangementCompteDeplie] = useState(false)
   const refusDuMouvementSurBilan = refusMouvementCompteDeBilan(ligne)
   const refusDuCompteDeBilan = (compte: string | null) =>
-    refusDuMouvementSurBilan ?? refusCompteDeBilan(compte, modeComptable, compteDirigeant)
+    refusDuMouvementSurBilan ?? refusCompteDeBilanAuPlan(compte, modeComptable, compteDirigeant, plan)
   const saisieCompte = lireCompteSaisi(compteSaisi)
   // Rien de tapé n'est pas un refus : le bouton attend, sans message en rouge.
-  const refusSaisie = saisieCompte.refus ?? (saisieCompte.compte ? refusCompteDeBilan(saisieCompte.compte, modeComptable, compteDirigeant) : null)
+  const refusSaisie = saisieCompte.refus ?? (saisieCompte.compte ? refusCompteDeBilanAuPlan(saisieCompte.compte, modeComptable, compteDirigeant, plan) : null)
   const libelleSaisi = saisieCompte.compte ? libelleDuCompteDeBilan(saisieCompte.compte) : null
-  const comptesProposes = comptesDeBilanProposes(plan)
+  const comptesProposes = comptesDeBilanProposes(plan, modeComptable)
   const compteDeBilanPropose = surCompteDeBilan ? comptesProposes.find((c) => c.compte === ligne.compte_bilan) ?? null : null
   const libelleCompteDeBilan = ligne.compte_bilan ? libelleDuCompteDeBilan(ligne.compte_bilan) : null
 

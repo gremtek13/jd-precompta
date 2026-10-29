@@ -33,6 +33,7 @@ import {
   type Relation,
 } from './sauvegarde'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
+import { CAISSE_EXPORTEE } from './caisse'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { derniereDefinitionSql } from '../test/schema'
 
@@ -133,9 +134,10 @@ describe('ordre de restauration', () => {
       'pieces_hors_de_france.remplace_id', 'revision_conclusions.remplace_id', 'revision_seuils.remplace_id',
       'revision_explications.remplace_id', 'declarations_ereporting.remplace_id', 'dossier_permanent.remplace_id',
       // Depuis l'étape A6a, les adresses de réception, le jour où leur migration est exportée ; depuis l'étape A5a, les
-      // paramètres de facturation, de même.
+      // paramètres de facturation, de même ; depuis l'étape C2, les opérations de la caisse, de même.
       ...(ADRESSES_RECEPTION_EXPORTEES ? ['adresses_reception.remplace_id'] : []),
       ...(PARAMETRES_FACTURATION_EXPORTES ? ['parametres_facturation.remplace_id'] : []),
+      ...(CAISSE_EXPORTEE ? ['operations_caisse.remplace_id'] : []),
     ])
   })
 

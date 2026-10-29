@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
+import { CAISSE_EXPORTEE } from './caisse'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import {
+  auGrapheDeLaCaisse,
   auGrapheDesExemplaires,
   auPlan,
   auPlanAujourdHui,
+  auPlanDeLaCaisse,
   auPlanDesAdressesReception,
   auPlanDesArticles,
   auPlanDesContacts,
@@ -53,15 +56,18 @@ describe('le filtre du plan', () => {
     // des contacts (sauvegardeContacts.test.ts) ; depuis l'étape A5a, celui des paramètres de facturation
     // (sauvegardeParametresFacturation.test.ts) ; depuis l'étape VF1a, le graphe retire aussi la relation de l'exemplaire d'une
     // facture tant que sa migration n'est pas exportée (sauvegardeExemplaires.test.ts) ; depuis l'étape VF6b, celui du journal
-    // des désignations (sauvegardeDesignations.test.ts).
+    // des désignations (sauvegardeDesignations.test.ts) ; depuis l'étape C2, celui de la caisse, et le graphe retire ses
+    // relations — dont celle du brouillon vers une opération — tant que ses migrations ne sont pas exportées
+    // (sauvegardeCaisse.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
         && auPlanDesParametresFacturation(table, PARAMETRES_FACTURATION_EXPORTES)
-        && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE))
+        && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE) && auPlanDeLaCaisse(table, CAISSE_EXPORTEE))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
-      .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)))
+      .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
+        && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE)))
     expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CHEMINS_DOSSIER)).toEqual(Object.keys(CHEMINS_DOSSIER_PREVUS).filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CLES_PRIMAIRES)).toEqual(Object.keys(CLES_PRIMAIRES_PREVUES).filter((t) => auPlanAujourdHui(t)))

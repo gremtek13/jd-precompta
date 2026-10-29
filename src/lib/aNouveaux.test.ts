@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { compteDeLApplication, compteQueLApplicationEcrit, dateOuverture, ouvertureBanque, preparerANouveaux } from './aNouveaux'
+import {
+  compteDeLApplication, compteDeLApplicationSelon, compteQueLApplicationEcrit, compteQueLApplicationEcritSelon, dateOuverture,
+  ouvertureBanque, preparerANouveaux, preparerANouveauxSelon,
+} from './aNouveaux'
+import { CAISSE_EXPORTEE } from './caisse'
 import type { LigneBalance } from './balanceImport'
 import type { ANouveau } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
-import { PLAN_PAR_DEFAUT } from './planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 
 const ligne = (compte: string, debit: number, credit: number, libelle = ''): LigneBalance => ({ compte, libelle, debit, credit })
 
@@ -37,7 +41,7 @@ describe('compteDeLApplication', () => {
   })
 
   it('laisse tout autre compte sous le numéro de la balance', () => {
-    for (const numero of ['2183', '28183', '164', '108', '5300', '401000']) {
+    for (const numero of ['2183', '28183', '164', '108', '401000']) {
       expect(compteDeLApplication(numero, PLAN_PAR_DEFAUT)).toBe(numero)
     }
   })
@@ -245,5 +249,45 @@ describe('ouvertureBanque', () => {
     // mise en garde.
     expect(ouvertureBanque([aNouveau({ compte: '2183', compte_origine: '2183', montant: 3000 })]))
       .toEqual({ date: '2026-01-01', solde: 0 })
+  })
+})
+
+// LA CAISSE REPRISE (ligne 26.6, étape C2). La caisse en base, tout compte 53 de la balance se range sur la caisse du PLAN :
+// c'est le seul compte de caisse que la base lit pour juger la caisse (`premier_jour_negatif_de_la_caisse`). Une caisse
+// reprise au crédit se refuse avant le clic, sous les mots de la base. Le drapeau baissé, la reprise d'hier : un 53 reste
+// sous son numéro.
+describe('la caisse reprise, selon que la caisse est en base', () => {
+  it('en base : tout 53 sur la caisse du plan, réunis, et l’écran le dit ; sinon, sous son numéro', () => {
+    for (const plan of [PLAN_PAR_DEFAUT, PLAN_DECALE]) {
+      for (const numero of ['53', '530', '5300', '5310000', plan.caisse]) {
+        expect(compteDeLApplicationSelon(numero, plan, true), numero).toBe(plan.caisse)
+        expect(compteDeLApplicationSelon(numero, plan, false), numero).toBe(numero)
+        expect(compteQueLApplicationEcritSelon(numero, plan, true), numero).toBeNull()
+      }
+    }
+    const balance = [ligne('5300', 30, 0, 'Caisse'), ligne('5310', 20, 0, 'Caisse secondaire'), ligne('101', 0, 50, 'Capital')]
+    const avec = preparerANouveauxSelon(balance, 2026, PLAN_PAR_DEFAUT, true)
+    expect(avec.refus).toBeNull()
+    expect(avec.lignes.filter((l) => l.compte === '530000').map((l) => `${l.compteOrigine} ${l.montant}`)).toEqual(['5300 30', '5310 20'])
+    expect(avec.rapproches.map((r) => `${r.compteOrigine} ${r.compte}`)).toEqual(['5300 530000', '5310 530000'])
+    const sans = preparerANouveauxSelon(balance, 2026, PLAN_PAR_DEFAUT, false)
+    expect(sans.lignes.map((l) => l.compte)).toEqual(['5300', '5310', '101'])
+  })
+
+  it('en base : une caisse reprise au crédit se refuse, sous les mots de la base ; un crédit qu’un débit couvre passe', () => {
+    const credit = [ligne('530', 0, 40, 'Caisse'), ligne('101', 40, 0, 'Capital')]
+    expect(preparerANouveauxSelon(credit, 2026, PLAN_PAR_DEFAUT, true).refus)
+      .toBe('Une ouverture de la caisse au crédit, 40,00 €, la rendrait négative le 01/01/2026 (−40,00 €) : le solde d\'une caisse est débiteur ou nul.')
+    expect(preparerANouveauxSelon(credit, 2026, PLAN_PAR_DEFAUT, false).refus).toBeNull()
+    const couvert = [ligne('5300', 0, 10, 'Caisse'), ligne('5310', 25, 0, 'Caisse secondaire'), ligne('101', 0, 15, 'Capital')]
+    expect(preparerANouveauxSelon(couvert, 2026, PLAN_PAR_DEFAUT, true).refus).toBeNull()
+    const decouvert = [ligne('5300', 0, 30, 'Caisse'), ligne('5310', 25, 0, 'Caisse secondaire'), ligne('101', 5, 0, 'Capital')]
+    expect(preparerANouveauxSelon(decouvert, 2026, PLAN_PAR_DEFAUT, true).refus)
+      .toBe('Une ouverture de la caisse au crédit, 30,00 €, la rendrait négative le 01/01/2026 (−5,00 €) : le solde d\'une caisse est débiteur ou nul.')
+  })
+
+  it('le module chargé normalement suit son drapeau', () => {
+    expect(compteDeLApplication('5300', PLAN_PAR_DEFAUT)).toBe(CAISSE_EXPORTEE ? '530000' : '5300')
+    expect(preparerANouveaux([ligne('530', 0, 40), ligne('101', 40, 0)], 2026, PLAN_PAR_DEFAUT).refus === null).toBe(!CAISSE_EXPORTEE)
   })
 })
