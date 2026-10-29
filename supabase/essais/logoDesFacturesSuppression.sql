@@ -26,6 +26,12 @@
 --
 -- Le moteur est celui de `logoDesFactures.sql` ; deux profils de plus : `chef_autre` (le compte du client rangé chef d'un
 -- cabinet jetable C) et `chef_du_cabinet` (le même, rangé chef du cabinet des dossiers — non super-administrateur).
+--
+-- 29/10/2026, AUDIT-Q1 : une garde de tête, la première instruction du bloc, refuse de le jouer hors d'une réplique
+-- (ESSAI_HORS_REPLIQUE), avant toute écriture : le rôle `proprietaire`, qui y tient la place du propriétaire des
+-- tables, manque à la production (relu au catalogue le 29/10/2026). L'en-tête seul ne gardait que son lecteur
+-- (HISTORIQUE.md, « CE QUE RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION », et la fin de « A7Q-Q1 : UNE SOCIÉTÉ
+-- SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION »).
 do $essai$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -38,6 +44,10 @@ declare
   erreur text;
   verdicts jsonb := '[]'::jsonb;
 begin
+  -- La garde de tête (AUDIT-Q1) : sur une réplique seulement, avant toute écriture.
+  if not exists (select 1 from pg_roles where rolname = 'proprietaire') then
+    raise exception 'ESSAI_HORS_REPLIQUE : cet essai supprime des lignes et ne se joue que sur une réplique ; le rôle proprietaire, que toute réplique porte, est absent : rien n''est écrit.';
+  end if;
   if not exists (select 1 from storage.buckets where id = 'ventes') then
     verdicts := verdicts || jsonb_build_object('controle', '0. EN ATTENTE : le seau ventes (migration logo_des_factures) n''est pas en base',
       'genre', 'controle', 'observe', 'seau absent', 'ok', true);
