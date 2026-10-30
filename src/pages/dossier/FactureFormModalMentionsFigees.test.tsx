@@ -12,7 +12,8 @@ import { AVIS_SANS_FORME, RETENUE_EN_LECTURE } from '../../lib/mentionsFigeesVue
 import { MODELE_IBAN_DANS_UN_TEXTE } from '../../lib/parametresFacturation'
 import { motsDuCabinet } from '../../lib/espaceVentes'
 import type { EspaceVentes } from '../../lib/espaceVentes'
-import type { FactureEmise } from '../../lib/types'
+import type { ArticleExoneration, FactureEmise, StatutTva } from '../../lib/types'
+import { mentionsLegalesParDefaut } from '../../lib/factures'
 
 // LA FACTURE FIGE SES MENTIONS, À L'ÉCRAN — LE FORMULAIRE (espace client, étape A7b ; lib/mentionsFigeesVue.ts), monté pour le
 // cabinet et pour le client « Ventes », drapeau `MENTIONS_FIGEES_EXPORTEES` LEVÉ (l'état d'avant se joue dans les autres
@@ -119,11 +120,14 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-function monter(espace: EspaceVentes, o: { facture?: FactureEmise | null; dossierAdresse?: string | null; dossierSiret?: string | null } = {}) {
+function monter(espace: EspaceVentes, o: {
+  facture?: FactureEmise | null; dossierAdresse?: string | null; dossierSiret?: string | null
+  statutTva?: StatutTva; articleExoneration?: ArticleExoneration | null
+} = {}) {
   const commun = {
     dossierId: 'd1', dossierNom: 'Nom interne du dossier', dossierSiret: o.dossierSiret === undefined ? SIRET_VENDEUR : o.dossierSiret,
     dossierAdresse: o.dossierAdresse === undefined ? '1 rue des Essais\n69000 Lyon' : o.dossierAdresse,
-    statutTva: 'redevable' as const, articleExoneration: null, numeroTvaAttribue: false, tvaSurDebits: false,
+    statutTva: o.statutTva ?? 'redevable', articleExoneration: o.articleExoneration ?? null, numeroTvaAttribue: false, tvaSurDebits: false,
     reglageDesVentes: NON_BASCULE, facture: o.facture ?? null, onClose: () => {}, onSaved: () => {},
   }
   render(espace === 'cabinet'
@@ -368,4 +372,70 @@ async function remplirSansAttendre() {
   await screen.findAllByRole('button', { name: /^Choisir un article, ligne/ })
   fireEvent.change(document.querySelector('#tiers-nom')!, { target: { value: 'Patient fictif' } })
   fireEvent.change(designation(), { target: { value: 'Séance' } })
+}
+
+// ── A7B-Q2 (réponse du cabinet du 30/10/2026) : la mention légale proposée suit les paramètres du dossier ──────────────────
+// Quand le dossier a des paramètres de facturation en vigueur, ce sont eux qui disent les conditions de retard ; la mention
+// proposée ne garde que la TVA. Sans paramètres, et tant que leur lecture n'est pas revenue, la phrase d'hier. Une saisie,
+// même vide, est la sienne : la lecture qui revient ne la remplace pas ; un brouillon rouvert garde la sienne.
+const mentionsLegales = () => screen.getByLabelText('Mentions légales') as HTMLTextAreaElement
+const PHRASE_D_HIER = mentionsLegalesParDefaut('redevable', null, false)
+const relacherLaLecture = async () => { await act(async () => { faux.dossierEnAttente.forEach((r) => r()) }) }
+
+for (const espace of ['cabinet', 'client'] as const) {
+  describe(`la mention légale proposée suit les paramètres du dossier, A7B-Q2 (${espace})`, () => {
+    it('des paramètres en vigueur : la phrase d’hier tant que la lecture n’est pas revenue, puis la TVA seule, et c’est elle qui part', async () => {
+      faux.retenirDossier = true
+      monter(espace)
+      await remplirSansAttendre()
+      expect(PHRASE_D_HIER).toMatch(/trois fois le taux d'intérêt légal/)
+      expect(mentionsLegales().value).toBe(PHRASE_D_HIER)
+      await relacherLaLecture()
+      await waitFor(() => expect(valider().disabled).toBe(false))
+      // Un redevable n'a pas de mention de TVA : rien ne se propose.
+      expect(mentionsLegales().value).toBe('')
+      await act(async () => { brouillon().click() })
+      expect((envoi().p_facture as Record<string, unknown>).mentions_legales).toBeNull()
+    })
+
+    it('un dossier exonéré qui a des paramètres : la mention de son exonération, seule', async () => {
+      monter(espace, { statutTva: 'exonere', articleExoneration: 'cgi_261_4_1' })
+      await waitFor(() => expect(mentionsLegales().value).toBe('Exonération de TVA, art. 261, 4, 1° du CGI.'))
+    })
+
+    it('aucun paramètre : la phrase d’hier, et c’est elle qui part', async () => {
+      faux.versions = []
+      faux.retenirDossier = true
+      monter(espace)
+      await remplirSansAttendre()
+      await relacherLaLecture()
+      await waitFor(() => expect(valider().disabled).toBe(false))
+      expect(mentionsLegales().value).toBe(PHRASE_D_HIER)
+      await act(async () => { brouillon().click() })
+      expect((envoi().p_facture as Record<string, unknown>).mentions_legales).toBe(PHRASE_D_HIER)
+    })
+
+    it('une mention saisie, ou vidée, avant le retour de la lecture reste la sienne', async () => {
+      for (const saisie of ['Ma mention.', '']) {
+        faux.retenirDossier = true
+        faux.dossierEnAttente = []
+        monter(espace)
+        await remplirSansAttendre()
+        fireEvent.change(mentionsLegales(), { target: { value: saisie } })
+        await relacherLaLecture()
+        await waitFor(() => expect(valider().disabled).toBe(false))
+        expect(mentionsLegales().value).toBe(saisie)
+        cleanup()
+      }
+    })
+
+    it('un brouillon rouvert garde sa mention, même la phrase d’hier, sur un dossier qui a des paramètres', async () => {
+      monter(espace, { facture: factureFigee({ id: 'b1', statut: 'brouillon', numero: null, mentions_figees: false, mentions_legales: PHRASE_D_HIER, emetteur_adresse: '1 rue des Essais\n69000 Lyon' }) })
+      // La lecture revenue : la validation offerte.
+      await remplirSansAttendre()
+      fireEvent.change(ligneDuFormulaire().querySelectorAll('input')[2], { target: { value: '60' } })
+      await waitFor(() => expect(valider().disabled).toBe(false))
+      expect(mentionsLegales().value).toBe(PHRASE_D_HIER)
+    })
+  })
 }

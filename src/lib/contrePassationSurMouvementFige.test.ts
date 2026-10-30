@@ -51,8 +51,8 @@ function fichierDeLaDerniereDefinition(nom: string): string {
   return fichiers[fichiers.length - 1]?.chemin ?? ''
 }
 
-// La migration POSTÉRIEURE qui reprend la garde — la caisse, étape C6 : `especes_sans_mouvement`, préparée — et en portera
-// la dernière définition le jour où elle entrera dans l'export ; especesSansMouvement.test.ts confronte la sienne à
+// La migration POSTÉRIEURE qui reprend la garde — la caisse, étape C6 : `especes_sans_mouvement`, dans l'export depuis
+// le 30/10/2026 — et en porte la dernière définition ; especesSansMouvement.test.ts confronte la sienne à
 // celle-ci. Ce garde-ci confronte donc la définition que CETTE migration pose, où que soit la dernière.
 const REPRISE_DEPUIS = /\/\d{14}_especes_sans_mouvement\.sql$/
 

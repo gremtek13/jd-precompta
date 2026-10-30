@@ -1,5 +1,5 @@
 import { libelleUnite, sansBlancsAuxBords } from './articles'
-import { categorieJuridique } from './categoriesJuridiques'
+import { CATEGORIE_ENTREPRENEUR_INDIVIDUEL, categorieJuridique } from './categoriesJuridiques'
 import { pourLEspace, type EspaceVentes } from './espaceVentes'
 import { mentionsImprimees, sirenDe, sirenValide, type MentionImprimee } from './factureCii'
 import { formatMoney } from './format'
@@ -118,6 +118,17 @@ export interface JugementDesMentions {
   mentions: MentionsFigees | null
   // Ce que le cabinet valide encore, et qu'on lui dit : une identité sans forme, une facture sans dénomination.
   avis: string[]
+}
+
+/**
+ * Le dossier a-t-il des paramètres de facturation en vigueur, d'après une lecture revenue ENTIÈRE ? (A7B-Q2 : la mention
+ * légale qu'une facture neuve propose n'en garde alors que la TVA.) Faux tant qu'on ne le sait pas : une lecture pas
+ * revenue, illisible, des versions qui ne forment pas une suite — la phrase d'hier se propose.
+ */
+export function parametresEnVigueur(lecture: LectureDeLaValidation | null, dossierId: string): boolean {
+  if (lecture === null || lecture.etat !== 'lu') return false
+  const courante = versionCourante(lecture.versions, dossierId)
+  return courante !== null && courante !== 'rompue'
 }
 
 export const RETENUE_EN_LECTURE = 'Ce que la validation figera (l’identité du dossier, ses paramètres de facturation) est en cours de '
@@ -279,8 +290,13 @@ export function confirmationDesMentions(m: MentionsFigees, nom: string | null, a
 }
 
 // ── Ce que l'aperçu imprime d'une facture qui a figé ses mentions ────────────────────────────────────────────────────
-/** La forme juridique sous son libellé de l'INSEE, son capital à sa suite ; null sans forme ni capital. */
+/**
+ * La forme juridique sous son libellé de l'INSEE, son capital à sa suite ; null sans forme ni capital. Rien pour un
+ * entrepreneur individuel (A7B-Q1, réponse du cabinet du 30/10/2026) : son nom porte déjà « EI » (C. com., art. R526-27),
+ * que « Entrepreneur individuel » redirait dessous ; il n'a pas de capital.
+ */
 export function formeEtCapital(forme: string | null, capital: number | null): string | null {
+  if (forme === CATEGORIE_ENTREPRENEUR_INDIVIDUEL) return null
   const libelle = forme === null ? null : categorieJuridique(forme)?.libelle ?? forme
   const auCapital = capital === null ? null : `au capital de ${formatMoney(capital)}`
   if (libelle && auCapital) return `${libelle} ${auCapital}`

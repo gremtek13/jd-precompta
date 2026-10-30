@@ -12,9 +12,9 @@ import {
   type LigneDeFacture, type MouvementClasse, type SaisieEncaissement,
 } from './encaissementsFactures'
 
-// LA CAISSE : LE RESSERREMENT (ligne 26.6, étape C6 ; MVP-D2). La migration `especes_sans_mouvement` — PRÉPARÉE dans
-// supabase/preparees/, pas encore appliquée ; elle entrera dans l'export, texte inchangé, sous la version de sa ligne
-// d'historique — reprend la garde des encaissements (`garder_encaissement_facture`) telle que
+// LA CAISSE : LE RESSERREMENT (ligne 26.6, étape C6 ; MVP-D2). La migration `especes_sans_mouvement` — préparée dans
+// supabase/preparees/, appliquée le 30/10/2026 et entrée dans l'export, texte inchangé, sous la version de sa ligne
+// d'historique (`20261030224203`) — reprend la garde des encaissements (`garder_encaissement_facture`) telle que
 // `contre_passation_sur_mouvement_fige` l'a laissée, et n'y fait qu'INSÉRER une règle : un encaissement en espèces ne cite
 // aucun crédit, de toute facture, à l'insertion comme au rattachement, la restauration exceptée. Ce garde la confronte à
 // l'export au caractère près ; relit dans son texte les mots, le code et la règle que le module redit

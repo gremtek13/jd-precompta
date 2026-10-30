@@ -2063,7 +2063,7 @@ describe('EncaissementsFactureModal — l’impayé d’un encaissement jamais d
 
 // ── LA CAISSE, ÉTAPE C6 : UN ENCAISSEMENT EN ESPÈCES NE CITE AUCUN CRÉDIT ────────────────────────────────────────────────
 //
-// La migration `especes_sans_mouvement` (préparée) fait refuser par la garde des encaissements des espèces qui citent un
+// La migration `especes_sans_mouvement` (en base) fait refuser par la garde des encaissements des espèces qui citent un
 // crédit ; un resserrement vient en dernier : la fenêtre cesse d'offrir le geste AVANT que la base ne le refuse. Ce que ces
 // cas gardent, et que le module (especesSansMouvement.test.ts) ne voit pas : le câblage — les espèces absentes des moyens
 // d'un crédit imposé, le choix du mouvement remplacé par la phrase quand les espèces sont choisies, le mouvement choisi qui
