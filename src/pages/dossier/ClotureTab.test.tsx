@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
 import ClotureTab from './ClotureTab'
 import type { Immobilisation } from '../../lib/types'
@@ -18,6 +18,18 @@ import type { EncaissementVendu, FactureVendue } from '../../lib/ventesFacturees
 // TOUTES les entrées de la déclaration, pas seulement les pièces. Il n'en vérifiait qu'une sur
 // cinq — il promettait donc « ce formulaire est bâti sur tout » sans pouvoir le tenir. Un
 // garde-fou qui ment est pire qu'un garde-fou absent : on cesse d'aller voir.
+// LA CAISSE (ligne 26.6, étape C3a) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
+// réseau) tant qu'un cas n'en pose pas une autre — lue en entier, lue en partie —, pour jouer l'écran le drapeau levé.
+const caisseDuTest = vi.hoisted(() => ({ lecture: null as null | ((dossierId: string) => unknown) }))
+vi.mock('../../lib/caisseLecture', async (original) => {
+  const vrai = await original<typeof import('../../lib/caisseLecture')>()
+  return {
+    ...vrai,
+    lireLaCaisse: (dossierId: string) => (caisseDuTest.lecture ? Promise.resolve(caisseDuTest.lecture(dossierId)) : vrai.lireLaCaisse(dossierId)),
+  }
+})
+afterEach(() => { caisseDuTest.lecture = null })
+
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
   // Le rôle de qui regarde : seul le chef du cabinet valide un exercice.
@@ -3076,5 +3088,48 @@ describe('ClotureTab — les ventes facturées', () => {
     within((await screen.findByText(/Report sur la déclaration des revenus 2025/)).parentElement!).getByText(/Déficit de 720 € : case 5QE/)
     expect(screen.queryByText(/CLIENT QUITTÉ/)).toBeNull()
     for (const ligne of LIGNES_DISCRETES) expect(screen.queryByText(ligne)).toBeNull()
+  })
+})
+
+const OPERATION_2025 = { id: 'o', dossier_id: 'dossier-de-test', genre: 'recette' as const, date: '2025-06-12', montant: 200, categorie_id: 'cat-hono', taux_tva: null, encaissements_du_jour: [], piece_id: null, origine: 'cabinet' as const, remplace_id: null, cree_le: '2025-06-12T18:00:00Z', cree_par: 'u', retire_le: null, retire_par: null }
+
+
+// LA CAISSE DANS LA 2035 (ligne 26.6, étape C3a), le drapeau levé : l'écran lit la caisse avec le reste, en compte les
+// recettes à leur date, et ne calcule rien d'une caisse lue en partie — il le dit, et n'offre ni formulaire ni validation.
+describe('ClotureTab — les recettes de caisse', () => {
+  const HONORAIRES = {
+    id: 'cat-hono', dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 2, compte_comptable: '706000',
+    poste_2035: 'Recettes encaissées y compris les remboursements de frais',
+  }
+  const RECETTE = OPERATION_2025
+
+  function poserLaCaisse(lecture: (dossierId: string) => unknown) {
+    poser()
+    faux.parTable.categories = [CATEGORIE, HONORAIRES]
+    caisseDuTest.lecture = lecture
+  }
+
+  it('compte une recette en espèces à sa date, dans la ligne 1', async () => {
+    poserLaCaisse((dossierId) => ({ dossierId, enBase: true, lignes: [RECETTE], complete: true, motif: null }))
+    monter(2025)
+    // 600 € de cotisations et 120 € d'achat, 200 € d'espèces reçues : un déficit de 520 €.
+    const report = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(report.parentElement!).getByText(/Déficit de 520 € : case 5QE/)
+    expect(screen.queryByText(/La caisse du dossier/)).toBeNull()
+  })
+
+  it('une caisse lue en partie : ni 2035, ni formulaire, et l’écran le dit', async () => {
+    poserLaCaisse((dossierId) => ({ dossierId, enBase: true, lignes: [], complete: false, motif: 'lecture interrompue' }))
+    monter(2025)
+    await screen.findByText(/La caisse du dossier n.a pas pu être lue en entier \(lecture interrompue\)/)
+    expect(screen.queryByText(/Report sur la déclaration des revenus/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Remplir le formulaire officiel/ })).toBeNull()
+  })
+
+  it('la caisse d’un autre dossier ne vaut pas : l’écran attend', async () => {
+    poserLaCaisse(() => ({ dossierId: 'un-autre-dossier', enBase: true, lignes: [RECETTE], complete: true, motif: null }))
+    monter(2025)
+    await screen.findByText('Chargement…')
+    expect(screen.queryByText(/Report sur la déclaration des revenus/)).toBeNull()
   })
 })

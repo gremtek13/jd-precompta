@@ -17,6 +17,18 @@ import type { Predicat } from '../../test/filtresPostgrest'
 // Et l'écran porte DEUX jeux de pièces — `piecesValidees` et `recettesValidees` — dont CLAUDE.md
 // raconte qu'un nom y a déjà menti. Se tromper d'argument ne se verrait pas au type, les deux étant
 // des `Piece[]` : c'est ce qu'aucun test de `src/lib` ne peut voir.
+// LA CAISSE (ligne 26.6, étape C3a) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
+// réseau) tant qu'un cas n'en pose pas une autre — lue en entier, lue en partie —, pour jouer l'écran le drapeau levé.
+const caisseDuTest = vi.hoisted(() => ({ lecture: null as null | ((dossierId: string) => unknown) }))
+vi.mock('../../lib/caisseLecture', async (original) => {
+  const vrai = await original<typeof import('../../lib/caisseLecture')>()
+  return {
+    ...vrai,
+    lireLaCaisse: (dossierId: string) => (caisseDuTest.lecture ? Promise.resolve(caisseDuTest.lecture(dossierId)) : vrai.lireLaCaisse(dossierId)),
+  }
+})
+afterEach(() => { caisseDuTest.lecture = null })
+
 const faux = vi.hoisted(() => ({
   pieces: [] as unknown[],
   categories: [] as unknown[],
@@ -824,5 +836,44 @@ describe('EstimationTab — un retrait refusé se dit', () => {
 
     expect(await screen.findByText("Aucun repère annuel enregistré pour l'instant.")).toBeTruthy()
     expect(screen.queryByText(/n’a pas pu être retiré/)).toBeNull()
+  })
+})
+
+const OPERATION_ESTIMATION = { id: 'o', dossier_id: 'dossier-de-test', genre: 'recette' as const, date: '2025-06-01', montant: 500, categorie_id: 'cat-hono', taux_tva: null, encaissements_du_jour: [], piece_id: null, origine: 'cabinet' as const, remplace_id: null, cree_le: '2025-06-01T18:00:00Z', cree_par: 'u', retire_le: null, retire_par: null }
+
+
+// LA CAISSE DANS L'ESTIMATION (ligne 26.6, étape C3a), le drapeau levé : ses recettes en espèces entrent dans le chiffre
+// d'affaires d'un repère calculé ; lue en partie, ce calcul est suspendu, et l'écran le dit.
+describe('EstimationTab — les recettes de caisse', () => {
+  const HONORAIRES = categorieDeTest({ id: 'cat-hono', code: 'honoraires', libelle: 'Honoraires', compte_comptable: '706000', poste_2035: 'Recettes' })
+  const annee = () => new Date().getFullYear() - 1
+  function poser() {
+    faux.pieces = [pieceDeTest()]
+    faux.categories = [categorieDeTest(), HONORAIRES]
+    faux.immobilisations = []
+    faux.upserts = []
+    faux.upsertsAnnuels = []
+    faux.muetPieces = null
+  }
+  const operation = (o: Record<string, unknown>) => ({ ...OPERATION_ESTIMATION, date: `${annee()}-06-01`, cree_le: `${annee()}-06-01T18:00:00Z`, ...o })
+
+  it('compte les espèces reçues au chiffre d’affaires du repère calculé', async () => {
+    poser()
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [operation({})], complete: true, motif: null })
+    await rendre()
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    expect(faux.upsertsAnnuels).toEqual([expect.objectContaining({ annee: annee(), chiffre_affaires: 500, source: 'calculee' })])
+  })
+
+  it('une caisse lue en partie : le calcul du chiffre d’affaires est suspendu, et l’écran le dit', async () => {
+    poser()
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [], complete: false, motif: 'lecture interrompue' })
+    await rendre()
+    expect(screen.getByText(/La caisse du dossier n.a pas pu être lue en entier \(lecture interrompue\)/)).toBeTruthy()
+    expect(screen.getByText(/Calcul du chiffre d’affaires suspendu : la caisse du dossier/)).toBeTruthy()
+    const annuel = screen.getByRole('button', { name: 'Calculer CA + cotisations' })
+    expect(annuel.hasAttribute('disabled')).toBe(true)
+    await act(async () => { annuel.click() })
+    expect(faux.upsertsAnnuels).toHaveLength(0)
   })
 })
