@@ -92,30 +92,6 @@ const VISITES = [
   // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
   ...ONGLETS.map((onglet) => ({ dossier: onglet === 'tva' ? 'd7' : 'd1', onglet, nom: onglet })),
   ...ONGLETS_ENGAGEMENT.map((onglet) => ({ dossier: 'd8', onglet, nom: `engagement/${onglet}` })),
-  // LA CAISSE, la fiche d'un crédit dont le libellé dit un versement d'espèces (étape C4) : l'alerte qui le dit, le solde de la
-  // caisse ce jour-là, « Versement d'espèces » ; puis celle d'un versement déjà classé, ses mots sur la caisse. L'onglet lui-même
-  // est visité avec les autres (`ONGLETS`). Mesurées contre le corps de la fiche.
-  ...(CAISSE ? [
-    {
-      dossier: 'd1', onglet: 'banque', nom: 'caisse/fiche-versement', fenetre: '.fiche-mouvement-corps',
-      apres: async (page) => {
-        const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
-        if (await fermer.count()) await fermer.first().click()
-        await page.locator('tr.clickable', { hasText: 'VERSEMENT ESPECES GUICHET' }).first().click()
-        await page.getByText(/Avant ce mouvement, la caisse du/).first().waitFor({ timeout: 10000 })
-      },
-    },
-    {
-      dossier: 'd1', onglet: 'banque', nom: 'caisse/fiche-classe', fenetre: '.fiche-mouvement-corps',
-      apres: async (page) => {
-        const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
-        if (await fermer.count()) await fermer.first().click()
-        await page.getByRole('button', { name: 'Tous', exact: true }).click()
-        await page.locator('tr.clickable', { hasText: 'VERSEMENT ESPECES AGENCE' }).first().click()
-        await page.getByText(/Dans la caisse : sans ce mouvement/).first().waitFor({ timeout: 10000 })
-      },
-    },
-  ] : []),
   // La connexion bancaire, une récupération faite : l'aperçu de ce qui entrerait — son tableau, son
   // libellé long, ses boutons — n'apparaît qu'après un clic, donc aucune visite ordinaire ne le voit.
   {
@@ -1191,6 +1167,31 @@ const VISITES = [
     dossier: 'd12', onglet: 'acces', nom: 'acces/dossier-bascule',
     apres: async (page) => { await page.getByText(/Les factures de ce dossier sont la source de leurs ventes/u).first().waitFor({ timeout: 10000 }) },
   },
+  // LA CAISSE, la fiche d'un crédit dont le libellé dit un versement d'espèces (étape C4) : l'alerte qui le dit, le solde de la
+  // caisse ce jour-là, « Versement d'espèces » ; puis celle d'un versement déjà classé, ses mots sur la caisse. L'onglet lui-même
+  // est visité avec les autres (`ONGLETS`). Mesurées contre le corps de la fiche ; placées avant le relevé du dossier basculé, dont la première visite
+  // ferme le volet que celles-ci laissent ouvert (sous 1 280 px il se superpose et intercepterait les clics des visites d'avant).
+  ...(CAISSE ? [
+    {
+      dossier: 'd1', onglet: 'banque', nom: 'caisse/fiche-versement', fenetre: '.fiche-mouvement-corps',
+      apres: async (page) => {
+        const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+        if (await fermer.count()) await fermer.first().click()
+        await page.locator('tr.clickable', { hasText: 'VERSEMENT ESPECES GUICHET' }).first().click()
+        await page.getByText(/Avant ce mouvement, la caisse du/).first().waitFor({ timeout: 10000 })
+      },
+    },
+    {
+      dossier: 'd1', onglet: 'banque', nom: 'caisse/fiche-classe', fenetre: '.fiche-mouvement-corps',
+      apres: async (page) => {
+        const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+        if (await fermer.count()) await fermer.first().click()
+        await page.getByRole('button', { name: 'Tous', exact: true }).click()
+        await page.locator('tr.clickable', { hasText: 'VERSEMENT ESPECES AGENCE' }).first().click()
+        await page.getByText(/Dans la caisse : sans ce mouvement/).first().waitFor({ timeout: 10000 })
+      },
+    },
+  ] : []),
   // LE RELEVÉ D'UN DOSSIER BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5a1), sur la consultante d12 — archivé, il n'est vu
   // que de ces visites : la pastille d'un mouvement RÉSERVÉ à l'encaissement d'une facture, « proposé par le client », puis le
   // relevé entier et celle, verte, d'un mouvement CLASSÉ par ses encaissements ; enfin la fiche de chacun, sans section de

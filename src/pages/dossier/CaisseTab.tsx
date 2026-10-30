@@ -377,7 +377,7 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
               type="text"
               inputMode="decimal"
               autoComplete="off"
-              placeholder={recette ? 'ex. 485,00 (négatif : espèces rendues)' : 'ex. 100,00'}
+              placeholder={recette ? 'ex. 485,00' : 'ex. 100,00'}
               value={formulaire.montant}
               onChange={(e) => champ('montant', e.target.value)}
             />
@@ -386,7 +386,8 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
         {recette && (
           <p className="muted" style={{ margin: '0 0 8px' }}>
             Le total des espèces reçues ce jour-là, pour cette nature et ce taux, tel que le brouillard du praticien le porte
-            — sans les règlements en espèces des factures de l’application, que la caisse compte déjà.
+            — sans les règlements en espèces des factures de l’application, que la caisse compte déjà. Des espèces rendues se
+            saisissent en négatif.
           </p>
         )}
         {phraseDesEspeces && <p className="fiche-mouvement-alerte">{phraseDesEspeces}</p>}
@@ -534,10 +535,14 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
                     return (
                       <tr key={`${jour.jour}-${l.nature}-${o?.id ?? i}`}>
                         <td data-libelle="Nature">
-                          {libelleDeLaLigne(l, donnees.categories)}
-                          {origine && <> <span className="badge badge-neutral">{origine}</span></>}
-                          {o !== null && o.remplace_id != null && <> <span className="badge badge-neutral">Remplace une version retirée</span></>}
-                          {l.nature === 'encaissement' && <> <span className="badge badge-neutral">Comptée par la facture</span></>}
+                          {/* Un seul enfant : repliée en fiche (téléphone), la cellule est un `flex` dont chaque enfant se partage la
+                              place — le texte et ses pastilles, séparés, laissaient au texte une colonne si étroite qu'un mot s'y coupait. */}
+                          <div>
+                            {libelleDeLaLigne(l, donnees.categories)}
+                            {origine && <> <span className="badge badge-neutral">{origine}</span></>}
+                            {o !== null && o.remplace_id != null && <> <span className="badge badge-neutral">Remplace une version retirée</span></>}
+                            {l.nature === 'encaissement' && <> <span className="badge badge-neutral">Comptée par la facture</span></>}
+                          </div>
                         </td>
                         <td data-libelle="Entrée">{l.centimes > 0 ? euros(l.centimes) : ''}</td>
                         <td data-libelle="Sortie">{l.centimes < 0 ? euros(-l.centimes) : ''}</td>
