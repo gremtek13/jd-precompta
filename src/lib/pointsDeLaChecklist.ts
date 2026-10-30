@@ -36,6 +36,12 @@ import { exercicesAReclamer, moisManquantsDe, pointsUtiles, type ExerciceAReclam
 import type { LectureDesVentesDuReleve } from './mouvementsDesVentes'
 import { detailDesEncaissementsSansMouvement, ventesDeLaChecklist } from './ventesDeLaChecklist'
 import { exemplairesDesSources, horsDesExemplairesDesSources, type FacturesSources } from './facturesSources'
+import type { CaisseLue } from './recettesDeCaisse'
+import {
+  caisseNegative, caisseNegativeDite, detailDesOperationsAReprendre, detailDesRecettesARevoir, detailDesVersementsEnRecette,
+  dossierTientUneCaisse, etatDeLaCaisseLue, operationsDeCaisseAReprendre, operationsDeCaisseDuDossier, recettesDeCaisseARevoir,
+  versementsDEspecesEnRecette, type EspecesDesFactures,
+} from './controlesDeLaCaisse'
 
 // LES POINTS DE LA VUE D'ENSEMBLE (pages/dossier/ChecklistTab.tsx) : les points à traiter, rangés en paramétrage et en
 // travail, et les documents attendus du client. Ils étaient calculés DANS l'écran, et l'onglet de la révision (ligne 41,
@@ -128,6 +134,15 @@ export interface DonneesDeLaChecklist {
   // l'onglet Banque, lue ou incomplète ; NULLE pour un dossier qui n'a pas basculé, qui ne lit rien de plus. Incomplète, les
   // deux points qui en dépendent se taisent, et l'écran le dit.
   ventesFacturees: LectureDesVentesDuReleve | null
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts), telle que lue (lib/caisseLecture.ts) : absente
+  // (le drapeau `CAISSE_EXPORTEE` baissé — aucun point de plus, la liste est celle d'hier), lue en entier, ou lue en partie —
+  // ses quatre points se taisent alors, et l'écran le dit.
+  caisse: CaisseLue
+  // Le motif de la première des lectures dont les points de la caisse dépendent — ses opérations, le brouillon, les
+  // catégories, le relevé, la reprise, les ventilations — qui n'est pas entière, ou rien ; rien aussi pour une caisse absente.
+  // Sans valeur par défaut : lue en partie, une entrée les tait — jamais « rien à reprendre » sur ce qu'on n'a pas lu en
+  // entier.
+  entreesDeLaCaisseIncompletes: string | null
 }
 
 /** Ce que l'écran sait du dossier et du moment, lu au rendu. */
@@ -168,7 +183,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     categories, ecritures, emprunts, ventilations, ventilationsPartielles, reglements, reglementsPartiels, paiementsPartiels,
     lettragesManuels, vehicules, declarationsTva, declarationsPartielles, facturesEmises, transmissions, jumellesPartielles,
     info, infoInconnue, anneesCloturees, ouverture, ouvertureIncomplete, ventesFacturees, facturesSources, aNouveaux, soldesReportes,
-    entreesDeLOuvertureIncompletes,
+    entreesDeLOuvertureIncompletes, caisse, entreesDeLaCaisseIncompletes,
   } = d
   const { assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees, aujourdHui, anneeCourante, moisEcoules, premierJourDuMois } = c
 
@@ -463,6 +478,31 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     }, 'complete')
   const ecartDOuverture = confrontation?.etat === 'ecarts' ? ouvertureEnEcart(confrontation) : null
 
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts ; conception, § 4 et § 5) : quatre points, que
+  // la caisse lue EN ENTIER fait paraître. ABSENTE (le drapeau baissé), rien n'est calculé et la liste est celle d'hier, au
+  // caractère près. Lue en partie, ou une de ses entrées (`entreesDeLaCaisseIncompletes`), ils se taisent — leur silence ne
+  // prouverait rien —, et l'écran le dit. Les espèces des factures d'un dossier basculé (la lecture des ventes facturées) ne
+  // servent qu'à deux d'entre eux : lues en partie, ces deux-là se taisent seuls, sous le bandeau des ventes facturées.
+  // L'onglet Caisse n'existe pas encore (étape C4) : trois points mènent à Écritures, où les lignes de la caisse se lisent,
+  // et leur détail nomme chaque opération ; le quatrième mène à Banque, où le mouvement se voit sous « Rapprochés ».
+  const caisseDuDossier = operationsDeCaisseDuDossier(caisse, caisse.dossierId)
+  const caisseLue = caisseDuDossier.etat === 'lue' ? caisseDuDossier : null
+  const caisseJugee = caisseLue !== null && entreesDeLaCaisseIncompletes === null ? caisseLue.operations : null
+  const especes: EspecesDesFactures = ventesFacturees === null ? { etat: 'sans_objet' }
+    : ventesFacturees.etat === 'incomplete' ? { etat: 'incomplete', motif: ventesFacturees.motif }
+      : { etat: 'lues', encaissements: ventesFacturees.sources.encaissements, factures: ventesFacturees.sources.factures }
+  const dossierDeLaCaisse = {
+    modele, assujettiTva, categories, ecritures, frontiere, ouvertures: aNouveaux, mouvements: lignes, especes,
+  }
+  const caisseAReprendre = caisseJugee === null ? [] : operationsDeCaisseAReprendre(caisseJugee, dossierDeLaCaisse)
+  const etatDeLaCaisse = caisseJugee === null ? null : etatDeLaCaisseLue(caisseJugee, dossierDeLaCaisse)
+  const caisseEnNegatif = etatDeLaCaisse === null ? null : caisseNegative(etatDeLaCaisse, frontiere)
+  const recettesARevoir = etatDeLaCaisse === null || caisseJugee === null ? [] : recettesDeCaisseARevoir(caisseJugee, etatDeLaCaisse, frontiere)
+  // Un symptôme, sur une caisse qui tient au moins une opération vivante (§ 4 a) : un crédit libellé « VERSEMENT ESPECES »
+  // rangé en recette compte peut-être deux fois les espèces que la caisse a déjà comptées.
+  const versementsEnRecette = caisseJugee === null || dossierTientUneCaisse(caisseDuDossier) !== 'oui' ? []
+    : versementsDEspecesEnRecette(lignes, ventilations, categories, assujettiTva, frontiere)
+
   const tousLesPointsATraiter: PointATraiter[] = [
     // En tête, et en « erreur » : c'est le seul point de cette liste qui ne se voit nulle part
     // ailleurs. Une pièce validée sans catégorie a l'air traitée — elle ne produit pourtant ni
@@ -579,6 +619,32 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     { id: 'reglements-groupes-incoherents', label: 'virement(s) groupé(s) dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement', action: 'Régler de nouveau ou annuler ces virements', nb: reglementsFaux.length, cible: 'banque', severite: 'erreur' },
     // « Erreur » : la 2035 compte la pièce une fois, et l'argent versé en trop n'y est nulle part.
     { id: 'pieces-payees-en-trop', label: 'pièce(s) payée(s) plus que leur montant — un paiement en double ?', action: 'Annuler le paiement en trop', nb: payeesEnTrop.length, cible: 'banque', severite: 'erreur' },
+    // LA CAISSE (étape C3b) : trois points en « erreur », que la validation reprend sous les mêmes identifiants — ils ne
+    // paraissent que sur une caisse lue ; absente, la liste est celle d'hier.
+    ...(caisseLue === null ? [] : [
+      // Défensif : la base écrit l'opération et son écriture d'un tenant. Un plan ou un statut de TVA changé depuis la saisie,
+      // ou une restauration, la ferait diverger : la 2035 et le FEC ne diraient plus la même caisse.
+      {
+        id: 'caisse-a-reprendre', label: 'opération(s) de caisse dont l’écriture manque, ne suit plus l’opération ou ne peut plus s’écrire — à retirer et saisir de nouveau',
+        action: 'Voir les écritures', nb: caisseAReprendre.length, cible: 'ecritures' as const, severite: 'erreur' as const,
+        detail: caisseAReprendre.length > 0 ? detailDesOperationsAReprendre(caisseAReprendre) : undefined,
+      },
+      // Défensif aussi : la base refuse toute écriture qui rendrait la caisse négative (PCG, art. 1215-53). Seule une
+      // restauration d'un état fautif la laisserait ainsi. Un point qui ne compte rien : la caisse l'est ou non.
+      {
+        id: 'caisse-negative', label: caisseEnNegatif === null ? '' : `La caisse est négative le ${caisseNegativeDite(caisseEnNegatif)} — son solde est débiteur ou nul`,
+        action: 'Voir les écritures', nb: caisseEnNegatif === null ? 0 : 1, cible: 'ecritures' as const, severite: 'erreur' as const,
+        detail: caisseEnNegatif === null ? undefined : 'Une recette en espèces manque avant ce jour, ou une sortie d’espèces est de trop : la saisir, ou la retirer.',
+        sansNombre: true,
+      },
+      // CAISSE-Q2, (A) : la saisie d'une recette reconnaît les espèces des factures de son jour ; un encaissement enregistré,
+      // retiré ou rattaché depuis change ce jour-là, et le total saisi se revoit.
+      {
+        id: 'recettes-de-caisse-a-revoir', label: 'recette(s) en espèces dont le jour a changé depuis la saisie — un encaissement en espèces d’une facture enregistré, retiré ou rattaché depuis',
+        action: 'Voir les écritures', nb: recettesARevoir.length, cible: 'ecritures' as const, severite: 'erreur' as const,
+        detail: recettesARevoir.length > 0 && etatDeLaCaisse !== null ? detailDesRecettesARevoir(recettesARevoir, etatDeLaCaisse) : undefined,
+      },
+    ]),
     // « Erreur » : la validation de cet exercice se refuse sur cet écart (même identifiant que son préalable), et le dire ici, c'est
     // le dire AVANT le geste. Rien ne s'y corrige — les soldes reportés sont figés avec l'exercice validé — : le point renvoie
     // à l'onglet Bilan, à la ligne « Ouverture », qui montre l'écart compte par compte. Un point qui ne compte rien : l'exercice
@@ -641,6 +707,19 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       action: 'Voir ces règlements', nb: encaissementsSansMouvement.length, cible: 'factures', severite: 'attention',
       detail: ventes.etat === 'lue' && encaissementsSansMouvement.length > 0 ? detailDesEncaissementsSansMouvement(ventes) : undefined,
     },
+    // LE VERSEMENT D'ESPÈCES RANGÉ EN RECETTE (étape C3b ; conception, § 4 a). « Attention » : un libellé est un symptôme,
+    // jamais une preuve — mais un vrai versement rangé en recette compte deux fois des espèces que la caisse compte déjà. Le
+    // point mène à Banque, où le mouvement se voit sous « Rapprochés », et son détail les nomme ; sa fiche le remet à traiter,
+    // puis le classe sur la caisse. Il ne paraît que sur une caisse lue.
+    ...(caisseLue === null ? [] : [
+      {
+        id: 'versements-especes-en-recette', label: 'crédit(s) du relevé dont le libellé dit un versement d’espèces, rangé(s) en recette — des espèces que la caisse compte peut-être déjà',
+        action: 'Voir ces mouvements', nb: versementsEnRecette.length, cible: 'banque' as const, severite: 'attention' as const,
+        detail: versementsEnRecette.length > 0
+          ? `Dans Banque, filtre « Rapprochés » : ${detailDesVersementsEnRecette(versementsEnRecette)} Un versement se remet à traiter, puis se classe sur la caisse.`
+          : undefined,
+      },
+    ]),
     // « Attention » et non « erreur » : ignorer est le bon geste pour un doublon, et rien ne les distingue d'ici d'un
     // mouvement réel oublié. Le point les montre avec ce qu'ils emportent, le cabinet tranche.
     {

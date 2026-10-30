@@ -268,6 +268,8 @@ describe('le rangement des contrôles existants', () => {
       'ventiles-perimes', 'comptes-de-bilan-perimes', 'montant-suspect', 'banque',
       // Étape VF5f : le mouvement du relevé que des encaissements de factures réservent, à classer.
       'mouvements-reserves',
+      // Étape C3b : la caisse — une opération à reprendre, une caisse négative, un versement d'espèces rangé en recette.
+      'caisse-a-reprendre', 'caisse-negative', 'versements-especes-en-recette',
     ],
     // Étape VF5f : l'encaissement d'une facture qui attend son mouvement du relevé, au registre des ventes.
     recettes: [
@@ -278,6 +280,8 @@ describe('le rangement des contrôles existants', () => {
       // Étape VF7c : les préalables de la validation d'un dossier basculé — le chèque en cours au 511, la vente facturée à
       // écrire.
       'encaissements-en-cours', 'ventes-facturees-a-ecrire',
+      // Étape C3b : une recette en espèces dont le jour a changé depuis sa saisie (CAISSE-Q2).
+      'recettes-de-caisse-a-revoir',
     ],
     depenses: [
       'pieces-a-valider', 'pieces-sans-date', 'date-impossible', 'sans-categorie', 'comptes-manquants', 'postes-manquants',

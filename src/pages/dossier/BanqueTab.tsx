@@ -63,6 +63,8 @@ import {
 import { lireLesAccesDuReleve, lireLesEnvoisDuClient } from '../../lib/banqueCabinetLecture'
 import { argumentsDeLaPrecision, argumentsDeRetirer } from '../../lib/banqueClient'
 import { lireLesVentesDuReleve, type LectureDesVentesEtDeclarations } from '../../lib/ventesDuReleveLecture'
+import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { operationsDeCaisseDuDossier, versementsDEspecesHorsDesLots } from '../../lib/controlesDeLaCaisse'
 import {
   candidatsDeLaVente, comptesDuReleve, ecartDuLot, gestesDuCredit, gestesDuDebit, horsDesLotsAvecLesCandidats,
   mouvementsHorsDesLots, PASTILLE_CLASSE, pastilleDeVente, retenueDuReleve, texteDesNonRapproches, venteDuMouvement,
@@ -253,6 +255,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // la garde G3 refuserait à « Valider et rapprocher » : la validation d'une pièce de vente que le pont rattache à une
   // facture qu'elle ne désigne pas, ou qui n'est ni désignée ni déclarée. Nul, et jamais lu, pour un dossier qui n'a pas basculé.
   const [pontDuReleve, setPontDuReleve] = useState<LectureVentesEmises | null>(null)
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C3b ; lib/caisseLecture.ts) : un crédit dont le libellé dit un versement d'espèces
+  // n'entre dans aucun lot d'un dossier qui tient une caisse (conception, § 4 a). Lue avec le relevé, gardée avec le dossier
+  // qui l'a demandée, et JAMAIS remise à nul d'une relecture à l'autre : pas encore revenue, elle vaudrait « peut-être une
+  // caisse » et écarterait ces crédits des lots. Le drapeau baissé, rien n'est lu (sans appel au réseau) : la caisse est
+  // absente, et les lots sont ceux d'hier.
+  const [lectureCaisse, setLectureCaisse] = useState<LectureDeLaCaisse | null>(null)
   // La fenêtre des encaissements ouverte depuis la fiche d'un mouvement : la facture choisie, telle que la lecture des
   // ventes l'a rendue — gardée ici, car la relecture qui suit chaque geste remet cette lecture à « pas encore revenue »
   // —, et ce qu'elle impose : le crédit d'un encaissement (étape VF5c), ou la contre-passation d'un encaissement
@@ -281,6 +289,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
     const lectureDesVentes = ventesParLesFactures ? await lireLesVentesDuReleve(dossierId) : null
     const lectureDuPont = ventesParLesFactures ? await lireVentesEmises(dossierId) : null
+    // Ne rejette jamais ; le drapeau baissé, ne touche pas au réseau. Posée AVANT le relevé lu (`setLignes`, plus bas) : aucun
+    // rendu ne voit les mouvements de ce dossier avec la caisse d'un autre, ou pas encore revenue.
+    setLectureCaisse(await lireLaCaisse(dossierId))
 
     // Les pièces encore à valider sont chargées elles aussi : c'est justement sur elles que porte
     // l'appariement certain (voir lib/appariementBanque.ts), qui sert à les valider plutôt qu'à
@@ -409,7 +420,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const venteDe = (id: string) => (ventes.etat === 'lue' ? ventes.mouvements.get(id) ?? null : null)
   // Les mouvements qu'aucun lot ne prend (étape VF5a2) : classés par leurs encaissements ou réservés à eux, chacun avec les
   // mots de la garde. Vide tant que les ventes ne sont pas lues en entier — `ventesRetenues` suspend alors chaque lot.
-  const horsDesLots = useMemo(() => mouvementsHorsDesLots(ventes), [ventes])
+  // Et, depuis l'étape C3b, les crédits dont le libellé dit un versement d'espèces, dans un dossier qui tient une caisse — ou
+  // peut-être : lue en partie, ou pas encore revenue, ne rien savoir écarte, ce qui ne perd rien (lib/controlesDeLaCaisse.ts).
+  // Un symptôme, jamais une preuve : le versement se classe sur la caisse depuis sa fiche. La caisse absente n'écarte rien.
+  const caisseDuReleve = useMemo(() => operationsDeCaisseDuDossier(lectureCaisse, dossierId), [lectureCaisse, dossierId])
+  const horsDesLots = useMemo(
+    () => versementsDEspecesHorsDesLots(mouvementsHorsDesLots(ventes), caisseDuReleve, lignes),
+    [ventes, caisseDuReleve, lignes],
+  )
   // LES CANDIDATS DE LA VENTE (étape VF5e ; lib/mouvementsDesVentes.ts) : les factures sources ouvertes et les encaissements
   // enregistrés sans mouvement, jugés sur la même lecture. Aucun tant que les ventes ne sont pas lues en entier. Le lot des
   // règles les apprend par `justificatifPossible` (« à rapprocher ») ; les trois autres lots — le rapprochement automatique,

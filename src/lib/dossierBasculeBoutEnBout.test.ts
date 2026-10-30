@@ -18,6 +18,7 @@ import { prealablesDeValidation, type DonneesDeValidation } from './prealablesVa
 import { demandeDeValidation, frontiereDeValidation } from './validationExercice'
 import { ventesDeLaChecklist } from './ventesDeLaChecklist'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
+import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 
 // UN DOSSIER QUI A BASCULÉ, DE BOUT EN BOUT (chantier EC-Q3, étape VF4c3) : les lignes de la base (src/test/dossierBascule.ts
 // — trois factures de services, un avoir, un virement du même jour, un chèque remis la veille de son crédit), la composition
@@ -226,6 +227,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       facturesEmises: [], transmissions: [], facturesSources: ventes.sources,
       etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true }),
       ventesDeLaChecklist: ventesDeLaChecklist({ dossierId: sources.dossierId, etat: 'lue', sources }, frontiereDeValidation([])),
+      operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
       declaration: null, concordance: null, ...o,
     })
     let declaration = null
@@ -294,7 +296,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
     const SANS_LETTRAGE = new Map()
     const sansValidDate = (f: string) => f.split('\n').map((r) => r.split('\t').filter((_, i) => i !== 15).join('\t'))
     const avant = formaterFec(n, SANS_LETTRAGE)
-    expect(avant).toBe(genererFec(brouillon, [], [], [], mode, lignes, SANS_LETTRAGE, c.ecritures))
+    expect(avant).toBe(genererFec(brouillon, [], [], [], mode, lignes, SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES))
     const VALIDE_LE = '2026-03-15T10:00:00Z'
     const figees = n.lignes.map((l): EcritureBrouillon => ({
       ...l.ecriture, statut: 'validee', valide_le: VALIDE_LE, journal_code: l.journal, numero_ecriture: l.numero, piece_ref: l.pieceRef,

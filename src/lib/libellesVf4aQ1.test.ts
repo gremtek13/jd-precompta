@@ -7,6 +7,7 @@ import { titreDeLaLigne } from './revueAnalytiqueEcran'
 import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { SANS_ECRITURE_DE_VENTE } from '../test/ventesFacturees'
+import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 
 // LE 706000 ET LE 627000 PRENNENT LE NOM DU PLAN COMPTABLE GÉNÉRAL, POUR TOUT DOSSIER (décision du cabinet du 20/10/2026,
 // VF4A-Q1 ; chantier EC-Q3, étape VF4c2 ; lib/comptes.ts). Ce sont les comptes par défaut de deux rôles de la vente
@@ -71,7 +72,7 @@ describe('VF4A-Q1 — le 706000 et le 627000 portent le nom du plan comptable g�
   it('dans le FEC, un même CompteNum sous un seul CompteLib — et rien d’autre ne change de nom', () => {
     expect(libelleCompte('706000', CATEGORIES)).toBe('Prestations de services')
     expect(libelleCompte('627000', CATEGORIES)).toBe('Services bancaires et assimilés')
-    const parCompte = new Map(genererFec(BROUILLON, [piece], CATEGORIES, [], 'tresorerie', [], new Map(), SANS_ECRITURE_DE_VENTE)
+    const parCompte = new Map(genererFec(BROUILLON, [piece], CATEGORIES, [], 'tresorerie', [], new Map(), SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES)
       .split('\r\n').slice(1).map((r) => r.split('\t')).map((r) => [r[4], r[5]] as const))
     expect(Object.fromEntries(parCompte)).toEqual({
       '445800': "Taxes sur le chiffre d'affaires à régulariser ou en attente",
@@ -131,7 +132,7 @@ describe('VF4C2-Q1 — le 707000, le 445800, le 511000 et le 530000 portent auss
       aNouveau({ id: 'an1', compte: '511000', libelle: 'Chèques à encaisser', sens: 'debit' }),
       aNouveau({ id: 'an2', compte: '101000', libelle: 'Capital individuel', sens: 'credit' }),
     ]
-    const lignes = genererFec([], [], CATEGORIES, reprise, 'tresorerie', [], new Map(), SANS_ECRITURE_DE_VENTE)
+    const lignes = genererFec([], [], CATEGORIES, reprise, 'tresorerie', [], new Map(), SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES)
       .split('\r\n').slice(1).map((r) => r.split('\t'))
     expect(lignes.find((r) => r[4] === '511000')?.[5]).toBe("Valeurs à l'encaissement")
     // Un compte que l'application ne nomme pas garde le nom de la reprise, comme hier.

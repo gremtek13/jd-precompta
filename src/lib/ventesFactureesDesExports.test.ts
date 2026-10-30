@@ -18,6 +18,7 @@ import type { EcritureBrouillon, ModeComptable, Piece } from './types'
 import {
   factureDeLaLigne, indexDesFactures, nomDuDocument, porteUneSourceDeVente, rattachementDesVentes,
 } from './ventesFactureesDesExports'
+import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
 
 // LES EXPORTS LISENT LES ÉCRITURES D'UNE VENTE FACTURÉE (chantier EC-Q3, étape VF4c2 ; lib/ventesFactureesDesExports.ts,
 // lib/fec.ts). Un dossier qui a basculé, de bout en bout : la composition de VF4a sur les lignes de la base, le brouillon que
@@ -36,7 +37,7 @@ function jeu(mode: ModeComptable, plan: PlanComptable = PLAN_PAR_DEFAUT) {
 }
 
 const fec = (brouillon: EcritureBrouillon[], mode: ModeComptable, ecritures = jeu(mode).c.ecritures, pieces: Piece[] = []) =>
-  genererFec(brouillon, pieces, [], [], mode, [], SANS_LETTRAGE, ecritures)
+  genererFec(brouillon, pieces, [], [], mode, [], SANS_LETTRAGE, ecritures, OPERATIONS_DE_CAISSE_ABSENTES)
 
 describe('rattachementDesVentes — une ligne retrouve son écriture composée par sa source et sa date', () => {
   for (const mode of MODES) {
@@ -217,9 +218,9 @@ describe('le FEC d’un dossier qui a basculé', () => {
           facture_id: null, ...NON_VALIDEE,
         })))
         const tout = [...pieces, ...brouillon]
-        const n = numeroterFec(tout, [vente, achat], [], [], mode, [], c.ecritures)
+        const n = numeroterFec(tout, [vente, achat], [], [], mode, [], c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES)
         expect(n.horsFec).toEqual([])
-        const f = genererFec(tout, [vente, achat], [], [], mode, [], SANS_LETTRAGE, c.ecritures)
+        const f = genererFec(tout, [vente, achat], [], [], mode, [], SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES)
         expect(anomaliesDgfip(f)).toEqual([])
         expect(desequilibresDgfip(f)).toEqual([])
         // Les numéros d'un journal se suivent dans l'ordre des dates.
@@ -241,7 +242,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
       ...l, id: `pv-${i}`, ligne_bancaire_id: null, created_at: '2025-11-05T09:00:00Z', immobilisation_id: null, vehicule_id: null,
       declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
     }))
-    const rows = colonnes(genererFec([...lignes, ...brouillon], [vente], [], [], 'engagement', [], SANS_LETTRAGE, c.ecritures)).slice(1)
+    const rows = colonnes(genererFec([...lignes, ...brouillon], [vente], [], [], 'engagement', [], SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES)).slice(1)
     const fictif = rows.filter((r) => r[6] === 'CFICTIF')
     expect(fictif.length).toBeGreaterThan(4)
     expect(new Set(fictif.map((r) => r[7]))).toEqual(new Set(['CLIENT FICTIF']))
@@ -255,7 +256,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
   it('laisse hors du fichier ce qui ne se rattache plus, et le fichier reste juste', () => {
     const { brouillon } = jeu('engagement')
     const perime = brouillon.map((b) => (b.encaissement_id === 'e2' && b.compte === '511000' ? { ...b, montant: 100.01 } : b))
-    const n = numeroterFec(perime, [], [], [], 'engagement', [], jeu('engagement').c.ecritures)
+    const n = numeroterFec(perime, [], [], [], 'engagement', [], jeu('engagement').c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES)
     expect(n.horsFec.map((e) => e.encaissement_id)).toEqual(['e2', 'e2', 'e2', 'e2'])
     const f = fec(perime, 'engagement')
     expect(anomaliesDgfip(f)).toEqual([])
@@ -267,7 +268,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
   // validation envoie la reçoit, depuis l'étape VF7c (lib/prealablesValidation.ts ; dossierBasculeBoutEnBout.test.ts).
   it('sans la composition, chaque ligne d’une vente facturée est hors du fichier — la validation la reçoit depuis VF7c', () => {
     const { brouillon } = jeu('engagement')
-    const n = numeroterFec(brouillon, [], [], [], 'engagement', [], SANS_ECRITURE_DE_VENTE)
+    const n = numeroterFec(brouillon, [], [], [], 'engagement', [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES)
     expect(n.lignes).toEqual([])
     expect(n.horsFec).toHaveLength(brouillon.length)
   })
@@ -277,7 +278,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
   // seules. Pour les ventes facturées comme pour le reste, il est celui d'avant, ValidDate près.
   it.each(MODES)('%s : le FEC d’un exercice validé est celui d’avant la validation, ValidDate près', (mode) => {
     const { c, brouillon } = jeu(mode)
-    const avant = numeroterFec(brouillon, [], [], [], mode, [], c.ecritures)
+    const avant = numeroterFec(brouillon, [], [], [], mode, [], c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES)
     expect(avant.horsFec).toEqual([])
     const VALIDE_LE = '2026-01-20T10:00:00Z'
     const figees = avant.lignes.map((l): EcritureBrouillon => ({
@@ -310,7 +311,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
     const m2 = mouvementDesVentes({ id: 'm2', date: '2025-11-22', montant: 100 })
     const n = numeroterFec(brouillon, [], [], [], 'engagement', [{
       ...m2, libelle_brut: null, taux_tva: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
-    }], c.ecritures)
+    }], c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES)
     expect(n.lignes.filter((l) => l.ecriture.ligne_bancaire_id === 'm2' && l.ecriture.encaissement_id == null).map((l) => l.pieceRef))
       .toEqual(['releve-fictif.csv', 'releve-fictif.csv'])
   })
@@ -474,7 +475,7 @@ describe('le lettrage du 411 d’une vente facturée, par facture', () => {
 
   it('le FEC porte ces codes, une écriture ne porte qu’un lettrage, et l’outil de la DGFiP ne relève rien', () => {
     const { c, brouillon, exports } = jeu('engagement')
-    const f = genererFec(brouillon, [], [], [], 'engagement', [], lettrer(brouillon, exports), c.ecritures)
+    const f = genererFec(brouillon, [], [], [], 'engagement', [], lettrer(brouillon, exports), c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES)
     const lettrees = colonnes(f).slice(1).filter((r) => r[13] !== '')
     expect(lettrees.map((r) => [r[2], r[4], r[13], r[14]])).toEqual([
       ['VE00001', '411000', 'B', '20251120'],

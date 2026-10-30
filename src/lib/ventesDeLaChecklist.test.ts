@@ -10,6 +10,7 @@ import type { Categorie, EcritureBrouillon, LigneBancaire, MoyenEncaissement } f
 import { pieceDeVente } from '../test/dossierBascule'
 import { NON_VALIDEE } from '../test/ecritures'
 import { detailDesEncaissementsSansMouvement, MOYENS_DU_RELEVE, ventesDeLaChecklist } from './ventesDeLaChecklist'
+import { CAISSE_PAS_EN_BASE } from './controlesDeLaCaisse'
 
 // CE QUE LA VUE D'ENSEMBLE DIT DES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, chantier EC-Q3, étape VF5f) :
 // les mouvements réservés à des encaissements de factures, à classer, et les encaissements par un moyen du relevé qui
@@ -192,7 +193,7 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,
     anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, aNouveaux: [], soldesReportes: [], entreesDeLOuvertureIncompletes: null,
-    ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, ...o,
+    ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, caisse: CAISSE_PAS_EN_BASE, entreesDeLaCaisseIncompletes: null, ...o,
   }
 }
 const CONTEXTE: ContexteDeLaChecklist = {

@@ -34,6 +34,10 @@ import { LIBELLE_ETAT_SOURCE, type EtatsDesVentes, type SourceDeVenteEtat } from
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { anneeDe, formatDate, formatMoney } from './format'
 import type { VentesDeLaChecklist } from './ventesDeLaChecklist'
+import {
+  caisseNegative, caisseNegativeDite, detailDesOperationsAReprendre, detailDesRecettesARevoir, etatDeLaCaisseLue,
+  operationsDe, operationsDeCaisseAReprendre, recettesDeCaisseARevoir, type EspecesDesFactures, type OperationsDeCaisse,
+} from './controlesDeLaCaisse'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
   LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
@@ -156,6 +160,12 @@ export interface DonneesDeValidation {
   // défaut : oubliés, les écritures d'un dossier basculé sortiraient de la numérotation que la base exige entière.
   etatsDesVentes: EtatsDesVentesDeLaValidation | null
   ventesDeLaChecklist: VentesDeLaChecklist | null
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts) : ses opérations lues EN ENTIER, retirées
+  // comprises, ou la caisse ABSENTE (le drapeau `CAISSE_EXPORTEE` baissé : rien ne change). NULLES tant qu'elles ne sont pas
+  // revenues entières pour ce dossier : la validation se suspend, comme sur toute lecture partielle. Sans valeur par défaut :
+  // oubliées, les écritures de la caisse sortiraient de la numérotation que la base exige entière, et les trois préalables
+  // de la caisse se tairaient.
+  operationsDeCaisse: OperationsDeCaisse | null
   // En trésorerie, la 2035 de l'exercice et sa concordance avec les écritures ; RIEN en engagement, où la 2035 ne se
   // produit pas — l'appelant ne la calcule pas, et la base refuserait de la recevoir.
   declaration: Declaration2035 | null
@@ -409,10 +419,14 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // une pièce qui compte.
   // Les ventes facturées d'un dossier basculé aussi (étape VF7c) : sans elles, la numérotation laisserait leurs écritures
   // dehors, et les trois préalables qui les disent se tairaient.
+  // La caisse pas encore revenue entière aussi (étape C3b) : sans ses opérations, ses écritures seraient « que rien ne
+  // rattache », et ses préalables se tairaient.
   const lectureIncomplete = d.lectureIncomplete
     ?? (d.facturesSources === null ? 'les factures sources de leurs ventes ne sont pas lues en entier' : null)
     ?? ventesIllisibles(d)
-  if (lectureIncomplete !== null || d.facturesSources === null || d.etatsDesVentes === null || d.ventesDeLaChecklist === null) {
+    ?? (d.operationsDeCaisse === null ? 'la caisse du dossier n’est pas lue en entier' : null)
+  if (lectureIncomplete !== null || d.facturesSources === null || d.etatsDesVentes === null || d.ventesDeLaChecklist === null
+    || d.operationsDeCaisse === null) {
     prealables.push({
       id: 'lecture-partielle', nb: null, cible: 'cloture', bloquant: true,
       message: `La lecture du dossier est restée partielle (${lectureIncomplete}) : une validation ne se fait que sur tout le dossier. Recharger la page.`,
@@ -570,9 +584,11 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // le FEC d'après la validation est celui d'avant, ValidDate près. Une ligne qui ne la porte plus reste hors de la
   // numérotation, comme la base la refuserait ; elle se dit sous `ventes-facturees-a-ecrire`, qui nomme sa source, et non
   // parmi les écritures que rien ne rattache. Un dossier qui n'a pas basculé n'a aucune composition : rien ne change.
+  // Et les opérations de la caisse (étape C3b) : chacune fait son écriture, au journal de son genre (CAISSE-Q3, (A)), la
+  // pièce le récapitulatif de son jour — celle que la validation fige. La caisse absente n'en numérote aucune.
   const numerotation = numeroterFec(
     ecrituresDeLExercice, d.piecesValidees, [...d.categories], ouvertureDeLExercice(d.aNouveaux, d.soldesReportes, d.annee),
-    d.modele.mode, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [],
+    d.modele.mode, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [], d.operationsDeCaisse,
   )
   // Les lignes que `ventes-facturees-a-ecrire` nomme — à réécrire ou à retirer —, et elles seules : une ligne d'une vente
   // facturée qu'aucune source en défaut ne porterait (défensif) reste une écriture que rien ne rattache.
@@ -642,11 +658,22 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       id: 'concordance', nb: d.concordance ? d.concordance.ecarts.length : 0, cible: 'cloture',
       message: "écart(s) entre la 2035 et les écritures : la validation attend une concordance au centime. Le détail est dans la carte « Concordance avec les écritures » ci-dessus.",
     })
+    // LES RECETTES DE CAISSE QUE LA 2035 NE COMPTE PAS (étape C3b ; la carte « Recettes de caisse absentes du
+    // récapitulatif », étape C3a) : une catégorie sans poste, ou qui n'est plus un produit. Leur écriture est passée avec
+    // l'opération, et la concordance les dit aussi en écart ; ici, elles sont nommées comme ce qu'elles sont. Sans recette
+    // de caisse exclue — la caisse absente, ou toutes comptées —, le préalable est celui d'hier, au caractère près.
+    const recettesDeCaisseExclues = e.recettesDeCaisseSansPoste.length + e.recettesDeCaisseSansProduit.length
     bloque({
       id: 'exclusions-2035',
-      nb: e.sansPoste.length + e.sansMontant.length + e.mouvementsSansPoste.length + e.mouvementsHorsResultat.length + e.fraisSansPoste.length,
+      nb: e.sansPoste.length + e.sansMontant.length + e.mouvementsSansPoste.length + e.mouvementsHorsResultat.length + e.fraisSansPoste.length
+        + recettesDeCaisseExclues,
       cible: 'cloture',
-      message: "pièce(s) ou mouvement(s) que la 2035 ne compte pas (sans poste, sans montant, un compte sorti des comptes de résultat, ou les frais d'un mouvement d'encaissements sans poste) : les compléter avant la validation.",
+      message: recettesDeCaisseExclues === 0
+        ? "pièce(s) ou mouvement(s) que la 2035 ne compte pas (sans poste, sans montant, un compte sorti des comptes de résultat, ou les frais d'un mouvement d'encaissements sans poste) : les compléter avant la validation."
+        : "pièce(s), mouvement(s) ou recette(s) en espèces de la caisse que la 2035 ne compte pas (sans poste, sans montant, un compte sorti des comptes de résultat, les frais d'un mouvement d'encaissements sans poste, ou une recette de caisse dont la catégorie n'a pas de poste ou n'est plus un produit) : les compléter avant la validation — une recette de caisse sous une catégorie qui n'est plus un produit se retire et se saisit de nouveau.",
+      ...(recettesDeCaisseExclues === 0 ? {} : {
+        detail: `Dont ${pluriel(recettesDeCaisseExclues, 'recette de caisse', 'recettes de caisse')} : la carte « Recettes de caisse absentes du récapitulatif » ci-dessus les nomme.`,
+      }),
     })
     // Un poste qu'aucune case ne porte : son montant est compté, et n'apparaît nulle part sur le formulaire — la 2035
     // validée serait fausse de ce montant, et ses totaux aussi. Une recette sous un libellé de dépense (ou l'inverse) en
@@ -842,6 +869,52 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       .filter((p) => dansLExercice(p.cotisation.paiement_personnel_le)).length,
     message: "échéance(s) de cotisation payée(s) depuis le compte personnel dont l'écriture manque, ne suit plus l'échéance ou ne peut pas s'écrire : retirer le paiement, puis le déclarer de nouveau.",
   })
+  // ── LA CAISSE (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts ; conception, § 4 et § 5). ─────────────────────────────
+  // Trois préalables BLOQUANTS, que la base ne refuse pas — `valider_exercice` fige les écritures de la caisse avec les autres,
+  // sans rien savoir d'elle : ce qu'ils signalent, validé, le resterait. Ils regardent l'exercice, hors des exercices figés.
+  // La caisse absente (le drapeau baissé) n'a aucune opération : aucun ne se dit, et rien de plus n'est calculé. L'onglet
+  // Caisse n'existe pas encore (étape C4) : ils mènent à Écritures, où les lignes de la caisse se lisent, et leur détail nomme
+  // chaque opération — C4 les mènera à la caisse, qui retire et saisit de nouveau.
+  const operationsDeLaCaisse = operationsDe(d.operationsDeCaisse)
+  if (operationsDeLaCaisse.length > 0) {
+    const dossierDeLaCaisse = {
+      modele: d.modele, assujettiTva: d.assujettiTva, categories: d.categories, ecritures: d.ecritures, frontiere,
+      ouvertures: d.aNouveaux, mouvements: d.lignes,
+      // Les espèces des factures d'un dossier basculé : le registre et ses factures, sur la lecture même des ventes facturées
+      // (lues en entier : `ventesIllisibles` a suspendu tout le reste). Aucune pour un autre dossier : aucune facture source.
+      especes: (etatsDesVentes === null ? { etat: 'sans_objet' } : {
+        etat: 'lues', encaissements: etatsDesVentes.contexte.encaissements, factures: etatsDesVentes.contexte.factures,
+      }) satisfies EspecesDesFactures,
+    }
+    // UNE OPÉRATION DONT L'ÉCRITURE MANQUE OU NE SUIT PLUS SA COMPOSITION — un plan ou un statut de TVA changé depuis la saisie,
+    // une restauration : défensif, la base écrivant l'une avec l'autre. Validée, l'écriture fausse le resterait.
+    const aReprendre = operationsDeCaisseAReprendre(operationsDeLaCaisse, dossierDeLaCaisse).filter((x) => dansLExercice(x.date))
+    bloque({
+      id: 'caisse-a-reprendre', nb: aReprendre.length, cible: 'ecritures',
+      message: "opération(s) de caisse de l'exercice dont l'écriture manque, ne suit plus l'opération ou ne peut plus s'écrire — un plan ou un statut de TVA changé depuis la saisie : retirer l'opération et la saisir de nouveau avant la validation.",
+      detail: aReprendre.length > 0 ? detailDesOperationsAReprendre(aReprendre) : undefined,
+    })
+    const etatDeLaCaisse = etatDeLaCaisseLue(operationsDeLaCaisse, dossierDeLaCaisse)!
+    // UNE CAISSE LUE NÉGATIVE (PCG, art. 1215-53 : son solde est débiteur ou nul) : défensif, la base refusant toute écriture
+    // qui la rendrait négative — seule une restauration d'un état fautif la laisserait ainsi. Son premier jour négatif, s'il
+    // tombe dans l'exercice ou avant lui sans être figé : validé, il le resterait.
+    const negative = caisseNegative(etatDeLaCaisse, frontiere)
+    if (negative !== null && negative.jour <= fin) {
+      bloque({
+        id: 'caisse-negative', nb: null, cible: 'ecritures',
+        message: `La caisse est négative le ${caisseNegativeDite(negative)} : son solde est débiteur ou nul. Saisir les recettes en espèces qui manquent, ou retirer la sortie d'espèces qui la vide, avant la validation.`,
+      })
+    }
+    // UNE RECETTE DONT LE JOUR A CHANGÉ DEPUIS SA SAISIE (CAISSE-Q2, (A)) : un encaissement en espèces d'une facture, de son
+    // jour, enregistré, retiré ou rattaché depuis — son total compte peut-être deux fois les espèces de la facture, ou en
+    // oublie. Levé en retirant la recette et en la saisissant de nouveau, sur le jour tel qu'il est.
+    const aRevoir = recettesDeCaisseARevoir(operationsDeLaCaisse, etatDeLaCaisse, frontiere).filter((r) => dansLExercice(r.operation.date))
+    bloque({
+      id: 'recettes-de-caisse-a-revoir', nb: aRevoir.length, cible: 'ecritures',
+      message: "recette(s) en espèces de l'exercice dont le jour a changé depuis la saisie — un encaissement en espèces d'une facture de ce jour enregistré, retiré ou rattaché depuis : vérifier que leur total ne compte pas les espèces de la facture, puis les retirer et les saisir de nouveau avant la validation.",
+      detail: aRevoir.length > 0 ? detailDesRecettesARevoir(aRevoir, etatDeLaCaisse) : undefined,
+    })
+  }
   bloque({
     id: 'rapproches-sans-objet', nb: mouvementsRapprochesSansObjet([...d.lignes]).filter(mouvementDeLExercice).length, cible: 'banque',
     message: "mouvement(s) bancaire(s) rapproché(s) sans justificatif : annuler ou refaire ces rapprochements.",
@@ -984,9 +1057,9 @@ export const CARTES_DE_CLOTURE: Readonly<Record<string, { prealable: string } | 
   'Mouvements affectés absents du récapitulatif': { prealable: 'exclusions-2035' },
   'Frais d’encaissements absents du récapitulatif': { prealable: 'exclusions-2035' },
   // Étape C3a : une recette de caisse que la 2035 ne compte pas a son écriture au brouillon, écrite avec l'opération — la
-  // concordance la dit en écart (`sans_poste`, `caisse_a_reprendre`) et retient la validation. Les préalables propres à la
-  // caisse viennent avec l'étape C3b.
-  'Recettes de caisse absentes du récapitulatif': { prealable: 'concordance' },
+  // concordance la dit en écart (`sans_poste`, `caisse_a_reprendre`). Depuis l'étape C3b, `exclusions-2035` la compte aussi,
+  // sous une phrase qui la nomme.
+  'Recettes de caisse absentes du récapitulatif': { prealable: 'exclusions-2035' },
   'Échéances d’emprunt non rapprochées': { prealable: 'echeances-emprunt-non-rapprochees' },
   'Pièces comptées à leur date de facture': {
     ecartee: "une pièce dont aucun paiement n'est rapproché a une écriture sans banque, déséquilibrée, refusée sous « ecritures-desequilibrees » (ou sans écriture, sous « ecritures-a-generer ») ; une note de frais compte à sa date, qui est celle de son paiement",
