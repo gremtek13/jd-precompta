@@ -1809,7 +1809,7 @@ describe('prealablesDeValidation — la caisse (étape C3b)', () => {
 
   it('caisse-a-reprendre : l’écriture manque, ou ne suit plus — dans l’exercice seulement', () => {
     const p = prealable(donnees({ ecritures: [E1, E2, ...lignesDeLaCaisse(APPORT)], operationsDeCaisse: caisseLue([APPORT, PRELEVEMENT]) }), 'caisse-a-reprendre')!
-    expect([p.nb, p.bloquant, p.cible]).toEqual([1, true, 'ecritures'])
+    expect([p.nb, p.bloquant, p.cible]).toEqual([1, true, 'caisse'])
     expect(p.message).toContain('retirer l\'opération et la saisir de nouveau avant la validation')
     expect(p.detail!.replace(/[\u00a0\u202f]/g, ' ')).toBe('le 05/03/2025, prélèvement de 30,00 € (écriture absente).')
     const decalee = lignesDeLaCaisse(APPORT).map((e) => ({ ...e, compte: e.compte === PLAN_PAR_DEFAUT.caisse ? '531000' : e.compte }))

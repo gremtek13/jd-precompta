@@ -1890,7 +1890,7 @@ describe('ClotureTab — valider l’exercice', () => {
     ])
   })
 
-  it('une opération de caisse sans son écriture retient la validation, et la carte mène à Écritures', async () => {
+  it('une opération de caisse sans son écriture retient la validation, et la carte mène à la caisse', async () => {
     poserTenu()
     caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [APPORT_2025], complete: true, motif: null })
     const onNavigate = monterAvec()
@@ -1898,8 +1898,8 @@ describe('ClotureTab — valider l’exercice', () => {
     const ligne = c.getByText(/opération\(s\) de caisse de l'exercice dont l'écriture manque/).closest('li') as HTMLElement
     within(ligne).getByText(/le 01\/02\/2025, apport de 50,00\s€ \(écriture absente\)\./)
     expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
-    await act(async () => { fireEvent.click(within(ligne).getByRole('button', { name: 'Écritures' })) })
-    expect(onNavigate).toHaveBeenCalledWith('ecritures')
+    await act(async () => { fireEvent.click(within(ligne).getByRole('button', { name: 'Caisse' })) })
+    expect(onNavigate).toHaveBeenCalledWith('caisse')
   })
 
   it('valide un exercice tenu : la numérotation du FEC et la 2035 affichée partent à la base, et l’exercice se relit validé', async () => {

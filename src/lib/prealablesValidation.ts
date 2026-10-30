@@ -872,9 +872,8 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // ── LA CAISSE (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts ; conception, § 4 et § 5). ─────────────────────────────
   // Trois préalables BLOQUANTS, que la base ne refuse pas — `valider_exercice` fige les écritures de la caisse avec les autres,
   // sans rien savoir d'elle : ce qu'ils signalent, validé, le resterait. Ils regardent l'exercice, hors des exercices figés.
-  // La caisse absente (le drapeau baissé) n'a aucune opération : aucun ne se dit, et rien de plus n'est calculé. L'onglet
-  // Caisse n'existe pas encore (étape C4) : ils mènent à Écritures, où les lignes de la caisse se lisent, et leur détail nomme
-  // chaque opération — C4 les mènera à la caisse, qui retire et saisit de nouveau.
+  // La caisse absente (le drapeau baissé) n'a aucune opération : aucun ne se dit, et rien de plus n'est calculé. Ils mènent à
+  // l'onglet Caisse (étape C4), qui retire l'opération et la saisit de nouveau, et leur détail nomme chaque opération.
   const operationsDeLaCaisse = operationsDe(d.operationsDeCaisse)
   if (operationsDeLaCaisse.length > 0) {
     const dossierDeLaCaisse = {
@@ -890,7 +889,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     // une restauration : défensif, la base écrivant l'une avec l'autre. Validée, l'écriture fausse le resterait.
     const aReprendre = operationsDeCaisseAReprendre(operationsDeLaCaisse, dossierDeLaCaisse).filter((x) => dansLExercice(x.date))
     bloque({
-      id: 'caisse-a-reprendre', nb: aReprendre.length, cible: 'ecritures',
+      id: 'caisse-a-reprendre', nb: aReprendre.length, cible: 'caisse',
       message: "opération(s) de caisse de l'exercice dont l'écriture manque, ne suit plus l'opération ou ne peut plus s'écrire — un plan ou un statut de TVA changé depuis la saisie : retirer l'opération et la saisir de nouveau avant la validation.",
       detail: aReprendre.length > 0 ? detailDesOperationsAReprendre(aReprendre) : undefined,
     })
@@ -901,7 +900,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     const negative = caisseNegative(etatDeLaCaisse, frontiere)
     if (negative !== null && negative.jour <= fin) {
       bloque({
-        id: 'caisse-negative', nb: null, cible: 'ecritures',
+        id: 'caisse-negative', nb: null, cible: 'caisse',
         message: `La caisse est négative le ${caisseNegativeDite(negative)} : son solde est débiteur ou nul. Saisir les recettes en espèces qui manquent, ou retirer la sortie d'espèces qui la vide, avant la validation.`,
       })
     }
@@ -910,7 +909,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     // oublie. Levé en retirant la recette et en la saisissant de nouveau, sur le jour tel qu'il est.
     const aRevoir = recettesDeCaisseARevoir(operationsDeLaCaisse, etatDeLaCaisse, frontiere).filter((r) => dansLExercice(r.operation.date))
     bloque({
-      id: 'recettes-de-caisse-a-revoir', nb: aRevoir.length, cible: 'ecritures',
+      id: 'recettes-de-caisse-a-revoir', nb: aRevoir.length, cible: 'caisse',
       message: "recette(s) en espèces de l'exercice dont le jour a changé depuis la saisie — un encaissement en espèces d'une facture de ce jour enregistré, retiré ou rattaché depuis : vérifier que leur total ne compte pas les espèces de la facture, puis les retirer et les saisir de nouveau avant la validation.",
       detail: aRevoir.length > 0 ? detailDesRecettesARevoir(aRevoir, etatDeLaCaisse) : undefined,
     })

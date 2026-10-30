@@ -205,7 +205,7 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
     if (!window.confirm(confirmationDuRetrait(o, ctx, donnees))) return
     await agir(
       () => appelerRetirer(o.id),
-      `Opération retirée : ${nomDeLOperation(o, donnees.categories)}.`,
+      `Retiré : ${nomDeLOperation(o, donnees.categories)}.`,
       'L’opération n’a pas été retirée',
       () => { if (remplace === o.id) remettreLeFormulaire() },
     )
@@ -337,7 +337,7 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
       <div className="card" ref={formulaireRef} style={{ marginBottom: 20 }}>
         <strong>
           {remplace != null && donnees.operations.find((o) => o.id === remplace)
-            ? `Remplacer la ${nomDeLOperation(donnees.operations.find((o) => o.id === remplace)!, donnees.categories)}`
+            ? `Remplacer ${nomDeLOperation(donnees.operations.find((o) => o.id === remplace)!, donnees.categories)}`
             : 'Saisir une opération'}
         </strong>
         <div className="field-row aligne-bas" style={{ marginTop: 10 }}>
@@ -578,7 +578,7 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
           <ul style={{ margin: '10px 0 0', paddingLeft: 18 }}>
             {retirees.map((o) => (
               <li key={o.id}>
-                {nomDeLOperation(o, donnees.categories)} — {etatDUneOperationRetiree(o, donnees.operations)}
+                {nomDeLOperation(o, donnees.categories, null)} — {etatDUneOperationRetiree(o, donnees.operations)}
                 {origineDite(o) ? ` (${origineDite(o)})` : ''}
               </li>
             ))}

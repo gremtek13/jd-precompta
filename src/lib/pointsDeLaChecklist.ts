@@ -36,7 +36,7 @@ import { exercicesAReclamer, moisManquantsDe, pointsUtiles, type ExerciceAReclam
 import type { LectureDesVentesDuReleve } from './mouvementsDesVentes'
 import { detailDesEncaissementsSansMouvement, ventesDeLaChecklist } from './ventesDeLaChecklist'
 import { exemplairesDesSources, horsDesExemplairesDesSources, type FacturesSources } from './facturesSources'
-import type { CaisseLue } from './recettesDeCaisse'
+import { recettesVivantes, type CaisseLue } from './recettesDeCaisse'
 import {
   caisseNegative, caisseNegativeDite, detailDesOperationsAReprendre, detailDesRecettesARevoir, detailDesVersementsEnRecette,
   dossierTientUneCaisse, etatDeLaCaisseLue, operationsDeCaisseAReprendre, operationsDeCaisseDuDossier, recettesDeCaisseARevoir,
@@ -314,7 +314,13 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // rien. Écarté ici, chez l'appelant, et non dans les deux fonctions : `agent-comptable` en porte une copie gardée
   // (agentComptableAffectation.test.ts), que ce lot ne redéploie pas.
   const catSansCompte = categoriesSansCompte(categories, validesQuiComptent, [...lignes, ...ventilations], pieceIdsImmobilisees)
-  const catSansPoste = categoriesSansPoste(categories, validesQuiComptent, [...lignes, ...ventilations], pieceIdsImmobilisees)
+  // LES RECETTES DE CAISSE (ligne 26.6, étape C4) rangent leur catégorie comme un mouvement affecté : sans poste, la 2035 ne les
+  // compte nulle part (Clôture les dit déjà, `recettesDeCaisseSansPoste`). Sur une caisse lue en entier seulement ; absente ou
+  // lue en partie, la liste est celle d'hier.
+  const caisseDuDossier = operationsDeCaisseDuDossier(caisse, caisse.dossierId)
+  const caisseLue = caisseDuDossier.etat === 'lue' ? caisseDuDossier : null
+  const recettesDeLaCaisse = caisseLue === null ? [] : recettesVivantes(caisseLue.operations)
+  const catSansPoste = categoriesSansPoste(categories, validesQuiComptent, [...lignes, ...ventilations, ...recettesDeLaCaisse], pieceIdsImmobilisees)
   const sansTva = piecesSansTva(validesQuiComptent, assujettiTva)
   const sansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees, facturesSources)
   // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
@@ -483,10 +489,8 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // caractère près. Lue en partie, ou une de ses entrées (`entreesDeLaCaisseIncompletes`), ils se taisent — leur silence ne
   // prouverait rien —, et l'écran le dit. Les espèces des factures d'un dossier basculé (la lecture des ventes facturées) ne
   // servent qu'à deux d'entre eux : lues en partie, ces deux-là se taisent seuls, sous le bandeau des ventes facturées.
-  // L'onglet Caisse n'existe pas encore (étape C4) : trois points mènent à Écritures, où les lignes de la caisse se lisent,
-  // et leur détail nomme chaque opération ; le quatrième mène à Banque, où le mouvement se voit sous « Rapprochés ».
-  const caisseDuDossier = operationsDeCaisseDuDossier(caisse, caisse.dossierId)
-  const caisseLue = caisseDuDossier.etat === 'lue' ? caisseDuDossier : null
+  // Trois points mènent à l'onglet Caisse (étape C4), où l'opération se retire et se saisit de nouveau, et leur détail nomme
+  // chaque opération ; le quatrième mène à Banque, où le mouvement se voit sous « Rapprochés ».
   const caisseJugee = caisseLue !== null && entreesDeLaCaisseIncompletes === null ? caisseLue.operations : null
   const especes: EspecesDesFactures = ventesFacturees === null ? { etat: 'sans_objet' }
     : ventesFacturees.etat === 'incomplete' ? { etat: 'incomplete', motif: ventesFacturees.motif }
@@ -626,14 +630,14 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       // ou une restauration, la ferait diverger : la 2035 et le FEC ne diraient plus la même caisse.
       {
         id: 'caisse-a-reprendre', label: 'opération(s) de caisse dont l’écriture manque, ne suit plus l’opération ou ne peut plus s’écrire — à retirer et saisir de nouveau',
-        action: 'Voir les écritures', nb: caisseAReprendre.length, cible: 'ecritures' as const, severite: 'erreur' as const,
+        action: 'Voir la caisse', nb: caisseAReprendre.length, cible: 'caisse' as const, severite: 'erreur' as const,
         detail: caisseAReprendre.length > 0 ? detailDesOperationsAReprendre(caisseAReprendre) : undefined,
       },
       // Défensif aussi : la base refuse toute écriture qui rendrait la caisse négative (PCG, art. 1215-53). Seule une
       // restauration d'un état fautif la laisserait ainsi. Un point qui ne compte rien : la caisse l'est ou non.
       {
         id: 'caisse-negative', label: caisseEnNegatif === null ? '' : `La caisse est négative le ${caisseNegativeDite(caisseEnNegatif)} — son solde est débiteur ou nul`,
-        action: 'Voir les écritures', nb: caisseEnNegatif === null ? 0 : 1, cible: 'ecritures' as const, severite: 'erreur' as const,
+        action: 'Voir la caisse', nb: caisseEnNegatif === null ? 0 : 1, cible: 'caisse' as const, severite: 'erreur' as const,
         detail: caisseEnNegatif === null ? undefined : 'Une recette en espèces manque avant ce jour, ou une sortie d’espèces est de trop : la saisir, ou la retirer.',
         sansNombre: true,
       },
@@ -641,7 +645,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       // retiré ou rattaché depuis change ce jour-là, et le total saisi se revoit.
       {
         id: 'recettes-de-caisse-a-revoir', label: 'recette(s) en espèces dont le jour a changé depuis la saisie — un encaissement en espèces d’une facture enregistré, retiré ou rattaché depuis',
-        action: 'Voir les écritures', nb: recettesARevoir.length, cible: 'ecritures' as const, severite: 'erreur' as const,
+        action: 'Voir la caisse', nb: recettesARevoir.length, cible: 'caisse' as const, severite: 'erreur' as const,
         detail: recettesARevoir.length > 0 && etatDeLaCaisse !== null ? detailDesRecettesARevoir(recettesARevoir, etatDeLaCaisse) : undefined,
       },
     ]),

@@ -232,12 +232,20 @@ export function libelleDeLaLigne(l: LigneDuJournal, categories: readonly Categor
   }
 }
 
-/** Une opération nommée pour une confirmation : son genre, son jour, son montant et sa nature — jamais un nom. */
-export function nomDeLOperation(o: Pick<OperationCaisse, 'genre' | 'date' | 'montant' | 'categorie_id'>, categories: readonly Categorie[]): string {
-  const genre = o.genre === 'recette' ? (o.montant < 0 ? 'espèces rendues' : 'recette') : o.genre === 'apport' ? 'apport'
-    : o.genre === 'prelevement' ? 'prélèvement' : 'paiement'
+/**
+ * Une opération nommée pour une confirmation ou une liste : son genre, son jour, son montant et sa nature — jamais un nom. Avec
+ * l'article défini (« la recette du 12/03/2026 de 85,00 € (Honoraires) », « l’apport … »), indéfini (« une recette … »), ou aucun.
+ */
+export function nomDeLOperation(
+  o: Pick<OperationCaisse, 'genre' | 'date' | 'montant' | 'categorie_id'>, categories: readonly Categorie[], article: 'le' | 'un' | null = 'le',
+): string {
+  const [defini, indefini, nom] = o.genre === 'recette' ? (o.montant < 0 ? ['les', 'des', 'espèces rendues'] : ['la', 'une', 'recette'])
+    : o.genre === 'apport' ? ['l’', 'un', 'apport'] : o.genre === 'prelevement' ? ['le', 'un', 'prélèvement'] : ['le', 'un', 'paiement']
   const categorie = o.genre === 'recette' ? categories.find((c) => c.id === o.categorie_id)?.libelle : null
-  return `${genre} du ${jourDit(o.date)} de ${formatMoney(Math.abs(o.montant))}${categorie ? ` (${categorie})` : ''}`
+  const groupe = `${nom} du ${jourDit(o.date)} de ${formatMoney(Math.abs(o.montant))}${categorie ? ` (${categorie})` : ''}`
+  if (article === null) return groupe
+  const mot = article === 'le' ? defini : indefini
+  return mot.endsWith('’') ? `${mot}${groupe}` : `${mot} ${groupe}`
 }
 
 // ── Les espèces des factures d'un jour ────────────────────────────────────────────────────────────────────────────────
@@ -405,7 +413,7 @@ export function refusDuRetraitDeLOperation(operationId: string, ctx: ContexteDeL
 export function confirmationDuRetrait(o: OperationCaisse, ctx: ContexteDeLaCaisse, d: DonneesDeLaCaisse): string {
   const etat = etatDeLaCaisseLu(ctx.modele, d)
   const apres = soldeAuJour(sansLOperation(etat, o.id, 'maintenant'), o.date)
-  return `Retirer la ${nomDeLOperation(o, d.categories)} ? Son écriture est retirée avec elle ; la caisse du ${jourDit(o.date)} `
+  return `Retirer ${nomDeLOperation(o, d.categories)} ? Son écriture est retirée avec elle ; la caisse du ${jourDit(o.date)} `
     + `passera à ${euros(apres)}.`
 }
 
@@ -415,8 +423,8 @@ export function confirmationDuRemplacement(
 ): string {
   const nouvelle = nomDeLOperation({
     genre: saisie.genre as OperationCaisse['genre'], date: saisie.date ?? '', montant: saisie.montant ?? 0, categorie_id: saisie.categorie_id,
-  }, d.categories)
-  return `Remplacer la ${nomDeLOperation(ancienne, d.categories)} par une ${nouvelle} ? L’ancienne est retirée avec son écriture ; `
+  }, d.categories, 'un')
+  return `Remplacer ${nomDeLOperation(ancienne, d.categories)} par ${nouvelle} ? L’ancienne est retirée avec son écriture ; `
     + 'la nouvelle est écrite à sa place, et la caisse se rejoue.'
 }
 
