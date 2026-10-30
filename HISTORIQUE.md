@@ -42540,3 +42540,103 @@ cas, dont l'ouverture sans opération, dont la fiche parle ; six mutations de la
 l'onglet. La barrière, drapeau levé, sur l'arbre de l'intégration (Node 22.23.3) : `tsc -b --force` 0 ; lint 0 erreur,
 63 avertissements, ceux de la référence ; `test:fuseaux` 496 fichiers, 15 479 tests verts à Paris, UTC, New York et
 Auckland ; build 0.
+
+### 30/10/2026 — LA CAISSE : L'ASSISTANT (C5, LIGNE 26.6)
+
+(Écrite par l'agent architecte de C5 sur `43961cd` — `main` après la mise en production de la caisse, plus C4 en cours de
+fusion, demande #243. Aucune migration, rien de lu ni d'écrit en production, aucun appel au modèle ; `agent-comptable`
+n'est PAS redéployé : la session le déploie par la ligne qui importe le dépôt → « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI
+IMPORTE LE DÉPÔT ». Lus avant d'écrire : « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION » (§ 2, § 9, § 11), « LA CAISSE :
+LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE » (C13), « LA CAISSE : LE FEC ET LES CONTRÔLES (C3B, LIGNE 26.6) »,
+« LA CAISSE EN PRODUCTION : LES DEUX MIGRATIONS ET LE DRAPEAU LEVÉ », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) »,
+« VF9C-Q1… », « VF9CQ1… », « VF9CQ1B… » ; les deux migrations de l'export.)
+
+**CE QUI PART AU MODÈLE D'UNE LIGNE DE CAISSE.** Une ligne du brouillon qui cite une opération de caisse
+(`operation_caisse_id`) part sous ses colonnes d'hier — date, compte, sens, montant, `piece_id` (nul) — et un libellé
+RECOMPOSÉ de l'opération lue avec elle (`operations_caisse(genre, date, montant)`, à gauche) : « Recettes en espèces du
+02/03/2026, 120,00 € », « Espèces rendues du 04/03/2026, 21,50 € » (une recette négative), « Apport en caisse du … »,
+« Prélèvement en caisse du … », « Paiement par la caisse du … » ; le montant de l'OPÉRATION, sans signe — le mot dit le sens.
+D'un dossier qui lit ses ventes facturées, sa source : `"caisse"`. Jamais le libellé du brouillon, jamais la catégorie. Le côté
+fermé : une opération que la lecture n'a pas rendue (ou rendue en texte), d'un genre que la base n'a pas — `MOTS_D_UNE_
+OPERATION_DE_CAISSE` est une table, un genre « toString » n'y trouve rien —, ou dont le montant est nul, absent ou n'est pas
+un nombre : aucun libellé ; une ligne lue sans la colonne ou sans l'opération embarquée : aucun libellé, comme toute ligne. La
+ligne qui cite aussi une pièce — la contrepartie d'un paiement par la caisse (CAISSE-Q4, migration 4 pas encore écrite) — se
+nomme comme sa pièce (C13) : la pièce est jugée avant l'opération. Le VERSEMENT d'espèces en banque n'est pas une opération
+de la table : un crédit du relevé classé sur le compte de la caisse, nommé « Crédit du relevé du … » par la règle de VF9CQ1 ;
+un retrait d'espèces pour la caisse, un débit sans ligne propre sur un produit ni un client, garde son libellé (VF9CQ1B).
+
+**POURQUOI RECOMPOSER, PLUTÔT QUE RENDRE LE LIBELLÉ DE LA BASE.** Vérifié dans l'export :
+`enregistrer_operation_caisse` compose « Recettes en espèces du JJ/MM/AAAA — » ou « Espèces rendues le JJ/MM/AAAA — »
+suivi du LIBELLÉ DE LA CATÉGORIE, et « Apport en caisse de l'exploitant », « Prélèvement en espèces de l'exploitant » ;
+`remplacer_operation_caisse` passe par elle ; le versement (`ecrire_mouvement_compte_bilan`) prend le libellé que
+l'application donne, celui du relevé. Trois raisons de ne pas l'envoyer : le libellé d'une catégorie est un texte libre du
+cabinet ; la restauration réinsère une ligne sous le libellé qu'elle porte (`garder_ecriture_de_caisse` ne le juge pas pour
+le super-administrateur) ; la contrepartie d'un paiement (C8, C9) sera écrite par le cabinet sous la RLS. Le compte de la
+ligne dit déjà la nature de la recette. ÉCARTÉ : envoyer le libellé du brouillon après l'avoir comparé à la composition (une
+règle de la base recopiée, à garder) ; lire la catégorie (le libellé du cabinet, au modèle).
+
+**CE QUI EST POSÉ** (`supabase/functions/agent-comptable/index.ts`). Dans le bloc PIÈCES DE VENTE : le type
+`OperationDeCaisseNommee`, la table `MOTS_D_UNE_OPERATION_DE_CAISSE`, `nomDUneOperationDeCaisse`,
+`libelleDUneLigneDeCaisse` ; `operation_caisse_id` rejoint `RATTACHEMENTS_D_UNE_LIGNE` ; `libelleEtSource` exige
+l'opération embarquée et juge la caisse après le mouvement, avant les écritures composées. `lister_ecritures` lit la colonne
+et l'opération dans sa sélection unique. Sa description dit le nom d'une opération ; celle de `points_a_traiter` dit la caisse
+non vérifiée. `points_a_traiter` rend, pour tout dossier, `caisse: "non vérifiée par l'assistant : l'onglet Caisse et la Vue
+d'ensemble disent …"` — sur le patron de `declarations_tva` — sans rien lire de plus : les quatre contrôles
+(`caisse-a-reprendre`, `caisse-negative`, `recettes-de-caisse-a-revoir`, `versements-especes-en-recette`) ne se recopient
+pas. La consigne gagne une ligne, pour tout dossier, après celle du compte de bilan : une opération de caisse s'écrit sans
+pièce ni mouvement face au compte de la caisse (`${COMPTE_CAISSE}`), sa TVA au `${COMPTE_TVA_COLLECTEE}` pour un redevable,
+son justificatif est le brouillard du praticien — « ce n'est pas une anomalie » —, « La caisse ne nomme personne […] : ne le
+demande pas, ne le devine pas », le versement ni recette ni charge, et ses contrôles renvoyés à l'onglet Caisse et à la Vue
+d'ensemble.
+
+**LES ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- La source `"caisse"` ne part que d'un dossier qui lit ses ventes facturées, comme toute source depuis VF9c : ajouter la clé
+  aux lignes d'un autre dossier changerait la forme de tous ses résultats. Pour lui, le libellé recomposé dit la caisse.
+- `points_a_traiter` ne lit pas la caisse pour savoir si le dossier en tient une : sa clé est constante, pour tout dossier —
+  aucune lecture de plus, aucune panne de plus. Écarté : un compte des opérations (une clé de moins sur un dossier sans
+  caisse, au prix d'une lecture et de son refus).
+- La consigne nomme le `${COMPTE_CAISSE}` « dans le plan par défaut » : l'assistant ne lit pas encore le plan (PC3b) ; le
+  compte réel paraît sur chaque ligne.
+- `EN_ATTENTE_DE_L_ASSISTANT` reste, VIDE : la prochaine clé neuve du brouillon y entrera le jour où sa migration se prépare.
+
+**LES PREUVES.**
+- `agentComptablePiecesDeVente.test.ts` : trente-quatre cas neufs de la caisse (chaque genre, les espèces
+  rendues, la date, le côté fermé — genre inconnu, « toString », non lu ; montant nul, en texte, NaN, infini, absent ; opération non rendue, en
+  liste, en texte ; ligne lue sans l'opération ou sans la colonne —, la source, rien de l'opération ni de sa catégorie qui
+  sorte, le paiement d'une pièce de vente et d'achat, un paiement sans pièce) ; les mots confrontés à la contrainte
+  `operations_caisse_genre` du schéma exporté ; la clé de la caisse exigée parmi les rattachements, vers sa table ; vingt et une
+  dérives plantées neuves, et celle de la cotisation réancrée ; le scanner exige `operations_caisse(genre, date, montant)`
+  embarquée à gauche et rien d'autre, et voit huit défauts neufs (oubliée, sans genre, sans montant, avec sa catégorie, le
+  libellé de sa catégorie, la pièce qu'elle paie, en jointure interne, en entier) et la colonne non lue.
+- `agentComptableConsigne.test.ts` : la ligne de la caisse, une fois, pour tout dossier, hors de `repereVentes`, ses phrases, ses
+  deux comptes égaux à `src/lib/comptes.ts`, la clé de `points_a_traiter` et son texte, les quatre points qu'elle désigne
+  présents dans `src/lib/pointsDeLaChecklist.ts`, les deux descriptions, et trois outils qui n'en parlent pas.
+- Le contrat HTTP (`src/test/contratsFonctions.ts`) : le monde des scénarios de VF9CQ1 — non basculé en trésorerie et en
+  engagement, basculé, source illisible — porte une caisse : quatre opérations et leurs huit lignes sous un marqueur (le nom
+  qu'une ligne restaurée porterait), une ligne dont l'opération n'existe pas, et un versement classé sur la caisse ; chaque
+  ligne se juge à ce qu'elle doit porter, écrit dans le test ; le marqueur n'atteint jamais le modèle ; la consigne, la
+  description et la clé de `points_a_traiter` le disent. `edgeFunctionsHttp.test.ts` : dix défauts plantés neufs, vus. La clé
+  oubliée des rattachements ne change rien qu'un appel voie (la sélection lit la colonne) : le test du bloc la garde.
+- `comptesEnDur.test.ts` : l'exception de l'assistant passe de 137 à 139 emplois (la caisse et la TVA collectée, dans la ligne
+  de la consigne), sa raison le dit.
+- Les mutations du code neuf, jouées une à une sur la source (copie hors du dépôt, restaurée et comparée octet pour octet)
+  contre les trois tests du bloc, de la consigne et du contrat : 24 sur 24 tuées — la ligne sous le libellé du brouillon (39
+  tests tombent), le libellé du brouillon faute de nom, la clé oubliée des rattachements, la caisse tue, sa source perdue, la
+  caisse jugée avant la pièce, la garde sans l'opération, la sélection sans l'opération, avec sa catégorie, en jointure
+  interne, le montant signé, les espèces rendues oubliées, les mots dans un objet, un montant nul nommé, un genre sans mots
+  nommé, une opération non lue sous le libellé du brouillon, la consigne sans sa ligne, sans « pas une anomalie », sans « ne
+  nomme personne », sans le renvoi à l'onglet Caisse, `points_a_traiter` sans sa clé, la clé dite vérifiée, les deux
+  descriptions.
+- `npx tsc -p tsconfig.edge.json` : les mêmes 25 erreurs avant et après, à la ligne près (les types du SDK qui ne se
+  résolvent pas) ; aucune neuve.
+
+**LA BARRIÈRE**, sur la copie de travail (Node 22.23.3), chaque code lu par `${PIPESTATUS[0]}` : `npx tsc -b --force` 0 ;
+`npm run lint` 0, 0 erreur, 63 avertissements — ceux de la référence ; `npm run test:fuseaux` 0, 496 fichiers et 15 521
+tests verts à Paris, UTC, New York et Auckland (15 479 sur l'arbre de C4, selon son entrée : 42 de plus) ; `npm run build` 0.
+
+**CE QUI RESTE.** Le déploiement de l'assistant, par la session, avant la première opération réelle de caisse (la saisie des
+espèces de 2025) : `allerretour.py` après. C13 avec C9 : le paiement d'une pièce par la caisse — sa contrepartie au 53 se
+nomme déjà comme sa pièce, mais `points_a_traiter` (`analyserEcritures`, `paiementsDesPieces`) ne connaît pas encore ce
+paiement : une pièce payée par la caisse s'y dirait « en attente de rapprochement » tant que C9 n'a pas recopié l'union
+discriminée dans le bloc. Et le client « Caisse » (C10 à C12) ne change rien à ce que l'assistant dit : il ne sert que le
+cabinet.
