@@ -159,6 +159,43 @@ describe('la consigne de l’assistant', () => {
     for (const outil of ['resume_dossier', 'lister_comptes', 'lister_pieces', 'points_a_traiter']) expect(description(outil), outil).not.toMatch(/débit du relevé|rend ou défait/i)
   })
 
+  // LA CAISSE D'UN DOSSIER BNC (ligne 26.6, étape C5). Une opération de caisse s'écrit sans pièce ni mouvement, face au
+  // compte de la caisse : sans un mot de la consigne, l'assistant dirait une écriture orpheline au 530000. La consigne le dit,
+  // une fois, pour tout dossier — hors de `repereVentes` —, ce qu'elle doit au modèle (la caisse ne nomme personne : ne pas
+  // le demander, ne pas le deviner), et que ses quatre contrôles ne sont pas les siens : il renvoie à l'onglet Caisse et à la
+  // Vue d'ensemble, qui les disent (src/lib/pointsDeLaChecklist.ts). `points_a_traiter` le dit sous une clé, et les
+  // descriptions de `lister_ecritures` et de `points_a_traiter` aussi. La consigne ENVOYÉE se juge au contrat HTTP de
+  // l'assistant (« C5 »).
+  it('dit, pour tout dossier, qu’une opération de caisse n’est pas une anomalie et ne nomme personne — et renvoie ses contrôles à l’onglet Caisse', () => {
+    const source = readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
+    const ligne = /\n- La CAISSE du dossier \(onglet Caisse, un dossier en trésorerie\) : ([^\n]+)\n/.exec(texte)
+    expect(ligne, 'la ligne de la caisse introuvable dans la consigne').not.toBeNull()
+    expect(texte.split('\n- La CAISSE du dossier').length - 1).toBe(1)
+    expect(texte.indexOf(ligne![0])).toBeLessThan(texte.indexOf('${repereVentes}'))
+    const phrase = ligne![1]
+    expect(phrase).toContain('sans pièce ni mouvement, face au compte de la caisse (${COMPTE_CAISSE} Caisse dans le plan par défaut)')
+    expect(phrase).toContain('sa TVA au ${COMPTE_TVA_COLLECTEE} pour un dossier redevable')
+    expect(phrase).toContain('Son justificatif est le brouillard de caisse que l\'exploitant tient hors de l\'application : ce n\'est pas une anomalie.')
+    expect(phrase).toContain('La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas, ne le devine pas')
+    expect(phrase).toContain('Un VERSEMENT d\'espèces en banque est un crédit du relevé écrit sur le compte de la caisse')
+    expect(phrase).toMatch(/renvoie à l'onglet Caisse et à la Vue d'ensemble, qui les disent\.$/)
+    expect(source).toContain(`\nconst COMPTE_CAISSE = "${COMPTE_CAISSE}"\n`)
+    expect(source).toContain(`\nconst COMPTE_TVA_COLLECTEE = "${COMPTE_TVA_COLLECTEE}"\n`)
+    // `points_a_traiter` : une clé, pour tout dossier, qui dit la caisse non vérifiée ; les quatre points qu'elle désigne
+    // existent dans la Vue d'ensemble.
+    expect(source).toContain('      caisse: CAISSE_NON_VERIFIEE,\n')
+    expect(source).toContain('\nconst CAISSE_NON_VERIFIEE = "non vérifiée par l\'assistant : l\'onglet Caisse et la Vue d\'ensemble disent les opérations de caisse à reprendre, une caisse négative, les recettes de caisse à revoir et les versements d\'espèces rangés en recette"\n')
+    const points = readFileSync(new URL('./pointsDeLaChecklist.ts', import.meta.url), 'utf8')
+    for (const id of ['caisse-a-reprendre', 'caisse-negative', 'recettes-de-caisse-a-revoir', 'versements-especes-en-recette']) {
+      expect(points, id).toContain(`id: '${id}'`)
+      expect(source, id).toContain(`\`${id}\``)
+    }
+    const description = (outil: string) => /description: "([^"]*)"/.exec(source.slice(source.indexOf(`    name: "${outil}",`)))?.[1] ?? ''
+    expect(description('lister_ecritures')).toContain('n\'a pas de libellé. Celui d\'une ligne d\'une opération de caisse se recompose de sa nature, de sa date et de son montant (« Recettes en espèces du JJ/MM/AAAA, 0,00 € » ; de même « Espèces rendues », « Apport en caisse », « Prélèvement en caisse », « Paiement par la caisse ») : la caisse ne nomme personne.')
+    expect(description('points_a_traiter')).toContain('La CAISSE n\'y est pas vérifiée (caisse) : ses quatre contrôles — opérations de caisse à reprendre, caisse négative, recettes de caisse à revoir, versements d\'espèces rangés en recette — se lisent dans l\'onglet Caisse et la Vue d\'ensemble.')
+    for (const outil of ['resume_dossier', 'lister_comptes', 'lister_pieces']) expect(description(outil), outil).not.toMatch(/caisse|espèces/i)
+  })
+
   // Les comptes que le paragraphe nomme sont ceux de la vente facturée, dupliqués de src/lib/comptes.ts (étape VF4a) :
   // une valeur qui y change fait tomber ce test avant que l'assistant ne nomme un autre compte que l'écran.
   it('nomme, pour la vente facturée, les comptes de src/lib/comptes.ts', () => {

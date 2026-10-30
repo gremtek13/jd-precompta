@@ -7,7 +7,9 @@ import { fichiersDuSchema, fichiersPrepares, relationsDuSchema } from '../test/s
 // LE CLIENT D'UNE PIÈCE DE VENTE NE PART PAS AU MODÈLE (VF9C-Q1 : la réponse (A) du cabinet du 28/10/2026 ; chantier EC-Q3,
 // ligne 28.65). NI QUI A PAYÉ UN CRÉDIT DU RELEVÉ, NI LE LIBELLÉ D'UNE LIGNE RATTACHÉE À RIEN (VF9CQ1 : les réponses (A) du
 // cabinet du 28/10/2026 à VF9CQ1-Q1 et Q2). NI À QUI UN DÉBIT REND OU DÉFAIT L'ARGENT D'UN CLIENT (VF9CQ1B : la réponse (A) du
-// cabinet du 28/10/2026 à VF9CQ1B-Q1).
+// cabinet du 28/10/2026 à VF9CQ1B-Q1). NI QUI A VERSÉ LES ESPÈCES D'UNE RECETTE DE CAISSE (la caisse d'un dossier BNC, ligne
+// 26.6, étape C5) : la ligne d'une opération de caisse se nomme par son genre, sa date et son montant, jamais par le libellé du
+// brouillon.
 //
 // Le tiers d'une pièce de vente est son client — chez un praticien, un patient (RGPD.md, § 8.7) —, le nom de son fichier
 // le porte souvent, et le libellé de ses écritures le recopie (`piece.tiers ?? piece.nom_fichier`, src/lib/ecritures.ts et
@@ -74,15 +76,19 @@ interface Bloc {
   libelleDUneLigneDuReleve: (ligne: Record<string, unknown>) => string | null
   libelleEtSource: (ligne: Record<string, unknown>, ventes: VentesNommees | null) => { libelle: string | null; source: string | null }
   ecritureVueParLeModele: (ligne: Record<string, unknown>, ventes: VentesNommees | null) => Record<string, unknown>
+  MOTS_D_UNE_OPERATION_DE_CAISSE: ReadonlyMap<string, string>
+  nomDUneOperationDeCaisse: (operation: Record<string, unknown>) => string | null
+  libelleDUneLigneDeCaisse: (ligne: Record<string, unknown>) => string | null
 }
 
 const NOMS = [
   'TYPES_DONT_LE_TIERS_SE_DIT', 'RATTACHEMENTS_D_UNE_LIGNE', 'nomDUnePieceDeVente', 'nomDUnCreditDuReleve', 'pieceVueParLeModele',
   'libelleDuBrouillon', 'libelleDUneLigneDePiece', 'libelleDUneLigneDuReleve', 'libelleEtSource', 'ecritureVueParLeModele',
   'RACINES_DES_COMPTES_D_UN_CLIENT', 'nomDUnDebitDuReleve', 'debitQuiRendLArgentDUnClient',
+  'MOTS_D_UNE_OPERATION_DE_CAISSE', 'nomDUneOperationDeCaisse', 'libelleDUneLigneDeCaisse',
 ] as const
-/** Les types que le bloc déclare : ce qu'il nomme d'une pièce, d'un mouvement, des factures et des encaissements ; ce qu'il lit d'une ligne d'un mouvement. */
-const TYPES_DU_BLOC = ['PieceNommee', 'MouvementNomme', 'LigneDuMouvementLue', 'FactureNommeeRow', 'EncaissementNommeRow', 'VentesNommees']
+/** Les types que le bloc déclare : ce qu'il nomme d'une pièce, d'un mouvement, des factures, des encaissements et d'une opération de caisse ; ce qu'il lit d'une ligne d'un mouvement. */
+const TYPES_DU_BLOC = ['PieceNommee', 'MouvementNomme', 'LigneDuMouvementLue', 'OperationDeCaisseNommee', 'FactureNommeeRow', 'EncaissementNommeRow', 'VentesNommees']
 
 /** Le bloc transpilé puis exécuté SEUL, en mode strict : il ne voit rien du reste du fichier. */
 function executer(code: string): Bloc {
@@ -95,12 +101,11 @@ const deployee = executer(bloc(sourceDeployee()))
 /**
  * Les clés étrangères du brouillon que l'assistant ne juge pas ENCORE, chacune avec la table qu'elle vise et sa raison :
  * une ligne qui ne cite qu'elles passe pour rattachée à rien, et se tait — rien d'elle ne part au modèle, ni son libellé
- * ni sa source. L'étape qui jugera la source d'une clé la fait passer d'ici aux RATTACHEMENTS du bloc, et redéploie.
+ * ni sa source. L'étape qui jugera la source d'une clé la fait passer d'ici aux RATTACHEMENTS du bloc, et redéploie. VIDE
+ * depuis l'étape C5 de la caisse (ligne 26.6), qui en a fait passer `operation_caisse_id` aux rattachements : la prochaine
+ * clé neuve du brouillon y entrera, avec sa raison, le jour où sa migration se prépare.
  */
-const EN_ATTENTE_DE_L_ASSISTANT: readonly (readonly [colonne: string, parent: string, raison: string])[] = [
-  ['operation_caisse_id', 'operations_caisse',
-    'la caisse d’un dossier BNC (ligne 26.6) : la migration `caisse` (étape C1) la pose ; l’assistant la jugera à l’étape C5'],
-]
+const EN_ATTENTE_DE_L_ASSISTANT: readonly (readonly [colonne: string, parent: string, raison: string])[] = []
 
 // ── LE BLOC : CE QU'IL REND, CAS PAR CAS ────────────────────────────────────────────────────────────────────────────────
 
@@ -112,14 +117,14 @@ const piece = (o: Record<string, unknown>) => ({
   montant_ttc: 120, type_piece: 'vente', statut: 'validee', confiance: 'haute', ...o,
 })
 /**
- * Une ligne telle que `lister_ecritures` la lit : ses colonnes, ses huit rattachements — ici, une ligne de pièce de vente —,
- * sa pièce et son mouvement embarqués.
+ * Une ligne telle que `lister_ecritures` la lit : ses colonnes, ses neuf rattachements — ici, une ligne de pièce de vente —,
+ * sa pièce, son mouvement et son opération de caisse embarqués.
  */
 const ligne = (o: Record<string, unknown>) => ({
   date: '2026-01-20', compte: '706000', libelle: 'Client fictif', sens: 'credit', montant: 100, piece_id: ID_PIECE,
   ligne_bancaire_id: null, facture_id: null, encaissement_id: null, immobilisation_id: null, vehicule_id: null,
-  declaration_tva_id: null, cotisation_id: null,
-  pieces: { type_piece: 'vente', date_piece: '2026-01-15', montant_ttc: 120 }, lignes_bancaires: null, ...o,
+  declaration_tva_id: null, cotisation_id: null, operation_caisse_id: null,
+  pieces: { type_piece: 'vente', date_piece: '2026-01-15', montant_ttc: 120 }, lignes_bancaires: null, operations_caisse: null, ...o,
 })
 /** Une ligne sans pièce : celle d'un mouvement, d'une vente facturée, d'une écriture composée, ou rattachée à rien. */
 const sansPiece = (o: Record<string, unknown>) => ligne({ piece_id: null, pieces: null, ...o })
@@ -161,6 +166,71 @@ const VENTES: VentesNommees = {
   ]),
   classes: new Set([ID_CLASSE]),
 }
+
+/** La ligne d'une opération de caisse (étape C5), sous un libellé qu'une ligne restaurée pourrait porter, qui nomme quelqu'un. */
+const deCaisse = (operation: unknown, o: Record<string, unknown> = {}) => sansPiece({
+  operation_caisse_id: 'oc1', operations_caisse: operation, date: '2026-03-02', compte: '530000', sens: 'debit', montant: 120,
+  libelle: 'Recettes en espèces du 02/03/2026 — Patient fictif Orvelan', ...o,
+})
+const RECETTE_DE_CAISSE = { genre: 'recette', date: '2026-03-02', montant: 120 }
+const NOM_DE_LA_RECETTE = 'Recettes en espèces du 02/03/2026, 120,00 €'
+/** Ce que le bloc rend d'une opération de caisse et de ses lignes (étape C5). */
+const CAS_DE_LA_CAISSE: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu: unknown])[] = [
+  // Le nom d'une opération : chaque genre de la base, et les espèces rendues.
+  ['le nom d’une recette de caisse', (b) => b.nomDUneOperationDeCaisse(RECETTE_DE_CAISSE), NOM_DE_LA_RECETTE],
+  ['le nom d’espèces rendues : sans signe', (b) => b.nomDUneOperationDeCaisse({ genre: 'recette', date: '2026-03-02', montant: -20 }), 'Espèces rendues du 02/03/2026, 20,00 €'],
+  ['le nom d’un apport', (b) => b.nomDUneOperationDeCaisse({ genre: 'apport', date: '2026-01-02', montant: 200 }), 'Apport en caisse du 02/01/2026, 200,00 €'],
+  ['le nom d’un prélèvement : des centimes, sans séparateur de milliers', (b) => b.nomDUneOperationDeCaisse({ genre: 'prelevement', date: '2026-01-31', montant: 1234.5 }),
+    'Prélèvement en caisse du 31/01/2026, 1234,50 €'],
+  ['le nom d’un paiement par la caisse : sans signe', (b) => b.nomDUneOperationDeCaisse({ genre: 'paiement', date: '2026-02-14', montant: -80 }), 'Paiement par la caisse du 14/02/2026, 80,00 €'],
+  ['le nom : sans date', (b) => b.nomDUneOperationDeCaisse({ genre: 'recette', date: null, montant: 120 }), 'Recettes en espèces sans date, 120,00 €'],
+  ['le nom : une date mal formée', (b) => b.nomDUneOperationDeCaisse({ genre: 'recette', date: '2026-3-2', montant: 120 }), 'Recettes en espèces sans date, 120,00 €'],
+  ['le nom : un instant au lieu d’une date', (b) => b.nomDUneOperationDeCaisse({ genre: 'recette', date: '2026-03-02T10:00:00Z', montant: 120 }), 'Recettes en espèces sans date, 120,00 €'],
+  // Le côté fermé : un genre sans mots, un montant qui ne dit pas le sens.
+  ['le nom : un genre que la base n’a pas', (b) => b.nomDUneOperationDeCaisse({ genre: 'versement', date: '2026-03-02', montant: 120 }), null],
+  ['le nom : un genre qu’un objet connaîtrait (toString)', (b) => b.nomDUneOperationDeCaisse({ genre: 'toString', date: '2026-03-02', montant: 120 }), null],
+  ['le nom : un genre non lu', (b) => b.nomDUneOperationDeCaisse({ date: '2026-03-02', montant: 120 }), null],
+  ['le nom : un montant nul', (b) => b.nomDUneOperationDeCaisse({ genre: 'recette', date: '2026-03-02', montant: 0 }), null],
+  ['le nom : un montant en texte', (b) => b.nomDUneOperationDeCaisse({ genre: 'recette', date: '2026-03-02', montant: '120' }), null],
+  ['le nom : un montant qui n’est pas un nombre', (b) => b.nomDUneOperationDeCaisse({ genre: 'recette', date: '2026-03-02', montant: Number.NaN }), null],
+  ['le nom : un montant infini', (b) => b.nomDUneOperationDeCaisse({ genre: 'apport', date: '2026-03-02', montant: Number.POSITIVE_INFINITY }), null],
+  ['le nom : un montant non lu', (b) => b.nomDUneOperationDeCaisse({ genre: 'apport', date: '2026-03-02' }), null],
+  ['les mots : un par genre de la contrainte', (b) => JSON.stringify([...b.MOTS_D_UNE_OPERATION_DE_CAISSE.keys()].sort()), JSON.stringify(['apport', 'paiement', 'prelevement', 'recette'])],
+  // La ligne, telle que `lister_ecritures` la rend.
+  ['la ligne d’une recette de caisse : son nom, jamais le libellé du brouillon', (b) => b.ecritureVueParLeModele(deCaisse(RECETTE_DE_CAISSE), null),
+    vue(deCaisse(null), NOM_DE_LA_RECETTE)],
+  ['la ligne de produit d’une recette de caisse : le même nom, au montant de l’opération',
+    (b) => b.ecritureVueParLeModele(deCaisse(RECETTE_DE_CAISSE, { compte: '706000', sens: 'credit', montant: 100 }), null),
+    vue(deCaisse(null, { compte: '706000', sens: 'credit', montant: 100 }), NOM_DE_LA_RECETTE)],
+  ['la ligne d’un apport : son nom', (b) => b.ecritureVueParLeModele(deCaisse({ genre: 'apport', date: '2026-03-02', montant: 50 }, { libelle: 'Apport en caisse de l’exploitant' }), null),
+    vue(deCaisse(null), 'Apport en caisse du 02/03/2026, 50,00 €')],
+  ['d’un dossier qui lit ses ventes : son nom, et sa source « caisse »', (b) => b.ecritureVueParLeModele(deCaisse(RECETTE_DE_CAISSE), VENTES),
+    vue(deCaisse(null), NOM_DE_LA_RECETTE, 'caisse')],
+  ['une opération que la lecture n’a pas rendue : aucun libellé', (b) => b.ecritureVueParLeModele(deCaisse(null), null), vue(deCaisse(null), null)],
+  ['une opération que la lecture n’a pas rendue, d’un dossier qui lit ses ventes : sa source seule', (b) => b.ecritureVueParLeModele(deCaisse(null), VENTES),
+    vue(deCaisse(null), null, 'caisse')],
+  ['une opération rendue sous une forme inattendue (une liste) : aucun libellé', (b) => b.ecritureVueParLeModele(deCaisse([RECETTE_DE_CAISSE]), null), vue(deCaisse(null), null)],
+  ['une opération rendue en texte : aucun libellé', (b) => b.ecritureVueParLeModele(deCaisse('recette'), null), vue(deCaisse(null), null)],
+  ['une opération d’un genre que la base n’a pas : aucun libellé', (b) => b.ecritureVueParLeModele(deCaisse({ genre: 'versement', date: '2026-03-02', montant: 120 }), null),
+    vue(deCaisse(null), null)],
+  ['une ligne de caisse lue sans son opération embarquée : aucun libellé', (b) => b.ecritureVueParLeModele(sans(deCaisse(RECETTE_DE_CAISSE), 'operations_caisse'), null),
+    vue(deCaisse(null), null)],
+  ['une dotation lue sans l’opération embarquée : aucun libellé non plus', (b) => b.ecritureVueParLeModele(sans(dotation(), 'operations_caisse'), null), vue(dotation(), null)],
+  ['ce qui sort est écrit : rien de l’opération ne part, ni sa catégorie',
+    (b) => b.ecritureVueParLeModele(deCaisse({ ...RECETTE_DE_CAISSE, categorie_id: 'cat1', libelle: 'Honoraires du patient fictif Orvelan' }), null),
+    vue(deCaisse(null), NOM_DE_LA_RECETTE)],
+  // La contrepartie du paiement d'une pièce par la caisse (CAISSE-Q4) cite la pièce et l'opération : elle se nomme comme sa pièce.
+  ['la ligne du paiement d’une pièce de vente par la caisse : le nom de la pièce, sa source la pièce',
+    (b) => b.ecritureVueParLeModele(ligne({ operation_caisse_id: 'oc2', operations_caisse: { genre: 'paiement', date: '2026-01-20', montant: 120 }, compte: '530000', sens: 'debit', montant: 120 }), VENTES),
+    vue(ligne({ compte: '530000', sens: 'debit', montant: 120 }), NOM_DE_LA_PIECE, 'piece')],
+  ['la ligne du paiement d’une pièce d’achat par la caisse : son fournisseur',
+    (b) => b.ecritureVueParLeModele(achat({ operation_caisse_id: 'oc3', operations_caisse: { genre: 'paiement', date: '2026-01-20', montant: -120 }, compte: '530000', sens: 'credit' }), null),
+    vue(achat({ compte: '530000', sens: 'credit' }), 'Fournisseur fictif')],
+  ['la ligne d’un paiement par la caisse qui ne cite pas sa pièce : le nom de l’opération',
+    (b) => b.ecritureVueParLeModele(deCaisse({ genre: 'paiement', date: '2026-02-14', montant: -80 }, { sens: 'credit', montant: 80 }), null),
+    vue(deCaisse(null, { sens: 'credit', montant: 80 }), 'Paiement par la caisse du 14/02/2026, 80,00 €')],
+  ['la ligne seule : une ligne de caisse d’une opération lue', (b) => b.libelleDUneLigneDeCaisse(deCaisse(RECETTE_DE_CAISSE)), NOM_DE_LA_RECETTE],
+]
 
 /** Chaque cas : ce que le bloc rend, mis en texte (l'ordre des clés compte : c'est ce qui part au modèle), et l'attendu. */
 const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu: unknown])[] = [
@@ -256,7 +326,7 @@ const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu
   ['une ligne rattachée à rien, restée d’une pièce supprimée : aucun libellé', (b) => b.ecritureVueParLeModele(sansPiece({ libelle: 'Client fictif' }), null), vue(sansPiece({}), null)],
   // Le côté fermé : une ligne lue sans l'un de ses rattachements, sans sa pièce ou sans son mouvement, n'a aucun libellé —
   // chaque fois sur une ligne qui en aurait un, sans la garde.
-  ...['piece_id', 'ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id'].map((c) => {
+  ...['piece_id', 'ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id', 'operation_caisse_id'].map((c) => {
     const lue = sans(c === 'ligne_bancaire_id' ? dotation() : debit(), c)
     return [`une ligne lue sans sa colonne ${c} : aucun libellé`, (b: Bloc) => b.ecritureVueParLeModele(lue, null), vue(lue, null)] as const
   }),
@@ -303,14 +373,10 @@ const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu
     vue(sansPiece({}), null, null)],
   ['une ligne lue sans un de ses rattachements, d’un dossier qui lit ses ventes : ni libellé ni source',
     (b) => b.ecritureVueParLeModele(sans(sansPiece({ facture_id: 'f1' }), 'cotisation_id'), VENTES), vue(sansPiece({}), null, null)],
-  // La caisse (ligne 26.6, étape C1) : une ligne qui ne cite qu'une opération de caisse passe pour rattachée à rien, et se
-  // tait, jusqu'à l'étape C5 qui la jugera (EN_ATTENTE_DE_L_ASSISTANT, plus bas).
-  ['une ligne qui ne cite qu’une opération de caisse : aucun libellé, et rien de l’opération',
-    (b) => b.ecritureVueParLeModele(sansPiece({ operation_caisse_id: 'oc1', compte: '530000', sens: 'debit', libelle: 'Recettes en espèces du 02/03/2026 — Honoraires' }), null),
-    vue(sansPiece({ compte: '530000', sens: 'debit' }), null)],
-  ['la même, d’un dossier qui lit ses ventes : ni libellé ni source',
-    (b) => b.ecritureVueParLeModele(sansPiece({ operation_caisse_id: 'oc1', compte: '530000', sens: 'debit', libelle: 'Apport en caisse de l’exploitant' }), VENTES),
-    vue(sansPiece({ compte: '530000', sens: 'debit' }), null, null)],
+  // La caisse (ligne 26.6, étape C5) : la ligne d'une opération de caisse se nomme par son genre, sa date et son montant
+  // sans signe, jamais par le libellé du brouillon — ni le nom que la base compose (le libellé de la catégorie, un texte du
+  // cabinet), ni celui qu'une ligne restaurée porterait. Sa source : « caisse ».
+  ...CAS_DE_LA_CAISSE,
   // VF9CQ1B : le nom d'un débit qui rend ou défait l'argent d'un client — la date et le montant du mouvement, sans signe.
   ['le nom d’un débit : une date et un montant, sans signe', (b) => b.nomDUnDebitDuReleve({ date: '2026-01-15', montant: -45 }), 'Débit du relevé du 15/01/2026, 45,00 €'],
   ['le nom d’un débit : des centimes, sans séparateur de milliers', (b) => b.nomDUnDebitDuReleve({ date: '2026-12-31', montant: -1234.5 }), 'Débit du relevé du 31/12/2026, 1234,50 €'],
@@ -417,6 +483,16 @@ describe('agent-comptable / bloc PIÈCES DE VENTE (le seul passage vers le modè
     expect(fichiersDuSchema().filter((f) => /pieces_type_piece_check/.test(f.texte)).map((f) => f.chemin)).toEqual([])
   })
 
+  // Étape C5 : le côté fermé de la caisse tient à cette table — une opération ne se nomme que d'un genre qu'elle a jugé. Elle
+  // est la contrainte du schéma exporté, une seule définition : un genre que la base gagnerait fait tomber ce test, et sa ligne
+  // se tait jusqu'à ce qu'on l'ait jugé.
+  it('les mots d’une opération de caisse : un par genre de la contrainte du schéma exporté', () => {
+    const definitions = fichiersDuSchema().flatMap((f) => [...f.texte.matchAll(/constraint operations_caisse_genre check \(genre in \(([^)]*)\)\)/g)]
+      .map((m) => m[1].split(',').map((v) => v.trim().replace(/^'|'$/g, ''))))
+    expect(definitions, 'la contrainte du genre d’une opération de caisse introuvable, ou écrite plus d’une fois').toHaveLength(1)
+    expect([...deployee.MOTS_D_UNE_OPERATION_DE_CAISSE.keys()].sort()).toEqual([...definitions[0]].sort())
+  })
+
   // VF9CQ1 : « rattachée à rien » se définit par ce relevé. Une ligne du brouillon que la base gagnerait le droit de citer —
   // une clé étrangère neuve — fait tomber ce test, sauf si elle est déclarée EN ATTENTE de l'assistant, avec sa raison : une
   // ligne qui ne cite qu'elle passe pour rattachée à rien, et se tait (le côté fermé), et la source qu'elle désigne sera
@@ -426,7 +502,7 @@ describe('agent-comptable / bloc PIÈCES DE VENTE (le seul passage vers le modè
     const relations = relationsDuSchema(fichiersDuSchema()).filter((r) => r.enfant === 'ecritures_brouillon')
     expect(relations.some((r) => r.colonne === 'dossier_id' && r.parent === 'dossiers'), 'la clé du dossier, seule exceptée').toBe(true)
     const cles = relations.filter((r) => r.parent !== 'dossiers').map((r) => r.colonne).sort()
-    expect(cles.length, 'le plancher : les huit sources d’aujourd’hui').toBeGreaterThanOrEqual(8)
+    expect(cles.length, 'le plancher : les neuf sources d’aujourd’hui, la caisse comprise').toBeGreaterThanOrEqual(9)
     const enAttente = EN_ATTENTE_DE_L_ASSISTANT.map(([colonne]) => colonne).filter((c) => cles.includes(c))
     expect([...deployee.RATTACHEMENTS_D_UNE_LIGNE, ...enAttente].sort()).toEqual(cles)
     expect(new Set(deployee.RATTACHEMENTS_D_UNE_LIGNE).size).toBe(deployee.RATTACHEMENTS_D_UNE_LIGNE.length)
@@ -437,7 +513,10 @@ describe('agent-comptable / bloc PIÈCES DE VENTE (le seul passage vers le modè
   // jugera lui fera rejoindre en la retirant d'ici.
   it('une clé en attente de l’assistant : déclarée par une migration, appliquée ou préparée, et hors des rattachements', () => {
     const declarees = relationsDuSchema([...fichiersDuSchema(), ...fichiersPrepares()]).filter((r) => r.enfant === 'ecritures_brouillon')
-    expect(EN_ATTENTE_DE_L_ASSISTANT.length, 'la liste n’est pas vide aujourd’hui : la caisse').toBeGreaterThanOrEqual(1)
+    // Depuis l'étape C5, la caisse est jugée : sa clé, déclarée vers sa table, est un rattachement, et n'attend plus.
+    expect(EN_ATTENTE_DE_L_ASSISTANT.map(([colonne]) => colonne)).not.toContain('operation_caisse_id')
+    expect(deployee.RATTACHEMENTS_D_UNE_LIGNE).toContain('operation_caisse_id')
+    expect(declarees.some((r) => r.colonne === 'operation_caisse_id' && r.parent === 'operations_caisse'), 'la clé de la caisse, vers sa table').toBe(true)
     for (const [colonne, parent] of EN_ATTENTE_DE_L_ASSISTANT) {
       expect(declarees.some((r) => r.colonne === colonne && r.parent === parent), `${colonne} : aucune migration ne la déclare`).toBe(true)
       expect(deployee.RATTACHEMENTS_D_UNE_LIGNE, colonne).not.toContain(colonne)
@@ -476,7 +555,9 @@ describe('le bloc PIÈCES DE VENTE sait encore échouer', () => {
     ['ecritureVueParLeModele : la source rendue à un dossier qui ne lit pas ses ventes', '  return ventes === null ? vue : { ...vue, source }\n', '  return { ...vue, source }\n'],
     ['ecritureVueParLeModele : la source tue d’un dossier qui lit ses ventes', '  return ventes === null ? vue : { ...vue, source }\n', '  return vue\n'],
     ['RATTACHEMENTS_D_UNE_LIGNE : le mouvement en sort', '  "piece_id", "ligne_bancaire_id", "facture_id",', '  "piece_id", "facture_id",'],
-    ['RATTACHEMENTS_D_UNE_LIGNE : la cotisation en sort', '"declaration_tva_id",\n  "cotisation_id",\n]', '"declaration_tva_id",\n]'],
+    ['RATTACHEMENTS_D_UNE_LIGNE : la cotisation en sort', '"declaration_tva_id",\n  "cotisation_id", "operation_caisse_id",\n]', '"declaration_tva_id",\n  "operation_caisse_id",\n]'],
+    // Étape C5 : la caisse.
+    ['RATTACHEMENTS_D_UNE_LIGNE : la caisse en sort (la clé oubliée)', '  "cotisation_id", "operation_caisse_id",\n]', '  "cotisation_id",\n]'],
     ['nomDUnCreditDuReleve : la date telle que la base l’écrit',
       '    ? `du ${mouvement.date.slice(8, 10)}/${mouvement.date.slice(5, 7)}/${mouvement.date.slice(0, 4)}`\n', '    ? `du ${mouvement.date}`\n'],
     ['nomDUnCreditDuReleve : un instant pris pour une date', '/^\\d{4}-\\d{2}-\\d{2}$/.test(mouvement.date)', '/^\\d{4}-\\d{2}-\\d{2}/.test(mouvement.date)'],
@@ -528,6 +609,33 @@ describe('le bloc PIÈCES DE VENTE sait encore échouer', () => {
       '    if (lue.facture_id != null || lue.encaissement_id != null) return false\n', ''],
     ['debitQuiRendLArgentDUnClient : un compte illisible pris pour une charge', '    return typeof lue.compte !== "string" || RACINES', '    return typeof lue.compte === "string" && RACINES'],
     ['debitQuiRendLArgentDUnClient : la racine cherchée partout dans le compte', '(lue.compte as string).startsWith(r)', '(lue.compte as string).includes(r)'],
+    // Étape C5 : la caisse.
+    ['MOTS_D_UNE_OPERATION_DE_CAISSE : le paiement en sort', '\n  ["paiement", "Paiement par la caisse"],\n', '\n'],
+    ['MOTS_D_UNE_OPERATION_DE_CAISSE : un genre que la base n’a pas y entre', '["paiement", "Paiement par la caisse"],', '["paiement", "Paiement par la caisse"], ["versement", "Versement en banque"],'],
+    ['MOTS_D_UNE_OPERATION_DE_CAISSE : une recette sous un mot qui ne dit pas les espèces', '["recette", "Recettes en espèces"]', '["recette", "Recettes"]'],
+    ['nomDUneOperationDeCaisse : les mots lus dans un objet, qui connaît « toString »',
+      'MOTS_D_UNE_OPERATION_DE_CAISSE.get(operation.genre)', '({ recette: "Recettes en espèces", apport: "Apport en caisse", prelevement: "Prélèvement en caisse", paiement: "Paiement par la caisse" } as Record<string, string>)[operation.genre]'],
+    ['nomDUneOperationDeCaisse : le montant signé', '${Math.abs(montant).toFixed(2).replace(".", ",")} €', '${montant.toFixed(2).replace(".", ",")} €'],
+    ['nomDUneOperationDeCaisse : le montant à l’anglaise', '${Math.abs(montant).toFixed(2).replace(".", ",")} €', '${Math.abs(montant).toFixed(2)} €'],
+    ['nomDUneOperationDeCaisse : des espèces rendues sous le mot d’une recette', '  const nom = operation.genre === "recette" && montant < 0 ? "Espèces rendues" : mots\n', '  const nom = mots\n'],
+    ['nomDUneOperationDeCaisse : un montant nul pris pour un sens', ' || montant === 0) return null\n', ') return null\n'],
+    ['nomDUneOperationDeCaisse : un montant en texte lu comme un nombre', 'typeof montant !== "number" || !Number.isFinite(montant)', '!Number.isFinite(Number(montant))'],
+    ['nomDUneOperationDeCaisse : un genre sans mots écrit tel quel', '  if (mots === undefined || typeof montant', '  if (typeof montant'],
+    ['nomDUneOperationDeCaisse : la date telle que la base l’écrit',
+      '    ? `du ${operation.date.slice(8, 10)}/${operation.date.slice(5, 7)}/${operation.date.slice(0, 4)}`\n', '    ? `du ${operation.date}`\n'],
+    ['nomDUneOperationDeCaisse : un instant pris pour une date', '/^\\d{4}-\\d{2}-\\d{2}$/.test(operation.date)', '/^\\d{4}-\\d{2}-\\d{2}/.test(operation.date)'],
+    ['libelleDUneLigneDeCaisse : le libellé du brouillon, faute d’opération lue',
+      '  if (operation === null || typeof operation !== "object") return null\n', '  if (operation === null || typeof operation !== "object") return libelleDuBrouillon(ligne)\n'],
+    ['libelleDUneLigneDeCaisse : le libellé du brouillon avant le nom de l’opération',
+      '  return nomDUneOperationDeCaisse(operation as', '  return libelleDuBrouillon(ligne) ?? nomDUneOperationDeCaisse(operation as'],
+    ['libelleDUneLigneDeCaisse : le libellé du brouillon d’une opération sans nom',
+      '  return nomDUneOperationDeCaisse(operation as Partial<Record<keyof OperationDeCaisseNommee, unknown>>)\n',
+      '  return nomDUneOperationDeCaisse(operation as Partial<Record<keyof OperationDeCaisseNommee, unknown>>) ?? libelleDuBrouillon(ligne)\n'],
+    ['libelleEtSource : la ligne de caisse sous le libellé du brouillon', '{ libelle: libelleDUneLigneDeCaisse(ligne), source: "caisse" }', '{ libelle: libelleDuBrouillon(ligne), source: "caisse" }'],
+    ['libelleEtSource : la source de la caisse perdue', '{ libelle: libelleDUneLigneDeCaisse(ligne), source: "caisse" }', '{ libelle: libelleDUneLigneDeCaisse(ligne), source: null }'],
+    ['libelleEtSource : la caisse tue, comme une ligne rattachée à rien', '  if (ligne.operation_caisse_id != null) return { libelle: libelleDUneLigneDeCaisse(ligne), source: "caisse" }\n', ''],
+    ['libelleEtSource : une ligne lue sans son opération embarquée jugée quand même', '\n    || !("operations_caisse" in ligne)', ''],
+    ['libelleEtSource : la caisse jugée avant la pièce (la contrepartie d’un paiement)', '  if (ligne.piece_id != null) return {', '  if (ligne.piece_id != null && ligne.operation_caisse_id == null) return {'],
   ]
   for (const [quoi, avant, apres] of DERIVES) {
     it(`attrape ${quoi}`, () => {
@@ -581,7 +689,7 @@ const CE_QUE_LE_PASSAGE_LIT: Readonly<Record<Passage, readonly string[]>> = {
   ecritureVueParLeModele: [
     'ecritures_brouillon.libelle', ...deployee.RATTACHEMENTS_D_UNE_LIGNE.map((c) => `ecritures_brouillon.${c}`),
     'pieces.type_piece', 'pieces.date_piece', 'pieces.montant_ttc', 'lignes_bancaires.date', 'lignes_bancaires.montant',
-    'lignes_bancaires.encaissements_de_factures',
+    'lignes_bancaires.encaissements_de_factures', 'operations_caisse.genre', 'operations_caisse.date', 'operations_caisse.montant',
   ],
 }
 /**
@@ -592,7 +700,12 @@ const CE_QUE_LE_PASSAGE_LIT: Readonly<Record<Passage, readonly string[]>> = {
  * fige —, à gauche aussi : un mouvement sans ligne resterait.
  */
 const MOUVEMENT_EMBARQUE = 'lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))'
-const EMBARQUES = ['pieces(type_piece, date_piece, montant_ttc)', MOUVEMENT_EMBARQUE]
+/**
+ * L'opération de caisse de chaque ligne (étape C5) : son genre, sa date, son montant — à gauche, et rien d'autre : ni sa
+ * catégorie, dont le libellé est un texte du cabinet, ni les encaissements qu'elle reconnaît, ni sa pièce, ni ses auteurs.
+ */
+const OPERATION_EMBARQUEE = 'operations_caisse(genre, date, montant)'
+const EMBARQUES = ['pieces(type_piece, date_piece, montant_ttc)', MOUVEMENT_EMBARQUE, OPERATION_EMBARQUEE]
 /** L'appel du passage, tel que l'outil le fait sur ses lignes lues : une fois, et lui seul. */
 const APPEL_DU_PASSAGE: Readonly<Record<Passage, string>> = {
   pieceVueParLeModele: '((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)',
@@ -621,7 +734,8 @@ const LECTURES_QUI_NOMMENT: readonly LectureDeclaree[] = [
     zone: 'lister_ecritures', table: 'ecritures_brouillon', nomme: ['ecritures_brouillon.libelle'], nombre: 1, passage: 'ecritureVueParLeModele',
     raison: 'les lignes que l’outil rend, lues avec leurs rattachements, leur pièce et leur mouvement : chacune passe par le passage, qui écrit ce '
       + 'qui en sort — le libellé d’une ligne de pièce de vente, d’un crédit et d’un débit qui rend ou défait l’argent d’un client '
-      + 'recomposé, celui d’une ligne rattachée à rien tu ; le mouvement lu avec son classement et les comptes de ses lignes',
+      + 'recomposé, celui d’une ligne rattachée à rien tu, celui d’une ligne de caisse recomposé de son opération ; le mouvement lu '
+      + 'avec son classement et les comptes de ses lignes',
   },
   {
     zone: 'points_a_traiter', table: 'pieces', nomme: ['pieces.tiers'], nombre: 2, passage: null,
@@ -789,7 +903,7 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
   // Un scanner qui rend « aucune faute » sur la vraie source n'a rien prouvé tant qu'on ne l'a pas vu en rendre : chaque
   // défaut ci-dessous est posé dans la vraie source, en mémoire.
   const source = sourceDeployee()
-  const SELECTION_DES_LIGNES = 'piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"'
+  const SELECTION_DES_LIGNES = 'piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"'
   const DEFAUTS: readonly (readonly [quoi: string, mutee: () => string])[] = [
     ['une lecture de plus du tiers, dans resume_dossier', () => muter(source, [[
       'admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "a_valider"),',
@@ -839,7 +953,7 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
     ['les lignes du mouvement désignées sous une forme que le scanner ne sait pas lire', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon!ligne_bancaire_id(compte, facture_id, encaissement_id))"']])],
     ['les lignes du mouvement lues en entier (*)', () => muter(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(*))"']])],
     ['le mouvement de chaque ligne embarquant aussi ses encaissements', () => muter(source, [['encaissement_id))"', 'encaissement_id), encaissements_factures(id))"']])],
-    ...['ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id'].map((c) => [
+    ...['ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id', 'operation_caisse_id'].map((c) => [
       `le rattachement ${c} non lu`, () => muter(source, [[SELECTION_DES_LIGNES, SELECTION_DES_LIGNES.replace(`, ${c}`, '')]]),
     ] as const),
     ['le libellé de la banque lu par points_a_traiter', () => muter(source, [[
@@ -850,6 +964,15 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
       'select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut,', 'select("date, compte, libelle, sens, montant, piece_id, comp_aux_lib, ligne_bancaire_id, statut,']])],
     ['lister_ecritures passe ses lignes sans ce que le dossier sait de ses ventes', () => muter(source, [[
       '.map((ligne) => ecritureVueParLeModele(ligne, nommees))', '.map((ligne) => ecritureVueParLeModele(ligne, null))']])],
+    // Étape C5 : l'opération de caisse de chaque ligne — son genre, sa date, son montant, rien d'autre, à gauche.
+    ['l’opération de caisse de chaque ligne oubliée', () => muter(source, [[`, ${OPERATION_EMBARQUEE}, pieces(`, ', pieces(']])],
+    ['l’opération de caisse lue sans son genre', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(date, montant)']])],
+    ['l’opération de caisse lue sans son montant', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date)']])],
+    ['l’opération de caisse lue avec sa catégorie', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, categorie_id)']])],
+    ['l’opération de caisse lue avec le libellé de sa catégorie', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, categories(libelle))']])],
+    ['l’opération de caisse lue avec la pièce qu’elle paie', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, pieces(tiers))']])],
+    ['l’opération de caisse en jointure interne : une ligne sans opération disparaîtrait', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse!inner(genre, date, montant)']])],
+    ['l’opération de caisse lue en entier (*)', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(*)']])],
   ]
   for (const [quoi, mutee] of DEFAUTS) {
     it(`voit ${quoi}`, () => {

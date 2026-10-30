@@ -64,7 +64,8 @@
 // bloc VENTES DU RELEVÉ (les mouvements réservés à des encaissements de factures, et les encaissements sans mouvement) l'est
 // par src/lib/agentComptableVentesDuReleve.test.ts. Le bloc PIÈCES DE VENTE (étapes VF9C-Q1 et VF9CQ1 : le seul passage vers
 // le modèle d'une pièce et de toute ligne du brouillon — le libellé d'un crédit du relevé recomposé, celui d'une ligne
-// rattachée à rien tu —, qui ne copie aucun module) l'est par src/lib/agentComptablePiecesDeVente.test.ts, qui part aussi de
+// rattachée à rien tu, et, depuis l'étape C5 de la caisse (ligne 26.6), celui d'une opération de caisse recomposé —, qui ne
+// copie aucun module) l'est par src/lib/agentComptablePiecesDeVente.test.ts, qui part aussi de
 // toutes les lectures de la fonction.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
@@ -2803,7 +2804,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "lister_ecritures",
-    description: "Liste les lignes du brouillon d'écritures (date, compte, libellé, sens, montant), triées par date décroissante, plafonnées à 200 lignes. Le libellé d'une ligne d'une pièce de vente se recompose de la date et du montant TTC de cette pièce (« Pièce de vente du JJ/MM/AAAA, 0,00 € ») : son client n'est pas transmis. Celui d'une ligne d'un crédit du relevé se recompose de la date et du montant du mouvement (« Crédit du relevé du JJ/MM/AAAA, 0,00 € ») : qui a payé n'est pas transmis ; de même celui d'une ligne d'un débit qui rend ou défait l'argent d'un client — écrit en tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d'un encaissement — (« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui l'argent est rendu n'est pas transmis ; celui d'un autre débit reste. Une ligne rattachée à rien (l'écriture restée d'une pièce supprimée) n'a pas de libellé. Sert à comprendre en détail pourquoi un compte a bougé. Renvoie { ecritures, total_disponible, nombre_renvoye, tronque } : si tronque vaut true, la liste est incomplète — n'en tire ni total ni comptage, resserre le filtre ou passe par lister_comptes, qui agrège sans plafond.",
+    description: "Liste les lignes du brouillon d'écritures (date, compte, libellé, sens, montant), triées par date décroissante, plafonnées à 200 lignes. Le libellé d'une ligne d'une pièce de vente se recompose de la date et du montant TTC de cette pièce (« Pièce de vente du JJ/MM/AAAA, 0,00 € ») : son client n'est pas transmis. Celui d'une ligne d'un crédit du relevé se recompose de la date et du montant du mouvement (« Crédit du relevé du JJ/MM/AAAA, 0,00 € ») : qui a payé n'est pas transmis ; de même celui d'une ligne d'un débit qui rend ou défait l'argent d'un client — écrit en tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d'un encaissement — (« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui l'argent est rendu n'est pas transmis ; celui d'un autre débit reste. Une ligne rattachée à rien (l'écriture restée d'une pièce supprimée) n'a pas de libellé. Celui d'une ligne d'une opération de caisse se recompose de sa nature, de sa date et de son montant (« Recettes en espèces du JJ/MM/AAAA, 0,00 € » ; de même « Espèces rendues », « Apport en caisse », « Prélèvement en caisse », « Paiement par la caisse ») : la caisse ne nomme personne. Sert à comprendre en détail pourquoi un compte a bougé. Renvoie { ecritures, total_disponible, nombre_renvoye, tronque } : si tronque vaut true, la liste est incomplète — n'en tire ni total ni comptage, resserre le filtre ou passe par lister_comptes, qui agrège sans plafond.",
     input_schema: {
       type: "object",
       properties: {
@@ -2830,7 +2831,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : le statut de TVA du dossier quand il est à préciser, écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, déclarations de TVA dont l'écriture de liquidation manque ou ne suit plus la déclaration, paiements ou remboursements de TVA dont l'écriture ne suit plus le mouvement, périodes de TVA dont la déclaration n'est pas enregistrée (dossier assujetti), et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Pour un dossier qui compte ses ventes par ses factures (resume_dossier : ventes_par_les_factures), aussi les mouvements réservés à des encaissements de factures, à classer, et les encaissements de factures par un moyen du relevé (virement, prélèvement, chèque, carte, effet) sans mouvement — deux points de la Checklist — ; et ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer, qui n'en est pas un : ce que la validation de l'exercice refuserait, et que l'onglet Écritures dit — { nombre, par_etat (a_ecrire, a_reecrire, a_retirer, ne_s_ecrit_pas : une source que son motif retient), premieres : les six premières, nommées par leur numéro }, ou « indisponible : … » quand la base ne l'a pas dit. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : le statut de TVA du dossier quand il est à préciser, écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, déclarations de TVA dont l'écriture de liquidation manque ou ne suit plus la déclaration, paiements ou remboursements de TVA dont l'écriture ne suit plus le mouvement, périodes de TVA dont la déclaration n'est pas enregistrée (dossier assujetti), et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Pour un dossier qui compte ses ventes par ses factures (resume_dossier : ventes_par_les_factures), aussi les mouvements réservés à des encaissements de factures, à classer, et les encaissements de factures par un moyen du relevé (virement, prélèvement, chèque, carte, effet) sans mouvement — deux points de la Checklist — ; et ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer, qui n'en est pas un : ce que la validation de l'exercice refuserait, et que l'onglet Écritures dit — { nombre, par_etat (a_ecrire, a_reecrire, a_retirer, ne_s_ecrit_pas : une source que son motif retient), premieres : les six premières, nommées par leur numéro }, ou « indisponible : … » quand la base ne l'a pas dit. La CAISSE n'y est pas vérifiée (caisse) : ses quatre contrôles — opérations de caisse à reprendre, caisse négative, recettes de caisse à revoir, versements d'espèces rangés en recette — se lisent dans l'onglet Caisse et la Vue d'ensemble. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -2958,6 +2959,9 @@ function rienALire<T>(): Promise<LectureComplete<T>> {
 // numéro, sans jamais rendre celui du brouillon ; et l'exemplaire d'une facture source paraît sous ce numéro, sans le tiers
 // ni le nom de fichier qui nommeraient son client — depuis VF9C-Q1, comme toute pièce de vente (bloc PIÈCES DE VENTE).
 
+// Ce que `points_a_traiter` dit de la caisse (ligne 26.6, étape C5) : rien de vérifié, et où le lire.
+const CAISSE_NON_VERIFIEE = "non vérifiée par l'assistant : l'onglet Caisse et la Vue d'ensemble disent les opérations de caisse à reprendre, une caisse négative, les recettes de caisse à revoir et les versements d'espèces rangés en recette"
+
 // Les comptes que la consigne nomme pour la vente facturée — dupliqués de src/lib/comptes.ts (étape VF4a) : le produit
 // d'une facture source, des services puis des biens, la TVA collectée en attente, les valeurs à l'encaissement et la caisse
 // qui reçoivent un encaissement, les services bancaires qui reçoivent les frais d'un mouvement classé par ses encaissements.
@@ -3071,18 +3075,30 @@ function avertissementDesVentes(enDefaut: { lues: SourceEnDefautRow[] } | { moti
 // ce classement, ses lignes propres ou leurs comptes ne sont pas lus se nomme de même. Un autre débit lu — un fournisseur,
 // un organisme, un virement personnel, un emprunt — garde son libellé, au caractère près.
 //
+// UNE OPÉRATION DE CAISSE NE NOMME PERSONNE (la caisse d'un dossier BNC, ligne 26.6, étape C5 ; HISTORIQUE.md, « LA CAISSE
+// D'UN DOSSIER BNC : LA CONCEPTION », § 2). Une recette de caisse est le TOTAL des espèces reçues un jour, pour une nature ;
+// le détail, recette par recette — l'identité de chaque patient —, reste au brouillard du praticien, sous le secret
+// (BOI-BNC-DECLA-10-20, § 280). La base compose le libellé de ses écritures sans nom (`enregistrer_operation_caisse` : des
+// mots fixes, la date, le libellé de la catégorie), mais une ligne restaurée, ou la contrepartie d'un paiement que le cabinet
+// écrira (CAISSE-Q4), porte le libellé qu'on lui a donné, et le libellé d'une catégorie est un texte du cabinet : aucun ne part
+// au modèle. La ligne d'une opération de caisse — lue avec son opération (`operations_caisse`, par la clé étrangère de
+// `operation_caisse_id`) : son genre, sa date, son montant, rien d'autre — se nomme par ces trois-là (« Recettes en espèces du
+// 12/03/2026, 120,00 € », « Apport en caisse du … »), le montant sans signe : le mot dit le sens. Le côté fermé : une
+// opération que la lecture n'a pas rendue, d'un genre que la base n'a pas, ou dont le montant ne dit pas le sens, n'en donne
+// aucun. La ligne qui cite aussi une pièce — la contrepartie du paiement de cette pièce par la caisse — se nomme comme sa pièce.
+//
 // LA SOURCE D'UNE LIGNE se lit dans ses RATTACHEMENTS (`RATTACHEMENTS_D_UNE_LIGNE` : chaque clé étrangère de
 // `ecritures_brouillon` vers ce qui l'a produite, le dossier excepté), dans l'ordre de VF9c : la facture ou l'avoir,
 // l'encaissement, la pièce, le mouvement (une ligne de pièce ou de vente facturée ne recopie jamais le libellé de la banque),
-// puis une écriture que l'application compose sans eux (une dotation, un forfait kilométrique, une liquidation de TVA, une
-// cotisation payée depuis le compte personnel), qui garde le sien. Le côté fermé : une ligne lue sans l'un de ses
-// rattachements, ou sans sa pièce et son mouvement embarqués, n'a aucun libellé ; un mouvement que la lecture n'a pas rendu,
+// l'opération de caisse (étape C5), puis une écriture que l'application compose sans eux (une dotation, un forfait
+// kilométrique, une liquidation de TVA, une cotisation payée depuis le compte personnel), qui garde le sien. Le côté fermé : une ligne lue sans l'un de ses
+// rattachements, ou sans sa pièce, son mouvement et son opération de caisse embarqués, n'a aucun libellé ; un mouvement que la lecture n'a pas rendu,
 // ou dont le montant ne dit pas le sens, n'en donne aucun ; ni la ligne d'une vente facturée d'un dossier qui ne lit pas ses
 // ventes.
 //
 // LE SEUL PASSAGE : ce que le modèle reçoit d'une pièce (`lister_pieces`) ou d'une ligne du brouillon (`lister_ecritures`, qui
-// lit la pièce et le mouvement de chaque ligne par leurs clés étrangères, et du mouvement son classement par ses encaissements
-// et les comptes de ses lignes, dans la même sélection) passe par ce bloc, avant tout le reste ; d'une
+// lit la pièce, le mouvement et l'opération de caisse de chaque ligne par leurs clés étrangères, et du mouvement son classement
+// par ses encaissements et les comptes de ses lignes, dans la même sélection) passe par ce bloc, avant tout le reste ; d'une
 // ligne, il ÉCRIT ce qui sort, plutôt que d'en retirer ce qui ne sort pas. src/lib/agentComptablePiecesDeVente.test.ts
 // l'extrait et l'exécute seul, confronte ses rattachements au schéma exporté, et part de TOUTES les lectures de la fonction :
 // celle qui rapporte un tiers, un nom de fichier ou un libellé du brouillon passe par ici, ou se déclare avec sa raison et
@@ -3095,6 +3111,9 @@ interface MouvementNomme { date: string | null; montant: number }
 // Une ligne d'un mouvement, telle que `lister_ecritures` la lit avec lui (VF9CQ1B) : son compte, et de quoi dire si elle lui
 // est PROPRE — ni facture, ni encaissement.
 interface LigneDuMouvementLue { compte: string; facture_id: string | null; encaissement_id: string | null }
+// Une opération de caisse telle que le modèle la nomme (étape C5) : son genre, sa date, son montant — signé, négatif pour des
+// espèces rendues. Ni sa catégorie, ni les encaissements qu'elle reconnaît, ni sa pièce, ni ses auteurs.
+interface OperationDeCaisseNommee { genre: string; date: string | null; montant: number }
 // Une facture ou un avoir, tels que `lister_ecritures` les nomme : leur numéro et leur type — jamais leur client (VF9c).
 interface FactureNommeeRow { id: string; type: string; numero: string | null }
 // Un encaissement, tel que `lister_ecritures` le nomme : sa facture, et s'il en est la contre-passation (VF9c).
@@ -3111,11 +3130,20 @@ interface VentesNommees {
 const TYPES_DONT_LE_TIERS_SE_DIT: readonly string[] = ["achat", "note_frais", "autre"]
 
 // Les RATTACHEMENTS d'une ligne du brouillon : chaque clé étrangère vers ce qui l'a produite — la pièce, le mouvement, la
-// facture ou l'avoir, l'encaissement, le bien, le véhicule, la déclaration de TVA, l'échéance de cotisation.
+// facture ou l'avoir, l'encaissement, le bien, le véhicule, la déclaration de TVA, l'échéance de cotisation, l'opération de
+// caisse (étape C5).
 const RATTACHEMENTS_D_UNE_LIGNE: readonly string[] = [
   "piece_id", "ligne_bancaire_id", "facture_id", "encaissement_id", "immobilisation_id", "vehicule_id", "declaration_tva_id",
-  "cotisation_id",
+  "cotisation_id", "operation_caisse_id",
 ]
+
+// Les mots d'une opération de caisse, par son genre — ceux de la contrainte `operations_caisse_genre` (étape C5). Un genre que
+// la base gagnerait n'a pas de mots : sa ligne se tait jusqu'à ce qu'on l'ait jugé. Une table, pas un objet : un genre
+// « toString » ne trouve rien.
+const MOTS_D_UNE_OPERATION_DE_CAISSE: ReadonlyMap<string, string> = new Map([
+  ["recette", "Recettes en espèces"], ["apport", "Apport en caisse"], ["prelevement", "Prélèvement en caisse"],
+  ["paiement", "Paiement par la caisse"],
+])
 
 // Les racines des comptes qui disent qu'un débit rend ou défait l'argent d'un client, sur l'une de ses lignes propres
 // (VF9CQ1B) : un produit (classe 7), un client (classe 41). Des racines du plan comptable général, aucun compte de rôle.
@@ -3144,6 +3172,20 @@ function nomDUnCreditDuReleve(mouvement: MouvementNomme): string {
 // dit le sens —, jamais son libellé ; mis en forme comme celui d'un crédit.
 function nomDUnDebitDuReleve(mouvement: MouvementNomme): string {
   return nomDUnCreditDuReleve({ date: mouvement.date, montant: Math.abs(mouvement.montant) }).replace(/^Crédit/, "Débit")
+}
+
+// Le nom d'une opération de caisse (étape C5) : ses mots, sa date, son montant sans signe — « Espèces rendues » pour une
+// recette négative ; jamais un nom, ni le libellé de sa catégorie. Aucun pour un genre sans mots, ou un montant qui ne dit pas
+// le sens (absent, nul, ou qui n'est pas un nombre) ; « sans date » pour une date qui ne se lit pas.
+function nomDUneOperationDeCaisse(operation: Partial<Record<keyof OperationDeCaisseNommee, unknown>>): string | null {
+  const mots = typeof operation.genre === "string" ? MOTS_D_UNE_OPERATION_DE_CAISSE.get(operation.genre) : undefined
+  const montant = operation.montant
+  if (mots === undefined || typeof montant !== "number" || !Number.isFinite(montant) || montant === 0) return null
+  const date = typeof operation.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(operation.date)
+    ? `du ${operation.date.slice(8, 10)}/${operation.date.slice(5, 7)}/${operation.date.slice(0, 4)}`
+    : "sans date"
+  const nom = operation.genre === "recette" && montant < 0 ? "Espèces rendues" : mots
+  return `${nom} ${date}, ${Math.abs(montant).toFixed(2).replace(".", ",")} €`
 }
 
 // Ce débit rend-il ou défait-il l'argent d'un client, tel que la base l'a écrit (VF9CQ1B) — le mouvement lu avec son
@@ -3203,12 +3245,23 @@ function libelleDUneLigneDuReleve(ligne: Record<string, unknown>): string | null
   return nomDUnCreditDuReleve(nomme)
 }
 
+// Le libellé d'une ligne d'une OPÉRATION DE CAISSE (étape C5), lue avec son opération (`operations_caisse`, par la clé
+// étrangère de `operation_caisse_id`) : le nom de l'opération, jamais le libellé du brouillon ; aucun d'une opération que la
+// lecture n'a pas rendue.
+function libelleDUneLigneDeCaisse(ligne: Record<string, unknown>): string | null {
+  const operation = ligne.operations_caisse
+  if (operation === null || typeof operation !== "object") return null
+  return nomDUneOperationDeCaisse(operation as Partial<Record<keyof OperationDeCaisseNommee, unknown>>)
+}
+
 // Le libellé et la SOURCE d'une ligne, dans l'ordre de ses rattachements (VF9c) : la facture ou l'avoir, l'encaissement — leur
 // libellé se RECOMPOSE de leur numéro, comme l'application l'écrit moins son client, et ne se dit pas quand la lecture ne les
 // a pas rendus, ou d'un dossier qui ne lit pas ses ventes —, la pièce, le mouvement — ses encaissements le classent, ou non —,
-// une écriture que l'application compose sans pièce ni mouvement ; puis rien : une ligne rattachée à rien (VF9CQ1-Q2).
+// l'opération de caisse (étape C5), une écriture que l'application compose sans pièce ni mouvement ; puis rien : une ligne
+// rattachée à rien (VF9CQ1-Q2).
 function libelleEtSource(ligne: Record<string, unknown>, ventes: VentesNommees | null): { libelle: string | null; source: string | null } {
-  if (!RATTACHEMENTS_D_UNE_LIGNE.every((c) => c in ligne) || !("pieces" in ligne) || !("lignes_bancaires" in ligne)) {
+  if (!RATTACHEMENTS_D_UNE_LIGNE.every((c) => c in ligne) || !("pieces" in ligne) || !("lignes_bancaires" in ligne)
+    || !("operations_caisse" in ligne)) {
     return { libelle: null, source: null }
   }
   const numero = (f: FactureNommeeRow) => f.numero ?? "sans numéro"
@@ -3227,6 +3280,7 @@ function libelleEtSource(ligne: Record<string, unknown>, ventes: VentesNommees |
     const classe = ventes?.classes.has(String(ligne.ligne_bancaire_id)) ?? false
     return { libelle: libelleDUneLigneDuReleve(ligne), source: classe ? "mouvement_d_encaissements" : null }
   }
+  if (ligne.operation_caisse_id != null) return { libelle: libelleDUneLigneDeCaisse(ligne), source: "caisse" }
   if (ligne.immobilisation_id != null || ligne.vehicule_id != null || ligne.declaration_tva_id != null || ligne.cotisation_id != null) {
     return { libelle: libelleDuBrouillon(ligne), source: null }
   }
@@ -3235,9 +3289,9 @@ function libelleEtSource(ligne: Record<string, unknown>, ventes: VentesNommees |
 
 // Ce que le modèle reçoit d'une ligne du brouillon, ÉCRIT ici : ses colonnes d'hier — la date, le compte, le libellé, le sens,
 // le montant, la pièce — et, d'un dossier qui lit ses ventes facturées (`ventes`, VF9c), sa source : la pièce, la facture,
-// l'avoir, l'encaissement, le mouvement que ses encaissements classent, ou rien (`null`) pour une autre écriture sans pièce
-// que la consigne décrit. Rien de ce qui n'a été lu que pour décider ne part : ni la pièce ni le mouvement embarqués, ni les
-// rattachements.
+// l'avoir, l'encaissement, le mouvement que ses encaissements classent, l'opération de caisse (étape C5), ou rien (`null`)
+// pour une autre écriture sans pièce que la consigne décrit. Rien de ce qui n'a été lu que pour décider ne part : ni la pièce,
+// ni le mouvement, ni l'opération de caisse embarqués, ni les rattachements.
 function ecritureVueParLeModele(ligne: Record<string, unknown>, ventes: VentesNommees | null): Record<string, unknown> {
   const { libelle, source } = libelleEtSource(ligne, ventes)
   const vue = { date: ligne.date, compte: ligne.compte, libelle, sens: ligne.sens, montant: ligne.montant, piece_id: ligne.piece_id }
@@ -3387,9 +3441,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // chaque ligne, le libellé d'un crédit recomposé, celui d'une ligne rattachée à rien tu ; ni le compte ni la tranche ne
     // changent. VF9CQ1B : et, du mouvement, son classement par ses encaissements et ses lignes — leur compte, leur facture,
     // leur encaissement —, embarqués dans la même sélection : le libellé d'un débit qui rend ou défait l'argent d'un client se
-    // recompose aussi.
+    // recompose aussi. ÉTAPE C5 : et son opération de caisse — son genre, sa date, son montant — par la clé étrangère de
+    // `operation_caisse_id` : le libellé d'une ligne de la caisse se recompose de ces trois-là, jamais celui du brouillon.
     const lireLesVentes = ventes !== null
-    let q = admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))", { count: "exact" }).eq("dossier_id", dossierId)
+    let q = admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))", { count: "exact" }).eq("dossier_id", dossierId)
     if (typeof input.compte === "string" && input.compte) q = q.eq("compte", input.compte)
     if (date_debut) q = q.gte("date", date_debut).lte("date", date_fin!)
     const { data, error, count } = await q.order("date", { ascending: false }).limit(limite)
@@ -3740,6 +3795,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // déposée au calcul de sa période ; l'assistant le DIT au lieu de répondre « rien à signaler ». Leur
       // liquidation, leurs paiements et les périodes non déclarées, eux, sont comptés plus bas.
       declarations_tva: "montants non vérifiés par l'assistant : l'onglet TVA compare chaque déclaration déposée au calcul de sa période",
+      // LA CAISSE (ligne 26.6, étape C5) : ses quatre contrôles — `caisse-a-reprendre`, `caisse-negative`,
+      // `recettes-de-caisse-a-revoir`, `versements-especes-en-recette` — ne se recalculent pas ici, ce qui serait une copie de
+      // plus à garder (src/lib/controlesDeLaCaisse.ts et src/lib/caisse.ts) : l'assistant le DIT, comme pour la TVA, et renvoie
+      // à l'onglet Caisse et à la Vue d'ensemble, qui les disent. Pour tout dossier : la caisse n'y paraît qu'une fois tenue.
+      caisse: CAISSE_NON_VERIFIEE,
       pieces_a_faible_confiance_extraction: piecesConfianceBasse.length,
       categories_sans_compte_comptable: catSansCompte.map((c) => c.libelle),
       categories_sans_poste_2035: catSansPoste.map((c) => c.libelle),
@@ -3994,6 +4054,7 @@ Règles impératives :
 - Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
 - Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
 - Un mouvement du relevé peut être ÉCRIT SUR UN COMPTE DE BILAN : un virement vers un autre compte du professionnel (épargne, second compte bancaire) ou depuis lui au 580000 Virements internes, un dépôt de garantie versé ou rendu au 275000 Dépôts et cautionnements versés, ou un autre compte de bilan choisi par le cabinet. Son écriture, face au 512000, n'a pas de pièce — le relevé en est le justificatif — : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette. Un mouvement IGNORÉ, lui, n'est écrit nulle part : absent du FEC, il convient à un doublon ou à un mouvement antérieur à la reprise du dossier ; un mouvement réel ignoré est un point à traiter.
+- La CAISSE du dossier (onglet Caisse, un dossier en trésorerie) : une RECETTE EN ESPÈCES sans facture — le total des espèces reçues un jour, pour une nature —, des espèces rendues, un APPORT en caisse ou un PRÉLÈVEMENT en espèces de l'exploitant s'écrit au jour de l'opération, sans pièce ni mouvement, face au compte de la caisse (${COMPTE_CAISSE} Caisse dans le plan par défaut) : la recette à son compte de produit — sa TVA au ${COMPTE_TVA_COLLECTEE} pour un dossier redevable —, et elle compte dans la 2035 à sa date ; l'apport et le prélèvement au compte de l'exploitant, ni charge ni recette. Son justificatif est le brouillard de caisse que l'exploitant tient hors de l'application : ce n'est pas une anomalie. La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas, ne le devine pas (lister_ecritures nomme une opération de caisse par sa nature, sa date et son montant). Un VERSEMENT d'espèces en banque est un crédit du relevé écrit sur le compte de la caisse, et un retrait d'espèces pour la caisse un débit : ni recette ni charge — la recette est déjà comptée à la caisse. Les contrôles de la caisse — opérations à reprendre, caisse négative, recettes à revoir, versements d'espèces rangés en recette — ne sont pas vérifiés par l'assistant (points_a_traiter : caisse) : renvoie à l'onglet Caisse et à la Vue d'ensemble, qui les disent.
 - Un VIREMENT peut RÉGLER PLUSIEURS PIÈCES (un paiement qui solde plusieurs factures, un avoir déduit d'un paiement) : chaque pièce reçoit sa PART du mouvement, qui la paie à la date du mouvement. Une pièce payée en plusieurs fois porte au brouillon une ligne de banque par paiement, au montant de ce paiement : ce n'est pas une anomalie.
 - Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
 - La facture d'un BIEN IMMOBILISÉ (inscrit au registre des immobilisations) s'écrit sur le compte d'immobilisation de sa nature (classe 2 : 218300, 215400…), pas en charge, sa TVA au 445620 : c'est son acquisition, qui ne compte pas dans la 2035 — le bien y compte par ses dotations. Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur. Rien de cela n'est une anomalie.

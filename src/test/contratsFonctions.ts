@@ -1969,12 +1969,21 @@ const SCENARIOS_DES_PIECES_DE_VENTE: Scenario[] = [
 // classé par les contre-passations d'un encaissement (d'un dossier basculé), et un débit dont le classement ne se lit pas (le
 // côté fermé) ; chacun se nomme « Débit du relevé du … », et son marqueur n'atteint jamais le modèle. Les débits ordinaires —
 // un fournisseur, un organisme, un virement personnel, un emprunt — gardent le leur, qui l'atteint.
+//
+// NI QUI A VERSÉ LES ESPÈCES D'UNE RECETTE DE CAISSE (la caisse d'un dossier BNC, ligne 26.6, étape C5). Le même monde porte
+// une caisse : une recette en espèces, des espèces rendues, un apport et un prélèvement de l'exploitant, leurs écritures sous un
+// sixième marqueur — le libellé qu'une ligne restaurée pourrait porter, un nom de patient —, une ligne qui cite une opération que
+// la lecture ne rend pas, et le versement de ces espèces en banque, un crédit classé sur le compte de la caisse. Chaque ligne
+// d'une opération se nomme par son genre, sa date et son montant ; celle dont l'opération manque n'a aucun libellé ; le
+// versement se nomme comme tout crédit ; le marqueur n'atteint jamais le modèle. La consigne dit la caisse, `points_a_traiter`
+// la dit non vérifiée, et la description de `lister_ecritures` dit le nom d'une opération.
 
 const MARQUEUR_D_UN_CREDIT = 'Vorlanche Quibrastel'
 const MARQUEUR_D_UN_DEBIT = 'Fournisseur fictif Sabredouve'
 const MARQUEUR_D_UNE_LIGNE_ORPHELINE = 'Lumvérac Dastrogne'
 const MARQUEUR_D_UN_SENS_ILLISIBLE = 'Prévaudre Kermilan'
 const MARQUEUR_D_UN_CLIENT_REMBOURSE = 'Ostravelle Pimbrecaux'
+const MARQUEUR_DE_LA_CAISSE = 'Galdrevin Morteusquale'
 /** Les libellés des écritures que l'application compose sans pièce ni mouvement : ils atteignent le modèle. */
 const LIBELLES_COMPOSES = [
   'Dotation 2026 — Bien fictif Ostrelade', 'Indemnités kilométriques 2026 — Voiture fictive Brennelac', 'CA3 1er trimestre 2026',
@@ -1992,7 +2001,10 @@ const RL = {
   rembourse: 'b9c20000-0000-4000-8000-000000000031', remboursePart: 'b9c20000-0000-4000-8000-000000000032',
   regleAuClient: 'b9c20000-0000-4000-8000-000000000033', defait: 'b9c20000-0000-4000-8000-000000000034',
   classementIllisible: 'b9c20000-0000-4000-8000-000000000035', urssaf: 'b9c20000-0000-4000-8000-000000000036',
-  regleAuFournisseur: 'b9c20000-0000-4000-8000-000000000037',
+  regleAuFournisseur: 'b9c20000-0000-4000-8000-000000000037', versement: 'b9c20000-0000-4000-8000-000000000041',
+  recetteDeCaisse: 'c5ca0000-0000-4000-8000-000000000001', especesRendues: 'c5ca0000-0000-4000-8000-000000000002',
+  apportEnCaisse: 'c5ca0000-0000-4000-8000-000000000003', prelevementEnCaisse: 'c5ca0000-0000-4000-8000-000000000004',
+  operationAbsente: 'c5ca0000-0000-4000-8000-000000000009',
   contrePassation: 'e9c20000-0000-4000-8000-000000000011',
   recettes: 'ca9c2000-0000-4000-8000-000000000001', fraisBancaires: 'ca9c2000-0000-4000-8000-000000000002',
   emprunt: 'e9c20000-0000-4000-8000-000000000001', echeanceCotisation: 'e9c20000-0000-4000-8000-000000000002',
@@ -2003,7 +2015,7 @@ const RL = {
 } as const
 /** Les lignes du brouillon de ce monde : leur identifiant commence ainsi, et elles seules se jugent une à une. */
 const PREFIXE_DES_LIGNES_DU_RELEVE = 'ec9c2000-'
-const RATTACHEMENTS_DU_BROUILLON = ['piece_id', 'ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id'] as const
+const RATTACHEMENTS_DU_BROUILLON = ['piece_id', 'ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id', 'operation_caisse_id'] as const
 
 /**
  * Ajoute au dossier du monde les mouvements marqués, leurs écritures, et ce qui les classe ; `bascule` : le crédit classé, le
@@ -2040,6 +2052,8 @@ function mouvementsDuReleveMarques(m: Monde, bascule: boolean, mode: 'tresorerie
     mouvement(RL.remboursePart, '2026-04-04', -50, `VIR ${r} REMBOURSEMENT`, { ventilee: true }),
     // Son classement ne se lit pas : le côté fermé.
     mouvement(RL.classementIllisible, '2026-04-08', -7, `CB ${r} ILLISIBLE`, { categorie_id: RL.fraisBancaires, encaissements_de_factures: null }),
+    // Étape C5 : le versement des espèces de la caisse en banque, un crédit classé sur le compte de la caisse.
+    mouvement(RL.versement, '2026-03-20', 250, `VERSEMENT ESPECES ${c}`, { compte_bilan: '530000' }),
     ...(mode === 'engagement'
       ? [mouvement(RL.regleAuClient, '2026-04-06', -30, `VIR ${r} AVOIR`, {}), mouvement(RL.regleAuFournisseur, '2026-04-07', -48, `PRLV ${d} FOURNISSEUR`, {})]
       : []),
@@ -2060,6 +2074,16 @@ function mouvementsDuReleveMarques(m: Monde, bascule: boolean, mode: 'tresorerie
     { id: identifiantGenere(), dossier_id: D, ligne_bancaire_id: RL.ventile, categorie_id: RL.fraisBancaires, part_personnelle: false, montant: -2.2, taux_tva: null },
     { id: identifiantGenere(), dossier_id: D, ligne_bancaire_id: RL.remboursePart, categorie_id: RL.recettes, part_personnelle: false, montant: -45, taux_tva: null },
     { id: identifiantGenere(), dossier_id: D, ligne_bancaire_id: RL.remboursePart, categorie_id: RL.fraisBancaires, part_personnelle: false, montant: -5, taux_tva: null },
+  )
+  // Étape C5 : la caisse — une recette, des espèces rendues, un apport et un prélèvement de l'exploitant.
+  const operation = (id: string, genre: string, date: string, montant: number) => ({
+    id, dossier_id: D, genre, date, montant, categorie_id: genre === 'recette' ? RL.recettes : null, taux_tva: null,
+    encaissements_du_jour: genre === 'recette' ? [] : null, piece_id: null, origine: 'cabinet', remplace_id: null,
+    cree_le: `${date}T18:00:00Z`, cree_par: null, retire_le: null, retire_par: null,
+  })
+  ;(m.base.operations_caisse ??= []).push(
+    operation(RL.recetteDeCaisse, 'recette', '2026-03-02', 321.5), operation(RL.especesRendues, 'recette', '2026-03-04', -21.5),
+    operation(RL.apportEnCaisse, 'apport', '2026-01-02', 150), operation(RL.prelevementEnCaisse, 'prelevement', '2026-03-16', 75),
   )
   ;(m.base.emprunts ??= []).push({ id: RL.emprunt, dossier_id: D, nom: 'Emprunt fictif', capital_initial: 555.55, taux_annuel: 0.05, date_debut: '2026-02-11', duree_mois: 4 })
   ;(m.base.cotisations_declarees ??= []).push(
@@ -2134,6 +2158,20 @@ function mouvementsDuReleveMarques(m: Monde, bascule: boolean, mode: 'tresorerie
         ligne('2026-04-07', '512000', 'credit', 48, `PRLV ${d} FOURNISSEUR`, du(RL.regleAuFournisseur)),
       ]
       : []),
+    // Étape C5 : la caisse. Ses lignes portent un nom de patient, comme une ligne restaurée le pourrait : aucune ne le dit.
+    ligne('2026-03-02', '530000', 'debit', 321.5, `Recettes en espèces du 02/03/2026 — ${MARQUEUR_DE_LA_CAISSE}`, { operation_caisse_id: RL.recetteDeCaisse }),
+    ligne('2026-03-02', '706000', 'credit', 321.5, `Recettes en espèces du 02/03/2026 — ${MARQUEUR_DE_LA_CAISSE}`, { operation_caisse_id: RL.recetteDeCaisse }),
+    ligne('2026-03-04', '706000', 'debit', 21.5, `Espèces rendues le 04/03/2026 — ${MARQUEUR_DE_LA_CAISSE}`, { operation_caisse_id: RL.especesRendues }),
+    ligne('2026-03-04', '530000', 'credit', 21.5, `Espèces rendues le 04/03/2026 — ${MARQUEUR_DE_LA_CAISSE}`, { operation_caisse_id: RL.especesRendues }),
+    ligne('2026-01-02', '530000', 'debit', 150, `Apport en caisse — ${MARQUEUR_DE_LA_CAISSE}`, { operation_caisse_id: RL.apportEnCaisse }),
+    ligne('2026-01-02', '108000', 'credit', 150, `Apport en caisse — ${MARQUEUR_DE_LA_CAISSE}`, { operation_caisse_id: RL.apportEnCaisse }),
+    ligne('2026-03-16', '108000', 'debit', 75, `Prélèvement en espèces — ${MARQUEUR_DE_LA_CAISSE}`, { operation_caisse_id: RL.prelevementEnCaisse }),
+    ligne('2026-03-16', '530000', 'credit', 75, `Prélèvement en espèces — ${MARQUEUR_DE_LA_CAISSE}`, { operation_caisse_id: RL.prelevementEnCaisse }),
+    // Une opération que la lecture ne rend pas : sa ligne n'a aucun libellé.
+    ligne('2026-03-18', '530000', 'debit', 9.99, `Recettes en espèces — ${MARQUEUR_DE_LA_CAISSE}`, { operation_caisse_id: RL.operationAbsente }),
+    // Le versement de ces espèces en banque : un crédit, qui se nomme comme tout crédit.
+    ligne('2026-03-20', '512000', 'debit', 250, `VERSEMENT ESPECES ${c}`, du(RL.versement)),
+    ligne('2026-03-20', '530000', 'credit', 250, `VERSEMENT ESPECES ${c}`, du(RL.versement)),
     // Les sens illisibles : un mouvement de zéro euro, et un mouvement que la lecture ne rend pas.
     ligne('2026-02-27', '627000', 'debit', 1.11, `${MARQUEUR_D_UN_SENS_ILLISIBLE} ZERO`, du(RL.zero)),
     ligne('2026-02-28', '627000', 'debit', 2.22, `${MARQUEUR_D_UN_SENS_ILLISIBLE} ABSENT`, du(RL.absent)),
@@ -2179,7 +2217,12 @@ function mouvementsDuReleveMarques(m: Monde, bascule: boolean, mode: 'tresorerie
       encaissementBascule(RL.contrePassation, V.fs1, -25, 'carte', { ligne_bancaire_id: RL.defait, date_encaissement: '2026-03-12', annule_id: RL.encaissementClasse }),
     )
   }
-  m.sensibles.push(MARQUEUR_D_UN_CREDIT, MARQUEUR_D_UNE_LIGNE_ORPHELINE, MARQUEUR_D_UN_SENS_ILLISIBLE, MARQUEUR_D_UN_CLIENT_REMBOURSE)
+  m.sensibles.push(MARQUEUR_D_UN_CREDIT, MARQUEUR_D_UNE_LIGNE_ORPHELINE, MARQUEUR_D_UN_SENS_ILLISIBLE, MARQUEUR_D_UN_CLIENT_REMBOURSE, MARQUEUR_DE_LA_CAISSE)
+}
+
+/** Les mots d'une opération de caisse, par son genre, écrits ICI (étape C5). */
+const MOTS_DE_LA_CAISSE: Readonly<Record<string, string>> = {
+  recette: 'Recettes en espèces', apport: 'Apport en caisse', prelevement: 'Prélèvement en caisse', paiement: 'Paiement par la caisse',
 }
 
 /**
@@ -2217,6 +2260,12 @@ function ceQueLaLigneDoitPorter(l: Record<string, unknown>, m: Monde, lit: boole
       : montant < 0 ? (auClient ? `Débit du relevé ${enClair(mv?.date)}, ${euros(-montant)}` : String(l.libelle)) : null
     return { libelle, source: lit && mv?.encaissements_de_factures === true ? 'mouvement_d_encaissements' : null }
   }
+  if (l.operation_caisse_id != null) {
+    const o = trouver('operations_caisse', l.operation_caisse_id)
+    const montant = Number(o?.montant)
+    const mots = o?.genre === 'recette' && montant < 0 ? 'Espèces rendues' : MOTS_DE_LA_CAISSE[String(o?.genre)]
+    return { libelle: o ? `${mots} ${enClair(o.date)}, ${euros(Math.abs(montant))}` : null, source: 'caisse' }
+  }
   if (l.immobilisation_id != null || l.vehicule_id != null || l.declaration_tva_id != null || l.cotisation_id != null) return { libelle: String(l.libelle), source: null }
   return { libelle: null, source: null }
 }
@@ -2231,6 +2280,10 @@ const OUTILS_DU_RELEVE = [
   { id: 'points', name: 'points_a_traiter', input: {} },
 ]
 // Adaptée à VF9CQ1B : la phrase dit aussi le débit qui rend ou défait l'argent d'un client.
+/** Ce que la consigne dit d'une opération de caisse (étape C5) : pas une anomalie, et personne de nommé. */
+const PHRASE_DE_LA_CAISSE = 'Son justificatif est le brouillard de caisse que l\'exploitant tient hors de l\'application : ce n\'est pas une anomalie. La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas, ne le devine pas'
+/** Ce que `points_a_traiter` dit de la caisse (étape C5), écrit ICI. */
+const CAISSE_NON_VERIFIEE = 'non vérifiée par l\'assistant : l\'onglet Caisse et la Vue d\'ensemble disent les opérations de caisse à reprendre, une caisse négative, les recettes de caisse à revoir et les versements d\'espèces rangés en recette'
 const PHRASE_DU_CREDIT = '\n- Un CRÉDIT du relevé (un mouvement qui entre en banque) se nomme par sa date et son montant : qui a payé n\'est pas transmis (lister_ecritures recompose le libellé des écritures de ce mouvement) ; ne le demande pas, ne le devine pas. De même, un DÉBIT qui rend ou défait l\'argent d\'un client — écrit en tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d\'un encaissement — se nomme par sa date et son montant : à qui l\'argent est rendu n\'est pas transmis. Le libellé d\'un autre débit, lui, est transmis.\n'
 
 /**
@@ -2250,7 +2303,8 @@ function releveNomme(lit: boolean) {
     return [
       ...verifie(porte.split(MARQUEUR_D_UN_CREDIT).length - 1 >= 20, 'le monde ne porte plus le marqueur du crédit : la preuve serait vide'),
       ...verifie(porte.split(MARQUEUR_D_UN_CLIENT_REMBOURSE).length - 1 >= (lit ? 13 : 10), 'le monde ne porte plus le marqueur du client remboursé : la preuve serait vide'),
-      ...[MARQUEUR_D_UN_CREDIT, MARQUEUR_D_UNE_LIGNE_ORPHELINE, MARQUEUR_D_UN_SENS_ILLISIBLE, MARQUEUR_D_UN_CLIENT_REMBOURSE].flatMap((x) =>
+      ...verifie(porte.split(MARQUEUR_DE_LA_CAISSE).length - 1 >= 9, 'le monde ne porte plus le marqueur de la caisse : la preuve serait vide'),
+      ...[MARQUEUR_D_UN_CREDIT, MARQUEUR_D_UNE_LIGNE_ORPHELINE, MARQUEUR_D_UN_SENS_ILLISIBLE, MARQUEUR_D_UN_CLIENT_REMBOURSE, MARQUEUR_DE_LA_CAISSE].flatMap((x) =>
         verifie(morceauxDe(x).every((morceau) => !demandes.includes(morceau)), `« ${x} » est parvenu au modèle`)),
       ...verifie(demandes.includes(MARQUEUR_D_UN_DEBIT), 'le libellé d’un débit n’atteint plus le modèle : la règle vise trop large'),
       ...LIBELLES_COMPOSES.flatMap((x) => verifie(demandes.includes(x), `le libellé d’une écriture composée ne parvient plus au modèle : ${x}`)),
@@ -2259,6 +2313,11 @@ function releveNomme(lit: boolean) {
         'la description de lister_ecritures ne dit pas le nom d’un crédit'),
       ...verifie((outils.find((o) => o.name === 'lister_ecritures')?.description ?? '').includes('(« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui l\'argent est rendu n\'est pas transmis ; celui d\'un autre débit reste.'),
         'la description de lister_ecritures ne dit pas le nom d’un débit qui rend l’argent d’un client'),
+      // Étape C5 : la caisse, dans la consigne, dans la description de lister_ecritures et dans points_a_traiter.
+      ...verifie(consigne.includes(PHRASE_DE_LA_CAISSE), 'la consigne ne dit pas qu’une opération de caisse ne nomme personne et n’est pas une anomalie'),
+      ...verifie((outils.find((o) => o.name === 'lister_ecritures')?.description ?? '').includes('Celui d\'une ligne d\'une opération de caisse se recompose de sa nature, de sa date et de son montant'),
+        'la description de lister_ecritures ne dit pas le nom d’une opération de caisse'),
+      ...('erreur' in r.points ? [] : verifie(r.points.caisse === CAISSE_NON_VERIFIEE, `points_a_traiter, la caisse : ${JSON.stringify(r.points.caisse)}`)),
       // Chaque ligne du monde : rendue une fois, sous ce qu'elle doit porter.
       ...verifie(lesMiennes.length >= (lit ? 48 : 37), `le monde ne porte plus ses lignes : ${lesMiennes.length}`),
       ...lesMiennes.flatMap((l) => {
