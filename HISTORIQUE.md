@@ -42424,3 +42424,105 @@ paragraphes, que le banc du leurre et `essaisEnProduction.test.ts` lisent pour l
 
 **CE QUI RESTE.** C4, l'onglet Caisse et la fiche d'un crédit, prêts sur leur branche ; C5, l'assistant, avant la
 première opération réelle ; puis C6 et la suite, après le MVP pour ce qui n'y compte pas.
+
+
+### 30/10/2026 — LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6)
+
+(Écrite par l'agent `dev` de C4 sur `13f9ec0` — C1 à C3b —, la branche locale `caisse-c4`. Aucune migration, rien dans
+`supabase/`, aucune Edge Function, aucun déploiement ; en production, rien de lu ni d'écrit. Tout ce qui suit est NEUTRE
+tant que `CAISSE_EXPORTEE` reste baissé : aucun onglet neuf, aucune phrase neuve, aucune lecture de plus.)
+
+**CE QUI EST POSÉ.** - La navigation (`lib/ongletsDossier.ts`) : `groupesDuParcours(caisseEnBase)` et
+`ongletsValides(caisseEnBase)` — baissé, la liste d'hier au caractère près ; levé, « Caisse » vient juste après Banque,
+destination directe comme elle (icône `IconCaisse`, `ICONES_PARCOURS`, `DossierTab`). `TABS_VALIDES` de `DossierDetail`
+est tirée des groupes, source unique : l'adresse `/dossiers/:id/caisse` n'est routable que la caisse en base, et
+l'onglet rejoint l'exercice partagé (`TABS_AVEC_EXERCICE`). La barre d'onglets, la barre latérale et la page lisent le
+drapeau À CHAQUE RENDU. - `lib/caisseEcran.ts`, PUR : ce que l'écran assemble, sans une règle recopiée — la caisse
+rejouée sur ce qui est lu (`etatDeLaCaisseLu`, le compte de la caisse DU PLAN), le dossier tel que la base le lit
+(`dossierDeLEcran`, le profil du cabinet), le journal jour par jour (`journalDeLaCaisse` : chaque flux de
+`fluxDeLaCaisse`, ligne pour ligne, avec le solde de la fin du jour), les totaux, la saisie telle qu'elle PART
+(`saisieDuFormulaire` : l'écriture de `ecritureDeLOperation`, l'ensemble du jour de `ensembleDuJour`), son verdict avant
+le clic (`verdictDuFormulaire`, `verdictDuMois` : les refus de `caisse.ts`, sous leurs mots, nommés par leur rang et
+leur jour pour un mois), les confirmations d'un retrait et d'un remplacement, et la caisse d'une fiche de mouvement
+(`caisseDeLaFiche`, `caisseDeBanque`). - `lib/caisseDuDossierLecture.ts` : la lecture de l'onglet, EN ENTIER
+(`lireTout`), le tout ou rien, gardée avec le dossier — les opérations (`lireLaCaisse`), la reprise entière, les
+mouvements du relevé classés sur un compte de bilan, les catégories (du dossier et communes) et, d'un dossier basculé
+seulement, ses factures sources et leurs encaissements ; le drapeau baissé, aucun appel au réseau.
+`lireLaRepriseDeLaCaisse` sert Banque. - `pages/dossier/CaisseTab.tsx` : le journal (une ligne d'en-tête par jour avec
+son solde, les espèces des factures lues sans geste, l'origine « saisie par le client », les versions retirées ou
+remplacées), quatre cartes (solde, recettes, prélèvements, versements), la saisie d'une opération (un `<form>`), la
+saisie d'un mois (tout ou rien), le retrait et le remplacement. Un verrou `useRef` pour tous les gestes, lu et posé dans
+l'enveloppe `agir`, relâché dans un `finally` APRÈS la relecture ; chaque fonction de la base par son appel, son `{
+error }` lu et dit ; la caisse relue même sur un refus (la base répond « relis la caisse »). Clé par dossier. Un dossier
+en engagement lit que la caisse ne se tient qu'en trésorerie, sans geste. - La fiche d'un mouvement (Banque) :
+« Versement d'espèces » avec le solde de la caisse ce jour-là, sans le mouvement puis avec lui classé, ou le refus de la
+base sous ses mots ; pour un mouvement déjà classé sur la caisse, « Remettre à traiter » grisé quand le retirer la
+viderait ; un crédit dont le libellé dit un versement le dit AVANT qu'on le range en recette ; la caisse, la reprise, le
+relevé entier ou les espèces des factures pas lus en entier, la fiche ne classe rien sur la caisse et le dit. - Les
+cibles : `caisse-a-reprendre`, `caisse-negative` et `recettes-de-caisse-a-revoir` — préalables et points — mènent à
+l'onglet Caisse (bouton « Voir la caisse ») ; le point « postes-manquants » compte la catégorie sans poste d'une recette
+de caisse (`recettesVivantes`, caisse lue en entier seulement). - Le banc : `CAISSE=1` joue l'onglet et deux fiches (un
+versement à traiter, un versement classé), avec quelques opérations fictives du cabinet infirmier ; sans la variable,
+les visites ne se jouent pas (l'adresse retomberait sur la Vue d'ensemble).
+
+**LES ÉCARTS À LA CONCEPTION, ET POURQUOI.** - « Caisse » est un GROUPE de la navigation, pas un écran de Comptabilité :
+la saisie se fait chaque semaine, comme le relevé, et ne se cache pas derrière un menu. Le prix : six entrées dans la
+barre du bas du téléphone, au lieu de cinq — levé seulement. Vu au banc à 390 px : « Caisse » tient, comme « Compta » et
+« Cabinet ». - Une lecture à elle, et non celle de l'onglet Écritures (`lireLesSourcesDesEcrituresDeVente`) : elle
+lisait le relevé entier, le registre entier et ses parts, quand la caisse n'a besoin que des mouvements classés sur un
+compte de bilan, des factures sources et de leurs encaissements. - Banque ne relit pas la caisse : la fiche juge sur le
+relevé que l'onglet a déjà lu en entier, les espèces des factures de ses ventes lues, et la seule reprise lue en plus
+(`lireLaRepriseDeLaCaisse`, rien au réseau drapeau baissé). - Les catégories d'une recette ne proposent que celles d'un
+compte de produit : une charge ne se choisit pas, et le refus de la base (« n'a pas de compte de produit ») ne se dit
+donc qu'à la saisie d'un mois dont la catégorie aurait changé de compte. - La saisie d'un mois ignore ses lignes vides
+EN FIN de saisie, jamais celles du milieu : leur rang est celui que le cabinet voit. - La confirmation d'un remplacement
+nomme l'ancienne et la nouvelle, pas la caisse qui en résulte : le refus de la caisse jamais négative se dit avant le
+clic, sur le remplacement lui-même. - Un exercice qui n'est pas celui du sélecteur : une opération datée d'un autre
+exercice s'écrit, et le message le dit (« dans l'exercice 2025, que le sélecteur d'exercice de l'en-tête affiche »). Le
+sélecteur de la page tire ses années des pièces, du relevé, du brouillon et des factures : une année que seule la caisse
+porte n'y paraît qu'après la relecture de la page — l'écriture au brouillon, que la saisie pose, la rend visible au
+prochain chargement. - Les tests d'avant retouchés : quatre, ceux de C3b qui épinglaient la destination provisoire des
+trois contrôles (Écritures, « Voir les écritures ») — `pointsDeLaChecklist.test.ts` et `prealablesValidation.test.ts`
+(la cible), `ChecklistTab.test.tsx` et `ClotureTab.test.tsx` (le bouton et la navigation) —, plus deux registres :
+`ecransAvantLecture.test.tsx` (deux entrées de l'onglet, le drapeau joué par un accesseur) et `DossierDetail.test.tsx`
+(le double de l'onglet et le même accesseur).
+
+**LA NEUTRALITÉ, PROUVÉE.** drapeau baissé, la suite entière de `13f9ec0` rejouée test par test (JSON, Paris) : 15 293
+tests dans 491 fichiers avant, 15 474 dans 496 après ; aucun test d'avant ne change d'état, deux seulement changent de
+titre (ceux de `ChecklistTab` et de `ClotureTab`, dont le bouton « Voir les écritures » est devenu « Voir la caisse »),
+et 183 sont apparus — l'onglet, la lecture, le module, la fiche d'un mouvement, la navigation, les points. Dont 25 de
+`clesSupabase.test.ts`, qui compte un cas par fichier de source : les fichiers neufs s'y ajoutent. Baissé,
+`groupesDuParcours(false)` rend la liste d'hier au caractère près (`ongletsDossier.test.ts`), `lireLaRepriseDeLaCaisse`
+ne touche pas au réseau, la fiche d'un mouvement ne reçoit que la caisse « absente » et se rend comme avant
+(`BanqueTab.caisse.test.tsx`, `FicheMouvement`), et l'adresse `/dossiers/:id/caisse` retombe sur la Vue d'ensemble.
+Levé, avec les deux migrations déplacées dans `supabase/schema/` sous des versions postérieures à A7
+(`20261029220000_caisse`, `20261029220100_caisse_retrait_et_versement`, remises ensuite dans `supabase/preparees/`, rien
+commité) : la suite entière, 15 474 tests, verte, identique à celle du drapeau baissé test par test. Le drapeau reste
+baissé sur la branche ; c'est la session principale qui le lève, le jour des deux migrations.
+
+**LES PREUVES.** les tests de l'onglet (`CaisseTab.test.tsx`, 45 : chaque geste, son verrou par deux clics dans le MÊME
+`act`, le refus avant le clic, la lecture partielle, rien avant le retour de la lecture, le changement de dossier,
+l'engagement), de la fiche d'un mouvement (`BanqueTab.caisse.test.tsx`, 17), du module (`caisseEcran.test.ts`, 51, dont
+une batterie de 300 saisies tirée de la graine 20261030 confrontée à `caisse.ts`), de la lecture
+(`caisseDuDossierLecture.test.ts`, 25), de la navigation (`DossierParcours.caisse.test.tsx`, `ongletsDossier.test.ts`,
+`DossierDetail.test.tsx`) et des points (`pointsDeLaChecklist.test.ts`, `prealablesValidation.test.ts`). Environ
+cinquante mutations du code neuf (verrou lu mais non posé, rpc sans `{ error }`, lecture partielle qui offre un geste,
+solde du jour, refus montré après le clic, dossier non gardé, cible d'un point, tri des journées…) : toutes tuées ou
+équivalentes ; cinq survivantes du premier tour (une garde de dossier redondante, un solde mal éprouvé, l'engagement
+d'une fiche, deux cibles) corrigées, puis tuées. Le banc (`outils/captures/`, `CAISSE=1`, la caisse levée dans la copie
+de travail pour lui seul, jamais commitée, aucun mandataire donné au navigateur) : `debordements.mjs` rend 0 à 1 440, 1
+280, 1 024, 720 et 390 px et aux deux volets extrêmes (`barre=200 panneau=760`, `barre=420 panneau=340`), l'onglet et
+ses deux fiches compris ; 306 boutons sondés dans 64 fenêtres, 0 recouvert. Deux défauts vus au banc et corrigés : à 390
+px, « Prestation|s » se coupait au milieu du mot dans la cellule « Nature » (son contenu tient dans un seul bloc), et
+deux visites laissaient un panneau de droite ouvert qui interceptait le clic de la suivante sous 1 280 px (elles passent
+avant le relevé d'un dossier basculé, dont le premier pas le ferme).
+
+**LA BARRIÈRE**, sur `5127ad7` (Node 22.23.3) : `npx tsc -b --force` : code 0 ; `npm run lint` : code 0, 0 erreur, 63
+avertissements (autant que la référence de C2) ; `npm run test:fuseaux` : code 0, 496 fichiers et 15 474 tests verts à
+Paris, UTC, New York et Auckland ; `npm run build` : code 0. Chaque code lu par `${PIPESTATUS[0]}`.
+
+**CE QUI RESTE.** À C5 : l'assistant (la source « caisse » de `lister_ecritures`, la consigne, `points_a_traiter` qui
+renvoie à la Vue d'ensemble pour les quatre points — la cible d'un point mène désormais à l'onglet). À C6 et au-delà :
+le resserrement (plus de candidat en espèces pour un crédit, VF5e), le paiement d'une pièce par la caisse (C8, C9), le
+droit « Caisse » du client et « Ma caisse » (C10 à C12). Non fait, et non demandé : « Ma simulation » dit déjà ne pas
+compter la caisse (C3a).
