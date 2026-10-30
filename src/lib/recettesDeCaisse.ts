@@ -1,6 +1,5 @@
 import { natureDuCompte, type NatureCompte } from './affectationBanque'
 import { libelleDeLOperation } from './caisse'
-import type { LectureDeLaCaisse } from './caisseLecture'
 import { horsTaxeEtTva, tauxApplicable } from './tvaDuReleve'
 import type { Categorie, OperationCaisse } from './types'
 
@@ -33,7 +32,19 @@ import type { Categorie, OperationCaisse } from './types'
 // `paiement`, CAISSE-Q4) date la PIÈCE, comme un mouvement : il n'est pas une recette et n'entre pas ici — l'étape C9 l'ajoute
 // aux paiements des pièces (`paiementsDesPieces`).
 //
-// PUR : aucun appel au réseau ; la lecture n'est importée que pour son type.
+// PUR : aucun appel au réseau, et pas même un import de type de la lecture (lib/caisseLecture.ts, qui importe le client) :
+// le scanner des écrans qui lisent la base (ecransAvantLecture.test.tsx) suit les imports, et la 2035 qui importe ce module
+// ferait passer pour des lecteurs tous les écrans qui la calculent. La forme lue se décrit ici (`CaisseLue`), et la lecture
+// la rend telle quelle.
+
+/** Ce qu'une lecture de la caisse rend (`LectureDeLaCaisse`, lib/caisseLecture.ts), tel que ce module le lit. */
+export interface CaisseLue {
+  dossierId: string
+  enBase: boolean
+  lignes: readonly OperationCaisse[]
+  complete: boolean
+  motif: string | null
+}
 
 /** Une recette de caisse, telle que les moteurs la comptent. Montants en CENTIMES, signés comme les espèces. */
 export interface RecetteDeCaisse {
@@ -130,7 +141,7 @@ export function recetteDeCaisse(
  * lues, du dossier et communes ; `assujettiTva` : le statut d'aujourd'hui, comme pour le relevé.
  */
 export function recettesDeCaisseDuDossier(
-  lecture: LectureDeLaCaisse | null,
+  lecture: CaisseLue | null,
   dossierId: string,
   categories: readonly Categorie[],
   assujettiTva: boolean,
