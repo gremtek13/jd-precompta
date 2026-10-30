@@ -384,6 +384,51 @@ describe('enregistrer l’encaissement d’une facture : la fenêtre, le mouveme
   })
 })
 
+// LA CAISSE (ligne 26.6, étape C6) : un encaissement en espèces ne cite aucun crédit — la garde des encaissements le refuse
+// (migration especes_sans_mouvement). La fiche d'un crédit ne le propose pas (VF5e), ne l'offre pas à rattacher (VF5c), et
+// la fenêtre qu'elle ouvre, le crédit imposé, n'offre pas les espèces. Les espèces de F2026-0019, 120 €, reçues le jour même
+// du crédit libre de 120 € : le candidat parfait d'hier.
+describe('la caisse (étape C6) : des espèces sans mouvement ne se proposent ni ne se rattachent à un crédit', () => {
+  function avecDesEspeces() {
+    const f6 = facture('f6', 'F2026-0019', 'Cabinet Comptant', 100)
+    faux.parTable.factures_emises = [...faux.parTable.factures_emises, f6 as unknown as Record<string, unknown>]
+    faux.parTable.facture_lignes = [...faux.parTable.facture_lignes, {
+      id: 'fl6', facture_id: 'f6', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20,
+    }]
+    const e7 = encaissement({ id: 'e7', facture_id: 'f6', montant: 120, moyen: 'especes', date_encaissement: '2026-06-06' })
+    faux.parTable.encaissements_factures = [...faux.parTable.encaissements_factures, e7]
+    faux.parTable.encaissements_factures_taux = [
+      ...faux.parTable.encaissements_factures_taux, { encaissement_id: 'e7', dossier_id: D, taux: 20, montant: 120 },
+    ]
+  }
+
+  it.each([
+    ['le crédit libre de son montant, du même jour', 'REMISE CHEQUE 120', ['', 'e3', 'e5']],
+    ['la remise de chèques qu’il reste à faire', 'REMISE CHEQUES 2 FACTURES', ['', 'e5', 'e3']],
+  ] as const)('%s : ni proposées, ni à rattacher — les autres encaissements, comme hier', async (_nom, libelle, attendues) => {
+    avecDesEspeces()
+    rendre()
+    await ouvrir(libelle)
+    expect(options('Encaissement à rattacher')).toEqual(attendues)
+    // Ni en tête de la fiche (ses candidats), ni nulle part ailleurs : la facture des espèces n'y est jamais nommée.
+    expect(texteDe(volet())).not.toContain('F2026-0019')
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('la fenêtre ouverte sur un crédit n’offre pas les espèces ; les autres moyens, si', async () => {
+    avecDesEspeces()
+    rendre()
+    await ouvrir('REMISE CHEQUE 120')
+    choisir('Facture à encaisser', 'f4')
+    await cliquer(boutonDe(TITRE_ENREGISTRER, 'Enregistrer…'))
+    await screen.findByRole('heading', { name: 'Encaissements de la facture F2026-0017' })
+    const moyens = [...(screen.getByLabelText('Moyen de paiement') as HTMLSelectElement).options].map((o) => o.value)
+    expect(moyens).toEqual(['', 'virement', 'cheque', 'carte', 'prelevement', 'effet', 'compensation', 'autre'])
+    expect(screen.getByText(/hors les espèces, qui ne citent aucun crédit/)).toBeTruthy()
+    expect(faux.rpcs).toEqual([])
+  })
+})
+
 describe('le refus de la base après le clic : dit, puis relu', () => {
   it.each([
     ['classer', 'VIR SARL HORIZON F2026-0014', TITRE_CLASSER, TITRE_CLASSER, null, 'Le mouvement n’a pas été classé par ses encaissements : '],

@@ -1,6 +1,6 @@
 import {
-  refusEnregistrement, repartitionProposee, resteAEncaisser,
-  type CleRefusEnregistrement, type ContexteFacture, type EncaissementLu, type FacturePourEncaissement, type LigneDeFacture,
+  REFUS_ESPECES_SUR_UN_CREDIT, refusEnregistrement, repartitionProposee, resteAEncaisser,
+  type CleRefusEnregistrement, type CleRefusEspeces, type ContexteFacture, type EncaissementLu, type FacturePourEncaissement, type LigneDeFacture,
   type MouvementLu, type PartLue, type PartSaisie, type SaisieEncaissement,
 } from '../lib/encaissementsFactures'
 import { TAUX_ADMIS } from '../lib/factureCii'
@@ -26,8 +26,10 @@ import type { EtatTransmission } from '../lib/types'
 // lirait pas comme une date, la fonction ne la reçoit jamais), un nombre qui n'en est pas un (JSON l'écrit `null`).
 
 /** Le jour où la base a jugé la batterie dont encaissementsBatterie.test.ts fige l'empreinte : elle lit sa date à Paris,
- * le module la reçoit. Les saisies visent ce jour, le lendemain et le 1er janvier qui suit : elles en dépendent. */
-export const AUJOURD_HUI_RELEVE = '2026-10-10'
+ * le module la reçoit. Les saisies visent ce jour, le lendemain et le 1er janvier qui suit : elles en dépendent. Rejouée
+ * le 30/10/2026 (la caisse, étape C6), sur une réplique de la production, sans puis avec la migration
+ * especes_sans_mouvement. */
+export const AUJOURD_HUI_RELEVE = '2026-10-30'
 
 /** Le nombre de saisies de la batterie, et la graine de son tirage. */
 export const SAISIES_DE_LA_BATTERIE = 4000
@@ -353,9 +355,12 @@ export function batterie(nombre: number, graine: number, aujourdHui: string): Ca
   return cas
 }
 
-// Le code de chaque refus, dans la famille que la base lui donne ; les autres sont des paramètres invalides (22023).
-const CODES_DES_REFUS: Partial<Record<CleRefusEnregistrement, string>> = {
+// Le code de chaque refus, dans la famille que la base lui donne ; les autres sont des paramètres invalides (22023). Le
+// refus de la garde des encaissements que l'insertion rencontre (la caisse, étape C6 : des espèces qui citent un crédit),
+// celui des déclencheurs (23514).
+const CODES_DES_REFUS: Partial<Record<CleRefusEnregistrement | CleRefusEspeces, string>> = {
   acces: '42501', mouvement_sans_banque: '42501', facture_introuvable: 'P0002',
+  [REFUS_ESPECES_SUR_UN_CREDIT.cle]: REFUS_ESPECES_SUR_UN_CREDIT.code,
 }
 
 function reponses(cas: readonly CasDeBatterie[], aujourdHui: string, gereLaBanque: boolean): string[] {

@@ -324,11 +324,13 @@ describe('un crédit LIBRE : rattacher un encaissement, ou enregistrer celui d�
   const ENCAISSEMENTS = [
     encaissement({ id: 'e4b', facture_id: 'f1', montant: 120, date_encaissement: '2026-03-08', moyen: 'cheque' }),
     encaissement({ id: 'e4a', facture_id: 'f1', montant: 120, date_encaissement: '2026-03-08', moyen: 'cheque' }),
-    encaissement({ id: 'e4', facture_id: 'f1', montant: 120, date_encaissement: '2026-03-02', moyen: 'especes' }),
+    encaissement({ id: 'e4', facture_id: 'f1', montant: 120, date_encaissement: '2026-03-02', moyen: 'carte' }),
     encaissement({ id: 'e5', facture_id: 'f2', montant: 310 }),
     encaissement({ id: 'e3', facture_id: 'f3', montant: 300, moyen: 'cheque' }),
     // Écartés : retiré, déjà rattaché, une contre-passation, d'une facture d'avant la bascule, annulé par une
-    // contre-passation sans mouvement, d'un autre dossier.
+    // contre-passation sans mouvement, d'un autre dossier — et, depuis la caisse (étape C6), des espèces, qui ne citent
+    // aucun crédit : celles-ci feraient le crédit au centime, et ne se rattachent pourtant pas.
+    encaissement({ id: 'x-especes', facture_id: 'f3', montant: 300, moyen: 'especes', date_encaissement: '2026-03-01' }),
     encaissement({ id: 'x-retire', facture_id: 'f1', montant: 300, retire_le: '2026-03-11T00:00:00Z' }),
     encaissement({ id: 'x-cite', facture_id: 'f3', montant: 300, ligne_bancaire_id: 'm-autre' }),
     encaissement({ id: 'x-cp', facture_id: 'f3', montant: -50, annule_id: 'x-cite', ligne_bancaire_id: 'm-debit' }),
@@ -350,6 +352,32 @@ describe('un crédit LIBRE : rattacher un encaissement, ou enregistrer celui d�
     expect(g.complement.rattachables.map((e) => e.id)).toEqual(['e3', 'e5', 'e4', 'e4a', 'e4b'])
     expect(g.complement.rattachables[0]).toMatchObject({ libelle: 'Facture F2026-0016 (Atelier Martin) — chèque du 10/03/2026', montant: 300 })
     expect(g.complement.note).toBeNull()
+    // Les espèces (étape C6) : ni dans la liste — pas même grisées —, ni parmi les propositions en tête, alors qu'elles
+    // feraient le crédit au centime ; le chèque du même montant, si.
+    expect(g.complement.proposes.map((p) => p.id)).toEqual(['e3'])
+  })
+
+  it('un encaissement en espèces ne se rattache à aucun crédit (la caisse, étape C6) : ni rattachable, ni proposé', () => {
+    const seul = sources({
+      mouvements: [mouvement({ id: 'm1', montant: 300 })],
+      encaissements: [encaissement({ id: 'x-especes', facture_id: 'f3', montant: 300, moyen: 'especes', date_encaissement: '2026-03-01' })],
+    })
+    // Le libellé du crédit cite le client de la facture : la fiche le lirait comme un signal de plus.
+    const ici = { id: 'm1', dossier_id: D, libelle: 'VERSEMENT ESPECES ATELIER MARTIN', libelle_brut: null }
+    const gestesCites = (s: SourcesDesGestes) => gestesDuCredit(ventesDuReleve(true, D, lue(s), ACCES), lue(s), ici, [], PLAN_PAR_DEFAUT)
+    const g = gestesCites(seul)
+    if (g.etat !== 'libre') throw new Error(g.etat)
+    // Le montant et le client (cité au libellé) le désigneraient : rien ne se rattache, rien ne se propose ; les deux
+    // factures sources qui restent à encaisser, elles, s'offrent comme hier.
+    expect(g.complement.rattachables).toEqual([])
+    expect(g.complement.proposes).toEqual([])
+    expect(g.complement.factures.map((f) => f.facture.id)).toEqual(['f2', 'f1'])
+    // Le même encaissement par chèque se rattache, et se propose en tête.
+    const cheque = sources({ ...seul, encaissements: [{ ...seul.encaissements[0], moyen: 'cheque' }] })
+    const g2 = gestesCites(cheque)
+    if (g2.etat !== 'libre') throw new Error(g2.etat)
+    expect(g2.complement.rattachables.map((e) => [e.id, e.refus])).toEqual([['x-especes', null]])
+    expect(g2.complement.proposes.map((p) => p.id)).toEqual(['x-especes'])
   })
 
   it('chacun jugé par `refusRattachement`, sous ses mots ; l’état d’après dit ce qui restera', () => {
@@ -360,7 +388,7 @@ describe('un crédit LIBRE : rattacher un encaissement, ou enregistrer celui d�
     expect(par.get('e5')?.refus).toBe(refus(REFUS_RATTACHEMENT, 'mouvement_depasse', '300,00', '310,00'))
     expect(par.get('e4')?.refus).toBeNull()
     expect(par.get('e4')?.confirmation).toContain(`Il restera ${fm(180)} pour faire le crédit : son classement attendra qu’il soit fait.`)
-    expect(par.get('e4')?.confirmation).toContain(`— Facture F2026-0014 (SARL Horizon) — espèces du 02/03/2026 : ${fm(120)}`)
+    expect(par.get('e4')?.confirmation).toContain(`— Facture F2026-0014 (SARL Horizon) — carte bancaire du 02/03/2026 : ${fm(120)}`)
   })
 
   it('daté d’un exercice validé, le chèque se rattache au crédit d’après : son écriture n’y change pas, le crédit solde le 511 (VF7a)', () => {
@@ -377,8 +405,8 @@ describe('un crédit LIBRE : rattacher un encaissement, ou enregistrer celui d�
     expect(par.get('e9')?.refus).toBeNull()
     expect(par.get('e9')?.confirmation).toContain('L\'exercice 2025 est validé : l’écriture de cet encaissement n’y change pas, et '
       + 'celle de ce crédit soldera les valeurs à l’encaissement. ')
-    expect(par.get('e8')?.refus).toBeNull()
-    expect(par.get('e8')?.confirmation).toContain('et celle de ce crédit soldera la caisse. ')
+    // Les espèces ne se rattachent à aucun crédit (la caisse, étape C6) : figées ou non, absentes de la liste.
+    expect(par.has('e8')).toBe(false)
     // Par un autre moyen, il s'écrit sur son compte de contrepartie : la base le refuse, sous ses mots d'hier.
     expect(par.get('e7')?.refus).toBe(refus(REFUS_RATTACHEMENT, 'frontiere', 'L\'exercice 2025 est validé'))
     // Le lendemain de la frontière, la confirmation ne dit rien de l'exercice.

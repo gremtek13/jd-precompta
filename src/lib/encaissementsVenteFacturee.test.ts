@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { TEXTE_ESSAI_VENTES_FACTUREES, correspondAuModele, etapesDeLEssai, refusExigesParLEssai } from '../test/essaiVentesFacturees'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import type { MoyenEncaissement } from './types'
 import {
-  ANNEES_ILLISIBLES, MOYENS_ENCAISSEMENT, MOYENS_SUR_LEUR_CONTREPARTIE, REFUS_GARDE_FRONTIERE,
+  ANNEES_ILLISIBLES, MOYENS_ENCAISSEMENT, MOYENS_SANS_CREDIT, MOYENS_SUR_LEUR_CONTREPARTIE, REFUS_GARDE_FRONTIERE,
   REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT, REFUS_GARDE_MOUVEMENTS, REFUS_RATTACHEMENT, REFUS_RETRAIT,
   REFUS_RETRAIT_CLASSEMENT, debitObligatoire, exemplaireUnique, factureSansExemplaire, justifieSonMouvement, mouvementLibre,
   paireNonDeclaree, partsEncaissees, refusClassement,
@@ -630,15 +631,19 @@ describe('refusRattachement — rattacher_mouvement_encaissement, une fois, de n
   it('daté d’un exercice validé, il se rattache encore au mouvement d’après, sauf par compensation ou par un autre moyen (VF7a)', () => {
     const v = vente({ anneesValidees: [2026] })
     const janvier = mouvement({ date: '2027-01-05', montant: 100 })
+    // Des espèces ne se rattachent à aucun crédit (la caisse, étape C6) : le refus de la garde, après ceux de la fonction.
+    const surLeCredit = (moyen: MoyenEncaissement) => (MOYENS_SANS_CREDIT.includes(moyen) ? 'especes_sur_un_credit' : 'aucun')
     for (const { moyen } of MOYENS_ENCAISSEMENT) {
       const fige = encaissement({ date_encaissement: '2026-12-30', moyen })
       expect(refusRattachement(D, 'e1', 'm1', [fige], [janvier], v)?.cle ?? 'aucun', moyen)
-        .toBe(MOYENS_SUR_LEUR_CONTREPARTIE.includes(moyen) ? 'frontiere' : 'aucun')
-      // Le lendemain de la frontière, tout moyen se rattache ; un mouvement figé, aucun.
-      expect(refusRattachement(D, 'e1', 'm1', [{ ...fige, date_encaissement: '2027-01-02' }], [janvier], v), moyen).toBeNull()
+        .toBe(MOYENS_SUR_LEUR_CONTREPARTIE.includes(moyen) ? 'frontiere' : surLeCredit(moyen))
+      // Le lendemain de la frontière, tout moyen se rattache, les espèces exceptées ; un mouvement figé, aucun.
+      expect(refusRattachement(D, 'e1', 'm1', [{ ...fige, date_encaissement: '2027-01-02' }], [janvier], v)?.cle ?? 'aucun', moyen)
+        .toBe(surLeCredit(moyen))
       expect(refusRattachement(D, 'e1', 'm1', [{ ...fige, date_encaissement: '2027-01-02' }], [{ ...janvier, date: '2026-12-31' }], v)?.cle, moyen)
         .toBe('mouvement_fige')
     }
+    expect([...MOYENS_SANS_CREDIT]).toEqual(['especes'])
     expect([...MOYENS_SUR_LEUR_CONTREPARTIE]).toEqual(['compensation', 'autre'])
     // Une contre-passation figée sans mouvement, de même, sur un débit d'après.
     const c = encaissement({ id: 'c1', montant: -100, annule_id: 'e0', date_encaissement: '2026-12-30', moyen: 'cheque' })
@@ -654,7 +659,8 @@ describe('refusRattachement — rattacher_mouvement_encaissement, une fois, de n
     const cheque = encaissement({ date_encaissement: '2026-12-30', moyen: 'cheque' })
     expect(rattachableApresLaFrontiere(cheque, v)).toBe(true)
     for (const [cas, e, contexte] of [
-      ['par un autre moyen', { ...cheque, moyen: 'autre' }, v], ['retiré', { ...cheque, retire_le: '2027-01-02T10:00:00Z' }, v],
+      ['par un autre moyen', { ...cheque, moyen: 'autre' }, v], ['en espèces (étape C6)', { ...cheque, moyen: 'especes' }, v],
+      ['retiré', { ...cheque, retire_le: '2027-01-02T10:00:00Z' }, v],
       ['une contre-passation', { ...cheque, annule_id: 'e0' }, v], ['qui cite déjà un mouvement', { ...cheque, ligne_bancaire_id: 'm1' }, v],
       ['le lendemain de la frontière', { ...cheque, date_encaissement: '2027-01-02' }, v],
       ['une facture qui n’est pas source', { ...cheque, facture_id: 'f2' }, v], ['côté client', cheque, client],

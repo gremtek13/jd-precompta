@@ -13,7 +13,8 @@ import {
   ANNEES_ILLISIBLES, ETATS_DECLARANTS, FRONTIERE_JUGEE_PAR_LA_BASE, MOYENS_ENCAISSEMENT, RATTACHEMENT_APRES_LA_FRONTIERE,
   REFUS_DECLARATION, centimesExacts, rattachableApresLaFrontiere,
   contrePassationDe, debitObligatoire, debitsCitables, echeanceDeDeclaration, encaissementsDeclares, frontiereJugeeParLaBase,
-  inclassableApresContrePassation, inclassableApresEnregistrement, obligationEncaissee, paireNonDeclaree, partsEncaissees,
+  inclassableApresContrePassation, inclassableApresEnregistrement, moyenSansCredit, moyensOfferts, obligationEncaissee,
+  paireNonDeclaree, partsEncaissees,
   piecesJumelles, plateformeAcceptee, plateformeDeLaDeclaration, propositionsEncaissement, refusContrePassationAvantLaDate,
   refusContrePassationSansIssue, refusContrePassationVente, refusDeLaFacture, refusDeclaration, refusEnregistrementVente,
   refusRetraitVente, repartitionProposee, resteAEncaisserVente,
@@ -809,6 +810,12 @@ function Contenu({
     : null
   const choisie = formulaire?.ligneBancaireId ? propositions.find((p) => p.ligneBancaireId === formulaire.ligneBancaireId) ?? null : null
   const moyen = formulaire ? MOYENS_ENCAISSEMENT.find((m) => m.moyen === formulaire.moyen) ?? null : null
+  // LA CAISSE, ÉTAPE C6 : des espèces ne citent aucun crédit — la garde des encaissements le refusera
+  // (`especes_sans_mouvement`). Sur le crédit qu'impose la fiche d'un mouvement, le moyen ne s'offre pas ; ailleurs, choisi,
+  // aucun mouvement ne se propose ni ne se désigne, et celui qui l'était tombe dans la même saisie (un champ devenu sans
+  // objet). Le refus du module, sur la saisie telle qu'elle part, reste la seconde ceinture.
+  const offerts = moyensOfferts(mouvementImpose !== null)
+  const sansCredit = formulaire ? moyenSansCredit(formulaire.moyen) : false
   const echeanceSaisie = formulaire && formulaire.date !== '' ? echeanceDeDeclaration(formulaire.date, statutTva) : null
   const nomPiece = (id: string) => {
     const p = lu.pieces.find((x) => x.id === id)
@@ -1141,13 +1148,22 @@ function Contenu({
               </p>
               <p className="muted" style={{ margin: '4px 0 0' }}>
                 Imposé par la fiche du mouvement, dans l’onglet Banque : l’encaissement s’enregistre sur ce crédit. La date et
-                le montant en sont proposés ; le moyen reste à choisir.
+                le montant en sont proposés ; le moyen reste à choisir — hors les espèces, qui ne citent aucun crédit :
+                leur encaissement s’enregistre sans mouvement, depuis l’onglet Factures.
               </p>
             </div>
           ) : !gereLaBanque ? (
             <p className="muted" style={{ margin: '0 0 8px' }}>
               Ton accès ne porte pas « Banque » sur cette société : le relevé n’est pas lu ici, et aucun mouvement ne s’y
               propose ni ne s’y désigne. L’encaissement s’enregistre sans mouvement.
+            </p>
+          ) : sansCredit ? (
+            <p className="muted" style={{ margin: '0 0 8px' }}>
+              {espace === 'client'
+                ? 'Des espèces ne citent aucun mouvement du relevé : l’encaissement s’enregistre sans mouvement, le jour où tu '
+                  + 'les reçois. Leur dépôt en banque, ton cabinet le classe à part.'
+                : 'Des espèces ne citent aucun mouvement du relevé : l’encaissement s’enregistre sans mouvement, le jour où elles '
+                  + 'sont reçues. Leur dépôt en banque se classe à part, depuis la fiche du crédit dans l’onglet Banque.'}
             </p>
           ) : (
           <div className="field">
@@ -1213,10 +1229,16 @@ function Contenu({
               <label htmlFor="encaissement-moyen">Moyen de paiement</label>
               <select
                 id="encaissement-moyen" value={formulaire.moyen}
-                onChange={(ev) => setFormulaire({ ...formulaire, moyen: ev.target.value })}
+                onChange={(ev) => setFormulaire({
+                  ...formulaire,
+                  moyen: ev.target.value,
+                  // Des espèces ne citent aucun mouvement : celui que la saisie désignait tombe avec ce choix. Un crédit
+                  // imposé n'offre pas les espèces, et ne tombe jamais.
+                  ligneBancaireId: mouvementImpose === null && moyenSansCredit(ev.target.value) ? null : formulaire.ligneBancaireId,
+                })}
               >
                 <option value="">Choisir…</option>
-                {MOYENS_ENCAISSEMENT.map((m) => <option key={m.moyen} value={m.moyen}>{m.libelle}</option>)}
+                {offerts.map((m) => <option key={m.moyen} value={m.moyen}>{m.libelle}</option>)}
               </select>
             </div>
           </div>

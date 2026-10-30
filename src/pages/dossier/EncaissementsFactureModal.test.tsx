@@ -2060,3 +2060,97 @@ describe('EncaissementsFactureModal — l’impayé d’un encaissement jamais d
     expect(faux.tablesLues).not.toContain('lignes_bancaires')
   })
 })
+
+// ── LA CAISSE, ÉTAPE C6 : UN ENCAISSEMENT EN ESPÈCES NE CITE AUCUN CRÉDIT ────────────────────────────────────────────────
+//
+// La migration `especes_sans_mouvement` (préparée) fait refuser par la garde des encaissements des espèces qui citent un
+// crédit ; un resserrement vient en dernier : la fenêtre cesse d'offrir le geste AVANT que la base ne le refuse. Ce que ces
+// cas gardent, et que le module (especesSansMouvement.test.ts) ne voit pas : le câblage — les espèces absentes des moyens
+// d'un crédit imposé, le choix du mouvement remplacé par la phrase quand les espèces sont choisies, le mouvement choisi qui
+// tombe dans la même saisie, l'appel qui part sans mouvement, dans les deux espaces —, et la ligne d'un encaissement en
+// espèces figé, qui ne se dit plus « rattachable au crédit qui le paie ». Données FICTIVES.
+describe('EncaissementsFactureModal — des espèces ne citent aucun crédit (la caisse, étape C6)', () => {
+  const choixDuMouvement = () => screen.queryByLabelText('Mouvement du relevé (facultatif)') as HTMLSelectElement | null
+  const moyens = () => [...(champ('Moyen de paiement') as unknown as HTMLSelectElement).options].map((o) => o.value)
+  const PHRASE_CABINET = /^Des espèces ne citent aucun mouvement du relevé : l’encaissement s’enregistre sans mouvement, le jour où elles sont reçues\. Leur dépôt en banque se classe à part, depuis la fiche du crédit dans l’onglet Banque\.$/
+  const PHRASE_CLIENT = /^Des espèces ne citent aucun mouvement du relevé : l’encaissement s’enregistre sans mouvement, le jour où tu les reçois\. Leur dépôt en banque, ton cabinet le classe à part\.$/
+
+  it('au cabinet : le crédit choisi tombe quand les espèces sont choisies, la phrase le dit, et l’appel part sans mouvement', async () => {
+    monter()
+    await bouton()
+    // Le crédit qui fait le reste se propose et se choisit, comme hier.
+    fireEvent.change(choixDuMouvement() as HTMLSelectElement, { target: { value: 'm1' } })
+    expect(champ('Date de l’encaissement').value).toBe('2027-10-15')
+    expect(moyens()).toContain('especes')
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'especes' } })
+    // Le choix du mouvement cède la place à la phrase ; la date et le montant de la saisie restent ceux qu'elle portait.
+    expect(choixDuMouvement()).toBeNull()
+    screen.getByText(PHRASE_CABINET)
+    screen.getByText('Date à retenir : Le jour où les espèces sont reçues.')
+    expect(champ('Montant encaissé (€)').value).toBe('1355,50')
+    const enregistrer = await bouton()
+    expect(enregistrer).toHaveProperty('disabled', false)
+    await act(async () => { enregistrer.click() })
+    expect(faux.rpcs).toHaveLength(1)
+    expect(faux.rpcs[0]).toMatchObject({
+      nom: 'enregistrer_encaissement', args: { p_moyen: 'especes', p_ligne_bancaire_id: null, p_date: '2027-10-15' },
+    })
+  })
+
+  it('… et un autre moyen ensuite rouvre le choix, sans mouvement : celui qui est tombé ne revient pas seul', async () => {
+    monter()
+    await bouton()
+    fireEvent.change(choixDuMouvement() as HTMLSelectElement, { target: { value: 'm1' } })
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'especes' } })
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'cheque' } })
+    expect(choixDuMouvement()?.value).toBe('')
+    expect(screen.queryByText(PHRASE_CABINET)).toBeNull()
+    await act(async () => { (await bouton()).click() })
+    expect(faux.rpcs[0]).toMatchObject({ args: { p_moyen: 'cheque', p_ligne_bancaire_id: null } })
+  })
+
+  it('sur un crédit IMPOSÉ par la fiche d’un mouvement : les espèces ne s’offrent pas, et la phrase dit pourquoi', async () => {
+    monter({ facture: SOURCE, mouvementImpose: 'm1', mouvements: [mouvement({ id: 'm1', montant: 1355.5 })] })
+    await bouton()
+    expect(moyens()).toEqual(['', 'virement', 'cheque', 'carte', 'prelevement', 'effet', 'compensation', 'autre'])
+    screen.getByText(/hors les espèces, qui ne citent aucun crédit : leur encaissement s’enregistre sans mouvement, depuis l’onglet Factures\.$/)
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'cheque' } })
+    await act(async () => { (await bouton()).click() })
+    expect(faux.rpcs[0]).toMatchObject({ args: { p_moyen: 'cheque', p_ligne_bancaire_id: 'm1' } })
+  })
+
+  it('… sans crédit imposé, l’onglet Factures les offre toutes, dans l’ordre de la base', async () => {
+    monter()
+    await bouton()
+    expect(moyens()).toEqual(['', 'virement', 'cheque', 'carte', 'prelevement', 'especes', 'effet', 'compensation', 'autre'])
+  })
+
+  it('le client « Ventes » avec « Banque » : la phrase à son adresse, sans mot du cabinet ; l’appel part sans mouvement', async () => {
+    const { container } = monter({ client: { banque: true } })
+    await bouton()
+    fireEvent.change(choixDuMouvement() as HTMLSelectElement, { target: { value: 'm1' } })
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'especes' } })
+    expect(choixDuMouvement()).toBeNull()
+    screen.getByText(PHRASE_CLIENT)
+    expect(motsDuCabinet(container.textContent ?? '')).toEqual([])
+    await act(async () => { (await bouton()).click() })
+    expect(faux.rpcs[0]).toMatchObject({ args: { p_moyen: 'especes', p_ligne_bancaire_id: null } })
+  })
+
+  it('sans « Banque », la phrase d’hier : aucun mouvement ne se lit, les espèces non plus n’en citent', async () => {
+    monter({ client: { banque: false } })
+    await bouton()
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'especes' } })
+    screen.getByText(/^Ton accès ne porte pas « Banque » sur cette société/)
+    expect(screen.queryByText(PHRASE_CLIENT)).toBeNull()
+  })
+
+  it('un encaissement en espèces d’un exercice validé ne se dit pas « rattachable au crédit qui le paie » ; le chèque, si', async () => {
+    monter({ facture: SOURCE, exercices: [2027], encaissements: [encaissement({ moyen: 'especes' })], parts: [part()] })
+    await bouton()
+    expect(screen.queryByText(RATTACHEMENT_APRES_LA_FRONTIERE)).toBeNull()
+    cleanup()
+    monter({ facture: SOURCE, exercices: [2027], encaissements: [encaissement({ moyen: 'cheque' })], parts: [part()] })
+    await ligneDe(RATTACHEMENT_APRES_LA_FRONTIERE)
+  })
+})

@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
-  justifieSonMouvement, refusEnregistrement, refusEnregistrementVente, REFUS_ENREGISTREMENT, type ContexteVente, type MouvementClasse,
+  justifieSonMouvement, refusEnregistrement, refusEnregistrementVente, REFUS_ENREGISTREMENT, REFUS_ESPECES_SUR_UN_CREDIT,
+  type ContexteVente, type MouvementClasse,
 } from './encaissementsFactures'
 import {
   AUJOURD_HUI_RELEVE, GRAINE_DE_LA_BATTERIE, MONDE, SAISIES_DE_LA_BATTERIE, batterie, casDuClient, entreeDuCas,
@@ -35,9 +36,20 @@ import {
 // 285 acceptées. Elle dit ce que répond une base qui porte la migration ventes_du_client — la production depuis le
 // 10/10/2026.
 // Le refus neuf déplacé après ceux de la facture, dans le module, y faisait 546 écarts (la passe du chef, aucun).
+//
+// LES ESPÈCES SANS MOUVEMENT (la caisse, étape C6). Rejouée le 30/10/2026 sur une réplique dont signature.sql égalait la
+// production à 161 migrations. Sans la migration especes_sans_mouvement, le module d'avant l'étape : aucun écart sur
+// 4 000, l'empreinte de la base `EMPREINTE_SANS_LA_MIGRATION_C6` ; le module de l'étape : 11 écarts, chacun une saisie
+// en espèces sur un crédit que la base acceptait et que le module refuse. Avec la migration : aucun écart, la base
+// refusant ces 11 saisies sous le refus neuf, à son rang (le dernier) — l'empreinte figée ci-dessous ; la passe du client
+// rend la même empreinte des deux côtés (sans « Banque », il ne désigne aucun mouvement). Jusqu'à son application, la
+// production répond `EMPREINTE_SANS_LA_MIGRATION_C6`, et le module y est plus strict de ces seules saisies : le test qui
+// suit le vérifie, réponse par réponse.
 
-const EMPREINTE_DE_LA_BASE = '38a63609e3cd1b1aa047253b3bf482b1'
-const EMPREINTE_SANS_BANQUE = '26ff232d0b8335525ca51205c367d9e1'
+const EMPREINTE_DE_LA_BASE = 'b62ec27a8c27b6628c03a79ad6c451e8'
+const EMPREINTE_SANS_BANQUE = '324ca64fe74ee428ad34d7a7ae6c976f'
+const EMPREINTE_SANS_LA_MIGRATION_C6 = '8b19bbf7f37750c30750327f3dd565dc'
+const REPONSE_DES_ESPECES = `${REFUS_ESPECES_SUR_UN_CREDIT.code} ${REFUS_ESPECES_SUR_UN_CREDIT.modele}`
 
 describe('la batterie jouée par la base', () => {
   const cas = batterie(SAISIES_DE_LA_BATTERIE, GRAINE_DE_LA_BATTERIE, AUJOURD_HUI_RELEVE)
@@ -60,6 +72,13 @@ describe('la batterie jouée par la base', () => {
     const sorties = reponsesDuModule(cas, AUJOURD_HUI_RELEVE)
     expect(sorties).toHaveLength(SAISIES_DE_LA_BATTERIE)
     expect(createHash('md5').update(sorties.join('\n')).digest('hex')).toBe(EMPREINTE_DE_LA_BASE)
+  })
+
+  it('sans la migration especes_sans_mouvement, la base acceptait ce que le module refuse sous le refus neuf, et rien d’autre', () => {
+    const sorties = reponsesDuModule(cas, AUJOURD_HUI_RELEVE)
+    expect(sorties.filter((s) => s === REPONSE_DES_ESPECES)).toHaveLength(11)
+    const sansLaMigration = sorties.map((s) => (s === REPONSE_DES_ESPECES ? 'ok' : s))
+    expect(createHash('md5').update(sansLaMigration.join('\n')).digest('hex')).toBe(EMPREINTE_SANS_LA_MIGRATION_C6)
   })
 
   it('le client qui ne porte que « Ventes », sur son dossier : le module rend ce que la base a rendu', () => {
@@ -91,6 +110,10 @@ describe('la batterie jouée par la base', () => {
     }
     expect(atteints.has('mouvement_sans_banque')).toBe(false)
     expect(atteintsSansBanque.has('mouvement_sans_banque')).toBe(true)
+    // Le refus de la garde (la caisse, étape C6) : sur la passe du chef seule — le client sans « Banque » ne désigne aucun
+    // mouvement, et le refus de son droit passe avant.
+    expect(atteints.has(REFUS_ESPECES_SUR_UN_CREDIT.cle)).toBe(true)
+    expect(atteintsSansBanque.has(REFUS_ESPECES_SUR_UN_CREDIT.cle)).toBe(false)
     expect(atteints.has('ok')).toBe(true)
     expect(atteintsSansBanque.has('ok')).toBe(true)
   })
@@ -136,8 +159,8 @@ describe('la batterie jouée par la base', () => {
   // relevé, son lendemain et le 1er janvier qui suit glissent avec lui, les autres restent.
   it('se tire pour le jour où la base la juge, et ne change que de dates', () => {
     const dates = new Set(cas.map((c) => c.date))
-    for (const d of ['2026-10-10', '2026-10-11', '2027-01-01']) expect(dates.has(d), d).toBe(true)
-    const glissees: Record<string, string> = { '2026-10-10': '2027-03-15', '2026-10-11': '2027-03-16', '2027-01-01': '2028-01-01' }
+    for (const d of ['2026-10-30', '2026-10-31', '2027-01-01']) expect(dates.has(d), d).toBe(true)
+    const glissees: Record<string, string> = { '2026-10-30': '2027-03-15', '2026-10-31': '2027-03-16', '2027-01-01': '2028-01-01' }
     const autre = batterie(SAISIES_DE_LA_BATTERIE, GRAINE_DE_LA_BATTERIE, '2027-03-15')
     expect(autre).toEqual(cas.map((c) => ({ ...c, date: c.date == null ? null : (glissees[c.date] ?? c.date) })))
   })
