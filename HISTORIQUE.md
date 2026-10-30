@@ -42802,3 +42802,140 @@ retient un crédit « VERSEMENT ESPECES » d'un lot ni ne le signale rangé en r
 une caisse dès qu'un encaissement en espèces d'une facture source y entre — une fonction pure et ses trois appels, avant
 le premier encaissement réel en espèces ; (B) laisser la conception telle quelle, le comptage du 31 décembre (C7) voyant
 la caisse grossir.
+
+### 30/10/2026 — LA FACTURE FIGE SES MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5)
+
+(Écrite par l'agent dev d'A7b sur `0d8d5bd` — `main` après C6 —, en trois commits : le module et la lecture ; le
+formulaire, l'avoir et l'aperçu ; le banc et cette documentation. Créés : `src/lib/mentionsFigeesVue.ts`,
+`src/lib/mentionsFigeesLecture.ts`, leurs tests, `src/test/mentionsFigees.ts`, trois tests d'écran
+(`FactureFormModalMentionsFigees`, `FactureAvoirModalMentionsFigees`, `FactureApercuMentionsFigees`),
+`outils/captures/impressionFacture.mjs`. Modifiés : `FactureFormModal.tsx`, `FactureAvoirModal.tsx`, `FactureApercu.tsx`,
+`InformationsTab.tsx`, `index.css`, `lib/factures.ts` (`avoirQuiPart`), les phrases de `parametresFacturationVue.ts`,
+`logoDesFacturesVue.ts`, `identiteLegaleVue.ts` et `changementDeRib.ts`, des commentaires devenus faux (`articles.ts`,
+`articlesFacture.ts`, `contactsFacture.ts`, `parametresFacturation.ts`, `types.ts`, `mentionsFigees.ts`) ; six tests
+d'écran d'avant passent sous le drapeau baissé (`vi.mock`) ; le banc (`fauxSupabase.ts`, une facture figée ;
+`debordements.mjs`, sa visite). Ni migration, ni Edge Function, ni appel à la production.)
+
+**POURQUOI MAINTENANT.** Vers la mi-décembre, le praticien du premier dossier réel valide lui-même ses factures depuis
+« Mes ventes » (MVP-D1), et la facture qu'il envoie est le PDF de l'aperçu (le CII, A7c, après le MVP). Depuis A7a, la
+base fige à la validation ce que la facture imprime ; aucun écran ne s'en servait.
+
+**LE FORMULAIRE** (`FactureFormModal`, les deux espaces), drapeau `MENTIONS_FIGEES_EXPORTEES` levé :
+- chaque ligne porte une unité (la liste des articles), une référence et une nature, dans une colonne APRÈS les champs
+  d'hier ; un article les apporte, modifiables ; une ligne saisie à la main les choisit (vides : nulles). La ligne part
+  avec elles et l'article d'où elle vient (`provenanceQuiPart`, la référence sans les blancs de ses bords) ; l'en-tête
+  part avec `contact_id`, toujours nommé (nul sans contact). Un brouillon rouvert retrouve tout cela ;
+- les refus neufs se disent avant le clic, sur la saisie TELLE QU'ELLE PART, après ceux d'hier et avant ceux de la
+  source : la provenance (`refusDeLaProvenance`) puis un IBAN dans un texte (`refusDesTextesDeLaFacture`) grisent les
+  deux boutons ; ceux de `refusDeLaValidationFigee`, la validation seule. La provenance ne se juge que sur la liste
+  ENTIÈRE des clients et des articles ; une saisie qui ne nomme ni l'un ni l'autre n'en demande aucune ;
+- la validation lit le dossier (siret, adresse, statut de TVA, identité légale, `mentions_identite`) et les versions des
+  paramètres, EN ENTIER (`lireCeQueLaValidationFige`, qui ne rejette jamais ; une colonne absente n'est pas nulle) ; pas
+  revenue, lue en partie, refusée ou la chaîne des versions rompue, l'écran le dit et ne l'offre pas, le brouillon
+  s'enregistre ;
+- chaque validation se confirme, et la confirmation NOMME ce que la facture figera et imprimera (`mentionsAFiger`,
+  `ceQueLaValidationFigera`) : le nom (« … EI »), l'identité, le numéro de TVA ou « aucun », les conditions de paiement,
+  le RIB confirmé ou « aucun RIB confirmé : la facture n'en imprimera pas », les mentions complémentaires et le pied de
+  page, le logo ; une facture qui ne pourrait pas partir, ou une facture source, n'a toujours qu'UNE confirmation, ce
+  paragraphe avant la question ;
+- au cabinet, ce qu'il valide encore et qu'un accès « Ventes » ne validerait pas se dit (une identité sans forme, une
+  facture sans dénomination, qui imprimera le nom qu'elle porte) ;
+- dans « Mes ventes », l'émetteur est le dossier : montré, plus saisi ; un brouillon reprend l'adresse du dossier ; un
+  dossier sans SIRET ou sans adresse le dit (« ton brouillon s'enregistre, mais ta facture ne se validera qu'une fois
+  qu'il l'aura fait ») — la phrase « saisis-la ici pour cette facture » ne se dit plus.
+
+**L'AVOIR** (`FactureAvoirModal`, créé validé) : ses lignes reprennent l'unité, la référence et la nature des lignes
+qu'elles créditent (pas l'article) ; un IBAN dans ses lignes ou sa mention légale se dit avant le clic ; il attend le
+dossier, les paramètres, et les contacts quand sa facture vient d'un contact (la base y vérifie le contact qu'il
+reprend) ; il reprend l'identité de sa facture figée, n'est jugé ni sur l'émetteur ni sur la forme ; sa confirmation
+nomme ce qu'il figera et imprimera. `avoirQuiPart` (lib/factures.ts) est l'avoir tel qu'il part, que `creerAvoir`
+envoie et que l'écran juge : drapeau baissé, les lignes d'hier au caractère près.
+
+**L'APERÇU** (`FactureApercu`, le même aux deux espaces). D'une facture qui a figé ses mentions (`ceQueLaFactureImprime`),
+rien n'est relu du dossier ni recalculé :
+
+| Ce que le papier porte | D'où |
+|---|---|
+| Le logo | `logo_chemin`, montré seulement si le fichier rendu a l'empreinte `logo_sha256` (`lireLeLogo`) ; sinon rien, et l'écran dit pourquoi |
+| Le nom légal | `denomination_imprimee` ; sans elle (le cabinet a validé sans), `emetteur_nom`, figé depuis le 07/10/2026 |
+| Adresse et SIRET | `emetteur_adresse`, `emetteur_siret` (comme hier) |
+| La forme et le capital | `forme_juridique` sous son libellé de l'INSEE, « au capital de » `capital` |
+| RCS | « RCS » `rcs_ville` et le SIREN tiré du SIRET figé |
+| Les autres mentions | `mentions_identite` |
+| Le numéro de TVA | `numero_tva_imprime`, jamais `numeroTvaImprime` |
+| Les mentions de la facture électronique | comme hier, et le numéro d'engagement pour tout acheteur |
+| L'unité et la référence de chaque ligne | `facture_lignes.unite` (une colonne « Unité » quand une ligne en porte), `reference` sous la désignation |
+| Les conditions | `moyen_prefere` ; à une entreprise ou un organisme public seulement, `escompte`, `penalites` et l'indemnité de 40 € (D441-5), composée du type de client figé |
+| Le RIB | `iban_imprime` par quatre, `bic_imprime`, `titulaire_imprime` |
+| La mention légale | `mentions_legales` (comme hier) |
+| Les mentions complémentaires, le pied de page | `mentions_complementaires`, `pied_de_page` |
+
+Une facture d'avant (`mentions_figees` faux) s'imprime comme hier ; l'écran le dit dans `.facture-imprimable-avis`, que
+le bloc d'impression retire. Un brouillon n'a pas d'aperçu (FacturesTab ouvre le formulaire) : rien ne change pour lui.
+Le mandataire ne s'imprime pas (P4) ; le CII et ses copies ne changent pas (A7c).
+
+**LES PHRASES DEVENUES FAUSSES**, chacune derrière le drapeau et ses deux états éprouvés : l'en-tête des paramètres, le
+bloc du logo et la confirmation de son retrait, la carte « Identité du dossier » (qui dit aussi qu'un accès « Ventes »
+ne valide pas sans forme ou sans dénomination, et qu'un IBAN y retiendrait toute validation : le « de plus » d'A7-Q3),
+l'avis d'un changement de RIB (« à leur validation » au lieu de « quand elles porteront un RIB »).
+
+**OÙ L'ÉCRAN S'ÉCARTE DE LA CONCEPTION, ET POURQUOI.**
+- L'escompte, les pénalités et l'indemnité ne s'impriment qu'à une entreprise ou un organisme public : A.5.1 le dit
+  (« ces mentions entre professionnels ne s'imposent pas à une facture à un particulier »). Le moyen préféré et le RIB,
+  à tous.
+- La forme s'imprime sous le libellé de l'INSEE, faute d'une forme abrégée que rien ne tient (A5B2-Q4) : A7B-Q1.
+- L'avoir reprend l'unité, la référence et la nature des lignes créditées, pas leur article : il défait une opération
+  telle qu'elle a été facturée, et ce n'est pas un article qui le remplit.
+- Le jugement de la validation lit le dossier dans le formulaire, à son ouverture, et non les propriétés que la page a
+  lues avec l'onglet : la base lit le dossier dans la transaction qui valide.
+- Restent hors de l'étape : le champ du numéro d'engagement, que le formulaire n'offre encore qu'à un organisme public
+  (A7B-Q3) ; « Enregistrer comme article » d'une ligne ne reprend pas son unité, sa référence ni sa nature ; la
+  confirmation d'un article qui remplace une ligne ne nomme pas l'unité qu'il remplace.
+
+**LES PREUVES.**
+- Les tests : `mentionsFigeesVue.test.ts` (25) et `mentionsFigeesLecture.test.ts` (5) ; les écrans, drapeau levé —
+  le formulaire aux deux espaces (30 : chaque clé neuve qui part, un brouillon rouvert, chaque refus neuf avant le clic à
+  sa place, la validation retenue avant sa lecture et sur des paramètres lus en partie, la confirmation qui nomme le RIB
+  ou son absence, la confirmation unique d'une facture qui ne pourrait pas partir, l'émetteur de « Mes ventes », le
+  verrou), l'avoir (15) et l'aperçu (15 : chaque valeur figée imprimée depuis la facture sous un dossier qui a changé
+  depuis, un logo dont l'empreinte ne correspond pas jamais affiché, une facture d'avant comme hier, le drapeau baissé,
+  l'avis retiré de l'impression) ; l'état d'avant, drapeau baissé par `vi.mock`, dans les six fichiers d'écran d'hier
+  et, pour les phrases, par leur paramètre. La suite entière sous Paris avant le banc : 502 fichiers, 15 658 tests justes.
+- Les mutations, jouées sur une copie hors du dépôt : 33, toutes tuées — une valeur relue du dossier au lieu de la
+  facture (le nom, le numéro de TVA recalculé), le logo sans son empreinte, l'avis d'une facture d'avant tu, l'unité et
+  le RIB tus, la confirmation qui ne nomme pas le RIB, un avoir ou une facture sans confirmation, chaque clé neuve qui ne
+  part pas, un refus oublié, avancé ou retardé (un IBAN dit avant la provenance, la validation offerte avant sa lecture,
+  le refus de la validation qui grise le brouillon), la provenance jugée sans liste entière, l'escompte à un particulier,
+  le numéro d'engagement réservé à l'organisme public, une colonne absente prise pour nulle, des paramètres lus en
+  partie acceptés, chaque phrase revenue à l'état d'avant, l'avis imprimé. Une survivait (les contacts d'un avoir jamais
+  attendus) : un cas de plus, le contact retrouvé dans la liste lue, la tue.
+- L'impression, sur un vrai PDF (`outils/captures/impressionFacture.mjs`, Chromium du banc, A4) : F2026-0015, la
+  facture figée du banc, tient sur une page — le logo vérifié, « Claire Moreau EI », l'identité et la mention de l'Ordre,
+  les colonnes « Unité » et les références, les conditions d'un professionnel et l'indemnité, le RIB, la mention de TVA,
+  les mentions complémentaires et le pied de page — ; le premier essai en faisait deux (la longue mention de l'identité
+  poussait le numéro sous l'émetteur), d'où l'émetteur qui prend la place qui reste et un logo de 64 pixels au plus.
+  F2026-0013, une facture d'avant : une page, son texte celui d'hier, l'avis de l'écran absent du PDF.
+- `debordements.mjs`, une visite de plus (`factures/apercu-figee`) : 0 débordement et 0 bouton recouvert à 1 440 et
+  1 280 panneau ouvert, à 1 440 et 1 024 fermé, à 720 et 390, à 390 pour le client, et à 1 440 aux volets choisis
+  (barre 200, panneau 760).
+- La barrière, sous le Node 22 de la CI, sur la tête finale : son résultat et son SHA sont au rapport de l'agent.
+
+**LES QUESTIONS AU CABINET.**
+- **A7B-Q1 — La forme imprimée.** L'aperçu imprime le libellé de l'INSEE (« SAS, société par actions simplifiée »,
+  « Société à responsabilité limitée (sans autre indication) ») et, pour un entrepreneur individuel, « Entrepreneur
+  individuel » sous un nom qui porte déjà « EI ». (A) tel quel ; (B) une forme abrégée tirée du code (SAS, SARL, SELARL…),
+  une table à écrire et à faire relire ; (C) pour un entrepreneur individuel, rien sous le nom. *Recommandation : (A)
+  pour le MVP — juste, sans table à tenir —, et (C) en plus, la mention « EI » suffisant (R526-27) ; (B) plus tard, avec
+  le bilan (33-Q6).*
+- **A7B-Q2 — La mention légale par défaut.** Une facture neuve propose toujours, dans sa mention légale, « une pénalité
+  égale à trois fois le taux d'intérêt légal… et une indemnité forfaitaire… de 40 € » ; une facture figée à une
+  entreprise imprime AUSSI les pénalités des paramètres (par défaut, BCE + 10 points) et l'indemnité : deux taux
+  différents sur le même papier. (A) rien ; (B) quand le dossier a des paramètres, la mention proposée ne garde que la
+  mention de TVA ; (C) la phrase retirée pour tous. *Recommandation : (B) — les paramètres disent les conditions, la
+  mention légale la TVA ; une facture d'avant et un dossier sans paramètres gardent la phrase d'aujourd'hui.*
+- **A7B-Q3 — Le numéro d'engagement de tout acheteur.** A7a l'ouvre à tout acheteur (L441-9, I : le bon de commande),
+  et l'aperçu l'imprime ; le formulaire ne l'offre qu'à un organisme public. (A) tel quel ; (B) le champ « Numéro de bon
+  de commande (s'il en a établi un) » pour une entreprise aussi. *Recommandation : (B), après le MVP — le praticien
+  facture des particuliers.*
+
+**CE QUI RESTE.** A7c, le CII et ses copies, après le MVP ; P4, l'impression du mandataire ; les trois questions.

@@ -1929,6 +1929,38 @@ function octetsDeBase64(texte: string): Uint8Array<ArrayBuffer> {
 const SEAU_VENTES = new Map<string, Blob>([[CHEMIN_DU_LOGO_DU_BANC, new Blob([octetsDeBase64(OCTETS_DU_LOGO_DU_BANC)], { type: 'image/png' })]])
 const erreurDuStockage = (status: number, statusCode: string, message: string) => ({ __isStorageError: true, status, statusCode, message })
 
+// UNE FACTURE QUI A FIGÉ SES MENTIONS (étape A7b) : F2026-0015 du cabinet infirmier, entrepreneur individuel, à un EHPAD — ce
+// qu'`enregistrer_facture` a écrit à sa validation : la dénomination avec « EI », le numéro de TVA calculé ce jour-là (aucun : le
+// dossier est exonéré sans la case), les conditions et le RIB confirmé de la version en vigueur, le logo par son empreinte,
+// l'unité et la référence de chaque ligne. Son aperçu n'imprime que ces colonnes ; l'impression se mesure sur un vrai PDF.
+const FACTURE_FIGEE_D1: FactureEmise = {
+  id: 'f15', dossier_id: 'd1', numero: 'F2026-0015', statut: 'validee', type: 'facture', facture_origine_id: null,
+  date_emission: '2026-09-28', date_echeance: '2026-10-28',
+  tiers_nom: 'EHPAD Les Tilleuls SAS', tiers_adresse: '4 allée des Tilleuls\n13090 Aix-en-Provence', tiers_siret: '77712345600017',
+  montant_ht: 467, montant_tva: 0, montant_ttc: 467,
+  mentions_legales: mentionTva('exonere', 'cgi_261_4_1'), notes: null, source_de_la_vente: false,
+  ...EMETTEUR_D1,
+  superpdp_invoice_id: null, superpdp_dernier_statut: null, tiers_email: null,
+  created_by: 'u1', valide_par: 'u1', created_at: '2026-09-28T08:30:00Z', validated_at: '2026-09-28T08:55:00Z',
+  type_client: 'assujetti', tiers_siren: '777123456', tiers_adresse_electronique: null, code_service: null, numero_engagement: 'BC-2026-118',
+  nature_operation: 'services', date_prestation: null, periode_debut: '2026-09-01', periode_fin: '2026-09-27',
+  livraison_adresse: null, livraison_code_postal: null, livraison_ville: null, livraison_pays: null, option_debits: false,
+  mentions_figees: true, statut_tva: 'exonere', article_exoneration: 'cgi_261_4_1', numero_tva_attribue: false, numero_tva_imprime: null,
+  denomination_imprimee: 'Claire Moreau EI', forme_juridique: '1000', capital: null, rcs_ville: null,
+  mentions_identite: 'Inscrite à l’Ordre national des infirmiers, conseil départemental des Bouches-du-Rhône (fictif)',
+  parametres_id: 'pf-d1', moyen_prefere: 'virement', escompte: 'Pas d’escompte pour paiement anticipé.',
+  penalites: 'Pénalités de retard : taux d’intérêt appliqué par la Banque centrale européenne à son opération de refinancement la plus récente, majoré de 10 points de pourcentage (C. com., art. L441-10, II).',
+  mentions_complementaires: 'Toute réclamation se fait par écrit dans les huit jours.',
+  pied_de_page: 'Claire Moreau EI — 12 rue des Mimosas, 13100 Aix-en-Provence — données fictives',
+  logo_chemin: CHEMIN_DU_LOGO_DU_BANC, logo_sha256: EMPREINTE_DU_LOGO_DU_BANC,
+  iban_imprime: 'FR7699999000010000000000600', bic_imprime: 'ESSAFR10', titulaire_imprime: 'Claire Moreau EI', rib_parametres_id: 'pf-d1',
+  mandataire_nom: 'JD Consult', contact_id: null,
+}
+const LIGNES_FIGEES_D1: FactureLigne[] = [
+  { id: 'f15-l1', facture_id: 'f15', ordre: 1, designation: 'Soins infirmiers auprès des résidents — forfait de septembre 2026', quantite: 1, prix_unitaire_ht: 392, taux_tva: 0, unite: 'LS', reference: 'FORF-RES', nature: 'services', article_id: null },
+  { id: 'f15-l2', facture_id: 'f15', ordre: 2, designation: 'Séances de pansements complexes', quantite: 3, prix_unitaire_ht: 25, taux_tva: 0, unite: 'C62', reference: 'PANS-02', nature: 'services', article_id: null },
+]
+
 // `enregistrer_parametres_facturation` et `confirmer_rib` (étape A5b1), comme leurs fonctions en base pour ce que le banc montre :
 // la version nouvelle remplace la courante, son RIB gardé tel quel garde son état, posé ou changé par le cabinet il est confirmé,
 // par le client proposé ; la confirmation passe la courante à « confirmé ». Les refus, l'essai en base les juge.
@@ -2279,9 +2311,9 @@ const TABLES: Record<string, Ligne[]> = {
   // typées sur l'application, rendues au faux client en lignes nues.
   // Puis F2026-0008, acceptée par la plateforme de l'atelier, et la déclaration de ses encaissements (étape d4).
   // Puis F2026-0009, refusée par l'acheteur sur la plateforme du client, et les statuts lus de l'atelier (étape d7).
-  factures_emises: [...FACTURES_D1, ...FACTURES_D7, FACTURE_F8, FACTURE_F9, FACTURE_E1, ...FACTURES_D12].map((f) => ({ ...f })),
+  factures_emises: [FACTURE_FIGEE_D1, ...FACTURES_D1, ...FACTURES_D7, FACTURE_F8, FACTURE_F9, FACTURE_E1, ...FACTURES_D12].map((f) => ({ ...f })),
   facture_lignes: [
-    ...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7, ...LIGNES_DE_F8, ...LIGNES_DE_F9, ...lignesDeFacture(ER.V1, LIGNES_E1),
+    ...LIGNES_FIGEES_D1, ...LIGNES_DES_FACTURES_D1, ...LIGNES_DES_FACTURES_D7, ...LIGNES_DE_F8, ...LIGNES_DE_F9, ...lignesDeFacture(ER.V1, LIGNES_E1),
     ...LIGNES_DES_FACTURES_D12,
   ].map((l) => ({ ...l })),
   statuts_factures_recus: STATUTS_D7.map((s) => ({ ...s })),

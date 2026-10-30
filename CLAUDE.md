@@ -344,9 +344,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     CHOIX, la règle des soins se DIT et ne refuse rien → « UN CLIENT DANS LA FACTURE ». L'import : le fichier ne part
     nulle part, son encodage dit ; tout ou rien, « ne se défait pas » → « IMPORTER DES CLIENTS, À L'ÉCRAN ». L'export :
     une copie FIDÈLE que l'import relit → « EXPORTER LA FICHE D'UN CLIENT ».
-  - « Paramètres » : la validation d'une facture les fige depuis le 29/10/2026, le RIB CONFIRMÉ seul, et aucun écran ne
-    les montre encore (A7a ; A7b → « LA FACTURE FIGE SES MENTIONS, EN BASE ») ; un RIB proposé retouché par le cabinet
-    est confirmé d'emblée, dit avant le clic (`CONSEIL_VERIFICATION_RIB`) → « LES PARAMÈTRES DE FACTURATION, À
+  - « Paramètres » : la validation d'une facture les fige depuis le 29/10/2026, le RIB CONFIRMÉ seul, et l'aperçu les
+    imprime depuis A7b → « LA FACTURE FIGE SES MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B » ; un RIB proposé retouché par
+    le cabinet est confirmé d'emblée, dit avant le clic (`CONSEIL_VERIFICATION_RIB`) → « LES PARAMÈTRES DE FACTURATION, À
     L'ÉCRAN ». « Identité du dossier » : relue après écriture ; un entrepreneur individuel a son capital REMIS À NUL ;
     une colonne absente n'est pas nulle → « L'IDENTITÉ LÉGALE DU DOSSIER, À L'ÉCRAN ».
   - L'avis d'un changement de RIB : un RIB proposé reste chez le cabinet tant qu'il est le dernier changement, le reste
@@ -683,8 +683,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     mentions : A7a, la base, EN PRODUCTION le 29/10/2026 sur A7-Q1 à Q3 et A7Q-Q1, tranchées à la recommandation
     (l'émetteur d'une facture validée par un accès « Ventes » est celui du dossier ; aucun texte libre que la facture
     imprime ne porte un IBAN valide ; sans dénomination, un accès « Ventes » ne valide pas) — `mentions_figees` collée
-    par le cabinet, puis `iban_hors_des_parametres` par l'outil —, A7b l'écran derrière `MENTIONS_FIGEES_EXPORTEES`,
-    levé, A7c le CII après le MVP → « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES MENTIONS :
+    par le cabinet, puis `iban_hors_des_parametres` par l'outil —, A7b l'écran (le formulaire et l'avoir disent ses
+    refus avant le clic et nomment ce qui se fige, l'aperçu n'imprime que ce qui est figé ; `lib/mentionsFigeesVue.ts`),
+    écrit le 30/10/2026, A7c le CII après le MVP → « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES
+    MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5) », « LA FACTURE FIGE SES MENTIONS :
     L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES », « DEUX RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1 »,
     « A7Q-Q1 : UNE SOCIÉTÉ SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION », « LES DEUX
     MIGRATIONS D'A7 EN PRODUCTION » ; la liste des clients sans activité depuis trois ans, qui lit les factures d'un
@@ -995,8 +997,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Le générateur CII** refuse avant le clic → « LA FACTURE ÉLECTRONIQUE S'ÉCRIT EN CII ». **Une facture validée est
   figée en base** ; la numérotation par `enregistrer_facture` seule → « UNE FACTURE VALIDÉE SE FIGE EN BASE ». À sa
   validation, elle fige son statut et son numéro de TVA, l'identité légale, les paramètres, le RIB confirmé, le logo et
-  le mandataire, et ses lignes leur provenance (A7a, en base depuis le 29/10/2026) → « LA FACTURE FIGE SES MENTIONS, EN
-  BASE ».
+  le mandataire, et ses lignes leur provenance (A7a, en base depuis le 29/10/2026) ; l'aperçu d'une facture figée
+  n'imprime que ses colonnes, le logo vérifié à son empreinte figée, une facture d'avant comme hier (A7b) → « LA FACTURE
+  FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5) ».
 - **Le dépôt** : une seule transmission ACTIVE par facture, RÉSERVÉE avant l'envoi ; une issue inconnue n'est jamais
   réessayée, elle s'abandonne après un quart d'heure (`DELAI_AVANT_ABANDON_MS`) → « LA FACTURE ÉLECTRONIQUE SE DÉPOSE ».
   Une facture rejetée ou refusée ne repart pas : un avoir interne, non transmis ; chez Super PDP, 213 et 501 rejettent,
