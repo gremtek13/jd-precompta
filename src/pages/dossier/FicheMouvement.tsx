@@ -19,6 +19,8 @@ import {
 } from '../../lib/echeanceEmprunt'
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { formatDate, formatMoney } from '../../lib/format'
+import { euros, type CaisseDeLaFiche } from '../../lib/caisseEcran'
+import { libelleDitUnVersementDEspeces } from '../../lib/controlesDeLaCaisse'
 import type { PlanComptable } from '../../lib/planComptable'
 import type { PaiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux, TAUX_TVA_RELEVE, tauxApplicable, tauxRequis } from '../../lib/tvaDuReleve'
@@ -259,6 +261,11 @@ interface FicheMouvementProps {
   restesARegler: ReadonlyMap<string, number>
   // Écrire ce mouvement sur un compte de bilan, ou le remettre à traiter — par la base, qui écrit et retire le compte
   // AVEC son écriture (`ecrire_mouvement_compte_bilan`, `retirer_mouvement_compte_bilan`).
+  // LA CAISSE (ligne 26.6, étape C4 ; lib/caisseEcran.ts, calculée par l'onglet) : le solde de la caisse ce jour-là, avec et sans ce
+  // mouvement, et ce que la base refuserait — un versement qui la rendrait négative, un retrait d'espèces déjà dépensées —,
+  // dits AVANT le clic ; ou « pas lue » (rien ne se classe sur elle) ; ou « absente » (la caisse n'est pas en base : la fiche est
+  // celle d'hier, au caractère près).
+  caisse: CaisseDeLaFiche
   onEcrireCompteBilan: (compte: string) => void
   onRetirerCompteBilan: () => void
   // Les déclarations de TVA du dossier, chacune avec ce que le relevé lui a déjà payé ou remboursé (`suiviDesDeclarations`,
@@ -619,7 +626,7 @@ export default function FicheMouvement({
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
   ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
   reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe, restesAPayer, payeesEnTrop,
-  restesARegler, onEcrireCompteBilan, onRetirerCompteBilan,
+  restesARegler, caisse, onEcrireCompteBilan, onRetirerCompteBilan,
   suivisTva, declarationsTvaIncompletes, releveIncomplet, onRapprocherDeclarationTva, onRetirerDeclarationTva,
   dossierId, envoisDuClient, accesDuReleve, piecesIncompletes, onDemanderAuClient,
   onEcarterProposition, onSupprimerMessage,
@@ -724,11 +731,32 @@ export default function FicheMouvement({
   const [compteSaisi, setCompteSaisi] = useState('')
   const [changementCompteDeplie, setChangementCompteDeplie] = useState(false)
   const refusDuMouvementSurBilan = refusMouvementCompteDeBilan(ligne)
+  // Un crédit dont le libellé dit un versement d'espèces, dans un dossier qui tient (ou peut-être) une caisse : un symptôme, jamais
+  // une preuve (lib/controlesDeLaCaisse.ts) — la fiche le dit avant qu'on le range en recette.
+  const versementProbable = caisse.etat !== 'absente' && modeComptable === 'tresorerie' && caisse.tenue !== 'non'
+    && ligne.montant > 0 && libelleDitUnVersementDEspeces(ligne)
+  // LA CAISSE (ligne 26.6, étape C4). Classer ce mouvement sur la caisse, ou l'en retirer, change la caisse du jour : la base
+  // refuse celle qui passerait sous zéro, et le dit avant le clic, sous ses mots. Pas lue en entier, rien ne s'y classe ni ne
+  // s'en retire (une lecture partielle ne commande aucune écriture). Absente, ou en engagement : rien de plus qu'hier.
+  const caisseTenable = caisse.etat !== 'absente' && modeComptable === 'tresorerie'
+  const surLaCaisse = surCompteDeBilan && ligne.compte_bilan === plan.caisse
+  const refusDeLaCaisse = (compte: string | null): string | null => {
+    if (!caisseTenable) return null
+    const versLaCaisse = compte === plan.caisse
+    if (!versLaCaisse && !surLaCaisse) return null
+    if (caisse.etat === 'pas_lue') {
+      return `La caisse n’est pas lue en entier (${caisse.motif}) : ce mouvement ne s’y classe ni ne s’en retire avant. Recharge la page.`
+    }
+    if (caisse.etat !== 'lue') return null
+    if (versLaCaisse) return surLaCaisse ? null : caisse.refusDuClassement
+    return caisse.refusDuRetrait
+  }
   const refusDuCompteDeBilan = (compte: string | null) =>
-    refusDuMouvementSurBilan ?? refusCompteDeBilanAuPlan(compte, modeComptable, compteDirigeant, plan)
+    refusDuMouvementSurBilan ?? refusCompteDeBilanAuPlan(compte, modeComptable, compteDirigeant, plan) ?? refusDeLaCaisse(compte)
   const saisieCompte = lireCompteSaisi(compteSaisi)
   // Rien de tapé n'est pas un refus : le bouton attend, sans message en rouge.
-  const refusSaisie = saisieCompte.refus ?? (saisieCompte.compte ? refusCompteDeBilanAuPlan(saisieCompte.compte, modeComptable, compteDirigeant, plan) : null)
+  const refusSaisie = saisieCompte.refus
+    ?? (saisieCompte.compte ? refusCompteDeBilanAuPlan(saisieCompte.compte, modeComptable, compteDirigeant, plan) ?? refusDeLaCaisse(saisieCompte.compte) : null)
   const libelleSaisi = saisieCompte.compte ? libelleDuCompteDeBilan(saisieCompte.compte) : null
   const comptesProposes = comptesDeBilanProposes(plan, modeComptable)
   const compteDeBilanPropose = surCompteDeBilan ? comptesProposes.find((c) => c.compte === ligne.compte_bilan) ?? null : null
@@ -1030,6 +1058,25 @@ export default function FicheMouvement({
     )
   }
 
+  // LA CAISSE SUR LA FICHE (étape C4) : le solde de la caisse ce jour-là, avant et après ce mouvement classé sur elle — « Versement
+  // d'espèces » pour un crédit, « Retrait d'espèces pour la caisse » pour un débit —, et le refus de la base sous ses mots quand le
+  // geste la rendrait négative. Pas lue en entier, la phrase le dit et rien ne se classe. Absente : rien.
+  function noteDeLaCaisse(): ReactNode {
+    if (!caisseTenable || surLaCaisse) return null
+    if (caisse.etat === 'pas_lue') return <p className="fiche-mouvement-alerte">{refusDeLaCaisse(plan.caisse)}</p>
+    if (caisse.etat !== 'lue') return null
+    const nom = ligne.montant > 0 ? 'Versement d’espèces' : 'Retrait d’espèces pour la caisse'
+    return (
+      <>
+        <p className="fiche-mouvement-note">
+          Avant ce mouvement, la caisse du {formatDate(ligne.date)} est de {euros(caisse.soldeSans)} ; classé « {nom} », elle
+          serait de {euros(caisse.soldeAvec)}.
+        </p>
+        {caisse.refusDuClassement && <p className="fiche-mouvement-alerte">{caisse.refusDuClassement}</p>}
+      </>
+    )
+  }
+
   // Les comptes de bilan proposés, d'un clic, et un compte au choix. Rendu sur un mouvement à traiter et, replié, sur un
   // mouvement déjà écrit sur un compte de bilan — pour en changer : la base remplace alors le compte et l'écriture, et
   // rejouer le même compte réécrit une écriture qui ne le suivrait plus.
@@ -1037,6 +1084,7 @@ export default function FicheMouvement({
     return (
       <>
         {refusDuMouvementSurBilan && <p className="fiche-mouvement-alerte">{refusDuMouvementSurBilan}</p>}
+        {noteDeLaCaisse()}
         <div className="fiche-mouvement-boutons">
           {comptesProposes.map((c) => (
             <button
@@ -1217,7 +1265,7 @@ export default function FicheMouvement({
     // Par la base : l'écriture part avec le compte (`retirer_mouvement_compte_bilan`). Une simple remise à « à traiter »,
     // la contrainte `lignes_bancaires_compte_bilan_rapproche` la refuserait de toute façon.
     principal = (
-      <button type="button" className="btn btn-outline" disabled={occupe} onClick={onRetirerCompteBilan}>
+      <button type="button" className="btn btn-outline" disabled={occupe || !!refusDeLaCaisse(null)} onClick={onRetirerCompteBilan}>
         Remettre à traiter
       </button>
     )
@@ -1642,6 +1690,12 @@ export default function FicheMouvement({
                   : 'Cet encaissement ressemble au déblocage d’un emprunt (ci-dessus) : affecté à une catégorie, il compterait en recette.'}
               </p>
             )}
+            {versementProbable && (
+              <p className="fiche-mouvement-alerte">
+                Son libellé dit un versement d’espèces : rangé en recette, il compterait deux fois les espèces que la caisse a déjà
+                comptées. Si c’est un versement, classe-le « Versement d’espèces » (plus bas, sur un compte de bilan).
+              </p>
+            )}
             {declarationsExactes.length > 0 && (
               <p className="fiche-mouvement-alerte">
                 {encaissement
@@ -1956,6 +2010,18 @@ export default function FicheMouvement({
               le FEC le porte au journal de banque, avec le relevé pour pièce.
               {compteDeBilanPropose ? ` ${compteDeBilanPropose.aide}` : ''}
             </p>
+            {surLaCaisse && caisseTenable && caisse.etat === 'lue' && (
+              <>
+                <p className="fiche-mouvement-note">
+                  Dans la caisse : sans ce mouvement, la caisse du {formatDate(ligne.date)} serait de {euros(caisse.soldeSans)} ; avec
+                  lui, elle est de {euros(caisse.soldeAvec)}.
+                </p>
+                {!fige && caisse.refusDuRetrait && <p className="fiche-mouvement-alerte">{caisse.refusDuRetrait}</p>}
+              </>
+            )}
+            {surLaCaisse && caisseTenable && caisse.etat === 'pas_lue' && !fige && (
+              <p className="fiche-mouvement-alerte">{refusDeLaCaisse(null)}</p>
+            )}
             {!fige && (changementCompteDeplie ? choixDeCompteDeBilan() : (
               <div className="fiche-mouvement-boutons">
                 <button type="button" className="btn btn-outline btn-sm" onClick={() => setChangementCompteDeplie(true)}>

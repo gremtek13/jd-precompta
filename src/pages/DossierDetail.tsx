@@ -10,6 +10,7 @@ import PiecesTab from './dossier/PiecesTab'
 import FacturesTab from './dossier/FacturesTab'
 import PacksTab from './dossier/PacksTab'
 import BanqueTab from './dossier/BanqueTab'
+import CaisseTab from './dossier/CaisseTab'
 import AccesTab from './dossier/AccesTab'
 import EcrituresTab from './dossier/EcrituresTab'
 import StatistiquesTab from './dossier/StatistiquesTab'
@@ -28,6 +29,8 @@ import VirementsTab from './dossier/VirementsTab'
 import TvaTab from './dossier/TvaTab'
 import AssistantDossier, { BoutonAssistant } from './dossier/AssistantDossier'
 import DossierParcours, { type DossierTab } from '../components/DossierParcours'
+import { CAISSE_EXPORTEE } from '../lib/caisse'
+import { ongletsValides } from '../lib/ongletsDossier'
 import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
 import { AnneeProvider, useAnnee } from '../context/AnneeContext'
 import { ExercicesValidesProvider } from '../context/ExercicesValidesContext'
@@ -43,16 +46,13 @@ import { lireLOuverture } from '../lib/dossiersOuvertsLecture'
 // L'onglet actif fait partie de l'URL (voir la route /dossiers/:id/:tab dans App.tsx) plutôt qu'un
 // simple état React : sans ça, ouvrir une pièce dans un nouvel onglet puis faire "retour" ramenait
 // tout droit à la liste des dossiers au lieu de l'onglet Pièces qu'on venait de quitter — aucune
-// navigation interne n'était mémorisée par le navigateur. Cette liste sert à valider le paramètre
-// d'URL (une valeur absente ou invalide retombe sur "checklist").
-const TABS_VALIDES: DossierTab[] = [
-  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'bilan', 'revision', 'tva', 'immobilisations',
-  'cotisations', 'cloture', 'estimation', 'financement', 'supplements', 'packs', 'informations', 'virements', 'acces',
-]
+// navigation interne n'était mémorisée par le navigateur. Le paramètre d'URL est validé par `ongletsValides`
+// (lib/ongletsDossier.ts), tiré des groupes de la navigation : une valeur absente ou invalide retombe sur "checklist" — et
+// l'onglet Caisse, tant que la caisse n'est pas en base.
 
 // Onglets où l'exercice sélectionné a un effet réel (voir AnneeContext) — le sélecteur d'exercice de
 // l'en-tête ne s'affiche que là, pas sur des écrans (Informations, Packs...) où il ne changerait rien.
-const TABS_AVEC_EXERCICE: DossierTab[] = ['pieces', 'banque', 'ecritures', 'statistiques', 'bilan', 'revision', 'cloture']
+const TABS_AVEC_EXERCICE: DossierTab[] = ['pieces', 'banque', 'caisse', 'ecritures', 'statistiques', 'bilan', 'revision', 'cloture']
 
 // Exercice le plus pertinent à afficher par défaut à l'ouverture du dossier — jamais "toutes" sur un
 // dossier qui a déjà de l'historique : mélanger plusieurs exercices dans un total (Clôture, en
@@ -71,7 +71,7 @@ function calculerAnneeParDefaut(anneesDisponibles: number[]): ValeurAnnee {
 export default function DossierDetail() {
   const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>()
   const navigate = useNavigate()
-  const tab: DossierTab = TABS_VALIDES.includes(tabParam as DossierTab) ? (tabParam as DossierTab) : 'checklist'
+  const tab: DossierTab = ongletsValides(CAISSE_EXPORTEE).includes(tabParam as DossierTab) ? (tabParam as DossierTab) : 'checklist'
   // Le dossier lu, AVEC l'identifiant pour lequel il l'a été — et de même pour les années. Cette page
   // ne se remonte pas quand la barre latérale mène d'un dossier à l'autre (même route, autre :id) :
   // un état gardé seul désignerait encore l'ANCIEN dossier jusqu'à la fin de la lecture du nouveau,
@@ -447,6 +447,14 @@ export default function DossierDetail() {
                 dossierId={id} modele={modele} assujettiTva={dossier?.assujetti_tva ?? false}
                 ventesParLesFactures={dossier?.ventes_par_les_factures === true}
                 statutTva={dossier?.statut_tva ?? null}
+              />
+            )}
+            {/* L'onglet Caisse (ligne 26.6, étape C4) n'est routable que la caisse en base : `tab` ne vaut jamais 'caisse' avant. */}
+            {tab === 'caisse' && modele && (
+              <CaisseTab
+                dossierId={id} modele={modele} assujettiTva={dossier?.assujetti_tva ?? false}
+                ventesParLesFactures={dossier?.ventes_par_les_factures === true}
+                onNavigate={allerA}
               />
             )}
             {tab === 'documents' && <DocumentsTab dossierId={id} />}

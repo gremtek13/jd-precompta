@@ -8,12 +8,15 @@
 // icône par destination, la barre latérale n'en met pas sur les écrans du dossier). Toute nouvelle vue
 // de dossier s'ajoute ici — et à TABS_VALIDES dans DossierDetail.tsx pour être routable.
 
+import { CAISSE_EXPORTEE } from './caisse'
+
 export type DossierTab =
   | 'checklist'
   | 'documents'
   | 'pieces'
   | 'factures'
   | 'banque'
+  | 'caisse'
   | 'ecritures'
   | 'statistiques'
   | 'bilan'
@@ -34,7 +37,7 @@ export interface EnfantParcours { id: DossierTab; label: string }
 
 // Identifiants fermés plutôt qu'une chaîne libre : DossierParcours associe une icône à chacun, et un
 // groupe ajouté sans la sienne doit échouer à la compilation plutôt que s'afficher sans icône.
-export type IdGroupeParcours = 'checklist' | 'documents-groupe' | 'banque' | 'comptabilite' | 'cabinet'
+export type IdGroupeParcours = 'checklist' | 'documents-groupe' | 'banque' | 'caisse' | 'comptabilite' | 'cabinet'
 
 // Un groupe est soit une destination directe (cible renseignée, clic = navigation immédiate), soit un
 // regroupement qui déroule ses enfants au clic. Remplace l'ancienne liste à plat de 13 destinations
@@ -59,7 +62,28 @@ export interface GroupeParcours {
   enfants?: EnfantParcours[]
 }
 
-export const GROUPES_PARCOURS: GroupeParcours[] = [
+// LA LISTE DES ÉCRANS, SELON QUE LA CAISSE EST EN BASE (ligne 26.6, étape C4 ; `CAISSE_EXPORTEE`, lib/caisse.ts). Baissé, la
+// liste est celle d'hier, au caractère près : aucun onglet neuf. Levé, un onglet « Caisse » suit Banque, destination
+// directe comme elle — la saisie des espèces se fait chaque semaine, comme le relevé, et ne se cache pas derrière un menu.
+// Les deux états sont une fonction plutôt qu'une constante : les tests jouent chacun, et les navigations la lisent à chaque
+// rendu.
+export function groupesDuParcours(caisseEnBase: boolean): GroupeParcours[] {
+  const groupes = GROUPES_SANS_CAISSE
+  if (!caisseEnBase) return groupes
+  const apresBanque = groupes.findIndex((g) => g.id === 'banque') + 1
+  return [
+    ...groupes.slice(0, apresBanque),
+    { id: 'caisse', label: 'Caisse', labelCourt: 'Caisse', cible: 'caisse' },
+    ...groupes.slice(apresBanque),
+  ]
+}
+
+/** Les écrans qu'une adresse `/dossiers/:id/:tab` peut désigner, selon que la caisse est en base : tous ceux des groupes. */
+export function ongletsValides(caisseEnBase: boolean): DossierTab[] {
+  return groupesDuParcours(caisseEnBase).flatMap((g) => [...(g.cible ? [g.cible] : []), ...(g.enfants ?? []).map((e) => e.id)])
+}
+
+const GROUPES_SANS_CAISSE: GroupeParcours[] = [
   { id: 'checklist', label: "Vue d'ensemble", labelCourt: 'Vue', cible: 'checklist' },
   {
     id: 'documents-groupe', label: 'Documents', labelCourt: 'Docs',
@@ -104,10 +128,13 @@ export const GROUPES_PARCOURS: GroupeParcours[] = [
   },
 ]
 
+export const GROUPES_PARCOURS: GroupeParcours[] = groupesDuParcours(CAISSE_EXPORTEE)
+
 // Le libellé d'un écran du dossier, tel que les deux navigations l'affichent : un bouton qui mène à un écran
 // le nomme comme la barre qu'on retrouvera en y arrivant.
 export function libelleDeLOnglet(tab: DossierTab): string {
-  for (const groupe of GROUPES_PARCOURS) {
+  // Les deux états du drapeau : un écran se nomme de même qu'il soit offert ou non.
+  for (const groupe of groupesDuParcours(true)) {
     if (groupe.cible === tab) return groupe.label
     const enfant = groupe.enfants?.find((e) => e.id === tab)
     if (enfant) return enfant.label

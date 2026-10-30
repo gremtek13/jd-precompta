@@ -43,6 +43,14 @@ export const IconBanque = (p: IconProps) => base(<>
   <path d="M3 21h18" />
 </>, p)
 
+// La caisse : un tiroir-caisse, des espèces dans le tiroir.
+export const IconCaisse = (p: IconProps) => base(<>
+  <rect x="3" y="11" width="18" height="9" rx="1.5" />
+  <path d="M6 11V7.5A1.5 1.5 0 0 1 7.5 6h9A1.5 1.5 0 0 1 18 7.5V11" />
+  <path d="M8 15.5h8" />
+  <circle cx="12" cy="15.5" r="0.6" />
+</>, p)
+
 export const IconEcritures = (p: IconProps) => base(<>
   <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v18H6.5A2.5 2.5 0 0 1 4 18.5z" />
   <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v18h5.5a2.5 2.5 0 0 0 2.5-2.5z" />
@@ -296,6 +304,7 @@ export const ICONES_PARCOURS: Record<DossierTab, IconComponent> = {
   pieces: IconPieces,
   factures: IconFactures,
   banque: IconBanque,
+  caisse: IconCaisse,
   ecritures: IconEcritures,
   statistiques: IconStatistiques,
   bilan: IconBilan,
