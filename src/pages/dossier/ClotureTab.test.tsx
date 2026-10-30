@@ -1904,6 +1904,9 @@ describe('ClotureTab — valider l’exercice', () => {
 
   it('valide un exercice tenu : la numérotation du FEC et la 2035 affichée partent à la base, et l’exercice se relit validé', async () => {
     poserTenu()
+    // La caisse ABSENTE, posée et non lue du module : la version 2 d'hier, quel que soit l'état du drapeau — levé, une caisse
+    // lue même vide écrit la version 3 (étape C3a). La passe drapeau levé de l'étape C3b l'a montré.
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: false, lignes: [], complete: false, motif: null })
     accepter()
     confirmer(true)
     faux.apresValidation = VALIDE
@@ -2974,6 +2977,8 @@ describe('ClotureTab — les ventes facturées', () => {
   // derrière la recette facturée et le mouvement derrière les frais ; relue validée, son récapitulatif le redit.
   it('basculé, la validation envoie une 2035 qui compte ses encaissements, et son récapitulatif les relit', async () => {
     poserLesFrais()
+    // La caisse ABSENTE, posée et non lue du module : la version 2 de VF7d, quel que soit l'état du drapeau (voir plus haut).
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: false, lignes: [], complete: false, motif: null })
     // Sans la pièce d'achat (qu'aucun paiement ne règle) ni son exemplaire : l'exercice n'a que sa vente, et se valide.
     faux.parTable.pieces = []
     faux.parTable.ecritures_brouillon = (faux.parTable.ecritures_brouillon as { id: string }[]).filter((l) => l.id !== 'e-achat')
