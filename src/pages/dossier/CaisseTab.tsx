@@ -4,7 +4,7 @@ import BarreRecherche from '../../components/BarreRecherche'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { natureDuCompte } from '../../lib/affectationBanque'
-import { origineDite } from '../../lib/caisse'
+import { origineDite, type SaisieDeCaisse } from '../../lib/caisse'
 import {
   confirmationDuRemplacement, confirmationDuRetrait, etatDeLaCaisseLu, etatDUneOperationRetiree, euros, especesDuJour,
   FORMULAIRE_VIDE, journalDeLaCaisse, libelleDeLaLigne, ligneVide, nomDeLOperation, operationsRetirees,
@@ -18,7 +18,6 @@ import { anneeDe, aujourdHuiAParis, formatDate } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { supabase } from '../../lib/supabase'
-import type { SaisieDeCaisse } from '../../lib/caisse'
 import type { Categorie, OperationCaisse } from '../../lib/types'
 import type { DossierTab } from '../../lib/ongletsDossier'
 
@@ -99,7 +98,7 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
     return () => { annule = true }
   }, [dossierId, ventesParLesFactures, enTresorerie])
 
-  const donnees: DonneesDeLaCaisse | null = lecture !== null && lecture.dossierId === dossierId && lecture.etat === 'lue' ? lecture.donnees : null
+  const donnees: DonneesDeLaCaisse | null = lecture !== null && lecture.etat === 'lue' ? lecture.donnees : null
   // Le jour à Paris, relu à chaque rendu : « maintenant » ne se lit jamais au chargement d'un module.
   const ctx: ContexteDeLaCaisse = { modele, assujettiTva, aujourdhui: aujourdHuiAParis(), anneesValidees }
   const etat = useMemo(() => (donnees ? etatDeLaCaisseLu(modele, donnees) : null), [donnees, modele])

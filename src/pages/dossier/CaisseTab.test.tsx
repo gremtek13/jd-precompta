@@ -360,6 +360,18 @@ describe('saisir une opération', () => {
     expect((screen.getByLabelText('Jour') as HTMLInputElement).value).toBe('2026-03-12')
   })
 
+  it('une opération d’un autre exercice que celui affiché le dit : elle n’est pas dans la liste montrée, et le message nomme où la trouver', async () => {
+    rendre({ annee: 2026 })
+    await attendreLaLecture()
+    remplirLeFormulaire({ nature: 'apport', date: '2025-07-02', montant: '60' })
+    await act(async () => { bouton('Enregistrer').click() })
+    await screen.findByText(/^Opération enregistrée le 02\/07\/2025 \(dans l’exercice 2025, que le sélecteur d’exercice de l’en-tête affiche\)\.$/)
+    // Le même exercice que celui affiché : le message n'ajoute rien.
+    remplirLeFormulaire({ date: '2026-03-12', montant: '10' })
+    await act(async () => { bouton('Enregistrer').click() })
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Opération enregistrée le 12/03/2026.'))
+  })
+
   it('un dossier assujetti : le taux se choisit, et part avec la saisie — le hors taxe et la TVA dans l’écriture', async () => {
     rendre({ assujettiTva: true })
     await attendreLaLecture()

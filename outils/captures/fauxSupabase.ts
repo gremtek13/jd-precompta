@@ -285,6 +285,15 @@ function ligne(id: string, date: string, libelle: string, montant: number, statu
   }
 }
 
+// Une opération de la caisse du cabinet infirmier (ligne 26.6, étape C4), telle que les fonctions de la caisse la laissent.
+function operationCaisse(id: string, genre: string, date: string, montant: number, categorie: string | null): Ligne {
+  return {
+    id, dossier_id: 'd1', genre, date, montant, categorie_id: categorie, taux_tva: null,
+    encaissements_du_jour: genre === 'recette' ? [] : null, piece_id: null, origine: 'cabinet', remplace_id: null,
+    cree_le: MAINTENANT, cree_par: 'u1', retire_le: null, retire_par: null,
+  }
+}
+
 // Un mouvement rapproché d'un EMPRUNT (lib/echeanceEmprunt.ts), tel que `rapprocher_echeance_emprunt`
 // le laisse : le découpage validé gardé sur la ligne — le numéro de l'échéance, ses intérêts et son
 // assurance ; pour un déblocage, ni numéro, ni intérêts, ni assurance.
@@ -1961,6 +1970,19 @@ const TABLES: Record<string, Ligne[]> = {
   revision_conclusions: CYCLES_D9.conclusions,
   revision_notes: CYCLES_D9.journal,
   revision_revues: CYCLES_D9.revues,
+  // LA CAISSE DU CABINET INFIRMIER (ligne 26.6, étape C4 ; le drapeau `CAISSE_EXPORTEE` levé dans la copie de travail le temps du
+  // banc — baissé, l'onglet n'existe pas et ces lignes ne sont lues par personne) : un apport, deux recettes, un prélèvement,
+  // une recette remplacée par le client (retirée, puis sa remplaçante), un versement en banque (voir `l27`) — un solde de 513 €
+  // en fin de période, sans jour négatif. Des totaux de jour et de nature : aucun nom.
+  operations_caisse: [
+    operationCaisse('oc1', 'apport', '2026-08-03', 200, null),
+    operationCaisse('oc2', 'recette', '2026-08-04', 185, 'c9'),
+    operationCaisse('oc3', 'recette', '2026-08-18', 96.5, 'c9'),
+    operationCaisse('oc4', 'prelevement', '2026-08-21', 80, null),
+    { ...operationCaisse('oc5', 'recette', '2026-09-02', 120, 'c9'), retire_le: '2026-09-03T08:00:00Z', retire_par: 'u1', origine: 'client' },
+    { ...operationCaisse('oc6', 'recette', '2026-09-02', 132, 'c9'), remplace_id: 'oc5', origine: 'client' },
+    operationCaisse('oc7', 'recette', '2026-09-19', 59.5, 'c9'),
+  ],
   a_nouveaux: [
     aNouveau('an1', '512000', '51210000', 'Banque Populaire', 'debit', 8400),
     aNouveau('an2', '2154', '2154', 'Matériel médical', 'debit', 3200),
@@ -2074,6 +2096,9 @@ const TABLES: Record<string, Ligne[]> = {
     ecritureReleve('r32', 'l24', '2026-09-12', '512000', 'VIR VERS LIVRET PRO', 'credit', 3000),
     ecritureReleve('r33', 'l25', '2026-07-03', '275000', 'DEPOT DE GARANTIE BAIL CABINET', 'debit', 1300),
     ecritureReleve('r34', 'l25', '2026-07-03', '512000', 'DEPOT DE GARANTIE BAIL CABINET', 'credit', 1300),
+    // Le versement d'espèces classé sur la caisse (étape C4) : la banque au débit, la caisse au crédit.
+    ecritureReleve('r35', 'l27', '2026-08-25', '512000', 'VERSEMENT ESPECES AGENCE', 'debit', 150),
+    ecritureReleve('r36', 'l27', '2026-08-25', '530000', 'VERSEMENT ESPECES AGENCE', 'credit', 150),
   ],
   // Les parts du virement groupé l20, signées comme le relevé : les deux factures en sortie, l'avoir en
   // entrée, déduit du paiement.
@@ -2210,6 +2235,10 @@ const TABLES: Record<string, Ligne[]> = {
     mouvementEmprunt('l15', '2026-07-28', 'DEBLOCAGE PRET VEHICULE', 15000, null, 0, 0),
     mouvementEmprunt('l16', '2026-08-28', 'PRLV ECHEANCE PRET VEHICULE', -348.51, 1, 45, 12.5),
     ligne('l17', '2026-09-28', 'PRLV ECHEANCE PRET VEHICULE', -348.51, 'non_rapprochee', null),
+    // LA CAISSE (étape C4) : un versement d'espèces déjà classé sur le compte de la caisse, et un autre à traiter dont la fiche
+    // propose « Versement d'espèces » avec le solde de la caisse ce jour-là.
+    { ...ligne('l27', '2026-08-25', 'VERSEMENT ESPECES AGENCE', 150, 'rapprochee', null), compte_bilan: '530000' },
+    ligne('l28', '2026-09-26', 'VERSEMENT ESPECES GUICHET', 90, 'non_rapprochee', null),
     // Deux mouvements VENTILÉS sur plusieurs comptes (lib/ventilationBanque.ts) : un forfait mobile payé
     // depuis le compte pro, professionnel pour 42 € et personnel pour 18 € ; et une remise de carte dont
     // la banque a retenu sa commission — 490 € d'honoraires, 4,70 € de frais, 485,30 € versés. Leurs

@@ -61,9 +61,14 @@
 import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
 
+// LA CAISSE (ligne 26.6, étape C4) : `CAISSE=1` joue l'onglet Caisse et la fiche de son versement d'espèces, le drapeau
+// `CAISSE_EXPORTEE` (src/lib/caisse.ts) levé dans la copie de travail le temps du banc — jamais commité. Baissé, l'adresse
+// /caisse retombe sur la Vue d'ensemble : ces visites ne se jouent donc pas, et le total d'hier est inchangé.
+const CAISSE = process.env.CAISSE === '1'
 const ONGLETS = [
   'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'bilan', 'revision', 'tva', 'immobilisations',
   'cotisations', 'cloture', 'estimation', 'financement', 'supplements', 'packs', 'informations', 'virements', 'acces',
+  ...(CAISSE ? ['caisse'] : []),
 ]
 // Les onglets qu'un dossier tenu en ENGAGEMENT (d8) rend autrement : le réglage du modèle et le
 // brouillon en 401/411, la Clôture sans 2035, les factures sans règlement de la Checklist et de Banque,
@@ -87,6 +92,30 @@ const VISITES = [
   // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
   ...ONGLETS.map((onglet) => ({ dossier: onglet === 'tva' ? 'd7' : 'd1', onglet, nom: onglet })),
   ...ONGLETS_ENGAGEMENT.map((onglet) => ({ dossier: 'd8', onglet, nom: `engagement/${onglet}` })),
+  // LA CAISSE, la fiche d'un crédit dont le libellé dit un versement d'espèces (étape C4) : l'alerte qui le dit, le solde de la
+  // caisse ce jour-là, « Versement d'espèces » ; puis celle d'un versement déjà classé, ses mots sur la caisse. L'onglet lui-même
+  // est visité avec les autres (`ONGLETS`). Mesurées contre le corps de la fiche.
+  ...(CAISSE ? [
+    {
+      dossier: 'd1', onglet: 'banque', nom: 'caisse/fiche-versement', fenetre: '.fiche-mouvement-corps',
+      apres: async (page) => {
+        const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+        if (await fermer.count()) await fermer.first().click()
+        await page.locator('tr.clickable', { hasText: 'VERSEMENT ESPECES GUICHET' }).first().click()
+        await page.getByText(/Avant ce mouvement, la caisse du/).first().waitFor({ timeout: 10000 })
+      },
+    },
+    {
+      dossier: 'd1', onglet: 'banque', nom: 'caisse/fiche-classe', fenetre: '.fiche-mouvement-corps',
+      apres: async (page) => {
+        const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+        if (await fermer.count()) await fermer.first().click()
+        await page.getByRole('button', { name: 'Tous', exact: true }).click()
+        await page.locator('tr.clickable', { hasText: 'VERSEMENT ESPECES AGENCE' }).first().click()
+        await page.getByText(/Dans la caisse : sans ce mouvement/).first().waitFor({ timeout: 10000 })
+      },
+    },
+  ] : []),
   // La connexion bancaire, une récupération faite : l'aperçu de ce qui entrerait — son tableau, son
   // libellé long, ses boutons — n'apparaît qu'après un clic, donc aucune visite ordinaire ne le voit.
   {

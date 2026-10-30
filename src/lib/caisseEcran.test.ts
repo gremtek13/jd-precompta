@@ -99,6 +99,7 @@ describe('la caisse rejouée sur ce que l’écran a lu', () => {
     expect(soldeAuJour(etat, '2025-12-31')).toBe(0)
     expect(soldeAuJour(etat, '2026-01-01')).toBe(5000)
     expect(soldeAuJour(etat, '2026-03-02')).toBe(15000)
+    expect(soldeAuJour(etat, '2026-03-03')).toBe(15000 + 8500)
     expect(soldeAuJour(etat, '2026-03-04')).toBe(15000 + 8500 - 4000)
     expect(soldeAuJour(etat, '9999-12-31')).toBe(15000 + 8500 - 4000 - 12000 + 3000)
   })

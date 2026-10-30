@@ -44,12 +44,12 @@ migrations EN PRODUCTION depuis le 30/10/2026 — `caisse` (C1) par l'outil, `ca
 son essai de suppression (`caisseSuppression.sql`) sur une réplique seulement → « LA CAISSE, EN BASE : LA MIGRATION
 `CAISSE` (C1, LIGNE 26.6) », « LA CAISSE, EN BASE : LE RETRAIT, LE REMPLACEMENT ET LE VERSEMENT D'ESPÈCES (C1B, LIGNE
 26.6) », « LA CAISSE EN PRODUCTION : LES DEUX MIGRATIONS ET LE DRAPEAU LEVÉ » ; son drapeau, `CAISSE_EXPORTEE`, levé le
-même jour : le module, la lecture et la sauvegarde (C2), les moteurs (C3a), le FEC et les contrôles (C3b) suivent la
-base, l'onglet Caisse (C4) et l'assistant (C5) restent → « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE
-26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES CONTRÔLES (C3B, LIGNE 26.6) »), le
-plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y
-comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS
-LA MI-DÉCEMBRE 2026 ».
+même jour : le module, la lecture et la sauvegarde (C2), les moteurs (C3a), le FEC et les contrôles (C3b), les écrans du
+cabinet (C4) suivent la base, l'assistant (C5) reste → « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE
+26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES CONTRÔLES (C3B, LIGNE 26.6) », « LA
+CAISSE : LES ÉCRANS (C4, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la
+feuille de route marque les lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE
+MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
