@@ -42225,3 +42225,143 @@ EcritureLib composés), la piste d'audit (le brouillard du praticien pour justif
 (`caisse-a-reprendre`, `caisse-negative`, `recettes-de-caisse-a-revoir`, et les recettes de caisse dans
 `exclusions-2035`, sous une phrase qui les nomme), les points de la Checklist (les mêmes et
 `versements-especes-en-recette`), le versement d'espèces hors des lots. Puis C4, l'écran de la caisse ; C5, l'assistant.
+
+### 30/10/2026 — LA CAISSE : LE FEC ET LES CONTRÔLES (C3B, LIGNE 26.6)
+
+(Écrite par l'agent architecte de C3b sur `0915af3` — C1, C1b et C2, puis C3a —, la branche locale `caisse-c3b`. Aucune
+migration, aucun fichier de `supabase/preparees/` ni de `supabase/schema/`, aucune Edge Function ; en production, rien
+de lu ni d'écrit. Tout ce qui suit est NEUTRE tant que `CAISSE_EXPORTEE` reste baissé. CAISSE-Q3, (A) : les journaux
+d'aujourd'hui.)
+
+**CE QUI EST POSÉ.**
+- `src/lib/controlesDeLaCaisse.ts`, PUR : la forme `OperationsDeCaisse` — `absente` (le drapeau baissé) ou `lue` (les
+  opérations du dossier lues en entier, retirées et remplacées comprises) — et ce que l'écran tient en plus
+  (`en_attente`, `incomplete`), tranché avant l'appel (`operationsPourLesControles`) ; le journal selon le genre
+  (`journalDeLOperation` : VE pour une recette et des espèces rendues, OD pour un apport ou un prélèvement, aucun pour
+  le paiement d'une pièce, C9) ; la pièce « Caisse du JJ/MM/AAAA » (PCG, art. 1032-2 : le récapitulatif du jour) et le
+  justificatif « Brouillard de caisse du JJ/MM/AAAA, tenu hors de l'application » ; les quatre contrôles, sur les règles
+  mêmes de `caisse.ts` (C2), jamais recopiées — `operationsDeCaisseAReprendre` (l'écriture que l'application composerait
+  aujourd'hui, `ecritureDeLOperation` au plan et au statut de TVA du jour, comparée par `ecritureConforme` : compte,
+  sens, montant, date), `caisseNegative` (`soldesDeLaCaisse`, le premier jour négatif après la frontière),
+  `recettesDeCaisseARevoir` (`ensembleDuJour` face à `encaissements_du_jour`), `versementsDEspecesEnRecette` — ; le
+  versement hors des lots (`versementsDEspecesHorsDesLots`) ; leurs mots, sans un nom.
+- Le FEC (`fec.ts`) : les opérations, un paramètre OBLIGATOIRE de `numeroterFec` et de `genererFec` ; les lignes qui
+  citent une opération lue font UNE écriture, clé `caisse|opération|date`, au journal de son genre, PieceRef « Caisse du
+  … », PieceDate sa date, EcritureLib le libellé que la base a composé. Une ligne qui cite une opération que la lecture
+  ne rend pas reste hors du fichier, jamais devinée. C'est la numérotation que la validation fige (VF7c) : la caisse se
+  fige avec le reste, sans que `valider_exercice` change. Les vingt-deux champs d'un BNC (ligne 62 ; MVP-D5) et le
+  paiement d'une pièce (C9) sont dits en commentaire, là où ils viendront.
+- La piste d'audit (`pisteAudit.ts`) : la ligne d'une opération a pour justificatif le brouillard du praticien, sans
+  empreinte, et rien ne lui manque ; elle n'est ni une rupture (`rupturesPisteAudit` : ni l'onglet Écritures, ni la Vue
+  d'ensemble) ni un absent du FEC (`absenceFec`).
+- Les préalables (`prealablesValidation.ts`) : `operationsDeCaisse`, obligatoire, NULLE tant que la caisse n'est pas
+  revenue entière — la validation se suspend ; trois préalables BLOQUANTS, ramenés à l'exercice et hors des exercices
+  figés — `caisse-a-reprendre` (chaque opération nommée, et pourquoi), `caisse-negative` (le jour et le solde, s'ils
+  tombent dans l'exercice ou avant), `recettes-de-caisse-a-revoir` (les factures dont les espèces ont changé ce jour-là,
+  lues dans les états des ventes facturées d'un dossier basculé) — ; et les recettes de caisse dans `exclusions-2035`,
+  comptées, sous une phrase qui les nomme et un détail qui renvoie à la carte de Clôture, que `CARTES_DE_CLOTURE` range
+  désormais là. Sans opération de caisse, rien n'est calculé de plus, et la phrase d'`exclusions-2035` est celle d'hier.
+- La Vue d'ensemble (`pointsDeLaChecklist.ts`, `checklistLecture.ts`) : les mêmes trois points en « erreur », et
+  `versements-especes-en-recette` en « attention » (un crédit libellé comme un versement d'espèces, affecté à un produit
+  ou ventilé avec une part de produit, dans un dossier qui tient une caisse : un symptôme, jamais une preuve). Ils ne
+  paraissent que sur une caisse LUE ; lue en partie, ou l'une de leurs entrées (le brouillon, les catégories, le relevé,
+  la reprise, les ventilations : `entreesDeLaCaisseIncompletes`), ils se taisent, et un bandeau le dit (Vue d'ensemble,
+  Révision) ; les espèces des factures lues en partie taisent les deux qui en dépendent. Rangés dans leurs cycles
+  (`revisionCycles.ts` : trésorerie, la recette à revoir aux recettes). La Révision lit la caisse par la lecture de la
+  Vue d'ensemble, une seule fois.
+- Les lots du relevé (BanqueTab) : dans un dossier qui tient une caisse — ou peut-être : lue en partie, ou pas encore
+  revenue —, un crédit dont le libellé dit un versement d'espèces (« VERSEMENT ESPECES », « VRST ESP », « DEPOT
+  D'ESPECES », « REMISE ESPECES »…, le libellé lu ou brut, sans accent ni ponctuation) entre dans `horsDesLots`,
+  qu'aucun des quatre lots ne prend ; la carte d'un lot le dit à part (`ecartDuLot`), et sans lui rend la phrase d'hier.
+  La caisse se lit avant le relevé, pour qu'aucun rendu ne voie les mouvements sans elle.
+- Les écrans : Écritures lit la caisse avec le brouillon et refuse le FEC sur une caisse pas revenue, d'un autre dossier
+  ou lue en partie (le bouton dit pourquoi) ; Clôture passe les opérations à la validation.
+
+**LES ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- Les opérations, paramètre obligatoire du FEC, plutôt qu'un journal déduit des lignes (un compte de classe 7, un
+  libellé composé) : le genre est une donnée de l'opération, et le déduire serait deviner — ce que le FEC ne fait pas.
+  Le prix : la lecture de la caisse dans Écritures, et le paramètre ajouté aux appels d'avant (un codemod sur l'arbre
+  syntaxique).
+- Une forme à part de celle des moteurs (`RecettesDeCaisse`, C3a) : les moteurs ne comptent que les recettes vivantes,
+  résolues ; le FEC et les contrôles lisent chaque opération telle qu'elle est en base, retirées comprises.
+- « À reprendre » ne compare pas le libellé : la base l'a composé avec le nom de la catégorie du jour de la saisie, et
+  une catégorie renommée ne se reprend pas. Il dit aussi, défensif, les lignes restées d'une opération retirée ; il
+  laisse le paiement d'une pièce (C9) à sa pièce.
+- Les trois préalables et leurs points mènent à Écritures, le versement à Banque : l'onglet Caisse n'existe pas encore
+  (C4). Leur détail nomme chaque opération par son jour, son genre et son montant — jamais un nom.
+- Les quatre points paraissent dès que la caisse est lue (à zéro quand tout tient), et seulement alors : la caisse
+  absente laisse `tousLesPointsATraiter` identique, objet pour objet.
+- `absenceFec` ne lit que la ligne : une ligne de caisse y est « dans le FEC ». Elle ne l'est que si son opération est
+  lue — ce que l'écran garantit en refusant l'export sur une caisse qui ne l'est pas ; la clé étrangère en cascade fait
+  le reste.
+- Le versement « peut-être » : une caisse lue en partie, ou pas encore revenue, écarte des lots les crédits ainsi
+  libellés plutôt que de retenir tous les lots — écarter ne perd rien, le mouvement reste à traiter depuis sa fiche.
+
+**LA NEUTRALITÉ, PROUVÉE.** La suite comparée test par test sous Paris (Node 22.23.3) : l'arbre de BASE (`0915af3`),
+exporté hors du dépôt, 15 227 tests justes (la garde des clés, `clesSupabase.test.ts`, n'y charge pas : l'export n'est
+pas un dépôt git) ; le premier commit de C3b (`81add8e` : le code et les tests d'avant retouchés sur la forme, sans test
+neuf) : deux tests changeaient d'état, les deux REGISTRES qui exigent qu'un contrôle neuf se range —
+`revisionCycles.test.ts` (le rangement par cycle, complet) et `prealablesValidation.test.ts` (« un cas pour chaque
+contrôle repris ») —, complétés au même commit. Sur la tête (`b22fef0`), 15 318 tests justes : aucun changé d'état,
+aucun disparu, 66 neufs (39 de `controlesDeLaCaisse.test.ts`, 11 de `prealablesValidation.test.ts`, 6 de
+`pointsDeLaChecklist.test.ts`, 3 d'`EcrituresTab.test.tsx`, 3 de `ChecklistTab.test.tsx`, 2 de `ClotureTab.test.tsx`, 2
+de `BanqueTab.lotsDesVentes.test.tsx`), et les 25 de la garde des clés. Drapeau baissé, aucune lecture de plus :
+`lireLaCaisse` ne touche pas au réseau (`caisseLecture.test.ts`), et le scanner des écrans qui lisent la base
+(`ecransAvantLecture.test.tsx`) n'en a vu aucun de plus. Les tests d'avant retouchés, sur la forme seulement : les
+appels du FEC reçoivent `OPERATIONS_DE_CAISSE_ABSENTES` (un codemod sur l'arbre syntaxique : 81 appels dans
+`fec.test.ts`, 9 dans `ventesFactureesDesExports.test.ts`, 6 dans `validationExercice.test.ts`, 5 dans
+`reportDesSoldes.test.ts`, 2 dans `libellesVf4aQ1.test.ts` et `pisteAudit.test.ts`, 1 dans
+`dossierBasculeBoutEnBout.test.ts`, et le banc des captures) ; les fabriques de la validation (`operationsDeCaisse`) et
+de la Vue d'ensemble (`caisse`, `entreesDeLaCaisseIncompletes`) ; les deux registres ; deux tests de Clôture qui posent
+la caisse absente (ci-dessous).
+
+**LES PREUVES, LE DRAPEAU LEVÉ.**
+- `controlesDeLaCaisse.test.ts`, 39 cas : la forme ; les journaux et la pièce ; le FEC — une opération de chaque genre
+  au journal des ventes ou des opérations diverses, numérotée par journal et par date, dix-huit colonnes, la pièce et le
+  libellé de la base, `anomaliesDgfip` et `desequilibresDgfip` vides, la TVA d'un assujetti dans l'écriture, le plan
+  décalé (531000), ce qui reste dehors (la caisse absente, une opération non lue, un paiement), une ligne à un autre
+  jour (deux écritures, chacune d'une date), et la caisse sans ligne qui rend le même fichier ; la piste ; « à reprendre
+  » (absente, une ligne de moins, un compte, un jour, le plan changé, le statut de TVA changé dans les deux sens, une
+  catégorie qui n'est plus un produit, les lignes restées d'une retirée, la frontière, l'ordre et un détail qui s'arrête
+  à six) ; la caisse négative (une sortie, un versement, une ouverture au crédit, la frontière, la caisse du plan, les
+  espèces lues en partie) ; les recettes à revoir (un encaissement enregistré, retiré, rattaché depuis, ou un autre à sa
+  place ; ni une facture qui n'est pas source, ni un autre moyen, ni un autre jour) ; le libellé d'un versement (onze
+  reconnus, sept écartés) ; les lots et la carte ; le versement rangé en recette ; et 200 caisses TIRÉES (`tirage`,
+  graine 20261031), où le FEC fait une écriture par opération au journal de son genre, sans faute, sans déséquilibre ni
+  défaut de numérotation, aucune opération n'est à reprendre, et une ligne déplacée d'un jour fait reprendre son
+  opération seule.
+- Les préalables (11 cas, dont les trois de la table « ramené à l'exercice ») et la Vue d'ensemble (6 cas) : chacun
+  positif et négatif, la caisse absente sans rien de plus, la lecture partielle, un dossier basculé dont une recette ne
+  reconnaît pas les espèces d'une facture de son jour, `exclusions-2035` avec et sans recette de caisse.
+- Les écrans, par une doublure de la lecture : Écritures (la recette au journal des ventes dans le fichier exporté ; lue
+  en partie ou d'un autre dossier, le FEC refusé, et le bouton dit pourquoi), Clôture (les écritures de la caisse dans
+  la demande de validation, OD, « Caisse du 01/02/2025 » ; une opération sans écriture retient la validation et mène à
+  Écritures), la Vue d'ensemble (le point, son détail, son bouton ; lue en partie, le bandeau ; absente, rien), Banque
+  (le lot des règles écarte le versement et sa carte le dit ; absente, ou sans opération vivante, le lot le prend comme
+  hier).
+- Les mutations : 72, jouées chacune contre les tests qu'elle concerne (`muter.py`, hors du dépôt) — le module, le FEC,
+  la piste, les préalables, les points, la lecture de la Vue d'ensemble, la carte d'un lot et cinq écrans. Le premier
+  passage en a laissé vivre sept : six ont fait naître leur cas (« les bords », et deux cas des préalables et de la Vue
+  d'ensemble), et le second passage les a tuées ; la septième montrait un champ de la lecture de la Vue d'ensemble que
+  rien ne lisait (`caisseIncomplete`), retiré. 71 sur 71.
+- La suite ENTIÈRE le drapeau levé. Levé seul dans la copie de travail, huit tests tombent : six parce que les
+  migrations ne sont pas dans l'export (`caisse.test.ts`, qui exige le drapeau baissé jusque-là ; le compte de bilan ;
+  la sauvegarde, ses tables, ses relations, ses clés), ce que le jour de l'application règle ; et deux de Clôture, la
+  validation de VF7d qui attendait l'instantané en version 2 — levé, une caisse lue même vide écrit la version 3 de C3a.
+  Reproduits sur `0915af3` le drapeau levé : ce sont ceux de C3a. Ils posent désormais la caisse absente, justes dans
+  les deux états. La SIMULATION du jour de l'application — les deux migrations déplacées dans l'export par `git mv`,
+  sous des versions qui suivent celles d'A7, le drapeau levé — : `tsc -b --force` vert, 491 fichiers et 15 318 tests
+  justes ; puis tout remis, rien de commité.
+
+**LA BARRIÈRE**, sur `b22fef0` (Node 22.23.3) : `tsc -b --force` 0 ; `npm run lint` 0, 0 erreur, 63 avertissements —
+ceux de la référence, fichier pour fichier ; `npm run test:fuseaux` 0, 491 fichiers et 15 318 tests justes sous Paris,
+UTC, New York et Auckland ; `npm run build` 0.
+
+**CE QUI RESTE.** À C4 : l'onglet Caisse (la cible des trois préalables et de leurs points, qui y mèneront), la phrase
+de la fiche d'un crédit libellé comme un versement d'espèces, et « Versement d'espèces » sur cette fiche avec le solde
+de la caisse ce jour-là. À C5 : l'assistant — la source « caisse » de `lister_ecritures`, la consigne (une opération de
+caisse au 530000, sans pièce, n'est pas une anomalie, et ne nomme personne), `points_a_traiter` qui renvoie à la Vue
+d'ensemble pour les quatre points, la clé `operation_caisse_id` en attente dans `agentComptablePiecesDeVente.test.ts`. À
+C9 : le paiement d'une pièce par la caisse dans le FEC (le journal de sa pièce) et la piste d'audit. À la ligne 62 : les
+vingt-deux champs d'un BNC. Hors de C3b et non demandé, relevé en passant : le point « postes-manquants » de la Vue
+d'ensemble ne compte pas encore la catégorie sans poste d'une recette de caisse (Clôture, si, depuis C3a).
