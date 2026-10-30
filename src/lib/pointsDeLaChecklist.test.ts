@@ -490,6 +490,29 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
     expect(apres.filter((p) => !IDS.includes(p.id))).toEqual(avant)
   })
 
+  // L'ÉTAPE C4 : le point « postes-manquants » compte la catégorie sans poste 2035 qu'une recette de caisse range — Clôture la
+  // compte déjà (`recettesDeCaisseSansPoste`) : la 2035 ne la compterait nulle part, et la Vue d'ensemble se taisait.
+  it('postes-manquants : la catégorie sans poste d’une recette de caisse compte — une seule fois, comme celle d’un mouvement', () => {
+    const sansPoste: Categorie = { ...HONORAIRES, poste_2035: null }
+    const recette = operation({ id: 'r1', genre: 'recette', montant: 85, categorie_id: sansPoste.id, encaissements_du_jour: [] })
+    const autre = operation({ id: 'r2', genre: 'recette', date: '2026-03-03', montant: 40, categorie_id: sansPoste.id, encaissements_du_jour: [] })
+    const lue = (operations: OperationCaisse[]) => ({ categories: [sansPoste], caisse: caisseLue(operations) })
+    expect(nb(lue([recette]), 'postes-manquants')).toBe(1)
+    expect(nb(lue([recette, autre]), 'postes-manquants')).toBe(1)
+    // Un poste renseigné, un apport sans catégorie, une recette retirée ou remplacée : rien à compléter.
+    expect(nb({ categories: [HONORAIRES], caisse: caisseLue([recette]) }, 'postes-manquants')).toBe(0)
+    expect(nb(lue([A]), 'postes-manquants')).toBe(0)
+    expect(nb(lue([{ ...recette, retire_le: '2026-03-04T08:00:00Z' }]), 'postes-manquants')).toBe(0)
+    expect(nb(lue([{ ...recette, retire_le: '2026-03-04T08:00:00Z' }, { ...autre, remplace_id: 'r1' }]), 'postes-manquants')).toBe(1)
+  })
+
+  it('postes-manquants, NEUTRE : la caisse absente, ou lue en partie, laisse le point tel qu’il était', () => {
+    const sansPoste: Categorie = { ...HONORAIRES, poste_2035: null }
+    const recette = operation({ id: 'r1', genre: 'recette', montant: 85, categorie_id: sansPoste.id, encaissements_du_jour: [] })
+    expect(nb({ categories: [sansPoste] }, 'postes-manquants')).toBe(0)
+    expect(nb({ categories: [sansPoste], caisse: caisseLue([recette], { complete: false, motif: '500 lues sur 900' }) }, 'postes-manquants')).toBe(0)
+  })
+
   it('caisse-a-reprendre : l’écriture manque ; à jour, rien ; ce que la frontière fige, rien', () => {
     expect(nb({ caisse: caisseLue([A]), ecritures: lignesDe(A) }, 'caisse-a-reprendre')).toBe(0)
     const p = tous({ caisse: caisseLue([A]) }).find((x) => x.id === 'caisse-a-reprendre')!
