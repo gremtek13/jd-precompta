@@ -29,6 +29,18 @@ import { changementFictif, toutesLesCombinaisons, valeurRendue } from '../../tes
 // en tête du composant, sur moisEnDoubleSurAbonnement — et il s'est reproduit quand même sur
 // piecesADateImpossible : la SEULE pièce de la base à porter une date impossible est « à valider »,
 // donc le contrôle était aveugle sur le cas même que son commentaire cite comme origine.
+// LA CAISSE (ligne 26.6, étape C3b) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
+// réseau) tant qu'un cas n'en pose pas une autre — lue en entier, lue en partie —, pour jouer l'écran le drapeau levé.
+const caisseDuTest = vi.hoisted(() => ({ lecture: null as null | ((dossierId: string) => unknown) }))
+vi.mock('../../lib/caisseLecture', async (original) => {
+  const vrai = await original<typeof import('../../lib/caisseLecture')>()
+  return {
+    ...vrai,
+    lireLaCaisse: (dossierId: string) => (caisseDuTest.lecture ? Promise.resolve(caisseDuTest.lecture(dossierId)) : vrai.lireLaCaisse(dossierId)),
+  }
+})
+afterEach(() => { caisseDuTest.lecture = null })
+
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
   // Tables dont la lecture est REFUSÉE. Sans ce levier, « la liste des clôtures est inconnue »
@@ -3096,5 +3108,46 @@ describe('ChecklistTab — la jumelle inversée (VF6e)', () => {
     await screen.findByText(/sans catégorie/)
     expect(screen.queryByText(A_DESIGNER)).toBeNull()
     expect(screen.queryByText(HORS_FACTURES)).toBeNull()
+  })
+})
+
+// LA CAISSE DANS LA VUE D'ENSEMBLE (ligne 26.6, étape C3b), le drapeau levé : ses points paraissent sur une caisse lue, se
+// taisent sur une caisse lue en partie — et le bandeau le dit —, et la caisse absente n'ajoute rien. Des jeux FICTIFS.
+describe('ChecklistTab — la caisse', () => {
+  const APPORT = {
+    id: 'oa', dossier_id: 'dossier-de-test', genre: 'apport', date: '2026-02-01', montant: 50, categorie_id: null, taux_tva: null,
+    encaissements_du_jour: null, piece_id: null, origine: 'cabinet', remplace_id: null, cree_le: '2026-02-01T18:00:00Z', cree_par: 'u',
+    retire_le: null, retire_par: null,
+  }
+  const POINT = /opération\(s\) de caisse dont l’écriture manque/
+  const ANCRE = /non rapprochée\(s\)/
+
+  it('une opération sans son écriture : le point, son détail, et le bouton qui mène à Écritures', async () => {
+    poser({ lignes: [ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null, cotisation_id: null })] })
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [APPORT], complete: true, motif: null })
+    const allerA = vi.fn()
+    monter(false, TRESORERIE, [], 'trimestrielle', 'exonere', allerA)
+    const point = (await screen.findByText(POINT)).closest('.check-ligne') as HTMLElement
+    expect(within(point).getByText(POINT).textContent).toMatch(/^1 /)
+    within(point).getByText(/le 01\/02\/2026, apport de 50,00\s€ \(écriture absente\)\./)
+    await act(async () => { fireEvent.click(within(point).getByRole('button', { name: 'Voir les écritures' })) })
+    expect(allerA).toHaveBeenCalledWith('ecritures')
+  })
+
+  it('lue en partie : ses points se taisent, et le bandeau le dit', async () => {
+    poser({ lignes: [ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null, cotisation_id: null })] })
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [APPORT], complete: false, motif: 'lecture interrompue' })
+    monter()
+    await screen.findByText(ANCRE)
+    screen.getByText(/La caisse du dossier n.a pas pu être lue en entier \(lecture interrompue\)/)
+    expect(screen.queryByText(POINT)).toBeNull()
+  })
+
+  it('NEUTRE : la caisse absente (le drapeau baissé) — ni point, ni bandeau', async () => {
+    poser({ lignes: [ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null, cotisation_id: null })] })
+    monter()
+    await screen.findByText(ANCRE)
+    expect(screen.queryByText(POINT)).toBeNull()
+    expect(screen.queryByText(/La caisse du dossier/)).toBeNull()
   })
 })
