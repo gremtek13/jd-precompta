@@ -39,16 +39,17 @@ importe le FEC (MVP-D5). La répétition générale rejoue son année 2025 réel
 la 2035 déposée (MVP-D6) : ses données entrent vers le 20 novembre, leurs préalables avant. Le praticien valide ses
 factures (MVP-D1), la caisse entre (MVP-D2 ; conçue puis reprise le 28/10/2026 : le praticien la saisit aussi, sur un
 dossier exonéré ou en franchise, et une pièce s'y règle — environ vingt jours, cinq migrations → « LA CAISSE D'UN
-DOSSIER BNC : LA CONCEPTION », « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE » ; la première,
-`caisse` (C1), préparée le 29/10/2026 hors de l'export (`supabase/preparees/`), s'applique avec la sauvegarde de C2, son
-essai de suppression (`caisseSuppression.sql`) sur une réplique seulement → « LA CAISSE, EN BASE : LA MIGRATION `CAISSE`
-(C1, LIGNE 26.6) » ; la seconde (C1b), préparée de même, se colle après elle → « LA CAISSE, EN BASE : LE RETRAIT, LE
-REMPLACEMENT ET LE VERSEMENT D'ESPÈCES (C1B, LIGNE 26.6) » ; le module, la lecture et la sauvegarde (C2), puis les
-moteurs (C3a), le FEC et les contrôles (C3b), attendent leur drapeau, `CAISSE_EXPORTEE`, levé le jour des deux
-migrations → « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A,
-LIGNE 26.6) », « LA CAISSE : LE FEC ET LES CONTRÔLES (C3B, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base
-(MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une partie, et rien
-d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
+DOSSIER BNC : LA CONCEPTION », « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE » ; ses deux
+migrations EN PRODUCTION depuis le 30/10/2026 — `caisse` (C1) par l'outil, `caisse_retrait_et_versement` (C1b) collée —,
+son essai de suppression (`caisseSuppression.sql`) sur une réplique seulement → « LA CAISSE, EN BASE : LA MIGRATION
+`CAISSE` (C1, LIGNE 26.6) », « LA CAISSE, EN BASE : LE RETRAIT, LE REMPLACEMENT ET LE VERSEMENT D'ESPÈCES (C1B, LIGNE
+26.6) », « LA CAISSE EN PRODUCTION : LES DEUX MIGRATIONS ET LE DRAPEAU LEVÉ » ; son drapeau, `CAISSE_EXPORTEE`, levé le
+même jour : le module, la lecture et la sauvegarde (C2), les moteurs (C3a), le FEC et les contrôles (C3b) suivent la
+base, l'onglet Caisse (C4) et l'assistant (C5) restent → « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE
+26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES CONTRÔLES (C3B, LIGNE 26.6) »), le
+plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y
+comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS
+LA MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 

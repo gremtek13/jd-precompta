@@ -14,9 +14,10 @@ import type { OperationCaisse } from './types'
 // à une caisse sans opération. Elle se rend AVEC l'identifiant du dossier qu'elle a lu : un écran qui change de dossier
 // pendant la lecture ne prend pas la caisse d'un autre (`DossierDetail` reste monté d'un dossier à l'autre).
 //
-// LE DRAPEAU BAISSÉ (`CAISSE_EXPORTEE`), ELLE NE LIT RIEN, ET LE DIT : la table n'existe pas encore en production — la
-// lire ferait échouer l'écran (PostgREST : relation inconnue). Elle rend alors une lecture INCOMPLÈTE, sans appel au
-// réseau, sous un motif qui dit pourquoi : aucun écran ne dira « aucune opération » d'une caisse qui n'est pas encore là.
+// LE DRAPEAU BAISSÉ (`CAISSE_EXPORTEE`), ELLE NE LIT RIEN, ET LE DIT : avant le 30/10/2026, la table n'existait pas en
+// production — la lire aurait fait échouer l'écran (PostgREST : relation inconnue). Elle rend alors une lecture
+// INCOMPLÈTE, sans appel au réseau, sous un motif qui dit pourquoi : aucun écran ne dira « aucune opération » d'une
+// caisse qui n'est pas encore là.
 export interface LectureDeLaCaisse {
   dossierId: string
   // La table est-elle en base (le drapeau levé) ? Faux, rien n'a été lu ni ne pouvait l'être : la caisse est ABSENTE, ce

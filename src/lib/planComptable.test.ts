@@ -380,8 +380,8 @@ describe('compte_du_dirigeant remplace le case que cinq fonctions recopiaient', 
       .filter(([nom, corps]) => nom !== 'compte_du_dirigeant' && /public\.compte_du_dirigeant\(/.test(corps))
       .map(([nom]) => nom).sort()
     // La caisse (ligne 26.6, étape C1) : sa fonction d'écriture écrit un apport ou un prélèvement face au compte de
-    // l'exploitant, qu'elle lit ici. Sa migration est préparée hors de l'export (`supabase/preparees/`) ; elle y entre à
-    // son application, et sa lectrice avec elle.
+    // l'exploitant, qu'elle lit ici. Sa migration est entrée dans l'export à son application, le 30/10/2026, et sa
+    // lectrice avec elle.
     const deLaCaisse = definitions.has('enregistrer_operation_caisse') ? ['enregistrer_operation_caisse'] : []
     expect(lectrices).toEqual([
       'classer_virement_personnel', 'ecrire_forfait_kilometrique', 'ecrire_mouvement_compte_bilan',

@@ -602,6 +602,15 @@
 -- propriétaire qui écrivent la caisse : le bloc CR (CR1 à CR3, M-CR1 et M-CR2) — le client ne retire ni ne remplace une
 -- opération de la caisse de son dossier, et elle reste entière ; l'anonyme n'exécute aucune des deux ; le catalogue ; le
 -- chef retire et remplace (le contrôle positif) — ; EN ATTENTE sans la migration.
+--
+-- 30/10/2026 — LES DEUX MIGRATIONS DE LA CAISSE APPLIQUÉES EN PRODUCTION, `caisse` (`20261030073812`, par l'outil) puis
+-- `caisse_retrait_et_versement` (`20261030123801`, collée par le cabinet) : 163 migrations, les neuf familles de
+-- `signature.sql` égales à celles de la réplique du jour, où ce fichier a été joué ENTIER : 81 lignes de verdict, 0 en
+-- faute, 63 mutations sur 63 qui mordent, aucune EN ATTENTE. En production, ses blocs CA et CR l'ont été, d'un seul
+-- appel, les deux tables de résultats `on commit drop`, une ligne TEXTE ajoutée. La base a reçu 19 424 caractères
+-- (`b68e6aa362092f10d7014470ef64110b`) : 9 lignes de verdict, 0 en faute, 5 mutations sur 5 qui mordent, rien n'est
+-- resté. Les blocs CA et CR ne se disent plus EN ATTENTE en production (HISTORIQUE.md, « LA CAISSE EN PRODUCTION : LES
+-- DEUX MIGRATIONS ET LE DRAPEAU LEVÉ »).
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 

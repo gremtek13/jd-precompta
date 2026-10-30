@@ -294,18 +294,18 @@ incompréhensible trois étapes plus loin.
    fichier » (offert seulement quand le seau ne rend plus ce fichier, et pour ce fichier-là : son empreinte dit si
    c'est le bon). Sans lui, les versions désignent un fichier absent (la base l'admet : un logo inchangé ne se rejuge
    pas), et une version nouvelle peut en poser un autre.
-   **La caisse d'un dossier** (`operations_caisse`, ligne 26.6, étape C2 ; au plan de sauvegarde dès que ses migrations
-   sont appliquées, son drapeau `CAISSE_EXPORTEE` levé) : des montants, des dates et des natures, sans identité ni texte
-   libre — le détail, recette par recette, reste au brouillard du praticien. L'étape 5 la remet avec le reste du
-   dossier, juste avant le brouillon qui la cite, ses opérations par VAGUES (une opération remplacée avant celle qui la
-   remplace), retirées et remplacées comprises. La caisse jamais négative se juge en base à la fin de CHAQUE
-   transaction, donc de chaque lot de la restauration, qui passe par des états partiels (un versement d'espèces réinséré
-   avant les recettes qui le couvrent) : la base ne rejuge pas une ligne RÉINSÉRÉE — par le super-administrateur, dans
-   un dossier sans exercice validé, et datée d'avant la transaction —, et c'est l'instant de création que la sauvegarde
-   porte (`cree_le`, `created_at`, recopiés avec chaque ligne) qui ouvre cette porte. Ne jamais retirer ces colonnes
-   d'une sauvegarde avant de la restaurer, ni restaurer dans une base dont l'horloge retarde sur celle qui l'a écrite :
-   la caisse serait jugée lot par lot, et la restauration s'arrêterait au milieu. `exercices_valides`, qui referme la
-   porte, vient toujours en dernier.
+   **La caisse d'un dossier** (`operations_caisse`, ligne 26.6, étape C2 ; au plan de sauvegarde depuis le 30/10/2026,
+   ses migrations appliquées et son drapeau `CAISSE_EXPORTEE` levé) : des montants, des dates et des natures, sans
+   identité ni texte libre — le détail, recette par recette, reste au brouillard du praticien. L'étape 5 la remet avec
+   le reste du dossier, juste avant le brouillon qui la cite, ses opérations par VAGUES (une opération remplacée avant
+   celle qui la remplace), retirées et remplacées comprises. La caisse jamais négative se juge en base à la fin de
+   CHAQUE transaction, donc de chaque lot de la restauration, qui passe par des états partiels (un versement d'espèces
+   réinséré avant les recettes qui le couvrent) : la base ne rejuge pas une ligne RÉINSÉRÉE — par le
+   super-administrateur, dans un dossier sans exercice validé, et datée d'avant la transaction —, et c'est l'instant de
+   création que la sauvegarde porte (`cree_le`, `created_at`, recopiés avec chaque ligne) qui ouvre cette porte. Ne
+   jamais retirer ces colonnes d'une sauvegarde avant de la restaurer, ni restaurer dans une base dont l'horloge retarde
+   sur celle qui l'a écrite : la caisse serait jugée lot par lot, et la restauration s'arrêterait au milieu.
+   `exercices_valides`, qui referme la porte, vient toujours en dernier.
 7. **Les secrets, le domaine d'envoi et le webhook de réception** (§3.3, §3.4 et l'inventaire des
    variables en fin de §3).
 8. **Les Edge Functions** — redéployer depuis `supabase/functions/` via l'outil MCP, chacune avec

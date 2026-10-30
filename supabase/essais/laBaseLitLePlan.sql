@@ -47,13 +47,14 @@
 -- l'autre pour une confirmation qui n'arrive pas. Les objets d'essai (dossiers jetables, emprunt, échéances, bien,
 -- véhicule, déclarations) portent des identifiants fixes et vivent dans la sous-transaction de leur contrôle.
 --
--- ADAPTÉ LE 29/10/2026 (ligne 26.6, étape C1b : la migration `caisse_retrait_et_versement`, PRÉPARÉE, à coller) : elle
--- fait lire aussi à `ecrire_mouvement_compte_bilan` le compte de la caisse du plan (le versement d'espèces en banque).
--- La liste des quatorze dit l'EXPORT, que src/lib/planComptable.test.ts confronte au texte exporté : elle garde
--- « banque » ; le contrôle 3 attend, de la base munie de la migration, le rôle `caisse` en plus (`caisse_du_releve`).
--- Sans la migration, rien ne change. ÉTAPE C2 : la liste garde « banque » même le jour où la migration entre dans
--- l'export — le test y ajoute alors `caisse` de lui-même, comme ce contrôle selon la base —, et rien ne se retouche ici
--- ce jour-là (HISTORIQUE.md, « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE 26.6) »).
+-- ADAPTÉ LE 29/10/2026 (ligne 26.6, étape C1b : la migration `caisse_retrait_et_versement`, collée le 30/10/2026) :
+-- elle fait lire aussi à `ecrire_mouvement_compte_bilan` le compte de la caisse du plan (le versement d'espèces en
+-- banque). La liste des quatorze dit l'EXPORT, que src/lib/planComptable.test.ts confronte au texte exporté : elle
+-- garde « banque » ; le contrôle 3 attend, de la base munie de la migration, le rôle `caisse` en plus
+-- (`caisse_du_releve`). Sans la migration, rien ne change. ÉTAPE C2 : la liste garde « banque » même le jour où la
+-- migration entre dans l'export — le test y ajoute alors `caisse` de lui-même, comme ce contrôle selon la base —, et
+-- rien ne se retouche ici ce jour-là (HISTORIQUE.md, « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE
+-- 26.6) »).
 do $$
 declare
   -- Faux jusqu'à ce que la production porte les six migrations et que l'export les ait reçues ; vrai ensuite.

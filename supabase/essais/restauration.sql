@@ -361,17 +361,18 @@
 -- recopie des clés et nomme la clé, sans avoir recopié aucune ligne ; sans l'arrêt, son verdict se dit EN FAUTE ; le
 -- script d'avant y rendait 62 tables IDENTIQUES. Sans la table plantée : 119 clés recopiées, le verdict d'avant.
 --
--- 29/10/2026, ligne 26.6, étape C2 (migrations `caisse` et `caisse_retrait_et_versement`, PRÉPARÉES, appliquées avec
--- l'étape) : `operations_caisse` entre au plan quand sa table existe (le bloc « La caisse », ci-dessous), juste avant le
--- brouillon qui la cite — ancrée après `pieces_hors_de_france_taux`, les tables qui suivent reculant d'un rang —, son
--- chemin, et sa vague (une opération en remplace une autre, `remplace_id`). Rejoué sur la réplique de l'étape, égale à la
--- production à 159 migrations (signature.sql : les neuf familles), munie des deux migrations (la 1 comme l'outil, la 2 par
--- son texte à coller) : sur un dossier semé PAR LES FONCTIONS d'une caisse réaliste — une ouverture au 530000, une saisie
--- d'un mois, une recette retirée, une recette remplacée, une facture source et ses espèces, un versement classé sur la
--- caisse, une contre-passation sans mouvement —, 76 tables recréées, toutes IDENTIQUES à la source (50 lignes), les
--- neuf opérations en deux vagues ; sans les migrations, le plan d'hier (75 tables). Ce que ce script ne voit pas — les
--- déclencheurs de la caisse jamais négative, qu'une table recopiée n'emporte pas — se prouve par le chemin même de
--- l'application (HISTORIQUE.md, « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE 26.6) »).
+-- 29/10/2026, ligne 26.6, étape C2 (migrations `caisse` et `caisse_retrait_et_versement`, appliquées avec l'étape, puis
+-- en production le 30/10/2026) : `operations_caisse` entre au plan quand sa table existe (le bloc « La caisse »,
+-- ci-dessous), juste avant le brouillon qui la cite — ancrée après `pieces_hors_de_france_taux`, les tables qui suivent
+-- reculant d'un rang —, son chemin, et sa vague (une opération en remplace une autre, `remplace_id`). Rejoué sur la
+-- réplique de l'étape, égale à la production à 159 migrations (signature.sql : les neuf familles), munie des deux
+-- migrations (la 1 comme l'outil, la 2 par son texte à coller) : sur un dossier semé PAR LES FONCTIONS d'une caisse
+-- réaliste — une ouverture au 530000, une saisie d'un mois, une recette retirée, une recette remplacée, une facture
+-- source et ses espèces, un versement classé sur la caisse, une contre-passation sans mouvement —, 76 tables recréées,
+-- toutes IDENTIQUES à la source (50 lignes), les neuf opérations en deux vagues ; sans les migrations, le plan d'hier
+-- (75 tables). Ce que ce script ne voit pas — les déclencheurs de la caisse jamais négative, qu'une table recopiée
+-- n'emporte pas — se prouve par le chemin même de l'application (HISTORIQUE.md, « LA CAISSE : LE MODULE, LA LECTURE ET
+-- LA SAUVEGARDE (C2, LIGNE 26.6) »).
 \set ON_ERROR_STOP on
 drop schema if exists essai_restauration cascade;
 create schema essai_restauration;
