@@ -1527,3 +1527,22 @@ describe('FinancementTab — les recettes de caisse', () => {
     expect(generer().map((b) => b.disabled)).toEqual([true, true, true, false])
   })
 })
+
+// La situation dit une recette de caisse qu'aucune ligne ne porte (étape C3a), et ne la compte pas.
+describe('FinancementTab — une recette de caisse sans poste', () => {
+  it('la situation la dit, et ne la compte pas', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-09T10:00:00Z'))
+    faux.pieces = []
+    faux.categories = [{ id: 'cat-hono', dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 2, compte_comptable: '706000', poste_2035: null }]
+    faux.immobilisations = []
+    faux.ecritures = []
+    faux.emprunts = []
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [OPERATION_AOUT_2026], complete: true, motif: null })
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    const generer = () => screen.getAllByRole('button', { name: 'Générer' }) as HTMLButtonElement[]
+    await waitFor(() => expect(generer()[0].disabled).toBe(false))
+    fireEvent.click(generer()[0])
+    expect(screen.getByText(/Recettes de caisse que la situation ne compte pas.*\(1\) : Recettes en espèces du 14\/08\/2026 — Honoraires\./)).toBeTruthy()
+  })
+})

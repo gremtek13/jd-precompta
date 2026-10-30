@@ -25,7 +25,7 @@ import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVen
 import type { PlanComptable } from '../../lib/planComptable'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
 import {
-  lignesDeLaCaissePourLePlan, motifDeLaCaisse, recettesDeCaisseDuDossier, recettesPourLesMoteurs, type RecettesDeCaisse,
+  libelleDeLaRecette, lignesDeLaCaissePourLePlan, motifDeLaCaisse, recettesDeCaisseDuDossier, recettesPourLesMoteurs, type RecettesDeCaisse,
 } from '../../lib/recettesDeCaisse'
 import type {
   ANouveau, Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VentilationBancaire,
@@ -932,6 +932,13 @@ function VentesFactureesDeLaSituation({ situation }: { situation: SituationInter
   return (
     <>
       <FraisSansPosteNonComptes frais={situation.fraisSansPoste} quoi="la situation" />
+      {/* Les recettes de caisse qu'aucune ligne ne porte (étape C3a) : vide tant que la caisse est absente. */}
+      {situation.recettesDeCaisseSansPoste.length > 0 && (
+        <p className="muted" style={{ marginBottom: 0 }}>
+          Recettes de caisse que la situation ne compte pas, leur catégorie n’ayant pas de poste 2035 ou n’étant plus un produit
+          ({situation.recettesDeCaisseSansPoste.length}) : {situation.recettesDeCaisseSansPoste.map(libelleDeLaRecette).join(' ; ')}.
+        </p>
+      )}
       {ecartees.length > 0 && (
         <p className="muted" style={{ marginBottom: 0 }}>
           Ventes facturées que la situation ne compte pas ({ecartees.length}) :{' '}

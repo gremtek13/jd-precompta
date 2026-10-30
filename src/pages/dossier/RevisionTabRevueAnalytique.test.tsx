@@ -23,6 +23,18 @@ import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 // sous un verrou relâché APRÈS la relecture ; que chaque refus se lise avant le clic et grise son bouton ; qu'une explication
 // RETIENNE celle qu'elle remplace ; qu'une ligne expliquée passe « à revoir » quand ses montants changent.
 
+// LA CAISSE (ligne 26.6, étape C3a) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
+// réseau) tant qu'un cas n'en pose pas une autre — lue en entier, lue en partie —, pour jouer l'écran le drapeau levé.
+const caisseDuTest = vi.hoisted(() => ({ lecture: null as null | ((dossierId: string) => unknown) }))
+vi.mock('../../lib/caisseLecture', async (original) => {
+  const vrai = await original<typeof import('../../lib/caisseLecture')>()
+  return {
+    ...vrai,
+    lireLaCaisse: (dossierId: string) => (caisseDuTest.lecture ? Promise.resolve(caisseDuTest.lecture(dossierId)) : vrai.lireLaCaisse(dossierId)),
+  }
+})
+afterEach(() => { caisseDuTest.lecture = null })
+
 const faux = vi.hoisted(() => ({
   tables: {} as Record<string, unknown[]>,
   // Les tables dont la lecture est refusée : `lireTout` les rend incomplètes.
@@ -1413,6 +1425,40 @@ describe('RevisionTab, revue analytique — les ventes facturées', () => {
     )
     await act(async () => {})
     expect(within(section()).getByText(/Les ventes facturées du dossier n'ont pas pu être lues en entier \(la lecture rendue est celle d’un autre dossier\)/)).toBeDefined()
+    expect(within(section()).queryByRole('table')).toBeNull()
+    expect(within(section()).queryByRole('button')).toBeNull()
+  })
+})
+
+
+// LA CAISSE DANS LA REVUE (ligne 26.6, étape C3a), le drapeau levé : la 2035 de la revue compte la recette en espèces, comme
+// celle de Clôture ; lue en partie, la section le dit et n'affirme rien.
+describe('RevisionTab, revue analytique — les recettes de caisse', () => {
+  const POSTE_AA = 'Recettes encaissées y compris les remboursements de frais'
+  const HONORAIRES: Categorie = {
+    id: 'c-caisse', dossier_id: DOSSIER, code: 'honoraires', libelle: 'Honoraires', ordre: 9, compte_comptable: '706000', poste_2035: POSTE_AA,
+  }
+  const RECETTE = {
+    id: 'o1', dossier_id: DOSSIER, genre: 'recette' as const, date: '2025-06-12', montant: 250, categorie_id: 'c-caisse', taux_tva: null,
+    encaissements_du_jour: [], piece_id: null, origine: 'cabinet' as const, remplace_id: null, cree_le: '2025-06-12T18:00:00Z',
+    cree_par: AUTEUR, retire_le: null, retire_par: null,
+  }
+
+  it('la 2035 de la revue compte la recette en espèces', async () => {
+    dossier2025()
+    faux.tables.categories = [...faux.tables.categories, HONORAIRES]
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [RECETTE], complete: true, motif: null })
+    rendre()
+    await attendreLaSection()
+    expect(texte(ligneDuTableau(titreDeLaLigne({ objet_type: 'poste_2035', objet: POSTE_AA, nature: 'recette' })))).toContain('250,00 €')
+  })
+
+  it('une caisse lue en partie : la section le dit, sans tableau ni geste', async () => {
+    dossier2025()
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [], complete: false, motif: 'lecture interrompue' })
+    rendre()
+    await attendreLaSection()
+    expect(within(section()).getByText(/La caisse du dossier n.a pas pu être lue en entier \(lecture interrompue\)/)).toBeDefined()
     expect(within(section()).queryByRole('table')).toBeNull()
     expect(within(section()).queryByRole('button')).toBeNull()
   })
