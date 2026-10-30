@@ -13,7 +13,7 @@ import type { Article, ArticleExoneration, NatureArticle, StatutTva, UniteArticl
 // pas l'article, et changer l'article ne change aucune facture. Ses champs sont ceux de la norme EN 16931 : la désignation
 // (BT-153), sa description (BT-154), la référence que lui donne le vendeur (BT-155), l'unité (BT-130), le prix hors taxes
 // (BT-146), le taux (BT-152) — que la DGFiP borne (G1.16, G1.24) —, et la nature, biens ou services. L'unité, la référence
-// et la provenance n'entrent sur une ligne de facture qu'avec l'étape A7 ; d'ici là, la ligne garde ses quatre champs.
+// et la provenance entrent sur une ligne de facture avec l'étape A7 (en base depuis A7a, envoyées par l'écran depuis A7b).
 
 // ── Est-ce en base ? ──────────────────────────────────────────────────────────────────────────────────────────────────
 // La migration `articles` OUVRE une lecture au client qui porte la case « Ventes » : présentée au cabinet, elle a été

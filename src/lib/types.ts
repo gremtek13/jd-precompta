@@ -70,7 +70,7 @@ export interface Dossier {
   // `parametres_facturation` les a posées (`PARAMETRES_FACTURATION_EXPORTES`, lib/parametresFacturation.ts), mais une
   // sauvegarde faite avant elle ne les porte pas — une colonne absente d'une lecture n'est pas une colonne nulle. Depuis A5b2,
   // l'onglet Informations du cabinet les lit et les écrit (lib/identiteLegaleVue.ts), avec le SIRET et l'adresse, en une seule
-  // écriture ; aucune facture ne les lit ni ne les imprime encore (A7).
+  // écriture ; une facture les fige à sa validation (A7a) et les imprime (A7b).
   denomination_imprimee?: string | null
   rcs_ville?: string | null
   forme_juridique?: string | null
@@ -1102,7 +1102,7 @@ export interface FactureEmise {
   // prend de sa facture, quand elle les a figés, le statut et le numéro de TVA et l'identité légale. `contact_id` seul se
   // pose dès le brouillon : le contact d'où vient le client, une provenance sans clé. FACULTATIVES dans ce type : une
   // sauvegarde faite avant la migration ne les porte pas — une colonne absente d'une lecture n'est pas une colonne nulle.
-  // L'écran ne les lit ni ne les envoie avant l'étape A7b, derrière `MENTIONS_FIGEES_EXPORTEES`, levé.
+  // L'écran les lit et envoie `contact_id` depuis l'étape A7b (lib/mentionsFigeesVue.ts), derrière `MENTIONS_FIGEES_EXPORTEES`.
   mentions_figees?: boolean
   statut_tva?: StatutTva | null
   article_exoneration?: ArticleExoneration | null
@@ -1192,11 +1192,11 @@ export interface FactureLigne {
   prix_unitaire_ht: number
   // Pourcentage (0, 5.5, 10, 20...), pas un montant.
   taux_tva: number
-  // LA PROVENANCE DE LA LIGNE (étape A7a ; migration `mentions_figees`, PRÉPARÉE, pas encore collée) : l'unité (BT-130, la
+  // LA PROVENANCE DE LA LIGNE (étape A7a ; migration `mentions_figees`, en base depuis le 29/10/2026) : l'unité (BT-130, la
   // liste fermée des articles), la référence (BT-155), l'article qui l'a pré-remplie (sans clé : la ligne garde sa copie)
   // et sa nature, biens ou services (exigée de personne tant que la facture mixte se refuse, EC3-Q8). Écrites par
-  // `enregistrer_facture`, figées avec la facture ; nulles sur une ligne d'avant. FACULTATIVES tant que la migration n'est
-  // pas en base, comme celles de FactureEmise.
+  // `enregistrer_facture`, figées avec la facture ; nulles sur une ligne d'avant. FACULTATIVES, comme celles de FactureEmise :
+  // une sauvegarde faite avant la migration ne les porte pas. L'écran les envoie et l'aperçu les imprime depuis l'étape A7b.
   unite?: UniteArticle | null
   reference?: string | null
   article_id?: string | null

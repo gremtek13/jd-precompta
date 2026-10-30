@@ -15,8 +15,9 @@ import type { EtatRib, MoyenEncaissement, ParametresFacturation } from './types'
 // CE QU'UNE VERSION EST. Ce que les factures du dossier proposeront ou imprimeront de ses conditions — le délai de paiement,
 // le moyen proposé, les conditions d'escompte, les pénalités de retard, des mentions complémentaires, un pied de page — et
 // le RIB imprimé (IBAN, BIC, titulaire). Une saisie nouvelle REMPLACE la courante (`remplace_id`, une chaîne par dossier) ;
-// rien ne se modifie, sauf le RIB PROPOSÉ de la courante, que le cabinet confirme. Aucune facture ne lit une version
-// avant l'étape A7 (qui figera ce qu'elle imprime) : rien ici ne dit qu'une facture l'imprime aujourd'hui.
+// rien ne se modifie, sauf le RIB PROPOSÉ de la courante, que le cabinet confirme. Depuis l'étape A7 (la base, A7a ; l'écran,
+// A7b), la validation d'une facture fige la courante et le RIB confirmé en vigueur (lib/mentionsFigees.ts), et l'aperçu les
+// imprime.
 
 // ── Est-ce en base ? ──────────────────────────────────────────────────────────────────────────────────────────────────
 // La migration `parametres_facturation` OUVRE au client qui porte la case « Ventes » la lecture d'une table et une

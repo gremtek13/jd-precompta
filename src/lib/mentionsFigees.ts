@@ -27,8 +27,9 @@ import type { ArticleExoneration, Dossier, FactureEmise, ParametresFacturation, 
 // supabase/essais/mentionsFigees.sql, le numéro de TVA et la mention de l'entrepreneur individuel aux cas de l'essai.
 
 // LA MIGRATION EST EN BASE depuis le 29/10/2026 : `mentions_figees`, collée par le cabinet (version 20261029214359),
-// puis `iban_hors_des_parametres`, par l'outil (version 20261029214732). Le drapeau est levé ; aucun écran n'envoie ni
-// ne lit encore rien de neuf : l'étape A7b, qui s'y range, le fera. Chaque fonction de ce module se juge sans lui.
+// puis `iban_hors_des_parametres`, par l'outil (version 20261029214732). Le drapeau est levé ; l'étape A7b s'y range : le
+// formulaire d'une facture et la fenêtre d'un avoir envoient les clés neuves et disent ces refus avant le clic, l'aperçu
+// imprime ce que la facture a figé (lib/mentionsFigeesVue.ts). Chaque fonction de ce module se juge sans lui.
 export const MENTIONS_FIGEES_EXPORTEES: boolean = true
 
 // ── Les listes de la base, celles des articles (supabase/schema, migration `articles`) ──────────────────────────────
