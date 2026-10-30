@@ -473,3 +473,30 @@ describe('au hasard', () => {
     }
   })
 })
+
+// LES BORDS QUE LES PREMIÈRES MUTATIONS ONT MONTRÉS : deux postes dans la même case, une catégorie devenue charge dans la
+// situation, une recette le dernier jour d'une période.
+describe('les bords', () => {
+  it('deux postes de la même case : la case somme leurs opérations de caisse', () => {
+    const RECETTES = categorie({ id: 'k-recettes', dossier_id: DOSSIER, code: 'ventes', libelle: 'Ventes', compte_comptable: '706100', poste_2035: 'Recettes' })
+    const categories = [...CATEGORIES, RECETTES]
+    const d = declaration2035(2026, caisseDe([
+      operation({ id: 'r1' }), operation({ id: 'r2', categorie_id: RECETTES.id }), operation({ id: 'r3', categorie_id: RECETTES.id }),
+    ], false, categories), false, categories)
+    expect(d.recettes.map((l) => [l.poste, l.nbOperationsDeCaisse])).toEqual([['Recettes', 2], [HONORAIRES.poste_2035, 1]])
+    expect(repartirEnCases(d).cases.map((c) => [c.case.code, c.montant, c.nbOperationsDeCaisse])).toEqual([['AA', 300, 3]])
+  })
+
+  it('la situation ne range pas une recette dont la catégorie est devenue une charge : elle la dit', () => {
+    const s = calculerSituationIntermediaire([], CATEGORIES, [], [], '2026-01-01', '2026-12-31', false, paiementsDesPieces([], [], []), 'tresorerie', [],
+      ventesFactureesVides(DOSSIER), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, caisseDe([operation({ id: 'r1', categorie_id: DEVENUE_CHARGE.id })]))
+    expect(s.totauxParPoste).toEqual([])
+    expect(s.recettesDeCaisseSansPoste.map((r) => r.operationId)).toEqual(['r1'])
+  })
+
+  it('une recette du dernier jour compte : le 31 décembre dans l’année, le jour même dans la projection', () => {
+    const caisse = caisseDe([operation({ id: 'r1', date: '2026-12-31', montant: 40 }), operation({ id: 'r2', date: '2026-03-20', montant: 7 })])
+    expect(totauxPourAnnee([], [], 2026, false, paiementsDesPieces([], [], []), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, caisse).ca).toBe(47)
+    expect(projectionAnnuelle([], [], '2026-03-20', false, paiementsDesPieces([], [], []), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, caisse).ca).toBe(7)
+  })
+})
