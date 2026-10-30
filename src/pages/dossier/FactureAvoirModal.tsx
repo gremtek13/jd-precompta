@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
-import { calculerLigne, calculerTotaux, creerAvoir, lignesSaisies, refusAvoir } from '../../lib/factures'
+import { avoirQuiPart, calculerLigne, calculerTotaux, creerAvoir, lignesSaisies, refusAvoir } from '../../lib/factures'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
-import type { FactureEmise, FactureLigne } from '../../lib/types'
+import type { Contact, FactureEmise, FactureLigne } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { LIBELLE_MOTIF_AVOIR, LIBELLE_MOTIF_AVOIR_CLIENT } from '../../lib/droitsAcces'
-import { pourLEspaceSiTexte, type EspaceVentes } from '../../lib/espaceVentes'
+import { pourLEspace, pourLEspaceSiTexte, type EspaceVentes } from '../../lib/espaceVentes'
 import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
+import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
+import {
+  PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLaLigneLue, provenanceQuiPart,
+  type LectureDeLaValidation, type ProvenanceDeLigne,
+} from '../../lib/mentionsFigeesVue'
+import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
+import { lireLesContacts } from '../../lib/contactsLecture'
 
-interface LigneAvoirEdit {
+// L'unité, la référence et la nature de la ligne créditée (étape A7b) : l'avoir les reprend de la ligne qu'il crédite, et les
+// imprime comme elle ; elles ne partent que derrière `MENTIONS_FIGEES_EXPORTEES`.
+interface LigneAvoirEdit extends ProvenanceDeLigne {
   designation: string
   // Toujours saisie positive à l'écran ("je crédite 2 unités") — négatée seulement à l'enregistrement
   // (lib/factures.ts:creerAvoir), plus intuitif que de demander de taper un signe négatif à la main.
@@ -87,10 +96,34 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
         quantite: String(x.quantite),
         prix_unitaire_ht: String(x.prix_unitaire_ht),
         taux_tva: String(x.taux_tva),
+        ...(MENTIONS_FIGEES_EXPORTEES ? provenanceDeLaLigneLue(x) : PROVENANCE_VIDE),
       })))
       setChargement(false)
     })
   }, [factureOrigine.id])
+
+  // CE QUE LA VALIDATION DE L'AVOIR FIGE (étape A7b) : l'identité du dossier et les versions de ses paramètres, lues EN ENTIER à
+  // l'ouverture ; et, quand la facture vient d'un contact, les contacts du dossier — la base vérifie que celui que l'avoir
+  // reprend y est. Rien n'est lu drapeau baissé ; une réponse arrivée après un changement de dossier ne s'inscrit pas.
+  const [lectureValidation, setLectureValidation] = useState<{ cle: string; lu: LectureDeLaValidation } | null>(null)
+  const [contactsLus, setContactsLus] = useState<{ cle: string; contacts: readonly Contact[] | null } | null>(null)
+  const contactDeLOrigine = factureOrigine.contact_id ?? null
+  useEffect(() => {
+    if (!MENTIONS_FIGEES_EXPORTEES) return
+    let annule = false
+    lireCeQueLaValidationFige(dossierId).then((lu) => { if (!annule) setLectureValidation({ cle: dossierId, lu }) })
+    return () => { annule = true }
+  }, [dossierId])
+  useEffect(() => {
+    if (!MENTIONS_FIGEES_EXPORTEES || contactDeLOrigine === null) return
+    let annule = false
+    // Une liste lue en partie ou refusée ne juge rien : nulle, elle retient la validation.
+    lireLesContacts(dossierId).then(
+      (lu) => { if (!annule) setContactsLus({ cle: dossierId, contacts: lu.complete ? lu.lignes : null }) },
+      () => { if (!annule) setContactsLus({ cle: dossierId, contacts: null }) },
+    )
+    return () => { annule = true }
+  }, [dossierId, contactDeLOrigine])
 
   function majLigne(index: number, patch: Partial<LigneAvoirEdit>) {
     setLignes((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)))
@@ -118,7 +151,36 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
   )
   // Ce que la base refuserait, dit avant le clic (lib/factures.ts:refusAvoir), puis ce que la source refuserait de plus — la
   // base juge l'avoir, puis fixe sa source.
-  const refus = refusAvoir(factureOrigine, dateEmission, lignesValides, credite) ?? jugementSource.refus
+  // L'AVOIR TEL QU'IL PART (étape A7b) : ses lignes reprennent l'unité, la référence et la nature des lignes qu'elles créditent.
+  const lignesQuiPartent = lignes
+    .map((l, i) => ({ l, n: lignesNumeriques[i] }))
+    .filter(({ n }) => lignesValides.includes(n))
+    .map(({ l, n }) => {
+      if (!MENTIONS_FIGEES_EXPORTEES) return n
+      const { unite, reference, nature } = provenanceQuiPart(l, null)
+      return { ...n, unite, reference, nature }
+    })
+  const avoirEnvoye = { dateEmission, motif, mentionsLegales, lignes: lignesQuiPartent }
+  // Ce que la validation figée dit de l'avoir (lib/mentionsFigeesVue.ts) : les textes de ses lignes et sa mention légale, puis
+  // ce que sa validation figerait — de sa facture quand elle les a figés, du jour sinon. Rien drapeau baissé.
+  const contactsCourants = contactDeLOrigine === null ? [] : contactsLus?.cle === dossierId ? contactsLus.contacts : null
+  const lectureCourante = lectureValidation?.cle === dossierId ? lectureValidation.lu : null
+  const jugementMentions = MENTIONS_FIGEES_EXPORTEES
+    ? (() => {
+      const { entete, lignes: envoyees } = avoirQuiPart(factureOrigine.id, avoirEnvoye)
+      return jugementDesMentions({
+        espace, dossierId, facture: entete, lignes: envoyees, brouillon: null, origine: factureOrigine,
+        listes: { contacts: contactsCourants, articles: [] }, lecture: lectureCourante,
+      })
+    })()
+    : null
+  // Ce que la base refuserait, dit avant le clic, dans son ordre : l'avoir (lib/factures.ts:refusAvoir), puis un IBAN dans un
+  // texte et la validation figée (étape A7b), puis la source — la base juge l'avoir, puis fixe sa source. Ce qui RETIENT la
+  // validation (une lecture qui n'est pas revenue entière) se dit à part, sans être un refus.
+  const refusDeLAvoir = refusAvoir(factureOrigine, dateEmission, lignesValides, credite)
+  const retenue = refusDeLAvoir == null && jugementMentions?.refusDeLEnregistrement == null ? jugementMentions?.retenue ?? null : null
+  const refus = refusDeLAvoir ?? jugementMentions?.refusDeLEnregistrement
+    ?? (retenue != null ? null : jugementMentions?.refusDeLaValidation ?? jugementSource.refus)
 
   // Verrou en `useRef`, et POSÉ AVANT LE `try` : dans le `try`, le `return` du deuxième clic
   // sortirait par le `finally`, qui relâcherait le verrou du PREMIER, encore en cours — il faut
@@ -136,14 +198,23 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
       setError(refus)
       return
     }
+    if (retenue) {
+      setError(retenue)
+      return
+    }
     if (creationEnCours.current) return
-    // Un avoir source se confirme, sous la phrase du module : il réduira la vente de sa facture.
-    if (jugementSource.confirmation && !window.confirm(`${jugementSource.confirmation}\n\nLe valider ?`)) return
+    // Un avoir source se confirme, sous la phrase du module : il réduira la vente de sa facture. Depuis l'étape A7b, chaque avoir
+    // se confirme, et la confirmation NOMME ce qu'il figera et imprimera, au paragraphe qui précède la question.
+    const figer = jugementMentions?.mentions
+      ? pourLEspace(espace, confirmationDesMentions(jugementMentions.mentions, factureOrigine.emetteur_nom, true))
+      : null
+    const confirmation = [jugementSource.confirmation, figer].filter((x): x is string => x != null)
+    if (confirmation.length > 0 && !window.confirm(`${confirmation.join('\n\n')}\n\nLe valider ?`)) return
     creationEnCours.current = true
     setSaving(true)
     setError(null)
     try {
-      await creerAvoir(dossierId, factureOrigine.id, { dateEmission, motif, mentionsLegales, lignes: lignesValides })
+      await creerAvoir(dossierId, factureOrigine.id, avoirEnvoye)
       onCreated()
       onClose()
     } catch (err) {
@@ -252,12 +323,14 @@ export default function FactureAvoirModal({ dossierId, espace, factureOrigine, c
             </div>
 
             {jugementSource.avis && <p className="note-info" role="note">{jugementSource.avis}</p>}
+            {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
+            {retenue && !error && <p className="muted" role="status">{retenue}</p>}
             {(error ?? refus) && <p className="error-text">{pourLEspaceSiTexte(espace, error ?? refus)}</p>}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-outline" onClick={onClose} disabled={saving}>Annuler</button>
               <button
-                type="button" className="btn btn-primary" disabled={saving || refus != null} onClick={valider}
+                type="button" className="btn btn-primary" disabled={saving || refus != null || retenue != null} onClick={valider}
                 title="Attribue un numéro définitif — l'avoir ne sera plus modifiable ensuite"
               >
                 {saving ? 'Création…' : "Valider l'avoir"}

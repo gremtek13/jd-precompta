@@ -8,6 +8,7 @@ import {
   type CleRefusEnregistrementParametres, type Geste, type ParametresEnvoyes, type RefusParametres, type SaisieParametresFacturation,
 } from './parametresFacturation'
 import type { MoyenEncaissement, ParametresFacturation } from './types'
+import { MENTIONS_FIGEES_EXPORTEES } from './mentionsFigees'
 
 // « PARAMÈTRES », À L'ÉCRAN (espace client, étape A5b1 ; MEG1-Q12, MEG1-Q13, A5-Q4 à A5-Q6, décisions du cabinet du
 // 16/10/2026). Un module PUR : il ne lit rien en base, n'appelle personne, ne lit pas l'horloge. Il dit ce que la vue
@@ -15,9 +16,9 @@ import type { MoyenEncaissement, ParametresFacturation } from './types'
 // de la base : ce que `enregistrer_parametres_facturation` et `confirmer_rib` refuseraient, ce que deviendra un RIB, le RIB en
 // vigueur et qui a posé ou confirmé un RIB, c'est `lib/parametresFacturation.ts` qui le dit, sous les mots de la base.
 //
-// CE QUE CES PARAMÈTRES FONT AUJOURD'HUI : RIEN SUR UNE FACTURE. Aucune facture ne les lit ni ne les imprime avant l'étape
-// A7, qui figera sur chaque facture validée ce qu'elle imprime. La vue le dit en tête, et aucun texte d'ici ne dit qu'un RIB
-// ou une mention est imprimé : « en vigueur » se dit du RIB que les factures porteront QUAND elles porteront un RIB.
+// CE QUE CES PARAMÈTRES FONT SUR UNE FACTURE : depuis l'étape A7b (`MENTIONS_FIGEES_EXPORTEES`), la validation d'une facture
+// fige la version en vigueur et le RIB CONFIRMÉ, et l'aperçu les imprime ; une facture déjà validée ne change plus. La vue le
+// dit en tête (`phraseDEnTete`). Drapeau baissé, elle dit qu'aucune facture ne les lit encore, comme avant l'étape.
 //
 // « PAR LE CLIENT » AU CABINET SEUL, sur des accès lus EN ENTIER (`estLeClient`) : l'auteur d'une version, qui a posé et qui
 // a confirmé un RIB ; jamais deviné, jamais « par le cabinet » d'un compte que les accès ne reconnaissent pas.
@@ -406,8 +407,17 @@ export function refusDeLaConfirmation(
 }
 
 // ── Les phrases de la vue ────────────────────────────────────────────────────────────────────────────────────────────
-/** La phrase d'en-tête : ce que ces paramètres font AUJOURD'HUI — aucune facture ne les lit ni ne les imprime encore. */
-export function phraseDEnTete(espace: EspaceVentes): string {
+/** La phrase d'en-tête : ce que ces paramètres font sur une facture — figés à sa validation et imprimés, depuis l'étape A7b. */
+export function phraseDEnTete(espace: EspaceVentes, figees: boolean = MENTIONS_FIGEES_EXPORTEES): string {
+  if (figees) {
+    return espace === 'client'
+      ? 'Tes factures figent ces paramètres à leur validation — ceux en vigueur ce jour-là, le RIB confirmé seulement — et les '
+        + 'impriment ; une facture déjà validée ne change plus. Ton cabinet les lit aussi, et les tient avec toi ; un RIB que tu '
+        + 'poses ou changes n’est que proposé, jusqu’à ce que ton cabinet le confirme.'
+      : 'Une facture fige ces paramètres à sa validation — ceux en vigueur ce jour-là, le RIB confirmé seulement — et les '
+        + 'imprime ; une facture déjà validée ne change plus. Le client qui porte la case « Ventes » les lit et les tient avec '
+        + 'vous ; un RIB qu’il pose ou change n’est que proposé, jusqu’à ce que vous le confirmiez.'
+  }
   return espace === 'client'
     ? 'Aucune de tes factures ne lit ni n’imprime encore ces paramètres : elles le feront avec une étape à venir. Ton cabinet '
       + 'les lit aussi, et les tient avec toi ; un RIB que tu poses ou changes n’est que proposé, jusqu’à ce que ton cabinet '

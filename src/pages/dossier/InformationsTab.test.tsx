@@ -2,7 +2,9 @@ import type { ComponentProps } from 'react'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InformationsTab from './InformationsTab'
-import { CAPITAL_ILLISIBLE, IDENTITE_NON_ENREGISTREE, PHRASE_IDENTITE_LEGALE, PHRASE_IDENTITE_LEGALE_NON_LUE, RAISON_DENOMINATION_EI } from '../../lib/identiteLegaleVue'
+import {
+  CAPITAL_ILLISIBLE, IDENTITE_NON_ENREGISTREE, PHRASE_IDENTITE_LEGALE, PHRASE_IDENTITE_LEGALE_FIGEE, PHRASE_IDENTITE_LEGALE_NON_LUE, RAISON_DENOMINATION_EI,
+} from '../../lib/identiteLegaleVue'
 import { LIBELLE_ADRESSE_IDENTITE, LIBELLE_DENOMINATION_IDENTITE, LIBELLE_RCS_VILLE_IDENTITE } from '../../lib/droitsAcces'
 import { CATEGORIES_JURIDIQUES } from '../../lib/categoriesJuridiques'
 import { REFUS_IDENTITE_LEGALE } from '../../lib/parametresFacturation'
@@ -554,7 +556,8 @@ describe('l’identité du dossier : six colonnes, une écriture', () => {
     expect(champ(LIBELLE_DENOMINATION_IDENTITE).value).toBe('')
     expect(champ('Forme juridique').value).toBe('')
     expect(champ(/^Capital social/).value).toBe('')
-    expect(screen.getByText(PHRASE_IDENTITE_LEGALE)).toBeTruthy()
+    // Depuis l'étape A7b, la phrase dit que la facture fige ces champs ; l'état d'avant se joue dans identiteLegaleVue.test.ts.
+    expect(screen.getByText(PHRASE_IDENTITE_LEGALE_FIGEE)).toBeTruthy()
     // La phrase des quatre champs ne redit pas le SIRET et l'adresse : la phrase qui la précède le dit, une fois.
     expect(screen.getAllByText(/repris automatiquement sur chaque nouvelle facture émise/)).toHaveLength(1)
     expect(bouton().disabled).toBe(false)
@@ -745,6 +748,7 @@ describe('l’identité du dossier : six colonnes, une écriture', () => {
       expect(screen.queryByLabelText(/^Capital social/)).toBeNull()
       expect(screen.getByText(PHRASE_IDENTITE_LEGALE_NON_LUE)).toBeTruthy()
       expect(screen.queryByText(PHRASE_IDENTITE_LEGALE)).toBeNull()
+      expect(screen.queryByText(PHRASE_IDENTITE_LEGALE_FIGEE)).toBeNull()
 
       saisir('SIRET', ' 99999999999999 ')
       await act(async () => { bouton().click() })

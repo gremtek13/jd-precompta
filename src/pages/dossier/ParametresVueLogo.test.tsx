@@ -715,7 +715,8 @@ describe.each(['cabinet', 'client'] as const)('retirer le logo, après une confi
     const texte = dialogue.textContent ?? ''
     expect(texte).toContain('Une version nouvelle des paramètres est enregistrée, sans logo ; les autres champs ne changent pas.')
     expect(texte).toContain('Le fichier reste dans l’espace du dossier : il n’est pas supprimé, et l’historique des paramètres garde la trace de ce retrait (« Logo retiré »).')
-    expect(texte).toContain('Aucune facture n’imprime encore ce logo : elles le feront avec une étape à venir.')
+    // Depuis l'étape A7b : les factures validées gardent le logo qu'elles ont figé (l'état d'avant, logoDesFacturesVue.test.ts).
+    expect(texte).toContain('Les factures déjà validées gardent le logo qu’elles ont figé ; celles qui se valideront ensuite n’en imprimeront pas.')
     if (espace === 'client') expect(motsDuCabinet(texte)).toEqual([])
     expect(faux.rpcs).toEqual([])
     fireEvent.click(within(dialogue).getByRole('button', { name: 'Annuler' }))

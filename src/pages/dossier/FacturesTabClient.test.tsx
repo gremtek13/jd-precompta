@@ -9,6 +9,14 @@ import type {
 } from '../../lib/types'
 import { NON_BASCULE } from '../../test/factures'
 
+// L'ÉTAT D'AVANT L'ÉTAPE A7B, éprouvé tant que son code existe (CLAUDE.md, « Tests ») : le drapeau `MENTIONS_FIGEES_EXPORTEES`
+// baissé, le formulaire n'envoie ni ne lit rien de neuf. Ce que le drapeau levé change se joue dans
+// FactureFormModalMentionsFigees.test.tsx.
+vi.mock('../../lib/mentionsFigees', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/mentionsFigees')>()), MENTIONS_FIGEES_EXPORTEES: false,
+}))
+
+
 // L'ONGLET FACTURES EN MODE CLIENT — « Mes ventes › Factures » (espace client, étape P4a). L'onglet et ses VRAIES fenêtres,
 // montés pour le client qui porte la case « Ventes », et pour le cabinet en regard. Ce que ces cas gardent :
 //

@@ -7,7 +7,7 @@ import { messageErreur } from '../../lib/messageErreur'
 import { LIBELLE_NOTES_FACTURE, LIBELLE_NOTES_FACTURE_CLIENT } from '../../lib/droitsAcces'
 import { pourLEspace, pourLEspaceSiTexte } from '../../lib/espaceVentes'
 import { MENTION_FRANCHISE, exonerationDe, manqueMentionTva, mentionTva, refusTauxPositif } from '../../lib/statutTva'
-import { ARTICLES_EXPORTES, nomDansUnRefus } from '../../lib/articles'
+import { ARTICLES_EXPORTES, NATURES_ARTICLE, UNITES_ARTICLE, nomDansUnRefus } from '../../lib/articles'
 import { lireLesArticles, type LectureDesArticles } from '../../lib/articlesLecture'
 import { enregistrerArticle } from '../../lib/articlesEcriture'
 import { refusDeLaSaisie, saisieEnvoyee, type SaisieArticle } from '../../lib/articlesVue'
@@ -25,6 +25,12 @@ import {
   phraseDuFichierVide, refusDesSoinsDuClient, saisieDuClient, suiviDeLEcheance, type ChoixDeContact, type SuiviDeLEcheance,
 } from '../../lib/contactsFacture'
 import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
+import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
+import {
+  PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLArticle, provenanceDeLaLigneLue, provenanceQuiPart,
+  type LectureDeLaValidation, type ProvenanceDeLigne,
+} from '../../lib/mentionsFigeesVue'
+import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import ArticleChoixModal from './ArticleChoixModal'
 import ArticleSaisieModal from './ArticleSaisieModal'
@@ -36,7 +42,9 @@ import {
   siretAEnregistrer, versEntreprise, type ApercuTransmission, type SaisieMentions,
 } from '../../lib/mentionsFacture'
 
-interface LigneEdit {
+// L'unité, la référence et la nature de la ligne (étape A7b) : ce qu'un article lui apporte, modifiable ; une ligne saisie à
+// la main les choisit. Elles ne partent que derrière `MENTIONS_FIGEES_EXPORTEES`.
+interface LigneEdit extends ProvenanceDeLigne {
   id?: string // absent = ligne pas encore enregistrée
   // L'identité de la ligne DANS CE FORMULAIRE, stable tant qu'elle existe : c'est la clé de sa provenance (l'article qui l'a
   // remplie) et celle de son rendu. Ni l'indice, que le retrait d'une autre ligne déplace, ni `id`, que les lignes neuves n'ont pas.
@@ -77,7 +85,7 @@ const CONSEQUENCE_ARTICLES_PARTIELS = 'Aucun article ne peut donc être choisi n
 // Le taux d'une ligne neuve suit le statut de TVA du dossier : 20 % pour un redevable, qui facture la TVA, 0 % pour
 // les autres. Une ligne d'un redevable à 0 % par défaut partait chez la plateforme avec le motif de la franchise.
 function ligneVide(statut: StatutTva | null, cle: string): LigneEdit {
-  return { cle, designation: '', quantite: '1', prix_unitaire_ht: '', taux_tva: statut === 'redevable' ? '20' : '0' }
+  return { cle, designation: '', quantite: '1', prix_unitaire_ht: '', taux_tva: statut === 'redevable' ? '20' : '0', ...PROVENANCE_VIDE }
 }
 
 // QUI RÉDIGE LA FACTURE (espace client, étape P4a) : le cabinet, qui peut aussi enregistrer l'adresse de l'émetteur comme
@@ -138,8 +146,9 @@ export default function FactureFormModal(props: Props) {
   const [lignesIllisibles, setLignesIllisibles] = useState<string | null>(null)
   const [saving, setSaving] = useState<'brouillon' | 'validation' | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // L'article qui a rempli chaque ligne (clé de la ligne → identifiant), EN MÉMOIRE seulement : rien ne s'enregistre avant A7.
-  // Une facture rouverte n'en a sur aucune de ses lignes.
+  // L'article qui a rempli chaque ligne (clé de la ligne → identifiant). Depuis l'étape A7b (`MENTIONS_FIGEES_EXPORTEES`), il part
+  // avec la ligne (`article_id`), et une facture rouverte retrouve celui que ses lignes portent ; drapeau baissé, il n'est
+  // qu'en mémoire, et une facture rouverte n'en a sur aucune de ses lignes.
   const [provenanceBrute, setProvenance] = useState<Provenance>({})
   // Une ligne retirée perd sa provenance : celle qu'on LIT ne garde que les lignes qui existent, et la clé d'une ligne retirée ne revient jamais.
   const provenance = garderProvenance(provenanceBrute, lignes.map((l) => l.cle))
@@ -151,8 +160,12 @@ export default function FactureFormModal(props: Props) {
   const [contactOccupe, setContactOccupe] = useState(false)
   const [erreurContact, setErreurContact] = useState<string | null>(null)
   const [messageContact, setMessageContact] = useState<string | null>(null)
-  // Le contact qui a rempli le client, EN MÉMOIRE seulement : rien ne s'enregistre avant A7. Une facture rouverte n'en a pas.
-  const [contactChoisi, setContactChoisi] = useState<string | null>(null)
+  // Le contact qui a rempli le client. Depuis l'étape A7b, il part avec la facture (`contact_id`), et un brouillon rouvert garde
+  // le sien ; drapeau baissé, il n'est qu'en mémoire, et une facture rouverte n'en a pas.
+  const [contactChoisi, setContactChoisi] = useState<string | null>(MENTIONS_FIGEES_EXPORTEES ? facture?.contact_id ?? null : null)
+  // CE QUE LA VALIDATION FIGE (étape A7b) : l'identité du dossier et les versions de ses paramètres, lues EN ENTIER à
+  // l'ouverture, gardées AVEC le dossier lu. Rien n'est lu drapeau baissé.
+  const [lectureValidation, setLectureValidation] = useState<{ cle: string; lu: LectureDeLaValidation } | null>(null)
   // Ce que le choix a retenu de l'échéance (le délai du contact, la date d'émission d'alors) : la date d'émission qui change ensuite
   // le DIT, elle ne recalcule rien d'elle-même.
   const [suiviEcheance, setSuiviEcheance] = useState<SuiviDeLEcheance | null>(null)
@@ -179,8 +192,15 @@ export default function FactureFormModal(props: Props) {
       }
       const l = (data ?? []) as FactureLigne[]
       setLignes(l.length > 0
-        ? l.map((x) => ({ id: x.id, cle: x.id, designation: x.designation, quantite: String(x.quantite), prix_unitaire_ht: String(x.prix_unitaire_ht), taux_tva: String(x.taux_tva) }))
+        ? l.map((x) => ({
+          id: x.id, cle: x.id, designation: x.designation, quantite: String(x.quantite), prix_unitaire_ht: String(x.prix_unitaire_ht),
+          taux_tva: String(x.taux_tva), ...(MENTIONS_FIGEES_EXPORTEES ? provenanceDeLaLigneLue(x) : PROVENANCE_VIDE),
+        }))
         : [ligneVide(statutTva, nouvelleCle())])
+      // L'article d'où vient chaque ligne, tel que le brouillon le garde (étape A7b).
+      if (MENTIONS_FIGEES_EXPORTEES) {
+        setProvenance(Object.fromEntries(l.filter((x) => x.article_id != null).map((x) => [x.id, x.article_id as string])))
+      }
       setChargementLignes(false)
     })
   }, [facture, statutTva])
@@ -195,6 +215,15 @@ export default function FactureFormModal(props: Props) {
       (lu) => { if (!annule) setLectureArticles({ cle: dossierId, lu }) },
       (e: unknown) => { if (!annule) setLectureArticles({ cle: dossierId, echec: messageErreur(e, 'les articles n’ont pas pu être lus') }) },
     )
+    return () => { annule = true }
+  }, [dossierId])
+
+  // Ce que la validation fige : lu à l'ouverture (étape A7b). La lecture ne rejette jamais ; une réponse arrivée après un
+  // changement de dossier ne s'inscrit pas.
+  useEffect(() => {
+    if (!MENTIONS_FIGEES_EXPORTEES) return
+    let annule = false
+    lireCeQueLaValidationFige(dossierId).then((lu) => { if (!annule) setLectureValidation({ cle: dossierId, lu }) })
     return () => { annule = true }
   }, [dossierId])
 
@@ -222,6 +251,7 @@ export default function FactureFormModal(props: Props) {
   }
 
   const lignesNumeriques = lignes.map((l) => ({
+    cle: l.cle,
     designation: l.designation,
     quantite: parseFloat(l.quantite) || 0,
     prix_unitaire_ht: parseFloat(l.prix_unitaire_ht) || 0,
@@ -233,6 +263,13 @@ export default function FactureFormModal(props: Props) {
   // faisait une facture dont l'en-tête contredit les lignes, à l'aperçu comme à la plateforme qui la reçoit.
   const { valides: lignesValides, ecartees: lignesEcartees } = lignesSaisies(lignesNumeriques)
   const totaux = calculerTotaux(lignesValides)
+  // Les lignes TELLES QU'ELLES PARTENT : les quatre champs d'hier et, depuis l'étape A7b, leur unité, leur référence (sans les
+  // blancs de ses bords), leur nature et l'article d'où elles viennent — un champ vide part nul.
+  const lignesQuiPartent = lignesValides.map((l) => {
+    const ligne = { designation: l.designation, quantite: l.quantite, prix_unitaire_ht: l.prix_unitaire_ht, taux_tva: l.taux_tva }
+    if (!MENTIONS_FIGEES_EXPORTEES) return ligne
+    return { ...ligne, ...provenanceQuiPart(lignes.find((x) => x.cle === l.cle) ?? PROVENANCE_VIDE, provenance[l.cle] ?? null) }
+  })
 
   // CE QUE LE STATUT DE TVA DU DOSSIER DIT DE CETTE FACTURE, avant le clic (lib/statutTva.ts).
   // Une ligne taxée sur un dossier qui ne facture pas de TVA la rend due du seul fait de l'avoir facturée (CGI,
@@ -268,6 +305,9 @@ export default function FactureFormModal(props: Props) {
     setTiersSiret(valeur)
   }
 
+  // L'ÉMETTEUR DANS « MES VENTES » (étape A7b, A7-Q2) : le SIRET et l'adresse du DOSSIER, que le cabinet renseigne, montrés et
+  // plus saisis — la validation par le client les compare à ceux du dossier, et un brouillon reprend l'adresse du dossier.
+  const adresseDuDossierSeule = MENTIONS_FIGEES_EXPORTEES && espace === 'client'
   // L'en-tête tel qu'il s'enregistre, et tel que l'aperçu de la transmission le juge : un seul assemblage pour les deux.
   const entete = {
     tiers_nom: tiersNom.trim(),
@@ -279,11 +319,13 @@ export default function FactureFormModal(props: Props) {
     mentions_legales: mentionsLegales.trim() || null,
     emetteur_nom: dossierNom || null,
     emetteur_siret: dossierSiret || null,
-    emetteur_adresse: emetteurAdresse.trim() || null,
+    emetteur_adresse: adresseDuDossierSeule ? dossierAdresse?.trim() || null : emetteurAdresse.trim() || null,
     montant_ht: totaux.montant_ht,
     montant_tva: totaux.montant_tva,
     montant_ttc: totaux.montant_ttc,
     ...mentionsAEnregistrer(mentions),
+    // Le contact d'où vient le client (étape A7b) : la clé part toujours, nulle sans contact — un brouillon rouvert garde le sien.
+    ...(MENTIONS_FIGEES_EXPORTEES ? { contact_id: contactChoisi } : {}),
   }
   // Ce que la base refuserait des mentions : ni le brouillon ni la validation ne partent, et l'écran dit pourquoi.
   const refusMentions = refusDesMentions(mentions, tiersSiret)
@@ -399,7 +441,9 @@ export default function FactureFormModal(props: Props) {
 
   function appliquerChoix(cle: string, article: Article) {
     const { ligne } = choixDArticle(article, statutTva, articleExoneration)
-    setLignes((prev) => prev.map((l) => (l.cle === cle ? { ...l, ...ligne } : l)))
+    // Depuis l'étape A7b, l'article apporte aussi son unité, sa référence et sa nature, modifiables ensuite.
+    const apporte = MENTIONS_FIGEES_EXPORTEES ? provenanceDeLArticle(article) : {}
+    setLignes((prev) => prev.map((l) => (l.cle === cle ? { ...l, ...ligne, ...apporte } : l)))
     // Remplie par cet article, la ligne n'a plus la provenance qu'elle avait.
     setProvenance((p) => avecProvenance(p, cle, article.id))
   }
@@ -532,6 +576,21 @@ export default function FactureFormModal(props: Props) {
   const contactDeLaSaisie = contactDeLaProvenance(contactChoisi, contactsEntiers)
   const refusDesSoins = CONTACTS_EXPORTES ? refusDesSoinsDuClient(articleExoneration, clientSaisi) : null
   const echeanceDuContact = echeanceARecalculer(suiviEcheance, dateEmission, dateEcheance)
+
+  // ── LA FACTURE FIGE SES MENTIONS (étape A7b ; lib/mentionsFigeesVue.ts) ─────────────────────────────────────────────────────
+  // Les refus neufs d'`enregistrer_facture`, jugés sur la saisie TELLE QU'ELLE PART, après ceux d'hier et avant ceux de la source
+  // de la vente : la provenance, puis un IBAN dans un texte (brouillon compris) ; à la validation, ceux de la validation figée.
+  // La validation n'est offerte que sur ce qu'elle lit — le dossier, ses paramètres, ses clients et ses articles — lu EN ENTIER,
+  // et sa confirmation NOMME ce que la facture figera et imprimera. Drapeau baissé, rien de cela.
+  const lectureCourante = lectureValidation?.cle === dossierId ? lectureValidation.lu : null
+  const jugementMentions = MENTIONS_FIGEES_EXPORTEES
+    ? jugementDesMentions({
+      espace, dossierId, facture: { type: 'facture', ...entete }, lignes: lignesQuiPartent, brouillon: facture, origine: null,
+      listes: { contacts: contactsEntiers, articles: articlesEntiers }, lecture: lectureCourante,
+    })
+    : null
+  const refusFigeBrouillon = jugementMentions?.refusDeLEnregistrement ?? null
+  const refusFigeValidation = refusFigeBrouillon ?? jugementMentions?.retenue ?? jugementMentions?.refusDeLaValidation ?? null
 
   async function relireContacts() {
     try {
@@ -677,6 +736,16 @@ export default function FactureFormModal(props: Props) {
       setError(refusMentions[0])
       return
     }
+    // Seconde ceinture : les boutons sont déjà grisés sur un refus neuf (étape A7b), dit avant le clic — la provenance et un
+    // IBAN dans un texte pour tout enregistrement, puis ce qui retient ou refuse la validation.
+    if (refusFigeBrouillon) {
+      setError(refusFigeBrouillon)
+      return
+    }
+    if (statutCible === 'validee' && refusFigeValidation) {
+      setError(refusFigeValidation)
+      return
+    }
     // Seconde ceinture : le bouton de validation est déjà grisé sur un refus de la source, dit avant le clic.
     if (statutCible === 'validee' && jugementSource.refus) {
       setError(jugementSource.refus)
@@ -686,17 +755,28 @@ export default function FactureFormModal(props: Props) {
     // Une facture adressée à une entreprise ou à un organisme public, que rien ne pourrait plus transmettre une fois
     // validée : la validation se confirme, et la confirmation dit ce qu'on perd. Une facture source aussi : la phrase du module
     // dit quand elle comptera (étape VF8c) — une seule confirmation, qui dit les deux.
+    //
+    // Depuis l'étape A7b, chaque validation se confirme, et la confirmation NOMME ce que la facture figera et imprimera — le nom
+    // légal, l'identité, le numéro de TVA, les conditions de paiement, le RIB confirmé ou qu'il n'y en a pas, le logo —, au
+    // paragraphe qui précède la question.
+    const figer = statutCible === 'validee' && jugementMentions?.mentions
+      ? `\n\n${pourLEspace(espace, confirmationDesMentions(jugementMentions.mentions, entete.emetteur_nom, false))}`
+      : ''
     if (statutCible === 'validee' && nonTransmissible) {
       const premier = pourLEspace(espace, nonTransmissible.refus[0] ?? 'régler la TVA, comme le formulaire le signale.')
       const n = nonTransmissible.refus.length + nonTransmissible.ailleurs
       const points = n === 1 ? 'un point à compléter :' : `${n} points à compléter, dont :`
       // La phrase de la source dit déjà qu'une facture validée ne se corrige plus que par un avoir.
       const suite = jugementSource.confirmation
-        ? `${jugementSource.confirmation}\n\nLa valider quand même ?`
-        : 'Une facture validée ne se corrige plus que par un avoir. La valider quand même ?'
+        ? `${jugementSource.confirmation}${figer}\n\nLa valider quand même ?`
+        : figer
+          ? `Une facture validée ne se corrige plus que par un avoir.${figer}\n\nLa valider quand même ?`
+          : 'Une facture validée ne se corrige plus que par un avoir. La valider quand même ?'
       if (!window.confirm(`Validée ainsi, cette facture ne pourra pas partir par une plateforme agréée — ${points} ${premier}\n\n${suite}`)) return
     } else if (statutCible === 'validee' && jugementSource.confirmation) {
-      if (!window.confirm(`${jugementSource.confirmation}\n\nLa valider ?`)) return
+      if (!window.confirm(`${jugementSource.confirmation}${figer}\n\nLa valider ?`)) return
+    } else if (figer) {
+      if (!window.confirm(`${figer.slice(2)}\n\nLa valider ?`)) return
     }
     enregistrementEnCours.current = true
     setSaving(statutCible === 'validee' ? 'validation' : 'brouillon')
@@ -710,7 +790,7 @@ export default function FactureFormModal(props: Props) {
       //
       // Le remplacement complet des lignes reste préféré à un diff ligne à ligne : une facture en a
       // rarement plus de quelques-unes.
-      await enregistrerFacture(dossierId, facture?.id ?? null, entete, lignesValides, statutCible === 'validee')
+      await enregistrerFacture(dossierId, facture?.id ?? null, entete, lignesQuiPartent, statutCible === 'validee')
 
       // Hors transaction à dessein : mémoriser l'adresse sur le dossier est un confort, sans rapport
       // avec l'intégrité de la facture, et son échec ne doit pas la remettre en cause.
@@ -753,6 +833,25 @@ export default function FactureFormModal(props: Props) {
           </>
         ) : (
           <form onSubmit={handleSubmit}>
+            {adresseDuDossierSeule ? (
+              // « Mes ventes » (étape A7b, A7-Q2) : l'émetteur est le dossier, que le cabinet renseigne — montré, plus saisi.
+              <div className="field">
+                <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Émetteur</span>
+                <strong>{dossierNom}</strong>
+                {dossierSiret?.trim() && <div className="muted">SIRET {dossierSiret}</div>}
+                {dossierAdresse?.trim() && <div className="muted" style={{ whiteSpace: 'pre-line' }}>{dossierAdresse.trim()}</div>}
+                {(!dossierSiret?.trim() || !dossierAdresse?.trim()) && (
+                  <span className="muted" style={{ fontSize: '0.8rem' }}>
+                    {!dossierSiret?.trim() && !dossierAdresse?.trim()
+                      ? 'Ton cabinet n’a pas encore enregistré le SIRET ni l’adresse de ta société'
+                      : !dossierSiret?.trim()
+                        ? 'Ton cabinet n’a pas encore enregistré le SIRET de ta société'
+                        : 'Ton cabinet n’a pas encore enregistré l’adresse de ta société'}
+                    {' : ton brouillon s’enregistre, mais ta facture ne se validera qu’une fois qu’il l’aura fait.'}
+                  </span>
+                )}
+              </div>
+            ) : (
             <div className="field">
               <label htmlFor="emetteur-adresse">Adresse de l'émetteur ({dossierNom}{dossierSiret ? ` — SIRET ${dossierSiret}` : ''})</label>
               <textarea id="emetteur-adresse" rows={2} value={emetteurAdresse} onChange={(e) => setEmetteurAdresse(e.target.value)} placeholder="Numéro, rue, code postal, ville" />
@@ -768,6 +867,7 @@ export default function FactureFormModal(props: Props) {
                 </span>
               )}
             </div>
+            )}
 
             <div className="field-row">
               <div className="field">
@@ -960,7 +1060,10 @@ export default function FactureFormModal(props: Props) {
               <div className="table-scroll tableau-adaptable" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
                 <table className="table-empilable table-empilable-en-carte">
                   <thead>
-                    <tr><th>Désignation</th><th>Qté</th><th>PU HT</th><th>TVA %</th><th>Montant TTC</th><th></th></tr>
+                    <tr>
+                      <th>Désignation</th><th>Qté</th><th>PU HT</th><th>TVA %</th><th>Montant TTC</th>
+                      {MENTIONS_FIGEES_EXPORTEES && <th>Unité, référence, nature</th>}<th></th>
+                    </tr>
                   </thead>
                   <tbody>
                     {lignes.map((l, i) => {
@@ -980,6 +1083,26 @@ export default function FactureFormModal(props: Props) {
                           <td data-libelle="PU HT"><input type="number" step="any" value={l.prix_unitaire_ht} onChange={(e) => majLigne(i, { prix_unitaire_ht: e.target.value })} style={{ width: 85 }} /></td>
                           <td data-libelle="TVA %"><input type="number" step="0.1" value={l.taux_tva} onChange={(e) => majLigne(i, { taux_tva: e.target.value })} style={{ width: 65 }} /></td>
                           <td data-libelle="Montant TTC">{formatMoney(c.montant_ttc)}</td>
+                          {/* L'unité, la référence et la nature de la ligne (étape A7b), APRÈS les champs d'hier : ce qu'un article apporte,
+                              modifiable ; une ligne saisie à la main les choisit. Un seul enfant, comme la désignation. */}
+                          {MENTIONS_FIGEES_EXPORTEES && (
+                            <td data-libelle="Unité, référence, nature">
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: '1 1 auto', minWidth: 0 }}>
+                                <select aria-label={`Unité, ligne ${i + 1}`} value={l.unite} onChange={(e) => majLigne(i, { unite: e.target.value as LigneEdit['unite'] })}>
+                                  <option value="">— unité —</option>
+                                  {UNITES_ARTICLE.map((u) => <option key={u.code} value={u.code}>{u.libelle}</option>)}
+                                </select>
+                                <input
+                                  aria-label={`Référence, ligne ${i + 1}`} placeholder="Référence" value={l.reference}
+                                  onChange={(e) => majLigne(i, { reference: e.target.value })} style={{ width: 120 }}
+                                />
+                                <select aria-label={`Nature, ligne ${i + 1}`} value={l.nature} onChange={(e) => majLigne(i, { nature: e.target.value as LigneEdit['nature'] })}>
+                                  <option value="">— nature —</option>
+                                  {NATURES_ARTICLE.map((n) => <option key={n} value={n}>{n}</option>)}
+                                </select>
+                              </div>
+                            </td>
+                          )}
                           <td className="td-boutons"><button type="button" className="btn btn-outline btn-sm" onClick={() => retirerLigne(i)} disabled={lignes.length === 1}>✕</button></td>
                         </tr>
                       )
@@ -1095,14 +1218,23 @@ export default function FactureFormModal(props: Props) {
               </div>
             )}
 
+            {/* LA FACTURE FIGE SES MENTIONS (étape A7b) : le refus de l'enregistrement, puis ce qui retient la validation ou la
+                refuse, puis ce que le cabinet valide encore et qu'on lui dit. */}
+            {jugementMentions?.refusDeLEnregistrement && <p className="error-text" role="alert">{jugementMentions.refusDeLEnregistrement}</p>}
+            {jugementMentions && !jugementMentions.refusDeLEnregistrement && jugementMentions.retenue && (
+              <p className="muted" role="status">{jugementMentions.retenue}</p>
+            )}
+            {jugementMentions?.refusDeLaValidation && <p className="error-text" role="alert">{jugementMentions.refusDeLaValidation}</p>}
+            {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
+
             {error && <p className="error-text">{pourLEspaceSiTexte(espace, error)}</p>}
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10, flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-outline" onClick={onClose} disabled={!!saving}>Annuler</button>
-              <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0}>
+              <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0 || refusFigeBrouillon != null}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusMentions.length > 0 || jugementSource.refus != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>

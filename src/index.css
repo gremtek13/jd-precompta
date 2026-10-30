@@ -1926,6 +1926,18 @@ a.btn { text-decoration: none; }
 }
 .facture-imprimable { width: min(720px, 95vw); max-height: 92vh; overflow-y: auto; }
 .facture-imprimable-actions { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 16px; }
+/* Ce que l'écran dit d'une facture et que le papier ne porte pas (étape A7b) : une facture validée avant que les factures figent
+   leurs mentions, un logo figé qui ne s'imprime pas. Le bloc d'impression le retire. */
+.facture-imprimable-avis {
+  margin: 0 0 16px; padding: 9px 12px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface-2); color: var(--color-text);
+  font-size: 0.82rem; line-height: 1.45; overflow-wrap: anywhere;
+}
+.facture-imprimable-avis p { margin: 0; }
+.facture-imprimable-avis p + p { margin-top: 6px; }
+/* Le logo qu'une facture a figé, au-dessus du nom de l'émetteur, tel quel dans une boîte bornée (sans recadrage). */
+.facture-logo { display: block; max-width: 180px; max-height: 64px; width: auto; height: auto; object-fit: contain; margin-bottom: 8px; }
 
 /* Le bloc téléphone (`@media (max-width: 720px)`) n'est pas réservé à l'écran : la zone imprimable d'une page A4 mesure environ
    718 pixels dans Chromium, donc ses règles s'appliquent aussi à la facture IMPRIMÉE. Il lui imposait `table-layout: fixed`, qui
@@ -1959,6 +1971,7 @@ a.btn { text-decoration: none; }
   }
   .facture-imprimable { position: static; width: auto; max-height: none; overflow: visible; box-shadow: none; border: none; }
   .facture-imprimable-actions { display: none; }
+  .facture-imprimable-avis { display: none; }
   /* Une ligne ne se coupe pas entre deux pages. */
   .facture-imprimable tr { break-inside: avoid; }
 }

@@ -7,6 +7,7 @@ import {
 } from './parametresFacturation'
 import { saisieDeLaVersion } from './parametresFacturationVue'
 import type { ParametresFacturation } from './types'
+import { MENTIONS_FIGEES_EXPORTEES } from './mentionsFigees'
 
 // LE LOGO DES FACTURES, À L'ÉCRAN (espace client, étape A5c2a ; décisions du cabinet du 17/10/2026, A5C-Q1 à A5C-Q6). Un
 // module PUR : il ne lit rien en base ni dans le seau, n'appelle personne, ne lit pas l'horloge. Il dit ce que le bloc
@@ -19,15 +20,22 @@ import type { ParametresFacturation } from './types'
 // seau (A5C-Q3). Le RIB d'une courante PROPOSÉE reste donc proposé, et celui d'une confirmée confirmé : la base le garde d'une
 // version à l'autre quand l'IBAN, le BIC et le titulaire ne changent pas.
 //
-// AUJOURD'HUI AUCUNE FACTURE NE L'IMPRIME (étape A7) : chaque phrase qui parle du logo le dit, ou n'en dit pas plus que ce
-// qu'une version désigne. Une phrase fixe du bloc évite « aucun » et « rien » : le bloc se monte avant la lecture de son fichier
+// UNE FACTURE FIGE LE LOGO EN VIGUEUR À SA VALIDATION ET L'IMPRIME depuis l'étape A7b (`MENTIONS_FIGEES_EXPORTEES`) : chaque
+// phrase qui parle de l'impression le dit ; drapeau baissé, elle dit qu'aucune facture ne l'imprime encore. Une phrase fixe du bloc évite « aucun » et « rien » : le bloc se monte avant la lecture de son fichier
 // (ecransAvantLecture.test.tsx), et le vide ne s'y dit qu'après elle. Les mots du client : tutoiement, aucun onglet, jamais « le client » pour le titulaire
 // (src/lib/espaceVentes.ts, `MOTS_DU_CABINET`) ; les phrases qui servent aux deux espaces sont écrites sans personne.
 
 export const TITRE_DU_LOGO = 'Logo des factures'
 
-/** Ce que le bloc dit de qui voit et change le logo — et que rien ne l'imprime encore. */
-export function phraseDuLogo(espace: EspaceVentes): string {
+/** Ce que le bloc dit de qui voit et change le logo — et ce que les factures en font. */
+export function phraseDuLogo(espace: EspaceVentes, figees: boolean = MENTIONS_FIGEES_EXPORTEES): string {
+  if (figees) {
+    return espace === 'client'
+      ? 'Ton cabinet voit ce logo et peut le changer, comme toi. Tes factures figent le logo en vigueur à leur validation, et '
+        + 'l’impriment ; une facture déjà validée garde le sien.'
+      : 'Le client qui porte la case « Ventes » voit ce logo et peut le changer, comme vous. Une facture fige le logo en vigueur à '
+        + 'sa validation, et l’imprime ; une facture déjà validée garde le sien.'
+  }
   return espace === 'client'
     ? 'Ton cabinet voit ce logo et peut le changer, comme toi. Tes factures ne l’impriment pas encore : elles le feront avec '
       + 'une étape à venir.'
@@ -183,14 +191,16 @@ export function messageFichierDeposeSansVersion(espace: EspaceVentes, refusDeLaB
 }
 
 /** Ce que la confirmation du retrait dit avant le clic : ce qui change, ce qui reste, ce que les factures ne font pas encore. */
-export function confirmationDuRetraitDuLogo(): { titre: string; paragraphes: string[] } {
+export function confirmationDuRetraitDuLogo(figees: boolean = MENTIONS_FIGEES_EXPORTEES): { titre: string; paragraphes: string[] } {
   return {
     titre: 'Retirer le logo',
     paragraphes: [
       'Une version nouvelle des paramètres est enregistrée, sans logo ; les autres champs ne changent pas.',
       'Le fichier reste dans l’espace du dossier : il n’est pas supprimé, et l’historique des paramètres garde la trace de ce '
       + 'retrait (« Logo retiré »).',
-      'Aucune facture n’imprime encore ce logo : elles le feront avec une étape à venir.',
+      figees
+        ? 'Les factures déjà validées gardent le logo qu’elles ont figé ; celles qui se valideront ensuite n’en imprimeront pas.'
+        : 'Aucune facture n’imprime encore ce logo : elles le feront avec une étape à venir.',
     ],
   }
 }
