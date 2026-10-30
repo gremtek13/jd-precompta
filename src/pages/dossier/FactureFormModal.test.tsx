@@ -6,6 +6,14 @@ import { SIREN_CLIENT, SIRET_CLIENT, SIRET_VENDEUR } from '../../test/facturesCi
 import type { ArticleExoneration, FactureEmise, StatutTva } from '../../lib/types'
 import { LIBELLE_NOTES_FACTURE } from '../../lib/droitsAcces'
 
+// L'ÉTAT D'AVANT L'ÉTAPE A7B, éprouvé tant que son code existe (CLAUDE.md, « Tests ») : le drapeau `MENTIONS_FIGEES_EXPORTEES`
+// baissé, le formulaire n'envoie ni ne lit rien de neuf. Ce que le drapeau levé change se joue dans
+// FactureFormModalMentionsFigees.test.tsx.
+vi.mock('../../lib/mentionsFigees', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/mentionsFigees')>()), MENTIONS_FIGEES_EXPORTEES: false,
+}))
+
+
 // DIXIÈME PORTEUR DU MOTIF « un verrou d'exécution est un `useRef`, jamais un état React »
 // (CLAUDE.md) — et le plus cher des dix.
 //

@@ -3,12 +3,14 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   CAPITAL_ILLISIBLE, COLONNES_IDENTITE_LEGALE, FORME_NON_RENSEIGNEE, IDENTITE_NON_ENREGISTREE, PHRASE_IDENTITE_LEGALE,
+  PHRASE_IDENTITE_LEGALE_FIGEE, phraseIdentiteLegale,
   RAISON_DENOMINATION_EI, capitalPourSaisie, choixDeForme, colonnesEcrites, ecritureQuiPart, estEntrepreneurIndividuel,
   identiteDepuisLaReponse, identiteLegaleLue, identiteQuiPart, lireCapital, phraseDuCapitalRemisANul,
   propositionDeDenomination, refusDeLIdentite, refusDeLaBase, saisieDepuisLaLigne,
   type IdentiteLue, type SaisieIdentite,
 } from './identiteLegaleVue'
 import { CATEGORIES_JURIDIQUES } from './categoriesJuridiques'
+import { MENTIONS_FIGEES_EXPORTEES } from './mentionsFigees'
 import { CAPITAL_BORNE, DENOMINATION_MAX, REFUS_IDENTITE_LEGALE, RCS_VILLE_MAX } from './parametresFacturation'
 
 // Jeux d'essai fictifs, typés `Partial<T> => T`.
@@ -345,10 +347,21 @@ describe('le refus de la base, dit sous les mots du module', () => {
 })
 
 describe('ce que la carte dit en phrase', () => {
-  it('dit qu’aucune facture ne lit ni n’imprime encore ces champs, sans redire le SIRET et l’adresse que la carte dit déjà repris', () => {
+  // Drapeau baissé (`MENTIONS_FIGEES_EXPORTEES`) : l'état d'avant l'étape A7b, éprouvé tant que son code existe.
+  it('drapeau baissé : dit qu’aucune facture ne lit ni n’imprime encore ces champs, sans redire le SIRET et l’adresse que la carte dit déjà repris', () => {
+    expect(phraseIdentiteLegale(false)).toBe(PHRASE_IDENTITE_LEGALE)
     expect(PHRASE_IDENTITE_LEGALE).toContain('Aucune facture ne lit ni n’imprime encore')
     // La phrase qui la précède dans la carte dit déjà que le SIRET et l'adresse sont repris sur chaque nouvelle facture.
     expect(PHRASE_IDENTITE_LEGALE).not.toMatch(/SIRET|adresse/)
+  })
+
+  it('drapeau levé : la facture fige ces champs et les imprime ; sans forme ou sans dénomination, un accès « Ventes » ne valide pas ; un IBAN retient', () => {
+    expect(phraseIdentiteLegale(true)).toBe(PHRASE_IDENTITE_LEGALE_FIGEE)
+    expect(PHRASE_IDENTITE_LEGALE_FIGEE).toMatch(/^Une facture fige à sa validation la dénomination, la ville du greffe, la forme juridique et le capital, et les imprime/)
+    expect(PHRASE_IDENTITE_LEGALE_FIGEE).toContain('un accès « Ventes » ne valide pas de facture')
+    expect(PHRASE_IDENTITE_LEGALE_FIGEE).toContain('un IBAN dans la dénomination ou la ville du greffe retiendrait toute validation')
+    expect(PHRASE_IDENTITE_LEGALE_FIGEE).not.toMatch(/SIRET|adresse/)
+    expect(phraseIdentiteLegale()).toBe(phraseIdentiteLegale(MENTIONS_FIGEES_EXPORTEES))
   })
 
   it('une écriture sans ligne rendue ne prétend rien', () => {

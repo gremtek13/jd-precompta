@@ -19,6 +19,7 @@ import {
   REFUS_IDENTITE_LEGALE, denominationProposee, refusIdentiteLegale, type CleRefusIdentiteLegale,
 } from './parametresFacturation'
 import type { Dossier } from './types'
+import { MENTIONS_FIGEES_EXPORTEES } from './mentionsFigees'
 
 /** Les six colonnes que l'écran écrit d'un seul tenant, et que la base rend. */
 export type IdentiteRendue = Pick<Dossier, 'siret' | 'adresse' | 'denomination_imprimee' | 'rcs_ville' | 'forme_juridique' | 'capital'>
@@ -247,9 +248,20 @@ export function phraseDuCapitalRemisANul(s: SaisieIdentite, capitalLu: number | 
 // ── Ce que la carte dit ────────────────────────────────────────────────────────────────────────────────────────────
 
 // La phrase de la carte qui la précède dit déjà que le SIRET et l'adresse sont repris sur chaque nouvelle facture : celle-ci
-// ne parle que des quatre champs qui ne le sont pas encore.
+// ne parle que des quatre champs d'identité légale. Depuis l'étape A7b (`MENTIONS_FIGEES_EXPORTEES`), une facture les fige à
+// sa validation et les imprime ; un accès « Ventes » ne valide pas sans forme ni dénomination (A7-Q1, A7Q-Q1), et un IBAN dans
+// l'un d'eux retient toute validation (A7-Q3). Drapeau baissé, la phrase d'avant.
 export const PHRASE_IDENTITE_LEGALE =
   'Aucune facture ne lit ni n’imprime encore la dénomination, la ville du greffe, la forme juridique ni le capital : elles le feront avec une étape à venir.'
+export const PHRASE_IDENTITE_LEGALE_FIGEE =
+  'Une facture fige à sa validation la dénomination, la ville du greffe, la forme juridique et le capital, et les imprime ; une '
+  + 'facture déjà validée ne change plus. Sans forme juridique, ou sans dénomination, un accès « Ventes » ne valide pas de '
+  + 'facture ; un IBAN dans la dénomination ou la ville du greffe retiendrait toute validation.'
+
+/** La phrase des quatre champs, selon que les factures figent leurs mentions. */
+export function phraseIdentiteLegale(figees: boolean = MENTIONS_FIGEES_EXPORTEES): string {
+  return figees ? PHRASE_IDENTITE_LEGALE_FIGEE : PHRASE_IDENTITE_LEGALE
+}
 
 export const PHRASE_IDENTITE_LEGALE_NON_LUE =
   'La dénomination imprimée, la ville du greffe, la forme juridique et le capital n’ont pas été lus avec ce dossier : ils ne sont pas offerts, car les écrire sans les connaître pourrait effacer ce que le dossier porte. Le SIRET et l’adresse s’enregistrent comme d’habitude ; recharge la page pour les retrouver.'

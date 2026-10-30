@@ -3,9 +3,10 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import {
   AUTEURS_DU_CHANGEMENT, CHANGEMENT_DE_RIB_EXPORTE, CLES_DU_CHANGEMENT, COMBINAISONS_DU_CHANGEMENT, CONSEIL_AU_CLIENT_BANQUE,
   CONSEIL_AU_CLIENT_VENTES, CONSEIL_D_UN_RETRAIT, EFFETS_SUR_LE_RIB_EN_VIGUEUR, ETATS_APRES_LE_CHANGEMENT, GESTES_DU_RIB,
-  avisDuChangement, lireLeChangementDeRib, type ChangementDeRib, type DestinataireDuChangement,
+  avisDuChangement, lireLeChangementDeRib, quandLesFacturesLePortent, type ChangementDeRib, type DestinataireDuChangement,
 } from './changementDeRib'
 import { motsDuCabinet } from './espaceVentes'
+import { MENTIONS_FIGEES_EXPORTEES } from './mentionsFigees'
 import { etatDuRibEnregistre, ribEnVigueur, versionCourante, type VersionDuRib } from './parametresFacturation'
 import { CONSEIL_VERIFICATION_RIB } from './parametresFacturationVue'
 import { decouper, lignesInserees } from '../test/essaiSql'
@@ -461,10 +462,11 @@ describe('ce que l’avis dit à chacun', () => {
     }
   })
 
-  it('ce que les factures porteront : au futur, « quand elles porteront un RIB » — aucune n’en imprime encore (A7)', () => {
-    expect(avisDuChangement(combinaison('change|client|propose|inchange'), 'banque').factures)
+  // DRAPEAU BAISSÉ (`MENTIONS_FIGEES_EXPORTEES`, l'état d'avant l'étape A7b, éprouvé tant que son code existe).
+  it('drapeau baissé, ce que les factures porteront : au futur, « quand elles porteront un RIB » — aucune n’en imprime encore', () => {
+    expect(avisDuChangement(combinaison('change|client|propose|inchange'), 'banque', false).factures)
       .toBe('Le RIB confirmé d’avant reste en vigueur : c’est lui que tes factures porteront, quand elles porteront un RIB, jusqu’à la confirmation de ton cabinet.')
-    expect(avisDuChangement(combinaison('change|client|propose|aucun'), 'cabinet').factures)
+    expect(avisDuChangement(combinaison('change|client|propose|aucun'), 'cabinet', false).factures)
       .toBe('Aucun RIB confirmé ne le précède : tant que vous ne l’avez pas confirmé, les factures n’en porteront aucun, quand elles porteront un RIB.')
     expect(avisDuChangement(combinaison('retire|inconnu|retire|retire'), 'ventes').factures)
       .toBe('Tes factures ne porteront plus de RIB, tant qu’un autre n’est pas posé et confirmé par ton cabinet.')
@@ -472,8 +474,21 @@ describe('ce que l’avis dit à chacun', () => {
     expect(avisDuChangement(combinaison('change|cabinet|confirme|inchange'), 'cabinet').phrase)
       .toBe('Le RIB proposé pour les factures a été écarté le 16/10/2026 par le cabinet, qui a remis le RIB en vigueur.')
     expect(avisDuChangement(combinaison('confirme|cabinet|confirme|inchange'), 'banque').factures).toBe('Le RIB de tes factures ne change pas : c’était déjà lui.')
-    expect(avisDuChangement(combinaison('confirme|inconnu|confirme|pose'), 'cabinet').factures)
+    expect(avisDuChangement(combinaison('confirme|inconnu|confirme|pose'), 'cabinet', false).factures)
       .toBe('Aucun RIB n’était confirmé avant lui : les factures porteront celui-ci, quand elles porteront un RIB.')
+  })
+
+  // DEPUIS L'ÉTAPE A7B, une facture fige le RIB confirmé en vigueur à sa validation, et l'imprime.
+  it('drapeau levé, ce que les factures porteront : « à leur validation » ; par défaut, l’état du drapeau', () => {
+    expect(quandLesFacturesLePortent(true)).toBe('à leur validation')
+    expect(quandLesFacturesLePortent(false)).toBe('quand elles porteront un RIB')
+    expect(avisDuChangement(combinaison('change|client|propose|inchange'), 'banque', true).factures)
+      .toBe('Le RIB confirmé d’avant reste en vigueur : c’est lui que tes factures porteront, à leur validation, jusqu’à la confirmation de ton cabinet.')
+    expect(avisDuChangement(combinaison('confirme|inconnu|confirme|pose'), 'cabinet', true).factures)
+      .toBe('Aucun RIB n’était confirmé avant lui : les factures porteront celui-ci, à leur validation.')
+    for (const cle of COMBINAISONS_DU_CHANGEMENT) for (const d of DESTINATAIRES) {
+      expect(avisDuChangement(combinaison(cle), d), `${cle} ${d}`).toEqual(avisDuChangement(combinaison(cle), d, MENTIONS_FIGEES_EXPORTEES))
+    }
   })
 
   it('le conseil : au client, toujours, de prévenir son cabinet — « Ventes » sait où lire le détail ; au cabinet, où lire qui a retiré', () => {
@@ -555,14 +570,16 @@ describe('ce que l’avis dit à chacun', () => {
       'Le RIB de tes factures ne change pas : c’était déjà lui.'],
   }
 
-  it.each(COMBINAISONS_DU_CHANGEMENT.map((c) => [c]))('%s : les mots du cabinet et ceux du client, au caractère près', (cle) => {
-    const cabinet = avisDuChangement(combinaison(cle), 'cabinet')
-    expect([cabinet.phrase, cabinet.factures]).toEqual(AU_CABINET[cle])
-    const banque = avisDuChangement(combinaison(cle), 'banque')
-    expect([banque.phrase, banque.factures]).toEqual(AU_CLIENT[cle])
+  // Les deux états du drapeau : « quand elles porteront un RIB » avant l'étape A7b, « à leur validation » depuis.
+  it.each(COMBINAISONS_DU_CHANGEMENT.flatMap((c) => [[c, false], [c, true]] as const))('%s (figées : %s) : les mots du cabinet et ceux du client, au caractère près', (cle, figees) => {
+    const attendu = (t: string[]) => t.map((x) => x.split(Q).join(quandLesFacturesLePortent(figees)))
+    const cabinet = avisDuChangement(combinaison(cle), 'cabinet', figees)
+    expect([cabinet.phrase, cabinet.factures]).toEqual(attendu(AU_CABINET[cle]))
+    const banque = avisDuChangement(combinaison(cle), 'banque', figees)
+    expect([banque.phrase, banque.factures]).toEqual(attendu(AU_CLIENT[cle]))
     // Le client « Ventes » lit les mêmes mots ; son conseil seul diffère (il sait où lire le détail).
-    const ventes = avisDuChangement(combinaison(cle), 'ventes')
-    expect([ventes.phrase, ventes.factures]).toEqual(AU_CLIENT[cle])
+    const ventes = avisDuChangement(combinaison(cle), 'ventes', figees)
+    expect([ventes.phrase, ventes.factures]).toEqual(attendu(AU_CLIENT[cle]))
   })
 
   it('les deux tables couvrent les quinze combinaisons, ni plus ni moins', () => {

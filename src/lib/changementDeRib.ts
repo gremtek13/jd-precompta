@@ -1,6 +1,7 @@
 import { estUnJourCivil } from './adressesReception'
 import { ajouterJours, formatDate } from './format'
 import { CONSEIL_VERIFICATION_RIB } from './parametresFacturationVue'
+import { MENTIONS_FIGEES_EXPORTEES } from './mentionsFigees'
 
 // LE DERNIER CHANGEMENT DU RIB DES FACTURES D'UN DOSSIER (espace client, étape A5b3a ; conception : HISTORIQUE.md, « LA
 // FRAUDE AU FAUX RIB » ; décision du cabinet du 16/10/2026, A5-Q2). Un module PUR — il ne lit rien en base, n'appelle
@@ -120,9 +121,10 @@ export function lireLeChangementDeRib(rendu: unknown): DernierChangementLu | nul
 // Trois lecteurs : le CABINET (vouvoyé, comme la vue des paramètres le vouvoie), le client qui porte « Ventes » (il lit
 // aussi la vue « Paramètres » de « Mes ventes »), le client qui ne porte que « Banque » (il n'a pas d'autre écran des
 // paramètres). Le client est tutoyé, et aucun mot n'est celui du cabinet (src/lib/espaceVentes.ts, `MOTS_DU_CABINET`) :
-// jamais « le client » pour lui — l'auteur se dit « un accès client de ton dossier », jamais la personne. Aucune facture
-// n'imprime encore de RIB (étape A7) : ce que les factures « porteront » se dit au futur, « quand elles porteront un RIB »,
-// comme la vue des paramètres le dit. Un client qui porte les deux cases lit l'avis « Ventes ».
+// jamais « le client » pour lui — l'auteur se dit « un accès client de ton dossier », jamais la personne. Depuis l'étape A7b
+// (`MENTIONS_FIGEES_EXPORTEES`), une facture fige le RIB confirmé en vigueur à sa validation et l'imprime : ce que les
+// factures « porteront » se dit « à leur validation » ; drapeau baissé, « quand elles porteront un RIB », comme la vue des
+// paramètres le disait. Un client qui porte les deux cases lit l'avis « Ventes ».
 export type DestinataireDuChangement = 'cabinet' | 'ventes' | 'banque'
 
 /** L'avis : ce qui a changé, ce que les factures porteront, et ce qu'il faut faire. */
@@ -132,7 +134,10 @@ export interface AvisDuChangement {
   conseil: string | null
 }
 
-const QUAND = 'quand elles porteront un RIB'
+/** Quand les factures portent le RIB en vigueur : à leur validation depuis l'étape A7b, au futur avant elle. */
+export function quandLesFacturesLePortent(figees: boolean): string {
+  return figees ? 'à leur validation' : 'quand elles porteront un RIB'
+}
 
 function phraseDuCabinet(c: ChangementDeRib, j: string): string {
   switch (c.geste) {
@@ -157,7 +162,7 @@ function phraseDuCabinet(c: ChangementDeRib, j: string): string {
   }
 }
 
-function facturesDuCabinet(c: ChangementDeRib): string {
+function facturesDuCabinet(c: ChangementDeRib, QUAND: string): string {
   switch (c.ribEnVigueur) {
     case 'pose':
       return `Aucun RIB n’était confirmé avant lui : les factures porteront celui-ci, ${QUAND}.`
@@ -200,7 +205,7 @@ function phraseDuClient(c: ChangementDeRib, j: string): string {
   }
 }
 
-function facturesDuClient(c: ChangementDeRib): string {
+function facturesDuClient(c: ChangementDeRib, QUAND: string): string {
   switch (c.ribEnVigueur) {
     case 'pose':
       return `Aucun RIB n’était confirmé avant lui : tes factures porteront celui-ci, ${QUAND}.`
@@ -231,18 +236,21 @@ export const CONSEIL_D_UN_RETRAIT = 'L’historique des paramètres (Factures �
  * de la confirmation d'un RIB (`CONSEIL_VERIFICATION_RIB`, la même phrase que la vue des paramètres) devant un RIB proposé ;
  * au client, toujours, de prévenir son cabinet s'il n'attendait pas ce changement.
  */
-export function avisDuChangement(c: ChangementDeRib, destinataire: DestinataireDuChangement): AvisDuChangement {
+export function avisDuChangement(
+  c: ChangementDeRib, destinataire: DestinataireDuChangement, figees: boolean = MENTIONS_FIGEES_EXPORTEES,
+): AvisDuChangement {
   const j = formatDate(c.jour)
+  const quand = quandLesFacturesLePortent(figees)
   if (destinataire === 'cabinet') {
     return {
       phrase: phraseDuCabinet(c, j),
-      factures: facturesDuCabinet(c),
+      factures: facturesDuCabinet(c, quand),
       conseil: c.etat === 'propose' ? CONSEIL_VERIFICATION_RIB : c.geste === 'retire' ? CONSEIL_D_UN_RETRAIT : null,
     }
   }
   return {
     phrase: phraseDuClient(c, j),
-    factures: facturesDuClient(c),
+    factures: facturesDuClient(c, quand),
     conseil: destinataire === 'ventes' ? CONSEIL_AU_CLIENT_VENTES : CONSEIL_AU_CLIENT_BANQUE,
   }
 }

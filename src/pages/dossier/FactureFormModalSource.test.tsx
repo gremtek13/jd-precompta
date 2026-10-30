@@ -9,6 +9,14 @@ import {
 } from '../../lib/sourceDeLaVente'
 import type { EspaceVentes } from '../../lib/espaceVentes'
 
+// L'ÉTAT D'AVANT L'ÉTAPE A7B, éprouvé tant que son code existe (CLAUDE.md, « Tests ») : le drapeau `MENTIONS_FIGEES_EXPORTEES`
+// baissé, le formulaire n'envoie ni ne lit rien de neuf. Ce que le drapeau levé change se joue dans
+// FactureFormModalMentionsFigees.test.tsx.
+vi.mock('../../lib/mentionsFigees', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/mentionsFigees')>()), MENTIONS_FIGEES_EXPORTEES: false,
+}))
+
+
 // LA FACTURE D'UN DOSSIER BASCULÉ, À L'ÉCRAN (chantier EC-Q3, étape VF8c ; HISTORIQUE.md, « VF8, LA BASCULE : LA
 // CONCEPTION », § 3 (c)). Dans les deux espaces, le formulaire dit AVANT le clic ce que la validation d'une facture source
 // refuserait — la nature absente, la facture mixte, la frontière d'un exercice validé au cabinet —, sur la saisie telle

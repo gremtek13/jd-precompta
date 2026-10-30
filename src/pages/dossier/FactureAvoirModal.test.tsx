@@ -11,6 +11,14 @@ import type { EspaceVentes } from '../../lib/espaceVentes'
 import type { FactureEmise } from '../../lib/types'
 import { LIBELLE_MOTIF_AVOIR } from '../../lib/droitsAcces'
 
+// L'ÉTAT D'AVANT L'ÉTAPE A7B, éprouvé tant que son code existe (CLAUDE.md, « Tests ») : le drapeau `MENTIONS_FIGEES_EXPORTEES`
+// baissé, la fenêtre n'envoie ni ne lit rien de neuf. Ce que le drapeau levé change se joue dans
+// FactureAvoirModalMentionsFigees.test.tsx.
+vi.mock('../../lib/mentionsFigees', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/mentionsFigees')>()), MENTIONS_FIGEES_EXPORTEES: false,
+}))
+
+
 // L'AVOIR S'ENREGISTRE D'UN SEUL TENANT PAR LA BASE (ligne 28.5, étape c ; migration mentions_de_la_facture).
 //
 // L'écran le faisait en trois allers-retours — un numéro de la série « A » consommé par

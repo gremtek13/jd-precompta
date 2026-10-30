@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { TAILLE_MAX } from './bornesStockage'
 import { motsDuCabinet } from './espaceVentes'
+import { MENTIONS_FIGEES_EXPORTEES } from './mentionsFigees'
 import { cheminDuLogo, type LogoLu } from './logoDesFactures'
 import {
   GESTE_DU_REDEPOT, PHRASE_AUCUN_LOGO, PHRASE_LOGO_EN_LECTURE, PHRASE_LOGO_IDENTIQUE, PHRASE_LOGO_NON_LU, PHRASE_REDEPOT, TITRE_DU_LOGO,
@@ -51,18 +52,36 @@ function ecrite(remplacee: ParametresFacturation, parametres: object, id: string
 }
 
 describe('les phrases du bloc, et ce que chaque espace lit', () => {
-  it('le cabinet : qui voit et change le logo, et que rien ne l’imprime encore', () => {
-    expect(phraseDuLogo('cabinet')).toBe(
+  // Drapeau baissé (`MENTIONS_FIGEES_EXPORTEES`) : l'état d'avant l'étape A7b, éprouvé tant que son code existe.
+  it('le cabinet : qui voit et change le logo, et — drapeau baissé — que rien ne l’imprime encore', () => {
+    expect(phraseDuLogo('cabinet', false)).toBe(
       'Le client qui porte la case « Ventes » voit ce logo et peut le changer, comme vous. Les factures ne l’impriment pas encore : '
       + 'elles le feront avec une étape à venir.',
     )
   })
 
-  it('le client : son cabinet le voit et peut le changer, en tutoiement', () => {
-    expect(phraseDuLogo('client')).toBe(
+  it('le client : son cabinet le voit et peut le changer, en tutoiement (drapeau baissé)', () => {
+    expect(phraseDuLogo('client', false)).toBe(
       'Ton cabinet voit ce logo et peut le changer, comme toi. Tes factures ne l’impriment pas encore : elles le feront avec une '
       + 'étape à venir.',
     )
+  })
+
+  // Depuis l'étape A7b, une facture fige le logo en vigueur à sa validation et l'imprime ; par défaut, l'état du drapeau.
+  it('drapeau levé : la facture fige le logo et l’imprime, une facture validée garde le sien — sans « aucun » ni « rien »', () => {
+    expect(phraseDuLogo('cabinet', true)).toBe(
+      'Le client qui porte la case « Ventes » voit ce logo et peut le changer, comme vous. Une facture fige le logo en vigueur à sa '
+      + 'validation, et l’imprime ; une facture déjà validée garde le sien.',
+    )
+    expect(phraseDuLogo('client', true)).toBe(
+      'Ton cabinet voit ce logo et peut le changer, comme toi. Tes factures figent le logo en vigueur à leur validation, et '
+      + 'l’impriment ; une facture déjà validée garde le sien.',
+    )
+    for (const espace of ['cabinet', 'client'] as const) {
+      expect(phraseDuLogo(espace, true)).not.toMatch(/\baucun|\brien\b/)
+      expect(phraseDuLogo(espace)).toBe(phraseDuLogo(espace, MENTIONS_FIGEES_EXPORTEES))
+    }
+    expect(motsDuCabinet(phraseDuLogo('client', true))).toEqual([])
   })
 
   it('sans version : le logo est un champ d’une version, renseigner d’abord les paramètres', () => {
@@ -231,14 +250,20 @@ describe('ce que les gestes disent', () => {
     )
   })
 
-  it('la confirmation du retrait dit ce qui change, ce qui reste et ce que les factures ne font pas encore', () => {
-    const { titre, paragraphes } = confirmationDuRetraitDuLogo()
+  it('la confirmation du retrait dit ce qui change, ce qui reste et — drapeau baissé — ce que les factures ne font pas encore', () => {
+    const { titre, paragraphes } = confirmationDuRetraitDuLogo(false)
     expect(titre).toBe('Retirer le logo')
     expect(paragraphes).toEqual([
       'Une version nouvelle des paramètres est enregistrée, sans logo ; les autres champs ne changent pas.',
       'Le fichier reste dans l’espace du dossier : il n’est pas supprimé, et l’historique des paramètres garde la trace de ce retrait (« Logo retiré »).',
       'Aucune facture n’imprime encore ce logo : elles le feront avec une étape à venir.',
     ])
+  })
+
+  it('drapeau levé, la confirmation du retrait dit que les factures validées gardent leur logo ; par défaut, l’état du drapeau', () => {
+    expect(confirmationDuRetraitDuLogo(true).paragraphes[2])
+      .toBe('Les factures déjà validées gardent le logo qu’elles ont figé ; celles qui se valideront ensuite n’en imprimeront pas.')
+    expect(confirmationDuRetraitDuLogo()).toEqual(confirmationDuRetraitDuLogo(MENTIONS_FIGEES_EXPORTEES))
   })
 })
 

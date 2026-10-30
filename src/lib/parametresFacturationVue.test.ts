@@ -7,6 +7,7 @@ import {
 } from './parametresFacturationVue'
 import { CHAMPS_DES_PARAMETRES, PROPOSITIONS_PAR_DEFAUT, saisieQuiPart } from './parametresFacturation'
 import { motsDuCabinet } from './espaceVentes'
+import { MENTIONS_FIGEES_EXPORTEES } from './mentionsFigees'
 import type { AccesDuDossier } from './auteursVentes'
 import { versionParametres } from '../test/parametresFacturation'
 import type { ParametresFacturation } from './types'
@@ -313,10 +314,20 @@ describe('la confirmation d’un RIB', () => {
 })
 
 describe('les mots', () => {
-  it('la phrase d’en-tête : aucune facture ne les lit ni ne les imprime encore — jamais l’inverse', () => {
+  // Drapeau baissé (`MENTIONS_FIGEES_EXPORTEES`) : l'état d'avant l'étape A7b, éprouvé tant que son code existe.
+  it('drapeau baissé, la phrase d’en-tête : aucune facture ne les lit ni ne les imprime encore — jamais l’inverse', () => {
     for (const espace of ['cabinet', 'client'] as const) {
-      expect(phraseDEnTete(espace)).toMatch(/ne lit ni n’imprime encore ces paramètres : elles le feront avec une étape à venir/)
+      expect(phraseDEnTete(espace, false)).toMatch(/ne lit ni n’imprime encore ces paramètres : elles le feront avec une étape à venir/)
     }
+  })
+
+  it('drapeau levé, la phrase d’en-tête : la facture les fige à sa validation, le RIB confirmé seulement, et les imprime', () => {
+    for (const espace of ['cabinet', 'client'] as const) {
+      expect(phraseDEnTete(espace, true)).toMatch(/fige(nt)? ces paramètres à (sa|leur) validation — ceux en vigueur ce jour-là, le RIB confirmé seulement — et les imprim/)
+      expect(phraseDEnTete(espace, true)).toMatch(/une facture déjà validée ne change plus/)
+      expect(phraseDEnTete(espace)).toBe(phraseDEnTete(espace, MENTIONS_FIGEES_EXPORTEES))
+    }
+    expect(motsDuCabinet(phraseDEnTete('client', true))).toEqual([])
   })
 
   it('chez le client, aucun mot du cabinet ; le texte rompu non plus', () => {

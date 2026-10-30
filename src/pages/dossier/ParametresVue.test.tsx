@@ -225,9 +225,11 @@ describe.each(['cabinet', 'client'] as const)('Paramètres — avant et après l
     expect(screen.queryByRole('table', { name: 'Historique des paramètres' })).toBeNull()
   })
 
-  it('la phrase d’en-tête : aucune facture ne les lit ni ne les imprime encore', async () => {
+  // Depuis l'étape A7b (`MENTIONS_FIGEES_EXPORTEES`, levé) : la facture fige ces paramètres à sa validation et les imprime. L'état
+  // d'avant se joue dans parametresFacturationVue.test.ts.
+  it('la phrase d’en-tête : une facture fige ces paramètres à sa validation, et les imprime', async () => {
     monter(espace)
-    expect(await screen.findByText(/ne lit ni n’imprime encore ces paramètres : elles le feront avec une étape à venir/)).toBeTruthy()
+    expect(await screen.findByText(/ces paramètres à (sa|leur) validation — ceux en vigueur ce jour-là, le RIB confirmé seulement/)).toBeTruthy()
   })
 })
 

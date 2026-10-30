@@ -16,7 +16,7 @@ import { messageErreur } from '../../lib/messageErreur'
 import { ouvrirApercu } from '../../lib/apercu'
 import { chargerInformationsDossier, enregistrerInformationsDossier } from '../../lib/informationsDossier'
 import {
-  IDENTITE_NON_ENREGISTREE, PHRASE_IDENTITE_LEGALE, PHRASE_IDENTITE_LEGALE_NON_LUE,
+  IDENTITE_NON_ENREGISTREE, PHRASE_IDENTITE_LEGALE_NON_LUE, phraseIdentiteLegale,
   choixDeForme, colonnesEcrites, ecritureQuiPart, estEntrepreneurIndividuel, identiteDepuisLaReponse, identiteLegaleLue,
   phraseDuCapitalRemisANul, propositionDeDenomination, refusDeLIdentite, refusDeLaBase, saisieDepuisLaLigne,
   type IdentiteRendue, type SaisieIdentite,
@@ -308,7 +308,7 @@ export default function InformationsTab({
         et requis pour la transmettre via Super PDP.
       </p>
       <p className="muted" style={{ marginTop: -4 }}>
-        {identiteLue ? PHRASE_IDENTITE_LEGALE : PHRASE_IDENTITE_LEGALE_NON_LUE}
+        {identiteLue ? phraseIdentiteLegale() : PHRASE_IDENTITE_LEGALE_NON_LUE}
       </p>
       <form onSubmit={enregistrerIdentite}>
         <div className="field-row">
