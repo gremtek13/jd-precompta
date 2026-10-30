@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
 import type { ValeurAnnee } from '../../components/AnneeTabs'
 import type { ModeleComptable } from '../../lib/engagement'
@@ -235,6 +235,18 @@ vi.mock('../../lib/fec', async (vrai) => ({
   ...(await vrai<typeof import('../../lib/fec')>()),
   telechargerTexte: (nom: string, contenu: string) => { telecharge.fichiers.push({ nom, contenu }) },
 }))
+
+// LA CAISSE (ligne 26.6, étape C3b) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
+// réseau) tant qu'un cas n'en pose pas une autre — lue en entier, lue en partie —, pour jouer l'écran le drapeau levé.
+const caisseDuTest = vi.hoisted(() => ({ lecture: null as null | ((dossierId: string) => unknown) }))
+vi.mock('../../lib/caisseLecture', async (original) => {
+  const vrai = await original<typeof import('../../lib/caisseLecture')>()
+  return {
+    ...vrai,
+    lireLaCaisse: (dossierId: string) => (caisseDuTest.lecture ? Promise.resolve(caisseDuTest.lecture(dossierId)) : vrai.lireLaCaisse(dossierId)),
+  }
+})
+afterEach(() => { caisseDuTest.lecture = null })
 
 const CATEGORIE_ACHATS = {
   id: 'cat-achats', dossier_id: null, code: 'achats_fournisseurs', libelle: 'Achats',
@@ -3053,5 +3065,64 @@ describe('EcrituresTab — sous le plan du dossier', () => {
     const exploitant = await screen.findByRole('button', { name: /^108 – Compte de l’exploitant/ })
     await act(async () => { exploitant.click() })
     expect(faux.misesAJour.at(-1)).toEqual({ table: 'dossiers', valeurs: { compte_notes_de_frais: '108100' } })
+  })
+})
+
+// LA CAISSE DANS LE FEC (ligne 26.6, étape C3b), le drapeau levé : l'onglet lit la caisse avec le brouillon, et le FEC numérote
+// chaque opération au journal de son genre, sous la pièce de son jour. Pas encore revenue, lue en partie ou d'un autre
+// dossier, le FEC ne s'exporte pas, et le bouton dit pourquoi. Des jeux FICTIFS.
+describe('EcrituresTab — la caisse dans le FEC', () => {
+  const RECETTE = {
+    id: 'o1', dossier_id: 'dossier-de-test', genre: 'recette', date: '2025-06-12', montant: 200, categorie_id: 'cat-hono', taux_tva: null,
+    encaissements_du_jour: [], piece_id: null, origine: 'cabinet', remplace_id: null, cree_le: '2025-06-12T18:00:00Z', cree_par: 'u',
+    retire_le: null, retire_par: null,
+  }
+  const HONORAIRES = { ...CATEGORIE_ACHATS, id: 'cat-hono', code: 'honoraires', libelle: 'Honoraires', compte_comptable: '706000', poste_2035: 'Recettes' }
+  const LIBELLE = 'Recettes en espèces du 12/06/2025 — Honoraires'
+  const LIGNES = [
+    ecriture({ id: 'o1-0', piece_id: null, date: '2025-06-12', compte: '530000', sens: 'debit', montant: 200, libelle: LIBELLE, operation_caisse_id: 'o1' }),
+    ecriture({ id: 'o1-1', piece_id: null, date: '2025-06-12', compte: '706000', sens: 'credit', montant: 200, libelle: LIBELLE, operation_caisse_id: 'o1' }),
+  ]
+
+  it('une recette en espèces au journal des ventes, sous « Caisse du … », ni rompue ni hors du FEC', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, HONORAIRES], ecritures_brouillon: LIGNES })
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [RECETTE], complete: true, motif: null })
+    monter()
+    await screen.findAllByText('706000')
+    expect(screen.queryByText(/ne (sera|seront) pas dans ce FEC/)).toBeNull()
+    expect(screen.queryByText(/piste d'audit rompue|sans justificatif/i)).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    expect(telecharge.fichiers).toHaveLength(1)
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').slice(1).map((l) => l.split('\t'))
+    expect(lignes.map((r) => [r[0], r[2], r[4], r[8], r[9], r[10]])).toEqual([
+      ['VE', 'VE00001', '530000', 'Caisse du 12/06/2025', '20250612', LIBELLE],
+      ['VE', 'VE00001', '706000', 'Caisse du 12/06/2025', '20250612', LIBELLE],
+    ])
+  })
+
+  it('lue en partie, ou celle d’un autre dossier : le FEC ne s’exporte pas, et le bouton dit pourquoi', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, HONORAIRES], ecritures_brouillon: LIGNES })
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [], complete: false, motif: 'lecture interrompue' })
+    const { unmount } = monter()
+    await screen.findAllByText('706000')
+    const bouton = screen.getByRole('button', { name: /Exporter FEC/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toBe('Caisse non lue en entier (lecture interrompue) — ses opérations sortiraient du FEC sans qu’il puisse le dire.')
+    unmount()
+    poser({ categories: [CATEGORIE_ACHATS, HONORAIRES], ecritures_brouillon: LIGNES })
+    caisseDuTest.lecture = () => ({ dossierId: 'un-autre-dossier', enBase: true, lignes: [RECETTE], complete: true, motif: null })
+    monter()
+    await screen.findAllByText('706000')
+    expect(screen.getByRole('button', { name: /Exporter FEC/ }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: /Exporter FEC/ }).getAttribute('title')).toContain('la caisse du dossier n’est pas encore lue')
+  })
+
+  it('la caisse absente (le drapeau baissé) : une ligne qui cite une opération que rien ne lit reste hors du fichier, jamais devinée', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, HONORAIRES], ecritures_brouillon: LIGNES })
+    monter()
+    await screen.findAllByText('706000')
+    expect(screen.getByRole('button', { name: /Exporter FEC/ }).hasAttribute('disabled')).toBe(false)
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    expect(telecharge.fichiers[0].contenu.split('\r\n')).toHaveLength(1)
   })
 })

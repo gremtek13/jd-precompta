@@ -1860,6 +1860,48 @@ describe('ClotureTab — valider l’exercice', () => {
     expect(onNavigate).toHaveBeenCalledWith('ecritures')
   })
 
+  // LA CAISSE (ligne 26.6, étape C3b), le drapeau levé : ses écritures partent avec la numérotation, au journal de leur
+  // genre et sous la pièce de leur jour ; une opération dont l'écriture manque retient la validation, et la carte mène à
+  // Écritures. Des jeux FICTIFS.
+  const APPORT_2025 = {
+    id: 'oa', dossier_id: 'dossier-de-test', genre: 'apport' as const, date: '2025-02-01', montant: 50, categorie_id: null, taux_tva: null,
+    encaissements_du_jour: null, piece_id: null, origine: 'cabinet' as const, remplace_id: null, cree_le: '2025-02-01T18:00:00Z', cree_par: 'u',
+    retire_le: null, retire_par: null,
+  }
+  const LIGNES_DE_L_APPORT = [
+    { ...ECRITURE, id: 'oa-0', piece_id: null, date: '2025-02-01', compte: '530000', libelle: 'Apport en caisse de l\'exploitant', montant: 50, sens: 'debit', operation_caisse_id: 'oa' },
+    { ...ECRITURE, id: 'oa-1', piece_id: null, date: '2025-02-01', compte: '108000', libelle: 'Apport en caisse de l\'exploitant', montant: 50, sens: 'credit', operation_caisse_id: 'oa' },
+  ]
+
+  it('la caisse lue : ses écritures partent à la base au journal des opérations diverses, sous la pièce de leur jour', async () => {
+    poserTenu()
+    faux.parTable.ecritures_brouillon = [ECRITURE, BANQUE, ...LIGNES_DE_L_APPORT]
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [APPORT_2025], complete: true, motif: null })
+    accepter()
+    confirmer(true)
+    faux.apresValidation = VALIDE
+    monterAvec()
+    const c = await carte()
+    c.getByText(/Rien n.empêche de valider cet exercice/)
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    const params = faux.appels[0].params as { p_lignes: { id: string; journal: string; numero: number; piece_ref: string }[] }
+    expect(params.p_lignes.filter((l) => l.id.startsWith('oa-')).map((l) => [l.id, l.journal, l.numero, l.piece_ref])).toEqual([
+      ['oa-0', 'OD', 1, 'Caisse du 01/02/2025'], ['oa-1', 'OD', 1, 'Caisse du 01/02/2025'],
+    ])
+  })
+
+  it('une opération de caisse sans son écriture retient la validation, et la carte mène à Écritures', async () => {
+    poserTenu()
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [APPORT_2025], complete: true, motif: null })
+    const onNavigate = monterAvec()
+    const c = await carte()
+    const ligne = c.getByText(/opération\(s\) de caisse de l'exercice dont l'écriture manque/).closest('li') as HTMLElement
+    within(ligne).getByText(/le 01\/02\/2025, apport de 50,00\s€ \(écriture absente\)\./)
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => { fireEvent.click(within(ligne).getByRole('button', { name: 'Écritures' })) })
+    expect(onNavigate).toHaveBeenCalledWith('ecritures')
+  })
+
   it('valide un exercice tenu : la numérotation du FEC et la 2035 affichée partent à la base, et l’exercice se relit validé', async () => {
     poserTenu()
     accepter()

@@ -27,6 +27,16 @@ const faux = vi.hoisted(() => ({
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
 }))
 
+// LA CAISSE (ligne 26.6, étape C3b) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
+// réseau) tant qu'un cas n'en pose pas une autre, pour jouer l'écran le drapeau levé.
+const caisseDuTest = vi.hoisted(() => ({ lecture: null as null | ((dossierId: string) => unknown) }))
+vi.mock('../../lib/caisseLecture', async (original) => {
+  const vrai = await original<typeof import('../../lib/caisseLecture')>()
+  return {
+    ...vrai,
+    lireLaCaisse: (dossierId: string) => (caisseDuTest.lecture ? Promise.resolve(caisseDuTest.lecture(dossierId)) : vrai.lireLaCaisse(dossierId)),
+  }
+})
 vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => [] }))
 vi.mock('../../lib/depot', () => ({ ouvrirJustificatif: async () => {} }))
 
@@ -177,7 +187,7 @@ function poser() {
 }
 
 beforeEach(poser)
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); caisseDuTest.lecture = null })
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
@@ -373,5 +383,46 @@ describe('un dossier qui n’a pas basculé : les lots comme hier', () => {
     await cliquer(within(volet()).getByRole('button', { name: 'Toujours ignorer ce type…' }), 1)
     await waitFor(() => expect([...mouvementsEcrits()].sort()).toEqual(['m-libre-regle', 'm-res-regle']))
     expect(alerte).not.toHaveBeenCalled()
+  })
+})
+
+// LE VERSEMENT D'ESPÈCES HORS DES LOTS (ligne 26.6, étape C3b ; conception, § 4 a), le drapeau levé : dans un dossier qui tient
+// une caisse, un crédit dont le libellé dit un versement d'espèces n'entre dans aucun lot — une règle « gamma » le rangerait en
+// recette, et la caisse a déjà compté ces espèces. La carte du lot le dit. La caisse absente, ou sans opération, les lots
+// comme hier. Des jeux FICTIFS.
+describe('un dossier qui tient une caisse : un versement d’espèces n’entre dans aucun lot', () => {
+  const VERSEMENT = mouvement({ id: 'm-vrst', date: '2026-06-08', montant: 300, libelle: 'VERSEMENT ESPECES GAMMA' })
+  const APPORT = {
+    id: 'oa', dossier_id: D, genre: 'apport', date: '2026-06-01', montant: 300, categorie_id: null, taux_tva: null,
+    encaissements_du_jour: null, piece_id: null, origine: 'cabinet', remplace_id: null, cree_le: '2026-06-01T18:00:00Z', cree_par: 'u',
+    retire_le: null, retire_par: null,
+  }
+  const avecLeVersement = () => { faux.parTable.lignes_bancaires = [...faux.parTable.lignes_bancaires, VERSEMENT as unknown as Record<string, unknown>] }
+
+  it('l’affectation par les règles l’écarte, et sa carte dit pourquoi', async () => {
+    avecLeVersement()
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [APPORT], complete: true, motif: null })
+    rendre(false)
+    const bouton = await lot('Affecter les 2')
+    const ecart = ecartDe('Affectation par les règles')
+    expect(texteDe(ecart.querySelector('summary'))).toBe(
+      'Affectation par les règles — 1 mouvement écarté : 1 a un libellé de versement d’espèces, à classer sur la caisse depuis sa fiche.',
+    )
+    expect(texteDe(ecart.querySelector('li'))).toContain('08/06/2026 — VERSEMENT ESPECES GAMMA — 300,00 € : son libellé dit un versement d’espèces')
+    await cliquer(bouton, 1)
+    await waitFor(() => expect([...affectes()].sort()).toEqual(['m-libre-regle', 'm-res-regle']))
+  })
+
+  it('NEUTRE : la caisse absente (le drapeau baissé), ou sans opération vivante — le lot le prend, comme hier', async () => {
+    for (const lecture of [null, (dossierId: string) => ({ dossierId, enBase: true, lignes: [{ ...APPORT, retire_le: '2026-06-02T10:00:00Z' }], complete: true, motif: null })]) {
+      poser()
+      avecLeVersement()
+      caisseDuTest.lecture = lecture
+      const { unmount } = rendre(false)
+      await cliquer(await lot('Affecter les 3'), 1)
+      await waitFor(() => expect([...affectes()].sort()).toEqual(['m-libre-regle', 'm-res-regle', 'm-vrst']))
+      expect(screen.queryByText(/versement d’espèces/)).toBeNull()
+      unmount()
+    }
   })
 })
