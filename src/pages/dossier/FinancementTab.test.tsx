@@ -17,6 +17,18 @@ import { ajouterMois, premierJourDuMoisCourant } from '../../lib/format'
 // Aucun test de `src/lib` ne garde ce que la MODALE passe comme période : le même écran appelle la
 // même fonction sur une année civile complète pour préremplir le prévisionnel, donc les deux usages
 // coexistent et rien n'empêche l'un de prendre les bornes de l'autre.
+// LA CAISSE (ligne 26.6, étape C3a) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
+// réseau) tant qu'un cas n'en pose pas une autre — lue en entier, lue en partie —, pour jouer l'écran le drapeau levé.
+const caisseDuTest = vi.hoisted(() => ({ lecture: null as null | ((dossierId: string) => unknown) }))
+vi.mock('../../lib/caisseLecture', async (original) => {
+  const vrai = await original<typeof import('../../lib/caisseLecture')>()
+  return {
+    ...vrai,
+    lireLaCaisse: (dossierId: string) => (caisseDuTest.lecture ? Promise.resolve(caisseDuTest.lecture(dossierId)) : vrai.lireLaCaisse(dossierId)),
+  }
+})
+afterEach(() => { caisseDuTest.lecture = null })
+
 const faux = vi.hoisted(() => ({
   pieces: [] as unknown[],
   categories: [] as unknown[],
@@ -1472,5 +1484,46 @@ describe('FinancementTab — le verrou de création d’un emprunt', () => {
     expect(screen.getByRole('heading', { name: 'Nouvel emprunt' })).toBeTruthy()
     await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
     expect(faux.creations).toHaveLength(2)
+  })
+})
+
+const OPERATION_AOUT_2026 = { id: 'o', dossier_id: 'd', genre: 'recette' as const, date: '2026-08-14', montant: 600, categorie_id: 'cat-hono', taux_tva: null, encaissements_du_jour: [], piece_id: null, origine: 'cabinet' as const, remplace_id: null, cree_le: '2026-08-14T18:00:00Z', cree_par: 'u', retire_le: null, retire_par: null }
+
+
+// LA CAISSE DANS FINANCEMENT (ligne 26.6, étape C3a), le drapeau levé : ses recettes en espèces entrent dans le rythme des
+// encaissements du plan de trésorerie ; lue en partie, ni situation, ni plan, ni ratios — leurs « Générer » restent grisés,
+// et l'écran le dit — ; le prévisionnel se saisit à la main.
+describe('FinancementTab — les recettes de caisse', () => {
+  const generer = () => screen.getAllByRole('button', { name: 'Générer' }) as HTMLButtonElement[]
+  function poserVide() {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-09T10:00:00Z'))
+    faux.pieces = []
+    faux.categories = [{
+      id: 'cat-hono', dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 2, compte_comptable: '706000',
+      poste_2035: 'Recettes encaissées y compris les remboursements de frais',
+    }]
+    faux.immobilisations = []
+    faux.ecritures = []
+    faux.emprunts = []
+  }
+
+  it('compte les espèces reçues dans le rythme des encaissements, et le dit', async () => {
+    poserVide()
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [OPERATION_AOUT_2026], complete: true, motif: null })
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    await waitFor(() => expect(generer().every((b) => !b.disabled)).toBe(true))
+    fireEvent.click(generer()[1])
+    // 600 € reçus en août, sur six mois : 100 € par mois.
+    expect(screen.getByText(/100,00\s€ d'encaissements/)).toBeTruthy()
+    expect(screen.getByText(/Les recettes en espèces de la caisse y entrent/)).toBeTruthy()
+  })
+
+  it('une caisse lue en partie : la situation, le plan et les ratios ne se génèrent pas, et l’écran le dit', async () => {
+    poserVide()
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [], complete: false, motif: 'lecture interrompue' })
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    await screen.findByText(/La caisse du dossier n.a pas pu être lue en entier \(lecture interrompue\)/)
+    expect(generer().map((b) => b.disabled)).toEqual([true, true, true, false])
   })
 })

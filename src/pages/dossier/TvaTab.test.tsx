@@ -21,6 +21,18 @@ import { encaissementVendu, factureVendue, ligneVendue } from '../../test/ventes
 // refuse de l'enregistrer sur une lecture partielle ou quand la base le refuserait, saisit à la main une période
 // antérieure à l'ouverture, dit ce qui reste à payer, et écrit le régime du dossier en annulant ce qu'il a affiché
 // si la base refuse.
+// LA CAISSE (ligne 26.6, étape C3a) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
+// réseau) tant qu'un cas n'en pose pas une autre — lue en entier, lue en partie —, pour jouer l'écran le drapeau levé.
+const caisseDuTest = vi.hoisted(() => ({ lecture: null as null | ((dossierId: string) => unknown) }))
+vi.mock('../../lib/caisseLecture', async (original) => {
+  const vrai = await original<typeof import('../../lib/caisseLecture')>()
+  return {
+    ...vrai,
+    lireLaCaisse: (dossierId: string) => (caisseDuTest.lecture ? Promise.resolve(caisseDuTest.lecture(dossierId)) : vrai.lireLaCaisse(dossierId)),
+  }
+})
+afterEach(() => { caisseDuTest.lecture = null })
+
 const faux = vi.hoisted(() => ({
   tables: {} as Record<string, unknown[]>,
   // Tables dont la lecture s'arrête avant le compte annoncé : `lireTout` la déclare incomplète.
@@ -1277,5 +1289,34 @@ describe('TvaTab — les ventes facturées', () => {
     // Facturée en mars sur le régime de l'encaissement, encaissée en avril : rien au premier trimestre.
     expect(within(ligneDe('Taux normal 20 %')).getByText(MONTANT('1 000,00 €'))).toBeTruthy()
     expect(screen.queryByText(/vente\(s\) facturée\(s\) retenues/)).toBeNull()
+  })
+})
+
+const OPERATION_T1_2027 = { id: 'o', dossier_id: 'd', genre: 'recette' as const, date: '2027-03-12', montant: 120, categorie_id: 'c-recettes', taux_tva: 20, encaissements_du_jour: [], piece_id: null, origine: 'cabinet' as const, remplace_id: null, cree_le: '2027-03-12T18:00:00Z', cree_par: 'u', retire_le: null, retire_par: null }
+
+
+// LA CAISSE DANS LA CA3 (ligne 26.6, étape C3a), le drapeau levé : une recette en espèces à sa date et à son taux, comme une
+// recette du relevé ; lue en partie, ni CA3, ni enregistrement, et l'onglet le dit.
+describe('TvaTab — les recettes de caisse', () => {
+  it('compte une recette en espèces à son taux, et la montre', async () => {
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [OPERATION_T1_2027], complete: true, motif: null })
+    await afficher()
+    // 1 000 € de la vente facturée, 120 € d'espèces à 20 % : 1 100 € de base, 220 € de taxe.
+    const l08 = ligneDe('Taux normal 20 %')
+    expect(within(l08).getByText(MONTANT('1 100,00 €'))).toBeTruthy()
+    expect(within(l08).getByText(MONTANT('220,00 €'))).toBeTruthy()
+    fireEvent.click(screen.getByText('Les 1 recette(s) de caisse retenues, ligne par ligne'))
+    const ligne = ligneDe('Recettes en espèces du 12/03/2027 — Ventes / prestations')
+    expect(within(ligne).getByText(MONTANT('100,00 €'))).toBeTruthy()
+    expect(within(ligne).getByText(MONTANT('20,00 €'))).toBeTruthy()
+  })
+
+  it('une caisse lue en partie : ni CA3 ni enregistrement, et l’onglet le dit', async () => {
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [], complete: false, motif: 'lecture interrompue' })
+    await afficher()
+    expect(screen.getByText(/La caisse du dossier n.a pas pu être lue en entier \(lecture interrompue\)/)).toBeTruthy()
+    expect(screen.getByText(/La CA3 ne se calcule pas sans la caisse du dossier/)).toBeTruthy()
+    expect(screen.queryByText('CA3 — 1er trimestre 2027')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Enregistrer la déclaration' })).toBeNull()
   })
 })

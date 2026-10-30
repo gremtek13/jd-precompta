@@ -36,6 +36,14 @@ const faux = vi.hoisted(() => ({
   appels: [] as { nom: string; args: unknown }[],
 }))
 
+// LA CAISSE (ligne 26.6, étape C3a) : son drapeau, baissé comme dans ce lot sauf dans le bloc qui le lève.
+const drapeauCaisse = vi.hoisted(() => ({ leve: false }))
+vi.mock('../lib/caisse', async (original) => {
+  const vrai = await original<typeof import('../lib/caisse')>()
+  return { ...vrai, get CAISSE_EXPORTEE() { return drapeauCaisse.leve } }
+})
+afterEach(() => { drapeauCaisse.leve = false })
+
 vi.mock('../lib/simulationVentesFacturees', async (original) => {
   const vrai = await original<typeof import('../lib/simulationVentesFacturees')>()
   return { ...vrai, get SIMULATION_VENTES_FACTUREES_EXPORTEE() { return faux.drapeau } }
@@ -704,5 +712,38 @@ describe('ClientSimulation — les ventes facturées, le drapeau levé (VF8e)', 
     espion.mockRestore()
     expect(tables.filter((t) => ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux'].includes(t))).toEqual([])
     expect(faux.appels.map((a) => a.nom).sort()).toEqual(['droits_sur_le_dossier', 'ventes_facturees_de_la_simulation'])
+  })
+})
+
+
+// LA CAISSE, LE DRAPEAU LEVÉ (ligne 26.6, étape C3a) : la session du client ne la lit pas — aucune table de la caisse n'est
+// demandée —, la projection est celle d'hier, et la simulation dit qu'elle ne compte pas les recettes en espèces, pour un
+// dossier en trésorerie, le seul qui en tienne une. Le drapeau baissé, la phrase se tait (tous les cas ci-dessus).
+describe('ClientSimulation — la caisse, le drapeau levé', () => {
+  const PHRASE = 'Cette simulation ne compte pas tes recettes en espèces : ta caisse est tenue par ton cabinet, et ta session ne la lit pas.'
+
+  it('dit qu’elle ne compte pas les espèces, sans lire la caisse ni changer un chiffre', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({ recettes: [recette()] })
+    await monter()
+    const avant = valeur('CA encaissé à date')
+    expect(screen.queryByText(PHRASE)).toBeNull()
+    cleanup()
+    drapeauCaisse.leve = true
+    poser({ recettes: [recette()] })
+    await monter()
+    expect(screen.getByText(PHRASE)).toBeTruthy()
+    expect(valeur('CA encaissé à date')).toBe(avant)
+    expect(Object.keys(faux.parTable)).not.toContain('operations_caisse')
+  })
+
+  it('en engagement, elle se tait : la base n’y tient pas de caisse', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    drapeauCaisse.leve = true
+    poser({ recettes: [recette()], modeComptable: 'engagement' })
+    await monter()
+    expect(screen.queryByText(PHRASE)).toBeNull()
   })
 })
