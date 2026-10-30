@@ -42640,3 +42640,29 @@ nomme déjà comme sa pièce, mais `points_a_traiter` (`analyserEcritures`, `pai
 paiement : une pièce payée par la caisse s'y dirait « en attente de rapprochement » tant que C9 n'a pas recopié l'union
 discriminée dans le bloc. Et le client « Caisse » (C10 à C12) ne change rien à ce que l'assistant dit : il ne sert que le
 cabinet.
+
+### 30/10/2026 — LA CAISSE : L'ASSISTANT EN LIGNE (C5, LIGNE 26.6)
+
+(La session, après la fusion de « LA CAISSE : L'ASSISTANT (C5, LIGNE 26.6) ». En production : `agent-comptable` version
+50, `verify_jwt` faux, `ezbr_sha256` `344504c9…`. Au dépôt : CLAUDE.md. Le modèle n'a pas été appelé.)
+
+**MESURÉ AVANT D'ÉCRASER.** La v49 en ligne n'avait pas changé depuis son déploiement (version 49, `ezbr_sha256`
+`e394873c…`, la ligne qui importe le commit `66eb5c8`). Le fichier servi par GitHub au commit de `main` qui porte C5,
+`d7178376494c4610f3f944bebaa28d92dde9e431`, est celui du dépôt, octet pour octet : 4 205 lignes, 306 056 octets, md5
+`c831c046…`, en `text/plain; charset=utf-8`. En base, une seule clé étrangère relie `ecritures_brouillon` à
+`operations_caisse`, dans un sens comme dans l'autre : l'embarquement `operations_caisse(genre, date, montant)` que lit
+`lister_ecritures` est sans ambiguïté, et les déclencheurs qui rechargent le schéma de PostgREST après une migration
+(`pgrst_ddl_watch`, `pgrst_drop_watch`) sont actifs.
+
+**EN LIGNE.** La même ligne d'import, à ce commit, par `deploy_edge_function`, `verify_jwt` faux : version 50,
+`ezbr_sha256` `344504c9…`. Sans session, un POST rend 401 « Non authentifié. » et un GET 405. `allerretour.py` : « la
+copie déployée importe supabase/functions/agent-comptable/index.ts au commit d717837, identique au dépôt (4205 lignes) ;
+rien n'a été recopié ».
+
+**L'EMBARQUEMENT, CONTRE LE POSTGREST RÉEL, SANS LE MODÈLE.** Une lecture anonyme de `ecritures_brouillon` — la clé
+publique que sert le site, aucune session — avec l'embarquement que lit `lister_ecritures`,
+`operations_caisse(genre,date,montant)` : 200 et aucune ligne (la RLS les tait toutes, mais PostgREST a résolu la
+relation). Le témoin, un embarquement vers une table qui n'existe pas, rend 400 PGRST200 et propose
+`operations_caisse` : la relation est dans le cache du schéma. Ce qui reste derrière une session et le modèle — la ligne
+recomposée — se lira au premier appel de `lister_ecritures` par le cabinet. Revenir à la v49 : la même ligne au commit
+`66eb5c86a486d506ccc21621ac62e65c274e738f`.
