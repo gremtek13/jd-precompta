@@ -62,7 +62,7 @@ const ESPECES = (id: string, jour: string, montant: number, facture = 'f1', annu
 // 30 € d'espèces d'une facture source le 10, un versement en banque de 120 € le 5 ; et une recette retirée, qui ne compte pas.
 function mars(): DonneesDeLaCaisse {
   return donnees({
-    ouvertures: [{ id: 'a1', dossier_id: 'd1', date: '2026-01-01', compte: CAISSE, compte_origine: '530', libelle: 'Caisse', sens: 'debit', montant: 50, source_nom: 'b.csv', source_empreinte: 'x', created_at: '2026-01-01T00:00:00Z' }],
+    ouvertures: [{ id: 'a1', dossier_id: 'd1', date: '2026-01-01', compte: CAISSE, compte_origine: '530', libelle: 'Caisse', sens: 'debit', montant: 50, source_nom: 'b.csv', source_empreinte: 'x', created_at: '2026-01-01T00:00:00Z', compte_lib: null, ecriture_lib: null }],
     operations: [
       operation({ id: 'o1', genre: 'apport', date: '2026-03-01', montant: 100 }),
       operation({ id: 'o2', genre: 'recette', date: '2026-03-03', montant: 85, categorie_id: HONORAIRES.id, encaissements_du_jour: [] }),
