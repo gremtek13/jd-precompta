@@ -42944,3 +42944,85 @@ l'avis d'un changement de RIB (« à leur validation » au lieu de « quand elle
   des particuliers.*
 
 **CE QUI RESTE.** A7c, le CII et ses copies, après le MVP ; P4, l'impression du mandataire ; les trois questions.
+
+### 30/10/2026 — LA CAISSE : LE RESSERREMENT EN PRODUCTION (C6, LIGNE 26.6)
+
+(La session, sur sa branche, après « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) (PRÉPARÉE, PAS APPLIQUÉE) » et la
+fusion de la demande #246. Modifiés : la migration, de `supabase/preparees/` à l'export sous sa version ;
+`supabase/schema/README.md` ; les commentaires qui la disaient préparée (`lib/encaissementsFactures.ts`,
+`EncaissementsFactureModal.tsx` et cinq tests) ; CLAUDE.md. Aucun essai, aucune Edge Function.)
+
+**CE QUI EST EN BASE.** Sur l'accord du cabinet (la fiche « C6-migration » de la page des arbitrages : « Oui,
+l'appliquer »), `especes_sans_mouvement` a été appliquée par l'outil, sous la version `20261030224203` : sa ligne
+d'historique rend `40e539ff4eb5da4062fd70c89a7e503a`, l'empreinte du fichier, et sa garde de tête a trouvé le corps
+qu'elle exige (`16af5858…`). 164 migrations. La garde des encaissements rend `31fdfcc86b476669612b459555e94f13`, le
+corps de la réplique de l'étape. Relu après : aucun encaissement en espèces n'est en base, aucun ne cite donc un crédit.
+Depuis, un encaissement en espèces qui cite un crédit du relevé se refuse en 23514, à l'insertion comme au rattachement,
+de toute facture et sous toute session, la restauration exceptée ; l'écran ne l'offrait déjà plus (la demande #246).
+
+**LES CONTRÔLES, relus en production.** `signature.sql` : la seule famille « fonctions » change, 217 `7372ffd2…` puis
+`3800368f333f960c6b366acc8a666531`, les huit autres inchangées (« colonnes » 911 `13d1263c…`, « contraintes » 710
+`ce4cd645…`, « déclencheurs » 82 `86c12843…`, « droits des fonctions » 217 `8ea236a6…`, « droits des tables » 82
+`36d97923…`, « index » 244 `9704c175…`, « policies » 161 `6e6e0706…`, « rls » 82 `5fb5dc41…`) — les valeurs de la
+réplique de l'étape munie de la migration. L'export : la dérive, 164 fichiers et 164 migrations,
+`3a31b7307c5cbe1f33722786cf1ec7c2` des deux côtés ; le socle inchangé, 81 instructions, `5d636a96…` ; l'inventaire
+inchangé, 2 284 objets, `efbc0207…` — la garde change sous son nom.
+
+**CE QUI N'EST PAS REJOUÉ EN PRODUCTION.** `caisse.sql` écrit et retire des lignes, que l'outil retient (CLAUDE.md,
+« Structure importante du projet ») : ses étapes 170 à 179 se sont jouées sur la réplique de l'étape munie de la
+migration (372 lignes, aucune faute), avec `rls.sql` entier, identique avant et après, et la batterie des
+encaissements ; l'égalité des neuf familles avec cette réplique en tient lieu, « policies » et « rls » inchangées. Les
+trois cas « apres » de `outils/leurre/regles.json` (`mentionsFigees`, `ibanHorsDesParametres`, `caisse`) n'attendent
+plus rien, leurs migrations étant en production : ils se retirent au prochain passage du banc, qui les jouera sur la
+réplique de la production. L'en-tête de `caisse.sql`, daté du jour de son extension, dit encore la migration préparée :
+il changera avec l'essai, qu'un passage du banc accompagne.
+
+**CE QUI RESTE.** C6-Q1, sans réponse (« CE QUI RESTE, ET UNE QUESTION » de l'entrée de C6) ; la phrase de
+`GESTES_DE_LA_CAISSE` qui disait le rattachement d'un encaissement en espèces, que C6 a rendue sans objet.
+
+### 30/10/2026 — QUATRE RÉPONSES DU CABINET : LA MIGRATION DE C6 ET A7B-Q1 À Q3
+
+(Quatre fiches de la page des arbitrages, tranchées le 30/10/2026 au soir, toutes à la recommandation. Les questions →
+« LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) (PRÉPARÉE, PAS APPLIQUÉE) » pour la première, « LA FACTURE FIGE SES
+MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5) » pour les trois autres. La session écrit A7B-Q1 et A7B-Q2
+elle-même, sans agent : deux fonctions pures et le formulaire.)
+
+**C6-MIGRATION : « OUI, L'APPLIQUER ».** Appliquée le jour même → « LA CAISSE : LE RESSERREMENT EN PRODUCTION (C6, LIGNE
+26.6) ». C6-Q1 reste sans réponse.
+
+**A7B-Q1, (A) ET (C) : LE LIBELLÉ DE L'INSEE, RIEN SOUS LE NOM D'UN ENTREPRENEUR INDIVIDUEL.** `formeEtCapital`
+(`lib/mentionsFigeesVue.ts`) ne rend rien pour la catégorie 1000 : le nom d'un entrepreneur individuel porte déjà « EI »
+(C. com., art. R526-27), et il n'a pas de capital ; une société garde le libellé de l'INSEE et son capital. L'aperçu
+d'une facture figée et la confirmation de la validation, qui l'appellent tous deux, le suivent : la confirmation d'un
+entrepreneur individuel sans RCS ni autre mention ne nomme plus d'identité. La base fige toujours la forme
+(`forme_juridique`) : seul ce qui s'imprime change. La forme abrégée, (B), attend le bilan (33-Q6).
+
+**A7B-Q2, (B) : LA MENTION PROPOSÉE NE GARDE QUE LA TVA QUAND LE DOSSIER A SES PARAMÈTRES.** `mentionsLegalesParDefaut`
+(`lib/factures.ts`) prend un troisième paramètre, `parametresEnVigueur`, sans valeur par défaut : vrai, elle ne rend que
+la mention de TVA du statut (rien pour un redevable) ; faux, la phrase d'hier. Le formulaire (`FactureFormModal.tsx`,
+les deux espaces) ne garde la mention dans son état qu'une fois saisie : tant qu'on n'y a pas touché — une facture
+neuve, un brouillon qui n'en a pas —, elle se DÉDUIT de la lecture de ce que la validation fige (A7b), par
+`parametresEnVigueur` (`lib/mentionsFigeesVue.ts`) : vrai d'une lecture revenue entière qui porte une version en vigueur
+du dossier ; faux tant qu'on ne le sait pas (pas revenue, illisible, une suite rompue). La phrase d'hier se propose donc
+d'abord, puis la TVA seule quand la lecture revient. Une saisie, même vide, et la mention d'un brouillon rouvert restent
+les leurs ; drapeau `MENTIONS_FIGEES_EXPORTEES` baissé, rien n'est lu et la phrase d'hier se propose, comme avant A7b.
+Une facture validée garde la mention qu'elle porte. À un client particulier, une facture figée n'imprime ni pénalités ni
+indemnité (C. com., art. L441-9, I : entre professionnels) : la mention de TVA y reste seule, ce que la question disait.
+
+**A7B-Q3, (B) APRÈS LE MVP.** Le champ « Numéro de bon de commande (s'il en a établi un) » pour une entreprise attend la
+fin du MVP ; rien n'est écrit.
+
+**LES TESTS.** `mentionsFigeesVue.test.ts` : la forme d'une SAS et d'une SARL, et rien pour un entrepreneur individuel,
+avec ou sans capital ; une facture figée d'un entrepreneur individuel n'imprime que son RCS et ses autres mentions ;
+`parametresEnVigueur`, sept cas (une version, aucune, celles d'un autre dossier, pas revenue, illisible, une suite
+rompue, une suite). `factures.test.ts` : la mention, avec et sans paramètres, pour les cinq statuts.
+`FactureFormModalMentionsFigees.test.tsx`, aux deux espaces : la phrase d'hier pendant la lecture, puis la TVA seule, et
+c'est elle qui part ; un exonéré, sa mention seule ; sans paramètres, la phrase d'hier, qui part ; une mention saisie ou
+vidée avant le retour de la lecture reste la sienne ; un brouillon rouvert garde la sienne.
+
+**LES MUTATIONS**, dix, chacune jouée sur ces trois fichiers : neuf tuées — la forme d'un entrepreneur individuel
+imprimée, son capital seul imprimé, la phrase toujours ou jamais proposée, le formulaire qui ne lit pas les paramètres,
+la lecture qui remplace la saisie, le brouillon rouvert qui perd sa mention, une suite rompue ou une lecture illisible
+comptées comme des paramètres (ces deux-là n'ont mordu qu'une fois `parametresEnVigueur` éprouvé directement). Une
+survit, équivalente : la lecture d'un autre dossier, que le formulaire écarte par sa clé, ne compterait pas non plus
+sans elle, `versionCourante` ne gardant que les versions du dossier.
