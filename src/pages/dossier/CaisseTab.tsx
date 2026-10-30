@@ -83,7 +83,7 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
   // partir, le temps qu'elle revienne.
   const ecritureEnCours = useRef(false)
   const [enCours, setEnCours] = useState(false)
-  const formulaireRef = useRef<HTMLDivElement>(null)
+  const formulaireRef = useRef<HTMLFormElement>(null)
 
   const enTresorerie = modele.mode === 'tresorerie'
 
@@ -334,7 +334,11 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
         </div>
       </div>
 
-      <div className="card" ref={formulaireRef} style={{ marginBottom: 20 }}>
+      {/* Un vrai formulaire : « Entrée » dans un champ l'envoie, et son nom le distingue des gestes du journal. */}
+      <form
+        className="card" ref={formulaireRef} style={{ marginBottom: 20 }} aria-label="Saisie d’une opération"
+        onSubmit={(e) => { e.preventDefault(); void enregistrer() }}
+      >
         <strong>
           {remplace != null && donnees.operations.find((o) => o.id === remplace)
             ? `Remplacer ${nomDeLOperation(donnees.operations.find((o) => o.id === remplace)!, donnees.categories)}`
@@ -392,10 +396,9 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
         )}
         <div className="fiche-mouvement-boutons" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <button
-            type="button"
+            type="submit"
             className="btn btn-primary btn-sm"
             disabled={enCours || verdict === null || verdict.etat !== 'permis'}
-            onClick={enregistrer}
           >
             {enCours ? 'Écriture…' : remplace == null ? 'Enregistrer' : 'Remplacer'}
           </button>
@@ -405,7 +408,7 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
             </button>
           )}
         </div>
-      </div>
+      </form>
 
       <div className="card" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>

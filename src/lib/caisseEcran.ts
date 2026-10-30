@@ -102,8 +102,8 @@ export function soldeAuJour(etat: EtatDeLaCaisse, jour: string): number {
   return solde
 }
 
-/** Les centimes en euros pour l'écran : le signe moins typographique d'un solde négatif est celui de `formatMoney`. */
-export const euros = (centimes: number): string => formatMoney(centimes / 100)
+/** Les centimes en euros pour l'écran, le signe moins typographique d'un solde négatif comme la base l'écrit (« −160,00 € »). */
+export const euros = (centimes: number): string => formatMoney(centimes / 100).replace(/^-/, '−')
 
 // ── Le journal : la caisse jour par jour ──────────────────────────────────────────────────────────────────────────────
 
