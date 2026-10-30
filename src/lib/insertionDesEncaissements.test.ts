@@ -26,8 +26,9 @@ import { REFUS_CONTRE_PASSATION, REFUS_ENREGISTREMENT } from './encaissementsFac
 
 const MIGRATION = /\/\d{14}_insertion_des_encaissements\.sql$/
 const texteDeLaMigration = () => fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))?.texte ?? ''
-// La migration POSTÉRIEURE qui a repris la garde, et en porte désormais la dernière définition.
-const REPRISE_DEPUIS = /\/\d{14}_contre_passation_sur_mouvement_fige\.sql$/
+// La migration POSTÉRIEURE qui a repris la garde, et en porte désormais la dernière définition — puis, le jour où elle
+// entrera dans l'export, celle de la caisse (étape C6 : `especes_sans_mouvement`, préparée), qui la reprend à son tour.
+const REPRISE_DEPUIS = /\/\d{14}_(?:contre_passation_sur_mouvement_fige|especes_sans_mouvement)\.sql$/
 
 // Ce que cette migration a posé : la définition que son texte donne à la garde.
 function definitionPosee(): string {

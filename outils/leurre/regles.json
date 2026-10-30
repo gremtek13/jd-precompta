@@ -36,7 +36,7 @@
     "reportDesSoldes": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
     "mentionsFigees": {"famille": "apres", "raison": "sa migration (`mentions_figees`) est préparée, pas appliquée : la réplique qui la porte, donnée par --modele apres=…"},
     "ibanHorsDesParametres": {"famille": "apres", "raison": "sa migration (`iban_hors_des_parametres`) est préparée, pas appliquée : la réplique qui la porte"},
-    "caisse": {"famille": "apres", "raison": "sa migration (`caisse`, supabase/preparees/) est préparée, pas appliquée : la réplique qui la porte"},
+    "caisse": {"famille": "apres", "raison": "la migration de son étape C6 (`especes_sans_mouvement`, supabase/preparees/) est préparée, pas appliquée : la réplique qui la porte — sans elle, ses étapes de genre « …3 » attendent"},
     "devis": {"attendu": "impossible", "raison": "ses migrations (les devis, étape P5) ne sont pas appliquées : l'essai le dit (ESSAI_IMPOSSIBLE) et n'écrit rien ; le banc compare alors ce refus"}
   }
 }

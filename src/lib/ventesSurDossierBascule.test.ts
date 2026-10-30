@@ -279,8 +279,10 @@ describe('les essais qui cochent « Ventes »', () => {
   it('chacun bascule aussi un dossier — la liste, au nom près', () => {
     const essais = readdirSync(resolve(RACINE, 'supabase/essais')).filter((n) => /\.(sql|mjs|py)$/.test(n)).sort()
     const ecrivent = essais.filter((n) => ECRIT_VENTES.some((m) => m.test(lire(`supabase/essais/${n}`))))
+    // caisse.sql depuis l'étape C6 de la caisse : le client de l'essai porte « Ventes » et « Banque » sur S6, un dossier qu'il
+    // insère basculé.
     expect(ecrivent).toEqual([
-      'articles.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
+      'articles.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'caisse.sql', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
       'dossiersAuRibAConfirmer.sql', 'droitsAcces.sql', 'ecrituresVentesFacturees.sql', 'etatFactureElectronique.sql',
       'exemplairesDesFactures.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
       'mentionsFigees.sql', 'parametresFacturation.sql', 'piecesJointesEcartees.sql', 'rls.sql', 'simulationDesVentesFacturees.sql',

@@ -27,7 +27,9 @@ export interface EtapeDeLEssai {
   attendu: string
 }
 
-const GENRES = /\n {4}array\['((?:jeu|controle|fait|valeur|capture)2?)', /g
+// Les genres de l'essai, et leur suffixe : « 2 » pour une étape de la migration de l'étape C1b, « 3 » pour une de l'étape C6
+// (`especes_sans_mouvement`), « 3h » pour une que celle-ci remplace (ce que la base répondait sans elle).
+const GENRES = /\n {4}array\['((?:jeu|controle|fait|valeur|capture)(?:2|3h?)?)', /g
 
 /** Les littéraux SQL qui suivent, joints : `'a' || 'b'` rend `ab` ; l'apostrophe doublée rendue simple. */
 function litteraux(texte: string): string[] {
@@ -249,7 +251,13 @@ export function rejouerLEssai(essai: string, aujourdhui: string): Issue[] {
   for (const etape of etapesDeLEssai(essai)) {
     let sql = etape.sql
     for (const [cle, v] of ids) sql = sql.split(`{${cle}}`).join(v)
-    const genre = etape.genre.replace(/2$/, '')
+    // Une étape que la migration de l'étape C6 remplace (« …3h ») dit ce que la base répondait sans elle : ce banc rejoue
+    // la base d'après, et l'étape qui la remplace (« …3 »).
+    if (/3h$/.test(etape.genre)) {
+      issues.push({ genre: 'hors_module', etape, raison: 'remplacée par la migration de l’étape C6 (especes_sans_mouvement)' })
+      continue
+    }
+    const genre = etape.genre.replace(/[23]$/, '')
     const nommes = [...etat.dossiers.keys(), 'dossier-du-client'].filter((d) => sql.includes(d))
 
     if (genre === 'valeur') { issues.push({ genre: 'hors_module', etape, raison: 'une lecture : la base, pas le module' }); continue }
