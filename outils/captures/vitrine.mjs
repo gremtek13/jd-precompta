@@ -69,6 +69,14 @@ const VUES = [
   { nom: 'pc-proposition-sombre', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'dark', reduite: false, cellule: '18/08/2026', apres: 'Proposer une catégorie' },
   { nom: 'pc-proposition-1024', chemin: '#/dossiers/d1/pieces', l: 1024, h: 768, theme: 'light', reduite: false, cellule: '18/08/2026', apres: 'Proposer une catégorie' },
   { nom: 'mobile-proposition-clair', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: '18/08/2026', apres: 'Proposer une catégorie' },
+  // L'onglet Caisse et la fiche d'un versement d'espèces (ligne 26.6, étape C4) : `CAISSE=1`, le drapeau `CAISSE_EXPORTEE` levé dans
+  // la copie de travail — baissé, l'adresse retombe sur la Vue d'ensemble.
+  ...(process.env.CAISSE === '1' ? [
+    { nom: 'pc-caisse-clair', chemin: '#/dossiers/d1/caisse', l: 1440, h: 900, theme: 'light', reduite: false },
+    { nom: 'pc-caisse-sombre', chemin: '#/dossiers/d1/caisse', l: 1440, h: 900, theme: 'dark', reduite: false },
+    { nom: 'mobile-caisse-clair', chemin: '#/dossiers/d1/caisse', l: 390, h: 844, theme: 'light', reduite: false },
+    { nom: 'pc-caisse-versement', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'VERSEMENT ESPECES GUICHET' },
+  ] : []),
   // Le rapprochement d'un mouvement dans le panneau de droite : une pièce proposée (Papeterie Moderne,
   // validée), puis un mouvement déjà rapproché — ouvert après être passé sur « Tous ».
   { nom: 'pc-mouvement-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },

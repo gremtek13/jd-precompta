@@ -147,11 +147,13 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); drapeau.leve = false; faux.ca
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
-function rendre(ventesParLesFactures = false) {
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+
+function rendre(ventesParLesFactures = false, modele: ModeleComptable = TRESORERIE) {
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee="toutes" valides={[]}>
-        <BanqueTab dossierId={D} modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={ventesParLesFactures} statutTva="redevable" />
+        <BanqueTab dossierId={D} modele={modele} assujettiTva={false} ventesParLesFactures={ventesParLesFactures} statutTva="redevable" />
       </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,
@@ -313,6 +315,17 @@ describe('la caisse ou l’une de ses entrées pas lue en entier : la fiche ne c
     await ouvrir('VIR CLIENT DIVERS')
     await waitFor(() => expect(sans(volet().textContent)).toContain('La caisse n’est pas lue en entier (la caisse du dossier n’est pas encore lue)'))
     expect(boutonVersement()!.disabled).toBe(true)
+  })
+})
+
+describe('un dossier en comptabilité d’engagement : la caisse ne se tient pas, la fiche n’en dit rien', () => {
+  it('ni proposition de versement, ni solde, ni alerte sur un libellé de versement, même la caisse en base', async () => {
+    rendre(false, ENGAGEMENT)
+    const cellule = (await screen.findAllByText('VERSEMENT ESPECES GUICHET')).find((e) => e.closest('tr')?.classList.contains('clickable'))!
+    await act(async () => { (cellule.closest('tr') as HTMLElement).click() })
+    await within(volet()).findByRole('heading', { name: 'Sans justificatif' })
+    expect(boutonVersement()).toBeNull()
+    expect(sans(volet().textContent)).not.toMatch(/la caisse|Son libellé dit un versement/i)
   })
 })
 

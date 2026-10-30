@@ -524,7 +524,7 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
   it('caisse-negative : le jour et le solde, un point qui ne compte rien', () => {
     const P = operation({ id: 'p1', genre: 'prelevement', date: '2026-03-05', montant: 80 })
     const p = tous({ caisse: caisseLue([A, P]), ecritures: [...lignesDe(A), ...lignesDe(P)] }).find((x) => x.id === 'caisse-negative')!
-    expect([p.nb, p.sansNombre, p.severite]).toEqual([1, true, 'erreur'])
+    expect([p.nb, p.sansNombre, p.severite, p.cible, p.action]).toEqual([1, true, 'erreur', 'caisse', 'Voir la caisse'])
     expect(p.label.replace(/[\u00a0\u202f]/g, ' ')).toBe('La caisse est négative le 05/03/2026 (−30,00 €) — son solde est débiteur ou nul')
     expect(nb({ caisse: caisseLue([A, { ...P, montant: 50 }]) }, 'caisse-negative')).toBe(0)
   })
@@ -538,7 +538,7 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
     const especes = { id: 'e1', facture_id: 'f1', date_encaissement: '2026-03-12', montant: 30, moyen: 'especes', ligne_bancaire_id: null, annule_id: null, retire_le: null }
     const d = { caisse: caisseLue([R]), categories: [HONORAIRES], ecritures: lignesDe(R) }
     const p = tous({ ...d, ventesFacturees: ventes([especes]) }).find((x) => x.id === 'recettes-de-caisse-a-revoir')!
-    expect(p.nb).toBe(1)
+    expect([p.nb, p.cible, p.action]).toEqual([1, 'caisse', 'Voir la caisse'])
     expect(p.detail!.replace(/[\u00a0\u202f]/g, ' ')).toBe('le 12/03/2026, recette de 120,00 € (F2026-0012).')
     expect(nb({ ...d, ventesFacturees: ventes([]) }, 'recettes-de-caisse-a-revoir')).toBe(0)
     // Les ventes facturées lues en partie : ce point et la caisse négative se taisent, sous leur bandeau ; « à reprendre » reste.

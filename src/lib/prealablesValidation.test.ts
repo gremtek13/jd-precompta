@@ -1564,7 +1564,7 @@ describe('prealablesDeValidation — les ventes facturées d’un dossier bascul
       autres: { operationsDeCaisse: caisseLue([r]) },
     })
     const p = prealable(d(recette([])), 'recettes-de-caisse-a-revoir')
-    expect(p).toMatchObject({ nb: 1, bloquant: true })
+    expect(p).toMatchObject({ nb: 1, bloquant: true, cible: 'caisse' })
     expect(p!.detail).toMatch(/^le 20\/11\/2025, recette de 40,00\s€ \(F\d{4}-\d{4}\)\.$/)
     expect(ids(d(recette(['e1'])))).not.toContain('recettes-de-caisse-a-revoir')
   })
@@ -1822,7 +1822,7 @@ describe('prealablesDeValidation — la caisse (étape C3b)', () => {
   it('caisse-negative : défensif, le jour et le solde sous les mots de la base', () => {
     const P80 = { ...PRELEVEMENT, montant: 80 }
     const p = prealable(donnees({ ecritures: [E1, E2, ...lignesDeLaCaisse(APPORT), ...lignesDeLaCaisse(P80)], operationsDeCaisse: caisseLue([APPORT, P80]) }), 'caisse-negative')!
-    expect([p.nb, p.bloquant]).toEqual([null, true])
+    expect([p.nb, p.bloquant, p.cible]).toEqual([null, true, 'caisse'])
     expect(p.message.replace(/[\u00a0\u202f]/g, ' ')).toBe('La caisse est négative le 05/03/2025 (−30,00 €) : son solde est débiteur ou nul. Saisir les recettes '
       + 'en espèces qui manquent, ou retirer la sortie d\'espèces qui la vide, avant la validation.')
     // Négative l'exercice suivant seulement : celui-ci n'est pas retenu.
