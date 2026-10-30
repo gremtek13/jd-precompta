@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Layout from '../components/Layout'
 import DossierDetail from './DossierDetail'
 import { DOSSIER_FERME_PAR_LE_CABINET, POUR_OUVRIR_LE_DOSSIER } from '../lib/dossiersOuverts'
@@ -390,6 +390,24 @@ vi.mock('./dossier/BilanTab', () => ({
 // se lit pas sur un relevé) : un statut qui ne lui parviendrait pas laisserait passer l'affectation, que
 // seule la base refuserait alors.
 vi.mock('./dossier/BanqueTab', () => doubleTva('Banque'))
+// L'ONGLET CAISSE (ligne 26.6, étape C4) : doublé pour montrer ce qu'il REÇOIT de la page — le modèle comptable, le statut de TVA
+// du dossier, sa bascule des ventes — et la navigation. Et le drapeau de la caisse (`CAISSE_EXPORTEE`) joué par un accesseur : baissé
+// (par défaut), l'adresse /caisse n'est pas routable et la page tombe sur la Vue d'ensemble, comme pour toute valeur invalide.
+const drapeauDeLaCaisse = vi.hoisted(() => ({ leve: false }))
+vi.mock('../lib/caisse', async (original) => {
+  const vrai = await original<typeof import('../lib/caisse')>()
+  return { ...vrai, get CAISSE_EXPORTEE() { return drapeauDeLaCaisse.leve } }
+})
+vi.mock('./dossier/CaisseTab', () => ({
+  default: ({ dossierId, modele, assujettiTva, ventesParLesFactures, onNavigate }: {
+    dossierId: string; modele: { mode: string }; assujettiTva: boolean; ventesParLesFactures: boolean; onNavigate: (t: 'banque') => void
+  }) => (
+    <>
+      <p>Caisse — {dossierId} — {modele.mode} — TVA {assujettiTva ? 'assujetti' : 'exonéré'} — ventes {ventesParLesFactures ? 'facturées' : 'par les pièces'}</p>
+      <button onClick={() => onNavigate('banque')}>Aller à Banque</button>
+    </>
+  ),
+}))
 // L'onglet TVA lit le régime du dossier (périodicité, option pour les débits) et peut le changer :
 // doublé pour montrer ce qu'il REÇOIT et rendre un changement à la page, qui doit le faire voir.
 // Le STATUT de TVA s'y règle aussi (StatutTvaCard) : le double rend à la page ce que la base aurait écrit, le
@@ -1303,5 +1321,39 @@ describe('Page d’un dossier — un dossier que le cabinet n’ouvre pas au com
     await act(async () => { await o.promesse })
     expect(titre()).toBe('Bravo Santé')
     expect(screen.getByText('Vue d’ensemble du dossier')).toBeTruthy()
+  })
+})
+
+// L'ONGLET CAISSE N'EXISTE QUE LA CAISSE EN BASE (ligne 26.6, étape C4) : routable, offert par les deux navigations et affecté de
+// l'exercice partagé — l'adresse /dossiers/:id/caisse, sinon, retombe sur la Vue d'ensemble, et la navigation est celle d'hier.
+describe('Page d’un dossier — l’onglet Caisse', () => {
+  afterEach(() => { drapeauDeLaCaisse.leve = false })
+
+  it('baissé : l’adresse de l’onglet retombe sur la Vue d’ensemble, et aucune navigation ne l’offre', async () => {
+    await afficher('/dossiers/d1/caisse')
+    expect(screen.getByText('Vue d’ensemble du dossier')).toBeTruthy()
+    expect(screen.queryByText(/^Caisse — /)).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Caisse' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Caisse/ })).toBeNull()
+  })
+
+  it('levé : l’onglet se monte avec le modèle, le statut de TVA et la source des ventes du dossier affiché ; la barre latérale y mène', async () => {
+    drapeauDeLaCaisse.leve = true
+    await afficher('/dossiers/d1/caisse')
+    expect(screen.getByText('Caisse — d1 — tresorerie — TVA exonéré — ventes par les pièces')).toBeTruthy()
+    expect(screen.queryByText('Vue d’ensemble du dossier')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Caisse' }).getAttribute('href')).toBe('/dossiers/d1/caisse')
+    // La navigation de l'onglet mène aux autres : « Banque » (le versement d'espèces s'y classe).
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Aller à Banque' })) })
+    expect(screen.getByText('Banque — TVA exonéré')).toBeTruthy()
+  })
+
+  it('levé : l’exercice partagé s’affiche en tête de l’onglet, comme pour Banque', async () => {
+    drapeauDeLaCaisse.leve = true
+    await afficher('/dossiers/d1/caisse')
+    expect(screen.getByRole('tablist', { name: 'Exercice' })).toBeTruthy()
+    cleanup()
+    await afficher('/dossiers/d1/informations')
+    expect(screen.queryByRole('tablist', { name: 'Exercice' })).toBeNull()
   })
 })
