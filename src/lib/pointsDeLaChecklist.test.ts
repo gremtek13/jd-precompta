@@ -493,7 +493,7 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
   it('caisse-a-reprendre : l’écriture manque ; à jour, rien ; ce que la frontière fige, rien', () => {
     expect(nb({ caisse: caisseLue([A]), ecritures: lignesDe(A) }, 'caisse-a-reprendre')).toBe(0)
     const p = tous({ caisse: caisseLue([A]) }).find((x) => x.id === 'caisse-a-reprendre')!
-    expect([p.nb, p.cible, p.severite]).toEqual([1, 'ecritures', 'erreur'])
+    expect([p.nb, p.cible, p.severite]).toEqual([1, 'caisse', 'erreur'])
     expect(p.detail!.replace(/[\u00a0\u202f]/g, ' ')).toBe('le 02/03/2026, apport de 50,00 € (écriture absente).')
     expect(nb({ caisse: caisseLue([A]) }, 'caisse-a-reprendre', { ...CONTEXTE, frontiere: '2026-12-31' })).toBe(0)
   })

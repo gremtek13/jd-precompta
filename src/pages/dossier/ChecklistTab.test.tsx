@@ -3122,7 +3122,7 @@ describe('ChecklistTab — la caisse', () => {
   const POINT = /opération\(s\) de caisse dont l’écriture manque/
   const ANCRE = /non rapprochée\(s\)/
 
-  it('une opération sans son écriture : le point, son détail, et le bouton qui mène à Écritures', async () => {
+  it('une opération sans son écriture : le point, son détail, et le bouton qui mène à la caisse', async () => {
     poser({ lignes: [ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null, cotisation_id: null })] })
     caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, lignes: [APPORT], complete: true, motif: null })
     const allerA = vi.fn()
@@ -3130,8 +3130,8 @@ describe('ChecklistTab — la caisse', () => {
     const point = (await screen.findByText(POINT)).closest('.check-ligne') as HTMLElement
     expect(within(point).getByText(POINT).textContent).toMatch(/^1 /)
     within(point).getByText(/le 01\/02\/2026, apport de 50,00\s€ \(écriture absente\)\./)
-    await act(async () => { fireEvent.click(within(point).getByRole('button', { name: 'Voir les écritures' })) })
-    expect(allerA).toHaveBeenCalledWith('ecritures')
+    await act(async () => { fireEvent.click(within(point).getByRole('button', { name: 'Voir la caisse' })) })
+    expect(allerA).toHaveBeenCalledWith('caisse')
   })
 
   it('lue en partie : ses points se taisent, et le bandeau le dit', async () => {
