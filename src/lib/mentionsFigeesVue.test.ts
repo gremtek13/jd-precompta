@@ -75,6 +75,11 @@ describe('le jugement de la saisie, dans l’ordre de la base', () => {
     expect(jugementDesMentions(saisie({ lignes, lecture: null }))).toMatchObject({ retenue: null, mentions: null })
   })
 
+  it('la provenance AVANT un IBAN dans un texte : une ligne qui porte les deux dit la provenance', () => {
+    const lignes = [{ ...saisie().lignes[0], unite: 'XYZ', designation: `Virer au ${IBAN_ESSAI}` }]
+    expect(jugementDesMentions(saisie({ lignes })).refusDeLEnregistrement).toBe(modele(REFUS_DE_LA_PROVENANCE, 'unite').replace('%', '1'))
+  })
+
   it('un contact ou un article qui n’est pas du dossier : refusé ; une liste qui n’est pas lue entière : rien ne s’enregistre', () => {
     expect(jugementDesMentions(saisie({ facture: { ...saisie().facture, contact_id: 'inconnu' } })).refusDeLEnregistrement)
       .toBe(modele(REFUS_DE_LA_PROVENANCE, 'contact'))

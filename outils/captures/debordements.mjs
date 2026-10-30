@@ -499,6 +499,16 @@ const VISITES = [
       await page.getByRole('cell', { name: /Soins infirmiers à domicile/ }).waitFor({ timeout: 10000 })
     },
   },
+  // L'aperçu d'une facture qui a FIGÉ ses mentions (étape A7b) : son logo vérifié, l'identité de l'entrepreneur individuel et
+  // sa longue mention de l'Ordre, l'unité et la référence de chaque ligne, les conditions de paiement, le RIB, le pied de page.
+  {
+    dossier: 'd1', onglet: 'factures', nom: 'factures/apercu-figee', fenetre: FENETRE_FACTURE,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await boutonDeFacture(page, 'F2026-0015', 'Aperçu').click()
+      await page.getByAltText('Logo').waitFor({ timeout: 10000 })
+    },
+  },
   // La transmission de la même facture : son dépôt refusé, au détail long, et son envoi par Super PDP sans issue connue
   // depuis plus d'un quart d'heure — le bouton « Abandonner », que seule cette transmission-là offre.
   {

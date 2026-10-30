@@ -142,6 +142,13 @@ for (const espace of ['cabinet', 'client'] as const) {
       expect(valider().disabled).toBe(true)
     })
 
+    it('sa facture vient d’un contact que la liste lue retrouve : il se valide, sur la liste LUE', async () => {
+      faux.contacts = [{ id: 'c1', dossier_id: 'd1', nom: 'Aubert SAS', efface_le: null, retire_le: null, cree_le: '2026-01-01T00:00:00Z' }]
+      await monter(espace, figee({ contact_id: 'c1' }))
+      await waitFor(() => expect(valider().disabled).toBe(false))
+      expect(faux.tables).toContain('contacts')
+    })
+
     it('sa facture vient d’un contact : les contacts sont lus, et un contact absent du dossier refuse la validation', async () => {
       faux.contacts = []
       await monter(espace, figee({ contact_id: 'c1' }))
