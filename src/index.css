@@ -2310,3 +2310,8 @@ a.btn { text-decoration: none; }
   .ribs-a-confirmer-ligne { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; }
   .ribs-a-confirmer-qui, .ribs-a-confirmer-avis { flex: none; }
 }
+
+/* La caisse d'un dossier (ligne 26.6, étape C4) : une ligne d'en-tête par jour, avec le solde de la fin de journée, au-dessus
+   des lignes de ce jour. Un fond plat, la teinte du tableau ; empilée sur une carte étroite, la cellule fusionnée garde sa ligne. */
+.caisse-jour td { background: var(--color-surface-2); }
+.caisse-jour td strong { font-variant-numeric: tabular-nums; }

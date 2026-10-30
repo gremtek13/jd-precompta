@@ -31,6 +31,7 @@ import AccesTab from './dossier/AccesTab'
 import AssistantTab from './dossier/AssistantTab'
 import BalanceCard from './dossier/BalanceCard'
 import BanqueTab from './dossier/BanqueTab'
+import CaisseTab from './dossier/CaisseTab'
 import BilanTab from './dossier/BilanTab'
 import ChecklistTab from './dossier/ChecklistTab'
 import ClotureTab from './dossier/ClotureTab'
@@ -102,6 +103,15 @@ import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES } from '../lib/planComptable'
 // revenue, chaque geste offert tenté — une écriture qui part alors part sans rien avoir lu.
 
 vi.mock('../lib/supabase', async () => ({ supabase: (await import('../test/clientRetenu')).supabase }))
+// LE DRAPEAU DE LA CAISSE (`CAISSE_EXPORTEE`, lib/caisse.ts), que l'onglet Caisse (ligne 26.6, étape C4) suppose levé : il ne se
+// monte et ne lit qu'avec la caisse en base. Baissé par défaut — chaque autre écran se joue ici comme hier, au caractère près —,
+// levé le temps du montage de l'onglet Caisse seulement (`rendre` le lève, `afterEach` le baisse), par un accesseur que chaque
+// lecteur du drapeau relit à chaque usage.
+const caisseDuGarde = vi.hoisted(() => ({ levee: false }))
+vi.mock('../lib/caisse', async (original) => {
+  const vrai = await original<typeof import('../lib/caisse')>()
+  return { ...vrai, get CAISSE_EXPORTEE() { return caisseDuGarde.levee } }
+})
 // pdf.js touche au navigateur dès l'import (`DOMMatrix`) : les deux modules qui le chargent sont doublés, comme dans les
 // tests de la Banque et de la Clôture. Aucun n'est atteint au montage ; la lecture d'un relevé PDF l'est par le second
 // garde, qui donne un fichier à chaque champ : elle rend deux opérations fictives, de quoi offrir l'import.
@@ -257,6 +267,17 @@ const ECRANS: Ecran[] = [
   { nom: 'AccesTab', fichier: 'pages/dossier/AccesTab.tsx', rendre: () => <Dossier1><AccesTab dossierId="d1" dossierNom="Dossier fictif" codeEmail="abc123" /></Dossier1> },
   { nom: 'AssistantTab', fichier: 'pages/dossier/AssistantTab.tsx', rendre: () => <Dossier1><AssistantTab dossierId="d1" dossierNom="Dossier fictif" onFermer={rien} /></Dossier1> },
   { nom: 'BalanceCard', fichier: 'pages/dossier/BalanceCard.tsx', rendre: () => <Dossier1><BalanceCard dossierId="d1" plan={PLAN_PAR_DEFAUT} /></Dossier1> },
+  // L'onglet Caisse (étape C4), la caisse en base : sa lecture entière (les opérations, la reprise, les mouvements classés, les
+  // catégories) est retenue, il attend, et n'offre ni formulaire, ni total, ni geste ; revenue vide ou refusée, l'attente se lève.
+  { nom: 'CaisseTab', fichier: 'pages/dossier/CaisseTab.tsx', rendre: () => {
+    caisseDuGarde.levee = true
+    return <Dossier1><CaisseTab dossierId="d1" modele={TRESORERIE} assujettiTva ventesParLesFactures={false} onNavigate={rien} /></Dossier1>
+  } },
+  // Basculé : il lit aussi les factures sources et leurs encaissements, d'où viennent les espèces des factures d'un jour.
+  { nom: 'CaisseTab (basculé)', fichier: 'pages/dossier/CaisseTab.tsx', rendre: () => {
+    caisseDuGarde.levee = true
+    return <Dossier1><CaisseTab dossierId="d1" modele={TRESORERIE} assujettiTva ventesParLesFactures onNavigate={rien} /></Dossier1>
+  } },
   { nom: 'BanqueTab', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={false} statutTva="redevable" /></Dossier1> },
   // Basculé (ligne 28.65, étape VF5a1) : l'onglet lit aussi les ventes facturées, et ne dit ni n'offre rien avant elles.
   { nom: 'BanqueTab (basculé)', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures statutTva="redevable" /></Dossier1> },
@@ -654,7 +675,7 @@ beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-09T10:00:00Z'))
 })
-afterEach(() => { cleanup() })
+afterEach(() => { cleanup(); caisseDuGarde.levee = false })
 afterAll(() => { vi.useRealTimers() })
 
 // LE PLAN COMPTABLE DU DOSSIER (ligne 43, étape PC3) : la page d'un dossier le lit avec lui (`plan_du_dossier`) et ne monte

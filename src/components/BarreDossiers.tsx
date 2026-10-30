@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { IconChevron } from './icons'
 import Avatar from './widgets/Avatar'
-import { GROUPES_PARCOURS, type IdGroupeParcours } from '../lib/ongletsDossier'
+import { CAISSE_EXPORTEE } from '../lib/caisse'
+import { groupesDuParcours, type IdGroupeParcours } from '../lib/ongletsDossier'
 import { correspondALaRecherche } from '../lib/recherche'
 import type { DossierDeBarre } from '../lib/listeDossiers'
 
@@ -13,9 +14,6 @@ import type { DossierDeBarre } from '../lib/listeDossiers'
 //
 // Réduite, la barre ne garde que les pastilles des dossiers : l'arborescence n'y tient pas, et c'est
 // alors DossierParcours qui réapparaît en haut du dossier (voir index.css).
-
-const DESTINATIONS = GROUPES_PARCOURS.filter((g) => g.cible)
-const REGROUPEMENTS = GROUPES_PARCOURS.filter((g) => g.enfants)
 
 // Groupes que l'opérateur a lui-même dépliés ou repliés — préférence d'affichage de ce navigateur,
 // comme le thème. Sans choix enregistré, un groupe s'ouvre s'il contient l'écran affiché, et
@@ -43,6 +41,10 @@ export default function BarreDossiers({ dossiers, chargement, motif, recherche, 
   reduite: boolean
 }) {
   const [groupes, setGroupes] = useState<Record<string, boolean>>(lireGroupes)
+  // Les écrans, lus à chaque rendu : l'onglet Caisse n'y est que la caisse en base (lib/ongletsDossier.ts).
+  const tousLesGroupes = groupesDuParcours(CAISSE_EXPORTEE)
+  const DESTINATIONS = tousLesGroupes.filter((g) => g.cible)
+  const REGROUPEMENTS = tousLesGroupes.filter((g) => g.enfants)
 
   const groupeDeLOnglet = REGROUPEMENTS.find((g) => g.enfants?.some((e) => e.id === ongletActif))?.id ?? null
   // Dérivé plutôt que forcé par un effet : un groupe replié explicitement le reste, même quand l'écran
