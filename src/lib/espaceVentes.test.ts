@@ -17,8 +17,8 @@ import { REFUS_ENREGISTREMENT_CONTACT, REFUS_REPRISE_CONTACT } from './contacts'
 import { manqueMentionTva, motifExoneration, refusTauxPositif } from './statutTva'
 import { refusEmission } from './factureCii'
 import {
-  REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_GARDE_FRONTIERE, REFUS_RETRAIT,
-  obligationEncaissee,
+  REFUS_CLASSEMENT, REFUS_CONTRE_PASSATION, REFUS_DECLARATION, REFUS_ENREGISTREMENT, REFUS_ESPECES_SUR_UN_CREDIT,
+  REFUS_GARDE_FRONTIERE, REFUS_RETRAIT, obligationEncaissee,
 } from './encaissementsFactures'
 import { bilanDuReleve, refusDuReleve, verificationAvantDeclaration } from './statutsLus'
 import { libelleCanal, libelleCourtCanal } from './transmissionsFactures'
@@ -181,6 +181,14 @@ describe('les réécritures du client', () => {
       expect(motsDuCabinet(phrase), phrase).toEqual([])
       expect(pourLEspace('client', phrase)).toBe(phrase)
     })
+
+  // La garde des espèces (la caisse, étape C6) : la fenêtre du client « Ventes » et « Banque » dit son refus avant le clic,
+  // et la base le rendrait après une écriture concurrente. Il se lit tel quel : ni le cabinet, ni un onglet, ni le vouvoiement.
+  it('la garde des espèces : le client la lit telle quelle', () => {
+    const phrase = REFUS_ESPECES_SUR_UN_CREDIT.modele
+    expect(motsDuCabinet(phrase), phrase).toEqual([])
+    expect(pourLEspace('client', phrase)).toBe(phrase)
+  })
 
   it('le texte du cabinet reste le sien, au caractère près', () => {
 

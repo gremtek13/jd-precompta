@@ -59,7 +59,11 @@ import type {
 //     source ne cite pas un mouvement classé par ses encaissements, et que, quand le mouvement dont il dépend l'est, il ne
 //     se retire pas ni ne se contre-passe sans débit — ce que ce mouvement justifie ne change plus, comme pour une facture
 //     source : trois refus neufs, sous des mots à eux (`virementMixte`), que seuls les jugements de la vente disent
-//     (`refusEnregistrementVente`, `refusRetraitVente`, `refusContrePassationVente`).
+//     (`refusEnregistrementVente`, `refusRetraitVente`, `refusContrePassationVente`) ;
+//   - depuis la caisse (ligne 26.6, étape C6 ; migration `especes_sans_mouvement`, PRÉPARÉE, pas encore appliquée), qu'un
+//     encaissement en espèces ne cite aucun crédit du relevé : la garde des encaissements le refuse à l'insertion et au
+//     rattachement, après tous les refus des fonctions (`REFUS_ESPECES_SUR_UN_CREDIT`, `MOYENS_SANS_CREDIT`) — l'écran le
+//     dit, et cesse d'offrir le geste, avant que la base ne le refuse.
 //
 // Les sources sont publiques : CGI, art. 290 A, et ann. II, art. 242 nonies P — CIBS, art. L. 216-56 à compter du
 // 01/01/2027 — ; BOI-TVA-DECLA-20-30-60 ; BOI-TVA-BASE-20-20 ; spécifications externes de la DGFiP v3.2 (§ 3.6.4 et
@@ -612,7 +616,9 @@ export interface SaisieEncaissement {
  * défaut : un écran du client qui l'oublierait laisserait désigner un mouvement que la base refuse. Pour une facture SOURCE
  * (étape VF2), la base refuse davantage, que seule `refusEnregistrementVente` dit : elle lit ce qui classe les mouvements,
  * les exercices validés et les avoirs ; et, depuis l'étape VF5h2, pour une facture qui ne l'est pas, un mouvement classé
- * par ses encaissements (le rang 18), que ce jugement-ci ne lit pas.
+ * par ses encaissements (le rang 18), que ce jugement-ci ne lit pas. Depuis la caisse (étape C6), et pour toute facture,
+ * le refus de la GARDE des encaissements une fois la fonction passée, le dernier : des espèces qui citent un crédit
+ * (`REFUS_ESPECES_SUR_UN_CREDIT`).
  */
 export function refusEnregistrement(
   c: ContexteFacture,
@@ -620,7 +626,7 @@ export function refusEnregistrement(
   mouvements: readonly MouvementLu[],
   aujourdHui: string,
   gereLaBanque: boolean,
-): RefusEncaissement<CleRefusEnregistrement> | null {
+): RefusEncaissement<CleRefusEnregistrement | CleRefusEspeces> | null {
   return jugerEnregistrement(c, s, mouvements, aujourdHui, gereLaBanque, null)
 }
 
@@ -632,7 +638,8 @@ export function refusEnregistrement(
  * classé par ses encaissements (rang 18) — le virement mixte, que l'encaissement de plus changerait. `mouvements` : ceux du
  * dossier, avec ce qui les classe ; `vente` : les exercices validés et les factures du dossier — les lignes des avoirs de
  * la facture dans `c.lignes`. Pour une facture qui n'est pas source, sur un autre mouvement, la même chose que
- * `refusEnregistrement`. La fenêtre des encaissements le lit depuis l'étape VF5b.
+ * `refusEnregistrement`. La fenêtre des encaissements le lit depuis l'étape VF5b. Et, pour toute facture, le refus de la
+ * garde des espèces (étape C6), le dernier.
  */
 export function refusEnregistrementVente(
   c: ContexteFacture,
@@ -641,12 +648,13 @@ export function refusEnregistrementVente(
   aujourdHui: string,
   gereLaBanque: boolean,
   vente: ContexteVente,
-): RefusEncaissement<CleRefusEnregistrement> | null {
+): RefusEncaissement<CleRefusEnregistrement | CleRefusEspeces> | null {
   return jugerEnregistrement(c, s, mouvements, aujourdHui, gereLaBanque, vente)
 }
 
-// Le jugement d'`enregistrer_encaissement`, dans son ordre. `vente` nul : sans ce qu'une facture source demande de lire
-// de plus — la facture est jugée comme une facture qui n'est pas source.
+// Le jugement d'`enregistrer_encaissement`, dans son ordre, puis celui de la garde que son insertion rencontre (étape C6).
+// `vente` nul : sans ce qu'une facture source demande de lire de plus — la facture est jugée comme une facture qui n'est
+// pas source.
 function jugerEnregistrement(
   c: ContexteFacture,
   s: SaisieEncaissement,
@@ -654,7 +662,7 @@ function jugerEnregistrement(
   aujourdHui: string,
   gereLaBanque: boolean,
   vente: ContexteVente | null,
-): RefusEncaissement<CleRefusEnregistrement> | null {
+): RefusEncaissement<CleRefusEnregistrement | CleRefusEspeces> | null {
   // Juste après l'accès (refus 1, que seule la base juge), avant la facture : le mouvement qui prouve l'encaissement est
   // une donnée de la banque, et sans le droit « Banque » il ne se désigne pas — l'encaissement s'enregistre sans lui
   // (espace client, étape P2 ; migration ventes_du_client).
@@ -690,9 +698,11 @@ function jugerEnregistrement(
   // justifie se lit comme la base le lit depuis l'étape VF2 (`justifieSonMouvement`) : pour un mouvement qu'aucune
   // contre-passation ne cite, comme hier. Le rang 18 ne se juge qu'avec la vente (`vente` donné) : sans elle, le mouvement
   // lu ne dit pas ce qui le classe.
+  let cite: MouvementLu | undefined
   if (s.ligneBancaireId != null) {
     const mouvement = mouvements.find((m) => m.id === s.ligneBancaireId && m.dossier_id === c.dossierId)
     if (!mouvement) return refus('mouvement_hors_dossier')
+    cite = mouvement
     if (mouvement.montant <= 0) return refus('mouvement_debit')
     if (source && !mouvementLibre(mouvement as MouvementClasse)) return refus('mouvement_classe')
     if (vente != null && !source && (mouvement as MouvementClasse).encaissements_de_factures) {
@@ -754,6 +764,10 @@ function jugerEnregistrement(
         euroCommeLaBase(Math.max(ttcDuTaux - dejaDuTaux, 0)))
     }
   }
+
+  // 13. La garde des encaissements, que l'insertion rencontre une fois la fonction passée (la caisse, étape C6) : des
+  // espèces ne citent aucun crédit, de toute facture — sa règle, la dernière de l'ordre de la base.
+  if (moyenSurUnCredit(s.moyen, cite)) return refusEspeces()
   return null
 }
 
@@ -1448,7 +1462,8 @@ export function propositionsEncaissement(
     const saisie: SaisieEncaissement = {
       date: m.date,
       montant: montantCentimes / 100,
-      // Le moyen ne se propose pas, le cabinet le choisit ; il ne décide d'aucun autre refus.
+      // Le moyen ne se propose pas, le cabinet le choisit ; il ne décide d'aucun autre refus que celui des espèces, qui ne
+      // citent aucun crédit (étape C6) — la fenêtre ne propose alors aucun mouvement.
       moyen: MOYENS_ENCAISSEMENT[0].moyen,
       ligneBancaireId: m.id,
       repartition: repartition.map((p) => ({ taux: p.taux, montant: p.centimes / 100 })),
@@ -1771,6 +1786,60 @@ export const REFUS_GARDE_FRONTIERE = [
 
 export type CleRefusGardeFrontiere = (typeof REFUS_GARDE_FRONTIERE)[number]['cle']
 
+// ── La caisse : un encaissement en espèces ne cite aucun crédit (ligne 26.6, étape C6) ────────────────────────────────
+//
+// LE RESSERREMENT DE LA CAISSE (HISTORIQUE.md, « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION », § 4 b ; « LA CAISSE : LE
+// RESSERREMENT (C6, LIGNE 26.6) »). Deux voies séparées : des espèces se reçoivent hors de la banque — pour une facture
+// source, elles entrent dans la caisse du dossier à leur date (EC3-Q7) — et n'y arrivent que par leur dépôt, le versement
+// que la caisse classe sur elle ; un crédit qui les citerait les y porterait une seconde fois. La migration
+// `especes_sans_mouvement` (PRÉPARÉE dans supabase/preparees/, pas encore appliquée) donne cette règle à la garde des
+// encaissements (`garder_encaissement_facture`) : de toute facture, à l'insertion comme au rattachement, en 23514 — sa
+// contre-passation, qui cite le débit qui a rendu l'argent, et la restauration (une ligne réinsérée par le
+// super-administrateur, son instant de création d'avant) passent. AUCUNE FONCTION NE LA JUGE : `enregistrer_encaissement` et
+// `rattacher_mouvement_encaissement` passent tous leurs refus, puis la garde refuse à l'écriture — sa place dans l'ordre de
+// la base, la DERNIÈRE, celle que `refusEnregistrementVente`, `refusEnregistrement` et `refusRattachement` lui donnent. Un
+// resserrement vient en dernier : l'application le dit, et cesse d'offrir le geste — la fenêtre des encaissements ne propose
+// aucun mouvement à des espèces, ni les espèces sur un crédit qu'impose la fiche d'un mouvement ; la fiche d'un crédit
+// n'en propose ni n'en rattache aucun (lib/mouvementsDesVentes.ts) — AVANT que la base ne le refuse.
+// especesSansMouvement.test.ts relit les mots, le code et la règle dans le texte de la migration, où qu'elle soit.
+export const REFUS_ESPECES_SUR_UN_CREDIT = {
+  cle: 'especes_sur_un_credit',
+  modele: "Un encaissement en espèces ne cite aucun crédit du relevé : il s'enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.",
+  code: '23514',
+} as const
+
+export type CleRefusEspeces = typeof REFUS_ESPECES_SUR_UN_CREDIT.cle
+
+/** Les moyens d'un encaissement qui ne citent aucun crédit du relevé (étape C6) : les espèces — la règle de la garde. */
+export const MOYENS_SANS_CREDIT: readonly MoyenEncaissement[] = ['especes']
+
+/** Ce moyen ne cite aucun crédit (étape C6) : la fenêtre ne lui offre aucun mouvement. */
+export function moyenSansCredit(moyen: string | null): boolean {
+  return moyen != null && (MOYENS_SANS_CREDIT as readonly string[]).includes(moyen)
+}
+
+/**
+ * La règle de la garde (étape C6) : un encaissement d'un moyen qui ne cite aucun crédit, sur un CRÉDIT — un mouvement de
+ * montant positif. Une contre-passation, de même moyen, ne cite qu'un débit : la règle ne la juge pas. `mouvement` : celui
+ * qu'il cite, tel qu'il a été lu ; absent, il n'en cite aucun.
+ */
+export function moyenSurUnCredit(moyen: string | null, mouvement: Pick<MouvementLu, 'montant'> | undefined): boolean {
+  return moyenSansCredit(moyen) && mouvement != null && mouvement.montant > 0
+}
+
+/**
+ * Les moyens qu'offre la fenêtre des encaissements (étape C6) : tous, sauf — sur le crédit qu'impose la fiche d'un mouvement
+ * (étape VF5c ; la fiche n'impose qu'un crédit, lu ou non) — ceux qui n'en citent aucun. Dans l'ordre de
+ * `MOYENS_ENCAISSEMENT`.
+ */
+export function moyensOfferts(surUnCreditImpose: boolean): readonly MoyenDePaiement[] {
+  return surUnCreditImpose ? MOYENS_ENCAISSEMENT.filter((m) => !moyenSansCredit(m.moyen)) : MOYENS_ENCAISSEMENT
+}
+
+function refusEspeces(): RefusEncaissement<CleRefusEspeces> {
+  return { cle: REFUS_ESPECES_SUR_UN_CREDIT.cle, message: REFUS_ESPECES_SUR_UN_CREDIT.modele }
+}
+
 /**
  * Ce que `rattacher_mouvement_encaissement` refuserait : le PREMIER refus, dans l'ordre de la base et sous son message, ou
  * null — l'accès (refus 1), seule la base le juge : le cabinet seul rattache. Dans l'ordre : l'encaissement introuvable,
@@ -1781,7 +1850,9 @@ export type CleRefusGardeFrontiere = (typeof REFUS_GARDE_FRONTIERE)[number]['cle
  * l'écart des frais sur ce qu'il justifierait — cet encaissement compris s'il le justifie ; pour une contre-passation,
  * l'écart des frais sur les contre-passations du débit, puis le mouvement de l'encaissement qu'elle annule — classé, ou
  * qu'il justifierait alors au-delà des frais : rattachée à son débit, elle cesse de dire que l'encaissement n'a pas eu
- * lieu sur lui, qui le justifie de nouveau. `encaissements` et `mouvements` : ceux du dossier, lus en entier.
+ * lieu sur lui, qui le justifie de nouveau. Puis, d'un encaissement que la fonction accepterait, le refus de la garde que
+ * sa mise à jour rencontre (la caisse, étape C6) : des espèces ne se rattachent à aucun crédit. `encaissements` et
+ * `mouvements` : ceux du dossier, lus en entier.
  */
 export function refusRattachement(
   dossierId: string,
@@ -1790,7 +1861,7 @@ export function refusRattachement(
   encaissements: readonly EncaissementPourRattachement[],
   mouvements: readonly MouvementClasse[],
   vente: ContexteVente,
-): RefusEncaissement<CleRefusRattachement> | null {
+): RefusEncaissement<CleRefusRattachement | CleRefusEspeces> | null {
   const refusA = (cle: CleRefusRattachement, ...valeurs: string[]) => refusDe(REFUS_RATTACHEMENT, cle, ...valeurs)
   const e = encaissements.find((x) => x.id === encaissementId && x.dossier_id === dossierId)
   if (!e) return refusA('encaissement_introuvable')
@@ -1821,6 +1892,9 @@ export function refusRattachement(
       .reduce((somme, x) => somme + centimes(x.montant), 0)
     const credit = centimes(m.montant)
     if (!ecartDeFrais(total - credit, total)) return refusA('mouvement_depasse', euroCommeLaBase(credit), euroCommeLaBase(total))
+    // La garde des encaissements, que la mise à jour rencontre une fois la fonction passée (la caisse, étape C6) : des
+    // espèces ne se rattachent à aucun crédit — sa règle, la dernière.
+    if (moyenSurUnCredit(e.moyen, m)) return refusEspeces()
     return null
   }
   const total = vivants.filter((x) => x.ligne_bancaire_id === m.id).reduce((somme, x) => somme + centimes(x.montant), 0)
@@ -2090,11 +2164,13 @@ export const RATTACHEMENT_APRES_LA_FRONTIERE = 'Daté d’un exercice validé, i
  * Un encaissement d'une facture source, sans mouvement, daté d'un exercice validé, qui se rattache encore au mouvement
  * d'après (étape VF7a, `rattacher_mouvement_encaissement`) : le chèque remis le 30 décembre, crédité en janvier. Ni retiré,
  * ni une contre-passation (elle attend un débit, et la fiche d'un débit la propose), ni par compensation ou par un autre
- * moyen (le rang 6 du rattachement le refuse). Jamais côté client : il ne lit pas les exercices validés, et ne rattache pas.
+ * moyen (le rang 6 du rattachement le refuse), ni en espèces (la caisse, étape C6 : elles ne se rattachent à aucun crédit,
+ * leur dépôt est un versement de la caisse). Jamais côté client : il ne lit pas les exercices validés, et ne rattache pas.
  */
 export function rattachableApresLaFrontiere(e: EncaissementPourRattachement, vente: ContexteVente): boolean {
   return e.ligne_bancaire_id == null && compte(e) && e.annule_id == null && factureSource(e.facture_id, vente)
-    && !MOYENS_SUR_LEUR_CONTREPARTIE.includes(e.moyen) && dateFigeePourLaVente(e.date_encaissement, vente.anneesValidees) !== null
+    && !MOYENS_SUR_LEUR_CONTREPARTIE.includes(e.moyen) && !moyenSansCredit(e.moyen)
+    && dateFigeePourLaVente(e.date_encaissement, vente.anneesValidees) !== null
 }
 
 /**

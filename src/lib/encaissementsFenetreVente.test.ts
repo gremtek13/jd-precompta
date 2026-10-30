@@ -89,12 +89,17 @@ describe('l’équivalence : une facture qui n’est pas source se juge comme hi
   })
 
   // Le rang 18 (étape VF5h2) : la réponse d'hier si elle le précède ; sinon, si la saisie cite un mouvement du dossier classé
-  // par ses encaissements, le refus neuf.
+  // par ses encaissements, le refus neuf. Le refus de la garde des espèces (la caisse, étape C6), opposé une fois la fonction
+  // passée, vient après tous ses rangs.
   const RANG_18 = REFUS_ENREGISTREMENT.findIndex((r) => r.cle === 'mouvement_classe_facture_d_avant')
+  const rang = (cle: string) => {
+    const i = REFUS_ENREGISTREMENT.findIndex((r) => r.cle === cle)
+    return i < 0 ? REFUS_ENREGISTREMENT.length : i
+  }
   const enregistrementAttendu = (e: (typeof entrees)[number], mouvements: readonly MouvementClasse[]) => {
     const hier = refusEnregistrement(e.contexte, e.saisie, e.mouvements, AUJOURD_HUI_RELEVE, e.gereLaBanque)
     const cite = mouvements.find((m) => m.id === e.saisie.ligneBancaireId && m.dossier_id === e.contexte.dossierId)
-    const avant = hier != null && REFUS_ENREGISTREMENT.findIndex((r) => r.cle === hier.cle) < RANG_18
+    const avant = hier != null && rang(hier.cle) < RANG_18
     return cite?.encaissements_de_factures && !avant ? refusNeuf(REFUS_ENREGISTREMENT, 'mouvement_classe_facture_d_avant') : hier
   }
 

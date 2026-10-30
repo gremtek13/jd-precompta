@@ -3,7 +3,7 @@ import { libelleExploitable, motsDuLibelle, motsIdentifiants, motsSeConfirment, 
 import { estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
   ANNEES_ILLISIBLES, ecartDeFrais, encaissementsDAvantDuMouvement, encaissementsDeclares, encaissementsDuMouvement, exemplaireUnique,
-  justifieSonMouvement, mouvementLibre, MOYENS_ENCAISSEMENT, ordreDesEncaissements, refusClassement, refusContrePassationVente,
+  justifieSonMouvement, mouvementLibre, MOYENS_ENCAISSEMENT, moyenSurUnCredit, ordreDesEncaissements, refusClassement, refusContrePassationVente,
   refusDuClassementDuReleve, refusRattachement, refusRetraitDuClassement, resteAEncaisserVente, SEUIL_PLAFOND_CENTIMES,
   type CleRefusGardeMouvements, type ContexteVente, type DeclarationLue, type EncaissementDuReleve, type EncaissementLu,
   type ExemplaireLu, type FactureDuDossier, type LigneDeFacture, type MouvementClasse, type PartLue, type RefusEncaissement,
@@ -710,19 +710,22 @@ function complementDuCredit(
   const sources = new Set(s.factures.filter((f) => f.dossier_id === dossierId && f.source_de_la_vente).map((f) => f.id))
   const cite = (e: EncaissementDuMouvementLu) => clientCite(e.facture_id, s.factures, libelle)
   // Daté d'un exercice validé, l'encaissement se rattache encore au crédit d'après qui le paie (étape VF7a) : la confirmation
-  // dit que son écriture, figée, n'en change pas, et ce que le crédit soldera — le 511 d'un chèque, le 53 d'espèces.
+  // dit que son écriture, figée, n'en change pas, et ce que le crédit soldera — le 511 des valeurs à l'encaissement (un
+  // encaissement en espèces ne se rattache à aucun crédit : étape C6, ci-dessous).
   const fige = (e: EncaissementDuMouvementLu) => {
     const phrase = vente.anneesValidees === ANNEES_ILLISIBLES ? null : dateFigee(e.date_encaissement, vente.anneesValidees)
     return phrase === null ? ''
-      : `${phrase} : l’écriture de cet encaissement n’y change pas, et celle de ce crédit soldera `
-        + `${e.moyen === 'especes' ? 'la caisse' : 'les valeurs à l’encaissement'}. `
+      : `${phrase} : l’écriture de cet encaissement n’y change pas, et celle de ce crédit soldera les valeurs à l’encaissement. `
   }
   // Des encaissements — pas des contre-passations, qui se justifient par un débit — de factures sources, sans mouvement, non
   // retirés, et que rien ne dit « n'avoir pas eu lieu » : une contre-passation sans mouvement qui les annule les ferait
-  // rattacher sans qu'ils pèsent rien sur le crédit.
+  // rattacher sans qu'ils pèsent rien sur le crédit. Ni ceux d'un moyen qui ne cite aucun crédit (la caisse, étape C6 :
+  // les espèces) : la garde des encaissements les refuse sur tout crédit, et la liste ne les montre pas — grisés, ils
+  // diraient un geste qui n'existe pour aucun crédit ; leurs espèces arrivent en banque par leur versement, que la fiche
+  // classe sur la caisse.
   const rattachables = s.encaissements
     .filter((e) => e.dossier_id === dossierId && e.ligne_bancaire_id == null && e.retire_le == null && e.annule_id == null
-      && sources.has(e.facture_id) && justifieSonMouvement(e, s.encaissements))
+      && sources.has(e.facture_id) && justifieSonMouvement(e, s.encaissements) && !moyenSurUnCredit(e.moyen, m))
     .sort((a, b) => Math.abs(enCentimes(a.montant) - manque) - Math.abs(enCentimes(b.montant) - manque)
       || Number(cite(b)) - Number(cite(a)) || ordreC(a.date_encaissement, b.date_encaissement) || ordreC(a.id, b.id))
     .map((e): EncaissementARattacher => {
@@ -1322,7 +1325,8 @@ export function candidatsDuMouvement(c: CandidatsDeLaVente, ligne: LigneDesGeste
     })
   }
   for (const e of c.encaissementsSansMouvement) {
-    // Un crédit attend un encaissement, un débit une contre-passation.
+    // Un crédit attend un encaissement, un débit une contre-passation. Un encaissement en espèces n'est candidat d'aucun
+    // crédit (la caisse, étape C6) : `refusRattachement` y dit le refus de la garde, et il ne se propose pas.
     if ((e.annule_id == null) !== credit) continue
     const facture = j.facturesParId.get(e.facture_id)
     if (!facture) continue
