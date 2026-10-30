@@ -42537,4 +42537,6 @@ opération vivante, la caisse vide ce jour-là, un mouvement que ni son libellé
 espèces) : un crédit n'y voit pas « Versement d'espèces », que la base refuserait, un débit le garde (des espèces
 retirées pour ouvrir la caisse), et un compte tapé se juge toujours avant le clic (`BanqueTab.caisse.test.tsx`, cinq
 cas, dont l'ouverture sans opération, dont la fiche parle ; six mutations de la règle, toutes tuées). RGPD.md dit
-l'onglet. La barrière, drapeau levé : BARRIERE_C4.
+l'onglet. La barrière, drapeau levé, sur l'arbre de l'intégration (Node 22.23.3) : `tsc -b --force` 0 ; lint 0 erreur,
+63 avertissements, ceux de la référence ; `test:fuseaux` 496 fichiers, 15 479 tests verts à Paris, UTC, New York et
+Auckland ; build 0.
