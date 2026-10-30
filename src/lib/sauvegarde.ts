@@ -106,19 +106,20 @@ export function auPlanDuJournalDesDesignations(table: string, jumelleExportee: b
   return jumelleExportee || !TABLES_DU_JOURNAL_DES_DESIGNATIONS.includes(table)
 }
 
-// LA CAISSE D'UN DOSSIER (ligne 26.6, étape C2 ; migrations `caisse` et `caisse_retrait_et_versement`, PRÉPARÉES dans
-// `supabase/preparees/`, appliquées avec ce lot) : le patron des articles, des contacts et des exemplaires, sous son propre
-// drapeau (`CAISSE_EXPORTEE`, src/lib/caisse.ts), BAISSÉ — la production n'a pas la table, et la lire ferait échouer
-// toute sauvegarde. Sa table est déclarée ci-dessous à sa place — ses quatre relations (le dossier en cascade, la
-// catégorie, la pièce, l'opération remplacée), son rang (après les pièces et les catégories, juste avant le brouillon qui
-// la cite), son chemin et sa vague (une opération en remplace une autre de son dossier, `remplace_id`) ; sa clé est la
-// commune, `id`. La migration pose aussi une COLONNE sur une table au plan, `ecritures_brouillon.operation_caisse_id`, et
-// sa clé en cascade, sur le patron de `RELATIONS_DES_EXEMPLAIRES` : la relation quitte le graphe du jour le drapeau
-// baissé. La sauvegarde recopie des lignes entières (`select('*')`) : une écriture de la caisse se réinsère avec son
-// opération, par la porte que la garde ouvre au super-administrateur dans un dossier sans exercice validé ; les
-// opérations aussi, retirées et remplacées comprises, chacune avec son instant de création — antérieur à la transaction
-// de la restauration, il ouvre la porte des déclencheurs de la caisse jamais négative, qui ne rejugent pas un état déjà
-// jugé. sauvegardeCaisse.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
+// LA CAISSE D'UN DOSSIER (ligne 26.6, étape C2 ; migrations `caisse` et `caisse_retrait_et_versement`, en base depuis
+// le 30/10/2026) : le patron des articles, des contacts et des exemplaires, sous son propre drapeau (`CAISSE_EXPORTEE`,
+// src/lib/caisse.ts), levé le même jour ; baissé, le plan ne la nommait pas — la production n'avait pas la table, et la
+// lire aurait fait échouer toute sauvegarde. Sa table est déclarée ci-dessous à sa place — ses quatre relations (le
+// dossier en cascade, la catégorie, la pièce, l'opération remplacée), son rang (après les pièces et les catégories,
+// juste avant le brouillon qui la cite), son chemin et sa vague (une opération en remplace une autre de son dossier,
+// `remplace_id`) ; sa clé est la commune, `id`. La migration pose aussi une COLONNE sur une table au plan,
+// `ecritures_brouillon.operation_caisse_id`, et sa clé en cascade, sur le patron de `RELATIONS_DES_EXEMPLAIRES` : la
+// relation quitte le graphe du jour le drapeau baissé. La sauvegarde recopie des lignes entières (`select('*')`) : une
+// écriture de la caisse se réinsère avec son opération, par la porte que la garde ouvre au super-administrateur dans un
+// dossier sans exercice validé ; les opérations aussi, retirées et remplacées comprises, chacune avec son instant de
+// création — antérieur à la transaction de la restauration, il ouvre la porte des déclencheurs de la caisse jamais
+// négative, qui ne rejugent pas un état déjà jugé. sauvegardeCaisse.test.ts éprouve le plan prévu et le plan du jour,
+// sous chaque état du drapeau.
 export const TABLES_DE_LA_CAISSE: readonly string[] = ['operations_caisse']
 
 /** Une table au plan, côté caisse : toutes, sauf la sienne tant que sa migration n'est pas exportée. */

@@ -1,9 +1,9 @@
--- LA CAISSE D'UN DOSSIER BNC DEVANT UNE SUPPRESSION (ligne 26.6, étape C1 ; migration `caisse`, préparée dans
--- `supabase/preparees/`) — SUR UNE RÉPLIQUE SEULEMENT : l'outil d'exécution de la production soumet toute suppression à
--- une confirmation qui n'arrive pas, et l'appel expire. Le compagnon de `caisse.sql`, à rejouer avec lui, après toute
--- migration qui touche `operations_caisse`, ses gardes (`garder_operation_caisse`, `garder_ecriture_de_caisse`,
--- `garder_la_caisse`) ou les clés qui la lient aux pièces, aux catégories et aux dossiers. Avant la migration, il le
--- dit (ESSAI_IMPOSSIBLE) et n'écrit rien.
+-- LA CAISSE D'UN DOSSIER BNC DEVANT UNE SUPPRESSION (ligne 26.6, étape C1 ; migration `caisse`) — SUR UNE RÉPLIQUE
+-- SEULEMENT : l'outil d'exécution de la production soumet toute suppression à une confirmation qui n'arrive pas, et
+-- l'appel expire. Le compagnon de `caisse.sql`, à rejouer avec lui, après toute migration qui touche
+-- `operations_caisse`, ses gardes (`garder_operation_caisse`, `garder_ecriture_de_caisse`, `garder_la_caisse`) ou les
+-- clés qui la lient aux pièces, aux catégories et aux dossiers. Avant la migration, il le dit (ESSAI_IMPOSSIBLE) et
+-- n'écrit rien.
 --
 -- Ce qui se prouve ici, et ne se relit pas :
 --   - une opération de caisse ne se supprime pas, ni par le propriétaire (sa garde) ni par le cabinet (aucune policy) ;

@@ -9,7 +9,7 @@ import { compteDuDirigeant } from './virementPersonnel'
 // LA CAISSE D'UN DOSSIER BNC, CE QUE LA BASE EN DIRA AVANT LE CLIC (ligne 26.6, étape C2 ; MVP-D2). La conception :
 // HISTORIQUE.md, « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION — MVP-D2 (LIGNE 26.6) » et « LA CAISSE : LA SAISIE DU
 // PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE (CAISSE-Q1 ET Q4) » ; la base : les migrations
-// `caisse` et `caisse_retrait_et_versement`, préparées dans `supabase/preparees/` (C1, C1b).
+// `caisse` et `caisse_retrait_et_versement` (C1, C1b), en base depuis le 30/10/2026.
 //
 // PUR : aucun appel au réseau, aucun import du client Supabase. Ce module redit, dans leur ORDRE, sous leurs MOTS et leurs
 // CODES, les refus des quatre fonctions de la caisse — `enregistrer_operation_caisse`, `enregistrer_operations_de_caisse`,
@@ -20,11 +20,13 @@ import { compteDuDirigeant } from './virementPersonnel'
 // `caisse.test.ts` le confronte à l'essai (supabase/essais/caisse.sql : les mêmes cas, les mêmes verdicts), puis au
 // texte des deux migrations (les mots et l'ordre des refus, relus dans le SQL).
 //
-// LE DRAPEAU. La table n'est pas en production : `CAISSE_EXPORTEE` reste baissé tant que ses deux migrations ne sont pas
-// appliquées et dans l'export. Baissé, rien ne lit la table (`caisseLecture.ts`), la sauvegarde ne la porte pas
-// (`sauvegarde.ts`), et ni le compte de bilan du relevé (`compteDeBilan.ts`) ni la reprise (`aNouveaux.ts`) ne la
-// connaissent : l'application se conduit comme hier. Levé — le jour de l'application —, tout cela suit la base.
-export const CAISSE_EXPORTEE = false
+// LE DRAPEAU. LES DEUX MIGRATIONS SONT EN BASE depuis le 30/10/2026 : `caisse`, par l'outil (version 20261030073812),
+// puis `caisse_retrait_et_versement`, collée par le cabinet (version 20261030123801), toutes deux dans l'export. Le
+// drapeau est levé : la table se lit (`caisseLecture.ts`), la sauvegarde la porte (`sauvegarde.ts`), le compte de bilan
+// du relevé (`compteDeBilan.ts`) et la reprise (`aNouveaux.ts`) la connaissent, et les moteurs comptent ses recettes.
+// Baissé, l'application se conduisait comme avant la caisse : les fonctions `…Selon` gardent cet état, que les tests
+// jouent encore.
+export const CAISSE_EXPORTEE = true
 
 // ── Les mots de la base ───────────────────────────────────────────────────────────────────────────────────────────────
 

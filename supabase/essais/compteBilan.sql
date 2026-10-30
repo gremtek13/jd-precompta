@@ -45,8 +45,8 @@
 -- REJOUÉ LE 06/10/2026 après `refus_tva_par_sa_declaration` : le contrôle 23 attend désormais le refus d'un
 -- compte de TVA qui renvoie à sa déclaration — le paiement et le remboursement se rapprochent d'elle depuis la
 -- fiche du mouvement (ligne 26.8).
--- ADAPTÉ LE 29/10/2026 (ligne 26.6, étape C1b : la migration `caisse_retrait_et_versement`, PRÉPARÉE, à coller) :
--- le contrôle 19 sort de la boucle des refus, et les comptes 53 ont leur bloc. Sans la migration, le 19 rend ce qu'il
+-- ADAPTÉ LE 29/10/2026 (ligne 26.6, étape C1b : la migration `caisse_retrait_et_versement`, collée le 30/10/2026) : le
+-- contrôle 19 sort de la boucle des refus, et les comptes 53 ont leur bloc. Sans la migration, le 19 rend ce qu'il
 -- rendait, et trois contrôles neufs attendent la phrase d'hier — un autre compte 53 (19b), la caisse en engagement
 -- (19c), une régie d'avances (19d). Avec elle, le compte de la caisse du plan du dossier test reçoit un débit en
 -- trésorerie (19 : son écriture, la caisse au débit), un autre compte 53 se refuse sous la phrase de la caisse (19b),

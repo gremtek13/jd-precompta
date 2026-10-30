@@ -33,14 +33,15 @@ import {
 } from './sauvegarde'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
-// LA CAISSE AU PLAN DE SAUVEGARDE (ligne 26.6, étape C2). Ses migrations sont PRÉPARÉES, pas appliquées : le drapeau
-// `CAISSE_EXPORTEE` est baissé, et le plan effectif ne nomme ni la table ni la colonne d'`ecritures_brouillon` — une
-// sauvegarde lirait une table absente et échouerait. Le plan PRÉVU est celui du jour de l'application. Les tests qui
-// confrontent le plan au schéma exporté (`sauvegardeRelations`, `sauvegardeTables`, `sauvegardeClesPrimaires`,
-// `sauvegarde`) jugent l'état effectif ; celui-ci juge le plan prévu contre le texte de la migration préparée, le lien des
-// deux, et le plan rechargé sous chaque état du drapeau — le graphe, l'ordre et les vagues se calculent au chargement.
+// LA CAISSE AU PLAN DE SAUVEGARDE (ligne 26.6, étape C2). Ses migrations sont en base depuis le 30/10/2026, le drapeau
+// `CAISSE_EXPORTEE` levé : le plan effectif nomme la table et la colonne d'`ecritures_brouillon`. Baissé, il ne les
+// nommait pas — une sauvegarde aurait lu une table absente et échoué. Le plan PRÉVU est celui du jour de l'application.
+// Les tests qui confrontent le plan au schéma exporté (`sauvegardeRelations`, `sauvegardeTables`,
+// `sauvegardeClesPrimaires`, `sauvegarde`) jugent l'état effectif ; celui-ci juge le plan prévu contre le texte de la
+// migration, le lien des deux, et le plan rechargé sous chaque état du drapeau — le graphe, l'ordre et les vagues se
+// calculent au chargement.
 
-// La migration, où qu'elle soit : préparée aujourd'hui, dans l'export le jour de son application.
+// La migration, où qu'elle soit : préparée hier, dans l'export depuis son application.
 const MIGRATION = [...fichiersDuSchema(), ...fichiersPrepares()].find((f) => /\d{14}_caisse\.sql$/.test(f.chemin))?.texte ?? ''
 const cle = (r: { enfant: string; colonne: string; parent: string; aLaSuppression: string }) =>
   `${r.enfant}.${r.colonne} → ${r.parent} (${r.aLaSuppression})`

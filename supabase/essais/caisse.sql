@@ -1,9 +1,9 @@
--- LA CAISSE D'UN DOSSIER BNC, ÉPROUVÉE EN BASE (ligne 26.6, étape C1 ; migration `caisse`, préparée dans
--- `supabase/preparees/`) — à rejouer par `execute_sql` après toute migration qui touche `operations_caisse`,
--- `enregistrer_operation_caisse`, `enregistrer_operations_de_caisse`, `premier_jour_negatif_de_la_caisse`,
--- `texte_caisse_negative`, `qui_ecrit_la_caisse`, les trois gardes de la caisse (`garder_operation_caisse`,
--- `garder_ecriture_de_caisse`, `garder_la_caisse`), les contraintes d'`ecritures_brouillon` et de `lignes_bancaires`,
--- le registre des encaissements ou les à-nouveaux. Avant la migration, il le dit (ESSAI_IMPOSSIBLE) et n'écrit rien.
+-- LA CAISSE D'UN DOSSIER BNC, ÉPROUVÉE EN BASE (ligne 26.6, étape C1 ; migration `caisse`) — à rejouer par
+-- `execute_sql` après toute migration qui touche `operations_caisse`, `enregistrer_operation_caisse`,
+-- `enregistrer_operations_de_caisse`, `premier_jour_negatif_de_la_caisse`, `texte_caisse_negative`,
+-- `qui_ecrit_la_caisse`, les trois gardes de la caisse (`garder_operation_caisse`, `garder_ecriture_de_caisse`,
+-- `garder_la_caisse`), les contraintes d'`ecritures_brouillon` et de `lignes_bancaires`, le registre des encaissements
+-- ou les à-nouveaux. Avant la migration, il le dit (ESSAI_IMPOSSIBLE) et n'écrit rien.
 --
 -- Ce qui se prouve ici, et ne se relit pas :
 --   - QUI écrit : un anonyme n'a pas le droit d'appeler ; un compte rattaché à rien, le client — sur son dossier comme
@@ -54,19 +54,19 @@
 -- raison (HISTORIQUE.md, « LA CAISSE, EN BASE : LA MIGRATION `CAISSE` (C1, LIGNE 26.6) »). En production, il se
 -- rejoue entier après l'application.
 --
--- ÉTENDU LE 29/10/2026 (ligne 26.6, étape C1b : la migration `caisse_retrait_et_versement`, À COLLER, préparée dans
--- `supabase/preparees/`, après celle-ci). Les contrôles 100 à 163, sept dossiers jetables de plus (préfixe
--- `ca155e00-0000-4000-8006`) : qui retire et remplace (l'anonyme, un compte rattaché à rien, le client, le chef d'un
--- autre cabinet, le chef) ; chaque refus du retrait et du remplacement, dans l'ordre et sous ses mots ; ce que le retrait
--- fait d'une recette, d'un apport, d'un prélèvement, d'espèces rendues et d'un paiement (toutes les lignes qui citent
--- l'opération) ; le remplacement — l'ancienne retirée, la nouvelle et son `remplace_id`, l'écriture de l'une partie et
--- celle de l'autre écrite, un genre ou un taux qui change, la chaîne des versions ; la caisse jamais négative, par un
--- retrait et par un remplacement qui ne passe sous zéro qu'un instant (accepté) ou pour de bon (refusé) ; la frontière ;
--- le versement d'espèces classé sur le compte de la caisse du plan, au 530000 et au 531000 d'un plan décalé, refusé quand
--- il rend la caisse négative, et le retrait d'espèces pour elle ; un autre compte 53, l'engagement ; la restauration ; le
--- catalogue. Une étape de genre « …2 » ne se joue qu'avec cette migration : sans elle, une ligne dit qu'ils attendent
--- (EN ATTENTE), et le reste rend, verdict par verdict, ce qu'il rendait. Une étape « capture » lit, par le propriétaire,
--- l'identifiant d'une opération que les fonctions ont tiré, et le range sous un nom entre accolades.
+-- ÉTENDU LE 29/10/2026 (ligne 26.6, étape C1b : la migration `caisse_retrait_et_versement`, collée après celle-ci). Les
+-- contrôles 100 à 163, sept dossiers jetables de plus (préfixe `ca155e00-0000-4000-8006`) : qui retire et remplace
+-- (l'anonyme, un compte rattaché à rien, le client, le chef d'un autre cabinet, le chef) ; chaque refus du retrait et
+-- du remplacement, dans l'ordre et sous ses mots ; ce que le retrait fait d'une recette, d'un apport, d'un prélèvement,
+-- d'espèces rendues et d'un paiement (toutes les lignes qui citent l'opération) ; le remplacement — l'ancienne retirée,
+-- la nouvelle et son `remplace_id`, l'écriture de l'une partie et celle de l'autre écrite, un genre ou un taux qui
+-- change, la chaîne des versions ; la caisse jamais négative, par un retrait et par un remplacement qui ne passe sous
+-- zéro qu'un instant (accepté) ou pour de bon (refusé) ; la frontière ; le versement d'espèces classé sur le compte de
+-- la caisse du plan, au 530000 et au 531000 d'un plan décalé, refusé quand il rend la caisse négative, et le retrait
+-- d'espèces pour elle ; un autre compte 53, l'engagement ; la restauration ; le catalogue. Une étape de genre « …2 » ne
+-- se joue qu'avec cette migration : sans elle, une ligne dit qu'ils attendent (EN ATTENTE), et le reste rend, verdict
+-- par verdict, ce qu'il rendait. Une étape « capture » lit, par le propriétaire, l'identifiant d'une opération que les
+-- fonctions ont tiré, et le range sous un nom entre accolades.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';

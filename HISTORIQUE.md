@@ -42365,3 +42365,62 @@ d'ensemble pour les quatre points, la clé `operation_caisse_id` en attente dans
 C9 : le paiement d'une pièce par la caisse dans le FEC (le journal de sa pièce) et la piste d'audit. À la ligne 62 : les
 vingt-deux champs d'un BNC. Hors de C3b et non demandé, relevé en passant : le point « postes-manquants » de la Vue
 d'ensemble ne compte pas encore la catégorie sans poste d'une recette de caisse (Clôture, si, depuis C3a).
+
+### 30/10/2026 — LA CAISSE EN PRODUCTION : LES DEUX MIGRATIONS ET LE DRAPEAU LEVÉ (C1, C1B, LIGNE 26.6)
+
+(La session, sur sa branche, après « LA CAISSE : LE FEC ET LES CONTRÔLES (C3B, LIGNE 26.6) ». Modifiés : les deux
+fichiers de la caisse, de `supabase/preparees/` à l'export sous leurs versions ; le socle ; `lib/caisse.ts`, son drapeau
+levé ; `supabase/schema/README.md` ; les en-têtes de six essais ; PLAN_DE_REPRISE.md, RGPD.md, CLAUDE.md. Aucune Edge
+Function.)
+
+**CE QUI EST EN PRODUCTION.** Sur l'accord du cabinet (« Oui pour la caisse », le 30/10/2026), `caisse` a été appliquée
+par l'outil, sous la version `20261030073812` : sa ligne d'historique rend `20bbd94ff38cf78b297896c697ffdaea`,
+l'empreinte du fichier. Le cabinet a ensuite collé `caisse_retrait_et_versement` dans l'éditeur SQL de Supabase — son
+texte nomme une suppression dans le corps d'une fonction, que l'outil aurait retenue —, avec sa ligne d'historique, sous
+la version `20261030123801` : elle rend `6104e62c7ed5ee81ce4f1c81c40eb5cd`, l'empreinte du fichier, et porte l'auteur
+des collages d'avant (`created_by`). 163 migrations. Aucune opération de caisse n'est encore en base.
+
+**LES CONTRÔLES, relus en production après chacune.** Après la première, `signature.sql` rend déjà les valeurs finales
+de sept familles, et « fonctions » et « droits des fonctions » 215 (`866f0ee9…`, `94bc8f4a…`) — exactement la réplique
+munie de la seule première. Après la seconde, les neuf familles de la réplique munie des deux : « colonnes » 911
+`13d1263c…`, « contraintes » 710 `ce4cd645…`, « déclencheurs » 82 `86c12843…`, « droits des fonctions » 217 `8ea236a6…`,
+« droits des tables » 82 `36d97923…`, « fonctions » 217 `7372ffd2…`, « index » 244 `9704c175…`, « policies » 161
+`6e6e0706…`, « rls » 82 `5fb5dc41…` (avant : 895, 681, 70, 207, 81, 207, 238, 159 et 81, les valeurs d'A7). L'export :
+la dérive, 163 fichiers, 163 migrations, `4f380da5…` des deux côtés ; le socle, 81 instructions (80 avant : l'index de
+la colonne neuve du brouillon), `5d636a96…` ; l'inventaire, 2 284 objets (2 210 avant), `efbc0207…`, des deux côtés.
+
+**LA RÉPLIQUE DU JOUR.** La production à 161 migrations, sa signature égale à celle relevée en production le 29/10 au
+soir, munie des deux migrations — la première comme l'outil, la seconde par le texte même donné au cabinet. Joués en une
+transaction chacun (`psql -1`) : `caisse.sql` 346 lignes (345 contrôles et une ligne d'information), toutes justes ;
+`rls.sql` ENTIER, 81 lignes de verdict, 0 en faute, 63 mutations sur 63, aucune EN ATTENTE ; `mentionsFigees.sql` (236
+lignes) et `ibanHorsDesParametres.sql` (28) identiques avec et sans la caisse ; sur le jeu de départ du banc,
+`compteBilan.sql` 65 lignes et `laBaseLitLePlan.sql` 54, justes ; `caisseSuppression.sql` 20 lignes justes. Tous rendent
+les sorties de C2, hors la date du jour et les identifiants tirés. L'entrée de C2 disait 347, 66, 55 et 21 lignes : elle
+comptait la ligne « (n rows) » de psql.
+
+**LES ESSAIS EN PRODUCTION.** Les blocs CA et CR de `rls.sql`, d'un seul appel, les deux tables de résultats `on commit
+drop` et une ligne TEXTE ajoutée : la base a reçu 19 424 caractères, `b68e6aa362092f10d7014470ef64110b`, le texte
+construit ; 9 lignes de verdict (CA1 à CA4, CR1 à CR3, les deux jeux construits), 0 en faute ; 5 mutations sur 5 qui
+mordent (M-CA1 à M-CA3, M-CR1, M-CR2) ; rien n'est resté — aucune opération, aucune ligne du brouillon qui en cite une,
+deux policies sur la table, aucune policy de mutation. `caisse.sql` n'est PAS rejoué en production : 180 000 caractères,
+et son texte nomme une suppression (une lecture du catalogue, `prosrc like '%delete from …%'`) que l'outil retiendrait ;
+la production rend les neuf familles de la réplique où il est passé entier, le corps de chaque fonction compris.
+`caisseSuppression.sql` ne se joue que sur une réplique. Les deux se rejouent sur une réplique au premier changement de
+leurs fonctions.
+
+**CE QUI CHANGE DANS LE CODE.** Les deux fichiers passent de `supabase/preparees/`, désormais vide, à l'export sous
+leurs versions réelles, textes inchangés : `20261030073812_caisse.sql`,
+`20261030123801_caisse_retrait_et_versement.sql`. Le socle reçoit, dans `ecritures_brouillon` — une table née hors
+migration (« UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA ») —, la colonne `operation_caisse_id`, sa clé (`on delete
+cascade`), la contrainte `ecritures_brouillon_caisse_sans_autre_source` et l'index partiel de la colonne, sous
+l'instruction que rend la réplique. `CAISSE_EXPORTEE` est levé, et `caisse.test.ts` le lie aux deux fichiers de
+l'export : la lecture, la sauvegarde (la table au plan, PLAN_DE_REPRISE.md §4), les moteurs (la 2035, sa concordance, la
+CA3, la situation, l'estimation, la revue ; l'instantané validé en version 3), le FEC, la piste d'audit, les préalables
+de la validation et les points de la Vue d'ensemble comptent désormais la caisse. Aucun écran ne l'écrit encore :
+l'onglet Caisse (C4) suit, dans sa propre demande de fusion. Les en-têtes de `caisse.sql`, `caisseSuppression.sql`,
+`compteBilan.sql`, `laBaseLitLePlan.sql` et `restauration.sql` ne disent plus la caisse « préparée » — leurs premiers
+paragraphes, que le banc du leurre et `essaisEnProduction.test.ts` lisent pour les classer, gardent leur classement ;
+`rls.sql` note le passage de ses blocs en production.
+
+**CE QUI RESTE.** C4, l'onglet Caisse et la fiche d'un crédit, prêts sur leur branche ; C5, l'assistant, avant la
+première opération réelle ; puis C6 et la suite, après le MVP pour ce qui n'y compte pas.

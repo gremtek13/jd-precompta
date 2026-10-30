@@ -561,7 +561,24 @@ et `enregistrer_parametres_facturation` changent sous leur nom. `signature.sql`,
 les cinq autres inchangées — les valeurs de la réplique de l'étape munie des deux, où leurs essais sont passés entiers
 (HISTORIQUE.md, « LES DEUX MIGRATIONS D'A7 EN PRODUCTION »).
 
-**Préparé le 29/10/2026, PAS ENCORE APPLIQUÉ : `caisse`** (ligne 26.6, étape C1 : la caisse d'un dossier BNC, MVP-D2).
+**Appliqué le 30/10/2026 : `caisse`, puis `caisse_retrait_et_versement`** (ligne 26.6, étapes C1 et C1b ; HISTORIQUE.md,
+« LA CAISSE EN PRODUCTION : LES DEUX MIGRATIONS ET LE DRAPEAU LEVÉ »). Sur l'accord du cabinet, `caisse` par l'outil
+(version `20261030073812`, sa ligne d'historique `20bbd94ff38cf78b297896c697ffdaea`), puis `caisse_retrait_et_versement`,
+collée par le cabinet (version `20261030123801`, `6104e62c7ed5ee81ce4f1c81c40eb5cd`) ; leurs fichiers quittent
+`supabase/preparees/` pour entrer ici sous ces versions, textes inchangés, et le socle se régénère (la colonne
+d'`ecritures_brouillon`, sa clé, sa contrainte et son index). Les trois contrôles, égaux des deux côtés : 163 fichiers et
+163 migrations, `4f380da572afcd602eb480203ac5a898` ; le socle, 81 instructions, `5d636a96f2a2fb373d668da5c26f6554` ;
+l'inventaire, 2 284 objets, `efbc0207c63081b484ebfc07eb7a538c`. `signature.sql` en production, avant (les neuf familles
+d'après A7), après la première (« fonctions » et « droits des fonctions » 215, `866f0ee9…` et `94bc8f4a…`, les sept
+autres déjà à leurs valeurs finales) et après la seconde : « colonnes » 911 `13d1263c3f4d08381411d33ccb2e3e72`,
+« contraintes » 710 `ce4cd645805f61594330230eb9a69fa1`, « déclencheurs » 82 `86c12843…`, « fonctions » 217
+`7372ffd259a85ef62b5a2bbb1ab2c780`, « droits des fonctions » 217 `8ea236a6697c3a1e57a1ec2a666dfa4b`, « index » 244
+`9704c175…`, « policies » 161 `6e6e0706…`, « RLS » 82 `5fb5dc41…`, « droits des tables » 82 `36d97923…` — chaque fois
+égales à celles d'une réplique de la production du jour (161 migrations, A7 comprise) munie des mêmes migrations, où
+les essais de la caisse sont passés entiers.
+
+**Préparé le 29/10/2026 (appliqué le 30/10/2026, ci-dessus) : `caisse`** (ligne 26.6, étape C1 : la caisse d'un dossier
+BNC, MVP-D2).
 Son fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version PROVISOIRE, `20261029120000`, après
 celles d'A7 : il crée une table, que `sauvegardeTables.test.ts` et `sauvegardeRelations.test.ts` exigeraient au plan de
 sauvegarde du jour, et l'étape C2 l'y met, derrière son drapeau. Elle s'applique par l'outil — ni table, ni colonne, ni
@@ -590,8 +607,8 @@ puis 212 `ddcdda6933f81c9e51ec32b5d0b9b26a`), « index » (238 `b9aae28f…` pui
 — et reviennent à la production, historique compris, après son retour arrière ; les trois ordres avec A7 rendent une
 même signature (HISTORIQUE.md, « LA CAISSE, EN BASE : LA MIGRATION `CAISSE` (C1, LIGNE 26.6) »).
 
-**Préparé le 29/10/2026, PAS ENCORE APPLIQUÉ : `caisse_retrait_et_versement`** (ligne 26.6, étape C1b : le retrait, le
-remplacement et le versement d'espèces). Son fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version
+**Préparé le 29/10/2026 (collé le 30/10/2026, ci-dessus) : `caisse_retrait_et_versement`** (ligne 26.6, étape C1b : le
+retrait, le remplacement et le versement d'espèces). Son fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version
 PROVISOIRE, `20261029130000`, après celle de `caisse`, qu'il exige (sa garde de tête refuse une base sans elle). Il se
 COLLE — le corps de ses deux fonctions retire les lignes du brouillon d'une opération retirée — : le texte à coller
 vérifie son empreinte, refuse une seconde application et une base dont l'historique ne porte pas `caisse`, et pose la

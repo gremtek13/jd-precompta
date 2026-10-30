@@ -333,6 +333,7 @@ create table public.ecritures_brouillon (
   cotisation_id uuid,
   encaissement_id uuid,
   facture_id uuid,
+  operation_caisse_id uuid,
   constraint ecritures_brouillon_pkey PRIMARY KEY (id),
   constraint ecritures_brouillon_cotisation_id_fkey FOREIGN KEY (cotisation_id) REFERENCES cotisations_declarees(id) ON DELETE CASCADE,
   constraint ecritures_brouillon_declaration_tva_id_fkey FOREIGN KEY (declaration_tva_id) REFERENCES declarations_tva(id),
@@ -341,8 +342,10 @@ create table public.ecritures_brouillon (
   constraint ecritures_brouillon_facture_id_fkey FOREIGN KEY (facture_id) REFERENCES factures_emises(id),
   constraint ecritures_brouillon_immobilisation_id_fkey FOREIGN KEY (immobilisation_id) REFERENCES immobilisations(id),
   constraint ecritures_brouillon_ligne_bancaire_id_fkey FOREIGN KEY (ligne_bancaire_id) REFERENCES lignes_bancaires(id) ON DELETE SET NULL,
+  constraint ecritures_brouillon_operation_caisse_id_fkey FOREIGN KEY (operation_caisse_id) REFERENCES operations_caisse(id) ON DELETE CASCADE,
   constraint ecritures_brouillon_piece_id_fkey FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE SET NULL,
   constraint ecritures_brouillon_vehicule_id_fkey FOREIGN KEY (vehicule_id) REFERENCES vehicules(id),
+  constraint ecritures_brouillon_caisse_sans_autre_source CHECK (((operation_caisse_id IS NULL) OR ((ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL) AND (vehicule_id IS NULL) AND (declaration_tva_id IS NULL) AND (cotisation_id IS NULL) AND (encaissement_id IS NULL) AND (facture_id IS NULL)))),
   constraint ecritures_brouillon_cotisation_sans_autre_source CHECK (((cotisation_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL) AND (vehicule_id IS NULL) AND (declaration_tva_id IS NULL)))),
   constraint ecritures_brouillon_dotation_au_31_decembre CHECK (((immobilisation_id IS NULL) OR ((EXTRACT(month FROM date) = (12)::numeric) AND (EXTRACT(day FROM date) = (31)::numeric)))),
   constraint ecritures_brouillon_dotation_sans_piece_ni_mouvement CHECK (((immobilisation_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL)))),
@@ -367,6 +370,7 @@ CREATE INDEX lignes_bancaires_declaration_tva_id_idx ON public.lignes_bancaires 
 CREATE INDEX ecritures_brouillon_ligne_bancaire_id_idx ON public.ecritures_brouillon USING btree (ligne_bancaire_id);
 CREATE INDEX ecritures_brouillon_immobilisation_id_idx ON public.ecritures_brouillon USING btree (immobilisation_id);
 CREATE INDEX ecritures_brouillon_vehicule_id_idx ON public.ecritures_brouillon USING btree (vehicule_id);
+CREATE INDEX ecritures_brouillon_operation_caisse_id_idx ON public.ecritures_brouillon USING btree (operation_caisse_id) WHERE (operation_caisse_id IS NOT NULL);
 CREATE INDEX ecritures_brouillon_declaration_tva_id_idx ON public.ecritures_brouillon USING btree (declaration_tva_id);
 CREATE INDEX ecritures_brouillon_cotisation_id_idx ON public.ecritures_brouillon USING btree (cotisation_id);
 CREATE INDEX ecritures_brouillon_encaissement_id_idx ON public.ecritures_brouillon USING btree (encaissement_id) WHERE (encaissement_id IS NOT NULL);
