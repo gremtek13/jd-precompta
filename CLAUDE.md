@@ -47,13 +47,14 @@ son essai de suppression (`caisseSuppression.sql`) sur une réplique seulement �
 même jour : le module, la lecture et la sauvegarde (C2), les moteurs (C3a), le FEC et les contrôles (C3b), les écrans du
 cabinet (C4) suivent la base ; l'assistant (C5) en ligne le même jour (`agent-comptable` v50) — une ligne de caisse au
 modèle sous son genre, sa date et son montant, jamais un libellé —, `points_a_traiter` renvoie ses contrôles à l'onglet
-Caisse ; le resserrement (C6) le même jour : l'écran n'offre plus d'espèces sur un crédit, la migration 3
-(`especes_sans_mouvement`) PRÉPARÉE, pas appliquée → « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE
-26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES CONTRÔLES (C3B, LIGNE 26.6) », « LA
-CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT EN LIGNE
-(C5, LIGNE 26.6) », « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base
-(MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une partie, et rien
-d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
+Caisse ; le resserrement (C6) le même jour : l'écran n'offre plus d'espèces sur un crédit, et la garde des encaissements
+le refuse en base (la migration 3, `especes_sans_mouvement`, appliquée par l'outil) → « LA CAISSE : LE MODULE, LA
+LECTURE ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
+CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
+26.6) », « LA CAISSE : L'ASSISTANT EN LIGNE (C5, LIGNE 26.6) », « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) », « LA
+CAISSE : LE RESSERREMENT EN PRODUCTION (C6, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case
+« MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant
+elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
@@ -685,14 +686,16 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     imprime ne porte un IBAN valide ; sans dénomination, un accès « Ventes » ne valide pas) — `mentions_figees` collée
     par le cabinet, puis `iban_hors_des_parametres` par l'outil —, A7b l'écran (le formulaire et l'avoir disent ses
     refus avant le clic et nomment ce qui se fige, l'aperçu n'imprime que ce qui est figé ; `lib/mentionsFigeesVue.ts`),
-    en ligne le 30/10/2026 (trois questions au cabinet, A7B-Q1 à Q3), A7c le CII après le MVP → « LA FACTURE FIGE SES
-    MENTIONS, EN BASE », « LA FACTURE FIGE SES MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5) », « LA FACTURE
-    FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES », « DEUX RÉPONSES DU CABINET : A7Q-Q1 ET
-    VF9CQ1B2-Q1 », « A7Q-Q1 : UNE SOCIÉTÉ SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA
-    MIGRATION », « LES DEUX MIGRATIONS D'A7 EN PRODUCTION » ; la liste des clients sans activité depuis trois ans, qui
-    lit les factures d'un contact (A7 les relie) ; la suite du premier groupe, dont A9, la numérotation (MEG1-Q5 : deux
-    séries par dossier, celle du client et celle du mandataire, choisie selon qui valide, et la série de l'ancien
-    logiciel qui continue ; rien n'en est écrit) ; les devis (P5) ; P1-trace.
+    en ligne le 30/10/2026 ; A7B-Q1 et Q2 le même jour (rien sous le nom d'un entrepreneur individuel ; la mention
+    légale proposée ne garde que la TVA quand le dossier a ses paramètres) ; A7B-Q3 (le bon de commande d'une
+    entreprise) et A7c, le CII, après le MVP → « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES
+    MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B (LIGNE 51.5) », « LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET
+    L'IBAN HORS DES TEXTES LIBRES », « DEUX RÉPONSES DU CABINET : A7Q-Q1 ET VF9CQ1B2-Q1 », « A7Q-Q1 : UNE SOCIÉTÉ SANS
+    DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION », « LES DEUX MIGRATIONS D'A7 EN
+    PRODUCTION », « QUATRE RÉPONSES DU CABINET : LA MIGRATION DE C6 ET A7B-Q1 À Q3 » ; la liste des clients sans
+    activité depuis trois ans, qui lit les factures d'un contact (A7 les relie) ; la suite du premier groupe, dont A9,
+    la numérotation (MEG1-Q5 : deux séries par dossier, celle du client et celle du mandataire, choisie selon qui
+    valide, et la série de l'ancien logiciel qui continue ; rien n'en est écrit) ; les devis (P5) ; P1-trace.
 - **Bilan** (ligne 33) : restent l'affectation du résultat d'une société, la forme juridique du dossier (posée par A5b2,
   que le bilan lira : 33-Q6), l'impôt sur les sociétés, l'inventaire (35), les stocks (36), puis la liasse 2033 (37) ;
   sur l'ouverture, confronter une balance reprise (O33-Q2, plus tard) → « LE BILAN SE LIT DANS LES RUBRIQUES DU
