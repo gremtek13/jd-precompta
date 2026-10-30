@@ -35,8 +35,11 @@ import { motsDuCabinet, pourLEspace } from './espaceVentes'
 const MIGRATION = /\/\d{14}_registre_virement_mixte\.sql$/
 const texteDeLaMigration = () => fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))?.texte ?? ''
 
-// Les fonctions qu'une migration POSTÉRIEURE a reprises, et le fichier qui en porte désormais la dernière définition.
-const REPRISES_DEPUIS = new Map([['garder_encaissement_facture', /\/\d{14}_contre_passation_sur_mouvement_fige\.sql$/]])
+// Les fonctions qu'une migration POSTÉRIEURE a reprises, et le fichier qui en porte désormais la dernière définition — la
+// garde, celle de la caisse (étape C6 : `especes_sans_mouvement`, préparée) le jour où elle entrera dans l'export.
+const REPRISES_DEPUIS = new Map([
+  ['garder_encaissement_facture', /\/\d{14}_(?:contre_passation_sur_mouvement_fige|especes_sans_mouvement)\.sql$/],
+])
 
 // Ce que cette migration a posé : la définition que son texte donne à une fonction — la dernière de l'export, sauf pour
 // une fonction reprise depuis.

@@ -67,6 +67,20 @@
 -- se joue qu'avec cette migration : sans elle, une ligne dit qu'ils attendent (EN ATTENTE), et le reste rend, verdict
 -- par verdict, ce qu'il rendait. Une étape « capture » lit, par le propriétaire, l'identifiant d'une opération que les
 -- fonctions ont tiré, et le range sous un nom entre accolades.
+--
+-- ÉTENDU LE 30/10/2026 (ligne 26.6, étape C6 : la migration `especes_sans_mouvement`, PRÉPARÉE, pas appliquée — le
+-- resserrement). Les contrôles 170 à 179, deux dossiers jetables de plus (préfixe `ca155e00-0000-4000-8009`) : un
+-- encaissement en espèces ne cite aucun crédit — refusé à la fonction qui enregistre, pour le chef et pour le client
+-- « Ventes » et « Banque », après tous ses refus (l'ordre : ceux de la fonction d'abord) ; de toute facture, source ou
+-- non ; au rattachement par la fonction ; en direct par le propriétaire, à l'insertion et au rattachement, et sous la
+-- session du super-administrateur au rattachement ; par le super-administrateur lui-même à l'insertion, sans l'instant de
+-- création d'avant d'une ligne réinsérée — et admis : des espèces sans mouvement, un chèque sur le même crédit, la
+-- restauration (une ligne réinsérée, son instant de création d'avant), la contre-passation qui cite le débit qui a rendu
+-- l'argent, une contre-passation sans mouvement rattachée à ce débit ; le catalogue. Une étape de genre « …3 » ne se joue
+-- qu'avec cette migration : sans elle, une ligne dit qu'elles attendent (EN ATTENTE) ; une étape de genre « …3h » (hier)
+-- ne se joue que SANS elle — ce qu'elle remplace, le rattachement d'espèces à un crédit, que la caisse jugeait (74c), et
+-- que la garde refuse désormais la première (74c, sous le genre « …3 »). Les espèces du 11/03 que le crédit du 12/03 a
+-- remises (60b) naissent désormais par la restauration (60bb) : la fonction les refuserait avec la migration.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -91,7 +105,11 @@ declare
   -- La migration de l'étape C1b : ses deux fonctions en base. Sans elle, ses étapes (genre « …2 ») attendent.
   c1b boolean := to_regprocedure('public.retirer_operation_caisse(uuid, uuid)') is not null
     and to_regprocedure('public.remplacer_operation_caisse(uuid, uuid, text, date, numeric, uuid, numeric, uuid[], jsonb)') is not null;
-  genre text; en_attente integer := 0;
+  -- La migration de l'étape C6 : la règle des espèces dans la garde des encaissements. Sans elle, ses étapes (genre « …3 »)
+  -- attendent ; avec elle, celles qu'elle remplace (genre « …3h ») se taisent.
+  c6 boolean := exists (select 1 from pg_proc p where p.oid = to_regprocedure('public.garder_encaissement_facture()')
+                         and p.prosrc like '%Un encaissement en espèces ne cite aucun crédit du relevé%');
+  genre text; en_attente integer := 0; en_attente3 integer := 0; remplacees integer := 0;
   cle text; valeur text; s text;
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
@@ -164,7 +182,13 @@ begin
       'V5', 'ca155e00-0000-4000-8007-000000000005', 'V6', 'ca155e00-0000-4000-8007-000000000006',
       'V7', 'ca155e00-0000-4000-8007-000000000007', 'PR6', 'ca155e00-0000-4000-8007-000000000010',
       'Y1', 'ca155e00-0000-4000-8008-000000000001', 'Y2', 'ca155e00-0000-4000-8008-000000000002',
-      'Y3', 'ca155e00-0000-4000-8008-000000000003', 'Y4', 'ca155e00-0000-4000-8008-000000000004');
+      'Y3', 'ca155e00-0000-4000-8008-000000000003', 'Y4', 'ca155e00-0000-4000-8008-000000000004')
+    -- L'étape C6 : deux dossiers (S6, basculé, et N6, qui ne l'est pas) et leurs mouvements — un crédit et un débit de
+    -- S6, un crédit de N6. (Aucun point-virgule dans ce bloc : src/test/essaiCaisse.ts lit les identifiants jusqu'au premier.)
+    || jsonb_build_object(
+      'S6', 'ca155e00-0000-4000-8009-000000000001', 'N6', 'ca155e00-0000-4000-8009-000000000002',
+      'MS1', 'ca155e00-0000-4000-8009-000000000011', 'MS3', 'ca155e00-0000-4000-8009-000000000013',
+      'MN1', 'ca155e00-0000-4000-8009-000000000021');
 
   select string_agg(n::text, '/') into avant from (values
     ((select count(*) from dossiers)), ((select count(*) from operations_caisse)), ((select count(*) from ecritures_brouillon)),
@@ -444,12 +468,18 @@ begin
 
     -- ══ 60 à 65. L'ensemble du jour, dossier B (basculé) : sa facture source et ses espèces ══════════
     array['fait', '60. une facture source de B, validée', 'chef', $q$select enregistrer_facture('{B}', null, {FACTURE})$q$, 'OK', ''],
-    array['fait', '60b. ses encaissements : deux en espèces et un virement le 10/03, des espèces du 11/03 remises par le crédit du 12/03, des espèces le 14/03', 'chef', $q$select enregistrer_encaissement('{B}', f.id, '2026-03-10', 30, 'especes', null, '[{"taux":20,"montant":30}]'),
+    array['fait', '60b. ses encaissements : deux en espèces et un virement le 10/03, des espèces le 14/03', 'chef', $q$select enregistrer_encaissement('{B}', f.id, '2026-03-10', 30, 'especes', null, '[{"taux":20,"montant":30}]'),
         enregistrer_encaissement('{B}', f.id, '2026-03-10', 20, 'especes', null, '[{"taux":20,"montant":20}]'),
         enregistrer_encaissement('{B}', f.id, '2026-03-10', 10, 'virement', null, '[{"taux":20,"montant":10}]'),
-        enregistrer_encaissement('{B}', f.id, '2026-03-11', 15, 'especes', '{MB1}', '[{"taux":20,"montant":15}]'),
         enregistrer_encaissement('{B}', f.id, '2026-03-14', 25, 'especes', null, '[{"taux":20,"montant":25}]')
       from factures_emises f where f.dossier_id = '{B}' and f.type = 'facture'$q$, 'OK', ''],
+    -- Des espèces qui citent un crédit ne s'enregistrent plus depuis l'étape C6 (la garde des encaissements, `especes_sans_mouvement`) :
+    -- celles du 11/03 que le crédit du 12/03 a remises naissent comme une sauvegarde d'avant les réinsère, par la
+    -- restauration — le super-administrateur, leur instant de création d'avant —, avec ou sans la migration.
+    array['fait', '60bb. des espèces du 11/03 remises par le crédit du 12/03, réinsérées par la restauration, et leur part', 'chef', $q$insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, cree_le)
+      select '{B}', f.id, '2026-03-11', 15, 'especes', '{MB1}', '2026-03-11 10:00:00+00' from factures_emises f where f.dossier_id = '{B}' and f.type = 'facture';
+      insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant)
+      select e.id, e.dossier_id, 20, 15 from encaissements_factures e where e.dossier_id = '{B}' and e.date_encaissement = '2026-03-11'$q$, 'OK', ''],
     array['jeu', '60c. la contre-passation sans mouvement des espèces du 14/03, le 15/03, et sa part', 'postgres', $q$insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, annule_id, motif)
       select e.dossier_id, e.facture_id, '2026-03-15', -e.montant, e.moyen, e.id, 'ESSAI CAISSE' from encaissements_factures e where e.dossier_id = '{B}' and e.date_encaissement = '2026-03-14';
       insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant)
@@ -571,8 +601,12 @@ begin
       'OK', ''],
     array['controle', '74b. retirer un encaissement en espèces dont les espèces ont servi', 'chef', $q$select retirer_encaissement('{B}', e.id) from encaissements_factures e where e.dossier_id = '{B}' and e.date_encaissement = '2026-03-10' and e.montant = 20$q$,
       '23514', 'Retirer cet encaissement de 20,00 € en espèces rendrait la caisse négative le 13/03/2026 (−20,00 €) : ses espèces ont déjà servi.'],
-    array['controle', '74c. le rattacher à un crédit du relevé', 'chef', $q$select rattacher_mouvement_encaissement('{B}', e.id, '{MB2}') from encaissements_factures e where e.dossier_id = '{B}' and e.date_encaissement = '2026-03-10' and e.montant = 30$q$,
+    -- Sans la migration de l'étape C6 (« …3h ») : la caisse jugeait le rattachement d'espèces à un crédit, qui les en
+    -- sortait ; avec elle (« …3 »), la garde des encaissements le refuse d'abord — des espèces ne citent aucun crédit.
+    array['controle3h', '74c. le rattacher à un crédit du relevé (sans la migration de l''étape C6)', 'chef', $q$select rattacher_mouvement_encaissement('{B}', e.id, '{MB2}') from encaissements_factures e where e.dossier_id = '{B}' and e.date_encaissement = '2026-03-10' and e.montant = 30$q$,
       '23514', 'Rattacher à un mouvement cet encaissement de 30,00 € en espèces rendrait la caisse négative le 13/03/2026 (−30,00 €) : ses espèces ont déjà servi.'],
+    array['controle3', '74c. … avec elle, la garde des encaissements le refuse d''abord : des espèces ne citent aucun crédit', 'chef', $q$select rattacher_mouvement_encaissement('{B}', e.id, '{MB2}') from encaissements_factures e where e.dossier_id = '{B}' and e.date_encaissement = '2026-03-10' and e.montant = 30$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
     array['fait', '74d. des espèces de 20 € le 16/03, puis un prélèvement de 20 € le 17/03', 'chef', $q$select enregistrer_encaissement('{B}', f.id, '2026-03-16', 20, 'especes', null, '[{"taux":20,"montant":20}]') from factures_emises f where f.dossier_id = '{B}';
       select enregistrer_operation_caisse('{B}', 'prelevement', '2026-03-17', 20, null, null, null, '[{"compte":"108000","sens":"debit","montant":20},{"compte":"530000","sens":"credit","montant":20}]')$q$,
       'OK', ''],
@@ -1154,14 +1188,108 @@ begin
       where pronamespace = 'public'::regnamespace and prosrc like '%set_config(''jd.caisse'',%'$q$, '',
       'enregistrer_operation_caisse,remplacer_operation_caisse,retirer_operation_caisse'],
     array['valeur2', '163. le refus d''un compte 53 : la caisse en trésorerie, la phrase d''hier en engagement et pour les autres comptes de trésorerie', 'postgres', $q$select string_agg(c || '/' || m || ':' || left(coalesce(refus_compte_de_bilan(c, m, '108000'), 'accepté'), 24), ' | ' order by c, m) from unnest(array['514000', '530000', '531000', '541000']) c, unnest(array['engagement', 'tresorerie']) m$q$, '',
-      '514000/engagement:Un virement vers un autr | 514000/tresorerie:Un virement vers un autr | 530000/engagement:Un virement vers un autr | 530000/tresorerie:Seule la caisse du dossi | 531000/engagement:Un virement vers un autr | 531000/tresorerie:Seule la caisse du dossi | 541000/engagement:Un virement vers un autr | 541000/tresorerie:Un virement vers un autr']
+      '514000/engagement:Un virement vers un autr | 514000/tresorerie:Un virement vers un autr | 530000/engagement:Un virement vers un autr | 530000/tresorerie:Seule la caisse du dossi | 531000/engagement:Un virement vers un autr | 531000/tresorerie:Seule la caisse du dossi | 541000/engagement:Un virement vers un autr | 541000/tresorerie:Un virement vers un autr'],
+
+    -- ══ 170 à 179. Un encaissement en espèces ne cite aucun crédit (étape C6, la migration `especes_sans_mouvement`) ══════════
+    -- S6 a basculé : sa facture est la source de sa vente ; celle de N6 ne l'est pas. Le client de l'essai porte « Ventes » et
+    -- « Banque » sur S6 (un dossier basculé : `garder_droit_ventes` l'admet).
+    array['jeu3', 'C6 : deux dossiers jetables, leurs mouvements, l''accès du client à S6', 'postgres', $q$insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, statut_tva, ventes_par_les_factures) values
+      ('{S6}', 'ESSAI CAISSE S6', '{CAB}', 'tresorerie', '455000', null, true), ('{N6}', 'ESSAI CAISSE N6', '{CAB}', 'tresorerie', '455000', null, false);
+      insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values
+      ('{MS1}', '{S6}', '2026-03-12', 'ESSAI VERSEMENT ESPECES', 50, 'non_rapprochee'), ('{MS3}', '{S6}', '2026-03-20', 'ESSAI REMBOURSEMENT', -50, 'non_rapprochee'),
+      ('{MN1}', '{N6}', '2026-03-12', 'ESSAI VERSEMENT ESPECES', 40, 'non_rapprochee');
+      insert into memberships (user_id, dossier_id, role, droit_ventes, droit_banque) values ('797fe440-df8d-4b8e-828b-d148927bfd60', '{S6}', 'client', true, true)$q$, '', ''],
+    array['fait3', '170. une facture source de S6, une facture de N6, validées', 'chef', $q$select enregistrer_facture('{S6}', null, {FACTURE});
+      select enregistrer_facture('{N6}', null, {FACTURE})$q$, 'OK', ''],
+    -- 171 et 172. La fonction qui enregistre : la garde refuse, pour le chef comme pour le client, de toute facture — APRÈS
+    -- les refus de la fonction, qui passent d'abord.
+    array['controle3', '171. le chef : des espèces sur un crédit de S6 (une facture source), refusées par la garde', 'chef', $q$select enregistrer_encaissement('{S6}', f.id, '2026-03-12', 50, 'especes', '{MS1}', '[{"taux":20,"montant":50}]') from factures_emises f where f.dossier_id = '{S6}'$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
+    array['controle3', '171b. … de toute facture : celle de N6, qui n''est pas source', 'chef', $q$select enregistrer_encaissement('{N6}', f.id, '2026-03-12', 40, 'especes', '{MN1}', '[{"taux":20,"montant":40}]') from factures_emises f where f.dossier_id = '{N6}'$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
+    array['controle3', '171c. ordre : les refus de la fonction d''abord — un crédit que l''encaissement dépasserait', 'chef', $q$select enregistrer_encaissement('{S6}', f.id, '2026-03-12', 60, 'especes', '{MS1}', '[{"taux":20,"montant":60}]') from factures_emises f where f.dossier_id = '{S6}'$q$,
+      '22023', 'Ce mouvement de 50,00 € justifierait 60,00 € d''encaissements : l''écart dépasse ce que des frais bancaires expliquent.'],
+    array['controle3', '171d. … un débit cité', 'chef', $q$select enregistrer_encaissement('{S6}', f.id, '2026-03-20', 50, 'especes', '{MS3}', '[{"taux":20,"montant":50}]') from factures_emises f where f.dossier_id = '{S6}'$q$,
+      '22023', 'Un encaissement se justifie par un crédit : ce mouvement n''en est pas un.'],
+    array['controle3', '172. le client « Ventes » et « Banque » de S6 : refusé de même, sous les mêmes mots', 'client', $q$select enregistrer_encaissement('{S6}', f.id, '2026-03-12', 50, 'especes', '{MS1}', '[{"taux":20,"montant":50}]') from factures_emises f where f.dossier_id = '{S6}'$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
+    array['controle3', '172b. … ses espèces sans mouvement passent (le contrôle POSITIF du profil)', 'client', $q$select enregistrer_encaissement('{S6}', f.id, '2026-03-12', 50, 'especes', null, '[{"taux":20,"montant":50}]') from factures_emises f where f.dossier_id = '{S6}'$q$,
+      'OK', ''],
+    array['controle3', '172c. MUTATION : des espèces sans mouvement, par le chef, passent', 'chef', $q$select enregistrer_encaissement('{S6}', f.id, '2026-03-12', 50, 'especes', null, '[{"taux":20,"montant":50}]') from factures_emises f where f.dossier_id = '{S6}'$q$,
+      'OK', ''],
+    array['controle3', '172d. MUTATION : un chèque sur le même crédit passe — la règle ne juge que les espèces', 'chef', $q$select enregistrer_encaissement('{S6}', f.id, '2026-03-12', 50, 'cheque', '{MS1}', '[{"taux":20,"montant":50}]') from factures_emises f where f.dossier_id = '{S6}'$q$,
+      'OK', ''],
+    -- 173 et 174. La fonction qui rattache.
+    array['fait3', '173. des espèces et un chèque sans mouvement, le 12/03, gardés', 'chef', $q$select enregistrer_encaissement('{S6}', f.id, '2026-03-12', 50, 'especes', null, '[{"taux":20,"montant":50}]'),
+        enregistrer_encaissement('{S6}', f.id, '2026-03-12', 50, 'cheque', null, '[{"taux":20,"montant":50}]')
+      from factures_emises f where f.dossier_id = '{S6}'$q$, 'OK', ''],
+    array['controle3', '174. la fonction qui rattache : les espèces à un crédit, refusées par la garde', 'chef', $q$select rattacher_mouvement_encaissement('{S6}', e.id, '{MS1}') from encaissements_factures e where e.dossier_id = '{S6}' and e.moyen = 'especes' and e.annule_id is null$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
+    array['controle3', '174b. MUTATION : le chèque se rattache au même crédit', 'chef', $q$select rattacher_mouvement_encaissement('{S6}', e.id, '{MS1}') from encaissements_factures e where e.dossier_id = '{S6}' and e.moyen = 'cheque'$q$,
+      'OK', ''],
+    -- 175. Sans les fonctions : le propriétaire, à l'insertion et au rattachement — même sous la session du super-administrateur.
+    array['controle3', '175. sans les fonctions : le propriétaire insère des espèces sur un crédit', 'postgres', $q$insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id)
+      select '{S6}', f.id, '2026-03-12', 50, 'especes', '{MS1}' from factures_emises f where f.dossier_id = '{S6}'$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
+    array['controle3', '175b. … ni ne les rattache à un crédit, sous le réglage de la fonction', 'postgres', $q$select set_config('jd.rattachement_encaissement', (select e.id::text from encaissements_factures e where e.dossier_id = '{S6}' and e.moyen = 'especes' and e.annule_id is null), true);
+      update encaissements_factures set ligne_bancaire_id = '{MS1}' where dossier_id = '{S6}' and moyen = 'especes' and annule_id is null$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
+    array['controle3', '175c. … même sous la session du super-administrateur : la restauration ne rattache pas', 'postgres', $q$select set_config('request.jwt.claims', json_build_object('sub', '{CHEF}', 'role', 'authenticated')::text, true);
+      select set_config('jd.rattachement_encaissement', (select e.id::text from encaissements_factures e where e.dossier_id = '{S6}' and e.moyen = 'especes' and e.annule_id is null), true);
+      update encaissements_factures set ligne_bancaire_id = '{MS1}' where dossier_id = '{S6}' and moyen = 'especes' and annule_id is null$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
+    array['controle3', '175d. … ni une ligne d''avant, réinsérée sans mouvement par le super-administrateur : la porte de la restauration ne s''ouvre qu''à l''insertion', 'postgres', $q$select set_config('request.jwt.claims', json_build_object('sub', '{CHEF}', 'role', 'authenticated')::text, true);
+      insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, cree_le)
+      select '{S6}', f.id, '2026-03-11', 1, 'especes', '2026-03-11 09:00:00+00' from factures_emises f where f.dossier_id = '{S6}';
+      select set_config('jd.rattachement_encaissement', (select e.id::text from encaissements_factures e where e.dossier_id = '{S6}' and e.cree_le = '2026-03-11 09:00:00+00'), true);
+      update encaissements_factures set ligne_bancaire_id = '{MS1}' where dossier_id = '{S6}' and cree_le = '2026-03-11 09:00:00+00'$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
+    -- 176. La restauration : le super-administrateur réinsère une ligne d'avant, son instant de création d'avant ; la même
+    -- ligne créée dans la transaction ne passe pas, ni par le propriétaire.
+    array['controle3', '176. la restauration : le super-administrateur réinsère des espèces qui citaient un crédit, leur instant de création d''avant', 'chef', $q$insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, cree_le)
+      select '{S6}', f.id, '2026-03-12', 50, 'especes', '{MS1}', '2026-03-12 10:00:00+00' from factures_emises f where f.dossier_id = '{S6}'$q$,
+      'OK', ''],
+    array['controle3', '176b. … la même ligne créée dans la transaction, non : ce n''est pas la restauration', 'chef', $q$insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id)
+      select '{S6}', f.id, '2026-03-12', 50, 'especes', '{MS1}' from factures_emises f where f.dossier_id = '{S6}'$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
+    array['controle3', '176c. … ni par le propriétaire, son instant de création d''avant : la porte est celle du super-administrateur', 'postgres', $q$insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, cree_le)
+      select '{S6}', f.id, '2026-03-12', 50, 'especes', '{MS1}', '2026-03-12 10:00:00+00' from factures_emises f where f.dossier_id = '{S6}'$q$,
+      '23514', 'Un encaissement en espèces ne cite aucun crédit du relevé : il s''enregistre sans mouvement, et le dépôt des espèces en banque se classe à part.'],
+    -- 177 et 178. Sa contre-passation, qui cite le débit qui a rendu l'argent ; une contre-passation sans mouvement rattachée à
+    -- ce débit : la règle ne juge qu'un crédit.
+    array['controle3', '177. MUTATION : la contre-passation des espèces, qui cite le débit qui les a rendues, passe', 'chef', $q$select annuler_encaissement('{S6}', e.id, '2026-03-20', 'ESSAI C6', '{MS3}') from encaissements_factures e where e.dossier_id = '{S6}' and e.moyen = 'especes' and e.annule_id is null$q$,
+      'OK', ''],
+    array['fait3', '178. une contre-passation sans mouvement des espèces, le 15/03, et sa part (l''essai l''insère comme annuler_encaissement l''insère)', 'postgres', $q$insert into encaissements_factures (dossier_id, facture_id, date_encaissement, montant, moyen, annule_id, motif)
+      select e.dossier_id, e.facture_id, '2026-03-15', -e.montant, e.moyen, e.id, 'ESSAI C6' from encaissements_factures e where e.dossier_id = '{S6}' and e.moyen = 'especes' and e.annule_id is null;
+      insert into encaissements_factures_taux (encaissement_id, dossier_id, taux, montant)
+      select a.id, a.dossier_id, 20, a.montant from encaissements_factures a where a.dossier_id = '{S6}' and a.annule_id is not null$q$, 'OK', ''],
+    array['controle3', '178b. MUTATION : elle se rattache au débit', 'chef', $q$select rattacher_mouvement_encaissement('{S6}', a.id, '{MS3}') from encaissements_factures a where a.dossier_id = '{S6}' and a.annule_id is not null$q$,
+      'OK', ''],
+    -- 179. Ce que le catalogue dit.
+    array['valeur3', '179. la règle vit dans la garde des encaissements, une fois ; aucune autre fonction ne la dit', 'postgres', $q$select string_agg(p.proname || ':' || ((length(p.prosrc) - length(replace(p.prosrc, 'ne cite aucun crédit du relevé', ''))) / length('ne cite aucun crédit du relevé')), ',' order by p.proname collate "C") from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prosrc like '%ne cite aucun crédit du relevé%'$q$, '',
+      'garder_encaissement_facture:1'],
+    array['valeur3', '179b. la garde : ni security definer, ni exécutable par l''anonyme ou un compte connecté ; son seul déclencheur, avant l''insertion, la mise à jour et la suppression', 'postgres', $q$select p.prosecdef || ':' || has_function_privilege('anon', p.oid, 'execute') || ':' || has_function_privilege('authenticated', p.oid, 'execute') || ':' || (select string_agg(t.tgname || '/' || t.tgtype, ',' order by t.tgname) from pg_trigger t where t.tgfoid = p.oid) from pg_proc p where p.oid = to_regprocedure('public.garder_encaissement_facture()')$q$, '',
+      'false:false:false:encaissements_factures_gardes/31']
   ];
 
   begin
     foreach etape slice 1 in array etapes loop
-      -- Une étape de l'étape C1b (genre « …2 ») ne se joue qu'avec sa migration ; sans elle, elle attend.
+      -- Une étape de l'étape C1b (genre « …2 ») ne se joue qu'avec sa migration ; sans elle, elle attend. Une de l'étape C6
+      -- (« …3 ») de même ; une que la migration de l'étape C6 remplace (« …3h ») ne se joue que sans elle.
       genre := etape[1];
-      if genre like '%2' then
+      if genre like '%3h' then
+        if c6 then
+          remplacees := remplacees + 1;
+          continue;
+        end if;
+        genre := left(genre, -2);
+      elsif genre like '%3' then
+        if not c6 then
+          en_attente3 := en_attente3 + 1;
+          continue;
+        end if;
+        genre := left(genre, -1);
+      elsif genre like '%2' then
         if not c1b then
           en_attente := en_attente + 1;
           continue;
@@ -1232,6 +1360,14 @@ begin
     if en_attente > 0 then
       verdicts := verdicts || jsonb_build_object('controle', '100. EN ATTENTE de la migration caisse_retrait_et_versement (étape C1b) : '
         || en_attente || ' étapes du retrait, du remplacement et du versement d''espèces', 'observe', 'absente : elles se jouent dès qu''elle y est', 'ok', true);
+    end if;
+    if en_attente3 > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '170. EN ATTENTE de la migration especes_sans_mouvement (étape C6) : '
+        || en_attente3 || ' étapes — un encaissement en espèces ne cite aucun crédit', 'observe', 'absente : elles se jouent dès qu''elle y est', 'ok', true);
+    end if;
+    if remplacees > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '170. la migration especes_sans_mouvement (étape C6) en base : '
+        || remplacees || ' étape d''avant elle remplacée par la sienne (74c)', 'observe', 'remplacée', 'ok', true);
     end if;
     raise exception 'ANNULATION_ESSAI_GLOBALE';
   exception when others then

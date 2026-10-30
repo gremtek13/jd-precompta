@@ -51,6 +51,19 @@ function fichierDeLaDerniereDefinition(nom: string): string {
   return fichiers[fichiers.length - 1]?.chemin ?? ''
 }
 
+// La migration POSTÉRIEURE qui reprend la garde — la caisse, étape C6 : `especes_sans_mouvement`, préparée — et en portera
+// la dernière définition le jour où elle entrera dans l'export ; especesSansMouvement.test.ts confronte la sienne à
+// celle-ci. Ce garde-ci confronte donc la définition que CETTE migration pose, où que soit la dernière.
+const REPRISE_DEPUIS = /\/\d{14}_especes_sans_mouvement\.sql$/
+
+// Ce que cette migration a posé : la définition que son texte donne à la garde.
+function definitionPosee(): string {
+  const texte = texteDeLaMigration()
+  const debut = texte.indexOf(`create or replace function public.${GARDE}(`)
+  expect(debut).toBeGreaterThan(0)
+  return texte.slice(debut, texte.indexOf('$$;', debut))
+}
+
 // Les deux règles de VF5H2-Q1 que les neuves suivent, et les neuves : leurs lignes de CODE au caractère près, précédées
 // dans la garde de leurs lignes de commentaire (qui ne jugent rien). Chaque neuve : une condition, le verrou de la
 // validation, puis la frontière.
@@ -139,13 +152,16 @@ describe('la migration contre_passation_sur_mouvement_fige reprend la garde des 
     expect(texte).toContain("where p.oid = to_regprocedure('public.garder_encaissement_facture()')), chr(13), ''))")
   })
 
-  it('la garde est sa dernière définition : celle d’insertion_des_encaissements au caractère près, deux règles en plus', () => {
-    expect(fichierDeLaDerniereDefinition(GARDE)).toMatch(MIGRATION)
-    expect(sansLesRegles(derniereDefinitionSql(GARDE))).toBe(avantLaMigration(GARDE).definition)
+  it('la garde qu’elle pose : celle d’insertion_des_encaissements au caractère près, deux règles en plus ; la dernière, ou reprise depuis', () => {
+    const derniere = fichierDeLaDerniereDefinition(GARDE)
+    expect(MIGRATION.test(derniere) || REPRISE_DEPUIS.test(derniere), derniere).toBe(true)
+    expect(sansLesRegles(definitionPosee())).toBe(avantLaMigration(GARDE).definition)
+    // Tant qu'elle est la dernière, la base exécute ce qu'elle pose.
+    if (MIGRATION.test(derniere)) expect(derniereDefinitionSql(GARDE)).toBe(definitionPosee())
   })
 
   it('chacune suit la règle de VF5H2-Q1 de son bloc : le mouvement cité, puis l’annulation, avant le `return`', () => {
-    const lignes = derniereDefinitionSql(GARDE).split('\n')
+    const lignes = definitionPosee().split('\n')
     const [, finA] = bornes(lignes, REGLE_DU_MOUVEMENT_DE_VF5H2_Q1) as [number, number]
     const [debutA, finNeuveA] = bornes(lignes, REGLE_DU_MOUVEMENT_FIGE) as [number, number]
     const [, finB] = bornes(lignes, REGLE_DE_LA_CONTRE_PASSATION_DE_VF5H2_Q1) as [number, number]
@@ -173,7 +189,7 @@ describe('la migration contre_passation_sur_mouvement_fige reprend la garde des 
     // Le mouvement cité : celui que la règle de VF5H2-Q1 juge, pour une facture qui n'est pas source — `is not true`, du
     // côté fermé ; `v_source` est la facture de l'encaissement, lue à l'insertion.
     expect(REGLE_DU_MOUVEMENT_FIGE.slice(1, 3)).toEqual(REGLE_DU_MOUVEMENT_DE_VF5H2_Q1.slice(1, 3))
-    const sql = derniereDefinitionSql(GARDE)
+    const sql = definitionPosee()
     expect(sql).toContain("  if tg_op = 'INSERT' then\n    select f.source_de_la_vente into v_source from public.factures_emises f\n     where f.id = new.facture_id")
     // Aucune exception : ni le super-administrateur, ni un réglage de session.
     expect([...REGLE_DU_MOUVEMENT_FIGE, ...REGLE_DE_LA_CONTRE_PASSATION_FIGEE].join('\n')).not.toMatch(/is_super_admin|current_setting/)
@@ -195,7 +211,7 @@ describe('la migration contre_passation_sur_mouvement_fige reprend la garde des 
     expect(export_).toContain('revoke execute on function public.cle_validation(uuid) from public, anon, authenticated;')
     expect(export_).toContain('revoke execute on function public.frontiere_validation(uuid) from public, anon, authenticated;')
     expect(export_).not.toMatch(/grant execute on function public\.(cle_validation|frontiere_validation)\(/)
-    const demain = derniereDefinitionSql(GARDE)
+    const demain = definitionPosee()
     expect(demain).not.toMatch(/security definer/i)
     for (const regle of [REGLE_DU_MOUVEMENT_FIGE, REGLE_DE_LA_CONTRE_PASSATION_FIGEE]) {
       const debut = demain.indexOf(regle.join('\n'))
@@ -211,7 +227,7 @@ describe('la migration contre_passation_sur_mouvement_fige reprend la garde des 
 
   it('les refus : deux de plus, chacun après celui de VF5H2-Q1 de son bloc, en 23514 — rien d’autre ne bouge', () => {
     const hier = avantLaMigration(GARDE).definition
-    const demain = derniereDefinitionSql(GARDE)
+    const demain = definitionPosee()
     const messages = messagesSql(demain)
     const i = messages.indexOf(NEUF_MOUVEMENT)
     const j = messages.indexOf(NEUF_CONTRE_PASSATION)
@@ -242,7 +258,7 @@ describe('la migration contre_passation_sur_mouvement_fige reprend la garde des 
   })
 
   it('vire au rouge sur une dérive plantée : un mot de la garde hors des règles, une règle changée', () => {
-    const demain = derniereDefinitionSql(GARDE)
+    const demain = definitionPosee()
     const hier = avantLaMigration(GARDE).definition
     const mot = demain.replace("'Un encaissement ne se supprime pas", "'Un encaissement ne se retire pas")
     expect(mot).not.toBe(demain)

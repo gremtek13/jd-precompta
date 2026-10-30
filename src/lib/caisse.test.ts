@@ -266,9 +266,10 @@ describe('la caisse lue, jour par jour', () => {
 })
 
 describe('l’ensemble du jour, sur le jeu de l’essai (section 60, dossier B) : les mots de la base', () => {
-  // Le jeu de B tel que l'essai le pose (60, 60b, 60c, 64c) : sa facture source F2026-0001, deux espèces et un virement le
-  // 10/03, des espèces du 11/03 remises par le crédit du 12/03, des espèces le 14/03 contre-passées le 15/03, des espèces
-  // le 21/03 retirées. Les identifiants sont ceux du registre ; les verdicts, ceux que la base a rendus (lus dans l'essai).
+  // Le jeu de B tel que l'essai le pose (60, 60b, 60bb, 60c, 64c) : sa facture source F2026-0001, deux espèces et un virement
+  // le 10/03, des espèces du 11/03 remises par le crédit du 12/03 (réinsérées par la restauration depuis l'étape C6 : la garde
+  // refuse à la fonction des espèces qui citent un crédit), des espèces le 14/03 contre-passées le 15/03, des espèces le
+  // 21/03 retirées. Les identifiants sont ceux du registre ; les verdicts, ceux que la base a rendus (lus dans l'essai).
   const enc = (id: string, date: string, montant: number, moyen: string, ligne: string | null = null, annule: string | null = null, retire: string | null = null) =>
     ({ id, facture_id: 'fb', date_encaissement: date, montant, moyen, ligne_bancaire_id: ligne, annule_id: annule, retire_le: retire }) as EtatDeLaCaisse['encaissements'][number]
   const b = dossier({
