@@ -384,6 +384,28 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
           { slug, quoi: 'la description de lister_ecritures sans le nom d’un débit', remplacements: [[' (« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui', ' : à qui']], scenario: tresorerie },
         ]
       })(),
+      // La caisse (ligne 26.6, étape C5) : qui a versé les espèces d'une recette, au modèle — la ligne d'une opération sous le
+      // libellé du brouillon, tue, l'opération non lue ; la source perdue ; la consigne, la description de lister_ecritures et
+      // la clé de points_a_traiter qui ne disent plus la caisse. La clé oubliée des rattachements ne change rien qu'un appel
+      // HTTP voie — la sélection lit toujours la colonne — : agentComptablePiecesDeVente.test.ts la garde, contre le schéma
+      // exporté et sur une ligne lue sans elle.
+      ...((): DefautPlante[] => {
+        const tresorerie = 'un dossier qui n’a pas basculé, en trésorerie : ni qui a payé un crédit du relevé ni le libellé d’une ligne rattachée à rien n’atteignent le modèle — chaque ligne d’un crédit, de toute sorte, se nomme par la date et le montant du mouvement —, le libellé d’un débit et d’une écriture composée l’atteignent, et un sens illisible tombe du côté fermé (VF9CQ1)'
+        const basculeReleve = 'un dossier basculé : ni qui a payé un crédit — classé par ses encaissements, d’un virement mixte, ou de toute autre sorte — ni le libellé d’une ligne rattachée à rien n’atteignent le modèle, et chaque ligne garde sa source (VF9CQ1)'
+        const caisse = '  if (ligne.operation_caisse_id != null) return { libelle: libelleDUneLigneDeCaisse(ligne), source: "caisse" }\n'
+        return [
+          { slug, quoi: 'la ligne d’une opération de caisse sous le libellé du brouillon', remplacements: [[caisse, caisse.replace('libelleDUneLigneDeCaisse(ligne)', 'libelleDuBrouillon(ligne)')]], scenario: tresorerie },
+          { slug, quoi: 'la ligne d’une opération de caisse sous le libellé du brouillon, d’un dossier basculé', remplacements: [[caisse, caisse.replace('libelleDUneLigneDeCaisse(ligne)', 'libelleDuBrouillon(ligne)')]], scenario: basculeReleve },
+          { slug, quoi: 'la caisse tue, comme une ligne rattachée à rien', remplacements: [[caisse, '']], scenario: tresorerie },
+          { slug, quoi: 'la source d’une ligne de caisse perdue', remplacements: [[caisse, caisse.replace('source: "caisse"', 'source: null')]], scenario: basculeReleve },
+          { slug, quoi: 'lister_ecritures lue sans l’opération de caisse de chaque ligne', remplacements: [[' operations_caisse(genre, date, montant),', '']], scenario: tresorerie },
+          { slug, quoi: 'une opération que la lecture n’a pas rendue sous le libellé du brouillon', remplacements: [['  if (operation === null || typeof operation !== "object") return null\n', '  if (operation === null || typeof operation !== "object") return libelleDuBrouillon(ligne)\n']], scenario: tresorerie },
+          { slug, quoi: 'des espèces rendues sous le mot d’une recette', remplacements: [['  const nom = operation.genre === "recette" && montant < 0 ? "Espèces rendues" : mots\n', '  const nom = mots\n']], scenario: tresorerie },
+          { slug, quoi: 'la consigne sans la phrase de la caisse', remplacements: [['La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas', 'La caisse dit ce qu’elle peut']], scenario: tresorerie },
+          { slug, quoi: 'la description de lister_ecritures sans le nom d’une opération de caisse', remplacements: [[' Celui d\'une ligne d\'une opération de caisse se recompose', ' Une ligne de caisse se recompose']], scenario: tresorerie },
+          { slug, quoi: 'points_a_traiter sans la caisse', remplacements: [['      caisse: CAISSE_NON_VERIFIEE,\n', '']], scenario: tresorerie },
+        ]
+      })(),
     ]
   })(),
   {
