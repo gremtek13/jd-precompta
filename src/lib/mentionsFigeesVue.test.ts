@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AUCUN_RIB_CONFIRME, AVIS_SANS_FORME, FACTURE_D_AVANT, INDEMNITE_DE_RECOUVREMENT, PROVENANCE_VIDE, RETENUE_CHAINE_ROMPUE,
   RETENUE_EN_LECTURE, avisSansDenomination, ceQueLaFactureImprime, ceQueLaValidationFigera, confirmationDesMentions, formeEtCapital,
-  jugementDesMentions, logoNonImprime, provenanceDeLArticle, provenanceDeLaLigneLue, provenanceQuiPart, retenueIllisible,
+  jugementDesMentions, logoNonImprime, parametresEnVigueur, provenanceDeLArticle, provenanceDeLaLigneLue, provenanceQuiPart, retenueIllisible,
   uniteImprimee, type LectureDeLaValidation, type SaisieAJuger,
 } from './mentionsFigeesVue'
 import { REFUS_DE_LA_PROVENANCE, REFUS_DE_LA_VALIDATION_FIGEE, mentionsAFiger } from './mentionsFigees'
@@ -157,6 +157,23 @@ describe('le jugement de la saisie, dans l’ordre de la base', () => {
   })
 })
 
+describe('le dossier a-t-il des paramètres de facturation en vigueur ? (A7B-Q2 : la mention proposée n’en garde alors que la TVA)', () => {
+  it('oui d’une lecture revenue entière qui porte une version du dossier ; non tant qu’on ne le sait pas', () => {
+    expect(parametresEnVigueur(LU, 'd1')).toBe(true)
+    expect(parametresEnVigueur({ etat: 'lu', identite: identiteDuDossier(), versions: [] }, 'd1')).toBe(false)
+    // Les versions d'un autre dossier ne disent rien de celui-ci.
+    expect(parametresEnVigueur(LU, 'd2')).toBe(false)
+    // Pas revenue, illisible : on ne sait pas — la phrase d'hier se propose.
+    expect(parametresEnVigueur(null, 'd1')).toBe(false)
+    expect(parametresEnVigueur({ etat: 'illisible', motif: 'refusée' }, 'd1')).toBe(false)
+    // Deux premières versions : la suite est rompue, on ne sait pas laquelle vaut.
+    const rompue: LectureDeLaValidation = { etat: 'lu', identite: identiteDuDossier(), versions: [versionParametres({ id: 'v1' }), versionParametres({ id: 'v2' })] }
+    expect(parametresEnVigueur(rompue, 'd1')).toBe(false)
+    const suite: LectureDeLaValidation = { etat: 'lu', identite: identiteDuDossier(), versions: [versionParametres({ id: 'v1' }), versionParametres({ id: 'v2', remplace_id: 'v1' })] }
+    expect(parametresEnVigueur(suite, 'd1')).toBe(true)
+  })
+})
+
 describe('la confirmation nomme ce que la facture figera et imprimera', () => {
   const m = (j = jugementDesMentions(saisie())) => j.mentions!
 
@@ -164,7 +181,6 @@ describe('la confirmation nomme ce que la facture figera et imprimera', () => {
     const phrases = ceQueLaValidationFigera(m(), 'Nom interne')
     expect(phrases).toEqual([
       'le nom « Camille Essai EI »',
-      'l’identité : Entrepreneur individuel',
       `le numéro de TVA ${TVA_VENDEUR}`,
       'les conditions de paiement (moyen préféré : virement)',
       `le RIB FR76 9999 9000 0100 0000 0000 600, BIC ${BIC_ESSAI}, au nom de CAMILLE ESSAI`,
@@ -240,13 +256,23 @@ describe('ce que l’aperçu d’une facture figée imprime, de ses seules colon
     expect(publique.filter((x) => x.libelle === 'Numéro d’engagement')).toHaveLength(1)
   })
 
+  it('un entrepreneur individuel : rien sous son nom, qui porte déjà « EI » (A7B-Q1) ; le RCS et les autres mentions figés, si la facture en a', () => {
+    expect(ceQueLaFactureImprime(factureFigee({ forme_juridique: '1000', capital: null, rcs_ville: null, mentions_identite: null }))!.identite).toEqual([])
+    expect(ceQueLaFactureImprime(factureFigee({ forme_juridique: '1000', capital: null, rcs_ville: 'Lyon', mentions_identite: 'Membre d’une AGA' }))!.identite)
+      .toEqual(['RCS Lyon 123 456 782', 'Membre d’une AGA'])
+  })
+
   it('le logo : son chemin et son empreinte figés, ou rien', () => {
     expect(ceQueLaFactureImprime(factureFigee({ logo_chemin: 'd1/logos/x.png', logo_sha256: 'b'.repeat(64) }))!.logo).toEqual({ chemin: 'd1/logos/x.png', empreinte: 'b'.repeat(64) })
   })
 
   it('la forme et le capital ; l’unité d’une ligne sous son libellé', () => {
     expect(formeEtCapital(null, null)).toBeNull()
-    expect(formeEtCapital('1000', null)).toBe('Entrepreneur individuel')
+    // A7B-Q1 : le libellé de l'INSEE pour une société ; rien sous le nom d'un entrepreneur individuel, qui porte déjà « EI ».
+    expect(formeEtCapital('5710', 1000)).toBe(`SAS, société par actions simplifiée au capital de ${formatMoney(1000)}`)
+    expect(formeEtCapital('5499', null)).toBe('Société à responsabilité limitée (sans autre indication)')
+    expect(formeEtCapital('1000', null)).toBeNull()
+    expect(formeEtCapital('1000', 500)).toBeNull()
     expect(formeEtCapital(null, 500)).toMatch(/^Société au capital de 500,00/)
     expect(uniteImprimee({ unite: 'HUR' })).toBe('heure')
     expect(uniteImprimee({ unite: null })).toBe('')

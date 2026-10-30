@@ -11,14 +11,20 @@ import type { ArticleExoneration, FactureEmise, FactureLigne, NatureArticle, Sta
 // La mention de TVA suit le STATUT du dossier (lib/statutTva.ts) : la franchise cite l'art. 293 B, une
 // exonération l'article qui exonère. Elle proposait la franchise à tout dossier non assujetti, donc à un
 // dossier de soins exonérés — c'était faux, et c'est le défaut qui a fait naître ce statut (ligne 28.5).
-export function mentionsLegalesParDefaut(statut: StatutTva | null, article: ArticleExoneration | null): string {
+// Les conditions de retard (A7B-Q2, réponse du cabinet du 30/10/2026) : quand le dossier a des paramètres de facturation en
+// vigueur, ce sont eux qui les disent — une facture figée à une entreprise imprime de ses colonnes leurs pénalités et
+// l'indemnité forfaitaire, et la phrase y mettrait un second taux —, et la mention ne garde que la TVA. Sans paramètres, ou
+// tant qu'on ne sait pas s'il en a, la phrase d'hier. Sans valeur par défaut : l'appelant dit ce qu'il a lu.
+export function mentionsLegalesParDefaut(statut: StatutTva | null, article: ArticleExoneration | null, parametresEnVigueur: boolean): string {
   const lignes: string[] = []
   const mention = mentionTva(statut, article)
   if (mention) lignes.push(mention)
-  lignes.push(
-    "En cas de retard de paiement, une pénalité égale à trois fois le taux d'intérêt légal sera exigible, " +
-    'ainsi qu\'une indemnité forfaitaire pour frais de recouvrement de 40 €.',
-  )
+  if (!parametresEnVigueur) {
+    lignes.push(
+      "En cas de retard de paiement, une pénalité égale à trois fois le taux d'intérêt légal sera exigible, " +
+      'ainsi qu\'une indemnité forfaitaire pour frais de recouvrement de 40 €.',
+    )
+  }
   return lignes.join('\n')
 }
 

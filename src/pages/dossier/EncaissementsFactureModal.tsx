@@ -810,7 +810,7 @@ function Contenu({
     : null
   const choisie = formulaire?.ligneBancaireId ? propositions.find((p) => p.ligneBancaireId === formulaire.ligneBancaireId) ?? null : null
   const moyen = formulaire ? MOYENS_ENCAISSEMENT.find((m) => m.moyen === formulaire.moyen) ?? null : null
-  // LA CAISSE, ÉTAPE C6 : des espèces ne citent aucun crédit — la garde des encaissements le refusera
+  // LA CAISSE, ÉTAPE C6 : des espèces ne citent aucun crédit — la garde des encaissements le refuse
   // (`especes_sans_mouvement`). Sur le crédit qu'impose la fiche d'un mouvement, le moyen ne s'offre pas ; ailleurs, choisi,
   // aucun mouvement ne se propose ni ne se désigne, et celui qui l'était tombe dans la même saisie (un champ devenu sans
   // objet). Le refus du module, sur la saisie telle qu'elle part, reste la seconde ceinture.

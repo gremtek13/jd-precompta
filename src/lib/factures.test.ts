@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fichiersDuSchema } from '../test/schema'
+import { mentionTva } from './statutTva'
 
 // Le client Supabase est simulé (voir contrepartieBanque.test.ts pour le même motif) : `enregistrerFacture` et
 // `creerAvoir` ne sont que des appels RPC, il n'y a pas de calcul pur à extraire d'eux.
@@ -106,26 +107,40 @@ describe('calculerTotaux', () => {
 })
 
 describe('mentionsLegalesParDefaut', () => {
+  const CAS = [['redevable', null], ['franchise', null], ['exonere', 'cgi_261_4_1'], ['exonere', null], [null, null]] as const
+
   it('cite l’article 293 B pour un dossier en franchise, et seulement pour lui', () => {
-    expect(mentionsLegalesParDefaut('franchise', null)).toContain('TVA non applicable, art. 293 B du CGI.')
-    expect(mentionsLegalesParDefaut('redevable', null)).not.toContain('293 B')
-    expect(mentionsLegalesParDefaut(null, null)).not.toContain('293 B')
+    for (const parametres of [false, true]) {
+      expect(mentionsLegalesParDefaut('franchise', null, parametres)).toContain('TVA non applicable, art. 293 B du CGI.')
+      expect(mentionsLegalesParDefaut('redevable', null, parametres)).not.toContain('293 B')
+      expect(mentionsLegalesParDefaut(null, null, parametres)).not.toContain('293 B')
+    }
   })
 
   it('un dossier de soins exonérés cite l’art. 261, 4, 1°, jamais la franchise — le défaut d’origine', () => {
-    const mentions = mentionsLegalesParDefaut('exonere', 'cgi_261_4_1')
-    expect(mentions).toContain('Exonération de TVA, art. 261, 4, 1° du CGI.')
-    expect(mentions).not.toContain('293 B')
+    for (const parametres of [false, true]) {
+      const mentions = mentionsLegalesParDefaut('exonere', 'cgi_261_4_1', parametres)
+      expect(mentions).toContain('Exonération de TVA, art. 261, 4, 1° du CGI.')
+      expect(mentions).not.toContain('293 B')
+    }
   })
 
   it('n’invente aucune mention de TVA quand l’article d’un dossier exonéré manque', () => {
-    expect(mentionsLegalesParDefaut('exonere', null)).not.toMatch(/TVA/)
+    expect(mentionsLegalesParDefaut('exonere', null, false)).not.toMatch(/TVA/)
+    expect(mentionsLegalesParDefaut('exonere', null, true)).toBe('')
   })
 
-  it('rappelle toujours les pénalités de retard', () => {
-    for (const [statut, article] of [['redevable', null], ['franchise', null], ['exonere', 'cgi_261_4_1'], [null, null]] as const) {
-      expect(mentionsLegalesParDefaut(statut, article)).toContain('40 €')
+  it('sans paramètres de facturation en vigueur, rappelle toujours les pénalités de retard', () => {
+    for (const [statut, article] of CAS) expect(mentionsLegalesParDefaut(statut, article, false)).toContain('40 €')
+  })
+
+  it('avec des paramètres en vigueur, ne garde que la mention de TVA : ce sont eux qui disent les conditions de retard (A7B-Q2)', () => {
+    for (const [statut, article] of CAS) {
+      expect(mentionsLegalesParDefaut(statut, article, true)).toBe(mentionTva(statut, article) ?? '')
+      expect(mentionsLegalesParDefaut(statut, article, true)).not.toMatch(/retard|40 €/)
     }
+    expect(mentionsLegalesParDefaut('franchise', null, true)).toBe('TVA non applicable, art. 293 B du CGI.')
+    expect(mentionsLegalesParDefaut('redevable', null, true)).toBe('')
   })
 })
 

@@ -308,7 +308,8 @@ describe.each(['cabinet', 'client'] as const)('Un article dans la facture — le
     await chargerLesArticles()
     const mentions = screen.getByLabelText('Mentions légales') as HTMLTextAreaElement
     const avant = mentions.value
-    expect(avant).toBe(mentionsLegalesParDefaut('franchise', null))
+    // Ce faux ne rend aucun paramètre de facturation : la phrase d'hier se propose avec la mention de la franchise (A7B-Q2).
+    expect(avant).toBe(mentionsLegalesParDefaut('franchise', null, false))
     await choisir(/^Consultation de conseil/)
     expect(valeursDe(0).taux).toBe('0')
     // Le choix n'écrit pas dans les mentions.

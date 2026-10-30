@@ -577,6 +577,20 @@ autres déjà à leurs valeurs finales) et après la seconde : « colonnes » 91
 égales à celles d'une réplique de la production du jour (161 migrations, A7 comprise) munie des mêmes migrations, où
 les essais de la caisse sont passés entiers.
 
+**Appliqué le 30/10/2026 : `especes_sans_mouvement`** (ligne 26.6, étape C6 : le resserrement de la caisse ;
+HISTORIQUE.md, « LA CAISSE : LE RESSERREMENT EN PRODUCTION (C6, LIGNE 26.6) »). Sur l'accord du cabinet, par l'outil :
+version `20261030224203`, sa ligne d'historique `40e539ff4eb5da4062fd70c89a7e503a`, l'empreinte du fichier, fins de
+ligne comprises ; sa garde de tête a trouvé le corps qu'elle exige (`16af5858…`). Le fichier quitte
+`supabase/preparees/` pour entrer ici sous cette version, texte inchangé ; son retour arrière reste dans
+`supabase/preparees/retour/`. La garde des encaissements rend `31fdfcc86b476669612b459555e94f13` ; aucun encaissement en
+espèces n'est en base, aucun ne cite donc un crédit (relu après l'application). Les trois contrôles, égaux des deux
+côtés : 164 fichiers et 164 migrations, `3a31b7307c5cbe1f33722786cf1ec7c2` ; le socle inchangé, 81 instructions,
+`5d636a96f2a2fb373d668da5c26f6554` ; l'inventaire inchangé, 2 284 objets, `efbc0207c63081b484ebfc07eb7a538c` — la garde
+change sous son nom. `signature.sql` en production : la seule famille « fonctions » change, 217 `7372ffd2…` puis
+`3800368f333f960c6b366acc8a666531`, les huit autres inchangées — les valeurs de la réplique de l'étape munie d'elle, où
+l'essai de la caisse, `rls.sql` et la batterie des encaissements sont passés entiers. Aucun essai n'est rejoué en
+production : celui de la caisse écrit et retire des lignes, que l'outil retient.
+
 **Préparé le 29/10/2026 (appliqué le 30/10/2026, ci-dessus) : `caisse`** (ligne 26.6, étape C1 : la caisse d'un dossier
 BNC, MVP-D2).
 Son fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version PROVISOIRE, `20261029120000`, après
@@ -630,37 +644,37 @@ elles reviennent à celles d'après `caisse`, historique compris, après son ret
 rendent une même signature (HISTORIQUE.md, « LA CAISSE, EN BASE : LE RETRAIT, LE REMPLACEMENT ET LE VERSEMENT D'ESPÈCES
 (C1B, LIGNE 26.6) »).
 
-**Préparé le 30/10/2026, PAS ENCORE APPLIQUÉ : `especes_sans_mouvement`** (ligne 26.6, étape C6 : le resserrement de la
-caisse — un encaissement en espèces ne cite aucun crédit du relevé). Son fichier vit HORS de l'export, dans
-`supabase/preparees/`, sous une version PROVISOIRE, `20261030180000`, après celles de la caisse (20 736 caractères,
-21 116 octets, 291 lignes, `40e539ff4eb5da4062fd70c89a7e503a`, ni barre oblique inverse ni retour chariot). Il
-s'applique PAR L'OUTIL : ni `drop`, ni `delete from`, ni `truncate`, ni `grant` ni `revoke` — le mot de la suppression
-n'y paraît que dans `tg_op = 'DELETE'`, comme dans la garde d'hier, que l'outil a passée le 27/10/2026 sans demander de
-confirmation. Sa garde de tête exige le corps de la garde des encaissements que `contre_passation_sur_mouvement_fige` a
-posé (`16af585818378356e7b4e58521dbe665`, la production), sinon elle refuse en le disant — une seconde application aussi ;
-puis `create or replace function public.garder_encaissement_facture()` (OID, propriétaire, droits et déclencheur gardés),
-sa définition d'hier au caractère près, une règle INSÉRÉE après celle qui veut un crédit pour un encaissement et un débit
-pour une contre-passation : un encaissement de moyen « espèces » qui cite un crédit (un mouvement de montant positif) se
-refuse en 23514, « Un encaissement en espèces ne cite aucun crédit du relevé : il s'enregistre sans mouvement, et le dépôt
-des espèces en banque se classe à part. » — à l'insertion comme au rattachement, de toute facture, le
-super-administrateur compris ; passent sa contre-passation (elle cite un débit) et la restauration (une ligne INSÉRÉE par
-le super-administrateur sous son instant de création d'avant la transaction, la porte de `garder_la_caisse`). Corps
-neuf : 14 813 caractères, `31fdfcc86b476669612b459555e94f13`. Le fichier entre ici sous la version que portera sa ligne
-d'historique, texte inchangé, et cette ligne doit rendre `40e539ff…`. Son RETOUR ARRIÈRE
-(`supabase/preparees/retour/20261030180100_retour_especes_sans_mouvement.sql`, 15 603 caractères,
+**Préparé le 30/10/2026 (appliqué le 30/10/2026, ci-dessus) : `especes_sans_mouvement`** (ligne 26.6, étape C6 : le
+resserrement de la caisse — un encaissement en espèces ne cite aucun crédit du relevé). Son fichier vit HORS de
+l'export, dans `supabase/preparees/`, sous une version PROVISOIRE, `20261030180000`, après celles de la caisse (20 736
+caractères, 21 116 octets, 291 lignes, `40e539ff4eb5da4062fd70c89a7e503a`, ni barre oblique inverse ni retour chariot).
+Il s'applique PAR L'OUTIL : ni `drop`, ni `delete from`, ni `truncate`, ni `grant` ni `revoke` — le mot de la
+suppression n'y paraît que dans `tg_op = 'DELETE'`, comme dans la garde d'hier, que l'outil a passée le 27/10/2026 sans
+demander de confirmation. Sa garde de tête exige le corps de la garde des encaissements que
+`contre_passation_sur_mouvement_fige` a posé (`16af585818378356e7b4e58521dbe665`, la production), sinon elle refuse en
+le disant — une seconde application aussi ; puis `create or replace function public.garder_encaissement_facture()` (OID,
+propriétaire, droits et déclencheur gardés), sa définition d'hier au caractère près, une règle INSÉRÉE après celle qui
+veut un crédit pour un encaissement et un débit pour une contre-passation : un encaissement de moyen « espèces » qui
+cite un crédit (un mouvement de montant positif) se refuse en 23514, « Un encaissement en espèces ne cite aucun crédit
+du relevé : il s'enregistre sans mouvement, et le dépôt des espèces en banque se classe à part. » — à l'insertion comme
+au rattachement, de toute facture, le super-administrateur compris ; passent sa contre-passation (elle cite un débit) et
+la restauration (une ligne INSÉRÉE par le super-administrateur sous son instant de création d'avant la transaction, la
+porte de `garder_la_caisse`). Corps neuf : 14 813 caractères, `31fdfcc86b476669612b459555e94f13`. Le fichier entre ici
+sous la version que portera sa ligne d'historique, texte inchangé, et cette ligne doit rendre `40e539ff…`. Son RETOUR
+ARRIÈRE (`supabase/preparees/retour/20261030180100_retour_especes_sans_mouvement.sql`, 15 603 caractères,
 `76a479a1f7bb39efe997b27b1440f2a8`) : sa garde de tête exige `31fdfcc8…`, puis la garde d'hier au caractère près, par
-`create or replace` — rien ne s'y retire ; appliqué par l'outil, il pose sa propre ligne d'historique à la suite (retirer
-celle de la migration serait une suppression, à accorder). Aucune donnée ne se perd, dans un sens ni dans l'autre. Tant
-qu'elle n'est pas appliquée, l'export ne la porte pas, et ses trois contrôles sont ceux de la production (163 fichiers,
-`4f380da5…` ; socle 81, `5d636a96…` ; inventaire 2 284, `efbc0207…`). Sur la réplique de l'étape (la production du
-jour, 163 migrations, ses neuf familles égales à celles de la production, relues le 30/10/2026), munie d'elle sous sa
-version provisoire, et sur un miroir de l'export qui la porte : 164 fichiers et 164 migrations, égaux nom par nom
-(`b22c6cc8eb9209007eac89457a681c37` pour le miroir, un agrégat que la version réelle changera) ; le socle inchangé (81
-instructions, `5d636a96…`) ; l'inventaire inchangé (2 284 objets, `efbc0207…`) — la garde change sous son nom.
-`signature.sql` : la seule famille « fonctions » change (217, `7372ffd2…` puis `3800368f333f960c6b366acc8a666531`), les
-huit autres inchangées, « droits des fonctions » et « déclencheurs » compris ; elles reviennent toutes à la production
-après le retour arrière, qu'une seconde application refuse comme la migration (HISTORIQUE.md, « LA CAISSE : LE
-RESSERREMENT (C6, LIGNE 26.6) (PRÉPARÉE, PAS APPLIQUÉE) »).
+`create or replace` — rien ne s'y retire ; appliqué par l'outil, il pose sa propre ligne d'historique à la suite
+(retirer celle de la migration serait une suppression, à accorder). Aucune donnée ne se perd, dans un sens ni dans
+l'autre. Tant qu'elle n'est pas appliquée, l'export ne la porte pas, et ses trois contrôles sont ceux de la production
+(163 fichiers, `4f380da5…` ; socle 81, `5d636a96…` ; inventaire 2 284, `efbc0207…`). Sur la réplique de l'étape (la
+production du jour, 163 migrations, ses neuf familles égales à celles de la production, relues le 30/10/2026), munie
+d'elle sous sa version provisoire, et sur un miroir de l'export qui la porte : 164 fichiers et 164 migrations, égaux nom
+par nom (`b22c6cc8eb9209007eac89457a681c37` pour le miroir, un agrégat que la version réelle changera) ; le socle
+inchangé (81 instructions, `5d636a96…`) ; l'inventaire inchangé (2 284 objets, `efbc0207…`) — la garde change sous son
+nom. `signature.sql` : la seule famille « fonctions » change (217, `7372ffd2…` puis `3800368f333f960c6b366acc8a666531`),
+les huit autres inchangées, « droits des fonctions » et « déclencheurs » compris ; elles reviennent toutes à la
+production après le retour arrière, qu'une seconde application refuse comme la migration (HISTORIQUE.md, « LA CAISSE :
+LE RESSERREMENT (C6, LIGNE 26.6) (PRÉPARÉE, PAS APPLIQUÉE) »).
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 

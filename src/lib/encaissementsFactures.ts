@@ -60,7 +60,7 @@ import type {
 //     se retire pas ni ne se contre-passe sans débit — ce que ce mouvement justifie ne change plus, comme pour une facture
 //     source : trois refus neufs, sous des mots à eux (`virementMixte`), que seuls les jugements de la vente disent
 //     (`refusEnregistrementVente`, `refusRetraitVente`, `refusContrePassationVente`) ;
-//   - depuis la caisse (ligne 26.6, étape C6 ; migration `especes_sans_mouvement`, PRÉPARÉE, pas encore appliquée), qu'un
+//   - depuis la caisse (ligne 26.6, étape C6 ; migration `especes_sans_mouvement`, en base depuis le 30/10/2026), qu'un
 //     encaissement en espèces ne cite aucun crédit du relevé : la garde des encaissements le refuse à l'insertion et au
 //     rattachement, après tous les refus des fonctions (`REFUS_ESPECES_SUR_UN_CREDIT`, `MOYENS_SANS_CREDIT`) — l'écran le
 //     dit, et cesse d'offrir le geste, avant que la base ne le refuse.
@@ -1792,7 +1792,7 @@ export type CleRefusGardeFrontiere = (typeof REFUS_GARDE_FRONTIERE)[number]['cle
 // RESSERREMENT (C6, LIGNE 26.6) »). Deux voies séparées : des espèces se reçoivent hors de la banque — pour une facture
 // source, elles entrent dans la caisse du dossier à leur date (EC3-Q7) — et n'y arrivent que par leur dépôt, le versement
 // que la caisse classe sur elle ; un crédit qui les citerait les y porterait une seconde fois. La migration
-// `especes_sans_mouvement` (PRÉPARÉE dans supabase/preparees/, pas encore appliquée) donne cette règle à la garde des
+// `especes_sans_mouvement` (en base depuis le 30/10/2026, version `20261030224203`) donne cette règle à la garde des
 // encaissements (`garder_encaissement_facture`) : de toute facture, à l'insertion comme au rattachement, en 23514 — sa
 // contre-passation, qui cite le débit qui a rendu l'argent, et la restauration (une ligne réinsérée par le
 // super-administrateur, son instant de création d'avant) passent. AUCUNE FONCTION NE LA JUGE : `enregistrer_encaissement` et

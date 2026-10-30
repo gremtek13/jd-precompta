@@ -27,7 +27,8 @@ import {
 import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
 import {
-  PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLArticle, provenanceDeLaLigneLue, provenanceQuiPart,
+  PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, parametresEnVigueur, provenanceDeLArticle, provenanceDeLaLigneLue,
+  provenanceQuiPart,
   type LectureDeLaValidation, type ProvenanceDeLigne,
 } from '../../lib/mentionsFigeesVue'
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
@@ -131,7 +132,8 @@ export default function FactureFormModal(props: Props) {
   const [dateEmission, setDateEmission] = useState(facture?.date_emission ?? aujourdHuiSql())
   const [dateEcheance, setDateEcheance] = useState(facture?.date_echeance ?? '')
   const [notes, setNotes] = useState(facture?.notes ?? '')
-  const [mentionsLegales, setMentionsLegales] = useState(facture?.mentions_legales ?? mentionsLegalesParDefaut(statutTva, articleExoneration))
+  // La mention légale SAISIE ; nulle tant qu'on n'y a pas touché (et d'un brouillon qui n'en a pas) : elle se déduit, plus bas.
+  const [mentionsLegalesSaisies, setMentionsLegales] = useState<string | null>(facture?.mentions_legales ?? null)
   const [emetteurAdresse, setEmetteurAdresse] = useState(facture?.emetteur_adresse ?? dossierAdresse ?? '')
   const [enregistrerAdresseDossier, setEnregistrerAdresseDossier] = useState(false)
   // Les mentions de la facture électronique (lib/mentionsFacture.ts), reprises du brouillon.
@@ -166,6 +168,12 @@ export default function FactureFormModal(props: Props) {
   // CE QUE LA VALIDATION FIGE (étape A7b) : l'identité du dossier et les versions de ses paramètres, lues EN ENTIER à
   // l'ouverture, gardées AVEC le dossier lu. Rien n'est lu drapeau baissé.
   const [lectureValidation, setLectureValidation] = useState<{ cle: string; lu: LectureDeLaValidation } | null>(null)
+  // LA MENTION LÉGALE PROPOSÉE (A7B-Q2, réponse du cabinet du 30/10/2026) : tant qu'on n'y a pas touché, elle se DÉDUIT — la
+  // TVA seule quand le dossier a des paramètres de facturation en vigueur, qui disent les conditions de retard ; la phrase
+  // d'hier sans paramètres, et tant que leur lecture n'est pas revenue entière (drapeau baissé, elle ne part jamais). Une
+  // saisie, même vide, est la sienne : la lecture qui revient ne la remplace pas.
+  const mentionsLegales = mentionsLegalesSaisies ?? mentionsLegalesParDefaut(statutTva, articleExoneration,
+    parametresEnVigueur(lectureValidation?.cle === dossierId ? lectureValidation.lu : null, dossierId))
   // Ce que le choix a retenu de l'échéance (le délai du contact, la date d'émission d'alors) : la date d'émission qui change ensuite
   // le DIT, elle ne recalcule rien d'elle-même.
   const [suiviEcheance, setSuiviEcheance] = useState<SuiviDeLEcheance | null>(null)
@@ -291,7 +299,8 @@ export default function FactureFormModal(props: Props) {
   const manqueMention = manqueMentionTva(statutTva, articleExoneration)
 
   function ajouterMention(mention: string) {
-    setMentionsLegales((m) => (m.trim() ? `${mention}\n${m}` : mention))
+    // Sur ce que le champ montre : la saisie, ou la mention proposée.
+    setMentionsLegales(mentionsLegales.trim() ? `${mention}\n${mentionsLegales}` : mention)
   }
 
   // LES MENTIONS DE LA FACTURE ÉLECTRONIQUE (ligne 28.5, étape c4 ; lib/mentionsFacture.ts).

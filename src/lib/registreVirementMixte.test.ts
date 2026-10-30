@@ -36,7 +36,7 @@ const MIGRATION = /\/\d{14}_registre_virement_mixte\.sql$/
 const texteDeLaMigration = () => fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))?.texte ?? ''
 
 // Les fonctions qu'une migration POSTÉRIEURE a reprises, et le fichier qui en porte désormais la dernière définition — la
-// garde, celle de la caisse (étape C6 : `especes_sans_mouvement`, préparée) le jour où elle entrera dans l'export.
+// garde, celle de la caisse (étape C6 : `especes_sans_mouvement`, dans l'export depuis le 30/10/2026).
 const REPRISES_DEPUIS = new Map([
   ['garder_encaissement_facture', /\/\d{14}_(?:contre_passation_sur_mouvement_fige|especes_sans_mouvement)\.sql$/],
 ])
