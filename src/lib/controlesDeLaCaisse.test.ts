@@ -462,6 +462,55 @@ describe('le versement d’espèces : un libellé, symptôme et jamais preuve', 
   })
 })
 
+// LES BORDS QUE LA PREMIÈRE CAMPAGNE DE MUTATIONS A MONTRÉS : la caisse du PLAN du dossier, jamais le 530000 en dur ; deux
+// ensembles de même longueur qui diffèrent ; un détail qui s'arrête à six.
+describe('les bords', () => {
+  it('la caisse se rejoue sur le compte de la caisse du plan du dossier', () => {
+    const decale: ModeleComptable = { ...MODELE, plan: { ...PLAN_PAR_DEFAUT, caisse: '531000' } }
+    const ouvertures = [{ date: '2026-01-01', compte: '531000', sens: 'debit' as const, montant: 10 }]
+    const etat = etatDeLaCaisseLue([prelevement('p', { date: '2026-02-01', montant: 8 })], dossier({ modele: decale, ouvertures }))!
+    expect(etat.compteCaisse).toBe('531000')
+    expect(caisseNegative(etat, null)).toBeNull()
+    // Sous le plan par défaut, la même ouverture n'est pas la caisse : le prélèvement la vide sous zéro.
+    expect(caisseNegative(etatDeLaCaisseLue([prelevement('p', { date: '2026-02-01', montant: 8 })], dossier({ ouvertures }))!, null))
+      .toEqual({ jour: '2026-02-01', centimes: -800 })
+  })
+
+  it('un encaissement à la place d’un autre, le même jour : à revoir, bien que l’ensemble ait la même taille', () => {
+    const FACTURES = [{ id: 'f1', numero: 'F1', source_de_la_vente: true }, { id: 'f2', numero: 'F2', source_de_la_vente: true }]
+    const especes = (id: string, facture_id: string) => ({
+      id, facture_id, date_encaissement: '2026-03-12', montant: 10, moyen: 'especes' as const, ligne_bancaire_id: null, annule_id: null,
+      retire_le: null,
+    })
+    const r = recette('r1', { encaissements_du_jour: ['e1'] })
+    const etat: EtatDeLaCaisse = {
+      compteCaisse: PLAN_PAR_DEFAUT.caisse, ouvertures: [], operations: [r], mouvements: [],
+      encaissements: [especes('e2', 'f2')], factures: FACTURES,
+    }
+    const aRevoir = recettesDeCaisseARevoir([r], etat, null)
+    expect(aRevoir.map((x) => [x.reconnus, x.attendus])).toEqual([[['e1'], ['e2']]])
+    expect(detailDesRecettesARevoir(aRevoir, etat).replace(/[\u00a0\u202f]/g, ' ')).toBe('le 12/03/2026, recette de 100,00 € (F2, sans numéro).')
+  })
+
+  it('une ligne de l’opération à un autre jour (une opération à reprendre) : deux écritures, chacune d’une date — jamais une écriture à deux dates', () => {
+    const A = apport('a1', { date: '2026-03-02' })
+    const lignes = brouillonDe(A)
+    const deplacee = [lignes[0], { ...lignes[1], date: '2026-03-03' }]
+    const n = numeroterFec(deplacee, [], CATEGORIES, [], 'tresorerie', [], SANS_ECRITURE_DE_VENTE, lue([A]))
+    expect(n.lignes.map((l) => [l.ecriture.date, `${l.journal}${l.numero}`])).toEqual([['2026-03-02', 'OD1'], ['2026-03-03', 'OD2']])
+    expect(anomaliesDgfip(formaterFec(n, SANS_LETTRAGE))).toEqual([])
+    expect(defautsDeNumerotation(n).filter((x) => x.type !== 'desequilibre')).toEqual([])
+  })
+
+  it('un détail nomme six opérations au plus, et dit le reste', () => {
+    const ops = Array.from({ length: 8 }, (_, i) => apport(`a${i}`, { date: `2026-03-1${i}` }))
+    const detail = detailDesOperationsAReprendre(operationsDeCaisseAReprendre(ops, dossier()))
+    expect(detail.match(/apport de/g)).toHaveLength(6)
+    expect(detail).toContain(' ; et 2 autre(s).')
+    expect(detailDesOperationsAReprendre(operationsDeCaisseAReprendre(ops.slice(0, 6), dossier()))).not.toContain('autre(s)')
+  })
+})
+
 // ── Au hasard ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 // UN TIRAGE (src/test/encaissementsBatterie.ts) : des caisses au hasard — genres, montants, signes, taux, dates, plans —,

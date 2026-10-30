@@ -522,6 +522,13 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
     const partielles: LectureDesVentesDuReleve = { dossierId: 'd1', etat: 'incomplete', motif: 'les encaissements' }
     expect(nb({ ...d, ventesFacturees: partielles }, 'recettes-de-caisse-a-revoir')).toBe(0)
     expect(nb({ caisse: caisseLue([A]), ventesFacturees: partielles }, 'caisse-a-reprendre')).toBe(1)
+    // Même une recette qui a reconnu des espèces, que la lecture partielle ne montre plus ; même une caisse négative.
+    const reconnue = { ...R, encaissements_du_jour: ['e1'] }
+    expect(nb({ caisse: caisseLue([reconnue]), categories: [HONORAIRES], ecritures: lignesDe(reconnue), ventesFacturees: partielles }, 'recettes-de-caisse-a-revoir')).toBe(0)
+    expect(nb({ caisse: caisseLue([reconnue]), categories: [HONORAIRES], ecritures: lignesDe(reconnue), ventesFacturees: ventes([]) }, 'recettes-de-caisse-a-revoir')).toBe(1)
+    const P = operation({ id: 'p1', genre: 'prelevement', date: '2026-03-05', montant: 80 })
+    expect(nb({ caisse: caisseLue([A, P]), ecritures: [...lignesDe(A), ...lignesDe(P)], ventesFacturees: partielles }, 'caisse-negative')).toBe(0)
+    expect(nb({ caisse: caisseLue([A, P]), ecritures: [...lignesDe(A), ...lignesDe(P)], ventesFacturees: ventes([]) }, 'caisse-negative')).toBe(1)
   })
 
   it('versements-especes-en-recette : un crédit libellé « VERSEMENT ESPECES » rangé en recette, dans un dossier qui tient une caisse', () => {

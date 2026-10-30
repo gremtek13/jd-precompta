@@ -49,9 +49,6 @@ export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'releve
   // et la révision en tire aussi les recettes de sa revue analytique — une lecture que deux écrans comptent s'écrit une fois.
   // Le drapeau baissé, rien n'est lu (sans appel au réseau) : la caisse est absente.
   caisse: LectureDeLaCaisse
-  // Son motif quand elle est en base et n'est pas lue en entier : À PART de `lectureIncomplete` — seuls les points de la caisse
-  // se taisent, et leur bandeau le dit. Nul pour une caisse absente.
-  caisseIncomplete: string | null
 }
 
 // `ventesParLesFactures` : le réglage du dossier, sans valeur par défaut — un dossier qui a basculé lit aussi ses ventes
@@ -243,7 +240,6 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
     ventesFacturees,
     ventesIncompletes: ventesFacturees?.etat === 'incomplete' ? ventesFacturees.motif : null,
     caisse: lectureCaisse,
-    caisseIncomplete: lectureCaisse.enBase && !lectureCaisse.complete ? lectureCaisse.motif ?? 'lecture incomplète' : null,
     // Les lectures dont les points de la caisse ne se jugent qu'entières : ses opérations, le brouillon (leurs écritures), les
     // catégories (le compte d'une recette), le relevé (les versements, les mouvements classés sur la caisse), la reprise (son
     // ouverture) et les ventilations (un versement ventilé en recette). Une caisse absente n'en attend aucune.
