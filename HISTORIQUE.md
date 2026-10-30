@@ -42920,7 +42920,10 @@ l'avis d'un changement de RIB (« à leur validation » au lieu de « quand elle
 - `debordements.mjs`, une visite de plus (`factures/apercu-figee`) : 0 débordement et 0 bouton recouvert à 1 440 et 1
   280 panneau ouvert, à 1 440 et 1 024 fermé, à 720 et 390, à 390 pour le client, et à 1 440 aux volets choisis (barre
   200, panneau 760).
-- La barrière, sous le Node 22 de la CI, sur la tête finale : son résultat et son SHA sont au rapport de l'agent.
+- La barrière, rejouée par la session sur la tête intégrée (`78d1875`), Node 22.23.3, chaque code lu à part :
+  `npx tsc -b --force` 0 ; `npm run lint` 0, 0 erreur, 63 avertissements — ceux de la référence ; `npm run
+  test:fuseaux` 0, 502 fichiers et 15 663 tests justes à Paris, UTC, New York et Auckland (497 et 15 553 sur `main`
+  avant l'étape) ; `npm run build` 0.
 
 **LES QUESTIONS AU CABINET.**
 - **A7B-Q1 — La forme imprimée.** L'aperçu imprime le libellé de l'INSEE (« SAS, société par actions simplifiée »,
