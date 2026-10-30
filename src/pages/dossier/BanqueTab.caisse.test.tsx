@@ -286,6 +286,55 @@ describe('un crédit dont le libellé dit un versement d’espèces', () => {
   })
 })
 
+describe('un dossier qui ne tient pas de caisse — aucune opération, aucune ouverture : la fiche n’en parle pas', () => {
+  const DEBIT = mouvement({ id: 'm-dab', montant: -80, libelle: 'RETRAIT DAB' })
+  beforeEach(() => { poser({ operations: [], reprise: [], releve: [VIREMENT, VERSEMENT, DEBIT] }) })
+  const depot = () => within(volet()).getByRole('button', { name: /^Dépôt de garantie/ })
+
+  it('un crédit que rien ne relie aux espèces : ni solde, ni refus, ni « Versement d’espèces » — les autres comptes restent', async () => {
+    rendre()
+    await ouvrir('VIR CLIENT DIVERS')
+    expect(depot()).toBeTruthy()
+    expect(sans(volet().textContent)).not.toContain('la caisse du 12/03/2026')
+    expect(sans(volet().textContent)).not.toContain('rendrait la caisse négative')
+    expect(boutonVersement()).toBeNull()
+  })
+
+  it('un compte tapé qui est celui de la caisse se juge toujours, avant le clic', async () => {
+    rendre()
+    await ouvrir('VIR CLIENT DIVERS')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Autre compte de bilan…' }).click() })
+    fireEvent.change(within(volet()).getByLabelText('Autre compte de bilan (classe 1 à 5)'), { target: { value: CAISSE } })
+    expect(within(volet()).getByRole('button', { name: 'Écrire sur ce compte' }).hasAttribute('disabled')).toBe(true)
+    expect(sans(volet().textContent)).toContain('rendrait la caisse négative le 12/03/2026 (−200,00 €)')
+  })
+
+  it('un débit garde le bouton, sans phrase : des espèces retirées peuvent ouvrir la caisse', async () => {
+    rendre()
+    await ouvrir('RETRAIT DAB')
+    expect(depot()).toBeTruthy()
+    expect(boutonVersement()!.disabled).toBe(false)
+    expect(sans(volet().textContent)).not.toContain('Avant ce mouvement, la caisse')
+  })
+
+  it('une ouverture sans opération : la caisse n’est pas vide, la fiche en parle — le solde, le refus, le bouton grisé', async () => {
+    poser({ operations: [], reprise: REPRISE, releve: [VIREMENT, VERSEMENT, DEBIT] })
+    rendre()
+    await ouvrir('VIR CLIENT DIVERS')
+    await waitFor(() => expect(sans(volet().textContent)).toContain('Avant ce mouvement, la caisse du 12/03/2026 est de 50,00 €'))
+    expect(sans(volet().textContent)).toContain('Ce versement de 200,00 € rendrait la caisse négative le 12/03/2026 (−150,00 €)')
+    expect(boutonVersement()!.disabled).toBe(true)
+  })
+
+  it('un crédit dont le libellé dit un versement : le solde et le refus de la base, le bouton grisé', async () => {
+    rendre()
+    await ouvrir('VERSEMENT ESPECES GUICHET')
+    await waitFor(() => expect(sans(volet().textContent)).toContain('Avant ce mouvement, la caisse du 12/03/2026 est de 0,00 €'))
+    expect(sans(volet().textContent)).toContain('Ce versement de 200,00 € rendrait la caisse négative le 12/03/2026 (−200,00 €)')
+    expect(boutonVersement()!.disabled).toBe(true)
+  })
+})
+
 describe('la caisse ou l’une de ses entrées pas lue en entier : la fiche ne classe rien sur elle, et le dit', () => {
   it('la reprise lue en partie', async () => {
     faux.muet = { 'a_nouveaux|*': 0 }

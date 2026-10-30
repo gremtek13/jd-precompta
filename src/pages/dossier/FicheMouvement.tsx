@@ -751,6 +751,13 @@ export default function FicheMouvement({
     if (versLaCaisse) return surLaCaisse ? null : caisse.refusDuClassement
     return caisse.refusDuRetrait
   }
+  // UNE CAISSE MUETTE : un dossier sans opération de caisse, sa caisse vide ce jour-là, et un mouvement que rien ne relie aux
+  // espèces — ni son libellé ni son classement. La fiche n'y parle pas de la caisse : sinon le solde nul et le refus d'un
+  // versement se diraient sur chaque mouvement de chaque dossier qui ne tient pas de caisse. Un crédit n'y voit pas « Versement
+  // d'espèces », que la base refuserait ; un débit le garde (des espèces retirées pour ouvrir la caisse), et un compte tapé se
+  // juge toujours (`refusSaisie`).
+  const caisseMuette = caisseTenable && caisse.etat === 'lue' && caisse.tenue === 'non' && caisse.soldeSans === 0
+    && !surLaCaisse && !libelleDitUnVersementDEspeces(ligne)
   const refusDuCompteDeBilan = (compte: string | null) =>
     refusDuMouvementSurBilan ?? refusCompteDeBilanAuPlan(compte, modeComptable, compteDirigeant, plan) ?? refusDeLaCaisse(compte)
   const saisieCompte = lireCompteSaisi(compteSaisi)
@@ -1064,7 +1071,7 @@ export default function FicheMouvement({
   function noteDeLaCaisse(): ReactNode {
     if (!caisseTenable || surLaCaisse) return null
     if (caisse.etat === 'pas_lue') return <p className="fiche-mouvement-alerte">{refusDeLaCaisse(plan.caisse)}</p>
-    if (caisse.etat !== 'lue') return null
+    if (caisse.etat !== 'lue' || caisseMuette) return null
     const nom = ligne.montant > 0 ? 'Versement d’espèces' : 'Retrait d’espèces pour la caisse'
     return (
       <>
@@ -1086,7 +1093,7 @@ export default function FicheMouvement({
         {refusDuMouvementSurBilan && <p className="fiche-mouvement-alerte">{refusDuMouvementSurBilan}</p>}
         {noteDeLaCaisse()}
         <div className="fiche-mouvement-boutons">
-          {comptesProposes.map((c) => (
+          {comptesProposes.filter((c) => !(caisseMuette && ligne.montant > 0 && c.compte === plan.caisse)).map((c) => (
             <button
               key={c.compte}
               type="button"

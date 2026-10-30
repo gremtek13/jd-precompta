@@ -42526,3 +42526,15 @@ renvoie à la Vue d'ensemble pour les quatre points — la cible d'un point mèn
 le resserrement (plus de candidat en espèces pour un crédit, VF5e), le paiement d'une pièce par la caisse (C8, C9), le
 droit « Caisse » du client et « Ma caisse » (C10 à C12). Non fait, et non demandé : « Ma simulation » dit déjà ne pas
 compter la caisse (C3a).
+
+**L'INTÉGRATION, PAR LA SESSION, LE DRAPEAU LEVÉ.** Les sept commits rejoués sur la mise en production de la caisse
+(« LA CAISSE EN PRODUCTION : LES DEUX MIGRATIONS ET LE DRAPEAU LEVÉ ») : deux conflits, de documentation seulement — la
+ligne du MVP de CLAUDE.md (les écrans du cabinet suivent désormais la base, l'assistant reste) et la fin de ce fichier.
+La relecture a trouvé un défaut que le drapeau levé aurait montré dans tout le cabinet : dans un dossier qui ne tient
+pas de caisse, la section « Sur un compte de bilan » de chaque mouvement à traiter disait le solde de la caisse (0 €)
+et, pour chaque crédit, le refus de la base en rouge. La fiche se tait désormais devant une CAISSE MUETTE (aucune
+opération vivante, la caisse vide ce jour-là, un mouvement que ni son libellé ni son classement ne relient aux
+espèces) : un crédit n'y voit pas « Versement d'espèces », que la base refuserait, un débit le garde (des espèces
+retirées pour ouvrir la caisse), et un compte tapé se juge toujours avant le clic (`BanqueTab.caisse.test.tsx`, cinq
+cas, dont l'ouverture sans opération, dont la fiche parle ; six mutations de la règle, toutes tuées). RGPD.md dit
+l'onglet. La barrière, drapeau levé : BARRIERE_C4.
