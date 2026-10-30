@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { anneeDe, aujourdHuiSql, formatMoney } from '../lib/format'
 import { ecartPct, projectionAnnuelle, SIMULATION_SANS_VENTES_FACTUREES } from '../lib/estimation'
+import { CAISSE_EXPORTEE } from '../lib/caisse'
+import { recettesDeCaisseDuClient, simulationDitNePasCompterLaCaisse, SIMULATION_SANS_CAISSE } from '../lib/recettesDeCaisse'
 import {
   QUOI_DES_VENTES_DE_LA_SIMULATION, SANS_PROJECTION, SIMULATION_VENTES_FACTUREES_EXPORTEE, lectureDeLaSimulation,
   lireLesVentesDeLaSimulation, ventesDeLaSimulation, type LectureDeLaSimulation,
@@ -212,6 +214,10 @@ export default function ClientSimulation() {
   )
   if (ventes === null) return <p className="muted">Chargement…</p>
 
+  // LA CAISSE (ligne 26.6, étape C3a) : la session du client ne la lit pas — sa lecture viendra avec son droit (CAISSE-Q1),
+  // une migration présentée au cabinet. Le drapeau baissé, elle est absente et rien ne change ; levé, la simulation ne compte
+  // pas ses recettes en espèces, et le dit (`SIMULATION_SANS_CAISSE`), pour un dossier en trésorerie, le seul qui en tienne.
+  const caisse = recettesDeCaisseDuClient(CAISSE_EXPORTEE)
   // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
   // Les cotisations comptent à la date du prélèvement qui les paie, sinon à leur échéance — comme au cabinet.
   const projection = ventes.recettes === null ? null : projectionAnnuelle(
@@ -225,6 +231,7 @@ export default function ClientSimulation() {
     partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva),
     // Un état choisi, et dit plus bas : pas une valeur par défaut.
     ventes.recettes,
+    caisse,
   )
   const referenceN1 = references.find((r) => r.annee === annee - 1) ?? null
 
@@ -293,6 +300,9 @@ export default function ClientSimulation() {
         )}
         {ventes.phrase && (
           <p className="muted" style={{ marginBottom: 0, fontSize: '0.85rem' }}>{SIMULATION_SANS_VENTES_FACTUREES}</p>
+        )}
+        {simulationDitNePasCompterLaCaisse(caisse, modeComptable) && (
+          <p className="muted" style={{ marginBottom: 0, fontSize: '0.85rem' }}>{SIMULATION_SANS_CAISSE}</p>
         )}
       </div>
 

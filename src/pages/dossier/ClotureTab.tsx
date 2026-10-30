@@ -59,6 +59,10 @@ import Annexe2035ECard from './Annexe2035ECard'
 import ConcordanceCard from './ConcordanceCard'
 import ValidationExerciceCard from './ValidationExerciceCard'
 import { AUCUNE_FACTURE_SOURCE, horsDesExemplairesDesSources } from '../../lib/facturesSources'
+import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import {
+  libelleDeLaRecette, motifDeLaCaisse, recettesDe, recettesDeCaisseDuDossier, recettesPourLesMoteurs, type RecetteDeCaisse,
+} from '../../lib/recettesDeCaisse'
 
 // Palier 5, briques 5 et 6 réunies — postes de la 2035 et clôture brouillon. Regroupe et totalise
 // par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer d'impôt.
@@ -162,6 +166,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // tout ou rien avec le reste, gardées AVEC le dossier qui les a demandées, jamais lues pour un dossier qui n'a pas basculé :
   // tant qu'elles ne sont pas revenues entières pour ce dossier, aucune 2035 ne se calcule.
   const [lectureSourcesVentes, setLectureSourcesVentes] = useState<LectureSourcesDesEcrituresDeVente | null>(null)
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C3a ; lib/caisseLecture.ts) : ses recettes en espèces comptent dans la 2035 à
+  // leur date. Lue tout ou rien avec le reste, gardée AVEC le dossier qui l'a demandée ; le drapeau baissé, rien n'est lu ni
+  // dit (la caisse absente). Lue en partie : aucune 2035 — ni chiffre, ni formulaire, ni validation —, et l'écran le dit.
+  const [lectureCaisse, setLectureCaisse] = useState<LectureDeLaCaisse | null>(null)
   const [validationIncomplete, setValidationIncomplete] = useState<string | null>(null)
   const [ecrituresIncompletes, setEcrituresIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -213,7 +221,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes,
       { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
       lectureEcritures, lectureOuverture, lectureAValider, lectureValides, lectureDeclarationsTva, lectureReportes,
-      lectureFacturesEmises, lectureTransmissions, lectureVentesFacturees, lectureSourcesDesVentes,
+      lectureFacturesEmises, lectureTransmissions, lectureVentesFacturees, lectureSourcesDesVentes, lectureDeLaCaisse,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -320,6 +328,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       lireLesVentesFacturees(dossierId),
       // Ne rejette jamais non plus ; jamais lue pour un dossier qui n'a pas basculé.
       ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
+      // Ne rejette jamais ; le drapeau baissé, ne touche pas au réseau.
+      lireLaCaisse(dossierId),
     ])
     // Le relevé qui ne boucle pas et les doublons de contenu, comme la Checklist les lit — mais une lecture ratée
     // n'y vaut jamais « rien à signaler » : elle devient un préalable de la validation.
@@ -330,6 +340,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     if (demande !== derniereLecture.current) return
     setLectureVentes(lectureVentesFacturees)
     setLectureSourcesVentes(lectureSourcesDesVentes)
+    setLectureCaisse(lectureDeLaCaisse)
     setRelevesIncoherents(releves)
     setDoublonsTexte(doublons)
     setPiecesAValider(lectureAValider.lignes)
@@ -453,6 +464,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const ventesFacturees = ecrituresDesVentes === null ? null : ventesLues
   const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif
     : pourLa2035?.etat === 'incomplete' ? pourLa2035.motif : null
+  // LES RECETTES DE CAISSE de CE dossier (étape C3a ; lib/recettesDeCaisse.ts), résolues sur ses catégories : absentes (le
+  // drapeau baissé), elles ne changent rien ; pas encore revenues ou lues en partie, aucune 2035.
+  const etatDeLaCaisse = recettesDeCaisseDuDossier(lectureCaisse, dossierId, categories, assujettiTva)
+  const recettesDeCaisse = recettesPourLesMoteurs(etatDeLaCaisse)
+  const caisseIncomplete = motifDeLaCaisse(etatDeLaCaisse)
   // CE QUE LES VIREMENTS MIXTES PAIENT DE LEURS EXEMPLAIRES (étape VF5h ; lib/rattachement.ts), lu avec les ventes facturées :
   // une pièce qu'un tel virement paie se date par lui, dans la 2035 comme dans la validation. Sans facture source, aucun
   // mouvement n'est classé par ses encaissements, et il n'y en a aucun. Pas encore revenues ou lues en partie, aucune 2035
@@ -496,6 +512,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     ...parts.map((m) => anneeDe(m.ligne.date)),
     // Et un exercice qui n'a que des encaissements de factures sources.
     ...(ventesFacturees?.parts ?? []).map((p) => anneeDe(p.date)),
+    // Et un exercice qui n'a que des recettes en espèces.
+    ...(recettesDeCaisse === null ? [] : recettesDe(recettesDeCaisse)).map((r) => anneeDe(r.date)),
     // Et un exercice qui n'a que les frais d'un mouvement d'encaissements — un chèque de décembre remis en janvier.
     ...(ecrituresDesVentes?.etat === 'composees' ? fraisDesMouvements(ecrituresDesVentes.composition, modele.plan) : [])
       .map((f) => anneeDe(f.date)),
@@ -516,8 +534,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   // Sans les ventes facturées du dossier lues en entier, AUCUNE 2035 : une déclaration sans ses ventes facturées serait
   // plausible, fausse et signée, et le moteur n'a pas de valeur par défaut à leur donner.
-  const declarations = ventesFacturees === null || ecrituresDesVentes === null ? [] : exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan, ventesFacturees, ecrituresDesVentes),
+  // Ni sans sa caisse, pour la même raison : lue en partie, une recette en espèces manquerait à une 2035 signée.
+  const declarations = ventesFacturees === null || ecrituresDesVentes === null || recettesDeCaisse === null ? [] : exercices.map((a) =>
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan, ventesFacturees, ecrituresDesVentes, recettesDeCaisse),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
@@ -657,8 +676,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // pièce qui compte (étape VF6a), et sans ce que leurs virements mixtes paient, l'exemplaire d'une facture d'avant serait
   // daté par sa facture et non par le virement (étape VF5h) — leur motif se dit, en trésorerie comme en engagement ; pas
   // encore revenues, la validation attend (`facturesSources` nulles). Une seule garde pour les deux raisons.
+  // La caisse lue en partie aussi (étape C3a) : sans elle, aucune 2035, et la validation ne part pas sur une 2035 qui manque.
   const motifValidation = lectureIncomplete ?? ecrituresIncompletes ?? naturesIncompletes ?? empruntsIncomplets ?? validationIncomplete
     ?? (lectureVentesDuDossier?.etat === 'incomplete' ? `les ventes facturées : ${lectureVentesDuDossier.motif}` : null)
+    ?? (caisseIncomplete !== null ? `la caisse : ${caisseIncomplete}` : null)
   const entete = { nom: dossier?.nom ?? null, activite: dossier?.libelle_naf ?? null, siret: dossier?.siret ?? null }
   const validationDe = (annee: number, formulaire?: { declaration: Declaration2035; valeurs: Map<string, number> }) => {
     const valide = exercicesValides.find((e) => e.annee === annee) ?? null
@@ -794,6 +815,17 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     ...d.exclusions.mouvementsSansPoste.map((m) => ({ mouvement: m, raison: 'catégorie sans poste 2035' })),
     ...d.exclusions.mouvementsHorsResultat.map((m) => ({ mouvement: m, raison: 'compte de la catégorie hors charges et produits' })),
   ])
+  // Et côté caisse (étape C3a) : une recette en espèces que la 2035 n'a pas pu compter. Elle ne compte que dans l'exercice de
+  // sa date. Vide tant que la caisse est absente.
+  const recettesDeCaisseExclues: { recette: RecetteDeCaisse; raison: string }[] = declarationsOuvertes.flatMap((d) => [
+    ...d.exclusions.recettesDeCaisseSansPoste.map((r) => ({ recette: r, raison: 'catégorie sans poste 2035' })),
+    ...d.exclusions.recettesDeCaisseSansProduit.map((r) => ({
+      recette: r, raison: r.libelleCategorie === null ? 'catégorie inconnue' : 'catégorie qui n’est plus un produit',
+    })),
+  ])
+  // La catégorie d'une recette sans poste rejoint « Postes manquants », où son poste se règle.
+  const categoriesDesRecettesSansPoste = categories.filter((c) => recettesDeCaisseExclues.some((x) =>
+    x.recette.categorieId === c.id && x.raison === 'catégorie sans poste 2035'))
 
   // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS QUE LA 2035 NE RANGE SUR AUCUNE LIGNE (VF4C3-Q1) : la catégorie « Frais
   // bancaires » du dossier manque, ou n'a pas de poste. Un mouvement ne compte que dans l'exercice de sa date.
@@ -801,8 +833,12 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // Sa catégorie, quand elle existe sans poste, rejoint « Postes manquants » : c'est là que son poste se règle — ou que la
   // carte dit qu'une catégorie commune ne se règle que par l'administrateur de l'application.
   const categorieDesFraisExclus = fraisExclus.find((f) => f.categorie !== null)?.categorie ?? null
-  const categoriesSansPoste = categorieDesFraisExclus === null || categoriesSansPosteDesSources.some((c) => c.id === categorieDesFraisExclus.id)
+  const categoriesSansPosteHorsCaisse = categorieDesFraisExclus === null || categoriesSansPosteDesSources.some((c) => c.id === categorieDesFraisExclus.id)
     ? categoriesSansPosteDesSources : [...categoriesSansPosteDesSources, categorieDesFraisExclus]
+  const categoriesSansPoste = categoriesDesRecettesSansPoste.length === 0 ? categoriesSansPosteHorsCaisse : [
+    ...categoriesSansPosteHorsCaisse,
+    ...categoriesDesRecettesSansPoste.filter((c) => !categoriesSansPosteHorsCaisse.some((x) => x.id === c.id)),
+  ]
 
   // CE QUE LES VENTES FACTURÉES ONT D'ÉCARTÉ OU DE TROP (lib/ventesFacturees.ts), et les exemplaires qu'elles retirent du
   // compte des pièces. Les écartées et les excédents sont ceux du DOSSIER — le module ne date pas une facture qu'il écarte —,
@@ -1020,6 +1056,33 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                     <td data-libelle="Catégorie">{m.libelle}</td>
                     <td data-libelle="Motif" className="muted">{raison}</td>
                     <td data-libelle="Montant" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(m.montantReleve)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {recettesDeCaisseExclues.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Recettes de caisse absentes du récapitulatif ({recettesDeCaisseExclues.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ces recettes en espèces sont dans la caisse, et leur écriture est passée, mais elles n’entrent dans aucun total :
+            leur montant manquera dans la déclaration tant que leur catégorie n’a pas de poste 2035 (carte « Postes
+            manquants »). Une catégorie qui n’est plus un produit ne se corrige pas ici : l’opération se retire et se saisit de
+            nouveau sous une catégorie de produit.
+          </p>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu">
+              <thead><tr><th>Date</th><th>Recette</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
+              <tbody>
+                {recettesDeCaisseExclues.map(({ recette: r, raison }) => (
+                  <tr key={r.operationId}>
+                    <td data-libelle="Date">{formatDate(r.date)}</td>
+                    <td data-libelle="Recette">{libelleDeLaRecette(r)}</td>
+                    <td data-libelle="Motif" className="muted">{raison}</td>
+                    <td data-libelle="Montant" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(r.centimes / 100)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1578,7 +1641,18 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
 
       {loading ? (
         <div className="card"><p className="muted" style={{ margin: 0 }}>Chargement…</p></div>
-      ) : ventesFacturees === null ? (
+      ) : caisseIncomplete !== null ? (
+        // La caisse de ce dossier n'est pas revenue entière (étape C3a) : rien ne se calcule, et rien ne s'offre.
+        <BandeauLecturePartielle
+          quoi="La caisse du dossier"
+          accord="lue"
+          motif={caisseIncomplete}
+          consequence={
+            'La 2035 ne se calcule pas sans elle : ni ses montants, ni son formulaire, ni la validation de l’exercice ne '
+            + 's’affichent. Recharge la page.'
+          }
+        />
+      ) : ventesFacturees === null || recettesDeCaisse === null ? (
         // Les ventes facturées de ce dossier ne sont pas revenues entières : rien ne se calcule, et rien ne s'offre.
         ventesIncompletes ? (
           <BandeauLecturePartielle
@@ -1696,7 +1770,7 @@ function FormulaireAnnuel({
   formulaire?: Map<string, number>
   // Une 2035 validée : quand, les cases qu'un calcul d'aujourd'hui ne retrouverait plus, et ses postes tels qu'elle les
   // garde, avec ce que chacun compte (étape VF7d) — `version` dit si elle portait déjà les encaissements.
-  validee?: { le: string; casesDifferentes: string[]; postes: PosteRelu[]; version: 1 | 2 }
+  validee?: { le: string; casesDifferentes: string[]; postes: PosteRelu[]; version: 1 | 2 | 3 }
   genere: boolean
   onTelecharger: () => void
   // L'annexe 2035-E de l'exercice (lib/declaration2035E.ts) : due ou non, le formulaire la porte quand elle l'est.
@@ -1803,7 +1877,9 @@ function FormulaireAnnuel({
 // mouvements du relevé sans pièce, ses encaissements de factures —, tel que l'instantané le garde, rien recalculé. Une 2035
 // validée en version 1 ne portait pas les encaissements : « — », et la phrase le dit ; jamais un zéro, qui affirmerait
 // qu'aucun encaissement n'a compté.
-function RecapitulatifValide({ postes, version }: { postes: PosteRelu[]; version: 1 | 2 }) {
+// La version 3 (étape C3a) porte aussi les opérations de caisse de chaque poste : une colonne de plus, pour elle seule — le
+// récapitulatif d'une 1 ou d'une 2 reste celui d'hier.
+function RecapitulatifValide({ postes, version }: { postes: PosteRelu[]; version: 1 | 2 | 3 }) {
   const nombre = (n: number | null) => (n === null ? '—' : String(n))
   return (
     <details style={{ marginTop: 8 }}>
@@ -1823,6 +1899,7 @@ function RecapitulatifValide({ postes, version }: { postes: PosteRelu[]; version
               <th style={{ textAlign: 'right' }}>Pièces</th>
               <th style={{ textAlign: 'right' }}>Mouvements du relevé</th>
               <th style={{ textAlign: 'right' }}>Encaissements de factures</th>
+              {version === 3 && <th style={{ textAlign: 'right' }}>Opérations de caisse</th>}
             </tr>
           </thead>
           <tbody>
@@ -1833,6 +1910,7 @@ function RecapitulatifValide({ postes, version }: { postes: PosteRelu[]; version
                 <td style={{ textAlign: 'right' }}>{nombre(p.nbPieces)}</td>
                 <td style={{ textAlign: 'right' }}>{nombre(p.nbMouvements)}</td>
                 <td style={{ textAlign: 'right' }}>{nombre(p.nbEncaissements)}</td>
+                {version === 3 && <td style={{ textAlign: 'right' }}>{nombre(p.nbOperationsDeCaisse ?? null)}</td>}
               </tr>
             ))}
           </tbody>

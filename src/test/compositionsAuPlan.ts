@@ -39,6 +39,7 @@ import { NON_VALIDEE } from './ecritures'
 import { encaissementVendu, factureVendue, ligneVendue, SANS_EXEMPLAIRE, SANS_FACTURE_SOURCE, ventesFactureesVides } from './ventesFacturees'
 import { ecrituresDesVentesFacturees, type MouvementDesEncaissements } from '../lib/ecrituresVentesFacturees'
 import { ventesFacturees } from '../lib/ventesFacturees'
+import { CAISSE_ABSENTE } from '../lib/recettesDeCaisse'
 
 // LES COMPOSITIONS SOUS UN PLAN (ligne 43, étape PC3 ; conception, § 5.1 et § 5.2) : chaque écriture que l'application
 // compose — et chaque contrôle qui la recompose pour juger le brouillon — joué sur des jeux d'essai FICTIFS tirés du
@@ -585,7 +586,7 @@ const CAS_DES_VENTES_FACTUREES: CasDuPlan[] = [
       })
       const fraisBancaires = categorie({ id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires fictifs', poste_2035: 'Frais financiers' })
       return calculerDeclaration2035(
-        2025, [], [fraisBancaires], [], [], [], true, new Map(), [], [], plan, ventesFacturees(sources), { etat: 'composees', composition },
+        2025, [], [fraisBancaires], [], [], [], true, new Map(), [], [], plan, ventesFacturees(sources), { etat: 'composees', composition }, CAISSE_ABSENTE,
       ).contributions
     },
   },
@@ -604,7 +605,7 @@ const CAS_DE_LA_CLOTURE: CasDuPlan[] = [
       return calculerDeclaration2035(
         2026, [], CATEGORIES, [IMMOBILISATION], cotisationsComptees([COTISATION], lignes, 'tresorerie'), [vehicule2026], true,
         new Map(), parts, [A_PAYER, EN_CREDIT], plan, ventesFactureesVides('d1'),
-        { etat: 'sans_bascule' },
+        { etat: 'sans_bascule' }, CAISSE_ABSENTE,
       ).contributions
     },
   },

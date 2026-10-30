@@ -45,6 +45,8 @@ import { paiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux } from '../../lib/tvaDuReleve'
 import { declarationDuNonRedevable } from '../../lib/statutTva'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
+import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { libelleDeLaRecette, motifDeLaCaisse, recettesDeCaisseDuDossier, recettesPourLesMoteurs } from '../../lib/recettesDeCaisse'
 import type { ExigibiliteVenteFacturee } from '../../lib/ventesFacturees'
 import type {
   ANouveau, ArticleExoneration, Categorie, DeclarationTva, LigneBancaire, ModeComptable, PeriodiciteTva, Piece, ReglementGroupe,
@@ -261,6 +263,10 @@ export default function TvaTab({
   // Les écritures des ventes facturées d'un dossier qui a basculé, avec le brouillon entier, lues ensemble (étape VF4c3) :
   // nulles tant qu'elles ne sont pas revenues, et jamais lues pour un dossier qui n'a pas basculé.
   const [lectureEcrituresVentes, setLectureEcrituresVentes] = useState<LectureDesEcrituresDeVente | null>(null)
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C3a ; lib/caisseLecture.ts) : ses recettes en espèces comptent à leur date et à
+  // leur taux. Nulle tant qu'elle n'est pas revenue ; le drapeau baissé, rien n'est lu (la caisse absente, qui ne change
+  // rien). Lue en partie : ni CA3, ni enregistrement, ni comparaison, et l'écran le dit.
+  const [lectureCaisse, setLectureCaisse] = useState<LectureDeLaCaisse | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [erreurRegime, setErreurRegime] = useState<string | null>(null)
   // La période choisie, AVEC la périodicité pour laquelle elle l'a été : passer de trimestrielle à
@@ -292,14 +298,17 @@ export default function TvaTab({
     const demande = ++derniereLecture.current
     // `lireLesVentesFacturees` ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
     // `lireLesEcrituresDesVentes` non plus.
-    const [donnees, ventes, ecrituresVentes] = await Promise.all([
+    // `lireLaCaisse` non plus, et le drapeau baissé, elle ne touche pas au réseau.
+    const [donnees, ventes, ecrituresVentes, caisse] = await Promise.all([
       lireDonnees(dossier), lireLesVentesFacturees(dossier),
       bascule ? lireLesEcrituresDesVentes(dossier) : Promise.resolve(null),
+      lireLaCaisse(dossier),
     ])
     if (demande !== derniereLecture.current) return
     setLu(donnees)
     setLectureVentes(ventes)
     setLectureEcrituresVentes(ecrituresVentes)
+    setLectureCaisse(caisse)
   }
 
   useEffect(() => {
@@ -380,8 +389,14 @@ export default function TvaTab({
   // exigible au paiement que ce virement fait. Sans elles, aucune CA3 ne se calcule.
   const encaissees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.encaissees : []
   const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : null
+  // LES RECETTES DE CAISSE de CE dossier (étape C3a), résolues sur ses catégories : absentes, elles ne changent rien ; pas
+  // encore revenues, l'onglet attend ; lues en partie, aucune CA3 — une déclaration sans la TVA d'une recette en espèces
+  // serait plausible, fausse et déposée.
+  const etatDeLaCaisse = recettesDeCaisseDuDossier(lectureCaisse, dossierId, luDuDossier?.categories ?? [], assujettiTva)
+  const caisse = recettesPourLesMoteurs(etatDeLaCaisse)
+  const caisseIncomplete = motifDeLaCaisse(etatDeLaCaisse)
   // Tant que l'une ou l'autre n'est pas revenue, l'onglet attend : ni CA3, ni enregistrement, ni comparaison.
-  const enAttente = loading || lectureVentesDuDossier === null
+  const enAttente = loading || lectureVentesDuDossier === null || etatDeLaCaisse.etat === 'en_attente'
   const pieces = luDuDossier?.pieces ?? []
   const lignesBancaires = luDuDossier?.lignesBancaires ?? []
   const declarations = luDuDossier?.declarations ?? []
@@ -415,12 +430,14 @@ export default function TvaTab({
 
   // Sans les ventes facturées du dossier lues en entier, AUCUNE CA3 : une déclaration sans elles serait plausible, fausse et
   // déposée, et le moteur n'a pas de valeur par défaut à leur donner.
-  const donnees: DonneesTva | null = ventesFacturees === null ? null : {
+  // Ni sans sa caisse, lue en entier ou absente.
+  const donnees: DonneesTva | null = ventesFacturees === null || caisse === null ? null : {
     pieces,
     paiements: paiementsDesPieces(lignesBancaires, luDuDossier?.reglements ?? [], encaissees),
     pieceIdsImmobilisees: luDuDossier?.pieceIdsImmobilisees ?? new Set(),
     releve: partsDuReleve(lignesBancaires, luDuDossier?.categories ?? [], luDuDossier?.ventilations ?? [], assujettiTva),
     ventesFacturees,
+    caisse,
   }
   // Une période antérieure à l'ouverture d'un dossier repris se saisit à la main : sa TVA est dans les à-nouveaux,
   // et le calcul n'a rien à en dire.
@@ -472,7 +489,8 @@ export default function TvaTab({
   const arrondi = liquidee ? arrondiDeLaLiquidation(liquidee) : 0
   // Le remboursement que la déclaration demandera : borné au crédit de la période pour une CA3 préparée.
   const remboursementDemande = aLaMain ? (remboursementLu ?? 0) : (ca3?.cases.l26 ?? 0)
-  const piecesHorsDeLaDeclaration = ca3 === null ? 0 : ca3.ecartees.length + ca3.releveEcartees.length + ca3.aValider.length
+  const piecesHorsDeLaDeclaration = ca3 === null ? 0
+    : ca3.ecartees.length + ca3.releveEcartees.length + ca3.caisseEcartees.length + ca3.aValider.length
 
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE : la déclaration proposée vient d'un calcul qui ne voit qu'une
   // partie des pièces, le crédit proposé d'un historique qui peut en manquer une, et l'ouverture décide de ce qui se
@@ -644,6 +662,12 @@ export default function TvaTab({
         consequence="Une recette encaissée sans facture, affectée ou ventilée depuis le relevé, peut manquer à la déclaration."
       />
       <BandeauLecturePartielle
+        quoi="La caisse du dossier"
+        accord="lue"
+        motif={caisseIncomplete}
+        consequence="Aucune déclaration ne se prépare ni ne s’enregistre sans elle : une recette en espèces y manquerait. Rechargez la page."
+      />
+      <BandeauLecturePartielle
         quoi="L’ouverture du dossier"
         accord="lue"
         motif={lectures.ouverture}
@@ -720,6 +744,13 @@ export default function TvaTab({
             <div className="skeleton skeleton-ligne" style={{ width: '40%' }} />
             <div className="skeleton skeleton-ligne" style={{ width: '50%' }} />
           </div>
+        ) : ca3 === null && caisseIncomplete !== null ? (
+          // La caisse de ce dossier n'est pas revenue entière (étape C3a) : rien ne se calcule, et rien ne s'offre — le
+          // bandeau du haut de l'onglet le dit.
+          <p className="muted" style={{ marginTop: 16 }}>
+            La CA3 ne se calcule pas sans la caisse du dossier : ni ses cases, ni son enregistrement, ni la comparaison des
+            déclarations déposées ne s’affichent.
+          </p>
         ) : ca3 === null ? (
           // Les ventes facturées de ce dossier ne sont pas revenues entières : rien ne se calcule, et rien ne s'offre.
           <div style={{ marginTop: 16 }}>
@@ -885,6 +916,30 @@ export default function TvaTab({
               </div>
             )}
 
+            {ca3.caisseEcartees.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <p className="error-text" style={{ marginBottom: 6 }}>
+                  {ca3.caisseEcartees.length} recette(s) de caisse de la période ne sont pas dans les cases ci-dessus.
+                  Reprenez-les dans la caisse, ou reportez-les à la main.
+                </p>
+                <div className="table-scroll tableau-adaptable">
+                  <table className="table-empilable-etroite table-empilable-sans-jeu">
+                    <thead><tr><th>Date</th><th>Recette</th><th>Montant</th><th>Pourquoi</th></tr></thead>
+                    <tbody>
+                      {ca3.caisseEcartees.map((e) => (
+                        <tr key={e.recette.operationId}>
+                          <td data-libelle="Date">{formatDate(e.recette.date)}</td>
+                          <td data-libelle="Recette">{libelleDeLaRecette(e.recette)}</td>
+                          <td data-libelle="Montant">{formatMoney(e.recette.centimes / 100)}</td>
+                          <td data-libelle="Pourquoi">{e.detail}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {ca3.exigibilitesEcartees.length > 0 && (
               <p className="error-text">
                 {ca3.exigibilitesEcartees.length} vente(s) facturée(s) de la période ne sont pas dans les cases ci-dessus,
@@ -1014,6 +1069,30 @@ export default function TvaTab({
               </details>
             )}
 
+            {ca3.caisseRetenues.length > 0 && (
+              <details style={{ marginTop: 12 }}>
+                <summary>Les {ca3.caisseRetenues.length} recette(s) de caisse retenues, ligne par ligne</summary>
+                {/* Repliée en fiches, comme les recettes du relevé. Des espèces rendues se lisent en négatif. */}
+                <div className="table-scroll tableau-adaptable">
+                  <table className="table-empilable-etroite table-empilable-sans-jeu">
+                    <thead><tr><th>Ligne</th><th>Date</th><th>Recette</th><th>Taux</th><th>HT</th><th>TVA</th></tr></thead>
+                    <tbody>
+                      {ca3.caisseRetenues.map(({ recette: r, ligne }) => (
+                        <tr key={r.operationId}>
+                          <td data-libelle="Ligne">{ligne}</td>
+                          <td data-libelle="Date">{formatDate(r.date)}</td>
+                          <td data-libelle="Recette">{libelleDeLaRecette(r)}</td>
+                          <td data-libelle="Taux">{r.taux == null ? '' : libelleTaux(r.taux)}</td>
+                          <td data-libelle="HT">{formatMoney(r.htCentimes / 100)}</td>
+                          <td data-libelle="TVA">{formatMoney(r.tvaCentimes / 100)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
+
             {ca3.exigibilitesRetenues.length > 0 && (
               <details style={{ marginTop: 12 }}>
                 <summary>Les {ca3.exigibilitesRetenues.length} vente(s) facturée(s) retenues, ligne par ligne</summary>
@@ -1134,6 +1213,12 @@ export default function TvaTab({
           <p className="muted" style={{ margin: 16 }}>
             Les déclarations déposées ne se comparent pas au calcul sans les ventes facturées du dossier, qui n’ont pas pu être
             lues en entier : rechargez la page.
+          </p>
+        ) : caisseIncomplete !== null ? (
+          // Et la caisse (étape C3a) : le recalcul compte ses recettes ; lue en partie, ni recalcul ni écart, et aucun geste.
+          <p className="muted" style={{ margin: 16 }}>
+            Les déclarations déposées ne se comparent pas au calcul sans la caisse du dossier, qui n’a pas pu être lue en
+            entier : rechargez la page.
           </p>
         ) : declarations.length === 0 ? (
           <div className="empty-state">

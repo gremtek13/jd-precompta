@@ -2,6 +2,7 @@ import { piecesDeviseNonConvertie, piecesTvaImpossible, LIBELLE_MOTIF_TVA } from
 import { ajouterJours, ajouterMois, dateLocaleDe, dernierJourDuMois } from './format'
 import { montantRetenu } from './montantRetenu'
 import type { PartDuReleve } from './partsDuReleve'
+import type { RecetteDeCaisse, RecettesDeCaisse } from './recettesDeCaisse'
 import {
   centimesParDate, rattachementsTresorerie, type PaiementDePiece, type PaiementsDesPieces, type Rattachement,
 } from './rattachement'
@@ -344,6 +345,26 @@ export const LIBELLE_MOTIF_RELEVE: Record<MotifReleveEcarte, string> = {
   sur_debits: "sur option pour les débits, la TVA est due à la date de la facture, que le relevé ne donne pas",
 }
 
+// UNE RECETTE DE CAISSE retenue (étape C3a ; lib/recettesDeCaisse.ts), et sa ligne — comme une recette du relevé : des
+// espèces rendues se déclarent comme un avoir consenti, leur base en B5 et leur taxe en 21 ; à 0 %, en F8.
+export interface RecetteDeCaisseRetenue {
+  recette: RecetteDeCaisse
+  ligne: LigneTaux | 'E2' | 'F8' | 'B5'
+}
+
+export interface RecetteDeCaisseEcartee {
+  recette: RecetteDeCaisse
+  motif: MotifReleveEcarte
+  detail: string
+}
+
+// Les motifs d'une recette du relevé, dits pour la caisse : son taux manque (saisie avant que le dossier devienne
+// assujetti — la base ne lui en a pas demandé), ou l'option pour les débits, que la CA3 du relevé écarte de même.
+export const LIBELLE_MOTIF_CAISSE: Record<MotifReleveEcarte, string> = {
+  sans_taux: 'recette de caisse sans taux de TVA, saisie avant que le dossier devienne assujetti : retire-la et saisis-la de nouveau avec son taux',
+  sur_debits: 'sur option pour les débits, la CA3 de l’application n’exige pas une recette sans facture à sa date d’encaissement : à reporter à la main',
+}
+
 export interface PieceNonPlacee {
   piece: Piece
   motif: MotifNonPlacee
@@ -397,6 +418,10 @@ export interface DeclarationCa3 {
   // ligne ou écartées avec leur motif. Leur TVA est au 445710 dès que leurs écritures sont passées (étape VF4c3).
   exigibilitesRetenues: ExigibiliteRetenue[]
   exigibilitesEcartees: ExigibiliteEcartee[]
+  // LES RECETTES DE CAISSE DE LA PÉRIODE (étape C3a) : retenues à leur ligne, ou écartées avec leur motif — vides quand la
+  // caisse est absente. Leur TVA est au 445710 de leur écriture, que la base compose avec l'opération.
+  caisseRetenues: RecetteDeCaisseRetenue[]
+  caisseEcartees: RecetteDeCaisseEcartee[]
   // Les factures sources que le module ne sait pas compter sans deviner : rien d'elles n'entre, un vrai trou dans les
   // opérations. DU DOSSIER, TOUTES PÉRIODES : le module ne date pas une facture qu'il écarte — un acompte peut précéder la
   // facture —, et la dire dans une seule période la ferait taire dans les autres.
@@ -440,6 +465,10 @@ export interface DonneesTva {
   // déposée ; et des ventes vides par commodité compteraient l'exemplaire à la place de sa facture, c'est-à-dire la même
   // vente à la date du paiement de la pièce au lieu de celle de son exigibilité, et sous l'option d'aujourd'hui du dossier.
   ventesFacturees: VentesFacturees
+  // LES RECETTES DE CAISSE du dossier (étape C3a ; lib/recettesDeCaisse.ts) : une recette en espèces sans facture, à sa date
+  // et à son taux, comme une recette du relevé. Sans valeur par défaut : un appelant qui l'oublierait rendrait la CA3 d'un
+  // praticien assujetti sans la TVA de ses espèces. Absente (le drapeau baissé), elle ne change rien.
+  caisse: RecettesDeCaisse
 }
 
 const centimes = (euros: number) => Math.round(euros * 100)
@@ -621,27 +650,54 @@ export function calculerCa3(
       releveEcartees.push({ part, motif: 'sans_taux', detail: LIBELLE_MOTIF_RELEVE.sans_taux })
       continue
     }
-    // Le hors taxe et la TVA, au centime, du calcul même qui a écrit l'écriture : la CA3 et le brouillon
-    // disent le même montant.
-    const { ht, tva } = horsTaxeEtTva(part.montantReleve, part.taux)
-    const sortie = part.montantReleve < 0
+    releveRetenues.push({ part, ligne: placerUneRecetteSansFacture(part.montantReleve, part.taux, ligneDuTauxReleve) })
+  }
+
+  // UNE RECETTE SANS FACTURE — du relevé ou de la caisse — À SA LIGNE. Le hors taxe et la TVA, au centime, du calcul même qui
+  // a écrit l'écriture : la CA3 et le brouillon disent le même montant. Une seule règle pour les deux : la caisse est une
+  // recette du relevé sans mouvement (conception de la caisse, § 5).
+  function placerUneRecetteSansFacture(
+    montant: number, taux: number, ligneDuTaux: LigneTaux | undefined,
+  ): LigneTaux | 'E2' | 'F8' | 'B5' {
+    const { ht, tva } = horsTaxeEtTva(montant, taux)
+    const sortie = montant < 0
     // Zéro : exonérée ou non imposable, aucune ligne de taux.
-    if (!ligneDuTauxReleve) {
+    if (!ligneDuTaux) {
       cumul[sortie ? 'F8' : 'E2'] += centimes(ht)
-      releveRetenues.push({ part, ligne: sortie ? 'F8' : 'E2' })
-      continue
+      return sortie ? 'F8' : 'E2'
     }
     comptes.collectee += sortie ? -centimes(tva) : centimes(tva)
     if (sortie) {
       cumul.B5 += centimes(ht)
       cumul.l21 += centimes(tva)
-      releveRetenues.push({ part, ligne: 'B5' })
-      continue
+      return 'B5'
     }
     cumul.A1 += centimes(ht)
-    cumul[`base${ligneDuTauxReleve}`] += centimes(ht)
-    cumul[`taxe${ligneDuTauxReleve}`] += centimes(tva)
-    releveRetenues.push({ part, ligne: ligneDuTauxReleve })
+    cumul[`base${ligneDuTaux}`] += centimes(ht)
+    cumul[`taxe${ligneDuTaux}`] += centimes(tva)
+    return ligneDuTaux
+  }
+
+  // LES RECETTES DE CAISSE, APRÈS CELLES DU RELEVÉ, ET COMME ELLES (étape C3a ; conception de la caisse, § 5) : à leur date —
+  // le jour où les espèces ont été reçues, l'exigibilité d'une prestation de services encaissée (CGI, art. 269, 2, c) —, à
+  // leur taux ; exonérée (0 %), en E2 ; des espèces rendues, comme un avoir consenti. Une catégorie qui n'est plus un produit
+  // n'y entre pas, comme dans la 2035. Sur option pour les débits, et sans taux, écartées sous les mêmes motifs que le relevé.
+  const caisseRetenues: RecetteDeCaisseRetenue[] = []
+  const caisseEcartees: RecetteDeCaisseEcartee[] = []
+  if (donnees.caisse.etat === 'lue') {
+    for (const recette of donnees.caisse.recettes) {
+      if (recette.nature !== 'recette' || !dansLaPeriode(recette.date)) continue
+      if (surDebits) {
+        caisseEcartees.push({ recette, motif: 'sur_debits', detail: LIBELLE_MOTIF_CAISSE.sur_debits })
+        continue
+      }
+      const ligneDuTauxCaisse = TAUX_RECONNUS.find((r) => r.taux === recette.taux)?.ligne
+      if (recette.taux == null || (recette.taux !== 0 && !ligneDuTauxCaisse)) {
+        caisseEcartees.push({ recette, motif: 'sans_taux', detail: LIBELLE_MOTIF_CAISSE.sans_taux })
+        continue
+      }
+      caisseRetenues.push({ recette, ligne: placerUneRecetteSansFacture(recette.centimes / 100, recette.taux, ligneDuTauxCaisse) })
+    }
   }
 
   // LES VENTES FACTURÉES, APRÈS LE RELEVÉ (étape VF3b2). Chaque exigibilité datée dans la période, à son taux, pour la base et
@@ -711,6 +767,8 @@ export function calculerCa3(
     releveEcartees,
     exigibilitesRetenues,
     exigibilitesEcartees,
+    caisseRetenues,
+    caisseEcartees,
     ventesFactureesEcartees: [...donnees.ventesFacturees.ecartees],
     exemplairesDeFacturesSources,
     tvaDesComptes: {

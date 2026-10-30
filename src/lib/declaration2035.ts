@@ -4,6 +4,7 @@ import { indemniteKilometriqueCentimes, totalIndemnitesKilometriques, vehiculeDu
 import { arrondiDeLaLiquidation } from './liquidationTva'
 import { montantRetenu } from './montantRetenu'
 import type { PartDuReleve } from './partsDuReleve'
+import type { RecetteDeCaisse, RecettesDeCaisse } from './recettesDeCaisse'
 import type { PlanComptable } from './planComptable'
 import {
   compteDuProduit, fraisDesMouvements, type EcrituresDesVentesFacturees, type FraisDUnMouvement,
@@ -113,6 +114,12 @@ export interface LigneDeclaration {
   // encaissement compte une fois ; une contre-passation est une entrée du registre, elle compte aussi, dans l'année de sa
   // date. Le mouvement qu'un encaissement cite ne s'y ajoute pas aux mouvements : il est réservé à ses encaissements (G2).
   nbEncaissements: number
+  // Et d'opérations de caisse (étape C3a, ligne 26.6) : la preuve d'une recette en espèces est le brouillard du praticien,
+  // récapitulé par l'opération d'un jour — ni pièce, ni mouvement, ni encaissement. PRÉSENT SEULEMENT QUAND LA 2035 A LU LA
+  // CAISSE (`RecettesDeCaisse` lue), zéro compris ; ABSENT quand la caisse l'est (le drapeau baissé) : la ligne est alors,
+  // au caractère près, celle d'avant la caisse — et l'instantané validé qu'on en tire, la version 2 d'hier
+  // (lib/validationExercice.ts).
+  nbOperationsDeCaisse?: number
 }
 
 // Ce qui n'a PAS été pris dans le calcul, avec la raison. Sur une déclaration fiscale, une pièce
@@ -147,6 +154,13 @@ export interface ExclusionsDeclaration {
   // ou n'a pas de poste. Le même trou que `mouvementsSansPoste` — les frais sont écrits au 627, la 2035 ne les déduit
   // pas —, dans l'exercice du mouvement. Jamais un poste deviné.
   fraisSansPoste: FraisSansPoste[]
+  // LES RECETTES DE CAISSE QUE NULLE LIGNE NE PORTE (étape C3a) : leur catégorie n'a pas de poste 2035 — le trou de
+  // `mouvementsSansPoste`, côté caisse : la recette est écrite, la 2035 ne la compte pas.
+  recettesDeCaisseSansPoste: RecetteDeCaisse[]
+  // Et celles dont la catégorie n'est plus une catégorie de produit — son compte a changé depuis la saisie, que la base
+  // aurait refusée sinon, ou elle n'est pas lue : ni recette ni dépense devinée, donc dites. Leur écriture reste sur le
+  // compte d'alors : l'opération se retire et se saisit de nouveau.
+  recettesDeCaisseSansProduit: RecetteDeCaisse[]
 }
 
 // Une pièce comptée à sa DATE DE FACTURE faute de paiement rapproché — une supposition, que l'écran
@@ -184,6 +198,9 @@ export type SourceDeclaration =
   // Les frais d'un mouvement que ses encaissements classent (lib/ecrituresVentesFacturees.ts, `fraisDesMouvements`) : `id`
   // est le mouvement, que l'écriture désigne par son seul `ligne_bancaire_id`.
   | { type: 'frais_d_encaissements'; id: string; frais: FraisDUnMouvement }
+  // Une recette de caisse (étape C3a ; lib/recettesDeCaisse.ts) : `id` est l'opération, que son écriture désigne par
+  // `operation_caisse_id`.
+  | { type: 'caisse'; id: string; recette: RecetteDeCaisse }
 
 export interface ContributionDeclaration {
   source: SourceDeclaration
@@ -386,6 +403,11 @@ export function calculerDeclaration2035(
   // (`EcrituresDesVentesDeLa2035`). Sans valeur par défaut : un appelant qui les oublierait déclarerait le résultat d'un
   // dossier basculé sans ses frais bancaires, plausible et faux ; l'absence de bascule se DIT (`sans_bascule`).
   ecrituresDesVentes: EcrituresDesVentesDeLa2035,
+  // Les recettes de caisse du dossier (étape C3a ; lib/recettesDeCaisse.ts) : le total des espèces reçues un jour sans
+  // facture, pour une catégorie de produit, compte à SA date (CGI, art. 93, 1). Sans valeur par défaut : un appelant qui les
+  // oublierait rendrait la 2035 d'un praticien sans ses recettes en espèces, plausible et signée. Une caisse ABSENTE (le
+  // drapeau baissé) se DIT, et ne change rien ; une caisse lue en partie n'a pas de 2035 — l'appelant ne l'appelle pas.
+  recettesDeCaisse: RecettesDeCaisse,
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -396,6 +418,7 @@ export function calculerDeclaration2035(
   const exclusions: ExclusionsDeclaration = {
     sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [],
     exemplairesDeFacturesSources: [], ventesFactureesEcartees: [...ventesFacturees.ecartees], fraisSansPoste: [],
+    recettesDeCaisseSansPoste: [], recettesDeCaisseSansProduit: [],
   }
   const sansPaiementConnu: PieceSansPaiement[] = []
   const contributions: ContributionDeclaration[] = []
@@ -414,22 +437,28 @@ export function calculerDeclaration2035(
   // Clôture montre et que la validation d'un exercice refuse.
   const totaux = new Map<string, {
     poste: string; nature: 'recette' | 'depense'; centimes: number; nbPieces: number; mouvements: Set<string>; encaissements: Set<string>
+    operationsDeCaisse: Set<string>
   }>()
 
   const ajouter = (
     contribution: ContributionDeclaration, nbPieces: number, mouvementId: string | null = null, encaissementId: string | null = null,
+    operationDeCaisseId: string | null = null,
   ) => {
     contributions.push(contribution)
     const cle = `${contribution.nature}:${contribution.poste}`
     let actuel = totaux.get(cle)
     if (!actuel) {
-      actuel = { poste: contribution.poste, nature: contribution.nature, centimes: 0, nbPieces: 0, mouvements: new Set(), encaissements: new Set() }
+      actuel = {
+        poste: contribution.poste, nature: contribution.nature, centimes: 0, nbPieces: 0, mouvements: new Set(), encaissements: new Set(),
+        operationsDeCaisse: new Set(),
+      }
       totaux.set(cle, actuel)
     }
     actuel.centimes += contribution.centimes
     actuel.nbPieces += nbPieces
     if (mouvementId) actuel.mouvements.add(mouvementId)
     if (encaissementId) actuel.encaissements.add(encaissementId)
+    if (operationDeCaisseId) actuel.operationsDeCaisse.add(operationDeCaisseId)
   }
   const enCentimes = (montant: number) => Math.round(montant * 100)
 
@@ -517,6 +546,36 @@ export function calculerDeclaration2035(
       compte: p.role ? plan[p.role] : p.compte,
       centimes: enCentimes(p.montantPoste),
     }, 0, p.ligne.id)
+  }
+
+  // LES RECETTES DE CAISSE, APRÈS LE RELEVÉ, ET COMME LUI (étape C3a ; conception de la caisse, § 5). Une recette compte
+  // l'année de SA date — le jour où les espèces ont été reçues (CGI, art. 93, 1 ; BOI-BNC-BASE-20-10-10, § 10) —, dans le
+  // poste de sa catégorie, pour ce qu'elle ajoute à ce poste : le hors taxe sur un dossier assujetti, le total sinon
+  // (`recetteDeCaisse`, la règle d'une recette du relevé, le calcul même de son écriture). Des espèces rendues la diminuent.
+  // Une recette n'est qu'un produit : une catégorie qui n'en est plus un (son compte a changé depuis la saisie) n'est ni
+  // recette ni dépense devinée — dite, comme une catégorie sans poste. Ni pièce, ni mouvement, ni encaissement : la ligne
+  // compte ses OPÉRATIONS. Son compte est celui de sa catégorie, où l'écriture de l'opération la porte : c'est sur lui, et
+  // sur l'opération (`operation_caisse_id`), que la concordance la retrouve. L'apport, le prélèvement et le versement n'y
+  // sont pas : ce ne sont pas des recettes (lib/recettesDeCaisse.ts).
+  if (recettesDeCaisse.etat === 'lue') {
+    for (const r of recettesDeCaisse.recettes) {
+      if (anneeDe(r.date) !== annee) continue
+      if (r.nature !== 'recette') {
+        exclusions.recettesDeCaisseSansProduit.push(r)
+        continue
+      }
+      if (!r.poste) {
+        exclusions.recettesDeCaisseSansPoste.push(r)
+        continue
+      }
+      ajouter({
+        source: { type: 'caisse', id: r.operationId, recette: r },
+        poste: r.poste,
+        nature: 'recette',
+        compte: r.compte,
+        centimes: r.htCentimes,
+      }, 0, null, null, r.operationId)
+    }
   }
 
   // LES VENTES FACTURÉES, APRÈS LE RELEVÉ (ligne 28.6, étape VF3b1). Ce moteur est celui d'une comptabilité de TRÉSORERIE —
@@ -663,6 +722,8 @@ export function calculerDeclaration2035(
       nbPieces: t.nbPieces,
       nbMouvements: t.mouvements.size,
       nbEncaissements: t.encaissements.size,
+      // Le compte des opérations de caisse, seulement quand la 2035 a lu la caisse : la ligne d'avant, sinon.
+      ...(recettesDeCaisse.etat === 'lue' ? { nbOperationsDeCaisse: t.operationsDeCaisse.size } : {}),
     }))
 
   const recettes = lignes.filter((l) => l.nature === 'recette').sort((a, b) => b.montant - a.montant)

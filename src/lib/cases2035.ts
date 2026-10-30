@@ -282,6 +282,9 @@ export interface CaseRemplie {
   // Et la somme des encaissements de factures de ses postes (étape VF7d) : un même encaissement ne porte qu'un poste, celui
   // des ventes facturées, et n'y compte donc qu'une fois.
   nbEncaissements: number
+  // Et la somme des opérations de caisse de ses postes (étape C3a) : présente quand la 2035 a lu la caisse, comme sur ses
+  // lignes (`LigneDeclaration.nbOperationsDeCaisse`) ; absente sinon, et la case est celle d'avant la caisse.
+  nbOperationsDeCaisse?: number
 }
 
 export interface PosteNonRattache {
@@ -331,11 +334,13 @@ export function repartirEnCases(declaration: Declaration2035): RepartitionCases 
       actuel.nbPieces += ligne.nbPieces
       actuel.nbMouvements += ligne.nbMouvements
       actuel.nbEncaissements += ligne.nbEncaissements
+      if (ligne.nbOperationsDeCaisse !== undefined) actuel.nbOperationsDeCaisse = (actuel.nbOperationsDeCaisse ?? 0) + ligne.nbOperationsDeCaisse
       continue
     }
     parCode.set(c.code, {
       case: c, montant: ligne.montant, postes: [ligne.poste], nbPieces: ligne.nbPieces, nbMouvements: ligne.nbMouvements,
       nbEncaissements: ligne.nbEncaissements,
+      ...(ligne.nbOperationsDeCaisse !== undefined ? { nbOperationsDeCaisse: ligne.nbOperationsDeCaisse } : {}),
     })
   }
 

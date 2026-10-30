@@ -21,6 +21,7 @@ import { PLAN_PAR_DEFAUT } from './planComptable'
 import { encaissementVendu, factureVendue, ligneVendue, ventesFactureesVides } from '../test/ventesFacturees'
 import { tirage } from '../test/encaissementsBatterie'
 import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
+import { CAISSE_ABSENTE } from './recettesDeCaisse'
 
 // Jeu d'essai typé SANS `as` : le compilateur vérifie chaque champ contre la table, et un champ
 // oublié ou mal typé échoue au build plutôt que de laisser un test prouver autre chose.
@@ -63,7 +64,7 @@ function donnees(
 ): DonneesTva {
   return {
     pieces, paiements: paiementsDesPieces(lignesBancaires, parts, []), pieceIdsImmobilisees: new Set(immobilisees), releve,
-    ventesFacturees: ventesFactureesVides('d1'),
+    ventesFacturees: ventesFactureesVides('d1'), caisse: CAISSE_ABSENTE,
   }
 }
 

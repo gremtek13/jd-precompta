@@ -10,6 +10,7 @@ import {
 } from './declaration2035'
 import { fraisDesMouvements } from './ecrituresVentesFacturees'
 import type { PlanComptable } from './planComptable'
+import type { RecetteDeCaisse, RecettesDeCaisse } from './recettesDeCaisse'
 import {
   exemplaireDUneFactureSource, recettesFactureesDeLaPeriode, type ExcedentVenteFacturee, type VenteEcartee, type VentesFacturees,
 } from './ventesFacturees'
@@ -42,6 +43,9 @@ export interface SituationIntermediaire {
   // (`exclusions.fraisSansPoste`), dit ici pour la même raison : une charge payée qui manque à l'état montré à une banque
   // flatte le résultat sans un signe.
   fraisSansPoste: FraisSansPoste[]
+  // LES RECETTES DE CAISSE DE LA PÉRIODE QUE NULLE LIGNE NE PORTE (étape C3a) : leur catégorie n'a pas de poste, ou n'est
+  // plus un produit. Dites, comme la 2035 les dit : une recette qui manque à l'état montré à une banque se tairait sinon.
+  recettesDeCaisseSansPoste: RecetteDeCaisse[]
 }
 
 // Situation intermédiaire — première brique du "dossier bancaire automatisé" (voir CLAUDE.md) :
@@ -123,6 +127,10 @@ export function calculerSituationIntermediaire(
   // valeur par défaut : un appelant qui les oublierait montrerait à une banque un dossier basculé sans ses frais bancaires,
   // un résultat flatté ; l'absence de bascule se DIT (`sans_bascule`).
   ecrituresDesVentes: EcrituresDesVentesDeLa2035,
+  // Les recettes de caisse du dossier (étape C3a ; lib/recettesDeCaisse.ts), dans la période de leur date, comme dans la 2035
+  // dont cet état est la version « à ce jour ». Sans valeur par défaut : les oublier montrerait à une banque un praticien
+  // sans ses recettes en espèces. Absente (le drapeau baissé), elle ne change rien.
+  recettesDeCaisse: RecettesDeCaisse,
 ): SituationIntermediaire {
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
@@ -158,6 +166,24 @@ export function calculerSituationIntermediaire(
     if (!p.nature || !p.poste) continue
     const signe = p.nature === 'recette' ? 1 : -1
     totauxParPoste.set(p.poste, (totauxParPoste.get(p.poste) ?? 0) + signe * p.montantPoste)
+  }
+
+  // LES RECETTES DE CAISSE DE LA PÉRIODE (étape C3a), au poste de leur catégorie, pour ce qu'elles ajoutent à ce poste — la
+  // règle de la 2035 —, en centimes entiers jusqu'au poste. Une caisse absente n'ajoute rien, ni ligne ni zéro.
+  const recettesDeCaisseSansPoste: RecetteDeCaisse[] = []
+  if (recettesDeCaisse.etat === 'lue') {
+    const parPoste = new Map<string, number>()
+    for (const r of recettesDeCaisse.recettes) {
+      if (r.date < periodeDebut || r.date > periodeFin) continue
+      if (r.nature !== 'recette' || !r.poste) {
+        recettesDeCaisseSansPoste.push(r)
+        continue
+      }
+      parPoste.set(r.poste, (parPoste.get(r.poste) ?? 0) + r.htCentimes)
+    }
+    for (const [poste, centimes] of parPoste) {
+      if (centimes !== 0) totauxParPoste.set(poste, (totauxParPoste.get(poste) ?? 0) + centimes / 100)
+    }
   }
 
   // Les ventes facturées de la période, au poste de la case AA, en centimes entiers jusqu'au bout : la règle de
@@ -230,5 +256,6 @@ export function calculerSituationIntermediaire(
     ventesFactureesEcartees: [...ventesFacturees.ecartees],
     ventesFactureesEnExcedent: [...ventesFacturees.excedents],
     fraisSansPoste,
+    recettesDeCaisseSansPoste,
   }
 }

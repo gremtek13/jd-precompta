@@ -24,6 +24,8 @@ import {
 } from '../../lib/revueAnalytique'
 import { donneesDeLaRevueAnalytique, identifiantDeLaLigne, memeCleDeLigne } from '../../lib/revueAnalytiqueEcran'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
+import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { recettesDeCaisseDuDossier, recettesPourLesMoteurs } from '../../lib/recettesDeCaisse'
 import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFactureesEcran'
 import type { LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import {
@@ -118,6 +120,10 @@ interface LectureDeLaRevision {
   // Elles ne servent qu'à la revue analytique — ni les soldes, ni les cycles, ni le dossier permanent ne les lisent —, et
   // leur lecture incomplète rejoint donc les motifs de la revue, qui se tait seule.
   ventesFacturees: LectureVentesFacturees
+  // La caisse du dossier (ligne 26.6, étape C3a) : la 2035 de la revue en compte les recettes en espèces, comme celle de
+  // Clôture. Elle ne sert qu'à la revue analytique, et sa lecture incomplète rejoint donc les motifs de la revue, qui se tait
+  // seule ; le drapeau baissé, rien n'est lu (la caisse absente, qui ne change rien).
+  caisse: LectureDeLaCaisse
   // Les sources des écritures des ventes facturées d'un dossier qui a basculé (VF4C3-Q1) : la 2035 de la revue en tire les
   // frais d'un mouvement d'encaissements, comme celle de Clôture. Nulles pour un dossier qui n'a pas basculé, jamais lues.
   // Une lecture incomplète ne cache que sa section. Depuis l'étape VF5f, c'est la lecture même de la Vue d'ensemble
@@ -155,7 +161,7 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
   const [
     checklist, lectureControles, lectureDocuments, lectureDecisions, lecturePreuves, lectureConclusions,
     lectureJournal, lectureRevues, lectureSeuils, lectureExplications, lectureReperes, lectureReperesDesPostes, permanent,
-    ventesFacturees,
+    ventesFacturees, caisse,
   ] = await Promise.all([
     // Un dossier qui a basculé y lit aussi les sources de ses écritures de vente : elles servent à la revue, plus bas. Elle lit
     // aussi les soldes reportés (O33-Q3), que la révision reprend tels quels : une lecture que deux écrans comptent s'écrit une fois.
@@ -212,6 +218,8 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
     lireLePermanent(dossierId),
     // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
     lireLesVentesFacturees(dossierId),
+    // Ne rejette jamais non plus ; le drapeau baissé, ne touche pas au réseau.
+    lireLaCaisse(dossierId),
   ])
   // Chaque lecture a son bandeau : dire laquelle manque, c'est dire où chercher.
   const motifs: MotifDeLecture[] = []
@@ -244,6 +252,10 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
   if (lectureReperes.motif) motifsRevue.push({ quoi: 'Les repères annuels de l’onglet Estimation', accord: 'lus', motif: lectureReperes.motif })
   if (lectureReperesDesPostes.motif) motifsRevue.push({ quoi: 'Les repères par poste de l’onglet Estimation', accord: 'lus', motif: lectureReperesDesPostes.motif })
   if (ventesFacturees.etat === 'incomplete') motifsRevue.push({ quoi: 'Les ventes facturées du dossier', accord: 'lues', motif: ventesFacturees.motif })
+  // Une caisse absente (le drapeau baissé) n'est pas une lecture qui manque : elle ne se dit pas.
+  if (caisse.enBase && !caisse.complete) {
+    motifsRevue.push({ quoi: 'La caisse du dossier', accord: 'lue', motif: caisse.motif ?? 'la lecture de la caisse est incomplète' })
+  }
   return {
     checklist: { ...checklist, relevesIncoherents: checklist.relevesIncoherents ?? [], doublonsTexte: checklist.doublonsTexte ?? [] },
     reprise: checklist.aNouveaux,
@@ -261,6 +273,7 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
     motifs,
     motifsRevue,
     ventesFacturees,
+    caisse,
     sourcesDesVentes: checklist.ventesFacturees,
     ventesIncompletes: checklist.ventesIncompletes,
     permanent,
@@ -806,6 +819,9 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     dossierId, ventesParLesFactures, facturesSources: ventesDeLaRevue.sources, lecture: lecture.sourcesDesVentes, mode: modele.mode,
     plan: modele.plan,
   })
+  // LES RECETTES DE CAISSE de CE dossier (étape C3a), résolues sur ses catégories : la 2035 de la revue les compte, comme
+  // celle de Clôture ; lues en partie, la revue n'a pas de 2035 (son motif est déjà parmi ceux de la revue).
+  const etatDeLaCaisse = recettesDeCaisseDuDossier(lecture.caisse, dossierId, lecture.checklist.categories, assujettiTva)
   const motifsDeLaRevue: MotifDeLectureDeLaRevue[] = [
     ...lecture.motifsRevue,
     ...(lectureDesVentes === null
@@ -814,6 +830,9 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       ? [{ quoi: 'Les écritures des ventes facturées du dossier', accord: 'lues' as const, motif: pourLa2035.motif }] : []),
     ...(pourLa2035?.etat === 'en_attente'
       ? [{ quoi: 'Les écritures des ventes facturées du dossier', accord: 'lues' as const, motif: 'pas encore lues pour ce dossier' }] : []),
+    // La caisse d'un autre dossier — une lecture d'avant un changement de dossier — ne vaut pas, comme les ventes facturées.
+    ...(etatDeLaCaisse.etat === 'en_attente'
+      ? [{ quoi: 'La caisse du dossier', accord: 'lue' as const, motif: 'la lecture rendue est celle d’un autre dossier' }] : []),
   ]
   const donneesDeLaRevue = donneesDeLaRevueAnalytique(annee, anneeCourante, modele, assujettiTva, {
     dossier: lecture.checklist, reprise: lecture.reprise, reportes: lecture.reportes, exercicesValides: exercices,
@@ -821,6 +840,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     // Ce que les virements mixtes paient de leurs exemplaires (étape VF5h), lu avec elles ; sans elles, aucune 2035.
     encaissees: lectureDesVentes?.etat === 'lue' ? lectureDesVentes.encaissees : [],
     ecrituresDesVentes: pourLa2035?.etat === 'pret' ? pourLa2035.ecritures : null,
+    recettesDeCaisse: recettesPourLesMoteurs(etatDeLaCaisse),
   })
   const lectureDeLaRevueIncomplete = motifsDeLaRevue.length > 0
     ? motifsDeLaRevue.map((m) => `${m.quoi} : ${m.motif}`).join(' ; ')

@@ -4,6 +4,7 @@ import { libellePeriode } from './declarationTva'
 import type { ContributionDeclaration, Declaration2035, SourceDeclaration } from './declaration2035'
 import { nomDuVehicule } from './forfaitKilometrique'
 import { anneeDe, formatDate, formatMoney } from './format'
+import { libelleDeLaRecette } from './recettesDeCaisse'
 import type { EcritureBrouillon } from './types'
 
 // LA 2035 SE RETROUVE-T-ELLE DANS LES ÉCRITURES ? (ligne 26.6 de la feuille de route, étape c)
@@ -38,6 +39,13 @@ import type { EcritureBrouillon } from './types'
 // (à écrire, à réécrire, à retirer) ; sauf des frais que la 2035 ne range sur aucune ligne, faute de poste à la catégorie
 // « Frais bancaires » (`frais_sans_poste`) : c'est la catégorie qui se règle, pas l'écriture.
 //
+// ET LA RECETTE DE CAISSE (ligne 26.6, étape C3a) : l'écriture d'une opération de caisse la désigne par
+// `operation_caisse_id` — la base l'écrit avec l'opération, d'un tenant, et la recompose (`enregistrer_operation_caisse`).
+// La 2035 la porte au compte de sa catégorie, où l'écriture porte son produit : les deux se rapprochent par l'opération et
+// concordent au centime. Un écart ne se corrige pas par « régénérer » : l'écriture ne se réécrit qu'avec l'opération, qui
+// se retire et se saisit de nouveau — un motif à lui (`caisse_a_reprendre`), sauf une catégorie sans poste, qui se règle
+// comme une autre.
+//
 // CE QUI N'EST PAS UN ÉCART, PAR CONSTRUCTION : la CSG déductible (case BV). La CSG-CRDS passe entière au
 // 108000, hors résultat, et seule sa part déductible entre en BV — la présentation relevée sur la 2035 déposée
 // par le cabinet. Elle est dite à part : le résultat du FEC dépasse celui de la 2035 de son montant.
@@ -53,7 +61,7 @@ import type { EcritureBrouillon } from './types'
 // pour référence l'échéance elle-même : payée depuis le compte personnel, son écriture la désigne (`cotisation_id`) ; sans
 // paiement, elle n'a pas d'écriture.
 export type ReferenceEcriture = {
-  type: 'piece' | 'mouvement' | 'bien' | 'vehicule' | 'cotisation' | 'declaration' | 'encaissement' | 'facture' | 'ecriture'
+  type: 'piece' | 'mouvement' | 'bien' | 'vehicule' | 'cotisation' | 'declaration' | 'encaissement' | 'facture' | 'caisse' | 'ecriture'
   id: string
 }
 
@@ -88,6 +96,9 @@ export type MotifEcart =
   // Une écriture de résultat d'un mouvement que ses encaissements classent — l'écart des frais, au 627 — que la 2035 ne
   // range sur aucune ligne : la catégorie « Frais bancaires » du dossier manque, ou n'a pas de poste.
   | 'frais_sans_poste'
+  // Une recette de caisse que son écriture ne porte plus telle que la 2035 la compte — aucune écriture, une autre, ou une
+  // écriture que la 2035 ne compte pas (sa catégorie n'est plus un produit) : l'opération se retire et se saisit de nouveau.
+  | 'caisse_a_reprendre'
   // Les deux, mais pas le même montant.
   | 'montant_different'
   // Le même montant, sur un autre compte.
@@ -158,11 +169,17 @@ function cleDeSource(s: SourceDeclaration): string {
     case 'encaissement': return `encaissement:${s.id}`
     // Les frais d'un mouvement d'encaissements : son écriture ne désigne que le mouvement.
     case 'frais_d_encaissements': return `mouvement:${s.id}`
+    // Une recette de caisse : son écriture désigne l'opération.
+    case 'caisse': return `caisse:${s.id}`
   }
 }
 
 function referenceDeLEcriture(e: EcritureBrouillon): ReferenceEcriture {
   if (e.piece_id) return { type: 'piece', id: e.piece_id }
+  // Une opération de caisse (étape C3a) : aucune autre source ne l'accompagne (la contrainte
+  // `ecritures_brouillon_caisse_sans_autre_source`), sauf la pièce que la caisse paie, dont la ligne est au compte de la
+  // caisse, hors résultat. Lue avant les autres : une ligne qui la désigne n'en désigne aucune autre.
+  if (e.operation_caisse_id) return { type: 'caisse', id: e.operation_caisse_id }
   // Une écriture d'une vente facturée désigne sa source (lib/ecrituresVentesFacturees.ts, `colonnesDeLaSource`) : son
   // encaissement — avant le mouvement qu'elle porte aussi quand l'encaissement est du jour du crédit —, ou sa facture.
   if (e.encaissement_id) return { type: 'encaissement', id: e.encaissement_id }
@@ -210,6 +227,8 @@ function libelleDeSource(s: SourceDeclaration): { libelle: string; date: string 
       date: s.part.date,
     }
     case 'frais_d_encaissements': return { libelle: `Frais retenus sur le mouvement « ${s.frais.libelle} »`, date: s.frais.date }
+    // Le libellé que la base compose pour son écriture : un total de jour, sans nom.
+    case 'caisse': return { libelle: libelleDeLaRecette(s.recette), date: s.recette.date }
   }
 }
 
@@ -310,6 +329,7 @@ export function concordance2035(
   const mouvementsSansPoste = new Set(exclusions.mouvementsSansPoste.map((p) => p.ligne.id))
   const mouvementsHorsResultat = new Set(exclusions.mouvementsHorsResultat.map((p) => p.ligne.id))
   const fraisSansPoste = new Set(exclusions.fraisSansPoste.map((f) => f.frais.ligneBancaireId))
+  const recettesDeCaisseSansPoste = new Set(exclusions.recettesDeCaisseSansPoste.map((r) => r.operationId))
 
   const ecarts: EcartDeSource[] = []
   for (const [cle, g] of groupes) {
@@ -325,6 +345,7 @@ export function concordance2035(
     const motif = motifDeLEcart({
       g, cle, declare, ecrit, totalDeclare, totalEcrit, autresExercices,
       contexte, piecesSansDate, piecesSansPoste, piecesSansMontant, mouvementsSansPoste, mouvementsHorsResultat, fraisSansPoste,
+      recettesDeCaisseSansPoste,
     })
     const identite = g.source ? libelleDeSource(g.source)
       : { libelle: g.premiereEcriture?.libelle ?? '', date: g.premiereEcriture?.date ?? null }
@@ -365,8 +386,15 @@ function motifDeLEcart(x: {
   mouvementsSansPoste: ReadonlySet<string>
   mouvementsHorsResultat: ReadonlySet<string>
   fraisSansPoste: ReadonlySet<string>
+  recettesDeCaisseSansPoste: ReadonlySet<string>
 }): MotifEcart {
   const { g, declare, ecrit } = x
+  // UNE RECETTE DE CAISSE, avant les motifs d'une pièce : son écriture ne se régénère pas, elle s'écrit avec l'opération.
+  // Écrite et sans poste dans la 2035 : c'est la catégorie qui se règle, comme pour un mouvement. Sinon, à reprendre.
+  if (g.source?.type === 'caisse' || g.reference.type === 'caisse') {
+    if (declare.size === 0 && x.recettesDeCaisseSansPoste.has(g.reference.id)) return 'sans_poste'
+    return 'caisse_a_reprendre'
+  }
   // UNE VENTE FACTURÉE, avant tout autre motif : ses gestes sont ceux de la section « Ventes facturées », jamais
   // « régénérer » une pièce ni régler une catégorie. La 2035 compte la part et rien ne la porte dans l'exercice : à
   // écrire ; elle ne la compte pas et une écriture la porte : à retirer ; les deux, autrement : à réécrire.
@@ -432,6 +460,7 @@ export const LIBELLES_MOTIFS: Readonly<Record<MotifEcart, string>> = {
   vente_facturee_a_reecrire: 'vente facturée à réécrire',
   vente_facturee_a_retirer: 'écriture d’une vente facturée à retirer',
   frais_sans_poste: 'frais d’encaissements sans poste',
+  caisse_a_reprendre: 'recette de caisse à reprendre',
   montant_different: 'montant différent',
   compte_different: 'compte différent',
   piece_non_validee: 'pièce non validée',
@@ -482,6 +511,14 @@ export function phraseDeLEcart(e: EcartDeSource): string {
       return 'Écriture d’une vente facturée que la 2035 ne compte pas dans cet exercice (un encaissement retiré, une facture que le calcul écarte) : à retirer depuis la section « Ventes facturées ».'
     case 'frais_sans_poste':
       return `Les frais que la banque a retenus sur ce mouvement d’encaissements (${formatMoney(Math.abs(e.ecritures))} au ${e.comptesEcritures.join(', ')}) : l’écriture les porte, la 2035 les compte sous le poste de la catégorie « Frais bancaires », qui n’en a pas — ou que le dossier n’a pas. Ils n’entrent dans aucune ligne tant que ce poste manque.`
+    case 'caisse_a_reprendre':
+      if (e.ecritures === 0) {
+        return `La 2035 compte cette recette de caisse (${formatMoney(Math.abs(e.declaration))}), aucune écriture de l’exercice ne la porte : son écriture s’écrit avec l’opération — retire l’opération et saisis-la de nouveau.`
+      }
+      if (e.declaration === 0) {
+        return `Son écriture porte ${formatMoney(Math.abs(e.ecritures))} au ${e.comptesEcritures.join(', ')}, que la 2035 ne compte pas : sa catégorie n’est plus une catégorie de produit. Retire l’opération et saisis-la de nouveau sous une catégorie de produit.`
+      }
+      return `Son écriture porte ${formatMoney(Math.abs(e.ecritures))} au ${e.comptesEcritures.join(', ')}, la 2035 ${formatMoney(Math.abs(e.declaration))} au ${comptes(e.comptesDeclaration)} : elle n’est plus celle de l’opération (une catégorie ou un statut de TVA changé depuis la saisie) — retire l’opération et saisis-la de nouveau.`
     case 'montant_different':
       return `L’écriture porte ${formatMoney(Math.abs(e.ecritures))}, la 2035 ${formatMoney(Math.abs(e.declaration))} : à régénérer ou à réécrire.`
     case 'compte_different':
@@ -522,6 +559,8 @@ export function ouAgir(e: EcartDeSource): string {
   // Des frais sans poste : c'est la catégorie « Frais bancaires » qui se règle, là où Clôture dit les postes manquants (une
   // catégorie commune à tous les cabinets ne se règle que par l'administrateur de l'application, et la carte le dit).
   if (e.motif === 'frais_sans_poste') return 'Clôture — Postes manquants'
+  // Une recette de caisse se retire et se saisit de nouveau là où la caisse se tient.
+  if (e.motif === 'caisse_a_reprendre') return 'Caisse'
   switch (e.source?.type ?? e.reference.type) {
     case 'piece':
       return e.motif === 'piece_non_validee' ? 'Justificatifs' : 'Écritures'

@@ -206,7 +206,7 @@ describe('l’instantané de la 2035 — la déclaration telle qu’elle a été
     resultat: 4879.8,
     exclusions: {
       sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [], exemplairesDeFacturesSources: [],
-      ventesFactureesEcartees: [], fraisSansPoste: [],
+      ventesFactureesEcartees: [], fraisSansPoste: [], recettesDeCaisseSansPoste: [], recettesDeCaisseSansProduit: [],
     },
     sansPaiementConnu: [],
     indemnitesKilometriques: null,

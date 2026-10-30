@@ -26,6 +26,7 @@ import {
 import type { EncaissementDesEcritures, SourcesDesEcrituresDeVente } from './ecrituresVentesFactureesEcran'
 import { ventesFacturees, type VentesFacturees } from './ventesFacturees'
 import { formatMoney } from './format'
+import { CAISSE_ABSENTE } from './recettesDeCaisse'
 
 // LA CONCORDANCE DE LA 2035 AVEC LES ÉCRITURES (ligne 26.6, étape c). Les écritures de ces tests viennent des
 // VRAIS générateurs de l'application — celui d'une pièce, d'un mouvement affecté, d'une échéance d'emprunt,
@@ -142,7 +143,7 @@ function concordance(d: Dossier, o: {
     cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), o.vehicules ?? [vehicule], d.assujetti,
     paiementsDesPieces(d.lignes, [], []), partsDuReleve(d.lignes, categories, d.ventilations, d.assujetti), o.declarationsTva ?? [], PLAN_PAR_DEFAUT,
     o.ventes ?? ventesFactureesVides('d1'),
-    o.ecrituresDesVentes ?? { etat: 'sans_bascule' },
+    o.ecrituresDesVentes ?? { etat: 'sans_bascule' }, CAISSE_ABSENTE,
   )
   return concordance2035(
     declaration, d.ecritures,
@@ -622,7 +623,7 @@ describe('ouAgir', () => {
 describe('comptesPartagesEntreCases', () => {
   const declarer = (cats: Categorie[], pieces: Piece[]) => calculerDeclaration2035(
     2025, pieces, cats, [], [], [], false, paiementsDesPieces([], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
-    { etat: 'sans_bascule' },
+    { etat: 'sans_bascule' }, CAISSE_ABSENTE,
   )
 
   it('dit un compte que deux postes de cases différentes partagent', () => {
@@ -763,7 +764,7 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
     const d = dossier()
     const declaration = calculerDeclaration2035(
       2025, d.pieces, categories, [bien], [], [vehicule], d.assujetti, paiementsDesPieces(d.lignes, [], []), [], [], PLAN_DECALE, ventesDe(biens),
-      { etat: 'sans_bascule' },
+      { etat: 'sans_bascule' }, CAISSE_ABSENTE,
     )
     expect(declaration.contributions.filter((c) => c.source.type === 'encaissement').map((c) => c.compte))
       .toEqual([PLAN_DECALE.ventes_de_biens, PLAN_DECALE.ventes_de_biens])
@@ -861,7 +862,7 @@ describe('concordance2035 — la part d’une vente facturée, rapprochée des �
   })
 
   it('aucun compte partagé entre cases : la part porte le 706000, en case AA comme les recettes du dossier', () => {
-    const declaration = calculerDeclaration2035(2025, [], categories, [], [], [], false, paiementsDesPieces([], [], []), [], [], PLAN_PAR_DEFAUT, ventesDe(sources()), { etat: 'sans_bascule' })
+    const declaration = calculerDeclaration2035(2025, [], categories, [], [], [], false, paiementsDesPieces([], [], []), [], [], PLAN_PAR_DEFAUT, ventesDe(sources()), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
     expect(declaration.contributions.map((c) => c.compte)).toEqual(['706000', '706000'])
     expect(comptesPartagesEntreCases(declaration)).toEqual([])
   })

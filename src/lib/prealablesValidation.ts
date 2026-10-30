@@ -983,6 +983,10 @@ export const CARTES_DE_CLOTURE: Readonly<Record<string, { prealable: string } | 
   'Pièces validées absentes du récapitulatif': { prealable: 'exclusions-2035' },
   'Mouvements affectés absents du récapitulatif': { prealable: 'exclusions-2035' },
   'Frais d’encaissements absents du récapitulatif': { prealable: 'exclusions-2035' },
+  // Étape C3a : une recette de caisse que la 2035 ne compte pas a son écriture au brouillon, écrite avec l'opération — la
+  // concordance la dit en écart (`sans_poste`, `caisse_a_reprendre`) et retient la validation. Les préalables propres à la
+  // caisse viennent avec l'étape C3b.
+  'Recettes de caisse absentes du récapitulatif': { prealable: 'concordance' },
   'Échéances d’emprunt non rapprochées': { prealable: 'echeances-emprunt-non-rapprochees' },
   'Pièces comptées à leur date de facture': {
     ecartee: "une pièce dont aucun paiement n'est rapproché a une écriture sans banque, déséquilibrée, refusée sous « ecritures-desequilibrees » (ou sans écriture, sous « ecritures-a-generer ») ; une note de frais compte à sa date, qui est celle de son paiement",
