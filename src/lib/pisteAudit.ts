@@ -3,6 +3,7 @@ import { mouvementJustifieParLeReleve } from './affectationBanque'
 import { COMPTE_BANQUE } from './comptes'
 import { nomDuVehicule } from './forfaitKilometrique'
 import { referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
+import { justificatifDeLaCaisse } from './controlesDeLaCaisse'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { formatDate } from './format'
@@ -72,12 +73,16 @@ export interface RuptureAudit {
 // action — une déclaration ne se retire qu'avec sa liquidation (`retirer_declaration_tva`). NI LE PAIEMENT D'UNE
 // ÉCHÉANCE DEPUIS LE COMPTE PERSONNEL (lib/cotisationPersonnelle.ts) : son justificatif est le relevé du compte
 // personnel au jour du paiement, et sa clé est en cascade — l'écriture part avec son échéance, et la base ne la laisse
-// retirer qu'avec le paiement : `cotisation_id` ne tombe jamais à nul sous elle.
+// retirer qu'avec le paiement : `cotisation_id` ne tombe jamais à nul sous elle. NI UNE OPÉRATION DE LA CAISSE (ligne 26.6,
+// étape C3b ; lib/controlesDeLaCaisse.ts) : son justificatif est le brouillard du praticien, tenu hors de l'application, et sa
+// clé est en cascade — la base n'écrit, ne change et ne retire ses lignes qu'avec elle (`garder_ecriture_de_caisse`) :
+// `operation_caisse_id` ne tombe jamais à nul sous elle. Une ligne qui cite une opération porte aussi, un jour, la pièce
+// qu'un paiement par la caisse règle (étape C9) : elle est alors jugée par sa pièce, comme la contrepartie de banque.
 export function rupturesPisteAudit(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): RuptureAudit[] {
   const ruptures: RuptureAudit[] = []
   for (const ecriture of ecritures) {
     if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id && !ecriture.vehicule_id
-      && !ecriture.declaration_tva_id && !ecriture.cotisation_id) {
+      && !ecriture.declaration_tva_id && !ecriture.cotisation_id && !ecriture.operation_caisse_id) {
       ruptures.push({ ecriture, motif: 'sans_justificatif' })
     }
     if (ecriture.compte === COMPTE_BANQUE && !ecriture.ligne_bancaire_id) {
@@ -120,11 +125,13 @@ export interface AbsenceFec {
 // Les écritures des mouvements justifiés par le relevé, elles, y sont — au journal de banque, avec le
 // relevé pour pièce (voir `genererFec`) —, comme les dotations aux amortissements, les forfaits kilométriques
 // et la liquidation de la TVA, au journal des opérations diverses avec le tableau d'amortissement, le barème ou la
-// CA3 pour pièce, et le paiement d'une échéance depuis le compte personnel, avec le relevé de ce compte.
+// CA3 pour pièce, et le paiement d'une échéance depuis le compte personnel, avec le relevé de ce compte — et une opération de
+// la caisse (étape C3b), au journal des ventes ou des opérations diverses, avec le récapitulatif de son jour : l'écran ne
+// l'exporte que sur une caisse lue en entier, qui rend chaque opération qu'une ligne cite.
 export function absenceFec(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): AbsenceFec {
   const horsFec = ecritures.filter((e) =>
     !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id && !e.vehicule_id && !e.declaration_tva_id
-    && !e.cotisation_id)
+    && !e.cotisation_id && !e.operation_caisse_id)
   return {
     nb: horsFec.length,
     debit: horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
@@ -196,6 +203,13 @@ export interface LignePisteAudit {
 // dépense que plus rien ne justifie (voir `immobilisationSansJustificatif`). Obligatoire, sans valeur par
 // défaut : l'oublier ferait nommer chaque dotation « bien hors du jeu chargé ».
 //
+// Le justificatif d'une OPÉRATION DE LA CAISSE (ligne 26.6, étape C3b) — une recette en espèces, des espèces rendues, un
+// apport ou un prélèvement de l'exploitant — est le BROUILLARD DE CAISSE du praticien, au jour de l'opération : le
+// récapitulatif de ce jour (PCG, art. 1032-2), tenu hors de l'application, qui n'en garde aucun fichier (la décision du
+// 24/09/2026, et le secret : BOI-BNC-DECLA-10-20, § 280). Sans empreinte, comme le paiement d'une échéance depuis le compte
+// personnel : la colonne reste vide plutôt que de laisser croire à une preuve. Rien ne lui « manque » : sa ligne est à sa
+// place, et la Vue d'ensemble dit à part une opération dont l'écriture ne suit plus (`caisse-a-reprendre`).
+//
 // Le justificatif d'un FORFAIT KILOMÉTRIQUE est le BARÈME de l'exercice appliqué au kilométrage de la ligne
 // du cadre 7 qu'il désigne : `vehicules` permet de les nommer. Rien n'en a d'empreinte, la colonne reste vide.
 //
@@ -255,6 +269,7 @@ export function pisteAudit(
     if (!e.piece_id && !e.ligne_bancaire_id && e.vehicule_id) return ligneDuForfait(e, vehiculeParId)
     if (!e.piece_id && !e.ligne_bancaire_id && e.declaration_tva_id) return ligneDeLiquidation(e)
     if (!e.piece_id && !e.ligne_bancaire_id && e.cotisation_id) return ligneDuPaiementPersonnel(e)
+    if (!e.piece_id && !e.ligne_bancaire_id && e.operation_caisse_id) return ligneDeLaCaisse(e)
     const piece = e.piece_id ? pieceParId.get(e.piece_id) ?? null : null
     const mouvement = e.ligne_bancaire_id ? ligneParId.get(e.ligne_bancaire_id) ?? null : null
     const releve = !e.piece_id && mouvement && mouvementJustifieParLeReleve(mouvement) ? mouvement : null
@@ -542,6 +557,30 @@ function ligneDuPaiementPersonnel(e: EcritureBrouillon): LignePisteAudit {
     pieceDate: e.date,
     pieceMontantTtc: null,
     pieceFichier: `Paiement depuis le compte personnel : ${referenceDuPaiementPersonnel(e.date)}`,
+    pieceEmpreinte: null,
+    mouvementDate: null,
+    mouvementLibelle: null,
+    mouvementMontant: null,
+    manque: [],
+  }
+}
+
+// La ligne d'une opération de la caisse : le brouillard du praticien au jour de l'opération pour justificatif
+// (`justificatifDeLaCaisse`), la pièce que le FEC lui donne (« Caisse du … », `referenceDeLaCaisse`). Rien du relevé : les
+// espèces n'y sont pas passées — leur versement en banque est un mouvement à part, justifié par le relevé. Sans empreinte.
+function ligneDeLaCaisse(e: EcritureBrouillon): LignePisteAudit {
+  return {
+    ecritureId: e.id,
+    date: e.date,
+    compte: e.compte,
+    libelle: e.libelle,
+    debit: e.sens === 'debit' ? e.montant : 0,
+    credit: e.sens === 'credit' ? e.montant : 0,
+    pieceId: null,
+    pieceTiers: null,
+    pieceDate: e.date,
+    pieceMontantTtc: null,
+    pieceFichier: justificatifDeLaCaisse(e.date),
     pieceEmpreinte: null,
     mouvementDate: null,
     mouvementLibelle: null,

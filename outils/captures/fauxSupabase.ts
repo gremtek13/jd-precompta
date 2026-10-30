@@ -39,6 +39,7 @@ import type {
   VehiculeDossier, VentilationBancaire,
 } from '../../src/lib/types'
 import { CAISSE_ABSENTE } from '../../src/lib/recettesDeCaisse'
+import { OPERATIONS_DE_CAISSE_ABSENTES } from '../../src/lib/controlesDeLaCaisse'
 
 type Ligne = Record<string, unknown>
 
@@ -710,8 +711,9 @@ function valider(
   const dansLExercice = ecritures.filter((e) => String(e.date) <= `${annee}-12-31` && String(e.date) >= `${annee}-01-01`)
   const numerotation = numeroterFec(
     dansLExercice as unknown as EcritureBrouillon[], s.pieces as unknown as Piece[], categories as unknown as Categorie[], [],
-    // Le dossier que le banc valide n'a pas basculé : aucune écriture d'une vente facturée (étape VF4c2).
-    TRESORERIE.mode, s.lignes as unknown as MouvementBancaire[], [],
+    // Le dossier que le banc valide n'a pas basculé : aucune écriture d'une vente facturée (étape VF4c2). Il ne tient pas de
+    // caisse non plus : aucune opération à numéroter (étape C3b).
+    TRESORERIE.mode, s.lignes as unknown as MouvementBancaire[], [], OPERATIONS_DE_CAISSE_ABSENTES,
   )
   if (numerotation.horsFec.length > 0) console.error('[banc] écritures hors du FEC dans le dossier validé', numerotation.horsFec)
   for (const l of numerotation.lignes) {

@@ -166,6 +166,11 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'comptes-de-bilan-perimes': 'tresorerie',
   'montant-suspect': 'tresorerie',
   'sans-contrepartie': { tresorerie: 'tresorerie', engagement: 'tiers' },
+  // La caisse (ligne 26.6, étape C3b) : le compte 53 est de la trésorerie, et ce qui l'écrit — une opération dont l'écriture
+  // ne suit plus, une caisse négative, un versement d'espèces rangé en recette qui en compte les espèces deux fois.
+  'caisse-a-reprendre': 'tresorerie',
+  'caisse-negative': 'tresorerie',
+  'versements-especes-en-recette': 'tresorerie',
   // Les relevés attendus de chaque exercice (« Relevés bancaires AAAA »).
   banque: 'tresorerie',
   // Les recettes : les ventes que l'application émet, et le taux d'une recette du relevé.
@@ -182,6 +187,9 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   // une vente facturée qui n'est pas écrite à jour — le registre des ventes et ce qu'il écrit.
   'encaissements-en-cours': 'recettes',
   'ventes-facturees-a-ecrire': 'recettes',
+  // Une recette en espèces dont le jour a changé depuis sa saisie (CAISSE-Q2) : ce que la recette compte, face aux espèces des
+  // factures de son jour.
+  'recettes-de-caisse-a-revoir': 'recettes',
   // Les dépenses : les pièces, leurs écritures, leurs postes.
   'pieces-a-valider': 'depenses',
   'pieces-sans-date': 'depenses',

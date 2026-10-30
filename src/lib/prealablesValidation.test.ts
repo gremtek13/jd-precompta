@@ -17,7 +17,7 @@ import type { Emprunt } from './emprunts'
 import { formatMoney } from './format'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
-  LigneBancaire, NatureImmobilisation, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
+  LigneBancaire, NatureImmobilisation, OperationCaisse, Piece, ReglementGroupe, SoldeReporte, VehiculeDossier, VentilationBancaire,
 } from './types'
 import { demandeDeValidation } from './validationExercice'
 import type { FacturePourJumelle } from './ventesJumelles'
@@ -35,6 +35,10 @@ import { ventesDeLaChecklist } from './ventesDeLaChecklist'
 import { ventesFacturees } from './ventesFacturees'
 import { frontiereDeValidation } from './validationExercice'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
+import { OPERATIONS_DE_CAISSE_ABSENTES } from './controlesDeLaCaisse'
+import { ecritureDeLOperation } from './caisse'
+import { recetteDeCaisse } from './recettesDeCaisse'
+import type { OperationsDeCaisse } from './controlesDeLaCaisse'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -135,7 +139,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE,
-    etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, ...o,
+    etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, ...o,
   }
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
   const paiements = paiementsDesPieces(base.lignes, base.reglements, base.encaissees)
@@ -699,6 +703,26 @@ describe('prealablesDeValidation — la TVA liquidée', () => {
 // dans l'exercice, et se tait quand le même défaut est dans l'exercice suivant — que la validation ne fige pas.
 // Sans le premier cas, un contrôle débranché laisserait figer un défaut ; sans le second, un contrôle qui compte
 // tout le dossier refuserait un exercice juste.
+// LA CAISSE (ligne 26.6, étape C3b) : les fabriques de ses cas, ici et plus bas. L'écriture d'une opération est celle que la
+// base compose (`ecritureDeLOperation`), telle qu'elle arrive au brouillon. Des jeux FICTIFS.
+const MODELE_CAISSE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+const operationDeCaisse = (o: Partial<OperationCaisse>): OperationCaisse => ({
+  id: 'o', dossier_id: 'd1', genre: 'apport', date: '2025-03-02', montant: 50, categorie_id: null, taux_tva: null,
+  encaissements_du_jour: null, piece_id: null, origine: 'cabinet', remplace_id: null, cree_le: '2025-03-02T18:00:00Z',
+  cree_par: null, retire_le: null, retire_par: null, ...o,
+})
+const HONORAIRES_CAISSE: Categorie = { ...ACHATS, id: 'k-hono', code: 'honoraires', libelle: 'Honoraires', compte_comptable: '706000', poste_2035: 'Recettes encaissées y compris les remboursements de frais' }
+// L'écriture que la base compose pour l'opération, telle qu'elle arrive au brouillon.
+const lignesDeLaCaisse = (o: OperationCaisse): EcritureBrouillon[] => ecritureDeLOperation({
+  genre: o.genre as 'apport', date: o.date, montant: o.montant, taux_tva: null,
+  categorie: o.categorie_id ? { libelle: HONORAIRES_CAISSE.libelle, compte_comptable: HONORAIRES_CAISSE.compte_comptable } : null,
+}, MODELE_CAISSE).map((l, i) => ecriture(`${o.id}-${i}`, {
+  piece_id: null, date: o.date, compte: l.compte, sens: l.sens, montant: l.montant, libelle: l.libelle, operation_caisse_id: o.id,
+}))
+const APPORT = operationDeCaisse({ id: 'a1', date: '2025-03-02', montant: 50 })
+const PRELEVEMENT = operationDeCaisse({ id: 'p1', genre: 'prelevement', date: '2025-03-05', montant: 30 })
+const caisseLue = (operations: OperationCaisse[]): OperationsDeCaisse => ({ etat: 'lue', dossierId: 'd1', operations })
+
 describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exercice', () => {
   const D = (a: number, mmjj: string) => `${a}-${mmjj}`
   const cas: [string, (a: number) => Surcharges][] = [
@@ -798,6 +822,20 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
     ['paiements-tva-perimes', (a) => ({
       lignes: [L1, ligne('l2', { date: D(a, '04-20'), montant: -200, declaration_tva_id: 'dt1' })],
     })],
+    // LA CAISSE (étape C3b) : une opération sans son écriture ; un prélèvement qui la vide sous zéro ; une recette dont le jour
+    // a changé depuis sa saisie. Défensifs les deux premiers : la base écrit l'opération avec son écriture, et refuse une caisse
+    // négative.
+    ['caisse-a-reprendre', (a) => ({ operationsDeCaisse: caisseLue([{ ...APPORT, date: D(a, '03-02') }]) })],
+    ['caisse-negative', (a) => {
+      const ops = [{ ...APPORT, date: D(a, '03-02') }, { ...PRELEVEMENT, date: D(a, '03-05'), montant: 80 }]
+      return { ecritures: [E1, E2, ...ops.flatMap(lignesDeLaCaisse)], operationsDeCaisse: caisseLue(ops) }
+    }],
+    ['recettes-de-caisse-a-revoir', (a) => {
+      const r = operationDeCaisse({
+        id: 'r1', genre: 'recette', date: D(a, '03-12'), montant: 120, categorie_id: HONORAIRES_CAISSE.id, encaissements_du_jour: ['e-perdu'],
+      })
+      return { categories: [ACHATS, HONORAIRES_CAISSE], ecritures: [E1, E2, ...lignesDeLaCaisse(r)], operationsDeCaisse: caisseLue([r]) }
+    }],
   ]
 
   // Sans exercice validé, le défaut porté par 2026 ferait aussi juger 2025 sur son activité : 2024 validé l'écarte.
@@ -1716,5 +1754,89 @@ describe('prealablesDeValidation — les ventes facturées d’un dossier bascul
       expect(etat.prealables[0].message).toMatch(motif)
       expect(etat.numerotation).toBeNull()
     }
+  })
+})
+
+// LA CAISSE (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts) : ses écritures numérotées avec les autres, au journal de leur
+// genre ; trois préalables bloquants — une opération à reprendre, une caisse négative, une recette à revoir — et les recettes
+// de caisse dans `exclusions-2035`, sous une phrase qui les nomme. La caisse absente (le drapeau baissé) ne change rien, et
+// pas encore revenue ou lue en partie, la validation se suspend. Des jeux FICTIFS.
+describe('prealablesDeValidation — la caisse (étape C3b)', () => {
+  const IDS_DE_LA_CAISSE = ['caisse-a-reprendre', 'caisse-negative', 'recettes-de-caisse-a-revoir']
+  const idsDeLaCaisse = (d: DonneesDeValidation) => ids(d).filter((id) => IDS_DE_LA_CAISSE.includes(id))
+
+  it('lue, à jour : aucun préalable de plus, et ses écritures dans la numérotation que la validation figera', () => {
+    const d = donnees({ ecritures: [E1, E2, ...lignesDeLaCaisse(APPORT), ...lignesDeLaCaisse(PRELEVEMENT)], operationsDeCaisse: caisseLue([APPORT, PRELEVEMENT]) })
+    const etat = prealablesDeValidation(d)
+    expect(etat.prealables).toEqual([])
+    expect(etat.numerotation!.horsFec).toEqual([])
+    expect(etat.numerotation!.lignes.filter((l) => l.ecriture.operation_caisse_id).map((l) => [l.ecriture.id, l.journal, l.numero, l.pieceRef]))
+      .toEqual([
+        ['a1-0', 'OD', 1, 'Caisse du 02/03/2025'], ['a1-1', 'OD', 1, 'Caisse du 02/03/2025'],
+        ['p1-1', 'OD', 2, 'Caisse du 05/03/2025'], ['p1-0', 'OD', 2, 'Caisse du 05/03/2025'],
+      ])
+  })
+
+  it('pas encore revenue, ou lue en partie : la validation se suspend', () => {
+    const etat = prealablesDeValidation(donnees({ operationsDeCaisse: null }))
+    expect(etat.prealables.map((p) => [p.id, p.bloquant])).toEqual([['lecture-partielle', true]])
+    expect(etat.prealables[0].message).toContain('la caisse du dossier n’est pas lue en entier')
+    expect(etat.numerotation).toBeNull()
+  })
+
+  it('NEUTRE : la caisse absente ne dit rien de plus — mais une ligne de caisse que rien ne lit ne se numérote pas', () => {
+    expect(ids(donnees())).toEqual([])
+    expect(ids(donnees({ operationsDeCaisse: caisseLue([]) }))).toEqual([])
+    expect(ids(donnees({ ecritures: [E1, E2, ...lignesDeLaCaisse(APPORT)] }))).toEqual(['ecritures-orphelines'])
+  })
+
+  it('caisse-a-reprendre : l’écriture manque, ou ne suit plus — dans l’exercice seulement', () => {
+    const p = prealable(donnees({ ecritures: [E1, E2, ...lignesDeLaCaisse(APPORT)], operationsDeCaisse: caisseLue([APPORT, PRELEVEMENT]) }), 'caisse-a-reprendre')!
+    expect([p.nb, p.bloquant, p.cible]).toEqual([1, true, 'ecritures'])
+    expect(p.message).toContain('retirer l\'opération et la saisir de nouveau avant la validation')
+    expect(p.detail!.replace(/[\u00a0\u202f]/g, ' ')).toBe('le 05/03/2025, prélèvement de 30,00 € (écriture absente).')
+    const decalee = lignesDeLaCaisse(APPORT).map((e) => ({ ...e, compte: e.compte === PLAN_PAR_DEFAUT.caisse ? '531000' : e.compte }))
+    expect(prealable(donnees({ ecritures: [E1, E2, ...decalee], operationsDeCaisse: caisseLue([APPORT]) }), 'caisse-a-reprendre')!.nb).toBe(1)
+    // Une opération de l'exercice suivant ne retient pas celui-ci.
+    const plusTard = operationDeCaisse({ id: 'a9', date: '2026-01-15' })
+    expect(idsDeLaCaisse(donnees({ operationsDeCaisse: caisseLue([plusTard]) }))).toEqual([])
+  })
+
+  it('caisse-negative : défensif, le jour et le solde sous les mots de la base', () => {
+    const P80 = { ...PRELEVEMENT, montant: 80 }
+    const p = prealable(donnees({ ecritures: [E1, E2, ...lignesDeLaCaisse(APPORT), ...lignesDeLaCaisse(P80)], operationsDeCaisse: caisseLue([APPORT, P80]) }), 'caisse-negative')!
+    expect([p.nb, p.bloquant]).toEqual([null, true])
+    expect(p.message.replace(/[\u00a0\u202f]/g, ' ')).toBe('La caisse est négative le 05/03/2025 (−30,00 €) : son solde est débiteur ou nul. Saisir les recettes '
+      + 'en espèces qui manquent, ou retirer la sortie d\'espèces qui la vide, avant la validation.')
+    // Négative l'exercice suivant seulement : celui-ci n'est pas retenu.
+    const P26 = { ...P80, date: '2026-02-01' }
+    expect(idsDeLaCaisse(donnees({ ecritures: [E1, E2, ...lignesDeLaCaisse(APPORT), ...lignesDeLaCaisse(P26)], operationsDeCaisse: caisseLue([APPORT, P26]) }))).toEqual([])
+  })
+
+  it('recettes-de-caisse-a-revoir : l’ensemble reconnu de son jour n’est plus celui de la caisse (CAISSE-Q2)', () => {
+    const R = operationDeCaisse({ id: 'r1', genre: 'recette', date: '2025-03-12', montant: 120, categorie_id: HONORAIRES_CAISSE.id, encaissements_du_jour: ['e-perdu'] })
+    const d = donnees({ categories: [ACHATS, HONORAIRES_CAISSE], ecritures: [E1, E2, ...lignesDeLaCaisse(R)], operationsDeCaisse: caisseLue([R]) })
+    const p = prealable(d, 'recettes-de-caisse-a-revoir')!
+    expect([p.nb, p.bloquant]).toEqual([1, true])
+    expect(p.detail!.replace(/[\u00a0\u202f]/g, ' ')).toBe('le 12/03/2025, recette de 120,00 € (sans numéro).')
+    expect(idsDeLaCaisse(donnees({
+      categories: [ACHATS, HONORAIRES_CAISSE], ecritures: [E1, E2, ...lignesDeLaCaisse({ ...R, encaissements_du_jour: [] })],
+      operationsDeCaisse: caisseLue([{ ...R, encaissements_du_jour: [] }]),
+    }))).toEqual([])
+  })
+
+  it('exclusions-2035 : la phrase d’hier sans recette de caisse exclue ; nommée, et comptée, avec', () => {
+    const base = donnees()
+    const sans = prealable({ ...base, declaration: { ...base.declaration!, exclusions: { ...base.declaration!.exclusions, sansMontant: [P1] } } }, 'exclusions-2035')!
+    expect(sans.message).toBe("pièce(s) ou mouvement(s) que la 2035 ne compte pas (sans poste, sans montant, un compte sorti des comptes de résultat, ou les frais d'un mouvement d'encaissements sans poste) : les compléter avant la validation.")
+    expect('detail' in sans).toBe(false)
+    const recette = recetteDeCaisse({ id: 'r1', date: '2025-03-12', montant: 120, categorie_id: 'k-inconnue', taux_tva: null }, [], false)
+    const avec = prealable({
+      ...base,
+      declaration: { ...base.declaration!, exclusions: { ...base.declaration!.exclusions, recettesDeCaisseSansProduit: [recette], recettesDeCaisseSansPoste: [recette] } },
+    }, 'exclusions-2035')!
+    expect(avec.nb).toBe(2)
+    expect(avec.message).toContain('ou une recette de caisse dont la catégorie n\'a pas de poste ou n\'est plus un produit')
+    expect(avec.detail).toBe('Dont 2 recettes de caisse : la carte « Recettes de caisse absentes du récapitulatif » ci-dessus les nomme.')
   })
 })

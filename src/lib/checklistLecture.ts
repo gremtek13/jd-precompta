@@ -11,6 +11,7 @@ import type { FacturePourJumelle, TransmissionPourJumelle } from './ventesJumell
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from './ecrituresVentesFactureesLecture'
 import { facturesSourcesDe } from './facturesSources'
 import { lireLesSoldesReportes } from './soldesReportesLecture'
+import { lireLaCaisse, type LectureDeLaCaisse } from './caisseLecture'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, FactureEmise, Immobilisation,
   LigneBancaire, LettrageManuel, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
@@ -20,7 +21,7 @@ import type {
 // pages/dossier/ChecklistTab.tsx, qui le lisait lui-même, pour que l'onglet de la révision (ligne 41, étape R3) range
 // les mêmes points, tirés des mêmes lectures. Les requêtes sont celles de l'écran, dans le même ordre.
 
-export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'relevesIncoherents' | 'doublonsTexte' | 'ventesFacturees'> {
+export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'relevesIncoherents' | 'doublonsTexte' | 'ventesFacturees' | 'caisse'> {
   // Nuls quand leur lecture a échoué — l'échec est journalisé. La Vue d'ensemble les lit alors comme vides, comme elle
   // l'a toujours fait (best-effort) ; la révision, elle, n'affirme rien d'une lecture qu'elle n'a pas.
   relevesIncoherents: ControleReleveBancaire[] | null
@@ -44,6 +45,13 @@ export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'releve
   // Son motif quand elle n'est pas entière : À PART de `lectureIncomplete` — seuls les deux points des ventes facturées se
   // taisent, et leur bandeau le dit ; les autres points portent sur tout ce qu'ils lisent.
   ventesIncompletes: string | null
+  // La caisse du dossier (ligne 26.6, étape C3b ; lib/caisseLecture.ts), telle que lue : les points de la caisse s'en tirent,
+  // et la révision en tire aussi les recettes de sa revue analytique — une lecture que deux écrans comptent s'écrit une fois.
+  // Le drapeau baissé, rien n'est lu (sans appel au réseau) : la caisse est absente.
+  caisse: LectureDeLaCaisse
+  // Son motif quand elle est en base et n'est pas lue en entier : À PART de `lectureIncomplete` — seuls les points de la caisse
+  // se taisent, et leur bandeau le dit. Nul pour une caisse absente.
+  caisseIncomplete: string | null
 }
 
 // `ventesParLesFactures` : le réglage du dossier, sans valeur par défaut — un dossier qui a basculé lit aussi ses ventes
@@ -71,6 +79,7 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
     lectureTransmissions,
     lectureReportes,
     ventesFacturees,
+    lectureCaisse,
   ] = await Promise.all([
     // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
     // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -159,6 +168,8 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
     lireLesSoldesReportes(dossierId),
     // Ne rejette jamais : refusée, partielle ou d'un autre dossier, elle revient « incomplète », avec son motif.
     ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
+    // Ne rejette jamais non plus ; le drapeau baissé, ne touche pas au réseau (la caisse absente).
+    lireLaCaisse(dossierId),
   ])
   // Best-effort, comme dans BanqueTab : l'échec est journalisé, et rendu NUL — jamais lu ici comme « aucun écart ».
   const relevesIncoherents = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -231,5 +242,17 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
     })(),
     ventesFacturees,
     ventesIncompletes: ventesFacturees?.etat === 'incomplete' ? ventesFacturees.motif : null,
+    caisse: lectureCaisse,
+    caisseIncomplete: lectureCaisse.enBase && !lectureCaisse.complete ? lectureCaisse.motif ?? 'lecture incomplète' : null,
+    // Les lectures dont les points de la caisse ne se jugent qu'entières : ses opérations, le brouillon (leurs écritures), les
+    // catégories (le compte d'une recette), le relevé (les versements, les mouvements classés sur la caisse), la reprise (son
+    // ouverture) et les ventilations (un versement ventilé en recette). Une caisse absente n'en attend aucune.
+    entreesDeLaCaisseIncompletes: !lectureCaisse.enBase ? null
+      : !lectureCaisse.complete ? lectureCaisse.motif ?? 'lecture incomplète'
+        : (() => {
+          const partielle = [lectureEcritures, lectureCategories, lectureLignes, lectureANouveaux, lectureVentilations]
+            .find((l) => !l.complete)
+          return partielle === undefined ? null : partielle.motif ?? 'lecture incomplète'
+        })(),
   }
 }

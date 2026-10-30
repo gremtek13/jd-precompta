@@ -24,7 +24,7 @@ import {
 } from '../../lib/revueAnalytique'
 import { donneesDeLaRevueAnalytique, identifiantDeLaLigne, memeCleDeLigne } from '../../lib/revueAnalytiqueEcran'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
-import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import type { LectureDeLaCaisse } from '../../lib/caisseLecture'
 import { recettesDeCaisseDuDossier, recettesPourLesMoteurs } from '../../lib/recettesDeCaisse'
 import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFactureesEcran'
 import type { LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
@@ -122,7 +122,9 @@ interface LectureDeLaRevision {
   ventesFacturees: LectureVentesFacturees
   // La caisse du dossier (ligne 26.6, étape C3a) : la 2035 de la revue en compte les recettes en espèces, comme celle de
   // Clôture. Elle ne sert qu'à la revue analytique, et sa lecture incomplète rejoint donc les motifs de la revue, qui se tait
-  // seule ; le drapeau baissé, rien n'est lu (la caisse absente, qui ne change rien).
+  // seule ; le drapeau baissé, rien n'est lu (la caisse absente, qui ne change rien). Depuis l'étape C3b, c'est la lecture
+  // même de la Vue d'ensemble (lib/checklistLecture.ts), dont les points de la caisse se tirent aussi : une lecture que deux
+  // écrans comptent s'écrit une fois.
   caisse: LectureDeLaCaisse
   // Les sources des écritures des ventes facturées d'un dossier qui a basculé (VF4C3-Q1) : la 2035 de la revue en tire les
   // frais d'un mouvement d'encaissements, comme celle de Clôture. Nulles pour un dossier qui n'a pas basculé, jamais lues.
@@ -161,7 +163,7 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
   const [
     checklist, lectureControles, lectureDocuments, lectureDecisions, lecturePreuves, lectureConclusions,
     lectureJournal, lectureRevues, lectureSeuils, lectureExplications, lectureReperes, lectureReperesDesPostes, permanent,
-    ventesFacturees, caisse,
+    ventesFacturees,
   ] = await Promise.all([
     // Un dossier qui a basculé y lit aussi les sources de ses écritures de vente : elles servent à la revue, plus bas. Elle lit
     // aussi les soldes reportés (O33-Q3), que la révision reprend tels quels : une lecture que deux écrans comptent s'écrit une fois.
@@ -218,9 +220,8 @@ async function lireLaRevision(dossierId: string, bascule: boolean): Promise<Lect
     lireLePermanent(dossierId),
     // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
     lireLesVentesFacturees(dossierId),
-    // Ne rejette jamais non plus ; le drapeau baissé, ne touche pas au réseau.
-    lireLaCaisse(dossierId),
   ])
+  const caisse = checklist.caisse
   // Chaque lecture a son bandeau : dire laquelle manque, c'est dire où chercher.
   const motifs: MotifDeLecture[] = []
   if (checklist.lectureIncomplete) motifs.push({ quoi: 'Les données du dossier', accord: 'lues', motif: checklist.lectureIncomplete })
@@ -903,6 +904,18 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
         consequence={
           'Les cycles Trésorerie et Recettes ne disent donc ni les mouvements réservés à des encaissements de factures, ni les '
           + 'encaissements sans mouvement du relevé : leur silence ne prouve rien. Recharge la page.'
+        }
+      />
+
+      {/* La caisse du dossier (étape C3b), ou une lecture dont ses points dépendent, lue en partie : ses quatre points de la Vue
+          d'ensemble se taisent sous leurs cycles. Muet pour une caisse absente (le drapeau baissé). */}
+      <BandeauLecturePartielle
+        quoi="La caisse du dossier"
+        accord="lue"
+        motif={lecture.checklist.entreesDeLaCaisseIncompletes}
+        consequence={
+          'Les cycles Trésorerie et Recettes ne disent donc ni une opération de caisse à reprendre, ni une caisse négative, ni une '
+          + 'recette en espèces à revoir, ni un versement d’espèces rangé en recette : leur silence ne prouve rien. Recharge la page.'
         }
       />
 

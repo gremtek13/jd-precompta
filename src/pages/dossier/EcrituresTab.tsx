@@ -48,6 +48,8 @@ import {
   etatsDesVentesFacturees, ligneDUneVenteFacturee, mouvementsClassesParEncaissements,
 } from '../../lib/ecrituresVentesFactureesEcran'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
+import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { motifDesOperationsDeCaisse, operationsDeCaisseDuDossier, operationsPourLesControles } from '../../lib/controlesDeLaCaisse'
 import { rattachementDesVentes, type VentesFactureesDesExports } from '../../lib/ventesFactureesDesExports'
 import { lireLesJustificatifsDesVentes } from '../../lib/justificatifsDesVentesLecture'
 import VentesFactureesEcritures from './VentesFactureesEcritures'
@@ -225,12 +227,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // lignes du brouillon, et deux lectures faites à deux moments diraient « à écrire » une écriture qu'on vient de passer.
   // Gardées avec le dossier pour lequel elles ont été lues : DossierDetail reste monté d'un dossier à l'autre.
   const [lectureVentes, setLectureVentes] = useState<LectureSourcesDesEcrituresDeVente | null>(null)
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C3b ; lib/caisseLecture.ts) : le FEC numérote chaque opération au journal de son
+  // genre (lib/fec.ts), et doit donc les lire toutes. Lue avec le brouillon, gardée avec le dossier qui l'a demandée ; le
+  // drapeau baissé, rien n'est lu (sans appel au réseau) et rien ne change.
+  const [lectureCaisse, setLectureCaisse] = useState<LectureDeLaCaisse | null>(null)
 
   async function load() {
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
-      lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations, lectureReportes, lectureDesVentes,
+      lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations, lectureReportes, lectureDesVentes, lectureDeLaCaisse,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -298,8 +304,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       lireLesSoldesReportes(dossierId),
       // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
       ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
+      // Ne rejette jamais ; le drapeau baissé, ne touche pas au réseau.
+      lireLaCaisse(dossierId),
     ])
     setLectureVentes(lectureDesVentes)
+    setLectureCaisse(lectureDeLaCaisse)
     setLignesBancaires(lectureLignes.lignes)
     setLettragesManuels(lectureLettrages.lignes)
     setLettragesIncomplets(lectureLettrages.motif)
@@ -541,6 +550,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       : null
   const ventesIndisponibles = ventesDesExports !== null ? null
     : motifVentesIncompletes ?? (etatsVentes?.etat === 'incoherent' ? etatsVentes.motif : 'pas encore lues')
+  // LES OPÉRATIONS DE LA CAISSE QUE LE FEC NUMÉROTE (étape C3b) : lues en entier pour CE dossier, ou la caisse absente (le
+  // drapeau baissé). Pas encore revenues, ou lues en partie, le FEC ne s'exporte pas : les recettes en espèces d'un praticien
+  // en sortiraient sans que le fichier puisse le dire.
+  const etatDesOperationsDeCaisse = operationsDeCaisseDuDossier(lectureCaisse, dossierId)
+  const operationsDuFec = operationsPourLesControles(etatDesOperationsDeCaisse)
+  const caisseIndisponible = motifDesOperationsDeCaisse(etatDesOperationsDeCaisse)
 
   // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
   // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
@@ -1819,7 +1834,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           disabled={
             typeof anneeFilter !== 'number' || (ecrituresFiltrees.length === 0 && aNouveauxExercice.length === 0)
             || brouillonIncomplet !== null || aNouveauxIncomplets !== null || reportesIncomplets !== null
-            || lettragesManquants !== null || ventesIndisponibles !== null
+            || lettragesManquants !== null || ventesIndisponibles !== null || caisseIndisponible !== null
           }
           title={
             brouillonIncomplet
@@ -1832,17 +1847,19 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               ? `Lettrages faits à la main lus incomplètement (${lettragesManquants}) — une facture lettrée paraîtrait ouverte dans le FEC.`
               : ventesIndisponibles
               ? `Ventes facturées non lues en entier (${ventesIndisponibles}) — leurs écritures sortiraient du FEC sans qu’il puisse le dire.`
+              : caisseIndisponible
+              ? `Caisse non lue en entier (${caisseIndisponible}) — ses opérations sortiraient du FEC sans qu’il puisse le dire.`
               : typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice."
               : fecValide ? 'Exercice validé : son FEC se relit tel que la validation l’a figé — journal, numéros et libellés ne changent plus.'
               : undefined
           }
           onClick={() => {
-            if (typeof anneeFilter !== 'number' || ventesDesExports === null) return
+            if (typeof anneeFilter !== 'number' || ventesDesExports === null || operationsDuFec === null) return
             const contenu = fecValide
               ? formaterFec(fecValide, lettrage)
               : genererFec(
                 ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode, lignesBancaires, lettrage,
-                ventesDesExports.ecritures,
+                ventesDesExports.ecritures, operationsDuFec,
               )
             telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
           }}

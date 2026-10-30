@@ -106,7 +106,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
 
   const {
     lectureIncomplete, ouvertureIncomplete, soldesReportesIncomplets, ouverture, clotureInconnue, infoInconnue, ecritures, piecesAValider,
-    ventesIncompletes,
+    ventesIncompletes, entreesDeLaCaisseIncompletes,
   } = lecture
   // Les relevés incohérents et les doublons de contenu sont BEST-EFFORT ici : illisibles, ils se lisent comme vides —
   // l'échec est journalisé par la lecture —, comme avant que leurs lectures sortent de cet écran.
@@ -199,6 +199,17 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
           'Les points « mouvements réservés à des encaissements de factures » et « encaissements sans mouvement du relevé » ' +
           'se taisent donc — leur silence ne prouve rien —, et les lignes non rapprochées comptent peut-être des mouvements ' +
           'réservés. Recharge la page avant de t’y fier.'
+        }
+      />
+      {/* LA CAISSE (ligne 26.6, étape C3b) : ses opérations, ou une lecture dont ses points dépendent, lues en partie — ses
+          quatre points se taisent. Muet pour une caisse absente (le drapeau baissé). */}
+      <BandeauLecturePartielle
+        quoi="La caisse du dossier"
+        accord="lue"
+        motif={entreesDeLaCaisseIncompletes}
+        consequence={
+          'Les points de la caisse — une opération à reprendre, une caisse négative, une recette en espèces à revoir, un versement ' +
+          'd’espèces rangé en recette — se taisent donc : leur silence ne prouve rien. Recharge la page avant de t’y fier.'
         }
       />
       {reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true }) && (

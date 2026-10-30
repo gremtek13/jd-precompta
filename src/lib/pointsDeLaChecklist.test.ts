@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
-import type { ANouveau, Categorie, DeclarationTva, EcritureBrouillon, InformationsDossier, LigneBancaire, Piece, SoldeReporte } from './types'
+import type { ANouveau, Categorie, DeclarationTva, EcritureBrouillon, InformationsDossier, LigneBancaire, OperationCaisse, Piece, SoldeReporte } from './types'
+import { ecritureDeLOperation } from './caisse'
+import type { CaisseLue } from './recettesDeCaisse'
+import type { LectureDesVentesDuReleve } from './mouvementsDesVentes'
 import { COMPTE_BANQUE } from './comptes'
 import { formatMoney } from './format'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+import { CAISSE_PAS_EN_BASE } from './controlesDeLaCaisse'
 
 // Les points de la Vue d'ensemble, sortis de ChecklistTab (ligne 41, étape R3) : `ChecklistTab.test.tsx` garde ce que
 // l'écran en affiche, mot pour mot. Ici, ce que le module seul décide : il ne lit pas l'horloge — le premier jour du mois
@@ -19,7 +23,7 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,
     anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, aNouveaux: [], soldesReportes: [], entreesDeLOuvertureIncompletes: null,
-    ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, ...o,
+    ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, caisse: CAISSE_PAS_EN_BASE, entreesDeLaCaisseIncompletes: null, ...o,
   }
 }
 
@@ -443,5 +447,99 @@ describe('pointsDeLaChecklist : l’ouverture confrontée à la clôture du pré
     expect(point({ ecritures: achat, soldesReportes: juste }, { ...dans([2024]), modele: engagement })?.nb).toBe(0)
     // La même ouverture, jugée comme celle d'une entreprise individuelle (trésorerie) : la perte irait au capital, 101000.
     expect(point({ ecritures: achat, soldesReportes: juste })?.nb).toBe(1)
+  })
+})
+
+// LA CAISSE DANS LA VUE D'ENSEMBLE (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts) : quatre points, qui ne paraissent que
+// sur une caisse lue — absente (le drapeau baissé), la liste est celle d'hier, point pour point. Chacun dans ses deux sens,
+// tu sur une lecture partielle. Des jeux FICTIFS.
+describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
+  const HONORAIRES: Categorie = {
+    id: 'k-hono', dossier_id: 'd1', code: 'honoraires', libelle: 'Honoraires', compte_comptable: '706000', poste_2035: 'Recettes encaissées',
+    ordre: 1, created_at: '2026-01-01T00:00:00Z',
+  } as Categorie
+  const operation = (o: Partial<OperationCaisse>): OperationCaisse => ({
+    id: 'o', dossier_id: 'd1', genre: 'apport', date: '2026-03-02', montant: 50, categorie_id: null, taux_tva: null,
+    encaissements_du_jour: null, piece_id: null, origine: 'cabinet', remplace_id: null, cree_le: '2026-03-02T18:00:00Z',
+    cree_par: null, retire_le: null, retire_par: null, ...o,
+  })
+  const lignesDe = (o: OperationCaisse): EcritureBrouillon[] => ecritureDeLOperation({
+    genre: o.genre as 'apport', date: o.date, montant: o.montant, taux_tva: null,
+    categorie: o.categorie_id ? { libelle: HONORAIRES.libelle, compte_comptable: HONORAIRES.compte_comptable } : null,
+  }, CONTEXTE.modele).map((l, i) => ({
+    id: `${o.id}-${i}`, dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date: o.date, compte: l.compte, libelle: l.libelle,
+    montant: l.montant, sens: l.sens, statut: 'proposee', created_at: '2026-03-02T18:00:00Z', immobilisation_id: null, vehicule_id: null,
+    declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE, operation_caisse_id: o.id,
+  }))
+  const caisseLue = (operations: OperationCaisse[], o: Partial<CaisseLue> = {}): CaisseLue =>
+    ({ dossierId: 'd1', enBase: true, lignes: operations, complete: true, motif: null, ...o })
+  const A = operation({ id: 'a1', montant: 50 })
+  const IDS = ['caisse-a-reprendre', 'caisse-negative', 'recettes-de-caisse-a-revoir', 'versements-especes-en-recette']
+  const tous = (d: Partial<DonneesDeLaChecklist>, c: ContexteDeLaChecklist = CONTEXTE) => pointsDeLaChecklist(donnees(d), c).tousLesPointsATraiter
+  const nb = (d: Partial<DonneesDeLaChecklist>, id: string, c: ContexteDeLaChecklist = CONTEXTE) => tous(d, c).find((p) => p.id === id)?.nb
+
+  it('NEUTRE : la caisse absente n’ajoute aucun point — la liste est celle d’hier, au caractère près', () => {
+    const avant = tous({ lignes: [ligne({ statut: 'non_rapprochee' })] })
+    expect(avant.some((p) => IDS.includes(p.id))).toBe(false)
+    // Lue, les quatre paraissent, à zéro quand tout tient — et les autres points ne changent pas d'un caractère.
+    const apres = tous({ lignes: [ligne({ statut: 'non_rapprochee' })], caisse: caisseLue([]) })
+    expect(apres.filter((p) => IDS.includes(p.id)).map((p) => [p.id, p.nb, p.severite])).toEqual([
+      ['caisse-a-reprendre', 0, 'erreur'], ['caisse-negative', 0, 'erreur'], ['recettes-de-caisse-a-revoir', 0, 'erreur'],
+      ['versements-especes-en-recette', 0, 'attention'],
+    ])
+    expect(apres.filter((p) => !IDS.includes(p.id))).toEqual(avant)
+  })
+
+  it('caisse-a-reprendre : l’écriture manque ; à jour, rien ; ce que la frontière fige, rien', () => {
+    expect(nb({ caisse: caisseLue([A]), ecritures: lignesDe(A) }, 'caisse-a-reprendre')).toBe(0)
+    const p = tous({ caisse: caisseLue([A]) }).find((x) => x.id === 'caisse-a-reprendre')!
+    expect([p.nb, p.cible, p.severite]).toEqual([1, 'ecritures', 'erreur'])
+    expect(p.detail!.replace(/[\u00a0\u202f]/g, ' ')).toBe('le 02/03/2026, apport de 50,00 € (écriture absente).')
+    expect(nb({ caisse: caisseLue([A]) }, 'caisse-a-reprendre', { ...CONTEXTE, frontiere: '2026-12-31' })).toBe(0)
+  })
+
+  it('caisse-negative : le jour et le solde, un point qui ne compte rien', () => {
+    const P = operation({ id: 'p1', genre: 'prelevement', date: '2026-03-05', montant: 80 })
+    const p = tous({ caisse: caisseLue([A, P]), ecritures: [...lignesDe(A), ...lignesDe(P)] }).find((x) => x.id === 'caisse-negative')!
+    expect([p.nb, p.sansNombre, p.severite]).toEqual([1, true, 'erreur'])
+    expect(p.label.replace(/[\u00a0\u202f]/g, ' ')).toBe('La caisse est négative le 05/03/2026 (−30,00 €) — son solde est débiteur ou nul')
+    expect(nb({ caisse: caisseLue([A, { ...P, montant: 50 }]) }, 'caisse-negative')).toBe(0)
+  })
+
+  it('recettes-de-caisse-a-revoir : un encaissement en espèces de son jour enregistré depuis, dans un dossier basculé', () => {
+    const R = operation({ id: 'r1', genre: 'recette', date: '2026-03-12', montant: 120, categorie_id: HONORAIRES.id, encaissements_du_jour: [] })
+    const ventes = (encaissements: unknown[]): LectureDesVentesDuReleve => ({
+      dossierId: 'd1', etat: 'lue',
+      sources: { dossierId: 'd1', factures: [{ id: 'f1', numero: 'F2026-0012', source_de_la_vente: true }], encaissements, mouvements: [], exemplaires: [] },
+    } as unknown as LectureDesVentesDuReleve)
+    const especes = { id: 'e1', facture_id: 'f1', date_encaissement: '2026-03-12', montant: 30, moyen: 'especes', ligne_bancaire_id: null, annule_id: null, retire_le: null }
+    const d = { caisse: caisseLue([R]), categories: [HONORAIRES], ecritures: lignesDe(R) }
+    const p = tous({ ...d, ventesFacturees: ventes([especes]) }).find((x) => x.id === 'recettes-de-caisse-a-revoir')!
+    expect(p.nb).toBe(1)
+    expect(p.detail!.replace(/[\u00a0\u202f]/g, ' ')).toBe('le 12/03/2026, recette de 120,00 € (F2026-0012).')
+    expect(nb({ ...d, ventesFacturees: ventes([]) }, 'recettes-de-caisse-a-revoir')).toBe(0)
+    // Les ventes facturées lues en partie : ce point et la caisse négative se taisent, sous leur bandeau ; « à reprendre » reste.
+    const partielles: LectureDesVentesDuReleve = { dossierId: 'd1', etat: 'incomplete', motif: 'les encaissements' }
+    expect(nb({ ...d, ventesFacturees: partielles }, 'recettes-de-caisse-a-revoir')).toBe(0)
+    expect(nb({ caisse: caisseLue([A]), ventesFacturees: partielles }, 'caisse-a-reprendre')).toBe(1)
+  })
+
+  it('versements-especes-en-recette : un crédit libellé « VERSEMENT ESPECES » rangé en recette, dans un dossier qui tient une caisse', () => {
+    const versement = ligne({ id: 'v1', date: '2026-03-14', montant: 400, libelle: 'VERSEMENT ESPECES', statut: 'rapprochee', categorie_id: HONORAIRES.id })
+    const d = { categories: [HONORAIRES], lignes: [versement], caisse: caisseLue([A]), ecritures: lignesDe(A) }
+    const p = tous(d).find((x) => x.id === 'versements-especes-en-recette')!
+    expect([p.nb, p.cible, p.severite]).toEqual([1, 'banque', 'attention'])
+    expect(p.detail!.replace(/[\u00a0\u202f]/g, ' ')).toBe('Dans Banque, filtre « Rapprochés » : le 14/03/2026, 400,00 € (VERSEMENT ESPECES). Un versement se remet à '
+      + 'traiter, puis se classe sur la caisse.')
+    // Sans opération vivante, aucune caisse : le symptôme ne se dit pas.
+    expect(nb({ ...d, caisse: caisseLue([{ ...A, retire_le: '2026-03-03T10:00:00Z' }]), ecritures: [] }, 'versements-especes-en-recette')).toBe(0)
+    expect(nb({ ...d, lignes: [{ ...versement, libelle: 'VIR CPAM', libelle_brut: 'VIR CPAM' }] }, 'versements-especes-en-recette')).toBe(0)
+  })
+
+  it('lue en partie, ou une de ses entrées : les quatre se taisent', () => {
+    const incompletes = tous({ caisse: caisseLue([A], { complete: false, motif: 'coupée' }) })
+    expect(incompletes.some((p) => IDS.includes(p.id))).toBe(false)
+    const entree = tous({ caisse: caisseLue([A]), entreesDeLaCaisseIncompletes: 'le brouillon : 1 000 lues sur 1 200' })
+    expect(entree.filter((p) => IDS.includes(p.id)).map((p) => p.nb)).toEqual([0, 0, 0, 0])
   })
 })

@@ -60,6 +60,7 @@ import ConcordanceCard from './ConcordanceCard'
 import ValidationExerciceCard from './ValidationExerciceCard'
 import { AUCUNE_FACTURE_SOURCE, horsDesExemplairesDesSources } from '../../lib/facturesSources'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { operationsDeCaisseDuDossier, operationsPourLesControles } from '../../lib/controlesDeLaCaisse'
 import {
   libelleDeLaRecette, motifDeLaCaisse, recettesDe, recettesDeCaisseDuDossier, recettesPourLesMoteurs, type RecetteDeCaisse,
 } from '../../lib/recettesDeCaisse'
@@ -469,6 +470,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const etatDeLaCaisse = recettesDeCaisseDuDossier(lectureCaisse, dossierId, categories, assujettiTva)
   const recettesDeCaisse = recettesPourLesMoteurs(etatDeLaCaisse)
   const caisseIncomplete = motifDeLaCaisse(etatDeLaCaisse)
+  // SES OPÉRATIONS, telles que la validation les reçoit (étape C3b ; lib/controlesDeLaCaisse.ts) : la numérotation du FEC en
+  // écrit chacune, et trois préalables la jugent. Sur la même lecture, pour CE dossier ; pas encore revenues ou lues en
+  // partie, nulles — la validation se suspend. Absentes (le drapeau baissé), rien ne change.
+  const operationsDeCaisse = operationsPourLesControles(operationsDeCaisseDuDossier(lectureCaisse, dossierId))
   // CE QUE LES VIREMENTS MIXTES PAIENT DE LEURS EXEMPLAIRES (étape VF5h ; lib/rattachement.ts), lu avec les ventes facturées :
   // une pièce qu'un tel virement paie se date par lui, dans la 2035 comme dans la validation. Sans facture source, aucun
   // mouvement n'est classé par ses encaissements, et il n'y en a aucun. Pas encore revenues ou lues en partie, aucune 2035
@@ -696,7 +701,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       periodiciteTva, relevesIncoherents, doublonsTexte, facturesEmises, transmissions,
       // Les factures sources lues en entier pour CE dossier, ou rien : la validation se suspend alors (étape VF6a).
       facturesSources: ventesLues?.sources ?? null,
-      etatsDesVentes, ventesDeLaChecklist: ventesDeLaVueDEnsemble,
+      etatsDesVentes, ventesDeLaChecklist: ventesDeLaVueDEnsemble, operationsDeCaisse,
       declaration: formulaire?.declaration ?? null,
       concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
     })

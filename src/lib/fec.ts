@@ -7,6 +7,7 @@ import { auxiliaireDeLaLigne, type EcritureVenteFacturee } from './ecrituresVent
 import { dateAParis } from './format'
 import type { LettrageDeLigne } from './lettrage'
 import { porteUneSourceDeVente, rattachementDesVentes } from './ventesFactureesDesExports'
+import { journalDeLOperation, operationsDe, referenceDeLaCaisse, type OperationsDeCaisse } from './controlesDeLaCaisse'
 
 // Génération du FEC (Fichier des Écritures Comptables) — format officiel imposé par l'article
 // A47 A-1 du Livre des procédures fiscales, que tout logiciel de comptabilité sait importer sans
@@ -28,7 +29,9 @@ import { porteUneSourceDeVente, rattachementDesVentes } from './ventesFactureesD
 // Les dix-huit champs du VII de l'article A47 A-1, ceux d'une comptabilité tenue selon le droit
 // commercial. UN BNC EN COMPTABILITÉ DE TRÉSORERIE (VIII 7) en doit VINGT-DEUX : les mêmes, plus la
 // date et le mode de règlement, la nature de l'opération et l'identification du client (DateRglt,
-// ModeRglt, NatOp, IdClient). Ce fichier ne les écrit pas encore, pour aucun dossier — voir CLAUDE.md.
+// ModeRglt, NatOp, IdClient). Ce fichier ne les écrit pas encore, pour aucun dossier — voir CLAUDE.md. Le jour où il les
+// écrira (ligne 62 ; MVP-D5), une opération de caisse y portera DateRglt sa date, ModeRglt les espèces, NatOp sa nature, et
+// IdClient vide : un total de jour ne nomme personne (BOI-BNC-DECLA-10-20, § 70 et § 280).
 const ENTETES_FEC = [
   'JournalCode', 'JournalLib', 'EcritureNum', 'EcritureDate', 'CompteNum', 'CompteLib',
   'CompAuxNum', 'CompAuxLib', 'PieceRef', 'PieceDate', 'EcritureLib', 'Debit', 'Credit',
@@ -117,7 +120,8 @@ export interface NumerotationFec {
   // Dans l'ordre du fichier — voir `ordonnerLignes`.
   lignes: LigneFec[]
   // Les écritures que rien ne rattache : ni une pièce, ni un mouvement justifié par le relevé, ni un bien, ni
-  // un véhicule, ni une déclaration de TVA, ni une échéance payée depuis le compte personnel — le reste d'une pièce
+  // un véhicule, ni une déclaration de TVA, ni une échéance payée depuis le compte personnel, ni une opération de caisse
+  // lue — le reste d'une pièce
   // supprimée, que `absenceFec` chiffre —, et les lignes d'une vente facturée que la composition ne rend plus telles
   // quelles (« à réécrire » ou « à retirer », lib/ventesFactureesDesExports.ts). Hors du fichier, et une écriture
   // qu'on ne peut pas numéroter empêche de valider son exercice.
@@ -198,6 +202,17 @@ function libellesDesComptes(categories: Categorie[], aNouveaux: readonly ANouvea
 // échéance, au jour du paiement : sa pièce est le relevé du compte personnel de ce jour (`referenceDuPaiementPersonnel`).
 // Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
 //
+// UNE OPÉRATION DE LA CAISSE (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts) fait UNE écriture : les lignes qui la
+// citent (`operation_caisse_id`), que la base a écrites d'un tenant avec elle, à sa date — la clé `caisse|opération|date`. Son
+// journal suit son GENRE (CAISSE-Q3, (A), `journalDeLOperation`) : une recette, et des espèces rendues, au journal des
+// VENTES ; un apport ou un prélèvement de l'exploitant aux OPÉRATIONS DIVERSES. Sa pièce est le récapitulatif de son jour,
+// que le praticien garde (PCG, art. 1032-2) : PieceRef « Caisse du JJ/MM/AAAA », PieceDate sa date. EcritureLib reste le
+// libellé que la base a composé, sans nom (« Recettes en espèces du … — Honoraires »). Le versement d'espèces en banque
+// n'en est pas une : c'est un mouvement du relevé, au journal de BANQUE comme hier. Une ligne qui cite une opération que
+// la lecture ne rend pas — une caisse absente, ou un appelant qui ne l'a pas lue — reste dehors, jamais devinée : les
+// opérations sont un paramètre sans valeur par défaut. LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (le genre `paiement`, étape
+// C9) n'est pas d'ici : ses lignes portent leur pièce, et vont à l'écriture de la pièce, à son journal — C9 l'y conduira.
+//
 // UNE VENTE FACTURÉE (ligne 28.6, chantier EC-Q3, étape VF4c2 ; conception, § 5) fait les écritures que sa COMPOSITION rend
 // (lib/ecrituresVentesFacturees.ts) : la facture, l'avoir et l'encaissement de trésorerie au journal des VENTES, le
 // règlement d'engagement et le mouvement que ses encaissements classent au journal de BANQUE ; PieceRef, le numéro de la
@@ -222,8 +237,12 @@ export function numeroterFec(
   // faites en entier). Sans valeur par défaut : oubliées, toutes les écritures d'un dossier qui a basculé sortiraient du
   // fichier — ses ventes. Un dossier qui n'a pas basculé n'en a aucune : la base refuse d'en écrire.
   ventesFacturees: readonly EcritureVenteFacturee[],
+  // Les opérations de la caisse du dossier, lues en entier (lib/controlesDeLaCaisse.ts) — ou la caisse absente, le drapeau
+  // baissé. Sans valeur par défaut : oubliées, toutes les recettes en espèces d'un praticien sortiraient du fichier.
+  caisse: OperationsDeCaisse,
 ): NumerotationFec {
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
+  const operationById = new Map(operationsDe(caisse).map((o) => [o.id, o]))
   const ventes = rattachementDesVentes(ecritures, ventesFacturees)
   const idsJustifies = idsMouvementsJustifiesParLeReleve(mouvements)
   const mouvementById = new Map(mouvements.map((m) => [m.id, m]))
@@ -256,6 +275,14 @@ export function numeroterFec(
     } else if (e.piece_id) {
       const source = mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
       cle = `${source}|${e.date}`
+    } else if (e.operation_caisse_id) {
+      // Une opération de caisse que la lecture rend, d'un genre qui a son journal ; sinon dehors, jamais devinée.
+      const operation = operationById.get(e.operation_caisse_id)
+      if (!operation || journalDeLOperation(operation.genre) === null) {
+        horsFec.push(e)
+        continue
+      }
+      cle = `caisse|${operation.id}|${e.date}`
     } else if (e.ligne_bancaire_id && idsJustifies.has(e.ligne_bancaire_id)) {
       cle = `releve|${e.ligne_bancaire_id}`
     } else if (e.immobilisation_id) {
@@ -291,6 +318,11 @@ export function numeroterFec(
       const vente = ventes.get(rows[0].id)
       if (vente) {
         return { cle, pieceId: null, rows, ordre, journal: vente.journal, pieceDate: vente.pieceDate, pieceRef: vente.pieceRef }
+      }
+      if (!pieceId && rows[0].operation_caisse_id) {
+        const operation = operationById.get(rows[0].operation_caisse_id)!
+        return { cle, pieceId: null, rows, ordre, journal: journalDeLOperation(operation.genre)!, pieceDate: operation.date,
+          pieceRef: referenceDeLaCaisse(operation.date) }
       }
       if (!pieceId && rows[0].immobilisation_id && !rows[0].ligne_bancaire_id) {
         return { cle, pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
@@ -480,9 +512,9 @@ export function formaterFec(
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   mode: ModeComptable, mouvements: readonly MouvementBancaire[], lettrage: ReadonlyMap<string, LettrageDeLigne>,
-  ventesFacturees: readonly EcritureVenteFacturee[],
+  ventesFacturees: readonly EcritureVenteFacturee[], caisse: OperationsDeCaisse,
 ): string {
-  return formaterFec(numeroterFec(ecritures, pieces, categories, aNouveaux, mode, mouvements, ventesFacturees), lettrage)
+  return formaterFec(numeroterFec(ecritures, pieces, categories, aNouveaux, mode, mouvements, ventesFacturees, caisse), lettrage)
 }
 
 // SirenFECAAAAMMJJ.txt — nom de fichier imposé par le format (AAAAMMJJ = date de clôture de

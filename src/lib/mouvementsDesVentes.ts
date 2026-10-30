@@ -1,3 +1,4 @@
+import { RAISON_VERSEMENT_D_ESPECES } from './controlesDeLaCaisse'
 import { libelleExploitable, motsDuLibelle, motsIdentifiants, motsSeConfirment, tiersConfirmeParBanque } from './appariementBanque'
 import { estLeClient, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
@@ -261,6 +262,20 @@ export function ecartDuLot<L extends { id: string }>(ecartes: readonly L[], hors
   if (mouvements.length === 0) return null
   const plusieurs = mouvements.length > 1
   const debut = `${mouvements.length} mouvement${plusieurs ? 's' : ''} écarté${plusieurs ? 's' : ''} : `
+  // Ceux dont le libellé dit un versement d'espèces, dans un dossier qui tient une caisse (étape C3b ; lib/controlesDeLaCaisse.ts)
+  // : ni des encaissements de factures, ni une vente facturée — leur fiche les classe sur la caisse. Sans eux, la phrase est
+  // celle d'hier, au caractère près.
+  const versements = mouvements.filter((m) => m.raison === RAISON_VERSEMENT_D_ESPECES).length
+  if (versements > 0) {
+    const autres = mouvements.length - versements
+    return {
+      resume: `${debut}${versements} ${versements > 1 ? 'ont' : 'a'} un libellé de versement d’espèces, à classer sur la caisse `
+        + `depuis ${versements > 1 ? 'leur' : 'sa'} fiche${autres === 0 ? '' : ` ; ${autres} autre${autres > 1 ? 's' : ''} `
+        + `${autres > 1 ? 'portent' : 'porte'} des encaissements de factures, ou une vente facturée ${autres > 1 ? 'les' : 'le'} `
+        + 'justifie peut-être'}.`,
+      mouvements,
+    }
+  }
   // Ceux qu'un candidat de la vente justifie peut-être (étape VF5e) se disent autrement que ceux que leurs encaissements
   // portent : ils restent à rapprocher, depuis leur fiche.
   const candidats = mouvements.filter((m) => JUSTIFICATIFS_DE_LA_VENTE.has(m.raison)).length
