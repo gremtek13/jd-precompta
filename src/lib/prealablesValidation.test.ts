@@ -1552,6 +1552,23 @@ describe('prealablesDeValidation — les ventes facturées d’un dossier bascul
     return { ...s, encaissements: [...s.encaissements, { ...encaissement, compte_contrepartie: null, cree_par: null }], parts: [...s.parts, part] }
   }
 
+  // LA CAISSE D'UN DOSSIER BASCULÉ (ligne 26.6, étape C3b ; CAISSE-Q2, (A)) : les espèces d'une facture source encaissées le
+  // jour d'une recette de caisse, sur la lecture même des ventes facturées. Non reconnues par la recette, elle est à revoir.
+  it('la caisse : une recette qui ne reconnaît pas les espèces d’une facture de son jour est à revoir (C3b)', () => {
+    const sources = sansMouvement(sourcesDuDossierBascule(), 'e1', { moyen: 'especes' })
+    const recette = (reconnus: string[]) => operationDeCaisse({
+      id: 'r1', genre: 'recette', date: '2025-11-20', montant: 40, categorie_id: HONORAIRES_CAISSE.id, encaissements_du_jour: reconnus,
+    })
+    const d = (r: OperationCaisse) => bascule({
+      sources, modele: TRESORERIE, categories: [HONORAIRES_CAISSE], brouillon: (ecrit) => [...ecrit, ...lignesDeLaCaisse(r)],
+      autres: { operationsDeCaisse: caisseLue([r]) },
+    })
+    const p = prealable(d(recette([])), 'recettes-de-caisse-a-revoir')
+    expect(p).toMatchObject({ nb: 1, bloquant: true })
+    expect(p!.detail).toMatch(/^le 20\/11\/2025, recette de 40,00\s€ \(F\d{4}-\d{4}\)\.$/)
+    expect(ids(d(recette(['e1'])))).not.toContain('recettes-de-caisse-a-revoir')
+  })
+
   it('un exercice tenu : aucun préalable bloquant, et chaque écriture de vente numérotée — dans les deux modèles', () => {
     for (const modele of [ENGAGEMENT, TRESORERIE]) {
       const d = bascule({ modele })
