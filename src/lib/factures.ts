@@ -2,7 +2,7 @@ import { supabase } from './supabase'
 import { formatDate, formatMoney } from './format'
 import { calculerTotaux } from './montantsFacture'
 import { mentionTva } from './statutTva'
-import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from './types'
+import type { ArticleExoneration, FactureEmise, FactureLigne, NatureArticle, StatutTva, UniteArticle } from './types'
 
 // Mentions légales par défaut, proposées à la création d'une facture puis librement modifiables avant
 // validation — un point de départ raisonnable, pas une garantie de conformité exhaustive : la
@@ -131,19 +131,18 @@ export function refusAvoir(
   return null
 }
 
-// L'avoir, enregistré et validé d'un seul tenant. Ses montants et ses lignes sont stockés NÉGATIFS (voir
-// FactureEmise.type) : sommer les montants d'un dossier annule l'avoir sans cas particulier. L'en-tête est le total
-// des lignes envoyées, comme pour une facture.
-export async function creerAvoir(
-  dossierId: string,
+// Une ligne d'avoir : les quatre champs d'hier, et — étape A7b, quand l'écran les donne — l'unité, la référence et la nature
+// de la ligne qu'elle crédite, que l'avoir imprime comme elle.
+export type LigneDAvoir = LigneAEnregistrer & { unite?: UniteArticle | null; reference?: string | null; nature?: NatureArticle | null }
+
+/** L'avoir TEL QU'IL PART à `enregistrer_facture` : l'en-tête (le total des lignes, négatif) et les lignes, quantités négatives. */
+export function avoirQuiPart(
   origineId: string,
-  avoir: { dateEmission: string; motif: string; mentionsLegales: string; lignes: LigneAEnregistrer[] },
-): Promise<{ id: string; numero: string | null }> {
+  avoir: { dateEmission: string; motif: string; mentionsLegales: string; lignes: LigneDAvoir[] },
+): { entete: Record<string, unknown>; lignes: Record<string, unknown>[] } {
   const totaux = calculerTotaux(avoir.lignes)
-  return enregistrerFacture(
-    dossierId,
-    null,
-    {
+  return {
+    entete: {
       type: 'avoir',
       facture_origine_id: origineId,
       date_emission: avoir.dateEmission,
@@ -153,11 +152,26 @@ export async function creerAvoir(
       montant_tva: oppose(totaux.montant_tva),
       montant_ttc: oppose(totaux.montant_ttc),
     },
-    avoir.lignes.map((l) => ({
+    lignes: avoir.lignes.map((l) => ({
       designation: l.designation, quantite: oppose(l.quantite), prix_unitaire_ht: l.prix_unitaire_ht, taux_tva: l.taux_tva,
+      // Une clé que l'écran ne donne pas ne part pas : drapeau baissé, la ligne est celle d'hier, au caractère près.
+      ...(l.unite !== undefined ? { unite: l.unite } : {}),
+      ...(l.reference !== undefined ? { reference: l.reference } : {}),
+      ...(l.nature !== undefined ? { nature: l.nature } : {}),
     })),
-    true,
-  )
+  }
+}
+
+// L'avoir, enregistré et validé d'un seul tenant. Ses montants et ses lignes sont stockés NÉGATIFS (voir
+// FactureEmise.type) : sommer les montants d'un dossier annule l'avoir sans cas particulier. L'en-tête est le total
+// des lignes envoyées, comme pour une facture.
+export async function creerAvoir(
+  dossierId: string,
+  origineId: string,
+  avoir: { dateEmission: string; motif: string; mentionsLegales: string; lignes: LigneDAvoir[] },
+): Promise<{ id: string; numero: string | null }> {
+  const { entete, lignes } = avoirQuiPart(origineId, avoir)
+  return enregistrerFacture(dossierId, null, entete, lignes as unknown as LigneAEnregistrer[], true)
 }
 
 // ── LA SUPPRESSION D'UN BROUILLON (espace client, étape P2) ─────────────────────────────────────────────────────────

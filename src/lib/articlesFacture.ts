@@ -17,7 +17,7 @@ import type { ArticleExoneration, Article, StatutTva } from './types'
 // AUCUNE RÈGLE N'EST RECOPIÉE ICI. La ligne qu'un article pré-remplit est celle de `ligneDepuisArticle` (lib/articles.ts : le
 // statut de TVA du jour, la mention, l'avertissement) ; les refus des deux gestes sont ceux de `refusDeLaSaisie` (le module
 // des articles, dans l'ordre de la base, sous ses mots). Ce fichier ne dit que ce qu'un FORMULAIRE de texte ajoute : la ligne
-// est faite de TEXTES de champ, et la provenance est une mémoire d'écran, que rien n'enregistre avant l'étape A7.
+// est faite de TEXTES de champ, et la provenance une mémoire d'écran que la ligne envoie depuis l'étape A7b (`article_id`).
 
 /** Une ligne du formulaire, telle que ses champs la portent : des textes. */
 export interface LigneEnSaisie {
@@ -111,9 +111,10 @@ export function articlesAChoisir(articles: readonly Article[], recherche: string
   return trouves
 }
 
-// ── La provenance : l'article qui a rempli la ligne, EN MÉMOIRE seulement ────────────────────────────────────────────────
-// Rien ne s'enregistre avant l'étape A7 (`facture_lignes.article_id`) : une facture rouverte n'a de provenance sur aucune de ses
-// lignes. La clé est celle de la ligne DANS LE FORMULAIRE (stable tant qu'elle existe), la valeur l'identifiant de l'article.
+// ── La provenance : l'article qui a rempli la ligne ─────────────────────────────────────────────────────────────────────
+// Depuis l'étape A7b (`MENTIONS_FIGEES_EXPORTEES`), elle part avec la ligne (`facture_lignes.article_id`), et une facture rouverte
+// retrouve celle de ses lignes ; drapeau baissé, elle n'est qu'en mémoire. La clé est celle de la ligne DANS LE FORMULAIRE
+// (stable tant qu'elle existe), la valeur l'identifiant de l'article.
 export type Provenance = Readonly<Record<string, string>>
 
 /** La ligne `cle` vient de l'article `articleId` : elle remplace une provenance qu'elle avait. */

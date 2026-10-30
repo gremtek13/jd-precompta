@@ -21,8 +21,8 @@ import type { ArticleExoneration, Contact, TypeClient } from './types'
 // refuserait est `refusDeLaSaisieContact` (le module des contacts, dans l'ordre de la base, sous ses mots) et la saisie qui
 // part est `saisieQuiPart` ; les états d'un contact sont ceux de `contactsAffiches` ; les quatre types ont les mots du formulaire
 // (`LIBELLES_TYPE_CONTACT`). Ce fichier ne dit que ce qu'un FORMULAIRE de facture ajoute : le client y est fait de TEXTES de
-// champ, et il garde sa COPIE du contact — aucune clé, aucune garde ne lit un contact (la provenance n'est qu'une mémoire d'écran
-// jusqu'à l'étape A7).
+// champ, et il garde sa COPIE du contact — aucune clé ne lit un contact ; la provenance part avec la facture depuis l'étape A7b
+// (`contact_id`, une provenance sans clé), drapeau `MENTIONS_FIGEES_EXPORTEES` levé.
 
 /** Le client d'une facture tel que les champs du formulaire le portent : des textes, le type choisi ou non. */
 export interface ClientEnSaisie {
@@ -203,9 +203,10 @@ export function phraseDeLEcheanceARecalculer(r: EcheanceARecalculer): string {
     + `(${delaiAffiche({ delai_paiement_jours: r.delai })}) donnerait une échéance au ${formatDate(r.date)}.`
 }
 
-// ── La provenance : le contact qui a rempli le client, EN MÉMOIRE seulement ─────────────────────────────────────────────────
-// Rien ne s'enregistre avant l'étape A7 : une facture rouverte n'en a aucune. C'est l'identifiant du contact, que la liste lue en
-// entier retrouve — un contact retiré ou effacé depuis ne se montre pas comme provenance.
+// ── La provenance : le contact qui a rempli le client ───────────────────────────────────────────────────────────────────────
+// Depuis l'étape A7b, elle part avec la facture (`contact_id`) et un brouillon rouvert garde la sienne ; drapeau baissé, une
+// facture rouverte n'en a aucune. C'est l'identifiant du contact, que la liste lue en entier retrouve — un contact retiré ou
+// effacé depuis ne se montre pas comme provenance (la facture, elle, le garde).
 export function contactDeLaProvenance(contactId: string | null, contacts: readonly Contact[] | null): Contact | null {
   if (contactId == null || contacts == null) return null
   const contact = contacts.find((c) => c.id === contactId)
