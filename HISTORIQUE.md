@@ -42102,6 +42102,126 @@ passage avait montré une attente oubliée, la vague de la caisse dans `sauvegar
 contrôles, sur un miroir sans A7 confronté à la réplique : 161 fichiers et 161 migrations à la même dérive, socle 81
 `5d636a96…`, inventaire 2 241 `bd1bb32a…`, égaux des deux côtés.
 
-**CE QUI RESTE À C3.** Le premier écran de la caisse côté cabinet (la saisie, le mois, le retrait et le remplacement, la
-caisse dite avant le clic, le versement d'espèces sur la fiche d'un mouvement), qui lit `caisseLecture.ts` et juge par
-`caisse.ts`.
+**CE QUI RESTE.** C3, les moteurs et les contrôles, en deux lots : C3a, la forme des recettes de caisse et les moteurs
+qui la comptent (la 2035 et sa concordance, la CA3, la situation, l'estimation et Financement, la revue analytique, « Ma
+simulation ») ; puis C3b, le FEC, la piste d'audit, les préalables de la validation et les points de la Checklist. Puis
+C4, l'écran : le premier écran de la caisse côté cabinet (la saisie, le mois, le retrait et le remplacement, la caisse
+dite avant le clic, le versement d'espèces sur la fiche d'un mouvement), qui lit `caisseLecture.ts` et juge par
+`caisse.ts`. (Paragraphe corrigé le 30/10/2026 par l'étape C3a : il nommait C3 ce qui est C4.)
+
+### 30/10/2026 — LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6)
+
+(Écrite par l'agent architecte de C3a sur `72e45e2` — C1 et C1b préparées dans `supabase/preparees/`, C2 en module —, la
+branche locale `caisse-c3a`. Aucune migration, aucun fichier de `supabase/preparees/` ni de `supabase/schema/`, aucune
+Edge Function ; en production, rien de lu ni d'écrit. Tout ce qui suit est NEUTRE tant que `CAISSE_EXPORTEE` reste
+baissé.)
+
+**CE QUI EST POSÉ.**
+- `src/lib/recettesDeCaisse.ts`, PUR : la forme `RecettesDeCaisse` — `absente` (le drapeau baissé : la table n'existe
+  pas, rien à compter ni à dire) ou `lue` (les recettes vivantes, résolues) — que les moteurs reçoivent ; et ce que
+  l'écran tient en plus, `EtatDesRecettesDeCaisse` : `en_attente` (pas revenue, ou celle d'un autre dossier) et
+  `incomplete` (son motif), que le type des moteurs n'admet pas — l'écran tranche avant l'appel
+  (`recettesPourLesMoteurs`, `motifDeLaCaisse`). Une recette est une opération de genre `recette`, ni retirée ni
+  remplacée (`recettesVivantes`) ; l'apport, le prélèvement, le versement et le paiement d'une pièce (C9) n'en sont pas.
+  Résolue sur les catégories lues, au statut de TVA d'aujourd'hui, par la règle d'une recette du relevé
+  (`tauxApplicable`, `horsTaxeEtTva`) : son poste, sa nature (une catégorie qui n'est plus un produit est dite telle),
+  son compte, son taux, ses centimes, son hors taxe et sa TVA, signés comme les espèces. S'y ajoutent l'état « non
+  comptées » de l'estimation, que « Ma simulation » passe le drapeau levé, sa phrase (`SIMULATION_SANS_CAISSE`, en
+  trésorerie seulement), et les lignes de la caisse pour le plan de trésorerie.
+- `caisseLecture.ts` : la lecture dit si la table est en base (`enBase`) — ABSENTE n'est pas lue en partie.
+- La 2035 (`declaration2035.ts`) : un paramètre obligatoire, la recette à SA date (CGI, art. 93, 1), dans le poste de sa
+  catégorie, au hors taxe d'un assujetti, au total sinon, des espèces rendues en négatif ; une source `caisse` ; deux
+  exclusions (`recettesDeCaisseSansPoste`, `recettesDeCaisseSansProduit`) ; `nbOperationsDeCaisse` sur chaque ligne,
+  PRÉSENT seulement quand la caisse est lue — absente, la ligne est celle d'hier, au caractère près. `cases2035.ts` le
+  somme.
+- La concordance (`concordance2035.ts`) : la référence `caisse` par `operation_caisse_id`, lue juste après la pièce ; un
+  motif à elle, `caisse_a_reprendre` (« retire l'opération et saisis-la de nouveau », où agir : Caisse), sauf une
+  catégorie sans poste, qui se règle comme une autre ; le libellé d'un écart, celui que la base compose.
+- La CA3 (`declarationTva.ts`) : `DonneesTva.caisse`, obligatoire ; la recette à sa date et à son taux, par la règle
+  même du relevé, désormais une fonction pour les deux (`placerUneRecetteSansFacture`) ; exonérée en E2, rendue en B5 et
+  21 ; sans taux ou sur option pour les débits, écartée sous les motifs du relevé (`LIBELLE_MOTIF_CAISSE`) ;
+  `caisseRetenues`, `caisseEcartees`.
+- La situation intermédiaire, l'estimation (`totauxPourAnnee`, `projectionAnnuelle`), la revue analytique
+  (`declarationPourLaRevue`, `SourcesDeLaRevueAnalytique.recettesDeCaisse`, nulle tant que la caisse n'est pas
+  entière) : le paramètre obligatoire, et la règle de la 2035. `chargesParPostePourAnnee` ne le prend pas : il ne lit
+  que des charges.
+- L'instantané validé (`validationExercice.ts`) : la version 3, chaque poste avec `nbOperationsDeCaisse`, écrite d'une
+  2035 qui a lu la caisse ; une caisse absente écrit la version 2 d'hier ; la 2 et la 1 se relisent telles quelles, sans
+  ce compte (Clôture n'ajoute la colonne « Opérations de caisse » qu'à une version 3).
+- Les écrans : Clôture, TVA, Financement, Estimation et Révision lisent la caisse avec le reste (`lireLaCaisse`, qui ne
+  touche pas au réseau le drapeau baissé), la gardent avec le dossier, et passent la forme. Lue en partie : ni 2035, ni
+  formulaire, ni validation ; ni CA3, ni enregistrement, ni comparaison ; ni situation, ni plan, ni ratios (le
+  prévisionnel se saisit à la main, sans préremplissage) ; ni projection ni chiffre d'affaires calculé ; la revue se
+  tait — et chacun le dit (`BandeauLecturePartielle`). Clôture dit les recettes que la 2035 ne compte pas (une carte, et
+  leur catégorie sans poste dans « Postes manquants ») ; la TVA, les recettes retenues et écartées. Financement : les
+  espèces reçues entrent dans le rythme des encaissements (le versement, un mouvement sur un compte de bilan, en reste
+  écarté, ligne 26.7), et la phrase le dit. « Ma simulation » ne lit pas la caisse ; le drapeau levé, elle le dit.
+
+**LA FORME, ET POURQUOI.** Une forme à part, comme la conception le veut (§ 5) : la `ligne` d'une part du relevé est un
+mouvement, et chacun de ses usages aurait dû apprendre une recette qui n'en a pas. Trois états seulement entrent dans
+les moteurs ou l'écran, et c'est le TYPE qui sépare les deux : un moteur ne reçoit qu'une caisse absente ou lue —
+l'écran ne peut pas lui passer une caisse lue en partie par mégarde, il doit trancher avant. Écartées : un booléen «
+caisse lue » à côté d'une liste (une liste vide se serait confondue avec une caisse absente), ou le drapeau lu par les
+moteurs (deux états à jouer dans chaque test, et un module de calcul qui dépendrait du jour de la migration). Les
+recettes se résolvent une fois, à la construction, comme `PartDuReleve` : la 2035, la CA3, la situation et l'estimation
+lisent les mêmes postes et les mêmes centimes.
+
+**LES ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- `nbOperationsDeCaisse` est FACULTATIF sur la ligne et sur la case, présent seulement quand la caisse est lue :
+  toujours présent, il aurait changé la forme de chaque ligne — dix-sept égalités de tests à compléter, comme à VF7d —
+  et surtout l'instantané écrit en base à la validation, le drapeau baissé. D'où aussi la version 3 seulement d'une 2035
+  qui a lu la caisse, et `PosteRelu.nbOperationsDeCaisse` présent pour une version 3 seulement.
+- La catégorie d'une recette qui n'est plus un produit (son compte a changé depuis la saisie, que la base aurait refusée
+  sinon) n'est ni recette ni dépense devinée : la 2035, la CA3 et l'estimation ne la comptent pas, et la 2035 la dit. Le
+  relevé, lui, compte un mouvement affecté selon la nature d'aujourd'hui ; la caisse ne s'écrit qu'au compte d'un
+  produit.
+- Sur option pour les débits, la CA3 écarte une recette de caisse sous le motif du relevé, plutôt que de juger son
+  exigibilité : « comme une recette du relevé ». Le cabinet la reporte à la main, et l'écran le dit.
+- La carte « Recettes de caisse absentes du récapitulatif » est reprise par la concordance dans `CARTES_DE_CLOTURE` :
+  une telle recette a son écriture au brouillon, que la concordance dit en écart. Les préalables propres à la caisse
+  sont à C3b.
+- `operation_caisse_id` reste facultative dans `types.ts` : la colonne n'existe pas tant que la migration attend.
+- Les tests d'avant retouchés, sur la forme seulement : les appels des moteurs et les données de la CA3 ou de la revue
+  reçoivent `CAISSE_ABSENTE` (un codemod sur l'arbre syntaxique : 118 appels dans quatorze fichiers, treize objets dans
+  six), deux fabriques d'exclusions et une CA3 fabriquée leurs listes vides, `caisseLecture.test.ts` le champ `enBase`,
+  et le jumeau de Clôture (`revueAnalytiqueEcran.test.ts`) l'expression qu'il recopie.
+
+**LA NEUTRALITÉ, PROUVÉE.** La suite comparée test par test sous Paris (Node 22) : l'arbre de BASE (`72e45e2`), exporté
+hors du dépôt, 15 184 tests justes (la garde des clés, `clesSupabase.test.ts`, n'y charge pas : l'export n'est pas un
+dépôt git) ; le premier commit de C3a (`1818cdf`, le code et les retouches, sans un test neuf), 15 209 tests : aucun
+disparu, les 25 de la garde des clés en plus, et un seul changé d'état — le scanner des écrans qui lisent la base (voir
+ci-dessous), corrigé au commit suivant. Sur la tête finale, 15 252 tests justes : aucun disparu, aucun changé d'état, 43
+neufs (et les 25 de la garde des clés). Drapeau baissé, aucune lecture de plus : `lireLaCaisse` ne touche pas au réseau
+(`caisseLecture.test.ts`), et le scanner des écrans qui lisent la base (`ecransAvantLecture.test.tsx`) n'a vu aucun
+écran de plus — il l'a vu une fois, quand le module pur importait le TYPE de la lecture, et la forme lue s'y décrit
+depuis (`CaisseLue`).
+
+**LES PREUVES, LE DRAPEAU LEVÉ.**
+- `recettesDeCaisse.test.ts`, 29 cas : la forme et ses états ; ce qu'est une recette ; la 2035 (sa date au 31 décembre,
+  ses cases AA, AD, AE, AF, AG, ses opérations par ligne et par case, ses exclusions, le hors taxe, les espèces rendues)
+  ; la concordance au centime contre l'écriture que compose `ecritureDeLOperation` (C2), et ses écarts ; la CA3 (08, 09,
+  E2, B5 et 21, la TVA des comptes, sans taux, sur les débits, le recalcul d'une déclaration déposée) ; la situation,
+  l'estimation, la simulation, le plan, la revue ; l'instantané en version 3 ; et 300 caisses TIRÉES (`tirage`, graine
+  20261030), où la 2035 compte au centime ce que les écritures portent au produit, la concordance est nulle et la CA3
+  porte exactement la TVA écrite au 445710.
+- Les écrans, par une doublure de la lecture (celle du module tant qu'un cas n'en pose pas une autre) : Clôture (la
+  recette dans le déficit ; lue en partie, ni report ni formulaire ; celle d'un autre dossier, l'attente), TVA (la case
+  08 ; lue en partie, ni CA3 ni enregistrement), Financement (le rythme, la phrase, la situation qui dit la recette sans
+  poste ; lue en partie, trois « Générer » grisés), Estimation (le repère calculé ; lue en partie, suspendu), Révision
+  (la recette dans la ligne de la revue ; lue en partie, la section le dit, sans tableau ni geste), « Ma simulation »
+  (le drapeau levé : la phrase, aucun chiffre changé ; en engagement, rien).
+- Les mutations : 60, jouées chacune contre les tests qu'elle concerne (`muter.py`, hors du dépôt) — le module, les sept
+  moteurs, l'instantané, la lecture et les six écrans. Le premier passage en a laissé vivre quatre : une borne de
+  période (`<` pour `<=`), une catégorie devenue charge dans la situation, la somme d'une case à deux postes, le câblage
+  de la revue dans l'onglet Révision ; chacune a fait naître son cas (« les bords », et deux tests de la revue), et le
+  second passage les a tuées avec deux mutations neuves (le motif de la revue, la phrase de la situation) : 60 sur 60.
+
+**LA BARRIÈRE**, sur `e3a06ec` (Node 22.23.3) : `tsc -b --force` 0 ; `npm run lint` 0, 0 erreur, 63 avertissements —
+ceux de la référence, fichier pour fichier ; `npm run test:fuseaux` 0, 490 fichiers et 15 252 tests justes sous Paris,
+UTC, New York et Auckland ; `npm run build` 0.
+
+**CE QUI RESTE À C3B.** Le FEC (la clé `caisse|opération|date`, les journaux VE, OD et BQ — CAISSE-Q3 (A) —, PieceRef et
+EcritureLib composés), la piste d'audit (le brouillard du praticien pour justificatif), les préalables de la validation
+(`caisse-a-reprendre`, `caisse-negative`, `recettes-de-caisse-a-revoir`, et les recettes de caisse dans
+`exclusions-2035`, sous une phrase qui les nomme), les points de la Checklist (les mêmes et
+`versements-especes-en-recette`), le versement d'espèces hors des lots. Puis C4, l'écran de la caisse ; C5, l'assistant.

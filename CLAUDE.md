@@ -43,11 +43,11 @@ DOSSIER BNC : LA CONCEPTION », « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈ
 `caisse` (C1), préparée le 29/10/2026 hors de l'export (`supabase/preparees/`), s'applique avec la sauvegarde de C2, son
 essai de suppression (`caisseSuppression.sql`) sur une réplique seulement → « LA CAISSE, EN BASE : LA MIGRATION `CAISSE`
 (C1, LIGNE 26.6) » ; la seconde (C1b), préparée de même, se colle après elle → « LA CAISSE, EN BASE : LE RETRAIT, LE
-REMPLACEMENT ET LE VERSEMENT D'ESPÈCES (C1B, LIGNE 26.6) » ; le module, la lecture et la sauvegarde (C2) attendent leur
-drapeau, `CAISSE_EXPORTEE`, levé le jour des deux migrations → « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2,
-LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les
-lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC
-RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
+REMPLACEMENT ET LE VERSEMENT D'ESPÈCES (C1B, LIGNE 26.6) » ; le module, la lecture et la sauvegarde (C2), puis les
+moteurs (C3a), attendent leur drapeau, `CAISSE_EXPORTEE`, levé le jour des deux migrations → « LA CAISSE : LE MODULE, LA
+LECTURE ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) »), le plan Pro de Supabase
+sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une
+partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
