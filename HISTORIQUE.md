@@ -42666,3 +42666,139 @@ relation). Le témoin, un embarquement vers une table qui n'existe pas, rend 400
 `operations_caisse` : la relation est dans le cache du schéma. Ce qui reste derrière une session et le modèle — la ligne
 recomposée — se lira au premier appel de `lister_ecritures` par le cabinet. Revenir à la v49 : la même ligne au commit
 `66eb5c86a486d506ccc21621ac62e65c274e738f`.
+
+### 30/10/2026 — LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par l'agent architecte de C6 sur `d717837`. Rien de lu ni d'écrit en production, aucun appel au modèle : la
+migration 3 est PRÉPARÉE et éprouvée sur une réplique de la production du jour — 163 migrations, ses neuf familles
+égales à celles de la production —, jamais appliquée. Lus avant d'écrire : « LA CAISSE D'UN DOSSIER BNC : LA
+CONCEPTION » (§ 4 a et b, § 8 n° 3), sa reprise (§ 9), « LA CONTRE-PASSATION SANS MOUVEMENT SUR UN MOUVEMENT FIGÉ » ; la
+garde de l'export.)
+
+**LES VOIES PAR OÙ DES ESPÈCES CITAIENT UN CRÉDIT, ET CE QUI LES FERME.** Deux fonctions écrivent le mouvement d'un
+encaissement, `enregistrer_encaissement` et `rattacher_mouvement_encaissement` ; l'application les appelle de deux
+endroits, la fenêtre des encaissements et la fiche d'un crédit (onglet Banque) ; aucune Edge Function n'écrit le
+registre.
+1. La fenêtre des encaissements, aux deux espaces — le cabinet depuis Factures et « Règlements », le client « Ventes »
+   et « Banque » depuis « Mes ventes › Factures » et « Règlements » : le moyen « Espèces » choisi, aucun mouvement ne se
+   propose ni ne se désigne (la liste fait place à une phrase — au client, tutoyé ; au cabinet, avec l'endroit où le
+   dépôt se classe), et celui que la saisie désignait tombe dans la même écriture.
+2. La même fenêtre ouverte par la fiche d'un crédit, le mouvement IMPOSÉ (« Enregistrer l'encaissement d'une facture »,
+   et la facture candidate) : les espèces ne s'offrent pas (`moyensOfferts`), la phrase du mouvement imposé le dit.
+3. Les candidats de la fiche d'un crédit (VF5e, `candidatsDuMouvement`) : un encaissement en espèces sans mouvement
+   n'est plus candidat d'aucun crédit — `refusRattachement` y rend le refus de la garde.
+4. Le complément de la fiche d'un crédit (VF5c, « Rattacher un encaissement enregistré sans mouvement ») : la liste ne
+   montre pas les espèces — grisées, elles diraient un geste qui n'existe pour aucun crédit.
+5. La phrase d'un encaissement figé qui se rattache au crédit d'après (VF7a, `rattachableApresLaFrontiere`) : jamais
+   dite d'espèces ; la confirmation, qui disait qu'un tel crédit « soldera la caisse », n'a plus que les valeurs à
+   l'encaissement.
+6. Sans voie : « Ma banque » n'écrit aucun encaissement ; le client ne rattache pas ; la fiche d'un débit cite des
+   contre-passations, que la règle laisse passer. Une écriture directe (le propriétaire, le rôle des Edge Functions, le
+   super-administrateur sous sa session) : la garde seule.
+Le module redit le refus neuf (`lib/encaissementsFactures.ts`) : `REFUS_ESPECES_SUR_UN_CREDIT` (clé
+`especes_sur_un_credit`, 23514, les mots de la garde), `MOYENS_SANS_CREDIT`, `moyenSansCredit`, `moyenSurUnCredit` (un
+moyen sans crédit, un mouvement de montant POSITIF), `moyensOfferts`, à sa place dans l'ordre de la base, la DERNIÈRE —
+aucune fonction ne le juge, la garde refuse à l'écriture : après les plafonds pour `refusEnregistrement` et
+`refusEnregistrementVente`, après l'écart des frais pour `refusRattachement`. `lib/mouvementsDesVentes.ts` le lit pour
+le complément.
+
+**LA MIGRATION 3, `especes_sans_mouvement`**, dans `supabase/preparees/` sous la version provisoire `20261030180000` (20
+736 caractères, 291 lignes, `40e539ff4eb5da4062fd70c89a7e503a` ; ni `drop`, ni `delete from`, ni `truncate`, ni `grant`
+ni `revoke`, ni barre oblique inverse ni retour chariot ; « DELETE » n'y vient que de `tg_op`, comme dans la garde que
+l'outil a passée le 27/10/2026). Composée par un script hors du dépôt qui RECOPIE la définition de l'export et n'y
+insère qu'une règle. Sa garde de tête exige le corps d'aujourd'hui (`16af5858…`), puis `create or replace` de
+`garder_encaissement_facture` — OID, propriétaire, droits et déclencheur gardés —, la règle INSÉRÉE après celle qui veut
+un crédit pour un encaissement et un débit pour une contre-passation : un encaissement en espèces qui cite un crédit se
+refuse, en 23514, « Un encaissement en espèces ne cite aucun crédit du relevé : il s'enregistre sans mouvement, et le
+dépôt des espèces en banque se classe à part. » — à l'insertion comme au rattachement, de toute facture, le
+super-administrateur compris. Passent : sa contre-passation (elle cite un débit), tout autre moyen, des espèces sans
+mouvement, la restauration (une ligne INSÉRÉE par le super-administrateur sous son instant de création d'avant la
+transaction). Le retrait et la suppression : comme hier, la règle ne se jugeant qu'à l'insertion et au rattachement.
+Corps neuf `31fdfcc8…`. Son retour arrière (`supabase/preparees/retour/`, `76a479a1…`) rend la garde d'hier par `create
+or replace`, sous sa propre garde de tête ; par l'outil, il ne retire rien. Neutre en production : la requête de lecture
+ci-dessous rend « aucune ligne ».
+
+**LES ÉCARTS À LA DEMANDE, ET POURQUOI.**
+- La demande disait « une garde (déclencheur) », et pour retour arrière « retirer le déclencheur ». Retenu : la règle
+  DANS la garde des encaissements. Écarté, un déclencheur neuf : (a) sa fonction s'exécuterait par PUBLIC, et la
+  convention des gardes (aucun rôle de l'API ne les exécute, l'essai 179b le relit) demanderait un `revoke`, que le
+  texte ne doit pas porter pour passer l'outil ; (b) son retour arrière serait un `drop trigger` et un `drop function`,
+  des suppressions à accorder ; (c) deux déclencheurs `before` d'une table se jouent dans l'ordre de leur NOM : la place
+  du refus dans l'ordre de la base tiendrait à un nom, quand dans la garde elle est écrite, et le module la redit ; (d)
+  une garde par table, le patron de VF5H2-Q1 et de VF5H2Q1-Q2.
+- La porte de la restauration est celle de la caisse (`garder_la_caisse` : à l'insertion, `cree_le < now()`, le
+  super-administrateur), non celle des règles de VF5H2-Q1 (à l'insertion, le super-administrateur). Là, les fonctions
+  refusent avant d'écrire ; ici, aucune ne juge la règle, et sur ce projet le super-administrateur est aussi le chef du
+  cabinet : l'essai le montrait, cette porte-là laissait passer ses gestes par `enregistrer_encaissement` (171, 171b et
+  176b acceptés). `cree_le` prend `now()` par défaut, et aucune fonction ne le donne.
+
+**L'ESSAI** (`supabase/essais/caisse.sql`, étendu) : 170 à 179, vingt-six étapes de genre « …3 », qui ne se jouent
+qu'avec la migration (sans elle, une ligne EN ATTENTE) — le chef et le client « Ventes » et « Banque » refusés par la
+fonction qui enregistre, de toute facture, APRÈS ses refus (l'écart des frais, le débit) ; la fonction qui rattache ; le
+propriétaire en direct, à l'insertion et au rattachement, sous la session du super-administrateur aussi ; une ligne
+d'avant rattachée par le super-administrateur (175d : la porte ne s'ouvre qu'à l'insertion) ; la restauration admise, la
+même ligne née dans la transaction refusée, par le propriétaire refusée ; la contre-passation qui cite le débit, une
+contre-passation sans mouvement rattachée à ce débit, des espèces sans mouvement, un chèque sur le même crédit, admis ;
+le catalogue (la règle dans la seule garde ; la garde, ni `security definer` ni exécutable par l'API). 74c se dédouble :
+« …3h », ce que la caisse répondait sans la migration, « …3 », la garde qui refuse d'abord ; les espèces du 11/03 que le
+crédit du 12/03 remettait naissent par la restauration (60bb). Sans la migration : 348 lignes, aucune faute, « 26 étapes
+EN ATTENTE » ; avec elle : 372, aucune faute, « 1 étape d'avant elle remplacée (74c) ». Le banc du leurre (une copie
+hors du dépôt, le seul préfixe des bases changé) : SÛR des deux côtés (349 et 373 verdicts, aucun écart, aucun motif,
+aucune écriture du leurre). Le banc de la caisse (`src/test/essaiCaisse.ts`) lit ces étapes sans en juger aucune — la
+règle est celle du registre ; un point-virgule dans un commentaire du bloc des identifiants lui en cachait la fin.
+
+**CE QUI A ÉTÉ REJOUÉ, AVANT ET APRÈS**, chaque fois sur une copie fraîche de la réplique : les 64 essais (13 ne s'y
+jouent pas faute du jeu de départ de la production ; rejoués sur la réplique semée, dix de plus, `droitsAcces` et
+`notesInternes` restant impossibles des deux côtés, `devis` attendant ses migrations) — seuls `caisse` et l'heure d'une
+phrase de `parametresFacturation` diffèrent ; ceux des encaissements (`encaissementsFactures`, `ventesFacturees`,
+`frontiereDesEncaissements`, `validationDesVentesFacturees`, `recompositionDesVentes`, `restauration`…), au caractère
+près. `rls.sql` entier : 81 invariants, aucune faute, 63 mutations sur 63 qui mordent, identique des deux côtés. La
+batterie des encaissements (4 000 saisies, rejouée pour le 30/10/2026) : sans la migration, le module d'avant, aucun
+écart (`8b19bbf7…`) ; le module de l'étape, onze écarts — onze saisies en espèces sur un crédit, que la base acceptait ;
+avec la migration, aucun écart (`b62ec27a…` : 390 acceptées, onze refusées sous le refus neuf) ; la passe du client,
+`324ca64f…` des deux côtés. Le test fige le jour, l'empreinte d'après la migration et celle d'avant, réponse par
+réponse. `signature.sql` : la seule famille « fonctions » change (217, `7372ffd2…` puis
+`3800368f333f960c6b366acc8a666531`) ; le retour arrière la rend, et une seconde application de l'un ou de l'autre se
+refuse. Les trois contrôles de l'export : ceux de la production tant qu'elle n'est pas appliquée ; avec elle, 164 et 164
+égaux nom par nom, le socle (81) et l'inventaire (2 284) inchangés (supabase/schema/README.md, « Préparé le
+30/10/2026 »).
+
+**LA SIMULATION DU JOUR DE L'APPLICATION.** Le fichier posé dans l'export, la suite ENTIÈRE : quatre gardes d'hier
+tombaient. Trois supposaient que la migration de VF5H2Q1-Q2 porte la dernière définition de la garde
+(`contrePassationSurMouvementFige`, `insertionDesEncaissements`, `registreVirementMixte`) : elles confrontent désormais
+celle que LEUR migration pose, et acceptent `especes_sans_mouvement` comme reprise. La quatrième tombait aussi hors de
+la simulation, par l'essai étendu : `ventesSurDossierBascule` nomme les essais qui cochent « Ventes », et `caisse.sql` y
+entre (il bascule S6 avant d'y porter l'accès du client). Après : la suite entière verte, le fichier dans l'export comme
+dans `supabase/preparees/`.
+
+**LES MUTATIONS.** De la règle SQL, chacune sur une copie fraîche, l'essai rejoué : neuf sur neuf mordent — sans la
+porte, tout mouvement, tout moyen, la porte ouverte à la mise à jour (175d seule la voit), sans l'instant de création,
+sans le super-administrateur, un autre code, l'insertion seule, un mot changé. Du code neuf, chacune sur le fichier, les
+tests joués puis le fichier rendu et comparé : vingt-trois sur vingt-trois — le module (aucun moyen, le chèque aussi, le
+montant nul, un débit, tous les moyens offerts, l'inverse, la règle oubliée ou avancée avant les plafonds, le mouvement
+cité oublié, la règle du rattachement oubliée ou avancée avant l'écart des frais, la frontière sans la règle, un autre
+message, un autre code), le complément sans la règle, la fenêtre (tout offert, la liste d'hier, sans la phrase, le
+mouvement gardé, la phrase d'hier, les phrases des deux espaces échangées), le banc (sans « …3h », un genre « …3 » non
+ramené).
+
+**LA BARRIÈRE**, sur la copie de travail (Node 22.23.3), chaque code lu par `${PIPESTATUS[0]}` : `npx tsc -b --force` 0
+(un premier passage a vu un champ `libelle` qu'un mouvement du relevé n'a pas, dans un test neuf : le libellé passe
+désormais par la fiche, qui le lit) ; `npm run lint` 0, 0 erreur, 63 avertissements — ceux de la référence ; `npm run
+test:fuseaux` 0, 497 fichiers et 15 553 tests verts à Paris, UTC, New York et Auckland (496 et 15 521 sur l'arbre de
+C5 : un fichier et 32 tests de plus) ; `npm run build` 0.
+
+**LA REQUÊTE DE LECTURE**, à jouer en production avant l'application (deux booléens, rien d'une ligne) : `select not
+exists (select 1 from public.encaissements_factures e join public.lignes_bancaires l on l.id = e.ligne_bancaire_id where
+e.moyen = 'especes' and l.montant > 0) as aucune_ligne_ne_viole_la_regle, (select md5(replace(p.prosrc, chr(13), ''))
+from pg_proc p where p.oid = to_regprocedure('public.garder_encaissement_facture()')) =
+'16af585818378356e7b4e58521dbe665' as la_garde_est_celle_d_hier;` — vrai et vrai sur la réplique.
+
+**CE QUI RESTE, ET UNE QUESTION.** L'application, par l'outil, sur l'accord du cabinet, après la requête : le fichier
+renommé à sa version, sa ligne d'historique qui rend `40e539ff…`, les trois contrôles, `caisse.sql` et `rls.sql` en
+production. C6-Q1 : un dossier basculé dont la caisse ne reçoit que les espèces de ses factures — aucune opération
+saisie — ne « tient pas de caisse » pour `dossierTientUneCaisse` (§ 4 a : « un dossier qui a des opérations de
+caisse ») ; depuis C6, le dépôt de ces espèces n'a plus d'autre chemin que le versement classé sur la caisse, et rien ne
+retient un crédit « VERSEMENT ESPECES » d'un lot ni ne le signale rangé en recette. Recommandation (A) : qu'il tienne
+une caisse dès qu'un encaissement en espèces d'une facture source y entre — une fonction pure et ses trois appels, avant
+le premier encaissement réel en espèces ; (B) laisser la conception telle quelle, le comptage du 31 décembre (C7) voyant
+la caisse grossir.
