@@ -17,6 +17,8 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import FraisSansPosteNonComptes from '../../components/FraisSansPosteNonComptes'
 import { messageErreur } from '../../lib/messageErreur'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
+import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { motifDeLaCaisse, recettesDeCaisseDuDossier, recettesPourLesMoteurs } from '../../lib/recettesDeCaisse'
 import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFactureesEcran'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import type { PlanComptable } from '../../lib/planComptable'
@@ -92,6 +94,10 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
   // exemplaire ne compte plus. Nulles tant qu'elles ne sont pas revenues : l'onglet attend. Lues en partie, ni projection ni
   // repère calculé : une assiette sans ses ventes facturées a l'air d'une bonne nouvelle.
   const [lectureVentes, setLectureVentes] = useState<LectureVentesFacturees | null>(null)
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C3a ; lib/caisseLecture.ts) : ses recettes en espèces entrent dans le chiffre
+  // d'affaires de la projection et d'un repère calculé, comme dans la 2035. Nulle tant qu'elle n'est pas revenue ; le drapeau
+  // baissé, rien n'est lu (la caisse absente, qui ne change rien) ; lue en partie, la projection et ce calcul sont suspendus.
+  const [lectureCaisse, setLectureCaisse] = useState<LectureDeLaCaisse | null>(null)
   // LES SOURCES DES ÉCRITURES DES VENTES FACTURÉES (étape VF8g ; lib/ecrituresVentesFactureesLecture.ts), lues avec le reste
   // pour un dossier basculé seulement : le détail par poste en tire les frais d'un mouvement d'encaissements, par la
   // composition, comme la 2035. Nulles tant qu'elles ne sont pas revenues, ou pour un dossier qui n'a pas basculé.
@@ -116,6 +122,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
       lectureReglements,
       ventesLues,
       sourcesLues,
+      caisseLue,
     ] = await Promise.all([
       lireTout<CotisationDeclaree>((debut, fin) =>
         supabase.from('cotisations_declarees').select('*', { count: 'exact' })
@@ -171,9 +178,12 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
       lireLesVentesFacturees(dossierId),
       // Ne rejette jamais non plus ; jamais lue pour un dossier qui n'a pas basculé.
       ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
+      // Ne rejette jamais ; le drapeau baissé, ne touche pas au réseau.
+      lireLaCaisse(dossierId),
     ])
     if (demande !== derniereLecture.current) return
     setLectureVentes(ventesLues)
+    setLectureCaisse(caisseLue)
     setLectureSourcesVentes(sourcesLues)
     setCotisations(lectureCotisations.lignes)
     setRecettesValidees(lectureRecettes.lignes)
@@ -225,13 +235,18 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
   const ventesFacturees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
   const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : null
   const recettesFacturees = ventesFacturees === null ? null : recettesFactureesDuDossier(ventesFacturees, modeComptable)
-  const projection = recettesFacturees === null
+  // Les recettes de caisse de CE dossier (étape C3a), résolues sur ses catégories : absentes, elles ne changent rien ; lues en
+  // partie, ni projection ni chiffre d'affaires calculé.
+  const etatDeLaCaisse = recettesDeCaisseDuDossier(lectureCaisse, dossierId, categories, assujettiTva)
+  const recettesDeCaisse = recettesPourLesMoteurs(etatDeLaCaisse)
+  const caisseIncomplete = motifDeLaCaisse(etatDeLaCaisse)
+  const projection = recettesFacturees === null || recettesDeCaisse === null
     ? null
-    : projectionAnnuelle(recettesValidees, comptees, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts, recettesFacturees)
+    : projectionAnnuelle(recettesValidees, comptees, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts, recettesFacturees, recettesDeCaisse)
   const referenceN1 = projection === null ? null : references.find((r) => r.annee === projection.annee - 1) ?? null
   // Le calcul du chiffre d'affaires d'un repère est suspendu sur une lecture partielle, celle des ventes facturées comprise ;
   // le détail par poste ne lit que des charges, et ne suit que les autres.
-  const calculDuCaSuspendu = lectureIncomplete ?? ventesIncompletes
+  const calculDuCaSuspendu = lectureIncomplete ?? ventesIncompletes ?? caisseIncomplete
   // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (étape VF8g) : ce que le détail par poste reçoit des écritures des ventes
   // facturées, sur les lectures de CE dossier — la règle de Clôture et du Financement (lib/ecrituresVentesFactureesEcran.ts,
   // `ecrituresDesVentesPourLa2035`). Un dossier qui n'a pas basculé : `sans_bascule`, et le détail d'hier, que des ventes
@@ -321,11 +336,11 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
   // au rechargement de la page.
   async function calculerDepuisAppli() {
     const annee = parseInt(anneeACalculer, 10)
-    if (!annee || calculDuCaSuspendu || recettesFacturees === null) return
+    if (!annee || calculDuCaSuspendu || recettesFacturees === null || recettesDeCaisse === null) return
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(recettesValidees, comptees, annee, assujettiTva, paiements, modeComptable, parts, recettesFacturees)
+      const { ca, cotis } = totauxPourAnnee(recettesValidees, comptees, annee, assujettiTva, paiements, modeComptable, parts, recettesFacturees, recettesDeCaisse)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,
@@ -415,7 +430,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
   }
 
   // Les ventes facturées font partie de la lecture : avant leur retour, l'onglet attend.
-  if (loading || lectureVentesDuDossier === null) return <p className="muted">Chargement…</p>
+  if (loading || lectureVentesDuDossier === null || etatDeLaCaisse.etat === 'en_attente') return <p className="muted">Chargement…</p>
 
   return (
     <>
@@ -433,6 +448,15 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
         consequence={
           'La projection et le calcul du chiffre d’affaires d’un repère sont suspendus : sans elles, une assiette de ' +
           'cotisations sous-évaluée aurait l’air d’une bonne nouvelle. Recharge la page.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="La caisse du dossier"
+        accord="lue"
+        motif={caisseIncomplete}
+        consequence={
+          'La projection et le calcul du chiffre d’affaires d’un repère sont suspendus : sans elle, une recette en espèces ' +
+          'manquerait, et une assiette de cotisations sous-évaluée aurait l’air d’une bonne nouvelle. Recharge la page.'
         }
       />
       {/* Les sources des écritures relisent les mêmes tables : quand les ventes facturées manquent déjà, leur bandeau suffit. */}
@@ -541,6 +565,13 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
             Calcul du chiffre d’affaires suspendu : les ventes facturées du dossier n’ont pas pu être lues en entier
             ({ventesIncompletes}). Un repère calculé sans elles serait enregistré trop bas. Recharge la page — la saisie à la
             main reste possible ci-dessous.
+          </p>
+        )}
+        {lectureIncomplete === null && ventesIncompletes === null && caisseIncomplete !== null && (
+          <p className="error-text" style={{ marginTop: -8 }}>
+            Calcul du chiffre d’affaires suspendu : la caisse du dossier n’a pas pu être lue en entier ({caisseIncomplete}). Un
+            repère calculé sans ses recettes en espèces serait enregistré trop bas. Recharge la page — la saisie à la main
+            reste possible ci-dessous.
           </p>
         )}
         {lectureIncomplete === null && ecrituresIncompletes !== null && (

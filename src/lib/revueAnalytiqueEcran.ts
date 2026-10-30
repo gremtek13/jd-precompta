@@ -5,6 +5,7 @@ import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { formatMoney } from './format'
 import { partsDuReleve } from './partsDuReleve'
 import { paiementsDesPieces, type PartEncaissee } from './rattachement'
+import type { RecettesDeCaisse } from './recettesDeCaisse'
 import {
   LIBELLE_DE_L_ETAT_DE_LA_LIGNE, LIBELLE_DU_TOTAL, type CauseARevoir, type CleDeLigne, type DonneesDeLaRevueAnalytique,
   type EtatDeLaLigne, type ExercicePourLaRevue, type ReperesAnnuels, type TotalDeLa2035,
@@ -59,6 +60,10 @@ export interface SourcesDeLaRevueAnalytique {
   // `ecrituresDesVentesPourLa2035`) ; NUL tant que, pour un dossier basculé, leurs sources ne sont pas revenues entières :
   // la 2035 ne se calcule pas, comme sans ses ventes facturées, et l'onglet le dit parmi les lectures de la revue.
   ecrituresDesVentes: EcrituresDesVentesDeLa2035 | null
+  // Les recettes de caisse du dossier (étape C3a ; lib/recettesDeCaisse.ts), que la 2035 compte à leur date ; NULLES tant
+  // que la caisse n'est pas revenue entière pour ce dossier — la 2035 ne se calcule pas, et l'onglet le dit parmi les
+  // lectures de la revue. Absente (le drapeau baissé), elle ne change rien.
+  recettesDeCaisse: RecettesDeCaisse | null
 }
 
 /**
@@ -77,6 +82,7 @@ export function declarationPourLaRevue(
   ventesFacturees: VentesFacturees,
   ecrituresDesVentes: EcrituresDesVentesDeLa2035,
   encaissees: readonly PartEncaissee[],
+  recettesDeCaisse: RecettesDeCaisse,
 ): Declaration2035 | null {
   if (modele.mode === 'engagement') return null
   const rapprochees = d.lignes.filter((l) => l.statut === 'rapprochee')
@@ -85,7 +91,7 @@ export function declarationPourLaRevue(
   const comptees = cotisationsComptees(d.cotisations, rapprochees, modele.mode)
   return calculerDeclaration2035(
     annee, d.piecesValidees, d.categories, d.immobilisations, comptees, d.vehicules, assujettiTva, paiements, parts, d.declarationsTva,
-    modele.plan, ventesFacturees, ecrituresDesVentes,
+    modele.plan, ventesFacturees, ecrituresDesVentes, recettesDeCaisse,
   )
 }
 
@@ -104,8 +110,8 @@ export function donneesDeLaRevueAnalytique(
     ecritures: s.dossier.ecritures,
     reprise: s.reprise,
     reportes: s.reportes,
-    declaration: s.ventesFacturees === null || s.ecrituresDesVentes === null ? null
-      : declarationPourLaRevue(annee, modele, assujettiTva, s.dossier, s.ventesFacturees, s.ecrituresDesVentes, s.encaissees),
+    declaration: s.ventesFacturees === null || s.ecrituresDesVentes === null || s.recettesDeCaisse === null ? null
+      : declarationPourLaRevue(annee, modele, assujettiTva, s.dossier, s.ventesFacturees, s.ecrituresDesVentes, s.encaissees, s.recettesDeCaisse),
     exercicesValides: s.exercicesValides,
     reperes: s.reperes,
     partsDuReleve: partsDuReleve(rapprochees, s.dossier.categories, s.dossier.ventilations, assujettiTva),

@@ -71,7 +71,7 @@ describe('lireLaCaisseSelon — la caisse en base', () => {
   it('les opérations de SON dossier, retirées et remplacées comprises, lues en entier, avec l’identifiant du dossier', async () => {
     const lu = await lireLaCaisseSelon('d1', true)
     expect(lu.lignes.map((o) => o.id)).toEqual(['o1', 'o2', 'o3'])
-    expect(lu).toMatchObject({ dossierId: 'd1', complete: true, motif: null })
+    expect(lu).toMatchObject({ dossierId: 'd1', enBase: true, complete: true, motif: null })
   })
 
   it('toutes les colonnes, le compte annoncé, le filtre du dossier, un tri total terminé par la clé primaire', async () => {
@@ -92,7 +92,7 @@ describe('lireLaCaisseSelon — la caisse en base', () => {
     faux.refus = null
     faux.leve = true
     const levee = await lireLaCaisseSelon('d1', true)
-    expect(levee).toMatchObject({ dossierId: 'd1', lignes: [], complete: false })
+    expect(levee).toMatchObject({ dossierId: 'd1', enBase: true, lignes: [], complete: false })
     expect(levee.motif).toContain('réseau coupé')
   })
 })
@@ -101,12 +101,14 @@ describe('lireLaCaisseSelon — la caisse pas encore en base', () => {
   it('ne lit rien, ne touche pas au réseau, et le dit : une lecture incomplète, jamais une caisse vide', async () => {
     const lu = await lireLaCaisseSelon('d1', false)
     expect(faux.requetes).toEqual([])
-    expect(lu).toEqual({ dossierId: 'd1', lignes: [], complete: false, motif: MOTIF_CAISSE_ABSENTE })
+    // `enBase` faux (étape C3a) : la caisse ABSENTE, que les moteurs ne prennent pas pour une caisse lue en partie.
+    expect(lu).toEqual({ dossierId: 'd1', enBase: false, lignes: [], complete: false, motif: MOTIF_CAISSE_ABSENTE })
   })
 
   it('le module chargé normalement suit son drapeau', async () => {
     const lu = await lireLaCaisse('d1')
     expect(lu.complete).toBe(CAISSE_EXPORTEE)
+    expect(lu.enBase).toBe(CAISSE_EXPORTEE)
     expect(faux.requetes.length).toBe(CAISSE_EXPORTEE ? 1 : 0)
   })
 })

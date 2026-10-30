@@ -34,6 +34,7 @@ import { etatsDesVentesFacturees, type SourcesDesEcrituresDeVente } from './ecri
 import { ventesDeLaChecklist } from './ventesDeLaChecklist'
 import { ventesFacturees } from './ventesFacturees'
 import { frontiereDeValidation } from './validationExercice'
+import { CAISSE_ABSENTE } from './recettesDeCaisse'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -141,7 +142,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
   const declaration = calculerDeclaration2035(
     base.annee, [...base.piecesValidees], [...base.categories], [...base.immobilisations], [], [...base.vehicules],
     base.assujettiTva, paiements, [], base.declarationsTva, PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
-    { etat: 'sans_bascule' },
+    { etat: 'sans_bascule' }, CAISSE_ABSENTE,
   )
   const ouverture = base.aNouveaux.length > 0 ? base.aNouveaux[0].date : null
   const concordance = concordance2035(
@@ -1013,7 +1014,7 @@ describe('prealablesDeValidation — une échéance payée depuis le compte pers
     const declaration = calculerDeclaration2035(
       d.annee, [...d.piecesValidees], [...d.categories], [], cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), [],
       d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements, []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
-      { etat: 'sans_bascule' },
+      { etat: 'sans_bascule' }, CAISSE_ABSENTE,
     )
     const concordance = concordance2035(
       declaration, d.ecritures,
@@ -1485,7 +1486,7 @@ describe('prealablesDeValidation — les ventes facturées d’un dossier bascul
     if (modele.mode === 'engagement') return base
     // En trésorerie, la 2035 qui lit les ventes facturées et leurs écritures, et sa concordance avec le brouillon.
     const declaration = calculerDeclaration2035(
-      2025, [], categories, [], [], [], true, paiementsDesPieces([], [], []), [], [], modele.plan, ventes, { etat: 'composees', composition: c },
+      2025, [], categories, [], [], [], true, paiementsDesPieces([], [], []), [], [], modele.plan, ventes, { etat: 'composees', composition: c }, CAISSE_ABSENTE,
     )
     const concordance = concordance2035(declaration, base.ecritures, {
       piecesValidees: new Set(), piecesImmobilisees: new Set(),

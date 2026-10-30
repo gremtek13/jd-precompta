@@ -19,6 +19,10 @@ import type { OperationCaisse } from './types'
 // réseau, sous un motif qui dit pourquoi : aucun écran ne dira « aucune opération » d'une caisse qui n'est pas encore là.
 export interface LectureDeLaCaisse {
   dossierId: string
+  // La table est-elle en base (le drapeau levé) ? Faux, rien n'a été lu ni ne pouvait l'être : la caisse est ABSENTE, ce
+  // qui n'est pas une caisse lue en partie — les moteurs n'ont rien à en compter et rien à en dire
+  // (lib/recettesDeCaisse.ts, étape C3a). Vrai, `complete` dit si elle a été lue jusqu'au bout.
+  enBase: boolean
   lignes: OperationCaisse[]
   // Lue jusqu'au bout, ou non : l'écran en décide (le vide, les soldes, les gestes).
   complete: boolean
@@ -35,14 +39,14 @@ export async function lireLaCaisse(dossierId: string): Promise<LectureDeLaCaisse
 
 /** La même lecture, selon que la table est en base : les deux états du drapeau, que les tests jouent. */
 export async function lireLaCaisseSelon(dossierId: string, caisseEnBase: boolean): Promise<LectureDeLaCaisse> {
-  if (!caisseEnBase) return { dossierId, lignes: [], complete: false, motif: MOTIF_CAISSE_ABSENTE }
+  if (!caisseEnBase) return { dossierId, enBase: false, lignes: [], complete: false, motif: MOTIF_CAISSE_ABSENTE }
   try {
     const lecture = await lireTout<OperationCaisse>((debut, fin) =>
       supabase.from('operations_caisse').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('date').order('cree_le').order('id').range(debut, fin),
     )
-    return { dossierId, lignes: lecture.lignes, complete: lecture.complete, motif: lecture.motif }
+    return { dossierId, enBase: true, lignes: lecture.lignes, complete: lecture.complete, motif: lecture.motif }
   } catch (e) {
-    return { dossierId, lignes: [], complete: false, motif: messageErreur(e, 'la lecture de la caisse a échoué') }
+    return { dossierId, enBase: true, lignes: [], complete: false, motif: messageErreur(e, 'la lecture de la caisse a échoué') }
   }
 }

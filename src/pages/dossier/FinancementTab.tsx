@@ -23,6 +23,10 @@ import type { EcrituresDesVentesDeLa2035 } from '../../lib/declaration2035'
 import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFactureesEcran'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import type { PlanComptable } from '../../lib/planComptable'
+import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import {
+  lignesDeLaCaissePourLePlan, motifDeLaCaisse, recettesDeCaisseDuDossier, recettesPourLesMoteurs, type RecettesDeCaisse,
+} from '../../lib/recettesDeCaisse'
 import type {
   ANouveau, Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
@@ -92,6 +96,12 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
   // n'a pas basculé : tant qu'elles ne sont pas revenues entières pour ce dossier, aucun chiffre de situation — des frais
   // bancaires qui manqueraient flatteraient le résultat montré à une banque.
   const [lectureSourcesVentes, setLectureSourcesVentes] = useState<LectureSourcesDesEcrituresDeVente | null>(null)
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C3a ; lib/caisseLecture.ts) : ses recettes en espèces comptent dans la situation,
+  // les ratios et le préremplissage du prévisionnel comme dans la 2035, et dans le rythme des encaissements du plan de
+  // trésorerie. Nulle tant qu'elle n'est pas revenue ; le drapeau baissé, rien n'est lu (la caisse absente, qui ne change
+  // rien). Lue en partie : aucun de ces chiffres — une recette en espèces qui manquerait aurait l'air d'une baisse
+  // d'activité, sur le document qu'on présente à une banque.
+  const [lectureCaisse, setLectureCaisse] = useState<LectureDeLaCaisse | null>(null)
   // LA DERNIÈRE LECTURE DEMANDÉE ÉCRIT SEULE : celle d'un dossier quitté, ou celle d'avant un enregistrement, ne remplace
   // pas en arrivant après celle qui l'a suivie. Le numéro se prend avant la première attente.
   const derniereLecture = useRef(0)
@@ -113,6 +123,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
       lectureReglements,
       ventesLues,
       sourcesLues,
+      caisseLue,
     ] = await Promise.all([
       lireTout<Emprunt>((debut, fin) =>
         supabase.from('emprunts').select('*', { count: 'exact' })
@@ -183,10 +194,13 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
       lireLesVentesFacturees(dossierId),
       // Ne rejette jamais non plus ; jamais lue pour un dossier qui n'a pas basculé.
       ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
+      // Ne rejette jamais ; le drapeau baissé, ne touche pas au réseau.
+      lireLaCaisse(dossierId),
     ])
     if (demande !== derniereLecture.current) return
     setLectureVentes(ventesLues)
     setLectureSourcesVentes(sourcesLues)
+    setLectureCaisse(caisseLue)
     setEmprunts(lectureEmprunts.lignes)
     setPiecesValidees(lecturePieces.lignes)
     setCategories(lectureCategories.lignes)
@@ -230,6 +244,12 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
   const ventesFacturees = ecrituresDesVentes === null ? null : ventesLues
   const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif
     : pourLaSituation?.etat === 'incomplete' ? pourLaSituation.motif : null
+  // LES RECETTES DE CAISSE de CE dossier (étape C3a), résolues sur ses catégories : absentes, elles ne changent rien ; pas
+  // encore revenues, les « Générer » attendent ; lues en partie, aucun chiffre qui les compte.
+  const etatDeLaCaisse = recettesDeCaisseDuDossier(lectureCaisse, dossierId, categories, assujettiTva)
+  const recettesDeCaisse = recettesPourLesMoteurs(etatDeLaCaisse)
+  const caisseIncomplete = motifDeLaCaisse(etatDeLaCaisse)
+  const caisseEnAttente = loading || etatDeLaCaisse.etat === 'en_attente'
   // Pas encore revenues : la situation, les ratios et le prévisionnel attendent, et le disent (`aria-busy`).
   const ventesEnAttente = loading || lectureVentesDuDossier === null || pourLaSituation?.etat === 'en_attente'
 
@@ -278,6 +298,13 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
   const acquisitionsEcartees = sansDeblocages.length - sansAcquisitions.length
   const mouvementsDeBilanEcartes = sansAcquisitions.length - sansBilan.length
   const remboursementsTvaEcartes = sansBilan.length - lignesDuRythme.length
+  // LES RECETTES EN ESPÈCES ENTRENT DANS LE RYTHME (étape C3a ; conception de la caisse, § 5) : sans elles, le taux
+  // d'endettement d'un praticien qui encaisse en espèces se calculerait sur la seule banque. Le VERSEMENT d'espèces, un
+  // mouvement classé sur le compte de la caisse, est un mouvement écrit sur un compte de bilan, que la moyenne écarte déjà
+  // ci-dessus : la même somme n'y entre pas deux fois. Rien de plus quand la caisse est absente.
+  const lignesDeLaCaisse: LigneBanque[] = recettesDeCaisse === null ? []
+    : lignesDeLaCaissePourLePlan(recettesDeCaisse).map((l) => ({ ...l, ligne_bancaire_id: null, piece_id: null }))
+  const lignesDuRythmeEtDeLaCaisse = lignesDeLaCaisse.length === 0 ? lignesDuRythme : [...lignesDuRythme, ...lignesDeLaCaisse]
 
   // Les mouvements rapprochés de chaque emprunt : ses échéances payées, et son déblocage.
   const rapprochementsDe = (e: Emprunt) => mouvementsRapproches.filter((l) => l.emprunt_id === e.id)
@@ -331,6 +358,16 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
         }
       />
       <BandeauLecturePartielle
+        quoi="La caisse du dossier"
+        accord="lue"
+        motif={caisseIncomplete}
+        consequence={
+          'La situation intermédiaire, le plan de trésorerie et les ratios bancaires ne se calculent pas sans elle — une ' +
+          'recette en espèces qui manquerait aurait l’air d’une baisse d’activité —, et le préremplissage du prévisionnel est ' +
+          'suspendu. Recharge la page.'
+        }
+      />
+      <BandeauLecturePartielle
         quoi="Les ventes facturées du dossier"
         motif={ventesIncompletes}
         consequence={
@@ -372,8 +409,8 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
             existait aucun, alors que son enregistrement remplace tous les champs de celui qui existe peut-être. */}
         {/* Et les ventes facturées, entières : sans elles, la situation montrerait un dossier sans ses ventes facturées. */}
         <button
-          className="btn btn-outline btn-sm" disabled={ventesEnAttente || ventesFacturees === null}
-          aria-busy={ventesEnAttente || undefined} onClick={() => setSituationOuverte(true)}
+          className="btn btn-outline btn-sm" disabled={ventesEnAttente || ventesFacturees === null || recettesDeCaisse === null}
+          aria-busy={ventesEnAttente || caisseEnAttente || undefined} onClick={() => setSituationOuverte(true)}
         >
           Générer
         </button>
@@ -386,7 +423,11 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
         <h3 style={{ margin: 0 }}>Plan de trésorerie</h3>
-        <button className="btn btn-outline btn-sm" disabled={loading} onClick={() => setTresorerieOuverte(true)}>Générer</button>
+        {/* Et la caisse, lue en entier ou absente : ses recettes en espèces font partie du rythme (étape C3a). */}
+        <button
+          className="btn btn-outline btn-sm" disabled={loading || recettesDeCaisse === null}
+          aria-busy={caisseEnAttente && !loading ? true : undefined} onClick={() => setTresorerieOuverte(true)}
+        >Générer</button>
       </div>
       <p className="muted" style={{ marginTop: -4, marginBottom: 26 }}>
         Projection mensuelle du solde bancaire sur les prochains mois, à partir du rythme réel
@@ -398,8 +439,8 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
         <h3 style={{ margin: 0 }}>Dettes & ratios bancaires</h3>
         {/* La CAF se calcule sur la situation de l'année : elle attend les ventes facturées comme elle. */}
         <button
-          className="btn btn-outline btn-sm" disabled={ventesEnAttente || ventesFacturees === null}
-          aria-busy={ventesEnAttente || undefined} onClick={() => setDettesOuvertes(true)}
+          className="btn btn-outline btn-sm" disabled={ventesEnAttente || ventesFacturees === null || recettesDeCaisse === null}
+          aria-busy={ventesEnAttente || caisseEnAttente || undefined} onClick={() => setDettesOuvertes(true)}
         >
           Générer
         </button>
@@ -414,7 +455,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
         <button
           className="btn btn-outline btn-sm" onClick={() => setPrevisionnelOuvert(true)}
           // Les ventes facturées revenues, entières ou non : incomplètes, il se saisit à la main, sans préremplissage.
-          disabled={ventesEnAttente || !!previsionnelIllisible} aria-busy={ventesEnAttente || undefined}
+          disabled={ventesEnAttente || caisseEnAttente || !!previsionnelIllisible} aria-busy={ventesEnAttente || caisseEnAttente || undefined}
         >
           {previsionnel ? 'Modifier' : 'Générer'}
         </button>
@@ -500,9 +541,10 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
         <EcheancierModal emprunt={echeancierDe} rapprochements={rapprochementsDe(echeancierDe)} onClose={() => setEcheancierDe(null)} />
       )}
 
-      {situationOuverte && ventesFacturees && ecrituresDesVentes && (
+      {situationOuverte && ventesFacturees && ecrituresDesVentes && recettesDeCaisse && (
         <SituationIntermediaireModal
           ventesFacturees={ventesFacturees}
+          recettesDeCaisse={recettesDeCaisse}
           plan={plan}
           ecrituresDesVentes={ecrituresDesVentes}
           assujettiTva={assujettiTva}
@@ -519,10 +561,11 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
         />
       )}
 
-      {tresorerieOuverte && (
+      {tresorerieOuverte && recettesDeCaisse && (
         <PlanTresorerieModal
           lignesBanque={lignesBanque}
-          lignesDuRythme={lignesDuRythme}
+          lignesDuRythme={lignesDuRythmeEtDeLaCaisse}
+          recettesEnEspeces={lignesDeLaCaisse.length}
           deblocagesEcartes={deblocagesEcartes}
           acquisitionsEcartees={acquisitionsEcartees}
           mouvementsDeBilanEcartes={mouvementsDeBilanEcartes}
@@ -535,9 +578,10 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
         />
       )}
 
-      {dettesOuvertes && ventesFacturees && ecrituresDesVentes && (
+      {dettesOuvertes && ventesFacturees && ecrituresDesVentes && recettesDeCaisse && (
         <DettesRatiosModal
           ventesFacturees={ventesFacturees}
+          recettesDeCaisse={recettesDeCaisse}
           plan={plan}
           ecrituresDesVentes={ecrituresDesVentes}
           assujettiTva={assujettiTva}
@@ -550,7 +594,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
           cotisationsDatees={cotisationsDatees}
           cotisationsAPayer={cotisationsAPayer}
           emprunts={emprunts}
-          lignesDuRythme={lignesDuRythme}
+          lignesDuRythme={lignesDuRythmeEtDeLaCaisse}
           deblocagesEcartes={deblocagesEcartes}
           mouvementsDeBilanEcartes={mouvementsDeBilanEcartes}
           remboursementsTvaEcartes={remboursementsTvaEcartes}
@@ -573,11 +617,12 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
           immobilisations={immobilisations}
           cotisations={cotisationsDatees}
           ventesFacturees={ventesFacturees}
+          recettesDeCaisse={recettesDeCaisse}
           plan={plan}
           ecrituresDesVentes={ecrituresDesVentes}
           // Les ventes facturées lues en partie suspendent le préremplissage, comme une autre lecture : leur motif nomme la
-          // collection qui a manqué.
-          lectureIncomplete={lectureIncomplete ?? ventesIncompletes}
+          // collection qui a manqué. La caisse lue en partie aussi (étape C3a).
+          lectureIncomplete={lectureIncomplete ?? ventesIncompletes ?? caisseIncomplete}
           onClose={() => setPrevisionnelOuvert(false)}
           onSaved={load}
         />
@@ -586,9 +631,9 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
   )
 }
 
-function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisationsDatees, cotisationsAPayer, emprunts, lignesDuRythme, deblocagesEcartes, mouvementsDeBilanEcartes, remboursementsTvaEcartes, capitalRestantTotal, mensualiteTotale, ventesFacturees, plan, ecrituresDesVentes, onClose }: {
+function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisationsDatees, cotisationsAPayer, emprunts, lignesDuRythme, deblocagesEcartes, mouvementsDeBilanEcartes, remboursementsTvaEcartes, capitalRestantTotal, mensualiteTotale, ventesFacturees, recettesDeCaisse, plan, ecrituresDesVentes, onClose }: {
   assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: PaiementsDesPieces; partsReleve: PartDuReleve[]
-  ventesFacturees: VentesFacturees; plan: PlanComptable; ecrituresDesVentes: EcrituresDesVentesDeLa2035
+  ventesFacturees: VentesFacturees; recettesDeCaisse: RecettesDeCaisse; plan: PlanComptable; ecrituresDesVentes: EcrituresDesVentesDeLa2035
   // Les échéances datées au paiement pour la CAF ; celles que rien ne paie encore pour l'échéancier.
   categories: Categorie[]; immobilisations: Immobilisation[]; cotisationsDatees: readonly CotisationComptee[]; cotisationsAPayer: CotisationDeclaree[]
   emprunts: Emprunt[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; mouvementsDeBilanEcartes: number; remboursementsTvaEcartes: number
@@ -600,7 +645,7 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
   // la CAF, et l'étiquette qui l'annonce juste en dessous (voir moisEcoulesDeLAnnee).
   const moisEcoules = moisEcoulesDeLAnnee(aujourdHui)
 
-  const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisationsDatees, debutAnnee, aujourdHui, assujettiTva, paiements, modeComptable, partsReleve, ventesFacturees, plan, ecrituresDesVentes)
+  const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisationsDatees, debutAnnee, aujourdHui, assujettiTva, paiements, modeComptable, partsReleve, ventesFacturees, plan, ecrituresDesVentes, recettesDeCaisse)
   // Moyenne sur 6 mois glissants, juste pour disposer d'un rythme d'encaissements de référence — les
   // réglages fins (nombre de mois, projection détaillée) restent dans la modale Plan de trésorerie.
   const planTresorerie = calculerPlanTresorerie(lignesDuRythme, 0, 6, 1)
@@ -689,8 +734,9 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
   )
 }
 
-function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, acquisitionsEcartees, mouvementsDeBilanEcartes, remboursementsTvaEcartes, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
-  lignesBanque: LigneBanque[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; acquisitionsEcartees: number; mouvementsDeBilanEcartes: number
+// `recettesEnEspeces` : le nombre de recettes de la caisse que le rythme compte (étape C3a), pour que la phrase le dise.
+function PlanTresorerieModal({ lignesBanque, lignesDuRythme, recettesEnEspeces, deblocagesEcartes, acquisitionsEcartees, mouvementsDeBilanEcartes, remboursementsTvaEcartes, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
+  lignesBanque: LigneBanque[]; lignesDuRythme: LigneBanque[]; recettesEnEspeces: number; deblocagesEcartes: number; acquisitionsEcartees: number; mouvementsDeBilanEcartes: number
   remboursementsTvaEcartes: number
   ouverture: OuvertureBanque | null; soldeActuel: number
   emprunts: Emprunt[]; cotisations: CotisationDeclaree[]; onClose: () => void
@@ -742,6 +788,7 @@ function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, 
           {acquisitionsEcartees > 0 && ' Le paiement d’un bien immobilisé non plus : un investissement ne se répète pas chaque mois, et le solde le compte déjà.'}
           {mouvementsDeBilanEcartes > 0 && ' Ni un mouvement écrit sur un compte de bilan — un virement vers l’épargne ou depuis elle, un dépôt de garantie : il ne dit rien de l’activité, et le solde le compte.'}
           {remboursementsTvaEcartes > 0 && ' Ni le remboursement d’un crédit de TVA : il ne se répète pas, et le solde le compte. Le prélèvement de la TVA, lui, y reste.'}
+          {recettesEnEspeces > 0 && ' Les recettes en espèces de la caisse y entrent, à leur date, et leur versement en banque n’y entre pas une seconde fois.'}
         </p>
         {reserveAffichee && (
           <p className="muted" style={{ marginTop: -4, color: 'var(--color-danger, #c0392b)' }}>{reserveAffichee}</p>
@@ -799,16 +846,16 @@ function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, 
   )
 }
 
-function SituationIntermediaireModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, lignesBanque, ouverture, ventesFacturees, plan, ecrituresDesVentes, onClose }: {
+function SituationIntermediaireModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, lignesBanque, ouverture, ventesFacturees, recettesDeCaisse, plan, ecrituresDesVentes, onClose }: {
   assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: PaiementsDesPieces; partsReleve: PartDuReleve[]
-  ventesFacturees: VentesFacturees; plan: PlanComptable; ecrituresDesVentes: EcrituresDesVentesDeLa2035
+  ventesFacturees: VentesFacturees; recettesDeCaisse: RecettesDeCaisse; plan: PlanComptable; ecrituresDesVentes: EcrituresDesVentesDeLa2035
   categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: readonly CotisationComptee[]
   lignesBanque: LigneBanque[]; ouverture: OuvertureBanque | null; onClose: () => void
 }) {
   const [dateFin, setDateFin] = useState(aujourdHuiSql())
   const periodeDebut = `${anneeDe(dateFin)}-01-01`
 
-  const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, periodeDebut, dateFin, assujettiTva, paiements, modeComptable, partsReleve, ventesFacturees, plan, ecrituresDesVentes)
+  const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, periodeDebut, dateFin, assujettiTva, paiements, modeComptable, partsReleve, ventesFacturees, plan, ecrituresDesVentes, recettesDeCaisse)
   const tresorerieADate = soldeBanqueADate(lignesBanque, ouverture, dateFin)
   // « 0,00 € » est juste quand rien n'est comptabilisé, et c'est ce qui le rend dangereux.
   const reserveSolde = reserveSurSolde(lignesBanque, ouverture, dateFin)
@@ -908,12 +955,14 @@ function VentesFactureesDeLaSituation({ situation }: { situation: SituationInter
   )
 }
 
-function PrevisionnelModal({ dossierId, assujettiTva, modeComptable, previsionnel, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, ventesFacturees, plan, ecrituresDesVentes, lectureIncomplete, onClose, onSaved }: {
+function PrevisionnelModal({ dossierId, assujettiTva, modeComptable, previsionnel, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, ventesFacturees, recettesDeCaisse, plan, ecrituresDesVentes, lectureIncomplete, onClose, onSaved }: {
   dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable; previsionnel: PrevisionnelBancaire | null
   piecesValidees: Piece[]; paiements: PaiementsDesPieces; partsReleve: PartDuReleve[]
   categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: readonly CotisationComptee[]
   // Nulles quand elles n'ont pas été lues en entier : `lectureIncomplete` le dit alors, et le préremplissage est suspendu.
   ventesFacturees: VentesFacturees | null
+  // Les recettes de caisse (étape C3a) : nulles, comme les ventes facturées, quand la caisse n'a pas été lue en entier.
+  recettesDeCaisse: RecettesDeCaisse | null
   // Le plan du dossier et les écritures des ventes facturées : les frais d'un mouvement d'encaissements de l'année de
   // référence. Nulles, comme les ventes facturées, quand elles n'ont pas été lues en entier.
   plan: PlanComptable; ecrituresDesVentes: EcrituresDesVentesDeLa2035 | null
@@ -940,8 +989,8 @@ function PrevisionnelModal({ dossierId, assujettiTva, modeComptable, previsionne
   //
   // Calculée à chaque rendu, sur l'année de référence affichée : ce que le préremplissage laisserait de côté (les frais d'un
   // mouvement d'encaissements sans poste) se dit AVANT le clic, comme les ventes écartées. Le calcul est celui du clic.
-  const situationDeReference = lectureIncomplete || ventesFacturees === null || ecrituresDesVentes === null ? null
-    : calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`, assujettiTva, paiements, modeComptable, partsReleve, ventesFacturees, plan, ecrituresDesVentes)
+  const situationDeReference = lectureIncomplete || ventesFacturees === null || ecrituresDesVentes === null || recettesDeCaisse === null ? null
+    : calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`, assujettiTva, paiements, modeComptable, partsReleve, ventesFacturees, plan, ecrituresDesVentes, recettesDeCaisse)
   function precharger() {
     if (situationDeReference === null) return
     const situation = situationDeReference

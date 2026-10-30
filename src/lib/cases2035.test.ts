@@ -22,6 +22,7 @@ import type { Categorie, CotisationDeclaree, Piece, VehiculeDossier } from './ty
 import { cotisationsComptees } from './cotisationRapprochee'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { ventesFactureesVides } from '../test/ventesFacturees'
+import { CAISSE_ABSENTE } from './recettesDeCaisse'
 
 const ligne = (o: Partial<LigneDeclaration>): LigneDeclaration =>
   ({ poste: 'Achats', nature: 'depense', montant: 100, nbPieces: 1, nbMouvements: 0, nbEncaissements: 0, ...o })
@@ -35,7 +36,7 @@ const declaration = (o: Partial<Declaration2035>): Declaration2035 => ({
   resultat: 0,
   exclusions: {
     sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [], exemplairesDeFacturesSources: [],
-    ventesFactureesEcartees: [], fraisSansPoste: [],
+    ventesFactureesEcartees: [], fraisSansPoste: [], recettesDeCaisseSansPoste: [], recettesDeCaisseSansProduit: [],
   },
   sansPaiementConnu: [],
   indemnitesKilometriques: null,
@@ -396,7 +397,7 @@ describe('bout en bout depuis les pièces', () => {
       piece({ id: 'a', categorie_id: 'c-hono', montant_ht: 800 }),
       piece({ id: 'b', categorie_id: 'c-assur', montant_ht: 200 }),
       piece({ id: 'c', categorie_id: 'c-vente', type_piece: 'vente', montant_ht: 5000 }),
-    ], categories, [], [], [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' })
+    ], categories, [], [], [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
 
     const { valeurs, postesSansCase } = valeursDesCases(d)
     expect(postesSansCase).toEqual([])
@@ -414,7 +415,7 @@ describe('bout en bout depuis les pièces', () => {
     const achat = piece({ id: 'a', categorie_id: 'c-hono', montant_ht: 800 })
     const vente = piece({ id: 'v', categorie_id: 'c-hono', type_piece: 'vente', montant_ht: 300 })
     for (const pieces of [[achat, vente], [vente, achat]]) {
-      const { valeurs, postesSansCase } = valeursDesCases(calculerDeclaration2035(2025, pieces, categories, [], [], [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }))
+      const { valeurs, postesSansCase } = valeursDesCases(calculerDeclaration2035(2025, pieces, categories, [], [], [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE))
       expect(valeurs.get('BH')).toBe(800)
       expect(valeurs.get('AA')).toBe(0)
       expect(postesSansCase.map((p) => [p.ligne.nature, p.ligne.montant, p.raison, p.codeRefuse]))
@@ -432,7 +433,7 @@ describe('le barème kilométrique arrive en case BJ', () => {
 
   it('porte le « total A » du cadre 7 ligne 23, comme le dit le formulaire', () => {
     // Le bas du 2035-B : « Total A à reporter ligne 23 de l'annexe 2035 A ». Ligne 23 = BJ.
-    const d = calculerDeclaration2035(2025, [], [], [], [], [vehicule({})], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' })
+    const d = calculerDeclaration2035(2025, [], [], [], [], [vehicule({})], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
     const { valeurs, postesSansCase } = valeursDesCases(d)
     expect(postesSansCase).toEqual([])
     expect(valeurs.get('BJ')).toBe(2660)
@@ -449,7 +450,7 @@ describe('le barème kilométrique arrive en case BJ', () => {
       id: 'train', statut: 'validee', type_piece: 'achat', date_piece: '2025-04-02',
       montant_ht: 340, montant_ttc: 340, categorie_id: 'c-depl',
     } as Piece
-    const d = calculerDeclaration2035(2025, [piece], categories, [], [], [vehicule({})], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' })
+    const d = calculerDeclaration2035(2025, [piece], categories, [], [], [vehicule({})], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
     expect(valeursDesCases(d).valeurs.get('BJ')).toBe(2660 + 340)
   })
 })
@@ -592,7 +593,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
     const categories = [{ id: 'c-rec', poste_2035: 'Recettes' }] as Categorie[]
     const recette = { id: 'r', statut: 'validee', type_piece: 'vente', date_piece: '2025-06-15', montant_ht: 50_000, montant_ttc: 50_000, categorie_id: 'c-rec' } as Piece
     const avec = (montant_csg_crds: number | null) =>
-      valeursDesCases(calculerDeclaration2035(2025, [recette], categories, [], cotisationsComptees([cotisation({ montant_csg_crds })], [], 'tresorerie'), [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' })).valeurs
+      valeursDesCases(calculerDeclaration2035(2025, [recette], categories, [], cotisationsComptees([cotisation({ montant_csg_crds })], [], 'tresorerie'), [], true, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)).valeurs
 
     const brute = avec(null)
     const ventilee = avec(970)

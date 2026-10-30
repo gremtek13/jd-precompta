@@ -198,13 +198,14 @@ export interface DemandeDeValidation {
   p_lignes: LigneDemandee[]
   p_a_nouveaux: ANouveauDemande[]
   // La 2035 telle qu'elle est validée (trésorerie), rien en engagement — la base exige l'un ou l'autre selon
-  // le modèle du dossier. Toujours la version d'aujourd'hui : la 1 ne s'écrit plus, elle se relit.
-  p_declaration: Instantane2035V2 | null
+  // le modèle du dossier. Toujours une version d'aujourd'hui — la 2, ou la 3 quand la 2035 a lu la caisse : la 1 ne
+  // s'écrit plus, elle se relit.
+  p_declaration: Instantane2035Ecrit | null
 }
 
 // TIRÉE DE LA NUMÉROTATION MÊME DU FEC : ce que la base fige est exactement ce que le fichier imprime, et le FEC
 // relu depuis l'exercice validé est celui qu'on aurait exporté la veille.
-export function demandeDeValidation(n: NumerotationFec, declaration: Instantane2035V2 | null): DemandeDeValidation {
+export function demandeDeValidation(n: NumerotationFec, declaration: Instantane2035Ecrit | null): DemandeDeValidation {
   return {
     p_lignes: n.lignes.map((l) => ({
       id: l.ecriture.id, journal: l.journal, numero: l.numero, piece_ref: l.pieceRef, piece_date: l.pieceDate,
@@ -228,8 +229,14 @@ export function demandeDeValidation(n: NumerotationFec, declaration: Instantane2
 // TELLE QUELLE — rien ne la réécrit ni ne la complète : le nombre qu'elle ne porte pas se dit « — », jamais un zéro deviné
 // (`postesDeLInstantane`). La base n'en lit que les montants (`centimes_de_la_2035_validee`, `lireLa2035Validee`), ni la
 // version ni les nombres : `exercices_valides.declaration` est un `jsonb`, et rien n'y change.
+//
+// LA VERSION 3 (étape C3a, ligne 26.6) y ajoute les opérations de caisse de chaque poste (`nbOperationsDeCaisse`). Elle ne
+// s'écrit que d'une 2035 qui a LU la caisse — ses lignes portent ce compte (lib/declaration2035.ts) ; une 2035 d'une caisse
+// absente (le drapeau baissé) écrit la version 2 d'hier, au caractère près. La 2 se relit telle quelle, comme la 1 : les
+// opérations de caisse qu'elle ne porte pas se disent « — ».
 interface PosteDeLInstantaneV1 { poste: string; nature: 'recette' | 'depense'; montant: number; nbPieces: number; nbMouvements: number }
 export interface PosteDeLInstantane extends PosteDeLInstantaneV1 { nbEncaissements: number }
+export interface PosteDeLInstantaneV3 extends PosteDeLInstantane { nbOperationsDeCaisse: number }
 interface Instantane2035Commun {
   annee: number
   // Au centime, toutes les cases du formulaire, calculées comprises (`valeursDesCases`).
@@ -243,7 +250,10 @@ interface Instantane2035Commun {
 }
 export interface Instantane2035V1 extends Instantane2035Commun { version: 1; postes: PosteDeLInstantaneV1[] }
 export interface Instantane2035V2 extends Instantane2035Commun { version: 2; postes: PosteDeLInstantane[] }
-export type Instantane2035 = Instantane2035V1 | Instantane2035V2
+export interface Instantane2035V3 extends Instantane2035Commun { version: 3; postes: PosteDeLInstantaneV3[] }
+export type Instantane2035 = Instantane2035V1 | Instantane2035V2 | Instantane2035V3
+/** Ce que l'application écrit aujourd'hui : la 2, ou la 3 d'une 2035 qui a lu la caisse. */
+export type Instantane2035Ecrit = Instantane2035V2 | Instantane2035V3
 
 export function instantane2035(
   declaration: Declaration2035,
@@ -252,21 +262,31 @@ export function instantane2035(
   valeurs: ReadonlyMap<string, number>,
   formulaire: ReadonlyMap<string, number>,
   entete: EnteteDeclaration,
-): Instantane2035V2 {
-  return {
-    version: 2,
+): Instantane2035Ecrit {
+  const commun = {
     annee: declaration.annee,
     cases: Object.fromEntries([...valeurs].sort(([a], [b]) => a.localeCompare(b))),
     formulaire: Object.fromEntries([...formulaire].sort(([a], [b]) => a.localeCompare(b))),
     totalRecettes: declaration.totalRecettes,
     totalDepenses: declaration.totalDepenses,
     resultat: declaration.resultat,
-    postes: [...declaration.recettes, ...declaration.depenses].map((l) => ({
-      poste: l.poste, nature: l.nature, montant: l.montant, nbPieces: l.nbPieces, nbMouvements: l.nbMouvements,
-      nbEncaissements: l.nbEncaissements,
-    })),
-    entete: { nom: entete.nom, activite: entete.activite, siret: entete.siret },
   }
+  const lignes = [...declaration.recettes, ...declaration.depenses]
+  const entete2035 = { nom: entete.nom, activite: entete.activite, siret: entete.siret }
+  const poste = (l: (typeof lignes)[number]): PosteDeLInstantane => ({
+    poste: l.poste, nature: l.nature, montant: l.montant, nbPieces: l.nbPieces, nbMouvements: l.nbMouvements,
+    nbEncaissements: l.nbEncaissements,
+  })
+  // La 3 quand la 2035 a compté la caisse : toutes ses lignes portent alors leurs opérations de caisse (une 2035 sans aucune
+  // ligne ne dit pas si elle a lu la caisse, et s'écrit en version 2 — elle n'a rien à en compter).
+  if (lignes.length > 0 && lignes.every((l) => l.nbOperationsDeCaisse !== undefined)) {
+    return {
+      version: 3, ...commun,
+      postes: lignes.map((l) => ({ ...poste(l), nbOperationsDeCaisse: l.nbOperationsDeCaisse ?? 0 })),
+      entete: entete2035,
+    }
+  }
+  return { version: 2, ...commun, postes: lignes.map(poste), entete: entete2035 }
 }
 
 // Relit un instantané gardé en base, et le REFUSE plutôt que de deviner : un instantané illisible ne doit pas
@@ -279,13 +299,16 @@ export function lireInstantane2035(valeur: unknown): Instantane2035 | null {
     !!o && typeof o === 'object' && !Array.isArray(o) && Object.values(o).every((x) => typeof x === 'number' && Number.isFinite(x))
   const texteOuNul = (x: unknown) => x === null || typeof x === 'string'
   const entete = v.entete as Record<string, unknown> | null | undefined
-  if ((v.version !== 1 && v.version !== 2) || typeof v.annee !== 'number' || !nombres(v.cases) || !nombres(v.formulaire)) return null
+  if ((v.version !== 1 && v.version !== 2 && v.version !== 3) || typeof v.annee !== 'number' || !nombres(v.cases) || !nombres(v.formulaire)) return null
   if (![v.totalRecettes, v.totalDepenses, v.resultat].every((x) => typeof x === 'number' && Number.isFinite(x))) return null
   if (!Array.isArray(v.postes) || !v.postes.every((p) => !!p && typeof p === 'object'
     && typeof (p as Record<string, unknown>).poste === 'string'
     && ((p as Record<string, unknown>).nature === 'recette' || (p as Record<string, unknown>).nature === 'depense')
     && typeof (p as Record<string, unknown>).montant === 'number')) return null
   if (v.version === 2 && !v.postes.every((p) => ['nbPieces', 'nbMouvements', 'nbEncaissements']
+    .every((cle) => estUnCompte((p as Record<string, unknown>)[cle])))) return null
+  // La 3 exige en plus, à chaque poste, ses opérations de caisse (étape C3a).
+  if (v.version === 3 && !v.postes.every((p) => ['nbPieces', 'nbMouvements', 'nbEncaissements', 'nbOperationsDeCaisse']
     .every((cle) => estUnCompte((p as Record<string, unknown>)[cle])))) return null
   if (!entete || typeof entete !== 'object' || !texteOuNul(entete.nom) || !texteOuNul(entete.activite) || !texteOuNul(entete.siret)) {
     return null
@@ -308,6 +331,9 @@ export interface PosteRelu {
   nbPieces: number | null
   nbMouvements: number | null
   nbEncaissements: number | null
+  // Les opérations de caisse (étape C3a) : PRÉSENTES pour une version 3 seulement — nulles quand elles ne se lisent pas comme
+  // un compte —, absentes d'une 1 ou d'une 2, qui ne les portent pas : leur récapitulatif reste celui d'hier, sans colonne.
+  nbOperationsDeCaisse?: number | null
 }
 export function postesDeLInstantane(instantane: Instantane2035): PosteRelu[] {
   return instantane.postes.map((p) => {
@@ -315,7 +341,8 @@ export function postesDeLInstantane(instantane: Instantane2035): PosteRelu[] {
     const compte = (cle: string) => (estUnCompte(lu[cle]) ? lu[cle] : null)
     return {
       poste: p.poste, nature: p.nature, montant: p.montant, nbPieces: compte('nbPieces'), nbMouvements: compte('nbMouvements'),
-      nbEncaissements: instantane.version === 2 ? compte('nbEncaissements') : null,
+      nbEncaissements: instantane.version >= 2 ? compte('nbEncaissements') : null,
+      ...(instantane.version === 3 ? { nbOperationsDeCaisse: compte('nbOperationsDeCaisse') } : {}),
     }
   })
 }

@@ -13,6 +13,7 @@ import { PLAN_DECALE, PLAN_PAR_DEFAUT, type PlanComptable } from './planComptabl
 import { fraisDesMouvements } from './ecrituresVentesFacturees'
 import type { MouvementDesEcritures, SourcesDesEcrituresDeVente } from './ecrituresVentesFactureesEcran'
 import { D_BASCULE, composition, sourcesDuDossierBascule } from '../test/dossierBascule'
+import { CAISSE_ABSENTE } from './recettesDeCaisse'
 
 // Un dossier qui n'a pas basculé : aucun frais d'un mouvement d'encaissements (étape VF8g).
 const SANS_BASCULE: EcrituresDesVentesDeLa2035 = { etat: 'sans_bascule' }
@@ -46,26 +47,26 @@ describe('les repères comptent une pièce à la date de son paiement', () => {
   it("compte une recette de décembre encaissée en janvier dans l'année de l'encaissement", () => {
     const decembre = [piece({ id: 'r', date_piece: '2025-12-28', montant_ttc: 500 })]
     const encaissee = [paiement('r', '2026-01-04', 500)]
-    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(encaissee, [], []), 'tresorerie', [], recettesFactureesVides()).ca).toBe(0)
-    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(encaissee, [], []), 'tresorerie', [], recettesFactureesVides()).ca).toBe(500)
+    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(encaissee, [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(0)
+    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(encaissee, [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(500)
     // Sans encaissement rapproché, la date de facture : le garde symétrique.
-    expect(totauxPourAnnee(decembre, [], 2025, true, new Map(), 'tresorerie', [], recettesFactureesVides()).ca).toBe(500)
+    expect(totauxPourAnnee(decembre, [], 2025, true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(500)
   })
 
   it("compte une recette encaissée plus tard hors du « à date » de la projection", () => {
     // Facturée en mars, encaissée en octobre : au 15 juin, rien n'est encore entré.
     const mars = [piece({ id: 'r', date_piece: '2026-03-10', montant_ttc: 600 })]
-    const auJuin = projectionAnnuelle(mars, [], '2026-06-15', true, paiementsDesPieces([paiement('r', '2026-10-01', 600)], [], []), 'tresorerie', [], recettesFactureesVides())
+    const auJuin = projectionAnnuelle(mars, [], '2026-06-15', true, paiementsDesPieces([paiement('r', '2026-10-01', 600)], [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE)
     expect(auJuin.ca).toBe(0)
-    expect(projectionAnnuelle(mars, [], '2026-06-15', true, new Map(), 'tresorerie', [], recettesFactureesVides()).ca).toBe(600)
+    expect(projectionAnnuelle(mars, [], '2026-06-15', true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(600)
   })
 
   it("partage une recette encaissée en partie : la part encaissée à l'encaissement, le reste à la facture", () => {
     // 1 000 € facturés le 20 décembre, 400 € encaissés le 8 janvier : 600 € en 2025, 400 € en 2026.
     const decembre = [piece({ id: 'r', date_piece: '2025-12-20', montant_ttc: 1000 })]
     const acompte = [paiement('r', '2026-01-08', 400)]
-    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(acompte, [], []), 'tresorerie', [], recettesFactureesVides()).ca).toBe(600)
-    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(acompte, [], []), 'tresorerie', [], recettesFactureesVides()).ca).toBe(400)
+    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(acompte, [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(600)
+    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(acompte, [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(400)
   })
 
   it("compte une charge payée l'année suivante dans l'année du paiement", () => {
@@ -93,32 +94,32 @@ describe('les repères comptent les mouvements du relevé affectés sans justifi
 
   it("compte au hors taxe la recette taxée d'un dossier assujetti (lib/tvaDuReleve.ts)", () => {
     const taxee = partsDuReleve([{ ...mouvement('cli', 'c-recettes', '2026-03-12', 1200), taux_tva: 20 }], categories, [], true)
-    expect(totauxPourAnnee([], [], 2026, true, new Map(), 'tresorerie', taxee, recettesFactureesVides()).ca).toBe(1000)
+    expect(totauxPourAnnee([], [], 2026, true, new Map(), 'tresorerie', taxee, recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(1000)
   })
 
   it("ajoute au chiffre d'affaires un encaissement affecté, l'année de sa date", () => {
     const cpam = releve(mouvement('cpam', 'c-recettes', '2026-03-12', 1250))
-    expect(totauxPourAnnee([piece({ id: 'r', montant_ttc: 100 })], [], 2026, false, new Map(), 'tresorerie', cpam, recettesFactureesVides()).ca).toBe(1350)
-    expect(totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', cpam, recettesFactureesVides()).ca).toBe(0)
+    expect(totauxPourAnnee([piece({ id: 'r', montant_ttc: 100 })], [], 2026, false, new Map(), 'tresorerie', cpam, recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(1350)
+    expect(totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', cpam, recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(0)
   })
 
   // L'autre borne : l'encaissement de décembre dernier appartient au repère de l'an dernier. Compté ici
   // aussi, il gonflerait le chiffre d'affaires de l'année — et la projection qui en part.
   it("laisse au repère de l'an dernier un encaissement de décembre", () => {
     const deuxAnnees = releve(mouvement('decembre', 'c-recettes', '2025-12-30', 700), mouvement('cpam', 'c-recettes', '2026-03-12', 1250))
-    expect(totauxPourAnnee([], [], 2026, false, new Map(), 'tresorerie', deuxAnnees, recettesFactureesVides()).ca).toBe(1250)
-    expect(totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', deuxAnnees, recettesFactureesVides()).ca).toBe(700)
-    expect(projectionAnnuelle([], [], '2026-06-15', false, new Map(), 'tresorerie', deuxAnnees, recettesFactureesVides()).ca).toBe(1250)
+    expect(totauxPourAnnee([], [], 2026, false, new Map(), 'tresorerie', deuxAnnees, recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(1250)
+    expect(totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', deuxAnnees, recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(700)
+    expect(projectionAnnuelle([], [], '2026-06-15', false, new Map(), 'tresorerie', deuxAnnees, recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(1250)
   })
 
   it("ne compte pas une dépense du relevé dans le chiffre d'affaires", () => {
     const frais = releve(mouvement('frais', 'c-frais', '2026-03-12', -8.5))
-    expect(totauxPourAnnee([], [], 2026, false, new Map(), 'tresorerie', frais, recettesFactureesVides()).ca).toBe(0)
+    expect(totauxPourAnnee([], [], 2026, false, new Map(), 'tresorerie', frais, recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(0)
   })
 
   it('compte dans le « à date » un encaissement déjà reçu, pas un à venir', () => {
     const cpam = releve(mouvement('avant', 'c-recettes', '2026-06-10', 900), mouvement('apres', 'c-recettes', '2026-06-20', 400))
-    expect(projectionAnnuelle([], [], '2026-06-15', false, new Map(), 'tresorerie', cpam, recettesFactureesVides()).ca).toBe(900)
+    expect(projectionAnnuelle([], [], '2026-06-15', false, new Map(), 'tresorerie', cpam, recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(900)
   })
 
   it('range une dépense du relevé dans le poste de sa catégorie, jamais une recette', () => {
@@ -147,7 +148,7 @@ describe('les repères comptent les mouvements du relevé affectés sans justifi
     const parts = releve(echeance, deblocage, mouvement('frais', 'c-frais', '2026-03-12', -8.5))
     expect([...chargesParPostePourAnnee([], categories, new Set(), 2026, false, new Map(), 'tresorerie', parts, PLAN_PAR_DEFAUT, SANS_BASCULE)])
       .toEqual([['Frais financiers', 44.5], ["Primes d'assurance", 21.03]])
-    expect(totauxPourAnnee([], [], 2026, false, new Map(), 'tresorerie', parts, recettesFactureesVides()).ca).toBe(0)
+    expect(totauxPourAnnee([], [], 2026, false, new Map(), 'tresorerie', parts, recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(0)
   })
 })
 
@@ -156,13 +157,13 @@ describe('en engagement, les repères comptent une pièce à la date de sa FACTU
   it('compte une recette de décembre encaissée en janvier dans l’année de la facture', () => {
     const decembre = [piece({ id: 'r', date_piece: '2025-12-28', montant_ttc: 500 })]
     const encaissee = [paiement('r', '2026-01-04', 500)]
-    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(encaissee, [], []), 'engagement', [], recettesFactureesVides()).ca).toBe(500)
-    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(encaissee, [], []), 'engagement', [], recettesFactureesVides()).ca).toBe(0)
+    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(encaissee, [], []), 'engagement', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(500)
+    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(encaissee, [], []), 'engagement', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(0)
   })
 
   it('projette l’année sur les factures émises, encaissées ou non', () => {
     const mars = [piece({ id: 'r', date_piece: '2026-03-10', montant_ttc: 600 })]
-    expect(projectionAnnuelle(mars, [], '2026-06-15', true, paiementsDesPieces([paiement('r', '2026-10-01', 600)], [], []), 'engagement', [], recettesFactureesVides()).ca).toBe(600)
+    expect(projectionAnnuelle(mars, [], '2026-06-15', true, paiementsDesPieces([paiement('r', '2026-10-01', 600)], [], []), 'engagement', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(600)
   })
 
   it('compte une charge dans l’année de sa facture, payée ou non', () => {
@@ -182,31 +183,31 @@ describe('totauxPourAnnee', () => {
       aEcheance([cotisation({ echeance: '2026-02-05', montant_appele: 300 }),
        cotisation({ echeance: '2025-02-05', montant_appele: 999 })]),
       2026, true, new Map(),
-      'tresorerie', [], recettesFactureesVides(),
+      'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE,
     )
     expect(totaux).toEqual({ ca: 100, cotis: 300 })
   })
 
   it('préfère le HT au TTC quand il est renseigné', () => {
-    expect(totauxPourAnnee([piece({ montant_ht: 80, montant_ttc: 96 })], [], 2026, true, new Map(), 'tresorerie', [], recettesFactureesVides()).ca).toBe(80)
-    expect(totauxPourAnnee([piece({ montant_ht: null, montant_ttc: 96 })], [], 2026, true, new Map(), 'tresorerie', [], recettesFactureesVides()).ca).toBe(96)
+    expect(totauxPourAnnee([piece({ montant_ht: 80, montant_ttc: 96 })], [], 2026, true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(80)
+    expect(totauxPourAnnee([piece({ montant_ht: null, montant_ttc: 96 })], [], 2026, true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(96)
   })
 
   // Pour un dossier exonéré, la règle de la 2035 dont ces repères sont l'estimation : TVA comprise
   // (voir lib/montantRetenu.ts).
   it('retient la TVA comprise pour un dossier exonéré', () => {
-    expect(totauxPourAnnee([piece({ montant_ht: 80, montant_tva: 16, montant_ttc: 96 })], [], 2026, false, new Map(), 'tresorerie', [], recettesFactureesVides()).ca).toBe(96)
+    expect(totauxPourAnnee([piece({ montant_ht: 80, montant_tva: 16, montant_ttc: 96 })], [], 2026, false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(96)
   })
 
   it('ignore une pièce sans date', () => {
-    expect(totauxPourAnnee([piece({ date_piece: null })], [], 2026, true, new Map(), 'tresorerie', [], recettesFactureesVides()).ca).toBe(0)
+    expect(totauxPourAnnee([piece({ date_piece: null })], [], 2026, true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(0)
   })
 
   it('retient le montant versé d’une cotisation, sinon celui appelé', () => {
     const cotis = totauxPourAnnee([], aEcheance([
       cotisation({ id: 'x', montant_appele: 300, montant_verse: 280 }),
       cotisation({ id: 'y', montant_appele: 400, montant_verse: null }),
-    ]), 2026, true, new Map(), 'tresorerie', [], recettesFactureesVides()).cotis
+    ]), 2026, true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).cotis
     expect(cotis).toBe(680)
   })
 
@@ -217,7 +218,7 @@ describe('totauxPourAnnee', () => {
     const avecAchat = totauxPourAnnee(
       [piece({ id: 'v', montant_ttc: 100 }), piece({ id: 'a', type_piece: 'achat', montant_ttc: 70 })],
       [], 2026, true, new Map(),
-      'tresorerie', [], recettesFactureesVides(),
+      'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE,
     )
     expect(avecAchat.ca).toBe(170)
   })
@@ -232,7 +233,7 @@ describe('projectionAnnuelle', () => {
   it('divise par les mois ÉCOULÉS, pas par le numéro du mois', () => {
     // Le 1er février, un mois et un jour sont écoulés (31/30 en 30/360). Le numéro du mois en
     // comptait deux, et annonçait une projection de moitié.
-    const p = projectionAnnuelle([piece({ date_piece: '2026-01-15', montant_ttc: 1000 })], [], '2026-02-01', true, new Map(), 'tresorerie', [], recettesFactureesVides())
+    const p = projectionAnnuelle([piece({ date_piece: '2026-01-15', montant_ttc: 1000 })], [], '2026-02-01', true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE)
     expect(p.moisEcoules).toBeCloseTo(31 / 30, 10)
     expect(p.caProjete).toBeCloseTo((1000 * 12 * 30) / 31, 6)
   })
@@ -244,7 +245,7 @@ describe('projectionAnnuelle', () => {
       [piece({ id: 'passee', date_piece: '2026-03-02', montant_ttc: 600 }),
        piece({ id: 'future', date_piece: '2026-11-30', montant_ttc: 9000 })],
       echeancier, '2026-03-20', true, new Map(),
-      'tresorerie', [], recettesFactureesVides(),
+      'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE,
     )
     expect(p.cotis).toBe(300)
     expect(p.ca).toBe(600)
@@ -257,14 +258,14 @@ describe('projectionAnnuelle', () => {
     // L'échéance du 5 mars prélevée le 9 : au 7 mars, elle n'est pas encore payée (lib/cotisationRapprochee.ts).
     const mars = cotisation({ id: 'mars', echeance: '2026-03-05', montant_appele: 100 })
     const prelevement: LigneBancaire = { ...paiement('x', '2026-03-09', -100), id: 'l-mars', piece_id: null, cotisation_id: 'mars' }
-    const auSept = (lignes: LigneBancaire[]) => projectionAnnuelle([], cotisationsComptees([mars], lignes, 'tresorerie'), '2026-03-07', true, new Map(), 'tresorerie', [], recettesFactureesVides()).cotis
+    const auSept = (lignes: LigneBancaire[]) => projectionAnnuelle([], cotisationsComptees([mars], lignes, 'tresorerie'), '2026-03-07', true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).cotis
     expect(auSept([prelevement])).toBe(0)
     expect(auSept([])).toBe(100)
   })
 
   it('compte l’échéance du jour : elle est appelée', () => {
-    expect(projectionAnnuelle([], echeancier, '2026-03-05', true, new Map(), 'tresorerie', [], recettesFactureesVides()).cotis).toBe(300)
-    expect(projectionAnnuelle([], echeancier, '2026-03-04', true, new Map(), 'tresorerie', [], recettesFactureesVides()).cotis).toBe(200)
+    expect(projectionAnnuelle([], echeancier, '2026-03-05', true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).cotis).toBe(300)
+    expect(projectionAnnuelle([], echeancier, '2026-03-04', true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).cotis).toBe(200)
   })
 
   it('tient l’année et les mois d’UNE date : le 5 janvier ne projette pas l’année d’avant', () => {
@@ -272,7 +273,7 @@ describe('projectionAnnuelle', () => {
     // année, l'écran ramenait l'année ENTIÈRE qui venait de finir à douze fois sa valeur.
     const p = projectionAnnuelle(
       [piece({ date_piece: '2026-12-10', montant_ttc: 50000 })], echeancier, '2027-01-05', true, new Map(),
-      'tresorerie', [], recettesFactureesVides(),
+      'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE,
     )
     expect(p.annee).toBe(2027)
     expect(p.ca).toBe(0)
@@ -282,7 +283,7 @@ describe('projectionAnnuelle', () => {
   it('n’annualise pas moins d’un mois, mais rend ce qui est déjà là', () => {
     // Le 20 janvier, dix-neuf jours ramenés à douze mois font un chiffre qui bouge d'un facteur deux
     // à chaque pièce saisie. Même plancher que la CAF des ratios bancaires.
-    const p = projectionAnnuelle([piece({ date_piece: '2026-01-10', montant_ttc: 800 })], echeancier, '2026-01-20', true, new Map(), 'tresorerie', [], recettesFactureesVides())
+    const p = projectionAnnuelle([piece({ date_piece: '2026-01-10', montant_ttc: 800 })], echeancier, '2026-01-20', true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE)
     expect(p.caProjete).toBeNull()
     expect(p.cotisationsProjetees).toBeNull()
     expect(p.ca).toBe(800)
@@ -292,7 +293,7 @@ describe('projectionAnnuelle', () => {
   it('le 31 décembre, la projection est l’année elle-même', () => {
     // Le garde symétrique : douze mois écoulés, rien à ramener — sans lui, « rapporter aux mois
     // écoulés » serait satisfait par une fonction qui déforme toujours.
-    const p = projectionAnnuelle([piece({ date_piece: '2026-06-01', montant_ttc: 1234 })], echeancier, '2026-12-31', true, new Map(), 'tresorerie', [], recettesFactureesVides())
+    const p = projectionAnnuelle([piece({ date_piece: '2026-06-01', montant_ttc: 1234 })], echeancier, '2026-12-31', true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE)
     expect(p.moisEcoules).toBe(12)
     expect(p.caProjete).toBeCloseTo(1234, 10)
     expect(p.cotisationsProjetees).toBeCloseTo(1200, 10)
@@ -471,43 +472,43 @@ describe('l’estimation et les ventes facturées', () => {
 
   it('totauxPourAnnee compte les recettes facturées de l’année, et ignore l’exemplaire', () => {
     const tresorerie = recettesFactureesDuDossier(VENTES, 'tresorerie')
-    expect(totauxPourAnnee([exemplaire], [], 2025, true, new Map(), 'tresorerie', [], tresorerie).ca).toBe(0)
-    expect(totauxPourAnnee([exemplaire], [], 2026, true, new Map(), 'tresorerie', [], tresorerie).ca).toBe(1000)
+    expect(totauxPourAnnee([exemplaire], [], 2025, true, new Map(), 'tresorerie', [], tresorerie, CAISSE_ABSENTE).ca).toBe(0)
+    expect(totauxPourAnnee([exemplaire], [], 2026, true, new Map(), 'tresorerie', [], tresorerie, CAISSE_ABSENTE).ca).toBe(1000)
     const engagement = recettesFactureesDuDossier(VENTES, 'engagement')
-    expect(totauxPourAnnee([exemplaire], [], 2025, true, new Map(), 'engagement', [], engagement).ca).toBe(1000)
-    expect(totauxPourAnnee([exemplaire], [], 2026, true, new Map(), 'engagement', [], engagement).ca).toBe(0)
+    expect(totauxPourAnnee([exemplaire], [], 2025, true, new Map(), 'engagement', [], engagement, CAISSE_ABSENTE).ca).toBe(1000)
+    expect(totauxPourAnnee([exemplaire], [], 2026, true, new Map(), 'engagement', [], engagement, CAISSE_ABSENTE).ca).toBe(0)
   })
 
   it('« non comptées » : la pièce compte comme hier, et rien des factures', () => {
-    expect(totauxPourAnnee([exemplaire], [], 2025, true, new Map(), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES).ca).toBe(1000)
-    expect(totauxPourAnnee([exemplaire], [], 2026, true, new Map(), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES).ca).toBe(0)
-    expect(projectionAnnuelle([exemplaire], [], '2026-06-15', true, new Map(), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES).ca).toBe(0)
+    expect(totauxPourAnnee([exemplaire], [], 2025, true, new Map(), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, CAISSE_ABSENTE).ca).toBe(1000)
+    expect(totauxPourAnnee([exemplaire], [], 2026, true, new Map(), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, CAISSE_ABSENTE).ca).toBe(0)
+    expect(projectionAnnuelle([exemplaire], [], '2026-06-15', true, new Map(), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, CAISSE_ABSENTE).ca).toBe(0)
   })
 
   it('une pièce désignée à une facture qui n’est pas source compte comme hier', () => {
     const pdf = { ...exemplaire, facture_id: 'f-avant-la-bascule' }
     const tresorerie = recettesFactureesDuDossier(VENTES, 'tresorerie')
-    expect(totauxPourAnnee([pdf], [], 2025, true, new Map(), 'tresorerie', [], tresorerie).ca).toBe(1000)
+    expect(totauxPourAnnee([pdf], [], 2025, true, new Map(), 'tresorerie', [], tresorerie, CAISSE_ABSENTE).ca).toBe(1000)
   })
 
   it('projectionAnnuelle compte les mois écoulés, celui du jour compris', () => {
     const tresorerie = recettesFactureesDuDossier(VENTES, 'tresorerie')
     // Le mois du jour compte en entier : au 9 janvier, la part du 10 compte déjà. Le cas ne se présente pas — la base ne
     // laisse dater aucun encaissement dans l'avenir —, mais il dit la précision de la forme mensuelle (EC3-Q11).
-    expect(projectionAnnuelle([], [], '2026-01-09', true, new Map(), 'tresorerie', [], tresorerie).ca).toBe(500)
-    expect(projectionAnnuelle([], [], '2026-04-30', true, new Map(), 'tresorerie', [], tresorerie).ca).toBe(500)
-    expect(projectionAnnuelle([], [], '2026-05-12', true, new Map(), 'tresorerie', [], tresorerie).ca).toBe(1000)
-    const p = projectionAnnuelle([exemplaire], [], '2026-06-30', true, new Map(), 'tresorerie', [], tresorerie)
+    expect(projectionAnnuelle([], [], '2026-01-09', true, new Map(), 'tresorerie', [], tresorerie, CAISSE_ABSENTE).ca).toBe(500)
+    expect(projectionAnnuelle([], [], '2026-04-30', true, new Map(), 'tresorerie', [], tresorerie, CAISSE_ABSENTE).ca).toBe(500)
+    expect(projectionAnnuelle([], [], '2026-05-12', true, new Map(), 'tresorerie', [], tresorerie, CAISSE_ABSENTE).ca).toBe(1000)
+    const p = projectionAnnuelle([exemplaire], [], '2026-06-30', true, new Map(), 'tresorerie', [], tresorerie, CAISSE_ABSENTE)
     expect(p.ca).toBe(1000)
     expect(p.caProjete).toBe(2000)
     // L'année d'avant ne compte pas dans la projection de celle-ci.
-    expect(projectionAnnuelle([], [], '2026-06-30', true, new Map(), 'engagement', [], recettesFactureesDuDossier(VENTES, 'engagement')).ca).toBe(0)
+    expect(projectionAnnuelle([], [], '2026-06-30', true, new Map(), 'engagement', [], recettesFactureesDuDossier(VENTES, 'engagement'), CAISSE_ABSENTE).ca).toBe(0)
   })
 
   it('les recettes facturées s’ajoutent aux pièces et au relevé, sans les remplacer', () => {
     const autre = piece({ id: 'r', type_piece: 'vente', date_piece: '2026-02-01', montant_ht: 250, montant_ttc: 300 })
     const tresorerie = recettesFactureesDuDossier(VENTES, 'tresorerie')
-    expect(totauxPourAnnee([autre, exemplaire], [], 2026, true, new Map(), 'tresorerie', [], tresorerie).ca).toBe(1250)
+    expect(totauxPourAnnee([autre, exemplaire], [], 2026, true, new Map(), 'tresorerie', [], tresorerie, CAISSE_ABSENTE).ca).toBe(1250)
   })
 })
 

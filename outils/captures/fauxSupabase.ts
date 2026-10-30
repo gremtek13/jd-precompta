@@ -38,6 +38,7 @@ import type {
   RegimeEreporting, StatutFactureRecu, TransmissionEncaissement, TransmissionFacture,
   VehiculeDossier, VentilationBancaire,
 } from '../../src/lib/types'
+import { CAISSE_ABSENTE } from '../../src/lib/recettesDeCaisse'
 
 type Ligne = Record<string, unknown>
 
@@ -427,7 +428,7 @@ function declarationD7(id: string, debut: string, fin: string, depot: string) {
     releve: partsDuReleve(lignes, categories as unknown as Categorie[], RELEVE_D7.ventilations as unknown as VentilationBancaire[], true),
     // Aucune facture du banc n'est SOURCE de sa vente : les ventes facturées que l'onglet TVA lirait sont vides, et la
     // valeur vide le dit (étape VF3b2).
-    ventesFacturees: ventesFactureesVides('d7'),
+    ventesFacturees: ventesFactureesVides('d7'), caisse: CAISSE_ABSENTE,
   }
   const ca3 = calculerCa3(donnees, { debut, fin }, false, 0, 0)
   const liquidee = declarationDeLaCa3(ca3, { debut, fin })
@@ -733,7 +734,7 @@ function valider(
     // Aucune facture du banc n'est SOURCE de sa vente (`source_de_la_vente: false` partout) : les ventes facturées que la
     // Clôture lirait de ces dossiers sont vides, et la valeur vide le dit (étape VF3b1).
     ventesFactureesVides(s.dossier),
-    { etat: 'sans_bascule' },
+    { etat: 'sans_bascule' }, CAISSE_ABSENTE,
   )
   const { valeurs } = valeursDesCases(declaration)
   const dossier = dossiers.find((d) => d.id === s.dossier)!

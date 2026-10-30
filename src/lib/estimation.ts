@@ -7,6 +7,7 @@ import type { CotisationComptee } from './cotisationRapprochee'
 import { categorieDesFraisBancaires, type EcrituresDesVentesDeLa2035, type FraisSansPoste } from './declaration2035'
 import { fraisDesMouvements } from './ecrituresVentesFacturees'
 import type { PlanComptable } from './planComptable'
+import { centimesDesRecettesDeCaisse, type RecettesDeCaissePourLEstimation } from './recettesDeCaisse'
 import type { Categorie, ModeComptable, Piece } from './types'
 import { exemplaireDUneFactureSource, recettesFactureesParMois, type VentesFacturees } from './ventesFacturees'
 
@@ -109,6 +110,12 @@ function recettesAffecteesDansLaPeriode(parts: readonly PartDuReleve[], debut: s
   )
 }
 
+// Les recettes de caisse d'une période, en euros (lib/recettesDeCaisse.ts). Une caisse absente ou non comptée y ajoute un zéro
+// exact : x + 0 vaut x pour tout flottant, et le chiffre d'hier ne bouge pas d'un caractère.
+function recettesDeCaisseDeLaPeriode(caisse: RecettesDeCaissePourLEstimation, debut: string, fin: string): number {
+  return centimesDesRecettesDeCaisse(caisse, debut, fin) / 100
+}
+
 // Les cotisations comptent comme dans la 2035 (`cotisationsComptees`, lib/cotisationRapprochee.ts) : à la
 // date et au montant du mouvement qui les paie, sinon à leur échéance. Sans valeur par défaut, comme les
 // paiements.
@@ -125,13 +132,18 @@ export function totauxPourAnnee(
   partsDuReleve: readonly PartDuReleve[],
   // Sans valeur par défaut non plus : voir `RecettesFacturees`.
   recettesFacturees: RecettesFacturees,
+  // LES RECETTES DE CAISSE (étape C3a ; lib/recettesDeCaisse.ts), à leur date, pour ce qu'elles ajoutent à leur poste, comme
+  // dans la 2035. Sans valeur par défaut : absente, le drapeau baissé ; « non comptées », ce que la simulation d'un client
+  // passe et dit.
+  recettesDeCaisse: RecettesDeCaissePourLEstimation,
 ) {
   const debut = `${annee}-01-01`
   const fin = `${annee}-12-31`
   return {
     ca: montantDansLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode, recettesFacturees)
       + recettesAffecteesDansLaPeriode(partsDuReleve, debut, fin)
-      + recettesFactureesDesMois(recettesFacturees, debut, fin),
+      + recettesFactureesDesMois(recettesFacturees, debut, fin)
+      + recettesDeCaisseDeLaPeriode(recettesDeCaisse, debut, fin),
     cotis: cotisationsDeLaPeriode(cotisations, debut, fin),
   }
 }
@@ -171,6 +183,7 @@ export function projectionAnnuelle(
   paiements: PaiementsDesPieces, mode: ModeComptable,
   partsDuReleve: readonly PartDuReleve[],
   recettesFacturees: RecettesFacturees,
+  recettesDeCaisse: RecettesDeCaissePourLEstimation,
 ): ProjectionAnnuelle {
   const annee = anneeDe(dateDuJour)
   // Du 1er janvier à aujourd'hui : la borne du jour fait un « à date », pour les recettes (à leur
@@ -179,6 +192,7 @@ export function projectionAnnuelle(
   const ca = montantDansLaPeriode(recettes, paiements, `${annee}-01-01`, dateDuJour, assujettiTva, mode, recettesFacturees)
     + recettesAffecteesDansLaPeriode(partsDuReleve, `${annee}-01-01`, dateDuJour)
     + recettesFactureesDesMois(recettesFacturees, `${annee}-01-01`, dateDuJour)
+    + recettesDeCaisseDeLaPeriode(recettesDeCaisse, `${annee}-01-01`, dateDuJour)
   const cotis = cotisationsDeLaPeriode(cotisations, `${annee}-01-01`, dateDuJour)
   const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
   const annualiser = (montant: number) => (moisEcoules >= 1 ? (montant * 12) / moisEcoules : null)
