@@ -611,6 +611,14 @@
 -- (`b68e6aa362092f10d7014470ef64110b`) : 9 lignes de verdict, 0 en faute, 5 mutations sur 5 qui mordent, rien n'est
 -- resté. Les blocs CA et CR ne se disent plus EN ATTENTE en production (HISTORIQUE.md, « LA CAISSE EN PRODUCTION : LES
 -- DEUX MIGRATIONS ET LE DRAPEAU LEVÉ »).
+--
+-- 31/10/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (ligne 26.6, étape C8 : migration `paiement_par_la_caisse`,
+-- PRÉPARÉE, pas appliquée), qui ne crée ni ne change aucune policy, mais une fonction aux droits du propriétaire qui
+-- écrit la caisse (`regler_piece_par_la_caisse`) et trois gardes aux droits du propriétaire, dont celle du brouillon, qui
+-- admet désormais la contrepartie d'un paiement écrite sous la RLS : le bloc CP (CP1 à CP3, M-CP1 et M-CP2) — le client
+-- ne règle pas une pièce de son dossier par la caisse, n'écrit pas la contrepartie du paiement du chef, ne lit ni l'un ni
+-- l'autre ; l'anonyme n'exécute pas la fonction ; le catalogue ; le chef règle et écrit la contrepartie (le contrôle
+-- positif) — ; EN ATTENTE sans la migration.
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -3424,6 +3432,150 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', 'CR3. security definer, leur chemin fixé ; les connectés les exécutent, ni l''anonyme ni PUBLIC (lecture du catalogue)',
     'cible', 'retirer_operation_caisse, remplacer_operation_caisse', 'observe', n || ' sur 2', 'ok', n = 2);
   verdicts := verdicts || jsonb_build_object('controle', 'CR. le jeu d''essai du retrait s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ CP. Le paiement d'une pièce par la caisse (ligne 26.6, étape C8 ; migration `paiement_par_la_caisse`) ══════════
+-- Une fonction aux droits du propriétaire, exécutable par les connectés, qui écrit une table que personne n'écrit en
+-- direct : elle contourne la RLS, avec son propre contrôle (`qui_ecrit_la_caisse`, au cabinet seul tant que la migration
+-- du droit du client ne l'a pas remplacée), avant toute lecture. La garde du brouillon, aux droits du propriétaire, admet
+-- la contrepartie d'un paiement hors de toute fonction : la RLS du brouillon reste ce qui la borne au cabinet.
+--   CP1. Dans le dossier du client, une pièce et un apport posés, le chef y règle la pièce par la caisse : le client ne
+--        la règle pas lui-même (42501, sa raison), et rien n'est écrit ; il n'écrit pas la contrepartie du paiement du
+--        chef (la RLS du brouillon, 42501) ; il ne lit ni le paiement ni une ligne qui le cite.
+--   CP2. L'anonyme n'exécute pas la fonction (42501).
+--   CP3. Le catalogue : la fonction, `security definer`, son chemin fixé, exécutable par les connectés, ni par
+--        l'anonyme ni par PUBLIC ; les deux gardes neuves, `security definer`, leur chemin fixé, exécutables par personne.
+-- Deux mutations, qui doivent mordre : M-CP1 (CP1 joué par le chef : le paiement passe), M-CP2 (la contrepartie écrite
+-- par le chef : elle passe). Avant la migration, une ligne dit que le bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  apport jsonb := '[{"compte":"530000","sens":"debit","montant":10},{"compte":"108000","sens":"credit","montant":10}]';
+  piece uuid; paiement uuid; reglement text; contrepartie text; ecrites bigint; vus bigint; lignes_vues bigint;
+  chef_reglement text; chef_contrepartie text; anon_reglement text; n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.regler_piece_par_la_caisse(uuid, uuid, date, numeric)') is null then
+    insert into rls_verdict values ('CP. le paiement d''une pièce par la caisse : EN ATTENTE de la migration paiement_par_la_caisse',
+      'regler_piece_par_la_caisse', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : une pièce d'achat du dossier du client (par le propriétaire), un apport et un paiement par le chef ──
+    insert into pieces (dossier_id, storage_path, nom_fichier, type_piece, statut)
+    values (dossier_du_client, dossier_du_client::text || '/essai-rls-caisse-cp.pdf', 'essai-rls-caisse-cp.pdf', 'achat', 'a_valider')
+    returning id into piece;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform enregistrer_operation_caisse(dossier_du_client, 'apport', '2026-03-03', 10, null, null, null, apport);
+    select o.id into paiement from regler_piece_par_la_caisse(dossier_du_client, piece, '2026-03-04', -5) o;
+    reset role;
+    construit := true;
+
+    -- CP1 : le client règle la pièce, puis écrit la contrepartie du paiement du chef ; puis ce qu'il lit.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform regler_piece_par_la_caisse(dossier_du_client, piece, '2026-03-04', -5);
+      reglement := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if reglement is null then reglement := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)
+      values (dossier_du_client, '2026-03-04', '530000', 'essai', 5, 'credit', paiement, piece);
+      contrepartie := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if contrepartie is null then contrepartie := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into vus from operations_caisse where dossier_id = dossier_du_client;
+    select count(*) into lignes_vues from ecritures_brouillon where operation_caisse_id = paiement;
+    reset role;
+    select count(*) into ecrites from operations_caisse where dossier_id = dossier_du_client and genre = 'paiement';
+    verdicts := verdicts || jsonb_build_object('controle', 'CP1. le client ne règle pas une pièce de son dossier par la caisse, n''écrit pas la contrepartie du paiement du chef, et ne lit ni l''un ni l''autre',
+      'cible', 'regler_piece_par_la_caisse, ecritures_brouillon',
+      'observe', 'règlement : ' || reglement || ' | contrepartie : ' || contrepartie || ' | paiements écrits : ' || ecrites
+        || ' | lus par le client : ' || vus || '/' || lignes_vues,
+      'ok', reglement = '42501 Accès refusé à ce dossier.'
+        and contrepartie = '42501 new row violates row-level security policy for table "ecritures_brouillon"'
+        and ecrites = 1 and vus = 0 and lignes_vues = 0);
+
+    -- M-CP1 et M-CP2 : joué par le chef — le paiement, puis la contrepartie, passent.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform regler_piece_par_la_caisse(dossier_du_client, piece, '2026-03-04', -5);
+      chef_reglement := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if chef_reglement is null then chef_reglement := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)
+      values (dossier_du_client, '2026-03-04', '530000', 'essai', 5, 'credit', paiement, piece);
+      chef_contrepartie := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if chef_contrepartie is null then chef_contrepartie := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('jd.caisse', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-CP1 — CP1 joué par le chef : le paiement',
+      'attendu', 'accepté', 'observe', chef_reglement, 'mord', chef_reglement = 'ACCEPTÉ');
+    mutations := mutations || jsonb_build_object('mutation', 'M-CP2 — CP1 joué par le chef : la contrepartie',
+      'attendu', 'accepté', 'observe', chef_contrepartie, 'mord', chef_contrepartie = 'ACCEPTÉ');
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- CP2 : l'anonyme.
+  begin
+    set local role anon;
+    perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+    perform regler_piece_par_la_caisse(dossier_du_client, null, null, null);
+    anon_reglement := 'ACCEPTÉ';
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if anon_reglement is null then anon_reglement := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  verdicts := verdicts || jsonb_build_object('controle', 'CP2. l''anonyme n''exécute pas le paiement d''une pièce par la caisse',
+    'cible', 'regler_piece_par_la_caisse', 'observe', anon_reglement,
+    'ok', anon_reglement = '42501 permission denied for function regler_piece_par_la_caisse');
+
+  -- CP3 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.prosecdef and p.proconfig @> array['search_path=public']
+     and not has_function_privilege('anon', p.oid, 'execute')
+     and not exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0)
+     and (p.oid = to_regprocedure('public.regler_piece_par_la_caisse(uuid, uuid, date, numeric)')
+            and has_function_privilege('authenticated', p.oid, 'execute')
+          or p.oid in (to_regprocedure('public.garder_piece_payee_par_la_caisse()'), to_regprocedure('public.garder_caisse_depuis_l_ouverture()'))
+            and not has_function_privilege('authenticated', p.oid, 'execute'));
+  verdicts := verdicts || jsonb_build_object('controle', 'CP3. security definer, leur chemin fixé ; le paiement exécutable par les connectés, les deux gardes par personne, ni l''anonyme ni PUBLIC (lecture du catalogue)',
+    'cible', 'regler_piece_par_la_caisse, garder_piece_payee_par_la_caisse, garder_caisse_depuis_l_ouverture', 'observe', n || ' sur 3', 'ok', n = 3);
+  verdicts := verdicts || jsonb_build_object('controle', 'CP. le jeu d''essai du paiement s''est construit', 'cible', 'le dossier du client',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 

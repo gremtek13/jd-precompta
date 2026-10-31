@@ -81,6 +81,28 @@
 -- ne se joue que SANS elle — ce qu'elle remplace, le rattachement d'espèces à un crédit, que la caisse jugeait (74c), et
 -- que la garde refuse désormais la première (74c, sous le genre « …3 »). Les espèces du 11/03 que le crédit du 12/03 a
 -- remises (60b) naissent désormais par la restauration (60bb) : la fonction les refuserait avec la migration.
+--
+-- ÉTENDU LE 31/10/2026 (ligne 26.6, étape C8 : la migration `paiement_par_la_caisse`, PRÉPARÉE, pas appliquée). Les
+-- contrôles 200 à 231, neuf dossiers jetables de plus (préfixe `ca155e00-0000-4000-800a`) : qui règle une pièce par la
+-- caisse (l'anonyme, un compte rattaché à rien, le client, le chef d'un autre cabinet, le chef) ; chaque refus de
+-- `regler_piece_par_la_caisse`, sous ses mots et son code, et dans l'ordre — la trésorerie, la pièce du dossier, son type,
+-- l'exemplaire d'une facture source, la date, le montant, le sens (un achat, une vente, un avoir de chacun), le plafond
+-- d'une pièce validée —, et la caisse négative par un paiement, dès l'appel, et par son retrait ; ce qui s'écrit
+-- (l'opération, aucune ligne du
+-- brouillon) ; la contrepartie, écrite par le chef sous la RLS, admise et refusée (son paiement, son compte, son sens, sa
+-- part, sa pièce, un paiement retiré, une ligne sans pièce, la pièce sur un apport, le client), qui ne se modifie pas et
+-- part avec son paiement ; la pièce gardée (ni note de frais ni pièce « autre », ni l'exemplaire d'une facture source, ni
+-- un autre dossier, même le paiement retiré) ; l'ensemble reconnu d'une recette, étendu aux paiements de pièces de vente du
+-- jour (le paiement qui manque, celui d'un achat, d'un autre jour, retiré ; l'ordre, après l'encaissement qui manque) ; LA
+-- CAISSE BORNÉE PAR SON OUVERTURE — un mouvement d'avant l'ouverture ne se classe pas sur la caisse (par la fonction, sans
+-- elle, en le déplaçant, la restauration exceptée), un mouvement déjà classé se retire et ne compte pas, ce qui reste d'un
+-- dossier repris sans ligne de caisse, une reprise posée après coup qui viderait la caisse, une ouverture au crédit qui
+-- quitte son dossier et y emporte la borne ; le catalogue. Une étape de
+-- genre « …4 » ne se joue qu'avec cette migration : sans elle, une ligne dit qu'elles attendent (EN ATTENTE) ; une étape de
+-- genre « …4h » ne se joue que SANS elle (162 : la liste des fonctions qui posent le réglage d'une opération, que le
+-- paiement allonge), et peut porter avant ce suffixe celui d'une étape d'avant (« valeur24h »). Ce qui supprime — la
+-- contrepartie que « Régénérer » reprend, la pièce qu'un paiement cite — se joue sur une réplique, dans
+-- `caisseSuppression.sql`.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -109,7 +131,11 @@ declare
   -- attendent ; avec elle, celles qu'elle remplace (genre « …3h ») se taisent.
   c6 boolean := exists (select 1 from pg_proc p where p.oid = to_regprocedure('public.garder_encaissement_facture()')
                          and p.prosrc like '%Un encaissement en espèces ne cite aucun crédit du relevé%');
+  -- La migration de l'étape C8 : la fonction du paiement d'une pièce par la caisse. Sans elle, ses étapes (genre « …4 »)
+  -- attendent ; avec elle, celles qu'elle remplace (genre « …4h ») se taisent.
+  c8 boolean := to_regprocedure('public.regler_piece_par_la_caisse(uuid, uuid, date, numeric)') is not null;
   genre text; en_attente integer := 0; en_attente3 integer := 0; remplacees integer := 0;
+  en_attente4 integer := 0; remplacees4 integer := 0;
   cle text; valeur text; s text;
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
@@ -188,7 +214,35 @@ begin
     || jsonb_build_object(
       'S6', 'ca155e00-0000-4000-8009-000000000001', 'N6', 'ca155e00-0000-4000-8009-000000000002',
       'MS1', 'ca155e00-0000-4000-8009-000000000011', 'MS3', 'ca155e00-0000-4000-8009-000000000013',
-      'MN1', 'ca155e00-0000-4000-8009-000000000021');
+      'MN1', 'ca155e00-0000-4000-8009-000000000021')
+    -- L'étape C8 : neuf dossiers (P8, le paiement - E8, en engagement - B8, basculé - O8, repris avec sa caisse - Z8, repris
+    -- sans ligne de caisse - W8, sans reprise - Y8, repris avec 10 € en caisse - G8, repris avec sa caisse au crédit - H8,
+    -- sans reprise), deux catégories, quatorze pièces, sept mouvements, huit à-nouveaux. (Aucun point-virgule ici non plus.)
+    || jsonb_build_object(
+      'P8', 'ca155e00-0000-4000-800a-000000000001', 'E8', 'ca155e00-0000-4000-800a-000000000002',
+      'B8', 'ca155e00-0000-4000-800a-000000000003', 'O8', 'ca155e00-0000-4000-800a-000000000004',
+      'Z8', 'ca155e00-0000-4000-800a-000000000005', 'W8', 'ca155e00-0000-4000-800a-000000000006',
+      'Y8', 'ca155e00-0000-4000-800a-000000000007', 'QEX', 'ca155e00-0000-4000-800a-00000000002e',
+      'K8', 'ca155e00-0000-4000-800a-000000000011', 'KB8', 'ca155e00-0000-4000-800a-000000000012')
+    || jsonb_build_object(
+      'QA', 'ca155e00-0000-4000-800a-000000000021', 'QV', 'ca155e00-0000-4000-800a-000000000022',
+      'QE', 'ca155e00-0000-4000-800a-000000000023', 'QAA', 'ca155e00-0000-4000-800a-000000000024',
+      'QVA', 'ca155e00-0000-4000-800a-000000000025', 'QN', 'ca155e00-0000-4000-800a-000000000026',
+      'QO', 'ca155e00-0000-4000-800a-000000000027', 'QE8', 'ca155e00-0000-4000-800a-000000000028',
+      'QB1', 'ca155e00-0000-4000-800a-000000000029', 'QB2', 'ca155e00-0000-4000-800a-00000000002a',
+      'QO8', 'ca155e00-0000-4000-800a-00000000002b', 'QV8', 'ca155e00-0000-4000-800a-00000000002c',
+      'QDA', 'ca155e00-0000-4000-800a-00000000002d')
+    || jsonb_build_object(
+      'MO1', 'ca155e00-0000-4000-800a-000000000031', 'MO2', 'ca155e00-0000-4000-800a-000000000032',
+      'MO3', 'ca155e00-0000-4000-800a-000000000033', 'MO4', 'ca155e00-0000-4000-800a-000000000034',
+      'MZ1', 'ca155e00-0000-4000-800a-000000000035', 'MZ2', 'ca155e00-0000-4000-800a-000000000036',
+      'AO1', 'ca155e00-0000-4000-800a-000000000041', 'AO2', 'ca155e00-0000-4000-800a-000000000042',
+      'AZ1', 'ca155e00-0000-4000-800a-000000000043', 'AZ2', 'ca155e00-0000-4000-800a-000000000044',
+      'AY1', 'ca155e00-0000-4000-800a-000000000045', 'AY2', 'ca155e00-0000-4000-800a-000000000046')
+    || jsonb_build_object(
+      'G8', 'ca155e00-0000-4000-800a-000000000008', 'H8', 'ca155e00-0000-4000-800a-000000000009',
+      'MG1', 'ca155e00-0000-4000-800a-000000000037', 'AG1', 'ca155e00-0000-4000-800a-000000000047',
+      'AG2', 'ca155e00-0000-4000-800a-000000000048');
 
   select string_agg(n::text, '/') into avant from (values
     ((select count(*) from dossiers)), ((select count(*) from operations_caisse)), ((select count(*) from ecritures_brouillon)),
@@ -1184,9 +1238,12 @@ begin
     array['valeur2', '161. les fonctions qui retirent les lignes du brouillon d''une opération : les deux de la caisse, et elles seules', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc
       where pronamespace = 'public'::regnamespace and prosrc like '%delete from public.ecritures_brouillon where operation_caisse_id%'$q$, '',
       'remplacer_operation_caisse,retirer_operation_caisse'],
-    array['valeur2', '162. les fonctions qui posent le réglage d''une opération : la saisie, le retrait, le remplacement', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc
+    array['valeur24h', '162. les fonctions qui posent le réglage d''une opération : la saisie, le retrait, le remplacement (sans la migration de l''étape C8)', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc
       where pronamespace = 'public'::regnamespace and prosrc like '%set_config(''jd.caisse'',%'$q$, '',
       'enregistrer_operation_caisse,remplacer_operation_caisse,retirer_operation_caisse'],
+    array['valeur4', '162. … avec elle, le paiement d''une pièce aussi', 'postgres', $q$select string_agg(proname, ',' order by proname collate "C") from pg_proc
+      where pronamespace = 'public'::regnamespace and prosrc like '%set_config(''jd.caisse'',%'$q$, '',
+      'enregistrer_operation_caisse,regler_piece_par_la_caisse,remplacer_operation_caisse,retirer_operation_caisse'],
     array['valeur2', '163. le refus d''un compte 53 : la caisse en trésorerie, la phrase d''hier en engagement et pour les autres comptes de trésorerie', 'postgres', $q$select string_agg(c || '/' || m || ':' || left(coalesce(refus_compte_de_bilan(c, m, '108000'), 'accepté'), 24), ' | ' order by c, m) from unnest(array['514000', '530000', '531000', '541000']) c, unnest(array['engagement', 'tresorerie']) m$q$, '',
       '514000/engagement:Un virement vers un autr | 514000/tresorerie:Un virement vers un autr | 530000/engagement:Un virement vers un autr | 530000/tresorerie:Seule la caisse du dossi | 531000/engagement:Un virement vers un autr | 531000/tresorerie:Seule la caisse du dossi | 541000/engagement:Un virement vers un autr | 541000/tresorerie:Un virement vers un autr'],
 
@@ -1269,7 +1326,374 @@ begin
     array['valeur3', '179. la règle vit dans la garde des encaissements, une fois ; aucune autre fonction ne la dit', 'postgres', $q$select string_agg(p.proname || ':' || ((length(p.prosrc) - length(replace(p.prosrc, 'ne cite aucun crédit du relevé', ''))) / length('ne cite aucun crédit du relevé')), ',' order by p.proname collate "C") from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prosrc like '%ne cite aucun crédit du relevé%'$q$, '',
       'garder_encaissement_facture:1'],
     array['valeur3', '179b. la garde : ni security definer, ni exécutable par l''anonyme ou un compte connecté ; son seul déclencheur, avant l''insertion, la mise à jour et la suppression', 'postgres', $q$select p.prosecdef || ':' || has_function_privilege('anon', p.oid, 'execute') || ':' || has_function_privilege('authenticated', p.oid, 'execute') || ':' || (select string_agg(t.tgname || '/' || t.tgtype, ',' order by t.tgname) from pg_trigger t where t.tgfoid = p.oid) from pg_proc p where p.oid = to_regprocedure('public.garder_encaissement_facture()')$q$, '',
-      'false:false:false:encaissements_factures_gardes/31']
+      'false:false:false:encaissements_factures_gardes/31'],
+    -- ══ 200 à 231. Le paiement d'une pièce par la caisse, et la caisse bornée par son ouverture (étape C8, la migration
+    -- `paiement_par_la_caisse`) ══════════
+    -- P8 (trésorerie, non assujetti) porte les pièces du paiement ; E8 est en engagement ; B8 a basculé ; O8 est repris au
+    -- 1er janvier 2026 avec 300 € en caisse, Z8 sans ligne de caisse ; W8 n'a pas de reprise ; G8 reprend sa caisse au
+    -- crédit (219f), H8 n'a pas de reprise. V porte l'exercice 2025
+    -- validé (section 80), DA est le dossier de l'autre cabinet (6).
+    array['jeu4', 'C8 : neuf dossiers jetables, leurs catégories, leurs pièces, leurs mouvements, trois reprises', 'postgres', $q$insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, statut_tva, ventes_par_les_factures) values
+      ('{P8}', 'ESSAI CAISSE P8', '{CAB}', 'tresorerie', '455000', null, false), ('{E8}', 'ESSAI CAISSE E8', '{CAB}', 'engagement', '455000', null, false),
+      ('{B8}', 'ESSAI CAISSE B8', '{CAB}', 'tresorerie', '455000', null, true), ('{O8}', 'ESSAI CAISSE O8', '{CAB}', 'tresorerie', '455000', null, false),
+      ('{Z8}', 'ESSAI CAISSE Z8', '{CAB}', 'tresorerie', '455000', null, false), ('{W8}', 'ESSAI CAISSE W8', '{CAB}', 'tresorerie', '455000', null, false),
+      ('{Y8}', 'ESSAI CAISSE Y8', '{CAB}', 'tresorerie', '455000', null, false), ('{G8}', 'ESSAI CAISSE G8', '{CAB}', 'tresorerie', '455000', null, false),
+      ('{H8}', 'ESSAI CAISSE H8', '{CAB}', 'tresorerie', '455000', null, false);
+      insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
+      ('{K8}', '{P8}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KB8}', '{B8}', 'essai_hon', 'Honoraires', '706000', 'AA');
+      insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, montant_ttc) values
+      ('{QA}', '{P8}', '{P8}/essai-qa.pdf', 'essai-qa.pdf', 'achat', 'a_valider', 100), ('{QV}', '{P8}', '{P8}/essai-qv.pdf', 'essai-qv.pdf', 'achat', 'validee', 50),
+      ('{QE}', '{P8}', '{P8}/essai-qe.pdf', 'essai-qe.pdf', 'vente', 'validee', 80), ('{QAA}', '{P8}', '{P8}/essai-qaa.pdf', 'essai-qaa.pdf', 'achat', 'validee', -15),
+      ('{QVA}', '{P8}', '{P8}/essai-qva.pdf', 'essai-qva.pdf', 'vente', 'validee', -20), ('{QN}', '{P8}', '{P8}/essai-qn.pdf', 'essai-qn.pdf', 'note_frais', 'a_valider', 12),
+      ('{QO}', '{P8}', '{P8}/essai-qo.pdf', 'essai-qo.pdf', 'autre', 'a_valider', null), ('{QE8}', '{E8}', '{E8}/essai-qe8.pdf', 'essai-qe8.pdf', 'achat', 'a_valider', 10),
+      ('{QB1}', '{B8}', '{B8}/essai-qb1.pdf', 'essai-qb1.pdf', 'vente', 'a_valider', 15), ('{QO8}', '{O8}', '{O8}/essai-qo8.pdf', 'essai-qo8.pdf', 'achat', 'a_valider', 10),
+      ('{QV8}', '{V}', '{V}/essai-qv8.pdf', 'essai-qv8.pdf', 'achat', 'a_valider', 10), ('{QDA}', '{DA}', '{DA}/essai-qda.pdf', 'essai-qda.pdf', 'achat', 'a_valider', 10);
+      insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values
+      ('{MO1}', '{O8}', '2025-12-20', 'ESSAI RETRAIT DAB', -100, 'non_rapprochee'), ('{MO2}', '{O8}', '2026-01-01', 'ESSAI RETRAIT DAB', -40, 'non_rapprochee'),
+      ('{MO3}', '{O8}', '2025-12-28', 'ESSAI VERSEMENT ESPECES', 60, 'non_rapprochee'), ('{MZ1}', '{Z8}', '2025-12-20', 'ESSAI RETRAIT DAB', -100, 'non_rapprochee');
+      insert into a_nouveaux (id, dossier_id, date, compte, sens, montant, source_nom, source_empreinte) values
+      ('{AO1}', '{O8}', '2026-01-01', '530000', 'debit', 300, 'balance-essai-o8.csv', repeat('e', 64)), ('{AO2}', '{O8}', '2026-01-01', '101000', 'credit', 300, 'balance-essai-o8.csv', repeat('e', 64)),
+      ('{AZ1}', '{Z8}', '2026-01-01', '512000', 'debit', 50, 'balance-essai-z8.csv', repeat('f', 64)), ('{AZ2}', '{Z8}', '2026-01-01', '101000', 'credit', 50, 'balance-essai-z8.csv', repeat('f', 64)),
+      ('{AY1}', '{Y8}', '2026-01-01', '530000', 'debit', 10, 'balance-essai-y8.csv', repeat('b', 64)), ('{AY2}', '{Y8}', '2026-01-01', '101000', 'credit', 10, 'balance-essai-y8.csv', repeat('b', 64))$q$, '', ''],
+    array['fait4', '200. une facture source de B8, validée ; son exemplaire, réinséré par le super-administrateur', 'chef', $q$select enregistrer_facture('{B8}', null, {FACTURE});
+      insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, montant_ttc, facture_id)
+      select '{QB2}', '{B8}', '{B8}/essai-qb2.pdf', 'essai-qb2.pdf', 'vente', 'a_valider', 1200, f.id from factures_emises f where f.dossier_id = '{B8}'$q$, 'OK', ''],
+    array['fait4', '200b. un apport de 500 € le 01/03 dans P8', 'chef', $q$select enregistrer_operation_caisse('{P8}', 'apport', '2026-03-01', 500, null, null, null, '[{"compte":"530000","sens":"debit","montant":500},{"compte":"108000","sens":"credit","montant":500}]')$q$,
+      'OK', ''],
+    array['fait4', '200c. une facture de P8, qui n''a pas basculé : elle n''est pas source ; son exemplaire, réinséré par le super-administrateur', 'chef', $q$select enregistrer_facture('{P8}', null, {FACTURE});
+      insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, montant_ttc, facture_id)
+      select '{QEX}', '{P8}', '{P8}/essai-qex.pdf', 'essai-qex.pdf', 'vente', 'a_valider', 1200, f.id from factures_emises f where f.dossier_id = '{P8}'$q$, 'OK', ''],
+    array['capture4', 'l''apport de P8', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{P8}' and o.genre = 'apport'$q$, 'PAP', ''],
+
+    -- 201. Qui règle.
+    array['controle4', '201. un anonyme n''exécute pas la fonction', 'anon', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-05', -10)$q$,
+      '42501', 'permission denied for function regler_piece_par_la_caisse'],
+    array['controle4', '201b. un compte rattaché à rien', 'inconnu', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-05', -10)$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle4', '201c. le client, sur son dossier, avant même d''en lire la pièce', 'client', $q$select regler_piece_par_la_caisse('{DC}', 'ca155e00-0000-4000-800a-0000000000ff', null, null)$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle4', '201d. le client, sur un autre dossier', 'client', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-05', -10)$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle4', '201e. le chef d''un autre cabinet', 'autre', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-05', -10)$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle4', '201f. … règle une pièce de son dossier (le contrôle POSITIF du profil)', 'autre', $q$select regler_piece_par_la_caisse('{DA}', '{QDA}', '2026-03-04', -5)$q$,
+      'OK', ''],
+    array['controle4', '201g. un dossier qui n''existe pas, sous les mêmes mots, même pour le super-administrateur', 'chef', $q$select regler_piece_par_la_caisse('ca155e00-0000-4000-800a-0000000000fe', '{QA}', '2026-03-05', -10)$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+
+    -- 202 à 210. Chaque refus, sous ses mots, et dans l'ordre.
+    array['controle4', '202. le dossier en engagement', 'chef', $q$select regler_piece_par_la_caisse('{E8}', '{QE8}', '2026-03-05', -10)$q$,
+      '22023', 'La caisse ne se tient que dans un dossier en comptabilité de trésorerie.'],
+    array['controle4', '202b. ordre : l''accès avant l''engagement', 'client', $q$select regler_piece_par_la_caisse('{E8}', null, null, null)$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle4', '203. la pièce d''un autre dossier', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{PT}', '2026-03-05', -10)$q$,
+      'P0002', 'Cette pièce n''est pas une pièce de ce dossier : relis ses pièces.'],
+    array['controle4', '203b. une pièce qui n''existe pas', 'chef', $q$select regler_piece_par_la_caisse('{P8}', 'ca155e00-0000-4000-800a-0000000000fd', '2026-03-05', -10)$q$,
+      'P0002', 'Cette pièce n''est pas une pièce de ce dossier : relis ses pièces.'],
+    array['controle4', '203c. aucune pièce', 'chef', $q$select regler_piece_par_la_caisse('{P8}', null, '2026-03-05', -10)$q$,
+      'P0002', 'Cette pièce n''est pas une pièce de ce dossier : relis ses pièces.'],
+    array['controle4', '203d. ordre : l''engagement avant la pièce', 'chef', $q$select regler_piece_par_la_caisse('{E8}', null, null, null)$q$,
+      '22023', 'La caisse ne se tient que dans un dossier en comptabilité de trésorerie.'],
+    array['controle4', '204. une note de frais', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QN}', '2026-03-05', -10)$q$,
+      '22023', 'Une note de frais est payée de ta poche ; payée par la caisse, c''est un achat : change d''abord son type.'],
+    array['controle4', '204b. une pièce « autre »', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QO}', '2026-03-05', -10)$q$,
+      '22023', 'Seule une pièce d''achat ou de vente se paie par la caisse.'],
+    array['controle4', '204c. ordre : la pièce avant son type — celle d''un autre dossier, une note de frais', 'chef', $q$select regler_piece_par_la_caisse('{O8}', '{QN}', null, null)$q$,
+      'P0002', 'Cette pièce n''est pas une pièce de ce dossier : relis ses pièces.'],
+    array['controle4', '204d. ordre : le type avant la date', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QN}', null, null)$q$,
+      '22023', 'Une note de frais est payée de ta poche ; payée par la caisse, c''est un achat : change d''abord son type.'],
+    array['controle4', '205. l''exemplaire d''une facture source', 'chef', $q$select regler_piece_par_la_caisse('{B8}', '{QB2}', '2026-03-12', 10)$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2026-%, qui compte sa vente : enregistre l''encaissement en espèces de la facture.'],
+    array['controle4', '205b. ordre : l''exemplaire avant la date', 'chef', $q$select regler_piece_par_la_caisse('{B8}', '{QB2}', null, null)$q$,
+      '22023', 'Cette pièce est l''exemplaire de la facture F2026-%, qui compte sa vente : enregistre l''encaissement en espèces de la facture.'],
+    array['controle4', '205c. MUTATION : une pièce de vente d''un dossier basculé qui n''est pas l''exemplaire d''une facture source se paie', 'chef', $q$select regler_piece_par_la_caisse('{B8}', '{QB1}', '2026-03-12', 15)$q$,
+      'OK', ''],
+    array['controle4', '205d. MUTATION : l''exemplaire d''une facture qui n''est pas source compte sa vente lui-même, et se paie', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QEX}', '2026-03-12', 10)$q$,
+      'OK', ''],
+    array['controle4', '206. la date nulle', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', null, -10)$q$,
+      '22023', 'La date de l''opération de caisse est à renseigner.'],
+    array['controle4', '206b. la date d''avant 2000', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '1999-12-31', -10)$q$,
+      '22023', 'Une opération de caisse ne se date pas avant l''an 2000.'],
+    array['controle4', '206c. la date dans l''avenir, à Paris', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '{DEMAIN}', -10)$q$,
+      '22023', 'Une opération de caisse ne se date pas dans l''avenir : nous sommes le __/__/20__.'],
+    array['controle4', '206d. la date d''avant l''ouverture d''un dossier repris', 'chef', $q$select regler_piece_par_la_caisse('{O8}', '{QO8}', '2025-12-31', -10)$q$,
+      '22023', 'Cette opération précède l''ouverture du dossier, le 01/01/2026 : elle est dans les comptes repris.'],
+    array['controle4', '206e. un jour de l''exercice validé', 'chef', $q$select regler_piece_par_la_caisse('{V}', '{QV8}', '2025-12-31', -10)$q$,
+      '23514', 'L''exercice 2025 est validé : sa caisse ne change plus.'],
+    array['controle4', '206f. ordre : la frontière avant le montant', 'chef', $q$select regler_piece_par_la_caisse('{V}', '{QV8}', '2025-12-31', 0)$q$,
+      '23514', 'L''exercice 2025 est validé : sa caisse ne change plus.'],
+    array['controle4', '206g. ordre : la date avant le montant', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '1999-12-31', 0)$q$,
+      '22023', 'Une opération de caisse ne se date pas avant l''an 2000.'],
+    array['controle4', '207. le montant nul', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-05', null)$q$,
+      '22023', 'Le montant de l''opération de caisse est à renseigner.'],
+    array['controle4', '207b. le montant pas au centime', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-05', -10.005)$q$,
+      '22023', 'Le montant d''une opération de caisse est au centime.'],
+    array['controle4', '207c. le montant de zéro euro', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-05', 0)$q$,
+      '22023', 'Une opération de caisse de zéro euro n''a rien à écrire.'],
+    array['controle4', '207d. un montant au-delà de ce que l''application compte', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-05', -10000000000000)$q$,
+      '22023', 'Le montant d''une opération de caisse dépasse ce que l''application compte.'],
+    array['controle4', '207e. ordre : le montant avant le sens', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-05', 10.005)$q$,
+      '22023', 'Le montant d''une opération de caisse est au centime.'],
+    array['controle4', '208. une pièce d''achat qui ferait entrer des espèces', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-05', 10)$q$,
+      '22023', 'Ce paiement ne va pas dans le sens de sa pièce : une pièce d''achat fait sortir des espèces (un montant négatif), une pièce de vente en fait entrer (positif) — l''inverse pour un avoir.'],
+    array['controle4', '208b. une pièce de vente qui en ferait sortir', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QE}', '2026-03-05', -10)$q$,
+      '22023', 'Ce paiement ne va pas dans le sens de sa pièce : une pièce d''achat fait sortir des espèces (un montant négatif), une pièce de vente en fait entrer (positif) — l''inverse pour un avoir.'],
+    array['controle4', '208c. l''avoir d''un fournisseur (un achat de montant négatif) qui en ferait sortir', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QAA}', '2026-03-05', -5)$q$,
+      '22023', 'Ce paiement ne va pas dans le sens de sa pièce : une pièce d''achat fait sortir des espèces (un montant négatif), une pièce de vente en fait entrer (positif) — l''inverse pour un avoir.'],
+    array['controle4', '208d. l''avoir d''un client (une vente de montant négatif) qui en ferait entrer', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QVA}', '2026-03-05', 5)$q$,
+      '22023', 'Ce paiement ne va pas dans le sens de sa pièce : une pièce d''achat fait sortir des espèces (un montant négatif), une pièce de vente en fait entrer (positif) — l''inverse pour un avoir.'],
+    array['controle4', '208e. MUTATION : l''avoir d''un fournisseur fait entrer des espèces', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QAA}', '2026-03-05', 5)$q$,
+      'OK', ''],
+    array['controle4', '208f. MUTATION : l''avoir d''un client en fait sortir', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QVA}', '2026-03-05', -5)$q$,
+      'OK', ''],
+    array['controle4', '208g. MUTATION : une vente en fait entrer', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QE}', '2026-03-05', 10)$q$,
+      'OK', ''],
+    array['fait4', '209. un paiement de 30 € de la pièce d''achat validée de 50 €, le 05/03', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QV}', '2026-03-05', -30)$q$,
+      'OK', ''],
+    array['capture4', 'le paiement de QV', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{P8}' and o.genre = 'paiement' and o.date = '2026-03-05'$q$, 'PQV', ''],
+    array['controle4', '209b. un second de 25 € dépasserait son montant', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QV}', '2026-03-06', -25)$q$,
+      '22023', 'Les paiements de cette pièce par la caisse dépasseraient son montant : relis ses paiements.'],
+    array['controle4', '209c. MUTATION : un second de 20 € l''atteint, et passe', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QV}', '2026-03-06', -20)$q$,
+      'OK', ''],
+    array['controle4', '209d. une pièce à valider n''a pas de plafond : son montant est encore une lecture', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-06', -150)$q$,
+      'OK', ''],
+    array['controle4', '209e. ordre : le sens avant le plafond', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QV}', '2026-03-06', 25)$q$,
+      '22023', 'Ce paiement ne va pas dans le sens de sa pièce : une pièce d''achat fait sortir des espèces (un montant négatif), une pièce de vente en fait entrer (positif) — l''inverse pour un avoir.'],
+    array['controle4', '209f. un paiement retiré ne compte plus dans le plafond', 'chef', $q$select retirer_operation_caisse('{P8}', '{PQV}');
+      select regler_piece_par_la_caisse('{P8}', '{QV}', '2026-03-06', -50)$q$,
+      'OK', ''],
+    array['controle4', '210. un paiement qui viderait la caisse', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-07', -1000)$q$,
+      '23514', 'Ce paiement de 1000,00 € rendrait la caisse négative le 07/03/2026 (−530,00 €) : saisis d''abord les recettes en espèces qui le précèdent ; si tu as payé de ta poche, ce n''est pas la caisse : c''est une note de frais.'],
+    array['controle4', '210b. … le jour d''avant l''apport, même d''un euro', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-02-28', -1)$q$,
+      '23514', 'Ce paiement de 1,00 € rendrait la caisse négative le 28/02/2026 (−1,00 €) : saisis d''abord les recettes en espèces qui le précèdent ; si tu as payé de ta poche, ce n''est pas la caisse : c''est une note de frais.'],
+    array['controle4', '210c. une entrée d''espèces ne se juge pas, même avant l''apport', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QE}', '2026-02-27', 10)$q$,
+      'OK', ''],
+    -- Le refus est celui de l'APPEL, comme le module le dit avant le clic : une entrée d'espèces qui le suit dans la même
+    -- transaction ne le rattrape pas (les déclencheurs différés, qui disent les mêmes mots, le rattraperaient).
+    array['controle4', '210d. … refusé à l''appel : un apport qui le suit dans la même transaction ne le rattrape pas', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-07', -1000);
+      select enregistrer_operation_caisse('{P8}', 'apport', '2026-03-07', 1000, null, null, null, '[{"compte":"530000","sens":"debit","montant":1000},{"compte":"108000","sens":"credit","montant":1000}]')$q$,
+      '23514', 'Ce paiement de 1000,00 € rendrait la caisse négative le 07/03/2026 (−530,00 €) : saisis d''abord les recettes en espèces qui le précèdent ; si tu as payé de ta poche, ce n''est pas la caisse : c''est une note de frais.'],
+    -- Le paiement d'une pièce de vente apporte des espèces : retiré après qu'elles ont servi, la caisse le refuse, sous les
+    -- mots du retrait d'une recette (`retirer_operation_caisse`, la migration `caisse_retrait_et_versement`).
+    array['controle4', '210e. le paiement de la pièce de vente QE, 80 € le 02/03, ne se retire plus quand un prélèvement du 03/03 a dépensé ses espèces', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QE}', '2026-03-02', 80);
+      select enregistrer_operation_caisse('{P8}', 'prelevement', '2026-03-03', 540, null, null, null, '[{"compte":"108000","sens":"debit","montant":540},{"compte":"530000","sens":"credit","montant":540}]');
+      select retirer_operation_caisse('{P8}', (select o.id from operations_caisse o where o.dossier_id = '{P8}' and o.piece_id = '{QE}' and o.retire_le is null))$q$,
+      '23514', 'Retirer ce paiement de 80,00 € rendrait la caisse négative le 03/03/2026 (−40,00 €) : retire d''abord les sorties d''espèces qui le suivent.'],
+    array['valeur4', '211. ce qui s''écrit : un paiement qui cite sa pièce, l''origine et l''auteur posés par la base, ni catégorie, ni taux, ni ensemble', 'postgres', $q$select genre || '/' || (piece_id = '{QV}') || '/' || montant || '/' || origine || '/' || (cree_par = '{CHEF}') || '/' || coalesce(categorie_id::text, '-') || coalesce(taux_tva::text, '-') || coalesce(encaissements_du_jour::text, '-') || '/' || (retire_le is null) from operations_caisse where id = '{PQV}'$q$, '',
+      'paiement/true/-30/cabinet/true/---/true'],
+    array['valeur4', '211b. … et aucune ligne du brouillon : sa contrepartie s''écrit avec les écritures de sa pièce', 'postgres', $q$select count(*)::text from ecritures_brouillon where operation_caisse_id = '{PQV}'$q$, '', '0'],
+
+    -- 212 et 213. La contrepartie : une ligne que l'application écrit sous la RLS du brouillon, avec les écritures de la pièce.
+    array['controle4', '212. la contrepartie du paiement de QV, écrite par le chef : la caisse au crédit, 30 €, à sa date, sa pièce', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 30, 'credit', '{PQV}', '{QV}')$q$,
+      'OK', ''],
+    array['controle4', '212b. … ou en deux lignes, 10 € et 20 €', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 10, 'credit', '{PQV}', '{QV}');
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 20, 'credit', '{PQV}', '{QV}')$q$,
+      'OK', ''],
+    array['controle4', '212c. à une autre date que son paiement', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-06', '530000', 'essai', 30, 'credit', '{PQV}', '{QV}')$q$,
+      '23514', 'Cette écriture ne suit pas son opération de caisse : son dossier, sa date, ou sa pièce.'],
+    array['controle4', '212d. sur une autre pièce', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 30, 'credit', '{PQV}', '{QA}')$q$,
+      '23514', 'Cette écriture ne suit pas son opération de caisse : son dossier, sa date, ou sa pièce.'],
+    array['controle4', '212e. sur un autre compte que la caisse du plan', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '512000', 'essai', 30, 'credit', '{PQV}', '{QV}')$q$,
+      '23514', 'La contrepartie d''un paiement par la caisse s''écrit au compte de la caisse du dossier (530000).'],
+    array['controle4', '212f. dans l''autre sens que ses espèces', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 30, 'debit', '{PQV}', '{QV}')$q$,
+      '23514', 'La contrepartie d''un paiement par la caisse suit ses espèces : au débit quand elles entrent, au crédit quand elles sortent.'],
+    array['controle4', '212g. plus que son paiement, d''un centime', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 30.01, 'credit', '{PQV}', '{QV}')$q$,
+      '23514', 'La contrepartie d''un paiement par la caisse ne dépasse pas ce paiement.'],
+    array['controle4', '212h. … ou deux lignes qui, ensemble, le dépassent', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 20, 'credit', '{PQV}', '{QV}');
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 15, 'credit', '{PQV}', '{QV}')$q$,
+      '23514', 'La contrepartie d''un paiement par la caisse ne dépasse pas ce paiement.'],
+    array['controle4', '212i. ordre : son paiement avant le compte', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-06', '512000', 'essai', 30, 'credit', '{PQV}', '{QV}')$q$,
+      '23514', 'Cette écriture ne suit pas son opération de caisse : son dossier, sa date, ou sa pièce.'],
+    array['controle4', '212j. ordre : le compte avant le sens', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '512000', 'essai', 30, 'debit', '{PQV}', '{QV}')$q$,
+      '23514', 'La contrepartie d''un paiement par la caisse s''écrit au compte de la caisse du dossier (530000).'],
+    array['controle4', '212k. ordre : le sens avant la part', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 31, 'debit', '{PQV}', '{QV}')$q$,
+      '23514', 'La contrepartie d''un paiement par la caisse suit ses espèces : au débit quand elles entrent, au crédit quand elles sortent.'],
+    array['controle4', '212l. la contrepartie d''un paiement retiré', 'chef', $q$select retirer_operation_caisse('{P8}', '{PQV}');
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 30, 'credit', '{PQV}', '{QV}')$q$,
+      '23514', 'Cette écriture ne suit pas son opération de caisse : son dossier, sa date, ou sa pièce.'],
+    -- Une ligne qui n'est pas une contrepartie suit la porte d'hier (migration `caisse`) : le réglage de son opération, ou la
+    -- restauration — le super-administrateur dans un dossier sans exercice validé, ce qu'est le chef ici. Le chef de l'autre
+    -- cabinet, qui ne l'est pas, la trouve fermée (212s).
+    array['controle4', '212m. une ligne qui cite le paiement sans sa pièce passe la porte d''hier : celle de la restauration, au super-administrateur', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id) values ('{P8}', '2026-03-05', '530000', 'essai', 30, 'credit', '{PQV}')$q$,
+      'OK', ''],
+    array['controle4', '212n. une pièce sur la ligne d''un apport : la porte d''hier, puis l''opération qu''elle ne suit pas', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-01', '530000', 'essai', 1, 'debit', '{PAP}', '{QV}')$q$,
+      '23514', 'Cette écriture ne suit pas son opération de caisse : son dossier, sa date, ou sa pièce.'],
+    array['controle4', '212o. le client n''écrit pas la contrepartie : la RLS du brouillon, après la garde', 'client', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 30, 'credit', '{PQV}', '{QV}')$q$,
+      '42501', 'new row violates row-level security policy for table "ecritures_brouillon"'],
+    array['controle4', '212p. … ni le chef d''un autre cabinet', 'autre', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 30, 'credit', '{PQV}', '{QV}')$q$,
+      '42501', 'new row violates row-level security policy for table "ecritures_brouillon"'],
+    array['fait4', '212q. le chef de l''autre cabinet, qui n''est pas super-administrateur, règle une pièce de son dossier : 5 €, le 04/03', 'autre', $q$select regler_piece_par_la_caisse('{DA}', '{QDA}', '2026-03-04', -5)$q$,
+      'OK', ''],
+    array['capture4', 'le paiement de QDA', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{DA}' and o.genre = 'paiement'$q$, 'PDA', ''],
+    array['controle4', '212r. … il écrit sa contrepartie sous la RLS (le contrôle POSITIF d''un chef qui n''est pas super-administrateur)', 'autre', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{DA}', '2026-03-04', '530000', 'essai', 5, 'credit', '{PDA}', '{QDA}')$q$,
+      'OK', ''],
+    array['controle4', '212s. … une ligne du paiement sans sa pièce : la porte d''hier lui est fermée', 'autre', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id) values ('{DA}', '2026-03-04', '530000', 'essai', 5, 'credit', '{PDA}')$q$,
+      '42501', 'L''écriture d''une opération de caisse ne s''écrit qu''avec cette opération, par la fonction de la caisse.'],
+    array['controle4', '212t. … une contrepartie sur un autre compte se refuse sous ses mots', 'autre', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{DA}', '2026-03-04', '512000', 'essai', 5, 'credit', '{PDA}', '{QDA}')$q$,
+      '23514', 'La contrepartie d''un paiement par la caisse s''écrit au compte de la caisse du dossier (530000).'],
+    array['controle4', '212u. … une pièce sur la ligne d''un apport : la porte d''hier lui est fermée', 'autre', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)
+      select '{DA}', '2026-03-03', '530000', 'x', 1, 'debit', o.id, '{QDA}' from operations_caisse o where o.dossier_id = '{DA}' and o.genre = 'apport'$q$,
+      '42501', 'L''écriture d''une opération de caisse ne s''écrit qu''avec cette opération, par la fonction de la caisse.'],
+    array['fait4', '213. la contrepartie du paiement de QV, gardée', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 30, 'credit', '{PQV}', '{QV}')$q$,
+      'OK', ''],
+    array['controle4', '213b. elle ne se modifie pas', 'chef', $q$update ecritures_brouillon set date = '2026-03-06' where operation_caisse_id = '{PQV}'$q$,
+      '42501', 'L''écriture d''une opération de caisse ne se modifie pas : retire l''opération, puis saisis-la de nouveau.'],
+    array['controle4', '213c. le paiement couvert, une ligne de plus d''un centime le dépasse', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id) values ('{P8}', '2026-03-05', '530000', 'essai', 0.01, 'credit', '{PQV}', '{QV}')$q$,
+      '23514', 'La contrepartie d''un paiement par la caisse ne dépasse pas ce paiement.'],
+
+    -- 214. La pièce gardée.
+    array['controle4', '214. la pièce payée ne devient pas une note de frais', 'chef', $q$update pieces set type_piece = 'note_frais' where id = '{QV}'$q$,
+      '23514', 'Cette pièce est payée par la caisse : elle reste une pièce d''achat ou de vente tant que ce paiement n''est pas retiré.'],
+    array['controle4', '214b. … ni une pièce « autre »', 'chef', $q$update pieces set type_piece = 'autre' where id = '{QV}'$q$,
+      '23514', 'Cette pièce est payée par la caisse : elle reste une pièce d''achat ou de vente tant que ce paiement n''est pas retiré.'],
+    array['controle4', '214c. MUTATION : elle devient une pièce de vente (le sens du paiement se dira au pointage)', 'chef', $q$update pieces set type_piece = 'vente' where id = '{QV}'$q$,
+      'OK', ''],
+    array['controle4', '214d. elle ne change pas de dossier', 'chef', $q$update pieces set dossier_id = '{W8}' where id = '{QV}'$q$,
+      '23514', 'Cette pièce est citée par un paiement de la caisse de son dossier : elle ne change pas de dossier.'],
+    array['controle4', '214e. … même son paiement retiré', 'chef', $q$select retirer_operation_caisse('{P8}', '{PQV}');
+      update pieces set dossier_id = '{W8}' where id = '{QV}'$q$,
+      '23514', 'Cette pièce est citée par un paiement de la caisse de son dossier : elle ne change pas de dossier.'],
+    array['controle4', '214f. MUTATION : son paiement retiré, elle change de type', 'chef', $q$select retirer_operation_caisse('{P8}', '{PQV}');
+      update pieces set type_piece = 'note_frais' where id = '{QV}'$q$,
+      'OK', ''],
+    array['controle4', '214g. MUTATION : une pièce qu''aucun paiement ne cite change de dossier', 'chef', $q$update pieces set dossier_id = '{W8}' where id = '{QO}'$q$,
+      'OK', ''],
+    array['fait4', '214h. un paiement de 15 € de la pièce de vente QB1 de B8, le 12/03', 'chef', $q$select regler_piece_par_la_caisse('{B8}', '{QB1}', '2026-03-12', 15)$q$,
+      'OK', ''],
+    array['capture4', 'le paiement de QB1', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{B8}' and o.genre = 'paiement'$q$, 'PQB1', ''],
+    array['controle4', '214i. la pièce payée ne devient pas l''exemplaire de la facture source', 'chef', $q$select designer_exemplaire_facture('{B8}', '{QB1}', f.id) from factures_emises f where f.dossier_id = '{B8}'$q$,
+      '23514', 'Cette pièce est payée par la caisse : elle ne devient l''exemplaire de la facture F2026-%, qui compte sa vente, qu''une fois ce paiement retiré — l''encaissement en espèces de la facture le remplace.'],
+    array['controle4', '214j. MUTATION : son paiement retiré, elle le devient', 'chef', $q$select retirer_operation_caisse('{B8}', '{PQB1}');
+      select designer_exemplaire_facture('{B8}', '{QB1}', f.id) from factures_emises f where f.dossier_id = '{B8}'$q$,
+      'OK', ''],
+
+    -- 215 et 216. L'ensemble reconnu d'une recette : les paiements de pièces de vente de son jour.
+    array['fait4', '215. le 10/03 dans P8 : un paiement de 40 € de la pièce de vente QE, un de 5 € de la pièce d''achat QA ; le 11/03, un de 10 € de QE', 'chef', $q$select regler_piece_par_la_caisse('{P8}', '{QE}', '2026-03-10', 40);
+      select regler_piece_par_la_caisse('{P8}', '{QA}', '2026-03-10', -5);
+      select regler_piece_par_la_caisse('{P8}', '{QE}', '2026-03-11', 10)$q$, 'OK', ''],
+    array['capture4', 'le paiement de QE du 10/03', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{P8}' and o.genre = 'paiement' and o.date = '2026-03-10' and o.montant > 0$q$, 'PQE', ''],
+    array['capture4', 'le paiement de QA du 10/03', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{P8}' and o.genre = 'paiement' and o.date = '2026-03-10' and o.montant < 0$q$, 'PQA', ''],
+    array['capture4', 'le paiement de QE du 11/03', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{P8}' and o.genre = 'paiement' and o.date = '2026-03-11'$q$, 'PQE11', ''],
+    array['controle4', '216. une recette du 10/03 qui ne reconnaît pas le paiement de la pièce de vente du jour', 'chef', $q$select enregistrer_operation_caisse('{P8}', 'recette', '2026-03-10', 25, '{K8}', null, '{}', '[{"compte":"530000","sens":"debit","montant":25},{"compte":"706000","sens":"credit","montant":25}]')$q$,
+      '22023', 'Un paiement en espèces d''une pièce de vente du même jour a été enregistré depuis ta lecture : relis la caisse.'],
+    array['controle4', '216b. MUTATION : qui le reconnaît, passe', 'chef', $q$select enregistrer_operation_caisse('{P8}', 'recette', '2026-03-10', 25, '{K8}', null, '{{PQE}}', '[{"compte":"530000","sens":"debit","montant":25},{"compte":"706000","sens":"credit","montant":25}]')$q$,
+      'OK', ''],
+    array['controle4', '216c. le paiement d''une pièce d''achat du même jour n''en est pas', 'chef', $q$select enregistrer_operation_caisse('{P8}', 'recette', '2026-03-10', 25, '{K8}', null, '{{PQE},{PQA}}', '[{"compte":"530000","sens":"debit","montant":25},{"compte":"706000","sens":"credit","montant":25}]')$q$,
+      '22023', 'Le paiement d''une pièce que ta lecture comptait n''est pas un paiement en espèces d''une pièce de vente de ce jour : relis la caisse.'],
+    array['controle4', '216d. … ni celui d''une pièce de vente d''un autre jour', 'chef', $q$select enregistrer_operation_caisse('{P8}', 'recette', '2026-03-10', 25, '{K8}', null, '{{PQE},{PQE11}}', '[{"compte":"530000","sens":"debit","montant":25},{"compte":"706000","sens":"credit","montant":25}]')$q$,
+      '22023', 'Le paiement d''une pièce que ta lecture comptait n''est pas un paiement en espèces d''une pièce de vente de ce jour : relis la caisse.'],
+    array['controle4', '216e. … ni un paiement retiré depuis la lecture', 'chef', $q$select retirer_operation_caisse('{P8}', '{PQE}');
+      select enregistrer_operation_caisse('{P8}', 'recette', '2026-03-10', 25, '{K8}', null, '{{PQE}}', '[{"compte":"530000","sens":"debit","montant":25},{"compte":"706000","sens":"credit","montant":25}]')$q$,
+      '22023', 'Le paiement d''une pièce que ta lecture comptait n''est pas un paiement en espèces d''une pièce de vente de ce jour : relis la caisse.'],
+    array['controle4', '216f. MUTATION : retiré, il n''y a plus rien à reconnaître ce jour-là', 'chef', $q$select retirer_operation_caisse('{P8}', '{PQE}');
+      select enregistrer_operation_caisse('{P8}', 'recette', '2026-03-10', 25, '{K8}', null, '{}', '[{"compte":"530000","sens":"debit","montant":25},{"compte":"706000","sens":"credit","montant":25}]')$q$,
+      'OK', ''],
+    array['controle4', '216g. une autre opération du dossier n''est pas un paiement : les mots d''hier', 'chef', $q$select enregistrer_operation_caisse('{P8}', 'recette', '2026-03-10', 25, '{K8}', null, '{{PQE},{PAP}}', '[{"compte":"530000","sens":"debit","montant":25},{"compte":"706000","sens":"credit","montant":25}]')$q$,
+      '22023', 'Un encaissement que ta lecture comptait n''est pas un encaissement de ce dossier : relis la caisse.'],
+    array['fait4', '216g2. des espèces de la facture source de B8, le 12/03, que la caisse compte', 'chef', $q$select enregistrer_encaissement('{B8}', f.id, '2026-03-12', 50, 'especes', null, '[{"taux":20,"montant":50}]') from factures_emises f where f.dossier_id = '{B8}'$q$, 'OK', ''],
+    array['controle4', '216h. ordre : l''encaissement qui manque avant le paiement qui manque (B8, le 12/03)', 'chef', $q$select enregistrer_operation_caisse('{B8}', 'recette', '2026-03-12', 25, '{KB8}', null, '{}', '[{"compte":"530000","sens":"debit","montant":25},{"compte":"706000","sens":"credit","montant":25}]')$q$,
+      '22023', 'Un encaissement en espèces de la facture F2026-% du même jour a été enregistré depuis ta lecture : relis la caisse.'],
+    array['controle4', '216i. … puis le paiement qui manque', 'chef', $q$select enregistrer_operation_caisse('{B8}', 'recette', '2026-03-12', 25, '{KB8}', null, array[(select e.id from encaissements_factures e where e.dossier_id = '{B8}' and e.moyen = 'especes')]::uuid[], '[{"compte":"530000","sens":"debit","montant":25},{"compte":"706000","sens":"credit","montant":25}]')$q$,
+      '22023', 'Un paiement en espèces d''une pièce de vente du même jour a été enregistré depuis ta lecture : relis la caisse.'],
+    array['controle4', '216j. MUTATION : les deux reconnus, la recette passe', 'chef', $q$select enregistrer_operation_caisse('{B8}', 'recette', '2026-03-12', 25, '{KB8}', null, array[(select e.id from encaissements_factures e where e.dossier_id = '{B8}' and e.moyen = 'especes'), '{PQB1}']::uuid[], '[{"compte":"530000","sens":"debit","montant":25},{"compte":"706000","sens":"credit","montant":25}]')$q$,
+      'OK', ''],
+
+    array['controle4', '216k. MUTATION : la pièce de vente payée devient l''exemplaire d''une facture qui n''est pas source', 'chef', $q$select designer_exemplaire_facture('{P8}', '{QE}', f.id) from factures_emises f where f.dossier_id = '{P8}'$q$,
+      'OK', ''],
+
+    -- 217 et 218. La caisse bornée par son ouverture : un mouvement d'avant elle ne s'y classe pas, et ne s'y compte pas.
+    array['controle4', '217. un retrait au distributeur d''avant l''ouverture, classé sur la caisse', 'chef', $q$select ecrire_mouvement_compte_bilan('{MO1}', '530000', '[{"compte":"512000","sens":"credit","montant":100},{"compte":"530000","sens":"debit","montant":100}]')$q$,
+      '23514', 'Ce mouvement précède l''ouverture du dossier, le 01/01/2026 : il est déjà dans les comptes repris, et ne se classe pas sur la caisse.'],
+    array['controle4', '217b. ordre : les refus de la fonction d''abord — une écriture fausse', 'chef', $q$select ecrire_mouvement_compte_bilan('{MO1}', '530000', '[{"compte":"512000","sens":"credit","montant":90},{"compte":"530000","sens":"debit","montant":90}]')$q$,
+      '22023', 'L''écriture proposée ne correspond pas à ce mouvement et à ce compte.'],
+    array['controle4', '217c. un versement d''espèces d''avant l''ouverture', 'chef', $q$select ecrire_mouvement_compte_bilan('{MO3}', '530000', '[{"compte":"512000","sens":"debit","montant":60},{"compte":"530000","sens":"credit","montant":60}]')$q$,
+      '23514', 'Ce mouvement précède l''ouverture du dossier, le 01/01/2026 : il est déjà dans les comptes repris, et ne se classe pas sur la caisse.'],
+    array['controle4', '217d. … d''un dossier repris sans ligne de caisse aussi : la borne est l''ouverture du dossier', 'chef', $q$select ecrire_mouvement_compte_bilan('{MZ1}', '530000', '[{"compte":"512000","sens":"credit","montant":100},{"compte":"530000","sens":"debit","montant":100}]')$q$,
+      '23514', 'Ce mouvement précède l''ouverture du dossier, le 01/01/2026 : il est déjà dans les comptes repris, et ne se classe pas sur la caisse.'],
+    array['controle4', '217e. MUTATION : le jour même de l''ouverture, il se classe', 'chef', $q$select ecrire_mouvement_compte_bilan('{MO2}', '530000', '[{"compte":"512000","sens":"credit","montant":40},{"compte":"530000","sens":"debit","montant":40}]')$q$,
+      'OK', ''],
+    array['controle4', '217f. MUTATION : sur un autre compte de bilan, la garde se tait', 'chef', $q$select ecrire_mouvement_compte_bilan('{MO1}', '580000', '[{"compte":"512000","sens":"credit","montant":100},{"compte":"580000","sens":"debit","montant":100}]')$q$,
+      'OK', ''],
+    array['controle4', '217g. sans la fonction, le propriétaire non plus', 'postgres', $q$update lignes_bancaires set compte_bilan = '530000', statut = 'rapprochee' where id = '{MO1}'$q$,
+      '23514', 'Ce mouvement précède l''ouverture du dossier, le 01/01/2026 : il est déjà dans les comptes repris, et ne se classe pas sur la caisse.'],
+    array['controle4', '217h. … ni en déplaçant à une date d''avant l''ouverture un mouvement classé sur la caisse', 'chef', $q$select ecrire_mouvement_compte_bilan('{MO2}', '530000', '[{"compte":"512000","sens":"credit","montant":40},{"compte":"530000","sens":"debit","montant":40}]');
+      update lignes_bancaires set date = '2025-12-31' where id = '{MO2}'$q$,
+      '23514', 'Ce mouvement précède l''ouverture du dossier, le 01/01/2026 : il est déjà dans les comptes repris, et ne se classe pas sur la caisse.'],
+    array['controle4', '217k. MUTATION : un autre compte 53 d''avant l''ouverture, la garde le laisse à `refus_compte_de_bilan`', 'postgres', $q$update lignes_bancaires set compte_bilan = '531000', statut = 'rapprochee' where id = '{MO1}'$q$,
+      'OK', ''],
+    array['controle4', '217i. la restauration réinsère un retrait d''avant l''ouverture classé sur la caisse, son instant de création d''avant', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, compte_bilan, created_at) values ('{MO4}', '{O8}', '2025-12-21', 'ESSAI RETRAIT DAB', -100, 'rapprochee', '530000', '2026-01-15 10:00+01')$q$,
+      'OK', ''],
+    array['controle4', '217j. … créé dans la transaction, il se refuse', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, compte_bilan) values ('{MO4}', '{O8}', '2025-12-21', 'ESSAI RETRAIT DAB', -100, 'rapprochee', '530000')$q$,
+      '23514', 'Ce mouvement précède l''ouverture du dossier, le 01/01/2026 : il est déjà dans les comptes repris, et ne se classe pas sur la caisse.'],
+    array['fait4', '218. un retrait d''avant l''ouverture classé sur la caisse avant la garde, que la restauration remet', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, compte_bilan, created_at) values ('{MO4}', '{O8}', '2025-12-21', 'ESSAI RETRAIT DAB', -100, 'rapprochee', '530000', '2026-01-15 10:00+01')$q$,
+      'OK', ''],
+    array['controle4', '218b. un prélèvement de 300 € le 05/01/2026 vide la caisse reprise, et passe', 'chef', $q$select enregistrer_operation_caisse('{O8}', 'prelevement', '2026-01-05', 300, null, null, null, '[{"compte":"108000","sens":"debit","montant":300},{"compte":"530000","sens":"credit","montant":300}]')$q$,
+      'OK', ''],
+    array['controle4', '218c. … un de 301 € la rendrait négative : le retrait d''avant l''ouverture ne compte pas une seconde fois', 'chef', $q$select enregistrer_operation_caisse('{O8}', 'prelevement', '2026-01-05', 301, null, null, null, '[{"compte":"108000","sens":"debit","montant":301},{"compte":"530000","sens":"credit","montant":301}]')$q$,
+      '23514', 'Ce prélèvement de 301,00 € rendrait la caisse négative le 05/01/2026 (−1,00 €) : saisis d''abord les recettes en espèces qui le précèdent.'],
+    array['controle4', '218d. il se retire de la caisse', 'chef', $q$select retirer_mouvement_compte_bilan('{MO4}')$q$,
+      'OK', ''],
+    array['controle4', '218e. … même quand la caisse reprise a servi', 'chef', $q$select enregistrer_operation_caisse('{O8}', 'prelevement', '2026-01-05', 300, null, null, null, '[{"compte":"108000","sens":"debit","montant":300},{"compte":"530000","sens":"credit","montant":300}]');
+      select retirer_mouvement_compte_bilan('{MO4}')$q$,
+      'OK', ''],
+    array['controle4', '218i. MUTATION : déjà sur la caisse, rien ne le déplace — il ne se juge pas', 'chef', $q$update lignes_bancaires set compte_bilan = '530000' where id = '{MO4}'$q$,
+      'OK', ''],
+    array['controle4', '218j. … mais il ne passe pas dans un dossier dont il précède l''ouverture', 'postgres', $q$update lignes_bancaires set dossier_id = '{Z8}' where id = '{MO4}'$q$,
+      '23514', 'Ce mouvement précède l''ouverture du dossier, le 01/01/2026 : il est déjà dans les comptes repris, et ne se classe pas sur la caisse.'],
+    array['valeur4', '218f. la caisse lue de O8 : aucun jour négatif, rien d''avant l''ouverture', 'postgres', $q$select coalesce((select n.jour || ' ' || n.solde from premier_jour_negatif_de_la_caisse('{O8}') n), 'aucun')$q$, '', 'aucun'],
+    array['fait4', '218g. ce qui reste : Z8, repris sans ligne de caisse, et un retrait d''avant la reprise que la restauration remet sur la caisse', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, compte_bilan, created_at) values ('{MZ2}', '{Z8}', '2025-12-21', 'ESSAI RETRAIT DAB', -100, 'rapprochee', '530000', '2026-01-15 10:00+01')$q$,
+      'OK', ''],
+    array['controle4', '218h. … rien ne borne sa caisse : un prélèvement de 100 € le 05/01/2026 passe sur ce retrait (le classement en est refusé, 217d)', 'chef', $q$select enregistrer_operation_caisse('{Z8}', 'prelevement', '2026-01-05', 100, null, null, null, '[{"compte":"108000","sens":"debit","montant":100},{"compte":"530000","sens":"credit","montant":100}]')$q$,
+      'OK', ''],
+
+    -- 219. Une ouverture se juge toujours : posée après coup, elle retire de la caisse ce qui la précède.
+    array['fait4', '219. W8, sans reprise : un apport de 500 € le 01/06/2025, un prélèvement de 300 € le 01/02/2026', 'chef', $q$select enregistrer_operation_caisse('{W8}', 'apport', '2025-06-01', 500, null, null, null, '[{"compte":"530000","sens":"debit","montant":500},{"compte":"108000","sens":"credit","montant":500}]');
+      select enregistrer_operation_caisse('{W8}', 'prelevement', '2026-02-01', 300, null, null, null, '[{"compte":"108000","sens":"debit","montant":300},{"compte":"530000","sens":"credit","montant":300}]')$q$,
+      'OK', ''],
+    array['controle4', '219b. une reprise au 1er janvier 2026 qui porte 10 € en caisse : l''apport de 2025 sort de la caisse, et le prélèvement la vide', 'chef', $q$insert into a_nouveaux (dossier_id, date, compte, sens, montant, source_nom, source_empreinte) values
+      ('{W8}', '2026-01-01', '530000', 'debit', 10, 'balance-essai-w8.csv', repeat('a', 64)), ('{W8}', '2026-01-01', '101000', 'credit', 10, 'balance-essai-w8.csv', repeat('a', 64))$q$,
+      '23514', 'Ce changement de l''ouverture de la caisse la rendrait négative le 01/02/2026 (−290,00 €).'],
+    array['controle4', '219c. MUTATION : une reprise qui en porte 300, passe', 'chef', $q$insert into a_nouveaux (dossier_id, date, compte, sens, montant, source_nom, source_empreinte) values
+      ('{W8}', '2026-01-01', '530000', 'debit', 300, 'balance-essai-w8.csv', repeat('a', 64)), ('{W8}', '2026-01-01', '101000', 'credit', 300, 'balance-essai-w8.csv', repeat('a', 64))$q$,
+      'OK', ''],
+    array['controle4', '219d. une reprise sans ligne de caisse ne borne rien : l''apport de 2025 compte encore', 'chef', $q$insert into a_nouveaux (dossier_id, date, compte, sens, montant, source_nom, source_empreinte) values
+      ('{W8}', '2026-01-01', '512000', 'debit', 10, 'balance-essai-w8.csv', repeat('a', 64)), ('{W8}', '2026-01-01', '101000', 'credit', 10, 'balance-essai-w8.csv', repeat('a', 64))$q$,
+      'OK', ''],
+
+    array['controle4', '219e. l''ouverture de la caisse de Y8 déplacée dans W8 : W8 se juge, et sa caisse serait négative', 'chef', $q$update a_nouveaux set dossier_id = '{W8}' where id = '{AY1}'$q$,
+      '23514', 'Ce changement de l''ouverture de la caisse la rendrait négative le 01/02/2026 (−290,00 €).'],
+    -- Une ouverture AU CRÉDIT qui quitte son dossier : elle n'y apportait aucune espèce, mais elle en était la borne — sans
+    -- elle, ce qui la précède y revient. G8 : 50 € versés en banque le 15/12/2025 et classés sur la caisse (la restauration
+    -- les remet), 20 € apportés le 01/01/2026, puis la reprise du même jour, qui porte la caisse au crédit de 10 €.
+    array['fait4', '219f. G8 : un versement de 2025 que la restauration remet sur la caisse, un apport et une reprise au crédit le 01/01/2026 ; H8 : un apport le 01/01/2026', 'chef', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, compte_bilan, created_at) values ('{MG1}', '{G8}', '2025-12-15', 'ESSAI VERSEMENT ESPECES', 50, 'rapprochee', '530000', '2026-01-15 10:00+01');
+      select enregistrer_operation_caisse('{G8}', 'apport', '2026-01-01', 20, null, null, null, '[{"compte":"530000","sens":"debit","montant":20},{"compte":"108000","sens":"credit","montant":20}]');
+      insert into a_nouveaux (id, dossier_id, date, compte, sens, montant, source_nom, source_empreinte) values
+      ('{AG1}', '{G8}', '2026-01-01', '530000', 'credit', 10, 'balance-essai-g8.csv', repeat('c', 64)), ('{AG2}', '{G8}', '2026-01-01', '101000', 'debit', 10, 'balance-essai-g8.csv', repeat('c', 64));
+      select enregistrer_operation_caisse('{H8}', 'apport', '2026-01-01', 30, null, null, null, '[{"compte":"530000","sens":"debit","montant":30},{"compte":"108000","sens":"credit","montant":30}]')$q$,
+      'OK', ''],
+    array['controle4', '219g. l''ouverture au crédit de G8 déplacée dans H8 : G8 se juge — plus rien n''y borne la caisse, et le versement de 2025 la vide', 'chef', $q$update a_nouveaux set dossier_id = '{H8}' where id = '{AG1}'$q$,
+      '23514', 'Une ouverture de la caisse au crédit, 10,00 €, la rendrait négative le 15/12/2025 (−50,00 €) : le solde d''une caisse est débiteur ou nul.'],
+    array['controle4', '219h. MUTATION : le versement de 2025 retiré de la caisse, elle passe dans H8', 'chef', $q$select retirer_mouvement_compte_bilan('{MG1}');
+      update a_nouveaux set dossier_id = '{H8}' where id = '{AG1}'$q$,
+      'OK', ''],
+
+    -- 220. Le paiement retiré emporte sa contrepartie (213).
+    array['fait4', '220. le paiement de QV retiré', 'chef', $q$select retirer_operation_caisse('{P8}', '{PQV}')$q$, 'OK', ''],
+    array['valeur4', '220b. … et sa contrepartie avec lui', 'postgres', $q$select count(*)::text from ecritures_brouillon where operation_caisse_id = '{PQV}'$q$, '', '0'],
+
+    -- 230 et 231. Ce que le catalogue dit.
+    array['valeur4', '230. les trois fonctions neuves : aux droits du propriétaire, leur chemin fixé ; le paiement exécutable par un compte connecté, ni par l''anonyme ; les deux gardes, par personne', 'postgres', $q$select string_agg(proname || ':' || prosecdef || ':' || provolatile::text || ':' || coalesce(array_to_string(proconfig, ','), '-') || ':' || has_function_privilege('anon', oid, 'execute') || ':' || has_function_privilege('authenticated', oid, 'execute'), ',' order by proname collate "C") from pg_proc
+      where pronamespace = 'public'::regnamespace and proname in ('regler_piece_par_la_caisse', 'garder_piece_payee_par_la_caisse', 'garder_caisse_depuis_l_ouverture')$q$, '',
+      'garder_caisse_depuis_l_ouverture:true:v:search_path=public:false:false,garder_piece_payee_par_la_caisse:true:v:search_path=public:false:false,regler_piece_par_la_caisse:true:v:search_path=public:false:true'],
+    array['valeur4', '230b. … PUBLIC n''exécute pas le paiement', 'postgres', $q$select count(*)::text from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+      where p.oid = to_regprocedure('public.regler_piece_par_la_caisse(uuid, uuid, date, numeric)') and a.grantee = 0$q$, '', '0'],
+    array['valeur4', '230c. leurs déclencheurs : avant la ligne du relevé qui arrive sous la racine 53, avant la pièce dont le dossier, le type ou la désignation change', 'postgres', $q$select string_agg(pg_get_triggerdef(t.oid), ' | ' order by t.tgname) from pg_trigger t where t.tgname in ('pieces_payees_par_la_caisse', 'lignes_bancaires_sur_la_caisse_depuis_l_ouverture')$q$, '',
+      'CREATE TRIGGER lignes_bancaires_sur_la_caisse_depuis_l_ouverture BEFORE INSERT OR UPDATE OF compte_bilan, date, dossier_id ON public.lignes_bancaires FOR EACH ROW WHEN (("left"(new.compte_bilan, 2) = ''53''::text)) EXECUTE FUNCTION garder_caisse_depuis_l_ouverture() | CREATE TRIGGER pieces_payees_par_la_caisse BEFORE UPDATE OF dossier_id, type_piece, facture_id ON public.pieces FOR EACH ROW WHEN (((old.dossier_id IS DISTINCT FROM new.dossier_id) OR (old.type_piece IS DISTINCT FROM new.type_piece) OR (old.facture_id IS DISTINCT FROM new.facture_id))) EXECUTE FUNCTION garder_piece_payee_par_la_caisse()'],
+    array['valeur4', '230d. la garde de l''ouverture est la dernière des gardes de la ligne du relevé, par son nom', 'postgres', $q$select (array_agg(t.tgname order by t.tgname desc))[1] from pg_trigger t where t.tgrelid = 'public.lignes_bancaires'::regclass and not t.tgisinternal and (t.tgtype & 2) = 2$q$, '',
+      'lignes_bancaires_sur_la_caisse_depuis_l_ouverture'],
+    array['valeur4', '231. aucune autre fonction ne dit les refus neufs ; aucune n''écrit une ligne du brouillon pour un paiement', 'postgres', $q$select string_agg(p.proname, ',' order by p.proname collate "C") from pg_proc p where p.pronamespace = 'public'::regnamespace
+      and (p.prosrc like '%précède l''''ouverture du dossier, le % : il est déjà%' or p.prosrc like '%La contrepartie d''''un paiement par la caisse%' or p.prosrc like '%Cette pièce est payée par la caisse%' or p.prosrc like '%paiement en espèces d''''une pièce de vente%')$q$, '',
+      'enregistrer_operation_caisse,garder_caisse_depuis_l_ouverture,garder_ecriture_de_caisse,garder_piece_payee_par_la_caisse']
   ];
 
   begin
@@ -1277,6 +1701,21 @@ begin
       -- Une étape de l'étape C1b (genre « …2 ») ne se joue qu'avec sa migration ; sans elle, elle attend. Une de l'étape C6
       -- (« …3 ») de même ; une que la migration de l'étape C6 remplace (« …3h ») ne se joue que sans elle.
       genre := etape[1];
+      -- Une étape de l'étape C8 (« …4 ») ne se joue qu'avec sa migration ; une qu'elle remplace (« …4h »), que sans elle —
+      -- puis le suffixe qui reste se juge comme celui de toute étape.
+      if genre like '%4h' then
+        if c8 then
+          remplacees4 := remplacees4 + 1;
+          continue;
+        end if;
+        genre := left(genre, -2);
+      elsif genre like '%4' then
+        if not c8 then
+          en_attente4 := en_attente4 + 1;
+          continue;
+        end if;
+        genre := left(genre, -1);
+      end if;
       if genre like '%3h' then
         if c6 then
           remplacees := remplacees + 1;
@@ -1364,6 +1803,14 @@ begin
     if en_attente3 > 0 then
       verdicts := verdicts || jsonb_build_object('controle', '170. EN ATTENTE de la migration especes_sans_mouvement (étape C6) : '
         || en_attente3 || ' étapes — un encaissement en espèces ne cite aucun crédit', 'observe', 'absente : elles se jouent dès qu''elle y est', 'ok', true);
+    end if;
+    if en_attente4 > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '200. EN ATTENTE de la migration paiement_par_la_caisse (étape C8) : '
+        || en_attente4 || ' étapes — le paiement d''une pièce par la caisse, et la caisse bornée par son ouverture', 'observe', 'absente : elles se jouent dès qu''elle y est', 'ok', true);
+    end if;
+    if remplacees4 > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '200. la migration paiement_par_la_caisse (étape C8) en base : '
+        || remplacees4 || ' étape d''avant elle remplacée par la sienne (162)', 'observe', 'remplacée', 'ok', true);
     end if;
     if remplacees > 0 then
       verdicts := verdicts || jsonb_build_object('controle', '170. la migration especes_sans_mouvement (étape C6) en base : '

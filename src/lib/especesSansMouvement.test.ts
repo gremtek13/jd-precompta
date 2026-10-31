@@ -377,15 +377,17 @@ describe('l’essai exige le refus de la garde, sous ses mots et son code, de ch
 
   // Le banc de la caisse (src/test/essaiCaisse.ts) rejoue le MODULE DE LA CAISSE ; la règle des espèces est celle du registre
   // des encaissements, que ce fichier-ci confronte. Il lit chaque étape de l'étape C6 — ses identifiants compris, que le
-  // bloc de l'essai déclare sans point-virgule — et n'en juge aucune : 74c d'hier se tait, remplacée, et le catalogue reste
-  // une lecture de la base.
-  it('le banc de la caisse lit ces étapes sans en juger aucune : la règle est celle du registre, pas de la caisse', () => {
+  // bloc de l'essai déclare sans point-virgule — et n'en juge aucune règle : 74c d'hier se tait, remplacée, et le catalogue
+  // reste une lecture de la base. Depuis l'étape C8, le banc connaît le corps d'une facture (`{FACTURE}`, le paiement d'une
+  // pièce par la caisse en a besoin) : les deux factures de 170, une écriture du jeu, s'y écrivent — acceptées comme par la
+  // base, sans rien juger de la caisse. Hier, elles se taisaient faute de ce corps (« une capture manque »).
+  it('le banc de la caisse lit ces étapes sans en juger aucune règle : la règle est celle du registre, pas de la caisse', () => {
     const issues = rejouerLEssai(ESSAI, '2026-10-29')
     const c6 = issues.filter((i) => /3h?$/.test(i.etape.genre))
     expect(c6).toHaveLength(etapes.filter((e) => /3h?$/.test(e.genre)).length)
-    expect(c6.filter((i) => i.genre === 'jugee')).toEqual([])
-    expect(c6.filter((i) => i.genre !== 'jugee' && i.raison === 'une capture manque').map((i) => i.etape.titre.split(' ')[0]))
-      .toEqual(['170.'])
+    expect(c6.flatMap((i) => (i.genre === 'jugee' ? [[i.etape.titre.split(' ')[0], i.etape.genre, i.recu, i.juste]] : [])))
+      .toEqual([['170.', 'fait3', null, true]])
+    expect(c6.filter((i) => i.genre !== 'jugee' && i.raison === 'une capture manque')).toEqual([])
     const raison = (titre: string) => c6.find((i) => i.etape.titre.startsWith(titre))
     expect(raison('74c. le rattacher')).toMatchObject({
       genre: 'hors_module', raison: 'remplacée par la migration de l’étape C6 (especes_sans_mouvement)',

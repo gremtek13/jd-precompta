@@ -20,6 +20,16 @@ import { compteDuDirigeant } from './virementPersonnel'
 // `caisse.test.ts` le confronte à l'essai (supabase/essais/caisse.sql : les mêmes cas, les mêmes verdicts), puis au
 // texte des deux migrations (les mots et l'ordre des refus, relus dans le SQL).
 //
+// LA MIGRATION 4 (`paiement_par_la_caisse`, étape C8, préparée le 31/10/2026, pas encore appliquée) : ce module redit,
+// DÈS AUJOURD'HUI, ce qu'elle change aux fonctions d'ici — la caisse bornée par l'ouverture de son compte (ce qui la
+// précède est dans les comptes repris), et l'ensemble du jour d'une recette étendu aux paiements par la caisse de pièces
+// de vente. Avant elle, l'un et l'autre ne changent rien tant que la production n'a ni paiement ni flux de caisse d'avant
+// l'ouverture (relevé le 31/10/2026 : aucune opération de caisse, aucun encaissement ; le 29/10/2026 : aucun mouvement
+// classé sur un compte de bilan, aucun à-nouveau au 53). Le premier est la correction d'un défaut de l'écran (le module
+// comptait deux fois les espèces d'avant l'ouverture), qui doit précéder la base : d'ici là, un tel flux, la base le
+// compte encore — elle reste la garde, et refuserait après le clic ce qu'il ôterait. Ses refus neufs à elle — le
+// paiement, sa contrepartie, la pièce payée, le mouvement d'avant l'ouverture — sont ceux de lib/paiementParLaCaisse.ts.
+//
 // LE DRAPEAU. LES DEUX MIGRATIONS SONT EN BASE depuis le 30/10/2026 : `caisse`, par l'outil (version 20261030073812),
 // puis `caisse_retrait_et_versement`, collée par le cabinet (version 20261030123801), toutes deux dans l'export. Le
 // drapeau est levé : la table se lit (`caisseLecture.ts`), la sauvegarde la porte (`sauvegarde.ts`), le compte de bilan
@@ -65,7 +75,10 @@ export const MOTS_DE_LA_CAISSE = {
   ensemble_absent: { code: '22023', gabarit: 'La saisie d\'une recette dit les encaissements en espèces de factures de son jour qu\'elle a lus : une liste d\'identifiants, vide s\'il n\'y en a aucun.' },
   ensemble_doublon: { code: '22023', gabarit: 'La saisie d\'une recette nomme chaque encaissement de son jour une seule fois.' },
   ensemble_manquant: { code: '22023', gabarit: 'Un encaissement en espèces de la facture % du même jour a été enregistré depuis ta lecture : relis la caisse.' },
+  // La migration `paiement_par_la_caisse` : les paiements par la caisse de pièces de vente du jour, sans nommer la pièce.
+  ensemble_paiement_manquant: { code: '22023', gabarit: 'Un paiement en espèces d\'une pièce de vente du même jour a été enregistré depuis ta lecture : relis la caisse.' },
   ensemble_en_trop: { code: '22023', gabarit: 'L\'encaissement de la facture % que ta lecture comptait n\'est pas dans la caisse de ce jour : relis la caisse.' },
+  ensemble_paiement_en_trop: { code: '22023', gabarit: 'Le paiement d\'une pièce que ta lecture comptait n\'est pas un paiement en espèces d\'une pièce de vente de ce jour : relis la caisse.' },
   ensemble_etranger: { code: '22023', gabarit: 'Un encaissement que ta lecture comptait n\'est pas un encaissement de ce dossier : relis la caisse.' },
   ensemble_hors_recette: { code: '22023', gabarit: 'Seule une recette reconnaît les encaissements en espèces de son jour.' },
   ecriture_incomplete: { code: '22023', gabarit: 'L\'écriture proposée est incomplète.' },
@@ -100,7 +113,8 @@ export const ORDRE_DES_REFUS: Readonly<Record<
     'tresorerie', 'genre', 'date_absente', 'date_avant_2000', 'date_future', 'date_avant_ouverture', 'frontiere',
     'montant_absent', 'montant_centime', 'montant_nul', 'montant_negatif', 'montant_borne', 'categorie_absente',
     'categorie_inconnue', 'categorie_sans_produit', 'categorie_de_trop', 'taux_absent', 'taux_inconnu', 'taux_de_trop',
-    'ensemble_absent', 'ensemble_doublon', 'ensemble_manquant', 'ensemble_en_trop', 'ensemble_etranger',
+    'ensemble_absent', 'ensemble_doublon', 'ensemble_manquant', 'ensemble_paiement_manquant', 'ensemble_en_trop',
+    'ensemble_paiement_en_trop', 'ensemble_etranger',
     'ensemble_hors_recette', 'ecriture_incomplete', 'ecriture_fausse', 'ecriture_desequilibree',
   ],
   enregistrer_operations_de_caisse: [
@@ -121,7 +135,8 @@ export function former(gabarit: string, ...valeurs: readonly string[]): string {
   return gabarit.replace(/%/g, () => valeurs[i++] ?? '%')
 }
 
-function refus(cle: CleDuRefus, ...valeurs: readonly string[]): RefusCaisse {
+/** Un refus de la base sous sa clé : son code, et son gabarit rempli. */
+export function refus(cle: CleDuRefus, ...valeurs: readonly string[]): RefusCaisse {
   const { code, gabarit } = MOTS_DE_LA_CAISSE[cle]
   return { code, message: former(gabarit, ...valeurs) }
 }
@@ -190,7 +205,10 @@ export function centimesDe(montant: number): number | null {
 
 /** Les taux qu'une recette porte, ceux du relevé (`recettes_assujetties_du_releve`). */
 export const TAUX_DE_LA_CAISSE: readonly number[] = [0, 5.5, 8.5, 10, 20]
-/** Les genres qu'`enregistrer_operation_caisse` saisit — le paiement d'une pièce aura sa fonction (la migration 4). */
+/**
+ * Les genres qu'`enregistrer_operation_caisse` saisit — le paiement d'une pièce a sa fonction, `regler_piece_par_la_caisse`
+ * (la migration 4 ; lib/paiementParLaCaisse.ts).
+ */
 export const GENRES_SAISIS: readonly GenreOperationCaisse[] = ['recette', 'apport', 'prelevement']
 // La borne de la base : un montant de dix mille milliards d'euros ou plus n'est pas compté.
 const BORNE_CENTIMES = 1_000_000_000_000_000
@@ -223,6 +241,13 @@ export interface EtatDeLaCaisse {
   mouvements: readonly MouvementDeLaCaisse[]
   encaissements: readonly EncaissementDeLaCaisse[]
   factures: readonly FactureDeLaCaisse[]
+  /**
+   * Les pièces de VENTE que des paiements par la caisse citent, lues avec eux : l'ensemble qu'une recette reconnaît compte
+   * ces paiements-là (la migration `paiement_par_la_caisse`). Absentes, aucun paiement n'est d'une pièce de vente — ce qui
+   * est vrai tant que la migration n'est pas en base, où aucun paiement n'existe ; l'écran qui les règle (lot C9, derrière
+   * `PAIEMENT_PAR_LA_CAISSE_EXPORTE`) les lit et les passe.
+   */
+  piecesDeVente?: readonly string[]
 }
 
 export type SourceDuFlux = 'ouverture' | 'operation' | 'mouvement' | 'encaissement'
@@ -247,12 +272,33 @@ export function especesDUneFactureSource(
 }
 
 /**
+ * Le premier jour que la caisse compte : la date des à-nouveaux de SON compte (une reprise n'a qu'une date), ou rien quand
+ * la reprise n'en porte pas — comme `premier_jour_negatif_de_la_caisse` le borne depuis la migration
+ * `paiement_par_la_caisse`. Ce qui le précède est dans les comptes repris : le 53 de la balance le porte déjà.
+ */
+export function premierJourDeLaCaisse(etat: Pick<EtatDeLaCaisse, 'compteCaisse' | 'ouvertures'>): string | null {
+  return etat.ouvertures.filter((a) => a.compte === etat.compteCaisse).map((a) => a.date).sort()[0] ?? null
+}
+
+/** L'ouverture du DOSSIER : la plus ancienne date de ses à-nouveaux, tout compte confondu (celle qui refuse une opération). */
+export function ouvertureDuDossier(etat: Pick<EtatDeLaCaisse, 'ouvertures'>): string | null {
+  return etat.ouvertures.map((a) => a.date).sort()[0] ?? null
+}
+
+/**
  * Les flux de la caisse, comme `premier_jour_negatif_de_la_caisse` les réunit : l'ouverture (les à-nouveaux du compte de
  * la caisse, au débit ou au crédit), les opérations non retirées (un prélèvement en sort ; les autres, leur montant
  * signé), les mouvements classés sur le compte de la caisse (un crédit — le versement en banque — la vide, un débit la
- * remplit), les espèces des factures sources sans mouvement et leurs contre-passations.
+ * remplit), les espèces des factures sources sans mouvement et leurs contre-passations ; à partir du premier jour que la
+ * caisse compte (`premierJourDeLaCaisse`) — ce qui le précède, un retrait au distributeur de la veille classé sur la
+ * caisse par exemple, se compterait sinon une seconde fois après le 53 repris qui le porte déjà.
  */
 export function fluxDeLaCaisse(etat: EtatDeLaCaisse): FluxDeLaCaisse[] {
+  const premierJour = premierJourDeLaCaisse(etat)
+  return fluxSansBorne(etat).filter((f) => premierJour == null || f.jour >= premierJour)
+}
+
+function fluxSansBorne(etat: EtatDeLaCaisse): FluxDeLaCaisse[] {
   return [
     ...etat.ouvertures.filter((a) => a.compte === etat.compteCaisse).map((a) => ({
       jour: a.date, centimes: (a.sens === 'debit' ? 1 : -1) * enCentimes(a.montant), source: 'ouverture' as const, id: null,
@@ -291,13 +337,29 @@ export function refusDeLaCaisse(etat: EtatDeLaCaisse, geste: GesteDeLaCaisse, mo
   return negatif ? { code: '23514', message: texteCaisseNegative(geste, montantCentimes, negatif.jour, negatif.centimes) } : null
 }
 
-/**
- * Les encaissements en espèces de factures sources que la caisse compte CE jour-là — l'ensemble qu'une recette du jour
- * doit reconnaître (CAISSE-Q2, (A)), trié par identifiant comme la base le range.
- */
-export function ensembleDuJour(etat: EtatDeLaCaisse, jour: string): string[] {
+/** Les encaissements en espèces de factures sources que la caisse compte CE jour-là, triés par identifiant. */
+export function encaissementsDuJour(etat: EtatDeLaCaisse, jour: string): string[] {
   return etat.encaissements.filter((e) => e.date_encaissement === jour && especesDUneFactureSource(e, etat))
     .map((e) => e.id).sort()
+}
+
+/**
+ * Les paiements par la caisse, non retirés, de pièces de VENTE, CE jour-là (la migration `paiement_par_la_caisse`) : le
+ * paiement compte sa vente, le total du jour ne la compte pas une seconde fois. Triés par identifiant.
+ */
+export function paiementsDeVenteDuJour(etat: EtatDeLaCaisse, jour: string): string[] {
+  const ventes = new Set(etat.piecesDeVente ?? [])
+  return etat.operations.filter((o) => o.genre === 'paiement' && o.retire_le == null && o.date === jour
+    && o.piece_id != null && ventes.has(o.piece_id)).map((o) => o.id).sort()
+}
+
+/**
+ * L'ensemble qu'une recette du jour doit reconnaître (CAISSE-Q2, (A)) : les encaissements en espèces de factures sources
+ * que la caisse compte CE jour-là, et les paiements par la caisse de pièces de vente de ce jour — ce que la saisie passe,
+ * trié par identifiant comme la base le range.
+ */
+export function ensembleDuJour(etat: EtatDeLaCaisse, jour: string): string[] {
+  return [...encaissementsDuJour(etat, jour), ...paiementsDeVenteDuJour(etat, jour)].sort()
 }
 
 // ── L'écriture d'une opération, au plan du dossier ────────────────────────────────────────────────────────────────────
@@ -395,6 +457,36 @@ function frontiereFranchie(date: string, dossier: DossierDeLaCaisse): RefusCaiss
   return refus('frontiere', exerciceQuiFige(annee, dossier.anneesValidees) ?? `L'exercice ${annee} est validé`)
 }
 
+/**
+ * Les refus de la DATE d'une opération de caisse, dans l'ordre de la base : renseignée, pas avant 2000, pas dans l'avenir à
+ * Paris, pas avant l'ouverture d'un dossier repris, pas dans un exercice figé. Ceux d'`enregistrer_operation_caisse`, que
+ * `regler_piece_par_la_caisse` dit sous les mêmes mots.
+ */
+export function jugerLaDate(date: string | null, dossier: DossierDeLaCaisse): { refus: RefusCaisse } | { refus: null; date: string } {
+  if (date == null) return { refus: refus('date_absente') }
+  if (date < '2000-01-01') return { refus: refus('date_avant_2000') }
+  if (date > dossier.aujourdhui) return { refus: refus('date_future', jourDit(dossier.aujourdhui)) }
+  if (dossier.ouverture != null && date < dossier.ouverture) return { refus: refus('date_avant_ouverture', jourDit(dossier.ouverture)) }
+  const figee = frontiereFranchie(date, dossier)
+  return figee ? { refus: figee } : { refus: null, date }
+}
+
+/**
+ * Les refus du MONTANT d'une opération de caisse, dans l'ordre de la base : renseigné, au centime, non nul, positif quand
+ * `positif` l'exige (un apport, un prélèvement), borné. Ceux d'`enregistrer_operation_caisse` ; `regler_piece_par_la_caisse`
+ * dit les mêmes, sauf le signe, que le sens de la pièce juge ensuite.
+ */
+export function jugerLeMontant(montant: number | null, positif: boolean):
+  { refus: RefusCaisse } | { refus: null; montant: number; centimes: number } {
+  if (montant == null) return { refus: refus('montant_absent') }
+  const centimes = centimesDe(montant)
+  if (centimes == null) return { refus: refus('montant_centime') }
+  if (centimes === 0) return { refus: refus('montant_nul') }
+  if (positif && centimes < 0) return { refus: refus('montant_negatif') }
+  if (Math.abs(centimes) >= BORNE_CENTIMES) return { refus: refus('montant_borne') }
+  return { refus: null, montant, centimes }
+}
+
 function numeroDeLaFacture(encaissementId: string, etat: EtatDeLaCaisse): string | null {
   const e = etat.encaissements.find((x) => x.id === encaissementId)
   if (!e) return null
@@ -465,21 +557,13 @@ export function jugerLaSaisie(saisie: SaisieDeCaisse, dossier: DossierDeLaCaisse
   const genre = saisie.genre
   if (genre == null || !(GENRES_SAISIS as readonly string[]).includes(genre)) return r(refus('genre'))
   // 4. La date.
-  const date = saisie.date
-  if (date == null) return r(refus('date_absente'))
-  if (date < '2000-01-01') return r(refus('date_avant_2000'))
-  if (date > dossier.aujourdhui) return r(refus('date_future', jourDit(dossier.aujourdhui)))
-  if (dossier.ouverture != null && date < dossier.ouverture) return r(refus('date_avant_ouverture', jourDit(dossier.ouverture)))
-  const figee = frontiereFranchie(date, dossier)
-  if (figee) return r(figee)
+  const laDate = jugerLaDate(saisie.date, dossier)
+  if (laDate.refus) return r(laDate.refus)
+  const { date } = laDate
   // 5. Le montant.
-  const montant = saisie.montant
-  if (montant == null) return r(refus('montant_absent'))
-  const centimes = centimesDe(montant)
-  if (centimes == null) return r(refus('montant_centime'))
-  if (centimes === 0) return r(refus('montant_nul'))
-  if (genre !== 'recette' && centimes < 0) return r(refus('montant_negatif'))
-  if (Math.abs(centimes) >= BORNE_CENTIMES) return r(refus('montant_borne'))
+  const leMontant = jugerLeMontant(saisie.montant, genre !== 'recette')
+  if (leMontant.refus) return r(leMontant.refus)
+  const { montant, centimes } = leMontant
   // 6. La catégorie d'une recette, et son compte de produit.
   let categorie: CategorieDeLaCaisse | null = null
   if (genre === 'recette') {
@@ -506,13 +590,18 @@ export function jugerLaSaisie(saisie: SaisieDeCaisse, dossier: DossierDeLaCaisse
     if (recus == null || recus.some((x) => x == null)) return r(refus('ensemble_absent'))
     const distincts = [...new Set(recus as string[])].sort()
     if (distincts.length !== recus.length) return r(refus('ensemble_doublon'))
-    const attendus = ensembleDuJour(etat, date)
+    const attendus = encaissementsDuJour(etat, date)
+    const paiements = paiementsDeVenteDuJour(etat, date)
     const manquant = attendus.filter((x) => !distincts.includes(x)).sort()[0]
     if (manquant != null) return r(refus('ensemble_manquant', numeroDeLaFacture(manquant, etat) ?? '(sans numéro)'))
-    const enTrop = distincts.filter((x) => !attendus.includes(x)).sort()[0]
+    if (paiements.some((x) => !distincts.includes(x))) return r(refus('ensemble_paiement_manquant'))
+    const enTrop = distincts.filter((x) => !attendus.includes(x) && !paiements.includes(x)).sort()[0]
     if (enTrop != null) {
-      return r(etat.encaissements.some((e) => e.id === enTrop)
-        ? refus('ensemble_en_trop', numeroDeLaFacture(enTrop, etat) ?? '(sans numéro)')
+      if (etat.encaissements.some((e) => e.id === enTrop)) {
+        return r(refus('ensemble_en_trop', numeroDeLaFacture(enTrop, etat) ?? '(sans numéro)'))
+      }
+      return r(etat.operations.some((o) => o.id === enTrop && o.genre === 'paiement')
+        ? refus('ensemble_paiement_en_trop')
         : refus('ensemble_etranger'))
     }
   } else if (saisie.encaissements_du_jour != null && saisie.encaissements_du_jour.length > 0) {

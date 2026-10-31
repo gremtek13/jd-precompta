@@ -533,6 +533,28 @@ describe('la caisse dans la fiche d’un mouvement du relevé', () => {
     expect(fiche).toMatchObject({ surLaCaisse: true, refusDuRetrait: null, soldeSans: 15000, soldeAvec: 11000 })
   })
 
+  // LA RELECTURE DU 31/10/2026 : un mouvement daté d'avant l'ouverture du dossier est déjà dans les comptes repris — classé
+  // sur la caisse, il s'y comptait une seconde fois après le 53 des à-nouveaux. La fiche refuse son classement avant le clic,
+  // sous les mots de la garde de la migration `paiement_par_la_caisse`, avant même la caisse négative ; déjà classé, il se
+  // retire, et la caisse bornée par son ouverture ne le compte pas.
+  it('un mouvement d’avant l’ouverture ne se classe pas sur la caisse, crédit comme débit ; déjà classé, il se retire sans refus', () => {
+    const avant = 'Ce mouvement précède l\'ouverture du dossier, le 01/01/2026 : il est déjà dans les comptes repris, et ne se classe pas sur la caisse.'
+    // Le retrait au distributeur du 20/12/2025 (la relecture) : sa fiche refuse désormais son classement.
+    const dab = caisseDeLaFiche({ id: 'dab', date: '2025-12-20', montant: -100, compte_bilan: null }, lecture, operations, SANS_ESPECES, SANS_REPRISE)
+    expect(dab.etat === 'lue' && dab.refusDuClassement).toBe(avant)
+    // Un crédit qui viderait aussi la caisse : le mouvement d'avant l'ouverture parle le premier.
+    const versement = caisseDeLaFiche({ id: 'v', date: '2025-12-31', montant: 5000, compte_bilan: null }, lecture, operations, SANS_ESPECES, SANS_REPRISE)
+    expect(versement.etat === 'lue' && versement.refusDuClassement).toBe(avant)
+    // Le jour même de l'ouverture, il se classe.
+    const jourMeme = caisseDeLaFiche({ id: 'j', date: '2026-01-01', montant: -100, compte_bilan: null }, lecture, operations, SANS_ESPECES, SANS_REPRISE)
+    expect(jourMeme.etat === 'lue' && jourMeme.refusDuClassement).toBe(null)
+    // Déjà classé (avant la garde, ou par la restauration) : il ne compte pas, et se retire sans refus.
+    const classe = { id: 'dab', date: '2025-12-20', montant: -100, libelle: 'RETRAIT DAB', compte_bilan: CAISSE }
+    const dessus = etatDeLaCaisseLu(MODELE, { ...d, mouvements: [classe], operations: [...d.operations, operation({ id: 'p', genre: 'prelevement', date: '2026-03-02', montant: 150 })] })
+    const fiche = caisseDeLaFiche(classe, { etat: 'lue', caisse: dessus }, operations, SANS_ESPECES, SANS_REPRISE)
+    expect(fiche).toMatchObject({ etat: 'lue', surLaCaisse: true, refusDuRetrait: null, soldeSans: 0, soldeAvec: 0 })
+  })
+
   it('le reste dit ce que la fiche peut en dire : la caisse absente (le drapeau baissé), la caisse pas lue en entier', () => {
     expect(caisseDeLaFiche({ id: 'x', date: '2026-03-12', montant: 10, compte_bilan: null }, { etat: 'absente' }, { etat: 'absente' }, SANS_ESPECES, SANS_REPRISE)).toBe(CAISSE_ABSENTE_DE_LA_FICHE)
     expect(caisseDeLaFiche({ id: 'x', date: '2026-03-12', montant: 10, compte_bilan: null }, { etat: 'pas_lue', motif: 'la reprise : lecture partielle' }, operations, SANS_ESPECES, SANS_REPRISE))

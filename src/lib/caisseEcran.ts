@@ -10,6 +10,7 @@ import {
 } from './controlesDeLaCaisse'
 import type { ModeleComptable } from './engagement'
 import { formatMoney } from './format'
+import { refusDuMouvementAvantLOuverture } from './paiementParLaCaisse'
 import type { CaisseLue } from './recettesDeCaisse'
 import type { ANouveau, Categorie, LigneBancaire, OperationCaisse } from './types'
 
@@ -465,7 +466,10 @@ export type CaisseDeLaFiche =
     /** Le solde de la caisse à la fin du jour du mouvement, sans lui, puis avec lui — en centimes. */
     soldeSans: number
     soldeAvec: number
-    /** Ce que la base refuserait si on le classait sur la caisse (un versement qui la rendrait négative), ou rien. */
+    /**
+     * Ce que la base refuserait si on le classait sur la caisse — un mouvement d'avant l'ouverture du dossier, déjà dans les
+     * comptes repris ; un versement qui la rendrait négative —, ou rien.
+     */
     refusDuClassement: string | null
     /** Ce qu'elle refuserait si on le retirait de la caisse (un retrait d'espèces déjà dépensées), ou rien. */
     refusDuRetrait: string | null
@@ -485,6 +489,11 @@ function classe(m: Pick<LigneBancaire, 'id' | 'date' | 'montant'>, compte: strin
  * refuse pas. `etat` nul : la caisse n'est pas lue en entier. « Tenue » se juge sur les opérations, les espèces des factures,
  * la reprise et le relevé (`horsDesOperations`, la relecture du 31/10/2026) : une caisse qui n'existe que par sa reprise est
  * tenue, et la fiche dit le libellé d'un versement.
+ *
+ * UN MOUVEMENT D'AVANT L'OUVERTURE du dossier ne se classe pas sur la caisse, crédit comme débit : il est déjà dans les
+ * comptes repris (la relecture du 31/10/2026 ; `garder_caisse_depuis_l_ouverture`, la migration `paiement_par_la_caisse`),
+ * et ce refus passe avant celui de la caisse négative, comme en base. L'écran le dit avant le clic DÈS AUJOURD'HUI, la
+ * migration pas encore appliquée : il cesse d'offrir le geste avant que la base ne le refuse. Déjà classé, il se retire.
  */
 export function caisseDeLaFiche(
   ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'compte_bilan'>,
@@ -509,8 +518,10 @@ export function caisseDeLaFiche(
     surLaCaisse,
     soldeSans: soldeAuJour(sans, ligne.date),
     soldeAvec: soldeAuJour(avec, ligne.date),
-    // Un crédit classé sur la caisse en sort des espèces : `versement`. Un débit y en met : aucun refus.
-    refusDuClassement: ligne.montant > 0 ? refusDeLaCaisse(avec, 'versement', centimes)?.message ?? null : null,
+    // D'avant l'ouverture, il ne s'y classe pas. Sinon, un crédit classé sur la caisse en sort des espèces : `versement`. Un
+    // débit y en met : aucun refus.
+    refusDuClassement: refusDuMouvementAvantLOuverture(ligne, compte, etat)?.message
+      ?? (ligne.montant > 0 ? refusDeLaCaisse(avec, 'versement', centimes)?.message ?? null : null),
     // Retirer de la caisse un débit déjà classé lui enlève ces espèces : `retrait_d_especes_retire`. Un crédit retiré lui en rend.
     refusDuRetrait: surLaCaisse && ligne.montant < 0 ? refusDeLaCaisse(sans, 'retrait_d_especes_retire', centimes)?.message ?? null : null,
   }

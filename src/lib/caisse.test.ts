@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  CAISSE_EXPORTEE, ecritureDeLOperation, ensembleDuJour, fluxDeLaCaisse, former, GESTES_DE_LA_CAISSE, jugerLaSaisie,
-  jugerLaSaisieDUnMois, jugerLeRemplacement, jugerLeRetrait, MOTS_DE_LA_CAISSE, ORDRE_DES_REFUS, origineDite,
-  premierJourNegatif, refusDeLaCaisse, refusDeLaSaisie, refusDeLaSaisieDUnMois, refusDuRemplacement, refusDuRetrait,
-  remplacanteDe, soldesDeLaCaisse, texteCaisseNegative, versionsDeLOperation,
+  CAISSE_EXPORTEE, ecritureDeLOperation, encaissementsDuJour, ensembleDuJour, fluxDeLaCaisse, former, GESTES_DE_LA_CAISSE,
+  jugerLaSaisie, jugerLaSaisieDUnMois, jugerLeRemplacement, jugerLeRetrait, MOTS_DE_LA_CAISSE, ORDRE_DES_REFUS, origineDite,
+  ouvertureDuDossier, paiementsDeVenteDuJour, premierJourDeLaCaisse, premierJourNegatif, refusDeLaCaisse, refusDeLaSaisie,
+  refusDeLaSaisieDUnMois, refusDuRemplacement, refusDuRetrait, remplacanteDe, soldesDeLaCaisse, texteCaisseNegative,
+  versionsDeLOperation,
   type DossierDeLaCaisse, type EtatDeLaCaisse, type OperationDeLaCaisse, type SaisieDeCaisse,
 } from './caisse'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
@@ -113,6 +114,9 @@ describe('les mots et l’ordre des refus, relus dans le texte des deux migratio
 
   it('les soldes : les quatre flux de `premier_jour_negatif_de_la_caisse`, un solde par jour, le premier négatif', () => {
     const corps = definition('premier_jour_negatif_de_la_caisse')
+    // Bornés par l'ouverture du compte de la caisse (la migration `paiement_par_la_caisse`) : `premierJourDeLaCaisse`.
+    expect(corps).toContain('select min(a.date) as premier_jour\n      from public.a_nouveaux a, caisse c\n     where a.dossier_id = p_dossier_id and a.compte = c.compte')
+    expect(corps).toContain('from flux x, ouverture o\n     where o.premier_jour is null or x.le_jour >= o.premier_jour')
     expect(corps).toContain("select a.date, case when a.sens = 'debit' then a.montant else -a.montant end")
     expect(corps).toContain("select o.date, case when o.genre = 'prelevement' then -o.montant else o.montant end")
     expect(corps).toContain('where o.dossier_id = p_dossier_id and o.retire_le is null')
@@ -262,6 +266,104 @@ describe('la caisse lue, jour par jour', () => {
     expect(ensembleDuJour(etat, '2026-03-10')).toEqual(['e1'])
     expect(ensembleDuJour(etat, '2026-03-11')).toEqual([])
     expect(ensembleDuJour(etat, '2026-03-15')).toEqual(['e3'])
+  })
+})
+
+// LA CAISSE BORNÉE PAR SON OUVERTURE (la relecture du 31/10/2026 ; la migration `paiement_par_la_caisse`). Le dossier est
+// repris au 01/01/2026 : la balance de clôture 2025 porte 300 € en caisse (le 53 des à-nouveaux). Le relevé importé commence
+// en décembre 2025 ; un retrait au distributeur du 20/12/2025, 100 €, classé « Retrait d'espèces pour la caisse » — ce que la
+// fiche refuse désormais, la base aussi avec la migration — est DÉJÀ dans les 300 € repris. Les deux tests qui suivent étaient
+// les `it.fails` de la relecture : ils décrivent le comportement attendu, que le module tient maintenant.
+describe('la caisse ne compte pas deux fois les espèces d’avant l’ouverture', () => {
+  const etat = caisse({
+    ouvertures: [
+      { date: '2026-01-01', compte: '530000', sens: 'debit', montant: 300 },
+      { date: '2026-01-01', compte: '512000', sens: 'credit', montant: 300 },
+    ],
+    mouvements: [{ id: 'dab', date: '2025-12-20', montant: -100, compte_bilan: '530000' }],
+  })
+  const PRELEVEMENT_400 = [{ compte: '530000', sens: 'credit', montant: 400 }, { compte: '108000', sens: 'debit', montant: 400 }]
+
+  it('le solde du 01/01/2026 est celui de la balance reprise, 300 € — pas 400 €', () => {
+    expect(soldesDeLaCaisse(etat).find((s) => s.jour === '2026-01-01')?.centimes).toBe(30_000)
+    expect(fluxDeLaCaisse(etat).map((f) => `${f.jour} ${f.source} ${f.centimes}`)).toEqual(['2026-01-01 ouverture 30000'])
+  })
+
+  it('un prélèvement de 400 € le 05/01/2026 vide une caisse de 300 € : la caisse jamais négative le refuse', () => {
+    const saisie = { genre: 'prelevement', date: '2026-01-05', montant: 400, categorie_id: null, taux_tva: null,
+      encaissements_du_jour: null, ecritures: PRELEVEMENT_400 }
+    expect(refusDeLaSaisie(saisie, dossier({ ouverture: '2026-01-01', caisse: etat }))).toEqual({
+      code: '23514',
+      message: 'Ce prélèvement de 400,00 € rendrait la caisse négative le 05/01/2026 (−100,00 €) : saisis d\'abord les recettes en espèces qui le précèdent.',
+    })
+    expect(refusDeLaSaisie({ ...saisie, montant: 300, ecritures: PRELEVEMENT_400.map((l) => ({ ...l, montant: 300 })) },
+      dossier({ ouverture: '2026-01-01', caisse: etat }))).toBeNull()
+  })
+
+  it('la borne est l’ouverture du COMPTE de la caisse : sans à-nouveau sur lui, rien ne la borne (ce qui reste)', () => {
+    expect(premierJourDeLaCaisse(etat)).toBe('2026-01-01')
+    expect(ouvertureDuDossier(etat)).toBe('2026-01-01')
+    // Une reprise sans ligne de caisse : l'ouverture du dossier, mais aucune borne — le retrait compte encore.
+    const sansCaisse = { ...etat, ouvertures: [{ date: '2026-01-01', compte: '512000', sens: 'debit' as const, montant: 50 }] }
+    expect(premierJourDeLaCaisse(sansCaisse)).toBeNull()
+    expect(ouvertureDuDossier(sansCaisse)).toBe('2026-01-01')
+    expect(soldesDeLaCaisse(sansCaisse).map((s) => `${s.jour} ${s.centimes}`)).toEqual(['2025-12-20 10000'])
+    // Le compte de la caisse est celui du plan : une ouverture sur un autre compte 53 ne borne rien.
+    const decale = { ...etat, compteCaisse: PLAN_DECALE.caisse }
+    expect(premierJourDeLaCaisse(decale)).toBeNull()
+    expect(ouvertureDuDossier(caisse())).toBeNull()
+  })
+
+  it('une opération ou des espèces d’une facture d’avant l’ouverture ne comptent pas non plus ; le jour même, oui', () => {
+    const avec = caisse({
+      ouvertures: etat.ouvertures,
+      operations: [operation({ id: 'a', date: '2025-12-31', montant: 1000 }), operation({ id: 'b', date: '2026-01-01', montant: 5 })],
+      factures: [{ id: 'f', numero: 'F2025-0009', source_de_la_vente: true }],
+      encaissements: [{ id: 'e', facture_id: 'f', date_encaissement: '2025-12-30', montant: 70, moyen: 'especes', ligne_bancaire_id: null, annule_id: null, retire_le: null }],
+    })
+    expect(fluxDeLaCaisse(avec).map((f) => `${f.jour} ${f.source} ${f.centimes}`)).toEqual(['2026-01-01 ouverture 30000', '2026-01-01 operation 500'])
+  })
+})
+
+describe('l’ensemble du jour : les paiements par la caisse de pièces de vente (la migration `paiement_par_la_caisse`)', () => {
+  const etat = caisse({
+    operations: [
+      operation({ id: 'pv', genre: 'paiement', date: '2026-03-10', montant: 40, piece_id: 'qv' }),
+      operation({ id: 'pa', genre: 'paiement', date: '2026-03-10', montant: -5, piece_id: 'qa' }),
+      operation({ id: 'pr', genre: 'paiement', date: '2026-03-10', montant: 9, piece_id: 'qv', retire_le: '2026-03-10T18:00:00Z' }),
+      operation({ id: 'p11', genre: 'paiement', date: '2026-03-11', montant: 10, piece_id: 'qv' }),
+      operation({ id: 'ap', genre: 'apport', date: '2026-03-10', montant: 10 }),
+    ],
+    factures: [{ id: 'f', numero: 'F2026-0001', source_de_la_vente: true }],
+    encaissements: [{ id: 'z', facture_id: 'f', date_encaissement: '2026-03-10', montant: 30, moyen: 'especes', ligne_bancaire_id: null, annule_id: null, retire_le: null }],
+    piecesDeVente: ['qv'],
+  })
+
+  it('les paiements non retirés de pièces de vente du jour, triés avec les espèces des factures ; ni un achat, ni un autre jour', () => {
+    expect(encaissementsDuJour(etat, '2026-03-10')).toEqual(['z'])
+    expect(paiementsDeVenteDuJour(etat, '2026-03-10')).toEqual(['pv'])
+    expect(ensembleDuJour(etat, '2026-03-10')).toEqual(['pv', 'z'])
+    expect(ensembleDuJour(etat, '2026-03-11')).toEqual(['p11'])
+  })
+
+  it('sans les pièces de vente lues, aucun paiement n’en est : l’ensemble d’hier (le chemin par défaut)', () => {
+    expect(paiementsDeVenteDuJour({ ...etat, piecesDeVente: undefined }, '2026-03-10')).toEqual([])
+    expect(ensembleDuJour({ ...etat, piecesDeVente: undefined }, '2026-03-10')).toEqual(['z'])
+  })
+
+  it('la recette du jour reconnaît le paiement ; manquant ou en trop, les mots de la base, dans l’ordre', () => {
+    const d = dossier({ caisse: etat })
+    const recette = (ensemble: string[]) => saisie({
+      genre: 'recette', date: '2026-03-10', montant: 25, categorie_id: 'k-hon', encaissements_du_jour: ensemble,
+      ecritures: [{ compte: '530000', sens: 'debit', montant: 25 }, { compte: '706000', sens: 'credit', montant: 25 }],
+    })
+    expect(refusDeLaSaisie(recette(['z', 'pv']), d)).toBeNull()
+    expect(refusDeLaSaisie(recette([]), d)?.message).toBe(former(MOTS_DE_LA_CAISSE.ensemble_manquant.gabarit, 'F2026-0001'))
+    expect(refusDeLaSaisie(recette(['z']), d)?.message).toBe(MOTS_DE_LA_CAISSE.ensemble_paiement_manquant.gabarit)
+    for (const enTrop of ['pa', 'pr', 'p11']) {
+      expect(refusDeLaSaisie(recette(['z', 'pv', enTrop]), d)?.message, enTrop).toBe(MOTS_DE_LA_CAISSE.ensemble_paiement_en_trop.gabarit)
+    }
+    expect(refusDeLaSaisie(recette(['z', 'pv', 'ap']), d)?.message).toBe(MOTS_DE_LA_CAISSE.ensemble_etranger.gabarit)
   })
 })
 
