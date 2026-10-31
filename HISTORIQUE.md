@@ -43026,3 +43026,8 @@ la lecture qui remplace la saisie, le brouillon rouvert qui perd sa mention, une
 comptées comme des paramètres (ces deux-là n'ont mordu qu'une fois `parametresEnVigueur` éprouvé directement). Une
 survit, équivalente : la lecture d'un autre dossier, que le formulaire écarte par sa clé, ne compterait pas non plus
 sans elle, `versionCourante` ne gardant que les versions du dossier.
+
+**LA BARRIÈRE**, sur `d3a0937` (Node 22.23.3), chaque code lu : `npx tsc -b --force` 0 ; `npm run lint` 0, 0 erreur, 63
+avertissements, ceux de la référence ; `npm run test:fuseaux` 0, 502 fichiers et 15 676 tests justes à Paris, UTC, New
+York et Auckland (15 663 sur `main` avant ce lot : treize tests de plus) ; `npm run build` 0. Le commit de la
+documentation qui suit ne touche aucun fichier que la suite lise.
