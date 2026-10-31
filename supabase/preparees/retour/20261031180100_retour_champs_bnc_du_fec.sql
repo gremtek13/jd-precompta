@@ -29,7 +29,7 @@ declare
   v_lignes bigint;
 begin
   for v in select x.fonction, x.empreinte from (values
-      ('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', '261e874f81276c69869c2f85e7dbc8f4'),
+      ('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', 'a7844d5c918ce82b510c5dc448a3452c'),
       ('public.empreinte_exercice(uuid, integer, text)', 'd5221142acc9b109ecd24badfb1bf025'),
       ('public.garder_lignes_de_la_vente_facturee()', '52320c1e5903df610c1d592f59130c53')
     ) x(fonction, empreinte) loop

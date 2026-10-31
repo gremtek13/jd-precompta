@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { codesSql, messagesSql } from '../test/raiseSql'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
-import { POSTES_RATTACHES, posteRattache } from './cases2035'
+import { CASES_2035, POSTES_RATTACHES, caseDuPoste, posteRattache } from './cases2035'
 import {
   MODES_REGLEMENT, NATURES_OPERATION, SEPARATEUR_DU_POSTE, natOpDeLaLigne, type ChampsBnc, type LigneACaracteriser,
 } from './champsBncDuFec'
@@ -302,6 +302,21 @@ describe('les listes fermées que la base copie : celles de lib/champsBncDuFec.t
     for (const n of NATURES_OPERATION) expect(n.includes(SEPARATEUR_DU_POSTE.trim()), n).toBe(false)
     expect(CLASSE_DU_POSTE.size).toBe(POSTES_RATTACHES.length)
   })
+
+  it('les cases qui se retranchent des recettes (AB, AC) ne reçoivent qu’une dépense : leurs postes sont de classe 6', () => {
+    // Lu au formulaire, pas recopié : les cases soustractives de la table, et les postes qui y vont.
+    const soustractives = CASES_2035.filter((c) => c.soustractive).map((c) => c.code)
+    expect(soustractives).toEqual(['AB', 'AC'])
+    const postesSoustractifs = POSTES_RATTACHES.filter((p) => soustractives.includes(caseDuPoste(p)?.code ?? ''))
+    expect(postesSoustractifs).toEqual(['Débours payés pour le compte des clients', 'Débours', 'Honoraires rétrocédés', 'Rétrocessions'])
+    for (const p of postesSoustractifs) expect(CLASSE_DU_POSTE.get(p), p).toBe('6')
+    // Les autres postes du cadre des recettes, classe 7 ; tous ceux des autres cadres, classe 6.
+    for (const p of POSTES_RATTACHES.filter((x) => !postesSoustractifs.includes(x))) {
+      expect(CLASSE_DU_POSTE.get(p), p).toBe(caseDuPoste(p)?.cadre === 'recettes' ? '7' : '6')
+    }
+    expect([...CLASSE_DU_POSTE].filter(([, c]) => c === '7').map(([p]) => p)).toEqual(
+      ['Recettes', 'Recettes encaissées y compris les remboursements de frais', 'Produits financiers', 'Gains divers'])
+  })
 })
 
 describe('le retour arrière : les trois fonctions d’hier, au caractère près, puis la contrainte et les colonnes retirées', () => {
@@ -415,6 +430,8 @@ describe('juger comme la base : les cas de l’essai, un à un', () => {
       ['157', varier(1, { poste_rattache: 'Achats' }), 'poste_hors_resultat'],
       ['158', varier(3, { poste_rattache: 'Achats' }), 'poste_hors_cadre'],
       ['158b', varier(0, { poste_rattache: 'Recettes' }), 'poste_hors_cadre'],
+      ['158c', varier(3, { poste_rattache: 'Honoraires rétrocédés' }), 'poste_hors_cadre'],
+      ['158e', varier(3, { poste_rattache: 'Débours payés pour le compte des clients' }), 'poste_hors_cadre'],
       ['159', varier(1, { date_reglement: '2024-03-06' }), 'date_differe'],
       ['159b', varier(1, { date_reglement: null }), 'date_differe'],
       ['160', varier(1, { mode_reglement: 'Chèque' }), 'mode_differe'],
@@ -434,6 +451,11 @@ describe('juger comme la base : les cas de l’essai, un à un', () => {
       ['165b', deux([0, 1], { date_reglement: '2024-13-01', nature_operation: 'Soins' }), 'date_illisible'],
     ]
     for (const [etape, lignes, cle] of cas) expect(cleDe(lignes), etape).toBe(cle)
+    // 158d et 158f : les honoraires rétrocédés et les débours sur une charge passent — la rétrocession payée à un
+    // remplaçant (622600) comme l'achat de l'essai (606100).
+    expect(cleDe(varier(0, { poste_rattache: 'Honoraires rétrocédés' }))).toBeNull()
+    expect(cleDe(varier(0, { compte: '622600', poste_rattache: 'Honoraires rétrocédés' }))).toBeNull()
+    expect(cleDe(varier(0, { poste_rattache: 'Débours payés pour le compte des clients' }))).toBeNull()
     // 152b : le jour même passe ; 152 se juge au jour de Paris que l'appelant donne.
     expect(cleDe(deux([0, 1], { date_reglement: AUJOURD_HUI }))).toBeNull()
     expect(cleDe(deux([0, 1], { date_reglement: '2026-11-01' }), DOCUMENTS, '2026-11-01')).toBeNull()
@@ -461,6 +483,16 @@ describe('l’essai joue chaque refus neuf, et la ligne qu’on scinderait', () 
     for (const r of REFUS_DES_CHAMPS_BNC) {
       expect(essai, r.cle).toContain(`'${r.code}',\n      '${r.message.replace(/'/g, "''")}'],`)
     }
+  })
+  it('les débours et les honoraires rétrocédés y sont joués : sur un produit refusés, sur une charge admis, des deux portes', () => {
+    for (const poste of ['Honoraires rétrocédés', 'Débours payés pour le compte des clients']) {
+      // La ligne 3 de K est le produit de la vente (706000), la ligne 0 la charge de l'achat (606100).
+      expect(essai, poste).toContain(`jsonb_set({JK}, '{3,poste_rattache}', '"${poste}"'){FIN}$q$, '22023'`)
+      expect(essai, poste).toContain(`jsonb_set({JK}, '{0,poste_rattache}', '"${poste}"'){FIN}$q$, 'OK'`)
+    }
+    // La restauration : une rétrocession sur un produit se refuse, sur une charge (622600) se réinsère.
+    expect(essai).toContain("'706000', 'ESSAI', 1, 'credit', 'validee', now(), 'VE', 2, 'x', '2024-04-03', 'Honoraires', null, null, 'Recette', 'Honoraires rétrocédés', null)$q$, '23514'")
+    expect(essai).toContain("'622600', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Rétrocessions', null, null, 'Dépense', 'Honoraires rétrocédés', null)$q$, 'OK'")
   })
   it('les étapes du lot attendent la migration, et la ligne scindée entre deux écritures s’y refuse', () => {
     expect(essai).toContain("and attname = 'nature_operation' and not attisdropped")

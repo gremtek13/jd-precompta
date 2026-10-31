@@ -186,14 +186,17 @@
 -- numérotation qui ne porte pas les clés valide comme hier, refus et écritures compris, et 172 relit que les écritures de
 -- A n'en portent aucune. Puis, sur deux dossiers jetables de plus — K, tenu en trésorerie, une écriture de chaque forme
 -- (un achat et une vente payés par le relevé, une recette affectée, une dotation sous l'option « vides » de FEC22-Q1) et
--- sept documents aux SIRET FICTIFS (préfixe 999, et La Poste) ; RF, sans exercice validé, pour la restauration — :
--- chaque refus neuf de la validation, dans son ordre et sous ses mots (151 à 165, deux défauts à la fois compris, un
--- défaut d'hier l'emportant sur un champ neuf) ; ce qui passe (152b, le jour même à Paris ; 164, le numéro d'une facture
--- validée, un SIREN saisi seul, un établissement de La Poste ; un avoir) ; la validation qui les porte, et les fige, relus
--- ligne à ligne (170, 171) ; l'intangibilité (174) ; l'empreinte qui les compte (173 à 176 : une valeur falsifiée ou
--- passée d'une colonne à l'autre hors déclencheur se voit, et l'empreinte d'un exercice validé sans eux est celle d'hier
--- au caractère près, recalculée ici par la formule d'hier) ; la contrainte, sans la fonction (180 à 183, la restauration
--- comprise) ; le catalogue (190). Les factures de l'essai entrent au décompte de 145.
+-- six documents aux SIRET FICTIFS (préfixe 999), ceux de La Poste validés chacun dans l'étape qui le juge ; RF, sans
+-- exercice validé, pour la restauration — : chaque refus neuf de la validation, dans son ordre et sous ses mots (151 à
+-- 165, deux défauts à la fois compris, un défaut d'hier l'emportant sur un champ neuf), les débours et les honoraires
+-- rétrocédés refusés sur un produit et admis sur une charge (158c à 158f) ; ce qui passe (152b, le jour même à Paris ;
+-- 162c, deux écritures d'un même journal ; 164, le numéro d'une facture validée, un SIREN saisi seul, La Poste et son
+-- siège ; un avoir) ; une ligne scindée entre deux écritures, que le refus d'hier écarte (166) ; la validation qui les
+-- porte, et les fige, relus ligne à ligne (170, 171) ; l'intangibilité (174) ; l'empreinte qui les compte (173 à 176 :
+-- chaque colonne falsifiée hors déclencheur, l'une après l'autre, se voit, une valeur passée d'une colonne à l'autre
+-- aussi, et l'empreinte d'un exercice validé sans eux est celle d'hier au caractère près, recalculée ici par la formule
+-- d'hier) ; la contrainte, sans la fonction (180 à 183, la restauration comprise) ; le catalogue (190). Les factures de
+-- l'essai entrent au décompte de 145.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -746,9 +749,18 @@ begin
     array['controlef', '157. un poste sur la banque, qui n''est ni une charge ni un produit', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1,poste_rattache}', '"Achats"'){FIN}$q$, '22023',
       'Une ligne de la numérotation proposée porte un poste de la 2035 sur un compte qui n''est ni de charge ni de produit.'],
     array['controlef', '158. un poste de dépenses sur un produit', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{3,poste_rattache}', '"Achats"'){FIN}$q$, '22023',
-      'Une ligne de la numérotation proposée porte un poste de la 2035 de l''autre cadre que son compte : un poste de recettes va sur un compte de produit, un poste de dépenses sur un compte de charge.'],
+      'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.'],
     array['controlef', '158b. … un poste de recettes sur une charge', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{0,poste_rattache}', '"Recettes"'){FIN}$q$, '22023',
-      'Une ligne de la numérotation proposée porte un poste de la 2035 de l''autre cadre que son compte : un poste de recettes va sur un compte de produit, un poste de dépenses sur un compte de charge.'],
+      'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.'],
+    -- Les deux cases qui se retranchent des recettes, les débours (AB) et les honoraires rétrocédés (AC), ne reçoivent
+    -- qu'une DÉPENSE (`cadreCompatible`, src/lib/cases2035.ts) : la rétrocession payée à un remplaçant est une charge
+    -- (622600), sous le poste « Honoraires rétrocédés ». Sur un produit, leur poste se refuse ; sur une charge, il passe.
+    array['controlef', '158c. … les honoraires rétrocédés sur un produit', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{3,poste_rattache}', '"Honoraires rétrocédés"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.'],
+    array['controlef', '158d. MUTATION de 158c : sur une charge, la rétrocession payée à un remplaçant, ils passent', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{0,poste_rattache}', '"Honoraires rétrocédés"'){FIN}$q$, 'OK', ''],
+    array['controlef', '158e. … les débours payés pour le compte des clients sur un produit', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{3,poste_rattache}', '"Débours payés pour le compte des clients"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.'],
+    array['controlef', '158f. MUTATION de 158e : sur une charge, ils passent', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{0,poste_rattache}', '"Débours payés pour le compte des clients"'){FIN}$q$, 'OK', ''],
     -- Les mêmes sur toutes les lignes d'une écriture ; le poste suit la ligne (FEC22-Q3, (C)).
     array['controlef', '159. deux dates de règlement dans une écriture', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1,date_reglement}', '"2024-03-06"'){FIN}$q$, '22023',
       'Les lignes d''une même écriture ne portent pas la même date de règlement.'],
@@ -878,6 +890,9 @@ begin
       'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
     array['controlef', '182d. … ni un poste de recettes sur une charge', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, 'Dépense', 'Recettes', null)$q$, '23514',
       'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182d2. … ni des honoraires rétrocédés sur un produit', 'chef', $q${RES}'{RF}', '2024-04-03', '706000', 'ESSAI', 1, 'credit', 'validee', now(), 'VE', 2, 'x', '2024-04-03', 'Honoraires', null, null, 'Recette', 'Honoraires rétrocédés', null)$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182d3. MUTATION de 182d2 : sur une charge, ils se réinsèrent', 'chef', $q${RES}'{RF}', '2024-04-03', '622600', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Rétrocessions', null, null, 'Dépense', 'Honoraires rétrocédés', null)$q$, 'OK', ''],
     array['controlef', '182e. … ni un poste sans nature', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, null, 'Achats', null)$q$, '23514',
       'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
     array['controlef', '182f. … ni une identification bordée d''un blanc', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, null, null, ' F2024-0001')$q$, '23514',
