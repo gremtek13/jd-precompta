@@ -43435,3 +43435,76 @@ validation attendant au besoin FEC22-E2.
 **CE QUI SUIT.** FEC22a, le module pur, peut commencer : Q2 à Q5 tranchées, Q1 en choix sans défaut. Puis FEC22b, la
 migration, présentée au cabinet avant la validation de 2025 ; ses colonnes suivent Q3 (la nature et le poste, figés
 ensemble ou à part : au lot).
+
+### 31/10/2026 — LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A)
+
+(Écrit par l'agent architecte sur `4062fd8`, relu, corrigé d'un point et intégré par la session. Un module pur et
+NEUTRE : rien ne le lit ; ni `fec.ts`, ni un écran, ni la base ne changent. Lu avant d'écrire : « LE FEC D'UN BNC EN
+TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION » et « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E »,
+dont les réponses l'emportent sur les recommandations.)
+
+**CE QUE LE MODULE TIENT** (`src/lib/champsBncDuFec.ts`). Pour chaque sorte d'écriture que `numeroterFec` distingue, une
+fonction rend `{ dateRglt, modeRglt, nature, natOp, idClient }` depuis ses entrées LUES, chacune un paramètre
+obligatoire, sans valeur par défaut ; aucun libellé n'est lu.
+
+- Les listes fermées : onze modes de règlement (`MODES_REGLEMENT`, dont « Banque », « Espèces », « Compte personnel » et
+  « Sans règlement »), vingt et une natures (`NATURES_OPERATION`), le mode de chaque moyen du registre (`MODE_DU_MOYEN`,
+  un `Record` sur l'union : un moyen neuf sans mode ne compile pas).
+- FEC22-Q1 (C) : `ChoixChampsBnc` — `vides`, ou `date_de_l_ecriture` (DateRglt la date de l'écriture, ModeRglt « Sans
+  règlement ») — pour la dotation, le forfait, la liquidation, les à-nouveaux, la TVA due d'une facture, la pièce sans
+  paiement ; l'expert-comptable le fixera (FEC22-E2).
+- FEC22-Q3 (C) : NatOp ligne par ligne (`natOpDeLaLigne`) — la nature de l'écriture, et sur une ligne de classe 6 ou 7
+  le poste de la 2035 « sous l'orthographe du rattachement » (`posteRattache`, ajouté à lib/cases2035.ts avec
+  `POSTES_RATTACHES`), seulement si sa case est du cadre de la ligne ; un poste inconnu ou de l'autre cadre laisse la
+  nature seule. Le poste se lit de la catégorie (`poste_2035`, jamais son libellé) ou du moteur de la 2035 (une
+  constante importée : dotations, cotisations, forfait, intérêts et assurance d'un emprunt, ventes facturées, arrondis).
+- FEC22-Q4 (D) : `identificationDuClient` — le SIREN quand le `tiers_siret` figé n'est fait que de chiffres (14, ou 9)
+  et passe la clé de Luhn (`siretValide`, `sirenValide` de lib/factureCii.ts, La Poste comprise), sinon le numéro de la
+  facture ; '' pour une facture qui n'est pas validée. Jamais `tiers_nom`.
+
+**LA RÈGLE PAR SORTE.** Une pièce : la date et le mode de son règlement (le relevé ou un règlement groupé : « Banque » ;
+un virement mixte : le moyen de l'encaissement de SA facture, '' s'il n'est pas lu ; une note de frais : « Compte
+personnel » ; la caisse : « Espèces » ; sans paiement : Q1), « Recette », « Dépense » ou « Acquisition
+d'immobilisation », IdClient sur le seul exemplaire désigné d'une facture qui n'est pas source. Un mouvement du relevé :
+sa date, « Banque », la nature selon son lien (le signe pour un virement personnel ou la TVA, l'échéance ou le déblocage
+d'un emprunt, la cotisation, le compte de la caisse du PLAN, sinon le compte de chaque ligne), aucun client. La caisse :
+sa date, « Espèces », la nature de son genre. Le paiement depuis le compte personnel : `paiement_personnel_le`, « Compte
+personnel », « Cotisation sociale ». Les écritures d'une vente facturée : la TVA due (Q1, l'identité du DOCUMENT,
+facture ou avoir), l'encaissement et sa contre-passation (`date_encaissement`, leur moyen, « Recette » ou « Annulation
+de recette », l'identité de la facture), le mouvement classé par ses encaissements (sa date, le moyen unique de ceux qui
+le justifient — `justifieSonMouvement` —, sinon « Banque », « Remise en banque », aucun client).
+
+**CE QUI S'ÉCARTE DE LA CONCEPTION** (des choix pris au plus sûr) :
+
+- La nature d'un mouvement affecté ou ventilé se lit au COMPTE de chaque ligne (`natureDuCompte`, comme la 2035), pas au
+  cadre du poste ; sans ligne de résultat, « Opération de bilan ».
+- Le poste ne s'écrit que sous l'orthographe du rattachement, et seulement de son cadre : « achats » tapé par le cabinet
+  s'écrit « Achats ».
+- Un débit classé par ses contre-passations porte « Annulation de recette » ; la conception ne disait que « Remise en
+  banque ».
+- IdClient de la TVA due d'un avoir : l'avoir lui-même, dont le numéro est la PieceRef de l'écriture. `tiers_siren`
+  n'est pas lu : la réponse du cabinet dit `tiers_siret`.
+- Deux modes le même jour : `reglementsDeLaPieceALaDate` rend un règlement par mode ; la scission et le partage des
+  centimes restent au fichier (FEC22c).
+- CORRIGÉ À L'INTÉGRATION : la conception donnait « Versement d'espèces » à tout mouvement écrit sur le compte de la
+  caisse ; un DÉBIT — des espèces retirées pour la caisse — porte « Retrait d'espèces pour la caisse », les mots de la
+  fiche d'un mouvement, ajoutés à la liste fermée.
+
+**PREUVES** (`src/lib/champsBncDuFec.test.ts`, 51 tests) : chaque sorte, positive et négative ; « aucun nom » sur 500
+écritures tirées d'une graine fixe, des tiers, des noms de clients, des libellés, des noms de fichier et des motifs
+FICTIFS plantés, aucun ne sort, chaque valeur dans sa liste ; le SCANNER, qui relit `numeroterFec` et la composition des
+ventes facturées — onze sortes, plancher exact, et trois sorties hors du fichier, comptées — et les liens de
+`mouvementJustifieParLeReleve`, chacun éprouvé par un défaut planté (une branche, une clé, une forme de clé inconnue,
+une règle retirée, un lien) ; aucune valeur par défaut dans le module, éprouvé de même. Trente mutations jouées par
+l'agent, toutes tuées (la seule survivante du premier passage, une facture non validée qui portait un numéro, a reçu
+deux cas) ; cinq rejouées par la session (le signe du retrait, le nom du client en IdClient, le relevé sans mode, le
+libellé de la catégorie pour poste, le SIRET non vérifié), toutes tuées. `fec.test.ts` inchangé et vert.
+
+**POUR FEC22B, LA MIGRATION** (ce que l'agent recommande, à concevoir au lot) : trois colonnes figées par ligne
+d'écriture pour NatOp — la nature (liste fermée, la même sur toutes les lignes d'une écriture) et le poste figé (nul, ou
+un des `POSTES_RATTACHES`, sur une ligne de classe 6 ou 7 seulement), NatOp recomposée à la relecture — que
+`valider_exercice` contrôle chacune, la liste des postes recopiée en SQL et confrontée par un test au texte de
+lib/cases2035.ts ; la garde d'IdClient, qui n'admet que le numéro d'une facture validée du dossier ou les neuf premiers
+chiffres de son `tiers_siret` quand ils passent la clé de Luhn ; « Sans règlement » admis par la liste, écrit seulement
+si l'expert-comptable choisit cette option (FEC22-E2). La migration se présente au cabinet avant la validation de 2025
+(FEC22-Q6) ; la validation, elle, attend FEC22-E2, que les quatre valeurs figent.
