@@ -463,4 +463,37 @@ describe('un dossier qui tient une caisse : un versement d’espèces n’entre 
     await waitFor(() => expect([...affectes()].sort()).toEqual(['m-libre-regle', 'm-vrst']))
     expect(screen.queryByText(/versement d’espèces/)).toBeNull()
   })
+
+  // LA RELECTURE DU 31/10/2026 : le praticien arrive avec 300 € de caisse dans sa balance ; le cabinet importe le relevé avant
+  // de saisir le brouillard. Aucune opération, rien de basculé : le dossier tient une caisse, et la règle « gamma » ne range pas
+  // le versement en recette — les recettes du brouillard compteront ces espèces. Hier, le lot le prenait.
+  const repriseDe = (montant: number, compte = PLAN_PAR_DEFAUT.caisse) => {
+    faux.parTable.a_nouveaux = [{
+      id: 'an1', dossier_id: D, date: '2026-01-01', compte, compte_origine: compte.slice(0, 3), libelle: 'Reprise', sens: 'debit',
+      montant, source_nom: 'balance.csv', source_empreinte: 'x', created_at: '2026-01-01T00:00:00Z', compte_lib: null, ecriture_lib: null,
+    }]
+  }
+
+  it('la relecture : sans opération, la caisse reprise dans la balance l’écarte aussi', async () => {
+    avecLeVersement()
+    repriseDe(300)
+    caisseDuTest.lecture = caisseSansOperation
+    rendre(false)
+    const bouton = await lot('Affecter les 2')
+    expect(texteDe(ecartDe('Affectation par les règles').querySelector('summary'))).toBe(
+      'Affectation par les règles — 1 mouvement écarté : 1 a un libellé de versement d’espèces, à classer sur la caisse depuis sa fiche.',
+    )
+    await cliquer(bouton, 1)
+    await waitFor(() => expect([...affectes()].sort()).toEqual(['m-libre-regle', 'm-res-regle']))
+  })
+
+  it('la relecture, NEUTRE : une reprise sans espèces (la banque seule), le lot prend le versement, comme hier', async () => {
+    avecLeVersement()
+    repriseDe(300, '512000')
+    caisseDuTest.lecture = caisseSansOperation
+    rendre(false)
+    await cliquer(await lot('Affecter les 3'), 1)
+    await waitFor(() => expect([...affectes()].sort()).toEqual(['m-libre-regle', 'm-res-regle', 'm-vrst']))
+    expect(screen.queryByText(/versement d’espèces/)).toBeNull()
+  })
 })

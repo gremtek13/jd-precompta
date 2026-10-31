@@ -268,12 +268,30 @@ describe('un crédit dont le libellé dit un versement d’espèces', () => {
     expect(sans(volet().textContent)).not.toContain('Son libellé dit un versement')
   })
 
-  it('un dossier sans opération de caisse n’en dit rien : le versement est peut-être une recette ordinaire', async () => {
+  it('un dossier sans opération de caisse ni caisse reprise n’en dit rien : le versement est peut-être une recette ordinaire', async () => {
+    poser({ operations: [], reprise: [] })
+    rendre()
+    await sansFiche()
+    await waitFor(() => expect(sans(volet().textContent)).toContain('Avant ce mouvement, la caisse du 12/03/2026 est de 0,00 €'))
+    expect(sans(volet().textContent)).not.toContain(PHRASE)
+  })
+
+  // La relecture du 31/10/2026 : le praticien arrive avec sa caisse dans la balance, le relevé est importé avant le brouillard —
+  // aucune opération. Le dossier tient une caisse : la fiche dit le libellé du versement (hier, elle se taisait).
+  it('la relecture : sans opération, la caisse reprise dans la balance la dit tenue — la fiche dit le libellé du versement', async () => {
     poser({ operations: [] })
     rendre()
     await sansFiche()
     await waitFor(() => expect(sans(volet().textContent)).toContain('Avant ce mouvement, la caisse du 12/03/2026 est de 50,00 €'))
-    expect(sans(volet().textContent)).not.toContain(PHRASE)
+    expect(sans(volet().textContent)).toContain(PHRASE)
+  })
+
+  it('la relecture : sans opération ni reprise, un mouvement déjà classé sur la caisse la dit tenue', async () => {
+    poser({ operations: [], reprise: [], releve: [RETRAIT, VERSEMENT] })
+    rendre()
+    await sansFiche()
+    await waitFor(() => expect(sans(volet().textContent)).toContain('Avant ce mouvement, la caisse du 12/03/2026 est de 80,00 €'))
+    expect(sans(volet().textContent)).toContain(PHRASE)
   })
 
   it('la caisse lue en partie : peut-être une caisse — il le dit — et la fiche ne classe rien sur elle', async () => {
@@ -414,12 +432,13 @@ describe('un dossier basculé : les espèces des factures sources entrent dans l
   })
 
   it('C6-Q1, NEUTRE : les espèces retirées, aucune caisse tenue — la fiche n’en dit rien, comme hier', async () => {
-    poser({ operations: [] })
+    // Ni reprise : une caisse reprise la dirait tenue (la relecture du 31/10/2026).
+    poser({ operations: [], reprise: [] })
     baser()
     faux.parTable.encaissements_factures = [{ ...ESPECES, retire_le: '2026-03-13T10:00:00Z' }]
     rendre(true)
     await ouvrir('VERSEMENT ESPECES GUICHET')
-    await waitFor(() => expect(sans(volet().textContent)).toContain('Avant ce mouvement, la caisse du 12/03/2026 est de 50,00 €'))
+    await waitFor(() => expect(sans(volet().textContent)).toContain('Avant ce mouvement, la caisse du 12/03/2026 est de 0,00 €'))
     expect(sans(volet().textContent)).not.toContain('Son libellé dit un versement')
   })
 

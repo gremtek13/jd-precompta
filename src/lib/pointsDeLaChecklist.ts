@@ -502,10 +502,16 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const etatDeLaCaisse = caisseJugee === null ? null : etatDeLaCaisseLue(caisseJugee, dossierDeLaCaisse)
   const caisseEnNegatif = etatDeLaCaisse === null ? null : caisseNegative(etatDeLaCaisse, frontiere)
   const recettesARevoir = etatDeLaCaisse === null || caisseJugee === null ? [] : recettesDeCaisseARevoir(caisseJugee, etatDeLaCaisse, frontiere)
-  // Un symptôme, dans un dossier qui tient une caisse — une opération vivante, ou les espèces d'une facture source (§ 4 a ;
-  // C6-Q1) : un crédit libellé « VERSEMENT ESPECES » rangé en recette compte peut-être deux fois les espèces que la caisse a
-  // déjà comptées.
-  const versementsEnRecette = caisseJugee === null || dossierTientUneCaisse(caisseDuDossier, especes) !== 'oui' ? []
+  // Un symptôme, dans un dossier qui tient une caisse — une opération vivante, les espèces d'une facture source (§ 4 a ;
+  // C6-Q1), un solde repris ou un mouvement classé sur la caisse (la relecture du 31/10/2026 : le relevé importé avant le
+  // brouillard) : un crédit libellé « VERSEMENT ESPECES » rangé en recette compte peut-être deux fois les espèces que la caisse
+  // a déjà comptées. La reprise et le relevé sont lus en entier quand la caisse est jugée (`entreesDeLaCaisseIncompletes`).
+  const repriseEtReleve = {
+    compteCaisse: modele.plan.caisse,
+    ouvertures: caisseJugee === null ? null : aNouveaux,
+    mouvements: caisseJugee === null ? null : lignes,
+  }
+  const versementsEnRecette = caisseJugee === null || dossierTientUneCaisse(caisseDuDossier, especes, repriseEtReleve) !== 'oui' ? []
     : versementsDEspecesEnRecette(lignes, ventilations, categories, assujettiTva, frontiere)
 
   const tousLesPointsATraiter: PointATraiter[] = [

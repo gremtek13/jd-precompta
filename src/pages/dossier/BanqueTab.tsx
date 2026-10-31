@@ -70,7 +70,7 @@ import { argumentsDeLaPrecision, argumentsDeRetirer } from '../../lib/banqueClie
 import { lireLesVentesDuReleve, type LectureDesVentesEtDeclarations } from '../../lib/ventesDuReleveLecture'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
 import { operationsDeCaisseDuDossier, versementsDEspecesHorsDesLots, type EspecesDesFactures } from '../../lib/controlesDeLaCaisse'
-import { caisseDeBanque, caisseDeLaFiche } from '../../lib/caisseEcran'
+import { caisseDeBanque, caisseDeLaFiche, repriseEtReleveDeBanque } from '../../lib/caisseEcran'
 import { lireLaRepriseDeLaCaisse, type LectureDeLaReprise } from '../../lib/caisseDuDossierLecture'
 import {
   candidatsDeLaVente, comptesDuReleve, ecartDuLot, gestesDuCredit, gestesDuDebit, horsDesLotsAvecLesCandidats,
@@ -441,9 +441,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       ? { etat: 'lues', encaissements: lectureVentes.sources.encaissements, factures: lectureVentes.sources.factures }
       : { etat: 'incomplete', motif: lectureVentes?.etat === 'incomplete' ? lectureVentes.motif : 'les ventes facturées ne sont pas encore lues' },
   [ventesParLesFactures, lectureVentes, dossierId])
+  // Et la reprise et le relevé (la relecture du 31/10/2026) : un solde repris au compte de la caisse DU PLAN, ou un mouvement
+  // classé sur ce compte, disent aussi que le dossier tient une caisse — le relevé importé avant le brouillard. Chacun lu en
+  // entier, sinon il ne dit rien (« peut-être »). Les mêmes pour les lots ici et pour la fiche plus bas.
+  const repriseEtReleve = useMemo(() => repriseEtReleveDeBanque({
+    dossierId, ouvertures: repriseDeLaCaisse, releve: lignes, releveIncomplet: lignesIncompletes, modele,
+  }), [dossierId, repriseDeLaCaisse, lignes, lignesIncompletes, modele])
   const horsDesLots = useMemo(
-    () => versementsDEspecesHorsDesLots(mouvementsHorsDesLots(ventes), caisseDuReleve, especesDeLaCaisse, lignes),
-    [ventes, caisseDuReleve, especesDeLaCaisse, lignes],
+    () => versementsDEspecesHorsDesLots(mouvementsHorsDesLots(ventes), caisseDuReleve, especesDeLaCaisse, repriseEtReleve, lignes),
+    [ventes, caisseDuReleve, especesDeLaCaisse, repriseEtReleve, lignes],
   )
   // LA CAISSE QUE LA FICHE D'UN MOUVEMENT JUGE (étape C4 ; lib/caisseEcran.ts) : absente tant que la table n'est pas en base ;
   // sinon rejouée sur la caisse, la reprise, le relevé ENTIER de l'onglet et — pour un dossier basculé — les espèces des factures
@@ -2387,7 +2393,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             restesAPayer={restesAPayer}
             payeesEnTrop={payeesEnTrop}
             restesARegler={restesARegler}
-            caisse={caisseDeLaFiche(ligneOuverte, caisseDuRelevePourLaFiche, caisseDuReleve, especesDeLaCaisse)}
+            caisse={caisseDeLaFiche(ligneOuverte, caisseDuRelevePourLaFiche, caisseDuReleve, especesDeLaCaisse, repriseEtReleve)}
             onEcrireCompteBilan={(compte) => agirSurMouvement(() => ecrireCompteBilan(ligneOuverte, compte))}
             onRetirerCompteBilan={() => agirSurMouvement(() => retirerCompteBilan(ligneOuverte.id))}
             suivisTva={suivisTva}

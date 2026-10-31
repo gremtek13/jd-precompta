@@ -589,6 +589,29 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
     expect(nb({ ...d, ventesFacturees: partielles }, 'versements-especes-en-recette')).toBe(0)
   })
 
+  // LA RELECTURE DU 31/10/2026 : la caisse qui n'existe encore que par la reprise ou le relevé est tenue — le point se dit dès
+  // l'import du relevé, avant la première opération saisie (hier, il attendait cette opération).
+  it('versements-especes-en-recette, la relecture : la caisse reprise, ou un mouvement classé sur elle, sans aucune opération', () => {
+    const versement = ligne({ id: 'v1', date: '2026-03-14', montant: 400, libelle: 'VERSEMENT ESPECES', statut: 'rapprochee', categorie_id: HONORAIRES.id })
+    const reprise = (compte: string, montant = 300): ANouveau => ({
+      id: 'an1', dossier_id: 'd1', date: '2026-01-01', compte, compte_origine: compte.slice(0, 3), libelle: 'Reprise', sens: 'debit',
+      montant, source_nom: 'balance.csv', source_empreinte: 'x', created_at: '2026-01-01T00:00:00Z', compte_lib: null, ecriture_lib: null,
+    })
+    const d = { categories: [HONORAIRES], lignes: [versement], caisse: caisseLue([]) }
+    expect(nb({ ...d, aNouveaux: [reprise(PLAN_PAR_DEFAUT.caisse)] }, 'versements-especes-en-recette')).toBe(1)
+    const retrait = ligne({ id: 'dab', date: '2026-03-02', montant: -80, libelle: 'RETRAIT DAB', statut: 'rapprochee', compte_bilan: PLAN_PAR_DEFAUT.caisse })
+    expect(nb({ ...d, lignes: [versement, retrait] }, 'versements-especes-en-recette')).toBe(1)
+    // NEUTRE : une reprise sans espèces, un solde repris nul, rien sur la caisse — aucune caisse, rien ne se dit.
+    expect(nb({ ...d, aNouveaux: [reprise('512000')] }, 'versements-especes-en-recette')).toBe(0)
+    expect(nb({ ...d, aNouveaux: [reprise(PLAN_PAR_DEFAUT.caisse, 0)] }, 'versements-especes-en-recette')).toBe(0)
+    expect(nb(d, 'versements-especes-en-recette')).toBe(0)
+    // Une entrée de la caisse pas lue en entier : les quatre se taisent, la reprise n'y change rien.
+    expect(nb({ ...d, aNouveaux: [reprise(PLAN_PAR_DEFAUT.caisse)], entreesDeLaCaisseIncompletes: 'la reprise : coupée' },
+      'versements-especes-en-recette')).toBe(0)
+    // La caisse absente : le point ne paraît pas.
+    expect(nb({ ...d, aNouveaux: [reprise(PLAN_PAR_DEFAUT.caisse)], caisse: CAISSE_PAS_EN_BASE }, 'versements-especes-en-recette')).toBeUndefined()
+  })
+
   it('lue en partie, ou une de ses entrées : les quatre se taisent', () => {
     const incompletes = tous({ caisse: caisseLue([A], { complete: false, motif: 'coupée' }) })
     expect(incompletes.some((p) => IDS.includes(p.id))).toBe(false)
