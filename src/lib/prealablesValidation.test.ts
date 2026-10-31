@@ -1448,13 +1448,30 @@ describe('les refus de la validation pour les ventes facturées (étape VF7b) �
     const debut = [...texte.matchAll(motif)].at(-1)?.index ?? -1
     return debut < 0 ? '' : texte.slice(debut, texte.indexOf('$$;', debut))
   })()
+  // La définition que CETTE migration pose. Une migration postérieure la reprend — `champs_bnc_du_fec` (ligne 26.6, lot
+  // FEC22b), qui y ajoute les quatre champs du FEC d'un BNC, préparée hors de l'export puis dans l'export le jour de son
+  // application — et porte alors la dernière ; champsBncFiges.test.ts confronte la sienne à celle-ci. Ce garde-ci
+  // confronte donc ce que VF7b a posé, où que soit la dernière.
+  const posee = (() => {
+    const texte = migration?.texte ?? ''
+    const debut = texte.search(/create (or replace )?function public\.valider_exercice\(/)
+    return debut < 0 ? '' : texte.slice(debut, texte.indexOf('$$;', debut))
+  })()
+  const repriseDepuis = /\/\d{14}_champs_bnc_du_fec\.sql$/
 
   it('la migration : ses refus d’hier au caractère près, la définition d’hier contenue ligne à ligne dans la nouvelle', () => {
     expect(migration).toBeDefined()
     expect(avant).toContain('create or replace function public.valider_exercice(')
-    expect(messages.filter((m) => !modeles.includes(m))).toEqual(messagesSql(avant))
-    expect(codes.filter((_, i) => !rangs.includes(i))).toEqual(codesSql(avant))
-    const neuves = sql.split('\n')
+    const derniere = fichiers.filter((f) => /create (or replace )?function public\.valider_exercice\(/.test(f.texte)).at(-1)?.chemin ?? ''
+    expect(derniere === migration?.chemin || repriseDepuis.test(derniere), derniere).toBe(true)
+    // Tant qu'elle est la dernière, la base exécute ce qu'elle pose.
+    if (derniere === migration?.chemin) expect(sql).toBe(posee)
+    const lesMessages = messagesSql(posee)
+    const lesRangs = modeles.map((m) => lesMessages.indexOf(m))
+    expect(lesRangs.every((r) => r >= 0), lesRangs.join(',')).toBe(true)
+    expect(lesMessages.filter((m) => !modeles.includes(m))).toEqual(messagesSql(avant))
+    expect(codesSql(posee).filter((_, i) => !lesRangs.includes(i))).toEqual(codesSql(avant))
+    const neuves = posee.split('\n')
     let k = 0
     for (const ligne of avant.split('\n')) {
       while (k < neuves.length && neuves[k] !== ligne) k++

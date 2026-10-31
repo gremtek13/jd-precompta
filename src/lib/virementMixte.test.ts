@@ -45,6 +45,22 @@ function fichierDeLaDerniereDefinition(nom: string): string {
 const corps = (definition: string) => definition.slice(definition.indexOf('as $$') + 'as $$'.length)
 const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('hex')
 
+// La définition qu'une fonction reçoit de CETTE migration — la seule que son texte lui donne.
+function definitionPosee(nom: string): string {
+  const texte = texteDeLaMigration()
+  const debut = texte.indexOf(`create or replace function public.${nom}(`)
+  expect(debut, nom).toBeGreaterThan(0)
+  return texte.slice(debut, texte.indexOf('$$;', debut))
+}
+
+// Les migrations POSTÉRIEURES qui reprennent une de ces fonctions et en portent la dernière définition : la garde G5,
+// reprise par `champs_bnc_du_fec` (ligne 26.6, lot FEC22b), qui laisse à la validation les quatre champs du FEC d'un BNC
+// — préparée hors de l'export, dans l'export le jour de son application ; champsBncFiges.test.ts confronte la sienne à
+// celle-ci. Ce garde-ci confronte donc ce que CETTE migration pose, où que soit la dernière.
+const REPRISES_DEPUIS: ReadonlyMap<string, RegExp> = new Map([
+  ['garder_lignes_de_la_vente_facturee', /\/\d{14}_champs_bnc_du_fec\.sql$/],
+])
+
 // Les quatre fonctions reprises : l'empreinte de leur corps d'hier (celle que la production portait le 23/10/2026, relevée
 // par catalogue), et la migration qui l'a écrit.
 const REPRISES = [
@@ -123,8 +139,11 @@ describe('la migration du virement mixte reprend quatre fonctions d’hier, et n
 
   it('chacune est sa dernière définition, et redevient celle d’hier au caractère près quand ses remplacements se défont', () => {
     for (const [nom] of REPRISES) {
-      expect(fichierDeLaDerniereDefinition(nom), nom).toMatch(MIGRATION)
-      const demain = derniereDefinitionSql(nom)
+      const derniere = fichierDeLaDerniereDefinition(nom)
+      expect(MIGRATION.test(derniere) || (REPRISES_DEPUIS.get(nom)?.test(derniere) ?? false), `${nom} : ${derniere}`).toBe(true)
+      const demain = definitionPosee(nom)
+      // Tant qu'elle est la dernière, la base exécute ce qu'elle pose.
+      if (MIGRATION.test(derniere)) expect(derniereDefinitionSql(nom), nom).toBe(demain)
       expect(demain.startsWith(`create or replace function public.${nom}(`), nom).toBe(true)
       expect(hierDepuisDemain(nom, demain), nom).toBe(definitionAvantLaMigration(nom))
     }

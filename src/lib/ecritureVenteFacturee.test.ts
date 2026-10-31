@@ -34,6 +34,11 @@ const TEXTE_MIGRATION = fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))
 // ses mots neufs) et la garde G5 (une ligne qui porte une pièce n'est pas du troisième genre).
 const TEXTE_VIREMENT_MIXTE = fichiersDuSchema().find((f) => /\/\d{14}_virement_mixte\.sql$/.test(f.chemin))?.texte ?? ''
 const REPRISES_PAR_VF5H: ReadonlySet<string> = new Set(['ecrire_vente_facturee', 'garder_lignes_de_la_vente_facturee'])
+// La migration des quatre champs du FEC d'un BNC (ligne 26.6, lot FEC22b), qui reprend la garde G5 : préparée hors de
+// l'export, elle y entre le jour de son application, et porte alors sa dernière définition (champsBncFiges.test.ts la
+// confronte à celle du virement mixte).
+const TEXTE_CHAMPS_BNC = fichiersDuSchema().find((f) => /\/\d{14}_champs_bnc_du_fec\.sql$/.test(f.chemin))?.texte ?? ''
+const REPRISES_PAR_FEC22B: ReadonlySet<string> = new Set(['garder_lignes_de_la_vente_facturee'])
 
 const D1 = uuidEssai(1)
 const D2 = uuidEssai(2)
@@ -97,11 +102,12 @@ const FONCTIONS: readonly (readonly [string, Liste])[] = [
 ]
 
 describe('chaque liste redit sa fonction, dans son ordre, sous ses mots et ses codes', () => {
-  it('les quatre fonctions neuves sont dans la migration ; leur dernière définition, la sienne ou celle du virement mixte', () => {
+  it('les quatre fonctions neuves sont dans la migration ; leur dernière définition, la sienne, celle du virement mixte ou celle des champs du FEC', () => {
     for (const [nom] of FONCTIONS) {
       expect(TEXTE_MIGRATION, nom).toContain(`create function public.${nom}(`)
-      const texte = REPRISES_PAR_VF5H.has(nom) ? TEXTE_VIREMENT_MIXTE : TEXTE_MIGRATION
-      const debut = texte.indexOf(`${REPRISES_PAR_VF5H.has(nom) ? 'create or replace' : 'create'} function public.${nom}(`)
+      const reprise = REPRISES_PAR_FEC22B.has(nom) && TEXTE_CHAMPS_BNC !== ''
+      const texte = reprise ? TEXTE_CHAMPS_BNC : REPRISES_PAR_VF5H.has(nom) ? TEXTE_VIREMENT_MIXTE : TEXTE_MIGRATION
+      const debut = texte.indexOf(`${reprise || REPRISES_PAR_VF5H.has(nom) ? 'create or replace' : 'create'} function public.${nom}(`)
       expect(debut, nom).toBeGreaterThanOrEqual(0)
       expect(derniereDefinitionSql(nom), nom).toBe(texte.slice(debut, texte.indexOf('$$;', debut)))
     }
