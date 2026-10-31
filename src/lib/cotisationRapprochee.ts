@@ -235,7 +235,7 @@ export function cotisationsComptees(
 // prenait la saisie telle quelle : un remboursement de 300 €, dont 30 € de CSG-CRDS, ôtait 330 € de BK et AJOUTAIT
 // 21,03 € de CSG déductible en BV, quand le même remboursement rapproché de son crédit ôtait 270 € et 21,03 €
 // (relecture du 31/10/2026). Inconnue, elle reste inconnue (`null`), surtout pas zéro.
-function csgDansLeSensDe(montant: number, cotisation: Pick<CotisationDeclaree, 'montant_csg_crds'>): number | null {
+export function csgDansLeSensDe(montant: number, cotisation: Pick<CotisationDeclaree, 'montant_csg_crds'>): number | null {
   return cotisation.montant_csg_crds == null ? null : Math.sign(montant) * Math.abs(cotisation.montant_csg_crds)
 }
 

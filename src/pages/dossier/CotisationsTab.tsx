@@ -15,8 +15,8 @@ import { messageErreur } from '../../lib/messageErreur'
 // deux fois n'attend pas de diverger, elle attend un troisième appelant.
 import { csgDeductible as partDeductible } from '../../lib/declaration2035'
 import {
-  avertissementRetraitEcheance, cotisationsAEcrire, ecritureDeLaCotisation, montantDeLEcheance, rapprochementsCotisationRefuses,
-  refusMontantsDuPaiementPersonnel,
+  avertissementRetraitEcheance, cotisationsAEcrire, csgDansLeSensDe, ecritureDeLaCotisation, montantDeLEcheance,
+  rapprochementsCotisationRefuses, refusMontantsDuPaiementPersonnel,
 } from '../../lib/cotisationRapprochee'
 import {
   argumentsDeLaDeclaration, avertissementRetraitPaiementPersonnel, avertissementSuppressionEcheancePayee,
@@ -477,8 +477,13 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
 
   // Une cotisation sans ventilation saisie n'a pas « zéro » de CSG déductible : on ne sait pas.
   // D'où `null` plutôt que 0 — c'est ce que la colonne affiche en « — ».
-  function csgDeductible(montantCsgCrds: number | null): number | null {
-    return montantCsgCrds == null ? null : partDeductible(montantCsgCrds)
+  //
+  // DANS LE SENS DE L'ÉCHÉANCE, comme la 2035 la compte en BV (`csgDansLeSensDe`, lib/cotisationRapprochee.ts) : le
+  // décompte imprime la CSG-CRDS d'un remboursement en positif, et la prendre telle quelle AUGMENTAIT le total de la CSG
+  // déductible quand BV le diminue (31/10/2026).
+  function csgDeductible(c: CotisationDeclaree): number | null {
+    const csg = csgDansLeSensDe(montantDeLEcheance(c), c)
+    return csg == null ? null : partDeductible(csg)
   }
 
   const documentsNonRattaches = documentsCotisation.filter((d) => !d.attached_to_cotisation_id)
@@ -558,7 +563,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
 
   const totalAppele = cotisationsFiltrees.reduce((sum, c) => sum + c.montant_appele, 0)
   const totalVerse = cotisationsFiltrees.reduce((sum, c) => sum + (verseDe(c) ?? 0), 0)
-  const totalCsgDeductible = cotisationsFiltrees.reduce((sum, c) => sum + (csgDeductible(c.montant_csg_crds) ?? 0), 0)
+  const totalCsgDeductible = cotisationsFiltrees.reduce((sum, c) => sum + (csgDeductible(c) ?? 0), 0)
 
   return (
     <>
@@ -857,7 +862,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
                         </div>
                       </td>
                       <td data-libelle="dont CSG-CRDS">{c.montant_csg_crds != null ? formatMoney(c.montant_csg_crds) : '—'}</td>
-                      <td data-libelle="CSG déductible">{csgDeductible(c.montant_csg_crds) != null ? formatMoney(csgDeductible(c.montant_csg_crds)) : '—'}</td>
+                      <td data-libelle="CSG déductible">{csgDeductible(c) != null ? formatMoney(csgDeductible(c)) : '—'}</td>
                       <td data-libelle="Paiement">
                         {/* Payée depuis le compte personnel : un fait de la ligne elle-même, dit même sur un relevé lu en
                             partie ; l'état de son écriture, seulement sur un brouillon lu en entier. */}

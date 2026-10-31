@@ -317,14 +317,119 @@ describe('relecture — une pièce payée, rejetée puis payée de nouveau', () 
       ventesFacturees: ventesFactureesVides('d1'), caisse: CAISSE_ABSENTE,
     }
     const dec = calculerCa3(donnees, { debut: '2025-12-15', fin: '2025-12-15' }, false, 0, 0).cases
-    expect(Number.isFinite(dec.l20)).toBe(true)
-    // Le 15/12 défait la moitié payée le 10 : −100 € de TVA, que la période du 10 avait déduits.
-    expect(dec.l20).toBe(-100)
+    expect(Number.isFinite(dec.l15)).toBe(true)
+    // Le 15/12 défait la moitié payée le 10 : 100 € de TVA, que la période du 10 avait déduits, se REVERSENT en ligne 15
+    // — jamais une ligne 20 négative.
+    expect(dec.l15).toBe(100)
+    expect(dec.l20).toBe(0)
     expect(calculerCa3(donnees, { debut: '2025-12-01', fin: '2025-12-31' }, false, 0, 0).cases.l20).toBe(0)
     // Et une pièce SANS date dont le rejet tombe le jour de son dépôt : la part sans date ne se divise pas par zéro.
     const sansDate = { ...prime, date_piece: null, created_at: '2025-12-15T09:00:00Z' } as Piece
     const morceaux = centimesParDate(sansDate, 1200, p)
     expect(morceaux.every((m) => Number.isFinite(m.centimes) && Number.isFinite(m.centimesSansDate))).toBe(true)
     expect(morceaux.find((m) => m.date === '2025-12-15')).toEqual({ date: '2025-12-15', centimes: 0, centimesSansDate: 60_000 })
+  })
+})
+
+// RELECTURE DE 3564fcb (31/10/2026) : une période qui ne porte que la part négative d'une pièce positive — le mois d'un
+// rejet — ne l'inscrit jamais en négatif sur une ligne de taux. La ligne se choisit au signe de ce que la période porte.
+describe('relecture — la CA3 du mois d’un rejet n’inscrit aucune ligne négative', () => {
+  const T = (mois: string) => ({ debut: `${mois}-01`, fin: `${mois}-${mois.endsWith('02') ? '28' : '31'}` })
+  const base = {
+    id: 'p', dossier_id: 'd1', statut: 'validee', date_piece: '2025-12-15', categorie_id: null,
+    created_at: '2025-12-16T09:00:00Z', tiers: 'Tiers', nom_fichier: 'p.pdf', devise: 'EUR',
+  }
+  // Payée le 20/12, son paiement rejeté le 08/01, payée de nouveau le 05/02 : le sens de chaque mouvement est celui qui
+  // règle la pièce (`regle`), puis l'inverse, puis le même.
+  const releve = (regle: 1 | -1, montant: number) => [
+    mouvement({ id: 'm1', date: '2025-12-20', montant: regle * montant, piece_id: 'p' }),
+    mouvement({ id: 'm2', date: '2026-01-08', montant: -regle * montant, piece_id: 'p' }),
+    mouvement({ id: 'm3', date: '2026-02-05', montant: regle * montant, piece_id: 'p' }),
+  ]
+  const ca3 = (piece: Piece, lignes: LigneBancaire[], mois: string) => calculerCa3({
+    pieces: [piece], paiements: paiementsDesPieces(lignes, [], []), pieceIdsImmobilisees: new Set(), releve: [],
+    ventesFacturees: ventesFactureesVides('d1'), caisse: CAISSE_ABSENTE,
+  }, T(mois), false, 0, 0).cases
+
+  it('un achat : déduit en décembre, REVERSÉ en janvier (ligne 15), déduit de nouveau en février', () => {
+    const achat = { ...base, type_piece: 'achat', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200 } as Piece
+    const lignes = releve(-1, 1200)
+    expect(ca3(achat, lignes, '2025-12')).toMatchObject({ l15: 0, l20: 200 })
+    expect(ca3(achat, lignes, '2026-01')).toMatchObject({ l15: 200, l20: 0, l23: 0 })
+    expect(ca3(achat, lignes, '2026-02')).toMatchObject({ l15: 0, l20: 200 })
+  })
+
+  it('une vente taxée : en janvier, une régularisation en B5 et en ligne 21, jamais une base négative', () => {
+    const vente = { ...base, type_piece: 'vente', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200 } as Piece
+    const lignes = releve(1, 1200)
+    expect(ca3(vente, lignes, '2025-12')).toMatchObject({ A1: 1000, base08: 1000, taxe08: 200, B5: 0, l21: 0 })
+    expect(ca3(vente, lignes, '2026-01')).toMatchObject({ A1: 0, base08: 0, taxe08: 0, l16: 0, B5: 1000, l21: 200 })
+  })
+
+  it('une vente exonérée : en janvier, F8 et non une E2 négative', () => {
+    const vente = { ...base, type_piece: 'vente', montant_ht: 1200, montant_tva: 0, montant_ttc: 1200 } as Piece
+    const lignes = releve(1, 1200)
+    expect(ca3(vente, lignes, '2025-12')).toMatchObject({ E2: 1200, F8: 0 })
+    expect(ca3(vente, lignes, '2026-01')).toMatchObject({ E2: 0, F8: 1200 })
+  })
+
+  it('un avoir payé d’un seul sens garde ses lignes d’hier : l15 pour un avoir fournisseur, B5 et l21 pour un avoir client', () => {
+    const avoirFournisseur = { ...base, type_piece: 'achat', montant_ht: -100, montant_tva: -20, montant_ttc: -120 } as Piece
+    expect(ca3(avoirFournisseur, [mouvement({ id: 'r', date: '2025-12-20', montant: 120, piece_id: 'p' })], '2025-12'))
+      .toMatchObject({ l15: 20, l20: 0 })
+    const avoirClient = { ...base, type_piece: 'vente', montant_ht: -100, montant_tva: -20, montant_ttc: -120 } as Piece
+    expect(ca3(avoirClient, [mouvement({ id: 'r', date: '2025-12-20', montant: -120, piece_id: 'p' })], '2025-12'))
+      .toMatchObject({ A1: 0, base08: 0, B5: 100, l21: 20 })
+  })
+
+  it('une période dont la TVA s’arrondit à zéro garde la ligne de la pièce, celle d’hier', () => {
+    // Un avoir fournisseur de 0,06 € dont 0,01 € de TVA, remboursé en deux fois : la TVA de janvier s'arrondit à zéro, et
+    // la pièce y reste rangée en ligne 15, comme avant.
+    const avoir = { ...base, type_piece: 'achat', montant_ht: -0.05, montant_tva: -0.01, montant_ttc: -0.06 } as Piece
+    const lignes = [
+      mouvement({ id: 'a', date: '2025-12-20', montant: 0.03, piece_id: 'p' }),
+      mouvement({ id: 'b', date: '2026-01-20', montant: 0.03, piece_id: 'p' }),
+    ]
+    const janvier = calculerCa3({
+      pieces: [avoir], paiements: paiementsDesPieces(lignes, [], []), pieceIdsImmobilisees: new Set(), releve: [],
+      ventesFacturees: ventesFactureesVides('d1'), caisse: CAISSE_ABSENTE,
+    }, T('2026-01'), false, 0, 0)
+    expect(janvier.cases.l15).toBe(0)
+    expect(janvier.retenues.map((r) => r.ligne)).toEqual(['15'])
+  })
+
+  it('aucune ligne de la CA3 ne porte une somme négative, quels que soient les sens et les mois des paiements', () => {
+    const LIGNES = ['A1', 'B5', 'E2', 'F8', 'base08', 'taxe08', 'base09', 'taxe09', 'base9B', 'taxe9B', 'base10', 'taxe10',
+      'l15', 'l16', 'l19', 'l20', 'l21', 'l22', 'l23'] as const
+    const mois = ['2025-12', '2026-01', '2026-02']
+    const pieces = [
+      { ...base, type_piece: 'achat', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200 },
+      { ...base, type_piece: 'achat', montant_ht: -100, montant_tva: -20, montant_ttc: -120 },
+      { ...base, type_piece: 'vente', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200 },
+      { ...base, type_piece: 'vente', montant_ht: -100, montant_tva: -20, montant_ttc: -120 },
+      { ...base, type_piece: 'vente', montant_ht: 1200, montant_tva: 0, montant_ttc: 1200 },
+      { ...base, type_piece: 'vente', montant_ht: -120, montant_tva: 0, montant_ttc: -120 },
+    ] as Piece[]
+    // Trois mouvements de 1 200, 200 ou 120 €, chacun dans l'un ou l'autre sens, chacun dans l'un des trois mois.
+    let cas = 0
+    for (const piece of pieces) {
+      for (let code = 0; code < 6 ** 3; code++) {
+        const lignes = [0, 1, 2].map((i) => {
+          const chiffre = Math.floor(code / 6 ** i) % 6
+          const sens = chiffre % 2 === 0 ? 1 : -1
+          const montant = [1200, 200, 120][i]
+          return mouvement({ id: `m${i}`, date: `${mois[Math.floor(chiffre / 2)]}-1${i}`, montant: sens * montant, piece_id: 'p' })
+        })
+        for (const m of mois) {
+          const cases = ca3(piece, lignes, m)
+          for (const l of LIGNES) {
+            expect(cases[l], `${piece.type_piece} ${piece.montant_tva} ${lignes.map((x) => `${x.date}:${x.montant}`)} ${m} ${l}`)
+              .toBeGreaterThanOrEqual(0)
+          }
+          cas++
+        }
+      }
+    }
+    expect(cas).toBe(6 * 216 * 3)
   })
 })

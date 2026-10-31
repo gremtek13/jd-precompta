@@ -1023,3 +1023,29 @@ describe('CotisationsTab — sous le plan du dossier', () => {
     await waitFor(() => expect(screen.queryByText(/dont l’écriture manque/)).toBeNull())
   })
 })
+
+describe('CotisationsTab — la CSG déductible d’un remboursement se signe comme la 2035 la compte en BV', () => {
+  // Un appel de 300 € dont 30 € de CSG-CRDS, et le remboursement de 300 € de l'Urssaf, dont la CSG-CRDS est saisie en
+  // positif, comme le décompte l'imprime. La 2035 compte +21,03 puis −21,03 en BV (`csgDansLeSensDe`) : le total de
+  // l'onglet est nul, et la ligne du remboursement le dit négatif. En valeur saisie, il valait 42,06 €.
+  const montant = (texte: string | null) => (texte ?? '').replace(/\s/g, ' ')
+
+  it('le total et la colonne suivent le sens de l’échéance', async () => {
+    faux.cotisations = [
+      cotisation({ id: 'appel', echeance: '2026-03-05', montant_appele: 300, montant_csg_crds: 30 }),
+      cotisation({ id: 'rembourse', echeance: '2026-06-05', montant_appele: -300, montant_csg_crds: 30 }),
+    ]
+    monter()
+    const libelle = await screen.findByText('CSG déductible (proposée)')
+    expect(montant(libelle.parentElement!.querySelector('strong')!.textContent)).toBe(montant('0,00 €'))
+    const colonne = [...document.querySelectorAll('td[data-libelle="CSG déductible"]')].map((td) => montant(td.textContent))
+    expect(colonne.sort()).toEqual([montant('-21,03 €'), montant('21,03 €')].sort())
+  })
+
+  it('une CSG-CRDS non saisie reste inconnue, jamais zéro', async () => {
+    faux.cotisations = [cotisation({ id: 'sans', montant_appele: -300, montant_csg_crds: null })]
+    monter()
+    await screen.findByText('CSG déductible (proposée)')
+    expect([...document.querySelectorAll('td[data-libelle="CSG déductible"]')].map((td) => td.textContent)).toEqual(['—'])
+  })
+})
