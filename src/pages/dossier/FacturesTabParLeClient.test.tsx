@@ -152,7 +152,7 @@ const commun = {
   articleExoneration: null, numeroTvaAttribue: false, tvaSurDebits: false,
 }
 const cabinet = (dossierId = 'd1') => (
-  <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} dossierId={dossierId} {...commun} />
+  <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet" compteCaisse="530000" onAdresseUpdated={() => {}} dossierId={dossierId} {...commun} />
 )
 
 async function monter(attendre = 'Client A') {

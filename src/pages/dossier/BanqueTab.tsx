@@ -2423,6 +2423,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
           ].join('-')}
           espace="cabinet"
           acces={accesDuReleve.acces}
+          compteCaisse={modele.plan.caisse}
           dossierId={dossierId}
           facture={fenetreSurMouvement.facture}
           mouvementImpose={fenetreSurMouvement.mouvementImpose}

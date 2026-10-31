@@ -28,7 +28,8 @@ import EncaissementsFactureModal from './EncaissementsFactureModal'
 // QUI REGARDE : le cabinet, avec les accès du dossier que l'onglet a lus une fois (« par le client », étape P4c) ; ou le
 // client « Ventes », avec ou sans « Banque » — sans elle, le relevé n'est pas demandé, et le mouvement qu'un encaissement
 // désigne se dit sans être nommé, sous les mots de la fenêtre.
-type QuiRegarde = { espace: 'cabinet'; acces: AccesDuDossier } | { espace: 'client'; banque: boolean }
+// Le cabinet passe aussi le compte de la caisse du plan, pour la fenêtre (la relecture de la caisse du 31/10/2026).
+type QuiRegarde = { espace: 'cabinet'; acces: AccesDuDossier; compteCaisse: string } | { espace: 'client'; banque: boolean }
 
 type Props = QuiRegarde & {
   dossierId: string
@@ -284,7 +285,7 @@ export default function ReglementsSection(props: Props) {
       {factureOuverte && (
         <EncaissementsFactureModal
           key={factureOuverte.id}
-          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const, banque: props.banque })}
+          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces, compteCaisse: props.compteCaisse } : { espace: 'client' as const, banque: props.banque })}
           dossierId={dossierId}
           facture={factureOuverte}
           mouvementImpose={null}

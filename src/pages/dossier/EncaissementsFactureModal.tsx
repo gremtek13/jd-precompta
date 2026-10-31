@@ -41,6 +41,14 @@ import type {
 import {
   ACCES_SANS_OBJET, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, estLeClient, type AccesDuDossier,
 } from '../../lib/auteursVentes'
+import { CAISSE_EXPORTEE } from '../../lib/caisse'
+import { lireLaCaisse } from '../../lib/caisseLecture'
+import { lireLaRepriseDeLaCaisse } from '../../lib/caisseDuDossierLecture'
+import {
+  caisseDeLaFenetre, contrePassationPourLaCaisse, PERMIS_PAR_LA_CAISSE, retenuParLaCaisse, retraitPourLaCaisse,
+  type CaisseDeLaFenetre,
+  type JugementDeLaCaisse,
+} from '../../lib/caisseDesEncaissements'
 
 // QUI REGARDE (espace client, étape P4a) : le cabinet, qui porte les deux droits (`gere_la_banque` en base) ; ou le client
 // « Ventes », avec ou sans « Banque » sur la société affichée. Les mêmes gestes, par les mêmes fonctions (P2 les lui
@@ -49,7 +57,10 @@ import {
 // (conception, §5.4). Elle le DIT, et l'encaissement s'enregistre sans mouvement.
 // Le cabinet reçoit de l'onglet les ACCÈS du dossier (étape P4c) : il dit « par le client » de ce que le client a fait, sur
 // une liste lue en entier seulement (lib/auteursVentes.ts). Le client, lui, n'en lit aucun et rien ne s'y dit.
-type QuiRegarde = { espace: 'cabinet'; acces: AccesDuDossier } | { espace: 'client'; banque: boolean }
+// Le cabinet reçoit aussi le compte de la caisse DU PLAN du dossier (la relecture de la caisse du 31/10/2026 ;
+// lib/caisseDesEncaissements.ts) : retirer, ou contre-passer sans mouvement, l'encaissement en espèces d'une facture source
+// se juge sur la caisse rejouée, avant le clic — jamais sur un 53 deviné. Le client ne lit pas la caisse : la base la juge.
+type QuiRegarde = { espace: 'cabinet'; acces: AccesDuDossier; compteCaisse: string } | { espace: 'client'; banque: boolean }
 
 type Props = QuiRegarde & {
   dossierId: string
@@ -152,6 +163,10 @@ interface Lu {
   // Les statuts de LA facture lus sur la plateforme du client (étape d7) : un refus ou un rejet fait refuser
   // l'encaissement et sa déclaration, comme la base.
   statuts: StatutLu[]
+  // La caisse du dossier (la relecture du 31/10/2026) : au cabinet, rejouée sur ses opérations et la reprise, lues avec le
+  // reste, et sur le relevé, les encaissements et les factures ci-dessus ; une entrée pas lue en entier ne retient que les
+  // gestes qui font sortir des espèces de la caisse — ce n'est pas un manque de la fenêtre. Au client, jugée par la base.
+  caisse: CaisseDeLaFenetre
 }
 
 interface Manque {
@@ -171,12 +186,13 @@ const CONSEQUENCE_DECLARATIONS = 'Rien n’est proposé — ni enregistrer, ni r
 const CONSEQUENCE_STATUTS = 'Rien n’est proposé — ni enregistrer, ni déclarer : un refus de l’acheteur qu’on ne verrait '
   + 'pas laisserait proposer l’encaissement ou la déclaration d’une facture refusée. Rouvre cette fenêtre.'
 
+// `compteCaisse` : celui du plan du dossier, au cabinet ; nul pour le client, qui ne lit pas la caisse.
 async function lireDonnees(
-  dossierId: string, factureId: string, espace: EspaceVentes, gereLaBanque: boolean,
+  dossierId: string, factureId: string, espace: EspaceVentes, gereLaBanque: boolean, compteCaisse: string | null,
 ): Promise<{ lu: Lu; manques: Manque[] }> {
   const [
     factures, facturesDuDossier, exercices, transmissions, evenements, encaissements, parts, mouvements, reglements, pieces,
-    declarations, statuts,
+    declarations, statuts, lectureDeLaCaisse,
   ] = await Promise.all([
     lireTout<FactureEmise>((debut, fin) =>
       supabase.from('factures_emises').select('*', { count: 'exact' })
@@ -240,6 +256,12 @@ async function lireDonnees(
       supabase.from('statuts_factures_recus').select(COLONNES_STATUT_LU, { count: 'exact' })
         .eq('dossier_id', dossierId).eq('facture_id', factureId).order('lu_le').order('id').range(debut, fin),
     ),
+    // La caisse et la reprise (la relecture du 31/10/2026), au cabinet seul : leurs policies ne s'ouvrent qu'à lui, et une
+    // lecture refusée rendrait zéro ligne sans erreur. Elles ne rejettent jamais ; le drapeau baissé, aucun appel au réseau
+    // (`lireLaCaisse`), et la reprise n'est pas demandée.
+    compteCaisse === null ? Promise.resolve(null) : lireLaCaisse(dossierId).then(async (caisse) => ({
+      caisse, reprise: await lireLaRepriseDeLaCaisse(dossierId, caisse.enBase),
+    })),
   ])
   // Les lignes de la facture ET de ses avoirs, une fois ceux-ci lus : celles des avoirs portent le plafond net d'une facture
   // source (étape VF5b). Celles de la facture toujours, même si la lecture de ses avoirs n'est pas revenue en entier.
@@ -274,6 +296,13 @@ async function lireDonnees(
       lignes: lignes.lignes, transmissions: transmissions.lignes, evenements: evenements.lignes,
       encaissements: encaissements.lignes, parts: parts.lignes, mouvements: mouvements.lignes, reglements: reglements.lignes,
       pieces: pieces.lignes, declarations: declarations.lignes, statuts: statuts.lignes,
+      // Le relevé, les encaissements et les factures sont ceux de la fenêtre : lus en partie, un manque ci-dessus retient tout.
+      caisse: compteCaisse === null || lectureDeLaCaisse === null
+        ? caisseDeLaFenetre({ espace: 'client', caisseEnBase: CAISSE_EXPORTEE })
+        : caisseDeLaFenetre({
+          espace: 'cabinet', dossierId, compteCaisse, caisse: lectureDeLaCaisse.caisse, reprise: lectureDeLaCaisse.reprise,
+          mouvements: mouvements.lignes, encaissements: encaissements.lignes, factures: facturesDuDossier.lignes,
+        }),
     },
     manques,
   }
@@ -317,6 +346,21 @@ function formulaireVierge(parTaux: readonly ResteDuTaux[], resteCentimes: number
 // Ce qu'une facture source demande de lire de plus (étape VF5b), tel que la lecture l'a rendu.
 function venteDe(lu: Pick<Lu, 'anneesValidees' | 'facturesDuDossier'>): ContexteVente {
   return { anneesValidees: lu.anneesValidees, factures: lu.facturesDuDossier }
+}
+
+// CE QUE LA CAISSE DIT D'UN GESTE (la relecture du 31/10/2026 ; lib/caisseDesEncaissements.ts) : le même jugement pour le
+// bouton qu'il grise et pour le geste qu'il retient — retirer l'encaissement, ou le contre-passer TEL QUE L'ÉTAPE LE SAISIT (sa
+// date, le débit qu'il cite ou non). La garde de la caisse est différée à la fin de la transaction : sans eux, son refus
+// n'arrivait qu'après le clic.
+function caisseDuRetrait(lu: Lu, e: EncaissementEcran): JugementDeLaCaisse {
+  return retraitPourLaCaisse(lu.caisse, e, { encaissements: lu.encaissements, factures: lu.facturesDuDossier })
+}
+
+function caisseDeLaContrePassation(
+  lu: Lu, e: EncaissementEcran, etape: Pick<Extract<Etape, { type: 'contre-passer' }>, 'date' | 'ligneBancaireId'>,
+): JugementDeLaCaisse {
+  return contrePassationPourLaCaisse(lu.caisse, e, etape.date === '' ? null : etape.date, etape.ligneBancaireId,
+    { encaissements: lu.encaissements, factures: lu.facturesDuDossier })
 }
 
 // Les pièces désignées du dossier (étape VF1), lues avec le relevé, sous « Banque » : le virement mixte (étape VF5h) se juge
@@ -439,6 +483,8 @@ export default function EncaissementsFactureModal(props: Props) {
   const gereLaBanque = props.espace === 'cabinet' || props.banque
   // Qui est le client : au cabinet seulement, sur les accès que l'onglet a lus ; le client n'en lit aucun.
   const acces = props.espace === 'cabinet' ? props.acces : ACCES_SANS_OBJET
+  // Le compte de la caisse du plan : au cabinet seulement, qui lit la caisse ; le client ne la lit pas.
+  const compteCaisse = props.espace === 'cabinet' ? props.compteCaisse : null
   const dire = (texte: string) => pourLEspace(espace, texte)
   const [lu, setLu] = useState<Lu | null>(null)
   const [manques, setManques] = useState<Manque[]>([])
@@ -456,7 +502,7 @@ export default function EncaissementsFactureModal(props: Props) {
   // `vider` : le formulaire repart de ce qui vient d'être lu — à l'ouverture, et après un geste réussi, quand le reste
   // et les propositions ont changé. Après un refus de la base, la saisie reste, pour qu'on la corrige.
   async function lire(vider: boolean) {
-    const etat = etatLu(await lireDonnees(dossierId, factureOuverte.id, espace, gereLaBanque), dossierId, factureOuverte.id, mouvementImpose)
+    const etat = etatLu(await lireDonnees(dossierId, factureOuverte.id, espace, gereLaBanque, compteCaisse), dossierId, factureOuverte.id, mouvementImpose)
     setManques(etat.manques)
     setLu(etat.lu)
     if (vider && etat.formulaire !== undefined) setFormulaire(etat.formulaire)
@@ -466,7 +512,7 @@ export default function EncaissementsFactureModal(props: Props) {
   // qu'un formulaire existe. Une fenêtre fermée avant la réponse ne l'écrit pas.
   useEffect(() => {
     let fermee = false
-    lireDonnees(dossierId, factureOuverte.id, espace, gereLaBanque).then((r) => {
+    lireDonnees(dossierId, factureOuverte.id, espace, gereLaBanque, compteCaisse).then((r) => {
       if (fermee) return
       const etat = etatLu(r, dossierId, factureOuverte.id, mouvementImpose)
       setManques(etat.manques)
@@ -481,7 +527,7 @@ export default function EncaissementsFactureModal(props: Props) {
       setConnexionErreur(r.erreur)
     })
     return () => { fermee = true }
-  }, [dossierId, factureOuverte.id, espace, gereLaBanque, mouvementImpose, encaissementImpose, debitImpose])
+  }, [dossierId, factureOuverte.id, espace, gereLaBanque, compteCaisse, mouvementImpose, encaissementImpose, debitImpose])
 
   async function lireConnexion() {
     const r = await lireConnexionPlateforme(dossierId)
@@ -536,6 +582,8 @@ export default function EncaissementsFactureModal(props: Props) {
   async function retirer(e: EncaissementEcran) {
     if (verrou.current || !lu) return
     if (refusRetraitVente(dossierId, e.id, lu.encaissements, encaissementsDeclares(lu.declarations), lu.mouvements, venteDe(lu))) return
+    // La caisse : des espèces qui ont déjà servi, ou une caisse pas lue en entier, ont grisé le bouton.
+    if (retenuParLaCaisse(caisseDuRetrait(lu, e))) return
     if (!window.confirm(
       `Retirer l’encaissement du ${formatDate(e.date_encaissement)} de ${formatMoney(e.montant)} sur ${nature} ?\n\n`
       + 'Il reste au registre, marqué retiré : il ne compte plus dans ce qui est encaissé, et ne se rétablit pas — '
@@ -612,6 +660,8 @@ export default function EncaissementsFactureModal(props: Props) {
     if (verrou.current || !lu || etape?.type !== 'contre-passer') return
     const e = lu.encaissements.find((x) => x.id === etape.encaissementId)
     if (!e) return
+    // La caisse : une contre-passation sans mouvement qui la rendrait négative, ou une caisse pas lue, ont grisé le bouton.
+    if (retenuParLaCaisse(caisseDeLaContrePassation(lu, e, etape))) return
     const cp = contrePassationDe(e, lu.parts)
     // Nul : l'encaissement n'a jamais été déclaré, et sa contre-passation ne se déclarera pas.
     const hote = declarationActive(lu.declarations, e.id)?.hote ?? null
@@ -1012,6 +1062,10 @@ function Contenu({
               <tbody>
                 {siens.map((e) => {
                   const refusDuRetrait = refusRetraitVente(dossierId, e.id, lu.encaissements, declares, lu.mouvements, vente)
+                  // Ce que la caisse dit du retrait que la fonction accepterait (la relecture du 31/10/2026) : les espèces
+                  // déjà servies, sous les mots de la base, ou la caisse pas lue — le bouton grisé ; au client, que la
+                  // base en jugera. Hors des espèces d'une facture source, rien.
+                  const caisseRetrait = refusDuRetrait == null ? caisseDuRetrait(lu, e) : PERMIS_PAR_LA_CAISSE
                   // « Déclaré sur la plateforme » : un encaissement ou une contre-passation qui compte, pas encore déclaré,
                   // que la base inscrirait, sous une obligation due ou facultative.
                   const declarable = offerte && e.retire_le == null && !declares.has(e.id)
@@ -1073,9 +1127,15 @@ function Contenu({
                       <td data-libelle="Déclaration" className="muted cellule-declaration">{celluleDeclaration(e)}</td>
                       <td className="td-actions">
                         {refusDuRetrait == null && (
-                          <button type="button" className="btn btn-outline btn-sm" disabled={enCours != null} onClick={() => onRetirer(e)}>
+                          <button
+                            type="button" className="btn btn-outline btn-sm" disabled={enCours != null || retenuParLaCaisse(caisseRetrait)}
+                            onClick={() => onRetirer(e)}
+                          >
                             {enCours === `retirer-${e.id}` ? 'Retrait…' : 'Retirer'}
                           </button>
+                        )}
+                        {caisseRetrait.etat !== 'permis' && (
+                          <span className="muted" style={{ fontSize: '0.82rem' }}>{dire(caisseRetrait.message)}</span>
                         )}
                         {declarable && (
                           <button
@@ -1459,6 +1519,11 @@ function EtapeContrePassation({
   const inclassable = refus == null
     ? inclassableApresContrePassation(dossierId, e.id, lu.encaissements, etape.ligneBancaireId, lu.mouvements, vente, exemplairesDe(lu))
     : null
+  // La caisse (la relecture du 31/10/2026) : sans débit cité, la contre-passation d'espèces d'une facture source en fait sortir
+  // ces espèces au jour du décaissement. La garde de la caisse, différée, ne refusait qu'après le clic : ses mots avant, le
+  // bouton grisé ; une caisse pas lue, retenue ; au client, que la base en jugera. Après les refus de la fonction, qui
+  // passent d'abord.
+  const caisse = refus == null ? caisseDeLaContrePassation(lu, e, etape) : PERMIS_PAR_LA_CAISSE
   return (
     <div className="field etape-encaissement">
       <h3>Contre-passer l’encaissement du {formatDate(e.date_encaissement)} — {formatMoney(e.montant)}</h3>
@@ -1541,9 +1606,17 @@ function EtapeContrePassation({
       </p>
       {refus && <p className="alerte-tva" style={{ marginTop: 0 }}>{pourLEspace(espace, refus.message)}</p>}
       {inclassable && <p className="note-info">{pourLEspace(espace, inclassable)}</p>}
+      {caisse.etat !== 'permis' && (
+        <p className={caisse.etat === 'juge_par_la_base' ? 'note-info' : 'alerte-tva'} style={{ marginTop: 0 }}>
+          {pourLEspace(espace, caisse.message)}
+        </p>
+      )}
       <div className="rangee-boutons">
         <button type="button" className="btn btn-outline" disabled={enCours != null} onClick={() => setEtape(null)}>Annuler</button>
-        <button type="button" className="btn btn-primary" disabled={refus != null || enCours != null} onClick={onContrePasser}>
+        <button
+          type="button" className="btn btn-primary" disabled={refus != null || retenuParLaCaisse(caisse) || enCours != null}
+          onClick={onContrePasser}
+        >
           {enCours === 'contre-passer' ? 'Contre-passation…' : 'Enregistrer la contre-passation'}
         </button>
       </div>

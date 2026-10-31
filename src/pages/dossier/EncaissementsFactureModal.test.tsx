@@ -6,6 +6,8 @@ import { LIBELLE_MOTIF_CONTRE_PASSATION, LIBELLE_MOTIF_CONTRE_PASSATION_CLIENT, 
 import { ACCES_EN_COURS, type AccesDuDossier } from '../../lib/auteursVentes'
 import { motsDuCabinet } from '../../lib/espaceVentes'
 import { RATTACHEMENT_APRES_LA_FRONTIERE } from '../../lib/encaissementsFactures'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { CAISSE_JUGEE_PAR_LA_BASE } from '../../lib/caisseDesEncaissements'
 
 import type {
   EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureSuperpdpEvent, LigneBancaire, Piece, ReglementGroupe,
@@ -43,6 +45,14 @@ const faux = vi.hoisted(() => ({
   // Les tables que la fenêtre a demandées, une entrée par requête (étape VF5b : le client ne lit pas les exercices validés).
   tablesLues: [] as string[],
 }))
+
+// LE DRAPEAU DE LA CAISSE (`CAISSE_EXPORTEE`, levé depuis le 30/10/2026) : ses deux états joués par un accesseur — levé par
+// défaut, baissé dans les cas qui gardent la fenêtre d'hier (la relecture de la caisse du 31/10/2026).
+const drapeauCaisse = vi.hoisted(() => ({ leve: true }))
+vi.mock('../../lib/caisse', async (original) => {
+  const vrai = await original<typeof import('../../lib/caisse')>()
+  return { ...vrai, get CAISSE_EXPORTEE() { return drapeauCaisse.leve } }
+})
 
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatIn, predicatOr } = await import('../../test/filtresPostgrest')
@@ -207,7 +217,10 @@ function monter(o: {
   mouvementImpose?: string
   // La contre-passation que la fiche d'un débit impose (étape VF5d) ; aucune par défaut, comme l'onglet Factures.
   contrePassationImposee?: ContrePassationImposee
-
+  // La caisse du dossier (la relecture du 31/10/2026), que le cabinet seul lit : ses opérations et la reprise ; aucune par
+  // défaut — une caisse vide, que des espèces d'une facture source remplissent.
+  operationsCaisse?: Record<string, unknown>[]
+  reprise?: Record<string, unknown>[]
 } = {}) {
   const f = o.facture ?? FACTURE
   // Des copies en objets nus : le faux client les modifie comme la base, et le jeu d'essai reste intact.
@@ -226,11 +239,13 @@ function monter(o: {
     statuts_factures_recus: nues(o.statuts ?? []),
     // Les exercices validés, que la fenêtre lit au cabinet depuis l'étape VF5b : aucun par défaut.
     exercices_valides: (o.exercices ?? []).map((annee) => ({ dossier_id: 'd1', annee })),
+    operations_caisse: o.operationsCaisse ?? [],
+    a_nouveaux: o.reprise ?? [],
   }
   faux.connexion = o.connexion === undefined ? null : o.connexion
   const qui = o.client
     ? { espace: 'client' as const, banque: o.client.banque }
-    : { espace: 'cabinet' as const, acces: o.acces ?? ACCES_EN_COURS }
+    : { espace: 'cabinet' as const, acces: o.acces ?? ACCES_EN_COURS, compteCaisse: PLAN_PAR_DEFAUT.caisse }
   return render(
     <EncaissementsFactureModal {...qui}
       dossierId="d1" facture={f} statutTva={o.statutTva === undefined ? 'redevable' : o.statutTva}
@@ -266,6 +281,7 @@ beforeEach(() => {
   faux.resoudreReleve = null
   faux.lecturesConnexion = 0
   faux.tablesLues = []
+  drapeauCaisse.leve = true
   onUpdated.mockReset()
 
 })
@@ -2152,5 +2168,142 @@ describe('EncaissementsFactureModal — des espèces ne citent aucun crédit (la
     cleanup()
     monter({ facture: SOURCE, exercices: [2027], encaissements: [encaissement({ moyen: 'cheque' })], parts: [part()] })
     await ligneDe(RATTACHEMENT_APRES_LA_FRONTIERE)
+  })
+})
+
+// ── LA CAISSE, LA RELECTURE DU 31/10/2026 : DES ESPÈCES QUI ONT DÉJÀ SERVI NE SORTENT PLUS DE LA CAISSE APRÈS LE CLIC ────
+//
+// Retirer, ou contre-passer sans mouvement, l'encaissement en espèces d'une facture source fait sortir ses espèces de la
+// caisse ; la garde de la caisse, différée à la fin de la transaction, ne le refusait qu'APRÈS le clic. Ce que ces cas
+// gardent, et que le module (caisseDesEncaissements.test.ts) ne voit pas : le câblage — la caisse et la reprise lues au
+// cabinet, et pas au client ; le refus dit avant le clic, le bouton grisé, aucun appel ; la caisse pas lue qui retient le
+// geste ; le client qui l'apprend de la base, sans mot du cabinet ; le drapeau baissé, la fenêtre d'hier. Données FICTIVES.
+describe('EncaissementsFactureModal — la caisse juge les espèces d’une facture source avant le clic', () => {
+  // 600 € reçus en espèces le 05/10/2027 (e1), versés en banque le 10/10/2027 : le versement, classé sur la caisse, les a
+  // fait sortir.
+  const ESPECES = encaissement({ moyen: 'especes' })
+  const VERSEMENT = mouvement({
+    id: 'm-vrst', montant: 600, date: '2027-10-10', libelle: 'VERSEMENT ESPECES', statut: 'rapprochee', compte_bilan: PLAN_PAR_DEFAUT.caisse,
+  })
+  const REFUS_RETRAIT = 'Retirer cet encaissement de 600,00 € en espèces rendrait la caisse négative le 10/10/2027 (−600,00 €) : ses espèces ont déjà servi.'
+  const REFUS_CP = 'Cette contre-passation de 600,00 € en espèces rendrait la caisse négative le 20/10/2027 (−600,00 €) : la caisse n\'a plus ces espèces ce jour-là.'
+  const sans = (s: string | null) => (s ?? '').replace(/[  ]/g, ' ')
+  const retirerBouton = () => screen.findByRole('button', { name: 'Retirer' }) as Promise<HTMLButtonElement>
+  const especesSource = (o: Parameters<typeof monter>[0] = {}) =>
+    monter({ facture: SOURCE, encaissements: [ESPECES], parts: [part()], mouvements: [mouvement(), VERSEMENT], ...o })
+
+  it('le retrait : le refus de la base sous ses mots, avant le clic — le bouton grisé, ni confirmation ni appel', async () => {
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { container } = especesSource()
+    const b = await retirerBouton()
+    await screen.findByText((_, el) => el?.tagName === 'SPAN' && sans(el.textContent) === REFUS_RETRAIT)
+    expect(b.disabled).toBe(true)
+    await act(async () => { fireEvent.click(b) })
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(faux.rpcs).toEqual([])
+    // Le cabinet lit la caisse et la reprise.
+    expect(faux.tablesLues).toEqual(expect.arrayContaining(['operations_caisse', 'a_nouveaux']))
+    expect(sans(container.textContent)).toContain(REFUS_RETRAIT)
+  })
+
+  it('NEUTRE : des espèces qui n’ont pas servi — le retrait part, comme hier', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    especesSource({ mouvements: [mouvement()] })
+    const b = await retirerBouton()
+    expect(b.disabled).toBe(false)
+    expect(screen.queryByText(/rendrait la caisse négative/)).toBeNull()
+    await act(async () => { b.click() })
+    expect(faux.rpcs.map((r) => r.nom)).toEqual(['retirer_encaissement'])
+  })
+
+  it('NEUTRE : une facture qui n’est pas source, ou un autre moyen — la caisse n’en compte rien, le retrait part', async () => {
+    for (const o of [{ facture: FACTURE }, { encaissements: [encaissement({ moyen: 'cheque' })] }]) {
+      especesSource(o)
+      expect((await retirerBouton()).disabled).toBe(false)
+      expect(screen.queryByText(/rendrait la caisse négative|La caisse du dossier n’est pas lue/)).toBeNull()
+      cleanup()
+    }
+  })
+
+  it('la reprise refusée : la caisse n’est pas lue en entier — le retrait est retenu, et la fenêtre le dit', async () => {
+    faux.refus = { a_nouveaux: 'lecture refusée' }
+    especesSource({ mouvements: [mouvement()] })
+    const b = await retirerBouton()
+    await screen.findByText(/^La caisse du dossier n’est pas lue en entier \(la reprise du dossier : .*\) : ce geste fait sortir des espèces de la caisse/)
+    expect(b.disabled).toBe(true)
+    // Les autres gestes restent : seul celui qui touche la caisse est retenu.
+    expect(await bouton()).toHaveProperty('disabled', true)
+    fireEvent.change(champ('Date de l’encaissement'), { target: { value: '2027-10-20' } })
+    fireEvent.change(champ('Moyen de paiement'), { target: { value: 'virement' } })
+    expect(await bouton()).toHaveProperty('disabled', false)
+  })
+
+  describe('la contre-passation sans mouvement d’un encaissement déclaré', () => {
+    const declare = (o: Parameters<typeof monter>[0] = {}) => especesSource({ transmissions: [acceptee()], declarations: [declaration()], ...o })
+    const ouvrir = async () => {
+      const l = await ligneDe('Déclaré à la main sur flux.plateforme-demo.fr le 06/10/2027')
+      fireEvent.click(within(l).getByRole('button', { name: 'Contre-passer' }))
+    }
+    const enregistrerCp = () => screen.getByRole('button', { name: 'Enregistrer la contre-passation' }) as HTMLButtonElement
+    const saisir = () => {
+      fireEvent.change(champ('Date du décaissement'), { target: { value: '2027-10-20' } })
+      fireEvent.change(champ(LIBELLE_MOTIF_CONTRE_PASSATION), { target: { value: 'Espèces rendues' } })
+    }
+
+    it('le refus de la base au jour du décaissement, le bouton grisé ; citant un débit, elle ne touche plus la caisse', async () => {
+      declare({ mouvements: [mouvement(), VERSEMENT, mouvement({ id: 'juste', montant: -600, date: '2027-10-28', libelle: 'CHQ IMPAYE 0001' })] })
+      await ouvrir()
+      saisir()
+      screen.getByText((_, el) => el?.tagName === 'P' && sans(el.textContent) === REFUS_CP)
+      expect(enregistrerCp().disabled).toBe(true)
+      await act(async () => { fireEvent.click(enregistrerCp()) })
+      expect(faux.rpcs).toEqual([])
+      fireEvent.change(screen.getByLabelText('Débit qui défait l’encaissement (facultatif)'), { target: { value: 'juste' } })
+      expect(screen.queryByText(/rendrait la caisse négative/)).toBeNull()
+      expect(enregistrerCp().disabled).toBe(false)
+    })
+
+    it('NEUTRE : des espèces qui n’ont pas servi — la contre-passation part, comme hier', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      declare({ mouvements: [mouvement()] })
+      await ouvrir()
+      saisir()
+      expect(screen.queryByText(/rendrait la caisse négative/)).toBeNull()
+      expect(enregistrerCp().disabled).toBe(false)
+      await act(async () => { enregistrerCp().click() })
+      expect(faux.rpcs.map((r) => r.nom)).toEqual(['annuler_encaissement'])
+    })
+
+    it('la caisse pas lue : retenue, quelle que soit la date', async () => {
+      faux.refus = { operations_caisse: 'lecture refusée' }
+      declare({ mouvements: [mouvement()] })
+      await ouvrir()
+      saisir()
+      screen.getByText(/^La caisse du dossier n’est pas lue en entier \(les opérations de la caisse : /)
+      expect(enregistrerCp().disabled).toBe(true)
+    })
+  })
+
+  it('le client « Ventes » ne lit pas la caisse : le geste reste offert, et la fenêtre dit que la base en jugera — sans mot du cabinet', async () => {
+    const { container } = especesSource({ client: { banque: true } })
+    const b = await retirerBouton()
+    expect(b.disabled).toBe(false)
+    screen.getByText(CAISSE_JUGEE_PAR_LA_BASE)
+    expect(faux.tablesLues).not.toContain('operations_caisse')
+    expect(faux.tablesLues).not.toContain('a_nouveaux')
+    expect(motsDuCabinet(container.textContent ?? '')).toEqual([])
+  })
+
+  it('le drapeau baissé : la fenêtre d’hier, au cabinet comme au client — ni lecture de la caisse, ni mot d’elle', async () => {
+    drapeauCaisse.leve = false
+    for (const o of [{}, { client: { banque: true } }]) {
+      faux.tablesLues = []
+      especesSource(o)
+      expect((await retirerBouton()).disabled).toBe(false)
+      expect(screen.queryByText(/rendrait la caisse négative|La caisse du dossier|Ces espèces sont dans la caisse/)).toBeNull()
+      expect(faux.tablesLues).not.toContain('operations_caisse')
+      expect(faux.tablesLues).not.toContain('a_nouveaux')
+      cleanup()
+    }
   })
 })

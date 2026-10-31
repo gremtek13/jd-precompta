@@ -237,7 +237,7 @@ function poser(factures: FactureEmise[]) {
 
 function monter(statutTva: StatutTva | null = 'redevable', articleExoneration: ArticleExoneration | null = null, numeroTvaAttribue = false) {
   return render(
-    <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet"
+    <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet" compteCaisse="530000"
       dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234"
       dossierAdresse={null} statutTva={statutTva} articleExoneration={articleExoneration} numeroTvaAttribue={numeroTvaAttribue}
       tvaSurDebits={false} onAdresseUpdated={() => {}}
