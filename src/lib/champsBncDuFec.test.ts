@@ -308,6 +308,8 @@ describe('un mouvement justifié par le relevé : « Banque », sa date, aucun c
       .toBe(`Cotisation sociale — ${POSTE_COTISATIONS}`)
     expect(releve({ compte_bilan: '580000' }, [])?.nature).toBe('Opération de bilan')
     expect(releve({ montant: 200, compte_bilan: '530000' }, [])?.nature).toBe("Versement d'espèces")
+    // Un débit sur la caisse (des espèces retirées pour elle) n'est pas un versement : les mots de la fiche du mouvement.
+    expect(releve({ montant: -80, compte_bilan: '530000' }, [])?.nature).toBe("Retrait d'espèces pour la caisse")
     // Le compte de la caisse est celui du PLAN du dossier, jamais un 53 deviné.
     expect(champsDUnMouvementDuReleve(mouvement({ montant: 200, compte_bilan: '530000' }), [], { caisse: '530100' })?.nature)
       .toBe('Opération de bilan')
