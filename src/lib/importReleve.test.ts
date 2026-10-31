@@ -4,15 +4,16 @@
 // FICTIFS, à la forme des exports réels (point-virgule, virgule décimale, JJ/MM/AAAA, préambules, windows-1252).
 import { describe, expect, it } from 'vitest'
 import {
-  colonnesParEntete, detectColumnMapping, estUnSoldeCourant, libelleDeLigne, montantDeLigne, parseCsv, parseMontantBancaire,
-  separateurDuCsv, type DetectionDesColonnes,
+  colonnesParEntete, detectColumnMapping, estUnSoldeCourant, libelleDeLigne, lignesDeDonnees, montantDeLigne, parseCsv,
+  parseMontantBancaire, separateurDuCsv, type DetectionDesColonnes,
 } from './csv'
 import { decoderUtf8OuWindows1252 } from './decodageTexte'
 import {
-  douteDuSens, interpreterReleve, partagerParMultiplicite, phraseDesEcartees, phraseDesRecouvrements, recouvrements,
-  refusDuReglage, signatureMouvement, type ReglageDeLImport,
+  AUCUNE_DECISION, douteDuSens, interpreterReleve, operationsDuPdf, partagerParMultiplicite, phraseDesEcartees,
+  phraseDesRecouvrements, recouvrements, refusDesLignesATrancher, refusDuReglage, signatureMouvement, type DecisionDeSolde,
+  type ReglageDeLImport,
 } from './importReleve'
-import { aLaFormeDUnSolde, lignesDeSolde, phraseDesSoldes } from './soldeReleve'
+import { aLaFormeDUnSolde, lignesATrancher, lignesDeSolde, natureDuLibelle, phraseDesSoldes } from './soldeReleve'
 import { parseLignesFromPdf } from './relevePdf'
 
 // Un fichier tel qu'une banque l'écrit en windows-1252 : chaque caractère sur un octet (é = 0xE9, € = 0x80).
@@ -25,8 +26,8 @@ function lire(octets: Uint8Array) {
   const { texte, encodage } = decoderUtf8OuWindows1252(octets)
   const rows = parseCsv(texte)
   const detection = detectColumnMapping(rows)
-  const dataRows = detection.hasHeader ? rows.slice(1) : rows
-  return { encodage, rows, detection, releve: interpreterReleve(dataRows, detection) }
+  const { donnees, retirees } = lignesDeDonnees(rows, detection.hasHeader, detection.ligneEnTete)
+  return { encodage, rows, detection, retirees, releve: interpreterReleve(donnees, detection, AUCUNE_DECISION) }
 }
 const utf8 = (texte: string) => new TextEncoder().encode(texte)
 
@@ -58,6 +59,13 @@ describe('separateurDuCsv — le séparateur le plus régulier', () => {
   it('départage par la régularité un fichier sans dates (une balance)', () => {
     expect(separateurDuCsv('Compte;Libelle;Debit;Credit\n411000;Clients;1 200,00;\n512000;Banque;;3 400,50\n')).toBe(';')
     expect(separateurDuCsv('Compte,Libelle,Debit,Credit\n411000,Clients,1200.00,\n512000,"Banque; courant",,3400.50\n')).toBe(',')
+  })
+  it('garde le point-virgule d’une balance dont certaines lignes omettent la dernière colonne', () => {
+    // Sans aucune ligne d'opération, la régularité seule choisissait la virgule décimale : aucun compte lu.
+    const balance = 'Compte;Libellé;Débit;Crédit;Lettrage\n411000;Clients;1 200,00;;A\n512000;Banque;;3 400,50\n'
+      + '606000;Achats;2 200,50;\n401000;Fournisseurs;;12,00;B\n'
+    expect(separateurDuCsv(balance)).toBe(';')
+    expect(parseCsv(balance)[1]).toEqual(['411000', 'Clients', '1 200,00', '', 'A'])
   })
   it('ne compte pas un séparateur entre guillemets', () => {
     expect(separateurDuCsv('a,"b;c",d\ne,"f;g",h\n')).toBe(',')
@@ -118,6 +126,10 @@ describe('colonnesParEntete', () => {
     expect(colonnesParEntete([['Date de l\'opération', 'Libellé', 'Montant de l\'opération', 'Devise']])).toMatchObject({ date: 0, montant: 2 })
     expect(colonnesParEntete([['Date', 'Date de valeur', 'Montant(EUROS)']])).toMatchObject({ date: 0, dateValeur: 1, montant: 2 })
   })
+  it('reconnaît « Date opé. » et « Date opé »', () => {
+    expect(colonnesParEntete([['Date opé.', 'Libellé', 'Montant']])).toMatchObject({ date: 0, montant: 2 })
+    expect(colonnesParEntete([['Date opé', 'Libellé', 'Débit', 'Crédit']])).toMatchObject({ date: 0, debit: 2, credit: 3 })
+  })
   it('trouve l’en-tête après un préambule', () => {
     expect(colonnesParEntete([['Compte courant', '0123456789'], ['Période du 01/03/2025 au 31/03/2025'], ['Date', 'Libellé', 'Montant']]))
       .toMatchObject({ ligne: 2, date: 0, montant: 2 })
@@ -169,8 +181,10 @@ describe('les exports des banques (fictifs)', () => {
     expect(r.encodage).toBe('windows-1252')
     expect(r.detection).toMatchObject({ format: 'debit_credit', colDebit: 2, colCredit: 3, colSolde: null, doute: null })
     expect(montants(r)).toEqual([['CB PHARMACIE DE LA GARE', -45.2], ['PRLV ORANGE', -89], ['VIR CPAM DES BOUCHES-DU-RHÔNE', 120]])
-    // Les lignes de préambule et d'en-tête restées sous la première ligne se COMPTENT, jamais en silence.
-    expect(r.releve.ecartees).toEqual([{ raison: 'date illisible', nombre: 2 }])
+    // Le préambule et l'en-tête précèdent les données : ni lus comme des opérations, ni comptés « date illisible ».
+    expect(r.detection.ligneEnTete).toBe(2)
+    expect(r.retirees).toHaveLength(3)
+    expect(r.releve.ecartees).toEqual([])
   })
 
   it('Société Générale : préambule, « Montant de l’opération » signé, la colonne Devise ignorée', () => {
@@ -231,6 +245,17 @@ describe('les exports des banques (fictifs)', () => {
     expect(r.releve.soldes).toEqual([{ date: '2025-03-01', montant: 1000 }, { date: '2025-03-31', montant: 1107.5 }])
   })
 
+  it('une ligne « SOLDE EN VOTRE FAVEUR » en Débit / Crédit est un solde, jamais un crédit', () => {
+    const r = lire(utf8([
+      'Date;Libellé;Débit;Crédit',
+      '01/01/2025;SOLDE ANTERIEUR;;1 000,00',
+      '05/01/2025;CB PHARMACIE;12,50;',
+      '31/01/2025;SOLDE EN VOTRE FAVEUR AU 31/01/2025;;987,50',
+    ].join('\n')))
+    expect(r.releve.operations.map((o) => o.libelle)).toEqual(['CB PHARMACIE'])
+    expect(r.releve.soldesNommes.map((l) => l.libelle)).toEqual(['SOLDE ANTERIEUR', 'SOLDE EN VOTRE FAVEUR AU 31/01/2025'])
+  })
+
   it('sans en-tête, deux colonnes exclusives dont une négative : un Débit / Crédit, sans doute', () => {
     const r = lire(utf8('05/03/2025;CB PHARMACIE;-12,50;\n06/03/2025;PRLV ORANGE;-40,00;\n07/03/2025;VIR CPAM;;120,00\n'))
     expect(r.detection).toMatchObject({ format: 'debit_credit', colDebit: 2, colCredit: 3, doute: null })
@@ -273,14 +298,20 @@ describe('libelleDeLigne — les autres colonnes de montants', () => {
 describe('les lignes de solde — la forme d’un solde', () => {
   it('reconnaît ce qu’écrivent les banques', () => {
     for (const t of ['SOLDE CREDITEUR AU 28/02/2025', 'Nouveau solde', 'Solde précédent', 'SOLDE EN FIN DE PERIODE',
-      'Ancien solde au 31 mars 2025', 'Solde au 31/03/2025 compte n° 12345', 'SOLDE', 'Solde (EUR)', 'SOLDE DEBITEUR AU 31.03.25']) {
+      'Ancien solde au 31 mars 2025', 'Solde au 31/03/2025 compte n° 12345', 'SOLDE', 'Solde (EUR)', 'SOLDE DEBITEUR AU 31.03.25',
+      'SOLDE A REPORTER', 'SOLDE INTERMEDIAIRE A REPORTER', 'SOLDE EN VOTRE FAVEUR AU 31/01/2025', 'SOLDE ANTERIEUR',
+      'Solde à ce jour', 'Solde après opération', 'Solde valeur', 'Solde total', 'Solde veille', 'SOLDE AU 31 JANV 2025',
+      'SOLDE AU 30 SEPT. 2025 CR', 'Solde au 31/03/2025 compte 02871 073921S', 'SOLDE AU 31/03/2025 1 060,00 Page 1/3',
+      'SOLDE DEBITEUR DB', 'Solde au 28 fevr 2025']) {
+      expect(natureDuLibelle(t), t).toBe('solde')
       expect(aLaFormeDUnSolde(t), t).toBe(true)
     }
   })
-  it('garde une opération dont le libellé dit « solde »', () => {
-    for (const t of ['VIR M DUPONT SOLDE NOTE HONORAIRES', 'LES SOLDES DU PORT', 'CB SOLDERIE', 'PRLV SOLDE CARTE', 'VIR SOLDE']) {
-      expect(aLaFormeDUnSolde(t), t).toBe(false)
+  it('met « à trancher » une ligne qui dit « solde » sans en avoir la forme, et opération celle qui ne le dit pas', () => {
+    for (const t of ['VIR M DUPONT SOLDE NOTE HONORAIRES', 'LES SOLDES DU PORT', 'PRLV SOLDE CARTE', 'VIR SOLDE', 'SOLDE DU COMPTE CLOS']) {
+      expect(natureDuLibelle(t), t).toBe('a trancher')
     }
+    for (const t of ['CB SOLDERIE', 'CB PHARMACIE', 'VIR CPAM 0325']) expect(natureDuLibelle(t), t).toBe('operation')
   })
   it('lignesDeSolde ne retient que les deux vrais soldes', () => {
     const rows = [
@@ -290,11 +321,28 @@ describe('les lignes de solde — la forme d’un solde', () => {
     ]
     expect(lignesDeSolde(rows, { colDate: 0, colLibelle: 1, colMontant: 2, hasHeader: false }).map((l) => l.index)).toEqual([0, 2])
   })
-  it('le chemin PDF ne coche plus « solde » une recette qui dit le mot', () => {
-    const lignes = ['SOLDE AU 01/03/2025 1 000,00', '05/03/2025 VIR M DUPONT SOLDE NOTE HONORAIRES 60,00', 'SOLDE AU 31/03/2025 1 060,00']
+  it('le chemin PDF coche « solde » d’office une ligne à trancher, et la signale', () => {
+    // Une vraie ligne de solde que la liste ne connaît pas ne doit jamais entrer comme un mouvement : cochée, signalée,
+    // l'opérateur la décoche si c'est une recette.
+    const lignes = ['SOLDE AU 01/03/2025 1 000,00', '05/03/2025 VIR M DUPONT SOLDE NOTE HONORAIRES 60,00', 'SOLDE AU 31/03/2025 1 060,00',
+      '10/03/2025 PRLV SEPA ORANGE -40,00']
       .map((texte) => ({ texte, xFin: 0 }))
-    expect(parseLignesFromPdf(lignes, 'signe', 'tous').map((l) => l.estSolde)).toEqual([true, false, true])
-    expect(parseLignesFromPdf(lignes).map((l) => l.montant)).toEqual([60])
+    expect(parseLignesFromPdf(lignes, 'signe', 'tous').map((l) => [l.estSolde, l.soldeATrancher])).toEqual([
+      [true, false], [true, true], [true, false], [false, false],
+    ])
+    expect(parseLignesFromPdf(lignes).map((l) => l.montant)).toEqual([-40])
+  })
+  it('le chemin PDF reconnaît la ligne de solde recollée avec la pagination', () => {
+    const lignes = [{ texte: 'Page 1/3 SOLDE INTERMEDIAIRE A REPORTER 31/01/2025 1 087,50', xFin: 0 }]
+    expect(parseLignesFromPdf(lignes, 'signe', 'tous').map((l) => [l.estSolde, l.soldeATrancher])).toEqual([[true, false]])
+  })
+  it('lignesATrancher : ni les soldes, ni les opérations', () => {
+    const rows = [
+      ['01/03/2025', 'SOLDE CREDITEUR AU 28/02/2025', '1 000,00'],
+      ['05/03/2025', 'VIR M DUPONT SOLDE NOTE HONORAIRES', '60,00'],
+      ['06/03/2025', 'CB PHARMACIE', '-12,50'],
+    ]
+    expect(lignesATrancher(rows, { colDate: 0, colLibelle: 1, colMontant: 2, hasHeader: false })).toEqual([1])
   })
   it('dit un relevé qui n’a pas exactement deux soldes', () => {
     expect(phraseDesSoldes(2)).toBeNull()
@@ -316,7 +364,7 @@ describe('interpreterReleve', () => {
       ['07/03/2025', 'FRAIS OFFERTS', '0,00', ''],
       ['08/03/2025', 'DEUX MONTANTS', '10,00', '20,00'],
       ['09/03/2025', 'VIR CPAM', '', '120,00'],
-    ], reglage())
+    ], reglage(), AUCUNE_DECISION)
     expect(r.operations.map((o) => o.montant)).toEqual([120])
     expect(r.ecartees).toEqual([
       { raison: 'date illisible', nombre: 1 }, { raison: 'sans montant', nombre: 1 }, { raison: 'montant illisible', nombre: 1 },
@@ -331,14 +379,68 @@ describe('interpreterReleve', () => {
       ['05/03/2025', 'VIR CPAM', '', '120,00'],
       ['06/03/2025', 'RIEN', '0,00', ''],
       ['31/03/2025', 'SOLDE AU 31/03/2025', '', '120,00'],
-    ], reglage())
+    ], reglage(), AUCUNE_DECISION)
     expect(r.soldes).toEqual([{ date: '2025-03-01', montant: 0 }, { date: '2025-03-31', montant: 120 }])
     expect(r.operations).toHaveLength(1)
   })
   it('ne fait jamais entrer le solde courant dans le libellé reconstitué', () => {
-    const r = interpreterReleve([['05/03/2025', '', '-12,50', '', '1 954,80']], reglage({ colSolde: 4 }))
+    const r = interpreterReleve([['05/03/2025', '', '-12,50', '', '1 954,80']], reglage({ colSolde: 4 }), AUCUNE_DECISION)
     expect(r.operations[0].libelle).toBe('Mouvement bancaire')
     expect(r.operations[0].brut).toBe('05/03/2025 |  | -12,50 |  | 1 954,80')
+  })
+  // Une vraie ligne de solde en Débit / Crédit que la liste ne connaîtrait pas, et une recette qui dit « solde » : ni
+  // l'une ni l'autre ne s'importe sans que le cabinet ait tranché, et les deux sont NOMMÉES.
+  const AVEC_A_TRANCHER = [
+    ['01/01/2025', 'SOLDE COMPTE JOINT AU 31/12/2024', '', '1 000,00'],
+    ['05/01/2025', 'VIR M DUPONT SOLDE NOTE HONORAIRES', '', '60,00'],
+    ['06/01/2025', 'CB PHARMACIE', '12,50', ''],
+    ['31/01/2025', 'SOLDE EN VOTRE FAVEUR AU 31/01/2025', '', '1 047,50'],
+  ]
+  it('retient une ligne à trancher, la nomme, et refuse l’import tant qu’elle ne l’est pas', () => {
+    const r = interpreterReleve(AVEC_A_TRANCHER, reglage(), AUCUNE_DECISION)
+    expect(r.aTrancher.map((l) => [l.libelle, l.montant, l.decision])).toEqual([
+      ['SOLDE COMPTE JOINT AU 31/12/2024', 1000, null], ['VIR M DUPONT SOLDE NOTE HONORAIRES', 60, null],
+    ])
+    expect(r.operations.map((o) => o.libelle)).toEqual(['CB PHARMACIE'])
+    expect(r.soldesNommes.map((l) => [l.date, l.libelle, l.montant])).toEqual([['2025-01-31', 'SOLDE EN VOTRE FAVEUR AU 31/01/2025', 1047.5]])
+    expect(r.lignes.map((l) => l.nature)).toEqual(['a trancher', 'a trancher', 'operation', 'solde'])
+    expect(refusDesLignesATrancher(r.aTrancher)).toMatch(/^2 lignes disent « solde » sans en avoir la forme/)
+  })
+  it('suit la décision du cabinet, ligne par ligne', () => {
+    const decisions = new Map<readonly string[], DecisionDeSolde>([[AVEC_A_TRANCHER[0], 'solde'], [AVEC_A_TRANCHER[1], 'operation']])
+    const r = interpreterReleve(AVEC_A_TRANCHER, reglage(), decisions)
+    expect(r.operations.map((o) => [o.libelle, o.montant])).toEqual([['VIR M DUPONT SOLDE NOTE HONORAIRES', 60], ['CB PHARMACIE', -12.5]])
+    expect(r.soldes).toEqual([{ date: '2025-01-01', montant: 1000 }, { date: '2025-01-31', montant: 1047.5 }])
+    expect(r.aTrancher.map((l) => l.decision)).toEqual(['solde', 'operation'])
+    expect(refusDesLignesATrancher(r.aTrancher)).toBeNull()
+    // Une seule tranchée : il en reste une, et le refus le dit au singulier.
+    const partiel = interpreterReleve(AVEC_A_TRANCHER, reglage(), new Map([[AVEC_A_TRANCHER[0], 'solde' as const]]))
+    expect(refusDesLignesATrancher(partiel.aTrancher)).toMatch(/^Une ligne dit « solde »/)
+  })
+})
+
+describe('lignesDeDonnees', () => {
+  const rows = [['Compte 123'], ['Date', 'Libellé', 'Montant'], ['05/03/2025', 'CB', '-12,50']]
+  it('prend les données après la ligne d’en-tête reconnue, préambule compris', () => {
+    expect(lignesDeDonnees(rows, true, 1)).toEqual({ donnees: [rows[2]], retirees: [rows[0], rows[1]] })
+  })
+  it('retire la seule première ligne sans en-tête reconnu, et rien quand la case est décochée', () => {
+    expect(lignesDeDonnees(rows, true, null)).toEqual({ donnees: [rows[1], rows[2]], retirees: [rows[0]] })
+    expect(lignesDeDonnees(rows, false, 1)).toEqual({ donnees: rows, retirees: [] })
+  })
+})
+
+describe('operationsDuPdf', () => {
+  it('écarte et compte les montants nuls et les dates vides, met les soldes à part', () => {
+    const r = operationsDuPdf([
+      { date: '2025-03-01', libelle: 'SOLDE', montant: 1000, estSolde: true },
+      { date: '2025-03-05', libelle: 'CB', montant: -12.5 },
+      { date: '2025-03-06', libelle: 'EFFACÉ', montant: 0 },
+      { date: '', libelle: 'SANS DATE', montant: 10 },
+      { date: '2025-03-07', libelle: 'NAN', montant: Number.NaN },
+    ])
+    expect(r.operations.map((o) => o.libelle)).toEqual(['CB'])
+    expect(r).toMatchObject({ soldes: [{ date: '2025-03-01', montant: 1000 }], nulles: 2, sansDate: 1 })
   })
 })
 
@@ -385,25 +487,31 @@ describe('partagerParMultiplicite', () => {
 
 describe('recouvrements', () => {
   const ligne = (date: string, source_fichier: string | null) => ({ date, source_fichier })
-  const fevrier = [ligne('2025-02-03', 'fevrier.pdf'), ligne('2025-03-01', 'fevrier.pdf')]
+  const fevrier = [ligne('2025-02-03', 'fevrier.pdf'), ligne('2025-02-27', 'fevrier.pdf')]
   const mars = [ligne('2025-03-03', 'mars.pdf'), ligne('2025-03-28', 'mars.pdf')]
   it('trouve le même mois importé sous un autre nom', () => {
-    const r = recouvrements(['2025-03-03', '2025-03-28'], [...fevrier, ...mars], 'mars.csv')
+    const r = recouvrements(['2025-03-03', '2025-03-28'], [...fevrier, ...mars])
     expect(r).toEqual([{ source: 'mars.pdf', du: '2025-03-03', au: '2025-03-28', mouvements: 2 }])
     expect(phraseDesRecouvrements(r)).toMatch(/« mars\.pdf » — 2 mouvement\(s\) du 03\/03\/2025 au 28\/03\/2025\. Si c’est le même relevé/)
   })
-  it('ne voit pas un recouvrement entre deux mois qui se touchent au jour près', () => {
-    expect(recouvrements(['2025-03-01', '2025-03-31'], fevrier, 'mars.csv')).toEqual([])
+  it('signale un seul jour partagé en bordure : janvier en PDF, puis un CSV du 31 janvier au 28 février', () => {
+    const janvier = [ligne('2025-01-02', 'janvier.pdf'), ligne('2025-01-31', 'janvier.pdf')]
+    expect(recouvrements(['2025-01-31', '2025-02-28'], janvier)).toEqual([{ source: 'janvier.pdf', du: '2025-01-02', au: '2025-01-31', mouvements: 2 }])
+    expect(recouvrements(['2025-02-01', '2025-02-28'], janvier)).toEqual([])
   })
-  it('ignore le fichier en cours, que le dédoublonnage reconnaît ligne à ligne', () => {
-    expect(recouvrements(['2025-03-03', '2025-03-28'], mars, 'mars.pdf')).toEqual([])
+  it('ne voit pas un recouvrement entre deux mois qui ne partagent aucun jour', () => {
+    expect(recouvrements(['2025-03-03', '2025-03-31'], fevrier)).toEqual([])
+  })
+  it('compte aussi les lignes du même nom de fichier : le dédoublonnage dépend du libellé', () => {
+    // Le même « mars.pdf » relu avec un libellé reconstitué autrement : ses mouvements, restés nouveaux, recouvrent mars.
+    expect(recouvrements(['2025-03-03', '2025-03-28'], mars)).toHaveLength(1)
   })
   it('nomme les mouvements sans fichier d’origine (connexion bancaire)', () => {
-    const r = recouvrements(['2025-03-03', '2025-03-28'], [ligne('2025-03-02', null), ligne('2025-03-30', null)], 'mars.csv')
+    const r = recouvrements(['2025-03-03', '2025-03-28'], [ligne('2025-03-02', null), ligne('2025-03-30', null)])
     expect(phraseDesRecouvrements(r)).toMatch(/des mouvements sans fichier d’origine \(connexion bancaire, import ancien\)/)
   })
   it('se tait sans rien à importer, ou sans recouvrement', () => {
-    expect(recouvrements([], mars, 'x.csv')).toEqual([])
+    expect(recouvrements([], mars)).toEqual([])
     expect(phraseDesRecouvrements([])).toBeNull()
   })
 })

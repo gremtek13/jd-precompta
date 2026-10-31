@@ -5614,7 +5614,7 @@ describe('Relecture — import d’un relevé CSV', () => {
     reinitialiser()
     faux.lignes = []
     rendre()
-    const bouton = await deposer(CSV_JUMEAUX, 4)
+    const bouton = await deposer(CSV_JUMEAUX, 2)
     await act(async () => { bouton.click() })
     expect(insere()).toHaveLength(2)
     expect(alertes).toEqual([expect.stringContaining('2 ligne(s) importée(s), 2 ligne(s) de solde écartée(s).')])
@@ -5623,9 +5623,13 @@ describe('Relecture — import d’un relevé CSV', () => {
   it('n’en importe qu’une quand le relevé en porte déjà une : n − m, par multiplicité', async () => {
     reinitialiser()
     faux.lignes = [ligneDeTest({ id: 'deja', date: '2025-03-05', libelle: 'CB PHARMACIE DU CENTRE', montant: -12.5, source_fichier: 'releve-mars.csv' })]
+    // Le jumeau qui reste à importer tombe le jour d'un mouvement déjà importé : le recouvrement se dit, même sous le même
+    // nom de fichier, et se confirme.
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
     rendre()
-    const bouton = await deposer(CSV_JUMEAUX, 4)
+    const bouton = await deposer(CSV_JUMEAUX, 2)
     await act(async () => { bouton.click() })
+    expect(confirmation).toHaveBeenCalledWith(expect.stringMatching(/« releve-mars\.csv » — 1 mouvement\(s\) du 05\/03\/2025 au 05\/03\/2025/))
     expect(insere()).toHaveLength(1)
     expect(alertes).toEqual([expect.stringContaining('1 ligne(s) importée(s), 1 déjà présente(s), ignorée(s), 2 ligne(s) de solde écartée(s).')])
   })
@@ -5634,7 +5638,7 @@ describe('Relecture — import d’un relevé CSV', () => {
     const jumeau = { date: '2025-03-05', libelle: 'CB PHARMACIE DU CENTRE', montant: -12.5, source_fichier: 'releve-mars.csv' }
     faux.lignes = [ligneDeTest({ id: 'a', ...jumeau }), ligneDeTest({ id: 'b', ...jumeau })]
     rendre()
-    const bouton = await deposer(CSV_JUMEAUX, 4)
+    const bouton = await deposer(CSV_JUMEAUX, 2)
     await act(async () => { bouton.click() })
     expect(insere()).toHaveLength(0)
     expect(screen.getByText('Ce relevé semble déjà importé (mêmes date, libellé et montant).')).toBeTruthy()
@@ -5646,7 +5650,7 @@ describe('Relecture — import d’un relevé CSV', () => {
     reinitialiser()
     faux.lignes = []
     rendre()
-    const bouton = await deposer('Date;Libellé;Débit;Crédit\n05/03/2025;PRLV LOYER CABINET;1 234,56 EUR;\n07/03/2025;VIR CPAM;;120,00\n', 2)
+    const bouton = await deposer('Date;Libellé;Débit;Crédit\n05/03/2025;PRLV LOYER CABINET;1 234,56 EUR;\n07/03/2025;VIR CPAM;;120,00\n', 1)
     // La détection règle déjà les deux colonnes ; le choix explicite ne change rien.
     expect((document.getElementById('mode') as HTMLSelectElement).value).toBe('debit_credit')
     expect(screen.getByText(/Écartée : montant illisible/)).toBeTruthy()
@@ -5659,7 +5663,7 @@ describe('Relecture — import d’un relevé CSV', () => {
     reinitialiser()
     faux.lignes = []
     rendre()
-    const bouton = await deposer('Date;Libellé;Débit;Crédit\n05/03/2025;FRAIS OFFERTS;0,00;\n06/03/2025;COMMENTAIRE;;\n07/03/2025;VIR CPAM;;120,00\n', 3)
+    const bouton = await deposer('Date;Libellé;Débit;Crédit\n05/03/2025;FRAIS OFFERTS;0,00;\n06/03/2025;COMMENTAIRE;;\n07/03/2025;VIR CPAM;;120,00\n', 1)
     await act(async () => { bouton.click() })
     expect(insere().map((l) => l.montant)).toEqual([120])
     expect(alertes).toEqual([expect.stringContaining('2 ignorée(s) (1 sans montant, 1 montant nul)')])
@@ -5711,7 +5715,7 @@ describe('Relecture — import d’un relevé CSV', () => {
   })
 
   // Un virement qui « solde » une note d'honoraires est une recette ; seuls les deux vrais soldes sont écartés.
-  it('importe le virement dont le libellé dit « solde », et vérifie le relevé', async () => {
+  it('retient le virement dont le libellé dit « solde » jusqu’à ce qu’il soit tranché, puis l’importe et vérifie le relevé', async () => {
     reinitialiser()
     faux.lignes = []
     rendre()
@@ -5721,8 +5725,20 @@ describe('Relecture — import d’un relevé CSV', () => {
       '05/03/2025;VIR M DUPONT SOLDE NOTE HONORAIRES;60,00',
       '10/03/2025;PRLV SEPA ORANGE;-40,00',
       '31/03/2025;SOLDE CREDITEUR AU 31/03/2025;1 020,00',
-    ].join('\n'), 4)
+    ].join('\n'), 1) as HTMLButtonElement
+    // Nommée, avec son choix ; le refus dit avant le clic, le bouton grisé.
+    expect(screen.getByText(/05\/03\/2025 — « VIR M DUPONT SOLDE NOTE HONORAIRES » —/)).toBeTruthy()
+    expect(screen.getByText(/Une ligne dit « solde » sans en avoir la forme/)).toBeTruthy()
+    expect(bouton.disabled).toBe(true)
     await act(async () => { bouton.click() })
+    expect(insere()).toEqual([])
+    // Les soldes retenus sont nommés, pas seulement comptés.
+    expect(screen.getByText(/Prise\(s\) pour des soldes, non importée\(s\) : 01\/03\/2025 — « SOLDE CREDITEUR AU 28\/02\/2025 »/)).toBeTruthy()
+    const choix = screen.getByRole('combobox', { name: /Ligne du 05\/03\/2025 « VIR M DUPONT SOLDE NOTE HONORAIRES » : solde ou opération/ })
+    await act(async () => { fireEvent.change(choix, { target: { value: 'operation' } }) })
+    const pret = screen.getByRole('button', { name: /Importer 2 ligne\(s\)/ }) as HTMLButtonElement
+    expect(pret.disabled).toBe(false)
+    await act(async () => { pret.click() })
     expect(insere().map((l) => l.libelle)).toEqual(['VIR M DUPONT SOLDE NOTE HONORAIRES', 'PRLV SEPA ORANGE'])
     expect(controles()).toEqual([expect.objectContaining({ coherent: true })])
   })
@@ -5730,7 +5746,7 @@ describe('Relecture — import d’un relevé CSV', () => {
     reinitialiser()
     faux.lignes = []
     rendre()
-    const bouton = await deposer('Date;Libellé;Montant\n01/03/2025;SOLDE AU 28/02/2025;1 000,00\n10/03/2025;PRLV SEPA ORANGE;-40,00\n', 2)
+    const bouton = await deposer('Date;Libellé;Montant\n01/03/2025;SOLDE AU 28/02/2025;1 000,00\n10/03/2025;PRLV SEPA ORANGE;-40,00\n', 1)
     expect(screen.getByText(/1 ligne de solde reconnue, alors qu’il en faut exactement deux/)).toBeTruthy()
     await act(async () => { bouton.click() })
     expect(alertes).toEqual([expect.stringMatching(/1 ligne de solde reconnue, alors qu’il en faut exactement deux/)])
@@ -5757,12 +5773,12 @@ describe('Relecture — import d’un relevé CSV', () => {
     await act(async () => { bouton.click() })
     expect(insere()).toHaveLength(2)
   })
-  it('ne dit rien d’un relevé du mois suivant, qui touche le précédent sans le recouvrir', async () => {
+  it('ne dit rien d’un relevé qui commence le lendemain du dernier mouvement déjà importé', async () => {
     reinitialiser()
     faux.lignes = DEJA_EN_PDF
     const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
     rendre()
-    const bouton = await deposer('Date;Libellé;Montant\n28/03/2025;VIR M MARTIN;60,00\n15/04/2025;PRLV SEPA ORANGE;-40,00\n', 2, 'releve-avril.csv')
+    const bouton = await deposer('Date;Libellé;Montant\n29/03/2025;VIR M MARTIN;60,00\n15/04/2025;PRLV SEPA ORANGE;-40,00\n', 2, 'releve-avril.csv')
     expect(screen.queryByText(/recouvre celle d’un relevé déjà importé/)).toBeNull()
     await act(async () => { bouton.click() })
     expect(confirmation).not.toHaveBeenCalled()
@@ -5782,6 +5798,89 @@ describe('Relecture — import d’un relevé CSV', () => {
     await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF'], 'releve-mars.pdf', { type: 'application/pdf' })] } }) })
     const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
     await act(async () => { bouton.click() })
+    expect(insere()).toHaveLength(2)
+  })
+
+  // Une vraie ligne de solde que la liste ne connaît pas, en Débit / Crédit : tranchée « solde », elle n'entre pas comme
+  // un crédit du montant du solde.
+  it('une ligne à trancher dite « solde » par le cabinet ne s’importe pas, et sert au contrôle', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    await deposer([
+      'Date;Libellé;Débit;Crédit',
+      '01/01/2025;SOLDE COMPTE JOINT AU 31/12/2024;;1 000,00',
+      '05/01/2025;CB PHARMACIE;12,50;',
+      '31/01/2025;SOLDE EN VOTRE FAVEUR AU 31/01/2025;;987,50',
+    ].join('\n'), 1)
+    const choix = screen.getByRole('combobox', { name: /Ligne du 01\/01\/2025 « SOLDE COMPTE JOINT AU 31\/12\/2024 »/ })
+    await act(async () => { fireEvent.change(choix, { target: { value: 'solde' } }) })
+    await act(async () => { (screen.getByRole('button', { name: /Importer 1 ligne\(s\)/ }) as HTMLButtonElement).click() })
+    expect(insere().map((l) => [l.libelle, l.montant])).toEqual([['CB PHARMACIE', -12.5]])
+    expect(controles()).toEqual([expect.objectContaining({ coherent: true })])
+  })
+
+  // Après un préambule, les données commencent après l'en-tête : ni le préambule ni l'en-tête ne sont comptés.
+  it('ne compte ni le préambule ni l’en-tête parmi les lignes, et le dit', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    const bouton = await deposer('Compte courant n° 0123456789;\nPériode du 01/03/2025 au 31/03/2025;\nDate;Libellé;Montant\n05/03/2025;CB PHARMACIE;-12,50\n07/03/2025;VIR CPAM;120,00\n', 2)
+    expect(screen.getByText(/Non lue\(s\) avant les données : 3 ligne\(s\), préambule et en-tête/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(insere()).toHaveLength(2)
+    expect(alertes).toEqual([])
+  })
+  it('dit une première ligne retirée comme en-tête sans être reconnue comme tel', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    await deposer('Opérations du compte;;\n05/03/2025;CB PHARMACIE;-12,50\n07/03/2025;VIR CPAM;120,00\n', 2)
+    expect(screen.getByText(/La ligne 1 est retirée comme en-tête sans être reconnue comme tel/)).toBeTruthy()
+  })
+
+  // Le même nom de fichier ne protège de rien : relu avec un autre libellé, ses mouvements entreraient deux fois.
+  it('avertit aussi d’un relevé du même nom dont les mouvements ne se reconnaissent pas', async () => {
+    reinitialiser()
+    faux.lignes = DEJA_EN_PDF.map((l) => ({ ...l, source_fichier: 'releve-mars.csv' }))
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    rendre()
+    const bouton = await deposer(CSV_MARS, 2)
+    await act(async () => { bouton.click() })
+    expect(confirmation).toHaveBeenCalledWith(expect.stringMatching(/« releve-mars\.csv »/))
+    expect(insere()).toEqual([])
+  })
+
+  async function deposerPdf(lignes: { texte: string; xFin: number }[], nombre: number) {
+    faux.lignesPdf = lignes
+    await act(async () => { (await screen.findByRole('button', { name: 'PDF' })).click() })
+    const champ = document.querySelector('input[type=file][accept=".pdf,application/pdf"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF'], 'releve-mars.pdf', { type: 'application/pdf' })] } }) })
+    return screen.findByRole('button', { name: new RegExp(`Importer ${nombre} ligne\\(s\\)`) })
+  }
+  it('le chemin PDF n’importe pas une opération dont le montant a été effacé, et la compte', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    await deposerPdf([{ texte: '05/03/2025 CB PHARMACIE -12,50', xFin: 0 }, { texte: '07/03/2025 VIR CPAM 120,00', xFin: 0 }], 2)
+    const montants = screen.getAllByRole('spinbutton')
+    await act(async () => { fireEvent.change(montants[1], { target: { value: '' } }) })
+    const bouton = screen.getByRole('button', { name: /Importer 1 ligne\(s\)/ })
+    await act(async () => { bouton.click() })
+    expect(insere().map((l) => [l.libelle, l.montant])).toEqual([['CB PHARMACIE', -12.5]])
+    expect(alertes).toEqual([expect.stringContaining('1 ligne(s) importée(s), 1 à 0,00 € ignorée(s).')])
+  })
+  it('le chemin PDF coche « solde » d’office une ligne à trancher, et la nomme', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    await deposerPdf([
+      { texte: '05/03/2025 VIR M DUPONT SOLDE NOTE HONORAIRES 60,00', xFin: 0 }, { texte: '07/03/2025 CB PHARMACIE -12,50', xFin: 0 },
+    ], 1)
+    expect(screen.getByText(/Cochées « solde » d’office parce que leur libellé dit « solde » sans en avoir la forme[\s\S]*05\/03\/2025 — « VIR M DUPONT SOLDE NOTE HONORAIRES »/)).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'Ligne 1 : solde plutôt qu\'opération' })) })
+    expect(screen.getByText(/\(décochée : importée\)/)).toBeTruthy()
+    await act(async () => { (screen.getByRole('button', { name: /Importer 2 ligne\(s\)/ }) as HTMLButtonElement).click() })
     expect(insere()).toHaveLength(2)
   })
 })
