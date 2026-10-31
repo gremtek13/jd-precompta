@@ -32,6 +32,11 @@ export function separateurDuCsv(text: string): SeparateurCsv {
       meilleurScore = [operations, regularite]
     }
   }
+  // Aucune ligne d'opération, quel que soit le séparateur (une balance reprise, un fichier sans dates) : la régularité seule
+  // ne tient pas — une balance « Compte;Libellé;Débit;Crédit;Lettrage » dont certaines lignes omettent la dernière colonne
+  // porte une virgule décimale par ligne, plus régulière que ses points-virgules, et se lisait à la virgule (aucun compte
+  // lu). La règle d'avant y revient : le point-virgule dès qu'il en paraît un, compté hors guillemets.
+  if (meilleurScore[0] === 0 && decouper(text, ';', 30).some((r) => r.length > 1)) return ';'
   return meilleur
 }
 
@@ -209,6 +214,18 @@ export interface ReglageDesMontants {
 export interface DetectionDesColonnes extends ColumnMapping, ReglageDesMontants {
   colSolde: number | null
   doute: string | null
+  // La ligne qui NOMME les colonnes (`colonnesParEntete`), ou `null` si aucune ne le fait : les données commencent à la
+  // ligne suivante, et le préambule qui la précède (numéro de compte, période) n'est pas lu comme des opérations.
+  ligneEnTete: number | null
+}
+
+// Les lignes de données d'un fichier : celles qui suivent la ligne d'en-tête nommée par la détection, ou la première ligne
+// quand elle est un en-tête sans être reconnue comme tel, ou toutes. Rend aussi les lignes ainsi retirées, que l'écran dit.
+export function lignesDeDonnees(
+  rows: readonly string[][], hasHeader: boolean, ligneEnTete: number | null,
+): { donnees: string[][]; retirees: string[][] } {
+  const debut = !hasHeader ? 0 : (ligneEnTete ?? 0) + 1
+  return { donnees: rows.slice(debut), retirees: rows.slice(0, debut) }
 }
 
 // Le montant d'une ligne, ou la raison pour laquelle il ne se lit pas : la seule interprétation d'un montant de relevé,
@@ -260,7 +277,7 @@ function normaliserEntete(v: string): string {
 function roleDeLEntete(v: string): RoleDeColonne | null {
   const t = normaliserEntete(v)
   if (/^date (de )?valeur$/.test(t)) return 'date_valeur'
-  if (/^date( (d |de l |de )?operation| comptable| compta| op)?$/.test(t)) return 'date'
+  if (/^date( (d |de l |de )?operation| comptable| compta| ope?)?$/.test(t)) return 'date'
   if (/^(montant )?debits?$/.test(t)) return 'debit'
   if (/^(montant )?credits?$/.test(t)) return 'credit'
   // « Solde », « Solde courant », « Nouveau solde », « Solde après opération ».
@@ -419,7 +436,7 @@ export function detectColumnMapping(rows: string[][]): DetectionDesColonnes {
   const first = rows[0]
   const hasHeader = entete !== null || !(first && isFullDate((first[colDate] ?? '').trim()) && 'montant' in montantDeLigne(first, reglage))
 
-  return { colDate, colLibelle, hasHeader, autresMontants, ...reglage, colSolde, doute }
+  return { colDate, colLibelle, hasHeader, ligneEnTete: entete?.ligne ?? null, autresMontants, ...reglage, colSolde, doute }
 }
 
 // Deux colonnes de montants qui ne portent jamais un montant non nul sur la même ligne, qui ensemble couvrent au moins

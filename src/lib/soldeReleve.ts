@@ -23,23 +23,44 @@ export interface LigneDeSolde {
 }
 
 // Les mots qu'une banque met autour de « solde » sur une ligne de solde (« SOLDE CREDITEUR AU 28/02/2025 », « Nouveau
-// solde », « Solde précédent », « Solde en fin de période », « Ancien solde au 31 mars 2025 »), sans accents ni casse.
+// solde », « Solde précédent », « SOLDE INTERMEDIAIRE A REPORTER », « SOLDE EN VOTRE FAVEUR », « Solde à ce jour »,
+// « SOLDE AU 31 JANV 2025 », « Page 1/3 » d'une ligne PDF recollée), sans accents ni casse.
 const MOTS_D_UN_SOLDE = new Set([
-  'solde', 'soldes', 'ancien', 'nouveau', 'precedent', 'crediteur', 'debiteur', 'initial', 'final', 'finale', 'ouverture',
-  'cloture', 'credit', 'debit', 'depart', 'debut', 'fin', 'periode', 'comptable', 'disponible', 'provisoire', 'intermediaire', 'reporte',
-  'report', 'courant', 'compte', 'releve', 'votre', 'situation', 'arrete', 'date', 'mois', 'jour', 'euros', 'euro', 'eur',
+  'solde', 'soldes', 'ancien', 'nouveau', 'precedent', 'anterieur', 'crediteur', 'debiteur', 'initial', 'final', 'finale',
+  'ouverture', 'cloture', 'credit', 'debit', 'cr', 'db', 'dr', 'depart', 'debut', 'fin', 'periode', 'comptable',
+  'disponible', 'provisoire', 'intermediaire', 'reporte', 'report', 'reporter', 'courant', 'compte', 'releve', 'votre',
+  'faveur', 'situation', 'arrete', 'date', 'mois', 'jour', 'veille', 'ce', 'apres', 'operation', 'valeur', 'total',
+  'euros', 'euro', 'eur', 'page', 'sur',
   'a', 'au', 'aux', 'du', 'de', 'des', 'd', 'l', 'le', 'la', 'les', 'en', 'n', 'no',
   'janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre',
+  'janv', 'fev', 'fevr', 'avr', 'juil', 'sept', 'oct', 'nov', 'dec',
 ])
 
-// Un texte A LA FORME d'un solde quand il dit « solde » et rien d'autre qu'un solde : ses mots sont tous de ceux qu'une
-// banque met autour (`MOTS_D_UN_SOLDE`), les dates, montants et numéros mis à part. L'ancienne règle, le seul mot
-// « solde » n'importe où, prenait « VIR M DUPONT SOLDE NOTE HONORAIRES » pour un solde : la recette ne s'importait pas, et
-// avec trois « soldes » le relevé n'était plus vérifié du tout. Un texte d'opération autour du mot le garde opération —
-// mieux vaut un contrôle qui ne tourne pas, et qui le dit, qu'une recette perdue.
+// Les mots d'un texte, sans accents ni casse. Un « mot » qui porte un chiffre — une date, un montant, un numéro de compte
+// comme « 073921S » — ne compte pas comme un mot : il ne dit rien de la nature de la ligne.
+function motsDuTexte(texte: string): string[] {
+  return texte.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z0-9]+/).filter((m) => m && !/\d/.test(m))
+}
+
+// Ce qu'un libellé dit d'une ligne :
+//   - « solde » : il A LA FORME d'un solde — il dit « solde » et rien d'autre qu'un solde, ses mots tous de ceux qu'une
+//     banque met autour (`MOTS_D_UN_SOLDE`) ;
+//   - « à trancher » : il dit « solde » sans en avoir la forme. « VIR M DUPONT SOLDE NOTE HONORAIRES » est une recette ;
+//     « SOLDE DU COMPTE » ou une formule de banque que la liste ne connaît pas est peut-être un solde. Ni l'un ni l'autre
+//     ne se devine : pris pour un solde, une recette disparaît ; pris pour une opération, le solde du compte entre comme un
+//     mouvement. Le cabinet tranche, ligne par ligne, avant l'import ;
+//   - « operation » : le mot n'y est pas.
+// L'ancienne règle, le seul mot « solde » n'importe où, prenait toute ligne qui le porte pour un solde, sans rien dire.
+export type NatureDuLibelle = 'solde' | 'a trancher' | 'operation'
+
+export function natureDuLibelle(texte: string): NatureDuLibelle {
+  const mots = motsDuTexte(texte)
+  if (!mots.some((m) => m === 'solde' || m === 'soldes')) return 'operation'
+  return mots.every((m) => MOTS_D_UN_SOLDE.has(m)) ? 'solde' : 'a trancher'
+}
+
 export function aLaFormeDUnSolde(texte: string): boolean {
-  const mots = texte.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z]+/).filter(Boolean)
-  return mots.some((m) => m === 'solde' || m === 'soldes') && mots.every((m) => MOTS_D_UN_SOLDE.has(m))
+  return natureDuLibelle(texte) === 'solde'
 }
 
 // Ce que l'écran dit quand les lignes de solde reconnues ne sont pas exactement deux (ouverture et clôture) : le relevé
@@ -85,6 +106,13 @@ export function lignesDeSolde(rows: string[][], mapping: ColumnMapping): LigneDe
     }
   })
   return trouvees
+}
+
+// Les lignes « à trancher » (`natureDuLibelle`) que `lignesDeSolde` n'a pas déjà retenues comme soldes : le cabinet dit,
+// pour chacune, si c'est un solde ou une opération, et l'import attend sa réponse.
+export function lignesATrancher(rows: string[][], mapping: ColumnMapping): number[] {
+  const soldes = new Set(lignesDeSolde(rows, mapping).map((l) => l.index))
+  return rows.flatMap((row, index) => (!soldes.has(index) && natureDuLibelle(libelleDeLigne(row, mapping)) === 'a trancher' ? [index] : []))
 }
 
 export interface ControleSolde {

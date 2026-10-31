@@ -1,6 +1,6 @@
 import { libelleDeLigne, montantDeLigne, parseDateBancaire, type ColumnMapping, type ReglageDesMontants } from './csv'
 import { formatDate } from './format'
-import { lignesDeSolde } from './soldeReleve'
+import { lignesATrancher, lignesDeSolde } from './soldeReleve'
 
 // L'IMPORT D'UN RELEVÉ BANCAIRE PAR FICHIER, ce qui se décide avant d'écrire : l'interprétation des lignes (opérations,
 // soldes, lignes écartées et leur raison), le dédoublonnage contre le relevé déjà en base, le recouvrement d'une période
@@ -46,7 +46,7 @@ export type RaisonDEcart = 'date illisible' | 'sans montant' | 'montant illisibl
 const ORDRE_DES_RAISONS: readonly RaisonDEcart[] = ['date illisible', 'sans montant', 'montant illisible', 'débit et crédit à la fois', 'montant nul']
 
 export type LigneInterpretee =
-  | { index: number; nature: 'operation' | 'solde'; date: string; libelle: string; montant: number }
+  | { index: number; nature: 'operation' | 'solde' | 'a trancher'; date: string; libelle: string; montant: number }
   | { index: number; nature: 'ecartee'; libelle: string; raison: RaisonDEcart }
 
 export interface OperationDuFichier {
@@ -57,21 +57,40 @@ export interface OperationDuFichier {
   brut: string
 }
 
+// Une ligne nommée à l'écran : un solde retenu, ou une ligne à trancher. `ligne` : la ligne du fichier elle-même, qui sert
+// de clé à la décision du cabinet (elle survit à la case « en-tête », qui décale les indices).
+export interface LigneNommee { ligne: readonly string[]; date: string; libelle: string; montant: number }
+
+// Ce que le cabinet a tranché pour une ligne dont le libellé dit « solde » sans en avoir la forme.
+export type DecisionDeSolde = 'solde' | 'operation'
+export const AUCUNE_DECISION: ReadonlyMap<readonly string[], DecisionDeSolde> = new Map()
+
 export interface ReleveInterprete {
   lignes: LigneInterpretee[]
   operations: OperationDuFichier[]
   soldes: { date: string; montant: number }[]
+  // Les soldes NOMMÉS, pour que le cabinet voie ce qui ne s'importera pas (« SOLDE DU COMPTE » pris pour un solde serait
+  // une opération perdue) ; et les lignes à trancher, chacune avec la décision du cabinet (`null` : pas encore tranchée,
+  // ce qui retient l'import) — toutes, tranchées ou non, pour que le choix reste visible et se change.
+  soldesNommes: LigneNommee[]
+  aTrancher: (LigneNommee & { decision: DecisionDeSolde | null })[]
   ecartees: { raison: RaisonDEcart; nombre: number }[]
 }
 
-// Les lignes du fichier (en-tête retiré), une à une : une opération, un solde, ou une ligne écartée avec sa raison —
-// jamais un montant deviné. Une ligne écartée se COMPTE, et l'écran le dit avant comme après l'import.
-export function interpreterReleve(dataRows: readonly string[][], reglage: ReglageDeLImport): ReleveInterprete {
+// Les lignes du fichier (en-tête retiré), une à une : une opération, un solde, une ligne à trancher, ou une ligne écartée
+// avec sa raison — jamais un montant deviné. Une ligne écartée se COMPTE, et l'écran le dit avant comme après l'import.
+// `decisions` : ce que le cabinet a tranché des lignes à trancher (`AUCUNE_DECISION` avant tout choix).
+export function interpreterReleve(
+  dataRows: readonly string[][], reglage: ReglageDeLImport, decisions: ReadonlyMap<readonly string[], DecisionDeSolde>,
+): ReleveInterprete {
   const mapping = mappingDuReglage(reglage)
   const indicesSolde = new Set(lignesDeSolde([...dataRows], mapping).map((l) => l.index))
+  const indicesATrancher = new Set(lignesATrancher([...dataRows], mapping))
   const lignes: LigneInterpretee[] = []
   const operations: OperationDuFichier[] = []
   const soldes: { date: string; montant: number }[] = []
+  const soldesNommes: LigneNommee[] = []
+  const aTrancher: ReleveInterprete['aTrancher'] = []
   const compte = new Map<RaisonDEcart, number>()
   const ecarter = (index: number, libelle: string, raison: RaisonDEcart) => {
     lignes.push({ index, nature: 'ecartee', libelle, raison })
@@ -88,17 +107,34 @@ export function interpreterReleve(dataRows: readonly string[][], reglage: Reglag
       ecarter(index, libelle, lecture.ecart === 'absent' ? 'sans montant' : lecture.ecart === 'illisible' ? 'montant illisible' : 'débit et crédit à la fois')
       continue
     }
-    if (indicesSolde.has(index)) {
-      lignes.push({ index, nature: 'solde', date, libelle, montant: lecture.montant })
-      soldes.push({ date, montant: lecture.montant })
+    const montant = lecture.montant
+    const decision = indicesATrancher.has(index) ? (decisions.get(row) ?? null) : undefined
+    if (decision !== undefined) aTrancher.push({ ligne: row, date, libelle, montant, decision })
+    if (decision === null) {
+      lignes.push({ index, nature: 'a trancher', date, libelle, montant })
       continue
     }
-    if (lecture.montant === 0) { ecarter(index, libelle, 'montant nul'); continue }
-    lignes.push({ index, nature: 'operation', date, libelle, montant: lecture.montant })
-    operations.push({ date, libelle, montant: lecture.montant, brut: row.join(' | ') })
+    if (indicesSolde.has(index) || decision === 'solde') {
+      lignes.push({ index, nature: 'solde', date, libelle, montant })
+      soldes.push({ date, montant })
+      soldesNommes.push({ ligne: row, date, libelle, montant })
+      continue
+    }
+    if (montant === 0) { ecarter(index, libelle, 'montant nul'); continue }
+    lignes.push({ index, nature: 'operation', date, libelle, montant })
+    operations.push({ date, libelle, montant, brut: row.join(' | ') })
   }
   const ecartees = ORDRE_DES_RAISONS.filter((r) => compte.has(r)).map((raison) => ({ raison, nombre: compte.get(raison)! }))
-  return { lignes, operations, soldes, ecartees }
+  return { lignes, operations, soldes, soldesNommes, aTrancher, ecartees }
+}
+
+// Le refus de l'import tant qu'une ligne à trancher ne l'est pas, dit avant le clic.
+export function refusDesLignesATrancher(aTrancher: ReleveInterprete['aTrancher']): string | null {
+  const restent = aTrancher.filter((l) => l.decision === null).length
+  if (restent === 0) return null
+  return `${restent === 1 ? 'Une ligne dit' : `${restent} lignes disent`} « solde » sans en avoir la forme : `
+    + 'dis pour chacune si c’est un solde ou une opération avant d’importer. Prise pour un solde, une recette disparaîtrait ; '
+    + 'prise pour une opération, le solde du compte entrerait comme un mouvement.'
 }
 
 // « 3 ignorée(s) (1 date illisible, 2 montant illisible) », ou rien.
@@ -148,6 +184,26 @@ export function partagerParMultiplicite<T extends MouvementSigne>(
   return { nouvelles, dejaPresentes }
 }
 
+// ── Les lignes d'un relevé PDF ───────────────────────────────────────────────────────────────────────────────────────────
+// L'aperçu PDF se corrige à la main : un montant effacé y devient 0, une date effacée une chaîne vide. Une opération nulle
+// n'est pas un mouvement, une date absente ne s'écrit pas : elles s'écartent et se COMPTENT, comme dans un CSV. Les lignes
+// cochées « solde » ne s'importent pas et servent au contrôle.
+export function operationsDuPdf<T extends MouvementSigne & { estSolde?: boolean }>(lignes: readonly T[]): {
+  operations: T[]; soldes: { date: string; montant: number }[]; nulles: number; sansDate: number
+} {
+  const operations: T[] = []
+  const soldes: { date: string; montant: number }[] = []
+  let nulles = 0
+  let sansDate = 0
+  for (const l of lignes) {
+    if (l.estSolde) { soldes.push({ date: l.date, montant: l.montant }); continue }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(l.date)) { sansDate++; continue }
+    if (!Number.isFinite(l.montant) || l.montant === 0) { nulles++; continue }
+    operations.push(l)
+  }
+  return { operations, soldes, nulles, sansDate }
+}
+
 // ── Le recouvrement d'une période déjà importée ──────────────────────────────────────────────────────────────────────────
 // Le dédoublonnage ne reconnaît que les mêmes date, libellé et montant : le même mois importé une fois en PDF puis en CSV
 // (deux libellés pour chaque mouvement), ou récupéré par la connexion bancaire puis importé, entrerait deux fois. Le relevé
@@ -163,19 +219,20 @@ export interface Recouvrement {
   mouvements: number
 }
 
-// Les fichiers du relevé dont la période recouvre celle des mouvements à importer, comparées STRICTEMENT : deux relevés
-// mensuels qui se touchent au jour près (le solde de clôture de février daté du 1er mars, la première opération de mars le
-// même jour) ne se recouvrent pas. Les lignes du fichier en cours (même nom) n'y comptent pas : redéposé, il est
-// dédoublonné ligne à ligne.
+// Les fichiers du relevé dont la période recouvre celle des mouvements à importer, bornes COMPRISES : janvier importé en
+// PDF (du 02/01 au 31/01) puis un CSV du 31/01 au 28/02 partagent le 31 janvier, et les mouvements de ce jour entreraient
+// deux fois. Les dates comparées sont celles des opérations seules (jamais des soldes) ; `dates` ne porte que les
+// mouvements qui restent à importer APRÈS le dédoublonnage — un relevé redéposé tel quel ne recouvre donc rien. Le même nom
+// de fichier ne protège de rien : le dédoublonnage dépend du libellé, qu'un autre réglage des colonnes reconstitue
+// autrement, et ses mouvements entreraient deux fois.
 export function recouvrements(
-  dates: readonly string[], existantes: readonly { date: string; source_fichier: string | null }[], nomFichier: string | null,
+  dates: readonly string[], existantes: readonly { date: string; source_fichier: string | null }[],
 ): Recouvrement[] {
   if (dates.length === 0) return []
   const du = dates.reduce((a, b) => (b < a ? b : a))
   const au = dates.reduce((a, b) => (b > a ? b : a))
   const parSource = new Map<string | null, Recouvrement>()
   for (const l of existantes) {
-    if (nomFichier !== null && l.source_fichier === nomFichier) continue
     const g = parSource.get(l.source_fichier)
     if (!g) parSource.set(l.source_fichier, { source: l.source_fichier, du: l.date, au: l.date, mouvements: 1 })
     else {
@@ -185,7 +242,7 @@ export function recouvrements(
     }
   }
   return [...parSource.values()]
-    .filter((g) => du < g.au && au > g.du)
+    .filter((g) => du <= g.au && au >= g.du)
     .sort((a, b) => a.du.localeCompare(b.du) || (a.source ?? '').localeCompare(b.source ?? ''))
 }
 

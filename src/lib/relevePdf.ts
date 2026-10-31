@@ -1,5 +1,5 @@
 import { parseDateBancaire, parseMontantBancaire } from './csv'
-import { aLaFormeDUnSolde } from './soldeReleve'
+import { natureDuLibelle } from './soldeReleve'
 
 // Lecture des opérations d'un relevé bancaire déjà converti en lignes (voir `extractPdfLignes`).
 // Séparé de `pdfText.ts` parce que celui-ci charge pdf.js, qui touche au DOM dès l'import et rend
@@ -22,6 +22,10 @@ export interface LigneExtraite {
   // (voir `parseLignesFromPdf`), où l'aperçu d'import montre tout et laisse l'opérateur corriger :
   // sur les relevés où la banque n'écrit pas le mot « solde », c'est lui qui les désigne.
   estSolde?: boolean
+  // Vrai quand la ligne dit « solde » sans en avoir la forme (`natureDuLibelle`) : cochée « solde » d'office — comme toute
+  // ligne qui écrit le mot, avant la règle de la forme —, et nommée par l'écran, qui demande de la décocher si c'est une
+  // opération. Renseigné, comme `estSolde`, en mode 'tous' seulement.
+  soldeATrancher?: boolean
 }
 
 // Deux mises en page, comme pour l'import CSV :
@@ -121,8 +125,12 @@ export function parseLignesFromPdf(
     // Un relevé ne contient pas que des opérations : il porte aussi les soldes d'ouverture et de
     // clôture, qui ressemblent à une opération (une date, un montant en fin de ligne) sans en être
     // une. Elles sont écartées du flux normal — et récupérées à part pour contrôler le relevé.
-    // La FORME d'un solde, pas le seul mot (`aLaFormeDUnSolde`) : « VIR M DUPONT SOLDE NOTE HONORAIRES » est une recette.
-    const estSolde = aLaFormeDUnSolde(line)
+    // Une ligne qui a la forme d'un solde en est un ; une ligne qui dit « solde » sans en avoir la forme (« VIR M DUPONT
+    // SOLDE NOTE HONORAIRES », ou une formule de banque inconnue) est À TRANCHER : traitée en solde, ce qui ne fait entrer
+    // aucun faux mouvement, mais signalée (`soldeATrancher`) pour que l'opérateur la décoche si c'est une recette. Un solde
+    // qui entrerait comme un mouvement fausserait tous les totaux sans que rien ne le dise.
+    const nature = natureDuLibelle(line)
+    const estSolde = nature !== 'operation'
     if (inclure !== 'tous' && estSolde !== (inclure === 'soldes')) continue
 
     const montantMatch = line.match(montantRegex)
@@ -158,7 +166,7 @@ export function parseLignesFromPdf(
     if (montant === null) continue
 
     const libelle = line.slice(finDate, montantMatch.index).trim()
-    brutes.push({ ligne: { date, libelle: libelle || 'Mouvement bancaire', montant, ...(inclure === 'tous' ? { estSolde } : {}) }, xFin })
+    brutes.push({ ligne: { date, libelle: libelle || 'Mouvement bancaire', montant, ...(inclure === 'tous' ? { estSolde, soldeATrancher: nature === 'a trancher' } : {}) }, xFin })
   }
 
   if (format === 'signe') return brutes.map((b) => b.ligne)
