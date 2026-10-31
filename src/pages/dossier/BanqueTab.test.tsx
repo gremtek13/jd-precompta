@@ -5545,3 +5545,70 @@ describe('BanqueTab — sous le plan du dossier', () => {
     ])
   })
 })
+
+// RELECTURE DE L'IMPORT (31/10/2026) — des défauts PROUVÉS, rien de corrigé : `it.fails` tant qu'ils vivent.
+describe('Relecture — import d’un relevé CSV', () => {
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+  const insere = () => faux.insertions.filter((i) => i.table === 'lignes_bancaires').flatMap((i) => i.valeur as unknown as Record<string, unknown>[])
+  async function deposer(csv: string, lignes: number) {
+    const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], 'releve-mars.csv', { type: 'text/csv' })] } }) })
+    return screen.findByRole('button', { name: new RegExp(`Importer ${lignes} ligne\\(s\\)`) })
+  }
+
+  // Deux achats identiques le même jour (deux passages à la pharmacie, deux frais de 1,00 €) ont la même signature
+  // (date, libellé, montant) : le second est pris pour un DOUBLON du premier, DANS LE MÊME FICHIER, et ne s'importe pas.
+  // Le contrôle de solde porte sur `toInsert` (les deux) : il se dit cohérent, et s'enregistre tel.
+  const CSV_JUMEAUX = [
+    'Date;Libellé;Montant',
+    '01/03/2025;SOLDE CREDITEUR AU 28/02/2025;1 000,00',
+    '05/03/2025;CB PHARMACIE DU CENTRE;-12,50',
+    '05/03/2025;CB PHARMACIE DU CENTRE;-12,50',
+    '31/03/2025;SOLDE CREDITEUR AU 31/03/2025;975,00',
+  ].join('\n')
+  it.fails('importe les deux opérations identiques d’un même relevé', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    const bouton = await deposer(CSV_JUMEAUX, 4)
+    await act(async () => { bouton.click() })
+    expect(insere()).toHaveLength(2)
+  })
+  it('(constat) n’en importe qu’une, et enregistre le relevé comme cohérent', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    const bouton = await deposer(CSV_JUMEAUX, 4)
+    await act(async () => { bouton.click() })
+    expect(insere()).toHaveLength(1)
+    // L'alerte dit « déjà présente », et pas « ne boucle pas » : le contrôle a compté la ligne qui n'est pas entrée.
+    expect(alertes).toEqual([expect.stringContaining('1 ligne(s) importée(s), 1 déjà présente(s), ignorée(s), 2 ligne(s) de solde écartée(s).')])
+    expect(alertes[0]).not.toMatch(/ne boucle pas/)
+  })
+
+  // En « Deux colonnes (Débit / Crédit) », un montant illisible ou absent vaut 0 (`?? 0`) au lieu d'écarter la ligne :
+  // la ligne s'importe à 0,00 €, et ne se compte pas parmi les « ignorées ». Ici « 1 234,56 EUR ».
+  it.fails('n’importe pas à zéro euro une ligne dont le débit est illisible', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    const bouton = await deposer('Date;Libellé;Débit;Crédit\n05/03/2025;PRLV LOYER CABINET;1 234,56 EUR;\n07/03/2025;VIR CPAM;;120,00\n', 2)
+    await act(async () => { fireEvent.change(document.getElementById('mode')!, { target: { value: 'debit_credit' } }) })
+    await act(async () => { bouton.click() })
+    expect(insere().map((l) => l.montant)).not.toContain(0)
+  })
+  it('(constat) la ligne illisible entre à 0,00 €, sans alerte', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    const bouton = await deposer('Date;Libellé;Débit;Crédit\n05/03/2025;PRLV LOYER CABINET;1 234,56 EUR;\n07/03/2025;VIR CPAM;;120,00\n', 2)
+    await act(async () => { fireEvent.change(document.getElementById('mode')!, { target: { value: 'debit_credit' } }) })
+    await act(async () => { bouton.click() })
+    expect(insere().map((l) => [l.libelle, l.montant])).toEqual([['PRLV LOYER CABINET', 0], ['VIR CPAM', 120]])
+    expect(alertes).toEqual([])
+  })
+})
