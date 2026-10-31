@@ -44145,3 +44145,135 @@ refus avant le clic, `defautsDeNumerotation` dit une ligne numérotée deux fois
 et de TVA par règlement, le FEC d'un exercice validé se relit depuis les colonnes (`natOpFigee`), `types.ts` les rend
 obligatoires ; l'assistant ne lit jamais `identification_client` (VF9C-Q1). Le jour de l'application : le drapeau du
 fichier reste baissé jusque-là ; la migration AVANT toute validation d'un exercice en trésorerie (FEC22-Q6).
+
+### 31/10/2026 — LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, EN BASE (C8, LIGNE 26.6) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par un agent architecte, rejouée sur la ligne d'intégration du jour, qui porte la relecture de la caisse (« LA
+CAISSE REPRISE EST « TENUE », ET LA FENÊTRE DES ENCAISSEMENTS JUGE LA CAISSE AVANT LE CLIC (RELECTURE) »). La migration
+4 de la caisse est PRÉPARÉE et éprouvée sur une réplique de la production — 164 migrations, ses neuf familles égales à
+celles que la production a rendues le 30/10/2026 —, jamais appliquée. En production : `list_migrations`, des SELECT du
+catalogue et, le 31/10/2026, quelques comptes (aucune valeur d'une ligne). Lus avant d'écrire : « LA CAISSE : LA SAISIE
+DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE (CAISSE-Q1 ET Q4) », § 8, § 9 n° 4 et § 10 ; les
+entrées C1 à C6 ; « QUATRE RELECTURES AVANT LES DONNÉES RÉELLES » (le défaut K1).)
+
+**LA MIGRATION 4, `paiement_par_la_caisse`**, dans `supabase/preparees/` sous la version provisoire `20261031120000` (64
+280 caractères, 65 211 octets, 1 041 lignes, `864afcecd84949db1d6ed0995ed26424` ; ni `drop`, ni `delete from`, ni
+`truncate` ; ses `revoke` ne retirent que les droits que Postgres donne d'office aux trois fonctions qu'elle crée, le
+patron de `caisse` ; « DELETE » n'y vient que de `tg_op` ; ni barre oblique inverse ni retour chariot). Composée par un
+script hors du dépôt qui RECOPIE de l'export les quatre corps qu'elle remplace et n'y fait que des remplacements trouvés
+une fois et une seule. Sa garde de tête refuse une seconde application, une base sans les trois migrations de la caisse,
+dix-sept fonctions qui ne seraient plus à l'empreinte relue en production le 31/10/2026, et ce qui manquerait (le rôle
+`caisse` de racine 53, les onze déclencheurs des deux gardes remplacées, le genre `paiement`, la pièce de la table,
+dix-huit colonnes). Ce qu'elle pose : 1. `regler_piece_par_la_caisse(dossier, pièce, date, montant)` : une opération de
+genre `paiement` qui cite sa pièce, à SA date, d'un montant signé comme le relevé ; AUCUNE ligne du brouillon — la
+contrepartie s'écrit avec les écritures de la pièce, par l'application (§ 8). L'accès par `qui_ecrit_la_caisse`, avant
+toute lecture : le droit du client n'en changera que le corps (CAISSE2-Q4). Exécutable par un compte connecté, ni par
+l'anonyme ni par PUBLIC. 2. `garder_ecriture_de_caisse` REMPLACÉE : une ligne qui cite un paiement ET sa pièce s'écrit
+sous la RLS du brouillon, hors de toute fonction, sous le verrou de la caisse du dossier, si elle suit son paiement
+(dossier, date, pièce, non retiré), porte le compte de la caisse DU PLAN et le sens des espèces, et ne dépasse pas, avec
+les autres lignes du même paiement, son montant ; elle se retire avec les écritures de sa pièce (« Régénérer »), une
+ligne du paiement sans pièce non ; elle ne se modifie pas. La restauration suit la porte d'hier. 3.
+`garder_piece_payee_par_la_caisse`, sur `pieces` : la pièce qu'un paiement cite ne change pas de dossier, même le
+paiement retiré (la piste d'audit) ; tant qu'il ne l'est pas, elle reste d'achat ou de vente et ne devient pas
+l'exemplaire d'une facture SOURCE. 4. `enregistrer_operation_caisse` REMPLACÉE : l'ensemble qu'une recette reconnaît
+pour son jour (CAISSE-Q2) s'étend aux paiements par la caisse de pièces de VENTE de ce jour — deux refus neufs, le
+paiement qui manque (juste après l'encaissement qui manque) et le paiement que la lecture comptait à tort (juste après
+l'encaissement en trop). 5. LA CAISSE BORNÉE PAR SON OUVERTURE (le défaut K1, ci-dessous). Les refus du paiement, dans
+l'ordre : l'accès (42501) ; la trésorerie (22023) ; la pièce de ce dossier (P0002) ; une note de frais, puis une pièce
+ni d'achat ni de vente ; l'exemplaire d'une facture source ; la date (renseignée, 2000, l'avenir à Paris, l'ouverture
+d'un dossier repris : 22023 ; la frontière : 23514) ; le montant (renseigné, au centime, non nul, borné) ; le sens (une
+sortie pour un achat, une entrée pour une vente, l'inverse pour un avoir — une pièce de montant négatif) ; le plafond
+d'une pièce VALIDÉE (ses paiements par la caisse non retirés, sans dire son montant) ; la caisse jamais négative, À
+L'APPEL (23514, le geste `paiement`). Ceux de la contrepartie, de la pièce payée et du mouvement d'avant l'ouverture :
+23514 chacun.
+
+**LES ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- Le § 8 refusait « l'exemplaire d'une facture, et toute pièce de vente d'un dossier basculé ». Retenu : l'exemplaire
+  d'une facture SOURCE, et lui seul (il ne compte pas sa vente ; ses espèces viennent de l'encaissement en espèces de la
+  facture, que la caisse compte déjà). Une autre pièce de vente compte sa vente elle-même — l'exemplaire d'une facture
+  qui n'est pas source, une vente déclarée hors des factures d'un dossier basculé, une pièce à valider : la refuser
+  pousserait ses espèces dans le total du jour d'une recette, qui la compterait une seconde fois. D'où le point 4.
+- Le plafond ne se juge que sur une pièce validée : le montant d'une pièce à valider est encore une lecture de l'OCR.
+- Ne se refusent pas : la pièce payée qui passe de l'achat à la vente (le sens de son paiement), son montant qui change
+  (le plafond) — une correction légitime ; le pointage les dira (lot C9).
+
+**LE DÉFAUT K1 — LES ESPÈCES D'AVANT L'OUVERTURE COMPTÉES DEUX FOIS — ET SA CORRECTION.** Un retrait au distributeur
+d'avant l'ouverture, classé sur la caisse, s'y comptait après le 53 des à-nouveaux qui le porte déjà ; rien ne refusait
+ce classement. Corrigé deux fois, et pourquoi deux : REFUSER le classement (R) ferme la porte d'aujourd'hui ; BORNER le
+compte (C') couvre ce qui est déjà là ou le deviendra — un mouvement classé avant la migration, une restauration, une
+reprise posée après coup.
+- R : `garder_caisse_depuis_l_ouverture`, déclencheur `before` de `lignes_bancaires` (insertion, compte de bilan, date,
+  dossier ; seulement sous la racine 53), le dernier par son nom — un mouvement qui ARRIVE sur la caisse du plan à une
+  date d'avant l'ouverture du DOSSIER se refuse, « Ce mouvement précède l'ouverture du dossier, le … : il est déjà dans
+  les comptes repris, et ne se classe pas sur la caisse. », après tous les refus d'`ecrire_mouvement_compte_bilan`
+  (inchangée : la changer demanderait un collage), la restauration exceptée. Celui qui y est déjà se retire comme hier.
+  La fiche du mouvement le dit avant le clic DÈS AUJOURD'HUI (`refusDuClassement`, crédit comme débit, avant la caisse
+  négative) : l'écran cesse d'offrir le geste avant que la base ne le refuse.
+- C' : `premier_jour_negatif_de_la_caisse` ne compte que les flux du jour des à-nouveaux du COMPTE DE LA CAISSE ou après
+  — non de l'ouverture du dossier : seule une ouverture sous la racine 53 met en file les déclencheurs de la caisse, et
+  une reprise sans ligne de caisse changerait la borne sans que rien ne la juge. `garder_la_caisse` juge donc toute
+  ouverture de la caisse (plus de raccourci « elle ne fait qu'ajouter » : la poser retire de la caisse ce qui la
+  précède), et celle qui change de dossier juge les deux dès qu'elle y comptait — au crédit aussi (elle emporte la
+  borne). `fluxDeLaCaisse` et `soldesDeLaCaisse` (lib/caisse.ts) bornent de même, dès aujourd'hui : les deux `it.fails`
+  de la relecture sont des tests ordinaires (`caisse.test.ts`). Avant la migration, un tel flux, la base le compte
+  encore : elle reste la garde, du côté fermé.
+- Ce qui reste : un dossier repris SANS ligne de caisse compte encore un flux d'avant la reprise (le classement en est
+  refusé : seul un mouvement d'avant la migration ou restauré) ; l'onglet Caisse le dira (lot C9).
+
+**NEUTRE.** L'application n'appelle pas `regler_piece_par_la_caisse` : `lib/paiementParLaCaisse.ts` (pur) redit ses
+refus neufs — `MOTS_DU_PAIEMENT`, `ORDRE_DU_PAIEMENT`, `jugerLeReglementSelon` / `jugerLeReglement`,
+`refusDeLaContrepartie`, `contrepartieDuPaiement`, `refusDuChangementDeLaPiece`, `refusDuMouvementAvantLOuverture` —
+derrière `PAIEMENT_PAR_LA_CAISSE_EXPORTE`, BAISSÉ, joué dans ses deux états ; `lib/caisse.ts` reçoit ceux qu'il partage
+(les mots de l'ensemble du jour, `jugerLaDate`, `jugerLeMontant`, `premierJourDeLaCaisse`, `ensembleDuJour` étendu par
+`piecesDeVente`, optionnel : absent, aucun paiement n'est d'une pièce de vente — vrai tant qu'aucun n'existe).
+`paiementParLaCaisse.test.ts` confronte les mots et l'ordre au texte de la migration, et le module aux verdicts de son
+essai. Deux choses changent dès aujourd'hui, du côté fermé : la caisse bornée et le refus du classement dans la fiche.
+
+**L'ESSAI** (`supabase/essais/caisse.sql`, étendu) : 200 à 231, 148 étapes de genre « …4 » (sans la migration, une ligne
+EN ATTENTE ; « …4h », ce qu'elle remplace : 162), neuf dossiers jetables — qui règle ; chaque refus sous ses mots et son
+code, et l'ordre ; la caisse négative par un paiement, À L'APPEL (210d), et par son retrait (210e) ; ce qui s'écrit ; la
+contrepartie admise et refusée (son paiement, son compte, son sens, sa part, sa pièce, un paiement retiré, sans pièce,
+la pièce sur un apport, le client, un compte qui n'est pas le super-administrateur) ; la pièce gardée ; l'ensemble d'une
+recette ; la caisse bornée (217 à 219h : par la fonction, sans elle, en déplaçant, la restauration exceptée ; le
+mouvement déjà classé qui se retire et ne compte pas ; la reprise posée après coup ; l'ouverture au crédit qui quitte
+son dossier) ; le catalogue. Sans la migration : 373 verdicts, aucune faute ; avec : 512, aucune faute.
+`caisseSuppression.sql` (réplique seulement) : 21 puis 28 (la contrepartie que « Régénérer » reprend, la pièce qu'un
+paiement cite). `rls.sql` entier, bloc CP neuf (le client ne règle pas, n'écrit pas la contrepartie, ne lit ni l'un ni
+l'autre ; l'anonyme n'exécute pas ; le catalogue) : 82 invariants puis 85, aucune faute ; 63 mutations puis 65, toutes
+mordent. `restauration.sql` : 76 tables IDENTIQUES, et sur une réplique dont la caisse porte des paiements semés par les
+fonctions (cinq opérations, une vague ; six lignes du brouillon). Le banc de la caisse (`src/test/essaiCaisse.ts`)
+rejoue les étapes neuves (il connaît désormais le corps d'une facture : les factures de 170, une écriture du jeu de C6,
+s'y écrivent — `especesSansMouvement.test.ts` le dit). Le banc du leurre : `caisse` et `rls` SÛRS, avec et sans la
+migration ; les 63 essais joués en production, rejoués par le banc avant et après elle : tous SÛRS, et seules les
+sorties de `caisse`, `rls`, `signature` et `inventaire` changent (`ventesClient` porte, avant comme après, un verdict en
+faute qui n'est pas de cette étape : 0c, la liste des fonctions de la vente, que l'essai ne suit plus).
+
+**LES MUTATIONS** (71, chacune sur une copie fraîche, la migration mutée appliquée comme l'outil, `caisse.sql` — et
+`caisseSuppression.sql` pour la suppression — joués entiers) : 69 tuées ; le témoin (la migration telle quelle) survit,
+comme il doit ; C4 (la borne au plus tard, `max` pour `min`) est ÉQUIVALENTE — `a_nouveaux_une_seule_ouverture` ne
+laisse qu'une date aux à-nouveaux d'un dossier. La première campagne avait laissé G3 (l'ouverture au crédit qui quitte
+son dossier ne le jugeait plus) et P20 (la caisse négative jugée à la fin seulement : le déclencheur différé dit les
+mêmes mots) : 219f à 219h et 210d les tuent.
+
+**CE QUI A ÉTÉ REJOUÉ, AVANT ET APRÈS** : l'historique de chaque réplique munie de la migration rend l'empreinte du
+fichier (`864afcec…`) ; `signature.sql` : trois familles changent — « déclencheurs » 82 `86c12843…` puis 84
+`8f00438b06152d6c2db2f18b5c6fdea7`, « fonctions » 217 `3800368f…` puis 220 `e2fc90560453b3e5a2c296a2f5b25c5f`, « droits
+des fonctions » 217 `8ea236a6…` puis 220 `410d7470d418786fde9f2db4ebcd9ef7` —, les six autres inchangées ; le socle
+inchangé (81, `5d636a96…`) ; l'inventaire 2 284 puis 2 289 objets (`af6df144d2048842edf7620ad28d1f81`). Le retour
+arrière (`supabase/preparees/retour/20261031120100_retour_paiement_par_la_caisse.sql`, `172eb93c…`) : la signature
+revient à celle d'avant ; une seconde application se refuse ; sur une caisse qui porte un paiement, il se refuse ; la
+migration se réapplique ensuite. Il retire des objets : à accorder, et à coller.
+
+**LE JOUR DE L'APPLICATION, EN SIMULATION** (le fichier DÉPLACÉ dans l'export, le drapeau levé) : les trois contrôles
+égaux des deux côtés (165 fichiers et 165 migrations, `5c171d4ab4fdbfe00c5b7ef83db7afad` ; le socle, 81 instructions,
+`5d636a96…` ; l'inventaire, 2 289 objets, `af6df144…`) ; la suite entière verte, 511 fichiers et 15 976 tests, le
+déplacement indexé comme le commit le fera (sans lui, `clesSupabase.test.ts`, qui lit les fichiers suivis, cherchait un
+chemin qui n'était plus là). Puis tout rendu : le fichier dans `supabase/preparees/`, le drapeau baissé.
+
+**POUR C9.** `synchroniserContrepartieBanque` et `rendreAuxDatesDeFacture` (lib/contrepartieBanque.ts : « toute ligne de
+la pièce hors de la banque » reçoit la date du paiement) écartent les lignes d'une opération de caisse (la garde refuse
+de les modifier) ; « Régénérer » réécrit la contrepartie après l'avoir retirée ; l'écran passe `piecesDeVente` ;
+`facturesDeLaRecetteARevoir` et la phrase des espèces du jour nomment un paiement autrement que « sans numéro » ; la
+désignation d'une pièce payée comme exemplaire d'une facture source se dit avant le clic
+(`refusDuChangementDeLaPiece`) ; le journal de la caisse dit le flux d'avant l'ouverture qu'il ne compte pas, et la Vue
+d'ensemble un mouvement d'avant l'ouverture classé sur la caisse, à retirer.
