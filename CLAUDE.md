@@ -429,10 +429,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   cabinet, tranchées le 31/10/2026 — Q1 selon le logiciel de l'expert-comptable (FEC22-E2), ModeRglt « Banque » pour le
   relevé, NatOp la nature et le poste de la 2035 (« Dépense — Achats »), IdClient le SIREN d'une entreprise, sinon le
   numéro de la facture, Q5 et Q6 à la recommandation —, et quatorze pour l'expert-comptable (FEC22-E1 à E14), à son
-  rendez-vous ; FEC22a en module le 31/10/2026 (`lib/champsBncDuFec.ts`, neutre : rien ne le lit encore) ; reste FEC22b,
-  la migration, à présenter au cabinet avant la validation de 2025 → « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX
-  CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E », « LES QUATRE CHAMPS DU FEC
-  D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) ».
+  rendez-vous ; FEC22a en module le 31/10/2026 (`lib/champsBncDuFec.ts`, neutre : rien ne le lit encore) ; FEC22c1, le
+  fichier à vingt-deux colonnes, derrière `CHAMPS_BNC_EXPORTES` baissé ; FEC22b, la migration (`champs_bnc_du_fec`,
+  `supabase/preparees/`), préparée et éprouvée sur une réplique le 31/10/2026, à appliquer sur l'accord du cabinet avant
+  la validation de 2025, puis FEC22c2 (la demande porte les clés, une ligne de charge par règlement) → « LE FEC D'UN BNC
+  EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E »,
+  « LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) », « LE FEC D'UN BNC EN TRÉSORERIE À
+  VINGT-DEUX CHAMPS, DERRIÈRE SON DRAPEAU (FEC22C1, LIGNE 26.6, ÉTAPE E) », « LES QUATRE CHAMPS DU FEC D'UN BNC, EN BASE
+  (FEC22B) (PRÉPARÉE, PAS APPLIQUÉE) ».
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
   APRÈS COUP ».

@@ -43986,3 +43986,162 @@ non écrit, le refus du motif retiré, la confirmation de l'autre sens retirée,
 libellé entier proposé, la phrase de la pièce choisie tue, le badge « inopérante » tu. Une première version du test de
 la sous-chaîne prenait « sfr » dans « transfert », qui ne le contient pas : la mutation survivait ; l'exemple est
 « edf » dans « medformation ».
+
+### 31/10/2026 — LES QUATRE CHAMPS DU FEC D'UN BNC, EN BASE (FEC22B) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par un agent architecte, reprise le même jour sur la 2035 corrigée. Rien d'écrit en production : des lectures de
+l'historique des migrations et du catalogue seulement ; la migration est PRÉPARÉE et éprouvée sur une réplique de la
+production du jour — 164 migrations, son historique et ses neuf familles égaux à ceux de la production, relus deux fois
+le 31/10/2026 —, jamais appliquée. Lus avant d'écrire : « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA
+CONCEPTION » (§ CE QUI CHANGE EN BASE, les lots), « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E », « LES
+QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) », « UN EXERCICE VALIDÉ SE FIGE EN BASE », « LA 2035
+D'UN BNC EXONÉRÉ : TROIS DÉFAUTS DE LA RELECTURE CORRIGÉS », et pour la forme « LA CAISSE : LE RESSERREMENT (C6, LIGNE
+26.6) (PRÉPARÉE, PAS APPLIQUÉE) ».)
+
+**CE QUI SE FIGE, ET OÙ.** LPF, art. A47 A-1, VIII, 7° : un BNC en trésorerie fournit vingt-deux informations, les
+quatre dernières DateRglt, ModeRglt, NatOp et IdClient ; validée, une écriture ne se modifie plus (PCG, art. 1031-3) —
+ce que son FEC imprime se fige donc avec elle, comme sa pièce et son numéro. La migration `champs_bnc_du_fec`
+(`supabase/preparees/20261031180000_champs_bnc_du_fec.sql`, version provisoire, 783 lignes, `b10198af…`) : 1. cinq
+colonnes NULLES sur `ecritures_brouillon`, sans valeur par défaut — `date_reglement` (date), `mode_reglement`,
+`nature_operation` (une par écriture), `poste_rattache` (le poste de la 2035 d'une ligne de charge ou de produit : NatOp
+se recompose « nature — poste » à la relecture, FEC22-Q3, (C)), `identification_client` ; 2. une contrainte,
+`ecritures_brouillon_champs_bnc_du_fec`, À CÔTÉ de `ecritures_brouillon_validation_complete` (inchangée, sa définition à
+l'empreinte d'hier, 190b) plutôt que celle-ci réécrite : la réécrire, c'était un `drop constraint`, une suppression à
+accorder. Proposée : aucun des cinq ; validée : le mode et la nature dans leur liste fermée, ou nuls ; un poste
+seulement avec une nature, sur un compte de classe 7 s'il se range sous une recette, de classe 6 sous une dépense ; une
+identification ni vide, ni bordée de blancs, ni porteuse d'un caractère de contrôle ; 3. `valider_exercice` reçoit les
+cinq clés dans `p_lignes` et les fige ; absentes, elle valide comme hier (172 : 0 sur 17 lignes de A) ; 4.
+`empreinte_exercice` les compte, en UN champ de plus présent seulement quand l'une est posée (`concat_ws` saute un
+argument nul) : un exercice validé sans elles garde son empreinte au caractère près. Prouvé sur la réplique : un
+exercice validé par la fonction d'HIER se vérifie encore après la migration, et après son retour arrière ; 5. la garde
+G5 (`garder_lignes_de_la_vente_facturee`) laisse ces colonnes à la validation, comme les neuf d'hier. TROUVÉ en
+préparant : sans cela, la validation d'un dossier basculé qui porte les champs se refusait sur sa première écriture de
+vente facturée (42501, « ne se modifie que par la fonction qui l'écrit ») — l'étape 31g de
+`validationDesVentesFacturees.sql` le montre, et trois mutations de G5 l'y font virer au rouge.
+
+**LES REFUS NEUFS** (22023, après tous ceux d'hier, le premier défaut l'emportant ; `lib/champsBncFiges.ts`,
+`REFUS_DES_CHAMPS_BNC`, les redit au caractère près) : `date_illisible` (une date hors du calendrier — un 30 février, un
+texte vide, une autre forme que AAAA-MM-JJ —, jugée sans lever), `date_future` (après aujourd'hui à Paris, l'instant de
+la validation), `mode_hors_liste`, `nature_hors_liste`, `poste_hors_liste`, `poste_sans_nature`, `poste_hors_resultat`,
+`poste_hors_cadre` (« … porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de
+produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte
+de charge. »), `date_differe`, `mode_differe`, `nature_differe`, `client_differe` (une valeur la même sur toutes les
+lignes d'une écriture : partout, une seule, ou nulle partout), `client_inconnu` — LA GARDE DU SECRET
+(BOI-BNC-DECLA-10-20, § 280 ; FEC22-Q4, (D)) : un client ne s'identifie que par le numéro d'une facture ou d'un avoir
+VALIDÉ du dossier, ou par le SIREN de son client figé — les neuf premiers chiffres de `tiers_siret` quand il n'est fait
+que de neuf ou de quatorze chiffres et passe ses clés de Luhn, en entiers, La Poste et son siège compris (`sirenValide`,
+`siretValide`) —, comme `identificationDuClient` (FEC22a) le lit. Aucun chemin n'y fait entrer un nom. « Sans
+règlement » est un mode de la liste : la base admet des champs vides comme ce mode (FEC22-Q1, (C) ; FEC22-E2 tranchera).
+
+**LA CLASSE D'UN POSTE, REPRISE SUR LA 2035 CORRIGÉE.** La première version rangeait un poste par le CADRE de sa case :
+les recettes sur un produit, le reste sur une charge. La 2035 corrigée du même jour (« LA 2035 D'UN BNC EXONÉRÉ : TROIS
+DÉFAUTS DE LA RELECTURE CORRIGÉS ») fait des deux cases qui se retranchent des recettes, les débours (AB) et les
+honoraires rétrocédés (AC), des cases qui n'acceptent qu'une DÉPENSE (`cadreCompatible`) : la rétrocession payée à un
+remplaçant est une charge (622600, sous le poste « Honoraires rétrocédés »), que la contrainte et `poste_hors_cadre`
+auraient refusée — le garde du module l'a dit à l'intégration (« Débours payés pour le compte des clients: expected
+false to be true »). Retenu : la classe se tire de `posteRattache` lui-même (`CLASSE_DU_POSTE` : 7 pour un poste que la
+2035 range sous une recette, 6 sous une dépense ; un poste rangé sous les deux natures, ou sous aucune, se lève), comme
+la NatOp d'une ligne le lit (`natOpDeLaLigne`) ; la migration en copie la liste (`postes(poste, classe)`, les deux
+listes de la contrainte), que le test confronte. Les quatre postes d'AB et d'AC (« Débours payés pour le compte des
+clients », « Débours », « Honoraires rétrocédés », « Rétrocessions ») passent en classe 6 ; il reste quatre postes en
+classe 7 (« Recettes », « Recettes encaissées y compris les remboursements de frais », « Produits financiers », « Gains
+divers »). Écarté : recopier la règle de `cadreCompatible` (« soustractive → dépense ») à la main dans le module — la
+confrontation à `posteRattache` tient toute règle future sans relecture. Une recette sous ces postes — la rétrocession
+REÇUE par la remplaçante — n'est plus un poste de la 2035 (`posteRattache` rend nul) : la NatOp n'en porte pas, la base
+n'a rien à juger. Changent avec elle : le corps de `valider_exercice` (`a7844d5c…`, la garde de tête du retour arrière
+suit), les mots de `poste_hors_cadre`, l'essai (158c à 158f, 182d2, 182d3).
+
+**UNE LIGNE NE PORTE QU'UN JEU DE VALEURS** (le point dur que FEC22c1 a fait voir : `scinderParMode` scinde une ligne de
+charge entre deux écritures du FEC quand une pièce est payée le même jour par deux modes). La base le refusait déjà, par
+le refus d'hier « La numérotation proposée ne couvre pas exactement les N écritures de l'exercice A. » (22023 ;
+`v_recues <> v_distinctes`), AVANT tout champ neuf : 166 (deux numéros, deux modes), 166b (le même numéro), 166c (la
+seconde occurrence à la place d'une autre ligne, le compte des lignes reçues juste) ; la mutation qui retire ce refus
+fait virer 166c. FEC22c2 écrira une ligne de charge et de TVA par règlement d'une même date (la recommandation de
+FEC22c1, que la session reprend), et `defautsDeNumerotation` devra dire une ligne numérotée deux fois, que la base ne
+dit que d'un message général.
+
+**LES ÉCARTS À LA DEMANDE, ET POURQUOI.**
+- Le poste : la demande disait « un des POSTES_RATTACHES, seulement sur une ligne de classe 6 ou 7 ». Retenu, plus
+  strict : le poste du compte qui le porte, selon la nature sous laquelle la 2035 le range (ci-dessus) ; un poste sur le
+  mauvais compte ne serait le poste d'aucune case.
+- Une colonne de plus que les quatre champs : la nature et le poste séparés (FEC22-Q3, (C) : la nature une par écriture,
+  le poste suit la ligne), NatOp recomposée à la relecture (`natOpFigee`) — une seule colonne NatOp aurait laissé la
+  base sans moyen de vérifier la nature d'une écriture.
+- Le nom `poste_rattache` (FEC22c1 supposait `poste_operation`) : celui de `POSTES_RATTACHES` et de `posteRattache`,
+  d'où la valeur vient ; FEC22c2 s'aligne sur la migration.
+- Aucun drapeau neuf : `CHAMPS_BNC_EXPORTES` est celui du fichier (FEC22c1, lib/champsBncDuFec.ts), qui tiendra l'envoi
+  des clés ; ce lot ne lit aucune des colonnes neuves. `types.ts` les porte FACULTATIVES, la vérité des deux côtés de la
+  migration (le patron d'`operation_caisse_id`).
+- Pas de refus en engagement : l'article ne les demande qu'en trésorerie, l'application ne les enverra que là ; FEC22-E9
+  dira si l'expert-comptable les veut en engagement.
+
+**CE QUE LA BASE NE VÉRIFIE PAS, DIT PLUTÔT QUE PROMIS.** Que l'identification soit celle de la facture DE L'ÉCRITURE
+(un SIREN juste d'un autre client du dossier passe) : la base ne lie pas une écriture de pièce à sa facture ; la garde
+tient le secret (jamais un nom), l'exactitude est celle du module (FEC22a) et des tests du fichier. Que la date soit
+celle du paiement réel (seulement une date du calendrier, au plus aujourd'hui). La contrainte ne juge pas le jour
+(183) : la validation seule, à l'instant où elle fige.
+
+**L'ESSAI** (`supabase/essais/validationExercice.sql`, étendu) : 150 à 190, 90 étapes de genre « …f », qui ne se jouent
+qu'avec la migration (sans elle, une ligne EN ATTENTE). K, en trésorerie : un achat payé par le relevé, une vente, une
+recette affectée, une dotation ; six documents validés par le chef (un SIRET juste, un SIREN que sa clé refuse au SIRET
+que la sienne passe, son avoir, un SIRET que sa clé refuse, un SIREN seul, un SIRET écrit avec des blancs), un
+brouillon, une facture d'un autre dossier ; les documents de La Poste validés chacun dans l'étape qui le juge (deux au
+même SIREN se couvriraient). Chaque refus, sa mutation (152b le jour même, 158d et 158f les débours et les honoraires
+rétrocédés sur une charge, 162c deux écritures d'un même journal, 164 à 164d les identifications admises), l'ordre (165
+à 165c), la ligne scindée (166), la validation qui les fige (170, 171), le cas neutre (172), l'empreinte (173 à 176 :
+chaque champ falsifié hors déclencheur, l'un après l'autre, se voit ; une valeur passée d'un champ à l'autre se voit),
+l'intangibilité (174), la contrainte sans la fonction (180 à 183, dont 182d2 et 182d3 : une rétrocession réinsérée sur
+un produit refusée, sur une charge admise), le catalogue (190). `validationDesVentesFacturees.sql` : 31g.
+`restauration.sql` : un contrôle, une écriture qui porte les champs restaurée avec les cinq.
+
+**CE QUE LES ESSAIS RENDENT SUR LA RÉPLIQUE** (copies fraîches, `psql -1`, la migration corrigée) :
+`validationExercice.sql` 153 sur 153 sans la migration (90 EN ATTENTE), 229 sur 229 avec ;
+`validationDesVentesFacturees.sql` 77 sur 77 des deux côtés ; `restauration.sql` IDENTIQUE, 76 tables, des deux côtés
+(avec, un exercice semé par la fonction : « 2 sur 2 ») ; `rls.sql` entier, semé du journal : 81 lignes d'invariants à 0
+en faute, 63 mutations sur 63 qui mordent, la sortie identique au caractère près des deux côtés (`2671bff4…`) ; le banc
+du leurre, sur les deux essais joués en production, SÛR des deux côtés (154 et 230 verdicts ; 78). `signature.sql` :
+« colonnes » 911 → 916 `821f8387…`, « contraintes » 710 → 711 `52e83bda…`, « fonctions » 217 `3800368f…` → `3e97b806…`,
+six familles inchangées ; le retour arrière rend les neuf familles de la production. Les trois contrôles sur un miroir
+de l'export qui la porte, le socle régénéré : 165 = 165 (`fce74e5f…`), socle 81 `780ac3ed…`, inventaire 2 290
+`98bfa4c1…` des deux côtés (2 284 avant : cinq colonnes, une contrainte). La garde de tête refuse une seconde
+application ; le retour, la sienne, et une base dont une ligne porte un champ (« Ce retour arrière détruirait les champs
+du FEC d'un BNC que 2 lignes validées portent »).
+
+**LES MUTATIONS** (71, chacune un passage du texte préparé remplacé, le mutant appliqué sur une copie fraîche de la
+production, l'essai joué) : 70 mordent — chaque refus retiré, la forme de la date relâchée, le jour hors de son mois, le
+vide sauté, `>=` pour `>`, chaque liste amputée, la classe du poste oubliée, les postes d'AB et d'AC rendus aux recettes
+(tous, ou les honoraires seuls, ou les débours seuls, dans la validation comme dans la contrainte), un poste des deux
+classes, chaque « nul ou valeur », l'écriture lue au journal seul, le statut ou le dossier des documents, le numéro ou
+le SIREN, chaque clé de Luhn, La Poste, son siège, les blancs retirés, le SIRET entier admis, la mise à jour sans les
+champs ou inversée, l'empreinte sans eux, toujours avec eux, sans l'un d'eux, sans leur rang, G5 non étendue (31g),
+chaque clause de la contrainte, le refus d'hier de la ligne reçue deux fois. Une seule ne mord pas, ÉQUIVALENTE : le
+statut des documents retiré, leur numéro gardé — `factures_emises_numero_de_la_validation` lie le numéro à la
+validation, si bien que les deux filtres disent la même chose ; les deux restent, par défense. Cinq mutations ne
+mordaient pas d'abord, et ont fait ajouter 160b, 161b, 162c, un SIRET juste au SIREN faux (163e) et les documents de La
+Poste joués seuls (164c, 164d, 163j).
+
+**LE MODULE ET SES GARDES** (`src/lib/champsBncFiges.ts`, pur, que rien n'appelle encore) : `COLONNES_CHAMPS_BNC`,
+`REFUS_DES_CHAMPS_BNC`, `CLASSE_DU_POSTE` (tirée de `posteRattache`), le jugement (`refusDesChampsBnc`, le jour de Paris
+en paramètre, les documents du dossier lus en entier), la demande (`champsDeLaLigneDemandee` : le vide du fichier
+devient nul) et la relecture (`natOpFigee`). `champsBncFiges.test.ts` (25 cas) défait ce que la migration ajoute aux
+trois fonctions et retrouve celles d'hier au caractère près ; relit l'ordre du jugement, chaque refus, chaque liste, les
+clés, l'empreinte, G5, le retour et l'essai — dont les postes d'AB et d'AC, lus au formulaire (`soustractive`), pas
+recopiés ; joue les cas de l'essai sur le module. Vingt-sept défauts plantés (un mot, deux refus permutés, un code, une
+liste, une classe, les honoraires rétrocédés rendus aux recettes, les débours ajoutés aux produits de la contrainte, la
+classe lue au cadre plutôt qu'à la nature, G5, l'empreinte, une ligne d'hier, la mise à jour, une colonne de plus, un
+`grant`, le module, le retour, l'essai) : tous le font virer. Trois gardes de migrations d'hier
+(`virementMixte.test.ts`, `ecritureVenteFacturee.test.ts`, le bloc VF7b de `prealablesValidation.test.ts`) lisaient la
+DERNIÈRE définition comme celle de leur migration : le jour de l'application, elles auraient viré — elles confrontent
+désormais ce que leur migration pose, où que soit la dernière (le patron de `contrePassationSurMouvementFige.test.ts`).
+La simulation du jour d'application (le fichier dans l'export et retiré de `supabase/preparees/`, le déplacement inscrit
+à l'index comme le ferait un déplacement suivi — sans quoi `clesSupabase.test.ts`, qui lit la liste des fichiers suivis,
+cherche le fichier à son ancienne place —, le socle régénéré) : la suite entière verte, 511 fichiers, 15 986 tests et un
+échec attendu d'un autre lot ; puis tout rendu comme avant elle — les trois contrôles de l'export revenus à ceux de la
+production (164, `3a31b730…` ; socle 81, `5d636a96…` ; inventaire 2 284, `efbc0207…`), la suite entière verte de même.
+`tsc -b` propre, lint à 63 avertissements, pas un de plus.
+
+**CE QUI RESTE.** FEC22c2 : la demande porte les cinq clés (`champsDeLaLigneDemandee`), `refusDesChampsBnc` dit les
+refus avant le clic, `defautsDeNumerotation` dit une ligne numérotée deux fois, la génération écrit une ligne de charge
+et de TVA par règlement, le FEC d'un exercice validé se relit depuis les colonnes (`natOpFigee`), `types.ts` les rend
+obligatoires ; l'assistant ne lit jamais `identification_client` (VF9C-Q1). Le jour de l'application : le drapeau du
+fichier reste baissé jusque-là ; la migration AVANT toute validation d'un exercice en trésorerie (FEC22-Q6).
