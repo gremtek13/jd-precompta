@@ -43899,3 +43899,57 @@ lecture (« la caisse sans cet encaissement serait-elle négative ? ») ou la le
 — une migration, qui se présente au cabinet (CAISSE-Q1, (B) : la caisse du client viendra avec son droit, C10 à C12). Le
 rattachement d'un encaissement en espèces à un mouvement (`rattachement_encaissement`) n'a plus de chemin depuis C6 (des
 espèces ne citent aucun crédit) : rien à dire avant le clic.
+
+### 31/10/2026 — LES LOTS DU RELEVÉ : LE SENS, LA FENÊTRE DU JUSTIFICATIF, « TOUJOURS IGNORER » ET LE MOUVEMENT TRAITÉ AILLEURS
+
+Une relecture de l'import des relevés et du rapprochement, avant l'année 2025 d'un praticien réel (douze relevés), a
+prouvé neuf défauts par des `it.fails` (`src/lib/relectureImportReleve.test.ts`). Quatre touchent les LOTS du relevé ;
+ils sont corrigés ici, du côté sûr : n'écrire que ce qui est certain, dire le reste. Aucune migration.
+
+**2 — « Tout rapprocher » ignorait le sens.** `candidatsPieces` comparait les montants en valeur absolue et
+`planRapprochementAutomatique` ne regardait pas le sens : un achat validé de 60 € du 3 mars se rapprochait du virement
+de 60 € d'un patient du 5 — la recette sortait de la 2035, et la base, qui ne juge aucun sens sur `piece_id`,
+l'acceptait. `analyserAppariements`, lui, refusait la même paire (« sens contraire »). `candidatsPieces` exige désormais
+`sensCoherent` : « Tout rapprocher », la pièce suggérée de la liste et la pièce proposée de la fiche d'un mouvement en
+héritent (une pièce de sens contraire n'est plus non plus une concurrente dans l'unicité). Choisie à la main dans la
+fiche, une pièce de sens contraire se DIT (« Sens contraire : … Associée, elle ferait de ce mouvement le paiement d'une
+dépense : ce crédit ne compterait plus dans les recettes »), sans se refuser.
+
+**8 — le justificatif peut-être au dossier se cherchait à cinq jours.** `justificatifPossible` cherchait le même montant
+dans la fenêtre du rapprochement assisté (`JOURS_TOLERANCE_RAPPROCHEMENT`, 5) quand l'appariement en accepte 7
+(`JOURS_TOLERANCE`, mesuré pour la facture du 30 avril prélevée le 7 mai) : quand le tiers lu ne se retrouvait pas dans
+le libellé, le lot des règles affectait le prélèvement, et la pièce, restée sans paiement, comptait à côté de lui. La
+question se pose maintenant par `piecesDuMemeMontant` (appariementBanque.ts), à `JOURS_TOLERANCE` et dans les deux sens
+— une pièce de sens contraire retient le lot sous sa propre phrase (« … ce mouvement en est peut-être le
+remboursement ») ; l'échéance de cotisation aussi, à `JOURS_TOLERANCE`. Le remboursement d'une note de frais figée se
+cherche de même. En passant : la carte « Sans doute possible » annonçait « la date à 5 jours près » alors que son lot
+(`analyserAppariements`) prend 7 jours ; elle dit `JOURS_TOLERANCE`.
+
+**9 — « Toujours ignorer » : une sous-chaîne sans jugement ni sens.** La règle se juge désormais comme une règle
+d'affectation, par ses fonctions, non recopiées : forme normalisée (`normaliserPourRegle`), motif en début de mot
+(`libelleCorrespond`), motif trop commun refusé (`refusMotif`). À la création : le motif proposé est celui des règles
+d'affectation (`motifPropose`, jamais le libellé entier), un motif refusé ne s'enregistre pas, le motif s'enregistre
+normalisé, et les mouvements de l'AUTRE sens qu'il reconnaît déjà sont nommés dans une confirmation
+(`autreSensReconnu`). Une règle déjà en base dont le motif ne désigne pas un tiers est INOPÉRANTE (`regleOperante`) :
+l'onglet la dit telle, elle ne fait plus rien ignorer. L'alerte de l'import CSV et PDF dit, règle par règle, combien de
+mouvements elle a fait ignorer, dont combien d'encaissements, et ce qu'une règle inopérante laisse à traiter
+(`phraseDesIgnores`). LE SENS RESTE À FAIRE : la table `regles_bancaires_ignorees` n'a que `motif`, il faut une
+migration (une colonne `sens` nullable, la clé unique sur `(dossier_id, motif, sens)` en `nulls not distinct`) ; le cas
+« une règle née d'un débit n'ignore pas un encaissement » reste `it.fails` jusque-là.
+
+**11c — « Tout rapprocher » écrasait un mouvement traité ailleurs.** La mise à jour visait l'identifiant seul : un
+mouvement ignoré entre-temps dans un autre onglet devenait « rapproché ». Elle porte maintenant `.eq('statut',
+'non_rapprochee').select('id').maybeSingle()` (une ligne au plus : sans `maybeSingle`, `lecturesPaginees.test.ts` y
+voyait une lecture de collection sans compte) ; un mouvement que rien n'a écrit est compté à part, ne reçoit pas de
+contrepartie, et l'alerte le dit. Le même défaut vivait dans le rapprochement à la main de la fiche et dans « Valider et
+rapprocher » (la pièce y reste validée, sans mouvement, et l'échec le dit) : même condition. Reste
+`rapprocher_cotisation`, qui ne refuse pas un mouvement « ignoré » : une migration, préparée le même jour avec le sens
+de « Toujours ignorer » et présentée au cabinet (REGLES-Q1).
+
+Mutations (17) : toutes tuées — le sens retiré de `candidatsPieces`, la fenêtre du justificatif ramenée à 5 jours
+(pièces et cotisations), la phrase du sens contraire tue, la règle inopérante rendue opérante, la sous-chaîne rendue,
+les encaissements non comptés, chacune des trois conditions `statut` retirée, la contrepartie écrite sur un mouvement
+non écrit, le refus du motif retiré, la confirmation de l'autre sens retirée, l'alerte d'import sans les règles, le
+libellé entier proposé, la phrase de la pièce choisie tue, le badge « inopérante » tu. Une première version du test de
+la sous-chaîne prenait « sfr » dans « transfert », qui ne le contient pas : la mutation survivait ; l'exemple est
+« edf » dans « medformation ».
