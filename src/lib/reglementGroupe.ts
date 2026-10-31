@@ -1,4 +1,4 @@
-import { seuilAlignement } from './alignementBanque'
+import { paiementNet, seuilAlignement } from './alignementBanque'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import type { MouvementBancaire } from './affectationBanque'
 import { DEVISE_PIVOT } from './devises'
@@ -63,15 +63,17 @@ export function partSaisieDe(piece: Pick<Piece, 'type_piece' | 'montant_ttc'>, m
 }
 
 // CE QU'IL RESTE À RÉGLER D'UNE PIÈCE, hors ce que CE mouvement en paie déjà — le régler de nouveau
-// remplace ses parts. Les paiements comptent en valeur absolue, comme la part de chacun dans
-// `partsDesPaiements` (lib/rattachement.ts) : c'est la même question, et deux réponses divergeraient.
+// remplace ses parts. Les paiements comptent par leur somme SIGNÉE (`paiementNet`, lib/alignementBanque.ts), comme dans
+// `partsDesPaiements` (lib/rattachement.ts) : c'est la même question, et deux réponses divergeraient. En valeur absolue,
+// une prime prélevée puis rejetée passait pour payée deux fois, et son nouveau prélèvement se refusait comme un paiement
+// de trop ; signée, le rejet rend à régler ce qu'il défait.
 export function resteARegler(
   piece: Pick<Piece, 'montant_ttc'>,
   paiements: readonly Pick<PaiementDePiece, 'id' | 'montant'>[],
   saufMouvement: string | null,
 ): number {
-  const paye = paiements.filter((p) => p.id !== saufMouvement).reduce((s, p) => s + Math.abs(p.montant), 0)
-  return Math.max(0, centimes(Math.abs(piece.montant_ttc ?? 0) - paye) / 100)
+  const paye = paiementNet(paiements.filter((p) => p.id !== saufMouvement)).centimes
+  return Math.max(0, centimes(Math.abs(piece.montant_ttc ?? 0)) - paye) / 100
 }
 
 // Pourquoi ce mouvement ne peut pas régler ces pièces ainsi, dit AVANT d'écrire. La base refait les mêmes
@@ -250,7 +252,8 @@ export function piecesPayeesEnTrop<P extends Pick<Piece, 'id' | 'tiers' | 'nom_f
   const resultat: (PiecePayeeEnTrop & { piece: P })[] = []
   for (const piece of pieces) {
     if (piece.montant_ttc == null) continue
-    const paye = centimes((paiements.get(piece.id) ?? []).reduce((s, p) => s + Math.abs(p.montant), 0))
+    // La somme SIGNÉE, comme `partsDesPaiements` : un rejet repris n'est pas un paiement de trop.
+    const paye = paiementNet(paiements.get(piece.id) ?? []).centimes
     const du = centimes(Math.abs(piece.montant_ttc))
     const enTrop = paye - du
     if (enTrop > centimes(seuilAlignement(piece.montant_ttc))) resultat.push({ piece, paye: paye / 100, enTrop: enTrop / 100 })

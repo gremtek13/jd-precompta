@@ -261,17 +261,42 @@ describe('valeurs des cases — l’addition du formulaire', () => {
     expect(valeurs.get('BR')).toBe(1500)
   })
 
-  it('déduit les débours et les rétrocessions du montant net des recettes', () => {
-    const { valeurs } = valeursDesCases(declaration({
+  it('déduit les débours et les rétrocessions — des DÉPENSES, comptées en positif — du montant net des recettes', () => {
+    // Relecture du 31/10/2026 : ce que reçoivent les lignes 2 et 3 est de l'argent versé, que le moteur range en dépense.
+    const d = declaration({
+      recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000 })],
+      depenses: [
+        ligne({ poste: 'Débours', nature: 'depense', montant: 400 }),
+        ligne({ poste: 'Honoraires rétrocédés', nature: 'depense', montant: 600 }),
+      ],
+    })
+    const { valeurs, postesSansCase } = valeursDesCases(d)
+    expect(postesSansCase).toEqual([])
+    expect(valeurs.get('AA')).toBe(10_000)
+    expect(valeurs.get('AB')).toBe(400)
+    expect(valeurs.get('AC')).toBe(600)
+    expect(valeurs.get('AD')).toBe(9000)
+    expect(valeurs.get('AG')).toBe(9000)
+    // Retranchées des recettes, elles n'entrent pas AUSSI au total des dépenses.
+    expect(valeurs.get('BR')).toBe(0)
+    expect(valeurs.get('CA')).toBe(9000)
+  })
+
+  it('refuse une RECETTE sous le poste des débours ou des rétrocessions : la retrancher l’ôterait du résultat', () => {
+    const { valeurs, postesSansCase } = valeursDesCases(declaration({
       recettes: [
         ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000 }),
         ligne({ poste: 'Débours', nature: 'recette', montant: 400 }),
         ligne({ poste: 'Honoraires rétrocédés', nature: 'recette', montant: 600 }),
       ],
     }))
-    expect(valeurs.get('AA')).toBe(10_000)
-    expect(valeurs.get('AD')).toBe(9000)
-    expect(valeurs.get('AG')).toBe(9000)
+    expect(postesSansCase.map((p) => [p.ligne.poste, p.raison, p.codeRefuse])).toEqual([
+      ['Débours', 'case du mauvais sens', 'AB'],
+      ['Honoraires rétrocédés', 'case du mauvais sens', 'AC'],
+    ])
+    expect(valeurs.get('AB')).toBe(0)
+    expect(valeurs.get('AC')).toBe(0)
+    expect(valeurs.get('AD')).toBe(10_000)
   })
 
   it('remplit l’excédent ou l’insuffisance, jamais les deux', () => {

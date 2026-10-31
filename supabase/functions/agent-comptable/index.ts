@@ -596,15 +596,21 @@ function partsDesPaiements(
   piece: Pick<PieceRow, "montant_ttc">,
   paiements: readonly Pick<PaiementDePiece, "date" | "montant">[],
 ): { parts: { date: string; part: number }[]; reste: number } {
-  const paye = paiements.reduce((s, m) => s + Math.abs(m.montant), 0)
-  if (paye === 0) return { parts: [], reste: 1 }
+  // La somme SIGNÉE des paiements, au centime, et son sens (`paiementNet`, src/lib/alignementBanque.ts) : chaque paiement
+  // compte pour son montant rapporté à ce sens, sa valeur absolue quand tous vont dans le même ; le rejet d'un prélèvement
+  // repris porte une part négative, à sa date. Nulle, la pièce n'a pas de paiement net.
+  const net = paiements.reduce((s, m) => s + Math.round(m.montant * 100), 0)
+  if (net === 0) return { parts: [], reste: 1 }
+  const sens = Math.sign(net)
+  const regle = (m: Pick<PaiementDePiece, "montant">) => m.montant * sens
+  const paye = paiements.reduce((s, m) => s + regle(m), 0)
   const montantPiece = Math.abs(piece.montant_ttc ?? 0)
   const reste = Math.round((montantPiece - paye) * 100) / 100
   if (reste <= seuilAlignement(montantPiece)) {
-    return { parts: paiements.map((m) => ({ date: m.date, part: Math.abs(m.montant) / paye })), reste: 0 }
+    return { parts: paiements.map((m) => ({ date: m.date, part: regle(m) / paye })), reste: 0 }
   }
   return {
-    parts: paiements.map((m) => ({ date: m.date, part: Math.abs(m.montant) / montantPiece })),
+    parts: paiements.map((m) => ({ date: m.date, part: regle(m) / montantPiece })),
     reste: reste / montantPiece,
   }
 }
@@ -1148,7 +1154,9 @@ function piecesPayeesEnTrop<P extends Pick<PieceRow, "id" | "montant_ttc">>(
   const resultat: { piece: P; paye: number; enTrop: number }[] = []
   for (const piece of pieces) {
     if (piece.montant_ttc == null) continue
-    const paye = centimesGroupe((paiements.get(piece.id) ?? []).reduce((s, p) => s + Math.abs(p.montant), 0))
+    // La somme SIGNÉE des paiements (`paiementNet`, src/lib/alignementBanque.ts) : un prélèvement rejeté puis repris n'a
+    // payé la pièce qu'une fois.
+    const paye = Math.abs((paiements.get(piece.id) ?? []).reduce((s, p) => s + centimesGroupe(p.montant), 0))
     const du = centimesGroupe(Math.abs(piece.montant_ttc))
     const enTrop = paye - du
     if (enTrop > centimesGroupe(seuilAlignement(piece.montant_ttc))) resultat.push({ piece, paye: paye / 100, enTrop: enTrop / 100 })

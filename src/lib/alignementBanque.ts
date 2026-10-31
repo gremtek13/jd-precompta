@@ -55,6 +55,35 @@ export function ecartAvecBanque(piece: Piece, ligne: Pick<LigneBancaire, 'montan
   return { montantPiece, montantBanque, ecart, seuil, alignable: ecart > 0 && ecart <= seuil }
 }
 
+// CE QU'ONT PAYÉ, ENSEMBLE, LES PAIEMENTS D'UNE PIÈCE : leur somme SIGNÉE, en centimes, et le sens dans lequel elle la
+// règle. Une seule réponse pour la 2035, la CA3, les écritures (`partsDesPaiements`, lib/rattachement.ts), ce qu'il
+// reste à régler (`resteARegler`), la pièce payée de trop (`piecesPayeesEnTrop`, lib/reglementGroupe.ts) et le solde
+// ci-dessous — la même question, et deux réponses divergeraient.
+//
+// SIGNÉE, ET NON PLUS EN VALEUR ABSOLUE (relecture du 31/10/2026). Un prélèvement de 1 200 € rejeté puis repris — le
+// débit du 20/12, le crédit du rejet le 28/12, le débit du 05/01, tous rapprochés de la même prime — était « payé »
+// 3 600 € : chaque mouvement portait un tiers de la pièce, 800 € comptaient en 2025 pour 400 € en 2026, et la pièce
+// passait pour payée de 2 400 € de trop. Signée, la pièce est payée 1 200 € ; le rejet DÉFAIT le prélèvement qu'il
+// suit, au lieu de la payer une fois de plus.
+//
+// LE SENS EST CELUI DE LA SOMME, pas celui que le type de la pièce attend (`signeReglant`) : des paiements tous dans le
+// même sens rendent exactement ce que rendait la valeur absolue, quel que soit ce sens — un remboursement fournisseur
+// rangé en achat, une note de frais réglée par un crédit restent ce qu'ils étaient. Seuls des paiements de SENS
+// CONTRAIRES changent : chacun compte alors, dans `partsDesPaiements`, pour son montant rapporté à ce sens — négatif pour
+// le mouvement qui défait. Une somme nulle (un prélèvement rejeté et pas encore repris) ne paie rien : sens 0, la pièce
+// n'a pas de paiement net.
+export interface PaiementNet {
+  centimes: number
+  sens: -1 | 0 | 1
+}
+
+export function paiementNet(paiements: readonly { montant: number }[]): PaiementNet {
+  // En centimes entiers : sommés en flottants, −1 200 + 1 200 − 1 200 resterait juste, mais trois paiements de 0,10 €
+  // ne feraient pas 0,30 €.
+  const net = paiements.reduce((s, p) => s + Math.round(p.montant * 100), 0)
+  return { centimes: Math.abs(net), sens: Math.sign(net) as -1 | 0 | 1 }
+}
+
 // CE QUE LES PAIEMENTS D'UNE PIÈCE LAISSENT À PAYER, ou ont payé de trop. L'écart se juge sur le TOTAL des
 // paiements de la pièce — ses mouvements rapprochés et les parts des virements groupés qui la règlent
 // (`paiementsDesPieces`) —, jamais mouvement par mouvement : une facture de 1 000 € réglée par un acompte de
@@ -79,8 +108,10 @@ export function soldeDesPaiements(
 ): SoldeDesPaiements | null {
   if (piece.devise && piece.devise !== DEVISE_PIVOT) return null
   if (piece.montant_ttc == null) return null
-  // En centimes entiers : sommés en flottants, trois paiements de 0,10 € ne feraient pas 0,30 €.
-  const payeCentimes = paiements.reduce((s, p) => s + Math.round(Math.abs(p.montant) * 100), 0)
+  // La somme SIGNÉE (`paiementNet`) : un prélèvement rejeté puis repris n'a payé la pièce qu'une fois. Nette nulle — un
+  // rejet qui n'a pas encore été repris —, la pièce n'est pas payée : rien à dire ici, et la 2035 la date à sa facture,
+  // en le disant (`sans_paiement`).
+  const payeCentimes = paiementNet(paiements).centimes
   if (payeCentimes === 0) return null
   const pieceCentimes = Math.round(Math.abs(piece.montant_ttc) * 100)
   return {

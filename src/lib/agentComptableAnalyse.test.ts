@@ -614,6 +614,13 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
       [piece({ id: 'p1' }), [paiement({ montant: -48 })]],
       [piece({ id: 'p1', montant_ttc: 256.16 }), [paiement({ montant: -251.16 })]],
       [piece({ id: 'p1' }), [paiement({ id: 'a', date: '2025-05-01', montant: -60 }), paiement({ id: 'b', date: '2025-04-01', montant: -60 })]],
+      // Relecture du 31/10/2026 : un prélèvement rejeté puis repris — les paiements se somment SIGNÉS — ; et rejeté sans
+      // être repris, ce qui ne paie rien.
+      [piece({ id: 'p1' }), [
+        paiement({ id: 'a', date: '2025-04-01', montant: -120 }), paiement({ id: 'r', date: '2025-04-08', montant: 120 }),
+        paiement({ id: 'b', date: '2025-05-02', montant: -120 }),
+      ]],
+      [piece({ id: 'p1' }), [paiement({ id: 'a', date: '2025-04-01', montant: -120 }), paiement({ id: 'r', date: '2025-04-08', montant: 120 })]],
     ]
     for (const [p, paiements] of cas) {
       expect(deployee.rattachementsTresorerie(p, paiements)).toEqual(rattachementsTresorerie(p, paiements))
@@ -1443,6 +1450,21 @@ describe('le garde-fou sait encore échouer', () => {
       encaissements_de_factures: false,
     }]
     expect(derivee.rattachementsTresorerie(p, paye)).not.toEqual(rattachementsTresorerie(p, paye))
+  })
+
+  it('attrape une copie du rattachement qui somme les paiements en valeur absolue (la formule d’avant la relecture)', () => {
+    const source = sourceDeployee()
+    const derivee = extraire(planter(
+      planter(source, '  const paye = paiements.reduce((s, m) => s + regle(m), 0)\n', '  const paye = paiements.reduce((s, m) => s + Math.abs(m.montant), 0)\n', 'le total payé'),
+      '  const regle = (m: Pick<PaiementDePiece, "montant">) => m.montant * sens\n',
+      '  const regle = (m: Pick<PaiementDePiece, "montant">) => Math.abs(m.montant)\n', 'la part de chaque paiement',
+    ))
+    const p = piece({ id: 'p1', montant_ttc: 120 })
+    const rejete = [
+      paiement({ id: 'a', date: '2025-04-01', montant: -120 }), paiement({ id: 'r', date: '2025-04-08', montant: 120 }),
+      paiement({ id: 'b', date: '2025-05-02', montant: -120 }),
+    ]
+    expect(derivee.rattachementsTresorerie(p, rejete)).not.toEqual(rattachementsTresorerie(p, rejete))
   })
 
   it('attrape une dérive de `piecesAComptabiliser` elle-même', () => {

@@ -103,6 +103,11 @@ const CAS_EN_TROP: [string, Pick<Piece, 'id' | 'montant_ttc'>[], LigneBancaire[]
     [ligne({ id: 's', piece_id: 'av', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: 100 }), ligne({ id: 't', piece_id: 'av', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: 100 })], [], []],
   ['une pièce sans montant lu', [piece('fa', null)], [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -1000 })], [], []],
   ['une pièce que rien ne paie', [piece('fa', 1000)], [], [], []],
+  // RELECTURE DU 31/10/2026 : un prélèvement rejeté puis repris n'a payé la pièce qu'une fois — les paiements se somment
+  // SIGNÉS ; en valeur absolue, la pièce passait pour payée 3 000 €, dont 2 000 de trop.
+  ['un prélèvement rejeté puis repris', [piece('fa', 1000)],
+    [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, montant: -1000 }), ligne({ id: 'r', piece_id: 'fa', reglement_groupe: false, montant: 1000 }),
+      ligne({ id: 't', piece_id: 'fa', reglement_groupe: false, montant: -1000 })], [], []],
   ['une pièce payée en deux fois, exactement', [piece('fa', 1000)],
     [ligne({ id: 's', piece_id: 'fa', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, montant: -400 }), ligne({ montant: -600 })], [part('g', 'fa', -600)], []],
   // LE VIREMENT MIXTE (étape VF9b) : l'exemplaire d'une facture d'avant que paient un rapprochement ET un virement mixte ;
@@ -251,13 +256,24 @@ describe('le garde-fou du bloc RÈGLEMENT GROUPÉ sait encore échouer', () => {
     expect(la).not.toEqual(ici)
   })
 
-  it('attrape une copie qui somme les paiements avec leur signe', () => {
+  it('attrape une copie qui garde le signe de la somme payée', () => {
+    // Un achat se paie par des débits : la somme est négative, et sans sa valeur absolue la pièce n'est jamais payée de trop.
     const derivee = planter(
-      '    const paye = centimesGroupe((paiements.get(piece.id) ?? []).reduce((s, p) => s + Math.abs(p.montant), 0))\n',
-      '    const paye = centimesGroupe((paiements.get(piece.id) ?? []).reduce((s, p) => s + p.montant, 0))\n',
+      '    const paye = Math.abs((paiements.get(piece.id) ?? []).reduce((s, p) => s + centimesGroupe(p.montant), 0))\n',
+      '    const paye = (paiements.get(piece.id) ?? []).reduce((s, p) => s + centimesGroupe(p.montant), 0)\n',
       'la somme payée',
     )
     const { la, ici } = enTropDerive(derivee, 'une pièce payée par un rapprochement ET par la part d’un virement groupé')
+    expect(la).not.toEqual(ici)
+  })
+
+  it('attrape une copie qui somme les paiements en valeur absolue (la formule d’avant la relecture)', () => {
+    const derivee = planter(
+      '    const paye = Math.abs((paiements.get(piece.id) ?? []).reduce((s, p) => s + centimesGroupe(p.montant), 0))\n',
+      '    const paye = centimesGroupe((paiements.get(piece.id) ?? []).reduce((s, p) => s + Math.abs(p.montant), 0))\n',
+      'la somme payée',
+    )
+    const { la, ici } = enTropDerive(derivee, 'un prélèvement rejeté puis repris')
     expect(la).not.toEqual(ici)
   })
 
