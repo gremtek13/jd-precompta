@@ -27,8 +27,8 @@ import { correspondALaRecherche } from '../../lib/recherche'
 import { controlerSolde, phraseDesSoldes } from '../../lib/soldeReleve'
 import { chargerRelevesIncoherents, enregistrerControleReleve } from '../../lib/controlesReleves'
 import {
-  analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE_RAPPROCHEMENT,
-  libelleExploitable, lotDesCertains, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
+  analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE,
+  libelleExploitable, lotDesCertains, piecesDuMemeMontant, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
 } from '../../lib/appariementBanque'
 import { mouvementRapprocheSansObjet, pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar, restesAReglerDesPieces } from '../../lib/controles'
 import { ecritureDuMouvement, mouvementsAffectes, recettesAffecteesSansTaux, refusAffectation } from '../../lib/affectationBanque'
@@ -40,7 +40,7 @@ import {
 } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
 import {
-  envoisDuLot, justificatifPossible, normaliserPourRegle, planAffectationParRegles, refusMotif, sensDuMouvement, totauxParCategorie,
+  envoisDuLot, justificatifPossible, motifPropose, normaliserPourRegle, planAffectationParRegles, refusMotif, sensDuMouvement, totauxParCategorie,
 } from '../../lib/reglesAffectation'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
 import { lirePiecesFigees, type LecturePiecesFigees } from '../../lib/piecesFigeesLecture'
@@ -54,7 +54,7 @@ import { libellePeriode } from '../../lib/declarationTva'
 import {
   ecritureDuPaiementTva, paiementTvaPlausible, raisonPaiementTvaPlausible, refusPaiementTva, suiviDesDeclarations,
 } from '../../lib/liquidationTva'
-import { ignoresParLaRegle, statutPourLibelle } from '../../lib/reglesIgnorees'
+import { autreSensReconnu, ignoresParLaRegle, phraseDesIgnores, regleOperante, statutPourLibelle } from '../../lib/reglesIgnorees'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import PanneauDroit from '../../components/PanneauDroit'
 import ConnexionBancaireCard from './ConnexionBancaireCard'
@@ -837,8 +837,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       const refus = refusSecondPaiement(ligne, pieceAvant, dejaPayee)
       if (refus) { window.alert(refus); return false }
     }
-    const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId }).eq('id', ligneId)
+    // Sur un mouvement encore « à traiter » seulement, comme « Tout rapprocher » : ignoré ou classé depuis un autre onglet,
+    // il ne s'écrase pas, et la relecture montre ce qu'il est devenu.
+    const { data: ecrites, error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId })
+      .eq('id', ligneId).eq('statut', 'non_rapprochee').select('id').maybeSingle()
     if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return false }
+    if (ecrites == null) {
+      window.alert('Le rapprochement n’a pas été enregistré : ce mouvement n’est plus à traiter (ignoré ou classé entre-temps, depuis un autre écran).')
+      return true
+    }
     // Le règlement AVANT la contrepartie : celle-ci reprend les montants de la pièce, et les
     // écrirait donc avec la valeur provisoire si l'ordre était inversé (voir lib/reglementBanque.ts).
     const piece = ligne && pieceAvant ? await reglerSiLibre(pieceAvant, ligne.id, ligne.montant) : pieceAvant
@@ -1214,12 +1221,30 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       window.alert(`La règle n’a pas été enregistrée : ${ventesRetenues}. Recharge la page.`)
       return false
     }
+    // Le motif proposé est celui des règles d'affectation (`motifPropose`), le premier mot qui nomme le tiers — jamais le
+    // libellé entier, qui ne reconnaîtrait que ce mouvement-là. Il se juge comme elles (`refusMotif`) et s'enregistre sous
+    // leur forme normalisée, celle que l'import compare (lib/reglesIgnorees.ts).
     const motif = window.prompt(
-      'Mot-clé stable qui identifie ce type de mouvement récurrent (ex. "MACSF", "SWISSLIFE") — toute future ligne contenant ce mot sera automatiquement ignorée.',
-      ligne.libelle,
+      'Mot-clé stable qui identifie ce type de mouvement récurrent (ex. "MACSF", "SWISSLIFE") — toute future ligne dont le libellé contient un mot commençant ainsi sera automatiquement ignorée.',
+      motifPropose(ligne, lignes) ?? ligne.libelle,
     )
     if (!motif || !motif.trim()) return false
-    const motifNormalise = motif.trim().toLowerCase()
+    const refus = refusMotif(motif)
+    if (refus) { window.alert(`La règle n’a pas été enregistrée. ${refus}`); return false }
+    const motifNormalise = normaliserPourRegle(motif)
+    // LE SENS, que la table ne retient pas : une règle née d'un débit ferait ignorer aussi les crédits qu'elle reconnaît —
+    // ceux déjà importés et ceux des prochains relevés. Nommés avant le clic, jamais tus.
+    const autreSens = autreSensReconnu(ligne, motifNormalise, lignes)
+    if (autreSens.length > 0) {
+      const lesquels = ligne.montant < 0 ? 'encaissement' : 'paiement'
+      const exemples = autreSens.slice(0, 5).map((l) => `${formatDate(l.date)} — ${libelleExploitable(l)} — ${formatMoney(l.montant)}`)
+      if (!window.confirm(
+        `Ce motif reconnaît aussi ${autreSens.length} ${lesquels}${autreSens.length > 1 ? 's' : ''} du relevé :\n${exemples.join('\n')}`
+        + `${autreSens.length > 5 ? '\n…' : ''}\n\nUne règle « toujours ignorer » ne retient pas encore le sens du mouvement : elle les ferait ignorer aussi, `
+        + `et ceux des prochains relevés — ${ligne.montant < 0 ? 'un encaissement ignoré sort des recettes' : 'un paiement ignoré sort des dépenses'}. `
+        + 'Créer la règle quand même ?',
+      )) return false
+    }
 
     const { error } = await supabase.from('regles_bancaires_ignorees').insert({ dossier_id: dossierId, motif: motifNormalise })
     if (error) {
@@ -1387,7 +1412,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     return planAffectationParRegles(lignes, reglesAffectation, categories, assujettiTva, (l) => {
       const justificatif = justificatifPossible(l, justificatifs)
       if (justificatif) return justificatif
-      if (candidatsPieces(l, notesFigees, piecesRapprochees, facturesSources).length > 0) return REMBOURSEMENT_D_UNE_NOTE_FIGEE
+      // La question large (`piecesDuMemeMontant`) : un justificatif POSSIBLE retient le lot, à la fenêtre de l'appariement.
+      if (piecesDuMemeMontant(l, notesFigees, piecesRapprochees, facturesSources).length > 0) return REMBOURSEMENT_D_UNE_NOTE_FIGEE
       const emprunt = empruntPlausible(l, emprunts, lignes)
       if (emprunt) return raisonEmpruntPlausible(emprunt)
       // Un prélèvement qui paie exactement une déclaration de TVA : une règle au nom du Trésor le rangerait en charge.
@@ -1459,11 +1485,20 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
 
         // Le rapprochement n'est tenté qu'une fois la validation réellement écrite : l'inverse
         // laisserait un mouvement rapproché sur une pièce restée « à valider ».
-        const { error: errLigne } = await supabase
+        // Sur un mouvement encore « à traiter » seulement (voir `rapprocherTout`) : la pièce reste validée — la banque en a
+        // confirmé les trois signaux —, sans mouvement, et l'échec le dit.
+        const { data: ecrites, error: errLigne } = await supabase
           .from('lignes_bancaires')
           .update({ statut: 'rapprochee', piece_id: a.piece.id })
           .eq('id', a.ligne.id)
+          .eq('statut', 'non_rapprochee')
+          .select('id')
+          .maybeSingle()
         if (errLigne) { echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : ${errLigne.message}`); continue }
+        if (ecrites == null) {
+          echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : validée, mais son mouvement n’est plus à traiter (ignoré ou classé entre-temps) — non rapprochée`)
+          continue
+        }
 
         try {
           const piece = await reglerSiLibre(a.piece, a.ligne.id, a.ligne.montant)
@@ -1502,7 +1537,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     await sousVerrou(setRapprochementAuto, async () => {
       // Une échéance de cotisation passe par la base, qui écrit son écriture avec le rapprochement ; une
       // pièce, par une mise à jour suivie de sa contrepartie, comme à la main.
-      const resultats: { error: { message: string } | null }[] = await Promise.all(
+      // UN MOUVEMENT QUI N'EST PLUS À TRAITER NE SE RAPPROCHE PAS : le plan a été calculé sur le relevé LU, et un autre
+      // onglet a pu, entre-temps, ignorer ce mouvement ou le classer. La mise à jour sans condition l'écrasait en silence ;
+      // elle ne vise plus qu'un mouvement encore « à traiter », et rend la ligne qu'elle a écrite (une au plus : l'identifiant). Rien d'écrit : il est compté
+      // à part (`plusATraiter`), sans contrepartie, et l'écran le dit.
+      const resultats: { error: { message: string } | null; plusATraiter?: boolean }[] = await Promise.all(
         maj.map(async (m) => {
           if (m.cotisationId) {
             const ligne = lignes.find((l) => l.id === m.ligneId)
@@ -1515,16 +1554,23 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             })
             return { error: error ? { message: messageErreur(error, 'raison inconnue') } : null }
           }
-          const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: m.pieceId }).eq('id', m.ligneId)
-          return { error: error ? { message: messageErreur(error, 'raison inconnue') } : null }
+          const { data, error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: m.pieceId })
+            .eq('id', m.ligneId).eq('statut', 'non_rapprochee').select('id').maybeSingle()
+          if (error) return { error: { message: messageErreur(error, 'raison inconnue') } }
+          return { error: null, plusATraiter: data == null }
         }),
       )
+      const plusATraiter = resultats.filter((r) => r.plusATraiter).length
+      if (plusATraiter > 0) {
+        window.alert(`${plusATraiter} mouvement${plusATraiter > 1 ? 's' : ''} sur ${maj.length} n’${plusATraiter > 1 ? 'ont' : 'a'} pas été rapproché${plusATraiter > 1 ? 's' : ''} : `
+          + `${plusATraiter > 1 ? 'ils ne sont' : 'il n’est'} plus à traiter (ignoré${plusATraiter > 1 ? 's' : ''} ou classé${plusATraiter > 1 ? 's' : ''} entre-temps, depuis un autre écran). Rien n’y a été écrit.`)
+      }
       // Correctif audit sécurité (rapprochements, Importante) : seules les lignes réellement mises à
       // jour reçoivent leur contrepartie banque — jamais toutes en bloc, sinon un échec isolé (une
       // ligne verrouillée, une erreur réseau au milieu du lot...) laisserait une écriture de
       // contrepartie pour un mouvement qui, en base, n'est en réalité pas rapproché.
       const echecs = resultats.filter((r) => r.error)
-      const reussies = maj.filter((_, i) => !resultats[i].error)
+      const reussies = maj.filter((_, i) => !resultats[i].error && !resultats[i].plusATraiter)
       if (echecs.length > 0) {
         window.alert(
           `${echecs.length} rapprochement${echecs.length > 1 ? 's' : ''} sur ${maj.length} n'${echecs.length > 1 ? 'ont' : 'a'} pas pu être enregistré${echecs.length > 1 ? 's' : ''} (${echecs[0].error!.message}) — les autres ont bien été appliqués.`,
@@ -1854,7 +1900,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             Ignorés automatiquement :{' '}
             {regles.map((r) => (
               <span key={r.id} className="badge badge-neutral" style={{ marginRight: 6 }}>
-                {r.motif}
+                {/* Inopérante (`regleOperante`) : son motif ne désigne pas un tiers, elle ne fait plus rien ignorer. */}
+                {regleOperante(r) ? r.motif : `${r.motif} (inopérante : motif trop commun)`}
                 <button
                   type="button"
                   onClick={() => retirerRegle(r.id)}
@@ -1875,8 +1922,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             <div>
               <h3 style={{ margin: 0 }}>Sans doute possible ({certainsAValider.length})</h3>
               <p className="muted" style={{ margin: '4px 0 0' }}>
+                {/* La fenêtre de `analyserAppariements`, qui forme ce lot : l'écran annonçait celle, plus étroite, de
+                    « Tout rapprocher ». */}
                 Pour ces pièces, la banque confirme les trois : le montant au centime, la date à
-                {' '}{JOURS_TOLERANCE_RAPPROCHEMENT} jours près avec un seul rapprochement possible, et le fournisseur dans
+                {' '}{JOURS_TOLERANCE} jours près avec un seul rapprochement possible, et le fournisseur dans
                 le libellé du mouvement. Les relire une par une n'apprendrait rien.
               </p>
             </div>
@@ -2733,9 +2782,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       setPdfLignes(null)
       setSourceFileName(null)
       onImported()
-      if (doublons > 0 || figees > 0 || alertePdf) {
+      const ignoresDites = phraseDesIgnores(aInserer, regles)
+      if (doublons > 0 || figees > 0 || alertePdf || ignoresDites) {
         window.alert(`${aInserer.length} ligne(s) importée(s)${doublons > 0 ? `, ${doublons} déjà présente(s) ignorée(s)` : ''}${soldesDesignes.length > 0 ? `, ${soldesDesignes.length} ligne(s) de solde écartée(s)` : ''}.`
-          + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '') + alertePdf)
+          + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '') + alertePdf + ignoresDites)
       }
     } catch (err) {
       setError(messageErreur(err, "L'import a échoué."))
@@ -2810,9 +2860,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const alerte = controle && !controle.coherent
         ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controle.soldeInitial.toFixed(2)} € + mouvements ${controle.sommeMouvements.toFixed(2)} € = ${controle.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controle.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controle.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
         : ''
-      if (doublons > 0 || phraseEcartees || soldes.length > 0 || figees > 0 || alerte) {
+      const ignoresDites = phraseDesIgnores(aInserer, regles)
+      if (doublons > 0 || phraseEcartees || soldes.length > 0 || figees > 0 || alerte || ignoresDites) {
         window.alert(messages.join(', ') + '.' + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '')
-          + (phraseSoldes ? `\n\n${phraseSoldes}` : '') + alerte)
+          + (phraseSoldes ? `\n\n${phraseSoldes}` : '') + alerte + ignoresDites)
       }
     } catch (err) {
       setError(messageErreur(err, "L'import a échoué."))

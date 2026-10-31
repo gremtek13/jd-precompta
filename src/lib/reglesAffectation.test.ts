@@ -327,6 +327,34 @@ describe('justificatifPossible — un paiement qui a peut-être sa pièce ne s�
     expect(justificatifPossible(ligne(), aucun)).toBeNull()
   })
 
+  // LA FENÊTRE DE L'APPARIEMENT (relecture du 31/10/2026) : la facture d'un abonnement datée du 30 avril, prélevée le 7 mai,
+  // d'un tiers que le libellé ne nomme pas. À cinq jours, elle échappait au montant, et le lot affectait le prélèvement.
+  it('une pièce du même montant à sept jours retient le lot ; à huit, non', () => {
+    const prlv = ligne({ date: '2025-05-07', libelle: 'PRLV SEPA TELECOM PRO 0425' })
+    const facture = (date: string) => ({ ...aucun, pieces: [piece({ tiers: 'SFR Business', date_piece: date })] })
+    expect(justificatifPossible(prlv, facture('2025-04-30'))).toBe('Une pièce du même montant attend un rapprochement.')
+    expect(justificatifPossible(prlv, facture('2025-05-14'))).toBe('Une pièce du même montant attend un rapprochement.')
+    expect(justificatifPossible(prlv, facture('2025-04-29'))).toBeNull()
+    expect(justificatifPossible(prlv, facture('2025-05-15'))).toBeNull()
+  })
+
+  it('une échéance de cotisation à sept jours retient le lot ; à huit, non', () => {
+    const avec = (echeance: string) => ({ ...aucun, cotisations: [cotisation({ montant_appele: 38.4, echeance })] })
+    expect(justificatifPossible(ligne(), avec('2025-03-05'))).toMatch(/échéance de cotisation/)
+    expect(justificatifPossible(ligne(), avec('2025-03-04'))).toBeNull()
+  })
+
+  // DANS LES DEUX SENS : une pièce de sens contraire n'est plus proposée au rapprochement (`candidatsPieces`), mais un
+  // mouvement du même montant en est peut-être le remboursement — le lot ne l'affecte pas, et le dit autrement.
+  it('une pièce du même montant de sens contraire retient le lot, et se dit telle', () => {
+    const remboursement = ligne({ montant: 38.4, libelle: 'VIR SEPA RECU /DE ETS BERNARD' })
+    const achat = { ...aucun, pieces: [piece({ tiers: 'SFR Business', date_piece: '2025-03-10' })] }
+    expect(justificatifPossible(remboursement, achat)).toMatch(/^Une pièce du même montant, de sens contraire/)
+    // Le même montant dans le bon sens l'emporte, et se dit comme avant.
+    const deux = { ...achat, pieces: [...achat.pieces, piece({ id: 'p2', type_piece: 'vente', tiers: null, date_piece: '2025-03-11' })] }
+    expect(justificatifPossible(remboursement, deux)).toBe('Une pièce du même montant attend un rapprochement.')
+  })
+
   // UNE PIÈCE PAYÉE EN PARTIE ATTEND SON SOLDE : rapprochée de son acompte, elle échappait aux questions précédentes, et le
   // solde affecté en lot aurait compté la dépense une seconde fois.
   it('une pièce payée en partie de ce tiers, ou dont le reste vaut le mouvement', () => {

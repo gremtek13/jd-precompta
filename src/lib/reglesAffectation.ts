@@ -1,5 +1,6 @@
 import {
-  candidatsCotisations, candidatsPieces, libelleExploitable, sensCoherent, tiersConfirmeParBanque, type CotisationRapprochable,
+  candidatsCotisations, JOURS_TOLERANCE, libelleExploitable, piecesDuMemeMontant, sensCoherent, tiersConfirmeParBanque,
+  type CotisationRapprochable,
 } from './appariementBanque'
 import { ecritureDuMouvement, natureDuCompte, refusAffectation, type LigneEcritureMouvement } from './affectationBanque'
 import { recollerSiglesPointes } from './format'
@@ -215,17 +216,27 @@ export interface JustificatifsDuDossier {
 // espèces. Une règle « transmedical » aurait fait ça sur le dossier `test`, qui porte dix-sept factures
 // Transmedical.
 //
-// Trois signaux, du plus sûr au plus large : une pièce du même montant dans la fenêtre du
-// rapprochement, une échéance de cotisation de même, puis une pièce de CE tiers qui n'est rapprochée
+// Trois signaux, du plus sûr au plus large : une pièce du même montant dans la fenêtre de
+// l'APPARIEMENT, une échéance de cotisation de même, puis une pièce de CE tiers qui n'est rapprochée
 // d'aucun mouvement — quel que soit son montant, parce qu'un paiement en deux fois ou une facture mal
 // lue échappent au montant et pas au nom. Le troisième est large exprès : le mouvement reste à traiter,
 // l'opérateur l'ouvre, et un faux négatif coûte un clic.
+//
+// LA FENÊTRE EST CELLE DE L'APPARIEMENT (`JOURS_TOLERANCE`, sept jours), jamais celle, plus étroite, du rapprochement
+// assisté : la facture d'un abonnement datée du 30 avril, prélevée le 7 mai, échappait au montant à cinq jours ; quand son
+// tiers lu ne se retrouvait pas dans le libellé, le lot affectait le prélèvement, et la pièce, restée sans paiement,
+// comptait à côté de lui. Et le montant se cherche DANS LES DEUX SENS (`piecesDuMemeMontant`) : une pièce de sens
+// contraire n'est jamais proposée au rapprochement, mais le mouvement en est peut-être le remboursement.
 export function justificatifPossible(ligne: LigneBancaire, justificatifs: JustificatifsDuDossier): string | null {
   const sources = justificatifs.facturesSources
-  if (candidatsPieces(ligne, justificatifs.pieces, justificatifs.piecesRapprochees, sources).length > 0) {
+  const memeMontant = piecesDuMemeMontant(ligne, justificatifs.pieces, justificatifs.piecesRapprochees, sources)
+  if (memeMontant.some((p) => sensCoherent(p, ligne))) {
     return 'Une pièce du même montant attend un rapprochement.'
   }
-  if (candidatsCotisations(ligne, justificatifs.cotisations, justificatifs.cotisationsRapprochees).length > 0) {
+  if (memeMontant.length > 0) {
+    return 'Une pièce du même montant, de sens contraire, n’est rapprochée d’aucun mouvement : ce mouvement en est peut-être le remboursement.'
+  }
+  if (candidatsCotisations(ligne, justificatifs.cotisations, justificatifs.cotisationsRapprochees, JOURS_TOLERANCE).length > 0) {
     return 'Une échéance de cotisation du même montant attend un rapprochement.'
   }
   const libelle = libelleExploitable(ligne)

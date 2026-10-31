@@ -123,7 +123,8 @@ describe('Relecture — « Tout rapprocher automatiquement » et le sens du mouv
   // Une fourniture de 60 € (pièce d'ACHAT validée) datée du 03/03, réglée plus tard ; le 05/03, un patient vire 60 €.
   // `candidatsPieces` compare les montants en valeur absolue et `planRapprochementAutomatique` ne regarde pas le sens
   // (`analyserAppariements`, lui, le fait) : le lot rapproche l'achat de la RECETTE — la recette disparaît de la 2035.
-  it.fails('ne rapproche pas une pièce d’achat d’un encaissement du même montant', () => {
+  // CORRIGÉ le 31/10/2026 : `candidatsPieces` exige le sens (`sensCoherent`), pour le lot comme pour la fiche.
+  it('ne rapproche pas une pièce d’achat d’un encaissement du même montant', () => {
     const plan = planRapprochementAutomatique(
       [ligne({ id: 'credit-patient', date: '2025-03-05', montant: 60, libelle: 'VIR M DUPONT' })],
       [piece({ id: 'achat', date_piece: '2025-03-03' })],
@@ -144,7 +145,8 @@ describe('Relecture — le lot des règles et le justificatif peut-être au doss
   // Facture mensuelle datée du 30/04, prélevée le 07/05 : le cas que `JOURS_TOLERANCE` (7 jours) a été choisi pour
   // couvrir. `justificatifPossible` ne cherche le même montant qu'à `JOURS_TOLERANCE_RAPPROCHEMENT` (5 jours) ; sur une
   // pièce dont le tiers lu ne se retrouve pas dans le libellé, la règle AFFECTE le mouvement — et la pièce, restée sans
-  // paiement, compte à côté de lui.
+  // paiement, compte à côté de lui. CORRIGÉ le 31/10/2026 : la question se pose à la fenêtre de l'appariement
+  // (`piecesDuMemeMontant`, `JOURS_TOLERANCE`).
   const p = piece({ id: 'facture-avril', date_piece: '2025-04-30', tiers: 'SFR Business', montant_ttc: 45, montant_ht: 45 })
   const l = ligne({ id: 'prlv-mai', date: '2025-05-07', montant: -45, libelle: 'PRLV SEPA TELECOM PRO 0425' })
   const justificatifs = {
@@ -155,7 +157,7 @@ describe('Relecture — le lot des règles et le justificatif peut-être au doss
     const { aArbitrer } = analyserAppariements([p], [l], AUCUNE_FACTURE_SOURCE)
     expect(aArbitrer.map((a) => a.ligne.id)).toEqual(['prlv-mai'])
   })
-  it.fails('n’affecte pas en lot un mouvement dont la pièce du même montant est à sept jours', () => {
+  it('n’affecte pas en lot un mouvement dont la pièce du même montant est à sept jours', () => {
     expect(justificatifPossible(l, justificatifs)).not.toBeNull()
     const plan = planAffectationParRegles([l], [regle()], [HONORAIRES], false, (x) => justificatifPossible(x, justificatifs), AUCUN_HORS_DES_LOTS)
     expect(plan.propositions).toEqual([])
@@ -166,10 +168,13 @@ describe('Relecture — « Toujours ignorer »', () => {
   // La règle est une SOUS-CHAÎNE, sans sens ni contrôle du motif (les règles d'affectation ont `refusMotif` et leur
   // sens) : née sur un prélèvement « PRLV CPAM PARTICIPATION », le motif « cpam » fait ignorer à l'import chaque
   // virement de recette de la CPAM ; le motif « prlv » chaque prélèvement.
+  // Le motif trop commun : CORRIGÉ le 31/10/2026 (le jugement des règles d'affectation, `refusMotif`). Le SENS, non : la
+  // table `regles_bancaires_ignorees` n'a pas de colonne `sens`, il faut une migration — ce cas reste `it.fails` jusque-là
+  // (la création de la règle nomme déjà les crédits qu'elle reconnaît, et l'import compte ceux qu'elle fait ignorer).
   it.fails('une règle née d’un débit n’ignore pas un encaissement', () => {
     expect(statutPourLibelle('VIR CPAM DES YVELINES 0325', [{ motif: 'cpam' }])).toBe('non_rapprochee')
   })
-  it.fails('un motif fait d’un mot commun aux relevés se refuse', () => {
+  it('un motif fait d’un mot commun aux relevés se refuse', () => {
     expect(statutPourLibelle('PRLV SEPA URSSAF', [{ motif: 'prlv' }])).toBe('non_rapprochee')
   })
 })

@@ -456,7 +456,11 @@ describe('les lots sur un crédit qu’une facture source pourrait régler', () 
     const lot = lotDesCertains([paire(CANDIDAT, 'p1'), paire(LIBRE, 'p2')], AVEC, AUCUN_REFUS_DE_VALIDATION)
     expect(lot.aEcrire.map((a) => a.piece.id)).toEqual(['p2'])
     expect(lot.ecartesParLesVentes.map((a) => a.ligne.id)).toEqual(['m-cand'])
-    expect(ignoresParLaRegle(RELEVE, 'vir', AVEC)).toEqual({ aIgnorer: [LIBRE], ecartesParLesVentes: [RESERVE, CANDIDAT] })
+    // Un motif par tiers : « vir », qui les reconnaissait tous trois, est un motif trop commun, inopérant depuis le
+    // 31/10/2026 (lib/reglesIgnorees.ts).
+    expect(ignoresParLaRegle(RELEVE, 'rocher', AVEC)).toEqual({ aIgnorer: [], ecartesParLesVentes: [RESERVE] })
+    expect(ignoresParLaRegle(RELEVE, 'horizon', AVEC)).toEqual({ aIgnorer: [], ecartesParLesVentes: [CANDIDAT] })
+    expect(ignoresParLaRegle(RELEVE, 'cpam', AVEC)).toEqual({ aIgnorer: [LIBRE], ecartesParLesVentes: [] })
   })
 
   it('ce que la carte d’un lot en dit : les candidats autrement que les mouvements portés', () => {
