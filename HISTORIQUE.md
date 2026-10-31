@@ -43676,3 +43676,147 @@ intégré tel quel : le drapeau baissé, rien ne change pour l'utilisateur. Le p
 brouillon scindée entre deux écritures quand une pièce est payée le même jour par deux modes — est transmis le jour même
 à l'agent qui prépare la migration FEC22b : une ligne du brouillon ne portera qu'un jeu de valeurs, la génération des
 écritures écrivant une ligne de charge et de TVA par règlement d'une même date (FEC22c2).
+
+### 31/10/2026 — L'IMPORT D'UN RELEVÉ PAR FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN
+
+Une relecture de l'import des relevés bancaires (CSV et PDF) a prouvé, par des `it.fails`, des défauts qui auraient
+faussé sans bruit l'import des douze relevés de 2025 du premier dossier réel (MVP-D7, vers le 20 novembre). Aucun écran
+ne supprime une ligne de `lignes_bancaires` : un import faux y serait resté. Chaque correction tombe du côté sûr —
+refuser, ou dire, plutôt que deviner. Aucune migration.
+
+- **Deux opérations identiques d'un même relevé** (deux passages à la pharmacie le même jour, même montant) : la seconde
+  était prise pour un doublon de la première, dans le fichier même, et le contrôle de solde, qui somme toutes les lignes
+  du fichier, enregistrait cohérent un relevé auquel il manquait le montant. Le dédoublonnage compte désormais par
+  MULTIPLICITÉ (`partagerParMultiplicite`, `lib/importReleve.ts`) : n occurrences dans le fichier contre m au relevé, n
+  − m s'importent ; un relevé redéposé ne s'importe toujours pas. Les deux chemins, CSV et PDF.
+- **Le solde courant pris pour le montant** (export CIC / Crédit Mutuel « Date;Date de
+  valeur;Débit;Crédit;Libellé;Solde ») : la colonne Solde, remplie sur toutes les lignes, gagnait le compte des
+  montants. **Un export Débit / Crédit laissé en montant signé** (Crédit Agricole, débits positifs) : `handleFile`
+  remettait le format à « une colonne », chaque débit entrait en encaissement. La détection lit désormais l'EN-TÊTE,
+  cherché dans les dix premières lignes (préambules de la Société Générale ou de La Banque Postale), ses variantes
+  (« euros », « EUR », « (€) », accents, « opération ») : Débit et Crédit règlent le format à deux colonnes, une colonne
+  Solde n'est jamais un montant. Sans en-tête, deux colonnes de montants jamais remplies ensemble sont un Débit / Crédit
+  — le sens lu aux signes, ou supposé (la première est le débit) et alors DIT (`doute`) ; une colonne qui suit
+  l'arithmétique d'un solde courant (quatre paires sur cinq, trois lignes au moins) n'est pas un montant. L'écran règle
+  tout cela, laisse choisir la colonne du solde, refuse l'import si on la prend pour un montant, et MONTRE avant
+  l'import les montants interprétés, signés, des six premières lignes, avec les totaux des débits et des crédits.
+- **Un montant illisible valait zéro** en Débit / Crédit (`?? 0`) : « 1 234,56 EUR » s'importait à 0,00 €.
+  `montantDeLigne` (`csv.ts`, la seule interprétation, pour l'aperçu comme pour l'import) rend le montant ou sa raison —
+  absent, illisible, ambigu (deux montants, ou un crédit négatif) ; une opération nulle s'écarte aussi. Chaque ligne
+  écartée se COMPTE, par raison, avant comme après l'import. `parseMontantBancaire` refuse toujours « EUR » écrit en
+  lettres (choix assumé, que garde `extractPieceMontants.test.ts`).
+- **L'encodage windows-1252** : `blob.text()` lisait en UTF-8 indulgent, le « € » d'un export (octet 0x80) devenait
+  U+FFFD, la ligne était écartée et les accents abîmés. Le décodeur de la balance reprise (UTF-8 strict, repli
+  windows-1252) vit désormais dans `lib/decodageTexte.ts`, une seule copie pour la balance et le relevé ; l'écran dit un
+  fichier lu en windows-1252.
+- **Un libellé qui dit « solde »** (« VIR M DUPONT SOLDE NOTE HONORAIRES ») était pris pour une ligne de solde : la
+  recette ne s'importait pas, et trois « soldes » faisaient taire le contrôle. Seul ce qui a la FORME d'un solde en est
+  un (`aLaFormeDUnSolde`, `soldeReleve.ts`) : le mot, entouré seulement des mots qu'une banque y met, des dates et des
+  montants ; vaut aussi pour la case pré-cochée du PDF. Le critère de POSITION (en tête et en fin de fichier) que la
+  relecture suggérait n'est pas retenu seul : un virement de patient peut être la première ou la dernière opération du
+  mois, et le prendre pour un solde perdrait la recette — mieux vaut un contrôle qui ne tourne pas, et qui le dit. Hors
+  de deux soldes exactement, l'aperçu le dit, et l'alerte de fin d'import aussi pour un ou plus de deux.
+- **Le même mois importé deux fois sous deux formats** (PDF puis CSV, ou connexion bancaire puis fichier) : le
+  dédoublonnage ne le reconnaît pas, les libellés différant. Avant l'import, l'aperçu dit le recouvrement, et le clic le
+  fait confirmer, sans le refuser (`recouvrements`). La période de chaque relevé se lit au relevé en base, fichier par
+  fichier, plutôt que dans `controles_releves_bancaires`, qui n'a de ligne que pour un fichier portant ses deux soldes.
+  Les périodes se comparent strictement : deux mois qui se touchent au jour près ne se recouvrent pas.
+- **Le séparateur** : la règle « un point-virgule dans les 2 000 premiers caractères » découpait de travers un fichier à
+  virgules dont un libellé porte « ; ». La régularité seule ne suffit pas non plus (essayé : un relevé français dont les
+  lignes de solde sont plus courtes porte une virgule décimale par ligne, plus régulière que ses points-virgules — le
+  mutant l'a montré sur le jeu LCL). Le séparateur retenu est celui qui donne le plus de lignes ressemblant à une
+  opération (une date et un montant entiers), puis le plus régulier, puis le point-virgule. **Le signe moins
+  typographique** (U+2212) se lit comme le trait d'union.
+
+Ce qui reste : la copie de `parseMontantBancaire` dans `extract-piece` ne connaît pas U+2212 (elle lit « −45,20 » en
++45,20 sur une pièce) — à reprendre au prochain déploiement de la fonction ; les lignes de préambule restent comptées
+« date illisible » plutôt qu'écartées comme telles ; une colonne « Sens » (D / C) à côté d'un montant non signé n'est
+pas reconnue — `douteDuSens` le dit quand aucun débit n'est lu.
+
+### 31/10/2026 — LA 2035 D'UN BNC EXONÉRÉ : TROIS DÉFAUTS DE LA RELECTURE CORRIGÉS
+
+Avant la répétition générale du MVP (MVP-D6, MVP-D7 : la 2035 de 2025 d'un soignant rejouée vers le 20 novembre et
+comparée case par case à celle qu'il a déposée), une relecture du moteur a prouvé trois défauts par des `it.fails`
+(`src/lib/relecture2035Exonere.test.ts`). Les trois sont corrigés, sans migration ; les `it.fails` sont devenus des
+tests ordinaires, et les tests « constaté » d'hier ont été remplacés par ce qui doit être refusé.
+
+**1. Les honoraires rétrocédés (AC, ligne 3) et les débours (AB, ligne 2) ne se déclaraient par aucune voie.**
+`cadreCompatible` (`lib/cases2035.ts`) n'acceptait qu'une recette dans une case du cadre des recettes. Une rétrocession
+rangée dans une catégorie de charge (622600) — ce que fait un praticien titulaire qui paie sa remplaçante — tombait en
+« case du mauvais sens » : AC vide, AD au brut, validation refusée. Rangée en produit (une recette négative), elle
+entrait dans AC au signe de la recette : AC = −10 000, AD = AA − (−AC) = 60 000, la case négative bloquait aussi. Pire,
+sans que la relecture l'ait relevé : la REMPLAÇANTE qui rangeait sa rétrocession REÇUE (une recette positive) sous
+« Rétrocessions » la voyait retranchée de ses recettes — AD = AA − AC — pendant que le moteur l'ajoutait, un écart de
+deux fois la rétrocession entre le résultat du moteur et celui du formulaire, en silence. Désormais une case
+`soustractive` (AB et AC seules, un test le dit) n'accepte qu'une DÉPENSE, comptée en positif, et refuse une recette
+(« case du mauvais sens », que Clôture montre et que la validation refuse). Le formulaire suit le moteur au centime : AD
+= AA − AB − AC, la dépense n'entre pas au cadre 3 (BR), CA = le résultat du moteur. Lecteurs : la concordance avec les
+écritures ne change pas (elle juge source par source et compte par compte, sur les totaux du moteur, qui n'ont pas
+bougé) et concorde sur une rétrocession au 622600 face à la banque ; Clôture propose de changer le poste d'une catégorie
+de PRODUIT au poste « Honoraires rétrocédés » (sa nature n'est pas le sens opposé) ; le PDF (`remplir2035.ts`) écrit les
+valeurs de `valeursDesCases`, AC positive ; le volet social et la 2035-E, qui lisent AD, deviennent justes ;
+`posteRattache` (FEC22a), qui s'appuie sur `cadreCompatible`, rend « Honoraires rétrocédés » pour une rétrocession en
+charge et `null` pour une recette sous ce poste.
+
+**2. Le remboursement d'une échéance de cotisation non rapprochée signait mal sa CSG-CRDS.** `cotisationsComptees`
+(`lib/cotisationRapprochee.ts`) signait la CSG-CRDS comme le montant dans ses deux premières branches (un mouvement, le
+compte personnel), pas dans la troisième (comptée à son échéance) : −300 € dont 30 € saisis en positif donnaient BK −330
+et BV +21,03 au lieu de BK −270 et BV −21,03. Une seule règle, `csgDansLeSensDe`, pour les trois. Seul
+`declaration2035.ts` lit `csgCrds`. Effet de bord voulu : une échéance positive dont la CSG-CRDS est saisie négative la
+compte désormais positive, comme les deux autres branches le faisaient déjà ; une échéance de zéro euro n'a plus de
+CSG-CRDS (zéro).
+
+**3. Une pièce payée, rejetée puis payée de nouveau se comptait en partie dans le mauvais exercice.**
+`partsDesPaiements` (`lib/rattachement.ts`) sommait les paiements en valeur absolue : la prime de 1 200 € prélevée le
+20/12/2025, rejetée le 28/12 (crédit rapproché de la même pièce), payée le 05/01/2026 était « payée » 3 600 € — 800 € en
+2025, 400 € en 2026. Désormais le total payé est la somme SIGNÉE (`paiementNet`, `lib/alignementBanque.ts`), et chaque
+paiement compte pour son montant RAPPORTÉ AU SENS de cette somme : +1, −1, +1 → rien en 2025, 1 200 € en 2026.
+- NEUTRE pour des paiements tous de même sens, quel que soit ce sens (un remboursement fournisseur rangé en achat, une
+  note de frais réglée par un crédit restent ce qu'ils étaient) : les parts sont celles d'hier AU BIT PRÈS — le total
+  s'additionne en euros dans l'ordre d'hier, un test le compare à l'ancienne formule sur des montants qui flottent mal,
+  et une mutation qui le calcule en centimes/100 le fait virer au rouge. Une écriture déjà générée ne se découvre donc
+  pas « à régénérer ». Seules les pièces aux paiements de sens contraires changent.
+- Les écritures : la charge se répartit date par date (`centimesParDate`) avec une part NÉGATIVE à la date du rejet, que
+  `lignesChargeProduitPourPiece` écrit dans l'autre sens (crédit du 616000), face à la banque au débit : l'écriture
+  s'équilibre à CHAQUE date, donc dans chaque exercice, et concorde avec la 2035 de chacun. Avant, elle était
+  déséquilibrée dans chacun (400 € de charge face à 1 200 € de banque). Aucune ligne négative ni nulle n'est écrite.
+- Une date dont la part nette est NULLE (un prélèvement et son rejet le même jour) : `centimesParDate` y rend 0, aucune
+  ligne de charge ne s'écrit, ses deux lignes de banque se soldent entre elles ; la 2035 n'y compte rien.
+- Une somme NULLE (rejeté, pas encore repris) : pas de paiement net, la pièce compte à sa date de facture et se dit
+  « sans paiement connu » (avant : comptée au paiement, sans rien dire). Son écriture reste déséquilibrée (deux lignes
+  de banque qui se soldent, une charge sans contrepartie) — comme avant ; le second prélèvement, rapproché, la répare.
+- Deux divisions par zéro fermées, qu'une part nette nulle rendait possibles : la part sans date d'une pièce non datée
+  dont le rejet tombe le jour du dépôt (`centimesParDate`), et la CA3 d'une date où le rejet d'un paiement partiel
+  rencontre le reste supposé à la date de facture (`centimesDeLaPeriode`, `lib/declarationTva.ts`), où la période compte
+  la part payée seule, prise sur la pièce entière.
+- La CA3 défait la déduction au jour du rejet et la refait à la reprise (un mois de décembre à 0, un mois de janvier à
+  200 €) ; une période qui ne contiendrait que le rejet porterait une TVA déductible négative en ligne 20 — la
+  régularisation d'une déduction faite la période d'avant —, un cas que l'essai réel n'a pas encore rencontré.
+- Les copies de la même question suivent : `resteARegler` et `piecesPayeesEnTrop` (`lib/reglementGroupe.ts`),
+  `soldeDesPaiements` (`lib/alignementBanque.ts`) — la prime n'est plus « payée de 2 400 € de trop », et le rejet rend à
+  régler ce qu'il défait ; et les deux copies de l'assistant (`supabase/functions/agent-comptable/index.ts` :
+  `partsDesPaiements`, `piecesPayeesEnTrop`), gardées par `agentComptableAnalyse.test.ts` et
+  `agentComptableReglementGroupe.test.ts`, qui reçoivent le cas du rejet et une dérive plantée de l'ancienne formule.
+- Le FEC, le lettrage et la piste d'audit lisent les écritures du brouillon, pas les parts : ils ne voient le changement
+  qu'après « Régénérer » d'une pièce aux paiements de sens contraires, dont le contrôle des écritures dira alors qu'elle
+  est désynchronisée (c'est vrai : son écriture d'hier était fausse dans chaque exercice).
+
+**Ce qui reste.** L'écran ne laisse toujours pas rapprocher le crédit d'un rejet de la pièce qu'il défait :
+`refusSecondPaiement` refuse un mouvement « dans le mauvais sens » pour la pièce, et une pièce déjà payée n'est pas
+proposée. Le moteur est juste pour ces données, d'où qu'elles viennent (un rapprochement direct, une restauration) ;
+ouvrir le geste est une décision du cabinet (REJET-Q1, à la page des arbitrages). Le total « CSG déductible » de
+l'onglet Cotisations additionne la saisie sans la signer (`CotisationsTab.tsx`, ligne 561) : un affichage, pas la 2035.
+
+Mutations (seize, toutes tuées) : la case soustractive sans l'exception ou ouverte aux recettes ; la CSG à son échéance
+non signée, sans valeur absolue ; la part en valeur absolue ; `paiementNet` en valeur absolue ; la somme nulle non
+écartée ; le total payé en centimes/100 (la neutralité au bit) ; `resteARegler`, `piecesPayeesEnTrop`,
+`soldeDesPaiements` en valeur absolue ; les deux gardes de la part nulle (CA3 et `centimesParDate`), et la TVA de la
+date entière dans la garde de la CA3 ; les deux copies de l'assistant.
+
+### 31/10/2026 — UNE RÉPONSE DU CABINET : 28.5E-Q8
+
+28.5e-Q8, sans réponse recommandée (la recommandation dépendait de 28.5e-Q1 b, tranchée « quelques-uns » le
+28/10/2026) : **oui**. Le formulaire de facture recevra, pour un client établi hors de France, son pays, son numéro de
+TVA et le régime de l'opération (autoliquidation, exportation…) : des mentions que la facture doit porter, et dont
+l'e-reporting a besoin. C'est l'étape e7 de l'e-reporting, qui se construit après le MVP (28.5e-Q1) ; d'ici là,
+l'application ne demande toujours ni le pays, ni le numéro de TVA, ni le régime d'un tel client.

@@ -463,9 +463,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   faire ; l'essai réel sur le bac à sable de Super PDP. (e) l'e-reporting, onze étapes (le point 15 en hypothèse ;
   E6-Q8 : l'identifiant tiré au téléchargement, donné ensuite à la base, une migration) ; restent e5b2 (Q6, la fiche
   déclarée qui retient sa pièce), e6b (le bouton qui télécharge le fichier) et la suite (e7 : une facture à un client
-  étranger ; e8 : les recettes sans facture vendues à des particuliers — e7 et e8 se construiront après le MVP,
-  28.5e-Q1 ; e9 : `fluxEreporting` recopié dans `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER
-  D'UNE DÉCLARATION D'E-REPORTING ».
+  étranger, dont le formulaire recevra le pays, le numéro de TVA et le régime, 28.5e-Q8 ; e8 : les recettes sans
+  facture vendues à des particuliers — e7 et e8 se construiront après le MVP, 28.5e-Q1 ; e9 : `fluxEreporting` recopié
+  dans `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING », « UNE
+  RÉPONSE DU CABINET : 28.5E-Q8 ».
 - **Défauts connus des Edge Functions** (2, `DEFAUTS_CONNUS`) : `taux-change-bce` sans contrôle d'appelant : la
   désactivation des clés historiques le referme → « LES DERNIERS CORPS MAL FORMÉS DES EDGE FUNCTIONS ». `receive-email`
   ne journalise plus que des comptes, ni objet, ni expéditeur, ni adresse, ni code de collecte (le contrat exige zéro
@@ -966,12 +967,15 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `compositionsAuPlan.test.ts`) → « L'APPLICATION LIT LE PLAN ».
 - **Montant retenu** : HT pour un assujetti, TTC pour un exonéré (`lib/montantRetenu.ts`) → « HT OU TTC ». **La 2035
   compte une pièce à la date de son PAIEMENT** (`paiementsDesPieces`, entrées obligatoires : le relevé, les parts des
-  virements groupés, et celles des virements mixtes, lues avec les ventes facturées) → « LA 2035 COMPTE UNE PIÈCE À LA
-  DATE DE SON PAIEMENT », « LE VIREMENT MIXTE — CHANTIER EC-Q3 ». **La CA3** : exigibilité à l'encaissement ou au
+  virements groupés, et celles des virements mixtes, lues avec les ventes facturées), le total payé étant la somme
+  SIGNÉE de ses paiements (`paiementNet` : un rejet défait le paiement) → « LA 2035 COMPTE UNE PIÈCE À LA DATE DE SON
+  PAIEMENT », « LE VIREMENT MIXTE — CHANTIER EC-Q3 », « LA 2035 D'UN BNC EXONÉRÉ : TROIS DÉFAUTS DE LA RELECTURE
+  CORRIGÉS ». **La CA3** : exigibilité à l'encaissement ou au
   paiement, arrondi fiscal par ligne, aucune somme négative sur un taux ; une déclaration enregistrée écrit sa
   liquidation → « LA TVA SE LIQUIDE ».
 - **Le moteur de la 2035** : une ligne par poste ET par nature, un poste négatif reste négatif, une case n'appartient
-  pas à la ligne en face (BH, BJ, BM groupent) ; amortissements en CH ; la CSG-CRDS entière au 108 en trésorerie, 6,8
+  pas à la ligne en face (BH, BJ, BM groupent), AB et AC n'acceptent qu'une dépense, comptée en positif ;
+  amortissements en CH ; la CSG-CRDS entière au 108 en trésorerie, 6,8
   points en BV ; le cadre 8 sans l'abattement de 26 % → « Le cadre 8 du 2035-B ». **L'annexe 2035-E** se tire des cases
   à l'euro, rien rempli à la place du cabinet → « L'ANNEXE 2035-E SE TIRE DE LA 2035 DÉPOSÉE ». PDF :
   `Intl.NumberFormat('fr-FR')` casse pdf-lib ; pdf.js vide son tampon (`slice(0)`).
@@ -991,8 +995,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 ### Import, OCR, classification
 
 - **Montants et dates bancaires** : `csv.ts` seul ; le contrôle de solde est CONSERVÉ → « Un relevé ne contient pas que
-  des opérations ». **Classification** : le bordereau d'abord, le sens par `orientationDe` → « Le sens d'une pièce est
-  décidé par la classification ».
+  des opérations ». **L'import d'un relevé par fichier** (`lib/importReleve.ts`) : l'aperçu et l'import passent par la
+  même interprétation, montrée signée avant le clic ; un montant illisible s'écarte et se compte, jamais zéro ; le
+  dédoublonnage compte par multiplicité ; un solde se reconnaît à sa forme ; un recouvrement se confirme → « L'IMPORT
+  D'UN RELEVÉ PAR FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN ». **Classification** : le bordereau d'abord, le sens
+  par `orientationDe` → « Le sens d'une pièce est décidé par la classification ».
 - **Un fournisseur se reconnaît à une clé d'identité** (`cleFournisseur`), mot à mot, jamais par sous-chaîne.
   **« Textract sait le lire » n'est pas « l'application accepte ce fichier »** (`textractPeutLire`) ; une relecture OCR
   ne relit que ce qui manque.
