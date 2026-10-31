@@ -268,6 +268,22 @@ export function caseDuPoste(poste: string): Case2035 | null {
   return code ? CASE_PAR_CODE.get(code) ?? null : null
 }
 
+// LES POSTES QUE LE RATTACHEMENT CONNAÎT, sous l'orthographe du code (FEC22a, lib/champsBncDuFec.ts) : la NatOp d'une ligne
+// de charge ou de produit du FEC d'un BNC en trésorerie y écrit le poste de sa catégorie (FEC22-Q3, (C)), et jamais le
+// texte que le cabinet a tapé dans le champ « poste 2035 » — « achats » ou « ACHATS » s'y écrivent « Achats », la clé
+// du rattachement les confondant déjà. La première orthographe d'une clé l'emporte.
+export const POSTES_RATTACHES: readonly string[] = [...new Set(RATTACHEMENTS.map(([poste]) => poste))]
+const POSTE_PAR_CLE = new Map<string, string>()
+for (const poste of POSTES_RATTACHES) if (!POSTE_PAR_CLE.has(cle(poste))) POSTE_PAR_CLE.set(cle(poste), poste)
+
+// Le poste d'une ligne de cette nature tel que le formulaire le range, sous l'orthographe du rattachement ; nul quand le
+// rattachement ne le connaît pas, ou que sa case est de l'autre cadre — exactement les postes que `repartirEnCases` dit
+// « sans case » (`cadreCompatible`) : une recette sous un poste de dépenses n'est le poste d'aucune case.
+export function posteRattache(poste: string, nature: LigneDeclaration['nature']): string | null {
+  const c = caseDuPoste(poste)
+  return c && cadreCompatible(c, nature) ? POSTE_PAR_CLE.get(cle(poste)) ?? null : null
+}
+
 export interface CaseRemplie {
   case: Case2035
   montant: number
