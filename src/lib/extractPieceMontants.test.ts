@@ -42,6 +42,9 @@ describe('extract-piece / parseAmount (copie déployée)', () => {
     expect(parseAmount('45,20-')).toBe(-45.2)
     expect(parseAmount('(45,20)')).toBe(-45.2)
     expect(parseAmount('+120,00')).toBe(120)
+    // Le signe moins typographique (U+2212) : retiré avec les lettres, il rendait « −45,20 » en +45,20.
+    expect(parseAmount('\u221245,20')).toBe(-45.2)
+    expect(parseAmount('45,20\u2212')).toBe(-45.2)
   })
 
   it('tolère les lettres que Textract laisse, contrairement à la version CSV', () => {
@@ -62,7 +65,8 @@ describe('extract-piece / parseAmount (copie déployée)', () => {
   it('rend le même résultat que `parseMontantBancaire` sur tout ce que les deux acceptent', () => {
     // Le contrat que la duplication doit tenir : sur un montant écrit sans lettre, les deux copies
     // ne peuvent pas diverger.
-    for (const montant of ['1 234,56', '1.234,56', '1,234.56', '1234,56', '0,00', '45,20-', '(45,20)', '-1 500,00', '20846,47']) {
+    for (const montant of ['1 234,56', '1.234,56', '1,234.56', '1234,56', '0,00', '45,20-', '(45,20)', '-1 500,00', '20846,47',
+      '\u22121 500,00', '45,20\u2212']) {
       expect(parseAmount(montant), `divergence sur « ${montant} »`).toBe(parseMontantBancaire(montant))
     }
   })

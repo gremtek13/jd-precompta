@@ -249,7 +249,9 @@ async function citerChamps(texte: string, region: string): Promise<Citation> {
 // d'un ou deux chiffres en fin de chaîne — un montant n'a jamais trois décimales.
 function parseAmount(raw?: string): number | null {
   if (!raw) return null
-  let s = raw.replace(/[\s\u00a0\u202f]/g, "").replace(/\u20ac/g, "")
+  // Le signe moins typographique (U+2212), qu'un logiciel de facturation peut imprimer à la place du trait d'union, se
+  // lit comme lui — la règle de `parseMontantBancaire` : retiré avec les lettres, il rendait un avoir en positif.
+  let s = raw.replace(/\u2212/g, "-").replace(/[\s\u00a0\u202f]/g, "").replace(/\u20ac/g, "")
   if (!s) return null
 
   let negatif = false
