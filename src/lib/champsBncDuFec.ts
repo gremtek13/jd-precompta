@@ -78,13 +78,15 @@ export const MODE_DU_MOYEN: Readonly<Record<MoyenEncaissement, ModeRglt>> = {
 }
 
 /**
- * Les natures de l'opération (NatOp), une par écriture, tirées de sa SOURCE : la liste de FEC22-Q3, (A), et rien d'autre.
- * Aucune ne dit un soin, une personne ni un texte que le cabinet a tapé.
+ * Les natures de l'opération (NatOp), une par écriture, tirées de sa SOURCE : la liste de FEC22-Q3, (A), et le retrait
+ * d'espèces pour la caisse — un DÉBIT classé sur la caisse, les mots de la fiche d'un mouvement, que « Versement
+ * d'espèces », un crédit, dirait faux. Aucune ne dit un soin, une personne ni un texte que le cabinet a tapé.
  */
 export const NATURES_OPERATION = [
   'Recette', 'Dépense', 'Recette et dépense', "Acquisition d'immobilisation", "Apport de l'exploitant",
   "Prélèvement de l'exploitant", "Échéance d'emprunt", "Déblocage d'emprunt", 'Cotisation sociale', 'Opération de bilan',
-  "Versement d'espèces", 'Paiement de TVA', 'Remboursement de TVA', 'Liquidation de TVA', 'Dotation aux amortissements',
+  "Versement d'espèces", "Retrait d'espèces pour la caisse", 'Paiement de TVA', 'Remboursement de TVA', 'Liquidation de TVA',
+  'Dotation aux amortissements',
   'Frais de véhicule (barème)', 'À-nouveaux', 'TVA due sur facture', 'Annulation de recette', 'Remise en banque',
 ] as const
 export type NatureOperation = (typeof NATURES_OPERATION)[number]
@@ -369,8 +371,9 @@ function natureDesLignes(lignes: readonly LigneACaracteriser[]): NatureOperation
  * « Banque » (FEC22-Q2, (A) : le relevé ne dit pas l'instrument, et son libellé ne se lit pas), IdClient vide — un
  * crédit de l'Assurance maladie paie pour des patients que le relevé ne nomme pas (RGPD.md § 8.7). La nature selon le
  * lien : le signe pour un virement personnel ou une déclaration de TVA ; l'échéance (`emprunt_echeance`) pour un emprunt ;
- * le compte de la caisse du PLAN (jamais le libellé) pour un versement d'espèces. Nul pour un mouvement que le relevé ne
- * justifie pas : ce n'est pas une écriture de cette sorte.
+ * le compte de la caisse du PLAN (jamais le libellé) et le signe pour un versement d'espèces (un crédit, les espèces qui
+ * quittent la caisse) ou un retrait d'espèces pour la caisse (un débit, celles qui y entrent). Nul pour un mouvement que
+ * le relevé ne justifie pas : ce n'est pas une écriture de cette sorte.
  */
 export function champsDUnMouvementDuReleve(
   mouvement: MouvementDuFec,
@@ -384,7 +387,8 @@ export function champsDUnMouvementDuReleve(
     : m.emprunt_id ? (m.emprunt_echeance === null ? "Déblocage d'emprunt" : "Échéance d'emprunt")
     : m.cotisation_id ? 'Cotisation sociale'
     : m.declaration_tva_id ? (m.montant < 0 ? 'Paiement de TVA' : 'Remboursement de TVA')
-    : m.compte_bilan ? (m.compte_bilan === plan.caisse ? "Versement d'espèces" : 'Opération de bilan')
+    : m.compte_bilan
+      ? (m.compte_bilan !== plan.caisse ? 'Opération de bilan' : m.montant < 0 ? "Retrait d'espèces pour la caisse" : "Versement d'espèces")
     : natureDesLignes(lignes)
   return { dateRglt: m.date, modeRglt: 'Banque', nature, natOp: natOps(nature, lignes), idClient: '' }
 }
