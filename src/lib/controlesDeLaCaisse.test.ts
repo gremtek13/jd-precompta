@@ -6,7 +6,7 @@ import {
   libelleDitUnVersementDEspeces, motifDesOperationsDeCaisse, OPERATIONS_DE_CAISSE_ABSENTES, operationNommee, operationsDe,
   operationsDeCaisseAReprendre, operationsDeCaisseDuDossier, operationsPourLesControles, RAISON_VERSEMENT_D_ESPECES,
   recettesDeCaisseARevoir, referenceDeLaCaisse, versementsDEspecesEnRecette, versementsDEspecesHorsDesLots,
-  type DossierDesControlesDeLaCaisse, type EspecesDesFactures, type OperationsDeCaisse,
+  type DossierDesControlesDeLaCaisse, type EspecesDesFactures, type OperationsDeCaisse, type RepriseEtReleveDeLaCaisse,
 } from './controlesDeLaCaisse'
 import { CHAMPS_BNC_NON_EXPORTES, formaterFec, genererFec, numeroterFec } from './fec'
 import { absenceFec, pisteAudit, rupturesPisteAudit } from './pisteAudit'
@@ -66,6 +66,8 @@ function brouillonDe(o: OperationCaisse, modele: ModeleComptable = MODELE, assuj
 const lue = (operations: OperationCaisse[]): OperationsDeCaisse => ({ etat: 'lue', dossierId: DOSSIER, operations })
 // Un dossier qui n'a pas basculé : ses factures ne disent rien de la caisse.
 const SANS_ESPECES: EspecesDesFactures = { etat: 'sans_objet' }
+// La reprise et le relevé lus en entier, sans rien au compte de la caisse : ils ne disent rien de la caisse (le cas neutre).
+const SANS_REPRISE: RepriseEtReleveDeLaCaisse = { compteCaisse: PLAN_PAR_DEFAUT.caisse, ouvertures: [], mouvements: [] }
 
 // Les espèces des factures d'un dossier basculé (C6-Q1) : F1 est une facture source, F2 non. Un encaissement en espèces de F1,
 // sans mouvement ni retrait, ENTRE dans la caisse.
@@ -111,42 +113,107 @@ describe('la forme que les contrôles reçoivent', () => {
   })
 
   it('le dossier tient-il une caisse ? une opération vivante le dit ; ne pas savoir, c’est peut-être', () => {
-    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, SANS_ESPECES)).toBe('non')
-    expect(dossierTientUneCaisse(lue([]), SANS_ESPECES)).toBe('non')
-    expect(dossierTientUneCaisse(lue([recette('r1', { retire_le: '2026-03-13T10:00:00Z' })]), SANS_ESPECES)).toBe('non')
-    expect(dossierTientUneCaisse(lue([apport('a1')]), SANS_ESPECES)).toBe('oui')
-    expect(dossierTientUneCaisse({ etat: 'en_attente' }, SANS_ESPECES)).toBe('peut_etre')
-    expect(dossierTientUneCaisse({ etat: 'incomplete', motif: 'x' }, SANS_ESPECES)).toBe('peut_etre')
+    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, SANS_ESPECES, SANS_REPRISE)).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), SANS_ESPECES, SANS_REPRISE)).toBe('non')
+    expect(dossierTientUneCaisse(lue([recette('r1', { retire_le: '2026-03-13T10:00:00Z' })]), SANS_ESPECES, SANS_REPRISE)).toBe('non')
+    expect(dossierTientUneCaisse(lue([apport('a1')]), SANS_ESPECES, SANS_REPRISE)).toBe('oui')
+    expect(dossierTientUneCaisse({ etat: 'en_attente' }, SANS_ESPECES, SANS_REPRISE)).toBe('peut_etre')
+    expect(dossierTientUneCaisse({ etat: 'incomplete', motif: 'x' }, SANS_ESPECES, SANS_REPRISE)).toBe('peut_etre')
   })
 
   // C6-Q1 (réponse du cabinet du 31/10/2026) : un dossier basculé tient une caisse dès qu'un encaissement en espèces d'une de ses
   // factures sources y entre — sans mouvement, ni retiré —, même sans aucune opération saisie.
   it('C6-Q1 : les espèces d’une facture source qui entrent dans la caisse le disent aussi, sans opération', () => {
-    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1()))).toBe('oui')
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1()), SANS_REPRISE)).toBe('oui')
     // Les espèces suffisent, la caisse pas encore revenue ou lue en partie.
-    expect(dossierTientUneCaisse({ etat: 'en_attente' }, especesLues(especesDeF1()))).toBe('oui')
-    expect(dossierTientUneCaisse({ etat: 'incomplete', motif: 'x' }, especesLues(especesDeF1()))).toBe('oui')
+    expect(dossierTientUneCaisse({ etat: 'en_attente' }, especesLues(especesDeF1()), SANS_REPRISE)).toBe('oui')
+    expect(dossierTientUneCaisse({ etat: 'incomplete', motif: 'x' }, especesLues(especesDeF1()), SANS_REPRISE)).toBe('oui')
     // Défait depuis, l'encaissement est entré : la caisse l'a reçu.
-    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1(), especesDeF1({ id: 'e2', montant: -30, annule_id: 'e1' })))).toBe('oui')
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1(), especesDeF1({ id: 'e2', montant: -30, annule_id: 'e1' })), SANS_REPRISE)).toBe('oui')
     // Ni une facture qui n'est pas source, ni un autre moyen, ni un encaissement rattaché à un crédit, ni un retiré.
-    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ facture_id: 'f2' })))).toBe('non')
-    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ moyen: 'cheque' })))).toBe('non')
-    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ ligne_bancaire_id: 'm1' })))).toBe('non')
-    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ retire_le: '2026-03-13T10:00:00Z' })))).toBe('non')
-    expect(dossierTientUneCaisse(lue([]), especesLues())).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ facture_id: 'f2' })), SANS_REPRISE)).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ moyen: 'cheque' })), SANS_REPRISE)).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ ligne_bancaire_id: 'm1' })), SANS_REPRISE)).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ retire_le: '2026-03-13T10:00:00Z' })), SANS_REPRISE)).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), especesLues(), SANS_REPRISE)).toBe('non')
     // L'encaissement qui ENTRE, jamais sa seule contre-passation (un état que la base n'écrit pas : il garde la règle).
     expect(dossierTientUneCaisse(lue([]), especesLues(
       especesDeF1({ retire_le: '2026-03-13T10:00:00Z' }), especesDeF1({ id: 'e2', montant: -30, annule_id: 'e1' }),
-    ))).toBe('non')
+    ), SANS_REPRISE)).toBe('non')
     // La caisse absente (le drapeau baissé) : non, quoi que disent les factures.
-    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, especesLues(especesDeF1()))).toBe('non')
+    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, especesLues(especesDeF1()), SANS_REPRISE)).toBe('non')
     // Les ventes lues en partie : on ne sait pas — sauf qu'une opération vivante le dit.
     const partielles: EspecesDesFactures = { etat: 'incomplete', motif: 'coupée' }
-    expect(dossierTientUneCaisse(lue([]), partielles)).toBe('peut_etre')
-    expect(dossierTientUneCaisse(lue([apport('a1')]), partielles)).toBe('oui')
-    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, partielles)).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), partielles, SANS_REPRISE)).toBe('peut_etre')
+    expect(dossierTientUneCaisse(lue([apport('a1')]), partielles, SANS_REPRISE)).toBe('oui')
+    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, partielles, SANS_REPRISE)).toBe('non')
     // Lues sans espèces qui entrent, la caisse pas encore revenue : peut-être.
-    expect(dossierTientUneCaisse({ etat: 'en_attente' }, especesLues())).toBe('peut_etre')
+    expect(dossierTientUneCaisse({ etat: 'en_attente' }, especesLues(), SANS_REPRISE)).toBe('peut_etre')
+  })
+
+  // LA RELECTURE DU 31/10/2026 : une caisse qui n'existe encore que par la REPRISE ou le RELEVÉ est tenue. Le cas de la
+  // relecture (src/lib/caisseRelecture.test.ts du commit 5676098, qui figeait le défaut) : le praticien arrive avec 300 € de
+  // caisse dans sa balance au 01/01/2026, le cabinet importe le relevé avant de saisir le brouillard — aucune opération,
+  // rien de basculé. Le dossier tient une caisse, et le « VERSEMENT ESPECES » n'entre dans aucun lot.
+  const CAISSE = PLAN_PAR_DEFAUT.caisse
+  const ouverture = (o: Partial<{ compte: string; sens: 'debit' | 'credit'; montant: number }> = {}) =>
+    ({ compte: CAISSE, sens: 'debit' as const, montant: 300, ...o })
+  const reprise = (o: Partial<RepriseEtReleveDeLaCaisse>): RepriseEtReleveDeLaCaisse => ({ ...SANS_REPRISE, ...o })
+
+  it('la relecture : la caisse reprise dans la balance, le relevé importé avant le brouillard — tenue, le versement hors des lots', () => {
+    const sansOperation = lue([])
+    const repriseDe300 = reprise({ ouvertures: [ouverture(), { compte: '512000', sens: 'credit', montant: 300 }] })
+    expect(dossierTientUneCaisse(sansOperation, SANS_ESPECES, repriseDe300)).toBe('oui')
+    const hors = versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, sansOperation, SANS_ESPECES, repriseDe300,
+      [ligne({ id: 'v', montant: 250, libelle: 'VERSEMENT ESPECES', libelle_brut: null })])
+    expect([...hors]).toEqual([['v', RAISON_VERSEMENT_D_ESPECES]])
+  })
+
+  it('la reprise : un solde repris NON NUL au compte de la caisse DU PLAN, et lui seul', () => {
+    const op = lue([])
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ ouvertures: [ouverture({ montant: 0.01 })] }))).toBe('oui')
+    // Un solde nul (une ligne à zéro, ou deux qui s'annulent) : rien n'a été repris en espèces.
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ ouvertures: [ouverture({ montant: 0 })] }))).toBe('non')
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({
+      ouvertures: [ouverture(), ouverture({ sens: 'credit' })],
+    }))).toBe('non')
+    // Un autre compte, même de classe 5 : ce n'est pas la caisse du plan — jamais un 53 deviné.
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ ouvertures: [ouverture({ compte: '531000' })] }))).toBe('non')
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ ouvertures: [ouverture({ compte: '512000' })] }))).toBe('non')
+    // Un plan dont la caisse est le 531000 : c'est elle, et le 530000 n'est rien.
+    const decale = (o: Partial<RepriseEtReleveDeLaCaisse>) => reprise({ compteCaisse: '531000', ...o })
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, decale({ ouvertures: [ouverture({ compte: '531000' })] }))).toBe('oui')
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, decale({ ouvertures: [ouverture()] }))).toBe('non')
+  })
+
+  it('le relevé : un mouvement classé sur le compte de la caisse DU PLAN', () => {
+    const op = lue([])
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ mouvements: [{ compte_bilan: CAISSE }] }))).toBe('oui')
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ mouvements: [{ compte_bilan: null }, { compte_bilan: '455000' }] }))).toBe('non')
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ compteCaisse: '531000', mouvements: [{ compte_bilan: CAISSE }] }))).toBe('non')
+  })
+
+  it('une entrée pas lue en entier rend « peut-être » là où la réponse en dépend, jamais au-delà', () => {
+    const op = lue([])
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ ouvertures: null }))).toBe('peut_etre')
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ mouvements: null }))).toBe('peut_etre')
+    // Une autre source dit oui : la réponse ne dépend plus de l'entrée manquante.
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ ouvertures: null, mouvements: [{ compte_bilan: CAISSE }] }))).toBe('oui')
+    expect(dossierTientUneCaisse(op, SANS_ESPECES, reprise({ ouvertures: [ouverture()], mouvements: null }))).toBe('oui')
+    expect(dossierTientUneCaisse(lue([apport('a1')]), SANS_ESPECES, reprise({ ouvertures: null, mouvements: null }))).toBe('oui')
+    // Pas lue, la reprise ne fait pas « peut-être » des opérations pas revenues : elles le sont déjà.
+    expect(dossierTientUneCaisse({ etat: 'en_attente' }, SANS_ESPECES, reprise({ ouvertures: [ouverture()] }))).toBe('oui')
+    expect(versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, op, SANS_ESPECES, reprise({ ouvertures: null }),
+      [ligne({ id: 'v', montant: 250, libelle: 'VERSEMENT ESPECES' })]).has('v')).toBe(true)
+  })
+
+  it('le cas neutre : la caisse absente (le drapeau baissé) ne regarde ni la reprise ni le relevé', () => {
+    const tout = reprise({ ouvertures: [ouverture()], mouvements: [{ compte_bilan: CAISSE }] })
+    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, SANS_ESPECES, tout)).toBe('non')
+    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, SANS_ESPECES, reprise({ ouvertures: null, mouvements: null }))).toBe('non')
+    const hors = new Map<string, string>()
+    expect(versementsDEspecesHorsDesLots(hors, OPERATIONS_DE_CAISSE_ABSENTES, SANS_ESPECES, tout,
+      [ligne({ id: 'v', montant: 250, libelle: 'VERSEMENT ESPECES' })])).toBe(hors)
   })
 })
 
@@ -459,36 +526,36 @@ describe('le versement d’espèces : un libellé, symptôme et jamais preuve', 
   const CPAM = ligne({ id: 'v3', date: '2026-03-14', montant: 70, libelle: 'VIR CPAM', statut: 'non_rapprochee' })
 
   it('hors des lots : un crédit ainsi libellé, dans un dossier qui tient une caisse — ou peut-être', () => {
-    const avec = versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, lue([apport('a1')]), SANS_ESPECES, [VERSEMENT, RETRAIT, CPAM])
+    const avec = versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, lue([apport('a1')]), SANS_ESPECES, SANS_REPRISE, [VERSEMENT, RETRAIT, CPAM])
     expect([...avec]).toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
-    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, { etat: 'incomplete', motif: 'x' }, SANS_ESPECES, [VERSEMENT])]).toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
-    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, { etat: 'en_attente' }, SANS_ESPECES, [VERSEMENT])]).toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
+    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, { etat: 'incomplete', motif: 'x' }, SANS_ESPECES, SANS_REPRISE, [VERSEMENT])]).toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
+    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, { etat: 'en_attente' }, SANS_ESPECES, SANS_REPRISE, [VERSEMENT])]).toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
     // Un mouvement qu'un autre motif écarte garde le sien.
     const deja = new Map([['v1', 'les mots de la garde G2']])
-    expect([...versementsDEspecesHorsDesLots(deja, lue([apport('a1')]), SANS_ESPECES, [VERSEMENT])]).toEqual([['v1', 'les mots de la garde G2']])
+    expect([...versementsDEspecesHorsDesLots(deja, lue([apport('a1')]), SANS_ESPECES, SANS_REPRISE, [VERSEMENT])]).toEqual([['v1', 'les mots de la garde G2']])
   })
 
   it('NEUTRE : la caisse absente, ou sans opération vivante, rend la carte telle quelle — le même objet', () => {
     const hors = new Map([['x', 'y']])
-    expect(versementsDEspecesHorsDesLots(hors, OPERATIONS_DE_CAISSE_ABSENTES, SANS_ESPECES, [VERSEMENT])).toBe(hors)
-    expect(versementsDEspecesHorsDesLots(hors, lue([]), SANS_ESPECES, [VERSEMENT])).toBe(hors)
-    expect(versementsDEspecesHorsDesLots(hors, lue([apport('a', { retire_le: 'x' })]), SANS_ESPECES, [VERSEMENT])).toBe(hors)
-    expect(versementsDEspecesHorsDesLots(hors, lue([apport('a')]), SANS_ESPECES, [CPAM, RETRAIT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, OPERATIONS_DE_CAISSE_ABSENTES, SANS_ESPECES, SANS_REPRISE, [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([]), SANS_ESPECES, SANS_REPRISE, [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([apport('a', { retire_le: 'x' })]), SANS_ESPECES, SANS_REPRISE, [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([apport('a')]), SANS_ESPECES, SANS_REPRISE, [CPAM, RETRAIT])).toBe(hors)
   })
 
   it('C6-Q1 : un dossier basculé sans opération, où les espèces d’une facture source entrent, l’écarte aussi des lots', () => {
-    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, lue([]), especesLues(especesDeF1()), [VERSEMENT, RETRAIT, CPAM])])
+    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, lue([]), especesLues(especesDeF1()), SANS_REPRISE, [VERSEMENT, RETRAIT, CPAM])])
       .toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
     // Les ventes lues en partie : peut-être, écarté aussi — écarter d'un lot ne perd rien.
-    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, lue([]), { etat: 'incomplete', motif: 'x' }, [VERSEMENT])])
+    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, lue([]), { etat: 'incomplete', motif: 'x' }, SANS_REPRISE, [VERSEMENT])])
       .toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
     // NEUTRE : des espèces rattachées à un crédit, retirées, ou d'une facture qui n'est pas source — la carte, le même objet.
     const hors = new Map([['x', 'y']])
-    expect(versementsDEspecesHorsDesLots(hors, lue([]), especesLues(especesDeF1({ ligne_bancaire_id: 'm1' })), [VERSEMENT])).toBe(hors)
-    expect(versementsDEspecesHorsDesLots(hors, lue([]), especesLues(especesDeF1({ retire_le: '2026-03-13T10:00:00Z' })), [VERSEMENT])).toBe(hors)
-    expect(versementsDEspecesHorsDesLots(hors, lue([]), especesLues(especesDeF1({ facture_id: 'f2' })), [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([]), especesLues(especesDeF1({ ligne_bancaire_id: 'm1' })), SANS_REPRISE, [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([]), especesLues(especesDeF1({ retire_le: '2026-03-13T10:00:00Z' })), SANS_REPRISE, [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([]), especesLues(especesDeF1({ facture_id: 'f2' })), SANS_REPRISE, [VERSEMENT])).toBe(hors)
     // La caisse absente (le drapeau baissé) : la carte telle quelle, quoi que disent les factures.
-    expect(versementsDEspecesHorsDesLots(hors, OPERATIONS_DE_CAISSE_ABSENTES, especesLues(especesDeF1()), [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, OPERATIONS_DE_CAISSE_ABSENTES, especesLues(especesDeF1()), SANS_REPRISE, [VERSEMENT])).toBe(hors)
   })
 
   it('la carte d’un lot le dit à part, et rend la phrase d’hier sans lui', () => {

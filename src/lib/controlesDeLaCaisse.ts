@@ -343,23 +343,53 @@ export function libelleDitUnVersementDEspeces(ligne: Pick<LigneBancaire, 'libell
 }
 
 /**
+ * LA CAISSE HORS DE SES OPÉRATIONS : ce que la reprise et le relevé en disent (relecture de la caisse du 31/10/2026). Le
+ * compte de la caisse est celui DU PLAN du dossier (`modele.plan.caisse`), jamais un 53 deviné — la base lit
+ * `compte_du_role(dossier, 'caisse')`. Chaque entrée est lue EN ENTIER, ou nulle : pas encore revenue, lue en partie, ou d'un
+ * autre dossier (le vide est une affirmation, que seule une lecture entière fait).
+ */
+export interface RepriseEtReleveDeLaCaisse {
+  compteCaisse: string
+  /** La reprise ENTIÈRE (`a_nouveaux`), ou nulle quand elle n'est pas lue en entier. */
+  ouvertures: readonly Pick<ANouveau, 'compte' | 'sens' | 'montant'>[] | null
+  /** Le relevé ENTIER, ou nul quand il n'est pas lu en entier. */
+  mouvements: readonly Pick<LigneBancaire, 'compte_bilan'>[] | null
+}
+
+/**
  * LE DOSSIER TIENT-IL UNE CAISSE ? Une opération non retirée le dit ; et, depuis C6-Q1 (réponse du cabinet du 31/10/2026), un
  * encaissement en espèces d'une facture source qui y entre (`especesDUneFactureSource`) : son dépôt en banque n'a plus d'autre
  * chemin que le versement classé sur la caisse (C6), et les deux protections du § 4 a — hors des lots, et le point de la Vue
- * d'ensemble — doivent le couvrir, même sans aucune opération saisie. Absente (le drapeau baissé) : non, quoi que disent les
- * factures. Ni opération vivante ni espèces qui entrent, l'une et l'autre lues (ou sans objet : un dossier qui n'a pas
- * basculé) : non. Sinon, l'une pas encore revenue ou lue en partie : on ne sait pas — « peut-être », que les lots traitent
- * comme oui (écarter d'un lot ne perd rien : le mouvement reste à traiter depuis sa fiche) et que la Vue d'ensemble tait.
+ * d'ensemble — doivent le couvrir, même sans aucune opération saisie. Et, depuis la relecture du 31/10/2026, la caisse qui
+ * n'existe encore que par la REPRISE ou le RELEVÉ : un solde repris non nul au compte de la caisse (le praticien arrive avec
+ * ses espèces dans sa balance), ou un mouvement du relevé classé sur ce compte. Le cabinet importe souvent le relevé avant de
+ * saisir le brouillard : sans cela, un « VERSEMENT ESPECES » entrerait dans les lots, une règle apprise le rangerait en
+ * recette, et les mêmes espèces se compteraient une seconde fois avec les recettes du brouillard.
+ *
+ * Absente (le drapeau baissé) : non, quoi que disent les factures, la reprise ou le relevé. Aucune de ces quatre sources ne
+ * dit oui, toutes lues (les espèces sans objet : un dossier qui n'a pas basculé) : non. Sinon, l'une pas encore revenue ou
+ * lue en partie, et aucune autre qui dise oui : on ne sait pas — « peut-être », que les lots traitent comme oui (écarter d'un
+ * lot ne perd rien : le mouvement reste à traiter depuis sa fiche) et que la Vue d'ensemble tait.
  */
-export function dossierTientUneCaisse(etat: EtatDesOperationsDeCaisse, especes: EspecesDesFactures): 'oui' | 'non' | 'peut_etre' {
+export function dossierTientUneCaisse(
+  etat: EtatDesOperationsDeCaisse, especes: EspecesDesFactures, horsDesOperations: RepriseEtReleveDeLaCaisse,
+): 'oui' | 'non' | 'peut_etre' {
   if (etat.etat === 'absente') return 'non'
   const parLesOperations = etat.etat === 'lue' ? etat.operations.some((o) => o.retire_le == null) : null
   // L'encaissement qui ENTRE, pas sa contre-passation : un seul suffit, même défait depuis — la caisse l'a reçu.
   const parLesFactures = especes.etat === 'sans_objet' ? false
     : especes.etat === 'lues' ? especes.encaissements.some((e) => e.annule_id == null && especesDUneFactureSource(e, especes))
       : null
-  if (parLesOperations === true || parLesFactures === true) return 'oui'
-  if (parLesOperations === false && parLesFactures === false) return 'non'
+  const { compteCaisse, ouvertures, mouvements } = horsDesOperations
+  // Le SOLDE repris au compte de la caisse, en centimes, comme `fluxDeLaCaisse` le compte à l'ouverture : nul, rien n'a été
+  // repris en espèces.
+  const parLaReprise = ouvertures === null ? null
+    : ouvertures.filter((a) => a.compte === compteCaisse)
+      .reduce((solde, a) => solde + (a.sens === 'debit' ? 1 : -1) * Math.round(a.montant * 100), 0) !== 0
+  const parLeReleve = mouvements === null ? null : mouvements.some((m) => m.compte_bilan === compteCaisse)
+  const reponses = [parLesOperations, parLesFactures, parLaReprise, parLeReleve]
+  if (reponses.includes(true)) return 'oui'
+  if (reponses.every((r) => r === false)) return 'non'
   return 'peut_etre'
 }
 
@@ -372,16 +402,17 @@ export const RAISON_VERSEMENT_D_ESPECES = 'son libellé dit un versement d’esp
  * relevé ne les prend (conception, § 4 a) — le rapprochement automatique, « Valider et rapprocher », les règles et la règle
  * d'ignorance. Rangés en recette par une règle, ils compteraient deux fois des espèces que la caisse compte déjà ; le versement
  * se classe sur la caisse, depuis la fiche du mouvement (C4). Les mouvements qu'un autre motif écarte déjà gardent le leur.
- * Sans caisse (le drapeau baissé, ou ni opération vivante ni espèces d'une facture source qui y entrent — C6-Q1), la carte
- * est rendue telle quelle.
+ * Sans caisse (le drapeau baissé, ou ni opération vivante, ni espèces d'une facture source qui y entrent — C6-Q1 —, ni solde
+ * repris, ni mouvement classé sur la caisse — la relecture du 31/10/2026), la carte est rendue telle quelle.
  */
 export function versementsDEspecesHorsDesLots(
   hors: ReadonlyMap<string, string>,
   caisse: EtatDesOperationsDeCaisse,
   especes: EspecesDesFactures,
+  horsDesOperations: RepriseEtReleveDeLaCaisse,
   lignes: readonly Pick<LigneBancaire, 'id' | 'montant' | 'libelle' | 'libelle_brut'>[],
 ): ReadonlyMap<string, string> {
-  if (dossierTientUneCaisse(caisse, especes) === 'non') return hors
+  if (dossierTientUneCaisse(caisse, especes, horsDesOperations) === 'non') return hors
   const versements = lignes.filter((l) => l.montant > 0 && !hors.has(l.id) && libelleDitUnVersementDEspeces(l))
   if (versements.length === 0) return hors
   const avec = new Map(hors)

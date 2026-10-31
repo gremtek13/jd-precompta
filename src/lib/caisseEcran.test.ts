@@ -7,13 +7,14 @@ import {
   CAISSE_ABSENTE_DE_LA_FICHE, caisseDeBanque, caisseDeLaFiche, confirmationDuRemplacement, confirmationDuRetrait,
   dossierDeLEcran, especesDuJour, etatDeLaCaisseLu, etatDUneOperationRetiree, FORMULAIRE_VIDE, journalDeLaCaisse,
   libelleDeLaLigne, ligneVide, lireLeMontantSaisi, MONTANT_ILLISIBLE, nomDeLOperation, operationsRetirees,
-  phraseDesEspecesDuJour, refusDuRetraitDeLOperation, saisieDuFormulaire, soldeAuJour, TAUX_PROPOSES, totauxDuJournal,
+  phraseDesEspecesDuJour, refusDuRetraitDeLOperation, repriseEtReleveDeBanque, saisieDuFormulaire, soldeAuJour, TAUX_PROPOSES,
+  totauxDuJournal,
   verdictDuFormulaire, verdictDuMois, type ContexteDeLaCaisse, type DonneesDeLaCaisse, type EntreesDeLaCaisseDeBanque,
   type FormulaireDeCaisse,
 } from './caisseEcran'
-import { operationsDeCaisseDuDossier, type EspecesDesFactures } from './controlesDeLaCaisse'
+import { operationsDeCaisseDuDossier, type EspecesDesFactures, type RepriseEtReleveDeLaCaisse } from './controlesDeLaCaisse'
 import type { ModeleComptable } from './engagement'
-import { PLAN_PAR_DEFAUT } from './planComptable'
+import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import type { Categorie, OperationCaisse } from './types'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 
@@ -24,6 +25,8 @@ import { entierTire, tirage } from '../test/encaissementsBatterie'
 
 const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 const CAISSE = PLAN_PAR_DEFAUT.caisse
+// La reprise et le relevé lus en entier, sans rien au compte de la caisse : « tenue » ne s'y lit pas (le cas neutre).
+const SANS_REPRISE: RepriseEtReleveDeLaCaisse = { compteCaisse: CAISSE, ouvertures: [], mouvements: [] }
 const AUJOURDHUI = '2026-10-29'
 const sansEspaceInsecable = (s: string) => s.replace(/[  ]/g, ' ')
 
@@ -480,12 +483,12 @@ describe('la caisse dans la fiche d’un mouvement du relevé', () => {
   const SANS_ESPECES: EspecesDesFactures = { etat: 'sans_objet' }
 
   it('un crédit : la caisse du jour, sans lui puis avec lui classé « Versement d’espèces » — aucun refus tant qu’elle tient', () => {
-    const fiche = caisseDeLaFiche({ id: 'c1', date: '2026-03-12', montant: 200, compte_bilan: null }, lecture, operations, SANS_ESPECES)
+    const fiche = caisseDeLaFiche({ id: 'c1', date: '2026-03-12', montant: 200, compte_bilan: null }, lecture, operations, SANS_ESPECES, SANS_REPRISE)
     expect(fiche).toEqual({ etat: 'lue', tenue: 'oui', surLaCaisse: false, soldeSans: 34000, soldeAvec: 14000, refusDuClassement: null, refusDuRetrait: null })
   })
 
   it('un crédit qui rendrait la caisse négative : le refus de la base, ses mots, le jour et le solde', () => {
-    const fiche = caisseDeLaFiche({ id: 'c2', date: '2026-03-12', montant: 500, compte_bilan: null }, lecture, operations, SANS_ESPECES)
+    const fiche = caisseDeLaFiche({ id: 'c2', date: '2026-03-12', montant: 500, compte_bilan: null }, lecture, operations, SANS_ESPECES, SANS_REPRISE)
     expect(fiche.etat).toBe('lue')
     if (fiche.etat === 'lue') {
       expect(fiche.soldeAvec).toBe(-16000)
@@ -498,21 +501,21 @@ describe('la caisse dans la fiche d’un mouvement du relevé', () => {
   it('un versement trop tôt vide aussi les jours d’après : le premier jour négatif est celui que le geste crée', () => {
     // Un prélèvement de 300 € le 13/03 serait couvert par la caisse de 340 € ; un versement de 100 € le 12/03 le découvre.
     const avecSortie = etatDeLaCaisseLu(MODELE, { ...d, operations: [...d.operations, operation({ id: 'p', genre: 'prelevement', date: '2026-03-13', montant: 300 })] })
-    const fiche = caisseDeLaFiche({ id: 'c3', date: '2026-03-12', montant: 100, compte_bilan: null }, { etat: 'lue', caisse: avecSortie }, operations, SANS_ESPECES)
+    const fiche = caisseDeLaFiche({ id: 'c3', date: '2026-03-12', montant: 100, compte_bilan: null }, { etat: 'lue', caisse: avecSortie }, operations, SANS_ESPECES, SANS_REPRISE)
     expect(fiche.etat === 'lue' && sansEspaceInsecable(fiche.refusDuClassement ?? '')).toBe(
       'Ce versement de 100,00 € rendrait la caisse négative le 13/03/2026 (−60,00 €) : saisis d\'abord les recettes en espèces qui le précèdent.',
     )
   })
 
   it('un débit (des espèces retirées pour la caisse) l’alimente : aucun refus', () => {
-    const fiche = caisseDeLaFiche({ id: 'c4', date: '2026-03-12', montant: -80, compte_bilan: null }, lecture, operations, SANS_ESPECES)
+    const fiche = caisseDeLaFiche({ id: 'c4', date: '2026-03-12', montant: -80, compte_bilan: null }, lecture, operations, SANS_ESPECES, SANS_REPRISE)
     expect(fiche).toMatchObject({ etat: 'lue', surLaCaisse: false, soldeSans: 34000, soldeAvec: 42000, refusDuClassement: null, refusDuRetrait: null })
   })
 
   it('un débit déjà classé sur la caisse : le retirer vide la caisse des espèces qu’il y avait mises — le refus dit « retrait d’espèces »', () => {
     const classe = { id: 'c5', date: '2026-03-02', montant: -80, libelle: 'RETRAIT', compte_bilan: CAISSE }
     const dessus = etatDeLaCaisseLu(MODELE, { ...d, mouvements: [classe], operations: [...d.operations, operation({ id: 'p', genre: 'prelevement', date: '2026-03-03', montant: 220 })] })
-    const fiche = caisseDeLaFiche(classe, { etat: 'lue', caisse: dessus }, operations, SANS_ESPECES)
+    const fiche = caisseDeLaFiche(classe, { etat: 'lue', caisse: dessus }, operations, SANS_ESPECES, SANS_REPRISE)
     expect(fiche).toMatchObject({ etat: 'lue', surLaCaisse: true })
     if (fiche.etat === 'lue') {
       expect(fiche.soldeSans).toBe(15000)
@@ -526,13 +529,13 @@ describe('la caisse dans la fiche d’un mouvement du relevé', () => {
   it('un crédit déjà classé sur la caisse : le retirer ne la vide jamais', () => {
     const classe = { id: 'c6', date: '2026-03-02', montant: 40, libelle: 'VERSEMENT', compte_bilan: CAISSE }
     const dessus = etatDeLaCaisseLu(MODELE, { ...d, mouvements: [classe] })
-    const fiche = caisseDeLaFiche(classe, { etat: 'lue', caisse: dessus }, operations, SANS_ESPECES)
+    const fiche = caisseDeLaFiche(classe, { etat: 'lue', caisse: dessus }, operations, SANS_ESPECES, SANS_REPRISE)
     expect(fiche).toMatchObject({ surLaCaisse: true, refusDuRetrait: null, soldeSans: 15000, soldeAvec: 11000 })
   })
 
   it('le reste dit ce que la fiche peut en dire : la caisse absente (le drapeau baissé), la caisse pas lue en entier', () => {
-    expect(caisseDeLaFiche({ id: 'x', date: '2026-03-12', montant: 10, compte_bilan: null }, { etat: 'absente' }, { etat: 'absente' }, SANS_ESPECES)).toBe(CAISSE_ABSENTE_DE_LA_FICHE)
-    expect(caisseDeLaFiche({ id: 'x', date: '2026-03-12', montant: 10, compte_bilan: null }, { etat: 'pas_lue', motif: 'la reprise : lecture partielle' }, operations, SANS_ESPECES))
+    expect(caisseDeLaFiche({ id: 'x', date: '2026-03-12', montant: 10, compte_bilan: null }, { etat: 'absente' }, { etat: 'absente' }, SANS_ESPECES, SANS_REPRISE)).toBe(CAISSE_ABSENTE_DE_LA_FICHE)
+    expect(caisseDeLaFiche({ id: 'x', date: '2026-03-12', montant: 10, compte_bilan: null }, { etat: 'pas_lue', motif: 'la reprise : lecture partielle' }, operations, SANS_ESPECES, SANS_REPRISE))
       .toEqual({ etat: 'pas_lue', tenue: 'oui', motif: 'la reprise : lecture partielle' })
     expect(CAISSE_ABSENTE_DE_LA_FICHE).toEqual({ etat: 'absente', tenue: 'non' })
   })
@@ -550,15 +553,31 @@ describe('la caisse dans la fiche d’un mouvement du relevé', () => {
       factures: [{ id: 'f1', numero: 'F2026-0012', source_de_la_vente: true }, { id: 'f2', numero: 'F2026-0013', source_de_la_vente: false }],
     })
     const credit = { id: 'c7', date: '2026-03-12', montant: 30, compte_bilan: null }
-    expect(caisseDeLaFiche(credit, lecture, vide, SANS_ESPECES)).toMatchObject({ etat: 'lue', tenue: 'non' })
-    expect(caisseDeLaFiche(credit, lecture, vide, especes(encaissement()))).toMatchObject({ etat: 'lue', tenue: 'oui' })
-    expect(caisseDeLaFiche(credit, lecture, vide, especes(encaissement({ facture_id: 'f2' })))).toMatchObject({ tenue: 'non' })
-    expect(caisseDeLaFiche(credit, lecture, vide, especes(encaissement({ ligne_bancaire_id: 'm1' })))).toMatchObject({ tenue: 'non' })
-    expect(caisseDeLaFiche(credit, lecture, vide, { etat: 'incomplete', motif: 'x' })).toMatchObject({ tenue: 'peut_etre' })
-    expect(caisseDeLaFiche(credit, { etat: 'pas_lue', motif: 'la reprise : lecture partielle' }, vide, especes(encaissement())))
+    expect(caisseDeLaFiche(credit, lecture, vide, SANS_ESPECES, SANS_REPRISE)).toMatchObject({ etat: 'lue', tenue: 'non' })
+    expect(caisseDeLaFiche(credit, lecture, vide, especes(encaissement()), SANS_REPRISE)).toMatchObject({ etat: 'lue', tenue: 'oui' })
+    expect(caisseDeLaFiche(credit, lecture, vide, especes(encaissement({ facture_id: 'f2' })), SANS_REPRISE)).toMatchObject({ tenue: 'non' })
+    expect(caisseDeLaFiche(credit, lecture, vide, especes(encaissement({ ligne_bancaire_id: 'm1' })), SANS_REPRISE)).toMatchObject({ tenue: 'non' })
+    expect(caisseDeLaFiche(credit, lecture, vide, { etat: 'incomplete', motif: 'x' }, SANS_REPRISE)).toMatchObject({ tenue: 'peut_etre' })
+    expect(caisseDeLaFiche(credit, { etat: 'pas_lue', motif: 'la reprise : lecture partielle' }, vide, especes(encaissement()), SANS_REPRISE))
       .toEqual({ etat: 'pas_lue', tenue: 'oui', motif: 'la reprise : lecture partielle' })
     // Absente (le drapeau baissé) : rien de plus qu'hier, quoi que disent les factures.
-    expect(caisseDeLaFiche(credit, { etat: 'absente' }, { etat: 'absente' }, especes(encaissement()))).toBe(CAISSE_ABSENTE_DE_LA_FICHE)
+    expect(caisseDeLaFiche(credit, { etat: 'absente' }, { etat: 'absente' }, especes(encaissement()), SANS_REPRISE)).toBe(CAISSE_ABSENTE_DE_LA_FICHE)
+  })
+
+  // La relecture du 31/10/2026 : sans opération ni facture source, la caisse reprise dans la balance, ou un mouvement déjà classé
+  // sur elle, la disent tenue — la fiche dit alors le libellé d'un versement.
+  it('la relecture : la caisse reprise, ou un mouvement classé sur elle, la disent tenue ; lue en partie, peut-être', () => {
+    const vide = operationsDeCaisseDuDossier({ dossierId: 'd1', enBase: true, lignes: [], complete: true, motif: null }, 'd1')
+    const credit = { id: 'c8', date: '2026-03-12', montant: 30, compte_bilan: null }
+    const reprise = { ...SANS_REPRISE, ouvertures: [{ compte: CAISSE, sens: 'debit' as const, montant: 300 }] }
+    expect(caisseDeLaFiche(credit, lecture, vide, SANS_ESPECES, reprise)).toMatchObject({ etat: 'lue', tenue: 'oui' })
+    expect(caisseDeLaFiche(credit, lecture, vide, SANS_ESPECES, { ...SANS_REPRISE, mouvements: [{ compte_bilan: CAISSE }] }))
+      .toMatchObject({ tenue: 'oui' })
+    expect(caisseDeLaFiche(credit, { etat: 'pas_lue', motif: 'le relevé : coupé' }, vide, SANS_ESPECES, reprise))
+      .toEqual({ etat: 'pas_lue', tenue: 'oui', motif: 'le relevé : coupé' })
+    expect(caisseDeLaFiche(credit, lecture, vide, SANS_ESPECES, { ...SANS_REPRISE, ouvertures: null })).toMatchObject({ tenue: 'peut_etre' })
+    // Absente : rien de plus qu'hier.
+    expect(caisseDeLaFiche(credit, { etat: 'absente' }, { etat: 'absente' }, SANS_ESPECES, reprise)).toBe(CAISSE_ABSENTE_DE_LA_FICHE)
   })
 })
 
@@ -600,6 +619,19 @@ describe('la caisse que l’onglet Banque juge, ou ce qui l’en empêche', () =
     expect(motif({ ouvertures: { dossierId: 'd1', lignes: [], complete: false, motif: 'lecture interrompue' } })).toBe('la reprise du dossier : lecture interrompue')
     expect(motif({ releveIncomplet: '200 lus sur 900' })).toBe('le relevé : 200 lus sur 900')
     expect(motif({ especes: { etat: 'incomplete', motif: 'les encaissements' } })).toBe('les espèces des factures : les encaissements')
+  })
+
+  // La relecture du 31/10/2026 : la reprise et le relevé que « tenue » reçoit sont les mêmes entrées, chacune lue en entier.
+  it('la reprise et le relevé pour « tenue » : le compte du plan, la reprise de CE dossier entière, le relevé entier — sinon nuls', () => {
+    const ouvertures = mars().ouvertures
+    const releve = [{ id: 'm', date: '2026-03-05', montant: 20, libelle: 'VERSEMENT', compte_bilan: CAISSE }]
+    expect(repriseEtReleveDeBanque(entrees({ ouvertures: { dossierId: 'd1', lignes: ouvertures, complete: true, motif: null }, releve })))
+      .toEqual({ compteCaisse: CAISSE, ouvertures, mouvements: releve })
+    expect(repriseEtReleveDeBanque(entrees({ modele: { ...MODELE, plan: PLAN_DECALE } })).compteCaisse).toBe(PLAN_DECALE.caisse)
+    expect(repriseEtReleveDeBanque(entrees({ ouvertures: null })).ouvertures).toBeNull()
+    expect(repriseEtReleveDeBanque(entrees({ ouvertures: { dossierId: 'd2', lignes: ouvertures, complete: true, motif: null } })).ouvertures).toBeNull()
+    expect(repriseEtReleveDeBanque(entrees({ ouvertures: { dossierId: 'd1', lignes: ouvertures, complete: false, motif: 'x' } })).ouvertures).toBeNull()
+    expect(repriseEtReleveDeBanque(entrees({ releve, releveIncomplet: '200 lus sur 900' })).mouvements).toBeNull()
   })
 
   it('la caisse que la fiche juge tient compte de toutes ses entrées : les espèces d’une facture du jour comptent', () => {

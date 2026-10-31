@@ -6,6 +6,7 @@ import {
 } from './caisse'
 import {
   dossierTientUneCaisse, operationsDeCaisseDuDossier, type EspecesDesFactures, type EtatDesOperationsDeCaisse,
+  type RepriseEtReleveDeLaCaisse,
 } from './controlesDeLaCaisse'
 import type { ModeleComptable } from './engagement'
 import { formatMoney } from './format'
@@ -481,16 +482,19 @@ function classe(m: Pick<LigneBancaire, 'id' | 'date' | 'montant'>, compte: strin
  * La caisse pour la fiche d'un mouvement : le mouvement CLASSÉ sur la caisse (ou DÉCLASSÉ, s'il l'est déjà) comparé à la
  * caisse lue, jugé par le module sous les mots de la base (`texte_caisse_negative` : « versement » pour un crédit,
  * « retrait_d_especes_retire » pour un débit qu'on retire). Un débit qu'on classe sur la caisse l'alimente : la base ne le
- * refuse pas. `etat` nul : la caisse n'est pas lue en entier.
+ * refuse pas. `etat` nul : la caisse n'est pas lue en entier. « Tenue » se juge sur les opérations, les espèces des factures,
+ * la reprise et le relevé (`horsDesOperations`, la relecture du 31/10/2026) : une caisse qui n'existe que par sa reprise est
+ * tenue, et la fiche dit le libellé d'un versement.
  */
 export function caisseDeLaFiche(
   ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'compte_bilan'>,
   lecture: EtatDeLaCaisseDeBanque,
   operations: EtatDesOperationsDeCaisse,
   especes: EspecesDesFactures,
+  horsDesOperations: RepriseEtReleveDeLaCaisse,
 ): CaisseDeLaFiche {
   if (lecture.etat === 'absente') return CAISSE_ABSENTE_DE_LA_FICHE
-  const tenue = dossierTientUneCaisse(operations, especes)
+  const tenue = dossierTientUneCaisse(operations, especes, horsDesOperations)
   if (lecture.etat === 'pas_lue') return { etat: 'pas_lue', tenue, motif: lecture.motif }
   const etat = lecture.caisse
   const compte = etat.compteCaisse
@@ -553,6 +557,21 @@ export function caisseDeBanque(e: EntreesDeLaCaisseDeBanque): EtatDeLaCaisseDeBa
     caisse: etatDeLaCaisseLu(e.modele, {
       operations: operations.operations, ouvertures: e.ouvertures.lignes, mouvements: e.releve, especes: e.especes,
     }),
+  }
+}
+
+/**
+ * La reprise et le relevé que l'onglet Banque a lus, tels que « le dossier tient-il une caisse ? » les reçoit (la relecture du
+ * 31/10/2026) : le compte de la caisse DU PLAN ; la reprise de CE dossier lue en entier, sinon nulle ; le relevé lu en entier,
+ * sinon nul. Les mêmes entrées que `caisseDeBanque` : les lots et la fiche jugent la même caisse.
+ */
+export function repriseEtReleveDeBanque(
+  e: Pick<EntreesDeLaCaisseDeBanque, 'dossierId' | 'ouvertures' | 'releve' | 'releveIncomplet' | 'modele'>,
+): RepriseEtReleveDeLaCaisse {
+  return {
+    compteCaisse: e.modele.plan.caisse,
+    ouvertures: e.ouvertures !== null && e.ouvertures.dossierId === e.dossierId && e.ouvertures.complete ? e.ouvertures.lignes : null,
+    mouvements: e.releveIncomplet ? null : e.releve,
   }
 }
 
