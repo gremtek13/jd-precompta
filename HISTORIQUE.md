@@ -43366,3 +43366,72 @@ entrent dans la page des arbitrages (version 56) : les fiches FEC22-Q1 à FEC22-
 FEC22-E, qui rassemble E1 à E14 pour le rendez-vous du cabinet, ses réponses en note. Rien n'est écrit tant qu'elles ne
 sont pas revenues : FEC22a peut commencer sur Q1 à Q5 répondues ; FEC22b, la migration, se présente au cabinet avant
 toute validation d'un exercice en trésorerie (FEC22-Q6).
+
+### 31/10/2026 — HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E
+
+Lues sur la page des arbitrages le 31/10/2026 vers 13 h 20 (UTC), la collection relue en entier vers 13 h 45 : rien de
+plus.
+
+**C6-Q1 — « Oui, il tient une caisse »** (A, la recommandation). Un dossier basculé tient une caisse dès qu'un
+encaissement en espèces d'une de ses factures sources y ENTRE — sans mouvement, ni retiré (`especesDUneFactureSource`,
+lib/caisse.ts, rendue publique) —, même défait depuis (la caisse l'a reçu), même sans aucune opération saisie : depuis
+C6, ces espèces ne rejoignent la banque que par un versement classé sur la caisse, et les deux protections du § 4 a — le
+versement d'espèces hors des lots, le point `versements-especes-en-recette` — doivent le couvrir. Fait le jour même,
+sans migration :
+
+- `dossierTientUneCaisse(operations, especes)` (lib/controlesDeLaCaisse.ts) reçoit les espèces des factures
+  (`EspecesDesFactures`, la forme que la caisse rejoue déjà) en paramètre obligatoire : « oui » par une opération
+  vivante OU par ces espèces ; « non » quand l'une et l'autre sont lues (ou sans objet : un dossier qui n'a pas basculé)
+  et muettes ; « peut-être » sinon. La caisse absente (le drapeau baissé) : « non », quoi que disent les factures. Seul
+  l'encaissement qui entre compte, jamais sa seule contre-passation.
+- Ses trois appelants le suivent : `versementsDEspecesHorsDesLots` (l'onglet Banque calcule les espèces une fois, avant
+  les lots, pour les lots et pour la fiche), `caisseDeLaFiche` (lib/caisseEcran.ts : « tenue », qui fait dire à la fiche
+  le libellé d'un versement et lève la caisse muette) et le point de la Vue d'ensemble (lib/pointsDeLaChecklist.ts, qui
+  lisait déjà ces espèces).
+- NEUTRE pour un dossier qui n'a pas basculé (« sans objet ») et pour la caisse absente. Des ventes lues en partie :
+  « peut-être » — le versement écarté des lots (écarter ne perd rien, et un dossier basculé aux ventes lues en partie
+  retient déjà ses lots, VF5a1), le point tu. L'assistant ne recalcule pas ces contrôles (`CAISSE_NON_VERIFIEE`, C5) :
+  rien à redéployer.
+- Preuves : le module — un cas par sorte d'encaissement (d'une facture qui n'est pas source, par chèque, rattaché à un
+  crédit, retiré, sa seule contre-passation), la caisse pas revenue, lue en partie, absente —, la carte des lots, la
+  fiche, le point de la Vue d'ensemble ; deux écrans (`BanqueTab.lotsDesVentes`, `BanqueTab.caisse`), chacun avec son
+  cas neutre (les espèces retirées) ; onze mutations, toutes tuées — les espèces non transmises par chacun des trois
+  appelants et par la fiche du module, la contre-passation comptée, les factures qui ne disent jamais « oui », « sans
+  objet » qui ne sait pas, des ventes partielles qui disent « non », la caisse absente qui regarde les factures, tout
+  encaissement d'une facture source, les deux exigés ensemble.
+
+**FEC22-Q1 — DateRglt et ModeRglt d'une écriture qui n'est pas un règlement : « Selon ce qu'exige le logiciel de
+l'expert-comptable »** (C). Le module (FEC22a) les reçoit en choix SANS valeur par défaut — vides, ou la date de
+l'écriture et « Sans règlement » —, comme le fichier FRR ses choix incertains (`ChoixFrr`) ; la réponse de
+l'expert-comptable à FEC22-E2 le fixe, avant la validation de 2025 (FEC22-Q6).
+
+**FEC22-Q2 — Le mode d'un règlement par le relevé : « Banque »** (A, la recommandation). FEC22d, le mode réel (une
+colonne du mouvement), attend FEC22-E3.
+
+**FEC22-Q3 — La forme de NatOp : « Les deux »** (C). La nature de l'opération sur chaque ligne de l'écriture, dans sa
+liste fermée, et, sur une ligne de charge ou de produit, le poste de la 2035 de sa catégorie après un tiret (« Dépense —
+Achats ») ; la banque, la TVA et les comptes de bilan portent la nature seule. La nature reste une par écriture ; le
+poste suit la ligne : une écriture ventilée sur deux postes porte deux NatOp, chacune vraie de sa ligne — le contrôle
+« constant par EcritureNum » de la conception vaut pour la nature, pas pour NatOp entière. Le poste se FIGE avec
+l'écriture (FEC22b) : une catégorie qui change de poste après la validation ne change pas le FEC validé. Jamais un texte
+que le cabinet tape (le libellé d'une catégorie), jamais la nature d'un soin (LPF, L. 13-0 A) : un poste que la 2035
+connaît (lib/cases2035.ts), sa liste fixée au lot FEC22a.
+
+**FEC22-Q4 — IdClient : « Le SIREN d'une entreprise, sinon le numéro de la facture »** (D). Sur les seules écritures
+d'une facture émise : le SIREN de son client quand la facture figée en porte un (les neuf premiers chiffres de
+`tiers_siret` — une entreprise ou un organisme, qu'aucun secret médical ne couvre), sinon le numéro de la facture (la
+« référence à un document annexe » du § 280) ; jamais un nom. La garde de FEC22b n'admet que ces deux formes, tirées
+d'une facture validée du dossier. Le coût, que la conception disait : un IdClient de deux formes dans le même fichier ;
+FEC22-E5 dira si le logiciel de l'expert-comptable ouvre un compte par IdClient.
+
+**FEC22-Q5 — Montantdevise et Idevise : « Seulement sur les lignes du montant entier »** (A, la recommandation).
+
+**FEC22-Q6 — « La migration d'abord, puis la validation de 2025 »** (A, la recommandation) : FEC22b s'applique, sur
+l'accord du cabinet, avant toute validation d'un exercice en trésorerie — la répétition de 2025 comprise —, la
+validation attendant au besoin FEC22-E2.
+
+**FEC22-E — « Pas encore »** : le rendez-vous de l'expert-comptable n'a pas eu lieu ; E1 à E14 l'attendent sur la page.
+
+**CE QUI SUIT.** FEC22a, le module pur, peut commencer : Q2 à Q5 tranchées, Q1 en choix sans défaut. Puis FEC22b, la
+migration, présentée au cabinet avant la validation de 2025 ; ses colonnes suivent Q3 (la nature et le poste, figés
+ensemble ou à part : au lot).

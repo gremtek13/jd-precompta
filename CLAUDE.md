@@ -48,13 +48,15 @@ même jour : le module, la lecture et la sauvegarde (C2), les moteurs (C3a), le 
 cabinet (C4) suivent la base ; l'assistant (C5) en ligne le même jour (`agent-comptable` v50) — une ligne de caisse au
 modèle sous son genre, sa date et son montant, jamais un libellé —, `points_a_traiter` renvoie ses contrôles à l'onglet
 Caisse ; le resserrement (C6) le même jour : l'écran n'offre plus d'espèces sur un crédit, et la garde des encaissements
-le refuse en base (la migration 3, `especes_sans_mouvement`, appliquée par l'outil) → « LA CAISSE : LE MODULE, LA
-LECTURE ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
+le refuse en base (la migration 3, `especes_sans_mouvement`, appliquée par l'outil) ; un dossier basculé tient une
+caisse dès que les espèces d'une facture source y entrent (C6-Q1, le 31/10/2026) → « LA CAISSE : LE MODULE, LA LECTURE
+ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
 CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
 26.6) », « LA CAISSE : L'ASSISTANT EN LIGNE (C5, LIGNE 26.6) », « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) », « LA
-CAISSE : LE RESSERREMENT EN PRODUCTION (C6, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case
-« MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant
-elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
+CAISSE : LE RESSERREMENT EN PRODUCTION (C6, LIGNE 26.6) », « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET
+FEC22-E »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les
+lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC
+RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
@@ -422,8 +424,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **FEC** (lignes 26.5 et 26.6, étape (e) ; MVP-D5) : les vingt-deux champs d'un BNC en trésorerie et les montants en
   devise, CONÇUS le 31/10/2026 — quatre valeurs lues, jamais devinées, jamais un nom de patient ; six lots, FEC22a à
   FEC22f, dont une migration (FEC22b) à appliquer avant toute validation d'un exercice en trésorerie ; six questions au
-  cabinet (FEC22-Q1 à Q6) et quatorze pour l'expert-comptable (FEC22-E1 à E14) → « LE FEC D'UN BNC EN TRÉSORERIE : LES
-  VINGT-DEUX CHAMPS, LA CONCEPTION ».
+  cabinet, tranchées le 31/10/2026 — Q1 selon le logiciel de l'expert-comptable (FEC22-E2), ModeRglt « Banque » pour le
+  relevé, NatOp la nature et le poste de la 2035 (« Dépense — Achats »), IdClient le SIREN d'une entreprise, sinon le
+  numéro de la facture, Q5 et Q6 à la recommandation —, et quatorze pour l'expert-comptable (FEC22-E1 à E14), à son
+  rendez-vous → « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU CABINET :
+  C6-Q1, FEC22-Q1 À Q6 ET FEC22-E ».
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
   APRÈS COUP ».
