@@ -424,9 +424,12 @@ export default function DossierDetail() {
             {tab === 'pieces' && (
               <PiecesTab dossierId={id} dossierSiret={dossier?.siret ?? null} ventesParLesFactures={dossier?.ventes_par_les_factures === true} />
             )}
-            {tab === 'factures' && (
+            {tab === 'factures' && modele && (
               <FacturesTab
                 espace="cabinet"
+                // Le compte de la caisse du PLAN (la relecture de la caisse du 31/10/2026) : la fenêtre des encaissements
+                // rejoue la caisse avant de retirer ou de contre-passer des espèces. Le plan est lu avant tout onglet (`pret`).
+                compteCaisse={modele.plan.caisse}
                 dossierId={id}
                 dossierNom={dossier?.nom ?? ''}
                 dossierSiret={dossier?.siret ?? null}

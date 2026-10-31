@@ -315,17 +315,17 @@ const ECRANS: Ecran[] = [
     <Dossier1><EcrituresTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} assujettiTva={false} modele={TRESORERIE} ventesParLesFactures onModeleUpdated={rien} /></Dossier1>
   ) },
   { nom: 'EncaissementsFactureModal', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
-    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture()} mouvementImpose={null} contrePassationImposee={null} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} compteCaisse="530000" dossierId="d1" facture={facture()} mouvementImpose={null} contrePassationImposee={null} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   // Ouverte par la fiche d'un crédit de l'onglet Banque, sur une facture source et un mouvement IMPOSÉ (étape VF5c) : la saisie
   // part de ce mouvement, qu'elle ne connaît qu'une fois le relevé lu ; rien ne se dit ni ne part avant.
   { nom: 'EncaissementsFactureModal (mouvement imposé)', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
-    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture({ source_de_la_vente: true })} mouvementImpose="m1" contrePassationImposee={null} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} compteCaisse="530000" dossierId="d1" facture={facture({ source_de_la_vente: true })} mouvementImpose="m1" contrePassationImposee={null} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   // Ouverte par la fiche d'un débit de l'onglet Banque, sur la contre-passation IMPOSÉE d'un encaissement et son débit
   // (étape VF5d) : l'étape ne s'ouvre, sa date ne se propose et rien ne part qu'une fois tout lu.
   { nom: 'EncaissementsFactureModal (contre-passation imposée)', fichier: 'pages/dossier/EncaissementsFactureModal.tsx', rendre: () => (
-    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" facture={facture({ source_de_la_vente: true })} mouvementImpose={null} contrePassationImposee={{ encaissementId: 'e1', ligneBancaireId: 'm1' }} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
+    <Dossier1><EncaissementsFactureModal espace="cabinet" acces={ACCES_EN_COURS} compteCaisse="530000" dossierId="d1" facture={facture({ source_de_la_vente: true })} mouvementImpose={null} contrePassationImposee={{ encaissementId: 'e1', ligneBancaireId: 'm1' }} statutTva="redevable" onClose={rien} onUpdated={rien} /></Dossier1>
   ) },
   // Une facture SOURCE de sa vente, dans l'espace du client « Ventes » et « Banque » (étape VF5b) : la fenêtre y lit les
   // factures du dossier, les lignes des avoirs et ce qui classe les mouvements, pas les exercices validés ; rien avant elles.
@@ -370,7 +370,7 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'FacturesTab', fichier: 'pages/dossier/FacturesTab.tsx', rendre: () => (
     <Dossier1>
-      <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet"
+      <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet" compteCaisse="530000"
         dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable"
         articleExoneration={null} numeroTvaAttribue={false} tvaSurDebits={false} onAdresseUpdated={rien}
       />
@@ -483,7 +483,7 @@ const ECRANS: Ecran[] = [
   ) },
   // « Règlements » (étape A3) : la vue de l'onglet Factures, montée seule — au cabinet, et au client sans « Banque ».
   { nom: 'ReglementsSection', fichier: 'pages/dossier/ReglementsSection.tsx', rendre: () => (
-    <Dossier1><ReglementsSection espace="cabinet" acces={ACCES_EN_COURS} dossierId="d1" statutTva="redevable" /></Dossier1>
+    <Dossier1><ReglementsSection espace="cabinet" acces={ACCES_EN_COURS} compteCaisse="530000" dossierId="d1" statutTva="redevable" /></Dossier1>
   ) },
   { nom: 'ReglementsSection (client)', fichier: 'pages/dossier/ReglementsSection.tsx', rendre: () => (
     <Dossier1><ReglementsSection espace="client" banque={false} dossierId="d1" statutTva="redevable" /></Dossier1>

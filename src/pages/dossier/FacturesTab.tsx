@@ -51,8 +51,11 @@ import type { ReglageDesVentes } from '../../lib/sourceDeLaVente'
 // avec ou sans « Banque » sur la société affichée. Les mêmes gestes, par les mêmes fonctions (P2 et P3 les lui ouvrent) ;
 // ceux du cabinet seul retirés, les mots de son espace (lib/espaceVentes.ts). Une propriété OBLIGATOIRE, sans valeur par
 // défaut : un écran qui oublierait de dire qui regarde ne compile pas.
+// Le cabinet passe aussi le compte de la caisse DU PLAN du dossier, que la fenêtre des encaissements rejoue avant de retirer
+// ou de contre-passer des espèces d'une facture source (la relecture de la caisse du 31/10/2026) ; le client ne lit pas la
+// caisse.
 type QuiRegarde =
-  | { espace: 'cabinet'; onAdresseUpdated: (adresse: string) => void }
+  | { espace: 'cabinet'; onAdresseUpdated: (adresse: string) => void; compteCaisse: string }
   | { espace: 'client'; banque: boolean }
 
 type VueDeLOnglet = 'factures' | 'reglements' | 'articles' | 'clients' | 'parametres'
@@ -308,7 +311,7 @@ export default function FacturesTab(props: Props) {
 
       {vue === 'reglements' ? (
         <ReglementsSection
-          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const, banque: props.banque })}
+          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces, compteCaisse: props.compteCaisse } : { espace: 'client' as const, banque: props.banque })}
           dossierId={dossierId}
           statutTva={statutTva}
         />
@@ -676,7 +679,7 @@ export default function FacturesTab(props: Props) {
       {encaissee && (
         <EncaissementsFactureModal
           key={encaissee.id}
-          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces } : { espace: 'client' as const, banque: props.banque })}
+          {...(props.espace === 'cabinet' ? { espace: 'cabinet' as const, acces, compteCaisse: props.compteCaisse } : { espace: 'client' as const, banque: props.banque })}
           dossierId={dossierId}
           facture={encaissee}
           mouvementImpose={null}

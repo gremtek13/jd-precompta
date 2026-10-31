@@ -114,7 +114,7 @@ async function monter(espace: 'cabinet' | 'client') {
   }
   render(espace === 'client'
     ? <FacturesTab reglageDesVentes={NON_BASCULE} espace="client" banque={false} {...commun} />
-    : <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
+    : <FacturesTab reglageDesVentes={NON_BASCULE} espace="cabinet" compteCaisse="530000" onAdresseUpdated={() => {}} {...commun} />)
   await screen.findByText('F2027-0001')
 }
 
