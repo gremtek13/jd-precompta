@@ -3,6 +3,10 @@ import {
   type DossierDeLaCaisse, type EtatDeLaCaisse, type OperationDeLaCaisse, type RefusCaisse, type SaisieDeCaisse,
 } from '../lib/caisse'
 import { refusCompteDeBilanAuPlanSelon } from '../lib/compteDeBilan'
+import {
+  jugerLeReglementSelon, refusDeLaContrepartie, refusDuChangementDeLaPiece, refusDuMouvementAvantLOuverture,
+  type PieceDuPaiement,
+} from '../lib/paiementParLaCaisse'
 import { PLAN_PAR_DEFAUT, type CleRoleComptable, type PlanComptable } from '../lib/planComptable'
 import type { OrigineOperationCaisse } from '../lib/types'
 
@@ -28,8 +32,9 @@ export interface EtapeDeLEssai {
 }
 
 // Les genres de l'essai, et leur suffixe : « 2 » pour une étape de la migration de l'étape C1b, « 3 » pour une de l'étape C6
-// (`especes_sans_mouvement`), « 3h » pour une que celle-ci remplace (ce que la base répondait sans elle).
-const GENRES = /\n {4}array\['((?:jeu|controle|fait|valeur|capture)(?:2|3h?)?)', /g
+// (`especes_sans_mouvement`), « 3h » pour une que celle-ci remplace (ce que la base répondait sans elle) ; puis « 4 » pour
+// une de l'étape C8 (`paiement_par_la_caisse`), « 4h » pour une qu'elle remplace — après le suffixe d'une étape d'avant.
+const GENRES = /\n {4}array\['((?:jeu|controle|fait|valeur|capture)(?:2|3h?)?(?:4h?)?)', /g
 
 /** Les littéraux SQL qui suivent, joints : `'a' || 'b'` rend `ab` ; l'apostrophe doublée rendue simple. */
 function litteraux(texte: string): string[] {
@@ -129,14 +134,28 @@ interface Etat {
   operations: (OperationDeLaCaisse & { dossier_id: string })[]
   mouvements: { id: string; dossier_id: string; date: string; montant: number; compte_bilan: string | null }[]
   validees: { dossier_id: string; annee: number }[]
-  pieces: { id: string; dossier_id: string }[]
+  pieces: PieceSimulee[]
+  // Les factures émises (l'étape C8) : leur dossier et leur source, que la désignation d'un exemplaire lit.
+  factures: { id: string; dossier_id: string; source: boolean }[]
+  // Les lignes du brouillon qui citent une opération de la caisse : la contrepartie d'un paiement se juge sur elles.
+  lignesDeCaisse: { operation_caisse_id: string; dossier_id: string; montant: number; piece_id: string | null }[]
   horsJeu: Set<string>
+}
+
+interface PieceSimulee {
+  id: string
+  dossier_id: string
+  type_piece: PieceDuPaiement['type_piece']
+  statut: PieceDuPaiement['statut']
+  montant_ttc: number | null
+  facture_id: string | null
 }
 
 const copier = (e: Etat): Etat => ({
   dossiers: new Map(e.dossiers), categories: [...e.categories], ouvertures: e.ouvertures.map((x) => ({ ...x })),
   operations: e.operations.map((x) => ({ ...x })), mouvements: e.mouvements.map((x) => ({ ...x })), validees: [...e.validees],
-  horsJeu: new Set(e.horsJeu), pieces: [...e.pieces],
+  horsJeu: new Set(e.horsJeu), pieces: e.pieces.map((x) => ({ ...x })), factures: [...e.factures],
+  lignesDeCaisse: e.lignesDeCaisse.map((x) => ({ ...x })),
 })
 
 function planDe(e: Etat, dossierId: string): PlanComptable {
@@ -152,7 +171,21 @@ function caisseDe(e: Etat, dossierId: string): EtatDeLaCaisse {
     // Le registre des encaissements ne se rejoue pas ici : une étape qui l'écrit met son dossier hors jeu.
     encaissements: [],
     factures: [],
+    // Les pièces de vente du dossier : l'ensemble d'une recette compte les paiements par la caisse de celles-là.
+    piecesDeVente: e.pieces.filter((p) => p.dossier_id === dossierId && p.type_piece === 'vente').map((p) => p.id),
   }
+}
+
+/** Les pièces du dossier telles que `regler_piece_par_la_caisse` les lit : l'exemplaire, avec la source de sa facture. */
+function piecesDuPaiement(e: Etat, dossierId: string): PieceDuPaiement[] {
+  return e.pieces.filter((p) => p.dossier_id === dossierId).map((p) => {
+    const facture = p.facture_id == null ? null : e.factures.find((f) => f.id === p.facture_id)
+    if (p.facture_id != null && facture == null) throw new NonRejouable('l’exemplaire d’une facture que ce banc ne connaît pas')
+    return {
+      id: p.id, type_piece: p.type_piece, statut: p.statut, montant_ttc: p.montant_ttc,
+      exemplaire: facture ? { numero: 'F2026-0001', source_de_la_vente: facture.source } : null,
+    }
+  })
 }
 
 /** Le dossier tel que les fonctions de la caisse le lisent, sous un profil de l'essai. */
@@ -192,13 +225,17 @@ function judgerALaFin(e: Etat, evenements: readonly Evenement[]): RefusCaisse | 
   for (const ev of evenements) {
     if (ev.avant === 0 && ev.apres === 0) continue
     let dossiers: string[]
+    // Une ouverture de la caisse se juge toujours, et dans les deux dossiers qu'elle quitte et rejoint (l'étape C8) : elle
+    // borne aussi ce que la caisse compte.
+    const ouverture = ev.table === 'a_nouveaux'
     if (ev.op === 'UPDATE' && ev.dossierAvant !== ev.dossierApres) {
-      dossiers = [ev.avant > 0 ? ev.dossierAvant : null, ev.apres < 0 ? ev.dossierApres : null]
+      dossiers = [ev.avant > 0 || (ouverture && ev.avant !== 0) ? ev.dossierAvant : null,
+        ev.apres < 0 || (ouverture && ev.apres !== 0) ? ev.dossierApres : null]
         .filter((x): x is string => x != null).sort()
     } else {
       const jAvant = ev.op === 'INSERT' ? ev.jourApres : ev.jourAvant ?? ev.jourApres
       const jApres = ev.jourApres
-      if (ev.apres >= ev.avant && (jApres >= jAvant || ev.apres >= 0) && (jAvant >= jApres || ev.avant <= 0)) continue
+      if (!ouverture && ev.apres >= ev.avant && (jApres >= jAvant || ev.apres >= 0) && (jAvant >= jApres || ev.avant <= 0)) continue
       dossiers = [ev.dossierApres]
     }
     for (const d of dossiers) {
@@ -239,9 +276,12 @@ export function rejouerLEssai(essai: string, aujourdhui: string): Issue[] {
   demain.setUTCDate(demain.getUTCDate() + 1)
   ids.set('CAB', 'cabinet-du-dossier-test').set('DC', 'dossier-du-client').set('CHEF', 'chef')
     .set('DEMAIN', demain.toISOString().slice(0, 10))
+    // Le corps d'une facture (`{FACTURE}`) : ce banc n'en lit que le dossier, et la source qu'il porte (l'étape C8).
+    .set('FACTURE', '\'{}\'::jsonb, \'[]\'::jsonb, true')
   const captures = new Set<string>()
   let etat: Etat = {
-    dossiers: new Map(), categories: [], ouvertures: [], operations: [], mouvements: [], validees: [], pieces: [],
+    dossiers: new Map(), categories: [], ouvertures: [], operations: [], mouvements: [], validees: [], pieces: [], factures: [],
+    lignesDeCaisse: [],
     // Le dossier du client vit en production : sa caisse s'y lit, pas ici.
     horsJeu: new Set(['dossier-du-client']),
   }
@@ -251,18 +291,24 @@ export function rejouerLEssai(essai: string, aujourdhui: string): Issue[] {
   for (const etape of etapesDeLEssai(essai)) {
     let sql = etape.sql
     for (const [cle, v] of ids) sql = sql.split(`{${cle}}`).join(v)
-    // Une étape que la migration de l'étape C6 remplace (« …3h ») dit ce que la base répondait sans elle : ce banc rejoue
-    // la base d'après, et l'étape qui la remplace (« …3 »).
-    if (/3h$/.test(etape.genre)) {
+    // Une étape qu'une migration remplace (« …3h » pour l'étape C6, « …4h » pour l'étape C8) dit ce que la base répondait
+    // sans elle : ce banc rejoue la base d'après, et l'étape qui la remplace.
+    if (/4h$/.test(etape.genre)) {
+      issues.push({ genre: 'hors_module', etape, raison: 'remplacée par la migration de l’étape C8 (paiement_par_la_caisse)' })
+      continue
+    }
+    const sansC8 = etape.genre.replace(/4$/, '')
+    if (/3h$/.test(sansC8)) {
       issues.push({ genre: 'hors_module', etape, raison: 'remplacée par la migration de l’étape C6 (especes_sans_mouvement)' })
       continue
     }
-    const genre = etape.genre.replace(/[23]$/, '')
+    const genre = sansC8.replace(/[23]$/, '')
     const nommes = [...etat.dossiers.keys(), 'dossier-du-client'].filter((d) => sql.includes(d))
 
     if (genre === 'valeur') { issues.push({ genre: 'hors_module', etape, raison: 'une lecture : la base, pas le module' }); continue }
     if (genre === 'capture') {
-      // Les conditions d'une capture : le dossier, le genre, le signe du montant, la date, l'opération remplacée.
+      // Les conditions d'une capture : le dossier, le genre, le signe du montant, la date, l'opération remplacée. Une
+      // capture lit l'état d'AVANT les contrôles : l'état gardé.
       const m = /^select o\.id::text from operations_caisse o where (.*)$/.exec(sql.trim())
       const conditions = m ? m[1].split(' and ').map((c) => {
         const egal = /^o\.(dossier_id|genre|date|remplace_id) = '([^']+)'$/.exec(c)
@@ -394,16 +440,72 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
       }
       return null
     }
+    if (lues.table === 'ecritures_brouillon' && profil !== 'postgres' && lues.lignes.every((l) => typeof l.operation_caisse_id === 'string')) {
+      for (const l of lues.lignes) {
+        const refus = ligneDeCaisse(e, l, profil, quiEcrit)
+        if (refus) return refus
+      }
+      return null
+    }
     if (profil !== 'postgres' && !['lignes_bancaires', 'a_nouveaux'].includes(lues.table)) throw new NonRejouable('une écriture directe')
-    for (const l of lues.lignes) inserer(e, lues.table, l, evenements)
+    for (const l of lues.lignes) {
+      const refus = inserer(e, lues.table, l, evenements, profil)
+      if (refus) return refus
+    }
+    return null
+  }
+  // Une pièce insérée sur la facture de son dossier (l'exemplaire, réinséré par le super-administrateur).
+  const surFacture = /^insert into pieces \(([^)]*)\) select ([\s\S]*) from factures_emises f where f\.dossier_id = '([^']+)'$/.exec(appel)
+  if (surFacture) {
+    const factures = e.factures.filter((f) => f.dossier_id === surFacture[3])
+    if (factures.length !== 1) throw new NonRejouable('la facture d’un exemplaire')
+    const colonnes = surFacture[1].split(',').map((c) => c.trim())
+    const valeurs = couper(surFacture[2], ',').map((v) => (v.trim() === 'f.id' ? factures[0].id : valeur(v)))
+    return inserer(e, 'pieces', Object.fromEntries(colonnes.map((c, i) => [c, valeurs[i]])), evenements, profil)
+  }
+  const majPiece = /^update pieces set (type_piece|dossier_id) = '([^']+)' where id = '([^']+)'$/.exec(appel)
+  if (majPiece) {
+    const piece = e.pieces.find((x) => x.id === majPiece[3])
+    if (!piece || !e.dossiers.has(piece.dossier_id) || quiEcrit(piece.dossier_id) == null) throw new NonRejouable('une pièce hors jeu')
+    const apres = { ...piece, [majPiece[1]]: majPiece[2] }
+    const refus = refusDuChangementDeLaPiece(piece, apres, e.operations.filter((o) => o.dossier_id === piece.dossier_id), null)
+    if (refus) return refus
+    Object.assign(piece, apres)
     return null
   }
   const maj = /^update (lignes_bancaires|a_nouveaux) set (.*) where id = '([^']+)'$/.exec(appel)
-  if (maj) {
-    mettreAJour(e, maj[1] as 'lignes_bancaires' | 'a_nouveaux', maj[3], couper(maj[2], ','), evenements)
+  if (maj) return mettreAJour(e, maj[1] as 'lignes_bancaires' | 'a_nouveaux', maj[3], couper(maj[2], ','), evenements)
+  if (profil === 'postgres') throw new NonRejouable('un appel du propriétaire')
+  // Une facture validée (l'étape C8 n'en lit que la source, celle de son dossier à sa validation).
+  const facture = /^select enregistrer_facture\('([^']+)', null, /.exec(appel)
+  if (facture) {
+    const d = e.dossiers.get(facture[1])
+    if (!d || quiEcrit(facture[1]) == null) throw new NonRejouable('une facture hors jeu')
+    e.factures.push({ id: nouvelId(), dossier_id: facture[1], source: d.source })
     return null
   }
-  if (profil === 'postgres') throw new NonRejouable('un appel du propriétaire')
+  if (appel.startsWith('select regler_piece_par_la_caisse(')) {
+    const args = arguments_(appel, 'regler_piece_par_la_caisse')
+    const d = texte(args[0])
+    if (!e.dossiers.has(d) && quiEcrit(d) != null) throw new NonRejouable('un dossier hors jeu')
+    const qui = quiEcrit(d)
+    if (qui == null) return { code: '42501', message: 'Accès refusé à ce dossier.' }
+    const id = nouvelId()
+    const saisie = { piece_id: args[1] as string | null, date: args[2] as string | null, montant: args[3] as number | null }
+    const jugee = jugerLeReglementSelon(true, saisie, dossierLu(e, d, qui, aujourdhui), piecesDuPaiement(e, d), id)
+    if (jugee.etat === 'refuse') return jugee.refus
+    if (jugee.etat !== 'accepte') throw new NonRejouable('le paiement d’une pièce, absent')
+    ajouter(e, d, jugee.operation, evenements)
+    return null
+  }
+  if (appel.startsWith('select retirer_mouvement_compte_bilan(')) {
+    const args = arguments_(appel, 'retirer_mouvement_compte_bilan')
+    const ligne = e.mouvements.find((l) => l.id === texte(args[0]))
+    if (!ligne || !e.dossiers.has(ligne.dossier_id)) throw new NonRejouable('un mouvement hors jeu')
+    if (quiEcrit(ligne.dossier_id) == null) return { code: '42501', message: 'Accès refusé à ce mouvement.' }
+    if (ligne.compte_bilan == null) return { code: '22023', message: 'Ce mouvement n’est écrit sur aucun compte de bilan.' }
+    return mettreAJour(e, 'lignes_bancaires', ligne.id, ['compte_bilan = null'], evenements)
+  }
   if (appel.startsWith('select enregistrer_operation_caisse(')) {
     const args = arguments_(appel, 'enregistrer_operation_caisse')
     const d = texte(args[0])
@@ -470,10 +572,44 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
     if (recues.join('|') !== attendues.join('|')) {
       return { code: '22023', message: 'L’écriture proposée ne correspond pas à ce mouvement et à ce compte.' }
     }
-    mettreAJour(e, 'lignes_bancaires', ligne.id, [`compte_bilan = '${compte}'`], evenements)
-    return null
+    return mettreAJour(e, 'lignes_bancaires', ligne.id, [`compte_bilan = '${compte}'`], evenements)
   }
   throw new NonRejouable('une instruction que ce banc ne rejoue pas')
+}
+
+// Une ligne du brouillon qui cite une opération de la caisse, écrite sous un profil (`garder_ecriture_de_caisse`, puis la
+// RLS du brouillon) : la contrepartie d'un paiement — sa pièce, hors de la restauration — se juge par le module ; une autre
+// ligne suit la porte d'hier, celle de la restauration, ouverte au super-administrateur (le chef ici) dans un dossier sans
+// exercice validé, puis l'opération qu'elle suit. La RLS ensuite : le cabinet du dossier seul.
+function ligneDeCaisse(e: Etat, l: Record<string, Valeur>, profil: string,
+  quiEcrit: (d: string) => OrigineOperationCaisse | null): RefusCaisse | null {
+  const dossierId = texte(l.dossier_id)
+  if (!e.dossiers.has(dossierId)) throw new NonRejouable('un dossier hors jeu')
+  if (l.created_at !== undefined) throw new NonRejouable('une ligne réinsérée par la restauration')
+  const operationId = texte(l.operation_caisse_id)
+  const operation = e.operations.find((o) => o.id === operationId)
+  const piece = (l.piece_id ?? null) as string | null
+  if (piece != null && operation?.genre === 'paiement') {
+    const caisse = caisseDe(e, dossierId)
+    const ligne = {
+      date: texte(l.date), compte: texte(l.compte), sens: texte(l.sens) as 'debit' | 'credit', montant: nombre(l.montant),
+      piece_id: piece, operation_caisse_id: operationId,
+    }
+    const refus = refusDeLaContrepartie(ligne, caisse, e.lignesDeCaisse.filter((x) => x.operation_caisse_id === operationId))
+    if (refus) return refus
+  } else {
+    const restauration = profil === 'chef' && !e.validees.some((v) => v.dossier_id === dossierId)
+    if (!restauration) {
+      return { code: '42501', message: 'L’écriture d’une opération de caisse ne s’écrit qu’avec cette opération, par la fonction de la caisse.' }
+    }
+    if (!operation || operation.dossier_id !== dossierId || operation.date !== l.date || operation.retire_le != null
+      || (piece != null && piece !== operation.piece_id)) {
+      return { code: '23514', message: 'Cette écriture ne suit pas son opération de caisse : son dossier, sa date, ou sa pièce.' }
+    }
+  }
+  if (quiEcrit(dossierId) == null) return { code: '42501', message: 'new row violates row-level security policy for table "ecritures_brouillon"' }
+  e.lignesDeCaisse.push({ operation_caisse_id: operationId, dossier_id: dossierId, montant: nombre(l.montant), piece_id: piece })
+  return null
 }
 
 // Une opération réinsérée par la restauration, sous la garde de la table (`garder_operation_caisse`) : la porte ne
@@ -522,6 +658,8 @@ function retirer(e: Etat, operationId: string, evenements: Evenement[]): void {
   const o = e.operations.find((x) => x.id === operationId)!
   const avant = apportDe(o)
   o.retire_le = 'maintenant'
+  // Toutes les lignes du brouillon qui la citent partent avec elle (`retirer_operation_caisse`).
+  e.lignesDeCaisse = e.lignesDeCaisse.filter((x) => x.operation_caisse_id !== operationId)
   evenements.push({
     table: 'operations_caisse', op: 'UPDATE', dossierAvant: o.dossier_id, dossierApres: o.dossier_id, avant, apres: 0,
     jourAvant: o.date, jourApres: o.date, montant: centimes(o.montant),
@@ -529,7 +667,13 @@ function retirer(e: Etat, operationId: string, evenements: Evenement[]): void {
   })
 }
 
-function inserer(e: Etat, table: string, l: Record<string, Valeur>, evenements: Evenement[]): void {
+// LA PORTE DE LA RESTAURATION, celle des gardes de la caisse : une ligne RÉINSÉRÉE (son instant de création d'avant la
+// transaction) par le super-administrateur (le chef ici), dans un dossier sans exercice validé, ne se juge pas.
+function reinseree(e: Etat, l: Record<string, Valeur>, profil: string): boolean {
+  return l.created_at !== undefined && profil === 'chef' && !e.validees.some((v) => v.dossier_id === l.dossier_id)
+}
+
+function inserer(e: Etat, table: string, l: Record<string, Valeur>, evenements: Evenement[], profil: string): RefusCaisse | null {
   if (table === 'dossiers') {
     e.dossiers.set(texte(l.id), {
       id: texte(l.id), cabinet: texte(l.cabinet_id), mode: (l.mode_comptable ?? 'tresorerie') as DossierSimule['mode'],
@@ -539,8 +683,16 @@ function inserer(e: Etat, table: string, l: Record<string, Valeur>, evenements: 
   } else if (table === 'categories') {
     e.categories.push({ id: texte(l.id), dossier_id: l.dossier_id as string | null, libelle: texte(l.libelle), compte_comptable: l.compte_comptable as string | null })
   } else if (table === 'lignes_bancaires') {
-    if (l.created_at !== undefined) throw new NonRejouable('un mouvement réinséré par la restauration')
     const ligne = { id: texte(l.id), dossier_id: texte(l.dossier_id), date: texte(l.date), montant: nombre(l.montant), compte_bilan: (l.compte_bilan ?? null) as string | null }
+    if (reinseree(e, l, profil)) {
+      e.mouvements.push(ligne)
+      return null
+    }
+    // Le mouvement d'avant l'ouverture, inséré sur la caisse (`garder_caisse_depuis_l_ouverture`, avant la ligne).
+    if (ligne.compte_bilan != null && e.dossiers.has(ligne.dossier_id)) {
+      const refus = refusDuMouvementAvantLOuverture({ date: ligne.date, compte_bilan: null }, ligne.compte_bilan, caisseDe(e, ligne.dossier_id))
+      if (refus) return refus
+    }
     e.mouvements.push(ligne)
     if (ligne.compte_bilan?.startsWith('53')) {
       const apres = ligne.compte_bilan === planDe(e, ligne.dossier_id).caisse ? -centimes(ligne.montant) : 0
@@ -548,9 +700,12 @@ function inserer(e: Etat, table: string, l: Record<string, Valeur>, evenements: 
         jourAvant: null, jourApres: ligne.date, montant: apres, geste: apres < 0 ? 'versement' : 'mouvement_change' })
     }
   } else if (table === 'a_nouveaux') {
-    if (l.created_at !== undefined) throw new NonRejouable('une ouverture réinsérée par la restauration')
-    const a = { id: texte(l.id), dossier_id: texte(l.dossier_id), date: texte(l.date), compte: texte(l.compte), sens: texte(l.sens) as 'debit' | 'credit', montant: nombre(l.montant) }
+    const a = {
+      id: typeof l.id === 'string' ? l.id : `ouverture-${e.ouvertures.length + 1}`, dossier_id: texte(l.dossier_id), date: texte(l.date),
+      compte: texte(l.compte), sens: texte(l.sens) as 'debit' | 'credit', montant: nombre(l.montant),
+    }
     e.ouvertures.push(a)
+    if (reinseree(e, l, profil)) return null
     if (a.compte.startsWith('53')) {
       const apres = a.compte === planDe(e, a.dossier_id).caisse ? (a.sens === 'debit' ? 1 : -1) * centimes(a.montant) : 0
       evenements.push({ table: 'a_nouveaux', op: 'INSERT', dossierAvant: null, dossierApres: a.dossier_id, avant: 0, apres,
@@ -563,13 +718,18 @@ function inserer(e: Etat, table: string, l: Record<string, Valeur>, evenements: 
   } else if (table === 'exercices_valides') {
     e.validees.push({ dossier_id: texte(l.dossier_id), annee: nombre(l.annee) })
   } else if (table === 'pieces') {
-    e.pieces.push({ id: texte(l.id), dossier_id: texte(l.dossier_id) })
+    e.pieces.push({
+      id: texte(l.id), dossier_id: texte(l.dossier_id), type_piece: (l.type_piece ?? 'achat') as PieceSimulee['type_piece'],
+      statut: (l.statut ?? 'a_valider') as PieceSimulee['statut'], montant_ttc: (l.montant_ttc ?? null) as number | null,
+      facture_id: (l.facture_id ?? null) as string | null,
+    })
   } else if (!['cabinets', 'cabinet_admins'].includes(table)) {
     throw new NonRejouable(`une insertion dans ${table}`)
   }
+  return null
 }
 
-function mettreAJour(e: Etat, table: 'lignes_bancaires' | 'a_nouveaux', id: string, affectations: readonly string[], evenements: Evenement[]): void {
+function mettreAJour(e: Etat, table: 'lignes_bancaires' | 'a_nouveaux', id: string, affectations: readonly string[], evenements: Evenement[]): RefusCaisse | null {
   const changements = Object.fromEntries(affectations.map((a) => {
     const m = /^(\w+) = (.*)$/.exec(a.trim())
     if (!m) throw new NonRejouable('une affectation illisible')
@@ -585,7 +745,17 @@ function mettreAJour(e: Etat, table: 'lignes_bancaires' | 'a_nouveaux', id: stri
       else if (c === 'dossier_id') l.dossier_id = texte(v)
       else if (c !== 'statut' && c !== 'libelle') throw new NonRejouable(`la colonne ${c} d’un mouvement`)
     }
-    if (!avant.compte_bilan?.startsWith('53') && !l.compte_bilan?.startsWith('53')) return
+    // Le mouvement qui ARRIVE sur la caisse du plan d'avant l'ouverture de son dossier (`garder_caisse_depuis_l_ouverture`) :
+    // classé, ou déplacé à une autre date ou dans un autre dossier.
+    if (l.compte_bilan != null && e.dossiers.has(l.dossier_id)) {
+      const reste = avant.compte_bilan === l.compte_bilan && avant.date === l.date && avant.dossier_id === l.dossier_id
+      const refus = reste ? null : refusDuMouvementAvantLOuverture({ date: l.date, compte_bilan: null }, l.compte_bilan, caisseDe(e, l.dossier_id))
+      if (refus) {
+        Object.assign(l, avant)
+        return refus
+      }
+    }
+    if (!avant.compte_bilan?.startsWith('53') && !l.compte_bilan?.startsWith('53')) return null
     const apport = (x: typeof l) => (x.compte_bilan === planDe(e, x.dossier_id).caisse ? -centimes(x.montant) : 0)
     const va = apport(avant)
     const vp = apport(l)
@@ -595,7 +765,7 @@ function mettreAJour(e: Etat, table: 'lignes_bancaires' | 'a_nouveaux', id: stri
       geste: vp < 0 ? 'versement' : va > 0 && vp === 0 ? 'retrait_d_especes_retire' : 'mouvement_change',
       montant: vp < 0 ? vp : va > 0 && vp === 0 ? va : vp,
     })
-    return
+    return null
   }
   const a = e.ouvertures.find((x) => x.id === id)
   if (!a) throw new NonRejouable('une ouverture inconnue')
@@ -604,6 +774,7 @@ function mettreAJour(e: Etat, table: 'lignes_bancaires' | 'a_nouveaux', id: stri
     if (c === 'montant') a.montant = nombre(v)
     else if (c === 'compte') a.compte = texte(v)
     else if (c === 'sens') a.sens = texte(v) as 'debit' | 'credit'
+    else if (c === 'dossier_id') a.dossier_id = texte(v)
     else throw new NonRejouable(`la colonne ${c} d’une ouverture`)
   }
   const apport = (x: typeof a) => (x.compte === planDe(e, x.dossier_id).caisse ? (x.sens === 'debit' ? 1 : -1) * centimes(x.montant) : 0)
@@ -615,4 +786,5 @@ function mettreAJour(e: Etat, table: 'lignes_bancaires' | 'a_nouveaux', id: stri
     geste: vp < 0 ? 'ouverture_au_credit' : va > 0 && vp === 0 ? 'retrait_ouverture' : 'ouverture_change',
     montant: vp < 0 ? vp : va > 0 && vp === 0 ? va : vp,
   })
+  return null
 }

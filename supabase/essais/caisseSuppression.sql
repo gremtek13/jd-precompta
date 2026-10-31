@@ -36,6 +36,13 @@
 -- tables, manque à la production (relu au catalogue le 29/10/2026). L'en-tête seul ne gardait que son lecteur
 -- (HISTORIQUE.md, « CE QUE RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION », et la fin de « A7Q-Q1 : UNE SOCIÉTÉ
 -- SANS DÉNOMINATION NE SE FACTURE PAS DEPUIS L'ESPACE CLIENT, DANS LA MIGRATION »).
+--
+-- ÉTENDU LE 31/10/2026 (ligne 26.6, étape C8 : la migration `paiement_par_la_caisse`, PRÉPARÉE, pas appliquée). Les
+-- contrôles 11 et 12 : la contrepartie d'un paiement par la caisse se retire avec les écritures de sa pièce — par le
+-- cabinet sous la RLS (« Régénérer »), par le propriétaire —, une ligne du paiement qui ne porte pas sa pièce ne part
+-- pas sans lui, le retrait du paiement emporte sa contrepartie ; la pièce qu'un paiement cite ne se supprime plus, sa
+-- contrepartie partie, ni son paiement retiré ; le dossier entier part avec ses paiements et leurs contreparties. Une
+-- étape de genre « …4 » ne se joue qu'avec la migration : sans elle, une ligne dit qu'elles attendent (EN ATTENTE).
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -55,6 +62,9 @@ declare
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
   verdicts jsonb := '[]'::jsonb;
+  -- La migration de l'étape C8 : sans elle, ses étapes (genre « …4 ») attendent.
+  c8 boolean := to_regprocedure('public.regler_piece_par_la_caisse(uuid, uuid, date, numeric)') is not null;
+  genre text; en_attente4 integer := 0;
 begin
   -- La garde de tête (AUDIT-Q1) : sur une réplique seulement, avant toute écriture.
   if not exists (select 1 from pg_roles where rolname = 'proprietaire') then
@@ -175,11 +185,54 @@ begin
       '55006', 'cannot ALTER TABLE "lignes_bancaires" because it has pending trigger events'],
     array['controle', '10c. … l''ouverture de la caisse de même', 'postgres', $q$update a_nouveaux set montant = 60 where id = '{AS1}';
       alter table public.a_nouveaux set (autovacuum_enabled = true)$q$,
-      '55006', 'cannot ALTER TABLE "a_nouveaux" because it has pending trigger events']
+      '55006', 'cannot ALTER TABLE "a_nouveaux" because it has pending trigger events'],
+
+    -- ══ 11 et 12. Le paiement d'une pièce par la caisse et sa contrepartie (étape C8, `paiement_par_la_caisse`) ══════════
+    -- S : 180 € en caisse le 02/03 (1), un paiement de 20 € de la pièce PS le 03/03, sa contrepartie écrite par le chef.
+    array['fait4', '11. un paiement de 20 € de la pièce PS par la caisse, le 03/03, et sa contrepartie écrite par le chef', 'chef', $q$select regler_piece_par_la_caisse('{S}', '{PS}', '2026-03-03', -20);
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)
+      select '{S}', '2026-03-03', '530000', 'essai', 20, 'credit', o.id, '{PS}' from operations_caisse o where o.dossier_id = '{S}' and o.genre = 'paiement'$q$,
+      'OK', ''],
+    array['controle4', '11b. « Régénérer » reprend les écritures de la pièce : le cabinet retire sa contrepartie sous la RLS', 'chef', $q$delete from ecritures_brouillon where piece_id = '{PS}';
+      select 1 / (case when exists (select 1 from ecritures_brouillon where piece_id = '{PS}') then 0 else 1 end)$q$,
+      'OK', ''],
+    array['controle4', '11c. … le propriétaire aussi : la garde seule en juge', 'postgres', $q$delete from ecritures_brouillon where piece_id = '{PS}'$q$,
+      'OK', ''],
+    array['controle4', '11d. une ligne du paiement qui ne porte pas sa pièce ne part pas sans lui', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id)
+      select '{S}', '2026-03-03', '530000', 'essai', 1, 'credit', o.id from operations_caisse o where o.dossier_id = '{S}' and o.genre = 'paiement';
+      delete from ecritures_brouillon where piece_id is null and operation_caisse_id = (select o.id from operations_caisse o where o.dossier_id = '{S}' and o.genre = 'paiement')$q$,
+      '42501', 'L''écriture d''une opération de caisse se retire avec cette opération.'],
+    array['controle4', '11e. le retrait du paiement emporte sa contrepartie', 'chef', $q$select retirer_operation_caisse('{S}', o.id) from operations_caisse o where o.dossier_id = '{S}' and o.genre = 'paiement';
+      select 1 / (case when exists (select 1 from ecritures_brouillon where piece_id = '{PS}') then 0 else 1 end)$q$,
+      'OK', ''],
+    array['controle4', '11f. la pièce que le paiement cite ne se supprime plus, sa contrepartie partie', 'postgres', $q$delete from ecritures_brouillon where piece_id = '{PS}';
+      delete from pieces where id = '{PS}'$q$,
+      '23503', '%violates foreign key constraint "operations_caisse_piece_id_fkey" on table "operations_caisse"%'],
+    array['controle4', '11g. … ni son paiement retiré', 'chef', $q$select retirer_operation_caisse('{S}', o.id) from operations_caisse o where o.dossier_id = '{S}' and o.genre = 'paiement';
+      delete from pieces where id = '{PS}'$q$,
+      '23503', '%violates foreign key constraint "operations_caisse_piece_id_fkey" on table "operations_caisse"%'],
+    array['controle4', '12. le dossier se supprime avec ses paiements par la caisse et leurs contreparties', 'chef', $q$select enregistrer_operation_caisse('{K}', 'apport', '2026-03-01', 50, null, null, null, '[{"compte":"530000","sens":"debit","montant":50},{"compte":"108000","sens":"credit","montant":50}]');
+      select regler_piece_par_la_caisse('{K}', '{PK}', '2026-03-03', -20);
+      insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)
+      select '{K}', '2026-03-03', '530000', 'essai', 20, 'credit', o.id, '{PK}' from operations_caisse o where o.dossier_id = '{K}' and o.genre = 'paiement';
+      delete from dossiers where id = '{K}';
+      select 1 / (case when exists (select 1 from operations_caisse where dossier_id = '{K}') or exists (select 1 from ecritures_brouillon where dossier_id = '{K}')
+        or exists (select 1 from pieces where dossier_id = '{K}') then 0 else 1 end)$q$,
+      'OK', '']
   ];
 
   begin
     foreach etape slice 1 in array etapes loop
+      -- Une étape de l'étape C8 (« …4 ») ne se joue qu'avec sa migration.
+      genre := etape[1];
+      if genre like '%4' then
+        if not c8 then
+          en_attente4 := en_attente4 + 1;
+          continue;
+        end if;
+        genre := left(genre, -1);
+      end if;
+      etape[1] := genre;
       s := etape[4];
       for cle, valeur in select key, value from jsonb_each_text(ids) loop
         s := replace(s, '{' || cle || '}', valeur);
@@ -228,6 +281,10 @@ begin
         end if;
       end if;
     end loop;
+    if en_attente4 > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '11. EN ATTENTE de la migration paiement_par_la_caisse (étape C8) : '
+        || en_attente4 || ' étapes — la contrepartie d''un paiement par la caisse et la pièce qu''il cite', 'observe', 'absente : elles se jouent dès qu''elle y est', 'ok', true);
+    end if;
     raise exception 'ANNULATION_ESSAI_GLOBALE';
   exception when others then
     if sqlerrm <> 'ANNULATION_ESSAI_GLOBALE' then
