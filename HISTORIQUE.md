@@ -43508,3 +43508,74 @@ lib/cases2035.ts ; la garde d'IdClient, qui n'admet que le numéro d'une facture
 chiffres de son `tiers_siret` quand ils passent la clé de Luhn ; « Sans règlement » admis par la liste, écrit seulement
 si l'expert-comptable choisit cette option (FEC22-E2). La migration se présente au cabinet avant la validation de 2025
 (FEC22-Q6) ; la validation, elle, attend FEC22-E2, que les quatre valeurs figent.
+
+### 31/10/2026 — QUATRE RELECTURES AVANT LES DONNÉES RÉELLES : LA CAISSE, LA FACTURE, LA 2035, L'IMPORT DU RELEVÉ
+
+(Quatre agents architecte en lecture seule, chacun sur un parcours, sans conclusion donnée d'avance ; chaque défaut
+prouvé par un test écrit dans son worktree, ou dit plausible. Rien de lu ni d'écrit en production. Le but : les
+premières données réelles d'un praticien vers le 20 novembre, la répétition de 2025 comparée à la 2035 déposée.)
+
+**LA FACTURE DU PRATICIEN** (droit « Ventes », dossier basculé, exonéré). Confirmés :
+
+- La numérotation peut sortir de l'ordre des dates : `enregistrer_facture` ne compare pas la date d'émission à celle de
+  la dernière facture validée de la série, et une date future passe (CGI, ann. II, art. 242 nonies A, I, 7°). Une
+  migration, préparée par un agent, à présenter.
+- Une facture figée à une entreprise pouvait n'imprimer aucun taux de pénalités : A7B-Q2 retirait la phrase de retard
+  dès qu'il y avait des paramètres, même sans leur texte des pénalités, et un client « à préciser » n'imprimait rien (C.
+  com., art. L441-9, I). Corrigé à l'écran le jour même (ci-dessous).
+- Le demi-centime d'une ligne tombe parfois vers zéro : `auCentime` arrondit en virgule flottante (0,5 × 32,05 € donne
+  16,02 €) ; la base (`centimes_ligne_facture`) et les copies des Edge Functions font le même calcul. Avec la même
+  migration ; les Edge Functions à redéployer.
+- Une facture d'un dossier exonéré se validait sans la mention de l'art. 261, 4, 1° : l'écran n'en faisait qu'une
+  alerte, la base ne juge pas le texte. Corrigé à l'écran le jour même ; en base avec la migration.
+
+Plausibles : la source de la vente ne dépend pas de la date de la facture (une facture datée d'avant la bascule, validée
+après, devient source — à regarder pour la répétition de 2025, dans le même dossier) ; le nom du client, un patient,
+entre dans le libellé des écritures d'une vente facturée et sert d'auxiliaire, donc dans EcritureLib et CompAuxLib du
+FEC — une question au cabinet (FEC22-Q7).
+
+**LA CAISSE.** Confirmés :
+
+- Des espèces datées d'avant l'ouverture de la caisse comptées deux fois : rien ne refuse de classer sur la caisse un
+  mouvement du relevé d'avant l'ouverture (ni `ecrire_mouvement_compte_bilan`, ni la fiche), et le solde compte ses flux
+  (`premier_jour_negatif_de_la_caisse`, `fluxDeLaCaisse`) : la caisse peut passer sous zéro sans refus. Réaliste : un
+  relevé chevauche la date de reprise, et la répétition reprend une balance au 01/01/2025. Confié au lot C8, dans la
+  même migration de la caisse.
+- Une caisse qui n'existe encore que par la reprise n'est pas « tenue » (`dossierTientUneCaisse` ignore le compte de la
+  caisse repris et les mouvements classés sur lui) : un versement d'espèces reste dans les lots tant qu'aucune opération
+  n'est saisie. À corriger, sans migration.
+- La fenêtre des encaissements ne dit pas avant le clic que retirer ou contre-passer des espèces déjà dépensées rendrait
+  la caisse négative (la base le refuse, après). À corriger, sans migration.
+
+Plausible, rare : la contre-passation d'un encaissement en espèces qui cite un débit d'un autre jour, écrite sur le 53,
+que le solde de la caisse ignore entre les deux dates.
+
+**LA 2035 D'UN BNC EXONÉRÉ EN TRÉSORERIE.** Confirmés : les honoraires rétrocédés (AC) et les débours (AB) ne se
+déclarent par aucune voie (`cadreCompatible` refuse une dépense sur une case soustractive, une recette la rend
+négative) ; la CSG-CRDS d'une échéance de cotisation non rapprochée est mal signée ; une pièce payée, rejetée puis payée
+de nouveau se compte en partie dans le mauvais exercice (`partsDesPaiements` additionne en valeur absolue). Corrections
+confiées à un agent. Plausibles : les cases « dont » (BT, BZ, BU, BY, BW) et CC, CL, DE, DB ne se saisissent pas — un
+écart certain à la comparaison (MVP-D6), dû à la saisie et non au moteur ; le formulaire PDF de 2026 rempli pour tout
+exercice ; une échéance prévisionnelle comptée deux fois si l'appel réel arrive à une autre date. Six questions pour
+l'expert-comptable : l'assurance emprunteur (BH ou BN) ; la note de frais remboursée l'exercice suivant, datée par son
+remboursement ; la fraction non déductible des repas ; les cotisations facultatives sans plafond ; la majoration de 20 %
+du barème pour un véhicule à hydrogène ; DC en valeur absolue.
+
+**L'IMPORT DU RELEVÉ ET LES LOTS.** Confirmés : deux opérations identiques d'un même fichier, la seconde perdue et le
+contrôle de solde dit cohérent ; le rapprochement automatique ignore le sens du mouvement (un achat rapproché d'une
+recette, qui sort de la 2035) ; la colonne Solde d'un export CIC prise pour les montants ; les débits positifs d'un
+export Crédit Agricole entrés en encaissements ; windows-1252 non géré ; un libellé contenant « solde » pris pour une
+ligne de solde ; un montant illisible importé à 0 ; les règles d'affectation cherchent la pièce à 5 jours quand
+l'appariement en accepte 7 ; « toujours ignorer » sans sens ni refus d'un motif trop commun. Plausibles : un même mois
+importé en PDF puis en CSV, doublé ; le séparateur choisi trop tôt ; le signe moins U+2212 ; « Tout rapprocher » sans
+condition sur le statut. Aggravant : aucun écran ne supprime une ligne du relevé — un import faux est définitif.
+Corrections confiées à deux agents, l'import et les lots.
+
+**CE QUE LA SESSION A FAIT LE JOUR MÊME.** À l'écran de la facture, sans migration : la mention de TVA attendue qui
+manque, ou la franchise citée hors de son statut, retiennent la validation (`refusDeLaMentionTva`, lib/statutTva.ts) ;
+la mention proposée ne retire la phrase de retard que si les paramètres en vigueur disent les pénalités d'un client
+professionnel, ou que le client est un particulier (`sansPhraseDeRetard`) ; une facture à une entreprise sans texte des
+pénalités dans les paramètres ni mot des pénalités dans ses mentions ne se valide pas (`refusSansPenalites`,
+lib/mentionsFigeesVue.ts) ; le brouillon reste enregistrable ; six mutations tuées. Le reste attend ses agents : la
+migration de la facture, l'ouverture de la caisse dans C8, l'import, les lots, la 2035 ; puis la caisse 2 et 3, la
+question FEC22-Q7 et les six questions de l'expert-comptable.
