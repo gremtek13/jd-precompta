@@ -43579,3 +43579,100 @@ pénalités dans les paramètres ni mot des pénalités dans ses mentions ne se 
 lib/mentionsFigeesVue.ts) ; le brouillon reste enregistrable ; six mutations tuées. Le reste attend ses agents : la
 migration de la facture, l'ouverture de la caisse dans C8, l'import, les lots, la 2035 ; puis la caisse 2 et 3, la
 question FEC22-Q7 et les six questions de l'expert-comptable.
+
+### 31/10/2026 — LE FEC D'UN BNC EN TRÉSORERIE À VINGT-DEUX CHAMPS, DERRIÈRE SON DRAPEAU (FEC22C1, LIGNE 26.6, ÉTAPE E)
+
+(Écrit par l'agent architecte sur `0f3701f`, branche `claude/intelligent-goldberg-jv941d`, dans son worktree. NEUTRE : le
+drapeau `CHAMPS_BNC_EXPORTES` est BAISSÉ, le fichier qu'on exporte est celui d'hier au caractère près ; ni la base, ni
+une Edge Function, ni la validation ne changent. Lus avant d'écrire : « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX
+CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E », « LES QUATRE CHAMPS DU FEC D'UN
+BNC EN TRÉSORERIE, EN MODULE (FEC22A) », « LE FEC SUIT L'ARTICLE A47 A-1 », « LA CAISSE : LE FEC ET LES CONTRÔLES (C3B) »,
+« LE FEC, LA PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES » ; lib/fec.ts, lib/champsBncDuFec.ts,
+lib/rattachement.ts et leurs tests en entier. Hors du lot : `numerotationValidee` qui relirait les valeurs figées et
+`demandeDeValidation` qui les enverrait (FEC22c2, après la migration FEC22b, préparée à part).)
+
+**LE DRAPEAU.** `CHAMPS_BNC_EXPORTES` (lib/champsBncDuFec.ts) vaut `null` — baissé — ou PORTE le choix de FEC22-Q1
+(`ChoixChampsBnc`) : il ne se lèvera qu'avec la réponse de l'expert-comptable à FEC22-E2, et l'écran reçoit ainsi le choix
+sans qu'aucune valeur par défaut le décide. Les tests le jouent dans ses deux états par un accesseur
+(`get CHAMPS_BNC_EXPORTES()`, EcrituresTab.test.tsx) ; un test dit qu'il est baissé dans ce lot.
+
+**LA NUMÉROTATION** (`numeroterFec`, lib/fec.ts) reçoit un neuvième paramètre, sans valeur par défaut : `ChampsBncDuFec`
+— `{ etat: 'non_exportes' }` (`CHAMPS_BNC_NON_EXPORTES`), ou `{ etat: 'exportes', entrees }`. Exportés, en trésorerie
+seulement, chaque ligne et chaque à-nouveau porte `champsBnc` (DateRglt, ModeRglt, la nature, NatOp, IdClient), calculé
+par la règle de la sorte de son écriture (`REGLES_DES_SORTES`) : le fichier ne recopie aucune règle, il passe au module la
+source que la clé a désignée et le poste de chaque ligne. Le poste se lit de la catégorie que la 2035 lit pour la source
+(la pièce, l'opération de caisse, le mouvement affecté, la part ventilée dont la catégorie porte le compte de la ligne, la
+« Frais bancaires » des frais d'un mouvement d'encaissements), ou du rôle du plan dont le moteur de la 2035 donne le poste
+(dotations, cotisations, forfait, intérêts et assurance d'un emprunt, arrondis de la liquidation, ventes facturées) ;
+jamais d'un libellé. Une source que la lecture ne rend pas (défensif) : `champsDUneSourceNonLue`, ajoutée au module — le
+choix de FEC22-Q1, la nature que les comptes donnent, aucun client. La `NumerotationFec` dit `champsBnc: 'calcules' |
+'non_calcules'`. Non exportés, ou en engagement : la numérotation d'hier, ni scission ni champ.
+
+**LA SCISSION** (`scinderParMode`). Une pièce payée le même jour par deux modes fait deux écritures : les règlements de la
+date et leurs parts viennent du module (`partsDesReglementsALaDate`, qui remplace la boucle de
+`reglementsDeLaPieceALaDate` — `reglementDUnPaiement`, `cleDuReglement` —, celle-ci rendue inchangée) ; la ligne de banque
+d'un paiement va au règlement de son mouvement, la contrepartie de l'exploitant (`estContrepartieDirigeant`, exportée de
+lib/ecritures.ts, la règle même de la génération) à la poche de l'exploitant ; la charge et sa TVA se sous-répartissent au
+centime selon les parts — le TTC d'abord, la TVA en dernier, qui complète la charge comme `lignesChargeProduitPourPiece` le
+fait d'une date. Le total de chaque ligne est intact : la 2035, la balance, le fichier par compte et par date ne changent
+pas. Chaque écriture scindée s'équilibre ; la part d'une pièce payée en partie que rien ne paie reste seule déséquilibrée,
+comme hier. Le rang du règlement entre dans la clé : le relevé d'abord, jamais l'alphabet des modes.
+
+**LE FICHIER** (`formaterFec(numerotation, lettrage, mode)`, le mode sans valeur par défaut). En trésorerie, une
+numérotation `calcules` s'écrit à vingt-deux colonnes, l'en-tête du VIII, 7° (`ENTETES_FEC_BNC`) : les dix-huit, puis
+DateRglt (AAAAMMJJ, vide sans règlement), ModeRglt, NatOp, IdClient ; sinon dix-huit. En engagement, dix-huit, octet pour
+octet ; une numérotation `calcules` y lève (elle ne peut pas exister). `genererFec` prend le même neuvième paramètre.
+
+**LES ENTRÉES NEUVES** (`EntreesDesChampsBnc`, chacune obligatoire) : le choix, les paiements des pièces, le registre
+ENTIER des encaissements (celui des ventes facturées d'un dossier basculé ; vide ailleurs, où aucune écriture n'en vient),
+les factures et avoirs du dossier (numéro, statut, SIRET figé, source — jamais le nom), les échéances de cotisation
+(`paiement_personnel_le`), les ventilations, les biens, le plan. Une lecture neuve, `lib/champsBncLecture.ts` : les
+factures (`id, dossier_id, numero, statut, tiers_siret, source_de_la_vente`) et les cotisations (`id, dossier_id,
+paiement_personnel_le`), en entier, tout ou rien, chaque ligne confrontée au dossier ; le drapeau baissé, aucun appel.
+`FactureDuClient` perd `tiers_nom` et `EncaissementDuRegistre` `motif` : le module ne les lisait pas, la lecture ne les
+demande plus (les tests les plantent à côté du type). L'onglet Écritures lit, compose, et refuse l'export tant qu'une
+entrée manque (« Les champs d'un BNC en trésorerie ne peuvent pas se calculer (…) ») ; un exercice validé s'exporte
+toujours, relu à dix-huit colonnes. Les préalables de la validation et le banc des captures passent
+`CHAMPS_BNC_NON_EXPORTES` : la numérotation que la base fige reste celle du drapeau baissé.
+
+**PREUVES.** Octet pour octet : les 355 fichiers que produisent les suites du FEC (fec, pisteAudit,
+dossierBasculeBoutEnBout, ventesFactureesDesExports, ecrituresVentesFactureesControles, libellesVf4aQ1, reportDesSoldes,
+controlesDeLaCaisse, les deux suites d'écran d'EcrituresTab), enregistrés avant la modification et après, sont
+identiques. `src/test/fecDgfip.ts` élargi : `structureBncDgfip` (l'en-tête des vingt-deux, vingt-deux champs par ligne,
+DateRglt vide ou une date du calendrier) et `anomaliesBnc` (DateRglt, ModeRglt, IdClient et la nature constants par
+EcritureNum — NatOp peut porter un poste par ligne —, DateRglt et ModeRglt remplis sur toute écriture qui touche le 512, le
+511 ou le 53 hors des à-nouveaux, l'un sans l'autre jamais, IdClient vide ou un identifiant du jeu), chacun éprouvé par un
+défaut planté. `src/lib/fecVingtDeuxChamps.test.ts` (25 cas) : le drapeau baissé ; l'engagement, fichier identique avec
+ou sans entrées, composition d'un dossier basculé comprise ; chaque sorte avec ses quatre valeurs, les deux états du
+choix ; la scission (la note remboursée le jour même, assujettie ou non, deux virements et la poche, le virement mixte et
+le rapprochement, le paiement partiel le jour de la facture, deux mouvements qui ne font qu'un mode, l'ordre de la
+lecture) ; 200 dossiers tirés (graine 20261031) de toutes les sortes, chacun sans faute de structure, d'anomalie, de
+déséquilibre ni de conception, aucun des dix noms plantés dans les quatre champs du fichier entier, chaque valeur dans sa
+liste, le total par compte et par date celui d'hier — planchers : tous les modes, toutes les natures hors l'annulation
+d'une recette, plus de 200 postes, 20 SIREN, 20 numéros, 20 scissions. `champsBncLecture.test.ts` (7), quatre cas d'écran
+(EcrituresTab.test.tsx). Trente-trois mutations, toutes tuées — quatre survivantes au premier passage (la TVA qui ne
+complète plus la charge, la part du premier paiement seule, l'écran qui calcule en engagement, l'oracle qui ne juge pas la
+nature) ont reçu chacune un cas.
+
+**CE QUE FEC22C2 DEVRA FAIRE, APRÈS LA MIGRATION FEC22B.** Les colonnes supposées sur `ecritures_brouillon` :
+`date_reglement` (date), `mode_reglement`, `nature_operation`, `poste_operation` (nul, ou un poste rattaché, sur une ligne
+de classe 6 ou 7), `identification_client`. `demandeDeValidation` enverra, par ligne, `champsBnc` (nul → les cinq nuls) ;
+`numerotationValidee` relira ces colonnes, recomposera NatOp (`nature — poste`) et rendra `calcules` quand l'exercice les
+porte (un exercice validé avant FEC22b : `non_calcules`, dix-huit colonnes, ou vingt-deux vides selon FEC22-Q6) ; les
+préalables recevront les MÊMES entrées que l'export. LE POINT DUR : une ligne scindée n'a qu'un identifiant — le même
+`id` porte deux numéros d'écriture —, qu'une validation ne peut pas figer sur une seule ligne de la base, et
+`defautsDeNumerotation` la verrait deux fois. Recommandé : la génération écrit une ligne de charge (et de TVA) par
+règlement d'une date (lib/ecritures.ts), si bien que le fichier ne scinde plus aucune ligne du brouillon ; à décider au
+lot. Et l'opération découverte après coup (B9 : EcritureDate au 1er janvier N+1, règlement en N) : la numérotation
+cherche les règlements à la date de l'écriture, et n'en trouverait pas — à traiter avec B9.
+
+**CE QUI RESTE INCERTAIN.** Les frais d'un mouvement d'encaissements (poste de la « Frais bancaires ») et l'annulation
+d'une recette ne sont éprouvés que par le module, pas dans un fichier ; un mouvement classé par ses encaissements que la
+lecture du relevé de l'onglet ne rendrait pas prend la règle défensive ; le comportement du logiciel de
+l'expert-comptable (FEC22-E1 à E14) reste à éprouver (FEC22f).
+
+**CE QUE LA SESSION EN A FAIT, LE JOUR MÊME.** Relu, rejoué sur `f41b133` (la correction de l'écran de la facture),
+intégré tel quel : le drapeau baissé, rien ne change pour l'utilisateur. Le point dur de FEC22c2 — une ligne du
+brouillon scindée entre deux écritures quand une pièce est payée le même jour par deux modes — est transmis le jour même
+à l'agent qui prépare la migration FEC22b : une ligne du brouillon ne portera qu'un jeu de valeurs, la génération des
+écritures écrivant une ligne de charge et de TVA par règlement d'une même date (FEC22c2).
