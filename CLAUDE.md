@@ -419,8 +419,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   encore la pièce sur la banque ; à écrire à part, aux comptes 666, 766 et 627 : 31-changeFrais), les auxiliaires des
   à-nouveaux et des soldes reportés, l'affectation du résultat d'une société, la TVA des livraisons de biens, la liasse
   (2033 ou 2050), les exercices décalés.
-- **FEC** : restent les vingt-deux champs d'un BNC en trésorerie et les montants en devise (réponse de
-  l'expert-comptable du cabinet attendue).
+- **FEC** (lignes 26.5 et 26.6, étape (e) ; MVP-D5) : les vingt-deux champs d'un BNC en trésorerie et les montants en
+  devise, CONÇUS le 31/10/2026 — quatre valeurs lues, jamais devinées, jamais un nom de patient ; six lots, FEC22a à
+  FEC22f, dont une migration (FEC22b) à appliquer avant toute validation d'un exercice en trésorerie ; six questions au
+  cabinet (FEC22-Q1 à Q6) et quatorze pour l'expert-comptable (FEC22-E1 à E14) → « LE FEC D'UN BNC EN TRÉSORERIE : LES
+  VINGT-DEUX CHAMPS, LA CONCEPTION ».
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
   APRÈS COUP ».
