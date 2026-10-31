@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
-import { detectColumnMapping, libelleDeLigne, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
+import { detectColumnMapping, parseCsv, type FormatDesMontants } from '../../lib/csv'
+import { decoderUtf8OuWindows1252, type EncodageLu } from '../../lib/decodageTexte'
+import {
+  douteDuSens, interpreterReleve, partagerParMultiplicite, phraseDesEcartees, phraseDesRecouvrements, recouvrements,
+  refusDuReglage, type Recouvrement, type ReglageDeLImport,
+} from '../../lib/importReleve'
 import { extractPdfLignes } from '../../lib/pdfText'
 import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
 import { anneeDe, aujourdHuiAParis, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
@@ -19,7 +24,7 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee, estFigee } from '../../lib/validationExercice'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
-import { controlerSolde, lignesDeSolde } from '../../lib/soldeReleve'
+import { controlerSolde, phraseDesSoldes } from '../../lib/soldeReleve'
 import { chargerRelevesIncoherents, enregistrerControleReleve } from '../../lib/controlesReleves'
 import {
   analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE_RAPPROCHEMENT,
@@ -130,10 +135,6 @@ function EcartDeLaValidation({ resume, paires }: {
       </ul>
     </details>
   )
-}
-
-function signatureLigne(l: { date: string; libelle: string; montant: number }): string {
-  return `${l.date}|${l.libelle}|${l.montant.toFixed(2)}`
 }
 
 const AUCUNE_PIECE_FIGEE: LecturePiecesFigees = { figees: new Map(), avecEcritureValidee: new Set(), motif: null }
@@ -2440,6 +2441,56 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
 // (la première) ou d'avant la dernière écriture (une relecture) : tout le fichier paraîtrait nouveau. L'import attend la
 // fin de la lecture, et le dit.
 //
+// Un relevé dont la période recouvre celle d'un relevé déjà importé se confirme avant d'écrire (`lib/importReleve.ts`,
+// `recouvrements`) : le même mois en PDF puis en CSV n'a pas les mêmes libellés, et le dédoublonnage ne le reconnaît pas.
+function confirmerRecouvrement(liste: readonly Recouvrement[]): boolean {
+  const phrase = phraseDesRecouvrements(liste)
+  return phrase === null || window.confirm(`${phrase}\n\nImporter quand même ?`)
+}
+
+const AVERTISSEMENT = { color: 'var(--color-warning)', fontSize: '0.875rem' } as const
+
+// L'aperçu des montants INTERPRÉTÉS, signés, des premières lignes, à côté des lignes brutes : ce que l'import écrira, et
+// non ce que le fichier porte. Un export Crédit Agricole laissé en montant signé montrait ses lignes brutes justes, et
+// faisait entrer chaque débit en encaissement ; ici le premier débit se lit « +45,20 € », avant le clic.
+function ApercuInterprete({ interpretation, phraseSoldes, doute, recouvrement }: {
+  interpretation: ReturnType<typeof interpreterReleve>; phraseSoldes: string | null; doute: string | null; recouvrement: string | null
+}) {
+  const { lignes, operations, soldes, ecartees } = interpretation
+  const debits = operations.filter((o) => o.montant < 0)
+  const credits = operations.filter((o) => o.montant > 0)
+  const somme = (l: readonly { montant: number }[]) => l.reduce((s, o) => s + o.montant, 0)
+  const phraseEcartees = phraseDesEcartees(ecartees)
+  return (
+    <div className="field">
+      <label>Ce que l’import lira</label>
+      <p className="muted" style={{ marginTop: 0 }}>
+        {`${operations.length} opération(s) : ${debits.length} débit(s) pour ${formatMoney(somme(debits))}, `
+          + `${credits.length} crédit(s) pour ${formatMoney(somme(credits))} ; ${soldes.length} ligne(s) de solde`
+          + (phraseEcartees ? ` ; ${phraseEcartees}` : '') + '.'}
+      </p>
+      {doute && <p style={AVERTISSEMENT}>{doute}</p>}
+      {phraseSoldes && <p style={AVERTISSEMENT}>{phraseSoldes}</p>}
+      {recouvrement && <p style={AVERTISSEMENT}>{recouvrement}</p>}
+      <div className="table-scroll" style={{ marginBottom: 6, border: '1px solid var(--color-border)', borderRadius: 8 }}>
+        <table>
+          <thead><tr><th>Date</th><th>Libellé</th><th>Montant lu</th><th>Ligne</th></tr></thead>
+          <tbody>
+            {lignes.slice(0, 6).map((l) => (
+              <tr key={l.index}>
+                <td>{l.nature === 'ecartee' ? '—' : formatDate(l.date)}</td>
+                <td>{l.libelle}</td>
+                <td style={{ textAlign: 'right' }}>{l.nature === 'ecartee' ? '—' : formatMoney(l.montant)}</td>
+                <td>{l.nature === 'ecartee' ? `Écartée : ${l.raison}` : l.nature === 'solde' ? 'Solde, non importée' : l.montant < 0 ? 'Débit' : 'Crédit'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // `frontiere` : un mouvement daté d'un exercice validé ne s'importe plus — la base refuserait le lot entier. Il est
 // écarté et compté, comme un doublon, et l'alerte de fin d'import le dit : un relevé qui en porte, c'est un exercice
 // validé auquel il manque des mouvements, et rien ne peut plus les y ajouter.
@@ -2451,10 +2502,16 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   const [rows, setRows] = useState<string[][] | null>(null)
   const [colDate, setColDate] = useState(0)
   const [colLibelle, setColLibelle] = useState(1)
-  const [mode, setMode] = useState<'signe' | 'debit_credit'>('signe')
+  const [mode, setMode] = useState<FormatDesMontants>('signe')
   const [colMontant, setColMontant] = useState(2)
   const [colDebit, setColDebit] = useState(2)
   const [colCredit, setColCredit] = useState(3)
+  // La colonne du solde courant (export CIC ou Crédit Mutuel), que la détection reconnaît à son en-tête ou à son
+  // arithmétique : elle n'est jamais un montant, et l'import se refuse si on la choisit comme tel (`refusDuReglage`).
+  const [colSolde, setColSolde] = useState<number | null>(null)
+  // Ce que la détection n'a pas pu établir, et l'encodage lu : dits au-dessus de l'aperçu.
+  const [doute, setDoute] = useState<string | null>(null)
+  const [encodage, setEncodage] = useState<EncodageLu | null>(null)
   const [hasHeader, setHasHeader] = useState(true)
   const [importing, setImporting] = useState(false)
   // Verrou d'exécution des deux imports : `importing` est un état React, qui ne prend effet qu'au
@@ -2496,25 +2553,54 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   async function handleFile(blob: Blob, nom: string) {
     setError(null)
     setSourceFileName(nom)
-    const text = await blob.text()
-    const parsed = parseCsv(text)
+    // Les OCTETS, décodés en UTF-8 strict, sinon en windows-1252 (`lib/decodageTexte.ts`) : `blob.text()` lisait en UTF-8
+    // indulgent, et le « € » d'un export windows-1252 (octet 0x80) devenait U+FFFD — montant illisible, ligne écartée,
+    // libellés accentués abîmés.
+    const { texte, encodage: lu } = decoderUtf8OuWindows1252(new Uint8Array(await blob.arrayBuffer()))
+    const parsed = parseCsv(texte)
     if (parsed.length === 0) {
       setError('Fichier vide ou illisible.')
       return
     }
     setRows(parsed)
+    setEncodage(lu)
 
-    // Détection automatique du mapping de colonnes à partir du contenu — reste modifiable ensuite
-    // si la banque a un format inhabituel que la détection n'aurait pas bien reconnu.
+    // Détection automatique du mapping de colonnes à partir du contenu et de l'en-tête — reste modifiable ensuite
+    // si la banque a un format inhabituel que la détection n'aurait pas bien reconnu. Le format (une colonne signée, ou
+    // Débit / Crédit) et la colonne du solde courant en font partie : laissé en montant signé, un export Crédit Agricole
+    // (« Débit euros;Crédit euros », débits positifs) faisait entrer chaque débit comme un encaissement.
     const detected = detectColumnMapping(parsed)
     setColDate(detected.colDate)
     setColMontant(detected.colMontant)
     setColLibelle(detected.colLibelle)
     setHasHeader(detected.hasHeader)
-    setMode('signe')
+    setMode(detected.format)
+    setColDebit(detected.colDebit)
+    setColCredit(detected.colCredit)
+    setColSolde(detected.colSolde)
+    setDoute(detected.doute)
   }
 
-  const dataRows = rows ? (hasHeader ? rows.slice(1) : rows) : []
+  const dataRows = useMemo(() => (rows ? (hasHeader ? rows.slice(1) : rows) : []), [rows, hasHeader])
+  const reglage: ReglageDeLImport = { colDate, colLibelle, hasHeader, format: mode, colMontant, colDebit, colCredit, colSolde }
+  // La même interprétation pour l'aperçu et pour l'import : ce que l'écran montre est ce qui s'écrit.
+  const interpretation = useMemo(
+    () => (rows ? interpreterReleve(dataRows, { colDate, colLibelle, hasHeader, format: mode, colMontant, colDebit, colCredit, colSolde }) : null),
+    [rows, dataRows, colDate, colLibelle, hasHeader, mode, colMontant, colDebit, colCredit, colSolde],
+  )
+  const refusReglage = rows ? refusDuReglage(reglage) : null
+  // Avant l'import : ce qui s'importerait vraiment (le relevé en base retiré, par multiplicité), et les relevés déjà
+  // importés dont la période le recouvre.
+  const recouvrementsCsv = useMemo(() => {
+    if (!interpretation) return []
+    const { nouvelles } = partagerParMultiplicite(interpretation.operations, lignesExistantes)
+    return recouvrements(nouvelles.map((o) => o.date), lignesExistantes, sourceFileName)
+  }, [interpretation, lignesExistantes, sourceFileName])
+  const recouvrementsPdf = useMemo(() => {
+    if (!pdfRows) return []
+    const { nouvelles } = partagerParMultiplicite(pdfRows.filter((r) => !r.estSolde), lignesExistantes)
+    return recouvrements(nouvelles.map((r) => r.date), lignesExistantes, sourceFileName)
+  }, [pdfRows, lignesExistantes, sourceFileName])
   // Les lignes peuvent avoir des longueurs différentes selon les banques (ex. ligne de solde plus
   // courte que les lignes d'opérations) — on prend le plus grand nombre de colonnes observé.
   const nbColonnes = rows ? rows.reduce((max, r) => Math.max(max, r.length), 0) : 0
@@ -2603,22 +2689,16 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const operations = pdfRows.filter((r) => !r.estSolde)
       const soldesDesignes = pdfRows.filter((r) => r.estSolde).map(({ date, montant }) => ({ date, montant }))
 
-      const signaturesVues = new Set(lignesExistantes.map(signatureLigne))
-      const aInserer: typeof pdfRows = []
-      let doublons = 0
-      let figees = 0
-      for (const r of operations) {
-        const sig = signatureLigne(r)
-        if (signaturesVues.has(sig)) { doublons++; continue }
-        signaturesVues.add(sig)
-        if (estFigee(r.date, frontiere)) { figees++; continue }
-        aInserer.push(r)
-      }
+      // Par multiplicité (`partagerParMultiplicite`) : deux opérations identiques du même relevé s'importent toutes deux.
+      const { nouvelles, dejaPresentes: doublons } = partagerParMultiplicite(operations, lignesExistantes)
+      const aInserer = nouvelles.filter((r) => !estFigee(r.date, frontiere))
+      const figees = nouvelles.length - aInserer.length
       if (aInserer.length === 0) {
         throw new Error(figees > 0 && frontiere
           ? phraseLignesFigees(figees, frontiere, true, doublons)
           : "Ce relevé semble déjà importé (mêmes date, libellé et montant).")
       }
+      if (!confirmerRecouvrement(recouvrements(aInserer.map((r) => r.date), lignesExistantes, sourceFileName))) return
 
       const { error } = await supabase.from('lignes_bancaires').insert(
         aInserer.map((r) => ({
@@ -2665,69 +2745,35 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
     setImporting(true)
     setError(null)
     try {
-      const mapping = { colDate, colMontant, colLibelle, hasHeader }
+      if (!interpretation) return
+      // Un réglage qui ferait entrer de faux montants (le solde courant pris pour un montant) se refuse, et le dit.
+      const refus = refusDuReglage(reglage)
+      if (refus) throw new Error(refus)
 
       // Un relevé ne contient pas que des opérations : il porte aussi le solde d'ouverture et le
       // solde de clôture. Importées comme des mouvements, ces lignes faussent tous les totaux et ne
       // pourront jamais être rapprochées. Elles sont écartées de l'import — et servent juste après à
-      // contrôler le relevé lui-même.
-      const indicesSolde = new Set(lignesDeSolde(dataRows, mapping).map((l) => l.index))
-      const soldes: { date: string; montant: number }[] = []
-
-      const toInsert: { dossier_id: string; date: string; libelle: string; montant: number; statut: StatutLigneBancaire; source_fichier: string | null; libelle_brut: string | null }[] = []
-      let ignorees = 0
-      for (const [index, row] of dataRows.entries()) {
-        const date = parseDateBancaire(row[colDate] ?? '')
-        // Certaines banques laissent la colonne Libellé vide sur une partie des lignes (débits et
-        // crédits dans deux colonnes distinctes, par exemple) : `libelleDeLigne` reconstitue alors le
-        // texte depuis les autres colonnes, parce qu'un mouvement sans libellé est invisible pour la
-        // recherche, les règles « toujours ignorer » et la détection de récurrence. Le générique ne
-        // sert plus que si la ligne entière est vide en dehors de la date et du montant. La ligne
-        // brute reste gardée à part (libelle_brut) pour pouvoir remonter à la source.
-        // On ne rejette la ligne que si la date ou le montant, seuls champs réellement nécessaires,
-        // sont illisibles.
-        const libelle = libelleDeLigne(row, mapping) || 'Mouvement bancaire'
-        let montant: number | null = null
-        if (mode === 'signe') {
-          montant = parseMontantBancaire(row[colMontant] ?? '')
-        } else {
-          const debit = parseMontantBancaire(row[colDebit] ?? '') ?? 0
-          const credit = parseMontantBancaire(row[colCredit] ?? '') ?? 0
-          montant = credit - Math.abs(debit)
-        }
-        if (!date || montant == null) {
-          ignorees++
-          continue
-        }
-        if (indicesSolde.has(index)) {
-          soldes.push({ date, montant })
-          continue
-        }
-        toInsert.push({
-          dossier_id: dossierId, date, libelle, montant, statut: statutPourLibelle(libelle, regles),
-          source_fichier: sourceFileName, libelle_brut: row.join(' | '),
-        })
-      }
+      // contrôler le relevé lui-même. Les lignes dont la date ou le montant ne se lit pas sont écartées et
+      // comptées, leur raison dite (`interpreterReleve`) : un montant illisible ne vaut jamais zéro.
+      const { operations, soldes, ecartees } = interpretation
+      const toInsert = operations.map((o) => ({
+        dossier_id: dossierId, date: o.date, libelle: o.libelle, montant: o.montant, statut: statutPourLibelle(o.libelle, regles),
+        source_fichier: sourceFileName, libelle_brut: o.brut,
+      }))
 
       // Un relevé déposé deux fois (nouvelle tentative après un doute, mauvais fichier repris par
       // erreur...) dupliquerait sinon silencieusement chaque mouvement — même signature (date,
-      // libellé, montant) qu'une ligne déjà en base, ou répétée dans ce même fichier.
-      const signaturesVues = new Set(lignesExistantes.map(signatureLigne))
-      const aInserer: typeof toInsert = []
-      let doublons = 0
-      let figees = 0
-      for (const ligne of toInsert) {
-        const sig = signatureLigne(ligne)
-        if (signaturesVues.has(sig)) { doublons++; continue }
-        signaturesVues.add(sig)
-        if (estFigee(ligne.date, frontiere)) { figees++; continue }
-        aInserer.push(ligne)
-      }
+      // libellé, montant) qu'une ligne déjà en base. Par MULTIPLICITÉ, jamais à l'intérieur du fichier :
+      // deux opérations identiques du même relevé (deux passages à la pharmacie le même jour) s'importent toutes deux.
+      const { nouvelles, dejaPresentes: doublons } = partagerParMultiplicite(toInsert, lignesExistantes)
+      const aInserer = nouvelles.filter((l) => !estFigee(l.date, frontiere))
+      const figees = nouvelles.length - aInserer.length
       if (aInserer.length === 0) {
         throw new Error(figees > 0 && frontiere
           ? phraseLignesFigees(figees, frontiere, true, doublons)
           : doublons > 0 ? "Ce relevé semble déjà importé (mêmes date, libellé et montant)." : "Aucune ligne exploitable — vérifie le mapping des colonnes.")
       }
+      if (!confirmerRecouvrement(recouvrements(aInserer.map((l) => l.date), lignesExistantes, sourceFileName))) return
 
       const { error } = await supabase.from('lignes_bancaires').insert(aInserer)
       if (error) throw error
@@ -2738,8 +2784,11 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const messages = [`${aInserer.length} ligne(s) importée(s)`]
       if (doublons > 0) messages.push(`${doublons} déjà présente(s), ignorée(s)`)
       if (figees > 0 && frontiere) messages.push(`${figees} datée(s) d’un exercice validé, non importée(s)`)
-      if (ignorees > 0) messages.push(`${ignorees} ignorée(s) (date/montant illisible)`)
+      const phraseEcartees = phraseDesEcartees(ecartees)
+      if (phraseEcartees) messages.push(phraseEcartees)
       if (soldes.length > 0) messages.push(`${soldes.length} ligne(s) de solde écartée(s)`)
+      // Une ou plus de deux lignes de solde : le relevé n'est pas vérifié, et l'alerte le dit (zéro, l'aperçu l'a dit).
+      const phraseSoldes = soldes.length > 0 ? phraseDesSoldes(soldes.length) : null
 
       // Le contrôle que les lignes de solde rendent possible : solde d'ouverture + mouvements doit
       // donner le solde de clôture. Quand ça ne tombe pas juste, le relevé est incomplet — il vaut
@@ -2754,8 +2803,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const alerte = controle && !controle.coherent
         ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controle.soldeInitial.toFixed(2)} € + mouvements ${controle.sommeMouvements.toFixed(2)} € = ${controle.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controle.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controle.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
         : ''
-      if (doublons > 0 || ignorees > 0 || soldes.length > 0 || figees > 0 || alerte) {
-        window.alert(messages.join(', ') + '.' + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '') + alerte)
+      if (doublons > 0 || phraseEcartees || soldes.length > 0 || figees > 0 || alerte) {
+        window.alert(messages.join(', ') + '.' + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '')
+          + (phraseSoldes ? `\n\n${phraseSoldes}` : '') + alerte)
       }
     } catch (err) {
       setError(messageErreur(err, "L'import a échoué."))
@@ -2822,7 +2872,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
         <>
           <p className="muted" style={{ marginTop: -4 }}>
             Mapping détecté automatiquement à partir du fichier — vérifie l'aperçu ci-dessous et corrige si besoin.
+            {encodage === 'windows-1252' && ' Fichier lu en windows-1252 (ses octets ne sont pas de l’UTF-8 : l’encodage des logiciels français sous Windows).'}
           </p>
+          {doute && <p style={AVERTISSEMENT}>{doute}</p>}
           <div className="field">
             <label>
               <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} style={{ marginRight: 6 }} />
@@ -2887,7 +2939,25 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
             </div>
           )}
 
-          <button className="btn btn-primary" onClick={handleImport} disabled={importing || lectureIncomplete !== null || lectureEnCours}>
+          <div className="field">
+            <label htmlFor="colSolde">Colonne du solde courant (jamais importée comme montant)</label>
+            <select id="colSolde" value={colSolde ?? ''} onChange={(e) => setColSolde(e.target.value === '' ? null : +e.target.value)}>
+              <option value="">Aucune</option>
+              {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
+            </select>
+          </div>
+
+          {interpretation && (
+            <ApercuInterprete
+              interpretation={interpretation}
+              phraseSoldes={phraseDesSoldes(interpretation.soldes.length)}
+              doute={douteDuSens(reglage, interpretation.operations)}
+              recouvrement={phraseDesRecouvrements(recouvrementsCsv)}
+            />
+          )}
+          {refusReglage && <p className="error-text">{refusReglage}</p>}
+
+          <button className="btn btn-primary" onClick={handleImport} disabled={importing || lectureIncomplete !== null || lectureEnCours || refusReglage !== null}>
             {importing ? 'Import…' : `Importer ${dataRows.length} ligne(s)`}
           </button>
         </>
@@ -2948,6 +3018,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
                   return ` ${coches} solde désigné : il en faut exactement deux (ouverture et clôture) pour que la vérification soit possible.`
                 })()}
               </p>
+              {recouvrementsPdf.length > 0 && <p style={AVERTISSEMENT}>{phraseDesRecouvrements(recouvrementsPdf)}</p>}
               {/* Repliée en fiches sous 860 pixels de cadre (08/10/2026) : le libellé (180 pixels au moins), le montant et « Retirer »
                   passaient derrière un défilement latéral, et la ligne qu'on corrige n'était jamais entière à l'écran — sur téléphone,
                   et volet de droite ouvert dans le panneau central. Le cadre a déjà son trait : les fiches gardent le jeu de 12 pixels

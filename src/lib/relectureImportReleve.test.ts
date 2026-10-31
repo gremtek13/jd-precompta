@@ -2,7 +2,8 @@
 // Chaque test décrit le comportement ATTENDU ; il est rouge tant que le défaut vit. Ils sont marqués `it.fails` pour que
 // la suite reste verte : le jour où le défaut est corrigé, `it.fails` passe au rouge et rappelle de le rendre `it`.
 import { describe, expect, it } from 'vitest'
-import { detectColumnMapping, parseCsv, parseMontantBancaire } from './csv'
+import { detectColumnMapping, montantDeLigne, parseCsv, parseDateBancaire, parseMontantBancaire } from './csv'
+import { decoderUtf8OuWindows1252 } from './decodageTexte'
 import { controlerSolde, lignesDeSolde } from './soldeReleve'
 import { analyserAppariements, planRapprochementAutomatique } from './appariementBanque'
 import { justificatifPossible, planAffectationParRegles } from './reglesAffectation'
@@ -52,21 +53,19 @@ describe('Relecture — la détection des colonnes', () => {
     '06/01/2025;06/01/2025;-89,00;;PRLV SEPA ORANGE;1 985,80',
     '07/01/2025;07/01/2025;;60,00;VIR M DUPONT;2 045,80',
   ].join('\n')
-  it.fails('ne prend pas la colonne du solde courant pour celle des montants', () => {
-    const m = detectColumnMapping(parseCsv(CIC))
-    expect(m.colMontant).not.toBe(5)
-  })
-  it('(constat) prend bien la colonne Solde, et le premier mouvement vaudrait 1 954,80 €', () => {
+  // Corrigé le 31/10/2026 : l'en-tête Solde fait foi, et le format Débit / Crédit est réglé par la détection.
+  it('ne prend pas la colonne du solde courant pour celle des montants', () => {
     const rows = parseCsv(CIC)
     const m = detectColumnMapping(rows)
-    expect(m.colMontant).toBe(5)
-    expect(parseMontantBancaire(rows[1][m.colMontant])).toBe(1954.8)
+    expect(m.colMontant).not.toBe(5)
+    expect(m).toMatchObject({ format: 'debit_credit', colDebit: 2, colCredit: 3, colSolde: 5 })
+    expect(montantDeLigne(rows[1], m)).toEqual({ montant: -45.2 })
   })
 
   // Export Crédit Agricole : « Date;Libellé;Débit euros;Crédit euros », débits POSITIFS dans leur colonne. La détection
-  // ne propose jamais « Deux colonnes » (handleFile remet `mode` à 'signe') : laissée telle quelle, la colonne Débit est
-  // prise comme un montant signé, et chaque débit entre comme un ENCAISSEMENT ; les crédits sont « ignorés ».
-  it.fails('ne laisse pas un fichier Débit / Crédit en « montant signé » : un débit positif n’est pas une recette', () => {
+  // ne proposait jamais « Deux colonnes » (handleFile remettait `mode` à 'signe') : laissée telle quelle, la colonne Débit
+  // était prise comme un montant signé, et chaque débit entrait comme un ENCAISSEMENT ; les crédits étaient « ignorés ».
+  it('ne laisse pas un fichier Débit / Crédit en « montant signé » : un débit positif n’est pas une recette', () => {
     const rows = parseCsv([
       'Date;Libellé;Débit euros;Crédit euros',
       '02/01/2025;CB PHARMACIE;45,20;',
@@ -74,8 +73,11 @@ describe('Relecture — la détection des colonnes', () => {
       '07/01/2025;VIR CPAM;;120,00',
     ].join('\n'))
     const m = detectColumnMapping(rows)
-    // En mode signé (le seul que la détection règle), le débit de 45,20 € entre en +45,20.
-    expect(parseMontantBancaire(rows[1][m.colMontant])).toBeLessThan(0)
+    // L'assertion d'origine lisait `colMontant` en montant signé : le format étant désormais réglé, le montant se lit
+    // par `montantDeLigne`, la seule interprétation de l'aperçu comme de l'import.
+    expect(m.format).toBe('debit_credit')
+    expect(montantDeLigne(rows[1], m)).toEqual({ montant: -45.2 })
+    expect(montantDeLigne(rows[3], m)).toEqual({ montant: 120 })
   })
 })
 
@@ -90,14 +92,14 @@ describe('Relecture — les lignes de solde', () => {
     '31/03/2025;SOLDE CREDITEUR AU 31/03/2025;1 020,00',
   ].join('\n'))
   const mapping = { colDate: 0, colLibelle: 1, colMontant: 2, hasHeader: false }
-  it.fails('ne prend pas pour un solde un virement dont le libellé dit « solde »', () => {
+  // Corrigé le 31/10/2026 : seul ce qui a la forme d'un solde en est un (`aLaFormeDUnSolde`).
+  it('ne prend pas pour un solde un virement dont le libellé dit « solde »', () => {
     expect(lignesDeSolde(rows, mapping).map((l) => l.index)).toEqual([0, 3])
   })
-  it('(constat) trois soldes : la recette est écartée, et le contrôle ne tourne plus', () => {
+  it('et le relevé, ses deux vrais soldes reconnus, se vérifie avec la recette', () => {
     const indices = lignesDeSolde(rows, mapping).map((l) => l.index)
-    expect(indices).toEqual([0, 1, 3])
-    const soldes = indices.map((i) => ({ date: '2025-03-0' + (i + 1), montant: parseMontantBancaire(rows[i][2])! }))
-    expect(controlerSolde(soldes, [{ montant: -40 }])).toBeNull()
+    const soldes = indices.map((i) => ({ date: parseDateBancaire(rows[i][0])!, montant: parseMontantBancaire(rows[i][2])! }))
+    expect(controlerSolde(soldes, [{ montant: 60 }, { montant: -40 }])).toMatchObject({ coherent: true })
   })
 })
 
@@ -106,9 +108,12 @@ describe('Relecture — l’encodage du fichier', () => {
   // (courant chez les banques françaises) qui écrit « € » dans ses montants (octet 0x80) le voit devenir U+FFFD — et
   // `parseMontantBancaire` ne retire que U+20AC : le montant devient illisible, la ligne est « ignorée ». BalanceCard
   // et l'import des contacts décodent, eux, en UTF-8 strict avec repli windows-1252.
-  it.fails('lit le montant d’une ligne d’un export windows-1252 qui écrit le symbole euro', async () => {
+  // Corrigé le 31/10/2026 : `handleFile` décode les octets par `decoderUtf8OuWindows1252`, la règle de la balance reprise.
+  // Le test d'origine décodait par `blob.text()`, le défaut lui-même : il décode désormais comme l'import.
+  it('lit le montant d’une ligne d’un export windows-1252 qui écrit le symbole euro', async () => {
     const octets = Uint8Array.from([...'05/03/2025;PHARMACIE;-12,50 '].map((c) => c.charCodeAt(0)).concat([0x80]))
-    const texte = await new Blob([octets]).text()
+    const { texte, encodage } = decoderUtf8OuWindows1252(new Uint8Array(await new Blob([octets]).arrayBuffer()))
+    expect(encodage).toBe('windows-1252')
     const rows = parseCsv(texte)
     expect(parseMontantBancaire(rows[0][2])).toBe(-12.5)
   })

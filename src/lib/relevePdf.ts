@@ -1,4 +1,5 @@
 import { parseDateBancaire, parseMontantBancaire } from './csv'
+import { aLaFormeDUnSolde } from './soldeReleve'
 
 // Lecture des opérations d'un relevé bancaire déjà converti en lignes (voir `extractPdfLignes`).
 // Séparé de `pdfText.ts` parce que celui-ci charge pdf.js, qui touche au DOM dès l'import et rend
@@ -120,7 +121,8 @@ export function parseLignesFromPdf(
     // Un relevé ne contient pas que des opérations : il porte aussi les soldes d'ouverture et de
     // clôture, qui ressemblent à une opération (une date, un montant en fin de ligne) sans en être
     // une. Elles sont écartées du flux normal — et récupérées à part pour contrôler le relevé.
-    const estSolde = /SOLDE/i.test(line)
+    // La FORME d'un solde, pas le seul mot (`aLaFormeDUnSolde`) : « VIR M DUPONT SOLDE NOTE HONORAIRES » est une recette.
+    const estSolde = aLaFormeDUnSolde(line)
     if (inclure !== 'tous' && estSolde !== (inclure === 'soldes')) continue
 
     const montantMatch = line.match(montantRegex)

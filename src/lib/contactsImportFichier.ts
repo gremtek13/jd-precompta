@@ -50,7 +50,7 @@ const reenregistrer = (espace: EspaceVentes) => (espace === 'client'
 // Une marque d'ordre (UTF-8, UTF-16 LE ou BE) DÉCIDE : le fichier se lit dans l'encodage qu'elle annonce, en mode strict — des
 // octets qui le démentent font refuser le fichier, jamais lire de travers. Sans marque : l'UTF-8 strict, qui LÈVE sur une
 // séquence invalide, sinon windows-1252, l'encodage des logiciels français sous Windows, qui ne peut pas échouer. C'est la
-// règle du `decoder` de `BalanceCard.tsx` (le jumeau, laissé tel quel), à laquelle s'ajoutent les marques : un tableur qui
+// règle de `lib/decodageTexte.ts` (le jumeau, laissé tel quel), à laquelle s'ajoutent les marques : un tableur qui
 // enregistre en « Unicode » écrit de l'UTF-16 avec sa marque.
 export type EncodageDuFichier = 'utf-8-marque' | 'utf-16le' | 'utf-16be' | 'utf-8' | 'windows-1252'
 

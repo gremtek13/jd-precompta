@@ -177,7 +177,7 @@ describe('detectColumnMapping', () => {
       ['05/09/2026', 'LOYER CABINET', '-2 300,00'],
       ['09/09/2026', 'ACHAT MATERIEL MEDICAL', '-4 780,50'],
     ])
-    expect(mapping).toEqual({ colDate: 0, colMontant: 2, colLibelle: 1, hasHeader: true })
+    expect(mapping).toMatchObject({ colDate: 0, colMontant: 2, colLibelle: 1, hasHeader: true, format: 'signe', colSolde: null, doute: null })
   })
 
   it('ne dépend pas de l’ordre des colonnes', () => {

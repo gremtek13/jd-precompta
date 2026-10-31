@@ -5546,7 +5546,8 @@ describe('BanqueTab — sous le plan du dossier', () => {
   })
 })
 
-// RELECTURE DE L'IMPORT (31/10/2026) — des défauts PROUVÉS, rien de corrigé : `it.fails` tant qu'ils vivent.
+// RELECTURE DE L'IMPORT (31/10/2026) — des défauts prouvés par la relecture (`it.fails`), CORRIGÉS le même jour : les tests
+// sont devenus ordinaires. Les formats de banques sont des jeux FICTIFS.
 describe('Relecture — import d’un relevé CSV', () => {
   const alertes: string[] = []
   beforeEach(() => {
@@ -5554,15 +5555,16 @@ describe('Relecture — import d’un relevé CSV', () => {
     vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
   })
   const insere = () => faux.insertions.filter((i) => i.table === 'lignes_bancaires').flatMap((i) => i.valeur as unknown as Record<string, unknown>[])
-  async function deposer(csv: string, lignes: number) {
+  const controles = () => faux.upserts.filter((u) => u.table === 'controles_releves_bancaires').map((u) => u.valeur)
+  async function deposer(csv: string | Uint8Array<ArrayBuffer>, lignes: number, nom = 'releve-mars.csv') {
     const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
-    await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], 'releve-mars.csv', { type: 'text/csv' })] } }) })
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], nom, { type: 'text/csv' })] } }) })
     return screen.findByRole('button', { name: new RegExp(`Importer ${lignes} ligne\\(s\\)`) })
   }
 
-  // Deux achats identiques le même jour (deux passages à la pharmacie, deux frais de 1,00 €) ont la même signature
-  // (date, libellé, montant) : le second est pris pour un DOUBLON du premier, DANS LE MÊME FICHIER, et ne s'importe pas.
-  // Le contrôle de solde porte sur `toInsert` (les deux) : il se dit cohérent, et s'enregistre tel.
+  // Deux achats identiques le même jour (deux passages à la pharmacie) ont la même signature (date, libellé, montant) :
+  // le second était pris pour un DOUBLON du premier, DANS LE MÊME FICHIER, et le contrôle de solde, qui porte sur toutes
+  // les lignes du fichier, enregistrait cohérent un relevé auquel il manquait 12,50 €.
   const CSV_JUMEAUX = [
     'Date;Libellé;Montant',
     '01/03/2025;SOLDE CREDITEUR AU 28/02/2025;1 000,00',
@@ -5570,45 +5572,178 @@ describe('Relecture — import d’un relevé CSV', () => {
     '05/03/2025;CB PHARMACIE DU CENTRE;-12,50',
     '31/03/2025;SOLDE CREDITEUR AU 31/03/2025;975,00',
   ].join('\n')
-  it.fails('importe les deux opérations identiques d’un même relevé', async () => {
+  it('importe les deux opérations identiques d’un même relevé, et le contrôle porte sur ce qui entre', async () => {
     reinitialiser()
     faux.lignes = []
     rendre()
     const bouton = await deposer(CSV_JUMEAUX, 4)
     await act(async () => { bouton.click() })
     expect(insere()).toHaveLength(2)
+    expect(alertes).toEqual([expect.stringContaining('2 ligne(s) importée(s), 2 ligne(s) de solde écartée(s).')])
+    expect(controles()).toEqual([expect.objectContaining({ coherent: true, somme_mouvements: -25 })])
   })
-  it('(constat) n’en importe qu’une, et enregistre le relevé comme cohérent', async () => {
+  it('n’en importe qu’une quand le relevé en porte déjà une : n − m, par multiplicité', async () => {
     reinitialiser()
-    faux.lignes = []
+    faux.lignes = [ligneDeTest({ id: 'deja', date: '2025-03-05', libelle: 'CB PHARMACIE DU CENTRE', montant: -12.5, source_fichier: 'releve-mars.csv' })]
     rendre()
     const bouton = await deposer(CSV_JUMEAUX, 4)
     await act(async () => { bouton.click() })
     expect(insere()).toHaveLength(1)
-    // L'alerte dit « déjà présente », et pas « ne boucle pas » : le contrôle a compté la ligne qui n'est pas entrée.
     expect(alertes).toEqual([expect.stringContaining('1 ligne(s) importée(s), 1 déjà présente(s), ignorée(s), 2 ligne(s) de solde écartée(s).')])
-    expect(alertes[0]).not.toMatch(/ne boucle pas/)
+  })
+  it('et un relevé redéposé dont chaque jumeau est déjà en base ne s’importe pas', async () => {
+    reinitialiser()
+    const jumeau = { date: '2025-03-05', libelle: 'CB PHARMACIE DU CENTRE', montant: -12.5, source_fichier: 'releve-mars.csv' }
+    faux.lignes = [ligneDeTest({ id: 'a', ...jumeau }), ligneDeTest({ id: 'b', ...jumeau })]
+    rendre()
+    const bouton = await deposer(CSV_JUMEAUX, 4)
+    await act(async () => { bouton.click() })
+    expect(insere()).toHaveLength(0)
+    expect(screen.getByText('Ce relevé semble déjà importé (mêmes date, libellé et montant).')).toBeTruthy()
   })
 
-  // En « Deux colonnes (Débit / Crédit) », un montant illisible ou absent vaut 0 (`?? 0`) au lieu d'écarter la ligne :
-  // la ligne s'importe à 0,00 €, et ne se compte pas parmi les « ignorées ». Ici « 1 234,56 EUR ».
-  it.fails('n’importe pas à zéro euro une ligne dont le débit est illisible', async () => {
+  // En « Deux colonnes (Débit / Crédit) », un montant illisible ou absent valait 0 (`?? 0`) : la ligne s'importait à
+  // 0,00 €, sans alerte. Ici « 1 234,56 EUR » : la ligne est écartée, et comptée.
+  it('n’importe pas à zéro euro une ligne dont le débit est illisible : elle est écartée et comptée', async () => {
     reinitialiser()
     faux.lignes = []
     rendre()
     const bouton = await deposer('Date;Libellé;Débit;Crédit\n05/03/2025;PRLV LOYER CABINET;1 234,56 EUR;\n07/03/2025;VIR CPAM;;120,00\n', 2)
+    // La détection règle déjà les deux colonnes ; le choix explicite ne change rien.
+    expect((document.getElementById('mode') as HTMLSelectElement).value).toBe('debit_credit')
+    expect(screen.getByText(/Écartée : montant illisible/)).toBeTruthy()
     await act(async () => { fireEvent.change(document.getElementById('mode')!, { target: { value: 'debit_credit' } }) })
     await act(async () => { bouton.click() })
-    expect(insere().map((l) => l.montant)).not.toContain(0)
+    expect(insere().map((l) => [l.libelle, l.montant])).toEqual([['VIR CPAM', 120]])
+    expect(alertes).toEqual([expect.stringContaining('1 ligne(s) importée(s), 1 ignorée(s) (1 montant illisible).')])
   })
-  it('(constat) la ligne illisible entre à 0,00 €, sans alerte', async () => {
+  it('écarte aussi une ligne sans montant, et une opération à zéro', async () => {
     reinitialiser()
     faux.lignes = []
     rendre()
-    const bouton = await deposer('Date;Libellé;Débit;Crédit\n05/03/2025;PRLV LOYER CABINET;1 234,56 EUR;\n07/03/2025;VIR CPAM;;120,00\n', 2)
-    await act(async () => { fireEvent.change(document.getElementById('mode')!, { target: { value: 'debit_credit' } }) })
+    const bouton = await deposer('Date;Libellé;Débit;Crédit\n05/03/2025;FRAIS OFFERTS;0,00;\n06/03/2025;COMMENTAIRE;;\n07/03/2025;VIR CPAM;;120,00\n', 3)
     await act(async () => { bouton.click() })
-    expect(insere().map((l) => [l.libelle, l.montant])).toEqual([['PRLV LOYER CABINET', 0], ['VIR CPAM', 120]])
-    expect(alertes).toEqual([])
+    expect(insere().map((l) => l.montant)).toEqual([120])
+    expect(alertes).toEqual([expect.stringContaining('2 ignorée(s) (1 sans montant, 1 montant nul)')])
+  })
+
+  // Export Crédit Agricole (fictif) : débits POSITIFS dans « Débit euros », en windows-1252 avec ses accents.
+  it('règle un export Crédit Agricole en deux colonnes, et chaque débit sort', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    // Le symbole euro sur l'octet 0x80 : lu par `blob.text()`, il devenait U+FFFD, et le montant illisible.
+    const texte = 'Date;Libellé;Débit euros;Crédit euros\n02/01/2025;CB PHARMACIE;45,20 €;\n07/01/2025;VIR CPAM;;120,00 €\n'
+    const octets = Uint8Array.from([...texte].map((c) => (c === '€' ? 0x80 : c.charCodeAt(0))))
+    const bouton = await deposer(octets, 2)
+    expect(screen.getByText(/Fichier lu en windows-1252/)).toBeTruthy()
+    // L'aperçu dit le montant INTERPRÉTÉ et son sens, avant le clic.
+    expect(screen.getByText('Débit')).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(insere().map((l) => [l.libelle, l.montant])).toEqual([['CB PHARMACIE', -45.2], ['VIR CPAM', 120]])
+  })
+
+  // Export CIC (fictif) : la colonne Solde, remplie sur toutes les lignes, n'est jamais un montant ; choisie à la main
+  // comme tel, l'import se refuse.
+  const CIC = [
+    'Date;Date de valeur;Débit;Crédit;Libellé;Solde',
+    '02/01/2025;02/01/2025;-45,20;;CB PHARMACIE DU CENTRE;1 954,80',
+    '03/01/2025;03/01/2025;;120,00;VIR CPAM DES YVELINES;2 074,80',
+  ].join('\n')
+  it('n’importe jamais le solde courant d’un export CIC comme montant', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    const bouton = await deposer(CIC, 2)
+    expect((document.getElementById('colSolde') as HTMLSelectElement).value).toBe('5')
+    await act(async () => { bouton.click() })
+    expect(insere().map((l) => [l.libelle, l.montant])).toEqual([['CB PHARMACIE DU CENTRE', -45.2], ['VIR CPAM DES YVELINES', 120]])
+  })
+  it('refuse l’import quand la colonne du solde est choisie comme montant', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    const bouton = await deposer(CIC, 2) as HTMLButtonElement
+    await act(async () => { fireEvent.change(document.getElementById('mode')!, { target: { value: 'signe' } }) })
+    await act(async () => { fireEvent.change(document.getElementById('colMontant')!, { target: { value: '5' } }) })
+    expect(screen.getByText(/La colonne 6 est celle du solde courant du compte/)).toBeTruthy()
+    expect(bouton.disabled).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(insere()).toEqual([])
+  })
+
+  // Un virement qui « solde » une note d'honoraires est une recette ; seuls les deux vrais soldes sont écartés.
+  it('importe le virement dont le libellé dit « solde », et vérifie le relevé', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    const bouton = await deposer([
+      'Date;Libellé;Montant',
+      '01/03/2025;SOLDE CREDITEUR AU 28/02/2025;1 000,00',
+      '05/03/2025;VIR M DUPONT SOLDE NOTE HONORAIRES;60,00',
+      '10/03/2025;PRLV SEPA ORANGE;-40,00',
+      '31/03/2025;SOLDE CREDITEUR AU 31/03/2025;1 020,00',
+    ].join('\n'), 4)
+    await act(async () => { bouton.click() })
+    expect(insere().map((l) => l.libelle)).toEqual(['VIR M DUPONT SOLDE NOTE HONORAIRES', 'PRLV SEPA ORANGE'])
+    expect(controles()).toEqual([expect.objectContaining({ coherent: true })])
+  })
+  it('dit, avant et après l’import, un relevé qui n’a pas exactement deux soldes', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    const bouton = await deposer('Date;Libellé;Montant\n01/03/2025;SOLDE AU 28/02/2025;1 000,00\n10/03/2025;PRLV SEPA ORANGE;-40,00\n', 2)
+    expect(screen.getByText(/1 ligne de solde reconnue, alors qu’il en faut exactement deux/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(alertes).toEqual([expect.stringMatching(/1 ligne de solde reconnue, alors qu’il en faut exactement deux/)])
+    expect(controles()).toEqual([])
+  })
+
+  // Le même mois importé en PDF puis en CSV n'a pas les mêmes libellés : avertir, et ne rien écrire sans confirmation.
+  const DEJA_EN_PDF = [
+    ligneDeTest({ id: 'pdf-1', date: '2025-03-02', libelle: 'PHARMACIE DU CENTRE CB', montant: -12.5, source_fichier: 'releve-mars.pdf' }),
+    ligneDeTest({ id: 'pdf-2', date: '2025-03-28', libelle: 'VIREMENT CPAM', montant: 120, source_fichier: 'releve-mars.pdf' }),
+  ]
+  const CSV_MARS = 'Date;Libellé;Montant\n02/03/2025;CB PHARMACIE DU CENTRE;-12,50\n28/03/2025;VIR CPAM;120,00\n'
+  it('avertit d’un relevé dont la période recouvre un relevé déjà importé, et n’écrit rien sans confirmation', async () => {
+    reinitialiser()
+    faux.lignes = DEJA_EN_PDF
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    rendre()
+    const bouton = await deposer(CSV_MARS, 2)
+    expect(screen.getByText(/recouvre celle d’un relevé déjà importé : « releve-mars\.pdf » — 2 mouvement\(s\) du 02\/03\/2025 au 28\/03\/2025/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(confirmation).toHaveBeenCalledWith(expect.stringMatching(/releve-mars\.pdf[\s\S]*Importer quand même \?/))
+    expect(insere()).toEqual([])
+    confirmation.mockReturnValue(true)
+    await act(async () => { bouton.click() })
+    expect(insere()).toHaveLength(2)
+  })
+  it('ne dit rien d’un relevé du mois suivant, qui touche le précédent sans le recouvrir', async () => {
+    reinitialiser()
+    faux.lignes = DEJA_EN_PDF
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    rendre()
+    const bouton = await deposer('Date;Libellé;Montant\n28/03/2025;VIR M MARTIN;60,00\n15/04/2025;PRLV SEPA ORANGE;-40,00\n', 2, 'releve-avril.csv')
+    expect(screen.queryByText(/recouvre celle d’un relevé déjà importé/)).toBeNull()
+    await act(async () => { bouton.click() })
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(insere()).toHaveLength(2)
+  })
+
+  it('le chemin PDF importe aussi les deux opérations identiques d’un même relevé', async () => {
+    reinitialiser()
+    faux.lignes = []
+    faux.lignesPdf = [
+      { texte: '05/03/2025 CB PHARMACIE DU CENTRE -12,50', xFin: 0 },
+      { texte: '05/03/2025 CB PHARMACIE DU CENTRE -12,50', xFin: 0 },
+    ]
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'PDF' })).click() })
+    const champ = document.querySelector('input[type=file][accept=".pdf,application/pdf"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF'], 'releve-mars.pdf', { type: 'application/pdf' })] } }) })
+    const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
+    await act(async () => { bouton.click() })
+    expect(insere()).toHaveLength(2)
   })
 })
