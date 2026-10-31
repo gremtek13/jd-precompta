@@ -8,7 +8,7 @@ import {
   denominationAbsente, mentionsAFiger, refusDeLaProvenance, refusDeLaValidationFigee, refusDesTextesDeLaFacture,
   type MentionsDeLOrigine, type MentionsFigees,
 } from './mentionsFigees'
-import { versEntreprise } from './mentionsFacture'
+import { versEntreprise, type SaisieMentions } from './mentionsFacture'
 import { versionCourante } from './parametresFacturation'
 import { ibanParQuatre, libelleDuMoyen } from './parametresFacturationVue'
 import type {
@@ -130,6 +130,50 @@ export function parametresEnVigueur(lecture: LectureDeLaValidation | null, dossi
   const courante = versionCourante(lecture.versions, dossierId)
   return courante !== null && courante !== 'rompue'
 }
+
+/** Le texte des pénalités de retard des paramètres en vigueur, d'après une lecture revenue entière ; nul sans lui. */
+function penalitesEnVigueur(lecture: LectureDeLaValidation | null, dossierId: string): string | null {
+  if (lecture === null || lecture.etat !== 'lu') return null
+  const courante = versionCourante(lecture.versions, dossierId)
+  if (courante === null || courante === 'rompue') return null
+  const texte = courante.penalites?.trim() ?? ''
+  return texte === '' ? null : texte
+}
+
+/**
+ * LA PHRASE DE RETARD EST-ELLE INUTILE DANS LA MENTION PROPOSÉE ? (A7B-Q2, relue le 31/10/2026 après une relecture.) Les
+ * paramètres en vigueur ne disent les conditions de retard que d'un client PROFESSIONNEL, et de leur texte des pénalités
+ * (`ceQueLaFactureImprime` : un assujetti ou un organisme public, `penalites` figées) : sans ce texte, une facture à une
+ * entreprise n'imprimerait aucun taux (C. com., art. L441-9, I). Vrai : des paramètres en vigueur, et un particulier
+ * (`non_assujetti`, à qui l'article ne s'applique pas), ou un professionnel avec leur texte des pénalités. Faux sinon — un
+ * client « à préciser » ou établi hors de France : on ne sait pas, la phrase d'hier reste.
+ */
+export function sansPhraseDeRetard(
+  lecture: LectureDeLaValidation | null, dossierId: string, typeClient: SaisieMentions['typeClient'],
+): boolean {
+  if (!parametresEnVigueur(lecture, dossierId)) return false
+  if (typeClient === 'non_assujetti') return true
+  return versEntreprise(typeClient) && penalitesEnVigueur(lecture, dossierId) !== null
+}
+
+/**
+ * LE REFUS D'UNE FACTURE À UNE ENTREPRISE QUI NE DIRAIT AUCUN TAUX DE PÉNALITÉS (C. com., art. L441-9, I ; relecture du
+ * 31/10/2026) : une facture validée ne se corrige que par un avoir. Un professionnel (assujetti, organisme public), ni le
+ * texte des pénalités des paramètres en vigueur — que la facture figée imprimera —, ni un mot des pénalités dans ses
+ * mentions légales : la validation se refuse, le brouillon reste enregistrable. Un particulier, un client « à préciser »
+ * ou hors de France : rien.
+ */
+export function refusSansPenalites(
+  lecture: LectureDeLaValidation | null, dossierId: string, typeClient: SaisieMentions['typeClient'], mentionsLegales: string,
+): string | null {
+  if (!versEntreprise(typeClient)) return null
+  if (penalitesEnVigueur(lecture, dossierId) !== null) return null
+  if (/p[ée]nalit/i.test(mentionsLegales)) return null
+  return REFUS_SANS_PENALITES
+}
+
+export const REFUS_SANS_PENALITES = 'Une facture à une entreprise dit le taux des pénalités de retard (code de commerce, art. '
+  + 'L441-9) : ajoute-le aux mentions légales, ou aux paramètres de facturation du dossier, avant de la valider.'
 
 export const RETENUE_EN_LECTURE = 'Ce que la validation figera (l’identité du dossier, ses paramètres de facturation) est en cours de '
   + 'lecture : la validation attend la réponse.'

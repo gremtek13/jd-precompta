@@ -185,6 +185,26 @@ export function mentionTva(statut: StatutTva | null, article: ArticleExoneration
   return null
 }
 
+/**
+ * CE QUI RETIENT LA VALIDATION D'UNE FACTURE POUR SA MENTION DE TVA (CGI, ann. II, art. 242 nonies A, I : la référence à la
+ * disposition qui exonère, l'art. 293 B pour la franchise ; relecture du 31/10/2026). Une facture validée ne se corrige que
+ * par un avoir : celle d'un dossier exonéré ou en franchise qui ne cite pas sa disposition, ou qui cite la franchise hors de
+ * son statut, serait fausse pour toujours. `mentionAbsente` : la mention attendue (celle du statut, ou de l'article d'une
+ * ligne à 0 % d'un redevable), absente du texte ; `franchiseHorsStatut` : le texte cite l'art. 293 B sur un dossier qui
+ * n'est pas en franchise. Le brouillon reste enregistrable.
+ */
+export function refusDeLaMentionTva(mentionAbsente: string | null, franchiseHorsStatut: boolean): string | null {
+  if (mentionAbsente != null) {
+    return `La facture ne se valide pas sans la mention « ${mentionAbsente} » (CGI, ann. II, art. 242 nonies A) : ajoute-la `
+      + 'aux mentions légales.'
+  }
+  if (franchiseHorsStatut) {
+    return `La facture ne se valide pas avec la mention de la franchise en base (« ${MENTION_FRANCHISE} ») : ce n’est pas le `
+      + 'statut de TVA du dossier, retire-la des mentions légales.'
+  }
+  return null
+}
+
 // Ce qui empêche de proposer la bonne mention, dit à qui rédige la facture.
 export function manqueMentionTva(statut: StatutTva | null, article: ArticleExoneration | null): string | null {
   if (statut == null) {

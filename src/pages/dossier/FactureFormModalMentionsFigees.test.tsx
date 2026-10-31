@@ -8,7 +8,7 @@ import { versionParametres } from '../../test/parametresFacturation'
 import { AUTRE_IBAN_ESSAI, BIC_ESSAI, IBAN_ESSAI, factureFigee, identiteDuDossier } from '../../test/mentionsFigees'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 import { REFUS_DE_LA_PROVENANCE, REFUS_DE_LA_VALIDATION_FIGEE } from '../../lib/mentionsFigees'
-import { AVIS_SANS_FORME, RETENUE_EN_LECTURE } from '../../lib/mentionsFigeesVue'
+import { AVIS_SANS_FORME, REFUS_SANS_PENALITES, RETENUE_EN_LECTURE } from '../../lib/mentionsFigeesVue'
 import { MODELE_IBAN_DANS_UN_TEXTE } from '../../lib/parametresFacturation'
 import { motsDuCabinet } from '../../lib/espaceVentes'
 import type { EspaceVentes } from '../../lib/espaceVentes'
@@ -374,20 +374,24 @@ async function remplirSansAttendre() {
   fireEvent.change(designation(), { target: { value: 'Séance' } })
 }
 
-// ── A7B-Q2 (réponse du cabinet du 30/10/2026) : la mention légale proposée suit les paramètres du dossier ──────────────────
-// Quand le dossier a des paramètres de facturation en vigueur, ce sont eux qui disent les conditions de retard ; la mention
-// proposée ne garde que la TVA. Sans paramètres, et tant que leur lecture n'est pas revenue, la phrase d'hier. Une saisie,
-// même vide, est la sienne : la lecture qui revient ne la remplace pas ; un brouillon rouvert garde la sienne.
+// ── A7B-Q2 (réponse du cabinet du 30/10/2026, relue le 31/10/2026) : la mention légale proposée suit les paramètres ──────
+// Quand les paramètres de facturation en vigueur disent les conditions de retard — à un professionnel, de leur texte des
+// pénalités — ou que le client est un particulier, la mention proposée ne garde que la TVA. Sans paramètres, tant que leur
+// lecture n'est pas revenue, pour un client « à préciser », ou une entreprise sans texte des pénalités : la phrase d'hier.
+// Une saisie, même vide, est la sienne : la lecture qui revient ne la remplace pas ; un brouillon rouvert garde la sienne.
 const mentionsLegales = () => screen.getByLabelText('Mentions légales') as HTMLTextAreaElement
 const PHRASE_D_HIER = mentionsLegalesParDefaut('redevable', null, false)
 const relacherLaLecture = async () => { await act(async () => { faux.dossierEnAttente.forEach((r) => r()) }) }
+const typeDuClient = (type: string) => { fireEvent.change(document.querySelector('#type-client')!, { target: { value: type } }) }
+const PENALITES = 'Pénalités de retard : trois fois le taux d’intérêt légal.'
 
 for (const espace of ['cabinet', 'client'] as const) {
   describe(`la mention légale proposée suit les paramètres du dossier, A7B-Q2 (${espace})`, () => {
-    it('des paramètres en vigueur : la phrase d’hier tant que la lecture n’est pas revenue, puis la TVA seule, et c’est elle qui part', async () => {
+    it('des paramètres en vigueur, un particulier : la phrase d’hier tant que la lecture n’est pas revenue, puis la TVA seule, et c’est elle qui part', async () => {
       faux.retenirDossier = true
       monter(espace)
       await remplirSansAttendre()
+      typeDuClient('non_assujetti')
       expect(PHRASE_D_HIER).toMatch(/trois fois le taux d'intérêt légal/)
       expect(mentionsLegales().value).toBe(PHRASE_D_HIER)
       await relacherLaLecture()
@@ -398,9 +402,75 @@ for (const espace of ['cabinet', 'client'] as const) {
       expect((envoi().p_facture as Record<string, unknown>).mentions_legales).toBeNull()
     })
 
-    it('un dossier exonéré qui a des paramètres : la mention de son exonération, seule', async () => {
+    it('un dossier exonéré qui a des paramètres, un patient : la mention de son exonération, seule', async () => {
       monter(espace, { statutTva: 'exonere', articleExoneration: 'cgi_261_4_1' })
+      await remplirSansAttendre()
+      typeDuClient('non_assujetti')
       await waitFor(() => expect(mentionsLegales().value).toBe('Exonération de TVA, art. 261, 4, 1° du CGI.'))
+    })
+
+    // La relecture du 31/10/2026 : sans le texte des pénalités dans les paramètres, une facture à une entreprise n'en
+    // imprimerait aucun taux (C. com., art. L441-9, I) ; un client « à préciser » peut en être une.
+    it('des paramètres en vigueur, un client « à préciser » ou une entreprise sans texte des pénalités : la phrase d’hier reste', async () => {
+      monter(espace)
+      await remplirSansAttendre()
+      await waitFor(() => expect(valider().disabled).toBe(false))
+      expect(mentionsLegales().value).toBe(PHRASE_D_HIER)
+      typeDuClient('assujetti')
+      expect(mentionsLegales().value).toBe(PHRASE_D_HIER)
+      typeDuClient('etranger')
+      expect(mentionsLegales().value).toBe(PHRASE_D_HIER)
+      // Le particulier : la TVA seule — un redevable n'en a pas.
+      typeDuClient('non_assujetti')
+      expect(mentionsLegales().value).toBe('')
+    })
+
+    it('des paramètres qui portent le texte des pénalités, une entreprise : la TVA seule — la facture figée les imprime', async () => {
+      faux.versions = nues([versionParametres({ ...RIB_CONFIRME, penalites: PENALITES })])
+      monter(espace)
+      await remplirSansAttendre()
+      typeDuClient('assujetti')
+      await waitFor(() => expect(mentionsLegales().value).toBe(''))
+    })
+
+    it('une entreprise, ni texte des pénalités dans les paramètres ni mot des pénalités dans les mentions : la validation se refuse, avant le clic', async () => {
+      monter(espace)
+      await remplirSansAttendre()
+      typeDuClient('assujetti')
+      await waitFor(() => expect(mentionsLegales().value).toBe(PHRASE_D_HIER))
+      fireEvent.change(mentionsLegales(), { target: { value: 'Paiement à réception.' } })
+      await waitFor(() => expect(valider().disabled).toBe(true))
+      expect(screen.getByText(REFUS_SANS_PENALITES)).toBeTruthy()
+      // Le brouillon reste enregistrable ; un mot des pénalités rend la validation.
+      expect(brouillon().disabled).toBe(false)
+      fireEvent.change(mentionsLegales(), { target: { value: 'Pénalités de retard : trois fois le taux légal.' } })
+      await waitFor(() => expect(valider().disabled).toBe(false))
+      // Un particulier : rien de tel.
+      fireEvent.change(mentionsLegales(), { target: { value: 'Paiement à réception.' } })
+      typeDuClient('non_assujetti')
+      await waitFor(() => expect(valider().disabled).toBe(false))
+    })
+
+    it('un dossier exonéré dont la mention a été retirée : la validation se refuse, avant le clic ; la remettre la rend', async () => {
+      monter(espace, { statutTva: 'exonere', articleExoneration: 'cgi_261_4_1' })
+      await remplirSansAttendre()
+      typeDuClient('non_assujetti')
+      await waitFor(() => expect(mentionsLegales().value).toBe('Exonération de TVA, art. 261, 4, 1° du CGI.'))
+      fireEvent.change(mentionsLegales(), { target: { value: '' } })
+      await waitFor(() => expect(valider().disabled).toBe(true))
+      expect(screen.getByText(/La facture ne se valide pas sans la mention « Exonération de TVA, art\. 261, 4, 1° du CGI\. »/)).toBeTruthy()
+      expect(brouillon().disabled).toBe(false)
+      await act(async () => { screen.getByRole('button', { name: 'Ajouter la mention' }).click() })
+      await waitFor(() => expect(valider().disabled).toBe(false))
+    })
+
+    it('la franchise citée sur un dossier qui n’y est pas : la validation se refuse, avant le clic', async () => {
+      monter(espace)
+      await remplirSansAttendre()
+      typeDuClient('non_assujetti')
+      fireEvent.change(mentionsLegales(), { target: { value: 'TVA non applicable, art. 293 B du CGI.' } })
+      await waitFor(() => expect(valider().disabled).toBe(true))
+      expect(screen.getByText(/La facture ne se valide pas avec la mention de la franchise en base/)).toBeTruthy()
     })
 
     it('aucun paramètre : la phrase d’hier, et c’est elle qui part', async () => {

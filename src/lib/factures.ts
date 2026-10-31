@@ -11,15 +11,18 @@ import type { ArticleExoneration, FactureEmise, FactureLigne, NatureArticle, Sta
 // La mention de TVA suit le STATUT du dossier (lib/statutTva.ts) : la franchise cite l'art. 293 B, une
 // exonération l'article qui exonère. Elle proposait la franchise à tout dossier non assujetti, donc à un
 // dossier de soins exonérés — c'était faux, et c'est le défaut qui a fait naître ce statut (ligne 28.5).
-// Les conditions de retard (A7B-Q2, réponse du cabinet du 30/10/2026) : quand le dossier a des paramètres de facturation en
-// vigueur, ce sont eux qui les disent — une facture figée à une entreprise imprime de ses colonnes leurs pénalités et
-// l'indemnité forfaitaire, et la phrase y mettrait un second taux —, et la mention ne garde que la TVA. Sans paramètres, ou
-// tant qu'on ne sait pas s'il en a, la phrase d'hier. Sans valeur par défaut : l'appelant dit ce qu'il a lu.
-export function mentionsLegalesParDefaut(statut: StatutTva | null, article: ArticleExoneration | null, parametresEnVigueur: boolean): string {
+// Les conditions de retard (A7B-Q2, réponse du cabinet du 30/10/2026, relue le 31/10/2026) : quand les paramètres de
+// facturation en vigueur les disent — une facture figée à une entreprise imprime de leurs colonnes leurs pénalités et
+// l'indemnité forfaitaire, et la phrase y mettrait un second taux —, ou que le client est un particulier, à qui l'art.
+// L441-9 du code de commerce ne s'applique pas, la mention ne garde que la TVA. Sinon — sans paramètres, sans leur texte
+// des pénalités pour une entreprise, un client « à préciser » —, la phrase d'hier : une facture à une entreprise sans
+// aucun taux de pénalités serait incomplète (C. com., art. L441-9, I). L'appelant le décide (`sansPhraseDeRetard`,
+// lib/mentionsFigeesVue.ts), sur ce qu'il a lu ; sans valeur par défaut.
+export function mentionsLegalesParDefaut(statut: StatutTva | null, article: ArticleExoneration | null, sansPhraseDeRetard: boolean): string {
   const lignes: string[] = []
   const mention = mentionTva(statut, article)
   if (mention) lignes.push(mention)
-  if (!parametresEnVigueur) {
+  if (!sansPhraseDeRetard) {
     lignes.push(
       "En cas de retard de paiement, une pénalité égale à trois fois le taux d'intérêt légal sera exigible, " +
       'ainsi qu\'une indemnité forfaitaire pour frais de recouvrement de 40 €.',

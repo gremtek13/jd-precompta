@@ -6,7 +6,7 @@ import type { Article, ArticleExoneration, Contact, FactureEmise, FactureLigne, 
 import { messageErreur } from '../../lib/messageErreur'
 import { LIBELLE_NOTES_FACTURE, LIBELLE_NOTES_FACTURE_CLIENT } from '../../lib/droitsAcces'
 import { pourLEspace, pourLEspaceSiTexte } from '../../lib/espaceVentes'
-import { MENTION_FRANCHISE, exonerationDe, manqueMentionTva, mentionTva, refusTauxPositif } from '../../lib/statutTva'
+import { MENTION_FRANCHISE, exonerationDe, manqueMentionTva, mentionTva, refusDeLaMentionTva, refusTauxPositif } from '../../lib/statutTva'
 import { ARTICLES_EXPORTES, NATURES_ARTICLE, UNITES_ARTICLE, nomDansUnRefus } from '../../lib/articles'
 import { lireLesArticles, type LectureDesArticles } from '../../lib/articlesLecture'
 import { enregistrerArticle } from '../../lib/articlesEcriture'
@@ -27,8 +27,8 @@ import {
 import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
 import {
-  PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, parametresEnVigueur, provenanceDeLArticle, provenanceDeLaLigneLue,
-  provenanceQuiPart,
+  PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLArticle, provenanceDeLaLigneLue,
+  provenanceQuiPart, refusSansPenalites, sansPhraseDeRetard,
   type LectureDeLaValidation, type ProvenanceDeLigne,
 } from '../../lib/mentionsFigeesVue'
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
@@ -168,12 +168,14 @@ export default function FactureFormModal(props: Props) {
   // CE QUE LA VALIDATION FIGE (étape A7b) : l'identité du dossier et les versions de ses paramètres, lues EN ENTIER à
   // l'ouverture, gardées AVEC le dossier lu. Rien n'est lu drapeau baissé.
   const [lectureValidation, setLectureValidation] = useState<{ cle: string; lu: LectureDeLaValidation } | null>(null)
-  // LA MENTION LÉGALE PROPOSÉE (A7B-Q2, réponse du cabinet du 30/10/2026) : tant qu'on n'y a pas touché, elle se DÉDUIT — la
-  // TVA seule quand le dossier a des paramètres de facturation en vigueur, qui disent les conditions de retard ; la phrase
-  // d'hier sans paramètres, et tant que leur lecture n'est pas revenue entière (drapeau baissé, elle ne part jamais). Une
-  // saisie, même vide, est la sienne : la lecture qui revient ne la remplace pas.
+  // LA MENTION LÉGALE PROPOSÉE (A7B-Q2, réponse du cabinet du 30/10/2026, relue le 31/10/2026) : tant qu'on n'y a pas touché,
+  // elle se DÉDUIT — la TVA seule quand les paramètres en vigueur disent les conditions de retard (un professionnel, et leur
+  // texte des pénalités) ou que le client est un particulier ; la phrase d'hier sinon, et tant que leur lecture n'est pas
+  // revenue entière (drapeau baissé, elle ne part jamais). Une saisie, même vide, est la sienne : la lecture qui revient ne la
+  // remplace pas ; le type du client qui change, tant qu'on n'a pas touché au texte, la refait.
+  const lectureDesParametres = lectureValidation?.cle === dossierId ? lectureValidation.lu : null
   const mentionsLegales = mentionsLegalesSaisies ?? mentionsLegalesParDefaut(statutTva, articleExoneration,
-    parametresEnVigueur(lectureValidation?.cle === dossierId ? lectureValidation.lu : null, dossierId))
+    sansPhraseDeRetard(lectureDesParametres, dossierId, mentions.typeClient))
   // Ce que le choix a retenu de l'échéance (le délai du contact, la date d'émission d'alors) : la date d'émission qui change ensuite
   // le DIT, elle ne recalcule rien d'elle-même.
   const [suiviEcheance, setSuiviEcheance] = useState<SuiviDeLEcheance | null>(null)
@@ -297,6 +299,11 @@ export default function FactureFormModal(props: Props) {
   // assujetti, donc à un dossier de soins exonérés.
   const franchiseHorsStatut = statutTva !== 'franchise' && mentionsLegales.includes('293 B')
   const manqueMention = manqueMentionTva(statutTva, articleExoneration)
+  // CE QUI RETIENT LA VALIDATION POUR LES MENTIONS (relecture du 31/10/2026) : la mention de TVA attendue qui manque, la
+  // franchise citée hors de son statut (lib/statutTva.ts), une facture à une entreprise qui ne dirait aucun taux de pénalités
+  // (lib/mentionsFigeesVue.ts). Dit avant le clic ; le brouillon reste enregistrable.
+  const refusConformite = refusDeLaMentionTva(mentionAbsente, franchiseHorsStatut)
+    ?? refusSansPenalites(lectureDesParametres, dossierId, mentions.typeClient, mentionsLegales)
 
   function ajouterMention(mention: string) {
     // Sur ce que le champ montre : la saisie, ou la mention proposée.
@@ -738,6 +745,10 @@ export default function FactureFormModal(props: Props) {
     // Seconde ceinture : le bouton de validation est déjà grisé sur ce refus.
     if (statutCible === 'validee' && refusTaxe) {
       setError(refusTaxe)
+      return
+    }
+    if (statutCible === 'validee' && refusConformite) {
+      setError(refusConformite)
       return
     }
     // Les boutons sont déjà grisés : la base refuserait la saisie, et son message ne dirait pas quel champ corriger.
@@ -1234,6 +1245,7 @@ export default function FactureFormModal(props: Props) {
               <p className="muted" role="status">{jugementMentions.retenue}</p>
             )}
             {jugementMentions?.refusDeLaValidation && <p className="error-text" role="alert">{jugementMentions.refusDeLaValidation}</p>}
+            {refusConformite && <p className="error-text" role="alert">{pourLEspace(espace, refusConformite)}</p>}
             {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
 
             {error && <p className="error-text">{pourLEspaceSiTexte(espace, error)}</p>}
@@ -1243,7 +1255,7 @@ export default function FactureFormModal(props: Props) {
               <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0 || refusFigeBrouillon != null}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>
