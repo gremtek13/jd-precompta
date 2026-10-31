@@ -526,6 +526,20 @@ export interface EcritureBrouillon {
   // autre écriture. Elle devient obligatoire avec le premier moteur qui la lit (C3), comme `pieces.facture_id` l'est
   // devenue avec le premier écran qui la lisait (VF1b).
   operation_caisse_id?: string | null
+  // LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, FIGÉS À LA VALIDATION (ligne 26.6, étape e ; lot FEC22b ; migration
+  // `champs_bnc_du_fec`, préparée hors de l'export — voir lib/champsBncFiges.ts) : la date et le mode du règlement, la
+  // nature de l'opération (une par écriture), le poste de la 2035 d'une ligne de charge ou de produit (NatOp se recompose
+  // « nature — poste », `natOpFigee`), l'identification du client (le numéro d'une facture validée du dossier, ou le SIREN
+  // de son client — jamais un nom). Posés par `valider_exercice` seule, dans leurs listes fermées, ou nuls ; nuls sur une
+  // écriture proposée (`ecritures_brouillon_champs_bnc_du_fec`). FACULTATIFS dans ce type, et c'est la vérité des deux
+  // côtés de la migration : avant elle, `select('*')` ne les rend pas ; après, il les rend, nuls sur toute écriture que la
+  // validation n'a pas figée avec eux. Ils deviennent obligatoires avec le premier moteur qui les lit (le FEC d'un exercice
+  // validé, lot FEC22c2), comme `operation_caisse_id` avec le sien.
+  date_reglement?: string | null
+  mode_reglement?: string | null
+  nature_operation?: string | null
+  poste_rattache?: string | null
+  identification_client?: string | null
 }
 
 // Les journaux du FEC : achats, ventes, banque et opérations diverses. Les à-nouveaux ont le leur (AN), qui

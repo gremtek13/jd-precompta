@@ -350,6 +350,16 @@
 -- leurs gardes : que la porte de la restauration réinsère une facture figée telle quelle, que les contraintes de la ligne
 -- la jugent, et qu'une facture d'une sauvegarde d'avant (ses colonnes absentes) se réinsère avec les colonnes nulles,
 -- mentionsFigees.sql le prouve (j5, 100 à 110, M9).
+--
+-- 31/10/2026, ligne 26.6, lot FEC22b (migration `champs_bnc_du_fec`, PRÉPARÉE, pas encore en base) : aucune table ni clé de
+-- plus — cinq colonnes d'`ecritures_brouillon` (la date et le mode de règlement, la nature de l'opération, le poste de la
+-- 2035 d'une ligne de charge ou de produit, l'identification du client), sans clé, recopiées avec leurs lignes, et une
+-- contrainte, recopiée avec les autres ; le plan ne change pas. Un contrôle de plus suit le verdict : chaque écriture qui
+-- les porte, restaurée avec les cinq — ou EN ATTENTE sans la migration. Rejoué sur la réplique de l'étape (la production à
+-- 164 migrations, ses neuf familles égales à celles de la production, puis munie de la migration), sur une copie jetable,
+-- le dossier `test` semé PAR LES FONCTIONS : deux écritures de 2025, validées par `valider_exercice` avec leurs champs.
+-- Une sauvegarde d'avant la migration (ses colonnes absentes) se réinsère avec les colonnes nulles : une écriture validée
+-- sans eux, comme hier.
 
 -- ══ 1. Le schéma d'essai ══════════════════════════════════════════════════════════════════════════
 -- L'essai s'ARRÊTE à la première erreur, nommément. Sans cela, psql passe à l'instruction suivante : la recopie des clés
@@ -1012,6 +1022,34 @@ begin
   insert into essai_restauration._controles values ('dossiers.mentions_identite : le dossier restauré avec ses autres mentions',
     case when n > 0 then n || ' sur ' || n else 'un dossier qui en porte' end,
     case when n > 0 then egales || ' sur ' || n else 'aucune autre mention dans le dossier : rien n''est prouvé' end);
+end $$;
+
+-- LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE (ligne 26.6, étape e ; lot FEC22b ; migration `champs_bnc_du_fec`,
+-- préparée) : cinq colonnes de plus d'une table au plan, sans clé, recopiées avec leurs lignes et leur contrainte ; le plan
+-- ne change pas. Ce contrôle dit que chaque écriture validée qui porte l'un d'eux a été restaurée avec les cinq telles
+-- qu'elles étaient — au moins une, ou rien n'est prouvé, et il le dit ; avant la migration, les colonnes n'existent pas et
+-- le contrôle attend. Ce script recopie les tables, pas leurs gardes : que la porte de la restauration réinsère une
+-- écriture validée et ses champs, et que la contrainte les juge, validationExercice.sql le prouve (181 à 183).
+do $$
+declare d uuid := (select dossier from essai_restauration._cible); n bigint; egales bigint;
+begin
+  if not exists (select 1 from pg_attribute where attrelid = 'public.ecritures_brouillon'::regclass
+                  and attname = 'nature_operation' and not attisdropped) then
+    insert into essai_restauration._controles values
+      ('ecritures_brouillon.nature_operation : EN ATTENTE de la migration champs_bnc_du_fec', 'absente', 'absente');
+    return;
+  end if;
+  execute 'select count(*), count(*) filter (where e.date_reglement is not distinct from s.date_reglement'
+          || ' and e.mode_reglement is not distinct from s.mode_reglement and e.nature_operation is not distinct from s.nature_operation'
+          || ' and e.poste_rattache is not distinct from s.poste_rattache'
+          || ' and e.identification_client is not distinct from s.identification_client)'
+          || ' from public.ecritures_brouillon s left join essai_restauration.ecritures_brouillon e on e.id = s.id'
+          || ' where s.dossier_id = $1'
+          || ' and num_nonnulls(s.date_reglement, s.mode_reglement, s.nature_operation, s.poste_rattache, s.identification_client) > 0'
+    into n, egales using d;
+  insert into essai_restauration._controles values ('ecritures_brouillon : chaque écriture qui porte les champs du FEC d''un BNC, restaurée avec les cinq',
+    case when n > 0 then n || ' sur ' || n else 'au moins une écriture qui les porte' end,
+    case when n > 0 then egales || ' sur ' || n else 'aucune écriture qui les porte dans le dossier : rien n''est prouvé' end);
 end $$;
 
 select controle, attendu, observe, observe = attendu as ok from essai_restauration._controles order by controle;

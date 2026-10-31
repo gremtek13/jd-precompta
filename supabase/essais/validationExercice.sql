@@ -178,6 +178,22 @@
 -- `garder_ecriture_de_caisse`, toutes deux de la forme `dossier`. La lecture de la cascade (141) part de tous les
 -- déclencheurs, ces deux-là écartés, et attend ses 43 ; 141b lit les deux : aucun sans la migration, actifs et de la
 -- forme `dossier` avec elle. Avant la migration, rien ne change.
+--
+-- ÉTENDU LE 31/10/2026 AUX QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE (ligne 26.6, étape e ; lot FEC22b ; migration
+-- `champs_bnc_du_fec`, PRÉPARÉE dans `supabase/preparees/`, pas encore en base). Une étape de genre « …f » ne se joue
+-- qu'avec elle — ses colonnes sur `ecritures_brouillon` — : sans elle, une ligne dit qu'elles attendent (EN ATTENTE), et
+-- les 145 contrôles d'hier rendent ce qu'ils rendaient. Avec elle, ces 145 contrôles sont LE CAS NEUTRE : une
+-- numérotation qui ne porte pas les clés valide comme hier, refus et écritures compris, et 172 relit que les écritures de
+-- A n'en portent aucune. Puis, sur deux dossiers jetables de plus — K, tenu en trésorerie, une écriture de chaque forme
+-- (un achat et une vente payés par le relevé, une recette affectée, une dotation sous l'option « vides » de FEC22-Q1) et
+-- sept documents aux SIRET FICTIFS (préfixe 999, et La Poste) ; RF, sans exercice validé, pour la restauration — :
+-- chaque refus neuf de la validation, dans son ordre et sous ses mots (151 à 165, deux défauts à la fois compris, un
+-- défaut d'hier l'emportant sur un champ neuf) ; ce qui passe (152b, le jour même à Paris ; 164, le numéro d'une facture
+-- validée, un SIREN saisi seul, un établissement de La Poste ; un avoir) ; la validation qui les porte, et les fige, relus
+-- ligne à ligne (170, 171) ; l'intangibilité (174) ; l'empreinte qui les compte (173 à 176 : une valeur falsifiée ou
+-- passée d'une colonne à l'autre hors déclencheur se voit, et l'empreinte d'un exercice validé sans eux est celle d'hier
+-- au caractère près, recalculée ici par la formule d'hier) ; la contrainte, sans la fonction (180 à 183, la restauration
+-- comprise) ; le catalogue (190). Les factures de l'essai entrent au décompte de 145.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -193,6 +209,45 @@ declare
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
   verdicts jsonb := '[]'::jsonb;
+  -- La migration du lot FEC22b : ses colonnes sur le brouillon. Sans elle, ses étapes (genre « …f ») attendent.
+  fec boolean := exists (select 1 from pg_attribute where attrelid = 'public.ecritures_brouillon'::regclass
+                          and attname = 'nature_operation' and not attisdropped);
+  genre text; en_attente_fec integer := 0;
+  -- L'empreinte d'un exercice validé telle que `report_des_soldes` l'écrivait (sans les quatre champs), le dossier, l'année
+  -- et l'empreinte précédente à poser par `format` : 173c la confronte à celle d'aujourd'hui.
+  empreinte_d_hier text := $f$encode(sha256(convert_to(
+    coalesce(%3$L, '') || chr(29)
+    || coalesce((
+      select string_agg(concat_ws(chr(31),
+          e.id::text, to_char(e.date, 'YYYY-MM-DD'), e.journal_code, e.numero_ecriture::text, e.compte, e.compte_lib,
+          coalesce(e.comp_aux_num, ''), coalesce(e.comp_aux_lib, ''), e.piece_ref, to_char(e.piece_date, 'YYYY-MM-DD'),
+          e.libelle, trim_scale(e.montant)::text, e.sens,
+          to_char(e.valide_le at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US')),
+        chr(30) order by e.journal_code, e.numero_ecriture, e.id)
+      from public.ecritures_brouillon e
+      where e.dossier_id = '%1$s' and e.statut = 'validee'
+        and e.date between make_date(%2$s, 1, 1) and make_date(%2$s, 12, 31)), '')
+    || chr(29)
+    || coalesce((
+      select string_agg(concat_ws(chr(31),
+          a.id::text, to_char(a.date, 'YYYY-MM-DD'), a.compte, coalesce(a.compte_origine, ''), a.libelle, a.sens,
+          trim_scale(a.montant)::text, a.source_nom, a.source_empreinte, coalesce(a.compte_lib, ''),
+          coalesce(a.ecriture_lib, '')),
+        chr(30) order by a.compte, a.id)
+      from (
+        select n.id, n.date, n.compte, n.compte_origine, n.libelle, n.sens, n.montant, n.source_nom, n.source_empreinte,
+               n.compte_lib, n.ecriture_lib
+          from public.a_nouveaux n
+         where n.dossier_id = '%1$s' and n.date between make_date(%2$s, 1, 1) and make_date(%2$s, 12, 31)
+        union all
+        select s.id, s.date, s.compte, null::text, s.libelle, s.sens, s.montant, s.source_nom, s.source_empreinte,
+               s.compte_lib, s.ecriture_lib
+          from public.soldes_reportes s
+         where s.dossier_id = '%1$s' and s.date = make_date(%2$s, 1, 1)
+      ) a), ''),
+    'UTF8')), 'hex')$f$;
+  -- Le jour à Paris, tel que la validation le lit : 152 pose une date de règlement deux jours après, 152b ce jour même.
+  aujourd_hui date := (now() at time zone 'Europe/Paris')::date;
 begin
   select m.dossier_id into dossier_client from memberships m where m.user_id = client order by m.dossier_id limit 1;
   select cabinet_id into cabinet from dossiers where id = dossier_test;
@@ -244,14 +299,32 @@ begin
       'C1', 'e55a1000-0000-4000-8007-000000000001', 'C2', 'e55a1000-0000-4000-8007-000000000002',
       'XC24', 'e55a1000-0000-4000-8007-000000000021', 'XAN', 'e55a1000-0000-4000-8008-000000000021',
       'GAN1', 'e55a1000-0000-4000-8008-000000000031', 'GAN2', 'e55a1000-0000-4000-8008-000000000032',
-      'HAN1', 'e55a1000-0000-4000-8008-000000000041', 'HAN2', 'e55a1000-0000-4000-8008-000000000042');
+      'HAN1', 'e55a1000-0000-4000-8008-000000000041', 'HAN2', 'e55a1000-0000-4000-8008-000000000042')
+    -- Le lot FEC22b : K, RF et leurs lignes ; et des fragments de requête, sans accolade à remplacer.
+    || jsonb_build_object(
+      'K', 'e55a1000-0000-4000-80f0-0000000000a1', 'RF', 'e55a1000-0000-4000-80f0-0000000000a2',
+      'PK1', 'e55a1000-0000-4000-80f1-000000000001', 'PK2', 'e55a1000-0000-4000-80f1-000000000002',
+      'MK1', 'e55a1000-0000-4000-80f2-000000000001', 'MK2', 'e55a1000-0000-4000-80f2-000000000002',
+      'MK3', 'e55a1000-0000-4000-80f2-000000000003', 'BK', 'e55a1000-0000-4000-80f3-000000000001',
+      'EK1', 'e55a1000-0000-4000-80f4-000000000001', 'EK2', 'e55a1000-0000-4000-80f4-000000000002',
+      'EK3', 'e55a1000-0000-4000-80f4-000000000003', 'EK4', 'e55a1000-0000-4000-80f4-000000000004',
+      'EK5', 'e55a1000-0000-4000-80f4-000000000005', 'EK6', 'e55a1000-0000-4000-80f4-000000000006',
+      'EK7', 'e55a1000-0000-4000-80f4-000000000007', 'EK8', 'e55a1000-0000-4000-80f4-000000000008',
+      'RF1', 'e55a1000-0000-4000-80f5-000000000001', 'RF2', 'e55a1000-0000-4000-80f5-000000000002')
+    || jsonb_build_object(
+      'VAL', 'select valider_exercice(', 'FIN', ', ''[]''::jsonb, ''{}''::jsonb)', 'JK', 'current_setting(''essai.k'')::jsonb',
+      'ENF', 'select enregistrer_facture(',
+      'FK', '''{"tiers_nom":"ESSAI","emetteur_nom":"ESSAI","montant_ht":100,"montant_tva":20,"montant_ttc":120,"nature_operation":"services"}''::jsonb',
+      'LK', '''[{"designation":"x","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]''::jsonb',
+      -- Une écriture validée réinsérée par la restauration dans RF, ses champs à compléter (183 à 187).
+      'RES', 'insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, statut, valide_le, journal_code, numero_ecriture, piece_ref, piece_date, compte_lib, date_reglement, mode_reglement, nature_operation, poste_rattache, identification_client) values (');
 
   select string_agg(n::text, '/') into avant from (values
     ((select count(*) from dossiers)), ((select count(*) from cabinets)), ((select count(*) from cabinet_admins)),
     ((select count(*) from pieces)), ((select count(*) from lignes_bancaires)), ((select count(*) from ecritures_brouillon)),
     ((select count(*) from immobilisations)), ((select count(*) from vehicules)), ((select count(*) from cotisations_declarees)),
     ((select count(*) from a_nouveaux)), ((select count(*) from exercices_valides)), ((select count(*) from dossier_assignations)),
-    ((select count(*) from soldes_reportes))
+    ((select count(*) from soldes_reportes)), ((select count(*) from factures_emises))
   ) as t(n);
 
   -- Une étape : {genre, contrôle, qui, requête, code attendu, message attendu (motif LIKE) ou valeur attendue}.
@@ -596,23 +669,254 @@ begin
       ('garder_soldes_reportes', '()'), ('soldes_a_reporter', '(uuid, integer)')) as t(f, a)$q$, '',
       'cle_validation:false:false,empreinte_exercice:false:true,exercice_fige:false:false,frontiere_validation:false:false,garder_ecritures_validees:false:false,garder_soldes_reportes:false:false,soldes_a_reporter:false:false,valider_exercice:false:true,verifier_exercice_valide:false:true'],
     array['valeur', '144. un exercice validé est lu par le cabinet, réinséré par le super-administrateur, jamais modifié', 'postgres', $q$select string_agg(policyname || ':' || cmd || ':' || array_to_string(roles, '+'), ',' order by policyname collate "C") from pg_policies where schemaname = 'public' and tablename = 'exercices_valides'$q$, '',
-      'exercices_valides_lecture:SELECT:authenticated,exercices_valides_restauration:INSERT:authenticated']
+      'exercices_valides_lecture:SELECT:authenticated,exercices_valides_restauration:INSERT:authenticated'],
+
+    -- ══ 150 à 190. Les quatre champs du FEC d'un BNC en trésorerie (lot FEC22b ; genre « …f ») ═══════════════════
+    -- K, tenu en trésorerie : un achat payé par le relevé (AC 1), une vente payée par le relevé (VE 1), une recette
+    -- affectée (BQ 1), une dotation (OD 1). RF, sans exercice validé : la restauration.
+    array['jeuf', 'dossiers jetables K et RF', 'postgres', $q$insert into dossiers (id, nom, cabinet_id, mode_comptable) values
+      ('{K}', 'ESSAI VALIDATION K', '{CAB}', 'tresorerie'), ('{RF}', 'ESSAI VALIDATION RF', '{CAB}', 'tresorerie')$q$, '', ''],
+    array['jeuf', 'pièces de K', 'postgres', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, statut, type_piece, montant_ttc, date_piece) values
+      ('{PK1}', '{K}', 'essai/validation/k1.pdf', 'essai-k1.pdf', 'validee', 'achat', 120, '2024-03-01'),
+      ('{PK2}', '{K}', 'essai/validation/k2.pdf', 'essai-k2.pdf', 'validee', 'vente', 200, '2024-05-01')$q$, '', ''],
+    array['jeuf', 'mouvements de K', 'postgres', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, piece_id, categorie_id) values
+      ('{MK1}', '{K}', '2024-03-05', 'ESSAI K PRLV', -120, 'rapprochee', '{PK1}', null),
+      ('{MK2}', '{K}', '2024-05-10', 'ESSAI K VIR', 200, 'rapprochee', '{PK2}', null),
+      ('{MK3}', '{K}', '2024-06-01', 'ESSAI K CPAM', 50, 'rapprochee', null, '{CAT}')$q$, '', ''],
+    array['jeuf', 'bien de K', 'postgres', $q$insert into immobilisations (id, dossier_id, libelle, valeur, date_acquisition, duree_annees) values ('{BK}', '{K}', 'ESSAI K Bien', 300, '2024-01-15', 3)$q$, '', ''],
+    array['jeuf', 'écritures de K', 'postgres', $q$insert into ecritures_brouillon (id, dossier_id, piece_id, ligne_bancaire_id, immobilisation_id, date, compte, libelle, montant, sens) values
+      ('{EK1}', '{K}', '{PK1}', null, null, '2024-03-05', '606100', 'ESSAI K1', 120, 'debit'),
+      ('{EK2}', '{K}', '{PK1}', '{MK1}', null, '2024-03-05', '512000', 'ESSAI K1', 120, 'credit'),
+      ('{EK3}', '{K}', '{PK2}', '{MK2}', null, '2024-05-10', '512000', 'ESSAI K2', 200, 'debit'),
+      ('{EK4}', '{K}', '{PK2}', null, null, '2024-05-10', '706000', 'ESSAI K2', 200, 'credit'),
+      ('{EK5}', '{K}', null, '{MK3}', null, '2024-06-01', '512000', 'ESSAI K3', 50, 'debit'),
+      ('{EK6}', '{K}', null, '{MK3}', null, '2024-06-01', '706000', 'ESSAI K3', 50, 'credit'),
+      ('{EK7}', '{K}', null, null, '{BK}', '2024-12-31', '681100', 'ESSAI K DOTATION', 100, 'debit'),
+      ('{EK8}', '{K}', null, null, '{BK}', '2024-12-31', '281830', 'ESSAI K DOTATION', 100, 'credit')$q$, '', ''],
+    -- Six documents de K validés par le chef, dans cet ordre : F2024-0001 (un SIRET juste), F2024-0002 (un SIREN que sa
+    -- clé refuse, au SIRET que la sienne passe), A2024-0001 (son avoir), F2024-0003 (un SIREN juste, un SIRET que sa clé refuse), F2024-0004 (un SIREN
+    -- seul), F2024-0005 (un SIRET juste écrit avec des blancs) ; puis un brouillon de K, au SIRET juste, et une facture
+    -- validée de X. Tous FICTIFS. Les documents de La Poste se valident chacun dans l'étape qui le juge, annulée avec
+    -- elle (163j, 164c, 164d) : deux documents au même SIREN se couvriraient l'un l'autre.
+    array['faitf', '150. le jeu : les documents de K, validés par le chef', 'chef', $q${ENF}'{K}', null, {FK} || '{"tiers_siret":"99900010200015","date_emission":"2024-02-01"}', {LK}, true);
+      {ENF}'{K}', null, {FK} || '{"tiers_siret":"99900070000008","date_emission":"2024-02-02"}', {LK}, true);
+      {ENF}'{K}', null, jsonb_build_object('type', 'avoir', 'facture_origine_id', (select id from factures_emises where dossier_id = '{K}' and numero = 'F2024-0002'), 'date_emission', '2024-02-03', 'montant_ht', -50, 'montant_tva', -10, 'montant_ttc', -60), '[{"designation":"x","quantite":-1,"prix_unitaire_ht":50,"taux_tva":20}]'::jsonb, true);
+      {ENF}'{K}', null, {FK} || '{"tiers_siret":"99900030000010","date_emission":"2024-02-04"}', {LK}, true);
+      {ENF}'{K}', null, {FK} || '{"tiers_siret":"999000201","date_emission":"2024-02-05"}', {LK}, true);
+      {ENF}'{K}', null, {FK} || '{"tiers_siret":"999 000 607 00013","date_emission":"2024-02-07"}', {LK}, true)$q$, 'OK', ''],
+    array['faitf', '150b. le jeu : un brouillon de K, et une facture validée de X', 'chef', $q${ENF}'{K}', null, {FK} || '{"tiers_siret":"99900040900014","date_emission":"2024-02-08"}', {LK}, false);
+      {ENF}'{X}', null, {FK} || '{"tiers_siret":"99900050800013","date_emission":"2023-02-01"}', {LK}, true)$q$, 'OK', ''],
+    array['valeurf', '150c. les documents de K et de X, leurs numéros et leurs SIRET', 'postgres', $q$select string_agg(coalesce(numero, '∅') || ':' || statut || ':' || tiers_siret, ',' order by coalesce(numero, '∅') collate "C") from factures_emises where dossier_id in ('{K}', '{X}')$q$, '',
+      'A2024-0001:validee:99900070000008,F2023-0001:validee:99900050800013,F2024-0001:validee:99900010200015,F2024-0002:validee:99900070000008,F2024-0003:validee:99900030000010,F2024-0004:validee:999000201,F2024-0005:validee:999 000 607 00013,∅:brouillon:99900040900014'],
+    -- La numérotation de K 2024 que l'application composerait, ses quatre champs compris (FEC22a) : le règlement par le
+    -- relevé, « Banque » (FEC22-Q2) ; la vente identifiée par le SIREN de F2024-0001, la recette par le numéro de l'avoir ;
+    -- la dotation sans règlement, ses champs vides (FEC22-Q1, l'option « vides ») ; le poste sur les lignes de résultat
+    -- seulement. Ses variantes fautives en dérivent, par le rang de la ligne : 0 et 1 l'achat, 2 et 3 la vente, 4 et 5 la
+    -- recette, 6 et 7 la dotation.
+    array['jeuf', 'la numérotation de K 2024 et ses quatre champs', 'postgres', $q$select set_config('essai.k', $j$[
+      {"id":"{EK1}","journal":"AC","numero":1,"piece_ref":"essai-k1.pdf","piece_date":"2024-03-01","compte_lib":"Achats","date_reglement":"2024-03-05","mode_reglement":"Banque","nature_operation":"Dépense","poste_rattache":"Achats"},
+      {"id":"{EK2}","journal":"AC","numero":1,"piece_ref":"essai-k1.pdf","piece_date":"2024-03-01","compte_lib":"Banque","date_reglement":"2024-03-05","mode_reglement":"Banque","nature_operation":"Dépense"},
+      {"id":"{EK3}","journal":"VE","numero":1,"piece_ref":"essai-k2.pdf","piece_date":"2024-05-01","compte_lib":"Banque","date_reglement":"2024-05-10","mode_reglement":"Banque","nature_operation":"Recette","identification_client":"999000102"},
+      {"id":"{EK4}","journal":"VE","numero":1,"piece_ref":"essai-k2.pdf","piece_date":"2024-05-01","compte_lib":"Honoraires","date_reglement":"2024-05-10","mode_reglement":"Banque","nature_operation":"Recette","poste_rattache":"Recettes","identification_client":"999000102"},
+      {"id":"{EK5}","journal":"BQ","numero":1,"piece_ref":"Relevé essai K","piece_date":"2024-06-01","compte_lib":"Banque","date_reglement":"2024-06-01","mode_reglement":"Banque","nature_operation":"Recette","identification_client":"A2024-0001"},
+      {"id":"{EK6}","journal":"BQ","numero":1,"piece_ref":"Relevé essai K","piece_date":"2024-06-01","compte_lib":"Honoraires","date_reglement":"2024-06-01","mode_reglement":"Banque","nature_operation":"Recette","poste_rattache":"Gains divers","identification_client":"A2024-0001"},
+      {"id":"{EK7}","journal":"OD","numero":1,"piece_ref":"Tableau d'amortissement 2024","piece_date":"2024-12-31","compte_lib":"Dotations","nature_operation":"Dotation aux amortissements","poste_rattache":"Amortissements"},
+      {"id":"{EK8}","journal":"OD","numero":1,"piece_ref":"Tableau d'amortissement 2024","piece_date":"2024-12-31","compte_lib":"Amortissements","nature_operation":"Dotation aux amortissements"}
+    ]$j$, true)$q$, '', ''],
+    -- Chaque valeur dans sa forme.
+    array['controlef', '151. une date de règlement illisible : un jour hors de son mois', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{0,date_reglement}', '"2024-02-30"'), '{1,date_reglement}', '"2024-02-30"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte une date de règlement illisible.'],
+    array['controlef', '151b. … un texte vide, qui n''est pas une date nulle', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{0,date_reglement}', '""'), '{1,date_reglement}', '""'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte une date de règlement illisible.'],
+    array['controlef', '151c. … une autre forme que AAAA-MM-JJ', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{0,date_reglement}', '"05/03/2024"'), '{1,date_reglement}', '"05/03/2024"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte une date de règlement illisible.'],
+    array['controlef', '152. une date de règlement postérieure à aujourd''hui, à Paris', 'chef', format($q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{0,date_reglement}', '"%1$s"'), '{1,date_reglement}', '"%1$s"'){FIN}$q$, to_char(aujourd_hui + 2, 'YYYY-MM-DD')), '22023',
+      'Une ligne de la numérotation proposée porte une date de règlement postérieure à aujourd''hui.'],
+    array['controlef', '152b. MUTATION de 152 : le jour même, à Paris, passe', 'chef', format($q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{0,date_reglement}', '"%1$s"'), '{1,date_reglement}', '"%1$s"'){FIN}$q$, to_char(aujourd_hui, 'YYYY-MM-DD')), 'OK', ''],
+    array['controlef', '153. un mode de règlement hors de sa liste', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{0,mode_reglement}', '"Cheque"'), '{1,mode_reglement}', '"Cheque"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un mode de règlement hors de sa liste.'],
+    array['controlef', '153b. … un mode vide, qui n''est pas un mode nul', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{0,mode_reglement}', '""'), '{1,mode_reglement}', '""'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un mode de règlement hors de sa liste.'],
+    array['controlef', '154. une nature d''opération hors de sa liste — la nature d''un soin', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{0,nature_operation}', '"Soins infirmiers"'), '{1,nature_operation}', '"Soins infirmiers"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte une nature d''opération hors de sa liste.'],
+    array['controlef', '155. un poste de la 2035 hors de sa liste — son orthographe comprise', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{0,poste_rattache}', '"achats"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 hors de sa liste.'],
+    array['controlef', '156. un poste sans nature', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{0,nature_operation}', 'null'), '{1,nature_operation}', 'null'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 sans nature d''opération.'],
+    array['controlef', '157. un poste sur la banque, qui n''est ni une charge ni un produit', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1,poste_rattache}', '"Achats"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 sur un compte qui n''est ni de charge ni de produit.'],
+    array['controlef', '158. un poste de dépenses sur un produit', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{3,poste_rattache}', '"Achats"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 de l''autre cadre que son compte : un poste de recettes va sur un compte de produit, un poste de dépenses sur un compte de charge.'],
+    array['controlef', '158b. … un poste de recettes sur une charge', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{0,poste_rattache}', '"Recettes"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 de l''autre cadre que son compte : un poste de recettes va sur un compte de produit, un poste de dépenses sur un compte de charge.'],
+    -- Les mêmes sur toutes les lignes d'une écriture ; le poste suit la ligne (FEC22-Q3, (C)).
+    array['controlef', '159. deux dates de règlement dans une écriture', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1,date_reglement}', '"2024-03-06"'){FIN}$q$, '22023',
+      'Les lignes d''une même écriture ne portent pas la même date de règlement.'],
+    array['controlef', '159b. … une date sur une ligne, aucune sur l''autre', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1,date_reglement}', 'null'){FIN}$q$, '22023',
+      'Les lignes d''une même écriture ne portent pas la même date de règlement.'],
+    array['controlef', '160. deux modes de règlement dans une écriture', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1,mode_reglement}', '"Chèque"'){FIN}$q$, '22023',
+      'Les lignes d''une même écriture ne portent pas le même mode de règlement.'],
+    array['controlef', '160b. … un mode sur une ligne, aucun sur l''autre', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1,mode_reglement}', 'null'){FIN}$q$, '22023',
+      'Les lignes d''une même écriture ne portent pas le même mode de règlement.'],
+    array['controlef', '161. deux natures dans une écriture', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1,nature_operation}', '"Recette"'){FIN}$q$, '22023',
+      'Les lignes d''une même écriture ne portent pas la même nature d''opération.'],
+    array['controlef', '161b. … une nature sur une ligne, aucune sur l''autre', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1,nature_operation}', 'null'){FIN}$q$, '22023',
+      'Les lignes d''une même écriture ne portent pas la même nature d''opération.'],
+    array['controlef', '162. deux identifications du client dans une écriture', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{3,identification_client}', '"F2024-0001"'){FIN}$q$, '22023',
+      'Les lignes d''une même écriture ne portent pas la même identification du client.'],
+    array['controlef', '162b. … une identification sur une ligne, aucune sur l''autre', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{3,identification_client}', 'null'){FIN}$q$, '22023',
+      'Les lignes d''une même écriture ne portent pas la même identification du client.'],
+    -- Une écriture, c'est un journal ET un numéro : deux écritures d'un même journal portent chacune les leurs.
+    array['controlef', '162c. MUTATION de 159 à 162 : deux écritures d''un même journal, à deux dates, chacune son client, passent', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set(jsonb_set(jsonb_set({JK}, '{2,journal}', '"AC"'), '{3,journal}', '"AC"'), '{2,numero}', '2'), '{3,numero}', '2'){FIN}$q$, 'OK', ''],
+    -- LA GARDE DU SECRET : le numéro d'un document validé du dossier, ou le SIREN juste de son client figé, rien d'autre.
+    array['controlef', '163. un nom pour client', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"ESSAI DUPONT"'), '{3,identification_client}', '"ESSAI DUPONT"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlef', '163b. le SIREN d''une facture de K restée en brouillon', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"999000409"'), '{3,identification_client}', '"999000409"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlef', '163c. le SIREN d''une facture validée d''un autre dossier', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"999000508"'), '{3,identification_client}', '"999000508"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlef', '163d. … et son numéro', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"F2023-0001"'), '{3,identification_client}', '"F2023-0001"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlef', '163e. un SIREN que sa clé refuse', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"999000700"'), '{3,identification_client}', '"999000700"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlef', '163f. le SIREN d''un SIRET que sa clé refuse', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"999000300"'), '{3,identification_client}', '"999000300"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlef', '163g. le SIRET entier, pas son SIREN', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"99900010200015"'), '{3,identification_client}', '"99900010200015"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlef', '163h. le SIREN d''un SIRET écrit avec des blancs, qui ne se corrige pas', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"999000607"'), '{3,identification_client}', '"999000607"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlef', '164. MUTATION de 163 : le numéro d''une facture validée de K passe', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"F2024-0002"'), '{3,identification_client}', '"F2024-0002"'){FIN}$q$, 'OK', ''],
+    array['controlef', '164b. … le SIREN saisi seul, quand sa clé le passe', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"999000201"'), '{3,identification_client}', '"999000201"'){FIN}$q$, 'OK', ''],
+    -- La Poste (SIREN 356000000) : un document validé dans l'étape même, annulé avec elle, seul à porter ce SIREN. Ses
+    -- établissements passent quand la somme de leurs chiffres est un multiple de cinq (35600000000001 : 15), pas
+    -- autrement (35600000000002 : 16) ; son siège, 35600000000048, par la clé de Luhn (la somme de ses chiffres, 26,
+    -- ne le passerait pas).
+    array['controlef', '164c. … le SIREN d''un établissement de La Poste', 'chef', $q${ENF}'{K}', null, {FK} || '{"tiers_siret":"35600000000001","date_emission":"2024-02-07"}', {LK}, true); {VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"356000000"'), '{3,identification_client}', '"356000000"'){FIN}$q$, 'OK', ''],
+    array['controlef', '164d. … et celui du siège de La Poste, que la règle de ses établissements refuserait', 'chef', $q${ENF}'{K}', null, {FK} || '{"tiers_siret":"35600000000048","date_emission":"2024-02-07"}', {LK}, true); {VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"356000000"'), '{3,identification_client}', '"356000000"'){FIN}$q$, 'OK', ''],
+    array['controlef', '163j. le SIREN d''un établissement de La Poste que sa règle refuse', 'chef', $q${ENF}'{K}', null, {FK} || '{"tiers_siret":"35600000000002","date_emission":"2024-02-07"}', {LK}, true); {VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"356000000"'), '{3,identification_client}', '"356000000"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlef', '163i. une identification vide, qui n''est pas une identification nulle', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '""'), '{3,identification_client}', '""'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    -- L'ordre : le premier défaut l'emporte, et un défaut d'hier l'emporte sur un champ neuf.
+    array['controlef', '165. deux défauts : le mode hors de sa liste avant le nom pour client', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set(jsonb_set(jsonb_set({JK}, '{0,mode_reglement}', '"Cheque"'), '{1,mode_reglement}', '"Cheque"'), '{2,identification_client}', '"ESSAI DUPONT"'), '{3,identification_client}', '"ESSAI DUPONT"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un mode de règlement hors de sa liste.'],
+    array['controlef', '165b. … la date illisible avant la nature hors de sa liste', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set(jsonb_set(jsonb_set({JK}, '{0,date_reglement}', '"2024-13-01"'), '{1,date_reglement}', '"2024-13-01"'), '{0,nature_operation}', '"Soins"'), '{1,nature_operation}', '"Soins"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte une date de règlement illisible.'],
+    array['controlef', '165c. … un défaut d''hier, un journal inconnu, avant un champ neuf', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set(jsonb_set(jsonb_set({JK}, '{0,journal}', '"XX"'), '{1,journal}', '"XX"'), '{0,mode_reglement}', '"Cheque"'), '{1,mode_reglement}', '"Cheque"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée est incomplète.'],
+    -- Une ligne du brouillon ne porte qu'UN jeu de valeurs : la numérotation qui la scinderait entre deux écritures du
+    -- FEC — une pièce payée le même jour par deux modes, deux numéros et deux modes pour la même ligne de charge — ne la
+    -- couvre pas exactement, et se refuse par le refus d'hier (19), avant tout champ neuf ; de même sous le même
+    -- numéro, et quand la seconde occurrence prend la place d'une autre ligne (le compte des lignes reçues juste).
+    array['controlef', '166. une ligne scindée entre deux écritures : deux numéros, deux modes de règlement', 'chef', $q${VAL}'{K}', 2024, {JK} || jsonb_build_array(jsonb_set(jsonb_set({JK} -> 0, '{numero}', '2'), '{mode_reglement}', '"Espèces"')){FIN}$q$, '22023',
+      'La numérotation proposée ne couvre pas exactement les 8 écritures de l''exercice 2024.'],
+    array['controlef', '166b. … sous le même numéro, deux modes de règlement', 'chef', $q${VAL}'{K}', 2024, {JK} || jsonb_build_array(jsonb_set({JK} -> 0, '{mode_reglement}', '"Espèces"')){FIN}$q$, '22023',
+      'La numérotation proposée ne couvre pas exactement les 8 écritures de l''exercice 2024.'],
+    array['controlef', '166c. … la seconde occurrence à la place d''une autre ligne, le compte des lignes reçues juste', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1}', jsonb_set(jsonb_set({JK} -> 0, '{numero}', '2'), '{mode_reglement}', '"Espèces"')){FIN}$q$, '22023',
+      'La numérotation proposée ne couvre pas exactement les 8 écritures de l''exercice 2024.'],
+    -- La validation qui les porte, et les fige.
+    array['faitf', '170. le chef valide 2024 de K, et ses quatre champs', 'chef', $q${VAL}'{K}', 2024, {JK}{FIN}$q$, 'OK', ''],
+    array['valeurf', '171. ils sont figés, ligne par ligne, tels que la numérotation les portait', 'postgres', $q$select string_agg(coalesce(to_char(date_reglement, 'YYYY-MM-DD'), '∅') || '|' || coalesce(mode_reglement, '∅') || '|' || coalesce(nature_operation, '∅') || '|' || coalesce(poste_rattache, '∅') || '|' || coalesce(identification_client, '∅'), ',' order by id) from ecritures_brouillon where dossier_id = '{K}' and statut = 'validee'$q$, '',
+      '2024-03-05|Banque|Dépense|Achats|∅,2024-03-05|Banque|Dépense|∅|∅,2024-05-10|Banque|Recette|∅|999000102,2024-05-10|Banque|Recette|Recettes|999000102,2024-06-01|Banque|Recette|∅|A2024-0001,2024-06-01|Banque|Recette|Gains divers|A2024-0001,∅|∅|Dotation aux amortissements|Amortissements|∅,∅|∅|Dotation aux amortissements|∅|∅'],
+    array['valeurf', '172. LE CAS NEUTRE : les écritures de A, validées sans les clés, n''en portent aucun', 'postgres', $q$select count(*) filter (where num_nonnulls(date_reglement, mode_reglement, nature_operation, poste_rattache, identification_client) > 0) || '/' || count(*) from ecritures_brouillon where dossier_id = '{A}' and statut = 'validee'$q$, '', '0/17'],
+    array['valeurf', '173. l''empreinte de K se vérifie', 'postgres', $q$select verifier_exercice_valide('{K}', 2024)::text$q$, '', 'true'],
+    array['valeurf', '173b. … et compte les quatre champs : ce n''est pas l''empreinte d''hier', 'postgres', format($q$select ((select empreinte from exercices_valides where dossier_id = '{K}' and annee = 2024) <> (%s))::text$q$, format(empreinte_d_hier, '{K}', 2024, null)), '', 'true'],
+    array['valeurf', '173c. l''empreinte d''un exercice validé sans eux est celle d''hier, au caractère près (A, et G et son ouverture)', 'postgres', format($q$select (empreinte_exercice('{A}', 2024, null) = (%s))::text || '/' || (empreinte_exercice('{G}', 2025, null) = (%s))::text$q$, format(empreinte_d_hier, '{A}', 2024, null), format(empreinte_d_hier, '{G}', 2025, null)), '', 'true/true'],
+    array['controlef', '174. un champ figé ne change plus, même pour le propriétaire de la base', 'postgres', $q$update ecritures_brouillon set mode_reglement = 'Chèque' where id = '{EK2}'$q$, '23514', 'Cette écriture est validée (exercice 2024) : elle ne se modifie plus.'],
+    array['controlef', '174b. … ni pour le chef, qui voudrait taire une identification', 'chef', $q$update ecritures_brouillon set identification_client = null where id = '{EK3}'$q$, '23514', 'Cette écriture est validée (exercice 2024) : elle ne se modifie plus.'],
+    -- Chaque champ, l'un après l'autre, falsifié hors déclencheur puis rétabli : une empreinte qui en oublierait un ne le
+    -- verrait pas.
+    array['jeuf', 'falsifier chaque champ hors déclencheur, l''un après l''autre, puis le rétablir', 'postgres', $q$do $f$
+      declare
+        c record;
+        r text := '';
+      begin
+        set local session_replication_role = replica;
+        for c in select * from (values
+            (1, 'date_reglement', '{EK1}', '2024-03-04', '2024-03-05'),
+            (2, 'mode_reglement', '{EK2}', 'Chèque', 'Banque'),
+            (3, 'nature_operation', '{EK3}', 'Recette et dépense', 'Recette'),
+            (4, 'poste_rattache', '{EK4}', 'Gains divers', 'Recettes'),
+            (5, 'identification_client', '{EK5}', 'F2024-0001', 'A2024-0001')) as v(rang, colonne, ligne, faux, juste)
+          order by rang loop
+          execute format('update ecritures_brouillon set %I = %L where id = %L', c.colonne, c.faux, c.ligne);
+          r := r || c.colonne || ':' || verifier_exercice_valide('{K}', 2024)::text || ',';
+          execute format('update ecritures_brouillon set %I = %L where id = %L', c.colonne, c.juste, c.ligne);
+        end loop;
+        set local session_replication_role = origin;
+        perform set_config('essai.falsifications', r || 'rétablis:' || verifier_exercice_valide('{K}', 2024)::text, true);
+      end
+    $f$$q$, '', ''],
+    array['valeurf', '175. chaque champ falsifié hors déclencheur se voit ; rétablis, ils se relisent', 'postgres', $q$select current_setting('essai.falsifications')$q$, '',
+      'date_reglement:false,mode_reglement:false,nature_operation:false,poste_rattache:false,identification_client:false,rétablis:true'],
+    -- La dotation ne porte que sa nature : passée dans l'identification, la ligne garderait, sans le rang de chaque champ,
+    -- le même texte.
+    array['jeuf', 'passer la nature d''une ligne dans son identification, hors déclencheur', 'postgres', $q$set local session_replication_role = replica$q$, '', ''],
+    array['jeuf', '', 'postgres', $q$update ecritures_brouillon set nature_operation = null, identification_client = 'Dotation aux amortissements' where id = '{EK8}'$q$, '', ''],
+    array['jeuf', '', 'postgres', $q$set local session_replication_role = origin$q$, '', ''],
+    array['valeurf', '176. une valeur passée d''un champ à l''autre se voit', 'postgres', $q$select verifier_exercice_valide('{K}', 2024)::text$q$, '', 'false'],
+    array['jeuf', 'la rendre à sa place', 'postgres', $q$set local session_replication_role = replica$q$, '', ''],
+    array['jeuf', '', 'postgres', $q$update ecritures_brouillon set nature_operation = 'Dotation aux amortissements', identification_client = null where id = '{EK8}'$q$, '', ''],
+    array['jeuf', '', 'postgres', $q$set local session_replication_role = origin$q$, '', ''],
+    array['valeurf', '176b. rendue, elle se relit', 'postgres', $q$select verifier_exercice_valide('{K}', 2024)::text$q$, '', 'true'],
+    -- La contrainte, sans la fonction : une écriture proposée n'en porte aucun ; la restauration réinsère ce qui a été
+    -- validé, dans les listes.
+    array['controlef', '180. une écriture proposée ne porte aucun des quatre champs', 'chef', $q$insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, mode_reglement) values ('{X}', '2024-08-01', '606100', 'ESSAI X', 1, 'debit', 'Banque')$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '180b. … ni ne les reçoit par une mise à jour', 'chef', $q$update ecritures_brouillon set nature_operation = 'Dépense' where id = '{XE24}'$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['faitf', '181. la restauration réinsère des écritures validées et leurs champs', 'chef', $q$insert into ecritures_brouillon (id, dossier_id, date, compte, libelle, montant, sens, statut, valide_le, journal_code, numero_ecriture, piece_ref, piece_date, compte_lib, date_reglement, mode_reglement, nature_operation, poste_rattache, identification_client) values
+      ('{RF1}', '{RF}', '2024-04-02', '606100', 'ESSAI RF', 10, 'debit', 'validee', '2025-02-01 10:00+00', 'AC', 1, 'Pièce RF', '2024-04-01', 'Achats', '2024-04-02', 'Chèque', 'Dépense', 'Achats', null),
+      ('{RF2}', '{RF}', '2024-04-02', '512000', 'ESSAI RF', 10, 'credit', 'validee', '2025-02-01 10:00+00', 'AC', 1, 'Pièce RF', '2024-04-01', 'Banque', '2024-04-02', 'Chèque', 'Dépense', null, null)$q$, 'OK', ''],
+    array['valeurf', '181b. … tels quels', 'postgres', $q$select string_agg(compte || '|' || to_char(date_reglement, 'YYYY-MM-DD') || '|' || mode_reglement || '|' || nature_operation || '|' || coalesce(poste_rattache, '∅'), ',' order by id) from ecritures_brouillon where dossier_id = '{RF}'$q$, '',
+      '606100|2024-04-02|Chèque|Dépense|Achats,512000|2024-04-02|Chèque|Dépense|∅'],
+    array['controlef', '182. … mais pas un mode hors de sa liste', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', '2024-04-03', 'Cheque', 'Dépense', null, null)$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182b. … ni une nature hors de la sienne', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, 'Soins infirmiers', null, null)$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182c. … ni un poste sur un compte de bilan', 'chef', $q${RES}'{RF}', '2024-04-03', '512000', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Banque', null, null, 'Dépense', 'Achats', null)$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182d. … ni un poste de recettes sur une charge', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, 'Dépense', 'Recettes', null)$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182e. … ni un poste sans nature', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, null, 'Achats', null)$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182f. … ni une identification bordée d''un blanc', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, null, null, ' F2024-0001')$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182g. … ni une identification qui porte un caractère de contrôle', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, null, null, 'F2024' || chr(10) || '0001')$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182h. … ni une identification vide', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, null, null, '')$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '183. ce que la contrainte ne juge pas : le jour, que la validation seule refuse', 'chef', format($q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', '%s', null, null, null, null)$q$, to_char(aujourd_hui + 2, 'YYYY-MM-DD')), 'OK', ''],
+    -- Le catalogue.
+    array['valeurf', '190. cinq colonnes nulles, sans valeur par défaut', 'postgres', $q$select string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull || ':' || coalesce(pg_get_expr(d.adbin, d.adrelid), '∅'), ',' order by a.attname collate "C") from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum where a.attrelid = 'public.ecritures_brouillon'::regclass and not a.attisdropped and a.attname in ('date_reglement', 'mode_reglement', 'nature_operation', 'poste_rattache', 'identification_client')$q$, '',
+      'date_reglement:date:false:∅,identification_client:text:false:∅,mode_reglement:text:false:∅,nature_operation:text:false:∅,poste_rattache:text:false:∅'],
+    array['valeurf', '190b. et la contrainte, validée, à côté de celle d''hier, inchangée (sa définition à l''empreinte d''hier)', 'postgres', $q$select string_agg(conname || ':' || contype::text || ':' || convalidated || case when conname = 'ecritures_brouillon_validation_complete' then ':' || md5(pg_get_constraintdef(oid)) else '' end, ',' order by conname collate "C") from pg_constraint where conrelid = 'public.ecritures_brouillon'::regclass and conname in ('ecritures_brouillon_champs_bnc_du_fec', 'ecritures_brouillon_validation_complete')$q$, '',
+      'ecritures_brouillon_champs_bnc_du_fec:c:true,ecritures_brouillon_validation_complete:c:true:ea2ab25ce87ce97ced803e6e304b7b0f']
   ];
 
   begin
     foreach etape slice 1 in array etapes loop
+      -- Une étape du lot FEC22b (genre « …f ») ne se joue qu'avec la migration champs_bnc_du_fec ; sans elle, elle attend.
+      genre := etape[1];
+      if genre like '%f' then
+        if not fec then
+          en_attente_fec := en_attente_fec + 1;
+          continue;
+        end if;
+        genre := left(genre, -1);
+      end if;
       s := etape[4];
       for cle, valeur in select key, value from jsonb_each_text(ids) loop
         s := replace(s, '{' || cle || '}', valeur);
       end loop;
       accepte := false; code_recu := null; message := null; obs := null;
-      if etape[1] = 'jeu' then
+      if genre = 'jeu' then
         begin
           execute s;
         exception when others then
           verdicts := verdicts || jsonb_build_object('controle', '0. le jeu : ' || etape[2], 'observe', sqlstate || ' ' || sqlerrm, 'ok', false);
         end;
-      elsif etape[1] = 'valeur' then
+      elsif genre = 'valeur' then
         begin
           execute s into obs;
         exception when others then obs := sqlstate || ' ' || sqlerrm;
@@ -628,7 +932,7 @@ begin
           end if;
           execute s;
           accepte := true;
-          if etape[1] = 'controle' then
+          if genre = 'controle' then
             raise exception 'ANNULATION_ESSAI';
           end if;
         exception when others then code_recu := sqlstate; message := sqlerrm;
@@ -637,10 +941,15 @@ begin
         perform set_config('request.jwt.claims', '', true);
         verdicts := verdicts || jsonb_build_object('controle', etape[2],
           'observe', case when accepte then 'accepté' else coalesce(code_recu, '?') || ' ' || coalesce(message, '') end,
-          'ok', case when etape[5] = 'OK' then accepte and (etape[1] = 'fait' or coalesce(code_recu = 'P0001', false))
+          'ok', case when etape[5] = 'OK' then accepte and (genre = 'fait' or coalesce(code_recu = 'P0001', false))
                      else not accepte and coalesce(code_recu = etape[5] and message like etape[6], false) end);
       end if;
     end loop;
+    if en_attente_fec > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '150. EN ATTENTE de la migration champs_bnc_du_fec (lot FEC22b) : '
+        || en_attente_fec || ' étapes — les quatre champs du FEC d''un BNC en trésorerie', 'observe',
+        'absente : elles se jouent dès qu''elle y est', 'ok', true);
+    end if;
     raise exception 'ANNULATION_ESSAI_GLOBALE';
   exception when others then
     if sqlerrm <> 'ANNULATION_ESSAI_GLOBALE' then
@@ -656,7 +965,7 @@ begin
     ((select count(*) from pieces)), ((select count(*) from lignes_bancaires)), ((select count(*) from ecritures_brouillon)),
     ((select count(*) from immobilisations)), ((select count(*) from vehicules)), ((select count(*) from cotisations_declarees)),
     ((select count(*) from a_nouveaux)), ((select count(*) from exercices_valides)), ((select count(*) from dossier_assignations)),
-    ((select count(*) from soldes_reportes))
+    ((select count(*) from soldes_reportes)), ((select count(*) from factures_emises))
   ) as t(n);
   -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '145. rien n''est resté en base',

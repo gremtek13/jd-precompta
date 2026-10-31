@@ -51,6 +51,12 @@
 -- écrite à jour (15, 18, 20, 22, 26, 29, 31d, 31f, 41, 53, 56, 58), dit « à traiter » un mouvement réservé (2, 4, 10,
 -- 31b), et la fonction neuve manque au reste ; avec elle, 77 verdicts, 0 en faute, sur les deux bases. Ses mutations :
 -- HISTORIQUE.md, « LA VALIDATION REFUSE LES MANQUES DES VENTES FACTURÉES ».
+--
+-- 31/10/2026, lot FEC22b (migration `champs_bnc_du_fec`, PRÉPARÉE, pas encore en base) : 31g valide l'exercice 2025 de V
+-- avec les champs du FEC d'un BNC sur chacune de ses lignes — 27, dont celles des ventes facturées, que G5 garde — et,
+-- la migration en base, les relit figés. Sans elle, la base ignore ces clés et valide comme hier : 31g passe sans rien
+-- juger de plus. Avec elle et une garde G5 d'hier (qui ne laisse à la validation que ses neuf colonnes), 31g tombe en
+-- 42501, « Une écriture de vente facturée ne se modifie que par la fonction qui l'écrit. ».
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -250,6 +256,11 @@ begin
       'L''exercice 2025 porte une vente facturée dont l''écriture proposée n''est plus celle que sa source commande : l''encaissement du 10/03/2025 de la facture F2025-0002 — la réécrire avant la validation.'],
 
     -- ══ 32 à 37. La validation, puis l'exercice figé ══════════
+    -- 31g (lot FEC22b) : la numérotation qui porte, sur chaque ligne, les champs du FEC d'un BNC — une nature et un mode,
+    -- les mêmes dans chaque écriture — se valide : G5 les laisse à la validation comme le reste de ce qu'elle pose, et,
+    -- la migration `champs_bnc_du_fec` en base, ils sont figés sur les 27 lignes. Sans elle, la base ignore ces clés et
+    -- valide comme hier : le contrôle passe aussi, sans rien juger de plus.
+    array['controle', '31g. avec les champs du FEC d''un BNC sur ses lignes, l''exercice 2025 de V se valide : G5 les laisse à la validation', 'chef', $q${VAL}'{V}', 2025, (select jsonb_agg(x || '{"nature_operation":"Recette","mode_reglement":"Banque"}'::jsonb) from jsonb_array_elements('{NV}'::jsonb) x), '[]'::jsonb, '{}'::jsonb); do $x$ declare n bigint; begin if exists (select 1 from pg_attribute where attrelid = 'public.ecritures_brouillon'::regclass and attname = 'nature_operation' and not attisdropped) then execute $y$select count(*) from ecritures_brouillon where dossier_id = '{V}' and statut = 'validee' and nature_operation = 'Recette' and mode_reglement = 'Banque' and date between '2025-01-01' and '2025-12-31'$y$ into n; if n <> 27 then raise exception 'CHAMPS NON FIGÉS : %', n; end if; end if; end $x$$q$, 'OK', ''],
     array['fait', '32. tout repris, l''exercice 2025 de V se valide', 'chef', $q${VAL}'{V}', 2025, '{NV}'::jsonb, '[]'::jsonb, '{}'::jsonb)$q$, 'OK', ''],
     array['valeur', '33. ses lignes, toutes validées et numérotées au journal des ventes, sont exactement celles que la base recompose pour l''exercice', 'postgres', $q$select (count(*) filter (where b.statut = 'validee' and b.journal_code = 'VE' and b.numero_ecriture is not null) = count(*))::text || ' ' || count(*) || ' ' || (count(*) = (select sum(cardinality(r.lignes)) from ecritures_attendues_de_la_periode('{V}', null, '2025-12-31') r))::text from ecritures_brouillon b where b.dossier_id = '{V}' and b.date between '2025-01-01' and '2025-12-31'$q$, '',
       'true 27 true'],
