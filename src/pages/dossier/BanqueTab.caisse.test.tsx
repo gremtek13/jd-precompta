@@ -402,6 +402,27 @@ describe('un dossier basculé : les espèces des factures sources entrent dans l
     expect(sans(volet().textContent)).toContain('elle serait de 170,00 €.')
   })
 
+  // C6-Q1 (réponse du cabinet du 31/10/2026) : sans aucune opération saisie, le dossier tient une caisse dès qu'un encaissement
+  // en espèces d'une de ses factures sources y entre — la fiche d'un crédit libellé « VERSEMENT ESPECES » le dit alors.
+  it('C6-Q1 : sans opération, les espèces de la facture disent la caisse tenue — la fiche dit le libellé du versement', async () => {
+    poser({ operations: [] })
+    baser()
+    rendre(true)
+    await ouvrir('VERSEMENT ESPECES GUICHET')
+    await waitFor(() => expect(sans(volet().textContent)).toContain('Avant ce mouvement, la caisse du 12/03/2026 est de 80,00 €'))
+    expect(sans(volet().textContent)).toContain('Son libellé dit un versement d’espèces : rangé en recette, il compterait deux fois')
+  })
+
+  it('C6-Q1, NEUTRE : les espèces retirées, aucune caisse tenue — la fiche n’en dit rien, comme hier', async () => {
+    poser({ operations: [] })
+    baser()
+    faux.parTable.encaissements_factures = [{ ...ESPECES, retire_le: '2026-03-13T10:00:00Z' }]
+    rendre(true)
+    await ouvrir('VERSEMENT ESPECES GUICHET')
+    await waitFor(() => expect(sans(volet().textContent)).toContain('Avant ce mouvement, la caisse du 12/03/2026 est de 50,00 €'))
+    expect(sans(volet().textContent)).not.toContain('Son libellé dit un versement')
+  })
+
   it('les ventes facturées lues en partie : la fiche n’offre aucun classement (elle le dit déjà), donc rien sur la caisse', async () => {
     baser()
     faux.muet = { [`encaissements_factures|${COLONNES_ENCAISSEMENTS_ECRITURES}`]: 0 }

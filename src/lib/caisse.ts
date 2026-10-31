@@ -235,7 +235,10 @@ const enCentimes = (montant: number) => Math.round(montant * 100)
 // Les espèces d'une facture SOURCE qui n'ont pas rejoint la banque par leur propre mouvement : un encaissement en espèces
 // sans mouvement, non retiré, ou la contre-passation sans mouvement d'un tel encaissement — ce que la composition des ventes
 // facturées écrit au compte de la caisse (EC3-Q7). Celui d'une facture qui n'est pas source ne s'écrit pas : il n'y entre pas.
-function especesDUneFactureSource(e: EncaissementDeLaCaisse, etat: EtatDeLaCaisse): boolean {
+// Publique pour C6-Q1 : un tel encaissement dit aussi que le dossier tient une caisse (lib/controlesDeLaCaisse.ts).
+export function especesDUneFactureSource(
+  e: EncaissementDeLaCaisse, etat: Pick<EtatDeLaCaisse, 'encaissements' | 'factures'>,
+): boolean {
   const facture = etat.factures.find((f) => f.id === e.facture_id)
   if (!facture?.source_de_la_vente || e.retire_le != null || e.ligne_bancaire_id != null) return false
   if (e.annule_id == null) return e.moyen === 'especes'

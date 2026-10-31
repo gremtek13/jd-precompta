@@ -432,19 +432,21 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // Et, depuis l'étape C3b, les crédits dont le libellé dit un versement d'espèces, dans un dossier qui tient une caisse — ou
   // peut-être : lue en partie, ou pas encore revenue, ne rien savoir écarte, ce qui ne perd rien (lib/controlesDeLaCaisse.ts).
   // Un symptôme, jamais une preuve : le versement se classe sur la caisse depuis sa fiche. La caisse absente n'écarte rien.
+  // Les espèces des factures d'un dossier basculé, telles que ses ventes lues en entier les rendent : elles disent aussi que le
+  // dossier tient une caisse (C6-Q1), même sans opération saisie — pour les lots ici, et pour la fiche plus bas.
   const caisseDuReleve = useMemo(() => operationsDeCaisseDuDossier(lectureCaisse, dossierId), [lectureCaisse, dossierId])
-  const horsDesLots = useMemo(
-    () => versementsDEspecesHorsDesLots(mouvementsHorsDesLots(ventes), caisseDuReleve, lignes),
-    [ventes, caisseDuReleve, lignes],
-  )
-  // LA CAISSE QUE LA FICHE D'UN MOUVEMENT JUGE (étape C4 ; lib/caisseEcran.ts) : absente tant que la table n'est pas en base ;
-  // sinon rejouée sur la caisse, la reprise, le relevé ENTIER de l'onglet et — pour un dossier basculé — les espèces des factures
-  // que ses ventes lues en entier rendent. Une entrée pas lue en entier, et la fiche ne classe rien sur la caisse.
   const especesDeLaCaisse = useMemo((): EspecesDesFactures => !ventesParLesFactures ? { etat: 'sans_objet' }
     : lectureVentes?.etat === 'lue' && lectureVentes.dossierId === dossierId
       ? { etat: 'lues', encaissements: lectureVentes.sources.encaissements, factures: lectureVentes.sources.factures }
       : { etat: 'incomplete', motif: lectureVentes?.etat === 'incomplete' ? lectureVentes.motif : 'les ventes facturées ne sont pas encore lues' },
   [ventesParLesFactures, lectureVentes, dossierId])
+  const horsDesLots = useMemo(
+    () => versementsDEspecesHorsDesLots(mouvementsHorsDesLots(ventes), caisseDuReleve, especesDeLaCaisse, lignes),
+    [ventes, caisseDuReleve, especesDeLaCaisse, lignes],
+  )
+  // LA CAISSE QUE LA FICHE D'UN MOUVEMENT JUGE (étape C4 ; lib/caisseEcran.ts) : absente tant que la table n'est pas en base ;
+  // sinon rejouée sur la caisse, la reprise, le relevé ENTIER de l'onglet et — pour un dossier basculé — les espèces des factures
+  // (plus haut) que ses ventes lues en entier rendent. Une entrée pas lue en entier, et la fiche ne classe rien sur la caisse.
   const caisseDuRelevePourLaFiche = useMemo(() => caisseDeBanque({
     dossierId, caisse: lectureCaisse, ouvertures: repriseDeLaCaisse, releve: lignes, releveIncomplet: lignesIncompletes,
     especes: especesDeLaCaisse, modele,
@@ -2384,7 +2386,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             restesAPayer={restesAPayer}
             payeesEnTrop={payeesEnTrop}
             restesARegler={restesARegler}
-            caisse={caisseDeLaFiche(ligneOuverte, caisseDuRelevePourLaFiche, caisseDuReleve)}
+            caisse={caisseDeLaFiche(ligneOuverte, caisseDuRelevePourLaFiche, caisseDuReleve, especesDeLaCaisse)}
             onEcrireCompteBilan={(compte) => agirSurMouvement(() => ecrireCompteBilan(ligneOuverte, compte))}
             onRetirerCompteBilan={() => agirSurMouvement(() => retirerCompteBilan(ligneOuverte.id))}
             suivisTva={suivisTva}

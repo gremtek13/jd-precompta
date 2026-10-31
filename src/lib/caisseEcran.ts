@@ -487,9 +487,10 @@ export function caisseDeLaFiche(
   ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'compte_bilan'>,
   lecture: EtatDeLaCaisseDeBanque,
   operations: EtatDesOperationsDeCaisse,
+  especes: EspecesDesFactures,
 ): CaisseDeLaFiche {
   if (lecture.etat === 'absente') return CAISSE_ABSENTE_DE_LA_FICHE
-  const tenue = dossierTientUneCaisse(operations)
+  const tenue = dossierTientUneCaisse(operations, especes)
   if (lecture.etat === 'pas_lue') return { etat: 'pas_lue', tenue, motif: lecture.motif }
   const etat = lecture.caisse
   const compte = etat.compteCaisse

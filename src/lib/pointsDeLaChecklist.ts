@@ -502,9 +502,10 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const etatDeLaCaisse = caisseJugee === null ? null : etatDeLaCaisseLue(caisseJugee, dossierDeLaCaisse)
   const caisseEnNegatif = etatDeLaCaisse === null ? null : caisseNegative(etatDeLaCaisse, frontiere)
   const recettesARevoir = etatDeLaCaisse === null || caisseJugee === null ? [] : recettesDeCaisseARevoir(caisseJugee, etatDeLaCaisse, frontiere)
-  // Un symptôme, sur une caisse qui tient au moins une opération vivante (§ 4 a) : un crédit libellé « VERSEMENT ESPECES »
-  // rangé en recette compte peut-être deux fois les espèces que la caisse a déjà comptées.
-  const versementsEnRecette = caisseJugee === null || dossierTientUneCaisse(caisseDuDossier) !== 'oui' ? []
+  // Un symptôme, dans un dossier qui tient une caisse — une opération vivante, ou les espèces d'une facture source (§ 4 a ;
+  // C6-Q1) : un crédit libellé « VERSEMENT ESPECES » rangé en recette compte peut-être deux fois les espèces que la caisse a
+  // déjà comptées.
+  const versementsEnRecette = caisseJugee === null || dossierTientUneCaisse(caisseDuDossier, especes) !== 'oui' ? []
     : versementsDEspecesEnRecette(lignes, ventilations, categories, assujettiTva, frontiere)
 
   const tousLesPointsATraiter: PointATraiter[] = [
