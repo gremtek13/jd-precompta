@@ -10,7 +10,7 @@ import { justifieSonMouvement } from './encaissementsFactures'
 import { sirenValide, siretValide } from './factureCii'
 import { dateLocaleDe } from './format'
 import type { PlanComptable } from './planComptable'
-import { rattachementsTresorerie, type PaiementDePiece } from './rattachement'
+import { partsDesPaiements, rattachementsTresorerie, type PaiementDePiece } from './rattachement'
 import type {
   ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, EncaissementFacture, FactureEmise, LigneBancaire, MoyenEncaissement,
   OperationCaisse, Piece,
@@ -110,6 +110,19 @@ export interface ChoixChampsBnc {
   sansReglement: SansReglement
 }
 
+// ── Le drapeau ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * LE FEC D'UN DOSSIER EN TRÉSORERIE PORTE-T-IL SES VINGT-DEUX CHAMPS (lot FEC22c) ? `null` : le drapeau BAISSÉ — le fichier
+ * d'aujourd'hui, à dix-huit colonnes, est celui qu'on exporte, et rien de neuf n'est lu. Levé, il PORTE le choix de
+ * FEC22-Q1 : le drapeau ne se lève qu'avec la réponse de l'expert-comptable à FEC22-E2 (vides, ou la date de l'écriture et
+ * « Sans règlement »), de sorte que l'écran reçoive ce choix sans qu'aucune valeur par défaut ne le décide à sa place. Il
+ * reste baissé tant que la migration FEC22b n'est pas appliquée et que la validation ne fige pas les quatre valeurs
+ * (FEC22c2) : un exercice validé avant elles ne pourrait plus les recevoir (FEC22-Q6). Les tests le jouent dans ses deux
+ * états par un accesseur (`get CHAMPS_BNC_EXPORTES()`).
+ */
+export const CHAMPS_BNC_EXPORTES: ChoixChampsBnc | null = null
+
 // ── Ce que le module rend ──────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Les quatre champs d'une écriture. Les mêmes sur toutes ses lignes, NatOp excepté, dont le poste suit la ligne. */
@@ -148,13 +161,20 @@ export type PosteDuMoteur =
 /** Une ligne de l'écriture : son identifiant, son compte (qui dit si elle est de charge ou de produit) et son poste lu. */
 export type LigneACaracteriser = Pick<EcritureBrouillon, 'id' | 'compte' | 'libelle'> & { poste: PosteLu }
 
-/** Une facture émise telle qu'on la lit, son nom compris — que ce module ne lit jamais. */
-export type FactureDuClient = Pick<FactureEmise, 'id' | 'numero' | 'statut' | 'tiers_siret' | 'tiers_nom' | 'source_de_la_vente'>
+/**
+ * Une facture émise telle que le FEC la lit : son numéro, son statut, le SIRET figé de son client et sa source — JAMAIS son
+ * nom (`tiers_nom`), que ni ce module ni sa lecture (lib/champsBncLecture.ts) ne demandent : une donnée qu'on ne lit pas ne
+ * peut pas fuir (RGPD.md, la minimisation). Les tests en plantent un quand même, à côté du type, et aucun ne sort.
+ */
+export type FactureDuClient = Pick<FactureEmise, 'id' | 'numero' | 'statut' | 'tiers_siret' | 'source_de_la_vente'>
 
-/** Un encaissement du registre (contre-passations comprises), tel qu'on le lit, son motif compris — jamais lu ici. */
+/**
+ * Un encaissement du registre (contre-passations et retirés compris), tel que les ventes facturées le lisent
+ * (lib/ecrituresVentesFactureesLecture.ts) : sans son motif, un texte libre que ce module ne lit jamais. Les tests en
+ * plantent un quand même, à côté du type, et aucun ne sort.
+ */
 export type EncaissementDuRegistre = Pick<EncaissementFacture,
-  'id' | 'dossier_id' | 'facture_id' | 'date_encaissement' | 'montant' | 'moyen' | 'ligne_bancaire_id' | 'annule_id' | 'retire_le'
-  | 'motif'>
+  'id' | 'dossier_id' | 'facture_id' | 'date_encaissement' | 'montant' | 'moyen' | 'ligne_bancaire_id' | 'annule_id' | 'retire_le'>
 
 /** Une pièce telle qu'on la lit, son tiers et son nom de fichier compris — jamais lus ici. */
 export type PieceDuFec = Pick<Piece,
@@ -264,46 +284,99 @@ const ORDRE_DES_REGLEMENTS: Readonly<Record<ReglementDUnePiece['par'], number>> 
 }
 
 /**
- * Les règlements d'une pièce à une date d'écriture, lus de ses paiements (`paiementsDesPieces`, lib/rattachement.ts) et
- * de ses parts que rien ne paie (`rattachementsTresorerie`, la part sans date reportée au jour du dépôt comme
- * `centimesParDate` la date), un par MODE. Deux règlements à la même date — la banque et la poche de l'exploitant, la
- * banque et un virement mixte d'un autre moyen — font deux écritures : la scission est au fichier (FEC22c), qui en
- * répartit les centimes. Le mode d'un mouvement rapproché est « Banque », même quand un encaissement du registre cite
- * aussi ce mouvement : seul l'encaissement qui paie CETTE pièce dit un moyen. Sans paiement de la caisse avant C9.
+ * Le règlement que porte UN paiement d'une pièce (`paiementsDesPieces`, lib/rattachement.ts). `rapprochement` et `groupe` :
+ * un mouvement du relevé, « Banque » — même quand un encaissement du registre cite aussi ce mouvement : seul l'encaissement
+ * qui paie CETTE pièce dit un moyen. `encaissements` : le virement mixte (étape VF5h), l'encaissement de la facture dont la
+ * pièce est l'exemplaire, cité sur ce mouvement, vivant et non une contre-passation — nul quand la lecture ne le rend pas.
  */
-export function reglementsDeLaPieceALaDate(
+export function reglementDUnPaiement(
+  piece: Pick<PieceDuFec, 'facture_id'>,
+  paiement: PaiementDePiece,
+  // Le registre des encaissements du dossier, lu en entier : l'encaissement d'un virement mixte s'y retrouve.
+  registre: readonly EncaissementDuRegistre[],
+): Extract<ReglementDUnePiece, { par: 'releve' | 'virement_mixte' }> {
+  if (paiement.origine === 'rapprochement' || paiement.origine === 'groupe') return { par: 'releve', date: paiement.date }
+  const encaissement = piece.facture_id === null ? null : registre.find((e) => e.ligne_bancaire_id === paiement.id
+    && e.facture_id === piece.facture_id && e.annule_id === null && e.retire_le === null) ?? null
+  return { par: 'virement_mixte', date: paiement.date, encaissement }
+}
+
+/**
+ * La clé qui sépare deux règlements d'une même date : une par MODE. Deux mouvements du relevé le même jour n'en font qu'une
+ * (« Banque ») ; deux virements mixtes de deux moyens en font deux.
+ */
+export function cleDuReglement(r: ReglementDUnePiece): string {
+  switch (r.par) {
+    case 'releve': return 'releve'
+    case 'virement_mixte': return `mixte|${r.encaissement === null ? '' : MODE_DU_MOYEN[r.encaissement.moyen]}`
+    case 'note_de_frais': return 'note_de_frais'
+    case 'caisse': return 'caisse'
+    case 'aucun': return 'aucun'
+  }
+}
+
+/** Un règlement d'une pièce à une date, la part de la pièce qu'il porte, et les mouvements de ses paiements. */
+export interface PartDUnReglement {
+  reglement: ReglementDUnePiece
+  // `cleDuReglement` : ce qui distingue deux écritures de la même pièce à la même date.
+  cle: string
+  // La part de la pièce que ce règlement porte à cette date, comme `rattachementsTresorerie` et `centimesParDate` la
+  // comptent (lib/rattachement.ts) : la somme des parts de ses paiements, ou celle que rien ne paie.
+  part: number
+  // Les mouvements de ses paiements : la ligne de banque d'un paiement porte le sien (`ligne_bancaire_id`).
+  mouvements: readonly string[]
+}
+
+/**
+ * Les règlements d'une pièce à une date d'écriture, un par MODE, chacun avec la part de la pièce qu'il porte — lus de ses
+ * paiements (`partsDesPaiements`, la part de CHAQUE paiement) et de ses parts que rien ne paie (`rattachementsTresorerie`,
+ * la part sans date reportée au jour du dépôt comme `centimesParDate` la date). Les parts d'une date somment à celle que
+ * `centimesParDate` lui donne : la scission d'une écriture (lib/fec.ts, FEC22c) en sous-répartit les centimes sans changer
+ * le total de la date, ni la 2035. Triés dans un ordre fixe — le relevé, le virement mixte, la caisse, la poche de
+ * l'exploitant, rien — pour que deux appels rendent la même chose. Sans paiement de la caisse avant C9.
+ */
+export function partsDesReglementsALaDate(
   piece: PieceDuFec,
   // Ceux de CETTE pièce, tirés de `paiementsDesPieces`.
   paiements: readonly PaiementDePiece[],
   date: string,
-  // Le registre des encaissements du dossier, lu en entier : l'encaissement d'un virement mixte s'y retrouve.
   registre: readonly EncaissementDuRegistre[],
-): ReglementDUnePiece[] {
-  const trouves: ReglementDUnePiece[] = []
-  const cles = new Set<string>()
-  const ajouter = (r: ReglementDUnePiece, cle: string) => {
-    if (cles.has(cle)) return
-    cles.add(cle)
-    trouves.push(r)
-  }
-  for (const p of paiements) {
-    if (p.date !== date) continue
-    if (p.origine === 'rapprochement' || p.origine === 'groupe') {
-      ajouter({ par: 'releve', date }, 'releve')
-      continue
+): PartDUnReglement[] {
+  const trouves: { reglement: ReglementDUnePiece; cle: string; part: number; mouvements: string[] }[] = []
+  const ajouter = (reglement: ReglementDUnePiece, part: number, mouvement: string | null) => {
+    const cle = cleDuReglement(reglement)
+    const deja = trouves.find((x) => x.cle === cle)
+    if (deja) {
+      deja.part += part
+      if (mouvement !== null) deja.mouvements.push(mouvement)
+      return
     }
-    // L'encaissement de la facture dont la pièce est l'exemplaire, cité sur ce mouvement, vivant et non une contre-passation.
-    const encaissement = piece.facture_id === null ? null : registre.find((e) => e.ligne_bancaire_id === p.id
-      && e.facture_id === piece.facture_id && e.annule_id === null && e.retire_le === null) ?? null
-    ajouter({ par: 'virement_mixte', date, encaissement }, `mixte|${encaissement === null ? '' : MODE_DU_MOYEN[encaissement.moyen]}`)
+    trouves.push({ reglement, cle, part, mouvements: mouvement === null ? [] : [mouvement] })
   }
+  const { parts } = partsDesPaiements(piece, paiements)
+  paiements.forEach((p, i) => {
+    if (p.date === date) ajouter(reglementDUnPaiement(piece, p, registre), parts[i].part, p.id)
+  })
   for (const r of rattachementsTresorerie(piece, paiements)) {
     if (r.source === 'paiement' || r.source === 'facture') continue
     if ((r.date ?? dateLocaleDe(piece.created_at)) !== date) continue
-    if (r.source === 'note_de_frais') ajouter({ par: 'note_de_frais', date }, 'note_de_frais')
-    else ajouter({ par: 'aucun' }, 'aucun')
+    ajouter(r.source === 'note_de_frais' ? { par: 'note_de_frais', date } : { par: 'aucun' }, r.part, null)
   }
-  return trouves.sort((a, b) => ORDRE_DES_REGLEMENTS[a.par] - ORDRE_DES_REGLEMENTS[b.par])
+  return trouves.sort((a, b) => ORDRE_DES_REGLEMENTS[a.reglement.par] - ORDRE_DES_REGLEMENTS[b.reglement.par])
+}
+
+/**
+ * Les règlements d'une pièce à une date d'écriture, un par MODE (`partsDesReglementsALaDate`, sans leurs parts). Deux
+ * règlements à la même date — la banque et la poche de l'exploitant, la banque et un virement mixte d'un autre moyen — font
+ * deux écritures : la scission est au fichier (FEC22c), qui en répartit les centimes.
+ */
+export function reglementsDeLaPieceALaDate(
+  piece: PieceDuFec,
+  paiements: readonly PaiementDePiece[],
+  date: string,
+  registre: readonly EncaissementDuRegistre[],
+): ReglementDUnePiece[] {
+  return partsDesReglementsALaDate(piece, paiements, date, registre).map((x) => x.reglement)
 }
 
 export interface EntreesDUnePiece {
@@ -340,6 +413,20 @@ export function champsDUnePiece(e: EntreesDUnePiece): ChampsBnc {
   const f = e.exemplaireDe
   const designee = e.piece.type_piece === 'vente' && f !== null && e.piece.facture_id === f.id && !f.source_de_la_vente
   return { ...reglement, nature, natOp: natOps(nature, e.lignes), idClient: designee ? identificationDuClient(f) : '' }
+}
+
+/**
+ * Une écriture dont la SOURCE n'est pas dans ce que l'appelant a lu — une pièce remise « à valider » dont l'écriture reste
+ * au brouillon, que les contrôles disent sans objet (`ecrituresSansObjet`, lib/ecritures.ts), ou l'encaissement d'une vente
+ * facturée qu'un registre lu ne rend plus. Rien ne dit son règlement : le choix de FEC22-Q1 ; sa nature est celle que le
+ * COMPTE de ses lignes donne (classe 7 une recette, classe 6 une dépense, sinon une opération de bilan), jamais devinée
+ * d'un libellé ; aucun client. Défensif : la validation ne fige pas un exercice qui en porte une, et le fichier (lib/fec.ts)
+ * ne l'appelle que là où une lecture complète ne peut pas manquer la source.
+ */
+export function champsDUneSourceNonLue(
+  dateDeLEcriture: string, lignes: readonly LigneACaracteriser[], choix: ChoixChampsBnc,
+): ChampsBnc {
+  return sansReglementDe(natureDesLignes(lignes), dateDeLEcriture, lignes, choix)
 }
 
 // ── Un mouvement justifié par le relevé ──

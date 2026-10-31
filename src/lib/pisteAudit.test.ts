@@ -7,7 +7,7 @@ import {
   rupturesPisteAudit,
   type RegistreAudit,
 } from './pisteAudit'
-import { genererFec } from './fec'
+import { CHAMPS_BNC_NON_EXPORTES, genererFec } from './fec'
 import type { LettrageDeLigne } from './lettrage'
 import { COMPTE_BANQUE } from './comptes'
 import { analyserEcritures } from './ecritures'
@@ -110,7 +110,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est absente du FEC', () => {
     const categories: Categorie[] = []
-    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES).split('\r\n').filter(Boolean)
+    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES).split('\r\n').filter(Boolean)
     // En-tête + la seule écriture justifiée : l'orpheline n'y est pas.
     expect(lignes).toHaveLength(2)
     expect(lignes.join('\n')).not.toContain('199,99')
@@ -558,7 +558,7 @@ describe('pisteAudit — l’échéance payée depuis le compte personnel', () =
     expect(rupturesPisteAudit(lignes, new Set())).toEqual([])
     expect(absenceFec(lignes, new Set())).toEqual({ nb: 0, debit: 0, credit: 0 })
     // L'en-tête et les deux lignes de l'écriture.
-    expect(genererFec(lignes, [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES).split('\r\n').filter((l) => l !== '')).toHaveLength(3)
+    expect(genererFec(lignes, [], [], [], 'tresorerie', [], SANS_LETTRAGE, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES).split('\r\n').filter((l) => l !== '')).toHaveLength(3)
     // Le garde symétrique : la même écriture sans son échéance est bien une rupture, et hors du FEC.
     expect(rupturesPisteAudit([paiement({ cotisation_id: null })], new Set()).map((r) => r.motif)).toEqual(['sans_justificatif'])
     expect(absenceFec([paiement({ cotisation_id: null })], new Set()).nb).toBe(1)

@@ -18,7 +18,7 @@ import { cotisationsComptees, ecritureDeLaCotisation } from '../../src/lib/cotis
 import { calculerDeclaration2035 } from '../../src/lib/declaration2035'
 import { calculerCa3, type DonneesTva } from '../../src/lib/declarationTva'
 import { lignesPourPiece, piecesAComptabiliser } from '../../src/lib/ecritures'
-import { numeroterFec } from '../../src/lib/fec'
+import { CHAMPS_BNC_NON_EXPORTES, numeroterFec } from '../../src/lib/fec'
 import { ecritureDuForfait } from '../../src/lib/forfaitKilometrique'
 import { aPayerDe, declarationDeLaCa3, ecritureDeLaLiquidation, ecritureDuPaiementTva } from '../../src/lib/liquidationTva'
 import { calculerTotaux } from '../../src/lib/montantsFacture'
@@ -721,8 +721,9 @@ function valider(
   const numerotation = numeroterFec(
     dansLExercice as unknown as EcritureBrouillon[], s.pieces as unknown as Piece[], categories as unknown as Categorie[], [],
     // Le dossier que le banc valide n'a pas basculé : aucune écriture d'une vente facturée (étape VF4c2). Il ne tient pas de
-    // caisse non plus : aucune opération à numéroter (étape C3b).
-    TRESORERIE.mode, s.lignes as unknown as MouvementBancaire[], [], OPERATIONS_DE_CAISSE_ABSENTES,
+    // caisse non plus : aucune opération à numéroter (étape C3b). Et la validation ne fige pas encore les quatre champs d'un
+    // BNC en trésorerie (lot FEC22c1 : la numérotation figée est celle du drapeau baissé).
+    TRESORERIE.mode, s.lignes as unknown as MouvementBancaire[], [], OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES,
   )
   if (numerotation.horsFec.length > 0) console.error('[banc] écritures hors du FEC dans le dossier validé', numerotation.horsFec)
   for (const l of numerotation.lignes) {

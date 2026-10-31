@@ -33,3 +33,68 @@ export function desequilibresDgfip(fec: string): string[] {
   }
   return [...soldes].filter(([, s]) => s !== 0).map(([num]) => num)
 }
+
+// ── LE FEC D'UN BNC EN TRÉSORERIE, À VINGT-DEUX CHAMPS (lot FEC22c) ──────────────────────────────────────────────────────
+//
+// L'en-tête du VIII, 7° de l'article A47 A-1, écrit ici en toutes lettres plutôt qu'importé de lib/fec.ts : l'oracle ne
+// répète pas ce qu'il juge.
+export const ENTETES_BNC_ATTENDUS = [
+  'JournalCode', 'JournalLib', 'EcritureNum', 'EcritureDate', 'CompteNum', 'CompteLib', 'CompAuxNum', 'CompAuxLib', 'PieceRef',
+  'PieceDate', 'EcritureLib', 'Debit', 'Credit', 'EcritureLet', 'DateLet', 'ValidDate', 'Montantdevise', 'Idevise',
+  'DateRglt', 'ModeRglt', 'NatOp', 'IdClient',
+]
+
+// Une date du calendrier, AAAAMMJJ, l'année dans 1900–2099 (Test Compta Demat, `trt_txt.pl` : une colonne de date
+// remplie doit être une date ; hors de ces années, un avertissement).
+function dateDuCalendrier(v: string): boolean {
+  const m = /^(\d{4})(\d{2})(\d{2})$/.exec(v)
+  if (!m) return false
+  const [a, mo, j] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const d = new Date(Date.UTC(a, mo - 1, j))
+  return a >= 1900 && a <= 2099 && d.getUTCFullYear() === a && d.getUTCMonth() === mo - 1 && d.getUTCDate() === j
+}
+
+/**
+ * LA STRUCTURE QUE L'OUTIL DE LA DGFiP ÉPROUVE dans la catégorie « BNC trésorerie » : l'en-tête des vingt-deux noms, dans
+ * l'ordre ; chaque ligne à autant de champs que l'en-tête, vides de fin compris (sinon « La structure du fichier est
+ * incorrecte ») ; DateRglt vide ou une date du calendrier.
+ */
+export function structureBncDgfip(fec: string): string[] {
+  const [entete, ...lignes] = colonnes(fec)
+  const fautes: string[] = []
+  if (JSON.stringify(entete) !== JSON.stringify(ENTETES_BNC_ATTENDUS)) fautes.push(`en-tête : ${entete.join(' ')}`)
+  lignes.forEach((r, i) => {
+    if (r.length !== ENTETES_BNC_ATTENDUS.length) fautes.push(`ligne ${i + 1} : ${r.length} champs`)
+    else if (r[18] !== '' && !dateDuCalendrier(r[18])) fautes.push(`ligne ${i + 1} : DateRglt « ${r[18]} »`)
+  })
+  return fautes
+}
+
+/**
+ * CE QUE LA CONCEPTION EXIGE DES QUATRE CHAMPS, relu sur le fichier IMPRIMÉ (« CE QUI EST DÉCIDÉ », 3° et 5° ; FEC22-Q3 et
+ * Q4) : DateRglt, ModeRglt et IdClient constants par EcritureNum, et la NATURE aussi — NatOp peut porter, après le tiret,
+ * un poste par ligne ; DateRglt et ModeRglt remplis sur toute écriture qui est un règlement — qui touche la banque (512),
+ * les valeurs à l'encaissement (511) ou la caisse (53), hors des à-nouveaux, qui reprennent des soldes —, et l'un l'est
+ * quand l'autre l'est ; IdClient vide, ou l'un des identifiants du jeu — le numéro d'une facture, un SIREN figé.
+ */
+export function anomaliesBnc(fec: string, identifiants: ReadonlySet<string>): string[] {
+  const parEcriture = new Map<string, string[][]>()
+  for (const r of colonnes(fec).slice(1)) parEcriture.set(r[2], [...(parEcriture.get(r[2]) ?? []), r])
+  const fautes: string[] = []
+  const nature = (natOp: string) => natOp.split(' — ')[0]
+  for (const [num, rows] of parEcriture) {
+    const distincts = (lire: (r: string[]) => string) => new Set(rows.map(lire)).size
+    if (distincts((r) => r[18]) !== 1) fautes.push(`${num} : différentes dates de règlement`)
+    if (distincts((r) => r[19]) !== 1) fautes.push(`${num} : différents modes de règlement`)
+    if (distincts((r) => nature(r[20])) !== 1) fautes.push(`${num} : différentes natures`)
+    if (distincts((r) => r[21]) !== 1) fautes.push(`${num} : différents clients`)
+    const [d, m, , id] = rows[0].slice(18)
+    if (rows[0][0] !== 'AN' && rows.some((r) => /^(512|511|53)/.test(r[4])) && (d === '' || m === '')) {
+      fautes.push(`${num} : un règlement sans date ou sans mode`)
+    }
+    if ((d === '') !== (m === '')) fautes.push(`${num} : une date de règlement sans mode, ou l'inverse`)
+    if (rows.some((r) => r[20] === '')) fautes.push(`${num} : une ligne sans nature`)
+    if (id !== '' && !identifiants.has(id)) fautes.push(`${num} : IdClient « ${id} » n'est ni un numéro de facture ni un SIREN du jeu`)
+  }
+  return fautes
+}

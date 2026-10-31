@@ -184,7 +184,7 @@ export function ligneContrepartieDirigeant(
 // pas de contrepartie à part — sa charge est déjà au compte du dirigeant, et l'écrire aussi en face annulerait l'une
 // par l'autre : elle suit la règle de toute pièce, la banque de son paiement. La génération et le contrôle
 // répondent par ce seul prédicat, sans quoi l'un écrirait ce que l'autre déclare « à régénérer ».
-function estContrepartieDirigeant(
+export function estContrepartieDirigeant(
   p: Pick<Piece, 'type_piece'>, cible: Pick<CibleComptable, 'compte'>, e: Pick<EcritureBrouillon, 'compte'>, plan: PlanComptable,
 ): boolean {
   return p.type_piece === 'note_frais' && e.compte === plan.exploitant && cible.compte !== plan.exploitant
