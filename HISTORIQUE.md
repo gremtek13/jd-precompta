@@ -43728,11 +43728,17 @@ refuser, ou dire, plutôt que deviner. Aucune migration.
   opération (une date et un montant entiers), puis le plus régulier, puis le point-virgule. **Le signe moins
   typographique** (U+2212) se lit comme le trait d'union.
 
-Ce qui reste : la copie de `parseMontantBancaire` dans `extract-piece` ne connaît pas U+2212 (elle lit « −45,20 » en
-+45,20 sur une pièce) — à reprendre au prochain déploiement de la fonction ; les lignes de préambule restent comptées
-« date illisible » plutôt qu'écartées comme telles ; une colonne « Sens » (D / C) à côté d'un montant non signé n'est
-pas reconnue — `douteDuSens` le dit quand aucun débit n'est lu.
+**Seconde relecture, le même jour, par un relecteur indépendant.** La règle de la forme, seule, faisait entrer comme un
+mouvement une vraie ligne de solde que sa liste ne connaissait pas (« SOLDE EN VOTRE FAVEUR », « SOLDE A REPORTER », un
+numéro de compte qui porte une lettre) — pire que la règle d'avant pour le PDF. Une troisième nature, « à trancher » (le
+mot sans la forme), se nomme et se décide ligne par ligne en CSV, l'import refusé avant le clic ; en PDF, cochée
+« solde » d'office et nommée. Les soldes retenus se listent par libellé. Le recouvrement compte aussi le même nom de
+fichier et ses bornes ; le séparateur d'une balance sans opérations revient au point-virgule ; les données commencent
+après l'en-tête reconnu ; le PDF écarte une opération à 0,00 €.
 
+Ce qui reste : la copie de `parseMontantBancaire` dans `extract-piece` ne connaissait pas U+2212 (elle lisait « −45,20 »
+en +45,20 sur une pièce) — corrigée le même jour par la session, la fonction à redéployer ; une colonne « Sens » (D / C)
+à côté d'un montant non signé n'est pas reconnue — `douteDuSens` le dit quand aucun débit n'est lu.
 ### 31/10/2026 — LA 2035 D'UN BNC EXONÉRÉ : TROIS DÉFAUTS DE LA RELECTURE CORRIGÉS
 
 Avant la répétition générale du MVP (MVP-D6, MVP-D7 : la 2035 de 2025 d'un soignant rejouée vers le 20 novembre et
@@ -43804,8 +43810,35 @@ paiement compte pour son montant RAPPORTÉ AU SENS de cette somme : +1, −1, +1
 **Ce qui reste.** L'écran ne laisse toujours pas rapprocher le crédit d'un rejet de la pièce qu'il défait :
 `refusSecondPaiement` refuse un mouvement « dans le mauvais sens » pour la pièce, et une pièce déjà payée n'est pas
 proposée. Le moteur est juste pour ces données, d'où qu'elles viennent (un rapprochement direct, une restauration) ;
-ouvrir le geste est une décision du cabinet (REJET-Q1, à la page des arbitrages). Le total « CSG déductible » de
-l'onglet Cotisations additionne la saisie sans la signer (`CotisationsTab.tsx`, ligne 561) : un affichage, pas la 2035.
+ouvrir le geste est une décision du cabinet (REJET-Q1, à la page des arbitrages).
+
+**Seconde relecture, le même jour : deux régressions et un oubli, corrigés.** Mesuré par la session sur le dossier
+`test` : 10 pièces payées, aucune aux paiements de sens contraires — aucune écriture existante ne bouge.
+- *La CA3 du mois d'un rejet inscrivait des lignes négatives* (`calculerCa3`, `lib/declarationTva.ts`) : la ligne se
+  choisissait au signe de la pièce, si bien que la part négative d'une pièce positive (le rejet d'un prélèvement)
+  faisait une ligne 20 négative, une base A1 et une taxe 08 négatives, une E2 négative. La ligne se choisit désormais au
+  signe de ce que LA PÉRIODE porte, la règle que la CA3 applique déjà à l'exigibilité d'une vente facturée : un achat
+  dont la période est négative REVERSE sa TVA en ligne 15 (« TVA antérieurement déduite à reverser », notice 3310-CA3) ;
+  une vente taxée, en B5 et en ligne 21 ; une vente sans TVA, en F8. Une période qui ne porte rien (un centime arrondi à
+  zéro) garde la ligne de la pièce, celle d'hier. Des paiements de même sens que la pièce rendent exactement ce qu'ils
+  rendaient. Un tirage de 3 888 cas (six pièces, trois mouvements de sens et de mois quelconques, trois mois) ne trouve
+  plus aucune ligne négative. Le test qui figeait −100 € en ligne 20 dit maintenant 100 € en ligne 15.
+- *L'écran acceptait un paiement que le moteur ne comptait pas* (`resteARegler`, `lib/reglementGroupe.ts`) : la somme
+  nette y était prise en valeur absolue, si bien qu'un crédit de 200 € rapproché d'abord d'un achat de 1 200 € y
+  comptait comme un paiement — reste 1 000 €, un débit de 1 000 € accepté, puis la 2035 jugeait la pièce payée 800 €,
+  400 € « payés en partie » qui retenaient la validation. Le reste est désormais la pièce moins le net rapporté au sens
+  qui la règle (`signeReglant`) — 1 400 € dans ce cas —, et le second paiement comme la part d'un règlement groupé se
+  jugent sur la somme qu'ils feraient (`refusDuPaiementAjoute`) : refusés s'ils dépassent le reste au-delà de l'écart
+  d'alignement (le refus d'hier, au centime près), ou s'ils retourneraient le sens d'une somme qu'un mouvement de
+  l'autre sens tient déjà (« retire d'abord ce mouvement de la pièce »). Une somme nulle — un prélèvement et son rejet —
+  n'a pas de sens à retourner : sa reprise passe. Le rejet rapproché APRÈS le débit reste refusé par l'écran (« mauvais
+  sens ») : le cabinet en est saisi (REJET-Q1).
+- *Le total « CSG déductible » de l'onglet Cotisations* additionnait la saisie sans la signer : il suit
+  `csgDansLeSensDe`, comme BV, et la colonne de chaque échéance aussi (un test d'écran).
+- Les deux copies de l'assistant ne portent ni la CA3 ni le reste à régler : rien à y reporter.
+Mutations (neuf, toutes tuées) : chacun des trois choix de ligne de la CA3 remis au signe de la pièce, la somme signée
+sur la ligne d'un achat, la période nulle classée positive, le reste sans le sens qui règle, le refus du sens retourné
+retiré ou jugé depuis zéro, la CSG saisie de l'onglet Cotisations.
 
 Mutations (seize, toutes tuées) : la case soustractive sans l'exception ou ouverte aux recettes ; la CSG à son échéance
 non signée, sans valeur absolue ; la part en valeur absolue ; `paiementNet` en valeur absolue ; la somme nulle non
