@@ -43031,3 +43031,338 @@ sans elle, `versionCourante` ne gardant que les versions du dossier.
 avertissements, ceux de la référence ; `npm run test:fuseaux` 0, 502 fichiers et 15 676 tests justes à Paris, UTC, New
 York et Auckland (15 663 sur `main` avant ce lot : treize tests de plus) ; `npm run build` 0. Le commit de la
 documentation qui suit ne touche aucun fichier que la suite lise.
+
+### 31/10/2026 — LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION (LIGNE 26.6, ÉTAPE E)
+
+(Écrite par l'agent architecte sur `a9d36e8`, branche `claude/intelligent-goldberg-jv941d`. Une conception seule : ni
+code, ni migration, ni Edge Function ; en production, rien de lu ni d'écrit. Lus avant d'écrire : « LE FEC SUIT
+L'ARTICLE A47 A-1 » et ses suites (« ET L'OUTIL CONTRÔLE AUSSI CHAQUE ÉCRITURE », « CE QUI RESTE HORS DE LA NORME ») ;
+le § 5 de « LA CAISSE D'UN DOSSIER BNC : LA CONCEPTION » ; « LA CAISSE : LE FEC ET LES CONTRÔLES (C3B, LIGNE 26.6) » ;
+« LE FEC, LA PISTE D'AUDIT ET LE LETTRAGE LISENT LES VENTES FACTURÉES » ; « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS
+LA MI-DÉCEMBRE 2026 » ; `src/lib/fec.ts` et `src/lib/fec.test.ts` en entier, `src/test/fecDgfip.ts`, et les sources
+de chaque écriture que le FEC porte. MVP-D5 : l'expert-comptable importe ce fichier pour déposer la 2035 de 2026.)
+
+**LES SOURCES, ET COMMENT ELLES ONT ÉTÉ LUES.**
+- LPF, art. A47 A-1 (LEGIARTI000027804775), version en vigueur depuis le 02/08/2013 (arrêté du 29/07/2013), lue sur
+  Légifrance par un outil qui résume la page — le téléchargement direct est refusé (403) — : des citations courtes,
+  recoupées par trois lectures. Le VIII, 3° vise une comptabilité « selon les règles du droit commercial » (dix-huit
+  informations) ; le VIII, 7° le contribuable BNC qui « tient une comptabilité de trésorerie retraçant les recettes et
+  les dépenses professionnelles » : « les vingt-deux premières informations devant obligatoirement correspondre, dans
+  l'ordre » au tableau. Les quatre dernières : « 19. La date de règlement » (DateRglt, date), « 20. Le mode de
+  règlement » (ModeRglt), « 21. La nature de l'opération (à blanc si non utilisé) » (NatOp), « 22. L'identification
+  du client (à blanc si non utilisé) » (IdClient). DateRglt et ModeRglt ne portent PAS la mention « à blanc ». Le 8°
+  admet Montant et Sens à la place de Debit et Credit (inutile ici). Une lecture a rendu d'abord un tableau qui marquait
+  autrement les champs « à blanc » (JournalCode, CompteNum) : relue ligne à ligne, la mention est sur les informations
+  1, 5, 7, 17, 21 et 22, rien sur 19 et 20. À VÉRIFIER À L'ŒIL par le cabinet sur Légifrance avant le rendez-vous
+  (FEC22-Q1 en dépend), comme l'orthographe « Crédit » que la page donnerait au champ 13 du 7°.
+- BOFiP, BOI-CF-IOR-60-40-20 du 07/06/2017 (la notice du FEC) : § 70 (« à blanc » : la donnée se fournit dès qu'elle
+  est disponible ; sinon le champ reste vide, « Il ne faut pas remplir avec des « 0 » ou des « espaces » ») ; § 120
+  (EcritureDate) ; § 250 (ValidDate et mode brouillard) ; § 260 (« le montant en devise figurant sur la pièce
+  justificative » dans Montantdevise) ; § 270 (Idevise, codifiable avec une table de correspondance) ; § 280 (« la date
+  à laquelle ont été encaissées les recettes et payées les dépenses ») ; § 290 (ModeRglt : chèque, espèces, virement ;
+  codifiable avec une table) ; § 300 (NatOp, « les opérations effectuées par le contribuable », littérale ou codifiée) ;
+  § 310 (IdClient, « l'identité déclarée par les clients », codifiable sous le secret professionnel, renvoi au
+  BOI-CF-IOR-60-10, III, § 210 et suivants). LE § 70 DE CETTE NOTICE PORTE SUR LES CHAMPS « À BLANC », PAS SUR LE
+  CLIENT : l'identification sous le secret est au § 310, et le « § 70 » que cite `fec.ts` est celui du BNC (ci-dessous).
+- BOFiP, BOI-CF-IOR-60-10 du 02/09/2015, § 210 à § 240 (l'identité, la date, le montant et la forme du versement
+  « doivent obligatoirement figurer » au livre-journal ; LPF, art. L. 13-0 A : aucune demande sur « la nature des
+  prestations fournies »), § 290 et § 300 (les deux tolérances), § 340 (la nature des prestations OCCULTÉE).
+- BOFiP, BOI-BNC-DECLA-10-20 du 12/09/2012 : § 70 (des recettes en espèces au comptant d'un montant unitaire sous le
+  seuil du 3° du I de l'art. 286 du CGI se comptabilisent « globalement en fin de journée », sans l'identité des
+  clients, qui « ne doit figurer que sur les pièces justificatives ») ; § 80 (les remises de chèques par total de
+  bordereau, si le bordereau porte l'identité des tireurs) ; § 90 (le mode de règlement et la nature des prestations au
+  livre-journal) ; § 270 à § 290 (sous le secret, au lieu de l'identité : « soit une référence à un document annexe
+  permettant de retrouver l'identité du client, à la condition que l'administration ait accès à ce document ; soit le
+  nom du client », l'identité complète dans un fichier couvert par le secret, fournie « sur simple demande ») ; § 310
+  (LPF, art. L. 86 A) ; § 330 (le relevé SNIR, pour le seul médecin conventionné du secteur I). L'art. 99 du CGI est lu
+  à travers ces deux BOFiP, pas sur Légifrance ; les art. L. 13-0 A et L. 86 A du LPF, à travers eux aussi.
+- Test Compta Demat (dépôt public `DGFiP/Test-Compta-Demat`, cloné au commit `1563a42` du 18/11/2021, la tête du dépôt,
+  lu et non exécuté) : `src/testeur/SQL/FECBNCT.sql`, `src/testeur/fmt_arrete`, `src/testeur/trt_txt.pl`,
+  `src/testeur/trt_entete.pl`, `src/testeur/SQL/VUES_FECBNCT.sql`. Aucune norme AFNOR.
+
+**CE QUE TEST COMPTA DEMAT CONTRÔLE DE CES COLONNES** (l'utilisateur choisit la catégorie « BNC trésorerie », BNCT).
+- L'en-tête : `fmt_arrete` nomme DateRglt, ModeRglt, NatOp et IdClient (rangs 19 à 22) ; `FECBNCT.sql` les déclare
+  sans `NOT NULL` (`paiement_date date`, `paiement_mode`, `prestation`, `client`) : un champ n'est exigé dans l'en-tête
+  que `NOT NULL` sans défaut (`trt_txt.pl`, la boucle sur le SQL). Un fichier à dix-huit colonnes passe donc, comme
+  l'entrée du 28/09/2026 le disait. Les noms se comparent en capitales, accents retirés (`trt_entete.pl`) : « Credit »
+  et « Crédit » s'équivalent. Un nom inconnu ouvre une correspondance à la main (« champs inconnus en surnombre »).
+- Chaque ligne a autant de champs que l'en-tête, vides de fin compris (le « ² » ajouté avant le découpage) : sinon
+  « La structure du fichier est incorrecte ».
+- Une colonne de date facultative vide passe ; remplie, elle doit être une date du calendrier (AAAAMMJJ ou les formes à
+  séparateurs), une année hors de 1900–2099 fait un avertissement. ModeRglt, NatOp et IdClient : du texte, rien de
+  contrôlé.
+- Les « données absentes » : en BNCT, PieceRef et PieceDate sur chaque ligne ; les contrôles de DateRglt et ModeRglt
+  sont en commentaire depuis le 23/01/2015 (« on ne doit plus controler les champs suivants »).
+- Rien de plus pour les quatre champs : la vue du journal (`VUES_FECBNCT.sql`) les affiche, aucune requête ne les juge.
+  CE QUE L'OUTIL N'ÉPROUVE PAS, L'IMPORT CHEZ L'EXPERT-COMPTABLE L'ÉPROUVERA : un logiciel peut exiger des valeurs
+  dans une liste, refuser 22 colonnes pour un dossier qu'il tient en 18, ou créer un compte client par IdClient
+  (FEC22-E1 à E14).
+
+**CE QUI EST DÉCIDÉ.**
+1. **Vingt-deux colonnes pour tout dossier en trésorerie, dix-huit en engagement.** `dossiers.mode_comptable` est la
+   seule donnée qui dise la tenue : l'application n'a pas de catégorie de revenus, et la trésorerie y est la règle du
+   BNC et de la 2035 (`types.ts`, commentaire de `mode_comptable`). Un dossier ne change pas de modèle quand son
+   brouillon porte une ligne (`verrouiller_modele_comptable`, 23514) : le nombre de colonnes est stable pour tout
+   exercice qui a des écritures. L'en-tête : les dix-huit noms d'aujourd'hui, dans l'ordre, puis DateRglt, ModeRglt,
+   NatOp, IdClient (VIII, 7°, « dans l'ordre »). En engagement, le fichier ne change pas d'un octet (VIII, 3° ; FECCOM
+   et FECBIC de l'outil n'ont pas ces colonnes : les ajouter ouvrirait la correspondance à la main). Un BNC qui aurait
+   opté pour les créances acquises et les dépenses engagées, s'il existe, est FEC22-E9.
+2. **Une valeur LUE, jamais devinée** : chaque champ se tire de la source de l'écriture — ce qui en fait déjà la clé
+   dans `numeroterFec` (la pièce et son paiement, le mouvement et son lien, l'opération de caisse, l'encaissement du
+   registre, la dotation, le forfait, la déclaration, l'échéance payée de la poche de l'exploitant). Aucun libellé de
+   relevé ni de pièce n'est lu pour en tirer un mode, une nature ou un client. Ce qui n'a pas de source reste vide.
+3. **Les quatre valeurs sont les mêmes sur toutes les lignes d'une écriture** : l'écriture enregistre UNE opération,
+   l'outil juge écriture par écriture (`SQL/ECRITURE.sql` ; `anomaliesDgfip`), et un logiciel qui lit le règlement
+   d'une ligne de charge doit lire celui de sa banque. D'où une seule règle neuve de numérotation : **une pièce payée le
+   même jour par deux modes fait deux écritures** — la clé `pièce|date` devient `pièce|date|mode` quand les paiements
+   d'une date en portent deux (la banque et la caisse le même jour), les centimes de la date sous-répartis entre ses
+   modes, le total de la date intact (`centimesParDate`, lib/rattachement.ts : la 2035 ne change pas). Écartée : une
+   valeur par ligne (le mode de la banque sur la banque, celui de la caisse sur la caisse, rien sur la charge) — la
+   ligne de charge n'aurait pas de règlement, et c'est elle que le vérificateur lit. Libre aujourd'hui : aucun exercice
+   n'est validé ; après la première validation, la numérotation figée ne se changerait plus.
+4. **DateRglt se lit du PAIEMENT, jamais d'EcritureDate**, même quand les deux coïncident (une pièce payée, en
+   trésorerie, s'écrit à la date de son paiement) : une pièce SANS paiement (`sans_paiement`, lib/rattachement.ts)
+   s'écrit à sa date et n'a pas de règlement — DateRglt vide —, et l'opération découverte après coup (B9) porte
+   EcritureDate au 1er janvier N+1 et DateRglt au paiement de N (« L'OPÉRATION DÉCOUVERTE APRÈS COUP », § POUR LE FEC).
+5. **Jamais le nom d'un patient, ni d'aucun client, ni le tiers d'une pièce** (BOI-BNC-DECLA-10-20, § 280 ; décision
+   de principe de la conception) : IdClient est une RÉFÉRENCE ou un code (FEC22-Q4), jamais un texte tiré de `tiers`,
+   de `tiers_nom`, d'un libellé ou d'un nom de fichier ; et NatOp n'est jamais la nature d'un SOIN (LPF, L. 13-0 A ;
+   BOI-CF-IOR-60-10, § 340) : une liste fermée de natures comptables, aucun texte libre que le cabinet ait tapé.
+6. **Les quatre valeurs se figent avec l'écriture** à la validation de son exercice, comme le journal, le numéro et la
+   pièce (`numerotationValidee` ne relit rien d'aujourd'hui) : une migration (lot FEC22b ci-dessous).
+
+**CE QUE CHAQUE ÉCRITURE PORTE** (trésorerie ; « Q1 » : la valeur d'une écriture qui n'est pas un règlement, FEC22-Q1 ;
+« Q2 » : le mode d'un règlement par le relevé, FEC22-Q2 ; « Q4 » : la référence du client, FEC22-Q4). Les natures sont
+écrites en toutes lettres (BOFiP § 300 : littérale, sans table) ; leur liste exacte est FEC22-Q3.
+- **Pièce payée par le relevé** (rapprochement, part d'un règlement groupé : `paiementsDesPieces`, origines
+  `rapprochement` et `groupe`) — DateRglt la date du mouvement ; ModeRglt Q2 ; NatOp « Dépense » ou « Recette » (le
+  `type_piece`), « Acquisition d'immobilisation » quand la cible est un bien (`cible.immobilisation`, ecritures.ts) ;
+  IdClient vide, sauf une pièce de vente DÉSIGNÉE exemplaire d'une facture qui n'est pas source (`pieces.facture_id`) :
+  Q4 de cette facture. Le tiers lu par l'OCR n'est pas « l'identité déclarée par le client » (CGI, art. 99) : jamais.
+- **Pièce payée par un virement mixte** (origine `encaissements`, étape VF5h) — DateRglt la date du mouvement ; ModeRglt
+  le `moyen` de l'encaissement de la facture d'avant au registre ; NatOp « Recette » ; IdClient Q4 de cette facture.
+- **Note de frais** (part `note_de_frais`, face au 108000) — DateRglt la date que la 2035 compte (celle de la pièce, son
+  repli : `centimesParDate`) ; ModeRglt « Compte personnel » (la source le dit : l'exploitant a payé de sa poche, le
+  moyen exact n'est pas connu) ; NatOp « Dépense » ; IdClient vide. Remboursée par un virement rapproché : la ligne
+  précédente.
+- **Pièce sans paiement** (`sans_paiement`) — DateRglt et ModeRglt vides ; NatOp « Dépense » ou « Recette » ; IdClient
+  vide. Elle est déséquilibrée, et la validation la refuse (`ecritures-desequilibrees`) : elle ne se fige jamais ainsi.
+- **Pièce payée par la caisse** (genre `paiement`, étape C9, à venir) — DateRglt la date de l'opération ; ModeRglt
+  « Espèces » ; NatOp celle de la pièce ; IdClient vide.
+- **Mouvement affecté à une catégorie, ou ventilé** (BQ, le relevé pour pièce) — DateRglt la date du mouvement ;
+  ModeRglt Q2 ; NatOp la nature, recette ou dépense, que la 2035 donne au poste de sa catégorie (`poste_2035`,
+  lib/cases2035.ts, `cadre`) — « Recette » ou « Dépense », jamais le libellé de la catégorie ; ventilé sur les deux,
+  « Recette et dépense » ; IdClient vide (un crédit de l'Assurance maladie paie pour des patients que le relevé ne
+  nomme pas, et que le SNIR justifie : RGPD.md § 8.7).
+- **Virement personnel** — DateRglt la date ; ModeRglt Q2 ; NatOp « Prélèvement de l'exploitant » (un débit) ou
+  « Apport de l'exploitant » (un crédit), le signe du mouvement ; IdClient vide.
+- **Échéance ou déblocage d'emprunt** — la date ; Q2 ; « Échéance d'emprunt » ou « Déblocage d'emprunt »
+  (`emprunt_echeance` nul ou non) ; vide. Le contrat dit souvent « prélèvement », la base ne le garde pas : Q2.
+- **Échéance de cotisation rapprochée** — la date ; Q2 ; « Cotisation sociale » ; vide.
+- **Échéance payée depuis le compte personnel** (`cotisation_id`, OD) — DateRglt la date du paiement saisie ; ModeRglt
+  « Compte personnel » ; NatOp « Cotisation sociale » ; IdClient vide.
+- **Mouvement écrit sur un compte de bilan** (ligne 26.7) — la date ; Q2 ; « Opération de bilan », et « Versement
+  d'espèces » quand le compte est celui du rôle `caisse` du plan (lu sur la ligne, jamais sur le libellé) ; vide.
+- **Paiement ou remboursement de TVA** (`declaration_tva_id` du mouvement) — la date ; Q2 ; « Paiement de TVA » ou
+  « Remboursement de TVA » (le signe) ; vide.
+- **Liquidation de TVA** (OD, la CA3 pour pièce) — Q1 ; NatOp « Liquidation de TVA » ; IdClient vide.
+- **Dotation aux amortissements** (OD au 31 décembre) — Q1 ; « Dotation aux amortissements » ; vide.
+- **Forfait kilométrique** (OD au 31 décembre, face au compte de l'exploitant) — Q1 ; « Frais de véhicule (barème) » ;
+  vide. Ce n'est pas un règlement : le barème tient lieu de frais réels, rien n'est payé ce jour-là.
+- **À-nouveaux** (journal AN) — Q1 ; « À-nouveaux » ; vide.
+- **Vente facturée — la facture ou l'avoir** (en trésorerie, la seule TVA due avant l'encaissement : le 411 face au
+  44571, lib/ecrituresVentesFacturees.ts) — Q1 ; « TVA due sur facture » ; IdClient Q4 de la facture.
+- **Vente facturée — l'encaissement** (VE, `encaissement|<id>|<date>`) — DateRglt `date_encaissement` (« la remise d'un
+  chèque, pas son crédit », types.ts) ; ModeRglt son `moyen` : Virement, Chèque, Carte bancaire, Prélèvement, Espèces,
+  Effet, Compensation, Autre ; NatOp « Recette » ; IdClient Q4 de la facture. Une compensation est un règlement (§ 290 :
+  « modalités de paiement »), daté au registre.
+- **Vente facturée — la contre-passation** — DateRglt sa date (le décaissement) ; ModeRglt son `moyen` au registre ;
+  NatOp « Annulation de recette » ; IdClient Q4 de la facture.
+- **Vente facturée — le mouvement classé par ses encaissements** (BQ : la banque, le 511 ou le 53 d'un autre jour, le
+  627 des frais) — DateRglt la date du mouvement ; ModeRglt le `moyen` de ses encaissements quand ils en ont un seul
+  (une remise de chèques : « Chèque »), sinon Q2 ; NatOp « Remise en banque » ; IdClient vide (un bordereau porte
+  plusieurs clients : BOI-BNC-DECLA-10-20, § 80).
+- **Caisse — la recette, ou des espèces rendues** (VE) — DateRglt la date ; ModeRglt « Espèces » ; NatOp « Recette » ;
+  IdClient vide : un total de jour ne nomme personne (BOI-BNC-DECLA-10-20, § 70 ; conception de la caisse, § 5).
+- **Caisse — l'apport, le prélèvement** (OD) — la date ; « Espèces » ; « Apport de l'exploitant » ou « Prélèvement de
+  l'exploitant » ; vide.
+- **Le reste d'une pièce supprimée, une vente facturée à réécrire** : hors du fichier, comme aujourd'hui (`horsFec`).
+
+**CE QUE LE MODÈLE SAIT DU MODE, ET CE QUI LUI MANQUE.** Il le sait du registre des encaissements (`moyen`, huit
+valeurs, `MoyenEncaissement`), de la caisse (les espèces, par construction) et des deux paiements de la poche de
+l'exploitant (la note de frais, l'échéance payée depuis le compte personnel). Il NE le sait PAS d'un mouvement du
+relevé : l'import ne garde que la date, le montant et le libellé (`lib/csv.ts`, `detectColumnMapping`,
+`libelleDeLigne` ; `lignes_bancaires` n'a aucune colonne de mode) ; la connexion bancaire, en bac à sable, rendrait un
+`bank_transaction_code` qu'aucun écran n'importe comme mode (`banqueConnexion.ts`). « PRLV », « CB », « VIR », « CHQ »
+dans un libellé : jamais lus. Pour un praticien, presque toutes les dépenses et la plupart des recettes passent par le
+relevé : FEC22-Q2 décide du gros du fichier. Ce qu'il faudrait pour le mode réel : une colonne `mode_reglement` sur
+`lignes_bancaires` (nulle, liste fermée), posée par une fonction du relevé avec l'affectation, proposée par une règle
+d'affectation que le cabinet a apprise (les règles PROPOSENT, le clic écrit), saisie à la fiche ; une migration, des
+écrans, et une saisie de plus par mouvement — non décidé ici.
+
+**NATOP, SA SOURCE ET SA FORME.** Trois sources possibles : le compte (redondant avec CompteNum), la catégorie (son
+libellé est un texte libre du cabinet, et une catégorie se renomme), le poste de la 2035 (une donnée de la catégorie,
+mais que seules les lignes de charge ou de produit portent). Recommandé (FEC22-Q3) : la nature de l'OPÉRATION, une par
+écriture, dans une liste fermée tirée de la source de l'écriture (ci-dessus) — définie pour toute écriture, OD et
+à-nouveaux compris, sans texte libre, sans rien du soin (L. 13-0 A), et que la base peut contrôler. La 2035 du cabinet
+reste lisible par CompteNum, que tout logiciel range lui-même.
+
+**IDCLIENT SOUS LE SECRET.** Le livre-journal d'un BNC porte « l'identité déclarée par le client » (CGI, art. 99, par
+BOI-CF-IOR-60-10, § 220) ; sous le secret de l'art. 226-13 du code pénal, l'administration admet « une référence à un
+document annexe permettant de retrouver l'identité du client » ou le nom, l'identité complète dans un fichier couvert
+par le secret (BOI-BNC-DECLA-10-20, § 280), fournie « sur simple demande » (§ 290) ; le FEC admet un IdClient codifié
+(BOI-CF-IOR-60-40-20, § 310) ; la mention « à blanc si non utilisé » le laisse vide quand rien ne l'identifie (§ 70).
+L'application ne connaît une identité DÉCLARÉE que d'une facture qu'elle a émise : son client figé (`tiers_nom`,
+`tiers_siret`, `type_client`) et, depuis A7b, la provenance `contact_id` (facultative, sans clé). D'une pièce, elle ne
+connaît que le tiers lu par l'OCR — un nom de patient possible, jamais une identité déclarée. D'où : IdClient sur les
+seules écritures d'une facture (sa TVA due, ses encaissements et leurs contre-passations ; la pièce désignée exemplaire
+d'une facture d'avant), jamais ailleurs, et jamais un nom.
+- **Le code, recommandé pour le MVP : le numéro de la facture** — la « référence à un document annexe » du § 280 : la
+  facture validée, numérotée par `enregistrer_facture` seule, figée, gardée dix ans, porte l'identité ; l'administration
+  y a accès dans le dossier. Aucune table neuve, aucune donnée de plus : le numéro est déjà PieceRef de l'encaissement.
+  Ce qu'il ne fait pas : regrouper deux factures d'un même client sous un même code.
+- **Le code par client, écarté pour le MVP** : un code opaque par client du dossier (« CL » et un rang), attribué par
+  la base, jamais tiré du nom (une empreinte d'un nom se retrouve par essais), et sa table de correspondance (code,
+  identité) exportée sur un clic du cabinet — le « fichier couvert par le secret ». Il regroupe, mais demande une
+  migration, une règle d'identité d'un client sans contact, et une table de plus à garder et à sauvegarder.
+- **Le SIREN d'une personne morale** (un organisme, une entreprise) : vrai et non couvert par le secret médical, mais
+  une règle de plus, et un IdClient de deux formes dans le même fichier. Écarté, sauf demande de l'expert-comptable.
+
+**MONTANTDEVISE ET IDEVISE.** Une pièce en devise porte `devise` (ISO 4217, jamais nulle), `montant_devise` (le TTC tel
+que le document l'écrit), `taux_change` et `conversion_source` (`bce` provisoire, `banque` définitif) ; les montants
+de la pièce sont en euros (`types.ts`, `Piece`). Le § 260 demande « le montant en devise figurant sur la pièce
+justificative », le § 70 la donnée quand elle est disponible. Elle l'est pour la pièce ENTIÈRE, pas pour une part :
+une ligne de charge hors taxe, une part de paiement partiel en devise seraient CALCULÉES. Recommandé (FEC22-Q5) :
+Montantdevise et Idevise (le code ISO, littéral, sans table) sur les lignes dont le montant en euros est le TTC entier
+de la pièce — la charge sans TVA payée en une fois et sa banque —, vides ailleurs. Une facture émise est en euros :
+rien. Hors du chemin du MVP (un praticien en France paie rarement en devise), mais dans les vingt-deux champs.
+
+**CE QUI CHANGE EN BASE : UNE MIGRATION** (FEC22b ; non écrite). Les quatre valeurs se figent à la validation, comme
+PieceRef : quatre colonnes nulles sur `ecritures_brouillon` (`date_reglement`, `mode_reglement`, `nature_operation`,
+`identification_client` ; noms à fixer au lot) ; `ecritures_brouillon_validation_complete` élargie (nulles sur une
+écriture proposée ; sur une validée, le mode et la nature dans leur liste fermée, ou nuls) ; `valider_exercice` reçoit
+les quatre clés dans `p_lignes` (`demandeDeValidation`, lib/validationExercice.ts), refuse une valeur hors des listes,
+une date de règlement dans l'avenir à Paris, des valeurs qui diffèrent entre les lignes d'une écriture, et un IdClient
+qui n'est pas le numéro d'une facture validée du dossier — LA GARDE DU SECRET EN BASE : aucun chemin n'y fait entrer un
+nom ; `empreinte_exercice` les compte (sa liste de colonnes est écrite en entier, 20261004133627) ; la restauration et
+la sauvegarde les portent (`types.ts`, les essais de la restauration). Non destructive : des colonnes nulles ajoutées,
+des fonctions remplacées. À rejouer : `validationExercice.sql` (de nouveaux refus, chacun avec sa mutation),
+`signature.sql`, `restauration.sql` sur une réplique, `socle.py`, `inventaire.py` ; aucune policy ne change (`rls.sql`
+seulement s'il touche ces fonctions). Une précondition, mesurée par la session le jour même : `exercices_valides` vide
+— une empreinte qui change de colonnes ne vérifierait plus un exercice validé avant elle. LE RISQUE DU CALENDRIER :
+MVP-D7 valide 2025 dans le dossier réel « une fois chaque écart expliqué », avant 2026 ; validé avant la migration, son
+FEC se relirait sans les quatre valeurs, et ne pourrait plus les recevoir (une écriture validée ne se modifie plus,
+`garder_ecritures_validees`). D'où FEC22-Q6.
+
+**LES LOTS.**
+- **FEC22a — le module, pur et neutre.** `src/lib/champsBncDuFec.ts` : les listes fermées (ModeRglt, NatOp), la
+  correspondance `moyen` → mode, et une fonction par sorte d'écriture qui rend `{ dateRglt, modeRglt, natOp, idClient }`
+  depuis ses entrées LUES (les paiements de la pièce et leur origine, le mouvement et son lien, l'opération de caisse,
+  l'encaissement, la facture et son numéro), chacune un paramètre sans valeur par défaut. Rien ne le lit. Preuves : un
+  cas par sorte de la table ci-dessus, positif et négatif ; un scanner qui part de TOUTES les clés de `numeroterFec` et
+  exige une règle pour chacune (une clé neuve sans règle est une faute) ; un test « aucun nom » — des tiers, des
+  `tiers_nom`, des libellés et des noms de fichier fictifs plantés, aucun ne paraît dans les quatre valeurs ; les
+  mutations (une valeur par défaut, le libellé lu, EcritureDate à la place du paiement, le tiers en IdClient).
+- **FEC22b — la migration** ci-dessus, AVANT toute validation d'un exercice d'un dossier en trésorerie (FEC22-Q6), puis
+  les trois contrôles de l'export (`supabase/schema/README.md`) et les essais nommés. Le drapeau
+  `CHAMPS_BNC_EXPORTES` tient l'écran jusqu'à elle (simulation d'abord : le fichier dans l'export, la suite entière).
+- **FEC22c — le fichier.** `LigneFec` porte les quatre valeurs ; `numeroterFec` les calcule en trésorerie (FEC22a) et
+  scinde une pièce payée le même jour par deux modes ; `formaterFec` reçoit le mode, sans valeur par défaut, et écrit
+  22 colonnes en trésorerie, 18 en engagement ; `numerotationValidee` relit les valeurs figées ; `demandeDeValidation`
+  les envoie ; l'onglet Écritures dit « FEC d'un BNC en trésorerie, vingt-deux champs ». Les entrées neuves (le registre
+  des encaissements et ses moyens, les numéros des factures, les paiements des pièces) : obligatoires, lues en entier,
+  l'export refusé sur une lecture partielle comme pour la caisse. Preuves : en engagement, le fichier égal octet pour
+  octet à celui de `a9d36e8` sur les jeux de `fec.test.ts` ; en trésorerie, chaque ligne à 22 champs, l'en-tête dans
+  l'ordre du VIII, 7° ; `src/test/fecDgfip.ts` élargi — DateRglt vide ou une date AAAAMMJJ du calendrier, les quatre
+  valeurs constantes par EcritureNum, DateRglt et ModeRglt remplis sur toute écriture qui est un règlement, IdClient
+  vide ou le numéro d'une facture du jeu — et `anomaliesDgfip`, `desequilibresDgfip` toujours vides ; la scission par
+  mode (deux écritures, chacune équilibrée, le total de la date et la 2035 inchangés) ; le FEC d'un exercice validé égal
+  à celui de la veille, à ValidDate près ; 200 dossiers TIRÉS (`tirage`, une graine fixe) de toutes les sortes ; les
+  mutations de chaque règle. Le banc des captures (`outils/captures/fauxSupabase.ts`) suit.
+- **FEC22d — le mode du relevé**, seulement si FEC22-Q2 retient (B) : la colonne, la fonction, les règles qui
+  proposent, la fiche et les lots ; une migration ; après le MVP sauf si l'expert-comptable l'exige (FEC22-E3).
+- **FEC22e — la devise** (FEC22-Q5) : quelques lignes de FEC22c, un jeu en dollars et un en francs suisses.
+- **FEC22f — l'épreuve du fichier.** Un FEC fictif tiré d'un des dossiers de référence (`outils/references`, un BNC en
+  trésorerie) et de la répétition générale de 2025, passé par le cabinet ou l'expert-comptable dans Test Compta Demat
+  (il tourne sous Windows, `testeur.bat` ; ici, sans interface graphique ni base, il ne tourne pas), puis importé dans
+  le logiciel de l'expert-comptable (ligne 26.5), avant mars 2027 — sur un fichier fictif, jamais celui du dossier réel
+  avant son accord.
+- L'ordre : les réponses de l'expert-comptable (le rendez-vous), FEC22a, FEC22b avant la validation de 2025, FEC22c,
+  FEC22f ; FEC22d et FEC22e selon les réponses.
+
+**LES QUESTIONS AU CABINET.**
+- **FEC22-Q1 — DateRglt et ModeRglt d'une écriture qui n'est pas un règlement** (dotation, forfait kilométrique,
+  liquidation de TVA, à-nouveaux, TVA due d'une facture, pièce sans paiement). Le VIII, 7° ne les dit pas « à blanc »,
+  et l'outil de la DGFiP ne les exige plus depuis 2015. (A) vides ; (B) DateRglt la date de l'écriture et ModeRglt
+  « Sans règlement » ; (C) seulement pour le logiciel qui l'exige, selon FEC22-E2. *Recommandation : (A) — il n'y a
+  pas de règlement, et une date de règlement écrite là serait fausse ; (B) seulement si l'import de l'expert-comptable
+  refuse des vides (FEC22-E2), avant la première validation.*
+- **FEC22-Q2 — Le mode d'un règlement par le relevé.** Le relevé ne dit pas le mode, et son libellé ne se lit pas.
+  (A) « Banque » — vrai et lu : le règlement est un mouvement du compte professionnel, l'instrument n'est pas connu ;
+  (B) le mode réel, une colonne du mouvement saisie par le cabinet ou proposée par une règle apprise (FEC22d : une
+  migration, des écrans, une saisie par mouvement) ; (C) vide. *Recommandation : (A) pour le MVP, et la question
+  posée à l'expert-comptable (FEC22-E3) ; (B) s'il l'exige, après le MVP ou avant la validation de 2026.*
+- **FEC22-Q3 — La forme de NatOp.** (A) la nature de l'opération, une par écriture, dans une liste fermée tirée de sa
+  source (« Recette », « Dépense », « Acquisition d'immobilisation », « Apport de l'exploitant », « Prélèvement de
+  l'exploitant », « Échéance d'emprunt », « Déblocage d'emprunt », « Cotisation sociale », « Opération de bilan »,
+  « Versement d'espèces », « Paiement de TVA », « Remboursement de TVA », « Liquidation de TVA », « Dotation aux
+  amortissements », « Frais de véhicule (barème) », « À-nouveaux », « TVA due sur facture », « Annulation de recette »,
+  « Remise en banque », « Recette et dépense ») ; (B) le poste de la 2035 de la catégorie, sur les seules lignes de
+  charge ou de produit, vide ailleurs ; (C) les deux, « Dépense — Achats » ; (D) vide. *Recommandation : (A) — définie
+  pour toute écriture, sans texte libre, sans rien du soin (LPF, L. 13-0 A), contrôlable en base ; (B) en plus si le
+  logiciel de l'expert-comptable s'en sert (FEC22-E4).*
+- **FEC22-Q4 — IdClient.** Jamais un nom, ni le tiers d'une pièce. Sur les seules écritures d'une facture émise :
+  (A) vide partout ; (B) le numéro de la facture, la « référence à un document annexe » du § 280 ; (C) un code opaque
+  par client du dossier et sa table de correspondance, sur un clic (une migration) ; (D) le SIREN d'une personne morale,
+  (B) ou (C) pour une personne physique. *Recommandation : (B) pour le MVP — admis par le BOFiP, sans table ni
+  migration, gardé en base contre tout autre texte ; (C) si l'expert-comptable veut regrouper par client (FEC22-E5).*
+- **FEC22-Q5 — Montantdevise et Idevise.** (A) sur les lignes dont le montant en euros est le TTC entier d'une pièce en
+  devise, `montant_devise` et le code ISO, vides ailleurs ; (B) sur toutes les lignes de la pièce, au prorata (un
+  montant calculé) ; (C) vides, comme aujourd'hui. *Recommandation : (A) — la valeur de la pièce, jamais calculée ;
+  hors du chemin du MVP.*
+- **FEC22-Q6 — La migration avant la première validation.** MVP-D7 valide 2025 dans le dossier réel avant 2026.
+  (A) FEC22b appliquée avant toute validation d'un exercice en trésorerie, la validation de 2025 attendant au besoin
+  les réponses de l'expert-comptable sur Q1 à Q4 ; (B) valider 2025 d'abord, son FEC relu à 22 colonnes, les quatre
+  vides, pour toujours. *Recommandation : (A) — une écriture validée ne change plus, et le FEC de 2025 est celui de la
+  répétition générale que l'expert-comptable importera.*
+
+**LES QUESTIONS À L'EXPERT-COMPTABLE** (pour le rendez-vous du cabinet ; chacune avec ce que nous recommandons).
+- **FEC22-E1 — Le logiciel.** Son nom et sa version ; importe-t-il un FEC « BNC trésorerie » à vingt-deux champs, ou
+  seulement dix-huit ; refuse-t-il des colonnes en trop ? *Ce que nous recommandons : vingt-deux, le texte (VIII, 7°).*
+- **FEC22-E2 — Les vides.** Accepte-t-il DateRglt et ModeRglt vides sur une OD, une dotation, des à-nouveaux ?
+  *Nous : vides (FEC22-Q1).*
+- **FEC22-E3 — Le mode.** Attend-il une liste fermée, des codes et leur table, ou du texte ? « Banque » lui suffit-il
+  pour un règlement par le relevé, ou veut-il le mode réel, au prix d'une saisie par mouvement ? *Nous : « Banque »
+  pour le MVP.*
+- **FEC22-E4 — NatOp.** Son logiciel en fait-il quelque chose (un rangement sur la 2035, une ventilation) ? *Nous : la
+  liste fermée (FEC22-Q3).*
+- **FEC22-E5 — IdClient.** Son logiciel crée-t-il un compte client par IdClient ? Le numéro de la facture lui va-t-il,
+  ou veut-il un code par client et sa table ? Quelle pratique tient-il pour les patients d'un soignant ? *Nous : le
+  numéro de la facture, jamais un nom.*
+- **FEC22-E6 — Les journaux et les pièces.** AN, AC, VE, BQ, OD lui conviennent-ils ; PieceRef « Caisse du … »,
+  « Tableau d'amortissement 2026 », le relevé ; l'ouverture en une écriture AN ?
+- **FEC22-E7 — La forme.** UTF-8 (le XII, 1° admet aussi l'ISO 8859-15), tabulation, CRLF, « Credit » sans accent,
+  le nom `SirenFECAAAAMMJJ.txt`, la virgule décimale : son import les lit-il ?
+- **FEC22-E8 — Quel fichier, quand.** Importera-t-il le FEC de l'exercice VALIDÉ (ValidDate le jour de la validation),
+  ou un FEC d'avant la validation (ValidDate la date de l'écriture, que le § 250 n'admet que d'un logiciel sans
+  brouillard) ? *Nous : le validé.*
+- **FEC22-E9 — Un BNC en engagement.** Si un dossier BNC optait pour les créances acquises et les dépenses engagées,
+  quel tableau attend-il, celui du 3° (18) ou du 7° (22) ? *Nous : sans objet pour le MVP.*
+- **FEC22-E10 — La devise.** Veut-il Montantdevise et Idevise, et sous quelle forme ? *Nous : FEC22-Q5 (A).*
+- **FEC22-E11 — Les comptes.** Reprend-il nos numéros (six chiffres, la numérotation de 2026 : le 101 pour le 108),
+  ou les range-t-il dans son plan par une table ? Le 108000 de l'exploitant, le 511, le 530, le 627 ?
+- **FEC22-E12 — Le validateur.** Passe-t-il Test Compta Demat, ou un autre outil, sur ce qu'il importe ; peut-il le
+  passer sur notre fichier fictif ?
+- **FEC22-E13 — Le lettrage.** EcritureLet et DateLet vides en trésorerie lui conviennent-ils ?
+- **FEC22-E14 — L'essai d'import.** Sur quel fichier fictif, et quand, avant mars 2027 ; et sur le FEC de la
+  répétition de 2025 (MVP-D6, MVP-D7), avec l'accord du praticien ?
+
+**CE QUI RESTE INCERTAIN.** Le texte du VIII, 7° lu par un outil qui résume (à vérifier à l'œil) ; le comportement du
+logiciel de l'expert-comptable (E1 à E14) ; la fonction qui rend la nature d'un poste de la 2035 (`cadre` de
+lib/cases2035.ts, à confirmer au lot FEC22a) ; Test Compta Demat lu à sa tête de 2021, non exécuté.
+
+**CE QUE LA SESSION EN A FAIT, LE JOUR MÊME.** Les six questions et la liste des quatorze pour l'expert-comptable
+entrent dans la page des arbitrages (version 56) : les fiches FEC22-Q1 à FEC22-Q6, chacune avec sa recommandation, et
+FEC22-E, qui rassemble E1 à E14 pour le rendez-vous du cabinet, ses réponses en note. Rien n'est écrit tant qu'elles ne
+sont pas revenues : FEC22a peut commencer sur Q1 à Q5 répondues ; FEC22b, la migration, se présente au cabinet avant
+toute validation d'un exercice en trésorerie (FEC22-Q6).
