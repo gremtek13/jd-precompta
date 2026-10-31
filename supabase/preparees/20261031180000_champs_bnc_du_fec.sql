@@ -19,11 +19,12 @@
 --   2. `valider_exercice` reçoit ces cinq clés dans `p_lignes` et les fige. Absentes, les colonnes restent nulles et la
 --      validation est celle d'hier, au refus près. Après tous ses refus d'hier, et dans cet ordre, elle refuse en
 --      22023 : une date illisible, ou postérieure à aujourd'hui à Paris ; un mode, une nature ou un poste hors de leur
---      liste ; un poste sans nature, sur une ligne qui n'est ni de charge ni de produit, ou de l'autre cadre que son
---      compte ; une date, un mode, une nature ou une identification du client qui diffèrent entre les lignes d'une
---      écriture ; et un client identifié autrement que par le numéro d'une facture ou d'un avoir validé du dossier, ou
---      par le SIREN que porte son client figé — LA GARDE DU SECRET (BOI-BNC-DECLA-10-20, § 280) : aucun chemin n'y fait
---      entrer un nom ;
+--      liste ; un poste sans nature, sur une ligne qui n'est ni de charge ni de produit, ou sur un compte qui ne le
+--      porte pas (un poste de recettes va sur un produit ; un poste de dépenses, et les débours et les honoraires
+--      rétrocédés qui se déduisent des recettes, sur une charge) ; une date, un mode, une nature ou une identification
+--      du client qui diffèrent entre les lignes d'une écriture ; et un client identifié autrement que par le numéro
+--      d'une facture ou d'un avoir validé du dossier, ou par le SIREN que porte son client figé — LA GARDE DU SECRET
+--      (BOI-BNC-DECLA-10-20, § 280) : aucun chemin n'y fait entrer un nom ;
 --   3. `empreinte_exercice` compte ces colonnes, en un champ de plus, présent seulement quand l'une d'elles est posée :
 --      un exercice validé sans elles — avant cette migration, ou par une demande qui ne les porte pas — garde son
 --      empreinte au caractère près, et `verifier_exercice_valide` le vérifie comme hier ;
@@ -98,9 +99,10 @@ alter table public.ecritures_brouillon
   add column identification_client text,
   -- Une écriture proposée n'en porte aucun ; une écriture validée les porte dans leurs listes fermées, ou nuls — la
   -- règle d'`ecritures_brouillon_validation_complete`, que cette contrainte prolonge sans la réécrire. Le poste ne va
-  -- qu'avec une nature, sur une ligne de produit (classe 7) pour un poste de recettes, de charge (classe 6) pour un
-  -- poste de dépenses ; l'identification du client, ni vide, ni bordée de blancs, ni porteuse d'un caractère de
-  -- contrôle.
+  -- qu'avec une nature, sur une ligne de produit (classe 7) pour un poste que la 2035 range sous une recette, de charge
+  -- (classe 6) pour un poste qu'elle range sous une dépense — ceux des dépenses, et les débours (AB) et les honoraires
+  -- rétrocédés (AC), qui se déduisent des recettes et ne reçoivent qu'une dépense (`cadreCompatible`) ;
+  -- l'identification du client, ni vide, ni bordée de blancs, ni porteuse d'un caractère de contrôle.
   add constraint ecritures_brouillon_champs_bnc_du_fec check (
     (statut = 'proposee' and date_reglement is null and mode_reglement is null and nature_operation is null
       and poste_rattache is null and identification_client is null)
@@ -116,10 +118,10 @@ alter table public.ecritures_brouillon
         'À-nouveaux', 'TVA due sur facture', 'Annulation de recette', 'Remise en banque'))
       and (poste_rattache is null or (nature_operation is not null and (
         (compte ~ '^7[0-9]{2}' and poste_rattache in (
-          'Recettes', 'Recettes encaissées y compris les remboursements de frais',
-          'Débours payés pour le compte des clients', 'Débours', 'Honoraires rétrocédés', 'Rétrocessions',
-          'Produits financiers', 'Gains divers'))
+          'Recettes', 'Recettes encaissées y compris les remboursements de frais', 'Produits financiers',
+          'Gains divers'))
         or (compte ~ '^6[0-9]{2}' and poste_rattache in (
+          'Débours payés pour le compte des clients', 'Débours', 'Honoraires rétrocédés', 'Rétrocessions',
           'Achats', 'Salaires nets et avantages en nature', 'Salaires', 'Charges sociales sur salaires',
           'Taxe sur la valeur ajoutée', 'TVA', 'Contribution économique territoriale', 'CET', 'Autres impôts',
           'Impôts et taxes', 'Contribution sociale généralisée déductible', 'CSG déductible',
@@ -145,7 +147,7 @@ comment on column public.ecritures_brouillon.mode_reglement is
 comment on column public.ecritures_brouillon.nature_operation is
   'La nature de l''opération (information 21, NatOp), une par écriture, figée par valider_exercice : une nature de la liste fermée de src/lib/champsBncDuFec.ts (NATURES_OPERATION), jamais un texte saisi ni la nature d''un soin ; nulle sur une écriture proposée, ou quand la demande ne la porte pas.';
 comment on column public.ecritures_brouillon.poste_rattache is
-  'Le poste de la 2035 d''une ligne de charge (classe 6) ou de produit (classe 7), figé par valider_exercice : un poste de POSTES_RATTACHES (src/lib/cases2035.ts) de son cadre ; NatOp se recompose « nature — poste » à la relecture (FEC22-Q3). Nul ailleurs.';
+  'Le poste de la 2035 d''une ligne de charge (classe 6) ou de produit (classe 7), figé par valider_exercice : un poste de POSTES_RATTACHES (src/lib/cases2035.ts), sur un produit s''il se range sous une recette, sur une charge sous une dépense — les débours et les honoraires rétrocédés compris, qui se déduisent des recettes ; NatOp se recompose « nature — poste » à la relecture (FEC22-Q3). Nul ailleurs.';
 comment on column public.ecritures_brouillon.identification_client is
   'IdClient (information 22), figé par valider_exercice : le numéro d''une facture ou d''un avoir validé du dossier, ou le SIREN que porte son client figé (FEC22-Q4) — jamais un nom ; nul ailleurs.';
 
@@ -530,8 +532,9 @@ begin
   -- porte pas valide comme hier : ils restent nuls. Dans l'ordre, après les refus d'hier :
   --   - chaque valeur dans sa forme : une date du calendrier, au plus aujourd'hui à Paris ; un mode et une nature de
   --     leur liste fermée ; un poste de la sienne (`POSTES_RATTACHES`, src/lib/cases2035.ts), avec une nature, sur une
-  --     ligne de produit (classe 7) pour un poste de recettes, de charge (classe 6) pour un poste de dépenses — ce que
-  --     `posteRattache` rend ;
+  --     ligne de produit (classe 7) pour un poste que la 2035 range sous une recette, de charge (classe 6) pour un
+  --     poste qu'elle range sous une dépense, les débours et les honoraires rétrocédés compris — ce que `posteRattache`
+  --     rend (`cadreCompatible`) ;
   --   - la date, le mode, la nature et le client les mêmes sur toutes les lignes d'une écriture ; le poste suit la
   --     ligne ;
   --   - LA GARDE DU SECRET (BOI-BNC-DECLA-10-20, § 280 ; CGI, art. 99 ; FEC22-Q4, (D)) : un client ne s'identifie que
@@ -573,11 +576,14 @@ begin
       ('À-nouveaux'), ('TVA due sur facture'), ('Annulation de recette'), ('Remise en banque')
   ), postes(poste, classe) as (
     -- Les postes que la 2035 range (`POSTES_RATTACHES`, src/lib/cases2035.ts), chacun avec la classe des comptes qui le
-    -- portent : 7, un produit, pour un poste de recettes ; 6, une charge, pour un poste de dépenses.
+    -- portent : 7, un produit, pour un poste qu'elle range sous une recette ; 6, une charge, pour un poste qu'elle
+    -- range sous une dépense — ceux des dépenses, et ceux des deux cases qui se retranchent des recettes, les débours
+    -- (AB) et les honoraires rétrocédés (AC) : la rétrocession payée à un remplaçant est une charge
+    -- (`cadreCompatible`).
     values
       ('Recettes', '7'), ('Recettes encaissées y compris les remboursements de frais', '7'),
-      ('Débours payés pour le compte des clients', '7'), ('Débours', '7'), ('Honoraires rétrocédés', '7'),
-      ('Rétrocessions', '7'), ('Produits financiers', '7'), ('Gains divers', '7'), ('Achats', '6'),
+      ('Débours payés pour le compte des clients', '6'), ('Débours', '6'), ('Honoraires rétrocédés', '6'),
+      ('Rétrocessions', '6'), ('Produits financiers', '7'), ('Gains divers', '7'), ('Achats', '6'),
       ('Salaires nets et avantages en nature', '6'), ('Salaires', '6'), ('Charges sociales sur salaires', '6'),
       ('Taxe sur la valeur ajoutée', '6'), ('TVA', '6'), ('Contribution économique territoriale', '6'), ('CET', '6'),
       ('Autres impôts', '6'), ('Impôts et taxes', '6'), ('Contribution sociale généralisée déductible', '6'),
@@ -676,7 +682,7 @@ begin
       using errcode = '22023';
   end if;
   if v_champs = 'poste_hors_cadre' then
-    raise exception 'Une ligne de la numérotation proposée porte un poste de la 2035 de l''autre cadre que son compte : un poste de recettes va sur un compte de produit, un poste de dépenses sur un compte de charge.'
+    raise exception 'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.'
       using errcode = '22023';
   end if;
   if v_champs = 'date_differe' then

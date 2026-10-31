@@ -678,33 +678,36 @@ LE RESSERREMENT (C6, LIGNE 26.6) (PRÉPARÉE, PAS APPLIQUÉE) »).
 
 **Préparé le 31/10/2026, PAS ENCORE APPLIQUÉ : `champs_bnc_du_fec`** (ligne 26.6, étape e, lot FEC22b ; MVP-D5 : les
 quatre champs du FEC d'un BNC en trésorerie, figés à la validation). Son fichier vit HORS de l'export, dans
-`supabase/preparees/`, sous une version PROVISOIRE, `20261031180000` (53 848 caractères, 54 677 octets, 777 lignes,
-`b9b6244cd0bb8445362094be946a669a`, ni barre oblique inverse ni retour chariot). Il s'applique PAR L'OUTIL : ni `drop`,
+`supabase/preparees/`, sous une version PROVISOIRE, `20261031180000` (54 822 caractères, 55 695 octets, 783 lignes,
+`b10198af819f3b9b0835a1e57388e89d`, ni barre oblique inverse ni retour chariot). Il s'applique PAR L'OUTIL : ni `drop`,
 ni `delete from`, ni `truncate`, ni `grant` ni `revoke` — « DELETE » n'y vient que du `tg_op` de la garde G5 reprise,
 « dropped » que d'`attisdropped`, comme dans `caisse`. Sa garde de tête exige les corps que l'export laisse à
 `valider_exercice` (`d241891f…`, `validation_des_ventes_facturees`), `empreinte_exercice` (`3e095e9b…`,
 `report_des_soldes`) et `garder_lignes_de_la_vente_facturee` (`905446cc…`, `virement_mixte`), et refuse une seconde
 application ; puis cinq colonnes nulles sur `ecritures_brouillon` (`date_reglement`, `mode_reglement`,
 `nature_operation`, `poste_rattache`, `identification_client`) et une contrainte, `ecritures_brouillon_champs_bnc_du_fec`,
-qui prolonge `ecritures_brouillon_validation_complete` sans la réécrire ; puis les trois fonctions par `create or
+qui prolonge `ecritures_brouillon_validation_complete` sans la réécrire — un poste sur un produit (classe 7) s'il se
+range sous une recette, sur une charge (classe 6) sous une dépense, les débours (AB) et les honoraires rétrocédés (AC)
+compris, cases qui se retranchent des recettes et ne reçoivent qu'une dépense (`cadreCompatible`, lib/cases2035.ts,
+depuis la 2035 corrigée du 31/10/2026) ; puis les trois fonctions par `create or
 replace` (OID, propriétaire, droits et déclencheurs gardés), chacune celle d'hier au caractère près hors de ce qu'elle
-ajoute (`champsBncFiges.test.ts` le défait et compare) — corps neufs `261e874f…`, `d5221142…`, `52320c1e…`. Le fichier
-entre ici sous la version que portera sa ligne d'historique, texte inchangé, et cette ligne doit rendre `b9b6244c…` ; le
+ajoute (`champsBncFiges.test.ts` le défait et compare) — corps neufs `a7844d5c…`, `d5221142…`, `52320c1e…`. Le fichier
+entre ici sous la version que portera sa ligne d'historique, texte inchangé, et cette ligne doit rendre `b10198af…` ; le
 socle se RÉGÉNÈRE (les cinq colonnes et la contrainte dans le `create table` d'`ecritures_brouillon`). Son RETOUR ARRIÈRE
 (`supabase/preparees/retour/20261031180100_retour_champs_bnc_du_fec.sql`, 29 292 caractères,
-`c9d4917565970d47ca50087eb6932115`) : sa garde de tête exige les trois corps neufs et refuse dès qu'une ligne porte l'un
+`98bebdbd40799ee4a76964d8711ee4cd`) : sa garde de tête exige les trois corps neufs et refuse dès qu'une ligne porte l'un
 des champs (il détruirait ce qu'une validation a figé), puis les trois fonctions d'hier au caractère près et, en
 dernier, la contrainte et les cinq colonnes RETIRÉES — destructif : il se présente au cabinet et se colle. Tant que la
 migration n'est pas appliquée, l'export ne la porte pas, et ses trois contrôles sont ceux de la production (164
 fichiers, `3a31b730…` ; socle 81, `5d636a96…` ; inventaire 2 284, `efbc0207…`). Sur la réplique de l'étape (la
 production du jour, 164 migrations, ses neuf familles égales à celles de la production), munie d'elle sous sa version
 provisoire, et sur un miroir de l'export qui la porte, le socle régénéré : 165 fichiers et 165 migrations, égaux nom par
-nom (`3c9ce61e7d30083578fe530c166bb254` pour le miroir, un agrégat que la version réelle changera) ; le socle, 81
-instructions, `1c8c5aecf96033ce135f1660aa48f465` des deux côtés ; l'inventaire, 2 290 objets,
+nom (`fce74e5f9fc1e2f20ef1655de0e69fdf` pour le miroir, un agrégat que la version réelle changera) ; le socle, 81
+instructions, `780ac3edf21028382d5de3bfd4cc0366` des deux côtés ; l'inventaire, 2 290 objets,
 `98bfa4c11a8f57a65b68501ad7192c9c` des deux côtés — cinq colonnes et une contrainte. `signature.sql` : trois familles
 changent, « colonnes » (911 `13d1263c…` puis 916 `821f83873fb42961174db84bb7076099`), « contraintes » (710 `ce4cd645…`
-puis 711 `1a8bb4f69a4e1dab7acfbb49821c8c0d`) et « fonctions » (217, `3800368f…` puis
-`48bba0c4f7be1aa5e0f211b4fcb497ca`), les six autres inchangées, « droits des fonctions » et « déclencheurs » compris ;
+puis 711 `52e83bdaf12314604c5812e2b108f8db`) et « fonctions » (217, `3800368f…` puis
+`3e97b8068cd31739e020ba540079fd21`), les six autres inchangées, « droits des fonctions » et « déclencheurs » compris ;
 elles reviennent toutes à la production après le retour arrière, qu'une seconde application refuse comme la migration.
 Un exercice validé avant elle se vérifie encore après elle, et après son retour arrière : l'empreinte n'ajoute son champ
 qu'à une ligne qui porte l'un des cinq (HISTORIQUE.md, « LES QUATRE CHAMPS DU FEC D'UN BNC, EN BASE (FEC22B) (PRÉPARÉE,

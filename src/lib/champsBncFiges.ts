@@ -1,5 +1,5 @@
 import { natureDuCompte } from './affectationBanque'
-import { caseDuPoste, POSTES_RATTACHES } from './cases2035'
+import { POSTES_RATTACHES, posteRattache } from './cases2035'
 import {
   MODES_REGLEMENT, NATURES_OPERATION, SEPARATEUR_DU_POSTE, type ChampsBnc, type ModeRglt, type NatureOperation,
 } from './champsBncDuFec'
@@ -85,14 +85,21 @@ export function natOpFigee(ligne: Pick<ChampsBncDUneLigne, 'nature_operation' | 
 // ── Les listes fermées que la base copie ───────────────────────────────────────────────────────────────────────────────
 
 /**
- * Les postes que la 2035 range, chacun avec la classe des comptes qui le portent : 7, un produit, pour un poste du cadre
- * des recettes ; 6, une charge, pour les autres — la règle de `posteRattache` (`cadreCompatible`, lib/cases2035.ts). La
- * migration en copie la liste (`postes(poste, classe)`) ; le test les confronte.
+ * Les postes que la 2035 range, chacun avec la classe des comptes qui le portent, tirée de `posteRattache` lui-même — la
+ * nature sous laquelle la 2035 le range (`cadreCompatible`, lib/cases2035.ts), comme la NatOp d'une ligne le lit
+ * (`natOpDeLaLigne`, lib/champsBncDuFec.ts) : 7, un produit, pour un poste rangé sous une RECETTE ; 6, une charge, pour
+ * un poste rangé sous une DÉPENSE — ceux des dépenses, et ceux des deux cases qui se retranchent des recettes (AB, les
+ * débours ; AC, les honoraires rétrocédés), qui ne reçoivent qu'une dépense : la rétrocession payée à un remplaçant est
+ * une charge. Un poste rangé sous les deux natures, ou sous aucune, est une faute de la table, qui se lève. La migration
+ * en copie la liste (`postes(poste, classe)`, et les deux de sa contrainte) ; le test les confronte.
  */
 export const CLASSE_DU_POSTE: ReadonlyMap<string, '6' | '7'> = new Map(POSTES_RATTACHES.map((poste) => {
-  const c = caseDuPoste(poste)
-  if (c === null) throw new Error(`Le poste rattaché « ${poste} » n'a pas de case.`)
-  return [poste, c.cadre === 'recettes' ? '7' : '6'] as const
+  const recette = posteRattache(poste, 'recette') === poste
+  const depense = posteRattache(poste, 'depense') === poste
+  if (recette === depense) {
+    throw new Error(`Le poste rattaché « ${poste} » se range sous ${recette ? 'les deux natures' : 'aucune nature'}.`)
+  }
+  return [poste, recette ? '7' : '6'] as const
 }))
 
 // ── Les refus neufs de la validation ───────────────────────────────────────────────────────────────────────────────────
@@ -114,7 +121,7 @@ export const REFUS_DES_CHAMPS_BNC = [
   },
   {
     cle: 'poste_hors_cadre', code: '22023',
-    message: "Une ligne de la numérotation proposée porte un poste de la 2035 de l'autre cadre que son compte : un poste de recettes va sur un compte de produit, un poste de dépenses sur un compte de charge.",
+    message: 'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.',
   },
   { cle: 'date_differe', code: '22023', message: "Les lignes d'une même écriture ne portent pas la même date de règlement." },
   { cle: 'mode_differe', code: '22023', message: "Les lignes d'une même écriture ne portent pas le même mode de règlement." },
