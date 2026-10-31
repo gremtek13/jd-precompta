@@ -425,4 +425,42 @@ describe('un dossier qui tient une caisse : un versement d’espèces n’entre 
       unmount()
     }
   })
+
+  // C6-Q1 (réponse du cabinet du 31/10/2026) : un dossier basculé sans aucune opération de caisse la tient dès qu'un encaissement
+  // en espèces d'une de ses factures sources y entre — sans mouvement, ni retiré. F2026-0018, 40 € reçus en espèces.
+  const especesDeF5 = (o: Record<string, unknown> = {}) => {
+    faux.parTable.factures_emises = [...faux.parTable.factures_emises, facture('f5', 'F2026-0018', 40)]
+    faux.parTable.facture_lignes = [...faux.parTable.facture_lignes, {
+      id: 'fl5', facture_id: 'f5', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 40, taux_tva: 0,
+    }]
+    faux.parTable.encaissements_factures = [...faux.parTable.encaissements_factures, {
+      ...encaissement('e5', 'f5', 40, 'aucun'), ligne_bancaire_id: null, moyen: 'especes', ...o,
+    }]
+    faux.parTable.encaissements_factures_taux = [...faux.parTable.encaissements_factures_taux, { encaissement_id: 'e5', dossier_id: D, taux: 0, montant: 40 }]
+  }
+  const caisseSansOperation = (dossierId: string) => ({ dossierId, enBase: true, lignes: [], complete: true, motif: null })
+
+  it('C6-Q1 : un dossier basculé sans opération, où les espèces d’une facture source entrent, l’écarte aussi', async () => {
+    avecLeVersement()
+    especesDeF5()
+    caisseDuTest.lecture = caisseSansOperation
+    rendre()
+    const bouton = await lot('Affecter ce mouvement')
+    expect(texteDe(ecartDe('Affectation par les règles').querySelector('summary'))).toBe(
+      'Affectation par les règles — 2 mouvements écartés : 1 a un libellé de versement d’espèces, à classer sur la caisse depuis sa '
+      + 'fiche ; 1 autre porte des encaissements de factures, ou une vente facturée le justifie peut-être.',
+    )
+    await cliquer(bouton, 1)
+    await waitFor(() => expect(affectes()).toEqual(['m-libre-regle']))
+  })
+
+  it('C6-Q1, NEUTRE : les espèces retirées, aucune caisse — le lot prend le versement, comme hier', async () => {
+    avecLeVersement()
+    especesDeF5({ retire_le: '2026-06-04T10:00:00Z' })
+    caisseDuTest.lecture = caisseSansOperation
+    rendre()
+    await cliquer(await lot('Affecter les 2'), 1)
+    await waitFor(() => expect([...affectes()].sort()).toEqual(['m-libre-regle', 'm-vrst']))
+    expect(screen.queryByText(/versement d’espèces/)).toBeNull()
+  })
 })

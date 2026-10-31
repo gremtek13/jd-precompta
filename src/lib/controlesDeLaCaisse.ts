@@ -1,6 +1,7 @@
 import { ecritureConforme, mouvementsAffectes, type MouvementBancaire } from './affectationBanque'
 import {
-  ecritureDeLOperation, ensembleDuJour, jourDit, soldesDeLaCaisse, type EncaissementDeLaCaisse, type EtatDeLaCaisse,
+  ecritureDeLOperation, ensembleDuJour, especesDUneFactureSource, jourDit, soldesDeLaCaisse, type EncaissementDeLaCaisse,
+  type EtatDeLaCaisse,
   type FactureDeLaCaisse, type OperationAEcrire,
 } from './caisse'
 import type { ModeleComptable } from './engagement'
@@ -342,13 +343,23 @@ export function libelleDitUnVersementDEspeces(ligne: Pick<LigneBancaire, 'libell
 }
 
 /**
- * LE DOSSIER TIENT-IL UNE CAISSE ? Une opération non retirée le dit. Absente (le drapeau baissé) ou lue sans opération vivante :
- * non. Pas encore revenue ou lue en partie : on ne sait pas — « peut-être », que les lots traitent comme oui (écarter d'un lot
- * ne perd rien : le mouvement reste à traiter depuis sa fiche) et que la Vue d'ensemble tait.
+ * LE DOSSIER TIENT-IL UNE CAISSE ? Une opération non retirée le dit ; et, depuis C6-Q1 (réponse du cabinet du 31/10/2026), un
+ * encaissement en espèces d'une facture source qui y entre (`especesDUneFactureSource`) : son dépôt en banque n'a plus d'autre
+ * chemin que le versement classé sur la caisse (C6), et les deux protections du § 4 a — hors des lots, et le point de la Vue
+ * d'ensemble — doivent le couvrir, même sans aucune opération saisie. Absente (le drapeau baissé) : non, quoi que disent les
+ * factures. Ni opération vivante ni espèces qui entrent, l'une et l'autre lues (ou sans objet : un dossier qui n'a pas
+ * basculé) : non. Sinon, l'une pas encore revenue ou lue en partie : on ne sait pas — « peut-être », que les lots traitent
+ * comme oui (écarter d'un lot ne perd rien : le mouvement reste à traiter depuis sa fiche) et que la Vue d'ensemble tait.
  */
-export function dossierTientUneCaisse(etat: EtatDesOperationsDeCaisse): 'oui' | 'non' | 'peut_etre' {
+export function dossierTientUneCaisse(etat: EtatDesOperationsDeCaisse, especes: EspecesDesFactures): 'oui' | 'non' | 'peut_etre' {
   if (etat.etat === 'absente') return 'non'
-  if (etat.etat === 'lue') return etat.operations.some((o) => o.retire_le == null) ? 'oui' : 'non'
+  const parLesOperations = etat.etat === 'lue' ? etat.operations.some((o) => o.retire_le == null) : null
+  // L'encaissement qui ENTRE, pas sa contre-passation : un seul suffit, même défait depuis — la caisse l'a reçu.
+  const parLesFactures = especes.etat === 'sans_objet' ? false
+    : especes.etat === 'lues' ? especes.encaissements.some((e) => e.annule_id == null && especesDUneFactureSource(e, especes))
+      : null
+  if (parLesOperations === true || parLesFactures === true) return 'oui'
+  if (parLesOperations === false && parLesFactures === false) return 'non'
   return 'peut_etre'
 }
 
@@ -361,14 +372,16 @@ export const RAISON_VERSEMENT_D_ESPECES = 'son libellé dit un versement d’esp
  * relevé ne les prend (conception, § 4 a) — le rapprochement automatique, « Valider et rapprocher », les règles et la règle
  * d'ignorance. Rangés en recette par une règle, ils compteraient deux fois des espèces que la caisse compte déjà ; le versement
  * se classe sur la caisse, depuis la fiche du mouvement (C4). Les mouvements qu'un autre motif écarte déjà gardent le leur.
- * Sans caisse (le drapeau baissé, ou aucune opération), la carte est rendue telle quelle.
+ * Sans caisse (le drapeau baissé, ou ni opération vivante ni espèces d'une facture source qui y entrent — C6-Q1), la carte
+ * est rendue telle quelle.
  */
 export function versementsDEspecesHorsDesLots(
   hors: ReadonlyMap<string, string>,
   caisse: EtatDesOperationsDeCaisse,
+  especes: EspecesDesFactures,
   lignes: readonly Pick<LigneBancaire, 'id' | 'montant' | 'libelle' | 'libelle_brut'>[],
 ): ReadonlyMap<string, string> {
-  if (dossierTientUneCaisse(caisse) === 'non') return hors
+  if (dossierTientUneCaisse(caisse, especes) === 'non') return hors
   const versements = lignes.filter((l) => l.montant > 0 && !hors.has(l.id) && libelleDitUnVersementDEspeces(l))
   if (versements.length === 0) return hors
   const avec = new Map(hors)

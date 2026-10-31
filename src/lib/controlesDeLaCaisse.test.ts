@@ -6,7 +6,7 @@ import {
   libelleDitUnVersementDEspeces, motifDesOperationsDeCaisse, OPERATIONS_DE_CAISSE_ABSENTES, operationNommee, operationsDe,
   operationsDeCaisseAReprendre, operationsDeCaisseDuDossier, operationsPourLesControles, RAISON_VERSEMENT_D_ESPECES,
   recettesDeCaisseARevoir, referenceDeLaCaisse, versementsDEspecesEnRecette, versementsDEspecesHorsDesLots,
-  type DossierDesControlesDeLaCaisse, type OperationsDeCaisse,
+  type DossierDesControlesDeLaCaisse, type EspecesDesFactures, type OperationsDeCaisse,
 } from './controlesDeLaCaisse'
 import { formaterFec, genererFec, numeroterFec } from './fec'
 import { absenceFec, pisteAudit, rupturesPisteAudit } from './pisteAudit'
@@ -64,6 +64,19 @@ function brouillonDe(o: OperationCaisse, modele: ModeleComptable = MODELE, assuj
 }
 
 const lue = (operations: OperationCaisse[]): OperationsDeCaisse => ({ etat: 'lue', dossierId: DOSSIER, operations })
+// Un dossier qui n'a pas basculé : ses factures ne disent rien de la caisse.
+const SANS_ESPECES: EspecesDesFactures = { etat: 'sans_objet' }
+
+// Les espèces des factures d'un dossier basculé (C6-Q1) : F1 est une facture source, F2 non. Un encaissement en espèces de F1,
+// sans mouvement ni retrait, ENTRE dans la caisse.
+const FACTURE_SOURCE = { id: 'f1', numero: 'F2026-0012', source_de_la_vente: true }
+const FACTURE_D_AVANT = { id: 'f2', numero: 'F2026-0013', source_de_la_vente: false }
+const especesDeF1 = (o: Partial<EncaissementFacture> = {}) => ({
+  id: 'e1', facture_id: 'f1', date_encaissement: '2026-03-12', montant: 30, moyen: 'especes' as const, ligne_bancaire_id: null,
+  annule_id: null, retire_le: null, ...o,
+})
+const especesLues = (...encaissements: ReturnType<typeof especesDeF1>[]): EspecesDesFactures =>
+  ({ etat: 'lues', encaissements, factures: [FACTURE_SOURCE, FACTURE_D_AVANT] })
 
 function dossier(o: Partial<DossierDesControlesDeLaCaisse> = {}): DossierDesControlesDeLaCaisse {
   return {
@@ -98,12 +111,42 @@ describe('la forme que les contrôles reçoivent', () => {
   })
 
   it('le dossier tient-il une caisse ? une opération vivante le dit ; ne pas savoir, c’est peut-être', () => {
-    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES)).toBe('non')
-    expect(dossierTientUneCaisse(lue([]))).toBe('non')
-    expect(dossierTientUneCaisse(lue([recette('r1', { retire_le: '2026-03-13T10:00:00Z' })]))).toBe('non')
-    expect(dossierTientUneCaisse(lue([apport('a1')]))).toBe('oui')
-    expect(dossierTientUneCaisse({ etat: 'en_attente' })).toBe('peut_etre')
-    expect(dossierTientUneCaisse({ etat: 'incomplete', motif: 'x' })).toBe('peut_etre')
+    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, SANS_ESPECES)).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), SANS_ESPECES)).toBe('non')
+    expect(dossierTientUneCaisse(lue([recette('r1', { retire_le: '2026-03-13T10:00:00Z' })]), SANS_ESPECES)).toBe('non')
+    expect(dossierTientUneCaisse(lue([apport('a1')]), SANS_ESPECES)).toBe('oui')
+    expect(dossierTientUneCaisse({ etat: 'en_attente' }, SANS_ESPECES)).toBe('peut_etre')
+    expect(dossierTientUneCaisse({ etat: 'incomplete', motif: 'x' }, SANS_ESPECES)).toBe('peut_etre')
+  })
+
+  // C6-Q1 (réponse du cabinet du 31/10/2026) : un dossier basculé tient une caisse dès qu'un encaissement en espèces d'une de ses
+  // factures sources y entre — sans mouvement, ni retiré —, même sans aucune opération saisie.
+  it('C6-Q1 : les espèces d’une facture source qui entrent dans la caisse le disent aussi, sans opération', () => {
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1()))).toBe('oui')
+    // Les espèces suffisent, la caisse pas encore revenue ou lue en partie.
+    expect(dossierTientUneCaisse({ etat: 'en_attente' }, especesLues(especesDeF1()))).toBe('oui')
+    expect(dossierTientUneCaisse({ etat: 'incomplete', motif: 'x' }, especesLues(especesDeF1()))).toBe('oui')
+    // Défait depuis, l'encaissement est entré : la caisse l'a reçu.
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1(), especesDeF1({ id: 'e2', montant: -30, annule_id: 'e1' })))).toBe('oui')
+    // Ni une facture qui n'est pas source, ni un autre moyen, ni un encaissement rattaché à un crédit, ni un retiré.
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ facture_id: 'f2' })))).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ moyen: 'cheque' })))).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ ligne_bancaire_id: 'm1' })))).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), especesLues(especesDeF1({ retire_le: '2026-03-13T10:00:00Z' })))).toBe('non')
+    expect(dossierTientUneCaisse(lue([]), especesLues())).toBe('non')
+    // L'encaissement qui ENTRE, jamais sa seule contre-passation (un état que la base n'écrit pas : il garde la règle).
+    expect(dossierTientUneCaisse(lue([]), especesLues(
+      especesDeF1({ retire_le: '2026-03-13T10:00:00Z' }), especesDeF1({ id: 'e2', montant: -30, annule_id: 'e1' }),
+    ))).toBe('non')
+    // La caisse absente (le drapeau baissé) : non, quoi que disent les factures.
+    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, especesLues(especesDeF1()))).toBe('non')
+    // Les ventes lues en partie : on ne sait pas — sauf qu'une opération vivante le dit.
+    const partielles: EspecesDesFactures = { etat: 'incomplete', motif: 'coupée' }
+    expect(dossierTientUneCaisse(lue([]), partielles)).toBe('peut_etre')
+    expect(dossierTientUneCaisse(lue([apport('a1')]), partielles)).toBe('oui')
+    expect(dossierTientUneCaisse(OPERATIONS_DE_CAISSE_ABSENTES, partielles)).toBe('non')
+    // Lues sans espèces qui entrent, la caisse pas encore revenue : peut-être.
+    expect(dossierTientUneCaisse({ etat: 'en_attente' }, especesLues())).toBe('peut_etre')
   })
 })
 
@@ -416,21 +459,36 @@ describe('le versement d’espèces : un libellé, symptôme et jamais preuve', 
   const CPAM = ligne({ id: 'v3', date: '2026-03-14', montant: 70, libelle: 'VIR CPAM', statut: 'non_rapprochee' })
 
   it('hors des lots : un crédit ainsi libellé, dans un dossier qui tient une caisse — ou peut-être', () => {
-    const avec = versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, lue([apport('a1')]), [VERSEMENT, RETRAIT, CPAM])
+    const avec = versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, lue([apport('a1')]), SANS_ESPECES, [VERSEMENT, RETRAIT, CPAM])
     expect([...avec]).toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
-    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, { etat: 'incomplete', motif: 'x' }, [VERSEMENT])]).toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
-    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, { etat: 'en_attente' }, [VERSEMENT])]).toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
+    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, { etat: 'incomplete', motif: 'x' }, SANS_ESPECES, [VERSEMENT])]).toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
+    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, { etat: 'en_attente' }, SANS_ESPECES, [VERSEMENT])]).toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
     // Un mouvement qu'un autre motif écarte garde le sien.
     const deja = new Map([['v1', 'les mots de la garde G2']])
-    expect([...versementsDEspecesHorsDesLots(deja, lue([apport('a1')]), [VERSEMENT])]).toEqual([['v1', 'les mots de la garde G2']])
+    expect([...versementsDEspecesHorsDesLots(deja, lue([apport('a1')]), SANS_ESPECES, [VERSEMENT])]).toEqual([['v1', 'les mots de la garde G2']])
   })
 
   it('NEUTRE : la caisse absente, ou sans opération vivante, rend la carte telle quelle — le même objet', () => {
     const hors = new Map([['x', 'y']])
-    expect(versementsDEspecesHorsDesLots(hors, OPERATIONS_DE_CAISSE_ABSENTES, [VERSEMENT])).toBe(hors)
-    expect(versementsDEspecesHorsDesLots(hors, lue([]), [VERSEMENT])).toBe(hors)
-    expect(versementsDEspecesHorsDesLots(hors, lue([apport('a', { retire_le: 'x' })]), [VERSEMENT])).toBe(hors)
-    expect(versementsDEspecesHorsDesLots(hors, lue([apport('a')]), [CPAM, RETRAIT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, OPERATIONS_DE_CAISSE_ABSENTES, SANS_ESPECES, [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([]), SANS_ESPECES, [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([apport('a', { retire_le: 'x' })]), SANS_ESPECES, [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([apport('a')]), SANS_ESPECES, [CPAM, RETRAIT])).toBe(hors)
+  })
+
+  it('C6-Q1 : un dossier basculé sans opération, où les espèces d’une facture source entrent, l’écarte aussi des lots', () => {
+    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, lue([]), especesLues(especesDeF1()), [VERSEMENT, RETRAIT, CPAM])])
+      .toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
+    // Les ventes lues en partie : peut-être, écarté aussi — écarter d'un lot ne perd rien.
+    expect([...versementsDEspecesHorsDesLots(AUCUN_HORS_DES_LOTS, lue([]), { etat: 'incomplete', motif: 'x' }, [VERSEMENT])])
+      .toEqual([['v1', RAISON_VERSEMENT_D_ESPECES]])
+    // NEUTRE : des espèces rattachées à un crédit, retirées, ou d'une facture qui n'est pas source — la carte, le même objet.
+    const hors = new Map([['x', 'y']])
+    expect(versementsDEspecesHorsDesLots(hors, lue([]), especesLues(especesDeF1({ ligne_bancaire_id: 'm1' })), [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([]), especesLues(especesDeF1({ retire_le: '2026-03-13T10:00:00Z' })), [VERSEMENT])).toBe(hors)
+    expect(versementsDEspecesHorsDesLots(hors, lue([]), especesLues(especesDeF1({ facture_id: 'f2' })), [VERSEMENT])).toBe(hors)
+    // La caisse absente (le drapeau baissé) : la carte telle quelle, quoi que disent les factures.
+    expect(versementsDEspecesHorsDesLots(hors, OPERATIONS_DE_CAISSE_ABSENTES, especesLues(especesDeF1()), [VERSEMENT])).toBe(hors)
   })
 
   it('la carte d’un lot le dit à part, et rend la phrase d’hier sans lui', () => {

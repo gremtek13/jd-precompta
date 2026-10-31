@@ -566,6 +566,29 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
     expect(nb({ ...d, lignes: [{ ...versement, libelle: 'VIR CPAM', libelle_brut: 'VIR CPAM' }] }, 'versements-especes-en-recette')).toBe(0)
   })
 
+  // C6-Q1 (réponse du cabinet du 31/10/2026) : un dossier basculé tient une caisse dès qu'un encaissement en espèces d'une de ses
+  // factures sources y entre — même sans aucune opération saisie : le symptôme se dit alors.
+  it('versements-especes-en-recette, C6-Q1 : les espèces d’une facture source disent la caisse, sans aucune opération', () => {
+    const versement = ligne({ id: 'v1', date: '2026-03-14', montant: 400, libelle: 'VERSEMENT ESPECES', statut: 'rapprochee', categorie_id: HONORAIRES.id })
+    const ventes = (encaissements: unknown[]): LectureDesVentesDuReleve => ({
+      dossierId: 'd1', etat: 'lue',
+      sources: { dossierId: 'd1', factures: [{ id: 'f1', numero: 'F2026-0012', source_de_la_vente: true }], encaissements, mouvements: [], exemplaires: [] },
+    } as unknown as LectureDesVentesDuReleve)
+    const especes = (o: object = {}) => ({
+      id: 'e1', facture_id: 'f1', date_encaissement: '2026-03-12', montant: 30, moyen: 'especes', ligne_bancaire_id: null, annule_id: null,
+      retire_le: null, ...o,
+    })
+    const d = { categories: [HONORAIRES], lignes: [versement], caisse: caisseLue([]) }
+    expect(nb({ ...d, ventesFacturees: ventes([especes()]) }, 'versements-especes-en-recette')).toBe(1)
+    // NEUTRE : aucune espèce, des espèces rattachées à un crédit, ou retirées — aucune caisse, rien ne se dit.
+    expect(nb({ ...d, ventesFacturees: ventes([]) }, 'versements-especes-en-recette')).toBe(0)
+    expect(nb({ ...d, ventesFacturees: ventes([especes({ ligne_bancaire_id: 'm1' })]) }, 'versements-especes-en-recette')).toBe(0)
+    expect(nb({ ...d, ventesFacturees: ventes([especes({ retire_le: '2026-03-13T10:00:00Z' })]) }, 'versements-especes-en-recette')).toBe(0)
+    // Les ventes lues en partie : peut-être, que la Vue d'ensemble tait.
+    const partielles: LectureDesVentesDuReleve = { dossierId: 'd1', etat: 'incomplete', motif: 'les encaissements' }
+    expect(nb({ ...d, ventesFacturees: partielles }, 'versements-especes-en-recette')).toBe(0)
+  })
+
   it('lue en partie, ou une de ses entrées : les quatre se taisent', () => {
     const incompletes = tous({ caisse: caisseLue([A], { complete: false, motif: 'coupée' }) })
     expect(incompletes.some((p) => IDS.includes(p.id))).toBe(false)

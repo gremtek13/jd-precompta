@@ -11,7 +11,7 @@ import {
   verdictDuFormulaire, verdictDuMois, type ContexteDeLaCaisse, type DonneesDeLaCaisse, type EntreesDeLaCaisseDeBanque,
   type FormulaireDeCaisse,
 } from './caisseEcran'
-import { operationsDeCaisseDuDossier } from './controlesDeLaCaisse'
+import { operationsDeCaisseDuDossier, type EspecesDesFactures } from './controlesDeLaCaisse'
 import type { ModeleComptable } from './engagement'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import type { Categorie, OperationCaisse } from './types'
@@ -477,14 +477,15 @@ describe('la caisse dans la fiche d’un mouvement du relevé', () => {
   const etat = etatDeLaCaisseLu(MODELE, d)
   const lecture = { etat: 'lue' as const, caisse: etat }
   const operations = operationsDeCaisseDuDossier({ dossierId: 'd1', enBase: true, lignes: d.operations, complete: true, motif: null }, 'd1')
+  const SANS_ESPECES: EspecesDesFactures = { etat: 'sans_objet' }
 
   it('un crédit : la caisse du jour, sans lui puis avec lui classé « Versement d’espèces » — aucun refus tant qu’elle tient', () => {
-    const fiche = caisseDeLaFiche({ id: 'c1', date: '2026-03-12', montant: 200, compte_bilan: null }, lecture, operations)
+    const fiche = caisseDeLaFiche({ id: 'c1', date: '2026-03-12', montant: 200, compte_bilan: null }, lecture, operations, SANS_ESPECES)
     expect(fiche).toEqual({ etat: 'lue', tenue: 'oui', surLaCaisse: false, soldeSans: 34000, soldeAvec: 14000, refusDuClassement: null, refusDuRetrait: null })
   })
 
   it('un crédit qui rendrait la caisse négative : le refus de la base, ses mots, le jour et le solde', () => {
-    const fiche = caisseDeLaFiche({ id: 'c2', date: '2026-03-12', montant: 500, compte_bilan: null }, lecture, operations)
+    const fiche = caisseDeLaFiche({ id: 'c2', date: '2026-03-12', montant: 500, compte_bilan: null }, lecture, operations, SANS_ESPECES)
     expect(fiche.etat).toBe('lue')
     if (fiche.etat === 'lue') {
       expect(fiche.soldeAvec).toBe(-16000)
@@ -497,21 +498,21 @@ describe('la caisse dans la fiche d’un mouvement du relevé', () => {
   it('un versement trop tôt vide aussi les jours d’après : le premier jour négatif est celui que le geste crée', () => {
     // Un prélèvement de 300 € le 13/03 serait couvert par la caisse de 340 € ; un versement de 100 € le 12/03 le découvre.
     const avecSortie = etatDeLaCaisseLu(MODELE, { ...d, operations: [...d.operations, operation({ id: 'p', genre: 'prelevement', date: '2026-03-13', montant: 300 })] })
-    const fiche = caisseDeLaFiche({ id: 'c3', date: '2026-03-12', montant: 100, compte_bilan: null }, { etat: 'lue', caisse: avecSortie }, operations)
+    const fiche = caisseDeLaFiche({ id: 'c3', date: '2026-03-12', montant: 100, compte_bilan: null }, { etat: 'lue', caisse: avecSortie }, operations, SANS_ESPECES)
     expect(fiche.etat === 'lue' && sansEspaceInsecable(fiche.refusDuClassement ?? '')).toBe(
       'Ce versement de 100,00 € rendrait la caisse négative le 13/03/2026 (−60,00 €) : saisis d\'abord les recettes en espèces qui le précèdent.',
     )
   })
 
   it('un débit (des espèces retirées pour la caisse) l’alimente : aucun refus', () => {
-    const fiche = caisseDeLaFiche({ id: 'c4', date: '2026-03-12', montant: -80, compte_bilan: null }, lecture, operations)
+    const fiche = caisseDeLaFiche({ id: 'c4', date: '2026-03-12', montant: -80, compte_bilan: null }, lecture, operations, SANS_ESPECES)
     expect(fiche).toMatchObject({ etat: 'lue', surLaCaisse: false, soldeSans: 34000, soldeAvec: 42000, refusDuClassement: null, refusDuRetrait: null })
   })
 
   it('un débit déjà classé sur la caisse : le retirer vide la caisse des espèces qu’il y avait mises — le refus dit « retrait d’espèces »', () => {
     const classe = { id: 'c5', date: '2026-03-02', montant: -80, libelle: 'RETRAIT', compte_bilan: CAISSE }
     const dessus = etatDeLaCaisseLu(MODELE, { ...d, mouvements: [classe], operations: [...d.operations, operation({ id: 'p', genre: 'prelevement', date: '2026-03-03', montant: 220 })] })
-    const fiche = caisseDeLaFiche(classe, { etat: 'lue', caisse: dessus }, operations)
+    const fiche = caisseDeLaFiche(classe, { etat: 'lue', caisse: dessus }, operations, SANS_ESPECES)
     expect(fiche).toMatchObject({ etat: 'lue', surLaCaisse: true })
     if (fiche.etat === 'lue') {
       expect(fiche.soldeSans).toBe(15000)
@@ -525,15 +526,39 @@ describe('la caisse dans la fiche d’un mouvement du relevé', () => {
   it('un crédit déjà classé sur la caisse : le retirer ne la vide jamais', () => {
     const classe = { id: 'c6', date: '2026-03-02', montant: 40, libelle: 'VERSEMENT', compte_bilan: CAISSE }
     const dessus = etatDeLaCaisseLu(MODELE, { ...d, mouvements: [classe] })
-    const fiche = caisseDeLaFiche(classe, { etat: 'lue', caisse: dessus }, operations)
+    const fiche = caisseDeLaFiche(classe, { etat: 'lue', caisse: dessus }, operations, SANS_ESPECES)
     expect(fiche).toMatchObject({ surLaCaisse: true, refusDuRetrait: null, soldeSans: 15000, soldeAvec: 11000 })
   })
 
   it('le reste dit ce que la fiche peut en dire : la caisse absente (le drapeau baissé), la caisse pas lue en entier', () => {
-    expect(caisseDeLaFiche({ id: 'x', date: '2026-03-12', montant: 10, compte_bilan: null }, { etat: 'absente' }, { etat: 'absente' })).toBe(CAISSE_ABSENTE_DE_LA_FICHE)
-    expect(caisseDeLaFiche({ id: 'x', date: '2026-03-12', montant: 10, compte_bilan: null }, { etat: 'pas_lue', motif: 'la reprise : lecture partielle' }, operations))
+    expect(caisseDeLaFiche({ id: 'x', date: '2026-03-12', montant: 10, compte_bilan: null }, { etat: 'absente' }, { etat: 'absente' }, SANS_ESPECES)).toBe(CAISSE_ABSENTE_DE_LA_FICHE)
+    expect(caisseDeLaFiche({ id: 'x', date: '2026-03-12', montant: 10, compte_bilan: null }, { etat: 'pas_lue', motif: 'la reprise : lecture partielle' }, operations, SANS_ESPECES))
       .toEqual({ etat: 'pas_lue', tenue: 'oui', motif: 'la reprise : lecture partielle' })
     expect(CAISSE_ABSENTE_DE_LA_FICHE).toEqual({ etat: 'absente', tenue: 'non' })
+  })
+
+  // C6-Q1 : un dossier basculé sans opération de caisse la tient dès qu'un encaissement en espèces d'une facture source y entre —
+  // la fiche le dit alors (« tenue »), et le versement de ces espèces s'y classe comme dans un dossier qui saisit sa caisse.
+  it('C6-Q1 : sans opération, les espèces d’une facture source qui entrent disent la caisse tenue ; d’une autre facture, non', () => {
+    const vide = operationsDeCaisseDuDossier({ dossierId: 'd1', enBase: true, lignes: [], complete: true, motif: null }, 'd1')
+    const encaissement = (o: { facture_id?: string; ligne_bancaire_id?: string | null } = {}) => ({
+      id: 'e1', facture_id: 'f1', date_encaissement: '2026-03-12', montant: 30, moyen: 'especes' as const, ligne_bancaire_id: null,
+      annule_id: null, retire_le: null, ...o,
+    })
+    const especes = (e: ReturnType<typeof encaissement>): EspecesDesFactures => ({
+      etat: 'lues', encaissements: [e],
+      factures: [{ id: 'f1', numero: 'F2026-0012', source_de_la_vente: true }, { id: 'f2', numero: 'F2026-0013', source_de_la_vente: false }],
+    })
+    const credit = { id: 'c7', date: '2026-03-12', montant: 30, compte_bilan: null }
+    expect(caisseDeLaFiche(credit, lecture, vide, SANS_ESPECES)).toMatchObject({ etat: 'lue', tenue: 'non' })
+    expect(caisseDeLaFiche(credit, lecture, vide, especes(encaissement()))).toMatchObject({ etat: 'lue', tenue: 'oui' })
+    expect(caisseDeLaFiche(credit, lecture, vide, especes(encaissement({ facture_id: 'f2' })))).toMatchObject({ tenue: 'non' })
+    expect(caisseDeLaFiche(credit, lecture, vide, especes(encaissement({ ligne_bancaire_id: 'm1' })))).toMatchObject({ tenue: 'non' })
+    expect(caisseDeLaFiche(credit, lecture, vide, { etat: 'incomplete', motif: 'x' })).toMatchObject({ tenue: 'peut_etre' })
+    expect(caisseDeLaFiche(credit, { etat: 'pas_lue', motif: 'la reprise : lecture partielle' }, vide, especes(encaissement())))
+      .toEqual({ etat: 'pas_lue', tenue: 'oui', motif: 'la reprise : lecture partielle' })
+    // Absente (le drapeau baissé) : rien de plus qu'hier, quoi que disent les factures.
+    expect(caisseDeLaFiche(credit, { etat: 'absente' }, { etat: 'absente' }, especes(encaissement()))).toBe(CAISSE_ABSENTE_DE_LA_FICHE)
   })
 })
 
