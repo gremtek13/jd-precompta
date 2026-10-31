@@ -323,7 +323,23 @@ export interface RepartitionCases {
 // rattachement se fait sur un libellé de poste, mais le sens vient du type de la pièce : sans ce
 // contrôle, un poste au libellé ambigu ferait entrer une dépense dans les recettes — et le montant
 // compterait deux fois à l'envers dans le résultat.
+//
+// SAUF LES DEUX CASES QUI SE RETRANCHENT DES RECETTES, les débours (AB, ligne 2) et les honoraires rétrocédés (AC, ligne
+// 3) : elles sont imprimées au cadre des recettes, mais ce qu'elles reçoivent est de l'argent VERSÉ — la part que la
+// titulaire rétrocède à sa remplaçante, les frais avancés pour le client —, dont l'encaissement est déjà en ligne 1 et
+// que le formulaire retranche (2035-A-SD, cadre 2 : la ligne 1 « recettes encaissées y compris les remboursements de
+// frais », la ligne 4 « montant net des recettes » = ligne 1 − ligne 2 − ligne 3). Une rétrocession se range donc dans
+// une catégorie de CHARGE (un compte 6, au poste « Honoraires rétrocédés ») et le moteur en fait une DÉPENSE, comptée en
+// positif, qui diminue le résultat comme la case diminue la ligne 4 : la case l'accepte, et elle seule. Elles refusaient
+// toute dépense, comme « case du mauvais sens » — et une rétrocession en charge laissait AC vide, AD au brut, la
+// validation bloquée ; rangée en produit
+// (une recette négative), elle y entrait au signe de la recette, AD = AA − (−AC) gonflait AD du double de la rétrocession,
+// et la case négative bloquait aussi (relecture du 31/10/2026). Une RECETTE sous ce poste n'y entre plus : c'est le cas
+// de la REMPLAÇANTE, pour qui la rétrocession reçue est une recette de la ligne 1, et la retrancher l'ôterait de son
+// résultat ; Clôture la montre dans les postes sans case, et la validation la refuse, jusqu'à ce que le cabinet range la
+// catégorie.
 function cadreCompatible(c: Case2035, nature: LigneDeclaration['nature']): boolean {
+  if (c.soustractive) return nature === 'depense'
   return nature === 'recette' ? c.cadre === 'recettes' : c.cadre !== 'recettes'
 }
 

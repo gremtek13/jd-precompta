@@ -1,4 +1,4 @@
-import { seuilAlignement } from './alignementBanque'
+import { paiementNet, seuilAlignement } from './alignementBanque'
 import { dateLocaleDe } from './format'
 import type { LigneBancaire, ModeComptable, Piece, ReglementGroupe } from './types'
 
@@ -147,21 +147,41 @@ export interface PartsReglees {
 // Au-delà du seuil, c'est un PAIEMENT PARTIEL : chaque paiement porte sa part du montant de la pièce,
 // et le reste n'est réglé par rien de connu. L'onglet TVA n'en fait rien (un acompte ne rend exigible
 // que ce qu'il paie) ; `rattachementsTresorerie` le date à la facture, et le dit.
+//
+// LE TOTAL PAYÉ EST LA SOMME SIGNÉE DES PAIEMENTS (`paiementNet`, lib/alignementBanque.ts ; relecture du 31/10/2026), et
+// chaque paiement y compte pour son montant RAPPORTÉ AU SENS de cette somme. Tous dans le même sens, rien ne change :
+// chacun porte sa valeur absolue, comme avant. Un mouvement de sens contraire — le rejet d'un prélèvement, le
+// remboursement d'un paiement fait en double — porte une part NÉGATIVE, à sa date : il défait, dans l'exercice où il
+// passe au relevé, ce que le paiement qu'il annule avait compté. La prime de 1 200 € prélevée le 20/12/2025, rejetée le
+// 28/12 et reprise le 05/01/2026 compte +1 et −1 en 2025, +1 en 2026 : rien en 2025, 1 200 € en 2026 — là où la valeur
+// absolue en mettait 800 € en 2025. Et chaque date porte ce que la banque y porte : la charge de la pièce, écrite date
+// par date (`centimesParDate`), fait face à la contrepartie banque de chaque mouvement, et l'écriture s'équilibre dans
+// chaque exercice ; la part négative s'écrit dans l'autre sens, comme un avoir (`lignesChargeProduitPourPiece`). Une date
+// où un paiement et son rejet s'annulent porte une part nulle : aucune charge, et ses deux lignes de banque se soldent
+// entre elles.
+//
+// Une somme NULLE — un prélèvement rejeté et pas encore repris — ne paie rien : la pièce n'a pas de paiement net, et
+// compte à sa date de facture comme une pièce sans paiement connu, ce que la 2035 dit (`sans_paiement`).
 export function partsDesPaiements(
   piece: Pick<Piece, 'montant_ttc'>,
   paiements: readonly Pick<LigneBancaire, 'date' | 'montant'>[],
 ): PartsReglees {
-  const paye = paiements.reduce((s, m) => s + Math.abs(m.montant), 0)
-  if (paye === 0) return { parts: [], reste: 1 }
+  const { centimes, sens } = paiementNet(paiements)
+  if (centimes === 0) return { parts: [], reste: 1 }
+  // Ce que chaque paiement règle, dans le sens de la somme : sa valeur absolue quand tous vont dans ce sens. Le total
+  // s'additionne en euros, dans l'ordre des paiements, comme avant : des paiements de même sens rendent ainsi les mêmes
+  // parts AU BIT PRÈS, et une écriture déjà générée ne se découvre pas « à régénérer » pour un arrondi.
+  const regle = (m: Pick<LigneBancaire, 'montant'>) => m.montant * sens
+  const paye = paiements.reduce((s, m) => s + regle(m), 0)
   const montantPiece = Math.abs(piece.montant_ttc ?? 0)
   // Au centime, comme l'écart que mesure `ecartAvecBanque` : sans cet arrondi, 100,10 − 98,10 vaut
   // 2,0000000000000004 et un écart pile au seuil passerait pour un paiement partiel.
   const reste = Math.round((montantPiece - paye) * 100) / 100
   if (reste <= seuilAlignement(montantPiece)) {
-    return { parts: paiements.map((m) => ({ date: m.date, part: Math.abs(m.montant) / paye })), reste: 0 }
+    return { parts: paiements.map((m) => ({ date: m.date, part: regle(m) / paye })), reste: 0 }
   }
   return {
-    parts: paiements.map((m) => ({ date: m.date, part: Math.abs(m.montant) / montantPiece })),
+    parts: paiements.map((m) => ({ date: m.date, part: regle(m) / montantPiece })),
     reste: reste / montantPiece,
   }
 }
@@ -285,11 +305,15 @@ export function centimesParDate(
   const total = Math.round(montant * 100)
   const morceaux = reunies.map((f) => Math.round(total * f.part))
   morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)
+  // Une date dont la part nette est NULLE — un paiement et son rejet le même jour, ou le rejet d'un paiement partiel qui
+  // tombe le jour du dépôt d'une pièce sans date — ne se divise pas : sa part sans date se prend alors sur le total de la
+  // pièce, et la 2035, qui ôte ce que rien ne date, y compte le paiement seul.
   return reunies.map((f, i) => ({
     date: f.date,
     centimes: morceaux[i],
     centimesSansDate: f.partSansDate === 0 ? 0
       : f.partSansDate === f.part ? morceaux[i]
+      : Math.abs(f.part) < 1e-12 ? Math.round(total * f.partSansDate)
       : Math.round(morceaux[i] * (f.partSansDate / f.part)),
   }))
 }

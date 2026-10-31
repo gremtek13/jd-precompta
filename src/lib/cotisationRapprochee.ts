@@ -211,21 +211,32 @@ export function cotisationsComptees(
     const refus = ligne ? refusRapprochementCotisation(ligne, cotisation, mode) : null
     if (ligne && !refus) {
       const montant = -ligne.montant
-      const csgCrds = cotisation.montant_csg_crds == null ? null : Math.sign(montant) * Math.abs(cotisation.montant_csg_crds)
+      const csgCrds = csgDansLeSensDe(montant, cotisation)
       return { cotisation, date: ligne.date, montant, csgCrds, ligne, paiementPersonnel: null, refus: null }
     }
     const paiement = !ligne ? cotisation.paiement_personnel_le ?? null : null
     const refusPersonnel = paiement ? refusMontantsDuPaiementPersonnel(cotisation, mode) : null
     if (paiement && !refusPersonnel) {
       const montant = montantDeLEcheance(cotisation)
-      const csgCrds = cotisation.montant_csg_crds == null ? null : Math.sign(montant) * Math.abs(cotisation.montant_csg_crds)
+      const csgCrds = csgDansLeSensDe(montant, cotisation)
       return { cotisation, date: paiement, montant, csgCrds, ligne: null, paiementPersonnel: paiement, refus: null }
     }
+    const montant = montantDeLEcheance(cotisation)
     return {
-      cotisation, date: cotisation.echeance, montant: montantDeLEcheance(cotisation),
-      csgCrds: cotisation.montant_csg_crds, ligne: null, paiementPersonnel: null, refus: refus ?? refusPersonnel?.message ?? null,
+      cotisation, date: cotisation.echeance, montant,
+      csgCrds: csgDansLeSensDe(montant, cotisation), ligne: null, paiementPersonnel: null, refus: refus ?? refusPersonnel?.message ?? null,
     }
   })
+}
+
+// LA CSG-CRDS D'UNE ÉCHÉANCE, DANS LE SENS DE CE QU'ELLE PÈSE — la même règle pour ses trois façons de compter (un
+// mouvement rapproché, le compte personnel, son échéance). Le décompte de l'Urssaf l'imprime en positif, remboursement
+// compris : c'est le montant de l'échéance qui dit si elle se paie ou se rembourse. L'échéance comptée à son échéance
+// prenait la saisie telle quelle : un remboursement de 300 €, dont 30 € de CSG-CRDS, ôtait 330 € de BK et AJOUTAIT
+// 21,03 € de CSG déductible en BV, quand le même remboursement rapproché de son crédit ôtait 270 € et 21,03 €
+// (relecture du 31/10/2026). Inconnue, elle reste inconnue (`null`), surtout pas zéro.
+function csgDansLeSensDe(montant: number, cotisation: Pick<CotisationDeclaree, 'montant_csg_crds'>): number | null {
+  return cotisation.montant_csg_crds == null ? null : Math.sign(montant) * Math.abs(cotisation.montant_csg_crds)
 }
 
 // L'échéance compte-t-elle à son échéance, faute de paiement connu qui la date ? Ni un prélèvement rapproché qui

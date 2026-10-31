@@ -225,6 +225,15 @@ function centimesDeLaPeriode(
     const comptee = aLaDate.filter(compteeParLaCa3).reduce((s, r) => s + r.part, 0)
     if (comptee === 0) return
     const tvaDeLaDate = toutCompris[i].centimes - m.centimes
+    // UNE DATE DONT LA PART NETTE EST NULLE ne se divise pas (lib/rattachement.ts, `partsDesPaiements`) : le rejet d'un
+    // paiement partiel qui tombe le jour de la facture y fait −x de paiement face à +x de reste. La période compte alors
+    // la part payée seule, prise sur la pièce entière.
+    if (Math.abs(tout) < 1e-12) {
+      const baseDeLaPiece = Math.round(charge * 100)
+      base += Math.round(baseDeLaPiece * comptee)
+      taxe += Math.round((Math.round((charge + tva) * 100) - baseDeLaPiece) * comptee)
+      return
+    }
     if (comptee >= tout - 1e-12) {
       base += m.centimes
       taxe += tvaDeLaDate
