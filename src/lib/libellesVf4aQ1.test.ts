@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { LIBELLES_COMPTES, libelleCompteTenu } from './comptes'
 import { libelleDuCompteDeBilan } from './compteDeBilan'
 import { calculerBalance } from './ecritures'
-import { genererFec, libelleCompte, numerotationValidee } from './fec'
+import { CHAMPS_BNC_NON_EXPORTES, genererFec, libelleCompte, numerotationValidee } from './fec'
 import { titreDeLaLigne } from './revueAnalytiqueEcran'
 import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
@@ -72,7 +72,7 @@ describe('VF4A-Q1 — le 706000 et le 627000 portent le nom du plan comptable g�
   it('dans le FEC, un même CompteNum sous un seul CompteLib — et rien d’autre ne change de nom', () => {
     expect(libelleCompte('706000', CATEGORIES)).toBe('Prestations de services')
     expect(libelleCompte('627000', CATEGORIES)).toBe('Services bancaires et assimilés')
-    const parCompte = new Map(genererFec(BROUILLON, [piece], CATEGORIES, [], 'tresorerie', [], new Map(), SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES)
+    const parCompte = new Map(genererFec(BROUILLON, [piece], CATEGORIES, [], 'tresorerie', [], new Map(), SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
       .split('\r\n').slice(1).map((r) => r.split('\t')).map((r) => [r[4], r[5]] as const))
     expect(Object.fromEntries(parCompte)).toEqual({
       '445800': "Taxes sur le chiffre d'affaires à régulariser ou en attente",
@@ -132,7 +132,7 @@ describe('VF4C2-Q1 — le 707000, le 445800, le 511000 et le 530000 portent auss
       aNouveau({ id: 'an1', compte: '511000', libelle: 'Chèques à encaisser', sens: 'debit' }),
       aNouveau({ id: 'an2', compte: '101000', libelle: 'Capital individuel', sens: 'credit' }),
     ]
-    const lignes = genererFec([], [], CATEGORIES, reprise, 'tresorerie', [], new Map(), SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES)
+    const lignes = genererFec([], [], CATEGORIES, reprise, 'tresorerie', [], new Map(), SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
       .split('\r\n').slice(1).map((r) => r.split('\t'))
     expect(lignes.find((r) => r[4] === '511000')?.[5]).toBe("Valeurs à l'encaissement")
     // Un compte que l'application ne nomme pas garde le nom de la reprise, comme hier.

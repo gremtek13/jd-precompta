@@ -41,10 +41,14 @@ const SIRET_AU_SIREN_INVALIDE = '98765432000017'
 const SIRET_INVALIDE = '12345678200011'
 
 // ── Les fabriques, typées Partial<T> => T ──
-const facture = (f: Partial<FactureDuClient>): FactureDuClient => ({
+// Le nom du client et le motif d'un encaissement ne sont pas dans les types que le module lit : on les plante à côté,
+// comme une lecture trop large les rendrait, et aucun ne doit sortir.
+type FactureLueEnTrop = FactureDuClient & { tiers_nom: string | null }
+type EncaissementLuEnTrop = EncaissementDuRegistre & { motif: string | null }
+const facture = (f: Partial<FactureLueEnTrop>): FactureLueEnTrop => ({
   id: 'facture-1', numero: 'F2026-0007', statut: 'validee', tiers_siret: null, tiers_nom: NOMS[0], source_de_la_vente: true, ...f,
 })
-const encaissement = (e: Partial<EncaissementDuRegistre>): EncaissementDuRegistre => ({
+const encaissement = (e: Partial<EncaissementLuEnTrop>): EncaissementLuEnTrop => ({
   id: 'enc-1', dossier_id: 'dossier-1', facture_id: 'facture-1', date_encaissement: '2026-04-10', montant: 100, moyen: 'virement',
   ligne_bancaire_id: null, annule_id: null, retire_le: null, motif: NOMS[9], ...e,
 })

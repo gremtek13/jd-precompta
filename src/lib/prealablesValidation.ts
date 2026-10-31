@@ -5,7 +5,7 @@ import { partCsgNonDeductible, type Declaration2035 } from './declaration2035'
 import { casesNegatives, doublonFraisVehicules, valeursDesCases } from './cases2035'
 import type { DoublonDeTexte } from './doublonsTexte'
 import type { Emprunt } from './emprunts'
-import { numeroterFec, type NumerotationFec } from './fec'
+import { CHAMPS_BNC_NON_EXPORTES, type NumerotationFec, numeroterFec } from './fec'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
 import { confronterLOuverture, ouvertureEnEcart } from './ouvertureConfrontee'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
@@ -586,9 +586,13 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // parmi les écritures que rien ne rattache. Un dossier qui n'a pas basculé n'a aucune composition : rien ne change.
   // Et les opérations de la caisse (étape C3b) : chacune fait son écriture, au journal de son genre (CAISSE-Q3, (A)), la
   // pièce le récapitulatif de son jour — celle que la validation fige. La caisse absente n'en numérote aucune.
+  // SANS LES QUATRE CHAMPS D'UN BNC EN TRÉSORERIE (lot FEC22c1) : la base ne les fige pas encore (la migration FEC22b), et la
+  // numérotation qu'elle fige est celle du drapeau baissé — sans la scission d'une pièce payée le même jour par deux modes.
+  // Le jour où le drapeau se lève (FEC22c2), ces préalables reçoivent les MÊMES entrées que l'export de l'onglet Écritures :
+  // sinon le FEC relu d'un exercice validé n'aurait pas les écritures de celui qu'on exportait la veille.
   const numerotation = numeroterFec(
     ecrituresDeLExercice, d.piecesValidees, [...d.categories], ouvertureDeLExercice(d.aNouveaux, d.soldesReportes, d.annee),
-    d.modele.mode, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [], d.operationsDeCaisse,
+    d.modele.mode, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [], d.operationsDeCaisse, CHAMPS_BNC_NON_EXPORTES,
   )
   // Les lignes que `ventes-facturees-a-ecrire` nomme — à réécrire ou à retirer —, et elles seules : une ligne d'une vente
   // facturée qu'aucune source en défaut ne porterait (défensif) reste une écriture que rien ne rattache.

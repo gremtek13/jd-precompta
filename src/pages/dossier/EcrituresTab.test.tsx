@@ -248,6 +248,16 @@ vi.mock('../../lib/caisseLecture', async (original) => {
 })
 afterEach(() => { caisseDuTest.lecture = null })
 
+// LES VINGT-DEUX CHAMPS D'UN BNC EN TRÉSORERIE (lot FEC22c1) : le drapeau `CHAMPS_BNC_EXPORTES` joué par un accesseur — le
+// vrai (baissé) tant qu'un cas n'en lève pas un, avec le choix de FEC22-Q1 qu'il porte. L'écran et la lecture
+// (lib/champsBncLecture.ts) le lisent tous deux du module : les deux suivent.
+const drapeauBnc = vi.hoisted(() => ({ choix: undefined as undefined | null | { sansReglement: 'vides' | 'date_de_l_ecriture' } }))
+vi.mock('../../lib/champsBncDuFec', async (original) => {
+  const vrai = await original<typeof import('../../lib/champsBncDuFec')>()
+  return { ...vrai, get CHAMPS_BNC_EXPORTES() { return drapeauBnc.choix === undefined ? vrai.CHAMPS_BNC_EXPORTES : drapeauBnc.choix } }
+})
+afterEach(() => { drapeauBnc.choix = undefined })
+
 const CATEGORIE_ACHATS = {
   id: 'cat-achats', dossier_id: null, code: 'achats_fournisseurs', libelle: 'Achats',
   ordre: 1, compte_comptable: '606100', poste_2035: 'Achats',
@@ -630,6 +640,79 @@ describe('EcrituresTab — une recherche filtre l’affichage, jamais le FEC', (
     expect(telecharge.fichiers).toHaveLength(1)
     expect(telecharge.fichiers[0].contenu).toContain('606100')
     expect(telecharge.fichiers[0].contenu).toContain('445660')
+  })
+})
+
+describe('EcrituresTab — le FEC d’un BNC en trésorerie, vingt-deux champs, derrière son drapeau (FEC22c1)', () => {
+  // Une pièce d'achat payée par un mouvement rapproché, son écriture au brouillon : la charge et la banque, le 20/03.
+  const posee = () => poser({
+    pieces: [piece({ date_piece: '2025-03-10' })],
+    lignes_bancaires: [{
+      id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-20', montant: -120, statut: 'rapprochee', piece_id: 'p1', libelle: 'PRLV FOURNISSEUR',
+      reglement_groupe: false, encaissements_de_factures: false, prelevement_personnel: false, created_at: '2025-03-21T08:00:00Z',
+    }],
+    ecritures_brouillon: [
+      ecriture({ id: 'e1', date: '2025-03-20' }),
+      ecriture({ id: 'e2', date: '2025-03-20', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1' }),
+    ],
+    cotisations_declarees: [],
+  })
+  const exporter = async () => {
+    await screen.findByText('606100')
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    return telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t'))
+  }
+
+  it('le drapeau baissé (l’état de ce lot) : le fichier d’hier, à dix-huit colonnes', async () => {
+    posee()
+    monter()
+    const lignes = await exporter()
+    expect(lignes.every((l) => l.length === 18)).toBe(true)
+    expect(lignes[0].at(-1)).toBe('Idevise')
+  })
+
+  it('levé : l’en-tête du VIII, 7°, et chaque ligne porte sa date de règlement, son mode, sa nature et son poste', async () => {
+    drapeauBnc.choix = { sansReglement: 'vides' }
+    posee()
+    monter()
+    const lignes = await exporter()
+    expect(lignes[0].slice(17)).toEqual(['Idevise', 'DateRglt', 'ModeRglt', 'NatOp', 'IdClient'])
+    expect(lignes.slice(1).map((l) => [l[4], ...l.slice(18)])).toEqual([
+      ['606100', '20250320', 'Banque', 'Dépense — Achats', ''],
+      ['512000', '20250320', 'Banque', 'Dépense', ''],
+    ])
+  })
+
+  it('levé, en engagement : le fichier reste à dix-huit colonnes', async () => {
+    drapeauBnc.choix = { sansReglement: 'date_de_l_ecriture' }
+    posee()
+    monter(false, ENGAGEMENT)
+    await screen.findByText('606100')
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    expect(telecharge.fichiers[0].contenu.split('\r\n').every((l) => l.split('\t').length === 18)).toBe(true)
+  })
+
+  it('levé, en engagement, une lecture des quatre champs incomplète ne retient rien : ils ne s’y calculent pas', async () => {
+    drapeauBnc.choix = { sansReglement: 'vides' }
+    posee()
+    faux.parTable.cotisations_declarees = [{ id: 'co1', dossier_id: 'dossier-de-test', paiement_personnel_le: null }]
+    faux.muetParTable = { cotisations_declarees: 0 }
+    monter(false, ENGAGEMENT)
+    await screen.findByText('606100')
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    expect(telecharge.fichiers).toHaveLength(1)
+  })
+
+  it('levé, une lecture des quatre champs incomplète : le FEC ne s’exporte pas, et dit pourquoi', async () => {
+    drapeauBnc.choix = { sansReglement: 'vides' }
+    posee()
+    faux.parTable.cotisations_declarees = [{ id: 'co1', dossier_id: 'dossier-de-test', paiement_personnel_le: null }]
+    faux.muetParTable = { cotisations_declarees: 0 }
+    monter()
+    await screen.findByText('606100')
+    const bouton = screen.getByRole('button', { name: /Exporter FEC/ })
+    await waitFor(() => expect(bouton.hasAttribute('disabled')).toBe(true))
+    expect(bouton.getAttribute('title')).toMatch(/Les champs d’un BNC en trésorerie ne peuvent pas se calculer \(les échéances de cotisation : /)
   })
 })
 

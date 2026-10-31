@@ -8,7 +8,11 @@ import {
 import type { EcritureSansObjet, MotifSansObjet, SuiteDansUnExerciceValide } from '../../lib/ecritures'
 import { comptesDuDirigeant, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
-import { formaterFec, genererFec, nomFichierFec, numerotationValidee, telechargerTexte } from '../../lib/fec'
+import {
+  CHAMPS_BNC_NON_EXPORTES, formaterFec, genererFec, nomFichierFec, numerotationValidee, telechargerTexte, type ChampsBncDuFec,
+} from '../../lib/fec'
+import { CHAMPS_BNC_EXPORTES } from '../../lib/champsBncDuFec'
+import { lireLesChampsBnc, type LectureDesChampsBnc } from '../../lib/champsBncLecture'
 import { etatsDesLettragesManuels, lettrages, lettragesDesFactures, phraseDuLettrage, piecesLettreesALaMain } from '../../lib/lettrage'
 import { estFigee } from '../../lib/validationExercice'
 import { lireTout } from '../../lib/lectureComplete'
@@ -231,12 +235,17 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // genre (lib/fec.ts), et doit donc les lire toutes. Lue avec le brouillon, gardée avec le dossier qui l'a demandée ; le
   // drapeau baissé, rien n'est lu (sans appel au réseau) et rien ne change.
   const [lectureCaisse, setLectureCaisse] = useState<LectureDeLaCaisse | null>(null)
+  // CE QUE LE FEC D'UN BNC EN TRÉSORERIE LIT DE PLUS (lot FEC22c ; lib/champsBncLecture.ts) : les factures du dossier (leur
+  // numéro et le SIRET figé du client, jamais son nom) et ses échéances de cotisation. Lue avec le brouillon, gardée avec le
+  // dossier qui l'a demandée ; le drapeau baissé, rien n'est lu (sans appel au réseau) et le FEC reste celui d'hier.
+  const [lectureChampsBnc, setLectureChampsBnc] = useState<LectureDesChampsBnc | null>(null)
 
   async function load() {
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
       lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations, lectureReportes, lectureDesVentes, lectureDeLaCaisse,
+      lectureDesChampsBnc,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -306,9 +315,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
       // Ne rejette jamais ; le drapeau baissé, ne touche pas au réseau.
       lireLaCaisse(dossierId),
+      // Ne rejette jamais ; le drapeau des vingt-deux champs baissé, ne touche pas au réseau.
+      lireLesChampsBnc(dossierId),
     ])
     setLectureVentes(lectureDesVentes)
     setLectureCaisse(lectureDeLaCaisse)
+    setLectureChampsBnc(lectureDesChampsBnc)
     setLignesBancaires(lectureLignes.lignes)
     setLettragesManuels(lectureLettrages.lignes)
     setLettragesIncomplets(lectureLettrages.motif)
@@ -556,6 +568,28 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const etatDesOperationsDeCaisse = operationsDeCaisseDuDossier(lectureCaisse, dossierId)
   const operationsDuFec = operationsPourLesControles(etatDesOperationsDeCaisse)
   const caisseIndisponible = motifDesOperationsDeCaisse(etatDesOperationsDeCaisse)
+  // LES QUATRE CHAMPS D'UN BNC EN TRÉSORERIE (lot FEC22c ; lib/fec.ts). Le drapeau baissé — ou un dossier en engagement, dont
+  // le fichier reste à dix-huit colonnes —, rien de neuf : le FEC d'hier. Levé, il porte le choix de FEC22-Q1, et les entrées
+  // se prennent sur des lectures toutes revenues EN ENTIER pour CE dossier : les factures et les cotisations, les
+  // ventilations, et pour un dossier qui a basculé le registre de ses encaissements (aucun sinon : aucune écriture n'en
+  // vient). Une seule manque, et le FEC ne s'exporte pas : une valeur y manquerait sans que le fichier puisse le dire.
+  const lectureChampsDuDossier = lectureChampsBnc !== null && lectureChampsBnc.dossierId === dossierId ? lectureChampsBnc : null
+  const choixDesChampsBnc = CHAMPS_BNC_EXPORTES
+  const registreDuFec = !ventesParLesFactures ? [] : lectureDesSources?.etat === 'lue' ? lectureDesSources.sources.encaissements : null
+  const champsDuFec: ChampsBncDuFec | null = choixDesChampsBnc === null || modele.mode === 'engagement' ? CHAMPS_BNC_NON_EXPORTES
+    : lectureChampsDuDossier?.etat === 'lue' && ventilationsIncompletes === null && registreDuFec !== null
+      ? {
+        etat: 'exportes',
+        entrees: {
+          choix: choixDesChampsBnc, paiements, registre: registreDuFec, factures: lectureChampsDuDossier.factures,
+          cotisations: lectureChampsDuDossier.cotisations, ventilations, acquisitions, plan: modele.plan,
+        },
+      }
+      : null
+  const champsBncIndisponibles = champsDuFec !== null ? null
+    : lectureChampsDuDossier?.etat === 'incomplete' ? lectureChampsDuDossier.motif
+    : ventilationsIncompletes !== null ? `les ventilations du relevé : ${ventilationsIncompletes}`
+    : registreDuFec === null ? 'le registre des encaissements n’est pas encore lu' : 'les factures et les cotisations ne sont pas encore lues'
 
   // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
   // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
@@ -1835,6 +1869,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             typeof anneeFilter !== 'number' || (ecrituresFiltrees.length === 0 && aNouveauxExercice.length === 0)
             || brouillonIncomplet !== null || aNouveauxIncomplets !== null || reportesIncomplets !== null
             || lettragesManquants !== null || ventesIndisponibles !== null || caisseIndisponible !== null
+            || (champsBncIndisponibles !== null && fecValide === null)
           }
           title={
             brouillonIncomplet
@@ -1849,18 +1884,24 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               ? `Ventes facturées non lues en entier (${ventesIndisponibles}) — leurs écritures sortiraient du FEC sans qu’il puisse le dire.`
               : caisseIndisponible
               ? `Caisse non lue en entier (${caisseIndisponible}) — ses opérations sortiraient du FEC sans qu’il puisse le dire.`
+              : champsBncIndisponibles && !fecValide
+              ? `Les champs d’un BNC en trésorerie ne peuvent pas se calculer (${champsBncIndisponibles}) — une valeur manquerait au FEC sans qu’il puisse le dire.`
               : typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice."
               : fecValide ? 'Exercice validé : son FEC se relit tel que la validation l’a figé — journal, numéros et libellés ne changent plus.'
               : undefined
           }
           onClick={() => {
             if (typeof anneeFilter !== 'number' || ventesDesExports === null || operationsDuFec === null) return
+            // Un exercice validé se relit de ce qui a été figé : à dix-huit colonnes tant que la validation ne fige pas les
+            // quatre champs (la migration FEC22b, puis FEC22c2). Les autres attendent leurs entrées, lues en entier.
             const contenu = fecValide
-              ? formaterFec(fecValide, lettrage)
+              ? formaterFec(fecValide, lettrage, modele.mode)
+              : champsDuFec === null ? null
               : genererFec(
                 ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode, lignesBancaires, lettrage,
-                ventesDesExports.ecritures, operationsDuFec,
+                ventesDesExports.ecritures, operationsDuFec, champsDuFec,
               )
+            if (contenu === null) return
             telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
           }}
         >

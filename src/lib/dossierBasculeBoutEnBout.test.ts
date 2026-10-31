@@ -13,7 +13,7 @@ import type { EcritureBrouillon, ModeComptable } from './types'
 import { ventesFacturees } from './ventesFacturees'
 import { brouillonDesVentes, composition, ligneBancaire, sourcesDuDossierBascule } from '../test/dossierBascule'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
-import { formaterFec, genererFec, numerotationValidee } from './fec'
+import { CHAMPS_BNC_NON_EXPORTES, formaterFec, genererFec, numerotationValidee } from './fec'
 import { prealablesDeValidation, type DonneesDeValidation } from './prealablesValidation'
 import { demandeDeValidation, frontiereDeValidation } from './validationExercice'
 import { ventesDeLaChecklist } from './ventesDeLaChecklist'
@@ -295,14 +295,14 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
     const n = etat.numerotation!
     const SANS_LETTRAGE = new Map()
     const sansValidDate = (f: string) => f.split('\n').map((r) => r.split('\t').filter((_, i) => i !== 15).join('\t'))
-    const avant = formaterFec(n, SANS_LETTRAGE)
-    expect(avant).toBe(genererFec(brouillon, [], [], [], mode, lignes, SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES))
+    const avant = formaterFec(n, SANS_LETTRAGE, mode)
+    expect(avant).toBe(genererFec(brouillon, [], [], [], mode, lignes, SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES))
     const VALIDE_LE = '2026-03-15T10:00:00Z'
     const figees = n.lignes.map((l): EcritureBrouillon => ({
       ...l.ecriture, statut: 'validee', valide_le: VALIDE_LE, journal_code: l.journal, numero_ecriture: l.numero, piece_ref: l.pieceRef,
       piece_date: l.pieceDate, compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
     }))
-    const apres = formaterFec(numerotationValidee(figees, [], VALIDE_LE), SANS_LETTRAGE)
+    const apres = formaterFec(numerotationValidee(figees, [], VALIDE_LE), SANS_LETTRAGE, mode)
     expect(sansValidDate(apres)).toEqual(sansValidDate(avant))
     expect(apres.split('\n').length).toBe(brouillon.length + 1 + (avant.endsWith('\n') ? 1 : 0))
   })

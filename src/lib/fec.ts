@@ -1,4 +1,6 @@
-import type { ANouveau, Categorie, EcritureBrouillon, JournalCode, ModeComptable, Piece } from './types'
+import type {
+  ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, JournalCode, ModeComptable, Piece, VentilationBancaire,
+} from './types'
 import { idsMouvementsJustifiesParLeReleve, referenceDuReleve, type MouvementBancaire } from './affectationBanque'
 import { libelleEcritureANouveau } from './aNouveaux'
 import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
@@ -8,6 +10,23 @@ import { dateAParis } from './format'
 import type { LettrageDeLigne } from './lettrage'
 import { porteUneSourceDeVente, rattachementDesVentes } from './ventesFactureesDesExports'
 import { journalDeLOperation, operationsDe, referenceDeLaCaisse, type OperationsDeCaisse } from './controlesDeLaCaisse'
+import type { AcquisitionDuBien } from './amortissements'
+import {
+  champsDeLaTvaDUneFacture, champsDesANouveaux, champsDUneDotation, champsDUneLiquidation, champsDUneOperationDeCaisse,
+  champsDUnEncaissement, champsDUnePiece, champsDUneSourceNonLue, champsDUnForfait, champsDUnMouvementDesEncaissements,
+  champsDUnMouvementDuReleve, champsDUnPaiementPersonnel, partsDesReglementsALaDate, type ChampsBnc, type ChoixChampsBnc,
+  type EncaissementDuRegistre, type FactureDuClient, type LigneACaracteriser, type ModeRglt, type NatureOperation,
+  type PartDUnReglement, type PosteLu, type REGLES_DES_SORTES, type ReglementDUnePiece,
+} from './champsBncDuFec'
+import {
+  categorieDesFraisBancaires, POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS,
+  POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
+} from './declaration2035'
+import { POSTE_ASSURANCE_EMPRUNT, POSTE_INTERETS_EMPRUNT } from './echeanceEmprunt'
+import { estContrepartieDirigeant, piecesAComptabiliser } from './ecritures'
+import { AUCUNE_FACTURE_SOURCE } from './facturesSources'
+import type { PlanComptable } from './planComptable'
+import type { PaiementsDesPieces } from './rattachement'
 
 // Génération du FEC (Fichier des Écritures Comptables) — format officiel imposé par l'article
 // A47 A-1 du Livre des procédures fiscales, que tout logiciel de comptabilité sait importer sans
@@ -27,16 +46,21 @@ import { journalDeLOperation, operationsDe, referenceDeLaCaisse, type Operations
 // son montant, ni sa date.
 
 // Les dix-huit champs du VII de l'article A47 A-1, ceux d'une comptabilité tenue selon le droit
-// commercial. UN BNC EN COMPTABILITÉ DE TRÉSORERIE (VIII 7) en doit VINGT-DEUX : les mêmes, plus la
-// date et le mode de règlement, la nature de l'opération et l'identification du client (DateRglt,
-// ModeRglt, NatOp, IdClient). Ce fichier ne les écrit pas encore, pour aucun dossier — voir CLAUDE.md. Le jour où il les
-// écrira (ligne 62 ; MVP-D5), une opération de caisse y portera DateRglt sa date, ModeRglt les espèces, NatOp sa nature, et
-// IdClient vide : un total de jour ne nomme personne (BOI-BNC-DECLA-10-20, § 70 et § 280).
+// commercial (VIII, 3°) : le fichier d'un dossier en ENGAGEMENT, et — le drapeau `CHAMPS_BNC_EXPORTES` baissé
+// (lib/champsBncDuFec.ts) — celui d'aujourd'hui pour tout dossier.
 const ENTETES_FEC = [
   'JournalCode', 'JournalLib', 'EcritureNum', 'EcritureDate', 'CompteNum', 'CompteLib',
   'CompAuxNum', 'CompAuxLib', 'PieceRef', 'PieceDate', 'EcritureLib', 'Debit', 'Credit',
   'EcritureLet', 'DateLet', 'ValidDate', 'Montantdevise', 'Idevise',
 ]
+
+// UN BNC EN COMPTABILITÉ DE TRÉSORERIE en doit VINGT-DEUX (LPF, art. A47 A-1, VIII, 7° : « les vingt-deux premières
+// informations devant obligatoirement correspondre, dans l'ordre » au tableau) : les dix-huit, puis « 19. La date de
+// règlement », « 20. Le mode de règlement », « 21. La nature de l'opération (à blanc si non utilisé) », « 22.
+// L'identification du client (à blanc si non utilisé) » (ligne 26.6, étape e ; lot FEC22c ; MVP-D5). Leurs valeurs sont
+// celles du module FEC22a (lib/champsBncDuFec.ts), écriture par écriture ; la conception : HISTORIQUE.md, « LE FEC D'UN BNC
+// EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », et les réponses du cabinet qui l'emportent sur elle.
+export const ENTETES_FEC_BNC = [...ENTETES_FEC, 'DateRglt', 'ModeRglt', 'NatOp', 'IdClient'] as const
 
 export const LIBELLES_JOURNAUX: Readonly<Record<JournalCode, string>> = {
   AC: 'Achats',
@@ -106,6 +130,23 @@ export interface LigneFec {
   compAuxLib: string | null
   // AAAA-MM-JJ : la date de l'écriture tant qu'elle est au brouillon, celle de sa validation ensuite.
   validDate: string
+  // Les quatre champs d'un BNC en trésorerie, ou nuls quand la numérotation ne les calcule pas (`champsBnc` ci-dessous).
+  champsBnc: ChampsBncDeLaLigne | null
+}
+
+/**
+ * Les quatre champs de plus d'une ligne (FEC22c). DateRglt, ModeRglt et IdClient sont ceux de son ÉCRITURE ; la nature
+ * aussi, une par écriture — ce que la migration (FEC22b) figera à part du poste —, et NatOp la nature suivie, sur une ligne
+ * de charge ou de produit, du poste de la 2035 (FEC22-Q3, (C)) : deux lignes d'une même écriture ventilée peuvent porter
+ * deux NatOp.
+ */
+export interface ChampsBncDeLaLigne {
+  // AAAA-MM-JJ, comme les dates de la base ; '' sans règlement. Le fichier l'écrit AAAAMMJJ.
+  dateRglt: string
+  modeRglt: ModeRglt | ''
+  nature: NatureOperation
+  natOp: string
+  idClient: string
 }
 
 export interface ANouveauFec {
@@ -113,12 +154,17 @@ export interface ANouveauFec {
   compteLib: string
   ecritureLib: string
   validDate: string
+  champsBnc: ChampsBncDeLaLigne | null
 }
 
 export interface NumerotationFec {
   aNouveaux: ANouveauFec[]
   // Dans l'ordre du fichier — voir `ordonnerLignes`.
   lignes: LigneFec[]
+  // `calcules` : chaque ligne et chaque à-nouveau porte ses quatre champs — un dossier en trésorerie, le drapeau levé ;
+  // `non_calcules` : aucune — un dossier en engagement, le drapeau baissé, ou un exercice relu de ce que la validation a
+  // figé avant la migration FEC22b (`numerotationValidee`). C'est ce que `formaterFec` lit pour écrire 22 colonnes.
+  champsBnc: 'calcules' | 'non_calcules'
   // Les écritures que rien ne rattache : ni une pièce, ni un mouvement justifié par le relevé, ni un bien, ni
   // un véhicule, ni une déclaration de TVA, ni une échéance payée depuis le compte personnel, ni une opération de caisse
   // lue — le reste d'une pièce
@@ -170,6 +216,263 @@ function libellesDesComptes(categories: Categorie[], aNouveaux: readonly ANouvea
   }
   return (compte) => champFec(libelleCompteTenu(compte) ?? repris.get(compte) ?? libelleCompte(compte, categories))
 }
+
+// ── CE QUE LA NUMÉROTATION LIT POUR LES QUATRE CHAMPS D'UN BNC EN TRÉSORERIE (FEC22c) ──────────────────────────────────
+
+/**
+ * Les entrées neuves des quatre champs. Chacune OBLIGATOIRE et LUE EN ENTIER par l'appelant : une lecture partielle refuse
+ * l'export, comme pour la caisse (l'onglet Écritures, `champsBncIndisponibles`) — un FEC où une valeur manquerait parce
+ * qu'une ligne n'a pas été lue aurait l'air complet.
+ */
+export interface EntreesDesChampsBnc {
+  // FEC22-Q1 : DateRglt et ModeRglt d'une écriture qui n'est pas un règlement. Sans valeur par défaut : le drapeau levé le
+  // porte (`CHAMPS_BNC_EXPORTES`), selon la réponse de l'expert-comptable à FEC22-E2.
+  choix: ChoixChampsBnc
+  // Les paiements de chaque pièce (`paiementsDesPieces`, lib/rattachement.ts), les mêmes que ceux qui ont daté et réglé
+  // son écriture : le règlement d'une pièce, et sa scission par mode.
+  paiements: PaiementsDesPieces
+  // Le registre ENTIER des encaissements du dossier, retirés et contre-passations compris : le moyen d'un encaissement, d'un
+  // virement mixte, d'une remise. Vide pour un dossier qui n'a pas basculé, où aucune écriture n'en vient.
+  registre: readonly EncaissementDuRegistre[]
+  // Les factures et avoirs du dossier, TOUS : le numéro et le SIRET figé du client (IdClient, FEC22-Q4), la source de la
+  // vente — jamais le nom du client.
+  factures: readonly FactureDuClient[]
+  // Les échéances de cotisation du dossier : la date d'un paiement depuis le compte personnel (`paiement_personnel_le`).
+  cotisations: readonly Pick<CotisationDeclaree, 'id' | 'paiement_personnel_le'>[]
+  // Les parts des mouvements ventilés : le poste de chaque ligne, par la catégorie de sa part.
+  ventilations: readonly Pick<VentilationBancaire, 'ligne_bancaire_id' | 'categorie_id'>[]
+  // La pièce de chaque bien du registre (`acquisitionsDesBiens`, lib/amortissements.ts) : l'acquisition d'immobilisation.
+  acquisitions: ReadonlyMap<string, AcquisitionDuBien>
+  // Le plan du dossier : le compte de la caisse, de l'exploitant, et de chaque rôle dont la 2035 donne le poste.
+  plan: PlanComptable
+}
+
+/**
+ * Ce que `numeroterFec` reçoit pour les quatre champs, SANS VALEUR PAR DÉFAUT : `non_exportes` — le drapeau baissé, la
+ * numérotation d'aujourd'hui au caractère près, sans scission ni champ de plus — ou `exportes`, avec les entrées lues. En
+ * engagement, rien ne se calcule, quoi qu'on passe : le fichier y reste à dix-huit colonnes (VIII, 3°).
+ */
+export type ChampsBncDuFec = { etat: 'non_exportes' } | { etat: 'exportes'; entrees: EntreesDesChampsBnc }
+
+export const CHAMPS_BNC_NON_EXPORTES: ChampsBncDuFec = { etat: 'non_exportes' }
+
+// Les sortes d'écriture que la numérotation distingue, celles dont le module dit les quatre champs (`REGLES_DES_SORTES`) ;
+// les à-nouveaux à part.
+type SorteDuFec = Exclude<keyof typeof REGLES_DES_SORTES, 'a-nouveaux'>
+
+// Une écriture du fichier avant son numéro : sa clé, sa sorte, ses lignes, et ce que la numérotation décide pour elle.
+interface EcritureANumeroter {
+  cle: string
+  sorte: SorteDuFec
+  pieceId: string | null
+  rows: EcritureBrouillon[]
+  ordre: string
+  journal: JournalCode
+  pieceDate: string
+  pieceRef: string
+  // Le règlement d'une écriture de pièce, quand la numérotation calcule les quatre champs ; nul ailleurs.
+  reglement: ReglementDUnePiece | null
+}
+
+// Un montant réparti au centime selon des poids, le dernier morceau prenant l'arrondi pour que la somme reste le total —
+// la règle de `centimesParDate` (lib/rattachement.ts), qui a fait le total de la date.
+function repartir(total: number, poids: readonly number[]): number[] {
+  const somme = poids.reduce((s, p) => s + p, 0)
+  const morceaux = poids.map((p) => Math.round(total * (p / somme)))
+  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)
+  return morceaux
+}
+
+const centimesSignes = (e: Pick<EcritureBrouillon, 'sens' | 'montant'>) => (e.sens === 'debit' ? 1 : -1) * Math.round(e.montant * 100)
+
+/**
+ * UNE PIÈCE PAYÉE LE MÊME JOUR PAR DEUX MODES FAIT DEUX ÉCRITURES (conception, « CE QUI EST DÉCIDÉ », 3°). Les quatre
+ * champs sont les mêmes sur toutes les lignes d'une écriture — elle enregistre UNE opération, et l'outil de la DGFiP la
+ * juge comme telle —, or la charge d'une date réunit la part de chacun de ses règlements (`centimesParDate`) : la banque et
+ * la poche de l'exploitant le même jour, la banque et un virement mixte. L'écriture de la date se scinde en une par mode,
+ * dans l'ordre de `partsDesReglementsALaDate` :
+ *   - la ligne de banque d'un paiement va au règlement de son mouvement ; la contrepartie d'une note de frais au compte de
+ *     l'exploitant (`estContrepartieDirigeant`, la règle de la génération) à la poche de l'exploitant ;
+ *   - les lignes que la date partage — la charge ou le produit, sa TVA — se sous-répartissent au centime selon la part de
+ *     chaque règlement : la pièce entière d'abord (charge et TVA ensemble), puis chaque ligne, la TVA en dernier, prenant ce
+ *     qui reste du total de son règlement — la TVA d'un règlement complète sa charge, comme `lignesChargeProduitPourPiece` le
+ *     fait d'une date. Le total de chaque ligne, donc de la date et de la pièce, est intact : la 2035, qui se calcule des
+ *     sources, ne change pas, ni la balance.
+ * Chaque écriture scindée s'équilibre : ce qu'un paiement règle de la pièce est le montant de son mouvement quand elle est
+ * payée en partie, sa part du total payé quand elle l'est en entier. Une ligne de part nulle ne s'écrit pas. Rien de
+ * scindé ne se valide encore : la numérotation que la validation fige est celle du drapeau baissé (FEC22c2).
+ */
+function scinderParMode(
+  e: EcritureANumeroter, parts: readonly PartDUnReglement[], contrepartieDirigeant: (ligne: EcritureBrouillon) => boolean,
+  // Une ligne de TVA de la pièce (les comptes de TVA du plan) : elle complète la charge de chaque règlement.
+  estUneTva: (ligne: EcritureBrouillon) => boolean,
+): EcritureANumeroter[] {
+  const somme = parts.reduce((s, p) => s + p.part, 0)
+  if (parts.length < 2 || !(somme > 0)) return [{ ...e, reglement: parts[0]?.reglement ?? { par: 'aucun' } }]
+  // Une ligne de banque dont le mouvement n'est plus un paiement de la pièce (une écriture désynchronisée) reste au relevé.
+  const auReleve = Math.max(0, parts.findIndex((p) => p.reglement.par === 'releve'))
+  const aLaPoche = parts.findIndex((p) => p.reglement.par === 'note_de_frais')
+  const propres: EcritureBrouillon[][] = parts.map(() => [])
+  const partagees: EcritureBrouillon[] = []
+  for (const l of e.rows) {
+    if (l.ligne_bancaire_id) {
+      const i = parts.findIndex((p) => p.mouvements.includes(l.ligne_bancaire_id!))
+      propres[i >= 0 ? i : auReleve].push(l)
+    } else if (aLaPoche >= 0 && contrepartieDirigeant(l)) propres[aLaPoche].push(l)
+    else partagees.push(l)
+  }
+  partagees.sort((a, b) => Number(estUneTva(a)) - Number(estUneTva(b)) || a.compte.localeCompare(b.compte) || a.id.localeCompare(b.id))
+  const poids = parts.map((p) => p.part)
+  const totaux = repartir(partagees.reduce((s, l) => s + centimesSignes(l), 0), poids)
+  const parLigne = partagees.map((l) => repartir(centimesSignes(l), poids))
+  if (parLigne.length > 0) {
+    parLigne[parLigne.length - 1] = totaux.map((t, i) => t - parLigne.slice(0, -1).reduce((s, m) => s + m[i], 0))
+  }
+  return parts.flatMap((p, i) => {
+    const derivees = partagees.flatMap((l, j): EcritureBrouillon[] => {
+      const c = parLigne[j][i]
+      return c === 0 ? [] : [{ ...l, montant: Math.abs(c) / 100, sens: c > 0 ? 'debit' : 'credit' }]
+    })
+    const rows = [...propres[i], ...derivees]
+    // Le rang du règlement dans la clé : à date et pièce égales, le tri du fichier suit l'ordre de `partsDesReglementsALaDate`
+    // — le relevé d'abord —, jamais l'alphabet des modes.
+    return rows.length === 0 ? [] : [{ ...e, cle: `${e.cle}|${i}|${p.cle}`, rows, reglement: p.reglement }]
+  })
+}
+
+// Ce que le calcul des quatre champs lit, une fois par numérotation.
+interface ContexteDesChamps {
+  entrees: EntreesDesChampsBnc
+  categories: readonly Categorie[]
+  pieceById: ReadonlyMap<string, Piece>
+  operationById: ReadonlyMap<string, ReturnType<typeof operationsDe>[number]>
+  mouvementById: ReadonlyMap<string, MouvementBancaire>
+  ventes: ReturnType<typeof rattachementDesVentes>
+}
+
+const AUCUN_POSTE: PosteLu = { de: 'aucun' }
+const posteDuMoteur = (poste: Extract<PosteLu, { de: 'moteur' }>['poste']): PosteLu => ({ de: 'moteur', poste })
+
+/**
+ * D'où vient le poste de la 2035 d'une ligne (FEC22-Q3, (C)), selon la sorte de son écriture : la catégorie que la 2035 lit
+ * pour sa source (celle de la pièce, de l'opération de caisse, du mouvement affecté, de la part ventilée sur le compte de la
+ * ligne, la « Frais bancaires » des frais d'un mouvement d'encaissements), ou le poste que le moteur de la 2035 donne lui-même
+ * à un rôle du plan (les dotations, les cotisations, le forfait, les intérêts et l'assurance d'un emprunt, les arrondis de la
+ * liquidation, les ventes facturées). Jamais le libellé d'une catégorie, jamais deviné d'un compte qui n'est pas celui d'un
+ * rôle. `natOpDeLaLigne` (lib/champsBncDuFec.ts) n'écrit le poste que sur une ligne de charge ou de produit, et seulement
+ * de son cadre : une ligne de banque, de TVA ou de bilan porte la nature seule, quoi qu'on lui donne ici.
+ */
+function posteDeLaLigne(
+  sorte: SorteDuFec, l: EcritureBrouillon, rows: readonly EcritureBrouillon[], x: ContexteDesChamps,
+): PosteLu {
+  const plan = x.entrees.plan
+  const categorie = (id: string | null | undefined): PosteLu => ({ de: 'categorie', categorie: id ? x.categories.find((c) => c.id === id) ?? null : null })
+  switch (sorte) {
+    case 'piece': return categorie(x.pieceById.get(rows[0].piece_id ?? '')?.categorie_id)
+    case 'caisse': return categorie(x.operationById.get(rows[0].operation_caisse_id ?? '')?.categorie_id)
+    case 'releve': {
+      const m = x.mouvementById.get(rows[0].ligne_bancaire_id ?? '')
+      if (!m) return AUCUN_POSTE
+      if (m.emprunt_id) {
+        return l.compte === plan.interets_emprunt ? posteDuMoteur(POSTE_INTERETS_EMPRUNT)
+          : l.compte === plan.assurance_emprunt ? posteDuMoteur(POSTE_ASSURANCE_EMPRUNT) : AUCUN_POSTE
+      }
+      if (m.cotisation_id) return l.compte === plan.cotisations_exploitant ? posteDuMoteur(POSTE_COTISATIONS) : AUCUN_POSTE
+      if (m.ventilee) {
+        // La part dont la catégorie porte le compte de la ligne ; deux parts de deux postes sur le même compte n'en disent
+        // aucun — la ligne n'en porte qu'un, et on ne choisit pas.
+        const candidates = x.entrees.ventilations.filter((v) => v.ligne_bancaire_id === m.id)
+          .map((v) => x.categories.find((c) => c.id === v.categorie_id) ?? null)
+          .filter((c): c is Categorie => c !== null && c.compte_comptable === l.compte)
+        const postes = new Set(candidates.map((c) => c.poste_2035))
+        return { de: 'categorie', categorie: postes.size === 1 ? candidates[0] : null }
+      }
+      return categorie(m.categorie_id)
+    }
+    case 'dotation': return l.compte === plan.dotations_amortissements ? posteDuMoteur(POSTE_AMORTISSEMENTS) : AUCUN_POSTE
+    case 'forfait': return l.compte === plan.indemnites_kilometriques ? posteDuMoteur(POSTE_INDEMNITES_KM) : AUCUN_POSTE
+    case 'liquidation':
+      return l.compte === plan.arrondi_charge ? posteDuMoteur(POSTE_ARRONDIS_TVA_CHARGE)
+        : l.compte === plan.arrondi_produit ? posteDuMoteur(POSTE_ARRONDIS_TVA_PRODUIT) : AUCUN_POSTE
+    case 'paiement-personnel': return l.compte === plan.cotisations_exploitant ? posteDuMoteur(POSTE_COTISATIONS) : AUCUN_POSTE
+    case 'facture': return AUCUN_POSTE
+    case 'encaissement':
+      return l.compte === plan.prestations_de_services || l.compte === plan.ventes_de_biens ? posteDuMoteur(POSTE_VENTES_FACTUREES) : AUCUN_POSTE
+    case 'mouvement-encaissements':
+      return l.compte === plan.services_bancaires
+        ? { de: 'categorie', categorie: categorieDesFraisBancaires(x.categories, l.dossier_id) } : AUCUN_POSTE
+  }
+}
+
+// Une facture que les factures lues ne rendent pas : elle n'identifie personne (`identificationDuClient` rend '' d'une
+// facture qui n'est pas validée). Défensif : les factures sont lues en entier, et la composition ne cite que les leurs.
+const factureNonLue = (id: string): FactureDuClient => ({ id, numero: null, statut: 'brouillon', tiers_siret: null, source_de_la_vente: true })
+
+/**
+ * Les quatre champs d'une écriture, par la règle de SA sorte (lib/champsBncDuFec.ts, `REGLES_DES_SORTES`) : ce fichier n'en
+ * recopie aucune. Il ne fait que lui passer ce qu'il a lu — la source de l'écriture, telle que la clé l'a désignée — et le
+ * poste de chaque ligne. Une source que la lecture ne rend pas (défensif) : `champsDUneSourceNonLue`.
+ */
+function champsDeLEcriture(e: EcritureANumeroter, x: ContexteDesChamps): ChampsBnc {
+  const { choix, registre, factures, cotisations, acquisitions } = x.entrees
+  const lignes: LigneACaracteriser[] = e.rows.map((l) => ({ id: l.id, compte: l.compte, libelle: l.libelle, poste: posteDeLaLigne(e.sorte, l, e.rows, x) }))
+  const date = e.ordre
+  const premiere = e.rows[0]
+  const nonLue = () => champsDUneSourceNonLue(date, lignes, choix)
+  const facture = (id: string) => factures.find((f) => f.id === id) ?? factureNonLue(id)
+  switch (e.sorte) {
+    case 'piece': {
+      const piece = e.pieceId ? x.pieceById.get(e.pieceId) : undefined
+      if (!piece) return nonLue()
+      // La cible de la pièce par la règle de la génération (`piecesAComptabiliser`) : son bien, s'il en est un.
+      const cible = piecesAComptabiliser([piece], [...x.categories], acquisitions, AUCUNE_FACTURE_SOURCE)[0]
+      return champsDUnePiece({
+        piece, reglement: e.reglement ?? { par: 'aucun' }, dateDeLEcriture: date,
+        cible: { immobilisation: cible?.immobilisation ?? false },
+        exemplaireDe: piece.facture_id === null ? null : factures.find((f) => f.id === piece.facture_id) ?? null,
+        lignes, choix,
+      })
+    }
+    case 'caisse': {
+      const operation = x.operationById.get(premiere.operation_caisse_id ?? '')
+      return (operation ? champsDUneOperationDeCaisse(operation, lignes) : null) ?? nonLue()
+    }
+    case 'releve': {
+      const mouvement = x.mouvementById.get(premiere.ligne_bancaire_id ?? '')
+      return (mouvement ? champsDUnMouvementDuReleve(mouvement, lignes, x.entrees.plan) : null) ?? nonLue()
+    }
+    case 'dotation': return champsDUneDotation(date, lignes, choix)
+    case 'forfait': return champsDUnForfait(date, lignes, choix)
+    case 'liquidation': return champsDUneLiquidation(date, lignes, choix)
+    case 'paiement-personnel': {
+      const id = premiere.cotisation_id ?? ''
+      return champsDUnPaiementPersonnel(cotisations.find((c) => c.id === id) ?? { id, paiement_personnel_le: null }, lignes)
+    }
+    case 'facture':
+    case 'encaissement':
+    case 'mouvement-encaissements': {
+      const vente = x.ventes.get(premiere.id)
+      if (!vente) return nonLue()
+      const s = vente.source
+      switch (s.genre) {
+        case 'facture':
+        case 'avoir': return champsDeLaTvaDUneFacture(facture(s.factureId), date, lignes, choix)
+        case 'encaissement': {
+          const encaissement = registre.find((r) => r.id === s.encaissementId)
+          return encaissement ? champsDUnEncaissement(encaissement, facture(s.factureId), lignes) : nonLue()
+        }
+        case 'mouvement': {
+          const mouvement = x.mouvementById.get(s.ligneBancaireId)
+          return mouvement ? champsDUnMouvementDesEncaissements(mouvement, registre, lignes) : nonLue()
+        }
+      }
+    }
+  }
+}
+
+const champsDeLaLigne = (c: ChampsBnc, id: string): ChampsBncDeLaLigne => ({
+  dateRglt: c.dateRglt, modeRglt: c.modeRglt, nature: c.nature, natOp: c.natOp.get(id) ?? c.nature, idClient: c.idClient,
+})
 
 // Regroupe les écritures par pièce (une pièce = une écriture FEC, EcritureNum commun à toutes ses
 // lignes), numérotées dans l'ordre chronologique à l'intérieur de leur journal — une vraie exigence
@@ -224,6 +527,12 @@ function libellesDesComptes(categories: Categorie[], aNouveaux: readonly ANouvea
 // le reste d'une pièce supprimée, et l'onglet le dit. EcritureLib reste le libellé de la ligne, celui que la composition
 // lui a donné en l'écrivant : le FEC d'un exercice validé le relira de la ligne seule (`numerotationValidee`), et les deux
 // fichiers ne doivent différer que par ValidDate et le lettrage.
+//
+// LES QUATRE CHAMPS D'UN BNC EN TRÉSORERIE (lot FEC22c ; `champsBnc`). Reçus `exportes`, dans un dossier en trésorerie, la
+// numérotation donne à chaque ligne et à chaque à-nouveau DateRglt, ModeRglt, NatOp et IdClient, par la règle de la sorte de
+// son écriture (`champsDeLEcriture`), et scinde l'écriture d'une pièce payée le même jour par deux modes
+// (`scinderParMode`). Reçus `non_exportes` — le drapeau baissé —, ou dans un dossier en engagement, elle est celle d'hier au
+// caractère près : ni scission, ni champ de plus.
 export function numeroterFec(
   ecritures: readonly EcritureBrouillon[], pieces: readonly Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   // Sans valeur par défaut : numéroté en trésorerie, le brouillon d'un dossier en engagement mettrait
@@ -240,7 +549,11 @@ export function numeroterFec(
   // Les opérations de la caisse du dossier, lues en entier (lib/controlesDeLaCaisse.ts) — ou la caisse absente, le drapeau
   // baissé. Sans valeur par défaut : oubliées, toutes les recettes en espèces d'un praticien sortiraient du fichier.
   caisse: OperationsDeCaisse,
+  // Les entrées des quatre champs d'un BNC en trésorerie, ou leur absence (le drapeau baissé). Sans valeur par défaut :
+  // oubliées, le FEC d'un praticien sortirait à dix-huit colonnes sans que rien ne le dise.
+  champsBnc: ChampsBncDuFec,
 ): NumerotationFec {
+  const calcul = mode === 'tresorerie' && champsBnc.etat === 'exportes' ? champsBnc.entrees : null
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
   const operationById = new Map(operationsDe(caisse).map((o) => [o.id, o]))
   const ventes = rattachementDesVentes(ecritures, ventesFacturees)
@@ -312,38 +625,41 @@ export function numeroterFec(
   // paiement de février. C'est aussi ce que `valider_exercice` vérifie : dans un journal, la plus
   // ancienne ligne d'une écriture ne précède jamais celle de l'écriture d'avant.
   const entrees = [...groupes.entries()]
-    .map(([cle, rows]) => {
+    .map(([cle, rows]): EcritureANumeroter => {
       const pieceId = rows[0].piece_id
       const ordre = plusAncienne(rows)
       const vente = ventes.get(rows[0].id)
       if (vente) {
-        return { cle, pieceId: null, rows, ordre, journal: vente.journal, pieceDate: vente.pieceDate, pieceRef: vente.pieceRef }
+        const sorte = vente.source.genre === 'encaissement' ? 'encaissement' as const
+          : vente.source.genre === 'mouvement' ? 'mouvement-encaissements' as const : 'facture' as const
+        return { cle, sorte, pieceId: null, rows, ordre, journal: vente.journal, pieceDate: vente.pieceDate, pieceRef: vente.pieceRef,
+          reglement: null }
       }
       if (!pieceId && rows[0].operation_caisse_id) {
         const operation = operationById.get(rows[0].operation_caisse_id)!
-        return { cle, pieceId: null, rows, ordre, journal: journalDeLOperation(operation.genre)!, pieceDate: operation.date,
-          pieceRef: referenceDeLaCaisse(operation.date) }
+        return { cle, sorte: 'caisse', pieceId: null, rows, ordre, journal: journalDeLOperation(operation.genre)!, pieceDate: operation.date,
+          pieceRef: referenceDeLaCaisse(operation.date), reglement: null }
       }
       if (!pieceId && rows[0].immobilisation_id && !rows[0].ligne_bancaire_id) {
-        return { cle, pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
-          pieceRef: `Tableau d'amortissement ${rows[0].date.slice(0, 4)}` }
+        return { cle, sorte: 'dotation', pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
+          pieceRef: `Tableau d'amortissement ${rows[0].date.slice(0, 4)}`, reglement: null }
       }
       if (!pieceId && rows[0].vehicule_id && !rows[0].ligne_bancaire_id) {
-        return { cle, pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
-          pieceRef: `Barème kilométrique ${rows[0].date.slice(0, 4)}` }
+        return { cle, sorte: 'forfait', pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
+          pieceRef: `Barème kilométrique ${rows[0].date.slice(0, 4)}`, reglement: null }
       }
       if (!pieceId && rows[0].declaration_tva_id && !rows[0].ligne_bancaire_id) {
-        return { cle, pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
-          pieceRef: referenceDeLaLiquidation(rows[0].date) }
+        return { cle, sorte: 'liquidation', pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
+          pieceRef: referenceDeLaLiquidation(rows[0].date), reglement: null }
       }
       if (!pieceId && rows[0].cotisation_id && !rows[0].ligne_bancaire_id) {
-        return { cle, pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
-          pieceRef: referenceDuPaiementPersonnel(rows[0].date) }
+        return { cle, sorte: 'paiement-personnel', pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
+          pieceRef: referenceDuPaiementPersonnel(rows[0].date), reglement: null }
       }
       if (!pieceId) {
         const mouvement = mouvementById.get(rows[0].ligne_bancaire_id!)!
-        return { cle, pieceId: null, rows, ordre, journal: 'BQ' as const, pieceDate: mouvement.date,
-          pieceRef: referenceDuReleve(mouvement) }
+        return { cle, sorte: 'releve', pieceId: null, rows, ordre, journal: 'BQ' as const, pieceDate: mouvement.date,
+          pieceRef: referenceDuReleve(mouvement), reglement: null }
       }
       const piece = pieceById.get(pieceId)
       // Un règlement d'engagement : ses lignes désignent leur mouvement, celles de la facture aucun — la clé les sépare.
@@ -352,23 +668,41 @@ export function numeroterFec(
       // ses lignes. Sa référence : le nom du fichier, sinon le début de son identifiant — jamais vide, la
       // validation refuse une ligne sans pièce.
       return {
-        cle, pieceId, rows, ordre,
+        cle, sorte: 'piece', pieceId, rows, ordre,
         journal: reglement ? 'BQ' as const : piece?.type_piece === 'vente' ? 'VE' as const : 'AC' as const,
         pieceDate: piece?.date_piece ?? ordre,
         pieceRef: champFec(piece?.nom_fichier ?? '') || pieceId.slice(0, 8),
+        reglement: null,
       }
+    })
+    // Les quatre champs calculés (FEC22c), l'écriture d'une pièce prend le règlement de sa date — ou se scinde, une par
+    // mode, quand deux règlements la paient ce jour-là. Une pièce que la lecture ne rend pas ne se scinde pas.
+    .flatMap((e): EcritureANumeroter[] => {
+      if (calcul === null || e.sorte !== 'piece' || e.pieceId === null) return [e]
+      const piece = pieceById.get(e.pieceId)
+      if (!piece) return [e]
+      const cible = piecesAComptabiliser([piece], categories, calcul.acquisitions, AUCUNE_FACTURE_SOURCE)[0]
+      const parts = partsDesReglementsALaDate(piece, calcul.paiements.get(piece.id) ?? [], e.ordre, calcul.registre)
+      const tva = new Set([calcul.plan.tva_deductible, calcul.plan.tva_immobilisations, calcul.plan.tva_collectee])
+      return scinderParMode(
+        e, parts, (l) => estContrepartieDirigeant(piece, { compte: cible?.compte ?? '' }, l, calcul.plan), (l) => tva.has(l.compte),
+      )
     })
     // À date égale, on départage sur la facture puis sur la clé, pour que deux exports successifs du
     // même brouillon produisent exactement le même fichier.
     .sort((a, b) => a.ordre.localeCompare(b.ordre) || a.pieceDate.localeCompare(b.pieceDate) || a.cle.localeCompare(b.cle))
 
+  const contexte: ContexteDesChamps | null = calcul === null ? null
+    : { entrees: calcul, categories, pieceById, operationById, mouvementById, ventes }
   const compteurs: Partial<Record<JournalCode, number>> = {}
   const lignes: LigneFec[] = []
-  for (const { pieceId, rows, journal, pieceDate, pieceRef } of entrees) {
+  for (const ecriture of entrees) {
+    const { pieceId, rows, journal, pieceDate, pieceRef } = ecriture
     const numero = (compteurs[journal] ?? 0) + 1
     compteurs[journal] = numero
     const piece = pieceId ? pieceById.get(pieceId) : undefined
     const vente = ventes.get(rows[0].id)
+    const champs = contexte === null ? null : champsDeLEcriture(ecriture, contexte)
     for (const e of rows) {
       // Une pièce absente du jeu fourni n'a pas de tiers qu'on puisse lire : son auxiliaire est le
       // compte « divers », plutôt qu'une clé tirée d'un libellé qui peut n'être qu'un nom de fichier.
@@ -383,6 +717,7 @@ export function numeroterFec(
         compAuxNum: auxiliaire ? champFec(auxiliaire.num) : null,
         compAuxLib: auxiliaire ? champFec(auxiliaire.lib) : null,
         validDate: e.date,
+        champsBnc: champs === null ? null : champsDeLaLigne(champs, e.id),
       })
     }
   }
@@ -399,12 +734,28 @@ export function numeroterFec(
     else l.compAuxLib = premier
   }
 
+  // Les quatre champs des à-nouveaux : une écriture, sans règlement (FEC22-Q1), NatOp « À-nouveaux » sur chaque ligne. Par
+  // date, défensif — la base n'admet qu'une ouverture par dossier, mais l'exercice qui suit un exercice validé reçoit les
+  // soldes reportés, sous la même forme.
+  const champsDesAN = new Map<string, ChampsBnc>()
+  if (calcul !== null) {
+    for (const date of new Set(aNouveaux.map((a) => a.date))) {
+      champsDesAN.set(date, champsDesANouveaux(aNouveaux.filter((a) => a.date === date), date, calcul.choix))
+    }
+  }
   return {
     aNouveaux: [...aNouveaux]
       .sort((a, b) => a.compte.localeCompare(b.compte) || a.id.localeCompare(b.id))
-      .map((a) => ({ aNouveau: a, compteLib: libelleDu(a.compte), ecritureLib: champFec(libelleEcritureANouveau(a)), validDate: a.date })),
+      .map((a) => {
+        const champs = champsDesAN.get(a.date)
+        return {
+          aNouveau: a, compteLib: libelleDu(a.compte), ecritureLib: champFec(libelleEcritureANouveau(a)), validDate: a.date,
+          champsBnc: champs === undefined ? null : champsDeLaLigne(champs, a.id),
+        }
+      }),
     lignes: ordonnees,
     horsFec,
+    champsBnc: calcul === null ? 'non_calcules' : 'calcules',
   }
 }
 
@@ -432,9 +783,11 @@ export function numerotationValidee(
       horsFec.push(e)
       continue
     }
+    // Les quatre champs ne sont pas encore figés (la migration FEC22b, puis FEC22c2) : le FEC validé reste à dix-huit.
     lignes.push({
       ecriture: e, journal: e.journal_code, numero: e.numero_ecriture, pieceRef: e.piece_ref, pieceDate: e.piece_date,
       compteLib: e.compte_lib, compAuxNum: e.comp_aux_num, compAuxLib: e.comp_aux_lib, validDate: dateAParis(e.valide_le),
+      champsBnc: null,
     })
   }
   const validDate = dateAParis(valideLe)
@@ -446,9 +799,11 @@ export function numerotationValidee(
         compteLib: a.compte_lib ?? champFec(libelleCompteTenu(a.compte) ?? (a.libelle || libelleDuPlanComptable(a.compte) || a.compte)),
         ecritureLib: a.ecriture_lib ?? champFec(libelleEcritureANouveau(a)),
         validDate,
+        champsBnc: null,
       })),
     lignes: ordonnerLignes(lignes),
     horsFec,
+    champsBnc: 'non_calcules',
   }
 }
 
@@ -458,14 +813,37 @@ export function numerotationValidee(
 // LE LETTRAGE (EcritureLet, DateLet) vient de `lettrages` (lib/lettrage.ts), calculé sur TOUT le brouillon du dossier
 // et non sur l'exercice exporté : une facture de décembre réglée en janvier porte le même code dans les deux fichiers.
 // Une ligne que rien ne lettre laisse les deux champs à blanc, ce que la norme prévoit (« à blanc si non utilisé »).
+//
+// VINGT-DEUX COLONNES EN TRÉSORERIE, DIX-HUIT EN ENGAGEMENT (FEC22c ; conception, « CE QUI EST DÉCIDÉ », 1°). Un dossier en
+// trésorerie dont la numérotation porte les quatre champs (`champsBnc: 'calcules'`, le drapeau levé) s'écrit au tableau du
+// VIII, 7° : l'en-tête des dix-huit, puis DateRglt, ModeRglt, NatOp et IdClient, dans cet ordre, chaque ligne à vingt-deux
+// champs, vides de fin compris (Test Compta Demat compte les champs de chaque ligne contre l'en-tête). DateRglt s'écrit
+// AAAAMMJJ comme les autres dates, vide sans règlement ; les trois autres en toutes lettres, sans tabulation ni saut de
+// ligne. Sans les quatre champs — le drapeau baissé, ou un exercice relu de ce qui a été figé avant FEC22b —, le fichier
+// d'hier. En ENGAGEMENT, le fichier ne change pas d'un octet (VIII, 3°) : les ajouter ouvrirait, chez l'outil de la DGFiP,
+// la correspondance à la main des champs inconnus.
 export function formaterFec(
   numerotation: NumerotationFec,
   // Sans valeur par défaut : oublié, le FEC d'un dossier en engagement sortirait sans aucun lettrage, et rien ne le
   // dirait. Un dossier en trésorerie passe une table vide — rien ne s'y lettre.
   lettrage: ReadonlyMap<string, LettrageDeLigne>,
+  // Le modèle comptable du dossier. Sans valeur par défaut : c'est lui qui dit le tableau du fichier — dix-huit
+  // informations en engagement, vingt-deux en trésorerie.
+  mode: ModeComptable,
 ): string {
-  const lignes: string[] = [ENTETES_FEC.join('\t')]
-  for (const { aNouveau: a, compteLib, ecritureLib, validDate } of numerotation.aNouveaux) {
+  if (mode === 'engagement' && numerotation.champsBnc === 'calcules') {
+    throw new Error('Le FEC d’un dossier en engagement n’a pas les quatre champs d’un BNC en trésorerie : sa numérotation ne les calcule pas.')
+  }
+  const vingtDeux = mode === 'tresorerie' && numerotation.champsBnc === 'calcules'
+  // Les quatre champs d'une ligne, ou rien pour le fichier à dix-huit colonnes. Une ligne qui n'en porte pas dans un fichier
+  // qui les écrit ne peut pas exister (`numeroterFec` les donne à chacune) : elle se voit plutôt que de s'écrire à blanc.
+  const quatreChamps = (c: ChampsBncDeLaLigne | null): string[] => {
+    if (!vingtDeux) return []
+    if (c === null) throw new Error('Une ligne du FEC d’un BNC en trésorerie n’a pas ses quatre champs.')
+    return [c.dateRglt === '' ? '' : yyyymmdd(c.dateRglt), champFec(c.modeRglt), champFec(c.natOp), champFec(c.idClient)]
+  }
+  const lignes: string[] = [(vingtDeux ? ENTETES_FEC_BNC : ENTETES_FEC).join('\t')]
+  for (const { aNouveau: a, compteLib, ecritureLib, validDate, champsBnc } of numerotation.aNouveaux) {
     lignes.push([
       'AN',
       'À-nouveaux',
@@ -482,6 +860,7 @@ export function formaterFec(
       '', '',
       yyyymmdd(validDate),
       '', '',
+      ...quatreChamps(champsBnc),
     ].join('\t'))
   }
   for (const l of numerotation.lignes) {
@@ -504,6 +883,7 @@ export function formaterFec(
       lettrage.has(e.id) ? yyyymmdd(lettrage.get(e.id)!.date) : '',
       yyyymmdd(l.validDate),
       '', '',
+      ...quatreChamps(l.champsBnc),
     ].join('\t'))
   }
   return lignes.join('\r\n')
@@ -512,9 +892,11 @@ export function formaterFec(
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   mode: ModeComptable, mouvements: readonly MouvementBancaire[], lettrage: ReadonlyMap<string, LettrageDeLigne>,
-  ventesFacturees: readonly EcritureVenteFacturee[], caisse: OperationsDeCaisse,
+  ventesFacturees: readonly EcritureVenteFacturee[], caisse: OperationsDeCaisse, champsBnc: ChampsBncDuFec,
 ): string {
-  return formaterFec(numeroterFec(ecritures, pieces, categories, aNouveaux, mode, mouvements, ventesFacturees, caisse), lettrage)
+  return formaterFec(
+    numeroterFec(ecritures, pieces, categories, aNouveaux, mode, mouvements, ventesFacturees, caisse, champsBnc), lettrage, mode,
+  )
 }
 
 // SirenFECAAAAMMJJ.txt — nom de fichier imposé par le format (AAAAMMJJ = date de clôture de
