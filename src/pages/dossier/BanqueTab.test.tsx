@@ -128,11 +128,14 @@ vi.mock('../../lib/supabase', async () => {
     const predicats: Predicat[] = []
     // Une lecture du brouillon restreinte à des COMPTES : celle des lettrages faits à la main, servie par `faux.brouillon`.
     let surDesComptes = false
+    let unique = false
     let debut = 0
     let fin = Number.MAX_SAFE_INTEGER
     const c: Record<string, unknown> = {}
     Object.assign(c, {
       select: () => c,
+      // `.select('id').maybeSingle()` après une mise à jour : la ligne écrite, ou rien.
+      maybeSingle: () => { unique = true; return c },
       eq: (colonne: string, valeur: unknown) => {
         if (colonne === 'id') idFiltre = valeur
         filtres.push(`${colonne}=${valeur}`)
@@ -192,9 +195,14 @@ vi.mock('../../lib/supabase', async () => {
         if (table === 'lignes_bancaires' && operation === 'update' && faux.erreurMajLigne) {
           return Promise.resolve({ data: null, error: { message: faux.erreurMajLigne } }).then(suite)
         }
+        // Le faux serveur n'applique la mise à jour qu'aux lignes que TOUS ses filtres désignent — `statut=non_rapprochee`
+        // compris, la condition des rapprochements — et rend celles qu'il a écrites, comme `.select('id')`.
+        const visees = () => new Set(filtrer(faux.lignes.filter((l) => l.id === idFiltre), predicats).map((l) => l.id))
+        const ecrites = (ids: Set<string>) => (unique ? ([...ids].map((id) => ({ id }))[0] ?? null) : [...ids].map((id) => ({ id })))
         if (table === 'lignes_bancaires' && operation === 'update' && faux.majImmediate) {
-          faux.lignes = faux.lignes.map((l) => (l.id === idFiltre ? { ...l, ...valeurMaj } as LigneBancaire : l))
-          return Promise.resolve({ data: null, error: null }).then(suite)
+          const ids = visees()
+          faux.lignes = faux.lignes.map((l) => (ids.has(l.id) ? { ...l, ...valeurMaj } as LigneBancaire : l))
+          return Promise.resolve({ data: ecrites(ids), error: null }).then(suite)
         }
         if (table === 'lignes_bancaires' && operation === 'update') {
           // La mise à jour reste en attente jusqu'à `resoudreUpdateLigne` : c'est la fenêtre
@@ -205,8 +213,9 @@ vi.mock('../../lib/supabase', async () => {
             faux.resoudreUpdateLigne = () => {
               // `as` ici seulement : on simule le serveur qui applique un `update` partiel. La FABRIQUE,
               // elle, reste typée sans `as` — c'est là que le compilateur doit mordre.
-              faux.lignes = faux.lignes.map((l) => (l.id === idFiltre ? { ...l, ...valeurMaj } as LigneBancaire : l))
-              resoudre({ data: null, error: null })
+              const ids = visees()
+              faux.lignes = faux.lignes.map((l) => (ids.has(l.id) ? { ...l, ...valeurMaj } as LigneBancaire : l))
+              resoudre({ data: ecrites(ids), error: null })
             }
           }).then(suite)
         }
@@ -989,13 +998,42 @@ describe('BanqueTab — le mouvement dans le panneau de droite', () => {
   it('dit ce que la banque ne confirme pas, au lieu de le cocher', async () => {
     reinitialiser()
     faux.pieces = [pieceDeTest({ tiers: 'Transmedical' })]
+    faux.lignes = [ligneDeTest({ libelle: 'PRLV SEPA ABONNEMENT' })]
+    rendre()
+    await ouvrir('PRLV SEPA ABONNEMENT')
+    const panneau = within(volet())
+    expect(panneau.getByText('Pièce proposée')).toBeTruthy()
+    expect(panneau.getByText('Fournisseur non retrouvé dans le libellé bancaire')).toBeTruthy()
+    expect(panneau.queryAllByText('Fournisseur retrouvé dans le libellé bancaire')).toHaveLength(0)
+  })
+
+  // LE SENS CONTRAIRE NE SE PROPOSE PLUS (relecture du 31/10/2026) : un achat face à un crédit du même montant était la
+  // « pièce proposée », sous un seul avertissement, et « Tout rapprocher » l'écrivait — la recette sortait de la 2035.
+  // Choisie à la main, elle se DIT, sans se refuser.
+  it('ne propose pas un achat à un crédit du même montant ; choisi à la main, le sens contraire se dit', async () => {
+    reinitialiser()
+    faux.pieces = [pieceDeTest({ tiers: 'Transmedical' })]
     faux.lignes = [ligneDeTest({ montant: 100, libelle: 'VIR SEPA REMBOURSEMENT' })]
     rendre()
     await ouvrir('VIR SEPA REMBOURSEMENT')
     const panneau = within(volet())
-    expect(panneau.getByText('Fournisseur non retrouvé dans le libellé bancaire')).toBeTruthy()
-    expect(panneau.getByText('Sens contraire : la pièce attend un paiement, le relevé montre un crédit')).toBeTruthy()
-    expect(panneau.queryAllByText('Fournisseur retrouvé dans le libellé bancaire')).toHaveLength(0)
+    expect(panneau.queryByText('Pièce proposée')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Tout rapprocher automatiquement/ })).toBeNull()
+    expect(panneau.queryAllByText(/Sens contraire/)).toHaveLength(0)
+    await act(async () => { fireEvent.change(panneau.getByLabelText('Pièce'), { target: { value: 'piece-1' } }) })
+    expect(panneau.getByText(/^Sens contraire : la pièce attend un paiement, le relevé montre un crédit\. Associée, elle ferait de ce mouvement le paiement d’une dépense/)).toBeTruthy()
+    expect((panneau.getByRole('button', { name: 'Associer' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  // GARDE SYMÉTRIQUE : une pièce du bon sens choisie à la main ne crie pas au sens contraire.
+  it('choisie à la main, une pièce du bon sens ne dit rien du sens', async () => {
+    reinitialiser()
+    faux.pieces = [pieceDeTest({ tiers: 'Transmedical', date_piece: '2025-04-01' })]
+    rendre()
+    await ouvrir()
+    const panneau = within(volet())
+    await act(async () => { fireEvent.change(panneau.getByLabelText('Pièce'), { target: { value: 'piece-1' } }) })
+    expect(panneau.queryAllByText(/Sens contraire/)).toHaveLength(0)
   })
 
   // DEUX PIÈCES QUI CONVIENNENT AUSSI BIEN : le cas que « Tout rapprocher » refuse de trancher. En
@@ -5745,5 +5783,175 @@ describe('Relecture — import d’un relevé CSV', () => {
     const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
     await act(async () => { bouton.click() })
     expect(insere()).toHaveLength(2)
+  })
+})
+
+// LES LOTS DU RELEVÉ (relecture du 31/10/2026) : un rapprochement n'écrase pas un mouvement qui n'est plus à traiter.
+// Le plan se calcule sur le relevé LU ; un autre onglet a pu, entre-temps, ignorer le mouvement. La mise à jour était
+// sans condition : la ligne ignorée devenait « rapprochée », sans un mot.
+describe('BanqueTab — un rapprochement ne vise qu’un mouvement encore à traiter', () => {
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+  const ignoreeAilleurs = () => { faux.lignes = faux.lignes.map((l) => ({ ...l, statut: 'ignoree' as const })) }
+
+  it('« Tout rapprocher » : ignoré depuis un autre onglet, le mouvement reste ignoré, sans contrepartie, et l’écran le dit', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    // La pièce est déjà passée en écriture : rapprochée, elle recevrait sa contrepartie banque — c'est ce qui la rend visible.
+    faux.ecritures = [{ id: 'e1', compte: '606100', ligne_bancaire_id: null }]
+    rendre()
+    const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+    ignoreeAilleurs()
+    await act(async () => { bouton.click() })
+    expect(faux.lignes.map((l) => [l.statut, l.piece_id])).toEqual([['ignoree', null]])
+    expect(alertes).toEqual(['1 mouvement sur 1 n’a pas été rapproché : il n’est plus à traiter (ignoré ou classé entre-temps, depuis un autre écran). Rien n’y a été écrit.'])
+    expect(faux.updatesPieces).toEqual([])
+    expect(faux.insertions.filter((i) => i.table === 'ecritures_brouillon')).toEqual([])
+  })
+
+  it('« Tout rapprocher » : encore à traiter, il se rapproche, sans alerte — le garde symétrique', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    rendre()
+    faux.ecritures = [{ id: 'e1', compte: '606100', ligne_bancaire_id: null }]
+    const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+    await act(async () => { bouton.click() })
+    expect(faux.lignes.map((l) => [l.statut, l.piece_id])).toEqual([['rapprochee', 'piece-1']])
+    expect(alertes).toEqual([])
+    await waitFor(() => expect(faux.insertions).toContainEqual({ table: 'ecritures_brouillon', valeur: expect.objectContaining({ compte: '512000' }) }))
+  })
+
+  it('« Valider et rapprocher » : la pièce se valide, le mouvement ignoré entre-temps ne se rapproche pas, et l’échec le dit', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.pieces = [pieceDeTest({ statut: 'a_valider' })]
+    rendre()
+    const bouton = await screen.findByRole('button', { name: 'Valider et rapprocher cette pièce' })
+    ignoreeAilleurs()
+    await act(async () => { bouton.click() })
+    expect(faux.lignes.map((l) => [l.statut, l.piece_id])).toEqual([['ignoree', null]])
+    expect(alertes).toEqual([expect.stringContaining('validée, mais son mouvement n’est plus à traiter (ignoré ou classé entre-temps) — non rapprochée')])
+  })
+
+  it('la fiche : « Associer cette pièce » ne réécrit pas un mouvement ignoré entre-temps', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    rendre()
+    await ouvrir()
+    ignoreeAilleurs()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette pièce' }).click() })
+    expect(faux.lignes.map((l) => l.statut)).toEqual(['ignoree'])
+    expect(alertes).toEqual(['Le rapprochement n’a pas été enregistré : ce mouvement n’est plus à traiter (ignoré ou classé entre-temps, depuis un autre écran).'])
+  })
+})
+
+// « TOUJOURS IGNORER » (relecture du 31/10/2026) : le motif se juge comme celui d'une règle d'affectation, et une règle
+// qui ne retient pas son sens nomme, avant le clic, les mouvements de l'autre sens qu'elle ferait ignorer.
+describe('BanqueTab — « Toujours ignorer ce type… »', () => {
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+  const regleInseree = () => faux.insertions.filter((i) => i.table === 'regles_bancaires_ignorees').map((i) => i.valeur)
+  async function toujoursIgnorer(libelle: string) {
+    await ouvrir(libelle)
+    await act(async () => { within(volet()).getByRole('button', { name: 'Toujours ignorer ce type…' }).click() })
+  }
+
+  it('propose le mot qui nomme le tiers, et refuse un motif trop commun avant d’écrire', async () => {
+    reinitialiser()
+    faux.pieces = []
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('PRLV SEPA')
+    rendre()
+    await toujoursIgnorer('PRLV SEPA FOURNISSEUR')
+    expect(prompt.mock.calls[0][1]).toBe('fournisseur')
+    expect(alertes).toEqual([expect.stringMatching(/^La règle n’a pas été enregistrée\. Ce motif ne contient que des mots communs aux relevés/)])
+    expect(regleInseree()).toEqual([])
+  })
+
+  it('un motif qui nomme le tiers s’enregistre sous sa forme normalisée', async () => {
+    reinitialiser()
+    faux.pieces = []
+    vi.spyOn(window, 'prompt').mockReturnValue('  Fournisseur ')
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    rendre()
+    await toujoursIgnorer('PRLV SEPA FOURNISSEUR')
+    expect(regleInseree()).toEqual([{ dossier_id: 'dossier-de-test', motif: 'fournisseur' }])
+    expect(confirmer).not.toHaveBeenCalled()
+    expect(faux.updatesLignes).toEqual([{ statut: 'ignoree', piece_id: null }])
+  })
+
+  it('née d’un débit, la règle nomme les encaissements qu’elle reconnaît ; refusée, rien ne part', async () => {
+    reinitialiser()
+    faux.pieces = []
+    faux.lignes = [
+      ligneDeTest({ id: 'debit', libelle: 'PRLV CPAM PARTICIPATION', montant: -2 }),
+      ligneDeTest({ id: 'recette', libelle: 'VIR CPAM DES YVELINES', montant: 120, date: '2025-06-03' }),
+    ]
+    vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    rendre()
+    await toujoursIgnorer('PRLV CPAM PARTICIPATION')
+    expect(confirmer).toHaveBeenCalledTimes(1)
+    const question = String(confirmer.mock.calls[0][0])
+    expect(question).toMatch(/^Ce motif reconnaît aussi 1 encaissement du relevé :\n03\/06\/2025 — VIR CPAM DES YVELINES — /)
+    expect(question).toContain('un encaissement ignoré sort des recettes')
+    expect(regleInseree()).toEqual([])
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('les règles inopérantes se disent dans la liste', async () => {
+    reinitialiser()
+    faux.reglesIgnorees = [
+      { id: 'r1', dossier_id: 'dossier-de-test', motif: 'prlv', created_at: '2025-06-01T09:00:00Z' },
+      { id: 'r2', dossier_id: 'dossier-de-test', motif: 'macsf', created_at: '2025-06-01T09:00:00Z' },
+    ]
+    rendre()
+    expect(await screen.findByText('prlv (inopérante : motif trop commun)')).toBeTruthy()
+    expect(screen.getByText('macsf')).toBeTruthy()
+  })
+})
+
+// L'ALERTE D'IMPORT DIT, RÈGLE PAR RÈGLE, CE QUE « TOUJOURS IGNORER » A FAIT (relecture du 31/10/2026) : une règle ne
+// retient pas son sens, et un encaissement ignoré sort des recettes sans que rien ne le montre.
+describe('BanqueTab — l’import compte les mouvements ignorés par règle', () => {
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+  const regle = (motif: string): RegleBancaireIgnoree => ({ id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, created_at: '2025-06-01T09:00:00Z' })
+  async function importer(csv: string, lignes: number) {
+    const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], 'releve-juin.csv', { type: 'text/csv' })] } }) })
+    const bouton = await screen.findByRole('button', { name: new RegExp(`Importer ${lignes} ligne\\(s\\)`) })
+    await act(async () => { bouton.click() })
+  }
+
+  it('compte les ignorés et les encaissements parmi eux, et dit la règle inopérante', async () => {
+    reinitialiser()
+    faux.lignes = []
+    faux.reglesIgnorees = [regle('dupont'), regle('prlv')]
+    rendre()
+    await importer('Date;Libellé;Montant\n02/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n05/06/2025;VIR CLIENT DUPONT;250,00\n', 2)
+    const lot = faux.insertions.filter((i) => i.table === 'lignes_bancaires').flatMap((i) => i.valeur as unknown as Record<string, unknown>[])
+    expect(lot.map((l) => [l.libelle, l.statut])).toEqual([['PRLV SEPA FOURNISSEUR', 'non_rapprochee'], ['VIR CLIENT DUPONT', 'ignoree']])
+    expect(alertes).toHaveLength(1)
+    expect(alertes[0]).toContain('1 mouvement ignoré par une règle « toujours ignorer » : « dupont » 1 (dont 1 encaissement).')
+    expect(alertes[0]).toContain('La règle « prlv » ne fait plus rien ignorer')
+  })
+
+  it('sans règle qui reconnaisse quoi que ce soit, l’import ne dit rien de plus — le garde symétrique', async () => {
+    reinitialiser()
+    faux.lignes = []
+    faux.reglesIgnorees = [regle('macsf')]
+    rendre()
+    await importer('Date;Libellé;Montant\n02/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n', 1)
+    expect(faux.insertions.filter((i) => i.table === 'lignes_bancaires')).toHaveLength(1)
+    expect(alertes).toEqual([])
   })
 })

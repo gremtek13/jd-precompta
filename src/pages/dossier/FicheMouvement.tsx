@@ -303,11 +303,21 @@ function joursDEcart(jours: number, avec: string): string {
   return `${jours} jour${jours > 1 ? 's' : ''} d’écart avec ${avec}`
 }
 
+// LE SENS CONTRAIRE, DIT : une pièce d'achat face à un crédit, une pièce de vente face à un débit. Associée, elle sort le
+// mouvement de ce qu'il est — un crédit rapproché d'un achat n'est plus une recette de la 2035. Aucune n'est plus
+// PROPOSÉE (`candidatsPieces` exige le sens) ; choisie à la main, elle se dit sans se refuser : l'opérateur sait peut-être
+// ce que la pièce ne dit pas.
+function sensContraireDit(piece: Piece, ligne: LigneBancaire): string | null {
+  if (sensCoherent(piece, ligne)) return null
+  return ligne.montant > 0
+    ? 'Sens contraire : la pièce attend un paiement, le relevé montre un crédit'
+    : 'Sens contraire : la pièce attend un encaissement, le relevé montre un débit'
+}
+
 // Les signaux d'une pièce candidate. Le montant concorde par construction — `candidatsPieces` ne rend
-// que celles-là, au centime près — ; le fournisseur et le sens, non, et ce sont eux qui séparent une
-// concordance d'une coïncidence. Le sens n'est dit que lorsqu'il est CONTRAIRE : `candidatsPieces`
-// compare les montants en valeur absolue, donc un remboursement du même montant se voit proposer
-// l'achat qu'il annule.
+// que celles-là, au centime près —, le sens aussi (il les exige) ; le fournisseur, non, et c'est lui qui
+// sépare une concordance d'une coïncidence. Le sens se redit pourtant ici, en seconde ceinture : une
+// candidate de sens contraire, si un chemin en laissait passer une, ne s'alignerait pas sous trois coches.
 function signauxPiece(piece: Piece, ligne: LigneBancaire): Signal[] {
   const signaux: Signal[] = [{ ok: true, texte: 'Même montant, au centime près' }]
   if (piece.date_piece) {
@@ -320,14 +330,8 @@ function signauxPiece(piece: Piece, ligne: LigneBancaire): Signal[] {
   } else {
     signaux.push({ ok: false, texte: 'Fournisseur non retrouvé dans le libellé bancaire' })
   }
-  if (!sensCoherent(piece, ligne)) {
-    signaux.push({
-      ok: false,
-      texte: ligne.montant > 0
-        ? 'Sens contraire : la pièce attend un paiement, le relevé montre un crédit'
-        : 'Sens contraire : la pièce attend un encaissement, le relevé montre un débit',
-    })
-  }
+  const sens = sensContraireDit(piece, ligne)
+  if (sens) signaux.push({ ok: false, texte: sens })
   return signaux
 }
 
@@ -902,6 +906,9 @@ export default function FicheMouvement({
   const refusPieceChoisie = pieceChoisieDejaPayee
     ? refusSecondPaiement(ligne, pieceChoisieDejaPayee, paiements.get(pieceChoisieDejaPayee.id) ?? [])
     : null
+  // La pièce choisie à la main, de sens contraire : dit avant le clic, jamais refusé (`sensContraireDit`).
+  const pieceChoisieAuChoix = pieceChoisie ? piecesAuChoix.find((p) => p.id === pieceChoisie) ?? null : null
+  const sensDeLaPieceChoisie = pieceChoisieAuChoix ? sensContraireDit(pieceChoisieAuChoix, ligne) : null
   const cotisationsAuChoix = aTraiter
     ? cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
         .sort((a, b) =>
@@ -1593,6 +1600,13 @@ export default function FicheMouvement({
                   </button>
                 </div>
                 {refusPieceChoisie && <p className="fiche-mouvement-alerte">{refusPieceChoisie}</p>}
+                {sensDeLaPieceChoisie && !refusPieceChoisie && (
+                  <p className="fiche-mouvement-alerte">
+                    {sensDeLaPieceChoisie}. Associée, elle ferait de ce mouvement {ligne.montant > 0
+                      ? 'le paiement d’une dépense : ce crédit ne compterait plus dans les recettes'
+                      : 'l’encaissement d’une vente : ce débit ne compterait plus dans les dépenses'}.
+                  </p>
+                )}
                 {pieceChoisieDejaPayee && !refusPieceChoisie && (
                   <p className="fiche-mouvement-note">
                     Cette pièce est déjà payée en partie : ce mouvement en règle le reste.

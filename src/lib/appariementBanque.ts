@@ -192,9 +192,12 @@ function montantCompatible(piece: Piece, ligne: LigneBancaire): boolean {
   return Math.abs(Math.abs(piece.montant_ttc!) - Math.abs(ligne.montant)) <= 0.01
 }
 
-// Exporté pour le panneau d'un mouvement : `candidatsPieces` compare les montants en valeur absolue,
-// donc un remboursement du même montant se voit proposer l'achat qu'il annule. Le panneau le DIT
-// plutôt que d'aligner trois coches sous une pièce que le rapprochement certain refuserait.
+// Le SENS d'une paire : un achat se paie par un débit, une vente s'encaisse par un crédit, un avoir à l'inverse. Exigé
+// par CHAQUE chemin qui propose une pièce à un mouvement — le rapprochement certain (`motifDeDoute`), « Tout rapprocher »
+// et la fiche d'un mouvement (`candidatsPieces`) : les montants s'y comparent en valeur absolue, et un achat de 60 € daté
+// du 3 mars se rapprochait du virement de 60 € d'un patient du 5 — la recette sortait de la 2035, et la base, qui ne
+// juge aucun sens sur `piece_id`, l'acceptait. Exporté aussi pour le choix à la main de la fiche, qui le DIT sans le
+// refuser, et pour la proposition du client (lib/banqueCabinet.ts).
 export function sensCoherent(piece: Piece, ligne: LigneBancaire): boolean {
   // Une pièce à montant négatif est un avoir : il revient sur le compte, donc en crédit pour un achat.
   const montantPiece = piece.montant_ttc ?? 0
@@ -304,8 +307,11 @@ function motifDeDoute(
 // `analyserAppariements` décide s'il faut VALIDER une pièce, acte professionnel : trois signaux, dont
 // le fournisseur lu dans le libellé, et sept jours de tolérance. Ce qui suit décide s'il faut RELIER
 // un mouvement à une pièce DÉJÀ validée par un humain : deux signaux (montant au centime, date à cinq
-// jours), parce que la pièce a déjà été regardée. Les deux tolérances sont donc distinctes par
-// construction et ne doivent pas être confondues — d'où deux constantes, deux noms.
+// jours), parce que la pièce a déjà été regardée — et le SENS, qui n'est pas un signal mais une condition
+// (`sensCoherent`) : sans lui, un achat se rapprochait d'une recette du même montant. Les deux tolérances
+// sont donc distinctes par construction et ne doivent pas être confondues — d'où deux constantes, deux
+// noms. La question inverse, « ce mouvement a-t-il peut-être son justificatif ? », prend la plus LARGE
+// des deux (`piecesDuMemeMontant`).
 //
 // CE QUI N'EST PAS UNE POLITIQUE, EN REVANCHE, C'EST DE TRANCHER À PILE OU FACE. L'écran faisait
 // `piecesValidees.find(...)` : quand deux pièces convenaient aussi bien l'une que l'autre, la
@@ -351,9 +357,27 @@ function montantEgal(a: number | null | undefined, b: number): boolean {
   return a != null && Math.abs(Math.abs(a) - Math.abs(b)) <= 0.01
 }
 
+// Les pièces libres du même montant qu'un mouvement, à `joursTolerance` près, DANS LES DEUX SENS : le socle commun des
+// deux questions qui suivent, qui ne se posent pas avec la même prudence.
+function piecesEnFace(
+  ligne: LigneBancaire,
+  pieces: readonly Piece[],
+  dejaRapprochees: ReadonlySet<string>,
+  sources: FacturesSources,
+  joursTolerance: number,
+): Piece[] {
+  return pieces.filter((p) =>
+    !dejaRapprochees.has(p.id)
+    && !exemplaireDUneSource(p, sources)
+    && p.date_piece != null
+    && montantEgal(p.montant_ttc, ligne.montant)
+    && Math.abs(jourDe(p.date_piece) - jourDe(ligne.date)) <= joursTolerance)
+}
+
 /**
- * Les pièces validées qui conviennent à ce mouvement — toutes, jamais la première. Jamais l'exemplaire d'une facture source
- * (G4, étape VF6d) : `sources` n'a pas de valeur par défaut.
+ * Les pièces validées qui conviennent à ce mouvement — toutes, jamais la première, et seulement DANS LE SENS du mouvement
+ * (`sensCoherent`) : ce sont elles que « Tout rapprocher » écrit et que la fiche propose. Jamais l'exemplaire d'une facture
+ * source (G4, étape VF6d) : `sources` n'a pas de valeur par défaut.
  */
 export function candidatsPieces(
   ligne: LigneBancaire,
@@ -362,12 +386,24 @@ export function candidatsPieces(
   sources: FacturesSources,
   joursTolerance = JOURS_TOLERANCE_RAPPROCHEMENT,
 ): Piece[] {
-  return piecesValidees.filter((p) =>
-    !dejaRapprochees.has(p.id)
-    && !exemplaireDUneSource(p, sources)
-    && p.date_piece != null
-    && montantEgal(p.montant_ttc, ligne.montant)
-    && Math.abs(jourDe(p.date_piece) - jourDe(ligne.date)) <= joursTolerance)
+  return piecesEnFace(ligne, piecesValidees, dejaRapprochees, sources, joursTolerance).filter((p) => sensCoherent(p, ligne))
+}
+
+/**
+ * LA QUESTION INVERSE : ce mouvement a-t-il PEUT-ÊTRE son justificatif au dossier ? Elle ne rapproche rien, elle retient un
+ * lot (`justificatifPossible`, lib/reglesAffectation.ts) — elle se pose donc LARGE : dans la fenêtre de l'appariement
+ * (`JOURS_TOLERANCE`, sept jours, celle qui a été mesurée pour la facture du 30 avril prélevée le 7 mai), jamais dans
+ * la fenêtre plus étroite du rapprochement assisté, et dans les deux sens (un remboursement fait face à l'achat qu'il
+ * annule). Une seule constante, celle de l'appariement : une pièce qu'un chemin du relevé peut apparier à ce mouvement
+ * est un justificatif possible, et un lot qui l'affecterait la laisserait sans paiement, comptée à côté de lui.
+ */
+export function piecesDuMemeMontant(
+  ligne: LigneBancaire,
+  pieces: readonly Piece[],
+  dejaRapprochees: ReadonlySet<string>,
+  sources: FacturesSources,
+): Piece[] {
+  return piecesEnFace(ligne, pieces, dejaRapprochees, sources, JOURS_TOLERANCE)
 }
 
 /**
@@ -421,6 +457,9 @@ export function candidatsCotisations<C extends CotisationRapprochable>(
  * disputent n'est pas rapprochable, et une pièce que deux lignes se disputent non plus. La version
  * précédente parcourait les lignes dans l'ordre en « consommant » les pièces au passage : le premier
  * mouvement rencontré emportait la pièce, ce qui n'est pas un choix mais un effet de l'ordre de tri.
+ *
+ * LE SENS EST EXIGÉ (`candidatsPieces`) : une pièce d'achat n'est jamais la candidate d'un crédit, ni une pièce de vente
+ * celle d'un débit — ni retenue, ni concurrente dans l'unicité.
  *
  * La précédence pièce > cotisation est CONSERVÉE telle quelle : ce n'est pas un arbitrage entre
  * égaux mais une règle de l'écran, et la changer serait une décision produit.

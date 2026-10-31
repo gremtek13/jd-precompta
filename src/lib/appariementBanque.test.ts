@@ -3,11 +3,13 @@ import {
   JOURS_TOLERANCE,
   analyserAppariements,
   candidatsCotisations,
+  candidatsPieces,
   ecartEnJours,
   libelleExploitable,
   motsDuLibelle,
   motsIdentifiants,
   motsSeConfirment,
+  piecesDuMemeMontant,
   piecesMontantIntrouvableEnBanque,
   planRapprochementAutomatique,
   sensCotisationCoherent,
@@ -596,5 +598,59 @@ describe('ecartEnJours', () => {
   it('traverse un changement de mois et d’année', () => {
     expect(ecartEnJours('2024-12-30', '2025-01-02')).toBe(3)
     expect(ecartEnJours('2024-02-28', '2024-03-01')).toBe(2)
+  })
+})
+
+// LE SENS DU MOUVEMENT (relecture du 31/10/2026). « Tout rapprocher » et la fiche d'un mouvement comparaient les montants en
+// valeur absolue : un achat validé de 38,40 € se rapprochait du virement de 38,40 € d'un patient, et la recette sortait de
+// la 2035 — la base ne juge aucun sens sur `piece_id`.
+describe('candidatsPieces et planRapprochementAutomatique exigent le sens', () => {
+  const vide = { pieces: new Set<string>(), cotisations: new Set<string>() }
+  const achat = piece({ id: 'achat', statut: 'validee', date_piece: '2025-06-03' })
+  const vente = piece({ id: 'vente', type_piece: 'vente', statut: 'validee', date_piece: '2025-06-03', tiers: null })
+  const avoirAchat = piece({ id: 'avoir', statut: 'validee', date_piece: '2025-06-03', montant_ttc: -38.4 })
+  const credit = ligne({ id: 'credit', montant: 38.4, libelle: 'VIR M DUPONT' })
+  const debit = ligne({ id: 'debit' })
+
+  it('un achat n’est la candidate que d’un débit ; une vente, d’un crédit ; un avoir d’achat, d’un crédit', () => {
+    expect(candidatsPieces(credit, [achat], new Set(), AUCUNE_FACTURE_SOURCE)).toEqual([])
+    expect(candidatsPieces(debit, [achat], new Set(), AUCUNE_FACTURE_SOURCE)).toEqual([achat])
+    expect(candidatsPieces(debit, [vente], new Set(), AUCUNE_FACTURE_SOURCE)).toEqual([])
+    expect(candidatsPieces(credit, [vente], new Set(), AUCUNE_FACTURE_SOURCE)).toEqual([vente])
+    expect(candidatsPieces(credit, [avoirAchat], new Set(), AUCUNE_FACTURE_SOURCE)).toEqual([avoirAchat])
+    expect(candidatsPieces(debit, [avoirAchat], new Set(), AUCUNE_FACTURE_SOURCE)).toEqual([])
+  })
+
+  it('le lot ne rapproche pas l’achat de la recette ; il rapproche la vente', () => {
+    expect(planRapprochementAutomatique([credit], [achat], [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE))
+      .toEqual({ retenus: [], ecartesPourAmbiguite: 0, ecartesParLesVentes: [] })
+    expect(planRapprochementAutomatique([credit], [achat, vente], [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE).retenus)
+      .toEqual([{ ligneId: 'credit', pieceId: 'vente' }])
+  })
+
+  // Une pièce de sens contraire n'est pas non plus une CONCURRENTE : elle ne paie pas ce mouvement, et ne rend pas ambigu
+  // celui que l'autre pièce paie — ni ne fait passer l'achat pour disputé par le crédit.
+  it('une pièce de sens contraire ne rend rien ambigu', () => {
+    const plan = planRapprochementAutomatique([credit, debit], [achat], [], vide, AUCUN_HORS_DES_LOTS, AUCUNE_FACTURE_SOURCE)
+    expect(plan.retenus).toEqual([{ ligneId: 'debit', pieceId: 'achat' }])
+    expect(plan.ecartesPourAmbiguite).toBe(0)
+  })
+})
+
+// LA QUESTION INVERSE, « ce mouvement a-t-il peut-être son justificatif ? » : à la fenêtre de l'APPARIEMENT, dans les deux
+// sens. Une pièce de sens contraire n'est jamais proposée, mais elle retient le lot des règles.
+describe('piecesDuMemeMontant', () => {
+  const achat = (date: string) => piece({ id: date, statut: 'validee', date_piece: date })
+  it('cherche à JOURS_TOLERANCE jours, pas à la fenêtre du rapprochement assisté', () => {
+    const l = ligne({ date: '2025-05-07' })
+    expect(piecesDuMemeMontant(l, [achat('2025-04-30')], new Set(), AUCUNE_FACTURE_SOURCE).map((p) => p.id)).toEqual(['2025-04-30'])
+    expect(candidatsPieces(l, [achat('2025-04-30')], new Set(), AUCUNE_FACTURE_SOURCE)).toEqual([])
+    expect(piecesDuMemeMontant(l, [achat('2025-04-29')], new Set(), AUCUNE_FACTURE_SOURCE)).toEqual([])
+    expect(JOURS_TOLERANCE).toBe(7)
+  })
+  it('dans les deux sens, jamais une pièce déjà rapprochée', () => {
+    const credit = ligne({ montant: 38.4 })
+    expect(piecesDuMemeMontant(credit, [achat('2025-06-03')], new Set(), AUCUNE_FACTURE_SOURCE)).toHaveLength(1)
+    expect(piecesDuMemeMontant(credit, [achat('2025-06-03')], new Set(['2025-06-03']), AUCUNE_FACTURE_SOURCE)).toEqual([])
   })
 })
