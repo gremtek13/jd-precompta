@@ -22,12 +22,43 @@ export interface LigneDeSolde {
   motif: MotifSolde
 }
 
-const LIBELLE_SOLDE = /\bsoldes?\b/i
+// Les mots qu'une banque met autour de « solde » sur une ligne de solde (« SOLDE CREDITEUR AU 28/02/2025 », « Nouveau
+// solde », « Solde précédent », « Solde en fin de période », « Ancien solde au 31 mars 2025 »), sans accents ni casse.
+const MOTS_D_UN_SOLDE = new Set([
+  'solde', 'soldes', 'ancien', 'nouveau', 'precedent', 'crediteur', 'debiteur', 'initial', 'final', 'finale', 'ouverture',
+  'cloture', 'credit', 'debit', 'depart', 'debut', 'fin', 'periode', 'comptable', 'disponible', 'provisoire', 'intermediaire', 'reporte',
+  'report', 'courant', 'compte', 'releve', 'votre', 'situation', 'arrete', 'date', 'mois', 'jour', 'euros', 'euro', 'eur',
+  'a', 'au', 'aux', 'du', 'de', 'des', 'd', 'l', 'le', 'la', 'les', 'en', 'n', 'no',
+  'janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre',
+])
+
+// Un texte A LA FORME d'un solde quand il dit « solde » et rien d'autre qu'un solde : ses mots sont tous de ceux qu'une
+// banque met autour (`MOTS_D_UN_SOLDE`), les dates, montants et numéros mis à part. L'ancienne règle, le seul mot
+// « solde » n'importe où, prenait « VIR M DUPONT SOLDE NOTE HONORAIRES » pour un solde : la recette ne s'importait pas, et
+// avec trois « soldes » le relevé n'était plus vérifié du tout. Un texte d'opération autour du mot le garde opération —
+// mieux vaut un contrôle qui ne tourne pas, et qui le dit, qu'une recette perdue.
+export function aLaFormeDUnSolde(texte: string): boolean {
+  const mots = texte.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z]+/).filter(Boolean)
+  return mots.some((m) => m === 'solde' || m === 'soldes') && mots.every((m) => MOTS_D_UN_SOLDE.has(m))
+}
+
+// Ce que l'écran dit quand les lignes de solde reconnues ne sont pas exactement deux (ouverture et clôture) : le relevé
+// s'importe, sans que son arithmétique soit vérifiée. Deux : rien à dire.
+export function phraseDesSoldes(nombre: number): string | null {
+  if (nombre === 2) return null
+  if (nombre === 0) {
+    return 'Aucune ligne de solde reconnue : le relevé s’importe sans vérification de son arithmétique (solde d’ouverture + '
+      + 'mouvements = solde de clôture).'
+  }
+  return `${nombre} ligne${nombre > 1 ? 's' : ''} de solde reconnue${nombre > 1 ? 's' : ''}, alors qu’il en faut exactement deux `
+    + '(ouverture et clôture) : le relevé s’importe sans vérification de son arithmétique. Ces lignes ne s’importent pas.'
+}
 
 // Repère les lignes qui décrivent un solde plutôt qu'une opération. Deux signaux, volontairement
 // conservateurs — un mouvement pris pour un solde disparaîtrait de la comptabilité :
 //
-//   - le libellé dit « solde » (la plupart des banques françaises l'écrivent) ;
+//   - le libellé a la forme d'un solde (`aLaFormeDUnSolde` : la plupart des banques françaises écrivent le mot, et rien
+//     d'autre qu'un solde autour) ;
 //   - la ligne a MOINS de colonnes que les opérations du même fichier. Une banque qui écrit un solde
 //     n'a ni type d'opération ni libellé à mettre : elle produit un enregistrement plus court. C'est
 //     le seul signal disponible sur le relevé réel, où les deux lignes de solde portent le numéro de
@@ -45,7 +76,7 @@ export function lignesDeSolde(rows: string[][], mapping: ColumnMapping): LigneDe
 
   const trouvees: LigneDeSolde[] = []
   rows.forEach((row, index) => {
-    if (LIBELLE_SOLDE.test(libelleDeLigne(row, mapping))) {
+    if (aLaFormeDUnSolde(libelleDeLigne(row, mapping))) {
       trouvees.push({ index, motif: 'libellé de solde' })
       return
     }

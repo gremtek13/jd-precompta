@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { controlerBalance, lireBalance, type ControleBalance, type ResultatLectureBalance } from '../../lib/balanceImport'
 import { dateOuverture, preparerANouveaux } from '../../lib/aNouveaux'
 import { parseCsv } from '../../lib/csv'
+import { decoderUtf8OuWindows1252 } from '../../lib/decodageTexte'
 import { hashFichier } from '../../lib/extraction'
 import { formatDate, formatMoney } from '../../lib/format'
 import { lireTout } from '../../lib/lectureComplete'
@@ -36,16 +37,11 @@ export const OUVERTURE_FIGEE = 'Un exercice de ce dossier est validé : son ouve
 // COMPTES, donc l'essentiel de ce qu'un humain lit sur cet écran. Décoder de travers rendrait
 // « Fournisseurs » en « Fournisseurs » et ferait douter du reste. On tente l'UTF-8 en mode strict —
 // qui LÈVE sur une séquence invalide, là où le mode indulgent rend un U+FFFD qu'il faudrait ensuite
-// aller renifler — et on retombe sur windows-1252, qui ne peut pas échouer.
+// aller renifler — et on retombe sur windows-1252, qui ne peut pas échouer (`lib/decodageTexte.ts`, la
+// même règle que l'import d'un relevé bancaire).
 // Les CHIFFRES, eux, sont de l'ASCII dans les deux cas : le contrôle d'équilibre reste juste même si
 // ce repli se trompait.
-function decoder(octets: ArrayBuffer): string {
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(octets)
-  } catch {
-    return new TextDecoder('windows-1252').decode(octets)
-  }
-}
+const decoder = (octets: ArrayBuffer): string => decoderUtf8OuWindows1252(octets).texte
 
 const pluriel = (n: number, mot: string, marque = 's') => `${n} ${mot}${n > 1 ? marque : ''}`
 
