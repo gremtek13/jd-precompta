@@ -3,7 +3,7 @@ import {
   AUCUN_RIB_CONFIRME, AVIS_SANS_FORME, FACTURE_D_AVANT, INDEMNITE_DE_RECOUVREMENT, PROVENANCE_VIDE, RETENUE_CHAINE_ROMPUE,
   RETENUE_EN_LECTURE, avisSansDenomination, ceQueLaFactureImprime, ceQueLaValidationFigera, confirmationDesMentions, formeEtCapital,
   jugementDesMentions, logoNonImprime, parametresEnVigueur, provenanceDeLArticle, provenanceDeLaLigneLue, provenanceQuiPart, retenueIllisible,
-  uniteImprimee, type LectureDeLaValidation, type SaisieAJuger,
+  REFUS_SANS_PENALITES, refusSansPenalites, sansPhraseDeRetard, uniteImprimee, type LectureDeLaValidation, type SaisieAJuger,
 } from './mentionsFigeesVue'
 import { REFUS_DE_LA_PROVENANCE, REFUS_DE_LA_VALIDATION_FIGEE, mentionsAFiger } from './mentionsFigees'
 import { MODELE_IBAN_DANS_UN_TEXTE } from './parametresFacturation'
@@ -171,6 +171,46 @@ describe('le dossier a-t-il des paramètres de facturation en vigueur ? (A7B-Q2 
     expect(parametresEnVigueur(rompue, 'd1')).toBe(false)
     const suite: LectureDeLaValidation = { etat: 'lu', identite: identiteDuDossier(), versions: [versionParametres({ id: 'v1' }), versionParametres({ id: 'v2', remplace_id: 'v1' })] }
     expect(parametresEnVigueur(suite, 'd1')).toBe(true)
+  })
+})
+
+// La relecture du 31/10/2026 : les paramètres ne disent les conditions de retard que d'un professionnel, de leur texte des
+// pénalités ; sans lui, une facture à une entreprise n'imprimerait aucun taux (C. com., art. L441-9, I).
+describe('la phrase de retard de la mention proposée, et le refus d’une facture à une entreprise sans taux de pénalités', () => {
+  const avec = (penalites: string | null): LectureDeLaValidation =>
+    ({ etat: 'lu', identite: identiteDuDossier(), versions: [versionParametres({ id: 'v1', penalites })] })
+  const PENALITES = 'Pénalités : trois fois le taux d’intérêt légal.'
+
+  it('inutile : des paramètres en vigueur, et un particulier, ou un professionnel avec leur texte des pénalités', () => {
+    expect(sansPhraseDeRetard(avec(null), 'd1', 'non_assujetti')).toBe(true)
+    expect(sansPhraseDeRetard(avec(PENALITES), 'd1', 'assujetti')).toBe(true)
+    expect(sansPhraseDeRetard(avec(PENALITES), 'd1', 'organisme_public')).toBe(true)
+  })
+
+  it('utile : sans paramètres, une entreprise sans leur texte des pénalités, un client « à préciser » ou hors de France', () => {
+    expect(sansPhraseDeRetard(avec(null), 'd1', 'assujetti')).toBe(false)
+    expect(sansPhraseDeRetard(avec('   '), 'd1', 'assujetti')).toBe(false)
+    expect(sansPhraseDeRetard(avec(PENALITES), 'd1', '')).toBe(false)
+    expect(sansPhraseDeRetard(avec(PENALITES), 'd1', 'etranger')).toBe(false)
+    expect(sansPhraseDeRetard(null, 'd1', 'non_assujetti')).toBe(false)
+    expect(sansPhraseDeRetard({ etat: 'illisible', motif: 'x' }, 'd1', 'non_assujetti')).toBe(false)
+    expect(sansPhraseDeRetard(avec(PENALITES), 'd2', 'assujetti')).toBe(false)
+    const rompue: LectureDeLaValidation = { etat: 'lu', identite: identiteDuDossier(), versions: [versionParametres({ id: 'v1', penalites: PENALITES }), versionParametres({ id: 'v2', penalites: PENALITES })] }
+    expect(sansPhraseDeRetard(rompue, 'd1', 'assujetti')).toBe(false)
+    // La version COURANTE seule compte : un texte retiré depuis ne vaut plus.
+    const retire: LectureDeLaValidation = { etat: 'lu', identite: identiteDuDossier(), versions: [versionParametres({ id: 'v1', penalites: PENALITES }), versionParametres({ id: 'v2', remplace_id: 'v1', penalites: null })] }
+    expect(sansPhraseDeRetard(retire, 'd1', 'assujetti')).toBe(false)
+  })
+
+  it('le refus : un professionnel, ni texte des pénalités en vigueur, ni mot des pénalités dans les mentions', () => {
+    expect(refusSansPenalites(avec(null), 'd1', 'assujetti', 'Paiement à réception.')).toBe(REFUS_SANS_PENALITES)
+    expect(refusSansPenalites(avec(null), 'd1', 'organisme_public', '')).toBe(REFUS_SANS_PENALITES)
+    expect(refusSansPenalites(null, 'd1', 'assujetti', '')).toBe(REFUS_SANS_PENALITES)
+    expect(refusSansPenalites(avec(null), 'd1', 'assujetti', 'En cas de retard, une pénalité de trois fois le taux légal.')).toBeNull()
+    expect(refusSansPenalites(avec(null), 'd1', 'assujetti', 'PENALITES DE RETARD : 10 %')).toBeNull()
+    expect(refusSansPenalites(avec(PENALITES), 'd1', 'assujetti', '')).toBeNull()
+    for (const type of ['non_assujetti', '', 'etranger'] as const) expect(refusSansPenalites(avec(null), 'd1', type, ''), type).toBeNull()
+    expect(REFUS_SANS_PENALITES).toMatch(/L441-9/)
   })
 })
 

@@ -19,8 +19,7 @@ import {
   motifExoneration,
   obligationsFacturationElectronique,
   refusTauxPositif,
-  resumeObligations,
-} from './statutTva'
+  resumeObligations, refusDeLaMentionTva } from './statutTva'
 
 // La liste d'une contrainte `check (colonne in (…))`, telle que la DERNIÈRE migration qui la pose la laisse :
 // une migration qui l'élargirait demain doit faire tomber ce test tant que le module ne la suit pas.
@@ -362,5 +361,18 @@ describe('declarationDuNonRedevable — ce que l’onglet TVA dit quand il ne pr
     expect(declarationDuNonRedevable(null)).toBe('Tant que son statut de TVA est à préciser, le dossier est traité comme ne '
       + 'récupérant pas la TVA : redevable, il préparerait ici ses déclarations.')
     expect(declarationDuNonRedevable('redevable')).toBe('Redevable, le dossier prépare ses déclarations de TVA dans cet onglet.')
+  })
+})
+
+// La relecture du 31/10/2026 : une facture validée ne se corrige que par un avoir ; celle d'un dossier exonéré ou en
+// franchise qui ne cite pas sa disposition, ou qui cite la franchise hors de son statut, serait fausse pour toujours.
+describe('ce qui retient la validation d’une facture pour sa mention de TVA', () => {
+  it('la mention attendue absente ; la franchise citée hors de son statut ; rien sinon', () => {
+    expect(refusDeLaMentionTva('Exonération de TVA, art. 261, 4, 1° du CGI.', false))
+      .toBe('La facture ne se valide pas sans la mention « Exonération de TVA, art. 261, 4, 1° du CGI. » (CGI, ann. II, art. 242 nonies A) : ajoute-la aux mentions légales.')
+    expect(refusDeLaMentionTva(null, true)).toMatch(/^La facture ne se valide pas avec la mention de la franchise en base \(« TVA non applicable, art\. 293 B du CGI\. »\)/)
+    // L'absente d'abord : c'est elle qu'il faut ajouter.
+    expect(refusDeLaMentionTva('X', true)).toMatch(/sans la mention « X »/)
+    expect(refusDeLaMentionTva(null, false)).toBeNull()
   })
 })
