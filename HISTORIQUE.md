@@ -43820,3 +43820,82 @@ date entière dans la garde de la CA3 ; les deux copies de l'assistant.
 TVA et le régime de l'opération (autoliquidation, exportation…) : des mentions que la facture doit porter, et dont
 l'e-reporting a besoin. C'est l'étape e7 de l'e-reporting, qui se construit après le MVP (28.5e-Q1) ; d'ici là,
 l'application ne demande toujours ni le pays, ni le numéro de TVA, ni le régime d'un tel client.
+
+### 31/10/2026 — LA CAISSE REPRISE EST « TENUE », ET LA FENÊTRE DES ENCAISSEMENTS JUGE LA CAISSE AVANT LE CLIC (RELECTURE)
+
+(Écrit par un agent architecte, deux commits ; aucune migration, aucune Edge Function. Lu avant d'écrire : « HUIT
+RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E », les entrées « LA CAISSE … », le commit `be7bf79` (C6-Q1) et le
+test de la relecture, qui n'entre pas au dépôt.)
+
+La relecture de la caisse du 31/10/2026 avait prouvé deux défauts par des tests. Tous deux se corrigent dans
+l'application.
+
+**1. UNE CAISSE QUI N'EXISTE ENCORE QUE PAR LA REPRISE N'ÉTAIT PAS « TENUE ».** `dossierTientUneCaisse` ne regardait que
+les opérations vivantes et les espèces des factures sources (C6-Q1). Le praticien qui arrive avec 300 € de caisse dans
+sa balance, dont le cabinet importe le relevé avant de saisir le brouillard : « non tenue » — un crédit « VERSEMENT
+ESPECES » entrait dans les lots (`versementsDEspecesHorsDesLots`), une règle apprise pouvait le ranger en recette, et
+les mêmes espèces se comptaient une seconde fois avec les recettes du brouillard ; le point
+`versements-especes-en-recette` attendait la première opération.
+
+- La fonction reçoit, en paramètre OBLIGATOIRE, `RepriseEtReleveDeLaCaisse` (lib/controlesDeLaCaisse.ts) : le compte de
+  la caisse DU PLAN (`modele.plan.caisse`, jamais un 53 deviné), la reprise et le relevé, chacun lu en entier ou nul.
+  « Oui » dès qu'un SOLDE repris non nul (débit moins crédit, en centimes, comme `fluxDeLaCaisse` le compte) ou un
+  mouvement classé (`compte_bilan`) porte ce compte ; « non » quand les quatre sources sont lues et muettes ;
+  « peut-être » quand l'une manque et qu'aucune autre ne dit oui. La caisse absente (le drapeau baissé) : « non », comme
+  hier.
+- Ses trois appelants : `versementsDEspecesHorsDesLots` (l'onglet Banque, par `repriseEtReleveDeBanque`,
+  lib/caisseEcran.ts — les mêmes entrées que `caisseDeBanque`, pour que les lots et la fiche jugent la même caisse),
+  `caisseDeLaFiche` (« tenue », qui fait dire à la fiche le libellé d'un versement) et le point de la Vue d'ensemble (la
+  reprise et le relevé, lus en entier quand la caisse est jugée : `entreesDeLaCaisseIncompletes` les couvre déjà).
+- Écarté : déduire « tenue » de la caisse rejouée de la fiche (`caisseDeBanque`) — elle exige TOUT lu en entier, et les
+  lots doivent écarter le versement même quand une seule entrée manque (« peut-être », écarter ne perd rien). Écarté
+  aussi : un « à-nouveau non nul » ligne à ligne — deux lignes qui s'annulent ne mettent aucune espèce en caisse, c'est
+  le solde qui compte.
+- Le cas du test de la relecture qui figeait le défaut est repris, INVERSÉ, dans `controlesDeLaCaisse.test.ts` (le
+  dossier tenu, le versement hors des lots) ; son autre cas, les espèces d'avant l'ouverture, appartient au lot C8.
+- Preuves : le module (le cas de la relecture, le solde et son sens, le compte du plan seul — un plan décalé —, le
+  relevé, une entrée pas lue, la caisse absente), `repriseEtReleveDeBanque`, la fiche, la Vue d'ensemble ; deux écrans
+  (les lots : la reprise écarte le versement, une reprise sans espèces le laisse ; la fiche : la reprise, puis un
+  mouvement classé, disent le libellé du versement) ; deux cas neutres d'hier corrigés (ils supposaient une reprise de
+  50 € « non tenue »). Quinze mutations, toutes tuées.
+
+**2. LA FENÊTRE DES ENCAISSEMENTS NE PRÉVENAIT PAS AVANT LE CLIC.** Retirer, ou contre-passer sans mouvement,
+l'encaissement en espèces d'une facture source dont les espèces ont déjà servi (un versement classé sur la caisse, un
+prélèvement) : la garde de la caisse (`garder_la_caisse`, différée) le refusait à la fin de la transaction, sous
+`retrait_encaissement` ou `contre_passation`, donc APRÈS le clic.
+
+- Un module pur, `lib/caisseDesEncaissements.ts` : `caisseDeLaFenetre` (absente, jugée par la base, pas lue avec son
+  motif, ou la caisse rejouée — les opérations et la reprise lues par la fenêtre, le relevé, les encaissements et les
+  factures qu'elle lisait déjà, chaque ligne de CE dossier) ; `retraitPourLaCaisse` (la caisse SANS l'encaissement) et
+  `contrePassationPourLaCaisse` (AVEC la contre-passation, de montant opposé, au jour du décaissement, du même moyen,
+  sans mouvement) jugées par `refusDeLaCaisse` (lib/caisse.ts), « entre-t-elle dans la caisse » par
+  `especesDUneFactureSource` — aucune règle recopiée. Un geste qui ne touche pas la caisse (un autre moyen, rattaché à
+  un mouvement, une facture qui n'est pas source, une contre-passation qui cite un débit, le retrait d'une
+  contre-passation) : rien.
+- La fenêtre (`EncaissementsFactureModal.tsx`) : au cabinet, elle lit la caisse (`lireLaCaisse`) et la reprise
+  (`lireLaRepriseDeLaCaisse`) avec le reste ; « Retirer » et « Enregistrer la contre-passation » disent le refus sous
+  les mots de la base et se grisent, ou, la caisse pas lue en entier, se retiennent et le disent ; les deux gestes
+  revérifient sous leur verrou. Le compte de la caisse du plan lui arrive en propriété obligatoire du cabinet
+  (`compteCaisse`), depuis l'onglet Banque (`modele`) et l'onglet Factures — la vue « Règlements » comprise —, que
+  `DossierDetail` ne monte plus qu'avec le plan (`modele &&`, comme les autres onglets : `pret` l'impliquait déjà).
+- LE CLIENT « VENTES » ne lit pas la caisse (`operations_caisse` et `a_nouveaux` n'ont de policy que pour le cabinet ;
+  CAISSE-Q1, (B)) : une lecture refusée rendrait zéro ligne sans erreur, et une caisse rejouée sur du vide mentirait.
+  Comme pour la frontière qu'il ne lit pas non plus (`FRONTIERE_JUGEE_PAR_LA_BASE`), la fenêtre dit que la base jugera
+  (`CAISSE_JUGEE_PAR_LA_BASE`), et le geste reste offert : le retenir lui ôterait tout retrait d'espèces. Ses mots, et
+  ceux des deux refus de la base, passent `motsDuCabinet` sans faute, et `pourLEspace` ne les change pas.
+- Le drapeau baissé : ni lecture de la caisse, ni mot d'elle — la fenêtre d'hier.
+- Preuves : le module (les deux gestes, leurs cas neutres, la caisse pas lue, le client, l'absente, les mots du
+  client) ; neuf cas d'écran (le retrait refusé sans confirmation ni appel, son cas neutre qui part, une facture qui
+  n'est pas source, la reprise refusée qui retient le seul geste de la caisse, la contre-passation refusée puis permise
+  en citant un débit, son cas neutre qui part, la caisse refusée qui la retient, le client, le drapeau baissé aux deux
+  espaces). Seize mutations, toutes tuées — le retrait qui ne rejoue rien, tout encaissement qui toucherait la caisse,
+  le montant d'une contre-passation oublié, la contre-passation qui cite un débit comptée, rejouée au jour de
+  l'encaissement, la caisse pas lue qui permet, le client retenu, la reprise lue en partie ignorée, le client tenu pour
+  absent, un 530000 en dur, les deux boutons qui ne se grisent pas, le message du retrait tu, la caisse du client lue,
+  la reprise lue le drapeau baissé, la contre-passation jugée sans le débit de l'étape.
+
+**CE QUI RESTE.** Pour le client, un refus après l'envoi reste possible : le dire avant demanderait une fonction de
+lecture (« la caisse sans cet encaissement serait-elle négative ? ») ou la lecture de la caisse par un client « Ventes »
+— une migration, qui se présente au cabinet (CAISSE-Q1, (B) : la caisse du client viendra avec son droit, C10 à C12). Le
+rattachement d'un encaissement en espèces à un mouvement (`rattachement_encaissement`) n'a plus de chemin depuis C6 (des
+espèces ne citent aucun crédit) : rien à dire avant le clic.

@@ -49,12 +49,14 @@ cabinet (C4) suivent la base ; l'assistant (C5) en ligne le même jour (`agent-c
 modèle sous son genre, sa date et son montant, jamais un libellé —, `points_a_traiter` renvoie ses contrôles à l'onglet
 Caisse ; le resserrement (C6) le même jour : l'écran n'offre plus d'espèces sur un crédit, et la garde des encaissements
 le refuse en base (la migration 3, `especes_sans_mouvement`, appliquée par l'outil) ; un dossier basculé tient une
-caisse dès que les espèces d'une facture source y entrent (C6-Q1, le 31/10/2026) → « LA CAISSE : LE MODULE, LA LECTURE
+caisse dès que les espèces d'une facture source y entrent (C6-Q1, le 31/10/2026), tout dossier dès que sa reprise ou son
+relevé la portent, et la fenêtre des encaissements juge la caisse avant le clic → « LA CAISSE : LE MODULE, LA LECTURE
 ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
 CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
 26.6) », « LA CAISSE : L'ASSISTANT EN LIGNE (C5, LIGNE 26.6) », « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) », « LA
 CAISSE : LE RESSERREMENT EN PRODUCTION (C6, LIGNE 26.6) », « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET
-FEC22-E »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les
+FEC22-E », « LA CAISSE REPRISE EST « TENUE », ET LA FENÊTRE DES ENCAISSEMENTS JUGE LA CAISSE AVANT LE CLIC
+(RELECTURE) »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les
 lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC
 RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
