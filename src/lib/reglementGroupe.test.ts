@@ -208,6 +208,55 @@ describe('refusSecondPaiement', () => {
   })
 })
 
+// RELECTURE DE 3564fcb (31/10/2026) : l'écran juge un paiement ajouté sur la somme que le moteur comptera.
+describe('le paiement ajouté se juge sur la somme SIGNÉE de ses paiements, rapportée au sens qui règle la pièce', () => {
+  // Un achat de 1 200 €, auquel un crédit de 200 € a été rapproché d'abord (le seul chemin ouvert : le premier
+  // rapprochement, avec le signal « sens contraire »).
+  const ACHAT = piece({ id: 'ach', tiers: 'Assureur', montant_ttc: 1200 })
+  const credit = paiementsDesPieces([mouvement({ id: 'cr', montant: 200, statut: 'rapprochee', piece_id: 'ach' })], [], []).get('ach') ?? []
+
+  it('un crédit rapproché d’un achat le défait : il rend à régler ce qu’il défait', () => {
+    expect(resteARegler(ACHAT, credit, null)).toBe(1400)
+    // Le débit dans le sens qui règle la pièce : le reste d'hier.
+    expect(resteARegler(ACHAT, [{ id: 'd', montant: -300 }], null)).toBe(900)
+  })
+
+  it('refuse le débit qui retournerait le sens de la somme — l’écran disait « reste 1 000 € », le moteur 400 € de plus', () => {
+    const attendu = 'Ce mouvement ne peut pas régler la pièce « Assureur » : un mouvement de l’autre sens, rapproché d’elle, '
+      + 'l’emporte sur ses paiements, et celui-ci en retournerait le sens : retire d’abord ce mouvement de la pièce.'
+    expect(refusSecondPaiement(mouvement({ montant: -1000 }), ACHAT, credit)).toBe(attendu)
+    expect(refusSecondPaiement(mouvement({ montant: -1400 }), ACHAT, credit)).toBe(attendu)
+    // Un débit qui ne fait que ramener la somme à zéro ne la retourne pas.
+    expect(refusSecondPaiement(mouvement({ montant: -200 }), ACHAT, credit)).toBeNull()
+    expect(refusReglementGroupe(mouvement({ montant: -1100 }), [{ piece_id: 'ach', montant: -1000 }, { piece_id: 'p3', montant: -100 }],
+      [ACHAT, piece({ id: 'p3', montant_ttc: 250 })], paiementsDesPieces([mouvement({ id: 'cr', montant: 200, statut: 'rapprochee', piece_id: 'ach' })], [], [])))
+      .toBe('La part de la pièce « Assureur » ne peut pas la régler : un mouvement de l’autre sens, rapproché d’elle, '
+        + 'l’emporte sur ses paiements, et celui-ci en retournerait le sens : retire d’abord ce mouvement de la pièce.')
+  })
+
+  it('accepte la reprise d’un prélèvement rejeté : une somme nulle n’a pas de sens à retourner', () => {
+    const rejete = paiementsDesPieces([
+      mouvement({ id: 'p1', montant: -1200, statut: 'rapprochee', piece_id: 'ach' }),
+      mouvement({ id: 'rj', montant: 1200, statut: 'rapprochee', piece_id: 'ach' }),
+    ], [], []).get('ach') ?? []
+    expect(resteARegler(ACHAT, rejete, null)).toBe(1200)
+    expect(refusSecondPaiement(mouvement({ montant: -1200 }), ACHAT, rejete)).toBeNull()
+    expect(refusSecondPaiement(mouvement({ montant: -1205.01 }), ACHAT, rejete))
+      .toContain(`dépasse ce qu’il reste à régler de la pièce « Assureur » (${formatMoney(1200)})`)
+  })
+
+  it('l’écran et le moteur disent le même reste après le clic', () => {
+    // Le débit accepté (le reste dit avant le clic) laisse au moteur exactement ce reste-là, moins ce débit.
+    for (const [autres, debit] of [[[-300], -900], [[-1200, 1200], -1200], [[200], -200], [[-400, -400], -400]] as const) {
+      const lignes = [...autres, debit].map((montant, i) => mouvement({ id: `m${i}`, montant, statut: 'rapprochee', piece_id: 'ach' }))
+      const avant = paiementsDesPieces(lignes.slice(0, -1), [], []).get('ach') ?? []
+      expect(refusSecondPaiement(lignes.at(-1)!, ACHAT, avant), `${autres} puis ${debit}`).toBeNull()
+      const apres = paiementsDesPieces(lignes, [], []).get('ach') ?? []
+      expect(resteARegler(ACHAT, apres, null), `${autres} puis ${debit}`).toBe(Math.max(0, resteARegler(ACHAT, avant, null) + debit))
+    }
+  })
+})
+
 describe('les autres classements refusent un mouvement réglé en groupe', () => {
   const groupe: MouvementBancaire = mouvement({ statut: 'rapprochee', reglement_groupe: true })
   const categorie: Categorie = {

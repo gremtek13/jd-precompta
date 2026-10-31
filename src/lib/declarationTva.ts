@@ -571,10 +571,18 @@ export function calculerCa3(
     const { montant_ht: htLu, montant_tva: tvaLue, montant_ttc: ttc } = piece
     const tva = tvaLue ?? 0
     // Les centimes de la période, ceux de l'écriture de la pièce (`centimesDeLaPeriode`). Une ligne de la CA3 ne
-    // porte jamais une somme négative : un avoir y entre pour sa valeur absolue, sur sa propre ligne — d'où le signe
-    // de la pièce, qui ramène ses centimes au sens de la ligne qui les reçoit.
+    // porte jamais une somme négative : un avoir y entre pour sa valeur absolue, sur sa propre ligne.
+    //
+    // LA LIGNE SE CHOISIT AU SIGNE DE CE QUE LA PÉRIODE PORTE, pas à celui de la pièce (31/10/2026, relecture de
+    // 3564fcb). Depuis que les paiements d'une pièce se somment signés (`partsDesPaiements`), la période d'un rejet de
+    // prélèvement porte une part NÉGATIVE d'une pièce positive : l'achat prélevé en décembre, rejeté en janvier, déduit
+    // sa TVA en décembre et la REVERSE en janvier — la « TVA antérieurement déduite à reverser » de la ligne 15 (notice
+    // 3310-CA3), et non une ligne 20 négative ; une vente remboursée, une régularisation en B5 et en ligne 21, et non une
+    // base négative en A1. C'est la règle que la CA3 applique déjà à l'exigibilité d'une vente facturée (plus bas). Une
+    // période qui ne porte rien garde la ligne du signe de la pièce, celle d'hier : des paiements de même sens que la
+    // pièce y rendent donc exactement ce qu'ils rendaient.
     const centimesDe = (charge: number, taxe: number) => centimesDeLaPeriode(piece, charge, taxe, paiements, surDebits, periode)
-    const signe = tva < 0 ? -1 : 1
+    const negatif = (porte: number, piecePositive: boolean) => (porte !== 0 ? porte < 0 : !piecePositive)
 
     if (!recette) {
       if (tva === 0) {
@@ -590,8 +598,8 @@ export function calculerCa3(
       const immobilisee = donnees.pieceIdsImmobilisees.has(piece.id)
       if (immobilisee) comptes.immobilisations += c
       else comptes.deductible += c
-      const ligne = tva < 0 ? '15' : immobilisee ? '19' : '20'
-      cumul[`l${ligne}`] += signe * c
+      const ligne = negatif(c, tva > 0) ? '15' : immobilisee ? '19' : '20'
+      cumul[`l${ligne}`] += Math.abs(c)
       retenues.push({ piece, part, ligne })
       continue
     }
@@ -606,7 +614,7 @@ export function calculerCa3(
         continue
       }
       const { base: b } = centimesDe(base, 0)
-      if (base < 0) {
+      if (negatif(b, base >= 0)) {
         cumul.F8 -= b
         retenues.push({ piece, part, ligne: 'F8' })
       } else {
@@ -632,7 +640,8 @@ export function calculerCa3(
     }
     const { base: b, tva: c } = centimesDe(montantRetenu(piece, true)!, tva)
     comptes.collectee += c
-    if (tva < 0) {
+    // La taxe décide ; à taxe nulle sur la période (un centime arrondi à zéro), la base ; à base nulle aussi, la pièce.
+    if (negatif(c !== 0 ? c : b, tva > 0)) {
       // Un avoir consenti à un client : sa base est une régularisation du chiffre d'affaires (B5), sa
       // taxe se récupère ligne 21. Retrancher l'un ou l'autre d'une ligne de taux inscrirait une somme
       // négative, ce que la notice interdit.

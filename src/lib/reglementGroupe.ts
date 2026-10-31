@@ -63,18 +63,58 @@ export function partSaisieDe(piece: Pick<Piece, 'type_piece' | 'montant_ttc'>, m
 }
 
 // CE QU'IL RESTE À RÉGLER D'UNE PIÈCE, hors ce que CE mouvement en paie déjà — le régler de nouveau
-// remplace ses parts. Les paiements comptent par leur somme SIGNÉE (`paiementNet`, lib/alignementBanque.ts), comme dans
-// `partsDesPaiements` (lib/rattachement.ts) : c'est la même question, et deux réponses divergeraient. En valeur absolue,
-// une prime prélevée puis rejetée passait pour payée deux fois, et son nouveau prélèvement se refusait comme un paiement
-// de trop ; signée, le rejet rend à régler ce qu'il défait.
+// remplace ses parts : la pièce, moins la somme SIGNÉE de ses paiements (`paiementNet`, lib/alignementBanque.ts)
+// RAPPORTÉE AU SENS QUI LA RÈGLE (`signeReglant`). Un mouvement qui va dans ce sens la paie ; un mouvement de l'autre
+// sens la défait, et rend à régler ce qu'il défait. Des paiements tous dans le sens qui la règle rendent le reste d'hier,
+// au centime près.
+//
+// EN VALEUR ABSOLUE (31/10/2026, relecture de 3564fcb), un crédit de 200 € rapproché d'abord d'un achat de 1 200 € y
+// comptait comme un paiement : le reste était de 1 000 €, l'écran acceptait un débit de 1 000 €, puis la 2035
+// (`partsDesPaiements`) jugeait la pièce payée de 800 € — 400 € de reste, une pièce « payée en partie » qui retenait la
+// validation. Le reste dit ici est celui que le moteur comptera.
+//
+// LE REJET D'UN PRÉLÈVEMENT, rapproché de la pièce APRÈS le débit qu'il défait, n'est pas un chemin que l'écran ouvre
+// aujourd'hui : `refusSecondPaiement` le refuse comme un mouvement « dans le mauvais sens », et une pièce déjà payée
+// n'est pas proposée. Le cabinet en est saisi (REJET-Q1). Le moteur compte juste ces données, d'où qu'elles viennent
+// (un rapprochement direct, une restauration), et le reste les suit.
 export function resteARegler(
-  piece: Pick<Piece, 'montant_ttc'>,
+  piece: Pick<Piece, 'type_piece' | 'montant_ttc'>,
   paiements: readonly Pick<PaiementDePiece, 'id' | 'montant'>[],
   saufMouvement: string | null,
 ): number {
-  const paye = paiementNet(paiements.filter((p) => p.id !== saufMouvement)).centimes
+  const net = paiementNet(paiements.filter((p) => p.id !== saufMouvement))
+  const paye = net.centimes * net.sens * signeReglant(piece)
   return Math.max(0, centimes(Math.abs(piece.montant_ttc ?? 0)) - paye) / 100
 }
+
+// CE QU'UN PAIEMENT AJOUTÉ FERAIT À LA SOMME DES PAIEMENTS DE SA PIÈCE, jugé avant le clic par le règlement groupé et
+// par le second paiement — sur la somme que le moteur comptera (`paiementNet`), jamais en valeur absolue.
+// - `depasse` : il dépasse ce qu'il reste à régler (`resteARegler`) au-delà de l'écart d'alignement — une pièce ne se
+//   paie pas deux fois, et l'argent versé en trop ne compterait nulle part ;
+// - `inverse` : la pièce a déjà reçu, net, un mouvement de l'AUTRE sens (un crédit rapproché d'abord d'un achat), et ce
+//   paiement retournerait le sens de la somme. Le moteur range alors chaque mouvement selon le sens de la somme : le
+//   crédit d'hier, compté comme un paiement tant qu'il était seul, deviendrait un remboursement, et la pièce passerait
+//   d'un état à l'autre sans que personne ne l'ait voulu. Ce crédit se retire d'abord. Une somme nulle — un prélèvement
+//   et son rejet — n'a pas de sens : la reprendre ne la retourne pas.
+// Le premier refus est celui d'hier, au centime près, pour des paiements dans le sens qui règle la pièce ; le second ne
+// vise que des paiements de sens contraires.
+export type RefusDuPaiementAjoute = { motif: 'depasse'; reste: number } | { motif: 'inverse' } | null
+
+export function refusDuPaiementAjoute(
+  piece: Pick<Piece, 'type_piece' | 'montant_ttc'>,
+  autres: readonly Pick<PaiementDePiece, 'id' | 'montant'>[],
+  montant: number,
+): RefusDuPaiementAjoute {
+  const avant = paiementNet(autres).sens
+  const apres = paiementNet([...autres, { montant }]).sens
+  if (avant !== 0 && apres !== 0 && avant !== apres) return { motif: 'inverse' }
+  const reste = resteARegler(piece, autres, null)
+  if (centimes(Math.abs(montant)) > centimes(reste + seuilAlignement(piece.montant_ttc ?? 0))) return { motif: 'depasse', reste }
+  return null
+}
+
+const PHRASE_DU_SENS_INVERSE = 'un mouvement de l’autre sens, rapproché d’elle, l’emporte sur ses paiements, et celui-ci en retournerait '
+  + 'le sens : retire d’abord ce mouvement de la pièce.'
 
 // Pourquoi ce mouvement ne peut pas régler ces pièces ainsi, dit AVANT d'écrire. La base refait les mêmes
 // refus (`regler_pieces_par_mouvement`), dans le même ordre, plus celui d'une écriture déjà validée, que
@@ -139,9 +179,10 @@ export function refusReglementGroupe(
     const piece = parId.get(p.piece_id)!
     const autres = (paiements.get(piece.id) ?? []).filter((m) => m.id !== ligne.id)
     if (seraRegleeSurLaBanque(piece) && autres.length === 0) continue
-    const reste = resteARegler(piece, paiements.get(piece.id) ?? [], ligne.id)
-    if (centimes(Math.abs(p.montant)) > centimes(reste + seuilAlignement(piece.montant_ttc ?? 0))) {
-      return `La part de la pièce « ${nomDeLaPiece(piece)} » dépasse ce qu’il en reste à régler (${formatMoney(reste)}) : `
+    const refus = refusDuPaiementAjoute(piece, autres, p.montant)
+    if (refus?.motif === 'inverse') return `La part de la pièce « ${nomDeLaPiece(piece)} » ne peut pas la régler : ${PHRASE_DU_SENS_INVERSE}`
+    if (refus?.motif === 'depasse') {
+      return `La part de la pièce « ${nomDeLaPiece(piece)} » dépasse ce qu’il en reste à régler (${formatMoney(refus.reste)}) : `
         + 'une pièce ne se paie pas deux fois.'
     }
   }
@@ -163,9 +204,10 @@ export function refusSecondPaiement(
     return `Ce mouvement va dans le mauvais sens pour la pièce « ${nomDeLaPiece(piece)} » : `
       + 'une dépense se règle par une sortie, une recette par une entrée, un avoir à l’inverse.'
   }
-  const reste = resteARegler(piece, paiementsDeLaPiece, ligne.id)
-  if (centimes(Math.abs(ligne.montant)) > centimes(reste + seuilAlignement(piece.montant_ttc ?? 0))) {
-    return `Ce mouvement dépasse ce qu’il reste à régler de la pièce « ${nomDeLaPiece(piece)} » (${formatMoney(reste)}) : `
+  const refus = refusDuPaiementAjoute(piece, paiementsDeLaPiece.filter((p) => p.id !== ligne.id), ligne.montant)
+  if (refus?.motif === 'inverse') return `Ce mouvement ne peut pas régler la pièce « ${nomDeLaPiece(piece)} » : ${PHRASE_DU_SENS_INVERSE}`
+  if (refus?.motif === 'depasse') {
+    return `Ce mouvement dépasse ce qu’il reste à régler de la pièce « ${nomDeLaPiece(piece)} » (${formatMoney(refus.reste)}) : `
       + 'une pièce ne se paie pas deux fois. Un virement qui en règle aussi d’autres se répartit par « Régler plusieurs pièces ».'
   }
   return null
