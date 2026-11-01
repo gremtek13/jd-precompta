@@ -7,8 +7,8 @@ import { aujourdHuiAParis } from '../../lib/format'
 import type { LectureComplete } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import {
-  confirmationDuReglement, confirmationDuRetraitDuPaiement, etatDeLaCaisseDeLaFiche, montantPropose, paiementNomme,
-  paiementsDeLaPiece, pieceDuPaiement, refusDuRetraitDuPaiement, verdictDuReglement, type FactureDuPaiement,
+  avertissementDuReglement, confirmationDuReglement, confirmationDuRetraitDuPaiement, etatDeLaCaisseDeLaFiche, montantPropose,
+  paiementNomme, paiementsDeLaPiece, pieceDuPaiement, refusDuRetraitDuPaiement, verdictDuReglement, type FactureDuPaiement,
   type LectureDeLaCaisseDeLaPiece,
 } from '../../lib/paiementParLaCaisseEcran'
 import type { PaiementsDesPieces } from '../../lib/rattachement'
@@ -37,7 +37,8 @@ export interface CaisseDeLaPiece {
   assujettiTva: boolean
   /**
    * Les paiements de chaque pièce — le relevé, les parts des virements, et la caisse —, tous lus en entier ; nuls sinon : le
-   * reste à régler ne se propose pas (le champ attend la saisie du cabinet).
+   * reste à régler ne se propose pas, et la pièce ne se règle pas d'ici — la base juge le reste au centime sur ses paiements
+   * du relevé aussi (relecture du 01/11/2026), et la fiche ne dit pas avant le clic ce qu'elle n'a pas lu.
    */
   paiements: PaiementsDesPieces | null
   /** Relit la caisse et les paiements de l'onglet ; rendue quand la relecture est revenue. */
@@ -101,10 +102,17 @@ export default function ReglementParLaCaisse({ dossierId, piece, factures, caiss
 
   // Le jour à Paris, relu à chaque rendu : « maintenant » ne se lit jamais au chargement d'un module.
   const ctx: ContexteDeLaCaisse = { modele: caisse.modele, assujettiTva: caisse.assujettiTva, aujourdhui: aujourdHuiAParis(), anneesValidees }
-  const laPiece = pieceDuPaiement(piece, factures)
-  const proposition = montantPropose(piece, caisse.paiements === null ? null : caisse.paiements.get(piece.id) ?? [])
+  // Les paiements de la pièce — le relevé et la caisse —, lus en entier, ou nuls : la base juge le reste au centime sur ceux du
+  // relevé aussi (relecture du 01/11/2026), et la fiche ne règle rien sur des paiements qu'elle n'a pas tous lus.
+  const sesPaiements = caisse.paiements === null ? null : caisse.paiements.get(piece.id) ?? []
+  const laPiece = pieceDuPaiement(piece, factures, sesPaiements)
+  const proposition = montantPropose(piece, sesPaiements)
   const montant = montantTape ?? proposition
   const verdict = 'piece' in laPiece ? verdictDuReglement({ date, montant }, ctx, donnees, laPiece.piece) : null
+  // La pièce déjà payée par la banque, ou payée en trop : dit avant le clic, et repris par la confirmation (rien ne se refuse).
+  const avertissement = verdict?.etat === 'permis' && 'piece' in laPiece
+    ? avertissementDuReglement(laPiece.piece, donnees, Math.round(verdict.operation.montant * 100))
+    : null
 
   // Un geste : le verrou, l'appel, la relecture (même sur un refus : la base a peut-être vu ce que l'écran n'avait pas lu), le
   // message. `appel` rend le refus de la base en clair, ou rien quand elle a écrit.
@@ -129,7 +137,7 @@ export default function ReglementParLaCaisse({ dossierId, piece, factures, caiss
 
   async function regler() {
     if (ecritureEnCours.current || verdict === null || verdict.etat !== 'permis') return
-    if (!window.confirm(confirmationDuReglement(piece.nom_fichier, verdict, caisse.modele.plan.caisse))) return
+    if (!window.confirm(confirmationDuReglement(piece.nom_fichier, verdict, caisse.modele.plan.caisse, avertissement))) return
     const { saisie } = verdict
     await agir(async () => {
       const { error } = await supabase.rpc('regler_piece_par_la_caisse', {
@@ -226,6 +234,7 @@ export default function ReglementParLaCaisse({ dossierId, piece, factures, caiss
             {verdict !== null && (verdict.etat === 'refuse' || verdict.etat === 'illisible') && (
               <p className="error-text" role="alert">{verdict.message}</p>
             )}
+            {avertissement !== null && <p className="muted" role="status">{avertissement}</p>}
           </>
         ))}
 

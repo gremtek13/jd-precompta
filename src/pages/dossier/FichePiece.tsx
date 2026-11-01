@@ -31,7 +31,8 @@ import { lireCeQueLaPieceEst, relireLesMarquesDeLaPiece } from '../../lib/marque
 import { preparerPiece, refusDUnePiece } from '../../lib/bornesStockage'
 import ReglementParLaCaisse, { type CaisseDeLaPiece } from './ReglementParLaCaisse'
 import {
-  etatDeLaCaisseDeLaFiche, refusDeLaDesignationParLaCaisse, refusDuTypeDeLaPiece, suppressionRetenueParLaCaisse,
+  etatDeLaCaisseDeLaFiche, refusDeLaDesignationParLaCaisse, refusDeSuppressionParLaCaisse, refusDuTypeDeLaPiece,
+  suppressionRetenueParLaCaisse,
 } from '../../lib/paiementParLaCaisseEcran'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
@@ -757,6 +758,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         throw new Error(messageBilanSuppressionPieces({ demandes: 1, supprimes: 0, motifs: [AUCUNE_PIECE_SUPPRIMEE] }) ?? AUCUNE_PIECE_SUPPRIMEE)
       }
       if (deleteError) {
+        // LA PIÈCE QU'UN PAIEMENT DE LA CAISSE CITE (relecture du 01/11/2026) : la fiche n'offre pas « Supprimer » sur une caisse
+        // lue en entier (`retenueParLaCaisse`) ; lue en partie, on ne sait pas si un paiement la cite, et la base refuse — sa
+        // garde du brouillon, ou la clé de l'opération. Ses mots, et le remède, plutôt que la raison de Postgres.
+        const parLaCaisse = refusDeSuppressionParLaCaisse(deleteError)
+        if (parLaCaisse) throw new Error(parLaCaisse)
         // Contrainte de clé étrangère (23503) : la pièce est encore référencée par une table qui
         // REFUSE la suppression. Gardé comme garde-fou, mais ce chemin ne peut pas se lever
         // aujourd'hui — mesuré le 23/09/2026, les cinq clés entrantes de `pieces` sont en SET NULL

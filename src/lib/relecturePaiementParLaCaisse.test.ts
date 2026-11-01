@@ -21,11 +21,12 @@ import { NON_VALIDEE } from '../test/ecritures'
 import { SANS_FACTURE_SOURCE, SANS_EXEMPLAIRE, SANS_ECRITURE_DE_VENTE, ventesFactureesVides } from '../test/ventesFacturees'
 
 // RELECTURE INDÉPENDANTE DU PAIEMENT D'UNE PIÈCE PAR LA CAISSE (ligne 26.6, lots C8, C9a et C9b ; CAISSE-Q4, (B)), AVANT QUE
-// LE DRAPEAU NE SE LÈVE. Chaque `it.fails` prouve un défaut confirmé, le drapeau `PAIEMENT_PAR_LA_CAISSE_EXPORTE` LEVÉ (l'état
-// du jour de la migration) : le test dit ce qui DEVRAIT être, et échoue aujourd'hui. Les cas ordinaires qui l'entourent sont
-// ses témoins : ils montrent que le jeu d'essai est juste, et que seul le paiement par la caisse fait la différence. Des
-// données FICTIVES. L'essai de la base qui les accompagne (validation, centime, pièce à valider) est rejoué sur une réplique,
-// jamais en production.
+// LE DRAPEAU NE SE LÈVE. Chaque défaut confirmé y était prouvé par un `it.fails`, le drapeau `PAIEMENT_PAR_LA_CAISSE_EXPORTE`
+// LEVÉ (l'état du jour de la migration). CORRIGÉS le 01/11/2026 (HISTORIQUE.md, « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES
+// CORRECTIONS ») : chacun est devenu un `it` ordinaire, qui dit ce qui est vrai désormais. Les cas ordinaires qui l'entourent
+// restent ses témoins : ils montrent que le jeu d'essai est juste, et que seul le paiement par la caisse fait la différence.
+// Des données FICTIVES. L'essai de la base qui les accompagne (validation, centime, pièce à valider) se rejoue sur une
+// réplique, jamais en production ; le filet de la base, `validationDesPaiementsParLaCaisse.sql`.
 
 const drapeau = vi.hoisted(() => ({ leve: true }))
 vi.mock('./paiementParLaCaisse', async (original) => {
@@ -117,13 +118,15 @@ const bloquants = (d: DonneesDeValidation) => prealablesDeValidation(d).prealabl
 
 // ══ DÉFAUT 1 — UNE PIÈCE ENCORE À VALIDER, PAYÉE PAR LA CAISSE DANS L'EXERCICE, NE RETIENT PAS SA VALIDATION ══════════════
 // La conception reprise (§ 8, « Les préalables de la validation ») le demandait : « `pieces-a-valider` attrape la pièce à
-// valider qu'un paiement cite ». Le préalable ne juge que la DATE DE LA PIÈCE (`dansLaPeriodeTenue(p.date_piece)`) : une facture
+// valider qu'un paiement cite ». Le préalable ne jugeait que la DATE DE LA PIÈCE (`dansLaPeriodeTenue(p.date_piece)`) : une facture
 // de décembre 2024 (exercice déjà validé, ou arrivée après), ou un acompte payé en décembre pour une facture datée de janvier,
 // payée en espèces dans l'exercice, laisse l'exercice se valider. Ses espèces sont sorties de la caisse (le journal et la base les
 // comptent), mais ni sa charge ni sa contrepartie ne sont au brouillon, ni sa dépense dans la 2035 : le 53 reporté au 1er janvier
 // dépasse la caisse du montant du paiement, et rien ne le rattrape ensuite — la pièce validée après coup s'écrirait à la date du
 // paiement, figée (« aucune écriture ne s'y passe plus »), et le paiement ne se retire plus. L'essai de la base le joue (dossier
-// Z : « reporté : debit 100.00 / la caisse : 20 », puis les deux refus de la frontière).
+// Z : « reporté : debit 100.00 / la caisse : 20 », puis les deux refus de la frontière). CORRIGÉ : le préalable compte aussi la
+// pièce à valider qu'un paiement de l'exercice cite (`paiementsDePiecesAValider`), sous un message qui le dit et un détail qui
+// nomme le paiement ; la base le refuse aussi (la migration `validation_des_paiements_par_la_caisse`).
 describe('défaut 1 — la pièce à valider qu’un paiement par la caisse de l’exercice cite', () => {
   const APPORT = operation({ id: 'oc-apport', date: '2025-01-02', montant: 100 })
   // La facture de décembre 2024 arrivée après la validation de 2024 (déposée le 03/02/2025) ; l'acompte de décembre 2025 d'une
@@ -150,14 +153,36 @@ describe('défaut 1 — la pièce à valider qu’un paiement par la caisse de l
     expect(d.ecritures.filter((e) => e.piece_id === 'pz')).toEqual([])
   })
 
-  it.fails('PROUVE : payée 80 € par la caisse le 05/01/2025, la facture de 2024 encore à valider laisse valider 2025 sans sa dépense ni sa contrepartie', () => {
+  it('payée 80 € par la caisse le 05/01/2025, la facture de 2024 encore à valider retient la validation de 2025, sous `pieces-a-valider`', () => {
     const paiement = operation({ id: 'oc-pz', genre: 'paiement', piece_id: 'pz', date: '2025-01-05', montant: -80 })
-    expect(bloquants(avecLeJeu(DE_2024, paiement, [2024])).length).toBeGreaterThan(0)
+    const d = avecLeJeu(DE_2024, paiement, [2024])
+    expect(bloquants(d)).toEqual(['pieces-a-valider'])
+    const p = prealablesDeValidation(d).prealables.find((x) => x.id === 'pieces-a-valider')!
+    expect(p.nb).toBe(1)
+    expect(p.message).toBe("pièce(s) à valider datée(s) de l'exercice 2025, ou payée(s) par la caisse dans cet exercice : les valider, ou les retirer, avant la validation — ensuite, leur écriture ne pourrait plus s'y passer, ni la sortie d'espèces de leur paiement.")
+    expect(p.detail?.replace(/\u202f|\u00a0/g, ' ')).toBe('Payée par la caisse : une pièce du 20/12/2024, payée en espèces le 05/01/2025 (80,00 €). Validée, sa sortie d’espèces s’écrit avec ses écritures, dans l’onglet Écritures ; une pièce payée par la caisse ne se retire qu’après son paiement.')
   })
 
-  it.fails('PROUVE : de même pour l’acompte payé en espèces le 28/12/2025 d’une facture datée du 10/01/2026, encore à valider', () => {
+  it('de même pour l’acompte payé en espèces le 28/12/2025 d’une facture datée du 10/01/2026, encore à valider', () => {
     const paiement = operation({ id: 'oc-pz', genre: 'paiement', piece_id: 'pz', date: '2025-12-28', montant: -80 })
-    expect(bloquants(avecLeJeu(DE_2026, paiement, [])).length).toBeGreaterThan(0)
+    expect(bloquants(avecLeJeu(DE_2026, paiement, []))).toEqual(['pieces-a-valider'])
+  })
+
+  it('une pièce datée de l’exercice ET payée dans l’exercice se compte une fois ; un paiement retiré, ou d’un autre exercice, ne retient rien', () => {
+    const paiement = operation({ id: 'oc-pz', genre: 'paiement', piece_id: 'pz', date: '2025-01-05', montant: -80 })
+    const datee = prealablesDeValidation(avecLeJeu({ ...DE_2024, date_piece: '2025-01-03' }, paiement, [2024])).prealables.find((x) => x.id === 'pieces-a-valider')!
+    expect(datee.nb).toBe(1)
+    expect(bloquants(avecLeJeu(DE_2024, { ...paiement, retire_le: '2025-01-06T08:00:00Z' }, [2024]))).toEqual([])
+    expect(bloquants(avecLeJeu(DE_2026, { ...paiement, date: '2026-01-05' }, []))).toEqual([])
+  })
+
+  it('le drapeau baissé, aucun paiement par la caisse : le préalable d’hier, au caractère près', () => {
+    drapeau.leve = false
+    const paiement = operation({ id: 'oc-pz', genre: 'paiement', piece_id: 'pz', date: '2025-01-05', montant: -80 })
+    expect(bloquants(avecLeJeu(DE_2024, paiement, [2024]))).toEqual([])
+    const datee = prealablesDeValidation(avecLeJeu({ ...DE_2024, date_piece: '2025-01-03' }, paiement, [2024])).prealables.find((x) => x.id === 'pieces-a-valider')!
+    expect(datee.message).toBe("pièce(s) à valider datée(s) de l'exercice 2025 : les valider, ou les retirer, avant la validation — ensuite, leur écriture ne pourrait plus s'y passer.")
+    expect(datee.detail).toBeUndefined()
   })
 })
 
@@ -172,6 +197,9 @@ describe('défaut 1 — la pièce à valider qu’un paiement par la caisse de l
 // ENTIÈRE (40,00) face à 39,99 de caisse — et « Régénérer » réécrit la même chose. L'onglet Écritures ne le voit pas (tolérance
 // de 2 centimes), « payée en partie » non plus ; la numérotation de la validation le refuse au centime, comme la base
 // (essai, dossier Y : « Une écriture n'est pas équilibrée au centime. »). La 2035 compte 40,00 de dépense pour 39,99 sortis.
+// CORRIGÉ, sur la recommandation de C9-Q1 (posée le 01/11/2026) : un tel paiement se REFUSE, avant le clic et en base, sous le
+// montant exact qui règle la pièce (`resteAuCentime`, le bloc 9 bis de `regler_piece_par_la_caisse`) ; et une pièce dont le
+// montant change APRÈS son paiement se dit, dans la validation et la Vue d'ensemble, sous `caisse-paiements-a-retirer`.
 describe('défaut 2 — un paiement par la caisse d’un centime de moins que la pièce', () => {
   const PIECE = piece('pc', { date_piece: '2026-03-10', montant_ttc: 40 })
   const APPORT = operation({ id: 'oc-apport', date: '2026-03-01', montant: 100 })
@@ -185,9 +213,9 @@ describe('défaut 2 — un paiement par la caisse d’un centime de moins que la
     return { paiement, p, lignes: lignesPourPiece('d1', PIECE, { compte: '606100', immobilisation: false }, false, p.get('pc') ?? [], TRESORERIE) }
   }
 
-  it('témoin : la fiche accepte 39,99 € ; payée de 40,00 € juste, l’écriture s’équilibre', () => {
-    const verdict = verdictDuReglement({ date: '2026-03-12', montant: '-39,99' }, ctx, donneesDeLaCaisse,
-      { id: 'pc', type_piece: 'achat', statut: 'validee', montant_ttc: 40, exemplaire: null })
+  const PIECE_DU_PAIEMENT = { id: 'pc', type_piece: 'achat', statut: 'validee', montant_ttc: 40, devise: 'EUR', exemplaire: null, paiementsDuReleve: [] } as const
+  it('témoin : payée de 40,00 € juste, la fiche l’accepte et l’écriture s’équilibre', () => {
+    const verdict = verdictDuReglement({ date: '2026-03-12', montant: '-40,00' }, ctx, donneesDeLaCaisse, PIECE_DU_PAIEMENT)
     expect(verdict.etat).toBe('permis')
     expect(solde(ecrituresApres(-40).lignes)).toBe(0)
   })
@@ -203,7 +231,26 @@ describe('défaut 2 — un paiement par la caisse d’un centime de moins que la
     expect(defauts.map((d) => d.type)).toEqual(['desequilibre'])
   })
 
-  it.fails('PROUVE : un paiement par la caisse que la fiche accepte (39,99 € pour 40,00 €) laisse une écriture équilibrée au centime', () => {
-    expect(solde(ecrituresApres(-39.99).lignes)).toBe(0)
+  it('39,99 € pour une pièce de 40,00 € : la fiche le refuse avant le clic, sous le montant exact qui la règle', () => {
+    const verdict = verdictDuReglement({ date: '2026-03-12', montant: '-39,99' }, ctx, donneesDeLaCaisse, PIECE_DU_PAIEMENT)
+    // Les mots de la base (le code 22023 se garde dans paiementParLaCaisse.test.ts, confronté au texte de la migration).
+    expect(verdict).toEqual({ etat: 'refuse', message:
+      "Ce paiement laisserait 0,01 € à régler sur cette pièce : sous l'écart où une pièce se dit réglée, son écriture ne s'équilibrerait pas. Le montant exact qui la règle est une sortie de 40,00 € — ou corrige d'abord le montant de la pièce." })
+  })
+
+  it('une pièce dont le montant change après son paiement (40,00 → 40,01) se dit à retirer, et retient la validation', () => {
+    const paiement = operation({ id: 'oc-pc', genre: 'paiement', piece_id: 'pc', date: '2025-03-12', montant: -40 })
+    const apport = operation({ id: 'oc-apport', date: '2025-03-01', montant: 100 })
+    const changee = piece('pc', { date_piece: '2025-03-10', montant_ttc: 40.01 })
+    const p = paiementsDesPieces([], [], [], paiementsParLaCaisseSelon(true, [apport, paiement]))
+    const lignes = auBrouillon(lignesPourPiece('d1', changee, { compte: '606100', immobilisation: false }, false, p.get('pc') ?? [], TRESORERIE))
+    const d = donnees({
+      piecesValidees: [P1, changee], operationsDeCaisse: caisseLue([apport, paiement]),
+      ecritures: [E1, E2, ...lignesDeLOperation(apport), ...lignes],
+    })
+    expect(bloquants(d)).toContain('caisse-paiements-a-retirer')
+    const prealable = prealablesDeValidation(d).prealables.find((x) => x.id === 'caisse-paiements-a-retirer')!
+    expect(prealable.nb).toBe(1)
+    expect(prealable.detail?.replace(/\u202f|\u00a0/g, ' ')).toBe('le paiement en espèces du 12/03/2025 (40,00 €), qui laisse sa pièce à 0,01 € de son montant. Dans l’onglet Caisse, retirer le paiement, puis le saisir de nouveau depuis la fiche de la pièce, au montant exact — ou corriger la pièce.')
   })
 })

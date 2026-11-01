@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { jugerLeReglementSelon, MOTS_DU_PAIEMENT } from './paiementParLaCaisse'
 import {
-  confirmationDuReglement, confirmationDuRetraitDuPaiement, especesEntrent, etatDeLaCaisseDeLaFiche, montantPropose,
-  paiementNomme, paiementsDeLaLecture, paiementsDeLaPiece, pieceDuPaiement, piecesPayeesEnEspeces, refusDeLaDesignationParLaCaisse,
-  refusDuRetraitDuPaiement, refusDuTypeDeLaPiece, resteARegler, saisieDuReglement, suppressionRetenueParLaCaisse, verdictDuReglement,
-  type LectureDeLaCaisseDeLaPiece,
+  avertissementDuReglement, confirmationDuReglement, confirmationDuRetraitDuPaiement, especesEntrent, etatDeLaCaisseDeLaFiche,
+  montantPropose, paiementNomme, paiementsDeLaLecture, paiementsDeLaPiece, pieceDuPaiement, piecesPayeesEnEspeces,
+  refusDeLaDesignationParLaCaisse, refusDeSuppressionParLaCaisse, refusDuRetraitDuPaiement, refusDuTypeDeLaPiece, resteARegler,
+  saisieDuReglement, SUPPRESSION_CITEE_PAR_LA_CAISSE, SUPPRESSION_PAYEE_PAR_LA_CAISSE, suppressionRetenueParLaCaisse,
+  verdictDuReglement, type LectureDeLaCaisseDeLaPiece,
 } from './paiementParLaCaisseEcran'
 import { dossierDeLEcran, MONTANT_ILLISIBLE, type ContexteDeLaCaisse, type DonneesDeLaCaisse } from './caisseEcran'
 import type { ModeleComptable } from './engagement'
@@ -116,21 +117,91 @@ describe('les paiements d’une pièce, et ce qui en reste à régler', () => {
 
 describe('la pièce telle que la fonction la lit', () => {
   it('l’enregistrée, et la facture qu’elle désigne lue en entier ; sinon illisible, sans rien deviner', () => {
-    expect(pieceDuPaiement(ACHAT, null)).toEqual({ piece: { id: 'p1', type_piece: 'achat', statut: 'validee', montant_ttc: 120, exemplaire: null } })
+    expect(pieceDuPaiement(ACHAT, null, [])).toEqual({
+      piece: { id: 'p1', type_piece: 'achat', statut: 'validee', montant_ttc: 120, devise: 'EUR', exemplaire: null, paiementsDuReleve: [] },
+    })
     const designee = { ...VENTE, facture_id: 'f1' }
     const f = { id: 'f1', numero: 'F-1', source_de_la_vente: true }
-    expect(pieceDuPaiement(designee, { lignes: [f], complete: true, motif: null }))
+    expect(pieceDuPaiement(designee, { lignes: [f], complete: true, motif: null }, []))
       .toMatchObject({ piece: { exemplaire: { numero: 'F-1', source_de_la_vente: true } } })
-    expect(pieceDuPaiement(designee, null)).toEqual({ illisible: 'les factures émises du dossier ne sont pas encore lues' })
-    expect(pieceDuPaiement(designee, { lignes: [f], complete: false, motif: 'coupée' })).toEqual({ illisible: 'les factures émises du dossier : coupée' })
-    expect(pieceDuPaiement(designee, { lignes: [], complete: true, motif: null }))
+    expect(pieceDuPaiement(designee, null, [])).toEqual({ illisible: 'les factures émises du dossier ne sont pas encore lues' })
+    expect(pieceDuPaiement(designee, { lignes: [f], complete: false, motif: 'coupée' }, [])).toEqual({ illisible: 'les factures émises du dossier : coupée' })
+    expect(pieceDuPaiement(designee, { lignes: [], complete: true, motif: null }, []))
       .toEqual({ illisible: 'la facture dont cette pièce est l’exemplaire n’est pas dans les factures lues' })
+  })
+
+  // LA RELECTURE DU 01/11/2026 (les défauts 2 et 5) : la pièce porte ses paiements PAR LE RELEVÉ — le reste au centime et
+  // l'avertissement se jugent sur tous ses paiements ; ceux de la caisse, la fonction les relit elle-même. Pas lus en entier :
+  // illisible, rien ne se juge.
+  it('ses paiements par le relevé, et eux seuls ; pas lus en entier, illisible', () => {
+    const paiements: PaiementDePiece[] = [
+      { id: 'l1', date: '2026-03-02', montant: -20, origine: 'rapprochement' },
+      { id: 'l2', date: '2026-03-03', montant: -10, origine: 'groupe' },
+      { operation_caisse_id: 'pa', date: '2026-03-05', montant: -50, origine: 'caisse' },
+    ]
+    expect(pieceDuPaiement(ACHAT, null, paiements)).toMatchObject({ piece: { paiementsDuReleve: [{ montant: -20 }, { montant: -10 }] } })
+    expect(pieceDuPaiement(ACHAT, null, null))
+      .toEqual({ illisible: 'les paiements de la pièce par le relevé ne sont pas lus en entier — son reste à régler ne se juge pas' })
+  })
+})
+
+// LE DÉFAUT 5 DE LA RELECTURE DU 01/11/2026 : payer en espèces une pièce que la banque paie déjà — un paiement en double se glisse
+// là. Un AVERTISSEMENT avant le clic, sur le reste de TOUS ses paiements ; rien n'est refusé (un acompte en banque et un solde en
+// espèces se font) ; rien quand il n'y a rien à dire.
+describe('l’avertissement avant le clic : la pièce que la banque paie déjà, ou payée en trop', () => {
+  const piece = (paiementsDuReleve: { montant: number }[], o: Partial<{ montant_ttc: number | null; devise: string }> = {}) =>
+    ({ id: 'p1', montant_ttc: 120 as number | null, devise: 'EUR', paiementsDuReleve, ...o })
+  const avec = (operations: OperationCaisse[] = []) => ({ operations })
+  const dit = (texte: string | null) => (texte === null ? null : sansInsecable(texte))
+
+  it('rien sans paiement du relevé ni trop-payé ; un paiement par la caisse seul, dans le reste, rien non plus', () => {
+    expect(avertissementDuReglement(piece([]), avec(), -12000)).toBeNull()
+    expect(avertissementDuReglement(piece([]), avec([APPORT, PAYE]), -7000)).toBeNull()
+  })
+
+  it('payée en partie par le relevé : ce qu’il a payé, et ce qui reste, tous paiements compris', () => {
+    expect(dit(avertissementDuReglement(piece([{ montant: -20 }]), avec(), -10000)))
+      .toBe('Cette pièce est déjà payée de 20,00 € par le relevé : il en reste 100,00 € à régler, tous paiements compris.')
+    expect(dit(avertissementDuReglement(piece([{ montant: -20 }]), avec([APPORT, PAYE]), -5000)))
+      .toBe('Cette pièce est déjà payée de 20,00 € par le relevé et de 50,00 € par la caisse : il en reste 50,00 € à régler, tous paiements compris.')
+    // Un paiement retiré ne compte plus.
+    expect(dit(avertissementDuReglement(piece([{ montant: -20 }]), avec([APPORT, { ...PAYE, retire_le: '2026-03-06T08:00:00Z' }]), -10000)))
+      .toBe('Cette pièce est déjà payée de 20,00 € par le relevé : il en reste 100,00 € à régler, tous paiements compris.')
+  })
+
+  it('déjà réglée par le relevé, ou payée en trop au-delà de l’écart : le montant en trop, et le point qui le dira', () => {
+    expect(dit(avertissementDuReglement(piece([{ montant: -120 }]), avec(), -5000)))
+      .toBe('Cette pièce est déjà payée de 120,00 € par le relevé : ses paiements la règlent déjà. Ce paiement la paierait de 50,00 € en trop, tous paiements compris — un paiement en double ? La Vue d’ensemble le dira (« pièce payée plus que son montant »).')
+    // Au-delà par la caisse seule : la seconde phrase seule. Dans l'écart (2,40 € pour 120 €), rien : le refus au centime le dit.
+    expect(dit(avertissementDuReglement(piece([]), avec([APPORT, PAYE]), -8000)))
+      .toBe('Ce paiement la paierait de 10,00 € en trop, tous paiements compris — un paiement en double ? La Vue d’ensemble le dira (« pièce payée plus que son montant »).')
+    expect(avertissementDuReglement(piece([]), avec([APPORT, PAYE]), -7240)).toBeNull()
+  })
+
+  it('une pièce en devise, ou sans montant : ce que le relevé a payé, sans reste ni trop-payé', () => {
+    expect(dit(avertissementDuReglement(piece([{ montant: -20 }], { devise: 'USD' }), avec(), -500000)))
+      .toBe('Cette pièce est déjà payée de 20,00 € par le relevé.')
+    expect(dit(avertissementDuReglement(piece([{ montant: -20 }], { montant_ttc: null }), avec(), -10000)))
+      .toBe('Cette pièce est déjà payée de 20,00 € par le relevé.')
+  })
+
+  it('la confirmation le dit, entre le paiement et la caisse du jour', () => {
+    drapeau.leve = true
+    const d = donnees({ operations: [APPORT] })
+    const p = { id: 'p1', type_piece: 'achat' as const, statut: 'validee' as const, montant_ttc: 120, devise: 'EUR', exemplaire: null, paiementsDuReleve: [{ montant: -20 }] }
+    const v = verdictDuReglement({ date: '2026-03-05', montant: '-50' }, CTX, d, p)
+    if (v.etat !== 'permis') throw new Error(v.etat)
+    expect(sansInsecable(confirmationDuReglement('fournitures.pdf', v, CAISSE, avertissementDuReglement(p, d, -5000))))
+      .toBe('Régler la pièce « fournitures.pdf » par la caisse : le paiement en espèces du 05/03/2026 de 50,00 € ? '
+        + 'Cette pièce est déjà payée de 20,00 € par le relevé : il en reste 100,00 € à régler, tous paiements compris. '
+        + `La caisse du 05/03/2026 passera à 150,00 €. Sa contrepartie au compte de la caisse (${CAISSE}) s’écrit avec les écritures `
+        + 'de la pièce : déjà générées, elles seront à régénérer (Écritures).')
   })
 })
 
 describe('le verdict avant le clic, sur la saisie telle qu’elle part', () => {
   const d = donnees({ operations: [APPORT] })
-  const piece = { id: 'p1', type_piece: 'achat' as const, statut: 'validee' as const, montant_ttc: 120, exemplaire: null }
+  const piece = { id: 'p1', type_piece: 'achat' as const, statut: 'validee' as const, montant_ttc: 120, devise: 'EUR', exemplaire: null, paiementsDuReleve: [] }
 
   it('le drapeau baissé : absent, sans rien juger', () => {
     drapeau.leve = false
@@ -158,7 +229,7 @@ describe('le verdict avant le clic, sur la saisie telle qu’elle part', () => {
     expect(v).toMatchObject({ etat: 'permis', saisie: { piece_id: 'p1', date: '2026-03-05', montant: -50 }, soldeDuJour: 15000 })
     if (v.etat !== 'permis') return
     expect(v.operation).toMatchObject({ genre: 'paiement', piece_id: 'p1', date: '2026-03-05', montant: -50, origine: 'cabinet' })
-    const texte = sansInsecable(confirmationDuReglement('fournitures.pdf', v, CAISSE))
+    const texte = sansInsecable(confirmationDuReglement('fournitures.pdf', v, CAISSE, null))
     expect(texte).toBe(`Régler la pièce « fournitures.pdf » par la caisse : le paiement en espèces du 05/03/2026 de 50,00 € ? `
       + `La caisse du 05/03/2026 passera à 150,00 €. Sa contrepartie au compte de la caisse (${CAISSE}) s’écrit avec les écritures `
       + 'de la pièce : déjà générées, elles seront à régénérer (Écritures).')
@@ -204,8 +275,23 @@ describe('la pièce qu’un paiement cite', () => {
     expect(refusDeLaDesignationParLaCaisse(vente, null, ops)).toBeNull()
   })
 
+  // LE DÉFAUT 3 DE LA RELECTURE DU 01/11/2026 : partie sur une caisse lue en partie, la suppression se refuse en base — la garde
+  // du brouillon (ses mots, 23503), ou la clé de l'opération (la raison de Postgres, 23503) ; traduite, ou rien.
+  it('le refus de la base à la suppression, traduit : la garde du brouillon, la clé de l’opération ; tout autre refus, rien', () => {
+    expect(refusDeSuppressionParLaCaisse({ code: '23503', message: MOTS_DU_PAIEMENT.piece_payee_supprimee.gabarit })).toBe(SUPPRESSION_PAYEE_PAR_LA_CAISSE)
+    expect(refusDeSuppressionParLaCaisse({
+      code: '23503', message: 'update or delete on table "pieces" violates foreign key constraint "operations_caisse_piece_id_fkey" on table "operations_caisse"',
+      details: 'Key (id)=(p1) is still referenced from table "operations_caisse".',
+    })).toBe(SUPPRESSION_CITEE_PAR_LA_CAISSE)
+    expect(refusDeSuppressionParLaCaisse({ code: '23503', message: 'violates foreign key constraint "autre_fkey" on table "autre"' })).toBeNull()
+    expect(refusDeSuppressionParLaCaisse({ code: '42501', message: MOTS_DU_PAIEMENT.piece_payee_supprimee.gabarit })).toBeNull()
+    expect(refusDeSuppressionParLaCaisse(null)).toBeNull()
+    // Les mots de l'écran sont ceux de la base, l'apostrophe typographique près.
+    expect(SUPPRESSION_PAYEE_PAR_LA_CAISSE.replace(/’/g, "'")).toBe(MOTS_DU_PAIEMENT.piece_payee_supprimee.gabarit)
+  })
+
   it('la suppression : retenue par tout paiement qui la cite, retiré ou non ; libre sans', () => {
-    expect(suppressionRetenueParLaCaisse('p1', ops)).toMatch(/^Cette pièce est payée par la caisse : elle ne se supprime pas/)
+    expect(suppressionRetenueParLaCaisse('p1', ops)).toMatch(/^Cette pièce est payée par la caisse : retire d’abord son paiement\. Elle ne se supprime pas pour autant/)
     expect(suppressionRetenueParLaCaisse('p1', [{ ...PAYE, retire_le: '2026-03-06T00:00:00Z' }])).toMatch(/^Un paiement de la caisse, retiré, cite cette pièce/)
     expect(suppressionRetenueParLaCaisse('p9', ops)).toBeNull()
   })

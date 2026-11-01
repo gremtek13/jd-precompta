@@ -43,6 +43,11 @@
 -- pas sans lui, le retrait du paiement emporte sa contrepartie ; la pièce qu'un paiement cite ne se supprime plus, sa
 -- contrepartie partie, ni son paiement retiré ; le dossier entier part avec ses paiements et leurs contreparties. Une
 -- étape de genre « …4 » ne se joue qu'avec la migration : sans elle, une ligne dit qu'elles attendent (EN ATTENTE).
+--
+-- ÉTENDU LE 01/11/2026 (la relecture de C8 et C9) : les contrôles 11h à 11j — la pièce que son paiement cite, sa
+-- contrepartie encore au brouillon, ne se supprime pas, et le refus le dit sous les mots de la caisse (23503 : retirer
+-- d'abord son paiement), pour le cabinet comme pour le propriétaire ; une autre modification de la contrepartie garde les
+-- mots d'hier.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -211,6 +216,14 @@ begin
     array['controle4', '11g. … ni son paiement retiré', 'chef', $q$select retirer_operation_caisse('{S}', o.id) from operations_caisse o where o.dossier_id = '{S}' and o.genre = 'paiement';
       delete from pieces where id = '{PS}'$q$,
       '23503', '%violates foreign key constraint "operations_caisse_piece_id_fkey" on table "operations_caisse"%'],
+    -- La relecture du 01/11/2026 : la contrepartie encore au brouillon, la clé du brouillon met sa pièce à nul AVANT que celle
+    -- de la caisse ne refuse — la garde de l'écriture le dit sous ses mots, non plus « ne se modifie pas ».
+    array['controle4', '11h. la pièce payée, sa contrepartie au brouillon : sa suppression se refuse sous les mots de la caisse', 'chef', $q$delete from pieces where id = '{PS}'$q$,
+      '23503', 'Cette pièce est payée par la caisse : retire d''abord son paiement. Elle ne se supprime pas pour autant — l''opération de caisse, même retirée, la cite pour la piste d''audit : si elle n''est pas une pièce de ce dossier, change ensuite son type en « autre ».'],
+    array['controle4', '11i. … le propriétaire aussi : la garde en juge', 'postgres', $q$delete from pieces where id = '{PS}'$q$,
+      '23503', 'Cette pièce est payée par la caisse : retire d''abord son paiement. Elle ne se supprime pas pour autant — l''opération de caisse, même retirée, la cite pour la piste d''audit : si elle n''est pas une pièce de ce dossier, change ensuite son type en « autre ».'],
+    array['controle4', '11j. … une autre modification de la contrepartie garde les mots d''hier', 'postgres', $q$update ecritures_brouillon set piece_id = null, libelle = 'autre' where piece_id = '{PS}'$q$,
+      '42501', 'L''écriture d''une opération de caisse ne se modifie pas : retire l''opération, puis saisis-la de nouveau.'],
     array['controle4', '12. le dossier se supprime avec ses paiements par la caisse et leurs contreparties', 'chef', $q$select enregistrer_operation_caisse('{K}', 'apport', '2026-03-01', 50, null, null, null, '[{"compte":"530000","sens":"debit","montant":50},{"compte":"108000","sens":"credit","montant":50}]');
       select regler_piece_par_la_caisse('{K}', '{PK}', '2026-03-03', -20);
       insert into ecritures_brouillon (dossier_id, date, compte, libelle, montant, sens, operation_caisse_id, piece_id)

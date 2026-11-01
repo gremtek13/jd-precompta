@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ecritureDeLOperation, ensembleDuJour, type EtatDeLaCaisse } from './caisse'
 import {
-  caisseNegative, caisseNegativeDite, CAISSE_PAS_EN_BASE, detailDesOperationsAReprendre, detailDesRecettesARevoir,
+  caisseNegative, caisseNegativeDite, CAISSE_PAS_EN_BASE, detailDesOperationsAReprendre, detailDesPaiementsARetirer,
+  detailDesPaiementsDePiecesAValider, detailDesRecettesARevoir, paiementsDePiecesAValider, paiementsParLaCaisseARetirer,
   detailDesVersementsEnRecette, dossierTientUneCaisse, etatDeLaCaisseLue, facturesDeLaRecetteARevoir, journalDeLOperation,
   justificatifDeLaCaisse, LIBELLE_RAISON_DE_REPRENDRE, mouvementsDAvantLOuverture, piecesDeVenteDe,
   libelleDitUnVersementDEspeces, motifDesOperationsDeCaisse, OPERATIONS_DE_CAISSE_ABSENTES, operationNommee, operationsDe,
@@ -14,7 +15,9 @@ import { absenceFec, pisteAudit, rupturesPisteAudit } from './pisteAudit'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { AUCUN_HORS_DES_LOTS, ecartDuLot } from './mouvementsDesVentes'
 import type { ModeleComptable } from './engagement'
-import type { Categorie, EcritureBrouillon, EncaissementFacture, OperationCaisse, VentilationBancaire } from './types'
+import type { Categorie, EcritureBrouillon, EncaissementFacture, OperationCaisse, Piece, VentilationBancaire } from './types'
+import { paiementsDesPieces, type PaiementsDesPieces } from './rattachement'
+import { paiementsParLaCaisseSelon } from './paiementParLaCaisse'
 import { defautsDeNumerotation } from './validationExercice'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { anomaliesDgfip, colonnes, desequilibresDgfip } from '../test/fecDgfip'
@@ -772,5 +775,98 @@ describe('le paiement d’une pièce par la caisse, dans les contrôles', () => 
     const reconnue = { ...r, encaissements_du_jour: ['pv'] }
     expect(recettesDeCaisseARevoir([reconnue, encaisse], etatDeLaCaisseLue([reconnue, encaisse], d)!, null)).toEqual([])
     expect(recettesDeCaisseARevoir([reconnue, encaisse], etatDeLaCaisseLue([reconnue, encaisse], dossier())!, null)).toHaveLength(1)
+  })
+})
+
+// LA RELECTURE DU 01/11/2026 — la pièce à valider qu'un paiement cite (le défaut 1), et le paiement que sa pièce contredit
+// depuis (les défauts 2 et 4). Des jeux FICTIFS.
+describe('la pièce à valider qu’un paiement cite, et le paiement que sa pièce contredit', () => {
+  type PieceJugee = Pick<Piece, 'id' | 'type_piece' | 'montant_ttc' | 'devise' | 'date_piece'>
+  const piece = (id: string, o: Partial<PieceJugee> = {}): PieceJugee =>
+    ({ id, type_piece: 'achat', montant_ttc: 40, devise: 'EUR', date_piece: '2026-03-10', ...o })
+  const paiement = (id: string, pieceId: string, o: Partial<OperationCaisse> = {}) =>
+    operation({ id, genre: 'paiement', date: '2026-03-12', montant: -40, piece_id: pieceId, categorie_id: null, encaissements_du_jour: null, ...o })
+  const tous = (operations: OperationCaisse[], releve: { piece_id: string; date: string; montant: number }[] = []): PaiementsDesPieces =>
+    paiementsDesPieces(releve.map((r, i) => ({
+      id: `l${i}`, piece_id: r.piece_id, date: r.date, montant: r.montant, statut: 'rapprochee' as const, reglement_groupe: false,
+      encaissements_de_factures: false,
+    })), [], [], paiementsParLaCaisseSelon(true, operations))
+  const aRetirer = (operations: OperationCaisse[], pieces: PieceJugee[], frontiere: string | null = null, releve: { piece_id: string; date: string; montant: number }[] = []) =>
+    paiementsParLaCaisseARetirer(operations, pieces, tous(operations, releve), frontiere)
+      .map((x) => [x.paiement.operation_caisse_id, x.raison, x.resteCentimes])
+
+  it('le drapeau baissé : aucun paiement, aucun point', () => {
+    drapeau.leve = false
+    expect(paiementsDePiecesAValider([paiement('o1', 'p1')], [piece('p1')], null)).toEqual([])
+    expect(paiementsParLaCaisseARetirer([paiement('o1', 'p1')], [piece('p1', { type_piece: 'vente' })], tous([paiement('o1', 'p1')]), null)).toEqual([])
+  })
+
+  it('la pièce à valider qu’un paiement vivant cite, hors des exercices figés ; ni un paiement retiré ou remplacé, ni une pièce validée', () => {
+    drapeau.leve = true
+    const a = paiement('o1', 'p1', { date: '2026-01-05' })
+    const b = paiement('o2', 'p1', { date: '2026-02-05', montant: -10 })
+    const retire = paiement('o3', 'p2', { retire_le: '2026-03-13T00:00:00Z' })
+    const remplace = paiement('o4', 'p2')
+    const remplacant = paiement('o5', 'p2', { remplace_id: 'o4' })
+    const liste = paiementsDePiecesAValider([b, a, retire, remplace, remplacant], [piece('p1'), piece('p2')], null)
+    expect(liste.map((x) => [x.piece.id, x.paiement.operation_caisse_id])).toEqual([['p1', 'o1'], ['p1', 'o2'], ['p2', 'o5']])
+    // Une pièce qui n'est pas à valider (absente de la liste passée) : rien.
+    expect(paiementsDePiecesAValider([a], [piece('p9')], null)).toEqual([])
+    // Figé : le paiement d'un exercice validé ne se reprend plus.
+    expect(paiementsDePiecesAValider([a, b], [piece('p1')], '2026-01-31').map((x) => x.paiement.operation_caisse_id)).toEqual(['o2'])
+    expect(detailDesPaiementsDePiecesAValider(liste.slice(0, 1).map((x) => ({ ...x, piece: { ...x.piece, date_piece: '2025-12-20' } })))
+      .replace(/\u202f|\u00a0/g, ' '))
+      .toBe('Payée par la caisse : une pièce du 20/12/2025, payée en espèces le 05/01/2026 (40,00 €). Validée, sa sortie d’espèces s’écrit avec ses écritures, dans l’onglet Écritures ; une pièce payée par la caisse ne se retire qu’après son paiement.')
+    expect(detailDesPaiementsDePiecesAValider([{ ...liste[0], piece: { date_piece: null } }, liste[1]])).toMatch(/^Payées par la caisse : une pièce sans date, payée en espèces le 05\/01\/2026 .* ; une pièce du 10\/03\/2026, payée en espèces le 05\/02\/2026/)
+  })
+
+  it('le sens : une sortie pour une pièce devenue une vente, une entrée pour un achat — et un avoir, à l’envers', () => {
+    drapeau.leve = true
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1')])).toEqual([])
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { type_piece: 'vente' })])).toEqual([['o1', 'sens', null]])
+    expect(aRetirer([paiement('o1', 'p1', { montant: 40 })], [piece('p1', { type_piece: 'vente' })])).toEqual([])
+    expect(aRetirer([paiement('o1', 'p1', { montant: 40 })], [piece('p1')])).toEqual([['o1', 'sens', null]])
+    // Un avoir d'achat (montant négatif) : les espèces entrent ; une sortie le contredit.
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { montant_ttc: -40 })])).toEqual([['o1', 'sens', null]])
+    expect(aRetirer([paiement('o1', 'p1', { montant: 40 })], [piece('p1', { montant_ttc: -40 })])).toEqual([])
+    // Ni un paiement figé, ni une pièce que la liste ne porte pas.
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { type_piece: 'vente' })], '2026-12-31')).toEqual([])
+    expect(aRetirer([paiement('o1', 'p1')], [])).toEqual([])
+  })
+
+  it('au centime : le montant de la pièce changé après le paiement, dans l’écart où la banque alignerait — pas au-delà, ni au centime', () => {
+    drapeau.leve = true
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { montant_ttc: 40.01 })])).toEqual([['o1', 'au_centime', 1]])
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { montant_ttc: 39.99 })])).toEqual([['o1', 'au_centime', -1]])
+    // L'écart d'alignement, 2 % DU MONTANT DE LA PIÈCE (0,8162 € pour 40,81 €) : au seuil, encore ; au-delà, un paiement en
+    // partie (« payée en partie »).
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { montant_ttc: 40.8 })])).toEqual([['o1', 'au_centime', 80]])
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { montant_ttc: 40.81 })])).toEqual([['o1', 'au_centime', 81]])
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { montant_ttc: 40.82 })])).toEqual([])
+    // Une pièce en devise, ou sans montant, ne se juge pas au centime.
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { montant_ttc: 40.01, devise: 'USD' })])).toEqual([])
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { montant_ttc: null })])).toEqual([])
+    // Tous ses paiements comptent, le relevé compris : 20 € de banque et 20 € d'espèces règlent 40 € ; 20 + 19,99, non.
+    expect(aRetirer([paiement('o1', 'p1', { montant: -20 })], [piece('p1')], null, [{ piece_id: 'p1', date: '2026-03-01', montant: -20 }])).toEqual([])
+    expect(aRetirer([paiement('o1', 'p1', { montant: -19.99 })], [piece('p1')], null, [{ piece_id: 'p1', date: '2026-03-01', montant: -20 }]))
+      .toEqual([['o1', 'au_centime', 1]])
+    // Le DERNIER paiement par la caisse de la pièce se nomme, une fois ; un paiement à contresens se dit sous son sens, seul.
+    expect(aRetirer([paiement('o1', 'p1', { montant: -20, date: '2026-03-02' }), paiement('o2', 'p1', { montant: -20 })], [piece('p1', { montant_ttc: 40.01 })]))
+      .toEqual([['o2', 'au_centime', 1]])
+    expect(aRetirer([paiement('o1', 'p1')], [piece('p1', { type_piece: 'vente', montant_ttc: 40.01 })])).toEqual([['o1', 'sens', null]])
+  })
+
+  it('le détail nomme chaque paiement, ce que sa pièce a changé, et le remède', () => {
+    drapeau.leve = true
+    const liste = paiementsParLaCaisseARetirer(
+      [paiement('o1', 'p1', { date: '2026-03-02' }), paiement('o2', 'p2', { montant: 25 }), paiement('o3', 'p3')],
+      [piece('p1', { type_piece: 'vente' }), piece('p2', { montant_ttc: 25 }), piece('p3', { montant_ttc: 39.5 })],
+      tous([paiement('o1', 'p1', { date: '2026-03-02' }), paiement('o2', 'p2', { montant: 25 }), paiement('o3', 'p3')]), null)
+    expect(liste.map((x) => [x.paiement.operation_caisse_id, x.raison])).toEqual([['o1', 'sens'], ['o2', 'sens'], ['o3', 'au_centime']])
+    expect(detailDesPaiementsARetirer(liste).replace(/\u202f|\u00a0/g, ' ')).toBe(
+      'le paiement en espèces du 02/03/2026 (40,00 €), une sortie d’espèces pour une pièce devenue une vente ou un avoir d’achat ; '
+      + 'le paiement en espèces du 12/03/2026 (25,00 €), une entrée d’espèces pour une pièce devenue un achat ou un avoir de vente ; '
+      + 'le paiement en espèces du 12/03/2026 (40,00 €), qui laisse sa pièce à 0,50 € au-delà de son montant. '
+      + 'Dans l’onglet Caisse, retirer le paiement, puis le saisir de nouveau depuis la fiche de la pièce, au montant exact — ou corriger la pièce.')
   })
 })

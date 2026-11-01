@@ -173,6 +173,9 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'versements-especes-en-recette': 'tresorerie',
   // Le mouvement d'avant l'ouverture classé sur la caisse (étape C9b) : le 53 compté deux fois.
   'caisse-mouvements-avant-ouverture': 'tresorerie',
+  // Le paiement par la caisse que sa pièce contredit depuis — un type ou un montant changé (la relecture du 01/11/2026) : ce
+  // que le 53 paie, et son écriture qui ne s'équilibrerait plus.
+  'caisse-paiements-a-retirer': 'tresorerie',
   // Les relevés attendus de chaque exercice (« Relevés bancaires AAAA »).
   banque: 'tresorerie',
   // Les recettes : les ventes que l'application émet, et le taux d'une recette du relevé.
@@ -194,6 +197,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'recettes-de-caisse-a-revoir': 'recettes',
   // Les dépenses : les pièces, leurs écritures, leurs postes.
   'pieces-a-valider': 'depenses',
+  // La pièce à valider qu'un paiement par la caisse cite (la relecture du 01/11/2026) : une pièce, comme celles d'au-dessus.
+  'pieces-a-valider-payees-par-la-caisse': 'depenses',
   'pieces-sans-date': 'depenses',
   'date-impossible': 'depenses',
   'sans-categorie': 'depenses',

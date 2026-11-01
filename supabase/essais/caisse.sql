@@ -103,6 +103,18 @@
 -- paiement allonge), et peut porter avant ce suffixe celui d'une étape d'avant (« valeur24h »). Ce qui supprime — la
 -- contrepartie que « Régénérer » reprend, la pièce qu'un paiement cite — se joue sur une réplique, dans
 -- `caisseSuppression.sql`.
+--
+-- ÉTENDU LE 01/11/2026 (la relecture de C8 et C9 : le reste au centime, refus 9 bis de `regler_piece_par_la_caisse` ;
+-- C9-Q1, sur la recommandation). Les contrôles 232 à 232w, deux dossiers jetables de plus (préfixe
+-- `ca155e00-0000-4000-800b`) : le centime qui resterait se refuse et le montant exact se dit, d'un achat comme d'une vente ;
+-- l'écart même (2 %) et son plafond (5 €) se refusent, un centime au-delà passe ; une pièce à valider aussi ; payée en
+-- trop dans l'écart ; la pièce déjà réglée par ses autres paiements ; le reste se juge sur TOUS les paiements — un
+-- mouvement rapproché (et plus quand il est remis à traiter), la part d'un virement groupé (et plus quand le mouvement ne
+-- règle plus en groupe), ses paiements par la caisse (un retiré ne compte plus) ; une pièce en devise ne se juge pas ;
+-- l'ordre, après le plafond d'une pièce validée et avant la caisse négative. La part d'un virement MIXTE, que la fonction
+-- compte comme `classer_mouvement_par_encaissements` la juge, ne se monte pas ici (une facture d'avant la bascule, son
+-- exemplaire et le classement d'un crédit par ses encaissements) : le module la juge (`paiementParLaCaisse.test.ts`), et la
+-- garde de tête de la migration épingle `encaissement_justifie_son_mouvement` à son empreinte.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -242,7 +254,18 @@ begin
     || jsonb_build_object(
       'G8', 'ca155e00-0000-4000-800a-000000000008', 'H8', 'ca155e00-0000-4000-800a-000000000009',
       'MG1', 'ca155e00-0000-4000-800a-000000000037', 'AG1', 'ca155e00-0000-4000-800a-000000000047',
-      'AG2', 'ca155e00-0000-4000-800a-000000000048');
+      'AG2', 'ca155e00-0000-4000-800a-000000000048')
+    -- La relecture du 01/11/2026 (le reste au centime, 9 bis) : deux dossiers (R9, qui ne rejoue que le relevé que ce banc
+    -- connaît - G9, le virement groupé), neuf pièces, trois mouvements rapprochés. (Aucun point-virgule ici non plus.)
+    || jsonb_build_object(
+      'R9', 'ca155e00-0000-4000-800b-000000000001', 'G9', 'ca155e00-0000-4000-800b-000000000002',
+      'RA', 'ca155e00-0000-4000-800b-000000000011', 'RB', 'ca155e00-0000-4000-800b-000000000012',
+      'RC', 'ca155e00-0000-4000-800b-000000000013', 'RD', 'ca155e00-0000-4000-800b-000000000014',
+      'RE', 'ca155e00-0000-4000-800b-000000000015', 'RF', 'ca155e00-0000-4000-800b-000000000016',
+      'RG', 'ca155e00-0000-4000-800b-000000000017', 'RH', 'ca155e00-0000-4000-800b-000000000018',
+      'GA', 'ca155e00-0000-4000-800b-000000000019',
+      'MRB', 'ca155e00-0000-4000-800b-000000000021', 'MRF', 'ca155e00-0000-4000-800b-000000000022',
+      'MGA', 'ca155e00-0000-4000-800b-000000000023');
 
   select string_agg(n::text, '/') into avant from (values
     ((select count(*) from dossiers)), ((select count(*) from operations_caisse)), ((select count(*) from ecritures_brouillon)),
@@ -1546,7 +1569,7 @@ begin
       '23514', 'Cette pièce est payée par la caisse : elle reste une pièce d''achat ou de vente tant que ce paiement n''est pas retiré.'],
     array['controle4', '214b. … ni une pièce « autre »', 'chef', $q$update pieces set type_piece = 'autre' where id = '{QV}'$q$,
       '23514', 'Cette pièce est payée par la caisse : elle reste une pièce d''achat ou de vente tant que ce paiement n''est pas retiré.'],
-    array['controle4', '214c. MUTATION : elle devient une pièce de vente (le sens du paiement se dira au pointage)', 'chef', $q$update pieces set type_piece = 'vente' where id = '{QV}'$q$,
+    array['controle4', '214c. MUTATION : elle devient une pièce de vente (le sens du paiement, la Vue d''ensemble le dit : caisse-paiements-a-retirer)', 'chef', $q$update pieces set type_piece = 'vente' where id = '{QV}'$q$,
       'OK', ''],
     array['controle4', '214d. elle ne change pas de dossier', 'chef', $q$update pieces set dossier_id = '{W8}' where id = '{QV}'$q$,
       '23514', 'Cette pièce est citée par un paiement de la caisse de son dossier : elle ne change pas de dossier.'],
@@ -1680,6 +1703,78 @@ begin
     -- 220. Le paiement retiré emporte sa contrepartie (213).
     array['fait4', '220. le paiement de QV retiré', 'chef', $q$select retirer_operation_caisse('{P8}', '{PQV}')$q$, 'OK', ''],
     array['valeur4', '220b. … et sa contrepartie avec lui', 'postgres', $q$select count(*)::text from ecritures_brouillon where operation_caisse_id = '{PQV}'$q$, '', '0'],
+
+    -- 232. LE RESTE AU CENTIME (9 bis ; la relecture du 01/11/2026, le défaut 2 ; C9-Q1, sur la recommandation). Dans R9 :
+    -- 2 000 € en caisse ; RA, un achat validé de 40 € ; RB, de 100 €, que le relevé paie de 60 € ; RC, une vente de 25 € ;
+    -- RD, un achat à valider de 1 000 € (l'écart plafonné à 5 €) ; RE, de 40 € en dollars ; RF, de 40 €, que le relevé
+    -- règle ; RG, un achat à valider de 40 € ; RH, un achat validé de 3 000 €. Dans G9 : GA, de 100 €, dont un virement
+    -- groupé paie 60 €. Chaque contrôle s'annule.
+    array['jeu4', '232. le reste au centime : deux dossiers, neuf pièces, trois mouvements rapprochés, une part d''un virement groupé', 'postgres', $q$insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, statut_tva, ventes_par_les_factures) values
+      ('{R9}', 'ESSAI CAISSE R9', '{CAB}', 'tresorerie', '455000', null, false), ('{G9}', 'ESSAI CAISSE G9', '{CAB}', 'tresorerie', '455000', null, false);
+      insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, montant_ttc, devise, montant_devise) values
+      ('{RA}', '{R9}', '{R9}/essai-ra.pdf', 'essai-ra.pdf', 'achat', 'validee', 40, 'EUR', null), ('{RB}', '{R9}', '{R9}/essai-rb.pdf', 'essai-rb.pdf', 'achat', 'validee', 100, 'EUR', null),
+      ('{RC}', '{R9}', '{R9}/essai-rc.pdf', 'essai-rc.pdf', 'vente', 'validee', 25, 'EUR', null), ('{RD}', '{R9}', '{R9}/essai-rd.pdf', 'essai-rd.pdf', 'achat', 'a_valider', 1000, 'EUR', null),
+      ('{RE}', '{R9}', '{R9}/essai-re.pdf', 'essai-re.pdf', 'achat', 'validee', 40, 'USD', 44), ('{RF}', '{R9}', '{R9}/essai-rf.pdf', 'essai-rf.pdf', 'achat', 'validee', 40, 'EUR', null),
+      ('{RG}', '{R9}', '{R9}/essai-rg.pdf', 'essai-rg.pdf', 'achat', 'a_valider', 40, 'EUR', null), ('{RH}', '{R9}', '{R9}/essai-rh.pdf', 'essai-rh.pdf', 'achat', 'validee', 3000, 'EUR', null),
+      ('{GA}', '{G9}', '{G9}/essai-ga.pdf', 'essai-ga.pdf', 'achat', 'validee', 100, 'EUR', null);
+      insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, piece_id) values
+      ('{MRB}', '{R9}', '2026-03-02', 'ESSAI PRLV RB', -60, 'rapprochee', '{RB}'), ('{MRF}', '{R9}', '2026-03-02', 'ESSAI PRLV RF', -40, 'rapprochee', '{RF}');
+      insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, reglement_groupe) values
+      ('{MGA}', '{G9}', '2026-03-02', 'ESSAI VIREMENT GROUPE', -60, 'rapprochee', true)$q$, '', ''],
+    -- La part du virement groupé, à part : src/test/essaiCaisse.ts ne la rejoue pas, et met G9 seul hors de son jeu.
+    array['jeu4', '232-. la part de GA dans le virement groupé de G9', 'postgres', $q$insert into reglements_groupes (dossier_id, ligne_bancaire_id, piece_id, montant) values ('{G9}', '{MGA}', '{GA}', -60)$q$, '', ''],
+    array['fait4', '232a. 2 000 € en caisse le 01/03 dans R9', 'chef', $q$select enregistrer_operation_caisse('{R9}', 'apport', '2026-03-01', 2000, null, null, null, '[{"compte":"530000","sens":"debit","montant":2000},{"compte":"108000","sens":"credit","montant":2000}]')$q$,
+      'OK', ''],
+    array['fait4', '232a-. … et 500 € dans G9', 'chef', $q$select enregistrer_operation_caisse('{G9}', 'apport', '2026-03-01', 500, null, null, null, '[{"compte":"530000","sens":"debit","montant":500},{"compte":"108000","sens":"credit","montant":500}]')$q$,
+      'OK', ''],
+    array['controle4', '232b. 39,99 € pour une pièce validée de 40,00 € : le centime qui resterait se refuse, et le montant exact se dit', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RA}', '2026-03-03', -39.99)$q$,
+      '22023', 'Ce paiement laisserait 0,01 € à régler sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est une sortie de 40,00 € — ou corrige d''abord le montant de la pièce.'],
+    array['controle4', '232c. MUTATION : 40,00 €, au centime, passe', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RA}', '2026-03-03', -40)$q$,
+      'OK', ''],
+    array['controle4', '232d. 39,20 € : 0,80 €, l''écart même (2 % de 40 €), se refuse', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RA}', '2026-03-03', -39.2)$q$,
+      '22023', 'Ce paiement laisserait 0,80 € à régler sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est une sortie de 40,00 € — ou corrige d''abord le montant de la pièce.'],
+    array['controle4', '232e. MUTATION : 39,19 € : 0,81 €, au-delà de l''écart — un acompte, il passe', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RA}', '2026-03-03', -39.19)$q$,
+      'OK', ''],
+    array['controle4', '232f. la pièce que le relevé paie de 60 € : 39,99 € de plus se refusent, sur TOUS ses paiements', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RB}', '2026-03-03', -39.99)$q$,
+      '22023', 'Ce paiement laisserait 0,01 € à régler sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est une sortie de 40,00 € — ou corrige d''abord le montant de la pièce.'],
+    array['controle4', '232g. MUTATION : les 40,00 € qui restent passent', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RB}', '2026-03-03', -40)$q$,
+      'OK', ''],
+    array['controle4', '232h. une vente de 25,00 € : 24,90 € reçus se refusent, une entrée exacte se dit', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RC}', '2026-03-03', 24.9)$q$,
+      '22023', 'Ce paiement laisserait 0,10 € à régler sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est une entrée de 25,00 € — ou corrige d''abord le montant de la pièce.'],
+    array['controle4', '232i. une pièce à valider aussi, son montant se corrigeant d''abord : 999 € pour 1 000 €', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RD}', '2026-03-03', -999)$q$,
+      '22023', 'Ce paiement laisserait 1,00 € à régler sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est une sortie de 1000,00 € — ou corrige d''abord le montant de la pièce.'],
+    array['controle4', '232j. … 995,00 € : 5 € pile, le plafond de l''écart, se refuse', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RD}', '2026-03-03', -995)$q$,
+      '22023', 'Ce paiement laisserait 5,00 € à régler sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est une sortie de 1000,00 € — ou corrige d''abord le montant de la pièce.'],
+    array['controle4', '232k. MUTATION : 994,99 €, au-delà des 5 €, passe', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RD}', '2026-03-03', -994.99)$q$,
+      'OK', ''],
+    array['controle4', '232l. payés en trop dans l''écart : 40,01 € pour la pièce à valider de 40 € (sans plafond, son montant étant une lecture)', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RG}', '2026-03-03', -40.01)$q$,
+      '22023', 'Ce paiement laisserait 0,01 € payés en trop sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est une sortie de 40,00 € — ou corrige d''abord le montant de la pièce.'],
+    array['controle4', '232m. ordre : le plafond d''une pièce validée avant le reste au centime (40,01 € pour RA)', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RA}', '2026-03-03', -40.01)$q$,
+      '22023', 'Les paiements de cette pièce par la caisse dépasseraient son montant : relis ses paiements.'],
+    array['controle4', '232n. ordre : le reste au centime avant la caisse négative (2 999 € pour 3 000 €, 2 000 € en caisse)', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RH}', '2026-03-03', -2999)$q$,
+      '22023', 'Ce paiement laisserait 1,00 € à régler sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est une sortie de 3000,00 € — ou corrige d''abord le montant de la pièce.'],
+    array['controle4', '232o. MUTATION : une pièce en devise ne se juge pas au centime — son montant en euros n''est qu''un provisoire', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RE}', '2026-03-03', -39.99)$q$,
+      'OK', ''],
+    array['controle4', '232p. la pièce que le relevé règle déjà : 0,50 € de plus la paieraient en trop, dans l''écart', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RF}', '2026-03-03', -0.5)$q$,
+      '22023', 'Cette pièce est déjà réglée par ses autres paiements : ce paiement la paierait de 0,50 € en trop, sous l''écart où une pièce se dit réglée, et son écriture ne s''équilibrerait pas.'],
+    array['controle4', '232q. MUTATION : 10 € de plus, au-delà de l''écart, ne se refusent pas ici — la Vue d''ensemble dit la pièce payée en trop', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RF}', '2026-03-03', -10)$q$,
+      'OK', ''],
+    array['controle4', '232r. MUTATION : un mouvement remis à traiter ne paie plus : 39,99 € pour RB passent, un acompte', 'chef', $q$update lignes_bancaires set statut = 'non_rapprochee', piece_id = null where id = '{MRB}';
+      select regler_piece_par_la_caisse('{R9}', '{RB}', '2026-03-03', -39.99)$q$,
+      'OK', ''],
+    array['fait4', '232s. les 40,00 € qui restent de RB, payés par la caisse le 04/03', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RB}', '2026-03-04', -40)$q$,
+      'OK', ''],
+    array['capture4', 'le paiement de RB', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{R9}' and o.genre = 'paiement' and o.date = '2026-03-04'$q$, 'PRB', ''],
+    array['controle4', '232t. réglée par la banque et la caisse : 0,30 € de plus la paieraient en trop', 'chef', $q$select regler_piece_par_la_caisse('{R9}', '{RB}', '2026-03-05', -0.3)$q$,
+      '22023', 'Cette pièce est déjà réglée par ses autres paiements : ce paiement la paierait de 0,30 € en trop, sous l''écart où une pièce se dit réglée, et son écriture ne s''équilibrerait pas.'],
+    array['controle4', '232u. un paiement retiré ne compte plus : 39,99 € à sa place se refusent', 'chef', $q$select retirer_operation_caisse('{R9}', '{PRB}');
+      select regler_piece_par_la_caisse('{R9}', '{RB}', '2026-03-05', -39.99)$q$,
+      '22023', 'Ce paiement laisserait 0,01 € à régler sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est une sortie de 40,00 € — ou corrige d''abord le montant de la pièce.'],
+    array['controle4', '232v. la part d''un virement groupé compte : 39,99 € de plus pour GA se refusent', 'chef', $q$select regler_piece_par_la_caisse('{G9}', '{GA}', '2026-03-03', -39.99)$q$,
+      '22023', 'Ce paiement laisserait 0,01 € à régler sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est une sortie de 40,00 € — ou corrige d''abord le montant de la pièce.'],
+    array['controle4', '232w. MUTATION : un mouvement qui ne règle plus en groupe ne paie plus par ses parts : 39,99 € passent', 'chef', $q$update lignes_bancaires set reglement_groupe = false where id = '{MGA}';
+      select regler_piece_par_la_caisse('{G9}', '{GA}', '2026-03-03', -39.99)$q$,
+      'OK', ''],
 
     -- 230 et 231. Ce que le catalogue dit.
     array['valeur4', '230. les trois fonctions neuves : aux droits du propriétaire, leur chemin fixé ; le paiement exécutable par un compte connecté, ni par l''anonyme ; les deux gardes, par personne', 'postgres', $q$select string_agg(proname || ':' || prosecdef || ':' || provolatile::text || ':' || coalesce(array_to_string(proconfig, ','), '-') || ':' || has_function_privilege('anon', oid, 'execute') || ':' || has_function_privilege('authenticated', oid, 'execute'), ',' order by proname collate "C") from pg_proc

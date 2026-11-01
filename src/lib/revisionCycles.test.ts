@@ -270,6 +270,8 @@ describe('le rangement des contrôles existants', () => {
       'mouvements-reserves',
       // Étape C3b : la caisse — une opération à reprendre, une caisse négative, un versement d'espèces rangé en recette.
       'caisse-a-reprendre', 'caisse-negative', 'versements-especes-en-recette', 'caisse-mouvements-avant-ouverture',
+      // La relecture du 01/11/2026 : le paiement par la caisse que sa pièce contredit depuis.
+      'caisse-paiements-a-retirer',
     ],
     // Étape VF5f : l'encaissement d'une facture qui attend son mouvement du relevé, au registre des ventes.
     recettes: [
@@ -289,6 +291,8 @@ describe('le rangement des contrôles existants', () => {
       'doublons-inconnus', 'ecritures-a-generer', 'desynchronisees', 'ecritures-sans-objet', 'pieces-payees-en-partie',
       'pieces-payees-en-trop', 'frais-vehicule-en-double', 'forfaits-a-ecrire', 'postes-sans-case', 'cases-negatives',
       'tickets', 'vacances', 'factures',
+      // La relecture du 01/11/2026 : la pièce à valider qu'un paiement par la caisse cite.
+      'pieces-a-valider-payees-par-la-caisse',
     ],
     immobilisations: ['immos-sans-justificatif', 'dotations-a-ecrire', 'vehicule-amorti-sous-bareme', 'vehicule'],
     emprunts: ['echeances-emprunt-perimees', 'echeances-emprunt-non-rapprochees'],

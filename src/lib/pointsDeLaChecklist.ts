@@ -40,10 +40,10 @@ import { detailDesEncaissementsSansMouvement, ventesDeLaChecklist } from './vent
 import { exemplairesDesSources, horsDesExemplairesDesSources, type FacturesSources } from './facturesSources'
 import { recettesVivantes, type CaisseLue } from './recettesDeCaisse'
 import {
-  caisseNegative, caisseNegativeDite, detailDesOperationsAReprendre, detailDesRecettesARevoir, detailDesVersementsEnRecette,
-  dossierTientUneCaisse, etatDeLaCaisseLue, mouvementsDAvantLOuverture, operationsDeCaisseAReprendre, operationsDeCaisseDuDossier,
-  piecesDeVenteDe, recettesDeCaisseARevoir,
-  versementsDEspecesEnRecette, type EspecesDesFactures,
+  caisseNegative, caisseNegativeDite, detailDesOperationsAReprendre, detailDesPaiementsARetirer, detailDesPaiementsDePiecesAValider,
+  detailDesRecettesARevoir, detailDesVersementsEnRecette, dossierTientUneCaisse, etatDeLaCaisseLue, mouvementsDAvantLOuverture,
+  operationsDeCaisseAReprendre, operationsDeCaisseDuDossier, paiementsDePiecesAValider, paiementsParLaCaisseARetirer, piecesDeVenteDe,
+  recettesDeCaisseARevoir, versementsDEspecesEnRecette, type EspecesDesFactures,
 } from './controlesDeLaCaisse'
 
 // LES POINTS DE LA VUE D'ENSEMBLE (pages/dossier/ChecklistTab.tsx) : les points à traiter, rangés en paramétrage et en
@@ -538,6 +538,15 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // lus en entier). Celui qui y est se retire depuis sa fiche, dans Banque.
   const avantLOuverture = caisseJugee === null || !PAIEMENT_PAR_LA_CAISSE_EXPORTE ? []
     : mouvementsDAvantLOuverture(lignes, aNouveaux, modele.plan.caisse, frontiere)
+  // LA RELECTURE DU 01/11/2026. Le paiement d'une pièce que sa pièce contredit depuis — son type, ou son montant changé
+  // (les défauts 2 et 4) : jugé sur la caisse jugée et sur TOUS les paiements de la pièce, que le relevé, ses parts et les
+  // ventes facturées lus en partie rendraient faux — ils taisent alors le point, comme « payée en partie ». Et la pièce à
+  // valider qu'un paiement cite (le défaut 1), que la validation de l'exercice du paiement attend.
+  const paiementsARetirer = caisseJugee === null || !PAIEMENT_PAR_LA_CAISSE_EXPORTE ? []
+    : paiementsParLaCaisseARetirer(caisseJugee, toutesPieces, paiements, frontiere)
+      .filter((x) => x.raison === 'sens' || !(paiementsPartiels || ventesFacturees?.etat === 'incomplete'))
+  const piecesAValiderPayees = caisseJugee === null || !PAIEMENT_PAR_LA_CAISSE_EXPORTE ? []
+    : paiementsDePiecesAValider(caisseJugee, piecesAValider, frontiere)
 
   const tousLesPointsATraiter: PointATraiter[] = [
     // En tête, et en « erreur » : c'est le seul point de cette liste qui ne se voit nulle part
@@ -694,6 +703,14 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
         action: 'Voir la caisse', nb: recettesARevoir.length, cible: 'caisse' as const, severite: 'erreur' as const,
         detail: recettesARevoir.length > 0 && etatDeLaCaisse !== null ? detailDesRecettesARevoir(recettesARevoir, etatDeLaCaisse) : undefined,
       },
+      // Les défauts 2 et 4 de la relecture du 01/11/2026 : « erreur », son écriture ne s'équilibrerait pas — la validation le
+      // reprend sous le même identifiant. Avec la migration seulement : sans elle, aucun paiement par la caisse.
+      ...(!PAIEMENT_PAR_LA_CAISSE_EXPORTE ? [] : [{
+        id: 'caisse-paiements-a-retirer',
+        label: 'paiement(s) en espèces que leur pièce contredit depuis — un type ou un montant changé : à retirer, puis à saisir de nouveau',
+        action: 'Voir la caisse', nb: paiementsARetirer.length, cible: 'caisse' as const, severite: 'erreur' as const,
+        detail: paiementsARetirer.length > 0 ? detailDesPaiementsARetirer(paiementsARetirer) : undefined,
+      }]),
     ]),
     // « Erreur » : la validation de cet exercice se refuse sur cet écart (même identifiant que son préalable), et le dire ici, c'est
     // le dire AVANT le geste. Rien ne s'y corrige — les soldes reportés sont figés avec l'exercice validé — : le point renvoie
@@ -769,6 +786,17 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
           ? `Dans Banque, filtre « Rapprochés » : ${detailDesVersementsEnRecette(versementsEnRecette)} Un versement se remet à traiter, puis se classe sur la caisse.`
           : undefined,
       },
+      // LA PIÈCE À VALIDER QU'UN PAIEMENT PAR LA CAISSE CITE (conception reprise, § 8 ; le défaut 1 de la relecture du
+      // 01/11/2026). « Attention » : une pièce à valider est un travail en cours, pas une anomalie — mais sa sortie d'espèces
+      // n'est nulle part au brouillon tant qu'elle ne l'est pas, et la validation de l'exercice du paiement l'attend
+      // (`pieces-a-valider`, qui la compte quelle que soit sa date). Avec la migration seulement.
+      ...(!PAIEMENT_PAR_LA_CAISSE_EXPORTE ? [] : [{
+        id: 'pieces-a-valider-payees-par-la-caisse',
+        label: 'pièce(s) à valider payée(s) par la caisse — leur sortie d’espèces ne s’écrit qu’une fois la pièce validée et ses écritures générées',
+        action: 'Valider ces pièces', nb: new Set(piecesAValiderPayees.map((x) => x.piece.id)).size, cible: 'pieces' as const,
+        severite: 'attention' as const,
+        detail: piecesAValiderPayees.length > 0 ? detailDesPaiementsDePiecesAValider(piecesAValiderPayees) : undefined,
+      }]),
     ]),
     // « Attention » et non « erreur » : ignorer est le bon geste pour un doublon, et rien ne les distingue d'ici d'un
     // mouvement réel oublié. Le point les montre avec ce qu'ils emportent, le cabinet tranche.

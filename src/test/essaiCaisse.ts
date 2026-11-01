@@ -132,7 +132,9 @@ interface Etat {
   categories: { id: string; dossier_id: string | null; libelle: string; compte_comptable: string | null }[]
   ouvertures: { id: string; dossier_id: string; date: string; compte: string; sens: 'debit' | 'credit'; montant: number }[]
   operations: (OperationDeLaCaisse & { dossier_id: string })[]
-  mouvements: { id: string; dossier_id: string; date: string; montant: number; compte_bilan: string | null }[]
+  // Le relevé : son classement sur un compte de bilan, et — depuis la relecture du 01/11/2026 — la pièce qu'un mouvement
+  // RAPPROCHÉ paie (le reste au centime d'un paiement par la caisse se juge sur eux aussi).
+  mouvements: { id: string; dossier_id: string; date: string; montant: number; compte_bilan: string | null; piece_id: string | null; statut: string }[]
   validees: { dossier_id: string; annee: number }[]
   pieces: PieceSimulee[]
   // Les factures émises (l'étape C8) : leur dossier et leur source, que la désignation d'un exemplaire lit.
@@ -148,6 +150,7 @@ interface PieceSimulee {
   type_piece: PieceDuPaiement['type_piece']
   statut: PieceDuPaiement['statut']
   montant_ttc: number | null
+  devise: string
   facture_id: string | null
 }
 
@@ -182,8 +185,12 @@ function piecesDuPaiement(e: Etat, dossierId: string): PieceDuPaiement[] {
     const facture = p.facture_id == null ? null : e.factures.find((f) => f.id === p.facture_id)
     if (p.facture_id != null && facture == null) throw new NonRejouable('l’exemplaire d’une facture que ce banc ne connaît pas')
     return {
-      id: p.id, type_piece: p.type_piece, statut: p.statut, montant_ttc: p.montant_ttc,
+      id: p.id, type_piece: p.type_piece, statut: p.statut, montant_ttc: p.montant_ttc, devise: p.devise,
       exemplaire: facture ? { numero: 'F2026-0001', source_de_la_vente: facture.source } : null,
+      // Ce que le relevé paie de la pièce : ses mouvements rapprochés d'elle (une part de virement groupé met le dossier hors
+      // jeu, son insertion ne se rejouant pas).
+      paiementsDuReleve: e.mouvements.filter((m) => m.dossier_id === dossierId && m.piece_id === p.id && m.statut === 'rapprochee')
+        .map((m) => ({ montant: m.montant })),
     }
   })
 }
@@ -683,7 +690,10 @@ function inserer(e: Etat, table: string, l: Record<string, Valeur>, evenements: 
   } else if (table === 'categories') {
     e.categories.push({ id: texte(l.id), dossier_id: l.dossier_id as string | null, libelle: texte(l.libelle), compte_comptable: l.compte_comptable as string | null })
   } else if (table === 'lignes_bancaires') {
-    const ligne = { id: texte(l.id), dossier_id: texte(l.dossier_id), date: texte(l.date), montant: nombre(l.montant), compte_bilan: (l.compte_bilan ?? null) as string | null }
+    const ligne = {
+      id: texte(l.id), dossier_id: texte(l.dossier_id), date: texte(l.date), montant: nombre(l.montant), compte_bilan: (l.compte_bilan ?? null) as string | null,
+      piece_id: (l.piece_id ?? null) as string | null, statut: (l.statut ?? 'non_rapprochee') as string,
+    }
     if (reinseree(e, l, profil)) {
       e.mouvements.push(ligne)
       return null
@@ -721,7 +731,7 @@ function inserer(e: Etat, table: string, l: Record<string, Valeur>, evenements: 
     e.pieces.push({
       id: texte(l.id), dossier_id: texte(l.dossier_id), type_piece: (l.type_piece ?? 'achat') as PieceSimulee['type_piece'],
       statut: (l.statut ?? 'a_valider') as PieceSimulee['statut'], montant_ttc: (l.montant_ttc ?? null) as number | null,
-      facture_id: (l.facture_id ?? null) as string | null,
+      devise: (l.devise ?? 'EUR') as string, facture_id: (l.facture_id ?? null) as string | null,
     })
   } else if (!['cabinets', 'cabinet_admins'].includes(table)) {
     throw new NonRejouable(`une insertion dans ${table}`)
@@ -743,7 +753,9 @@ function mettreAJour(e: Etat, table: 'lignes_bancaires' | 'a_nouveaux', id: stri
       if (c === 'compte_bilan') l.compte_bilan = v as string | null
       else if (c === 'date') l.date = texte(v)
       else if (c === 'dossier_id') l.dossier_id = texte(v)
-      else if (c !== 'statut' && c !== 'libelle') throw new NonRejouable(`la colonne ${c} d’un mouvement`)
+      else if (c === 'statut') l.statut = texte(v)
+      else if (c === 'piece_id') l.piece_id = v as string | null
+      else if (c !== 'libelle') throw new NonRejouable(`la colonne ${c} d’un mouvement`)
     }
     // Le mouvement qui ARRIVE sur la caisse du plan d'avant l'ouverture de son dossier (`garder_caisse_depuis_l_ouverture`) :
     // classé, ou déplacé à une autre date ou dans un autre dossier.

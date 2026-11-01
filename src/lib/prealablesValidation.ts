@@ -36,8 +36,9 @@ import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { anneeDe, formatDate, formatMoney } from './format'
 import type { VentesDeLaChecklist } from './ventesDeLaChecklist'
 import {
-  caisseNegative, caisseNegativeDite, detailDesOperationsAReprendre, detailDesRecettesARevoir, etatDeLaCaisseLue,
-  operationsDe, operationsDeCaisseAReprendre, piecesDeVenteDe, recettesDeCaisseARevoir, type EspecesDesFactures, type OperationsDeCaisse,
+  caisseNegative, caisseNegativeDite, detailDesOperationsAReprendre, detailDesPaiementsARetirer, detailDesPaiementsDePiecesAValider,
+  detailDesRecettesARevoir, etatDeLaCaisseLue, operationsDe, operationsDeCaisseAReprendre, paiementsDePiecesAValider,
+  paiementsParLaCaisseARetirer, piecesDeVenteDe, recettesDeCaisseARevoir, type EspecesDesFactures, type OperationsDeCaisse,
 } from './controlesDeLaCaisse'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
@@ -571,9 +572,20 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // Une pièce à valider de l'exercice : validée ensuite, son écriture ne pourrait plus s'y passer. Avant
   // l'ouverture d'un dossier repris, la période est dans les comptes repris : rien ne s'y écrit de toute façon.
   const dansLaPeriodeTenue = (date: string | null) => dansLExercice(date) && (ouverture === null || date! >= ouverture)
+  // ET LA PIÈCE À VALIDER QU'UN PAIEMENT PAR LA CAISSE DE L'EXERCICE CITE, quelle que soit sa date (conception reprise, § 8 ;
+  // le défaut 1 de la relecture du 01/11/2026) : sa sortie d'espèces ne s'écrit qu'avec les écritures de la pièce, et la
+  // caisse reportée au 1er janvier ne serait pas celle de ses opérations. Comptée une fois, datée de l'exercice ou non ; la
+  // base le refuse aussi (`validation_des_paiements_par_la_caisse`). Sans un tel paiement, le préalable d'hier, au caractère
+  // près.
+  const payeesParLaCaisse = paiementsDePiecesAValider(operationsDe(d.operationsDeCaisse), d.piecesAValider, frontiereDeValidation(d.anneesValidees))
+    .filter((x) => dansLaPeriodeTenue(x.paiement.date))
   bloque({
-    id: 'pieces-a-valider', nb: d.piecesAValider.filter((p) => dansLaPeriodeTenue(p.date_piece)).length, cible: 'pieces',
-    message: `pièce(s) à valider datée(s) de l'exercice ${d.annee} : les valider, ou les retirer, avant la validation — ensuite, leur écriture ne pourrait plus s'y passer.`,
+    id: 'pieces-a-valider', cible: 'pieces',
+    nb: new Set([...d.piecesAValider.filter((p) => dansLaPeriodeTenue(p.date_piece)).map((p) => p.id), ...payeesParLaCaisse.map((x) => x.piece.id)]).size,
+    message: payeesParLaCaisse.length === 0
+      ? `pièce(s) à valider datée(s) de l'exercice ${d.annee} : les valider, ou les retirer, avant la validation — ensuite, leur écriture ne pourrait plus s'y passer.`
+      : `pièce(s) à valider datée(s) de l'exercice ${d.annee}, ou payée(s) par la caisse dans cet exercice : les valider, ou les retirer, avant la validation — ensuite, leur écriture ne pourrait plus s'y passer, ni la sortie d'espèces de leur paiement.`,
+    ...(payeesParLaCaisse.length === 0 ? {} : { detail: detailDesPaiementsDePiecesAValider(payeesParLaCaisse) }),
   })
   // Une pièce sans date appartient peut-être à cet exercice : on ne fige pas un exercice qu'elle pourrait compléter.
   bloque({
@@ -932,6 +944,17 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       id: 'recettes-de-caisse-a-revoir', nb: aRevoir.length, cible: 'caisse',
       message: "recette(s) en espèces de l'exercice dont le jour a changé depuis la saisie — un encaissement en espèces d'une facture de ce jour enregistré, retiré ou rattaché depuis : vérifier que leur total ne compte pas les espèces de la facture, puis les retirer et les saisir de nouveau avant la validation.",
       detail: aRevoir.length > 0 ? detailDesRecettesARevoir(aRevoir, etatDeLaCaisse) : undefined,
+    })
+    // UN PAIEMENT D'UNE PIÈCE QUE SA PIÈCE CONTREDIT DEPUIS (les défauts 2 et 4 de la relecture du 01/11/2026) : un type changé
+    // (ses espèces ne vont plus dans le sens de la pièce) ou un montant changé (la pièce à quelques centimes de son total). Son
+    // écriture ne s'équilibrerait pas, et la numérotation se refuserait sans dire pourquoi. Le point de la Vue d'ensemble,
+    // sous le même identifiant ; aucun le drapeau du paiement baissé.
+    const aRetirer = paiementsParLaCaisseARetirer(operationsDeLaCaisse, [...d.piecesValidees, ...d.piecesAValider], paiements, frontiere)
+      .filter((x) => dansLExercice(x.paiement.date))
+    bloque({
+      id: 'caisse-paiements-a-retirer', nb: aRetirer.length, cible: 'caisse',
+      message: "paiement(s) en espèces de l'exercice que leur pièce contredit depuis — un type ou un montant changé : son écriture ne s'équilibrerait pas. Retirer le paiement, puis le saisir de nouveau au montant exact — ou corriger la pièce — avant la validation.",
+      detail: aRetirer.length > 0 ? detailDesPaiementsARetirer(aRetirer) : undefined,
     })
   }
   bloque({

@@ -50,7 +50,9 @@ import { jugeDeLaValidation, resumeDeLaSelection, validationEnLot } from '../../
 import type { ModeleComptable } from '../../lib/engagement'
 import { lireLaCaisseDuDossier, type LectureDeLaCaisseDuDossier } from '../../lib/caisseDuDossierLecture'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from '../../lib/paiementParLaCaisse'
-import { paiementsDeLaLecture, piecesPayeesEnEspeces } from '../../lib/paiementParLaCaisseEcran'
+import {
+  etatDeLaCaisseDeLaFiche, paiementsDeLaLecture, piecesPayeesEnEspeces, refusDeSuppressionParLaCaisse, suppressionRetenueParLaCaisse,
+} from '../../lib/paiementParLaCaisseEcran'
 import type { CaisseDeLaPiece } from './ReglementParLaCaisse'
 
 // Les factures sources tant que le pont n'est pas lu en entier (voir le badge « Devise non convertie ») : aucune n'est écartée.
@@ -355,6 +357,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   const caisseDeLaFiche: CaisseDeLaPiece | null = caisseTenue && modele !== null
     ? { lecture: lectureCaisse, modele, assujettiTva, paiements: paiementsPourLaFiche, relire: relireLaCaisse }
     : null
+  // Les opérations de la caisse, lues EN ENTIER pour ce dossier, ou rien (relecture du 01/11/2026) : « Supprimer la sélection »
+  // y voit la pièce qu'un paiement cite, comme sa fiche. Le drapeau baissé, aucune.
+  const etatDeLaCaisseDeLOnglet = caisseTenue ? etatDeLaCaisseDeLaFiche(lectureCaisse, dossierId) : null
+  const operationsDeLaCaisse = etatDeLaCaisseDeLOnglet?.etat === 'lue' ? etatDeLaCaisseDeLOnglet.donnees.operations : null
 
   // Un dossier est par client, pas par année (voir Estimation) — les pièces s'accumulent sur plusieurs
   // exercices sans jamais être archivées ailleurs. Le filtre d'exercice ne déplace rien, il joue sur
@@ -634,7 +640,9 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // (`lib/bilanSuppression.ts`), et un verrou empêche un second clic de relancer la boucle sur les mêmes pièces.
   async function supprimerUnePiece(piece: Piece): Promise<string | null> {
     const { data, error } = await supabase.from('pieces').delete().eq('id', piece.id).select('id').maybeSingle()
-    if (error) return messageErreur(error, 'suppression refusée par la base')
+    // La pièce qu'un paiement de la caisse cite, partie sur une caisse lue en partie (relecture du 01/11/2026) : le refus de la
+    // base sous les mots de l'écran, qui nomment le remède.
+    if (error) return refusDeSuppressionParLaCaisse(error) ?? messageErreur(error, 'suppression refusée par la base')
     if (!data) return AUCUNE_PIECE_SUPPRIMEE
     // Ses DEUX fichiers quand elle en a deux (voir lib/fichiersPiece.ts) : la version lisible d'une facture reçue en
     // XML, laissée seule, ne serait plus désignée par rien.
@@ -665,7 +673,22 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
       const d = pieceDeclaree(p.id, fichesHorsDeFrance, declarationsEreporting)
       return d?.sait ? [{ piece: p, refus: d.message }] : []
     })
-    const aSupprimer = nonFigees.filter((p) => !citees.some((c) => c.piece.id === p.id) && !declarees.some((d) => d.piece.id === p.id))
+    // UNE PIÈCE QU'UN PAIEMENT DE LA CAISSE CITE NE SE SUPPRIME PLUS NON PLUS (relecture du 01/11/2026 ; la clé `on delete restrict`
+    // de l'opération) : écartée de la sélection quand la caisse est lue en entier, chacune nommée avec la phrase de sa fiche
+    // (`suppressionRetenueParLaCaisse`). Lue en partie, on ne sait pas : la suppression part, et le bilan dit le refus de la
+    // base sous ses mots à elle (`refusDeSuppressionParLaCaisse`), plutôt qu'un « ne se modifie pas » qui ne nomme rien.
+    const payeesParLaCaisse = operationsDeLaCaisse === null ? [] : nonFigees.flatMap((p) => {
+      if (citees.some((c) => c.piece.id === p.id) || declarees.some((d) => d.piece.id === p.id)) return []
+      const refus = suppressionRetenueParLaCaisse(p.id, operationsDeLaCaisse)
+      return refus === null ? [] : [{ piece: p, refus }]
+    })
+    const aSupprimer = nonFigees.filter((p) => !citees.some((c) => c.piece.id === p.id) && !declarees.some((d) => d.piece.id === p.id)
+      && !payeesParLaCaisse.some((c) => c.piece.id === p.id))
+    const listeDesPayees = payeesParLaCaisse.slice(0, 5).map((c) => `• ${c.piece.nom_fichier} — ${c.refus}`).join('\n')
+      + (payeesParLaCaisse.length > 5 ? `\n… et ${payeesParLaCaisse.length - 5} autre(s)` : '')
+    const avertissementPayees = payeesParLaCaisse.length === 0 ? ''
+      : `\n\n${payeesParLaCaisse.length === 1 ? 'Une pièce de la sélection reste' : `${payeesParLaCaisse.length} pièces de la sélection restent`}, `
+        + `citée${payeesParLaCaisse.length > 1 ? 's' : ''} par un paiement de la caisse :\n${listeDesPayees}`
     const declarationsInconnues = aSupprimer.length > 0 && pieceDeclaree(aSupprimer[0].id, fichesHorsDeFrance, declarationsEreporting)?.sait === false
     const listeDesDeclarees = declarees.slice(0, 5).map((d) => `• ${d.piece.nom_fichier} — ${d.refus}`).join('\n')
       + (declarees.length > 5 ? `\n… et ${declarees.length - 5} autre(s)` : '')
@@ -692,13 +715,16 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
           : `Citée${citees.length > 1 ? 's' : ''} par ${citant}, ${citees.length > 1 ? 'elles ne se suppriment' : 'elle ne se supprime'} plus :\n${listeDesCitees}`,
         declarees.length === 0 ? null : declarees.length === 1 && nbFigees === 0 && citees.length === 0 ? declarees[0].refus
           : `Déclarée${declarees.length > 1 ? 's' : ''} à l’e-reporting, ${declarees.length > 1 ? 'elles ne se suppriment' : 'elle ne se supprime'} plus :\n${listeDesDeclarees}`,
+        payeesParLaCaisse.length === 0 ? null
+          : payeesParLaCaisse.length === 1 && nbFigees === 0 && citees.length === 0 && declarees.length === 0 ? payeesParLaCaisse[0].refus
+            : `Citée${payeesParLaCaisse.length > 1 ? 's' : ''} par un paiement de la caisse, ${payeesParLaCaisse.length > 1 ? 'elles ne se suppriment' : 'elle ne se supprime'} pas :\n${listeDesPayees}`,
       ].filter((ligne) => ligne !== null).join('\n\n'))
       return
     }
     // Les fiches « hors de France » partent avec leurs pièces (clé en cascade) : la confirmation les nomme.
     const fichesEmportees = fichesEmporteesParLaSuppression(aSupprimer.map((p) => p.id), fichesHorsDeFrance)
     if (!window.confirm(
-      `Supprimer définitivement ${aSupprimer.length} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}${avertissementFigees}${avertissementCitees}${avertissementDeclarees}`
+      `Supprimer définitivement ${aSupprimer.length} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}${avertissementFigees}${avertissementCitees}${avertissementDeclarees}${avertissementPayees}`
       + (fichesEmportees ? `\n\n${fichesEmportees}` : '')
       + (declarationsInconnues ? `\n\n${pieceDeclaree(aSupprimer[0].id, fichesHorsDeFrance, declarationsEreporting)?.message ?? ''}` : ''),
     )) return
