@@ -45281,3 +45281,85 @@ appliquée, et un dossier sans paiement rend ce qu'il rendait (« LA CAISSE : L'
 PAR LA CAISSE (C13, LIGNE 26.6) »). Le drapeau `PAIEMENT_PAR_LA_CAISSE_EXPORTE` reste baissé jusqu'au jour de C8.
 
 **LE RETOUR ARRIÈRE** : la même ligne au commit `b3b332a33a9697998fbf82cc2fb9bb4c82d19774` (la version 51).
+
+### 01/11/2026 — LE BANC DU LEURRE SUR LES ESSAIS DU 01/11/2026 (C8, FEC22B, LE FILET)
+
+(Écrite par un agent architecte, sur `acae7e3` — `main`. Sur des répliques seulement : en production, rien de lu ni
+d'écrit, aucun déploiement, aucune migration. Modifiés : `supabase/essais/validationDesPaiementsParLaCaisse.sql` (réécrit
+dans la forme des essais joués en production), `outils/leurre/regles.json` (un cas particulier de plus, deux de moins),
+`src/lib/essaisEnProduction.test.ts` et `src/lib/validationDesPaiementsParLaCaisse.test.ts` (leurs gardes suivent), et
+`supabase/schema/README.md` (la signature attendue le jour de l'application). Lus avant : « CE QUE RENDENT LES ESSAIS DE
+LA BASE REJOUÉS EN PRODUCTION », « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS », « LE FEC D'UN BNC : LES
+QUATRE POSTES NEUFS DE LA 2035 DANS LES LISTES FERMÉES (FEC22B ET LE FILET) ».)
+
+**POURQUOI.** Les trois entrées du jour disaient que le banc n'avait pas tourné sur `caisse.sql` et `validationExercice.sql`,
+changés, ni sur l'essai neuf du filet, marqué « de réplique seulement » en attendant. Le jour où C8, FEC22b et le filet
+s'appliquent, ces essais se jouent en production : le banc devait d'abord les dire SÛRS.
+
+**LES DEUX MODÈLES, sur la grappe de FEC22b (`fec22b_replique`), sans grappe neuve.** Démarrée par son répertoire de
+données dans l'espace de noms qui fait de root l'utilisateur 1000, son port et sa socket passés à `pg_ctl -o` :
+`postgresql.auto.conf` n'a pas été touché (`a6083d6b…` avant comme après), et la grappe a été arrêtée par son répertoire.
+- « production » : `f_prod164`, une base que la grappe portait déjà. `signature.sql` rend les neuf familles que la
+  production a rendues le 30/10/2026, après `especes_sans_mouvement` (« colonnes » 911 `13d1263c…`, « contraintes » 710
+  `ce4cd645…`, « déclencheurs » 82 `86c12843…`, « droits des fonctions » 217 `8ea236a6…`, « droits des tables » 82
+  `36d97923…`, « fonctions » 217 `3800368f333f960c6b366acc8a666531`, « index » 244 `9704c175…`, « policies » 161
+  `6e6e0706…`, « rls » 82 `5fb5dc41…`) ; l'historique, 164 migrations, `3a31b7307c5cbe1f33722786cf1ec7c2`, la dernière
+  à l'empreinte du fichier (`40e539ff…`) ; le socle 81 `5d636a96…`, l'inventaire 2 284 `efbc0207…`.
+- « apres » : `leurre0111_apres`, faite de `f_prod164` par `create database … template`, puis C8, FEC22b et le filet,
+  depuis `supabase/preparees/`, dans cet ordre, chacun dans sa transaction, par le PROPRIÉTAIRE des tables (comme l'outil,
+  qui les applique en production par le propriétaire du schéma), avec sa ligne d'historique (version provisoire, nom,
+  texte du fichier). 167 migrations, `601c8e9c…`, chaque ligne à l'empreinte de son fichier (`0accdea9…`, `844d59be…`,
+  `7c098f63…`) ; « colonnes » 916 `821f8387…`, « contraintes » 711 `bb338173…`, « déclencheurs » 84 `8f00438b…`,
+  « fonctions » 220 `e3cc1631…`, les quatre autres familles celles de la production — les valeurs relevées sur la
+  réplique de FEC22b après les trois ; le socle 81 `bfe9dce8…`, l'inventaire 2 295 `5ac4309b…`, de même.
+- UNE DIFFÉRENCE, ÉTABLIE : « droits des fonctions » 220 `410d7470d418786fde9f2db4ebcd9ef7`, et non `1f3389b2…`, que
+  l'entrée de FEC22b et `supabase/schema/README.md` donnaient comme la valeur du jour de l'application. Les trois
+  appliquées par le super-utilisateur de la réplique, sur une autre copie (jetée ensuite), rendent `1f3389b2…` : sous lui,
+  les fonctions neuves n'ont pas les droits par défaut du schéma, que la réplique porte pour `proprietaire` (comme la
+  production pour son propriétaire) — `service_role` y manque. La valeur `410d7470…` est aussi celle que la réplique de C8
+  avait relevée pour C8 seule. Le README dit désormais `410d7470…` (et la famille « colonnes », qu'il omettait).
+
+**CE QUE LE BANC A REJOUÉ** (`outils/leurre/banc.py`, trois travailleurs, toute la sortie dans le bloc-notes, sous
+`leurre_0111/`) :
+- Passe 1, les modèles ci-dessus : 74 fichiers, 63 essais joués en production, 6 de réplique seulement, 5 outils ; les 63
+  rejoués, en 90 s ; le témoin vu de ses trois façons ; 63 SÛRS. `caisse.sql` (famille « apres ») : 536 verdicts, aucun
+  en faute ; `validationExercice.sql` (super-utilisateur, sur la production) : 153.
+- Le filet réécrit (ci-dessous), seul : SÛR, 13 verdicts justes (famille « apres »).
+- Passe 2, « production » = « apres » — la production du lendemain de l'application, chaque essai joué sur elle : 64
+  essais, en 86 s, 64 SÛRS. `validationExercice.sql` : 245 verdicts, aucun en faute (les seize étapes de FEC22b
+  comprises) ; `caisse.sql` 536 ; le filet 13 ; `rls.sql`, `reportDesSoldes.sql`, `validationDesVentesFacturees.sql`,
+  `revisionSoldes.sql`, `cotisationPersonnelle.sql`, `piecesHorsDeFrance.sql`, `retraitPaiementPersonnel.sql` (ceux que
+  l'entrée de FEC22b rejouait) : SÛRS, sans faute.
+- Dans les deux passes : aucun écart entre P et L, aucun motif du leurre, aucune écriture du leurre. Les normalisations,
+  les mêmes aux deux passes : 748 identifiants tirés, 20 empreintes de ligne, 12 instants, 10 horodatages, 6 débuts
+  d'identifiant. Deux constats d'hier, inchangés : `devis.sql` impossible (ses migrations) ; `ventesClient.sql`,
+  contrôle 0c (la liste des fonctions de la vente, au catalogue), en faute sur P comme sur L — sans rapport avec le leurre
+  (« CE QUE RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION »). Le compte de verdicts du rapport du banc compte aussi
+  la colonne d'en-tête « ok » d'un essai qui en porte une : 14 pour les 13 du filet.
+- `caisseSuppression.sql`, changé le 01/11 aussi, reste de réplique seulement : il supprime.
+- Passe 3 : `mentionsFigees` et `ibanHorsDesParametres` gardaient la famille « apres » sous la raison « sa migration est
+  préparée, pas appliquée », fausse depuis le 29/10/2026 (A7a en production ; `f_prod164` porte les deux migrations).
+  Sortis de `regles.json`, rejoués sur le modèle « production » : SÛRS, 236 et 28 verdicts, aucun en faute (48
+  identifiants tirés).
+
+**LE FILET, RÉÉCRIT POUR LA PRODUCTION.** `validationDesPaiementsParLaCaisse.sql` ne pouvait pas s'y jouer, même sûr : un
+`\set ON_ERROR_STOP off` (une méta-commande de psql, que l'outil d'exécution ne joue pas), une table et deux fonctions
+temporaires, un `begin;` puis un `rollback;` final — l'outil rend le résultat de la dernière instruction, et sans ce
+`rollback` ses écritures auraient été validées. Il a pris la forme des autres : un bloc `do` qui s'annule entièrement par
+`ANNULATION_ESSAI_GLOBALE`, chaque étape dans sa sous-transaction, les verdicts dans un réglage local (`essai.filet`) que
+la requête finale lit ; ni table, ni fonction, ni suppression. Les mêmes étapes, dans le même ordre, sous les mêmes
+profils, jugées au même code et au même motif (la numérotation de la validation, une requête que `format` compose pour
+chaque dossier). Sur une copie du modèle « apres », l'ancienne forme et la nouvelle rendent les 13 mêmes lignes, au
+caractère près ; sur une copie de la production, la même ligne EN ATTENTE ; après chacune, aucun dossier jetable ne
+reste. La mutation « sans l'annulation finale » laisse ses cinq dossiers : l'annulation est ce qui le tient. Son en-tête ne
+dit plus « sur une réplique seulement » ; `regles.json` lui donne la famille « apres », à retirer, comme celle de
+`caisse.sql`, le jour où ses migrations s'appliquent. Les gardes : `essaisEnProduction.test.ts` compte cinq essais de
+réplique seulement et dix-huit cas particuliers (ci-dessous) ; `validationDesPaiementsParLaCaisse.test.ts` exige la forme neuve
+(ni méta-commande, ni transaction à la main, ni table ni fonction créée, l'annulation finale, le réglage lu à la fin) —
+joué sur l'ancienne forme, il tombe, avec les deux du classement.
+
+**CE QUI RESTE.** Le jour de l'application : C8, FEC22b, le filet, par l'outil, puis les trois contrôles de l'export —
+`signature.sql` doit rendre les valeurs du modèle « apres » ci-dessus, « droits des fonctions » `410d7470…` compris ; puis
+`caisse.sql`, `validationExercice.sql` et `validationDesPaiementsParLaCaisse.sql` se jouent en production, et les deux
+cas « apres » qui restent, `caisse` et le filet, quittent `regles.json`. La base `leurre0111_apres` a été jetée : `composer_apres.py`, dans
+le bloc-notes, la refait en quelques secondes.
