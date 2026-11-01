@@ -197,6 +197,14 @@
 -- aussi, et l'empreinte d'un exercice validé sans eux est celle d'hier au caractère près, recalculée ici par la formule
 -- d'hier) ; la contrainte, sans la fonction (180 à 183, la restauration comprise) ; le catalogue (190). Les factures de
 -- l'essai entrent au décompte de 145.
+--
+-- 01/11/2026, LES QUATRE POSTES NEUFS DE LA 2035 (étape 2035S1 : « Indemnités journalières », rangées en AF ; « Redevances
+-- de collaboration », en BG ; « Cotisations facultatives Madelin » et « Plan d'épargne retraite », en BK), entrés dans les
+-- listes fermées de `champs_bnc_du_fec` et du filet qui reprend sa validation (`validation_des_paiements_par_la_caisse`) :
+-- chacun admis à sa place et refusé de l'autre côté, par la validation (158g à 158n) et par la restauration (182i à 182p).
+-- Sur la réplique de FEC22b, la migration d'avant — sans eux — fait tomber les douze étapes qui les distinguent, et elles
+-- seules (245 verdicts) ; l'amendée les rend toutes justes, 245 sur 245, et les 229 contrôles d'hier gardent leurs verdicts
+-- au caractère près.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -761,6 +769,22 @@ begin
     array['controlef', '158e. … les débours payés pour le compte des clients sur un produit', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{3,poste_rattache}', '"Débours payés pour le compte des clients"'){FIN}$q$, '22023',
       'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.'],
     array['controlef', '158f. MUTATION de 158e : sur une charge, ils passent', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{0,poste_rattache}', '"Débours payés pour le compte des clients"'){FIN}$q$, 'OK', ''],
+    -- Les quatre postes de l'étape 2035S1 (src/lib/cases2035.ts), entrés dans les listes fermées le 01/11/2026 : les
+    -- indemnités journalières, rangées en gains divers (AF), vont sur un produit — la ligne 5 de K, la recette affectée ;
+    -- les redevances de collaboration (BG), les cotisations facultatives Madelin et le plan d'épargne retraite (BK), sur
+    -- une charge — la ligne 0, l'achat. De l'autre côté, leur poste se refuse.
+    array['controlef', '158g. les indemnités journalières sur une charge', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{0,poste_rattache}', '"Indemnités journalières"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.'],
+    array['controlef', '158h. MUTATION de 158g : sur un produit, elles passent', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{5,poste_rattache}', '"Indemnités journalières"'){FIN}$q$, 'OK', ''],
+    array['controlef', '158i. … les redevances de collaboration sur un produit', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{3,poste_rattache}', '"Redevances de collaboration"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.'],
+    array['controlef', '158j. MUTATION de 158i : sur une charge, elles passent', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{0,poste_rattache}', '"Redevances de collaboration"'){FIN}$q$, 'OK', ''],
+    array['controlef', '158k. … les cotisations facultatives Madelin sur un produit', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{3,poste_rattache}', '"Cotisations facultatives Madelin"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.'],
+    array['controlef', '158l. MUTATION de 158k : sur une charge, elles passent', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{0,poste_rattache}', '"Cotisations facultatives Madelin"'){FIN}$q$, 'OK', ''],
+    array['controlef', '158m. … le plan d''épargne retraite sur un produit', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{3,poste_rattache}', '"Plan d''épargne retraite"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée porte un poste de la 2035 que son compte ne porte pas : un poste de recettes va sur un compte de produit ; un poste de dépenses, et les débours ou les honoraires rétrocédés qui se déduisent des recettes, sur un compte de charge.'],
+    array['controlef', '158n. MUTATION de 158m : sur une charge, il passe', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{0,poste_rattache}', '"Plan d''épargne retraite"'){FIN}$q$, 'OK', ''],
     -- Les mêmes sur toutes les lignes d'une écriture ; le poste suit la ligne (FEC22-Q3, (C)).
     array['controlef', '159. deux dates de règlement dans une écriture', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1,date_reglement}', '"2024-03-06"'){FIN}$q$, '22023',
       'Les lignes d''une même écriture ne portent pas la même date de règlement.'],
@@ -893,6 +917,19 @@ begin
     array['controlef', '182d2. … ni des honoraires rétrocédés sur un produit', 'chef', $q${RES}'{RF}', '2024-04-03', '706000', 'ESSAI', 1, 'credit', 'validee', now(), 'VE', 2, 'x', '2024-04-03', 'Honoraires', null, null, 'Recette', 'Honoraires rétrocédés', null)$q$, '23514',
       'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
     array['controlef', '182d3. MUTATION de 182d2 : sur une charge, ils se réinsèrent', 'chef', $q${RES}'{RF}', '2024-04-03', '622600', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Rétrocessions', null, null, 'Dépense', 'Honoraires rétrocédés', null)$q$, 'OK', ''],
+    -- Les quatre postes de l'étape 2035S1, par la même porte : réinsérés sur un compte de leur classe, refusés sur l'autre.
+    array['controlef', '182i. … ni des indemnités journalières sur une charge', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, 'Dépense', 'Indemnités journalières', null)$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182j. MUTATION de 182i : sur un produit, elles se réinsèrent', 'chef', $q${RES}'{RF}', '2024-04-03', '791000', 'ESSAI', 1, 'credit', 'validee', now(), 'VE', 2, 'x', '2024-04-03', 'Indemnités journalières', null, null, 'Recette', 'Indemnités journalières', null)$q$, 'OK', ''],
+    array['controlef', '182k. … ni des redevances de collaboration sur un produit', 'chef', $q${RES}'{RF}', '2024-04-03', '706000', 'ESSAI', 1, 'credit', 'validee', now(), 'VE', 2, 'x', '2024-04-03', 'Honoraires', null, null, 'Recette', 'Redevances de collaboration', null)$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182l. MUTATION de 182k : sur une charge, elles se réinsèrent', 'chef', $q${RES}'{RF}', '2024-04-03', '613500', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Redevances de collaboration', null, null, 'Dépense', 'Redevances de collaboration', null)$q$, 'OK', ''],
+    array['controlef', '182m. … ni des cotisations facultatives Madelin sur un produit', 'chef', $q${RES}'{RF}', '2024-04-03', '706000', 'ESSAI', 1, 'credit', 'validee', now(), 'VE', 2, 'x', '2024-04-03', 'Honoraires', null, null, 'Recette', 'Cotisations facultatives Madelin', null)$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182n. MUTATION de 182m : sur une charge, elles se réinsèrent', 'chef', $q${RES}'{RF}', '2024-04-03', '646100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Cotisations facultatives', null, null, 'Dépense', 'Cotisations facultatives Madelin', null)$q$, 'OK', ''],
+    array['controlef', '182o. … ni un plan d''épargne retraite sur un produit', 'chef', $q${RES}'{RF}', '2024-04-03', '706000', 'ESSAI', 1, 'credit', 'validee', now(), 'VE', 2, 'x', '2024-04-03', 'Honoraires', null, null, 'Recette', 'Plan d''épargne retraite', null)$q$, '23514',
+      'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
+    array['controlef', '182p. MUTATION de 182o : sur une charge, il se réinsère', 'chef', $q${RES}'{RF}', '2024-04-03', '646100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Plan d''épargne retraite', null, null, 'Dépense', 'Plan d''épargne retraite', null)$q$, 'OK', ''],
     array['controlef', '182e. … ni un poste sans nature', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, null, 'Achats', null)$q$, '23514',
       'new row for relation "ecritures_brouillon" violates check constraint "ecritures_brouillon_champs_bnc_du_fec"%'],
     array['controlef', '182f. … ni une identification bordée d''un blanc', 'chef', $q${RES}'{RF}', '2024-04-03', '606100', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Achats', null, null, null, null, ' F2024-0001')$q$, '23514',

@@ -136,6 +136,12 @@ const DEFAIRE: Record<(typeof REPRISES)[number]['fonction'], (posee: string) => 
   garder_lignes_de_la_vente_facturee: gardeDefaite,
 }
 
+// Les quatre postes que l'étape 2035S1 a ajoutés au rattachement (lib/cases2035.ts) : entrés dans les listes fermées de la
+// migration et du filet le 01/11/2026, avant leur application ; l'essai les joue des deux côtés, par les deux portes.
+const POSTES_NEUFS_DE_2035S1 = [
+  'Indemnités journalières', 'Redevances de collaboration', 'Cotisations facultatives Madelin', "Plan d'épargne retraite",
+] as const
+
 // Les valeurs d'une liste SQL de littéraux, l'apostrophe doublée rendue simple ; les lignes de commentaire écartées
 // d'abord (« l'opération » d'un commentaire décalerait les apostrophes).
 const litteraux = (sql: string): string[] => [...sql.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n')
@@ -315,7 +321,18 @@ describe('les listes fermées que la base copie : celles de lib/champsBncDuFec.t
       expect(CLASSE_DU_POSTE.get(p), p).toBe(caseDuPoste(p)?.cadre === 'recettes' ? '7' : '6')
     }
     expect([...CLASSE_DU_POSTE].filter(([, c]) => c === '7').map(([p]) => p)).toEqual(
-      ['Recettes', 'Recettes encaissées y compris les remboursements de frais', 'Produits financiers', 'Gains divers'])
+      ['Recettes', 'Recettes encaissées y compris les remboursements de frais', 'Produits financiers', 'Gains divers',
+        'Indemnités journalières'])
+  })
+
+  it('les quatre postes neufs de la 2035 (étape 2035S1) sont dans les listes, chacun sous la classe de son cadre', () => {
+    // Le cadre lu au formulaire, pas recopié : les indemnités journalières vont en AF, une recette ; les trois autres en BG
+    // et en BK, des dépenses.
+    for (const poste of POSTES_NEUFS_DE_2035S1) {
+      expect(POSTES_RATTACHES, poste).toContain(poste)
+      expect(CLASSE_DU_POSTE.get(poste), poste).toBe(caseDuPoste(poste)?.cadre === 'recettes' ? '7' : '6')
+    }
+    expect(POSTES_NEUFS_DE_2035S1.map((p) => CLASSE_DU_POSTE.get(p))).toEqual(['7', '6', '6', '6'])
   })
 })
 
@@ -493,6 +510,24 @@ describe('l’essai joue chaque refus neuf, et la ligne qu’on scinderait', () 
     // La restauration : une rétrocession sur un produit se refuse, sur une charge (622600) se réinsère.
     expect(essai).toContain("'706000', 'ESSAI', 1, 'credit', 'validee', now(), 'VE', 2, 'x', '2024-04-03', 'Honoraires', null, null, 'Recette', 'Honoraires rétrocédés', null)$q$, '23514'")
     expect(essai).toContain("'622600', 'ESSAI', 1, 'debit', 'validee', now(), 'AC', 2, 'x', '2024-04-03', 'Rétrocessions', null, null, 'Dépense', 'Honoraires rétrocédés', null)$q$, 'OK'")
+  })
+  it('les quatre postes neufs de la 2035 y sont joués : à leur place admis, de l’autre côté refusés, des deux portes', () => {
+    const horsCadre = REFUS_DES_CHAMPS_BNC.find((r) => r.cle === 'poste_hors_cadre')?.message.replace(/'/g, "''")
+    const echappe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    for (const poste of POSTES_NEUFS_DE_2035S1) {
+      const sql = poste.replace(/'/g, "''")
+      const recette = CLASSE_DU_POSTE.get(poste) === '7'
+      // La validation : la ligne 0 de K est la charge de l'achat (606100), la 3 le produit de la vente, la 5 celui de la
+      // recette affectée (706000). Admis à sa place ; de l'autre côté, refusé sous les mots de `poste_hors_cadre`.
+      const [admis, refuse] = recette ? [5, 0] : [0, 3]
+      expect(essai, poste).toContain(`jsonb_set({JK}, '{${admis},poste_rattache}', '"${sql}"'){FIN}$q$, 'OK'`)
+      expect(essai, poste).toContain(`jsonb_set({JK}, '{${refuse},poste_rattache}', '"${sql}"'){FIN}$q$, '22023',\n      '${horsCadre}'],`)
+      // La restauration : réinséré sur un compte de sa classe, refusé sur l'autre par la contrainte.
+      const reinsertions = [...essai.matchAll(new RegExp(
+        `\\{RES\\}'\\{RF\\}', '2024-04-03', '(\\d)\\d{5}', [^\\n]*, '${echappe(sql)}', null\\)\\$q\\$, '(OK|23514)'`, 'g'))]
+      expect(reinsertions.map((m) => `${m[1]}:${m[2]}`).sort(), poste).toEqual(
+        [`${recette ? '7' : '6'}:OK`, `${recette ? '6' : '7'}:23514`].sort())
+    }
   })
   it('les étapes du lot attendent la migration, et la ligne scindée entre deux écritures s’y refuse', () => {
     expect(essai).toContain("and attname = 'nature_operation' and not attisdropped")
