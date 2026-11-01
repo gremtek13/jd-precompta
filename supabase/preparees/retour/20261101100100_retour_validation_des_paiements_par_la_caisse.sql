@@ -16,7 +16,7 @@ do $garde$
 begin
   if md5(replace((select p.prosrc from pg_proc p
                    where p.oid = to_regprocedure('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)')), chr(13), ''))
-     is distinct from 'dcdad1efec9e72fad503710599dd6652' then
+     is distinct from '02750f937482e3f11404f69975eb9220' then
     raise exception 'La fonction valider_exercice n''est pas celle que la migration validation_des_paiements_par_la_caisse pose : ce retour arrière ne s''applique pas sans être relu.';
   end if;
 end
@@ -344,18 +344,21 @@ begin
     values
       ('Recettes', '7'), ('Recettes encaissées y compris les remboursements de frais', '7'),
       ('Débours payés pour le compte des clients', '6'), ('Débours', '6'), ('Honoraires rétrocédés', '6'),
-      ('Rétrocessions', '6'), ('Produits financiers', '7'), ('Gains divers', '7'), ('Achats', '6'),
+      ('Rétrocessions', '6'), ('Produits financiers', '7'), ('Gains divers', '7'),
+      ('Indemnités journalières', '7'), ('Achats', '6'),
       ('Salaires nets et avantages en nature', '6'), ('Salaires', '6'), ('Charges sociales sur salaires', '6'),
       ('Taxe sur la valeur ajoutée', '6'), ('TVA', '6'), ('Contribution économique territoriale', '6'), ('CET', '6'),
       ('Autres impôts', '6'), ('Impôts et taxes', '6'), ('Contribution sociale généralisée déductible', '6'),
       ('CSG déductible', '6'), ('Loyer et charges locatives', '6'), ('Loyers et charges locatives', '6'),
-      ('Location de matériel et de mobilier', '6'), ('Entretien et réparations', '6'), ('Personnel intérimaire', '6'),
+      ('Location de matériel et de mobilier', '6'), ('Redevances de collaboration', '6'),
+      ('Entretien et réparations', '6'), ('Personnel intérimaire', '6'),
       ('Petit outillage', '6'), ('Chauffage, eau, gaz, électricité', '6'),
       ('Honoraires ne constituant pas des rétrocessions', '6'), ('Primes d''assurance', '6'),
       ('Primes d''assurances', '6'), ('Assurance', '6'), ('Frais de véhicules', '6'),
       ('Autres frais de déplacements', '6'), ('Frais de déplacement', '6'), ('Frais de déplacements', '6'),
       ('Indemnités kilométriques', '6'), ('Cotisations sociales personnelles', '6'),
-      ('Charges sociales personnelles', '6'), ('Frais de réception, de représentation et de congrès', '6'),
+      ('Charges sociales personnelles', '6'), ('Cotisations facultatives Madelin', '6'),
+      ('Plan d''épargne retraite', '6'), ('Frais de réception, de représentation et de congrès', '6'),
       ('Frais de réception, de représentation', '6'),
       ('Fournitures de bureau, frais de documentation, de correspondance et de téléphone', '6'),
       ('Fournitures de bureau', '6'), ('Frais d''actes et de contentieux', '6'),

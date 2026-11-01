@@ -304,25 +304,19 @@ export function caseDuPoste(poste: string): Case2035 | null {
 // texte que le cabinet a tapé dans le champ « poste 2035 » — « achats » ou « ACHATS » s'y écrivent « Achats », la clé
 // du rattachement les confondant déjà. La première orthographe d'une clé l'emporte.
 //
-// SAUF LES QUATRE POSTES NEUFS DE L'ÉTAPE 2035S1, TANT QUE LA BASE NE LES CONNAÎT PAS : la migration préparée de FEC22b
-// (`champs_bnc_du_fec`, supabase/preparees/) — et celle qui la reprend (`validation_des_paiements_par_la_caisse`) — copient
-// cette liste dans trois listes fermées (`valider_exercice`, la contrainte des écritures), confrontées par
-// champsBncFiges.test.ts, et refuseraient à la validation une NatOp qui en nomme un autre. Hors de la liste, la NatOp de
-// leurs lignes ne porte que la nature (« Dépense », « Recette »), ce que la base accepte. Les y faire entrer demande de
-// reprendre ces migrations, leurs empreintes et leurs retours — une décision de la session, avant leur application —,
-// puis de vider cette constante.
-export const POSTES_HORS_DES_LISTES_DU_FEC: readonly string[] = [
-  'Indemnités journalières', 'Redevances de collaboration', 'Cotisations facultatives Madelin', "Plan d'épargne retraite",
-]
+// LA BASE EN COPIE LA LISTE : la migration de FEC22b (`champs_bnc_du_fec`) et le filet qui reprend sa validation
+// (`validation_des_paiements_par_la_caisse`) la recopient dans les listes fermées de `valider_exercice` et de la contrainte
+// des écritures, que champsBncFiges.test.ts confronte à celle-ci : un poste ajouté ici entre dans ces migrations — leurs
+// empreintes et leurs retours suivant en chaîne — tant qu'elles sont préparées, par une migration de plus une fois
+// appliquées, sans quoi la base refuserait à la validation la NatOp qui le nomme. Les quatre postes de l'étape 2035S1 y
+// sont entrés le 01/11/2026, avant leur application.
 export const POSTES_RATTACHES: readonly string[] = [...new Set(RATTACHEMENTS.map(([poste]) => poste))]
-  .filter((poste) => !POSTES_HORS_DES_LISTES_DU_FEC.includes(poste))
 const POSTE_PAR_CLE = new Map<string, string>()
 for (const poste of POSTES_RATTACHES) if (!POSTE_PAR_CLE.has(cle(poste))) POSTE_PAR_CLE.set(cle(poste), poste)
 
 // Le poste d'une ligne de cette nature tel que le formulaire le range, sous l'orthographe du rattachement ; nul quand le
 // rattachement ne le connaît pas, ou que sa case est de l'autre cadre — exactement les postes que `repartirEnCases` dit
-// « sans case » (`cadreCompatible`) : une recette sous un poste de dépenses n'est le poste d'aucune case. Nul aussi pour un
-// poste que la base ne connaît pas encore (`POSTES_HORS_DES_LISTES_DU_FEC`).
+// « sans case » (`cadreCompatible`) : une recette sous un poste de dépenses n'est le poste d'aucune case.
 export function posteRattache(poste: string, nature: LigneDeclaration['nature']): string | null {
   const c = caseDuPoste(poste)
   return c && cadreCompatible(c, nature) ? POSTE_PAR_CLE.get(cle(poste)) ?? null : null

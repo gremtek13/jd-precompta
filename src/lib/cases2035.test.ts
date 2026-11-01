@@ -6,7 +6,6 @@ import {
   CODES_RATTACHABLES,
   CODES_TOTALISES_BR,
   POSTES_COMPTES_OBLIGATOIRES,
-  POSTES_HORS_DES_LISTES_DU_FEC,
   POSTES_PROPOSABLES,
   POSTES_RATTACHES,
   posteRattache,
@@ -757,16 +756,19 @@ describe('les secondes cases qu’un poste alimente aussi', () => {
     }
   })
 
-  // Les listes fermées de la migration préparée de FEC22b ne les portent pas encore : la NatOp de leurs lignes dit la nature
-  // seule, que la base accepte, jusqu'à ce que la session reprenne ces migrations (lib/champsBncFiges.ts les confronte).
-  it('hors des listes du FEC tant que la base ne les connaît pas : leur NatOp ne porte que la nature', () => {
-    expect([...POSTES_HORS_DES_LISTES_DU_FEC].sort()).toEqual(
-      ['Cotisations facultatives Madelin', 'Indemnités journalières', "Plan d'épargne retraite", 'Redevances de collaboration'])
-    for (const poste of POSTES_HORS_DES_LISTES_DU_FEC) {
-      expect(POSTES_RATTACHES, poste).not.toContain(poste)
-      expect(caseDuPoste(poste), poste).not.toBeNull()
-      expect(posteRattache(poste, caseDuPoste(poste)!.cadre === 'recettes' ? 'recette' : 'depense'), poste).toBeNull()
+  // Les listes fermées de FEC22b et du filet les portent depuis le 01/11/2026 (champsBncFiges.test.ts les confronte) : la
+  // NatOp de leurs lignes porte la nature et le poste, comme celle des autres postes — sous la nature de leur cadre seule.
+  it('dans les listes du FEC, comme les autres postes : leur poste se lit sous la nature de leur cadre, et sous elle seule', () => {
+    for (const [poste, nature, autre] of [
+      ['Redevances de collaboration', 'depense', 'recette'], ['Cotisations facultatives Madelin', 'depense', 'recette'],
+      ["Plan d'épargne retraite", 'depense', 'recette'], ['Indemnités journalières', 'recette', 'depense'],
+    ] as const) {
+      expect(POSTES_RATTACHES, poste).toContain(poste)
+      expect(posteRattache(poste, nature), poste).toBe(poste)
+      expect(posteRattache(poste, autre), poste).toBeNull()
     }
+    // Aucun poste que Clôture propose n'est tenu hors de la liste que la base copie.
+    expect(POSTES_PROPOSABLES.filter((p) => !POSTES_RATTACHES.includes(p))).toEqual([])
     expect(posteRattache('Cotisations syndicales et professionnelles', 'depense')).toBe('Cotisations syndicales et professionnelles')
   })
 

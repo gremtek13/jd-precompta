@@ -112,6 +112,21 @@ describe('NatOp : la nature, et le poste de la 2035 sur une ligne de charge ou d
     expect(natOpDeLaLigne('Recette', ligne('l', '706000', { de: 'categorie', categorie: null }))).toBe('Recette')
   })
 
+  // Les quatre postes de l'étape 2035S1 (lib/cases2035.ts), entrés dans les listes fermées de FEC22b et du filet le
+  // 01/11/2026 : leur NatOp porte la nature et le poste, comme celle des autres ; de l'autre cadre, la nature seule.
+  it('les quatre postes neufs de la 2035 : la nature et le poste, comme les autres', () => {
+    expect(natOpDeLaLigne('Dépense', ligne('l', '613500', categorie('Redevances de collaboration', 'x'))))
+      .toBe('Dépense — Redevances de collaboration')
+    expect(natOpDeLaLigne('Dépense', ligne('l', '646100', categorie('Cotisations facultatives Madelin', 'x'))))
+      .toBe('Dépense — Cotisations facultatives Madelin')
+    expect(natOpDeLaLigne('Dépense', ligne('l', '646100', categorie("Plan d'épargne retraite", 'x'))))
+      .toBe("Dépense — Plan d'épargne retraite")
+    expect(natOpDeLaLigne('Recette', ligne('l', '791000', categorie('Indemnités journalières', 'x'))))
+      .toBe('Recette — Indemnités journalières')
+    expect(natOpDeLaLigne('Recette', ligne('l', '706000', categorie('Redevances de collaboration', 'x')))).toBe('Recette')
+    expect(natOpDeLaLigne('Dépense', ligne('l', '606100', categorie('Indemnités journalières', 'x')))).toBe('Dépense')
+  })
+
   it('une ligne de bilan, de banque ou de TVA porte la nature seule, même avec une catégorie', () => {
     for (const compte of ['512000', '445660', '108000', '411000', '218300']) {
       expect(natOpDeLaLigne('Dépense', ligne('l', compte, categorie('Achats', 'Achats')))).toBe('Dépense')

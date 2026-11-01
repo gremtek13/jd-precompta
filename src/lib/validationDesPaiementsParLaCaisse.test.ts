@@ -143,8 +143,9 @@ describe('sa garde de tête exige, avant toute définition, les corps que C8 et 
       expect(position, fonction).toBeGreaterThan(0)
       expect(position, fonction).toBeLessThan(premiereDefinition)
     }
-    // FEC22b ne la retouche plus : sa propre définition est la dernière avant ce filet.
-    expect(attendues[0][1]).toBe('a7844d5c918ce82b510c5dc448a3452c')
+    // FEC22b ne la retouche plus : sa propre définition est la dernière avant ce filet — celle du 01/11/2026, qui porte les
+    // quatre postes neufs de la 2035 dans sa liste fermée (hier `a7844d5c…`, sans eux).
+    expect(attendues[0][1]).toBe('1827b6b7a6e10974b49499912757e535')
   })
 })
 
