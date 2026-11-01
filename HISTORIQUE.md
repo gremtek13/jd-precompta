@@ -45022,3 +45022,126 @@ simulation, et le drapeau levé. Le client (C10 à C12) ne change rien à ce que
 
 **LE RETOUR ARRIÈRE** : retirer les commits ; aucune donnée, aucune migration. Déployé, revenir à la v51 : la ligne d'import au
 commit d'avant.
+
+### 01/11/2026 — LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF D'UN MILLÉSIME (2035S1, S2 ET S6)
+
+(Écrite par un agent architecte, sur `0e5d883`. Trois lots de la conception « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA
+2035 : ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION », écrits sur la réponse (A), recommandée, de 2035S-Q2 à Q5 : le cabinet
+n'a pas répondu, il a demandé de continuer et d'arbitrer plus tard. Chaque autre réponse reste à un changement local, nommé
+ci-dessous. Sans migration, sans Edge Function ; en production, rien de lu ni d'écrit. 2035S3 à S5 attendent 2035S-Q1 : ni
+table `saisies_2035`, ni saisie ; leur `it.fails` (CC, CL, DE) reste. Lus avant d'écrire : la conception ; « L'INSTANTANÉ
+VALIDÉ COMPTE SES ENCAISSEMENTS » ; « LES DOSSIERS DE RÉFÉRENCE » ; FEC22b et sa garde.)
+
+Sources publiques : le formulaire 2035-A-SD et 2035-B-SD 2026, « REVENUS 2025 », cerfa 15945*08 (impots.gouv.fr,
+`2035-sd_5384.pdf`, livré dans `public/formulaires/2035-sd-2026.pdf`) ; la notice 2035-NOT-SD 2026 (`2035-sd_5385.pdf`),
+p. 1 (BZ, BU), renvois (9) (BW), (13) (BT), (25) (DB), (26) (le revenu brut social).
+
+**2035S1 — LES « DONT » DÉDUITS : BY, BT, PUIS LES QUATRE POSTES NEUFS.** (`src/lib/cases2035.ts`, `ClotureTab.tsx`,
+`prealablesValidation.ts`.)
+
+- Un rattachement nomme, à côté de sa porteuse, la SECONDE case qu'il alimente aussi (`RATTACHEMENTS`, troisième élément) :
+  BY du poste « Cotisations syndicales et professionnelles » (dans BM) ; quatre postes neufs — « Redevances de collaboration »
+  (BG et BW), « Cotisations facultatives Madelin » (BK et BZ), « Plan d'épargne retraite » (BK et BU), « Indemnités
+  journalières » (AF et DB). Le montant y est AJOUTÉ, jamais retiré de la porteuse : `repartirEnCases` rend les porteuses
+  (`cases`, qui seules font BR) et à part les `secondes`. DB ne se remplit qu'à partir des revenus 2025, comme le cadre 8
+  (`depuisExercice`) ; avant, les indemnités restent en AF seulement. Les quatre postes entrent d'eux-mêmes dans « Postes
+  sans case » (`POSTES_PROPOSABLES`). BT, BW, BZ, BU et BY perdent `saisieCabinet` ; DB le garde (le reste du renvoi (25),
+  un déficit non professionnel, attend 2035S3 et S4).
+- **BT** (2035S-Q2, (A)) : les échéances de l'onglet Cotisations, lues dans les CONTRIBUTIONS de la déclaration
+  (`partObligatoireDeBK`, `source.type === 'cotisation'`), leur CSG-CRDS sortie comme de BK — jamais au poste : une
+  catégorie que le cabinet aurait nommée « Cotisations sociales personnelles » partage la ligne du poste sans dire une
+  charge obligatoire. Écartée : BT tirée de la ligne du poste (elle l'aurait comptée). Le poste générique « Charges
+  sociales personnelles » reste en BK sans « dont », et Clôture le dit — carte « Charges sociales personnelles sans nature
+  dite » : « BK porte X € dont la nature, obligatoire ou facultative, n'est pas dite (sur Y €) » (`partDeBKSansNature`),
+  écartée de la validation (`CARTES_DE_CLOTURE` : BK est juste, seul son détail manque). **La réponse (B)** — le poste
+  générique compté obligatoire — s'écrit en ajoutant `'Charges sociales personnelles'` à `POSTES_COMPTES_OBLIGATOIRES`, vide
+  aujourd'hui.
+- **Les indemnités journalières** (2035S-Q3, (A)) : un poste propre, en AF et en DB comme le renvoi (25) le décrit ; le
+  choix de les porter en AF reste à l'expert-comptable. **La réponse (B)** — DB seulement saisi — s'écrit en retirant la
+  seconde case du rattachement `['Indemnités journalières', 'AF', 'DB']`. Le Report sur la déclaration des revenus le dit
+  (« moins les indemnités journalières rangées sous leur poste en gains divers (DB) »).
+- **Les « dont » arrondis ne dépassent pas leur porteuse** (`ajusterLesDontArrondis`, dans `arrondirPourFormulaire`) :
+  BT 9 000,60 € et BZ 1 200,70 € s'impriment 9 001 et 1 201 quand BK, leur somme, s'imprime 10 201. Quand les montants au
+  centime tiennent dans la porteuse et que l'arrondi seul l'en fait sortir, l'euro de trop se retire du « dont » que
+  l'arrondi a le plus relevé (en centimes, l'ordre du formulaire départageant). Une incohérence au centime n'est pas touchée :
+  `incoherencesDesCases` la dit (la carte reste écartée, sa raison réécrite : le moteur ne remplit un « dont » que d'une
+  part de sa porteuse).
+- **Une seconde case négative se dit** (`casesNegatives`, préalable `cases-negatives`) : BT négative — des remboursements
+  d'obligatoires plus forts que leurs appels — ne se dépose pas, même quand un Madelin garde BK positive.
+- **LES LISTES FERMÉES DU FEC : UNE DÉCISION DE LA SESSION.** La migration préparée de FEC22b (`champs_bnc_du_fec`) et celle
+  qui la reprend (`validation_des_paiements_par_la_caisse`) copient `POSTES_RATTACHES` dans trois listes fermées (le CTE
+  `postes(poste, classe)` de `valider_exercice`, la contrainte des écritures), confrontées par `champsBncFiges.test.ts` ;
+  leurs gardes de tête et leurs retours en vérifient les corps par empreinte, en chaîne. Y ajouter les quatre postes aurait
+  demandé de réécrire deux migrations éprouvées sur une réplique, quatre empreintes et deux retours. Écarté pour ce lot :
+  les quatre postes restent HORS de `POSTES_RATTACHES` (`POSTES_HORS_DES_LISTES_DU_FEC`) — la NatOp de leurs lignes ne
+  porte que la nature (« Dépense », « Recette »), ce que ces migrations acceptent ; FEC22c1 est encore derrière
+  `CHAMPS_BNC_EXPORTES` baissé. Les y faire entrer, avant l'application de FEC22b : reprendre les deux migrations, leurs
+  empreintes et leurs retours, rejouer leur essai sur une réplique, puis vider la constante (le test qui la fige le dira).
+- **L'instantané validé ne change pas de version.** Ses `cases` et son `formulaire` portaient déjà toutes les cases, BT et
+  les autres à zéro ; elles y portent désormais leur montant. La base n'en lit que les postes (`centimes_de_la_2035_validee`).
+  Une 2035 validée avant ce lot se relit telle quelle ; recalculée, elle différerait sur BT (et BY, BW, BZ, BU, DB s'il y a
+  lieu), et Clôture dirait l'écart (`casesQuiDifferent`) — aucun exercice n'est validé en base. La 2035-E d'un exercice
+  validé lit BW dans l'instantané : ce qui a été validé.
+
+**2035S2 — LA PRÉVISIONNELLE REMPLACÉE À LA CRÉATION, ET LE POINT D'ATTENTION.** (`src/lib/previsionnelles.ts`, neuf ;
+`CotisationsTab.tsx`, `pointsDeLaChecklist.ts`, `revisionCycles.ts`, `ClotureTab.tsx`, `prealablesValidation.ts`.)
+
+- **À la création depuis un avis** (2035S-Q4, (A)) : l'appel définitif proposé à une date où rien n'existe REMPLACE la
+  prévisionnelle du même mois civil (`remplaceLaPrevisionnelle`) qu'aucun mouvement ne paie, ni le compte personnel, sans
+  versement saisi, pas figée, et qu'aucune autre proposition ne confirme à sa date (`remplacementsDesPrevisionnelles`). La
+  ligne le dit avant le clic (« Remplace la prévisionnelle du 20/02/2026 (300,00 €) ») ; le clic porte sur elle la date, le
+  montant et `previsionnel = false` — une mise à jour que `garder_cotisation_valide` accepte hors d'un exercice validé, sa
+  CSG-CRDS et son justificatif gardés comme le fait déjà la confirmation à la même date. Deux prévisionnelles remplaçables
+  dans le mois : aucune n'est choisie, l'appel s'ajoute et la ligne le dit (`texteDeLAmbiguite`). Une prévisionnelle ne se
+  remplace qu'une fois (le premier appel du mois, dans l'ordre des dates). Les paiements lus en partie : la création se
+  suspend quand une prévisionnelle du mois pourrait se remplacer, et le dit — une prélevée paraîtrait impayée. Le texte de la
+  carte ne promet plus « pour la même date ». **La réponse (B)** — quinze jours — et **la (C)** — jamais à la création —
+  s'écrivent dans `remplaceLaPrevisionnelle` seule.
+- **Ce que la réponse (A) laisse, à dire au cabinet avec 2035S-Q4 :** l'exemple même de la relecture — la prévisionnelle du
+  20/01, l'appel du 05/02 — n'est pas du même mois ; il n'est pas remplacé à la création, ni sous (B) (seize jours). Il se
+  dit au point d'attention, et BK le compte jusqu'au geste du cabinet.
+- **Le point d'attention** (2035S-Q4, (A)) : `previsionnelles-sans-paiement`, en ATTENTION, dans la Checklist (cible
+  Cotisations, cycle « social » de la révision) et dans Clôture (carte « Prévisionnelles qu'aucun prélèvement ne paie »,
+  écartée de la validation : payée d'un autre compte, elle compte à juste titre) — une prévisionnelle comptée à son
+  échéance, datée dans la fenêtre que le relevé couvre (`couvertureDuReleve`, celle des échéances d'emprunt, après la
+  frontière des exercices validés) : l'appel définitif l'a peut-être remplacée. Le relevé lu en partie la tait. **La
+  réponse (B)** — en erreur — s'écrit en passant le point à `severite: 'erreur'` ; `prealablesValidation.test.ts` réclamera
+  alors son préalable.
+- `agent-comptable` n'a pas été touché : aucun bloc copié ne porte ce calcul, et `points_a_traiter` ne dit pas ce point.
+
+**2035S6 — UN MODÈLE PAR MILLÉSIME, ET LE PDF RETENU SANS LE SIEN.** (`src/lib/modeles2035.ts`, neuf ; `remplir2035.ts`,
+`ClotureTab.tsx`.)
+
+- `MODELES_2035` (le millésime → le modèle vierge), `millesimeDeLExercice` (N → N + 1), `modeleDuFormulaire(annee)` et
+  `formulaireAbsent(annee)`, un module pur. `remplir2035` reçoit l'exercice (paramètre obligatoire) et lit son modèle ;
+  `MODELE_2035` disparaît. Clôture retient le bouton d'un exercice sans son millésime, et le dit sous l'en-tête de la carte
+  (« Le formulaire 2035 des revenus 2026 (millésime 2027) n'est pas encore publié : le PDF n'est pas rempli… ») ; un
+  millésime plus ancien que le dernier servi se dit « pas dans l'application ». Les exercices d'avant 2025, qui
+  s'imprimaient sur le millésime 2026, sont donc retenus aussi (des bacs à sable seulement). **La réponse (B)** —
+  imprimer sur le dernier millésime avec un avertissement — s'écrit dans `modeleDuFormulaire` seule. Un millésime nouveau se
+  pose dans `MODELES_2035`, son fichier ajouté à côté de l'autre, avec son test de gabarit ; `modeles2035.test.ts` exige de
+  chaque modèle servi qu'il soit livré et que sa première page dise les revenus de l'année d'avant.
+
+**LES TESTS.** `relecture2035Saisies.test.ts` : les `it.fails` de BY, BT, BZ, BW, des indemnités journalières, de la
+prévisionnelle et du PDF de 2026 sont des `it` ordinaires, réécrits sur la correction ; celui de CC, CL et DE reste.
+`cases2035.test.ts` (les secondes cases), `previsionnelles.test.ts` et `modeles2035.test.ts` (neufs),
+`pointsDeLaChecklist.test.ts`, `ClotureTab.test.tsx` (BT à l'écran, les deux cartes, le PDF retenu, l'exercice transmis à
+`remplir2035`), `CotisationsTab.test.tsx` (le dernier bloc : le remplacement dit puis écrit, l'autre mois, la suspension, la
+prélevée qui reste). Quarante et une mutations jouées : trente-neuf tuées, dont quatre après un cas ajouté (BT lue au poste, l'ajustement
+d'une incohérence au centime, BU oubliée de la part sans nature, la carte de Clôture sur un relevé partiel) ; deux
+survivent, des défenses qu'un clic n'atteint pas — la garde du clic de « Créer ces N échéances » et celle de
+`telechargerFormulaire`, derrière un bouton `disabled`, comme celles d'hier sur une lecture partielle.
+
+**LES DOSSIERS DE RÉFÉRENCE.** L'empreinte scellée (`outils/references/README.md`) ne bouge pas : nos chiffres restent ceux de
+`c506932`, figés, ni recalculés ni recommités. Recalculés par les moteurs d'aujourd'hui, ceux du dossier A porteraient BT
+(ses cotisations sont des échéances de l'onglet Cotisations) ; sa cotisation ordinale est rangée en « Divers », donc ni BY ni
+BM ne changent. L'analyse des écarts, quand l'expert rendra ses chiffres, comparera aux moteurs d'alors.
+
+**LES RISQUES, ET LE RETOUR ARRIÈRE.** Ce qui change à la mise en ligne : des « dont » non nuls sur l'écran, le PDF et un
+instantané validé après elle ; DD diminué des indemnités journalières rangées sous leur poste (et l'estimation Urssaf, qui
+le lit) ; une prévisionnelle du mois remplacée, au clic, à la création depuis un avis ; le PDF de 2026 retenu. Aucun total
+de dépenses, aucune écriture, aucune concordance ne bouge. Un retour arrière ne demande que le code : rien n'est en base, et
+une prévisionnelle remplacée est une échéance ordinaire, que l'onglet Cotisations corrige.
+
+**CE QUI RESTE.** 2035S3 à S5 (2035S-Q1) ; les quatre postes dans les listes fermées de FEC22b avant son application ; les
+réponses du cabinet à 2035S-Q2 à Q5, chacune un changement local (ci-dessus).
