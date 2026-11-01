@@ -45145,3 +45145,123 @@ une prévisionnelle remplacée est une échéance ordinaire, que l'onglet Cotisa
 
 **CE QUI RESTE.** 2035S3 à S5 (2035S-Q1) ; les quatre postes dans les listes fermées de FEC22b avant son application ; les
 réponses du cabinet à 2035S-Q2 à Q5, chacune un changement local (ci-dessus).
+
+### 01/11/2026 — LE FEC D'UN BNC : LES QUATRE POSTES NEUFS DE LA 2035 DANS LES LISTES FERMÉES (FEC22B ET LE FILET)
+
+(Écrite par un agent architecte, sur `87e21bf` — `main` à `0e5d883`, C13, 2035S1, S2 et S6. Deux migrations PRÉPARÉES
+reprises avant leur application, rien d'appliqué ; en production, rien de lu ni d'écrit, aucun déploiement ; tout s'est
+joué sur la réplique de FEC22b. Lus avant d'écrire : « LES QUATRE CHAMPS DU FEC D'UN BNC, EN BASE (FEC22B) (PRÉPARÉE, PAS
+APPLIQUÉE) », « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS », « LA 2035 : LES CASES « DONT », LA
+PRÉVISIONNELLE REMPLACÉE ET LE PDF D'UN MILLÉSIME (2035S1, S2 ET S6) ».)
+
+**CE QUI ÉTAIT.** 2035S1 a ajouté quatre postes au rattachement (`RATTACHEMENTS`, lib/cases2035.ts) : « Indemnités
+journalières » (AF, et DB), « Redevances de collaboration » (BG, et BW), « Cotisations facultatives Madelin » (BK, et BZ),
+« Plan d'épargne retraite » (BK, et BU). La migration de FEC22b (`champs_bnc_du_fec`) copie `POSTES_RATTACHES` dans trois
+listes fermées — le CTE `postes(poste, classe)` de `valider_exercice`, et les deux listes, produits et charges, de la
+contrainte `ecritures_brouillon_champs_bnc_du_fec` —, et le filet (`validation_des_paiements_par_la_caisse`) reprend ce
+corps au caractère près ; leurs gardes de tête et leurs retours vérifient ces corps par empreinte, en chaîne. Pour ne pas
+les réécrire, 2035S1 tenait les quatre postes hors de `POSTES_RATTACHES` (`POSTES_HORS_DES_LISTES_DU_FEC`) : la NatOp de
+leurs lignes ne disait que la nature (« Dépense », « Recette »), et un exercice validé l'aurait figée ainsi.
+
+**CE QUI EST FAIT.**
+- Les listes. FEC22b reçoit les quatre postes, chacun à son rang dans `POSTES_RATTACHES` (l'ordre que
+  `champsBncFiges.test.ts` confronte) et sous la classe de son cadre, que `posteRattache` lit au formulaire : les
+  indemnités journalières en classe 7, une recette (AF) ; les trois autres en classe 6, des dépenses (BG, BK) — dans le
+  CTE et dans les deux listes de la contrainte. Le filet et son retour reçoivent la même copie du CTE. Rien d'autre ne
+  change dans ces textes : ni refus, ni mot, ni ordre, ni colonne ; seules les lignes où un poste s'insère sont coupées,
+  les autres intactes, pour que le diff se relise.
+- La chaîne des empreintes. Le corps de `valider_exercice` que FEC22b pose passe de `a7844d5c…` à
+  `1827b6b7a6e10974b49499912757e535` : la garde du filet et celle du retour de FEC22b l'exigent désormais. Celui que le
+  filet pose passe de `dcdad1ef…` à `02750f937482e3f11404f69975eb9220` : la garde de son retour l'exige. Le retour du filet
+  rend la définition amendée de FEC22b. Les deux autres corps de FEC22b (`d5221142…`, `52320c1e…`) ne bougent pas.
+- Les fichiers, avant → après : `20261031180000_champs_bnc_du_fec.sql` `b10198af…`, 783 lignes, 55 695 octets →
+  `844d59be0fa50951dab41e54bc318f77`, 788 lignes, 56 011 octets ; `20261101100000_validation_des_paiements_par_la_caisse.sql`
+  `da3248db…`, 614, 43 299 → `7c098f630a75b54fe66d305390b20155`, 617, 43 470 ; le retour de FEC22b `98bebdbd…`, 483,
+  29 656 → `21338634a5c1d62fe0a88008e3043bb2`, 483, 29 656 (une empreinte changée) ; le retour du filet `9d113ec5…`, 544,
+  36 696 → `46be291b924bdb50c6eb21a72d68eb51`, 547, 36 867. C8 (`0accdea9…`, 1 142 lignes) n'est pas touchée. Aucun texte
+  ne porte de barre oblique inverse ni de retour chariot ; le détecteur d'`apply_migration` n'y lit rien de plus qu'hier.
+- Le code. `POSTES_HORS_DES_LISTES_DU_FEC` et son filtre retirés : `POSTES_RATTACHES` redevient la liste des postes du
+  rattachement, et son commentaire dit ce que la base en copie — un poste ajouté là entre dans ces migrations tant
+  qu'elles sont préparées, par une migration de plus une fois appliquées. La NatOp des quatre postes porte la nature et
+  le poste, comme celle des autres (« Dépense — Redevances de collaboration », « Recette — Indemnités journalières »).
+  `CHAMPS_BNC_EXPORTES` reste baissé : rien n'envoie encore ces clés.
+- Les gardes. `champsBncFiges.test.ts` : la liste de la classe 7 écrite en dur s'allonge des indemnités journalières ; un
+  cas tient les quatre postes sous la classe de leur cadre ; un autre exige de l'essai les seize étapes neuves, le côté de
+  chaque poste tiré de sa classe, jamais recopié. `validationDesPaiementsParLaCaisse.test.ts` : l'empreinte qu'il épingle.
+  `cases2035.test.ts` : le cas qui figeait la constante est retourné (les quatre dans la liste, sous la nature de leur
+  cadre seule ; aucun poste proposé hors d'elle). `champsBncDuFec.test.ts` : leur NatOp. Les autres gardes recalculaient
+  déjà ces empreintes depuis les textes (le défaire-et-comparer, les gardes de tête, les retours) et ont suivi d'elles-mêmes.
+- L'essai (`validationExercice.sql`) : seize étapes, chacun des quatre postes admis à sa place et refusé de l'autre côté,
+  par la validation (158g à 158n : la ligne 5 de K, la recette affectée, pour les indemnités journalières ; la ligne 0,
+  l'achat, pour les trois autres ; de l'autre côté, sous les mots de `poste_hors_cadre`) et par la restauration (182i à
+  182p : réinsérés sur un compte de leur classe, refusés sur l'autre par la contrainte).
+
+**LA BASE, SUR LA RÉPLIQUE DE FEC22B SEULEMENT** (grappe `fec22b_replique`, base `f_m` : la production de 164 migrations
+et FEC22b ; démarrée par son répertoire de données, son port et sa socket posés dans `postgresql.auto.conf`, rendu à la
+fin à son empreinte d'avant). La référence d'abord, sur l'ancienne FEC22b, avec les essais d'aujourd'hui : la validation
+229 sur 229 ; les ventes facturées 77 ; le report des soldes 52 ; la révision 166 ; la cotisation personnelle 91 ; les
+pièces hors de France 197 ; le retrait d'un paiement personnel 24 ; `restauration.sql`, semé par la fonction, IDENTIQUE
+sur 76 tables et « 2 sur 2 » ; `rls.sql`, semé du journal, 82 invariants à 0 en faute et 63 mutations qui mordent ; C8 et
+le filet d'hier, 13 verdicts justes. L'essai amendé sur l'ancienne FEC22b : 245 verdicts, douze fautes — les douze étapes
+qui distinguent les quatre postes, et elles seules (les quatre refus par la restauration passent des deux côtés : ils
+gardent l'autre sens, un poste admis aux deux classes). Puis, en UNE transaction validée : l'ancienne défaite par son
+ancien retour (le corps de la production, `d241891f…`, les colonnes retirées), sa ligne d'historique retirée — sur la
+réplique seulement, comme la relecture de C8 l'a fait pour C8, pour que la nouvelle s'applique sous la même version
+provisoire —, la nouvelle appliquée comme l'outil, sa ligne d'historique à l'empreinte du fichier (`844d59be…`).
+`signature.sql` : seules « contraintes » (711, `bb338173…`) et « fonctions » (217, `ca432808…`) diffèrent de l'ancienne
+FEC22b. Sur la nouvelle : l'essai amendé 245 sur 245 ; celui d'hier rend ses 229 verdicts à l'empreinte de la référence,
+et les six autres essais de la validation chacun la sienne, au caractère près ; `restauration.sql` et `rls.sql` rendent
+une sortie identique. Puis, chacun dans une transaction annulée :
+- une seconde application de FEC22b se refuse (sa garde : « … n'est plus celle de la migration
+  validation_des_ventes_facturees ») ;
+- son retour se refuse sur une ligne validée qui porte les champs — et l'un des postes neufs, que la contrainte amendée
+  accepte —, « … que 1 lignes validées portent » ; sans elle, il rend les trois corps de la production (`d241891f…`,
+  `3e095e9b…`, `905446cc…`), ni colonne ni contrainte, et la signature des neuf familles est celle de la production ; une
+  seconde fois, il se refuse ;
+- C8 puis le filet, comme l'outil : le corps du filet `02750f93…`, les lignes d'historique de C8, de FEC22b et du filet
+  chacune à l'empreinte de son fichier (`0accdea9…`, `844d59be…`, `7c098f63…`), 167 migrations ; une seconde application
+  de chacune refusée ; l'essai du filet, 13 verdicts justes ; l'essai de la validation joué sur la validation du FILET,
+  245 sur 245 ; le retour du filet rend le corps amendé de FEC22b (`1827b6b7…`), son commentaire, son propriétaire, ses
+  droits, sa sécurité, ses réglages et sa volatilité, puis se refuse une seconde fois ; le retour de FEC22b accepte alors ;
+- L'ORDRE DU JOUR DE L'APPLICATION, depuis la production (FEC22b défaite et sa ligne retirée dans la transaction : 164
+  migrations, `3a31b730…`, la signature de la production) : C8 — qui ne touche pas `valider_exercice` —, FEC22b — dont la
+  garde accepte donc après C8 —, le filet, chacun avec sa ligne d'historique ; 13 et 245 verdicts justes.
+Côté base, sur la nouvelle : le socle rend 81 instructions, `bfe9dce8…` (hier `780ac3ed…`) — celui que le socle régénéré
+devra rendre le jour de l'application —, l'inventaire 2 290 objets, `98bfa4c1…`, inchangé (il compte des noms) ;
+l'historique de `f_m`, 165 migrations, `41893520…`. `f_m` reste la réplique de FEC22b, amendée.
+
+**LES MUTATIONS.** En base, chacune dans une transaction annulée, l'essai joué : dix mutants, tous mordent — le CTE sans
+le plan d'épargne retraite (158m, 158n), Madelin en classe 7 dans le CTE (158k, refusé par la contrainte ; 158l), la
+contrainte sans les redevances de collaboration (158j, 182l), sans les indemnités journalières (158h, 182j), Madelin admis
+aussi aux recettes de la contrainte (182m, accepté), la copie du filet sans les indemnités journalières (158g, 158h ; son
+retour se refuse), les trois gardes à l'empreinte d'hier (le filet, le retour de FEC22b, le retour du filet : chacun se
+refuse), le retour du filet qui rendrait l'ancien corps (sa garde mise à l'empreinte d'aujourd'hui : le corps relu est
+`a7844d5c…`, 158g à 158n tombent, le retour de FEC22b se refuse ensuite) ; et l'ancienne FEC22b elle-même, le mutant « les
+quatre postes absents » : douze étapes. Devant les gardes TypeScript, seize mutations du texte, chacune rendue au
+caractère près, toutes mordent ; une ne mordait pas d'abord — elle ne changeait que le libellé de 182p, dont l'instruction
+restait jouée : équivalente —, remplacée par deux vraies (la ligne de 182p retirée ; 182p sur un produit).
+
+**LA SUITE** (Node 22.23.3, sous Paris) : 523 fichiers, 16 292 tests verts et 2 « échecs attendus » d'autres lots. `tsc -b`
+: 0 ; `oxlint` : 0 erreur, 63 avertissements, ceux de la référence, aucun dans les fichiers touchés. `CHAMPS_BNC_EXPORTES`
+baissé ; aucune simulation du jour d'application dans l'export (le fichier déplacé, le socle régénéré) n'a été rejouée
+pour l'amendement : les gardes qui lisent la migration où qu'elle soit n'ont pas changé de forme.
+
+**ÉCARTÉ, ET POURQUOI.**
+- Garder les quatre postes hors des listes et les y faire entrer par une migration de plus, après l'application : la NatOp
+  de leurs lignes figerait d'ici là un FEC moins précis que les autres, et `valider_exercice` serait remplacée une
+  troisième fois ; avant l'application, reprendre les textes préparés ne coûte rien à la production.
+- Une table de référence des postes, que la validation lirait au lieu d'une liste écrite : une policy, une sauvegarde et
+  un essai de plus pour une liste que le code tient déjà et que le test confronte, et une refonte de deux migrations
+  éprouvées que la demande excluait (rien d'autre ne devait y changer que les listes et leurs empreintes).
+
+**CE QUI RESTE.** Le banc du leurre (outils/leurre/banc.py) n'a pas rejoué `validationExercice.sql` changé : il monte ses
+propres copies de la base, que ce lot ne devait pas créer ; à rejouer avant de jouer l'essai en production — ses étapes
+neuves ne rendent que leurs propres verdicts, dans les dossiers jetables K et RF. Le jour de l'application : C8, FEC22b,
+le filet, dans cet ordre, par l'outil, chacun sous la version de sa ligne d'historique, puis les trois contrôles de
+l'export. Relevé sur la réplique après les trois, depuis la production, dans une transaction annulée : le socle 81
+`bfe9dce8…` (C8 et le filet ne le changent pas : le socle régénéré doit le rendre), l'inventaire 2 295 objets
+`5ac4309b…`, et `signature.sql` — « colonnes » 916 `821f8387…`, « contraintes » 711 `bb338173…`, « déclencheurs » 84
+`8f00438b…`, « fonctions » 220 `e3cc1631…`, « droits des fonctions » 220 `1f3389b2…`, les quatre autres celles de la
+production. Dans supabase/schema/README.md, le paragraphe de C8 porte encore
+les chiffres d'avant sa relecture (`864afcec…`, 1 041 lignes ; le fichier est à `0accdea9…`, 1 142 lignes), et le filet
+n'y a pas de paragraphe : hors de ce lot.

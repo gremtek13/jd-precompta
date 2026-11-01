@@ -431,9 +431,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   les nomme (une seconde case AJOUTÉE, jamais retirée de la porteuse), BT des seules échéances de l'onglet Cotisations, DB
   des indemnités journalières ; l'appel définitif du même mois remplace, au clic, la prévisionnelle qu'aucun paiement ne
   date, et une autre se dit en attention (`lib/previsionnelles.ts`) ; un modèle par millésime, le PDF retenu sans le sien
-  (`lib/modeles2035.ts`) ; les quatre postes neufs restent hors des listes fermées de FEC22b tant que la session n'a pas
-  repris ses migrations (`POSTES_HORS_DES_LISTES_DU_FEC`). Restent CC, CL, DE et le reste de DB (2035S3 à S5, dont une
-  migration additive, `saisies_2035`), qui attendent 2035S-Q1 → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 :
+  (`lib/modeles2035.ts`) ; les quatre postes neufs sont entrés le 01/11/2026 dans les listes fermées du FEC (ci-dessous).
+  Restent CC, CL, DE et le reste de DB (2035S3 à S5, dont une migration additive, `saisies_2035`), qui attendent
+  2035S-Q1 → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 :
   ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION », « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF
   D'UN MILLÉSIME (2035S1, S2 ET S6) ».
 - **Déclarations TNS** (ligne 27) : restent hors de l'estimation — médecins et chirurgiens-dentistes, retraite, revenus
@@ -458,11 +458,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   rendez-vous ; FEC22a en module le 31/10/2026 (`lib/champsBncDuFec.ts`, neutre : rien ne le lit encore) ; FEC22c1, le
   fichier à vingt-deux colonnes, derrière `CHAMPS_BNC_EXPORTES` baissé ; FEC22b, la migration (`champs_bnc_du_fec`,
   `supabase/preparees/`), préparée et éprouvée sur une réplique le 31/10/2026, à appliquer sur l'accord du cabinet avant
-  la validation de 2025, puis FEC22c2 (la demande porte les clés, une ligne de charge par règlement) → « LE FEC D'UN BNC
-  EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E »,
-  « LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) », « LE FEC D'UN BNC EN TRÉSORERIE À
-  VINGT-DEUX CHAMPS, DERRIÈRE SON DRAPEAU (FEC22C1, LIGNE 26.6, ÉTAPE E) », « LES QUATRE CHAMPS DU FEC D'UN BNC, EN BASE
-  (FEC22B) (PRÉPARÉE, PAS APPLIQUÉE) ».
+  la validation de 2025, puis FEC22c2 (la demande porte les clés, une ligne de charge par règlement) ; le 01/11/2026, les
+  quatre postes neufs de la 2035 (2035S1) entrent dans ses listes fermées et dans la copie du filet, leurs empreintes et
+  leurs retours suivant en chaîne, éprouvés sur la réplique de FEC22b, et leur NatOp porte la nature et le poste → « LE
+  FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6
+  ET FEC22-E », « LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) », « LE FEC D'UN BNC EN TRÉSORERIE
+  À VINGT-DEUX CHAMPS, DERRIÈRE SON DRAPEAU (FEC22C1, LIGNE 26.6, ÉTAPE E) », « LES QUATRE CHAMPS DU FEC D'UN BNC, EN
+  BASE (FEC22B) (PRÉPARÉE, PAS APPLIQUÉE) », « LE FEC D'UN BNC : LES QUATRE POSTES NEUFS DE LA 2035 DANS LES LISTES
+  FERMÉES (FEC22B ET LE FILET) ».
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
   APRÈS COUP ».
