@@ -2179,3 +2179,68 @@ describe('PiecesTab — une pièce payée en espèces', () => {
     }
   })
 })
+
+// RELECTURE DE C9B (ligne 26.6) — LA SUPPRESSION D'UNE SÉLECTION ne connaît pas la pièce payée par la caisse. La fiche d'une
+// pièce qu'un paiement cite n'offre plus « Supprimer » et dit pourquoi (`suppressionRetenueParLaCaisse`) ; « Supprimer la
+// sélection » écarte, avant la confirmation, les pièces figées, citées par la révision et déclarées à l'e-reporting — pas celle
+// qu'un paiement de la caisse cite. Elle part donc à la base, qui la refuse (la clé `on delete restrict`, ou, quand sa
+// contrepartie est au brouillon, la garde de l'écriture : « L'écriture d'une opération de caisse ne se modifie pas : retire
+// l'opération, puis saisis-la de nouveau. », relevé sur une réplique — la mise à nul de `piece_id` par la clé du brouillon passe
+// avant la clé de la caisse), et le bilan du lot dit cette phrase, qui ne nomme ni la caisse ni le remède.
+describe('relecture C9b — supprimer une sélection qui porte une pièce payée par la caisse', () => {
+  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+  const paiement = {
+    id: 'o1', dossier_id: 'dossier-de-test', genre: 'paiement', date: '2026-03-12', montant: -120, categorie_id: null, taux_tva: null,
+    encaissements_du_jour: null, piece_id: 'p-esp', origine: 'cabinet', remplace_id: null, cree_le: '2026-03-12T08:00:00Z', cree_par: 'u',
+    retire_le: null, retire_par: null,
+  }
+  const preparer = () => {
+    poser([
+      piece({ id: 'p-esp', statut: 'validee', tiers: 'ESPECES', nom_fichier: 'paye-en-especes.pdf' }),
+      piece({ id: 'p-libre', statut: 'validee', tiers: 'LIBRE' }),
+    ])
+    caisseFaux.demandes = []
+    caisseFaux.reponse = (dossierId: string) => ({
+      dossierId, etat: 'lue',
+      donnees: { operations: [paiement], ouvertures: [], mouvements: [], especes: { etat: 'sans_objet' }, categories: [], piecesPayees: [] },
+    })
+  }
+  const montrer = () => render(
+    <AvecExercicesValides>
+      <FournisseurPanneauDroit>
+        <AnneeProvider defaut="toutes">
+          <PiecesTab dossierId="dossier-de-test" ventesParLesFactures={false} modele={TRESORERIE} assujettiTva={false} />
+        </AnneeProvider>
+        <EmplacementPanneauDroit />
+      </FournisseurPanneauDroit>
+    </AvecExercicesValides>,
+  )
+
+  it('témoin : la caisse est lue, et la pièce qu’elle paie se dit « Payée en espèces »', async () => {
+    caisseFaux.leve = true
+    try {
+      preparer()
+      montrer()
+      expect(await screen.findByText('Payée en espèces')).toBeTruthy()
+    } finally {
+      caisseFaux.leve = false
+    }
+  })
+
+  it.fails('PROUVE : la sélection écarte la pièce payée par la caisse avant la confirmation, comme une pièce figée ou citée', async () => {
+    caisseFaux.leve = true
+    try {
+      preparer()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      montrer()
+      expect(await screen.findByText('Payée en espèces')).toBeTruthy()
+      const cases = await screen.findAllByRole('checkbox')
+      await act(async () => { fireEvent.click(cases[cases.length - 2]) })
+      await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+      await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+      expect(faux.suppressions).toEqual(['p-libre'])
+    } finally {
+      caisseFaux.leve = false
+    }
+  })
+})
