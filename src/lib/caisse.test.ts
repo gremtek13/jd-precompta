@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  CAISSE_EXPORTEE, ecritureDeLOperation, encaissementsDuJour, ensembleDuJour, fluxDeLaCaisse, former, GESTES_DE_LA_CAISSE,
+  CAISSE_EXPORTEE, ecritureDeLOperation, encaissementsDuJour, ensembleDuJour, fluxAvantLOuverture, fluxDeLaCaisse, former,
+  GESTES_DE_LA_CAISSE,
   jugerLaSaisie, jugerLaSaisieDUnMois, jugerLeRemplacement, jugerLeRetrait, MOTS_DE_LA_CAISSE, ORDRE_DES_REFUS, origineDite,
   ouvertureDuDossier, paiementsDeVenteDuJour, premierJourDeLaCaisse, premierJourNegatif, refusDeLaCaisse, refusDeLaSaisie,
   refusDeLaSaisieDUnMois, refusDuRemplacement, refusDuRetrait, remplacanteDe, soldesDeLaCaisse, texteCaisseNegative,
@@ -283,6 +284,19 @@ describe('la caisse ne compte pas deux fois les espèces d’avant l’ouverture
     mouvements: [{ id: 'dab', date: '2025-12-20', montant: -100, compte_bilan: '530000' }],
   })
   const PRELEVEMENT_400 = [{ compte: '530000', sens: 'credit', montant: 400 }, { compte: '108000', sens: 'debit', montant: 400 }]
+
+  // Étape C9b : ce que la caisse lit et qui précède l'ouverture se dit (l'onglet Caisse) — non compté quand la reprise porte la
+  // caisse, compté à tort quand elle ne la porte pas.
+  it('les flux d’avant l’ouverture : le retrait du 20/12/2025, non compté ; sans ligne de caisse dans la reprise, compté', () => {
+    expect(fluxAvantLOuverture(etat)).toEqual([{ jour: '2025-12-20', centimes: 10_000, source: 'mouvement', id: 'dab', compte: false }])
+    const sansCaisse = { ...etat, ouvertures: [{ date: '2026-01-01', compte: '512000', sens: 'debit' as const, montant: 50 }] }
+    expect(fluxAvantLOuverture(sansCaisse)).toEqual([{ jour: '2025-12-20', centimes: 10_000, source: 'mouvement', id: 'dab', compte: true }])
+    // Un dossier qui n'est pas repris : rien ne précède rien.
+    expect(fluxAvantLOuverture({ ...etat, ouvertures: [] })).toEqual([])
+    // Le jour même de l'ouverture n'en est pas.
+    const leJour = { ...etat, mouvements: [{ id: 'dab', date: '2026-01-01', montant: -100, compte_bilan: '530000' }] }
+    expect(fluxAvantLOuverture(leJour)).toEqual([])
+  })
 
   it('le solde du 01/01/2026 est celui de la balance reprise, 300 € — pas 400 €', () => {
     expect(soldesDeLaCaisse(etat).find((s) => s.jour === '2026-01-01')?.centimes).toBe(30_000)

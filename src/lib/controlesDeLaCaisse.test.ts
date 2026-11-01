@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ecritureDeLOperation, ensembleDuJour, type EtatDeLaCaisse } from './caisse'
 import {
   caisseNegative, caisseNegativeDite, CAISSE_PAS_EN_BASE, detailDesOperationsAReprendre, detailDesRecettesARevoir,
-  detailDesVersementsEnRecette, dossierTientUneCaisse, etatDeLaCaisseLue, journalDeLOperation, justificatifDeLaCaisse,
+  detailDesVersementsEnRecette, dossierTientUneCaisse, etatDeLaCaisseLue, facturesDeLaRecetteARevoir, journalDeLOperation,
+  justificatifDeLaCaisse, LIBELLE_RAISON_DE_REPRENDRE, mouvementsDAvantLOuverture, piecesDeVenteDe,
   libelleDitUnVersementDEspeces, motifDesOperationsDeCaisse, OPERATIONS_DE_CAISSE_ABSENTES, operationNommee, operationsDe,
   operationsDeCaisseAReprendre, operationsDeCaisseDuDossier, operationsPourLesControles, RAISON_VERSEMENT_D_ESPECES,
   recettesDeCaisseARevoir, referenceDeLaCaisse, versementsDEspecesEnRecette, versementsDEspecesHorsDesLots,
@@ -26,6 +27,14 @@ import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE } from '../test/ventesFactu
 // reprendre, une caisse négative, une recette à revoir (CAISSE-Q2), un versement d'espèces rangé en recette — et le
 // versement hors des lots. Chacun dans ses deux états : la caisse absente (le drapeau baissé) rend ce qu'on rendait avant
 // elle. Des jeux FICTIFS.
+
+// Le drapeau de la migration `paiement_par_la_caisse` (étape C9b), joué par un accesseur : son état d'aujourd'hui par défaut.
+const drapeau = vi.hoisted(() => ({ leve: null as boolean | null }))
+vi.mock('./paiementParLaCaisse', async (original) => {
+  const module = await original<typeof import('./paiementParLaCaisse')>()
+  return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeau.leve ?? module.PAIEMENT_PAR_LA_CAISSE_EXPORTE } }
+})
+afterEach(() => { drapeau.leve = null })
 
 const DOSSIER = 'd-caisse'
 const SANS_LETTRAGE = new Map()
@@ -83,7 +92,7 @@ const especesLues = (...encaissements: ReturnType<typeof especesDeF1>[]): Espece
 function dossier(o: Partial<DossierDesControlesDeLaCaisse> = {}): DossierDesControlesDeLaCaisse {
   return {
     modele: MODELE, assujettiTva: false, categories: CATEGORIES, ecritures: [], ouvertures: [], mouvements: [], especes: { etat: 'sans_objet' },
-    frontiere: null, ...o,
+    frontiere: null, piecesDeVente: [], ...o,
   }
 }
 
@@ -686,5 +695,79 @@ describe('au hasard', () => {
         throw new Error(`cas ${cas} : ${JSON.stringify(aReprendre.map((x) => x.operationId))} au lieu de ${brouillon[i].operation_caisse_id}`)
       }
     }
+  })
+})
+
+// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (étape C9b) : `caisse-a-reprendre` compte le paiement d'une pièce ÉCRITE dont la
+// contrepartie manque ou ne suit plus ; le mouvement d'avant l'ouverture classé sur la caisse ; l'ensemble du jour d'une recette
+// qui compte le paiement d'une pièce de vente, et le nomme.
+describe('le paiement d’une pièce par la caisse, dans les contrôles', () => {
+  const PAYE = operation({ id: 'pa', genre: 'paiement', date: '2026-03-12', montant: -50, piece_id: 'p1', categorie_id: null, encaissements_du_jour: null })
+  // La charge de la pièce, au brouillon : la pièce est écrite.
+  const charge = ecriture({ id: 'c1', dossier_id: DOSSIER, piece_id: 'p1', date: '2026-03-12', compte: '606400', sens: 'debit', montant: 50 })
+  const contrepartie = (o: Partial<EcritureBrouillon> = {}) => ecriture({
+    id: 'k1', dossier_id: DOSSIER, piece_id: 'p1', operation_caisse_id: 'pa', date: '2026-03-12', compte: PLAN_PAR_DEFAUT.caisse,
+    sens: 'credit', montant: 50, ...o,
+  })
+  const reprendre = (ecritures: EcritureBrouillon[], operations = [apport('ap', { date: '2026-03-01', montant: 200 }), PAYE], o: Partial<DossierDesControlesDeLaCaisse> = {}) =>
+    operationsDeCaisseAReprendre(operations, dossier({ ecritures: [...brouillonDe(apport('ap', { date: '2026-03-01', montant: 200 })), ...ecritures], ...o }))
+      .map((x) => [x.operationId, x.raison])
+
+  it('le drapeau baissé : aucun paiement jugé, quoi que porte le brouillon — la liste d’hier', () => {
+    drapeau.leve = false
+    expect(reprendre([charge])).toEqual([])
+  })
+
+  it('levé : la contrepartie qui manque à une pièce écrite ; celle qui ne suit plus ; rien pour une pièce pas encore écrite', () => {
+    drapeau.leve = true
+    expect(reprendre([charge])).toEqual([['pa', 'contrepartie_absente']])
+    expect(reprendre([charge, contrepartie()])).toEqual([])
+    expect(reprendre([charge, contrepartie({ montant: 40 })])).toEqual([['pa', 'contrepartie_perimee']])
+    expect(reprendre([charge, contrepartie({ sens: 'debit' })])).toEqual([['pa', 'contrepartie_perimee']])
+    expect(reprendre([charge, contrepartie({ compte: '512000' })])).toEqual([['pa', 'contrepartie_perimee']])
+    expect(reprendre([charge, contrepartie({ date: '2026-03-13' })])).toEqual([['pa', 'contrepartie_perimee']])
+    // En deux lignes qui font le paiement : elle le suit.
+    expect(reprendre([charge, contrepartie({ montant: 20 }), contrepartie({ id: 'k2', montant: 30 })])).toEqual([])
+    expect(reprendre([])).toEqual([])
+  })
+
+  it('levé : ni un paiement retiré, ni un exercice figé, ni un dossier en engagement', () => {
+    drapeau.leve = true
+    expect(reprendre([charge], [apport('ap', { date: '2026-03-01', montant: 200 }), { ...PAYE, retire_le: '2026-03-13T00:00:00Z' }])).toEqual([])
+    expect(reprendre([charge], undefined, { frontiere: '2026-12-31' })).toEqual([])
+    expect(reprendre([charge], undefined, { modele: { ...MODELE, mode: 'engagement' } })).toEqual([])
+  })
+
+  it('le détail nomme le paiement et son remède : régénérer les écritures de sa pièce', () => {
+    drapeau.leve = true
+    const liste = operationsDeCaisseAReprendre([PAYE], dossier({ ecritures: [charge] }))
+    expect(detailDesOperationsAReprendre(liste)).toContain(`(${LIBELLE_RAISON_DE_REPRENDRE.contrepartie_absente})`)
+    expect(LIBELLE_RAISON_DE_REPRENDRE.contrepartie_absente).toMatch(/régénérer/)
+  })
+
+  it('le mouvement d’avant l’ouverture classé sur la caisse ; ni un autre compte, ni après, ni figé, ni sans reprise', () => {
+    const avant = ligne({ id: 'm1', date: '2025-12-30', montant: -100, compte_bilan: PLAN_PAR_DEFAUT.caisse })
+    const autreCompte = ligne({ id: 'm2', date: '2025-12-30', montant: -100, compte_bilan: '455000' })
+    const apres = ligne({ id: 'm3', date: '2026-01-02', montant: -100, compte_bilan: PLAN_PAR_DEFAUT.caisse })
+    const ouvertures = [{ date: '2026-01-01' }]
+    expect(mouvementsDAvantLOuverture([avant, autreCompte, apres], ouvertures, PLAN_PAR_DEFAUT.caisse, null).map((l) => l.id)).toEqual(['m1'])
+    expect(mouvementsDAvantLOuverture([avant], ouvertures, PLAN_PAR_DEFAUT.caisse, '2025-12-31')).toEqual([])
+    expect(mouvementsDAvantLOuverture([avant], [], PLAN_PAR_DEFAUT.caisse, null)).toEqual([])
+  })
+
+  it('l’ensemble du jour d’une recette compte le paiement d’une pièce de VENTE de ce jour, et le nomme — jamais « sans numéro »', () => {
+    const encaisse = operation({ id: 'pv', genre: 'paiement', date: '2026-03-12', montant: 30, piece_id: 'p-vente', categorie_id: null, encaissements_du_jour: null })
+    const r = recette('r1', { encaissements_du_jour: [] })
+    const d = dossier({ piecesDeVente: piecesDeVenteDe([{ id: 'p-vente', type_piece: 'vente' }, { id: 'p1', type_piece: 'achat' }]) })
+    const etat = etatDeLaCaisseLue([r, encaisse], d)!
+    expect(etat.piecesDeVente).toEqual(['p-vente'])
+    expect(ensembleDuJour(etat, '2026-03-12')).toEqual(['pv'])
+    const aRevoir = recettesDeCaisseARevoir([r, encaisse], etat, null)
+    expect(aRevoir.map((x) => x.operation.id)).toEqual(['r1'])
+    expect(facturesDeLaRecetteARevoir(aRevoir[0], etat)).toEqual(['paiement en espèces d’une pièce de vente du 12/03/2026'])
+    // Reconnu par la saisie : rien à revoir. Sans les pièces de vente, la même recette paraîtrait à revoir — d'où leur passage.
+    const reconnue = { ...r, encaissements_du_jour: ['pv'] }
+    expect(recettesDeCaisseARevoir([reconnue, encaisse], etatDeLaCaisseLue([reconnue, encaisse], d)!, null)).toEqual([])
+    expect(recettesDeCaisseARevoir([reconnue, encaisse], etatDeLaCaisseLue([reconnue, encaisse], dossier())!, null)).toHaveLength(1)
   })
 })

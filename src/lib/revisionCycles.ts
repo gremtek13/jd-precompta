@@ -171,6 +171,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'caisse-a-reprendre': 'tresorerie',
   'caisse-negative': 'tresorerie',
   'versements-especes-en-recette': 'tresorerie',
+  // Le mouvement d'avant l'ouverture classé sur la caisse (étape C9b) : le 53 compté deux fois.
+  'caisse-mouvements-avant-ouverture': 'tresorerie',
   // Les relevés attendus de chaque exercice (« Relevés bancaires AAAA »).
   banque: 'tresorerie',
   // Les recettes : les ventes que l'application émet, et le taux d'une recette du relevé.

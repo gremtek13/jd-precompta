@@ -25,7 +25,7 @@ import { acquisitionsDesBiens, dotationDeLExercice, dotationsDuRegistre, dotatio
 import { amortissementsSousLeBareme, forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces, type PartEncaissee } from './rattachement'
-import { paiementsParLaCaisse } from './paiementParLaCaisse'
+import { PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisse } from './paiementParLaCaisse'
 import { defautsDeNumerotation, estFigee, frontiereDeValidation } from './validationExercice'
 import { mouvementsDeCloture, ouvertureDeLExercice, soldesAReporter, type ReportDesSoldes } from './reportDesSoldes'
 import { jumellesDuDossier, ventesEnDouble, type FacturePourJumelle, type TransmissionPourJumelle } from './ventesJumelles'
@@ -37,7 +37,7 @@ import { anneeDe, formatDate, formatMoney } from './format'
 import type { VentesDeLaChecklist } from './ventesDeLaChecklist'
 import {
   caisseNegative, caisseNegativeDite, detailDesOperationsAReprendre, detailDesRecettesARevoir, etatDeLaCaisseLue,
-  operationsDe, operationsDeCaisseAReprendre, recettesDeCaisseARevoir, type EspecesDesFactures, type OperationsDeCaisse,
+  operationsDe, operationsDeCaisseAReprendre, piecesDeVenteDe, recettesDeCaisseARevoir, type EspecesDesFactures, type OperationsDeCaisse,
 } from './controlesDeLaCaisse'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
@@ -899,13 +899,18 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       especes: (etatsDesVentes === null ? { etat: 'sans_objet' } : {
         etat: 'lues', encaissements: etatsDesVentes.contexte.encaissements, factures: etatsDesVentes.contexte.factures,
       }) satisfies EspecesDesFactures,
+      // Les pièces de vente, des deux piles : l'ensemble du jour d'une recette compte leurs paiements par la caisse (étape C9b).
+      piecesDeVente: piecesDeVenteDe([...d.piecesValidees, ...d.piecesAValider]),
     }
     // UNE OPÉRATION DONT L'ÉCRITURE MANQUE OU NE SUIT PLUS SA COMPOSITION — un plan ou un statut de TVA changé depuis la saisie,
     // une restauration : défensif, la base écrivant l'une avec l'autre. Validée, l'écriture fausse le resterait.
     const aReprendre = operationsDeCaisseAReprendre(operationsDeLaCaisse, dossierDeLaCaisse).filter((x) => dansLExercice(x.date))
     bloque({
       id: 'caisse-a-reprendre', nb: aReprendre.length, cible: 'caisse',
-      message: "opération(s) de caisse de l'exercice dont l'écriture manque, ne suit plus l'opération ou ne peut plus s'écrire — un plan ou un statut de TVA changé depuis la saisie : retirer l'opération et la saisir de nouveau avant la validation.",
+      // Depuis C9b, aussi le paiement d'une pièce écrite dont la contrepartie manque ou ne suit plus (le détail le nomme).
+      message: PAIEMENT_PAR_LA_CAISSE_EXPORTE
+        ? "opération(s) de caisse de l'exercice dont l'écriture manque, ne suit plus l'opération ou ne peut plus s'écrire — un plan ou un statut de TVA changé depuis la saisie : retirer l'opération et la saisir de nouveau avant la validation ; pour le paiement d'une pièce, régénérer les écritures de la pièce."
+        : "opération(s) de caisse de l'exercice dont l'écriture manque, ne suit plus l'opération ou ne peut plus s'écrire — un plan ou un statut de TVA changé depuis la saisie : retirer l'opération et la saisir de nouveau avant la validation.",
       detail: aReprendre.length > 0 ? detailDesOperationsAReprendre(aReprendre) : undefined,
     })
     const etatDeLaCaisse = etatDeLaCaisseLue(operationsDeLaCaisse, dossierDeLaCaisse)!
@@ -1057,6 +1062,9 @@ export const POINTS_DE_LA_CHECKLIST_ECARTES: Readonly<Record<string, string>> = 
   'montant-suspect': "en trésorerie l'écriture d'une pièce non payée est déséquilibrée, donc refusée par la numérotation ; en engagement une facture impayée à la clôture est une dette, pas une anomalie",
   'piste-rompue': "ce sont les écritures que rien ne rattache, refusées sous « ecritures-orphelines »",
   desequilibrees: "jugé écriture par écriture sur la numérotation de l'exercice, sous « ecritures-desequilibrees »",
+  // Étape C9b : le mouvement précède l'ouverture du dossier, donc tout exercice que l'application valide ; ses espèces sont
+  // dans les comptes repris, et sa fiche le retire de la caisse.
+  'caisse-mouvements-avant-ouverture': "le mouvement précède l'ouverture du dossier : il n'appartient à aucun exercice que l'application valide, et la Vue d'ensemble le dit jusqu'à ce que sa fiche le retire de la caisse",
 }
 
 // LES CARTES DE CLÔTURE QUI DISENT CE QUE LA 2035 OU SES SOURCES ONT DE FAUX, et ce que la validation en fait. Une fois

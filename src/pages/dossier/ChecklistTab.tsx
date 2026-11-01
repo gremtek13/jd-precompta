@@ -19,6 +19,7 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import EncartFactureElectronique from './EncartFactureElectronique'
 import AvisChangementDeRib from '../../components/AvisChangementDeRib'
 import { useDernierChangementDeRib } from '../../lib/changementDeRibLecture'
+import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from '../../lib/paiementParLaCaisse'
 
 const NB_MOIS_TRESORERIE = 12
 const NB_MOIS_COLONNES = 6
@@ -209,7 +210,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
         motif={entreesDeLaCaisseIncompletes}
         consequence={
           'Les points de la caisse — une opération à reprendre, une caisse négative, une recette en espèces à revoir, un versement ' +
-          'd’espèces rangé en recette — se taisent donc : leur silence ne prouve rien. Recharge la page avant de t’y fier.'
+          'd’espèces rangé en recette — se taisent donc : leur silence ne prouve rien. ' +
+          // Depuis C9b, la migration en base : une caisse lue en partie ne dit pas les paiements de pièces en espèces.
+          (PAIEMENT_PAR_LA_CAISSE_EXPORTE
+            ? 'Ses opérations lues en partie, les paiements de pièces par la caisse ne sont pas connus : les points qui jugent une ' +
+              'pièce par ses paiements — en attente de rapprochement, payée en partie, montant introuvable, à régénérer pour une ' +
+              'pièce payée en espèces — se taisent aussi. '
+            : '') +
+          'Recharge la page avant de t’y fier.'
         }
       />
       {reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true }) && (

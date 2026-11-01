@@ -422,7 +422,11 @@ export default function DossierDetail() {
 
             {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} periodiciteTva={dossier?.tva_periodicite ?? 'trimestrielle'} statutTva={dossier?.statut_tva ?? null} modele={modele} ventesParLesFactures={dossier?.ventes_par_les_factures === true} onNavigate={allerA} />}
             {tab === 'pieces' && (
-              <PiecesTab dossierId={id} dossierSiret={dossier?.siret ?? null} ventesParLesFactures={dossier?.ventes_par_les_factures === true} />
+              <PiecesTab
+                dossierId={id} dossierSiret={dossier?.siret ?? null} ventesParLesFactures={dossier?.ventes_par_les_factures === true}
+                // Le modèle et le statut, pour la fiche d'une pièce qui se règle par la caisse (ligne 26.6, étape C9b).
+                modele={modele} assujettiTva={dossier?.assujetti_tva ?? false}
+              />
             )}
             {tab === 'factures' && modele && (
               <FacturesTab

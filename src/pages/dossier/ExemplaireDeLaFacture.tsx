@@ -81,12 +81,18 @@ interface Props {
   ceQuElleEst: CeQueLaFicheSait
   /** Les noms des autres pièces qui portent la même facture quand le pont dit la vente comptée plusieurs fois ; null sinon. */
   autresPieces: readonly string[] | null
+  /**
+   * Ce que la garde de la pièce payée par la caisse refuserait de la désignation de cette facture (étape C9b,
+   * `garder_piece_payee_par_la_caisse` : une pièce payée par la caisse ne devient pas l'exemplaire d'une facture SOURCE), ou
+   * rien. Nul — la caisse pas en base, ou pas lue —, la base juge seule, comme hier.
+   */
+  refusParLaCaisse: ((factureId: string) => string | null) | null
 }
 
 type Geste = 'designer_exemplaire_facture' | 'defaire_exemplaire_facture' | 'declarer_vente_hors_des_factures'
   | 'retirer_declaration_hors_des_factures'
 
-export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, ceQuElleEst, autresPieces }: Props) {
+export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, ceQuElleEst, autresPieces, refusParLaCaisse }: Props) {
   const { factures, relireLesFactures, anneeFigeante, gelIncomplet } = donnees
   const { lecture, relire, apresUnGeste, moi } = ceQuElleEst
   const [choix, setChoix] = useState('')
@@ -188,6 +194,8 @@ export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, ceQuE
     return r !== null && r.cle !== 'facture_introuvable' ? r : null
   })()
   const refusDuChoix = choix !== '' ? refusDeLaDesignationMarquee(piece, choix, contexte) : null
+  // Et la caisse (étape C9b) : après les refus de la désignation, comme la garde de la pièce juge après celle-ci.
+  const refusDuChoixParLaCaisse = choix !== '' && refusDuChoix === null && refusParLaCaisse !== null ? refusParLaCaisse(choix) : null
   const refusDuRetrait = designee !== null ? refusDuRetraitMarque(piece, contexte) : null
   // La déclaration ne s'offre que dans un dossier basculé (hors de lui elle ne dirait rien) ; refusée, son refus se dit pour
   // une pièce que rien ne marque — c'est là qu'il nomme la facture que le pont prouve, ou les preuves qui se contredisent.
@@ -224,6 +232,7 @@ export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, ceQuE
   function designer() {
     // Le refus du module, jugé sur la saisie TELLE QU'ELLE PART.
     if (choix === '' || refusDeLaDesignationMarquee(piece, choix, contexte) !== null) return
+    if (refusParLaCaisse !== null && refusParLaCaisse(choix) !== null) return
     const cible = lues.find((f) => f.id === choix)
     if (!cible) return
     void executer('designer_exemplaire_facture', argumentsDeLaDesignation(dossierId, piece.id, choix),
@@ -294,6 +303,7 @@ export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, ceQuE
             </select>
           </div>
           {refusDuChoix !== null && <p className="fiche-hdf-refus">{refusDuChoix.message}</p>}
+          {refusDuChoixParLaCaisse !== null && <p className="fiche-hdf-refus">{refusDuChoixParLaCaisse}</p>}
         </>
       )}
       {(offreDesigner || offreDefaire || offreDeclarer || offreRetirer) && (
@@ -302,7 +312,7 @@ export default function ExemplaireDeLaFacture({ dossierId, piece, donnees, ceQuE
             <button
               type="button"
               className="btn btn-outline btn-sm"
-              disabled={occupee || choix === '' || refusDuChoix !== null}
+              disabled={occupee || choix === '' || refusDuChoix !== null || refusDuChoixParLaCaisse !== null}
               onClick={designer}
             >
               {occupe === 'designer_exemplaire_facture' ? 'Désignation…'

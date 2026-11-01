@@ -16,7 +16,7 @@ const RACINE = fileURLToPath(new URL('../..', import.meta.url))
 // Les appelants qui ne comptent AUCUN paiement par la caisse, et pourquoi — fichier par fichier, au nombre près.
 const SANS_LA_CAISSE: Readonly<Record<string, { appels: number; raison: string }>> = {
   'src/pages/ClientSimulation.tsx': { appels: 1, raison: 'la session du client ne lit pas la caisse (CAISSE-Q1)' },
-  'src/pages/dossier/PiecesTab.tsx': { appels: 1, raison: '« Rapprochée » dit un mouvement bancaire ; « Payée en espèces » vient avec C9b' },
+  'src/pages/dossier/PiecesTab.tsx': { appels: 1, raison: '« Rapprochée » dit un mouvement bancaire ; « Payée en espèces » se dit à part (C9b), et le reste à régler de la fiche lit la caisse' },
   'src/pages/dossier/EncaissementsFactureModal.tsx': { appels: 1, raison: 'les propositions ne nomment que des mouvements, et la fenêtre sert le client' },
   'outils/captures/fauxSupabase.ts': { appels: 3, raison: 'les dossiers de référence du banc n’ont aucune caisse' },
 }

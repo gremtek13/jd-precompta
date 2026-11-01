@@ -7,6 +7,9 @@ import type { Piece, PieceCommentaire } from '../../lib/types'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { AVERTISSEMENT_PAIEMENT_DEFAIT } from '../../lib/controles'
 import { AUCUNE_PIECE_SUPPRIMEE } from '../../lib/bilanSuppression'
+import type { ModeleComptable } from '../../lib/engagement'
+import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { AvecExercicesValides } from '../../test/exercicesValides'
 
 // L'ÉCRAN OÙ LA PIÈCE SE CORRIGE. Cinq contrôles de la famille « donnée démontrée fausse » y
 // envoient l'opérateur depuis la Checklist (`cible: 'pieces'`), et trois seulement marquaient la
@@ -208,6 +211,24 @@ vi.mock('../../lib/supabase', async () => {
 // partagée par le cabinet. Monter un AuthProvider complet ferait dépendre ce test d'une session
 // Supabase ; la doublure dit exactement ce dont l'écran a besoin, et rien de plus.
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ monCabinetId: 'cabinet-de-test' }) }))
+// LA CAISSE DU DOSSIER (ligne 26.6, étape C9b) : le drapeau de la migration `paiement_par_la_caisse`, joué par un accesseur —
+// BAISSÉ par défaut, l'état d'aujourd'hui, que tous les cas d'avant jouent —, et la lecture de l'onglet Caisse doublée (elle est
+// éprouvée à part, lib/caisseDuDossierLecture.test.ts) : ce qu'elle rend, et qui la demande.
+const caisseFaux = vi.hoisted(() => ({
+  leve: false,
+  demandes: [] as [string, boolean][],
+  reponse: null as null | ((dossierId: string) => unknown),
+}))
+vi.mock('../../lib/paiementParLaCaisse', async (original) => {
+  const module = await original<typeof import('../../lib/paiementParLaCaisse')>()
+  return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return caisseFaux.leve } }
+})
+vi.mock('../../lib/caisseDuDossierLecture', () => ({
+  lireLaCaisseDuDossier: async (dossierId: string, ventes: boolean) => {
+    caisseFaux.demandes.push([dossierId, ventes])
+    return caisseFaux.reponse ? caisseFaux.reponse(dossierId) : { dossierId, etat: 'absente' }
+  },
+}))
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
 // La fenêtre de la plateforme du client a ses propres tests : ici, seulement ce que l'onglet lui passe.
 // Le double de la fenêtre montre ce qu'elle REÇOIT et rend la main comme elle : « Importer » signale à l'onglet qu'une
@@ -2040,5 +2061,121 @@ describe('PiecesTab — l’exemplaire d’une facture émise', () => {
       await ouvrir('CLIENT FICTIF')
       expect([...choix().options].map((o) => o.value)).toEqual(['', 'f1'])
     })
+  })
+})
+
+// LA CAISSE (ligne 26.6, étape C9b) : « Payée en espèces » se dit à part de « Rapprochée », qui dit un mouvement bancaire ; la
+// caisse ne se lit que la migration en base et le dossier en trésorerie ; la fiche reçoit de quoi régler la pièce par la caisse.
+describe('PiecesTab — une pièce payée en espèces', () => {
+  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+  const montrer = (modele: ModeleComptable | null) => render(
+    <AvecExercicesValides>
+      <FournisseurPanneauDroit>
+        <AnneeProvider defaut="toutes">
+          <PiecesTab dossierId="dossier-de-test" ventesParLesFactures={false} modele={modele} assujettiTva={false} />
+        </AnneeProvider>
+        <EmplacementPanneauDroit />
+      </FournisseurPanneauDroit>
+    </AvecExercicesValides>,
+  )
+  const ligneDe = async (tiers: string) => {
+    const cellules = await screen.findAllByText(tiers)
+    const ligne = cellules.map((c) => c.closest('tr')).find((tr) => tr !== null)
+    if (!ligne) throw new Error(`Aucune ligne ne porte « ${tiers} »`)
+    return ligne
+  }
+  const paiement = (id: string, pieceId: string, retire: string | null = null) => ({
+    id, dossier_id: 'dossier-de-test', genre: 'paiement', date: '2026-03-12', montant: -120, categorie_id: null, taux_tva: null,
+    encaissements_du_jour: null, piece_id: pieceId, origine: 'cabinet', remplace_id: null, cree_le: '2026-03-12T08:00:00Z', cree_par: 'u',
+    retire_le: retire, retire_par: null,
+  })
+  const caisseLue = (operations: unknown[]) => (dossierId: string) => ({
+    dossierId, etat: 'lue',
+    donnees: { operations, ouvertures: [], mouvements: [], especes: { etat: 'sans_objet' }, categories: [], piecesPayees: [] },
+  })
+  const preparer = () => {
+    poser([
+      piece({ id: 'p-esp', statut: 'validee', tiers: 'ESPECES' }), piece({ id: 'p-banque', statut: 'validee', tiers: 'BANQUE' }),
+      piece({ id: 'p-libre', statut: 'validee', tiers: 'LIBRE' }), piece({ id: 'p-retire', statut: 'validee', tiers: 'RETIRE' }),
+    ])
+    faux.parTable.lignes_bancaires = [{ id: 'm1', piece_id: 'p-banque', date: '2026-03-15', montant: -120, statut: 'rapprochee', reglement_groupe: false }]
+    caisseFaux.demandes = []
+    caisseFaux.reponse = caisseLue([paiement('o1', 'p-esp'), paiement('o2', 'p-retire', '2026-03-13T08:00:00Z')])
+  }
+
+  it('le drapeau BAISSÉ : la caisse ne se lit pas, et aucune pièce n’est « payée en espèces »', async () => {
+    caisseFaux.leve = false
+    preparer()
+    montrer(TRESORERIE)
+    expect(within(await ligneDe('ESPECES')).getByText('Non rapprochée')).toBeTruthy()
+    expect(screen.queryByText('Payée en espèces')).toBeNull()
+    expect(caisseFaux.demandes).toEqual([])
+  })
+
+  it('levé, en trésorerie : la caisse se lit, et la pièce qu’elle paie se dit « Payée en espèces » — jamais « Rapprochée »', async () => {
+    caisseFaux.leve = true
+    preparer()
+    try {
+      montrer(TRESORERIE)
+      const especes = await ligneDe('ESPECES')
+      expect(await within(especes).findByText('Payée en espèces')).toBeTruthy()
+      expect(within(especes).queryByText('Rapprochée')).toBeNull()
+      expect(within(especes).queryByText('Non rapprochée')).toBeNull()
+      expect(within(await ligneDe('BANQUE')).getByText('Rapprochée')).toBeTruthy()
+      expect(within(await ligneDe('BANQUE')).queryByText('Payée en espèces')).toBeNull()
+      expect(within(await ligneDe('LIBRE')).getByText('Non rapprochée')).toBeTruthy()
+      // Un paiement retiré ne paie plus.
+      expect(within(await ligneDe('RETIRE')).getByText('Non rapprochée')).toBeTruthy()
+      expect(caisseFaux.demandes).toEqual([['dossier-de-test', false]])
+    } finally {
+      caisseFaux.leve = false
+    }
+  })
+
+  it('levé, sans modèle ou en engagement : la caisse ne se lit pas', async () => {
+    caisseFaux.leve = true
+    try {
+      preparer()
+      const { unmount } = montrer(null)
+      expect(within(await ligneDe('ESPECES')).getByText('Non rapprochée')).toBeTruthy()
+      unmount()
+      cleanup()
+      preparer()
+      montrer({ ...TRESORERIE, mode: 'engagement' })
+      expect(within(await ligneDe('ESPECES')).getByText('Non rapprochée')).toBeTruthy()
+      expect(caisseFaux.demandes).toEqual([])
+    } finally {
+      caisseFaux.leve = false
+    }
+  })
+
+  it('levé, la caisse lue en partie : le bandeau le dit, au lieu de laisser la pièce « non rapprochée » sans un mot', async () => {
+    caisseFaux.leve = true
+    try {
+      preparer()
+      caisseFaux.reponse = (dossierId) => ({ dossierId, etat: 'incomplete', motif: 'les opérations de la caisse : lecture interrompue' })
+      montrer(TRESORERIE)
+      expect(await screen.findByText(/la caisse du dossier : les opérations de la caisse : lecture interrompue/)).toBeTruthy()
+      expect(screen.queryByText('Payée en espèces')).toBeNull()
+    } finally {
+      caisseFaux.leve = false
+    }
+  })
+
+  it('levé : la fiche de la pièce payée en espèces dit son paiement, et offre de la régler par la caisse', async () => {
+    caisseFaux.leve = true
+    try {
+      preparer()
+      montrer(TRESORERIE)
+      const cellule = await screen.findByText('ESPECES', { selector: 'td' })
+      await act(async () => { fireEvent.click(cellule) })
+      const section = await screen.findByRole('region', { name: 'Payée en espèces' })
+      expect(section.textContent).toContain('Le paiement en espèces du 12/03/2026')
+      expect(within(section).getByRole('button', { name: 'Régler par la caisse' })).toBeTruthy()
+      // La pièce payée ne se supprime plus : la fiche le dit.
+      expect(screen.getByText(/^Cette pièce est payée par la caisse : elle ne se supprime pas/)).toBeTruthy()
+    } finally {
+      caisseFaux.leve = false
+    }
   })
 })

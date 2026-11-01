@@ -25,7 +25,8 @@ import { etatsDesLettragesManuels, piecesLettreesALaMain } from './lettrage'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from './ventilationBanque'
 import { paiementsDesPieces, piecesPayees } from './rattachement'
 import { partsEncaissees } from './encaissementsFactures'
-import { paiementsParLaCaisseDuDossier } from './paiementParLaCaisse'
+import { PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisseDuDossierSelon } from './paiementParLaCaisse'
+import { estContrepartieCaisse } from './ecritures'
 import {
   detailJumellesIncoherentes, detailPiecesADesigner, detailVentesEnDouble, detailVentesHorsFacturesAVerifier,
   jumellesDuDossier, piecesADesigner, ventesEnDouble, ventesHorsFacturesAVerifier,
@@ -40,7 +41,8 @@ import { exemplairesDesSources, horsDesExemplairesDesSources, type FacturesSourc
 import { recettesVivantes, type CaisseLue } from './recettesDeCaisse'
 import {
   caisseNegative, caisseNegativeDite, detailDesOperationsAReprendre, detailDesRecettesARevoir, detailDesVersementsEnRecette,
-  dossierTientUneCaisse, etatDeLaCaisseLue, operationsDeCaisseAReprendre, operationsDeCaisseDuDossier, recettesDeCaisseARevoir,
+  dossierTientUneCaisse, etatDeLaCaisseLue, mouvementsDAvantLOuverture, operationsDeCaisseAReprendre, operationsDeCaisseDuDossier,
+  piecesDeVenteDe, recettesDeCaisseARevoir,
   versementsDEspecesEnRecette, type EspecesDesFactures,
 } from './controlesDeLaCaisse'
 
@@ -251,11 +253,21 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     ? partsEncaissees(ventesFacturees.dossierId, ventesFacturees.sources.encaissements, ventesFacturees.sources,
       ventesFacturees.sources.exemplaires)
     : []
-  // Et les paiements par la caisse (étape C9a), tirés des opérations lues (`paiementsParLaCaisseDuDossier`) : aucun tant que
-  // la migration n'est pas en base. Une caisse lue en partie n'en rend aucun ici — ses points se taisent déjà, et le bandeau
-  // le dit (`entreesDeLaCaisseIncompletes`) ; la fiche d'une pièce et ses points à elle viendront avec le lot C9b.
-  const paiements = paiementsDesPieces(lignes, reglements, encaissees, paiementsParLaCaisseDuDossier(caisse, caisse.dossierId) ?? [])
-  const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplaires)
+  // Et les paiements par la caisse (étape C9a), tirés des opérations lues : aucun tant que la migration n'est pas en base.
+  // UNE CAISSE LUE EN PARTIE (étape C9b) ne rend aucun paiement — `paiementsDeLaCaisseInconnus` : une pièce payée en espèces y
+  // paraîtrait sans paiement. Les points qui jugent une pièce par ses paiements se taisent alors, plutôt que de crier sur ce qu'on
+  // n'a pas lu : la pièce dont l'écriture porte la contrepartie d'un paiement par la caisse ne se dit pas « à régénérer », et
+  // « en attente de rapprochement », « payée en partie » et « montant introuvable » se taisent — le bandeau de la caisse le dit.
+  const paiementsDeLaCaisse = paiementsParLaCaisseDuDossierSelon(PAIEMENT_PAR_LA_CAISSE_EXPORTE, caisse, caisse.dossierId)
+  const paiementsDeLaCaisseInconnus = paiementsDeLaCaisse === null
+  const paiements = paiementsDesPieces(lignes, reglements, encaissees, paiementsDeLaCaisse ?? [])
+  const analyse = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplaires)
+  const { groupesDesequilibres } = analyse
+  const payeesParLaCaisseAuBrouillon = new Set(ecritures.flatMap((e) => (estContrepartieCaisse(e) ? [e.piece_id!] : [])))
+  const piecesDesynchronisees = paiementsDeLaCaisseInconnus
+    ? analyse.piecesDesynchronisees.filter((p) => !payeesParLaCaisseAuBrouillon.has(p.id))
+    : analyse.piecesDesynchronisees
+  const piecesSansContrepartie = paiementsDeLaCaisseInconnus ? [] : analyse.piecesSansContrepartie
   // Les lettrages faits à la main (lib/lettrage.ts), revérifiés sur TOUTES les pièces lues, comme la carte des comptes
   // de tiers qui les montre : la liste qu'on y défait et ces points disent la même chose. En trésorerie, rien ne se
   // lettre et la liste est vide. Une facture qu'un lettrage qui tient solde avec son avoir n'attend plus de règlement :
@@ -403,7 +415,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // reprendre. En trésorerie seulement — voir `piecesPayeesEnPartie`.
   // Des ventes facturées lues en partie taisent aussi ce point : un virement mixte non lu ferait passer son exemplaire pour
   // payé en partie.
-  const payeesEnPartie = paiementsPartiels || ventesFacturees?.etat === 'incomplete' ? []
+  const payeesEnPartie = paiementsPartiels || ventesFacturees?.etat === 'incomplete' || paiementsDeLaCaisseInconnus ? []
     : piecesPayeesEnPartie(validesQuiComptent, paiements, modele.mode)
   // La TROISIÈME clé en `ON DELETE SET NULL` de `pieces` : supprimer une pièce immobilisée détache
   // son immobilisation sans un mot, et la dotation continue de partir en case CH d'une 2035 signée.
@@ -467,7 +479,8 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // mouvement, et son montant ne sera jamais dans le relevé. Le même critère que l'onglet Banque, où mène ce point.
   // Ni l'exemplaire d'une facture source (étape VF6a) : il ne se règle pas, sa facture s'encaisse — l'envoyer chercher dans
   // le relevé mènerait à le rapprocher, ce que G4 (VF6b) refusera.
-  const montantSuspect = piecesMontantIntrouvableEnBanque(
+  // Une caisse lue en partie le tait aussi : une pièce payée en espèces n'a, par construction, aucun mouvement du relevé.
+  const montantSuspect = paiementsDeLaCaisseInconnus ? [] : piecesMontantIntrouvableEnBanque(
     validesQuiComptent.filter((p) => !piecesRapprocheesIds.has(p.id) && !lettreesALaMain.has(p.id)),
     lignes,
   )
@@ -501,6 +514,8 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       : { etat: 'lues', encaissements: ventesFacturees.sources.encaissements, factures: ventesFacturees.sources.factures }
   const dossierDeLaCaisse = {
     modele, assujettiTva, categories, ecritures, frontiere, ouvertures: aNouveaux, mouvements: lignes, especes,
+    // Les pièces de vente : l'ensemble du jour d'une recette compte leurs paiements par la caisse (étape C9b).
+    piecesDeVente: piecesDeVenteDe(toutesPieces),
   }
   const caisseAReprendre = caisseJugee === null ? [] : operationsDeCaisseAReprendre(caisseJugee, dossierDeLaCaisse)
   const etatDeLaCaisse = caisseJugee === null ? null : etatDeLaCaisseLue(caisseJugee, dossierDeLaCaisse)
@@ -517,6 +532,12 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   }
   const versementsEnRecette = caisseJugee === null || dossierTientUneCaisse(caisseDuDossier, especes, repriseEtReleve) !== 'oui' ? []
     : versementsDEspecesEnRecette(lignes, ventilations, categories, assujettiTva, frontiere)
+  // UN MOUVEMENT D'AVANT L'OUVERTURE CLASSÉ SUR LA CAISSE (étape C9b ; le défaut K1) : ses espèces sont dans les comptes repris,
+  // et le classement les compte une seconde fois. La migration `paiement_par_la_caisse` en refuse le classement et borne la
+  // caisse en base : le point vient avec elle (`PAIEMENT_PAR_LA_CAISSE_EXPORTE`), sur la caisse jugée (la reprise et le relevé
+  // lus en entier). Celui qui y est se retire depuis sa fiche, dans Banque.
+  const avantLOuverture = caisseJugee === null || !PAIEMENT_PAR_LA_CAISSE_EXPORTE ? []
+    : mouvementsDAvantLOuverture(lignes, aNouveaux, modele.plan.caisse, frontiere)
 
   const tousLesPointsATraiter: PointATraiter[] = [
     // En tête, et en « erreur » : c'est le seul point de cette liste qui ne se voit nulle part
@@ -640,7 +661,11 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       // Défensif : la base écrit l'opération et son écriture d'un tenant. Un plan ou un statut de TVA changé depuis la saisie,
       // ou une restauration, la ferait diverger : la 2035 et le FEC ne diraient plus la même caisse.
       {
-        id: 'caisse-a-reprendre', label: 'opération(s) de caisse dont l’écriture manque, ne suit plus l’opération ou ne peut plus s’écrire — à retirer et saisir de nouveau',
+        // Depuis C9b, aussi le paiement d'une pièce écrite dont la contrepartie manque ou ne suit plus : son remède est
+        // « Régénérer » — le libellé le dit avec la migration, celui d'hier sans elle.
+        id: 'caisse-a-reprendre', label: PAIEMENT_PAR_LA_CAISSE_EXPORTE
+          ? 'opération(s) de caisse dont l’écriture manque, ne suit plus l’opération ou ne peut plus s’écrire — à retirer et saisir de nouveau ; pour le paiement d’une pièce, à régénérer avec ses écritures'
+          : 'opération(s) de caisse dont l’écriture manque, ne suit plus l’opération ou ne peut plus s’écrire — à retirer et saisir de nouveau',
         action: 'Voir la caisse', nb: caisseAReprendre.length, cible: 'caisse' as const, severite: 'erreur' as const,
         detail: caisseAReprendre.length > 0 ? detailDesOperationsAReprendre(caisseAReprendre) : undefined,
       },
@@ -652,6 +677,16 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
         detail: caisseEnNegatif === null ? undefined : 'Une recette en espèces manque avant ce jour, ou une sortie d’espèces est de trop : la saisir, ou la retirer.',
         sansNombre: true,
       },
+      // Le défaut K1 (étape C9b) : un mouvement d'avant l'ouverture du dossier, classé sur la caisse — les espèces comptées deux
+      // fois. « Erreur » : le bilan de l'exercice porterait la caisse en double.
+      ...(!PAIEMENT_PAR_LA_CAISSE_EXPORTE ? [] : [{
+        id: 'caisse-mouvements-avant-ouverture',
+        label: 'mouvement(s) du relevé classé(s) sur la caisse et daté(s) d’avant l’ouverture du dossier — leurs espèces sont déjà dans les comptes repris : à retirer de la caisse',
+        action: 'Voir ces mouvements', nb: avantLOuverture.length, cible: 'banque' as const, severite: 'erreur' as const,
+        detail: avantLOuverture.length > 0
+          ? `${detailDesVersementsEnRecette(avantLOuverture)} Dans Banque, filtre « Rapprochés » : sa fiche le remet à traiter.`
+          : undefined,
+      }]),
       // CAISSE-Q2, (A) : la saisie d'une recette reconnaît les espèces des factures de son jour ; un encaissement enregistré,
       // retiré ou rattaché depuis change ce jour-là, et le total saisi se revoit.
       {

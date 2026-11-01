@@ -4,10 +4,10 @@ import BarreRecherche from '../../components/BarreRecherche'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { natureDuCompte } from '../../lib/affectationBanque'
-import { origineDite, type SaisieDeCaisse } from '../../lib/caisse'
+import { origineDite, ouvertureDuDossier, premierJourDeLaCaisse, type SaisieDeCaisse } from '../../lib/caisse'
 import {
   confirmationDuRemplacement, confirmationDuRetrait, etatDeLaCaisseLu, etatDUneOperationRetiree, euros, especesDuJour,
-  FORMULAIRE_VIDE, journalDeLaCaisse, libelleDeLaLigne, ligneVide, nomDeLOperation, operationsRetirees,
+  fluxDAvantLOuvertureDits, FORMULAIRE_VIDE, journalDeLaCaisse, phraseDuFluxDAvantLOuverture, libelleDeLaLigne, ligneVide, nomDeLOperation, operationsRetirees,
   phraseDesEspecesDuJour, refusDuRetraitDeLOperation, soldeAuJour, TAUX_PROPOSES, totauxDuJournal, verdictDuFormulaire,
   verdictDuMois, type ContexteDeLaCaisse, type DonneesDeLaCaisse, type FormulaireDeCaisse, type GenreSaisi,
   type JourDeLaCaisse, type LigneDuJournal,
@@ -16,6 +16,7 @@ import { lireLaCaisseDuDossier, type LectureDeLaCaisseDuDossier } from '../../li
 import type { ModeleComptable } from '../../lib/engagement'
 import { anneeDe, aujourdHuiAParis, formatDate } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
+import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from '../../lib/paiementParLaCaisse'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { supabase } from '../../lib/supabase'
 import type { Categorie, OperationCaisse } from '../../lib/types'
@@ -102,7 +103,11 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
   // Le jour à Paris, relu à chaque rendu : « maintenant » ne se lit jamais au chargement d'un module.
   const ctx: ContexteDeLaCaisse = { modele, assujettiTva, aujourdhui: aujourdHuiAParis(), anneesValidees }
   const etat = useMemo(() => (donnees ? etatDeLaCaisseLu(modele, donnees) : null), [donnees, modele])
-  const journal = useMemo(() => (donnees && etat ? journalDeLaCaisse(etat, donnees.operations, donnees.mouvements) : []), [donnees, etat])
+  // Le journal nomme le paiement d'une pièce par son type et sa date (étape C9b), jamais par son tiers.
+  const journal = useMemo(
+    () => (donnees && etat ? journalDeLaCaisse(etat, donnees.operations, donnees.mouvements, donnees.piecesPayees) : []),
+    [donnees, etat],
+  )
 
   // ── Les gestes ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -274,6 +279,11 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
   const operationsPleines = mois.filter((l) => !ligneVide(l)).length
   const verdictDuMoisCourant = verdictDuMois(mois, ctx, donnees)
   const retirees = operationsRetirees(donnees.operations)
+  // LES FLUX D'AVANT L'OUVERTURE (étape C9b ; le défaut K1) : la migration `paiement_par_la_caisse` borne la caisse en base
+  // comme l'écran la borne ; avec elle, l'onglet dit ce que le journal ne compte pas, et ce qu'il compte à tort. Sans elle, la
+  // base compte encore ce qui précède : l'écran se tait, comme hier.
+  const avantLOuverture = PAIEMENT_PAR_LA_CAISSE_EXPORTE ? fluxDAvantLOuvertureDits(etat, donnees) : []
+  const jourDeLOuverture = premierJourDeLaCaisse(etat) ?? ouvertureDuDossier(etat)
 
   function champ<K extends keyof FormulaireDeCaisse>(cle: K, valeur: FormulaireDeCaisse[K]) {
     setFormulaire((f) => ({ ...f, [cle]: valeur }))
@@ -542,6 +552,7 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
                             {origine && <> <span className="badge badge-neutral">{origine}</span></>}
                             {o !== null && o.remplace_id != null && <> <span className="badge badge-neutral">Remplace une version retirée</span></>}
                             {l.nature === 'encaissement' && <> <span className="badge badge-neutral">Comptée par la facture</span></>}
+                            {o !== null && o.genre === 'paiement' && <> <span className="badge badge-neutral">Se retire depuis la fiche de la pièce</span></>}
                           </div>
                         </td>
                         <td data-libelle="Entrée">{l.centimes > 0 ? euros(l.centimes) : ''}</td>
@@ -578,6 +589,22 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
           </div>
         )}
       </div>
+
+      {avantLOuverture.length > 0 && jourDeLOuverture !== null && (
+        <div className="card" style={{ marginTop: 20 }}>
+          <strong>Avant l’ouverture du dossier</strong>
+          <ul style={{ margin: '10px 0 0', paddingLeft: 18 }}>
+            {avantLOuverture.map((f, i) => (
+              <li key={`${f.jour}-${i}`} className={f.compte ? 'error-text' : undefined}>
+                {phraseDuFluxDAvantLOuverture(f, jourDeLOuverture)}
+              </li>
+            ))}
+          </ul>
+          <p className="muted" style={{ margin: '8px 0 0' }}>
+            Un mouvement du relevé se retire de la caisse depuis sa fiche, dans l’onglet Banque (« Remettre à traiter »).
+          </p>
+        </div>
+      )}
 
       {retirees.length > 0 && (
         <details className="card" style={{ marginTop: 20 }}>

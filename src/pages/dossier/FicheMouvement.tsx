@@ -259,6 +259,10 @@ interface FicheMouvementProps {
   // Pièce → ce qu'il reste à régler d'une pièce payée en partie, DANS LES DEUX MODÈLES (`restesAReglerDesPieces`) :
   // ce qu'un second paiement peut encore régler. Vide sur une lecture partielle du relevé ou des parts.
   restesARegler: ReadonlyMap<string, number>
+  // LES PAIEMENTS DE PIÈCES PAR LA CAISSE PAS LUS EN ENTIER (ligne 26.6, étape C9b) : le motif, ou rien. Une pièce payée en espèces
+  // y paraîtrait à payer, et « Associer » la paierait une seconde fois par la banque : aucune pièce ne s'associe d'ici, ni ne se
+  // règle en groupe, et la fiche le dit — comme les lots, que la même lecture suspend. Rien le drapeau baissé (aucun paiement).
+  paiementsDeLaCaisseIncomplets: string | null
   // Écrire ce mouvement sur un compte de bilan, ou le remettre à traiter — par la base, qui écrit et retire le compte
   // AVEC son écriture (`ecrire_mouvement_compte_bilan`, `retirer_mouvement_compte_bilan`).
   // LA CAISSE (ligne 26.6, étape C4 ; lib/caisseEcran.ts, calculée par l'onglet) : le solde de la caisse ce jour-là, avec et sans ce
@@ -630,13 +634,15 @@ export default function FicheMouvement({
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
   ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
   reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe, restesAPayer, payeesEnTrop,
-  restesARegler, caisse, onEcrireCompteBilan, onRetirerCompteBilan,
+  restesARegler, paiementsDeLaCaisseIncomplets, caisse, onEcrireCompteBilan, onRetirerCompteBilan,
   suivisTva, declarationsTvaIncompletes, releveIncomplet, onRapprocherDeclarationTva, onRetirerDeclarationTva,
   dossierId, envoisDuClient, accesDuReleve, piecesIncompletes, onDemanderAuClient,
   onEcarterProposition, onSupprimerMessage,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   const fige = figeePar !== null
+  // Les paiements par la caisse pas lus en entier : aucune pièce ne s'associe d'ici (étape C9b).
+  const piecesRetenues = paiementsDeLaCaisseIncomplets !== null
   // Libre : la fiche d'hier. Sinon, ni section de classement ni geste sur le mouvement (voir `venteDuMouvement`).
   const libre = venteDuMouvement.etat === 'libre'
   const venteDuMouvementPorte = venteDuMouvement.etat === 'porte' ? venteDuMouvement.mouvement : null
@@ -1205,7 +1211,10 @@ export default function FicheMouvement({
     // Rien à proposer : annuler, reclasser ou rapprocher, la base refuse tout (voir `figeePar`).
   } else if (piecesCandidates.length === 1) {
     principal = (
-      <button type="button" className="btn btn-primary" disabled={occupe} onClick={() => onRapprocher(piecesCandidates[0].id)}>
+      <button
+        type="button" className="btn btn-primary" disabled={occupe || piecesRetenues}
+        title={paiementsDeLaCaisseIncomplets ?? undefined} onClick={() => onRapprocher(piecesCandidates[0].id)}
+      >
         Associer cette pièce
       </button>
     )
@@ -1406,7 +1415,7 @@ export default function FicheMouvement({
           envois={envoisDuClient}
           acces={accesDuReleve.acces}
           contexte={contexteDeLaProposition}
-          aTraiter={aTraiter && !fige && libre}
+          aTraiter={aTraiter && !fige && libre && !piecesRetenues}
           occupe={occupe}
           onAssocier={onRapprocher}
           onEcarter={onEcarterProposition}
@@ -1451,7 +1460,7 @@ export default function FicheMouvement({
                 piece={p}
                 signaux={signauxPiece(p, ligne)}
                 action={(
-                  <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => onRapprocher(p.id)}>
+                  <button type="button" className="btn btn-outline btn-sm" disabled={occupe || piecesRetenues} onClick={() => onRapprocher(p.id)}>
                     Associer celle-ci
                   </button>
                 )}
@@ -1570,6 +1579,13 @@ export default function FicheMouvement({
           </p>
         )}
 
+        {aTraiter && piecesRetenues && (
+          <p className="fiche-mouvement-note" role="status">
+            Les paiements de pièces par la caisse n’ont pas pu être lus en entier ({paiementsDeLaCaisseIncomplets}) : une pièce
+            payée en espèces paraîtrait à payer, et l’associer la paierait une seconde fois. Aucune pièce ne s’associe d’ici,
+            ni ne se règle en groupe ; une échéance de cotisation, si. Recharge la page.
+          </p>
+        )}
         {aTraiter && (
           <section className="fiche-mouvement-section">
             <h3>{unePropositionExiste ? 'Choisir une autre pièce' : 'Choisir une pièce'}</h3>
@@ -1593,7 +1609,7 @@ export default function FicheMouvement({
                   <button
                     type="button"
                     className="btn btn-outline"
-                    disabled={!pieceChoisie || occupe || !!refusPieceChoisie}
+                    disabled={!pieceChoisie || occupe || !!refusPieceChoisie || piecesRetenues}
                     onClick={() => onRapprocher(pieceChoisie)}
                   >
                     Associer
@@ -1670,7 +1686,8 @@ export default function FicheMouvement({
             <h3>Plusieurs pièces</h3>
             {reglementDeplie ? (
               <FormulaireReglementGroupe
-                ligne={ligne} pieces={piecesReglables} paiements={paiements} partsExistantes={[]} suspension={reglementsIncomplets}
+                ligne={ligne} pieces={piecesReglables} paiements={paiements} partsExistantes={[]}
+                suspension={reglementsIncomplets ?? paiementsDeLaCaisseIncomplets}
                 exemplairesDesSources={exemplairesDesSources.raisons}
                 occupe={occupe} verbe="Régler ces pièces" onRegler={onReglerEnGroupe}
               />
@@ -1917,7 +1934,8 @@ export default function FicheMouvement({
             </p>
             {!reglementsIncomplets && !fige && (modificationReglementDepliee ? (
               <FormulaireReglementGroupe
-                ligne={ligne} pieces={piecesReglables} paiements={paiements} partsExistantes={reglements} suspension={reglementsIncomplets}
+                ligne={ligne} pieces={piecesReglables} paiements={paiements} partsExistantes={reglements}
+                suspension={reglementsIncomplets ?? paiementsDeLaCaisseIncomplets}
                 exemplairesDesSources={exemplairesDesSources.raisons}
                 occupe={occupe} verbe="Enregistrer le règlement" onRegler={onReglerEnGroupe}
               />

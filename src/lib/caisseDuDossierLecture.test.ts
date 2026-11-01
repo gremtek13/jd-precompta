@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  COLONNES_ENCAISSEMENTS_DE_LA_CAISSE, COLONNES_FACTURES_DE_LA_CAISSE, COLONNES_MOUVEMENTS_DE_LA_CAISSE, lireLaCaisseDuDossier,
-  lireLaRepriseDeLaCaisse,
+  COLONNES_ENCAISSEMENTS_DE_LA_CAISSE, COLONNES_FACTURES_DE_LA_CAISSE, COLONNES_MOUVEMENTS_DE_LA_CAISSE,
+  COLONNES_PIECES_DE_LA_CAISSE, lireLaCaisseDuDossier, lireLaRepriseDeLaCaisse,
 } from './caisseDuDossierLecture'
 import type { LectureDeLaCaisse } from './caisseLecture'
 import type { OperationCaisse } from './types'
@@ -24,6 +24,12 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('./caisseLecture', () => ({ lireLaCaisse: async () => faux.caisse }))
+// Le drapeau de la migration `paiement_par_la_caisse` (étape C9b), joué par un accesseur : baissé par défaut, l'état d'aujourd'hui.
+const drapeau = vi.hoisted(() => ({ leve: false }))
+vi.mock('./paiementParLaCaisse', async (original) => {
+  const module = await original<typeof import('./paiementParLaCaisse')>()
+  return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeau.leve } }
+})
 
 vi.mock('./supabase', async () => {
   const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../test/filtresPostgrest')
@@ -74,6 +80,7 @@ function operation(o: Partial<OperationCaisse> & Pick<OperationCaisse, 'id'>): O
 const tables = () => faux.requetes.map((r) => r.table)
 
 beforeEach(() => {
+  drapeau.leve = false
   faux.leve = false
   faux.muetApres = {}
   faux.refus = {}
@@ -235,5 +242,65 @@ describe('la reprise pour l’onglet Banque', () => {
     const rompue = await lireLaRepriseDeLaCaisse(D, true)
     expect(rompue).toMatchObject({ dossierId: D, lignes: [], complete: false })
     expect(rompue!.motif).toContain('réseau coupé')
+  })
+})
+
+// LES PIÈCES QUE DES PAIEMENTS CITENT (étape C9b) : leur type et leur date, lus seulement quand un paiement existe ET que la
+// migration est en base — le drapeau baissé, la lecture d'hier, requête pour requête.
+describe('les pièces payées par la caisse', () => {
+  const paiement = (id: string, pieceId: string) => operation({ id, genre: 'paiement', date: '2026-03-12', montant: -40, piece_id: pieceId })
+  const PIECES = [
+    { id: 'pa', dossier_id: D, type_piece: 'achat', date_piece: '2026-03-10', tiers: 'NE PART PAS' },
+    { id: 'pv', dossier_id: D, type_piece: 'vente', date_piece: '2026-03-11', tiers: 'NE PART PAS' },
+    { id: 'px', dossier_id: D, type_piece: 'vente', date_piece: null, tiers: 'NE PART PAS' },
+  ]
+
+  it('le drapeau baissé : aucune lecture des pièces, même avec un paiement — aucune pièce payée', async () => {
+    faux.caisse = { dossierId: D, enBase: true, lignes: [paiement('o1', 'pa')], complete: true, motif: null }
+    faux.parTable.pieces = PIECES
+    const l = await lireLaCaisseDuDossier(D, false)
+    expect(tables()).not.toContain('pieces')
+    expect(l).toMatchObject({ etat: 'lue', donnees: { piecesPayees: [] } })
+  })
+
+  it('levé, sans paiement : aucune lecture des pièces', async () => {
+    drapeau.leve = true
+    faux.parTable.pieces = PIECES
+    await lireLaCaisseDuDossier(D, false)
+    expect(tables()).not.toContain('pieces')
+  })
+
+  it('levé, des paiements : les pièces du dossier, en entier, leur type et leur date seulement ; celles que les paiements citent', async () => {
+    drapeau.leve = true
+    faux.caisse = { dossierId: D, enBase: true, lignes: [paiement('o1', 'pa'), paiement('o2', 'pv')], complete: true, motif: null }
+    faux.parTable.pieces = PIECES
+    const l = await lireLaCaisseDuDossier(D, false)
+    const requete = faux.requetes.find((r) => r.table === 'pieces')!
+    expect(requete.colonnes).toBe(COLONNES_PIECES_DE_LA_CAISSE)
+    expect(requete.colonnes).not.toContain('tiers')
+    expect(requete.filtres).toEqual([['dossier_id', D]])
+    expect(requete.ordres).toEqual(['id'])
+    expect(requete.options).toEqual({ count: 'exact' })
+    expect(l).toMatchObject({ etat: 'lue', donnees: { piecesPayees: [
+      { id: 'pa', type_piece: 'achat', date_piece: '2026-03-10' }, { id: 'pv', type_piece: 'vente', date_piece: '2026-03-11' },
+    ] } })
+  })
+
+  it('levé : lues en partie, ou une pièce citée que la lecture ne rend pas, ou d’un autre dossier — incomplète, sous son nom', async () => {
+    drapeau.leve = true
+    faux.caisse = { dossierId: D, enBase: true, lignes: [paiement('o1', 'pa'), paiement('o2', 'pz')], complete: true, motif: null }
+    faux.parTable.pieces = PIECES
+    expect(await lireLaCaisseDuDossier(D, false)).toEqual({
+      dossierId: D, etat: 'incomplete', motif: 'les pièces payées par la caisse : une pièce qu’un paiement cite n’est pas rendue',
+    })
+    faux.caisse = { dossierId: D, enBase: true, lignes: [paiement('o1', 'pa')], complete: true, motif: null }
+    faux.muetApres = { pieces: 1 }
+    expect(await lireLaCaisseDuDossier(D, false)).toMatchObject({ etat: 'incomplete', motif: expect.stringMatching(/^les pièces payées par la caisse : /) })
+    faux.muetApres = {}
+    faux.sansCadrage = ['pieces']
+    faux.parTable.pieces = [...PIECES, { id: 'pq', dossier_id: 'autre', type_piece: 'achat', date_piece: null }]
+    expect(await lireLaCaisseDuDossier(D, false)).toEqual({
+      dossierId: D, etat: 'incomplete', motif: 'les pièces payées par la caisse : une ligne rendue n\'est pas de ce dossier',
+    })
   })
 })

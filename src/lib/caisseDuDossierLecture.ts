@@ -1,8 +1,9 @@
 import { lireLaCaisse } from './caisseLecture'
-import type { DonneesDeLaCaisse, EspecesLues, MouvementClasse } from './caisseEcran'
+import type { DonneesDeLaCaisse, EspecesLues, MouvementClasse, PieceCiteeParLaCaisse } from './caisseEcran'
 import type { EncaissementDeLaCaisse, FactureDeLaCaisse } from './caisse'
 import { lireTout, type LectureComplete } from './lectureComplete'
 import { messageErreur } from './messageErreur'
+import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from './paiementParLaCaisse'
 import { supabase } from './supabase'
 import type { ANouveau, Categorie } from './types'
 
@@ -19,6 +20,11 @@ import type { ANouveau, Categorie } from './types'
 // (`DossierDetail` reste monté d'un dossier à l'autre). Ce module ne rejette jamais.
 //
 // LE DRAPEAU BAISSÉ (`CAISSE_EXPORTEE`), elle ne lit rien : `lireLaCaisse` n'a pas touché au réseau, et la caisse est ABSENTE.
+//
+// LES PIÈCES QUE DES PAIEMENTS CITENT (étape C9b) : leur type et leur date — une pièce de vente entre dans l'ensemble du jour
+// d'une recette, et le journal nomme un paiement par la pièce qu'il règle, jamais par son tiers. Lues seulement quand un
+// paiement existe ET que la migration `paiement_par_la_caisse` est en base (`PAIEMENT_PAR_LA_CAISSE_EXPORTE`) : le drapeau
+// baissé, la lecture est celle d'hier, requête pour requête. Une pièce citée que la lecture ne rend pas la rend incomplète.
 
 export type LectureDeLaCaisseDuDossier =
   /** La table n'est pas en base : rien n'a été lu, et rien ne pouvait l'être. */
@@ -29,7 +35,7 @@ export type LectureDeLaCaisseDuDossier =
 /** Le nom de chaque collection, dans l'ordre de la lecture : c'est lui que le motif d'un manque nomme. */
 const NOMS = [
   'les catégories', 'la reprise (à-nouveaux)', 'les mouvements classés sur un compte de bilan', 'les factures sources',
-  'les encaissements des factures',
+  'les encaissements des factures', 'les pièces payées par la caisse',
 ] as const
 
 // Les colonnes que le module lit, chaîne pour chaîne : le compilateur confronte chacune à son type.
@@ -37,10 +43,12 @@ export const COLONNES_MOUVEMENTS_DE_LA_CAISSE = 'id, dossier_id, date, montant, 
 export const COLONNES_FACTURES_DE_LA_CAISSE = 'id, dossier_id, numero, source_de_la_vente'
 export const COLONNES_ENCAISSEMENTS_DE_LA_CAISSE =
   'id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, retire_le'
+export const COLONNES_PIECES_DE_LA_CAISSE = 'id, dossier_id, type_piece, date_piece'
 
 type MouvementLu = MouvementClasse & { dossier_id: string }
 type FactureLue = FactureDeLaCaisse & { dossier_id: string }
 type EncaissementLu = EncaissementDeLaCaisse & { dossier_id: string }
+type PieceLue = PieceCiteeParLaCaisse & { dossier_id: string }
 
 function horsDuDossier<T extends { dossier_id: string | null }>(nom: string, lecture: LectureComplete<T>, dossierId: string): string | null {
   return lecture.lignes.every((l) => l.dossier_id === dossierId || l.dossier_id === null && nom === NOMS[0])
@@ -55,8 +63,11 @@ export async function lireLaCaisseDuDossier(dossierId: string, ventesParLesFactu
   if (caisse.dossierId !== dossierId || caisse.lignes.some((o) => o.dossier_id !== dossierId)) {
     return { dossierId, etat: 'incomplete', motif: 'les opérations de la caisse : une ligne rendue n’est pas de ce dossier' }
   }
+  // Les pièces que des paiements citent : aucune lecture sans paiement, ni tant que la migration n'est pas en base.
+  const citees = new Set(caisse.lignes.flatMap((o) => (o.genre === 'paiement' && o.piece_id ? [o.piece_id] : [])))
+  const lirePieces = PAIEMENT_PAR_LA_CAISSE_EXPORTE && citees.size > 0
   try {
-    const [categories, ouvertures, mouvements, factures, encaissements] = await Promise.all([
+    const [categories, ouvertures, mouvements, factures, encaissements, pieces] = await Promise.all([
       // Celles du dossier ET celles du cabinet (`dossier_id` nul), comme les autres onglets : un filtre sur le seul dossier les
       // écarterait presque toutes, et aucune recette n'aurait de nature.
       lireTout<Categorie>((debut, fin) =>
@@ -85,15 +96,28 @@ export async function lireLaCaisseDuDossier(dossierId: string, ventesParLesFactu
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
         )
         : Promise.resolve<LectureComplete<EncaissementLu>>({ lignes: [], complete: true, motif: null }),
+      // Les pièces du dossier, leur type et leur date seulement : une liste d'identifiants dans l'adresse grandirait avec la
+      // caisse, la lecture paginée du dossier non.
+      lirePieces
+        ? lireTout<PieceLue>((debut, fin) =>
+          supabase.from('pieces').select(COLONNES_PIECES_DE_LA_CAISSE, { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin),
+        )
+        : Promise.resolve<LectureComplete<PieceLue>>({ lignes: [], complete: true, motif: null }),
     ])
-    const manque = [categories, ouvertures, mouvements, factures, encaissements]
+    const manque = [categories, ouvertures, mouvements, factures, encaissements, pieces]
       .map((l, i) => (l.complete ? null : `${NOMS[i]} : ${l.motif ?? 'lecture incomplète'}`))
       .find((m) => m !== null)
     if (manque != null) return { dossierId, etat: 'incomplete', motif: manque }
     const etranger = horsDuDossier(NOMS[0], categories, dossierId) ?? horsDuDossier(NOMS[1], ouvertures, dossierId)
       ?? horsDuDossier(NOMS[2], mouvements, dossierId) ?? horsDuDossier(NOMS[3], factures, dossierId)
-      ?? horsDuDossier(NOMS[4], encaissements, dossierId)
+      ?? horsDuDossier(NOMS[4], encaissements, dossierId) ?? horsDuDossier(NOMS[5], pieces, dossierId)
     if (etranger !== null) return { dossierId, etat: 'incomplete', motif: etranger }
+    const piecesPayees = pieces.lignes.filter((p) => citees.has(p.id))
+      .map(({ id, type_piece, date_piece }) => ({ id, type_piece, date_piece }))
+    if (lirePieces && piecesPayees.length !== citees.size) {
+      return { dossierId, etat: 'incomplete', motif: `${NOMS[5]} : une pièce qu’un paiement cite n’est pas rendue` }
+    }
     const especes: EspecesLues = ventesParLesFactures
       ? {
         etat: 'lues',
@@ -111,6 +135,7 @@ export async function lireLaCaisseDuDossier(dossierId: string, ventesParLesFactu
         mouvements: mouvements.lignes.map(({ id, date, montant, libelle, compte_bilan }) => ({ id, date, montant, libelle, compte_bilan })),
         especes,
         categories: categories.lignes,
+        piecesPayees,
       },
     }
   } catch (erreur) {

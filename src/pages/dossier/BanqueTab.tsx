@@ -2456,6 +2456,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             restesAPayer={restesAPayer}
             payeesEnTrop={payeesEnTrop}
             restesARegler={restesARegler}
+            paiementsDeLaCaisseIncomplets={paiementsDeLaCaisseIncomplets}
             caisse={caisseDeLaFiche(ligneOuverte, caisseDuRelevePourLaFiche, caisseDuReleve, especesDeLaCaisse, repriseEtReleve)}
             onEcrireCompteBilan={(compte) => agirSurMouvement(() => ecrireCompteBilan(ligneOuverte, compte))}
             onRetirerCompteBilan={() => agirSurMouvement(() => retirerCompteBilan(ligneOuverte.id))}

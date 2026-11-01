@@ -29,6 +29,10 @@ import { passageJugeParG3, refusDeLaValidationDUneVente, type PieceMarquable } f
 import { pieceAJour, type LectureDeCeQueLaPieceEst, type MarquesDeLaPiece } from '../../lib/marquesDeLaPiece'
 import { lireCeQueLaPieceEst, relireLesMarquesDeLaPiece } from '../../lib/marquesDeLaPieceLecture'
 import { preparerPiece, refusDUnePiece } from '../../lib/bornesStockage'
+import ReglementParLaCaisse, { type CaisseDeLaPiece } from './ReglementParLaCaisse'
+import {
+  etatDeLaCaisseDeLaFiche, refusDeLaDesignationParLaCaisse, refusDuTypeDeLaPiece, suppressionRetenueParLaCaisse,
+} from '../../lib/paiementParLaCaisseEcran'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
 // reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
@@ -105,9 +109,15 @@ interface Props {
   // elle-même ce que la pièce est (lib/marquesDeLaPieceLecture.ts) : la bascule du dossier, le pont, les liens, le virement
   // mixte, le journal. Le cabinet seul ouvre cette fiche (l'onglet des justificatifs) ; l'espace du client ne la monte pas.
   exemplaire?: DonneesExemplaire | null
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C9b ; CAISSE-Q4) : sa lecture, le dossier, les paiements de chaque pièce et de quoi
+  // relire. FACULTATIF, et son absence suffit : sans elle — le drapeau `PAIEMENT_PAR_LA_CAISSE_EXPORTE` baissé, un dossier en
+  // engagement —, la fiche ne dit rien de la caisse et n'offre aucun geste, comme hier. Avec elle, la section « Payée en
+  // espèces » règle la pièce par la caisse et en retire un paiement, et la garde de la pièce (`garder_piece_payee_par_la_caisse`)
+  // se dit avant l'enregistrement, la désignation et la suppression.
+  caisse?: CaisseDeLaPiece | null
 }
 
-export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null, horsDeFrance, exemplaire = null }: Props) {
+export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null, horsDeFrance, exemplaire = null, caisse = null }: Props) {
   const fige = piece !== null && figeePar !== null
   // LA PIÈCE DONT LA FICHE EST DÉCLARÉE À L'E-REPORTING ne se supprime plus (hypothèse E5-Q6, `garder_piece_declaree`) : la
   // fiche le dit sous les mots de la base et n'offre pas « Supprimer ». Les fiches ou les déclarations lues en partie ne
@@ -223,8 +233,15 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
 
   // La désignation et la déclaration se jouent dans la base, sur la pièce ENREGISTRÉE : le formulaire dit avant
   // l'enregistrement ce que la garde refuserait — sa nature ne change pas —, sans toucher au reste de la saisie.
+  // LA CAISSE (étape C9b) : les opérations du dossier, lues en entier, ou rien — le drapeau baissé, aucune. Une pièce qu'un
+  // paiement non retiré cite reste d'achat ou de vente ; une pièce qu'un paiement cite, retiré ou non, ne se supprime plus.
+  const etatDeLaCaisse = caisse === null ? null : etatDeLaCaisseDeLaFiche(caisse.lecture, dossierId)
+  const operationsDeLaCaisse = etatDeLaCaisse?.etat === 'lue' ? etatDeLaCaisse.donnees.operations : null
   const refusDeLaNature = pieceMarquee !== null
-    ? refusDuFormulaireDeLaPiece(pieceMarquee, typePiece, exemplaire?.factures?.lignes ?? null) : null
+    ? refusDuFormulaireDeLaPiece(pieceMarquee, typePiece, exemplaire?.factures?.lignes ?? null)
+      ?? (operationsDeLaCaisse === null ? null : refusDuTypeDeLaPiece(pieceMarquee, typePiece, operationsDeLaCaisse))
+    : null
+  const retenueParLaCaisse = piece !== null && operationsDeLaCaisse !== null ? suppressionRetenueParLaCaisse(piece.id, operationsDeLaCaisse) : null
 
   // CE QUE LA PIÈCE EST (étape VF6c, lib/marquesDeLaPieceLecture.ts), lu par la fiche quand l'écran appelant lui a donné les
   // factures (`exemplaire`) et qu'il s'agit d'une vente — enregistrée, saisie, ou marquée. Une lecture plus lente écrit en
@@ -719,6 +736,10 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       setError(declareePar)
       return
     }
+    if (retenueParLaCaisse) {
+      setError(retenueParLaCaisse)
+      return
+    }
     // La fiche « hors de France » part avec la pièce (clé en cascade), toutes versions comprises : la confirmation la nomme.
     const ficheEmportee = ficheEmporteeParLaSuppression(piece.id, horsDeFrance.lecture)
     if (!window.confirm(
@@ -840,6 +861,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
           )}
           {citeePar && <p className="fiche-piece-figee">{citeePar}</p>}
           {declareePar && <p className="fiche-piece-figee">{declareePar}</p>}
+          {retenueParLaCaisse && <p className="fiche-piece-figee">{retenueParLaCaisse}</p>}
           {venteEmise && (
             <div className="fiche-piece-vente">
               <span className={`badge ${PASTILLE_DE_LA_MARQUE[venteEmise.genre]}`}>{venteEmise.libelle}</span>
@@ -862,6 +884,8 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               donnees={exemplaire}
               ceQuElleEst={{ lecture: lectureEnVigueur, relire: relireCeQuElleEst, apresUnGeste, moi }}
               autresPieces={venteEmise?.genre === 'double' ? venteEmise.autres : null}
+              refusParLaCaisse={operationsDeLaCaisse === null ? null : (factureId) => refusDeLaDesignationParLaCaisse(
+                pieceMarquee, exemplaire.factures?.lignes.find((f) => f.id === factureId) ?? null, operationsDeLaCaisse)}
             />
           )}
           {(previewUrl || previewError) && (
@@ -1136,6 +1160,9 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
           )}
 
           {rapprochee && <p className="fiche-piece-rapprochee">Rapprochée avec un mouvement bancaire.</p>}
+          {pieceMarquee && caisse && (
+            <ReglementParLaCaisse dossierId={dossierId} piece={pieceMarquee} factures={exemplaire?.factures ?? null} caisse={caisse} />
+          )}
 
           {refusDeLaValidation !== null && <p className="error-text">{refusDeLaValidation}</p>}
           {attenteDeLaValidation !== null && (
@@ -1151,7 +1178,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         </div>
 
         <div className="fiche-piece-pied">
-          {piece && !fige && !citeePar && !declareePar ? (
+          {piece && !fige && !citeePar && !declareePar && !retenueParLaCaisse ? (
             <button type="button" className="btn btn-danger btn-sm" disabled={occupee} onClick={handleDelete}>
               {deleting ? 'Suppression…' : 'Supprimer'}
             </button>

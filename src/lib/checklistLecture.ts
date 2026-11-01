@@ -12,6 +12,7 @@ import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVen
 import { facturesSourcesDe } from './facturesSources'
 import { lireLesSoldesReportes } from './soldesReportesLecture'
 import { lireLaCaisse, type LectureDeLaCaisse } from './caisseLecture'
+import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from './paiementParLaCaisse'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, FactureEmise, Immobilisation,
   LigneBancaire, LettrageManuel, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
@@ -246,7 +247,11 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
     entreesDeLaCaisseIncompletes: !lectureCaisse.enBase ? null
       : !lectureCaisse.complete ? lectureCaisse.motif ?? 'lecture incomplète'
         : (() => {
-          const partielle = [lectureEcritures, lectureCategories, lectureLignes, lectureANouveaux, lectureVentilations]
+          // Et, la migration `paiement_par_la_caisse` en base (étape C9b), les pièces des deux piles : l'ensemble du jour d'une
+          // recette compte les paiements par la caisse de pièces de VENTE — une pièce non lue ferait paraître une recette « à
+          // revoir ». Le drapeau baissé, la liste d'hier.
+          const partielle = [lectureEcritures, lectureCategories, lectureLignes, lectureANouveaux, lectureVentilations,
+            ...(PAIEMENT_PAR_LA_CAISSE_EXPORTE ? [lectureValidees, lectureAValider] : [])]
             .find((l) => !l.complete)
           return partielle === undefined ? null : partielle.motif ?? 'lecture incomplète'
         })(),

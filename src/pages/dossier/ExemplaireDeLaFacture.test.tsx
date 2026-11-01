@@ -83,10 +83,14 @@ function donnees(o: Partial<DonneesExemplaire> = {}): DonneesExemplaire {
 
 function monter(
   p: Piece, o: Partial<DonneesExemplaire> = {}, autresPieces: readonly string[] | null = null,
-  sait: Partial<CeQueLaFicheSait> = {},
+  sait: Partial<CeQueLaFicheSait> = {}, refusParLaCaisse: ((factureId: string) => string | null) | null = null,
 ) {
   const ceQuElleEst: CeQueLaFicheSait = { lecture: lecture(), relire, apresUnGeste, moi: 'u1', ...sait }
-  return render(<ExemplaireDeLaFacture dossierId={D} piece={p} donnees={donnees(o)} ceQuElleEst={ceQuElleEst} autresPieces={autresPieces} />)
+  return render(
+    <ExemplaireDeLaFacture
+      dossierId={D} piece={p} donnees={donnees(o)} ceQuElleEst={ceQuElleEst} autresPieces={autresPieces} refusParLaCaisse={refusParLaCaisse}
+    />,
+  )
 }
 const monterBascule = (p: Piece, contexte: Partial<ContexteLu> = {}, o: Partial<DonneesExemplaire> = {}) =>
   monter(p, o, null, { lecture: lecture({ ...BASCULE, ...contexte }) })
@@ -260,6 +264,23 @@ describe('Ce que cette pièce est — désigner', () => {
     await act(async () => { designer().click() })
     expect(String(confirmation.mock.calls[0][0])).toContain('l’avoir A2026-0001')
     expect(faux.rpcs[0].args).toEqual({ p_dossier_id: D, p_piece_id: 'p1', p_facture_id: 'a1' })
+  })
+
+  // LA PIÈCE PAYÉE PAR LA CAISSE (ligne 26.6, étape C9b ; `garder_piece_payee_par_la_caisse`) : la fiche passe le refus de la
+  // garde, que la section dit avant le clic, sous ses mots, pour la facture choisie — et seulement pour elle.
+  it('le refus de la caisse, pour la facture choisie, se dit avant le clic et ne laisse rien partir', async () => {
+    const refus = (factureId: string) => (factureId === 'f1' ? 'Cette pièce est payée par la caisse : elle ne devient l’exemplaire de la facture F2026-0007…' : null)
+    monter(piece(), {}, null, {}, refus)
+    fireEvent.change(choix(), { target: { value: 'f1' } })
+    expect(screen.getByText(/Cette pièce est payée par la caisse/)).toBeTruthy()
+    expect(designer().disabled).toBe(true)
+    await act(async () => { designer().click() })
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(faux.rpcs).toEqual([])
+    // Une autre facture, que la caisse ne refuse pas : le geste est offert.
+    fireEvent.change(choix(), { target: { value: 'a1' } })
+    expect(screen.queryByText(/Cette pièce est payée par la caisse/)).toBeNull()
+    expect(designer().disabled).toBe(false)
   })
 
   it('refusée à la confirmation, rien ne part et rien n’est relu', async () => {
