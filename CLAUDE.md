@@ -115,7 +115,7 @@ RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
   toute migration : y ajouter son fichier et rejouer les trois contrôles de `supabase/schema/README.md` (dérive, socle,
   inventaire).
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
-  - `agent-comptable` — assistant IA (Bedrock), v50 depuis le 30/10/2026, plafond de coût mensuel par cabinet ; aucun
+  - `agent-comptable` — assistant IA (Bedrock), v51 depuis le 31/10/2026, plafond de coût mensuel par cabinet ; aucun
     nom de cabinet (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant
     un dossier basculé, une garde provisoire (VF9a), que VF9c a levée — elle ne ferme plus qu'une source des ventes
     illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES OUTILS
@@ -841,12 +841,13 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un déploiement se vérifie** : la copie déployée comparée au dépôt AVANT d'écraser, puis `allerretour.py` ; l'outil
   décode les `\uXXXX` → « Déployer une Edge Function via l'outil MCP décode les échappements » ; les bordures `─`
   répétées d'abord par `bordures.py`, le texte ENVOYÉ relu dans le journal → « LES BORDURES SE RECOPIENT ».
-  `agent-comptable` ne se recopie plus (300 Ko qui portent la consigne de son modèle : la recopie est refusée ou
-  coupée) : une ligne IMPORTE son fichier du dépôt public à un commit écrit en entier, `allerretour.py` compare le
-  fichier de ce commit au dépôt, et revenir en arrière ne change que le commit → « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE
-  QUI IMPORTE LE DÉPÔT ». **Un commit n'est pas un déploiement, un déploiement n'est pas une autorisation** ;
-  `bright-task` (410, hors du dépôt) : à supprimer quand un outil le permettra, ne pas réenquêter → « UN DÉPLOIEMENT
-  N'EST PAS UN COMMIT NON PLUS ».
+  `agent-comptable` et `extract-piece` ne se recopient plus (300 et 83 Ko ; la recopie de l'assistant est refusée ou
+  coupée, celle d'`extract-piece` coûtait le fichier entier à chaque fois) : une ligne IMPORTE leur fichier du dépôt
+  public à un commit écrit en entier, `allerretour.py` compare le fichier de ce commit au dépôt, et revenir en arrière
+  ne change que le commit → « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT », « L'ASSISTANT ET
+  EXTRACT-PIECE REDÉPLOYÉS (V51), CELLE-CI PAR UNE LIGNE QUI IMPORTE LE DÉPÔT ». **Un commit n'est pas un déploiement,
+  un déploiement n'est pas une autorisation** ; `bright-task` (410, hors du dépôt) : à supprimer quand un outil le
+  permettra, ne pas réenquêter → « UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS ».
 - **Clés de Supabase** : les historiques sont quittées ; le bloc `cleSupabase` lit les nouvelles ; une fonction appelée
   sans session passe à `verify_jwt = false` avec son propre contrôle → « LES CLÉS HISTORIQUES DE SUPABASE SONT
   QUITTÉES ». **`extract-piece`** : un compte RATTACHÉ ou la clé secrète en `apikey`, avant le corps ; l'inscription

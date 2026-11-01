@@ -44277,3 +44277,38 @@ de les modifier) ; « Régénérer » réécrit la contrepartie après l'avoir r
 désignation d'une pièce payée comme exemplaire d'une facture source se dit avant le clic
 (`refusDuChangementDeLaPiece`) ; le journal de la caisse dit le flux d'avant l'ouverture qu'il ne compte pas, et la Vue
 d'ensemble un mouvement d'avant l'ouverture classé sur la caisse, à retirer.
+
+### 31/10/2026 — L'ASSISTANT ET EXTRACT-PIECE REDÉPLOYÉS (V51), CELLE-CI PAR UNE LIGNE QUI IMPORTE LE DÉPÔT
+
+(Par la session, après la fusion de la demande n° 253 sur `main` (`b3b332a`). En production : `agent-comptable` version
+51 et `extract-piece` version 51, `verify_jwt` faux pour les deux, la valeur de `supabase/config.toml`. Ni migration, ni
+écran. Aucun modèle n'a été appelé, aucun document lu.)
+
+**CE QUI EST PARTI.** Les deux copies que la demande n° 253 a changées. `agent-comptable` : le total payé d'une pièce
+est la somme signée de ses paiements (`paiementNet`), qu'un rejet de prélèvement défait → « LA 2035 D'UN BNC EXONÉRÉ :
+TROIS DÉFAUTS DE LA RELECTURE CORRIGÉS ». `extract-piece` : le signe moins typographique (U+2212) d'un montant cité se
+lit comme le trait d'union, l'avoir n'est plus lu en positif → « L'IMPORT D'UN RELEVÉ PAR FICHIER, CORRIGÉ AVANT L'ANNÉE
+2025 DU PRATICIEN », dont le « ce qui reste » est fait.
+
+**MESURÉ AVANT D'ÉCRASER.** La v50 d'`extract-piece`, recopiée : `allerretour.py` contre le fichier du dépôt d'avant la
+correction, zéro différence sur 1 409 lignes, six échappements décodés. La v50 de l'assistant importait le commit
+`d717837` ; entre lui et `main`, son fichier ne change que de la somme signée. Le fichier que sert
+raw.githubusercontent.com au commit `b3b332a` a, pour l'une et l'autre, l'empreinte du dépôt (md5 `59b7a549…` et
+`a584c5ca…`).
+
+**EXTRACT-PIECE NE SE RECOPIE PLUS.** Jusqu'ici recopiée (83 Ko, 1 411 lignes), elle coûtait à chaque redéploiement la
+lecture et l'écriture du fichier entier, sept échappements `\uXXXX` à réécrire et huit bordures à répéter
+(`bordures.py`). La voie de l'assistant lui est appliquée : trois lignes, dont un import du fichier du dépôt public au
+commit de `main` écrit en entier → « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT ». Rien n'est transcrit
+et le commit fige le contenu ; ses imports `npm:` se résolvent au déploiement, comme avant ; `get_edge_function` ne
+montre plus le code, le commit le dit. Les autres fonctions gardent la recopie.
+
+**EN LIGNE.** `agent-comptable` v51 (`ezbr_sha256` `e0e56e99…`) : « la copie déployée importe
+supabase/functions/agent-comptable/index.ts au commit b3b332a, identique au dépôt (4213 lignes) » ; sans session, un
+POST rend 401 et un GET 405, comme la v50. `extract-piece` v51 (`d5392cda…`) : la même phrase, 1 411 lignes, « rien n'a
+été recopié » ; sans session, un POST comme un GET rend 401 « La lecture d'un document demande d'être connecté à
+l'application. » : le module importé démarre et répond, avant toute dépense.
+
+**REVENIR EN ARRIÈRE.** L'assistant : la même ligne au commit `d7178376494c4610f3f944bebaa28d92dde9e431` (la v50).
+`extract-piece` : la même ligne au commit `f41b133f9e2e8b4387b28f71152b798f557dedf3`, dont le fichier est celui de la
+v50 (md5 `fd869ee7…`).
