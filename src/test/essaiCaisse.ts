@@ -1,5 +1,6 @@
 import {
-  jugerLaSaisie, jugerLaSaisieDUnMois, jugerLeRemplacement, jugerLeRetrait, premierJourNegatif, texteCaisseNegative,
+  jugerLaSaisie, jugerLaSaisieDUnMois, jugerLeRemplacement, jugerLeRetrait, premierJourNegatif, quiEcritLaCaisse,
+  refusDeLaNatureDesRecettesDuClient, STATUTS_DE_LA_SAISIE_DU_CLIENT, texteCaisseNegative,
   type DossierDeLaCaisse, type EtatDeLaCaisse, type OperationDeLaCaisse, type RefusCaisse, type SaisieDeCaisse,
 } from '../lib/caisse'
 import { refusCompteDeBilanAuPlanSelon } from '../lib/compteDeBilan'
@@ -8,7 +9,7 @@ import {
   type PieceDuPaiement,
 } from '../lib/paiementParLaCaisse'
 import { PLAN_PAR_DEFAUT, type CleRoleComptable, type PlanComptable } from '../lib/planComptable'
-import type { OrigineOperationCaisse } from '../lib/types'
+import type { OrigineOperationCaisse, StatutTva } from '../lib/types'
 
 // L'ESSAI DE LA CAISSE REJOUÉ PAR LE MODULE (ligne 26.6, étape C2). `supabase/essais/caisse.sql` joue, étape après étape,
 // les fonctions de la caisse sur des dossiers jetables ; ce banc rejoue les MÊMES étapes, dans le même ordre, sur un état
@@ -33,8 +34,9 @@ export interface EtapeDeLEssai {
 
 // Les genres de l'essai, et leur suffixe : « 2 » pour une étape de la migration de l'étape C1b, « 3 » pour une de l'étape C6
 // (`especes_sans_mouvement`), « 3h » pour une que celle-ci remplace (ce que la base répondait sans elle) ; puis « 4 » pour
-// une de l'étape C8 (`paiement_par_la_caisse`), « 4h » pour une qu'elle remplace — après le suffixe d'une étape d'avant.
-const GENRES = /\n {4}array\['((?:jeu|controle|fait|valeur|capture)(?:2|3h?)?(?:4h?)?)', /g
+// une de l'étape C8 (`paiement_par_la_caisse`), « 4h » pour une qu'elle remplace — après le suffixe d'une étape d'avant ;
+// puis « 5 » pour une de l'étape C10 (`caisse_du_client`), « 5h » pour une qu'elle remplace.
+const GENRES = /\n {4}array\['((?:jeu|controle|fait|valeur|capture)(?:2|3h?)?(?:4h?)?(?:5h?)?)', /g
 
 /** Les littéraux SQL qui suivent, joints : `'a' || 'b'` rend `ab` ; l'apostrophe doublée rendue simple. */
 function litteraux(texte: string): string[] {
@@ -125,6 +127,9 @@ interface DossierSimule {
   assujetti: boolean
   source: boolean
   plan: Partial<Record<CleRoleComptable, string>>
+  // L'étape C10 : le statut de TVA (qui ouvre la saisie du client) et la nature de ses recettes, que le cabinet fixe.
+  statut: StatutTva | null
+  nature: string | null
 }
 
 interface Etat {
@@ -141,6 +146,8 @@ interface Etat {
   factures: { id: string; dossier_id: string; source: boolean }[]
   // Les lignes du brouillon qui citent une opération de la caisse : la contrepartie d'un paiement se juge sur elles.
   lignesDeCaisse: { operation_caisse_id: string; dossier_id: string; montant: number; piece_id: string | null }[]
+  // Les accès du client de l'essai (l'étape C10) : le dossier, et la case « Caisse ».
+  acces: { dossier_id: string; droit_caisse: boolean }[]
   horsJeu: Set<string>
 }
 
@@ -155,10 +162,12 @@ interface PieceSimulee {
 }
 
 const copier = (e: Etat): Etat => ({
-  dossiers: new Map(e.dossiers), categories: [...e.categories], ouvertures: e.ouvertures.map((x) => ({ ...x })),
+  // Les dossiers et les catégories copiés eux aussi : un contrôle de l'étape C10 change la nature, le statut, un compte.
+  dossiers: new Map([...e.dossiers].map(([k, d]) => [k, { ...d }])), categories: e.categories.map((x) => ({ ...x })),
+  ouvertures: e.ouvertures.map((x) => ({ ...x })),
   operations: e.operations.map((x) => ({ ...x })), mouvements: e.mouvements.map((x) => ({ ...x })), validees: [...e.validees],
   horsJeu: new Set(e.horsJeu), pieces: e.pieces.map((x) => ({ ...x })), factures: [...e.factures],
-  lignesDeCaisse: e.lignesDeCaisse.map((x) => ({ ...x })),
+  lignesDeCaisse: e.lignesDeCaisse.map((x) => ({ ...x })), acces: e.acces.map((x) => ({ ...x })),
 })
 
 function planDe(e: Etat, dossierId: string): PlanComptable {
@@ -195,12 +204,12 @@ function piecesDuPaiement(e: Etat, dossierId: string): PieceDuPaiement[] {
   })
 }
 
-/** Le dossier tel que les fonctions de la caisse le lisent, sous un profil de l'essai. */
+/** Le dossier tel que les fonctions de la caisse le lisent, sous un profil de l'essai : l'utilisateur est celui du profil. */
 function dossierLu(e: Etat, dossierId: string, quiEcrit: OrigineOperationCaisse | null, aujourdhui: string): DossierDeLaCaisse {
   const d = e.dossiers.get(dossierId)!
   const ouvertures = e.ouvertures.filter((a) => a.dossier_id === dossierId).map((a) => a.date).sort()
   return {
-    quiEcrit, utilisateur: 'chef', aujourdhui,
+    quiEcrit, utilisateur: quiEcrit === 'client' ? 'client' : 'chef', aujourdhui, natureDesRecettesDuClient: d.nature,
     modele: { mode: d.mode, compteNotesDeFrais: d.notesDeFrais, plan: planDe(e, dossierId) },
     assujetti: d.assujetti, ouverture: ouvertures[0] ?? null,
     anneesValidees: e.validees.filter((v) => v.dossier_id === dossierId).map((v) => v.annee),
@@ -281,14 +290,14 @@ export function rejouerLEssai(essai: string, aujourdhui: string): Issue[] {
   const ids = identifiantsDeLEssai(essai)
   const demain = new Date(`${aujourdhui}T12:00:00Z`)
   demain.setUTCDate(demain.getUTCDate() + 1)
-  ids.set('CAB', 'cabinet-du-dossier-test').set('DC', 'dossier-du-client').set('CHEF', 'chef')
+  ids.set('CAB', 'cabinet-du-dossier-test').set('DC', 'dossier-du-client').set('CHEF', 'chef').set('CLIENT', 'client')
     .set('DEMAIN', demain.toISOString().slice(0, 10))
     // Le corps d'une facture (`{FACTURE}`) : ce banc n'en lit que le dossier, et la source qu'il porte (l'étape C8).
     .set('FACTURE', '\'{}\'::jsonb, \'[]\'::jsonb, true')
   const captures = new Set<string>()
   let etat: Etat = {
     dossiers: new Map(), categories: [], ouvertures: [], operations: [], mouvements: [], validees: [], pieces: [], factures: [],
-    lignesDeCaisse: [],
+    lignesDeCaisse: [], acces: [],
     // Le dossier du client vit en production : sa caisse s'y lit, pas ici.
     horsJeu: new Set(['dossier-du-client']),
   }
@@ -298,13 +307,18 @@ export function rejouerLEssai(essai: string, aujourdhui: string): Issue[] {
   for (const etape of etapesDeLEssai(essai)) {
     let sql = etape.sql
     for (const [cle, v] of ids) sql = sql.split(`{${cle}}`).join(v)
-    // Une étape qu'une migration remplace (« …3h » pour l'étape C6, « …4h » pour l'étape C8) dit ce que la base répondait
-    // sans elle : ce banc rejoue la base d'après, et l'étape qui la remplace.
-    if (/4h$/.test(etape.genre)) {
+    // Une étape qu'une migration remplace (« …3h » pour l'étape C6, « …4h » pour l'étape C8, « …5h » pour l'étape C10) dit
+    // ce que la base répondait sans elle : ce banc rejoue la base d'après, et l'étape qui la remplace.
+    if (/5h$/.test(etape.genre)) {
+      issues.push({ genre: 'hors_module', etape, raison: 'remplacée par la migration de l’étape C10 (caisse_du_client)' })
+      continue
+    }
+    const sansC10 = etape.genre.replace(/5$/, '')
+    if (/4h$/.test(sansC10)) {
       issues.push({ genre: 'hors_module', etape, raison: 'remplacée par la migration de l’étape C8 (paiement_par_la_caisse)' })
       continue
     }
-    const sansC8 = etape.genre.replace(/4$/, '')
+    const sansC8 = sansC10.replace(/4$/, '')
     if (/3h$/.test(sansC8)) {
       issues.push({ genre: 'hors_module', etape, raison: 'remplacée par la migration de l’étape C6 (especes_sans_mouvement)' })
       continue
@@ -318,7 +332,7 @@ export function rejouerLEssai(essai: string, aujourdhui: string): Issue[] {
       // capture lit l'état d'AVANT les contrôles : l'état gardé.
       const m = /^select o\.id::text from operations_caisse o where (.*)$/.exec(sql.trim())
       const conditions = m ? m[1].split(' and ').map((c) => {
-        const egal = /^o\.(dossier_id|genre|date|remplace_id) = '([^']+)'$/.exec(c)
+        const egal = /^o\.(dossier_id|genre|date|remplace_id|origine) = '([^']+)'$/.exec(c)
         if (egal) return (o: OperationDeLaCaisse & { dossier_id: string }) => String(o[egal[1] as 'genre']) === egal[2]
         const signe = /^o\.montant ([<>]) 0$/.exec(c)
         if (signe) return (o: OperationDeLaCaisse) => (signe[1] === '>' ? o.montant > 0 : o.montant < 0)
@@ -339,20 +353,29 @@ export function rejouerLEssai(essai: string, aujourdhui: string): Issue[] {
     const sur = genre === 'controle' ? copier(etat) : etat
     const evenements: Evenement[] = []
     const pas = { restauration: false }
-    const quiEcrit = (dossierId: string): OrigineOperationCaisse | null => {
-      const d = sur.dossiers.get(dossierId) ?? (dossierId === 'dossier-du-client' ? { cabinet: 'cabinet-du-dossier-test' } : null)
-      if (!d) return null
-      if (etape.profil === 'chef') return d.cabinet === 'cabinet-du-dossier-test' ? 'cabinet' : null
-      if (etape.profil === 'autre') return d.cabinet === ids.get('AUTRE') ? 'cabinet' : null
-      return null
+    // Qui écrit la caisse (`qui_ecrit_la_caisse`, par le module) : le chef dans le cabinet du dossier `test`, l'autre dans le
+    // sien ; le client par un accès « Caisse » d'un dossier exonéré ou en franchise (l'étape C10) — sinon le refus du module.
+    const accesALaCaisse = (dossierId: string) => {
+      const d = sur.dossiers.get(dossierId) ?? (dossierId === 'dossier-du-client' ? { cabinet: 'cabinet-du-dossier-test', statut: null } : null)
+      const cabinet = d != null && ((etape.profil === 'chef' && d.cabinet === 'cabinet-du-dossier-test')
+        || (etape.profil === 'autre' && d.cabinet === ids.get('AUTRE')))
+      const accesCaisse = d != null && etape.profil === 'client' && sur.acces.some((a) => a.dossier_id === dossierId && a.droit_caisse)
+      return quiEcritLaCaisse({ cabinet, accesCaisse, statutTva: d?.statut ?? null })
     }
+    const quiEcrit = (dossierId: string): OrigineOperationCaisse | null => {
+      const a = accesALaCaisse(dossierId)
+      return a.refus ? null : a.origine
+    }
+    const refusDAcces = (dossierId: string): RefusCaisse => accesALaCaisse(dossierId).refus ?? { code: '42501', message: 'Accès refusé à ce dossier.' }
     let recu: RefusCaisse | null = null
     try {
-      if (nommes.some((d) => etat.horsJeu.has(d)) && !(etape.profil !== 'chef' && etape.profil !== 'autre')) {
+      // Un profil qui peut écrire sur un dossier hors jeu ne s'y rejoue pas : le chef, l'autre, et le client qui y a un accès.
+      if (nommes.some((d) => etat.horsJeu.has(d) && (etape.profil === 'chef' || etape.profil === 'autre'
+        || (etape.profil === 'client' && etat.acces.some((a) => a.dossier_id === d))))) {
         throw new NonRejouable('un dossier hors jeu')
       }
       for (const instruction of couper(sql, ';')) {
-        recu = rejouer(instruction, sur, evenements, etape.profil, quiEcrit, aujourdhui, () => `simulee-${++compteur}`, pas)
+        recu = rejouer(instruction, sur, evenements, etape.profil, quiEcrit, refusDAcces, aujourdhui, () => `simulee-${++compteur}`, pas)
         if (recu) break
       }
       if (!recu) recu = judgerALaFin(sur, evenements)
@@ -419,8 +442,8 @@ function saisieDe(args: readonly Valeur[]): SaisieDeCaisse {
 
 // Une instruction de l'étape, rejouée sur l'état : son refus, ou rien (et l'état avancé, les lignes écrites notées).
 function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: string,
-  quiEcrit: (d: string) => OrigineOperationCaisse | null, aujourdhui: string, nouvelId: () => string,
-  pas: { restauration: boolean }): RefusCaisse | null {
+  quiEcrit: (d: string) => OrigineOperationCaisse | null, refusDAcces: (d: string) => RefusCaisse, aujourdhui: string,
+  nouvelId: () => string, pas: { restauration: boolean }): RefusCaisse | null {
   const appel = instruction.replace(/\s+/g, ' ').trim()
   if (/^select set_config\('request\.jwt\.claims'/.test(appel)) return null
   const lues = insertions(instruction.trim())
@@ -454,7 +477,11 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
       }
       return null
     }
-    if (profil !== 'postgres' && !['lignes_bancaires', 'a_nouveaux'].includes(lues.table)) throw new NonRejouable('une écriture directe')
+    // Un accès réinséré par le super-administrateur (le chef ici), sa case « Caisse » comprise : la porte de la restauration
+    // de `garder_droit_caisse` (l'étape C10).
+    if (profil !== 'postgres' && !['lignes_bancaires', 'a_nouveaux'].includes(lues.table) && !(lues.table === 'memberships' && profil === 'chef')) {
+      throw new NonRejouable('une écriture directe')
+    }
     for (const l of lues.lignes) {
       const refus = inserer(e, lues.table, l, evenements, profil)
       if (refus) return refus
@@ -482,6 +509,37 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
   }
   const maj = /^update (lignes_bancaires|a_nouveaux) set (.*) where id = '([^']+)'$/.exec(appel)
   if (maj) return mettreAJour(e, maj[1] as 'lignes_bancaires' | 'a_nouveaux', maj[3], couper(maj[2], ','), evenements)
+  // L'étape C10 : la nature des recettes du client, que le cabinet fixe sous la garde `garder_categorie_recettes_client`
+  // (pour tout auteur, le propriétaire compris) ; le statut de TVA et le compte d'une catégorie, posés par le jeu.
+  const nature = /^update dossiers set categorie_recettes_client = (null|'[^']+') where id = '([^']+)'$/.exec(appel)
+  if (nature) {
+    const d = e.dossiers.get(nature[2])
+    if (!d || (profil !== 'postgres' && quiEcrit(nature[2]) !== 'cabinet')) throw new NonRejouable('un dossier hors jeu')
+    const categorie = nature[1] === 'null' ? null : nature[1].slice(1, -1)
+    const refusDeLaNature = categorie === d.nature ? null : refusDeLaNatureDesRecettesDuClient(categorie, d.id, e.categories)
+    if (refusDeLaNature) return refusDeLaNature
+    d.nature = categorie
+    return null
+  }
+  const statut = /^update dossiers set statut_tva = '(redevable|franchise|exonere)' where id = '([^']+)'$/.exec(appel)
+  if (statut && profil === 'postgres') {
+    const d = e.dossiers.get(statut[2])
+    if (!d) throw new NonRejouable('un dossier hors jeu')
+    // La garde du statut (`garder_statut_tva_de_la_caisse`) n'est pas du module : qu'aucun jeu ne la rencontre.
+    const sort = d.statut != null && STATUTS_DE_LA_SAISIE_DU_CLIENT.includes(d.statut)
+      && !STATUTS_DE_LA_SAISIE_DU_CLIENT.includes(statut[1] as StatutTva)
+    if (sort && e.acces.some((a) => a.dossier_id === d.id && a.droit_caisse)) throw new NonRejouable('la garde du statut de TVA')
+    d.statut = statut[1] as StatutTva
+    d.assujetti = d.statut === 'redevable'
+    return null
+  }
+  const compte = /^update categories set compte_comptable = '([^']+)' where id = '([^']+)'$/.exec(appel)
+  if (compte && profil === 'postgres') {
+    const i = e.categories.findIndex((c) => c.id === compte[2])
+    if (i < 0) throw new NonRejouable('une catégorie inconnue')
+    e.categories[i] = { ...e.categories[i], compte_comptable: compte[1] }
+    return null
+  }
   if (profil === 'postgres') throw new NonRejouable('un appel du propriétaire')
   // Une facture validée (l'étape C8 n'en lit que la source, celle de son dossier à sa validation).
   const facture = /^select enregistrer_facture\('([^']+)', null, /.exec(appel)
@@ -496,7 +554,7 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
     const d = texte(args[0])
     if (!e.dossiers.has(d) && quiEcrit(d) != null) throw new NonRejouable('un dossier hors jeu')
     const qui = quiEcrit(d)
-    if (qui == null) return { code: '42501', message: 'Accès refusé à ce dossier.' }
+    if (qui == null) return refusDAcces(d)
     const id = nouvelId()
     const saisie = { piece_id: args[1] as string | null, date: args[2] as string | null, montant: args[3] as number | null }
     const jugee = jugerLeReglementSelon(true, saisie, dossierLu(e, d, qui, aujourdhui), piecesDuPaiement(e, d), id)
@@ -518,7 +576,7 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
     const d = texte(args[0])
     if (!e.dossiers.has(d) && quiEcrit(d) != null) throw new NonRejouable('un dossier hors jeu')
     const qui = quiEcrit(d)
-    if (qui == null) return { code: '42501', message: 'Accès refusé à ce dossier.' }
+    if (qui == null) return refusDAcces(d)
     const id = nouvelId()
     const jugee = jugerLaSaisie(saisieDe(args.slice(1)), dossierLu(e, d, qui, aujourdhui), false, id)
     if (jugee.refus) return jugee.refus
@@ -529,7 +587,7 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
     const args = arguments_(appel, 'enregistrer_operations_de_caisse')
     const d = texte(args[0])
     const qui = quiEcrit(d)
-    if (qui == null) return { code: '42501', message: 'Accès refusé à ce dossier.' }
+    if (qui == null) return refusDAcces(d)
     if (!e.dossiers.has(d)) throw new NonRejouable('un dossier hors jeu')
     const jugee = jugerLaSaisieDUnMois(JSON.parse(texte(args[1])), dossierLu(e, d, qui, aujourdhui))
     if (jugee.refus) return jugee.refus
@@ -540,7 +598,7 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
     const args = arguments_(appel, 'retirer_operation_caisse')
     const d = texte(args[0])
     const qui = quiEcrit(d)
-    if (qui == null) return { code: '42501', message: 'Accès refusé à ce dossier.' }
+    if (qui == null) return refusDAcces(d)
     if (!e.dossiers.has(d)) throw new NonRejouable('un dossier hors jeu')
     const jugee = jugerLeRetrait(args[1] as string | null, dossierLu(e, d, qui, aujourdhui), 'maintenant')
     if (jugee.refus) return jugee.refus
@@ -551,7 +609,7 @@ function rejouer(instruction: string, e: Etat, evenements: Evenement[], profil: 
     const args = arguments_(appel, 'remplacer_operation_caisse')
     const d = texte(args[0])
     const qui = quiEcrit(d)
-    if (qui == null) return { code: '42501', message: 'Accès refusé à ce dossier.' }
+    if (qui == null) return refusDAcces(d)
     if (!e.dossiers.has(d)) throw new NonRejouable('un dossier hors jeu')
     const id = nouvelId()
     const jugee = jugerLeRemplacement(args[1] as string | null, saisieDe(args.slice(2)), dossierLu(e, d, qui, aujourdhui), 'maintenant', id)
@@ -645,7 +703,9 @@ function reinserer(e: Etat, l: Record<string, Valeur>): RefusCaisse | null {
     id: texte(l.id), dossier_id: dossierId, genre: texte(l.genre) as OperationDeLaCaisse['genre'], date: texte(l.date),
     montant: nombre(l.montant), categorie_id: categorie, taux_tva: (l.taux_tva ?? null) as number | null,
     encaissements_du_jour: encaissements === undefined ? null : (encaissements as string[] | null), piece_id: piece,
-    origine: texte(l.origine) as OrigineOperationCaisse, remplace_id: remplace, cree_par: 'chef',
+    origine: texte(l.origine) as OrigineOperationCaisse, remplace_id: remplace,
+    // L'auteur réinséré (l'étape C10 : l'opération d'un autre accès), le chef sinon.
+    cree_par: typeof l.cree_par === 'string' ? l.cree_par : 'chef',
     retire_le: (l.retire_le ?? null) as string | null,
   })
   return null
@@ -685,8 +745,11 @@ function inserer(e: Etat, table: string, l: Record<string, Valeur>, evenements: 
     e.dossiers.set(texte(l.id), {
       id: texte(l.id), cabinet: texte(l.cabinet_id), mode: (l.mode_comptable ?? 'tresorerie') as DossierSimule['mode'],
       notesDeFrais: (l.compte_notes_de_frais ?? '455000') as string, assujetti: l.statut_tva === 'redevable' || l.assujetti_tva === true,
-      source: l.ventes_par_les_factures === true, plan: {},
+      source: l.ventes_par_les_factures === true, plan: {}, statut: (l.statut_tva ?? null) as StatutTva | null, nature: null,
     })
+  } else if (table === 'memberships') {
+    // Les accès du client de l'essai (l'étape C10) ; celui d'un autre compte ne s'y lit pas.
+    if (l.user_id === 'client') e.acces.push({ dossier_id: texte(l.dossier_id), droit_caisse: l.droit_caisse === true })
   } else if (table === 'categories') {
     e.categories.push({ id: texte(l.id), dossier_id: l.dossier_id as string | null, libelle: texte(l.libelle), compte_comptable: l.compte_comptable as string | null })
   } else if (table === 'lignes_bancaires') {

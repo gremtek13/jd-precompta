@@ -104,6 +104,8 @@ export function dossierDeLEcran(ctx: ContexteDeLaCaisse, d: DonneesDeLaCaisse): 
     anneesValidees: ctx.anneesValidees,
     categories: d.categories as readonly CategorieDeLaCaisse[],
     caisse: etatDeLaCaisseLu(ctx.modele, d),
+    // La nature des recettes du CLIENT (la migration `caisse_du_client`) : la saisie du cabinet ne la lit pas.
+    natureDesRecettesDuClient: null,
   }
 }
 

@@ -775,6 +775,46 @@ production : relevés le 01/11/2026 sur le modèle « apres » du banc du leurre
 d'une application par le super-utilisateur de la réplique, sous qui les fonctions neuves ne reçoivent pas les droits par
 défaut du schéma (HISTORIQUE.md, « LE BANC DU LEURRE SUR LES ESSAIS DU 01/11/2026 (C8, FEC22B, LE FILET) »).
 
+**Préparé le 01/11/2026, PAS ENCORE APPLIQUÉ : `caisse_du_client`** (ligne 26.6, étape C10 : le droit « Caisse » d'un accès
+client et la saisie des espèces par le praticien ; MVP-D2, CAISSE-Q1, CAISSE2-Q2 et Q3). Son fichier vit HORS de l'export,
+dans `supabase/preparees/`, sous une version PROVISOIRE, `20261101200000` (62 836 caractères, 64 071 octets, 942 lignes,
+`fcc9540203b6f919b20024ef4b630ffa`, ni barre oblique inverse ni retour chariot), APRÈS C8, FEC22b et le filet, qu'il exige
+(sa garde de tête épingle vingt-deux corps, dont `valider_exercice` tel que le filet le laisse, `02750f93…`). Il
+s'applique PAR L'OUTIL : ni `drop`, ni `delete`, ni `truncate` ; ses `revoke` ne retirent que les droits que Postgres donne
+d'office aux six fonctions qu'il crée. Ce qu'il pose : deux colonnes (`memberships.droit_caisse`, booléen non nul faux par
+défaut ; `dossiers.categorie_recettes_client`, nulle, sans clé étrangère) ; cinq corps par `create or replace`
+(`client_du_dossier`, `droits_sur_le_dossier`, `changer_droits_acces` à trois paramètres, `qui_ecrit_la_caisse`,
+`enregistrer_operation_caisse` : OID, propriétaire et droits gardés) ; six fonctions neuves (`gere_la_caisse`,
+`changer_droits_acces` à quatre paramètres et `caisse_du_client`, exécutables par un compte connecté ; trois gardes,
+`garder_droit_caisse`, `garder_statut_tva_de_la_caisse`, `garder_categorie_recettes_client`, par personne) ; trois
+déclencheurs APRÈS la ligne (`memberships_droit_caisse`, `dossiers_statut_tva_de_la_caisse` — sur toute mise à jour qui
+CHANGE le statut, la clause `when` —, `dossiers_categorie_recettes_client`) ; une policy PERMISSIVE de lecture,
+`operations_caisse_lecture_caisse` (`for select to authenticated using (client_du_dossier(dossier_id, 'caisse'))`) — UNE
+POLICY QUI OUVRE UNE LECTURE AU CLIENT, à accorder par le cabinet avant l'application. Le fichier entre ici sous la version
+que portera sa ligne d'historique, texte inchangé, et cette ligne doit rendre `fcc95402…`. Son RETOUR ARRIÈRE
+(`supabase/preparees/retour/20261101200100_retour_caisse_du_client.sql`, 24 352 caractères, 24 664 octets, 445 lignes,
+`297863ca77affe5103f23821dce374b5`) : sa garde de tête exige les onze corps de la migration à leur empreinte, et refuse
+tant qu'un accès porte la case ou qu'un dossier porte une nature ; il rend les cinq corps d'hier et les commentaires de
+production, puis retire la policy, les trois déclencheurs, les six fonctions et les deux colonnes — DESTRUCTIF dès
+qu'une case est cochée, à accorder, et à coller avec sa ligne d'historique. Tant qu'elle n'est pas appliquée, l'export ne
+la porte pas, et ses trois contrôles sont ceux de la production (164 fichiers, `3a31b730…` ; socle 81, `5d636a96…` ;
+inventaire 2 284, `efbc0207…`). Sur la réplique de l'étape (la production du jour, `f_prod164`, munie de C8, de FEC22b et
+du filet, puis d'elle, chacune par le PROPRIÉTAIRE des tables, comme l'outil, avec sa ligne d'historique), et sur l'export
+qui porte les quatre — leurs fichiers DÉPLACÉS de `supabase/preparees/`, en simulation — : la dérive, 168 fichiers et 168
+migrations, `6ee2379c9b9e581a51b886b6390a7328` des deux côtés (un agrégat que les versions réelles changeront ; 167,
+`601c8e9c…`, avec les trois seules) ; le socle inchangé par elle (81 instructions, `bfe9dce8…` côté base avant comme après
+elle — la régénération que FEC22b demande reste la sienne) ; l'inventaire 2 307 objets, `93edc60a9d6ed80c3dabb0e988ab9db8`
+côté base (2 295 avec les trois), douze de plus — deux colonnes, trois déclencheurs, une policy, six fonctions —, le même
+écart côté fichiers (2 290 puis 2 302 : les cinq colonnes de FEC22b sur `ecritures_brouillon` y manquent tant que le socle
+n'est pas régénéré). `signature.sql`, après les quatre : « colonnes » 918 `ccc284d4af552aa42cf281a0fd944812`,
+« contraintes » 711 `bb338173…` (inchangée), « déclencheurs » 87 `0d648fb17f5ba5c89af25fd1664f4a92`, « droits des
+fonctions » 226 `5e15c24f2782c3ee706160ad705fd6d2`, « droits des tables » 82 `36d97923…`, « fonctions » 226
+`f8f50bb44dfa2d4782f836711a4e7b2d`, « index » 244 `9704c175…`, « policies » 162 `c881b044ef658f79d6048a7dbb6b5870`,
+« rls » 82 `5fb5dc41…` ; elles reviennent à celles des trois après le retour arrière, qu'une seconde application refuse
+comme la migration (HISTORIQUE.md, « LA CAISSE : LE DROIT « CAISSE », EN BASE (C10, LIGNE 26.6) (PRÉPARÉE, PAS
+APPLIQUÉE) »). Le jour de l'application : C8, FEC22b, le filet, puis elle, chacune par l'outil, puis les trois contrôles ;
+puis `caisse.sql`, `droitsAcces.sql` et `rls.sql` se jouent en production, entiers.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

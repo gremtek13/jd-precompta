@@ -1,6 +1,6 @@
 -- LES DROITS D'UN ACCÈS CLIENT, ÉPROUVÉS EN BASE (espace client, étape P1) — à rejouer par `execute_sql` après toute
 -- migration qui touche `memberships`, ses policies, `admin_du_dossier`, `client_du_dossier`, `gere_les_ventes`,
--- `gere_la_banque`, `droits_sur_le_dossier` ou `changer_droits_acces`.
+-- `gere_la_banque`, `gere_la_caisse`, `droits_sur_le_dossier`, `changer_droits_acces`, ou le statut de TVA d'un dossier.
 --
 -- Ce qui se prouve ici, par impersonation de sept profils — anonyme, compte rattaché à rien, client du dossier, client
 -- d'un autre dossier, chef du cabinet, membre du cabinet affecté au dossier, membre affecté à un AUTRE dossier :
@@ -55,6 +55,16 @@
 -- dont les vingt de la garde (70 à 83, 90 à 95), et 2 lignes d'information ; rien de resté en base ; le texte reçu est
 -- ce fichier sans ses lignes de commentaire ni son dernier saut de ligne (53 876 caractères, empreinte
 -- 2f8b8661f1983beabda57cb8a8b7619b) (HISTORIQUE.md, « LES DEUX MIGRATIONS DE 23Q2Q2-Q3 ET VF8F EN PRODUCTION »).
+--
+-- LE DROIT « CAISSE » (ligne 26.6, étape C10 ; migration `caisse_du_client`, PRÉPARÉE, pas appliquée). Une troisième case,
+-- `droit_caisse`, que `changer_droits_acces` à QUATRE paramètres pose — celle à trois l'appelle, « Caisse » nul —, et deux
+-- gardes : « Caisse » qui arrive sur un accès se refuse (23514) sur un dossier ni exonéré de TVA ni en franchise en base,
+-- pour tout auteur, l'insertion du super-administrateur exceptée ; un dossier dont un accès porte la case ne quitte pas ces
+-- deux statuts, par aucun chemin. Les contrôles 100 à 147 et les mutations 150 à 155 les jouent sur quatre dossiers
+-- jetables (DX exonéré, DF en franchise, DR redevable, DN à préciser) ; sans la migration, une ligne dit qu'ils attendent
+-- (EN ATTENTE), et le reste rend ce qu'il rendait, la forme des contrôles 3, 4, 40 et 83 près — ce que la migration y
+-- ajoute (la forme à quatre, son refus aux trois mots, le déclencheur de la case) ne s'y attend qu'avec elle ; « rien n'est
+-- resté » (60) relit aussi le statut de TVA et la nature des recettes de chaque dossier.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -71,6 +81,22 @@ declare
   acces_dj uuid := 'f8f00000-0000-4000-8000-0000000000a1';
   acces_dk uuid := 'f8f00000-0000-4000-8000-0000000000a2';
   refus_ventes text := 'Le droit « Ventes » suppose que les factures de ce dossier soient la source de leurs ventes, ce qu''elles ne sont pas : changer d''abord la source des ventes du dossier.';
+  -- Étape C10 (la migration `caisse_du_client`, préparée) : quatre dossiers jetables du cabinet — DX exonéré, DF en
+  -- franchise, DR redevable, DN à préciser — et l'accès d'essai du client à chacun, sans droit, créés dans la
+  -- sous-transaction de chaque contrôle qui s'en sert, annulés avec elle.
+  c10 boolean := to_regprocedure('public.caisse_du_client(uuid, integer)') is not null;
+  dx uuid := 'c10d0000-0000-4000-8000-0000000000d1';
+  df uuid := 'c10d0000-0000-4000-8000-0000000000d2';
+  dr uuid := 'c10d0000-0000-4000-8000-0000000000d3';
+  dn uuid := 'c10d0000-0000-4000-8000-0000000000d4';
+  acces_dx uuid := 'c10d0000-0000-4000-8000-0000000000a1';
+  acces_df uuid := 'c10d0000-0000-4000-8000-0000000000a2';
+  acces_dr uuid := 'c10d0000-0000-4000-8000-0000000000a3';
+  acces_dn uuid := 'c10d0000-0000-4000-8000-0000000000a4';
+  refus_caisse text := 'Le droit « Caisse » suppose un dossier exonéré de TVA ou en franchise en base, ce que le statut de ce dossier ne dit pas : sa caisse reste tenue par le cabinet.';
+  refus_statut text := 'Un accès de ce dossier porte la case « Caisse », qui suppose un dossier exonéré de TVA ou en franchise en base : décoche-la d''abord.';
+  aucun_droit_c10 text := 'Aucun droit à changer : précise « Ventes », « Banque » ou « Caisse ».';
+  statuts_avant text;
   t record; n int; m int; sig text; code_recu text; message text; obs text; avant jsonb; apres jsonb; rendu jsonb;
   verdicts jsonb := '[]'::jsonb;
 begin
@@ -87,6 +113,7 @@ begin
     and not exists (select 1 from memberships mb where mb.dossier_id = d.id and mb.user_id = client);
   troisieme_dossier := 'f8f00000-0000-4000-8000-0000000000d3';
   if dossier_client is null or dossier_client_2 is null or cabinet is null or autre_dossier is null or exists (select 1 from dossiers where id = troisieme_dossier)
+     or exists (select 1 from dossiers where id in (dx, df, dr, dn))
      or (select cabinet_id from dossiers where id = dossier_client_2) <> cabinet
      or not exists (select 1 from cabinet_admins where user_id = chef and cabinet_id = cabinet and role = 'comptable_en_chef')
      or not exists (select 1 from super_admins where user_id = chef)
@@ -99,6 +126,10 @@ begin
   select count(*) into assignations_avant from dossier_assignations;
   select count(*) into supers_avant from super_admins;
   select count(*), count(*) filter (where d.ventes_par_les_factures) into dossiers_avant, bascules_avant from dossiers d;
+  -- Le statut de TVA et la nature des recettes du client de chaque dossier, sous une empreinte : les contrôles de l'étape C10
+  -- les changent dans leurs sous-transactions, et « rien n'est resté » (60) ne dit que leur égalité.
+  select md5(coalesce(string_agg(d.id::text || ':' || coalesce(d.statut_tva, '-') || ':' || coalesce(to_jsonb(d) ->> 'categorie_recettes_client', '-'),
+           ',' order by d.id), '')) into statuts_avant from dossiers d;
 
   -- ══ 0 à 4. Le catalogue ═════════════════════════════════════════════════════════════════════════════════════
   -- Les accès du client d'essai seuls : ceux de toute la base diraient ceux d'un dossier réel (audit du 29/10/2026).
@@ -129,8 +160,9 @@ begin
     into n, m
     from pg_proc p where p.pronamespace = 'public'::regnamespace
      and p.proname in ('client_du_dossier', 'gere_les_ventes', 'gere_la_banque', 'droits_sur_le_dossier', 'changer_droits_acces');
+  -- Avec la migration de l'étape C10, `changer_droits_acces` a deux formes : six définitions.
   verdicts := verdicts || jsonb_build_object('controle', '3. les cinq fonctions : SECURITY DEFINER, search_path fixé ; les quatre lectures stables',
-    'observe', n || ' conforme(s) sur ' || m, 'ok', n = 5 and m = 5);
+    'observe', n || ' conforme(s) sur ' || m, 'ok', n = case when c10 then 6 else 5 end and m = n);
 
   select string_agg(p.proname, ', ' order by p.proname) filter (where has_function_privilege('anon', p.oid, 'execute')
            or exists (select 1 from aclexplode(p.proacl) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')
@@ -141,7 +173,7 @@ begin
     from pg_proc p where p.pronamespace = 'public'::regnamespace
      and p.proname in ('client_du_dossier', 'gere_les_ventes', 'gere_la_banque', 'droits_sur_le_dossier', 'changer_droits_acces');
   verdicts := verdicts || jsonb_build_object('controle', '4. aucune des cinq ne s''exécute par anon ni PUBLIC ; authenticated et service_role les exécutent',
-    'observe', n || ' fonction(s), en faute : ' || coalesce(obs, 'aucune'), 'ok', n = 5 and obs is null);
+    'observe', n || ' fonction(s), en faute : ' || coalesce(obs, 'aucune'), 'ok', n = case when c10 then 6 else 5 end and obs is null);
 
   -- ══ 6. Le client lit ses seules lignes ═════════════════════════════════════════════════════════════════════
   -- L'accès d'une autre personne à SON dossier (le compte du chef, le temps du bloc) ne lui est pas rendu ; ses deux
@@ -426,8 +458,10 @@ begin
       if code_recu is null then code_recu := sqlstate; message := sqlerrm; end if;
     end;
     reset role;
+    -- Avec la migration de l'étape C10, la forme à trois appelle celle à quatre : son refus dit les trois mots.
     verdicts := verdicts || jsonb_build_object('controle', t.num || '. le chef, ' || t.quoi,
-      'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''), 'ok', coalesce(code_recu = t.code and message = t.mots, false));
+      'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
+      'ok', coalesce(code_recu = t.code and message = case when t.num = '40' and c10 then aucun_droit_c10 else t.mots end, false));
   end loop;
 
   for t in select * from (values
@@ -776,13 +810,15 @@ begin
          || ' anon ' || has_function_privilege('anon', p.oid, 'execute')
          || ' authenticated ' || has_function_privilege('authenticated', p.oid, 'execute')
          || ' public ' || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')
-         || ' | ' || coalesce((select string_agg(pg_get_triggerdef(tg.oid) || ' ' || tg.tgenabled::text, ' ; ') from pg_trigger tg
+         || ' | ' || coalesce((select string_agg(pg_get_triggerdef(tg.oid) || ' ' || tg.tgenabled::text, ' ; ' order by tg.tgname) from pg_trigger tg
                                 where tg.tgrelid = 'public.memberships'::regclass and not tg.tgisinternal), 'aucun déclencheur')
     into obs
     from pg_proc p join pg_language l on l.oid = p.prolang where p.oid = to_regprocedure('public.garder_droit_ventes()');
   verdicts := verdicts || jsonb_build_object('controle', '83. la garde : security definer, chemin fixé, exécutée par aucun rôle de l''API ; son déclencheur, après l''insertion et la mise à jour de droit_ventes ou de dossier_id',
     'observe', coalesce(obs, 'garde absente'),
-    'ok', coalesce(obs = 'true v search_path=public plpgsql anon false authenticated false public false | CREATE TRIGGER memberships_droit_ventes AFTER INSERT OR UPDATE OF droit_ventes, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_ventes() O', false));
+    'ok', coalesce(obs = 'true v search_path=public plpgsql anon false authenticated false public false | '
+      || case when c10 then 'CREATE TRIGGER memberships_droit_caisse AFTER INSERT OR UPDATE OF droit_caisse, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_caisse() O ; ' else '' end
+      || 'CREATE TRIGGER memberships_droit_ventes AFTER INSERT OR UPDATE OF droit_ventes, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_ventes() O', false));
 
   -- ══ 90 à 95. Les mutations de la garde : chacune doit MORDRE ════════════════════════════════════════════════
   for t in select * from (values
@@ -838,6 +874,498 @@ begin
                      else code_recu = 'ACCEPTÉ' and (rendu ->> 'droit_ventes') = 'true' end, false));
   end loop;
 
+  -- ══ 100 à 155. Le droit « Caisse » (ligne 26.6, étape C10 ; la migration `caisse_du_client`, préparée) ════════════
+  -- Sans la migration, une ligne dit que ces contrôles attendent (EN ATTENTE), et rien d'autre ne change. Avec elle : le
+  -- catalogue ; la table de vérité du mot « caisse » (client_du_dossier, gere_la_caisse, la clé « caisse » de
+  -- droits_sur_le_dossier) ; la forme à quatre de changer_droits_acces, et celle à trois qui l'appelle ; la garde de la case
+  -- (« Caisse » qui arrive, sur un dossier exonéré de TVA ou en franchise en base seulement, pour tout auteur, l'insertion du
+  -- super-administrateur exceptée) et celle du statut (un dossier dont un accès porte la case ne quitte pas ces deux
+  -- statuts, par aucun chemin) ; leurs mutations, qui doivent MORDRE. Quatre dossiers jetables du cabinet — DX exonéré, DF
+  -- en franchise, DR redevable, DN à préciser — et l'accès d'essai du client à chacun, sans droit, créés par le
+  -- propriétaire sans session dans la sous-transaction de chaque contrôle, annulés avec elle. Ce que deux sessions
+  -- concurrentes rencontrent (la case qui arrive pendant que le statut change) se joue sur une réplique, hors du dépôt.
+  if not c10 then
+    verdicts := verdicts || jsonb_build_object('controle', '100. EN ATTENTE de la migration caisse_du_client (étape C10) : le droit « Caisse », ses deux gardes et leurs mutations',
+      'observe', 'absente : ils se jouent dès qu''elle y est', 'ok', true);
+  else
+    -- 100. Les deux colonnes : la case, booléenne, non nulle, fausse par défaut ; la nature des recettes, nulle.
+    select string_agg(c.relname || '.' || a.attname || ' ' || format_type(a.atttypid, a.atttypmod)
+             || case when a.attnotnull then ' non nulle' else ' NULLABLE' end || ' défaut ' || coalesce(pg_get_expr(d.adbin, d.adrelid), 'aucun'),
+             ', ' order by c.relname, a.attname)
+      into obs
+      from pg_attribute a join pg_class c on c.oid = a.attrelid left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+     where ((c.oid = 'public.memberships'::regclass and a.attname = 'droit_caisse')
+            or (c.oid = 'public.dossiers'::regclass and a.attname = 'categorie_recettes_client')) and not a.attisdropped;
+    verdicts := verdicts || jsonb_build_object('controle', '100. le droit « Caisse » : booléen, non nul, faux par défaut ; la nature des recettes du client, nulle',
+      'observe', coalesce(obs, 'colonnes absentes'),
+      'ok', coalesce(obs = 'dossiers.categorie_recettes_client uuid NULLABLE défaut aucun, memberships.droit_caisse boolean non nulle défaut false', false));
+
+    -- 101. Les fonctions neuves des droits : aux droits du propriétaire, le chemin fixé ; la lecture stable ; ni l'anonyme ni
+    -- PUBLIC ne les exécutent, un compte connecté et le rôle des Edge Functions si ; les deux gardes, aucun rôle de l'API.
+    select string_agg(p.oid::regprocedure::text || ' ' || p.prosecdef || ' ' || p.provolatile::text || ' ' || coalesce(array_to_string(p.proconfig, ','), '')
+             || ' anon ' || has_function_privilege('anon', p.oid, 'execute') || ' authenticated ' || has_function_privilege('authenticated', p.oid, 'execute')
+             || ' public ' || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where x.grantee = 0 and x.privilege_type = 'EXECUTE'),
+             ' ; ' order by p.oid::regprocedure::text collate "C")
+      into obs
+      from pg_proc p
+     where p.oid in (to_regprocedure('public.gere_la_caisse(uuid)'), to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean)'),
+                     to_regprocedure('public.garder_droit_caisse()'), to_regprocedure('public.garder_statut_tva_de_la_caisse()'));
+    verdicts := verdicts || jsonb_build_object('controle', '101. gere_la_caisse et changer_droits_acces à quatre : security definer, chemin fixé, exécutées par un compte connecté seul ; les deux gardes, par aucun rôle de l''API',
+      'observe', coalesce(obs, 'fonctions absentes'),
+      'ok', coalesce(obs = 'changer_droits_acces(uuid,boolean,boolean,boolean) true v search_path=public anon false authenticated true public false'
+        || ' ; garder_droit_caisse() true v search_path=public anon false authenticated false public false'
+        || ' ; garder_statut_tva_de_la_caisse() true v search_path=public anon false authenticated false public false'
+        || ' ; gere_la_caisse(uuid) true s search_path=public anon false authenticated true public false'
+        and has_function_privilege('service_role', 'public.changer_droits_acces(uuid, boolean, boolean, boolean)', 'execute')
+        and has_function_privilege('service_role', 'public.gere_la_caisse(uuid)', 'execute'), false));
+
+    -- 102. L'anonyme n'atteint ni la lecture du droit, ni la forme à quatre, ni la caisse du client.
+    obs := '';
+    for t in select * from (values
+        ('gere_la_caisse', 'select gere_la_caisse($1)::text'),
+        ('changer_droits_acces', 'select changer_droits_acces($2, null, null, true)::text'),
+        ('caisse_du_client', 'select count(*)::text from caisse_du_client($1, 2026)')) as v(fonction, appel) loop
+      code_recu := null; message := null; sig := null;
+      begin
+        set local role anon;
+        perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+        execute t.appel into sig using dossier_client, acces_client;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_recu := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      if not (code_recu = '42501' and message = 'permission denied for function ' || t.fonction) then
+        obs := obs || t.fonction || ' (' || coalesce(code_recu, '?') || ' ' || coalesce(message, '') || ' ' || coalesce(sig, '') || ') ';
+      end if;
+    end loop;
+    verdicts := verdicts || jsonb_build_object('controle', '102. l''anonyme n''exécute ni gere_la_caisse, ni changer_droits_acces à quatre, ni caisse_du_client (42501, permission denied)',
+      'observe', case when obs = '' then 'trois refus' else 'en faute : ' || obs end, 'ok', obs = '');
+
+    -- 103 à 112. La table de vérité du mot « caisse » : client_du_dossier(…, 'caisse') | gere_la_caisse | droits_sur_le_dossier.caisse.
+    for t in select * from (values
+        ('103', 'compte rattaché à rien, sur DX dont l''accès du client porte « Caisse »', inconnu, dx, 'caisse_dx', '0|0|0'),
+        ('104', 'client de DX, sans droit', client, dx, 'aucun', '0|0|0'),
+        ('105', 'client de DX, « Caisse » sur son accès', client, dx, 'caisse_dx', '1|1|1'),
+        ('106', 'client de DX, « Banque » seul : un autre droit ne donne pas la caisse', client, dx, 'banque_dx', '0|0|0'),
+        ('107', 'le droit vaut pour SON accès : « Caisse » sur DF, lue sur DX', client, dx, 'caisse_df', '0|0|0'),
+        ('108', 'client qui porte « Caisse » sur DX et DF, sur un dossier où il n''a pas d''accès', client, autre_dossier, 'caisse_tous', '0|0|0'),
+        ('109', 'chef du cabinet (super-administrateur), sur DX', chef, dx, 'aucun', '0|1|1'),
+        ('110', 'chef du cabinet qui n''est pas super-administrateur, sur DX', client, dx, 'chef', '0|1|1'),
+        ('111', 'membre du cabinet affecté à DX', client, dx, 'membre_affecte', '0|1|1'),
+        ('112', 'membre du cabinet affecté à DF, sur DX', client, dx, 'membre_ailleurs', '0|0|0'),
+        ('154', 'MUTATION — le contrôle 105 joué avec « Banque » au lieu de « Caisse » : la signature doit changer', client, dx, 'banque_dx', '1|1|1')
+      ) as v(num, profil, sujet, dossier, reglage, attendu) loop
+      sig := null; code_recu := null; message := null;
+      begin
+        perform set_config('request.jwt.claims', '', true);
+        insert into dossiers (id, nom, cabinet_id, statut_tva) values
+          (dx, 'ESSAI C10 DX', cabinet, 'exonere'), (df, 'ESSAI C10 DF', cabinet, 'franchise'), (dr, 'ESSAI C10 DR', cabinet, 'redevable'), (dn, 'ESSAI C10 DN', cabinet, null);
+        insert into memberships (id, user_id, dossier_id, role, email) values (acces_dx, client, dx, 'client', 'essai-c10@example.test'),
+          (acces_df, client, df, 'client', 'essai-c10@example.test'), (acces_dr, client, dr, 'client', 'essai-c10@example.test'),
+          (acces_dn, client, dn, 'client', 'essai-c10@example.test');
+        case t.reglage
+          when 'aucun' then null;
+          when 'caisse_dx' then update memberships set droit_caisse = true where id = acces_dx;
+          when 'banque_dx' then update memberships set droit_banque = true where id = acces_dx;
+          when 'caisse_df' then update memberships set droit_caisse = true where id = acces_df;
+          when 'caisse_tous' then update memberships set droit_caisse = true where id in (acces_dx, acces_df);
+          when 'chef' then insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+          when 'membre_affecte' then
+            insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+            insert into dossier_assignations (dossier_id, user_id) values (dx, client);
+          when 'membre_ailleurs' then
+            insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+            insert into dossier_assignations (dossier_id, user_id) values (df, client);
+        end case;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', t.sujet, 'role', 'authenticated')::text, true);
+        select concat_ws('|', client_du_dossier(t.dossier, 'caisse')::int, gere_la_caisse(t.dossier)::int,
+                 (droits_sur_le_dossier(t.dossier) ->> 'caisse')::boolean::int) || case when is_super_admin() then ' super' else '' end
+          into sig;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_recu := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', t.num || '. ' || t.profil || case when t.num = '154' then '' else ' : ' || t.attendu end,
+        'observe', coalesce(sig, '?') || ', ' || coalesce(code_recu, '?') || case when code_recu = 'P0001' then '' else ' ' || coalesce(message, '') end,
+        'ok', coalesce(case when t.num = '154' then split_part(sig, ' ', 1) <> t.attendu
+                            else split_part(sig, ' ', 1) = t.attendu and (sig like '% super') = (t.num = '109') end
+          and code_recu = 'P0001', false));
+    end loop;
+
+    -- 113. Un mot que la fonction ne connaît pas ne vaut rien, même quand l'accès porte « Caisse ».
+    n := null; m := null; code_recu := null;
+    begin
+      perform set_config('request.jwt.claims', '', true);
+      insert into dossiers (id, nom, cabinet_id, statut_tva) values (dx, 'ESSAI C10 DX', cabinet, 'exonere');
+      insert into memberships (id, user_id, dossier_id, role, email, droit_caisse) values (acces_dx, client, dx, 'client', 'essai-c10@example.test', true);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) filter (where client_du_dossier(dx, w)) into n
+        from unnest(array['Caisse', 'CAISSE', ' caisse', 'caisses', 'especes', 'espèces', '', null]) as w;
+      m := client_du_dossier(dx, 'caisse')::int;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', '113. un mot inconnu (casse, espace, pluriel, synonyme, nul) ne vaut rien, même avec « Caisse »',
+      'observe', coalesce(n::text, '?') || ' vrai(s) sur 8 mots inconnus, ' || coalesce(m::text, '?') || ' sur le mot connu, ' || coalesce(code_recu, '?'),
+      'ok', coalesce(n = 0 and m = 1 and code_recu = 'P0001', false));
+
+    -- 114. Le chef coche « Caisse » sur l'accès du client à DX : l'accès rendu est l'accès relu, et seule la case a changé.
+    code_recu := null; message := null; avant := null; apres := null; rendu := null;
+    begin
+      perform set_config('request.jwt.claims', '', true);
+      insert into dossiers (id, nom, cabinet_id, statut_tva) values (dx, 'ESSAI C10 DX', cabinet, 'exonere');
+      insert into memberships (id, user_id, dossier_id, role, email) values (acces_dx, client, dx, 'client', 'essai-c10@example.test');
+      select to_jsonb(mb) into avant from memberships mb where mb.id = acces_dx;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select to_jsonb(r) into rendu from changer_droits_acces(acces_dx, null, null, true) r;
+      reset role;
+      select to_jsonb(mb) into apres from memberships mb where mb.id = acces_dx;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', '114. le chef coche « Caisse » sur un accès d''un dossier exonéré : l''accès rendu est l''accès relu, et rien d''autre n''a changé',
+      'observe', 'rendu ' || case when rendu is null then 'aucun' when rendu = apres then '= relu' else '≠ relu' end
+        || ', « Caisse » ' || coalesce(apres ->> 'droit_caisse', '?')
+        || ', autres colonnes ' || case when avant - 'droit_caisse' = apres - 'droit_caisse' then 'identiques' else 'CHANGÉES' end
+        || ', ' || coalesce(code_recu, '?') || case when code_recu = 'P0001' then '' else ' ' || coalesce(message, '') end,
+      'ok', coalesce(rendu = apres and (apres ->> 'droit_caisse') = 'true' and avant - 'droit_caisse' = apres - 'droit_caisse'
+        and code_recu = 'P0001', false));
+
+    -- 115. Un droit nul reste tel quel : « Caisse » seule, « Banque » par la forme à trois (« Caisse » gardée), « Caisse » retirée.
+    obs := null; code_recu := null; message := null;
+    begin
+      perform set_config('request.jwt.claims', '', true);
+      insert into dossiers (id, nom, cabinet_id, statut_tva) values (dx, 'ESSAI C10 DX', cabinet, 'exonere');
+      insert into memberships (id, user_id, dossier_id, role, email) values (acces_dx, client, dx, 'client', 'essai-c10@example.test');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select r.droit_ventes::int || '' || r.droit_banque::int || r.droit_caisse::int into obs from changer_droits_acces(acces_dx, null, null, true) r;
+      select obs || ' puis ' || r.droit_ventes::int || r.droit_banque::int || r.droit_caisse::int into obs from changer_droits_acces(acces_dx, null, true) r;
+      select obs || ' puis ' || r.droit_ventes::int || r.droit_banque::int || r.droit_caisse::int into obs from changer_droits_acces(acces_dx, null, null, false) r;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', '115. un droit nul reste tel quel : « Caisse » seule, « Banque » par la forme à trois, puis « Caisse » retirée',
+      'observe', coalesce(obs, '?') || ', ' || coalesce(code_recu, '?') || case when code_recu = 'P0001' then '' else ' ' || coalesce(message, '') end,
+      'ok', coalesce(obs = '001 puis 011 puis 010' and code_recu = 'P0001', false));
+
+    -- 116 à 118. Les refus de la forme à quatre, et de la forme à trois qui l'appelle : ses mots.
+    for t in select * from (values
+        ('116', 'le chef, aucun droit donné par la forme à quatre (les trois nuls) : refusé (22023)', 'quatre_nuls', '22023', aucun_droit_c10),
+        ('117', 'le chef, aucun droit donné par la forme à trois (les deux nuls) : refusé sous les mêmes mots (22023)', 'trois_nuls', '22023', aucun_droit_c10),
+        ('118', 'le chef, un accès qui n''existe pas : refusé sous les mêmes mots qu''un accès interdit (42501)', 'inexistant', '42501', 'Accès refusé à ce dossier.')
+      ) as v(num, quoi, geste, code, mots) loop
+      code_recu := null; message := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+        case t.geste
+          when 'quatre_nuls' then perform changer_droits_acces(acces_client, null, null, null);
+          when 'trois_nuls' then perform changer_droits_acces(acces_client, null, null);
+          else perform changer_droits_acces(gen_random_uuid(), null, null, true);
+        end case;
+        code_recu := 'ACCEPTÉ';
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then
+        if code_recu is null then code_recu := sqlstate; message := sqlerrm; end if;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', t.num || '. ' || t.quoi,
+        'observe', coalesce(code_recu, '?') || ' ' || coalesce(message, ''), 'ok', coalesce(code_recu = t.code and message = t.mots, false));
+    end loop;
+
+    -- 119. Ni le client sur SON accès, ni un compte rattaché à rien : refusés (42501), la ligne relue n'a pas changé.
+    obs := '';
+    for t in select * from (values ('client', client), ('compte rattaché à rien', inconnu)) as v(profil, sujet) loop
+      code_recu := null; message := null; avant := null; apres := null;
+      begin
+        perform set_config('request.jwt.claims', '', true);
+        insert into dossiers (id, nom, cabinet_id, statut_tva) values (dx, 'ESSAI C10 DX', cabinet, 'exonere');
+        insert into memberships (id, user_id, dossier_id, role, email) values (acces_dx, client, dx, 'client', 'essai-c10@example.test');
+        select to_jsonb(mb) into avant from memberships mb where mb.id = acces_dx;
+        begin
+          set local role authenticated;
+          perform set_config('request.jwt.claims', json_build_object('sub', t.sujet, 'role', 'authenticated')::text, true);
+          perform changer_droits_acces(acces_dx, null, null, true);
+          code_recu := 'ACCEPTÉ';
+        exception when others then code_recu := sqlstate; message := sqlerrm;
+        end;
+        reset role;
+        perform set_config('request.jwt.claims', '', true);
+        select to_jsonb(mb) into apres from memberships mb where mb.id = acces_dx;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then
+        if sqlstate <> 'P0001' or sqlerrm <> 'ANNULATION_ESSAI' then code_recu := sqlstate; message := sqlerrm; end if;
+      end;
+      reset role;
+      if not (code_recu = '42501' and message = 'Accès refusé à ce dossier.' and avant is not null and avant = apres) then
+        obs := obs || t.profil || ' (' || coalesce(code_recu, '?') || ' ' || coalesce(message, '') || ') ';
+      end if;
+    end loop;
+    verdicts := verdicts || jsonb_build_object('controle', '119. ni le client sur son accès, ni un compte rattaché à rien ne cochent « Caisse » : refusés (42501), la ligne relue n''a pas changé',
+      'observe', case when obs = '' then 'deux refus, lignes inchangées' else 'en faute : ' || obs end, 'ok', obs = '');
+
+    -- 120. Le membre du cabinet affecté à DX coche « Caisse » sur un accès de DX (celui du compte du chef, le temps du bloc).
+    code_recu := null; message := null; rendu := null; apres := null; acces_essai := null;
+    begin
+      perform set_config('request.jwt.claims', '', true);
+      insert into dossiers (id, nom, cabinet_id, statut_tva) values (dx, 'ESSAI C10 DX', cabinet, 'exonere');
+      insert into memberships (user_id, dossier_id, role, email) values (chef, dx, 'client', 'essai-c10@example.test') returning id into acces_essai;
+      insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+      insert into dossier_assignations (dossier_id, user_id) values (dx, client);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select to_jsonb(r) into rendu from changer_droits_acces(acces_essai, null, null, true) r;
+      reset role;
+      select to_jsonb(mb) into apres from memberships mb where mb.id = acces_essai;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then code_recu := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', '120. le membre du cabinet affecté au dossier coche « Caisse » sur un accès de ce dossier',
+      'observe', '« Caisse » relue ' || coalesce(apres ->> 'droit_caisse', '?') || ', rendu ' || case when rendu is null then 'aucun' when rendu = apres then '= relu' else '≠ relu' end
+        || ', ' || coalesce(code_recu, '?') || case when code_recu = 'P0001' then '' else ' ' || coalesce(message, '') end,
+      'ok', coalesce(rendu = apres and (apres ->> 'droit_caisse') = 'true' and code_recu = 'P0001', false));
+
+    -- 121 à 133, et les mutations 150 à 152. La garde de la case : « Caisse » qui ARRIVE sur un accès se refuse sur un
+    -- dossier ni exonéré ni en franchise (23514, ses mots), pour tout auteur ; seule passe l'insertion du super-administrateur.
+    for t in select * from (values
+        ('121', 'le chef du cabinet (super-administrateur), par la fonction, coche « Caisse » sur un dossier redevable', 'chef', 'fonction_caisse', 'dr', 'refus'),
+        ('122', 'le chef du cabinet, par la fonction, sur un dossier au statut à préciser', 'chef', 'fonction_caisse', 'dn', 'refus'),
+        ('123', 'le chef du cabinet qui n''est pas super-administrateur, par la fonction, sur un dossier redevable', 'client_chef', 'fonction_caisse', 'dr', 'refus'),
+        ('124', 'le membre du cabinet affecté au dossier, par la fonction, sur un dossier redevable', 'client_membre', 'fonction_caisse', 'dr', 'refus'),
+        ('125', 'sur un dossier exonéré, le chef coche « Caisse » par la fonction : accepté', 'chef', 'fonction_caisse', 'dx', 'accepte'),
+        ('126', 'sur un dossier en franchise en base, le chef coche « Caisse » par la fonction : accepté', 'chef', 'fonction_caisse', 'df', 'accepte'),
+        ('127', 'le chef coche « Banque » seul sur l''accès d''un dossier redevable : la garde ne regarde que « Caisse »', 'chef', 'fonction_banque', 'dr', 'accepte'),
+        ('128', 'le chef du cabinet qui n''est pas super-administrateur insère directement un accès qui porte « Caisse » sur un dossier redevable', 'client_chef', 'insertion_caisse', 'dr', 'refus'),
+        ('129', 'le super-administrateur insère un accès qui porte « Caisse » sur un dossier redevable (la restauration rend ce qui a été)', 'chef', 'insertion_caisse', 'dr', 'accepte'),
+        ('130', 'le propriétaire, sans session, coche « Caisse » par une mise à jour, sur un dossier redevable', 'proprietaire', 'mise_a_jour_caisse', 'dr', 'refus'),
+        ('131', 'le propriétaire, sans session, insère un accès qui porte « Caisse » sur un dossier redevable', 'proprietaire', 'insertion_caisse', 'dr', 'refus'),
+        ('132', 'le rôle des Edge Functions insère un accès qui porte « Caisse » sur un dossier redevable', 'service', 'insertion_caisse', 'dr', 'refus'),
+        ('133', 'le rôle des Edge Functions insère l''accès de create-client-access, sans droit, sur un dossier redevable : accepté', 'service', 'insertion_sans_droit', 'dr', 'accepte'),
+        ('150', 'MUTATION — le contrôle 121 joué sur le dossier exonéré : le chef coche « Caisse »', 'chef', 'fonction_caisse', 'dx', 'accepte'),
+        ('151', 'MUTATION — le contrôle 128 joué sur le dossier exonéré : l''insertion du cabinet passe', 'client_chef', 'insertion_caisse', 'dx', 'accepte'),
+        ('152', 'MUTATION — le contrôle 129 joué par le propriétaire, sans la session du super-administrateur : l''insertion se refuse', 'proprietaire', 'insertion_caisse', 'dr', 'refus')
+      ) as v(num, quoi, qui, geste, cible, attendu) loop
+      code_recu := null; message := null; avant := null; apres := null; rendu := null; obs := null;
+      begin
+        perform set_config('request.jwt.claims', '', true);
+        insert into dossiers (id, nom, cabinet_id, statut_tva) values
+          (dx, 'ESSAI C10 DX', cabinet, 'exonere'), (df, 'ESSAI C10 DF', cabinet, 'franchise'), (dr, 'ESSAI C10 DR', cabinet, 'redevable'), (dn, 'ESSAI C10 DN', cabinet, null);
+        insert into memberships (id, user_id, dossier_id, role, email) values (acces_dx, client, dx, 'client', 'essai-c10@example.test'),
+          (acces_df, client, df, 'client', 'essai-c10@example.test'), (acces_dr, client, dr, 'client', 'essai-c10@example.test'),
+          (acces_dn, client, dn, 'client', 'essai-c10@example.test');
+        if t.qui = 'client_chef' then
+          insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+        elsif t.qui = 'client_membre' then
+          insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+          insert into dossier_assignations (dossier_id, user_id) values (dr, client);
+        end if;
+        select to_jsonb(mb) into avant from memberships mb
+         where mb.id = case t.cible when 'dx' then acces_dx when 'df' then acces_df when 'dr' then acces_dr else acces_dn end;
+        begin
+          if t.qui in ('chef', 'client_chef', 'client_membre') then
+            set local role authenticated;
+            perform set_config('request.jwt.claims',
+              json_build_object('sub', case t.qui when 'chef' then chef else client end, 'role', 'authenticated')::text, true);
+          elsif t.qui = 'service' then
+            set local role service_role;
+            perform set_config('request.jwt.claims', json_build_object('role', 'service_role')::text, true);
+          end if;
+          case t.geste
+            when 'fonction_caisse' then
+              select to_jsonb(r) into rendu from changer_droits_acces(
+                case t.cible when 'dx' then acces_dx when 'df' then acces_df when 'dr' then acces_dr else acces_dn end, null, null, true) r;
+            when 'fonction_banque' then
+              select to_jsonb(r) into rendu from changer_droits_acces(
+                case t.cible when 'dx' then acces_dx when 'df' then acces_df when 'dr' then acces_dr else acces_dn end, null, true, null) r;
+            when 'mise_a_jour_caisse' then
+              update memberships set droit_caisse = true
+               where id = case t.cible when 'dx' then acces_dx when 'df' then acces_df when 'dr' then acces_dr else acces_dn end
+              returning to_jsonb(memberships.*) into rendu;
+            when 'insertion_caisse' then
+              -- L'accès du compte du chef, qui n'en a aucun (le jeu de départ l'exige).
+              insert into memberships (user_id, dossier_id, role, email, droit_caisse)
+                values (chef, case t.cible when 'dx' then dx when 'df' then df when 'dr' then dr else dn end, 'client', 'essai-c10@example.test', true)
+                returning to_jsonb(memberships.*) into rendu;
+            when 'insertion_sans_droit' then
+              insert into memberships (user_id, dossier_id, role, email)
+                values (chef, case t.cible when 'dx' then dx when 'df' then df when 'dr' then dr else dn end, 'client', 'essai-c10@example.test')
+                returning to_jsonb(memberships.*) into rendu;
+          end case;
+          code_recu := 'ACCEPTÉ';
+        exception when others then code_recu := sqlstate; message := sqlerrm;
+        end;
+        reset role;
+        perform set_config('request.jwt.claims', '', true);
+        select to_jsonb(mb) into apres from memberships mb
+         where mb.id = case t.cible when 'dx' then acces_dx when 'df' then acces_df when 'dr' then acces_dr else acces_dn end;
+        obs := case when t.geste in ('insertion_caisse', 'insertion_sans_droit')
+                    then 'accès ' || case when rendu is null then 'absent' else 'inséré, « Caisse » ' || (rendu ->> 'droit_caisse') end
+                    else 'ligne relue ' || case when avant = apres then 'inchangée' else '« Caisse » ' || coalesce(apres ->> 'droit_caisse', '?')
+                         || ', « Banque » ' || coalesce(apres ->> 'droit_banque', '?') end end;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then
+        if sqlstate <> 'P0001' or sqlerrm <> 'ANNULATION_ESSAI' then code_recu := sqlstate; message := sqlerrm; end if;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', t.num || '. ' || t.quoi
+          || case when t.attendu = 'refus' and t.num::int < 150 then ' : refusé (23514), rien d''écrit' else '' end,
+        'observe', coalesce(code_recu, '?') || coalesce(' ' || message, '') || ', ' || coalesce(obs, '?'),
+        'ok', coalesce(case t.attendu
+          when 'refus' then code_recu = '23514' and message = refus_caisse and (t.geste like 'insertion%' or avant = apres)
+          else code_recu = 'ACCEPTÉ'
+            and case t.geste
+                  when 'fonction_caisse' then rendu = apres and (apres ->> 'droit_caisse') = 'true'
+                  when 'fonction_banque' then rendu = apres and (apres ->> 'droit_caisse') = 'false' and (apres ->> 'droit_banque') = 'true'
+                  when 'insertion_caisse' then (rendu ->> 'droit_caisse') = 'true'
+                  when 'insertion_sans_droit' then (rendu ->> 'droit_caisse') = 'false'
+                  else false end
+          end, false));
+    end loop;
+
+    -- 134. Un accès qui porte déjà « Caisse » sur un dossier redevable (posé par la restauration : le propriétaire sous la
+    -- session du super-administrateur) : « Banque » s'y change, « Caisse » s'y décoche, et ne s'y recoche plus — par la
+    -- fonction, sous le super-administrateur, ni par le propriétaire. Puis un autre accès « Caisse » restauré sur DR,
+    -- emporté vers DX, exonéré : accepté ; ramené vers DR : refusé.
+    obs := null; code_recu := null; message := null;
+    begin
+      perform set_config('request.jwt.claims', '', true);
+      insert into dossiers (id, nom, cabinet_id, statut_tva) values (dx, 'ESSAI C10 DX', cabinet, 'exonere'), (dr, 'ESSAI C10 DR', cabinet, 'redevable');
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into memberships (id, user_id, dossier_id, role, email, droit_caisse) values
+        (acces_dr, client, dr, 'client', 'essai-c10@example.test', true),
+        (acces_dn, chef, dr, 'client', 'essai-c10@example.test', true);
+      set local role authenticated;
+      select 'Banque ' || r.droit_banque::int || r.droit_caisse::int into obs from changer_droits_acces(acces_dr, null, true, null) r;
+      select obs || ' ; décochée ' || r.droit_banque::int || r.droit_caisse::int into obs from changer_droits_acces(acces_dr, null, null, false) r;
+      begin
+        perform changer_droits_acces(acces_dr, null, null, true);
+        obs := obs || ' ; recochée ACCEPTÉ';
+      exception when others then obs := obs || ' ; recochée ' || sqlstate || case when sqlerrm = refus_caisse then ' (ses mots)' else ' ' || sqlerrm end;
+      end;
+      reset role;
+      perform set_config('request.jwt.claims', '', true);
+      begin
+        update memberships set droit_caisse = true where id = acces_dr;
+        obs := obs || ' ; propriétaire ACCEPTÉ';
+      exception when others then obs := obs || ' ; propriétaire ' || sqlstate || case when sqlerrm = refus_caisse then ' (ses mots)' else ' ' || sqlerrm end;
+      end;
+      begin
+        update memberships set dossier_id = dx where id = acces_dn;
+        obs := obs || ' ; emporté vers DX ACCEPTÉ';
+      exception when others then obs := obs || ' ; emporté vers DX ' || sqlstate || ' ' || sqlerrm;
+      end;
+      begin
+        update memberships set dossier_id = dr where id = acces_dn;
+        obs := obs || ' ; ramené vers DR ACCEPTÉ';
+      exception when others then obs := obs || ' ; ramené vers DR ' || sqlstate || case when sqlerrm = refus_caisse then ' (ses mots)' else ' ' || sqlerrm end;
+      end;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then
+      if sqlstate <> 'P0001' or sqlerrm <> 'ANNULATION_ESSAI' then code_recu := sqlstate; message := sqlerrm; end if;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object('controle', '134. un accès « Caisse » restauré sur un dossier redevable : « Banque » s''y change, « Caisse » s''y décoche et ne s''y recoche plus ; un accès « Caisse » emporté vers ce dossier, refusé',
+      'observe', coalesce(obs, '?') || coalesce(', ' || code_recu || ' ' || message, ''),
+      'ok', coalesce(obs = 'Banque 11 ; décochée 10 ; recochée 23514 (ses mots) ; propriétaire 23514 (ses mots) ; emporté vers DX ACCEPTÉ ; ramené vers DR 23514 (ses mots)'
+        and code_recu is null, false));
+
+    -- 135. Le catalogue de la garde de la case : aux droits du propriétaire, chemin fixé, qu'aucun rôle de l'API n'exécute ;
+    -- son déclencheur, APRÈS l'insertion et la mise à jour de `droit_caisse` ou de `dossier_id`, ligne par ligne, actif.
+    select p.prosecdef || ' ' || p.provolatile::text || ' ' || coalesce(array_to_string(p.proconfig, ','), '') || ' ' || l.lanname
+           || ' anon ' || has_function_privilege('anon', p.oid, 'execute')
+           || ' authenticated ' || has_function_privilege('authenticated', p.oid, 'execute')
+           || ' public ' || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')
+           || ' | ' || coalesce((select string_agg(pg_get_triggerdef(tg.oid) || ' ' || tg.tgenabled::text, ' ; ' order by tg.tgname) from pg_trigger tg
+                                  where tg.tgfoid = p.oid and not tg.tgisinternal), 'aucun déclencheur')
+      into obs
+      from pg_proc p join pg_language l on l.oid = p.prolang where p.oid = to_regprocedure('public.garder_droit_caisse()');
+    verdicts := verdicts || jsonb_build_object('controle', '135. la garde de la case : security definer, chemin fixé, exécutée par aucun rôle de l''API ; son déclencheur, après l''insertion et la mise à jour de droit_caisse ou de dossier_id',
+      'observe', coalesce(obs, 'garde absente'),
+      'ok', coalesce(obs = 'true v search_path=public plpgsql anon false authenticated false public false | CREATE TRIGGER memberships_droit_caisse AFTER INSERT OR UPDATE OF droit_caisse, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_caisse() O', false));
+
+    -- 140 à 146, et les mutations 153 et 155. La garde du statut : un dossier dont un accès porte « Caisse » ne quitte pas
+    -- les deux statuts exclus (23514, ses mots), par aucun chemin — le statut, ou le booléen que `deduire_assujetti_tva`
+    -- traduit en statut — ; passer de l'un à l'autre, ou y entrer, passe. La ligne du dossier est RELUE après.
+    for t in select * from (values
+        ('140', 'le propriétaire, sans session, passe redevable un dossier exonéré dont un accès porte « Caisse »', 'proprietaire', 'redevable', 'case', 'refus', 'exonere'),
+        ('141', 'le propriétaire le passe au statut à préciser (nul)', 'proprietaire', 'nul', 'case', 'refus', 'exonere'),
+        ('142', 'le chef du cabinet, sous sa session, le passe redevable', 'chef', 'redevable', 'case', 'refus', 'exonere'),
+        ('143', 'le chef du cabinet le dit assujetti (le booléen, que deduire_assujetti_tva traduit en « redevable »)', 'chef', 'assujetti', 'case', 'refus', 'exonere'),
+        ('144', 'le chef le passe en franchise en base, puis de nouveau exonéré : accepté', 'chef', 'franchise_puis_exonere', 'case', 'accepte', 'exonere'),
+        ('145', 'un dossier exonéré sans case « Caisse », passé redevable par le chef : accepté', 'chef', 'redevable', 'sans_case', 'accepte', 'redevable'),
+        ('146', 'un dossier redevable où la restauration a posé « Caisse », passé exonéré par le chef : accepté (y entrer ne se juge pas)', 'chef', 'dr_exonere', 'case_restauree', 'accepte', 'exonere'),
+        ('153', 'MUTATION — le contrôle 140 sans la case : la mise à jour passe', 'proprietaire', 'redevable', 'sans_case', 'accepte', 'redevable'),
+        ('155', 'MUTATION — le contrôle 143 avec le booléen inchangé (faux) : rien à juger, la mise à jour passe', 'chef', 'non_assujetti', 'case', 'accepte', 'exonere')
+      ) as v(num, quoi, qui, geste, case_posee, attendu, statut_attendu) loop
+      code_recu := null; message := null; obs := null;
+      begin
+        perform set_config('request.jwt.claims', '', true);
+        insert into dossiers (id, nom, cabinet_id, statut_tva) values (dx, 'ESSAI C10 DX', cabinet, 'exonere'), (dr, 'ESSAI C10 DR', cabinet, 'redevable');
+        insert into memberships (id, user_id, dossier_id, role, email, droit_caisse) values
+          (acces_dx, client, dx, 'client', 'essai-c10@example.test', t.case_posee = 'case');
+        if t.case_posee = 'case_restauree' then
+          perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+          insert into memberships (id, user_id, dossier_id, role, email, droit_caisse) values (acces_dr, client, dr, 'client', 'essai-c10@example.test', true);
+          perform set_config('request.jwt.claims', '', true);
+        end if;
+        begin
+          if t.qui = 'chef' then
+            set local role authenticated;
+            perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+          end if;
+          case t.geste
+            when 'redevable' then update dossiers set statut_tva = 'redevable' where id = dx;
+            when 'nul' then update dossiers set statut_tva = null where id = dx;
+            when 'assujetti' then update dossiers set assujetti_tva = true where id = dx;
+            when 'non_assujetti' then update dossiers set assujetti_tva = false where id = dx;
+            when 'franchise_puis_exonere' then
+              update dossiers set statut_tva = 'franchise' where id = dx;
+              update dossiers set statut_tva = 'exonere' where id = dx;
+            when 'dr_exonere' then update dossiers set statut_tva = 'exonere' where id = dr;
+          end case;
+          get diagnostics n = row_count;
+          code_recu := case when n = 1 then 'ACCEPTÉ' else 'AUCUNE LIGNE' end;
+        exception when others then code_recu := sqlstate; message := sqlerrm;
+        end;
+        reset role;
+        perform set_config('request.jwt.claims', '', true);
+        select coalesce(d.statut_tva, 'nul') into obs from dossiers d where d.id = case when t.geste = 'dr_exonere' then dr else dx end;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then
+        if sqlstate <> 'P0001' or sqlerrm <> 'ANNULATION_ESSAI' then code_recu := sqlstate; message := sqlerrm; end if;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', t.num || '. ' || t.quoi || case when t.attendu = 'refus' then ' : refusé (23514), le statut relu inchangé' else '' end,
+        'observe', coalesce(code_recu, '?') || coalesce(' ' || message, '') || ', statut relu ' || coalesce(obs, '?'),
+        'ok', coalesce(case t.attendu when 'refus' then code_recu = '23514' and message = refus_statut
+                                      else code_recu = 'ACCEPTÉ' end
+          and obs = t.statut_attendu, false));
+    end loop;
+
+    -- 147. Le catalogue de la garde du statut et de celle de la nature : aux droits du propriétaire, chemin fixé, qu'aucun
+    -- rôle de l'API n'exécute ; leurs déclencheurs, APRÈS la ligne — le statut, sur toute mise à jour qui le CHANGE (la
+    -- clause `when`, quel que soit le chemin) ; la nature, sur l'insertion et la mise à jour de sa colonne.
+    select string_agg(p.proname || ' ' || p.prosecdef || ' ' || coalesce(array_to_string(p.proconfig, ','), '')
+             || ' anon ' || has_function_privilege('anon', p.oid, 'execute') || ' authenticated ' || has_function_privilege('authenticated', p.oid, 'execute')
+             || ' public ' || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')
+             || ' | ' || coalesce((select string_agg(pg_get_triggerdef(tg.oid) || ' ' || tg.tgenabled::text, ' ; ' order by tg.tgname) from pg_trigger tg
+                                    where tg.tgfoid = p.oid and not tg.tgisinternal), 'aucun déclencheur'), ' ; ' order by p.proname collate "C")
+      into obs
+      from pg_proc p where p.oid in (to_regprocedure('public.garder_statut_tva_de_la_caisse()'), to_regprocedure('public.garder_categorie_recettes_client()'));
+    verdicts := verdicts || jsonb_build_object('controle', '147. les gardes du statut et de la nature : security definer, chemin fixé, exécutées par aucun rôle de l''API ; leurs déclencheurs, après la ligne',
+      'observe', coalesce(obs, 'gardes absentes'),
+      'ok', coalesce(obs = 'garder_categorie_recettes_client true search_path=public anon false authenticated false public false | CREATE TRIGGER dossiers_categorie_recettes_client AFTER INSERT OR UPDATE OF categorie_recettes_client ON public.dossiers FOR EACH ROW EXECUTE FUNCTION garder_categorie_recettes_client() O'
+        || ' ; garder_statut_tva_de_la_caisse true search_path=public anon false authenticated false public false | CREATE TRIGGER dossiers_statut_tva_de_la_caisse AFTER UPDATE ON public.dossiers FOR EACH ROW WHEN ((old.statut_tva IS DISTINCT FROM new.statut_tva)) EXECUTE FUNCTION garder_statut_tva_de_la_caisse() O', false));
+  end if;
+
   -- ══ 60. Rien n'est resté ════════════════════════════════════════════════════════════════════════════════════
   select coalesce(jsonb_agg(to_jsonb(mb) order by mb.id), '[]'::jsonb) into apres from memberships mb;
   -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
@@ -848,7 +1376,9 @@ begin
       || ', super-administrateurs ' || to_char((select count(*) from super_admins) - supers_avant, 'FMSG9999999990')
       || ', dossiers ' || to_char((select count(*) from dossiers) - dossiers_avant, 'FMSG9999999990')
       || ', dont basculés ' || to_char((select count(*) from dossiers where ventes_par_les_factures) - bascules_avant, 'FMSG9999999990')
-      || ', droit d''exécution d''anon ' || has_function_privilege('anon', 'public.changer_droits_acces(uuid, boolean, boolean)', 'execute'),
+      || ', droit d''exécution d''anon ' || has_function_privilege('anon', 'public.changer_droits_acces(uuid, boolean, boolean)', 'execute')
+      || ', statuts et natures ' || case when statuts_avant = (select md5(coalesce(string_agg(d.id::text || ':' || coalesce(d.statut_tva, '-') || ':'
+           || coalesce(to_jsonb(d) ->> 'categorie_recettes_client', '-'), ',' order by d.id), '')) from dossiers d) then 'identiques' else 'CHANGÉS' end,
     'ok', coalesce(apres = instantane
       and admins_avant = (select count(*) from cabinet_admins)
       and assignations_avant = (select count(*) from dossier_assignations)
@@ -856,7 +1386,10 @@ begin
       and dossiers_avant = (select count(*) from dossiers)
       and bascules_avant = (select count(*) from dossiers where ventes_par_les_factures)
       and not exists (select 1 from cabinet_admins where user_id = client)
-      and not has_function_privilege('anon', 'public.changer_droits_acces(uuid, boolean, boolean)', 'execute'), false));
+      and not has_function_privilege('anon', 'public.changer_droits_acces(uuid, boolean, boolean)', 'execute')
+      and not exists (select 1 from dossiers where id in (dx, df, dr, dn))
+      and statuts_avant = (select md5(coalesce(string_agg(d.id::text || ':' || coalesce(d.statut_tva, '-') || ':'
+           || coalesce(to_jsonb(d) ->> 'categorie_recettes_client', '-'), ',' order by d.id), '')) from dossiers d), false));
 
   perform set_config('essai.droits_acces', verdicts::text, true);
 end $$;

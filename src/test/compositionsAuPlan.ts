@@ -679,6 +679,7 @@ const CAS_DE_LA_CAISSE: CasDuPlan[] = [
           compteCaisse: plan.caisse, ouvertures: [{ date: '2026-01-01', compte: plan.caisse, sens: 'debit', montant: 10 }],
           operations: [], mouvements: [{ id: 'm', date: '2026-03-04', montant: 50, compte_bilan: plan.caisse }], encaissements: [], factures: [],
         },
+        natureDesRecettesDuClient: null,
       }
       const saisie = { genre: 'recette', date: recette.date, montant: 120, categorie_id: 'k', taux_tva: 20, encaissements_du_jour: [], ecritures: ecritureDeLOperation(recette, modele) }
       const jugee = jugerLaSaisie(saisie, dossier, false, 'n')

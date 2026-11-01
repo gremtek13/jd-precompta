@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
-  CASES_DES_DROITS, CLE_PUBLIABLE, CLE_SECRETE, DROITS_DU_DOSSIER, ID, PERSONNES, SECRET_WEBHOOK, chargerFonction, decrire,
+  CAISSE_DU_CLIENT_EXPORTEE, CASES_DES_DROITS, CLE_PUBLIABLE, CLE_SECRETE, DROITS_DU_DOSSIER, ID, PERSONNES, SECRET_WEBHOOK,
+  casesDesDroitsSelon, chargerFonction, decrire, droitsDuDossierSelon,
   depensesDe, fuitesDans, muter, mondeDeReference, nouveauMonde, preflightDe, prechauffer, requeteDe, signerWebhook,
   slugsDesFonctions, sourceDe, verifierWebhookSvix, verifyJwtDe, type Monde,
 } from './fonctionsEdge'
-import { derniereDefinitionSql } from './schema'
+import { derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from './schema'
 
 // LE HARNAIS SE TESTE AUSSI : un faux qui accepte tout rendrait chaque contrat vert. Chaque faux est éprouvé ici par ce
 // qu'il doit REFUSER — un hôte non déclaré, un filtre qu'il ne sait pas appliquer, une table inconnue, une clé étrangère
@@ -285,16 +286,19 @@ describe('la base applique ce qu’on lui demande', () => {
       Object.assign(monde.base.memberships[0], { droit_ventes: ventes, droit_banque: banque, dossier_id: dossier })
       return monde
     }
-    const tout = { cabinet: true, membre: false, ventes: true, banque: true }
-    const rien = { cabinet: false, membre: false, ventes: false, banque: false }
+    // La clé `caisse` le jour où la migration `caisse_du_client` (étape C10) entre dans l'export : le cabinet du dossier, ou
+    // un accès qui porte la case — qu'aucun accès du monde de référence ne porte.
+    const avecCaisse = (o: Record<string, boolean>, caisse: boolean) => (CAISSE_DU_CLIENT_EXPORTEE ? { ...o, caisse } : o)
+    const tout = avecCaisse({ cabinet: true, membre: false, ventes: true, banque: true }, true)
+    const rien = avecCaisse({ cabinet: false, membre: false, ventes: false, banque: false }, false)
     const lus: Record<string, unknown> = {}
     for (const p of Object.keys(PERSONNES) as (keyof typeof PERSONNES)[]) lus[p] = await sonde(lire).rendre(p)
     expect(lus).toEqual({
       chef: tout, comptableAssigne: tout, superAdmin: tout, comptableNonAssigne: rien, chefAutreCabinet: rien, inscrit: rien,
-      client: { cabinet: false, membre: true, ventes: false, banque: false },
+      client: avecCaisse({ cabinet: false, membre: true, ventes: false, banque: false }, false),
     })
-    expect(await sonde(lire, cases(true, false)).rendre('client')).toEqual({ cabinet: false, membre: true, ventes: true, banque: false })
-    expect(await sonde(lire, cases(false, true)).rendre('client')).toEqual({ cabinet: false, membre: true, ventes: false, banque: true })
+    expect(await sonde(lire, cases(true, false)).rendre('client')).toEqual(avecCaisse({ cabinet: false, membre: true, ventes: true, banque: false }, false))
+    expect(await sonde(lire, cases(false, true)).rendre('client')).toEqual(avecCaisse({ cabinet: false, membre: true, ventes: false, banque: true }, false))
     // Ses deux cases cochées sur un AUTRE dossier ne lui donnent rien sur celui-ci.
     expect(await sonde(lire, cases(true, true, ID.dossierVoisin)).rendre('client')).toEqual(rien)
     // Sous la clé de service, `auth.uid()` est nul : rien, pour personne.
@@ -495,7 +499,7 @@ function termesDe(expression: string, definitionDe: (nom: string) => string): st
     if (!m) throw new Error(`terme illisible : ${brut}`)
     if (m[1] === 'admin_du_dossier' && !m[2]) return ['admin_du_dossier']
     if (m[1] === 'client_du_dossier' && m[2]) return [`client_du_dossier:${m[2]}`]
-    if ((m[1] === 'gere_les_ventes' || m[1] === 'gere_la_banque') && !m[2]) {
+    if ((m[1] === 'gere_les_ventes' || m[1] === 'gere_la_banque' || m[1] === 'gere_la_caisse') && !m[2]) {
       return termesDe(expressionDe(definitionDe(m[1])), definitionDe)
     }
     throw new Error(`fonction inattendue : ${m[1]}`)
@@ -540,5 +544,30 @@ describe('droits_sur_le_dossier : le faux est tiré du texte de la migration (é
       ? derniereDefinitionSql(nom).replace("'ventes')", "'ventes') or public.client_du_dossier(p_dossier_id, 'membre')")
       : derniereDefinitionSql(nom)
     expect(droitsDeLaDefinition(ouverte)).not.toEqual(DROITS_DU_DOSSIER)
+  })
+
+  // LE MOT « CAISSE » (la migration `caisse_du_client`, étape C10) : préparée, elle n'est pas le schéma ; le faux la suit le
+  // jour où elle entre dans l'export. Ses deux états, et le second confronté dès aujourd'hui au texte préparé — la DERNIÈRE
+  // définition de chaque fonction, l'export et les migrations préparées dans l'ordre de leurs noms.
+  it('le mot « caisse » : le faux suit l’export, et son état du jour de l’application est celui du texte préparé', () => {
+    const exportee = fichiersDuSchema().some((f) => /\/\d{14}_caisse_du_client\.sql$/.test(f.chemin))
+    const preparee = fichiersPrepares().some((f) => /\/\d{14}_caisse_du_client\.sql$/.test(f.chemin))
+    expect(exportee !== preparee, 'la migration caisse_du_client, préparée OU dans l’export').toBe(true)
+    expect(CAISSE_DU_CLIENT_EXPORTEE).toBe(exportee)
+    expect(casesDesDroitsSelon(false)).toEqual({ membre: true, ventes: 'droit_ventes', banque: 'droit_banque' })
+    expect(Object.keys(droitsDuDossierSelon(false))).toEqual(['cabinet', 'membre', 'ventes', 'banque'])
+    const nom = (chemin: string) => chemin.split('/').pop() as string
+    const fichiers = [...fichiersDuSchema(), ...fichiersPrepares()].sort((a, b) => (nom(a.chemin) < nom(b.chemin) ? -1 : 1))
+    const derniere = (fonction: string) => {
+      const motif = new RegExp(`create (or replace )?function public\\.${fonction}\\(`, 'g')
+      const texte = fichiers.filter((f) => new RegExp(motif.source).test(f.texte)).pop()!.texte
+      const debut = [...texte.matchAll(motif)].pop()!.index
+      return texte.slice(debut, texte.indexOf('$$;', debut))
+    }
+    expect(droitsDeLaDefinition(derniere)).toEqual(droitsDuDossierSelon(true))
+    expect(casesDeLaDefinition(derniere('client_du_dossier'))).toEqual(casesDesDroitsSelon(true))
+    // Et la confrontation mord sur ce texte-là aussi : la case de « Caisse » lue dans celle de « Ventes ».
+    expect(casesDeLaDefinition(derniere('client_du_dossier').replace('then m.droit_caisse', 'then m.droit_ventes')))
+      .not.toEqual(casesDesDroitsSelon(true))
   })
 })

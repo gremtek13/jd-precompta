@@ -45502,3 +45502,151 @@ sous Paris, UTC, New York et Auckland, 525 fichiers, 16 322 tests verts et 2 « 
   l'expert-comptable à FEC22-E2 (le choix qu'il porte) ; « Régénérer » sur les pièces payées le même jour par deux modes
   avant la validation de 2025 (le préalable les nomme).
 - FEC22-E2 fixe le choix une fois : les à-nouveaux d'un exercice validé suivent le choix en vigueur.
+
+### 01/11/2026 — LA CAISSE : LE DROIT « CAISSE », EN BASE (C10, LIGNE 26.6) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par un agent architecte. La migration 5 de la caisse est PRÉPARÉE et éprouvée sur une réplique — la production à
+164 migrations (`f_prod164`, ses neuf familles égales à celles de la production), munie des trois migrations préparées du
+jour de C8, dans leur ordre —, jamais appliquée. En production : des SELECT du catalogue seulement (l'empreinte de
+vingt-deux corps de fonction, les commentaires de trois, quelques comptes ; aucune valeur d'une ligne), aucun essai
+rejoué. Lus avant d'écrire : « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION
+REPRISE (CAISSE-Q1 ET Q4) », § 3 à 6, § 9 n° 5 et § 10 ; « HUIT RÉPONSES DU CABINET : A7-Q1 À Q3, VF9CQ1B-Q1, CAISSE2-Q1 À
+Q4 » ; les entrées C1 à C9, la relecture de C8 et C9 ; « « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ », le patron
+des gardes.)
+
+**LA MIGRATION 5, `caisse_du_client`**, dans `supabase/preparees/` sous la version provisoire `20261101200000` (62 836
+caractères, 64 071 octets, 942 lignes, `fcc9540203b6f919b20024ef4b630ffa` ; ni `drop`, ni `delete`, ni `truncate` ; ses
+`revoke` ne retirent que les droits que Postgres donne d'office aux six fonctions qu'elle crée ; ni barre oblique inverse
+ni retour chariot), APRÈS `paiement_par_la_caisse`, `champs_bnc_du_fec` et `validation_des_paiements_par_la_caisse`.
+Composée par un script hors du dépôt : un gabarit, et le corps d'`enregistrer_operation_caisse` RECOPIÉ de C8, où onze
+remplacements se trouvent une fois et une seule. Sa garde de tête refuse une seconde application ; une base sans C8 ;
+vingt-deux corps qui ne seraient plus à l'empreinte relue (les cinq qu'elle remplace, ceux qu'elle appelle, les quatre
+dont les branches « client » s'ouvrent, et `valider_exercice` tel que le filet le laisse — l'ordre du jour de
+l'application) ; des statuts de TVA qui ne seraient plus les trois d'hier ; la lecture de la caisse par le cabinet et la
+garde de « Ventes » qui ne seraient plus celles d'hier ; vingt-sept colonnes. Ce qu'elle pose :
+1. `memberships.droit_caisse`, booléen non nul, FAUX par défaut ; `client_du_dossier` connaît le mot « caisse » ;
+   `gere_la_caisse(dossier)` (le cabinet du dossier, ou un accès « Caisse ») ; `droits_sur_le_dossier` rend la clé
+   `caisse` — une de plus, que `droitsDeLAppelant` des quatre Edge Functions de la vente ignore.
+2. `changer_droits_acces` à QUATRE paramètres (`p_caisse`, sans défaut), la seule écriture des droits ; la forme à trois,
+   que l'onglet Accès appelle, devient son appel, « Caisse » nul — PostgREST les distingue par les noms des paramètres.
+3. `garder_droit_caisse`, APRÈS l'insertion et la mise à jour de `droit_caisse` ou de `dossier_id` (le patron de
+   `garder_droit_ventes`) : « Caisse » qui ARRIVE se refuse (23514) sur un dossier ni exonéré ni en franchise en base, à
+   préciser compris, pour tout auteur ; l'insertion du super-administrateur passe (la restauration) ; le statut lu
+   `for share`.
+4. `garder_statut_tva_de_la_caisse`, APRÈS toute mise à jour qui CHANGE le statut (`when (old.statut_tva is distinct from
+   new.statut_tva)`) : quitter les deux statuts exclus se refuse (23514) tant qu'un accès porte la case ; passer de l'un à
+   l'autre, ou y entrer, passe.
+5. `dossiers.categorie_recettes_client` (CAISSE2-Q2, (B)), nulle, sans clé étrangère, que `garder_categorie_recettes_client`
+   juge à l'écriture : une catégorie de produit (classe 7) du dossier, ou commune, ou rien ; l'insertion du
+   super-administrateur passe.
+6. `qui_ecrit_la_caisse` REMPLACÉE : « client » pour un accès « Caisse » d'un dossier exonéré ou en franchise, le statut
+   relu `for share` ; un accès « Caisse » d'un dossier qui ne l'est plus (une restauration) se refuse en 23514, avant toute
+   lecture. Les quatre fonctions qui l'appellent ne changent pas : leurs branches « client » s'ouvrent.
+7. `enregistrer_operation_caisse` REMPLACÉE, pour le client seul : sa recette prend la nature que le cabinet a fixée (il
+   n'en envoie aucune) ; il n'envoie pas d'écriture — la base compose celle qu'elle attend du cabinet et la juge de même ;
+   l'ensemble du jour se refuse sans le numéro d'une facture. Le cabinet : rien de changé, au caractère près.
+8. La lecture du client (le § 4 de la conception) : `operations_caisse_lecture_caisse`, PERMISSIVE, `for select to
+   authenticated using (client_du_dossier(dossier_id, 'caisse'))` — toute la caisse de son dossier, celles du cabinet et
+   les retirées comprises ; et `caisse_du_client(dossier, année)`, aux droits du propriétaire : jour par jour, le report des
+   années d'avant (le 1er janvier, quand il n'est pas nul), l'ouverture, les opérations, le relevé, les espèces des
+   factures sources et l'ensemble qu'une recette du jour reconnaît, le solde, le jour figé — des montants, des dates, des
+   identifiants d'encaissements ou de paiements, jamais un libellé, un numéro, un nom ni une pièce.
+Les refus neufs, dans l'ordre : `qui_ecrit_la_caisse` — l'accès « Caisse » d'un dossier exclu (23514) avant l'accès
+(42501) ; `enregistrer_operation_caisse`, pour le client — après le montant : la nature choisie, absente, qui n'est plus
+une catégorie de produit (22023) ; dans l'ensemble du jour, l'encaissement qui manque et celui en trop, sans numéro, juste
+avant les mots d'hier ; l'écriture envoyée (22023), avant l'écriture incomplète d'hier ; `changer_droits_acces` à quatre —
+ceux d'hier, aux trois mots ; les trois gardes (23514) ; `caisse_du_client` — l'accès (42501, un dossier qui n'existe pas
+sous les mêmes mots, même pour le super-administrateur), l'année (22023).
+
+**LES ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- `enregistrer_operation_caisse` est remplacée (le § 9 n'y prévoyait que `qui_ecrit_la_caisse`) : la nature du dossier,
+  l'écriture que la base compose et l'ensemble sans numéro ne tiennent que dans son corps. Le chemin du cabinet est celui
+  d'hier au caractère près : `caisseDuClient.test.ts` défait ce qu'elle ajoute et retrouve le corps de C8.
+- La garde du statut est un déclencheur APRÈS toute mise à jour qui change le statut, et non « of statut_tva » :
+  `deduire_assujetti_tva` change le statut quand seul le booléen change (le contrôle 143 le joue). Elle ne VERROUILLE PAS
+  les accès qu'elle lit (`for share`, que la conception demandait) : sur la réplique, ce verrou ouvre un interblocage avec
+  « Ventes » cochée sur un accès qui porte « Caisse » (la course R3, ci-dessous) ; la case qui arrive lit le statut
+  `for share`, la mise à jour du statut tient la ligne du dossier, et cela suffit (R1a, R1b).
+- Les gardes sont APRÈS la ligne, après la RLS, comme `garder_droit_ventes` : la policy juge l'auteur d'abord.
+- La nature du dossier n'a pas de clé étrangère : la restauration écrit les dossiers avant leurs catégories ; la garde la
+  juge à l'écriture, la saisie du client à son usage (la nature qui a perdu son produit, 246).
+- `caisse_du_client` rend une ligne de report au 1er janvier (le solde des années d'avant, à partir de l'ouverture du
+  compte de la caisse) et compte, dans l'ensemble du jour, les paiements par la caisse de pièces de vente (l'extension de
+  C8) ; un dossier qui n'existe pas s'y refuse même au super-administrateur (le patron de `qui_ecrit_la_caisse`).
+- Le refus « aucun droit » de `changer_droits_acces` nomme désormais trois cases, pour la forme à trois aussi : un seul
+  corps écrit `memberships`. L'onglet Accès n'envoie jamais deux nuls (`demandeDeChangement`).
+- La forme à trois précède celle à quatre dans le texte (plpgsql résout l'appel à l'exécution) : la forme à quatre reste la
+  DERNIÈRE définition du nom, celle que les gardes de l'export relisent (`update public.memberships m`).
+
+**LES ESSAIS.** Joués entiers par psql, en une transaction, sur trois états : la production (`f_prod164`), les trois
+(`c10_trois`), les quatre (`c10_m`).
+- `caisse.sql`, les contrôles 240 à 267 sous le genre « …5 » (huit dossiers jetables, préfixe `ca155e00-0000-4000-800c`,
+  et les accès du client d'essai) ; 97c (les deux policies d'hier) sous « …5h » ; « rien n'est resté » compte aussi les
+  accès. Avec les quatre : 604 lignes, aucune en faute ; avec les trois : 537, dont la ligne EN ATTENTE (81 étapes) ; en
+  production : 374. Comparés à l'essai d'avant sur la production et sur les trois : la ligne EN ATTENTE seule diffère.
+- `droitsAcces.sql`, les contrôles 100 à 147 et les mutations 150 à 155 (quatre dossiers jetables, DX exonéré, DF en
+  franchise, DR redevable, DN à préciser) : la table de vérité du mot « caisse », la forme à quatre et celle à trois, la
+  garde de la case pour chaque auteur, celle du statut par chaque chemin, le catalogue ; les contrôles 3, 4, 40 et 83 lisent
+  ce que la migration ajoute ; « rien n'est resté » relit le statut et la nature de chaque dossier (sous une empreinte).
+  Avec les quatre (le second accès semé) : 115 lignes, aucune en faute ; en production : 66, dont la ligne EN ATTENTE —
+  comparé à l'essai d'avant, la ligne EN ATTENTE et la phrase de 60 seules diffèrent.
+- `rls.sql`, le bloc CC (le profil « client portant Caisse », la boucle de l'invariant 3 sous lui, ce qu'il lit et
+  écrit, l'anonyme ; M-CC1 à M-CC3) ; CA4 compte trois policies avec la migration. Avec les quatre (le journal semé) : 90
+  lignes d'invariants, aucune en faute, 68 mutations sur 68 qui mordent ; en production : 83, 63 sur 63 — comparé à
+  l'essai d'avant, la ligne CC EN ATTENTE seule diffère.
+- Le retour arrière sur une copie des quatre : la signature redevient celle des trois, les trois commentaires de
+  production reviennent (ceux que `f_prod164` n'a pas : la réplique ne les portait pas) ; une seconde fois, refusé ;
+  sous une case cochée, puis sous une nature fixée, refusé, rien de retiré ; la migration réappliquée, la signature des
+  quatre. La migration refusée une seconde fois, sans C8, et avec C8 seule.
+
+**LES COURSES, DEUX SESSIONS SUR LA RÉPLIQUE** (un témoin lisant `pg_stat_activity`), chacune sur une base fraîche :
+- R1a, le statut passé redevable, puis la case cochée pendant : la case attend le verrou du dossier, puis se refuse
+  (23514). R1b, la case cochée, puis le statut changé pendant : le statut attend, puis se refuse ; la case reste, le
+  dossier exonéré. Le MUTANT sans `for share` dans `garder_droit_caisse` : rien n'attend, les deux passent — la case sur un
+  dossier redevable. Le verrou porte la règle.
+- R2, le cabinet décoche la case et passe le dossier redevable, le client saisit pendant : la saisie attend, puis se
+  refuse (23514, ses mots) ; aucune opération. Le MUTANT sans `for share` dans `qui_ecrit_la_caisse` : la saisie passe,
+  sur le statut d'avant — une opération du client sur un dossier devenu redevable. R2b, l'ordre inverse : le changement
+  de statut attend la fin de la saisie, qui reste.
+- R3, « Banque » puis « Ventes » cochées sur un accès qui porte « Caisse » pendant que le statut change : la garde du
+  statut refuse aussitôt, sans attendre ; aucun interblocage. Le MUTANT qui verrouille les accès dans la garde du statut :
+  « deadlock detected ».
+
+**LE MODULE ET LES GARDES DU DÉPÔT.** `lib/caisse.ts` redit dès aujourd'hui ce que la migration ouvre — neutre pour le
+cabinet : `quiEcritLaCaisse` (et `STATUTS_DE_LA_SAISIE_DU_CLIENT`), les sept refus neufs dans l'ordre d'`ORDRE_DES_REFUS`,
+la saisie du client dans `jugerLaSaisie` (la nature du dossier, l'écriture que la base compose, l'ensemble sans numéro),
+`refusDeLaNatureDesRecettesDuClient` (la garde de la nature, pour l'écran de C11) ; `DossierDeLaCaisse` reçoit
+`natureDesRecettesDuClient`, OBLIGATOIRE (nul à l'écran du cabinet, qui ne la lit pas). Le banc de l'essai
+(`src/test/essaiCaisse.ts`) rejoue le profil client — ses accès, le statut, la nature — par `quiEcritLaCaisse` ;
+`caisse.test.ts` exige que le rejeu voie chaque refus neuf du client. `caisseDuClient.test.ts` (dix-huit cas) : les cinq
+fonctions reprises défaites et comparées à celles d'hier, les vingt-deux empreintes de la garde de tête relues en chaîne
+(l'export et les migrations préparées avant elle), le texte, les gardes, `caisse_du_client` confrontée aux flux de
+`premier_jour_negatif_de_la_caisse` et à l'ensemble de la saisie, le retour arrière, les essais ; neuf mutations du texte
+de la migration et du retour, toutes tuées. `types.ts` : les deux colonnes FACULTATIVES (le patron de FEC22b).
+`outils/leurre/regles.json` : les raisons de `caisse`, `droitsAcces` et `rls` (dix-huit cas particuliers, comme hier).
+
+**LE JOUR DE L'APPLICATION, EN SIMULATION** — les quatre fichiers déplacés dans l'export, le drapeau de C8 levé, la suite
+entière : trois gardes y tombaient, rendues SENSIBLES À LEUR PLACE — le faux de `droits_sur_le_dossier` des Edge Functions
+(`src/test/fonctionsEdge.ts`) suit l'export (la case et la clé `caisse` le jour où la migration y entre ; son état de ce
+jour-là confronté dès aujourd'hui au texte préparé) ; dans `ventesSurDossierBascule.test.ts`, la garde de tête de VF8f se
+relit sur l'export JUSTE AVANT elle, et `caisse_du_client` rejoint les migrations qui écrivent `memberships`. Restent deux
+cas de `clesSupabase.test.ts`, un artefact de la simulation : ils listent les fichiers de l'index git, où les fichiers
+déplacés à la main restent sous leur ancien chemin.
+
+**LE BANC DU LEURRE** (`outils/leurre/banc.py`, sur la grappe de FEC22b) : passe 1, « production » `f_prod164` et « apres »
+la base des quatre : `caisse` SÛR (605 verdicts, aucun en faute), `droitsAcces` SÛR (67), `rls` SÛR ; passe 2,
+« production » = la base des quatre : `caisse` 605, `droitsAcces` 116, `rls` SÛRS — leurs blocs C10 joués. Aucun écart
+entre P et L, aucun motif, aucune écriture du leurre ; six identifiants tirés, normalisés.
+
+**LES SIGNATURES APRÈS LES QUATRE** (par le propriétaire, comme l'outil) : « colonnes » 918 `ccc284d4…`, « contraintes » 711
+`bb338173…`, « déclencheurs » 87 `0d648fb1…`, « droits des fonctions » 226 `5e15c24f…`, « droits des tables » 82
+`36d97923…`, « fonctions » 226 `f8f50bb4…`, « index » 244 `9704c175…`, « policies » 162 `c881b044…`, « rls » 82
+`5fb5dc41…` ; la dérive 168 `6ee2379c…` des deux côtés ; le socle inchangé par elle ; l'inventaire 2 307 `93edc60a…`
+(supabase/schema/README.md).
+
+**CE QUI RESTE, ET CE QUI ATTEND LE CABINET.** La migration ouvre une LECTURE au client (une policy) : elle se présente au
+cabinet et attend son accord, comme le retour arrière, destructif dès qu'une case est cochée. Le jour de l'application :
+C8, FEC22b, le filet, puis elle, par l'outil ; les trois contrôles de l'export ; `caisse.sql`, `droitsAcces.sql` et
+`rls.sql` en production. Rien ne s'ouvre à un client avant qu'une case soit cochée — par l'onglet Accès de C11, qui dira
+avant le clic les refus des deux gardes (le statut d'un dossier qui porte une case, la case sur un dossier exclu) et
+fixera la nature ; « Ma caisse » (C12) lira `caisse_du_client`.

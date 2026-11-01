@@ -53,6 +53,22 @@ function instructions(texte: string): string[] {
   return out.filter(Boolean)
 }
 
+/**
+ * Le corps qu'une fonction avait dans l'export JUSTE AVANT cette migration — ce que sa garde de tête a vérifié le jour de
+ * son application. Une migration d'après peut le remplacer (`caisse_du_client`, ligne 26.6, étape C10, fait de
+ * `changer_droits_acces` à trois paramètres un appel de sa forme à quatre) sans rien changer à ce qui a été vérifié.
+ */
+function corpsAvantLaMigration(nom: string): string {
+  const nomDuFichier = (chemin: string) => chemin.split('/').pop() as string
+  const borne = nomDuFichier(fichiersDuSchema().find((f) => MIGRATION.test(f.chemin))?.chemin ?? '')
+  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
+  const avant = fichiersDuSchema().filter((f) => nomDuFichier(f.chemin) < borne && new RegExp(motif.source).test(f.texte))
+  const texte = avant[avant.length - 1].texte
+  const debut = [...texte.matchAll(motif)].pop()!.index
+  const definition = texte.slice(debut, texte.indexOf('$$;', debut))
+  return definition.slice(definition.indexOf('$$') + 2)
+}
+
 /** Le corps d'une fonction de l'export (entre ses `$$`), tel que la base le garde dans `pg_proc.prosrc`. */
 function corpsExporte(nom: string): string {
   const definition = derniereDefinitionSql(nom)
@@ -90,11 +106,12 @@ describe('la migration ventes_sur_dossier_bascule', () => {
     // Une seconde application : la garde ou son déclencheur.
     expect(tete).toContain("if to_regprocedure('public.garder_droit_ventes()') is not null or exists (select 1 from pg_trigger t "
       + "where t.tgrelid = 'public.memberships'::regclass and t.tgname = 'memberships_droit_ventes') then")
-    // Les trois fonctions, chacune à l'empreinte de son corps dans l'export, retours chariot écartés : une fonction changée
-    // depuis par une migration de l'export ferait tomber ce test avant d'arrêter la migration.
+    // Les trois fonctions, chacune à l'empreinte de son corps dans l'export JUSTE AVANT elle, retours chariot écartés : une
+    // fonction changée entre l'export et elle ferait tomber ce test avant d'arrêter la migration ; une migration d'après
+    // (`caisse_du_client`) ne change pas ce qu'elle a vérifié.
     for (const [nom, signature] of [['garder_ventes_par_les_factures', '()'], ['is_super_admin', '()'],
       ['changer_droits_acces', '(uuid, boolean, boolean)']] as const) {
-      const empreinte = md5(corpsExporte(nom).replace(/\r/g, ''))
+      const empreinte = md5(corpsAvantLaMigration(nom).replace(/\r/g, ''))
       expect(tete, nom).toContain(`if to_regprocedure('public.${nom}${signature}') is null or md5(replace((select p.prosrc from pg_proc p `
         + `where p.oid = to_regprocedure('public.${nom}${signature}')), chr(13), '')) <> '${empreinte}' then`)
     }
@@ -255,7 +272,10 @@ describe('les chemins qui posent ou changent droit_ventes', () => {
   it('en base : parmi les fonctions de l’export, seule changer_droits_acces écrit memberships', () => {
     const ecrivent = fichiersDuSchema().flatMap((f) => [...sansCommentaires(f.texte).matchAll(
       /\b(?:insert\s+into|update)\s+(?:public\.)?memberships\b/gi)].map(() => f.chemin))
-    expect(ecrivent).toEqual(['supabase/schema/20261009224031_droits_des_acces_clients.sql'])
+    // La migration `caisse_du_client` (ligne 26.6, étape C10), le jour où elle entre dans l'export : sa forme à quatre de
+    // changer_droits_acces, la seule qui écrive alors, celle à trois l'appelant.
+    const caisse = fichiersDuSchema().filter((f) => /\/\d{14}_caisse_du_client\.sql$/.test(f.chemin)).map((f) => f.chemin)
+    expect(ecrivent).toEqual(['supabase/schema/20261009224031_droits_des_acces_clients.sql', ...caisse])
     expect(derniereDefinitionSql('changer_droits_acces')).toContain('update public.memberships m')
   })
 })
