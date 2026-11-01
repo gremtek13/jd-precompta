@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { calculerDeclaration2035 } from './declaration2035'
-import { CASE_PAR_CODE, CODES_RATTACHABLES, valeursDesCases } from './cases2035'
+import { CASE_PAR_CODE, CODES_RATTACHABLES, partDeBKSansNature, valeursDesCases } from './cases2035'
 import { cotisationsComptees } from './cotisationRapprochee'
 import { partsDuReleve } from './partsDuReleve'
 import { paiementsDesPieces } from './rattachement'
@@ -58,67 +58,76 @@ const urssaf = echeance({ id: 'urssaf', montant_appele: 9_000 })
 describe('point 1 — les cases « dont » BT, BZ, BU, BY, BW, et CC, CL, DE, DB', () => {
   const NEUF = ['BT', 'BZ', 'BU', 'BY', 'BW', 'CC', 'CL', 'DE', 'DB']
 
-  // PROUVÉ : aucune voie ne les remplit. Aucun poste n'y mène (le rattachement l'interdit pour les « dont », un test de
-  // cases2035.test.ts le garde), `valeursDesCases` ne reçoit que la déclaration, et rien ne pose une valeur à côté.
-  it('aucune des neuf n’est atteinte par un poste : toutes sont marquées « saisie du cabinet », et valent zéro', () => {
-    for (const code of NEUF) {
-      expect(CASE_PAR_CODE.get(code)?.saisieCabinet, code).toBe(true)
-      expect(CODES_RATTACHABLES.has(code), code).toBe(false)
-    }
+  // CORRIGÉ EN PARTIE (étape 2035S1, le 01/11/2026) : cinq des neuf se DÉDUISENT désormais — BY, BW, BZ et BU d'un poste qui
+  // les nomme à côté de sa porteuse, BT des échéances de l'onglet Cotisations — et DB des indemnités journalières rangées
+  // sous leur poste. Aucune n'est une porteuse (le rattachement le garde, cases2035.test.ts). CC, CL et DE restent des
+  // saisies du cabinet, et DB pour le reste du renvoi (25) : 2035S3 à S5, qui attendent 2035S-Q1.
+  it('aucune des neuf n’est une porteuse ; CC, CL, DE et DB restent des saisies du cabinet, les cinq « dont » se déduisent', () => {
+    for (const code of NEUF) expect(CODES_RATTACHABLES.has(code), code).toBe(false)
+    for (const code of ['CC', 'CL', 'DE', 'DB']) expect(CASE_PAR_CODE.get(code)?.saisieCabinet, code).toBe(true)
+    for (const code of ['BT', 'BZ', 'BU', 'BY', 'BW']) expect(CASE_PAR_CODE.get(code)?.saisieCabinet, code).toBeUndefined()
     const d = exonere({
       categories: [recettes, madelin, ordre],
       lignes: [cpam, mouvement({ id: 'mad', categorie_id: 'c-mad', montant: -1_200 }), mouvement({ id: 'ord', categorie_id: 'c-ord', montant: -180 })],
       cotisations: [urssaf],
     })
     const { valeurs } = valeursDesCases(d)
-    for (const code of NEUF) expect(valeurs.get(code), code).toBe(0)
+    // Le Madelin rangé sous le poste GÉNÉRIQUE ne dit pas sa nature : BZ reste vide (2035S-Q2, (A)), et Clôture dit la part
+    // de BK que rien ne qualifie (`partDeBKSansNature`).
+    expect(new Map(NEUF.map((code) => [code, valeurs.get(code)]))).toEqual(new Map([
+      ['BT', 9_000], ['BZ', 0], ['BU', 0], ['BY', 180], ['BW', 0], ['CC', 0], ['CL', 0], ['DE', 0], ['DB', 0],
+    ]))
+    expect(partDeBKSansNature(valeurs)).toBe(1_200)
     // Les porteuses, elles, sont justes : BK porte les obligatoires ET le Madelin, BM la cotisation à l'Ordre.
     expect(valeurs.get('BK')).toBe(10_200)
     expect(valeurs.get('BM')).toBe(180)
   })
 
   // L'ÉCART QUE LA COMPARAISON MONTRERA, ET CELUI QU'ELLE NE MONTRERA PAS : une case « dont » ne s'additionne jamais
-  // (« dont », renvoi (9) pour BW) — vide, elle laisse BR, CP et DD intacts. L'écart est de forme, case par case.
-  it('les « dont » vides ne changent ni BR, ni le résultat, ni le revenu brut social', () => {
+  // (« dont », renvoi (9) pour BW) — remplie, elle laisse BR, CP et DD intacts. Seul DB, qui n'est pas un « dont », joue au
+  // revenu brut social.
+  it('les « dont » remplis ne changent ni BR, ni le résultat, ni le revenu brut social', () => {
     const d = exonere({ categories: [recettes, ordre], lignes: [cpam, mouvement({ id: 'ord', categorie_id: 'c-ord', montant: -180 })], cotisations: [urssaf] })
     const { valeurs } = valeursDesCases(d)
+    expect(valeurs.get('BT')).toBe(9_000)
+    expect(valeurs.get('BY')).toBe(180)
     expect(valeurs.get('BR')).toBe(9_180)
     expect(valeurs.get('CP')).toBe(50_820)
     // Renvoi (26) : CE − CN + BK + BV + DE − DB.
     expect(valeurs.get('DD')).toBe(59_820)
   })
 
-  // SE DÉDUIT : la ligne 29 est un poste que le rattachement connaît déjà (« Cotisations syndicales et professionnelles »,
-  // envoyé en BM). BY est la somme de ce seul poste ; rien n'est à saisir.
-  it.fails('BY se DÉDUIT du poste « Cotisations syndicales et professionnelles » (défaut non corrigé)', () => {
+  // SE DÉDUIT (étape 2035S1) : la ligne 29 est un poste que le rattachement connaît déjà (« Cotisations syndicales et
+  // professionnelles », envoyé en BM). BY est la somme de ce seul poste ; rien n'est à saisir.
+  it('BY se DÉDUIT du poste « Cotisations syndicales et professionnelles »', () => {
     const d = exonere({ categories: [recettes, ordre], lignes: [cpam, mouvement({ id: 'ord', categorie_id: 'c-ord', montant: -180 })] })
     expect(valeursDesCases(d).valeurs.get('BY')).toBe(180)
   })
 
-  // SE DÉDUIT : les échéances de l'onglet Cotisations sont les cotisations obligatoires (Urssaf, caisse de retraite) —
-  // renvoi (13) : « la part respective des cotisations obligatoires et facultatives […] à la rubrique Charges sociales
-  // personnelles ». BT est leur part de BK.
-  it.fails('BT se DÉDUIT des échéances de l’onglet Cotisations (défaut non corrigé)', () => {
+  // SE DÉDUIT (étape 2035S1) : les échéances de l'onglet Cotisations sont les cotisations obligatoires (Urssaf, caisse de
+  // retraite) — renvoi (13) : « la part respective des cotisations obligatoires et facultatives […] à la rubrique Charges
+  // sociales personnelles ». BT est leur part de BK.
+  it('BT se DÉDUIT des échéances de l’onglet Cotisations', () => {
     const d = exonere({ categories: [recettes, madelin], lignes: [cpam, mouvement({ id: 'mad', categorie_id: 'c-mad', montant: -1_200 })], cotisations: [urssaf] })
     expect(valeursDesCases(d).valeurs.get('BT')).toBe(9_000)
   })
 
-  // SE DÉDUIRAIT D'UN POSTE QUI N'EXISTE PAS : un contrat Madelin payé se range aujourd'hui sous le poste générique de BK,
-  // qui ne dit pas « Madelin » ; BZ (et BU, le nouveau PER) demandent un poste propre. La part DÉDUCTIBLE (art. 154 bis,
-  // plafonds) reste à l'expert-comptable (question ouverte « cotisations facultatives sans plafond »).
-  it.fails('BZ se déduit d’un poste « Cotisations facultatives Madelin » (défaut non corrigé : le poste n’a pas de case)', () => {
+  // SE DÉDUIT D'UN POSTE PROPRE (étape 2035S1) : un contrat Madelin rangé sous « Cotisations facultatives Madelin » va en BK
+  // et en BZ. La part DÉDUCTIBLE (art. 154 bis, plafonds) reste à l'expert-comptable (question ouverte « cotisations
+  // facultatives sans plafond »).
+  it('BZ se déduit d’un poste « Cotisations facultatives Madelin »', () => {
     const madelinPropre = { ...madelin, poste_2035: 'Cotisations facultatives Madelin' }
     const d = exonere({ categories: [recettes, madelinPropre], lignes: [cpam, mouvement({ id: 'mad', categorie_id: 'c-mad', montant: -1_200 })] })
     const { valeurs, postesSansCase } = valeursDesCases(d)
     expect(postesSansCase).toEqual([])
     expect(valeurs.get('BK')).toBe(1_200)
     expect(valeurs.get('BZ')).toBe(1_200)
+    expect(partDeBKSansNature(valeurs)).toBe(0)
   })
 
   // Même chose pour BW : renvoi (9), « individualiser à la ligne 16 dans le cadre BW […] le montant de ces redevances puis
-  // porter le total des locations […] y compris ces redevances, en ligne BG ». Le poste n'a pas de case aujourd'hui : il
-  // tombe dans « aucune case connue », et la validation de l'exercice le refuse.
-  it.fails('BW se déduit d’un poste « Redevances de collaboration », compté aussi en BG (défaut non corrigé)', () => {
+  // porter le total des locations […] y compris ces redevances, en ligne BG ».
+  it('BW se déduit d’un poste « Redevances de collaboration », compté aussi en BG', () => {
     const d = exonere({ categories: [recettes, collaboration], lignes: [cpam, mouvement({ id: 'col', categorie_id: 'c-col', montant: -2_400 })] })
     const { valeurs, postesSansCase } = valeursDesCases(d)
     expect(postesSansCase).toEqual([])
@@ -126,9 +135,9 @@ describe('point 1 — les cases « dont » BT, BZ, BU, BY, BW, et CC, CL, DE, DB
     expect(valeurs.get('BW')).toBe(2_400)
   })
 
-  // DB : renvoi (25), les indemnités journalières « lorsqu'elles ont été incluses dans la rubrique AF ». Rangées sous un
-  // poste propre, elles iraient en AF ET en DB ; aujourd'hui ce poste n'a pas de case, et la validation le refuse.
-  it.fails('les indemnités journalières rangées en gains divers vont en AF et en DB (défaut non corrigé)', () => {
+  // DB : renvoi (25), les indemnités journalières « lorsqu'elles ont été incluses dans la rubrique AF ». Rangées sous leur
+  // poste propre (étape 2035S1, 2035S-Q3 (A)), elles vont en AF ET en DB.
+  it('les indemnités journalières rangées en gains divers vont en AF et en DB', () => {
     const d = exonere({ categories: [recettes, ij], lignes: [cpam, mouvement({ id: 'ij', categorie_id: 'c-ij', montant: 1_500 })], cotisations: [urssaf] })
     const { valeurs, postesSansCase } = valeursDesCases(d)
     expect(postesSansCase).toEqual([])

@@ -5,14 +5,23 @@ import {
   CASE_PAR_CODE,
   CODES_RATTACHABLES,
   CODES_TOTALISES_BR,
+  POSTES_COMPTES_OBLIGATOIRES,
+  POSTES_HORS_DES_LISTES_DU_FEC,
   POSTES_PROPOSABLES,
+  POSTES_RATTACHES,
+  posteRattache,
+  SECONDES_CASES,
+  SECONDES_CASES_ADMISES_HORS_DONT,
   caseDuPoste,
   casesNegatives,
   doublonFraisVehicules,
   incoherencesDesCases,
+  partDeBKSansNature,
   repartirEnCases,
   valeursDesCases,
 } from './cases2035'
+import { paiementsDesPieces } from './rattachement'
+import { partsDuReleve } from './partsDuReleve'
 import {
   calculerDeclaration2035, POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS,
   POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
@@ -710,5 +719,147 @@ describe('casesNegatives', () => {
   it('une recette négative aussi', () => {
     const d = declaration({ recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: -40 })] })
     expect(casesNegatives(d).map((c) => c.case.code)).toEqual(['AA'])
+  })
+})
+
+// LES SECONDES CASES (étape 2035S1, le 01/11/2026). Un poste rejoint toujours une porteuse ; un « dont » ne lui est
+// qu'AJOUTÉ — BY, BW, BZ, BU —, comme DB derrière AF pour les indemnités journalières ; BT vient des échéances de l'onglet
+// Cotisations. Sources : la notice 2035-NOT-SD 2026, p. 1 (BZ, BU), renvois (9) (BW), (13) (BT), (25) (DB).
+describe('les secondes cases qu’un poste alimente aussi', () => {
+  const contribution = (id: string, centimes: number, ligneId: string | null): Declaration2035['contributions'][number] => ({
+    source: {
+      type: 'cotisation', id, cotisation: { id } as CotisationDeclaree, paiementPersonnel: null, refus: null,
+      ligne: ligneId === null ? null : ({ id: ligneId } as NonNullable<Extract<Declaration2035['contributions'][number]['source'], { type: 'cotisation' }>['ligne']>),
+    },
+    poste: POSTE_COTISATIONS, nature: 'depense', compte: '646000', centimes,
+  })
+
+  it('chaque seconde case est un « dont » de sa porteuse, ou DB derrière AF — jamais une porteuse ni une case calculée', () => {
+    expect([...SECONDES_CASES.values()].map((s) => s.aussi).sort()).toEqual(['BU', 'BW', 'BY', 'BZ', 'DB'])
+    for (const [poste, { porteuse, aussi }] of SECONDES_CASES) {
+      expect(caseDuPoste(poste)?.code, poste).toBe(porteuse)
+      const c = CASE_PAR_CODE.get(aussi)
+      expect(c, poste).toBeDefined()
+      expect(c?.calculee, poste).toBeUndefined()
+      expect(CODES_RATTACHABLES.has(aussi), poste).toBe(false)
+      const horsDont = SECONDES_CASES_ADMISES_HORS_DONT.some((a) => a.porteuse === porteuse && a.aussi === aussi)
+      expect(c?.sousCaseDe === porteuse || horsDont, `${poste} : ${porteuse} → ${aussi}`).toBe(true)
+    }
+  })
+
+  it('les quatre postes neufs ont leur case, et sont proposés aux catégories sans case', () => {
+    for (const [poste, code] of [
+      ['Redevances de collaboration', 'BG'], ['Cotisations facultatives Madelin', 'BK'], ["Plan d'épargne retraite", 'BK'],
+      ['Indemnités journalières', 'AF'],
+    ] as const) {
+      expect(caseDuPoste(poste)?.code, poste).toBe(code)
+      expect(POSTES_PROPOSABLES, poste).toContain(poste)
+    }
+  })
+
+  // Les listes fermées de la migration préparée de FEC22b ne les portent pas encore : la NatOp de leurs lignes dit la nature
+  // seule, que la base accepte, jusqu'à ce que la session reprenne ces migrations (lib/champsBncFiges.ts les confronte).
+  it('hors des listes du FEC tant que la base ne les connaît pas : leur NatOp ne porte que la nature', () => {
+    expect([...POSTES_HORS_DES_LISTES_DU_FEC].sort()).toEqual(
+      ['Cotisations facultatives Madelin', 'Indemnités journalières', "Plan d'épargne retraite", 'Redevances de collaboration'])
+    for (const poste of POSTES_HORS_DES_LISTES_DU_FEC) {
+      expect(POSTES_RATTACHES, poste).not.toContain(poste)
+      expect(caseDuPoste(poste), poste).not.toBeNull()
+      expect(posteRattache(poste, caseDuPoste(poste)!.cadre === 'recettes' ? 'recette' : 'depense'), poste).toBeNull()
+    }
+    expect(posteRattache('Cotisations syndicales et professionnelles', 'depense')).toBe('Cotisations syndicales et professionnelles')
+  })
+
+  it('ajoute le montant à la seconde case sans le retirer de la porteuse, et ne compte pas deux fois', () => {
+    const d = declaration({
+      depenses: [
+        ligne({ poste: 'Cotisations syndicales et professionnelles', montant: 180 }),
+        ligne({ poste: 'Fournitures de bureau', montant: 20 }),
+        ligne({ poste: 'Redevances de collaboration', montant: 2_400 }),
+        ligne({ poste: 'Location de matériel et de mobilier', montant: 600 }),
+        ligne({ poste: 'Cotisations facultatives Madelin', montant: 1_200 }),
+        ligne({ poste: "Plan d'épargne retraite", montant: 800 }),
+      ],
+    })
+    const { valeurs } = valeursDesCases(d)
+    expect(['BM', 'BY', 'BG', 'BW', 'BK', 'BZ', 'BU'].map((c) => valeurs.get(c))).toEqual([200, 180, 3_000, 2_400, 2_000, 1_200, 800])
+    // BR, la somme des porteuses : les « dont » n'y entrent pas.
+    expect(valeurs.get('BR')).toBe(5_200)
+    expect(repartirEnCases(d).secondes.map((s) => s.case.code)).toEqual(['BW', 'BZ', 'BU', 'BY'])
+    expect(repartirEnCases(d).cases.map((s) => s.case.code)).toEqual(['BG', 'BK', 'BM'])
+    expect(incoherencesDesCases(valeurs)).toEqual([])
+    // BK n'est faite que du Madelin et du plan d'épargne retraite : rien n'en reste sans nature.
+    expect(partDeBKSansNature(valeurs)).toBe(0)
+  })
+
+  it('BT ne compte que les échéances de l’onglet Cotisations, jamais une catégorie au même poste ni le poste générique', () => {
+    const d = declaration({
+      depenses: [
+        // La ligne du poste porte 9 000 € d'échéances et 500 € d'une catégorie que le cabinet a nommée comme le poste.
+        ligne({ poste: POSTE_COTISATIONS, montant: 9_500 }),
+        ligne({ poste: 'Charges sociales personnelles', montant: 1_200 }),
+      ],
+      contributions: [
+        contribution('c1', 600_000, 'prlv-1'), contribution('c2', 300_000, null),
+        { source: { type: 'piece', id: 'p1', piece: { id: 'p1' } as Piece }, poste: POSTE_COTISATIONS, nature: 'depense', compte: '646100', centimes: 50_000 },
+      ],
+    })
+    const { valeurs } = valeursDesCases(d)
+    expect(valeurs.get('BK')).toBe(10_700)
+    expect(valeurs.get('BT')).toBe(9_000)
+    expect(partDeBKSansNature(valeurs)).toBe(1_700)
+    expect(repartirEnCases(d).secondes).toEqual([expect.objectContaining({ montant: 9_000, nbMouvements: 1, postes: [POSTE_COTISATIONS] })])
+    // 2035S-Q2, (A) : aucun poste compté obligatoire en plus des échéances.
+    expect(POSTES_COMPTES_OBLIGATOIRES).toEqual([])
+  })
+
+  it('BT depuis le moteur : les échéances, leur CSG-CRDS sortie comme de BK', () => {
+    const cotisations: CotisationDeclaree[] = [{
+      id: 'c1', dossier_id: 'd1', echeance: '2025-03-05', montant_appele: 1_000, montant_verse: null, montant_csg_crds: 97,
+      created_at: '2025-01-05T09:00:00Z', previsionnel: false, paiement_personnel_le: null,
+    }]
+    const d = calculerDeclaration2035(
+      2025, [], [], [], cotisationsComptees(cotisations, [], 'tresorerie'), [], false, paiementsDesPieces([], [], [], []),
+      partsDuReleve([], [], [], false), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+    )
+    const { valeurs } = valeursDesCases(d)
+    expect(valeurs.get('BK')).toBe(903)
+    expect(valeurs.get('BT')).toBe(903)
+    expect(valeurs.get('BV')).toBe(68)
+    expect(partDeBKSansNature(valeurs)).toBe(0)
+  })
+
+  it('DB ne se remplit qu’à partir des revenus 2025 ; avant, les indemnités journalières restent en AF seulement', () => {
+    const ij = ligne({ poste: 'Indemnités journalières', nature: 'recette', montant: 1_500 })
+    expect(valeursDesCases(declaration({ annee: 2025, recettes: [ij] })).valeurs.get('DB')).toBe(1_500)
+    const avant = valeursDesCases(declaration({ annee: 2024, recettes: [ij] })).valeurs
+    expect(avant.get('AF')).toBe(1_500)
+    expect(avant.get('DB')).toBe(0)
+  })
+
+  it('une indemnité journalière en dépense est du mauvais sens : ni AF, ni DB', () => {
+    const { valeurs, postesSansCase } = valeursDesCases(declaration({ depenses: [ligne({ poste: 'Indemnités journalières', montant: 100 })] }))
+    expect(postesSansCase.map((p) => p.raison)).toEqual(['case du mauvais sens'])
+    expect(valeurs.get('DB')).toBe(0)
+  })
+
+  it('une seconde case négative se dit, même quand sa porteuse reste positive', () => {
+    const d = declaration({
+      depenses: [ligne({ poste: POSTE_COTISATIONS, montant: -200 }), ligne({ poste: 'Cotisations facultatives Madelin', montant: 1_200 })],
+      contributions: [contribution('c1', -20_000, null)],
+    })
+    expect(casesNegatives(d).map((c) => [c.case.code, c.montant])).toEqual([['BT', -200]])
+  })
+
+  it('à l’euro, les « dont » d’une porteuse ne la dépassent pas : l’euro que l’arrondi ajoute se retire du plus relevé', () => {
+    // BT 9 000,60 € (relevé de 40 centimes) et BZ 1 200,70 € (de 30) : 9 001 + 1 201 = 10 202 sur un BK de 10 201.
+    const arrondies = arrondirPourFormulaire(new Map([['BK', 10_201.3], ['BT', 9_000.6], ['BZ', 1_200.7]]), 2025)
+    expect([arrondies.get('BK'), arrondies.get('BT'), arrondies.get('BZ')]).toEqual([10_201, 9_000, 1_201])
+    // Sans dépassement, chacun garde son arrondi.
+    const justes = arrondirPourFormulaire(new Map([['BK', 10_200.8], ['BT', 9_000.4], ['BZ', 1_200.4]]), 2025)
+    expect([justes.get('BK'), justes.get('BT'), justes.get('BZ')]).toEqual([10_201, 9_000, 1_200])
+    // Une incohérence au centime (une saisie contradictoire) n'est pas touchée : `incoherencesDesCases` la dit.
+    const contradictoire = arrondirPourFormulaire(new Map([['BK', 100], ['BT', 150.6]]), 2025)
+    expect(contradictoire.get('BT')).toBe(151)
   })
 })

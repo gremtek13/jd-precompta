@@ -12,7 +12,7 @@ import { dotationDeLExercice } from '../../lib/amortissements'
 import { amortissementsSousLeBareme } from '../../lib/forfaitKilometrique'
 import {
   CASES_2035, PREMIER_EXERCICE_REVENU_BRUT_SOCIAL, arrondirPourFormulaire, casesNegatives, doublonFraisVehicules, incoherencesDesCases,
-  valeursDesCases,
+  partDeBKSansNature, valeursDesCases,
 } from '../../lib/cases2035'
 import { POSTES_PROPOSABLES, type DoublonFraisVehicule, type IncoherenceCase, type PosteNonRattache } from '../../lib/cases2035'
 import { comptesPartagesEntreCases, concordance2035 } from '../../lib/concordance2035'
@@ -602,10 +602,18 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   }
 
   // Garde armé à l'avance : une case « dont » qui dépasse sa porteuse est une saisie contradictoire.
-  // Le moteur ne remplit jamais ces cases (toutes marquées `saisieCabinet`), donc rien ne peut le
-  // déclencher tant que l'écran de saisie manuelle n'existe pas — il sera en place le jour où elle
-  // arrivera, plutôt qu'à écrire après coup en ayant oublié la règle.
+  // Le moteur remplit les « dont » d'un poste qui les nomme, et BT des échéances (étape 2035S1) : chacun est une part de sa
+  // porteuse par construction. Le garde reste pour la saisie du cabinet à venir (2035S3 et S4), plutôt qu'à écrire après
+  // coup en ayant oublié la règle.
   const incoherences: IncoherenceCase[] = formulairesOuverts.flatMap((f) => incoherencesDesCases(f.valeurs))
+
+  // LA PART DE BK QUE RIEN NE QUALIFIE (étape 2035S1, 2035S-Q2 (A)) : le formulaire veut, ligne 25, la part obligatoire (BT),
+  // les Madelin (BZ) et les plans d'épargne retraite (BU) ; BT ne compte que les échéances de l'onglet Cotisations, et une
+  // catégorie au poste générique « Charges sociales personnelles » ne dit pas sa nature. Dit par exercice ouvert, avec le
+  // geste qui la règle : ranger la catégorie sous le poste qui la nomme. Rien ne retient la validation.
+  const bkSansNature = formulairesOuverts
+    .map((f) => ({ annee: f.declaration.annee, montant: partDeBKSansNature(f.valeurs), bk: f.valeurs.get('BK') ?? 0 }))
+    .filter((x) => x.montant > 0)
 
   // Forfait kilométrique ET frais de véhicule au réel dans la même déclaration : la dépense est
   // comptée deux fois en case BJ, et la case ne montre qu'un total qui ne dit pas de quoi il est fait.
@@ -1596,6 +1604,27 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
         </div>
       )}
 
+      {bkSansNature.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Charges sociales personnelles sans nature dite ({bkSansNature.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            La ligne 25 du formulaire détaille BK en charges obligatoires (BT), cotisations facultatives Madelin (BZ) et plans
+            d’épargne retraite (BU). BT ne compte que les échéances de l’onglet Cotisations : une catégorie au poste
+            « Charges sociales personnelles » ne dit pas si sa charge est obligatoire ou facultative, et l’application ne le
+            devine pas. Range-la sous « Cotisations facultatives Madelin » ou « Plan d’épargne retraite » quand c’en est ;
+            sinon, la part de BK reste à dire sur le formulaire.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {bkSansNature.map((x) => (
+              <li key={x.annee}>
+                Exercice {x.annee} : BK porte {formatMoney(x.montant)} dont la nature, obligatoire ou facultative, n’est pas dite
+                (sur {formatMoney(x.bk)}).
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {negatives.length > 0 && (
         <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-danger)' }}>
           <h3 style={{ marginTop: 0 }}>Case négative ({negatives.length})</h3>
@@ -1978,12 +2007,13 @@ function ReportDeclarationRevenus({ annee, valeurs, formulaire: fige }: {
       </ul>
       <p className="muted" style={{ margin: 0, fontSize: '0.9em' }}>
         Revenu brut social calculé comme le résultat, plus les charges sociales personnelles (BK) et
-        la CSG déductible (BV). L'application ne connaît pas le reste du renvoi (26) de la notice :
-        les exonérations de la ligne 43 (zones franches, zones déficitaires en offre de soins,
-        déductions des médecins de secteur I…), les sommes à réintégrer (DE : plus-values à court terme
-        exonérées, intéressement de l'exploitant, bénéfices non professionnels) et à déduire (DB :
-        indemnités journalières comptées dans les recettes, déficits non professionnels). Si le
-        dossier en porte, le revenu brut social est à reprendre.
+        la CSG déductible (BV), moins les indemnités journalières rangées sous leur poste en gains divers
+        (DB). L'application ne connaît pas le reste du renvoi (26) de la notice : les exonérations de la
+        ligne 43 (zones franches, zones déficitaires en offre de soins, déductions des médecins de
+        secteur I…), les sommes à réintégrer (DE : plus-values à court terme exonérées, intéressement de
+        l'exploitant, bénéfices non professionnels) et le reste des sommes à déduire (DB : indemnités
+        journalières rangées sous un autre poste, déficits non professionnels). Si le dossier en porte,
+        le revenu brut social est à reprendre.
       </p>
     </div>
   )

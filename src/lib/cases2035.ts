@@ -51,7 +51,9 @@ export interface Case2035 {
   calculee?: string
   // Case que le moteur ne produira jamais : elle relève d'un arbitrage de l'expert-comptable
   // (plus-values, réintégrations, exonérations). Elle existe ici pour que l'arithmétique du
-  // formulaire soit complète, pas pour être remplie automatiquement.
+  // formulaire soit complète, pas pour être remplie automatiquement. DB l'est encore (étape 2035S1) :
+  // seules les indemnités journalières rangées sous leur poste propre la remplissent, le reste du
+  // renvoi (25) — un déficit non professionnel — attend la saisie du cabinet (2035S3 et S4).
   saisieCabinet?: true
   // Se retranche au lieu de s'ajouter (débours et rétrocessions, lignes 2 et 3).
   soustractive?: true
@@ -83,15 +85,15 @@ export const CASES_2035: Case2035[] = [
   { code: 'BS', ligne: '13', libelle: 'Autres impôts', formulaire: '2035-A', cadre: 'depenses' },
   { code: 'BV', ligne: '14', libelle: 'Contribution sociale généralisée déductible', formulaire: '2035-A', cadre: 'depenses' },
   { code: 'BF', ligne: '15', libelle: 'Loyer et charges locatives', formulaire: '2035-A', cadre: 'depenses' },
-  { code: 'BW', ligne: '16', libelle: 'dont redevances de collaboration', formulaire: '2035-A', cadre: 'depenses', sousCaseDe: 'BG', saisieCabinet: true },
+  { code: 'BW', ligne: '16', libelle: 'dont redevances de collaboration', formulaire: '2035-A', cadre: 'depenses', sousCaseDe: 'BG' },
   { code: 'BG', ligne: '16', libelle: 'Location de matériel et de mobilier', formulaire: '2035-A', cadre: 'depenses' },
   { code: 'BH', ligne: '17 à 22', libelle: 'Travaux, fournitures et services extérieurs', formulaire: '2035-A', cadre: 'depenses' },
   { code: 'BJ', ligne: '23 et 24', libelle: 'Transport et déplacements', formulaire: '2035-A', cadre: 'depenses' },
-  { code: 'BT', ligne: '25', libelle: 'dont charges sociales personnelles obligatoires', formulaire: '2035-A', cadre: 'depenses', sousCaseDe: 'BK', saisieCabinet: true },
-  { code: 'BZ', ligne: '25', libelle: 'dont cotisations facultatives Madelin', formulaire: '2035-A', cadre: 'depenses', sousCaseDe: 'BK', saisieCabinet: true },
-  { code: 'BU', ligne: '25', libelle: 'dont facultatives aux nouveaux plans d’épargne retraite', formulaire: '2035-A', cadre: 'depenses', sousCaseDe: 'BK', saisieCabinet: true },
+  { code: 'BT', ligne: '25', libelle: 'dont charges sociales personnelles obligatoires', formulaire: '2035-A', cadre: 'depenses', sousCaseDe: 'BK' },
+  { code: 'BZ', ligne: '25', libelle: 'dont cotisations facultatives Madelin', formulaire: '2035-A', cadre: 'depenses', sousCaseDe: 'BK' },
+  { code: 'BU', ligne: '25', libelle: 'dont facultatives aux nouveaux plans d’épargne retraite', formulaire: '2035-A', cadre: 'depenses', sousCaseDe: 'BK' },
   { code: 'BK', ligne: '25', libelle: 'Charges sociales personnelles', formulaire: '2035-A', cadre: 'depenses' },
-  { code: 'BY', ligne: '29', libelle: 'dont cotisations syndicales et professionnelles', formulaire: '2035-A', cadre: 'depenses', sousCaseDe: 'BM', saisieCabinet: true },
+  { code: 'BY', ligne: '29', libelle: 'dont cotisations syndicales et professionnelles', formulaire: '2035-A', cadre: 'depenses', sousCaseDe: 'BM' },
   { code: 'BM', ligne: '26 à 30', libelle: 'Frais divers de gestion', formulaire: '2035-A', cadre: 'depenses' },
   { code: 'BN', ligne: '31', libelle: 'Frais financiers', formulaire: '2035-A', cadre: 'depenses' },
   { code: 'BP', ligne: '32', libelle: 'Pertes diverses', formulaire: '2035-A', cadre: 'depenses' },
@@ -162,9 +164,18 @@ function cle(poste: string): string {
 // Les clés couvrent les postes par défaut du produit ET les libellés officiels du formulaire, que le
 // cabinet est susceptible de recopier tels quels dans le champ « poste 2035 ».
 //
-// Aucune valeur n'est une case « dont » : un poste rattaché à BY ou BT sortirait du total, puisque
-// ces cases ne s'additionnent pas. Un test le vérifie.
-const RATTACHEMENTS: [string, string][] = [
+// LA CASE PORTEUSE N'EST JAMAIS UNE CASE « DONT » : un poste rattaché à BY ou BT sortirait du total, puisque ces cases ne
+// s'additionnent pas. Un test le vérifie.
+//
+// MAIS UN POSTE PEUT ALIMENTER AUSSI UNE SECONDE CASE (étape 2035S1, le troisième élément) : la case « dont » qui détaille
+// sa porteuse — BY pour les cotisations syndicales et professionnelles (ligne 29, dans BM), BW pour les redevances de
+// collaboration (renvoi (9), dans BG), BZ pour un contrat Madelin et BU pour un plan d'épargne retraite (ligne 25, dans
+// BK ; notice 2035-NOT-SD 2026, p. 1) —, ou DB pour les indemnités journalières comptées en gains divers (renvoi (25) :
+// « lorsqu'elles ont été incluses dans la rubrique AF »). Le montant y est AJOUTÉ, jamais retiré de la porteuse : une
+// case « dont » ne s'additionne pas, DB ne joue qu'au revenu brut social. Le choix de porter les indemnités en AF reste à
+// l'expert-comptable (2035S-Q3, (A)) : le poste propre le rend visible, il ne le tranche pas. Un test vérifie que la
+// seconde case est une « dont » de la porteuse, ou DB derrière AF, et rien d'autre (`SECONDES_CASES_ADMISES_HORS_DONT`).
+const RATTACHEMENTS: [poste: string, porteuse: string, aussi?: string][] = [
   // Recettes
   ['Recettes', 'AA'],
   // Le libellé officiel de la ligne 1, qui est aussi le poste des ventes facturées (étape VF3b1) : IMPORTÉ, comme la CSG
@@ -179,6 +190,8 @@ const RATTACHEMENTS: [string, string][] = [
   ['Rétrocessions', 'AC'],
   ['Produits financiers', 'AE'],
   ['Gains divers', 'AF'],
+  // 2035S-Q3, (A) : un poste propre, en AF et en DB. Pour (B) — DB seulement saisi —, retirer la seconde case ici.
+  ['Indemnités journalières', 'AF', 'DB'],
 
   // Dépenses — lignes à case propre
   ['Achats', 'BA'],
@@ -199,6 +212,7 @@ const RATTACHEMENTS: [string, string][] = [
   ['Loyer et charges locatives', 'BF'],
   ['Loyers et charges locatives', 'BF'],
   ['Location de matériel et de mobilier', 'BG'],
+  ['Redevances de collaboration', 'BG', 'BW'],
 
   // Dépenses — lignes 17 à 22, total groupé BH
   ['Entretien et réparations', 'BH'],
@@ -220,8 +234,12 @@ const RATTACHEMENTS: [string, string][] = [
   [POSTE_INDEMNITES_KM, 'BJ'],
 
   // Dépenses — ligne 25
+  // BT, la part obligatoire de BK, ne vient pas d'un poste : des échéances de l'onglet Cotisations elles-mêmes
+  // (`partObligatoireDeBK`). Le poste générique reste en BK sans « dont » (2035S-Q2, (A)).
   [POSTE_COTISATIONS, 'BK'],
   ['Charges sociales personnelles', 'BK'],
+  ['Cotisations facultatives Madelin', 'BK', 'BZ'],
+  ["Plan d'épargne retraite", 'BK', 'BU'],
 
   // Dépenses — lignes 26 à 30, total groupé BM
   ['Frais de réception, de représentation et de congrès', 'BM'],
@@ -229,7 +247,7 @@ const RATTACHEMENTS: [string, string][] = [
   ['Fournitures de bureau, frais de documentation, de correspondance et de téléphone', 'BM'],
   ['Fournitures de bureau', 'BM'],
   ["Frais d'actes et de contentieux", 'BM'],
-  ['Cotisations syndicales et professionnelles', 'BM'],
+  ['Cotisations syndicales et professionnelles', 'BM', 'BY'],
   ['Autres frais divers de gestion', 'BM'],
   ['Frais divers de gestion', 'BM'],
   // « Divers » est le poste de la catégorie fourre-tout « Autre ». Le formulaire n'a pas de case
@@ -247,6 +265,19 @@ const RATTACHEMENTS: [string, string][] = [
 ]
 
 const CASE_PAR_CLE_DE_POSTE = new Map(RATTACHEMENTS.map(([poste, code]) => [cle(poste), code]))
+const SECONDE_CASE_PAR_CLE_DE_POSTE = new Map(RATTACHEMENTS.flatMap(([poste, , aussi]) => (aussi ? [[cle(poste), aussi] as const] : [])))
+
+// Les secondes cases qu'un poste peut alimenter. Exporté pour le test qui juge la liste ENTIÈRE : chacune est une « dont »
+// de sa porteuse, ou DB derrière AF (le seul « à déduire » du cadre 8 qu'un poste connaisse).
+export const SECONDES_CASES = new Map(RATTACHEMENTS.flatMap(([poste, porteuse, aussi]) =>
+  (aussi ? [[poste, { porteuse, aussi }] as const] : [])))
+export const SECONDES_CASES_ADMISES_HORS_DONT: readonly { porteuse: string; aussi: string }[] = [{ porteuse: 'AF', aussi: 'DB' }]
+
+// 2035S-Q2 : LES POSTES COMPTÉS OBLIGATOIRES, EN PLUS DES ÉCHÉANCES DE L'ONGLET COTISATIONS. Vide sur la réponse (A) : le
+// poste générique « Charges sociales personnelles » ne dit pas si la charge est obligatoire ou facultative, et Clôture dit
+// la part de BK que rien ne qualifie (`partDeBKSansNature`). La réponse (B) — le poste générique compté obligatoire aussi —
+// s'écrit en y ajoutant 'Charges sociales personnelles'.
+export const POSTES_COMPTES_OBLIGATOIRES: readonly string[] = []
 
 // Les codes qu'un poste peut atteindre. Exporté pour que le test vérifie sur la liste ENTIÈRE, et non
 // sur trois postes choisis, qu'aucun ne vise une case calculée, une case « dont » ou une case du
@@ -272,13 +303,26 @@ export function caseDuPoste(poste: string): Case2035 | null {
 // de charge ou de produit du FEC d'un BNC en trésorerie y écrit le poste de sa catégorie (FEC22-Q3, (C)), et jamais le
 // texte que le cabinet a tapé dans le champ « poste 2035 » — « achats » ou « ACHATS » s'y écrivent « Achats », la clé
 // du rattachement les confondant déjà. La première orthographe d'une clé l'emporte.
+//
+// SAUF LES QUATRE POSTES NEUFS DE L'ÉTAPE 2035S1, TANT QUE LA BASE NE LES CONNAÎT PAS : la migration préparée de FEC22b
+// (`champs_bnc_du_fec`, supabase/preparees/) — et celle qui la reprend (`validation_des_paiements_par_la_caisse`) — copient
+// cette liste dans trois listes fermées (`valider_exercice`, la contrainte des écritures), confrontées par
+// champsBncFiges.test.ts, et refuseraient à la validation une NatOp qui en nomme un autre. Hors de la liste, la NatOp de
+// leurs lignes ne porte que la nature (« Dépense », « Recette »), ce que la base accepte. Les y faire entrer demande de
+// reprendre ces migrations, leurs empreintes et leurs retours — une décision de la session, avant leur application —,
+// puis de vider cette constante.
+export const POSTES_HORS_DES_LISTES_DU_FEC: readonly string[] = [
+  'Indemnités journalières', 'Redevances de collaboration', 'Cotisations facultatives Madelin', "Plan d'épargne retraite",
+]
 export const POSTES_RATTACHES: readonly string[] = [...new Set(RATTACHEMENTS.map(([poste]) => poste))]
+  .filter((poste) => !POSTES_HORS_DES_LISTES_DU_FEC.includes(poste))
 const POSTE_PAR_CLE = new Map<string, string>()
 for (const poste of POSTES_RATTACHES) if (!POSTE_PAR_CLE.has(cle(poste))) POSTE_PAR_CLE.set(cle(poste), poste)
 
 // Le poste d'une ligne de cette nature tel que le formulaire le range, sous l'orthographe du rattachement ; nul quand le
 // rattachement ne le connaît pas, ou que sa case est de l'autre cadre — exactement les postes que `repartirEnCases` dit
-// « sans case » (`cadreCompatible`) : une recette sous un poste de dépenses n'est le poste d'aucune case.
+// « sans case » (`cadreCompatible`) : une recette sous un poste de dépenses n'est le poste d'aucune case. Nul aussi pour un
+// poste que la base ne connaît pas encore (`POSTES_HORS_DES_LISTES_DU_FEC`).
 export function posteRattache(poste: string, nature: LigneDeclaration['nature']): string | null {
   const c = caseDuPoste(poste)
   return c && cadreCompatible(c, nature) ? POSTE_PAR_CLE.get(cle(poste)) ?? null : null
@@ -312,7 +356,13 @@ export interface PosteNonRattache {
 }
 
 export interface RepartitionCases {
+  // Les cases qui s'additionnent — une par poste, sa porteuse.
   cases: CaseRemplie[]
+  // LES SECONDES CASES (étape 2035S1) : les « dont » que les postes alimentent aussi (BY, BW, BZ, BU), BT tirée des
+  // échéances de l'onglet Cotisations, et DB des indemnités journalières. Leur montant est DÉJÀ dans une case de `cases` :
+  // les additionner aux premières compterait deux fois. Seulement celles que le formulaire de l'exercice porte (DB depuis
+  // les revenus 2025).
+  secondes: CaseRemplie[]
   // Postes qu'aucune case ne reçoit. Comme partout ailleurs dans ce moteur, ce qui sort du calcul est
   // remonté plutôt que retiré en silence : sur une déclaration, un poste écarté est un montant que
   // personne ne verra manquer.
@@ -345,8 +395,59 @@ function cadreCompatible(c: Case2035, nature: LigneDeclaration['nature']): boole
 
 // Regroupe les postes d'une déclaration dans les cases du formulaire. `montant` reste positif, le
 // sens étant porté par le cadre de la case (recettes/dépenses), comme dans le moteur.
+// Ajoute une ligne (ou ce qui en tient lieu) à la case `c` de `parCode`.
+function porterDans(
+  parCode: Map<string, CaseRemplie>, c: Case2035,
+  ligne: Pick<LigneDeclaration, 'poste' | 'montant' | 'nbPieces' | 'nbMouvements' | 'nbEncaissements' | 'nbOperationsDeCaisse'>,
+): void {
+  const actuel = parCode.get(c.code)
+  if (actuel) {
+    actuel.montant += ligne.montant
+    actuel.postes.push(ligne.poste)
+    actuel.nbPieces += ligne.nbPieces
+    actuel.nbMouvements += ligne.nbMouvements
+    actuel.nbEncaissements += ligne.nbEncaissements
+    if (ligne.nbOperationsDeCaisse !== undefined) actuel.nbOperationsDeCaisse = (actuel.nbOperationsDeCaisse ?? 0) + ligne.nbOperationsDeCaisse
+    return
+  }
+  parCode.set(c.code, {
+    case: c, montant: ligne.montant, postes: [ligne.poste], nbPieces: ligne.nbPieces, nbMouvements: ligne.nbMouvements,
+    nbEncaissements: ligne.nbEncaissements,
+    ...(ligne.nbOperationsDeCaisse !== undefined ? { nbOperationsDeCaisse: ligne.nbOperationsDeCaisse } : {}),
+  })
+}
+
+// La case que le formulaire de cet exercice porte : DB n'existe qu'à partir des revenus 2025.
+const porteeEn = (c: Case2035, annee: number) => (c.depuisExercice ?? annee) <= annee
+
+// BT, LA PART OBLIGATOIRE DE BK (renvoi (13) : « la part respective des cotisations obligatoires et facultatives »), au
+// centime : les échéances de l'onglet Cotisations — Urssaf, caisse de retraite, que la loi impose —, telles que la 2035 les
+// porte en BK, leur CSG-CRDS sortie (sa part déductible va en BV). Lues dans les CONTRIBUTIONS, jamais au poste : une
+// catégorie que le cabinet aurait nommée « Cotisations sociales personnelles » partage la ligne du poste, et ne dit pas pour
+// autant une charge obligatoire (2035S-Q2, (A)). Plus les postes que `POSTES_COMPTES_OBLIGATOIRES` désigne — aucun en (A).
+export function partObligatoireDeBK(declaration: Declaration2035): { centimes: number; nbMouvements: number } {
+  let centimes = 0
+  const mouvements = new Set<string>()
+  for (const c of declaration.contributions) {
+    if (c.source.type === 'cotisation') {
+      centimes += c.centimes
+      if (c.source.ligne) mouvements.add(c.source.ligne.id)
+    }
+  }
+  const obligatoires = new Set(POSTES_COMPTES_OBLIGATOIRES.map(cle))
+  for (const l of declaration.depenses) {
+    if (l.poste !== POSTE_COTISATIONS && obligatoires.has(cle(l.poste)) && caseDuPoste(l.poste)?.code === 'BK') {
+      centimes += Math.round(l.montant * 100)
+    }
+  }
+  return { centimes, nbMouvements: mouvements.size }
+}
+
+// Regroupe les postes d'une déclaration dans les cases du formulaire. `montant` reste positif, le
+// sens étant porté par le cadre de la case (recettes/dépenses), comme dans le moteur.
 export function repartirEnCases(declaration: Declaration2035): RepartitionCases {
   const parCode = new Map<string, CaseRemplie>()
+  const secondes = new Map<string, CaseRemplie>()
   const postesSansCase: PosteNonRattache[] = []
 
   for (const ligne of [...declaration.recettes, ...declaration.depenses]) {
@@ -359,30 +460,28 @@ export function repartirEnCases(declaration: Declaration2035): RepartitionCases 
       postesSansCase.push({ ligne, raison: 'case du mauvais sens', codeRefuse: c.code })
       continue
     }
-    const actuel = parCode.get(c.code)
-    if (actuel) {
-      actuel.montant += ligne.montant
-      actuel.postes.push(ligne.poste)
-      actuel.nbPieces += ligne.nbPieces
-      actuel.nbMouvements += ligne.nbMouvements
-      actuel.nbEncaissements += ligne.nbEncaissements
-      if (ligne.nbOperationsDeCaisse !== undefined) actuel.nbOperationsDeCaisse = (actuel.nbOperationsDeCaisse ?? 0) + ligne.nbOperationsDeCaisse
-      continue
-    }
-    parCode.set(c.code, {
-      case: c, montant: ligne.montant, postes: [ligne.poste], nbPieces: ligne.nbPieces, nbMouvements: ligne.nbMouvements,
-      nbEncaissements: ligne.nbEncaissements,
-      ...(ligne.nbOperationsDeCaisse !== undefined ? { nbOperationsDeCaisse: ligne.nbOperationsDeCaisse } : {}),
+    porterDans(parCode, c, ligne)
+    // La seconde case, quand le poste en nomme une et que le formulaire de l'exercice la porte : le même montant, AJOUTÉ.
+    const aussi = CASE_PAR_CODE.get(SECONDE_CASE_PAR_CLE_DE_POSTE.get(cle(ligne.poste)) ?? '')
+    if (aussi && porteeEn(aussi, declaration.annee)) porterDans(secondes, aussi, ligne)
+  }
+
+  // BT : la part de BK que les échéances de l'onglet Cotisations portent.
+  const obligatoire = partObligatoireDeBK(declaration)
+  if (obligatoire.centimes !== 0) {
+    porterDans(secondes, CASE_PAR_CODE.get('BT')!, {
+      poste: POSTE_COTISATIONS, montant: obligatoire.centimes / 100, nbPieces: 0, nbMouvements: obligatoire.nbMouvements,
+      nbEncaissements: 0,
     })
   }
 
   // Ordre du formulaire, pas ordre d'apparition : une déclaration se lit dans l'ordre imprimé.
   const rang = new Map(CASES_2035.map((c, i) => [c.code, i]))
-  const cases = [...parCode.values()]
+  const dansLOrdre = (m: Map<string, CaseRemplie>) => [...m.values()]
     .map((r) => ({ ...r, montant: Number(r.montant.toFixed(2)) }))
     .sort((a, b) => (rang.get(a.case.code) ?? 0) - (rang.get(b.case.code) ?? 0))
 
-  return { cases, postesSansCase }
+  return { cases: dansLOrdre(parCode), secondes: dansLOrdre(secondes), postesSansCase }
 }
 
 // UNE CASE NÉGATIVE NE SE DÉPOSE PAS. Un poste dont les avoirs et les remboursements de l'exercice
@@ -392,8 +491,12 @@ export function repartirEnCases(declaration: Declaration2035): RepartitionCases 
 // dépense d'un exercice antérieur, et sa place est à arbitrer avant de signer. Le moteur ne tranche pas —
 // il totalise, il ne déclare pas — mais il ne retourne plus le signe, et il le dit ici, avec les postes
 // qui font la case.
+//
+// Une seconde case aussi (étape 2035S1) : BT négative — des remboursements d'obligatoires plus forts que leurs appels — ne
+// se dépose pas davantage, même quand un Madelin garde BK positive.
 export function casesNegatives(declaration: Declaration2035): CaseRemplie[] {
-  return repartirEnCases(declaration).cases.filter((r) => r.montant < 0)
+  const { cases, secondes } = repartirEnCases(declaration)
+  return [...cases, ...secondes].filter((r) => r.montant < 0)
 }
 
 // Toutes les cases du formulaire, y compris celles qu'aucun poste n'alimente et celles qui se
@@ -403,9 +506,9 @@ export function valeursDesCases(declaration: Declaration2035): {
   valeurs: Map<string, number>
   postesSansCase: PosteNonRattache[]
 } {
-  const { cases, postesSansCase } = repartirEnCases(declaration)
+  const { cases, secondes, postesSansCase } = repartirEnCases(declaration)
   const valeurs = new Map<string, number>(CASES_2035.map((c) => [c.code, 0]))
-  for (const r of cases) valeurs.set(r.case.code, r.montant)
+  for (const r of [...cases, ...secondes]) valeurs.set(r.case.code, r.montant)
 
   calculerLesCasesCalculees(valeurs, declaration.annee)
 
@@ -525,9 +628,10 @@ export interface IncoherenceCase {
 // à la ligne 16 dans le cadre BW […] le montant de ces redevances puis porter le total des locations de
 // matériel et de mobilier, Y COMPRIS ces redevances, en ligne BG ».
 //
-// Le moteur ne remplit aucune case « dont » (toutes marquées `saisieCabinet`), donc l'incohérence ne
-// peut venir que d'une saisie. C'est justement ce qu'un relecteur ne voit pas : les deux cases sont
-// loin l'une de l'autre sur le formulaire, et rien n'oblige l'œil à les rapprocher.
+// Depuis l'étape 2035S1, le moteur remplit les « dont » d'un poste qui les nomme, et BT des échéances : chacune est une
+// part de sa porteuse par construction, et ne la dépasse pas. L'incohérence reste à dire d'une saisie à venir, et d'une
+// case négative qui ferait passer la porteuse sous ses « dont ». C'est justement ce qu'un relecteur ne voit pas : les deux
+// cases sont loin l'une de l'autre sur le formulaire, et rien n'oblige l'œil à les rapprocher.
 //
 // Les sous-cases d'une même porteuse sont additionnées avant comparaison : BT (obligatoires), BZ
 // (Madelin) et BU (nouveaux plans) sont trois parts disjointes de BK, donc c'est leur somme qui ne
@@ -559,6 +663,16 @@ export function incoherencesDesCases(valeurs: Map<string, number>): IncoherenceC
   return incoherences
 }
 
+// LA PART DE BK QUE RIEN NE QUALIFIE (étape 2035S1, 2035S-Q2 (A)) : ce que la ligne 25 porte au-delà de ses trois « dont »
+// — BT, les échéances de l'onglet Cotisations ; BZ, un poste « Cotisations facultatives Madelin » ; BU, un poste « Plan
+// d'épargne retraite ». Le reste vient d'une catégorie au poste générique « Charges sociales personnelles », qui ne dit pas
+// si la charge est obligatoire ou facultative : le formulaire veut cette part (renvoi (13)), et l'application ne la
+// devine pas. Clôture le dit ; ranger la catégorie sous le poste qui la nomme le règle. Au centime ; zéro si rien ne reste.
+export function partDeBKSansNature(valeurs: ReadonlyMap<string, number>): number {
+  const c = (code: string) => Math.round((valeurs.get(code) ?? 0) * 100)
+  return Math.max(0, c('BK') - c('BT') - c('BZ') - c('BU')) / 100
+}
+
 // « Ne pas porter les centimes », dit le formulaire. Arrondir chaque case indépendamment casserait
 // l'addition imprimée (les totaux ne tomberaient plus juste à l'euro près) : on arrondit donc les
 // cases alimentées, puis on RECALCULE les totaux à partir des valeurs arrondies. Un formulaire dont
@@ -566,12 +680,39 @@ export function incoherencesDesCases(valeurs: Map<string, number>): IncoherenceC
 //
 // L'exercice est exigé, sans valeur par défaut : le cadre 8 en dépend, et un appelant qui l'oublierait
 // doit le découvrir à la compilation plutôt que sur un revenu brut social absent du PDF.
+//
+// ET LES « DONT » D'UNE MÊME PORTEUSE NE LA DÉPASSENT PAS UNE FOIS ARRONDIS (étape 2035S1). Chacun s'arrondit seul, comme
+// sa porteuse : BT 9 000,60 € et BZ 1 200,60 € s'impriment 9 001 et 1 201, quand BK, leur somme 10 201,20 €, s'imprime
+// 10 201 — un euro de « dont » de plus que la case qui les porte, sur un formulaire que les contrôles de cohérence
+// rejettent. Quand les montants au centime tiennent dans la porteuse et que l'arrondi seul l'en fait sortir, l'euro de trop
+// se retire du « dont » que l'arrondi a le plus relevé (`ajusterLesDontArrondis`). Une incohérence au centime n'est pas
+// touchée : c'est une saisie contradictoire, que `incoherencesDesCases` dit.
 export function arrondirPourFormulaire(valeurs: Map<string, number>, annee: number): Map<string, number> {
   const arrondies = new Map<string, number>()
   for (const c of CASES_2035) {
     if (c.calculee) continue
     arrondies.set(c.code, Math.round(valeurs.get(c.code) ?? 0))
   }
+  ajusterLesDontArrondis(valeurs, arrondies)
   calculerLesCasesCalculees(arrondies, annee)
   return arrondies
+}
+
+function ajusterLesDontArrondis(valeurs: Map<string, number>, arrondies: Map<string, number>): void {
+  const parPorteuse = new Map<string, Case2035[]>()
+  for (const c of CASES_2035) if (c.sousCaseDe) parPorteuse.set(c.sousCaseDe, [...(parPorteuse.get(c.sousCaseDe) ?? []), c])
+  for (const [porteuse, dont] of parPorteuse) {
+    const auCentime = dont.reduce((s, c) => s + Math.round((valeurs.get(c.code) ?? 0) * 100), 0)
+    if (auCentime > Math.round((valeurs.get(porteuse) ?? 0) * 100)) continue
+    let exces = dont.reduce((s, c) => s + (arrondies.get(c.code) ?? 0), 0) - (arrondies.get(porteuse) ?? 0)
+    while (exces > 0) {
+      // Le « dont » dont l'arrondi a le plus relevé le montant ; à égalité, l'ordre du formulaire.
+      // En centimes : un écart en virgule flottante départagerait deux arrondis égaux au hasard des décimales.
+      const releve = (c: Case2035) => (arrondies.get(c.code) ?? 0) * 100 - Math.round((valeurs.get(c.code) ?? 0) * 100)
+      const plusReleve = dont.reduce((a, b) => (releve(b) > releve(a) ? b : a))
+      if (releve(plusReleve) <= 0) break
+      arrondies.set(plusReleve.code, (arrondies.get(plusReleve.code) ?? 0) - 1)
+      exces--
+    }
+  }
 }
