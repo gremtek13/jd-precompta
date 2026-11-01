@@ -168,10 +168,11 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
       + 'des rôles `services_bancaires` et `prestations_de_services`, sans en être l’emploi.',
   },
   'supabase/functions/agent-comptable/index.ts': {
-    nombre: 139,
+    nombre: 141,
     raison: 'PC3b — l’assistant, Edge Function auto-portée, recopie les constantes dans ses blocs gardés et nomme les '
       + 'comptes dans sa consigne (deux de plus depuis l’étape C5 de la caisse : la caisse et la TVA collectée d’une recette en '
-      + 'espèces) ; il lira le plan du dossier à l’étape PC3b, avec son redéploiement.',
+      + 'espèces ; deux encore depuis l’étape C13 : la caisse de la contrepartie d’un paiement par la caisse, et celle qui la '
+      + 'juge) ; il lira le plan du dossier à l’étape PC3b, avec son redéploiement.',
   },
   'src/lib/compteDeBilan.ts': {
     nombre: 2,

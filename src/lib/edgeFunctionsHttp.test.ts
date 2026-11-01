@@ -403,7 +403,26 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
           { slug, quoi: 'des espèces rendues sous le mot d’une recette', remplacements: [['  const nom = operation.genre === "recette" && montant < 0 ? "Espèces rendues" : mots\n', '  const nom = mots\n']], scenario: tresorerie },
           { slug, quoi: 'la consigne sans la phrase de la caisse', remplacements: [['La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas', 'La caisse dit ce qu’elle peut']], scenario: tresorerie },
           { slug, quoi: 'la description de lister_ecritures sans le nom d’une opération de caisse', remplacements: [[' Celui d\'une ligne d\'une opération de caisse se recompose', ' Une ligne de caisse se recompose']], scenario: tresorerie },
-          { slug, quoi: 'points_a_traiter sans la caisse', remplacements: [['      caisse: CAISSE_NON_VERIFIEE,\n', '']], scenario: tresorerie },
+          // Réancré à l'étape C13 : la clé dit aussi, d'un dossier dont la caisse paie des pièces, les points de ce paiement.
+          { slug, quoi: 'points_a_traiter sans la caisse', remplacements: [['      caisse: paiementsDeLaCaisse !== null && paiementsDeLaCaisse.length > 0 ? CAISSE_PAYANTE_NON_VERIFIEE : CAISSE_NON_VERIFIEE,\n', '']], scenario: tresorerie },
+        ]
+      })(),
+      // Le paiement d'une pièce par la caisse (ligne 26.6, étape C13) : la pièce payée en espèces de nouveau « en attente de
+      // rapprochement » ou sa contrepartie « à régénérer » — les paiements par la caisse oubliés, la contrepartie non reconnue,
+      // la colonne qui la dit non lue —, une panne de la caisse tue ou qui tait tout, la phrase de la clé ou de la consigne perdue.
+      ...((): DefautPlante[] => {
+        const justes = 'un dossier dont la caisse paie deux pièces : ni « en attente de rapprochement », ni « à régénérer » leur contrepartie au compte de la caisse, la Vue d’ensemble nommée pour ses points, et le client de la vente jamais au modèle (C13)'
+        const perimees = 'un dossier dont la caisse paie : la contrepartie d’un paiement retiré, et un achat écrit avant son paiement, sont à régénérer — aucun n’attend un rapprochement (C13)'
+        const panne = 'les opérations de caisse en panne : les clés que leurs paiements nourrissent se disent indisponibles, les autres se disent (C13)'
+        return [
+          { slug, quoi: 'les paiements par la caisse oubliés de points_a_traiter', remplacements: [['encaissees, paiementsDeLaCaisse ?? [])', 'encaissees, [])']], scenario: justes },
+          { slug, quoi: 'les paiements par la caisse oubliés, une pièce écrite avant son paiement', remplacements: [['encaissees, paiementsDeLaCaisse ?? [])', 'encaissees, [])']], scenario: perimees },
+          { slug, quoi: 'la contrepartie de caisse non reconnue', remplacements: [['  return e.piece_id != null && e.operation_caisse_id != null\n', '  return false\n']], scenario: justes },
+          { slug, quoi: 'le brouillon de points_a_traiter lu sans l’opération de caisse de chaque ligne', remplacements: [['vehicule_id, operation_caisse_id, declaration_tva_id", { count: "exact" })', 'vehicule_id, declaration_tva_id", { count: "exact" })']], scenario: justes },
+          { slug, quoi: 'une panne de la caisse prise pour une caisse sans paiement', remplacements: [['    const caisseIllisible = paiementsDeLaCaisse === null\n', '    const caisseIllisible = false\n']], scenario: panne },
+          { slug, quoi: 'une panne de la caisse qui tait tout points_a_traiter', remplacements: [['rLettrages, rDeclarations]\n      .filter((r) => !r.complete)', 'rLettrages, rDeclarations, rCaisse]\n      .filter((r) => !r.complete)']], scenario: panne },
+          { slug, quoi: 'la clé de la caisse qui ne nomme pas les points du paiement', remplacements: [['? CAISSE_PAYANTE_NON_VERIFIEE : CAISSE_NON_VERIFIEE,', '? CAISSE_NON_VERIFIEE : CAISSE_NON_VERIFIEE,']], scenario: justes },
+          { slug, quoi: 'la consigne sans la pièce payée en espèces', remplacements: [[' Une PIÈCE PAYÉE EN ESPÈCES par la caisse a sa contrepartie', ' Une pièce payée en espèces a sa contrepartie']], scenario: justes },
         ]
       })(),
     ]

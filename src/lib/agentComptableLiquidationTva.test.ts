@@ -310,7 +310,8 @@ describe('agent-comptable / points_a_traiter lit les déclarations de TVA', () =
     expect(corps).toMatch(/lireTout<DeclarationTvaRow>\(\(d, f\) =>\s*admin\.from\("declarations_tva"\)\.select\("id, periode_debut, periode_fin, cases, tva_collectee, tva_deductible, tva_deductible_immobilisations", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("periode_debut"\)\.order\("id"\)/)
     expect(corps).toMatch(/lireTout<[^>]*EcritureLiquidationRow>\(\(d, f\) =>\s*admin\.from\("ecritures_brouillon"\)\.select\("[^"]*\bdeclaration_tva_id"/)
     expect(corps).toMatch(/lireTout<[^>]*MouvementTvaRow>\(\(d, f\) =>\s*admin\.from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*\bdeclaration_tva_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(corps).toMatch(/rValides, rLettrages, rDeclarations\] = await Promise\.all/)
+    // Depuis l'étape C13, les opérations de caisse se lisent après les déclarations, hors du refus général (`rCaisse`).
+    expect(corps).toMatch(/rValides, rLettrages, rDeclarations, rCaisse\] = await Promise\.all/)
     expect(corps).toMatch(/rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
