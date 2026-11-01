@@ -44312,3 +44312,172 @@ l'application. » : le module importé démarre et répond, avant toute dépense
 **REVENIR EN ARRIÈRE.** L'assistant : la même ligne au commit `d7178376494c4610f3f944bebaa28d92dde9e431` (la v50).
 `extract-piece` : la même ligne au commit `f41b133f9e2e8b4387b28f71152b798f557dedf3`, dont le fichier est celui de la
 v50 (md5 `fd869ee7…`).
+
+### 01/11/2026 — LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 : ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION
+
+(Écrit par un agent architecte, versé par la session ; ses tests au dépôt, en `it.fails` pour un défaut non corrigé.
+Rien d'écrit en production : deux lectures du catalogue — les tables dont le nom évoque une saisie, un exercice, un
+volet, une référence ou une cotisation, avec leurs colonnes ; les contraintes, index et déclencheurs de
+`cotisations_declarees` —, aucune valeur d'une ligne. Lus avant d'écrire : « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS
+LA MI-DÉCEMBRE 2026 », « QUATRE RELECTURES AVANT LES DONNÉES RÉELLES » (section « LA 2035 D'UN BNC EXONÉRÉ EN
+TRÉSORERIE »), « LA 2035 D'UN BNC EXONÉRÉ : TROIS DÉFAUTS DE LA RELECTURE CORRIGÉS ».)
+
+Sources publiques :
+- [F] le formulaire 2035-A-SD et 2035-B-SD 2026, « REVENUS 2025 », cerfa 15945*08 —
+  `public/formulaires/2035-sd-2026.pdf`, le fichier
+  `https://www.impots.gouv.fr/sites/default/files/formulaires/2035-sd/2026/2035-sd_5384.pdf` ;
+- [N] la notice 2035-NOT-SD 2026 —
+  `https://www.impots.gouv.fr/sites/default/files/formulaires/2035-sd/2026/2035-sd_5385.pdf` : p. 1 (BZ et BU informent
+  les organismes sociaux), renvois (9) (BW), (13) (BK), (17) (CC), (21) (CL), (24) (DE), (25) (DB), (26) (le revenu brut
+  social).
+
+Les tests : `src/lib/relecture2035Saisies.test.ts` (points 1, 2 et 3) et le dernier bloc de
+`src/pages/dossier/CotisationsTab.test.tsx` (point 2). Un `it.fails` y prouve un défaut non corrigé.
+
+**TEMPS 1 — CE QUI EST ÉTABLI.**
+
+**Point 1 — PROUVÉ : les neuf cases ne se remplissent par aucune voie.**
+
+Toutes sont `saisieCabinet` dans `CASES_2035`, aucun poste ne les atteint (`CODES_RATTACHABLES`), `valeursDesCases` ne
+reçoit que la déclaration, et aucune table ne porte une saisie de la 2035 (catalogue relu : `volet_social_pamc` porte le
+volet social, `references_annuelles` et `references_postes_annuels` des repères — que le client lit —,
+`exercices_valides` l'instantané) ; la 2035-E a la même lacune (`SAISIES_2035E_ABSENTES`). Elles valent donc zéro sur
+l'écran, l'instantané validé et le PDF, qui sait pourtant toutes les placer (`gabarit2035.test.ts`, « sait placer
+chacune des cases »).
+
+| Case | Ce que le formulaire attend [F], [N] | Ce que l'application en fait | Se déduit ou se saisit | L'écart à la comparaison |
+|---|---|---|---|---|
+| BW (l. 16, dont de BG) | les redevances de collaboration VERSÉES, comprises dans BG (renvoi 9) ; la 2035-E les retire de la valeur ajoutée (EF, EM) | toujours 0 ; un poste « Redevances de collaboration » n'a pas de case (« aucune case connue », la validation refuse) | se DÉDUIT d'un poste propre, rattaché à BG et à BW | BW vide si le praticien est collaborateur ; BG juste si le poste est rangé en « Location de matériel » ; aucun total ne bouge |
+| BT (l. 25, dont de BK) | la part obligatoire des charges sociales personnelles (renvoi 13) | toujours 0 | se DÉDUIT : les échéances de l'onglet Cotisations (Urssaf, caisse de retraite) sont obligatoires | BT vide sur l'application, rempli sur la 2035 déposée dès que BK l'est : écart CERTAIN, sans effet sur BR, CP, DD |
+| BZ (l. 25, dont de BK) | les primes Madelin (154 bis, II, 1er al.), information des organismes sociaux [N p. 1] | toujours 0 ; un contrat Madelin se range sous le poste générique de BK | se DÉDUIT d'un poste propre ; la part déductible (plafonds) reste à l'expert-comptable | BZ vide si le praticien a un Madelin |
+| BU (l. 25, dont de BK) | les versements à un PER déductibles du revenu catégoriel [N p. 1] | toujours 0 | comme BZ | BU vide s'il a un PER |
+| BY (l. 29, dont de BM) | les cotisations syndicales et professionnelles (l'Ordre, un syndicat) | toujours 0, alors que le poste « Cotisations syndicales et professionnelles » existe et va en BM | se DÉDUIT du poste existant, sans rien ajouter | BY vide dès qu'une cotisation à l'Ordre est payée : écart PROBABLE |
+| CC (l. 36) | divers à réintégrer : quote-part personnelle de dépenses mixtes, avantage en nature et amortissement excédentaire d'un véhicule… avec une note annexe (renvoi 17) | toujours 0 | se SAISIT (un arbitrage) | CC, CE, CP, DD et la case 5QC différents si la 2035 déposée en porte |
+| CL (l. 43) | divers à déduire : exonérations (ZFU CS, entreprise nouvelle AW, JEI CU, zones déficitaires en soins CI, ZFRR CJ, jeunes artistes CO), abattements des médecins de secteur I (DF, DG, DH)… (renvoi 21) | toujours 0 ; ses « dont » ne sont pas même au tableau des cases | se SAISIT, chaque montant sous sa nature (le revenu brut social en rajoute certaines, renvoi 26) | CL, CN, CP et DD différents si le praticien a une exonération (ZRR, ZFRR) |
+| DE (cadre 8) | sommes à réintégrer au revenu brut social : plus-values à court terme exonérées, brevets, intéressement, BNC non professionnels (renvoi 24) | toujours 0 | se SAISIT | DD seul, rare pour un praticien |
+| DB (cadre 8) | sommes à déduire : indemnités journalières comprises en AF, déficits non professionnels (renvoi 25) | toujours 0 ; un poste « Indemnités journalières » n'a pas de case | les indemnités se DÉDUISENT d'un poste propre (AF et DB) ; le reste se SAISIT | DD, et l'estimation Urssaf, si le praticien a perçu des indemnités |
+
+Ce qui ne bouge pas : les « dont » ne s'additionnent jamais, et la concordance juge les totaux du moteur, jamais CP —
+elle reste juste quelles que soient les saisies (CC et CL sont extra-comptables).
+
+**Point 2 — PROUVÉ : une prévisionnelle qu'aucun prélèvement ne paie, et l'appel définitif d'une autre date, comptent
+tous deux.**
+
+`creerEcheancesProposees` (CotisationsTab) ne confirme une prévisionnelle qu'à sa date exacte : l'appel définitif du
+05/02 s'insère à côté de la prévisionnelle du 20/01, qui reste comptée à son échéance (`cotisationsComptees` ne lit pas
+`previsionnel`) — BK 620 € au lieu de 320 €. Aucune unicité en base ne l'empêche. Seule trace : la liste « Cotisations
+comptées à leur échéance » de Clôture, qui la dit « (prévisionnelle) », sans refus ni explication. Le texte de l'écran
+(« remplacée automatiquement si tu déposes plus tard l'appel définitif pour la même date ») le dit vrai à la même date
+seulement. Le garde de l'autre côté : une prévisionnelle déjà PRÉLEVÉE a été payée ; l'appel d'une autre date est une
+échéance de plus, réelle, et les deux comptent à juste titre.
+
+**Point 3 — PROUVÉ, HORS DU MVP.**
+
+Un seul modèle (`MODELE_2035`), et `remplir2035` ne reçoit pas l'exercice. **Exercice 2025 : juste** — « REVENUS 2025 »,
+millésime 2026. **Exercice 2026 : faux** — ses chiffres s'impriment sous « REVENUS 2025 », sans rien dire ; le millésime
+2027 n'est pas publié, et la 2035 de 2026 sera déposée par l'expert-comptable sur son logiciel (MVP-D5). Les exercices
+d'avant 2025 s'impriment aussi sur ce formulaire (le cadre 8 y reste vide).
+
+**TEMPS 2 — LA CONCEPTION.**
+
+**La saisie (CC, CL, DE, le reste de DB).**
+
+- **Une table neuve, `saisies_2035`** : `id`, `dossier_id` (→ `dossiers`, cascade), `annee` (DE et DB à partir de 2025,
+  l'exercice du cadre 8), `code` (liste fermée : `CC`, `CL`, `DE`, `DB`, et les natures de CL : `CS`, `AW`, `CU`, `CI`,
+  `DF`, `DG`, `DH`, `CO`, `CJ`, `CL_AUTRE`), `libelle` (le détail de la note annexe que réclament les renvois 17 et 21,
+  obligatoire), `montant numeric(14,2) check (montant > 0)`, `created_at`, `created_by`. Une LIGNE par élément,
+  plusieurs par case : CC et CL se justifient élément par élément, et le revenu brut social rajoute certaines natures de
+  CL et pas d'autres.
+- **Une migration**, additive (aucune destruction) : la table, RLS `for all to authenticated` sur
+  `admin_du_dossier(dossier_id)` (le client n'y lit rien : c'est un texte du cabinet seul), une garde
+  `garder_saisie_2035_validee` qui refuse toute écriture sur un exercice validé (23514), l'insertion du
+  super-administrateur exceptée (la restauration) ; son essai (`supabase/essais/saisies2035.sql`) et un bloc de
+  `rls.sql`. Au plan de sauvegarde derrière `SAISIES_2035_PREVUES`, puis levé.
+- Options écartées : des colonnes dans `volet_social_pamc` (le volet social d'un PAMC, une ligne par exercice : ni le
+  détail, ni un dossier non PAMC) ; `references_annuelles` (le client la lit — un texte du cabinet n'y va pas) ; la
+  saisie portée seulement par l'instantané de la validation (rien avant, rien sur le PDF d'avant) ; une table générique
+  avec la 2035-E (possible plus tard, en élargissant la liste fermée — pas maintenant : ses six lignes attendent leurs
+  questions).
+- **Le calcul** : `valeursDesCases(declaration, saisies)` et `arrondirPourFormulaire(valeurs, annee, saisies)`,
+  `saisies` OBLIGATOIRE ; CL = la somme de ses natures, et le revenu brut social ajoute CS, AW, CU, CI, DG, DH, CO, CJ
+  (pas DF, pas CL_AUTRE), le commentaire de `revenuBrutSocial` l'annonçant déjà. Les natures de CL entrent au tableau
+  des cases (le PDF les place, repérées par le gabarit comme les autres, à vérifier sur le modèle). L'instantané validé
+  les porte dans ses cases, sans changer de version.
+- **L'écran, dans Clôture** : une carte « Saisies du cabinet » par exercice affiché, au cabinet seul — la ligne (case,
+  détail, montant), l'ajout, la correction, le retrait confirmé qui nomme ce qu'il retire ; lue en entier ou rien n'est
+  offert, et la validation suspendue (`lectureIncomplete`) ; verrou `useRef` ; un exercice validé ne montre que ce qu'il
+  a figé. Le Report sur la déclaration des revenus ne dit plus « l'application ne connaît pas le reste du renvoi
+  (26) » : il dit ce que le cabinet a saisi, et ce qu'il reste à vérifier. Le volet social et l'estimation Urssaf lisent
+  DD/DC comme aujourd'hui.
+
+**Les cases qui se déduisent (BY, BT, BW, BZ, BU, les indemnités en DB).**
+
+- **Sans migration** : un rattachement peut nommer, à côté de la case porteuse, la case « dont » qu'il alimente aussi —
+  BY du poste « Cotisations syndicales et professionnelles » ; BT des échéances de l'onglet Cotisations
+  (`POSTE_COTISATIONS`) ; quatre postes neufs, proposés dans « Postes sans case » : « Redevances de collaboration » (BG
+  et BW), « Cotisations facultatives Madelin » (BK et BZ), « Plan d'épargne retraite » (BK et BU), « Indemnités
+  journalières » (AF et DB). Le poste générique « Charges sociales personnelles » reste en BK sans « dont », et Clôture
+  le dit (« BK porte X € dont la nature, obligatoire ou facultative, n'est pas dite »). `incoherencesDesCases` est déjà
+  armé.
+- Ce qui change à la mise en ligne : des « dont » non nuls dans les cases, sur l'écran, le PDF et un instantané validé
+  après elle — aucun total, aucune écriture, aucune concordance. Le test qui interdit tout « dont » aux rattachements se
+  réécrit : un poste rejoint toujours une porteuse, un « dont » ne lui est qu'ajouté.
+
+**L'échéance prévisionnelle.**
+
+- À la création depuis un avis : une échéance définitive proposée à une date où rien n'existe, quand une prévisionnelle
+  du même mois n'est payée ni par un mouvement ni depuis le compte personnel, et n'est pas figée, est proposée
+  « remplace la prévisionnelle du 20/01/2026 (300 €) » — la ligne le dit avant le clic, le clic porte sur elle la date,
+  le montant et `previsionnel = false` (une mise à jour, que `garder_cotisation_valide` accepte hors d'un exercice
+  validé), jamais un remplacement que le cabinet n'a pas vu. Le texte de la carte cesse de promettre « pour la même
+  date ».
+- Dans Clôture et la Checklist, un point en ATTENTION : « échéance prévisionnelle qu'aucun prélèvement ne paie, dans un
+  exercice dont le relevé est lu : l'appel définitif l'a peut-être remplacée — la retirer ou la rapprocher ». Sans
+  migration.
+
+**Le formulaire de l'exercice 2026.**
+
+- Un modèle par millésime (`MODELES_2035`, l'exercice N rempli sur le millésime N + 1) ; sans le sien, Clôture n'offre
+  pas le PDF et le dit (« le formulaire des revenus 2026 n'est pas encore publié »), plutôt que d'imprimer sous un autre
+  en-tête. Un millésime nouveau se pose avec son test de gabarit (les cases ont pu bouger).
+
+**L'ordre des lots, et leur effort.**
+
+| Lot | Contenu | Migration | Effort | Pour le MVP |
+|---|---|---|---|---|
+| 2035S1 | les « dont » déduits : BY, BT, puis les quatre postes neufs | non | 1 jour | OUI : BT certain, BY probable à la comparaison |
+| 2035S2 | la prévisionnelle remplacée à la création, et le point d'attention | non | 1 jour | OUI : l'année 2025 entre par ses avis |
+| 2035S3 | `saisies_2035`, sa garde, son essai, la sauvegarde derrière son drapeau | oui (additive) | 1 jour | OUI si la 2035 déposée porte CC, CL, DE ou DB |
+| 2035S4 | le calcul et la carte de Clôture (CC, DE, DB, CL sans ses natures) | non | 1,5 à 2 jours | idem |
+| 2035S5 | les natures de CL au tableau des cases, au PDF et au revenu brut social | non | 1 jour | seulement si le praticien a une exonération |
+| 2035S6 | un modèle par millésime ; le PDF retenu sans le sien | non | une demi-journée | non (MVP-D5) |
+
+Ce qui reste ouvert, et que la conception ne tranche pas : les six questions pour l'expert-comptable (l'assurance
+emprunteur en BH ou BN ; la note de frais remboursée l'exercice suivant ; la fraction non déductible des repas ; les
+cotisations facultatives sans plafond — d'où le montant de BZ et BU ; la majoration de 20 % du barème pour un véhicule à
+hydrogène ; DC en valeur absolue).
+
+**Les risques.**
+
+- 2035S1 change des cases d'un exercice déjà validé ? Non : un exercice validé se relit de son instantané. Il change ce
+  que montre un exercice ouvert, et la validation en fige le nouveau contenu.
+- 2035S3 : une table de plus à la sauvegarde et à la restauration (son drapeau d'abord : une sauvegarde qui la lirait
+  avant sa migration échouerait) ; un retour arrière ne demande que de baisser le drapeau, la table vide restant.
+- 2035S2 : réécrire la date d'une prévisionnelle que l'extraction a mal datée — d'où la proposition dite et le clic.
+
+**QUESTIONS AU CABINET.**
+
+- **2035S-Q1 — Les saisies du cabinet avant la répétition générale ?** (A, recommandé) lire d'abord la 2035 de 2025
+  déposée : n'écrire 2035S3 et 2035S4 que si elle porte CC, CL, DE ou DB, et 2035S5 que si CL porte une exonération ;
+  (B) les écrire toutes avant le 20 novembre ; (C) après le MVP, l'écart dit et expliqué à la comparaison.
+- **2035S-Q2 — BT : les seules échéances de l'onglet Cotisations ?** (A, recommandé) oui, et le poste générique
+  « Charges sociales personnelles » reste sans « dont », dit par Clôture ; (B) le poste générique compté obligatoire
+  aussi ; (C) BT saisi par le cabinet.
+- **2035S-Q3 — Les indemnités journalières.** (A, recommandé) un poste propre, en AF et en DB comme le renvoi (25) le
+  décrit, le choix de les porter en AF restant à l'expert-comptable ; (B) DB seulement saisi.
+- **2035S-Q4 — Remplacer la prévisionnelle.** (A, recommandé) l'appel définitif du MÊME MOIS qu'une prévisionnelle non
+  payée la remplace, dit sur sa ligne avant le clic ; (B) dans une fenêtre de quinze jours ; (C) jamais à la création,
+  le point d'attention seul. Et le point d'attention : (A, recommandé) en attention, sans retenir la validation ; (B) en
+  erreur.
+- **2035S-Q5 — Le PDF de l'exercice 2026.** (A, recommandé) retenu tant que son millésime n'est pas publié, dit par
+  Clôture ; (B) imprimé sur le millésime 2026 avec un avertissement.

@@ -1049,3 +1049,57 @@ describe('CotisationsTab — la CSG déductible d’un remboursement se signe co
     expect([...document.querySelectorAll('td[data-libelle="CSG déductible"]')].map((td) => td.textContent)).toEqual(['—'])
   })
 })
+
+// RELECTURE DU 01/11/2026 (point 2 de la relecture du 31/10/2026) : UNE ÉCHÉANCE PRÉVISIONNELLE COMPTÉE DEUX FOIS quand
+// l'appel définitif arrive à une AUTRE date. La confirmation (`creerEcheancesProposees`) ne reconnaît la prévisionnelle qu'à
+// sa date exacte (`c.echeance === e.date`) : à une autre date, l'appel s'insère À CÔTÉ d'elle ; la prévisionnelle qu'aucun
+// prélèvement ne paie reste comptée à son échéance, et les deux comptent en BK (`cotisationsComptees` ne regarde pas
+// `previsionnel` ; lib/relecture2035Saisies.test.ts en montre l'effet sur la 2035).
+// `it.fails` : défaut prouvé, NON CORRIGÉ — il virera au rouge quand la prévisionnelle sera remplacée ou retirée.
+describe('CotisationsTab — l’appel définitif à une autre date que sa prévisionnelle', () => {
+  async function deposerLAvis() {
+    const champ = document.querySelector('input[type=file][accept=".pdf,.jpg,.jpeg,.png"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF'], 'avis.pdf', { type: 'application/pdf' })] } }) })
+    const bouton = await screen.findByRole('button', { name: 'Créer ces 1 échéance(s)' })
+    await act(async () => { bouton.click() })
+  }
+  // Ce qui compterait ensuite dans la 2035 : la prévisionnelle, sauf si le geste l'a retirée ou portée à la date de l'appel,
+  // et chaque échéance insérée.
+  function echeancesComptees(dateDeLAppel: string): number {
+    const inserees = faux.insertions.filter((i) => i.table === 'cotisations_declarees').flatMap((i) => i.valeur as unknown[])
+    const remplacee = faux.rpcs.some((r) => r.nom === 'supprimer_echeance_cotisation' && r.args.p_cotisation_id === 'prev')
+      || faux.misesAJour.some((m) => m.table === 'cotisations_declarees' && (m.valeur as { echeance?: string }).echeance === dateDeLAppel)
+    return (remplacee ? 0 : 1) + inserees.length
+  }
+
+  it('constat : à la MÊME date, la prévisionnelle prend le montant de l’appel, rien ne s’insère', async () => {
+    faux.cotisations = [cotisation({ id: 'prev', echeance: '2026-01-20', montant_appele: 300, previsionnel: true })]
+    faux.echeancesLues = [{ date: '2026-01-20', montant: 320, previsionnel: false }]
+    monter()
+    await screen.findByText('Prévisionnel')
+    await deposerLAvis()
+    expect(faux.insertions.filter((i) => i.table === 'cotisations_declarees')).toEqual([])
+    expect(echeancesComptees('2026-01-20')).toBe(1)
+  })
+
+  it.fails('à une AUTRE date, l’appel ne s’ajoute pas à côté de la prévisionnelle (défaut non corrigé)', async () => {
+    faux.cotisations = [cotisation({ id: 'prev', echeance: '2026-01-20', montant_appele: 300, previsionnel: true })]
+    faux.echeancesLues = [{ date: '2026-02-05', montant: 320, previsionnel: false }]
+    monter()
+    await screen.findByText('Prévisionnel')
+    await deposerLAvis()
+    expect(echeancesComptees('2026-02-05')).toBe(1)
+  })
+
+  // Le garde de l'autre côté : une prévisionnelle déjà PRÉLEVÉE a été payée — l'appel d'une autre date est une échéance de
+  // plus, réelle, et les deux comptent à juste titre. Une correction ne doit pas la retirer.
+  it('constat : la prévisionnelle déjà prélevée reste, et l’appel d’une autre date s’ajoute', async () => {
+    faux.cotisations = [cotisation({ id: 'prev', echeance: '2026-01-20', montant_appele: 300, previsionnel: true })]
+    faux.lignes = [ligne({ id: 'l-prev', date: '2026-01-20', montant: -300, cotisation_id: 'prev' })]
+    faux.echeancesLues = [{ date: '2026-02-05', montant: 320, previsionnel: false }]
+    monter()
+    await screen.findByText('Prélevée le 20/01/2026')
+    await deposerLAvis()
+    expect(echeancesComptees('2026-02-05')).toBe(2)
+  })
+})
