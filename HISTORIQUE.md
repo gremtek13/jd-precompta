@@ -44876,3 +44876,149 @@ relecture ne pouvait pas créer — à rejouer sur `caisse.sql`, changé, avant 
 réplique seulement » jusqu'à ce qu'il l'ait rejoué SÛR. Le chemin du virement mixte dans le bloc 9 bis (l'encaissement qui paie
 l'exemplaire d'une facture d'avant la bascule) n'est exercé par aucun essai. Le jour de l'application : C8, puis FEC22b, puis le
 filet, dans cet ordre, puis les trois contrôles de l'export.
+
+### 01/11/2026 — LA CAISSE : L'ASSISTANT DEVANT LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (C13, LIGNE 26.6)
+
+(Écrite par un agent architecte, sur `28d9572` — C9a, C9b et les corrections de leur relecture. Aucune migration, rien de lu ni
+d'écrit en production, aucun appel au modèle ; `agent-comptable` n'est PAS redéployé : la session le déploie par la ligne qui
+importe le dépôt → « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT ». Lus avant d'écrire : « LA CAISSE : L'ASSISTANT
+(C5, LIGNE 26.6) » et « … EN LIGNE » ; la ligne C13 de la conception reprise ; C9a et son « CE QUI RESTE » ; C9b ; la relecture
+de C8 et C9 (point 6) ; « VF9C-Q1… », « VF9CQ1… », « VF9CQ1B… » ; la migration C8 préparée.)
+
+**CE QUE L'ASSISTANT DISAIT, ET CE QU'IL DIT.** Un monde du contrat HTTP (`src/test/contratsFonctions.ts`, « C13 ») : un dossier
+en trésorerie, redevable ; un achat de 60 € payé en espèces le 06/03/2026, une vente de 120 € encaissée en espèces le 08/03,
+leurs écritures telles que la génération les écrit (la charge ou le produit, la TVA, la contrepartie au 530000 qui cite la pièce
+et l'opération). La source d'avant C13, jouée sur ce monde : `points_a_traiter` rendait `ecritures_en_attente_de_rapprochement_bancaire`
+2 et `ecritures_a_regenerer_pieces_modifiees` 2 — chaque pièce payée en espèces « en attente de rapprochement », et sa
+contrepartie au compte de la caisse prise pour une ligne sur un autre compte que le sien. Après : 0 et 0 ; `caisse` nomme aussi les
+points du paiement (ci-dessous). Un achat écrit avant son paiement, et la contrepartie d'un paiement retiré restée au brouillon :
+avant, 2 « en attente » et 1 « à régénérer » ; après, 0 et 2 — à régénérer, ce que la Vue d'ensemble dit aussi. `lister_ecritures`
+ne change pas : la contrepartie se nommait déjà comme sa pièce depuis C5 (« Pièce de vente du 07/03/2026, 120,00 € » pour la
+vente — ni son client, ni son fichier, ni le libellé du brouillon —, le libellé du fournisseur pour l'achat).
+
+**CE QUE `LISTER_ECRITURES` FAIT D'UNE LIGNE QUI NE CITE QU'UNE OPÉRATION DE CAISSE — ÉTABLI, PAS SUPPOSÉ.** Le commentaire du
+drapeau disait qu'elle se taisait : c'était inexact. Une ligne qui ne cite QUE l'opération d'un paiement (sa pièce à nul) se nomme
+par l'opération, « Paiement par la caisse du 09/03/2026, 9,99 € » — ni son libellé, ni personne —, ce qu'un cas du passage gardait
+déjà depuis C5 (agentComptablePiecesDeVente.test.ts) et que le monde de C13 établit au contrat HTTP. Elle n'a pas à se nommer comme
+sa pièce : le passage ne lit, de l'opération, que son genre, sa date et son montant (le scanner refuse la pièce qu'elle paie,
+embarquée), et une telle ligne ne s'écrit que par une restauration — la clé `on delete restrict` de la caisse retient la pièce qu'un
+paiement cite. Rien à changer ; le commentaire du drapeau est corrigé.
+
+**CE QUI EST POSÉ** (`supabase/functions/agent-comptable/index.ts`).
+- Le bloc copié de src/lib/rattachement.ts : `PaiementDePiece` devient l'union de `PaiementParLeReleve` et `PaiementParLaCaisse`
+  (`origine: "caisse"`, l'opération, aucun `id`), `estParLeReleve`, `cleDuPaiement` ; `paiementsDesPieces` prend un QUATRIÈME
+  paramètre obligatoire et trie comme src/lib (la date, le relevé avant la caisse, la clé) ; `paiementsParLaCaisse`, copie de
+  `paiementsParLaCaisseSelon(true, …)` — le genre `paiement`, une pièce citée, ni retiré, ni remplacé, non nul, trié.
+- Le générateur et son analyse, comme src/lib/ecritures.ts : `ligneContrepartieCaisse` (au 530000, `COMPTE_CAISSE`, monté parmi les
+  comptes du générateur), `ligneContrepartieDuPaiement`, `estContrepartieCaisse`, `caisseSuitLesPaiements` et
+  `contrepartiesSuiventLesPaiements` (la banque et la caisse, la même question sur deux clés) ; la contrepartie de caisse est une
+  contrepartie (ni « sans contrepartie », ni déséquilibre caché), hors des lignes de charge, jugée sur son compte et sur ses
+  paiements ; la clé d'une part ouverte porte l'opération ; EN ENGAGEMENT, le relevé seul règle.
+- `points_a_traiter` lit les opérations de caisse du dossier (`id, genre, piece_id, date, montant, retire_le, remplace_id` —
+  rien qui nomme), toutes, paginées, l'erreur lue (`lireTout`), et le brouillon avec `operation_caisse_id`. Une lecture des
+  opérations en partie ou en échec ne rend AUCUN paiement : les trois clés qu'ils nourrissent —
+  `ecritures_a_regenerer_pieces_modifiees`, `ecritures_en_attente_de_rapprochement_bancaire` (ou
+  `factures_sans_reglement_rapproche`), `pieces_payees_plus_que_leur_montant` — disent « indisponible : les paiements par la
+  caisse n'ont pas pu être lus (…) », et le reste se dit, comme `ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer` d'hier ;
+  elle n'entre pas au refus général.
+- La consigne, une phrase dans la ligne de la caisse : la contrepartie d'une pièce payée en espèces au compte de la caisse, au jour
+  du paiement, n'est pas une anomalie et n'attend aucun rapprochement.
+
+**POURQUOI SANS DRAPEAU.** Une opération de genre `paiement` n'existe qu'après la migration `paiement_par_la_caisse` : la base ne
+l'écrit que par `regler_piece_par_la_caisse`, et la garde du brouillon n'admet aujourd'hui une ligne qui cite une opération que
+de la fonction de la caisse ou d'une restauration. Sans elle, la liste est vide et chaque contrôle rend ce qu'il rendait. C'est ce qui permet de déployer
+l'assistant avant C8. ÉCARTÉ : un drapeau dans l'Edge Function (un second interrupteur à lever le jour de C8, dans un fichier qui
+se déploie à part, et rien qu'il protège).
+
+**LES POINTS NEUFS DE LA VUE D'ENSEMBLE : LE PLUS PETIT CHOIX JUSTE.** `caisse-paiements-a-retirer`,
+`pieces-a-valider-payees-par-la-caisse` et `caisse-mouvements-avant-ouverture` ne se recopient pas, comme les quatre contrôles de
+C5 : ce seraient trois copies de plus à garder (lib/controlesDeLaCaisse.ts, le reste au centime et son seuil, la frontière, la
+reprise). L'assistant les NOMME et y renvoie : d'un dossier dont la caisse paie des pièces — un paiement vivant lu —, la clé
+`caisse` ajoute à la phrase de C5 « la caisse de ce dossier payant des pièces, la Vue d'ensemble dit aussi les paiements par la
+caisse à retirer (…), les pièces à valider qu'un paiement par la caisse règle, et les mouvements d'avant l'ouverture du dossier
+classés sur la caisse ». Sans paiement vivant, la phrase d'hier, au caractère près. Pourquoi sous condition : la Vue d'ensemble
+ne montre ces points que le drapeau levé ; un paiement n'existe qu'après C8, et l'écran ne l'offre que le drapeau levé — la phrase
+ne nomme donc jamais un point qu'elle ne montre pas. ÉCARTÉ : la phrase pour tout dossier (elle nommerait, avant C8, des points
+que la Vue d'ensemble n'a pas, et changerait la réponse de chaque dossier) ; une clé de plus (une forme neuve pour tout dossier) ;
+recopier les trois contrôles. `caisse-a-reprendre`, que C9b étend au paiement dont la contrepartie manque, l'assistant le dit
+désormais lui-même : « à régénérer ».
+
+**LES ÉCARTS, ET POURQUOI.**
+- Une caisse illisible ne tait que trois clés, au lieu de refuser tout l'outil comme les vingt autres lectures : la Checklist, devant
+  une caisse lue en partie, tait de même les seuls points que les paiements jugent (C9b) — « à régénérer » s'y tait sur la seule pièce
+  dont l'écriture porte une contrepartie de caisse ; l'assistant, qui ne dit pas « zéro » de ce qu'il n'a pas lu, dit la clé entière
+  indisponible. `pieces_payees_plus_que_leur_montant`, que la Checklist garde, s'y tait aussi : un paiement en espèces non lu ferait
+  dire zéro d'une pièce payée deux fois.
+- Les opérations se lisent pour tout dossier, en engagement compris (la base y refuse le paiement par la caisse) : une seule forme,
+  comme la Checklist ; le prix, une lecture de plus.
+- La phrase de la consigne vaut pour tout dossier : un texte vrai avant C8 comme après, que la preuve de neutralité ci-dessous met à
+  part, seule.
+- Le compte de la caisse est celui du plan par défaut (530000) : l'assistant ne lit pas encore le plan (PC3b), et aucun plan de la
+  production ne change ce rôle. `comptesEnDur.test.ts` passe de 139 à 141 emplois pour l'assistant, sa raison le dit.
+
+**LA PREUVE DU « RIEN DE CHANGÉ ».**
+- Une fois, hors du dépôt : chaque scénario du contrat HTTP de l'assistant (57, dont 27 où le modèle reçoit des résultats d'outils —
+  les mondes de VF9b à C5, la caisse de C5 comprise, ses recettes et ses apports), joué avec la source d'avant C13 (une copie gardée
+  dans le carnet de la session) et avec celle d'après, sur le même monde : la réponse, et tout ce que le modèle reçoit — la consigne,
+  la description des outils, chaque résultat d'outil —, identiques au caractère près, hors de la phrase neuve de la consigne. Aucun
+  écart.
+- Dans le dépôt (`agentComptableCaisse.test.ts`, neuf) : les mêmes scénarios, joués tels quels puis avec des opérations qui ne paient
+  rien — un paiement retiré, sans pièce, de zéro euro, remplacé (et celle qui le remplace, retirée), un paiement vivant d'un autre
+  dossier — rendent la même chose au caractère près ; le témoin, un paiement vivant du dossier, change ce que le modèle reçoit ; un
+  plancher (50 scénarios, 25 où les outils répondent). Le harnais gagne `jouerScenario` (le monde et la réponse, sans juger), que
+  `jugerScenario` appelle.
+
+**LES PREUVES, LA CAISSE PAYANTE.**
+- `agentComptableAnalyse.test.ts` : la copie comparée à src/lib reçoit les paiements par la caisse (`memeResultat`, un paramètre de
+  plus, sous les six frontières et les quatre régimes des ventes) ; la batterie du générateur gagne six règlements par la caisse
+  (en entier le jour de la pièce ou après, en deux opérations, en partie par la banque le même jour, à zéro, d'une autre pièce), et
+  exige une contrepartie au 530000 qui cite son opération ; neuf cas neufs (la dérivation égale à `paiementsParLaCaisseSelon(true,
+  …)` sur une batterie qui exerce chaque filtre et le tri ; le relevé avant la caisse ; la pièce payée en espèces muette — et son
+  témoin, à régénérer sans ses paiements ; la vente, la banque et la caisse le même jour ; écrite avant son paiement, à régénérer et
+  jamais en attente ; la contrepartie retirée, sur un autre compte, d'un autre montant — déséquilibrée aussi —, d'une autre
+  opération ; la part ouverte d'une pièce que la frontière coupe ; l'engagement) et sept dérives plantées. Les ancres d'hier qui
+  suivaient le texte changé (la contrepartie sans mouvement, les règlements attendus, les lignes de charge, la contrepartie au
+  108000, les contreparties banque, la clé d'une ligne ouverte) sont réancrées, chacune au même défaut.
+- `agentComptableReglementGroupe.test.ts` : trois cas de payé en trop (la banque puis la caisse ; un acompte en banque et un solde en
+  espèces, exactement ; une vente encaissée deux fois en espèces).
+- `agentComptablePiecesDeVente.test.ts` : le scanner voit la lecture neuve, ses sept colonnes, rien qui nomme ; deux défauts plantés
+  (la pièce embarquée et son tiers, la lecture en entier).
+- `agentComptableConsigne.test.ts` : la phrase de la consigne, la clé sous condition et sa phrase, les trois points nommés présents
+  dans `src/lib/pointsDeLaChecklist.ts`.
+- Le contrat HTTP : trois scénarios « C13 » (les deux pièces payées ; la contrepartie retirée et l'achat écrit avant ; la caisse en
+  panne) ; `edgeFunctionsHttp.test.ts`, huit défauts plantés neufs, vus, et celui de C5 (« points_a_traiter sans la caisse »)
+  réancré. Les gardes de la lecture (`agentComptableLiquidationTva`, `agentComptableLettrage`, `agentComptableReglementGroupe`,
+  `agentComptableAnalyse`) suivent la forme neuve, sur la forme seulement.
+
+**LES MUTATIONS** (34, jouées une à une par un script hors du dépôt sur la source de l'assistant — une copie gardée, rendue et
+comparée octet pour octet après chacune —, chacune contre les six fichiers de tests qui la gardent : l'analyse, le règlement groupé,
+la neutralité, le passage, la consigne et le contrat HTTP) : la boucle de la caisse retirée ; la caisse avant le relevé à date égale ;
+un paiement retiré, remplacé, nul, sans pièce, ou d'un autre genre compté ; la contrepartie de caisse jamais reconnue, hors des
+contreparties, parmi les charges ; la caisse non suivie, son compte non jugé ; l'engagement réglé par la caisse, ou qui l'attend ;
+l'opération hors de la clé d'une part ouverte ; la contrepartie à la banque, à contresens, toujours à la banque ; la banque qui suit
+aussi la caisse ; `points_a_traiter` sans les paiements par la caisse ; une caisse lue en partie prise pour entière ; une panne de la
+caisse tue, ou qui tait tout l'outil ; la clé de la caisse jamais étendue, toujours étendue ; le brouillon lu sans l'opération de
+caisse ; les opérations d'un autre dossier lues, sans leur remplacement, sans leur retrait ; la consigne sans sa phrase ; la phrase
+de la caisse payante sans ses points ; chacune des trois clés dite zéro sur une panne. 34 sur 34 tuées au premier passage. Le script
+et son relevé sont gardés avec la copie de la source d'avant, hors du dépôt.
+
+**LA BARRIÈRE** (Node 22.23.3, sous Paris), sur la copie de travail : `npx tsc -b` 0 ; `npm run lint` 0, 0 erreur, 63
+avertissements — ceux de la référence ; `npm test` 0, 521 fichiers et 16 258 tests (10 « échecs attendus » d'autres lots), tous
+verts ; `npx tsc -p tsconfig.edge.json` : 25 erreurs, celles d'hier (les types du SDK de l'assistant, `extract-piece`,
+`receive-email`), aucune neuve.
+
+**LES RISQUES.**
+- Ce lot ne touche que l'assistant et ses tests : aucune donnée, aucun écran, aucune autre Edge Function.
+- Une lecture de plus à chaque `points_a_traiter` (les opérations de caisse du dossier, paginées) : de quelques dizaines à quelques
+  centaines de lignes par an pour un praticien.
+- Rien n'a été joué contre le PostgREST réel : la table `operations_caisse` et ses sept colonnes sont dans l'export (migration
+  `caisse`, en production depuis le 30/10/2026) ; la lecture se fait avec la clé du rôle de service, comme les autres.
+- Le drapeau suit le fichier de C8 dans l'export : le jour où on l'y déplace, l'assistant de C13 doit être en ligne, sans quoi la
+  version d'avant dirait faux d'une pièce payée en espèces.
+
+**CE QUI RESTE.** Le déploiement de l'assistant par la session (la ligne d'import au commit qui porte C13, `verify_jwt` faux), puis
+`allerretour.py` ; il peut précéder C8. Le jour de C8 : la migration, puis FEC22b et le filet, les trois contrôles de l'export, la
+simulation, et le drapeau levé. Le client (C10 à C12) ne change rien à ce que l'assistant dit.
+
+**LE RETOUR ARRIÈRE** : retirer les commits ; aucune donnée, aucune migration. Déployé, revenir à la v51 : la ligne d'import au
+commit d'avant.

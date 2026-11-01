@@ -59,8 +59,10 @@ quatrième paramètre obligatoire de `paiementsDesPieces`, la contrepartie au co
 « Payée en espèces » à part de « Rapprochée », `caisse-a-reprendre` compte la contrepartie d'un paiement, une caisse lue en
 partie retient « Associer » ; relus et corrigés le 01/11/2026 : la pièce à valider qu'un paiement cite retient la validation
 (et un filet en base, `validation_des_paiements_par_la_caisse`, préparé, après C8 et FEC22b), un paiement qui laisserait la
-pièce à quelques centimes se refuse (C9-Q1, sur la recommandation), une pièce payée ne part plus d'une sélection ; le drapeau
-ne se lève qu'après l'assistant (C13) ; le client, C10 à C12 → « LA CAISSE : LE MODULE, LA LECTURE
+pièce à quelques centimes se refuse (C9-Q1, sur la recommandation), une pièce payée ne part plus d'une sélection ;
+l'assistant (C13, le 01/11/2026, pas encore déployé) lit ces paiements sans drapeau — une pièce payée en espèces n'y est plus
+« en attente de rapprochement », ni sa contrepartie « à régénérer », et un dossier sans paiement rend ce qu'il rendait, au
+caractère près —, et le drapeau ne se lève qu'après son déploiement, le jour de C8 ; le client, C10 à C12 → « LA CAISSE : LE MODULE, LA LECTURE
 ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
 CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
 26.6) », « LA CAISSE : L'ASSISTANT EN LIGNE (C5, LIGNE 26.6) », « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) », « LA
@@ -69,7 +71,7 @@ FEC22-E », « LA CAISSE REPRISE EST « TENUE », ET LA FENÊTRE DES ENCAISSEMEN
 (RELECTURE) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, EN BASE (C8, LIGNE 26.6) (PRÉPARÉE, PAS
 APPLIQUÉE) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS LES MOTEURS (C9A, LIGNE 26.6) », « LA CAISSE : LE
 PAIEMENT D'UNE PIÈCE PAR LA CAISSE, À L'ÉCRAN DU CABINET (C9B, LIGNE 26.6) », « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES
-CORRECTIONS »), le plan Pro de Supabase sauvegarde la base
+CORRECTIONS », « LA CAISSE : L'ASSISTANT DEVANT LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (C13, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base
 (MVP-D3). La case « MVP » de la feuille de route marque les
 lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC
 RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
