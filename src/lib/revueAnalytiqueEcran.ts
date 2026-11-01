@@ -4,7 +4,7 @@ import type { ModeleComptable } from './engagement'
 import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { formatMoney } from './format'
 import { partsDuReleve } from './partsDuReleve'
-import { paiementsDesPieces, type PartEncaissee } from './rattachement'
+import { paiementsDesPieces, type PartEncaissee, type PartPayeeParLaCaisse } from './rattachement'
 import type { RecettesDeCaisse } from './recettesDeCaisse'
 import {
   LIBELLE_DE_L_ETAT_DE_LA_LIGNE, LIBELLE_DU_TOTAL, type CauseARevoir, type CleDeLigne, type DonneesDeLaRevueAnalytique,
@@ -64,6 +64,10 @@ export interface SourcesDeLaRevueAnalytique {
   // que la caisse n'est pas revenue entière pour ce dossier — la 2035 ne se calcule pas, et l'onglet le dit parmi les
   // lectures de la revue. Absente (le drapeau baissé), elle ne change rien.
   recettesDeCaisse: RecettesDeCaisse | null
+  // Les paiements de pièces par la caisse (étape C9a ; lib/paiementParLaCaisse.ts, `paiementsParLaCaisseDuDossier`), qui
+  // datent ces pièces dans la 2035 comme Clôture ; NULS tant que la caisse n'est pas revenue entière — la 2035 ne se calcule
+  // pas. Aucun tant que la migration n'est pas en base.
+  paiementsParLaCaisse: readonly PartPayeeParLaCaisse[] | null
 }
 
 /**
@@ -83,10 +87,12 @@ export function declarationPourLaRevue(
   ecrituresDesVentes: EcrituresDesVentesDeLa2035,
   encaissees: readonly PartEncaissee[],
   recettesDeCaisse: RecettesDeCaisse,
+  // Les paiements par la caisse (étape C9a), comme Clôture les passe.
+  paiementsParLaCaisse: readonly PartPayeeParLaCaisse[],
 ): Declaration2035 | null {
   if (modele.mode === 'engagement') return null
   const rapprochees = d.lignes.filter((l) => l.statut === 'rapprochee')
-  const paiements = paiementsDesPieces(rapprochees, d.reglements, encaissees)
+  const paiements = paiementsDesPieces(rapprochees, d.reglements, encaissees, paiementsParLaCaisse)
   const parts = partsDuReleve(rapprochees, d.categories, d.ventilations, assujettiTva)
   const comptees = cotisationsComptees(d.cotisations, rapprochees, modele.mode)
   return calculerDeclaration2035(
@@ -110,8 +116,10 @@ export function donneesDeLaRevueAnalytique(
     ecritures: s.dossier.ecritures,
     reprise: s.reprise,
     reportes: s.reportes,
-    declaration: s.ventesFacturees === null || s.ecrituresDesVentes === null || s.recettesDeCaisse === null ? null
-      : declarationPourLaRevue(annee, modele, assujettiTva, s.dossier, s.ventesFacturees, s.ecrituresDesVentes, s.encaissees, s.recettesDeCaisse),
+    declaration: s.ventesFacturees === null || s.ecrituresDesVentes === null || s.recettesDeCaisse === null
+      || s.paiementsParLaCaisse === null ? null
+      : declarationPourLaRevue(annee, modele, assujettiTva, s.dossier, s.ventesFacturees, s.ecrituresDesVentes, s.encaissees,
+        s.recettesDeCaisse, s.paiementsParLaCaisse),
     exercicesValides: s.exercicesValides,
     reperes: s.reperes,
     partsDuReleve: partsDuReleve(rapprochees, s.dossier.categories, s.dossier.ventilations, assujettiTva),

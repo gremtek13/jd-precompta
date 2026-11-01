@@ -28,8 +28,12 @@ type Ligne = Pick<LigneBancaire, 'id' | 'montant' | 'statut' | 'reglement_groupe
 interface Copie {
   reglementsGroupesIncoherents: (l: readonly Ligne[], r: readonly PartReglee[]) => { ligne: Ligne; raison: string; montant: number }[]
   piecesPayeesEnTrop: (p: readonly Pick<Piece, 'id' | 'montant_ttc'>[], paiements: PaiementsDesPieces) => { piece: { id: string }; paye: number; enTrop: number }[]
-  // Les trois paramètres de src/lib depuis l'étape VF9b : les parts des virements groupés ET des virements mixtes.
-  paiementsDesPieces: typeof paiementsDesPieces
+  // Les trois paramètres de src/lib depuis l'étape VF9b : les parts des virements groupés ET des virements mixtes. Pas le
+  // quatrième (étape C9a) : la copie de l'assistant ne lit pas encore les paiements par la caisse — C13.
+  paiementsDesPieces: (
+    lignes: Parameters<typeof paiementsDesPieces>[0], reglements: Parameters<typeof paiementsDesPieces>[1],
+    encaissees: Parameters<typeof paiementsDesPieces>[2],
+  ) => PaiementsDesPieces
 }
 
 // Le bloc lit `seuilAlignement` et `paiementsDesPieces` du bloc copié de src/lib/rattachement.ts : on reprend
@@ -142,7 +146,7 @@ describe('agent-comptable / bloc RÈGLEMENT GROUPÉ (copie déployée)', () => {
     for (const [cas, pieces, lignes, parts, encaissees] of CAS_EN_TROP) {
       // Chaque côté tire les paiements de SA copie de `paiementsDesPieces`, virements mixtes compris.
       expect(formeEnTrop(deployee.piecesPayeesEnTrop(pieces, deployee.paiementsDesPieces(lignes, parts, encaissees))), cas)
-        .toEqual(formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, encaissees))))
+        .toEqual(formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, encaissees, []))))
     }
   })
 
@@ -159,7 +163,7 @@ describe('agent-comptable / bloc RÈGLEMENT GROUPÉ (copie déployée)', () => {
       'h:part_sans_piece:300.00',
     ])
     const enTrop = CAS_EN_TROP.flatMap(([, pieces, lignes, parts, encaissees]) =>
-      formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, encaissees))))
+      formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, encaissees, []))))
     expect(enTrop).toEqual(['fa:2000.00:1000.00', 'fa:1005.01:5.01', 'av:200.00:100.00', 'pv:240.00:120.00'])
   })
 })
@@ -242,7 +246,7 @@ describe('le garde-fou du bloc RÈGLEMENT GROUPÉ sait encore échouer', () => {
     const [, pieces, lignes, parts, encaissees] = CAS_EN_TROP.find(([n]) => n === nom)!
     return {
       la: formeEnTrop(copie.piecesPayeesEnTrop(pieces, copie.paiementsDesPieces(lignes, parts, encaissees))),
-      ici: formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, encaissees))),
+      ici: formeEnTrop(piecesPayeesEnTrop(pieces as Piece[], paiementsDesPieces(lignes, parts, encaissees, []))),
     }
   }
 

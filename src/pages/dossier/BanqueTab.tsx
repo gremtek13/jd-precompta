@@ -70,6 +70,7 @@ import { lireLesAccesDuReleve, lireLesEnvoisDuClient } from '../../lib/banqueCab
 import { argumentsDeLaPrecision, argumentsDeRetirer } from '../../lib/banqueClient'
 import { lireLesVentesDuReleve, type LectureDesVentesEtDeclarations } from '../../lib/ventesDuReleveLecture'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
 import { operationsDeCaisseDuDossier, versementsDEspecesHorsDesLots, type EspecesDesFactures } from '../../lib/controlesDeLaCaisse'
 import { caisseDeBanque, caisseDeLaFiche, repriseEtReleveDeBanque } from '../../lib/caisseEcran'
 import { lireLaRepriseDeLaCaisse, type LectureDeLaReprise } from '../../lib/caisseDuDossierLecture'
@@ -487,7 +488,16 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const encaissees = useMemo(() => (lectureVentes?.etat === 'lue' && lectureVentes.dossierId === dossierId
     ? partsEncaissees(dossierId, lectureVentes.sources.encaissements, lectureVentes.sources, lectureVentes.sources.exemplaires)
     : []), [lectureVentes, dossierId])
-  const paiements = useMemo(() => paiementsDesPieces(lignes, reglements, encaissees), [lignes, reglements, encaissees])
+  // Et les paiements de pièces par la caisse (étape C9a), de la même lecture de la caisse : AUCUN tant que la migration
+  // n'est pas en base (`PAIEMENT_PAR_LA_CAISSE_EXPORTE`). Nuls — la caisse pas encore revenue, ou lue en partie —, une pièce
+  // payée en espèces paraîtrait sans paiement : les lots qui jugent un paiement se suspendent (`paiementsDeLaCaisseIncomplets`).
+  const paiementsDeLaCaisse = useMemo(() => paiementsParLaCaisseDuDossier(lectureCaisse, dossierId), [lectureCaisse, dossierId])
+  const paiementsDeLaCaisseIncomplets = paiementsDeLaCaisse === null
+    ? 'les paiements de pièces par la caisse ne sont pas encore lus en entier' : null
+  const paiements = useMemo(
+    () => paiementsDesPieces(lignes, reglements, encaissees, paiementsDeLaCaisse ?? []),
+    [lignes, reglements, encaissees, paiementsDeLaCaisse],
+  )
   // L'EXEMPLAIRE D'UNE FACTURE SOURCE NE JUSTIFIE AUCUN MOUVEMENT (étape VF6d ; lib/lotsDeLaJumelleInversee.ts) : la base refuse
   // qu'il soit rapproché ou réglé par une part d'un virement groupé (G4). Les factures sont celles des ventes facturées lues en
   // entier de CE dossier ; aucune pour un dossier qui n'a pas basculé — la base y refuse toute facture source —, ni tant
@@ -809,7 +819,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // seul n'en est qu'une fraction.
   function reglerSiLibre(piece: Piece, ligneId: string, montant: number): Promise<Piece> {
     if (piecesFigees.figees.has(piece.id)) return Promise.resolve(piece)
-    const autres = (paiements.get(piece.id) ?? []).filter((paiement) => paiement.id !== ligneId)
+    // Un paiement par la caisse en est toujours un autre (étape C9a) : il n'a pas de mouvement.
+    const autres = (paiements.get(piece.id) ?? []).filter((paiement) => paiement.origine === 'caisse' || paiement.id !== ligneId)
     return reglerPieceSurBanque(piece, [...autres, { montant }])
   }
 
@@ -1314,10 +1325,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // en deux fois s'en écartaient chacun, et l'écran criait deux fois sur une pièce payée. Sur le relevé ou les
   // parts lus en partie, un paiement non lu ferait paraître une pièce réglée payée en partie : ce reste-là se tait.
   const restesAPayer = useMemo(
-    () => (lignesIncompletes || reglementsIncomplets
+    () => (lignesIncompletes || reglementsIncomplets || paiementsDeLaCaisseIncomplets
       ? new Map<string, number>()
       : new Map(piecesPayeesEnPartie(pieces, paiements, modele.mode).map((x) => [x.piece.id, x.reste]))),
-    [pieces, paiements, modele.mode, lignesIncompletes, reglementsIncomplets],
+    [pieces, paiements, modele.mode, lignesIncompletes, reglementsIncomplets, paiementsDeLaCaisseIncomplets],
   )
   const payeesEnTrop = useMemo(
     () => new Map(piecesPayeesEnTrop(pieces, paiements).map((x) => [x.piece.id, x.enTrop])),
@@ -1328,8 +1339,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // mouvement qui en est peut-être le solde. Même silence que le reste à payer sur une lecture partielle : rien n'est
   // alors offert.
   const restesARegler = useMemo(
-    () => (lignesIncompletes || reglementsIncomplets ? new Map<string, number>() : restesAReglerDesPieces(pieces, paiements)),
-    [pieces, paiements, lignesIncompletes, reglementsIncomplets],
+    () => (lignesIncompletes || reglementsIncomplets || paiementsDeLaCaisseIncomplets
+      ? new Map<string, number>() : restesAReglerDesPieces(pieces, paiements)),
+    [pieces, paiements, lignesIncompletes, reglementsIncomplets, paiementsDeLaCaisseIncomplets],
   )
 
   // Mémoïsée parce que `planAuto` en dépend : recréée à chaque rendu, elle relançait le plan — un
@@ -1383,8 +1395,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // Et les ventes facturées d'un dossier basculé (étape VF5a1) : sans elles, un mouvement réservé à l'encaissement d'une
   // facture paraît à rapprocher, et la base refuserait le lot entier (G2).
   const lotAutomatiqueSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes ?? reglementsIncomplets
-    ?? (modele.mode === 'tresorerie' ? piecesFigees.motif : null) ?? ventesRetenues
+    ?? (modele.mode === 'tresorerie' ? piecesFigees.motif : null) ?? ventesRetenues ?? paiementsDeLaCaisseIncomplets
   const lotCertainSuspendu = lignesIncompletes ?? piecesIncompletes ?? reglementsIncomplets ?? ventesRetenues
+    ?? paiementsDeLaCaisseIncomplets
   // ET UNE LECTURE PAS ENCORE REVENUE NON PLUS. Pendant une relecture — celle qui suit l'import d'un relevé, le retrait
   // d'une règle —, les deux lots restent à l'écran sur le plan d'AVANT : un mouvement tout juste importé, jumeau de
   // celui que le plan rapproche, n'y est pas encore, et la pièce y paraît seule candidate. Ils attendent la fin de la

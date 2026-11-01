@@ -10,7 +10,7 @@ import { justifieSonMouvement } from './encaissementsFactures'
 import { sirenValide, siretValide } from './factureCii'
 import { dateLocaleDe } from './format'
 import type { PlanComptable } from './planComptable'
-import { partsDesPaiements, rattachementsTresorerie, type PaiementDePiece } from './rattachement'
+import { cleDuPaiement, partsDesPaiements, rattachementsTresorerie, type PaiementDePiece } from './rattachement'
 import type {
   ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, EncaissementFacture, FactureEmise, LigneBancaire, MoyenEncaissement,
   OperationCaisse, Piece,
@@ -270,7 +270,8 @@ export const REGLES_DES_SORTES = {
  * facture d'avant la bascule cité sur un mouvement classé par ses encaissements (origine `encaissements`, étape VF5h) —
  * l'encaissement du registre qui paie CETTE pièce, nul quand la lecture ne le rend pas. `note_de_frais` : la part que
  * l'exploitant a payée de sa poche, à la date que la 2035 compte. `caisse` : le paiement d'une pièce par la caisse (le
- * genre `paiement`, étape C9, à venir). `aucun` : une part que rien ne règle (`sans_paiement`).
+ * genre `paiement`, origine `caisse` de `paiementsDesPieces`, étape C9a), à la date de son opération — « Espèces ». `aucun` :
+ * une part que rien ne règle (`sans_paiement`).
  */
 export type ReglementDUnePiece =
   | { par: 'releve'; date: string }
@@ -288,13 +289,15 @@ const ORDRE_DES_REGLEMENTS: Readonly<Record<ReglementDUnePiece['par'], number>> 
  * un mouvement du relevé, « Banque » — même quand un encaissement du registre cite aussi ce mouvement : seul l'encaissement
  * qui paie CETTE pièce dit un moyen. `encaissements` : le virement mixte (étape VF5h), l'encaissement de la facture dont la
  * pièce est l'exemplaire, cité sur ce mouvement, vivant et non une contre-passation — nul quand la lecture ne le rend pas.
+ * `caisse` (étape C9a) : le paiement par la caisse, « Espèces », à la date de son opération.
  */
 export function reglementDUnPaiement(
   piece: Pick<PieceDuFec, 'facture_id'>,
   paiement: PaiementDePiece,
   // Le registre des encaissements du dossier, lu en entier : l'encaissement d'un virement mixte s'y retrouve.
   registre: readonly EncaissementDuRegistre[],
-): Extract<ReglementDUnePiece, { par: 'releve' | 'virement_mixte' }> {
+): Extract<ReglementDUnePiece, { par: 'releve' | 'virement_mixte' | 'caisse' }> {
+  if (paiement.origine === 'caisse') return { par: 'caisse', date: paiement.date }
   if (paiement.origine === 'rapprochement' || paiement.origine === 'groupe') return { par: 'releve', date: paiement.date }
   const encaissement = piece.facture_id === null ? null : registre.find((e) => e.ligne_bancaire_id === paiement.id
     && e.facture_id === piece.facture_id && e.annule_id === null && e.retire_le === null) ?? null
@@ -323,7 +326,9 @@ export interface PartDUnReglement {
   // La part de la pièce que ce règlement porte à cette date, comme `rattachementsTresorerie` et `centimesParDate` la
   // comptent (lib/rattachement.ts) : la somme des parts de ses paiements, ou celle que rien ne paie.
   part: number
-  // Les mouvements de ses paiements : la ligne de banque d'un paiement porte le sien (`ligne_bancaire_id`).
+  // Les mouvements de ses paiements : la ligne de banque d'un paiement porte le sien (`ligne_bancaire_id`) ; et, pour un
+  // paiement par la caisse (étape C9a), sa clé `caisse:<opération>` (`cleDuPaiement`, lib/rattachement.ts) — la ligne de
+  // caisse de la pièce porte son opération (`operation_caisse_id`), jamais un mouvement.
   mouvements: readonly string[]
 }
 
@@ -333,7 +338,8 @@ export interface PartDUnReglement {
  * la part sans date reportée au jour du dépôt comme `centimesParDate` la date). Les parts d'une date somment à celle que
  * `centimesParDate` lui donne : la scission d'une écriture (lib/fec.ts, FEC22c) en sous-répartit les centimes sans changer
  * le total de la date, ni la 2035. Triés dans un ordre fixe — le relevé, le virement mixte, la caisse, la poche de
- * l'exploitant, rien — pour que deux appels rendent la même chose. Sans paiement de la caisse avant C9.
+ * l'exploitant, rien — pour que deux appels rendent la même chose. Aucun paiement de la caisse tant que la migration n'est
+ * pas en base (`PAIEMENT_PAR_LA_CAISSE_EXPORTE`).
  */
 export function partsDesReglementsALaDate(
   piece: PieceDuFec,
@@ -355,7 +361,7 @@ export function partsDesReglementsALaDate(
   }
   const { parts } = partsDesPaiements(piece, paiements)
   paiements.forEach((p, i) => {
-    if (p.date === date) ajouter(reglementDUnPaiement(piece, p, registre), parts[i].part, p.id)
+    if (p.date === date) ajouter(reglementDUnPaiement(piece, p, registre), parts[i].part, cleDuPaiement(p))
   })
   for (const r of rattachementsTresorerie(piece, paiements)) {
     if (r.source === 'paiement' || r.source === 'facture') continue

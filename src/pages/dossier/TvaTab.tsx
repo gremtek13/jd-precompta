@@ -46,6 +46,7 @@ import { horsTaxeEtTva, libelleTaux } from '../../lib/tvaDuReleve'
 import { declarationDuNonRedevable } from '../../lib/statutTva'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
 import { libelleDeLaRecette, motifDeLaCaisse, recettesDeCaisseDuDossier, recettesPourLesMoteurs } from '../../lib/recettesDeCaisse'
 import type { ExigibiliteVenteFacturee } from '../../lib/ventesFacturees'
 import type {
@@ -433,7 +434,10 @@ export default function TvaTab({
   // Ni sans sa caisse, lue en entier ou absente.
   const donnees: DonneesTva | null = ventesFacturees === null || caisse === null ? null : {
     pieces,
-    paiements: paiementsDesPieces(lignesBancaires, luDuDossier?.reglements ?? [], encaissees),
+    // Les paiements de pièces par la caisse (étape C9a) rendent la TVA d'une pièce exigible ou déductible à leur date, selon
+    // le régime : aucun tant que la migration n'est pas en base ; nuls, la caisse ne l'est pas non plus, et aucune CA3.
+    paiements: paiementsDesPieces(lignesBancaires, luDuDossier?.reglements ?? [], encaissees,
+      paiementsParLaCaisseDuDossier(lectureCaisse, dossierId) ?? []),
     pieceIdsImmobilisees: luDuDossier?.pieceIdsImmobilisees ?? new Set(),
     releve: partsDuReleve(lignesBancaires, luDuDossier?.categories ?? [], luDuDossier?.ventilations ?? [], assujettiTva),
     ventesFacturees,

@@ -24,6 +24,7 @@ import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFacturees
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import type { PlanComptable } from '../../lib/planComptable'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
 import {
   libelleDeLaRecette, lignesDeLaCaissePourLePlan, motifDeLaCaisse, recettesDeCaisseDuDossier, recettesPourLesMoteurs, type RecettesDeCaisse,
 } from '../../lib/recettesDeCaisse'
@@ -259,7 +260,11 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
   const partsReleve = partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva)
   // Les paiements de chaque pièce, parts des virements groupés et des virements mixtes comprises : ils datent les pièces
   // des trois états comme dans la 2035.
-  const paiements = paiementsDesPieces(mouvementsRapproches, reglements, encaissees)
+  // Et les paiements de pièces par la caisse (étape C9a), de la même lecture : aucun tant que la migration n'est pas en
+  // base. Nuls (la caisse pas revenue, ou lue en partie), les recettes de caisse le sont aussi, et rien de ce qu'ils datent
+  // ne se calcule : `?? []` ne sert qu'à ce qui attend déjà.
+  const paiements = paiementsDesPieces(mouvementsRapproches, reglements, encaissees,
+    paiementsParLaCaisseDuDossier(lectureCaisse, dossierId) ?? [])
   // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance
   // (lib/cotisationRapprochee.ts) : la règle de la 2035, pour les trois états qui les comptent.
   const cotisationsDatees = cotisationsComptees(cotisations, mouvementsRapproches, modeComptable)

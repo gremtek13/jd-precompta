@@ -332,7 +332,7 @@ describe('la piste d’audit : le brouillard du praticien, sans empreinte ; jama
 
   it('la ligne d’une opération de caisse', () => {
     const lignes = pisteAudit(BROUILLON, [], [], [], {
-      immobilisations: [], factures: [], vehicules: [], ventes: { ...SANS_VENTE_FACTUREE, exemplaires: [], transmissions: [] },
+      immobilisations: [], factures: [], vehicules: [], ventes: { ...SANS_VENTE_FACTUREE, exemplaires: [], transmissions: [] }, caisse: OPERATIONS_DE_CAISSE_ABSENTES,
     })
     expect(lignes.map((l) => [l.compte, l.pieceFichier, l.pieceDate, l.pieceEmpreinte, l.pieceId, l.mouvementDate, l.manque])).toEqual([
       [PLAN_PAR_DEFAUT.caisse, 'Brouillard de caisse du 12/03/2026, tenu hors de l’application', '2026-03-12', null, null, null, []],

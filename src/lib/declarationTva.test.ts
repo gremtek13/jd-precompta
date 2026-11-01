@@ -63,7 +63,7 @@ function donnees(
   releve: PartDuReleve[] = [],
 ): DonneesTva {
   return {
-    pieces, paiements: paiementsDesPieces(lignesBancaires, parts, []), pieceIdsImmobilisees: new Set(immobilisees), releve,
+    pieces, paiements: paiementsDesPieces(lignesBancaires, parts, [], []), pieceIdsImmobilisees: new Set(immobilisees), releve,
     ventesFacturees: ventesFactureesVides('d1'), caisse: CAISSE_ABSENTE,
   }
 }

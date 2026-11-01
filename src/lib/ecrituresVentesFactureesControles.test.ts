@@ -183,7 +183,7 @@ describe('la preuve : aucun contrôle d’hier ne signale les lignes d’une ven
   for (const modele of DANS_LES_DEUX_MODELES) {
     it(`${modele.mode} : ni sans objet, ni sans contrepartie, ni déséquilibrées, ni à régénérer, ni à générer`, () => {
       expect(ecrituresSansObjet(LIGNES_DES_VENTES, [], [], new Map(), null, PLAN_PAR_DEFAUT, SANS_FACTURE_SOURCE)).toEqual([])
-      const paiements = paiementsDesPieces(MOUVEMENTS, [], [])
+      const paiements = paiementsDesPieces(MOUVEMENTS, [], [], [])
       expect(analyserEcritures(LIGNES_DES_VENTES, [], true, paiements, modele, null, SANS_EXEMPLAIRE)).toMatchObject({
         piecesSansContrepartie: [], groupesDesequilibres: [], piecesDesynchronisees: [],
       })

@@ -24,7 +24,7 @@ import { aPayerDe, declarationDeLaCa3, ecritureDeLaLiquidation, ecritureDuPaieme
 import { calculerTotaux } from '../../src/lib/montantsFacture'
 import { repartitionProposee, ttcParTaux } from '../../src/lib/encaissementsFactures'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
-import { paiementsDesPieces } from '../../src/lib/rattachement'
+import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from '../../src/lib/rattachement'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES } from '../../src/lib/planComptable'
 import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSoldes'
 import { mentionTva } from '../../src/lib/statutTva'
@@ -431,8 +431,8 @@ function declarationD7(id: string, debut: string, fin: string, depot: string) {
   const donnees: DonneesTva = {
     pieces: TVA_D7.pieces as unknown as Piece[],
     // Aucun virement mixte (étape VF5h) : l'atelier n'a pas basculé, aucun de ses mouvements n'est classé par ses
-    // encaissements.
-    paiements: paiementsDesPieces(lignes, [], []),
+    // encaissements. Ni paiement par la caisse (étape C9a) : les dossiers de référence n'en ont aucun.
+    paiements: paiementsDesPieces(lignes, [], [], AUCUN_PAIEMENT_PAR_LA_CAISSE),
     // L'ordinateur du dossier, immobilisé (`i-d7`) : sa TVA va en ligne 19.
     pieceIdsImmobilisees: new Set(['a2']),
     releve: partsDuReleve(lignes, categories as unknown as Categorie[], RELEVE_D7.ventilations as unknown as VentilationBancaire[], true),
@@ -671,7 +671,8 @@ function ecrituresDe(s: SourcesDeValidation): Ligne[] {
   const lignes = s.lignes as unknown as LigneBancaire[]
   const rapprochees = lignes.filter((l) => l.statut === 'rapprochee')
   // Ni règlement groupé ni virement mixte dans ces dossiers : aucun n'a basculé (étape VF5h).
-  const paiements = paiementsDesPieces(rapprochees, [], [])
+  // Ni paiement par la caisse (étape C9a) : ces dossiers de référence n'en ont aucun.
+  const paiements = paiementsDesPieces(rapprochees, [], [], AUCUN_PAIEMENT_PAR_LA_CAISSE)
   const acquisitions = acquisitionsDesBiens(s.immobilisations as unknown as Immobilisation[], natures as unknown as NatureImmobilisation[], null)
   let n = 0
   const ecriture = (l: { compte: string; sens: 'debit' | 'credit'; montant: number; libelle: string; date: string }, liens: Ligne): Ligne => ({
@@ -739,7 +740,7 @@ function valider(
   const declaration = calculerDeclaration2035(
     annee, s.pieces as unknown as Piece[], categories as unknown as Categorie[], s.immobilisations as unknown as Immobilisation[],
     cotisationsComptees(s.cotisations as unknown as CotisationDeclaree[], lignes, TRESORERIE.mode),
-    s.vehicules as unknown as VehiculeDossier[], false, paiementsDesPieces(lignes, [], []), partsDuReleve(lignes, categories as unknown as Categorie[], [], false),
+    s.vehicules as unknown as VehiculeDossier[], false, paiementsDesPieces(lignes, [], [], AUCUN_PAIEMENT_PAR_LA_CAISSE), partsDuReleve(lignes, categories as unknown as Categorie[], [], false),
     // Ni l'un ni l'autre dossier n'est assujetti : aucune déclaration de TVA, donc aucun arrondi de liquidation.
     [],
     PLAN_PAR_DEFAUT,

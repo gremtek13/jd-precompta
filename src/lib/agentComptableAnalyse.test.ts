@@ -9,7 +9,7 @@ import { lignesEngagementPourPiece, type ModeleComptable } from './engagement'
 import { exemplairesDesSources, facturesSourcesDe, type FacturesSources } from './facturesSources'
 import { montantRetenu } from './montantRetenu'
 import {
-  rattachementsTresorerie, paiementsDesPieces, type PaiementDePiece, type PaiementsDesPieces, type PartEncaissee, type PartReglee,
+  estParLeReleve, rattachementsTresorerie, paiementsDesPieces, type PaiementDePiece, type PaiementsDesPieces, type PartEncaissee, type PartReglee,
 } from './rattachement'
 import type { Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { dateAParis } from './format'
@@ -113,7 +113,12 @@ function extraire(source: string) {
       piecesDesynchronisees: Piece[]
     }
     rattachementsTresorerie: typeof rattachementsTresorerie
-    paiementsDesPieces: typeof paiementsDesPieces
+    // Les trois premiers paramètres de src/lib : la copie de l'assistant ne lit pas encore les paiements par la caisse
+    // (étape C9a ; l'assistant les recevra avec C13), et src/lib, sans eux, rend la même chose qu'elle.
+    paiementsDesPieces: (
+      lignes: Parameters<typeof paiementsDesPieces>[0], reglements: Parameters<typeof paiementsDesPieces>[1],
+      encaissees: Parameters<typeof paiementsDesPieces>[2],
+    ) => PaiementsDesPieces
     facturesSourcesDe: typeof facturesSourcesDe
     exemplairesDesSources: typeof exemplairesDesSources
     partsEncaissees: typeof partsEncaissees
@@ -338,7 +343,7 @@ function memeResultat(
     const ici = piecesAComptabiliser(cas.pieces, categories, new Map(biens), ventesIci.sources)
     const la = copie.piecesAComptabiliser(cas.pieces, categories, new Map(biens), ventesLa.sources)
     expect(resume(la), `piecesAComptabiliser a dérivé (${nom})`).toEqual(resume(ici))
-    const paiementsIci = paiementsDesPieces(cas.paiements, parts, ventesIci.encaissees)
+    const paiementsIci = paiementsDesPieces(cas.paiements, parts, ventesIci.encaissees, [])
     const paiementsLa = copie.paiementsDesPieces(cas.paiements, parts, ventesLa.encaissees)
     expect(enObjet(paiementsLa), `paiementsDesPieces a dérivé (${nom})`).toEqual(enObjet(paiementsIci))
     for (const f of new Set([...FRONTIERES, frontiere])) {
@@ -469,7 +474,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
   it('accepte une pièce réglée en partie, répartie sur ses deux dates', () => {
     const partiel = [paiement({ montant: -48 })]
     const p = piece({ id: 'p1' })
-    const reparties = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces(partiel, [], SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
+    const reparties = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces(partiel, [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `r${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(reparties, [p], [], deployee, true, partiel).piecesDesynchronisees).toEqual([])
     // Et la même écriture tout entière au paiement ne l'est pas.
@@ -488,7 +493,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     const p = piece({ id: 'p1' })
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `g${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(genere, [p], [], deployee, true, [groupe], TRESORERIE, parts)).toEqual({
       nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [],
@@ -503,7 +508,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     const acompte = paiement({ id: 'a', date: '2025-03-20', montant: -48 })
     const groupe = paiement({ id: 'g', date: '2025-04-15', piece_id: null, montant: -272, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -72 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -200 }]
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, groupe], parts, SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, groupe], parts, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `d${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(genere, [p], [], deployee, true, [acompte, groupe], TRESORERIE, parts).piecesDesynchronisees).toEqual([])
     const unSeul = genere.filter((e) => !(e.compte === COMPTE_BANQUE && e.ligne_bancaire_id === 'g'))
@@ -520,7 +525,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const avant: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -118 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -182 }]
     const apres: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const ancienne = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], avant, SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
+    const ancienne = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], avant, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `o${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(ancienne, [p], [], deployee, true, [groupe], TRESORERIE, apres).piecesDesynchronisees).toEqual(['p1'])
   })
@@ -582,11 +587,11 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
       { ligne_bancaire_id: 'absent', piece_id: 'p8', montant: 5 },
     ]
     for (const [quoi, avec] of [['sans virement mixte', SANS_VIREMENT_MIXTE], ['avec ses virements mixtes', encaissees]] as const) {
-      expect(enObjet(deployee.paiementsDesPieces(lignes, parts, avec)), quoi).toEqual(enObjet(paiementsDesPieces(lignes, parts, avec)))
+      expect(enObjet(deployee.paiementsDesPieces(lignes, parts, avec)), quoi).toEqual(enObjet(paiementsDesPieces(lignes, parts, avec, [])))
     }
     // La batterie exerce bien ce qui décide : les pièces payées, dans l'ordre des dates puis des mouvements — et seul le
     // crédit classé par ses encaissements paie un exemplaire, celui d'une pièce que paie aussi un acompte compris.
-    expect(enObjet(paiementsDesPieces(lignes, parts, encaissees))).toEqual({
+    expect(enObjet(paiementsDesPieces(lignes, parts, encaissees, []))).toEqual({
       p1: [
         { id: 'a', date: '2025-04-01', montant: -20, origine: 'rapprochement' },
         { id: 'g', date: '2025-04-01', montant: -60, origine: 'groupe' },
@@ -652,12 +657,12 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
 
   it('se tait sur l’acquisition telle que src/lib la génère, et voit la charge restée sur la catégorie', () => {
     const p = piece({ id: 'p1' })
-    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
+    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `a${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(acquisition.map((e) => e.compte)).toEqual(['218300', '445620', COMPTE_BANQUE])
     expect(memeResultat(acquisition, [p], [['p1', acq('218300')]], deployee, true, [paiement()]).piecesDesynchronisees).toEqual([])
     // La même pièce écrite en charge avant d'être immobilisée : « à régénérer » des deux côtés.
-    const charge = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
+    const charge = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `c${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(charge, [p], [['p1', acq('218300')]], deployee, true, [paiement()]).piecesDesynchronisees).toEqual(['p1'])
     // Et l'acquisition d'un bien qu'on retire du registre l'est aussi : elle repasse en charge.
@@ -814,7 +819,7 @@ describe('agent-comptable / analyserEcritures en engagement (copie déployée)',
 function brouillonTresorerie(
   p: Piece, mouvements: LigneBancaire[], o: { assujettiTva?: boolean; compte?: string } = {},
 ): EcritureBrouillon[] {
-  const paiementsPiece = paiementsDesPieces(mouvements, [], SANS_VIREMENT_MIXTE).get(p.id) ?? []
+  const paiementsPiece = paiementsDesPieces(mouvements, [], SANS_VIREMENT_MIXTE, []).get(p.id) ?? []
   return lignesPourPiece('d1', p, cible(o.compte ?? COMPTE_ACHATS), o.assujettiTva ?? true, paiementsPiece, TRESORERIE)
     .map((l, i) => ecriture({ ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 }
@@ -980,7 +985,7 @@ describe('agent-comptable / les ventes facturées (copie déployée, étape VF9b
     const parts = partsEncaissees('d1', ventes.encaissements, ventes, [{ id: 'pv', dossier_id: 'd1', facture_id: 'fa1', statut: 'validee', type_piece: 'vente' }])
     expect(parts).toEqual([{ ligne_bancaire_id: 'vm', piece_id: 'pv', montant: 120 }])
     for (const modele of [TRESORERIE, ENGAGEMENT]) {
-      const juste = lignesPourPiece('d1', v, cible(COMPTE_ACHATS), true, paiementsDesPieces([credit], [], parts).get('pv') ?? [], modele)
+      const juste = lignesPourPiece('d1', v, cible(COMPTE_ACHATS), true, paiementsDesPieces([credit], [], parts, []).get('pv') ?? [], modele)
         .map((l, i) => ecriture({ ...l, id: `v${i}`, piece_id: 'pv', ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
       expect(juste.some((e) => e.ligne_bancaire_id === 'vm' && e.date === '2025-04-20'), modele.mode).toBe(true)
       // Payée par le virement mixte, son écriture datée du crédit est juste…
@@ -1066,7 +1071,7 @@ function batterieDuGenerateur(copie: typeof deployee): string[][] {
     ]
     for (const c of cibles) {
       for (const [mouvements, parts, encaissees] of reglements) {
-        const paiementsPiece = paiementsDesPieces(mouvements, parts, encaissees).get(p.id) ?? []
+        const paiementsPiece = paiementsDesPieces(mouvements, parts, encaissees, []).get(p.id) ?? []
         // Les paiements de la pièce, chaque copie les tirant du même relevé : ils datent tout ce qui suit.
         expect(copie.paiementsDesPieces(mouvements, parts, encaissees).get(p.id) ?? [], 'paiementsDesPieces a dérivé').toEqual(paiementsPiece)
         for (const modele of modeles) {
@@ -1179,7 +1184,7 @@ describe('agent-comptable / la frontière de validation (copie déployée)', () 
 function brouillon(
   p: Piece, c: CibleComptable, mouvements: LigneBancaire[], modele: ModeleComptable, prefixe: string = p.id,
 ): EcritureBrouillon[] {
-  const paiementsPiece = paiementsDesPieces(mouvements, [], SANS_VIREMENT_MIXTE).get(p.id) ?? []
+  const paiementsPiece = paiementsDesPieces(mouvements, [], SANS_VIREMENT_MIXTE, []).get(p.id) ?? []
   return lignesPourPiece('d1', p, c, true, paiementsPiece, modele)
     .map((l, i) => ecriture({ ...l, id: `${prefixe}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 }
@@ -1486,7 +1491,7 @@ describe('le garde-fou sait encore échouer', () => {
       'le compte de TVA d’un bien',
     ))
     const p = piece({ id: 'p1' })
-    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
+    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `a${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(() => memeResultat(acquisition, [p], [['p1', acq('218300')]], derivee, true, [paiement()])).toThrow()
   })
@@ -1545,7 +1550,7 @@ describe('le garde-fou sait encore échouer', () => {
     const p = piece({ id: 'p1' })
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts, SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `g${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(() => memeResultat(genere, [p], [], derivee, true, [groupe], TRESORERIE, parts)).toThrow()
   })
@@ -1556,7 +1561,7 @@ describe('le garde-fou sait encore échouer', () => {
     ))
     const simple = [paiement({ id: 'n', piece_id: null, montant: -90 })]
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'n', piece_id: 'p2', montant: -90 }]
-    expect(derivee.paiementsDesPieces(simple, parts, SANS_VIREMENT_MIXTE)).not.toEqual(paiementsDesPieces(simple, parts, SANS_VIREMENT_MIXTE))
+    expect(derivee.paiementsDesPieces(simple, parts, SANS_VIREMENT_MIXTE)).not.toEqual(paiementsDesPieces(simple, parts, SANS_VIREMENT_MIXTE, []))
   })
 
   // LES DÉRIVES DES VENTES FACTURÉES (étape VF9b) : la copie qui compterait l'exemplaire d'une facture source, jugerait son
@@ -1582,7 +1587,7 @@ describe('le garde-fou sait encore échouer', () => {
     const reservees = deriver(' || !mouvement.encaissements_de_factures) continue\n', ') continue\n', 'le drapeau du virement mixte')
     const reserve = [paiement({ id: 'vm', piece_id: null, montant: 120, encaissements_de_factures: false })]
     const encaissees: PartEncaissee[] = [{ ligne_bancaire_id: 'vm', piece_id: 'p1', montant: 120 }]
-    echoue(() => expect(reservees.paiementsDesPieces(reserve, [], encaissees)).toEqual(paiementsDesPieces(reserve, [], encaissees)))
+    echoue(() => expect(reservees.paiementsDesPieces(reserve, [], encaissees)).toEqual(paiementsDesPieces(reserve, [], encaissees, [])))
   })
 
   it('attrape une copie qui ne compare pas les contreparties aux paiements', () => {
@@ -1595,7 +1600,7 @@ describe('le garde-fou sait encore échouer', () => {
     const p = piece({ id: 'p1' })
     const acompte = paiement({ id: 'a', date: '2025-03-20', montant: -48 })
     const solde = paiement({ id: 's', date: '2025-04-15', montant: -72 })
-    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, solde], [], SANS_VIREMENT_MIXTE).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, solde], [], SANS_VIREMENT_MIXTE, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `d${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     const unSeul = genere.filter((e) => !(e.compte === COMPTE_BANQUE && e.ligne_bancaire_id === 's'))
     expect(() => memeResultat(unSeul, [p], [], derivee, true, [acompte, solde])).toThrow()
@@ -1656,7 +1661,7 @@ describe('le garde-fou sait encore échouer', () => {
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const avant: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -100 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -200 }]
     const apres: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const ancien = brouillonEngagement(p, [...(paiementsDesPieces([groupe], avant, SANS_VIREMENT_MIXTE).get('p1') ?? [])])
+    const ancien = brouillonEngagement(p, [...(paiementsDesPieces([groupe], avant, SANS_VIREMENT_MIXTE, []).get('p1') ?? [])].filter(estParLeReleve))
     expect(memeResultat(ancien, [p], [], deployee, true, [groupe], ENGAGEMENT, apres).piecesDesynchronisees).toEqual(['p1'])
     expect(() => memeResultat(ancien, [p], [], derivee, true, [groupe], ENGAGEMENT, apres)).toThrow()
   })

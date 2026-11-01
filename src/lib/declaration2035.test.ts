@@ -38,7 +38,7 @@ const calcul = (o: {
   o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [],
   // Les échéances comptées comme à l'écran : au mouvement qui les paie quand `paiements` en porte un.
   cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], true,
-  paiementsDesPieces(o.paiements ?? [], [], []), o.mouvements ?? [], o.declarationsTva ?? [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+  paiementsDesPieces(o.paiements ?? [], [], [], []), o.mouvements ?? [], o.declarationsTva ?? [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
   { etat: 'sans_bascule' }, CAISSE_ABSENTE,
 )
 
@@ -273,7 +273,7 @@ describe('calculerDeclaration2035 — totaux et résultat', () => {
     const encaissement = paiement({ id: 'm', piece_id: null, categorie_id: 'c-honoraires-recus', date: '2025-04-02', montant: 300 })
     const d = calculerDeclaration2035(
       2025, [piece({ id: 'a', categorie_id: 'c-honoraires-payes', montant_ht: 80 })], honoraires, [], [], [], true,
-      paiementsDesPieces([], [], []), partsDuReleve([encaissement], honoraires, [], true), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+      paiementsDesPieces([], [], [], []), partsDuReleve([encaissement], honoraires, [], true), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
       { etat: 'sans_bascule' }, CAISSE_ABSENTE,
     )
     expect(d.recettes.map((l) => [l.poste, l.montant, l.nbMouvements])).toEqual([['Honoraires', 300, 1]])
@@ -774,7 +774,7 @@ describe('calculerDeclaration2035 — l’arrondi de la liquidation de la TVA', 
     const gains = [...categories, { id: 'c-gains', poste_2035: POSTE_ARRONDIS_TVA_PRODUIT } as Categorie]
     const d = calculerDeclaration2035(
       2025, [piece({ id: 'g', type_piece: 'vente', categorie_id: 'c-gains', montant_ht: 10, montant_ttc: 10 })], gains, [], [], [], true,
-      paiementsDesPieces([], [], []), [], [declaration()], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+      paiementsDesPieces([], [], [], []), [], [declaration()], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
       { etat: 'sans_bascule' }, CAISSE_ABSENTE,
     )
     expect(d.recettes).toEqual([{ poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette', montant: 10.8, nbPieces: 1, nbMouvements: 0, nbEncaissements: 0 }])
@@ -879,7 +879,7 @@ describe('calculerDeclaration2035 — les contributions, source par source', () 
   }) => calculerDeclaration2035(
     o.annee ?? 2025, o.pieces ?? [], categoriesComptables, o.immos ?? [],
     cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], o.assujetti ?? true,
-    paiementsDesPieces(o.paiements ?? [], [], []),
+    paiementsDesPieces(o.paiements ?? [], [], [], []),
     partsDuReleve(o.mouvements ?? [], categoriesComptables, [], o.assujetti ?? true), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
     { etat: 'sans_bascule' }, CAISSE_ABSENTE,
   )
@@ -982,7 +982,7 @@ describe('calculerDeclaration2035 — les contributions, source par source', () 
       paiement({ id: `${p.id}-jan`, piece_id: p.id, date: '2026-01-10', montant: -70 }),
     ])
     const ecrites = pieces.flatMap((p) => lignesChargeProduitPourPiece(
-      'd1', p, { compte: '606100', immobilisation: false }, true, paiementsDesPieces(paiements, [], []).get(p.id) ?? [], PLAN_PAR_DEFAUT,
+      'd1', p, { compte: '606100', immobilisation: false }, true, paiementsDesPieces(paiements, [], [], []).get(p.id) ?? [], PLAN_PAR_DEFAUT,
     )).filter((l) => l.compte === '606100')
     const ecritEn = (annee: number) => Math.round(ecrites.filter((l) => l.date.startsWith(String(annee))).reduce((s, l) => s + l.montant, 0) * 100) / 100
     expect(calculComptable({ annee: 2025, pieces, paiements }).totalDepenses).toBe(83.34)
@@ -1011,7 +1011,7 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
   const affecte = (o: Partial<LigneBancaire>): LigneBancaire =>
     paiement({ piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', ...o })
   const calculReleve = (...lignes: LigneBancaire[]) => calculerDeclaration2035(
-    2025, [], categoriesDuReleve, [], [], [], false, paiementsDesPieces([], [], []), partsDuReleve(lignes, categoriesDuReleve, [], false), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+    2025, [], categoriesDuReleve, [], [], [], false, paiementsDesPieces([], [], [], []), partsDuReleve(lignes, categoriesDuReleve, [], false), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
     { etat: 'sans_bascule' }, CAISSE_ABSENTE,
   )
 
@@ -1038,7 +1038,7 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
     // Le moteur ne déclarait la ligne 25 que positive : un remboursement de l'Urssaf supérieur aux appels de
     // l'année disparaissait du résultat.
     const rembt = cotisation({ id: 'r', echeance: '2025-06-05', montant_verse: null, montant_appele: -300, montant_csg_crds: null })
-    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
+    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
     expect(d.depenses).toEqual([{ poste: POSTE_COTISATIONS, nature: 'depense', montant: -300, nbPieces: 0, nbMouvements: 0, nbEncaissements: 0 }])
     expect(d.resultat).toBe(300)
   })
@@ -1058,7 +1058,7 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
     dossierId: 'd1', factures: [F1], lignes: LIGNES_F1, encaissements: [e1.encaissement, e2.encaissement], parts: [e1.part, e2.part], ...o,
   })
   const avec = (v: VentesFacturees, o: { pieces?: Piece[]; annee?: number; assujetti?: boolean } = {}) => calculerDeclaration2035(
-    o.annee ?? 2025, o.pieces ?? [], categories, [], [], [], o.assujetti ?? true, paiementsDesPieces([], [], []), [], [], PLAN_PAR_DEFAUT, v,
+    o.annee ?? 2025, o.pieces ?? [], categories, [], [], [], o.assujetti ?? true, paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT, v,
     { etat: 'sans_bascule' }, CAISSE_ABSENTE,
   )
   const desVentes = (d: ReturnType<typeof avec>) => d.contributions.filter((c) => c.source.type === 'encaissement')
@@ -1067,7 +1067,7 @@ describe('calculerDeclaration2035 — les ventes facturées', () => {
     // Le compilateur refuse l'appel (`tsc -b` vérifie la directive) ; forcé quand même, il lève au lieu de rendre une 2035
     // sans ventes facturées.
     // @ts-expect-error — les ventes facturées omises
-    expect(() => calculerDeclaration2035(2025, [], categories, [], [], [], true, paiementsDesPieces([], [], []), [], [], PLAN_PAR_DEFAUT)).toThrow()
+    expect(() => calculerDeclaration2035(2025, [], categories, [], [], [], true, paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT)).toThrow()
   })
 
   it('une facture encaissée en deux fois, à cheval sur deux années : chaque part dans l’année de son encaissement', () => {
@@ -1259,7 +1259,7 @@ describe('calculerDeclaration2035 — les frais d’un mouvement d’encaissemen
   const declarer = (s: SourcesDesEcrituresDeVente, o: { categories?: Categorie[]; annee?: number; plan?: PlanComptable; bascule?: boolean } = {}) => {
     const plan = o.plan ?? PLAN_PAR_DEFAUT
     return calculerDeclaration2035(
-      o.annee ?? 2025, [], o.categories ?? [COMMUNE], [], [], [], true, paiementsDesPieces([], [], []), [], [], plan, ventesDe(s),
+      o.annee ?? 2025, [], o.categories ?? [COMMUNE], [], [], [], true, paiementsDesPieces([], [], [], []), [], [], plan, ventesDe(s),
       o.bascule === false ? { etat: 'sans_bascule' } : { etat: 'composees', composition: composition(s, 'tresorerie', plan) }, CAISSE_ABSENTE,
     )
   }
@@ -1268,7 +1268,7 @@ describe('calculerDeclaration2035 — les frais d’un mouvement d’encaissemen
   it('le paramètre est obligatoire : aucun appel ne compile sans lui, et rien ne le remplace en silence', () => {
     const s = sources()
     // @ts-expect-error — les écritures des ventes facturées omises
-    expect(() => calculerDeclaration2035(2025, [], [COMMUNE], [], [], [], true, paiementsDesPieces([], [], []), [], [], PLAN_PAR_DEFAUT, ventesDe(s))).toThrow()
+    expect(() => calculerDeclaration2035(2025, [], [COMMUNE], [], [], [], true, paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT, ventesDe(s))).toThrow()
   })
 
   it('une dépense, à la date du mouvement, sous le poste de la catégorie commune, au compte que la composition écrit', () => {

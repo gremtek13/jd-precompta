@@ -3,12 +3,12 @@ import { mouvementJustifieParLeReleve } from './affectationBanque'
 import { COMPTE_BANQUE } from './comptes'
 import { nomDuVehicule } from './forfaitKilometrique'
 import { referenceDeLaLiquidation, referenceDuPaiementPersonnel } from './fec'
-import { justificatifDeLaCaisse } from './controlesDeLaCaisse'
+import { justificatifDeLaCaisse, operationsDe, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { formatDate } from './format'
 import type {
-  ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, TransmissionFacture, VehiculeDossier,
+  ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, OperationCaisse, Piece, TransmissionFacture, VehiculeDossier,
 } from './types'
 import {
   indexDesFactures, nomDuDocument, porteUneSourceDeVente, rattachementDesVentes, type IndexDesFactures,
@@ -243,6 +243,20 @@ export interface RegistreAudit {
   vehicules: readonly VehiculeDossier[]
   // Les ventes facturées et leurs preuves (ci-dessus).
   ventes: JustificatifsDesVentes
+  // Les opérations de la caisse du dossier, lues en entier (lib/controlesDeLaCaisse.ts), ou la caisse absente : le paiement
+  // d'une pièce par la caisse (étape C9a) se cite à sa ligne de caisse. Obligatoires, sans valeur par défaut : les oublier
+  // ferait dire « opération de caisse hors du jeu chargé » à chaque paiement en espèces.
+  caisse: OperationsDeCaisse
+}
+
+// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (étape C9a ; CAISSE-Q4, (B)) : sa ligne de caisse est jugée par sa PIÈCE, comme la
+// contrepartie de banque — la pièce pour justificatif —, et l'opération réelle qu'elle cite est le paiement par la caisse :
+// sa date, son montant signé comme le relevé, et ce qu'il est (« Paiement en espèces par la caisse », qui l'a saisi —
+// le cabinet ou le client, jamais un nom —, et le brouillard du praticien de ce jour, tenu hors de l'application). Le
+// relevé n'y est pour rien : les espèces n'y sont pas passées.
+function libelleDuPaiementParLaCaisse(operation: Pick<OperationCaisse, 'date' | 'origine'>): string {
+  const qui = operation.origine === 'client' ? 'saisi par le client' : 'saisi par le cabinet'
+  return `Paiement en espèces par la caisse, ${qui} — ${justificatifDeLaCaisse(operation.date)}`
 }
 
 export function pisteAudit(
@@ -257,6 +271,7 @@ export function pisteAudit(
   const bienParId = new Map(registre.immobilisations.map((i) => [i.id, i]))
   const factureParId = new Map(registre.factures.map((p) => [p.id, p]))
   const vehiculeParId = new Map(registre.vehicules.map((v) => [v.id, v]))
+  const operationParId = new Map(operationsDe(registre.caisse).map((o) => [o.id, o]))
   const piecesCitees = new Set(ecritures.map((e) => e.piece_id).filter((id): id is string => !!id))
   const ventes = rattachementDesVentes(ecritures, registre.ventes.ecritures)
   const index = indexDesFactures(registre.ventes)
@@ -286,6 +301,9 @@ export function pisteAudit(
     // vides s'expliquer toutes seules — une colonne vide non commentée se lit comme une absence de
     // preuve, ce qui est exactement ce qu'un export de piste d'audit ne doit pas laisser croire.
     else if (e.ligne_bancaire_id && !mouvement) manque.push('mouvement hors du jeu chargé')
+    // La ligne de caisse d'un paiement par la caisse : son opération, lue avec la caisse, ou la même distinction.
+    const parLaCaisse = e.piece_id && e.operation_caisse_id ? operationParId.get(e.operation_caisse_id) ?? null : null
+    if (e.piece_id && e.operation_caisse_id && !parLaCaisse) manque.push('opération de caisse hors du jeu chargé')
 
     return {
       ecritureId: e.id,
@@ -302,9 +320,9 @@ export function pisteAudit(
       // importé. La colonne reste vide plutôt que de laisser croire à une preuve d'intégrité.
       pieceFichier: piece?.nom_fichier ?? (releve ? justificatifDuReleve(releve) : null),
       pieceEmpreinte: piece?.storage_hash ?? null,
-      mouvementDate: mouvement?.date ?? null,
-      mouvementLibelle: mouvement?.libelle ?? null,
-      mouvementMontant: mouvement?.montant ?? null,
+      mouvementDate: mouvement?.date ?? parLaCaisse?.date ?? null,
+      mouvementLibelle: mouvement?.libelle ?? (parLaCaisse ? libelleDuPaiementParLaCaisse(parLaCaisse) : null),
+      mouvementMontant: mouvement?.montant ?? parLaCaisse?.montant ?? null,
       manque,
     }
   })

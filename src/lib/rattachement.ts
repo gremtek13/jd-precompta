@@ -24,12 +24,42 @@ import type { LigneBancaire, ModeComptable, Piece, ReglementGroupe } from './typ
 // même question — quand cette pièce a-t-elle été réglée ? — et une règle écrite deux fois n'attend
 // que de diverger.
 
-// LES PAIEMENTS D'UNE PIÈCE, tels que tous les calculs les lisent : un mouvement RAPPROCHÉ de la pièce, la
-// PART d'un mouvement qui règle plusieurs pièces (lib/reglementGroupe.ts, ligne 26 de la feuille de
-// route), ou, depuis l'étape VF5h, l'ENCAISSEMENT d'une facture d'avant la bascule cité sur un mouvement
-// classé par ses encaissements (le virement mixte, plus bas). Une part est un paiement de sa pièce à la date
-// du mouvement et de son montant : la 2035, la TVA et les écritures la lisent comme un rapprochement simple.
-export interface PaiementDePiece {
+// LES PAIEMENTS D'UNE PIÈCE, tels que tous les calculs les lisent : un paiement par le RELEVÉ — un mouvement RAPPROCHÉ de
+// la pièce, la PART d'un mouvement qui règle plusieurs pièces (lib/reglementGroupe.ts, ligne 26 de la feuille de route),
+// ou, depuis l'étape VF5h, l'ENCAISSEMENT d'une facture d'avant la bascule cité sur un mouvement classé par ses
+// encaissements (le virement mixte, plus bas) —, ou, depuis l'étape C9a, un paiement par la CAISSE (une opération de
+// genre `paiement` qui cite la pièce : CAISSE-Q4, (B)). Chacun est un paiement de sa pièce à SA date et de son montant :
+// la 2035, la TVA et les écritures le lisent comme un rapprochement simple (CGI, art. 93, 1 : la recette encaissée, la
+// dépense payée, quel que soit le moyen).
+//
+// UNE UNION DISCRIMINÉE PAR `origine`, et c'est voulu : seul un paiement par le relevé porte un `id` de MOUVEMENT. Le
+// paiement par la caisse porte l'opération qui le fait (`operation_caisse_id`) et rien d'autre — chaque usage d'un
+// paiement comme mouvement (la contrepartie banque, le règlement en engagement, l'alignement, la fiche d'un mouvement)
+// cesse de compiler à son arrivée, et se juge (HISTORIQUE.md, « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS
+// LES MOTEURS (C9A, LIGNE 26.6) »).
+export type PaiementDePiece = PaiementParLeReleve | PaiementParLaCaisse
+
+/** Un paiement de la pièce par la CAISSE du dossier (étape C9a) : l'opération de genre `paiement` qui la cite, à sa date
+ *  (le jour où les espèces sont sorties, ou entrées pour une vente), d'un montant signé comme le relevé. AUCUN `id` de
+ *  mouvement : ce n'en est pas un. */
+export interface PaiementParLaCaisse {
+  operation_caisse_id: string
+  date: string
+  montant: number
+  origine: 'caisse'
+}
+
+/** Le paiement est-il par le relevé ? Ce qu'un usage du paiement comme MOUVEMENT exige (la banque, l'engagement). */
+export function estParLeReleve(p: PaiementDePiece): p is PaiementParLeReleve {
+  return p.origine !== 'caisse'
+}
+
+/** La clé d'un paiement, d'un moyen ou de l'autre : le mouvement, ou l'opération de la caisse. */
+export function cleDuPaiement(p: PaiementDePiece): string {
+  return p.origine === 'caisse' ? `caisse:${p.operation_caisse_id}` : p.id
+}
+
+export interface PaiementParLeReleve {
   /** Le mouvement bancaire : en engagement il désigne le règlement de la pièce, en trésorerie sa
    *  contrepartie banque. Deux parts d'un même mouvement portent le même, sur deux pièces différentes. */
   id: string
@@ -46,7 +76,7 @@ export interface PaiementDePiece {
 }
 
 /** Les paiements de chaque pièce, par identifiant de pièce. Ne se construit que par `paiementsDesPieces`,
- *  qui exige les parts des règlements groupés et celles des virements mixtes. */
+ *  qui exige les parts des règlements groupés, celles des virements mixtes et les paiements par la caisse. */
 export type PaiementsDesPieces = ReadonlyMap<string, readonly PaiementDePiece[]>
 
 /** Ce que `paiementsDesPieces` lit d'une ligne du relevé. */
@@ -67,6 +97,24 @@ export interface PartEncaissee {
   piece_id: string
   montant: number
 }
+
+/**
+ * Ce qu'il lit d'un PAIEMENT PAR LA CAISSE (étape C9a) : l'opération de genre `paiement`, la pièce qu'elle cite, sa date et
+ * son montant, signé comme le relevé. Ne se construit que par `paiementsParLaCaisse` (lib/paiementParLaCaisse.ts), qui ne
+ * garde que les paiements vivants — ni retirés, ni remplacés — et n'en rend AUCUN tant que la migration n'est pas en base
+ * (`PAIEMENT_PAR_LA_CAISSE_EXPORTE` baissé).
+ */
+export interface PartPayeeParLaCaisse {
+  operation_caisse_id: string
+  piece_id: string
+  date: string
+  montant: number
+}
+
+/** Aucun paiement par la caisse : ce que passe un appelant qui, de son propre jugement, n'en compte pas — l'espace client,
+ *  qui ne lit pas la caisse ; le badge « Rapprochée » d'une pièce, qui dit un mouvement bancaire. Écrit en toutes lettres,
+ *  jamais une valeur par défaut. */
+export const AUCUN_PAIEMENT_PAR_LA_CAISSE: readonly PartPayeeParLaCaisse[] = Object.freeze([])
 
 // Les paiements de chaque pièce. Seul un mouvement RAPPROCHÉ paie une pièce : le statut est relu ici
 // plutôt que supposé du côté de l'appelant, un `piece_id` sur une ligne remise à traiter étant exactement
@@ -91,12 +139,24 @@ export interface PartEncaissee {
 // OBLIGATOIRES elles aussi, pour la même raison : oubliées, la pièce d'un virement mixte retomberait sans
 // paiement, à sa date de facture.
 //
-// Chaque liste est triée par date puis par mouvement, pour que deux lectures du même relevé rendent la
-// même chose quel que soit l'ordre de la requête — la répartition des centimes d'une écriture en dépend.
+// LE PAIEMENT PAR LA CAISSE (étape C9a ; CAISSE-Q4, (B)). Une pièce payée en espèces de la caisse du dossier — une
+// opération de genre `paiement` qui la cite (`regler_piece_par_la_caisse`, migration `paiement_par_la_caisse`) — est
+// payée à la date de cette opération et de son montant, comme par un mouvement : la 2035 la compte ce jour-là (CGI, art.
+// 93, 1 ; BOI-BNC-BASE-20-10-10, § 10), la CA3 rend sa TVA exigible ou déductible à cette date selon le régime figé, et
+// une pièce payée en partie par la banque et en partie par la caisse additionne ses paiements (`partsDesPaiements`).
+// Aucune règle neuve : un paiement est un paiement. Ces paiements sont OBLIGATOIRES eux aussi, pour la même raison que les
+// parts : oubliés, une pièce payée en espèces retomberait à sa date de facture, « sans paiement ». Ils arrivent filtrés
+// (`paiementsParLaCaisse`) : ni retirés, ni remplacés, et AUCUN tant que la migration n'est pas en base — la liste vide
+// rend alors, au caractère près, ce que la fonction rendait avant eux (`paiementParLaCaisse.test.ts`).
+//
+// Chaque liste est triée par date, puis le relevé avant la caisse, puis par mouvement ou par opération, pour que deux
+// lectures rendent la même chose quel que soit l'ordre de la requête — la répartition des centimes d'une écriture en
+// dépend. Une liste sans paiement par la caisse se trie comme avant (par date puis par mouvement).
 export function paiementsDesPieces(
   lignes: readonly LignePayante[],
   reglements: readonly PartReglee[],
   encaissees: readonly PartEncaissee[],
+  caisse: readonly PartPayeeParLaCaisse[],
 ): PaiementsDesPieces {
   const mouvements = new Map(lignes.map((l) => [l.id, l]))
   const parPiece = new Map<string, PaiementDePiece[]>()
@@ -120,7 +180,13 @@ export function paiementsDesPieces(
     if (!mouvement || mouvement.statut !== 'rapprochee' || !mouvement.encaissements_de_factures) continue
     ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: 'encaissements' })
   }
-  for (const liste of parPiece.values()) liste.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+  for (const part of caisse) {
+    ajouter(part.piece_id, { operation_caisse_id: part.operation_caisse_id, date: part.date, montant: part.montant, origine: 'caisse' })
+  }
+  const rang = (p: PaiementDePiece) => (p.origine === 'caisse' ? 1 : 0)
+  for (const liste of parPiece.values()) {
+    liste.sort((a, b) => a.date.localeCompare(b.date) || rang(a) - rang(b) || cleDuPaiement(a).localeCompare(cleDuPaiement(b)))
+  }
   return parPiece
 }
 

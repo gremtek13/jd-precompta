@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   anneesDesRattachements,
+  cleDuPaiement,
   paiementsDesPieces,
   partDansLaPeriode,
   partDeLAnnee,
@@ -180,7 +181,7 @@ describe('paiementsDesPieces', () => {
       mouvement({ id: 'e', piece_id: 'p3', statut: 'non_rapprochee' }),
       mouvement({ id: 'f', piece_id: 'p4', statut: 'ignoree' }),
     ]
-    const parPiece = paiementsDesPieces(lignes, [], [])
+    const parPiece = paiementsDesPieces(lignes, [], [], [])
     expect([...parPiece.keys()].sort()).toEqual(['p1', 'p2'])
     expect(parPiece.get('p1')).toEqual([
       { id: 'a', date: '2026-01-05', montant: -1000, origine: 'rapprochement' },
@@ -196,7 +197,7 @@ describe('paiementsDesPieces', () => {
       { ligne_bancaire_id: 'g', piece_id: 'p1', montant: -1000 },
       { ligne_bancaire_id: 'g', piece_id: 'p2', montant: 100 },
     ]
-    const parPiece = paiementsDesPieces([groupe], parts, [])
+    const parPiece = paiementsDesPieces([groupe], parts, [], [])
     expect(parPiece.get('p1')).toEqual([{ id: 'g', date: '2026-03-10', montant: -1000, origine: 'groupe' }])
     expect(parPiece.get('p2')).toEqual([{ id: 'g', date: '2026-03-10', montant: 100, origine: 'groupe' }])
   })
@@ -207,16 +208,16 @@ describe('paiementsDesPieces', () => {
     const parPiece = paiementsDesPieces([acompte, groupe], [
       { ligne_bancaire_id: 'a', piece_id: 'p1', montant: -700 },
       { ligne_bancaire_id: 'a', piece_id: 'p2', montant: -200 },
-    ], [])
+    ], [], [])
     // Par date d'abord : le virement groupé du 15 janvier avant l'acompte du 1er février, quel que soit
     // l'ordre de la lecture.
-    expect(parPiece.get('p1')?.map((p) => [p.id, p.montant])).toEqual([['a', -700], ['z', -300]])
+    expect(parPiece.get('p1')?.map((p) => [cleDuPaiement(p), p.montant])).toEqual([['a', -700], ['z', -300]])
   })
 
   it('départage deux paiements du même jour par leur mouvement, pour rendre toujours le même ordre', () => {
     const lignes = [mouvement({ id: 'b', montant: -400 }), mouvement({ id: 'a', montant: -600 })]
-    expect(paiementsDesPieces(lignes, [], []).get('p1')?.map((p) => p.id)).toEqual(['a', 'b'])
-    expect(paiementsDesPieces([...lignes].reverse(), [], []).get('p1')?.map((p) => p.id)).toEqual(['a', 'b'])
+    expect(paiementsDesPieces(lignes, [], [], []).get('p1')?.map((p) => cleDuPaiement(p))).toEqual(['a', 'b'])
+    expect(paiementsDesPieces([...lignes].reverse(), [], [], []).get('p1')?.map((p) => cleDuPaiement(p))).toEqual(['a', 'b'])
   })
 
   // Une part ne paie que si son mouvement est LU, RAPPROCHÉ et RÉGLÉ EN GROUPE : sinon rien ne la date,
@@ -231,7 +232,7 @@ describe('paiementsDesPieces', () => {
       mouvement({ id: 'defait', piece_id: null, reglement_groupe: true, statut: 'non_rapprochee' }),
       mouvement({ id: 'simple', piece_id: null, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null }),
     ]
-    expect(paiementsDesPieces(lignes, parts, []).size).toBe(0)
+    expect(paiementsDesPieces(lignes, parts, [], []).size).toBe(0)
   })
 
   it('écarte la part d’une pièce supprimée depuis : elle ne paie plus rien', () => {
@@ -239,7 +240,7 @@ describe('paiementsDesPieces', () => {
     const parPiece = paiementsDesPieces([groupe], [
       { ligne_bancaire_id: 'g', piece_id: null, montant: -100 },
       { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -200 },
-    ], [])
+    ], [], [])
     expect([...parPiece.keys()]).toEqual(['p2'])
   })
 
@@ -248,7 +249,7 @@ describe('paiementsDesPieces', () => {
     const payees = piecesPayees(paiementsDesPieces(
       [groupe, mouvement({ id: 's', piece_id: 'p9' })],
       [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -100 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -200 }],
-      [],
+      [], [],
     ))
     expect([...payees].sort()).toEqual(['p1', 'p2', 'p9'])
   })
@@ -262,7 +263,7 @@ describe('paiementsDesPieces', () => {
   })
 
   it('rend la part d’un virement mixte comme un paiement de l’exemplaire, à la date du mouvement et de son montant', () => {
-    const parPiece = paiementsDesPieces([mixte()], [], [{ ligne_bancaire_id: 'mx', piece_id: 'p1', montant: 120 }])
+    const parPiece = paiementsDesPieces([mixte()], [], [{ ligne_bancaire_id: 'mx', piece_id: 'p1', montant: 120 }], [])
     expect(parPiece.get('p1')).toEqual([{ id: 'mx', date: '2027-01-08', montant: 120, origine: 'encaissements' }])
     expect([...piecesPayees(parPiece)]).toEqual(['p1'])
   })
@@ -282,13 +283,13 @@ describe('paiementsDesPieces', () => {
       // Rapproché d'une pièce, il n'est pas classé par ses encaissements : c'est le rapprochement qui paie SA pièce.
       mouvement({ id: 'piece', piece_id: 'p9', montant: 300 }),
     ]
-    expect([...paiementsDesPieces(lignes, [], encaissees).keys()]).toEqual(['p9'])
+    expect([...paiementsDesPieces(lignes, [], encaissees, []).keys()]).toEqual(['p9'])
   })
 
   it('une pièce payée en partie par un virement mixte et en partie par un autre mouvement : ses deux paiements, par date', () => {
     const acompte = mouvement({ id: 'ac', piece_id: 'p1', montant: 40, date: '2026-12-28' })
-    const parPiece = paiementsDesPieces([mixte(), acompte], [], [{ ligne_bancaire_id: 'mx', piece_id: 'p1', montant: 80 }])
-    expect(parPiece.get('p1')?.map((p) => [p.id, p.date, p.montant, p.origine])).toEqual([
+    const parPiece = paiementsDesPieces([mixte(), acompte], [], [{ ligne_bancaire_id: 'mx', piece_id: 'p1', montant: 80 }], [])
+    expect(parPiece.get('p1')?.map((p) => [cleDuPaiement(p), p.date, p.montant, p.origine])).toEqual([
       ['ac', '2026-12-28', 40, 'rapprochement'], ['mx', '2027-01-08', 80, 'encaissements'],
     ])
     // Une vente de 120 € : un tiers en 2026, deux tiers en 2027 — chacun à la date de son paiement (CGI, art. 93, 1).
@@ -301,12 +302,12 @@ describe('paiementsDesPieces', () => {
   it('une pièce compte une fois : deux encaissements de sa facture sur le même virement la datent, sans la compter deux fois', () => {
     const parPiece = paiementsDesPieces([mixte()], [], [
       { ligne_bancaire_id: 'mx', piece_id: 'p1', montant: 70 }, { ligne_bancaire_id: 'mx', piece_id: 'p1', montant: 50 },
-    ])
+    ], [])
     expect(parPiece.get('p1')?.map((p) => p.montant)).toEqual([70, 50])
     const vente = piece({ type_piece: 'vente', montant_ttc: 120, montant_ht: 120, date_piece: '2026-12-20' })
     expect(rattachementsTresorerie(vente, parPiece.get('p1') ?? [])).toEqual([{ date: '2027-01-08', part: 1, source: 'paiement' }])
     // Sans la part, la pièce retombe sans paiement, à sa date de facture : l'exercice d'avant.
-    expect(rattachementsTresorerie(vente, paiementsDesPieces([mixte()], [], []).get('p1') ?? []))
+    expect(rattachementsTresorerie(vente, paiementsDesPieces([mixte()], [], [], []).get('p1') ?? []))
       .toEqual([{ date: '2026-12-20', part: 1, source: 'sans_paiement' }])
   })
 })
@@ -332,7 +333,7 @@ describe('partDansLaPeriode et anneesDesRattachements', () => {
 describe('rattachements — selon le modèle comptable du dossier', () => {
   // Les paiements d'une pièce, par le vrai constructeur : une conversion écrite ici pourrait dire autre
   // chose que lui.
-  const payee = (...lignes: LigneBancaire[]) => paiementsDesPieces(lignes, [], []).get('p1') ?? []
+  const payee = (...lignes: LigneBancaire[]) => paiementsDesPieces(lignes, [], [], []).get('p1') ?? []
 
   it('rend en trésorerie exactement la règle de la 2035', () => {
     const p = piece()
@@ -356,7 +357,7 @@ describe('rattachements — selon le modèle comptable du dossier', () => {
     const paiements = paiementsDesPieces([groupe], [
       { ligne_bancaire_id: 'g', piece_id: 'p1', montant: -1000 },
       { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -500 },
-    ], []).get('p1') ?? []
+    ], [], []).get('p1') ?? []
     expect(rattachements(piece(), paiements, 'tresorerie')).toEqual([{ date: '2026-02-12', part: 1, source: 'paiement' }])
   })
 })

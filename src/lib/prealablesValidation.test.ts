@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CARTES_DE_CLOTURE, motsDeLaBase, NOM_DU_MOYEN_SANS_MOUVEMENT, POINTS_DE_LA_CHECKLIST_ECARTES, prealablesDeValidation,
   prochainExerciceAValider, REFUS_VENTES_FACTUREES_DE_LA_VALIDATION, type DonneesDeValidation,
@@ -142,7 +142,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, ...o,
   }
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
-  const paiements = paiementsDesPieces(base.lignes, base.reglements, base.encaissees)
+  const paiements = paiementsDesPieces(base.lignes, base.reglements, base.encaissees, [])
   const declaration = calculerDeclaration2035(
     base.annee, [...base.piecesValidees], [...base.categories], [...base.immobilisations], [], [...base.vehicules],
     base.assujettiTva, paiements, [], base.declarationsTva, PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
@@ -431,7 +431,7 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
     const janvier = ligne('l-jan', { date: '2026-01-05', piece_id: 'p1' })
     // Telles que la génération les écrit ; la facture a été validée avec 2025, son règlement est de 2026.
     const ecrites = lignesPourPiece('d1', facture, { compte: '606100', immobilisation: false }, false,
-      paiementsDesPieces([janvier], [], []).get('p1') ?? [], engagement)
+      paiementsDesPieces([janvier], [], [], []).get('p1') ?? [], engagement)
       .map((l, i) => ecriture(`e${i}`, { ...l, ligne_bancaire_id: l.ligne_bancaire_id ?? null, statut: l.date <= '2025-12-31' ? 'validee' : 'proposee' }))
     expect(ecrites.map((e) => [e.date, e.compte, e.statut])).toEqual([
       ['2025-12-20', '606100', 'validee'], ['2025-12-20', '401000', 'validee'],
@@ -1051,7 +1051,7 @@ describe('prealablesDeValidation — une échéance payée depuis le compte pers
     const d = donnees(o)
     const declaration = calculerDeclaration2035(
       d.annee, [...d.piecesValidees], [...d.categories], [], cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), [],
-      d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements, []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+      d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements, [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
       { etat: 'sans_bascule' }, CAISSE_ABSENTE,
     )
     const concordance = concordance2035(
@@ -1300,7 +1300,7 @@ describe('prealablesDeValidation et prochainExerciceAValider — la pièce qu’
   const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
   // Ses écritures telles que la génération les écrit : à la date du virement, sa banque sur lui.
   const ECRITES = lignesPourPiece('d1', RECETTE_D_AVANT, { compte: '706000', immobilisation: false }, false,
-    paiementsDesPieces([VIREMENT_MIXTE], [], PARTS).get('pv') ?? [], TRESORERIE)
+    paiementsDesPieces([VIREMENT_MIXTE], [], PARTS, []).get('pv') ?? [], TRESORERIE)
     .map((l, i) => ecriture(`ev${i}`, { ...l, piece_id: 'pv', ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 
   it('les écritures de la pièce sont celles de son paiement par le virement : 2025 n’a rien à régénérer', () => {
@@ -1541,7 +1541,7 @@ describe('prealablesDeValidation — les ventes facturées d’un dossier bascul
     if (modele.mode === 'engagement') return base
     // En trésorerie, la 2035 qui lit les ventes facturées et leurs écritures, et sa concordance avec le brouillon.
     const declaration = calculerDeclaration2035(
-      2025, [], categories, [], [], [], true, paiementsDesPieces([], [], []), [], [], modele.plan, ventes, { etat: 'composees', composition: c }, CAISSE_ABSENTE,
+      2025, [], categories, [], [], [], true, paiementsDesPieces([], [], [], []), [], [], modele.plan, ventes, { etat: 'composees', composition: c }, CAISSE_ABSENTE,
     )
     const concordance = concordance2035(declaration, base.ecritures, {
       piecesValidees: new Set(), piecesImmobilisees: new Set(),
@@ -1872,5 +1872,41 @@ describe('prealablesDeValidation — la caisse (étape C3b)', () => {
     expect(avec.nb).toBe(2)
     expect(avec.message).toContain('ou une recette de caisse dont la catégorie n\'a pas de poste ou n\'est plus un produit')
     expect(avec.detail).toBe('Dont 2 recettes de caisse : la carte « Recettes de caisse absentes du récapitulatif » ci-dessus les nomme.')
+  })
+})
+
+// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (ligne 26.6, étape C9a), le drapeau joué dans ses deux états. Baissé (la valeur du
+// module), la validation ne lit aucun paiement par la caisse — tous les cas plus haut ; levé, elle les tire des opérations
+// qu'elle reçoit, et une pièce compte à la date de ses espèces, pour l'ordre des exercices comme pour les montants payés.
+const drapeauDuPaiement = vi.hoisted(() => ({ leve: null as boolean | null }))
+vi.mock('./paiementParLaCaisse', async (original) => {
+  const module = await original<typeof import('./paiementParLaCaisse')>()
+  return {
+    ...module,
+    paiementsParLaCaisse: (operations: Parameters<typeof module.paiementsParLaCaisse>[0]) =>
+      module.paiementsParLaCaisseSelon(drapeauDuPaiement.leve ?? module.PAIEMENT_PAR_LA_CAISSE_EXPORTE, operations),
+  }
+})
+
+describe('prealablesDeValidation — les paiements par la caisse (étape C9a)', () => {
+  afterEach(() => { drapeauDuPaiement.leve = null })
+  const P2 = piece('p2', { date_piece: '2024-12-20', montant_ttc: 80 })
+  const ESPECES = operationDeCaisse({ id: 'oc-p2', genre: 'paiement', piece_id: 'p2', date: '2025-01-05', montant: -80 })
+
+  it('l’ordre des exercices : une pièce de décembre payée en espèces en janvier fait de janvier l’exercice qui la porte', () => {
+    const d = donnees({ piecesValidees: [P1, P2], operationsDeCaisse: caisseLue([ESPECES]) })
+    expect(prochainExerciceAValider(d)).toBe(2024)
+    drapeauDuPaiement.leve = true
+    expect(prochainExerciceAValider(d)).toBe(2025)
+    // Une caisse pas encore revenue (nulle) n'en rend aucun : la validation se suspend déjà sur elle.
+    expect(prochainExerciceAValider(donnees({ piecesValidees: [P1, P2], operationsDeCaisse: null }))).toBe(2024)
+  })
+
+  it('payée en trop : le relevé et la caisse s’additionnent', () => {
+    const ENTROP = operationDeCaisse({ id: 'oc-p1', genre: 'paiement', piece_id: 'p1', date: '2025-03-20', montant: -50 })
+    const d = donnees({ operationsDeCaisse: caisseLue([ENTROP]) })
+    expect(ids(d)).not.toContain('pieces-payees-en-trop')
+    drapeauDuPaiement.leve = true
+    expect(prealable(d, 'pieces-payees-en-trop')?.nb).toBe(1)
   })
 })

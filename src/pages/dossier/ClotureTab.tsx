@@ -60,6 +60,7 @@ import ConcordanceCard from './ConcordanceCard'
 import ValidationExerciceCard from './ValidationExerciceCard'
 import { AUCUNE_FACTURE_SOURCE, horsDesExemplairesDesSources } from '../../lib/facturesSources'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
 import { operationsDeCaisseDuDossier, operationsPourLesControles } from '../../lib/controlesDeLaCaisse'
 import {
   libelleDeLaRecette, motifDeLaCaisse, recettesDe, recettesDeCaisseDuDossier, recettesPourLesMoteurs, type RecetteDeCaisse,
@@ -479,7 +480,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // mouvement n'est classé par ses encaissements, et il n'y en a aucun. Pas encore revenues ou lues en partie, aucune 2035
   // ne s'affiche ; et la validation se suspend en le disant, par la garde des factures sources (`motifValidation`).
   const encaissees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.encaissees : []
-  const paiements = paiementsDesPieces(lignesBancaires, reglements, encaissees)
+  // Et les paiements de pièces par la caisse (étape C9a) : la 2035 compte une pièce à la date de son paiement en espèces
+  // (CGI, art. 93, 1). Aucun tant que la migration n'est pas en base. Nuls — la caisse pas encore revenue ou lue en partie —,
+  // les recettes de caisse le sont aussi : ni 2035, ni validation (`operationsDeCaisse` nulles).
+  const paiementsDeLaCaisse = paiementsParLaCaisseDuDossier(lectureCaisse, dossierId) ?? []
+  const paiements = paiementsDesPieces(lignesBancaires, reglements, encaissees, paiementsDeLaCaisse)
   const parts = partsDuReleve(lignesBancaires, categories, ventilations, assujettiTva)
   // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance :
   // la 2035 et le FEC disent la même année (lib/cotisationRapprochee.ts).
@@ -508,7 +513,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     : sourcesDesVentesDuDossier === null ? null : ventesDeLaChecklist(sourcesDesVentesDuDossier, frontiereDeValidation(anneesValidees))
   const prochainAValider = prochainExerciceAValider({
     anneeCourante, modele, anneesValidees, aNouveaux, ecritures,
-    lignes: toutesLesLignes, reglements, encaissees, piecesValidees, piecesAValider, cotisations, vehicules, immobilisations, etatsDesVentes,
+    lignes: toutesLesLignes, reglements, encaissees, operationsDeCaisse, piecesValidees, piecesAValider, cotisations, vehicules, immobilisations,
+    etatsDesVentes,
   })
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),

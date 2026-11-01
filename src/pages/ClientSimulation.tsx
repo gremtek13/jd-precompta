@@ -10,7 +10,7 @@ import {
   lireLesVentesDeLaSimulation, ventesDeLaSimulation, type LectureDeLaSimulation,
 } from '../lib/simulationVentesFacturees'
 import { partsDuReleve } from '../lib/partsDuReleve'
-import { paiementsDesPieces } from '../lib/rattachement'
+import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from '../lib/rattachement'
 import { cotisationsComptees } from '../lib/cotisationRapprochee'
 import type {
   Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel, ReglementGroupe,
@@ -226,8 +226,11 @@ export default function ClientSimulation() {
     // ni leurs encaissements, et l'exemplaire d'une facture d'avant qu'un tel virement paie s'y date à sa facture, au lieu
     // du virement — EC3-Q11 et VF5-Q3 : le total mensuel seul, rien de plus pour « Banque ». Un virement mixte n'existe que
     // sur un dossier basculé, dont la simulation compte les ventes facturées par mois (VF8e) ou dit qu'elle ne les compte
-    // pas (`SIMULATION_SANS_VENTES_FACTUREES`).
-    paiementsDesPieces(mouvementsRapproches, reglements, []), modeComptable,
+    // pas (`SIMULATION_SANS_VENTES_FACTUREES`). Ni les paiements de pièces par la caisse (étape C9a) : la session du client ne
+    // lit pas la caisse (CAISSE-Q1 : sa lecture viendra avec son droit, une migration présentée au cabinet), et la
+    // simulation ne compte déjà pas ses recettes en espèces (`SIMULATION_SANS_CAISSE`) ; une pièce qu'elles paient s'y date
+    // à sa facture.
+    paiementsDesPieces(mouvementsRapproches, reglements, [], AUCUN_PAIEMENT_PAR_LA_CAISSE), modeComptable,
     partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva),
     // Un état choisi, et dit plus bas : pas une valeur par défaut.
     ventes.recettes,

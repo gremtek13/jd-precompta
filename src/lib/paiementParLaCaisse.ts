@@ -2,7 +2,9 @@ import {
   avecLOperation, former, jourDit, jugerLaDate, jugerLeMontant, MOTS_DE_LA_CAISSE, ouvertureDuDossier, refus, refusDeLaCaisse,
   type CleDuRefus, type CodeDuRefus, type DossierDeLaCaisse, type EtatDeLaCaisse, type OperationDeLaCaisse, type RefusCaisse,
 } from './caisse'
-import type { Piece } from './types'
+import type { PartPayeeParLaCaisse } from './rattachement'
+import type { CaisseLue } from './recettesDeCaisse'
+import type { OperationCaisse, Piece } from './types'
 
 // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, CE QUE LA BASE EN DIRA AVANT LE CLIC (ligne 26.6, étape C8 ; CAISSE-Q4, (B)). La
 // conception : HISTORIQUE.md, « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE
@@ -169,6 +171,55 @@ export function jugerLeReglementSelon(enBase: boolean, saisie: SaisieDuReglement
 export function jugerLeReglement(saisie: SaisieDuReglement, dossier: DossierDeLaCaisse, pieces: readonly PieceDuPaiement[],
   id: string): JugementDuReglement {
   return jugerLeReglementSelon(PAIEMENT_PAR_LA_CAISSE_EXPORTE, saisie, dossier, pieces, id)
+}
+
+// ── Les paiements par la caisse, tels que les moteurs les lisent (étape C9a) ─────────────────────────────────────────
+
+/** Ce que la dérivation lit d'une opération : son genre, sa pièce, sa date, son montant, son retrait et son remplacement. */
+export type OperationPayante = Pick<OperationCaisse, 'id' | 'genre' | 'piece_id' | 'date' | 'montant' | 'retire_le' | 'remplace_id'>
+
+/**
+ * Les PAIEMENTS DE PIÈCES par la caisse que `paiementsDesPieces` (lib/rattachement.ts) reçoit, tirés des opérations lues :
+ * le genre `paiement`, une pièce citée, ni retiré (`retire_le` ; la base retire celle qu'elle remplace), ni désigné par
+ * une autre (`remplace_id`, défensivement, comme `recettesVivantes`), d'un montant non nul. `enBase` : la migration est-elle
+ * en base ? Faux, AUCUN — sans regarder les opérations : la base d'aujourd'hui n'en écrit pas
+ * (`regler_piece_par_la_caisse` n'existe pas), sa garde refuse la contrepartie qu'on écrirait, et la liste vide rend aux
+ * moteurs, au caractère près, ce qu'ils rendaient avant la caisse. Triés par date puis par opération.
+ */
+export function paiementsParLaCaisseSelon(enBase: boolean, operations: readonly OperationPayante[]): PartPayeeParLaCaisse[] {
+  if (!enBase) return []
+  const remplacees = new Set(operations.flatMap((o) => (o.remplace_id ? [o.remplace_id] : [])))
+  return operations
+    .filter((o) => o.genre === 'paiement' && o.piece_id != null && o.retire_le == null && !remplacees.has(o.id) && o.montant !== 0)
+    .map((o) => ({ operation_caisse_id: o.id, piece_id: o.piece_id!, date: o.date, montant: o.montant }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.operation_caisse_id.localeCompare(b.operation_caisse_id))
+}
+
+/** Les mêmes, selon le drapeau : aucun tant que la migration n'est pas dans l'export. */
+export function paiementsParLaCaisse(operations: readonly OperationPayante[]): PartPayeeParLaCaisse[] {
+  return paiementsParLaCaisseSelon(PAIEMENT_PAR_LA_CAISSE_EXPORTE, operations)
+}
+
+/**
+ * Les paiements par la caisse de CE dossier, tels qu'un écran les passe aux moteurs, selon le drapeau et la lecture de la
+ * caisse (lib/caisseLecture.ts, `lireLaCaisse`) — la même lecture, pour le cabinet, que celle de ses recettes : rien de plus
+ * n'est lu, rien n'est ouvert au client. NUL quand rien ne doit s'en tirer, comme un relevé lu en partie : la lecture pas
+ * encore revenue, celle d'un autre dossier (`DossierDetail` reste monté), ou lue en partie — une pièce payée en espèces y
+ * paraîtrait « sans paiement ». Le drapeau BAISSÉ, aucun, quelle que soit la lecture : aucun écran n'attend la caisse pour
+ * ses paiements, ni ne change quoi que ce soit à ce qu'il rendait. Une caisse pas en base (`enBase` faux) n'en a aucun.
+ */
+export function paiementsParLaCaisseDuDossierSelon(enBase: boolean, lecture: CaisseLue | null, dossierId: string):
+  PartPayeeParLaCaisse[] | null {
+  if (!enBase) return []
+  if (lecture === null || lecture.dossierId !== dossierId) return null
+  if (!lecture.enBase) return []
+  if (!lecture.complete) return null
+  return paiementsParLaCaisseSelon(true, lecture.lignes)
+}
+
+/** La même, selon le drapeau. */
+export function paiementsParLaCaisseDuDossier(lecture: CaisseLue | null, dossierId: string): PartPayeeParLaCaisse[] | null {
+  return paiementsParLaCaisseDuDossierSelon(PAIEMENT_PAR_LA_CAISSE_EXPORTE, lecture, dossierId)
 }
 
 // ── La contrepartie d'un paiement ─────────────────────────────────────────────────────────────────────────────────────

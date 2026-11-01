@@ -291,8 +291,9 @@ const centimesSignes = (e: Pick<EcritureBrouillon, 'sens' | 'montant'>) => (e.se
  * juge comme telle —, or la charge d'une date réunit la part de chacun de ses règlements (`centimesParDate`) : la banque et
  * la poche de l'exploitant le même jour, la banque et un virement mixte. L'écriture de la date se scinde en une par mode,
  * dans l'ordre de `partsDesReglementsALaDate` :
- *   - la ligne de banque d'un paiement va au règlement de son mouvement ; la contrepartie d'une note de frais au compte de
- *     l'exploitant (`estContrepartieDirigeant`, la règle de la génération) à la poche de l'exploitant ;
+ *   - la ligne de banque d'un paiement va au règlement de son mouvement ; la ligne de caisse d'un paiement par la caisse
+ *     (étape C9a) au règlement de son opération ; la contrepartie d'une note de frais au compte de l'exploitant
+ *     (`estContrepartieDirigeant`, la règle de la génération) à la poche de l'exploitant ;
  *   - les lignes que la date partage — la charge ou le produit, sa TVA — se sous-répartissent au centime selon la part de
  *     chaque règlement : la pièce entière d'abord (charge et TVA ensemble), puis chaque ligne, la TVA en dernier, prenant ce
  *     qui reste du total de son règlement — la TVA d'un règlement complète sa charge, comme `lignesChargeProduitPourPiece` le
@@ -312,12 +313,17 @@ function scinderParMode(
   // Une ligne de banque dont le mouvement n'est plus un paiement de la pièce (une écriture désynchronisée) reste au relevé.
   const auReleve = Math.max(0, parts.findIndex((p) => p.reglement.par === 'releve'))
   const aLaPoche = parts.findIndex((p) => p.reglement.par === 'note_de_frais')
+  // Une ligne de caisse dont l'opération n'est plus un paiement de la pièce reste à la caisse, s'il en est une ce jour-là.
+  const aLaCaisse = parts.findIndex((p) => p.reglement.par === 'caisse')
   const propres: EcritureBrouillon[][] = parts.map(() => [])
   const partagees: EcritureBrouillon[] = []
   for (const l of e.rows) {
     if (l.ligne_bancaire_id) {
       const i = parts.findIndex((p) => p.mouvements.includes(l.ligne_bancaire_id!))
       propres[i >= 0 ? i : auReleve].push(l)
+    } else if (l.operation_caisse_id) {
+      const i = parts.findIndex((p) => p.mouvements.includes(`caisse:${l.operation_caisse_id}`))
+      propres[i >= 0 ? i : aLaCaisse >= 0 ? aLaCaisse : auReleve].push(l)
     } else if (aLaPoche >= 0 && contrepartieDirigeant(l)) propres[aLaPoche].push(l)
     else partagees.push(l)
   }
