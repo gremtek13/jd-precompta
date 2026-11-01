@@ -39,7 +39,7 @@ const exonere = (o: { categories: Categorie[]; lignes?: LigneBancaire[]; cotisat
   calculerDeclaration2035(
     o.annee ?? 2025, [], o.categories, [],
     cotisationsComptees(o.cotisations ?? [], o.lignes ?? [], 'tresorerie'), [], false,
-    paiementsDesPieces(o.lignes ?? [], [], []), partsDuReleve(o.lignes ?? [], o.categories, [], false), [], PLAN_PAR_DEFAUT,
+    paiementsDesPieces(o.lignes ?? [], [], [], []), partsDuReleve(o.lignes ?? [], o.categories, [], false), [], PLAN_PAR_DEFAUT,
     ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
   )
 
