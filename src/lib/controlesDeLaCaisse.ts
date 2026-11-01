@@ -31,9 +31,9 @@ import { partsDesVentilations } from './ventilationBanque'
 // PUR : aucun appel au réseau, et pas même un import de la lecture (lib/caisseLecture.ts importe le client ; le scanner des
 // écrans qui lisent la base suit les imports — voir lib/recettesDeCaisse.ts). La forme lue est `CaisseLue`.
 //
-// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (le genre `paiement`, CAISSE-Q4 ; étape C9) n'est pas jugé ici : sa contrepartie
-// porte la pièce (`piece_id`), va au journal de la pièce et se juge avec elle — C9 l'ajoutera à `paiementsDesPieces`, aux
-// préalables des pièces et à la piste d'audit. Ce module ne compose que les trois genres qu'`enregistrer_operation_caisse`
+// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (le genre `paiement`, CAISSE-Q4 ; étape C9a) n'est pas jugé ici : sa contrepartie
+// porte la pièce (`piece_id`), va au journal de la pièce et se juge avec elle — C9a l'a ajouté à `paiementsDesPieces` et à
+// la piste d'audit ; C9b l'ajoutera aux préalables des pièces (`caisse-a-reprendre`). Ce module ne compose que les trois genres qu'`enregistrer_operation_caisse`
 // saisit, et laisse un paiement de côté sans rien en dire.
 
 // ── La forme que les contrôles reçoivent ──────────────────────────────────────────────────────────────────────────────

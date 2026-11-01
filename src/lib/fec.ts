@@ -520,7 +520,8 @@ const champsDeLaLigne = (c: ChampsBnc, id: string): ChampsBncDeLaLigne => ({
 // n'en est pas une : c'est un mouvement du relevé, au journal de BANQUE comme hier. Une ligne qui cite une opération que
 // la lecture ne rend pas — une caisse absente, ou un appelant qui ne l'a pas lue — reste dehors, jamais devinée : les
 // opérations sont un paramètre sans valeur par défaut. LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (le genre `paiement`, étape
-// C9) n'est pas d'ici : ses lignes portent leur pièce, et vont à l'écriture de la pièce, à son journal — C9 l'y conduira.
+// C9a) n'est pas d'ici : ses lignes portent leur pièce, et vont à l'écriture de la pièce, à son journal (la clé de la pièce
+// se lit avant celle d'une opération) ; aux vingt-deux champs, son règlement « Espèces » (`scinderParMode`).
 //
 // UNE VENTE FACTURÉE (ligne 28.6, chantier EC-Q3, étape VF4c2 ; conception, § 5) fait les écritures que sa COMPOSITION rend
 // (lib/ecrituresVentesFacturees.ts) : la facture, l'avoir et l'encaissement de trésorerie au journal des VENTES, le

@@ -21,9 +21,10 @@ import type { OperationCaisse, Piece } from './types'
 // (supabase/essais/caisse.sql, étapes 200 à 231).
 //
 // LE DRAPEAU. `PAIEMENT_PAR_LA_CAISSE_EXPORTE` reste BAISSÉ tant que la migration n'est pas dans l'export : aucun écran
-// ne règle une pièce par la caisse (le lot C9 s'y branchera), et `jugerLeReglementSelon` le dit (`absent`) sans juger.
-// Levé, le jour de l'application — le fichier dans l'export, sous la version de sa ligne d'historique —, C9 offre le
-// geste. Le mouvement d'avant l'ouverture, lui, ne dépend pas du drapeau : l'écran cesse de l'offrir AVANT que la base ne
+// ne règle une pièce par la caisse (le lot C9b s'y branchera), et `jugerLeReglementSelon` le dit (`absent`) sans juger ;
+// et aucun paiement par la caisse n'entre dans les moteurs (`paiementsParLaCaisse`, étape C9a) : ils rendent ce qu'ils
+// rendaient, au caractère près. Levé, le jour de l'application — le fichier dans l'export, sous la version de sa ligne
+// d'historique —, les moteurs lisent les paiements de la caisse, et C9b offre le geste. Le mouvement d'avant l'ouverture, lui, ne dépend pas du drapeau : l'écran cesse de l'offrir AVANT que la base ne
 // le refuse (un resserrement vient en dernier) ; la production n'en portait aucun classé sur la caisse le 29/10/2026
 // (aucun mouvement sur un compte de bilan), et la session les recompte le jour de l'application.
 export const PAIEMENT_PAR_LA_CAISSE_EXPORTE = false

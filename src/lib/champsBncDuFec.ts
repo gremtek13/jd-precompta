@@ -492,7 +492,7 @@ const NATURE_DU_GENRE: Readonly<Record<OperationCaisse['genre'], NatureOperation
   recette: 'Recette',
   apport: "Apport de l'exploitant",
   prelevement: "Prélèvement de l'exploitant",
-  // Le paiement d'une pièce par la caisse n'est pas une écriture à lui : ses lignes vont à l'écriture de la pièce (C9).
+  // Le paiement d'une pièce par la caisse n'est pas une écriture à lui : ses lignes vont à l'écriture de la pièce (C9a).
   paiement: null,
 }
 

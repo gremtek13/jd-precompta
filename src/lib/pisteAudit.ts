@@ -76,8 +76,8 @@ export interface RuptureAudit {
 // retirer qu'avec le paiement : `cotisation_id` ne tombe jamais à nul sous elle. NI UNE OPÉRATION DE LA CAISSE (ligne 26.6,
 // étape C3b ; lib/controlesDeLaCaisse.ts) : son justificatif est le brouillard du praticien, tenu hors de l'application, et sa
 // clé est en cascade — la base n'écrit, ne change et ne retire ses lignes qu'avec elle (`garder_ecriture_de_caisse`) :
-// `operation_caisse_id` ne tombe jamais à nul sous elle. Une ligne qui cite une opération porte aussi, un jour, la pièce
-// qu'un paiement par la caisse règle (étape C9) : elle est alors jugée par sa pièce, comme la contrepartie de banque.
+// `operation_caisse_id` ne tombe jamais à nul sous elle. Une ligne qui cite une opération peut porter aussi la pièce
+// qu'un paiement par la caisse règle (étape C9a) : elle est alors jugée par sa pièce, comme la contrepartie de banque.
 export function rupturesPisteAudit(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): RuptureAudit[] {
   const ruptures: RuptureAudit[] = []
   for (const ecriture of ecritures) {
