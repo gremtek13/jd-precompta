@@ -115,6 +115,20 @@
 -- compte comme `classer_mouvement_par_encaissements` la juge, ne se monte pas ici (une facture d'avant la bascule, son
 -- exemplaire et le classement d'un crédit par ses encaissements) : le module la juge (`paiementParLaCaisse.test.ts`), et la
 -- garde de tête de la migration épingle `encaissement_justifie_son_mouvement` à son empreinte.
+--
+-- ÉTENDU LE 01/11/2026 (ligne 26.6, étape C10 : la migration `caisse_du_client`, PRÉPARÉE, pas appliquée — le droit
+-- « Caisse » d'un accès client). Les contrôles 240 à 267, huit dossiers jetables de plus (préfixe `ca155e00-0000-4000-800c`)
+-- et les accès du client de l'essai : sa saisie sur un dossier exonéré ou en franchise — l'apport, la recette sous la
+-- nature que le cabinet a fixée, l'écriture que la base compose (aucune envoyée), son origine et son auteur ; ses refus
+-- neufs, dans l'ordre (la nature choisie, absente, sans produit ; l'écriture envoyée ; l'ensemble du jour, sans numéro de
+-- facture) ; l'accès sans la case, et la case restaurée sur un dossier redevable (23514, avant toute lecture) ; le
+-- paiement d'une pièce et son reste au centime, sous les mots du client ; le retrait et le remplacement de ses seules
+-- opérations ; la saisie d'un mois ; la caisse jamais négative ; la frontière ; ce qu'il lit — la policy (toute la caisse
+-- de son dossier, rien d'ailleurs, ni le brouillon), `caisse_du_client` jour par jour, ce qu'elle ne rend pas, ses refus ;
+-- la nature, jugée à l'écriture par sa garde ; le catalogue. Une étape de genre « …5 » ne se joue qu'avec cette
+-- migration : sans elle, une ligne dit qu'elles attendent (EN ATTENTE) ; une de genre « …5h » ne se joue que SANS elle
+-- (97c : les deux policies d'hier, que la lecture du client porte à trois, 267). Les gardes de la case et du statut se
+-- jouent dans `droitsAcces.sql`, la lecture par profil dans `rls.sql`, les deux sessions concurrentes sur une réplique.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -146,8 +160,12 @@ declare
   -- La migration de l'étape C8 : la fonction du paiement d'une pièce par la caisse. Sans elle, ses étapes (genre « …4 »)
   -- attendent ; avec elle, celles qu'elle remplace (genre « …4h ») se taisent.
   c8 boolean := to_regprocedure('public.regler_piece_par_la_caisse(uuid, uuid, date, numeric)') is not null;
+  -- La migration de l'étape C10 : la caisse lue par le client. Sans elle, ses étapes (genre « …5 ») attendent ; avec elle,
+  -- celles qu'elle remplace (genre « …5h ») se taisent.
+  c10 boolean := to_regprocedure('public.caisse_du_client(uuid, integer)') is not null;
   genre text; en_attente integer := 0; en_attente3 integer := 0; remplacees integer := 0;
   en_attente4 integer := 0; remplacees4 integer := 0;
+  en_attente5 integer := 0; remplacees5 integer := 0;
   cle text; valeur text; s text;
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
@@ -173,7 +191,7 @@ begin
     raise exception 'ESSAI_IMPOSSIBLE : jeu de départ introuvable, dossier jetable déjà présent, ou l''année n''est plus 2026 (les dates de l''essai sont à avancer)';
   end if;
 
-  ids := jsonb_build_object('CAB', cabinet, 'DC', dossier_client, 'CHEF', chef, 'DEMAIN', demain, 'FACTURE', facture)
+  ids := jsonb_build_object('CAB', cabinet, 'DC', dossier_client, 'CHEF', chef, 'CLIENT', client, 'DEMAIN', demain, 'FACTURE', facture)
     || jsonb_build_object(
       'T', 'ca155e00-0000-4000-8000-000000000001', 'A', 'ca155e00-0000-4000-8000-000000000002',
       'E', 'ca155e00-0000-4000-8000-000000000003', 'V', 'ca155e00-0000-4000-8000-000000000004',
@@ -265,7 +283,28 @@ begin
       'RG', 'ca155e00-0000-4000-800b-000000000017', 'RH', 'ca155e00-0000-4000-800b-000000000018',
       'GA', 'ca155e00-0000-4000-800b-000000000019',
       'MRB', 'ca155e00-0000-4000-800b-000000000021', 'MRF', 'ca155e00-0000-4000-800b-000000000022',
-      'MGA', 'ca155e00-0000-4000-800b-000000000023');
+      'MGA', 'ca155e00-0000-4000-800b-000000000023')
+    -- L'étape C10 : huit dossiers (X10, exonéré - F10, en franchise - R10, redevable - Z10, dont l'accès ne porte pas la
+    -- case - N10, sans nature - B10, basculé - V10, dont 2025 est validé - W10, dont la nature a perdu son produit), leurs
+    -- catégories, les huit accès du client, deux pièces, une opération restaurée, un retrait au distributeur, et l'auteur
+    -- d'un autre accès. (Aucun point-virgule ici non plus.)
+    || jsonb_build_object(
+      'X10', 'ca155e00-0000-4000-800c-000000000001', 'F10', 'ca155e00-0000-4000-800c-000000000002',
+      'R10', 'ca155e00-0000-4000-800c-000000000003', 'Z10', 'ca155e00-0000-4000-800c-000000000004',
+      'N10', 'ca155e00-0000-4000-800c-000000000005', 'B10', 'ca155e00-0000-4000-800c-000000000006',
+      'V10', 'ca155e00-0000-4000-800c-000000000007', 'W10', 'ca155e00-0000-4000-800c-000000000008',
+      'KX10', 'ca155e00-0000-4000-800c-000000000011', 'KX10C', 'ca155e00-0000-4000-800c-000000000012',
+      'KF10', 'ca155e00-0000-4000-800c-000000000013', 'KZ10', 'ca155e00-0000-4000-800c-000000000014',
+      'KR10', 'ca155e00-0000-4000-800c-000000000015', 'KB10', 'ca155e00-0000-4000-800c-000000000016',
+      'KV10', 'ca155e00-0000-4000-800c-000000000017', 'KW10', 'ca155e00-0000-4000-800c-000000000018')
+    || jsonb_build_object(
+      'AX10', 'ca155e00-0000-4000-800c-000000000021', 'AF10', 'ca155e00-0000-4000-800c-000000000022',
+      'AN10', 'ca155e00-0000-4000-800c-000000000023', 'AB10', 'ca155e00-0000-4000-800c-000000000024',
+      'AV10', 'ca155e00-0000-4000-800c-000000000025', 'AW10', 'ca155e00-0000-4000-800c-000000000026',
+      'AZ10', 'ca155e00-0000-4000-800c-000000000027', 'AR10', 'ca155e00-0000-4000-800c-000000000028',
+      'QX10', 'ca155e00-0000-4000-800c-000000000031', 'QXV10', 'ca155e00-0000-4000-800c-000000000032',
+      'OX10Y', 'ca155e00-0000-4000-800c-000000000041', 'MX10', 'ca155e00-0000-4000-800c-000000000051',
+      'AUTRE10', 'ca155e00-0000-4000-800c-0000000000ca');
 
   select string_agg(n::text, '/') into avant from (values
     ((select count(*) from dossiers)), ((select count(*) from operations_caisse)), ((select count(*) from ecritures_brouillon)),
@@ -273,7 +312,8 @@ begin
     ((select count(*) from encaissements_factures)), ((select count(*) from encaissements_factures_taux)),
     ((select count(*) from factures_emises)), ((select count(*) from categories)), ((select count(*) from pieces)),
     ((select count(*) from cabinets)), ((select count(*) from cabinet_admins)), ((select count(*) from facture_lignes)),
-    ((select count(*) from facture_numerotation)), ((select count(*) from plan_comptable_dossier))
+    ((select count(*) from facture_numerotation)), ((select count(*) from plan_comptable_dossier)),
+    ((select count(*) from memberships))
   ) as t(n);
 
   -- Une étape : {genre, contrôle, qui, requête, code attendu, message attendu (motif LIKE) ou valeur attendue}.
@@ -919,7 +959,7 @@ begin
     array['valeur', '97b. les clés : le dossier et l''écriture en cascade, la pièce gardée, la catégorie et l''opération remplacée sans action', 'postgres', $q$select string_agg(conname || ':' || confdeltype::text, ',' order by conname collate "C") from pg_constraint where contype = 'f'
       and (conrelid = 'public.operations_caisse'::regclass or conname = 'ecritures_brouillon_operation_caisse_id_fkey')$q$, '',
       'ecritures_brouillon_operation_caisse_id_fkey:c,operations_caisse_categorie_id_fkey:a,operations_caisse_dossier_id_fkey:c,operations_caisse_piece_id_fkey:r,operations_caisse_remplace_id_fkey:a'],
-    array['valeur', '97c. la RLS et les deux policies, au compte connecté', 'postgres', $q$select (select relrowsecurity::text from pg_class where oid = 'public.operations_caisse'::regclass) || ',' || string_agg(policyname || ':' || cmd || ':' || array_to_string(roles, '+'), ',' order by policyname collate "C") from pg_policies where tablename = 'operations_caisse'$q$, '',
+    array['valeur5h', '97c. la RLS et les deux policies, au compte connecté', 'postgres', $q$select (select relrowsecurity::text from pg_class where oid = 'public.operations_caisse'::regclass) || ',' || string_agg(policyname || ':' || cmd || ':' || array_to_string(roles, '+'), ',' order by policyname collate "C") from pg_policies where tablename = 'operations_caisse'$q$, '',
       'true,operations_caisse_lecture:SELECT:authenticated,operations_caisse_restauration:INSERT:authenticated'],
     array['valeur', '98. les mots de chaque refus de la caisse négative', 'postgres', $q$select string_agg(texte_caisse_negative(g, 500, '2026-03-05', -314.5), ' | ' order by o) from unnest(array['prelevement', 'especes_rendues', 'paiement', 'retrait_recette', 'retrait_apport', 'retrait_paiement',
       'versement', 'retrait_d_especes_retire', 'mouvement_change', 'contre_passation', 'retrait_encaissement', 'rattachement_encaissement', 'ouverture_au_credit', 'retrait_ouverture', 'ouverture_change', 'lot', 'autre']) with ordinality as u(g, o)$q$, '',
@@ -1788,7 +1828,170 @@ begin
       'lignes_bancaires_sur_la_caisse_depuis_l_ouverture'],
     array['valeur4', '231. aucune autre fonction ne dit les refus neufs ; aucune n''écrit une ligne du brouillon pour un paiement', 'postgres', $q$select string_agg(p.proname, ',' order by p.proname collate "C") from pg_proc p where p.pronamespace = 'public'::regnamespace
       and (p.prosrc like '%précède l''''ouverture du dossier, le % : il est déjà%' or p.prosrc like '%La contrepartie d''''un paiement par la caisse%' or p.prosrc like '%Cette pièce est payée par la caisse%' or p.prosrc like '%paiement en espèces d''''une pièce de vente%')$q$, '',
-      'enregistrer_operation_caisse,garder_caisse_depuis_l_ouverture,garder_ecriture_de_caisse,garder_piece_payee_par_la_caisse']
+      'enregistrer_operation_caisse,garder_caisse_depuis_l_ouverture,garder_ecriture_de_caisse,garder_piece_payee_par_la_caisse'],
+
+
+    -- ══ 240 à 267. Le droit « Caisse » du client et sa saisie (étape C10 ; la migration `caisse_du_client`) ══════════
+    -- Huit dossiers jetables (préfixe `ca155e00-0000-4000-800c`) : X10 exonéré, F10 en franchise, R10 redevable, Z10 où
+    -- l'accès du client ne porte pas la case, N10 sans nature fixée, B10 basculé, V10 dont 2025 est validé, W10 dont la nature
+    -- a perdu son compte de produit ; l'accès du client d'essai à chacun ; deux pièces de X10.
+    array['jeu5', '240. les dossiers de l''étape C10', 'postgres', $q$insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, statut_tva, ventes_par_les_factures) values
+      ('{X10}', 'ESSAI CAISSE X10', '{CAB}', 'tresorerie', '455000', 'exonere', false), ('{F10}', 'ESSAI CAISSE F10', '{CAB}', 'tresorerie', '455000', 'franchise', false),
+      ('{R10}', 'ESSAI CAISSE R10', '{CAB}', 'tresorerie', '455000', 'redevable', false), ('{Z10}', 'ESSAI CAISSE Z10', '{CAB}', 'tresorerie', '455000', 'exonere', false),
+      ('{N10}', 'ESSAI CAISSE N10', '{CAB}', 'tresorerie', '455000', 'exonere', false), ('{B10}', 'ESSAI CAISSE B10', '{CAB}', 'tresorerie', '455000', null, true),
+      ('{V10}', 'ESSAI CAISSE V10', '{CAB}', 'tresorerie', '455000', 'exonere', false), ('{W10}', 'ESSAI CAISSE W10', '{CAB}', 'tresorerie', '455000', 'exonere', false)$q$, '', ''],
+    array['jeu5', '240b. leurs catégories', 'postgres', $q$insert into categories (id, dossier_id, code, libelle, compte_comptable, poste_2035) values
+      ('{KX10}', '{X10}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KX10C}', '{X10}', 'essai_fou', 'Fournitures', '606400', null),
+      ('{KF10}', '{F10}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KZ10}', '{Z10}', 'essai_hon', 'Honoraires', '706000', 'AA'),
+      ('{KR10}', '{R10}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KB10}', '{B10}', 'essai_hon', 'Honoraires', '706000', 'AA'),
+      ('{KV10}', '{V10}', 'essai_hon', 'Honoraires', '706000', 'AA'), ('{KW10}', '{W10}', 'essai_hon', 'Honoraires', '706000', 'AA')$q$, '', ''],
+    array['jeu5', '240c. la nature des recettes du client, fixée sur tous, N10 excepté', 'postgres', $q$update dossiers set categorie_recettes_client = '{KX10}' where id = '{X10}';
+      update dossiers set categorie_recettes_client = '{KF10}' where id = '{F10}'; update dossiers set categorie_recettes_client = '{KZ10}' where id = '{Z10}';
+      update dossiers set categorie_recettes_client = '{KR10}' where id = '{R10}'; update dossiers set categorie_recettes_client = '{KB10}' where id = '{B10}';
+      update dossiers set categorie_recettes_client = '{KV10}' where id = '{V10}'; update dossiers set categorie_recettes_client = '{KW10}' where id = '{W10}'$q$, '', ''],
+    array['jeu5', '240d. la catégorie fixée de W10 perd son compte de produit (une catégorie se change après coup)', 'postgres', $q$update categories set compte_comptable = '606400' where id = '{KW10}'$q$, '', ''],
+    array['fait5', '240e. une facture source de B10, validée, et ses espèces du 10/03', 'chef', $q$select enregistrer_facture('{B10}', null, {FACTURE});
+      select enregistrer_encaissement('{B10}', f.id, '2026-03-10', 30, 'especes', null, '[{"taux":20,"montant":30}]') from factures_emises f where f.dossier_id = '{B10}'$q$, 'OK', ''],
+    array['capture5', '240f. les espèces de B10', 'postgres', $q$select e.id::text from encaissements_factures e where e.dossier_id = '{B10}'$q$, 'E10', ''],
+    array['jeu5', '240g. B10 se dit ensuite exonéré : son statut entre dans l''ensemble exclu, rien ne s''y refuse', 'postgres', $q$update dossiers set statut_tva = 'exonere' where id = '{B10}'$q$, '', ''],
+    array['jeu5', '240h. les accès du client d''essai : la case « Caisse » sur X10, F10, N10, B10, V10 et W10 ; sans elle sur Z10', 'postgres', $q$insert into memberships (id, user_id, dossier_id, role, email, droit_caisse) values
+      ('{AX10}', '{CLIENT}', '{X10}', 'client', 'essai-caisse@example.test', true), ('{AF10}', '{CLIENT}', '{F10}', 'client', 'essai-caisse@example.test', true),
+      ('{AN10}', '{CLIENT}', '{N10}', 'client', 'essai-caisse@example.test', true), ('{AB10}', '{CLIENT}', '{B10}', 'client', 'essai-caisse@example.test', true),
+      ('{AV10}', '{CLIENT}', '{V10}', 'client', 'essai-caisse@example.test', true), ('{AW10}', '{CLIENT}', '{W10}', 'client', 'essai-caisse@example.test', true),
+      ('{AZ10}', '{CLIENT}', '{Z10}', 'client', 'essai-caisse@example.test', false)$q$, '', ''],
+    array['fait5', '240i. … et sur R10, redevable, la case réinsérée par la restauration (le super-administrateur) : un état que les gardes refusent ailleurs', 'chef', $q$insert into memberships (id, user_id, dossier_id, role, email, droit_caisse) values ('{AR10}', '{CLIENT}', '{R10}', 'client', 'essai-caisse@example.test', true)$q$, 'OK', ''],
+    array['fait5', '240j. un apport du chef dans Z10, le 02/03', 'chef', $q$select enregistrer_operation_caisse('{Z10}', 'apport', '2026-03-02', 10, null, null, null, '[{"compte":"530000","sens":"debit","montant":10},{"compte":"108000","sens":"credit","montant":10}]')$q$, 'OK', ''],
+
+    -- 241 à 251. La saisie du client.
+    array['fait5', '241. le client, la case sur X10 (exonéré), y apporte 100 € le 02/03 — ni catégorie, ni écriture', 'client', $q$select enregistrer_operation_caisse('{X10}', 'apport', '2026-03-02', 100, null, null, null, null)$q$, 'OK', ''],
+    array['capture5', '241b. son apport', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{X10}' and o.genre = 'apport'$q$, 'OX10A', ''],
+    array['valeur5', '241c. … son origine, son auteur, et l''écriture que la base a composée', 'postgres', $q$select o.origine || ':' || (o.cree_par = '{CLIENT}')::text || ' | ' || (select string_agg(b.compte || ':' || b.sens || ':' || b.montant || ':' || b.libelle, ',' order by b.compte) from ecritures_brouillon b where b.operation_caisse_id = o.id) from operations_caisse o where o.id = '{OX10A}'$q$, '',
+      'client:true | 108000:credit:100.00:Apport en caisse de l''exploitant,530000:debit:100.00:Apport en caisse de l''exploitant'],
+    array['fait5', '242. … ses recettes du 03/03, 85 € : la nature que le cabinet a fixée, l''écriture de la base', 'client', $q$select enregistrer_operation_caisse('{X10}', 'recette', '2026-03-03', 85, null, null, '{}', null)$q$, 'OK', ''],
+    array['capture5', '242b. sa recette', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{X10}' and o.genre = 'recette'$q$, 'OX10R', ''],
+    array['valeur5', '242c. … sa catégorie, son origine, sans taux, et son écriture', 'postgres', $q$select (o.categorie_id = '{KX10}')::text || ':' || o.origine || ':' || coalesce(o.taux_tva::text, '-') || ' | ' || (select string_agg(b.compte || ':' || b.sens || ':' || b.montant || ':' || b.libelle, ',' order by b.compte) from ecritures_brouillon b where b.operation_caisse_id = o.id) from operations_caisse o where o.id = '{OX10R}'$q$, '',
+      'true:client:- | 530000:debit:85.00:Recettes en espèces du 03/03/2026 — Honoraires,706000:credit:85.00:Recettes en espèces du 03/03/2026 — Honoraires'],
+    array['controle5', '243. une recette du client qui choisit sa nature', 'client', $q$select enregistrer_operation_caisse('{X10}', 'recette', '2026-03-04', 10, '{KX10}', null, '{}', null)$q$,
+      '22023', 'La nature de tes recettes en espèces est celle que ton cabinet a fixée pour ton dossier : ta saisie n''en choisit pas.'],
+    array['controle5', '243b. ordre : le montant avant la nature', 'client', $q$select enregistrer_operation_caisse('{X10}', 'recette', '2026-03-04', 0, '{KX10}', null, '{}', null)$q$,
+      '22023', 'Une opération de caisse de zéro euro n''a rien à écrire.'],
+    array['controle5', '244. une recette du client qui envoie une écriture', 'client', $q$select enregistrer_operation_caisse('{X10}', 'recette', '2026-03-04', 10, null, null, '{}', '[{"compte":"530000","sens":"debit","montant":10},{"compte":"706000","sens":"credit","montant":10}]')$q$,
+      '22023', 'Une saisie depuis ton espace n''envoie pas d''écriture : la base compose la sienne.'],
+    array['controle5', '244b. … un apport qui envoie une écriture vide', 'client', $q$select enregistrer_operation_caisse('{X10}', 'apport', '2026-03-04', 10, null, null, null, '[]')$q$,
+      '22023', 'Une saisie depuis ton espace n''envoie pas d''écriture : la base compose la sienne.'],
+    array['controle5', '244c. … une écriture JSON nulle vaut une écriture absente', 'client', $q$select enregistrer_operation_caisse('{X10}', 'apport', '2026-03-04', 10, null, null, null, 'null'::jsonb)$q$, 'OK', ''],
+    array['controle5', '244d. ordre : l''ensemble du jour avant l''écriture envoyée', 'client', $q$select enregistrer_operation_caisse('{X10}', 'recette', '2026-03-04', 10, null, null, null, '[]')$q$,
+      '22023', 'La saisie d''une recette dit les encaissements en espèces de factures de son jour qu''elle a lus : une liste d''identifiants, vide s''il n''y en a aucun.'],
+    array['controle5', '245. une recette sur N10, dont le cabinet n''a pas fixé la nature', 'client', $q$select enregistrer_operation_caisse('{N10}', 'recette', '2026-03-04', 10, null, null, '{}', null)$q$,
+      '22023', 'Ton cabinet n''a pas fixé la nature de tes recettes en espèces : demande-lui de la poser.'],
+    array['controle5', '245b. … un apport y passe : la nature ne regarde qu''une recette', 'client', $q$select enregistrer_operation_caisse('{N10}', 'apport', '2026-03-04', 10, null, null, null, null)$q$, 'OK', ''],
+    array['controle5', '246. une recette sur W10, dont la nature fixée a perdu son compte de produit', 'client', $q$select enregistrer_operation_caisse('{W10}', 'recette', '2026-03-04', 10, null, null, '{}', null)$q$,
+      '22023', 'La nature que ton cabinet a fixée pour tes recettes en espèces n''est plus une catégorie de produit de ton dossier : demande-lui de la corriger.'],
+    array['controle5', '247. une recette du client qui porte un taux, sur un dossier exonéré', 'client', $q$select enregistrer_operation_caisse('{X10}', 'recette', '2026-03-04', 10, null, 20, '{}', null)$q$,
+      '22023', 'Un taux de TVA ne s''applique qu''à une recette d''un dossier assujetti.'],
+    array['fait5', '248. sur F10, en franchise en base : ses recettes du 03/03, 30 €, sans taux', 'client', $q$select enregistrer_operation_caisse('{F10}', 'recette', '2026-03-03', 30, null, null, '{}', null)$q$, 'OK', ''],
+    array['controle5', '249. sur Z10, son accès sans la case', 'client', $q$select enregistrer_operation_caisse('{Z10}', 'apport', '2026-03-04', 10, null, null, null, null)$q$,
+      '42501', 'Accès refusé à ce dossier.'],
+    array['controle5', '250. sur R10, la case restaurée sur un dossier redevable : le refus défensif, avant toute lecture', 'client', $q$select enregistrer_operation_caisse('{R10}', 'recette', '2026-03-04', 0, null, null, null, null)$q$,
+      '23514', 'La saisie des espèces depuis ton espace suppose un dossier exonéré de TVA ou en franchise en base : ton cabinet tient ta caisse.'],
+    array['controle5', '250b. … le paiement d''une pièce sous le même refus', 'client', $q$select regler_piece_par_la_caisse('{R10}', '{QX10}', '2026-03-05', -1)$q$,
+      '23514', 'La saisie des espèces depuis ton espace suppose un dossier exonéré de TVA ou en franchise en base : ton cabinet tient ta caisse.'],
+    array['controle5', '251. l''ensemble du jour sur B10 : la recette du client qui oublie les espèces de la facture du 10/03, sans le numéro', 'client', $q$select enregistrer_operation_caisse('{B10}', 'recette', '2026-03-10', 50, null, null, '{}', null)$q$,
+      '22023', 'Des espèces d''une facture de ce jour ont été enregistrées depuis ta lecture : relis ta caisse.'],
+    array['controle5', '251b. … celle du chef, sous le numéro, comme hier', 'chef', $q$select enregistrer_operation_caisse('{B10}', 'recette', '2026-03-10', 50, '{KB10}', null, '{}', '[]')$q$,
+      '22023', 'Un encaissement en espèces de la facture % du même jour a été enregistré depuis ta lecture : relis la caisse.'],
+    array['controle5', '251c. … la recette du client du 11/03 qui compte les espèces du 10/03, sans le numéro', 'client', $q$select enregistrer_operation_caisse('{B10}', 'recette', '2026-03-11', 50, null, null, array['{E10}']::uuid[], null)$q$,
+      '22023', 'Des espèces d''une facture que ta lecture comptait ne sont pas dans la caisse de ce jour : relis ta caisse.'],
+    array['controle5', '251d. … celle du 10/03 qui les compte : acceptée', 'client', $q$select enregistrer_operation_caisse('{B10}', 'recette', '2026-03-10', 50, null, null, array['{E10}']::uuid[], null)$q$, 'OK', ''],
+
+    -- 252 à 254. Le paiement d'une pièce par le client (CAISSE2-Q4, (A)).
+    array['jeu5', '252. deux pièces de X10 : un achat de 40 € et une vente de 25 €', 'postgres', $q$insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, montant_ttc, devise) values
+      ('{QX10}', '{X10}', '{X10}/essai-caisse-x10a.pdf', 'essai-caisse-x10a.pdf', 'achat', 'a_valider', 40, 'EUR'),
+      ('{QXV10}', '{X10}', '{X10}/essai-caisse-x10v.pdf', 'essai-caisse-x10v.pdf', 'vente', 'a_valider', 25, 'EUR')$q$, '', ''],
+    array['fait5', '252b. le client paie l''achat par sa caisse le 05/03, 20 €', 'client', $q$select regler_piece_par_la_caisse('{X10}', '{QX10}', '2026-03-05', -20)$q$, 'OK', ''],
+    array['valeur5', '252c. … le paiement, son origine et son auteur ; aucune ligne du brouillon', 'postgres', $q$select string_agg(o.genre || ':' || o.montant || ':' || o.origine || ':' || (o.cree_par = '{CLIENT}')::text || ':' || (select count(*) from ecritures_brouillon b where b.operation_caisse_id = o.id), ',') from operations_caisse o where o.dossier_id = '{X10}' and o.genre = 'paiement'$q$, '',
+      'paiement:-20:client:true:0'],
+    array['controle5', '253. … un paiement qui laisserait un centime : les mots du client, sans montant', 'client', $q$select regler_piece_par_la_caisse('{X10}', '{QX10}', '2026-03-05', -19.99)$q$,
+      '22023', 'Ce paiement ne règle pas exactement cette pièce : à quelques centimes près, son écriture ne s''équilibrerait pas. Vérifie le montant de tes espèces, ou demande à ton cabinet.'],
+    array['fait5', '254. le client encaisse la vente en espèces le 07/03, 25 €', 'client', $q$select regler_piece_par_la_caisse('{X10}', '{QXV10}', '2026-03-07', 25)$q$, 'OK', ''],
+    array['controle5', '254b. … sa recette du 07/03 qui l''oublie : le paiement d''une pièce de vente du même jour', 'client', $q$select enregistrer_operation_caisse('{X10}', 'recette', '2026-03-07', 60, null, null, '{}', null)$q$,
+      '22023', 'Un paiement en espèces d''une pièce de vente du même jour a été enregistré depuis ta lecture : relis la caisse.'],
+
+    -- 255 à 260. Ce que le client corrige : ses propres opérations seulement, par retrait ou remplacement.
+    array['fait5', '255. le chef apporte 50 € dans X10 le 02/03', 'chef', $q$select enregistrer_operation_caisse('{X10}', 'apport', '2026-03-02', 50, null, null, null, '[{"compte":"530000","sens":"debit","montant":50},{"compte":"108000","sens":"credit","montant":50}]')$q$, 'OK', ''],
+    array['capture5', '255b. l''apport du chef', 'postgres', $q$select o.id::text from operations_caisse o where o.dossier_id = '{X10}' and o.genre = 'apport' and o.origine = 'cabinet'$q$, 'OX10C', ''],
+    array['controle5', '256. le client ne retire pas l''apport du chef', 'client', $q$select retirer_operation_caisse('{X10}', '{OX10C}')$q$,
+      '42501', 'Cette opération a été saisie par ton cabinet : demande-lui de la corriger.'],
+    array['controle5', '256b. … ni ne le remplace', 'client', $q$select remplacer_operation_caisse('{X10}', '{OX10C}', 'apport', '2026-03-02', 40, null, null, null, null)$q$,
+      '42501', 'Cette opération a été saisie par ton cabinet : demande-lui de la corriger.'],
+    array['fait5', '256c. une opération d''un autre accès à X10, réinsérée par la restauration (le super-administrateur, son instant de création d''avant)', 'chef', $q$insert into operations_caisse (id, dossier_id, genre, date, montant, origine, cree_le, cree_par) values ('{OX10Y}', '{X10}', 'apport', '2026-03-02', 5, 'client', '2026-01-15 10:00+01', '{AUTRE10}')$q$, 'OK', ''],
+    array['controle5', '256d. le client ne retire pas l''opération d''un autre accès', 'client', $q$select retirer_operation_caisse('{X10}', '{OX10Y}')$q$,
+      '42501', 'Cette opération a été saisie depuis un autre accès à ce dossier : demande à ton cabinet de la corriger.'],
+    array['fait5', '257. le client remplace sa recette du 03/03 : 90 € au lieu de 85 €', 'client', $q$select remplacer_operation_caisse('{X10}', '{OX10R}', 'recette', '2026-03-03', 90, null, null, '{}', null)$q$, 'OK', ''],
+    array['valeur5', '257b. … l''ancienne retirée, la nouvelle à sa place : son montant, son origine, sa nature, son écriture', 'postgres', $q$select (select (o.retire_le is not null)::text from operations_caisse o where o.id = '{OX10R}') || ' | ' || string_agg(o.montant || ':' || o.origine || ':' || (o.categorie_id = '{KX10}')::text || ':' || (select string_agg(b.compte || '/' || b.sens || '/' || b.montant, ',' order by b.compte) from ecritures_brouillon b where b.operation_caisse_id = o.id), ',') from operations_caisse o where o.remplace_id = '{OX10R}'$q$, '',
+      'true | 90:client:true:530000/debit/90.00,706000/credit/90.00'],
+    array['fait5', '258. le client retire son apport du 02/03', 'client', $q$select retirer_operation_caisse('{X10}', '{OX10A}')$q$, 'OK', ''],
+    array['controle5', '259. la saisie d''un mois du client : une recette et un prélèvement, sans catégorie ni écriture', 'client', $q$select enregistrer_operations_de_caisse('{X10}', '[{"genre":"recette","date":"2026-03-08","montant":12,"encaissements_du_jour":[]},{"genre":"prelevement","date":"2026-03-09","montant":5}]')$q$, 'OK', ''],
+    array['controle5', '259b. … une opération du mois qui choisit sa nature', 'client', $q$select enregistrer_operations_de_caisse('{X10}', '[{"genre":"recette","date":"2026-03-08","montant":12,"categorie_id":"{KX10}","encaissements_du_jour":[]}]')$q$,
+      '22023', 'Opération n° 1, du 08/03/2026 : La nature de tes recettes en espèces est celle que ton cabinet a fixée pour ton dossier : ta saisie n''en choisit pas.'],
+    array['controle5', '260. un prélèvement du client qui viderait sa caisse', 'client', $q$select enregistrer_operation_caisse('{X10}', 'prelevement', '2026-03-03', 500, null, null, null, null)$q$,
+      '23514', 'Ce prélèvement de 500,00 € rendrait la caisse négative le 03/03/2026 (%) : saisis d''abord les recettes en espèces qui le précèdent.'],
+
+    -- 261 à 265. Ce que le client lit : la policy, et caisse_du_client.
+    array['jeu5', '261. un retrait au distributeur de X10, le 06/03, 60 €', 'postgres', $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{MX10}', '{X10}', '2026-03-06', 'ESSAI RETRAIT DAB X10', -60, 'non_rapprochee')$q$, '', ''],
+    array['fait5', '261b. … classé pour la caisse par le chef', 'chef', $q$update lignes_bancaires set compte_bilan = '530000', statut = 'rapprochee' where id = '{MX10}'$q$, 'OK', ''],
+    array['valeur5', '262. le client lit toute la caisse de X10 : ses opérations, celles du chef, celle de l''autre accès et les retirées', 'client', $q$select count(*)::text || '/' || count(*) filter (where retire_le is not null) || '/' || count(*) filter (where origine = 'cabinet') from operations_caisse where dossier_id = '{X10}'$q$, '',
+      '7/2/1'],
+    array['valeur5', '262b. … rien de Z10, où son accès ne porte pas la case, ni de T, où il n''en a pas ; aucune ligne du brouillon de X10', 'client', $q$select (select count(*) from operations_caisse where dossier_id in ('{Z10}', '{T}')) || '/' || (select count(*) from ecritures_brouillon where dossier_id = '{X10}')$q$, '',
+      '0/0'],
+    array['valeur5', '262c. … ce que le chef lit des mêmes (le contrôle positif)', 'chef', $q$select (select count(*) from operations_caisse where dossier_id = '{Z10}') || '/' || (select count(*) from ecritures_brouillon where dossier_id = '{X10}' and operation_caisse_id is not null)$q$, '',
+      '1/4'],
+    array['valeur5', '263. caisse_du_client : X10, jour par jour, pour le client', 'client', $q$select string_agg(c.jour || ':' || c.report || ':' || c.ouverture || ':' || c.operations || ':' || c.releve || ':' || c.especes_des_factures || ':' || cardinality(c.encaissements_du_jour) || ':' || c.solde || ':' || c.fige, ',' order by c.jour) from caisse_du_client('{X10}', 2026) c$q$, '',
+      '2026-03-02:0:0:55:0:0:0:55:false,2026-03-03:0:0:90:0:0:0:145:false,2026-03-05:0:0:-20:0:0:0:125:false,2026-03-06:0:0:0:60.00:0:0:185.00:false,2026-03-07:0:0:25:0:0:1:210.00:false'],
+    array['valeur5', '263b. … ce qu''elle ne rend pas : ni le libellé du relevé, ni une pièce, ni un auteur', 'client', $q$select (position('ESSAI' in t) = 0 and position('{QX10}' in t) = 0 and position('{QXV10}' in t) = 0 and position('{CLIENT}' in t) = 0)::text from (select string_agg(c::text, ',') as t from caisse_du_client('{X10}', 2026) c) x$q$, '',
+      'true'],
+    array['valeur5', '263c. … ses colonnes, exactement', 'postgres', $q$select array_to_string(p.proargnames, ',') from pg_proc p where p.oid = to_regprocedure('public.caisse_du_client(uuid, integer)')$q$, '',
+      'p_dossier_id,p_annee,jour,report,ouverture,operations,releve,especes_des_factures,encaissements_du_jour,solde,fige'],
+    array['valeur5', '263d. B10 : les espèces de la facture du 10/03, et l''identifiant que la recette du jour reconnaît', 'client', $q$select c.especes_des_factures || ':' || (c.encaissements_du_jour = array['{E10}']::uuid[])::text from caisse_du_client('{B10}', 2026) c where c.jour = '2026-03-10'$q$, '',
+      '30:true'],
+    array['fait5', '264. le chef apporte 100 € dans V10 en juin 2025', 'chef', $q$select enregistrer_operation_caisse('{V10}', 'apport', '2025-06-01', 100, null, null, null, '[{"compte":"530000","sens":"debit","montant":100},{"compte":"108000","sens":"credit","montant":100}]')$q$, 'OK', ''],
+    array['jeu5', '264b. l''exercice 2025 de V10, validé', 'postgres', $q$insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte, declaration)
+      values ('{V10}', 2025, now(), '{CHEF}', 'tresorerie', 0, 0, 0, 0, repeat('a', 64), '{}')$q$, '', ''],
+    array['valeur5', '264c. caisse_du_client : le jour figé de 2025, et le report de 2026', 'client', $q$select (select string_agg(c.jour || ':' || c.solde || ':' || c.fige, ',') from caisse_du_client('{V10}', 2025) c) || ' | ' || (select string_agg(c.jour || ':' || c.report || ':' || c.solde || ':' || c.fige, ',') from caisse_du_client('{V10}', 2026) c)$q$, '',
+      '2025-06-01:100:true | 2026-01-01:100:100:false'],
+    array['controle5', '264d. le client ne saisit pas dans l''exercice validé', 'client', $q$select enregistrer_operation_caisse('{V10}', 'apport', '2025-12-31', 10, null, null, null, null)$q$,
+      '23514', 'L''exercice 2025 est validé : sa caisse ne change plus.'],
+    array['controle5', '265. caisse_du_client : le client sur Z10, son accès sans la case', 'client', $q$select caisse_du_client('{Z10}', 2026)$q$, '42501', 'Accès refusé à ce dossier.'],
+    array['controle5', '265b. … un compte rattaché à rien', 'inconnu', $q$select caisse_du_client('{X10}', 2026)$q$, '42501', 'Accès refusé à ce dossier.'],
+    array['controle5', '265c. … l''anonyme', 'anon', $q$select caisse_du_client('{X10}', 2026)$q$, '42501', 'permission denied for function caisse_du_client'],
+    array['controle5', '265d. … l''année', 'client', $q$select caisse_du_client('{X10}', null)$q$, '22023', 'L''année d''une caisse se lit de 2000 à 9999.'],
+    array['controle5', '265e. … un dossier qui n''existe pas, sous les mêmes mots, même pour le super-administrateur', 'chef', $q$select caisse_du_client('ca155e00-0000-4000-800c-0000000000fe', 2026)$q$, '42501', 'Accès refusé à ce dossier.'],
+    array['valeur5', '265f. … le chef la lit (le contrôle positif)', 'chef', $q$select count(*)::text from caisse_du_client('{X10}', 2026)$q$, '', '5'],
+
+    -- 266. La nature des recettes du client, jugée à l'écriture.
+    array['controle5', '266. la nature de X10 : une catégorie de charge du dossier se refuse', 'chef', $q$update dossiers set categorie_recettes_client = '{KX10C}' where id = '{X10}'$q$,
+      '23514', 'La nature des recettes en espèces du client est une catégorie de produit (classe 7) de ce dossier, ou commune : celle-ci ne l''est pas.'],
+    array['controle5', '266b. … une catégorie de produit d''un autre dossier aussi', 'chef', $q$update dossiers set categorie_recettes_client = '{KF10}' where id = '{X10}'$q$,
+      '23514', 'La nature des recettes en espèces du client est une catégorie de produit (classe 7) de ce dossier, ou commune : celle-ci ne l''est pas.'],
+    array['controle5', '266c. … une catégorie commune de produit passe', 'chef', $q$update dossiers set categorie_recettes_client = '{KCOM}' where id = '{X10}'$q$, 'OK', ''],
+    array['controle5', '266d. … la retirer aussi', 'chef', $q$update dossiers set categorie_recettes_client = null where id = '{X10}'$q$, 'OK', ''],
+    array['controle5', '266e. … une catégorie de charge fixée sans session, par le propriétaire, se refuse aussi', 'postgres', $q$update dossiers set categorie_recettes_client = '{KX10C}' where id = '{X10}'$q$,
+      '23514', 'La nature des recettes en espèces du client est une catégorie de produit (classe 7) de ce dossier, ou commune : celle-ci ne l''est pas.'],
+
+    -- 267. Ce que le catalogue dit.
+    array['valeur5', '267. la RLS et les trois policies, au compte connecté : la lecture du client à la case « Caisse »', 'postgres', $q$select (select relrowsecurity::text from pg_class where oid = 'public.operations_caisse'::regclass) || ',' || string_agg(policyname || ':' || cmd || ':' || array_to_string(roles, '+') || ':' || coalesce(qual, '-'), ',' order by policyname collate "C") from pg_policies where tablename = 'operations_caisse'$q$, '',
+      'true,operations_caisse_lecture:SELECT:authenticated:admin_du_dossier(dossier_id),operations_caisse_lecture_caisse:SELECT:authenticated:client_du_dossier(dossier_id, ''caisse''::text),operations_caisse_restauration:INSERT:authenticated:-'],
+    array['valeur5', '267b. les six fonctions neuves : aux droits du propriétaire, leur chemin fixé ; les trois qu''un compte connecté appelle, ni l''anonyme ; les trois gardes, personne', 'postgres', $q$select string_agg(p.oid::regprocedure::text || ':' || p.prosecdef || ':' || p.provolatile::text || ':' || coalesce(array_to_string(p.proconfig, ','), '-') || ':' || has_function_privilege('anon', p.oid, 'execute') || ':' || has_function_privilege('authenticated', p.oid, 'execute'), ',' order by p.oid::regprocedure::text collate "C") from pg_proc p
+      where p.pronamespace = 'public'::regnamespace and (p.proname in ('gere_la_caisse', 'caisse_du_client', 'garder_droit_caisse', 'garder_statut_tva_de_la_caisse', 'garder_categorie_recettes_client') or p.oid = to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean)'))$q$, '',
+      'caisse_du_client(uuid,integer):true:s:search_path=public:false:true,changer_droits_acces(uuid,boolean,boolean,boolean):true:v:search_path=public:false:true,garder_categorie_recettes_client():true:v:search_path=public:false:false,garder_droit_caisse():true:v:search_path=public:false:false,garder_statut_tva_de_la_caisse():true:v:search_path=public:false:false,gere_la_caisse(uuid):true:s:search_path=public:false:true'],
+    array['valeur5', '267c. … PUBLIC n''en exécute aucune', 'postgres', $q$select count(*)::text from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+      where p.pronamespace = 'public'::regnamespace and a.grantee = 0 and (p.proname in ('gere_la_caisse', 'caisse_du_client', 'garder_droit_caisse', 'garder_statut_tva_de_la_caisse', 'garder_categorie_recettes_client') or p.oid = to_regprocedure('public.changer_droits_acces(uuid, boolean, boolean, boolean)'))$q$, '', '0'],
+    array['valeur5', '267d. leurs trois déclencheurs : la case qui arrive, le statut qui change, la nature fixée', 'postgres', $q$select string_agg(pg_get_triggerdef(t.oid), ' | ' order by t.tgname) from pg_trigger t where t.tgname in ('memberships_droit_caisse', 'dossiers_statut_tva_de_la_caisse', 'dossiers_categorie_recettes_client')$q$, '',
+      'CREATE TRIGGER dossiers_categorie_recettes_client AFTER INSERT OR UPDATE OF categorie_recettes_client ON public.dossiers FOR EACH ROW EXECUTE FUNCTION garder_categorie_recettes_client() | CREATE TRIGGER dossiers_statut_tva_de_la_caisse AFTER UPDATE ON public.dossiers FOR EACH ROW WHEN ((old.statut_tva IS DISTINCT FROM new.statut_tva)) EXECUTE FUNCTION garder_statut_tva_de_la_caisse() | CREATE TRIGGER memberships_droit_caisse AFTER INSERT OR UPDATE OF droit_caisse, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_caisse()'],
+    array['valeur5', '267e. les deux colonnes : la case, booléenne, non nulle, fausse par défaut ; la nature, nulle, sans clé étrangère', 'postgres', $q$select string_agg(c.relname || '.' || a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull || ':' || coalesce(pg_get_expr(d.adbin, d.adrelid), '-') || ':' || (select count(*) from pg_constraint k where k.conrelid = c.oid and k.contype = 'f' and a.attnum = any (k.conkey)), ',' order by c.relname)
+      from pg_attribute a join pg_class c on c.oid = a.attrelid left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+      where (c.oid, a.attname) in (('public.memberships'::regclass, 'droit_caisse'), ('public.dossiers'::regclass, 'categorie_recettes_client')) and not a.attisdropped$q$, '',
+      'dossiers.categorie_recettes_client:uuid:false:-:0,memberships.droit_caisse:boolean:true:false:0']
   ];
 
   begin
@@ -1796,6 +1999,20 @@ begin
       -- Une étape de l'étape C1b (genre « …2 ») ne se joue qu'avec sa migration ; sans elle, elle attend. Une de l'étape C6
       -- (« …3 ») de même ; une que la migration de l'étape C6 remplace (« …3h ») ne se joue que sans elle.
       genre := etape[1];
+      -- Une étape de l'étape C10 (« …5 ») ne se joue qu'avec sa migration ; une qu'elle remplace (« …5h »), que sans elle.
+      if genre like '%5h' then
+        if c10 then
+          remplacees5 := remplacees5 + 1;
+          continue;
+        end if;
+        genre := left(genre, -2);
+      elsif genre like '%5' then
+        if not c10 then
+          en_attente5 := en_attente5 + 1;
+          continue;
+        end if;
+        genre := left(genre, -1);
+      end if;
       -- Une étape de l'étape C8 (« …4 ») ne se joue qu'avec sa migration ; une qu'elle remplace (« …4h »), que sans elle —
       -- puis le suffixe qui reste se juge comme celui de toute étape.
       if genre like '%4h' then
@@ -1907,6 +2124,14 @@ begin
       verdicts := verdicts || jsonb_build_object('controle', '200. la migration paiement_par_la_caisse (étape C8) en base : '
         || remplacees4 || ' étape d''avant elle remplacée par la sienne (162)', 'observe', 'remplacée', 'ok', true);
     end if;
+    if en_attente5 > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '240. EN ATTENTE de la migration caisse_du_client (étape C10) : '
+        || en_attente5 || ' étapes — le droit « Caisse » du client, sa saisie et sa lecture', 'observe', 'absente : elles se jouent dès qu''elle y est', 'ok', true);
+    end if;
+    if remplacees5 > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '240. la migration caisse_du_client (étape C10) en base : '
+        || remplacees5 || ' étape d''avant elle remplacée par la sienne (97c, par 267)', 'observe', 'remplacée', 'ok', true);
+    end if;
     if remplacees > 0 then
       verdicts := verdicts || jsonb_build_object('controle', '170. la migration especes_sans_mouvement (étape C6) en base : '
         || remplacees || ' étape d''avant elle remplacée par la sienne (74c)', 'observe', 'remplacée', 'ok', true);
@@ -1927,7 +2152,8 @@ begin
     ((select count(*) from encaissements_factures)), ((select count(*) from encaissements_factures_taux)),
     ((select count(*) from factures_emises)), ((select count(*) from categories)), ((select count(*) from pieces)),
     ((select count(*) from cabinets)), ((select count(*) from cabinet_admins)), ((select count(*) from facture_lignes)),
-    ((select count(*) from facture_numerotation)), ((select count(*) from plan_comptable_dossier))
+    ((select count(*) from facture_numerotation)), ((select count(*) from plan_comptable_dossier)),
+    ((select count(*) from memberships))
   ) as t(n);
   -- L'écart seul, non plus les comptes de toute la base, qui diraient le volume d'un dossier réel (audit du 29/10/2026).
   verdicts := verdicts || jsonb_build_object('controle', '99. rien n''est resté en base',

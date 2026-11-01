@@ -305,16 +305,26 @@ function membreDuDossier(monde: Monde, utilisateur: string | null, dossierId: un
   return !!utilisateur && (monde.base.memberships ?? []).some((m) => m.dossier_id === dossierId && m.user_id === utilisateur)
 }
 
+// LE MOT « CAISSE » (ligne 26.6, étape C10 ; la migration `caisse_du_client`, préparée) : le jour où elle entre dans l'export,
+// `client_du_dossier` lit la case `droit_caisse` et `droits_sur_le_dossier` rend la clé `caisse` — le faux suit l'export,
+// comme les gardes qui le confrontent à la DERNIÈRE définition de chaque fonction ; `fonctionsEdge.test.ts` joue les deux
+// états, et confronte le second au texte préparé.
+export const CAISSE_DU_CLIENT_EXPORTEE = fichiersDuSchema().some((f) => /\/\d{14}_caisse_du_client\.sql$/.test(f.chemin))
+
 /**
  * La case de `memberships` que chaque droit lit dans `client_du_dossier` (migration `droits_des_acces_clients`, étape
- * P1) : `true` pour « membre » (un accès quelconque) ; tout autre mot ne vaut rien. `fonctionsEdge.test.ts` confronte
- * cette table, et les deux suivantes, au texte de la migration.
+ * P1 ; « caisse » depuis la migration `caisse_du_client`) : `true` pour « membre » (un accès quelconque) ; tout autre mot
+ * ne vaut rien. `fonctionsEdge.test.ts` confronte cette table, et les deux suivantes, au texte de la migration.
  */
-export const CASES_DES_DROITS: Readonly<Record<string, string | true>> = {
-  membre: true,
-  ventes: 'droit_ventes',
-  banque: 'droit_banque',
+export function casesDesDroitsSelon(caisseExportee: boolean): Readonly<Record<string, string | true>> {
+  return {
+    membre: true,
+    ventes: 'droit_ventes',
+    banque: 'droit_banque',
+    ...(caisseExportee ? { caisse: 'droit_caisse' } : {}),
+  }
 }
+export const CASES_DES_DROITS: Readonly<Record<string, string | true>> = casesDesDroitsSelon(CAISSE_DU_CLIENT_EXPORTEE)
 
 /** `client_du_dossier(dossier, droit)` : un accès de l'appelant à CE dossier, qui porte ce droit. */
 export function clientDuDossier(monde: Monde, utilisateur: string | null, dossierId: unknown, droit: unknown): boolean {
@@ -324,16 +334,22 @@ export function clientDuDossier(monde: Monde, utilisateur: string | null, dossie
     m.dossier_id === dossierId && m.user_id === utilisateur && (caseLue === true || m[caseLue] === true))
 }
 
+type TermesDesDroits = Readonly<Record<string, readonly ('admin_du_dossier' | `client_du_dossier:${string}`)[]>>
+
 /**
  * Chaque clé de `droits_sur_le_dossier`, et ce qu'elle vaut : le OU de ses termes — `admin_du_dossier`, ou
- * `client_du_dossier` sous le droit nommé (`gere_les_ventes` et `gere_la_banque` déroulées).
+ * `client_du_dossier` sous le droit nommé (`gere_les_ventes`, `gere_la_banque` et `gere_la_caisse` déroulées).
  */
-export const DROITS_DU_DOSSIER: Readonly<Record<string, readonly ('admin_du_dossier' | `client_du_dossier:${string}`)[]>> = {
-  cabinet: ['admin_du_dossier'],
-  membre: ['client_du_dossier:membre'],
-  ventes: ['admin_du_dossier', 'client_du_dossier:ventes'],
-  banque: ['admin_du_dossier', 'client_du_dossier:banque'],
+export function droitsDuDossierSelon(caisseExportee: boolean): TermesDesDroits {
+  return {
+    cabinet: ['admin_du_dossier'],
+    membre: ['client_du_dossier:membre'],
+    ventes: ['admin_du_dossier', 'client_du_dossier:ventes'],
+    banque: ['admin_du_dossier', 'client_du_dossier:banque'],
+    ...(caisseExportee ? { caisse: ['admin_du_dossier', 'client_du_dossier:caisse'] } : {}),
+  }
 }
+export const DROITS_DU_DOSSIER: TermesDesDroits = droitsDuDossierSelon(CAISSE_DU_CLIENT_EXPORTEE)
 
 /** `droits_sur_le_dossier(dossier)` : l'objet que la fonction SQL rend, une case par clé. */
 export function droitsSurLeDossier(monde: Monde, utilisateur: string | null, dossierId: unknown): Record<string, boolean> {

@@ -1,7 +1,7 @@
 import type { ModeleComptable } from './engagement'
 import { tvaEnCentimes } from './tvaDuReleve'
 import type {
-  ANouveau, EncaissementFacture, FactureEmise, GenreOperationCaisse, OperationCaisse, OrigineOperationCaisse,
+  ANouveau, EncaissementFacture, FactureEmise, GenreOperationCaisse, OperationCaisse, OrigineOperationCaisse, StatutTva,
 } from './types'
 import { exerciceQuiFige, frontiereDeValidation } from './validationExercice'
 import { compteDuDirigeant } from './virementPersonnel'
@@ -30,6 +30,15 @@ import { compteDuDirigeant } from './virementPersonnel'
 // compte encore — elle reste la garde, et refuserait après le clic ce qu'il ôterait. Ses refus neufs à elle — le
 // paiement, sa contrepartie, la pièce payée, le mouvement d'avant l'ouverture — sont ceux de lib/paiementParLaCaisse.ts.
 //
+// LA MIGRATION 5 (`caisse_du_client`, étape C10, préparée le 01/11/2026, pas encore appliquée ; CAISSE-Q1, (B)) : le droit
+// « Caisse » d'un accès client, sur un dossier exonéré de TVA ou en franchise en base (CAISSE2-Q3, (B)). Ce module redit,
+// DÈS AUJOURD'HUI, ce qu'elle ouvre : `quiEcritLaCaisse`, qui dit l'accès du client (le cabinet d'abord, puis un accès
+// « Caisse » d'un dossier exclu, sinon le refus) ; la saisie du client, dont la nature est celle que le cabinet a fixée
+// pour le dossier (CAISSE2-Q2, (B) : `natureDesRecettesDuClient`), dont l'écriture est celle que la base compose (il n'en
+// envoie aucune), et dont l'ensemble du jour se refuse sans numéro de facture ; et la nature elle-même, que le cabinet
+// fixe (`refusDeLaNatureDesRecettesDuClient`). NEUTRE pour le cabinet : ces branches ne s'ouvrent que pour `quiEcrit`
+// « client », que la base ne rend à personne avant la migration, et que l'écran du cabinet ne passe jamais.
+//
 // LE DRAPEAU. LES DEUX MIGRATIONS SONT EN BASE depuis le 30/10/2026 : `caisse`, par l'outil (version 20261030073812),
 // puis `caisse_retrait_et_versement`, collée par le cabinet (version 20261030123801), toutes deux dans l'export. Le
 // drapeau est levé : la table se lit (`caisseLecture.ts`), la sauvegarde la porte (`sauvegarde.ts`), le compte de bilan
@@ -54,6 +63,9 @@ export interface RefusCaisse {
 // remplit dans l'ordre. Les apostrophes sont celles de la base : ce sont SES mots, que l'écran redit tels quels.
 // `caisse.test.ts` relit chaque gabarit dans le texte des migrations, et l'ordre de chaque liste ci-dessous.
 export const MOTS_DE_LA_CAISSE = {
+  // `qui_ecrit_la_caisse` (la migration `caisse_du_client`) : un accès « Caisse » d'un dossier qui n'est plus exonéré ni en
+  // franchise — une restauration, puisque les gardes le refusent ailleurs —, avant le refus d'hier.
+  acces_hors_statut: { code: '23514', gabarit: 'La saisie des espèces depuis ton espace suppose un dossier exonéré de TVA ou en franchise en base : ton cabinet tient ta caisse.' },
   acces: { code: '42501', gabarit: 'Accès refusé à ce dossier.' },
   tresorerie: { code: '22023', gabarit: 'La caisse ne se tient que dans un dossier en comptabilité de trésorerie.' },
   genre: { code: '22023', gabarit: 'Une opération de caisse est une recette en espèces, un apport ou un prélèvement de l\'exploitant.' },
@@ -67,6 +79,11 @@ export const MOTS_DE_LA_CAISSE = {
   montant_nul: { code: '22023', gabarit: 'Une opération de caisse de zéro euro n\'a rien à écrire.' },
   montant_negatif: { code: '22023', gabarit: 'Le montant d\'un apport ou d\'un prélèvement est positif : un apport fait entrer des espèces, un prélèvement les fait sortir.' },
   montant_borne: { code: '22023', gabarit: 'Le montant d\'une opération de caisse dépasse ce que l\'application compte.' },
+  // La recette du CLIENT (la migration `caisse_du_client` ; CAISSE2-Q2, (B)) : la nature que le cabinet a fixée pour le
+  // dossier, jamais la sienne.
+  nature_choisie: { code: '22023', gabarit: 'La nature de tes recettes en espèces est celle que ton cabinet a fixée pour ton dossier : ta saisie n\'en choisit pas.' },
+  nature_absente: { code: '22023', gabarit: 'Ton cabinet n\'a pas fixé la nature de tes recettes en espèces : demande-lui de la poser.' },
+  nature_sans_produit: { code: '22023', gabarit: 'La nature que ton cabinet a fixée pour tes recettes en espèces n\'est plus une catégorie de produit de ton dossier : demande-lui de la corriger.' },
   categorie_absente: { code: '22023', gabarit: 'La nature d\'une recette en espèces est une catégorie de produit du dossier : à choisir.' },
   categorie_inconnue: { code: '22023', gabarit: 'Cette catégorie n\'existe pas pour ce dossier.' },
   categorie_sans_produit: { code: '22023', gabarit: 'La catégorie « % » n\'a pas de compte de produit (classe 7) : une recette en espèces ne s\'y range pas.' },
@@ -76,13 +93,18 @@ export const MOTS_DE_LA_CAISSE = {
   taux_de_trop: { code: '22023', gabarit: 'Un taux de TVA ne s\'applique qu\'à une recette d\'un dossier assujetti.' },
   ensemble_absent: { code: '22023', gabarit: 'La saisie d\'une recette dit les encaissements en espèces de factures de son jour qu\'elle a lus : une liste d\'identifiants, vide s\'il n\'y en a aucun.' },
   ensemble_doublon: { code: '22023', gabarit: 'La saisie d\'une recette nomme chaque encaissement de son jour une seule fois.' },
+  // Au client, sans le numéro de la facture : `caisse_du_client` ne le lui rend pas (la migration `caisse_du_client`).
+  ensemble_manquant_client: { code: '22023', gabarit: 'Des espèces d\'une facture de ce jour ont été enregistrées depuis ta lecture : relis ta caisse.' },
   ensemble_manquant: { code: '22023', gabarit: 'Un encaissement en espèces de la facture % du même jour a été enregistré depuis ta lecture : relis la caisse.' },
   // La migration `paiement_par_la_caisse` : les paiements par la caisse de pièces de vente du jour, sans nommer la pièce.
   ensemble_paiement_manquant: { code: '22023', gabarit: 'Un paiement en espèces d\'une pièce de vente du même jour a été enregistré depuis ta lecture : relis la caisse.' },
+  ensemble_en_trop_client: { code: '22023', gabarit: 'Des espèces d\'une facture que ta lecture comptait ne sont pas dans la caisse de ce jour : relis ta caisse.' },
   ensemble_en_trop: { code: '22023', gabarit: 'L\'encaissement de la facture % que ta lecture comptait n\'est pas dans la caisse de ce jour : relis la caisse.' },
   ensemble_paiement_en_trop: { code: '22023', gabarit: 'Le paiement d\'une pièce que ta lecture comptait n\'est pas un paiement en espèces d\'une pièce de vente de ce jour : relis la caisse.' },
   ensemble_etranger: { code: '22023', gabarit: 'Un encaissement que ta lecture comptait n\'est pas un encaissement de ce dossier : relis la caisse.' },
   ensemble_hors_recette: { code: '22023', gabarit: 'Seule une recette reconnaît les encaissements en espèces de son jour.' },
+  // Le client ne lit pas le plan du dossier : la base compose son écriture (la migration `caisse_du_client`).
+  ecriture_du_client: { code: '22023', gabarit: 'Une saisie depuis ton espace n\'envoie pas d\'écriture : la base compose la sienne.' },
   ecriture_incomplete: { code: '22023', gabarit: 'L\'écriture proposée est incomplète.' },
   ecriture_fausse: { code: '22023', gabarit: 'L\'écriture proposée ne correspond pas à cette opération de caisse et au plan du dossier (la caisse : %).' },
   ecriture_desequilibree: { code: '23514', gabarit: 'Écriture déséquilibrée : % au débit, % au crédit.' },
@@ -100,6 +122,9 @@ export const MOTS_DE_LA_CAISSE = {
   operation_du_cabinet: { code: '42501', gabarit: 'Cette opération a été saisie par ton cabinet : demande-lui de la corriger.' },
   operation_d_un_autre_acces: { code: '42501', gabarit: 'Cette opération a été saisie depuis un autre accès à ce dossier : demande à ton cabinet de la corriger.' },
   operation_retiree: { code: 'P0002', gabarit: 'Cette opération a été retirée ou remplacée depuis ta lecture : relis ta caisse.' },
+  // La nature des recettes du client, que le cabinet fixe (`garder_categorie_recettes_client`, la migration
+  // `caisse_du_client`).
+  nature_hors_produit: { code: '23514', gabarit: 'La nature des recettes en espèces du client est une catégorie de produit (classe 7) de ce dossier, ou commune : celle-ci ne l\'est pas.' },
 } as const satisfies Record<string, { code: CodeDuRefus; gabarit: string }>
 
 export type CleDuRefus = keyof typeof MOTS_DE_LA_CAISSE
@@ -113,11 +138,12 @@ export const ORDRE_DES_REFUS: Readonly<Record<
 >> = {
   enregistrer_operation_caisse: [
     'tresorerie', 'genre', 'date_absente', 'date_avant_2000', 'date_future', 'date_avant_ouverture', 'frontiere',
-    'montant_absent', 'montant_centime', 'montant_nul', 'montant_negatif', 'montant_borne', 'categorie_absente',
+    'montant_absent', 'montant_centime', 'montant_nul', 'montant_negatif', 'montant_borne',
+    'nature_choisie', 'nature_absente', 'nature_sans_produit', 'categorie_absente',
     'categorie_inconnue', 'categorie_sans_produit', 'categorie_de_trop', 'taux_absent', 'taux_inconnu', 'taux_de_trop',
-    'ensemble_absent', 'ensemble_doublon', 'ensemble_manquant', 'ensemble_paiement_manquant', 'ensemble_en_trop',
-    'ensemble_paiement_en_trop', 'ensemble_etranger',
-    'ensemble_hors_recette', 'ecriture_incomplete', 'ecriture_fausse', 'ecriture_desequilibree',
+    'ensemble_absent', 'ensemble_doublon', 'ensemble_manquant_client', 'ensemble_manquant', 'ensemble_paiement_manquant',
+    'ensemble_en_trop_client', 'ensemble_en_trop', 'ensemble_paiement_en_trop', 'ensemble_etranger',
+    'ensemble_hors_recette', 'ecriture_du_client', 'ecriture_incomplete', 'ecriture_fausse', 'ecriture_desequilibree',
   ],
   enregistrer_operations_de_caisse: [
     'mois_pas_un_tableau', 'mois_vide', 'mois_trop_long', 'mois_pas_un_objet', 'mois_champ_inconnu', 'mois_champ_illisible',
@@ -442,7 +468,8 @@ export function ecritureDeLOperation(op: OperationAEcrire, modele: ModeleComptab
 /**
  * Ce que les fonctions de la caisse lisent d'un dossier, en plus de sa caisse : qui écrit (`qui_ecrit_la_caisse` : le
  * cabinet, le client, ou personne), l'utilisateur, son modèle et son plan, s'il est assujetti, le jour à Paris, l'ouverture
- * d'un dossier repris (la plus ancienne date de ses à-nouveaux), ses exercices validés, ses catégories et les communes.
+ * d'un dossier repris (la plus ancienne date de ses à-nouveaux), ses exercices validés, ses catégories et les communes, et
+ * la nature des recettes du client.
  */
 export interface DossierDeLaCaisse {
   quiEcrit: OrigineOperationCaisse | null
@@ -454,6 +481,56 @@ export interface DossierDeLaCaisse {
   anneesValidees: readonly number[]
   categories: readonly CategorieDeLaCaisse[]
   caisse: EtatDeLaCaisse
+  /**
+   * La nature des recettes en espèces que le CLIENT saisit (`dossiers.categorie_recettes_client`, la migration
+   * `caisse_du_client` ; CAISSE2-Q2, (B)) : l'identifiant d'une catégorie que le cabinet a fixée, ou nul. Lue pour la
+   * saisie du client seule — celle du cabinet choisit sa catégorie, et ne la lit pas. Obligatoire, pour qu'aucun écran du
+   * client ne l'oublie : absente, sa recette se dirait refusée faute de nature.
+   */
+  natureDesRecettesDuClient: string | null
+}
+
+// LES STATUTS DE TVA OÙ LE CLIENT TIENT SA CAISSE (CAISSE2-Q3, (B)) : un dossier exonéré de TVA, ou en franchise en base —
+// ceux que l'obligation d'un système de caisse certifié n'atteint pas (CGI, art. 286, I, 3° bis et II, 2 ; BOI-TVA-DECLA-
+// 30-10-30, § 25). Ceux de `qui_ecrit_la_caisse`, de `garder_droit_caisse` et de `garder_statut_tva_de_la_caisse`.
+export const STATUTS_DE_LA_SAISIE_DU_CLIENT: readonly StatutTva[] = ['exonere', 'franchise']
+
+/** L'appelant, tel que `qui_ecrit_la_caisse` le lit. */
+export interface AppelantDeLaCaisse {
+  /** Le cabinet du dossier (`admin_du_dossier`, sur un dossier qui existe) — le super-administrateur compris. */
+  cabinet: boolean
+  /** Un accès de l'appelant à ce dossier porte le droit « Caisse » (`client_du_dossier(dossier, 'caisse')`). */
+  accesCaisse: boolean
+  /** Le statut de TVA du dossier. */
+  statutTva: StatutTva | null
+}
+
+/**
+ * Qui écrit la caisse, comme `qui_ecrit_la_caisse` le dit (étapes C1 et C10) : le cabinet du dossier d'abord ; un accès
+ * « Caisse » d'un dossier exonéré ou en franchise, le client ; un accès « Caisse » d'un dossier qui ne l'est plus, 23514 ;
+ * sinon l'accès refusé (42501). Avant la migration `caisse_du_client`, aucun accès ne porte la case : le cabinet, ou le
+ * refus, comme hier.
+ */
+export function quiEcritLaCaisse(appelant: AppelantDeLaCaisse): { refus: RefusCaisse } | { refus: null; origine: OrigineOperationCaisse } {
+  if (appelant.cabinet) return { refus: null, origine: 'cabinet' }
+  if (appelant.accesCaisse) {
+    return appelant.statutTva != null && STATUTS_DE_LA_SAISIE_DU_CLIENT.includes(appelant.statutTva)
+      ? { refus: null, origine: 'client' }
+      : { refus: refus('acces_hors_statut') }
+  }
+  return { refus: refus('acces') }
+}
+
+/**
+ * Le refus de `garder_categorie_recettes_client` pour la nature que le cabinet fixe aux recettes du client de CE dossier,
+ * ou rien : une catégorie de produit (classe 7) du dossier, ou commune — ou rien (nul retire la nature). `categories` est
+ * la liste où la garde la cherche : celles du dossier et les communes, lues en entier.
+ */
+export function refusDeLaNatureDesRecettesDuClient(categorieId: string | null, dossierId: string,
+  categories: readonly CategorieDeLaCaisse[]): RefusCaisse | null {
+  if (categorieId == null) return null
+  const categorie = categories.find((c) => c.id === categorieId && (c.dossier_id == null || c.dossier_id === dossierId))
+  return categorie?.compte_comptable != null && /^7[0-9]{2}/.test(categorie.compte_comptable) ? null : refus('nature_hors_produit')
 }
 
 /**
@@ -543,11 +620,15 @@ function ecritureConformeALaCaisse(recue: readonly { compte: string; sens: strin
   return recue.every((l) => typeof l.libelle !== 'string' || l.libelle === libelle)
 }
 
-/** L'opération qu'une saisie acceptée écrit, telle que la base l'insère. */
-function operationDeLaSaisie(saisie: SaisieDeCaisse, id: string, dossier: DossierDeLaCaisse): OperationDeLaCaisse {
+/**
+ * L'opération qu'une saisie acceptée écrit, telle que la base l'insère : la catégorie RÉSOLUE (`v_categorie.id`) — celle de
+ * la saisie pour le cabinet, la nature du dossier pour le client.
+ */
+function operationDeLaSaisie(saisie: SaisieDeCaisse, id: string, dossier: DossierDeLaCaisse,
+  categorie: CategorieDeLaCaisse | null): OperationDeLaCaisse {
   return {
     id, genre: saisie.genre as GenreOperationCaisse, date: saisie.date!, montant: saisie.montant!,
-    categorie_id: saisie.categorie_id, taux_tva: saisie.taux_tva,
+    categorie_id: categorie?.id ?? null, taux_tva: saisie.taux_tva,
     encaissements_du_jour: saisie.genre === 'recette' ? [...new Set(saisie.encaissements_du_jour as string[])].sort() : null,
     piece_id: null, origine: dossier.quiEcrit ?? 'cabinet', cree_par: dossier.utilisateur, remplace_id: null, retire_le: null,
   }
@@ -587,9 +668,16 @@ export function jugerLaSaisie(saisie: SaisieDeCaisse, dossier: DossierDeLaCaisse
   const leMontant = jugerLeMontant(saisie.montant, genre !== 'recette')
   if (leMontant.refus) return r(leMontant.refus)
   const { montant, centimes } = leMontant
-  // 6. La catégorie d'une recette, et son compte de produit.
+  // 6. La catégorie d'une recette, et son compte de produit. Pour le client (la migration `caisse_du_client`), celle que le
+  //    cabinet a fixée pour le dossier : il n'en choisit aucune.
   let categorie: CategorieDeLaCaisse | null = null
-  if (genre === 'recette') {
+  const client = dossier.quiEcrit === 'client'
+  if (genre === 'recette' && client) {
+    if (saisie.categorie_id != null) return r(refus('nature_choisie'))
+    if (dossier.natureDesRecettesDuClient == null) return r(refus('nature_absente'))
+    categorie = dossier.categories.find((c) => c.id === dossier.natureDesRecettesDuClient) ?? null
+    if (categorie?.compte_comptable == null || !/^7[0-9]{2}/.test(categorie.compte_comptable)) return r(refus('nature_sans_produit'))
+  } else if (genre === 'recette') {
     if (saisie.categorie_id == null) return r(refus('categorie_absente'))
     categorie = dossier.categories.find((c) => c.id === saisie.categorie_id) ?? null
     if (categorie == null) return r(refus('categorie_inconnue'))
@@ -616,12 +704,14 @@ export function jugerLaSaisie(saisie: SaisieDeCaisse, dossier: DossierDeLaCaisse
     const attendus = encaissementsDuJour(etat, date)
     const paiements = paiementsDeVenteDuJour(etat, date)
     const manquant = attendus.filter((x) => !distincts.includes(x)).sort()[0]
+    // Au client, sans le numéro de la facture : `caisse_du_client` ne le lui rend pas.
+    if (manquant != null && client) return r(refus('ensemble_manquant_client'))
     if (manquant != null) return r(refus('ensemble_manquant', numeroDeLaFacture(manquant, etat) ?? '(sans numéro)'))
     if (paiements.some((x) => !distincts.includes(x))) return r(refus('ensemble_paiement_manquant'))
     const enTrop = distincts.filter((x) => !attendus.includes(x) && !paiements.includes(x)).sort()[0]
     if (enTrop != null) {
       if (etat.encaissements.some((e) => e.id === enTrop)) {
-        return r(refus('ensemble_en_trop', numeroDeLaFacture(enTrop, etat) ?? '(sans numéro)'))
+        return r(client ? refus('ensemble_en_trop_client') : refus('ensemble_en_trop', numeroDeLaFacture(enTrop, etat) ?? '(sans numéro)'))
       }
       return r(etat.operations.some((o) => o.id === enTrop && o.genre === 'paiement')
         ? refus('ensemble_paiement_en_trop')
@@ -630,15 +720,20 @@ export function jugerLaSaisie(saisie: SaisieDeCaisse, dossier: DossierDeLaCaisse
   } else if (saisie.encaissements_du_jour != null && saisie.encaissements_du_jour.length > 0) {
     return r(refus('ensemble_hors_recette'))
   }
-  // 9. L'écriture, recomposée en centimes entiers et comparée en multiensemble.
-  const recue = ecritureRecue(saisie.ecritures)
-  if (recue == null) return r(refus('ecriture_incomplete'))
+  // 9. L'écriture, recomposée en centimes entiers et comparée en multiensemble. Le client n'en envoie aucune — ni un
+  //    tableau vide : `null`, ou rien —, et la base pose celle qu'elle compose, conforme par construction.
   const op: OperationAEcrire = { genre: genre as OperationAEcrire['genre'], date, montant, taux_tva: saisie.taux_tva, categorie }
-  if (!ecritureConformeALaCaisse(recue, ecritureEnCentimes(op, dossier.modele), libelleDeLOperation(op))) {
-    return r(refus('ecriture_fausse', dossier.modele.plan.caisse))
+  if (client) {
+    if (saisie.ecritures != null) return r(refus('ecriture_du_client'))
+  } else {
+    const recue = ecritureRecue(saisie.ecritures)
+    if (recue == null) return r(refus('ecriture_incomplete'))
+    if (!ecritureConformeALaCaisse(recue, ecritureEnCentimes(op, dossier.modele), libelleDeLOperation(op))) {
+      return r(refus('ecriture_fausse', dossier.modele.plan.caisse))
+    }
   }
   // L'opération et son écriture, d'un tenant.
-  const operation = operationDeLaSaisie(saisie, id, dossier)
+  const operation = operationDeLaSaisie(saisie, id, dossier, categorie)
   const caisse = avecLOperation(etat, operation)
   // 10. La caisse jamais négative, dite ici sous les mots du geste ; une saisie d'un mois la juge à sa fin.
   if (!dansUnLot && (genre === 'prelevement' || centimes < 0)) {

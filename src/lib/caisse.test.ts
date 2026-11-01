@@ -4,9 +4,9 @@ import {
   CAISSE_EXPORTEE, ecritureDeLOperation, encaissementsDuJour, ensembleDuJour, fluxAvantLOuverture, fluxDeLaCaisse, former,
   GESTES_DE_LA_CAISSE,
   jugerLaSaisie, jugerLaSaisieDUnMois, jugerLeRemplacement, jugerLeRetrait, MOTS_DE_LA_CAISSE, ORDRE_DES_REFUS, origineDite,
-  ouvertureDuDossier, paiementsDeVenteDuJour, premierJourDeLaCaisse, premierJourNegatif, refusDeLaCaisse, refusDeLaSaisie,
-  refusDeLaSaisieDUnMois, refusDuRemplacement, refusDuRetrait, remplacanteDe, soldesDeLaCaisse, texteCaisseNegative,
-  versionsDeLOperation,
+  ouvertureDuDossier, paiementsDeVenteDuJour, premierJourDeLaCaisse, premierJourNegatif, quiEcritLaCaisse, refusDeLaCaisse,
+  refusDeLaNatureDesRecettesDuClient, refusDeLaSaisie, refusDeLaSaisieDUnMois, refusDuRemplacement, refusDuRetrait,
+  remplacanteDe, soldesDeLaCaisse, STATUTS_DE_LA_SAISIE_DU_CLIENT, texteCaisseNegative, versionsDeLOperation,
   type DossierDeLaCaisse, type EtatDeLaCaisse, type OperationDeLaCaisse, type SaisieDeCaisse,
 } from './caisse'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
@@ -50,7 +50,9 @@ function raises(corps: string): { gabarit: string; code: string }[] {
 
 describe('les mots et l’ordre des refus, relus dans le texte des deux migrations', () => {
   it('l’accès, celui de `qui_ecrit_la_caisse`, pour les quatre', () => {
-    expect(raises(definition('qui_ecrit_la_caisse'))).toEqual([MOTS_DE_LA_CAISSE.acces])
+    // La migration `caisse_du_client` (étape C10) : un accès « Caisse » d'un dossier qui n'est plus exonéré ni en franchise,
+    // avant le refus d'hier — `quiEcritLaCaisse` les dit dans cet ordre.
+    expect(raises(definition('qui_ecrit_la_caisse'))).toEqual([MOTS_DE_LA_CAISSE.acces_hors_statut, MOTS_DE_LA_CAISSE.acces])
     for (const f of ['enregistrer_operation_caisse', 'enregistrer_operations_de_caisse', 'retirer_operation_caisse', 'remplacer_operation_caisse']) {
       const corps = definition(f)
       // L'accès vient avant toute lecture : son appel précède le premier `select` et le premier `raise`.
@@ -158,6 +160,9 @@ describe('l’essai de la caisse, rejoué par le module : les mêmes cas, les m�
       'montant_nul', 'montant_negatif', 'montant_borne', 'categorie_absente', 'categorie_inconnue', 'categorie_de_trop',
       'taux_absent', 'taux_inconnu', 'taux_de_trop', 'ensemble_absent', 'ensemble_hors_recette', 'ecriture_incomplete',
       'mois_pas_un_tableau', 'mois_vide', 'operation_inconnue', 'operation_retiree', 'acces',
+      // La saisie du client (l'étape C10) : ses refus neufs, et ceux d'hier qui ne regardent que lui.
+      'acces_hors_statut', 'nature_choisie', 'nature_absente', 'nature_sans_produit', 'ecriture_du_client', 'nature_hors_produit',
+      'operation_du_cabinet', 'operation_d_un_autre_acces',
     ] as const
     for (const cle of attendus) {
       const gabarit = sansApostrophes(MOTS_DE_LA_CAISSE[cle].gabarit)
@@ -200,7 +205,7 @@ function dossier(o: Partial<DossierDeLaCaisse> = {}): DossierDeLaCaisse {
   return {
     quiEcrit: 'cabinet', utilisateur: 'chef', modele: MODELE, assujetti: false, aujourdhui: AUJOURDHUI, ouverture: null,
     anneesValidees: [], categories: [{ id: 'k-hon', dossier_id: 'd', libelle: 'Honoraires', compte_comptable: '706000' }],
-    caisse: caisse(), ...o,
+    caisse: caisse(), natureDesRecettesDuClient: null, ...o,
   }
 }
 
@@ -636,7 +641,8 @@ describe('les bords de la saisie, que l’essai ne touche pas', () => {
   })
 
   it('l’opération acceptée : l’origine de qui écrit, et l’ensemble du jour d’une recette seulement', () => {
-    const duClient = jugerLaSaisie(apport('2026-03-01'), dossier({ quiEcrit: 'client', utilisateur: 'acces-1' }), false, 'n')
+    // Le client n'envoie pas d'écriture : la base compose la sienne (la migration `caisse_du_client`, étape C10).
+    const duClient = jugerLaSaisie({ ...apport('2026-03-01'), ecritures: null }, dossier({ quiEcrit: 'client', utilisateur: 'acces-1' }), false, 'n')
     expect(duClient.refus).toBeNull()
     if (duClient.refus) return
     expect(duClient.operation).toMatchObject({ origine: 'client', cree_par: 'acces-1', encaissements_du_jour: null })
@@ -656,6 +662,99 @@ describe('les bords de la saisie, que l’essai ne touche pas', () => {
     expect(illisible('2024-02-29')).not.toContain(MOTS_DE_LA_CAISSE.mois_date_illisible.gabarit)
     expect(illisible('1900-02-29')).toBe(`Opération n° 1 : ${MOTS_DE_LA_CAISSE.mois_date_illisible.gabarit}`)
     expect(illisible('2025-02-29')).toBe(`Opération n° 1 : ${MOTS_DE_LA_CAISSE.mois_date_illisible.gabarit}`)
+  })
+})
+
+// LA SAISIE DU CLIENT (ligne 26.6, étape C10 ; la migration `caisse_du_client`, préparée) : ce que l'essai ne touche pas, ou
+// touche dans un dossier que ce banc met hors jeu (B10, dont le registre des encaissements ne se rejoue pas ici).
+describe('la saisie du client (la migration `caisse_du_client`)', () => {
+  const CLIENT = { quiEcrit: 'client' as const, utilisateur: 'acces-1', natureDesRecettesDuClient: 'k-hon' }
+  const recette = (o: Partial<SaisieDeCaisse> = {}) => saisie({
+    genre: 'recette', date: '2026-03-03', montant: 85, categorie_id: null, encaissements_du_jour: [], ecritures: null, ...o,
+  })
+
+  it('qui écrit : le cabinet d’abord ; un accès « Caisse » d’un dossier exonéré ou en franchise ; sinon les deux refus', () => {
+    expect(STATUTS_DE_LA_SAISIE_DU_CLIENT).toEqual(['exonere', 'franchise'])
+    expect(quiEcritLaCaisse({ cabinet: true, accesCaisse: true, statutTva: 'redevable' })).toEqual({ refus: null, origine: 'cabinet' })
+    expect(quiEcritLaCaisse({ cabinet: false, accesCaisse: true, statutTva: 'exonere' })).toEqual({ refus: null, origine: 'client' })
+    expect(quiEcritLaCaisse({ cabinet: false, accesCaisse: true, statutTva: 'franchise' })).toEqual({ refus: null, origine: 'client' })
+    for (const statutTva of ['redevable', null] as const) {
+      expect(quiEcritLaCaisse({ cabinet: false, accesCaisse: true, statutTva }).refus)
+        .toEqual({ code: '23514', message: MOTS_DE_LA_CAISSE.acces_hors_statut.gabarit })
+    }
+    expect(quiEcritLaCaisse({ cabinet: false, accesCaisse: false, statutTva: 'exonere' }).refus).toEqual({ code: '42501', message: 'Accès refusé à ce dossier.' })
+  })
+
+  it('la recette prend la nature du dossier : sa catégorie, son écriture composée, son origine', () => {
+    const j = jugerLaSaisie(recette(), dossier(CLIENT), false, 'r')
+    expect(j.refus).toBeNull()
+    if (j.refus) return
+    expect(j.operation).toMatchObject({ categorie_id: 'k-hon', origine: 'client', cree_par: 'acces-1', encaissements_du_jour: [] })
+    // Le cabinet, lui, garde la catégorie qu'il choisit, et la nature du dossier ne le regarde pas.
+    const cabinet = jugerLaSaisie(recette({ categorie_id: 'k-hon', ecritures: ecritureDeLOperation({ genre: 'recette', date: '2026-03-03', montant: 85, taux_tva: null, categorie: { libelle: 'Honoraires', compte_comptable: '706000' } }, MODELE) }), dossier({ natureDesRecettesDuClient: null }), false, 'c')
+    expect(cabinet.refus).toBeNull()
+  })
+
+  it('ses refus neufs, dans l’ordre de la base : la nature choisie, absente, sans produit ; l’écriture envoyée', () => {
+    expect(refusDeLaSaisie(recette({ categorie_id: 'k-hon' }), dossier(CLIENT))?.message).toBe(MOTS_DE_LA_CAISSE.nature_choisie.gabarit)
+    // Le montant avant la nature.
+    expect(refusDeLaSaisie(recette({ categorie_id: 'k-hon', montant: 0 }), dossier(CLIENT))?.message).toBe(MOTS_DE_LA_CAISSE.montant_nul.gabarit)
+    expect(refusDeLaSaisie(recette(), dossier({ ...CLIENT, natureDesRecettesDuClient: null }))?.message).toBe(MOTS_DE_LA_CAISSE.nature_absente.gabarit)
+    const charge = [{ id: 'k-fou', dossier_id: 'd', libelle: 'Fournitures', compte_comptable: '606400' }]
+    expect(refusDeLaSaisie(recette(), dossier({ ...CLIENT, natureDesRecettesDuClient: 'k-fou', categories: charge }))?.message)
+      .toBe(MOTS_DE_LA_CAISSE.nature_sans_produit.gabarit)
+    // Une nature qui n'est plus dans les catégories que la saisie lit : sans produit, de même.
+    expect(refusDeLaSaisie(recette(), dossier({ ...CLIENT, natureDesRecettesDuClient: 'k-perdue' }))?.message)
+      .toBe(MOTS_DE_LA_CAISSE.nature_sans_produit.gabarit)
+    // Un apport ne regarde pas la nature ; il ne porte pas de catégorie, comme celui du cabinet.
+    expect(refusDeLaSaisie(saisie({ ecritures: null }), dossier({ ...CLIENT, natureDesRecettesDuClient: null }))).toBeNull()
+    expect(refusDeLaSaisie(saisie({ ecritures: null, categorie_id: 'k-hon' }), dossier(CLIENT))?.message).toBe(MOTS_DE_LA_CAISSE.categorie_de_trop.gabarit)
+    // L'écriture envoyée — même vide — se refuse ; l'ensemble du jour d'abord.
+    for (const ecritures of [[], APPORT_100, {}, 0, '']) {
+      expect(refusDeLaSaisie(recette({ ecritures }), dossier(CLIENT))?.message, JSON.stringify(ecritures)).toBe(MOTS_DE_LA_CAISSE.ecriture_du_client.gabarit)
+    }
+    expect(refusDeLaSaisie(recette({ ecritures: [], encaissements_du_jour: null }), dossier(CLIENT))?.message).toBe(MOTS_DE_LA_CAISSE.ensemble_absent.gabarit)
+  })
+
+  it('l’ensemble du jour : l’encaissement qui manque et celui en trop, sans le numéro de la facture', () => {
+    const etat = caisse({
+      factures: [{ id: 'f', numero: 'F2026-0001', source_de_la_vente: true }],
+      encaissements: [{ id: 'e1', facture_id: 'f', date_encaissement: '2026-03-10', montant: 30, moyen: 'especes', ligne_bancaire_id: null, annule_id: null, retire_le: null }],
+    })
+    const sur = (o: Partial<SaisieDeCaisse>) => refusDeLaSaisie(recette(o), dossier({ ...CLIENT, caisse: etat }))
+    expect(sur({ date: '2026-03-10' })?.message).toBe(MOTS_DE_LA_CAISSE.ensemble_manquant_client.gabarit)
+    expect(sur({ date: '2026-03-11', encaissements_du_jour: ['e1'] })?.message).toBe(MOTS_DE_LA_CAISSE.ensemble_en_trop_client.gabarit)
+    expect(sur({ date: '2026-03-10', encaissements_du_jour: ['e1'] })).toBeNull()
+    // Le cabinet, sous le numéro, comme hier.
+    expect(refusDeLaSaisie(recette({ date: '2026-03-10', categorie_id: 'k-hon', ecritures: [] }), dossier({ caisse: etat }))?.message)
+      .toBe(former(MOTS_DE_LA_CAISSE.ensemble_manquant.gabarit, 'F2026-0001'))
+    for (const m of [MOTS_DE_LA_CAISSE.ensemble_manquant_client.gabarit, MOTS_DE_LA_CAISSE.ensemble_en_trop_client.gabarit]) {
+      expect(m).not.toContain('%')
+    }
+  })
+
+  it('la nature que le cabinet fixe : une catégorie de produit du dossier, ou commune, ou rien', () => {
+    const categories = [
+      { id: 'k-hon', dossier_id: 'd', libelle: 'Honoraires', compte_comptable: '706000' },
+      { id: 'k-fou', dossier_id: 'd', libelle: 'Fournitures', compte_comptable: '606400' },
+      { id: 'k-com', dossier_id: null, libelle: 'Gains divers', compte_comptable: '758000' },
+      { id: 'k-autre', dossier_id: 'e', libelle: 'Honoraires', compte_comptable: '706000' },
+      { id: 'k-sans', dossier_id: 'd', libelle: 'Sans compte', compte_comptable: null },
+    ]
+    const refusDe = (id: string | null) => refusDeLaNatureDesRecettesDuClient(id, 'd', categories)
+    expect([refusDe('k-hon'), refusDe('k-com'), refusDe(null)]).toEqual([null, null, null])
+    for (const id of ['k-fou', 'k-autre', 'k-sans', 'k-inconnue']) {
+      expect(refusDe(id), id).toEqual({ code: '23514', message: MOTS_DE_LA_CAISSE.nature_hors_produit.gabarit })
+    }
+  })
+
+  it('ses refus, relus dans le texte de la migration : la garde de la nature', () => {
+    const corps = definition('garder_categorie_recettes_client')
+    expect(raises(corps)).toEqual([MOTS_DE_LA_CAISSE.nature_hors_produit])
+    expect(corps).toContain("and c.compte_comptable ~ '^7[0-9]{2}') then")
+    expect(corps).toContain('where c.id = new.categorie_recettes_client and (c.dossier_id is null or c.dossier_id = new.id)')
+    // Les statuts de la saisie du client, ceux des trois corps qui les nomment.
+    expect(definition('qui_ecrit_la_caisse')).toContain("if v_statut in ('exonere', 'franchise') then")
   })
 })
 

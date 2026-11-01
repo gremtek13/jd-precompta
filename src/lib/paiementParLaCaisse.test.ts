@@ -129,7 +129,7 @@ function dossier(o: Partial<DossierDeLaCaisse> = {}): DossierDeLaCaisse {
   return {
     quiEcrit: 'cabinet', utilisateur: 'chef', modele: MODELE, assujetti: false, aujourdhui: AUJOURDHUI, ouverture: null,
     anneesValidees: [], categories: [{ id: 'k', dossier_id: 'd', libelle: 'Honoraires', compte_comptable: '706000' }],
-    caisse: caisse({ operations: [operation({ id: 'apport' })] }), ...o,
+    caisse: caisse({ operations: [operation({ id: 'apport' })] }), natureDesRecettesDuClient: null, ...o,
   }
 }
 

@@ -80,6 +80,12 @@ export interface Dossier {
   // texte de cinq cents caractères au plus, que le cabinet seul écrit (la policy `dossiers_update`), et que chaque facture
   // fige à sa validation. FACULTATIVE tant que la migration n'est pas en base ; aucun écran ne l'écrit encore.
   mentions_identite?: string | null
+  // LA NATURE DES RECETTES EN ESPÈCES DU CLIENT (ligne 26.6, étape C10 ; CAISSE2-Q2, (B) ; migration `caisse_du_client`,
+  // préparée) : la catégorie de produit (classe 7) du dossier, ou commune, que le cabinet fixe (la policy `dossiers_update`,
+  // sous la garde `garder_categorie_recettes_client`), et que la saisie du client prend pour ses recettes ; nulle tant qu'il
+  // ne l'a pas fixée. Sans clé étrangère (la restauration écrit les dossiers avant leurs catégories). FACULTATIVE dans ce
+  // type tant que la migration n'est pas en base ; aucun écran ne l'écrit encore (C11).
+  categorie_recettes_client?: string | null
   // LES FACTURES DU DOSSIER SONT-ELLES LA SOURCE DE LEURS VENTES ? (chantier EC-Q3, étape VF2 ; migration
   // `source_de_la_vente`, en base et dans l'export depuis le 18/10/2026 ; lib/sourceDeLaVente.ts.) Faux par défaut ; posé
   // par le cabinet (la policy `dossiers_update`) ; irréversible dès qu'une facture source existe
@@ -995,6 +1001,12 @@ export interface Membership {
   email: string | null
   droit_ventes: boolean
   droit_banque: boolean
+  // LE DROIT « CAISSE » (ligne 26.6, étape C10 ; migration `caisse_du_client`, préparée hors de l'export — voir
+  // lib/caisse.ts) : la saisie des espèces par le praticien, sur un dossier exonéré de TVA ou en franchise en base
+  // (`garder_droit_caisse`), posée par `changer_droits_acces` à quatre paramètres seule ; faux par défaut. FACULTATIF dans
+  // ce type, et c'est la vérité des deux côtés de la migration : avant elle, `select('*')` ne le rend pas ; après, il le
+  // rend, faux sur tout accès d'aujourd'hui. Il devient obligatoire avec le premier écran qui le lit (l'onglet Accès, C11).
+  droit_caisse?: boolean
 }
 
 export type RoleCabinetAdmin = 'comptable_en_chef' | 'comptable'
