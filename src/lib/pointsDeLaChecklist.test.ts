@@ -488,6 +488,9 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
   const nb = (d: Partial<DonneesDeLaChecklist>, id: string, c: ContexteDeLaChecklist = CONTEXTE) => tous(d, c).find((p) => p.id === id)?.nb
 
   it('NEUTRE : la caisse absente n’ajoute aucun point — la liste est celle d’hier, au caractère près', () => {
+    // L'état d'aujourd'hui, écrit : la migration `paiement_par_la_caisse` pas en base (étape C9b ; levé, la caisse lue y ajoute
+    // le point du mouvement d'avant l'ouverture — le cas suivant).
+    drapeau.leve = false
     const avant = tous({ lignes: [ligne({ statut: 'non_rapprochee' })] })
     expect(avant.some((p) => IDS.includes(p.id))).toBe(false)
     // Lue, les quatre paraissent, à zéro quand tout tient — et les autres points ne changent pas d'un caractère.
@@ -497,6 +500,18 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
       ['versements-especes-en-recette', 0, 'attention'],
     ])
     expect(apres.filter((p) => !IDS.includes(p.id))).toEqual(avant)
+  })
+
+  it('NEUTRE, la migration en base : la caisse lue ajoute aussi le point du mouvement d’avant l’ouverture, et rien d’autre', () => {
+    drapeau.leve = true
+    const avant = tous({ lignes: [ligne({ statut: 'non_rapprochee' })] })
+    const apres = tous({ lignes: [ligne({ statut: 'non_rapprochee' })], caisse: caisseLue([]) })
+    const ids = [...IDS, 'caisse-mouvements-avant-ouverture']
+    expect(apres.filter((p) => ids.includes(p.id)).map((p) => [p.id, p.nb])).toEqual([
+      ['caisse-a-reprendre', 0], ['caisse-negative', 0], ['caisse-mouvements-avant-ouverture', 0], ['recettes-de-caisse-a-revoir', 0],
+      ['versements-especes-en-recette', 0],
+    ])
+    expect(apres.filter((p) => !ids.includes(p.id))).toEqual(avant)
   })
 
   // L'ÉTAPE C4 : le point « postes-manquants » compte la catégorie sans poste 2035 qu'une recette de caisse range — Clôture la
@@ -698,6 +713,16 @@ describe('pointsDeLaChecklist : le paiement d’une pièce par la caisse (C9b)',
     expect(nb(partielle, 'sans-contrepartie')).toBe(0)
     expect(nb(partielle, 'montant-suspect')).toBe(0)
     expect(nb(partielle, 'pieces-payees-en-partie')).toBe(0)
+    // Écrite AVANT son paiement (sans contrepartie) : ni « en attente de rapprochement » — témoin, la caisse absente le dit.
+    const sansContrepartie = { ...partielle, ecritures: [...APPORT_ECRIT, CHARGE] }
+    expect(nb(sansContrepartie, 'sans-contrepartie')).toBe(0)
+    expect(nb({ ...sansContrepartie, caisse: CAISSE_PAS_EN_BASE, entreesDeLaCaisseIncompletes: null }, 'sans-contrepartie')).toBe(1)
+    // Payée en partie par la banque, le reste en espèces : la banque seule la ferait paraître payée en partie.
+    const banque = ligne({ id: 'm1', statut: 'rapprochee', piece_id: 'x', montant: -20, date: '2026-03-12' })
+    const enDeux = { ...partielle, lignes: [banque], caisse: caisseLue([APPORT, { ...PAYE, montant: -30 }], { complete: false, motif: '1 lue sur 2' }) }
+    expect(nb(enDeux, 'pieces-payees-en-partie')).toBe(0)
+    expect(nb({ ...enDeux, caisse: CAISSE_PAS_EN_BASE, entreesDeLaCaisseIncompletes: null }, 'pieces-payees-en-partie')).toBe(1)
+    expect(nb({ ...enDeux, caisse: caisseLue([APPORT, { ...PAYE, montant: -30 }]), entreesDeLaCaisseIncompletes: null }, 'pieces-payees-en-partie')).toBe(0)
     // Le témoin : la même écriture, le paiement retiré et la caisse lue en entier — la contrepartie ne suit plus, « à régénérer ».
     expect(nb(base({ caisse: caisseLue([APPORT, { ...PAYE, retire_le: '2026-03-13T00:00:00Z' }]) }), 'desynchronisees')).toBe(1)
     // Une autre pièce, que la caisse ne touche pas et qui est à régénérer, le reste : seule la pièce payée en espèces se tait.

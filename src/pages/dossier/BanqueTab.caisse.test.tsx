@@ -520,6 +520,10 @@ describe('la fiche d’un mouvement, les paiements par la caisse lus en partie',
     expect(sans(volet().textContent)).toContain('Les paiements de pièces par la caisse n’ont pas pu être lus en entier')
     for (const b of associer()) await act(async () => { b.click() })
     expect(faux.rpcs.filter((r) => /rapproch/.test(r.nom))).toEqual([])
+    // Le règlement groupé, suspendu de même : son bouton grisé, sa note dite.
+    await act(async () => { within(volet()).getByRole('button', { name: 'Régler plusieurs pièces…' }).click() })
+    expect((within(volet()).getByRole('button', { name: 'Régler ces pièces' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(sans(volet().textContent)).toContain('Régler plusieurs pièces est suspendu')
   })
 
   it('levé, la caisse lue en entier : « Associer » offert, sans la phrase', async () => {

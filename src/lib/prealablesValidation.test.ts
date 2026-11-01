@@ -1910,6 +1910,7 @@ describe('prealablesDeValidation — les paiements par la caisse (étape C9a)', 
     const APPORT_2025 = operationDeCaisse({ id: 'oc-ap', genre: 'apport', date: '2025-01-02', montant: 500 })
     const paye = operationDeCaisse({ id: 'oc-p1', genre: 'paiement', piece_id: 'p1', date: '2025-03-12', montant: -120 })
     const d = donnees({ operationsDeCaisse: caisseLue([APPORT_2025, paye]), ecritures: [E1, ...lignesDeLaCaisse(APPORT_2025)] })
+    drapeauDuPaiement.leve = false
     expect(prealable(d, 'caisse-a-reprendre')).toBeUndefined()
     drapeauDuPaiement.leve = true
     const p = prealable(d, 'caisse-a-reprendre')!
@@ -1919,6 +1920,21 @@ describe('prealablesDeValidation — les paiements par la caisse (étape C9a)', 
     // Sa contrepartie écrite au compte de la caisse : plus rien à reprendre.
     const contrepartie = ecriture('k1', { compte: PLAN_PAR_DEFAUT.caisse, sens: 'credit', operation_caisse_id: 'oc-p1' })
     expect(prealable(donnees({ ...d, ecritures: [E1, contrepartie, ...lignesDeLaCaisse(APPORT_2025)] }), 'caisse-a-reprendre')).toBeUndefined()
+  })
+
+  // Étape C9b : l'ensemble du jour d'une recette compte le paiement par la caisse d'une pièce de VENTE de son jour — la
+  // validation passe les pièces de vente à la caisse, sans quoi la recette qui l'a reconnu paraîtrait à revoir.
+  it('recettes-de-caisse-a-revoir : la recette qui a reconnu le paiement d’une pièce de vente de son jour n’est pas à revoir', () => {
+    const VENTE = piece('pv', { type_piece: 'vente', date_piece: '2025-03-12', montant_ttc: 30 })
+    const encaisse = operationDeCaisse({ id: 'oc-pv', genre: 'paiement', piece_id: 'pv', date: '2025-03-12', montant: 30 })
+    const recette = operationDeCaisse({ id: 'oc-r', genre: 'recette', date: '2025-03-12', montant: 40, categorie_id: HONORAIRES_CAISSE.id, encaissements_du_jour: ['oc-pv'] })
+    const d = donnees({
+      piecesValidees: [P1, VENTE], categories: [ACHATS, HONORAIRES_CAISSE], operationsDeCaisse: caisseLue([recette, encaisse]),
+      ecritures: [E1, E2, ...lignesDeLaCaisse(recette)],
+    })
+    expect(prealable(d, 'recettes-de-caisse-a-revoir')).toBeUndefined()
+    // Sans la pièce de vente dans les piles, l'ensemble du jour ne la compte pas : la recette paraît à revoir.
+    expect(prealable(donnees({ ...d, piecesValidees: [P1] }), 'recettes-de-caisse-a-revoir')?.nb).toBe(1)
   })
 
   it('payée en trop : le relevé et la caisse s’additionnent', () => {

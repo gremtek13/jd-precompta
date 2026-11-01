@@ -751,6 +751,9 @@ describe('le paiement d’une pièce par la caisse, dans les contrôles', () => 
     const apres = ligne({ id: 'm3', date: '2026-01-02', montant: -100, compte_bilan: PLAN_PAR_DEFAUT.caisse })
     const ouvertures = [{ date: '2026-01-01' }]
     expect(mouvementsDAvantLOuverture([avant, autreCompte, apres], ouvertures, PLAN_PAR_DEFAUT.caisse, null).map((l) => l.id)).toEqual(['m1'])
+    // Le jour même de l'ouverture n'en est pas : la reprise est celle de la veille au soir.
+    const leJour = ligne({ id: 'm4', date: '2026-01-01', montant: -100, compte_bilan: PLAN_PAR_DEFAUT.caisse })
+    expect(mouvementsDAvantLOuverture([leJour], ouvertures, PLAN_PAR_DEFAUT.caisse, null)).toEqual([])
     expect(mouvementsDAvantLOuverture([avant], ouvertures, PLAN_PAR_DEFAUT.caisse, '2025-12-31')).toEqual([])
     expect(mouvementsDAvantLOuverture([avant], [], PLAN_PAR_DEFAUT.caisse, null)).toEqual([])
   })
