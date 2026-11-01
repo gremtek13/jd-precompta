@@ -29,8 +29,8 @@ import type { Categorie, OperationCaisse } from './types'
 // CE QUI EST UNE RECETTE (conception, § 3 et § 5) : une opération de genre `recette`, ni retirée ni remplacée. L'apport, le
 // prélèvement de l'exploitant et le versement en banque (un mouvement classé sur le compte de la caisse) ne sont ni des
 // recettes ni des dépenses : ils n'entrent ni dans la 2035 ni dans la CA3. Le paiement d'une pièce par la caisse (le genre
-// `paiement`, CAISSE-Q4) date la PIÈCE, comme un mouvement : il n'est pas une recette et n'entre pas ici — l'étape C9 l'ajoute
-// aux paiements des pièces (`paiementsDesPieces`).
+// `paiement`, CAISSE-Q4) date la PIÈCE, comme un mouvement : il n'est pas une recette et n'entre pas ici — l'étape C9a l'a
+// ajouté aux paiements des pièces (`paiementsDesPieces`, lib/paiementParLaCaisse.ts : `paiementsParLaCaisse`).
 //
 // PUR : aucun appel au réseau, et pas même un import de type de la lecture (lib/caisseLecture.ts, qui importe le client) :
 // le scanner des écrans qui lisent la base (ecransAvantLecture.test.tsx) suit les imports, et la 2035 qui importe ce module

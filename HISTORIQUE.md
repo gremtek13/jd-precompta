@@ -44481,3 +44481,144 @@ hydrogène ; DC en valeur absolue).
   erreur.
 - **2035S-Q5 — Le PDF de l'exercice 2026.** (A, recommandé) retenu tant que son millésime n'est pas publié, dit par
   Clôture ; (B) imprimé sur le millésime 2026 avec un avertissement.
+
+### 01/11/2026 — LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS LES MOTEURS (C9A, LIGNE 26.6)
+
+(Écrite par un agent architecte, sur la tête de C8 (demande de fusion n° 254). Aucune migration, aucun fichier
+de `supabase/preparees/` ni de `supabase/schema/`, aucune Edge Function ; en production, rien de lu ni d'écrit. Lus avant
+d'écrire : « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE (CAISSE-Q1 ET
+Q4) », § 8 et § 10 ; « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, EN BASE (C8, LIGNE 26.6) », et son « POUR C9 » ;
+C3a et C3b ; la ligne « Pièce payée par la caisse » de « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA
+CONCEPTION ». C9 a été coupé en deux : C9a, les moteurs, sans écran ; C9b, la fiche d'une pièce (« Régler par la caisse »),
+les points `caisse-a-reprendre`, le journal de l'onglet Caisse, la Vue d'ensemble. Tout ce qui suit est NEUTRE tant que
+`PAIEMENT_PAR_LA_CAISSE_EXPORTE` reste baissé.)
+
+**CE QUI EST POSÉ.**
+- `PaiementDePiece` devient une UNION DISCRIMINÉE par `origine` (lib/rattachement.ts) : `PaiementParLeReleve` (le
+  rapprochement, la part d'un virement groupé, celle d'un virement mixte — un `id` de mouvement) ou `PaiementParLaCaisse`
+  (`origine: 'caisse'`, `operation_caisse_id`, AUCUN `id`). `estParLeReleve`, `cleDuPaiement` (`caisse:<opération>` pour
+  la caisse). `paiementsDesPieces` prend un QUATRIÈME paramètre obligatoire, les paiements par la caisse
+  (`PartPayeeParLaCaisse`) ; à date égale, le relevé d'abord : une liste sans caisse se trie comme hier. Une pièce compte à
+  la date de ses espèces (CGI, art. 93, 1 ; BOI-BNC-BASE-20-10-10, § 10), payée en partie par la banque et en partie par
+  la caisse elle additionne ses paiements (`partsDesPaiements`), payée en trop elle se dit (`piecesPayeesEnTrop`). Aucune
+  règle neuve dans la 2035, la CA3, la situation ni l'estimation : un paiement est un paiement.
+- La dérivation, dans lib/paiementParLaCaisse.ts : `paiementsParLaCaisseSelon(enBase, opérations)` — le genre `paiement`,
+  une pièce citée, ni retiré ni remplacé, non nul, trié ; AUCUN le drapeau baissé, sans regarder les opérations ;
+  `paiementsParLaCaisseDuDossierSelon(enBase, lecture, dossier)` — la même lecture de la caisse que ses recettes (le
+  cabinet seul ; rien n'est ouvert au client) : nulle tant qu'elle n'est pas revenue pour CE dossier ou qu'elle est lue en
+  partie, comme un relevé lu en partie ; le drapeau baissé, aucun, quelle que soit la lecture — aucun écran n'attend la
+  caisse pour ses paiements. `AUCUN_PAIEMENT_PAR_LA_CAISSE` (lib/rattachement.ts) : le jugement écrit d'un appelant qui
+  n'en compte pas.
+- LA CONTREPARTIE GÉNÉRALISÉE (lib/ecritures.ts) : `ligneContrepartieCaisse` — le compte de la caisse DU PLAN, à la date de
+  l'opération, de son montant, au débit quand les espèces entrent, au crédit quand elles sortent, la pièce ET l'opération
+  citées : la seule ligne que `garder_ecriture_de_caisse` admet, celle que `contrepartieDuPaiement` redit ;
+  `ligneContrepartieDuPaiement` choisit la banque ou la caisse ; `estContrepartieCaisse`. La génération et « Régénérer »
+  l'écrivent avec les écritures de la pièce (« Régénérer » retire tout, la garde laisse partir cette ligne, puis réécrit) ;
+  `analyserEcritures` la tient pour une contrepartie (ni « sans contrepartie », ni déséquilibre caché), et une pièce dont
+  la caisse ne suit plus ses paiements (une ligne de moins, un autre compte, un paiement retiré, un autre montant) est « à
+  régénérer » (`caisseSuitLesPaiements`, la question de `banqueSuitLesPaiements` sur l'autre clé) ; la clé d'une part
+  ouverte porte l'opération ; `ecrituresSansObjet` ne la compte pas « en trop ». EN ENGAGEMENT, le relevé seul règle : la
+  base refuse le paiement par la caisse d'un dossier en engagement, et sa garde n'admettrait pas la ligne de tiers d'un
+  règlement ; un paiement par la caisse n'y écrit rien et n'y attend rien.
+- lib/contrepartieBanque.ts : `synchroniserContrepartieBanque` ne prend qu'un paiement par le relevé ; une pièce déjà payée
+  par la caisse est payée par un AUTRE paiement (pas de redate : « Régénérer » répartit), et la redate écarte la ligne
+  d'une opération de caisse ; `rendreAuxDatesDeFacture` ne ramène pas à sa facture une pièce que la caisse date encore, et
+  n'en redate jamais la ligne de caisse (la garde refuserait la mise à jour, et toute la redate avec). Le drapeau baissé,
+  les requêtes sont celles d'hier, filtre pour filtre.
+- Les appelants, quinze, la liste faite par le compilateur (vingt-deux fichiers ne compilaient plus) : les moteurs et les
+  contrôles — la validation (`paiementsDeLaValidation`, des opérations qu'elle reçoit déjà), la Vue d'ensemble, la revue
+  analytique (`SourcesDeLaRevueAnalytique.paiementsParLaCaisse`, nul sans caisse entière : pas de 2035) — ; les écrans qui
+  lisent déjà la caisse — Clôture, TVA, Financement, Estimation (le détail par poste se suspend sans elle), Écritures (la
+  génération, « Régénérer » et la piste d'audit attendent une caisse entière : `caisseNonLue`), Banque (les deux lots
+  automatiques et les restes à payer se suspendent : `paiementsDeLaCaisseIncomplets`), Révision — ; et trois qui, de
+  leur propre jugement, n'en comptent AUCUN : « Ma simulation » (le client ne lit pas la caisse), le badge « Rapprochée »
+  de l'onglet Pièces (un mouvement bancaire ; « Payée en espèces » vient avec C9b), la fenêtre des encaissements (ses
+  propositions ne nomment que des mouvements, et elle sert le client) — et le banc des captures. Les usages d'un paiement
+  comme MOUVEMENT, jugés un à un : la contrepartie banque et le règlement en engagement (le relevé seul) ; le reste à
+  régler et le second paiement (`PaiementResume` : la caisse paie, `saufMouvement` ne l'écarte jamais) ; les propositions
+  d'encaissement (le relevé seul) ; le règlement groupé (la caisse est toujours un « autre » paiement) ; le règlement sur
+  la banque d'une pièce en devise (la caisse entre dans le total payé).
+- LE FEC ET LA PISTE D'AUDIT : la ligne de caisse va à l'écriture de sa PIÈCE, au journal AC ou VE (la clé `pièce|date`,
+  avant celle d'une opération) ; aux vingt-deux champs, `reglementDUnPaiement` rend `{ par: 'caisse' }` — DateRglt la date
+  de l'opération, ModeRglt « Espèces » — et une pièce payée le même jour par la banque et par la caisse se scinde en deux
+  écritures, « Banque » et « Espèces », chacune équilibrée, la ligne de caisse au règlement de son opération
+  (`mouvements` y porte `caisse:<opération>`). La piste d'audit (`RegistreAudit.caisse`, obligatoire) : la pièce pour
+  justificatif ; pour opération réelle, la date et le montant du paiement et « Paiement en espèces par la caisse, saisi par
+  le cabinet » (ou « par le client ») « — Brouillard de caisse du …, tenu hors de l'application » ; une opération que la
+  lecture ne rend pas, « opération de caisse hors du jeu chargé ».
+
+**LES ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- `origine: 'caisse'` plutôt qu'un second discriminant (`moyen`) : un `Record` sur l'origine, s'il en existait, aurait
+  failli lui aussi, et aucun usage ne lit l'origine pour autre chose que le genre du paiement.
+- `PartPayeeParLaCaisse` plutôt que les opérations elles-mêmes en paramètre : `paiementsDesPieces` reste pur et sans
+  drapeau ; le drapeau vit dans la dérivation, une fois.
+- Les requêtes de lib/contrepartieBanque.ts sous le drapeau : une ceinture qui ne change rien en production changeait
+  pourtant le texte des requêtes et un compte de plus par pièce — la neutralité tient filtre pour filtre.
+- Une caisse lue en partie suspend ce que les paiements commandent (les lots, la génération, l'export de la piste, le
+  détail de l'estimation) ; la Vue d'ensemble n'en lit alors aucun, faute de quoi elle se tairait entière — ses points de
+  caisse se taisent déjà et le bandeau le dit (C9b les reprendra).
+
+**LA NEUTRALITÉ, PROUVÉE.** `paiementParLaCaisseMoteurs.test.ts`, 150 dossiers tirés (`tirage`, graine 20261101), chacun
+une caisse qui porte des recettes et des PAIEMENTS de ses pièces (plus de 200) : le drapeau baissé, les sorties —
+les paiements, deux 2035, une CA3 annuelle, la situation, le brouillon généré, son analyse, le FEC, les pièces payées en
+trop — sont, en `JSON.stringify`, celles d'une caisse sans paiement ; levé, une caisse sans paiement de pièce aussi ; le
+témoin (levé sur la même caisse) diffère. Les tests d'avant retouchés sur la FORME seulement : le quatrième argument `[]`
+ajouté aux appels (un codemod sur l'arbre syntaxique, 205 appels dans 24 fichiers de tests, 3 du banc devenus
+`AUCUN_PAIEMENT_PAR_LA_CAISSE`), `paiementsParLaCaisse: []` aux sources de la revue, `caisse: OPERATIONS_DE_CAISSE_ABSENTES`
+aux registres de la piste, `cleDuPaiement(p)` pour `p.id` dans quatre lectures, le type des copies de l'assistant (trois
+paramètres : elles ne lisent pas encore la caisse, C13), et l'expression de Clôture que la revue recopie.
+
+**LES PREUVES, LE DRAPEAU LEVÉ.** `paiementParLaCaisseMoteurs.test.ts` : la dérivation et la lecture dans leurs états ;
+l'union (aucun `id`, le relevé d'abord) ; la 2035 (BA à la date des espèces, plus « sans paiement », AA d'une vente, la
+part de chaque exercice d'une pièce payée banque puis caisse, payée en trop, l'engagement à la facture) ; la CA3 (l20 d'un
+achat, 08 d'une vente, la TVA de chaque part) ; la situation ; la contrepartie (sous les deux plans, confrontée à
+`contrepartieDuPaiement` et à `refusDeLaContrepartie`), la génération, banque et caisse le même jour, « à régénérer » dans
+quatre cas et sur une pièce que la frontière coupe, le déséquilibre, l'engagement, l'écriture sans objet, le lettrage ; le reste à régler et le second paiement ;
+le FEC (dix-huit champs, vingt-deux champs, les règlements d'une date et la scission « Banque » / « Espèces ») ; la piste
+d'audit.
+`contrepartieBanque.test.ts` (+6), le drapeau forcé par `vi.mock` : la redate retenue, la ligne de caisse écartée, le
+retour à la facture retenu, un compte non rendu ou refusé. `prealablesValidation.test.ts` (+2) : l'ordre des exercices,
+la pièce payée en trop. `revueAnalytiqueEcran.test.ts` (+1) : la revue date la pièce comme Clôture, et n'a pas de 2035
+sans ses paiements. `paiementsDesPiecesAppelants.test.ts`, un scanner parti de TOUS les fichiers de `src/` et du
+banc : chaque appel porte quatre arguments ; le quatrième se tire de la caisse, ou est `AUCUN_PAIEMENT_PAR_LA_CAISSE` dans
+les quatre fichiers justifiés, au nombre près ; `[]` est une faute. `compositionsAuPlan` : un cas neuf exerce le rôle
+`caisse` par la contrepartie.
+
+**LES MUTATIONS** (37, jouées une à une par un script hors du dépôt, chacune contre les tests qu'elle concerne, le
+fichier rendu après chacune) : la boucle de la caisse retirée ; la caisse avant le relevé à date égale ; le drapeau
+ignoré ; un paiement retiré, remplacé, ou d'un autre genre compté ; une caisse lue en partie rendue vide ; la lecture d'un
+autre dossier acceptée ; la contrepartie au sens inverse, à la banque, au compte par défaut, absente ; la caisse non
+suivie, son compte non jugé, prise pour une charge, qui n'est pas une contrepartie ; l'engagement qui règle par la
+caisse ; la caisse comptée « en trop » ; l'opération retirée de la clé d'une part ouverte ; au FEC, la caisse sans
+règlement, ou au relevé, sa ligne partagée à la scission, sa clé perdue ; la piste sans le paiement, sans « hors du jeu »,
+sans l'origine ; le reste à régler et le second paiement sans la caisse ; la redate d'une pièce payée par la caisse ; la
+ligne de caisse redatée (deux fois) ; la caisse qui ne retient pas le retour à la facture ; le compte de la caisse lu le
+drapeau baissé ; la validation sans la caisse ; un appelant qui passe `[]`, un autre qui n'en compte aucun sans le dire ;
+la revue sans la caisse. Le premier passage en a laissé vivre quatre — un autre genre compté, la clé d'une part ouverte,
+la clé de la caisse dans les règlements d'une date, la revue sans la caisse — et une ancre double ; chacune a fait naître
+son cas, et le second passage les a tuées : 37 sur 37.
+
+**LA SUITE** (Node 22.22.0, sous Paris) : 514 fichiers, 16 076 tests (un « échec attendu » compris), tous verts sauf cinq, qui ne sont pas de ce lot et
+tombent de même sans lui — les exports en windows-1252 (`contactsImportFichier`, `importReleve`, `relectureImportReleve`,
+le cas Crédit Agricole de `BanqueTab`) : le Node de cet environnement décode l'octet 0x80 en U+0080, non en « € » (ICU
+réduit). La suite n'a pas été comparée test par test à BASE : la neutralité se prouve par les cas ci-dessus et par les
+tests d'avant, retouchés sur la forme seulement, tous verts. `tsc -p tsconfig.app.json` et `tsconfig.node.json` : 0 ;
+`oxlint` : 0 erreur, 63 avertissements, ceux de la référence.
+
+**CE QUI RESTE POUR C9B, ET LES PIÈGES.**
+- La fiche d'une pièce : « Régler par la caisse » (`jugerLeReglement`), ses paiements dits, « Rapprochée » qui ne doit pas
+  le devenir d'un paiement en espèces (l'onglet Pièces passe `AUCUN_PAIEMENT_PAR_LA_CAISSE` à dessein) ;
+  `refusDuChangementDeLaPiece` avant le clic ; le retrait d'un paiement, qui retire sa ligne.
+- La Vue d'ensemble : une caisse lue en partie n'y rend aucun paiement — une pièce payée en espèces s'y dirait « à
+  régénérer » ; `caisse-a-reprendre` qui compte le paiement dont la contrepartie manque ou ne suit plus.
+- La fiche d'un mouvement (le second paiement, « Associer ») n'est pas retenue par une caisse lue en partie : seuls les
+  lots et les restes le sont.
+- `EtatDeLaCaisse.piecesDeVente`, que l'écran devra passer (l'ensemble du jour d'une recette) ; le journal de l'onglet
+  Caisse et le flux d'avant l'ouverture.
+- L'assistant (C13) : sa copie de `paiementsDesPieces` ne lit pas la caisse — une pièce payée en espèces y paraîtra sans
+  paiement, et sa ligne de caisse en écart ; `lister_ecritures` taira la ligne qui ne cite que l'opération.
+- À rejouer sur une réplique, la migration appliquée : la contrepartie que la génération écrit, admise par la garde ;
+  « Régénérer » (suppression puis insertion) ; et `valider_exercice` sur une pièce dont l'écriture porte la ligne de
+  caisse (la numérotation la range avec la pièce, la base ne l'a jamais vue ainsi). Rien de cela n'a été joué ici.
+
+**LE RETOUR ARRIÈRE** : retirer les commits ; aucune donnée, aucune migration. Le drapeau baissé, rien n'est en jeu.

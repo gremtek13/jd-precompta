@@ -52,14 +52,17 @@ le refuse en base (la migration 3, `especes_sans_mouvement`, appliquée par l'ou
 caisse dès que les espèces d'une facture source y entrent (C6-Q1, le 31/10/2026), tout dossier dès que sa reprise ou son
 relevé la portent, et la fenêtre des encaissements juge la caisse avant le clic ; le paiement d'une pièce par la caisse
 et la caisse bornée par son ouverture (C8), une migration préparée le 31/10/2026, à accorder, la fiche d'un mouvement
-refusant déjà de classer sur la caisse un mouvement d'avant l'ouverture → « LA CAISSE : LE MODULE, LA LECTURE
+refusant déjà de classer sur la caisse un mouvement d'avant l'ouverture ; ce paiement dans les moteurs (C9a, le
+01/11/2026, derrière `PAIEMENT_PAR_LA_CAISSE_EXPORTE` baissé) : `PaiementDePiece` une union, le relevé ou la caisse,
+quatrième paramètre obligatoire de `paiementsDesPieces`, la contrepartie au compte de la caisse du plan ; l'écran, C9b
+→ « LA CAISSE : LE MODULE, LA LECTURE
 ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
 CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
 26.6) », « LA CAISSE : L'ASSISTANT EN LIGNE (C5, LIGNE 26.6) », « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) », « LA
 CAISSE : LE RESSERREMENT EN PRODUCTION (C6, LIGNE 26.6) », « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET
 FEC22-E », « LA CAISSE REPRISE EST « TENUE », ET LA FENÊTRE DES ENCAISSEMENTS JUGE LA CAISSE AVANT LE CLIC
 (RELECTURE) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, EN BASE (C8, LIGNE 26.6) (PRÉPARÉE, PAS
-APPLIQUÉE) »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les
+APPLIQUÉE) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS LES MOTEURS (C9A, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base (MVP-D3). La case « MVP » de la feuille de route marque les
 lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC
 RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 

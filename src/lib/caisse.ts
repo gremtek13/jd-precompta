@@ -244,8 +244,8 @@ export interface EtatDeLaCaisse {
   /**
    * Les pièces de VENTE que des paiements par la caisse citent, lues avec eux : l'ensemble qu'une recette reconnaît compte
    * ces paiements-là (la migration `paiement_par_la_caisse`). Absentes, aucun paiement n'est d'une pièce de vente — ce qui
-   * est vrai tant que la migration n'est pas en base, où aucun paiement n'existe ; l'écran qui les règle (lot C9, derrière
-   * `PAIEMENT_PAR_LA_CAISSE_EXPORTE`) les lit et les passe.
+   * est vrai tant que la migration n'est pas en base, où aucun paiement n'existe ; l'écran qui les règle (lot C9b, derrière
+   * `PAIEMENT_PAR_LA_CAISSE_EXPORTE`) les lira et les passera.
    */
   piecesDeVente?: readonly string[]
 }
