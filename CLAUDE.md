@@ -57,7 +57,10 @@ refusant déjà de classer sur la caisse un mouvement d'avant l'ouverture ; ce p
 quatrième paramètre obligatoire de `paiementsDesPieces`, la contrepartie au compte de la caisse du plan ; l'écran du cabinet
 (C9b, le 01/11/2026, derrière le même drapeau) : la fiche d'une pièce la règle par la caisse et en retire un paiement,
 « Payée en espèces » à part de « Rapprochée », `caisse-a-reprendre` compte la contrepartie d'un paiement, une caisse lue en
-partie retient « Associer » ; le client, C10 à C12 → « LA CAISSE : LE MODULE, LA LECTURE
+partie retient « Associer » ; relus et corrigés le 01/11/2026 : la pièce à valider qu'un paiement cite retient la validation
+(et un filet en base, `validation_des_paiements_par_la_caisse`, préparé, après C8 et FEC22b), un paiement qui laisserait la
+pièce à quelques centimes se refuse (C9-Q1, sur la recommandation), une pièce payée ne part plus d'une sélection ; le drapeau
+ne se lève qu'après l'assistant (C13) ; le client, C10 à C12 → « LA CAISSE : LE MODULE, LA LECTURE
 ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
 CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
 26.6) », « LA CAISSE : L'ASSISTANT EN LIGNE (C5, LIGNE 26.6) », « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) », « LA
@@ -65,7 +68,8 @@ CAISSE : LE RESSERREMENT EN PRODUCTION (C6, LIGNE 26.6) », « HUIT RÉPONSES DU
 FEC22-E », « LA CAISSE REPRISE EST « TENUE », ET LA FENÊTRE DES ENCAISSEMENTS JUGE LA CAISSE AVANT LE CLIC
 (RELECTURE) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, EN BASE (C8, LIGNE 26.6) (PRÉPARÉE, PAS
 APPLIQUÉE) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS LES MOTEURS (C9A, LIGNE 26.6) », « LA CAISSE : LE
-PAIEMENT D'UNE PIÈCE PAR LA CAISSE, À L'ÉCRAN DU CABINET (C9B, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base
+PAIEMENT D'UNE PIÈCE PAR LA CAISSE, À L'ÉCRAN DU CABINET (C9B, LIGNE 26.6) », « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES
+CORRECTIONS »), le plan Pro de Supabase sauvegarde la base
 (MVP-D3). La case « MVP » de la feuille de route marque les
 lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC
 RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
