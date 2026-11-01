@@ -29,6 +29,7 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee } from '../../lib/validationExercice'
 import { preparerPiece } from '../../lib/bornesStockage'
+import { remplacementsDesPrevisionnelles, texteDeLAmbiguite, texteDuRemplacement } from '../../lib/previsionnelles'
 
 // Palier 5, brique 4 — suivi des cotisations sociales. Saisie manuelle des appels et versements
 // URSSAF (montants connus tardivement, jamais déductibles d'un relevé bancaire seul) et calcul
@@ -402,8 +403,13 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   // UNE LISTE PAS ENCORE REVENUE NE COMMANDE PAS D'ÉCRITURE NON PLUS : pendant la lecture (`loading`, à la première comme
   // à chaque relecture), `cotisations` est vide ou d'avant la dernière écriture — toutes les échéances proposées
   // paraîtraient nouvelles. La création attend la fin de la lecture, et le dit.
+  //
+  // L'APPEL DÉFINITIF D'UNE AUTRE DATE REMPLACE LA PRÉVISIONNELLE DU MÊME MOIS (étape 2035S2, 2035S-Q4 (A) ;
+  // lib/previsionnelles.ts) : sans paiement qui la date, elle comptait à côté de lui dans la 2035. La ligne le dit avant le
+  // clic ; le clic porte sur elle la date, le montant et le marqueur définitif. Sur des paiements lus en partie, une
+  // prévisionnelle prélevée paraîtrait impayée : la création se suspend quand l'une pourrait se remplacer.
   async function creerEcheancesProposees() {
-    if (proposeesOuvertes.length === 0 || cotisationsIncompletes !== null || loading || creationEnCours.current) return
+    if (proposeesOuvertes.length === 0 || cotisationsIncompletes !== null || remplacementsInconnus || loading || creationEnCours.current) return
     creationEnCours.current = true
     setCreantEcheances(true)
     setError(null)
@@ -415,8 +421,10 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
       // Seules les échéances d'un exercice ouvert : une seule date figée ferait refuser toute l'insertion, qui est d'un
       // seul tenant — et une prévisionnelle figée ne se corrige plus.
       const aInserer = proposeesOuvertes
-        .filter((e) => !cotisations.some((c) => c.echeance === e.date))
+        .filter((e, i) => !cotisations.some((c) => c.echeance === e.date) && !planDesRemplacements.remplacements.has(i))
         .map((e) => ({ dossier_id: dossierId, echeance: e.date, montant_appele: e.montant, previsionnel: e.previsionnel }))
+      // Les prévisionnelles que l'appel définitif d'une autre date du même mois remplace, dites sur leur ligne.
+      const aRemplacer = [...planDesRemplacements.remplacements].map(([i, prevue]) => ({ e: proposeesOuvertes[i], prevue }))
 
       // Une prévisionnelle que le document confirme prend son montant — sauf figée : payée dans un exercice validé, elle se
       // juge à la date de son paiement, et la base refuserait. Comptée alors avec les figées, pas « déjà à jour » : son
@@ -444,14 +452,22 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
         if (updateError) throw updateError
         ecrit = true
       }
+      for (const { e, prevue } of aRemplacer) {
+        const { error: updateError } = await supabase
+          .from('cotisations_declarees')
+          .update({ echeance: e.date, montant_appele: e.montant, previsionnel: false })
+          .eq('id', prevue.id)
+        if (updateError) throw updateError
+        ecrit = true
+      }
 
       const figees = echeancesProposees.length - proposeesOuvertes.length + aConfirmer.length - aMettreAJour.length - payeesPersonnellement.length
-      const ignorees = proposeesOuvertes.length - aInserer.length - aConfirmer.length
+      const ignorees = proposeesOuvertes.length - aInserer.length - aConfirmer.length - aRemplacer.length
       setEcheancesProposees([])
       load()
       if (ignorees > 0 || figees > 0 || payeesPersonnellement.length > 0) {
         window.alert(
-          `${aInserer.length + aMettreAJour.length} échéance(s) prise(s) en compte`
+          `${aInserer.length + aMettreAJour.length + aRemplacer.length} échéance(s) prise(s) en compte`
           + (ignorees > 0 ? `, ${ignorees} déjà à jour (ignorée(s))` : '')
           + (figees > 0 ? `, ${figees} d’un exercice validé (ignorée(s)) : une échéance ne s’y ajoute plus` : '')
           + (payeesPersonnellement.length > 0
@@ -512,6 +528,12 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   const proposeesOuvertes = echeancesProposees.filter((e) => !dateFigee(e.date, anneesValidees))
   const prevuePayeePersonnellement = (date: string) =>
     cotisations.some((c) => c.echeance === date && c.previsionnel && !!c.paiement_personnel_le)
+  // Les prévisionnelles que les appels définitifs proposés remplacent (étape 2035S2), par indice dans `proposeesOuvertes`.
+  const planDesRemplacements = remplacementsDesPrevisionnelles(proposeesOuvertes, cotisations, {
+    payeeParUnMouvement: (c) => paiementDe.has(c.id), paiementsLus: paiementsIncomplets === null, figee: (c) => figeeDe(c) !== null,
+  })
+  const remplacementsInconnus = planDesRemplacements.inconnues.size > 0
+  const indiceOuvert = (e: (typeof echeancesProposees)[number]) => proposeesOuvertes.indexOf(e)
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE (voir CLAUDE.md) : une échéance dont le paiement ou
   // l'écriture n'a pas été lu paraîtrait à écrire, ou écrite ; et un échéancier lu à moitié en cacherait.
   const ecritureSuspendue = cotisationsIncompletes ?? paiementsIncomplets ?? ecrituresIncompletes
@@ -657,8 +679,9 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
           <h3 style={{ marginTop: 0 }}>Échéances trouvées sur ce document ({echeancesProposees.length})</h3>
           <p className="muted" style={{ marginTop: -8 }}>
             Vérifie avant de créer — rien n'est encore enregistré. Une échéance "Prévisionnel" vient
-            d'une section estimée du document (pas encore un appel définitif) — remplacée automatiquement
-            si tu déposes plus tard l'appel définitif pour la même date.
+            d'une section estimée du document (pas encore un appel définitif) — l'appel définitif que tu
+            déposeras plus tard la remplace, à la même date ou dans le même mois, tant qu'aucun paiement
+            ne la date : sa ligne le dit avant le clic.
           </p>
           <div className="table-scroll">
             <table>
@@ -681,7 +704,21 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
                           )
                           : e.previsionnel
                           ? <span className="badge badge-warning">Prévisionnel</span>
-                          : <span className="badge badge-ok">Définitif</span>}
+                          : (
+                            <>
+                              <span className="badge badge-ok">Définitif</span>
+                              {planDesRemplacements.remplacements.has(indiceOuvert(e)) && (
+                                <span className="muted" style={{ marginLeft: 8 }}>
+                                  {texteDuRemplacement(planDesRemplacements.remplacements.get(indiceOuvert(e))!)}
+                                </span>
+                              )}
+                              {planDesRemplacements.ambigues.has(indiceOuvert(e)) && (
+                                <span className="muted" style={{ marginLeft: 8 }}>
+                                  {texteDeLAmbiguite(planDesRemplacements.ambigues.get(indiceOuvert(e))!)}
+                                </span>
+                              )}
+                            </>
+                          )}
                     </td>
                   </tr>
                 ))}
@@ -691,7 +728,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
           <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
             <button
               className="btn btn-primary btn-sm"
-              disabled={creantEcheances || cotisationsIncompletes !== null || loading || proposeesOuvertes.length === 0}
+              disabled={creantEcheances || cotisationsIncompletes !== null || remplacementsInconnus || loading || proposeesOuvertes.length === 0}
               onClick={creerEcheancesProposees}
             >
               {creantEcheances ? 'Création…' : `Créer ces ${proposeesOuvertes.length} échéance(s)`}
@@ -709,6 +746,13 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
             <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
               Les échéances du dossier sont en cours de lecture : la création attend la fin de la lecture, pour ne pas
               créer deux fois une échéance déjà enregistrée.
+            </p>
+          )}
+          {!cotisationsIncompletes && remplacementsInconnus && (
+            <p className="error-text" style={{ marginTop: 8, marginBottom: 0 }}>
+              Création suspendue : les paiements des échéances n'ont pas pu être lus en entier ({paiementsIncomplets}).
+              Une prévisionnelle du même mois qu'un appel définitif paraîtrait impayée et serait remplacée, ou
+              resterait comptée à côté de lui sur la 2035. Recharge la page.
             </p>
           )}
           {cotisationsIncompletes && (

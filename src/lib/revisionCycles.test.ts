@@ -299,6 +299,8 @@ describe('le rangement des contrôles existants', () => {
     social: [
       'cotisations-sans-ecriture', 'cotisations-rapprochement-refuse', 'csg-non-saisie', 'paiements-personnels-a-reprendre',
       'cotisations',
+      // Étape 2035S2 : la prévisionnelle qu'aucun prélèvement ne paie.
+      'previsionnelles-sans-paiement',
     ],
     tva: ['statut-tva', 'liquidations-tva-perimees', 'paiements-tva-perimes', 'periodes-tva-non-declarees'],
     capitaux: ['virements-sans-ecriture'],

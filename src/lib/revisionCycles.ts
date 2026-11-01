@@ -237,6 +237,7 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'cotisations-rapprochement-refuse': 'social',
   'csg-non-saisie': 'social',
   'paiements-personnels-a-reprendre': 'social',
+  'previsionnelles-sans-paiement': 'social',
   cotisations: 'social',
   // La TVA.
   'statut-tva': 'tva',

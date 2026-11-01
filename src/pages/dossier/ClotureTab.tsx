@@ -25,6 +25,7 @@ import { anneesDesRattachements, paiementsDesPieces, rattachements } from '../..
 import { partsDuReleve } from '../../lib/partsDuReleve'
 import { natureDuCompte } from '../../lib/affectationBanque'
 import { compteeASonEcheance, cotisationsComptees } from '../../lib/cotisationRapprochee'
+import { previsionnellesSansPaiement } from '../../lib/previsionnelles'
 import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
 import type { ModeleComptable } from '../../lib/engagement'
@@ -883,6 +884,13 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const echeancesSansPaiement = comptees
     .filter((c) => compteeASonEcheance(c) && exercices.includes(anneeDe(c.date)) && ouvert(anneeDe(c.date)))
     .sort((x, y) => x.date.localeCompare(y.date))
+  // Parmi elles, LES PRÉVISIONNELLES QU'AUCUN PRÉLÈVEMENT NE PAIE ALORS QUE LE RELEVÉ COUVRE LEUR DATE (étape 2035S2,
+  // lib/previsionnelles.ts) : l'appel définitif d'une autre date l'a peut-être remplacée, et les deux comptent en BK. En
+  // attention, comme la Checklist, sans retenir la validation (2035S-Q4, (A)). Sur une lecture partielle, rien : un
+  // prélèvement non lu la ferait paraître impayée.
+  const previsionnellesImpayees = lectureIncomplete !== null ? [] : previsionnellesSansPaiement(
+    cotisations, toutesLesLignes, modeComptable, frontiereDeValidation(anneesValidees),
+  ).filter((c) => exercices.includes(anneeDe(c.echeance)) && ouvert(anneeDe(c.echeance)))
 
   // LA CARTE DES POSTES MANQUANTS VIT DANS LES DEUX MODÈLES. En engagement la 2035 n'est pas produite,
   // mais le poste regroupe encore les recettes et les charges de la situation intermédiaire (onglet
@@ -1229,6 +1237,22 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
               </table>
             </div>
           </details>
+        </div>
+      )}
+
+      {previsionnellesImpayees.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Prévisionnelles qu’aucun prélèvement ne paie ({previsionnellesImpayees.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Le relevé couvre leur date et ne porte pas leur prélèvement : l’appel définitif, à une autre date, les a
+            peut-être remplacées — comptées à leur échéance, elles s’ajoutent alors à lui en BK. Retire-les dans l’onglet
+            Cotisations, ou rapproche-les de leur prélèvement dans l’onglet Banque.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {previsionnellesImpayees.map((c) => (
+              <li key={c.id}>Prévisionnelle du {formatDate(c.echeance)} : {formatMoney(c.montant_verse ?? c.montant_appele)}</li>
+            ))}
+          </ul>
         </div>
       )}
 

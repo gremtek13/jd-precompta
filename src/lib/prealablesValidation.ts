@@ -1112,6 +1112,11 @@ export const CARTES_DE_CLOTURE: Readonly<Record<string, { prealable: string } | 
   'Cotisations comptées à leur échéance': {
     ecartee: "une échéance qu'aucun prélèvement ni paiement depuis le compte personnel ne date n'a pas d'écriture : la concordance la dit en écart, refusée sous « concordance »",
   },
+  // Étape 2035S2, 2035S-Q4 (A) : en attention, comme la Checklist. Une prévisionnelle peut avoir été payée hors du relevé
+  // (un prélèvement d'un autre compte) : elle se dit, elle ne retient pas la validation.
+  'Prévisionnelles qu’aucun prélèvement ne paie': {
+    ecartee: "une prévisionnelle qu'aucun prélèvement ne paie n'est pas forcément remplacée — payée d'un autre compte, elle compte à juste titre ; la dire suffit (2035S-Q4, (A)), et la concordance dit déjà son écriture qui manque",
+  },
   'Postes sans case du formulaire': { prealable: 'postes-sans-case' },
   'Cotisations dont la CSG-CRDS n’est pas saisie': { prealable: 'csg-non-saisie' },
   'Amortissement(s) sans justificatif': { prealable: 'immos-sans-justificatif' },
