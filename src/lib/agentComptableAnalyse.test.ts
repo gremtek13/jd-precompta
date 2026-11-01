@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { SANS_VIREMENT_MIXTE } from '../test/ventesFacturees'
 import type { AcquisitionDuBien } from './amortissements'
+import type { ChoixChampsBnc } from './champsBncExportes'
 import { analyserEcritures, lignesPourPiece, piecesAComptabiliser, type CibleComptable, type LigneAGenerer } from './ecritures'
 import { partsEncaissees, type EncaissementLu, type ExemplaireLu, type FactureDuDossier } from './encaissementsFactures'
 import { lignesEngagementPourPiece, type ModeleComptable } from './engagement'
@@ -17,6 +19,16 @@ import type { Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, P
 import { dateAParis } from './format'
 import { estFigee, frontiereDeValidation } from './validationExercice'
 import { PLAN_PAR_DEFAUT } from './planComptable'
+
+// LE DRAPEAU DE LA GÉNÉRATION RÉPARTIE PAR RÈGLEMENT (lot FEC22c3), joué par un accesseur sur lib/champsBncExportes.ts : sans
+// demande (`undefined`), l'état réel — chaque cas d'avant compare l'application telle qu'elle est à la copie telle qu'elle
+// est déployée, et le garde de leur accord (en fin de fichier) les veut dans le même état ; les cas de la génération
+// répartie jouent les deux (`avecLaGeneration`).
+const drapeauDesChamps = vi.hoisted(() => ({ choix: undefined as ChoixChampsBnc | null | undefined }))
+vi.mock('./champsBncExportes', async (original) => {
+  const vrai = await original<typeof import('./champsBncExportes')>()
+  return { ...vrai, get CHAMPS_BNC_EXPORTES() { return drapeauDesChamps.choix === undefined ? vrai.CHAMPS_BNC_EXPORTES : drapeauDesChamps.choix } }
+})
 
 // `agent-comptable` EST AUTO-PORTÉE, ET C'ÉTAIT LA DERNIÈRE DUPLICATION SANS GARDE.
 //
@@ -97,6 +109,10 @@ function extraire(source: string) {
     'const COMPTE_CAISSE =', 'function paiementsParLaCaisse(', 'function estParLeReleve(', 'function cleDuPaiement(',
     'function ligneContrepartieCaisse(', 'function ligneContrepartieDuPaiement(', 'function estContrepartieCaisse(',
     'function caisseSuitLesPaiements(', 'function contrepartiesSuiventLesPaiements(',
+    // La génération répartie par règlement (lot FEC22c3) : le drapeau de la copie, ses règlements, leur répartition, et ce
+    // qui juge le brouillon d'avant.
+    'const ECRITURE_PAR_REGLEMENT =', 'function ecritureParReglement(', 'function reglementsDeLaDate(', 'function seRepartit(',
+    'function repartir(', 'function repartirLesLignesPartagees(', 'function decoupageDiffere(',
   ] as const) {
     expect(bloc, `« ${attendu} » absent du bloc gardé`).toContain(attendu)
   }
@@ -1454,8 +1470,8 @@ describe('le garde-fou sait encore échouer', () => {
   function sansPaiements(): string {
     const source = planter(sourceDeployee(), '  const dateComparee = datesAttendues(p, paiementsPiece) !== null\n',
       '  const dateComparee = datesAttendues(p, []) !== null\n', 'la date attendue')
-    return planter(source, '  const generees = soldesParDate(lignesChargeProduitPourPiece(p, cible, assujettiTva, paiementsPiece))\n',
-      '  const generees = soldesParDate(lignesChargeProduitPourPiece(p, cible, assujettiTva, []))\n', 'les soldes attendus')
+    return planter(source, '  const chargesGenerees = lignesChargeProduitPourPiece(p, cible, assujettiTva, paiementsPiece)\n',
+      '  const chargesGenerees = lignesChargeProduitPourPiece(p, cible, assujettiTva, [])\n', 'les soldes attendus')
   }
 
   it('attrape une copie déployée qui attend la date de facture malgré le paiement', () => {
@@ -1848,7 +1864,10 @@ describe('le garde-fou sait encore échouer', () => {
         '    date: paiement.date, compte: COMPTE_BANQUE, sens: paiement.montant > 0 ? "credit" : "debit",\n', 'le sens de la banque',
       )
       echoue(() => batterieDuGenerateur(sensBanque))
-      const sansArrondi = deriver('  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)\n', '', 'le dernier morceau')
+      // L'arrondi du dernier morceau de `centimesParDate` : `repartir` (lot FEC22c3) porte la même ligne, d'où l'ancre de deux.
+      const sansArrondi = deriver(
+        '  const morceaux = reunies.map((f) => Math.round(total * f.part))\n  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)\n',
+        '  const morceaux = reunies.map((f) => Math.round(total * f.part))\n', 'le dernier morceau')
       echoue(() => batterieDuGenerateur(sansArrondi))
     })
 
@@ -2128,5 +2147,452 @@ describe('le garde-fou du paiement par la caisse sait encore échouer (étape C1
     const tard = [payeeParLaCaisse('oc1', '2025-04-15', -60)]
     const autre = brouillonGenere(coupee, banque, tard).map((e) => (e.operation_caisse_id ? { ...e, operation_caisse_id: 'oc2' } : e))
     echoue(() => memeResultat(autre, [coupee], [], derivee, true, banque, TRESORERIE, [], '2025-03-31', null, tard))
+  })
+})
+
+// LA GÉNÉRATION RÉPARTIE PAR RÈGLEMENT (ligne 26.6, étape e ; lot FEC22c3 ; HISTORIQUE.md, « L'ASSISTANT SUIT LA GÉNÉRATION
+// RÉPARTIE PAR RÈGLEMENT (FEC22C3, DERRIÈRE SON DRAPEAU) »). Les quatre champs d'un BNC exportés (`CHAMPS_BNC_EXPORTES` levé,
+// lot FEC22c2), la génération écrit une ligne de charge et une de TVA par règlement d'une date que plusieurs se partagent
+// (lib/ecritureParReglement.ts), et `tresorerieDesynchronisee` compare ce découpage (`decoupageDiffere`). La copie de
+// l'assistant porte les deux derrière sa constante `ECRITURE_PAR_REGLEMENT`. Ce que ces cas gardent :
+//   - la constante de l'assistant est dans l'état du drapeau de l'application : l'un levé sans l'autre, la suite rougit ;
+//   - dans CHACUN des deux états — l'application par l'accesseur, la copie par sa constante réécrite dans le texte extrait,
+//     avant la transpilation —, les mêmes lignes et le même jugement : la batterie du générateur, des cas écrits (deux modes
+//     le même jour, une date qui s'annule, la frontière qui coupe), et un tirage ;
+//   - le brouillon d'avant (une seule ligne de charge pour deux règlements) dit « à régénérer » levé, et pas baissé.
+// Toutes les données sont FICTIVES.
+
+const GENERATION_LEVEE: ChoixChampsBnc = { sansReglement: 'vides' }
+
+/** `f` sous le drapeau de l'application levé ou baissé ; l'état d'avant rendu ensuite. */
+function avecLaGeneration<T>(levee: boolean, f: () => T): T {
+  const avant = drapeauDesChamps.choix
+  drapeauDesChamps.choix = levee ? GENERATION_LEVEE : null
+  try { return f() } finally { drapeauDesChamps.choix = avant }
+}
+
+const LIGNE_DE_LA_CONSTANTE = /^const ECRITURE_PAR_REGLEMENT = (true|false)$/gm
+
+/** L'état de la constante d'une source de l'assistant : une ligne exactement, `true` ou `false`, rien d'autre. */
+function constanteDeLaCopie(source: string): boolean {
+  const trouvees = [...source.matchAll(LIGNE_DE_LA_CONSTANTE)]
+  expect(trouvees.length, 'la constante `ECRITURE_PAR_REGLEMENT` de l’assistant est introuvable, ambiguë ou d’une autre forme').toBe(1)
+  return trouvees[0][1] === 'true'
+}
+
+/** La copie d'une source de l'assistant, sa constante réécrite dans l'état demandé AVANT la transpilation. */
+function copieSelon(levee: boolean, source: string = sourceDeployee()): typeof deployee {
+  constanteDeLaCopie(source)
+  return extraire(source.replace(/^const ECRITURE_PAR_REGLEMENT = (true|false)$/m, `const ECRITURE_PAR_REGLEMENT = ${levee}`))
+}
+
+/** Le drapeau de l'application et la constante de l'assistant sont-ils dans le même état ? */
+function accordDesDrapeaux(source: string, choixDeLApplication: ChoixChampsBnc | null) {
+  expect(constanteDeLaCopie(source),
+    'la constante `ECRITURE_PAR_REGLEMENT` de l’assistant et `CHAMPS_BNC_EXPORTES` ne sont pas dans le même état : les lever ensemble, puis redéployer l’assistant')
+    .toBe(choixDeLApplication !== null)
+}
+
+/** Les deux copies d'une source, dans les deux états. */
+interface CopiesDesDeuxEtats { baissee: typeof deployee; levee: typeof deployee }
+const copiesDesDeuxEtats = (source: string = sourceDeployee()): CopiesDesDeuxEtats =>
+  ({ baissee: copieSelon(false, source), levee: copieSelon(true, source) })
+
+/** Un cas écrit : une pièce, ses paiements, et ce que la génération levée en fait. */
+interface CasReparti {
+  nom: string
+  piece: Piece
+  mouvements: LigneBancaire[]
+  parts?: PartReglee[]
+  caisse?: PartPayeeParLaCaisse[]
+  ventes?: VentesDuCas
+  assujettiTva?: boolean
+  frontiere?: string | null
+  // Levé, une date se répartit-elle (le témoin : le cas exerce la branche) ? Et le brouillon d'avant s'y dit-il « à
+  // régénérer » ? Une pièce sans date ne compare pas ses dates : son brouillon d'avant ne se dit pas à régénérer.
+  reparti: boolean
+  ditARegenerer: boolean
+}
+
+/** Les paiements de la pièce du cas, tirés par les copies d'UN côté (src/lib, ou la copie de l'assistant). */
+function paiementsDuCas(c: CasReparti, copies: Pick<typeof deployee, 'partsEncaissees' | 'paiementsDesPieces'>): readonly PaiementDePiece[] {
+  const designee: ExemplaireLu[] = [{ id: c.piece.id, dossier_id: 'd1', facture_id: c.piece.facture_id ?? null, statut: c.piece.statut, type_piece: c.piece.type_piece }]
+  const encaissees = c.ventes ? copies.partsEncaissees('d1', c.ventes.encaissements, { factures: c.ventes.factures }, designee) : SANS_VIREMENT_MIXTE
+  return copies.paiementsDesPieces(c.mouvements, c.parts ?? [], encaissees, c.caisse ?? []).get(c.piece.id) ?? []
+}
+const SRC_LIB = { partsEncaissees, paiementsDesPieces }
+
+/** Ce que src/lib génère pour le cas, le drapeau dans l'état demandé, en lignes de brouillon. */
+function brouillonDuCas(c: CasReparti, levee: boolean): EcritureBrouillon[] {
+  return avecLaGeneration(levee, () => lignesPourPiece('d1', c.piece, cible(COMPTE_ACHATS), c.assujettiTva ?? true, paiementsDuCas(c, SRC_LIB), TRESORERIE))
+    .map((l, i) => ecriture({
+      ...l, id: `${c.piece.id}-${levee ? 'r' : 'u'}${i}`, piece_id: c.piece.id,
+      ligne_bancaire_id: l.ligne_bancaire_id ?? null, operation_caisse_id: l.operation_caisse_id ?? null,
+    }))
+}
+
+/** Les lignes du cas des deux côtés, dans l'état demandé : elles doivent être les mêmes. */
+function memesLignesDuCas(c: CasReparti, levee: boolean, copie: typeof deployee): string[] {
+  const assujetti = c.assujettiTva ?? true
+  const ici = projeter(avecLaGeneration(levee, () => lignesPourPiece('d1', c.piece, cible(COMPTE_ACHATS), assujetti, paiementsDuCas(c, SRC_LIB), TRESORERIE)))
+  const la = projeter(copie.lignesPourPiece(c.piece, cible(COMPTE_ACHATS), assujetti, paiementsDuCas(c, copie), TRESORERIE))
+  expect(la, `${c.nom} : lignesPourPiece a dérivé (drapeau ${levee ? 'levé' : 'baissé'})`).toEqual(ici)
+  return ici
+}
+
+/** Le jugement d'un brouillon du cas des deux côtés, dans l'état demandé (`memeResultat` : régimes et frontières compris). */
+function jugementDuCas(c: CasReparti, brouillon: EcritureBrouillon[], levee: boolean, copies: CopiesDesDeuxEtats) {
+  return avecLaGeneration(levee, () => memeResultat(
+    brouillon, [c.piece], [], levee ? copies.levee : copies.baissee, c.assujettiTva ?? true, c.mouvements, TRESORERIE,
+    c.parts ?? [], c.frontiere ?? null, c.ventes ?? null, c.caisse ?? [],
+  ))
+}
+
+// Les ventes du cas des deux virements mixtes : une facture source et la facture d'avant dont la pièce est l'exemplaire,
+// chacun des deux crédits du 20 avril portant un encaissement de chacune.
+const VENTES_DEUX_VIREMENTS_MIXTES: VentesDuCas = {
+  factures: [factureDuCas({ id: 'fs1' }), factureDuCas({ id: 'fa1', numero: 'F2024-0099', source_de_la_vente: false })],
+  encaissements: [
+    encaissementDuCas({ id: 'es1', facture_id: 'fs1', montant: 30, ligne_bancaire_id: 'vm1' }),
+    encaissementDuCas({ id: 'ea1', facture_id: 'fa1', montant: 70, ligne_bancaire_id: 'vm1' }),
+    encaissementDuCas({ id: 'es2', facture_id: 'fs1', montant: 50, ligne_bancaire_id: 'vm2' }),
+    encaissementDuCas({ id: 'ea2', facture_id: 'fa1', montant: 50, ligne_bancaire_id: 'vm2' }),
+  ],
+}
+
+const CAS_REPARTIS: CasReparti[] = [
+  {
+    nom: 'la banque et la caisse le même jour (assujetti)', piece: piece({}),
+    mouvements: [paiement({ id: 'l1', date: '2025-04-02', montant: -70 })], caisse: [payeeParLaCaisse('oc1', '2025-04-02', -50)],
+    reparti: true, ditARegenerer: true,
+  },
+  {
+    nom: 'la banque et la caisse le même jour (exonéré)', piece: piece({}), assujettiTva: false,
+    mouvements: [paiement({ id: 'l1', date: '2025-04-02', montant: -70 })], caisse: [payeeParLaCaisse('oc1', '2025-04-02', -50)],
+    reparti: true, ditARegenerer: true,
+  },
+  {
+    nom: 'la banque et la poche de l’exploitant le même jour', piece: noteDeFrais({ date_piece: '2025-04-02' }),
+    mouvements: [paiement({ id: 'l1', date: '2025-04-02', montant: -70 })], reparti: true, ditARegenerer: true,
+  },
+  {
+    nom: 'deux virements mixtes de deux mouvements le même jour',
+    piece: piece({ id: 'pv', type_piece: 'vente', facture_id: 'fa1' }),
+    mouvements: [
+      paiement({ id: 'vm1', piece_id: null, date: '2025-04-20', montant: 100, encaissements_de_factures: true }),
+      paiement({ id: 'vm2', piece_id: null, date: '2025-04-20', montant: 100, encaissements_de_factures: true }),
+    ],
+    ventes: VENTES_DEUX_VIREMENTS_MIXTES, reparti: true, ditARegenerer: true,
+  },
+  {
+    // 120 € prélevés le 10 mars, rejetés le 2 avril et payés en espèces le même jour : la date du 2 avril ne porte aucune part.
+    nom: 'une date dont les parts s’annulent (un rejet et un paiement en espèces le même jour)', piece: piece({}),
+    mouvements: [paiement({ id: 'l1', date: '2025-03-10', montant: -120 }), paiement({ id: 'l2', date: '2025-04-02', montant: 120 })],
+    caisse: [payeeParLaCaisse('oc1', '2025-04-02', -120)], reparti: false, ditARegenerer: false,
+  },
+  {
+    // Prélevée le jour de sa date et rejetée le 2 avril, pas encore reprise : la somme des paiements est nulle, aucun ne paie,
+    // et la pièce compte à sa date comme sans paiement — un seul règlement (src/lib levait là, avant FEC22c3).
+    nom: 'des paiements qui s’annulent, l’un le jour de la pièce', piece: piece({}),
+    mouvements: [paiement({ id: 'l1', date: '2025-03-10', montant: -120 }), paiement({ id: 'l2', date: '2025-04-02', montant: 120 })],
+    reparti: false, ditARegenerer: false,
+  },
+  {
+    // 120 € (100 + 20) payés 1,05 € par la banque et 118,95 € en espèces le même jour : la TVA d'un règlement complète sa
+    // charge (0,88 + 0,17 face à 1,05) ; arrondie de son côté, elle ferait 0,18 et 19,82.
+    nom: 'la TVA d’un règlement complète sa charge', piece: piece({}),
+    mouvements: [paiement({ id: 'l1', date: '2025-04-02', montant: -1.05 })], caisse: [payeeParLaCaisse('oc1', '2025-04-02', -118.95)],
+    reparti: true, ditARegenerer: true,
+  },
+  {
+    // Une vente de 120 € encaissée le 20 avril par trois règlements du relevé — 30 € rapprochés, 33,33 € et 56,67 € par deux
+    // virements mixtes — : l'arrondi va au dernier dans l'ordre du fichier (le relevé, puis les virements mixtes par
+    // mouvement), pas dans celui des paiements, où les deux crédits se classent avant le prélèvement.
+    nom: 'trois règlements du relevé le même jour : l’arrondi au dernier dans l’ordre du fichier',
+    piece: piece({ id: 'pv2', type_piece: 'vente', facture_id: 'fa2' }),
+    mouvements: [
+      paiement({ id: 'l1', piece_id: 'pv2', date: '2025-04-20', montant: 30 }),
+      paiement({ id: 'a1', piece_id: null, date: '2025-04-20', montant: 43.33, encaissements_de_factures: true }),
+      paiement({ id: 'a2', piece_id: null, date: '2025-04-20', montant: 66.67, encaissements_de_factures: true }),
+    ],
+    ventes: {
+      factures: [factureDuCas({ id: 'fs1' }), factureDuCas({ id: 'fa2', numero: 'F2024-0098', source_de_la_vente: false })],
+      encaissements: [
+        encaissementDuCas({ id: 'es1', facture_id: 'fs1', montant: 10, ligne_bancaire_id: 'a1' }),
+        encaissementDuCas({ id: 'ea1', facture_id: 'fa2', montant: 33.33, ligne_bancaire_id: 'a1' }),
+        encaissementDuCas({ id: 'es2', facture_id: 'fs1', montant: 10, ligne_bancaire_id: 'a2' }),
+        encaissementDuCas({ id: 'ea2', facture_id: 'fa2', montant: 56.67, ligne_bancaire_id: 'a2' }),
+      ],
+    },
+    reparti: true, ditARegenerer: true,
+  },
+  {
+    nom: 'une pièce sans date, payée en partie le jour de son dépôt', piece: piece({ date_piece: null, created_at: '2025-03-15T09:00:00Z' }),
+    mouvements: [paiement({ id: 'l1', date: '2025-03-15', montant: -60 })], reparti: true, ditARegenerer: false,
+  },
+  {
+    // La part d'un virement groupé et un prélèvement le même jour sont un seul règlement : le relevé.
+    nom: 'la part d’un virement groupé et un prélèvement le même jour : un seul règlement', piece: piece({}),
+    mouvements: [
+      paiement({ id: 'g', piece_id: null, date: '2025-04-15', montant: -100, reglement_groupe: true }),
+      paiement({ id: 'l1', date: '2025-04-15', montant: -60 }),
+    ],
+    parts: [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -60 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -40 }],
+    reparti: false, ditARegenerer: false,
+  },
+  {
+    // Validé jusqu'au 31 mars : la part du 10 mars est figée, celle du 2 avril, répartie, se juge ligne pour ligne.
+    nom: 'une pièce que la frontière coupe, qu’une date répartie traverse', piece: piece({}), frontiere: '2025-03-31',
+    mouvements: [paiement({ id: 'l0', date: '2025-03-10', montant: -40 }), paiement({ id: 'l1', date: '2025-04-02', montant: -40 })],
+    caisse: [payeeParLaCaisse('oc1', '2025-04-02', -40)], reparti: true, ditARegenerer: true,
+  },
+]
+
+/** Les cas écrits, dans les deux états, les deux copies d'une source comparées à src/lib. */
+function comparerLesCasRepartis(copies: CopiesDesDeuxEtats) {
+  for (const c of CAS_REPARTIS) {
+    const baissees = memesLignesDuCas(c, false, copies.baissee)
+    const levees = memesLignesDuCas(c, true, copies.levee)
+    expect(levees.join('\n') !== baissees.join('\n'), `${c.nom} : la génération levée ${c.reparti ? 'ne répartit pas' : 'répartit'}`).toBe(c.reparti)
+    const avant = brouillonDuCas(c, false)
+    const apres = brouillonDuCas(c, true)
+    const id = c.piece.id
+    // Chaque brouillon jugé dans l'état qui l'a généré : rien à dire, des deux côtés.
+    expect(jugementDuCas(c, avant, false, copies).piecesDesynchronisees, `${c.nom} : baissé, son brouillon`).toEqual([])
+    expect(jugementDuCas(c, apres, true, copies).piecesDesynchronisees, `${c.nom} : levé, son brouillon`).toEqual([])
+    // Le brouillon d'avant : levé, « à régénérer » là où une date se répartit ; baissé, rien.
+    expect(jugementDuCas(c, avant, true, copies).piecesDesynchronisees, `${c.nom} : levé, le brouillon d’avant`).toEqual(c.ditARegenerer ? [id] : [])
+    // Et le brouillon levé jugé baissé : une ligne par date et par compte n'est attendue que si la date se répartit.
+    jugementDuCas(c, apres, false, copies)
+  }
+  // UNE RÉPARTITION FAUSSE AU MÊME TOTAL : les deux lignes de charge du premier cas déplacées d'un centime, les soldes de
+  // chaque date et de chaque compte intacts — le découpage seul la voit, levé.
+  const c = CAS_REPARTIS[0]
+  const charges = brouillonDuCas(c, true).filter((e) => e.compte === COMPTE_ACHATS)
+  expect(charges.length, 'le premier cas n’a plus deux lignes de charge levé').toBe(2)
+  const fausse = brouillonDuCas(c, true).map((e) => e.id === charges[0].id ? { ...e, montant: Math.round((e.montant + 0.01) * 100) / 100 }
+    : e.id === charges[1].id ? { ...e, montant: Math.round((e.montant - 0.01) * 100) / 100 } : e)
+  expect(jugementDuCas(c, fausse, true, copies).piecesDesynchronisees, 'levé, une répartition fausse au même total').toEqual(['p1'])
+  // Baissé, seuls les soldes se comparent : rien de plus qu'hier.
+  expect(jugementDuCas(c, fausse, false, copies).piecesDesynchronisees, 'baissé, une répartition fausse au même total').toEqual([])
+}
+
+// UN TIRAGE (graine 20261103) : des pièces de chaque type, avoirs et pièces sans date compris, payées sur trois dates par
+// le relevé, la caisse, la part d'un virement groupé, des virements mixtes et des rejets — de sorte que deux modes tombent
+// souvent le même jour. Pour chacune, les lignes et le jugement (son brouillon et celui d'avant, sans frontière et sous
+// celle du 31 mars) de src/lib dans les deux états, payés une fois dans le `beforeAll`.
+interface CasTire {
+  piece: Piece
+  compte: string
+  assujettiTva: boolean
+  mouvements: LigneBancaire[]
+  parts: PartReglee[]
+  encaissees: PartEncaissee[]
+  caisse: PartPayeeParLaCaisse[]
+}
+const DATES_DU_TIRAGE = ['2025-03-10', '2025-04-02', '2025-04-20'] as const
+const FRONTIERES_DU_TIRAGE = [null, '2025-03-31'] as const
+
+function casTires(nombre: number, graine: number): CasTire[] {
+  const suivant = tirage(graine)
+  const entier = (n: number) => entierTire(suivant, n)
+  const parmi = <T>(liste: readonly T[]): T => liste[entier(liste.length)]
+  return Array.from({ length: nombre }, (_, k) => {
+    const type = parmi(['achat', 'vente', 'note_frais'] as const)
+    const ttc = (entier(30000) + 1) / 100 * (entier(10) === 0 ? -1 : 1)
+    const tva = entier(2) === 0 ? null : Math.round(ttc * 0.1667 * 100) / 100
+    const ht = tva === null ? (entier(2) === 0 ? ttc : null) : Math.round((ttc - tva) * 100) / 100
+    const id = `t${k}`
+    const p = piece({
+      id, type_piece: type, montant_ht: ht, montant_tva: tva, montant_ttc: ttc,
+      date_piece: entier(8) === 0 ? null : parmi(DATES_DU_TIRAGE), created_at: `${parmi(DATES_DU_TIRAGE)}T09:00:00Z`,
+    })
+    // Le sens de ce que la pièce reçoit : une entrée pour une vente, une sortie sinon, retourné pour un avoir.
+    const sens = (type === 'vente' ? 1 : -1) * Math.sign(ttc)
+    const montant = () => sens * (entier(Math.round(Math.abs(ttc) * 60)) + 1) / 100
+    const mouvements: LigneBancaire[] = Array.from({ length: entier(3) }, (_, i) =>
+      paiement({ id: `m${k}-${i}`, piece_id: id, date: parmi(DATES_DU_TIRAGE), montant: montant() }))
+    if (mouvements.length > 0 && entier(6) === 0) {
+      // Le rejet d'un prélèvement, un jour du tirage.
+      mouvements.push(paiement({ id: `r${k}`, piece_id: id, date: parmi(DATES_DU_TIRAGE), montant: -mouvements[0].montant }))
+    }
+    const parts: PartReglee[] = []
+    if (entier(4) === 0) {
+      const part = montant()
+      mouvements.push(paiement({ id: `g${k}`, piece_id: null, date: parmi(DATES_DU_TIRAGE), montant: part + sens * 10, reglement_groupe: true }))
+      parts.push({ ligne_bancaire_id: `g${k}`, piece_id: id, montant: part }, { ligne_bancaire_id: `g${k}`, piece_id: 'autre', montant: sens * 10 })
+    }
+    const encaissees: PartEncaissee[] = []
+    for (let i = entier(3); i > 0; i--) {
+      const part = montant()
+      // L'identifiant d'un virement mixte se classe AVANT celui d'un prélèvement : l'ordre des règlements ne doit rien à celui
+      // des paiements.
+      mouvements.push(paiement({ id: `a${k}-${i}`, piece_id: null, date: parmi(DATES_DU_TIRAGE), montant: part + sens * 20, encaissements_de_factures: true }))
+      encaissees.push({ ligne_bancaire_id: `a${k}-${i}`, piece_id: id, montant: part })
+    }
+    const caisse: PartPayeeParLaCaisse[] = Array.from({ length: entier(2) }, (_, i) =>
+      payeeParLaCaisse(`o${k}-${i}`, parmi(DATES_DU_TIRAGE), montant(), id))
+    return { piece: p, compte: parmi([COMPTE_ACHATS, '628000']), assujettiTva: entier(2) === 0, mouvements, parts, encaissees, caisse }
+  })
+}
+
+/** Ce qu'un côté rend d'un cas tiré : ses lignes, et ses jugements. */
+interface SortieDuTirage { lignes: string[]; jugements: string[] }
+type CopieDuTirage = Pick<typeof deployee, 'paiementsDesPieces' | 'lignesPourPiece' | 'analyserEcritures'>
+
+/** Un cas tiré sous un état, par les copies d'un côté ; `brouillons` : le sien et celui d'avant, générés par src/lib. */
+function sortieDuTirage(c: CasTire, copie: CopieDuTirage, brouillons: readonly EcritureBrouillon[][]): SortieDuTirage {
+  const paiementsPiece = copie.paiementsDesPieces(c.mouvements, c.parts, c.encaissees, c.caisse).get(c.piece.id) ?? []
+  const lignes = projeter(copie.lignesPourPiece(c.piece, cible(c.compte), c.assujettiTva, paiementsPiece, TRESORERIE))
+  const aComptabiliser = [{ piece: c.piece, compte: c.compte, immobilisation: false }]
+  const paiements = new Map([[c.piece.id, paiementsPiece]])
+  const jugements = brouillons.flatMap((b) => FRONTIERES_DU_TIRAGE.map((f) => {
+    const r = copie.analyserEcritures(b, aComptabiliser, c.assujettiTva, paiements, TRESORERIE, f, new Set())
+    return JSON.stringify([r.nbSansContrepartie, r.groupesDesequilibres.map((g) => g.solde.toFixed(2)), r.piecesDesynchronisees.map((p) => p.id)])
+  }))
+  return { lignes, jugements }
+}
+
+// src/lib, sous la forme d'une copie : `lignesPourPiece` de l'application prend le dossier en premier.
+const SRC_LIB_DU_TIRAGE: CopieDuTirage = {
+  paiementsDesPieces,
+  lignesPourPiece: (p, c, a, paiements, modele) => lignesPourPiece('d1', p, c, a, paiements, modele),
+  analyserEcritures,
+}
+
+interface TirageCalcule { cas: CasTire[]; brouillons: EcritureBrouillon[][][]; attendus: Record<'baissee' | 'levee', SortieDuTirage[]> }
+
+function calculerLeTirage(): TirageCalcule {
+  const cas = casTires(300, 20261103)
+  const brouillons = cas.map((c) => {
+    const paiementsPiece = paiementsDesPieces(c.mouvements, c.parts, c.encaissees, c.caisse).get(c.piece.id) ?? []
+    return [false, true].map((levee) => avecLaGeneration(levee, () => lignesPourPiece('d1', c.piece, cible(c.compte), c.assujettiTva, paiementsPiece, TRESORERIE))
+      .map((l, i) => ecriture({
+        ...l, id: `${c.piece.id}-${levee ? 'r' : 'u'}${i}`, piece_id: c.piece.id,
+        ligne_bancaire_id: l.ligne_bancaire_id ?? null, operation_caisse_id: l.operation_caisse_id ?? null,
+      })))
+  })
+  const attendus = {
+    baissee: cas.map((c, i) => avecLaGeneration(false, () => sortieDuTirage(c, SRC_LIB_DU_TIRAGE, brouillons[i]))),
+    levee: cas.map((c, i) => avecLaGeneration(true, () => sortieDuTirage(c, SRC_LIB_DU_TIRAGE, brouillons[i]))),
+  }
+  return { cas, brouillons, attendus }
+}
+
+/** Le tirage, les deux copies d'une source comparées à src/lib dans les deux états. */
+function comparerLeTirage(t: TirageCalcule, copies: CopiesDesDeuxEtats) {
+  for (const etat of ['baissee', 'levee'] as const) {
+    t.cas.forEach((c, i) => {
+      const la = sortieDuTirage(c, copies[etat], t.brouillons[i])
+      expect(la, `cas tiré ${c.piece.id} (drapeau ${etat === 'levee' ? 'levé' : 'baissé'}) : ${JSON.stringify(c)}`).toEqual(t.attendus[etat][i])
+    })
+  }
+}
+
+/** Tout ce que la génération répartie compare, pour les deux copies d'une source. */
+function comparerLaGenerationRepartie(t: TirageCalcule, copies: CopiesDesDeuxEtats) {
+  comparerLesCasRepartis(copies)
+  comparerLeTirage(t, copies)
+  for (const levee of [false, true]) avecLaGeneration(levee, () => batterieDuGenerateur(levee ? copies.levee : copies.baissee))
+}
+
+describe('agent-comptable / la génération répartie par règlement (copie déployée, lot FEC22c3)', () => {
+  let t: TirageCalcule
+  beforeAll(() => { t = calculerLeTirage() })
+
+  it('garde la constante de l’assistant dans l’état du drapeau de l’application', async () => {
+    const vrai = await vi.importActual<typeof import('./champsBncExportes')>('./champsBncExportes')
+    accordDesDrapeaux(sourceDeployee(), vrai.CHAMPS_BNC_EXPORTES)
+  })
+
+  it('produit les mêmes lignes que src/lib dans les deux états, sur toute la batterie — levé, plus de lignes à une même date', () => {
+    const copies = copiesDesDeuxEtats()
+    const sorties = [false, true].map((levee) => avecLaGeneration(levee, () => batterieDuGenerateur(levee ? copies.levee : copies.baissee)))
+    // Le témoin : levé, des lignes de charge ou de TVA (sans mouvement ni opération) partagent leur date et leur compte.
+    const partagees = (lignes: string[]) => {
+      const cles = lignes.filter((l) => l.endsWith('||')).map((l) => l.split('|').slice(0, 2).join('|'))
+      return cles.length - new Set(cles).size
+    }
+    const [baissees, levees] = sorties.map((s) => s.reduce((n, lignes) => n + partagees(lignes), 0))
+    expect(levees, 'levé, la batterie ne répartit aucune date').toBeGreaterThan(baissees)
+  })
+
+  it('rend les mêmes lignes et le même jugement que src/lib sur les cas écrits, dans les deux états', () => {
+    comparerLesCasRepartis(copiesDesDeuxEtats())
+  })
+
+  it('rend les mêmes lignes et le même jugement que src/lib sur 300 pièces tirées, dans les deux états — et le tirage exerce la branche', () => {
+    comparerLeTirage(t, copiesDesDeuxEtats())
+    const reparties = t.cas.filter((_, i) => t.attendus.levee[i].lignes.join() !== t.attendus.baissee[i].lignes.join()).length
+    expect(reparties, 'trop peu de pièces tirées se répartissent levé').toBeGreaterThanOrEqual(40)
+    // Le brouillon d'avant (le premier), jugé levé sans frontière : « à régénérer » pour une part des pièces réparties.
+    const aRegenerer = t.cas.filter((c, i) => JSON.parse(t.attendus.levee[i].jugements[0])[2].includes(c.piece.id)).length
+    expect(aRegenerer, 'levé, aucun brouillon d’avant ne se dit à régénérer').toBeGreaterThanOrEqual(20)
+    const aRegenererBaisse = t.cas.filter((c, i) => JSON.parse(t.attendus.baissee[i].jugements[0])[2].includes(c.piece.id)).length
+    expect(aRegenererBaisse, 'baissé, un brouillon d’avant se dit à régénérer').toBe(0)
+  })
+
+  describe('le garde-fou de la génération répartie sait encore échouer', () => {
+    function planterUne(source: string, avant: string, apres: string, quoi: string): string {
+      expect(source.split(avant).length - 1, `${quoi} introuvable ou ambiguë — la dérive plantée ne mord plus`).toBe(1)
+      return source.replace(avant, apres)
+    }
+    // Chaque dérive doit échouer sur une ASSERTION, jamais sur une erreur d'exécution qui passerait pour une prise.
+    // Une seule exception, nommée par sa mutation : la copie qui lève sur le cas, comme src/lib levait avant FEC22c3.
+    function echoueSurUneAssertion(f: () => unknown, attendue: 'AssertionError' | 'TypeError' = 'AssertionError') {
+      let erreur: unknown = null
+      try { f() } catch (e) { erreur = e }
+      expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe(attendue)
+    }
+
+    it('attrape une constante de l’assistant levée sans le drapeau, ou baissée sans lui, absente ou en double', () => {
+      const source = sourceDeployee()
+      const levee = source.replace(/^const ECRITURE_PAR_REGLEMENT = (true|false)$/m, 'const ECRITURE_PAR_REGLEMENT = true')
+      const baissee = source.replace(/^const ECRITURE_PAR_REGLEMENT = (true|false)$/m, 'const ECRITURE_PAR_REGLEMENT = false')
+      expect(() => accordDesDrapeaux(levee, GENERATION_LEVEE)).not.toThrow()
+      expect(() => accordDesDrapeaux(baissee, null)).not.toThrow()
+      echoueSurUneAssertion(() => accordDesDrapeaux(levee, null))
+      echoueSurUneAssertion(() => accordDesDrapeaux(baissee, GENERATION_LEVEE))
+      echoueSurUneAssertion(() => accordDesDrapeaux(source.replace(/^const ECRITURE_PAR_REGLEMENT = (true|false)$/m, ''), null))
+      echoueSurUneAssertion(() => accordDesDrapeaux(source.replace(/^const ECRITURE_PAR_REGLEMENT = (true|false)$/m, 'const ECRITURE_PAR_REGLEMENT = !1'), null))
+      echoueSurUneAssertion(() => accordDesDrapeaux(`${baissee}\nconst ECRITURE_PAR_REGLEMENT = false\n`, null))
+    })
+
+    it('et elle ne crie pas au loup sur la copie réellement déployée', () => {
+      expect(() => comparerLaGenerationRepartie(t, copiesDesDeuxEtats())).not.toThrow()
+    })
+
+    // LES MUTATIONS DE LA COPIE, chacune plantée dans le texte de la source puis jouée dans les deux états.
+    const MUTATIONS: [string, string, string, ('AssertionError' | 'TypeError')?][] = [
+      ['une répartition fausse (des poids égaux)', ', reglements.map((r) => r.part))\n', ', reglements.map(() => 1))\n'],
+      ['la TVA qui ne complète plus sa charge', '  if (parLigne.length > 0) {\n', '  if (parLigne.length < 0) {\n'],
+      ['`decoupageDiffere` retiré', '  if (dateComparee && decoupageDiffere(lignes, chargesGenerees)) return true\n', ''],
+      ['la constante ignorée, toujours baissée', '  return ECRITURE_PAR_REGLEMENT\n', '  return false\n'],
+      ['la constante ignorée, toujours levée', '  return ECRITURE_PAR_REGLEMENT\n', '  return true\n'],
+      ['une date dont les parts s’annulent qui se répartit', '  return reglements.length >= 2 && reglements.reduce((s, r) => s + r.part, 0) > 0\n',
+        '  return reglements.length >= 2\n'],
+      ['deux virements mixtes réunis', '{ sorte: "virement_mixte", cle: `mixte|${p.id}` }', '{ sorte: "virement_mixte", cle: "mixte" }'],
+      ['la caisse confondue avec le relevé', '  if (!estParLeReleve(p)) return { sorte: "caisse", cle: "caisse" }\n',
+        '  if (!estParLeReleve(p)) return { sorte: "releve", cle: "releve" }\n'],
+      ['la part sans date qui ne tombe plus au dépôt', '    if ((r.date ?? dateDuDepot(piece.created_at)) !== date) continue\n',
+        '    if (r.date !== date) continue\n'],
+      ['les paiements comptés deux fois', '    if (r.source === "paiement") continue\n', ''],
+      ['des paiements qui s’annulent font un règlement', '    if (p.date !== date || parts.length === 0) return\n', '    if (p.date !== date) return\n',
+        'TypeError'],
+      ['l’ordre des règlements renversé', '{ releve: 0, virement_mixte: 1, caisse: 2, note_de_frais: 3, aucun: 4 }',
+        '{ releve: 4, virement_mixte: 3, caisse: 2, note_de_frais: 1, aucun: 0 }'],
+      ['les règlements dans l’ordre des paiements',
+        '  return trouves.sort((a, b) => ORDRE_DES_SORTES[a.sorte] - ORDRE_DES_SORTES[b.sorte] || premiere(a).localeCompare(premiere(b)))\n',
+        '  return trouves\n'],
+      ['le signe d’une vente oublié', '      const signe = sensPiece === "debit" ? 1 : -1\n', '      const signe = 1\n'],
+      ['le découpage comparé au seul nombre de lignes', '    return a.length !== b.length || a.some((c, i) => c !== b[i])\n',
+        '    return a.length !== b.length\n'],
+    ]
+    for (const [quoi, avant, apres, attendue] of MUTATIONS) {
+      it(`attrape une copie dont ${quoi}`, () => {
+        const copies = copiesDesDeuxEtats(planterUne(sourceDeployee(), avant, apres, quoi))
+        echoueSurUneAssertion(() => comparerLaGenerationRepartie(t, copies), attendue)
+      })
+    }
   })
 })

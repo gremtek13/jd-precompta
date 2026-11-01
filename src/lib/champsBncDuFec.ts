@@ -346,9 +346,12 @@ export function partsDesReglementsALaDate(
     }
     trouves.push({ reglement, cle, part, mouvements: mouvement === null ? [] : [mouvement] })
   }
+  // Des paiements dont la somme est NULLE — un prélèvement et son rejet pas encore repris, un paiement de zéro euro — ne paient
+  // rien : `partsDesPaiements` ne leur rend aucune part, et la pièce compte, à sa date, comme sans paiement (la part `aucun`
+  // ci-dessous). Ils ne font donc aucun règlement (lot FEC22c3 : `parts[i]` manquait, et la numérotation levée levait).
   const { parts } = partsDesPaiements(piece, paiements)
   paiements.forEach((p, i) => {
-    if (p.date === date) ajouter(reglementDUnPaiement(piece, p, registre), parts[i].part, cleDuPaiement(p))
+    if (p.date === date && parts.length > 0) ajouter(reglementDUnPaiement(piece, p, registre), parts[i].part, cleDuPaiement(p))
   })
   for (const r of rattachementsTresorerie(piece, paiements)) {
     if (r.source === 'paiement' || r.source === 'facture') continue

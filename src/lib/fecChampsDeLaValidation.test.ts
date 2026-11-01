@@ -411,6 +411,38 @@ describe('les bords du rangement et de la répartition', () => {
     expect(leve.every((l) => Number.isFinite(l.montant))).toBe(true)
   })
 
+  it('des paiements qui s’annulent ne paient rien : prélevée le jour de sa date et rejetée, la pièce se génère comme hier (lot FEC22c3)', () => {
+    // Prélevé le 01/04, le jour de la pièce, et rejeté le 15/04, pas encore repris : la somme est nulle, `partsDesPaiements` ne
+    // rend aucune part, et la pièce compte à sa date comme sans paiement. La génération levée lisait la part d'un paiement
+    // qui n'en a pas, et levait.
+    const p = piece({ id: 'p-z', date_piece: '2025-04-01' })
+    const paiements = paiementsDesPieces([
+      mouvement({ id: 'm-z1', date: '2025-04-01', montant: -120, piece_id: 'p-z' }),
+      mouvement({ id: 'm-z2', date: '2025-04-15', montant: 120, piece_id: 'p-z' }),
+    ], [], [], []).get('p-z')!
+    expect(reglementsDeLaDate(p, paiements, '2025-04-01').map((x) => [x.sorte, x.part])).toEqual([['aucun', 1]])
+    const leve = avecLeDrapeau(VIDES, () => lignesChargeProduitPourPiece(D, p, cibleDe(p), true, paiements, PLAN_PAR_DEFAUT))
+    expect(JSON.stringify(leve)).toBe(JSON.stringify(generationDHier(D, p, cibleDe(p), true, paiements, PLAN_PAR_DEFAUT)))
+  })
+
+  it('des paiements qui s’annulent ne font aucun règlement au fichier : la pièce part « Sans règlement », à vingt-deux colonnes (lot FEC22c3)', () => {
+    // La même pièce, au FEC : `partsDesReglementsALaDate` (lib/champsBncDuFec.ts), que la numérotation lit quand la date ne se
+    // répartit pas, lisait la part d'un paiement qui n'en a pas, et levait.
+    const p = piece({ id: 'p-z', date_piece: '2025-04-01' })
+    const mouvements = [
+      mouvement({ id: 'm-z1', date: '2025-04-01', montant: -120, piece_id: 'p-z' }),
+      mouvement({ id: 'm-z2', date: '2025-04-15', montant: 120, piece_id: 'p-z' }),
+    ]
+    const paiements = paiementsDesPieces(mouvements, [], [], [])
+    const brouillon = brouillonDe(VIDES, p, true, paiements)
+    const champs = exportes({ choix: { sansReglement: 'date_de_l_ecriture' }, paiements })
+    const n = numeroter(brouillon, [p], champs, mouvements)
+    const charge = n.lignes.find((l) => l.ecriture.compte === '606100')
+    expect(charge?.champsBnc?.modeRglt).toBe('Sans règlement')
+    expect(new Set(n.lignes.map((l) => l.ecriture.id))).toEqual(new Set(brouillon.map((l) => l.id)))
+    expect(colonnes(formaterFec(n, SANS_LETTRAGE, 'tresorerie')).every((c) => c.length === 22)).toBe(true)
+  })
+
   it('une répartition fausse au centime, au même total et au même nombre de lignes, se dit « à régénérer »', () => {
     const faux = brouillonDe(VIDES, ACHAT, true).map((l) => (l.compte === '606100' ? { ...l, montant: l.montant === 58.33 ? 60 : 40 } : l))
     const a = avecLeDrapeau(VIDES, () => analyserEcritures(faux, [{ piece: ACHAT, ...cibleDe(ACHAT) }], true, PAIEMENTS, TRESORERIE, null, new Set()))
