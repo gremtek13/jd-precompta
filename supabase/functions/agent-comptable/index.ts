@@ -807,10 +807,116 @@ function centimesParDate(
   return reunies.map((f, i) => ({ date: f.date, centimes: morceaux[i] }))
 }
 
-// La charge ou le produit, et sa TVA pour un dossier assujetti, une ligne par date de la pièce. Un montant négatif
-// (un avoir) inverse le sens : `montant` reste positif.
+// UNE LIGNE DE CHARGE ET UNE LIGNE DE TVA PAR RÈGLEMENT D'UNE MÊME DATE — dupliqué depuis src/lib/ecritureParReglement.ts
+// (ligne 26.6, étape e ; lot FEC22c2, cette copie FEC22c3). Les quatre champs d'un BNC exportés, la génération écrit, à une
+// date que plusieurs règlements partagent — le relevé, chaque virement mixte (par mouvement), la caisse, la poche de
+// l'exploitant, la part que rien ne paie —, une ligne de charge et une de TVA par règlement, la TVA complétant sa charge :
+// la validation fige le mode de chaque LIGNE, et une seule ligne pour deux règlements ne se fige pas. Sans cette copie,
+// l'assistant dirait « à régénérer » une pièce que la frontière coupe et qu'une date répartie traverse (la part ouverte se
+// compare ligne pour ligne), et ne dirait pas le brouillon d'avant, que la validation refuse (`decoupageDiffere`).
+//
+// LE DRAPEAU. L'assistant n'importe rien de src/lib : `ECRITURE_PAR_REGLEMENT` redit ici `CHAMPS_BNC_EXPORTES !== null`
+// (src/lib/champsBncExportes.ts, lu par `ecritureParReglement`). BAISSÉ tant que le drapeau de l'application l'est : la
+// génération n'écrit qu'une ligne par date et par compte, et la sortie de l'assistant est celle d'hier au caractère près. Il
+// se lève LE MÊME JOUR que le drapeau de l'application (après la migration FEC22b et la réponse de l'expert-comptable à
+// FEC22-E2), suivi du redéploiement de l'assistant ; src/lib/agentComptableAnalyse.test.ts égale les deux états et rougit
+// quand l'un se lève sans l'autre.
+const ECRITURE_PAR_REGLEMENT = false
+
+function ecritureParReglement(): boolean {
+  return ECRITURE_PAR_REGLEMENT
+}
+
+// Les sortes de règlement de la génération, dans l'ordre du fichier.
+type SorteDeReglement = "releve" | "virement_mixte" | "caisse" | "note_de_frais" | "aucun"
+
+const ORDRE_DES_SORTES: Readonly<Record<SorteDeReglement, number>> = { releve: 0, virement_mixte: 1, caisse: 2, note_de_frais: 3, aucun: 4 }
+
+// Un règlement d'une pièce à une date : sa clé (`releve`, `mixte|<mouvement>`, `caisse`, `note_de_frais`, `aucun`), la part de
+// la pièce qu'il porte à cette date (comme `centimesParDate` la compte), et les paiements qui le font.
+interface ReglementDeLaDate {
+  sorte: SorteDeReglement
+  cle: string
+  part: number
+  paiements: readonly PaiementDePiece[]
+}
+
+function sorteDuPaiement(p: PaiementDePiece): { sorte: SorteDeReglement; cle: string } {
+  if (!estParLeReleve(p)) return { sorte: "caisse", cle: "caisse" }
+  if (p.origine === "encaissements") return { sorte: "virement_mixte", cle: `mixte|${p.id}` }
+  return { sorte: "releve", cle: "releve" }
+}
+
+// Les règlements d'une pièce à une date d'écriture, dans l'ordre du fichier, chacun avec sa part : celle de CHAQUE paiement
+// (`partsDesPaiements`), et la part que rien ne paie (`rattachementsTresorerie`), la part sans date reportée au jour du dépôt
+// comme `centimesParDate` la date — ici à Paris (`dateDuDepot`), comme le reste de cette copie. La copie de
+// `rattachementsTresorerie` ne rend pas la source `facture` de l'engagement : seule `paiement` s'écarte.
+function reglementsDeLaDate(
+  piece: Pick<PieceRow, "date_piece" | "montant_ttc" | "type_piece" | "created_at">,
+  paiements: readonly PaiementDePiece[],
+  date: string,
+): ReglementDeLaDate[] {
+  const trouves: { sorte: SorteDeReglement; cle: string; part: number; paiements: PaiementDePiece[] }[] = []
+  const ajouter = (sorte: SorteDeReglement, cle: string, part: number, paiement: PaiementDePiece | null) => {
+    const deja = trouves.find((x) => x.cle === cle)
+    if (deja) {
+      deja.part += part
+      if (paiement !== null) deja.paiements.push(paiement)
+      return
+    }
+    trouves.push({ sorte, cle, part, paiements: paiement === null ? [] : [paiement] })
+  }
+  // Des paiements dont la somme est NULLE (un prélèvement et son rejet pas encore repris) ne paient rien : aucune part, et la
+  // pièce compte à sa date comme sans paiement (la part `aucun` ci-dessous).
+  const { parts } = partsDesPaiements(piece, paiements)
+  paiements.forEach((p, i) => {
+    if (p.date !== date || parts.length === 0) return
+    const { sorte, cle } = sorteDuPaiement(p)
+    ajouter(sorte, cle, parts[i].part, p)
+  })
+  for (const r of rattachementsTresorerie(piece, paiements)) {
+    if (r.source === "paiement") continue
+    if ((r.date ?? dateDuDepot(piece.created_at)) !== date) continue
+    const sorte: SorteDeReglement = r.source === "note_de_frais" ? "note_de_frais" : "aucun"
+    ajouter(sorte, sorte, r.part, null)
+  }
+  // À sorte égale (deux virements mixtes), par la clé de leur paiement : deux appels rendent la même chose.
+  const premiere = (x: { paiements: readonly PaiementDePiece[] }) => (x.paiements[0] ? cleDuPaiement(x.paiements[0]) : "")
+  return trouves.sort((a, b) => ORDRE_DES_SORTES[a.sorte] - ORDRE_DES_SORTES[b.sorte] || premiere(a).localeCompare(premiere(b)))
+}
+
+// La date se répartit-elle ? Deux règlements au moins, et une somme des parts positive : une date dont les parts s'annulent
+// (un prélèvement et son rejet le même jour) ne se divise pas.
+function seRepartit(reglements: readonly Pick<ReglementDeLaDate, "part">[]): boolean {
+  return reglements.length >= 2 && reglements.reduce((s, r) => s + r.part, 0) > 0
+}
+
+// Un montant réparti au centime selon des poids, le dernier morceau prenant l'arrondi pour que la somme reste le total.
+function repartir(total: number, poids: readonly number[]): number[] {
+  const somme = poids.reduce((s, p) => s + p, 0)
+  const morceaux = poids.map((p) => Math.round(total * (p / somme)))
+  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)
+  return morceaux
+}
+
+// Les lignes qu'une date partage, réparties entre ses règlements : `centimes`, chaque ligne en centimes SIGNÉS (le débit
+// positif), la charge d'abord, la TVA en dernier ; `poids`, la part de chaque règlement. La pièce entière d'abord, puis
+// chaque ligne, la dernière — la TVA — prenant ce qui reste du total de son règlement : la TVA d'un règlement complète sa
+// charge, et chaque écriture d'un règlement s'équilibre face à sa banque.
+function repartirLesLignesPartagees(centimes: readonly number[], poids: readonly number[]): number[][] {
+  const totaux = repartir(centimes.reduce((s, c) => s + c, 0), poids)
+  const parLigne = centimes.map((c) => repartir(c, poids))
+  if (parLigne.length > 0) {
+    parLigne[parLigne.length - 1] = totaux.map((t, i) => t - parLigne.slice(0, -1).reduce((s, m) => s + m[i], 0))
+  }
+  return parLigne
+}
+
+// La charge ou le produit, et sa TVA pour un dossier assujetti, une ligne par date de la pièce — et, le drapeau levé
+// (`ECRITURE_PAR_REGLEMENT`), une par règlement d'une date que plusieurs se partagent. Un montant négatif (un avoir)
+// inverse le sens : `montant` reste positif.
 function lignesChargeProduitPourPiece(
-  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly Pick<PaiementDePiece, "date" | "montant">[],
+  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[],
 ): LigneAttendue[] {
   const sensPiece: Sens = piece.type_piece === "vente" ? "credit" : "debit"
   const ligne = (date: string, compte: string, montant: number): LigneAttendue =>
@@ -823,10 +929,23 @@ function lignesChargeProduitPourPiece(
   const tvas = tva
     ? centimesParDate(piece, charge + tva, paiements).map((t, i) => ({ date: t.date, centimes: t.centimes - charges[i].centimes }))
     : []
+  const compteTva = compteTvaDe(piece, cible.immobilisation)
+  const parReglement = ecritureParReglement()
   return charges.flatMap((f, i) => {
+    const centimesTva = tva ? tvas[i].centimes : 0
+    const reglements = parReglement ? reglementsDeLaDate(piece, paiements, f.date) : []
+    if (seRepartit(reglements)) {
+      // En centimes SIGNÉS, le débit positif, comme le fichier les répartit : un arrondi au demi-centime tombe du même côté.
+      const signe = sensPiece === "debit" ? 1 : -1
+      const [charge, taxe] = repartirLesLignesPartagees([signe * f.centimes, ...(tva ? [signe * centimesTva] : [])], reglements.map((r) => r.part))
+      return reglements.flatMap((_, k) => [
+        ...(charge[k] !== 0 ? [ligne(f.date, cible.compte, (signe * charge[k]) / 100)] : []),
+        ...(taxe && taxe[k] !== 0 ? [ligne(f.date, compteTva, (signe * taxe[k]) / 100)] : []),
+      ])
+    }
     // Une part nulle ne fait pas de ligne : la base refuse un montant nul.
     const lignes = f.centimes !== 0 ? [ligne(f.date, cible.compte, f.centimes / 100)] : []
-    if (tva && tvas[i].centimes !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation), tvas[i].centimes / 100))
+    if (tva && centimesTva !== 0) lignes.push(ligne(f.date, compteTva, centimesTva / 100))
     return lignes
   })
 }
@@ -1058,8 +1177,14 @@ function tresorerieDesynchronisee(
     return [...soldes].filter(([, centimes]) => centimes !== 0).map(([cle, centimes]) => `${cle}|${centimes}`).sort()
   }
   const presentes = soldesParDate(lignes)
-  const generees = soldesParDate(lignesChargeProduitPourPiece(p, cible, assujettiTva, paiementsPiece))
+  const chargesGenerees = lignesChargeProduitPourPiece(p, cible, assujettiTva, paiementsPiece)
+  const generees = soldesParDate(chargesGenerees)
   if (presentes.length !== generees.length || presentes.some((c, i) => c !== generees[i])) return true
+  // ET LE DÉCOUPAGE D'UNE DATE ENTRE SES RÈGLEMENTS (lot FEC22c2, copie FEC22c3), que les soldes ne voient pas : là où la
+  // génération écrit plusieurs lignes d'un même compte à une même date — une par règlement, le drapeau levé —, les lignes
+  // présentes doivent être celles-là, au centime. Une charge générée avant, d'une seule ligne pour deux règlements, ne se
+  // fige pas : « Régénérer » doit se proposer. Le drapeau baissé, rien de plus que les soldes.
+  if (dateComparee && decoupageDiffere(lignes, chargesGenerees)) return true
   const total = lignes.reduce((s, e) => s + (e.sens === sensPiece ? e.montant : -e.montant), 0)
   if (Math.abs(total - (p.montant_ttc ?? 0)) > EPSILON_EQUILIBRE) return true
   // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT : une pièce payée en deux fois, ou réglée en partie par un
@@ -1079,6 +1204,30 @@ function tresorerieDesynchronisee(
   const dirigeantAttendu = lignesTresoreriePourPiece(p, cible, assujettiTva, paiementsPiece)
     .filter((l) => estContrepartieDirigeant(p, cible, l)).map(cle).sort()
   return dirigeantPresent.length !== dirigeantAttendu.length || dirigeantPresent.some((c, i) => c !== dirigeantAttendu[i])
+}
+
+// Les lignes présentes d'une date et d'un compte où la génération en écrit plusieurs ne sont-elles pas celles-là ? Comparées
+// en multiensemble de centimes signés (le débit positif) : l'identifiant d'une ligne n'y entre pas.
+function decoupageDiffere(
+  presentes: readonly Pick<EcritureRow, "date" | "compte" | "sens" | "montant">[],
+  generees: readonly Pick<LigneAttendue, "date" | "compte" | "sens" | "montant">[],
+): boolean {
+  const parCle = (ls: readonly Pick<EcritureRow, "date" | "compte" | "sens" | "montant">[]) => {
+    const carte = new Map<string, number[]>()
+    for (const l of ls) {
+      const cle = `${l.date}|${l.compte}`
+      carte.set(cle, [...(carte.get(cle) ?? []), (l.sens === "debit" ? 1 : -1) * Math.round(l.montant * 100)])
+    }
+    return carte
+  }
+  const attendu = parCle(generees)
+  const present = parCle(presentes)
+  return [...attendu].some(([cle, centimes]) => {
+    if (centimes.length < 2) return false
+    const a = [...centimes].sort((x, y) => x - y)
+    const b = [...(present.get(cle) ?? [])].sort((x, y) => x - y)
+    return a.length !== b.length || a.some((c, i) => c !== b[i])
+  })
 }
 
 // En ENGAGEMENT, l'écriture de la FACTURE — charge ou produit, TVA, et le compte de tiers qui porte le

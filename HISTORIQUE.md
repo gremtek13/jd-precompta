@@ -45650,3 +45650,93 @@ C8, FEC22b, le filet, puis elle, par l'outil ; les trois contrôles de l'export 
 `rls.sql` en production. Rien ne s'ouvre à un client avant qu'une case soit cochée — par l'onglet Accès de C11, qui dira
 avant le clic les refus des deux gardes (le statut d'un dossier qui porte une case, la case sur un dossier exclu) et
 fixera la nature ; « Ma caisse » (C12) lira `caisse_du_client`.
+
+### 01/11/2026 — L'ASSISTANT SUIT LA GÉNÉRATION RÉPARTIE PAR RÈGLEMENT (FEC22C3, DERRIÈRE SON DRAPEAU)
+
+(Écrite par un agent architecte, sur `43a09d4` — `main`. Ni migration, ni base, ni déploiement : l'assistant en ligne n'a
+pas changé. Lus avant d'écrire : « LE FEC D'UN BNC : LA DEMANDE DE VALIDATION PORTE SES CLÉS (FEC22C2, DERRIÈRE SON
+DRAPEAU) », son « CE QUI RESTE » — la copie de l'assistant avant le drapeau —, et « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI
+IMPORTE LE DÉPÔT ». Touchés : `supabase/functions/agent-comptable/index.ts` (le bloc gardé seul),
+`src/lib/agentComptableAnalyse.test.ts`, `src/lib/ecritureParReglement.ts` et `src/lib/champsBncDuFec.ts` (une garde
+chacun, ci-dessous) et `src/lib/fecChampsDeLaValidation.test.ts`.)
+
+**CE QUI CHANGE.** La copie du générateur de l'assistant (le bloc qui va de « Dupliqué depuis src/lib/ecritures.ts » à
+`analyserEcritures`) porte ce que la génération lit depuis FEC22c2 : `reglementsDeLaDate`, `seRepartit`, `repartir`,
+`repartirLesLignesPartagees` et leur auxiliaire `sorteDuPaiement`, recopiés de lib/ecritureParReglement.ts ; la branche
+répartie de `lignesChargeProduitPourPiece`, qui reçoit désormais les paiements entiers (`PaiementDePiece`, plus seulement
+leur date et leur montant) ; `decoupageDiffere` dans `tresorerieDesynchronisee`. Ce qu'elles appellent y était déjà, à
+l'identique (`partsDesPaiements`, `rattachementsTresorerie`, `estParLeReleve`, `cleDuPaiement`) ; deux écarts voulus, dits
+en commentaire : la part sans date tombe au jour du dépôt À PARIS (`dateDuDepot`, comme le reste de la copie, là où
+l'application lit `dateLocaleDe`), et la source `facture` de l'engagement, que la copie de `rattachementsTresorerie` ne rend
+pas, n'est pas nommée. Aucune bordure `─`, aucun échappement `\uXXXX`, aucune consigne, aucun outil, aucun texte envoyé au
+modèle ne change ; `npx tsc -p tsconfig.edge.json` rend les 32 fautes d'avant, à leur numéro de ligne près.
+
+**LE DRAPEAU DE L'ASSISTANT.** L'assistant n'importe rien de src/lib : une constante du bloc, `ECRITURE_PAR_REGLEMENT`,
+BAISSÉE, redit `CHAMPS_BNC_EXPORTES !== null`, et la copie de `ecritureParReglement()` la lit. Baissée, la sortie de
+l'assistant est celle d'hier au caractère près, pour tout dossier : `reglementsDeLaDate` ne s'appelle pas, la branche
+d'hier est seule prise, et `decoupageDiffere` ne regarde qu'un compte qui porte deux lignes à une même date — ce que la
+génération baissée n'écrit que si le compte d'une catégorie est celui de sa TVA, une pièce que la comparaison de la TVA dit
+déjà « à régénérer » avant lui.
+
+**UN DÉFAUT DE SRC/LIB, CORRIGÉ PARCE QUE LE GARDE L'EXIGEAIT.** Levé, la génération de l'application LEVAIT
+(`TypeError`, `parts[i]` absent) sur une pièce dont les paiements s'annulent quand l'un tombe à une date de son écriture —
+un prélèvement du jour de la pièce, rejeté et pas encore repris ; un paiement de zéro euro le jour de la pièce, la note de
+frais à zéro euro de la batterie. `partsDesPaiements` ne rend alors aucune part (la pièce compte, à sa date, comme sans
+paiement), et `reglementsDeLaDate` lisait celle de chaque paiement de la date. Une garde (`parts.length === 0` : ces
+paiements ne font aucun règlement, la part `aucun` reste seule), la même dans la copie ; drapeau baissé, la fonction ne
+s'appelle pas. Un cas dans `fecChampsDeLaValidation.test.ts` (levé, la génération est celle d'hier, au caractère près), qui
+lève sans la garde. LE MÊME DÉFAUT VIT ENCORE dans `partsDesReglementsALaDate` (lib/champsBncDuFec.ts, FEC22c1), que la
+numérotation du FEC appelle quand la date ne se répartit pas : levé, l'export d'un tel dossier levait. Corrigé dans le même
+lot, à la demande de la session, par la même garde (`p.date === date && parts.length > 0`) ; un cas de
+`fecChampsDeLaValidation.test.ts` (levé, `numeroterFec` et `formaterFec` ne lèvent pas, la charge part « Sans règlement », le
+fichier garde ses vingt-deux colonnes) lève sans elle. Aucune autre lecture indexée des parts de `partsDesPaiements`, dans
+src/lib ni dans la copie : les autres les parcourent (`rattachementsTresorerie`) ou ne lisent que `reste`
+(`contrepartieBanque.ts`).
+
+**LES GARDES** (`agentComptableAnalyse.test.ts`, une section neuve, vingt et un cas). Le drapeau de l'application joué par
+un accesseur sur `./champsBncExportes` — sans demande, l'état réel : chaque cas d'avant compare l'application telle
+qu'elle est à la copie telle qu'elle est déployée ; la copie jouée en réécrivant sa constante dans le texte extrait, avant
+la transpilation (`copieSelon`).
+- L'ACCORD : la constante de l'assistant est dans l'état de `CHAMPS_BNC_EXPORTES` (lu par `vi.importActual`). Défauts
+  plantés, tous vus : levée face au drapeau baissé, baissée face au drapeau levé, absente, d'une autre forme, en double. En
+  vrai, le drapeau de l'application levé seul : l'accord rougit, et la batterie d'avant aussi.
+- LES DEUX ÉTATS, mêmes lignes et même jugement des deux côtés : la batterie du générateur (le témoin : levé, plus de
+  lignes partagent leur date et leur compte) ; onze cas écrits — la banque et la caisse le même jour (assujetti, exonéré),
+  la banque et la poche de l'exploitant, deux virements mixtes de deux mouvements, une date dont les parts s'annulent,
+  des paiements qui s'annulent l'un le jour de la pièce, la TVA d'un règlement qui complète sa charge (1,05 € et 118,95 €),
+  trois règlements du relevé dont l'arrondi va au dernier dans l'ordre du fichier, une pièce sans date payée en partie le
+  jour de son dépôt, la part d'un virement groupé et un prélèvement le même jour (un seul règlement), une pièce que la
+  frontière du 31 mars coupe et qu'une date répartie traverse — chacun jugé dans son état (rien à dire), le brouillon
+  d'avant « à régénérer » levé là où une date se répartit et rien baissé (une pièce sans date ne compare pas ses dates :
+  son brouillon d'avant ne s'y dit pas, la numérotation le nomme), et une répartition fausse au même total dite levé, tue
+  baissé ; un tirage de 300 pièces (graine 20261103, `tirage`), payé dans un `beforeAll`, lignes et jugements sans
+  frontière et sous celle du 31 mars (témoins : 40 pièces au moins se répartissent levé, 20 brouillons d'avant au moins s'y
+  disent « à régénérer », aucun baissé).
+- QUINZE MUTATIONS DE LA COPIE, toutes tuées : des poids égaux ; la TVA qui ne complète plus sa charge ; `decoupageDiffere`
+  retiré ; la constante ignorée, baissée ou levée ; une date qui s'annule répartie ; deux virements mixtes réunis ; la caisse
+  confondue avec le relevé ; la part sans date hors du dépôt ; les paiements comptés deux fois ; la garde des paiements qui
+  s'annulent retirée (tuée par un `TypeError`, la seule prise qui n'est pas une assertion, déclarée telle) ; l'ordre des
+  règlements renversé ; les règlements laissés dans l'ordre des paiements ; le signe d'une vente oublié ; le découpage
+  comparé au seul nombre de lignes. Au premier jeu, une avait survécu — les règlements dans l'ordre des paiements : deux
+  règlements ne changent jamais le multiensemble des lignes, il en faut trois, d'où les deux virements mixtes classés avant
+  le prélèvement — et une autre ne mourait que par le tirage — la TVA : le cas écrit pour elle, un partage à moitié, rend le
+  même multiensemble, d'où 1,05 € et 118,95 €. L'attente d'un cas était fausse, et corrigée : une répartition fausse au
+  même total n'est pas « à régénérer » baissé, où seuls les soldes se comparent.
+- Deux ancres d'avant devenues ambiguës (la ligne du dernier morceau, que `repartir` porte aussi ; la ligne des soldes
+  générés, scindée en deux) sont réécrites sur deux lignes ou sur la ligne neuve ; les mutations d'avant mordent toujours.
+
+**LA SIMULATION DU JOUR D'APPLICATION** (`CHAMPS_BNC_EXPORTES` levé, `{ sansReglement: 'vides' }`, et la constante de
+l'assistant levée ; Paris ; jouée avant le cas du FEC ajouté ensuite) : 525 fichiers, 16 343 tests verts, 2 « échecs attendus », UN ÉCHEC — le test de
+`fecVingtDeuxChamps.test.ts` qui veut FEC22b dans l'export avant le drapeau, une garde voulue, hors de ce lot. Le garde de
+la copie est VERT. Puis tout rendu : les deux constantes baissées, `git status` ne montrant que les quatre fichiers du lot.
+
+**LA BARRIÈRE** (Node 22) : `tsc -b` 0 ; `oxlint` 0 erreur, 63 avertissements, ceux d'avant, aucun dans ces fichiers ;
+`test:fuseaux` : sous Paris, UTC, New York et Auckland, 525 fichiers,
+16 345 tests verts et les 2 « échecs attendus » d'autres lots par fuseau (hier 16 322 : vingt-trois tests de plus) ; `build` : 0.
+
+**CE QUI RESTE.**
+- Le redéploiement de l'assistant, NEUTRE baissé (la ligne qui importe le dépôt au commit de `main` qui portera ce lot) :
+  il peut partir avant le jour de l'application, et le jour venu il n'y aura plus que la constante à lever.
+- Le jour de l'application : C8, FEC22b, le filet, `types.ts` basculé ; puis LES DEUX CONSTANTES LEVÉES ENSEMBLE —
+  `CHAMPS_BNC_EXPORTES` avec le choix de FEC22-E2, `ECRITURE_PAR_REGLEMENT` à `true` — dans le même commit, et
+  l'assistant redéployé au commit qui les porte ; le garde de leur accord rougit si l'une part sans l'autre.

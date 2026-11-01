@@ -84,9 +84,12 @@ export function reglementsDeLaDate(
     }
     trouves.push({ sorte, cle, part, paiements: paiement === null ? [] : [paiement] })
   }
+  // Des paiements dont la somme est NULLE — un prélèvement et son rejet pas encore repris, un paiement de zéro euro — ne paient
+  // rien : `partsDesPaiements` ne leur rend aucune part, et la pièce compte, à sa date, comme sans paiement (la part `aucun`
+  // ci-dessous). Ils ne font donc aucun règlement (lot FEC22c3 : `parts[i]` manquait, et la génération levée levait).
   const { parts } = partsDesPaiements(piece, paiements)
   paiements.forEach((p, i) => {
-    if (p.date !== date) return
+    if (p.date !== date || parts.length === 0) return
     const { sorte, cle } = sorteDuPaiement(p)
     ajouter(sorte, cle, parts[i].part, p)
   })
