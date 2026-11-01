@@ -8,6 +8,7 @@ import { partsDuReleve } from './partsDuReleve'
 import { paiementsDesPieces } from './rattachement'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
+import { previsionnellesSansPaiement, remplacementsDesPrevisionnelles } from './previsionnelles'
 import { ventesFactureesVides } from '../test/ventesFacturees'
 import type { Categorie, CotisationDeclaree, LigneBancaire } from './types'
 
@@ -177,9 +178,38 @@ describe('point 2 — une échéance prévisionnelle et l’appel définitif d�
     ])
   })
 
-  it.fails('BK ne compte que l’appel définitif (défaut non corrigé : 620 € au lieu de 320 €)', () => {
-    const d = exonere({ annee: 2026, categories: [], lignes: [prelevement], cotisations: [prevue, appel] })
+  // CORRIGÉ (étape 2035S2, 2035S-Q4 (A)) : l'appel définitif du MÊME MOIS qu'une prévisionnelle qu'aucun paiement ne date la
+  // REMPLACE à la création depuis l'avis — la ligne le dit avant le clic, le clic porte sur elle la date, le montant et le
+  // marqueur définitif (src/pages/dossier/CotisationsTab.test.tsx) —, et BK ne compte plus que l'appel.
+  it('BK ne compte que l’appel définitif quand il tombe le même mois que la prévisionnelle : il la remplace', () => {
+    const prevueDeFevrier = { ...prevue, echeance: '2026-02-20' }
+    const { remplacements } = remplacementsDesPrevisionnelles(
+      [{ date: '2026-02-05', montant: 320, previsionnel: false }], [prevueDeFevrier],
+      { payeeParUnMouvement: () => false, paiementsLus: true, figee: () => false },
+    )
+    expect([...remplacements.values()].map((c) => c.id)).toEqual(['prev'])
+    // La mise à jour que le clic envoie : la prévisionnelle EST l'appel, et le prélèvement la paie.
+    const remplacee = { ...prevueDeFevrier, echeance: '2026-02-05', montant_appele: 320, previsionnel: false }
+    const paiement = mouvement({ ...prelevement, cotisation_id: 'prev' })
+    const d = exonere({ annee: 2026, categories: [], lignes: [paiement], cotisations: [remplacee] })
     expect(valeursDesCases(d).valeurs.get('BK')).toBe(320)
+  })
+
+  // CE QUE LA RÉPONSE (A) LAISSE : l'exemple même de la relecture — 20/01, puis 05/02 — n'est pas du même mois. Rien ne se
+  // remplace à la création (ni sous (B), quinze jours : ils sont seize) ; la prévisionnelle se DIT, en attention, dans la
+  // Checklist et dans Clôture (`previsionnellesSansPaiement`), et BK la compte jusqu'au geste du cabinet — la retirer, ou
+  // la rapprocher si elle a été payée.
+  it('d’un autre mois, rien ne se remplace : la prévisionnelle se dit au point d’attention, et BK la compte encore', () => {
+    const { remplacements } = remplacementsDesPrevisionnelles(
+      [{ date: '2026-02-05', montant: 320, previsionnel: false }], [prevue],
+      { payeeParUnMouvement: () => false, paiementsLus: true, figee: () => false },
+    )
+    expect(remplacements.size).toBe(0)
+    const releve = [mouvement({ id: 'm-ouvre', date: '2026-01-02', montant: -10, statut: 'non_rapprochee' }), prelevement,
+      mouvement({ id: 'm-ferme', date: '2026-03-31', montant: -10, statut: 'non_rapprochee' })]
+    expect(previsionnellesSansPaiement([prevue, appel], releve, 'tresorerie', null).map((c) => c.id)).toEqual(['prev'])
+    const d = exonere({ annee: 2026, categories: [], lignes: [prelevement], cotisations: [prevue, appel] })
+    expect(valeursDesCases(d).valeurs.get('BK')).toBe(620)
   })
 })
 

@@ -98,6 +98,21 @@ describe('pointsDeLaChecklist', () => {
     expect(compte([{ ...classe, encaissements_de_factures: false }])).toBe(1)
   })
 
+  // LA PRÉVISIONNELLE QU'AUCUN PRÉLÈVEMENT NE PAIE (étape 2035S2, 2035S-Q4 (A)) : en attention, dans la fenêtre du relevé ;
+  // tue sur un relevé lu en partie, où un prélèvement non lu la ferait paraître impayée.
+  it('dit en attention la prévisionnelle qu’aucun prélèvement ne paie dans la fenêtre du relevé, et se tait sur un relevé partiel', () => {
+    const cotisations = [{
+      id: 'prev', dossier_id: 'd1', echeance: '2026-01-20', montant_appele: 300, montant_verse: null, montant_csg_crds: null,
+      created_at: '2025-12-01T09:00:00Z', previsionnel: true, paiement_personnel_le: null,
+    }]
+    const lignes = [ligne({ id: 'a', date: '2026-01-02' }), ligne({ id: 'b', date: '2026-04-30' })]
+    const point = (d: Partial<DonneesDeLaChecklist>) =>
+      pointsDeLaChecklist(donnees({ cotisations, lignes, ...d }), CONTEXTE).tousLesPointsATraiter.find((p) => p.id === 'previsionnelles-sans-paiement')
+    expect(point({})).toMatchObject({ nb: 1, severite: 'attention', cible: 'cotisations' })
+    expect(point({ paiementsPartiels: true })?.nb).toBe(0)
+    expect(point({ cotisations: [{ ...cotisations[0], previsionnel: false }] })?.nb).toBe(0)
+  })
+
   it('nomme le justificatif que coche un document attendu, sans en faire le geste', () => {
     const { documentsAttendus } = pointsDeLaChecklist(
       donnees({ info: informations({ tickets_restaurant: true, cheques_vacances: true, justificatif_cheques_vacances_recu: true }) }),

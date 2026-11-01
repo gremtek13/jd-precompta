@@ -9,6 +9,7 @@ import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffect
 import { virementsPersonnelsAEcrire } from './virementPersonnel'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from './echeanceEmprunt'
 import { cotisationsAEcrire, rapprochementsCotisationRefuses } from './cotisationRapprochee'
+import { previsionnellesSansPaiement } from './previsionnelles'
 import { acquisitionsDesBiens, dotationsDuRegistre, dotationsEnDefaut } from './amortissements'
 import { forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesEnRetard } from './liquidationTva'
@@ -320,6 +321,12 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // d'un exercice validé : ses mouvements ne se rapprochent plus.
   const couverture = couvertureDuReleve(lignes, frontiere)
   const echeancesManquantes = couverture ? echeancesNonRapprochees(emprunts, lignes, couverture.debut, couverture.fin) : []
+  // LES PRÉVISIONNELLES QU'AUCUN PRÉLÈVEMENT NE PAIE dans la fenêtre que le relevé couvre (étape 2035S2,
+  // lib/previsionnelles.ts) : l'appel définitif d'une autre date l'a peut-être remplacée, et les deux comptent alors dans la
+  // 2035. En attention, sans retenir la validation (2035S-Q4, (A)) ; la réponse (B), en erreur, demanderait son préalable
+  // (prealablesValidation.test.ts le réclamerait). Le relevé lu en partie la tait : un prélèvement non lu la ferait paraître
+  // impayée.
+  const previsionnellesImpayees = paiementsPartiels ? [] : previsionnellesSansPaiement(cotisations, lignes, modele.mode, frontiere)
   // L'écriture d'une échéance rapprochée qui n'est plus celle de son découpage : défensif, la base les
   // écrivant ensemble — mais une écriture retirée par un autre chemin sortirait du FEC en silence.
   const echeancesPerimees = echeancesDesynchronisees(ecritures, lignes, modele.plan)
@@ -824,6 +831,11 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     // « Attention » et non « erreur » : c'est un travail en retard — le prélèvement est dans le relevé, à
     // traiter —, pas une donnée démontrée fausse. Mais il dit ce que le retard coûte.
     { id: 'echeances-emprunt-non-rapprochees', label: 'échéance(s) d’emprunt couverte(s) par le relevé sans mouvement rapproché — intérêts non comptés', action: 'Rapprocher ces prélèvements', nb: echeancesManquantes.length, cible: 'banque', severite: 'attention' },
+    {
+      id: 'previsionnelles-sans-paiement', label: 'échéance(s) prévisionnelle(s) de cotisation qu’aucun prélèvement ne paie alors que le relevé couvre leur date — l’appel définitif l’a peut-être remplacée',
+      action: 'Retirer ou rapprocher ces échéances', nb: previsionnellesImpayees.length, cible: 'cotisations', severite: 'attention',
+      detail: 'Comptées à leur échéance, elles s’ajoutent dans la 2035 à l’appel qui les a remplacées. Dans Cotisations, elles portent le badge « Prévisionnel ».',
+    },
   ]
   const pointsATraiter = tousLesPointsATraiter.filter((p) => p.nb > 0)
   // Trois groupes distincts (voir audit ergonomie) plutôt qu'un seul total mélangeant des natures très

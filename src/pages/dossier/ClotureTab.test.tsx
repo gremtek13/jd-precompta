@@ -381,6 +381,36 @@ describe('ClotureTab — une échéance de cotisation compte à son prélèvemen
     expect(screen.queryAllByText(TITRE)).toHaveLength(0)
   })
 
+  // ÉTAPE 2035S2 : la prévisionnelle qu'aucun prélèvement ne paie alors que le relevé couvre sa date se dit à part, en
+  // attention — l'appel définitif l'a peut-être remplacée. Hors de la fenêtre du relevé, elle n'est que « comptée à son
+  // échéance ».
+  it('dit la prévisionnelle qu’aucun prélèvement ne paie dans la fenêtre du relevé, et se tait hors d’elle', async () => {
+    const PREVUE = cotisation('prev', { echeance: '2025-03-20', montant_appele: 300, montant_verse: null, previsionnel: true })
+    const mouvementLibre = (id: string, date: string) => ({ ...PRELEVEE_EN_JANVIER, id, date, statut: 'non_rapprochee', cotisation_id: null, montant: -5 })
+    poser({}, [], [PREVUE])
+    faux.parTable.lignes_bancaires = [mouvementLibre('m1', '2025-01-03'), mouvementLibre('m2', '2025-06-30')]
+    const vue = monter(2025)
+    const carte = within((await screen.findByText('Prévisionnelles qu’aucun prélèvement ne paie (1)')).closest('.card') as HTMLElement)
+    expect(carte.getByText(/Prévisionnelle du 20\/03\/2025/).textContent?.replace(/\s/g, ' ')).toBe('Prévisionnelle du 20/03/2025 : 300,00 €')
+    vue.unmount()
+
+    // Le relevé s'arrête en février : rien ne dit qu'il aurait dû la payer.
+    poser({}, [], [PREVUE])
+    faux.parTable.lignes_bancaires = [mouvementLibre('m1', '2025-01-03'), mouvementLibre('m2', '2025-02-28')]
+    const fevrier = monter(2025)
+    await screen.findByText('Cotisations comptées à leur échéance (1)')
+    expect(screen.queryAllByText(/Prévisionnelles qu’aucun prélèvement ne paie/)).toHaveLength(0)
+    fevrier.unmount()
+
+    // Le relevé lu en partie (deux mouvements sur trois, la fenêtre couvrant mars) : un prélèvement non lu la ferait paraître
+    // impayée — la carte se tait.
+    poser({ lignes_bancaires: 2 }, [], [PREVUE])
+    faux.parTable.lignes_bancaires = [mouvementLibre('m1', '2025-01-03'), mouvementLibre('m2', '2025-06-30'), mouvementLibre('m3', '2025-07-15')]
+    monter(2025)
+    await screen.findByText('Cotisations comptées à leur échéance (1)')
+    expect(screen.queryAllByText(/Prévisionnelles qu’aucun prélèvement ne paie/)).toHaveLength(0)
+  })
+
   it('la carte ne liste que les échéances de l’exercice affiché, et dit les prévisionnelles', async () => {
     poser({}, [], [
       cotisation('c1', { echeance: '2025-12-05', montant_appele: 300, montant_verse: null, previsionnel: true }),
