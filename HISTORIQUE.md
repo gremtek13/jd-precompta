@@ -45148,7 +45148,7 @@ réponses du cabinet à 2035S-Q2 à Q5, chacune un changement local (ci-dessus).
 
 ### 01/11/2026 — LE FEC D'UN BNC : LES QUATRE POSTES NEUFS DE LA 2035 DANS LES LISTES FERMÉES (FEC22B ET LE FILET)
 
-(Écrite par un agent architecte, sur `87e21bf` — `main` à `0e5d883`, C13, 2035S1, S2 et S6. Deux migrations PRÉPARÉES
+(Écrite par un agent architecte, sur `8cb7af5` — `main`, C13 compris — et les lots 2035S1, S2 et S6 qui le suivent. Deux migrations PRÉPARÉES
 reprises avant leur application, rien d'appliqué ; en production, rien de lu ni d'écrit, aucun déploiement ; tout s'est
 joué sur la réplique de FEC22b. Lus avant d'écrire : « LES QUATRE CHAMPS DU FEC D'UN BNC, EN BASE (FEC22B) (PRÉPARÉE, PAS
 APPLIQUÉE) », « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS », « LA 2035 : LES CASES « DONT », LA
@@ -45265,3 +45265,19 @@ l'export. Relevé sur la réplique après les trois, depuis la production, dans 
 production. Dans supabase/schema/README.md, le paragraphe de C8 porte encore
 les chiffres d'avant sa relecture (`864afcec…`, 1 041 lignes ; le fichier est à `0accdea9…`, 1 142 lignes), et le filet
 n'y a pas de paragraphe : hors de ce lot.
+
+### 01/11/2026 — L'ASSISTANT REDÉPLOYÉ (V52) : C13 EN LIGNE
+
+Après la fusion de la demande n° 259, `agent-comptable` est redéployé par la ligne qui importe le fichier du dépôt public au
+commit de `main` qui porte C13, `8cb7af55115f71e16f6f45aa175d74f27fdfc751` — version 52, `verify_jwt` faux comme le
+veut `supabase/config.toml`, `ezbr_sha256` `2ba3d18c75dfabdee325b4751d773502da40192dab2be71b9a10d5978cfce858`. Avant
+d'écraser, la version 51 relue : la même ligne au commit `b3b332a33a9697998fbf82cc2fb9bb4c82d19774`, et le fichier de
+l'assistant inchangé sur `main` de ce commit à `0e5d883` ; seul C13 le change. `allerretour.py` rend la copie déployée
+identique au dépôt (4 354 lignes, rien de recopié). Sans session, un `POST` rend 401 « Non authentifié. » et un `GET`
+405 « Méthode non autorisée. », avant toute dépense ; aucun appel au modèle pour le vérifier.
+
+L'assistant lit désormais les paiements des pièces par la caisse ; la production n'en porte aucun tant que C8 n'est pas
+appliquée, et un dossier sans paiement rend ce qu'il rendait (« LA CAISSE : L'ASSISTANT DEVANT LE PAIEMENT D'UNE PIÈCE
+PAR LA CAISSE (C13, LIGNE 26.6) »). Le drapeau `PAIEMENT_PAR_LA_CAISSE_EXPORTE` reste baissé jusqu'au jour de C8.
+
+**LE RETOUR ARRIÈRE** : la même ligne au commit `b3b332a33a9697998fbf82cc2fb9bb4c82d19774` (la version 51).

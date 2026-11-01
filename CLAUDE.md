@@ -60,7 +60,7 @@ quatrième paramètre obligatoire de `paiementsDesPieces`, la contrepartie au co
 partie retient « Associer » ; relus et corrigés le 01/11/2026 : la pièce à valider qu'un paiement cite retient la validation
 (et un filet en base, `validation_des_paiements_par_la_caisse`, préparé, après C8 et FEC22b), un paiement qui laisserait la
 pièce à quelques centimes se refuse (C9-Q1, sur la recommandation), une pièce payée ne part plus d'une sélection ;
-l'assistant (C13, le 01/11/2026, pas encore déployé) lit ces paiements sans drapeau — une pièce payée en espèces n'y est plus
+l'assistant (C13, en ligne le 01/11/2026, `agent-comptable` v52) lit ces paiements sans drapeau — une pièce payée en espèces n'y est plus
 « en attente de rapprochement », ni sa contrepartie « à régénérer », et un dossier sans paiement rend ce qu'il rendait, au
 caractère près —, et le drapeau ne se lève qu'après son déploiement, le jour de C8 ; le client, C10 à C12 → « LA CAISSE : LE MODULE, LA LECTURE
 ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
@@ -71,7 +71,7 @@ FEC22-E », « LA CAISSE REPRISE EST « TENUE », ET LA FENÊTRE DES ENCAISSEMEN
 (RELECTURE) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, EN BASE (C8, LIGNE 26.6) (PRÉPARÉE, PAS
 APPLIQUÉE) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS LES MOTEURS (C9A, LIGNE 26.6) », « LA CAISSE : LE
 PAIEMENT D'UNE PIÈCE PAR LA CAISSE, À L'ÉCRAN DU CABINET (C9B, LIGNE 26.6) », « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES
-CORRECTIONS », « LA CAISSE : L'ASSISTANT DEVANT LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (C13, LIGNE 26.6) »), le plan Pro de Supabase sauvegarde la base
+CORRECTIONS », « LA CAISSE : L'ASSISTANT DEVANT LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (C13, LIGNE 26.6) », « L'ASSISTANT REDÉPLOYÉ (V52) : C13 EN LIGNE »), le plan Pro de Supabase sauvegarde la base
 (MVP-D3). La case « MVP » de la feuille de route marque les
 lignes qui y comptent, souvent pour une partie, et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC
 RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
@@ -128,7 +128,7 @@ RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
   toute migration : y ajouter son fichier et rejouer les trois contrôles de `supabase/schema/README.md` (dérive, socle,
   inventaire).
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
-  - `agent-comptable` — assistant IA (Bedrock), v51 depuis le 31/10/2026, plafond de coût mensuel par cabinet ; aucun
+  - `agent-comptable` — assistant IA (Bedrock), v52 depuis le 01/11/2026, plafond de coût mensuel par cabinet ; aucun
     nom de cabinet (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant
     un dossier basculé, une garde provisoire (VF9a), que VF9c a levée — elle ne ferme plus qu'une source des ventes
     illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES OUTILS
