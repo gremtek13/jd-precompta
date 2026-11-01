@@ -211,6 +211,8 @@ describe('Régler par la caisse', () => {
     fireEvent.change(champ(/Jour du paiement/), { target: { value: '2026-03-05' } })
     act(() => { fireEvent.click(bouton()); fireEvent.click(bouton()) })
     expect(faux.rpcs).toHaveLength(1)
+    // Le second clic ne redemande même pas : le verrou se lit avant la confirmation.
+    expect(confirmation).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: 'Écriture…' })).toBeTruthy()
     await act(async () => { faux.relacher?.() })
     await waitFor(() => expect(relire).toHaveBeenCalledTimes(1))
