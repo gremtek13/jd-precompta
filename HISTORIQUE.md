@@ -44758,3 +44758,121 @@ paiement d'une pièce de vente (`enregistrer_operation_caisse` remplacée) ; la 
 cabinet ; enfin la simulation (le fichier dans l'export, le drapeau levé, la suite entière).
 
 **LE RETOUR ARRIÈRE** : retirer les commits ; aucune donnée, aucune migration. Le drapeau baissé, rien n'est en jeu.
+
+### 01/11/2026 — LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS
+
+(Écrite par un agent architecte, sur la tête de C9b et de la relecture indépendante qui la suit (« Relecture de C8 à C9b : les
+preuves des défauts du paiement d'une pièce par la caisse, drapeau levé »). Deux migrations PRÉPARÉES, rien d'appliqué ; en
+production, rien de lu ni d'écrit, aucun déploiement. Tout ce qui suit est NEUTRE tant que `PAIEMENT_PAR_LA_CAISSE_EXPORTE` reste
+baissé. Lus avant d'écrire : la conception reprise, § 8 ; C8, C9a et C9b ; FEC22b, sa migration et sa garde de tête.)
+
+**LES SEPT POINTS DE LA RELECTURE, ET CE QUI EN EST FAIT.**
+
+1. **Une pièce À VALIDER, datée d'un autre exercice, payée par la caisse dans l'exercice, ne retenait pas sa validation**
+   (confirmé). `pieces-a-valider` ne jugeait que la date de la pièce : une facture de décembre arrivée après la validation de
+   l'exercice précédent, payée en espèces en janvier, laissait valider janvier sans sa dépense ni la contrepartie de son
+   paiement — le 53 reporté au 1er janvier dépassait la caisse du montant du paiement, et rien ne le rattrapait ensuite.
+   CORRIGÉ en trois endroits. (a) `pieces-a-valider` compte aussi la pièce à valider qu'un paiement vivant de l'exercice cite,
+   quelle que soit sa date, une fois (`paiementsDePiecesAValider`, lib/controlesDeLaCaisse.ts), sous un message qui le dit et un
+   détail qui nomme chaque paiement par son jour, son montant et la date de sa pièce ; sans un tel paiement, le préalable d'hier
+   au caractère près. (b) La Vue d'ensemble dit à part la pièce à valider qu'un paiement cite (`pieces-a-valider-payees-par-la-caisse`,
+   en « attention » : un travail en cours, pas une anomalie ; rangée aux dépenses de la révision). (c) Un FILET EN BASE : la
+   migration `validation_des_paiements_par_la_caisse`, préparée, refuse dans `valider_exercice` un paiement vivant de l'exercice
+   dont la contrepartie ENTIÈRE n'est pas au brouillon — les lignes qui citent ce paiement et sa pièce, à sa date, au compte de la
+   caisse DU PLAN, dans le sens de ses espèces (23514, sous ses mots, sa date et son montant). Elle reprend la définition que
+   FEC22b laisse, au caractère près, plus une variable et ce bloc, placé après tous les refus qui précèdent l'écriture et juste
+   avant elle (le garde de position de VF7b reste juste) ; sa garde de tête exige le corps de FEC22b (`a7844d5c…`), les deux corps
+   que C8 pose (`regler_piece_par_la_caisse`, `c8b8e39e…` ; `garder_ecriture_de_caisse`, `9db99bb9…`) et `compte_du_role` de
+   l'export. ÉCARTÉS : le mettre dans C8 (la garde de FEC22b refuserait alors de s'appliquer, et C8 ne doit rien savoir de
+   FEC22b) ; dans FEC22b (elle ne sait rien de la caisse, que la production n'a pas encore) ; un déclencheur sur
+   `exercices_valides` (un refus hors de l'ordre de la fonction, après sa numérotation, et la restauration à excepter). Elle
+   s'applique après C8 et FEC22b, par l'outil.
+2. **Un paiement en espèces qui laissait un reste non nul sous l'écart d'alignement passait** (confirmé) : 39,99 € pour une
+   pièce de 40,00 €, la pièce dite réglée (`partsDesPaiements`), sa charge entière face à 39,99 € de caisse — une écriture
+   déséquilibrée que « Régénérer » réécrivait pareille, et que la numérotation refusait sans dire pourquoi. (a) LA BANQUE COMPTE
+   DÉJÀ LA CAISSE quand elle aligne : depuis C9a, `reglerSiLibre` passe les paiements par la caisse parmi les « autres » — vrai,
+   mais rien ne l'épinglait ; un cas de BanqueTab.test.tsx (« la caisse comprise ») le garde, dans les deux états du drapeau, et
+   les commentaires de lib/reglementBanque.ts et de lib/rattachement.ts le disent. (b) LA CAISSE N'ALIGNE PAS : ELLE REFUSE, avant
+   le clic (`resteAuCentime`, dans `jugerLeReglementSelon`) et en base (le bloc 9 bis de `regler_piece_par_la_caisse`), le paiement
+   qui porterait le total de TOUS les paiements de la pièce — le mouvement rapproché, la part d'un virement groupé, l'encaissement
+   d'un virement mixte qui paie son exemplaire, la caisse — dans l'écart où la banque alignerait, sans l'atteindre au centime ;
+   trois mots : le cabinet lit le montant exact qui la règle (« une sortie de 40,00 € »), le client n'apprend pas le montant de la
+   pièce, et la pièce que ses autres paiements règlent déjà se dit telle. Une pièce en devise, ou sans montant, ne se juge pas.
+   ÉCRIT SUR LA RECOMMANDATION DE C9-Q1, posée au cabinet le même jour : l'autre option — aligner la pièce comme la banque — se
+   branche sans rien reprendre d'autre (le bloc 9 bis retiré du module et de la migration ; l'écran appelle, après
+   `regler_piece_par_la_caisse`, `reglerPieceSurBanque(piece, [...autres paiements, { montant }])`), et le commentaire de
+   `resteAuCentime` le dit. La règle en flottants du module (`ecartAvecBanque`) et la règle exacte de la base (`numeric`) rendent
+   le même verdict : 16 millions de cas au bord de l'écart, aucun écart (un script hors du dépôt) ; une batterie de plus de
+   60 000 cas le garde dans paiementParLaCaisse.test.ts. Et une pièce dont le MONTANT change après son paiement, qui l'y ramène,
+   se dit sous `caisse-paiements-a-retirer` (point 4).
+3. **« Supprimer la sélection » ne connaissait pas la pièce payée par la caisse** (confirmé) : elle partait à la base, qui la
+   refusait sous des mots qui ne nommaient ni la caisse ni le remède — la clé du brouillon (`on delete set null`) met la pièce de
+   la contrepartie à nul AVANT que celle de la caisse (`on delete restrict`) ne refuse, et la garde de l'écriture disait « ne se
+   modifie pas ». CORRIGÉ : la caisse lue en entier, la sélection l'écarte avant la confirmation et la nomme sous la phrase de sa
+   fiche (`suppressionRetenueParLaCaisse`) ; seule, elle ne part pas. En base, la garde du brouillon dit, sous 23503, « Cette pièce
+   est payée par la caisse : retire d'abord son paiement… » quand seule la pièce de la contrepartie passe à nul (caisseSuppression.sql,
+   11h à 11j) ; la fiche et la liste traduisent le refus de la base quand la caisse n'a été lue qu'en partie
+   (`refusDeSuppressionParLaCaisse` : la garde, ou la clé de l'opération). La phrase de la fiche est désormais celle de la base.
+4. **Une pièce qui passe de l'achat à la vente après son paiement** (plausible, ÉTABLI) : la garde de `pieces` laisse passer ce
+   changement (une correction légitime ; caisse.sql, 214c), la contrepartie suit le paiement, et l'écriture porte deux crédits que
+   la numérotation refuse sans dire pourquoi. CORRIGÉ : `caisse-paiements-a-retirer` (`paiementsParLaCaisseARetirer`), en « erreur »
+   dans la Vue d'ensemble et repris par la validation, dit le paiement dont le sens contredit sa pièce, et celui qui la laisse à
+   quelques centimes de son total ; le remède, retirer le paiement et le saisir de nouveau — ou corriger la pièce. Le sens se tient
+   sur une lecture partielle du relevé, le reste au centime s'y tait. La migration C8 ne renvoie plus au « pointage (lot C9) ».
+5. **Payer en espèces une pièce que la banque paie déjà** (plausible, CORRIGÉ) : un avertissement avant le clic, repris par la
+   confirmation (`avertissementDuReglement`), sur le reste de TOUS ses paiements — ce que le relevé et la caisse ont payé, ce qui
+   reste, et le trop-payé au-delà de l'écart. Rien n'est refusé (un acompte en banque et un solde en espèces se font) ; la fiche
+   ne règle plus rien sur des paiements qu'elle n'a pas lus en entier, et le dit.
+6. **L'assistant ignore la caisse** (plausible, NON CORRIGÉ ICI) : c'est le lot C13. LE DRAPEAU NE SE LÈVE QU'APRÈS C13 — le
+   commentaire du drapeau le dit (lib/paiementParLaCaisse.ts) ; la migration C8 attend donc C13 elle aussi, ou ce garde se réécrit.
+7. **`phraseDesEspecesDuJour` disait « reçus » d'un montant négatif** (mineur, CORRIGÉ) : la contre-passation en espèces d'un
+   encaissement, ou le paiement par la caisse d'un avoir de vente, se disent désormais par leur montant sans signe, sous « rendus » ;
+   des espèces toutes reçues gardent la phrase d'hier.
+
+**LES MIGRATIONS.**
+- `paiement_par_la_caisse` (C8), corrigée : `0accdea9c4c444e318cf8ef74825f37f`, 1 142 lignes, 74 881 octets. Le détecteur
+  d'`apply_migration` n'y lirait aucune suppression d'objet ni de donnée : ni `drop`, ni `delete from`, ni `truncate` ; le mot
+  `DELETE` n'y vient que de `tg_op = 'DELETE'` et de `on delete` dans des commentaires, comme dans la migration `caisse`, qu'il a
+  laissée passer ; ses `revoke` et son `grant` ne règlent que les droits par défaut de ses trois fonctions neuves. Son retour
+  arrière : `bdca96f15c0c605fe3b7c6da2d0c2842`, 577 lignes — il retire trois fonctions et deux déclencheurs : à accorder, à coller.
+- `validation_des_paiements_par_la_caisse` (le filet), préparée : `da3248db12214e519c7e8f52a12d81fb`, 614 lignes, 43 299 octets ;
+  une définition par `create or replace` et son commentaire — rien de retiré, ni objet, ni donnée, ni droit ; ni barre oblique
+  inverse ni retour chariot. Son retour arrière : `9d113ec5a5d9bd3ca7995e6e7c9754a9`, 544 lignes, la définition et le commentaire
+  de FEC22b au caractère près, rien de retiré non plus. Versions provisoires : elles prendront celles de leur ligne d'historique.
+
+**LA BASE, SUR LES RÉPLIQUES SEULEMENT.** Sur celle de C8 (`c8_s165`) : l'ancienne C8 retirée par son ancien retour (la
+signature revenue à celle d'avant C8, une seconde application refusée) ; la nouvelle appliquée comme l'outil (sa ligne
+d'historique à l'empreinte du fichier) ; son nouveau retour, dans une transaction annulée, rend la signature d'avant et se refuse
+une seconde fois. `caisse.sql` : 536 verdicts, aucun en faute (le bloc 232 : le reste au centime, de l'écart à son plafond,
+l'ordre, la devise, les autres paiements) ; `caisseSuppression.sql` : 31, aucun en faute ; `rls.sql` entier : 85 invariants sans faute, ses 65
+mutations mordent ; `restauration.sql`, le dossier `test` semé par les fonctions dans une transaction annulée (deux apports dont un
+remplacé, le paiement d'un achat et celui d'une vente, leurs contreparties) : 151 clés recopiées, 76 tables IDENTIQUES, les cinq
+opérations en deux vagues, huit lignes du brouillon. Sur celle de FEC22b (`f_m`), dans une transaction annulée, C8 puis le filet :
+son essai (`validationDesPaiementsParLaCaisse.sql`) rend 13 verdicts justes — refusés la pièce à valider de décembre payée en
+janvier, la pièce validée pas écrite, la contrepartie en partie ; l'écriture déséquilibrée dite d'abord, par les mots d'hier ;
+validé le chemin juste (un paiement retiré, un autre de l'exercice suivant), la caisse reportée celle de ses opérations ; le
+catalogue —, une seconde application se refuse, le retour rend le corps de FEC22b, son commentaire, ses droits et son
+propriétaire, et se refuse une seconde fois. Sans FEC22b, sa garde le refuse et l'essai dit EN ATTENTE. L'essai de la relecture,
+rejoué : 39,99 € refusés, la suppression sous les mots neufs, la pièce de décembre refusée par le filet. Neuf mutations de la
+base, chacune dans une transaction annulée — le bloc 9 bis débranché, puis privé du mouvement rapproché, de la part groupée, du
+paiement retiré ou de son plafond ; la garde de la suppression débranchée ; le filet comptant un paiement retiré, admettant une
+contrepartie en partie, ou à contresens — : toutes mordent. Les répliques en sont sorties telles qu'elles étaient.
+
+**LA SUITE** (Node 22.23.3, sous Paris), drapeau baissé : 520 fichiers, 16 216 tests verts et 10 « échecs attendus » d'autres
+lots ; `tsc -p tsconfig.app.json` et `tsconfig.node.json` : 0 ; `oxlint` : 0 erreur, 63 avertissements, ceux de la référence. En
+simulation (C8 déplacée dans l'export, indexée, le drapeau levé) : les mêmes 520 fichiers et 16 226 tests, tous verts ; puis tout
+rendu (le fichier dans `supabase/preparees/`, le drapeau baissé, l'index et le diff ceux d'avant). Les quatre `it.fails` de la
+relecture (trois dans relecturePaiementParLaCaisse.test.ts, un dans PiecesTab.test.tsx) sont des `it` ordinaires. Trente et
+une mutations du code et des textes des migrations, une par correction ou plus : toutes mordent (l'une, d'abord inapplicable,
+réécrite ; une mutation de la base, d'abord équivalente, remplacée par quatre). Des gardes d'hier ont suivi, chacun pour ce
+qu'il épinglait : la phrase de la fiche d'une pièce payée (la base dit désormais le remède), le champ du montant sur des
+paiements lus en partie (la fiche ne règle plus rien qu'elle ne puisse juger), la neutralité de la Vue d'ensemble levée (deux
+points de plus), la table des contrôles repris par la validation, le rangement par cycle de la révision, la liste des essais de
+réplique seulement (six), et le garde de VF7b, qui admet le filet comme une reprise de plus de `valider_exercice`.
+
+**CE QUI RESTE.** Le lot C13 (l'assistant), avant que le drapeau ne se lève. La réponse du cabinet à C9-Q1 (refuser, comme
+écrit, ou aligner). Le banc du leurre (outils/leurre/banc.py) n'a pas tourné : il monte ses propres copies de la base, que cette
+relecture ne pouvait pas créer — à rejouer sur `caisse.sql`, changé, avant de le jouer en production ; le nouvel essai reste « de
+réplique seulement » jusqu'à ce qu'il l'ait rejoué SÛR. Le chemin du virement mixte dans le bloc 9 bis (l'encaissement qui paie
+l'exemplaire d'une facture d'avant la bascule) n'est exercé par aucun essai. Le jour de l'application : C8, puis FEC22b, puis le
+filet, dans cet ordre, puis les trois contrôles de l'export.
