@@ -426,12 +426,16 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Contre-calcul par l'expert-comptable** (ligne 23.3) : quatre dossiers de référence remis (2035, CA3, amortissements,
   bilan 2033-A) ; restent ses chiffres, l'analyse des écarts, puis ses chiffres en cas de référence → « LES DOSSIERS DE
   RÉFÉRENCE ».
-- **La 2035 : les cases « dont » et les saisies du cabinet** (01/11/2026, MVP) : BT, BY, BW, BZ, BU, CC, CL, DE et DB
-  valent toujours zéro, une prévisionnelle qu'aucun prélèvement ne paie se compte avec l'appel définitif d'une autre
-  date, et le PDF de l'exercice 2026 s'imprimerait sous « REVENUS 2025 » — prouvés (`relecture2035Saisies.test.ts`, en
-  `it.fails`) ; six lots, 2035S1 à S6, dont une migration additive (S3, `saisies_2035`) ; cinq questions au cabinet
-  (2035S-Q1 à Q5) → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 : ÉTABLIS, ET LA CONCEPTION DE LEUR
-  CORRECTION ».
+- **La 2035 : les cases « dont » et les saisies du cabinet** (01/11/2026, MVP) : 2035S1, S2 et S6 faits sur la réponse (A)
+  de 2035S-Q2 à Q5, sans réponse du cabinet, chaque autre réponse à un changement local — BY, BW, BZ et BU d'un poste qui
+  les nomme (une seconde case AJOUTÉE, jamais retirée de la porteuse), BT des seules échéances de l'onglet Cotisations, DB
+  des indemnités journalières ; l'appel définitif du même mois remplace, au clic, la prévisionnelle qu'aucun paiement ne
+  date, et une autre se dit en attention (`lib/previsionnelles.ts`) ; un modèle par millésime, le PDF retenu sans le sien
+  (`lib/modeles2035.ts`) ; les quatre postes neufs restent hors des listes fermées de FEC22b tant que la session n'a pas
+  repris ses migrations (`POSTES_HORS_DES_LISTES_DU_FEC`). Restent CC, CL, DE et le reste de DB (2035S3 à S5, dont une
+  migration additive, `saisies_2035`), qui attendent 2035S-Q1 → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 :
+  ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION », « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF
+  D'UN MILLÉSIME (2035S1, S2 ET S6) ».
 - **Déclarations TNS** (ligne 27) : restent hors de l'estimation — médecins et chirurgiens-dentistes, retraite, revenus
   de remplacement, ACRE, exonérations, outre-mer, régularisation ; DSCS proposée depuis la ligne 4 de la 2035-A, à
   confirmer sur une première déclaration réelle.
