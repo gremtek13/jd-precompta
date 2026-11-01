@@ -1769,6 +1769,44 @@ describe('ClotureTab — une case négative', () => {
   })
 })
 
+// LES CASES « DONT » DÉDUITES (étape 2035S1, le 01/11/2026) : ce que l'écran garde, et que cases2035.test.ts ne voit pas —
+// que le formulaire MONTRE BT tirée des échéances lues, et que la carte de la part de BK que rien ne qualifie paraisse
+// sur un poste générique, et se taise sans lui (2035S-Q2, (A)).
+describe('ClotureTab — les cases « dont » BT et la part de BK sans nature', () => {
+  const GENERIQUE = {
+    id: 'cat-csp', dossier_id: null, code: 'csp', libelle: 'Prévoyance', ordre: 2, compte_comptable: '646100',
+    poste_2035: 'Charges sociales personnelles',
+  }
+  const PREVOYANCE = {
+    ...PIECE, id: 'p-csp', categorie_id: 'cat-csp', montant_ht: 500, montant_tva: 0, montant_ttc: 500, date_piece: '2025-04-10',
+  }
+  const montantDeLaCase = (code: string) => {
+    const tr = screen.getAllByText(code).map((e) => e.closest('tr')).find((t) => t?.closest('table')?.querySelector('th')?.textContent === 'Case')
+    return tr?.querySelectorAll('td')[3]?.textContent?.replace(/\s/g, ' ')
+  }
+
+  it('montre BT, la part des échéances, et dit la part de BK qu’une catégorie au poste générique ne qualifie pas', async () => {
+    poser()
+    faux.parTable.categories = [CATEGORIE, GENERIQUE]
+    faux.parTable.pieces = [PIECE, PREVOYANCE]
+    monter(2025, false)
+    const carte = within((await screen.findByText('Charges sociales personnelles sans nature dite (1)')).closest('.card') as HTMLElement)
+    expect(carte.getByText(/Exercice 2025 : BK porte/).textContent?.replace(/\s/g, ' ')).toBe(
+      'Exercice 2025 : BK porte 500,00 € dont la nature, obligatoire ou facultative, n’est pas dite (sur 1 100,00 €).')
+    expect(montantDeLaCase('BT')).toBe('600,00 €')
+    expect(montantDeLaCase('BK')).toBe('1 100,00 €')
+  })
+
+  it('se tait sans poste générique : BK n’est faite que des échéances — le garde symétrique', async () => {
+    poser()
+    monter(2025, false)
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(/Charges sociales personnelles sans nature dite/)).toHaveLength(0)
+    expect(montantDeLaCase('BT')).toBe('600,00 €')
+    expect(montantDeLaCase('BK')).toBe('600,00 €')
+  })
+})
+
 // VALIDER UN EXERCICE (ligne 26.6, étape d). Ce que la carte garde, et qu'aucun test de `src/lib` ne voit : que
 // l'écran LISE ce dont les préalables dépendent, réserve le geste au chef, nomme ce qu'on perd, n'appelle la base
 // qu'une fois, envoie la numérotation et la 2035 qu'il affiche — et qu'un exercice validé montre la 2035 qui a été

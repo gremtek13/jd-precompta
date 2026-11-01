@@ -1119,7 +1119,12 @@ export const CARTES_DE_CLOTURE: Readonly<Record<string, { prealable: string } | 
   'Amortissement d’un véhicule déduit avec le barème': { prealable: 'vehicule-amorti-sous-bareme' },
   'Véhicules absents de la case BJ': { prealable: 'forfaits-a-ecrire' },
   'Cases « dont » incohérentes': {
-    ecartee: "le moteur ne remplit aucune case « dont » (toutes saisies par le cabinet) et aucun écran ne les saisit : cette carte ne peut pas paraître",
+    ecartee: "le moteur ne remplit une case « dont » que d'une part de sa porteuse — le poste qui la nomme, BT les échéances (étape 2035S1) — et aucun écran ne les saisit : cette carte ne peut pas paraître",
+  },
+  // Étape 2035S1, 2035S-Q2 (A) : la part de BK que rien ne qualifie se DIT, elle ne retient pas la validation — BK est juste,
+  // seul son détail en BT, BZ, BU reste à dire sur le formulaire.
+  'Charges sociales personnelles sans nature dite': {
+    ecartee: "BK est juste : seule sa part obligatoire ou facultative n'est pas dite (BT ne compte que les échéances de l'onglet Cotisations), un détail du formulaire que le cabinet complète, sans effet sur le résultat",
   },
   'Case négative': { prealable: 'cases-negatives' },
   'La 2035 n’est pas produite pour ce dossier': { ecartee: "carte d'un dossier tenu en engagement, qui n'a pas de 2035" },
