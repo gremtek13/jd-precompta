@@ -1883,6 +1883,8 @@ vi.mock('./paiementParLaCaisse', async (original) => {
   const module = await original<typeof import('./paiementParLaCaisse')>()
   return {
     ...module,
+    // Le drapeau lui-même aussi (étape C9b) : `caisse-a-reprendre` le lit pour juger la contrepartie d'un paiement.
+    get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeauDuPaiement.leve ?? module.PAIEMENT_PAR_LA_CAISSE_EXPORTE },
     paiementsParLaCaisse: (operations: Parameters<typeof module.paiementsParLaCaisse>[0]) =>
       module.paiementsParLaCaisseSelon(drapeauDuPaiement.leve ?? module.PAIEMENT_PAR_LA_CAISSE_EXPORTE, operations),
   }
@@ -1900,6 +1902,23 @@ describe('prealablesDeValidation — les paiements par la caisse (étape C9a)', 
     expect(prochainExerciceAValider(d)).toBe(2025)
     // Une caisse pas encore revenue (nulle) n'en rend aucun : la validation se suspend déjà sur elle.
     expect(prochainExerciceAValider(donnees({ piecesValidees: [P1, P2], operationsDeCaisse: null }))).toBe(2024)
+  })
+
+  // Étape C9b : la contrepartie d'un paiement par la caisse qui manque à une pièce écrite retient la validation, sous
+  // `caisse-a-reprendre`, son remède dit — « Régénérer » ; le drapeau baissé, rien, et le message d'hier.
+  it('caisse-a-reprendre : le paiement d’une pièce écrite sans sa contrepartie retient la validation', () => {
+    const APPORT_2025 = operationDeCaisse({ id: 'oc-ap', genre: 'apport', date: '2025-01-02', montant: 500 })
+    const paye = operationDeCaisse({ id: 'oc-p1', genre: 'paiement', piece_id: 'p1', date: '2025-03-12', montant: -120 })
+    const d = donnees({ operationsDeCaisse: caisseLue([APPORT_2025, paye]), ecritures: [E1, ...lignesDeLaCaisse(APPORT_2025)] })
+    expect(prealable(d, 'caisse-a-reprendre')).toBeUndefined()
+    drapeauDuPaiement.leve = true
+    const p = prealable(d, 'caisse-a-reprendre')!
+    expect([p.nb, p.bloquant, p.cible]).toEqual([1, true, 'caisse'])
+    expect(p.detail).toMatch(/contrepartie absente des écritures de sa pièce : les régénérer/)
+    expect(p.message).toMatch(/pour le paiement d'une pièce, régénérer les écritures de la pièce\.$/)
+    // Sa contrepartie écrite au compte de la caisse : plus rien à reprendre.
+    const contrepartie = ecriture('k1', { compte: PLAN_PAR_DEFAUT.caisse, sens: 'credit', operation_caisse_id: 'oc-p1' })
+    expect(prealable(donnees({ ...d, ecritures: [E1, contrepartie, ...lignesDeLaCaisse(APPORT_2025)] }), 'caisse-a-reprendre')).toBeUndefined()
   })
 
   it('payée en trop : le relevé et la caisse s’additionnent', () => {

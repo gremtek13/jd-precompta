@@ -1,18 +1,18 @@
 import {
-  ecritureDeLOperation, ensembleDuJour, fluxDeLaCaisse, jourDit, refusDeLaCaisse, refusDeLaSaisie,
+  ecritureDeLOperation, ensembleDuJour, fluxAvantLOuverture, fluxDeLaCaisse, jourDit, refusDeLaCaisse, refusDeLaSaisie,
   refusDeLaSaisieDUnMois, refusDuRemplacement, refusDuRetrait, remplacanteDe, sansLOperation, soldesDeLaCaisse,
   TAUX_DE_LA_CAISSE, type CategorieDeLaCaisse, type DossierDeLaCaisse, type EncaissementDeLaCaisse, type EtatDeLaCaisse,
   type FactureDeLaCaisse, type FluxDeLaCaisse, type OperationAEcrire, type SaisieDeCaisse,
 } from './caisse'
 import {
-  dossierTientUneCaisse, operationsDeCaisseDuDossier, type EspecesDesFactures, type EtatDesOperationsDeCaisse,
+  dossierTientUneCaisse, operationsDeCaisseDuDossier, piecesDeVenteDe, type EspecesDesFactures, type EtatDesOperationsDeCaisse,
   type RepriseEtReleveDeLaCaisse,
 } from './controlesDeLaCaisse'
 import type { ModeleComptable } from './engagement'
 import { formatMoney } from './format'
 import { refusDuMouvementAvantLOuverture } from './paiementParLaCaisse'
 import type { CaisseLue } from './recettesDeCaisse'
-import type { ANouveau, Categorie, LigneBancaire, OperationCaisse } from './types'
+import type { ANouveau, Categorie, LigneBancaire, OperationCaisse, Piece } from './types'
 
 // CE QUE L'ÉCRAN DE LA CAISSE DIT ET ENVOIE (ligne 26.6, étape C4 ; MVP-D2). La conception : HISTORIQUE.md, « LA CAISSE D'UN
 // DOSSIER BNC : LA CONCEPTION », § 4 (le double compte) et § 9 (le lot C4), et « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE
@@ -29,6 +29,13 @@ import type { ANouveau, Categorie, LigneBancaire, OperationCaisse } from './type
 /** Un mouvement du relevé classé sur un compte de bilan, tel que la caisse le lit (son libellé pour le journal). */
 export type MouvementClasse = Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'libelle' | 'compte_bilan'>
 
+/**
+ * Une pièce qu'un paiement par la caisse cite, telle que l'onglet Caisse la lit (étape C9b) : son type — une pièce de vente
+ * entre dans l'ensemble du jour d'une recette —, et sa date, qui la nomme dans le journal. Jamais son tiers ni son fichier :
+ * une caisse ne nomme personne.
+ */
+export type PieceCiteeParLaCaisse = Pick<Piece, 'id' | 'type_piece' | 'date_piece'>
+
 /** Les espèces des factures telles que l'écran les a lues EN ENTIER : aucune pour un dossier qui n'a pas basculé. */
 export type EspecesLues = Exclude<EspecesDesFactures, { etat: 'incomplete' }>
 
@@ -43,6 +50,11 @@ export interface DonneesDeLaCaisse {
   especes: EspecesLues
   /** Les catégories lues, du dossier et communes. */
   categories: readonly Categorie[]
+  /**
+   * Les pièces que des paiements par la caisse citent, lues en entier (étape C9b) — aucune tant qu'aucun paiement n'existe :
+   * la migration `paiement_par_la_caisse` n'est pas en base. Obligatoires : l'ensemble du jour d'une recette en dépend.
+   */
+  piecesPayees: readonly PieceCiteeParLaCaisse[]
 }
 
 /**
@@ -51,7 +63,7 @@ export interface DonneesDeLaCaisse {
  */
 export function etatDeLaCaisseLu(
   modele: ModeleComptable,
-  d: Pick<DonneesDeLaCaisse, 'operations' | 'ouvertures' | 'mouvements' | 'especes'>,
+  d: Pick<DonneesDeLaCaisse, 'operations' | 'ouvertures' | 'mouvements' | 'especes' | 'piecesPayees'>,
 ): EtatDeLaCaisse {
   return {
     compteCaisse: modele.plan.caisse,
@@ -60,6 +72,9 @@ export function etatDeLaCaisseLu(
     mouvements: d.mouvements,
     encaissements: d.especes.etat === 'lues' ? d.especes.encaissements : [],
     factures: d.especes.etat === 'lues' ? d.especes.factures : [],
+    // L'ÉCRAN PASSE LES PIÈCES DE VENTE (la migration `paiement_par_la_caisse`) : leurs paiements par la caisse entrent dans
+    // l'ensemble qu'une recette de leur jour reconnaît, que la base exige à l'identifiant près.
+    piecesDeVente: piecesDeVenteDe(d.piecesPayees),
   }
 }
 
@@ -112,8 +127,9 @@ export const euros = (centimes: number): string => formatMoney(centimes / 100).r
 export type LigneDuJournal =
   /** L'ouverture : les espèces en main au premier jour tenu, reprises d'une balance. */
   | { nature: 'ouverture'; centimes: number }
-  /** Une opération non retirée : une recette, un apport, un prélèvement (ou, plus tard, le paiement d'une pièce). */
-  | { nature: 'operation'; centimes: number; operation: OperationCaisse }
+  /** Une opération non retirée : une recette, un apport, un prélèvement, ou le paiement d'une pièce — alors `piece`, la pièce
+   *  qu'il cite telle que la caisse la lit (nulle si la lecture ne la rend pas). */
+  | { nature: 'operation'; centimes: number; operation: OperationCaisse; piece?: PieceCiteeParLaCaisse | null }
   /** Un mouvement du relevé classé sur la caisse : un crédit la vide (le versement), un débit la remplit (le retrait). */
   | { nature: 'mouvement'; centimes: number; mouvement: MouvementClasse }
   /** Les espèces d'une facture source, comptées par son encaissement (ou rendues, par sa contre-passation) : lues, sans geste. */
@@ -131,13 +147,17 @@ export interface JourDeLaCaisse {
 
 function ligneDuFlux(
   f: FluxDeLaCaisse, etat: EtatDeLaCaisse, operations: readonly OperationCaisse[], mouvements: readonly MouvementClasse[],
+  pieces: readonly PieceCiteeParLaCaisse[],
 ): LigneDuJournal | null {
   switch (f.source) {
     case 'ouverture':
       return { nature: 'ouverture', centimes: f.centimes }
     case 'operation': {
       const operation = operations.find((o) => o.id === f.id)
-      return operation ? { nature: 'operation', centimes: f.centimes, operation } : null
+      if (!operation) return null
+      return operation.genre === 'paiement'
+        ? { nature: 'operation', centimes: f.centimes, operation, piece: pieces.find((p) => p.id === operation.piece_id) ?? null }
+        : { nature: 'operation', centimes: f.centimes, operation }
     }
     case 'mouvement': {
       const mouvement = mouvements.find((m) => m.id === f.id)
@@ -160,10 +180,11 @@ function ligneDuFlux(
  */
 export function journalDeLaCaisse(
   etat: EtatDeLaCaisse, operations: readonly OperationCaisse[], mouvements: readonly MouvementClasse[],
+  pieces: readonly PieceCiteeParLaCaisse[],
 ): JourDeLaCaisse[] {
   const parJour = new Map<string, LigneDuJournal[]>()
   for (const f of fluxDeLaCaisse(etat)) {
-    const ligne = ligneDuFlux(f, etat, operations, mouvements)
+    const ligne = ligneDuFlux(f, etat, operations, mouvements, pieces)
     // Un flux dont l'objet n'est pas retrouvé compte tout de même dans le solde : on le garde, sous une ligne d'ouverture
     // neutre plutôt que de l'omettre — un solde qui ne se retrouve pas dans ses lignes serait un défaut silencieux.
     const lue: LigneDuJournal = ligne ?? { nature: 'ouverture', centimes: f.centimes }
@@ -222,7 +243,7 @@ export function libelleDeLaLigne(l: LigneDuJournal, categories: readonly Categor
       const o = l.operation
       if (o.genre === 'apport') return 'Apport en caisse de l’exploitant'
       if (o.genre === 'prelevement') return 'Prélèvement en espèces de l’exploitant'
-      if (o.genre === 'paiement') return 'Paiement d’une pièce par la caisse'
+      if (o.genre === 'paiement') return libelleDuPaiement(o, l.piece ?? null)
       const categorie = categories.find((c) => c.id === o.categorie_id)?.libelle ?? 'catégorie non lue'
       const taux = o.taux_tva != null ? ` · TVA ${String(o.taux_tva).replace('.', ',')} %` : ''
       return `${o.montant < 0 ? 'Espèces rendues' : 'Recettes en espèces'} — ${categorie}${taux}`
@@ -232,6 +253,21 @@ export function libelleDeLaLigne(l: LigneDuJournal, categories: readonly Categor
     case 'encaissement':
       return `${l.encaissement.annule_id != null ? 'Espèces rendues sur' : 'Espèces reçues pour'} la facture ${l.numero ?? '(sans numéro)'}`
   }
+}
+
+const NOM_DU_TYPE: Readonly<Record<Piece['type_piece'], string>> = {
+  achat: 'une pièce d’achat', vente: 'une pièce de vente', note_frais: 'une note de frais', autre: 'une pièce',
+}
+
+/**
+ * Le paiement d'une pièce par la caisse, dans le journal (étape C9b) : le sens des espèces et la pièce par son TYPE et sa
+ * DATE — jamais son tiers ni son fichier, une caisse ne nomme personne (la fiche de la pièce, dans Justificatifs, la montre
+ * comme ailleurs). Une pièce que la lecture ne rend pas se dit telle.
+ */
+export function libelleDuPaiement(o: Pick<OperationCaisse, 'montant'>, piece: PieceCiteeParLaCaisse | null): string {
+  const groupe = piece === null ? 'une pièce que la lecture ne rend pas'
+    : `${NOM_DU_TYPE[piece.type_piece]}${piece.date_piece ? ` du ${jourDit(piece.date_piece)}` : ' sans date'}`
+  return o.montant > 0 ? `Espèces reçues pour ${groupe}` : `Paiement en espèces d’${groupe}`
 }
 
 /**
@@ -252,16 +288,27 @@ export function nomDeLOperation(
 
 // ── Les espèces des factures d'un jour ────────────────────────────────────────────────────────────────────────────────
 
-export interface EspeceDeFacture { encaissementId: string; numero: string | null; centimes: number }
+/**
+ * Les espèces d'un jour qu'une recette ne compte pas : celles d'une facture source (son encaissement, `numero`), ou — depuis
+ * la migration `paiement_par_la_caisse` (étape C9b) — le paiement par la caisse d'une pièce de vente de ce jour (`numero`
+ * nul, `paiement` vrai), qui compte sa vente lui-même.
+ */
+export interface EspeceDeFacture { encaissementId: string; numero: string | null; centimes: number; paiement: boolean }
 
-/** Les espèces des factures sources que la caisse compte ce jour-là : celles que la saisie d'une recette reconnaît. */
+/** Les espèces que la caisse compte ce jour-là et qu'une recette reconnaît : l'ensemble du jour, chacune nommée. */
 export function especesDuJour(etat: EtatDeLaCaisse, jour: string): EspeceDeFacture[] {
   const ids = new Set(ensembleDuJour(etat, jour))
-  return etat.encaissements.filter((e) => ids.has(e.id)).map((e) => ({
-    encaissementId: e.id,
-    numero: etat.factures.find((f) => f.id === e.facture_id)?.numero ?? null,
-    centimes: Math.round(e.montant * 100),
-  })).sort((a, b) => (a.encaissementId < b.encaissementId ? -1 : 1))
+  return [
+    ...etat.encaissements.filter((e) => ids.has(e.id)).map((e) => ({
+      encaissementId: e.id,
+      numero: etat.factures.find((f) => f.id === e.facture_id)?.numero ?? null,
+      centimes: Math.round(e.montant * 100),
+      paiement: false,
+    })),
+    ...etat.operations.filter((o) => ids.has(o.id)).map((o) => ({
+      encaissementId: o.id, numero: null, centimes: Math.round(o.montant * 100), paiement: true,
+    })),
+  ].sort((a, b) => (a.encaissementId < b.encaissementId ? -1 : 1))
 }
 
 /**
@@ -271,9 +318,42 @@ export function especesDuJour(etat: EtatDeLaCaisse, jour: string): EspeceDeFactu
  */
 export function phraseDesEspecesDuJour(especes: readonly EspeceDeFacture[]): string | null {
   if (especes.length === 0) return null
-  const noms = especes.map((e) => `${euros(e.centimes)} de la facture ${e.numero ?? '(sans numéro)'}`)
+  const noms = especes.map((e) => (e.paiement
+    ? `${euros(e.centimes)} d’une pièce de vente réglée par la caisse`
+    : `${euros(e.centimes)} de la facture ${e.numero ?? '(sans numéro)'}`))
   const liste = noms.length === 1 ? noms[0] : `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}`
   return `Les ${liste}, reçus ce jour-là, sont déjà dans la caisse : ce total ne les compte pas.`
+}
+
+// ── Les flux d'avant l'ouverture (étape C9b) ──────────────────────────────────────────────────────────────────────────
+
+/** Un flux d'avant l'ouverture du dossier, tel que l'onglet le dit : son jour, ses espèces, son texte, et s'il compte. */
+export interface FluxDAvantLOuverture { jour: string; centimes: number; libelle: string; compte: boolean }
+
+/**
+ * Ce que la caisse lit et qui précède l'ouverture du dossier (`fluxAvantLOuverture`, lib/caisse.ts), nommé comme le journal
+ * nomme ses lignes : un flux que la caisse ne compte pas (le 53 repris le porte déjà), ou qu'elle compte faute d'une ligne
+ * de caisse dans la reprise — à retirer. Le journal, lui, ne montre que ce que la caisse compte (`fluxDeLaCaisse`) : ces flux
+ * s'y disent à part, pour qu'un solde ne paraisse pas faux sans raison.
+ */
+export function fluxDAvantLOuvertureDits(
+  etat: EtatDeLaCaisse, d: Pick<DonneesDeLaCaisse, 'operations' | 'mouvements' | 'categories' | 'piecesPayees'>,
+): FluxDAvantLOuverture[] {
+  return fluxAvantLOuverture(etat).map((f) => {
+    const ligne = ligneDuFlux(f, etat, d.operations, d.mouvements, d.piecesPayees)
+    return {
+      jour: f.jour, centimes: f.centimes, compte: f.compte,
+      libelle: ligne === null ? 'Un flux que la lecture ne rend pas' : libelleDeLaLigne(ligne, d.categories),
+    }
+  })
+}
+
+/** La phrase d'un flux d'avant l'ouverture : ce qu'il est, et ce qu'on en fait. */
+export function phraseDuFluxDAvantLOuverture(f: FluxDAvantLOuverture, ouverture: string): string {
+  const quoi = `${jourDit(f.jour)} — ${f.libelle} (${euros(Math.abs(f.centimes))})`
+  return f.compte
+    ? `${quoi} : précède l’ouverture du dossier, le ${jourDit(ouverture)}, et la caisse le compte, faute d’une ligne de caisse dans la reprise — il est déjà dans les comptes repris : à retirer.`
+    : `${quoi} : précède l’ouverture de la caisse, le ${jourDit(ouverture)} — il est déjà dans le solde repris, et la caisse ne le compte pas.`
 }
 
 // ── Le formulaire, et ce qui en part ──────────────────────────────────────────────────────────────────────────────────
@@ -565,8 +645,10 @@ export function caisseDeBanque(e: EntreesDeLaCaisseDeBanque): EtatDeLaCaisseDeBa
   if (e.especes.etat === 'incomplete') return { etat: 'pas_lue', motif: `les espèces des factures : ${e.especes.motif}` }
   return {
     etat: 'lue',
+    // Sans les pièces payées : la fiche d'un mouvement juge les SOLDES de la caisse, que l'ensemble du jour d'une recette ne
+    // change pas — elle ne saisit aucune recette.
     caisse: etatDeLaCaisseLu(e.modele, {
-      operations: operations.operations, ouvertures: e.ouvertures.lignes, mouvements: e.releve, especes: e.especes,
+      operations: operations.operations, ouvertures: e.ouvertures.lignes, mouvements: e.releve, especes: e.especes, piecesPayees: [],
     }),
   }
 }

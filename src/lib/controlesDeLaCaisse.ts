@@ -1,11 +1,11 @@
 import { ecritureConforme, mouvementsAffectes, type MouvementBancaire } from './affectationBanque'
 import {
-  ecritureDeLOperation, ensembleDuJour, especesDUneFactureSource, jourDit, soldesDeLaCaisse, type EncaissementDeLaCaisse,
-  type EtatDeLaCaisse,
-  type FactureDeLaCaisse, type OperationAEcrire,
+  ecritureDeLOperation, ensembleDuJour, especesDUneFactureSource, jourDit, ouvertureDuDossier, soldesDeLaCaisse,
+  type EncaissementDeLaCaisse, type EtatDeLaCaisse, type FactureDeLaCaisse, type OperationAEcrire,
 } from './caisse'
 import type { ModeleComptable } from './engagement'
 import { formatMoney } from './format'
+import { PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisseSelon } from './paiementParLaCaisse'
 import type { CaisseLue } from './recettesDeCaisse'
 import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, OperationCaisse, VentilationBancaire } from './types'
 import { estFigee } from './validationExercice'
@@ -31,10 +31,11 @@ import { partsDesVentilations } from './ventilationBanque'
 // PUR : aucun appel au réseau, et pas même un import de la lecture (lib/caisseLecture.ts importe le client ; le scanner des
 // écrans qui lisent la base suit les imports — voir lib/recettesDeCaisse.ts). La forme lue est `CaisseLue`.
 //
-// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (le genre `paiement`, CAISSE-Q4 ; étape C9a) n'est pas jugé ici : sa contrepartie
-// porte la pièce (`piece_id`), va au journal de la pièce et se juge avec elle — C9a l'a ajouté à `paiementsDesPieces` et à
-// la piste d'audit ; C9b l'ajoutera aux préalables des pièces (`caisse-a-reprendre`). Ce module ne compose que les trois genres qu'`enregistrer_operation_caisse`
-// saisit, et laisse un paiement de côté sans rien en dire.
+// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (le genre `paiement`, CAISSE-Q4) : sa contrepartie porte la pièce (`piece_id`), va au
+// journal de la pièce et s'écrit avec elle — C9a l'a ajouté à `paiementsDesPieces` et à la piste d'audit. Ce module ne
+// compose que les trois genres qu'`enregistrer_operation_caisse` saisit ; depuis C9b, `caisse-a-reprendre` compte aussi le
+// paiement dont la pièce est écrite et dont la contrepartie manque ou ne suit plus l'opération (`paiementsAReprendre`) —
+// aucun tant que la migration n'est pas en base (`PAIEMENT_PAR_LA_CAISSE_EXPORTE` baissé : la base n'en écrit pas).
 
 // ── La forme que les contrôles reçoivent ──────────────────────────────────────────────────────────────────────────────
 
@@ -153,6 +154,17 @@ export interface DossierDesControlesDeLaCaisse {
   especes: EspecesDesFactures
   /** La frontière de la validation : ce qui la précède est figé, et rien ne s'y reprend. */
   frontiere: string | null
+  /**
+   * Les pièces de VENTE du dossier (leurs identifiants), lues en entier (étape C9b) : l'ensemble qu'une recette reconnaît
+   * compte les paiements par la caisse de pièces de vente de son jour (`ensembleDuJour`). Sans elles, une recette qui les a
+   * reconnus paraîtrait « à revoir ». Obligatoires : un appelant qui les oublierait le dirait à tort.
+   */
+  piecesDeVente: readonly string[]
+}
+
+/** Les pièces de vente d'une liste, par leur identifiant : ce que `piecesDeVente` reçoit (`p.type_piece = 'vente'` en base). */
+export function piecesDeVenteDe(pieces: readonly { id: string; type_piece: string }[]): string[] {
+  return pieces.filter((p) => p.type_piece === 'vente').map((p) => p.id)
 }
 
 /** La caisse jour par jour, telle que `premier_jour_negatif_de_la_caisse` la rejoue ; nulle quand les espèces des factures
@@ -166,6 +178,7 @@ export function etatDeLaCaisseLue(operations: readonly OperationCaisse[], d: Dos
     mouvements: d.mouvements,
     encaissements: d.especes.etat === 'lues' ? d.especes.encaissements : [],
     factures: d.especes.etat === 'lues' ? d.especes.factures : [],
+    piecesDeVente: d.piecesDeVente,
   }
 }
 
@@ -181,6 +194,10 @@ export type RaisonDeReprendre =
   | 'ne_s_ecrit_plus'
   /** Des lignes citent une opération retirée, ou qu'aucune lecture ne rend : la base les retire avec elle (défensif). */
   | 'ecriture_restee'
+  /** Le paiement d'une pièce ÉCRITE n'a pas de contrepartie au brouillon : la pièce a été générée avant lui (étape C9b). */
+  | 'contrepartie_absente'
+  /** Sa contrepartie n'est plus le paiement : un autre compte, un autre montant, une autre date (étape C9b). */
+  | 'contrepartie_perimee'
 
 export interface OperationAReprendre {
   operationId: string
@@ -196,6 +213,8 @@ export const LIBELLE_RAISON_DE_REPRENDRE: Readonly<Record<RaisonDeReprendre, str
   ecriture_perimee: 'écriture qui ne suit plus l’opération',
   ne_s_ecrit_plus: 'ne s’écrit plus au plan ou au statut de TVA d’aujourd’hui',
   ecriture_restee: 'écriture restée d’une opération retirée',
+  contrepartie_absente: 'contrepartie absente des écritures de sa pièce : les régénérer, dans l’onglet Écritures',
+  contrepartie_perimee: 'contrepartie qui ne suit plus le paiement : régénérer les écritures de sa pièce, dans l’onglet Écritures',
 }
 
 /** Une opération vivante d'un genre que la saisie écrit : ni retirée (une opération remplacée l'est aussi), ni un paiement. */
@@ -262,8 +281,40 @@ export function operationsDeCaisseAReprendre(
     if (estFigee(date, d.frontiere)) continue
     aReprendre.push({ operationId: id, operation: o ?? null, date, raison: 'ecriture_restee' })
   }
+  aReprendre.push(...paiementsAReprendre(operations, d, parOperation))
   return aReprendre.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
     || (a.operationId < b.operationId ? -1 : a.operationId > b.operationId ? 1 : 0))
+}
+
+/**
+ * LES PAIEMENTS DE PIÈCES DONT LA CONTREPARTIE MANQUE OU NE SUIT PLUS (étape C9b ; conception reprise, § 8, « les préalables
+ * de la validation »). La contrepartie d'un paiement par la caisse s'écrit avec les écritures de sa pièce, par l'application
+ * (lib/ecritures.ts, `ligneContrepartieCaisse`) : une pièce générée AVANT son paiement n'en a pas, une pièce dont le paiement a
+ * été retiré puis saisi de nouveau en a une qui ne le suit plus. Le paiement, vivant (`paiementsParLaCaisseSelon` : ni retiré,
+ * ni remplacé ; AUCUN le drapeau baissé), d'une pièce qui porte au moins une ligne à elle au brouillon — une pièce qui n'est pas
+ * encore écrite n'attend rien de sa caisse, d'autres points disent ce qui lui manque —, hors des exercices figés, en trésorerie
+ * (la base refuse le paiement d'un dossier en engagement). La règle est celle d'« à régénérer » (`caisseSuitLesPaiements`) :
+ * ses lignes, au compte de la caisse DU PLAN, à la date du paiement, font son montant signé. Le remède : « Régénérer ».
+ */
+function paiementsAReprendre(
+  operations: readonly OperationCaisse[], d: Pick<DossierDesControlesDeLaCaisse, 'modele' | 'ecritures' | 'frontiere'>,
+  parOperation: ReadonlyMap<string, readonly EcritureBrouillon[]>,
+): OperationAReprendre[] {
+  if (d.modele.mode !== 'tresorerie') return []
+  const paiements = paiementsParLaCaisseSelon(PAIEMENT_PAR_LA_CAISSE_EXPORTE, operations)
+  if (paiements.length === 0) return []
+  const piecesEcrites = new Set(d.ecritures.flatMap((e) => (e.piece_id && !e.operation_caisse_id ? [e.piece_id] : [])))
+  const parId = new Map(operations.map((o) => [o.id, o]))
+  return paiements.flatMap((p): OperationAReprendre[] => {
+    if (estFigee(p.date, d.frontiere) || !piecesEcrites.has(p.piece_id)) return []
+    const lignes = parOperation.get(p.operation_caisse_id) ?? []
+    const operation = parId.get(p.operation_caisse_id) ?? null
+    if (lignes.length === 0) return [{ operationId: p.operation_caisse_id, operation, date: p.date, raison: 'contrepartie_absente' }]
+    const signe = lignes.reduce((s, e) => s + (e.sens === 'debit' ? 1 : -1) * Math.round(e.montant * 100), 0)
+    const suit = signe === Math.round(p.montant * 100)
+      && lignes.every((e) => e.compte === d.modele.plan.caisse && e.date === p.date && e.piece_id === p.piece_id)
+    return suit ? [] : [{ operationId: p.operation_caisse_id, operation, date: p.date, raison: 'contrepartie_perimee' }]
+  })
 }
 
 // ── caisse-negative ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -319,7 +370,10 @@ export function facturesDeLaRecetteARevoir(r: RecetteARevoir, etat: EtatDeLaCais
   const changes = [...r.reconnus.filter((x) => !r.attendus.includes(x)), ...r.attendus.filter((x) => !r.reconnus.includes(x))]
   const numeros = changes.map((id) => {
     const e = etat.encaissements.find((x) => x.id === id)
-    return (e ? etat.factures.find((f) => f.id === e.facture_id)?.numero : null) ?? 'sans numéro'
+    if (e) return etat.factures.find((f) => f.id === e.facture_id)?.numero ?? 'sans numéro'
+    // Le paiement par la caisse d'une pièce de vente de ce jour (étape C9b) : il n'a pas de numéro, il se nomme.
+    const o = etat.operations.find((x) => x.id === id)
+    return o?.genre === 'paiement' ? `paiement en espèces d’une pièce de vente du ${jourDit(o.date)}` : 'sans numéro'
   })
   return [...new Set(numeros)].sort()
 }
@@ -468,6 +522,24 @@ export function detailDesOperationsAReprendre(liste: readonly OperationAReprendr
 /** Le détail des recettes à revoir : chacune, et les factures dont les espèces ont changé ce jour-là. */
 export function detailDesRecettesARevoir(liste: readonly RecetteARevoir[], etat: EtatDeLaCaisse): string {
   return `${enumerer(liste.map((r) => `${operationNommee(r.operation)} (${facturesDeLaRecetteARevoir(r, etat).join(', ')})`))}.`
+}
+
+// ── Le mouvement d'avant l'ouverture classé sur la caisse (étape C9b ; le défaut K1) ─────────────────────────────────
+
+/**
+ * LES MOUVEMENTS DU RELEVÉ CLASSÉS SUR LA CAISSE ET DATÉS D'AVANT L'OUVERTURE DU DOSSIER (la plus ancienne date de sa
+ * reprise), hors des exercices figés. Leurs espèces sont déjà dans les comptes repris : le 53 repris les porte, et le
+ * classement les compte une seconde fois au brouillon — et dans la caisse même, quand la reprise n'a pas de ligne de caisse.
+ * La migration `paiement_par_la_caisse` refuse ce classement (`garder_caisse_depuis_l_ouverture`) et la fiche du mouvement le
+ * dit avant le clic ; celui qui y est déjà — classé avant elle, ou restauré — se retire depuis sa fiche (« Remettre à
+ * traiter »). Le compte de la caisse est celui DU PLAN. Dans l'ordre du relevé.
+ */
+export function mouvementsDAvantLOuverture<L extends Pick<LigneBancaire, 'id' | 'date' | 'compte_bilan'>>(
+  lignes: readonly L[], ouvertures: readonly Pick<ANouveau, 'date'>[], compteCaisse: string, frontiere: string | null,
+): L[] {
+  const ouverture = ouvertureDuDossier({ ouvertures })
+  if (ouverture == null) return []
+  return lignes.filter((l) => l.compte_bilan === compteCaisse && l.date < ouverture && !estFigee(l.date, frontiere))
 }
 
 /** Le détail des versements rangés en recette : chacun, par sa date, son montant et son libellé. */

@@ -10,7 +10,9 @@ import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { grouperParTiers } from '../../lib/suggestionTiers'
 import { lireTout } from '../../lib/lectureComplete'
-import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces, piecesPayees, type LignePayante, type PartReglee } from '../../lib/rattachement'
+import {
+  AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces, piecesPayees, type LignePayante, type PartEncaissee, type PartReglee,
+} from '../../lib/rattachement'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -45,6 +47,11 @@ import { fichesEmporteesParLaSuppression, type LectureFichesHorsDeFrance } from 
 import PiecesJointesEcartees from './PiecesJointesEcartees'
 import type { FacturesSources } from '../../lib/facturesSources'
 import { jugeDeLaValidation, resumeDeLaSelection, validationEnLot } from '../../lib/lotsDeLaJumelleInversee'
+import type { ModeleComptable } from '../../lib/engagement'
+import { lireLaCaisseDuDossier, type LectureDeLaCaisseDuDossier } from '../../lib/caisseDuDossierLecture'
+import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from '../../lib/paiementParLaCaisse'
+import { paiementsDeLaLecture, piecesPayeesEnEspeces } from '../../lib/paiementParLaCaisseEcran'
+import type { CaisseDeLaPiece } from './ReglementParLaCaisse'
 
 // Les factures sources tant que le pont n'est pas lu en entier (voir le badge « Devise non convertie ») : aucune n'est écartée.
 const SOURCES_NON_LUES: FacturesSources = new Set()
@@ -53,8 +60,12 @@ const SOURCES_NON_LUES: FacturesSources = new Set()
 // vérifie à chaque facture qu'elle désigne bien CE dossier (voir lib/receptionPlateforme.ts).
 // `ventesParLesFactures` : le réglage du dossier (étape VF2), sans valeur par défaut — un dossier basculé lit aussi ses
 // ventes facturées, dont les virements mixtes paient des exemplaires (étape VF5h) : le badge « Rapprochée » le dit d'eux.
-export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLesFactures }: {
+// `modele` et `assujettiTva` : le modèle comptable et le statut du dossier, que la page lit (ligne 26.6, étape C9b) — la fiche
+// d'une pièce règle par la caisse dans un dossier en trésorerie, la migration `paiement_par_la_caisse` en base. Sans modèle
+// (un appelant qui ne le lit pas), la caisse ne se lit pas : la liste et la fiche sont celles d'hier.
+export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLesFactures, modele = null, assujettiTva = false }: {
   dossierId: string; dossierSiret?: string | null; ventesParLesFactures: boolean
+  modele?: ModeleComptable | null; assujettiTva?: boolean
 }) {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
@@ -103,6 +114,19 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // ergonomie comparatif) : validation, paiement/rapprochement et écriture générée sont trois états
   // distincts, une pièce validée n'a pas forcément encore été rapprochée d'un mouvement réel.
   const [piecesRapprochees, setPiecesRapprochees] = useState<Set<string>>(new Set())
+  // LA CAISSE DU DOSSIER (ligne 26.6, étape C9b) : lue seulement la migration `paiement_par_la_caisse` en base et le dossier en
+  // trésorerie (`caisseTenue`) — le drapeau baissé, aucune lecture de plus. Ses paiements disent « Payée en espèces », à part de
+  // « Rapprochée » (un mouvement bancaire) ; la fiche d'une pièce y règle et y retire un paiement. Nulle avant sa lecture.
+  const caisseTenue = PAIEMENT_PAR_LA_CAISSE_EXPORTE && modele?.mode === 'tresorerie'
+  const [lectureCaisse, setLectureCaisse] = useState<LectureDeLaCaisseDuDossier | null>(null)
+  const relireLaCaisse = useCallback(async () => {
+    setLectureCaisse(await lireLaCaisseDuDossier(dossierId, ventesParLesFactures))
+  }, [dossierId, ventesParLesFactures])
+  // Ce que le relevé, les parts des virements groupés et les virements mixtes paient — gardé pour que la fiche dise ce qu'il
+  // reste à régler d'une pièce, la caisse comprise. `complete` faux : une lecture partielle ne propose aucun reste.
+  const [entreesDesPaiements, setEntreesDesPaiements] = useState<{
+    lignes: LignePayante[]; reglements: PartReglee[]; encaissees: readonly PartEncaissee[]; complete: boolean
+  } | null>(null)
   // Reprise groupée des pièces incomplètes (voir lib/relectureDocuments.ts). L'avancement est affiché
   // pièce par pièce : chaque PDF repasse par Textract, donc l'opération dure des dizaines de secondes
   // sur un lot, et un bouton qui semble figé pousserait à recharger la page en plein traitement.
@@ -264,10 +288,14 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     // raccourcissent pas la liste, elles font paraître une pièce MOINS TRAITÉE qu'elle ne l'est
     // (`sousDossierLabel` rend « — » pour un sous-dossier absent, le badge de rapprochement retombe
     // sur « non rapprochée »), ou taisent une catégorie déjà arbitrée.
+    // Et la caisse (étape C9b), quand elle se tient : lue en partie, une pièce payée en espèces paraît « non rapprochée ».
+    const lectureDeLaCaisse = caisseTenue ? await lireLaCaisseDuDossier(dossierId, ventesParLesFactures) : null
+    setLectureCaisse(lectureDeLaCaisse)
     setReferencesIncompletes(
       [lectureRapprochees, lectureReglements, lectureCategories, lectureSousDossiers, lectureTiersCategories, lectureTiersCabinet]
         .find((l) => !l.complete)?.motif
-        ?? (lectureVentes?.etat === 'incomplete' ? `les ventes facturées du dossier : ${lectureVentes.motif}` : null),
+        ?? (lectureVentes?.etat === 'incomplete' ? `les ventes facturées du dossier : ${lectureVentes.motif}` : null)
+        ?? (lectureDeLaCaisse?.etat === 'incomplete' ? `la caisse du dossier : ${lectureDeLaCaisse.motif}` : null),
     )
 
     // Les précisions portées par le client sur ses dépôts. Chargées ici, en une requête pour tout le
@@ -302,15 +330,31 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     setTiersCategories(lectureTiersCategories.lignes)
     setTiersCategoriesCabinet(lectureTiersCabinet.lignes)
     // « Rapprochée » dit un MOUVEMENT BANCAIRE (le badge, la fiche) : un paiement par la caisse (étape C9a) n'en est pas un,
-    // et ne s'y compte pas — la fiche d'une pièce dira « Payée en espèces » avec le lot C9b, qui lira la caisse ici.
+    // et ne s'y compte pas — « Payée en espèces » le dit à part (étape C9b, `payeesEnEspeces`).
     setPiecesRapprochees(new Set(piecesPayees(paiementsDesPieces(lectureRapprochees.lignes, lectureReglements.lignes,
       lectureVentes?.etat === 'lue' ? lectureVentes.encaissees : [], AUCUN_PAIEMENT_PAR_LA_CAISSE))))
+    setEntreesDesPaiements({
+      lignes: lectureRapprochees.lignes, reglements: lectureReglements.lignes,
+      encaissees: lectureVentes?.etat === 'lue' ? lectureVentes.encaissees : [],
+      complete: lectureRapprochees.complete && lectureReglements.complete && lectureVentes?.etat !== 'incomplete',
+    })
     setLoading(false)
   }
 
   useEffect(() => {
     load()
-  }, [dossierId, ventesParLesFactures])
+  }, [dossierId, ventesParLesFactures, caisseTenue])
+
+  // LES PAIEMENTS PAR LA CAISSE (étape C9b) : aucun le drapeau baissé ; nuls tant que la caisse n'est pas lue en entier pour ce
+  // dossier. « Payée en espèces » ne se dit que d'une caisse lue ; la fiche ne propose de reste que sur des paiements tous lus.
+  const paiementsDeLaCaisse = paiementsDeLaLecture(lectureCaisse, dossierId)
+  const payeesEnEspeces = caisseTenue ? piecesPayeesEnEspeces(paiementsDeLaCaisse ?? []) : new Set<string>()
+  const paiementsPourLaFiche = entreesDesPaiements?.complete && paiementsDeLaCaisse !== null
+    ? paiementsDesPieces(entreesDesPaiements.lignes, entreesDesPaiements.reglements, entreesDesPaiements.encaissees, paiementsDeLaCaisse)
+    : null
+  const caisseDeLaFiche: CaisseDeLaPiece | null = caisseTenue && modele !== null
+    ? { lecture: lectureCaisse, modele, assujettiTva, paiements: paiementsPourLaFiche, relire: relireLaCaisse }
+    : null
 
   // Un dossier est par client, pas par année (voir Estimation) — les pièces s'accumulent sur plusieurs
   // exercices sans jamais être archivées ailleurs. Le filtre d'exercice ne déplace rien, il joue sur
@@ -1137,7 +1181,14 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
                           <div style={{ marginTop: 4 }}>
                             {piecesRapprochees.has(p.id)
                               ? <span className="badge badge-ok" style={{ fontSize: '0.7rem' }}>Rapprochée</span>
-                              : <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>Non rapprochée</span>}
+                              : !payeesEnEspeces.has(p.id) && <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>Non rapprochée</span>}
+                          </div>
+                        )}
+                        {/* Un paiement par la caisse n'est pas un mouvement bancaire (étape C9b) : il se dit à part, à valider
+                            comme validée — la caisse règle une pièce dès qu'elle est saisie. */}
+                        {payeesEnEspeces.has(p.id) && (
+                          <div style={{ marginTop: 4 }}>
+                            <span className="badge badge-ok" style={{ fontSize: '0.7rem' }}>Payée en espèces</span>
                           </div>
                         )}
                       </div>
@@ -1185,6 +1236,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
             commentaires={filDeLaPiece(editing.id)}
             navigation={navigationFiche}
             rapprochee={piecesRapprochees.has(editing.id)}
+            caisse={caisseDeLaFiche}
             onClose={fermerFiche}
             onSaved={load}
             onValidee={apresValidation}

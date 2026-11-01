@@ -5,7 +5,8 @@ import {
 } from './caisse'
 import {
   CAISSE_ABSENTE_DE_LA_FICHE, caisseDeBanque, caisseDeLaFiche, confirmationDuRemplacement, confirmationDuRetrait,
-  dossierDeLEcran, especesDuJour, etatDeLaCaisseLu, etatDUneOperationRetiree, FORMULAIRE_VIDE, journalDeLaCaisse,
+  dossierDeLEcran, especesDuJour, etatDeLaCaisseLu, etatDUneOperationRetiree, fluxDAvantLOuvertureDits, FORMULAIRE_VIDE,
+  journalDeLaCaisse, phraseDuFluxDAvantLOuverture,
   libelleDeLaLigne, ligneVide, lireLeMontantSaisi, MONTANT_ILLISIBLE, nomDeLOperation, operationsRetirees,
   phraseDesEspecesDuJour, refusDuRetraitDeLOperation, repriseEtReleveDeBanque, saisieDuFormulaire, soldeAuJour, TAUX_PROPOSES,
   totauxDuJournal,
@@ -45,7 +46,7 @@ function operation(o: Partial<OperationCaisse> & Pick<OperationCaisse, 'id'>): O
 }
 
 function donnees(o: Partial<DonneesDeLaCaisse> = {}): DonneesDeLaCaisse {
-  return { operations: [], ouvertures: [], mouvements: [], especes: { etat: 'sans_objet' }, categories: [HONORAIRES, LOYER], ...o }
+  return { operations: [], ouvertures: [], mouvements: [], especes: { etat: 'sans_objet' }, categories: [HONORAIRES, LOYER], piecesPayees: [], ...o }
 }
 
 function contexte(o: Partial<ContexteDeLaCaisse> = {}): ContexteDeLaCaisse {
@@ -110,7 +111,7 @@ describe('la caisse rejouée sur ce que l’écran a lu', () => {
 
 describe('le journal : la caisse jour par jour', () => {
   const etat = etatDeLaCaisseLu(MODELE, mars())
-  const journal = journalDeLaCaisse(etat, mars().operations, mars().mouvements)
+  const journal = journalDeLaCaisse(etat, mars().operations, mars().mouvements, [])
 
   it('chaque flux du solde est une ligne, sous son jour, du plus ancien au plus récent ; la recette retirée n’y est pas', () => {
     expect(journal.map((j) => j.jour)).toEqual(['2026-01-01', '2026-03-01', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-10'])
@@ -149,13 +150,13 @@ describe('le journal : la caisse jour par jour', () => {
       operation({ id: 'r1', genre: 'recette', date: '2026-03-03', montant: 85, categorie_id: HONORAIRES.id, encaissements_du_jour: [] }),
       operation({ id: 'r2', genre: 'recette', date: '2026-03-04', montant: -20, categorie_id: HONORAIRES.id, encaissements_du_jour: [] }),
     ]
-    expect(totauxDuJournal(journalDeLaCaisse(rendues, ops, [])).recettes).toBe(6500)
+    expect(totauxDuJournal(journalDeLaCaisse(rendues, ops, [], [])).recettes).toBe(6500)
     expect(totauxDuJournal([])).toEqual({ recettes: 0, apports: 0, prelevements: 0, versements: 0, retraits: 0, especesDesFactures: 0 })
   })
 
   it('un retrait d’espèces pour la caisse (un débit du relevé) entre dans la caisse', () => {
     const d = donnees({ mouvements: [{ id: 'm2', date: '2026-03-02', montant: -60, libelle: 'RETRAIT DAB', compte_bilan: CAISSE }] })
-    const j = journalDeLaCaisse(etatDeLaCaisseLu(MODELE, d), [], d.mouvements)
+    const j = journalDeLaCaisse(etatDeLaCaisseLu(MODELE, d), [], d.mouvements, [])
     expect(j).toHaveLength(1)
     expect([j[0].entrees, j[0].sorties, j[0].solde]).toEqual([6000, 0, 6000])
     expect(totauxDuJournal(j)).toMatchObject({ retraits: 6000, versements: 0 })
@@ -174,7 +175,14 @@ describe('le journal : la caisse jour par jour', () => {
     const assujettie = operation({ id: 'x', genre: 'recette', montant: -12, taux_tva: 5.5, categorie_id: HONORAIRES.id })
     expect(libelleDeLaLigne({ nature: 'operation', centimes: -1200, operation: assujettie }, [HONORAIRES])).toBe('Espèces rendues — Honoraires · TVA 5,5 %')
     expect(libelleDeLaLigne({ nature: 'operation', centimes: 1200, operation: { ...assujettie, montant: 12 } }, [])).toBe('Recettes en espèces — catégorie non lue · TVA 5,5 %')
-    expect(libelleDeLaLigne({ nature: 'operation', centimes: 500, operation: operation({ id: 'p', genre: 'paiement' }) }, [])).toBe('Paiement d’une pièce par la caisse')
+    // Le paiement d'une pièce (étape C9b) : par le sens de ses espèces, la pièce par son TYPE et sa DATE — jamais son tiers.
+    const paiement = operation({ id: 'p', genre: 'paiement', montant: -80, piece_id: 'pc' })
+    expect(libelleDeLaLigne({ nature: 'operation', centimes: -8000, operation: paiement, piece: { id: 'pc', type_piece: 'achat', date_piece: '2026-03-10' } }, []))
+      .toBe('Paiement en espèces d’une pièce d’achat du 10/03/2026')
+    expect(libelleDeLaLigne({ nature: 'operation', centimes: 5000, operation: { ...paiement, montant: 50 }, piece: { id: 'pc', type_piece: 'vente', date_piece: null } }, []))
+      .toBe('Espèces reçues pour une pièce de vente sans date')
+    expect(libelleDeLaLigne({ nature: 'operation', centimes: -8000, operation: paiement }, []))
+      .toBe('Paiement en espèces d’une pièce que la lecture ne rend pas')
     const contrePassation = ESPECES('e2', '2026-03-12', -30, 'f1', 'e1')
     expect(libelleDeLaLigne({ nature: 'encaissement', centimes: -3000, encaissement: contrePassation, numero: null }, []))
       .toBe('Espèces rendues sur la facture (sans numéro)')
@@ -709,5 +717,62 @@ describe('une batterie tirée : tout ce que l’écran laisse partir, la base l�
     // Un plancher : une batterie qui n'accepterait ou ne refuserait rien serait aveugle.
     expect(permises).toBeGreaterThan(60)
     expect(refusees).toBeGreaterThan(30)
+  })
+})
+
+// LE PAIEMENT D'UNE PIÈCE DANS L'ONGLET CAISSE (étape C9b) : l'écran passe les pièces de vente que des paiements citent ; le
+// journal nomme un paiement par la pièce qu'il règle ; la phrase des espèces du jour nomme un paiement d'une pièce de vente ; les
+// flux d'avant l'ouverture se disent.
+describe('le paiement d’une pièce, dans l’onglet Caisse', () => {
+  const encaisse = operation({ id: 'pv', genre: 'paiement', date: '2026-03-12', montant: 50, piece_id: 'p-vente' })
+  const paye = operation({ id: 'pa', genre: 'paiement', date: '2026-03-12', montant: -20, piece_id: 'p-achat' })
+  const PIECES = [
+    { id: 'p-vente', type_piece: 'vente' as const, date_piece: '2026-03-11' }, { id: 'p-achat', type_piece: 'achat' as const, date_piece: '2026-03-10' },
+  ]
+  const d = donnees({ operations: [operation({ id: 'ap', date: '2026-03-01', montant: 100 }), encaisse, paye], piecesPayees: PIECES })
+
+  it('les pièces de VENTE passent à la caisse : l’ensemble du jour d’une recette compte leur paiement', () => {
+    const etat = etatDeLaCaisseLu(MODELE, d)
+    expect(etat.piecesDeVente).toEqual(['p-vente'])
+    expect(ensembleDuJour(etat, '2026-03-12')).toEqual(['pv'])
+    expect(saisieDuFormulaire(formulaire({ date: '2026-03-12', montant: '30', categorieId: HONORAIRES.id }), contexte(), d.categories, etat)
+      .encaissements_du_jour).toEqual(['pv'])
+    // Sans elles, rien : la saisie partirait sans le paiement, et la base la refuserait.
+    expect(ensembleDuJour(etatDeLaCaisseLu(MODELE, { ...d, piecesPayees: [] }), '2026-03-12')).toEqual([])
+  })
+
+  it('le journal nomme un paiement par le type et la date de sa pièce, jamais un tiers', () => {
+    const etat = etatDeLaCaisseLu(MODELE, d)
+    const lignes = journalDeLaCaisse(etat, d.operations, d.mouvements, d.piecesPayees).flatMap((j) => j.lignes)
+    expect(lignes.map((l) => libelleDeLaLigne(l, []))).toEqual([
+      'Apport en caisse de l’exploitant', 'Espèces reçues pour une pièce de vente du 11/03/2026', 'Paiement en espèces d’une pièce d’achat du 10/03/2026',
+    ])
+    // Une pièce que la lecture ne rend pas se dit telle.
+    const sansPieces = journalDeLaCaisse(etat, d.operations, d.mouvements, []).flatMap((j) => j.lignes)
+    expect(libelleDeLaLigne(sansPieces[2], [])).toBe('Paiement en espèces d’une pièce que la lecture ne rend pas')
+  })
+
+  it('la phrase des espèces du jour nomme le paiement d’une pièce de vente, à côté de la facture', () => {
+    const avecFacture = donnees({
+      ...d, especes: { etat: 'lues', encaissements: [ESPECES('e1', '2026-03-12', 120)], factures: [FACTURE] },
+    })
+    const especes = especesDuJour(etatDeLaCaisseLu(MODELE, avecFacture), '2026-03-12')
+    expect(especes.map((e) => [e.encaissementId, e.paiement])).toEqual([['e1', false], ['pv', true]])
+    expect(sansEspaceInsecable(phraseDesEspecesDuJour(especes)!)).toBe(
+      'Les 120,00 € de la facture F-2026-0012 et 50,00 € d’une pièce de vente réglée par la caisse, reçus ce jour-là, sont déjà dans la caisse : ce total ne les compte pas.')
+  })
+
+  it('les flux d’avant l’ouverture, nommés : non compté, ou compté à tort, et leur phrase', () => {
+    const reprise = (compte: string) => ({ ...mars().ouvertures[0], date: '2026-01-01', compte })
+    const dab = { id: 'dab', date: '2025-12-20', montant: -100, libelle: 'RETRAIT DAB', compte_bilan: CAISSE }
+    const avec = donnees({ ouvertures: [reprise(CAISSE)], mouvements: [dab] })
+    const dits = fluxDAvantLOuvertureDits(etatDeLaCaisseLu(MODELE, avec), avec)
+    expect(dits).toEqual([{ jour: '2025-12-20', centimes: 10000, compte: false, libelle: 'Retrait d’espèces pour la caisse — RETRAIT DAB' }])
+    expect(sansEspaceInsecable(phraseDuFluxDAvantLOuverture(dits[0], '2026-01-01'))).toBe(
+      '20/12/2025 — Retrait d’espèces pour la caisse — RETRAIT DAB (100,00 €) : précède l’ouverture de la caisse, le 01/01/2026 — il est déjà dans le solde repris, et la caisse ne le compte pas.')
+    const sans = donnees({ ouvertures: [reprise('512000')], mouvements: [dab] })
+    const compte = fluxDAvantLOuvertureDits(etatDeLaCaisseLu(MODELE, sans), sans)
+    expect(compte.map((f) => f.compte)).toEqual([true])
+    expect(phraseDuFluxDAvantLOuverture(compte[0], '2026-01-01')).toMatch(/la caisse le compte, faute d’une ligne de caisse dans la reprise .* à retirer\.$/)
   })
 })

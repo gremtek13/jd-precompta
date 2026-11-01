@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
 import type { ANouveau, Categorie, DeclarationTva, EcritureBrouillon, InformationsDossier, LigneBancaire, OperationCaisse, Piece, SoldeReporte } from './types'
@@ -15,6 +15,15 @@ import { CAISSE_PAS_EN_BASE } from './controlesDeLaCaisse'
 // l'écran en affiche, mot pour mot. Ici, ce que le module seul décide : il ne lit pas l'horloge — le premier jour du mois
 // et les mois écoulés viennent de l'appelant —, et il NOMME le justificatif qu'un document attendu coche, sans en faire
 // le geste.
+
+// Le drapeau de la migration `paiement_par_la_caisse` (étape C9b), joué par un accesseur : son état d'aujourd'hui par défaut,
+// que tous les cas d'avant jouent.
+const drapeau = vi.hoisted(() => ({ leve: null as boolean | null }))
+vi.mock('./paiementParLaCaisse', async (original) => {
+  const module = await original<typeof import('./paiementParLaCaisse')>()
+  return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeau.leve ?? module.PAIEMENT_PAR_LA_CAISSE_EXPORTE } }
+})
+afterEach(() => { drapeau.leve = null })
 
 function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
   return {
@@ -617,5 +626,102 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
     expect(incompletes.some((p) => IDS.includes(p.id))).toBe(false)
     const entree = tous({ caisse: caisseLue([A]), entreesDeLaCaisseIncompletes: 'le brouillon : 1 000 lues sur 1 200' })
     expect(entree.filter((p) => IDS.includes(p.id)).map((p) => p.nb)).toEqual([0, 0, 0, 0])
+  })
+})
+
+// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS LA VUE D'ENSEMBLE (ligne 26.6, étape C9b) : `caisse-a-reprendre` compte la
+// contrepartie qui manque ; une caisse lue en partie ne fait paraître aucune pièce payée en espèces « à régénérer », ni « en
+// attente de rapprochement » ; un mouvement d'avant l'ouverture classé sur la caisse se dit, à retirer. Le drapeau baissé, rien
+// de tout cela. Données FICTIVES : un dossier non assujetti, une fourniture de 50 € payée en espèces le 12/03/2026.
+describe('pointsDeLaChecklist : le paiement d’une pièce par la caisse (C9b)', () => {
+  const C: ContexteDeLaChecklist = { ...CONTEXTE, assujettiTva: false, statutTva: 'exonere' }
+  const CAISSE = PLAN_PAR_DEFAUT.caisse
+  const FOURNITURES: Categorie = { id: 'c-fourn', dossier_id: null, code: 'fournitures', libelle: 'Fournitures', ordre: 2, compte_comptable: '606400', poste_2035: 'Achats' }
+  const piece = (o: Partial<Piece> = {}): Piece => ({
+    id: 'x', dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: 'd1/x.pdf', nom_fichier: 'x.pdf', storage_hash: null,
+    date_piece: '2026-03-10', tiers: 'Papeterie fictive', montant_ht: null, montant_tva: null, montant_ttc: 50, devise: 'EUR', montant_devise: null,
+    taux_change: null, conversion_source: null, categorie_id: 'c-fourn', sous_dossier_id: null, type_piece: 'achat', statut: 'validee',
+    notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
+    created_at: '2026-03-10T09:00:00Z', updated_at: '2026-03-10T09:00:00Z', ...o,
+  })
+  const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
+    id: 'e', dossier_id: 'd1', piece_id: 'x', ligne_bancaire_id: null, date: '2026-03-12', compte: '606400', libelle: 'Papeterie fictive',
+    montant: 50, sens: 'debit', statut: 'proposee', created_at: '2026-03-12T10:00:00Z', immobilisation_id: null, vehicule_id: null,
+    declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, operation_caisse_id: null, ...NON_VALIDEE, ...o,
+  })
+  const operation = (o: Partial<OperationCaisse>): OperationCaisse => ({
+    id: 'o', dossier_id: 'd1', genre: 'apport', date: '2026-03-01', montant: 200, categorie_id: null, taux_tva: null,
+    encaissements_du_jour: null, piece_id: null, origine: 'cabinet', remplace_id: null, cree_le: '2026-03-01T18:00:00Z',
+    cree_par: null, retire_le: null, retire_par: null, ...o,
+  })
+  const APPORT = operation({ id: 'ap' })
+  const APPORT_ECRIT = ecritureDeLOperation({ genre: 'apport', date: '2026-03-01', montant: 200, taux_tva: null, categorie: null }, C.modele)
+    .map((l, i) => ecriture({ id: `ap-${i}`, piece_id: null, date: '2026-03-01', compte: l.compte, sens: l.sens, montant: l.montant, operation_caisse_id: 'ap' }))
+  const PAYE = operation({ id: 'pa', genre: 'paiement', date: '2026-03-12', montant: -50, piece_id: 'x' })
+  const CHARGE = ecriture({ id: 'c1' })
+  const CONTREPARTIE = ecriture({ id: 'k1', compte: CAISSE, sens: 'credit', operation_caisse_id: 'pa' })
+  const caisseLue = (operations: OperationCaisse[], o: Partial<CaisseLue> = {}): CaisseLue =>
+    ({ dossierId: 'd1', enBase: true, lignes: operations, complete: true, motif: null, ...o })
+  const base = (o: Partial<DonneesDeLaChecklist> = {}): Partial<DonneesDeLaChecklist> => ({
+    piecesValidees: [piece()], categories: [FOURNITURES], caisse: caisseLue([APPORT, PAYE]), ecritures: [...APPORT_ECRIT, CHARGE, CONTREPARTIE], ...o,
+  })
+  const tous = (d: Partial<DonneesDeLaChecklist>) => pointsDeLaChecklist(donnees(d), C).tousLesPointsATraiter
+  const nb = (d: Partial<DonneesDeLaChecklist>, id: string) => tous(d).find((p) => p.id === id)?.nb
+
+  it('levé, la caisse lue : la pièce payée en espèces et écrite avec sa contrepartie n’est ni à régénérer, ni en attente, ni à reprendre', () => {
+    drapeau.leve = true
+    for (const id of ['desynchronisees', 'sans-contrepartie', 'caisse-a-reprendre', 'montant-suspect', 'pieces-payees-en-partie']) {
+      expect(nb(base(), id), id).toBe(0)
+    }
+  })
+
+  it('levé : caisse-a-reprendre compte le paiement d’une pièce écrite dont la contrepartie manque, et nomme son remède', () => {
+    drapeau.leve = true
+    const p = tous(base({ ecritures: [...APPORT_ECRIT, CHARGE] })).find((x) => x.id === 'caisse-a-reprendre')!
+    expect([p.nb, p.cible, p.severite]).toEqual([1, 'caisse', 'erreur'])
+    expect(p.detail).toMatch(/paiement de 50,00.€ \(contrepartie absente des écritures de sa pièce : les régénérer, dans l’onglet Écritures\)\.$/)
+    expect(p.label).toMatch(/pour le paiement d’une pièce, à régénérer avec ses écritures$/)
+  })
+
+  it('le drapeau baissé : aucun paiement compté, le libellé d’hier', () => {
+    drapeau.leve = false
+    const p = tous(base({ ecritures: [...APPORT_ECRIT, CHARGE] })).find((x) => x.id === 'caisse-a-reprendre')!
+    expect(p.nb).toBe(0)
+    expect(p.label).toBe('opération(s) de caisse dont l’écriture manque, ne suit plus l’opération ou ne peut plus s’écrire — à retirer et saisir de nouveau')
+  })
+
+  it('levé, la caisse lue EN PARTIE : la pièce payée en espèces ne paraît ni à régénérer, ni en attente, ni introuvable en banque', () => {
+    drapeau.leve = true
+    const partielle = base({ caisse: caisseLue([APPORT, PAYE], { complete: false, motif: '1 lue sur 2' }), entreesDeLaCaisseIncompletes: '1 lue sur 2' })
+    expect(nb(partielle, 'desynchronisees')).toBe(0)
+    expect(nb(partielle, 'sans-contrepartie')).toBe(0)
+    expect(nb(partielle, 'montant-suspect')).toBe(0)
+    expect(nb(partielle, 'pieces-payees-en-partie')).toBe(0)
+    // Le témoin : la même écriture, le paiement retiré et la caisse lue en entier — la contrepartie ne suit plus, « à régénérer ».
+    expect(nb(base({ caisse: caisseLue([APPORT, { ...PAYE, retire_le: '2026-03-13T00:00:00Z' }]) }), 'desynchronisees')).toBe(1)
+    // Une autre pièce, que la caisse ne touche pas et qui est à régénérer, le reste : seule la pièce payée en espèces se tait.
+    const autre = piece({ id: 'y', montant_ttc: 70 })
+    const ecritAutre = ecriture({ id: 'c2', piece_id: 'y', montant: 60 })
+    expect(nb({ ...partielle, piecesValidees: [piece(), autre], ecritures: [...APPORT_ECRIT, CHARGE, CONTREPARTIE, ecritAutre] }, 'desynchronisees')).toBe(1)
+  })
+
+  it('le mouvement d’avant l’ouverture classé sur la caisse : levé, un point en erreur vers Banque ; baissé, absent de la liste', () => {
+    const reprise: ANouveau = {
+      id: 'an', dossier_id: 'd1', date: '2026-01-01', compte: CAISSE, compte_origine: '530', libelle: 'Caisse', sens: 'debit', montant: 300,
+      source_nom: 'balance.csv', source_empreinte: 'x', created_at: '2026-01-02T00:00:00Z', ...A_NOUVEAU_NON_VALIDE,
+    }
+    const dab = ligne({ id: 'dab', date: '2025-12-20', montant: -100, libelle: 'RETRAIT DAB', statut: 'rapprochee', compte_bilan: CAISSE })
+    const d = { aNouveaux: [reprise], lignes: [dab], caisse: caisseLue([]) }
+    drapeau.leve = true
+    const p = tous(d).find((x) => x.id === 'caisse-mouvements-avant-ouverture')!
+    expect([p.nb, p.cible, p.severite]).toEqual([1, 'banque', 'erreur'])
+    expect(p.detail!.split(String.fromCharCode(0xa0)).join(' ').split(String.fromCharCode(0x202f)).join(' '))
+      .toBe('le 20/12/2025, -100,00 € (RETRAIT DAB). Dans Banque, filtre « Rapprochés » : sa fiche le remet à traiter.')
+    expect(nb({ ...d, lignes: [{ ...dab, date: '2026-01-02' }] }, 'caisse-mouvements-avant-ouverture')).toBe(0)
+    // La caisse lue en partie : il se tait.
+    expect(nb({ ...d, entreesDeLaCaisseIncompletes: 'la reprise : coupée' }, 'caisse-mouvements-avant-ouverture')).toBe(0)
+    drapeau.leve = false
+    expect(tous(d).some((x) => x.id === 'caisse-mouvements-avant-ouverture')).toBe(false)
   })
 })

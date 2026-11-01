@@ -281,7 +281,7 @@ export function premierJourDeLaCaisse(etat: Pick<EtatDeLaCaisse, 'compteCaisse' 
 }
 
 /** L'ouverture du DOSSIER : la plus ancienne date de ses à-nouveaux, tout compte confondu (celle qui refuse une opération). */
-export function ouvertureDuDossier(etat: Pick<EtatDeLaCaisse, 'ouvertures'>): string | null {
+export function ouvertureDuDossier(etat: { ouvertures: readonly Pick<ANouveau, 'date'>[] }): string | null {
   return etat.ouvertures.map((a) => a.date).sort()[0] ?? null
 }
 
@@ -313,6 +313,27 @@ function fluxSansBorne(etat: EtatDeLaCaisse): FluxDeLaCaisse[] {
       jour: e.date_encaissement, centimes: enCentimes(e.montant), source: 'encaissement' as const, id: e.id,
     })),
   ]
+}
+
+/**
+ * LES FLUX D'AVANT L'OUVERTURE DU DOSSIER (ligne 26.6, étape C9b ; le défaut K1 de la relecture du 31/10/2026) : ce qui
+ * précède la reprise et que la caisse lit pourtant — un retrait au distributeur de la veille classé sur la caisse, une
+ * opération restaurée. Deux cas, selon la reprise :
+ *   - elle porte la caisse (`premierJourDeLaCaisse`) : la caisse borne son compte à ce jour, et ces flux ne comptent pas
+ *     (`compte` faux) — le 53 repris les porte déjà ;
+ *   - elle ne la porte pas, mais le dossier est repris (`ouvertureDuDossier`) : rien ne borne la caisse, et ces flux
+ *     comptent (`compte` vrai), alors qu'ils sont dans les comptes repris : à retirer.
+ * Rien pour un dossier qui n'est pas repris. Dans l'ordre des jours, puis de la source. PUR : ni la caisse ni ses soldes ne
+ * changent ici ; l'écran le DIT (CaisseTab), la Vue d'ensemble dit le mouvement à retirer (lib/pointsDeLaChecklist.ts).
+ */
+export function fluxAvantLOuverture(etat: EtatDeLaCaisse): (FluxDeLaCaisse & { compte: boolean })[] {
+  const premierJour = premierJourDeLaCaisse(etat)
+  const ouverture = premierJour ?? ouvertureDuDossier(etat)
+  if (ouverture == null) return []
+  return fluxSansBorne(etat)
+    .filter((f) => f.jour < ouverture)
+    .map((f) => ({ ...f, compte: premierJour == null }))
+    .sort((a, b) => a.jour.localeCompare(b.jour) || a.source.localeCompare(b.source) || (a.id ?? '').localeCompare(b.id ?? ''))
 }
 
 /** Le solde de la caisse à la fin de chaque jour qui porte un flux, l'ouverture comprise, en centimes. */

@@ -24,6 +24,19 @@ vi.mock('../../lib/caisse', async (original) => {
   return { ...vrai, get CAISSE_EXPORTEE() { return drapeau.leve } }
 })
 
+// Le drapeau de la migration `paiement_par_la_caisse` (étape C9b), joué par un accesseur, et la dérivation qui le lit — BAISSÉ par
+// défaut, l'état d'aujourd'hui, que tous les cas d'avant jouent.
+const drapeauDuPaiement = vi.hoisted(() => ({ leve: false }))
+vi.mock('../../lib/paiementParLaCaisse', async (original) => {
+  const vrai = await original<typeof import('../../lib/paiementParLaCaisse')>()
+  return {
+    ...vrai,
+    get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeauDuPaiement.leve },
+    paiementsParLaCaisseDuDossier: (...a: Parameters<typeof vrai.paiementsParLaCaisseDuDossier>) =>
+      vrai.paiementsParLaCaisseDuDossierSelon(drapeauDuPaiement.leve, ...a),
+  }
+})
+
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, Record<string, unknown>[]>,
   muet: {} as Record<string, number>,
@@ -143,7 +156,7 @@ function poser(o: { releve?: LigneBancaire[]; operations?: unknown[]; reprise?: 
 }
 
 beforeEach(() => { drapeau.leve = true; poser() })
-afterEach(() => { cleanup(); vi.restoreAllMocks(); drapeau.leve = false; faux.caisse = null })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); drapeau.leve = false; drapeauDuPaiement.leve = false; faux.caisse = null })
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
 
@@ -469,5 +482,60 @@ describe('le drapeau baissé : la fiche est celle d’hier, au caractère près'
     // Les comptes de bilan d'hier : le virement entre comptes et le dépôt de garantie.
     expect(within(volet()).getByRole('button', { name: /^Virement entre comptes/ })).toBeTruthy()
     expect(within(volet()).getByRole('button', { name: /^Dépôt de garantie/ })).toBeTruthy()
+  })
+})
+
+// LA FICHE D'UN MOUVEMENT DEVANT UNE CAISSE LUE EN PARTIE (ligne 26.6, étape C9b) : les paiements de pièces par la caisse ne sont
+// pas connus — une pièce payée en espèces paraîtrait à payer, et « Associer » la paierait une seconde fois par la banque. La
+// migration en base, aucune pièce ne s'associe d'ici et la fiche le dit, comme les lots se suspendent déjà ; sans elle, rien ne
+// change.
+describe('la fiche d’un mouvement, les paiements par la caisse lus en partie', () => {
+  const PIECE = {
+    id: 'p-vir', dossier_id: D, uploaded_by: null, source: 'upload', storage_path: `${D}/v.pdf`, nom_fichier: 'v.pdf', storage_hash: null,
+    date_piece: '2026-03-11', tiers: 'CLIENT DIVERS', montant_ht: null, montant_tva: null, montant_ttc: 200, devise: 'EUR', montant_devise: null,
+    taux_change: null, conversion_source: null, categorie_id: 'c-hon', sous_dossier_id: null, type_piece: 'vente', statut: 'validee', notes: null,
+    confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
+    created_at: '2026-03-11T08:00:00Z', updated_at: '2026-03-11T08:00:00Z',
+  }
+  const preparer = (complete: boolean) => {
+    poser()
+    faux.parTable.pieces = [PIECE]
+    faux.caisse = (dossierId) => ({ dossierId, enBase: true, lignes: OPERATIONS, complete, motif: complete ? null : '1 lue sur 2' })
+  }
+  const ouvrirLeVirement = async () => {
+    const cellule = (await screen.findAllByText('VIR CLIENT DIVERS')).find((e) => e.closest('tr')?.classList.contains('clickable'))!
+    await act(async () => { (cellule.closest('tr') as HTMLElement).click() })
+    await within(volet()).findByRole('heading', { name: /Choisir une (autre )?pièce/ })
+  }
+  const associer = () => within(volet()).queryAllByRole('button', { name: /^Associer/ }) as HTMLButtonElement[]
+
+  it('levé, la caisse lue en partie : « Associer » grisé partout, la raison dite, et rien ne part', async () => {
+    drapeauDuPaiement.leve = true
+    preparer(false)
+    rendre()
+    await ouvrirLeVirement()
+    expect(associer().length).toBeGreaterThan(0)
+    expect(associer().every((b) => b.disabled)).toBe(true)
+    expect(sans(volet().textContent)).toContain('Les paiements de pièces par la caisse n’ont pas pu être lus en entier')
+    for (const b of associer()) await act(async () => { b.click() })
+    expect(faux.rpcs.filter((r) => /rapproch/.test(r.nom))).toEqual([])
+  })
+
+  it('levé, la caisse lue en entier : « Associer » offert, sans la phrase', async () => {
+    drapeauDuPaiement.leve = true
+    preparer(true)
+    rendre()
+    await ouvrirLeVirement()
+    expect(associer().some((b) => !b.disabled)).toBe(true)
+    expect(sans(volet().textContent)).not.toContain('Les paiements de pièces par la caisse n’ont pas pu être lus en entier')
+  })
+
+  it('le drapeau baissé, la même caisse lue en partie : la fiche d’hier — « Associer » offert', async () => {
+    preparer(false)
+    rendre()
+    await ouvrirLeVirement()
+    expect(associer().some((b) => !b.disabled)).toBe(true)
+    expect(sans(volet().textContent)).not.toContain('Les paiements de pièces par la caisse')
   })
 })

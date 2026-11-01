@@ -42,6 +42,13 @@ const faux = vi.hoisted(() => ({
   compteur: 0,
 }))
 
+// Le drapeau de la migration `paiement_par_la_caisse` (étape C9b), joué par un accesseur : son état d'aujourd'hui par défaut.
+const drapeau = vi.hoisted(() => ({ leve: null as boolean | null }))
+vi.mock('../../lib/paiementParLaCaisse', async (original) => {
+  const module = await original<typeof import('../../lib/paiementParLaCaisse')>()
+  return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeau.leve ?? module.PAIEMENT_PAR_LA_CAISSE_EXPORTE } }
+})
+
 vi.mock('../../lib/caisseDuDossierLecture', () => ({
   lireLaCaisseDuDossier: (dossierId: string) => {
     faux.demandes.push(dossierId)
@@ -125,6 +132,7 @@ function mars(o: Partial<DonneesDeLaCaisse> = {}): DonneesDeLaCaisse {
       factures: [{ id: 'f1', numero: 'F-2026-0012', source_de_la_vente: true }],
     },
     categories: [HONORAIRES, LOYER],
+    piecesPayees: [],
     ...o,
   }
 }
@@ -143,7 +151,7 @@ beforeEach(() => {
   faux.relacherRpc = null
   faux.compteur = 0
 })
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); drapeau.leve = null })
 
 function rendre(o: { dossierId?: string; modele?: ModeleComptable; assujettiTva?: boolean; ventes?: boolean; annee?: ValeurAnnee; onNavigate?: () => void } = {}) {
   const vue = (p: { dossierId?: string }) => (
@@ -778,5 +786,55 @@ describe('un dossier quitté ne laisse rien derrière lui', () => {
     await act(async () => { relacherLAncien() })
     expect(texte()).not.toContain('777,00')
     expect(texte()).toMatch(/Solde de la caisse à la fin de 2026\s*105,00 €/)
+  })
+})
+
+// LE PAIEMENT D'UNE PIÈCE DANS L'ONGLET CAISSE (ligne 26.6, étape C9b) : le journal montre le paiement d'une pièce, nommé par sa
+// pièce — son type et sa date, jamais un tiers —, sans geste ici (il se retire depuis la fiche de la pièce) ; la saisie d'une
+// recette reconnaît le paiement d'une pièce de VENTE de son jour, et le nomme ; les flux d'avant l'ouverture se disent, la
+// migration en base.
+describe('le paiement d’une pièce par la caisse, dans l’onglet', () => {
+  const paiement = (o: Partial<OperationCaisse> & Pick<OperationCaisse, 'id'>) =>
+    operation({ genre: 'paiement', date: '2026-03-06', montant: -20, piece_id: 'pc', ...o })
+
+  it('le journal : la ligne du paiement, nommée par sa pièce, sans geste ici', async () => {
+    faux.donnees = mars({
+      operations: [...mars().operations, paiement({ id: 'pa' })],
+      piecesPayees: [{ id: 'pc', type_piece: 'achat', date_piece: '2026-03-04' }],
+    })
+    rendre()
+    await attendreLaLecture()
+    const ligne = ligneDeLaCaisse(/Paiement en espèces d’une pièce d’achat du 04\/03\/2026/)
+    expect(within(ligne).getByText('Se retire depuis la fiche de la pièce')).toBeTruthy()
+    expect(within(ligne).queryAllByRole('button')).toHaveLength(0)
+    expect(document.body.textContent).not.toContain('PAPETERIE')
+  })
+
+  it('une recette du jour où une pièce de VENTE a été réglée par la caisse : la phrase la nomme, et la saisie la reconnaît', async () => {
+    faux.donnees = mars({
+      operations: [...mars().operations, paiement({ id: 'pv', montant: 30, piece_id: 'pvente' })],
+      piecesPayees: [{ id: 'pvente', type_piece: 'vente', date_piece: '2026-03-05' }],
+    })
+    rendre()
+    await attendreLaLecture()
+    remplirLeFormulaire({ date: '2026-03-06', categorie: HONORAIRES_ID, montant: '40' })
+    expect(texte()).toContain('Les 30,00 € d’une pièce de vente réglée par la caisse, reçus ce jour-là, sont déjà dans la caisse : ce total ne les compte pas.')
+    await act(async () => { bouton('Enregistrer').click() })
+    expect(faux.rpcs[0].args.p_encaissements_du_jour).toEqual(['pv'])
+  })
+
+  it('les flux d’avant l’ouverture : la migration en base, une carte les dit ; sans elle, rien', async () => {
+    const dab = { id: 'm0', date: '2024-12-20', montant: -50, libelle: 'RETRAIT DAB', compte_bilan: CAISSE }
+    faux.donnees = mars({ mouvements: [...mars().mouvements, dab] })
+    drapeau.leve = true
+    const { unmount } = rendre()
+    await attendreLaLecture()
+    expect(screen.getByText('Avant l’ouverture du dossier')).toBeTruthy()
+    expect(texte()).toContain('20/12/2024 — Retrait d’espèces pour la caisse — RETRAIT DAB (50,00 €) : précède l’ouverture de la caisse, le 01/01/2025')
+    unmount()
+    drapeau.leve = false
+    rendre()
+    await attendreLaLecture()
+    expect(screen.queryByText('Avant l’ouverture du dossier')).toBeNull()
   })
 })

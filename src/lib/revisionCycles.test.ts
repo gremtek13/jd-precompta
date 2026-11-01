@@ -269,7 +269,7 @@ describe('le rangement des contrôles existants', () => {
       // Étape VF5f : le mouvement du relevé que des encaissements de factures réservent, à classer.
       'mouvements-reserves',
       // Étape C3b : la caisse — une opération à reprendre, une caisse négative, un versement d'espèces rangé en recette.
-      'caisse-a-reprendre', 'caisse-negative', 'versements-especes-en-recette',
+      'caisse-a-reprendre', 'caisse-negative', 'versements-especes-en-recette', 'caisse-mouvements-avant-ouverture',
     ],
     // Étape VF5f : l'encaissement d'une facture qui attend son mouvement du relevé, au registre des ventes.
     recettes: [
