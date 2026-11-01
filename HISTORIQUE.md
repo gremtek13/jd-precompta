@@ -44879,7 +44879,7 @@ filet, dans cet ordre, puis les trois contrôles de l'export.
 
 ### 01/11/2026 — LA CAISSE : L'ASSISTANT DEVANT LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (C13, LIGNE 26.6)
 
-(Écrite par un agent architecte, sur `28d9572` — C9a, C9b et les corrections de leur relecture. Aucune migration, rien de lu ni
+(Écrite par un agent architecte, sur `0e5d883` — C9a, C9b et les corrections de leur relecture. Aucune migration, rien de lu ni
 d'écrit en production, aucun appel au modèle ; `agent-comptable` n'est PAS redéployé : la session le déploie par la ligne qui
 importe le dépôt → « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT ». Lus avant d'écrire : « LA CAISSE : L'ASSISTANT
 (C5, LIGNE 26.6) » et « … EN LIGNE » ; la ligne C13 de la conception reprise ; C9a et son « CE QUI RESTE » ; C9b ; la relecture
