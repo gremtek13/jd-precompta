@@ -29,6 +29,15 @@ vi.mock('../../lib/caisseLecture', async (original) => {
   }
 })
 afterEach(() => { caisseDuTest.lecture = null })
+// LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE (lot FEC22c2) : le drapeau `CHAMPS_BNC_EXPORTES` joué par un accesseur —
+// celui du module tant qu'un cas n'en pose pas un autre. Levé, l'écran lit les factures et les cotisations comme l'onglet
+// Écritures, et la demande porte les cinq clés de chaque ligne.
+const drapeauDesChamps = vi.hoisted(() => ({ choix: undefined as undefined | null | { sansReglement: 'vides' | 'date_de_l_ecriture' } }))
+vi.mock('../../lib/champsBncDuFec', async (original) => {
+  const vrai = await original<typeof import('../../lib/champsBncDuFec')>()
+  return { ...vrai, get CHAMPS_BNC_EXPORTES() { return drapeauDesChamps.choix === undefined ? vrai.CHAMPS_BNC_EXPORTES : drapeauDesChamps.choix } }
+})
+afterEach(() => { drapeauDesChamps.choix = undefined })
 
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
@@ -157,6 +166,7 @@ vi.mock('../../lib/supabase', async () => {
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ estChef: faux.estChef, isSuperAdmin: faux.superAdmin }) }))
 
 const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT } as const
+const HUIT_CLES = ['id', 'journal', 'numero', 'piece_ref', 'piece_date', 'compte_lib', 'comp_aux_num', 'comp_aux_lib']
 const ENGAGEMENT = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT } as const
 
 vi.mock('../../lib/remplir2035', () => ({
@@ -2037,6 +2047,39 @@ describe('ClotureTab — valider l’exercice', () => {
     screen.getByText('Sa validation a écrit l’ouverture de l’exercice 2026 : 2 soldes reportés au 01/01/2026, qui ouvrent son FEC (journal AN) et sa balance.')
     // La page relit les exercices validés : la frontière a bougé pour tous les onglets du dossier.
     expect(relirePage).toHaveBeenCalledTimes(1)
+  })
+
+  // LE DRAPEAU DES QUATRE CHAMPS (lot FEC22c2). Baissé : la demande d'hier, ses huit clés et rien de plus. Levé : la
+  // numérotation que la validation envoie porte les cinq clés de chaque ligne, sur les factures et les cotisations lues.
+  it('le drapeau des quatre champs baissé : chaque ligne de la demande porte les huit clés d’hier, et rien de plus', async () => {
+    poserTenu()
+    drapeauDesChamps.choix = null
+    accepter()
+    confirmer(true)
+    faux.apresValidation = VALIDE
+    monterAvec()
+    const c = await carte()
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    const lignes = (faux.appels[0].params as { p_lignes: Record<string, unknown>[] }).p_lignes
+    expect(lignes.map((l) => Object.keys(l))).toEqual([HUIT_CLES, HUIT_CLES])
+  })
+
+  it('le drapeau des quatre champs levé : la demande porte les cinq clés de chaque ligne, que la base fige', async () => {
+    poserTenu()
+    drapeauDesChamps.choix = { sansReglement: 'vides' }
+    faux.parTable.cotisations_declarees = []
+    accepter()
+    confirmer(true)
+    faux.apresValidation = VALIDE
+    monterAvec()
+    const c = await carte()
+    c.getByText(/Rien n.empêche de valider cet exercice/)
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    const lignes = (faux.appels[0].params as { p_lignes: Record<string, unknown>[] }).p_lignes
+    expect(lignes.map((l) => [l.id, l.journal, l.numero, l.date_reglement, l.mode_reglement, l.nature_operation, l.poste_rattache, l.identification_client])).toEqual([
+      ['e1', 'AC', 1, '2025-03-12', 'Banque', 'Dépense', 'Achats', null], ['e2', 'AC', 1, '2025-03-12', 'Banque', 'Dépense', null, null],
+    ])
+    expect(Object.keys(lignes[0])).toEqual([...HUIT_CLES, 'date_reglement', 'mode_reglement', 'nature_operation', 'poste_rattache', 'identification_client'])
   })
 
   it('nomme ce qu’on perd avant de valider, et n’appelle rien sur un refus', async () => {

@@ -139,7 +139,8 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE,
-    etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, ...o,
+    etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
+    champsBnc: { etat: 'non_exportes' }, ...o,
   }
   if (base.modele.mode === 'engagement') return { ...base, declaration: null, concordance: null }
   const paiements = paiementsDesPieces(base.lignes, base.reglements, base.encaissees, [])
@@ -2002,5 +2003,88 @@ describe('prealablesDeValidation — les paiements par la caisse (étape C9a)', 
     expect(ids(d)).not.toContain('pieces-payees-en-trop')
     drapeauDuPaiement.leve = true
     expect(prealable(d, 'pieces-payees-en-trop')?.nb).toBe(1)
+  })
+})
+
+// ══ LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE (lot FEC22c2) ══════════════════════════════════════════════════════
+// La validation reçoit les MÊMES entrées que l'export de l'onglet Écritures : la numérotation les calcule, la demande en porte
+// les cinq clés, et ce que la base refuserait se dit avant le clic, sous ses mots — une ligne numérotée deux fois (le
+// brouillon d'avant la répartition par règlement), un refus des quatre champs (`refusDesChampsBnc`). Le drapeau de la
+// génération (`CHAMPS_BNC_EXPORTES`, lib/champsBncExportes.ts) joué par un accesseur : baissé, le brouillon d'hier ; levé,
+// une ligne par règlement. Un achat FICTIF de 120 €, payé le 01/06/2025 par 70 € prélevés et 50 € en espèces (le drapeau du
+// paiement par la caisse levé, comme le bloc qui précède).
+const drapeauDeLaGeneration = vi.hoisted(() => ({ choix: null as { sansReglement: 'vides' | 'date_de_l_ecriture' } | null }))
+vi.mock('./champsBncExportes', async (original) => {
+  const vrai = await original<typeof import('./champsBncExportes')>()
+  return { ...vrai, get CHAMPS_BNC_EXPORTES() { return drapeauDeLaGeneration.choix } }
+})
+
+describe('les quatre champs du FEC d’un BNC en trésorerie (FEC22c2)', () => {
+  afterEach(() => { drapeauDuPaiement.leve = null })
+  const ACHAT = piece('p-a', { date_piece: '2025-06-01', montant_ttc: 120, created_at: '2025-06-01T09:00:00Z' })
+  const LA = ligne('l-a', { piece_id: 'p-a', date: '2025-06-01', montant: -70 })
+  const OUVERTURE_DE_CAISSE = operationDeCaisse({ id: 'oc-ap', date: '2025-01-02', montant: 200 })
+  const ESPECES = operationDeCaisse({ id: 'oc-pa', genre: 'paiement', piece_id: 'p-a', date: '2025-06-01', montant: -50 })
+  const TRESO: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT }
+  const VIDES = { sansReglement: 'vides' } as const
+  const brouillonDeLAchat = (choix: typeof VIDES | null) => {
+    drapeauDeLaGeneration.choix = choix
+    try {
+      const paiements = paiementsDesPieces([LA], [], [], [{ operation_caisse_id: 'oc-pa', piece_id: 'p-a', date: '2025-06-01', montant: -50 }])
+      return lignesPourPiece('d1', ACHAT, { compte: '606100', immobilisation: false }, false, paiements.get('p-a') ?? [], TRESO)
+        .map((l, i) => ecriture(`a${choix === null ? 'h' : 'r'}${i}`, {
+          ...l, piece_id: 'p-a', ligne_bancaire_id: l.ligne_bancaire_id ?? null, operation_caisse_id: l.operation_caisse_id ?? null,
+        }))
+    } finally { drapeauDeLaGeneration.choix = null }
+  }
+  const exportes = { etat: 'exportes' as const, entrees: {
+    choix: VIDES, registre: [], factures: [], cotisations: [], ventilations: [], acquisitions: new Map(), plan: PLAN_PAR_DEFAUT,
+  } }
+  const avec = (brouillon: EcritureBrouillon[], o: Surcharges = {}) => {
+    drapeauDuPaiement.leve = true
+    return donnees({
+      piecesValidees: [P1, ACHAT], lignes: [L1, LA], operationsDeCaisse: caisseLue([OUVERTURE_DE_CAISSE, ESPECES]),
+      ecritures: [E1, E2, ...lignesDeLaCaisse(OUVERTURE_DE_CAISSE), ...brouillon], ...o,
+    })
+  }
+
+  it('le drapeau baissé : la numérotation et la demande d’hier, même sur le brouillon d’une ligne pour deux règlements', () => {
+    const etat = prealablesDeValidation(avec(brouillonDeLAchat(null)))
+    expect(etat.prealables).toEqual([])
+    expect(etat.numerotation!.champsBnc).toBe('non_calcules')
+    for (const l of demandeDeValidation(etat.numerotation!, null).p_lignes) expect(Object.keys(l)).toHaveLength(8)
+  })
+
+  it('levé, le brouillon d’avant la répartition retient la validation, la pièce nommée — et non sous « défaut de numérotation »', () => {
+    const etat = prealablesDeValidation(avec(brouillonDeLAchat(null), { champsBnc: exportes }))
+    expect(etat.prealables.map((p) => p.id)).toEqual(['ecritures-a-repartir'])
+    expect(etat.prealables[0]).toMatchObject({ nb: 1, bloquant: true, cible: 'ecritures', detail: 'p-a.pdf' })
+    expect(etat.validable).toBe(false)
+  })
+
+  it('levé, le brouillon régénéré se valide, et la demande porte les cinq clés de chaque ligne', () => {
+    const etat = prealablesDeValidation(avec(brouillonDeLAchat(VIDES), { champsBnc: exportes }))
+    expect(etat.prealables).toEqual([])
+    expect(etat.validable).toBe(true)
+    const lignes = demandeDeValidation(etat.numerotation!, null).p_lignes
+    expect(lignes.filter((l) => l.id.startsWith('ar')).map((l) => ('mode_reglement' in l
+      ? [l.id, l.journal, l.numero, l.date_reglement, l.mode_reglement, l.nature_operation, l.poste_rattache] : null))).toEqual([
+      ['ar0', 'AC', 2, '2025-06-01', 'Banque', 'Dépense', 'Achats'], ['ar2', 'AC', 2, '2025-06-01', 'Banque', 'Dépense', null],
+      ['ar1', 'AC', 3, '2025-06-01', 'Espèces', 'Dépense', 'Achats'], ['ar3', 'AC', 3, '2025-06-01', 'Espèces', 'Dépense', null],
+    ])
+  })
+
+  it('un refus des quatre champs se dit avant le clic, sous les mots de la base', () => {
+    // Le jour de Paris AVANT le règlement du 01/06/2025 (artificiel : l'exercice reste clos) — la date de règlement est future.
+    const etat = prealablesDeValidation(avec(brouillonDeLAchat(VIDES), { champsBnc: exportes, aujourdHui: '2025-05-31' }))
+    expect(etat.prealables.map((p) => [p.id, p.message])).toEqual([
+      ['champs-bnc', "Une ligne de la numérotation proposée porte une date de règlement postérieure à aujourd'hui."],
+    ])
+  })
+
+  it('des entrées pas encore lues en entier suspendent la validation', () => {
+    const etat = prealablesDeValidation(avec(brouillonDeLAchat(VIDES), { champsBnc: null }))
+    expect(etat.prealables.map((p) => p.id)).toEqual(['lecture-partielle'])
+    expect(etat.prealables[0].message).toMatch(/les factures et les cotisations que le FEC d’un BNC en trésorerie lit ne sont pas lues en entier/)
   })
 })

@@ -227,7 +227,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       facturesEmises: [], transmissions: [], facturesSources: ventes.sources,
       etatsDesVentes: etatsDesVentesFacturees({ sources, brouillon, mode, plan, anneesValidees: [], ventesParLesFactures: true }),
       ventesDeLaChecklist: ventesDeLaChecklist({ dossierId: sources.dossierId, etat: 'lue', sources }, frontiereDeValidation([])),
-      operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
+      operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, champsBnc: { etat: 'non_exportes' },
       declaration: null, concordance: null, ...o,
     })
     let declaration = null
@@ -302,7 +302,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       ...l.ecriture, statut: 'validee', valide_le: VALIDE_LE, journal_code: l.journal, numero_ecriture: l.numero, piece_ref: l.pieceRef,
       piece_date: l.pieceDate, compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
     }))
-    const apres = formaterFec(numerotationValidee(figees, [], VALIDE_LE), SANS_LETTRAGE, mode)
+    const apres = formaterFec(numerotationValidee(figees, [], VALIDE_LE, null), SANS_LETTRAGE, mode)
     expect(sansValidDate(apres)).toEqual(sansValidDate(avant))
     expect(apres.split('\n').length).toBe(brouillon.length + 1 + (avant.endsWith('\n') ? 1 : 0))
   })

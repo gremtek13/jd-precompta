@@ -640,7 +640,9 @@ describe('le module ne prend aucune valeur par défaut', () => {
       ...parametres(t).filter((p) => /[^=!<>]=[^=>]/.test(p.liste)).map((p) => `valeur par défaut : ${p.fonction}`),
     ]
   }
-  const module = lire('src/lib/champsBncDuFec.ts')
+  // Le module et les deux qu'il redit depuis FEC22c2 (le choix et le drapeau ; les champs d'une ligne), tirés de lui pour
+  // sortir d'un cycle d'imports : la règle vaut pour les trois.
+  const module = ['src/lib/champsBncDuFec.ts', 'src/lib/champsBncExportes.ts', 'src/lib/champsBncDesLignes.ts'].map(lire).join('\n')
 
   it('aucune dans le module ; le plancher : douze fonctions au moins lues', () => {
     expect(fautes(module)).toEqual([])

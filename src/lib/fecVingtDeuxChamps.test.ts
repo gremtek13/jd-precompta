@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { anomaliesBnc, anomaliesDgfip, colonnes, desequilibresDgfip, ENTETES_BNC_ATTENDUS, structureBncDgfip } from '../test/fecDgfip'
 import { brouillonDesVentes, composition, ligneBancaire, pieceDeVente, sourcesDuDossierBascule } from '../test/dossierBascule'
 import { NON_VALIDEE, A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { SANS_ECRITURE_DE_VENTE } from '../test/ventesFacturees'
+import { fichiersDuSchema } from '../test/schema'
 import type { AcquisitionDuBien } from './amortissements'
 import { POSTES_RATTACHES } from './cases2035'
 import {
@@ -33,6 +34,15 @@ import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 // même jour par deux modes ; 200 dossiers tirés d'une graine fixe, jugés aux contrôles de l'outil de la DGFiP et de la
 // conception ; aucun nom dans les quatre champs, sur le fichier entier. Toutes les données sont FICTIVES : les noms plantés
 // n'appartiennent à personne, les SIREN et SIRET sont fabriqués pour passer (ou non) la clé de Luhn.
+
+// LA GÉNÉRATION D'HIER (lot FEC22c2) : ces cas éprouvent le fichier sur le brouillon d'une ligne de charge par date, que la
+// scission répartit entre les règlements d'une même date — le repli de la numérotation. Levé, le drapeau fait écrire à la
+// génération une ligne par règlement, que la numérotation range sans rien scinder (fecChampsDeLaValidation.test.ts, qui
+// prouve que les deux fichiers sont les mêmes) : la génération reste donc baissée ici, quel que soit le drapeau.
+vi.mock('./champsBncExportes', async (original) => {
+  const vrai = await original<typeof import('./champsBncExportes')>()
+  return { ...vrai, CHAMPS_BNC_EXPORTES: null }
+})
 
 const D = 'd1'
 const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
@@ -194,7 +204,13 @@ function dossierComplet(choix: ChoixChampsBnc): Jeu {
 const quatre = (f: string) => colonnes(f).slice(1).map((r) => [r[0], r[4], r[18], r[19], r[20], r[21]])
 
 describe('le drapeau baissé : le fichier d’hier', () => {
-  it('le drapeau est baissé dans ce lot : il attend la migration FEC22b et la réponse de l’expert-comptable (FEC22-E2)', () => {
+  it('le drapeau ne se lève qu’avec la migration FEC22b dans l’export (et la réponse de l’expert-comptable, FEC22-E2)', async () => {
+    // Levé sans elle, la validation enverrait les quatre champs à une base qui les ignore : l'exercice se figerait sans eux.
+    // Depuis FEC22c2, la simulation du jour d'application le lève, la migration posée dans l'export.
+    const migration = fichiersDuSchema().some((f) => /\d{14}_champs_bnc_du_fec\.sql$/.test(f.chemin))
+    const { CHAMPS_BNC_EXPORTES: reel } = await vi.importActual<typeof import('./champsBncExportes')>('./champsBncExportes')
+    expect(reel === null || migration).toBe(true)
+    // Ici, la génération baissée (ci-dessus) : ce que le module redit.
     expect(CHAMPS_BNC_EXPORTES).toBe(null)
   })
 
@@ -237,7 +253,7 @@ describe('en engagement : le fichier d’hier, octet pour octet, quoi qu’on pa
   })
 
   it('un exercice relu de ce qui a été figé, sans les quatre champs : dix-huit colonnes, même en trésorerie (FEC22c2)', () => {
-    const n = numerotationValidee([], [], '2027-01-15T10:00:00Z')
+    const n = numerotationValidee([], [], '2027-01-15T10:00:00Z', null)
     expect(n.champsBnc).toBe('non_calcules')
     expect(colonnes(formaterFec(n, SANS_LETTRAGE, 'tresorerie'))[0]).toHaveLength(18)
   })

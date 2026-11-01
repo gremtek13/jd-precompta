@@ -5,7 +5,10 @@ import { partCsgNonDeductible, type Declaration2035 } from './declaration2035'
 import { casesNegatives, doublonFraisVehicules, valeursDesCases } from './cases2035'
 import type { DoublonDeTexte } from './doublonsTexte'
 import type { Emprunt } from './emprunts'
-import { CHAMPS_BNC_NON_EXPORTES, type NumerotationFec, numeroterFec } from './fec'
+import {
+  CHAMPS_BNC_NON_EXPORTES, type ChampsBncDuFec, type EntreesDesChampsBnc, type NumerotationFec, numeroterFec,
+} from './fec'
+import { refusDesChampsBnc, type LigneAJuger } from './champsBncFiges'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
 import { confronterLOuverture, ouvertureEnEcart } from './ouvertureConfrontee'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
@@ -26,7 +29,7 @@ import { amortissementsSousLeBareme, forfaitsDuCadre7, forfaitsEnDefaut } from '
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces, type PartEncaissee } from './rattachement'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisse } from './paiementParLaCaisse'
-import { defautsDeNumerotation, estFigee, frontiereDeValidation } from './validationExercice'
+import { defautsDeNumerotation, demandeDeValidation, estFigee, frontiereDeValidation } from './validationExercice'
 import { mouvementsDeCloture, ouvertureDeLExercice, soldesAReporter, type ReportDesSoldes } from './reportDesSoldes'
 import { jumellesDuDossier, ventesEnDouble, type FacturePourJumelle, type TransmissionPourJumelle } from './ventesJumelles'
 import { exemplairesDesSources, horsDesExemplairesDesSources, type FacturesSources } from './facturesSources'
@@ -168,11 +171,23 @@ export interface DonneesDeValidation {
   // oubliées, les écritures de la caisse sortiraient de la numérotation que la base exige entière, et les trois préalables
   // de la caisse se tairaient.
   operationsDeCaisse: OperationsDeCaisse | null
+  // LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE (lot FEC22c2) : `non_exportes` — le drapeau `CHAMPS_BNC_EXPORTES` baissé,
+  // ou un dossier en engagement : la numérotation d'hier, que la base valide comme hier —, ou les MÊMES entrées que l'export
+  // de l'onglet Écritures, toutes lues en entier pour ce dossier, les paiements exceptés (la validation tire les siens,
+  // `paiementsDeLaValidation`, ceux qui datent ses écritures). NULS tant qu'ils ne sont pas revenus entiers : la validation se
+  // suspend, comme sur toute lecture partielle. Sans valeur par défaut : oubliés, l'exercice se figerait sans les quatre
+  // champs qu'aucune validation ne pourra plus lui donner (FEC22-Q6).
+  champsBnc: ChampsBncDeLaValidation | null
   // En trésorerie, la 2035 de l'exercice et sa concordance avec les écritures ; RIEN en engagement, où la 2035 ne se
   // produit pas — l'appelant ne la calcule pas, et la base refuserait de la recevoir.
   declaration: Declaration2035 | null
   concordance: Concordance2035 | null
 }
+
+/** Ce que la validation reçoit pour les quatre champs d'un BNC en trésorerie : rien, ou les entrées de l'export sans les paiements. */
+export type ChampsBncDeLaValidation =
+  | { etat: 'non_exportes' }
+  | { etat: 'exportes'; entrees: Omit<EntreesDesChampsBnc, 'paiements'> }
 
 export interface EtatDeValidation {
   prealables: PrealableDeValidation[]
@@ -187,6 +202,19 @@ export interface EtatDeValidation {
 
 function pluriel(n: number, singulier: string, plurielForme = `${singulier}s`): string {
   return `${n} ${n > 1 ? plurielForme : singulier}`
+}
+
+// Les lignes de la demande telles que la base les juge (`refusDesChampsBnc`) : leur écriture, le compte de leur ligne du
+// brouillon et leurs cinq valeurs, la règle même de la demande (`champsDeLaLigneDemandee`, que `demandeDeValidation` appelle).
+function lignesAJugerDe(n: NumerotationFec): LigneAJuger[] {
+  return demandeDeValidation(n, null).p_lignes.map((l, i) => {
+    if (!('nature_operation' in l)) throw new Error(`La ligne ${l.id} n'a pas les quatre champs que sa numérotation calcule.`)
+    return {
+      journal: l.journal, numero: l.numero, compte: n.lignes[i].ecriture.compte, date_reglement: l.date_reglement,
+      mode_reglement: l.mode_reglement, nature_operation: l.nature_operation, poste_rattache: l.poste_rattache,
+      identification_client: l.identification_client,
+    }
+  })
 }
 
 // Les dates où une pièce s'écrit, ou s'écrira : en trésorerie, celles de ses paiements et, pour le reste, sa date
@@ -437,8 +465,9 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     ?? (d.facturesSources === null ? 'les factures sources de leurs ventes ne sont pas lues en entier' : null)
     ?? ventesIllisibles(d)
     ?? (d.operationsDeCaisse === null ? 'la caisse du dossier n’est pas lue en entier' : null)
+    ?? (d.champsBnc === null ? 'les factures et les cotisations que le FEC d’un BNC en trésorerie lit ne sont pas lues en entier' : null)
   if (lectureIncomplete !== null || d.facturesSources === null || d.etatsDesVentes === null || d.ventesDeLaChecklist === null
-    || d.operationsDeCaisse === null) {
+    || d.operationsDeCaisse === null || d.champsBnc === null) {
     prealables.push({
       id: 'lecture-partielle', nb: null, cible: 'cloture', bloquant: true,
       message: `La lecture du dossier est restée partielle (${lectureIncomplete}) : une validation ne se fait que sur tout le dossier. Recharger la page.`,
@@ -609,13 +638,15 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // parmi les écritures que rien ne rattache. Un dossier qui n'a pas basculé n'a aucune composition : rien ne change.
   // Et les opérations de la caisse (étape C3b) : chacune fait son écriture, au journal de son genre (CAISSE-Q3, (A)), la
   // pièce le récapitulatif de son jour — celle que la validation fige. La caisse absente n'en numérote aucune.
-  // SANS LES QUATRE CHAMPS D'UN BNC EN TRÉSORERIE (lot FEC22c1) : la base ne les fige pas encore (la migration FEC22b), et la
-  // numérotation qu'elle fige est celle du drapeau baissé — sans la scission d'une pièce payée le même jour par deux modes.
-  // Le jour où le drapeau se lève (FEC22c2), ces préalables reçoivent les MÊMES entrées que l'export de l'onglet Écritures :
-  // sinon le FEC relu d'un exercice validé n'aurait pas les écritures de celui qu'on exportait la veille.
+  // ET LES QUATRE CHAMPS D'UN BNC EN TRÉSORERIE (lot FEC22c2) : le drapeau levé, la numérotation reçoit les MÊMES entrées que
+  // l'export de l'onglet Écritures — sinon le FEC relu d'un exercice validé ne serait pas celui qu'on exportait la veille —,
+  // ses paiements étant ceux de la validation ; la demande en porte alors les cinq clés, que la base fige (FEC22b). Le
+  // drapeau baissé, la numérotation d'hier, au caractère près.
+  const champsBnc: ChampsBncDuFec = d.champsBnc.etat === 'non_exportes' ? CHAMPS_BNC_NON_EXPORTES
+    : { etat: 'exportes', entrees: { ...d.champsBnc.entrees, paiements } }
   const numerotation = numeroterFec(
     ecrituresDeLExercice, d.piecesValidees, [...d.categories], ouvertureDeLExercice(d.aNouveaux, d.soldesReportes, d.annee),
-    d.modele.mode, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [], d.operationsDeCaisse, CHAMPS_BNC_NON_EXPORTES,
+    d.modele.mode, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [], d.operationsDeCaisse, champsBnc,
   )
   // Les lignes que `ventes-facturees-a-ecrire` nomme — à réécrire ou à retirer —, et elles seules : une ligne d'une vente
   // facturée qu'aucune source en défaut ne porterait (défensif) reste une écriture que rien ne rattache.
@@ -634,10 +665,28 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     detail: desequilibres.slice(0, 5).map((x) => x.type === 'desequilibre'
       ? `${x.pieceRef} (écart de ${(Math.abs(x.ecartCentimes) / 100).toFixed(2).replace('.', ',')} €)` : '').join(' ; ') || undefined,
   })
+  // UNE LIGNE NUMÉROTÉE DEUX FOIS (lot FEC22c2) : la charge d'une pièce payée le même jour par deux modes, générée d'une
+  // seule ligne avant que la génération ne la répartisse entre ses règlements. La base la refuse d'un message général (« La
+  // numérotation proposée ne couvre pas exactement les … écritures ») ; ici, la pièce est nommée, et le geste qui la répare
+  // aussi. Le drapeau baissé, la numérotation ne scinde rien : ce préalable ne se dit jamais.
+  const lignesEnDeux = defauts.filter((x) => x.type === 'ligne_numerotee_deux_fois')
   bloque({
-    id: 'numerotation', nb: defauts.length - desequilibres.length, cible: 'ecritures',
+    id: 'ecritures-a-repartir', nb: new Set(lignesEnDeux.map((x) => x.type === 'ligne_numerotee_deux_fois' ? x.pieceRef : '')).size,
+    cible: 'ecritures',
+    message: "pièce(s) payée(s) le même jour par deux modes dont l'écriture n'a qu'une ligne de charge pour deux règlements : la validation fige un mode de règlement par ligne. Les régénérer (onglet Écritures, « Régénérer ») avant la validation.",
+    detail: [...new Set(lignesEnDeux.map((x) => x.type === 'ligne_numerotee_deux_fois' ? x.pieceRef : ''))].slice(0, 5).join(' ; ') || undefined,
+  })
+  bloque({
+    id: 'numerotation', nb: defauts.length - desequilibres.length - lignesEnDeux.length, cible: 'ecritures',
     message: "défaut(s) de numérotation que la base refuserait : un compte qui porte deux libellés, des numéros qui ne se suivent pas, ou une écriture à deux pièces ou à deux dates. Signaler ce cas : il ne devrait pas se produire.",
   })
+  // LES QUATRE CHAMPS, JUGÉS COMME LA BASE LES JUGE (lot FEC22c2 ; `refusDesChampsBnc`, lib/champsBncFiges.ts) : sur la demande
+  // telle qu'elle part, le premier refus de `valider_exercice` — ses mots, dans son ordre, après ceux d'hier —, les factures
+  // et avoirs du dossier lus en entier, le jour de Paris. Rien quand la numérotation ne les calcule pas.
+  if (numerotation.champsBnc === 'calcules' && d.champsBnc.etat === 'exportes' && lignesEnDeux.length === 0) {
+    const refus = refusDesChampsBnc(lignesAJugerDe(numerotation), d.champsBnc.entrees.factures, d.aujourdHui)
+    if (refus !== null) bloque({ id: 'champs-bnc', nb: null, cible: 'ecritures', message: refus.message })
+  }
 
   // ── L'ouverture de l'exercice suivant, que la validation écrit dans le même clic (ligne 34). ────────────────────
   // La base la calcule sur l'exercice validé (`soldes_a_reporter`) et refuse deux choses, dites ici avec ses mots : un

@@ -533,8 +533,14 @@ export interface EcritureBrouillon {
   // de son client — jamais un nom). Posés par `valider_exercice` seule, dans leurs listes fermées, ou nuls ; nuls sur une
   // écriture proposée (`ecritures_brouillon_champs_bnc_du_fec`). FACULTATIFS dans ce type, et c'est la vérité des deux
   // côtés de la migration : avant elle, `select('*')` ne les rend pas ; après, il les rend, nuls sur toute écriture que la
-  // validation n'a pas figée avec eux. Ils deviennent obligatoires avec le premier moteur qui les lit (le FEC d'un exercice
-  // validé, lot FEC22c2), comme `operation_caisse_id` avec le sien.
+  // validation n'a pas figée avec eux. Le premier moteur qui les lit est arrivé (le FEC d'un exercice validé, lot FEC22c2,
+  // `numerotationValidee`), mais ILS RESTENT FACULTATIFS JUSQU'AU JOUR DE L'APPLICATION : obligatoires avant elle, le type
+  // mentirait sur toute ligne que la production rend (aucune ne les porte), et un jeu d'essai devrait les inventer.
+  // `numerotationValidee` lit donc une valeur ABSENTE comme nulle : une ligne validée sans eux.
+  // LA BASCULE, le jour de la migration (après elle, et après les trois contrôles de l'export) : les cinq clés perdent leur
+  // `?` (`date_reglement: string | null`, `mode_reglement: string | null`, …) ; `npx tsc -b` nomme alors chaque jeu d'essai
+  // et chaque fabrique qui construit une `EcritureBrouillon` sans eux (les fabriques de src/test/ d'abord) — on y ajoute les
+  // cinq à nul, comme `operation_caisse_id` l'a été avec C3 ; et `numerotationValidee` cesse de lire l'absence (`?? null`).
   date_reglement?: string | null
   mode_reglement?: string | null
   nature_operation?: string | null

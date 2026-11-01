@@ -91,37 +91,24 @@ export const NATURES_OPERATION = [
 ] as const
 export type NatureOperation = (typeof NATURES_OPERATION)[number]
 
-/** Le séparateur de la nature et du poste dans NatOp, celui de la réponse du cabinet (« Dépense — Achats »). */
-export const SEPARATEUR_DU_POSTE = ' — '
+// Le séparateur de NatOp, les cinq clés d'une ligne de la demande de validation et la NatOp d'une ligne validée vivent dans
+// lib/champsBncDesLignes.ts depuis FEC22c2, un module qui n'importe que des types : la demande (lib/validationExercice.ts) et
+// la relecture (lib/fec.ts) les lisent, et ce module-ci, qui importe lib/cases2035.ts, ne peut pas entrer dans le cycle de
+// leurs imports (cases2035 → declaration2035 → amortissements → validationExercice) sans s'évaluer avant eux.
+export {
+  champsDeLaLigneDemandee, natOpFigee, posteDeLaNatOp, SEPARATEUR_DU_POSTE, type ChampsBncDUneLigne,
+} from './champsBncDesLignes'
+import { SEPARATEUR_DU_POSTE } from './champsBncDesLignes'
 
 // ── Le choix de FEC22-Q1 ───────────────────────────────────────────────────────────────────────────────────────────────
 
-/**
- * DateRglt et ModeRglt d'une écriture qui n'est PAS un règlement — une dotation, un forfait kilométrique, une liquidation
- * de TVA, les à-nouveaux, la TVA due d'une facture, une pièce sans paiement. Le VIII, 7° ne les dit pas « à blanc », et
- * Test Compta Demat ne les contrôle plus depuis le 23/01/2015 : la réponse du cabinet (FEC22-Q1, (C)) est « selon ce
- * qu'exige le logiciel de l'expert-comptable », que FEC22-E2 dira. `vides` : les deux à blanc ; `date_de_l_ecriture` :
- * DateRglt la date de l'écriture et ModeRglt « Sans règlement ». SANS VALEUR PAR DÉFAUT.
- */
-export const SANS_REGLEMENT = ['vides', 'date_de_l_ecriture'] as const
-export type SansReglement = (typeof SANS_REGLEMENT)[number]
-
-export interface ChoixChampsBnc {
-  sansReglement: SansReglement
-}
-
-// ── Le drapeau ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-/**
- * LE FEC D'UN DOSSIER EN TRÉSORERIE PORTE-T-IL SES VINGT-DEUX CHAMPS (lot FEC22c) ? `null` : le drapeau BAISSÉ — le fichier
- * d'aujourd'hui, à dix-huit colonnes, est celui qu'on exporte, et rien de neuf n'est lu. Levé, il PORTE le choix de
- * FEC22-Q1 : le drapeau ne se lève qu'avec la réponse de l'expert-comptable à FEC22-E2 (vides, ou la date de l'écriture et
- * « Sans règlement »), de sorte que l'écran reçoive ce choix sans qu'aucune valeur par défaut ne le décide à sa place. Il
- * reste baissé tant que la migration FEC22b n'est pas appliquée et que la validation ne fige pas les quatre valeurs
- * (FEC22c2) : un exercice validé avant elles ne pourrait plus les recevoir (FEC22-Q6). Les tests le jouent dans ses deux
- * états par un accesseur (`get CHAMPS_BNC_EXPORTES()`).
- */
-export const CHAMPS_BNC_EXPORTES: ChoixChampsBnc | null = null
+// Le choix (`ChoixChampsBnc`, `SANS_REGLEMENT`) et le drapeau (`CHAMPS_BNC_EXPORTES`) vivent dans lib/champsBncExportes.ts
+// depuis FEC22c2, un module sans import, et se redisent ici : la génération des écritures (lib/ecritures.ts) lit le drapeau,
+// et ce module-ci, qui importe lib/cases2035.ts, ne peut pas entrer dans le cycle de ses imports (cases2035 →
+// declaration2035 → ecritures) sans s'évaluer avant lui. Un test qui joue le drapeau par un accesseur sur CE module
+// (`vi.mock('./champsBncDuFec')`) le change pour le fichier et les écrans ; la génération se joue sur lib/champsBncExportes.ts.
+export { CHAMPS_BNC_EXPORTES, SANS_REGLEMENT, type ChoixChampsBnc, type SansReglement } from './champsBncExportes'
+import type { ChoixChampsBnc } from './champsBncExportes'
 
 // ── Ce que le module rend ──────────────────────────────────────────────────────────────────────────────────────────────
 

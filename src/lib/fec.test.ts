@@ -390,7 +390,7 @@ describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
     // Et une fois l'exercice validé, la relecture dit la même chose : le nom figé est celui de la numérotation.
     const n = numeroterFec(ecritures, [], [], [...ouverture, pret], 'tresorerie', [rembourse], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     expect(n.aNouveaux.find((a) => a.aNouveau.id === 'an-3')!.compteLib).toBe('Prêts')
-    const relu = numerotationValidee([], [{ ...pret }], '2027-01-15T10:00:00Z')
+    const relu = numerotationValidee([], [{ ...pret }], '2027-01-15T10:00:00Z', null)
     expect(relu.aNouveaux[0].compteLib).toBe('Prêts')
   })
 
@@ -575,7 +575,7 @@ describe('genererFec — le lettrage des comptes de tiers', () => {
       ...l.ecriture, statut: 'validee' as const, valide_le: '2027-01-14T23:30:00Z', journal_code: l.journal, numero_ecriture: l.numero,
       piece_ref: l.pieceRef, piece_date: l.pieceDate, compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
     }))
-    const relu = formaterFec(numerotationValidee(validees, [], '2027-01-14T23:30:00Z'), lettrages(validees, [], [], 'engagement', SANS_VENTE_FACTUREE), 'engagement')
+    const relu = formaterFec(numerotationValidee(validees, [], '2027-01-14T23:30:00Z', null), lettrages(validees, [], [], 'engagement', SANS_VENTE_FACTUREE), 'engagement')
     expect(colonnes(relu).slice(1).filter((r) => r[13] !== '').map((r) => [r[2], r[13], r[14]])).toEqual(lettrees().map((r) => [r[0], r[2], r[3]]))
   })
 
@@ -1150,7 +1150,7 @@ describe('numerotationValidee — le FEC d’un exercice validé se relit depuis
   it('relit le fichier d’avant la validation, à ValidDate près', () => {
     const avant = numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     const { ecritures, aNouveaux } = valider(avant)
-    const apres = numerotationValidee([...ecritures].reverse(), aNouveaux, VALIDE_LE)
+    const apres = numerotationValidee([...ecritures].reverse(), aNouveaux, VALIDE_LE, null)
     expect(apres.horsFec).toEqual([])
     const sansValidDate = (fec: string) => colonnes(fec).map((r) => r.filter((_, i) => i !== 15))
     expect(sansValidDate(formaterFec(apres, SANS_LETTRAGE, 'engagement'))).toEqual(sansValidDate(formaterFec(avant, SANS_LETTRAGE, 'engagement')))
@@ -1162,20 +1162,20 @@ describe('numerotationValidee — le FEC d’un exercice validé se relit depuis
     const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES))
     // Ce que la validation a figé, même si l'application nommerait autrement ce compte aujourd'hui.
     const figees = ecritures.map((e) => (e.compte === '606100' ? { ...e, compte_lib: 'Achats de fournitures (2026)' } : e))
-    const rows = colonnes(formaterFec(numerotationValidee(figees, aNouveaux, VALIDE_LE), SANS_LETTRAGE, 'engagement')).slice(1)
+    const rows = colonnes(formaterFec(numerotationValidee(figees, aNouveaux, VALIDE_LE, null), SANS_LETTRAGE, 'engagement')).slice(1)
     expect(rows.find((r) => r[4] === '606100')![5]).toBe('Achats de fournitures (2026)')
     expect(rows.find((r) => r[0] === 'AN')!.slice(4, 6)).toEqual([COMPTE_BANQUE, 'Banque'])
   })
 
   it('lit les libellés figés des à-nouveaux', () => {
     const fige = { ...ouverture, compte_lib: 'Banque', ecriture_lib: 'À-nouveau 512 Banque Populaire' }
-    const rows = colonnes(formaterFec(numerotationValidee([], [fige], VALIDE_LE), SANS_LETTRAGE, 'engagement')).slice(1)
+    const rows = colonnes(formaterFec(numerotationValidee([], [fige], VALIDE_LE, null), SANS_LETTRAGE, 'engagement')).slice(1)
     expect(rows.map((r) => [r[0], r[5], r[10], r[15]])).toEqual([['AN', 'Banque', 'À-nouveau 512 Banque Populaire', '20270115']])
   })
 
   it('met dehors une écriture qui ne porte pas sa validation, au lieu de l’imprimer à moitié', () => {
     const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES))
-    const n = numerotationValidee([...ecritures, ligne('achat', { id: 'a5' })], aNouveaux, VALIDE_LE)
+    const n = numerotationValidee([...ecritures, ligne('achat', { id: 'a5' })], aNouveaux, VALIDE_LE, null)
     expect(n.horsFec.map((e) => e.id)).toEqual(['a5'])
     expect(n.lignes).toHaveLength(4)
   })
@@ -1184,7 +1184,7 @@ describe('numerotationValidee — le FEC d’un exercice validé se relit depuis
   // (`ecritures_brouillon_validation_complete`). Si elle en portait, le fichier d'un exercice validé ne l'imprime pas.
   it('n’imprime jamais une écriture proposée, même si elle portait les champs d’une validation', () => {
     const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', [], SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES))
-    const n = numerotationValidee([{ ...ecritures[0], statut: 'proposee' }, ...ecritures.slice(1)], aNouveaux, VALIDE_LE)
+    const n = numerotationValidee([{ ...ecritures[0], statut: 'proposee' }, ...ecritures.slice(1)], aNouveaux, VALIDE_LE, null)
     expect(n.horsFec.map((e) => e.id)).toEqual([ecritures[0].id])
   })
 })

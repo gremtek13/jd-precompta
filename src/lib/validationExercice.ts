@@ -1,6 +1,7 @@
 import type { Declaration2035 } from './declaration2035'
 import type { EnteteDeclaration } from './gabarit2035'
 import type { NumerotationFec } from './fec'
+import { champsDeLaLigneDemandee, type ChampsBncDUneLigne } from './champsBncDesLignes'
 import type { EcritureBrouillon, Immobilisation, JournalCode } from './types'
 import { anneeDe } from './format'
 
@@ -115,6 +116,13 @@ export type DefautDeNumerotation =
   | { type: 'dates'; journal: JournalCode; numero: number }
   | { type: 'compte'; compte: string }
   | { type: 'auxiliaire'; compAuxNum: string }
+  // UNE LIGNE NUMÉROTÉE DEUX FOIS (lot FEC22c2) : la charge ou la TVA d'une pièce payée le même jour par deux modes, générée
+  // d'une seule ligne avant que la génération ne la répartisse entre ses règlements (lib/ecritureParReglement.ts) — le
+  // fichier la scinde entre deux écritures sous un seul identifiant (`scinderParMode`, lib/fec.ts). La base ne fige qu'un
+  // jeu de valeurs par ligne, et la refuse d'un message général (« La numérotation proposée ne couvre pas exactement les N
+  // écritures de l'exercice A. ») : ici, la pièce est nommée, et « Régénérer » la répare. Une fois par ligne, à sa
+  // première écriture.
+  | { type: 'ligne_numerotee_deux_fois'; journal: JournalCode; numero: number; pieceRef: string; ligneId: string }
 
 export function defautsDeNumerotation(n: NumerotationFec): DefautDeNumerotation[] {
   const defauts: DefautDeNumerotation[] = []
@@ -171,13 +179,29 @@ export function defautsDeNumerotation(n: NumerotationFec): DefautDeNumerotation[
     libellesParAuxiliaire.set(l.compAuxNum, (libellesParAuxiliaire.get(l.compAuxNum) ?? new Set()).add(l.compAuxLib ?? ''))
   }
   for (const [compAuxNum, libelles] of libellesParAuxiliaire) if (libelles.size > 1) defauts.push({ type: 'auxiliaire', compAuxNum })
+  const vues = new Set<string>()
+  const signalees = new Set<string>()
+  for (const l of n.lignes) {
+    const id = l.ecriture.id
+    if (vues.has(id) && !signalees.has(id)) {
+      signalees.add(id)
+      const premiere = n.lignes.find((x) => x.ecriture.id === id)!
+      defauts.push({ type: 'ligne_numerotee_deux_fois', journal: premiere.journal, numero: premiere.numero, pieceRef: premiere.pieceRef, ligneId: id })
+    }
+    vues.add(id)
+  }
   return defauts
 }
 
 // ── La demande envoyée à `valider_exercice` ───────────────────────────────────────────────────────────
 
-// Une ligne de la numérotation, sous la forme que `valider_exercice` lit (`jsonb_to_recordset`).
-export interface LigneDemandee {
+// Une ligne de la numérotation, sous la forme que `valider_exercice` lit (`jsonb_to_recordset`) : celle d'hier, et — la
+// numérotation calculant les quatre champs d'un BNC en trésorerie (lot FEC22c2) — leurs cinq clés, que la migration
+// `champs_bnc_du_fec` (FEC22b) lit et fige (`COLONNES_CHAMPS_BNC`, lib/champsBncFiges.ts). Sans eux, les clés sont ABSENTES,
+// non nulles : la demande d'hier, au caractère près, que la base valide comme hier.
+export type LigneDemandee = LigneDemandeeDHier | (LigneDemandeeDHier & ChampsBncDUneLigne)
+
+export interface LigneDemandeeDHier {
   id: string
   journal: JournalCode
   numero: number
@@ -204,13 +228,22 @@ export interface DemandeDeValidation {
 }
 
 // TIRÉE DE LA NUMÉROTATION MÊME DU FEC : ce que la base fige est exactement ce que le fichier imprime, et le FEC
-// relu depuis l'exercice validé est celui qu'on aurait exporté la veille.
+// relu depuis l'exercice validé est celui qu'on aurait exporté la veille. Les quatre champs d'un BNC en trésorerie y entrent
+// quand la numérotation les calcule (le drapeau `CHAMPS_BNC_EXPORTES` levé, lot FEC22c2) : chaque ligne, les cinq clés de
+// la sienne (`champsDeLaLigneDemandee` : le vide du fichier devient nul, le poste celui que NatOp porte après la nature) ;
+// une ligne qui ne les porte pas dans une numérotation qui les calcule ne peut pas exister, et se lève.
 export function demandeDeValidation(n: NumerotationFec, declaration: Instantane2035Ecrit | null): DemandeDeValidation {
   return {
-    p_lignes: n.lignes.map((l) => ({
-      id: l.ecriture.id, journal: l.journal, numero: l.numero, piece_ref: l.pieceRef, piece_date: l.pieceDate,
-      compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
-    })),
+    p_lignes: n.lignes.map((l): LigneDemandee => {
+      const ligne: LigneDemandeeDHier = {
+        id: l.ecriture.id, journal: l.journal, numero: l.numero, piece_ref: l.pieceRef, piece_date: l.pieceDate,
+        compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
+      }
+      if (n.champsBnc === 'non_calcules') return ligne
+      const c = l.champsBnc
+      if (c === null) throw new Error(`La ligne ${l.ecriture.id} n'a pas les quatre champs que sa numérotation calcule.`)
+      return { ...ligne, ...champsDeLaLigneDemandee({ ...c, natOp: new Map([[l.ecriture.id, c.natOp]]) }, l.ecriture.id) }
+    }),
     p_a_nouveaux: n.aNouveaux.map((a) => ({ id: a.aNouveau.id, compte_lib: a.compteLib, ecriture_lib: a.ecritureLib })),
     p_declaration: declaration,
   }

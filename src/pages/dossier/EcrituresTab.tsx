@@ -620,7 +620,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Rien n'est relu des pièces ni des catégories d'aujourd'hui — une catégorie renommée ne change plus le fichier,
   // et deux exports rendent le même, au lettrage près : il suit les règlements écrits depuis (lib/lettrage.ts).
   const exerciceValideAffiche = typeof anneeFilter === 'number' ? exercicesValides.find((e) => e.annee === anneeFilter) ?? null : null
-  const fecValide = exerciceValideAffiche ? numerotationValidee(ecrituresFiltrees, aNouveauxExercice, exerciceValideAffiche.valide_le) : null
+  const fecValide = exerciceValideAffiche ? numerotationValidee(ecrituresFiltrees, aNouveauxExercice, exerciceValideAffiche.valide_le, choixDesChampsBnc) : null
   // LE LETTRAGE des comptes de tiers (lib/lettrage.ts), calculé sur TOUT le brouillon et non sur l'exercice affiché :
   // une facture de décembre réglée en janvier porte le même code dans les deux FEC. Il ne se fige pas avec l'exercice —
   // il dit l'état des comptes de tiers au jour de l'export, le FEC validé compris. Les lettrages faits à la main y
@@ -1920,8 +1920,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           }
           onClick={() => {
             if (typeof anneeFilter !== 'number' || ventesDesExports === null || operationsDuFec === null) return
-            // Un exercice validé se relit de ce qui a été figé : à dix-huit colonnes tant que la validation ne fige pas les
-            // quatre champs (la migration FEC22b, puis FEC22c2). Les autres attendent leurs entrées, lues en entier.
+            // Un exercice validé se relit de ce qui a été figé : à vingt-deux colonnes quand sa validation a figé les quatre
+            // champs (FEC22b, FEC22c2) et que le drapeau est levé, à dix-huit sinon (`numerotationValidee`). Les autres
+            // attendent leurs entrées, lues en entier.
             const contenu = fecValide
               ? formaterFec(fecValide, lettrage, modele.mode)
               : champsDuFec === null ? null

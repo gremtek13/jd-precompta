@@ -285,7 +285,7 @@ describe('le FEC d’un dossier qui a basculé', () => {
       ...l.ecriture, statut: 'validee', valide_le: VALIDE_LE, journal_code: l.journal, numero_ecriture: l.numero, piece_ref: l.pieceRef,
       piece_date: l.pieceDate, compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
     }))
-    const apres = numerotationValidee([...figees].reverse(), [], VALIDE_LE)
+    const apres = numerotationValidee([...figees].reverse(), [], VALIDE_LE, null)
     expect(apres.horsFec).toEqual([])
     const sansValidDate = (f: string) => colonnes(f).map((r) => r.filter((_, i) => i !== 15))
     expect(sansValidDate(formaterFec(apres, SANS_LETTRAGE, mode))).toEqual(sansValidDate(formaterFec(avant, SANS_LETTRAGE, mode)))
@@ -296,12 +296,12 @@ describe('le FEC d’un dossier qui a basculé', () => {
     const { brouillon } = jeu('engagement')
     // Une ligne d'une vente facturée validée sans ce que la validation fige ne se numérote pas, comme toute autre.
     const validee = { ...brouillon[0], statut: 'validee' as const, valide_le: '2026-01-20T10:00:00Z' }
-    expect(numerotationValidee([validee], [], '2026-01-20T10:00:00Z').horsFec).toEqual([validee])
+    expect(numerotationValidee([validee], [], '2026-01-20T10:00:00Z', null).horsFec).toEqual([validee])
     const figee = {
       ...validee, journal_code: 'VE' as const, numero_ecriture: 1, piece_ref: 'F2025-0001', piece_date: '2025-11-10',
       compte_lib: 'Clients', comp_aux_num: 'CFICTIF', comp_aux_lib: 'Client fictif',
     }
-    expect(numerotationValidee([figee], [], '2026-01-20T10:00:00Z').lignes.map((l) => [l.journal, l.pieceRef, l.compAuxNum]))
+    expect(numerotationValidee([figee], [], '2026-01-20T10:00:00Z', null).lignes.map((l) => [l.journal, l.pieceRef, l.compAuxNum]))
       .toEqual([['VE', 'F2025-0001', 'CFICTIF']])
   })
 

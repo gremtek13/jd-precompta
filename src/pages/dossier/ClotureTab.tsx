@@ -8,7 +8,7 @@ import {
   calculerDeclaration2035, partCsgNonDeductible, type Declaration2035, type FraisSansPoste, type PartCsgNonDeductible,
 } from '../../lib/declaration2035'
 import { fraisDesMouvements } from '../../lib/ecrituresVentesFacturees'
-import { dotationDeLExercice } from '../../lib/amortissements'
+import { acquisitionsDesBiens, dotationDeLExercice } from '../../lib/amortissements'
 import { amortissementsSousLeBareme } from '../../lib/forfaitKilometrique'
 import {
   CASES_2035, PREMIER_EXERCICE_REVENU_BRUT_SOCIAL, arrondirPourFormulaire, casesNegatives, doublonFraisVehicules, incoherencesDesCases,
@@ -33,7 +33,11 @@ import type { ModeleComptable } from '../../lib/engagement'
 import type { DossierTab } from '../../lib/ongletsDossier'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
-import { prealablesDeValidation, prochainExerciceAValider, type EtatsDesVentesDeLaValidation } from '../../lib/prealablesValidation'
+import {
+  prealablesDeValidation, prochainExerciceAValider, type ChampsBncDeLaValidation, type EtatsDesVentesDeLaValidation,
+} from '../../lib/prealablesValidation'
+import { CHAMPS_BNC_EXPORTES } from '../../lib/champsBncDuFec'
+import { lireLesChampsBnc, type LectureDesChampsBnc } from '../../lib/champsBncLecture'
 import type { FacturePourJumelle, TransmissionPourJumelle } from '../../lib/ventesJumelles'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 import { ecrituresDesVentesPourLa2035, etatsDesVentesFacturees, mouvementsClassesParEncaissements } from '../../lib/ecrituresVentesFactureesEcran'
@@ -174,6 +178,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // leur date. Lue tout ou rien avec le reste, gardée AVEC le dossier qui l'a demandée ; le drapeau baissé, rien n'est lu ni
   // dit (la caisse absente). Lue en partie : aucune 2035 — ni chiffre, ni formulaire, ni validation —, et l'écran le dit.
   const [lectureCaisse, setLectureCaisse] = useState<LectureDeLaCaisse | null>(null)
+  // CE QUE LE FEC D'UN BNC EN TRÉSORERIE LIT DE PLUS (lot FEC22c2 ; lib/champsBncLecture.ts), la lecture même de l'onglet
+  // Écritures : la validation reçoit les MÊMES entrées que l'export. Le drapeau baissé, rien n'est lu.
+  const [lectureChampsBnc, setLectureChampsBnc] = useState<LectureDesChampsBnc | null>(null)
   const [validationIncomplete, setValidationIncomplete] = useState<string | null>(null)
   const [ecrituresIncompletes, setEcrituresIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -226,6 +233,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
       lectureEcritures, lectureOuverture, lectureAValider, lectureValides, lectureDeclarationsTva, lectureReportes,
       lectureFacturesEmises, lectureTransmissions, lectureVentesFacturees, lectureSourcesDesVentes, lectureDeLaCaisse,
+      lectureDesChampsBnc,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -334,6 +342,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       ventesParLesFactures ? lireLesSourcesDesEcrituresDeVente(dossierId) : Promise.resolve(null),
       // Ne rejette jamais ; le drapeau baissé, ne touche pas au réseau.
       lireLaCaisse(dossierId),
+      // Ne rejette jamais ; le drapeau `CHAMPS_BNC_EXPORTES` baissé, ne touche pas au réseau.
+      lireLesChampsBnc(dossierId),
     ])
     // Le relevé qui ne boucle pas et les doublons de contenu, comme la Checklist les lit — mais une lecture ratée
     // n'y vaut jamais « rien à signaler » : elle devient un préalable de la validation.
@@ -345,6 +355,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     setLectureVentes(lectureVentesFacturees)
     setLectureSourcesVentes(lectureSourcesDesVentes)
     setLectureCaisse(lectureDeLaCaisse)
+    setLectureChampsBnc(lectureDesChampsBnc)
     setRelevesIncoherents(releves)
     setDoublonsTexte(doublons)
     setPiecesAValider(lectureAValider.lignes)
@@ -698,9 +709,31 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // daté par sa facture et non par le virement (étape VF5h) — leur motif se dit, en trésorerie comme en engagement ; pas
   // encore revenues, la validation attend (`facturesSources` nulles). Une seule garde pour les deux raisons.
   // La caisse lue en partie aussi (étape C3a) : sans elle, aucune 2035, et la validation ne part pas sur une 2035 qui manque.
+  // LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE (lot FEC22c2) : le drapeau baissé, ou un dossier en engagement, rien de
+  // neuf — la demande d'hier. Levé, les MÊMES entrées que l'export de l'onglet Écritures (les paiements, la validation les tire
+  // elle-même), sur des lectures toutes revenues en entier pour CE dossier : les factures et les cotisations, les ventilations,
+  // le registre des encaissements d'un dossier basculé (aucun sinon : aucune écriture n'en vient), les biens. Une seule manque,
+  // et la validation se suspend en le disant : l'exercice se figerait sans les quatre champs.
+  const lectureChampsDuDossier = lectureChampsBnc !== null && lectureChampsBnc.dossierId === dossierId ? lectureChampsBnc : null
+  const registreDesChamps = !ventesParLesFactures ? [] : sourcesDesVentesDuDossier?.etat === 'lue' ? sourcesDesVentesDuDossier.sources.encaissements : null
+  const champsDeLaValidation: ChampsBncDeLaValidation | null = CHAMPS_BNC_EXPORTES === null || modele.mode === 'engagement'
+    ? { etat: 'non_exportes' }
+    : lectureChampsDuDossier?.etat === 'lue' && registreDesChamps !== null
+      ? {
+        etat: 'exportes',
+        entrees: {
+          choix: CHAMPS_BNC_EXPORTES, registre: registreDesChamps, factures: lectureChampsDuDossier.factures,
+          cotisations: lectureChampsDuDossier.cotisations, ventilations,
+          acquisitions: acquisitionsDesBiens(immobilisations, natures, ouverture), plan: modele.plan,
+        },
+      }
+      : null
+  const champsBncIncomplets = champsDeLaValidation !== null ? null
+    : lectureChampsDuDossier?.etat === 'incomplete' ? `les champs du FEC d’un BNC : ${lectureChampsDuDossier.motif}` : null
   const motifValidation = lectureIncomplete ?? ecrituresIncompletes ?? naturesIncompletes ?? empruntsIncomplets ?? validationIncomplete
     ?? (lectureVentesDuDossier?.etat === 'incomplete' ? `les ventes facturées : ${lectureVentesDuDossier.motif}` : null)
     ?? (caisseIncomplete !== null ? `la caisse : ${caisseIncomplete}` : null)
+    ?? champsBncIncomplets
   const entete = { nom: dossier?.nom ?? null, activite: dossier?.libelle_naf ?? null, siret: dossier?.siret ?? null }
   const validationDe = (annee: number, formulaire?: { declaration: Declaration2035; valeurs: Map<string, number> }) => {
     const valide = exercicesValides.find((e) => e.annee === annee) ?? null
@@ -717,7 +750,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       periodiciteTva, relevesIncoherents, doublonsTexte, facturesEmises, transmissions,
       // Les factures sources lues en entier pour CE dossier, ou rien : la validation se suspend alors (étape VF6a).
       facturesSources: ventesLues?.sources ?? null,
-      etatsDesVentes, ventesDeLaChecklist: ventesDeLaVueDEnsemble, operationsDeCaisse,
+      etatsDesVentes, ventesDeLaChecklist: ventesDeLaVueDEnsemble, operationsDeCaisse, champsBnc: champsDeLaValidation,
       declaration: formulaire?.declaration ?? null,
       concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
     })
