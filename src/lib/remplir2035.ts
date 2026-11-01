@@ -4,6 +4,7 @@ import { ancragesDesCases, planDeRemplissage } from './gabarit2035'
 import type { EnteteDeclaration, FiletVertical, FragmentTexte, PageFormulaire } from './gabarit2035'
 import { planDeRemplissage2035E } from './gabarit2035E'
 import type { EnteteAnnexe2035E } from './gabarit2035E'
+import { modeleDuFormulaire } from './modeles2035'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
@@ -17,8 +18,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
 // bouton, un cerfa rempli » ne marche pas si on commence par réclamer un PDF.
 
 // Le millésime est dans le nom : quand la DGFiP publiera l'édition suivante, on ajoutera un fichier
-// au lieu d'écraser celui avec lequel les déclarations passées ont été produites.
-export const MODELE_2035 = '/formulaires/2035-sd-2026.pdf'
+// au lieu d'écraser celui avec lequel les déclarations passées ont été produites. Le modèle de chaque exercice se lit dans
+// lib/modeles2035.ts (étape 2035S6) : l'exercice N se remplit sur le millésime N + 1, et sans le sien, rien.
 
 // Les deux premières pages portent la 2035-A et la 2035-B ; la troisième, l'annexe 2035-E, ne se lit que quand elle est
 // due. Les deux dernières (2035-F et 2035-G, capital et filiales d'une société) ne sont pas alimentées ; les lire
@@ -85,8 +86,14 @@ export async function remplir2035(
   // L'annexe quand elle est due, sinon null : sa page reste alors vierge. Sans valeur par défaut — un appelant qui
   // l'oublierait déposerait une liasse sans son annexe, et ce n'est pas à la compilation de le lui taire.
   annexe2035E: Annexe2035EARemplir | null,
+  // L'exercice déclaré : il choisit le millésime du formulaire (lib/modeles2035.ts). Sans valeur par défaut — un appelant
+  // qui l'oublierait imprimerait ses chiffres sous l'en-tête d'une autre année, le défaut que l'étape 2035S6 corrige.
+  annee: number,
 ): Promise<Remplissage2035> {
-  const reponse = await fetch(MODELE_2035)
+  const modeleDeLExercice = modeleDuFormulaire(annee)
+  // Clôture ne l'offre pas sans son millésime (`formulaireAbsent`) ; ce refus ne se voit que si un appelant passe outre.
+  if (!modeleDeLExercice) throw new Error(`Formulaire 2035 des revenus ${annee} absent de l’application`)
+  const reponse = await fetch(modeleDeLExercice.chemin)
   if (!reponse.ok) throw new Error(`Formulaire 2035 introuvable (${reponse.status})`)
   const modele = await reponse.arrayBuffer()
 

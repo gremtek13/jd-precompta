@@ -46,6 +46,8 @@ const faux = vi.hoisted(() => ({
   muetApresParTable: {} as Record<string, number>,
   // Ce que `remplir2035` a reçu : les cases telles que le PDF les porterait, et le déclarant.
   remplies: [] as Map<string, number>[],
+  // Et l'exercice qui choisit le millésime du modèle (étape 2035S6).
+  exercicesRemplis: [] as number[],
   entetes: [] as unknown[],
   // Et l'annexe 2035-E portée en page 3, ou null quand elle n'est pas due.
   annexes: [] as ({ valeurs: ReadonlyMap<string, number>; entete: Record<string, unknown> } | null)[],
@@ -162,7 +164,9 @@ vi.mock('../../lib/remplir2035', () => ({
     valeurs: Map<string, number>,
     entete: unknown,
     annexe: { valeurs: ReadonlyMap<string, number>; entete: Record<string, unknown> } | null,
+    annee: number,
   ) => {
+    faux.exercicesRemplis.push(annee)
     faux.remplies.push(valeurs)
     faux.entetes.push(entete)
     faux.annexes.push(annexe)
@@ -517,6 +521,21 @@ describe('ClotureTab — le refus de remplir une 2035 sur une lecture partielle'
     const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
     expect(bouton.hasAttribute('disabled')).toBe(false)
     expect(screen.queryByText(/n'a pas pu être lue en entier/)).toBeNull()
+    expect(screen.queryByText(/n’est pas encore publié/)).toBeNull()
+  })
+
+  // ÉTAPE 2035S6, 2035S-Q5 (A) : l'exercice 2026 n'a pas son millésime (« REVENUS 2026 », millésime 2027, pas publié). Le
+  // bouton est retenu, la phrase le dit, et rien ne part vers `remplir2035` — ses chiffres s'imprimaient sous « REVENUS 2025 ».
+  it('retient le PDF d’un exercice dont le millésime n’est pas dans l’application, et le dit', async () => {
+    poser()
+    faux.remplies = []
+    monter(2026)
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toMatch(/^Le formulaire 2035 des revenus 2026 \(millésime 2027\) n’est pas encore publié/)
+    expect(screen.getByText(/^Le formulaire 2035 des revenus 2026 \(millésime 2027\) n’est pas encore publié/)).toBeTruthy()
+    await act(async () => { fireEvent.click(bouton) })
+    expect(faux.remplies).toHaveLength(0)
   })
 })
 
@@ -1020,6 +1039,7 @@ describe('ClotureTab — le revenu brut social du cadre 8', () => {
   it('envoie le cadre 8 au formulaire, recalculé sur les cases arrondies de l’exercice', async () => {
     poserUnBenefice()
     faux.remplies = []
+    faux.exercicesRemplis = []
     // jsdom n'a ni `createObjectURL` ni navigation : le téléchargement lui-même n'est pas en cause.
     URL.createObjectURL = () => 'blob:formulaire'
     URL.revokeObjectURL = () => {}
@@ -1030,6 +1050,8 @@ describe('ClotureTab — le revenu brut social du cadre 8', () => {
     await act(async () => { bouton.click() })
 
     expect(faux.remplies).toHaveLength(1)
+    // L'exercice part avec les cases : il choisit le millésime du modèle (étape 2035S6).
+    expect(faux.exercicesRemplis).toEqual([2025])
     // Les mêmes 4 879 que le report : ce que l'écran annonce est ce que le PDF porte.
     expect(faux.remplies[0].get('DD')).toBe(4879)
     expect(faux.remplies[0].get('DC')).toBe(0)

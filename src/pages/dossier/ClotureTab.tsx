@@ -18,6 +18,7 @@ import { POSTES_PROPOSABLES, type DoublonFraisVehicule, type IncoherenceCase, ty
 import { comptesPartagesEntreCases, concordance2035 } from '../../lib/concordance2035'
 import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
+import { formulaireAbsent } from '../../lib/modeles2035'
 import { SAISIES_2035E_ABSENTES, calculer2035E, forfaitKilometriqueDesPostes, type Annexe2035E } from '../../lib/declaration2035E'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
@@ -736,7 +737,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // déclarant — plutôt que recalculée. `annexe` : la 2035-E de l'exercice, portée en page 3 quand elle est due — celle
   // que l'écran montre, tirée des mêmes cases.
   async function telechargerFormulaire(annee: number, valeurs: Map<string, number>, instantane: Instantane2035 | null, annexe: Annexe2035E) {
-    if (generationEnCours.current || lectureIncomplete) return
+    // Sans le millésime de l'exercice, rien (étape 2035S6, 2035S-Q5 (A)) : le bouton est retenu, et la carte le dit.
+    if (generationEnCours.current || lectureIncomplete || formulaireAbsent(annee) !== null) return
     generationEnCours.current = true
     setError(null)
     try {
@@ -750,6 +752,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
         annexe.obligatoire
           ? { valeurs: annexe.lignes, entete: { nom: declarant.nom, siret: declarant.siret, adresse: dossier?.adresse ?? null, annee } }
           : null,
+        annee,
       )
       const manquantes = [
         ...codesSansAncrage,
@@ -1779,6 +1782,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                   annexe2035E={annexe}
                   lectureAnnexe={instantane ? null : lectureIncomplete}
                   blocage={lectureIncomplete}
+                  absent={formulaireAbsent(annee)}
                   cloture={cloturesConnues.has(annee)}
                   onCloturer={() => handleCloturer(annee)}
                 />
@@ -1825,7 +1829,7 @@ function BoutonCloture({ cloture, onCloturer }: { cloture: boolean; onCloturer: 
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
 function FormulaireAnnuel({
-  dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, annexe2035E, lectureAnnexe, blocage, cloture, onCloturer,
+  dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, annexe2035E, lectureAnnexe, blocage, absent, cloture, onCloturer,
 }: {
   dossierId: string
   annee: number
@@ -1845,6 +1849,9 @@ function FormulaireAnnuel({
   // Non nul quand la lecture des pièces n'a pas pu se dire complète : le bouton est alors grisé et
   // dit pourquoi, plutôt que de produire un formulaire qu'on croirait complet.
   blocage: string | null
+  // Non nul quand l'application n'a pas le millésime du formulaire de cet exercice (étape 2035S6, lib/modeles2035.ts) : le
+  // bouton est retenu, et la phrase le dit sous l'en-tête — jamais un PDF sous l'en-tête d'une autre année.
+  absent: string | null
   // Vrai si le cabinet a déjà demandé la clôture de cet exercice — le bouton change de libellé mais
   // reste actif, pour rattraper une pièce sensible validée après coup (voir clotureExercice.ts).
   cloture: boolean
@@ -1877,13 +1884,16 @@ function FormulaireAnnuel({
           <button
             className="btn btn-primary btn-sm"
             onClick={onTelecharger}
-            disabled={blocage !== null}
-            title={blocage ? `Lecture partielle d'une des collections de la déclaration (${blocage}) — le formulaire ne peut pas dire qu'il est amputé.` : undefined}
+            disabled={blocage !== null || absent !== null}
+            title={blocage ? `Lecture partielle d'une des collections de la déclaration (${blocage}) — le formulaire ne peut pas dire qu'il est amputé.` : absent ?? undefined}
           >
             {genere ? '↻ Regénérer le formulaire' : '⬇ Remplir le formulaire officiel'}
           </button>
         </div>
       </div>
+      {absent !== null && (
+        <p className="muted" style={{ margin: 0, padding: '0 16px 12px' }}>{absent}</p>
+      )}
       {validee && (
         <div style={{ padding: '0 16px 12px' }}>
           <p className="muted" style={{ margin: 0 }}>

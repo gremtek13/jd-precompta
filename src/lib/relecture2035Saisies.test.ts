@@ -9,6 +9,7 @@ import { paiementsDesPieces } from './rattachement'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { previsionnellesSansPaiement, remplacementsDesPrevisionnelles } from './previsionnelles'
+import { formulaireAbsent, modeleDuFormulaire } from './modeles2035'
 import { ventesFactureesVides } from '../test/ventesFacturees'
 import type { Categorie, CotisationDeclaree, LigneBancaire } from './types'
 
@@ -214,41 +215,42 @@ describe('point 2 — une échéance prévisionnelle et l’appel définitif d�
 })
 
 describe('point 3 — le formulaire PDF de 2026 rempli pour tout exercice', () => {
-  // Le modèle que l'application sert : `remplir2035` ne reçoit pas l'exercice, et le seul modèle nommé est MODELE_2035.
-  // Lu dans la source plutôt qu'importé : remplir2035.ts charge le pdf.js du navigateur et son « worker », que l'environnement
-  // node des tests n'a pas.
+  // CORRIGÉ (étape 2035S6, 2035S-Q5 (A)) : un modèle par millésime (lib/modeles2035.ts), l'exercice N rempli sur le millésime
+  // N + 1, et `remplir2035` reçoit l'exercice. Lu dans la source plutôt qu'importé : remplir2035.ts charge le pdf.js du
+  // navigateur et son « worker », que l'environnement node des tests n'a pas.
   const source = readFileSync('src/lib/remplir2035.ts', 'utf8')
-  const modeles = [...source.matchAll(/'\/formulaires\/(2035-sd-\d{4}\.pdf)'/g)].map((m) => m[1])
   const signature = /export async function remplir2035\(([\s\S]*?)\): Promise/.exec(source)?.[1] ?? ''
 
-  async function revenusDuModele(fichier: string): Promise<number | null> {
-    const doc = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(`public/formulaires/${fichier}`)) }).promise
+  async function revenusDuModele(chemin: string): Promise<number | null> {
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(`public${chemin}`)) }).promise
     const page = await doc.getPage(1)
     const texte = (await page.getTextContent()).items.map((i) => ('str' in i ? i.str : '')).join(' ')
     const m = /REVENUS (\d{4})/.exec(texte)
     return m ? Number(m[1]) : null
   }
 
-  // Le modèle qui remplit la 2035 de l'exercice `annee` : un seul, quel que soit l'exercice (le test qui suit l'établit).
+  // Le modèle qui remplit la 2035 de l'exercice `annee`, ou rien : celui que remplir2035.ts et Clôture lisent.
   async function revenusDuFormulaireRempliPour(annee: number): Promise<number | null> {
-    void annee // l'exercice n'entre pas dans le choix du modèle
-    return revenusDuModele(modeles[0])
+    const modele = modeleDuFormulaire(annee)
+    return modele === null ? null : revenusDuModele(modele.chemin)
   }
 
-  it('un seul modèle est servi, et remplir2035 ne reçoit pas l’exercice', () => {
-    expect(modeles).toEqual(['2035-sd-2026.pdf'])
+  it('remplir2035 reçoit l’exercice, et choisit son modèle par lui — aucun chemin de modèle écrit en dur', () => {
     expect(signature).toMatch(/valeurs/)
-    expect(signature).not.toMatch(/annee/)
+    expect(signature).toMatch(/annee: number/)
+    expect(source).toContain('modeleDuFormulaire(annee)')
+    expect(source).not.toMatch(/'\/formulaires\//)
   })
 
   it('l’exercice 2025 se remplit sur le bon formulaire : « REVENUS 2025 », millésime 2026', async () => {
     expect(await revenusDuFormulaireRempliPour(2025)).toBe(2025)
   })
 
-  // PROUVÉ, NON CORRIGÉ, ET HORS DU MVP : la 2035 de 2026 sera déposée en mai 2027 par l'expert-comptable sur son logiciel
-  // (MVP-D5), et le formulaire « REVENUS 2026 » (millésime 2027) n'est pas publié. Aujourd'hui l'application imprime les
-  // chiffres de 2026 sous l'en-tête « REVENUS 2025 », sans rien dire.
-  it.fails('l’exercice 2026 se remplit sur le formulaire « REVENUS 2026 » (défaut non corrigé)', async () => {
-    expect(await revenusDuFormulaireRempliPour(2026)).toBe(2026)
+  // HORS DU MVP : la 2035 de 2026 sera déposée en mai 2027 par l'expert-comptable sur son logiciel (MVP-D5), et le formulaire
+  // « REVENUS 2026 » (millésime 2027) n'est pas publié. L'application imprimait les chiffres de 2026 sous l'en-tête
+  // « REVENUS 2025 », sans rien dire ; elle ne les imprime plus, et Clôture le dit (`formulaireAbsent`).
+  it('l’exercice 2026 ne s’imprime plus sous « REVENUS 2025 » : sans son millésime, le PDF est retenu, et c’est dit', async () => {
+    expect(await revenusDuFormulaireRempliPour(2026)).toBeNull()
+    expect(formulaireAbsent(2026)).toMatch(/^Le formulaire 2035 des revenus 2026 \(millésime 2027\) n’est pas encore publié/)
   })
 })
