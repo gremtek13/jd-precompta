@@ -44622,3 +44622,134 @@ tests d'avant, retouchés sur la forme seulement, tous verts. `tsc -p tsconfig.a
   caisse (la numérotation la range avec la pièce, la base ne l'a jamais vue ainsi). Rien de cela n'a été joué ici.
 
 **LE RETOUR ARRIÈRE** : retirer les commits ; aucune donnée, aucune migration. Le drapeau baissé, rien n'est en jeu.
+
+### 01/11/2026 — LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, À L'ÉCRAN DU CABINET (C9B, LIGNE 26.6)
+
+(Écrite par un agent architecte, sur la tête de C9a (« C9a sur la relecture de la 2035 »). Aucune migration, aucun fichier de
+`supabase/preparees/` ni de `supabase/schema/`, aucune Edge Function ; en production, rien de lu ni d'écrit. Lus avant
+d'écrire : « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE (CAISSE-Q1 ET Q4) »,
+§ 8 et § 10 ; C8, son « POUR C9 » ; C9a, ses pièges pour C9b ; C4, les conventions de l'onglet Caisse. Côté cabinet seulement :
+le client (« Ma caisse », le paiement dans « Mes pièces ») est C10 à C12. Tout ce qui suit est NEUTRE tant que
+`PAIEMENT_PAR_LA_CAISSE_EXPORTE` reste baissé.)
+
+**CE QUI CHANGE À L'ÉCRAN, LE DRAPEAU LEVÉ.**
+- La fiche d'une pièce (Justificatifs), section « Payée en espèces » (`pages/dossier/ReglementParLaCaisse.tsx`, la logique dans
+  `lib/paiementParLaCaisseEcran.ts`, pur) : les paiements par la caisse de la pièce, retirés compris, chacun par son jour et
+  ses espèces — jamais un tiers ; « Retirer » un paiement vivant, par `retirer_operation_caisse` (la fonction de la caisse,
+  qui retire sa contrepartie avec lui), le refus de la caisse jamais négative dit avant le clic, la confirmation nommant le
+  paiement, sa contrepartie et la caisse de son jour ; « Régler par la caisse » : le jour et le montant, proposé — le reste à
+  régler, banque et caisse mêlées (`paiementNet`), SIGNÉ comme le relevé (« -80,00 » pour un achat) —, le verdict de
+  `jugerLeReglementSelon` sur la saisie telle qu'elle part (les refus de `regler_piece_par_la_caisse` dans leur ordre), la
+  confirmation qui nomme la pièce, le paiement, la caisse de ce jour-là et la contrepartie au compte de la caisse DU PLAN, à
+  régénérer avec les écritures de la pièce ; l'appel à la fonction seule, ses quatre paramètres ; l'erreur par `messageErreur` ;
+  un verrou `useRef` pour les deux gestes, relâché APRÈS la relecture de la caisse (même sur un refus). Ni le formulaire ni un
+  geste sur une caisse pas revenue, lue en partie, d'un autre dossier, sur une désignation que les factures lues ne rendent pas,
+  ni dans un dossier en engagement ; une pièce ni d'achat ni de vente sans paiement n'a pas de section. « Entrée » dans ses
+  champs n'envoie pas la fiche (elle validerait la pièce).
+- La garde de la pièce payée (`garder_piece_payee_par_la_caisse`), dite AVANT le clic (`refusDuChangementDeLaPiece`) : le type
+  d'une pièce qu'un paiement non retiré cite (sous le champ, les deux boutons grisés) ; sa désignation comme l'exemplaire d'une
+  facture SOURCE (`ExemplaireDeLaFacture`, le prop `refusParLaCaisse`, après les refus de la désignation) ; et la suppression :
+  une pièce qu'un paiement cite, retiré ou non, n'offre plus « Supprimer » (la clé `on delete restrict`), la phrase dit quoi
+  faire (retirer le paiement, puis la retyper en « autre »).
+- L'onglet Justificatifs lit la caisse (`lireLaCaisseDuDossier`) — le drapeau levé et le dossier en trésorerie seulement —, et
+  dit « Payée en espèces » sur la ligne d'une pièce qu'un paiement vivant règle, à part de « Rapprochée » (un mouvement
+  bancaire : le badge garde `AUCUN_PAIEMENT_PAR_LA_CAISSE`) ; « Non rapprochée » ne se dit plus d'une pièce payée en espèces ;
+  une caisse lue en partie entre au bandeau des listes de référence. `DossierDetail` passe le modèle et le statut.
+- La Vue d'ensemble : `caisse-a-reprendre` compte le paiement d'une pièce ÉCRITE dont la contrepartie manque
+  (`contrepartie_absente`) ou ne suit plus (`contrepartie_perimee` : compte du plan, date, montant signé — la règle de
+  `caisseSuitLesPaiements`), son détail nommant le remède, « Régénérer » ; la validation le reprend sous le même identifiant.
+  Une caisse lue EN PARTIE ne rend aucun paiement : « à régénérer » se tait sur une pièce dont l'écriture porte une contrepartie
+  de caisse, et « en attente de rapprochement », « payée en partie » et « montant introuvable » se taisent — le bandeau de la
+  caisse le dit. Le mouvement d'avant l'ouverture classé sur la caisse : `caisse-mouvements-avant-ouverture`, en erreur, vers
+  Banque, son détail nommant chaque mouvement (écarté de la validation : il n'appartient à aucun exercice que l'application
+  valide ; rangé en trésorerie dans la révision). Les pièces de vente passent à la caisse des contrôles (`piecesDeVente`, la
+  Checklist et la validation), et les pièces des deux piles entrent dans `entreesDeLaCaisseIncompletes`.
+- La fiche d'un mouvement (Banque) : les paiements par la caisse pas lus en entier, « Associer » est grisé partout (la pièce
+  proposée, les pièces à égalité, le choix à la main, la proposition du client), le règlement groupé se suspend, et la fiche
+  le dit ; une échéance de cotisation s'associe toujours (`paiementsDeLaCaisseIncomplets`, obligatoire).
+- L'onglet Caisse : `DonneesDeLaCaisse.piecesPayees` (lues par `lireLaCaisseDuDossier` : le type et la date des pièces que des
+  paiements citent, le dossier entier, jamais le tiers — seulement quand un paiement existe) ; `etatDeLaCaisseLu` en tire
+  `EtatDeLaCaisse.piecesDeVente`, que la saisie d'une recette passe à l'ensemble du jour ; la phrase des espèces du jour nomme
+  « X € d'une pièce de vente réglée par la caisse » ; le journal nomme un paiement « Paiement en espèces d'une pièce d'achat
+  du 10/03/2026 » (« Espèces reçues pour une pièce de vente … »), sans geste ici (« Se retire depuis la fiche de la pièce ») ;
+  une carte « Avant l'ouverture du dossier » dit chaque flux qui précède l'ouverture (`fluxAvantLOuverture`, lib/caisse.ts) :
+  non compté quand la reprise porte la caisse, compté à tort sinon — à retirer. `facturesDeLaRecetteARevoir` nomme le paiement
+  d'une pièce de vente au lieu de « sans numéro ».
+
+**LA NEUTRALITÉ.** Drapeau baissé : `etatDeLaCaisseDeLaFiche` rend `absente` et la section ne se monte pas ; Justificatifs ne
+lit pas la caisse (`caisseTenue` faux : aucune requête de plus) ; aucune pièce n'est « Payée en espèces » ; `paiementsAReprendre`
+ne juge aucun paiement (`paiementsParLaCaisseSelon` sous le drapeau) ; le libellé de `caisse-a-reprendre` et le message de son
+préalable sont ceux d'hier au caractère près ; le point du mouvement d'avant l'ouverture n'est pas dans la liste ; la carte de
+l'onglet Caisse ne paraît pas ; la lecture de l'onglet Caisse ne lit pas les pièces ; `paiementsParLaCaisseDuDossier` rendant
+toujours `[]`, ni la fiche d'un mouvement ni la Vue d'ensemble ne se suspendent ; le bandeau de la caisse dit la phrase d'hier.
+Restent, sans effet en production (aucun paiement n'y existe : `regler_piece_par_la_caisse` n'est pas en base) : le libellé
+d'un paiement au journal, sa phrase des espèces du jour, la garde du type et de la suppression — toutes ne parlent que d'une
+opération de genre `paiement`.
+
+**LES ÉCARTS, ET POURQUOI.**
+- La section vit dans un composant à elle, monté par la fiche : la fiche (1 177 lignes) ne recopie pas la caisse, et l'écran se
+  teste seul (`ReglementParLaCaisse.test.tsx`), la fiche pour le câblage seulement (`FichePiece.caisse.test.tsx`).
+- Le journal de l'onglet Caisse montre un paiement sans le retirer : le retrait est un geste de la pièce (il défait sa
+  contrepartie), et deux portes pour un même geste se jugeraient sur deux lectures.
+- Le point du mouvement d'avant l'ouverture et la carte de l'onglet Caisse viennent AVEC la migration (le drapeau) : sans elle,
+  la base compte encore ces flux (`premier_jour_negatif_de_la_caisse` d'hier) ; dire « la caisse ne le compte pas » serait faux
+  côté base. La fiche du mouvement, elle, refuse ce classement dès aujourd'hui (C8).
+- Une caisse lue en partie ne retient pas « Supprimer » d'une pièce : on ne sait pas si un paiement la cite, et la base refuse
+  alors en 23503, que la fiche dit déjà sous la raison de Postgres.
+- `PiecesTab` reçoit `modele` et `assujettiTva` FACULTATIFS (nuls, la caisse ne se lit pas) : une dizaine de fichiers de tests
+  montent l'onglet sans eux ; le défaut est joué par son propre cas (« sans modèle ou en engagement »).
+
+**LES PREUVES.** `paiementParLaCaisseEcran.test.ts` (15 : le drapeau dans ses deux états, les paiements d'une pièce, le reste
+signé, la pièce telle que la fonction la lit, le verdict égal à `jugerLeReglementSelon` sur la saisie qui part, les deux
+confirmations au caractère près, la garde de la pièce) ; `ReglementParLaCaisse.test.tsx` (15 : rien le drapeau baissé, rien
+avant le retour, un autre dossier, la lecture partielle sans geste, l'engagement, la désignation illisible, le reste proposé, le
+refus avant le clic — le sens, la caisse négative —, la confirmation qui nomme sans le tiers, les arguments, la relecture, le
+refus de la base dit, deux clics dans le même `act` et le verrou tenu jusqu'après la relecture, le retrait confirmé, le retrait
+refusé avant le clic) ; `FichePiece.caisse.test.tsx` (5) ; `PiecesTab.test.tsx` (+5 : le badge dans ses deux états, la lecture
+selon le drapeau et le modèle, la caisse lue en partie au bandeau, la fiche) ; `ExemplaireDeLaFacture.test.tsx` (+1) ;
+`BanqueTab.caisse.test.tsx` (+3 : « Associer » retenu, offert, le drapeau baissé) ; `CaisseTab.test.tsx` (+3 : le journal, la
+recette qui reconnaît le paiement d'une vente, la carte selon le drapeau) ; `caisseDuDossierLecture.test.ts` (+4) ;
+`controlesDeLaCaisse.test.ts` (+6) ; `pointsDeLaChecklist.test.ts` (+6 : le chemin de chaque point — `caisse-a-reprendre`,
+le silence d'une caisse partielle et ses témoins, le mouvement d'avant l'ouverture vers Banque, la neutralité levée) ;
+`prealablesValidation.test.ts` (+2 : la contrepartie qui retient la validation, la recette qui reconnaît la vente) ; `caisse.test.ts` (+1) ; `caisseEcran.test.ts` (+4, et le libellé d'un paiement). Les registres : `ecransAvantLecture`
+(`ReglementParLaCaisse.tsx`, sans lecture au montage), `revisionCycles` (le point neuf en trésorerie), le scanner des appelants
+de `paiementsDesPieces` (la raison de Justificatifs, l'appel neuf lisant la caisse).
+
+**LES MUTATIONS** (45, jouées une à une par un script hors du dépôt, chacune contre les fichiers de tests qu'elle concerne, le
+fichier rendu après chacune) : le drapeau ignoré (la fiche, le verdict, la lecture des pièces, Justificatifs, `paiementsAReprendre`,
+le point neuf, la carte de l'onglet Caisse) ; une caisse partielle rendue vide ; le reste sans les paiements, son signe inversé ;
+la confirmation sans la caisse du jour, sans confirmation, l'erreur avalée, le bouton qui n'attend pas le verdict, le retrait sans
+confirmation ; le verrou relâché avant la relecture, lu après la confirmation ; la lecture partielle qui offre le geste ; la
+garde du type, de la suppression (retirés oubliés), de la désignation, ignorées ; le badge muet, « Non rapprochée » d'une pièce
+payée ; la date de la contrepartie non jugée, une pièce non écrite comptée, le jour de l'ouverture compté, le paiement « sans
+numéro » ; les pièces de vente oubliées (l'écran, la validation), les paiements hors des espèces du jour ; un flux d'avant
+l'ouverture jamais compté, le jour même compté ; chacun des quatre silences d'une caisse partielle ; « Associer » et le
+règlement groupé non retenus ; le journal sans ses pièces. Le premier passage en a laissé vivre six, et une ancre double : le
+jour même de l'ouverture (M22), « en attente de rapprochement » et « payée en partie » non tus (M29, M32 : le jeu d'essai portait
+la contrepartie, et une pièce payée d'un seul moyen), les pièces de vente de la validation (M39), la ceinture du verrou de
+l'enveloppe (M9) et celle de la désignation (M44) ; chacun des quatre premiers a fait naître son cas, l'ancre double s'est
+scindée, et le second passage les a tués. Restent deux ÉQUIVALENTES, gardées comme ceintures : le verrou relu dans `agir` (M9)
+— chaque geste le lit avant sa confirmation, ce que le test du double clic exige désormais — et le refus de la caisse relu dans
+`designer` (M44) — le bouton est grisé. 43 tuées, 2 équivalentes.
+
+**LA SUITE** (Node 22.23.3, sous Paris, drapeau baissé) : 518 fichiers, 16 162 tests (10 « échecs attendus »), tous verts ;
+`tsc -p tsconfig.app.json` et `tsconfig.node.json` : 0 ; `oxlint` : 0 erreur, 63 avertissements, ceux de la référence.
+
+**LA SIMULATION** (le fichier DÉPLACÉ dans l'export, indexé, le drapeau levé, la suite ENTIÈRE ; puis tout rendu, rien commité) :
+tous les cas de ce lot verts — deux de mes cas épinglaient l'état d'aujourd'hui sans le dire, et l'écrivent désormais
+(`drapeau.leve = false`), un cas neuf jouant la neutralité levée. Quinze tests de C9a tombent, et ce n'est pas un défaut du
+code : ils épinglent l'état du drapeau baissé — les requêtes de `contrepartieBanque.ts` au filtre près (cinq, et cinq de
+`BanqueTab.test.tsx`, qui voient le filtre `operation_caisse_id is null` que le drapeau levé ajoute à dessein), deux témoins
+« le drapeau est baissé » (`paiementParLaCaisseMoteurs.test.ts`, `contrepartieBanque.test.ts`) et deux cas de
+`prealablesValidation.test.ts` qui lisent la valeur du module. À rendre explicites (un accesseur, l'état écrit) AVANT de lever
+le drapeau, le jour de la migration.
+
+**À REJOUER SUR UNE RÉPLIQUE, LE JOUR DE LA MIGRATION** (rien de cela n'a été joué ici) : depuis la fiche, `regler_piece_par_la_caisse`
+avec les quatre paramètres que l'écran envoie (`p_dossier_id`, `p_piece_id`, `p_date`, `p_montant`), chacun de ses refus
+redit avant le clic à la lettre ; puis la génération de la pièce (la contrepartie admise par la garde) et « Régénérer » ;
+`retirer_operation_caisse` sur un paiement, qui retire sa contrepartie ; la garde de la pièce sur un changement de type et sur
+la désignation d'une facture source ; la suppression d'une pièce citée (23503) ; une recette dont l'ensemble du jour porte le
+paiement d'une pièce de vente (`enregistrer_operation_caisse` remplacée) ; la lecture des pièces citées sous la RLS du
+cabinet ; enfin la simulation (le fichier dans l'export, le drapeau levé, la suite entière).
+
+**LE RETOUR ARRIÈRE** : retirer les commits ; aucune donnée, aucune migration. Le drapeau baissé, rien n'est en jeu.
