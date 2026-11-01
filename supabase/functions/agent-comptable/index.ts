@@ -38,11 +38,12 @@
 // src/lib/tvaDuReleve.ts, src/lib/reglementGroupe.ts, src/lib/cotisationRapprochee.ts, src/lib/compteDeBilan.ts, src/lib/amortissements.ts,
 // src/lib/baremeKilometrique.ts, src/lib/forfaitKilometrique.ts, src/lib/validationExercice.ts, src/lib/format.ts et src/lib/controles.ts
 // — et, depuis l'étape VF9b (chantier EC-Q3, ligne 28.65), src/lib/facturesSources.ts et src/lib/encaissementsFactures.ts ;
-// depuis l'étape VF9c, src/lib/ventesDeLaChecklist.ts et src/lib/mouvementsDesVentes.ts — plutôt qu'importées, ces
+// depuis l'étape VF9c, src/lib/ventesDeLaChecklist.ts et src/lib/mouvementsDesVentes.ts ; depuis l'étape C13 de la caisse
+// (ligne 26.6), src/lib/paiementParLaCaisse.ts (`paiementsParLaCaisseSelon`, le drapeau levé) — plutôt qu'importées, ces
 // fichiers n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
-// extrait `piecesAComptabiliser`, `paiementsDesPieces`, `rattachementsTresorerie` et `analyserEcritures`
-// et les exécute contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que
+// extrait `piecesAComptabiliser`, `paiementsDesPieces`, `paiementsParLaCaisse`, `rattachementsTresorerie` et
+// `analyserEcritures` et les exécute contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que
 // rien ne puisse le voir. Le bloc AFFECTATION (mouvements du relevé affectés sans justificatif, virements
 // personnels) l'est de même par src/lib/agentComptableAffectation.test.ts, le bloc EMPRUNT
 // (échéances d'emprunt) par src/lib/agentComptableEmprunt.test.ts, le bloc VENTILATION (mouvements
@@ -126,6 +127,10 @@ interface EcritureRow {
   // Le mouvement qu'une ligne désigne : la contrepartie banque en trésorerie, les deux lignes d'un
   // RÈGLEMENT en engagement — c'est lui qui sépare le règlement de la facture (voir engagementDesynchronise).
   ligne_bancaire_id: string | null
+  // L'opération de caisse qu'une ligne cite (étape C13) : avec sa pièce, la contrepartie du paiement de cette pièce par la
+  // caisse (`estContrepartieCaisse`). Facultative : une lecture qui ne la demande pas — un bloc qui ne juge pas les pièces —
+  // ne voit aucune contrepartie de caisse.
+  operation_caisse_id?: string | null
 }
 interface PieceRow {
   id: string; date_piece: string | null; tiers: string | null; nom_fichier: string
@@ -147,6 +152,9 @@ const COMPTE_TVA_COLLECTEE = "445710"
 // La TVA déductible de la facture d'un BIEN immobilisé (ligne 19 de la CA3) — src/lib/comptes.ts.
 const COMPTE_TVA_IMMOBILISATIONS = "445620"
 const COMPTE_BANQUE = "512000"
+// La caisse du dossier (src/lib/comptes.ts, le rôle `caisse`) : la contrepartie d'un paiement de la pièce par la caisse
+// (étape C13, `ligneContrepartieCaisse`), et le compte que la consigne nomme pour une opération de caisse (étape C5).
+const COMPTE_CAISSE = "530000"
 // Le compte de l'exploitant : en trésorerie, celui du dirigeant — ses virements personnels (bloc AFFECTATION)
 // et la part d'une note de frais qu'il a payée de sa poche (`ligneContrepartieDirigeant`).
 const COMPTE_EXPLOITANT = "108000"
@@ -535,6 +543,10 @@ function compteTvaDe(piece: Pick<PieceRow, "type_piece">, immobilisation: boolea
 // Et, depuis l'étape VF9b (chantier EC-Q3, ligne 28.65), l'ENCAISSEMENT d'une facture d'avant la bascule cité sur un
 // mouvement classé par ses encaissements — le virement mixte (bloc VIREMENT MIXTE) : un paiement de l'exemplaire de sa
 // facture, à la date du mouvement, comme la part d'un virement groupé.
+// Et, depuis l'étape C13 de la caisse (ligne 26.6 ; CAISSE-Q4, (B)), un PAIEMENT PAR LA CAISSE : une opération de caisse de
+// genre `paiement` qui cite la pièce, à sa date et de son montant (CGI, art. 93, 1 : la dépense payée, la recette encaissée,
+// quel que soit le moyen). Sans lui, une pièce payée en espèces passerait pour « en attente de rapprochement », et la
+// contrepartie de son paiement, au compte de la caisse, pour un écart « à régénérer ».
 interface LignePayanteRow {
   id: string; piece_id: string | null; date: string; montant: number; statut: string; reglement_groupe: boolean
   // Classé par ses encaissements de factures (étape VF2) : seul un tel mouvement paie l'exemplaire d'une facture d'avant.
@@ -544,10 +556,46 @@ interface PartRegleeRow { ligne_bancaire_id: string; piece_id: string | null; mo
 // Ce qu'un virement mixte paie : le mouvement, l'exemplaire unique et validé de la facture d'avant, et le montant de son
 // encaissement, signé comme le relevé — ce que `partsEncaissees` (bloc VIREMENT MIXTE) tire du registre.
 interface PartEncaisseeRow { ligne_bancaire_id: string; piece_id: string; montant: number }
-// `id` : le mouvement — la contrepartie banque en trésorerie, le règlement en engagement. `montant` : ce
-// que CE mouvement paie de CETTE pièce, signé comme le relevé. `origine` : `groupe`, la part d'un virement groupé ;
-// `encaissements`, celle d'un virement mixte.
-interface PaiementDePiece { id: string; date: string; montant: number; origine: "rapprochement" | "groupe" | "encaissements" }
+// Ce qu'un paiement par la caisse paie : l'opération de genre `paiement`, la pièce qu'elle cite, sa date et son montant,
+// signé comme le relevé — ce que `paiementsParLaCaisse` tire des opérations lues.
+interface PartPayeeParLaCaisseRow { operation_caisse_id: string; piece_id: string; date: string; montant: number }
+// LES PAIEMENTS D'UNE PIÈCE, UNE UNION DISCRIMINÉE PAR `origine` (src/lib/rattachement.ts, étape C9a) : seul un paiement par
+// le relevé porte un `id` de MOUVEMENT — la contrepartie banque en trésorerie, le règlement en engagement ; un paiement par la
+// caisse porte l'opération qui le fait, et rien d'autre. `montant` : ce que CE paiement paie de CETTE pièce, signé comme le
+// relevé. `origine` : `groupe`, la part d'un virement groupé ; `encaissements`, celle d'un virement mixte ; `caisse`, un
+// paiement par la caisse.
+type PaiementDePiece = PaiementParLeReleve | PaiementParLaCaisse
+interface PaiementParLeReleve { id: string; date: string; montant: number; origine: "rapprochement" | "groupe" | "encaissements" }
+interface PaiementParLaCaisse { operation_caisse_id: string; date: string; montant: number; origine: "caisse" }
+
+// Le paiement est-il par le relevé ? Ce qu'un usage du paiement comme MOUVEMENT exige (la banque, l'engagement).
+function estParLeReleve(p: PaiementDePiece): p is PaiementParLeReleve {
+  return p.origine !== "caisse"
+}
+
+// La clé d'un paiement, d'un moyen ou de l'autre : le mouvement, ou l'opération de la caisse.
+function cleDuPaiement(p: PaiementDePiece): string {
+  return p.origine === "caisse" ? `caisse:${p.operation_caisse_id}` : p.id
+}
+
+// Une opération de caisse telle que `paiementsParLaCaisse` la lit : son genre, sa pièce, sa date, son montant, son retrait et
+// son remplacement — rien qui nomme personne.
+interface OperationPayanteRow {
+  id: string; genre: string; piece_id: string | null; date: string; montant: number; retire_le: string | null; remplace_id: string | null
+}
+
+// LES PAIEMENTS DE PIÈCES PAR LA CAISSE, tirés des opérations lues — copié de `paiementsParLaCaisseSelon(true, …)`,
+// src/lib/paiementParLaCaisse.ts (étape C13) : le genre `paiement`, une pièce citée, ni retiré (`retire_le` ; la base retire
+// celle qu'elle remplace), ni désigné par une autre (`remplace_id`, défensivement), d'un montant non nul ; triés par date puis
+// par opération. SANS DRAPEAU : une telle opération n'existe qu'après la migration `paiement_par_la_caisse` — la base ne
+// l'écrit que par `regler_piece_par_la_caisse` —, et sans elle la liste est vide : chaque contrôle rend ce qu'il rendait.
+function paiementsParLaCaisse(operations: readonly OperationPayanteRow[]): PartPayeeParLaCaisseRow[] {
+  const remplacees = new Set(operations.flatMap((o) => (o.remplace_id ? [o.remplace_id] : [])))
+  return operations
+    .filter((o) => o.genre === "paiement" && o.piece_id != null && o.retire_le == null && !remplacees.has(o.id) && o.montant !== 0)
+    .map((o) => ({ operation_caisse_id: o.id, piece_id: o.piece_id!, date: o.date, montant: o.montant }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.operation_caisse_id.localeCompare(b.operation_caisse_id))
+}
 
 const SEUIL_ALIGNEMENT_RELATIF = 0.02
 const SEUIL_ALIGNEMENT_PLAFOND_EUR = 5
@@ -560,11 +608,14 @@ function seuilAlignement(montantPiece: number): number {
 // et réglé en groupe ; celle d'un virement mixte, que si son mouvement est lu, rapproché et CLASSÉ PAR SES
 // ENCAISSEMENTS — un mouvement seulement réservé, ou dont le classement est retiré, ne date rien. Les deux sortes de
 // parts sont OBLIGATOIRES, sans valeur par défaut : oubliées, la pièce qu'elles paient retomberait sans paiement, à sa
-// date de facture. Une pièce payée aussi par un autre mouvement additionne ses paiements, et compte une fois. Chaque
-// liste est triée par date puis par mouvement, pour que deux lectures du même relevé rendent la même chose quel que
-// soit l'ordre de la requête.
+// date de facture. Une pièce payée aussi par un autre mouvement additionne ses paiements, et compte une fois. Les
+// paiements par la CAISSE (étape C13) sont OBLIGATOIRES eux aussi, pour la même raison : oubliés, une pièce payée en espèces
+// retomberait « sans paiement ». Chaque liste est triée par date, puis le relevé avant la caisse, puis par mouvement ou par
+// opération, pour que deux lectures rendent la même chose quel que soit l'ordre de la requête ; une liste sans paiement par
+// la caisse se trie comme avant (par date puis par mouvement).
 function paiementsDesPieces(
   lignes: readonly LignePayanteRow[], reglements: readonly PartRegleeRow[], encaissees: readonly PartEncaisseeRow[],
+  caisse: readonly PartPayeeParLaCaisseRow[],
 ): Map<string, PaiementDePiece[]> {
   const mouvements = new Map(lignes.map((l) => [l.id, l]))
   const parPiece = new Map<string, PaiementDePiece[]>()
@@ -588,7 +639,13 @@ function paiementsDesPieces(
     if (!mouvement || mouvement.statut !== "rapprochee" || !mouvement.encaissements_de_factures) continue
     ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: "encaissements" })
   }
-  for (const liste of parPiece.values()) liste.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+  for (const part of caisse) {
+    ajouter(part.piece_id, { operation_caisse_id: part.operation_caisse_id, date: part.date, montant: part.montant, origine: "caisse" })
+  }
+  const rang = (p: PaiementDePiece) => (p.origine === "caisse" ? 1 : 0)
+  for (const liste of parPiece.values()) {
+    liste.sort((a, b) => a.date.localeCompare(b.date) || rang(a) - rang(b) || cleDuPaiement(a).localeCompare(cleDuPaiement(b)))
+  }
   return parPiece
 }
 
@@ -697,6 +754,8 @@ interface LigneAttendue {
   date: string; compte: string; sens: "debit" | "credit"; montant: number
   // Le mouvement d'une ligne de BANQUE (contrepartie d'un paiement, les deux lignes d'un règlement).
   ligne_bancaire_id?: string
+  // L'opération d'une ligne de CAISSE (la contrepartie d'un paiement par la caisse, étape C13).
+  operation_caisse_id?: string
 }
 
 type Sens = "debit" | "credit"
@@ -774,12 +833,36 @@ function lignesChargeProduitPourPiece(
 
 // La contrepartie BANQUE d'un paiement, en trésorerie : au montant et à la date de CE paiement, dans le sens de son
 // signe. Un paiement de zéro euro n'en écrit aucune.
-function ligneContrepartieBanque(paiement: Pick<PaiementDePiece, "id" | "date" | "montant">): LigneAttendue | null {
+function ligneContrepartieBanque(paiement: Pick<PaiementParLeReleve, "id" | "date" | "montant">): LigneAttendue | null {
   if (!paiement.montant) return null
   return {
     date: paiement.date, compte: COMPTE_BANQUE, sens: paiement.montant > 0 ? "debit" : "credit",
     montant: Math.abs(paiement.montant), ligne_bancaire_id: paiement.id,
   }
+}
+
+// La contrepartie CAISSE d'un paiement de la pièce par la caisse, en trésorerie (étape C13 ; src/lib/ecritures.ts) : le compte
+// de la caisse, à la date de l'opération, de son montant, au débit quand les espèces entrent, au crédit quand elles sortent,
+// l'opération citée — la seule ligne que la garde du brouillon admet pour un paiement (`garder_ecriture_de_caisse`). Le compte
+// est celui du plan par défaut : l'assistant ne lit pas encore le plan du dossier (PC3b), dont aucun ne change ce rôle.
+function ligneContrepartieCaisse(paiement: Pick<PaiementParLaCaisse, "operation_caisse_id" | "date" | "montant">): LigneAttendue | null {
+  if (!paiement.montant) return null
+  return {
+    date: paiement.date, compte: COMPTE_CAISSE, sens: paiement.montant > 0 ? "debit" : "credit",
+    montant: Math.abs(paiement.montant), operation_caisse_id: paiement.operation_caisse_id,
+  }
+}
+
+// La contrepartie d'un paiement, de l'un ou l'autre moyen : la banque d'un paiement par le relevé, la caisse d'un paiement par
+// la caisse.
+function ligneContrepartieDuPaiement(paiement: PaiementDePiece): LigneAttendue | null {
+  return estParLeReleve(paiement) ? ligneContrepartieBanque(paiement) : ligneContrepartieCaisse(paiement)
+}
+
+// La ligne est-elle la contrepartie d'un paiement par la caisse ? Celle d'une PIÈCE qui cite une opération de caisse : la
+// seule que la base admette (`ecritures_brouillon_caisse_sans_autre_source`), une opération saisie n'en portant jamais.
+function estContrepartieCaisse(e: Pick<EcritureRow, "piece_id" | "operation_caisse_id">): boolean {
+  return e.piece_id != null && e.operation_caisse_id != null
 }
 
 // LA NOTE DE FRAIS EN TRÉSORERIE S'ÉCRIT FACE AU COMPTE DE L'EXPLOITANT (108000) : la part que le dirigeant a payée
@@ -796,14 +879,15 @@ function ligneContrepartieDirigeant(
   return { date: part.date ?? dateDuDepot(piece.created_at), compte: COMPTE_EXPLOITANT, sens: solde > 0 ? "credit" : "debit", montant: Math.abs(solde) / 100 }
 }
 
-// En TRÉSORERIE : la charge ou le produit datés comme la 2035 compte la pièce, une contrepartie banque par paiement,
-// et la part d'une note de frais que le dirigeant a payée face au compte de l'exploitant.
+// En TRÉSORERIE : la charge ou le produit datés comme la 2035 compte la pièce, une contrepartie par paiement — la banque,
+// ou la caisse d'un paiement par la caisse (étape C13) —, et la part d'une note de frais que le dirigeant a payée face au
+// compte de l'exploitant.
 function lignesTresoreriePourPiece(
   piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[],
 ): LigneAttendue[] {
   const autres = [
     ...lignesChargeProduitPourPiece(piece, cible, assujettiTva, paiements),
-    ...paiements.flatMap((p) => ligneContrepartieBanque(p) ?? []),
+    ...paiements.flatMap((p) => ligneContrepartieDuPaiement(p) ?? []),
   ]
   const dirigeant = ligneContrepartieDirigeant(piece, autres, paiements)
   return dirigeant && estContrepartieDirigeant(piece, cible, dirigeant) ? [...autres, dirigeant] : autres
@@ -830,7 +914,7 @@ function lignesFactureEngagement(
 // Un RÈGLEMENT par paiement, daté du mouvement et portant son identifiant : le compte de tiers face à la banque, au
 // montant du paiement, la banque dans le sens de son signe.
 function lignesReglementEngagement(
-  piece: Pick<PieceRow, "type_piece">, mouvement: Pick<PaiementDePiece, "id" | "date" | "montant">,
+  piece: Pick<PieceRow, "type_piece">, mouvement: Pick<PaiementParLeReleve, "id" | "date" | "montant">,
   compteNotesDeFrais: string, immobilisation: boolean,
 ): LigneAttendue[] {
   if (!mouvement.montant) return []
@@ -844,7 +928,7 @@ function lignesReglementEngagement(
 
 function lignesEngagementPourPiece(
   piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, compteNotesDeFrais: string,
-  mouvements: readonly Pick<PaiementDePiece, "id" | "date" | "montant">[],
+  mouvements: readonly Pick<PaiementParLeReleve, "id" | "date" | "montant">[],
 ): LigneAttendue[] {
   return [
     ...lignesFactureEngagement(piece, cible, assujettiTva, compteNotesDeFrais),
@@ -858,8 +942,11 @@ function lignesEngagementPourPiece(
 function lignesPourPiece(
   piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[], modele: ModeleComptable,
 ): LigneAttendue[] {
+  // EN ENGAGEMENT, LE RELEVÉ SEUL RÈGLE (étape C13, comme src/lib/ecritures.ts) : la base refuse le paiement par la caisse
+  // d'une pièce d'un dossier en engagement, et sa garde n'admettrait pas la ligne de tiers d'un règlement — un paiement par
+  // la caisse n'y fait aucun règlement.
   return modele.mode === "engagement"
-    ? lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements)
+    ? lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements.filter(estParLeReleve))
     : lignesTresoreriePourPiece(piece, cible, assujettiTva, paiements)
 }
 
@@ -875,19 +962,35 @@ function datesAttendues(piece: PieceRow, paiements: readonly PaiementDePiece[]):
 // signé (un débit est une entrée) : la contrepartie d'un paiement en trésorerie, la ligne de banque d'un
 // règlement en engagement. Le montant autant que le mouvement : régler de nouveau un virement groupé avec
 // d'autres parts laisse le même mouvement en face de la même pièce.
+// ET LA CAISSE DE MÊME (étape C13, comme src/lib/ecritures.ts) : les lignes de caisse d'une pièce suivent ses paiements par la
+// caisse, une par opération, à sa date et à son montant — la même question sur l'autre clé.
 function banqueSuitLesPaiements(lignesBanque: readonly EcritureRow[], paiements: readonly PaiementDePiece[]): boolean {
-  const attendus = new Map(paiements.filter((m) => m.montant !== 0).map((m) => [m.id, m]))
+  return contrepartiesSuiventLesPaiements(lignesBanque, (e) => e.ligne_bancaire_id ?? null,
+    paiements.filter(estParLeReleve).map((m) => ({ cle: m.id, date: m.date, montant: m.montant })))
+}
+
+function caisseSuitLesPaiements(lignesCaisse: readonly EcritureRow[], paiements: readonly PaiementDePiece[]): boolean {
+  return contrepartiesSuiventLesPaiements(lignesCaisse, (e) => e.operation_caisse_id ?? null,
+    paiements.flatMap((m) => (m.origine === "caisse" ? [{ cle: m.operation_caisse_id, date: m.date, montant: m.montant }] : [])))
+}
+
+function contrepartiesSuiventLesPaiements(
+  lignes: readonly EcritureRow[], cleDe: (e: EcritureRow) => string | null,
+  paiements: readonly { cle: string; date: string; montant: number }[],
+): boolean {
+  const attendus = new Map(paiements.filter((m) => m.montant !== 0).map((m) => [m.cle, m]))
   const presents = new Map<string, { montant: number; dates: Set<string> }>()
-  for (const e of lignesBanque) {
-    if (!e.ligne_bancaire_id) return false
-    const present = presents.get(e.ligne_bancaire_id) ?? { montant: 0, dates: new Set<string>() }
+  for (const e of lignes) {
+    const cle = cleDe(e)
+    if (!cle) return false
+    const present = presents.get(cle) ?? { montant: 0, dates: new Set<string>() }
     present.montant += e.sens === "debit" ? e.montant : -e.montant
     present.dates.add(e.date)
-    presents.set(e.ligne_bancaire_id, present)
+    presents.set(cle, present)
   }
   if (attendus.size !== presents.size) return false
-  for (const [id, paiement] of attendus) {
-    const present = presents.get(id)
+  for (const [cle, paiement] of attendus) {
+    const present = presents.get(cle)
     if (!present || Math.abs(present.montant - paiement.montant) > EPSILON_EQUILIBRE) return false
     if (present.dates.size !== 1 || !present.dates.has(paiement.date)) return false
   }
@@ -915,8 +1018,8 @@ function tresorerieDesynchronisee(
   paiementsPiece: readonly PaiementDePiece[],
 ): boolean {
   // La contrepartie d'une note de frais au compte de l'exploitant est une contrepartie, comme la banque : elle se
-  // compare à part, à la fin.
-  const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE && !estContrepartieDirigeant(p, cible, e))
+  // compare à part, à la fin. Celle d'un paiement par la caisse aussi (étape C13).
+  const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE && !estContrepartieCaisse(e) && !estContrepartieDirigeant(p, cible, e))
   // Pas encore générée — pas une désynchronisation. Des contreparties SANS leur charge en sont une.
   if (lignes.length === 0) return groupe.length > 0
   const sensPiece: "debit" | "credit" = p.type_piece === "vente" ? "credit" : "debit"
@@ -963,6 +1066,10 @@ function tresorerieDesynchronisee(
   // virement groupé, n'en recevait qu'une au rapprochement — une écriture déséquilibrée que « Régénérer »
   // réécrit désormais depuis les paiements.
   if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)) return true
+  // ET UNE CONTREPARTIE CAISSE PAR PAIEMENT PAR LA CAISSE (étape C13), sur le compte de la caisse : une ligne qui ne suit plus
+  // son opération — un paiement retiré, une ligne de moins, un autre compte — se régénère.
+  const lignesCaisse = groupe.filter(estContrepartieCaisse)
+  if (lignesCaisse.some((e) => e.compte !== COMPTE_CAISSE) || !caisseSuitLesPaiements(lignesCaisse, paiementsPiece)) return true
   // ET LA CONTREPARTIE D'UNE NOTE DE FRAIS AU COMPTE DE L'EXPLOITANT, celle que la génération écrit — ni une de plus
   // ni une de moins. La date ne se compare que sur une pièce datée : sans date, c'est celle du dépôt, un instant lu
   // dans le fuseau de qui génère.
@@ -1004,8 +1111,9 @@ function engagementDesynchronise(
   if (Math.abs(totalTiers - (p.montant_ttc ?? 0)) > EPSILON_EQUILIBRE) return true
 
   // Exactement les paiements de la pièce — rapprochements et parts de virements groupés —, sur son compte
-  // de tiers ACTUEL, et chacun à son montant : un paiement de zéro euro n'écrit aucun règlement.
-  const attendus = new Set(paiementsPiece.filter((m) => m.montant !== 0).map((m) => m.id))
+  // de tiers ACTUEL, et chacun à son montant : un paiement de zéro euro n'écrit aucun règlement. Le relevé seul règle en
+  // engagement (`lignesPourPiece`) : un paiement par la caisse n'y attend aucun règlement.
+  const attendus = new Set(paiementsPiece.filter(estParLeReleve).filter((m) => m.montant !== 0).map((m) => m.id))
   const presents = new Set(reglements.map((e) => e.ligne_bancaire_id!))
   if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true
   if (reglements.some((e) => e.compte !== COMPTE_BANQUE && e.compte !== tiers)) return true
@@ -1039,8 +1147,9 @@ function partieOuverteDesynchronisee(
   groupe: readonly EcritureRow[], attendues: readonly LigneAttendue[], frontiere: string,
 ): boolean {
   if (groupe.length === 0) return false
-  const cle = (l: { date: string; compte: string; sens: string; montant: number; ligne_bancaire_id?: string | null }) =>
-    [l.date, l.compte, l.sens, Math.round(l.montant * 100), l.ligne_bancaire_id ?? ""].join("|")
+  // Et l'opération de caisse d'une contrepartie de caisse (étape C13) comme le mouvement d'une contrepartie de banque.
+  const cle = (l: { date: string; compte: string; sens: string; montant: number; ligne_bancaire_id?: string | null; operation_caisse_id?: string | null }) =>
+    [l.date, l.compte, l.sens, Math.round(l.montant * 100), l.ligne_bancaire_id ?? "", l.operation_caisse_id ?? ""].join("|")
   const presentes = groupe.filter((e) => !estFigee(e.date, frontiere)).map(cle).sort()
   const ouvertes = attendues.filter((l) => !estFigee(l.date, frontiere)).map(cle).sort()
   return presentes.length !== ouvertes.length || presentes.some((c, i) => c !== ouvertes[i])
@@ -1072,8 +1181,10 @@ function analyserEcritures(
   const notesDeFrais = new Set(aComptabiliser
     .filter(({ piece, ...cible }) => tresorerie && estContrepartieDirigeant(piece, cible, { compte: COMPTE_EXPLOITANT }))
     .map(({ piece }) => piece.id))
+  // La contrepartie d'un paiement par la CAISSE en est une aussi (étape C13) : une pièce payée en espèces a la sienne, au
+  // compte de la caisse, et rien ne la retient.
   const contrepartie = (pieceId: string, r: EcritureRow) =>
-    r.compte === COMPTE_BANQUE || (notesDeFrais.has(pieceId) && r.compte === COMPTE_EXPLOITANT)
+    r.compte === COMPTE_BANQUE || estContrepartieCaisse(r) || (notesDeFrais.has(pieceId) && r.compte === COMPTE_EXPLOITANT)
   // Par identifiant : en engagement, une facture qu'un lettrage fait à la main solde avec son avoir n'attend plus de
   // règlement, et `points_a_traiter` la retire comme la Checklist (bloc LETTRAGE MANUEL).
   const piecesSansContrepartie = [...piecesParGroupe.entries()]
@@ -2969,6 +3080,12 @@ function rienALire<T>(): Promise<LectureComplete<T>> {
 
 // Ce que `points_a_traiter` dit de la caisse (ligne 26.6, étape C5) : rien de vérifié, et où le lire.
 const CAISSE_NON_VERIFIEE = "non vérifiée par l'assistant : l'onglet Caisse et la Vue d'ensemble disent les opérations de caisse à reprendre, une caisse négative, les recettes de caisse à revoir et les versements d'espèces rangés en recette"
+// Et d'un dossier dont la caisse PAIE des pièces (étape C13) : les trois points que la migration `paiement_par_la_caisse` fait
+// paraître dans la Vue d'ensemble — `caisse-paiements-a-retirer`, `pieces-a-valider-payees-par-la-caisse`,
+// `caisse-mouvements-avant-ouverture` — ne se recopient pas ici non plus (src/lib/controlesDeLaCaisse.ts) : ils se nomment, et
+// l'assistant y renvoie. Un tel paiement n'existe qu'après la migration, et l'écran ne l'offre que le drapeau levé, qui fait
+// paraître ces trois points : la phrase ne nomme jamais un point que la Vue d'ensemble ne montre pas.
+const CAISSE_PAYANTE_NON_VERIFIEE = `${CAISSE_NON_VERIFIEE} ; la caisse de ce dossier payant des pièces, la Vue d'ensemble dit aussi les paiements par la caisse à retirer (leur sens contredit leur pièce, ou ils la laissent à quelques centimes), les pièces à valider qu'un paiement par la caisse règle, et les mouvements d'avant l'ouverture du dossier classés sur la caisse`
 
 // Les comptes que la consigne nomme pour la vente facturée — dupliqués de src/lib/comptes.ts (étape VF4a) : le produit
 // d'une facture source, des services puis des biens, la TVA collectée en attente, les valeurs à l'encaissement et la caisse
@@ -2977,7 +3094,8 @@ const COMPTE_PRESTATIONS_DE_SERVICES = "706000"
 const COMPTE_VENTES_DE_BIENS = "707000"
 const COMPTE_TVA_COLLECTEE_EN_ATTENTE = "445800"
 const COMPTE_VALEURS_A_L_ENCAISSEMENT = "511000"
-const COMPTE_CAISSE = "530000"
+// (La caisse, `COMPTE_CAISSE`, se déclare avec les comptes du générateur, plus haut : depuis l'étape C13, la contrepartie d'un
+// paiement par la caisse l'écrit.)
 const COMPTE_SERVICES_BANCAIRES = "627000"
 
 // Une source de vente facturée en défaut, telle que `ventes_facturees_de_l_exercice` la rend : à écrire, à réécrire, à
@@ -3551,7 +3669,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     if (ventes?.reglage === null) {
       return { erreur: `${ventes.constat}. L'assistant ne lit pas encore les ventes facturées : ses contrôles ne sont pas disponibles pour ce dossier — ne tire aucune conclusion sur son état, et renvoie l'utilisateur à la Vue d'ensemble et à l'onglet Écritures, qui les disent.` }
     }
-    const [rPieces, rPiecesAValider, rFactures, rEncaissements, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations] = await Promise.all([
+    const [rPieces, rPiecesAValider, rFactures, rEncaissements, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations, rCaisse] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter. Et tout ce qu'en
       // tire le GÉNÉRATEUR, qui dit ce qu'une pièce coupée par la frontière de validation doit encore porter, ligne
       // pour ligne : le hors taxe lu, qui prime sur le TTC moins la TVA pour un dossier assujetti — et pour la
@@ -3587,8 +3705,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // FORFAIT KILOMÉTRIQUE (bloc FORFAIT) est une écriture sans pièce ni mouvement qui désigne sa ligne du
       // cadre 7. Et `declaration_tva_id` : la LIQUIDATION d'une déclaration de TVA (bloc LIQUIDATION TVA) est une
       // écriture sans pièce ni mouvement qui désigne sa déclaration.
+      // Et `operation_caisse_id` (étape C13) : avec sa pièce, la ligne est la contrepartie d'un paiement de cette pièce par la
+      // caisse — une contrepartie, comme la banque, que ses paiements par la caisse doivent suivre.
       lireTout<EcritureRow & EcritureDotationRow & EcritureForfaitRow & EcritureLiquidationRow>((d, f) =>
-        admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id, vehicule_id, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+        admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id, vehicule_id, operation_caisse_id, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Le REGISTRE (bloc AMORTISSEMENT) : chaque bien, de quoi calculer sa dotation de chaque exercice. Et
       // `piece_id` : la facture d'un bien s'écrit sur le compte de sa nature, pas sur sa catégorie.
       lireTout<ImmobilisationRow & { piece_id: string | null }>((d, f) =>
@@ -3654,6 +3774,14 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // paraîtrait en retard — d'où le même refus.
       lireTout<DeclarationTvaRow>((d, f) =>
         admin.from("declarations_tva").select("id, periode_debut, periode_fin, cases, tva_collectee, tva_deductible, tva_deductible_immobilisations", { count: "exact" }).eq("dossier_id", dossierId).order("periode_debut").order("id").range(d, f)),
+      // LES OPÉRATIONS DE CAISSE (étape C13 ; bloc copié de src/lib/rattachement.ts, `paiementsParLaCaisse`) : celles de genre
+      // `paiement` qui citent une pièce la PAIENT, à leur date — sans elles, une pièce payée en espèces paraîtrait « en attente
+      // de rapprochement », et la contrepartie de son paiement, au compte de la caisse, « à régénérer ». Toutes, retirées
+      // comprises : une opération en remplace une autre (`remplace_id`). Leur genre, leur pièce, leur date, leur montant, leur
+      // retrait — rien qui nomme personne : ni catégorie, ni auteur. Elles n'alimentent que les clés qui jugent une pièce par
+      // ses paiements : lues en partie, celles-là seules se disent indisponibles, plus bas — le reste ne dépend pas d'elles.
+      lireTout<OperationPayanteRow>((d, f) =>
+        admin.from("operations_caisse").select("id, genre, piece_id, date, montant, retire_le, remplace_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : ces lectures alimentent toutes des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
@@ -3692,7 +3820,12 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const encaissees = partsEncaissees(dossierId, rEncaissements.lignes, { factures: rFactures.lignes }, designees)
     const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions, sources)
     const modele = modeleDuDossier(dossier)
-    const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes, encaissees)
+    // LES PAIEMENTS PAR LA CAISSE (étape C13), comme la Checklist (src/lib/pointsDeLaChecklist.ts) : tirés des opérations lues
+    // — aucun tant que la migration `paiement_par_la_caisse` n'est pas en base, et chaque contrôle rend alors ce qu'il rendait.
+    // LUES EN PARTIE, elles ne rendent aucun paiement (`null`) : une pièce payée en espèces paraîtrait sans paiement. Ce que les
+    // paiements jugent se dit alors indisponible, sous sa clé (`caisseIllisible`) ; le reste ne dépend pas d'elles.
+    const paiementsDeLaCaisse = rCaisse.complete ? paiementsParLaCaisse(rCaisse.lignes) : null
+    const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes, encaissees, paiementsDeLaCaisse ?? [])
     // La frontière de validation : rien de ce qu'elle fige ne se réclame plus, comme dans la Checklist.
     const frontiere = frontiereDeValidation(rValides.lignes.map((v) => v.annee))
     const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele, frontiere, exemplaires)
@@ -3702,6 +3835,12 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele.mode)
     const lettreesALaMain = piecesLettreesALaMain(etatsLettrages)
     const sansReglement = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
+    // Les opérations de caisse lues en partie (étape C13) : les clés qui jugent une pièce par ses paiements — à régénérer, en
+    // attente de rapprochement ou sans règlement, payée plus que son montant — ne se disent pas, et la phrase dit pourquoi.
+    // Jamais un zéro sur ce qu'on n'a pas lu.
+    const caisseIllisible = paiementsDeLaCaisse === null
+      ? `indisponible : les paiements par la caisse n'ont pas pu être lus (${rCaisse.motif ?? "lecture incomplète"}) — une pièce payée en espèces y paraîtrait sans paiement`
+      : null
     const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === "basse")
     // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés. L'exemplaire d'une facture
     // source n'y compte pas (VF9b) : il ne s'écrit pas et la 2035 l'écarte — sa catégorie ne décide de rien ; ni sa TVA.
@@ -3781,7 +3920,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // le dossier doit à la facturation électronique. Il se règle dans l'onglet TVA.
       statut_de_tva_a_preciser: dossier.statut_tva == null,
       ecritures_desequilibrees: groupesDesequilibres.length,
-      ecritures_a_regenerer_pieces_modifiees: piecesDesynchronisees.length,
+      ecritures_a_regenerer_pieces_modifiees: caisseIllisible ?? piecesDesynchronisees.length,
       // Le libellé de la Checklist : l'écriture d'un mouvement affecté ne suit plus sa catégorie.
       mouvements_affectes_a_reaffecter: affectesAReaffecter.length,
       // Le même compte, et pas la même chose : en engagement, une facture sans règlement est une dette
@@ -3789,13 +3928,13 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // la même chose que l'écran.
       ...(modele.mode === "engagement"
         ? {
-          factures_sans_reglement_rapproche: sansReglement,
+          factures_sans_reglement_rapproche: caisseIllisible ?? sansReglement,
           // Le libellé de la Checklist : un lettrage fait à la main qui ne se solde plus n'est pas porté au FEC, et la
           // facture qu'il soldait reparaît ouverte. La liste « Lettrages faits à la main », sous les comptes de tiers de
           // la Balance des comptes, dit pourquoi et le défait.
           lettrages_faits_a_la_main_qui_ne_se_soldent_plus: etatsLettrages.filter((e) => e.motif !== null).length,
         }
-        : { ecritures_en_attente_de_rapprochement_bancaire: sansReglement }),
+        : { ecritures_en_attente_de_rapprochement_bancaire: caisseIllisible ?? sansReglement }),
       // Plus de comparaison des déclarations de TVA au brouillon (retirée le 28/09/2026) : le
       // brouillon ne date pas la TVA selon la règle d'exigibilité de la déclaration — il porte celle de
       // l'acquisition d'un bien au 445620 depuis le 01/10/2026, mais à la date de son écriture —, donc il
@@ -3807,7 +3946,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // `recettes-de-caisse-a-revoir`, `versements-especes-en-recette` — ne se recalculent pas ici, ce qui serait une copie de
       // plus à garder (src/lib/controlesDeLaCaisse.ts et src/lib/caisse.ts) : l'assistant le DIT, comme pour la TVA, et renvoie
       // à l'onglet Caisse et à la Vue d'ensemble, qui les disent. Pour tout dossier : la caisse n'y paraît qu'une fois tenue.
-      caisse: CAISSE_NON_VERIFIEE,
+      // Depuis l'étape C13, d'un dossier dont la caisse PAIE des pièces — un paiement vivant lu —, la phrase nomme aussi les
+      // points que la migration `paiement_par_la_caisse` fait paraître (`CAISSE_PAYANTE_NON_VERIFIEE`) ; sans lui, celle d'hier, au caractère près.
+      caisse: paiementsDeLaCaisse !== null && paiementsDeLaCaisse.length > 0 ? CAISSE_PAYANTE_NON_VERIFIEE : CAISSE_NON_VERIFIEE,
       pieces_a_faible_confiance_extraction: piecesConfianceBasse.length,
       categories_sans_compte_comptable: catSansCompte.map((c) => c.libelle),
       categories_sans_poste_2035: catSansPoste.map((c) => c.libelle),
@@ -3829,7 +3970,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les libellés de la Checklist : un virement groupé dont une part ne justifie plus rien ou dont les parts
       // ne font plus le mouvement, et une pièce payée plus que son montant — un paiement en double ?
       virements_groupes_dont_une_part_ne_justifie_plus_rien_ou_dont_les_parts_ne_font_plus_le_mouvement: reglementsFaux.size,
-      pieces_payees_plus_que_leur_montant: payeesEnTrop.length,
+      pieces_payees_plus_que_leur_montant: caisseIllisible ?? payeesEnTrop.length,
       // Les libellés de la Checklist : une échéance payée par un mouvement rapproché dont l'écriture manque —
       // rapprochée avant que le rapprochement écrive — ou n'est plus à jour, absente du FEC ; et un
       // rapprochement qui ne peut pas s'écrire (un encaissement sur un appel), qui ne date rien.
@@ -4062,7 +4203,7 @@ Règles impératives :
 - Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
 - Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
 - Un mouvement du relevé peut être ÉCRIT SUR UN COMPTE DE BILAN : un virement vers un autre compte du professionnel (épargne, second compte bancaire) ou depuis lui au 580000 Virements internes, un dépôt de garantie versé ou rendu au 275000 Dépôts et cautionnements versés, ou un autre compte de bilan choisi par le cabinet. Son écriture, face au 512000, n'a pas de pièce — le relevé en est le justificatif — : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette. Un mouvement IGNORÉ, lui, n'est écrit nulle part : absent du FEC, il convient à un doublon ou à un mouvement antérieur à la reprise du dossier ; un mouvement réel ignoré est un point à traiter.
-- La CAISSE du dossier (onglet Caisse, un dossier en trésorerie) : une RECETTE EN ESPÈCES sans facture — le total des espèces reçues un jour, pour une nature —, des espèces rendues, un APPORT en caisse ou un PRÉLÈVEMENT en espèces de l'exploitant s'écrit au jour de l'opération, sans pièce ni mouvement, face au compte de la caisse (${COMPTE_CAISSE} Caisse dans le plan par défaut) : la recette à son compte de produit — sa TVA au ${COMPTE_TVA_COLLECTEE} pour un dossier redevable —, et elle compte dans la 2035 à sa date ; l'apport et le prélèvement au compte de l'exploitant, ni charge ni recette. Son justificatif est le brouillard de caisse que l'exploitant tient hors de l'application : ce n'est pas une anomalie. La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas, ne le devine pas (lister_ecritures nomme une opération de caisse par sa nature, sa date et son montant). Un VERSEMENT d'espèces en banque est un crédit du relevé écrit sur le compte de la caisse, et un retrait d'espèces pour la caisse un débit : ni recette ni charge — la recette est déjà comptée à la caisse. Les contrôles de la caisse — opérations à reprendre, caisse négative, recettes à revoir, versements d'espèces rangés en recette — ne sont pas vérifiés par l'assistant (points_a_traiter : caisse) : renvoie à l'onglet Caisse et à la Vue d'ensemble, qui les disent.
+- La CAISSE du dossier (onglet Caisse, un dossier en trésorerie) : une RECETTE EN ESPÈCES sans facture — le total des espèces reçues un jour, pour une nature —, des espèces rendues, un APPORT en caisse ou un PRÉLÈVEMENT en espèces de l'exploitant s'écrit au jour de l'opération, sans pièce ni mouvement, face au compte de la caisse (${COMPTE_CAISSE} Caisse dans le plan par défaut) : la recette à son compte de produit — sa TVA au ${COMPTE_TVA_COLLECTEE} pour un dossier redevable —, et elle compte dans la 2035 à sa date ; l'apport et le prélèvement au compte de l'exploitant, ni charge ni recette. Son justificatif est le brouillard de caisse que l'exploitant tient hors de l'application : ce n'est pas une anomalie. La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas, ne le devine pas (lister_ecritures nomme une opération de caisse par sa nature, sa date et son montant). Un VERSEMENT d'espèces en banque est un crédit du relevé écrit sur le compte de la caisse, et un retrait d'espèces pour la caisse un débit : ni recette ni charge — la recette est déjà comptée à la caisse. Une PIÈCE PAYÉE EN ESPÈCES par la caisse a sa contrepartie au compte de la caisse, au jour du paiement, à la place de la banque (lister_ecritures nomme cette ligne comme sa pièce) : elle n'attend aucun rapprochement, ce n'est pas une anomalie, et elle compte dans la 2035 à cette date. Les contrôles de la caisse — opérations à reprendre, caisse négative, recettes à revoir, versements d'espèces rangés en recette — ne sont pas vérifiés par l'assistant (points_a_traiter : caisse) : renvoie à l'onglet Caisse et à la Vue d'ensemble, qui les disent.
 - Un VIREMENT peut RÉGLER PLUSIEURS PIÈCES (un paiement qui solde plusieurs factures, un avoir déduit d'un paiement) : chaque pièce reçoit sa PART du mouvement, qui la paie à la date du mouvement. Une pièce payée en plusieurs fois porte au brouillon une ligne de banque par paiement, au montant de ce paiement : ce n'est pas une anomalie.
 - Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
 - La facture d'un BIEN IMMOBILISÉ (inscrit au registre des immobilisations) s'écrit sur le compte d'immobilisation de sa nature (classe 2 : 218300, 215400…), pas en charge, sa TVA au 445620 : c'est son acquisition, qui ne compte pas dans la 2035 — le bien y compte par ses dotations. Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur. Rien de cela n'est une anomalie.

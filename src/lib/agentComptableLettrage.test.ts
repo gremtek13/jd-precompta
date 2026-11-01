@@ -226,9 +226,10 @@ describe('agent-comptable / points_a_traiter lit les lettrages faits à la main'
     expect(corps).toContain('const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele.mode)')
     expect(corps).toContain('const lettreesALaMain = piecesLettreesALaMain(etatsLettrages)')
     expect(corps).toContain('const sansReglement = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length')
-    expect(corps).toMatch(/factures_sans_reglement_rapproche: sansReglement,/)
+    // Depuis l'étape C13, indisponible quand les paiements par la caisse ne se lisent pas (`caisseIllisible`).
+    expect(corps).toMatch(/factures_sans_reglement_rapproche: caisseIllisible \?\? sansReglement,/)
     expect(corps).toMatch(/lettrages_faits_a_la_main_qui_ne_se_soldent_plus: etatsLettrages\.filter\(\(e\) => e\.motif !== null\)\.length,/)
-    expect(corps).toMatch(/: \{ ecritures_en_attente_de_rapprochement_bancaire: sansReglement \}/)
+    expect(corps).toMatch(/: \{ ecritures_en_attente_de_rapprochement_bancaire: caisseIllisible \?\? sansReglement \}/)
   })
 
   it('nomme le point dans la description de l’outil, que le modèle lit avant de l’appeler', () => {

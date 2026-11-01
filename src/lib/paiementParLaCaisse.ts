@@ -29,12 +29,16 @@ import type { OperationCaisse, Piece } from './types'
 // le refuse (un resserrement vient en dernier) ; la production n'en portait aucun classé sur la caisse le 29/10/2026
 // (aucun mouvement sur un compte de bilan), et la session les recompte le jour de l'application.
 //
-// ET LE DRAPEAU NE SE LÈVE QU'APRÈS LE LOT C13 (relecture du 01/11/2026) : l'assistant (supabase/functions/agent-comptable)
-// ne lit pas encore la caisse — sa copie de `paiementsDesPieces` n'a pas de quatrième paramètre, et `lister_ecritures` tait
-// une ligne qui ne cite qu'une opération de caisse. Levé avant lui, une pièce payée en espèces lui paraîtrait sans paiement,
-// et sa contrepartie en écart : il dirait faux au cabinet. Le drapeau suit le fichier de la migration dans l'export
-// (`paiementParLaCaisse.test.ts`) : la migration attend donc C13 elle aussi, ou ce test se réécrit le jour où l'on choisit
-// de l'appliquer avant (neutre pour l'application, le drapeau baissé).
+// ET LE DRAPEAU NE SE LÈVE QU'APRÈS LE DÉPLOIEMENT DE L'ASSISTANT QUI PORTE LE LOT C13 (relecture du 01/11/2026 ; C13, le même
+// jour). L'assistant (supabase/functions/agent-comptable) lit désormais les paiements par la caisse — sa copie de
+// `paiementsDesPieces` prend le quatrième paramètre, tiré des opérations de caisse comme `paiementsParLaCaisseSelon(true, …)`,
+// sans drapeau : une telle opération n'existe qu'après la migration, et sans elle il rend ce qu'il rendait, au caractère près
+// (agentComptableCaisse.test.ts) ; la ligne de la contrepartie se nommait déjà comme sa pièce (étape C5), et une ligne restée
+// qui ne cite que l'opération d'un paiement, par l'opération. Mais c'est la version DÉPLOYÉE qui parle au cabinet : tant
+// qu'une version d'avant C13 est en ligne, une pièce payée en espèces lui paraîtrait sans paiement, et sa contrepartie en
+// écart. L'ordre du jour de l'application : l'assistant qui porte C13 déployé (il peut l'être avant C8, neutre), C8
+// appliquée, puis — ce jour-là — le drapeau levé. Le drapeau suit le fichier de la migration dans l'export
+// (`paiementParLaCaisse.test.ts`) : ne déplacer ce fichier dans l'export qu'une fois l'assistant de C13 en ligne.
 export const PAIEMENT_PAR_LA_CAISSE_EXPORTE = false
 
 // ── Les mots de la base ───────────────────────────────────────────────────────────────────────────────────────────────

@@ -115,19 +115,33 @@ export function messagePropre(source: string, message: unknown): boolean {
   return typeof message === 'string' && message.length > 0 && source.includes(message.slice(0, 16))
 }
 
-export async function jugerScenario(
-  contrat: ContratFonction, scenario: Scenario, contexte: Contexte, source?: string,
-): Promise<string[]> {
+/**
+ * Joue un scénario, et rend le monde et la réponse, sans les juger. `apres` amende le monde que le scénario a préparé —
+ * la neutralité d'un changement se juge ainsi sur des mondes qui ne diffèrent que de ce qu'il ne doit pas voir
+ * (agentComptableCaisse.test.ts, étape C13). `source` : la source à charger à la place de la vraie.
+ */
+export async function jouerScenario(
+  contrat: ContratFonction, scenario: Scenario, contexte: Contexte,
+  options: { source?: string; apres?: (monde: Monde) => void } = {},
+): Promise<{ monde: Monde; fonction: FonctionChargee; r: Resultat }> {
   const monde = mondeDeReference()
   const voisine = (slug: string) => chargerFonction(slug, monde)
   scenario.preparer?.(monde, voisine)
+  options.apres?.(monde)
   const env = typeof scenario.env === 'function' ? scenario.env() : scenario.env
-  const fonction = chargerFonction(contrat.slug, monde, { source, env })
+  const fonction = chargerFonction(contrat.slug, monde, { source: options.source, env })
   if (scenario.dejaRecue) {
     await fonction.appeler(scenario.requete(contrat.slug, contexte), { passerelle: scenario.passerelle })
     monde.journal.length = 0
   }
   const r = await fonction.appeler(scenario.requete(contrat.slug, contexte), { passerelle: scenario.passerelle })
+  return { monde, fonction, r }
+}
+
+export async function jugerScenario(
+  contrat: ContratFonction, scenario: Scenario, contexte: Contexte, source?: string,
+): Promise<string[]> {
+  const { monde, fonction, r } = await jouerScenario(contrat, scenario, contexte, { source })
   const fautes: string[] = []
   const a = scenario.attendu
 
@@ -2369,6 +2383,148 @@ const SCENARIOS_DU_RELEVE: Scenario[] = [
     ]),
 ]
 
+// ── LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (ligne 26.6, étape C13) ─────────────────────────────────────────────────────
+// Une pièce payée en espèces de la caisse du dossier — une opération de genre `paiement` qui la cite (CAISSE-Q4, (B) ;
+// migration `paiement_par_la_caisse`, préparée) — est PAYÉE, à la date de l'opération : `points_a_traiter` ne la dit plus
+// « en attente de rapprochement », ni « à régénérer » la contrepartie de son paiement au compte de la caisse. La ligne de
+// cette contrepartie se nomme comme sa pièce : une pièce de vente sous sa date et son montant, jamais son client (VF9C-Q1) ;
+// un achat sous son libellé. Une ligne restée qui ne cite que l'opération d'un paiement — une restauration, rien d'autre ne
+// l'écrit — se nomme par l'opération (« Paiement par la caisse du … »), sans personne. Le monde : un dossier en trésorerie,
+// redevable, qui n'a pas basculé ; un achat et une vente payés par la caisse, leurs écritures telles que la génération les
+// écrit, le client de la vente sous un marqueur ; une ligne restée d'un troisième paiement, sans pièce. Les opérations de
+// caisse en panne : les clés qu'elles nourrissent se disent indisponibles, et rien d'autre ne se tait.
+
+const MARQUEUR_DU_PATIENT_EN_ESPECES = 'Corvelune Abrastide'
+const FOURNISSEUR_PAYE_EN_ESPECES = 'Fournisseur fictif Ombrelac'
+const C13 = {
+  achat: 'c13a0000-0000-4000-8000-000000000001', vente: 'c13a0000-0000-4000-8000-000000000002',
+  categorieAchats: 'c13a0000-0000-4000-8000-000000000011', categorieRecettes: 'c13a0000-0000-4000-8000-000000000012',
+  paiementAchat: 'c13a0000-0000-4000-8000-000000000021', paiementVente: 'c13a0000-0000-4000-8000-000000000022',
+  paiementSansPiece: 'c13a0000-0000-4000-8000-000000000023',
+} as const
+/** Ce que `points_a_traiter` dit de la caisse d'un dossier dont la caisse paie des pièces (étape C13), écrit ICI. */
+const CAISSE_PAYANTE_NON_VERIFIEE = `${CAISSE_NON_VERIFIEE} ; la caisse de ce dossier payant des pièces, la Vue d'ensemble dit aussi les paiements par la caisse à retirer (leur sens contredit leur pièce, ou ils la laissent à quelques centimes), les pièces à valider qu'un paiement par la caisse règle, et les mouvements d'avant l'ouverture du dossier classés sur la caisse`
+/** Les clés de `points_a_traiter` que les paiements par la caisse nourrissent, en trésorerie. */
+const CLES_DES_PAIEMENTS = ['ecritures_a_regenerer_pieces_modifiees', 'ecritures_en_attente_de_rapprochement_bancaire', 'pieces_payees_plus_que_leur_montant'] as const
+
+/**
+ * L'achat et la vente payés par la caisse, leurs opérations et leurs écritures, et la ligne restée d'un troisième paiement.
+ * `ecrites` : `justes`, les écritures que la génération écrit ; `perimees`, la contrepartie de la vente restée après le retrait
+ * de son paiement, et l'achat écrit avant le sien, à sa date de facture, sans contrepartie.
+ */
+function piecesPayeesParLaCaisse(m: Monde, ecrites: 'justes' | 'perimees') {
+  dossierQuiNaPasBascule(m, 'tresorerie')
+  const piece = (id: string, type: string, date: string, ht: number, tva: number, tiers: string, categorie: string) => ({
+    id, dossier_id: D, type_piece: type, statut: 'validee', date_piece: date, tiers, nom_fichier: `${tiers}.pdf`, montant_ht: ht,
+    montant_tva: tva, montant_ttc: ht + tva, categorie_id: categorie, confiance: 'haute', created_at: `${date}T09:00:00Z`, facture_id: null,
+  })
+  ;(m.base.pieces ??= []).push(
+    piece(C13.achat, 'achat', '2026-03-05', 50, 10, FOURNISSEUR_PAYE_EN_ESPECES, C13.categorieAchats),
+    piece(C13.vente, 'vente', '2026-03-07', 100, 20, MARQUEUR_DU_PATIENT_EN_ESPECES, C13.categorieRecettes),
+  )
+  ;(m.base.categories ??= []).push(
+    { id: C13.categorieAchats, dossier_id: D, code: 'achats-c13', libelle: 'Achats fictifs', compte_comptable: '606100', poste_2035: 'BA' },
+    { id: C13.categorieRecettes, dossier_id: D, code: 'recettes-c13', libelle: 'Honoraires fictifs en espèces', compte_comptable: '706000', poste_2035: 'AA' },
+  )
+  const operation = (id: string, date: string, montant: number, pieceId: string, retire = false) => ({
+    id, dossier_id: D, genre: 'paiement', date, montant, categorie_id: null, taux_tva: null, encaissements_du_jour: null, piece_id: pieceId,
+    origine: 'cabinet', remplace_id: null, cree_le: `${date}T18:00:00Z`, cree_par: null, retire_le: retire ? `${date}T19:00:00Z` : null, retire_par: null,
+  })
+  ;(m.base.operations_caisse ??= []).push(
+    operation(C13.paiementAchat, '2026-03-06', -60, C13.achat),
+    operation(C13.paiementVente, '2026-03-08', 120, C13.vente, ecrites === 'perimees'),
+    operation(C13.paiementSansPiece, '2026-03-09', -9.99, C13.achat, true),
+  )
+  let n = 0
+  const ligne = (date: string, compte: string, sens: 'debit' | 'credit', montant: number, libelle: string, o: Record<string, unknown>) => {
+    n += 1
+    return {
+      id: `c13e0000-0000-4000-8000-${String(n).padStart(12, '0')}`, dossier_id: D, date, compte, libelle, sens, montant, statut: 'proposee',
+      ...Object.fromEntries(RATTACHEMENTS_DU_BROUILLON.map((r) => [r, null])), ...o,
+    }
+  }
+  const achat = { piece_id: C13.achat }
+  const vente = { piece_id: C13.vente }
+  const p = MARQUEUR_DU_PATIENT_EN_ESPECES
+  const f = FOURNISSEUR_PAYE_EN_ESPECES
+  ;(m.base.ecritures_brouillon ??= []).push(
+    ...(ecrites === 'justes'
+      ? [
+        ligne('2026-03-06', '606100', 'debit', 50, f, achat), ligne('2026-03-06', '445660', 'debit', 10, f, achat),
+        ligne('2026-03-06', '530000', 'credit', 60, f, { ...achat, operation_caisse_id: C13.paiementAchat }),
+      ]
+      : [ligne('2026-03-05', '606100', 'debit', 50, f, achat), ligne('2026-03-05', '445660', 'debit', 10, f, achat)]),
+    ligne('2026-03-08', '706000', 'credit', 100, p, vente), ligne('2026-03-08', '445710', 'credit', 20, p, vente),
+    ligne('2026-03-08', '530000', 'debit', 120, p, { ...vente, operation_caisse_id: C13.paiementVente }),
+    // La ligne restée d'un paiement, sans sa pièce : elle se nomme par l'opération.
+    ligne('2026-03-09', '530000', 'credit', 9.99, p, { operation_caisse_id: C13.paiementSansPiece }),
+  )
+  m.sensibles.push(MARQUEUR_DU_PATIENT_EN_ESPECES)
+}
+
+const OUTILS_DE_LA_CAISSE_PAYANTE = [
+  { id: 'points', name: 'points_a_traiter', input: {} },
+  { id: 'ecritures', name: 'lister_ecritures', input: {} },
+  { id: 'pieces', name: 'lister_pieces', input: {} },
+]
+
+/** Le client d'une vente payée en espèces n'atteint pas le modèle ; le fournisseur d'un achat, si ; chaque ligne porte ce qu'elle doit. */
+function caissePayanteNommee(consigne: string, r: ResultatsDesOutils, m: Monde): string[] {
+  const demandes = JSON.stringify(m.notes.demandesAuModele ?? [])
+  const rendues = (r.ecritures?.ecritures ?? []) as Record<string, unknown>[]
+  const lesMiennes = lignes(m, 'ecritures_brouillon').filter((l) => String(l.id).startsWith('c13e0000-'))
+  return [
+    ...verifie(JSON.stringify(m.base.ecritures_brouillon).split(MARQUEUR_DU_PATIENT_EN_ESPECES).length - 1 >= 4, 'le monde ne porte plus le marqueur : la preuve serait vide'),
+    ...verifie(morceauxDe(MARQUEUR_DU_PATIENT_EN_ESPECES).every((x) => !demandes.includes(x)), 'le client d’une vente payée en espèces est parvenu au modèle'),
+    ...verifie(demandes.includes(FOURNISSEUR_PAYE_EN_ESPECES), 'le fournisseur d’un achat payé en espèces n’atteint plus le modèle : la règle vise trop large'),
+    ...verifie(consigne.includes('Une PIÈCE PAYÉE EN ESPÈCES par la caisse a sa contrepartie au compte de la caisse, au jour du paiement, à la place de la banque'),
+      'la consigne ne dit pas la contrepartie d’une pièce payée en espèces'),
+    ...verifie(lesMiennes.length >= 6, `le monde ne porte plus ses lignes : ${lesMiennes.length}`),
+    ...lesMiennes.flatMap((l) => {
+      const memes = rendues.filter((e) => e.date === l.date && e.compte === l.compte && e.sens === l.sens && e.montant === l.montant)
+      if (memes.length !== 1) return [`lister_ecritures rend ${memes.length} fois la ligne ${String(l.date)} ${String(l.compte)} ${String(l.montant)}`]
+      const { libelle } = ceQueLaLigneDoitPorter(l, m, false)
+      return verifie(memes[0].libelle === libelle, `lister_ecritures, la ligne ${String(l.date)} ${String(l.compte)} ${String(l.montant)} : ${JSON.stringify(memes[0].libelle)} au lieu de ${JSON.stringify(libelle)}`)
+    }),
+    // Écrits ICI : la contrepartie de la vente sous le nom de sa pièce, la ligne restée sous le nom de l'opération.
+    ...verifie(rendues.some((e) => e.compte === '530000' && e.montant === 120 && e.libelle === 'Pièce de vente du 07/03/2026, 120,00 €'), 'la contrepartie d’une vente payée en espèces ne se nomme pas comme sa pièce'),
+    ...verifie(rendues.some((e) => e.compte === '530000' && e.montant === 9.99 && e.libelle === 'Paiement par la caisse du 09/03/2026, 9,99 €'), 'la ligne restée d’un paiement ne se nomme pas par son opération'),
+  ]
+}
+
+const SCENARIOS_DE_LA_CAISSE_PAYANTE: Scenario[] = [
+  scenarioDuDossierBascule('un dossier dont la caisse paie deux pièces : ni « en attente de rapprochement », ni « à régénérer » leur contrepartie au compte de la caisse, la Vue d’ensemble nommée pour ses points, et le client de la vente jamais au modèle (C13)',
+    (m) => piecesPayeesParLaCaisse(m, 'justes'),
+    OUTILS_DE_LA_CAISSE_PAYANTE,
+    (consigne, r, m) => [
+      ...caissePayanteNommee(consigne, r, m),
+      ...verifie(!('erreur' in r.points), `points_a_traiter refuse : ${JSON.stringify(r.points).slice(0, 200)}`),
+      ...CLES_DES_PAIEMENTS.flatMap((cle) => verifie(r.points[cle] === 0, `points_a_traiter, ${cle} : ${JSON.stringify(r.points[cle])}`)),
+      ...verifie(r.points.ecritures_desequilibrees === 0, `points_a_traiter, écritures déséquilibrées : ${JSON.stringify(r.points.ecritures_desequilibrees)}`),
+      ...verifie(r.points.caisse === CAISSE_PAYANTE_NON_VERIFIEE, `points_a_traiter, la caisse : ${JSON.stringify(r.points.caisse)}`),
+    ]),
+  scenarioDuDossierBascule('un dossier dont la caisse paie : la contrepartie d’un paiement retiré, et un achat écrit avant son paiement, sont à régénérer — aucun n’attend un rapprochement (C13)',
+    (m) => piecesPayeesParLaCaisse(m, 'perimees'),
+    OUTILS_DE_LA_CAISSE_PAYANTE,
+    (consigne, r, m) => [
+      ...caissePayanteNommee(consigne, r, m),
+      ...verifie(r.points.ecritures_a_regenerer_pieces_modifiees === 2, `points_a_traiter, à régénérer : ${JSON.stringify(r.points.ecritures_a_regenerer_pieces_modifiees)}`),
+      ...verifie(r.points.ecritures_en_attente_de_rapprochement_bancaire === 0, `points_a_traiter, en attente : ${JSON.stringify(r.points.ecritures_en_attente_de_rapprochement_bancaire)}`),
+      ...verifie(r.points.caisse === CAISSE_PAYANTE_NON_VERIFIEE, `points_a_traiter, la caisse : ${JSON.stringify(r.points.caisse)}`),
+    ]),
+  scenarioDuDossierBascule('les opérations de caisse en panne : les clés que leurs paiements nourrissent se disent indisponibles, les autres se disent (C13)',
+    (m) => { piecesPayeesParLaCaisse(m, 'justes'); m.pannes.push({ table: 'operations_caisse', operation: 'select', erreur: { message: 'panne fictive de la caisse' } }) },
+    [{ id: 'points', name: 'points_a_traiter', input: {} }],
+    (_c, r) => [
+      ...verifie(!('erreur' in r.points), `points_a_traiter refuse tout : ${JSON.stringify(r.points).slice(0, 200)}`),
+      ...CLES_DES_PAIEMENTS.flatMap((cle) => verifie(typeof r.points[cle] === 'string'
+        && String(r.points[cle]).startsWith('indisponible : les paiements par la caisse n\'ont pas pu être lus (')
+        && String(r.points[cle]).includes('panne fictive de la caisse'), `points_a_traiter, ${cle} : ${JSON.stringify(r.points[cle])}`)),
+      ...verifie(r.points.ecritures_desequilibrees === 0 && r.points.pieces_validees_sans_tva_renseignee === 0, 'points_a_traiter tait ce qui ne dépend pas de la caisse'),
+      ...verifie(r.points.caisse === CAISSE_NON_VERIFIEE, `points_a_traiter, la caisse : ${JSON.stringify(r.points.caisse)}`),
+    ]),
+]
+
 const SCENARIOS_DES_VENTES: Scenario[] = [
   // Ces deux scénarios étaient, sous VF9a, ceux de la garde sur un dossier basculé (« points_a_traiter refuse sans rien
   // lire », « la garde s’applique, et la phrase le dit ») : VF9c lève la garde pour un réglage LU vrai, et ils jugent
@@ -2585,6 +2741,7 @@ const AGENT_COMPTABLE: ContratFonction = {
     ...SCENARIOS_DES_VENTES,
     ...SCENARIOS_DES_PIECES_DE_VENTE,
     ...SCENARIOS_DU_RELEVE,
+    ...SCENARIOS_DE_LA_CAISSE_PAYANTE,
     {
       nom: 'le modèle refuse de répondre : 502 qui le dit',
       preparer: (m) => { m.modele = () => ({ content: [], stop_reason: 'refusal', usage: { input_tokens: 1, output_tokens: 0 } }) },

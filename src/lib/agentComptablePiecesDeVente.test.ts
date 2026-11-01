@@ -895,6 +895,18 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
     ])
   })
 
+  // ÉTAPE C13 : `points_a_traiter` lit les opérations de caisse du dossier, pour les paiements de pièces par la caisse. Le
+  // scanner la voit, et elle ne rapporte rien qui nomme : ni la pièce qu'une opération paie, ni sa catégorie, ni ses auteurs.
+  it('voit la lecture des opérations de caisse de points_a_traiter (étape C13), qui ne rapporte rien qui nomme', () => {
+    const { lectures } = lecturesDe(sourceDeployee())
+    const caisse = lectures.filter((l) => l.zone === 'points_a_traiter' && l.table === 'operations_caisse')
+    expect(caisse.map((l) => l.lues)).toEqual([[
+      'operations_caisse.date', 'operations_caisse.genre', 'operations_caisse.id', 'operations_caisse.montant', 'operations_caisse.piece_id',
+      'operations_caisse.remplace_id', 'operations_caisse.retire_le',
+    ]])
+    expect(caisse[0].nomme).toEqual([])
+  })
+
   it('chaque lecture qui nomme passe par le passage, ou se déclare avec sa raison et son nombre : aucune faute sur la vraie source', () => {
     expect(fautesDe(sourceDeployee())).toEqual([])
     for (const d of LECTURES_QUI_NOMMENT) expect(d.raison.length, `${d.zone} · ${d.table}`).toBeGreaterThan(40)
@@ -973,6 +985,12 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
     ['l’opération de caisse lue avec la pièce qu’elle paie', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, pieces(tiers))']])],
     ['l’opération de caisse en jointure interne : une ligne sans opération disparaîtrait', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse!inner(genre, date, montant)']])],
     ['l’opération de caisse lue en entier (*)', () => muter(source, [[OPERATION_EMBARQUEE, 'operations_caisse(*)']])],
+    // Étape C13 : les opérations de caisse que lit points_a_traiter, sans rien qui nomme.
+    ['les paiements par la caisse lus avec le tiers de leur pièce', () => muter(source, [[
+      'admin.from("operations_caisse").select("id, genre, piece_id, date, montant, retire_le, remplace_id",',
+      'admin.from("operations_caisse").select("id, genre, piece_id, date, montant, retire_le, remplace_id, pieces(tiers)",']])],
+    ['les paiements par la caisse lus en entier (*)', () => muter(source, [[
+      'admin.from("operations_caisse").select("id, genre, piece_id, date, montant, retire_le, remplace_id",', 'admin.from("operations_caisse").select("*",']])],
   ]
   for (const [quoi, mutee] of DEFAUTS) {
     it(`voit ${quoi}`, () => {

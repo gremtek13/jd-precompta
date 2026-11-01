@@ -178,15 +178,23 @@ describe('la consigne de l’assistant', () => {
     expect(phrase).toContain('Son justificatif est le brouillard de caisse que l\'exploitant tient hors de l\'application : ce n\'est pas une anomalie.')
     expect(phrase).toContain('La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas, ne le devine pas')
     expect(phrase).toContain('Un VERSEMENT d\'espèces en banque est un crédit du relevé écrit sur le compte de la caisse')
+    // Étape C13 : la contrepartie d'un paiement par la caisse, au compte de la caisse, n'est pas une anomalie.
+    expect(phrase).toContain('Une PIÈCE PAYÉE EN ESPÈCES par la caisse a sa contrepartie au compte de la caisse, au jour du paiement, à la place de la banque (lister_ecritures nomme cette ligne comme sa pièce) : elle n\'attend aucun rapprochement, ce n\'est pas une anomalie, et elle compte dans la 2035 à cette date.')
     expect(phrase).toMatch(/renvoie à l'onglet Caisse et à la Vue d'ensemble, qui les disent\.$/)
     expect(source).toContain(`\nconst COMPTE_CAISSE = "${COMPTE_CAISSE}"\n`)
     expect(source).toContain(`\nconst COMPTE_TVA_COLLECTEE = "${COMPTE_TVA_COLLECTEE}"\n`)
     // `points_a_traiter` : une clé, pour tout dossier, qui dit la caisse non vérifiée ; les quatre points qu'elle désigne
     // existent dans la Vue d'ensemble.
-    expect(source).toContain('      caisse: CAISSE_NON_VERIFIEE,\n')
+    // Depuis l'étape C13 : d'un dossier dont la caisse paie des pièces — un paiement vivant lu —, la phrase nomme aussi les trois
+    // points que la migration `paiement_par_la_caisse` fait paraître ; sans lui, celle d'hier.
+    expect(source).toContain('      caisse: paiementsDeLaCaisse !== null && paiementsDeLaCaisse.length > 0 ? CAISSE_PAYANTE_NON_VERIFIEE : CAISSE_NON_VERIFIEE,\n')
+    expect(source).toContain('\nconst CAISSE_PAYANTE_NON_VERIFIEE = `${CAISSE_NON_VERIFIEE} ; la caisse de ce dossier payant des pièces, la Vue d\'ensemble dit aussi les paiements par la caisse à retirer (leur sens contredit leur pièce, ou ils la laissent à quelques centimes), les pièces à valider qu\'un paiement par la caisse règle, et les mouvements d\'avant l\'ouverture du dossier classés sur la caisse`\n')
     expect(source).toContain('\nconst CAISSE_NON_VERIFIEE = "non vérifiée par l\'assistant : l\'onglet Caisse et la Vue d\'ensemble disent les opérations de caisse à reprendre, une caisse négative, les recettes de caisse à revoir et les versements d\'espèces rangés en recette"\n')
     const points = readFileSync(new URL('./pointsDeLaChecklist.ts', import.meta.url), 'utf8')
-    for (const id of ['caisse-a-reprendre', 'caisse-negative', 'recettes-de-caisse-a-revoir', 'versements-especes-en-recette']) {
+    for (const id of [
+      'caisse-a-reprendre', 'caisse-negative', 'recettes-de-caisse-a-revoir', 'versements-especes-en-recette',
+      'caisse-paiements-a-retirer', 'pieces-a-valider-payees-par-la-caisse', 'caisse-mouvements-avant-ouverture',
+    ]) {
       expect(points, id).toContain(`id: '${id}'`)
       expect(source, id).toContain(`\`${id}\``)
     }
