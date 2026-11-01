@@ -722,20 +722,23 @@ PAS APPLIQUÉE) »).
 **Préparé le 31/10/2026, PAS ENCORE APPLIQUÉ : `paiement_par_la_caisse`** (ligne 26.6, étape C8 : le paiement d'une pièce
 par la caisse, et la caisse bornée par son ouverture ; MVP-D2, CAISSE-Q4). Son fichier vit HORS de l'export, dans
 `supabase/preparees/`, sous une version PROVISOIRE, `20261031120000`, après les trois migrations de la caisse, qu'il exige
-(64 280 caractères, 65 211 octets, 1 041 lignes, `864afcecd84949db1d6ed0995ed26424`, ni barre oblique inverse ni retour
-chariot). Il s'applique PAR L'OUTIL : ni `drop`, ni `delete from`, ni `truncate` ; ses `revoke` ne retirent que les droits
+(73 755 caractères, 74 881 octets, 1 142 lignes, `0accdea9c4c444e318cf8ef74825f37f`, ni barre oblique inverse ni retour
+chariot ; corrigé le 01/11/2026 par la relecture de C8 et C9 — le reste au centime d'un paiement, la pièce supprimée sous
+la contrepartie de son paiement : HISTORIQUE.md, « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS » ; les
+agrégats de la réplique relevés plus bas sont ceux du texte du 31/10, ceux d'après les trois migrations du jour sont au
+paragraphe du filet). Il s'applique PAR L'OUTIL : ni `drop`, ni `delete from`, ni `truncate` ; ses `revoke` ne retirent que les droits
 que Postgres donne d'office aux trois fonctions qu'il crée, comme ceux de `caisse` ; le mot de la suppression n'y paraît
 que dans `tg_op = 'DELETE'` et les événements d'un déclencheur. Sa garde de tête refuse une seconde application, une base
-sans les trois migrations de la caisse, et dix-sept fonctions qui ne seraient plus à l'empreinte relue en production le
+sans les trois migrations de la caisse, et dix-huit fonctions (la dernière, `encaissement_justifie_son_mouvement`, depuis la relecture) qui ne seraient plus à l'empreinte relue en production le
 31/10/2026 ; puis quatre corps par `create or replace` (`premier_jour_negatif_de_la_caisse`, `garder_la_caisse`,
 `garder_ecriture_de_caisse`, `enregistrer_operation_caisse` : OID, propriétaire, droits et déclencheurs gardés), trois
 fonctions neuves (`regler_piece_par_la_caisse`, exécutable par un compte connecté ; `garder_piece_payee_par_la_caisse` et
 `garder_caisse_depuis_l_ouverture`, par personne) et deux déclencheurs (`pieces_payees_par_la_caisse`,
 `lignes_bancaires_sur_la_caisse_depuis_l_ouverture`) ; aucune table, colonne, contrainte ni policy. Le fichier entre ici
-sous la version que portera sa ligne d'historique, texte inchangé, et cette ligne doit rendre `864afcec…` ; le drapeau
+sous la version que portera sa ligne d'historique, texte inchangé, et cette ligne doit rendre `0accdea9…` ; le drapeau
 `PAIEMENT_PAR_LA_CAISSE_EXPORTE` se lève dans le même commit. Son RETOUR ARRIÈRE
-(`supabase/preparees/retour/20261031120100_retour_paiement_par_la_caisse.sql`, 30 232 octets,
-`172eb93c96c83ef61fc49f57cdc1c467`) : sa garde de tête exige les sept corps de la migration à leur empreinte et refuse dès
+(`supabase/preparees/retour/20261031120100_retour_paiement_par_la_caisse.sql`, 30 868 octets,
+`bdca96f15c0c605fe3b7c6da2d0c2842`) : sa garde de tête exige les sept corps de la migration à leur empreinte et refuse dès
 qu'un paiement par la caisse existe ; il rend les quatre corps d'hier et retire les trois fonctions et les deux
 déclencheurs — des objets, à accorder par le cabinet, et à coller avec sa ligne d'historique. Tant qu'elle n'est pas
 appliquée, l'export ne la porte pas, et ses trois contrôles sont ceux de la production (164 fichiers, `3a31b730…` ; socle
@@ -750,6 +753,23 @@ familles changent, « déclencheurs » (82 `86c12843…` puis 84 `8f00438b06152d
 `410d7470d418786fde9f2db4ebcd9ef7`), les six autres inchangées ; elles reviennent toutes à la production après le retour
 arrière, qu'une seconde application refuse comme la migration (HISTORIQUE.md, « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR
 LA CAISSE, EN BASE (C8, LIGNE 26.6) »).
+
+**Préparé le 01/11/2026, PAS ENCORE APPLIQUÉ : `validation_des_paiements_par_la_caisse`** (ligne 26.6 ; la relecture de
+C8 et C9, le défaut 1 : le filet de la validation). Son fichier vit HORS de l'export, dans `supabase/preparees/`, sous une
+version PROVISOIRE, `20261101100000` (42 854 caractères, 43 470 octets, 617 lignes, `7c098f630a75b54fe66d305390b20155`,
+ni barre oblique inverse ni retour chariot), APRÈS C8 et FEC22b, qu'il exige. Il s'applique PAR L'OUTIL : une seule
+définition, `valider_exercice` par `create or replace`, le corps que FEC22b lui laisse (`1827b6b7…`, que sa garde de tête
+exige) plus un refus (23514) juste avant que la fonction n'écrive — un paiement vivant de l'exercice par la caisse dont la
+contrepartie entière manque au brouillon ; corps neuf `02750f93…`. Son RETOUR ARRIÈRE
+(`supabase/preparees/retour/20261101100100_retour_validation_des_paiements_par_la_caisse.sql`, 36 867 octets,
+`46be291b924bdb50c6eb21a72d68eb51`) exige ce corps neuf et rend le corps, le commentaire et les droits de FEC22b ; rien
+n'est retiré. Le jour de l'application : C8, puis FEC22b, puis lui, chacun par l'outil, puis les trois contrôles de
+l'export. Sur la réplique de FEC22b, depuis l'état de la production (164 migrations, `3a31b730…`), les trois appliquées
+dans cet ordre : le socle 81 instructions, `bfe9dce8…` (celui que le socle régénéré devra rendre) ; l'inventaire 2 295
+objets, `5ac4309b…` ; `signature.sql` : « contraintes » 711 `bb338173…`, « déclencheurs » 84 `8f00438b…`, « fonctions »
+220 `e3cc1631…`, « droits des fonctions » 220 `1f3389b2…`, les autres familles celles de la production (HISTORIQUE.md,
+« LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS », « LE FEC D'UN BNC : LES QUATRE POSTES NEUFS DE LA 2035 DANS
+LES LISTES FERMÉES (FEC22B ET LE FILET) »).
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
