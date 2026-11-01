@@ -16,7 +16,7 @@ import {
 } from './declaration2035'
 import { POSTE_INTERETS_EMPRUNT } from './echeanceEmprunt'
 import type { MoyenEncaissement, OperationCaisse } from './types'
-import type { PaiementDePiece } from './rattachement'
+import type { PaiementDePiece, PaiementParLeReleve } from './rattachement'
 
 // LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE (lot FEC22a) : un cas par sorte d'écriture de la table « CE QUE CHAQUE
 // ÉCRITURE PORTE » de la conception, positif et négatif ; le scanner qui part de toutes les sortes que `numeroterFec`
@@ -61,7 +61,7 @@ const mouvement = (m: Partial<MouvementDuFec>): MouvementDuFec => ({
   statut: 'rapprochee', categorie_id: null, emprunt_id: null, emprunt_echeance: null, cotisation_id: null, ventilee: false,
   compte_bilan: null, declaration_tva_id: null, prelevement_personnel: false, ...m,
 })
-const paiement = (p: Partial<PaiementDePiece>): PaiementDePiece => ({ id: 'mvt-1', date: '2026-03-20', montant: -120, origine: 'rapprochement', ...p })
+const paiement = (p: Partial<PaiementParLeReleve>): PaiementDePiece => ({ id: 'mvt-1', date: '2026-03-20', montant: -120, origine: 'rapprochement', ...p })
 const categorie = (poste: string | null, libelle: string): PosteLu => ({ de: 'categorie', categorie: { libelle, poste_2035: poste } })
 const ligne = (id: string, compte: string, poste: PosteLu): LigneACaracteriser => ({ id, compte, libelle: NOMS[2], poste })
 const AUCUN: PosteLu = { de: 'aucun' }

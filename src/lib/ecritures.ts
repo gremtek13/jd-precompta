@@ -2,7 +2,10 @@ import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { comptesDeTiers, compteDeTiers, lignesEngagementPourPiece, type ModeleComptable } from './engagement'
 import type { PlanComptable } from './planComptable'
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
-import { centimesParDate, rattachementsTresorerie, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
+import {
+  centimesParDate, estParLeReleve, rattachementsTresorerie, type PaiementDePiece, type PaiementParLaCaisse, type PaiementParLeReleve,
+  type PaiementsDesPieces,
+} from './rattachement'
 import type { AcquisitionDuBien } from './amortissements'
 import { estFigee } from './validationExercice'
 import { dateLocaleDe } from './format'
@@ -42,6 +45,11 @@ export interface LigneAGenerer {
   // la charge. C'est lui qui range un règlement au journal de banque dans le FEC, et qui retire la ligne
   // quand le rapprochement est annulé.
   ligne_bancaire_id?: string
+  // L'opération de caisse d'une ligne de CAISSE — la contrepartie d'un paiement de la pièce par la caisse (étape C9a), au
+  // compte de la caisse du plan, que la garde du brouillon juge (`garder_ecriture_de_caisse`, migration
+  // `paiement_par_la_caisse`) ; absente de toute autre ligne. Elle range la ligne au journal de sa pièce, et la retire
+  // avec les écritures de sa pièce.
+  operation_caisse_id?: string
 }
 
 // OÙ UNE PIÈCE S'ÉCRIT : le compte de sa catégorie, ou — pour la facture d'un bien IMMOBILISÉ — le compte
@@ -134,7 +142,7 @@ export function lignesChargeProduitPourPiece(
 // et son écriture restait déséquilibrée sans que rien ne sache la compléter.
 export function ligneContrepartieBanque(
   dossierId: string, piece: Pick<Piece, 'id' | 'tiers' | 'nom_fichier'>,
-  paiement: Pick<PaiementDePiece, 'id' | 'date' | 'montant'>,
+  paiement: Pick<PaiementParLeReleve, 'id' | 'date' | 'montant'>,
   plan: PlanComptable,
 ): LigneAGenerer | null {
   if (!paiement.montant) return null
@@ -143,6 +151,43 @@ export function ligneContrepartieBanque(
     libelle: piece.tiers ?? piece.nom_fichier, statut: 'proposee', compte: plan.banque,
     montant: Math.abs(paiement.montant), sens: paiement.montant > 0 ? 'debit' : 'credit',
   }
+}
+
+// La contrepartie CAISSE d'un paiement de la pièce par la caisse (étape C9a ; CAISSE-Q4, (B)), en trésorerie : le compte de
+// la caisse DU PLAN, à la date de l'opération, de son montant, dans le sens de ses espèces — au débit quand elles entrent
+// (une vente encaissée en espèces), au crédit quand elles sortent (un achat payé) —, l'opération ET la pièce citées. C'est
+// la seule ligne que la garde du brouillon admet pour un paiement (`garder_ecriture_de_caisse`, migration
+// `paiement_par_la_caisse` : son paiement, son compte, son sens, pas au-delà de son montant), celle que
+// `contrepartieDuPaiement` (lib/paiementParLaCaisse.ts) redit — `paiementParLaCaisse.test.ts` les confronte. Écrite par la
+// génération et par « Régénérer », comme la banque : la pièce peut n'être ni validée ni écrite au jour du paiement, et un
+// seul chemin vers la contrepartie d'une pièce ne diverge pas. Un paiement de zéro euro n'en écrit aucune.
+export function ligneContrepartieCaisse(
+  dossierId: string, piece: Pick<Piece, 'id' | 'tiers' | 'nom_fichier'>,
+  paiement: Pick<PaiementParLaCaisse, 'operation_caisse_id' | 'date' | 'montant'>,
+  plan: PlanComptable,
+): LigneAGenerer | null {
+  if (!paiement.montant) return null
+  return {
+    dossier_id: dossierId, piece_id: piece.id, operation_caisse_id: paiement.operation_caisse_id, date: paiement.date,
+    libelle: piece.tiers ?? piece.nom_fichier, statut: 'proposee', compte: plan.caisse,
+    montant: Math.abs(paiement.montant), sens: paiement.montant > 0 ? 'debit' : 'credit',
+  }
+}
+
+// La contrepartie d'un paiement, de l'un ou l'autre moyen : la banque d'un paiement par le relevé, la caisse d'un paiement
+// par la caisse.
+export function ligneContrepartieDuPaiement(
+  dossierId: string, piece: Pick<Piece, 'id' | 'tiers' | 'nom_fichier'>, paiement: PaiementDePiece, plan: PlanComptable,
+): LigneAGenerer | null {
+  return estParLeReleve(paiement)
+    ? ligneContrepartieBanque(dossierId, piece, paiement, plan)
+    : ligneContrepartieCaisse(dossierId, piece, paiement, plan)
+}
+
+// La ligne est-elle la contrepartie d'un paiement par la caisse ? Celle d'une PIÈCE qui cite une opération de caisse : la
+// seule que la base admette (`ecritures_brouillon_caisse_sans_autre_source`), une opération saisie n'en portant jamais.
+export function estContrepartieCaisse(e: Pick<EcritureBrouillon, 'piece_id' | 'operation_caisse_id'>): boolean {
+  return e.piece_id != null && e.operation_caisse_id != null
 }
 
 // LA NOTE DE FRAIS EN TRÉSORERIE S'ÉCRIT FACE AU COMPTE DE L'EXPLOITANT (108000) : ce que le dirigeant a payé de
@@ -204,7 +249,12 @@ export function lignesPourPiece(
   paiements: readonly PaiementDePiece[], modele: ModeleComptable,
 ): LigneAGenerer[] {
   if (modele.mode === 'engagement') {
-    return lignesEngagementPourPiece(dossierId, piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements, modele.plan)
+    // EN ENGAGEMENT, LE RELEVÉ SEUL RÈGLE : la base refuse le paiement par la caisse d'une pièce d'un dossier en engagement
+    // (`regler_piece_par_la_caisse`, le refus de la trésorerie), dont le règlement viendrait au compte de tiers — et sa garde
+    // n'admet, pour une contrepartie de caisse, que la ligne de la caisse, jamais la ligne de tiers d'un règlement.
+    // Un paiement par la caisse ne fait donc ici aucun règlement : la facture reste à sa date, comme toujours en engagement.
+    return lignesEngagementPourPiece(dossierId, piece, cible, assujettiTva, modele.compteNotesDeFrais,
+      paiements.filter(estParLeReleve), modele.plan)
   }
   return lignesTresoreriePourPiece(dossierId, piece, cible, assujettiTva, paiements, modele.plan)
 }
@@ -215,7 +265,7 @@ function lignesTresoreriePourPiece(
 ): LigneAGenerer[] {
   const autres = [
     ...lignesChargeProduitPourPiece(dossierId, piece, cible, assujettiTva, paiements, plan),
-    ...paiements.flatMap((p) => ligneContrepartieBanque(dossierId, piece, p, plan) ?? []),
+    ...paiements.flatMap((p) => ligneContrepartieDuPaiement(dossierId, piece, p, plan) ?? []),
   ]
   const dirigeant = ligneContrepartieDirigeant(dossierId, piece, autres, paiements, plan)
   return dirigeant && estContrepartieDirigeant(piece, cible, dirigeant, plan) ? [...autres, dirigeant] : autres
@@ -405,7 +455,8 @@ export function ecrituresSansObjet(
     // `piece_id` nul est le domaine de rupturesPisteAudit, pas d'ici. Et un mouvement bancaire est
     // RÉEL : ni la contrepartie banque (trésorerie) ni l'écriture de règlement (engagement, les deux
     // lignes qui désignent leur mouvement) ne disparaissent parce que la pièce a changé de nature.
-    if (!e.piece_id || e.compte === plan.banque || e.ligne_bancaire_id) continue
+    // Le paiement par la caisse aussi (étape C9a) : des espèces sorties ou entrées ne disparaissent pas non plus.
+    if (!e.piece_id || e.compte === plan.banque || e.ligne_bancaire_id || estContrepartieCaisse(e)) continue
     // En engagement, la ligne de tiers de la facture (401, 411, compte de la note de frais) SOLDE la
     // charge dans son écriture : elle ne compte rien en trop, et la garder ferait rendre zéro à
     // `montant` — une facture immobilisée annoncée « 0,00 € compté au brouillon ». En trésorerie, la
@@ -492,8 +543,10 @@ export function analyserEcritures(
   const notesDeFrais = new Set(aComptabiliser
     .filter(({ piece, ...cible }) => tresorerie && estContrepartieDirigeant(piece, cible, { compte: plan.exploitant }, plan))
     .map(({ piece }) => piece.id))
+  // La contrepartie d'un paiement par la CAISSE en est une aussi (étape C9a) : une pièce payée en espèces a la sienne,
+  // au compte de la caisse, et rien ne la retient.
   const contrepartie = (pieceId: string, r: EcritureBrouillon) =>
-    r.compte === plan.banque || (notesDeFrais.has(pieceId) && r.compte === plan.exploitant)
+    r.compte === plan.banque || estContrepartieCaisse(r) || (notesDeFrais.has(pieceId) && r.compte === plan.exploitant)
   const piecesSansContrepartie = [...piecesParGroupe.entries()]
     .filter(([pieceId, rows]) => !notesDeFrais.has(pieceId) && !rows.some((r) => contrepartie(pieceId, r)) && !paiements.has(pieceId))
     .map(([pieceId]) => pieceId)
@@ -541,8 +594,10 @@ function partieOuverteDesynchronisee(
   groupe: readonly EcritureBrouillon[], attendues: readonly LigneAGenerer[], frontiere: string,
 ): boolean {
   if (groupe.length === 0) return false
-  const cle = (l: Pick<EcritureBrouillon, 'date' | 'compte' | 'sens' | 'montant'> & { ligne_bancaire_id?: string | null }) =>
-    [l.date, l.compte, l.sens, Math.round(l.montant * 100), l.ligne_bancaire_id ?? ''].join('|')
+  // Et l'opération de caisse d'une contrepartie de caisse (étape C9a) comme le mouvement d'une contrepartie de banque.
+  const cle = (l: Pick<EcritureBrouillon, 'date' | 'compte' | 'sens' | 'montant'>
+    & { ligne_bancaire_id?: string | null; operation_caisse_id?: string | null }) =>
+    [l.date, l.compte, l.sens, Math.round(l.montant * 100), l.ligne_bancaire_id ?? '', l.operation_caisse_id ?? ''].join('|')
   const presentes = groupe.filter((e) => !estFigee(e.date, frontiere)).map(cle).sort()
   const ouvertes = lignesOuvertes(attendues, frontiere).map(cle).sort()
   return presentes.length !== ouvertes.length || presentes.some((c, i) => c !== ouvertes[i])
@@ -627,19 +682,36 @@ export function ecrituresAGenerer(
 // nouveau avec d'autres montants laisse le même mouvement en face de la même pièce, et une comparaison des
 // seuls identifiants déclarerait juste une banque restée sur l'ancienne part. Une ligne de banque qui ne
 // désigne plus aucun mouvement (le mouvement supprimé, la clé mise à nul) n'est la contrepartie de rien.
+//
+// ET LA CAISSE DE MÊME (étape C9a) : les lignes de caisse d'une pièce suivent ses paiements par la caisse, une par
+// opération, à sa date et à son montant — `contrepartiesSuiventLesPaiements`, la même question sur l'autre clé.
 function banqueSuitLesPaiements(lignesBanque: readonly EcritureBrouillon[], paiements: readonly PaiementDePiece[]): boolean {
-  const attendus = new Map(paiements.filter((m) => m.montant !== 0).map((m) => [m.id, m]))
+  return contrepartiesSuiventLesPaiements(lignesBanque, (e) => e.ligne_bancaire_id ?? null,
+    paiements.filter(estParLeReleve).map((m) => ({ cle: m.id, date: m.date, montant: m.montant })))
+}
+
+function caisseSuitLesPaiements(lignesCaisse: readonly EcritureBrouillon[], paiements: readonly PaiementDePiece[]): boolean {
+  return contrepartiesSuiventLesPaiements(lignesCaisse, (e) => e.operation_caisse_id ?? null,
+    paiements.flatMap((m) => (m.origine === 'caisse' ? [{ cle: m.operation_caisse_id, date: m.date, montant: m.montant }] : [])))
+}
+
+function contrepartiesSuiventLesPaiements(
+  lignes: readonly EcritureBrouillon[], cleDe: (e: EcritureBrouillon) => string | null,
+  paiements: readonly { cle: string; date: string; montant: number }[],
+): boolean {
+  const attendus = new Map(paiements.filter((m) => m.montant !== 0).map((m) => [m.cle, m]))
   const presents = new Map<string, { montant: number; dates: Set<string> }>()
-  for (const e of lignesBanque) {
-    if (!e.ligne_bancaire_id) return false
-    const present = presents.get(e.ligne_bancaire_id) ?? { montant: 0, dates: new Set<string>() }
+  for (const e of lignes) {
+    const cle = cleDe(e)
+    if (!cle) return false
+    const present = presents.get(cle) ?? { montant: 0, dates: new Set<string>() }
     present.montant += e.sens === 'debit' ? e.montant : -e.montant
     present.dates.add(e.date)
-    presents.set(e.ligne_bancaire_id, present)
+    presents.set(cle, present)
   }
   if (attendus.size !== presents.size) return false
-  for (const [id, paiement] of attendus) {
-    const present = presents.get(id)
+  for (const [cle, paiement] of attendus) {
+    const present = presents.get(cle)
     if (!present || Math.abs(present.montant - paiement.montant) > EPSILON_EQUILIBRE) return false
     if (present.dates.size !== 1 || !present.dates.has(paiement.date)) return false
   }
@@ -654,8 +726,8 @@ function tresorerieDesynchronisee(
   paiementsPiece: readonly PaiementDePiece[], plan: PlanComptable,
 ): boolean {
   // La contrepartie d'une note de frais au compte de l'exploitant est une contrepartie, comme la banque : elle se
-  // compare à part, à la fin.
-  const lignes = groupe.filter((e) => e.compte !== plan.banque && !estContrepartieDirigeant(p, cible, e, plan))
+  // compare à part, à la fin. Celle d'un paiement par la caisse aussi (étape C9a).
+  const lignes = groupe.filter((e) => e.compte !== plan.banque && !estContrepartieCaisse(e) && !estContrepartieDirigeant(p, cible, e, plan))
   // Pas encore générée — pas une désynchronisation. Des contreparties SANS leur charge, en revanche, en
   // sont une : la génération ne les produit jamais ainsi, et « Régénérer » reconstruit les deux.
   if (lignes.length === 0) return groupe.length > 0
@@ -744,6 +816,10 @@ function tresorerieDesynchronisee(
   // gardait une écriture déséquilibrée que rien ne savait compléter. « Régénérer » réécrit désormais la
   // banque avec la charge, depuis les paiements.
   if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === plan.banque), paiementsPiece)) return true
+  // ET UNE CONTREPARTIE CAISSE PAR PAIEMENT PAR LA CAISSE (étape C9a), sur le compte de la caisse DU PLAN : une ligne qui
+  // ne suit plus son opération — un paiement retiré, une ligne de moins, un plan qui a changé de compte — se régénère.
+  const lignesCaisse = groupe.filter(estContrepartieCaisse)
+  if (lignesCaisse.some((e) => e.compte !== plan.caisse) || !caisseSuitLesPaiements(lignesCaisse, paiementsPiece)) return true
   // ET LA CONTREPARTIE D'UNE NOTE DE FRAIS AU COMPTE DE L'EXPLOITANT — celle que la génération écrit, ni une de plus
   // ni une de moins : absente d'une écriture générée avant, elle laisse la pièce déséquilibrée et la validation de
   // son exercice impossible ; restée après un remboursement rapproché, elle compterait deux fois ce que la banque
@@ -794,7 +870,8 @@ function engagementDesynchronise(
 
   // Exactement les paiements de la pièce — ni un de moins, ni un de plus —, sur son compte de tiers
   // ACTUEL, et chacun à son montant : un paiement de zéro euro n'écrit aucun règlement.
-  const attendus = new Set(paiementsPiece.filter((m) => m.montant !== 0).map((m) => m.id))
+  // Le relevé seul règle en engagement (`lignesPourPiece`) : un paiement par la caisse n'y attend aucun règlement.
+  const attendus = new Set(paiementsPiece.filter(estParLeReleve).filter((m) => m.montant !== 0).map((m) => m.id))
   const presents = new Set(reglements.map((e) => e.ligne_bancaire_id!))
   if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true
   if (reglements.some((e) => e.compte !== plan.banque && e.compte !== tiers)) return true

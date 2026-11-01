@@ -33,7 +33,7 @@ import {
 } from '../../lib/statutsLus'
 import { releverEtNommer, type ResultatReleve } from '../../lib/releveStatuts'
 import BilanReleveStatuts from './BilanReleveStatuts'
-import { paiementsDesPieces, type LignePayante, type PartReglee } from '../../lib/rattachement'
+import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces, type LignePayante, type PartReglee } from '../../lib/rattachement'
 import type {
   EncaissementFacture, ExerciceValide, FactureEmise, FactureSuperpdpEvent, Piece, StatutTva, TransmissionEncaissement,
   TransmissionFacture,
@@ -843,11 +843,14 @@ function Contenu({
   const crediteCentimes = avoirs.reduce((s, a) => s + Math.round(-a.montant_ttc * 100), 0)
   const attenduCentimes = Math.max(reste.resteCentimes - crediteCentimes, 0)
 
-  // Les paiements des pièces, ceux qu'un virement mixte fait à son exemplaire compris (étape VF5h).
+  // Les paiements des pièces, ceux qu'un virement mixte fait à son exemplaire compris (étape VF5h). Aucun par la caisse
+  // (étape C9a) : les propositions ne nomment que des MOUVEMENTS du relevé (`propositionsEncaissement` n'en lit pas
+  // d'autre), et la fenêtre sert aussi le client, à qui la caisse n'est pas ouverte.
   const exemplaires = exemplairesDe(lu)
   const propositions = propositionsEncaissement(
     contexte, lu.pieces,
-    paiementsDesPieces(lu.mouvements, lu.reglements, partsEncaissees(contexte.dossierId, lu.encaissements, vente, exemplaires)),
+    paiementsDesPieces(lu.mouvements, lu.reglements, partsEncaissees(contexte.dossierId, lu.encaissements, vente, exemplaires),
+      AUCUN_PAIEMENT_PAR_LA_CAISSE),
     lu.mouvements, aujourdHui, gereLaBanque, vente,
   )
   const saisie = formulaire ? saisieDe(formulaire) : null

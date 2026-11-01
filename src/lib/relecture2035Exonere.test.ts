@@ -35,7 +35,7 @@ const exonere = (o: {
 }) => calculerDeclaration2035(
   o.annee ?? 2025, o.pieces ?? [], o.categories, [],
   cotisationsComptees(o.cotisations ?? [], o.lignes ?? [], 'tresorerie'), [], false,
-  paiementsDesPieces(o.lignes ?? [], [], []), partsDuReleve(o.lignes ?? [], o.categories, [], false), [], PLAN_PAR_DEFAUT,
+  paiementsDesPieces(o.lignes ?? [], [], [], []), partsDuReleve(o.lignes ?? [], o.categories, [], false), [], PLAN_PAR_DEFAUT,
   ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
 )
 
@@ -197,7 +197,7 @@ describe('relecture — une pièce payée, rejetée puis payée de nouveau', () 
     mouvement({ id: 'rejet', date: '2025-12-28', montant: 1200, piece_id: 'prime' }),
     mouvement({ id: 'p2', date: '2026-01-05', montant: -1200, piece_id: 'prime' }),
   ]
-  const paiements = () => paiementsDesPieces(lignes, [], []).get('prime') ?? []
+  const paiements = () => paiementsDesPieces(lignes, [], [], []).get('prime') ?? []
 
   it('ne compte rien en 2025 et 1 200 € en 2026', () => {
     expect(exonere({ categories: [assurance], lignes, pieces: [prime], annee: 2025 }).totalDepenses).toBe(0)
@@ -236,7 +236,7 @@ describe('relecture — une pièce payée, rejetée puis payée de nouveau', () 
   })
 
   it('n’est ni payée de trop, ni restée à régler : son second prélèvement se règle', () => {
-    expect(piecesPayeesEnTrop([prime], paiementsDesPieces(lignes, [], []))).toEqual([])
+    expect(piecesPayeesEnTrop([prime], paiementsDesPieces(lignes, [], [], []))).toEqual([])
     expect(soldeDesPaiements(prime, paiements())).toMatchObject({ paye: 1200, reste: 0 })
     // Avant le second prélèvement, le rejet rend à régler ce qu'il défait.
     expect(resteARegler(prime, paiements(), 'p2')).toBe(1200)
@@ -245,8 +245,8 @@ describe('relecture — une pièce payée, rejetée puis payée de nouveau', () 
 
   it('rejetée et pas encore reprise, elle n’a pas de paiement net : comptée à sa facture, et dite sans paiement', () => {
     const avantReprise = lignes.slice(0, 2)
-    expect(paiementNet(paiementsDesPieces(avantReprise, [], []).get('prime') ?? [])).toEqual({ centimes: 0, sens: 0 })
-    expect(partsDesPaiements(prime, paiementsDesPieces(avantReprise, [], []).get('prime') ?? [])).toEqual({ parts: [], reste: 1 })
+    expect(paiementNet(paiementsDesPieces(avantReprise, [], [], []).get('prime') ?? [])).toEqual({ centimes: 0, sens: 0 })
+    expect(partsDesPaiements(prime, paiementsDesPieces(avantReprise, [], [], []).get('prime') ?? [])).toEqual({ parts: [], reste: 1 })
     const d = exonere({ categories: [assurance], lignes: avantReprise, pieces: [prime], annee: 2025 })
     expect(d.totalDepenses).toBe(1200)
     expect(d.sansPaiementConnu.map((s) => [s.piece.id, s.montant])).toEqual([['prime', 1200]])
@@ -258,7 +258,7 @@ describe('relecture — une pièce payée, rejetée puis payée de nouveau', () 
       mouvement({ id: 'rejet', date: '2025-12-20', montant: 1200, piece_id: 'prime' }),
       mouvement({ id: 'p2', date: '2026-01-05', montant: -1200, piece_id: 'prime' }),
     ]
-    const p = paiementsDesPieces(memeJour, [], []).get('prime') ?? []
+    const p = paiementsDesPieces(memeJour, [], [], []).get('prime') ?? []
     expect(centimesParDate(prime, 1200, p)).toEqual([
       { date: '2025-12-20', centimes: 0, centimesSansDate: 0 },
       { date: '2026-01-05', centimes: 120_000, centimesSansDate: 0 },
@@ -289,7 +289,7 @@ describe('relecture — une pièce payée, rejetée puis payée de nouveau', () 
   it('la CA3 d’un dossier assujetti défait la déduction au mois du rejet, et la refait à la reprise', () => {
     const achat = { ...prime, montant_ht: 1000, montant_tva: 200, montant_ttc: 1200 } as Piece
     const donnees: DonneesTva = {
-      pieces: [achat], paiements: paiementsDesPieces(lignes, [], []), pieceIdsImmobilisees: new Set(), releve: [],
+      pieces: [achat], paiements: paiementsDesPieces(lignes, [], [], []), pieceIdsImmobilisees: new Set(), releve: [],
       ventesFacturees: ventesFactureesVides('d1'), caisse: CAISSE_ABSENTE,
     }
     expect(calculerCa3(donnees, { debut: '2025-12-01', fin: '2025-12-31' }, false, 0, 0).cases.l20).toBe(0)
@@ -304,7 +304,7 @@ describe('relecture — une pièce payée, rejetée puis payée de nouveau', () 
       mouvement({ id: 'r', date: '2025-12-15', montant: 600, piece_id: 'prime' }),
       mouvement({ id: 'b', date: '2026-01-05', montant: -600, piece_id: 'prime' }),
     ]
-    const p = paiementsDesPieces(partiel, [], []).get('prime') ?? []
+    const p = paiementsDesPieces(partiel, [], [], []).get('prime') ?? []
     expect(rattachementsTresorerie(prime, p)).toEqual([
       { date: '2025-12-10', part: 0.5, source: 'paiement' },
       { date: '2025-12-15', part: -0.5, source: 'paiement' },
@@ -313,7 +313,7 @@ describe('relecture — une pièce payée, rejetée puis payée de nouveau', () 
     ])
     const achat = { ...prime, montant_ht: 1000, montant_tva: 200, montant_ttc: 1200 } as Piece
     const donnees: DonneesTva = {
-      pieces: [achat], paiements: paiementsDesPieces(partiel, [], []), pieceIdsImmobilisees: new Set(), releve: [],
+      pieces: [achat], paiements: paiementsDesPieces(partiel, [], [], []), pieceIdsImmobilisees: new Set(), releve: [],
       ventesFacturees: ventesFactureesVides('d1'), caisse: CAISSE_ABSENTE,
     }
     const dec = calculerCa3(donnees, { debut: '2025-12-15', fin: '2025-12-15' }, false, 0, 0).cases
@@ -347,7 +347,7 @@ describe('relecture — la CA3 du mois d’un rejet n’inscrit aucune ligne né
     mouvement({ id: 'm3', date: '2026-02-05', montant: regle * montant, piece_id: 'p' }),
   ]
   const ca3 = (piece: Piece, lignes: LigneBancaire[], mois: string) => calculerCa3({
-    pieces: [piece], paiements: paiementsDesPieces(lignes, [], []), pieceIdsImmobilisees: new Set(), releve: [],
+    pieces: [piece], paiements: paiementsDesPieces(lignes, [], [], []), pieceIdsImmobilisees: new Set(), releve: [],
     ventesFacturees: ventesFactureesVides('d1'), caisse: CAISSE_ABSENTE,
   }, T(mois), false, 0, 0).cases
 
@@ -391,7 +391,7 @@ describe('relecture — la CA3 du mois d’un rejet n’inscrit aucune ligne né
       mouvement({ id: 'b', date: '2026-01-20', montant: 0.03, piece_id: 'p' }),
     ]
     const janvier = calculerCa3({
-      pieces: [avoir], paiements: paiementsDesPieces(lignes, [], []), pieceIdsImmobilisees: new Set(), releve: [],
+      pieces: [avoir], paiements: paiementsDesPieces(lignes, [], [], []), pieceIdsImmobilisees: new Set(), releve: [],
       ventesFacturees: ventesFactureesVides('d1'), caisse: CAISSE_ABSENTE,
     }, T('2026-01'), false, 0, 0)
     expect(janvier.cases.l15).toBe(0)

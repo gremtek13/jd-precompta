@@ -4,7 +4,7 @@ import {
   SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF,
 } from './alignementBanque'
 import { pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar, restesAReglerDesPieces } from './controles'
-import type { PaiementDePiece } from './rattachement'
+import type { PaiementDePiece, PaiementParLeReleve } from './rattachement'
 import type { LigneBancaire, Piece } from './types'
 
 // Décision du cabinet (23/09/2026) : la banque fait foi SOUS UN SEUIL, et au-delà on signale.
@@ -110,7 +110,7 @@ describe('alignerMontantsSurBanque', () => {
 })
 
 // Un paiement de la pièce : un mouvement rapproché, ou la part d'un virement groupé.
-function paiement(montant: number, id = `m${montant}`, origine: PaiementDePiece['origine'] = 'rapprochement'): PaiementDePiece {
+function paiement(montant: number, id = `m${montant}`, origine: PaiementParLeReleve['origine'] = 'rapprochement'): PaiementDePiece {
   return { id, date: '2026-03-12', montant, origine }
 }
 

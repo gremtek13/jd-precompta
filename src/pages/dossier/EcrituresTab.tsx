@@ -53,7 +53,10 @@ import {
 } from '../../lib/ecrituresVentesFactureesEcran'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
-import { motifDesOperationsDeCaisse, operationsDeCaisseDuDossier, operationsPourLesControles } from '../../lib/controlesDeLaCaisse'
+import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
+import {
+  motifDesOperationsDeCaisse, OPERATIONS_DE_CAISSE_ABSENTES, operationsDeCaisseDuDossier, operationsPourLesControles,
+} from '../../lib/controlesDeLaCaisse'
 import { rattachementDesVentes, type VentesFactureesDesExports } from '../../lib/ventesFactureesDesExports'
 import { lireLesJustificatifsDesVentes } from '../../lib/justificatifsDesVentesLecture'
 import VentesFactureesEcritures from './VentesFactureesEcritures'
@@ -436,7 +439,17 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     ? partsEncaissees(dossierId, lectureDesSources.sources.encaissements, lectureDesSources.sources,
       lectureDesSources.sources.exemplaires)
     : []
-  const paiements = paiementsDesPieces(lignesBancaires, reglements, encaissees)
+  //
+  // ET LES PAIEMENTS DE PIÈCES PAR LA CAISSE (étape C9a ; CAISSE-Q4, (B)), de la même lecture de la caisse : ils datent la
+  // charge de leur pièce et portent sa contrepartie de CAISSE, que la génération et « Régénérer » écrivent avec elle — la
+  // garde du brouillon la juge (`garder_ecriture_de_caisse`). AUCUN tant que la migration n'est pas en base
+  // (`PAIEMENT_PAR_LA_CAISSE_EXPORTE`) : rien ne change. Nuls — la caisse pas encore revenue pour ce dossier, ou lue en
+  // partie —, la génération et la régénération attendent (`caisseNonLue`) : elles dateraient à sa facture une pièce payée
+  // en espèces, ou retireraient sa contrepartie de caisse.
+  const paiementsDeLaCaisse = paiementsParLaCaisseDuDossier(lectureCaisse, dossierId)
+  const caisseNonLue = paiementsDeLaCaisse !== null ? null
+    : motifDesOperationsDeCaisse(operationsDeCaisseDuDossier(lectureCaisse, dossierId)) ?? 'pas encore lue'
+  const paiements = paiementsDesPieces(lignesBancaires, reglements, encaissees, paiementsDeLaCaisse ?? [])
   // Les pièces sans écriture, et ce que la génération écrirait d'elles. Rien ne s'écrit au plus tard à la frontière
   // de validation (lib/validationExercice.ts) : la base le refuserait, et tout le lot avec, l'insertion étant d'un
   // seul tenant. Une pièce dont une part tombe dans un exercice validé est NOMMÉE plus bas, plutôt que de
@@ -457,7 +470,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // moitié feraient pire : une charge pour un bien qui s'amortit déjà. `brouillonIncomplet` couvre
   // les cinq lectures dont dépend la génération, les mêmes que celles des deux exports.
   async function genererEcritures() {
-    if (enAttente.length === 0 || brouillonIncomplet !== null || sourcesNonLues !== null || biensSansOuverture || generationEnCours.current || changementModeleEnCours.current) return
+    if (enAttente.length === 0 || brouillonIncomplet !== null || sourcesNonLues !== null || caisseNonLue !== null || biensSansOuverture || generationEnCours.current || changementModeleEnCours.current) return
     generationEnCours.current = true
     setGenerating(true)
     setError(null)
@@ -728,11 +741,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           "L'export est annulé : une piste d'audit dirait absente l'empreinte d'un exemplaire qu'elle n'a pas lu.",
         )
       }
+      // Les opérations de la caisse (étape C9a) : la ligne de caisse d'une pièce payée en espèces cite son paiement. Pas encore
+      // revenues ou lues en partie, l'export se refuse — un paiement se dirait « hors du jeu chargé » —, mais seulement quand
+      // un tel paiement peut exister (`paiementsDeLaCaisse` nuls) : tant que la migration n'est pas en base, la piste est
+      // celle d'hier, et ne cite aucune opération.
+      if (paiementsDeLaCaisse === null) {
+        throw new Error(
+          `La caisse du dossier n'a pas pu être lue en entier (${caisseNonLue}). ` +
+          "L'export est annulé : une piste d'audit dirait introuvable le paiement en espèces d'une pièce.",
+        )
+      }
       const contenu = genererPisteAuditCsv(pisteAudit(
         ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice,
         {
           immobilisations, factures: piecesValidees, vehicules: vehicules.lignes,
           ventes: { ...ventesDesExports, exemplaires: preuves.exemplaires, transmissions: preuves.transmissions },
+          caisse: operationsDuFec ?? OPERATIONS_DE_CAISSE_ABSENTES,
         },
       ))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
@@ -759,7 +783,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // pièce immobilisée après coup.
   async function regenererEcriture(piece: Piece) {
     const cible = aComptabiliser.find((a) => a.piece.id === piece.id)
-    if (!cible || brouillonIncomplet !== null || sourcesNonLues !== null || regenerationsEnCours.current.has(piece.id)) return
+    if (!cible || brouillonIncomplet !== null || sourcesNonLues !== null || caisseNonLue !== null || regenerationsEnCours.current.has(piece.id)) return
     // Le bien d'une ouverture lue en partie : on ne sait pas s'il est repris (voir `biensSansOuverture`).
     if (cible.immobilisation && aNouveauxIncomplets !== null) return
     regenerationsEnCours.current.add(piece.id)
@@ -1300,11 +1324,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                     <td className="td-boutons">
                       <button
                         className="btn btn-outline btn-sm"
-                        disabled={regenerating === p.id || brouillonIncomplet !== null || sourcesNonLues !== null || (aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id))}
+                        disabled={regenerating === p.id || brouillonIncomplet !== null || sourcesNonLues !== null || caisseNonLue !== null || (aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id))}
                         title={brouillonIncomplet
                           ? `Lecture incomplète (${brouillonIncomplet}) — régénérer maintenant pourrait mal dater l’écriture, ou retirer des règlements.`
                           : sourcesNonLues
                           ? `Factures sources de leurs ventes non lues (${sourcesNonLues}) — régénérer maintenant pourrait réécrire la vente d’un exemplaire que sa facture compte déjà, ou mal dater une pièce qu’un virement mixte paie.`
+                          : caisseNonLue
+                          ? `Caisse du dossier non lue en entier (${caisseNonLue}) — régénérer maintenant pourrait mal dater une pièce payée en espèces, ou retirer sa contrepartie de caisse.`
                           : aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id)
                           ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — on ne sait pas si la balance reprise porte déjà ce bien.`
                           : undefined}
@@ -1746,12 +1772,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </p>
         <button
           className="btn btn-primary btn-sm"
-          disabled={generating || changementModele || enAttente.length === 0 || brouillonIncomplet !== null || sourcesNonLues !== null || biensSansOuverture}
+          disabled={generating || changementModele || enAttente.length === 0 || brouillonIncomplet !== null || sourcesNonLues !== null || caisseNonLue !== null || biensSansOuverture}
           title={
             brouillonIncomplet
               ? `Lecture incomplète (${brouillonIncomplet}) — générer maintenant pourrait doubler des écritures déjà passées.`
               : sourcesNonLues
               ? `Factures sources de leurs ventes non lues (${sourcesNonLues}) — générer maintenant pourrait écrire la vente d’un exemplaire à côté de celle de sa facture, ou mal dater une pièce qu’un virement mixte paie.`
+              : caisseNonLue
+              ? `Caisse du dossier non lue en entier (${caisseNonLue}) — générer maintenant pourrait dater à sa facture une pièce payée en espèces, sans sa contrepartie de caisse.`
               : biensSansOuverture
               ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — on ne sait pas quels biens la balance reprise porte déjà : leur acquisition s’écrirait une seconde fois.`
               : undefined

@@ -38,8 +38,17 @@ let ordre: string[] = []
 // chargé dans la fabrique), si bien qu'un filtre oublié se voit aux lignes qui partent, et non au seul texte de la requête.
 let brouillon: Record<string, unknown>[] | null = null
 
+// LE DRAPEAU DU PAIEMENT PAR LA CAISSE (étape C9a), joué dans ses deux états : baissé (la valeur du module), les requêtes
+// sont celles d'hier, filtre pour filtre — tous les cas plus haut ; levé, la ligne d'une opération de caisse s'écarte des
+// redates, et une pièce qu'elle paie ne retourne pas à sa facture.
+const drapeau = vi.hoisted(() => ({ leve: null as boolean | null }))
+vi.mock('./paiementParLaCaisse', async (original) => {
+  const module = await original<typeof import('./paiementParLaCaisse')>()
+  return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeau.leve ?? module.PAIEMENT_PAR_LA_CAISSE_EXPORTE } }
+})
+
 vi.mock('./supabase', async () => {
-  const { filtrer, predicatEq, predicatIs } = await import('../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIs, predicatNot } = await import('../test/filtresPostgrest')
   const resolvable = (op: 'select' | 'compte' | 'insert' | 'delete' | 'update', filtres: string[] = []) => {
     const predicats: ((ligne: Record<string, unknown>) => boolean)[] = []
     const chaine = {
@@ -50,6 +59,9 @@ vi.mock('./supabase', async () => {
         return chaine
       },
       is: (colonne: string, valeur: unknown) => { filtres.push(`${colonne} is ${valeur}`); predicats.push(predicatIs(colonne, valeur)); return chaine },
+      not: (colonne: string, operateur: string, valeur: unknown) => {
+        filtres.push(`${colonne} not ${operateur} ${valeur}`); predicats.push(predicatNot(colonne, operateur, valeur)); return chaine
+      },
       then: (resoudre: (v: unknown) => unknown) => {
         if (op === 'delete' && brouillon && !reponses.delete.error) {
           const parties = new Set(filtrer(brouillon, predicats))
@@ -108,6 +120,7 @@ beforeEach(() => {
   misesAJour = []
   ordre = []
   brouillon = null
+  drapeau.leve = null
 })
 
 describe('synchroniserContrepartieBanque', () => {
@@ -494,5 +507,66 @@ describe('la contrepartie banque sous le plan du dossier', () => {
     reponses.select = { data: [{ id: 'e1', compte: '218300', ligne_bancaire_id: null }, { id: 'e2', compte: '404100', ligne_bancaire_id: null }], error: null }
     await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 120 }), ligne(-120), { ...DECALE, mode: 'engagement' })
     expect((insere as { compte: string; sens: string }[]).map((l) => [l.compte, l.sens])).toEqual([['404100', 'debit'], ['512100', 'credit']])
+  })
+})
+
+// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (étape C9a), le drapeau LEVÉ : la contrepartie de caisse s'écrit avec les écritures
+// de sa pièce (la génération, « Régénérer »), jamais ici ; mais une pièce qu'elle paie est une pièce qu'un AUTRE paiement
+// règle, et la ligne d'une opération de caisse ne se redate jamais — la garde du brouillon refuserait la mise à jour, et
+// la redate de toute la pièce avec elle.
+describe('le paiement par la caisse, le drapeau levé', () => {
+  const CAISSE = { id: 'e2', compte: '530000', piece_id: 'p1', operation_caisse_id: 'oc-1' }
+
+  it('le drapeau du module est baissé : les cas plus haut sont ceux d’hier', async () => {
+    const { PAIEMENT_PAR_LA_CAISSE_EXPORTE } = await vi.importActual<typeof import('./paiementParLaCaisse')>('./paiementParLaCaisse')
+    expect(PAIEMENT_PAR_LA_CAISSE_EXPORTE).toBe(false)
+  })
+
+  it('une pièce déjà payée par la caisse ne se redate pas au mouvement : « Régénérer » répartira entre les deux', async () => {
+    drapeau.leve = true
+    reponses.select = { data: [{ id: 'e1', compte: '606100' }, CAISSE], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 120 }), ligne(-120), TRESORERIE)
+    expect(misesAJour).toEqual([])
+    expect(insere).toMatchObject({ compte: COMPTE_BANQUE, sens: 'credit', montant: 120, ligne_bancaire_id: 'l1' })
+    // Le drapeau baissé, la même lecture — qu'aucune base d'aujourd'hui ne rend — n'y change rien : la ligne n'est lue que
+    // pour son compte, comme hier.
+    drapeau.leve = false
+    misesAJour = []
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 120 }), ligne(-120), TRESORERIE)
+    expect(misesAJour).toEqual([])
+  })
+
+  it('la redate écarte la ligne d’une opération de caisse', async () => {
+    drapeau.leve = true
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 120 }), ligne(-120), TRESORERIE)
+    expect(misesAJour).toEqual([{
+      valeurs: { date: '2026-03-12' }, filtres: ['piece_id=p1', `compte!=${COMPTE_BANQUE}`, 'operation_caisse_id is null'],
+    }])
+  })
+
+  it('rendre à sa facture : pas une pièce que la caisse date encore ; et jamais la ligne de la caisse', async () => {
+    drapeau.leve = true
+    comptesSuccessifs = [0, 1, 0, 0]
+    await rendreAuxDatesDeFacture([piece({ id: 'p1', date_piece: '2026-01-10' }), piece({ id: 'p2', date_piece: '2026-01-11' })], TRESORERIE)
+    expect(filtresComptes).toEqual([
+      ['piece_id=p1', `compte=${COMPTE_BANQUE}`], ['piece_id=p1', 'operation_caisse_id not is null'],
+      ['piece_id=p2', `compte=${COMPTE_BANQUE}`], ['piece_id=p2', 'operation_caisse_id not is null'],
+    ])
+    expect(misesAJour).toEqual([{ valeurs: { date: '2026-01-11' }, filtres: ['piece_id=p2', 'operation_caisse_id is null'] }])
+  })
+
+  it('un compte de la caisse que la base ne rend pas ne dit pas « plus aucun paiement » : rien ne se redate', async () => {
+    drapeau.leve = true
+    comptesSuccessifs = [0]
+    reponses.compte = { count: null, error: null }
+    await rendreAuxDatesDeFacture([piece()], TRESORERIE)
+    expect(misesAJour).toEqual([])
+  })
+
+  it('un compte de la caisse que la base refuse lève, sans rien redater', async () => {
+    drapeau.leve = true
+    comptesSuccessifs = [0]
+    reponses.compte = { count: null, error: { message: 'permission denied' } }
+    await expect(rendreAuxDatesDeFacture([piece()], TRESORERIE)).rejects.toMatchObject({ message: 'permission denied' })
   })
 })

@@ -26,7 +26,7 @@ import { ecritureDeLaLiquidation, ecritureDuPaiementTva, liquidationsDesynchroni
 import { compteTvaDe } from '../lib/montantRetenu'
 import { partsDuReleve } from '../lib/partsDuReleve'
 import { PLAN_DECALE, type CleRoleComptable, type PlanComptable, type RoleDuDirigeant } from '../lib/planComptable'
-import type { PaiementDePiece } from '../lib/rattachement'
+import type { PaiementDePiece, PaiementParLeReleve } from '../lib/rattachement'
 import { envoisDuLot } from '../lib/reglesAffectation'
 import { compteDuResultat, compteQuiRecoit, soldesAReporter } from '../lib/reportDesSoldes'
 import type {
@@ -127,7 +127,10 @@ const VENTE = piece({
 const BIEN = piece({ id: 'p-bien', tiers: 'Vendeur fictif', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200, categorie_id: null })
 const NOTE = piece({ id: 'p-note', type_piece: 'note_frais', tiers: 'Restaurant fictif', montant_ht: 50, montant_tva: 10, montant_ttc: 60 })
 
-const paiement = (id: string, montant: number, date = '2026-03-10'): PaiementDePiece => ({ id, date, montant, origine: 'rapprochement' })
+const paiement = (id: string, montant: number, date = '2026-03-10'): PaiementParLeReleve => ({ id, date, montant, origine: 'rapprochement' })
+// Un paiement de la pièce par la caisse (étape C9a) : sa contrepartie va au compte de la caisse DU PLAN.
+const paiementEnEspeces = (id: string, montant: number, date = '2026-03-12'): PaiementDePiece =>
+  ({ operation_caisse_id: id, date, montant, origine: 'caisse' })
 
 const A_COMPTABILISER: PieceAComptabiliser[] = [
   { piece: ACHAT, compte: '606100', immobilisation: false },
@@ -165,6 +168,12 @@ const CAS_DES_PIECES: CasDuPlan[] = [
     roles: ['autres_debiteurs_crediteurs', 'exploitant'],
     composer: (plan) => (['autres_debiteurs_crediteurs', 'exploitant'] as const).map((dirigeant) =>
       lignesPourPiece(D, NOTE, { compte: '606100', immobilisation: false }, true, [], modele(plan, 'engagement', dirigeant))),
+  },
+  {
+    nom: 'lignesPourPiece — trésorerie, un achat payé en partie par la banque et en partie par la caisse',
+    roles: ['banque', 'caisse', 'tva_deductible'],
+    composer: (plan) => lignesPourPiece(D, ACHAT, { compte: '606100', immobilisation: false }, true,
+      [paiement('l-achat', -70), paiementEnEspeces('oc-achat', -50)], modele(plan, 'tresorerie', 'exploitant')),
   },
   {
     nom: 'les briques de la trésorerie : charge et TVA, banque, dirigeant',

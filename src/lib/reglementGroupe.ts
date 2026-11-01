@@ -3,7 +3,7 @@ import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './clas
 import type { MouvementBancaire } from './affectationBanque'
 import { DEVISE_PIVOT } from './devises'
 import { formatMoney } from './format'
-import type { PaiementDePiece, PaiementsDesPieces, PartReglee } from './rattachement'
+import type { PaiementParLaCaisse, PaiementParLeReleve, PaiementsDesPieces, PartReglee } from './rattachement'
 import type { LigneBancaire, Piece } from './types'
 
 // UN MOUVEMENT QUI RÈGLE PLUSIEURS PIÈCES — ligne 26 de la feuille de route. Un virement fournisseur qui
@@ -77,12 +77,23 @@ export function partSaisieDe(piece: Pick<Piece, 'type_piece' | 'montant_ttc'>, m
 // aujourd'hui : `refusSecondPaiement` le refuse comme un mouvement « dans le mauvais sens », et une pièce déjà payée
 // n'est pas proposée. Le cabinet en est saisi (REJET-Q1). Le moteur compte juste ces données, d'où qu'elles viennent
 // (un rapprochement direct, une restauration), et le reste les suit.
+//
+// UN PAIEMENT PAR LA CAISSE (étape C9a) paie la pièce comme un mouvement : il entre dans la somme, et le reste le suit. Il
+// n'a pas de mouvement, donc `saufMouvement` ne l'écarte jamais : régler de nouveau un mouvement ne remplace que ses
+// parts à lui.
+export type PaiementResume = Pick<PaiementParLeReleve, 'id' | 'montant'> | Pick<PaiementParLaCaisse, 'operation_caisse_id' | 'montant'>
+
+/** Le mouvement d'un paiement résumé, ou nul pour un paiement par la caisse. */
+function mouvementDuPaiement(p: PaiementResume): string | null {
+  return 'id' in p ? p.id : null
+}
+
 export function resteARegler(
   piece: Pick<Piece, 'type_piece' | 'montant_ttc'>,
-  paiements: readonly Pick<PaiementDePiece, 'id' | 'montant'>[],
+  paiements: readonly PaiementResume[],
   saufMouvement: string | null,
 ): number {
-  const net = paiementNet(paiements.filter((p) => p.id !== saufMouvement))
+  const net = paiementNet(paiements.filter((p) => saufMouvement === null || mouvementDuPaiement(p) !== saufMouvement))
   const paye = net.centimes * net.sens * signeReglant(piece)
   return Math.max(0, centimes(Math.abs(piece.montant_ttc ?? 0)) - paye) / 100
 }
@@ -102,7 +113,7 @@ export type RefusDuPaiementAjoute = { motif: 'depasse'; reste: number } | { moti
 
 export function refusDuPaiementAjoute(
   piece: Pick<Piece, 'type_piece' | 'montant_ttc'>,
-  autres: readonly Pick<PaiementDePiece, 'id' | 'montant'>[],
+  autres: readonly PaiementResume[],
   montant: number,
 ): RefusDuPaiementAjoute {
   const avant = paiementNet(autres).sens
@@ -177,7 +188,8 @@ export function refusReglementGroupe(
   }
   for (const p of parts) {
     const piece = parId.get(p.piece_id)!
-    const autres = (paiements.get(piece.id) ?? []).filter((m) => m.id !== ligne.id)
+    // Les AUTRES paiements de la pièce : ceux de la caisse en sont toujours (étape C9a) — ils n'ont pas de mouvement.
+    const autres = (paiements.get(piece.id) ?? []).filter((m) => m.origine === 'caisse' || m.id !== ligne.id)
     if (seraRegleeSurLaBanque(piece) && autres.length === 0) continue
     const refus = refusDuPaiementAjoute(piece, autres, p.montant)
     if (refus?.motif === 'inverse') return `La part de la pièce « ${nomDeLaPiece(piece)} » ne peut pas la régler : ${PHRASE_DU_SENS_INVERSE}`
@@ -198,13 +210,13 @@ export function refusReglementGroupe(
 export function refusSecondPaiement(
   ligne: Pick<LigneBancaire, 'id' | 'montant'>,
   piece: Pick<Piece, 'type_piece' | 'montant_ttc' | 'tiers' | 'nom_fichier'>,
-  paiementsDeLaPiece: readonly Pick<PaiementDePiece, 'id' | 'montant'>[],
+  paiementsDeLaPiece: readonly PaiementResume[],
 ): string | null {
   if (Math.sign(ligne.montant) !== signeReglant(piece)) {
     return `Ce mouvement va dans le mauvais sens pour la pièce « ${nomDeLaPiece(piece)} » : `
       + 'une dépense se règle par une sortie, une recette par une entrée, un avoir à l’inverse.'
   }
-  const refus = refusDuPaiementAjoute(piece, paiementsDeLaPiece.filter((p) => p.id !== ligne.id), ligne.montant)
+  const refus = refusDuPaiementAjoute(piece, paiementsDeLaPiece.filter((p) => mouvementDuPaiement(p) !== ligne.id), ligne.montant)
   if (refus?.motif === 'inverse') return `Ce mouvement ne peut pas régler la pièce « ${nomDeLaPiece(piece)} » : ${PHRASE_DU_SENS_INVERSE}`
   if (refus?.motif === 'depasse') {
     return `Ce mouvement dépasse ce qu’il reste à régler de la pièce « ${nomDeLaPiece(piece)} » (${formatMoney(refus.reste)}) : `

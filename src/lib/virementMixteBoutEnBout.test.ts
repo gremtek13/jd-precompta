@@ -69,7 +69,7 @@ function leDossier(plan: PlanComptable, exemplaires: readonly ExemplaireLu[] = [
   const c = composition(s, 'tresorerie', plan)
   const ventes = ventesFacturees({ dossierId: s.dossierId, factures: s.factures, lignes: s.lignes, encaissements: s.encaissements, parts: s.parts })
   const encaissees: PartEncaissee[] = partsEncaissees(D_BASCULE, s.encaissements, { factures: s.factures }, exemplaires)
-  const paiements = paiementsDesPieces(s.mouvements.map(ligneBancaire), [], encaissees)
+  const paiements = paiementsDesPieces(s.mouvements.map(ligneBancaire), [], encaissees, [])
   const lignesDeLExemplaire = lignesPourPiece(D_BASCULE, EXEMPLAIRE, { compte: '706000', immobilisation: false }, true,
     paiements.get(EXEMPLAIRE.id) ?? [], { mode: 'tresorerie', compteNotesDeFrais: '455000', plan })
   const brouillon: EcritureBrouillon[] = [
@@ -127,7 +127,7 @@ describe.each(PLANS)('le virement mixte, de bout en bout — %s', (_, plan) => {
 
   it('sans la part du virement mixte, la pièce retomberait à sa date de facture : l’exercice d’avant, « sans paiement connu »', () => {
     const { declaration } = leDossier(plan)
-    const sansLaPart = paiementsDesPieces([ligneBancaire(sources([DESIGNEE]).mouvements[0])], [], [])
+    const sansLaPart = paiementsDesPieces([ligneBancaire(sources([DESIGNEE]).mouvements[0])], [], [], [])
     expect(declaration(2025, sansLaPart).totalRecettes).toBe(50)
     expect(declaration(2025, sansLaPart).sansPaiementConnu.map((x) => x.piece.id)).toEqual(['p-avant'])
     expect(declaration(2026, sansLaPart).totalRecettes).toBe(100)

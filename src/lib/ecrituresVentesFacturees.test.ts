@@ -1171,7 +1171,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
         const compte = new Map<string, number>()
         for (const annee of new Set(t.mouvements.map((m) => Number(m.date.slice(0, 4))))) {
           const d = calculerDeclaration2035(
-            annee, [], [FRAIS_BANCAIRES], [], [], [], true, paiementsDesPieces([], [], []), [], [], plan, r.ventes,
+            annee, [], [FRAIS_BANCAIRES], [], [], [], true, paiementsDesPieces([], [], [], []), [], [], plan, r.ventes,
             { etat: 'composees', composition: r }, CAISSE_ABSENTE,
           )
           for (const c of d.contributions) {

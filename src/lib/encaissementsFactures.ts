@@ -3,7 +3,7 @@ import { libelleExploitable, tiersConfirmeParBanque } from './appariementBanque'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
 import { anneeDe, dernierJourDuMois, formatDate, formatMoney, moisDe } from './format'
 import { frequenceDesPaiements, periodeDe } from './periodesEreporting'
-import type { PaiementsDesPieces, PartEncaissee } from './rattachement'
+import { estParLeReleve, type PaiementsDesPieces, type PartEncaissee } from './rattachement'
 import { DEBUT_EMISSION_PME } from './statutTva'
 import { STATUTS_ANNULATION_SUPERPDP, annuleeSurSaPlateforme, type StatutPlateformeLu } from './transmissionsFactures'
 import { exerciceQuiFige, frontiereDeValidation } from './validationExercice'
@@ -1448,8 +1448,9 @@ export function propositionsEncaissement(
   const parId = new Map(mouvements.map((m) => [m.id, m]))
   const vus = new Set<string>()
   const piecesDuMouvement = new Map<string, string[]>()
+  // Les paiements par le RELEVÉ seulement : un paiement par la caisse (étape C9a) n'a pas de mouvement à proposer.
   for (const [pieceId, liste] of paiements) {
-    for (const p of liste) piecesDuMouvement.set(p.id, [...(piecesDuMouvement.get(p.id) ?? []), pieceId])
+    for (const p of liste.filter(estParLeReleve)) piecesDuMouvement.set(p.id, [...(piecesDuMouvement.get(p.id) ?? []), pieceId])
   }
 
   const proposer = (source: PropositionEncaissement['source'], m: MouvementPropose, creditCentimes: number): PropositionEncaissement | null => {
@@ -1490,7 +1491,7 @@ export function propositionsEncaissement(
   // remboursement : le relevé ne le reproposera pas comme un crédit sans lien.
   const deLaJumelle: PropositionEncaissement[] = []
   for (const piece of piecesJumelles(c, pieces)) {
-    for (const paiement of paiements.get(piece.id) ?? []) {
+    for (const paiement of (paiements.get(piece.id) ?? []).filter(estParLeReleve)) {
       const m = parId.get(paiement.id)
       if (!m || vus.has(m.id)) continue
       vus.add(m.id)

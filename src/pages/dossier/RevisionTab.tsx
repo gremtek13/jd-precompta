@@ -25,6 +25,7 @@ import {
 import { donneesDeLaRevueAnalytique, identifiantDeLaLigne, memeCleDeLigne } from '../../lib/revueAnalytiqueEcran'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 import type { LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
 import { recettesDeCaisseDuDossier, recettesPourLesMoteurs } from '../../lib/recettesDeCaisse'
 import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFactureesEcran'
 import type { LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
@@ -842,6 +843,8 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     encaissees: lectureDesVentes?.etat === 'lue' ? lectureDesVentes.encaissees : [],
     ecrituresDesVentes: pourLa2035?.etat === 'pret' ? pourLa2035.ecritures : null,
     recettesDeCaisse: recettesPourLesMoteurs(etatDeLaCaisse),
+    // Les paiements de pièces par la caisse (étape C9a), de la même lecture : aucun tant que la migration n'est pas en base.
+    paiementsParLaCaisse: paiementsParLaCaisseDuDossier(lecture.caisse, dossierId),
   })
   const lectureDeLaRevueIncomplete = motifsDeLaRevue.length > 0
     ? motifsDeLaRevue.map((m) => `${m.quoi} : ${m.motif}`).join(' ; ')

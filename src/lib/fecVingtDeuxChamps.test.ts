@@ -140,7 +140,7 @@ function dossierComplet(choix: ChoixChampsBnc): Jeu {
     piece({ id: 'p-bien', montant_ttc: 1200, date_piece: '2026-05-01' }),
     piece({ id: 'p-note', type_piece: 'note_frais', montant_ttc: 80, categorie_id: 'c-divers', date_piece: '2026-06-01' }),
   ]
-  const paiements = paiementsDesPieces(mouvements, [], [])
+  const paiements = paiementsDesPieces(mouvements, [], [], [])
   const cotisation: CotisationDeclaree = {
     id: 'co1', dossier_id: D, echeance: '2026-03-05', montant_appele: 1000, montant_verse: null, montant_csg_crds: 300,
     previsionnel: false, created_at: '2026-02-01T00:00:00Z', paiement_personnel_le: '2026-03-10',
@@ -353,7 +353,7 @@ describe('la scission d’une pièce payée le même jour par deux modes', () =>
       ...(assujetti ? { montant_ht: 100, montant_tva: 20 } : {}),
     })
     const mouvements = [mouvement({ id: 'm-remb', date: '2026-06-01', montant: -50, piece_id: 'p-note' })]
-    const paiements = paiementsDesPieces(mouvements, [], [])
+    const paiements = paiementsDesPieces(mouvements, [], [], [])
     return {
       brouillon: lignesDeLaPiece(note, '625100', false, assujetti, paiements), pieces: [note], aNouveaux: [], mouvements,
       ventes: SANS_ECRITURE_DE_VENTE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, entrees: entreesVides({ paiements }),
@@ -367,7 +367,7 @@ describe('la scission d’une pièce payée le même jour par deux modes', () =>
       ...(tva === null ? {} : { montant_ht: Math.round((ttc - tva) * 100) / 100, montant_tva: tva }),
     })
     const mouvements = remboursements.map((m, i) => mouvement({ id: `m-remb-${i}`, date: '2026-06-01', montant: -m, piece_id: 'p-note' }))
-    const paiements = paiementsDesPieces(mouvements, [], [])
+    const paiements = paiementsDesPieces(mouvements, [], [], [])
     return {
       brouillon: lignesDeLaPiece(p, '625100', false, tva !== null, paiements), pieces: [p], aNouveaux: [], mouvements,
       ventes: SANS_ECRITURE_DE_VENTE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, entrees: entreesVides({ paiements }),
@@ -436,7 +436,7 @@ describe('la scission d’une pièce payée le même jour par deux modes', () =>
       mouvement({ id: 'm-b', date: '2026-02-03', montant: 450, encaissements_de_factures: true }),
     ]
     const encaissees: PartEncaissee[] = [{ ligne_bancaire_id: 'm-b', piece_id: 'p-v', montant: 200 }]
-    const paiements = paiementsDesPieces(mouvements, [], encaissees)
+    const paiements = paiementsDesPieces(mouvements, [], encaissees, [])
     const j: Jeu = {
       brouillon: lignesDeLaPiece(vente, '706000', false, false, paiements), pieces: [vente], aNouveaux: [], mouvements,
       ventes: SANS_ECRITURE_DE_VENTE, caisse: OPERATIONS_DE_CAISSE_ABSENTES,
@@ -459,7 +459,7 @@ describe('la scission d’une pièce payée le même jour par deux modes', () =>
   it('une pièce payée en partie le jour même de sa facture : le règlement, puis le reste sans règlement — seul ce reste est déséquilibré', () => {
     const p = piece({ id: 'p-part', date_piece: '2026-03-20', montant_ttc: 120 })
     const mouvements = [mouvement({ id: 'm-part', date: '2026-03-20', montant: -40, piece_id: 'p-part' })]
-    const paiements = paiementsDesPieces(mouvements, [], [])
+    const paiements = paiementsDesPieces(mouvements, [], [], [])
     const j: Jeu = {
       brouillon: lignesDeLaPiece(p, '606100', false, false, paiements), pieces: [p], aNouveaux: [], mouvements,
       ventes: SANS_ECRITURE_DE_VENTE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, entrees: entreesVides({ paiements }),
@@ -482,7 +482,7 @@ describe('la scission d’une pièce payée le même jour par deux modes', () =>
       mouvement({ id: 'm-2', date: '2026-03-20', montant: -30, reglement_groupe: true }),
     ]
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'm-2', piece_id: 'p-deux', montant: -50 }]
-    const paiements = paiementsDesPieces(mouvements, parts, [])
+    const paiements = paiementsDesPieces(mouvements, parts, [], [])
     const j: Jeu = {
       brouillon: lignesDeLaPiece(p, '606100', false, false, paiements), pieces: [p], aNouveaux: [], mouvements,
       ventes: SANS_ECRITURE_DE_VENTE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, entrees: entreesVides({ paiements }),
@@ -591,7 +591,7 @@ function dossierTire(suivant: () => number, n: number): JeuTire {
     cibles.set(pid, sorte === 8 ? { compte: '218300', immobilisation: true }
       : { compte: CATEGORIES.find((c) => c.id === p.categorie_id)!.compte_comptable!, immobilisation: false })
   }
-  const paiements = paiementsDesPieces(mouvements, parts, encaissees)
+  const paiements = paiementsDesPieces(mouvements, parts, encaissees, [])
   for (const p of pieces) {
     const c = cibles.get(p.id)!
     brouillon.push(...lignesDeLaPiece(p, c.compte, c.immobilisation, assujetti, paiements))

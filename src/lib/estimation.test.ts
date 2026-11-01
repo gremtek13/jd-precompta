@@ -47,8 +47,8 @@ describe('les repères comptent une pièce à la date de son paiement', () => {
   it("compte une recette de décembre encaissée en janvier dans l'année de l'encaissement", () => {
     const decembre = [piece({ id: 'r', date_piece: '2025-12-28', montant_ttc: 500 })]
     const encaissee = [paiement('r', '2026-01-04', 500)]
-    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(encaissee, [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(0)
-    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(encaissee, [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(500)
+    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(encaissee, [], [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(0)
+    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(encaissee, [], [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(500)
     // Sans encaissement rapproché, la date de facture : le garde symétrique.
     expect(totauxPourAnnee(decembre, [], 2025, true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(500)
   })
@@ -56,7 +56,7 @@ describe('les repères comptent une pièce à la date de son paiement', () => {
   it("compte une recette encaissée plus tard hors du « à date » de la projection", () => {
     // Facturée en mars, encaissée en octobre : au 15 juin, rien n'est encore entré.
     const mars = [piece({ id: 'r', date_piece: '2026-03-10', montant_ttc: 600 })]
-    const auJuin = projectionAnnuelle(mars, [], '2026-06-15', true, paiementsDesPieces([paiement('r', '2026-10-01', 600)], [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE)
+    const auJuin = projectionAnnuelle(mars, [], '2026-06-15', true, paiementsDesPieces([paiement('r', '2026-10-01', 600)], [], [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE)
     expect(auJuin.ca).toBe(0)
     expect(projectionAnnuelle(mars, [], '2026-06-15', true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(600)
   })
@@ -65,16 +65,16 @@ describe('les repères comptent une pièce à la date de son paiement', () => {
     // 1 000 € facturés le 20 décembre, 400 € encaissés le 8 janvier : 600 € en 2025, 400 € en 2026.
     const decembre = [piece({ id: 'r', date_piece: '2025-12-20', montant_ttc: 1000 })]
     const acompte = [paiement('r', '2026-01-08', 400)]
-    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(acompte, [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(600)
-    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(acompte, [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(400)
+    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(acompte, [], [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(600)
+    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(acompte, [], [], []), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(400)
   })
 
   it("compte une charge payée l'année suivante dans l'année du paiement", () => {
     const cat = [categorie({ id: 'c-loyer', poste_2035: 'Loyer' })]
     const loyer = [piece({ id: 'a', type_piece: 'achat', categorie_id: 'c-loyer', date_piece: '2025-12-30', montant_ttc: 800 })]
     const payee = [paiement('a', '2026-01-02', -800)]
-    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2025, true, paiementsDesPieces(payee, [], []), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBeUndefined()
-    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2026, true, paiementsDesPieces(payee, [], []), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBe(800)
+    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2025, true, paiementsDesPieces(payee, [], [], []), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBeUndefined()
+    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2026, true, paiementsDesPieces(payee, [], [], []), 'tresorerie', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBe(800)
   })
 })
 
@@ -157,21 +157,21 @@ describe('en engagement, les repères comptent une pièce à la date de sa FACTU
   it('compte une recette de décembre encaissée en janvier dans l’année de la facture', () => {
     const decembre = [piece({ id: 'r', date_piece: '2025-12-28', montant_ttc: 500 })]
     const encaissee = [paiement('r', '2026-01-04', 500)]
-    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(encaissee, [], []), 'engagement', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(500)
-    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(encaissee, [], []), 'engagement', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(0)
+    expect(totauxPourAnnee(decembre, [], 2025, true, paiementsDesPieces(encaissee, [], [], []), 'engagement', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(500)
+    expect(totauxPourAnnee(decembre, [], 2026, true, paiementsDesPieces(encaissee, [], [], []), 'engagement', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(0)
   })
 
   it('projette l’année sur les factures émises, encaissées ou non', () => {
     const mars = [piece({ id: 'r', date_piece: '2026-03-10', montant_ttc: 600 })]
-    expect(projectionAnnuelle(mars, [], '2026-06-15', true, paiementsDesPieces([paiement('r', '2026-10-01', 600)], [], []), 'engagement', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(600)
+    expect(projectionAnnuelle(mars, [], '2026-06-15', true, paiementsDesPieces([paiement('r', '2026-10-01', 600)], [], [], []), 'engagement', [], recettesFactureesVides(), CAISSE_ABSENTE).ca).toBe(600)
   })
 
   it('compte une charge dans l’année de sa facture, payée ou non', () => {
     const cat = [categorie({ id: 'c-loyer', poste_2035: 'Loyer' })]
     const loyer = [piece({ id: 'a', type_piece: 'achat', categorie_id: 'c-loyer', date_piece: '2025-12-30', montant_ttc: 800 })]
     const payee = [paiement('a', '2026-01-02', -800)]
-    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2025, true, paiementsDesPieces(payee, [], []), 'engagement', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBe(800)
-    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2026, true, paiementsDesPieces(payee, [], []), 'engagement', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBeUndefined()
+    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2025, true, paiementsDesPieces(payee, [], [], []), 'engagement', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBe(800)
+    expect(chargesParPostePourAnnee(loyer, cat, new Set(), 2026, true, paiementsDesPieces(payee, [], [], []), 'engagement', [], PLAN_PAR_DEFAUT, SANS_BASCULE).get('Loyer')).toBeUndefined()
   })
 })
 

@@ -10,7 +10,7 @@ import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { grouperParTiers } from '../../lib/suggestionTiers'
 import { lireTout } from '../../lib/lectureComplete'
-import { paiementsDesPieces, piecesPayees, type LignePayante, type PartReglee } from '../../lib/rattachement'
+import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces, piecesPayees, type LignePayante, type PartReglee } from '../../lib/rattachement'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -301,8 +301,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     setSousDossiers(lectureSousDossiers.lignes)
     setTiersCategories(lectureTiersCategories.lignes)
     setTiersCategoriesCabinet(lectureTiersCabinet.lignes)
+    // « Rapprochée » dit un MOUVEMENT BANCAIRE (le badge, la fiche) : un paiement par la caisse (étape C9a) n'en est pas un,
+    // et ne s'y compte pas — la fiche d'une pièce dira « Payée en espèces » avec le lot C9b, qui lira la caisse ici.
     setPiecesRapprochees(new Set(piecesPayees(paiementsDesPieces(lectureRapprochees.lignes, lectureReglements.lignes,
-      lectureVentes?.etat === 'lue' ? lectureVentes.encaissees : []))))
+      lectureVentes?.etat === 'lue' ? lectureVentes.encaissees : [], AUCUN_PAIEMENT_PAR_LA_CAISSE))))
     setLoading(false)
   }
 

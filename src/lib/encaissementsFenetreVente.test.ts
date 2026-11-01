@@ -340,7 +340,7 @@ describe('propositionsEncaissement — une facture source : des mouvements libre
     encaissements_de_factures: false,
   }
   const proposer = (o: { source?: boolean; mouvements?: MouvementPropose[]; v?: ContexteVente } = {}) => propositionsEncaissement(
-    contexte({ transmissions: [T], facture: facture({ source_de_la_vente: o.source ?? true }) }), [JUMELLE], paiementsDesPieces([paye], [], []),
+    contexte({ transmissions: [T], facture: facture({ source_de_la_vente: o.source ?? true }) }), [JUMELLE], paiementsDesPieces([paye], [], [], []),
     o.mouvements ?? [mouvement(), mouvement({ id: 'mj', date: '2027-10-12', statut: 'rapprochee', piece_id: 'pj' })], AUJOURD_HUI, true,
     o.v ?? vente(),
   )
@@ -362,7 +362,7 @@ describe('propositionsEncaissement — une facture source : des mouvements libre
     }
     const payePdf: LignePayante = { ...paye, id: 'mp', piece_id: 'pdf' }
     const proposerPdf = (source: boolean) => propositionsEncaissement(
-      contexte({ facture: facture({ source_de_la_vente: source }) }), [PDF], paiementsDesPieces([payePdf], [], []),
+      contexte({ facture: facture({ source_de_la_vente: source }) }), [PDF], paiementsDesPieces([payePdf], [], [], []),
       [mouvement({ id: 'mp', date: '2027-10-12', statut: 'rapprochee', piece_id: 'pdf' })], AUJOURD_HUI, true, vente(),
     )
     expect(proposerPdf(true)).toEqual([])

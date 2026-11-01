@@ -266,7 +266,7 @@ describe('pointsDeLaChecklist : l’exemplaire qu’un virement mixte paie (éta
     encaissement({ id: 'ea', facture_id: 'f0', montant: 60, ligne_bancaire_id: 'm-mx', date_encaissement: '2026-03-12' }),
   ]
   // Les écritures de l'exemplaire, telles que la génération les écrit avec la part du virement mixte.
-  const paiements = paiementsDesPieces([MIXTE], [], partsEncaissees(D, REGISTRE, { factures: FACTURES }, [DESIGNEE]))
+  const paiements = paiementsDesPieces([MIXTE], [], partsEncaissees(D, REGISTRE, { factures: FACTURES }, [DESIGNEE]), [])
   const ECRITES: EcritureBrouillon[] = lignesPourPiece(D, EXEMPLAIRE, { compte: '706000', immobilisation: false }, true,
     paiements.get('p-avant') ?? [], CONTEXTE.modele).map((l, i) => ({
     ...l, id: `ex${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null, created_at: `${l.date}T12:00:00Z`, immobilisation_id: null,

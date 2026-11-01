@@ -25,6 +25,7 @@ import { etatsDesLettragesManuels, piecesLettreesALaMain } from './lettrage'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from './ventilationBanque'
 import { paiementsDesPieces, piecesPayees } from './rattachement'
 import { partsEncaissees } from './encaissementsFactures'
+import { paiementsParLaCaisseDuDossier } from './paiementParLaCaisse'
 import {
   detailJumellesIncoherentes, detailPiecesADesigner, detailVentesEnDouble, detailVentesHorsFacturesAVerifier,
   jumellesDuDossier, piecesADesigner, ventesEnDouble, ventesHorsFacturesAVerifier,
@@ -250,7 +251,10 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     ? partsEncaissees(ventesFacturees.dossierId, ventesFacturees.sources.encaissements, ventesFacturees.sources,
       ventesFacturees.sources.exemplaires)
     : []
-  const paiements = paiementsDesPieces(lignes, reglements, encaissees)
+  // Et les paiements par la caisse (étape C9a), tirés des opérations lues (`paiementsParLaCaisseDuDossier`) : aucun tant que
+  // la migration n'est pas en base. Une caisse lue en partie n'en rend aucun ici — ses points se taisent déjà, et le bandeau
+  // le dit (`entreesDeLaCaisseIncompletes`) ; la fiche d'une pièce et ses points à elle viendront avec le lot C9b.
+  const paiements = paiementsDesPieces(lignes, reglements, encaissees, paiementsParLaCaisseDuDossier(caisse, caisse.dossierId) ?? [])
   const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere, exemplaires)
   // Les lettrages faits à la main (lib/lettrage.ts), revérifiés sur TOUTES les pièces lues, comme la carte des comptes
   // de tiers qui les montre : la liste qu'on y défait et ces points disent la même chose. En trésorerie, rien ne se

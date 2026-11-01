@@ -742,7 +742,7 @@ describe('une chaîne d’exercices', () => {
   })
 
   it('justifie l’ouverture de 2026, dans la piste d’audit, par l’exercice validé et son empreinte', () => {
-    const lignes = pisteAudit([], [], [], OUVERTURE_2026, { immobilisations: [], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE })
+    const lignes = pisteAudit([], [], [], OUVERTURE_2026, { immobilisations: [], factures: [], vehicules: [], ventes: SANS_VENTE_FACTUREE, caisse: OPERATIONS_DE_CAISSE_ABSENTES })
     expect(lignes.map((l) => [l.compte, l.libelle, l.pieceFichier, l.pieceEmpreinte, l.manque])).toEqual([
       ['101000', 'À-nouveau Compte capital', 'Exercice 2025 validé', 'c'.repeat(64), []],
       ['512000', 'À-nouveau Banque', 'Exercice 2025 validé', 'c'.repeat(64), []],

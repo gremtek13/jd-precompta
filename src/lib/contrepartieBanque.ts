@@ -1,9 +1,10 @@
 import { supabase } from './supabase'
-import { ligneContrepartieBanque } from './ecritures'
+import { estContrepartieCaisse, ligneContrepartieBanque } from './ecritures'
 import { lignesReglementEngagement, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
+import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from './paiementParLaCaisse'
 import type { PlanComptable } from './planComptable'
-import { partsDesPaiements, type PaiementDePiece } from './rattachement'
+import { partsDesPaiements, type PaiementParLeReleve } from './rattachement'
 import type { Piece } from './types'
 
 // Les comptes qu'une note de frais porte sans que ce soit sa CHARGE : la banque d'un paiement, sa TVA, et la
@@ -50,13 +51,22 @@ function comptesHorsCharge(plan: PlanComptable): ReadonlySet<string> {
 // celles qu'elle RETROUVE — la banque d'un autre paiement, le compte de l'exploitant d'une note de frais, la dette d'un
 // bien. Retrouvées sur un numéro par défaut, dans un dossier qui en tient un autre, elles se tairaient : la
 // contrepartie de l'exploitant ne serait jamais retirée, et la pièce resterait redatée à tort.
+//
+// UN PAIEMENT PAR LE RELEVÉ SEULEMENT (le type le dit) : celui de la caisse (étape C9a) n'a pas de mouvement, et sa
+// contrepartie s'écrit avec les écritures de sa pièce, par la génération et « Régénérer » (`lignesPourPiece`). Ici, une
+// pièce déjà payée par la caisse est une pièce qu'un AUTRE paiement règle : ses lignes ne se redatent pas, et le contrôle
+// des écritures demande « Régénérer », qui les répartit entre les deux moyens. Et la ligne d'une opération de caisse ne se
+// redate jamais : la garde du brouillon refuse de la modifier (`garder_ecriture_de_caisse`), et la refuser emporterait la
+// redate de toute la pièce. Tant que la migration n'est pas en base (`PAIEMENT_PAR_LA_CAISSE_EXPORTE` baissé), aucune ligne
+// ne cite à la fois une pièce et une opération de caisse — la garde d'aujourd'hui le refuse : rien à écarter, et les
+// requêtes sont celles d'hier, filtre pour filtre (contrepartieBanque.test.ts joue les deux états).
 export async function synchroniserContrepartieBanque(
-  dossierId: string, piece: Piece, paiement: Pick<PaiementDePiece, 'id' | 'date' | 'montant'>, modele: ModeleComptable,
+  dossierId: string, piece: Piece, paiement: Pick<PaiementParLeReleve, 'id' | 'date' | 'montant'>, modele: ModeleComptable,
 ) {
   const { plan } = modele
   const { data: existantes, error: lectureError } = await supabase
     .from('ecritures_brouillon')
-    .select('id, compte, ligne_bancaire_id')
+    .select('id, compte, ligne_bancaire_id, piece_id, operation_caisse_id')
     .eq('piece_id', piece.id)
   if (lectureError) throw lectureError
   if (modele.mode === 'engagement') {
@@ -98,7 +108,7 @@ export async function synchroniserContrepartieBanque(
   // AVANT la contrepartie, et c'est l'ordre qui garde les messages vrais : si la date échoue, rien
   // n'est écrit ; si la contrepartie échoue ensuite, l'écriture est à la bonne date et l'appelant dit
   // bien que la contrepartie n'a pas été créée.
-  const autrePaiement = existantes.some((e) => e.compte === plan.banque)
+  const autrePaiement = existantes.some((e) => e.compte === plan.banque || estContrepartieCaisse(e))
   if (!autrePaiement && partsDesPaiements(piece, [paiement]).reste === 0) {
     // Une NOTE DE FRAIS que ce virement rembourse en entier n'est plus due au dirigeant : sa contrepartie au compte
     // de l'exploitant (`ligneContrepartieDirigeant`) part AVANT la redate — redatée, elle resterait à côté de la
@@ -113,8 +123,9 @@ export async function synchroniserContrepartieBanque(
         .delete().eq('piece_id', piece.id).eq('compte', plan.exploitant)
       if (dirigeantError) throw dirigeantError
     }
-    const { error: dateError } = await supabase.from('ecritures_brouillon')
+    const redate = supabase.from('ecritures_brouillon')
       .update({ date: paiement.date }).eq('piece_id', piece.id).neq('compte', plan.banque)
+    const { error: dateError } = await (PAIEMENT_PAR_LA_CAISSE_EXPORTE ? redate.is('operation_caisse_id', null) : redate)
     if (dateError) throw dateError
   }
 
@@ -157,10 +168,15 @@ export async function retirerContrepartieBanque(
 
 // Les pièces qu'un mouvement a cessé de payer — un rapprochement annulé, un règlement groupé retiré ou
 // réglé de nouveau sans elles — RETOURNENT À LA DATE DE LEUR FACTURE quand plus aucune contrepartie
-// banque ne les date : elles comptent de nouveau là où la 2035 les compte (lib/rattachement.ts). Une
+// banque ni caisse ne les date : elles comptent de nouveau là où la 2035 les compte (lib/rattachement.ts). Une
 // pièce qu'un autre paiement date encore garde ses lignes, et le contrôle des écritures demande
 // « Régénérer », qui les répartit entre les paiements qui restent. La base a déjà retiré les lignes du
 // mouvement quand c'est elle qui l'a défait (`retirer_reglement_groupe`, `regler_pieces_par_mouvement`).
+//
+// UNE PIÈCE PAYÉE AUSSI PAR LA CAISSE (étape C9a) est datée par ce paiement-là : elle ne retourne pas à sa facture, et
+// garde ses lignes jusqu'à « Régénérer ». Et la ligne d'une opération de caisse ne se redate jamais (la garde du
+// brouillon la refuse) : elle est écartée de la mise à jour. Le drapeau baissé, ni l'une ni l'autre ne se lit : les
+// requêtes sont celles d'hier.
 //
 // EN ENGAGEMENT, rien : la facture n'a jamais quitté sa date.
 export async function rendreAuxDatesDeFacture(
@@ -174,8 +190,15 @@ export async function rendreAuxDatesDeFacture(
     // Un compte que la base n'a pas rendu ne dit pas « plus aucun paiement » : on ne redate rien plutôt
     // que de ramener à sa facture une pièce qu'un paiement date peut-être encore.
     if (count == null || count > 0) continue
-    const { error: dateError } = await supabase.from('ecritures_brouillon')
+    if (PAIEMENT_PAR_LA_CAISSE_EXPORTE) {
+      const { count: parLaCaisse, error: caisseError } = await supabase.from('ecritures_brouillon')
+        .select('id', { count: 'exact', head: true }).eq('piece_id', piece.id).not('operation_caisse_id', 'is', null)
+      if (caisseError) throw caisseError
+      if (parLaCaisse == null || parLaCaisse > 0) continue
+    }
+    const redate = supabase.from('ecritures_brouillon')
       .update({ date: piece.date_piece ?? dateLocaleDe(piece.created_at) }).eq('piece_id', piece.id)
+    const { error: dateError } = await (PAIEMENT_PAR_LA_CAISSE_EXPORTE ? redate.is('operation_caisse_id', null) : redate)
     if (dateError) throw dateError
   }
 }

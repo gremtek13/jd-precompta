@@ -18,6 +18,7 @@ import FraisSansPosteNonComptes from '../../components/FraisSansPosteNonComptes'
 import { messageErreur } from '../../lib/messageErreur'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
 import { motifDeLaCaisse, recettesDeCaisseDuDossier, recettesPourLesMoteurs } from '../../lib/recettesDeCaisse'
 import { ecrituresDesVentesPourLa2035 } from '../../lib/ecrituresVentesFactureesEcran'
 import { lireLesSourcesDesEcrituresDeVente, type LectureSourcesDesEcrituresDeVente } from '../../lib/ecrituresVentesFactureesLecture'
@@ -230,8 +231,13 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
   // Les paiements des pièces, et ce que les virements mixtes paient de leurs exemplaires (étape VF5h), lu avec les ventes
   // facturées : sans elles, le chiffre d'affaires ne se projette pas ; le détail par poste ne lit que des charges, qu'aucun
   // virement mixte ne paie.
+  //
+  // Et les paiements de pièces par la caisse (étape C9a), de la même lecture de la caisse : AUCUN tant que la migration n'est
+  // pas en base. Nuls — la caisse pas encore revenue pour ce dossier, ou lue en partie —, la projection l'est déjà (ses
+  // recettes en espèces manquent), et le détail par poste, qui date les charges qu'ils paient, se suspend aussi.
+  const paiementsDeLaCaisse = paiementsParLaCaisseDuDossier(lectureCaisse, dossierId)
   const paiements = paiementsDesPieces(mouvementsRapproches, reglements,
-    lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.encaissees : [])
+    lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.encaissees : [], paiementsDeLaCaisse ?? [])
   const ventesFacturees = lectureVentesDuDossier?.etat === 'lue' ? lectureVentesDuDossier.ventes : null
   const ventesIncompletes = lectureVentesDuDossier?.etat === 'incomplete' ? lectureVentesDuDossier.motif : null
   const recettesFacturees = ventesFacturees === null ? null : recettesFactureesDuDossier(ventesFacturees, modeComptable)
@@ -370,7 +376,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
 
   async function calculerPostesDepuisAppli() {
     const annee = parseInt(anneeACalculer, 10)
-    if (!annee || lectureIncomplete || ecrituresDuDetail === null) return
+    if (!annee || lectureIncomplete || ecrituresDuDetail === null || paiementsDeLaCaisse === null) return
     setCalculatingPostes(true)
     setError(null)
     try {
@@ -547,7 +553,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
             {calculating ? 'Calcul…' : 'Calculer CA + cotisations'}
           </button>
           <button
-            className="btn btn-outline btn-sm" disabled={calculatingPostes || lectureIncomplete !== null || ecrituresDuDetail === null}
+            className="btn btn-outline btn-sm" disabled={calculatingPostes || lectureIncomplete !== null || ecrituresDuDetail === null || paiementsDeLaCaisse === null}
             aria-busy={detailEnAttente || undefined} onClick={calculerPostesDepuisAppli}
           >
             {calculatingPostes ? 'Calcul…' : 'Calculer le détail par poste'}
