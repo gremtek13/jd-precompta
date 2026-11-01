@@ -724,6 +724,8 @@ const PRELEVEMENT = operationDeCaisse({ id: 'p1', genre: 'prelevement', date: '2
 const caisseLue = (operations: OperationCaisse[]): OperationsDeCaisse => ({ etat: 'lue', dossierId: 'd1', operations })
 
 describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exercice', () => {
+  // Le drapeau du paiement, que le cas `caisse-paiements-a-retirer` lève (l'état du jour de la migration) : remis ici.
+  afterEach(() => { drapeauDuPaiement.leve = null })
   const D = (a: number, mmjj: string) => `${a}-${mmjj}`
   const cas: [string, (a: number) => Surcharges][] = [
     ['sans-categorie', (a) => ({ piecesValidees: [P1, piece('p2', { categorie_id: null, date_piece: D(a, '05-02'), montant_ttc: 40 })] })],
@@ -835,6 +837,17 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
         id: 'r1', genre: 'recette', date: D(a, '03-12'), montant: 120, categorie_id: HONORAIRES_CAISSE.id, encaissements_du_jour: ['e-perdu'],
       })
       return { categories: [ACHATS, HONORAIRES_CAISSE], ecritures: [E1, E2, ...lignesDeLaCaisse(r)], operationsDeCaisse: caisseLue([r]) }
+    }],
+    // Les défauts 2 et 4 de la relecture du 01/11/2026 : le paiement en espèces d'une pièce devenue une vente depuis — le
+    // drapeau du paiement levé (sans lui, aucun paiement par la caisse).
+    ['caisse-paiements-a-retirer', (a) => {
+      drapeauDuPaiement.leve = true
+      const apport = { ...APPORT, date: D(a, '03-02') }
+      const paye = operationDeCaisse({ id: 'oc-p2', genre: 'paiement', piece_id: 'p2', date: D(a, '03-12'), montant: -40 })
+      return {
+        piecesValidees: [P1, piece('p2', { type_piece: 'vente', date_piece: D(a, '03-10'), montant_ttc: 40 })],
+        ecritures: [E1, E2, ...lignesDeLaCaisse(apport)], operationsDeCaisse: caisseLue([apport, paye]),
+      }
     }],
   ]
 
@@ -1449,15 +1462,17 @@ describe('les refus de la validation pour les ventes facturées (étape VF7b) �
     return debut < 0 ? '' : texte.slice(debut, texte.indexOf('$$;', debut))
   })()
   // La définition que CETTE migration pose. Une migration postérieure la reprend — `champs_bnc_du_fec` (ligne 26.6, lot
-  // FEC22b), qui y ajoute les quatre champs du FEC d'un BNC, préparée hors de l'export puis dans l'export le jour de son
-  // application — et porte alors la dernière ; champsBncFiges.test.ts confronte la sienne à celle-ci. Ce garde-ci
-  // confronte donc ce que VF7b a posé, où que soit la dernière.
+  // FEC22b), qui y ajoute les quatre champs du FEC d'un BNC, puis `validation_des_paiements_par_la_caisse` (la relecture du
+  // 01/11/2026), qui y ajoute le paiement d'une pièce par la caisse sans sa contrepartie ; préparées hors de l'export, puis
+  // dans l'export le jour de leur application — et porte alors la dernière ; champsBncFiges.test.ts et
+  // validationDesPaiementsParLaCaisse.test.ts confrontent chacune à la précédente. Ce garde-ci confronte donc ce que VF7b a
+  // posé, où que soit la dernière.
   const posee = (() => {
     const texte = migration?.texte ?? ''
     const debut = texte.search(/create (or replace )?function public\.valider_exercice\(/)
     return debut < 0 ? '' : texte.slice(debut, texte.indexOf('$$;', debut))
   })()
-  const repriseDepuis = /\/\d{14}_champs_bnc_du_fec\.sql$/
+  const repriseDepuis = /\/\d{14}_(champs_bnc_du_fec|validation_des_paiements_par_la_caisse)\.sql$/
 
   it('la migration : ses refus d’hier au caractère près, la définition d’hier contenue ligne à ligne dans la nouvelle', () => {
     expect(migration).toBeDefined()
@@ -1938,6 +1953,46 @@ describe('prealablesDeValidation — les paiements par la caisse (étape C9a)', 
     expect(prealable(d, 'recettes-de-caisse-a-revoir')).toBeUndefined()
     // Sans la pièce de vente dans les piles, l'ensemble du jour ne la compte pas : la recette paraît à revoir.
     expect(prealable(donnees({ ...d, piecesValidees: [P1] }), 'recettes-de-caisse-a-revoir')?.nb).toBe(1)
+  })
+
+  // LA RELECTURE DU 01/11/2026, le défaut 1 : la pièce À VALIDER qu'un paiement de l'exercice cite retient la validation, quelle
+  // que soit sa date — une pièce de décembre 2024 payée en janvier 2025 ; le drapeau baissé, le préalable d'hier.
+  it('pieces-a-valider : la pièce à valider qu’un paiement de l’exercice cite, quelle que soit sa date', () => {
+    const AVALIDER = piece('p2', { statut: 'a_valider', date_piece: '2024-12-20', montant_ttc: 80 })
+    const APPORT_2025 = operationDeCaisse({ id: 'oc-ap', date: '2025-01-02', montant: 100 })
+    const d = donnees({
+      anneesValidees: [2024], piecesAValider: [AVALIDER], operationsDeCaisse: caisseLue([APPORT_2025, ESPECES]),
+      ecritures: [E1, E2, ...lignesDeLaCaisse(APPORT_2025)],
+    })
+    drapeauDuPaiement.leve = false
+    expect(ids(d)).toEqual([])
+    drapeauDuPaiement.leve = true
+    const p = prealable(d, 'pieces-a-valider')!
+    expect([p.nb, p.bloquant, p.cible]).toEqual([1, true, 'pieces'])
+    expect(p.message).toMatch(/ou payée\(s\) par la caisse dans cet exercice/)
+    expect(p.detail).toMatch(/^Payée par la caisse : une pièce du 20\/12\/2024, payée en espèces le 05\/01\/2025/)
+    // Payée dans l'exercice suivant : la validation de 2025 ne l'attend pas.
+    expect(ids(donnees({ ...d, operationsDeCaisse: caisseLue([APPORT_2025, { ...ESPECES, date: '2026-01-05' }]) }))).toEqual([])
+  })
+
+  // Les défauts 2 et 4 : la pièce dont le TYPE (achat → vente) ou le MONTANT a changé depuis son paiement par la caisse.
+  it('caisse-paiements-a-retirer : le type, ou le montant, de la pièce changé depuis son paiement', () => {
+    const APPORT_2025 = operationDeCaisse({ id: 'oc-ap', date: '2025-01-02', montant: 200 })
+    const paye = operationDeCaisse({ id: 'oc-p2', genre: 'paiement', piece_id: 'p2', date: '2025-03-12', montant: -80 })
+    const avec = (p2: Piece) => donnees({
+      piecesValidees: [P1, p2], operationsDeCaisse: caisseLue([APPORT_2025, paye]), ecritures: [E1, E2, ...lignesDeLaCaisse(APPORT_2025)],
+    })
+    drapeauDuPaiement.leve = false
+    expect(ids(avec(piece('p2', { type_piece: 'vente', date_piece: '2025-03-10', montant_ttc: 80 })))).not.toContain('caisse-paiements-a-retirer')
+    drapeauDuPaiement.leve = true
+    const sens = prealable(avec(piece('p2', { type_piece: 'vente', date_piece: '2025-03-10', montant_ttc: 80 })), 'caisse-paiements-a-retirer')!
+    expect([sens.nb, sens.bloquant, sens.cible]).toEqual([1, true, 'caisse'])
+    expect(sens.detail).toMatch(/une sortie d’espèces pour une pièce devenue une vente/)
+    const centime = prealable(avec(piece('p2', { date_piece: '2025-03-10', montant_ttc: 80.05 })), 'caisse-paiements-a-retirer')!
+    expect(centime.detail).toMatch(/qui laisse sa pièce à 0,05\s€ de son montant/)
+    // Au centime, ou au-delà de l'écart (un paiement en partie, que « payée en partie » dit) : rien ici.
+    expect(ids(avec(piece('p2', { date_piece: '2025-03-10', montant_ttc: 80 })))).not.toContain('caisse-paiements-a-retirer')
+    expect(ids(avec(piece('p2', { date_piece: '2025-03-10', montant_ttc: 90 })))).not.toContain('caisse-paiements-a-retirer')
   })
 
   it('payée en trop : le relevé et la caisse s’additionnent', () => {

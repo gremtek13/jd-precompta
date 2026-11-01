@@ -244,10 +244,13 @@ const fleches = (texte: string) => [...sansCommentairesPleins(texte).matchAll(FL
 describe('les essais de la base, rejoués en production', () => {
   it('chaque fichier se classe par sa forme, la règle que le banc lit aussi', () => {
     expect(CLASSEMENT.inconnus).toEqual([])
-    // Cinq essais de réplique seulement : un de plus est un essai que le banc ne rejoue plus — à regarder avant.
+    // Six essais de réplique seulement : un de plus est un essai que le banc ne rejoue plus — à regarder avant. Le sixième, le
+    // filet de la validation devant la caisse (la relecture du 01/11/2026), le reste jusqu'à ce que le banc l'ait rejoué : ses
+    // migrations sont préparées, et la relecture ne pouvait pas monter les copies du banc (son en-tête le dit).
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'caisseSuppression (son en-tête)', 'frontiereDesEncaissements (son en-tête)', 'logoDesFacturesSuppression (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',
+      'validationDesPaiementsParLaCaisse (son en-tête)',
     ])
     // Les outils ne se rejouent pas ; un outil de plus se lit avant d'entrer (l'audit du 29/10/2026 a lu ces cinq-là).
     expect(CLASSEMENT.outils).toEqual(['allerretour.py', 'batterieEncaissements.mjs', 'bordures.py', 'inventaire.py', 'socle.py'])

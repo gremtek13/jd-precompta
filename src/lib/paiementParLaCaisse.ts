@@ -1,3 +1,4 @@
+import { ecartAvecBanque, paiementNet } from './alignementBanque'
 import {
   avecLOperation, former, jourDit, jugerLaDate, jugerLeMontant, MOTS_DE_LA_CAISSE, ouvertureDuDossier, refus, refusDeLaCaisse,
   type CleDuRefus, type CodeDuRefus, type DossierDeLaCaisse, type EtatDeLaCaisse, type OperationDeLaCaisse, type RefusCaisse,
@@ -27,6 +28,13 @@ import type { OperationCaisse, Piece } from './types'
 // d'historique —, les moteurs lisent les paiements de la caisse, et C9b offre le geste. Le mouvement d'avant l'ouverture, lui, ne dépend pas du drapeau : l'écran cesse de l'offrir AVANT que la base ne
 // le refuse (un resserrement vient en dernier) ; la production n'en portait aucun classé sur la caisse le 29/10/2026
 // (aucun mouvement sur un compte de bilan), et la session les recompte le jour de l'application.
+//
+// ET LE DRAPEAU NE SE LÈVE QU'APRÈS LE LOT C13 (relecture du 01/11/2026) : l'assistant (supabase/functions/agent-comptable)
+// ne lit pas encore la caisse — sa copie de `paiementsDesPieces` n'a pas de quatrième paramètre, et `lister_ecritures` tait
+// une ligne qui ne cite qu'une opération de caisse. Levé avant lui, une pièce payée en espèces lui paraîtrait sans paiement,
+// et sa contrepartie en écart : il dirait faux au cabinet. Le drapeau suit le fichier de la migration dans l'export
+// (`paiementParLaCaisse.test.ts`) : la migration attend donc C13 elle aussi, ou ce test se réécrit le jour où l'on choisit
+// de l'appliquer avant (neutre pour l'application, le drapeau baissé).
 export const PAIEMENT_PAR_LA_CAISSE_EXPORTE = false
 
 // ── Les mots de la base ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -41,11 +49,19 @@ export const MOTS_DU_PAIEMENT = {
   exemplaire_d_une_source: { code: '22023', gabarit: 'Cette pièce est l\'exemplaire de la facture %, qui compte sa vente : enregistre l\'encaissement en espèces de la facture.' },
   sens: { code: '22023', gabarit: 'Ce paiement ne va pas dans le sens de sa pièce : une pièce d\'achat fait sortir des espèces (un montant négatif), une pièce de vente en fait entrer (positif) — l\'inverse pour un avoir.' },
   au_dela: { code: '22023', gabarit: 'Les paiements de cette pièce par la caisse dépasseraient son montant : relis ses paiements.' },
+  // Le reste au centime (relecture du 01/11/2026 ; C9-Q1, sur la recommandation) : au client, sans montant — il ne lit pas
+  // celui de la pièce ; au cabinet, le reste et le montant exact, ou la pièce déjà réglée par ses autres paiements.
+  au_centime_client: { code: '22023', gabarit: 'Ce paiement ne règle pas exactement cette pièce : à quelques centimes près, son écriture ne s\'équilibrerait pas. Vérifie le montant de tes espèces, ou demande à ton cabinet.' },
+  au_centime: { code: '22023', gabarit: 'Ce paiement laisserait % € % sur cette pièce : sous l\'écart où une pièce se dit réglée, son écriture ne s\'équilibrerait pas. Le montant exact qui la règle est % de % € — ou corrige d\'abord le montant de la pièce.' },
+  au_centime_deja_reglee: { code: '22023', gabarit: 'Cette pièce est déjà réglée par ses autres paiements : ce paiement la paierait de % € en trop, sous l\'écart où une pièce se dit réglée, et son écriture ne s\'équilibrerait pas.' },
   // La contrepartie d'un paiement (`garder_ecriture_de_caisse`).
   contrepartie_ne_suit_pas: { code: '23514', gabarit: 'Cette écriture ne suit pas son opération de caisse : son dossier, sa date, ou sa pièce.' },
   contrepartie_compte: { code: '23514', gabarit: 'La contrepartie d\'un paiement par la caisse s\'écrit au compte de la caisse du dossier (%).' },
   contrepartie_sens: { code: '23514', gabarit: 'La contrepartie d\'un paiement par la caisse suit ses espèces : au débit quand elles entrent, au crédit quand elles sortent.' },
   contrepartie_au_dela: { code: '23514', gabarit: 'La contrepartie d\'un paiement par la caisse ne dépasse pas ce paiement.' },
+  // La pièce supprimée sous la contrepartie de son paiement (relecture du 01/11/2026) : la clé du brouillon met sa pièce à nul
+  // AVANT que celle de la caisse ne refuse, et la garde le dit sous ses mots — non plus « ne se modifie pas ».
+  piece_payee_supprimee: { code: '23503', gabarit: 'Cette pièce est payée par la caisse : retire d\'abord son paiement. Elle ne se supprime pas pour autant — l\'opération de caisse, même retirée, la cite pour la piste d\'audit : si elle n\'est pas une pièce de ce dossier, change ensuite son type en « autre ».' },
   // La pièce qu'un paiement cite (`garder_piece_payee_par_la_caisse`).
   piece_change_de_dossier: { code: '23514', gabarit: 'Cette pièce est citée par un paiement de la caisse de son dossier : elle ne change pas de dossier.' },
   piece_change_de_type: { code: '23514', gabarit: 'Cette pièce est payée par la caisse : elle reste une pièce d\'achat ou de vente tant que ce paiement n\'est pas retiré.' },
@@ -69,7 +85,7 @@ export const ORDRE_DU_PAIEMENT: Readonly<Record<
   regler_piece_par_la_caisse: [
     'tresorerie', 'piece_inconnue', 'note_de_frais', 'ni_achat_ni_vente', 'exemplaire_d_une_source', 'date_absente',
     'date_avant_2000', 'date_future', 'date_avant_ouverture', 'frontiere', 'montant_absent', 'montant_centime',
-    'montant_nul', 'montant_borne', 'sens', 'au_dela',
+    'montant_nul', 'montant_borne', 'sens', 'au_dela', 'au_centime_client', 'au_centime_deja_reglee', 'au_centime',
   ],
   contrepartie: ['contrepartie_ne_suit_pas', 'contrepartie_compte', 'contrepartie_sens', 'contrepartie_au_dela'],
   garder_piece_payee_par_la_caisse: ['piece_change_de_dossier', 'piece_change_de_type', 'piece_devient_exemplaire'],
@@ -84,17 +100,73 @@ function refusDuPaiement(cle: CleDuPaiement, ...valeurs: readonly string[]): Ref
 // ── Le paiement d'une pièce ───────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * La pièce telle que `regler_piece_par_la_caisse` la lit, dans le dossier du paiement : son type, son statut, son montant,
- * et, quand elle est l'exemplaire d'une facture, ce que la fonction en lit — sa source et son numéro, joints par la lecture
- * (jamais cherchés ici : une facture absente ne se devine pas).
+ * La pièce telle que `regler_piece_par_la_caisse` la lit, dans le dossier du paiement : son type, son statut, son montant, sa
+ * devise, et, quand elle est l'exemplaire d'une facture, ce que la fonction en lit — sa source et son numéro, joints par la
+ * lecture (jamais cherchés ici : une facture absente ne se devine pas). Et, depuis la relecture du 01/11/2026, ce que le RELEVÉ
+ * en paie (`paiementsDuReleve`) : la base les lit pour juger le reste au centime (le refus 9 bis), comme `paiementsDesPieces`
+ * les compte — un mouvement rapproché d'elle, la part d'un virement groupé, celle d'un virement mixte —, signés comme le
+ * relevé ; ses paiements par la caisse, eux, sont ceux de la caisse du dossier (`DossierDeLaCaisse.caisse`).
  */
 export interface PieceDuPaiement {
   id: string
   type_piece: Piece['type_piece']
   statut: Piece['statut']
   montant_ttc: number | null
+  devise: Piece['devise']
   exemplaire: { numero: string | null; source_de_la_vente: boolean } | null
+  paiementsDuReleve: readonly { montant: number }[]
 }
+
+/**
+ * LE SENS DES ESPÈCES D'UNE PIÈCE : elles ENTRENT pour une vente, SORTENT pour un achat — l'inverse pour un avoir (une pièce de
+ * montant négatif). La règle du refus 8 de `regler_piece_par_la_caisse`, celle d'un mouvement rapproché d'une pièce
+ * (lib/appariementBanque.ts, `sensCoherent`) ; une seule copie, que l'écran et la Vue d'ensemble lisent aussi.
+ */
+export function especesEntrentPour(piece: Pick<Piece, 'type_piece' | 'montant_ttc'>): boolean {
+  return (piece.type_piece === 'vente') !== (piece.montant_ttc != null && piece.montant_ttc < 0)
+}
+
+/**
+ * LE RESTE AU CENTIME (relecture du 01/11/2026, le défaut 2 ; C9-Q1, posée au cabinet le 01/11/2026, écrite sur sa
+ * recommandation). Une pièce dont les paiements font son montant à l'écart d'alignement près (`seuilAlignement` : 2 %, au plus
+ * 5 €) se dit RÉGLÉE (`partsDesPaiements`, lib/rattachement.ts) : sa charge s'écrit entière, face à ce qui a été payé. La
+ * banque ALIGNE alors la pièce sur le total de ses paiements, la caisse comprise (`reglerPieceSurBanque`, lib/reglementBanque.ts,
+ * appelé par BanqueTab `reglerSiLibre`) — le relevé dit l'argent réellement sorti. Un montant d'espèces est tapé à la main :
+ * 39,99 € pour une pièce de 40,00 € y est le plus souvent une faute de frappe, et la pièce « réglée » portait un centime que
+ * rien n'écrivait. D'où ce refus, avant le clic et en base, qui dit le montant exact.
+ *
+ * Ce que rend cette fonction : nul quand ce paiement ne laisse pas la pièce dans cette zone ; sinon le reste après lui, en
+ * centimes (positif : à régler ; négatif : payé en trop), et le montant exact qui la règle, signé comme le paiement — nul
+ * quand ses autres paiements la règlent déjà. La zone est celle où la banque alignerait : `ecartAvecBanque(…).alignable`, la
+ * MÊME fonction, sur le total de TOUS les paiements, ce paiement compris.
+ *
+ * L'AUTRE OPTION DE C9-Q1 — aligner la pièce, comme la banque — se branche ICI, sans rien reprendre d'autre : le refus 9 bis
+ * retiré du module et de la migration (un bloc), l'écran appellerait, après `regler_piece_par_la_caisse`,
+ * `reglerPieceSurBanque(piece, [...autres paiements, { montant }])`, qui aligne justement dans cette zone et seulement là.
+ */
+export function resteAuCentime(
+  piece: Pick<PieceDuPaiement, 'id' | 'montant_ttc' | 'devise' | 'paiementsDuReleve'>,
+  caisse: Pick<EtatDeLaCaisse, 'operations'>,
+  centimes: number,
+): { resteApres: number; exact: number | null } | null {
+  if (piece.montant_ttc == null) return null
+  const autres = [
+    ...piece.paiementsDuReleve,
+    ...caisse.operations.filter((o) => o.genre === 'paiement' && o.piece_id === piece.id && o.retire_le == null),
+  ]
+  const avant = paiementNet(autres)
+  const netAvant = avant.centimes * avant.sens
+  const netApres = netAvant + centimes
+  const ecart = ecartAvecBanque(piece, { montant: netApres / 100 })
+  if (ecart === null || !ecart.alignable) return null
+  const pieceCentimes = Math.abs(Math.round(piece.montant_ttc * 100))
+  const signe = Math.sign(centimes)
+  // Le paiement qui règle EXACTEMENT : celui qui porte la somme nette, dans son sens, au montant de la pièce.
+  const exact = signe * pieceCentimes - netAvant
+  return { resteApres: pieceCentimes - Math.abs(netApres), exact: Math.sign(exact) === signe ? exact : null }
+}
+
+const eurosDits = (centimes: number) => `${Math.floor(Math.abs(centimes) / 100)},${String(Math.abs(centimes) % 100).padStart(2, '0')}`
 
 /** Ce que la saisie d'un paiement envoie : ses paramètres, rien d'autre. */
 export interface SaisieDuReglement {
@@ -146,12 +218,20 @@ export function jugerLeReglementSelon(enBase: boolean, saisie: SaisieDuReglement
   const leMontant = jugerLeMontant(saisie.montant, false)
   if (leMontant.refus) return non(leMontant.refus)
   // 8. Le sens : des espèces qui entrent pour une vente, qui sortent pour un achat — l'inverse pour un avoir.
-  const entree = (piece.type_piece === 'vente') !== (piece.montant_ttc != null && piece.montant_ttc < 0)
-  if ((leMontant.centimes > 0) !== entree) return non(refusDuPaiement('sens'))
+  if ((leMontant.centimes > 0) !== especesEntrentPour(piece)) return non(refusDuPaiement('sens'))
   // 9. Une pièce validée : ses paiements par la caisse non retirés ne dépassent pas son montant.
   if (piece.statut === 'validee' && piece.montant_ttc != null
     && dejaPayeParLaCaisse(piece.id, dossier.caisse) + Math.abs(leMontant.centimes) > Math.abs(Math.round(piece.montant_ttc * 100))) {
     return non(refusDuPaiement('au_dela'))
+  }
+  // 9 bis. Le reste au centime (`resteAuCentime`) : sur TOUS ses paiements, ceux du relevé compris, la pièce ne reste pas à
+  //        quelques centimes de son montant — au client, sans le dire ; au cabinet, le reste et le montant exact.
+  const auCentime = resteAuCentime(piece, dossier.caisse, leMontant.centimes)
+  if (auCentime !== null) {
+    if (dossier.quiEcrit === 'client') return non(refusDuPaiement('au_centime_client'))
+    if (auCentime.exact === null) return non(refusDuPaiement('au_centime_deja_reglee', eurosDits(auCentime.resteApres)))
+    return non(refusDuPaiement('au_centime', eurosDits(auCentime.resteApres),
+      auCentime.resteApres > 0 ? 'à régler' : 'payés en trop', auCentime.exact > 0 ? 'une entrée' : 'une sortie', eurosDits(auCentime.exact)))
   }
   // Le paiement, tel que la base l'insère.
   const operation: OperationDeLaCaisse = {

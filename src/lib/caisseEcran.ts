@@ -315,14 +315,23 @@ export function especesDuJour(etat: EtatDeLaCaisse, jour: string): EspeceDeFactu
  * La phrase qui NOMME les espèces des factures d'un jour qu'une recette ne compte pas (conception, § 4 b) — « Les 120,00 € de
  * la facture F-2026-0012, reçus ce jour-là, sont déjà dans la caisse : ce total ne les compte pas » —, ou rien quand le jour n'en
  * porte aucune.
+ *
+ * DES ESPÈCES RENDUES AUSSI (relecture du 01/11/2026, le défaut 7) : la contre-passation en espèces d'un encaissement, ou le
+ * paiement par la caisse d'un avoir de vente, sont NÉGATIFS — l'ensemble du jour les reconnaît comme les autres. La phrase
+ * d'hier disait « Les −30,00 € …, reçus ce jour-là » : chacune se dit désormais par son montant, sans signe, sous « rendus » ;
+ * des espèces toutes reçues gardent la phrase d'hier, au caractère près.
  */
 export function phraseDesEspecesDuJour(especes: readonly EspeceDeFacture[]): string | null {
   if (especes.length === 0) return null
-  const noms = especes.map((e) => (e.paiement
-    ? `${euros(e.centimes)} d’une pièce de vente réglée par la caisse`
-    : `${euros(e.centimes)} de la facture ${e.numero ?? '(sans numéro)'}`))
-  const liste = noms.length === 1 ? noms[0] : `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}`
-  return `Les ${liste}, reçus ce jour-là, sont déjà dans la caisse : ce total ne les compte pas.`
+  const nom = (e: EspeceDeFacture) => (e.paiement
+    ? `${euros(Math.abs(e.centimes))} d’une pièce de vente réglée par la caisse`
+    : `${euros(Math.abs(e.centimes))} de la facture ${e.numero ?? '(sans numéro)'}`)
+  const liste = (noms: readonly string[]) => (noms.length === 1 ? noms[0] : `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}`)
+  const recus = especes.filter((e) => e.centimes > 0).map(nom)
+  const rendus = especes.filter((e) => e.centimes < 0).map(nom)
+  if (rendus.length === 0) return `Les ${liste(recus)}, reçus ce jour-là, sont déjà dans la caisse : ce total ne les compte pas.`
+  if (recus.length === 0) return `Les ${liste(rendus)}, rendus ce jour-là, sont déjà sortis de la caisse : ce total ne les compte pas.`
+  return `Les ${liste(recus)}, reçus ce jour-là, et les ${liste(rendus)}, rendus ce jour-là, sont déjà comptés par la caisse : ce total ne les compte pas.`
 }
 
 // ── Les flux d'avant l'ouverture (étape C9b) ──────────────────────────────────────────────────────────────────────────

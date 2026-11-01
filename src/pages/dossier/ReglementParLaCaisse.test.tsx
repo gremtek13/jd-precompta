@@ -146,13 +146,17 @@ describe('Payée en espèces — ce qui ne s’offre pas', () => {
 })
 
 describe('Régler par la caisse', () => {
-  it('le reste à régler proposé, signé comme le relevé ; inconnu sur des paiements lus en partie : le champ attend', () => {
+  // Sur des paiements lus en partie, le reste est inconnu ; depuis la relecture du 01/11/2026, la base juge aussi le reste au
+  // centime sur les paiements du relevé : la fiche ne règle rien qu'elle ne puisse juger, et le dit — aucun champ, aucun geste.
+  it('le reste à régler proposé, signé comme le relevé ; sur des paiements lus en partie, rien ne se règle, et la fiche le dit', () => {
     const { unmount } = monter(piece(), { paiements: new Map([['p1', [{ id: 'm', date: '2026-03-01', montant: -20, origine: 'rapprochement' as const }]]]) })
     expect(champ(/Montant/).value).toBe('-100,00')
     expect(screen.getByText(/Le montant proposé est ce qu’il reste à régler/)).toBeTruthy()
     unmount()
     monter(piece(), { paiements: null })
-    expect(champ(/Montant/).value).toBe('')
+    expect(screen.queryByLabelText(/Montant/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Régler par la caisse' })).toBeNull()
+    expect(screen.getByText(/les paiements de la pièce par le relevé ne sont pas lus en entier/)).toBeTruthy()
   })
 
   it('le refus du module se dit AVANT le clic, sur la saisie telle qu’elle part, et rien ne part', async () => {

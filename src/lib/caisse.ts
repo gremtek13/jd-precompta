@@ -40,7 +40,9 @@ export const CAISSE_EXPORTEE = true
 
 // ── Les mots de la base ───────────────────────────────────────────────────────────────────────────────────────────────
 
-export type CodeDuRefus = '42501' | '22023' | '23514' | 'P0002'
+// 23503 depuis la relecture du 01/11/2026 : la pièce qu'un paiement cite, supprimée sous la contrepartie de ce paiement
+// (`MOTS_DU_PAIEMENT.piece_payee_supprimee`) — le code de la clé qui la retient, que la garde du brouillon lève avant elle.
+export type CodeDuRefus = '42501' | '22023' | '23514' | 'P0002' | '23503'
 
 /** Un refus de la base, tel qu'elle le lèvera : son code et ses mots. */
 export interface RefusCaisse {

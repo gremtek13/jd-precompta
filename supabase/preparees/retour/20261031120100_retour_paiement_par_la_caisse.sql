@@ -19,6 +19,12 @@
 -- règle plus de pièce par la caisse ; la fiche d'un mouvement refuse encore le classement d'un mouvement d'avant
 -- l'ouverture, et le module borne encore la caisse : il juge alors plus strictement que la base, du côté fermé.
 --
+-- LA RELECTURE DU 01/11/2026 (HISTORIQUE.md, « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS ») a changé deux des
+-- sept corps de la migration — `regler_piece_par_la_caisse` (le reste au centime) et `garder_ecriture_de_caisse` (les mots de
+-- la pièce supprimée sous sa contrepartie) — : la garde de tête attend leurs empreintes neuves ; ce que le retour rend, les
+-- quatre corps de la migration `caisse`, ne change pas. Éprouvé le 01/11/2026 sur la réplique de C8 : l'ancien retour a défait
+-- l'ancienne migration (la signature revenue à celle d'avant, famille par famille), puis celui-ci la nouvelle.
+--
 -- VERSION PROVISOIRE : le fichier prendra la version que portera sa ligne d'historique.
 
 -- ══ 0. La garde de tête ══════════
@@ -32,9 +38,9 @@ begin
   for v_attendue in select * from (values
       ('premier_jour_negatif_de_la_caisse', 'public.premier_jour_negatif_de_la_caisse(uuid)', '3e04d7e969c9614be2d9eda3415f0da2'),
       ('garder_la_caisse', 'public.garder_la_caisse()', '5c9cc864b19928249626604efcc62246'),
-      ('garder_ecriture_de_caisse', 'public.garder_ecriture_de_caisse()', '77841ea785f47430de58af9bad841973'),
+      ('garder_ecriture_de_caisse', 'public.garder_ecriture_de_caisse()', '9db99bb96816b57669a688a1a8dc7b71'),
       ('enregistrer_operation_caisse', 'public.enregistrer_operation_caisse(uuid, text, date, numeric, uuid, numeric, uuid[], jsonb)', '394bed68d4f6b59d030e3792e758840e'),
-      ('regler_piece_par_la_caisse', 'public.regler_piece_par_la_caisse(uuid, uuid, date, numeric)', 'c543d1122173b3b62f11f9713604268b'),
+      ('regler_piece_par_la_caisse', 'public.regler_piece_par_la_caisse(uuid, uuid, date, numeric)', 'c8b8e39eb6fac46f386673e2d4e775e0'),
       ('garder_piece_payee_par_la_caisse', 'public.garder_piece_payee_par_la_caisse()', 'f23d930eb520580ec9d8eb82fad4cfeb'),
       ('garder_caisse_depuis_l_ouverture', 'public.garder_caisse_depuis_l_ouverture()', '7155daf0e08ef5f570e3b207d7c833c6')
     ) as t(nom, signature, empreinte) loop

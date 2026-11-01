@@ -502,14 +502,17 @@ describe('pointsDeLaChecklist — la caisse (étape C3b)', () => {
     expect(apres.filter((p) => !IDS.includes(p.id))).toEqual(avant)
   })
 
-  it('NEUTRE, la migration en base : la caisse lue ajoute aussi le point du mouvement d’avant l’ouverture, et rien d’autre', () => {
+  // Et, depuis la relecture du 01/11/2026, les deux points du paiement d'une pièce : le paiement que sa pièce contredit depuis
+  // (« erreur », repris par la validation) et la pièce à valider qu'un paiement cite (« attention »).
+  it('NEUTRE, la migration en base : la caisse lue ajoute aussi le mouvement d’avant l’ouverture et les deux points du paiement, et rien d’autre', () => {
     drapeau.leve = true
     const avant = tous({ lignes: [ligne({ statut: 'non_rapprochee' })] })
     const apres = tous({ lignes: [ligne({ statut: 'non_rapprochee' })], caisse: caisseLue([]) })
-    const ids = [...IDS, 'caisse-mouvements-avant-ouverture']
-    expect(apres.filter((p) => ids.includes(p.id)).map((p) => [p.id, p.nb])).toEqual([
-      ['caisse-a-reprendre', 0], ['caisse-negative', 0], ['caisse-mouvements-avant-ouverture', 0], ['recettes-de-caisse-a-revoir', 0],
-      ['versements-especes-en-recette', 0],
+    const ids = [...IDS, 'caisse-mouvements-avant-ouverture', 'caisse-paiements-a-retirer', 'pieces-a-valider-payees-par-la-caisse']
+    expect(apres.filter((p) => ids.includes(p.id)).map((p) => [p.id, p.nb, p.severite])).toEqual([
+      ['caisse-a-reprendre', 0, 'erreur'], ['caisse-negative', 0, 'erreur'], ['caisse-mouvements-avant-ouverture', 0, 'erreur'],
+      ['recettes-de-caisse-a-revoir', 0, 'erreur'], ['caisse-paiements-a-retirer', 0, 'erreur'],
+      ['versements-especes-en-recette', 0, 'attention'], ['pieces-a-valider-payees-par-la-caisse', 0, 'attention'],
     ])
     expect(apres.filter((p) => !ids.includes(p.id))).toEqual(avant)
   })
@@ -748,5 +751,43 @@ describe('pointsDeLaChecklist : le paiement d’une pièce par la caisse (C9b)',
     expect(nb({ ...d, entreesDeLaCaisseIncompletes: 'la reprise : coupée' }, 'caisse-mouvements-avant-ouverture')).toBe(0)
     drapeau.leve = false
     expect(tous(d).some((x) => x.id === 'caisse-mouvements-avant-ouverture')).toBe(false)
+  })
+
+  // LA RELECTURE DU 01/11/2026. Le défaut 1 : la pièce à valider qu'un paiement cite, en « attention », vers Justificatifs.
+  it('la pièce à valider qu’un paiement par la caisse cite : levé, un point en attention qui nomme le paiement ; baissé, absent', () => {
+    const aValider = piece({ statut: 'a_valider', date_piece: '2025-12-20' })
+    const d = { piecesAValider: [aValider], categories: [FOURNITURES], caisse: caisseLue([APPORT, PAYE]), ecritures: APPORT_ECRIT }
+    drapeau.leve = true
+    const p = tous(d).find((x) => x.id === 'pieces-a-valider-payees-par-la-caisse')!
+    expect([p.nb, p.cible, p.severite, p.action]).toEqual([1, 'pieces', 'attention', 'Valider ces pièces'])
+    expect(p.detail!.replace(/[\u00a0\u202f]/g, ' ')).toMatch(/^Payée par la caisse : une pièce du 20\/12\/2025, payée en espèces le 12\/03\/2026 \(50,00 €\)\./)
+    // Validée, ou son paiement retiré, ou ce que la frontière fige : rien.
+    expect(nb({ ...d, piecesAValider: [], piecesValidees: [piece()] }, 'pieces-a-valider-payees-par-la-caisse')).toBe(0)
+    expect(nb({ ...d, caisse: caisseLue([APPORT, { ...PAYE, retire_le: '2026-03-13T00:00:00Z' }]) }, 'pieces-a-valider-payees-par-la-caisse')).toBe(0)
+    expect(pointsDeLaChecklist(donnees(d), { ...C, frontiere: '2026-12-31' }).tousLesPointsATraiter
+      .find((x) => x.id === 'pieces-a-valider-payees-par-la-caisse')?.nb).toBe(0)
+    drapeau.leve = false
+    expect(tous(d).some((x) => x.id === 'pieces-a-valider-payees-par-la-caisse')).toBe(false)
+  })
+
+  // Les défauts 2 et 4 : le paiement que sa pièce contredit depuis, en « erreur », vers la caisse ; lus en partie, le relevé ou
+  // ses parts taisent le reste au centime, jamais le sens.
+  it('le paiement que sa pièce contredit depuis : levé, un point en erreur ; le reste au centime tu sur des paiements lus en partie', () => {
+    drapeau.leve = true
+    const vente = { ...base(), piecesValidees: [piece({ type_piece: 'vente' })] }
+    const p = tous(vente).find((x) => x.id === 'caisse-paiements-a-retirer')!
+    expect([p.nb, p.cible, p.severite, p.action]).toEqual([1, 'caisse', 'erreur', 'Voir la caisse'])
+    expect(p.detail).toMatch(/^le paiement en espèces du 12\/03\/2026 \(50,00.€\), une sortie d’espèces pour une pièce devenue une vente/)
+    const auCentime = base({ piecesValidees: [piece({ montant_ttc: 50.02 })] })
+    expect(nb(auCentime, 'caisse-paiements-a-retirer')).toBe(1)
+    expect(nb({ ...auCentime, paiementsPartiels: true }, 'caisse-paiements-a-retirer')).toBe(0)
+    expect(nb({ ...vente, paiementsPartiels: true }, 'caisse-paiements-a-retirer')).toBe(1)
+    expect(nb(base(), 'caisse-paiements-a-retirer')).toBe(0)
+    // Une caisse lue en partie : ses points ne paraissent pas (le bandeau de la caisse le dit) ; lue en entier, ses entrées en
+    // partie (la reprise, le relevé), la caisse n'est pas jugée : zéro.
+    expect(nb({ ...vente, caisse: caisseLue([APPORT, PAYE], { complete: false, motif: '1 lue sur 2' }) }, 'caisse-paiements-a-retirer')).toBeUndefined()
+    expect(nb({ ...vente, entreesDeLaCaisseIncompletes: 'la reprise : coupée' }, 'caisse-paiements-a-retirer')).toBe(0)
+    drapeau.leve = false
+    expect(tous(vente).some((x) => x.id === 'caisse-paiements-a-retirer')).toBe(false)
   })
 })

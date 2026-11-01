@@ -263,6 +263,21 @@ describe('les espèces des factures du jour, nommées dans le formulaire d’une
       .toBe('Les 120,00 € de la facture F-2026-0012 et 30,00 € de la facture F-2026-0013, reçus ce jour-là, sont déjà dans la caisse : ce total ne les compte pas.')
   })
 
+  // LE DÉFAUT 7 DE LA RELECTURE DU 01/11/2026 : une contre-passation en espèces, ou le paiement par la caisse d'un avoir de
+  // vente, est négatif — « Les −30,00 € …, reçus ce jour-là » se disait. Chacune par son montant, sans signe, sous « rendus ».
+  it('des espèces rendues se disent rendues, sans signe — seules, ou à côté d’espèces reçues', () => {
+    const rendue = { encaissementId: 'e4', numero: 'F-2026-0014', centimes: -3000, paiement: false }
+    const avoir = { encaissementId: 'p5', numero: null, centimes: -1250, paiement: true }
+    const recue = { encaissementId: 'e1', numero: 'F-2026-0012', centimes: 12000, paiement: false }
+    expect(sansEspaceInsecable(phraseDesEspecesDuJour([rendue])!))
+      .toBe('Les 30,00 € de la facture F-2026-0014, rendus ce jour-là, sont déjà sortis de la caisse : ce total ne les compte pas.')
+    expect(sansEspaceInsecable(phraseDesEspecesDuJour([rendue, avoir])!))
+      .toBe('Les 30,00 € de la facture F-2026-0014 et 12,50 € d’une pièce de vente réglée par la caisse, rendus ce jour-là, sont déjà sortis de la caisse : ce total ne les compte pas.')
+    expect(sansEspaceInsecable(phraseDesEspecesDuJour([recue, rendue])!))
+      .toBe('Les 120,00 € de la facture F-2026-0012, reçus ce jour-là, et les 30,00 € de la facture F-2026-0014, rendus ce jour-là, sont déjà comptés par la caisse : ce total ne les compte pas.')
+    for (const e of [[rendue], [rendue, avoir], [recue, rendue]]) expect(phraseDesEspecesDuJour(e)).not.toMatch(/(^|\s)[−-]\s?\d/)
+  })
+
   it('aucune espèce ce jour-là, ou celles d’une facture qui n’est pas source : rien à dire', () => {
     expect(phraseDesEspecesDuJour(especesDuJour(etat, '2026-03-13'))).toBeNull()
     const horsSource = etatDeLaCaisseLu(MODELE, donnees({ especes: { etat: 'lues', encaissements: [ESPECES('e9', '2026-03-12', 50, 'f9')], factures: [{ id: 'f9', numero: 'F-9', source_de_la_vente: false }] } }))

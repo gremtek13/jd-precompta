@@ -5,7 +5,10 @@
 -- BASE (C8, LIGNE 26.6) » — la relecture du 31/10/2026 : un retrait au distributeur d'avant l'ouverture, classé sur la
 -- caisse, s'y comptait une seconde fois après le 53 des à-nouveaux qui le porte déjà. Préparée sous une version
 -- PROVISOIRE, après les trois migrations de la caisse (`caisse`, `caisse_retrait_et_versement`, `especes_sans_mouvement`,
--- en base depuis le 30/10/2026), qu'elle suppose et dont elle remplace quatre corps.
+-- en base depuis le 30/10/2026), qu'elle suppose et dont elle remplace quatre corps. Corrigée le 01/11/2026 par la relecture
+-- de C8 et C9 (HISTORIQUE.md, « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS ») : le reste au centime d'un
+-- paiement (9 bis), les mots de la pièce supprimée sous la contrepartie de son paiement, et les points de la Vue
+-- d'ensemble qui disent ce qui ne se refuse pas ici — avant toute application, sur une réplique.
 --
 -- CE QU'ELLE POSE.
 --   1. `regler_piece_par_la_caisse(dossier, pièce, date, montant)` : le paiement d'une pièce par la caisse, une opération
@@ -20,7 +23,9 @@
 --      dossier, sa date, sa pièce, un paiement non retiré), porte le compte de la caisse du PLAN et le sens des espèces
 --      (au débit quand elles entrent, au crédit quand elles sortent), et ne dépasse pas, avec les autres lignes du même
 --      paiement, son montant ; elle se retire avec les écritures de sa pièce (« Régénérer » les reprend toutes). Le
---      reste, au caractère près.
+--      reste, au caractère près, hors ceci : la pièce SUPPRIMÉE sous la contrepartie de son paiement — la clé du brouillon
+--      (`on delete set null`) met sa pièce à nul avant que celle de la caisse (`on delete restrict`) ne refuse — se refuse
+--      sous ses mots à elle (23503 : retirer d'abord le paiement), non plus sous ceux d'une ligne qu'on modifierait.
 --   3. `garder_piece_payee_par_la_caisse`, sur `pieces` : une pièce qu'un paiement de la caisse cite ne change pas de
 --      dossier, que le paiement soit retiré ou non (la piste d'audit) ; tant qu'il ne l'est pas, elle reste une pièce
 --      d'achat ou de vente, et ne devient pas l'exemplaire d'une facture SOURCE (sa vente vient de la facture). Sa
@@ -44,10 +49,13 @@
 --     un exercice figé (23514) ; 7. le montant, comme celui d'une opération : renseigné, au centime, non nul, borné
 --     (22023) ; 8. le sens : une sortie pour une pièce d'achat, une entrée pour une pièce de vente, l'inverse pour un
 --     avoir (22023) ; 9. pour une pièce validée, ses paiements par la caisse non retirés ne dépassent pas son montant
---     (22023 — sans le dire : un client ne lit pas le montant d'une pièce) ; 10. la caisse jamais négative, quand le
---     paiement fait sortir des espèces (23514, `texte_caisse_negative`, le geste `paiement`) ;
+--     (22023 — sans le dire : un client ne lit pas le montant d'une pièce) ; 9 bis. le reste au centime : sur TOUS ses
+--     paiements, le relevé compris, la pièce ne reste pas à quelques centimes de son montant — dans l'écart où la banque
+--     l'alignerait, sans l'atteindre (22023 ; au client sans montant, au cabinet le reste et le montant exact, ou la pièce
+--     déjà réglée) ; 10. la caisse jamais négative, quand le paiement fait sortir des espèces (23514,
+--     `texte_caisse_negative`, le geste `paiement`) ;
 --   - la contrepartie — elle suit son paiement ; le compte de la caisse du plan ; le sens des espèces ; pas plus que le
---     paiement (23514 chacun) ;
+--     paiement (23514 chacun) ; sa pièce supprimée sous elle (23503), avant le refus d'hier d'une ligne qu'on modifie ;
 --   - la pièce payée — le dossier ; le type ; l'exemplaire d'une facture source (23514 chacun) ;
 --   - la recette — parmi ceux d'hier sur l'ensemble du jour : un paiement en espèces d'une pièce de vente de ce jour qui
 --     manque, juste après l'encaissement qui manque ; un paiement que la lecture comptait et qui n'est pas un paiement de
@@ -62,10 +70,11 @@
 -- ouverture sous la racine 53 met en file les déclencheurs de la caisse (leur condition, migration `caisse`) — une
 -- reprise posée ou retirée sans ligne de caisse changerait la caisse sans que rien ne la juge. Ce qui reste : un dossier
 -- repris sans ligne de caisse (une caisse nulle au jour de la reprise) compte encore un flux d'avant elle ; le
--- classement d'un mouvement en est refusé, et l'onglet Caisse le dira (lot C9).
+-- classement d'un mouvement en est refusé, et l'onglet Caisse le dit (sa carte « Avant l'ouverture du dossier », lot C9b).
 --
 -- CE QU'ELLE TOUCHE D'EXISTANT : les corps de quatre fonctions de la caisse, relus en production le 31/10/2026 à leur
--- empreinte, que la garde de tête vérifie — leur signature, leur sécurité, leurs droits et leurs déclencheurs restent
+-- empreinte (et, pour le reste au centime, `encaissement_justifie_son_mouvement`, qu'elle appelle, à l'empreinte de la
+-- réplique de la production du 01/11/2026), que la garde de tête vérifie — leur signature, leur sécurité, leurs droits et leurs déclencheurs restent
 -- (`create or replace`) ; deux déclencheurs neufs, l'un sur `pieces`, qui ne juge qu'une pièce dont le dossier, le type
 -- ou la désignation change, l'autre sur `lignes_bancaires`, qui ne juge qu'un mouvement qui arrive sur un compte 53.
 -- Aucune table, colonne, contrainte ni policy ; aucune donnée lue ni écrite d'avance. NEUTRE EN PRODUCTION si les
@@ -90,9 +99,10 @@
 -- ══ 0. La garde de tête ══════════
 -- Elle refuse une seconde application ; une base sans les trois migrations de la caisse — sa table, ses fonctions à
 -- l'empreinte de leur corps, les retours chariot d'un collage écartés, relues en production le 31/10/2026 — ; une
--- fonction que celle-ci appelle, ou dont elle suppose les refus, qui ne serait plus celle qu'elle suppose ; et une base où
--- manquerait ce qu'elle lit : le rôle `caisse` du plan, de racine 53 ; les onze déclencheurs qui appellent les deux gardes
--- remplacées ; le genre `paiement` et la pièce de la table, que la migration `caisse` a posés ; les colonnes qu'elle lit.
+-- fonction que celle-ci appelle, ou dont elle suppose les refus, qui ne serait plus celle qu'elle suppose (dix-huit, la
+-- dernière depuis la relecture du 01/11/2026) ; et une base où manquerait ce qu'elle lit : le rôle `caisse` du plan, de
+-- racine 53 ; les onze déclencheurs qui appellent les deux gardes remplacées ; le genre `paiement` et la pièce de la table,
+-- que la migration `caisse` a posés ; les colonnes qu'elle lit (trente-trois, les paiements du relevé compris).
 do $garde$
 declare
   v_attendue record;
@@ -125,7 +135,9 @@ begin
       ('frontiere_validation', 'public.frontiere_validation(uuid)', '24a04846471ec5e8cdbae6f3b9f4a2e8'),
       ('exercice_fige', 'public.exercice_fige(uuid, integer)', 'b70cbdd4a870f5e17e8e4c6851506bdc'),
       ('compte_du_role', 'public.compte_du_role(uuid, text)', '6108ab75d148aa2800484b89bb112c70'),
-      ('is_super_admin', 'public.is_super_admin()', 'a9159138778422a43ba8d8c21240c9bb')
+      ('is_super_admin', 'public.is_super_admin()', 'a9159138778422a43ba8d8c21240c9bb'),
+      -- Le reste au centime (9 bis) compte la part d'un virement mixte comme `classer_mouvement_par_encaissements` la juge.
+      ('encaissement_justifie_son_mouvement', 'public.encaissement_justifie_son_mouvement(uuid)', '5d8ac5a1d8d08ceb95a3eca3b98c499d')
     ) as t(nom, signature, empreinte) loop
     select count(*) into v_nombre from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = v_attendue.nom;
     select md5(replace(p.prosrc, chr(13), '')) into v_empreinte from pg_proc p
@@ -163,9 +175,18 @@ begin
      ('public.factures_emises'::regclass, 'source_de_la_vente'), ('public.factures_emises'::regclass, 'numero'),
      ('public.ecritures_brouillon'::regclass, 'operation_caisse_id'), ('public.ecritures_brouillon'::regclass, 'created_at'),
      ('public.lignes_bancaires'::regclass, 'compte_bilan'), ('public.lignes_bancaires'::regclass, 'created_at'),
-     ('public.a_nouveaux'::regclass, 'compte'), ('public.dossiers'::regclass, 'mode_comptable'));
-  if v_nombre <> 18 then
-    raise exception 'Une colonne que cette migration lit manque (% sur 18) : cette base n''est pas celle que la migration suppose.', v_nombre;
+     ('public.a_nouveaux'::regclass, 'compte'), ('public.dossiers'::regclass, 'mode_comptable'),
+     -- Ce que le reste au centime (9 bis) lit des paiements d'une pièce par le relevé, comme `paiementsDesPieces` les compte.
+     ('public.pieces'::regclass, 'devise'), ('public.lignes_bancaires'::regclass, 'piece_id'),
+     ('public.lignes_bancaires'::regclass, 'statut'), ('public.lignes_bancaires'::regclass, 'montant'),
+     ('public.lignes_bancaires'::regclass, 'reglement_groupe'), ('public.lignes_bancaires'::regclass, 'encaissements_de_factures'),
+     ('public.reglements_groupes'::regclass, 'piece_id'), ('public.reglements_groupes'::regclass, 'ligne_bancaire_id'),
+     ('public.reglements_groupes'::regclass, 'montant'), ('public.encaissements_factures'::regclass, 'ligne_bancaire_id'),
+     ('public.encaissements_factures'::regclass, 'facture_id'), ('public.encaissements_factures'::regclass, 'retire_le'),
+     ('public.encaissements_factures'::regclass, 'annule_id'), ('public.encaissements_factures'::regclass, 'montant'),
+     ('public.encaissements_factures'::regclass, 'dossier_id'));
+  if v_nombre <> 33 then
+    raise exception 'Une colonne que cette migration lit manque (% sur 33) : cette base n''est pas celle que la migration suppose.', v_nombre;
   end if;
 end
 $garde$;
@@ -473,8 +494,23 @@ create trigger lignes_bancaires_sur_la_caisse_depuis_l_ouverture
 -- juge comme celui d'un mouvement du relevé rapproché d'une pièce (src/lib/appariementBanque.ts, `sensCoherent`) : une
 -- entrée d'espèces pour une vente, une sortie pour un achat, l'inverse pour un avoir — une pièce de montant négatif. Le
 -- plafond ne se juge que sur une pièce validée, dont le montant est relu : celui d'une pièce à valider est encore une
--- lecture de l'OCR ; il ne compte que les paiements par la caisse — ceux de la banque, le pointage des pièces payées en
--- trop les voit (lot C9). Ni ses mots ni son code ne disent le montant de la pièce.
+-- lecture de l'OCR ; il ne compte que les paiements par la caisse — ceux de la banque, le point « pièce payée plus que son
+-- montant » les voit (`pieces-payees-en-trop`, la Vue d'ensemble et la validation), et la fiche le dit avant le clic. Ni ses
+-- mots ni son code ne disent le montant de la pièce.
+--
+-- LE RESTE AU CENTIME (9 bis ; relecture du 01/11/2026, le défaut 2 ; C9-Q1, posée au cabinet le 01/11/2026, écrite sur sa
+-- recommandation). Une pièce dont les paiements font son montant à l'écart d'alignement près — 2 %, au plus 5 € — se dit
+-- RÉGLÉE (`partsDesPaiements`, src/lib/rattachement.ts) : sa charge s'écrit entière, face à ce qui a été payé. La banque
+-- ALIGNE alors la pièce sur le total de ses paiements, la caisse comprise (`reglerPieceSurBanque`) ; un montant d'espèces est
+-- tapé à la main, et 39,99 € pour une pièce de 40,00 € y laissait un centime que rien n'écrivait : l'écriture ne
+-- s'équilibrait jamais, et la validation de l'exercice la refusait sans dire où. Ce paiement-là se refuse donc, sur TOUS les
+-- paiements de la pièce — un mouvement rapproché d'elle, la part d'un virement groupé, celle d'un virement mixte (comme
+-- `classer_mouvement_par_encaissements` la compte), ses paiements par la caisse non retirés : ceux que `paiementsDesPieces`
+-- compte —, en euros seulement (une pièce en devise n'a qu'un montant provisoire) et sur un montant lu, quel que soit son
+-- statut : la pièce à valider qu'on paie en espèces se corrige d'abord. Au client (la migration de son droit), sans montant —
+-- il ne lit pas celui de la pièce ; au cabinet, le reste et le montant exact, ou la pièce déjà réglée par ses autres
+-- paiements. L'AUTRE OPTION DE C9-Q1 — aligner la pièce, comme la banque — retirerait ce seul bloc : l'application
+-- appellerait alors `reglerPieceSurBanque` après le paiement (src/lib/paiementParLaCaisse.ts, `resteAuCentime`).
 --
 -- L'EXEMPLAIRE D'UNE FACTURE SOURCE, ET LUI SEUL, SE REFUSE (le § 8 de la conception disait « l'exemplaire d'une
 -- facture, et toute pièce de vente d'un dossier basculé ») : sa vente vient de la facture, et ses espèces, de
@@ -496,6 +532,10 @@ declare
   v_type text;
   v_statut text;
   v_ttc numeric;
+  v_devise text;
+  v_net numeric;
+  v_reste numeric;
+  v_exact numeric;
   v_facture uuid;
   v_numero text;
   v_entree boolean;
@@ -519,7 +559,7 @@ begin
   end if;
 
   -- 3. La pièce, de ce dossier, verrouillée.
-  select p.type_piece, p.statut, p.montant_ttc, p.facture_id into v_type, v_statut, v_ttc, v_facture
+  select p.type_piece, p.statut, p.montant_ttc, p.devise, p.facture_id into v_type, v_statut, v_ttc, v_devise, v_facture
     from public.pieces p
    where p.id = p_piece_id and p.dossier_id = p_dossier_id
    for share;
@@ -597,6 +637,54 @@ begin
     end if;
   end if;
 
+  -- 9 bis. Le reste au centime : sur tous ses paiements, signés comme le relevé, ce paiement compris.
+  if v_ttc is not null and v_devise = 'EUR' then
+    select coalesce(sum(x.montant), 0) into v_net from (
+      -- Un mouvement rapproché d'elle.
+      select l.montant from public.lignes_bancaires l
+       where l.dossier_id = p_dossier_id and l.piece_id = p_piece_id and l.statut = 'rapprochee'
+      union all
+      -- La part d'un virement qui règle plusieurs pièces, sur un mouvement rapproché et réglé en groupe.
+      select r.montant from public.reglements_groupes r
+        join public.lignes_bancaires l on l.id = r.ligne_bancaire_id
+       where r.piece_id = p_piece_id and l.dossier_id = p_dossier_id and l.statut = 'rapprochee' and l.reglement_groupe
+      union all
+      -- L'encaissement d'une facture qui n'est pas source, cité sur un mouvement classé par ses encaissements (le virement
+      -- mixte) : il paie l'exemplaire unique et validé de sa facture — cette pièce, si c'est elle.
+      select e.montant from public.encaissements_factures e
+        join public.lignes_bancaires l on l.id = e.ligne_bancaire_id
+        join public.factures_emises f on f.id = e.facture_id
+       where v_facture is not null and e.facture_id = v_facture and v_statut = 'validee' and v_type = 'vente'
+         and e.dossier_id = p_dossier_id and l.dossier_id = p_dossier_id and l.statut = 'rapprochee'
+         and l.encaissements_de_factures and e.retire_le is null and e.annule_id is null and not f.source_de_la_vente
+         and public.encaissement_justifie_son_mouvement(e.id)
+         and (select count(*) from public.pieces q
+               where q.facture_id = v_facture and q.dossier_id = p_dossier_id and q.statut = 'validee' and q.type_piece = 'vente') = 1
+      union all
+      -- Ses paiements par la caisse non retirés.
+      select o.montant from public.operations_caisse o
+       where o.dossier_id = p_dossier_id and o.piece_id = p_piece_id and o.genre = 'paiement' and o.retire_le is null
+    ) x;
+    v_reste := abs(v_ttc) - abs(v_net + p_montant);
+    if v_reste <> 0 and abs(v_reste) <= least(abs(v_ttc) * 0.02, 5) then
+      if v_origine = 'client' then
+        raise exception 'Ce paiement ne règle pas exactement cette pièce : à quelques centimes près, son écriture ne s''équilibrerait pas. Vérifie le montant de tes espèces, ou demande à ton cabinet.'
+          using errcode = '22023';
+      end if;
+      -- Le paiement qui règle exactement : celui qui porte la somme, dans son sens, au montant de la pièce.
+      v_exact := sign(p_montant) * abs(v_ttc) - v_net;
+      if sign(v_exact) is distinct from sign(p_montant) then
+        raise exception 'Cette pièce est déjà réglée par ses autres paiements : ce paiement la paierait de % € en trop, sous l''écart où une pièce se dit réglée, et son écriture ne s''équilibrerait pas.',
+          replace(to_char(abs(v_reste), 'FM999999999990.00'), '.', ',') using errcode = '22023';
+      end if;
+      raise exception 'Ce paiement laisserait % € % sur cette pièce : sous l''écart où une pièce se dit réglée, son écriture ne s''équilibrerait pas. Le montant exact qui la règle est % de % € — ou corrige d''abord le montant de la pièce.',
+        replace(to_char(abs(v_reste), 'FM999999999990.00'), '.', ','),
+        case when v_reste > 0 then 'à régler' else 'payés en trop' end,
+        case when p_montant > 0 then 'une entrée' else 'une sortie' end,
+        replace(to_char(abs(v_exact), 'FM999999999990.00'), '.', ',') using errcode = '22023';
+    end if;
+  end if;
+
   -- Le paiement, sous le réglage de CETTE opération (la garde de la table l'exige), retiré aussitôt. Aucune ligne du
   -- brouillon : la contrepartie s'écrit avec les écritures de la pièce (§ 5).
   perform set_config('jd.caisse', v_id::text, true);
@@ -619,7 +707,7 @@ end
 $$;
 
 comment on function public.regler_piece_par_la_caisse(uuid, uuid, date, numeric) is
-  'Le paiement d''une pièce par la caisse (ligne 26.6, étape C8 ; CAISSE-Q4) : une opération de genre paiement qui cite sa pièce, à sa date, d''un montant signé comme le relevé, sans écriture — la contrepartie s''écrit avec celles de la pièce. Ses refus, dans l''ordre : l''accès (42501), la trésorerie, la pièce du dossier (P0002), le type, l''exemplaire d''une facture source, la date, le montant, le sens, le plafond d''une pièce validée (22023 ; la frontière, 23514), la caisse jamais négative (23514).';
+  'Le paiement d''une pièce par la caisse (ligne 26.6, étape C8 ; CAISSE-Q4) : une opération de genre paiement qui cite sa pièce, à sa date, d''un montant signé comme le relevé, sans écriture — la contrepartie s''écrit avec celles de la pièce. Ses refus, dans l''ordre : l''accès (42501), la trésorerie, la pièce du dossier (P0002), le type, l''exemplaire d''une facture source, la date, le montant, le sens, le plafond d''une pièce validée, le reste au centime sur tous ses paiements (22023 ; la frontière, 23514), la caisse jamais négative (23514).';
 
 -- ══ 5. La garde de l'écriture d'une opération : la contrepartie d'un paiement ══════════
 -- Le corps de la migration `caisse`, au caractère près, plus la contrepartie d'un paiement par la caisse : une ligne qui
@@ -628,7 +716,8 @@ comment on function public.regler_piece_par_la_caisse(uuid, uuid, date, numeric)
 -- dossier : deux contreparties écrites ensemble ne dépassent pas leur paiement, et un paiement retiré pendant l'écriture
 -- n'en garde aucune. Elle se retire avec les écritures de sa pièce : « Régénérer » les reprend toutes, contreparties
 -- comprises ; le retrait du paiement l'emporte avec lui, sous son réglage (`retirer_operation_caisse`). Elle ne se
--- modifie pas, comme toute ligne d'une opération de caisse. Une ligne RÉINSÉRÉE par la restauration (le
+-- modifie pas, comme toute ligne d'une opération de caisse — et sa pièce supprimée sous elle se refuse sous ses mots
+-- (relecture du 01/11/2026). Une ligne RÉINSÉRÉE par la restauration (le
 -- super-administrateur, un dossier sans exercice validé, son instant de création d'avant la transaction) suit la porte
 -- d'hier : la contrepartie qu'elle remet a déjà été jugée.
 create or replace function public.garder_ecriture_de_caisse() returns trigger
@@ -657,6 +746,15 @@ begin
     raise exception 'L''écriture d''une opération de caisse se retire avec cette opération.' using errcode = '42501';
   end if;
   if tg_op = 'UPDATE' and old.operation_caisse_id is not null then
+    -- LA PIÈCE SUPPRIMÉE SOUS LA CONTREPARTIE DE SON PAIEMENT (relecture du 01/11/2026) : la clé du brouillon (`on delete set
+    -- null`) met la pièce de cette ligne à nul AVANT que la clé de la caisse (`on delete restrict`) ne refuse la suppression ;
+    -- la ligne ne change pas pour autant (ni elle, ni rien d'autre que sa pièce), et le refus dit pourquoi, et quoi faire.
+    -- Le même refus qu'hier, sous d'autres mots et sous le code de la clé qui retient la pièce.
+    if old.piece_id is not null and new.piece_id is null and to_jsonb(new) - 'piece_id' = to_jsonb(old) - 'piece_id'
+       and exists (select 1 from public.operations_caisse o where o.id = old.operation_caisse_id and o.genre = 'paiement') then
+      raise exception 'Cette pièce est payée par la caisse : retire d''abord son paiement. Elle ne se supprime pas pour autant — l''opération de caisse, même retirée, la cite pour la piste d''audit : si elle n''est pas une pièce de ce dossier, change ensuite son type en « autre ».'
+        using errcode = '23503';
+    end if;
     raise exception 'L''écriture d''une opération de caisse ne se modifie pas : retire l''opération, puis saisis-la de nouveau.'
       using errcode = '42501';
   end if;
@@ -710,8 +808,11 @@ $$;
 -- Le dossier d'abord, pour tout paiement, retiré ou non : l'opération reste dans le sien, et cite sa pièce pour la piste
 -- d'audit. Puis, tant qu'un paiement n'est pas retiré, ce que `regler_piece_par_la_caisse` a jugé : une pièce d'achat ou
 -- de vente (ni une note de frais, payée de la poche de l'exploitant, ni une pièce « autre »), qui n'est pas l'exemplaire
--- d'une facture source. Le sens d'un paiement dont la pièce passe de l'achat à la vente, ou son plafond quand son montant
--- change, ne se refusent pas ici : le pointage les dira (lot C9). Sa suppression, la clé la refuse (`on delete restrict`).
+-- d'une facture source. Le sens d'un paiement dont la pièce passe de l'achat à la vente, ou son montant qui change, ne se
+-- refusent pas ici — une correction de la pièce est légitime : la Vue d'ensemble et la validation les disent, sous
+-- `caisse-paiements-a-retirer` (le sens des espèces qui contredit le type de la pièce, et le reste au centime ; relecture
+-- du 01/11/2026), le trop-payé sous `pieces-payees-en-trop`, et le remède est de retirer le paiement pour le saisir de
+-- nouveau. Sa suppression, la clé la refuse (`on delete restrict`).
 -- Aux droits du propriétaire : elle lit les paiements de la pièce quel que soit l'auteur du changement.
 create function public.garder_piece_payee_par_la_caisse() returns trigger
 language plpgsql

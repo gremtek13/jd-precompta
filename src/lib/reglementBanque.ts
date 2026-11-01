@@ -26,9 +26,13 @@ import type { LigneBancaire, Piece } from './types'
 // n'a pas de conversion à régler, et une pièce dont le montant d'origine n'a pas été lu n'a rien à
 // partir de quoi déduire un taux.
 //
-// `paiements` : TOUT ce que la banque a payé pour CETTE pièce, le paiement qu'on vient de poser compris — chaque
-// mouvement rapproché d'elle, la part qui la règle dans un virement groupé (lib/reglementGroupe.ts). Seuls leurs
-// montants comptent, et c'est leur TOTAL qui la règle. Réglée sur un paiement seul, une pièce payée en plusieurs fois
+// `paiements` : TOUT ce qui a payé CETTE pièce, le paiement qu'on vient de poser compris — chaque mouvement rapproché
+// d'elle, la part qui la règle dans un virement groupé (lib/reglementGroupe.ts), et chacun de ses paiements par la caisse
+// (étape C9a : BanqueTab `reglerSiLibre` les passe parmi les autres ; la relecture du 01/11/2026 l'épingle, BanqueTab.test.tsx,
+// « la caisse comprise »). Seuls leurs montants comptent, et c'est leur TOTAL qui la règle : une pièce payée en partie en
+// espèces s'aligne sur ce que la banque ET la caisse ont payé, jamais sur le relevé seul. La caisse, elle, n'aligne jamais
+// la pièce : un paiement en espèces qui laisserait un reste dans cette zone se refuse (`resteAuCentime`,
+// lib/paiementParLaCaisse.ts). Réglée sur un paiement seul, une pièce payée en plusieurs fois
 // ne valait qu'une fraction de ce qu'elle coûte — une pièce en devise passait au montant de son DERNIER paiement — ;
 // et en euros, une pièce de 40 € payée 20 + 19,99 gardait un centime que rien n'écrit, qui déséquilibrait son
 // écriture et faisait refuser la validation de son exercice, sans qu'aucun geste puisse le réparer.

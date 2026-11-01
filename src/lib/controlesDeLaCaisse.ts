@@ -4,10 +4,12 @@ import {
   type EncaissementDeLaCaisse, type EtatDeLaCaisse, type FactureDeLaCaisse, type OperationAEcrire,
 } from './caisse'
 import type { ModeleComptable } from './engagement'
+import { ecartAvecBanque, paiementNet } from './alignementBanque'
 import { formatMoney } from './format'
-import { PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisseSelon } from './paiementParLaCaisse'
+import { especesEntrentPour, PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisseSelon } from './paiementParLaCaisse'
+import type { PaiementsDesPieces, PartPayeeParLaCaisse } from './rattachement'
 import type { CaisseLue } from './recettesDeCaisse'
-import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, OperationCaisse, VentilationBancaire } from './types'
+import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, OperationCaisse, Piece, VentilationBancaire } from './types'
 import { estFigee } from './validationExercice'
 import { partsDesVentilations } from './ventilationBanque'
 
@@ -24,7 +26,9 @@ import { partsDesVentilations } from './ventilationBanque'
 //     au statut de TVA d'aujourd'hui), `caisse-negative` (défensif : la caisse lue négative un jour, que la base refuse
 //     d'écrire mais qu'une restauration d'un état fautif laisserait), `recettes-de-caisse-a-revoir` (CAISSE-Q2, (A) : une
 //     recette dont le jour a changé depuis sa saisie), `versements-especes-en-recette` (§ 4 a : un symptôme, jamais une
-//     preuve).
+//     preuve). Depuis la relecture du 01/11/2026 : la pièce à valider qu'un paiement par la caisse cite, que la validation
+//     compte sous `pieces-a-valider` et que la Vue d'ensemble dit à part (`paiementsDePiecesAValider`), et le paiement dont
+//     la pièce a changé de type ou de montant depuis, à retirer et saisir de nouveau (`caisse-paiements-a-retirer`).
 //   - Les lots du relevé (pages/dossier/BanqueTab.tsx) : un crédit dont le libellé dit un versement d'espèces n'entre dans
 //     aucun lot d'un dossier qui tient une caisse (`versementsDEspecesHorsDesLots`).
 //
@@ -315,6 +319,120 @@ function paiementsAReprendre(
       && lignes.every((e) => e.compte === d.modele.plan.caisse && e.date === p.date && e.piece_id === p.piece_id)
     return suit ? [] : [{ operationId: p.operation_caisse_id, operation, date: p.date, raison: 'contrepartie_perimee' }]
   })
+}
+
+// ── La pièce à valider qu'un paiement cite (`pieces-a-valider`) ───────────────────────────────────────────────────────
+
+/** Le paiement vivant d'une pièce encore À VALIDER : sa contrepartie au compte de la caisse attend les écritures de la pièce. */
+export interface PaiementDUnePieceAValider<P> {
+  piece: P
+  paiement: PartPayeeParLaCaisse
+}
+
+/**
+ * LES PIÈCES À VALIDER QU'UN PAIEMENT PAR LA CAISSE CITE (conception reprise, § 8, « les préalables de la validation » :
+ * « `pieces-a-valider` attrape la pièce à valider qu'un paiement cite » ; le défaut 1 de la relecture du 01/11/2026). Une pièce à
+ * valider n'a pas d'écriture : la sortie d'espèces de son paiement n'est nulle part au brouillon, et la caisse que la validation
+ * reporterait au 1er janvier ne serait pas celle de ses opérations. `pieces-a-valider` ne comptait que les pièces DATÉES de
+ * l'exercice : une pièce de décembre payée en janvier passait la validation de janvier. Chaque paiement vivant
+ * (`paiementsParLaCaisseSelon` : ni retiré, ni remplacé ; AUCUN le drapeau baissé) d'une pièce de `piecesAValider`, hors des
+ * exercices figés, dans l'ordre des paiements (leur date, puis l'opération). La base le refuse aussi, à la validation (la
+ * migration `validation_des_paiements_par_la_caisse`) : ce module le dit avant le clic.
+ */
+export function paiementsDePiecesAValider<P extends Pick<Piece, 'id'>>(
+  operations: readonly OperationCaisse[], piecesAValider: readonly P[], frontiere: string | null,
+): PaiementDUnePieceAValider<P>[] {
+  const parId = new Map(piecesAValider.map((p) => [p.id, p]))
+  return paiementsParLaCaisseSelon(PAIEMENT_PAR_LA_CAISSE_EXPORTE, operations).flatMap((paiement) => {
+    const piece = parId.get(paiement.piece_id)
+    return piece === undefined || estFigee(paiement.date, frontiere) ? [] : [{ piece, paiement }]
+  })
+}
+
+/** Une pièce nommée sans nom : sa date, ou « sans date » — comme la caisse nomme ce qu'elle paie. */
+function pieceDatee(piece: Pick<Piece, 'date_piece'>): string {
+  return piece.date_piece ? `une pièce du ${jourDit(piece.date_piece)}` : 'une pièce sans date'
+}
+
+/** Le détail des paiements de pièces à valider : chacun par son jour, son montant et la date de sa pièce. */
+export function detailDesPaiementsDePiecesAValider(liste: readonly PaiementDUnePieceAValider<Pick<Piece, 'date_piece'>>[]): string {
+  return `Payée${liste.length > 1 ? 's' : ''} par la caisse : ${enumerer(liste.map((x) =>
+    `${pieceDatee(x.piece)}, payée en espèces le ${jourDit(x.paiement.date)} (${formatMoney(Math.abs(x.paiement.montant))})`))}. `
+    + 'Validée, sa sortie d’espèces s’écrit avec ses écritures, dans l’onglet Écritures ; une pièce payée par la caisse ne se '
+    + 'retire qu’après son paiement.'
+}
+
+// ── caisse-paiements-a-retirer ────────────────────────────────────────────────────────────────────────────────────────
+
+export type RaisonDeRetirer =
+  /** Ses espèces ne vont plus dans le sens de sa pièce : une sortie pour une pièce devenue une vente, ou l'inverse — la garde
+   *  de `pieces` laisse une pièce passer de l'achat à la vente (une correction légitime), et la contrepartie qui suit le
+   *  paiement s'écrirait du même côté que la pièce. */
+  | 'sens'
+  /** Ses paiements laissent la pièce à quelques centimes de son montant, sous l'écart où une pièce se dit réglée : un montant
+   *  de pièce changé après le paiement. Rien ne l'aligne — la caisse n'aligne jamais (`resteAuCentime`) —, et son écriture
+   *  resterait déséquilibrée de ces centimes. */
+  | 'au_centime'
+
+export interface PaiementARetirer {
+  paiement: PartPayeeParLaCaisse
+  raison: RaisonDeRetirer
+  /** `au_centime` : ce que les paiements laissent, en centimes — positif à régler, négatif payé en trop ; nul pour `sens`. */
+  resteCentimes: number | null
+}
+
+/**
+ * LES PAIEMENTS PAR LA CAISSE À RETIRER, puis à saisir de nouveau (les défauts 2 et 4 de la relecture du 01/11/2026 ; la
+ * migration `paiement_par_la_caisse`, § 6, renvoie ici) : ce que `regler_piece_par_la_caisse` a jugé au paiement et que la
+ * pièce a changé depuis — son TYPE (`sens`), ou son MONTANT (`au_centime`). La base ne refuse ni l'un ni l'autre sur la pièce,
+ * une correction étant légitime ; l'écriture de la pièce, elle, ne s'équilibrerait plus, et la validation la refuserait sans
+ * dire pourquoi (« Une écriture n'est pas équilibrée au centime »). Chaque paiement vivant hors des exercices figés dont le sens
+ * contredit sa pièce (`especesEntrentPour`, la règle de la fonction) ; puis, pour chaque pièce dont aucun paiement n'est dans ce
+ * cas, son dernier paiement par la caisse quand le total de TOUS ses paiements (`paiements` : le relevé, les parts, la caisse —
+ * lus en entier, ou l'appelant se tait) la laisse dans l'écart où la banque aligne sans l'atteindre au centime (`ecartAvecBanque`,
+ * la règle même du refus au paiement). Une pièce en devise, ou sans montant, ne se juge pas au centime. Le remède : retirer le
+ * paiement, puis le saisir de nouveau au montant exact — ou corriger la pièce.
+ */
+export function paiementsParLaCaisseARetirer<P extends Pick<Piece, 'id' | 'type_piece' | 'montant_ttc' | 'devise'>>(
+  operations: readonly OperationCaisse[], pieces: readonly P[], paiements: PaiementsDesPieces, frontiere: string | null,
+): PaiementARetirer[] {
+  const parId = new Map(pieces.map((p) => [p.id, p]))
+  const vivants = paiementsParLaCaisseSelon(PAIEMENT_PAR_LA_CAISSE_EXPORTE, operations).filter((p) => !estFigee(p.date, frontiere))
+  const aRetirer: PaiementARetirer[] = []
+  const aContresens = new Set<string>()
+  for (const paiement of vivants) {
+    const piece = parId.get(paiement.piece_id)
+    if (piece === undefined || (paiement.montant > 0) === especesEntrentPour(piece)) continue
+    aRetirer.push({ paiement, raison: 'sens', resteCentimes: null })
+    aContresens.add(piece.id)
+  }
+  // Le dernier paiement par la caisse de chaque pièce (les vivants sont dans l'ordre des paiements).
+  const derniers = new Map<string, PartPayeeParLaCaisse>()
+  for (const paiement of vivants) derniers.set(paiement.piece_id, paiement)
+  for (const [pieceId, paiement] of derniers) {
+    const piece = parId.get(pieceId)
+    if (piece === undefined || aContresens.has(pieceId) || piece.montant_ttc == null) continue
+    const net = paiementNet(paiements.get(pieceId) ?? [])
+    const ecart = ecartAvecBanque(piece, { montant: net.centimes / 100 })
+    if (ecart === null || !ecart.alignable) continue
+    aRetirer.push({ paiement, raison: 'au_centime', resteCentimes: Math.abs(Math.round(piece.montant_ttc * 100)) - net.centimes })
+  }
+  return aRetirer.sort((a, b) => a.paiement.date.localeCompare(b.paiement.date)
+    || a.paiement.operation_caisse_id.localeCompare(b.paiement.operation_caisse_id))
+}
+
+/** Le détail des paiements à retirer : chacun par son jour et son montant, et ce que sa pièce a changé. */
+export function detailDesPaiementsARetirer(liste: readonly PaiementARetirer[]): string {
+  return `${enumerer(liste.map((x) => {
+    const nom = `le paiement en espèces du ${jourDit(x.paiement.date)} (${formatMoney(Math.abs(x.paiement.montant))})`
+    if (x.raison === 'sens') {
+      return `${nom}, ${x.paiement.montant < 0 ? 'une sortie d’espèces' : 'une entrée d’espèces'} pour une pièce devenue `
+        + `${x.paiement.montant < 0 ? 'une vente ou un avoir d’achat' : 'un achat ou un avoir de vente'}`
+    }
+    const reste = x.resteCentimes ?? 0
+    return `${nom}, qui laisse sa pièce à ${formatMoney(Math.abs(reste) / 100)} ${reste > 0 ? 'de son montant' : 'au-delà de son montant'}`
+  }))}. Dans l’onglet Caisse, retirer le paiement, puis le saisir de nouveau depuis la fiche de la pièce, au montant exact — ou `
+    + 'corriger la pièce.'
 }
 
 // ── caisse-negative ───────────────────────────────────────────────────────────────────────────────────────────────────

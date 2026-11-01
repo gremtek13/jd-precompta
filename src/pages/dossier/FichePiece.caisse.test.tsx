@@ -22,12 +22,28 @@ vi.mock('../../lib/paiementParLaCaisse', async (original) => {
   return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeau.leve } }
 })
 
-const faux = vi.hoisted(() => ({ updates: [] as unknown[] }))
+// Le refus de la base à la suppression d'une pièce (relecture du 01/11/2026) : la garde du brouillon, ou la clé de l'opération.
+const faux = vi.hoisted(() => ({
+  updates: [] as unknown[], suppressions: 0,
+  refusSuppression: null as null | { code: string; message: string; details: string | null },
+}))
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'pieces') {
-        return { update: (ligne: unknown) => { faux.updates.push(ligne); return { eq: () => Promise.resolve({ error: null }) } } }
+        return {
+          update: (ligne: unknown) => { faux.updates.push(ligne); return { eq: () => Promise.resolve({ error: null }) } },
+          delete: () => ({
+            eq: () => ({
+              select: () => ({
+                maybeSingle: () => {
+                  faux.suppressions++
+                  return Promise.resolve(faux.refusSuppression === null ? { data: { id: 'p1' }, error: null } : { data: null, error: faux.refusSuppression })
+                },
+              }),
+            }),
+          }),
+        }
       }
       if (table === 'notes_internes') {
         return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }), upsert: () => Promise.resolve({ error: null }) }
@@ -90,6 +106,8 @@ function monter(c: CaisseDeLaPiece | null, p: Piece = piece()) {
 beforeEach(() => {
   drapeau.leve = true
   faux.updates = []
+  faux.suppressions = 0
+  faux.refusSuppression = null
 })
 afterEach(() => { vi.restoreAllMocks() })
 
@@ -136,7 +154,7 @@ describe('la fiche d’une pièce devant la caisse', () => {
     const { unmount } = monter(caisse([operation({ id: 'ap' }), PAYE]))
     await act(async () => {})
     expect(screen.queryByRole('button', { name: 'Supprimer' })).toBeNull()
-    expect(screen.getByText(/^Cette pièce est payée par la caisse : elle ne se supprime pas/)).toBeTruthy()
+    expect(screen.getByText(/^Cette pièce est payée par la caisse : retire d’abord son paiement\. Elle ne se supprime pas pour autant/)).toBeTruthy()
     unmount()
     monter(caisse([operation({ id: 'ap' }), { ...PAYE, retire_le: '2026-03-06T08:00:00Z' }]))
     await act(async () => {})
@@ -153,5 +171,56 @@ describe('la fiche d’une pièce devant la caisse', () => {
     await act(async () => {})
     expect(screen.getByRole('button', { name: 'Supprimer' })).toBeTruthy()
     expect(screen.getByText(/n’a pas pu être lue en entier \(coupée\)/)).toBeTruthy()
+  })
+
+  // LES DÉFAUTS 2 ET 5 DE LA RELECTURE DU 01/11/2026, à l'écran : la pièce que la banque paie déjà en partie se dit avant le
+  // clic — ce que le relevé a payé, ce qui reste —, et la confirmation le reprend ; un montant qui la laisserait à un centime de
+  // son total se refuse, le montant exact dit, et le bouton reste gris.
+  it('la pièce payée en partie par la banque : l’avertissement avant le clic et dans la confirmation ; le centime qui resterait, refusé', async () => {
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const paiements = new Map([['p1', [{ id: 'l1', date: '2026-03-02', montant: -20, origine: 'rapprochement' as const }]]])
+    monter({ ...caisse([operation({ id: 'ap' })]), paiements })
+    await act(async () => {})
+    fireEvent.change(screen.getByLabelText('Jour du paiement en espèces'), { target: { value: '2026-03-05' } })
+    // Le montant proposé : le reste à régler, 100 €, tous paiements compris.
+    const avertissement = screen.getByRole('status')
+    expect(avertissement.textContent?.replace(/[\u00a0\u202f]/g, ' '))
+      .toBe('Cette pièce est déjà payée de 20,00 € par le relevé : il en reste 100,00 € à régler, tous paiements compris.')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Régler par la caisse' })) })
+    expect(String(confirmation.mock.calls[0][0]).replace(/[\u00a0\u202f]/g, ' '))
+      .toContain('? Cette pièce est déjà payée de 20,00 € par le relevé : il en reste 100,00 € à régler, tous paiements compris. La caisse du 05/03/2026')
+    fireEvent.change(screen.getByLabelText('Montant (signé comme le relevé)'), { target: { value: '-99,99' } })
+    expect(screen.getByRole('alert').textContent?.replace(/[\u00a0\u202f]/g, ' '))
+      .toBe("Ce paiement laisserait 0,01 € à régler sur cette pièce : sous l'écart où une pièce se dit réglée, son écriture ne s'équilibrerait pas. Le montant exact qui la règle est une sortie de 100,00 € — ou corrige d'abord le montant de la pièce.")
+    expect((screen.getByRole('button', { name: 'Régler par la caisse' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // Les paiements de la pièce pas lus en entier : rien ne se règle d'ici, et la fiche le dit.
+  it('les paiements de la pièce pas lus en entier : la fiche ne règle rien, et dit pourquoi', async () => {
+    monter({ ...caisse([operation({ id: 'ap' })]), paiements: null })
+    await act(async () => {})
+    expect(screen.getByText(/les paiements de la pièce par le relevé ne sont pas lus en entier/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Régler par la caisse' })).toBeNull()
+  })
+
+  // LE DÉFAUT 3 DE LA RELECTURE DU 01/11/2026 : sur une caisse lue en partie, « Supprimer » part, et la base refuse — la garde du
+  // brouillon quand la contrepartie du paiement y est (23503, ses mots), ou la clé de l'opération (23503, la raison de Postgres).
+  // La fiche dit les mots de l'écran, qui nomment le remède ; un autre refus garde ceux d'hier.
+  it('une caisse lue en partie : le refus de la base à la suppression se dit sous les mots de la caisse, et nomme le remède', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const refus = [
+      { erreur: { code: '23503', message: MOTS_DU_PAIEMENT.piece_payee_supprimee.gabarit, details: null }, attendu: /^Cette pièce est payée par la caisse : retire d’abord son paiement\./ },
+      { erreur: { code: '23503', message: 'update or delete on table "pieces" violates foreign key constraint "operations_caisse_piece_id_fkey" on table "operations_caisse"', details: 'Key (id)=(p1) is still referenced from table "operations_caisse".' }, attendu: /^Un paiement de la caisse cite cette pièce : elle ne se supprime pas/ },
+      { erreur: { code: '23503', message: 'update or delete on table "pieces" violates foreign key constraint "autre_fkey" on table "autre"', details: null }, attendu: /^Impossible de supprimer : cette pièce est encore référencée ailleurs dans la base/ },
+    ]
+    for (const { erreur, attendu } of refus) {
+      faux.refusSuppression = erreur
+      const { unmount } = monter({ ...caisse([]), lecture: { dossierId: D, etat: 'incomplete', motif: 'coupée' } })
+      await act(async () => {})
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Supprimer' })) })
+      expect(await screen.findByText(attendu)).toBeTruthy()
+      unmount()
+    }
+    expect(faux.suppressions).toBe(3)
   })
 })

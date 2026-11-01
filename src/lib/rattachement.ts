@@ -242,6 +242,10 @@ export function partsDesPaiements(
   const montantPiece = Math.abs(piece.montant_ttc ?? 0)
   // Au centime, comme l'écart que mesure `ecartAvecBanque` : sans cet arrondi, 100,10 − 98,10 vaut
   // 2,0000000000000004 et un écart pile au seuil passerait pour un paiement partiel.
+  // SOUS LE SEUIL, LA PIÈCE EST RÉGLÉE parce que la banque l'aligne sur le total de ses paiements, la caisse comprise
+  // (lib/reglementBanque.ts) : son écriture s'équilibre alors au centime. Un paiement en espèces ne laisse jamais de reste
+  // dans cette zone — il s'y refuse, avant le clic et en base (`resteAuCentime`, la relecture du 01/11/2026) — ; un montant
+  // de pièce changé après lui l'y ramènerait, et la Vue d'ensemble le dit (`caisse-paiements-a-retirer`).
   const reste = Math.round((montantPiece - paye) * 100) / 100
   if (reste <= seuilAlignement(montantPiece)) {
     return { parts: paiements.map((m) => ({ date: m.date, part: regle(m) / paye })), reste: 0 }

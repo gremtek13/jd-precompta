@@ -2173,20 +2173,23 @@ describe('PiecesTab — une pièce payée en espèces', () => {
       expect(section.textContent).toContain('Le paiement en espèces du 12/03/2026')
       expect(within(section).getByRole('button', { name: 'Régler par la caisse' })).toBeTruthy()
       // La pièce payée ne se supprime plus : la fiche le dit.
-      expect(screen.getByText(/^Cette pièce est payée par la caisse : elle ne se supprime pas/)).toBeTruthy()
+      expect(screen.getByText(/^Cette pièce est payée par la caisse : retire d’abord son paiement\. Elle ne se supprime pas pour autant/)).toBeTruthy()
     } finally {
       caisseFaux.leve = false
     }
   })
 })
 
-// RELECTURE DE C9B (ligne 26.6) — LA SUPPRESSION D'UNE SÉLECTION ne connaît pas la pièce payée par la caisse. La fiche d'une
+// RELECTURE DE C9B (ligne 26.6) — LA SUPPRESSION D'UNE SÉLECTION ne connaissait pas la pièce payée par la caisse. La fiche d'une
 // pièce qu'un paiement cite n'offre plus « Supprimer » et dit pourquoi (`suppressionRetenueParLaCaisse`) ; « Supprimer la
-// sélection » écarte, avant la confirmation, les pièces figées, citées par la révision et déclarées à l'e-reporting — pas celle
-// qu'un paiement de la caisse cite. Elle part donc à la base, qui la refuse (la clé `on delete restrict`, ou, quand sa
+// sélection » écartait, avant la confirmation, les pièces figées, citées par la révision et déclarées à l'e-reporting — pas celle
+// qu'un paiement de la caisse cite. Elle partait donc à la base, qui la refusait (la clé `on delete restrict`, ou, quand sa
 // contrepartie est au brouillon, la garde de l'écriture : « L'écriture d'une opération de caisse ne se modifie pas : retire
 // l'opération, puis saisis-la de nouveau. », relevé sur une réplique — la mise à nul de `piece_id` par la clé du brouillon passe
-// avant la clé de la caisse), et le bilan du lot dit cette phrase, qui ne nomme ni la caisse ni le remède.
+// avant la clé de la caisse), et le bilan du lot disait cette phrase, qui ne nommait ni la caisse ni le remède. CORRIGÉ le
+// 01/11/2026 (le défaut 3) : la caisse lue en entier, la sélection l'écarte et la nomme, sous la phrase de sa fiche ; seule, elle
+// ne part pas ; et la garde de la base dit, sous 23503, « payée par la caisse : retire d'abord son paiement » (caisseSuppression.sql,
+// 11h à 11j).
 describe('relecture C9b — supprimer une sélection qui porte une pièce payée par la caisse', () => {
   const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
   const paiement = {
@@ -2227,11 +2230,11 @@ describe('relecture C9b — supprimer une sélection qui porte une pièce payée
     }
   })
 
-  it.fails('PROUVE : la sélection écarte la pièce payée par la caisse avant la confirmation, comme une pièce figée ou citée', async () => {
+  it('la sélection écarte la pièce payée par la caisse avant la confirmation, comme une pièce figée ou citée, et la nomme', async () => {
     caisseFaux.leve = true
     try {
       preparer()
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
       montrer()
       expect(await screen.findByText('Payée en espèces')).toBeTruthy()
       const cases = await screen.findAllByRole('checkbox')
@@ -2239,6 +2242,33 @@ describe('relecture C9b — supprimer une sélection qui porte une pièce payée
       await act(async () => { fireEvent.click(cases[cases.length - 1]) })
       await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
       expect(faux.suppressions).toEqual(['p-libre'])
+      const texte = String(confirmation.mock.calls[0][0])
+      expect(texte).toMatch(/^Supprimer définitivement 1 pièce\(s\) \?/)
+      expect(texte).toContain('Une pièce de la sélection reste, citée par un paiement de la caisse :\n• paye-en-especes.pdf — Cette pièce est payée par la caisse : retire d’abord son paiement.')
+    } finally {
+      caisseFaux.leve = false
+    }
+  })
+
+  it('seule, la pièce payée par la caisse ne part pas : l’alerte dit la phrase de sa fiche, et rien n’est demandé', async () => {
+    caisseFaux.leve = true
+    try {
+      preparer()
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+      montrer()
+      expect(await screen.findByText('Payée en espèces')).toBeTruthy()
+      const cases = await screen.findAllByRole('checkbox')
+      // La pièce payée seule : la première des deux pièces de la liste.
+      const ligneEspeces = cases.find((c) => c.closest('tr')?.textContent?.includes('ESPECES'))
+      expect(ligneEspeces).toBeTruthy()
+      await act(async () => { fireEvent.click(ligneEspeces!) })
+      await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+      expect(faux.suppressions).toEqual([])
+      expect(confirmation).not.toHaveBeenCalled()
+      // Seule, la phrase de sa fiche, et elle seule — pas la liste des pièces d'une sélection.
+      expect(alerte).toHaveBeenCalledTimes(1)
+      expect(String(alerte.mock.calls[0][0])).toMatch(/^Cette pièce est payée par la caisse : retire d’abord son paiement\. Elle ne se supprime pas pour autant/)
     } finally {
       caisseFaux.leve = false
     }

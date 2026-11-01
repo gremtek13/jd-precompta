@@ -4,7 +4,7 @@ import { refusDeLaSaisie, type DossierDeLaCaisse, type EtatDeLaCaisse, type Oper
 import {
   contrepartieDuPaiement, jugerLeReglement, jugerLeReglementSelon, MOTS, MOTS_DU_PAIEMENT, ORDRE_DU_PAIEMENT,
   PAIEMENT_PAR_LA_CAISSE_EXPORTE, refusDeLaContrepartie, refusDuChangementDeLaPiece, refusDuMouvementAvantLOuverture,
-  type PieceDuPaiement, type PieceGardee,
+  resteAuCentime, type PieceDuPaiement, type PieceGardee,
 } from './paiementParLaCaisse'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
 import { commeLike, etapesDeLEssai } from '../test/essaiCaisse'
@@ -68,8 +68,11 @@ describe('les mots et l’ordre des refus neufs, relus dans le texte de la migra
     const debut = tous.indexOf(neufs[0])
     expect(debut).toBeGreaterThan(0)
     expect(tous.slice(debut, debut + neufs.length)).toEqual(neufs)
-    // Avant elle, les deux refus d'hier d'une ligne qu'on supprime ou modifie ; après, la porte d'hier et l'opération suivie.
-    expect(tous.slice(0, debut).map((x) => x.slice(0, 6))).toEqual(['42501 ', '42501 '])
+    // Avant elle, les deux refus d'hier d'une ligne qu'on supprime ou modifie — et, entre eux depuis la relecture du
+    // 01/11/2026, la pièce supprimée sous la contrepartie de son paiement, sous ses mots et le code de la clé qui la retient ;
+    // après, la porte d'hier et l'opération suivie.
+    expect(tous.slice(0, debut).map((x) => x.slice(0, 6))).toEqual(['42501 ', '23503 ', '42501 '])
+    expect(tous[1]).toBe(attendus(['piece_payee_supprimee'])[0])
     expect(tous.slice(debut + neufs.length)).toEqual([
       '42501 L\'écriture d\'une opération de caisse ne s\'écrit qu\'avec cette opération, par la fonction de la caisse.',
       neufs[0],
@@ -131,7 +134,7 @@ function dossier(o: Partial<DossierDeLaCaisse> = {}): DossierDeLaCaisse {
 }
 
 function piece(o: Partial<PieceDuPaiement>): PieceDuPaiement {
-  return { id: 'qa', type_piece: 'achat', statut: 'a_valider', montant_ttc: 100, exemplaire: null, ...o }
+  return { id: 'qa', type_piece: 'achat', statut: 'a_valider', montant_ttc: 100, devise: 'EUR', exemplaire: null, paiementsDuReleve: [], ...o }
 }
 
 const ACHAT = piece({})
@@ -206,6 +209,75 @@ describe('jugerLeReglementSelon — le paiement d’une pièce par la caisse', (
     expect(juger({ piece_id: 'qa', date: '2026-03-05', montant: 10.005 })?.message).toBe('Le montant d\'une opération de caisse est au centime.')
     expect(juger({ piece_id: 'qa', date: '2026-03-05', montant: 25 }, dossier(), [piece({ statut: 'validee', montant_ttc: 10 })])?.message)
       .toBe(MOTS_DU_PAIEMENT.sens.gabarit)
+  })
+})
+
+// LE RESTE AU CENTIME (relecture du 01/11/2026, le défaut 2 ; C9-Q1, sur sa recommandation) : la caisse n'aligne pas la pièce,
+// elle REFUSE le paiement qui la laisserait dans l'écart où la banque l'alignerait sans l'atteindre au centime, et dit le
+// montant exact. Les mêmes règles que le bloc 9 bis de `regler_piece_par_la_caisse` (caisse.sql, 232) : le total de TOUS les
+// paiements de la pièce, en valeur absolue, une pièce en euros et de montant lu.
+describe('le reste au centime — la caisse refuse là où la banque alignerait', () => {
+  const quarante = (o: Partial<PieceDuPaiement> = {}) => piece({ statut: 'validee', montant_ttc: 40, ...o })
+  const payer = (montant: number, p: PieceDuPaiement, d = dossier()) => juger({ piece_id: 'qa', date: '2026-03-05', montant }, d, [p])
+
+  it('39,99 € pour 40,00 € : refusé sous le montant exact ; 40,00 € passe ; au-delà de l’écart (2 %, 0,80 €), un paiement en partie passe', () => {
+    expect(payer(-39.99, quarante())).toEqual({ code: '22023', message: "Ce paiement laisserait 0,01 € à régler sur cette pièce : sous l'écart où une pièce se dit réglée, son écriture ne s'équilibrerait pas. Le montant exact qui la règle est une sortie de 40,00 € — ou corrige d'abord le montant de la pièce." })
+    expect(payer(-40, quarante())).toBeNull()
+    expect(payer(-39.2, quarante())?.code).toBe('22023')
+    expect(payer(-39.19, quarante())).toBeNull()
+  })
+
+  it('au-delà d’une pièce à valider (qui n’a pas de plafond) : « payés en trop », et le montant exact ; validée, le plafond d’abord', () => {
+    expect(payer(-40.01, quarante({ statut: 'a_valider' }))?.message)
+      .toBe("Ce paiement laisserait 0,01 € payés en trop sur cette pièce : sous l'écart où une pièce se dit réglée, son écriture ne s'équilibrerait pas. Le montant exact qui la règle est une sortie de 40,00 € — ou corrige d'abord le montant de la pièce.")
+    expect(payer(-40.01, quarante())?.message).toBe(MOTS_DU_PAIEMENT.au_dela.gabarit)
+  })
+
+  it('tous ses paiements comptent : le relevé et la caisse ; déjà réglée, le centime de plus se dit tel', () => {
+    expect(payer(-19.99, quarante({ paiementsDuReleve: [{ montant: -20 }] }))?.message).toMatch(/0,01 € à régler .* une sortie de 20,00 €/)
+    const parLaCaisse = dossier({ caisse: caisse({ operations: [operation({ id: 'apport' }), operation({ id: 'p1', genre: 'paiement', date: '2026-03-02', montant: -20, piece_id: 'qa' })] }) })
+    expect(payer(-19.99, quarante(), parLaCaisse)?.message).toMatch(/0,01 € à régler .* une sortie de 20,00 €/)
+    expect(payer(-20, quarante(), parLaCaisse)).toBeNull()
+    // Un paiement retiré ne compte plus.
+    const retire = dossier({ caisse: caisse({ operations: [operation({ id: 'apport' }), operation({ id: 'p1', genre: 'paiement', date: '2026-03-02', montant: -20, piece_id: 'qa', retire_le: '2026-03-03T08:00:00Z' })] }) })
+    expect(payer(-39.99, quarante(), retire)?.message).toMatch(/une sortie de 40,00 €/)
+    expect(payer(-0.01, quarante({ statut: 'a_valider', paiementsDuReleve: [{ montant: -40 }] }))?.message)
+      .toBe("Cette pièce est déjà réglée par ses autres paiements : ce paiement la paierait de 0,01 € en trop, sous l'écart où une pièce se dit réglée, et son écriture ne s'équilibrerait pas.")
+  })
+
+  it('le client : les mots qui ne disent pas le montant de la pièce', () => {
+    expect(payer(-39.99, quarante(), dossier({ quiEcrit: 'client', utilisateur: 'u' }))).toEqual({ code: '22023', message: MOTS_DU_PAIEMENT.au_centime_client.gabarit })
+  })
+
+  it('un avoir : une entrée, et le montant exact se dit tel ; une pièce en devise, ou sans montant, ne se juge pas au centime', () => {
+    expect(payer(39.99, quarante({ montant_ttc: -40 }))?.message).toMatch(/0,01 € à régler .* une entrée de 40,00 €/)
+    expect(payer(-39.99, quarante({ devise: 'USD' }))).toBeNull()
+    expect(payer(-39.99, piece({ montant_ttc: null }))).toBeNull()
+  })
+
+  // LA RÈGLE EXACTE, EN CENTIMES — celle de la base, en `numeric` : un reste R non nul, |R| ≤ 2 % du montant et ≤ 5 € —, contre le
+  // module (en flottants, par `ecartAvecBanque`), au bord de chaque écart : le module refuse exactement là où la base refuse.
+  it('au bord de l’écart, le module et la règle exacte de la base rendent le même verdict', () => {
+    const montants = [1, 49, 50, 51, 99, 100, 101, 1999, 2000, 2001, 4000, 4081, 4082, 24999, 25000, 25001, 100000, 123457]
+    let juges = 0
+    for (const ttc of montants) {
+      for (const avant of [0, -Math.floor(ttc / 2), -ttc]) {
+        for (let p = -ttc - 600; p <= -ttc + 600; p++) {
+          if (p === 0) continue
+          const reste = ttc - Math.abs(avant + p)
+          const base = reste !== 0 && Math.abs(reste) * 50 <= ttc && Math.abs(reste) <= 500
+          const module = resteAuCentime(piece({ montant_ttc: ttc / 100, paiementsDuReleve: avant === 0 ? [] : [{ montant: avant / 100 }] }), caisse(), p)
+          expect(module !== null, `${ttc} ${avant} ${p}`).toBe(base)
+          if (module !== null) {
+            expect(module.resteApres).toBe(reste)
+            const exact = Math.sign(p) * ttc - avant
+            expect(module.exact).toBe(Math.sign(exact) === Math.sign(p) ? exact : null)
+          }
+          juges++
+        }
+      }
+    }
+    expect(juges).toBeGreaterThan(60000)
   })
 })
 

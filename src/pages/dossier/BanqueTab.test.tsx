@@ -4,8 +4,8 @@ import { ContexteDossier } from '../../test/exercicesValides'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type {
-  Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, LettrageManuel, LigneBancaire, Piece, RegleAffectationBancaire,
-  RegleBancaireIgnoree, ReglementGroupe, VentilationBancaire,
+  Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, LettrageManuel, LigneBancaire, OperationCaisse, Piece,
+  RegleAffectationBancaire, RegleBancaireIgnoree, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Emprunt } from '../../lib/emprunts'
@@ -101,6 +101,9 @@ const faux = vi.hoisted(() => ({
   // Les déclarations de TVA du dossier (lib/liquidationTva.ts) : une lecture qui peut être partielle, et deux fonctions
   // SQL que le faux serveur APPLIQUE au relevé — le lien et le statut, l'écriture n'étant pas relue ici.
   declarations: [] as DeclarationTva[],
+  // Les opérations de la caisse du dossier (lib/caisseLecture.ts) : aucune par défaut. Un paiement d'une pièce par la caisse
+  // (étape C9a) est un paiement de plus de cette pièce, que l'alignement sur la banque compte (relecture du 01/11/2026).
+  operationsCaisse: [] as OperationCaisse[],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -114,7 +117,13 @@ vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => faux.lignesP
 const drapeauDuPaiement = vi.hoisted(() => ({ leve: false }))
 vi.mock('../../lib/paiementParLaCaisse', async (original) => {
   const module = await original<typeof import('../../lib/paiementParLaCaisse')>()
-  return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeauDuPaiement.leve } }
+  // Et les paiements que l'écran passe aux moteurs, selon le MÊME accesseur : le module les tire de sa propre constante,
+  // que l'accesseur ne remplace pas.
+  return {
+    ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeauDuPaiement.leve },
+    paiementsParLaCaisseDuDossier: (...args: Parameters<typeof module.paiementsParLaCaisseDuDossier>) =>
+      module.paiementsParLaCaisseDuDossierSelon(drapeauDuPaiement.leve, ...args),
+  }
 })
 // Le justificatif qu'on ouvre depuis la fiche d'un mouvement : le chemin demandé, sans ouvrir d'onglet.
 const justificatifs = vi.hoisted(() => ({ ouverts: [] as string[] }))
@@ -321,6 +330,9 @@ vi.mock('../../lib/supabase', async () => {
         if (table === 'documents_divers' && faux.erreurReleves) {
           return Promise.resolve({ data: null, error: { message: faux.erreurReleves }, count: null }).then(suite)
         }
+        if (table === 'operations_caisse') {
+          return Promise.resolve({ data: faux.operationsCaisse, error: null, count: faux.operationsCaisse.length }).then(suite)
+        }
         if (table === 'pieces') {
           // Le `count` est OBLIGATOIRE ici : sans total annoncé, `lireTout` déclare la lecture
           // INCOMPLÈTE (voir lib/lectureComplete.ts) et l'écran bascule sur son bandeau de lecture
@@ -510,6 +522,7 @@ function reinitialiser() {
   faux.lettrages = []
   faux.brouillon = []
   faux.declarations = []
+  faux.operationsCaisse = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -3965,6 +3978,33 @@ describe('BanqueTab — un virement qui règle plusieurs pièces', () => {
     await act(async () => { bouton('Enregistrer le règlement').click() })
     await waitFor(() => expect(reglementsRpc()).toHaveLength(1))
     await waitFor(() => expect(faux.updatesPieces).toEqual([expect.objectContaining({ montant_ttc: 299.99 })]))
+  })
+
+  // ET LA CAISSE EST UN PAIEMENT DE PLUS (relecture du 01/11/2026, le défaut 2 (a)) : une pièce de 300 € payée 150 € en espèces,
+  // puis 149,99 € par la part d'un virement, s'aligne sur le TOTAL de ses paiements, la caisse comprise — 299,99 € ; sans la
+  // caisse (le drapeau baissé : aucun paiement par la caisse ne se lit), sa part seule n'en est qu'une moitié, et rien ne
+  // s'aligne. C'est `reglerSiLibre` qui passe le paiement par la caisse parmi les autres (lib/reglementBanque.ts).
+  it('une pièce payée en partie par la caisse s’aligne sur le total de ses paiements, la caisse comprise', async () => {
+    const paiementEnEspeces: OperationCaisse = {
+      id: 'op-especes', dossier_id: 'dossier-de-test', genre: 'paiement', date: '2025-05-22', montant: -150, categorie_id: null,
+      taux_tva: null, encaissements_du_jour: null, piece_id: 'piece-a', origine: 'cabinet', remplace_id: null,
+      cree_le: '2025-05-22T10:00:00Z', cree_par: 'chef', retire_le: null, retire_par: null,
+    }
+    for (const leve of [true, false]) {
+      cleanup()
+      preparer({ montant: -349.99 })
+      drapeauDuPaiement.leve = leve
+      faux.operationsCaisse = [paiementEnEspeces]
+      rendre()
+      await ouvrir('VIR FOURNISSEURS')
+      await deplier()
+      choisir(1, 'piece-a', '149.99')
+      choisir(2, 'piece-b', '200')
+      await act(async () => { bouton().click() })
+      await waitFor(() => expect(reglementsRpc()).toHaveLength(1))
+      await waitFor(() => expect(within(volet()).getByText('Règle 2 pièces')).toBeTruthy())
+      expect(faux.updatesPieces).toEqual(leve ? [expect.objectContaining({ montant_ttc: 299.99 })] : [])
+    }
   })
 
   it('ne dit pas le nombre de pièces sur des parts lues en partie, même quand il en a lu plusieurs', async () => {

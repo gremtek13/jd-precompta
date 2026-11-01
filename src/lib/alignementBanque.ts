@@ -43,7 +43,11 @@ export interface EcartBanque {
 
 // Rend `null` quand la question ne se pose pas : pièce en devise (traitée à part, sans seuil),
 // montant non lu (rien à comparer), ou mouvement à zéro.
-export function ecartAvecBanque(piece: Piece, ligne: Pick<LigneBancaire, 'montant'>): EcartBanque | null {
+//
+// LA ZONE OÙ LA BANQUE ALIGNE EST AUSSI CELLE OÙ LA CAISSE REFUSE (relecture du 01/11/2026 ; C9-Q1) : un paiement en espèces
+// qui porterait le total de la pièce dans cet écart, sans l'atteindre au centime, se refuse (`resteAuCentime`,
+// lib/paiementParLaCaisse.ts) — la même fonction, sur le même total, pour que les deux chemins jugent la même pièce pareil.
+export function ecartAvecBanque(piece: Pick<Piece, 'devise' | 'montant_ttc'>, ligne: Pick<LigneBancaire, 'montant'>): EcartBanque | null {
   if (piece.devise && piece.devise !== DEVISE_PIVOT) return null
   if (piece.montant_ttc == null) return null
   if (!ligne.montant) return null

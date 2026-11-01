@@ -1,4 +1,4 @@
-import { paiementNet } from './alignementBanque'
+import { paiementNet, seuilAlignement } from './alignementBanque'
 import { jourDit, sansLOperation, type OperationDeLaCaisse } from './caisse'
 import {
   dossierDeLEcran, euros, lireLeMontantSaisi, MONTANT_ILLISIBLE, refusDuRetraitDeLOperation, soldeAuJour,
@@ -8,10 +8,10 @@ import { DEVISE_PIVOT } from './devises'
 import { formatMoney } from './format'
 import type { LectureComplete } from './lectureComplete'
 import {
-  jugerLeReglementSelon, PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisseSelon, refusDuChangementDeLaPiece,
-  type PieceDuPaiement, type SaisieDuReglement,
+  especesEntrentPour, jugerLeReglementSelon, MOTS_DU_PAIEMENT, PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisseSelon,
+  refusDuChangementDeLaPiece, type PieceDuPaiement, type SaisieDuReglement,
 } from './paiementParLaCaisse'
-import type { PartPayeeParLaCaisse, PaiementDePiece } from './rattachement'
+import { estParLeReleve, type PartPayeeParLaCaisse, type PaiementDePiece } from './rattachement'
 import type { FactureEmise, OperationCaisse, Piece } from './types'
 
 // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, À L'ÉCRAN DU CABINET (ligne 26.6, étape C9b ; CAISSE-Q4, (B)). La conception :
@@ -93,15 +93,25 @@ export function paiementNomme(o: Pick<OperationCaisse, 'date' | 'montant'>): str
 export type FactureDuPaiement = Pick<FactureEmise, 'id' | 'numero' | 'source_de_la_vente'>
 
 /**
- * La pièce telle que `regler_piece_par_la_caisse` la lit, depuis la pièce ENREGISTRÉE (son type, son statut, son montant — la
- * base ne lit jamais la saisie de la fiche) et, quand elle est l'exemplaire d'une facture, la facture désignée, lue EN ENTIER
- * (sa source, son numéro). Une désignation que la lecture ne rend pas ne se devine pas : `illisible`, et aucun geste.
+ * La pièce telle que `regler_piece_par_la_caisse` la lit, depuis la pièce ENREGISTRÉE (son type, son statut, son montant, sa
+ * devise — la base ne lit jamais la saisie de la fiche) et, quand elle est l'exemplaire d'une facture, la facture désignée, lue
+ * EN ENTIER (sa source, son numéro). Une désignation que la lecture ne rend pas ne se devine pas : `illisible`, et aucun geste.
+ * Et ce que le RELEVÉ en paie (relecture du 01/11/2026) : la base le lit pour juger le reste au centime, et la fiche le dit
+ * avant le clic ; tiré des paiements de la pièce (`paiements`, ceux de l'onglet, lus en entier), ou `illisible` quand ils ne le
+ * sont pas — un paiement non lu ferait juger un reste qui n'est pas le sien.
  */
 export function pieceDuPaiement(
-  piece: Pick<Piece, 'id' | 'type_piece' | 'statut' | 'montant_ttc' | 'facture_id'>,
+  piece: Pick<Piece, 'id' | 'type_piece' | 'statut' | 'montant_ttc' | 'devise' | 'facture_id'>,
   factures: LectureComplete<FactureDuPaiement> | null,
+  paiements: readonly PaiementDePiece[] | null,
 ): { piece: PieceDuPaiement } | { illisible: string } {
-  const base = { id: piece.id, type_piece: piece.type_piece, statut: piece.statut, montant_ttc: piece.montant_ttc }
+  if (paiements === null) {
+    return { illisible: 'les paiements de la pièce par le relevé ne sont pas lus en entier — son reste à régler ne se juge pas' }
+  }
+  const base = {
+    id: piece.id, type_piece: piece.type_piece, statut: piece.statut, montant_ttc: piece.montant_ttc, devise: piece.devise,
+    paiementsDuReleve: paiements.filter(estParLeReleve).map((p) => ({ montant: p.montant })),
+  }
   if (piece.facture_id == null) return { piece: { ...base, exemplaire: null } }
   if (factures === null) return { illisible: 'les factures émises du dossier ne sont pas encore lues' }
   if (!factures.complete) return { illisible: `les factures émises du dossier : ${factures.motif ?? 'lecture incomplète'}` }
@@ -120,9 +130,10 @@ export function resteARegler(piece: Pick<Piece, 'montant_ttc' | 'devise'>, paiem
   return Math.max(0, Math.round(Math.abs(piece.montant_ttc) * 100) - paiementNet(paiements).centimes)
 }
 
-/** Le sens des espèces d'une pièce : elles ENTRENT pour une vente, SORTENT pour un achat — l'inverse pour un avoir. */
+/** Le sens des espèces d'une pièce : elles ENTRENT pour une vente, SORTENT pour un achat — l'inverse pour un avoir. La règle
+ *  du module (`especesEntrentPour`), celle que la base juge. */
 export function especesEntrent(piece: Pick<Piece, 'type_piece' | 'montant_ttc'>): boolean {
-  return (piece.type_piece === 'vente') !== (piece.montant_ttc != null && piece.montant_ttc < 0)
+  return especesEntrentPour(piece)
 }
 
 /**
@@ -177,14 +188,54 @@ export function verdictDuReglement(
 }
 
 /**
+ * L'AVERTISSEMENT AVANT LE CLIC (relecture du 01/11/2026) : payer en espèces une pièce que la BANQUE paie déjà, en tout ou en
+ * partie — un paiement en double se glisse là —, ou au-delà de ce qui reste. Dit sur le reste de TOUS ses paiements (`paiementNet`,
+ * le relevé et la caisse mêlés, comme `partsDesPaiements` les compte) : ce que le relevé et la caisse ont déjà payé, ce qu'il
+ * reste, et, quand ce paiement la paierait en trop au-delà de l'écart d'alignement, combien — la Vue d'ensemble le dira ensuite
+ * (`pieces-payees-en-trop`). Rien n'est refusé : la base ne juge que les paiements par la caisse (son plafond) et le reste au
+ * centime ; un acompte réglé par la banque et un solde en espèces sont légitimes. Rien quand il n'y a rien à dire : ni paiement
+ * du relevé, ni trop-payé.
+ */
+export function avertissementDuReglement(
+  piece: Pick<PieceDuPaiement, 'id' | 'montant_ttc' | 'devise' | 'paiementsDuReleve'>,
+  d: Pick<DonneesDeLaCaisse, 'operations'>,
+  centimes: number,
+): string | null {
+  const parLaCaisse = d.operations.filter((o) => o.genre === 'paiement' && o.piece_id === piece.id && o.retire_le == null)
+  const releve = paiementNet(piece.paiementsDuReleve)
+  const caisse = paiementNet(parLaCaisse)
+  const connu = piece.montant_ttc != null && (piece.devise == null || piece.devise === DEVISE_PIVOT)
+  const pieceCentimes = connu ? Math.abs(Math.round(piece.montant_ttc! * 100)) : null
+  const reste = pieceCentimes === null ? null : pieceCentimes - paiementNet([...piece.paiementsDuReleve, ...parLaCaisse]).centimes
+  const apres = pieceCentimes === null ? null
+    : pieceCentimes - paiementNet([...piece.paiementsDuReleve, ...parLaCaisse, { montant: centimes / 100 }]).centimes
+  const enTrop = apres !== null && apres < 0 && -apres > Math.round(seuilAlignement(piece.montant_ttc ?? 0) * 100) ? -apres : null
+  const parties: string[] = []
+  if (releve.centimes > 0) {
+    const deja = `Cette pièce est déjà payée de ${euros(releve.centimes)} par le relevé`
+      + `${caisse.centimes > 0 ? ` et de ${euros(caisse.centimes)} par la caisse` : ''}`
+    parties.push(reste === null ? `${deja}.`
+      : reste > 0 ? `${deja} : il en reste ${euros(reste)} à régler, tous paiements compris.`
+        : `${deja} : ses paiements la règlent déjà.`)
+  }
+  if (enTrop !== null) {
+    parties.push(`Ce paiement la paierait de ${euros(enTrop)} en trop, tous paiements compris — un paiement en double ? La Vue `
+      + 'd’ensemble le dira (« pièce payée plus que son montant »).')
+  }
+  return parties.length === 0 ? null : parties.join(' ')
+}
+
+/**
  * La confirmation qui NOMME ce qui part : le paiement (son jour, ses espèces, leur sens), la pièce (son fichier — la fiche la
  * montre comme ailleurs, la caisse n'en stocke rien), la caisse de ce jour-là, et l'écriture qui suivra — la contrepartie au
- * compte de la caisse DU PLAN, avec les écritures de la pièce.
+ * compte de la caisse DU PLAN, avec les écritures de la pièce ; et l'avertissement de la fiche, quand elle en dit un
+ * (`avertissementDuReglement` : la pièce déjà payée par la banque, ou payée en trop).
  */
 export function confirmationDuReglement(
-  nomDeLaPiece: string, v: Extract<VerdictDuReglement, { etat: 'permis' }>, compteCaisse: string,
+  nomDeLaPiece: string, v: Extract<VerdictDuReglement, { etat: 'permis' }>, compteCaisse: string, avertissement: string | null,
 ): string {
   return `Régler la pièce « ${nomDeLaPiece} » par la caisse : ${paiementNomme(v.operation)} ? `
+    + `${avertissement === null ? '' : `${avertissement} `}`
     + `La caisse du ${jourDit(v.operation.date)} passera à ${euros(v.soldeDuJour)}. Sa contrepartie au compte de la caisse `
     + `(${compteCaisse}) s’écrit avec les écritures de la pièce : déjà générées, elles seront à régénérer (Écritures).`
 }
@@ -227,16 +278,39 @@ export function refusDeLaDesignationParLaCaisse(
     { numero: facture.numero, source_de_la_vente: facture.source_de_la_vente })?.message ?? null
 }
 
+// LES MOTS D'UNE PIÈCE QU'UN PAIEMENT CITE, DEVANT SA SUPPRESSION. Le premier est celui de la base, au caractère près, ses
+// apostrophes typographiques (`MOTS_DU_PAIEMENT.piece_payee_supprimee`, que `garder_ecriture_de_caisse` lève quand la clé du
+// brouillon met à nul la pièce de sa contrepartie) ; le second, celui d'un paiement retiré ; le troisième, quand la caisse n'est
+// pas lue en entier et que la base a refusé par sa clé (`operations_caisse_piece`, `on delete restrict`) : on ne sait pas si le
+// paiement qui la cite est retiré.
+export const SUPPRESSION_PAYEE_PAR_LA_CAISSE = MOTS_DU_PAIEMENT.piece_payee_supprimee.gabarit.replace(/'/g, '’')
+export const SUPPRESSION_CITEE_PAR_UN_PAIEMENT_RETIRE = 'Un paiement de la caisse, retiré, cite cette pièce : elle ne se supprime pas — l’opération garde sa pièce pour la piste d’audit. Si elle n’est pas une pièce de ce dossier, change son type en « autre ».'
+export const SUPPRESSION_CITEE_PAR_LA_CAISSE = 'Un paiement de la caisse cite cette pièce : elle ne se supprime pas — l’opération garde sa pièce pour la piste d’audit. Si elle n’est pas une pièce de ce dossier, retire d’abord ce paiement s’il ne l’est pas, puis change son type en « autre ».'
+
 /**
  * Une pièce qu'un paiement de la caisse cite — retiré ou non — ne se supprime plus : la clé de l'opération est `on delete
- * restrict` (la piste d'audit garde la pièce de chaque opération écrite). La fiche le dit et n'offre pas « Supprimer ». Rien
- * quand aucun paiement ne la cite.
+ * restrict` (la piste d'audit garde la pièce de chaque opération écrite). La fiche le dit et n'offre pas « Supprimer » ; « Supprimer
+ * la sélection » l'écarte avant sa confirmation (relecture du 01/11/2026), et la nomme. Rien quand aucun paiement ne la cite.
  */
 export function suppressionRetenueParLaCaisse(pieceId: string, operations: readonly OperationCaisse[]): string | null {
   const citee = operations.filter((o) => o.piece_id === pieceId)
   if (citee.length === 0) return null
   const vivant = citee.some((o) => o.genre === 'paiement' && o.retire_le == null)
-  return vivant
-    ? 'Cette pièce est payée par la caisse : elle ne se supprime pas — l’opération de caisse qui la règle la cite. Si elle n’est pas une pièce de ce dossier, retire d’abord ce paiement, puis change son type en « autre ».'
-    : 'Un paiement de la caisse, retiré, cite cette pièce : elle ne se supprime pas — l’opération garde sa pièce pour la piste d’audit. Si elle n’est pas une pièce de ce dossier, change son type en « autre ».'
+  return vivant ? SUPPRESSION_PAYEE_PAR_LA_CAISSE : SUPPRESSION_CITEE_PAR_UN_PAIEMENT_RETIRE
+}
+
+/**
+ * LE REFUS DE LA BASE DEVANT LA SUPPRESSION D'UNE PIÈCE QU'UN PAIEMENT CITE, TRADUIT (relecture du 01/11/2026) — quand la caisse
+ * n'a pas été lue en entier, la suppression part, et la base refuse de deux façons : la garde du brouillon, quand la contrepartie
+ * du paiement y est (la clé du brouillon met sa pièce à nul AVANT que celle de la caisse ne refuse : 23503, ses mots), ou la clé
+ * de l'opération elle-même (23503, « violates foreign key constraint "operations_caisse_piece" »). Les mots de l'écran, ou rien
+ * pour tout autre refus — l'appelant dit alors celui de la base, tel quel.
+ */
+export function refusDeSuppressionParLaCaisse(
+  erreur: { code?: string | null; message?: string | null; details?: string | null } | null | undefined,
+): string | null {
+  if (!erreur || erreur.code !== '23503') return null
+  if (erreur.message === MOTS_DU_PAIEMENT.piece_payee_supprimee.gabarit) return SUPPRESSION_PAYEE_PAR_LA_CAISSE
+  const texte = `${erreur.message ?? ''} ${erreur.details ?? ''}`
+  return /operations_caisse_piece|"operations_caisse"/.test(texte) ? SUPPRESSION_CITEE_PAR_LA_CAISSE : null
 }
