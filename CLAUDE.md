@@ -413,6 +413,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Contre-calcul par l'expert-comptable** (ligne 23.3) : quatre dossiers de référence remis (2035, CA3, amortissements,
   bilan 2033-A) ; restent ses chiffres, l'analyse des écarts, puis ses chiffres en cas de référence → « LES DOSSIERS DE
   RÉFÉRENCE ».
+- **La 2035 : les cases « dont » et les saisies du cabinet** (01/11/2026, MVP) : BT, BY, BW, BZ, BU, CC, CL, DE et DB
+  valent toujours zéro, une prévisionnelle qu'aucun prélèvement ne paie se compte avec l'appel définitif d'une autre
+  date, et le PDF de l'exercice 2026 s'imprimerait sous « REVENUS 2025 » — prouvés (`relecture2035Saisies.test.ts`, en
+  `it.fails`) ; six lots, 2035S1 à S6, dont une migration additive (S3, `saisies_2035`) ; cinq questions au cabinet
+  (2035S-Q1 à Q5) → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 : ÉTABLIS, ET LA CONCEPTION DE LEUR
+  CORRECTION ».
 - **Déclarations TNS** (ligne 27) : restent hors de l'estimation — médecins et chirurgiens-dentistes, retraite, revenus
   de remplacement, ACRE, exonérations, outre-mer, régularisation ; DSCS proposée depuis la ligne 4 de la 2035-A, à
   confirmer sur une première déclaration réelle.
