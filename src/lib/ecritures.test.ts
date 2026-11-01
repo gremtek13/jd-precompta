@@ -108,7 +108,7 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
   const decembre = piece({ date_piece: '2025-12-20', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
 
   it('date toutes les lignes au paiement quand le rapprochement le connaît', () => {
-    const lignes = lignesChargeProduitPourPiece('d1', decembre, cible(ACHATS), true, [paiement()], PLAN_PAR_DEFAUT)
+    const lignes = lignesChargeProduitPourPiece('d1', decembre, cible(ACHATS), true, payes(paiement()), PLAN_PAR_DEFAUT)
     expect(lignes.map((l) => [l.compte, l.date, l.montant])).toEqual([
       [ACHATS, '2026-01-05', 100],
       [COMPTE_TVA_DEDUCTIBLE, '2026-01-05', 20],
@@ -118,7 +118,7 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
   it('répartit une pièce réglée en partie entre la facture et le paiement, au centime', () => {
     // 100 € dont 16,67 de TVA, 33,33 € rapprochés : deux tiers restent à la date de facture.
     const p = piece({ date_piece: '2025-12-20', montant_ht: 83.33, montant_tva: 16.67, montant_ttc: 100 })
-    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -33.33 })], PLAN_PAR_DEFAUT)
+    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, payes(paiement({ montant: -33.33 })), PLAN_PAR_DEFAUT)
     expect(lignes.map((l) => [l.date, l.compte, l.montant])).toEqual([
       ['2025-12-20', ACHATS, 55.56],
       ['2025-12-20', COMPTE_TVA_DEDUCTIBLE, 11.11],
@@ -135,7 +135,7 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
     // 83,33 + 16,67, payée pour moitié : chaque moitié arrondie seule donnerait 41,67 + 41,67 et
     // 8,34 + 8,34, soit un centime de trop par compte. Le dernier morceau prend le reste.
     const p = piece({ date_piece: '2025-12-20', montant_ht: 83.33, montant_tva: 16.67, montant_ttc: 100 })
-    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -50 })], PLAN_PAR_DEFAUT)
+    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, payes(paiement({ montant: -50 })), PLAN_PAR_DEFAUT)
     const parCompte = (compte: string) => Math.round(lignes.filter((l) => l.compte === compte).reduce((s, l) => s + l.montant, 0) * 100) / 100
     expect(parCompte(ACHATS)).toBe(83.33)
     expect(parCompte(COMPTE_TVA_DEDUCTIBLE)).toBe(16.67)
@@ -170,14 +170,14 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
 
   it('ne fait pas de ligne de TVA vide quand sa part s’arrondit à zéro', () => {
     const p = piece({ date_piece: '2025-12-20', montant_ht: 1, montant_tva: 0.01, montant_ttc: 1.01 })
-    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -0.5 })], PLAN_PAR_DEFAUT)
+    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, payes(paiement({ montant: -0.5 })), PLAN_PAR_DEFAUT)
     expect(lignes.every((l) => l.montant > 0)).toBe(true)
     expect(lignes.filter((l) => l.date === '2026-01-05').map((l) => l.compte)).toEqual([ACHATS])
   })
 
   it('date au dépôt la part que rien ne date', () => {
     const p = piece({ date_piece: null, created_at: '2025-12-21T10:00:00Z', montant_ttc: 120 })
-    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -60 })], PLAN_PAR_DEFAUT)
+    const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, payes(paiement({ montant: -60 })), PLAN_PAR_DEFAUT)
     expect(lignes.map((l) => [l.date, l.montant])).toEqual([['2026-01-05', 60], ['2025-12-21', 60]])
   })
 })
@@ -1028,7 +1028,7 @@ describe('analyserEcritures — en engagement', () => {
 
   it('exige le bon modèle : lu dans l’autre, chaque brouillon juste paraît périmé', () => {
     // C'est pour ça que le modèle n'a pas de valeur par défaut.
-    const tresorerie = enBase(lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement()], PLAN_PAR_DEFAUT))
+    const tresorerie = enBase(lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, payes(paiement()), PLAN_PAR_DEFAUT))
     expect(analyserEcritures(tresorerie, aComptabiliser, true, paiementsDesPieces([paiement()], [], [], []), ENGAGEMENT, null, SANS_EXEMPLAIRE).piecesDesynchronisees).toEqual([p])
     expect(analyserEcritures(genere(), aComptabiliser, true, paiementsDesPieces([paiement()], [], [], []), TRESORERIE, null, SANS_EXEMPLAIRE).piecesDesynchronisees).toEqual([p])
   })

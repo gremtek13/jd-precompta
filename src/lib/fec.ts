@@ -16,17 +16,20 @@ import {
   champsDUnEncaissement, champsDUnePiece, champsDUneSourceNonLue, champsDUnForfait, champsDUnMouvementDesEncaissements,
   champsDUnMouvementDuReleve, champsDUnPaiementPersonnel, partsDesReglementsALaDate, type ChampsBnc, type ChoixChampsBnc,
   type EncaissementDuRegistre, type FactureDuClient, type LigneACaracteriser, type ModeRglt, type NatureOperation,
-  type PartDUnReglement, type PosteLu, type REGLES_DES_SORTES, type ReglementDUnePiece,
+  type PartDUnReglement, type PosteLu, type REGLES_DES_SORTES, type ReglementDUnePiece, cleDuReglement, reglementDUnPaiement,
+  MODES_REGLEMENT, NATURES_OPERATION,
 } from './champsBncDuFec'
+import { natOpFigee } from './champsBncDesLignes'
 import {
   categorieDesFraisBancaires, POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS,
   POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
 } from './declaration2035'
 import { POSTE_ASSURANCE_EMPRUNT, POSTE_INTERETS_EMPRUNT } from './echeanceEmprunt'
 import { estContrepartieDirigeant, piecesAComptabiliser } from './ecritures'
+import { reglementsDeLaDate, repartirLesLignesPartagees, seRepartit, type ReglementDeLaDate } from './ecritureParReglement'
 import { AUCUNE_FACTURE_SOURCE } from './facturesSources'
 import type { PlanComptable } from './planComptable'
-import type { PaiementsDesPieces } from './rattachement'
+import { estParLeReleve, type PaiementsDesPieces } from './rattachement'
 
 // Génération du FEC (Fichier des Écritures Comptables) — format officiel imposé par l'article
 // A47 A-1 du Livre des procédures fiscales, que tout logiciel de comptabilité sait importer sans
@@ -274,15 +277,6 @@ interface EcritureANumeroter {
   reglement: ReglementDUnePiece | null
 }
 
-// Un montant réparti au centime selon des poids, le dernier morceau prenant l'arrondi pour que la somme reste le total —
-// la règle de `centimesParDate` (lib/rattachement.ts), qui a fait le total de la date.
-function repartir(total: number, poids: readonly number[]): number[] {
-  const somme = poids.reduce((s, p) => s + p, 0)
-  const morceaux = poids.map((p) => Math.round(total * (p / somme)))
-  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)
-  return morceaux
-}
-
 const centimesSignes = (e: Pick<EcritureBrouillon, 'sens' | 'montant'>) => (e.sens === 'debit' ? 1 : -1) * Math.round(e.montant * 100)
 
 /**
@@ -300,8 +294,13 @@ const centimesSignes = (e: Pick<EcritureBrouillon, 'sens' | 'montant'>) => (e.se
  *     fait d'une date. Le total de chaque ligne, donc de la date et de la pièce, est intact : la 2035, qui se calcule des
  *     sources, ne change pas, ni la balance.
  * Chaque écriture scindée s'équilibre : ce qu'un paiement règle de la pièce est le montant de son mouvement quand elle est
- * payée en partie, sa part du total payé quand elle l'est en entier. Une ligne de part nulle ne s'écrit pas. Rien de
- * scindé ne se valide encore : la numérotation que la validation fige est celle du drapeau baissé (FEC22c2).
+ * payée en partie, sa part du total payé quand elle l'est en entier. Une ligne de part nulle ne s'écrit pas.
+ *
+ * DEPUIS FEC22C2, CE N'EST PLUS QU'UN REPLI. La génération écrit, le drapeau levé, une ligne de charge et une de TVA par
+ * règlement (lib/ecritureParReglement.ts) : la numérotation RANGE alors chaque ligne dans l'écriture de son règlement
+ * (`rangerParReglement`), sans rien dériver. La scission ne sert plus qu'au brouillon généré avant, d'une ligne pour deux
+ * règlements : le fichier s'exporte comme hier, mais la ligne scindée porte deux numéros sous un seul identifiant, et la
+ * validation, qui fige un mode par ligne, la refuse en la nommant (`defautsDeNumerotation`, une ligne numérotée deux fois).
  */
 function scinderParMode(
   e: EcritureANumeroter, parts: readonly PartDUnReglement[], contrepartieDirigeant: (ligne: EcritureBrouillon) => boolean,
@@ -328,12 +327,7 @@ function scinderParMode(
     else partagees.push(l)
   }
   partagees.sort((a, b) => Number(estUneTva(a)) - Number(estUneTva(b)) || a.compte.localeCompare(b.compte) || a.id.localeCompare(b.id))
-  const poids = parts.map((p) => p.part)
-  const totaux = repartir(partagees.reduce((s, l) => s + centimesSignes(l), 0), poids)
-  const parLigne = partagees.map((l) => repartir(centimesSignes(l), poids))
-  if (parLigne.length > 0) {
-    parLigne[parLigne.length - 1] = totaux.map((t, i) => t - parLigne.slice(0, -1).reduce((s, m) => s + m[i], 0))
-  }
+  const parLigne = repartirLesLignesPartagees(partagees.map(centimesSignes), parts.map((p) => p.part))
   return parts.flatMap((p, i) => {
     const derivees = partagees.flatMap((l, j): EcritureBrouillon[] => {
       const c = parLigne[j][i]
@@ -344,6 +338,76 @@ function scinderParMode(
     // — le relevé d'abord —, jamais l'alphabet des modes.
     return rows.length === 0 ? [] : [{ ...e, cle: `${e.cle}|${i}|${p.cle}`, rows, reglement: p.reglement }]
   })
+}
+
+/**
+ * LE BROUILLON RÉPARTI PAR LA GÉNÉRATION ENTRE LES RÈGLEMENTS D'UNE DATE (lot FEC22c2 ; lib/ecritureParReglement.ts) : ses
+ * lignes se RANGENT, une par une, dans l'écriture de leur règlement, sans qu'aucune ne se dérive — chacune n'appartient
+ * qu'à une écriture, et la validation peut figer ses quatre champs. La ligne de banque va au règlement de son mouvement, la
+ * ligne de caisse à celui de son opération, la contrepartie de l'exploitant à sa poche ; les lignes que la date partage — la
+ * charge ou le produit, sa TVA — se reconnaissent à leurs montants : la répartition de leur total par compte entre les
+ * règlements (`repartirLesLignesPartagees`, celle de la génération), qui doit être exactement leur multiensemble, compte par
+ * compte. Deux lignes du même compte et du même montant sont interchangeables : rangées dans l'ordre de leur identifiant.
+ * Puis les règlements de la génération se réunissent par MODE (`cleDuReglement` : deux virements mixtes du même moyen font
+ * une écriture), dans l'ordre du fichier.
+ *
+ * Nul quand la date ne se répartit pas (un seul règlement) ou que le brouillon n'est pas celui que la génération écrit —
+ * une charge d'une seule ligne pour deux règlements, générée avant : la scission d'hier (`scinderParMode`) le reprend.
+ */
+function rangerParReglement(
+  e: EcritureANumeroter, reglements: readonly ReglementDeLaDate[], piece: Piece, registre: readonly EncaissementDuRegistre[],
+  contrepartieDirigeant: (ligne: EcritureBrouillon) => boolean, estUneTva: (ligne: EcritureBrouillon) => boolean,
+): EcritureANumeroter[] | null {
+  if (!seRepartit(reglements)) return null
+  const propres: EcritureBrouillon[][] = reglements.map(() => [])
+  const partagees: EcritureBrouillon[] = []
+  for (const l of e.rows) {
+    let i = -1
+    if (l.ligne_bancaire_id) {
+      i = reglements.findIndex((r) => r.paiements.some((p) => estParLeReleve(p) && p.id === l.ligne_bancaire_id))
+    } else if (l.operation_caisse_id) {
+      i = reglements.findIndex((r) => r.paiements.some((p) => p.origine === 'caisse' && p.operation_caisse_id === l.operation_caisse_id))
+    } else if (contrepartieDirigeant(l)) {
+      i = reglements.findIndex((r) => r.sorte === 'note_de_frais')
+    } else {
+      partagees.push(l)
+      continue
+    }
+    // Une contrepartie que les règlements de la date ne font pas : le brouillon n'est pas celui de la génération.
+    if (i < 0) return null
+    propres[i].push(l)
+  }
+  // Les lignes partagées, compte par compte : la charge ou le produit d'abord, la TVA en dernier, comme la génération.
+  const comptes = [...new Set(partagees.map((l) => l.compte))]
+    .sort((a, b) => Number(partagees.some((l) => l.compte === a && estUneTva(l))) - Number(partagees.some((l) => l.compte === b && estUneTva(l)))
+      || a.localeCompare(b))
+  const attendus = repartirLesLignesPartagees(
+    comptes.map((c) => partagees.filter((l) => l.compte === c).reduce((s, l) => s + centimesSignes(l), 0)),
+    reglements.map((r) => r.part),
+  )
+  for (const [j, compte] of comptes.entries()) {
+    const restantes = partagees.filter((l) => l.compte === compte).sort((a, b) => a.id.localeCompare(b.id))
+    for (const [i, centimes] of attendus[j].entries()) {
+      if (centimes === 0) continue
+      const k = restantes.findIndex((l) => centimesSignes(l) === centimes)
+      if (k < 0) return null
+      propres[i].push(restantes.splice(k, 1)[0])
+    }
+    if (restantes.length > 0) return null
+  }
+  // Le règlement du fichier de chacun : le moyen d'un virement mixte se lit au registre (`reglementDUnPaiement`).
+  const reunies: { cle: string; reglement: ReglementDUnePiece; rows: EcritureBrouillon[] }[] = []
+  for (const [i, r] of reglements.entries()) {
+    const reglement: ReglementDUnePiece = r.sorte === 'note_de_frais' ? { par: 'note_de_frais', date: e.ordre }
+      : r.sorte === 'aucun' ? { par: 'aucun' }
+      : reglementDUnPaiement(piece, r.paiements[0], registre)
+    const cle = cleDuReglement(reglement)
+    const deja = reunies.find((x) => x.cle === cle)
+    if (deja) deja.rows.push(...propres[i])
+    else reunies.push({ cle, reglement, rows: [...propres[i]] })
+  }
+  // Le rang du règlement dans la clé, comme la scission : le relevé d'abord, jamais l'alphabet des modes.
+  return reunies.flatMap((x, i) => (x.rows.length === 0 ? [] : [{ ...e, cle: `${e.cle}|${i}|${x.cle}`, rows: x.rows, reglement: x.reglement }]))
 }
 
 // Ce que le calcul des quatre champs lit, une fois par numérotation.
@@ -689,11 +753,16 @@ export function numeroterFec(
       const piece = pieceById.get(e.pieceId)
       if (!piece) return [e]
       const cible = piecesAComptabiliser([piece], categories, calcul.acquisitions, AUCUNE_FACTURE_SOURCE)[0]
-      const parts = partsDesReglementsALaDate(piece, calcul.paiements.get(piece.id) ?? [], e.ordre, calcul.registre)
+      const paiementsDeLaPiece = calcul.paiements.get(piece.id) ?? []
       const tva = new Set([calcul.plan.tva_deductible, calcul.plan.tva_immobilisations, calcul.plan.tva_collectee])
-      return scinderParMode(
-        e, parts, (l) => estContrepartieDirigeant(piece, { compte: cible?.compte ?? '' }, l, calcul.plan), (l) => tva.has(l.compte),
-      )
+      const contrepartieDirigeant = (l: EcritureBrouillon) => estContrepartieDirigeant(piece, { compte: cible?.compte ?? '' }, l, calcul.plan)
+      const estUneTva = (l: EcritureBrouillon) => tva.has(l.compte)
+      // La date répartie par la génération entre ses règlements (FEC22c2) : chaque ligne va à l'écriture du sien.
+      const rangees = rangerParReglement(e, reglementsDeLaDate(piece, paiementsDeLaPiece, e.ordre), piece, calcul.registre,
+        contrepartieDirigeant, estUneTva)
+      if (rangees !== null) return rangees
+      const parts = partsDesReglementsALaDate(piece, paiementsDeLaPiece, e.ordre, calcul.registre)
+      return scinderParMode(e, parts, contrepartieDirigeant, estUneTva)
     })
     // À date égale, on départage sur la facture puis sur la clé, pour que deux exports successifs du
     // même brouillon produisent exactement le même fichier.
@@ -777,40 +846,95 @@ export function numeroterFec(
 // `horsFec`, au lieu d'être imprimée avec des champs vides. Elle ne peut pas exister — la base refuse la
 // validation tant qu'une écriture de l'exercice reste proposée —, et c'est pourquoi elle se voit plutôt que
 // de se cacher.
+//
+// ET LES QUATRE CHAMPS D'UN BNC EN TRÉSORERIE, FIGÉS AVEC ELLE (lot FEC22c2 ; migration `champs_bnc_du_fec`, FEC22b) : une
+// ligne validée avec eux porte sa date et son mode de règlement, sa nature, son poste et l'identification du client ; NatOp
+// se recompose « nature — poste » (`natOpFigee`), rien ne se recalcule. Un exercice dont les lignes les portent s'écrit à
+// vingt-deux colonnes (`calcules`) ; un exercice validé sans eux — par une demande qui ne les portait pas, le drapeau baissé
+// —, à dix-huit, le fichier d'hier (`non_calcules`). Une ligne validée sans eux dans un exercice qui les porte ne peut pas
+// exister (la demande les donne à chaque ligne, ou à aucune) : elle part dans `horsFec`, comme une valeur hors de sa liste
+// fermée (la base la refuse). LES À-NOUVEAUX NE LES FIGENT PAS : la migration ne touche ni `a_nouveaux` ni
+// `soldes_reportes`, dont la validation ne fige que les libellés. Leurs quatre champs se recomposent donc ici
+// (« À-nouveaux », aucun client) sous le choix de FEC22-Q1 EN VIGUEUR (`choix`, le drapeau levé), le seul qui ne soit pas
+// figé : un choix changé après la validation changerait leurs deux premiers champs, et rien d'autre. Sans choix (le
+// drapeau baissé), un exercice qui porte les champs se relit à dix-huit colonnes, le fichier d'hier : rien ne s'invente.
 export function numerotationValidee(
   ecritures: readonly EcritureBrouillon[], aNouveaux: readonly ANouveau[],
   // L'instant de la validation de l'exercice (`exercices_valides.valide_le`), ValidDate des à-nouveaux.
   valideLe: string,
+  // Le choix de FEC22-Q1 en vigueur (`CHAMPS_BNC_EXPORTES`), ou nul le drapeau baissé. Sans valeur par défaut : il décide si
+  // un exercice figé avec les quatre champs s'écrit à vingt-deux colonnes, et donne les leurs aux à-nouveaux.
+  choix: ChoixChampsBnc | null,
 ): NumerotationFec {
   const lignes: LigneFec[] = []
   const horsFec: EcritureBrouillon[] = []
+  const lues: { e: EcritureBrouillon; champs: ChampsBncDeLaLigne | null | 'illisible' }[] = []
   for (const e of ecritures) {
     if (e.statut !== 'validee' || !e.valide_le || !e.journal_code || !e.numero_ecriture || !e.piece_ref
       || !e.piece_date || !e.compte_lib) {
       horsFec.push(e)
       continue
     }
-    // Les quatre champs ne sont pas encore figés (la migration FEC22b, puis FEC22c2) : le FEC validé reste à dix-huit.
+    lues.push({ e, champs: champsFiges(e) })
+  }
+  const figes = choix !== null && lues.some((x) => x.champs !== null)
+  for (const { e, champs } of lues) {
+    if (figes && (champs === null || champs === 'illisible')) {
+      horsFec.push(e)
+      continue
+    }
     lignes.push({
-      ecriture: e, journal: e.journal_code, numero: e.numero_ecriture, pieceRef: e.piece_ref, pieceDate: e.piece_date,
-      compteLib: e.compte_lib, compAuxNum: e.comp_aux_num, compAuxLib: e.comp_aux_lib, validDate: dateAParis(e.valide_le),
-      champsBnc: null,
+      ecriture: e, journal: e.journal_code!, numero: e.numero_ecriture!, pieceRef: e.piece_ref!, pieceDate: e.piece_date!,
+      compteLib: e.compte_lib!, compAuxNum: e.comp_aux_num, compAuxLib: e.comp_aux_lib, validDate: dateAParis(e.valide_le!),
+      champsBnc: figes && champs !== null && champs !== 'illisible' ? champs : null,
     })
   }
   const validDate = dateAParis(valideLe)
+  const champsDesAN = new Map<string, ChampsBnc>()
+  if (figes) {
+    for (const date of new Set(aNouveaux.map((a) => a.date))) {
+      champsDesAN.set(date, champsDesANouveaux(aNouveaux.filter((a) => a.date === date), date, choix))
+    }
+  }
   return {
     aNouveaux: [...aNouveaux]
       .sort((a, b) => a.compte.localeCompare(b.compte) || a.id.localeCompare(b.id))
-      .map((a) => ({
-        aNouveau: a,
-        compteLib: a.compte_lib ?? champFec(libelleCompteTenu(a.compte) ?? (a.libelle || libelleDuPlanComptable(a.compte) || a.compte)),
-        ecritureLib: a.ecriture_lib ?? champFec(libelleEcritureANouveau(a)),
-        validDate,
-        champsBnc: null,
-      })),
+      .map((a) => {
+        const champs = champsDesAN.get(a.date)
+        return {
+          aNouveau: a,
+          compteLib: a.compte_lib ?? champFec(libelleCompteTenu(a.compte) ?? (a.libelle || libelleDuPlanComptable(a.compte) || a.compte)),
+          ecritureLib: a.ecriture_lib ?? champFec(libelleEcritureANouveau(a)),
+          validDate,
+          champsBnc: champs === undefined ? null : champsDeLaLigne(champs, a.id),
+        }
+      }),
     lignes: ordonnerLignes(lignes),
     horsFec,
-    champsBnc: 'non_calcules',
+    champsBnc: figes ? 'calcules' : 'non_calcules',
+  }
+}
+
+// La forme d'une date de la base, AAAA-MM-JJ.
+const DATE_DE_LA_BASE = /^\d{4}-\d{2}-\d{2}$/
+
+// Les quatre champs qu'une ligne validée a figés (FEC22b), ou nul quand elle n'en porte aucun ; « illisible » quand une
+// valeur sort de sa liste fermée ou de sa forme — la contrainte de la base le refuse, et la ligne se voit plutôt que de
+// s'imprimer. Une colonne ABSENTE (la ligne lue avant la migration, ou un jeu d'essai d'avant) vaut nulle : les colonnes
+// restent facultatives dans `EcritureBrouillon` jusqu'au jour de l'application (lib/types.ts).
+function champsFiges(e: EcritureBrouillon): ChampsBncDeLaLigne | null | 'illisible' {
+  const date = e.date_reglement ?? null
+  const mode = e.mode_reglement ?? null
+  const nature = e.nature_operation ?? null
+  const poste = e.poste_rattache ?? null
+  const client = e.identification_client ?? null
+  if (nature === null) return date === null && mode === null && poste === null && client === null ? null : 'illisible'
+  const natureLue = NATURES_OPERATION.find((n) => n === nature)
+  const modeLu = mode === null ? '' : MODES_REGLEMENT.find((m) => m === mode)
+  if (natureLue === undefined || modeLu === undefined || (date !== null && !DATE_DE_LA_BASE.test(date))) return 'illisible'
+  return {
+    dateRglt: date ?? '', modeRglt: modeLu, nature: natureLue,
+    natOp: natOpFigee({ nature_operation: natureLue, poste_rattache: poste }), idClient: client ?? '',
   }
 }
 

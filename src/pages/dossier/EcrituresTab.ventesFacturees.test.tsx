@@ -6,6 +6,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { formatMoney } from '../../lib/format'
 import EcrituresTab from './EcrituresTab'
+import { CHAMPS_BNC_EXPORTES } from '../../lib/champsBncDuFec'
 
 // LES VENTES FACTURÉES DANS L'ONGLET ÉCRITURES (ligne 28.6, chantier EC-Q3, étape VF4c1). L'état de chaque source est
 // éprouvé à part (lib/ecrituresVentesFactureesEcran.test.ts) ; ce qui se joue ici est le CÂBLAGE : la section ne paraît
@@ -196,7 +197,10 @@ describe('la section ne paraît que pour un dossier qui a basculé', () => {
     monter({ bascule: false })
     await screen.findByText(/Aucune écriture proposée pour l'instant/)
     expect(screen.queryByRole('heading', { name: /^Ventes facturées/ })).toBeNull()
-    for (const table of ['factures_emises', 'facture_lignes', 'encaissements_factures', 'encaissements_factures_taux']) {
+    // Le drapeau des quatre champs levé (FEC22c2), le FEC d'un BNC lit les factures du dossier — leur numéro et le SIRET figé,
+    // pour IdClient (lib/champsBncLecture.ts) —, jamais les ventes facturées : ni leurs lignes, ni leurs encaissements.
+    const jamaisLues = ['facture_lignes', 'encaissements_factures', 'encaissements_factures_taux']
+    for (const table of CHAMPS_BNC_EXPORTES === null ? ['factures_emises', ...jamaisLues] : jamaisLues) {
       expect(faux.tables, table).not.toContain(table)
     }
   })

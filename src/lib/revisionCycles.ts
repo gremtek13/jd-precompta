@@ -261,6 +261,9 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'ecritures-desequilibrees': 'ensemble',
   desequilibrees: 'ensemble',
   numerotation: 'ensemble',
+  // Les quatre champs du FEC d'un BNC en trésorerie (lot FEC22c2) : la numérotation que la validation fige, comme celle d'hier.
+  'ecritures-a-repartir': 'ensemble',
+  'champs-bnc': 'ensemble',
   'report-hors-classes': 'ensemble',
   'report-desequilibre': 'ensemble',
   // L'ouverture de l'exercice qui ne reprend pas la clôture du précédent (O33-Q1) : l'enchaînement des exercices.

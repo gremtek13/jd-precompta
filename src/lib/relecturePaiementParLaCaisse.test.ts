@@ -97,7 +97,8 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', relevesIncoherents: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE,
-    etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES, ...o,
+    etatsDesVentes: { etat: 'sans_objet' }, ventesDeLaChecklist: { etat: 'sans_objet' }, operationsDeCaisse: OPERATIONS_DE_CAISSE_ABSENTES,
+    champsBnc: { etat: 'non_exportes' }, ...o,
   }
   // La 2035 comme Clôture la calcule, la caisse comprise : ses paiements datent les pièces qu'ils règlent.
   const operations = base.operationsDeCaisse?.etat === 'lue' ? base.operationsDeCaisse.operations : []

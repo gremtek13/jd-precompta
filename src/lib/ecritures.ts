@@ -7,6 +7,7 @@ import {
   type PaiementsDesPieces,
 } from './rattachement'
 import type { AcquisitionDuBien } from './amortissements'
+import { ecritureParReglement, reglementsDeLaDate, repartirLesLignesPartagees, seRepartit } from './ecritureParReglement'
 import { estFigee } from './validationExercice'
 import { dateLocaleDe } from './format'
 import { exemplaireDUneSource, type FacturesSources } from './facturesSources'
@@ -86,9 +87,17 @@ export interface CibleComptable {
 // facture —, ses montants répartis au centime près, le dernier morceau prenant l'arrondi pour que la
 // somme reste celle de la pièce. Une part que rien ne date (ni paiement, ni date de pièce) prend la
 // date du DÉPÔT, le repli d'avant.
+//
+// ET, LES QUATRE CHAMPS D'UN BNC EXPORTÉS, UNE LIGNE DE CHARGE ET UNE DE TVA PAR RÈGLEMENT D'UNE MÊME DATE (lot FEC22c2 ;
+// lib/ecritureParReglement.ts) : une pièce payée le même jour par deux modes — la banque et la caisse, la banque et la poche
+// de l'exploitant, la banque et la part que rien ne paie encore — fait deux écritures du FEC, et la validation fige le mode
+// sur chaque LIGNE ; la charge de la date se répartit donc entre ses règlements, comme le fichier la répartissait
+// (`repartirLesLignesPartagees`, la même fonction des deux côtés), et chaque ligne n'appartient qu'à une écriture. Le total
+// de la date, de la pièce et de chaque compte est intact : la 2035, la balance et le contrôle des écritures (qui compare des
+// soldes par date et par compte) n'y voient rien. Le drapeau baissé (`CHAMPS_BNC_EXPORTES`), une ligne par date, comme hier.
 export function lignesChargeProduitPourPiece(
   dossierId: string, piece: Piece, cible: CibleComptable, assujettiTva: boolean,
-  paiements: readonly Pick<PaiementDePiece, 'date' | 'montant'>[],
+  paiements: readonly PaiementDePiece[],
   // Le plan du dossier (lib/planComptable.ts) : le compte de TVA de la pièce est celui de son rôle.
   plan: PlanComptable,
 ): LigneAGenerer[] {
@@ -120,13 +129,26 @@ export function lignesChargeProduitPourPiece(
     ? centimesParDate(piece, charge + tva, paiements).map((t, i) => ({ date: t.date, centimes: t.centimes - charges[i].centimes }))
     : []
 
+  const compteTva = compteTvaDe(piece, cible.immobilisation, plan)
+  const parReglement = ecritureParReglement()
   return charges.flatMap((f, i) => {
+    const centimesTva = tva ? tvas[i].centimes : 0
+    const reglements = parReglement ? reglementsDeLaDate(piece, paiements, f.date) : []
+    if (seRepartit(reglements)) {
+      // En centimes SIGNÉS, le débit positif, comme le fichier les répartit : un arrondi au demi-centime tombe du même côté.
+      const signe = sensPiece === 'debit' ? 1 : -1
+      const [charge, taxe] = repartirLesLignesPartagees([signe * f.centimes, ...(tva ? [signe * centimesTva] : [])], reglements.map((r) => r.part))
+      return reglements.flatMap((_, k) => [
+        ...(charge[k] !== 0 ? [ligne(f.date, cible.compte, (signe * charge[k]) / 100)] : []),
+        ...(taxe && taxe[k] !== 0 ? [ligne(f.date, compteTva, (signe * taxe[k]) / 100)] : []),
+      ])
+    }
     // Une part nulle ne fait pas de ligne, la charge comme sa TVA : la base refuse un montant nul, et l'insertion d'un
     // seul tenant de la génération emporterait tout le lot avec elle.
     const lignes = f.centimes !== 0 ? [ligne(f.date, cible.compte, f.centimes / 100)] : []
     // Rien à ventiler : la charge est ce qui a été payé, face au mouvement bancaire. Une part de TVA
     // arrondie à zéro sur un paiement partiel ne fait pas de ligne vide.
-    if (tva && tvas[i].centimes !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation, plan), tvas[i].centimes / 100))
+    if (tva && centimesTva !== 0) lignes.push(ligne(f.date, compteTva, centimesTva / 100))
     return lignes
   })
 }
@@ -807,8 +829,16 @@ function tresorerieDesynchronisee(
     return [...soldes].filter(([, centimes]) => centimes !== 0).map(([cle, centimes]) => `${cle}|${centimes}`).sort()
   }
   const presentes = soldesParDate(lignes)
-  const generees = soldesParDate(lignesChargeProduitPourPiece(p.dossier_id, p, cible, assujettiTva, paiementsPiece, plan))
+  const chargesGenerees = lignesChargeProduitPourPiece(p.dossier_id, p, cible, assujettiTva, paiementsPiece, plan)
+  const generees = soldesParDate(chargesGenerees)
   if (presentes.length !== generees.length || presentes.some((c, i) => c !== generees[i])) return true
+  // ET LE DÉCOUPAGE D'UNE DATE ENTRE SES RÈGLEMENTS (lot FEC22c2), que les soldes ne voient pas : là où la génération écrit
+  // plusieurs lignes d'un même compte à une même date — une ligne par règlement, les quatre champs d'un BNC exportés —, les
+  // lignes présentes doivent être celles-là, au centime. Une charge générée avant, d'une seule ligne pour deux règlements,
+  // ne se fige pas (la validation fige un mode par ligne, et la refuse : `defautsDeNumerotation`) : « Régénérer » doit se
+  // proposer. Ailleurs — et partout le drapeau baissé, où la génération n'écrit qu'une ligne par date et par compte —, rien
+  // de plus que les soldes.
+  if (dateComparee && decoupageDiffere(lignes, chargesGenerees)) return true
   const total = lignes.reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
   if (Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE) return true
   // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT. Le rapprochement n'en écrivait qu'une par pièce — celle du
@@ -831,6 +861,30 @@ function tresorerieDesynchronisee(
   const dirigeantAttendu = lignesTresoreriePourPiece(p.dossier_id, p, cible, assujettiTva, paiementsPiece, plan)
     .filter((l) => estContrepartieDirigeant(p, cible, l, plan)).map(cle).sort()
   return dirigeantPresent.length !== dirigeantAttendu.length || dirigeantPresent.some((c, i) => c !== dirigeantAttendu[i])
+}
+
+// Les lignes présentes d'une date et d'un compte où la génération en écrit plusieurs ne sont-elles pas celles-là ? Comparées
+// en multiensemble de centimes signés (le débit positif) : l'identifiant d'une ligne n'y entre pas.
+function decoupageDiffere(
+  presentes: readonly Pick<EcritureBrouillon, 'date' | 'compte' | 'sens' | 'montant'>[],
+  generees: readonly Pick<LigneAGenerer, 'date' | 'compte' | 'sens' | 'montant'>[],
+): boolean {
+  const parCle = (ls: readonly Pick<EcritureBrouillon, 'date' | 'compte' | 'sens' | 'montant'>[]) => {
+    const carte = new Map<string, number[]>()
+    for (const l of ls) {
+      const cle = `${l.date}|${l.compte}`
+      carte.set(cle, [...(carte.get(cle) ?? []), (l.sens === 'debit' ? 1 : -1) * Math.round(l.montant * 100)])
+    }
+    return carte
+  }
+  const attendu = parCle(generees)
+  const present = parCle(presentes)
+  return [...attendu].some(([cle, centimes]) => {
+    if (centimes.length < 2) return false
+    const a = [...centimes].sort((x, y) => x - y)
+    const b = [...(present.get(cle) ?? [])].sort((x, y) => x - y)
+    return a.length !== b.length || a.some((c, i) => c !== b[i])
+  })
 }
 
 // En ENGAGEMENT (lib/engagement.ts), ce qu'une pièce doit porter au brouillon : l'écriture de sa

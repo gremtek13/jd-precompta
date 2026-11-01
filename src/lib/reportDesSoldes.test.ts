@@ -727,7 +727,7 @@ describe('une chaîne d’exercices', () => {
   it('se relit telle quelle une fois 2026 validé : les libellés figés sont ceux de la numérotation', () => {
     const n = numeroterFec(E2026, [], CATEGORIES, OUVERTURE_2026, 'tresorerie', MOUVEMENTS, SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
     const figes = n.aNouveaux.map((a) => ({ ...a.aNouveau, compte_lib: a.compteLib, ecriture_lib: a.ecritureLib }))
-    const relus = colonnes(formaterFec(numerotationValidee([], figes, '2027-01-15T10:00:00Z'), new Map(), 'tresorerie')).slice(1)
+    const relus = colonnes(formaterFec(numerotationValidee([], figes, '2027-01-15T10:00:00Z', null), new Map(), 'tresorerie')).slice(1)
     expect(relus.map((r) => [r[4], r[5], r[10]])).toEqual([
       ['101000', 'Compte capital', 'À-nouveau Compte capital'], ['512000', 'Banque', 'À-nouveau Banque'],
     ])

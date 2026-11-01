@@ -1,8 +1,6 @@
 import { natureDuCompte } from './affectationBanque'
 import { POSTES_RATTACHES, posteRattache } from './cases2035'
-import {
-  MODES_REGLEMENT, NATURES_OPERATION, SEPARATEUR_DU_POSTE, type ChampsBnc, type ModeRglt, type NatureOperation,
-} from './champsBncDuFec'
+import { MODES_REGLEMENT, NATURES_OPERATION } from './champsBncDuFec'
 import { sirenValide, siretValide } from './factureCii'
 import type { FactureEmise } from './types'
 
@@ -20,7 +18,8 @@ import type { FactureEmise } from './types'
 // les mêmes cas en base.
 //
 // UN MODULE PUR : il ne lit ni la base ni l'horloge — le jour de Paris est un paramètre, comme le reste de ce qu'il juge.
-// Rien ne l'appelle encore : l'application n'envoie pas ces clés avant FEC22c2, et la migration est neutre pour elle.
+// Les préalables de la validation l'appellent depuis FEC22c2 (lib/prealablesValidation.ts, `champs-bnc`), le drapeau levé ;
+// baissé, la demande ne porte pas ces clés, et la migration est neutre pour elle.
 
 // ── Les clés de la demande, les colonnes de la base ────────────────────────────────────────────────────────────────────
 
@@ -30,57 +29,12 @@ export const COLONNES_CHAMPS_BNC = [
 ] as const
 export type ColonneChampsBnc = (typeof COLONNES_CHAMPS_BNC)[number]
 
-/**
- * Ce qu'une ligne de la demande porte de plus, et ce qu'une ligne validée en garde : nul quand la valeur manque — jamais
- * une chaîne vide, que la base refuse (une date, un mode ou une identification vides ne sont pas nuls : 151b, 153b, 163i
- * de l'essai).
- */
-export interface ChampsBncDUneLigne {
-  date_reglement: string | null
-  mode_reglement: ModeRglt | null
-  nature_operation: NatureOperation | null
-  poste_rattache: string | null
-  identification_client: string | null
-}
-
-/**
- * Le poste que NatOp porte après la nature (FEC22-Q3, (C) : « Dépense — Achats »), ou nul quand NatOp n'est que la nature.
- * NatOp vient de `natOpDeLaLigne` (lib/champsBncDuFec.ts) : une autre forme est une faute de l'appelant, qui se lève.
- */
-export function posteDeLaNatOp(nature: NatureOperation, natOp: string): string | null {
-  if (natOp === nature) return null
-  const prefixe = `${nature}${SEPARATEUR_DU_POSTE}`
-  if (!natOp.startsWith(prefixe) || natOp.length === prefixe.length) {
-    throw new Error(`NatOp « ${natOp} » ne commence pas par sa nature « ${nature} ».`)
-  }
-  return natOp.slice(prefixe.length)
-}
-
-/**
- * Les cinq clés d'une ligne de la demande, tirées des quatre champs de son écriture (`ChampsBnc`, lib/champsBncDuFec.ts) :
- * le vide du fichier ('') devient nul, la nature est celle de l'écriture, le poste celui que la NatOp de CETTE ligne
- * porte. Une ligne que les champs ne caractérisent pas est une faute de l'appelant, qui se lève.
- */
-export function champsDeLaLigneDemandee(champs: ChampsBnc, idDeLaLigne: string): ChampsBncDUneLigne {
-  const natOp = champs.natOp.get(idDeLaLigne)
-  if (natOp === undefined) throw new Error(`La ligne ${idDeLaLigne} n'a pas de NatOp dans les champs de son écriture.`)
-  return {
-    date_reglement: champs.dateRglt === '' ? null : champs.dateRglt,
-    mode_reglement: champs.modeRglt === '' ? null : champs.modeRglt,
-    nature_operation: champs.nature,
-    poste_rattache: posteDeLaNatOp(champs.nature, natOp),
-    identification_client: champs.idClient === '' ? null : champs.idClient,
-  }
-}
-
-/**
- * NatOp d'une ligne validée, recomposée de ce qu'elle a figé : la nature, suivie du poste quand elle en porte un ; ''
- * sans nature (une ligne validée sans les champs, avant la migration ou par une demande qui ne les portait pas).
- */
-export function natOpFigee(ligne: Pick<ChampsBncDUneLigne, 'nature_operation' | 'poste_rattache'>): string {
-  if (ligne.nature_operation === null) return ''
-  return ligne.poste_rattache === null ? ligne.nature_operation : `${ligne.nature_operation}${SEPARATEUR_DU_POSTE}${ligne.poste_rattache}`
-}
+// Ce qu'une ligne de la demande porte de plus, le poste que NatOp porte, les cinq clés d'une ligne de la demande et la NatOp
+// d'une ligne validée vivent dans lib/champsBncDesLignes.ts depuis FEC22c2, et se redisent ici : la numérotation (lib/fec.ts) et
+// la demande (lib/validationExercice.ts) les lisent, et ce module-ci, qui calcule ses listes au chargement depuis
+// lib/cases2035.ts, ne peut pas entrer dans le cycle de leurs imports (cases2035 → declaration2035 → amortissements →
+// validationExercice) sans s'évaluer avant elles.
+export { champsDeLaLigneDemandee, natOpFigee, posteDeLaNatOp, type ChampsBncDUneLigne } from './champsBncDesLignes'
 
 // ── Les listes fermées que la base copie ───────────────────────────────────────────────────────────────────────────────
 

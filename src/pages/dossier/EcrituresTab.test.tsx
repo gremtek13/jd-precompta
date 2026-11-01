@@ -663,7 +663,9 @@ describe('EcrituresTab — le FEC d’un BNC en trésorerie, vingt-deux champs, 
     return telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t'))
   }
 
-  it('le drapeau baissé (l’état de ce lot) : le fichier d’hier, à dix-huit colonnes', async () => {
+  it('le drapeau baissé : le fichier d’hier, à dix-huit colonnes', async () => {
+    // Baissé en toutes lettres : le jour où le drapeau se lève (la simulation de FEC22c2 le lève), cet état reste éprouvé.
+    drapeauBnc.choix = null
     posee()
     monter()
     const lignes = await exporter()
@@ -2618,6 +2620,9 @@ describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () =
   })
 
   it('sur des parts lues en partie, le dit, ne propose rien et laisse le FEC s’exporter', async () => {
+    // Le drapeau des quatre champs baissé : levé, des parts lues en partie retiennent aussi l'export (les champs d'un BNC
+    // se lisent sur elles : `champsBncIndisponibles`, lot FEC22c1).
+    drapeauBnc.choix = null
     poser({ categories: [CATEGORIE_ACHATS, RECOMPTEE], lignes_bancaires: [mouvement()], ventilations_bancaires: PARTS, ecritures_brouillon: ecrituresDe('l-v', '2025-03-31') })
     faux.muetParTable = { ventilations_bancaires: 1 }
     monter()

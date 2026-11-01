@@ -45363,3 +45363,142 @@ joué sur l'ancienne forme, il tombe, avec les deux du classement.
 `caisse.sql`, `validationExercice.sql` et `validationDesPaiementsParLaCaisse.sql` se jouent en production, et les deux
 cas « apres » qui restent, `caisse` et le filet, quittent `regles.json`. La base `leurre0111_apres` a été jetée : `composer_apres.py`, dans
 le bloc-notes, la refait en quelques secondes.
+
+### 01/11/2026 — LE FEC D'UN BNC : LA DEMANDE DE VALIDATION PORTE SES CLÉS (FEC22C2, DERRIÈRE SON DRAPEAU)
+
+(Écrite par un agent architecte, sur `911d119` — `main`. Aucune migration, aucune Edge Function, rien en production ;
+les trois migrations préparées (C8, FEC22b, le filet) ne changent pas d'un octet. Lus avant d'écrire : « LE FEC D'UN BNC
+EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E »,
+« LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) », « LE FEC D'UN BNC EN TRÉSORERIE À VINGT-DEUX
+CHAMPS, DERRIÈRE SON DRAPEAU (FEC22C1, LIGNE 26.6, ÉTAPE E) », « LES QUATRE CHAMPS DU FEC D'UN BNC, EN BASE (FEC22B)
+(PRÉPARÉE, PAS APPLIQUÉE) » — son « CE QUI RESTE », le périmètre —, « LE FEC D'UN BNC : LES QUATRE POSTES NEUFS DE LA 2035
+DANS LES LISTES FERMÉES (FEC22B ET LE FILET) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS LES MOTEURS (C9A,
+LIGNE 26.6) », « LE FEC SUIT L'ARTICLE A47 A-1 ».)
+
+**LE DRAPEAU.** `CHAMPS_BNC_EXPORTES` reste BAISSÉ, et tout ce qui suit est derrière lui : baissé, la génération, la
+numérotation, la demande, les préalables et le FEC relu sont ceux d'hier au caractère près. Il vit désormais dans un module
+sans import, `lib/champsBncExportes.ts`, que `lib/champsBncDuFec.ts` redit : la génération (lib/ecritures.ts) le lit, et
+`champsBncDuFec.ts`, qui importe `cases2035.ts`, ne peut pas entrer dans le cycle `cases2035 → declaration2035 → ecritures`
+(sa table `CLASSE_DU_POSTE`, calculée au chargement, levait). Pour la même raison, les cinq clés d'une ligne
+(`ChampsBncDUneLigne`, `champsDeLaLigneDemandee`, `natOpFigee`, `posteDeLaNatOp`, `SEPARATEUR_DU_POSTE`) passent dans
+`lib/champsBncDesLignes.ts`, qui n'importe que des types, redites par `champsBncDuFec.ts` et `champsBncFiges.ts` : la demande
+(`validationExercice.ts`, importé par `amortissements.ts`) les lit sans le cycle.
+
+**LA GÉNÉRATION : UNE CHARGE ET UNE TVA PAR RÈGLEMENT D'UNE MÊME DATE** (lib/ecritureParReglement.ts, neuf, pur ;
+`lignesChargeProduitPourPiece`). Le point dur de FEC22c1 : une pièce payée le même jour par deux modes fait deux écritures
+du FEC, et la scission (`scinderParMode`) dérivait deux lignes d'un même identifiant, que la validation ne peut pas figer
+(un jeu de valeurs par ligne). Levé, la génération écrit, à une date que plusieurs règlements partagent, une ligne de charge
+et une de TVA par règlement — la répartition même du fichier (`repartirLesLignesPartagees`, extraite de `scinderParMode` :
+le TTC d'abord, la TVA en complément), en centimes signés le débit positif, pour qu'un demi-centime tombe du même côté. Les
+règlements de la génération ne lisent pas le registre des encaissements (elle ne le reçoit pas) : le relevé, CHAQUE virement
+mixte (par mouvement), la caisse, la poche de l'exploitant, la part que rien ne paie — un découpage au moins aussi fin que
+celui du fichier (`cleDuReglement`, qui sépare deux moyens) ; une date dont les parts s'annulent (un rejet et un paiement
+en espèces le même jour) ne se répartit pas (`seRepartit`). Le total de chaque compte à chaque date est intact : la 2035, la
+balance, la concordance et le contrôle des écritures (des soldes par date et par compte) n'y voient rien.
+`tresorerieDesynchronisee` compare en plus, là où la génération écrit plusieurs lignes d'un compte à une date, le
+multiensemble de leurs centimes (`decoupageDiffere`) : le brouillon d'une ligne pour deux règlements, généré avant, se dit
+« à régénérer » — et le drapeau baissé, rien de plus (la génération n'écrit alors qu'une ligne par date et par compte).
+
+**LA NUMÉROTATION RANGE** (lib/fec.ts, `rangerParReglement`). Les quatre champs calculés, l'écriture d'une pièce dont la date
+se répartit range chaque ligne dans l'écriture de son règlement : la banque par son mouvement, la caisse par son opération,
+la contrepartie de l'exploitant à sa poche, la charge et la TVA par leurs montants — la répartition de leur total par compte,
+qui doit être exactement leur multiensemble, compte par compte ; puis les règlements se réunissent par mode (deux virements
+mixtes du même moyen : une écriture). Un brouillon qui n'est pas celui de la génération (une ligne de trop, une contrepartie
+qu'aucun règlement de la date ne fait) reprend la scission d'hier, et aucune ligne ne se perd. La scission n'est plus qu'un
+repli : le fichier s'exporte comme hier, mais sa ligne scindée porte deux numéros.
+
+**`defautsDeNumerotation` DIT UNE LIGNE NUMÉROTÉE DEUX FOIS** (`ligne_numerotee_deux_fois` : journal, numéro, pièce, ligne) ;
+la base ne la refuse que d'un message général (« La numérotation proposée ne couvre pas exactement les N écritures de
+l'exercice A. »). Les préalables la disent à part (`ecritures-a-repartir`, la pièce nommée, « Régénérer »), hors du compte
+de `numerotation`.
+
+**LA DEMANDE PORTE LES CINQ CLÉS** (`demandeDeValidation`). Une numérotation `calcules` : chaque ligne reçoit
+`date_reglement`, `mode_reglement`, `nature_operation`, `poste_rattache`, `identification_client`
+(`champsDeLaLigneDemandee` : le vide du fichier devient nul, le poste celui que NatOp porte) ; `non_calcules` : les huit clés
+d'hier, ABSENTES et non nulles — la demande d'hier au caractère près. Les préalables reçoivent les MÊMES entrées que l'export
+de l'onglet Écritures (`DonneesDeValidation.champsBnc`, obligatoire : `non_exportes`, ou les entrées sans les paiements —
+la validation tire les siens —, ou nul tant qu'elles ne sont pas lues en entier, et la validation se suspend) ; Clôture les
+lit comme l'onglet Écritures (`lireLesChampsBnc`, le registre d'un dossier basculé, les ventilations, les biens).
+`refusDesChampsBnc` juge la demande telle qu'elle part, après les refus d'hier, et le premier refus se dit sous les mots de la
+base (`champs-bnc`). `revisionCycles.ts` range les deux préalables neufs dans l'« ensemble », avec `numerotation`.
+
+**LE FEC D'UN EXERCICE VALIDÉ SE RELIT DES COLONNES** (`numerotationValidee`, un quatrième paramètre obligatoire, le choix en
+vigueur). Une ligne figée avec les champs porte sa date et son mode, sa nature, et NatOp recomposée (`natOpFigee`) ; un
+exercice qui les porte s'écrit à vingt-deux colonnes, un exercice validé sans eux à dix-huit, comme hier ; une ligne figée
+hors de sa liste, ou sans eux dans un exercice qui les porte, part dans `horsFec`. Les à-nouveaux ne figent pas leurs
+champs (la migration ne touche ni `a_nouveaux` ni `soldes_reportes`) : ils se recomposent sous le choix de FEC22-Q1 en
+vigueur ; le drapeau baissé, un exercice figé avec eux se relit à dix-huit colonnes, rien ne s'invente.
+
+**`types.ts`** : les cinq colonnes restent FACULTATIVES jusqu'au jour de l'application, et le commentaire décrit la bascule
+(les `?` retirés après la migration, `tsc -b` nommant chaque fabrique de `src/test/` à compléter à nul ; `numerotationValidee`
+cesse alors de lire l'absence).
+
+**L'ASSISTANT** ne lit pas `identification_client` : une garde le prouve sans toucher à la fonction
+(`agentComptableIdentificationClient.test.ts`) — la colonne n'est nommée nulle part ; chacune des 46 lectures `.select(` n'est
+faite que de chaînes littérales sans `*` (une ternaire de deux listes comprise), aucune `select()` ; les deux appels de
+fonction dans une liste fermée, la table que rend `ventes_facturees_de_l_exercice` relue dans l'export ; sept défauts
+plantés, tous vus.
+
+**LES PREUVES.** `fecChampsDeLaValidation.test.ts` (20 cas), le drapeau joué par un accesseur sur `champsBncExportes.ts` :
+baissé, la génération égale, en `JSON.stringify`, sa copie d'hier sur 400 pièces tirées (graine 20261101 ; le témoin : 40
+pièces au moins se répartissent levé), la demande ses huit clés, un brouillon d'avant ni « à régénérer » ni en défaut ; levé,
+la génération (58,33 + 11,67 face à 70 € prélevés, 41,67 + 8,33 face à 50 € d'espèces), le rangement (aucune ligne deux
+fois), le fichier régénéré égal octet pour octet à celui qu'hier on scindait (sur le cas et sur 300 pièces tirées, graine
+20261102), les cinq clés, le jugement de la base redit, le brouillon d'avant « à régénérer » et en défaut, le FEC relu égal
+à celui d'avant la validation hors ValidDate, et quatre bords (deux virements mixtes du même moyen, une date qui s'annule,
+une répartition fausse au même total, deux lignes de plus qui s'annulent). `prealablesValidation.test.ts` (+5), `ClotureTab.test.tsx`
+(+2 : la demande envoyée, huit clés baissé, treize levé). Vingt et une mutations : vingt tuées ; une ÉQUIVALENTE — le
+`d.champsBnc === null` retiré du test de la lecture partielle, que le motif de `lectureIncomplete` couvre déjà. Quatre
+avaient survécu au premier passage et ont reçu leur cas (les quatre bords ci-dessus).
+
+**LA BASE, SUR LA RÉPLIQUE DE C8 SEULEMENT** (grappe `c8_replique`, démarrée par son répertoire, arrêtée de même). `c8_s165`
+vérifiée sans y toucher : 165 migrations, le corps de `regler_piece_par_la_caisse` égal à celui du fichier préparé
+(`c8b8e39e…`), sa ligne d'historique à l'empreinte du fichier (`0accdea9…`). Une base de travail faite d'elle comme modèle,
+FEC22b puis le filet appliqués par le propriétaire, chacun avec sa ligne d'historique à l'empreinte de son fichier
+(`844d59be…`, `7c098f63…`, 167 migrations), le corps de `valider_exercice` à `02750f93…`. Un dossier FICTIF en trésorerie,
+l'exercice 2024 : un achat de 120 € payé le même jour par 70 € prélevés et 50 € en espèces (`regler_piece_par_la_caisse`),
+une vente de 200 € encaissée par virement, exemplaire désigné d'une facture validée (IdClient : le SIREN de son client figé),
+une recette affectée du relevé, la dotation d'un bien, un apport en caisse. Les lignes de pièce écrites par la génération
+levée (la contrepartie de caisse admise par `garder_ecriture_de_caisse`) ; la demande composée par l'application sur ce que
+la base rend : 14 lignes, six écritures, aucun défaut, aucun refus redit ; `valider_exercice` l'ACCEPTE, l'exercice se
+vérifie (`verifier_exercice_valide`), ses 14 lignes portent leur nature ; le FEC relu de la base est celui d'avant la
+validation, ValidDate près, à vingt-deux colonnes. Les treize refus neufs, chacun sur une demande mutée : la base les rend
+tous sous le code 22023 et les mots de `REFUS_DES_CHAMPS_BNC`, et `refusDesChampsBnc` rend le même refus sur la même demande ;
+le brouillon d'avant (la charge et la TVA d'une ligne) : `defautsDeNumerotation` nomme ses deux lignes, la base le refuse
+d'un message général (« … ne couvre pas exactement les 14 écritures de l'exercice 2024. »). `validationExercice.sql`
+(`psql -1`) sur la base des trois migrations : 245 verdicts justes sur 245, avant le jeu et après, la sortie identique au
+caractère près (`08d91e57…`) — ceux de la référence du banc du leurre. La base de travail supprimée à la fin.
+
+**LA SIMULATION DU JOUR D'APPLICATION** (les trois fichiers déplacés dans l'export, le déplacement inscrit à l'index ;
+`CHAMPS_BNC_EXPORTES` et `PAIEMENT_PAR_LA_CAISSE_EXPORTE` levés) : 525 fichiers, 16 324 tests, UN ÉCHEC — la garde de la copie
+du générateur de l'assistant (`agentComptableAnalyse.test.ts`, « produit les mêmes lignes que src/lib ») : la copie déployée
+n'écrit qu'une ligne par date. C'est une vraie alarme, laissée telle : la copie doit suivre avant que le drapeau se lève
+(ci-dessous). Les autres défauts que la simulation a montrés tenaient à des cas de FEC22c1 qui lisaient le drapeau réel pour
+dire son état baissé, et ont été écrits en toutes lettres : le fichier d'hier et les ventilations lues en partie de
+`EcrituresTab.test.tsx` (`drapeauBnc.choix = null`), la lecture des factures d'un dossier non basculé
+(`EcrituresTab.ventesFacturees.test.tsx` : levé, le FEC d'un BNC lit `factures_emises`, jamais les ventes facturées), et
+`fecVingtDeuxChamps.test.ts`, qui éprouve la scission sur le brouillon d'hier et garde donc la génération baissée (le module
+neuf prouve que les deux fichiers sont les mêmes) ; son test du drapeau dit désormais « levé seulement avec FEC22b dans
+l'export ». Puis tout rendu : les fichiers dans `supabase/preparees/` à leurs empreintes, les deux drapeaux baissés.
+
+**LA SUITE** (Node 22, la barrière) : `tsc -b` 0 ; `oxlint` 0 erreur, 63 avertissements, ceux d'avant ; `test:fuseaux` :
+sous Paris, UTC, New York et Auckland, 525 fichiers, 16 322 tests verts et 2 « échecs attendus » d'autres lots par fuseau (hier 523 et 16 292 : deux fichiers et trente-deux tests de plus) ; `build` : 0.
+
+**LES ÉCARTS AU « CE QUI RESTE » DE FEC22B, ET POURQUOI.**
+- `types.ts` ne rend pas les colonnes obligatoires : avant la migration, le type mentirait sur chaque ligne de la production ;
+  la bascule est écrite, à faire le jour de l'application.
+- La génération ne répartit que derrière le drapeau : baissée, elle aurait changé le brouillon visible d'une note de frais
+  remboursée en partie le jour même, ou d'une pièce payée en partie le jour de sa facture.
+- Les règlements de la génération séparent chaque virement mixte par son mouvement, le fichier par son moyen : la génération
+  ne lit pas le registre.
+- Les à-nouveaux ne figent pas leurs quatre champs : la migration ne les pose que sur `ecritures_brouillon`.
+
+**CE QUI RESTE.**
+- AVANT DE LEVER LE DRAPEAU : la copie de l'assistant (`supabase/functions/agent-comptable/index.ts`, `lignesChargeProduitPourPiece`
+  et le contrôle qui la compare) suit la génération répartie — sinon il dit « à régénérer » une pièce que la frontière coupe et
+  qu'une date répartie traverse, et ne dit pas le brouillon d'avant —, puis l'assistant se redéploie ; la garde de sa copie le
+  rappelle.
+- Le jour de l'application : C8, FEC22b, le filet ; `types.ts` basculé ; puis le drapeau, avec la réponse de
+  l'expert-comptable à FEC22-E2 (le choix qu'il porte) ; « Régénérer » sur les pièces payées le même jour par deux modes
+  avant la validation de 2025 (le préalable les nomme).
+- FEC22-E2 fixe le choix une fois : les à-nouveaux d'un exercice validé suivent le choix en vigueur.

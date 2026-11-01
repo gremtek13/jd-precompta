@@ -98,7 +98,7 @@ describe('VF4A-Q1 â€” le 706000 et le 627000 portent le nom du plan comptable gÃ
       statut: 'validee', valide_le: '2027-01-15T10:00:00Z', journal_code: 'VE', numero_ecriture: 1, piece_ref: 'piece-fictive.pdf',
       piece_date: '2026-03-10', compte_lib: 'Ventes / prestations',
     })
-    expect(numerotationValidee([validee], [], '2027-01-15T10:00:00Z').lignes[0].compteLib).toBe('Ventes / prestations')
+    expect(numerotationValidee([validee], [], '2027-01-15T10:00:00Z', null).lignes[0].compteLib).toBe('Ventes / prestations')
   })
 })
 
