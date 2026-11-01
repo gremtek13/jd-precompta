@@ -1875,8 +1875,9 @@ describe('prealablesDeValidation — la caisse (étape C3b)', () => {
   })
 })
 
-// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (ligne 26.6, étape C9a), le drapeau joué dans ses deux états. Baissé (la valeur du
-// module), la validation ne lit aucun paiement par la caisse — tous les cas plus haut ; levé, elle les tire des opérations
+// LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (ligne 26.6, étape C9a), le drapeau joué dans ses deux états, écrits dans chaque cas
+// de ce bloc. Baissé (la valeur du module aujourd'hui), la validation ne lit aucun paiement par la caisse — tous les cas plus
+// haut ; levé, elle les tire des opérations
 // qu'elle reçoit, et une pièce compte à la date de ses espèces, pour l'ordre des exercices comme pour les montants payés.
 const drapeauDuPaiement = vi.hoisted(() => ({ leve: null as boolean | null }))
 vi.mock('./paiementParLaCaisse', async (original) => {
@@ -1897,6 +1898,8 @@ describe('prealablesDeValidation — les paiements par la caisse (étape C9a)', 
 
   it('l’ordre des exercices : une pièce de décembre payée en espèces en janvier fait de janvier l’exercice qui la porte', () => {
     const d = donnees({ piecesValidees: [P1, P2], operationsDeCaisse: caisseLue([ESPECES]) })
+    // Baissé, écrit : l'état d'aujourd'hui, quelle que soit la valeur du module, que la migration lèvera.
+    drapeauDuPaiement.leve = false
     expect(prochainExerciceAValider(d)).toBe(2024)
     drapeauDuPaiement.leve = true
     expect(prochainExerciceAValider(d)).toBe(2025)
@@ -1940,6 +1943,7 @@ describe('prealablesDeValidation — les paiements par la caisse (étape C9a)', 
   it('payée en trop : le relevé et la caisse s’additionnent', () => {
     const ENTROP = operationDeCaisse({ id: 'oc-p1', genre: 'paiement', piece_id: 'p1', date: '2025-03-20', montant: -50 })
     const d = donnees({ operationsDeCaisse: caisseLue([ENTROP]) })
+    drapeauDuPaiement.leve = false
     expect(ids(d)).not.toContain('pieces-payees-en-trop')
     drapeauDuPaiement.leve = true
     expect(prealable(d, 'pieces-payees-en-trop')?.nb).toBe(1)

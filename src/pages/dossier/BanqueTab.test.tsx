@@ -108,6 +108,14 @@ const faux = vi.hoisted(() => ({
 // jsdom faute de `DOMMatrix`. Aucune fonctionnalité PDF n'est exercée par ce test : le module est
 // donc remplacé, exactement comme `lib/supabase` l'est ci-dessous pour ce qui parle à la base.
 vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => faux.lignesPdf }))
+// LE DRAPEAU DU PAIEMENT PAR LA CAISSE (ligne 26.6, étape C9a), ÉCRIT : un accesseur, BAISSÉ par défaut (`reinitialiser`) —
+// l'état d'aujourd'hui, quelle que soit la valeur du module, que la migration lèvera. Levé, la redate d'une pièce écarte la
+// ligne d'une opération de caisse (lib/contrepartieBanque.ts) : les cas « levé » le disent filtre pour filtre.
+const drapeauDuPaiement = vi.hoisted(() => ({ leve: false }))
+vi.mock('../../lib/paiementParLaCaisse', async (original) => {
+  const module = await original<typeof import('../../lib/paiementParLaCaisse')>()
+  return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeauDuPaiement.leve } }
+})
 // Le justificatif qu'on ouvre depuis la fiche d'un mouvement : le chemin demandé, sans ouvrir d'onglet.
 const justificatifs = vi.hoisted(() => ({ ouverts: [] as string[] }))
 vi.mock('../../lib/depot', () => ({
@@ -463,6 +471,7 @@ function pieceDeTest(o: Partial<Piece> = {}): Piece {
 }
 
 function reinitialiser() {
+  drapeauDuPaiement.leve = false
   faux.lignes = [ligneDeTest()]
   faux.pieces = [pieceDeTest()]
   faux.updatesLignes = []
@@ -1214,6 +1223,34 @@ describe('BanqueTab — l’écriture suit le paiement', () => {
     await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
 
     expect(faux.updatesEcritures).toEqual([{ valeur: { date: '2025-06-01' }, filtres: ['piece_id=piece-1'] }])
+  })
+
+  it('levé : rapprocher date la pièce au paiement, la ligne d’une opération de caisse écartée de la redate', async () => {
+    reinitialiser()
+    drapeauDuPaiement.leve = true
+    faux.majImmediate = true
+    faux.ecritures = [{ id: 'e1', compte: '606100' }]
+    rendre()
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette pièce' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Rapproché avec')).toBeTruthy())
+
+    expect(faux.updatesEcritures).toEqual([{ valeur: { date: '2025-06-02' }, filtres: ['piece_id=piece-1', 'compte!=512000', 'operation_caisse_id is null'] }])
+    expect(faux.insertions).toContainEqual({ table: 'ecritures_brouillon', valeur: expect.objectContaining({ compte: '512000', date: '2025-06-02' }) })
+  })
+
+  it('levé : annuler rend la pièce à sa facture, la ligne d’une opération de caisse écartée', async () => {
+    reinitialiser()
+    drapeauDuPaiement.leve = true
+    faux.majImmediate = true
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1' })]
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler le rapprochement' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+
+    expect(faux.updatesEcritures).toEqual([{ valeur: { date: '2025-06-01' }, filtres: ['piece_id=piece-1', 'operation_caisse_id is null'] }])
   })
 })
 
@@ -3504,6 +3541,32 @@ describe('BanqueTab — un virement qui règle plusieurs pièces', () => {
     expect(within(volet()).queryByText('Rapproché avec')).toBeNull()
   })
 
+  it('levé : les mêmes parts, chaque pièce datée au paiement, la ligne d’une opération de caisse écartée', async () => {
+    preparer()
+    drapeauDuPaiement.leve = true
+    faux.ecritures = [{ id: 'charge', compte: '606100', ligne_bancaire_id: null }]
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    choisir(1, 'piece-a')
+    choisir(2, 'piece-b')
+    await act(async () => { bouton().click() })
+
+    await waitFor(() => expect(within(volet()).getByText('Règle 2 pièces')).toBeTruthy())
+    expect(reglementsRpc()).toEqual([{
+      nom: 'regler_pieces_par_mouvement',
+      args: { p_ligne_bancaire_id: 'ligne-1', p_parts: [{ piece_id: 'piece-a', montant: -300 }, { piece_id: 'piece-b', montant: -200 }] },
+    }])
+    expect(faux.insertions.filter((i) => i.table === 'ecritures_brouillon').map((i) => i.valeur)).toEqual([
+      expect.objectContaining({ piece_id: 'piece-a', ligne_bancaire_id: 'ligne-1', compte: '512000', montant: 300, sens: 'credit', date: '2025-06-02' }),
+      expect.objectContaining({ piece_id: 'piece-b', ligne_bancaire_id: 'ligne-1', compte: '512000', montant: 200, sens: 'credit', date: '2025-06-02' }),
+    ])
+    expect(faux.updatesEcritures.map((u) => [u.valeur, u.filtres])).toEqual([
+      [{ date: '2025-06-02' }, ['piece_id=piece-a', 'compte!=512000', 'operation_caisse_id is null']],
+      [{ date: '2025-06-02' }, ['piece_id=piece-b', 'compte!=512000', 'operation_caisse_id is null']],
+    ])
+  })
+
   it('en engagement, chaque part écrit le règlement de sa facture', async () => {
     preparer()
     faux.ecritures = [{ id: 'facture', compte: '606100', ligne_bancaire_id: null }]
@@ -3673,6 +3736,22 @@ describe('BanqueTab — un virement qui règle plusieurs pièces', () => {
     ])
   })
 
+  it('levé : l’annulation rend ses pièces à leur facture, la ligne d’une opération de caisse écartée', async () => {
+    preparer(REGLE, PARTS)
+    drapeauDuPaiement.leve = true
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR FOURNISSEURS')
+    await act(async () => { bouton('Annuler le règlement groupé').click() })
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_reglement_groupe', args: { p_ligne_bancaire_id: 'ligne-1' } }])
+    expect(faux.updatesLignes).toEqual([])
+    expect(faux.updatesEcritures.map((u) => [u.valeur, u.filtres])).toEqual([
+      [{ date: '2025-05-20' }, ['piece_id=piece-a', 'operation_caisse_id is null']],
+      [{ date: '2025-05-25' }, ['piece_id=piece-b', 'operation_caisse_id is null']],
+    ])
+  })
+
   it('dit une annulation que la base refuse, et le mouvement reste réglé', async () => {
     preparer(REGLE, PARTS)
     faux.erreurRpc = 'refus simulé'
@@ -3699,6 +3778,21 @@ describe('BanqueTab — un virement qui règle plusieurs pièces', () => {
     await waitFor(() => expect(reglementsRpc()).toHaveLength(1))
     expect(reglementsRpc()[0].args.p_parts).toEqual([{ piece_id: 'piece-a', montant: -300 }, { piece_id: 'piece-c', montant: -200 }])
     await waitFor(() => expect(faux.updatesEcritures.map((u) => u.filtres)).toContainEqual(['piece_id=piece-b']))
+    expect(faux.updatesEcritures.find((u) => u.filtres[0] === 'piece_id=piece-b')?.valeur).toEqual({ date: '2025-05-25' })
+  })
+
+  it('levé : la pièce qui sort du règlement modifié retourne à sa facture, la ligne d’une opération de caisse écartée', async () => {
+    preparer(REGLE, PARTS)
+    drapeauDuPaiement.leve = true
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR FOURNISSEURS')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Modifier le règlement…' }).click() })
+    choisir(2, 'piece-c')
+    await act(async () => { bouton('Enregistrer le règlement').click() })
+    await waitFor(() => expect(reglementsRpc()).toHaveLength(1))
+    expect(reglementsRpc()[0].args.p_parts).toEqual([{ piece_id: 'piece-a', montant: -300 }, { piece_id: 'piece-c', montant: -200 }])
+    await waitFor(() => expect(faux.updatesEcritures.map((u) => u.filtres)).toContainEqual(['piece_id=piece-b', 'operation_caisse_id is null']))
     expect(faux.updatesEcritures.find((u) => u.filtres[0] === 'piece_id=piece-b')?.valeur).toEqual({ date: '2025-05-25' })
   })
 

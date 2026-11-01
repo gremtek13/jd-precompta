@@ -44741,8 +44741,13 @@ tous les cas de ce lot verts — deux de mes cas épinglaient l'état d'aujourd'
 code : ils épinglent l'état du drapeau baissé — les requêtes de `contrepartieBanque.ts` au filtre près (cinq, et cinq de
 `BanqueTab.test.tsx`, qui voient le filtre `operation_caisse_id is null` que le drapeau levé ajoute à dessein), deux témoins
 « le drapeau est baissé » (`paiementParLaCaisseMoteurs.test.ts`, `contrepartieBanque.test.ts`) et deux cas de
-`prealablesValidation.test.ts` qui lisent la valeur du module. À rendre explicites (un accesseur, l'état écrit) AVANT de lever
-le drapeau, le jour de la migration.
+`prealablesValidation.test.ts` qui lisent la valeur du module. Rendus explicites dans la foulée, par un commit à part : un
+accesseur `get PAIEMENT_PAR_LA_CAISSE_EXPORTE()` sous `vi.mock`, baissé par défaut, chaque cas « baissé » d'hier au caractère
+près, et onze cas « levé » neufs (cinq de `contrepartieBanque.test.ts`, cinq de `BanqueTab.test.tsx`, un des moteurs), le
+témoin de `contrepartieBanque.test.ts` jouant l'accesseur dans ses deux états et un cas des moteurs gardant que la vraie
+dérivation suit la constante du module. Puis la suite entière, sous Paris : drapeau baissé, 518 fichiers et 16 174 tests
+verts (10 « échecs attendus ») ; en simulation (la migration dans l'export, le drapeau levé), les mêmes, tous verts ; tout
+rendu ensuite.
 
 **À REJOUER SUR UNE RÉPLIQUE, LE JOUR DE LA MIGRATION** (rien de cela n'a été joué ici) : depuis la fiche, `regler_piece_par_la_caisse`
 avec les quatre paramètres que l'écran envoie (`p_dossier_id`, `p_piece_id`, `p_date`, `p_montant`), chacun de ses refus
