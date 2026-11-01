@@ -766,10 +766,14 @@ contrepartie entière manque au brouillon ; corps neuf `02750f93…`. Son RETOUR
 n'est retiré. Le jour de l'application : C8, puis FEC22b, puis lui, chacun par l'outil, puis les trois contrôles de
 l'export. Sur la réplique de FEC22b, depuis l'état de la production (164 migrations, `3a31b730…`), les trois appliquées
 dans cet ordre : le socle 81 instructions, `bfe9dce8…` (celui que le socle régénéré devra rendre) ; l'inventaire 2 295
-objets, `5ac4309b…` ; `signature.sql` : « contraintes » 711 `bb338173…`, « déclencheurs » 84 `8f00438b…`, « fonctions »
-220 `e3cc1631…`, « droits des fonctions » 220 `1f3389b2…`, les autres familles celles de la production (HISTORIQUE.md,
-« LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS », « LE FEC D'UN BNC : LES QUATRE POSTES NEUFS DE LA 2035 DANS
-LES LISTES FERMÉES (FEC22B ET LE FILET) »).
+objets, `5ac4309b…` ; `signature.sql` : « colonnes » 916 `821f8387…`, « contraintes » 711 `bb338173…`, « déclencheurs »
+84 `8f00438b…`, « fonctions » 220 `e3cc1631…`, « droits des fonctions » 220 `410d7470d418786fde9f2db4ebcd9ef7`, les quatre
+autres familles celles de la production (HISTORIQUE.md, « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS », « LE
+FEC D'UN BNC : LES QUATRE POSTES NEUFS DE LA 2035 DANS LES LISTES FERMÉES (FEC22B ET LE FILET) »). Les « droits des
+fonctions » sont ceux des trois migrations appliquées par le PROPRIÉTAIRE des tables, comme l'outil les applique en
+production : relevés le 01/11/2026 sur le modèle « apres » du banc du leurre ; la valeur `1f3389b2…` notée d'abord venait
+d'une application par le super-utilisateur de la réplique, sous qui les fonctions neuves ne reçoivent pas les droits par
+défaut du schéma (HISTORIQUE.md, « LE BANC DU LEURRE SUR LES ESSAIS DU 01/11/2026 (C8, FEC22B, LE FILET) »).
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 

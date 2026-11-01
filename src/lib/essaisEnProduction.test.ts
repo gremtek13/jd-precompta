@@ -244,13 +244,13 @@ const fleches = (texte: string) => [...sansCommentairesPleins(texte).matchAll(FL
 describe('les essais de la base, rejoués en production', () => {
   it('chaque fichier se classe par sa forme, la règle que le banc lit aussi', () => {
     expect(CLASSEMENT.inconnus).toEqual([])
-    // Six essais de réplique seulement : un de plus est un essai que le banc ne rejoue plus — à regarder avant. Le sixième, le
-    // filet de la validation devant la caisse (la relecture du 01/11/2026), le reste jusqu'à ce que le banc l'ait rejoué : ses
-    // migrations sont préparées, et la relecture ne pouvait pas monter les copies du banc (son en-tête le dit).
+    // Cinq essais de réplique seulement : un de plus est un essai que le banc ne rejoue plus — à regarder avant. Le filet de la
+    // validation devant la caisse (la relecture du 01/11/2026), rejoué SÛR par le banc le même jour et réécrit dans la forme
+    // des essais joués en production, les a quittés (HISTORIQUE.md, « LE BANC DU LEURRE SUR LES ESSAIS DU 01/11/2026 (C8,
+    // FEC22B, LE FILET) »).
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'caisseSuppression (son en-tête)', 'frontiereDesEncaissements (son en-tête)', 'logoDesFacturesSuppression (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)',
-      'validationDesPaiementsParLaCaisse (son en-tête)',
     ])
     // Les outils ne se rejouent pas ; un outil de plus se lit avant d'entrer (l'audit du 29/10/2026 a lu ces cinq-là).
     expect(CLASSEMENT.outils).toEqual(['allerretour.py', 'batterieEncaissements.mjs', 'bordures.py', 'inventaire.py', 'socle.py'])
@@ -275,8 +275,10 @@ describe('les essais de la base, rejoués en production', () => {
     const familles = new Set([...semis, 'production', 'apres'])
     const cas = Object.entries(REGLES.particuliers)
     // Dix-neuf le 29/10/2026 : dix essais du jeu de départ, quatre autres semis ou rôles, deux par le super-utilisateur,
-    // trois après des migrations préparées, un attendu impossible.
-    expect(cas.length).toBe(19)
+    // trois après des migrations préparées, un attendu impossible. Dix-huit le 01/11/2026 : `mentionsFigees` et
+    // `ibanHorsDesParametres` sortis (leurs migrations sont en production depuis le 29/10/2026), le filet de la validation
+    // devant la caisse (`validationDesPaiementsParLaCaisse`) entré, après ses trois migrations préparées.
+    expect(cas.length).toBe(18)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

@@ -9,8 +9,8 @@ import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 // appliquer après `paiement_par_la_caisse` (C8) et `champs_bnc_du_fec` (FEC22b) — reprend `valider_exercice` telle que FEC22b
 // la laisse et n'y ajoute qu'un refus, avant que la validation n'écrive. Ce garde la confronte à FEC22b au caractère près, ce
 // qu'elle ajoute défait ; sa garde de tête aux corps qu'elle exige, recalculés depuis les textes qui les posent ; son retour
-// arrière ; ses mots, dits une fois ; et son essai (supabase/essais/validationDesPaiementsParLaCaisse.sql), rejoué sur une
-// réplique. Récit : HISTORIQUE.md, « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS ».
+// arrière ; ses mots, dits une fois ; et son essai (supabase/essais/validationDesPaiementsParLaCaisse.sql), dans la forme des
+// essais joués en production depuis que le banc du leurre l'a rejoué SÛR. Récit : HISTORIQUE.md, « LA CAISSE : LA RELECTURE DE C8 ET C9, ET SES CORRECTIONS ».
 
 const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('hex')
 const corps = (definition: string) => definition.slice(definition.indexOf('as $$') + 'as $$'.length)
@@ -188,9 +188,16 @@ describe('son essai', () => {
     expect(ESSAI).toContain("'22023', 'Une écriture n''est pas équilibrée au centime.'")
   })
 
-  it('une transaction annulée, aucune suppression, toute mise à jour sous son `where`', () => {
-    expect(ESSAI).toMatch(/^begin;$/m)
-    expect(ESSAI.trimEnd()).toMatch(/\nrollback;$/)
+  it('un bloc annulé tout entier, les verdicts dans un réglage, aucune suppression, toute mise à jour sous son `where`', () => {
+    // La forme des essais joués en production (le banc du leurre, le 01/11/2026) : ni méta-commande de psql, ni transaction
+    // ouverte ou annulée à la main, ni table ni fonction créée ; le bloc se défait par son exception finale, que seule elle
+    // n'interrompt pas.
+    expect(ESSAI).not.toMatch(/^[ \t]*\\[a-zA-Z]/m)
+    expect(ESSAI).not.toMatch(/^(begin|rollback|commit);$/m)
+    expect(ESSAI).not.toMatch(/\bcreate\s+(or\s+replace\s+)?((temp|temporary)\s+)?(table|function)\b/i)
+    expect(ESSAI).toContain("    raise exception 'ANNULATION_ESSAI_GLOBALE';\n  exception when others then\n    if sqlerrm <> 'ANNULATION_ESSAI_GLOBALE' then\n      raise;")
+    expect(ESSAI).toContain("perform set_config('essai.filet', verdicts::text, true);")
+    expect(ESSAI.trimEnd()).toMatch(/from jsonb_to_recordset\(current_setting\('essai\.filet'\)::jsonb\)[^;]*;$/)
     expect(ESSAI).not.toMatch(/\b(delete from|truncate|drop table)\b/i)
     for (const m of ESSAI.matchAll(/\bupdate public\.\w+ set [^;]*;/gi)) expect(m[0], m[0]).toMatch(/\bwhere\b/i)
   })
