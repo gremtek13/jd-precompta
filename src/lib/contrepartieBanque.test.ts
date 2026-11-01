@@ -38,10 +38,11 @@ let ordre: string[] = []
 // chargé dans la fabrique), si bien qu'un filtre oublié se voit aux lignes qui partent, et non au seul texte de la requête.
 let brouillon: Record<string, unknown>[] | null = null
 
-// LE DRAPEAU DU PAIEMENT PAR LA CAISSE (étape C9a), joué dans ses deux états : baissé (la valeur du module), les requêtes
-// sont celles d'hier, filtre pour filtre — tous les cas plus haut ; levé, la ligne d'une opération de caisse s'écarte des
-// redates, et une pièce qu'elle paie ne retourne pas à sa facture.
-const drapeau = vi.hoisted(() => ({ leve: null as boolean | null }))
+// LE DRAPEAU DU PAIEMENT PAR LA CAISSE (étape C9a), joué dans ses deux états, ÉCRITS : baissé par défaut (`beforeEach`),
+// les requêtes sont celles d'hier, filtre pour filtre — tous les cas plus haut, quelle que soit la valeur du module, que la
+// migration lèvera ; levé, la ligne d'une opération de caisse s'écarte des redates, et une pièce qu'elle paie ne retourne pas
+// à sa facture. `null` : la valeur du module.
+const drapeau = vi.hoisted(() => ({ leve: false as boolean | null }))
 vi.mock('./paiementParLaCaisse', async (original) => {
   const module = await original<typeof import('./paiementParLaCaisse')>()
   return { ...module, get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeau.leve ?? module.PAIEMENT_PAR_LA_CAISSE_EXPORTE } }
@@ -120,7 +121,7 @@ beforeEach(() => {
   misesAJour = []
   ordre = []
   brouillon = null
-  drapeau.leve = null
+  drapeau.leve = false
 })
 
 describe('synchroniserContrepartieBanque', () => {
@@ -223,6 +224,13 @@ describe('synchroniserContrepartieBanque', () => {
     expect(misesAJour).toEqual([{ valeurs: { date: '2026-02-12' }, filtres: ['piece_id=p1', `compte!=${COMPTE_BANQUE}`] }])
   })
 
+  it('levé : la même PART, la redate écartant la ligne d’une opération de caisse', async () => {
+    drapeau.leve = true
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 700 }), { id: 'g', date: '2026-02-12', montant: -700 }, TRESORERIE)
+    expect(insere).toMatchObject({ ligne_bancaire_id: 'g', montant: 700, sens: 'credit', date: '2026-02-12' })
+    expect(misesAJour).toEqual([{ valeurs: { date: '2026-02-12' }, filtres: ['piece_id=p1', `compte!=${COMPTE_BANQUE}`, 'operation_caisse_id is null'] }])
+  })
+
   it('n’écrit rien pour un paiement de zéro euro', async () => {
     await synchroniserContrepartieBanque('d1', piece(), ligne(0), TRESORERIE)
     expect(insere).toBeNull()
@@ -252,6 +260,12 @@ describe('synchroniserContrepartieBanque — la date du paiement', () => {
   it("passe l'écriture à la date du paiement qui règle la pièce, sans toucher la contrepartie", async () => {
     await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 120 }), ligne(-120), TRESORERIE)
     expect(misesAJour).toEqual([{ valeurs: { date: '2026-03-12' }, filtres: ['piece_id=p1', `compte!=${COMPTE_BANQUE}`] }])
+  })
+
+  it('levé : la même date, la ligne d’une opération de caisse écartée de la redate', async () => {
+    drapeau.leve = true
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 120 }), ligne(-120), TRESORERIE)
+    expect(misesAJour).toEqual([{ valeurs: { date: '2026-03-12' }, filtres: ['piece_id=p1', `compte!=${COMPTE_BANQUE}`, 'operation_caisse_id is null'] }])
   })
 
   it('tient pour réglée une pièce payée à des frais près', async () => {
@@ -318,6 +332,12 @@ describe('retirerContrepartieBanque', () => {
   it("rend l'écriture à la date de sa facture : plus rien ne la date au paiement", async () => {
     await retirerContrepartieBanque('l1', 'p1', piece({ date_piece: '2026-03-10' }), TRESORERIE)
     expect(misesAJour).toEqual([{ valeurs: { date: '2026-03-10' }, filtres: ['piece_id=p1'] }])
+  })
+
+  it('levé : rendue à sa facture de même, la ligne d’une opération de caisse écartée', async () => {
+    drapeau.leve = true
+    await retirerContrepartieBanque('l1', 'p1', piece({ date_piece: '2026-03-10' }), TRESORERIE)
+    expect(misesAJour).toEqual([{ valeurs: { date: '2026-03-10' }, filtres: ['piece_id=p1', 'operation_caisse_id is null'] }])
   })
 
   it('à la date de dépôt pour une pièce sans date, comme la génération', async () => {
@@ -474,6 +494,19 @@ describe('rendreAuxDatesDeFacture', () => {
     expect(misesAJour).toEqual([{ valeurs: { date: '2026-01-10' }, filtres: ['piece_id=p1'] }])
   })
 
+  it('levé : la caisse comptée aussi, après la banque ; ramenée seule la pièce que ni l’une ni l’autre ne date', async () => {
+    drapeau.leve = true
+    comptesSuccessifs = [0, 0, 2]
+    await rendreAuxDatesDeFacture([
+      piece({ id: 'p1', date_piece: '2026-01-10' }),
+      piece({ id: 'p2', date_piece: '2026-01-11' }),
+    ], TRESORERIE)
+    expect(filtresComptes).toEqual([
+      ['piece_id=p1', `compte=${COMPTE_BANQUE}`], ['piece_id=p1', 'operation_caisse_id not is null'], ['piece_id=p2', `compte=${COMPTE_BANQUE}`],
+    ])
+    expect(misesAJour).toEqual([{ valeurs: { date: '2026-01-10' }, filtres: ['piece_id=p1', 'operation_caisse_id is null'] }])
+  })
+
   it('ne redate rien en engagement : la facture n’a jamais quitté sa date', async () => {
     await rendreAuxDatesDeFacture([piece()], ENGAGEMENT)
     expect(filtresComptes).toEqual([])
@@ -493,6 +526,16 @@ describe('la contrepartie banque sous le plan du dossier', () => {
     expect(ordre).toEqual(['delete', 'update', 'insert'])
     expect(filtresSuppression).toEqual(['piece_id=p1', 'compte=108100'])
     expect(misesAJour.map((m) => m.filtres)).toEqual([['piece_id=p1', 'compte!=512100']])
+    expect(insere).toMatchObject({ compte: '512100', sens: 'credit', montant: 120 })
+  })
+
+  it('levé : de même sous le plan, la redate écartant la ligne d’une opération de caisse', async () => {
+    drapeau.leve = true
+    reponses.select = { data: [{ id: 'e1', compte: '625100' }, { id: 'e2', compte: '108100' }], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ type_piece: 'note_frais', montant_ttc: 120 }), ligne(-120), DECALE)
+    expect(ordre).toEqual(['delete', 'update', 'insert'])
+    expect(filtresSuppression).toEqual(['piece_id=p1', 'compte=108100'])
+    expect(misesAJour.map((m) => m.filtres)).toEqual([['piece_id=p1', 'compte!=512100', 'operation_caisse_id is null']])
     expect(insere).toMatchObject({ compte: '512100', sens: 'credit', montant: 120 })
   })
 
@@ -517,9 +560,16 @@ describe('la contrepartie banque sous le plan du dossier', () => {
 describe('le paiement par la caisse, le drapeau levé', () => {
   const CAISSE = { id: 'e2', compte: '530000', piece_id: 'p1', operation_caisse_id: 'oc-1' }
 
-  it('le drapeau du module est baissé : les cas plus haut sont ceux d’hier', async () => {
+  it('les cas plus haut jouent le drapeau BAISSÉ, écrit — ceux d’hier, quelle que soit la valeur du module ; levé à la demande', async () => {
+    // Le drapeau tel que lib/contrepartieBanque.ts le lit : celui de l'accesseur, que `beforeEach` baisse.
+    const lu = await import('./paiementParLaCaisse')
+    expect(lu.PAIEMENT_PAR_LA_CAISSE_EXPORTE).toBe(false)
+    drapeau.leve = true
+    expect(lu.PAIEMENT_PAR_LA_CAISSE_EXPORTE).toBe(true)
+    // `null`, la valeur du module : celle que la migration lève (paiementParLaCaisse.test.ts la confronte à l'export).
+    drapeau.leve = null
     const { PAIEMENT_PAR_LA_CAISSE_EXPORTE } = await vi.importActual<typeof import('./paiementParLaCaisse')>('./paiementParLaCaisse')
-    expect(PAIEMENT_PAR_LA_CAISSE_EXPORTE).toBe(false)
+    expect(lu.PAIEMENT_PAR_LA_CAISSE_EXPORTE).toBe(PAIEMENT_PAR_LA_CAISSE_EXPORTE)
   })
 
   it('une pièce déjà payée par la caisse ne se redate pas au mouvement : « Régénérer » répartira entre les deux', async () => {

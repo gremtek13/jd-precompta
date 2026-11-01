@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { valeursDesCases } from './cases2035'
 import type { EtatDeLaCaisse } from './caisse'
 import { OPERATIONS_DE_CAISSE_ABSENTES, type OperationsDeCaisse } from './controlesDeLaCaisse'
@@ -30,6 +30,22 @@ import { colonnes, desequilibresDgfip } from '../test/fecDgfip'
 import { NON_VALIDEE } from '../test/ecritures'
 import { tirage } from '../test/encaissementsBatterie'
 import { SANS_ECRITURE_DE_VENTE, SANS_EXEMPLAIRE, SANS_FACTURE_SOURCE, SANS_VENTE_FACTUREE, ventesFactureesVides } from '../test/ventesFacturees'
+
+// LE DRAPEAU, ÉCRIT : un accesseur sous `vi.mock`, BAISSÉ par défaut — l'état d'aujourd'hui, quelle que soit la valeur du module,
+// que la migration lèvera — et `paiementsParLaCaisse`, la dérivation selon le drapeau, qui le suit (son corps lit la constante
+// du module, que l'accesseur ne touche pas). `null` : la valeur du module ; le cas « la dérivation suit la constante du
+// module » garde que le vrai `paiementsParLaCaisse` est bien `paiementsParLaCaisseSelon` sous elle.
+const drapeau = vi.hoisted(() => ({ leve: false as boolean | null }))
+vi.mock('./paiementParLaCaisse', async (original) => {
+  const module = await original<typeof import('./paiementParLaCaisse')>()
+  return {
+    ...module,
+    get PAIEMENT_PAR_LA_CAISSE_EXPORTE() { return drapeau.leve ?? module.PAIEMENT_PAR_LA_CAISSE_EXPORTE },
+    paiementsParLaCaisse: (operations: Parameters<typeof module.paiementsParLaCaisse>[0]) =>
+      module.paiementsParLaCaisseSelon(drapeau.leve ?? module.PAIEMENT_PAR_LA_CAISSE_EXPORTE, operations),
+  }
+})
+afterEach(() => { drapeau.leve = false })
 
 // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DANS LES MOTEURS (ligne 26.6, étape C9a ; CAISSE-Q4, (B)). Une opération de genre
 // `paiement` qui cite sa pièce est un paiement de cette pièce, à SA date et de son montant, comme un mouvement du relevé :
@@ -105,9 +121,23 @@ describe('les paiements par la caisse que les moteurs reçoivent, et le drapeau'
   ]
 
   it('le drapeau est BAISSÉ : la migration `paiement_par_la_caisse` n’est pas en base, aucun paiement n’entre', () => {
+    drapeau.leve = false
     expect(PAIEMENT_PAR_LA_CAISSE_EXPORTE).toBe(false)
     expect(paiementsParLaCaisse(ops)).toEqual([])
     expect(paiementsParLaCaisseSelon(false, ops)).toEqual([])
+  })
+
+  it('le drapeau LEVÉ : la migration en base, la dérivation selon le drapeau rend les paiements vivants', () => {
+    drapeau.leve = true
+    expect(PAIEMENT_PAR_LA_CAISSE_EXPORTE).toBe(true)
+    expect(paiementsParLaCaisse(ops)).toEqual(paiementsParLaCaisseSelon(true, ops))
+    expect(paiementsParLaCaisse(ops)).toHaveLength(3)
+  })
+
+  it('la dérivation du module suit la constante du module, dans l’état qu’elle a', async () => {
+    const vrai = await vi.importActual<typeof import('./paiementParLaCaisse')>('./paiementParLaCaisse')
+    expect(vrai.paiementsParLaCaisse(ops)).toEqual(vrai.paiementsParLaCaisseSelon(vrai.PAIEMENT_PAR_LA_CAISSE_EXPORTE, ops))
+    expect(vrai.paiementsParLaCaisse(ops)).toEqual(vrai.PAIEMENT_PAR_LA_CAISSE_EXPORTE ? paiementsParLaCaisseSelon(true, ops) : [])
   })
 
   it('levé : les paiements vivants qui citent une pièce, triés par date puis par opération', () => {
@@ -185,6 +215,7 @@ describe('la neutralité, au caractère près', () => {
   }
 
   it('le drapeau baissé : une caisse qui porte des paiements rend ce que rend une caisse sans paiement', () => {
+    drapeau.leve = false
     let paiementsVus = 0
     for (const { pieces, lignes, ops } of dossiers) {
       paiementsVus += ops.filter((o) => o.genre === 'paiement').length
