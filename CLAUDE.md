@@ -466,7 +466,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`champs_bnc_du_fec`), en production depuis le 02/11/2026, `types.ts` basculé ; le 01/11/2026, les quatre postes neufs de la 2035 (2035S1) entrent dans ses listes fermées et
   dans la copie du filet, leurs empreintes et leurs retours suivant en chaîne, éprouvés sur la réplique de FEC22b, et leur
   NatOp porte la nature et le poste ; FEC22C2-Q1 (figer ce choix avec l'exercice validé), tranchée le 02/11/2026 : non ;
-  FEC22-Q7 (les libellés : le nom d'une entreprise, sinon le numéro de la facture), à écrire → « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU
+  FEC22-Q7, écrite le 02/11/2026 : le libellé d'une vente porte le nom d'une entreprise (le prédicat d'IdClient), sinon le
+  numéro de la facture, une pièce de vente « Recette » et sa date, son 411 au compte « Clients divers » ; la règle dans
+  `lib/libellesDesVentes.ts`, que garde un relevé de toute la source ; ce qui est déjà au brouillon garde son libellé
+  → « FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE », « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU
   CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E », « LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) »,
   « LE FEC D'UN BNC EN TRÉSORERIE À VINGT-DEUX CHAMPS, DERRIÈRE SON DRAPEAU (FEC22C1, LIGNE 26.6, ÉTAPE E) », « LES
   QUATRE CHAMPS DU FEC D'UN BNC, EN BASE (FEC22B) (PRÉPARÉE, PAS APPLIQUÉE) », « LE FEC D'UN BNC : LES QUATRE POSTES

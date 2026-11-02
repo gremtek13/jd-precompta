@@ -11,6 +11,7 @@ import { ecritureParReglement, reglementsDeLaDate, repartirLesLignesPartagees, s
 import { estFigee } from './validationExercice'
 import { dateLocaleDe } from './format'
 import { exemplaireDUneSource, type FacturesSources } from './facturesSources'
+import { libelleDUnePiece, type PieceLibellee } from './libellesDesVentes'
 import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
@@ -102,7 +103,8 @@ export function lignesChargeProduitPourPiece(
   plan: PlanComptable,
 ): LigneAGenerer[] {
   const sensPiece: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
-  const libelle = piece.tiers ?? piece.nom_fichier
+  // Une pièce de vente, « Recette » et sa date ; un achat, son fournisseur (FEC22-Q7, lib/libellesDesVentes.ts).
+  const libelle = libelleDUnePiece(piece)
 
   // Un montant de pièce négatif (avoir, remboursement — ça arrive, une pièce validée existante en a
   // un) inverse le sens réel de l'écriture : une "charge" négative est en réalité un crédit, jamais un
@@ -163,14 +165,14 @@ export function lignesChargeProduitPourPiece(
 // plusieurs fois — un acompte puis un virement groupé — n'en recevait qu'UNE, celle du premier paiement,
 // et son écriture restait déséquilibrée sans que rien ne sache la compléter.
 export function ligneContrepartieBanque(
-  dossierId: string, piece: Pick<Piece, 'id' | 'tiers' | 'nom_fichier'>,
+  dossierId: string, piece: Pick<Piece, 'id'> & PieceLibellee,
   paiement: Pick<PaiementParLeReleve, 'id' | 'date' | 'montant'>,
   plan: PlanComptable,
 ): LigneAGenerer | null {
   if (!paiement.montant) return null
   return {
     dossier_id: dossierId, piece_id: piece.id, ligne_bancaire_id: paiement.id, date: paiement.date,
-    libelle: piece.tiers ?? piece.nom_fichier, statut: 'proposee', compte: plan.banque,
+    libelle: libelleDUnePiece(piece), statut: 'proposee', compte: plan.banque,
     montant: Math.abs(paiement.montant), sens: paiement.montant > 0 ? 'debit' : 'credit',
   }
 }
@@ -184,14 +186,14 @@ export function ligneContrepartieBanque(
 // génération et par « Régénérer », comme la banque : la pièce peut n'être ni validée ni écrite au jour du paiement, et un
 // seul chemin vers la contrepartie d'une pièce ne diverge pas. Un paiement de zéro euro n'en écrit aucune.
 export function ligneContrepartieCaisse(
-  dossierId: string, piece: Pick<Piece, 'id' | 'tiers' | 'nom_fichier'>,
+  dossierId: string, piece: Pick<Piece, 'id'> & PieceLibellee,
   paiement: Pick<PaiementParLaCaisse, 'operation_caisse_id' | 'date' | 'montant'>,
   plan: PlanComptable,
 ): LigneAGenerer | null {
   if (!paiement.montant) return null
   return {
     dossier_id: dossierId, piece_id: piece.id, operation_caisse_id: paiement.operation_caisse_id, date: paiement.date,
-    libelle: piece.tiers ?? piece.nom_fichier, statut: 'proposee', compte: plan.caisse,
+    libelle: libelleDUnePiece(piece), statut: 'proposee', compte: plan.caisse,
     montant: Math.abs(paiement.montant), sens: paiement.montant > 0 ? 'debit' : 'credit',
   }
 }
@@ -199,7 +201,7 @@ export function ligneContrepartieCaisse(
 // La contrepartie d'un paiement, de l'un ou l'autre moyen : la banque d'un paiement par le relevé, la caisse d'un paiement
 // par la caisse.
 export function ligneContrepartieDuPaiement(
-  dossierId: string, piece: Pick<Piece, 'id' | 'tiers' | 'nom_fichier'>, paiement: PaiementDePiece, plan: PlanComptable,
+  dossierId: string, piece: Pick<Piece, 'id'> & PieceLibellee, paiement: PaiementDePiece, plan: PlanComptable,
 ): LigneAGenerer | null {
   return estParLeReleve(paiement)
     ? ligneContrepartieBanque(dossierId, piece, paiement, plan)
@@ -241,7 +243,7 @@ export function ligneContrepartieDirigeant(
   if (solde === 0) return null
   return {
     dossier_id: dossierId, piece_id: piece.id, date: part.date ?? dateLocaleDe(piece.created_at),
-    libelle: piece.tiers ?? piece.nom_fichier, statut: 'proposee', compte: plan.exploitant,
+    libelle: libelleDUnePiece(piece), statut: 'proposee', compte: plan.exploitant,
     montant: Math.abs(solde) / 100, sens: solde > 0 ? 'credit' : 'debit',
   }
 }

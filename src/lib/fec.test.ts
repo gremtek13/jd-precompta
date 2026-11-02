@@ -459,14 +459,16 @@ describe('genererFec — en engagement', () => {
     expect([...parNumero.values()].every((s) => Math.abs(s) < 0.005)).toBe(true)
   })
 
+  // Le 411 d'une pièce de vente va au compte « Clients divers », jamais à la clé du nom lu (FEC22-Q7,
+  // lib/libellesDesVentes.ts) ; un achat garde le compte de son fournisseur.
   it('porte le compte auxiliaire du tiers sur les lignes de 401 et de 411, et sur elles seules', () => {
     expect(rows().map((r) => [r[4], r[6], r[7]])).toEqual([
       ['606100', '', ''],
       ['401000', 'FTRANSMEDICAL', 'Transmedical'],
-      ['411000', 'CCPAM', 'CPAM'],
+      ['411000', 'CDIVERS', 'Clients divers'],
       ['706000', '', ''],
       [COMPTE_BANQUE, '', ''],
-      ['411000', 'CCPAM', 'CPAM'],
+      ['411000', 'CDIVERS', 'Clients divers'],
       ['401000', 'FTRANSMEDICAL', 'Transmedical'],
       [COMPTE_BANQUE, '', ''],
     ])
@@ -1052,7 +1054,8 @@ describe('numeroterFec — ce que la validation reçoit', () => {
     expect(n.lignes.map((l) => [l.ecriture.id, l.journal, l.numero, l.pieceRef, l.pieceDate, l.compteLib, l.compAuxNum, l.compAuxLib, l.validDate])).toEqual([
       ['a1', 'AC', 1, 'facture-mars.pdf', '2026-03-10', '606100', null, null, '2026-03-10'],
       ['a2', 'AC', 1, 'facture-mars.pdf', '2026-03-10', 'Fournisseurs', 'FTRANSMEDICAL', 'Transmedical', '2026-03-10'],
-      ['v2', 'VE', 1, 'vente.pdf', '2026-03-15', 'Clients', 'CCPAM', 'CPAM', '2026-03-15'],
+      // Le 411 d'une pièce de vente : « Clients divers », jamais le nom lu (FEC22-Q7).
+      ['v2', 'VE', 1, 'vente.pdf', '2026-03-15', 'Clients', 'CDIVERS', 'Clients divers', '2026-03-15'],
       // Le nom du plan comptable général, depuis l'étape VF4c2 (VF4A-Q1) : le 706000 n'est plus nommé par son numéro.
       ['v1', 'VE', 1, 'vente.pdf', '2026-03-15', 'Prestations de services', null, null, '2026-03-15'],
       ['a3', 'BQ', 1, 'facture-mars.pdf', '2026-03-10', 'Fournisseurs', 'FTRANSMEDICAL', 'Transmedical', '2026-04-05'],

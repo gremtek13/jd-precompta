@@ -4,8 +4,9 @@ import {
   centimesExacts, ecartDeFrais, factureSansExemplaire, justifieSonMouvement, type ExemplaireLu,
 } from './encaissementsFactures'
 import { formatDate } from './format'
+import { libelleDUneVenteFacturee, nomDuClientEcrit } from './libellesDesVentes'
 import type { PlanComptable } from './planComptable'
-import type { EcritureBrouillon, JournalCode, LigneBancaire, ModeComptable, SensEcriture } from './types'
+import type { EcritureBrouillon, FactureEmise, JournalCode, LigneBancaire, ModeComptable, SensEcriture } from './types'
 import {
   regimeDeLaFacture, ventesFacturees, type EncaissementVendu, type FactureVendue, type MotifVenteEcartee, type RegimeCa3,
   type SourcesVentesFacturees, type VentesFacturees,
@@ -81,10 +82,10 @@ import {
 // LE FEC (§ 5) : la facture, l'avoir et l'encaissement de trésorerie au journal des ventes (VE) ; l'encaissement
 // d'engagement — un règlement — et le mouvement au journal de banque (BQ). PieceRef : le numéro de la facture (de l'avoir
 // pour son écriture), le relevé pour un mouvement (`referenceDuReleve`) ; PieceDate : la date d'émission du document, celle
-// du mouvement. L'auxiliaire du 411, celui d'une pièce de vente : « C » et la clé du nom du client (`auxiliaireDuTiers`) —
-// un client ne change pas de compte à la bascule. Les clés que l'étape VF4c donnera à la numérotation du FEC
-// (`numeroterFec`) sont celles d'ici : `facture|<facture ou avoir>|<date>`, `encaissement|<encaissement>|<date>`,
-// `mouvement-encaissements|<mouvement>` — une écriture, une date (LPF, art. A47 A-1).
+// du mouvement. L'auxiliaire du 411 : « C » et la clé du nom du client quand c'est une entreprise (`auxiliaireDuTiers`),
+// « Clients divers » sinon (FEC22-Q7, lib/libellesDesVentes.ts) — comme une pièce de vente au FEC. Les clés que l'étape
+// VF4c donnera à la numérotation du FEC (`numeroterFec`) sont celles d'ici : `facture|<facture ou avoir>|<date>`,
+// `encaissement|<encaissement>|<date>`, `mouvement-encaissements|<mouvement>` — une écriture, une date (LPF, art. A47 A-1).
 //
 // CE QUE LA BASE VÉRIFIERA (VF4b, G5) : chaque écriture porte sa SOURCE — `facture_id` (la facture ou l'avoir),
 // `encaissement_id`, ou, pour un mouvement, le seul `ligne_bancaire_id` de ses lignes — et se recompose à l'identique
@@ -98,9 +99,16 @@ export type MouvementDesEncaissements = Pick<
   LigneBancaire, 'id' | 'dossier_id' | 'date' | 'montant' | 'libelle' | 'source_fichier' | 'encaissements_de_factures'
 >
 
+/**
+ * Une facture ou un avoir tel que la composition le lit : ce que les moteurs en lisent, et le SIRET figé de son client, qui
+ * dit seul si son nom peut s'écrire (FEC22-Q7, `nomDuClientEcrit`, lib/libellesDesVentes.ts).
+ */
+export type FactureDesVentesEcrites = FactureVendue & Pick<FactureEmise, 'tiers_siret'>
+
 export interface EntreesEcrituresVentes {
-  /** Les lignes que la lecture des ventes facturées a rendues, EN ENTIER (lib/ventesFactureesLecture.ts). */
-  sources: SourcesVentesFacturees
+  /** Les lignes que la lecture des ventes facturées a rendues, EN ENTIER (lib/ventesFactureesLecture.ts), et le SIRET figé
+   *  du client de chaque facture. */
+  sources: Omit<SourcesVentesFacturees, 'factures'> & { factures: readonly FactureDesVentesEcrites[] }
   /** Les mouvements que les encaissements citent — d'autres peuvent y être, seuls ceux-là comptent. */
   mouvements: readonly MouvementDesEncaissements[]
   /** Le compte de bilan choisi pour un encaissement par compensation (ou par un autre moyen sans mouvement), par
@@ -142,7 +150,8 @@ export interface EcritureVenteFacturee {
   pieceRef: string
   pieceDate: string
   libelle: string
-  /** Le nom du client, d'où vient l'auxiliaire du 411 ; nul pour un mouvement. */
+  /** Le nom du client quand c'est une entreprise (FEC22-Q7, `nomDuClientEcrit`), d'où vient l'auxiliaire du 411 ; nul pour
+   *  un particulier (le compte « Clients divers ») et pour un mouvement (aucun auxiliaire). */
   tiers: string | null
   /** Triées par compte, sens et mouvement ; équilibrées ; aucune nulle. */
   lignes: LigneVenteFacturee[]
@@ -337,8 +346,8 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
     const solde = ecriture({
       source: { genre: 'encaissement', encaissementId: e.id, factureId: f.id }, cle: cleFecEncaissement(e.id, p.date),
       date: p.date, journal: mode === 'tresorerie' ? 'VE' : 'BQ', pieceRef: nommer(f), pieceDate: f.date_emission,
-      libelle: `${e.annule_id == null ? 'Encaissement' : 'Contre-passation'}, facture ${nommer(f)} — ${f.tiers_nom}`,
-      tiers: f.tiers_nom,
+      libelle: libelleDUneVenteFacturee(`${e.annule_id == null ? 'Encaissement' : 'Contre-passation'}, facture ${nommer(f)}`, f),
+      tiers: nomDuClientEcrit(f),
     })
     const exigible = exigiblesALEncaissement.has(`${e.id}|${p.taux}`)
     solde.ajouter(t.compte, p.ttcCentimes, t.ligneBancaireId)
@@ -358,7 +367,7 @@ export function ecrituresDesVentesFacturees(entrees: EntreesEcrituresVentes): Ec
     const source: SourceEcritureVente = avoirId == null ? { genre: 'facture', factureId } : { genre: 'avoir', factureId: avoirId }
     return ecriture({
       source, cle: cleFecFacture(doc.id, date), date, journal: 'VE', pieceRef: nommer(doc), pieceDate: doc.date_emission,
-      libelle: `${avoirId == null ? 'Facture' : 'Avoir'} ${nommer(doc)} — ${f.tiers_nom}`, tiers: f.tiers_nom,
+      libelle: libelleDUneVenteFacturee(`${avoirId == null ? 'Facture' : 'Avoir'} ${nommer(doc)}`, f), tiers: nomDuClientEcrit(f),
     })
   }
   if (mode === 'engagement') {
@@ -523,7 +532,13 @@ export function memeEcritureQueLeBrouillon(
   return forme(lues) === forme(e.lignes)
 }
 
-/** L'auxiliaire d'une ligne dans le FEC : celui du 411 d'une pièce de vente, tiré du nom du client ; nul ailleurs. */
-export function auxiliaireDeLaLigne(e: Pick<EcritureVenteFacturee, 'tiers'>, ligne: Pick<LigneVenteFacturee, 'compte'>): CompteAuxiliaire | null {
-  return e.tiers == null ? null : auxiliaireDuTiers({ tiers: e.tiers }, ligne.compte)
+/**
+ * L'auxiliaire d'une ligne dans le FEC : celui du 411 (ou d'un compte de tiers de compensation) d'une facture, d'un avoir ou
+ * d'un encaissement — tiré du nom d'une entreprise cliente, « Clients divers » pour un particulier (FEC22-Q7) ; aucun pour
+ * un mouvement, dont aucune ligne n'est d'un compte de tiers.
+ */
+export function auxiliaireDeLaLigne(
+  e: Pick<EcritureVenteFacturee, 'tiers' | 'source'>, ligne: Pick<LigneVenteFacturee, 'compte'>,
+): CompteAuxiliaire | null {
+  return e.source.genre === 'mouvement' ? null : auxiliaireDuTiers({ tiers: e.tiers }, ligne.compte)
 }

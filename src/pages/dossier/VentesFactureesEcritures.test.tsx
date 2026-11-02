@@ -18,7 +18,7 @@ function etats(): Extract<EtatsDesVentes, { etat: 'lus' }> {
       dossierId: 'd1',
       factures: [{
         id: 'f1', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2025-0001', date_emission: '2025-11-10',
-        tiers_nom: 'Client fictif', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services',
+        tiers_nom: 'Client fictif', tiers_siret: null, facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services',
         option_debits: false, date_prestation: null, montant_ttc: 120,
       }],
       lignes: [{ facture_id: 'f1', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
@@ -52,8 +52,8 @@ describe('la section des ventes facturées, seule', () => {
         dossierId: 'd1',
         factures: [{
           id: 'f1', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2025-0001', date_emission: '2025-11-10',
-          tiers_nom: 'Client fictif', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services',
-          option_debits: false, date_prestation: null, montant_ttc: 120,
+          tiers_nom: 'Client fictif', tiers_siret: null, facture_origine_id: null, source_de_la_vente: true,
+          nature_operation: 'services', option_debits: false, date_prestation: null, montant_ttc: 120,
         }],
         lignes: [{ facture_id: 'f1', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
         encaissements: [{

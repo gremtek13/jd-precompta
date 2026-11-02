@@ -2,12 +2,13 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import type { ExemplaireLu, LigneDeFacture } from '../lib/encaissementsFactures'
 import {
-  ecrituresDesVentesFacturees, type EcrituresDesVentesFacturees, type MouvementDesEncaissements, type SourceEcritureVente,
+  ecrituresDesVentesFacturees, type EcrituresDesVentesFacturees, type FactureDesVentesEcrites, type MouvementDesEncaissements,
+  type SourceEcritureVente,
 } from '../lib/ecrituresVentesFacturees'
 import { montantsDuDocument } from '../lib/factureCii'
 import { PLAN_PAR_DEFAUT } from '../lib/planComptable'
 import type { ModeComptable, MoyenEncaissement, NatureOperation } from '../lib/types'
-import { prorataArrondi, type EncaissementVendu, type FactureVendue, type PartVendue } from '../lib/ventesFacturees'
+import { prorataArrondi, type EncaissementVendu, type PartVendue } from '../lib/ventesFacturees'
 
 // L'ESSAI DES ÉCRITURES D'UNE VENTE FACTURÉE (supabase/essais/ecrituresVentesFacturees.sql, chantier EC-Q3, étape VF4b),
 // CÔTÉ MODULE : le jeu que l'essai pose en base — un cas par point du § 5 de la conception, dans les deux modèles
@@ -257,7 +258,7 @@ const creeLe = (e: EncaissementDuJeu) => `${e.date}T10:${String(e.i % 60).padSta
 export interface JeuDuDossier {
   dossierId: string
   mode: ModeComptable
-  factures: FactureVendue[]
+  factures: FactureDesVentesEcrites[]
   lignes: LigneDeFacture[]
   encaissements: EncaissementVendu[]
   parts: PartVendue[]
@@ -281,7 +282,7 @@ export function jeuDuDossier(numero: number): JeuDuDossier {
     mode: d.mode,
     factures: FACTURES.map((f) => ({
       id: u(f.i), dossier_id: dossierId, statut: 'validee', type: f.type, numero: f.numero, date_emission: f.emission,
-      tiers_nom: 'ESSAI', facture_origine_id: f.origine == null ? null : u(f.origine), source_de_la_vente: f.source,
+      tiers_nom: 'ESSAI', tiers_siret: null, facture_origine_id: f.origine == null ? null : u(f.origine), source_de_la_vente: f.source,
       nature_operation: f.nature, option_debits: f.debits, date_prestation: f.livraison,
     })),
     lignes: FACTURES.flatMap((f) => f.lignes.map(([quantite, prix, taux], k) => ({

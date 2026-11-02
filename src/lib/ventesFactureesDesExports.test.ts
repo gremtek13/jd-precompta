@@ -162,23 +162,24 @@ describe('le FEC d’un dossier qui a basculé', () => {
   it('en engagement : chaque écriture dans son journal, sous sa pièce, avec l’auxiliaire du client', () => {
     const { brouillon } = jeu('engagement')
     const rows = colonnes(fec(brouillon, 'engagement')).slice(1)
-    // Journal, numéro, date, compte, auxiliaire, PieceRef, PieceDate — une écriture par source et par date.
+    // Journal, numéro, date, compte, auxiliaire, PieceRef, PieceDate — une écriture par source et par date. Le 411 d'un
+    // particulier va au compte « Clients divers », celui d'une entreprise à la clé de son nom (FEC22-Q7).
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[6], r[8], r[9]])).toEqual([
-      ['VE', 'VE00001', '20251110', '411000', 'CFICTIF', 'F2025-0001', '20251110'],
+      ['VE', 'VE00001', '20251110', '411000', 'CDIVERS', 'F2025-0001', '20251110'],
       ['VE', 'VE00001', '20251110', '445800', '', 'F2025-0001', '20251110'],
       ['VE', 'VE00001', '20251110', '706000', '', 'F2025-0001', '20251110'],
       ['VE', 'VE00002', '20251112', '411000', 'CCLINIQUE', 'F2025-0002', '20251112'],
       ['VE', 'VE00002', '20251112', '445800', '', 'F2025-0002', '20251112'],
       ['VE', 'VE00002', '20251112', '706000', '', 'F2025-0002', '20251112'],
-      ['VE', 'VE00003', '20251114', '411000', 'CFICTIF', 'F2025-0003', '20251114'],
+      ['VE', 'VE00003', '20251114', '411000', 'CDIVERS', 'F2025-0003', '20251114'],
       ['VE', 'VE00003', '20251114', '445800', '', 'F2025-0003', '20251114'],
       ['VE', 'VE00003', '20251114', '706000', '', 'F2025-0003', '20251114'],
       ['VE', 'VE00004', '20251118', '445800', '', 'A2025-0001', '20251118'],
       ['VE', 'VE00004', '20251118', '706000', '', 'A2025-0001', '20251118'],
-      ['VE', 'VE00004', '20251118', '411000', 'CFICTIF', 'A2025-0001', '20251118'],
+      ['VE', 'VE00004', '20251118', '411000', 'CDIVERS', 'A2025-0001', '20251118'],
       ['BQ', 'BQ00001', '20251120', '445800', '', 'F2025-0001', '20251110'],
       ['BQ', 'BQ00001', '20251120', '512000', '', 'F2025-0001', '20251110'],
-      ['BQ', 'BQ00001', '20251120', '411000', 'CFICTIF', 'F2025-0001', '20251110'],
+      ['BQ', 'BQ00001', '20251120', '411000', 'CDIVERS', 'F2025-0001', '20251110'],
       ['BQ', 'BQ00001', '20251120', '445710', '', 'F2025-0001', '20251110'],
       ['BQ', 'BQ00002', '20251121', '445800', '', 'F2025-0002', '20251112'],
       ['BQ', 'BQ00002', '20251121', '511000', '', 'F2025-0002', '20251112'],
@@ -188,7 +189,9 @@ describe('le FEC d’un dossier qui a basculé', () => {
       ['BQ', 'BQ00003', '20251122', '511000', '', 'releve-fictif.csv', '20251122'],
     ])
     // EcritureLib : le libellé que la composition a donné à la ligne en l'écrivant.
-    expect(rows.find((r) => r[2] === 'VE00004')![10]).toBe('Avoir A2025-0001 — Client fictif')
+    // Le particulier par le numéro, l'entreprise par son nom (FEC22-Q7).
+    expect(rows.find((r) => r[2] === 'VE00004')![10]).toBe('Avoir A2025-0001')
+    expect(rows.find((r) => r[2] === 'VE00002')![10]).toBe('Facture F2025-0002 — Clinique du Parc')
     expect(rows.find((r) => r[2] === 'BQ00003')![10]).toBe('REMISE CHEQUE FICTIVE')
   })
 
@@ -233,7 +236,10 @@ describe('le FEC d’un dossier qui a basculé', () => {
     }
   }
 
-  it('un même client, avant et après la bascule : un seul compte auxiliaire, sous un seul libellé', () => {
+  // FEC22-Q7 : un particulier ne change pas de compte à la bascule — sa pièce de vente déposée et ses factures sources vont
+  // au compte « Clients divers », sous un seul libellé, et aucune ligne ne porte son nom. Une entreprise, si : sa pièce
+  // déposée ne dit pas qu'elle en est une (« Clients divers »), sa facture source, si (la clé de son nom).
+  it('un même client, avant et après la bascule : un particulier reste au compte « Clients divers », sans son nom', () => {
     const { c, brouillon } = jeu('engagement')
     const vente = pieceDeVente({ id: 'p-vente', tiers: 'CLIENT FICTIF', date_piece: '2025-11-05' })
     const lignes = lignesPourPiece(D_BASCULE, vente, { compte: '706000', immobilisation: false }, false, [], {
@@ -243,9 +249,15 @@ describe('le FEC d’un dossier qui a basculé', () => {
       declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, ...NON_VALIDEE,
     }))
     const rows = colonnes(genererFec([...lignes, ...brouillon], [vente], [], [], 'engagement', [], SANS_LETTRAGE, c.ecritures, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)).slice(1)
-    const fictif = rows.filter((r) => r[6] === 'CFICTIF')
-    expect(fictif.length).toBeGreaterThan(4)
-    expect(new Set(fictif.map((r) => r[7]))).toEqual(new Set(['CLIENT FICTIF']))
+    const divers = rows.filter((r) => r[6] === 'CDIVERS')
+    expect(divers.length).toBeGreaterThan(4)
+    expect(new Set(divers.map((r) => r[7]))).toEqual(new Set(['Clients divers']))
+    expect(rows.filter((r) => r[6] === 'CFICTIF')).toEqual([])
+    expect(rows.filter((r) => /fictif/i.test(r[7]) || /fictif/i.test(r[10]))).toEqual([])
+    // La pièce déposée : « Recette » et sa date.
+    expect(new Set(rows.filter((r) => r[8] === vente.nom_fichier).map((r) => r[10]))).toEqual(new Set(['Recette du 05/11/2025']))
+    // L'entreprise, elle, garde son compte et son nom.
+    expect(new Set(rows.filter((r) => r[6] === 'CCLINIQUE').map((r) => r[7]))).toEqual(new Set(['Clinique du Parc']))
   })
 
   it('rend le même fichier dans les deux ordres de lecture', () => {

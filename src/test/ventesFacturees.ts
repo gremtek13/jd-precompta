@@ -1,7 +1,7 @@
 import type { LigneDeFacture } from '../lib/encaissementsFactures'
-import type { EncaissementVendu, FactureVendue, PartVendue, VentesFacturees } from '../lib/ventesFacturees'
+import type { EncaissementVendu, PartVendue, VentesFacturees } from '../lib/ventesFacturees'
 import type { RecettesFacturees } from '../lib/estimation'
-import type { EcritureVenteFacturee } from '../lib/ecrituresVentesFacturees'
+import type { EcritureVenteFacturee, FactureDesVentesEcrites } from '../lib/ecrituresVentesFacturees'
 import type { JustificatifsDesVentes } from '../lib/pisteAudit'
 import type { FacturesSources } from '../lib/facturesSources'
 import type { PartEncaissee } from '../lib/rattachement'
@@ -55,11 +55,15 @@ export function recettesFactureesVides(): RecettesFacturees {
   return { etat: 'comptees', parMois: new Map<string, number>(), sources: new Set<string>() }
 }
 
-/** Une facture validée SOURCE de sa vente, de services, sans l'option pour les débits. */
-export function factureVendue(o: Partial<FactureVendue> = {}): FactureVendue {
+/**
+ * Une facture validée SOURCE de sa vente, de services, sans l'option pour les débits — à un PARTICULIER (sans SIRET) : son
+ * nom ne s'écrit nulle part (FEC22-Q7, lib/libellesDesVentes.ts). Les moteurs n'en lisent pas le SIRET ; la composition des
+ * écritures, si.
+ */
+export function factureVendue(o: Partial<FactureDesVentesEcrites> = {}): FactureDesVentesEcrites {
   return {
     id: 'f1', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2025-0001', date_emission: '2025-11-10',
-    tiers_nom: 'Client fictif', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services',
+    tiers_nom: 'Client fictif', tiers_siret: null, facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services',
     option_debits: false, date_prestation: null, ...o,
   }
 }
