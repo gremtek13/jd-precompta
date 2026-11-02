@@ -874,11 +874,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un déploiement se vérifie** : la copie déployée comparée au dépôt AVANT d'écraser, puis `allerretour.py` ; l'outil
   décode les `\uXXXX` → « Déployer une Edge Function via l'outil MCP décode les échappements » ; les bordures `─`
   répétées d'abord par `bordures.py`, le texte ENVOYÉ relu dans le journal → « LES BORDURES SE RECOPIENT ».
-  `agent-comptable` et `extract-piece` ne se recopient plus (300 et 83 Ko ; la recopie de l'assistant est refusée ou
-  coupée, celle d'`extract-piece` coûtait le fichier entier à chaque fois) : une ligne IMPORTE leur fichier du dépôt
-  public à un commit écrit en entier, `allerretour.py` compare le fichier de ce commit au dépôt, et revenir en arrière
-  ne change que le commit → « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT », « L'ASSISTANT ET
-  EXTRACT-PIECE REDÉPLOYÉS (V51), CELLE-CI PAR UNE LIGNE QUI IMPORTE LE DÉPÔT ». **Un commit n'est pas un déploiement,
+  `agent-comptable`, `extract-piece`, et depuis le 02/11/2026 `send-email`, `plateforme-agreee` et `superpdp-emit` ne se
+  recopient plus (de 28 à 300 Ko ; la recopie de l'assistant est refusée ou coupée, celle des autres coûtait le fichier
+  entier à chaque fois) : une ligne IMPORTE leur fichier du dépôt public à un commit écrit en entier, `allerretour.py`
+  compare le fichier de ce commit au dépôt, et revenir en arrière ne change que le commit → « L'ASSISTANT SE DÉPLOIE PAR
+  UNE LIGNE QUI IMPORTE LE DÉPÔT », « L'ASSISTANT ET EXTRACT-PIECE REDÉPLOYÉS (V51), CELLE-CI PAR UNE LIGNE QUI IMPORTE
+  LE DÉPÔT », « LA FACTURE : LA MIGRATION EN PRODUCTION (FACTURE-Q1) ». **Un commit n'est pas un déploiement,
   un déploiement n'est pas une autorisation** ; `bright-task` (410, hors du dépôt) : à supprimer quand un outil le
   permettra, ne pas réenquêter → « UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS ».
 - **Clés de Supabase** : les historiques sont quittées ; le bloc `cleSupabase` lit les nouvelles ; une fonction appelée

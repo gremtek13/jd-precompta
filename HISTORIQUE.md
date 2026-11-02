@@ -46181,5 +46181,20 @@ rendait ; les huit autres, celles d'avant. Les trois contrôles : la dérive, 16
 les deux fonctions remplacées ne touchent pas, inchangé avec la signature — il se rejoue avec la migration des règles,
 qui le touche. Les commentaires qui la disaient préparée la disent en production.
 
-**CE QUI SUIT, DANS LA MÊME HEURE.** La fusion du front, puis `send-email`, `plateforme-agreee` et `superpdp-emit`, qui
-recopient `calculerLigne`, redéployées au commit de `main` qui les porte ; puis les essais en production.
+**LA FUSION ET LES TROIS FONCTIONS, DANS LA MÊME HEURE.** La demande de fusion n° 266, verte, fusionnée vers 12 h 50 (Paris ;
+`main` à `e3b9261`, sans commit de fusion). Puis `send-email` v8 (`verify_jwt` faux), `plateforme-agreee` v9 et
+`superpdp-emit` v15 (`verify_jwt` vrai), les valeurs de `config.toml`, redéployées comme l'assistant et `extract-piece` :
+une ligne qui importe leur fichier du dépôt public au commit `e3b9261e82c7498024594e2da2d76370c61b4800`. La recopie
+aurait coûté leurs 307 Ko à chaque déploiement (`plateforme-agreee` en fait 198) ; le chemin était ouvert depuis le
+28/10/2026 (« L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT »). Avant d'écraser : les versions en ligne (v7,
+v8, v14) dataient de leur déploiement vérifié du 11/10/2026, juste après `cffa136`, le dernier commit qui ait touché leurs
+fichiers : la comparaison faite alors tenait encore. Les trois fichiers servis à cette adresse ont l'empreinte du dépôt ;
+`allerretour.py` : « identique au dépôt » (453, 3 537 et 1 412 lignes) ; sans session, `send-email` répond elle-même 401
+« Non authentifié. » — le module importé démarre —, les deux autres 401 à la passerelle, comme avant. Revenir en arrière :
+la même ligne au commit `cffa13695995977436b20ef724e7092fbabad999`, dont les fichiers sont ceux des versions d'avant.
+
+**LES ESSAIS NE SE REJOUENT PAS EN PRODUCTION CETTE FOIS.** La production égale la réplique sur les neuf familles de
+`signature.sql` ; la réplique porte les six factures F2026 du dossier du client, les seules factures validées de la
+production et les seules lignes que la garde neuve lit hors des dossiers jetables des essais ; tous les essais y ont été
+joués, sans et avec la migration (le bloc SI corrigé, ci-dessus). Les rejouer en production, environ 550 Ko de texte,
+n'apprendrait rien de plus ; le précédent est celui de `caisse.sql` et `droitsAcces.sql`, le même jour.
