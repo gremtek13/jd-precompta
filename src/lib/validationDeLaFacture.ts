@@ -3,7 +3,7 @@ import { mentionTva } from './statutTva'
 import type { ArticleExoneration, FactureEmise, StatutTva } from './types'
 
 // CE QUE LA VALIDATION EXIGE D'UNE FACTURE, DEPUIS LA CORRECTION DE LA FACTURE (31/10/2026, reprise le 02/11/2026 pour
-// FACTURE-Q1 ; migration `facture_dates_centimes_mention_tva`, PRÉPARÉE dans supabase/preparees/, pas encore en base ;
+// FACTURE-Q1 ; migration `facture_dates_centimes_mention_tva`, en production depuis le 02/11/2026 (version 20261102112003) ;
 // HISTORIQUE.md, « LA FACTURE : LA DATE DANS L'ORDRE DE SA SÉRIE, LE DEMI-CENTIME ET LA MENTION DE TVA, REPRISE POUR
 // FACTURE-Q1 (PRÉPARÉE, PAS APPLIQUÉE) »).
 // Un module PUR — il ne lit rien en base, n'appelle personne, ne lit pas l'horloge (le jour de Paris lui est donné) — qui

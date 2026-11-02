@@ -46,8 +46,8 @@ import {
 // production répond `EMPREINTE_SANS_LA_MIGRATION_C6`, et le module y est plus strict de ces seules saisies : le test qui
 // suit le vérifie, réponse par réponse.
 //
-// LA CORRECTION DE LA FACTURE (31/10/2026 ; migration `facture_dates_centimes_mention_tva`, PRÉPARÉE dans
-// supabase/preparees/). Le HT et la TVA d'une ligne se comptent sur les décimaux exacts, des deux côtés : la facture F2 du
+// LA CORRECTION DE LA FACTURE (31/10/2026 ; migration `facture_dates_centimes_mention_tva`, en production
+// depuis le 02/11/2026). Le HT et la TVA d'une ligne se comptent sur les décimaux exacts, des deux côtés : la facture F2 du
 // monde (3 × 1,005 €) vaut 3,02 € HT, plus 3,01 €, et ses en-têtes, que `calculerTotaux` donne, avec elle. Le script
 // pose les deux dossiers en franchise et la mention de l'art. 293 B sur chaque facture (une facture d'un statut à
 // préciser ne se valide plus). Rejouée le 31/10/2026 sur trois copies de la réplique dont signature.sql égalait la

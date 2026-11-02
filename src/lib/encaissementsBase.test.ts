@@ -13,8 +13,8 @@ import type { EncaissementFacture, EncaissementFactureTaux, MoyenEncaissement } 
 // table RELEVÉE EN BASE — la règle du dépôt pour ce que la base doit vérifier. Si l'application change son calcul, ce
 // fichier tombe ; si la base change le sien, le contrôle 100 de `supabase/essais/encaissementsFactures.sql` tombe.
 //
-// LA CORRECTION DE LA FACTURE (31/10/2026 ; migration `facture_dates_centimes_mention_tva`, PRÉPARÉE dans
-// supabase/preparees/). Jusque-là, les deux côtés calculaient en virgule flottante — la base recopiait le navigateur au
+// LA CORRECTION DE LA FACTURE (31/10/2026 ; migration `facture_dates_centimes_mention_tva`, en production
+// depuis le 02/11/2026). Jusque-là, les deux côtés calculaient en virgule flottante — la base recopiait le navigateur au
 // bit près, en double précision —, et une ligne de 1,005 € valait 1,00 €, une de 0,285 € 0,28 € ; depuis, les deux
 // calculent sur les décimaux exacts de la ligne, le demi éloigné de zéro (1,01 € ; 0,29 €). Les valeurs et l'empreinte
 // ci-dessous sont celles de la base munie de la migration, relevées le 31/10/2026 sur la réplique (PostgreSQL 16) ; sans

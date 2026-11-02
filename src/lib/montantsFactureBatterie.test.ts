@@ -4,7 +4,7 @@ import { GRAINE_DES_LIGNES, LIGNES_NOMMEES, NOMBRE_DE_LIGNES, ligneEcrite, ligne
 import { calculerLigne } from './montantsFacture'
 
 // LE HT ET LA TVA D'UNE LIGNE, L'APPLICATION ET LA BASE SUR LES MÊMES DIX MILLE LIGNES (correction de la facture,
-// 31/10/2026 ; migration `facture_dates_centimes_mention_tva`, PRÉPARÉE dans supabase/preparees/). La batterie de
+// 31/10/2026 ; migration `facture_dates_centimes_mention_tva`, en production depuis le 02/11/2026). La batterie de
 // src/test/batterieDesLignes.ts — dix mille lignes tirées d'une graine fixe, dont les trois que la relecture a trouvées —
 // a été jugée le 31/10/2026 par `centimes_ligne_facture` ELLE-MÊME, sur la réplique (PostgreSQL 16, la production à 164
 // migrations), par supabase/essais/batterieDesLignes.mjs : chaque ligne sous l'écriture décimale que JSON lui donne,

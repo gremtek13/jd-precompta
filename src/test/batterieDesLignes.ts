@@ -2,7 +2,7 @@ import { TAUX_ADMIS } from '../lib/factureCii'
 import { entierTire, tirage } from './encaissementsBatterie'
 
 // LA BATTERIE DES LIGNES DE FACTURE (correction de la facture, 31/10/2026 ; migration `facture_dates_centimes_mention_tva`,
-// PRÉPARÉE dans supabase/preparees/). Le HT et la TVA d'une ligne se calculent deux fois : dans l'application
+// en production depuis le 02/11/2026). Le HT et la TVA d'une ligne se calculent deux fois : dans l'application
 // (`calculerLigne`, src/lib/montantsFacture.ts), qui écrit l'en-tête de la facture et ce que la facture électronique
 // transmet, et dans la base (`centimes_ligne_facture`), qui recompte chaque facture par taux pour plafonner ses
 // encaissements, en écrire la vente et valider l'exercice. Les deux doivent rendre le MÊME centime sur toute ligne
