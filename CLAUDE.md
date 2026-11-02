@@ -72,8 +72,9 @@ ce navigateur n'a pas montrées → « LA CAISSE : LE DROIT « CAISSE » À L'É
 (`caisse_du_client`, l'année et les suivantes) et ses opérations, les CONFRONTE avant de rien offrir, et juge ses saisies,
 corrections et retraits par les règles de `lib/caisse.ts` sur la caisse ainsi rejouée (`lib/caisseClient.ts`) — ce qu'il ne
 lit pas (l'ouverture du dossier, une année sans jour lu) reste au jugement de la base → « LA CAISSE : « MA CAISSE », L'ÉCRAN
-DU PRATICIEN (C12A, LIGNE 26.6) » ; reste C12b, le paiement d'une pièce depuis « Mes pièces » → « LA CAISSE ET
-LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026 », « LA CAISSE : LE MODULE, LA LECTURE
+DU PRATICIEN (C12A, LIGNE 26.6) » ; C12b, le 02/11/2026 : depuis « Mes pièces », le praticien paie une pièce par sa caisse, à
+son jour et à son montant, sans en voir le montant, et retire son paiement → « LA CAISSE : LE PAIEMENT D'UNE PIÈCE DEPUIS
+« MES PIÈCES » (C12B, LIGNE 26.6) », « LA CAISSE ET LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026 », « LA CAISSE : LE MODULE, LA LECTURE
 ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
 CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
 26.6) », « LA CAISSE : L'ASSISTANT EN LIGNE (C5, LIGNE 26.6) », « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) », « LA
@@ -366,7 +367,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     CABINET ».
   - « Ma caisse » sous `maCaisseOuverte` : la caisse rejouée sur ce que le client lit, confrontée au total et au solde de
     la base, sinon aucun geste ; aucune catégorie, aucun compte, aucun nom → « LA CAISSE : « MA CAISSE », L'ÉCRAN DU
-    PRATICIEN (C12A, LIGNE 26.6) ».
+    PRATICIEN (C12A, LIGNE 26.6) ». Le paiement d'une pièce, dans « Mes pièces » : le sens tiré de la pièce, jamais son
+    montant ; ce que le client ne lit pas jugé par la base seule → « LA CAISSE : LE PAIEMENT D'UNE PIÈCE DEPUIS « MES
+    PIÈCES » (C12B, LIGNE 26.6) ».
   - « Ma banque » sous `maBanqueOuverte` : l'état DÉDUIT, le solde LU au dernier relevé contrôlé, jamais calculé ; ni
     catégorie ni écriture → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » » ; avec « Ventes », le registre lu APRÈS la
     case dit le mouvement classé ou réservé par ses encaissements, lu en partie il tait les mouvements libres → « « MA

@@ -2025,6 +2025,10 @@ const TABLES: Record<string, Ligne[]> = {
     { ...operationCaisse('oc5', 'recette', '2026-09-02', 120, 'c9'), retire_le: '2026-09-03T08:00:00Z', retire_par: 'u1', origine: 'client' },
     { ...operationCaisse('oc6', 'recette', '2026-09-02', 132, 'c9'), remplace_id: 'oc5', origine: 'client' },
     operationCaisse('oc7', 'recette', '2026-09-19', 59.5, 'c9'),
+    // Le paiement d'une pièce par la caisse, saisi par le praticien depuis « Mes pièces » (étape C12b), pour la seule passe
+    // `client-caisse` : la papeterie (p7, un achat), payée en espèces le 20 septembre — « Mes pièces » le dit « par toi », « Ma
+    // caisse » le nomme par le jour de dépôt de la pièce.
+    ...(CAISSE_DU_CLIENT_DU_BANC ? [{ ...operationCaisse('oc8', 'paiement', '2026-09-20', -27.35, null), piece_id: 'p7', origine: 'client' }] : []),
   ],
   a_nouveaux: [
     aNouveau('an1', '512000', '51210000', 'Banque Populaire', 'debit', 8400),

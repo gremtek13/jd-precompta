@@ -609,8 +609,8 @@ export const CE_QUE_LA_CASE_RETIENT = 'Tant qu’un accès la porte, le statut d
   + 'case d’abord.'
 
 // CE QUE LA CASE OUVRE À LA SESSION DU CLIENT, PAR LA BASE, DÈS QU'ELLE EST COCHÉE — qu'un écran le montre ou non (« Ma
-// caisse », étape C12a, en montre la caisse, ses saisies, ses corrections et ses retraits ; le paiement d'une pièce, C12b, viendra
-// ensuite) : la policy `operations_caisse_lecture_caisse` (toute la caisse de son dossier,
+// caisse », étape C12a, en montre la caisse, ses saisies, ses corrections et ses retraits ; « Mes pièces », étape C12b, le
+// paiement d'une pièce et son retrait) : la policy `operations_caisse_lecture_caisse` (toute la caisse de son dossier,
 // chaque colonne), la fonction `caisse_du_client` (la caisse jour par jour, en totaux, et « le prix d'un solde juste » que son
 // commentaire veut voir dit ici : les versements et retraits du relevé sans « Banque », les espèces de ses factures sans
 // « Ventes ») et les cinq fonctions d'écriture que `qui_ecrit_la_caisse` lui ouvre (une opération, un mois, le retrait, le
@@ -624,11 +624,13 @@ export const CE_QUE_LA_CASE_CAISSE_OUVRE = 'il y lit toute la caisse de son doss
   + 'saisit compte aussitôt, marqué « saisie par le client » dans l’onglet Caisse, où tu le retires ou le remplaces au besoin.'
 
 /**
- * Ce que l'espace du client en montre (« Ma caisse », étape C12a) : sa caisse, et ce qu'il y saisit, corrige et retire ; le
- * paiement d'une pièce en espèces, que la base lui ouvre aussi, n'a pas encore son écran (C12b).
+ * Ce que l'espace du client en montre (« Ma caisse », étape C12a) : sa caisse, et ce qu'il y saisit, corrige et retire ; et,
+ * depuis l'étape C12b, le paiement en espèces d'une pièce, depuis « Mes pièces », à son jour et à son montant, qu'il retire
+ * tant que l'exercice n'est pas validé — sans que l'écran lui montre le montant de la pièce.
  */
 export const CE_QUE_MONTRE_MA_CAISSE = 'Son espace la lui montre dans « Ma caisse », où il saisit ses recettes, ses apports et '
-  + 'ses prélèvements, et corrige ou retire ce qu’il a saisi ; le paiement d’une pièce en espèces n’y a pas encore son écran.'
+  + 'ses prélèvements, et corrige ou retire ce qu’il a saisi ; dans « Mes pièces », il dit qu’une pièce est payée en espèces '
+  + 'de sa caisse, à son jour et à son montant, et retire ce paiement — l’écran ne lui montre pas le montant de la pièce.'
 
 /** Ce que la phrase de l'onglet dit de la case « Caisse » sur CE dossier, selon son statut de TVA. */
 export function phraseDuStatutDeLaCaisse(caisse: EtatCaisseDuDossier): string {

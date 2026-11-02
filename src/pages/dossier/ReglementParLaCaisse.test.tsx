@@ -243,6 +243,18 @@ describe('les paiements de la pièce, et leur retrait', () => {
     expect(screen.getAllByRole('button', { name: 'Retirer' })).toHaveLength(1)
   })
 
+  it('un paiement saisi par le client depuis « Mes pièces » (étape C12b) se dit « par le client », et se retire d’ici', () => {
+    const duClient = operation({ id: 'pc', genre: 'paiement', date: '2026-03-05', montant: -50, piece_id: 'p1', origine: 'client', cree_par: 'u-client' })
+    lecture = { dossierId: D, etat: 'lue', donnees: donnees({ operations: [operation({ id: 'ap' }), duClient, paye] }) }
+    monter()
+    const items = screen.getAllByRole('listitem').map((li) => sansInsecable(li.textContent ?? '').replace(/\s+/g, ' '))
+    expect(items).toEqual([
+      'Le paiement en espèces du 05/03/2026 de 50,00 € Retirer',
+      'Le paiement en espèces du 05/03/2026 de 50,00 € saisie par le client Retirer',
+    ])
+    expect(screen.getAllByRole('button', { name: 'Retirer' })).toHaveLength(2)
+  })
+
   it('le retrait : confirmé — la confirmation nomme ce qui part —, la fonction de la caisse, puis la relecture', async () => {
     lecture = { dossierId: D, etat: 'lue', donnees: donnees({ operations: [operation({ id: 'ap' }), paye] }) }
     monter()

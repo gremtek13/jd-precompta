@@ -46545,3 +46545,84 @@ infirmier exonéré, la nature fixée, l'accueil, la caisse du mois, septembre, 
 720, 1 024, 1 280 et 1 440 px ; la passe `client` d'avant, 0 à 390 et 1 440. Le navigateur sans mandataire.
 
 **CE QUI RESTE.** C12b, le paiement d'une pièce par la caisse depuis « Mes pièces » ; C11-Q1 et C11-Q2 au cabinet.
+
+### 02/11/2026 — LA CAISSE : LE PAIEMENT D'UNE PIÈCE DEPUIS « MES PIÈCES » (C12B, LIGNE 26.6)
+
+(Écrite par un agent dev, sur `2f7e021`. Ni migration, ni déploiement, ni lecture ni écriture en base : `regler_piece_par_la_caisse`
+(la migration `paiement_par_la_caisse`), sa branche du client (`caisse_du_client`) et `retirer_operation_caisse` sont en
+production depuis le 02/11/2026 ; ce lot ne lit que l'export. Lus avant d'écrire : « LA CAISSE : LA SAISIE DU PRATICIEN ET LA
+PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE (CAISSE-Q1 ET Q4) », § 8 (« Ce que voit le client », CAISSE2-Q4, (A)) ;
+« LA CAISSE : « MA CAISSE », L'ÉCRAN DU PRATICIEN (C12A, LIGNE 26.6) » ; « LA CAISSE : LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, À
+L'ÉCRAN DU CABINET (C9B, LIGNE 26.6) ».)
+
+**CE QUI EST FAIT.** Dans « Mes pièces », pour le praticien dont la case « Caisse » est sur la société affichée
+(`maCaisseOuverte`, la garde de la route de « Ma caisse »), et relue à la base avec la caisse (`lireLaCaisseDuClient`, depuis
+l'année d'avant l'année en cours) : sur une pièce d'achat, « Payée en espèces de ta caisse » ; sur une pièce de vente,
+« Encaissée en espèces dans ta caisse » ; jamais sur une note de frais ni une pièce « autre ». Le geste ouvre, sous la ligne,
+un jour et un montant SANS signe, les siens. La pièce dit ensuite « Payée en espèces le 12/03/2026, 80,00 € (par toi) » —
+« (par ton cabinet) », « (depuis un autre accès) » pour les autres —, et « Retirer » s'offre sur ses seules saisies, confirmé,
+jamais sur une année que la lecture dit figée. « Ma caisse » nomme un paiement « Paiement de la pièce déposée le … » (ou
+« Encaissement de … »), par le jour de dépôt de sa pièce (`lireLesDepotsDesPieces` : `id` et `created_at`, rien d'autre ;
+illisible, il garde son nom d'hier, par son sens). La phrase et la confirmation de la case « Caisse » de l'onglet Accès disent
+désormais ce paiement (`CE_QUE_MONTRE_MA_CAISSE`). Côté cabinet, la fiche d'une pièce disait déjà « saisie par le client »
+d'un paiement d'origine « client » (`origineDite`, C9b) : un cas d'écran le garde maintenant.
+
+**LE MONTANT DE LA PIÈCE NE S'AFFICHE JAMAIS.** L'écran n'en lit que le SENS, au seul endroit `pieceVueParLeClient`
+(`especesEntrentPour`, la règle du refus 8 de la base : (type = vente) <> (montant < 0)), pour signer ce qui part comme le relevé
+— une sortie pour un achat, une entrée pour une vente, l'inverse pour un avoir. Le montant ne passe pas plus loin.
+
+**LA BRANCHE DU CLIENT DU JUGEMENT** (lib/paiementParLaCaisse.ts). L'ordre des refus de `regler_piece_par_la_caisse` est
+écrit UNE fois (`jugerSelonLeLecteur`), et QUI juge en est un paramètre obligatoire : le cabinet lit tout ce que la base lit
+(`jugerLeReglementSelon`, inchangé au caractère près dans ses verdicts) ; le client (`jugerLeReglementDuClientSelon`) lit le
+type et le sens de la pièce, et SAUTE ce qu'il ne lit pas — l'exemplaire d'une facture source (il ne lit pas les factures
+sans « Ventes »), le plafond d'une pièce validée et le reste au centime (ils lisent le montant de la pièce et le relevé) —, qui
+restent au jugement de la base, après le clic, sous sa phrase au client (« Ce paiement ne règle pas exactement cette
+pièce… »), qui ne dit ni le reste ni le montant exact. Les juger ici sur le montant lu dirait, frappe après frappe, ce que
+l'écran tait. Le dossier du client ne porte ni l'ouverture ni les exercices validés (`dossierDuClient`) : l'ouverture reste à
+la base, et une année que la lecture dit figée se refuse à l'écran (la phrase de « Ma caisse »). La caisse négative se juge
+sur la caisse REJOUÉE de C12a (`caisseRejouee`), confrontée au total et au solde de la base, sinon aucun geste.
+
+**LE MODULE DE L'ÉCRAN** (lib/paiementDeMesPieces.ts) ne recopie aucune règle de la base. Ses seules règles sont celles de
+SON formulaire : un montant sans signe (le sens vient de la pièce), une date d'avant la première année lue (« Ta caisse est
+lue ici depuis le 01/01/… : pour un paiement plus ancien, demande à ton cabinet. »), une année figée. `caisseDeMesPieces` dit
+l'état : fermée sans la case (« Mes pièces » est celle d'hier, rien ne se lit), en attente avant le retour ou pour une autre
+société, muette (sa phrase) sur un échec, sans la case à la base ou lue en partie ; lue, ses gestes seulement si la caisse se
+rejoue, si le paiement du client s'ouvre (`paiementDuClientOuvert` : l'accès d'un dossier exonéré ou en franchise, la
+trésorerie — le paiement ne lit pas la nature des recettes) et si les pièces sont lues en entier.
+
+**L'ÉCRAN** (pages/ClientUpload.tsx, pages/PaiementParMaCaisse.tsx). La colonne des gestes s'appelle « Gestes » avec la
+case, « Précisions » sans elle ; le formulaire vit dans une ligne sous la pièce, une à la fois ; « Entrée » n'envoie rien.
+UN verrou `useRef` pour payer et retirer, posé avant le premier `await`, relâché dans le `finally` APRÈS la relecture de la
+caisse ; la confirmation nomme la pièce par son dépôt, le jour, le montant, et la caisse du jour après ; le refus de la base se
+dit aux mots du client (`pourLEspace('client', messageErreur(…))`).
+
+**LES CHOIX QUE LA CONCEPTION NE TRANCHAIT PAS.**
+- « Remplacer » un paiement n'est pas offert : `remplacer_operation_caisse` ne remplace pas un paiement par un paiement
+  (`enregistrer_operation_caisse` ne connaît pas ce genre). On le retire, puis on paie de nouveau — l'écran le dit. Un
+  remplacement d'un seul geste demanderait une migration (une branche `paiement` de `remplacer_operation_caisse`).
+- La caisse se lit depuis le 1er janvier de l'année d'avant (l'année que « Ma caisse » offre par défaut) : un paiement plus
+  ancien se refuse à l'écran et renvoie au cabinet. Lire plus loin attendrait une demande.
+- Le geste d'une vente dit « Encaissée », celui d'un achat « Payée » (le sens des espèces, pas le type seul : un avoir
+  d'achat « Encaissée »).
+- Un paiement du client depuis un autre accès se dit « depuis un autre accès », comme dans « Ma caisse ».
+
+**LES PREUVES.** Sous Node 22 : `tsc -b` 0 ; `oxlint` 0 erreur ; la suite entière sous Paris, 543 fichiers, 16 654 tests verts
+et l'« échec attendu » d'un autre lot, puis `test:fuseaux` (voir la demande de fusion). Neufs : `paiementDeMesPieces.test.ts`
+(18 cas, dont une BATTERIE tirée, graine 20261102, 4 000 saisies : chaque phrase de la branche du client est un `raise` de
+`regler_piece_par_la_caisse` relu dans l'export, à la lettre, ou le texte de la caisse négative ; elle juge comme la branche du
+cabinet là où il lit autant ; l'ordre est celui de la base ; la phrase du client au reste au centime, réservée par la base sous
+`if v_origine = 'client'`, sans montant ; la règle du sens relue dans le SQL ; aucun texte ne porte le montant de la pièce),
+`ClientUpload.caisse.test.tsx` (11 : sans la case, « Mes pièces » d'hier et aucune lecture de la caisse ; rien avant le retour ;
+la case relue sans « Caisse » ; la caisse ou les pièces lues en partie ; le paiement — deux clics dans le même `act`, un appel,
+le verrou tenu pendant la relecture —, l'encaissement d'une vente, la confirmation refusée, les refus avant le clic, le refus de
+la base après le clic, « par toi », « Retirer » ; `motsDuCabinet`). Repris : `ClientCaisse.test.tsx` (le paiement nommé par son
+dépôt, ou par son sens), `ReglementParLaCaisse.test.tsx` (« saisie par le client »), `droitsAcces.test.ts`,
+`ecransAvantLecture.test.tsx`. MUTATIONS : 29 écrites (le sens, la branche du client, « par toi », le retrait, le formulaire,
+l’état de la caisse, le verrou, la confirmation, la case), 29 tuées — « le verrou relâché avant la relecture » survivait à la
+première passe : un cas l'éprouve désormais. Le BANC (`debordements.mjs <largeur> client-caisse`, trois visites neuves : la
+pièce payée « par toi » et son retrait, un paiement qui viderait la caisse refusé avant le clic, « Ma caisse » qui nomme le
+paiement par le dépôt de sa pièce) : 0 débordement à 390, 720, 1 024, 1 280 et 1 440 px ; la passe `client`, 0 à 390 et 1 440.
+Le navigateur sans mandataire.
+
+**CE QUI RESTE.** Rien de C12b. Hors du lot : un remplacement d'un seul geste d'un paiement (une migration) ; C11-Q1 et C11-Q2
+au cabinet.

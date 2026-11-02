@@ -99,6 +99,28 @@ export async function lireLaCaisseDuClient(dossierId: string, annee: number, ann
   }
 }
 
+/**
+ * Le jour de dépôt des pièces que des paiements de la caisse citent (étape C12b) : « Ma caisse » nomme un paiement par lui,
+ * jamais par un fournisseur, un fichier ni un libellé — seuls `id` et `created_at` se lisent. Rendue AVEC le dossier lu ; une
+ * lecture ratée ou partielle rend `illisible`, et l'écran nomme alors le paiement par son sens seul. Ne rejette jamais.
+ */
+export type DepotsDesPieces = { dossierId: string; etat: 'lus'; depots: ReadonlyMap<string, string> }
+  | { dossierId: string; etat: 'illisible' }
+
+export async function lireLesDepotsDesPieces(dossierId: string, pieceIds: readonly string[]): Promise<DepotsDesPieces> {
+  if (pieceIds.length === 0) return { dossierId, etat: 'lus', depots: new Map() }
+  try {
+    const lecture = await lireTout<{ id: string; dossier_id: string; created_at: string }>((debut, fin) =>
+      supabase.from('pieces').select('id, dossier_id, created_at', { count: 'exact' })
+        .eq('dossier_id', dossierId).in('id', [...pieceIds]).order('id').range(debut, fin),
+    )
+    if (!lecture.complete || lecture.lignes.some((p) => p.dossier_id !== dossierId)) return { dossierId, etat: 'illisible' }
+    return { dossierId, etat: 'lus', depots: new Map(lecture.lignes.map((p) => [p.id, p.created_at])) }
+  } catch {
+    return { dossierId, etat: 'illisible' }
+  }
+}
+
 // La nature des recettes que le cabinet a fixée : son compte seulement. Aucune nature, rien à lire.
 async function lireLaNature(dossier: DossierDuClient): Promise<NatureDesRecettesLue> {
   if (dossier.categorie_recettes_client == null) return { etat: 'lue', categorie: null }
