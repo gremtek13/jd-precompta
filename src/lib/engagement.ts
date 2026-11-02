@@ -1,5 +1,6 @@
 import { COMPTE_CLIENTS, COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS } from './comptes'
 import { cleFournisseur, dateLocaleDe } from './format'
+import { libelleDUnePiece, type PieceLibellee } from './libellesDesVentes'
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
 import { ROLES_DU_DIRIGEANT, roleDuDirigeant, type PlanComptable, type RoleDuDirigeant } from './planComptable'
 import type { CibleComptable, LigneAGenerer } from './ecritures'
@@ -170,7 +171,7 @@ export function lignesFactureEngagement(
   const base = {
     dossier_id: dossierId, piece_id: piece.id, statut: 'proposee' as const,
     date: piece.date_piece ?? dateLocaleDe(piece.created_at),
-    libelle: piece.tiers ?? piece.nom_fichier,
+    libelle: libelleDUnePiece(piece),
   }
   const ttc = piece.montant_ttc!
   const tva = tvaVentilee(piece, assujettiTva)
@@ -189,14 +190,14 @@ export function lignesFactureEngagement(
 // avoir remboursé va dans l'autre sens que la facture. Le montant est celui du mouvement, pas celui de
 // la pièce : un frais bancaire ou un paiement partiel reste lisible sur le compte de tiers.
 export function lignesReglementEngagement(
-  dossierId: string, piece: Pick<Piece, 'id' | 'type_piece' | 'tiers' | 'nom_fichier'>,
+  dossierId: string, piece: Pick<Piece, 'id'> & PieceLibellee,
   mouvement: Pick<LigneBancaire, 'id' | 'date' | 'montant'>, compteNotesDeFrais: CompteNotesDeFrais, immobilisation: boolean,
   plan: PlanComptable,
 ): LigneAGenerer[] {
   if (!mouvement.montant) return []
   const base = {
     dossier_id: dossierId, piece_id: piece.id, statut: 'proposee' as const, date: mouvement.date,
-    libelle: piece.tiers ?? piece.nom_fichier, ligne_bancaire_id: mouvement.id,
+    libelle: libelleDUnePiece(piece), ligne_bancaire_id: mouvement.id,
   }
   const sensBanque: Sens = mouvement.montant > 0 ? 'debit' : 'credit'
   const montant = Math.abs(mouvement.montant)

@@ -7,8 +7,8 @@ import {
 import type { CibleComptable } from './ecritures'
 import { POSTE_ASSURANCE_EMPRUNT, POSTE_INTERETS_EMPRUNT } from './echeanceEmprunt'
 import { justifieSonMouvement } from './encaissementsFactures'
-import { sirenValide, siretValide } from './factureCii'
 import { dateLocaleDe } from './format'
+import { sirenDuClient } from './libellesDesVentes'
 import type { PlanComptable } from './planComptable'
 import { cleDuPaiement, partsDesPaiements, rattachementsTresorerie, type PaiementDePiece } from './rattachement'
 import type {
@@ -214,18 +214,15 @@ function natOps(nature: NatureOperation, lignes: readonly LigneACaracteriser[]):
 /**
  * IdClient d'une écriture d'une facture émise (FEC22-Q4, (D)) : le SIREN de son client quand la facture FIGÉE en porte un
  * — les neuf premiers chiffres de `tiers_siret`, s'il n'est fait que de chiffres (quatorze, un SIRET ; neuf, un SIREN
- * saisi seul) et passe la clé de Luhn de l'INSEE, celle du SIREN comprise (`siretValide`, `sirenValide`,
- * lib/factureCii.ts : La Poste et ses établissements compris) —, sinon le numéro de la facture, la « référence à un
+ * saisi seul) et passe la clé de Luhn de l'INSEE, celle du SIREN comprise : `sirenDuClient`, lib/libellesDesVentes.ts, le
+ * prédicat que les libellés d'une vente partagent (FEC22-Q7) —, sinon le numéro de la facture, la « référence à un
  * document annexe » de BOI-BNC-DECLA-10-20, § 280. JAMAIS le nom (`tiers_nom`). Une facture qui n'est pas figée (sans
  * numéro, un brouillon) n'identifie personne : ''. Une entreprise ou un organisme qu'un SIREN désigne n'est couvert par
  * aucun secret médical ; un SIRET mal formé ne se corrige pas (ni espace retiré ni chiffre deviné) : le numéro le remplace.
  */
 export function identificationDuClient(facture: FactureDuClient): string {
   if (facture.statut !== 'validee' || facture.numero === null || facture.numero === '') return ''
-  const s = facture.tiers_siret
-  if (s !== null && /^\d{14}$/.test(s) && siretValide(s) && sirenValide(s.slice(0, 9))) return s.slice(0, 9)
-  if (s !== null && /^\d{9}$/.test(s) && sirenValide(s)) return s
-  return facture.numero
+  return sirenDuClient(facture) ?? facture.numero
 }
 
 // ── Les sortes d'écriture que `numeroterFec` distingue (lib/fec.ts) ────────────────────────────────────────────────────

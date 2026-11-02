@@ -62,7 +62,7 @@ import { LIBELLE_MOTIF_VENTE, type EncaissementVendu, type FactureVendue, type P
 // ── Ce que le module lit ──────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Une facture ou un avoir du dossier, source ou non : ce que la composition, les refus et la confirmation lisent. */
-export type FactureDesEcritures = FactureVendue & Pick<FactureEmise, 'montant_ttc'>
+export type FactureDesEcritures = FactureVendue & Pick<FactureEmise, 'montant_ttc' | 'tiers_siret'>
 
 /**
  * Un encaissement du registre, retirés et contre-passations compris, avec son compte de contrepartie — et son auteur

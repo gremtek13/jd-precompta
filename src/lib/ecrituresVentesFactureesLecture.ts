@@ -31,7 +31,7 @@ import { COLONNES_LIGNES, COLONNES_PARTS } from './ventesFactureesLecture'
 
 /** Les colonnes que le module lit, chaîne pour chaîne : le compilateur confronte chacune à son type. */
 export const COLONNES_FACTURES_ECRITURES =
-  'id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, montant_ttc'
+  'id, dossier_id, statut, type, numero, date_emission, tiers_nom, tiers_siret, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, montant_ttc'
 export const COLONNES_ENCAISSEMENTS_ECRITURES =
   'id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le, compte_contrepartie, cree_par'
 export const COLONNES_MOUVEMENTS_ECRITURES =

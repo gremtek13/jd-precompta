@@ -11,13 +11,12 @@ import { calculerDeclaration2035 } from './declaration2035'
 import { paiementsDesPieces } from './rattachement'
 import {
   LIBELLE_MOTIF_VENTE, recettesFactureesParMois, type EncaissementVendu, type FactureVendue, type PartVendue,
-  type SourcesVentesFacturees,
 } from './ventesFacturees'
 import {
   LIBELLE_MOTIF_NON_ECRITE, auxiliaireDeLaLigne, cleFecEncaissement, cleFecFacture, cleFecMouvementEncaissements,
   colonnesDeLaSource, ecrituresDesVentesFacturees, fraisDesMouvements, lignesAuBrouillon, memeEcritureQueLeBrouillon, ordreDesLignes,
-  refusCompteDeContrepartie, type EcritureVenteFacturee, type EcrituresDesVentesFacturees, type LigneVenteFacturee,
-  type MouvementDesEncaissements,
+  refusCompteDeContrepartie, type EcritureVenteFacturee, type EcrituresDesVentesFacturees, type EntreesEcrituresVentes,
+  type FactureDesVentesEcrites, type LigneVenteFacturee, type MouvementDesEncaissements,
 } from './ecrituresVentesFacturees'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 
@@ -33,8 +32,8 @@ const MODES: readonly ModeComptable[] = ['tresorerie', 'engagement']
 
 // ── Les jeux ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const facture = (o: Partial<FactureVendue> = {}) => factureVendue({ numero: 'F2025-0001', date_emission: '2025-11-10', ...o })
-const avoir = (o: Partial<FactureVendue> = {}) => factureVendue({
+const facture = (o: Partial<FactureDesVentesEcrites> = {}) => factureVendue({ numero: 'F2025-0001', date_emission: '2025-11-10', ...o })
+const avoir = (o: Partial<FactureDesVentesEcrites> = {}) => factureVendue({
   id: 'a1', type: 'avoir', numero: 'A2025-0001', facture_origine_id: 'f1', date_emission: '2025-11-12', ...o,
 })
 // Une ligne d'avoir : son hors taxe, en quantité négative.
@@ -52,7 +51,7 @@ const mvt = (o: Partial<MouvementDesEncaissements> & Pick<MouvementDesEncaisseme
 })
 
 interface Jeu {
-  factures?: FactureVendue[]
+  factures?: FactureDesVentesEcrites[]
   lignes?: LigneDeFacture[]
   encaissements?: { encaissement: EncaissementVendu; part: PartVendue }[]
   mouvements?: MouvementDesEncaissements[]
@@ -137,7 +136,8 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
       expect(e.source).toEqual({ genre: 'encaissement', encaissementId: 'e1', factureId: 'f1' })
       // Au journal des ventes, la facture pour pièce : son numéro et sa date d'émission.
       expect([e.journal, e.pieceRef, e.pieceDate, e.date]).toEqual(['VE', 'F2025-0001', '2025-11-10', '2025-11-20'])
-      expect(e.libelle).toBe('Encaissement, facture F2025-0001 — Client fictif')
+      // Le client est un particulier (aucun SIRET) : le numéro de la facture le nomme, jamais son nom (FEC22-Q7).
+      expect(e.libelle).toBe('Encaissement, facture F2025-0001')
       expect(r.nonEcrites).toEqual([])
     })
 
@@ -146,7 +146,7 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
       expect(cles(r)).toEqual([cleFecFacture('f1', '2025-11-10'), cleFecEncaissement('e1', '2025-11-20')])
       const f = ecriture(r, cleFecFacture('f1', '2025-11-10'))
       expect(f.lignes).toEqual(lignes(plan, [['D', 'clients', 12000], ['C', 'prestations_de_services', 10000], ['C', 'tva_collectee_en_attente', 2000]]))
-      expect([f.journal, f.pieceRef, f.pieceDate, f.libelle]).toEqual(['VE', 'F2025-0001', '2025-11-10', 'Facture F2025-0001 — Client fictif'])
+      expect([f.journal, f.pieceRef, f.pieceDate, f.libelle]).toEqual(['VE', 'F2025-0001', '2025-11-10', 'Facture F2025-0001'])
       expect(f.source).toEqual({ genre: 'facture', factureId: 'f1' })
       const e = ecriture(r, cleFecEncaissement('e1', '2025-11-20'))
       expect(e.lignes).toEqual(lignes(plan, [
@@ -272,7 +272,7 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
       const a = ecriture(r, cleFecFacture('a1', '2025-11-12'))
       expect(a.lignes).toEqual(lignes(plan, [['C', 'clients', 2400], ['D', 'prestations_de_services', 2000], ['D', 'tva_collectee_en_attente', 400]]))
       expect(a.source).toEqual({ genre: 'avoir', factureId: 'a1' })
-      expect([a.journal, a.pieceRef, a.pieceDate, a.libelle]).toEqual(['VE', 'A2025-0001', '2025-11-12', 'Avoir A2025-0001 — Client fictif'])
+      expect([a.journal, a.pieceRef, a.pieceDate, a.libelle]).toEqual(['VE', 'A2025-0001', '2025-11-12', 'Avoir A2025-0001'])
       expect(ecriture(r, cleFecEncaissement('e1', '2025-11-20')).lignes).toEqual(lignes(plan, [
         ['D', 'valeurs_a_l_encaissement', 9600], ['C', 'clients', 9600], ['D', 'tva_collectee_en_attente', 1600], ['C', 'tva_collectee', 1600],
       ]))
@@ -314,7 +314,7 @@ describe.each(PLANS)('les écritures d’une vente facturée, cas par cas — %s
       const r = composer(jeu, mode, plan)
       expect(r.nonEcrites).toEqual([])
       const c = ecriture(r, cleFecEncaissement('c1', '2025-11-25'))
-      expect(c.libelle).toBe('Contre-passation, facture F2025-0001 — Client fictif')
+      expect(c.libelle).toBe('Contre-passation, facture F2025-0001')
       expect(c.lignes).toEqual(lignes(plan, mode === 'tresorerie'
         ? [['C', 'banque', 12000, 'm2'], ['D', 'prestations_de_services', 10000], ['D', 'tva_collectee', 2000]]
         : [['C', 'banque', 12000, 'm2'], ['D', 'clients', 12000], ['C', 'tva_collectee_en_attente', 2000], ['D', 'tva_collectee', 2000]]))
@@ -806,12 +806,11 @@ describe('chaque écriture porte sa source, et se recompose à l’identique dep
     expect(cles(r)).toEqual(['facture|f1|2025-11-10', 'facture|a1|2025-11-12', 'encaissement|e1|2025-11-18', 'mouvement-encaissements|m1'])
   })
 
-  it('l’auxiliaire du 411 est celui d’une pièce de vente du même client : « C » et la clé de son nom', () => {
+  it('l’auxiliaire du 411 d’un particulier est le compte « Clients divers », jamais la clé de son nom (FEC22-Q7)', () => {
     const f = ecriture(r, cleFecFacture('f1', '2025-11-10'))
     const quatreCentOnze = f.lignes.find((l) => l.compte === PLAN_PAR_DEFAUT.clients)!
-    const pieceDeVente = auxiliaireDuTiers({ tiers: 'Client fictif' }, PLAN_PAR_DEFAUT.clients)
-    expect(pieceDeVente?.num).toMatch(/^C/)
-    expect(auxiliaireDeLaLigne(f, quatreCentOnze)).toEqual(pieceDeVente)
+    expect(f.tiers).toBeNull()
+    expect(auxiliaireDeLaLigne(f, quatreCentOnze)).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
     expect(auxiliaireDeLaLigne(f, f.lignes.find((l) => l.compte === PLAN_PAR_DEFAUT.prestations_de_services)!)).toBeNull()
     const m = ecriture(r, cleFecMouvementEncaissements('m1'))
     expect(m.lignes.map((l) => auxiliaireDeLaLigne(m, l))).toEqual(m.lignes.map(() => null))
@@ -837,7 +836,7 @@ describe('chaque écriture porte sa source, et se recompose à l’identique dep
 // ── Le tirage ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 interface Tire {
-  sources: SourcesVentesFacturees
+  sources: EntreesEcrituresVentes['sources']
   mouvements: MouvementDesEncaissements[]
   comptes: Map<string, string>
 }
@@ -854,7 +853,7 @@ const jourDe = (n: number) => new Date(Date.UTC(2026, 2, 1 + n)).toISOString().s
 // mouvements, montés sur ce que leurs encaissements justifient, moins des frais sous le seuil, classés par eux.
 function tirerUnDossier(suivant: () => number, numero: number): Tire {
   const entier = (n: number) => entierTire(suivant, n)
-  const factures: FactureVendue[] = []
+  const factures: FactureDesVentesEcrites[] = []
   const lignesDeFacture: LigneDeFacture[] = []
   const encaissements: EncaissementVendu[] = []
   const parts: PartVendue[] = []
@@ -988,6 +987,70 @@ function solde(ecritures: readonly EcritureVenteFacturee[], comptes: readonly st
   for (const e of ecritures) for (const l of e.lignes) if (comptes.includes(l.compte) && filtre(e, l)) s += l.sens === 'debit' ? l.centimes : -l.centimes
   return s
 }
+
+// FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE. Une entreprise — un SIRET figé qui passe la clé de Luhn, le
+// prédicat d'IdClient (`sirenDuClient`) — garde son nom dans le libellé et son compte auxiliaire ; tout autre client se
+// nomme par le numéro de la facture, et son 411 va au compte « Clients divers ». Données fictives.
+describe('FEC22-Q7 : le nom d’une entreprise, sinon le numéro de la facture', () => {
+  const ENTREPRISE = { tiers_nom: 'Clinique  Fictive SAS', tiers_siret: '12345678200010' }
+  const jeu = (client: Partial<FactureDesVentesEcrites>): Jeu => ({
+    factures: [facture(client), avoir(client)], lignes: [ligneVendue('f1', 100, 20), ligneAvoir('a1', 20, 20)],
+    encaissements: [
+      enc('e1', '2025-11-14', 96, { moyen: 'cheque', ligne_bancaire_id: 'm1' }),
+      enc('c1', '2025-11-25', -96, { moyen: 'cheque', annule_id: 'e1', ligne_bancaire_id: 'm2' }),
+    ],
+    mouvements: [mvt({ id: 'm1', date: '2025-11-14', montant: 96 }), mvt({ id: 'm2', date: '2025-11-25', montant: -96 })],
+  })
+  const libelles = (r: EcrituresDesVentesFacturees) => r.ecritures.filter((e) => e.source.genre !== 'mouvement').map((e) => e.libelle)
+
+  it.each(MODES)('%s : une entreprise garde son nom, ses blancs ramenés à un seul, sur la facture, l’avoir, l’encaissement et la contre-passation', (mode) => {
+    const r = composer(jeu(ENTREPRISE), mode, PLAN_PAR_DEFAUT)
+    expect(r.nonEcrites).toEqual([])
+    const attendus = [
+      ...(mode === 'engagement' ? ['Facture F2025-0001 — Clinique Fictive SAS', 'Avoir A2025-0001 — Clinique Fictive SAS'] : []),
+      'Encaissement, facture F2025-0001 — Clinique Fictive SAS', 'Contre-passation, facture F2025-0001 — Clinique Fictive SAS',
+    ]
+    expect([...libelles(r)].sort()).toEqual([...attendus].sort())
+    for (const e of r.ecritures.filter((x) => x.source.genre !== 'mouvement')) {
+      expect(e.tiers).toBe('Clinique Fictive SAS')
+      for (const l of e.lignes.filter((x) => x.compte === PLAN_PAR_DEFAUT.clients)) {
+        expect(auxiliaireDeLaLigne(e, l)).toEqual(auxiliaireDuTiers({ tiers: 'Clinique Fictive SAS' }, PLAN_PAR_DEFAUT.clients))
+        expect(auxiliaireDeLaLigne(e, l)?.num).not.toBe('CDIVERS')
+      }
+    }
+  })
+
+  it.each(MODES)('%s : un particulier, un SIRET mal formé ou un nom vide — le numéro seul, et le compte « Clients divers »', (mode) => {
+    for (const client of [
+      { tiers_nom: 'Patient Fictif', tiers_siret: null },
+      { tiers_nom: 'Patient Fictif', tiers_siret: '12345678200011' },
+      { tiers_nom: 'Patient Fictif', tiers_siret: '123 456 782 00010' },
+      { tiers_nom: '   ', tiers_siret: '12345678200010' },
+    ]) {
+      const r = composer(jeu(client), mode, PLAN_PAR_DEFAUT)
+      expect(r.nonEcrites).toEqual([])
+      for (const e of r.ecritures) {
+        expect(e.libelle).not.toContain('Patient')
+        expect(e.libelle).not.toContain('—')
+        expect(e.tiers).toBeNull()
+        for (const l of e.lignes.filter((x) => x.compte === PLAN_PAR_DEFAUT.clients)) {
+          expect(auxiliaireDeLaLigne(e, l)).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
+        }
+      }
+    }
+  })
+
+  it('le nom au brouillon est celui du libellé composé : `lignesAuBrouillon` ne le change pas, et la comparaison ne le lit pas', () => {
+    const r = composer(jeu(ENTREPRISE), 'engagement', PLAN_PAR_DEFAUT)
+    const f = ecriture(r, cleFecFacture('f1', '2025-11-10'))
+    expect(lignesAuBrouillon(D, f).map((l) => l.libelle)).toEqual(f.lignes.map(() => 'Facture F2025-0001 — Clinique Fictive SAS'))
+    // Le brouillon écrit hier, avec le nom d'un particulier : « à jour » quand même — le libellé n'en décide pas (§ 5 de la
+    // conception) ; rien ne se réécrit seul (HISTORIQUE.md, « FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE »).
+    const p = ecriture(composer(jeu({ tiers_nom: 'Patient Fictif', tiers_siret: null }), 'engagement', PLAN_PAR_DEFAUT), cleFecFacture('f1', '2025-11-10'))
+    const hier = lignesAuBrouillon(D, p).map((l) => ({ ...l, libelle: 'Facture F2025-0001 — Patient Fictif' }))
+    expect(memeEcritureQueLeBrouillon(p, hier)).toBe(true)
+  })
+})
 
 describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que le module des ventes facturées compte', () => {
   const suivant = tirage(20261020)

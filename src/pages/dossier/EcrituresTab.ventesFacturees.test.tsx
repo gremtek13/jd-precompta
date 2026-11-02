@@ -124,7 +124,7 @@ const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '4
 
 const facture = (o: Record<string, unknown> = {}) => ({
   id: 'f1', dossier_id: D, statut: 'validee', type: 'facture', numero: 'F2025-0001', date_emission: '2025-11-10',
-  tiers_nom: 'Client fictif', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services',
+  tiers_nom: 'Client fictif', tiers_siret: null, facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services',
   option_debits: false, date_prestation: null, montant_ttc: 120, ...o,
 })
 const ligneFacture = { id: 'l1', facture_id: 'f1', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }
@@ -231,9 +231,9 @@ describe('Écrire, Réécrire, Retirer : la fonction seule, sur un clic confirm�
       args: {
         p_dossier_id: D, p_source: 'encaissement', p_source_id: 'e1',
         p_lignes: [
-          { date: '2025-11-20', compte: '445710', sens: 'credit', montant: 20, ligne_bancaire_id: null, libelle: 'Encaissement, facture F2025-0001 — Client fictif' },
-          { date: '2025-11-20', compte: '512000', sens: 'debit', montant: 120, ligne_bancaire_id: 'm1', libelle: 'Encaissement, facture F2025-0001 — Client fictif' },
-          { date: '2025-11-20', compte: '706000', sens: 'credit', montant: 100, ligne_bancaire_id: null, libelle: 'Encaissement, facture F2025-0001 — Client fictif' },
+          { date: '2025-11-20', compte: '445710', sens: 'credit', montant: 20, ligne_bancaire_id: null, libelle: 'Encaissement, facture F2025-0001' },
+          { date: '2025-11-20', compte: '512000', sens: 'debit', montant: 120, ligne_bancaire_id: 'm1', libelle: 'Encaissement, facture F2025-0001' },
+          { date: '2025-11-20', compte: '706000', sens: 'credit', montant: 100, ligne_bancaire_id: null, libelle: 'Encaissement, facture F2025-0001' },
         ],
       },
     })
@@ -639,7 +639,8 @@ describe('les contrôles et les gestes d’hier ne jugent pas les lignes d’une
 })
 
 describe('le FEC, la piste d’audit et le lettrage d’un dossier qui a basculé (étape VF4c2)', () => {
-  // La facture et son encaissement du même jour, en engagement, au brouillon exactement comme la fonction les écrit.
+  // La facture et son encaissement du même jour, en engagement, au brouillon exactement comme la fonction les écrivait avant
+  // FEC22-Q7 — le libellé portait encore le nom du client : la source reste « à jour », la comparaison ne le lit pas.
   const ECRITES = [
     ecriture({ id: 'w1', date: '2025-11-10', compte: '411000', sens: 'debit', montant: 120, facture_id: 'f1', libelle: 'Facture F2025-0001 — Client fictif' }),
     ecriture({ id: 'w2', date: '2025-11-10', compte: '706000', sens: 'credit', montant: 100, facture_id: 'f1', libelle: 'Facture F2025-0001 — Client fictif' }),
@@ -662,12 +663,13 @@ describe('le FEC, la piste d’audit et le lettrage d’un dossier qui a bascul�
     expect(telecharge.fichiers).toHaveLength(1)
     const rangs = telecharge.fichiers[0].contenu.split('\r\n').slice(1).map((r) => r.split('\t'))
     expect(rangs.map((r) => [r[0], r[2], r[4], r[6], r[8], r[13]])).toEqual([
-      ['VE', 'VE00001', '411000', 'CFICTIF', 'F2025-0001', 'A'],
+      // Un particulier : le compte « Clients divers », jamais la clé de son nom (FEC22-Q7).
+      ['VE', 'VE00001', '411000', 'CDIVERS', 'F2025-0001', 'A'],
       ['VE', 'VE00001', '445800', '', 'F2025-0001', ''],
       ['VE', 'VE00001', '706000', '', 'F2025-0001', ''],
       ['BQ', 'BQ00001', '445800', '', 'F2025-0001', ''],
       ['BQ', 'BQ00001', '512000', '', 'F2025-0001', ''],
-      ['BQ', 'BQ00001', '411000', 'CFICTIF', 'F2025-0001', 'A'],
+      ['BQ', 'BQ00001', '411000', 'CDIVERS', 'F2025-0001', 'A'],
       ['BQ', 'BQ00001', '445710', '', 'F2025-0001', ''],
     ])
   })

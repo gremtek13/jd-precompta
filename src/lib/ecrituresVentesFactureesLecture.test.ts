@@ -80,7 +80,7 @@ vi.mock('./supabase', async () => {
 
 const facture = (o: Partial<FactureDesEcritures> = {}): FactureDesEcritures => ({
   id: 'f1', dossier_id: 'd1', statut: 'validee', type: 'facture', numero: 'F2027-0001', date_emission: '2027-01-10',
-  tiers_nom: 'Client fictif', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services',
+  tiers_nom: 'Client fictif', tiers_siret: null, facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services',
   option_debits: false, date_prestation: null, montant_ttc: 120, ...o,
 })
 const ligne = (o: Partial<LigneDeFacture & { id: string }> = {}) => ({
@@ -167,7 +167,7 @@ describe('lireLesSourcesDesEcrituresDeVente', () => {
     // Les pièces désignées du dossier, validées ou non — c'est le module qui juge l'exemplaire unique et validé.
     expect(s.exemplaires).toEqual([{ id: 'p-hier', dossier_id: 'd1', facture_id: 'f-hier', statut: 'a_valider', type_piece: 'vente' }])
     expect(faux.demandes).toEqual([
-      'factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, montant_ttc',
+      'factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, tiers_siret, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, montant_ttc',
       'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id, source_de_la_vente)',
       'encaissements_factures: id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le, compte_contrepartie, cree_par',
       'encaissements_factures_taux: encaissement_id, dossier_id, taux, montant',

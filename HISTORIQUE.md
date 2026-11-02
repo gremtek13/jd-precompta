@@ -46202,3 +46202,58 @@ la même ligne au commit `cffa13695995977436b20ef724e7092fbabad999`, dont les fi
 production et les seules lignes que la garde neuve lit hors des dossiers jetables des essais ; tous les essais y ont été
 joués, sans et avec la migration (le bloc SI corrigé, ci-dessus). Les rejouer en production, environ 550 Ko de texte,
 n'apprendrait rien de plus ; le précédent est celui de `caisse.sql` et `droitsAcces.sql`, le même jour.
+
+### 02/11/2026 — FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE
+
+Le cabinet a tranché FEC22-Q7 sur la recommandation : le libellé des écritures d'une vente porte le nom d'une entreprise,
+sinon le numéro de la facture — la règle d'IdClient (le SIREN d'une entreprise, sinon le numéro) ; une pièce de vente
+déposée, dont rien ne dit si le client est une entreprise, s'écrit « Recette » et sa date, jamais le tiers lu ni le nom du
+fichier ; les achats gardent le nom du fournisseur. Le motif : le client d'un soignant est un patient, et le FEC part chez
+l'expert-comptable et l'administration (BOI-BNC-DECLA-10-20, § 280 : le nom, ou une référence qui permet de le retrouver).
+
+**LE RELEVÉ, PARTI DE TOUTE LA SOURCE.** Les objets qui composent une écriture (un `libelle` avec un `sens`, un `pieceRef`
+ou un `statut: 'proposee'`) et les appels à `auxiliaireDuTiers` ; plus de quarante écritures composées, dont huit lisaient
+un nom, et un compte auxiliaire :
+
+- la vente facturée (`ecrituresVentesFacturees.ts`) : la facture, l'avoir, l'encaissement et la contre-passation
+  (« Facture F… — <nom> »), le 411 de leurs écritures (`tiers`, d'où vient CompAuxNum et CompAuxLib) ; une compensation
+  sur un compte de tiers suit la même règle. Le virement mixte n'en compose pas d'autre ; la caisse non plus (un
+  encaissement en espèces d'une facture source est un encaissement : sa règle) ;
+- la pièce (`ecritures.ts`, `engagement.ts`) : la charge ou le produit, et ses contreparties banque, caisse et dirigeant, la
+  facture et le règlement en engagement (`piece.tiers ?? piece.nom_fichier`) — la jumelle, l'exemplaire désigné et la
+  facture d'avant d'un virement mixte sont des pièces de vente : la même règle ;
+- le compte auxiliaire du FEC d'une pièce (`fec.ts`), tiré du tiers lu.
+Restent tels quels : les achats, notes de frais et autres pièces ; les à-nouveaux (ils ne portent que la banque, le 44566
+et le 44571, sous le libellé de la balance reprise) ; les opérations de caisse (« Recettes en espèces du … », composé par la
+base, sans nom) ; et, hors du FEC, les écrans du cabinet (lettrage à la main, comptes de tiers, bilan, concordance), qui
+regroupent et nomment par le nom lu.
+
+**LA RÈGLE, UNE FOIS** (`lib/libellesDesVentes.ts`, pur) : `sirenDuClient`, le prédicat qu'`identificationDuClient` appelle
+désormais au lieu du sien — « entreprise » se juge au même SIRET figé, qui passe la clé ; `nomDuClientEcrit` (son nom, blancs
+ramenés à un seul, ou nul), `libelleDUneVenteFacturee` (le début composé par l'appelant, suivi du nom d'une entreprise),
+`libelleDUnePiece` (« Recette du JJ/MM/AAAA », « Recette » sans date lue ; un achat, comme hier) et `tiersAuFec` (aucun
+tiers pour une pièce de vente ou absente). Au FEC, le 411 d'un particulier et de toute pièce de vente va au compte
+« Clients divers » (CDIVERS) — le code de lettrage est unique par compte général, rien ne s'y confond ; celui d'une
+entreprise garde la clé de son nom. Conséquence voulue : une entreprise change de compte auxiliaire à la bascule (sa pièce
+déposée au compte « divers », sa facture source à son nom) ; un particulier, non. La composition lit le SIRET figé de chaque
+facture (`FactureDesVentesEcrites`, `tiers_siret` ajouté à la lecture de l'onglet Écritures) ; les moteurs n'en lisent
+rien. Aucune migration : `ecrire_vente_facturee` ne juge du libellé que son type, `valider_exercice` les auxiliaires que leur
+forme ; l'assistant, dont les lignes attendues n'ont pas de libellé, n'est pas touché.
+
+**LE GARDE.** `libellesDesVentes.test.ts` : la règle cas par cas (entreprise, particulier, SIRET faux ou mal formé, nom
+vide, pièce déposée avec et sans date, achat inchangé) et confrontée à IdClient ; puis le relevé de toute la source par
+l'analyseur de TypeScript, qui refuse un nom lu (`tiers_nom`, `tiers`, `nom_fichier`, directement ou par une variable
+locale, ou dans le début passé à la règle) dans une écriture composée, et un auxiliaire qui n'est ni `tiersAuFec(…)` ni
+`{ tiers: null }` — exceptions comptées : la composition (1, `e.tiers` vient de la règle), le lettrage (5), le bilan (1),
+la copie du lettrage à la main dans l'assistant (1). Éprouvé par un défaut planté sous chaque forme et par six branchements
+défaits sur la source réelle ; six mutations de la règle, toutes tuées.
+
+**CE QUI EST DÉJÀ AU BROUILLON NE SE RÉÉCRIT PAS SEUL.** Ni la comparaison d'une vente facturée (`memeEcritureQueLeBrouillon`,
+« le libellé n'en décide pas ») ni celle d'une pièce (`tresorerieDesynchronisee`, `engagementDesynchronise`) ne lisent le
+libellé : une ligne écrite avant reste « à jour », garde le nom, et le FEC le reprend (EcritureLib est celui de la ligne).
+Une pièce se réécrit par « Régénérer » ; une vente facturée « à jour » n'offre aucun geste. La production ne porte que des
+données fictives et aucun exercice validé ; la comparaison n'a pas été changée (une question au cabinet).
+
+**TROIS POINTS HORS DE LA DÉCISION, RELEVÉS.** PieceRef d'une pièce est le nom de son fichier, qui peut nommer le
+patient ; le libellé d'un mouvement du relevé (et du mouvement classé par ses encaissements) est celui de la banque, qui
+nomme souvent qui a payé ; la piste d'audit cite le tiers et le fichier de la pièce. Aucun n'est changé : des questions.

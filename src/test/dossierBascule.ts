@@ -15,9 +15,10 @@ import { encaissementVendu, factureVendue, ligneVendue } from './ventesFacturees
 // chaque écriture composée (`lignesAuBrouillon`) — ce que le FEC, la piste d'audit et le lettrage lisent ensemble. Rien n'y
 // est écrit à la main : une ligne posée à la main ne prouverait rien de ce que la composition rend. Données FICTIVES.
 //
-// Le jeu, des services à 20 %, chez deux clients :
+// Le jeu, des services à 20 %, chez deux clients — un particulier (sans SIRET) et une entreprise (un SIRET fictif qui passe
+// la clé de Luhn), le nom de la seconde seul écrit (FEC22-Q7, lib/libellesDesVentes.ts) :
 //   - F2025-0001 (Client fictif), 120 € TTC le 10/11/2025, encaissée en entier le 20/11 par un virement du même jour (m1) ;
-//   - F2025-0002 (Clinique du Parc), 240 € TTC le 12/11, encaissée en partie le 21/11 par un chèque que le relevé crédite le
+//   - F2025-0002 (Clinique du Parc, une entreprise), 240 € TTC le 12/11, encaissée en partie le 21/11 par un chèque que le relevé crédite le
 //     22/11 (m2, classé par ses encaissements) — il reste 140 € ;
 //   - F2025-0003 (Client fictif), 60 € TTC le 14/11, que l'avoir A2025-0001 du 18/11 annule en entier, sans encaissement.
 
@@ -53,7 +54,7 @@ export function sourcesDuDossierBascule(): SourcesDesEcrituresDeVente {
     dossierId: D_BASCULE,
     factures: [
       facture({ id: 'f1', numero: 'F2025-0001', date_emission: '2025-11-10', tiers_nom: 'Client fictif', montant_ttc: 120 }),
-      facture({ id: 'f2', numero: 'F2025-0002', date_emission: '2025-11-12', tiers_nom: 'Clinique du Parc', montant_ttc: 240 }),
+      facture({ id: 'f2', numero: 'F2025-0002', date_emission: '2025-11-12', tiers_nom: 'Clinique du Parc', tiers_siret: '12345678200010', montant_ttc: 240 }),
       facture({ id: 'f3', numero: 'F2025-0003', date_emission: '2025-11-14', tiers_nom: 'Client fictif', montant_ttc: 60 }),
       facture({
         id: 'a1', type: 'avoir', numero: 'A2025-0001', facture_origine_id: 'f3', date_emission: '2025-11-18',

@@ -7,8 +7,10 @@ import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
-import { ecrituresDesVentesFacturees, lignesAuBrouillon, type MouvementDesEncaissements } from '../../lib/ecrituresVentesFacturees'
-import type { EncaissementVendu, FactureVendue } from '../../lib/ventesFacturees'
+import {
+  ecrituresDesVentesFacturees, lignesAuBrouillon, type FactureDesVentesEcrites, type MouvementDesEncaissements,
+} from '../../lib/ecrituresVentesFacturees'
+import type { EncaissementVendu } from '../../lib/ventesFacturees'
 
 // L'ONGLET QUI PRODUIT LE SEUL DOCUMENT QUE LE CABINET SIGNE — la 2035. Son garde-fou refuse de
 // remplir le formulaire sur une lecture partielle, et c'est la bonne règle : une déclaration bâtie
@@ -2732,7 +2734,7 @@ describe('ClotureTab — les ventes facturées', () => {
   const FACTURE_SOURCE = {
     id: 'fs', dossier_id: 'dossier-de-test', statut: 'validee', type: 'facture', numero: 'F2025-0042', date_emission: '2025-05-02',
     tiers_nom: 'CLIENT FICTIF', facture_origine_id: null, source_de_la_vente: true, nature_operation: 'services', option_debits: false,
-    date_prestation: null, emetteur_siret: '12345678900012', superpdp_invoice_id: null,
+    date_prestation: null, emetteur_siret: '12345678900012', superpdp_invoice_id: null, tiers_siret: null,
   }
   const LIGNE_FS = { id: 'lfs', facture_id: 'fs', ordre: 1, designation: 'Prestation fictive', quantite: 1, prix_unitaire_ht: 1000, taux_tva: 20 }
   const ENCAISSEMENT = {
@@ -2849,7 +2851,7 @@ describe('ClotureTab — les ventes facturées', () => {
   function brouillonDeLaVente(o: { encaissement?: Record<string, unknown>; mouvements?: MouvementDesEncaissements[] } = {}) {
     const c = ecrituresDesVentesFacturees({
       sources: {
-        dossierId: 'dossier-de-test', factures: [FACTURE_SOURCE as FactureVendue], lignes: [LIGNE_FS],
+        dossierId: 'dossier-de-test', factures: [FACTURE_SOURCE as FactureDesVentesEcrites], lignes: [LIGNE_FS],
         encaissements: [(o.encaissement ?? ENCAISSEMENT) as unknown as EncaissementVendu], parts: [PART],
       },
       mouvements: o.mouvements ?? [], comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan: PLAN_PAR_DEFAUT,

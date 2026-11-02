@@ -16,6 +16,7 @@ import {
   CHAMPS_BNC_NON_EXPORTES, formaterFec, numerotationValidee, numeroterFec, type ChampsBncDuFec, type EntreesDesChampsBnc,
   type NumerotationFec,
 } from './fec'
+import { libelleDUnePiece } from './libellesDesVentes'
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
 import { PLAN_PAR_DEFAUT, type PlanComptable } from './planComptable'
 import { centimesParDate, paiementsDesPieces, type PaiementDePiece, type PartPayeeParLaCaisse } from './rattachement'
@@ -102,7 +103,8 @@ function generationDHier(
   plan: PlanComptable,
 ): LigneAGenerer[] {
   const sensPiece: 'debit' | 'credit' = p.type_piece === 'vente' ? 'credit' : 'debit'
-  const libelle = p.tiers ?? p.nom_fichier
+  // Le libellé d'aujourd'hui, depuis FEC22-Q7 : une pièce de vente, « Recette » et sa date ; un achat, son fournisseur.
+  const libelle = libelleDUnePiece(p)
   function ligne(date: string, compte: string, montant: number): LigneAGenerer {
     const sens = montant >= 0 ? sensPiece : (sensPiece === 'debit' ? 'credit' : 'debit')
     return { dossier_id: dossierId, piece_id: p.id, date, libelle, statut: 'proposee', compte, sens, montant: Math.abs(montant) }

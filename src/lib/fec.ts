@@ -6,6 +6,7 @@ import { libelleEcritureANouveau } from './aNouveaux'
 import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { auxiliaireDuTiers } from './engagement'
 import { auxiliaireDeLaLigne, type EcritureVenteFacturee } from './ecrituresVentesFacturees'
+import { tiersAuFec } from './libellesDesVentes'
 import { dateAParis } from './format'
 import type { LettrageDeLigne } from './lettrage'
 import { porteUneSourceDeVente, rattachementDesVentes } from './ventesFactureesDesExports'
@@ -591,11 +592,12 @@ const champsDeLaLigne = (c: ChampsBnc, id: string): ChampsBncDeLaLigne => ({
 // (lib/ecrituresVentesFacturees.ts) : la facture, l'avoir et l'encaissement de trésorerie au journal des VENTES, le
 // règlement d'engagement et le mouvement que ses encaissements classent au journal de BANQUE ; PieceRef, le numéro de la
 // facture (de l'avoir), le relevé pour un mouvement ; PieceDate, la date d'émission du document, celle du mouvement ; le
-// compte auxiliaire du 411, celui d'une pièce de vente du même client (« C » et la clé du nom) ; la clé, sa source et sa
-// date. Chaque ligne du brouillon retrouve son écriture composée par sa SOURCE et sa DATE, jamais par un montant ni un
-// libellé, et seulement si les lignes de la source à cette date SONT cette écriture (`rattachementDesVentes`, lib/
-// ventesFactureesDesExports.ts) ; sinon — une source « à réécrire » ou « à retirer » — elles restent HORS du fichier, avec
-// le reste d'une pièce supprimée, et l'onglet le dit. EcritureLib reste le libellé de la ligne, celui que la composition
+// compte auxiliaire du 411, « C » et la clé du nom d'une entreprise cliente, « Clients divers » pour tout autre client et
+// pour toute pièce de vente (FEC22-Q7, lib/libellesDesVentes.ts) ; la clé, sa source et sa date. Chaque ligne du
+// brouillon retrouve son écriture composée par sa SOURCE et sa DATE, jamais par un montant ni un libellé, et seulement si
+// les lignes de la source à cette date SONT cette écriture (`rattachementDesVentes`, lib/ventesFactureesDesExports.ts) ;
+// sinon — une source « à réécrire » ou « à retirer » — elles restent HORS du fichier, avec le reste d'une pièce supprimée,
+// et l'onglet le dit. EcritureLib reste le libellé de la ligne, celui que la composition
 // lui a donné en l'écrivant : le FEC d'un exercice validé le relira de la ligne seule (`numerotationValidee`), et les deux
 // fichiers ne doivent différer que par ValidDate et le lettrage.
 //
@@ -785,8 +787,10 @@ export function numeroterFec(
       // Un mouvement justifié par le relevé n'a pas de compte AUXILIAIRE : son écriture va de la catégorie,
       // ou du compte du dirigeant, à la banque — l'auxiliaire ne sert qu'aux 401 et 411 d'une pièce. Celui du 411 d'une
       // vente facturée est celui que la composition donne à son client (`auxiliaireDeLaLigne`).
+      // Une pièce de vente n'en nomme aucun : son 411 va au compte « Clients divers », jamais au nom lu (FEC22-Q7,
+      // `tiersAuFec`) ; un achat garde le compte de son fournisseur.
       const auxiliaire = vente ? auxiliaireDeLaLigne(vente, e)
-        : pieceId ? auxiliaireDuTiers(piece ?? { tiers: null }, e.compte) : null
+        : pieceId ? auxiliaireDuTiers(tiersAuFec(piece), e.compte) : null
       lignes.push({
         ecriture: e, journal, numero, pieceRef: champFec(pieceRef), pieceDate,
         compteLib: libelleDu(e.compte),
