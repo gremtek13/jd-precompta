@@ -300,7 +300,7 @@ describe('planAffectationParRegles — ce que « Affecter les N » écrirait', (
 
 describe('justificatifPossible — un paiement qui a peut-être sa pièce ne s’affecte pas en lot', () => {
   const aucun = {
-    pieces: [], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), cotisations: [],
+    pieces: [], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), paiements: new Map(), cotisations: [],
     cotisationsRapprochees: new Set<string>(), ventes: AUCUN_CANDIDAT, facturesSources: AUCUNE_FACTURE_SOURCE,
   }
 

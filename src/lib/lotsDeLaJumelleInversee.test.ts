@@ -248,7 +248,7 @@ describe('les plans du relevé ne prennent jamais l’exemplaire d’une facture
 
   describe('justificatifPossible : l’exemplaire n’est le justificatif d’aucun mouvement', () => {
     const aucun: JustificatifsDuDossier = {
-      pieces: [], piecesRapprochees: new Set(), restesARegler: new Map(), cotisations: [], cotisationsRapprochees: new Set(),
+      pieces: [], piecesRapprochees: new Set(), restesARegler: new Map(), paiements: new Map(), cotisations: [], cotisationsRapprochees: new Set(),
       ventes: AUCUN_CANDIDAT, facturesSources: SOURCES,
     }
     it('ni par son montant, ni par son tiers, ni par un reste', () => {
@@ -287,7 +287,7 @@ describe('les paramètres n’ont pas de valeur par défaut', () => {
       lotDesCertains(certains, AUCUN_HORS_DES_LOTS)
       // @ts-expect-error — les factures sources des justificatifs, omises
       justificatifPossible(lignes[0], {
-        pieces, piecesRapprochees: new Set(), restesARegler: new Map(), cotisations: [], cotisationsRapprochees: new Set(), ventes: AUCUN_CANDIDAT,
+        pieces, piecesRapprochees: new Set(), restesARegler: new Map(), paiements: new Map(), cotisations: [], cotisationsRapprochees: new Set(), ventes: AUCUN_CANDIDAT,
       })
       // @ts-expect-error — les pièces que le pont lit, omises
       jugeDeLaValidation(true, null, null)

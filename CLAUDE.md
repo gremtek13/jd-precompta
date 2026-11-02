@@ -1015,9 +1015,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Montant retenu** : HT pour un assujetti, TTC pour un exonéré (`lib/montantRetenu.ts`) → « HT OU TTC ». **La 2035
   compte une pièce à la date de son PAIEMENT** (`paiementsDesPieces`, entrées obligatoires : le relevé, les parts des
   virements groupés, et celles des virements mixtes, lues avec les ventes facturées), le total payé étant la somme
-  SIGNÉE de ses paiements (`paiementNet` : un rejet défait le paiement) → « LA 2035 COMPTE UNE PIÈCE À LA DATE DE SON
-  PAIEMENT », « LE VIREMENT MIXTE — CHANTIER EC-Q3 », « LA 2035 D'UN BNC EXONÉRÉ : TROIS DÉFAUTS DE LA RELECTURE
-  CORRIGÉS ». **La CA3** : exigibilité à l'encaissement ou au
+  SIGNÉE de ses paiements (`paiementNet` : un rejet défait le paiement) ; le rejet se rapproche de la pièce dont un paiement
+  a son montant opposé, puis la reprise, la fiche disant l'effet sur la 2035, aucun lot ne le prenant (`rejetAccepte`,
+  `lib/rejetDuPaiement.ts`) → « LA 2035 COMPTE UNE PIÈCE À LA DATE DE SON PAIEMENT », « LE VIREMENT MIXTE — CHANTIER
+  EC-Q3 », « LA 2035 D'UN BNC EXONÉRÉ : TROIS DÉFAUTS DE LA RELECTURE CORRIGÉS », « REJET-Q1 : LE PRÉLÈVEMENT REJETÉ PUIS
+  REPRIS, RAPPROCHÉ DE SA PIÈCE ». **La CA3** : exigibilité à l'encaissement ou au
   paiement, arrondi fiscal par ligne, aucune somme négative sur un taux ; une déclaration enregistrée écrit sa
   liquidation → « LA TVA SE LIQUIDE ».
 - **Le moteur de la 2035** : une ligne par poste ET par nature, un poste négatif reste négatif, une case n'appartient

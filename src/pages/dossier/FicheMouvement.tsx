@@ -25,6 +25,8 @@ import type { PlanComptable } from '../../lib/planComptable'
 import type { PaiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux, TAUX_TVA_RELEVE, tauxApplicable, tauxRequis } from '../../lib/tvaDuReleve'
 import { nomDeLaPiece, refusSecondPaiement, reglementsGroupesIncoherents, type PartReglement } from '../../lib/reglementGroupe'
+import { effetDuPaiementAjoute, phrasesDeLEffet, piecesDuRejet, rejetPropose, signauxDuRejet } from '../../lib/rejetDuPaiement'
+import { paiementNet } from '../../lib/alignementBanque'
 import type {
   Categorie, CotisationDeclaree, DeclarationTva, LigneBancaire, ModeComptable, Piece, RegleAffectationBancaire, ReglementGroupe,
   VentilationBancaire,
@@ -651,6 +653,8 @@ export default function FicheMouvement({
   // sur une liste déroulante qui a le focus, les flèches du clavier changent la valeur — et
   // rapprochaient donc, dans la fenêtre d'avant, la première pièce venue sans qu'on l'ait choisie.
   const [pieceChoisie, setPieceChoisie] = useState('')
+  // La pièce dont ce mouvement serait le rejet, choisie à la main (REJET-Q1) : rapprochée au seul clic sur « Associer ».
+  const [rejetChoisi, setRejetChoisi] = useState('')
   const [cotisationChoisie, setCotisationChoisie] = useState('')
   const aTraiter = ligne.statut === 'non_rapprochee'
   // La règle qui reconnaît ce mouvement, s'il est à traiter. Sa catégorie est PRÉSÉLECTIONNÉE, jamais
@@ -854,7 +858,7 @@ export default function FicheMouvement({
   // (voir `justificatifPossible`). Dit avant le clic, jamais refusé : c'est l'opérateur qui sait.
   const justificatifAttendu = aTraiter
     ? justificatifPossible(ligne, {
-      pieces, piecesRapprochees: horsRapprochement, restesARegler, cotisations, cotisationsRapprochees, ventes: candidatsDeLaVente,
+      pieces, piecesRapprochees: horsRapprochement, restesARegler, paiements, cotisations, cotisationsRapprochees, ventes: candidatsDeLaVente,
       facturesSources: exemplairesDesSources.sources,
     })
     : null
@@ -912,6 +916,30 @@ export default function FicheMouvement({
   const refusPieceChoisie = pieceChoisieDejaPayee
     ? refusSecondPaiement(ligne, pieceChoisieDejaPayee, paiements.get(pieceChoisieDejaPayee.id) ?? [])
     : null
+  // LA REPRISE D'UN PAIEMENT REJETÉ (REJET-Q1) : la pièce dont les paiements se soldent à zéro s'offre pour son montant
+  // entier ; la fiche le dit, et ce que la reprise change à la 2035.
+  const repriseChoisie = pieceChoisieDejaPayee !== null
+    && paiementNet(paiements.get(pieceChoisieDejaPayee.id) ?? []).centimes === 0
+  const effetDeLaReprise = repriseChoisie && pieceChoisieDejaPayee && !refusPieceChoisie
+    ? phrasesDeLEffet(effetDuPaiementAjoute(pieceChoisieDejaPayee, paiements.get(pieceChoisieDejaPayee.id) ?? [], ligne, modeComptable, assujettiTva), pieceChoisieDejaPayee)
+    : []
+
+  // LE REJET D'UN PAIEMENT (REJET-Q1 ; lib/rejetDuPaiement.ts) : les pièces dont ce mouvement défait un paiement — rapproché
+  // d'elle seule, de son montant au centime, de l'autre sens, daté au plus tard le jour du mouvement. Sur un relevé, des parts
+  // et une caisse lus en entier seulement — un paiement non lu ferait accepter un rejet de trop —, jamais une pièce figée ni
+  // l'exemplaire d'une facture source. Un rejet partiel, ou celui d'un virement groupé, ne s'offre pas : il se classe à part.
+  // La proposition, en tête, demande que ce paiement tombe dans les huit semaines, et jamais à égalité ; le choix à la main
+  // reste, et rien ne part avant le clic sur « Associer ». Aucun lot ne prend un rejet.
+  const rejetsLisibles = aTraiter && libre && !fige && !piecesRetenues && releveIncomplet === null && reglementsIncomplets === null
+  const exclusDuRejet: ReadonlySet<string> = new Set([
+    ...piecesFigees, ...pieces.filter((p) => exemplaireDUneSource(p, exemplairesDesSources.sources)).map((p) => p.id),
+  ])
+  const rejets = rejetsLisibles ? piecesDuRejet(ligne, pieces, paiements, exclusDuRejet) : []
+  const rejetEnTete = rejetPropose(rejets)
+  const rejetsSignales = rejets.filter((r) => r.signal).length
+  const rejetAuChoix = rejetChoisi ? rejets.find((r) => r.piece.id === rejetChoisi) ?? null : null
+  const effetDuRejet = (piece: Piece) =>
+    phrasesDeLEffet(effetDuPaiementAjoute(piece, paiements.get(piece.id) ?? [], ligne, modeComptable, assujettiTva), piece)
   // La pièce choisie à la main, de sens contraire : dit avant le clic, jamais refusé (`sensContraireDit`).
   const pieceChoisieAuChoix = pieceChoisie ? piecesAuChoix.find((p) => p.id === pieceChoisie) ?? null : null
   const sensDeLaPieceChoisie = pieceChoisieAuChoix ? sensContraireDit(pieceChoisieAuChoix, ligne) : null
@@ -939,7 +967,7 @@ export default function FicheMouvement({
   // contredirait, et le choix à la main devient celui d'une AUTRE pièce.
   const proposeeParLeClient = envoisDuClient.etat === 'lus'
     && envoisDuClient.propositions.some((p) => p.ligne_bancaire_id === ligne.id && p.retire_le === null)
-  const unePropositionExiste = piecesCandidates.length > 0 || echeancesCandidates.length > 0 || proposeeParLeClient
+  const unePropositionExiste = piecesCandidates.length > 0 || echeancesCandidates.length > 0 || proposeeParLeClient || rejetEnTete !== null
 
   // LA PIÈCE PROPOSÉE PAR LE CLIENT passe par le MÊME chemin que le choix à la main : les pièces hors du choix (payées,
   // figées), le reste d'une pièce payée en partie et son refus (`refusSecondPaiement`). Les parts d'un virement groupé ne
@@ -952,6 +980,8 @@ export default function FicheMouvement({
       piecesDuReglement: reglementsIncomplets ? null : reglements.map((r) => r.piece_id).filter((id): id is string => id !== null),
       piecesFigees, horsRapprochement, restesARegler, paiementsDeLaPiece,
       refusSecondPaiement: piece && restesARegler.has(pieceId) ? refusSecondPaiement(ligne, piece, paiementsDeLaPiece) : null,
+      // Les pièces de `piecesDuRejet` sont celles que `rejetAccepte` admet : le même jugement que le choix à la main.
+      rejetAccepte: rejets.some((r) => r.piece.id === pieceId),
       exemplairesDesSources: exemplairesDesSources.raisons,
     }
   }
@@ -1468,6 +1498,65 @@ export default function FicheMouvement({
             ))}
           </section>
         )}
+        {rejets.length > 0 && (
+          <section className="fiche-mouvement-section">
+            <h3>{rejetEnTete ? 'Paiement rejeté proposé' : 'Le rejet d’un paiement'}</h3>
+            <p className="fiche-mouvement-note">
+              {ligne.montant > 0
+                ? 'Ce crédit défait peut-être un paiement du même montant, déjà rapproché d’une pièce — un prélèvement que la banque a rejeté, '
+                  + 'puis présentera de nouveau. Rapproché d’elle, il la rend à régler, et la reprise se rapproche ensuite de la même pièce.'
+                : 'Ce débit défait peut-être un encaissement du même montant, déjà rapproché d’une pièce — un chèque impayé, un virement rendu. '
+                  + 'Rapproché d’elle, il la rend à encaisser, et le nouvel encaissement se rapproche ensuite de la même pièce.'}
+            </p>
+            {rejetEnTete && (
+              <>
+                <CartePiece piece={rejetEnTete.piece} signaux={signauxDuRejet(rejetEnTete, ligne)} />
+                <ul className="fiche-mouvement-note">
+                  {effetDuRejet(rejetEnTete.piece).map((phrase) => <li key={phrase}>{phrase}</li>)}
+                </ul>
+                <button
+                  type="button" className="btn btn-primary" disabled={occupe || piecesRetenues}
+                  onClick={() => onRapprocher(rejetEnTete.piece.id)}
+                >
+                  Associer comme son rejet
+                </button>
+              </>
+            )}
+            {!rejetEnTete && rejetsSignales > 1 && (
+              <p className="fiche-mouvement-note">
+                {rejetsSignales} pièces ont un paiement de ce montant dans les huit semaines avant ce mouvement : aucune n’est
+                proposée.
+                Ouvre les justificatifs avant de choisir.
+              </p>
+            )}
+            {(!rejetEnTete || rejets.length > 1) && (
+              <div className="field">
+                <label htmlFor="associer-rejet">Pièce dont ce mouvement défait un paiement</label>
+                <div className="fiche-mouvement-choix">
+                  <select id="associer-rejet" value={rejetChoisi} onChange={(e) => setRejetChoisi(e.target.value)}>
+                    <option value="">— Choisir —</option>
+                    {rejets.map((r) => (
+                      <option key={r.piece.id} value={r.piece.id}>
+                        {formatDate(r.piece.date_piece)} — {r.piece.tiers ?? '—'} — {formatMoney(r.piece.montant_ttc)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button" className="btn btn-outline" disabled={!rejetAuChoix || occupe || piecesRetenues}
+                    onClick={() => onRapprocher(rejetChoisi)}
+                  >
+                    Associer
+                  </button>
+                </div>
+                {rejetAuChoix && (
+                  <ul className="fiche-mouvement-note">
+                    {effetDuRejet(rejetAuChoix.piece).map((phrase) => <li key={phrase}>{phrase}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+          </section>
+        )}
         {echeancesCandidates.length === 1 && (
           <section className="fiche-mouvement-section">
             <h3>Échéance proposée</h3>
@@ -1623,10 +1712,16 @@ export default function FicheMouvement({
                       : 'l’encaissement d’une vente : ce débit ne compterait plus dans les dépenses'}.
                   </p>
                 )}
-                {pieceChoisieDejaPayee && !refusPieceChoisie && (
+                {pieceChoisieDejaPayee && !refusPieceChoisie && !repriseChoisie && (
                   <p className="fiche-mouvement-note">
                     Cette pièce est déjà payée en partie : ce mouvement en règle le reste.
                   </p>
+                )}
+                {repriseChoisie && !refusPieceChoisie && (
+                  <div className="fiche-mouvement-note" role="status">
+                    <p>Le paiement de cette pièce a été rejeté : ce mouvement en est la reprise.</p>
+                    {effetDeLaReprise.map((phrase) => <p key={phrase}>{phrase}</p>)}
+                  </div>
                 )}
               </div>
             )}

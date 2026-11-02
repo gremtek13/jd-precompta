@@ -46257,3 +46257,100 @@ données fictives et aucun exercice validé ; la comparaison n'a pas été chang
 **TROIS POINTS HORS DE LA DÉCISION, RELEVÉS.** PieceRef d'une pièce est le nom de son fichier, qui peut nommer le
 patient ; le libellé d'un mouvement du relevé (et du mouvement classé par ses encaissements) est celui de la banque, qui
 nomme souvent qui a payé ; la piste d'audit cite le tiers et le fichier de la pièce. Aucun n'est changé : des questions.
+
+### 02/11/2026 — REJET-Q1 : LE PRÉLÈVEMENT REJETÉ PUIS REPRIS, RAPPROCHÉ DE SA PIÈCE
+
+La question (tranchée par le cabinet le 01/11/2026 : « l'ouvrir », sur la recommandation) : quand la banque rejette un
+prélèvement — une prime, une cotisation, un abonnement — puis le présente de nouveau, le relevé porte trois mouvements pour
+une pièce. Depuis le 31/10/2026 le moteur les compte juste (« 31/10/2026 — LA 2035 D'UN BNC EXONÉRÉ : TROIS DÉFAUTS DE LA
+RELECTURE CORRIGÉS ») ; l'écran refusait le rejet (« mauvais sens ») puis la reprise (la pièce paraissait payée). Sans
+migration.
+
+**La règle, une fois** (`rejetAccepte`, `src/lib/reglementGroupe.ts`) : un mouvement du sens contraire à `signeReglant` se
+rapproche d'une pièce dont les AUTRES paiements, nets, l'ont payée dans son sens d'au moins son montant. Le sens de la
+somme ne se retourne jamais ; au-delà, le refus d'hier (« mauvais sens »), au caractère près. Symétrique : le chèque
+impayé d'une vente, le rejet du remboursement d'un avoir. `refusSecondPaiement` laisse passer ce rejet ; la reprise d'une
+pièce en devise dont les paiements se soldent à zéro passe comme un premier paiement (son débit réel la réalignera), et
+`refusReglementGroupe` reçoit la même exception (`regleeSurLaBanqueParCePaiement`). Le règlement groupé ne prend toujours
+pas un rejet : une part de l'autre sens reste refusée, par l'écran et par `regler_pieces_par_mouvement`.
+
+**La reprise est offerte** (`restesAReglerDesPieces`, `src/lib/controles.ts`) : une pièce dont les paiements se soldent à
+zéro s'offre pour son montant entier, en euros comme en devise. `soldeDesPaiements` ne change pas : une telle pièce n'est
+pas « payée en partie ». Les restes d'hier, au centime.
+
+**La fiche du mouvement** (`src/lib/rejetDuPaiement.ts`, `FicheMouvement.tsx`) : la section « Paiement rejeté proposé » ou
+« Le rejet d'un paiement » ne liste que les pièces qui ont un paiement RAPPROCHÉ SEUL du montant opposé au centime, daté au
+plus tard le jour du mouvement, à toute distance, et que `rejetAccepte` admet — jamais une pièce figée ni l'exemplaire
+d'une facture source, et seulement sur un relevé, des parts et une caisse lus en entier. La proposition, en tête, demande
+que ce paiement tombe dans les huit semaines (`JOURS_DU_REJET`, le délai de remboursement d'un prélèvement autorisé, code
+monétaire et financier, art. L133-25 et L133-25-1, I) ; à égalité, aucune. Deux limites, voulues : un rejet PARTIEL (le
+montant d'aucun paiement) et le rejet d'un VIREMENT GROUPÉ (le montant d'aucune part) ne s'offrent pas ; ils se classent à
+part, comme hier. `rejetAccepte` reste la garde générale, inchangée. Les signaux disent le paiement défait, l'écart en jours, le
+libellé, et ce que la banque ne confirme pas (elle ne relie pas deux mouvements). Rien ne part avant le clic
+(« Associer comme son rejet », ou « Associer » après le choix). La reprise choisie se dit « reprise », plus « payée en
+partie ».
+
+**L'effet sur la 2035, avant le clic** (`effetDuPaiementAjoute`, `phrasesDeLEffet`) : par les moteurs — `centimesParDate`
+et `rattachementsTresorerie` sur les paiements avant et après, la part sans date ôtée comme `calculerDeclaration2035`, le
+montant retenu du dossier — par exercice, puis date par date, et l'état (payée, payée en partie, à régler). Ce que le
+moteur rend, et que la fiche dit donc : la prime de 1 200 € du 01/12/2025, prélevée le 20/12, rejetée le 28/12 — 2025
+inchangée, la pièce comptée à la date de sa facture « faute de paiement net connu » ; reprise le 05/01/2026 — 2025 à 0 €
+(1 200 € de moins), 2026 à 1 200 €. En engagement, seul l'état change (le règlement du rejet rouvre la dette au 401).
+Jusqu'à la reprise, l'écriture de la pièce, régénérée, ne s'équilibre pas (déjà dit le 31/10/2026) : la fiche le dit.
+
+**Aucun lot ne prend un rejet** : le rapprochement automatique n'offre pas une pièce payée ; `justificatifPossible`
+(`src/lib/reglesAffectation.ts`, champ obligatoire `paiements`) retient du lot des règles un mouvement qu'un signal désigne
+comme rejet — affecté à une catégorie, le crédit compterait en recette pendant que la pièce resterait payée.
+
+**Jamais réaligné sur un rejet** (`reglerSiLibre`, `BanqueTab.tsx`) : réglée sur le total, une pièce en devise dont le rejet
+ne défait qu'une partie passait au montant de ce reste, et une pièce en euros pouvait s'aligner, sous le seuil, sur un
+rejet de quelques centimes. Le premier paiement de l'autre sens (le remboursement rangé sur un achat) se règle comme hier.
+
+**La base n'a rien à changer.** Le rapprochement d'une pièce est une mise à jour de `lignes_bancaires` (statut, `piece_id`)
+puis une contrepartie banque insérée au brouillon (`synchroniserContrepartieBanque`) ; aucune fonction SQL ne vérifie
+cette contrepartie. Les huit déclencheurs de `lignes_bancaires`, lus au catalogue de la production le 02/11/2026 et égaux à
+l'export : `garder_mouvement_valide` (le gel, sur la date du mouvement seule), `garder_mouvement_paiement_personnel`
+(`cotisation_id`), `garder_mouvement_reserve` (un mouvement classé par ses encaissements), `garder_exemplaire_d_une_source`
+(G4), `garder_caisse_depuis_l_ouverture` (le compte de la caisse), `garder_la_caisse` ×3 — aucun ne regarde le sens d'un
+mouvement face à sa pièce. Les contraintes (`lignes_bancaires_un_seul_rapprochement` et les sept `*_rapproche(e)`) ne
+comptent que les liens ; aucune unicité sur `piece_id` (le second paiement l'exerce déjà). Le seul refus de sens de la base
+est celui des parts d'un règlement groupé (`regler_pieces_par_mouvement`), hors de ce chemin. `valider_exercice` accepte la
+part négative au crédit d'un compte de charge (le poste de dépense sur un compte de charge) ; le paiement par la caisse
+juge la somme signée (`regler_piece_par_la_caisse`).
+
+**Les autres lecteurs.** La Checklist et ses points (`pieces-payees-en-trop`, `pieces-payees-en-partie`, rapprochés sans
+objet), le lettrage, le FEC et la piste d'audit lisent la somme signée ou le brouillon : rien ne change. La pièce proposée
+par le client (`etatDeLaProposition`, `src/lib/banqueCabinet.ts`) : deux états neufs, `rejet_de_la_piece` et
+`reprise_d_un_rejet`, au lieu de « déjà rapprochée » et « payée en partie », et `ContexteDeLaProposition.rejetAccepte`
+(obligatoire). « Ma banque » côté client dit le crédit « justifié par une pièce », ce qu'il est. La liste des pièces dit
+« Paiement rejeté » d'une pièce aux paiements soldés (`piecesAuPaiementRejete`), plus « Rapprochée ». Les deux copies de
+l'assistant (`partsDesPaiements`, `piecesPayeesEnTrop`) suivent déjà la somme signée : aucune ne porte le reste à régler
+ni le refus d'un second paiement — rien à reporter, rien de redéployé.
+
+**Relecture de la session, le même jour : le coût et le bruit.** La première version acceptait toute pièce payée d'au
+moins le montant du mouvement, puis triait ces candidates, pour chaque mouvement. Sur un banc de 1 500 pièces d'achat
+payées chacune par un débit (20 à 419 €) et 3 000 crédits libres (15,37 à 914,37 €), `rejetPossible` — appelé par
+`justificatifPossible` pour chaque mouvement du lot des règles, à chaque recalcul de `planRegles` — prenait 5,2 à 5,7 s,
+`piecesDuRejet` autant, et le crédit de 20,37 € se voyait offrir 1 496 pièces. Désormais un index (montant en centimes →
+paiements rapprochés seuls), bâti une fois par instance de `paiements` (`WeakMap`), ne donne à chaque mouvement que le
+montant opposé au sien, puis la date et `rejetAccepte`, sans tri dans `rejetPossible`. Même banc : 4 à 8 ms pour
+`rejetPossible`, 3 à 4 ms pour `piecesDuRejet`, aucune candidate ; avec des crédits aux montants des débits (le cas le pire),
+19 ms, 1 804 mouvements retenus, quatre candidates au plus. Aucune assertion de durée dans la suite ; un test garde la
+restriction (mille pièces payées : le rejet de 20,37 € n'en trouve aucune, celui de 420 € une seule).
+
+**Vérifié.** `src/lib/rejetDuPaiement.test.ts` (22 cas), `BanqueTab.test.tsx` (4 : la proposition, son signal, l'effet,
+deux clics dans le même `act` qui n'écrivent qu'une fois, puis la reprise offerte ; le rejet de trop, le rejet partiel non
+offert, le paiement hors de la fenêtre au choix seulement ; la pièce figée et les parts lues en partie ; la pièce en devise,
+payée en deux fois, jamais réalignée sur le rejet de son solde), `PiecesTab.test.tsx` (1). Mutations (vingt, toutes
+tuées) : `rejetAccepte` en `>` ou sans le sens ; `refusSecondPaiement` sans le rejet ; la reprise en devise jugée sur des
+autres paiements vides ; les restes sans la pièce rejetée ; `reglerSiLibre` qui réaligne sur un rejet ; la proposition
+prise à égalité ; l'index sans la fenêtre, sans le montant opposé, avec un paiement postérieur, ou avec les parts groupées
+et la caisse ;
+`justificatifPossible` sans le rejet ; l'effet sans ce mouvement, avec la part sans date, au TTC partout ; la reprise et le
+rejet du client dits comme hier ; le badge absent ; la fiche sans exclure les figées, ou sur des paiements lus en partie.
+Trois survivantes au premier passage (la part sans date, les figées, la lecture partielle) ont reçu leur cas.
+
+**Restent au cabinet** : un rejet rapproché APRÈS la validation de l'exercice du débit, en trésorerie, ne s'offre pas (la
+pièce porte une écriture validée) — le crédit et sa reprise s'affectent alors à la catégorie de la pièce ; et la
+Checklist dit « écriture déséquilibrée » (en erreur, vers Écritures) d'une pièce rejetée pas encore reprise, là où le geste
+qui répare est la reprise, dans Banque.

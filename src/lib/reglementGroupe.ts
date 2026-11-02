@@ -73,10 +73,12 @@ export function partSaisieDe(piece: Pick<Piece, 'type_piece' | 'montant_ttc'>, m
 // (`partsDesPaiements`) jugeait la pièce payée de 800 € — 400 € de reste, une pièce « payée en partie » qui retenait la
 // validation. Le reste dit ici est celui que le moteur comptera.
 //
-// LE REJET D'UN PRÉLÈVEMENT, rapproché de la pièce APRÈS le débit qu'il défait, n'est pas un chemin que l'écran ouvre
-// aujourd'hui : `refusSecondPaiement` le refuse comme un mouvement « dans le mauvais sens », et une pièce déjà payée
-// n'est pas proposée. Le cabinet en est saisi (REJET-Q1). Le moteur compte juste ces données, d'où qu'elles viennent
-// (un rapprochement direct, une restauration), et le reste les suit.
+// LE REJET D'UN PRÉLÈVEMENT (REJET-Q1, tranchée par le cabinet le 01/11/2026 : « l'ouvrir »). Le crédit qui défait un
+// prélèvement — une prime, une cotisation, un abonnement que la banque rejette, puis présente de nouveau — se rapproche de
+// la pièce déjà payée, APRÈS le débit qu'il défait (`rejetAccepte`, ci-dessous), puis la reprise de la même pièce : le
+// rejet rend à régler ce qu'il défait, et la pièce dont les paiements se soldent à zéro s'offre de nouveau pour son
+// montant entier (`restesAReglerDesPieces`, lib/controles.ts). La fiche d'un mouvement le propose et dit, avant le clic,
+// ce que le geste change à la 2035 (lib/rejetDuPaiement.ts). Le moteur compte ces données par la somme SIGNÉE.
 //
 // UN PAIEMENT PAR LA CAISSE (étape C9a) paie la pièce comme un mouvement : il entre dans la somme, et le reste le suit. Il
 // n'a pas de mouvement, donc `saufMouvement` ne l'écarte jamais : régler de nouveau un mouvement ne remplace que ses
@@ -122,6 +124,23 @@ export function refusDuPaiementAjoute(
   const reste = resteARegler(piece, autres, null)
   if (centimes(Math.abs(montant)) > centimes(reste + seuilAlignement(piece.montant_ttc ?? 0))) return { motif: 'depasse', reste }
   return null
+}
+
+// LE REJET QUE LA PIÈCE ACCEPTE (REJET-Q1) : un mouvement du sens CONTRAIRE à celui qui la règle (`signeReglant`) — le crédit
+// qui défait le prélèvement d'une dépense, le débit qui défait l'encaissement d'une vente (un chèque impayé) — se rapproche
+// d'elle quand ses AUTRES paiements, nets, l'ont payée dans son sens d'au moins son montant : il défait ce qu'elle a reçu,
+// jamais plus. Le sens de la somme ne se retourne donc jamais — un rejet plus grand que ce qu'elle a reçu reste « dans le
+// mauvais sens », le refus d'hier, au caractère près —, et la pièce ne passe jamais pour remboursée sans que personne ne
+// l'ait voulu. Une pièce sans montant lu n'a pas de sens qui la règle : rien ne s'y rejette.
+export function rejetAccepte(
+  piece: Pick<Piece, 'type_piece' | 'montant_ttc'>,
+  autres: readonly PaiementResume[],
+  montant: number,
+): boolean {
+  const reglant = signeReglant(piece)
+  if (reglant === 0 || Math.sign(montant) !== -reglant) return false
+  const net = paiementNet(autres)
+  return net.centimes * net.sens * reglant >= centimes(Math.abs(montant))
 }
 
 const PHRASE_DU_SENS_INVERSE = 'un mouvement de l’autre sens, rapproché d’elle, l’emporte sur ses paiements, et celui-ci en retournerait '
@@ -190,7 +209,7 @@ export function refusReglementGroupe(
     const piece = parId.get(p.piece_id)!
     // Les AUTRES paiements de la pièce : ceux de la caisse en sont toujours (étape C9a) — ils n'ont pas de mouvement.
     const autres = (paiements.get(piece.id) ?? []).filter((m) => m.origine === 'caisse' || m.id !== ligne.id)
-    if (seraRegleeSurLaBanque(piece) && autres.length === 0) continue
+    if (regleeSurLaBanqueParCePaiement(piece, autres)) continue
     const refus = refusDuPaiementAjoute(piece, autres, p.montant)
     if (refus?.motif === 'inverse') return `La part de la pièce « ${nomDeLaPiece(piece)} » ne peut pas la régler : ${PHRASE_DU_SENS_INVERSE}`
     if (refus?.motif === 'depasse') {
@@ -207,16 +226,25 @@ export function refusReglementGroupe(
 // sens, ou qui dépasse ce qu'il reste à régler au-delà de l'écart d'alignement — une pièce ne se paie pas deux fois, et
 // l'argent versé en trop ne compterait nulle part. Un virement qui règle aussi d'autres pièces se répartit par le
 // règlement groupé.
+//
+// SAUF LE REJET (REJET-Q1) : un mouvement de l'autre sens que la pièce accepte (`rejetAccepte`) n'est pas dans le mauvais
+// sens — il défait un paiement qu'elle a reçu. Il ne dépasse rien : il rend à régler. Un rejet qu'elle n'accepte pas garde
+// le refus d'hier, au caractère près. Et LA REPRISE d'une pièce en devise dont les paiements se soldent à zéro — le
+// prélèvement et son rejet — est le paiement qui la règle seul, comme le premier : son débit réel la réalignera
+// (`reglerPieceSurBanque`), et le comparer au provisoire refuserait une reprise juste.
 export function refusSecondPaiement(
   ligne: Pick<LigneBancaire, 'id' | 'montant'>,
-  piece: Pick<Piece, 'type_piece' | 'montant_ttc' | 'tiers' | 'nom_fichier'>,
+  piece: Pick<Piece, 'type_piece' | 'montant_ttc' | 'tiers' | 'nom_fichier'> & Partial<Pick<Piece, 'devise' | 'montant_devise'>>,
   paiementsDeLaPiece: readonly PaiementResume[],
 ): string | null {
+  const autres = paiementsDeLaPiece.filter((p) => mouvementDuPaiement(p) !== ligne.id)
   if (Math.sign(ligne.montant) !== signeReglant(piece)) {
+    if (rejetAccepte(piece, autres, ligne.montant)) return null
     return `Ce mouvement va dans le mauvais sens pour la pièce « ${nomDeLaPiece(piece)} » : `
       + 'une dépense se règle par une sortie, une recette par une entrée, un avoir à l’inverse.'
   }
-  const refus = refusDuPaiementAjoute(piece, paiementsDeLaPiece.filter((p) => mouvementDuPaiement(p) !== ligne.id), ligne.montant)
+  if (regleeSurLaBanqueParCePaiement(piece, autres)) return null
+  const refus = refusDuPaiementAjoute(piece, autres, ligne.montant)
   if (refus?.motif === 'inverse') return `Ce mouvement ne peut pas régler la pièce « ${nomDeLaPiece(piece)} » : ${PHRASE_DU_SENS_INVERSE}`
   if (refus?.motif === 'depasse') {
     return `Ce mouvement dépasse ce qu’il reste à régler de la pièce « ${nomDeLaPiece(piece)} » (${formatMoney(refus.reste)}) : `
@@ -228,8 +256,14 @@ export function refusSecondPaiement(
 // Une pièce en devise dont on connaît le montant d'origine : le paiement qui la règle seul remplace son
 // provisoire en euros par le débit réel (`reglerPieceSurBanque`). Sans montant d'origine, rien ne la
 // réaligne, et elle reste jugée sur ses euros.
-function seraRegleeSurLaBanque(piece: Pick<Piece, 'devise' | 'montant_devise'>): boolean {
+function seraRegleeSurLaBanque(piece: Partial<Pick<Piece, 'devise' | 'montant_devise'>>): boolean {
   return !!piece.devise && piece.devise !== DEVISE_PIVOT && piece.montant_devise != null
+}
+
+// Ce paiement règle-t-il seul une pièce en devise ? Quand ses autres paiements ne paient rien, net : aucun, ou un
+// prélèvement et son rejet (REJET-Q1). Le total que la banque aura payé est alors le sien, et la pièce s'y réaligne.
+function regleeSurLaBanqueParCePaiement(piece: Partial<Pick<Piece, 'devise' | 'montant_devise'>>, autres: readonly PaiementResume[]): boolean {
+  return seraRegleeSurLaBanque(piece) && paiementNet(autres).centimes === 0
 }
 
 // Ce qu'il reste à répartir entre les parts, dans le sens du mouvement : positif tant que les parts ne font
