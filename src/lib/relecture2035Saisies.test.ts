@@ -9,7 +9,7 @@ import { paiementsDesPieces } from './rattachement'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { previsionnellesSansPaiement, remplacementsDesPrevisionnelles } from './previsionnelles'
-import { formulaireAbsent, modeleDuFormulaire } from './modeles2035'
+import { avertissementDuFormulaire, modeleDuFormulaire } from './modeles2035'
 import { ventesFactureesVides } from '../test/ventesFacturees'
 import type { Categorie, CotisationDeclaree, LigneBancaire } from './types'
 
@@ -229,7 +229,7 @@ describe('point 3 — le formulaire PDF de 2026 rempli pour tout exercice', () =
     return m ? Number(m[1]) : null
   }
 
-  // Le modèle qui remplit la 2035 de l'exercice `annee`, ou rien : celui que remplir2035.ts et Clôture lisent.
+  // Le modèle qui remplit la 2035 de l'exercice `annee` (le dernier livré, sans le sien) : celui que remplir2035.ts et Clôture lisent.
   async function revenusDuFormulaireRempliPour(annee: number): Promise<number | null> {
     const modele = modeleDuFormulaire(annee)
     return modele === null ? null : revenusDuModele(modele.chemin)
@@ -247,10 +247,10 @@ describe('point 3 — le formulaire PDF de 2026 rempli pour tout exercice', () =
   })
 
   // HORS DU MVP : la 2035 de 2026 sera déposée en mai 2027 par l'expert-comptable sur son logiciel (MVP-D5), et le formulaire
-  // « REVENUS 2026 » (millésime 2027) n'est pas publié. L'application imprimait les chiffres de 2026 sous l'en-tête
-  // « REVENUS 2025 », sans rien dire ; elle ne les imprime plus, et Clôture le dit (`formulaireAbsent`).
-  it('l’exercice 2026 ne s’imprime plus sous « REVENUS 2025 » : sans son millésime, le PDF est retenu, et c’est dit', async () => {
-    expect(await revenusDuFormulaireRempliPour(2026)).toBeNull()
-    expect(formulaireAbsent(2026)).toMatch(/^Le formulaire 2035 des revenus 2026 \(millésime 2027\) n’est pas encore publié/)
+  // « REVENUS 2026 » (millésime 2027) n'est pas publié. 2035S-Q5, tranchée le 02/11/2026 contre la recommandation : le PDF
+  // s'imprime sur « REVENUS 2025 », et l'écran comme le papier le disent (`avertissementDuFormulaire`, `mentionDuPdf`).
+  it('l’exercice 2026 s’imprime sur « REVENUS 2025 » en le disant, au lieu d’être retenu', async () => {
+    expect(await revenusDuFormulaireRempliPour(2026)).toBe(2025)
+    expect(avertissementDuFormulaire(2026)).toMatch(/^Le formulaire 2035 des revenus 2026 \(millésime 2027\) n’est pas encore publié/)
   })
 })

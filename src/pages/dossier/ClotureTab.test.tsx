@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
 import ClotureTab from './ClotureTab'
@@ -534,18 +534,17 @@ describe('ClotureTab — le refus de remplir une 2035 sur une lecture partielle'
     expect(screen.queryByText(/n’est pas encore publié/)).toBeNull()
   })
 
-  // ÉTAPE 2035S6, 2035S-Q5 (A) : l'exercice 2026 n'a pas son millésime (« REVENUS 2026 », millésime 2027, pas publié). Le
-  // bouton est retenu, la phrase le dit, et rien ne part vers `remplir2035` — ses chiffres s'imprimaient sous « REVENUS 2025 ».
-  it('retient le PDF d’un exercice dont le millésime n’est pas dans l’application, et le dit', async () => {
+  // ÉTAPE 2035S6, 2035S-Q5 (B), tranchée le 02/11/2026 : l'exercice 2026 n'a pas son millésime (« REVENUS 2026 », millésime
+  // 2027, pas publié). Le bouton est offert, l'avertissement se lit AVANT le clic, et le PDF part quand même.
+  it('offre le PDF d’un exercice dont le millésime n’est pas dans l’application, avec son avertissement avant le clic', async () => {
     poser()
     faux.remplies = []
     monter(2026)
     const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
-    expect(bouton.hasAttribute('disabled')).toBe(true)
-    expect(bouton.getAttribute('title')).toMatch(/^Le formulaire 2035 des revenus 2026 \(millésime 2027\) n’est pas encore publié/)
-    expect(screen.getByText(/^Le formulaire 2035 des revenus 2026 \(millésime 2027\) n’est pas encore publié/)).toBeTruthy()
+    expect(bouton.hasAttribute('disabled')).toBe(false)
+    expect(screen.getByText(/^Le formulaire 2035 des revenus 2026 \(millésime 2027\) n’est pas encore publié : le PDF est rempli sur le millésime 2026/)).toBeTruthy()
     await act(async () => { fireEvent.click(bouton) })
-    expect(faux.remplies).toHaveLength(0)
+    await waitFor(() => expect(faux.remplies).toHaveLength(1))
   })
 })
 

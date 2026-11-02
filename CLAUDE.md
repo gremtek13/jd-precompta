@@ -434,12 +434,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   de 2035S-Q2 à Q5, confirmée par le cabinet le 02/11/2026 pour Q2 à Q4 — BY, BW, BZ et BU d'un poste qui
   les nomme (une seconde case AJOUTÉE, jamais retirée de la porteuse), BT des seules échéances de l'onglet Cotisations, DB
   des indemnités journalières ; l'appel définitif du même mois remplace, au clic, la prévisionnelle qu'aucun paiement ne
-  date, et une autre se dit en attention (`lib/previsionnelles.ts`) ; un modèle par millésime, le PDF retenu sans le sien
-  (`lib/modeles2035.ts`) — 2035S-Q5, contre la recommandation : l'imprimer avec un avertissement, à écrire ; les quatre postes neufs sont entrés le 01/11/2026 dans les listes fermées du FEC (ci-dessous).
+  date, et une autre se dit en attention (`lib/previsionnelles.ts`) ; un modèle par millésime, le dernier livré sans le sien
+  (`lib/modeles2035.ts`) — 2035S-Q5, contre la recommandation : imprimé sur le dernier millésime, l'avertissement dit à l'écran et sur le PDF ; les quatre postes neufs sont entrés le 01/11/2026 dans les listes fermées du FEC (ci-dessous).
   Restent CC, CL, DE et le reste de DB (2035S3 à S5, dont une migration additive, `saisies_2035`) : 2035S-Q1, regarder
   d'abord la 2035 déposée, à la répétition générale → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 :
   ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION », « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF
-  D'UN MILLÉSIME (2035S1, S2 ET S6) ».
+  D'UN MILLÉSIME (2035S1, S2 ET S6) », « 2035S-Q5 : LE PDF D'UN MILLÉSIME ABSENT S'IMPRIME AVEC UN AVERTISSEMENT ».
 - **Déclarations TNS** (ligne 27) : restent hors de l'estimation — médecins et chirurgiens-dentistes, retraite, revenus
   de remplacement, ACRE, exonérations, outre-mer, régularisation ; DSCS proposée depuis la ligne 4 de la 2035-A, à
   confirmer sur une première déclaration réelle.
