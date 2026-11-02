@@ -4,7 +4,7 @@ import { ancragesDesCases, planDeRemplissage } from './gabarit2035'
 import type { EnteteDeclaration, FiletVertical, FragmentTexte, PageFormulaire } from './gabarit2035'
 import { planDeRemplissage2035E } from './gabarit2035E'
 import type { EnteteAnnexe2035E } from './gabarit2035E'
-import { modeleDuFormulaire } from './modeles2035'
+import { mentionDuPdf, modeleDuFormulaire } from './modeles2035'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
@@ -19,7 +19,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
 // Le millésime est dans le nom : quand la DGFiP publiera l'édition suivante, on ajoutera un fichier
 // au lieu d'écraser celui avec lequel les déclarations passées ont été produites. Le modèle de chaque exercice se lit dans
-// lib/modeles2035.ts (étape 2035S6) : l'exercice N se remplit sur le millésime N + 1, et sans le sien, rien.
+// lib/modeles2035.ts (étape 2035S6) : l'exercice N se remplit sur le millésime N + 1, et sans le sien sur le dernier livré, sous un avertissement
+// écrit en tête de chaque page remplie (2035S-Q5, (B)).
 
 // Les deux premières pages portent la 2035-A et la 2035-B ; la troisième, l'annexe 2035-E, ne se lit que quand elle est
 // due. Les deux dernières (2035-F et 2035-G, capital et filiales d'une société) ne sont pas alimentées ; les lire
@@ -91,7 +92,7 @@ export async function remplir2035(
   annee: number,
 ): Promise<Remplissage2035> {
   const modeleDeLExercice = modeleDuFormulaire(annee)
-  // Clôture ne l'offre pas sans son millésime (`formulaireAbsent`) ; ce refus ne se voit que si un appelant passe outre.
+  // Sans son millésime, le dernier livré (avec sa mention, plus bas) ; aucun modèle du tout ne se voit que si l'application n'en livre plus.
   if (!modeleDeLExercice) throw new Error(`Formulaire 2035 des revenus ${annee} absent de l’application`)
   const reponse = await fetch(modeleDeLExercice.chemin)
   if (!reponse.ok) throw new Error(`Formulaire 2035 introuvable (${reponse.status})`)
@@ -138,6 +139,19 @@ export async function remplir2035(
       // se distingue immédiatement de ce qui était imprimé sur le formulaire.
       color: rgb(0, 0, 0.6),
     })
+  }
+
+  // Le millésime qui n'est pas le bon se dit sur le papier lui-même, en rouge, dans la marge du haut des pages remplies.
+  const mention = mentionDuPdf(annee)
+  if (mention.length > 0) {
+    for (const numero of new Set(inscriptions.map((i) => i.page))) {
+      const feuille = feuilles[numero - 1]
+      if (!feuille) continue
+      const haut = feuille.getHeight()
+      mention.forEach((ligne, k) => {
+        feuille.drawText(ligne, { x: 28, y: haut - 14 - k * 9, size: 7, font: police, color: rgb(0.75, 0, 0) })
+      })
+    }
   }
 
   return { pdf: await pdf.save(), codesSansAncrage, codesSansAncrage2035E }

@@ -45961,3 +45961,13 @@ sans la migration dans l'export ; dans le texte de la migration, d'autres mots, 
   la lecture et le clic redeviendrait « ignoré », sa pièce déliée sans un mot (une affectation, une échéance, un
   classement s'y refuseraient par leurs contraintes, et la mise à jour entière avec eux) — la famille de 11c, à corriger à
   part, hors de ce drapeau (`.eq('statut', 'non_rapprochee')`, et le compte des mouvements que rien n'a écrits).
+
+### 02/11/2026 — 2035S-Q5 : LE PDF D'UN MILLÉSIME ABSENT S'IMPRIME AVEC UN AVERTISSEMENT
+
+Le cabinet a tranché 2035S-Q5 contre la recommandation : (B), imprimer la 2035 d'un exercice dont le formulaire manque sur
+le dernier millésime livré, avec un avertissement, plutôt que retenir le PDF (A, écrit le 01/11/2026). `modeleDuFormulaire`
+rend toujours un modèle (le sien, sinon le plus récent) avec `attendu` et `substitut` ; `formulaireAbsent` devient
+`avertissementDuFormulaire` (pas encore publié / pas dans l'application, millésime utilisé, en-tête, « ne se dépose pas tel
+quel »). `remplir2035` ne lève plus et écrit `mentionDuPdf` en rouge en tête de chaque page remplie ; Clôture offre le bouton
+et affiche l'avertissement avant le clic. Tests : `modeles2035.test.ts`, `relecture2035Saisies.test.ts`, `ClotureTab.test.tsx`
+et `remplir2035.test.ts` (le vrai remplissage, mention présente sur le substitut, absente sur le bon millésime).
