@@ -23,6 +23,9 @@ const faux = vi.hoisted(() => ({
   lignes: [] as LigneBancaire[],
   pieces: [] as unknown[],
   updatesLignes: [] as Record<string, unknown>[],
+  // Les mouvements qu'une mise à jour EN LOT désigne (`.in('id', …)`) : ceux qu'une règle « toujours ignorer » neuve fait
+  // ignorer parmi les mouvements déjà importés.
+  idsMisAJour: [] as unknown[][],
   // La promesse de la première mise à jour de ligne bancaire est gardée en attente : c'est la
   // fenêtre réelle pendant laquelle un second clic arrive. La résoudre tout de suite supprimerait
   // la fenêtre même que le verrou est censé fermer.
@@ -125,6 +128,14 @@ vi.mock('../../lib/paiementParLaCaisse', async (original) => {
       module.paiementsParLaCaisseDuDossierSelon(drapeauDuPaiement.leve, ...args),
   }
 })
+// LE DRAPEAU DU SENS DES RÈGLES « TOUJOURS IGNORER » (REGLES-Q1 ; la migration `sens_des_regles_ignorees`, préparée), ÉCRIT :
+// un accesseur, BAISSÉ par défaut (`reinitialiser`) — l'état d'aujourd'hui, quelle que soit la valeur du module, que la
+// migration lèvera ; levé, une règle retient le sens du mouvement qui la crée (les cas « levé » le disent).
+const drapeauDuSens = vi.hoisted(() => ({ leve: false }))
+vi.mock('../../lib/sensDesReglesIgnorees', async (original) => {
+  const module = await original<typeof import('../../lib/sensDesReglesIgnorees')>()
+  return { ...module, get SENS_DES_REGLES_IGNOREES_EXPORTE() { return drapeauDuSens.leve } }
+})
 // Le justificatif qu'on ouvre depuis la fiche d'un mouvement : le chemin demandé, sans ouvrir d'onglet.
 const justificatifs = vi.hoisted(() => ({ ouverts: [] as string[] }))
 vi.mock('../../lib/depot', () => ({
@@ -167,6 +178,7 @@ vi.mock('../../lib/supabase', async () => {
       order: () => c,
       in: (colonne: string, valeurs: unknown[]) => {
         if (colonne === 'compte') surDesComptes = true
+        if (table === 'lignes_bancaires' && operation === 'update' && colonne === 'id') faux.idsMisAJour.push(valeurs)
         predicats.push(predicatIn(colonne, valeurs))
         return c
       },
@@ -484,6 +496,8 @@ function pieceDeTest(o: Partial<Piece> = {}): Piece {
 
 function reinitialiser() {
   drapeauDuPaiement.leve = false
+  drapeauDuSens.leve = false
+  faux.idsMisAJour = []
   faux.lignes = [ligneDeTest()]
   faux.pieces = [pieceDeTest()]
   faux.updatesLignes = []
@@ -6147,6 +6161,134 @@ describe('BanqueTab — « Toujours ignorer ce type… »', () => {
     expect(await screen.findByText('prlv (inopérante : motif trop commun)')).toBeTruthy()
     expect(screen.getByText('macsf')).toBeTruthy()
   })
+
+  // LE SENS RETENU (REGLES-Q1), le drapeau levé : la règle née d'un débit ne vise que les débits — à sa création, sur les
+  // mouvements déjà importés, et à l'import (plus bas) —, et l'onglet le dit.
+  const releveCpam = () => [
+    ligneDeTest({ id: 'debit', libelle: 'PRLV CPAM PARTICIPATION', montant: -2 }),
+    ligneDeTest({ id: 'recette', libelle: 'VIR CPAM DES YVELINES', montant: 120, date: '2025-06-03' }),
+    ligneDeTest({ id: 'autre-debit', libelle: 'PRLV CPAM FRANCHISE', montant: -1, date: '2025-06-04' }),
+  ]
+
+  it('levé : née d’un débit, la règle retient « decaissement », ne demande rien de l’autre sens, et n’ignore que les débits', async () => {
+    reinitialiser()
+    drapeauDuSens.leve = true
+    faux.pieces = []
+    faux.lignes = releveCpam()
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    rendre()
+    await toujoursIgnorer('PRLV CPAM PARTICIPATION')
+    expect(String(prompt.mock.calls[0][0])).toContain('tout futur paiement dont le libellé contient un mot commençant ainsi sera automatiquement ignoré ; les encaissements, non.')
+    expect(confirmer).not.toHaveBeenCalled()
+    expect(regleInseree()).toEqual([{ dossier_id: 'dossier-de-test', motif: 'cpam', sens: 'decaissement' }])
+    expect(faux.updatesLignes).toEqual([{ statut: 'ignoree', piece_id: null }])
+    expect(faux.idsMisAJour).toEqual([['debit', 'autre-debit']])
+    expect(alertes).toEqual([])
+  })
+
+  it('levé : née d’un crédit, « encaissement », et seuls les crédits', async () => {
+    reinitialiser()
+    drapeauDuSens.leve = true
+    faux.pieces = []
+    faux.lignes = releveCpam()
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    rendre()
+    await toujoursIgnorer('VIR CPAM DES YVELINES')
+    expect(String(prompt.mock.calls[0][0])).toContain('tout futur encaissement dont le libellé contient')
+    expect(regleInseree()).toEqual([{ dossier_id: 'dossier-de-test', motif: 'cpam', sens: 'encaissement' }])
+    expect(faux.idsMisAJour).toEqual([['recette']])
+  })
+
+  it('baissé : la question, la confirmation de l’autre sens et la ligne d’hier, sans clé `sens`', async () => {
+    reinitialiser()
+    faux.pieces = []
+    faux.lignes = releveCpam()
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    rendre()
+    await toujoursIgnorer('PRLV CPAM PARTICIPATION')
+    expect(prompt.mock.calls[0][0]).toBe('Mot-clé stable qui identifie ce type de mouvement récurrent (ex. "MACSF", "SWISSLIFE") — toute future ligne dont le libellé contient un mot commençant ainsi sera automatiquement ignorée.')
+    expect(confirmer).toHaveBeenCalledTimes(1)
+    expect(regleInseree()).toEqual([{ dossier_id: 'dossier-de-test', motif: 'cpam' }])
+    expect(faux.idsMisAJour).toEqual([['debit', 'recette', 'autre-debit']])
+  })
+
+  it('levé : un mouvement de zéro euro ne crée pas de règle, et le dit avant de demander le motif', async () => {
+    reinitialiser()
+    drapeauDuSens.leve = true
+    faux.pieces = []
+    faux.lignes = [ligneDeTest({ id: 'zero', libelle: 'CPAM REGUL', montant: 0 })]
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    rendre()
+    await toujoursIgnorer('CPAM REGUL')
+    expect(alertes).toEqual(['La règle n’a pas été enregistrée. Un mouvement de zéro euro n’a pas de sens, et une règle « toujours ignorer » retient le sens du mouvement qui la crée : crée-la depuis un paiement ou un encaissement de ce tiers.'])
+    expect(prompt).not.toHaveBeenCalled()
+    expect(regleInseree()).toEqual([])
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('baissé : un mouvement de zéro euro crée sa règle, comme hier', async () => {
+    reinitialiser()
+    faux.pieces = []
+    faux.lignes = [ligneDeTest({ id: 'zero', libelle: 'CPAM REGUL', montant: 0 })]
+    vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    rendre()
+    await toujoursIgnorer('CPAM REGUL')
+    expect(alertes).toEqual([])
+    expect(regleInseree()).toEqual([{ dossier_id: 'dossier-de-test', motif: 'cpam' }])
+  })
+
+  it('levé : la même règle — même motif, même sens — se dit avant d’écrire', async () => {
+    reinitialiser()
+    drapeauDuSens.leve = true
+    faux.pieces = []
+    faux.lignes = releveCpam()
+    faux.reglesIgnorees = [{ id: 'r1', dossier_id: 'dossier-de-test', motif: 'cpam', sens: 'decaissement', created_at: '2025-06-01T09:00:00Z' }]
+    vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    rendre()
+    await toujoursIgnorer('PRLV CPAM PARTICIPATION')
+    expect(alertes).toEqual(['La règle n’a pas été enregistrée. La règle « cpam » (paiements) existe déjà.'])
+    expect(regleInseree()).toEqual([])
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('levé : une règle des deux sens du même motif n’empêche pas celle d’un sens — le chemin qui la remplace', async () => {
+    reinitialiser()
+    drapeauDuSens.leve = true
+    faux.pieces = []
+    faux.lignes = releveCpam()
+    faux.reglesIgnorees = [{ id: 'r1', dossier_id: 'dossier-de-test', motif: 'cpam', sens: null, created_at: '2025-06-01T09:00:00Z' }]
+    vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    rendre()
+    await toujoursIgnorer('PRLV CPAM PARTICIPATION')
+    expect(alertes).toEqual([])
+    expect(regleInseree()).toEqual([{ dossier_id: 'dossier-de-test', motif: 'cpam', sens: 'decaissement' }])
+  })
+
+  it('levé : la liste dit le sens de chaque règle — « les deux sens » pour une règle d’avant', async () => {
+    reinitialiser()
+    drapeauDuSens.leve = true
+    faux.reglesIgnorees = [
+      { id: 'r1', dossier_id: 'dossier-de-test', motif: 'cpam', sens: 'decaissement', created_at: '2025-06-01T09:00:00Z' },
+      { id: 'r2', dossier_id: 'dossier-de-test', motif: 'epargne alpha', sens: 'encaissement', created_at: '2025-06-01T09:00:00Z' },
+      { id: 'r3', dossier_id: 'dossier-de-test', motif: 'macsf', sens: null, created_at: '2025-06-01T09:00:00Z' },
+      { id: 'r4', dossier_id: 'dossier-de-test', motif: 'prlv', created_at: '2025-06-01T09:00:00Z' },
+    ]
+    rendre()
+    expect(await screen.findByText('cpam · paiements')).toBeTruthy()
+    expect(screen.getByText('epargne alpha · encaissements')).toBeTruthy()
+    expect(screen.getByText('macsf · les deux sens')).toBeTruthy()
+    expect(screen.getByText('prlv (inopérante : motif trop commun) · les deux sens')).toBeTruthy()
+  })
+
+  it('baissé : la liste d’hier, même quand la règle porte un sens', async () => {
+    reinitialiser()
+    faux.reglesIgnorees = [{ id: 'r1', dossier_id: 'dossier-de-test', motif: 'cpam', sens: 'decaissement', created_at: '2025-06-01T09:00:00Z' }]
+    rendre()
+    expect(await screen.findByText('cpam')).toBeTruthy()
+    expect(screen.queryByText(/paiements/)).toBeNull()
+  })
 })
 
 // L'ALERTE D'IMPORT DIT, RÈGLE PAR RÈGLE, CE QUE « TOUJOURS IGNORER » A FAIT (relecture du 31/10/2026) : une règle ne
@@ -6186,5 +6328,46 @@ describe('BanqueTab — l’import compte les mouvements ignorés par règle', (
     await importer('Date;Libellé;Montant\n02/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n', 1)
     expect(faux.insertions.filter((i) => i.table === 'lignes_bancaires')).toHaveLength(1)
     expect(alertes).toEqual([])
+  })
+
+  // LE SENS RETENU (REGLES-Q1) : levé, la règle née d'un débit laisse à traiter l'encaissement qu'elle reconnaît, et l'alerte
+  // nomme chaque règle avec son sens ; une règle d'avant, des deux sens, dit encore les encaissements qu'elle a fait ignorer.
+  const CSV_CPAM = 'Date;Libellé;Montant\n02/06/2025;PRLV CPAM PARTICIPATION;-2,00\n05/06/2025;VIR CPAM DES YVELINES;120,00\n'
+  const statutsImportes = () => faux.insertions.filter((i) => i.table === 'lignes_bancaires')
+    .flatMap((i) => i.valeur as unknown as Record<string, unknown>[]).map((l) => [l.libelle, l.statut])
+
+  it('levé : la règle née d’un débit n’ignore pas l’encaissement qu’elle reconnaît, et l’alerte dit son sens', async () => {
+    reinitialiser()
+    drapeauDuSens.leve = true
+    faux.lignes = []
+    faux.reglesIgnorees = [{ ...regle('cpam'), sens: 'decaissement' }]
+    rendre()
+    await importer(CSV_CPAM, 2)
+    expect(statutsImportes()).toEqual([['PRLV CPAM PARTICIPATION', 'ignoree'], ['VIR CPAM DES YVELINES', 'non_rapprochee']])
+    expect(alertes).toHaveLength(1)
+    expect(alertes[0]).toContain('1 mouvement ignoré par une règle « toujours ignorer » : « cpam » (paiements) 1.')
+    expect(alertes[0]).not.toContain('encaissement ignoré')
+  })
+
+  it('levé : une règle d’avant fait ignorer les deux, et l’alerte le dit sous ses mots neufs', async () => {
+    reinitialiser()
+    drapeauDuSens.leve = true
+    faux.lignes = []
+    faux.reglesIgnorees = [{ ...regle('cpam'), sens: null }]
+    rendre()
+    await importer(CSV_CPAM, 2)
+    expect(statutsImportes()).toEqual([['PRLV CPAM PARTICIPATION', 'ignoree'], ['VIR CPAM DES YVELINES', 'ignoree']])
+    expect(alertes[0]).toContain('« cpam » (les deux sens) 2 (dont 1 encaissement). Une règle des deux sens fait ignorer aussi les encaissements')
+  })
+
+  it('baissé : le sens lu ne compte pas — l’import et l’alerte d’hier', async () => {
+    reinitialiser()
+    faux.lignes = []
+    faux.reglesIgnorees = [{ ...regle('cpam'), sens: 'decaissement' }]
+    rendre()
+    await importer(CSV_CPAM, 2)
+    expect(statutsImportes()).toEqual([['PRLV CPAM PARTICIPATION', 'ignoree'], ['VIR CPAM DES YVELINES', 'ignoree']])
+    expect(alertes[0]).toContain('2 mouvements ignorés par une règle « toujours ignorer » : « cpam » 2 (dont 1 encaissement).'
+      + ' Une règle ne retient pas encore le sens du mouvement')
   })
 })

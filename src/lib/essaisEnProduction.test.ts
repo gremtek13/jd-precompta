@@ -279,8 +279,9 @@ describe('les essais de la base, rejoués en production', () => {
     // `ibanHorsDesParametres` sortis (leurs migrations sont en production depuis le 29/10/2026), le filet de la validation
     // devant la caisse (`validationDesPaiementsParLaCaisse`) entré, après ses trois migrations préparées. Seize le
     // 02/11/2026 : `caisse` et `validationDesPaiementsParLaCaisse` sortis (C8, FEC22b, le filet et C10 en production le
-    // même jour) ; aucun essai n'attend plus une migration préparée (la famille « apres » reste, vide).
-    expect(cas.length).toBe(16)
+    // même jour) ; aucun essai n'attend plus une migration préparée (la famille « apres » reste, vide). Dix-sept le même
+    // jour : `sensDesReglesIgnorees` entré, après sa migration préparée (REGLES-Q1, `sens_des_regles_ignorees`).
+    expect(cas.length).toBe(17)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

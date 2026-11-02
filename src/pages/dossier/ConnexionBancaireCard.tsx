@@ -7,7 +7,7 @@ import {
   JOURS_ALERTE_ACCORD, LIBELLES_TYPE_ACCES, joursAvantExpiration, periodeParDefaut, phraseEcartes, planImport, sourceDeLaConnexion,
   type BanqueProposee, type EnvironnementBancaire, type Recuperation, type StatutConnexion, type TypeAcces,
 } from '../../lib/connexionBancaire'
-import { statutPourLibelle } from '../../lib/reglesIgnorees'
+import { statutPourMouvement } from '../../lib/reglesIgnorees'
 import type { LigneBancaire, RegleBancaireIgnoree } from '../../lib/types'
 
 // LA CONNEXION BANCAIRE D'UN DOSSIER (ligne 24 de la feuille de route), en preuve de concept sur le bac à
@@ -216,7 +216,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
     const source = sourceDeLaConnexion(recuperation.banque_nom)
     const aEcrire = aImporter.map((m) => ({
       dossier_id: dossierId, date: m.date, libelle: m.libelle, montant: m.montant,
-      statut: statutPourLibelle(m.libelle, regles), source_fichier: source, id_externe: m.id_externe,
+      statut: statutPourMouvement(m, regles), source_fichier: source, id_externe: m.id_externe,
     }))
     // Ce que la base a VRAIMENT écrit : `ignoreDuplicates` laisse tel quel un mouvement qu'un autre onglet
     // — ou un collègue — vient d'importer (`lignes_bancaires_id_externe_unique`), au lieu de faire échouer le

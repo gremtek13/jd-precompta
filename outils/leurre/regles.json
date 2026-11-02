@@ -34,6 +34,7 @@
     "rls": {"famille": "journal", "role": "super", "raison": "lit le journal des désignations que la production porte (semis/journal.sql) ; joué par le super-utilisateur, comme son en-tête le veut"},
     "validationExercice": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
     "reportDesSoldes": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
+    "sensDesReglesIgnorees": {"famille": "apres", "raison": "la migration `sens_des_regles_ignorees` (REGLES-Q1, supabase/preparees/) est préparée, pas appliquée : la réplique qui la porte, appliquée par le propriétaire avec sa ligne d'historique — sans elle, l'essai dit EN ATTENTE et n'écrit rien"},
     "devis": {"attendu": "impossible", "raison": "ses migrations (les devis, étape P5) ne sont pas appliquées : l'essai le dit (ESSAI_IMPOSSIBLE) et n'écrit rien ; le banc compare alors ce refus"}
   }
 }

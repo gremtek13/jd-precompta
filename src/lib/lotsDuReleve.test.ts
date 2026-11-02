@@ -7,7 +7,7 @@ import {
   type EncaissementDuMouvementLu, type VentesDuReleve,
 } from './mouvementsDesVentes'
 import { mouvementATraiter, mouvementsCouverts, planAffectationParRegles } from './reglesAffectation'
-import { ignoresParLaRegle, statutPourLibelle } from './reglesIgnorees'
+import { ignoresParLaRegle, statutPourMouvement } from './reglesIgnorees'
 import { AUCUNE_FACTURE_SOURCE } from './facturesSources'
 import { AUCUN_REFUS_DE_VALIDATION } from './lotsDeLaJumelleInversee'
 import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire } from './types'
@@ -214,16 +214,16 @@ describe('lotDesCertains : « Valider et rapprocher »', () => {
 
 describe('ignoresParLaRegle : la règle « toujours ignorer », sur les mouvements déjà importés', () => {
   it('ne fait pas ignorer le réservé qu’elle reconnaît : écarté, et dit ; le libre, si', () => {
-    expect(ignoresParLaRegle(RELEVE, 'horizon', HORS)).toEqual({ aIgnorer: [LIBRE], ecartesParLesVentes: [RESERVE] })
-    expect(ignoresParLaRegle(RELEVE, 'horizon', AUCUN_HORS_DES_LOTS)).toEqual({ aIgnorer: [RESERVE, LIBRE], ecartesParLesVentes: [] })
+    expect(ignoresParLaRegle(RELEVE, { motif: 'horizon' }, HORS)).toEqual({ aIgnorer: [LIBRE], ecartesParLesVentes: [RESERVE] })
+    expect(ignoresParLaRegle(RELEVE, { motif: 'horizon' }, AUCUN_HORS_DES_LOTS)).toEqual({ aIgnorer: [RESERVE, LIBRE], ecartesParLesVentes: [] })
   })
 
   it('le jugement de l’import, et rien d’autre : à traiter, et le libellé qui contient le motif', () => {
-    expect(ignoresParLaRegle(RELEVE, 'frais tenue', HORS)).toEqual({ aIgnorer: [FRAIS], ecartesParLesVentes: [] })
-    expect(ignoresParLaRegle([ligne({ id: 'x', libelle: 'VIR SARL HORIZON', statut: 'ignoree' })], 'horizon', HORS).aIgnorer).toEqual([])
+    expect(ignoresParLaRegle(RELEVE, { motif: 'frais tenue' }, HORS)).toEqual({ aIgnorer: [FRAIS], ecartesParLesVentes: [] })
+    expect(ignoresParLaRegle([ligne({ id: 'x', libelle: 'VIR SARL HORIZON', statut: 'ignoree' })], { motif: 'horizon' }, HORS).aIgnorer).toEqual([])
     for (const l of RELEVE) {
-      const pris = ignoresParLaRegle([l], 'horizon', AUCUN_HORS_DES_LOTS).aIgnorer.length === 1
-      expect(pris, l.id).toBe(l.statut === 'non_rapprochee' && statutPourLibelle(l.libelle, [{ motif: 'horizon' }]) === 'ignoree')
+      const pris = ignoresParLaRegle([l], { motif: 'horizon' }, AUCUN_HORS_DES_LOTS).aIgnorer.length === 1
+      expect(pris, l.id).toBe(l.statut === 'non_rapprochee' && statutPourMouvement(l, [{ motif: 'horizon' }]) === 'ignoree')
     }
   })
 })

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   joursAvantExpiration, periodeParDefaut, phraseEcartes, planImport, sourceDeLaConnexion, type MouvementRecupere,
 } from './connexionBancaire'
-import { statutPourLibelle } from './reglesIgnorees'
+import { statutPourMouvement } from './reglesIgnorees'
 
 const ligne = (date: string, montant = -10, id_externe: string | null = null) => ({ date, montant, id_externe })
 const mouvement = (id: string, date: string, montant: number, libelle = 'PRLV FICTIF'): MouvementRecupere =>
@@ -140,8 +140,8 @@ describe('ce qui se dit d’une récupération', () => {
 
 describe('le statut d’un mouvement à son import — commun aux trois chemins', () => {
   it('ignoré quand une règle du dossier reconnaît le libellé, sans égard à la casse du libellé', () => {
-    expect(statutPourLibelle('PRLV SEPA Assurance Fictive', [{ motif: 'assurance fictive' }])).toBe('ignoree')
-    expect(statutPourLibelle('PRLV SEPA Assurance Fictive', [{ motif: 'mutuelle' }])).toBe('non_rapprochee')
-    expect(statutPourLibelle('PRLV', [])).toBe('non_rapprochee')
+    expect(statutPourMouvement({ libelle: 'PRLV SEPA Assurance Fictive', montant: -50 }, [{ motif: 'assurance fictive' }])).toBe('ignoree')
+    expect(statutPourMouvement({ libelle: 'PRLV SEPA Assurance Fictive', montant: -50 }, [{ motif: 'mutuelle' }])).toBe('non_rapprochee')
+    expect(statutPourMouvement({ libelle: 'PRLV', montant: -50 }, [])).toBe('non_rapprochee')
   })
 })

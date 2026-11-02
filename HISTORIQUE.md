@@ -45818,3 +45818,146 @@ Contre la recommandation, trois :
   (`lib/modeles2035.ts`, 2035S6).
 - **28.5e-Q10** — « une plateforme d'essai à nommer » : les essais réels d'e-reporting se feront sur une plateforme que
   le cabinet nommera ; après le MVP.
+
+### 02/11/2026 — LE SENS DES RÈGLES « TOUJOURS IGNORER » ET LA COTISATION D'UN MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par un agent architecte, sur `b6abd4c` — la branche de la session, les quatre migrations du jour dans l'export.
+Aucun appel aux outils de Supabase, rien d'écrit ni lu en production : la migration est PRÉPARÉE et éprouvée sur une
+réplique de la production du jour, jamais appliquée. Lus avant d'écrire : « LES LOTS DU RELEVÉ : LE SENS, LA FENÊTRE DU
+JUSTIFICATIF, « TOUJOURS IGNORER » ET LE MOUVEMENT TRAITÉ AILLEURS » (31/10/2026, défauts 9 et 11c), « VINGT ET UNE
+RÉPONSES DU CABINET » (REGLES-Q1), et pour la forme « LA CAISSE : LE DROIT « CAISSE », EN BASE (C10, LIGNE 26.6) ».
+Créés : la migration et son retour arrière (`supabase/preparees/`), l'essai `supabase/essais/sensDesReglesIgnorees.sql`,
+`src/lib/sensDesReglesIgnorees.ts` et son test, `src/lib/sauvegardeReglesIgnorees.test.ts`. Modifiés :
+`lib/reglesIgnorees.ts`, `lib/cotisationRapprochee.ts`, `lib/types.ts`, l'onglet Banque et la carte de connexion
+bancaire, leurs tests, cinq autres tests, `outils/leurre/regles.json`, le README de l'export.)
+
+**LA DÉCISION.** REGLES-Q1, tranchée le 02/11/2026 à la recommandation : la règle retient le sens du mouvement qui l'a
+créée — une règle d'avant vaut pour les deux sens, comme aujourd'hui —, et la cotisation ne se rapproche plus d'un
+mouvement ignoré. L'enjeu : un mouvement ignoré ne s'écrit nulle part ; un encaissement ignoré à tort manque aux
+« recettes totales » dont l'excédent sur les dépenses fait le bénéfice non commercial (CGI, art. 93, 1).
+
+**LA MIGRATION** `sens_des_regles_ignorees` (`supabase/preparees/20261102120000_sens_des_regles_ignorees.sql`, version
+provisoire ; 17 772 caractères, 18 227 octets, 270 lignes, `5dd503780f887d06379bffe81b847325`) :
+1. `regles_bancaires_ignorees.sens`, texte nul SANS valeur par défaut, sous `regles_bancaires_ignorees_sens`
+   (« encaissement » ou « decaissement », les mots de `regles_affectation_bancaire.sens`) : chaque règle d'avant reste
+   nulle et fait ce qu'elle faisait ; une sauvegarde d'avant se restaure nulle ;
+2. la clé `regles_bancaires_ignorees_unique`, UNIQUE NULLS NOT DISTINCT (dossier_id, motif, sens) (documentation de
+   PostgreSQL, CREATE TABLE, `NULLS NOT DISTINCT`, depuis la version 15), posée AVANT que l'ancienne,
+   `regles_bancaires_ignorees_dossier_id_motif_key` (dossier_id, motif), se retire : elle admet toute paire que
+   l'ancienne admettait ; deux nulles du même motif se heurtent comme deux règles d'avant ; contrainte TOTALE ;
+3. `rapprocher_cotisation`, sa dernière définition (`lignes_propres_au_mouvement`, `a2a5c675…` — celle de la réplique,
+   relue au catalogue) au caractère près, plus un bloc : « Ce mouvement est ignoré : remets-le d'abord à traiter. »
+   (22023), APRÈS le refus d'un mouvement classé — un virement personnel est « ignoré » ET classé, et garde ces mots-là —
+   et AVANT celui du zéro ; corps neuf `bf920662bc500bc4fcf23aba0ce829e3`, droits et commentaire gardés.
+Sa garde de tête refuse une seconde application, une base sans la clé d'hier (nom et définition), une
+`rapprocher_cotisation` autre qu'à son empreinte (une seule de ce nom), des statuts d'un mouvement autres que les trois
+d'hier. Elle SE COLLE : son texte retire la clé d'hier (`drop constraint`), et le corps de la fonction supprime des
+écritures, comme hier. Le texte à coller (la transaction, la migration, sa ligne d'historique — la version, la seconde
+UTC du collage ou la plus haute plus un) et celui du retour arrière sont dans le bloc-notes de l'agent, avec leurs
+empreintes.
+
+**LES CHOIX, ET CE QUI EST ÉCARTÉ.**
+- Garder la clé d'hier, une règle par motif (nulle pour les deux sens) : sans `drop`, mais la règle des paiements à
+  laquelle s'ajouteraient les encaissements se RÉÉCRIRAIT (une mise à jour qui change ce que la ligne disait), son
+  retrait retirerait les deux sens ; et le texte se collerait de toute façon (le corps de la fonction supprime). Écarté,
+  comme la conception du 31/10 l'avait fait (la clé sur les trois colonnes).
+- Une règle neuve « des deux sens » : non. Une règle naît d'un mouvement et retient son sens ; d'un mouvement de zéro
+  euro, l'onglet ne crée rien et le dit. La base admet encore nul — une règle d'avant, une restauration.
+- Le refus du mouvement ignoré sous les mots du classement : écarté, il dirait « classé » d'un mouvement ignoré.
+- Les AUTRES fonctions qui classent un mouvement (`affecter_mouvement_bancaire` et les siennes) ne refusent pas non plus
+  un mouvement ignoré : hors de la décision, dit ci-dessous.
+- Le retour arrière se REFUSE tant qu'un motif d'un dossier porte deux règles, plutôt que d'en effacer une : choisir
+  laquelle revient au cabinet.
+
+**L'APPLICATION, DERRIÈRE `SENS_DES_REGLES_IGNOREES_EXPORTE`, BAISSÉ** (`lib/sensDesReglesIgnorees.ts`, pur, sans autre
+import qu'un type : les modules qui le lisent l'importent, et un accesseur de test le lève chez eux ; chaque fonction prend
+le drapeau en paramètre, `…Selon`) :
+- le drapeau suit le fichier de la migration (`sensDesReglesIgnorees.test.ts`) ;
+- « Toujours ignorer » (onglet Banque) : levé, la règle porte le sens du mouvement, la question le dit (« tout futur
+  paiement… ; les encaissements, non »), la confirmation de l'autre sens tombe, un mouvement de zéro euro ne crée rien, la
+  même règle (motif et sens) se dit avant d'écrire — une règle des deux sens du même motif n'empêche pas celle d'un sens :
+  c'est le chemin qui la remplace ;
+- l'import — CSV, PDF, connexion bancaire — et la règle neuve sur les mouvements déjà importés : `statutPourMouvement`
+  (qui remplace `statutPourLibelle`) et `ignoresParLaRegle` jugent le mouvement entier ; une règle d'un sens ne prend que
+  le sien, un mouvement de zéro euro n'est reconnu que par une règle des deux sens ;
+- l'alerte d'import : chaque règle nommée avec son sens ; « dont N encaissements » et l'avertissement pour une règle des
+  deux sens seulement, sous des mots neufs (« recrée-la depuis un paiement, puis retire-la ») ; l'onglet : « cpam ·
+  paiements », « macsf · les deux sens » ;
+- `refusRapprochementCotisation` : le refus neuf, à son rang (levé) — l'onglet Banque le dit avant d'appeler la base
+  quand il lit le mouvement ignoré (la fiche n'offre aucune échéance sur un mouvement ignoré ; la base reste juge d'un
+  mouvement ignoré dans un autre onglet, et « Tout rapprocher » dit alors son refus) ; la 2035, les échéances à écrire et
+  la Checklist ne jugent que des mouvements rapprochés, que le refus ne touche pas. L'assistant non plus : sa copie du
+  bloc COTISATION ne juge que des rapprochés ;
+- `types.ts` : `sens?` facultatif jusqu'au jour de l'application ;
+- la sauvegarde : rien à changer — les lignes entières (`select('*')`), envoyées telles (`lotsDEcriture`) ; une sauvegarde
+  d'avant part sans la clé, et la colonne la pose nulle (`sauvegardeReglesIgnorees.test.ts` ; l'essai, étape 3).
+LE DRAPEAU BAISSÉ, RIEN NE CHANGE AU CARACTÈRE PRÈS : un oracle (temporaire, hors du dépôt) a confronté les modules de
+`b6abd4c` aux fonctions `…Selon(false, …)` sur 20 000 cas tirés chacune (le statut à l'import, l'alerte, les mouvements
+déjà importés, le refus d'une échéance, `autreSensReconnu`) : égaux ; planté levé, il voit l'écart. La suite entière, ses
+tests d'écran d'hier écrits « baissés » (la ligne insérée sans `sens`, la question et la confirmation d'hier), passe.
+
+**LES PREUVES SUR LA RÉPLIQUE** (la grappe de FEC22b, PostgreSQL 16, port 54341 ; des bases `regles_*` seulement, faites
+de `f_prod164`, la production d'avant ce matin, qui n'a pas été touchée) :
+- « production » : `regles_prod168`, `f_prod164` munie des quatre migrations du 02/11/2026 dans l'ordre de leurs versions,
+  chacune dans sa transaction par le PROPRIÉTAIRE des tables, avec sa ligne d'historique (la base doit lui appartenir :
+  faite par le super-utilisateur, le schéma `public`, à `pg_database_owner`, refusait au propriétaire d'y créer) — 168
+  migrations, `86d12ffb…` comme l'export, et les neuf familles de `signature.sql` de la production, une à une ;
+- munie de la migration comme l'outil : la ligne d'historique rend `5dd50378…`, l'empreinte du fichier ; une seconde
+  application se refuse sous la garde, rien de changé ; les deux contraintes et le corps neuf au catalogue, les droits de
+  la fonction gardés (`authenticated`, `service_role` ; pas `anon`) ;
+- le TEXTE À COLLER, en fins de ligne `\n` puis `\r\n` (comme depuis un téléphone), chacun sur une copie fraîche : la même
+  ligne d'historique une fois les retours chariot écartés, le même corps, la même signature, l'essai 20 sur 20 ;
+- l'essai : 20 verdicts justes ; sans la migration, une ligne EN ATTENTE et rien d'écrit ; rien ne reste après lui ; ses
+  neuf mutations de la migration — le refus retiré, placé avant le classement ou après le zéro, sous 23514 ; la clé sans
+  `nulls not distinct`, absente, ou l'ancienne gardée ; le sens libre ; un sens par défaut — toutes tuées. Au banc du
+  leurre (une copie du banc dans le bloc-notes, ses bases sous le préfixe de ce lot ; famille « apres » de `regles.json`) :
+  SÛR, aucun écart, aucun motif, aucune écriture du leurre, le témoin vu de ses trois façons ;
+- `rls.sql` ENTIER (le super-utilisateur, sur le journal semé), avant et après : 90 invariants, 0 en faute, 68 mutations sur
+  68, une seule ligne EN ATTENTE (les devis) — la même sortie au caractère près. Aucun droit ne change : pas de bloc neuf ;
+- les essais qui touchent `rapprocher_cotisation`, avant et après : `cotisationRapprochee.sql` et `laBaseLitLePlan.sql` sur le
+  jeu de départ du banc, `cotisationPersonnelle.sql`, `ecrituresVentesFacturees.sql`, `retraitPaiementPersonnel.sql` — la
+  même sortie (identifiants tirés masqués), aucune faute. Son étape 33 (un virement personnel : « ignoré » et classé)
+  garde le refus d'un mouvement classé : c'est pour elle que le refus neuf vient après lui ;
+- `signature.sql` après elle : « colonnes » 919 `2848a5f9…`, « contraintes » 712 `e06f758d…`, « fonctions » 226
+  `b8f29817…`, « index » 244 `b4ac00a7…`, les cinq autres familles inchangées ; côté base, la dérive 169 (`bb040e67…`, sous
+  la version provisoire), le socle 81 `cea19cff…`, l'inventaire 2 309 `ee3f607f…` (le README de l'export les donne en
+  entier) ;
+- le retour arrière (`1c7503e3…`, 12 049 caractères) : refusé tant qu'un motif d'un dossier portait deux règles, sous ses
+  mots ; une règle retirée, il passe ; la signature, le socle (81, `bfe9dce8…`) et l'inventaire (2 307, `93edc60a…`)
+  reviennent à ceux de la production au caractère près ; un second retour se refuse ; l'essai dit EN ATTENTE.
+
+**LA BARRIÈRE, LA SIMULATION ET LES MUTATIONS.** Sous Node 22 : `tsc -b`, le lint (aucune erreur ; les avertissements
+d'avant), la suite entière sous Paris — 528 fichiers, aucun en échec ; le cas `it.fails` de la règle née d'un débit est un
+test qui passe, drapeau levé (le seul `it.fails` qui reste est celui de la 2035, sans rapport). SIMULATION du jour de
+l'application : le fichier DÉPLACÉ dans l'export sous sa version provisoire, le drapeau levé — `tsc -b`, le lint, la suite
+entière (528 fichiers, 16 419 tests) ; puis le `create table` du socle re-rendu depuis la réplique, tel que la base le
+rendra — les deux moitiés du socle (81, `cea19cff…`) et de l'inventaire (2 309, `ee3f607f…`) concordent, et la suite
+entière passe encore ; puis `types.ts` basculé (`sens` obligatoire) — l'application compile, neuf fabriques de test
+demandent `sens: null` (huit d'hier, et le cas neuf d'une règle « que la base ne rend pas encore »). Tout rendu ensuite au
+caractère près, vérifié par empreintes contre une copie hors du dépôt. Les mutations de l'application, 27, toutes tuées :
+le sens jamais lu, toute règle valant pour tout sens, l'import ou les mouvements déjà importés sans le sens ; la règle créée
+sans `sens` (levé), ou avec (baissé — la ligne d'hier) ; la confirmation de l'autre sens gardée levé ; la liste et la
+question sans le sens ; la même règle, le mouvement de zéro euro (et ce refus dit après le motif), une règle des deux sens
+qui bloquerait celle d'un sens ; « dont » et l'avertissement pour une règle d'un sens ; le nom sans le sens ; le refus de la
+cotisation retiré, sans drapeau, avant le classement, après le zéro, sous d'autres mots ou un autre code ; le drapeau levé
+sans la migration dans l'export ; dans le texte de la migration, d'autres mots, une autre empreinte gardée, la clé sans
+`nulls not distinct` ; dans l'essai, une autre empreinte épinglée.
+
+**CE QUI RESTE, ET CE QUI ATTEND LE CABINET.**
+- L'accord du cabinet (la fiche « REGLES-migration »), puis, ce jour-là : compter les règles en base (elles deviennent
+  « les deux sens », sans changer de comportement) ; le collage — le texte du bloc-notes de l'agent, ou recomposé du
+  fichier : la transaction, le fichier, `insert into supabase_migrations.schema_migrations (version, name, statements)`,
+  la version prise à la seconde UTC du collage ou à la plus haute plus un ; la ligne d'historique relue à l'empreinte
+  `5dd50378…` (retours chariot écartés) ; le fichier dans l'export sous la version de cette ligne ; le `create table` de
+  `regles_bancaires_ignorees` re-rendu au socle (la colonne, la clé neuve, la contrainte du sens ; la clé d'hier partie) ;
+  les trois contrôles ; `sensDesReglesIgnorees.sql` et `rls.sql` en production ; puis `SENS_DES_REGLES_IGNOREES_EXPORTE`
+  levé, `types.ts` basculé avec ses neuf fabriques, l'essai sorti de la famille « apres » (`regles.json`, le compte de
+  `essaisEnProduction.test.ts`). L'assistant : rien à redéployer.
+- HORS DE LA DÉCISION, dits, pas corrigés : les AUTRES fonctions qui classent un mouvement (l'affectation, la
+  ventilation, le virement personnel, le compte de bilan, l'échéance d'emprunt, la déclaration de TVA, le règlement
+  groupé) ne regardent pas le statut « ignoré » — seule `rapprocher_cotisation` le refusera ; l'écran les en garde (la
+  fiche n'offre aucun classement sur un mouvement ignoré). Et « Toujours ignorer » met à jour les mouvements déjà
+  importés sans condition de statut (`.in('id', …)` seul) : un mouvement rapproché d'une PIÈCE dans un autre onglet entre
+  la lecture et le clic redeviendrait « ignoré », sa pièce déliée sans un mot (une affectation, une échéance, un
+  classement s'y refuseraient par leurs contraintes, et la mise à jour entière avec eux) — la famille de 11c, à corriger à
+  part, hors de ce drapeau (`.eq('statut', 'non_rapprochee')`, et le compte des mouvements que rien n'a écrits).

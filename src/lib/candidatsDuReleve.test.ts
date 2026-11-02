@@ -458,9 +458,9 @@ describe('les lots sur un crédit qu’une facture source pourrait régler', () 
     expect(lot.ecartesParLesVentes.map((a) => a.ligne.id)).toEqual(['m-cand'])
     // Un motif par tiers : « vir », qui les reconnaissait tous trois, est un motif trop commun, inopérant depuis le
     // 31/10/2026 (lib/reglesIgnorees.ts).
-    expect(ignoresParLaRegle(RELEVE, 'rocher', AVEC)).toEqual({ aIgnorer: [], ecartesParLesVentes: [RESERVE] })
-    expect(ignoresParLaRegle(RELEVE, 'horizon', AVEC)).toEqual({ aIgnorer: [], ecartesParLesVentes: [CANDIDAT] })
-    expect(ignoresParLaRegle(RELEVE, 'cpam', AVEC)).toEqual({ aIgnorer: [LIBRE], ecartesParLesVentes: [] })
+    expect(ignoresParLaRegle(RELEVE, { motif: 'rocher' }, AVEC)).toEqual({ aIgnorer: [], ecartesParLesVentes: [RESERVE] })
+    expect(ignoresParLaRegle(RELEVE, { motif: 'horizon' }, AVEC)).toEqual({ aIgnorer: [], ecartesParLesVentes: [CANDIDAT] })
+    expect(ignoresParLaRegle(RELEVE, { motif: 'cpam' }, AVEC)).toEqual({ aIgnorer: [LIBRE], ecartesParLesVentes: [] })
   })
 
   it('ce que la carte d’un lot en dit : les candidats autrement que les mouvements portés', () => {

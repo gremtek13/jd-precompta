@@ -7,7 +7,7 @@ import { decoderUtf8OuWindows1252 } from './decodageTexte'
 import { controlerSolde, lignesDeSolde } from './soldeReleve'
 import { analyserAppariements, planRapprochementAutomatique } from './appariementBanque'
 import { justificatifPossible, planAffectationParRegles } from './reglesAffectation'
-import { statutPourLibelle } from './reglesIgnorees'
+import { statutPourMouvementSelon } from './reglesIgnorees'
 import { AUCUN_CANDIDAT, AUCUN_HORS_DES_LOTS } from './mouvementsDesVentes'
 import { AUCUNE_FACTURE_SOURCE } from './facturesSources'
 import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire } from './types'
@@ -168,13 +168,25 @@ describe('Relecture — « Toujours ignorer »', () => {
   // La règle est une SOUS-CHAÎNE, sans sens ni contrôle du motif (les règles d'affectation ont `refusMotif` et leur
   // sens) : née sur un prélèvement « PRLV CPAM PARTICIPATION », le motif « cpam » fait ignorer à l'import chaque
   // virement de recette de la CPAM ; le motif « prlv » chaque prélèvement.
-  // Le motif trop commun : CORRIGÉ le 31/10/2026 (le jugement des règles d'affectation, `refusMotif`). Le SENS, non : la
-  // table `regles_bancaires_ignorees` n'a pas de colonne `sens`, il faut une migration — ce cas reste `it.fails` jusque-là
-  // (la création de la règle nomme déjà les crédits qu'elle reconnaît, et l'import compte ceux qu'elle fait ignorer).
-  it.fails('une règle née d’un débit n’ignore pas un encaissement', () => {
-    expect(statutPourLibelle('VIR CPAM DES YVELINES 0325', [{ motif: 'cpam' }])).toBe('non_rapprochee')
+  // Le motif trop commun : CORRIGÉ le 31/10/2026 (le jugement des règles d'affectation, `refusMotif`). Le SENS : CORRIGÉ le
+  // 02/11/2026 derrière le drapeau de la migration `sens_des_regles_ignorees` (REGLES-Q1, préparée, lib/sensDesReglesIgnorees.ts)
+  // — la règle retient le sens du mouvement qui l'a créée. Le cas qui était `it.fails` passe, le drapeau levé (simulé par
+  // `statutPourMouvementSelon(true, …)`) ; baissé, la base d'aujourd'hui n'a pas la colonne, et la règle d'avant vaut pour
+  // les deux sens, comme le second cas le garde.
+  it('une règle née d’un débit n’ignore pas un encaissement (le drapeau levé)', () => {
+    expect(statutPourMouvementSelon(true, { libelle: 'VIR CPAM DES YVELINES 0325', montant: 120 }, [{ motif: 'cpam', sens: 'decaissement' }]))
+      .toBe('non_rapprochee')
+    expect(statutPourMouvementSelon(true, { libelle: 'PRLV CPAM PARTICIPATION', montant: -2 }, [{ motif: 'cpam', sens: 'decaissement' }]))
+      .toBe('ignoree')
+  })
+  it('baissé, ou une règle d’avant : le motif seul, comme hier', () => {
+    expect(statutPourMouvementSelon(false, { libelle: 'VIR CPAM DES YVELINES 0325', montant: 120 }, [{ motif: 'cpam', sens: 'decaissement' }]))
+      .toBe('ignoree')
+    expect(statutPourMouvementSelon(true, { libelle: 'VIR CPAM DES YVELINES 0325', montant: 120 }, [{ motif: 'cpam', sens: null }]))
+      .toBe('ignoree')
   })
   it('un motif fait d’un mot commun aux relevés se refuse', () => {
-    expect(statutPourLibelle('PRLV SEPA URSSAF', [{ motif: 'prlv' }])).toBe('non_rapprochee')
+    expect(statutPourMouvementSelon(false, { libelle: 'PRLV SEPA URSSAF', montant: -100 }, [{ motif: 'prlv' }])).toBe('non_rapprochee')
+    expect(statutPourMouvementSelon(true, { libelle: 'PRLV SEPA URSSAF', montant: -100 }, [{ motif: 'prlv', sens: 'decaissement' }])).toBe('non_rapprochee')
   })
 })

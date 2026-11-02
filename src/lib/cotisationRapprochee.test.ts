@@ -5,7 +5,9 @@ import {
   avertissementRetraitEcheance, compteeASonEcheance, cotisationsAEcrire, cotisationsComptees, csgDeLEcriture,
   ecritureDeLaCotisation, montantDeLEcheance, rapprochementsCotisationRefuses, REFUS_COTISATION_CLASSEE,
   REFUS_MONTANTS_PAIEMENT_PERSONNEL, refusMontantsDuPaiementPersonnel, refusRapprochementCotisation,
+  refusRapprochementCotisationSelon,
 } from './cotisationRapprochee'
+import { REFUS_MOUVEMENT_IGNORE, SENS_DES_REGLES_IGNOREES_EXPORTE } from './sensDesReglesIgnorees'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon } from './types'
@@ -158,6 +160,11 @@ describe('refusRapprochementCotisation — dit avant d’écrire ce que la base 
     const cas: [MouvementBancaire, CotisationDeclaree, string][] = [
       [mouvement({ reglement_groupe: true }), cotisation(), REFUS_REGLE_EN_GROUPE],
       [mouvement({ piece_id: 'p1', statut: 'rapprochee' }), cotisation(), REFUS_COTISATION_CLASSEE],
+      // Le refus neuf de la migration `sens_des_regles_ignorees` (REGLES-Q1), quand l'export la porte — le drapeau levé :
+      // sensDesReglesIgnorees.test.ts le confronte à son texte où qu'il soit, préparé ou exporté.
+      ...(SENS_DES_REGLES_IGNOREES_EXPORTE
+        ? [[mouvement({ statut: 'ignoree' }), cotisation(), 'Ce mouvement est ignoré'] as [MouvementBancaire, CotisationDeclaree, string]]
+        : []),
       [mouvement({ montant: 0 }), cotisation(), 'Un mouvement de zéro euro'],
       [mouvement(), cotisation({ montant_appele: 0 }), 'Une échéance de zéro euro'],
       [mouvement({ montant: 500 }), cotisation(), 'Ce mouvement est un encaissement'],
@@ -192,6 +199,44 @@ describe('refusRapprochementCotisation — dit avant d’écrire ce que la base 
     const declencheur = [...derniereDefinitionSql('garder_mouvement_paiement_personnel').matchAll(/raise exception '((?:[^']|'')*)'/g)]
       .map((m) => m[1].replace(/''/g, "'"))
     expect(declencheur).toEqual([message!.replace('10/01/2026', '%')])
+  })
+})
+
+// UN MOUVEMENT IGNORÉ NE PAIE PAS UNE ÉCHÉANCE (REGLES-Q1 ; la migration `sens_des_regles_ignorees`, préparée). Le drapeau
+// joué dans ses deux états, écrits : baissé, l'écran ne dit pas un refus que la base d'aujourd'hui ne fait pas ; levé, le refus
+// neuf, à son rang — après le classement, avant le zéro.
+describe('refusRapprochementCotisation — un mouvement ignoré', () => {
+  it('levé : refusé sous les mots de la base ; un virement personnel garde le refus d’un mouvement classé ; avant le zéro', () => {
+    expect(refusRapprochementCotisationSelon(true, mouvement({ statut: 'ignoree' }), cotisation(), 'tresorerie')).toBe(REFUS_MOUVEMENT_IGNORE.message)
+    expect(refusRapprochementCotisationSelon(true, mouvement({ statut: 'ignoree' }), cotisation(), 'engagement')).toBe(REFUS_MOUVEMENT_IGNORE.message)
+    expect(refusRapprochementCotisationSelon(true, mouvement({ statut: 'ignoree', prelevement_personnel: true }), cotisation(), 'tresorerie'))
+      .toBe(REFUS_COTISATION_CLASSEE)
+    expect(refusRapprochementCotisationSelon(true, mouvement({ statut: 'ignoree', montant: 0 }), cotisation(), 'tresorerie'))
+      .toBe(REFUS_MOUVEMENT_IGNORE.message)
+    expect(refusRapprochementCotisationSelon(true, mouvement({ statut: 'ignoree', reglement_groupe: true }), cotisation(), 'tresorerie'))
+      .toBe(REFUS_REGLE_EN_GROUPE)
+    // À traiter, ou rapproché d'une échéance : rien de neuf.
+    expect(refusRapprochementCotisationSelon(true, mouvement(), cotisation(), 'tresorerie')).toBeNull()
+    expect(refusRapprochementCotisationSelon(true, rapproche({ cotisation_id: 'autre' }), cotisation(), 'tresorerie')).toBeNull()
+  })
+
+  it('baissé : rien de plus qu’hier', () => {
+    expect(refusRapprochementCotisationSelon(false, mouvement({ statut: 'ignoree' }), cotisation(), 'tresorerie')).toBeNull()
+    expect(refusRapprochementCotisationSelon(false, mouvement({ statut: 'ignoree', montant: 0 }), cotisation(), 'tresorerie'))
+      .toBe('Un mouvement de zéro euro n’a rien à écrire.')
+    expect(refusRapprochementCotisationSelon(false, mouvement({ statut: 'ignoree', prelevement_personnel: true }), cotisation(), 'tresorerie'))
+      .toBe(REFUS_COTISATION_CLASSEE)
+  })
+
+  it('la fonction sans suffixe suit le drapeau du module', () => {
+    expect(refusRapprochementCotisation(mouvement({ statut: 'ignoree' }), cotisation(), 'tresorerie'))
+      .toBe(SENS_DES_REGLES_IGNOREES_EXPORTE ? REFUS_MOUVEMENT_IGNORE.message : null)
+  })
+
+  it('une échéance comptée ne change pas : seul un mouvement rapproché la date, et il n’est jamais ignoré', () => {
+    const lignes = [rapproche(), mouvement({ id: 'l2', statut: 'ignoree' })]
+    expect(cotisationsComptees([cotisation()], lignes, 'tresorerie').map((c) => [c.date, c.ligne?.id ?? null, c.refus]))
+      .toEqual([['2026-01-06', 'l1', null]])
   })
 })
 

@@ -8,6 +8,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { COLONNES_ENCAISSEMENTS_ECRITURES } from '../../lib/ecrituresVentesFactureesLecture'
 import { REFUS_GARDE_MOUVEMENTS } from '../../lib/encaissementsFactures'
+import { SENS_DES_REGLES_IGNOREES_EXPORTE } from '../../lib/sensDesReglesIgnorees'
 
 // LES LOTS DU RELEVÉ ÉCARTENT LES MOUVEMENTS DES VENTES FACTURÉES (ligne 28.65, chantier EC-Q3, étape VF5a2). Les plans
 // sont éprouvés à part (lib/lotsDuReleve.test.ts) ; ici, le CÂBLAGE : sur un dossier basculé, chaque lot — le rapprochement
@@ -288,7 +289,9 @@ describe('un dossier basculé, ses ventes facturées lues en entier : aucun lot 
     await cliquer(within(volet()).getByRole('button', { name: 'Toujours ignorer ce type…' }), 1)
     await waitFor(() => expect(mouvementsEcrits()).toEqual(['m-libre-regle']))
     expect(prompt).toHaveBeenCalledTimes(1)
-    expect(faux.ecritures.filter((e) => e.table === 'regles_bancaires_ignorees').map((e) => e.valeur)).toEqual([{ dossier_id: D, motif: 'gamma' }])
+    // Née d'un crédit : le drapeau du sens levé (REGLES-Q1), la règle retient « encaissement » ; baissé, la ligne d'hier.
+    expect(faux.ecritures.filter((e) => e.table === 'regles_bancaires_ignorees').map((e) => e.valeur))
+      .toEqual([{ dossier_id: D, motif: 'gamma', ...(SENS_DES_REGLES_IGNOREES_EXPORTE ? { sens: 'encaissement' } : {}) }])
     expect(alerte).toHaveBeenCalledTimes(1)
     expect(espaces(String(alerte.mock.calls[0][0]))).toContain('1 mouvement écarté : il porte des encaissements de factures.')
     expect(espaces(String(alerte.mock.calls[0][0]))).toContain(`05/06/2026 — VIR GAMMA SANTE F2026-0017 — 120,00 € : ${MOTS('F2026-0017')}`)

@@ -55,7 +55,8 @@ import { libellePeriode } from '../../lib/declarationTva'
 import {
   ecritureDuPaiementTva, paiementTvaPlausible, raisonPaiementTvaPlausible, refusPaiementTva, suiviDesDeclarations,
 } from '../../lib/liquidationTva'
-import { autreSensReconnu, ignoresParLaRegle, phraseDesIgnores, regleOperante, statutPourLibelle } from '../../lib/reglesIgnorees'
+import { autreSensReconnu, ignoresParLaRegle, phraseDesIgnores, regleOperante, statutPourMouvement } from '../../lib/reglesIgnorees'
+import { motsDuSens, refusDeLaRegleNeuveSelon, SENS_DES_REGLES_IGNOREES_EXPORTE, sensDeLaRegleSelon } from '../../lib/sensDesReglesIgnorees'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import PanneauDroit from '../../components/PanneauDroit'
 import ConnexionBancaireCard from './ConnexionBancaireCard'
@@ -335,7 +336,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     // Troisième drapeau, et sa conséquence n'est celle d'aucun des deux autres. Les cotisations sont
     // des CANDIDATES au rapprochement automatique et alimentent le compte « sans mouvement » ; les
     // règles, elles, décident du `statut` ÉCRIT EN BASE à l'import d'un relevé
-    // (`statutPourLibelle`). Une liste de règles tronquée n'affiche donc pas seulement de travers :
+    // (`statutPourMouvement`). Une liste de règles tronquée n'affiche donc pas seulement de travers :
     // elle importe des mouvements « à traiter » qu'une règle couvre, et aucun rechargement ne le
     // répare ensuite.
     setReferencesIncompletes(
@@ -1233,20 +1234,35 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       window.alert(`La règle n’a pas été enregistrée : ${ventesRetenues}. Recharge la page.`)
       return false
     }
+    // LE SENS (REGLES-Q1, lib/sensDesReglesIgnorees.ts) : le drapeau levé, la règle retient celui du mouvement qui la crée,
+    // et le dit dès la question ; baissé, la table ne le retient pas, et la question d'hier.
+    const parSens = SENS_DES_REGLES_IGNOREES_EXPORTE
+    const sens = sensDuMouvement(ligne)
+    // Un mouvement de zéro euro n'a pas de sens à retenir : dit avant de demander le motif, levé (le refus d'après le motif,
+    // plus bas, le redit — la même fonction).
+    const sansSens = refusDeLaRegleNeuveSelon(parSens, sens, '', [])
+    if (sansSens) { window.alert(`La règle n’a pas été enregistrée. ${sansSens}`); return false }
     // Le motif proposé est celui des règles d'affectation (`motifPropose`), le premier mot qui nomme le tiers — jamais le
     // libellé entier, qui ne reconnaîtrait que ce mouvement-là. Il se juge comme elles (`refusMotif`) et s'enregistre sous
     // leur forme normalisée, celle que l'import compare (lib/reglesIgnorees.ts).
     const motif = window.prompt(
-      'Mot-clé stable qui identifie ce type de mouvement récurrent (ex. "MACSF", "SWISSLIFE") — toute future ligne dont le libellé contient un mot commençant ainsi sera automatiquement ignorée.',
+      parSens && sens !== null
+        ? `Mot-clé stable qui identifie ce type de mouvement récurrent (ex. "MACSF", "SWISSLIFE") — tout futur ${sens === 'encaissement' ? 'encaissement' : 'paiement'} dont le libellé contient un mot commençant ainsi sera automatiquement ignoré ; les ${sens === 'encaissement' ? 'paiements' : 'encaissements'}, non.`
+        : 'Mot-clé stable qui identifie ce type de mouvement récurrent (ex. "MACSF", "SWISSLIFE") — toute future ligne dont le libellé contient un mot commençant ainsi sera automatiquement ignorée.',
       motifPropose(ligne, lignes) ?? ligne.libelle,
     )
     if (!motif || !motif.trim()) return false
     const refus = refusMotif(motif)
     if (refus) { window.alert(`La règle n’a pas été enregistrée. ${refus}`); return false }
     const motifNormalise = normaliserPourRegle(motif)
-    // LE SENS, que la table ne retient pas : une règle née d'un débit ferait ignorer aussi les crédits qu'elle reconnaît —
-    // ceux déjà importés et ceux des prochains relevés. Nommés avant le clic, jamais tus.
-    const autreSens = autreSensReconnu(ligne, motifNormalise, lignes)
+    // Levé : un mouvement de zéro euro n'a pas de sens à retenir, et la même règle — même motif, même sens — se refuserait
+    // (la clé `regles_bancaires_ignorees_unique`) ; dits avant d'écrire. Baissé : rien de plus qu'hier.
+    const refusDeLaRegle = refusDeLaRegleNeuveSelon(parSens, sens, motifNormalise, regles)
+    if (refusDeLaRegle) { window.alert(`La règle n’a pas été enregistrée. ${refusDeLaRegle}`); return false }
+    // LE SENS, que la table ne retient pas tant que le drapeau est baissé : une règle née d'un débit ferait ignorer aussi les
+    // crédits qu'elle reconnaît — ceux déjà importés et ceux des prochains relevés. Nommés avant le clic, jamais tus. Levé,
+    // la règle ne prend que son sens : rien à nommer.
+    const autreSens = parSens ? [] : autreSensReconnu(ligne, motifNormalise, lignes)
     if (autreSens.length > 0) {
       const lesquels = ligne.montant < 0 ? 'encaissement' : 'paiement'
       const exemples = autreSens.slice(0, 5).map((l) => `${formatDate(l.date)} — ${libelleExploitable(l)} — ${formatMoney(l.montant)}`)
@@ -1258,13 +1274,16 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       )) return false
     }
 
-    const { error } = await supabase.from('regles_bancaires_ignorees').insert({ dossier_id: dossierId, motif: motifNormalise })
+    // Baissé, la ligne d'hier, sans la clé `sens` : la base d'avant la migration refuserait une colonne qu'elle n'a pas.
+    const { error } = await supabase.from('regles_bancaires_ignorees').insert(
+      parSens ? { dossier_id: dossierId, motif: motifNormalise, sens } : { dossier_id: dossierId, motif: motifNormalise },
+    )
     if (error) {
       window.alert(`La règle n'a pas pu être enregistrée : ${error.message}`)
       return false
     }
 
-    const { aIgnorer: aMettreAJour, ecartesParLesVentes } = ignoresParLaRegle(lignes, motifNormalise, horsDesLotsEtCandidats)
+    const { aIgnorer: aMettreAJour, ecartesParLesVentes } = ignoresParLaRegle(lignes, { motif: motifNormalise, sens }, horsDesLotsEtCandidats)
     if (aMettreAJour.length > 0) {
       const { error: errMaj } = await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).in('id', aMettreAJour.map((l) => l.id))
       if (errMaj) window.alert(`La règle est enregistrée, mais les mouvements déjà importés n'ont pas pu être ignorés : ${errMaj.message}`)
@@ -1914,8 +1933,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             Ignorés automatiquement :{' '}
             {regles.map((r) => (
               <span key={r.id} className="badge badge-neutral" style={{ marginRight: 6 }}>
-                {/* Inopérante (`regleOperante`) : son motif ne désigne pas un tiers, elle ne fait plus rien ignorer. */}
+                {/* Inopérante (`regleOperante`) : son motif ne désigne pas un tiers, elle ne fait plus rien ignorer. Le
+                    drapeau levé (REGLES-Q1), le sens qu'elle retient, comme une règle d'affectation : « les deux sens »
+                    pour une règle d'avant, qui fait ignorer aussi les encaissements. */}
                 {regleOperante(r) ? r.motif : `${r.motif} (inopérante : motif trop commun)`}
+                {SENS_DES_REGLES_IGNOREES_EXPORTE && ` · ${motsDuSens(sensDeLaRegleSelon(true, r))}`}
                 <button
                   type="button"
                   onClick={() => retirerRegle(r.id)}
@@ -2837,7 +2859,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const { error } = await supabase.from('lignes_bancaires').insert(
         aInserer.map((r) => ({
           dossier_id: dossierId, date: r.date, libelle: r.libelle, montant: r.montant,
-          statut: statutPourLibelle(r.libelle, regles), source_fichier: sourceFileName,
+          statut: statutPourMouvement(r, regles), source_fichier: sourceFileName,
         })),
       )
       if (error) throw error
@@ -2894,7 +2916,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       // comptées, leur raison dite (`interpreterReleve`) : un montant illisible ne vaut jamais zéro.
       const { operations, soldes, ecartees } = interpretation
       const toInsert = operations.map((o) => ({
-        dossier_id: dossierId, date: o.date, libelle: o.libelle, montant: o.montant, statut: statutPourLibelle(o.libelle, regles),
+        dossier_id: dossierId, date: o.date, libelle: o.libelle, montant: o.montant, statut: statutPourMouvement(o, regles),
         source_fichier: sourceFileName, libelle_brut: o.brut,
       }))
 
