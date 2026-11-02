@@ -46094,10 +46094,12 @@ cette facture ; un accès « Ventes » ne la validerait pas tant que … ». L'a
 est celle du centime : une facture au demi-centime validée par l'ancien front après la migration, ou par le nouveau avant,
 ne se retrouverait pas dans ses lignes (un encaissement s'y refuserait) :
 1. la lecture du jour, en production, par `execute_sql` — des booléens, aucun compte (tous vrais sur la réplique) ; celle de
-   l'agent du 31/10/2026, plus un booléen : la série du dossier du client d'essai, où les blocs VB, FE et SI de `rls.sql`
-   valident à des dates fixes (le 01/03/2025, le 15/06/2025, le 10/01/2026) — une facture validée de ce dossier datée
-   d'après le 01/03/2025 les ferait tomber par l'ordre de la série (éprouvé sur la réplique : une facture du 20/06/2025
-   plantée, le booléen faux, FE et VB en faute) :
+   l'agent du 31/10/2026, plus un booléen : les séries du dossier du client d'essai où `rls.sql` valide à des dates fixes,
+   jugées SÉRIE PAR SÉRIE — F1999 (M5ter et le bloc du droit « Ventes », le 15/01/1999) et F2025 (VB le 01/03/2025, FE le
+   15/06/2025) : une facture validée de la série datée d'après la plus ancienne la ferait tomber par l'ordre de la série
+   (éprouvé sur la réplique, la migration et les six factures F2026 de la production plantées : une F1999 du 20/01/1999,
+   le booléen faux, M5ter et 3bis en faute ; une F2025 du 20/06/2025, faux, FE et VB en faute ; une F2025 du 01/03/2025,
+   vrai, rien en faute). La série F2026 n'en est plus un : SI calcule sa date (ci-dessous) :
 
 ```sql
 select
@@ -46121,9 +46123,10 @@ select
                  and f.dossier_id in ('001c7ed7-c23b-4590-901e-693489f8af24', 'ac538d93-7da3-4403-bca6-2d7836810a6f')
                  and f.date_emission >= (now() at time zone 'Europe/Paris')::date) as essais_sans_obstacle,
   not exists (select 1 from public.factures_emises f
-               where f.statut = 'validee' and f.type = 'facture'
-                 and f.dossier_id = 'ac538d93-7da3-4403-bca6-2d7836810a6f'
-                 and f.date_emission > date '2025-03-01') as dossier_du_client_sans_obstacle;
+               where f.statut = 'validee' and f.dossier_id = 'ac538d93-7da3-4403-bca6-2d7836810a6f'
+                 and ((split_part(f.numero, '-', 1) = 'F1999' and f.date_emission > date '1999-01-15')
+                   or (split_part(f.numero, '-', 1) = 'F2025' and f.date_emission > date '2025-03-01')))
+    as dossier_du_client_sans_obstacle;
 ```
 
 2. la migration par `apply_migration`, la ligne d'historique relue à l'empreinte du fichier, le fichier dans l'export sous
@@ -46137,6 +46140,23 @@ select
 
 **CE QUI RESTE.** FACTURE-Q4 avec A7c ; les refus de la date dits avant le clic (la série lue en entier) ; `ventesClient.sql`
 0c, hors de l'étape.
+
+**LE BLOC SI DE `RLS.SQL` TOMBAIT EN PRODUCTION, ET LE BOOLÉEN JUGEAIT MAL** (relu avant l'application). La production porte,
+dans le dossier du client d'essai, six factures validées de la série F2026 (trois du 09/09/2026, trois du 10/09/2026 ;
+fictives, indélébiles), que la réplique n'avait pas. Plantées sur la réplique par le chemin de la restauration (le
+super-administrateur, sur un dossier sans numérotation, puis la numérotation posée à 6), tous les essais rejoués avec la
+migration, sans et avec elles : la seule différence de verdict est le bloc SI, dont la facture du 10/01/2026 se refusait
+par l'ordre de la série (« précède celle de F2026-0006 (le 10/09/2026) ») — et avec elle SI1 à SI4 et leurs trois
+mutations ; FE (le 15/06/2025) et VB (le 01/03/2025) passent, la série F2025 étant vide, et n'ont pas été touchés. La
+correction : la date de la facture de SI se calcule — la plus tardive du 10/01/2026 et de la plus récente facture validée
+F2026 du dossier —, l'encaissement cinq jours après, sans quitter le mois de la facture ni dépasser le jour de Paris, et
+SI1 juge l'ÉCART du total du mois (relu par le client avant la construction, puis après), jamais une valeur que les autres
+lignes du dossier feraient varier. `rls.sql` entier, sans et avec la migration, sans et avec les six factures : 158 lignes
+de verdict, 0 en faute, toutes ses mutations mordent ; muté (l'encaissement retiré, le mois d'après), SI1 tombe ; une
+autre facture source encaissée le même mois le laisse vrai, quand l'ancien contrôle absolu tombait ; le banc du leurre
+SÛR dans les quatre configurations. Le booléen `dossier_du_client_sans_obstacle` disait « toute facture d'après le
+01/03/2025 » : faux sur la production pour ces six factures qui ne gênent plus rien ; il juge désormais par série (F1999,
+F2025), ci-dessus.
 
 ### 02/11/2026 — LA FACTURE : LA MIGRATION EN PRODUCTION (FACTURE-Q1)
 

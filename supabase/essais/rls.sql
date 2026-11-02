@@ -2583,6 +2583,8 @@ end $$;
 -- RLS : elle se rejoue, chaque refus jugé à sa RAISON.
 --   SI1. Le client qui porte « Banque » sur son dossier basculé la lit, et y trouve le hors-taxe de sa facture source et
 --        son identifiant — le contrôle POSITIF : sans lui, une fonction qui refuserait tout le monde passerait la suite.
+--        Le hors-taxe se juge par l'ÉCART : le total du mois relu avant la construction, puis après — jamais une valeur
+--        que les autres lignes du dossier feraient varier.
 --   SI2. Sans « Banque » — « Ventes » seule, puis aucune case —, sur son propre dossier : « Accès refusé à ce dossier. »
 --        (42501).
 --   SI3. L'autre dossier, où il n'a aucun accès, ses deux cases posées sur le sien : refusé de même.
@@ -2592,8 +2594,11 @@ end $$;
 -- Trois mutations, qui doivent mordre : M-SI1 (SI1 rejoué sans « Banque » : refusé), M-SI2 (SI2 rejoué avec « Banque » :
 -- accepté), M-SI3 (l'exécution rendue à l'anonyme : il lit la raison de la fonction, plus le droit d'exécution). Le jeu,
 -- dans le dossier du client, le temps d'une sous-transaction annulée : le dossier bascule ; le chef y valide une facture
--- source de janvier 2026, de 100 € hors taxe, et son encaissement du même mois. Avant la migration, une ligne dit que la
--- simulation attend.
+-- source de 2026, de 100 € hors taxe, et son encaissement du même mois. Sa date se CALCULE : le 10/01/2026, ou la plus
+-- récente des factures validées de la série F2026 du dossier si elle est plus tardive — la garde des factures refuse
+-- une date d'avant (la correction de la facture, 02/11/2026), et la production porte des factures validées de cette
+-- série dans ce dossier ; l'encaissement cinq jours après, dans le même mois, jamais après le jour de Paris. Avant la
+-- migration, une ligne dit que la simulation attend.
 do $$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -2604,6 +2609,7 @@ declare
   refus text := 'Accès refusé à ce dossier.';
   f_source uuid; profil text; n bigint; v jsonb;
   accepte boolean; motif text; message text; erreur text; construit boolean := false; obs text;
+  jour_facture date; jour_encaissement date; mois text; avant bigint;
   verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
 begin
   if to_regprocedure('public.ventes_facturees_de_la_simulation(uuid, integer)') is null then
@@ -2621,12 +2627,28 @@ begin
      where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
     -- En franchise le temps du bloc, la facture portant sa mention (la correction de la facture, 31/10/2026).
     update dossiers set statut_tva = 'franchise', article_exoneration = null where id = dossier_du_client;
+    -- La date de la facture : le 10/01/2026, ou la plus récente facture validée de sa série si elle est plus tardive
+    -- (`greatest` ignore le nul d'une série vide) ; l'encaissement cinq jours après, sans quitter le mois de la facture
+    -- (qu'une simulation en trésorerie compte à l'encaissement, en engagement à l'émission) ni dépasser le jour de Paris.
+    select greatest(date '2026-01-10', max(f.date_emission)) into jour_facture
+      from factures_emises f
+     where f.dossier_id = dossier_du_client and f.statut = 'validee' and split_part(f.numero, '-', 1) = 'F2026';
+    jour_encaissement := least(jour_facture + 5, (date_trunc('month', jour_facture) + interval '1 month - 1 day')::date,
+                               (now() at time zone 'Europe/Paris')::date);
+    mois := to_char(jour_facture, 'YYYY-MM');
+    -- Le total du mois AVANT la construction, lu comme SI1 le lira : SI1 juge l'écart.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    avant := coalesce((ventes_facturees_de_la_simulation(dossier_du_client, 2026) -> 'par_mois' ->> mois)::bigint, 0);
+    reset role;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
-      '{"tiers_nom":"ESSAI RLS SI","date_emission":"2026-01-10","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      jsonb_build_object('tiers_nom', 'ESSAI RLS SI', 'date_emission', jour_facture,
+        'mentions_legales', 'TVA non applicable, art. 293 B du CGI.', 'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120,
+        'type_client', 'assujetti', 'nature_operation', 'services'),
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
-    perform enregistrer_encaissement(dossier_du_client, f_source, '2026-01-15', 120, 'cheque', null, '[{"taux":20,"montant":120}]'::jsonb);
+    perform enregistrer_encaissement(dossier_du_client, f_source, jour_encaissement, 120, 'cheque', null, '[{"taux":20,"montant":120}]'::jsonb);
     reset role;
     construit := true;
 
@@ -2643,7 +2665,8 @@ begin
     reset role;
     verdicts := verdicts || jsonb_build_object('controle', 'SI1. le client « Banque » lit la simulation de son dossier basculé (contrôle positif)',
       'cible', 'ventes_facturees_de_la_simulation', 'observe', case when accepte then coalesce(v::text, '∅') else motif || ' ' || message end,
-      'ok', accepte and motif = 'P0001' and (v -> 'par_mois' ->> '2026-01')::bigint = 10000 and (v -> 'sources') ? f_source::text);
+      'ok', accepte and motif = 'P0001' and coalesce((v -> 'par_mois' ->> mois)::bigint, 0) - avant = 10000
+        and (v -> 'sources') ? f_source::text);
 
     -- M-SI1 : le même, sans « Banque ».
     obs := null;
