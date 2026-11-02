@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, formatDate } from '../lib/format'
+import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, aujourdHuiAParis, formatDate } from '../lib/format'
 import { lireAnneesCloturees } from '../lib/clotureExercice'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../lib/resteAEnvoyer'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, PieceCommentaire } from '../lib/types'
@@ -24,6 +24,13 @@ import {
 } from '../lib/adresseCollecte'
 import { useCopieDuTexte } from '../lib/copieDuTexte'
 import PiecesJointesEcarteesClient from './PiecesJointesEcarteesClient'
+import PaiementParMaCaisse from './PaiementParMaCaisse'
+import { droitsSur } from '../lib/droitsAcces'
+import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
+import { lireLaCaisseDuClient, type LectureDeLaCaisseDuClient } from '../lib/caisseClientLecture'
+import {
+  caisseDeMesPieces, libelleDuGeste, paiementDit, paiementsDeLaPiece, payableParLaCaisse, pieceVueParLeClient, premiereAnneeLue,
+} from '../lib/paiementDeMesPieces'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const LABEL_CATEGORIE: Record<DocumentDivers['categorie'], string> = {
@@ -45,11 +52,14 @@ interface Depot {
   // Ce sur quoi une précision se rattache. Null tant que le fichier est en cours d'analyse : aucune
   // ligne n'existe encore en base, il n'y a rien à commenter.
   cible: CibleCommentaire | null
+  // La pièce elle-même, pour le paiement par la caisse (étape C12b) ; nulle pour un document ou un envoi en cours.
+  piece: Piece | null
 }
 
 export default function ClientUpload() {
-  const { dossierActifId } = useAuth()
+  const { dossierActifId, droitsParDossier, session } = useAuth()
   const dossierId = dossierActifId
+  const moi = session?.user.id ?? null
   const [pieces, setPieces] = useState<Piece[]>([])
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
   // Les mois où le relevé porte un mouvement : l'accueil les lit de la même façon (voir ClientHome) — par
@@ -103,6 +113,29 @@ export default function ClientUpload() {
   // l'accueil, écrite une fois (lib/piecesJointesEcarteesClientLecture.ts, ligne 22.94) : gardée avec la société, annulée à
   // son changement, nulle tant qu'elle n'est pas revenue ; rien ne se lit tant que la fonction n'est pas en base.
   const ecartees = useEcarteesDuClient(dossierId)
+
+  // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (étape C12b ; CAISSE2-Q4, (A)) : avec la case « Caisse » sur la société affichée
+  // (lue à la connexion), la caisse se lit — et la case se RELIT à la base avec elle (lib/caisseClientLecture.ts) — depuis
+  // l'année d'avant. Sans la case, rien ne se lit et « Mes pièces » est celle d'hier. Gardée avec la société et l'année lues :
+  // une réponse d'une autre société ne s'affiche pas (`caisseDeMesPieces`).
+  const caisseOuverte = moi !== null && maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).caisse)
+  const aujourdhui = aujourdHuiAParis()
+  const anneeEnCours = Number(aujourdhui.slice(0, 4))
+  const [caisseLue, setCaisseLue] = useState<LectureDeLaCaisseDuClient | null>(null)
+  // Les pièces lues EN ENTIER : sans elles, aucun paiement ne s'offre (la base refuserait une pièce qu'elles ne portent pas).
+  const [piecesEntieres, setPiecesEntieres] = useState(false)
+  // Le paiement ouvert sous une pièce : une seule à la fois.
+  const [paiementOuvert, setPaiementOuvert] = useState<string | null>(null)
+  useEffect(() => {
+    if (!dossierId || !caisseOuverte) return
+    let annule = false
+    lireLaCaisseDuClient(dossierId, premiereAnneeLue(anneeEnCours), anneeEnCours).then((l) => { if (!annule) setCaisseLue(l) })
+    return () => { annule = true }
+  }, [dossierId, caisseOuverte, anneeEnCours])
+  async function relireLaCaisse() {
+    if (!dossierId) return
+    setCaisseLue(await lireLaCaisseDuClient(dossierId, premiereAnneeLue(anneeEnCours), anneeEnCours))
+  }
 
   // L'adresse e-mail de collecte du dossier (ligne 22.93), lue À PART : sa lecture ratée ne rend aucune autre liste fausse, et
   // elle ne dit que l'adresse. Gardée AVEC le dossier pour lequel elle a été faite — nulle tant qu'elle n'est pas revenue :
@@ -160,6 +193,7 @@ export default function ClientUpload() {
         .find((l) => !l.complete)?.motif ?? null,
     )
     setDepotsIncomplets(!lecturePieces.complete || !lectureDocuments.complete)
+    setPiecesEntieres(lecturePieces.complete)
     setCotisations(lectureCotisations.lignes)
     setCommentaires(commentairesData.commentaires)
     setPrecisionsIncompletes(commentairesData.motif)
@@ -220,6 +254,7 @@ export default function ClientUpload() {
       label: p.statut === 'validee' ? 'Facture — traitée' : 'Facture — en attente de traitement',
       traite: p.statut === 'validee',
       cible: { type: 'piece', id: p.id },
+      piece: p,
     })),
     ...documents.map((d): Depot => ({
       id: `doc-${d.id}`,
@@ -228,14 +263,21 @@ export default function ClientUpload() {
       label: LABEL_CATEGORIE[d.categorie],
       traite: true,
       cible: { type: 'document', id: d.id },
+      piece: null,
     })),
     ...enCours.map((f): Depot => ({
       id: f.id, nomFichier: f.nomFichier, createdAt: new Date().toISOString(), label: 'Analyse en cours…', traite: false,
       cible: null,
+      piece: null,
     })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 
   const parCible = commentairesParCible(commentaires)
+
+  const caisse = caisseDeMesPieces({
+    ouverte: caisseOuverte, lecture: caisseLue, dossierId, anneeEnCours, moi: moi ?? '', aujourdhui,
+    piecesLuesEnEntier: !chargement && piecesEntieres,
+  })
 
   // La recherche porte aussi sur les précisions : « salle d'attente » est souvent tout ce dont le
   // client se souvient d'un dépôt, bien plus sûrement que le nom du fichier que son téléphone a
@@ -406,6 +448,8 @@ export default function ClientUpload() {
       {error && <p className="error-text" style={{ marginBottom: 14 }}>{error}</p>}
 
       <h3>Mes dépôts</h3>
+      {caisse.etat === 'muette' && <p className="error-text" style={{ marginBottom: 14 }}>{caisse.texte}</p>}
+      {caisse.etat === 'lue' && caisse.raison !== null && <p className="muted" style={{ marginBottom: 14 }}>{caisse.raison}</p>}
       <div style={{ marginBottom: 14 }}>
         <BarreRecherche
           valeur={recherche}
@@ -434,12 +478,17 @@ export default function ClientUpload() {
         ) : (
           <div className="tableau-adaptable">
             <table className="table-empilable table-empilable-en-carte">
-              <thead><tr><th>Fichier</th><th>Déposé le</th><th>Statut</th><th>Précisions</th></tr></thead>
+              <thead><tr><th>Fichier</th><th>Déposé le</th><th>Statut</th><th>{caisseOuverte ? 'Gestes' : 'Précisions'}</th></tr></thead>
               <tbody>
                 {depotsAffiches.map((d) => {
                   const cle = d.cible ? cleCible(d.cible) : null
                   const fil = cle ? parCible.get(cle) ?? [] : []
                   const ouvert = cle !== null && filOuvert === cle
+                  // La caisse lue en entier : les paiements de la pièce, et le geste quand la caisse le permet.
+                  const paiements = caisse.etat === 'lue' && d.piece ? paiementsDeLaPiece(d.piece.id, caisse.operations) : []
+                  const especes = caisse.etat === 'lue' && caisse.dossier !== null && d.piece !== null
+                    && (payableParLaCaisse(d.piece) || paiements.length > 0) ? d.piece : null
+                  const especesOuvertes = especes !== null && paiementOuvert === especes.id
                   return (
                     <Fragment key={d.id}>
                       <tr>
@@ -451,6 +500,9 @@ export default function ClientUpload() {
                             : d.traite
                               ? <span className="badge badge-ok">{d.label}</span>
                               : <span className="badge badge-neutral">{d.label}</span>}
+                          {paiements.map((o) => (
+                            <span key={o.id} className="muted" style={{ display: 'block', fontSize: '0.82rem' }}>{paiementDit(o, moi ?? '')}</span>
+                          ))}
                         </td>
                         <td className="td-boutons">
                           {/* Rien à commenter tant que l'analyse tourne : la ligne n'existe pas encore. */}
@@ -465,8 +517,35 @@ export default function ClientUpload() {
                               {fil.length > 0 ? `💬 ${fil.length}` : '+ Préciser'}
                             </button>
                           )}
+                          {especes !== null && (
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              aria-expanded={especesOuvertes}
+                              onClick={() => setPaiementOuvert(especesOuvertes ? null : especes.id)}
+                            >
+                              {paiements.length > 0 || !payableParLaCaisse(especes) ? 'Espèces de ta caisse' : libelleDuGeste(pieceVueParLeClient(especes))}
+                            </button>
+                          )}
                         </td>
                       </tr>
+                      {especesOuvertes && especes !== null && caisse.etat === 'lue' && caisse.dossier !== null && dossierId && moi && (
+                        <tr>
+                          <td colSpan={4} style={{ background: 'var(--color-surface-2)' }}>
+                            <PaiementParMaCaisse
+                              dossierId={dossierId}
+                              piece={especes}
+                              dossier={caisse.dossier}
+                              operations={caisse.operations}
+                              jours={caisse.jours}
+                              moi={moi}
+                              anneeEnCours={anneeEnCours}
+                              aujourdhui={aujourdhui}
+                              relire={relireLaCaisse}
+                            />
+                          </td>
+                        </tr>
+                      )}
                       {ouvert && d.cible && dossierId && (
                         <tr>
                           <td colSpan={4} style={{ background: 'var(--color-surface-2)' }}>

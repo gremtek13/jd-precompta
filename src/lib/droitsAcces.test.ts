@@ -253,10 +253,17 @@ describe('le module, la migration et les écrans disent la même chose', () => {
       const texte = readFileSync(resolve(process.cwd(), `src/pages/${fichier}`), 'utf8')
       expect(texte, fichier).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b|supabase/)
     }
-    for (const fichier of ['ClientInformations.tsx', 'ClientUpload.tsx'].map((f) => `src/pages/${f}`)) {
+    for (const fichier of ['ClientInformations.tsx'].map((f) => `src/pages/${f}`)) {
       const texte = readFileSync(resolve(process.cwd(), fichier), 'utf8')
       expect(texte, fichier).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b|droitsAcces/)
     }
+    // DEPUIS L'ÉTAPE C12b, « Mes pièces » lit la case « Caisse » sous la garde de la route de « Ma caisse », pour le paiement
+    // d'une pièce par la caisse, et rien d'autre ; la lecture de la caisse la relit à la base (lib/caisseClientLecture.ts).
+    const mesPieces = readFileSync(resolve(process.cwd(), 'src/pages/ClientUpload.tsx'), 'utf8')
+    expect(mesPieces).toContain('maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).caisse)')
+    expect(mesPieces).not.toMatch(/droit_ventes|droit_banque|droit_caisse|\.ventes\b|\.banque\b/)
+    expect(mesPieces.match(/droitsSur\(/g)).toHaveLength(1)
+    expect(mesPieces).toContain('lireLaCaisseDuClient(')
     const simulation = readFileSync(resolve(process.cwd(), 'src/pages/ClientSimulation.tsx'), 'utf8')
     expect(simulation).toContain('simulationOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)')
     expect(simulation).not.toMatch(/droit_ventes|droit_banque|\.ventes\b/)
@@ -1557,17 +1564,21 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     expect(derniereDefinitionSql('enregistrer_operation_caisse')).toContain('categorie_recettes_client')
   })
 
-  it('« Ma caisse » existe (étape C12a) : la phrase et la confirmation la nomment, et taisent le paiement d’une pièce, à venir', () => {
+  it('« Ma caisse » (étape C12a) et le paiement d’une pièce dans « Mes pièces » (étape C12b) : la phrase et la confirmation les nomment', () => {
     const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
     expect(app).toMatch(/<Route path="\/ma-caisse" element={<ClientCaisse \/>} \/>/)
     expect(readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^ClientCaisse\.tsx$/.test(f))).toEqual(['ClientCaisse.tsx'])
     expect(CE_QUE_MONTRE_MA_CAISSE).toContain('« Ma caisse »')
-    expect(CE_QUE_MONTRE_MA_CAISSE).toContain('le paiement d’une pièce en espèces n’y a pas encore son écran')
+    expect(CE_QUE_MONTRE_MA_CAISSE).toContain('dans « Mes pièces », il dit qu’une pièce est payée en espèces de sa caisse')
+    expect(CE_QUE_MONTRE_MA_CAISSE).toContain('l’écran ne lui montre pas le montant de la pièce')
+    expect(CE_QUE_MONTRE_MA_CAISSE).not.toContain('pas encore son écran')
     expect(confirmationDeLaCaseCaisse('x', 'exonere', { etat: 'absente' }).paragraphes).toContain(CE_QUE_MONTRE_MA_CAISSE)
-    // Le jour où le paiement d'une pièce arrive dans « Mes pièces » (C12b), cette phrase change : la page des pièces ne le
-    // nomme pas encore.
+    // La phrase dit vrai : « Mes pièces » monte le paiement, qui appelle la fonction de la base et la retire.
     const pieces = readFileSync(resolve(process.cwd(), 'src/pages/ClientUpload.tsx'), 'utf8')
-    expect(pieces).not.toMatch(/regler_piece_par_la_caisse/)
+    expect(pieces).toMatch(/<PaiementParMaCaisse\b/)
+    const paiement = readFileSync(resolve(process.cwd(), 'src/pages/PaiementParMaCaisse.tsx'), 'utf8')
+    expect(paiement).toContain("supabase.rpc('regler_piece_par_la_caisse'")
+    expect(paiement).toContain("supabase.rpc('retirer_operation_caisse'")
   })
 
   it('ce que la case ouvre ne porte aucun texte libre du cabinet : aucun libellé neuf à écrire', () => {

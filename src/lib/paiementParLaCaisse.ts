@@ -195,27 +195,43 @@ function dejaPayeParLaCaisse(pieceId: string, caisse: EtatDeLaCaisse): number {
 }
 
 /**
- * Ce que `regler_piece_par_la_caisse` refuserait de CE paiement, tel qu'il part, dans son ordre et sous ses mots ; ou le
- * paiement qu'elle écrirait. `pieces` sont celles du DOSSIER, lues en entier : une pièce qui n'y est pas se refuse comme la
- * base la refuse. `id` est celui que l'écran donne au paiement en attendant la base.
+ * La pièce telle que l'ÉCRAN DU CLIENT la lit (« Mes pièces », étape C12b ; CAISSE2-Q4, (A)) : son type, et le SENS de ses
+ * espèces, tiré du signe de son montant (`especesEntrentPour`) — jamais le montant lui-même, que cet écran ne montre pas. Ni sa
+ * désignation (le client ne lit pas les factures sans « Ventes »), ni ce que le relevé en paie (sans « Banque »), ni son
+ * montant : les refus qui les lisent — l'exemplaire d'une facture source (5), le plafond d'une pièce validée (9), le reste au
+ * centime (9 bis) — restent au jugement de la base, après le clic. Les juger ici sur le montant lu dirait, frappe après
+ * frappe, ce que l'écran tait.
  */
-export function jugerLeReglementSelon(enBase: boolean, saisie: SaisieDuReglement, dossier: DossierDeLaCaisse,
-  pieces: readonly PieceDuPaiement[], id: string): JugementDuReglement {
-  if (!enBase) return { etat: 'absent' }
+export interface PieceDuPaiementDuClient {
+  id: string
+  type_piece: Piece['type_piece']
+  especesEntrent: boolean
+}
+
+/**
+ * QUI JUGE, ET CE QU'IL A LU DE LA PIÈCE : le paramètre obligatoire de `jugerSelonLeLecteur`, jamais une valeur par défaut. Le
+ * cabinet lit ce que la base lit (`PieceDuPaiement`) ; le client, ce que `PieceDuPaiementDuClient` porte. L'ordre des refus
+ * s'écrit UNE fois, ci-dessous : la branche du client saute ce qu'elle ne lit pas, sans rien deviner.
+ */
+type PieceLue = { lecteur: 'cabinet'; piece: PieceDuPaiement } | { lecteur: 'client'; piece: PieceDuPaiementDuClient }
+
+function jugerSelonLeLecteur(saisie: SaisieDuReglement, dossier: DossierDeLaCaisse,
+  trouver: (id: string) => PieceLue | null, id: string): JugementDuReglement {
   const non = (x: RefusCaisse): JugementDuReglement => ({ etat: 'refuse', refus: x })
   // 1. L'accès, avant toute lecture.
   if (dossier.quiEcrit == null) return non(refus('acces'))
   // 2. Le dossier en trésorerie.
   if (dossier.modele.mode !== 'tresorerie') return non(refus('tresorerie'))
   // 3. La pièce, de ce dossier.
-  const piece = saisie.piece_id == null ? undefined : pieces.find((p) => p.id === saisie.piece_id)
-  if (piece == null) return non(refusDuPaiement('piece_inconnue'))
+  const lue = saisie.piece_id == null ? null : trouver(saisie.piece_id)
+  if (lue == null) return non(refusDuPaiement('piece_inconnue'))
+  const piece = lue.piece
   // 4. Le type.
   if (piece.type_piece === 'note_frais') return non(refusDuPaiement('note_de_frais'))
   if (piece.type_piece !== 'achat' && piece.type_piece !== 'vente') return non(refusDuPaiement('ni_achat_ni_vente'))
-  // 5. L'exemplaire d'une facture source.
-  if (piece.exemplaire?.source_de_la_vente) {
-    return non(refusDuPaiement('exemplaire_d_une_source', piece.exemplaire.numero ?? '(sans numéro)'))
+  // 5. L'exemplaire d'une facture source — le client ne lit pas la facture : la base en juge.
+  if (lue.lecteur === 'cabinet' && lue.piece.exemplaire?.source_de_la_vente) {
+    return non(refusDuPaiement('exemplaire_d_une_source', lue.piece.exemplaire.numero ?? '(sans numéro)'))
   }
   // 6. La date, comme celle d'une opération.
   const laDate = jugerLaDate(saisie.date, dossier)
@@ -224,20 +240,24 @@ export function jugerLeReglementSelon(enBase: boolean, saisie: SaisieDuReglement
   const leMontant = jugerLeMontant(saisie.montant, false)
   if (leMontant.refus) return non(leMontant.refus)
   // 8. Le sens : des espèces qui entrent pour une vente, qui sortent pour un achat — l'inverse pour un avoir.
-  if ((leMontant.centimes > 0) !== especesEntrentPour(piece)) return non(refusDuPaiement('sens'))
-  // 9. Une pièce validée : ses paiements par la caisse non retirés ne dépassent pas son montant.
-  if (piece.statut === 'validee' && piece.montant_ttc != null
-    && dejaPayeParLaCaisse(piece.id, dossier.caisse) + Math.abs(leMontant.centimes) > Math.abs(Math.round(piece.montant_ttc * 100))) {
-    return non(refusDuPaiement('au_dela'))
-  }
-  // 9 bis. Le reste au centime (`resteAuCentime`) : sur TOUS ses paiements, ceux du relevé compris, la pièce ne reste pas à
-  //        quelques centimes de son montant — au client, sans le dire ; au cabinet, le reste et le montant exact.
-  const auCentime = resteAuCentime(piece, dossier.caisse, leMontant.centimes)
-  if (auCentime !== null) {
-    if (dossier.quiEcrit === 'client') return non(refusDuPaiement('au_centime_client'))
-    if (auCentime.exact === null) return non(refusDuPaiement('au_centime_deja_reglee', eurosDits(auCentime.resteApres)))
-    return non(refusDuPaiement('au_centime', eurosDits(auCentime.resteApres),
-      auCentime.resteApres > 0 ? 'à régler' : 'payés en trop', auCentime.exact > 0 ? 'une entrée' : 'une sortie', eurosDits(auCentime.exact)))
+  const entrent = lue.lecteur === 'cabinet' ? especesEntrentPour(lue.piece) : lue.piece.especesEntrent
+  if ((leMontant.centimes > 0) !== entrent) return non(refusDuPaiement('sens'))
+  if (lue.lecteur === 'cabinet') {
+    const p = lue.piece
+    // 9. Une pièce validée : ses paiements par la caisse non retirés ne dépassent pas son montant.
+    if (p.statut === 'validee' && p.montant_ttc != null
+      && dejaPayeParLaCaisse(p.id, dossier.caisse) + Math.abs(leMontant.centimes) > Math.abs(Math.round(p.montant_ttc * 100))) {
+      return non(refusDuPaiement('au_dela'))
+    }
+    // 9 bis. Le reste au centime (`resteAuCentime`) : sur TOUS ses paiements, ceux du relevé compris, la pièce ne reste pas à
+    //        quelques centimes de son montant — au client, sans le dire ; au cabinet, le reste et le montant exact.
+    const auCentime = resteAuCentime(p, dossier.caisse, leMontant.centimes)
+    if (auCentime !== null) {
+      if (dossier.quiEcrit === 'client') return non(refusDuPaiement('au_centime_client'))
+      if (auCentime.exact === null) return non(refusDuPaiement('au_centime_deja_reglee', eurosDits(auCentime.resteApres)))
+      return non(refusDuPaiement('au_centime', eurosDits(auCentime.resteApres),
+        auCentime.resteApres > 0 ? 'à régler' : 'payés en trop', auCentime.exact > 0 ? 'une entrée' : 'une sortie', eurosDits(auCentime.exact)))
+    }
   }
   // Le paiement, tel que la base l'insère.
   const operation: OperationDeLaCaisse = {
@@ -252,6 +272,37 @@ export function jugerLeReglementSelon(enBase: boolean, saisie: SaisieDuReglement
     if (negative) return non(negative)
   }
   return { etat: 'accepte', operation, caisse }
+}
+
+/**
+ * Ce que `regler_piece_par_la_caisse` refuserait de CE paiement, tel qu'il part, dans son ordre et sous ses mots ; ou le
+ * paiement qu'elle écrirait. `pieces` sont celles du DOSSIER, lues en entier : une pièce qui n'y est pas se refuse comme la
+ * base la refuse. `id` est celui que l'écran donne au paiement en attendant la base.
+ */
+export function jugerLeReglementSelon(enBase: boolean, saisie: SaisieDuReglement, dossier: DossierDeLaCaisse,
+  pieces: readonly PieceDuPaiement[], id: string): JugementDuReglement {
+  if (!enBase) return { etat: 'absent' }
+  return jugerSelonLeLecteur(saisie, dossier, (pieceId) => {
+    const piece = pieces.find((p) => p.id === pieceId)
+    return piece == null ? null : { lecteur: 'cabinet', piece }
+  }, id)
+}
+
+/**
+ * LA BRANCHE DU CLIENT (étape C12b) : ce que `regler_piece_par_la_caisse` refuserait de CE paiement, parti de l'écran du
+ * client, et que cet écran PEUT savoir — l'accès, la trésorerie, la pièce, son type, la date (hors de l'ouverture et de la
+ * frontière, que le dossier du client ne porte pas : `dossierDuClient`), le montant, le sens, la caisse jamais négative —,
+ * dans l'ordre de la base et sous ses mots ; ou le paiement qu'elle écrirait, si ce qu'il ne lit pas ne le refuse pas. Le
+ * dossier est celui du client (`quiEcrit` : 'client', d'où, en base, les mots du client au reste au centime) ; `pieces`,
+ * celles qu'il lit, en entier.
+ */
+export function jugerLeReglementDuClientSelon(enBase: boolean, saisie: SaisieDuReglement, dossier: DossierDeLaCaisse,
+  pieces: readonly PieceDuPaiementDuClient[], id: string): JugementDuReglement {
+  if (!enBase) return { etat: 'absent' }
+  return jugerSelonLeLecteur(saisie, dossier, (pieceId) => {
+    const piece = pieces.find((p) => p.id === pieceId)
+    return piece == null ? null : { lecteur: 'client', piece }
+  }, id)
 }
 
 /** Le même jugement, selon le drapeau : `absent` tant que la migration n'est pas dans l'export. */

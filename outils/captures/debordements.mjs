@@ -1954,6 +1954,32 @@ const VISITES_CAISSE_CLIENT = [
       await page.getByText(/^Ce prélèvement de 5000,00 € rendrait la caisse négative/).waitFor({ timeout: 10000 })
     },
   },
+  // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, DEPUIS « MES PIÈCES » (étape C12b) : la pièce payée « par toi », son paiement ouvert
+  // avec « Retirer » ; puis le formulaire d'une autre pièce, un montant qui viderait la caisse, refusé avant le clic.
+  {
+    chemin: '#/mes-pieces', nom: 'client/mes-pieces-caisse', nav: true,
+    apres: async (page) => {
+      await page.getByText(/^Payée en espèces le 20\/09\/2026, 27,35\s€ \(par toi\)$/).waitFor({ timeout: 10000 })
+      await page.locator('tr', { hasText: 'p7.pdf' }).getByRole('button', { name: 'Espèces de ta caisse', exact: true }).click()
+      await page.getByRole('button', { name: 'Retirer', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/mes-pieces', nom: 'client/mes-pieces-caisse-refus', nav: true,
+    apres: async (page) => {
+      await page.locator('tr', { hasText: 'p1.pdf' }).getByRole('button', { name: 'Payée en espèces de ta caisse', exact: true }).click()
+      await page.getByLabel('Jour où tu as payé').fill('2026-09-21')
+      await page.getByLabel('Montant de tes espèces (€)').fill('5000')
+      await page.getByText(/^Ce paiement de 5000,00 € rendrait la caisse négative/).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/ma-caisse', nom: 'client/ma-caisse-paiement', nav: true,
+    apres: async (page) => {
+      await choisirSeptembre(page)
+      await page.getByText(/^Paiement de la pièce déposée le 21\/08\/2026/).waitFor({ timeout: 10000 })
+    },
+  },
 ]
 
 const VISITES_BANQUE_CLIENT = [

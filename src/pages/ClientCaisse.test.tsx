@@ -25,6 +25,7 @@ const faux = vi.hoisted(() => ({
   dossier: {} as Record<string, unknown>,
   categories: [] as Record<string, unknown>[],
   operations: [] as Record<string, unknown>[],
+  pieces: [] as Record<string, unknown>[],
   jours: {} as Record<number, Record<string, unknown>[]>,
   muetApres: {} as Record<string, number>,
   retenirLectures: false,
@@ -41,7 +42,7 @@ vi.mock('../context/AuthContext', () => ({
 }))
 
 vi.mock('../lib/supabase', async () => {
-  const { filtrer, predicatEq } = await import('../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn } = await import('../test/filtresPostgrest')
   const attendreLecture = () => (faux.retenirLectures ? new Promise<void>((r) => { faux.lecturesEnAttente.push(r) }) : Promise.resolve())
   function chaine(nom: string, lignes: () => Record<string, unknown>[]) {
     const predicats: ((l: Record<string, unknown>) => boolean)[] = []
@@ -55,6 +56,7 @@ vi.mock('../lib/supabase', async () => {
     const c: Record<string, unknown> = {
       select: () => c,
       eq: (col: string, v: unknown) => { predicats.push(predicatEq(col, v)); return c },
+      in: (col: string, v: unknown[]) => { predicats.push(predicatIn(col, v)); return c },
       order: () => c,
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => attendreLecture().then(() => {
@@ -79,6 +81,7 @@ vi.mock('../lib/supabase', async () => {
         if (table === 'dossiers') return chaine(table, () => [faux.dossier])
         if (table === 'categories') return chaine(table, () => faux.categories)
         if (table === 'operations_caisse') return chaine(table, () => faux.operations)
+        if (table === 'pieces') return chaine(table, () => faux.pieces)
         throw new Error(`Table non attendue : ${table}`)
       },
     },
@@ -112,6 +115,7 @@ function poser() {
       jour({ jour: '2026-11-01', operations: 70, especes_des_factures: 20, encaissements_du_jour: ['e1'], solde: 140 }),
     ],
   }
+  faux.pieces = []
   faux.muetApres = {}
   faux.retenirLectures = false
   faux.lecturesEnAttente = []
@@ -187,6 +191,27 @@ describe('la caisse lue en entier', () => {
     expect(screen.getAllByRole('button', { name: 'Retirer' })).toHaveLength(1)
     expect(bouton('Enregistrer')).toBeTruthy()
     expect(motsDuCabinet(document.body.textContent ?? '')).toEqual([])
+  })
+
+  it('nomme le paiement d’une pièce par le jour de son dépôt, jamais par son fichier (étape C12b), sans geste ici', async () => {
+    faux.pieces = [{ id: 'p1', dossier_id: 'd1', nom_fichier: 'facture-fournisseur.pdf', created_at: '2026-03-05T09:00:00Z' }]
+    faux.operations.push(operation({ id: 'o5', genre: 'paiement', montant: -20, categorie_id: null, piece_id: 'p1', cree_le: '2026-11-01T21:00:00Z' }))
+    faux.jours[2026][1] = jour({ jour: '2026-11-01', operations: 50, especes_des_factures: 20, encaissements_du_jour: ['e1'], solde: 120 })
+    await monter()
+    const ligne = (await screen.findByText(/Paiement de la pièce déposée le 05\/03\/2026/)).closest('tr') as HTMLElement
+    expect(ligne.textContent).toMatch(/saisie par toi−20,00\s€/)
+    expect(ligne.textContent).not.toMatch(/facture-fournisseur|Corriger|Retirer/)
+    expect(faux.lectures).toContain('pieces')
+  })
+
+  it('sans le jour de dépôt lu, nomme le paiement par son sens seul', async () => {
+    faux.operations.push(operation({ id: 'o5', genre: 'paiement', montant: -20, categorie_id: null, piece_id: 'p1', cree_le: '2026-11-01T21:00:00Z' }))
+    faux.jours[2026][1] = jour({ jour: '2026-11-01', operations: 50, especes_des_factures: 20, encaissements_du_jour: ['e1'], solde: 120 })
+    faux.muetApres = { pieces: 0 }
+    faux.pieces = [{ id: 'p1', dossier_id: 'd1', created_at: '2026-03-05T09:00:00Z' }]
+    await monter()
+    await screen.findByText('Pièce payée en espèces')
+    expect(screen.queryByText(/déposée le/)).toBeNull()
   })
 
   it('lue en partie : le bandeau, ni caisse ni geste', async () => {

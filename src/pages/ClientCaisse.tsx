@@ -11,7 +11,8 @@ import {
   nomPourLeClient, RAPPEL_DU_BROUILLARD, refusDuRetraitDuClient, retireesDuMois, saisieDuClient, soldeLuAu, verdictDuFormulaire,
   type FormulaireDuClient, type GenreDuClient, type OperationDuClient,
 } from '../lib/caisseClient'
-import { lireLaCaisseDuClient, type LectureDeLaCaisseDuClient } from '../lib/caisseClientLecture'
+import { lireLaCaisseDuClient, lireLesDepotsDesPieces, type DepotsDesPieces, type LectureDeLaCaisseDuClient } from '../lib/caisseClientLecture'
+import { paiementDansMaCaisse } from '../lib/paiementDeMesPieces'
 import { pourLEspace } from '../lib/espaceVentes'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 
@@ -34,12 +35,14 @@ type Message = { genre: 'ok' | 'erreur'; texte: string }
 
 const FORMULAIRE_VIDE: FormulaireDuClient = { genre: 'recette', date: '', montant: '' }
 
-// Le nom d'une ligne d'opération dans le jour : son genre seulement (le jour et le montant sont dans leurs colonnes).
-function genreDit(o: Pick<OperationDuClient, 'genre' | 'montant'>): string {
+// Le nom d'une ligne d'opération dans le jour : son genre seulement (le jour et le montant sont dans leurs colonnes) ; le
+// paiement d'une pièce, par le jour de dépôt de sa pièce (étape C12b), jamais par un fournisseur, un fichier ni un libellé —
+// sans ce jour lu, par son sens seul.
+function genreDit(o: Pick<OperationDuClient, 'genre' | 'montant' | 'piece_id'>, depots: ReadonlyMap<string, string> | null): string {
   if (o.genre === 'recette') return o.montant < 0 ? 'Espèces rendues' : 'Recettes en espèces'
   if (o.genre === 'apport') return 'Apport de ta poche'
   if (o.genre === 'prelevement') return 'Prélèvement pour toi'
-  return o.montant < 0 ? 'Pièce payée en espèces' : 'Espèces reçues pour une pièce'
+  return paiementDansMaCaisse(o, (o.piece_id != null ? depots?.get(o.piece_id) : null) ?? null)
 }
 
 export default function ClientCaisse() {
@@ -69,6 +72,19 @@ export default function ClientCaisse() {
     lireLaCaisseDuClient(dossierId, annee, anneeEnCours).then((l) => { if (!annule) setLecture(l) })
     return () => { annule = true }
   }, [dossierId, annee, anneeEnCours])
+
+  // Le jour de dépôt des pièces que ses paiements citent : lu après les opérations, gardé avec la société lue.
+  const [depots, setDepots] = useState<DepotsDesPieces | null>(null)
+  const piecesCitees = lecture?.etat === 'lue'
+    ? [...new Set(lecture.operations.lignes.flatMap((o) => (o.genre === 'paiement' && o.piece_id != null ? [o.piece_id] : [])))].sort().join(',')
+    : ''
+  useEffect(() => {
+    if (!dossierId || piecesCitees === '') return
+    let annule = false
+    lireLesDepotsDesPieces(dossierId, piecesCitees.split(',')).then((d) => { if (!annule) setDepots(d) })
+    return () => { annule = true }
+  }, [dossierId, piecesCitees])
+  const depotsLus = depots?.dossierId === dossierId && depots.etat === 'lus' ? depots.depots : null
 
   async function relire() {
     if (!dossierId) return
@@ -265,6 +281,7 @@ export default function ClientCaisse() {
               dossierRejoue={dossier}
               onCorriger={preparerLaCorrection}
               onRetirer={retirer}
+              depots={depotsLus}
             />
           )}
           {message && (
@@ -362,6 +379,8 @@ interface ProprietesCaisse {
   dossierRejoue: ReturnType<typeof dossierDuClient> | null
   onCorriger: (o: OperationDuClient) => void
   onRetirer: (o: OperationDuClient) => void
+  /** Le jour de dépôt des pièces que les paiements citent, lu ; nul tant qu'il ne l'est pas. */
+  depots: ReadonlyMap<string, string> | null
 }
 
 // La caisse lue en entier : le solde, le mois jour par jour, ce qui a été retiré ; et les gestes sur ce que le praticien a saisi.
@@ -407,7 +426,7 @@ function Caisse(p: ProprietesCaisse) {
                     <tr key={`${j.jour}-${o?.id ?? `${l.nature}-${i}`}`}>
                       <td data-libelle="Jour">{jourDit(j.jour)}</td>
                       <td data-libelle="Quoi">
-                        {o ? genreDit(o) : libelleDeLaLigne(l as Exclude<typeof l, { nature: 'operation' }>, j.jour)}
+                        {o ? genreDit(o, p.depots) : libelleDeLaLigne(l as Exclude<typeof l, { nature: 'operation' }>, j.jour)}
                         {o && <span className="muted"> · {auteurPourLeClient(o, p.moi)}</span>}
                       </td>
                       <td data-libelle="Montant" style={{ whiteSpace: 'nowrap' }}>{euros(l.centimes)}</td>
