@@ -8,7 +8,7 @@
 // Le titulaire change le sien lui-même : « Mot de passe oublié » sur l'écran de connexion, ou, pour un client, le lien
 // que le cabinet lui envoie depuis l'onglet Accès. Aucun appel ici : les écrans appellent, ce module décide de ce qui se
 // dit (comme `recuperationMotDePasse.ts`), et de ce qui part.
-import { CE_QUE_DONNE_UN_ACCES, DOMAINES } from './droitsAcces'
+import { CE_QUE_DONNE_UN_ACCES, libellesDesCases } from './droitsAcces'
 import type { RoleCabinetAdmin } from './types'
 
 /** Ce que la réponse dit du compte : créé (le mot de passe saisi est le sien), existant (il n'a pas servi), ou rien de sûr. */
@@ -128,10 +128,10 @@ export interface ConfirmationDuRattachement {
 /**
  * Ce que dit la fenêtre de confirmation, avec l'adresse TELLE QU'ELLE PARTIRA (celle du premier appel, que le second
  * renvoie) et le nom du dossier. Ce que l'accès ouvre est la phrase de l'onglet (`CE_QUE_DONNE_UN_ACCES`, à l'état de son
- * drapeau), jamais une règle recopiée ; un accès neuf arrive sans ses deux cases, que la phrase nomme par leur libellé.
+ * drapeau), jamais une règle recopiée ; un accès neuf arrive sans ses cases, que la phrase nomme par leur libellé.
  */
 export function confirmationDuRattachement(adresse: string, dossierNom: string): ConfirmationDuRattachement {
-  const cases = DOMAINES.map((d) => `« ${d.libelle} »`).join(' et ')
+  const cases = libellesDesCases()
   return {
     titre: 'Rattacher ce compte au dossier ?',
     adresse: {

@@ -13,6 +13,7 @@ import {
   type JourDeLaCaisse, type LigneDuJournal,
 } from '../../lib/caisseEcran'
 import { lireLaCaisseDuDossier, type LectureDeLaCaisseDuDossier } from '../../lib/caisseDuDossierLecture'
+import { retenirLesOperationsVues } from '../../lib/caisseDuClientAuCabinet'
 import type { ModeleComptable } from '../../lib/engagement'
 import { anneeDe, aujourdHuiAParis, formatDate } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
@@ -100,6 +101,15 @@ function CaisseDuDossier({ dossierId, modele, assujettiTva, ventesParLesFactures
   }, [dossierId, ventesParLesFactures, enTresorerie])
 
   const donnees: DonneesDeLaCaisse | null = lecture !== null && lecture.etat === 'lue' ? lecture.donnees : null
+
+  // CE QUE L'ONGLET A MONTRÉ (étape C11 ; lib/caisseDuClientAuCabinet.ts) : la caisse lue EN ENTIER pour CE dossier, les
+  // opérations saisies par le client sont vues, et ce navigateur le retient — le point d'information de la Vue d'ensemble
+  // ne compte plus que les suivantes. Une lecture partielle, refusée ou d'un autre dossier ne retient rien.
+  useEffect(() => {
+    if (lecture !== null && lecture.etat === 'lue' && lecture.dossierId === dossierId) {
+      retenirLesOperationsVues(dossierId, lecture.donnees.operations)
+    }
+  }, [lecture, dossierId])
   // Le jour à Paris, relu à chaque rendu : « maintenant » ne se lit jamais au chargement d'un module.
   const ctx: ContexteDeLaCaisse = { modele, assujettiTva, aujourdhui: aujourdHuiAParis(), anneesValidees }
   const etat = useMemo(() => (donnees ? etatDeLaCaisseLu(modele, donnees) : null), [donnees, modele])

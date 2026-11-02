@@ -34,7 +34,7 @@ import { CE_QUE_DIT_LA_COLLECTE } from '../../lib/piecesJointesEcarteesClient'
 // en partie.
 type LigneAcces = {
   id: string; user_id: string; email: string | null; dossier_id: string; created_at: string
-  droit_ventes: unknown; droit_banque: unknown
+  droit_ventes: unknown; droit_banque: unknown; droit_caisse: unknown
 }
 
 const faux = vi.hoisted(() => ({
@@ -67,16 +67,19 @@ const faux = vi.hoisted(() => ({
 
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
-  // Ce que fait la fonction en base (migration droits_des_acces_clients) : un accès inconnu se refuse comme un accès
-  // interdit, un droit nul reste tel quel, et l'accès rendu est celui que l'écriture a laissé.
+  // Ce que fait la fonction en base (la forme à quatre de la migration `caisse_du_client`) : un accès inconnu se refuse comme
+  // un accès interdit, un droit nul reste tel quel, et l'accès rendu est celui que l'écriture a laissé. La forme à trois
+  // (sans `p_caisse`) n'est pas modélisée : la demander lève, pour qu'aucun appel ne la prenne sans qu'on le voie.
   function changerDroitsAcces(args: Record<string, unknown>) {
+    if (!('p_caisse' in args)) throw new Error('Faux client : changer_droits_acces à trois paramètres n’est pas modélisée.')
     const acces = faux.lignes.find((l) => l.id === args.p_membership_id)
     if (!acces) return { data: null, error: { message: 'Accès refusé à ce dossier.', code: '42501' } }
-    if (args.p_ventes === null && args.p_banque === null) {
-      return { data: null, error: { message: 'Aucun droit à changer : précise « Ventes », « Banque », ou les deux.', code: '22023' } }
+    if (args.p_ventes === null && args.p_banque === null && args.p_caisse === null) {
+      return { data: null, error: { message: 'Aucun droit à changer : précise « Ventes », « Banque » ou « Caisse ».', code: '22023' } }
     }
     if (args.p_ventes !== null) acces.droit_ventes = args.p_ventes
     if (args.p_banque !== null) acces.droit_banque = args.p_banque
+    if (args.p_caisse !== null) acces.droit_caisse = args.p_caisse
     return { data: { ...acces }, error: null }
   }
   return {
@@ -141,6 +144,8 @@ vi.mock('../../lib/supabase', async () => {
 // Le réglage du dossier (étape VF8d), doublé : son état, le dossier que la réponse dit avoir lu (une réponse pour un autre
 // dossier), et une porte pour la retenir. Basculé par défaut : la case « Ventes » s'offre comme avant VF8d. La lecture
 // elle-même a son test (reglageDuDossierLecture.test.ts).
+// Depuis l'étape C11, la même ligne porte le statut de TVA (exonéré par défaut : la case « Caisse » s'offre) et la nature
+// des recettes du client (pas fixée) ; AccesTab.caisse.test.tsx joue leurs états.
 const reglageFaux = vi.hoisted(() => ({
   reglage: { etat: 'bascule' } as { etat: 'bascule' } | { etat: 'non_bascule' } | { etat: 'illisible'; motif: string },
   dossierLu: null as string | null,
@@ -151,8 +156,16 @@ vi.mock('../../lib/reglageDuDossierLecture', () => ({
   lireLeReglageDuDossier: async (dossierId: string) => {
     reglageFaux.lectures += 1
     if (reglageFaux.porte) await reglageFaux.porte
-    return { dossierId: reglageFaux.dossierLu ?? dossierId, reglage: reglageFaux.reglage }
+    return {
+      dossierId: reglageFaux.dossierLu ?? dossierId, reglage: reglageFaux.reglage,
+      caisse: { etat: 'exclu', statut: 'exonere' }, nature: { etat: 'lue', categorieId: null },
+    }
   },
+}))
+// Les catégories de la nature (étape C11), doublées : lues en entier, aucune ; l'écriture n'est pas jouée ici.
+vi.mock('../../lib/natureDesRecettesLecture', () => ({
+  lireLesCategoriesDeLaNature: async (dossierId: string) => ({ dossierId, etat: 'lues', categories: [] }),
+  fixerLaNatureDesRecettes: async () => { throw new Error('non jouée ici') },
 }))
 
 // La modale de relance fait ses propres appels et n'a rien à voir avec ce qu'on garde ici.
@@ -167,7 +180,8 @@ function monter() {
 const MOT_DE_PASSE = 'Mot-de-passe-1'
 
 const acces = (o: Partial<LigneAcces> & { id: string }): LigneAcces => ({
-  user_id: `u-${o.id}`, email: null, dossier_id: 'd1', created_at: '2026-10-01T08:00:00Z', droit_ventes: false, droit_banque: false, ...o,
+  user_id: `u-${o.id}`, email: null, dossier_id: 'd1', created_at: '2026-10-01T08:00:00Z', droit_ventes: false, droit_banque: false,
+  droit_caisse: false, ...o,
 })
 
 // Retient les lectures suivantes jusqu'à ce que le test appelle la fonction rendue.
@@ -203,7 +217,7 @@ async function cliquerRetirer() {
   await act(async () => { within(ligne).getByRole('button', { name: /^Retirer$/ }).click() })
 }
 
-const caseDe = (droit: 'Ventes' | 'Banque', personne = 'client@exemple.fr') =>
+const caseDe = (droit: 'Ventes' | 'Banque' | 'Caisse', personne = 'client@exemple.fr') =>
   screen.getByRole<HTMLInputElement>('checkbox', { name: `Droit « ${droit} » de ${personne}` })
 
 beforeEach(() => {
@@ -454,14 +468,16 @@ describe('AccesTab — les droits « Ventes » et « Banque » de chaque accès'
     ]
   })
 
-  it('chaque accès porte ses deux cases, cochées comme la base les tient', async () => {
+  it('chaque accès porte ses trois cases, cochées comme la base les tient', async () => {
     monter()
     await screen.findByText('client@exemple.fr')
     expect(caseDe('Ventes').checked).toBe(true)
     expect(caseDe('Banque').checked).toBe(false)
+    expect(caseDe('Caisse').checked).toBe(false)
     expect(caseDe('Ventes', 'secretariat@exemple.fr').checked).toBe(false)
     expect(caseDe('Banque', 'secretariat@exemple.fr').checked).toBe(false)
-    expect(screen.getAllByRole('checkbox')).toHaveLength(4)
+    expect(caseDe('Caisse', 'secretariat@exemple.fr').checked).toBe(false)
+    expect(screen.getAllByRole('checkbox')).toHaveLength(6)
   })
 
   it('une valeur qui n’est pas strictement vraie ne coche rien', async () => {
@@ -480,7 +496,7 @@ describe('AccesTab — les droits « Ventes » et « Banque » de chaque accès'
     await act(async () => { caseDe('Banque', 'secretariat@exemple.fr').click() })
 
     expect(faux.appelsRpc).toEqual([
-      { nom: 'changer_droits_acces', args: { p_membership_id: 'm2', p_ventes: null, p_banque: true } },
+      { nom: 'changer_droits_acces', args: { p_membership_id: 'm2', p_ventes: null, p_banque: true, p_caisse: null } },
     ])
     expect(faux.lectures).toBe(2)
     expect(caseDe('Banque', 'secretariat@exemple.fr').checked).toBe(true)
@@ -494,7 +510,7 @@ describe('AccesTab — les droits « Ventes » et « Banque » de chaque accès'
     monter()
     await screen.findByText('client@exemple.fr')
     await act(async () => { caseDe('Ventes').click() })
-    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm1', p_ventes: false, p_banque: null }])
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm1', p_ventes: false, p_banque: null, p_caisse: null }])
     expect(caseDe('Ventes').checked).toBe(false)
   })
 
@@ -619,7 +635,7 @@ describe('AccesTab — les droits « Ventes » et « Banque » de chaque accès'
     await laisserPasserUnTour()
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
     await liberer()
-    expect(await screen.findAllByRole('checkbox')).toHaveLength(4)
+    expect(await screen.findAllByRole('checkbox')).toHaveLength(6)
   })
 
   it('aucune case sur une liste lue en partie : les droits lus se disent, le bandeau dit pourquoi', async () => {
@@ -628,7 +644,7 @@ describe('AccesTab — les droits « Ventes » et « Banque » de chaque accès'
     expect(await screen.findByText('client@exemple.fr')).toBeTruthy()
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
     const ligne = screen.getByText('client@exemple.fr').closest('tr')!
-    expect(within(ligne).getAllByText(/^(Oui|Non)$/).map((e) => e.textContent)).toEqual(['Oui', 'Non'])
+    expect(within(ligne).getAllByText(/^(Oui|Non)$/).map((e) => e.textContent)).toEqual(['Oui', 'Non', 'Non'])
     expect(screen.getByText(/La liste des accès n'a pas pu être lue en entier \(2 ligne\(s\) lue\(s\) sur 3 annoncée\(s\)\)/)).toBeTruthy()
     expect(screen.getByText(/Les droits ne se changent pas depuis une liste incomplète/)).toBeTruthy()
     // La liste n'est pas vide pour autant : elle ne se dit pas « aucun accès ».
@@ -1160,7 +1176,7 @@ describe('AccesTab — rattacher un compte que ce cabinet ne connaît pas, ou pl
     expect(texte).toContain("L'adresse Ancien.Client@exemple.fr a déjà un compte, que ce cabinet ne connaît pas, ou plus")
     expect(texte).toContain('le dossier « Cabinet Martin »')
     expect(texte).toContain(CE_QUE_DONNE_UN_ACCES)
-    expect(texte).toContain('sans les cases « Ventes » et « Banque »')
+    expect(texte).toContain('sans les cases « Ventes », « Banque » et « Caisse »')
     expect(texte).toContain('Le mot de passe initial que tu as saisi ne sert pas : ce compte garde le sien')
     // L'adresse porte `.courriel` : elle ne se coupe pas au milieu d'un mot.
     expect(within(dialogue).getByText('Ancien.Client@exemple.fr').className).toBe('courriel')
@@ -1312,14 +1328,14 @@ describe('AccesTab — la case « Ventes » suit la source des ventes du dossier
 
   const phraseAffichee = () => document.getElementById('ce-que-disent-les-cases')?.textContent ?? null
 
-  it('basculé : les quatre cases s’offrent, et la phrase dit ce que comptent les factures du client', async () => {
+  it('basculé : les six cases s’offrent, et la phrase dit ce que comptent les factures du client', async () => {
     monter()
     await screen.findByText('client@exemple.fr')
     for (const c of screen.getAllByRole<HTMLInputElement>('checkbox')) expect(c.disabled, c.getAttribute('aria-label') ?? '').toBe(false)
     expect(phraseAffichee()).toBe(ceQueDisentLesCasesDuDossier({ etat: 'bascule' }))
     expect(phraseAffichee()).toContain(CE_QUE_COMPTENT_SES_FACTURES)
     await act(async () => { caseDe('Ventes', 'secretariat@exemple.fr').click() })
-    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm2', p_ventes: true, p_banque: null }])
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm2', p_ventes: true, p_banque: null, p_caisse: null }])
     expect(caseDe('Ventes', 'secretariat@exemple.fr').checked).toBe(true)
   })
 
@@ -1350,7 +1366,7 @@ describe('AccesTab — la case « Ventes » suit la source des ventes du dossier
     expect(cochee.disabled).toBe(false)
     expect(cochee.getAttribute('aria-describedby')).toBeNull()
     await act(async () => { cochee.click() })
-    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm1', p_ventes: false, p_banque: null }])
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm1', p_ventes: false, p_banque: null, p_caisse: null }])
     // Décochée, elle ne se recoche plus : la relecture l'a rendue grisée.
     expect(caseDe('Ventes').checked).toBe(false)
     expect(caseDe('Ventes').disabled).toBe(true)
@@ -1371,7 +1387,7 @@ describe('AccesTab — la case « Ventes » suit la source des ventes du dossier
     expect(caseDe('Ventes').checked).toBe(true)
     expect(phraseAffichee()).toContain('ne se lit pas (lecture refusée)')
     await act(async () => { caseDe('Banque').click() })
-    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm1', p_ventes: null, p_banque: true }])
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm1', p_ventes: null, p_banque: true, p_caisse: null }])
   })
 
   it('aucune case ni phrase des cases tant que le réglage n’est pas revenu, même la liste lue', async () => {
@@ -1382,7 +1398,7 @@ describe('AccesTab — la case « Ventes » suit la source des ventes du dossier
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
     expect(phraseAffichee()).toBeNull()
     await act(async () => { ouvrir() })
-    expect(await screen.findAllByRole('checkbox')).toHaveLength(4)
+    expect(await screen.findAllByRole('checkbox')).toHaveLength(6)
     expect(phraseAffichee()).toBe(ceQueDisentLesCasesDuDossier({ etat: 'bascule' }))
   })
 
@@ -1392,7 +1408,7 @@ describe('AccesTab — la case « Ventes » suit la source des ventes du dossier
     expect(await screen.findByText('client@exemple.fr')).toBeTruthy()
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
     const ligne = screen.getByText('client@exemple.fr').closest('tr')!
-    expect(within(ligne).getAllByText(/^(Oui|Non)$/).map((e) => e.textContent)).toEqual(['Oui', 'Non'])
+    expect(within(ligne).getAllByText(/^(Oui|Non)$/).map((e) => e.textContent)).toEqual(['Oui', 'Non', 'Non'])
     expect(phraseAffichee()).toBeNull()
   })
 
@@ -1435,7 +1451,7 @@ describe('AccesTab — la base refuse « Ventes » sur un dossier qui n’a pas 
       data: null, error: { message: REFUS_VENTES_DOSSIER_NON_BASCULE.message, code: REFUS_VENTES_DOSSIER_NON_BASCULE.code },
     }
     await act(async () => { libre.click() })
-    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm2', p_ventes: true, p_banque: null }])
+    expect(faux.appelsRpc.map((a) => a.args)).toEqual([{ p_membership_id: 'm2', p_ventes: true, p_banque: null, p_caisse: null }])
     expect(screen.getByRole('alert').textContent)
       .toBe(messageDuRefus('ventes', 'secretariat@example.test', REFUS_VENTES_DOSSIER_NON_BASCULE.message))
     // La relecture : le réglage avec la liste. La case reste décochée, grisée, et dit pourquoi.
@@ -1448,7 +1464,7 @@ describe('AccesTab — la base refuse « Ventes » sur un dossier qui n’a pas 
     faux.reponseRpc = null
     expect(caseDe('Ventes', 'client@example.test').disabled).toBe(false)
     await act(async () => { caseDe('Ventes', 'client@example.test').click() })
-    expect(faux.appelsRpc.map((a) => a.args).at(-1)).toEqual({ p_membership_id: 'm1', p_ventes: false, p_banque: null })
+    expect(faux.appelsRpc.map((a) => a.args).at(-1)).toEqual({ p_membership_id: 'm1', p_ventes: false, p_banque: null, p_caisse: null })
     expect(caseDe('Ventes', 'client@example.test').checked).toBe(false)
     expect(screen.queryAllByRole('alert')).toHaveLength(0)
   })

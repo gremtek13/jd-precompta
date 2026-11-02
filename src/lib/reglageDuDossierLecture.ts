@@ -1,25 +1,54 @@
 import { supabase } from './supabase'
 import { messageErreur } from './messageErreur'
-import { reglageDuDossier, type ReglageDuDossier } from './droitsAcces'
+import { etatCaisseDuDossier, reglageDuDossier, type EtatCaisseDuDossier, type ReglageDuDossier } from './droitsAcces'
 
-// CE QUE L'ONGLET ACCÈS LIT POUR JUGER LA CASE « VENTES » (chantier EC-Q3, étape VF8d ; le module pur est
-// lib/droitsAcces.ts, `reglageDuDossier` et `gesteDeLaCase`) : le réglage du dossier, `dossiers.ventes_par_les_factures`, une
-// ligne lue par sa clé — donc en entier. Ce module ne rejette jamais : un refus, une ligne absente ou une requête qui lève
-// rendent un réglage ILLISIBLE, avec son motif, et la case « Ventes » ne s'offre alors ni à cocher ni à décocher. La
-// réponse porte le dossier lu : un écran qui en a changé entre-temps ne la prend pas pour la sienne.
+// CE QUE L'ONGLET ACCÈS LIT DU DOSSIER POUR JUGER SES CASES (chantier EC-Q3, étape VF8d ; ligne 26.6, étape C11 ; le module
+// pur est lib/droitsAcces.ts, `reglageDuDossier`, `etatCaisseDuDossier` et `gesteDeLaCase`) : une ligne lue par sa clé —
+// donc en entier —, trois colonnes de `dossiers` :
+//   - `ventes_par_les_factures`, le réglage qui ouvre la case « Ventes » ;
+//   - `statut_tva`, qui ouvre la case « Caisse » (exonéré ou en franchise en base : `garder_droit_caisse`) ;
+//   - `categorie_recettes_client`, la nature des recettes en espèces que le cabinet fixe pour le client (CAISSE2-Q2, (B) ;
+//     `garder_categorie_recettes_client`) : l'onglet la montre et la change.
+// Ce module ne rejette jamais : un refus, une ligne absente ou une requête qui lève rendent les trois ILLISIBLES, avec leur
+// motif, et aucune case qui en dépend ne s'offre. Une colonne absente de la réponse rend illisible ce qu'elle porte, et elle
+// seule. La réponse porte le dossier lu : un écran qui en a changé entre-temps ne la prend pas pour la sienne.
+
+/** La nature des recettes du client, lue : l'identifiant d'une catégorie, ou nul (pas encore fixée) ; ou illisible. */
+export type NatureLue = { etat: 'lue'; categorieId: string | null } | { etat: 'illisible'; motif: string }
 
 export interface LectureDuReglage {
   /** Le dossier dont le réglage a été lu. */
   dossierId: string
   reglage: ReglageDuDossier
+  caisse: EtatCaisseDuDossier
+  nature: NatureLue
+}
+
+/** La nature d'une ligne : une chaîne ou nul se lisent ; une colonne absente ou d'un autre type est illisible. */
+export function natureDeLaLigne(ligne: { readonly categorie_recettes_client?: unknown } | null): NatureLue {
+  if (ligne == null) return { etat: 'illisible', motif: 'le dossier n’a pas été trouvé' }
+  const valeur = ligne.categorie_recettes_client
+  if (valeur === null) return { etat: 'lue', categorieId: null }
+  if (typeof valeur === 'string' && valeur !== '') return { etat: 'lue', categorieId: valeur }
+  return { etat: 'illisible', motif: 'la nature des recettes du client n’est pas lisible' }
+}
+
+function illisible(dossierId: string, motif: string): LectureDuReglage {
+  return {
+    dossierId,
+    reglage: { etat: 'illisible', motif },
+    caisse: { etat: 'illisible', motif },
+    nature: { etat: 'illisible', motif },
+  }
 }
 
 export async function lireLeReglageDuDossier(dossierId: string): Promise<LectureDuReglage> {
   try {
-    const { data, error } = await supabase.from('dossiers').select('ventes_par_les_factures').eq('id', dossierId).maybeSingle()
-    if (error) return { dossierId, reglage: { etat: 'illisible', motif: messageErreur(error, 'lecture refusée') } }
-    return { dossierId, reglage: reglageDuDossier(data) }
+    const { data, error } = await supabase.from('dossiers')
+      .select('ventes_par_les_factures, statut_tva, categorie_recettes_client').eq('id', dossierId).maybeSingle()
+    if (error) return illisible(dossierId, messageErreur(error, 'lecture refusée'))
+    return { dossierId, reglage: reglageDuDossier(data), caisse: etatCaisseDuDossier(data), nature: natureDeLaLigne(data) }
   } catch (erreur) {
-    return { dossierId, reglage: { etat: 'illisible', motif: messageErreur(erreur, 'lecture interrompue') } }
+    return illisible(dossierId, messageErreur(erreur, 'lecture interrompue'))
   }
 }

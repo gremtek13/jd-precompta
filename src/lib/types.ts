@@ -83,9 +83,10 @@ export interface Dossier {
   // LA NATURE DES RECETTES EN ESPÈCES DU CLIENT (ligne 26.6, étape C10 ; CAISSE2-Q2, (B) ; migration `caisse_du_client`,
   // en base et dans l'export depuis le 02/11/2026) : la catégorie de produit (classe 7) du dossier, ou commune, que le cabinet fixe (la policy `dossiers_update`,
   // sous la garde `garder_categorie_recettes_client`), et que la saisie du client prend pour ses recettes ; nulle tant qu'il
-  // ne l'a pas fixée. Sans clé étrangère (la restauration écrit les dossiers avant leurs catégories). FACULTATIVE dans ce
-  // type jusqu'au premier écran qui l'écrit (C11).
-  categorie_recettes_client?: string | null
+  // ne l'a pas fixée. Sans clé étrangère (la restauration écrit les dossiers avant leurs catégories). OBLIGATOIRE depuis
+  // l'écran qui l'écrit, l'onglet Accès (C11) ; une sauvegarde d'avant la migration ne la porte pas, et sa restauration la
+  // laisse nulle (la colonne n'a pas de valeur par défaut).
+  categorie_recettes_client: string | null
   // LES FACTURES DU DOSSIER SONT-ELLES LA SOURCE DE LEURS VENTES ? (chantier EC-Q3, étape VF2 ; migration
   // `source_de_la_vente`, en base et dans l'export depuis le 18/10/2026 ; lib/sourceDeLaVente.ts.) Faux par défaut ; posé
   // par le cabinet (la policy `dossiers_update`) ; irréversible dès qu'une facture source existe
@@ -1002,10 +1003,10 @@ export interface Membership {
   droit_banque: boolean
   // LE DROIT « CAISSE » (ligne 26.6, étape C10 ; migration `caisse_du_client`, en base et dans l'export depuis le
   // 02/11/2026 — voir lib/caisse.ts) : la saisie des espèces par le praticien, sur un dossier exonéré de TVA ou en franchise en base
-  // (`garder_droit_caisse`), posée par `changer_droits_acces` à quatre paramètres seule ; faux par défaut. FACULTATIF dans
-  // ce type, et c'est la vérité des deux côtés de la migration : avant elle, `select('*')` ne le rend pas ; après, il le
-  // rend, faux sur tout accès d'aujourd'hui. Il devient obligatoire avec le premier écran qui le lit (l'onglet Accès, C11).
-  droit_caisse?: boolean
+  // (`garder_droit_caisse`), posée par `changer_droits_acces` à quatre paramètres seule ; faux par défaut. OBLIGATOIRE
+  // depuis le premier écran qui le lit (l'onglet Accès, C11 ; lib/droitsAcces.ts) ; une ligne d'avant la migration ne le
+  // porte pas, et `droitsDeLaLigne` n'en accorde alors aucun.
+  droit_caisse: boolean
 }
 
 export type RoleCabinetAdmin = 'comptable_en_chef' | 'comptable'
