@@ -9,9 +9,10 @@ import { droitsSur } from '../lib/droitsAcces'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import { maBanqueOuverte } from '../lib/banqueClient'
+import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
 import {
-  IconAccueil, IconApparence, IconBanque, IconComptesMaster, IconDossiers, IconEquipe, IconEstimation, IconFactures,
+  IconAccueil, IconApparence, IconBanque, IconCaisse, IconComptesMaster, IconDossiers, IconEquipe, IconEstimation, IconFactures,
   IconInformations, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun,
 } from './icons'
@@ -94,6 +95,9 @@ function Coque() {
   // « Ma banque » (étape P9) : de même, avec la case « Banque » sur la société affichée, comme sa route.
   const maBanque = role === 'client'
     && maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)
+  // « Ma caisse » (ligne 26.6, étape C12a) : de même, avec la case « Caisse » sur la société affichée, comme sa route.
+  const maCaisse = role === 'client'
+    && maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).caisse)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
@@ -320,6 +324,13 @@ function Coque() {
                   <IconBanque width={18} height={18} />
                   <span className="nav-label-full">Ma banque</span>
                   <span className="nav-label-court">Banque</span>
+                </NavLink>
+              )}
+              {maCaisse && (
+                <NavLink to="/ma-caisse" title="Ma caisse" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconCaisse width={18} height={18} />
+                  <span className="nav-label-full">Ma caisse</span>
+                  <span className="nav-label-court">Caisse</span>
                 </NavLink>
               )}
               <NavLink to="/mes-informations" title="Mes informations" className={({ isActive }) => (isActive ? 'active' : '')}>

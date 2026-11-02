@@ -6,7 +6,7 @@ import { deposerFichier } from '../lib/depot'
 import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, comptesParMois, dateRelative } from '../lib/format'
 import { lireAnneesCloturees } from '../lib/clotureExercice'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../lib/resteAEnvoyer'
-import { IconBanque, IconCamera, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
+import { IconBanque, IconCaisse, IconCamera, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
 import ProgressRing from '../components/widgets/ProgressRing'
@@ -19,6 +19,7 @@ import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import AccueilVentesClient from './AccueilVentesClient'
 import { maBanqueOuverte } from '../lib/banqueClient'
+import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
 import { useEcarteesDuClient } from '../lib/piecesJointesEcarteesClientLecture'
 import PiecesJointesEcarteesAccueil from './PiecesJointesEcarteesAccueil'
 import AvisChangementDeRib from '../components/AvisChangementDeRib'
@@ -60,6 +61,8 @@ export default function ClientHome() {
   // « Ma banque » (étape P9) : sa tuile, sous la même garde que son entrée — sur téléphone, l'accueil cache la barre du bas,
   // et ses tuiles en tiennent lieu.
   const banqueOuverte = maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)
+  // « Ma caisse » (ligne 26.6, étape C12a) : sa tuile, sous la même garde que son entrée.
+  const caisseOuverte = maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).caisse)
   const navigate = useNavigate()
   // Les pièces jointes que la réception par e-mail n'a pas déposées (ligne 22.94) : la lecture de « Mes pièces », écrite une
   // fois (lib/piecesJointesEcarteesClientLecture.ts), À PART de `load` — sa panne n'en fausse aucune autre, et la panne des
@@ -324,6 +327,13 @@ export default function ClientHome() {
             <span className="tuile-icone"><IconBanque width={24} height={24} /></span>
             <span className="tuile-libelle">Ma banque</span>
             <span className="tuile-desc">Tes mouvements, et la pièce que ton cabinet attend pour chacun.</span>
+          </Link>
+        )}
+        {caisseOuverte && (
+          <Link to="/ma-caisse" className="tuile">
+            <span className="tuile-icone"><IconCaisse width={24} height={24} /></span>
+            <span className="tuile-libelle">Ma caisse</span>
+            <span className="tuile-desc">Tes recettes en espèces, jour par jour, et ce qu'il reste dans ta caisse.</span>
           </Link>
         )}
         <Link to="/mes-informations" className="tuile">

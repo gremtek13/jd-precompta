@@ -13,10 +13,12 @@ import ClientInformations from './pages/ClientInformations'
 import ClientSimulation from './pages/ClientSimulation'
 import ClientVentes from './pages/ClientVentes'
 import ClientBanque from './pages/ClientBanque'
+import ClientCaisse from './pages/ClientCaisse'
 import { droitsSur } from './lib/droitsAcces'
 import { mesVentesOuvertes } from './lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from './lib/encaissementsFactures'
 import { maBanqueOuverte } from './lib/banqueClient'
+import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from './lib/caisseClient'
 import { COUVERTURE_EXPORTEE } from './lib/couvertureReleve'
 import SuperAdminPage from './pages/SuperAdminPage'
 import EquipePage from './pages/EquipePage'
@@ -109,6 +111,8 @@ function Gate() {
             {mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes) && <Route path="/mes-ventes" element={<ClientVentes />} />}
             {/* « Ma banque » (espace client, étape P9) : de même, seulement si la société AFFICHÉE porte la case « Banque ». */}
             {maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque) && <Route path="/ma-banque" element={<ClientBanque />} />}
+            {/* « Ma caisse » (ligne 26.6, étape C12a) : de même, seulement si la société AFFICHÉE porte la case « Caisse ». */}
+            {maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).caisse) && <Route path="/ma-caisse" element={<ClientCaisse />} />}
             <Route path="*" element={<Navigate to="/accueil" replace />} />
           </>
         )}

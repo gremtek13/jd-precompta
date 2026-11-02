@@ -17,6 +17,9 @@
 //   node outils/captures/debordements.mjs 390 client-banque  # banc rattaché à l'atelier (d7) avec la case « Ventes » — et « Banque »
 //                                                           # pour la seconde passe —, ses factures et leurs fenêtres, et la barre
 //                                                           # du bas du téléphone, dont les entrées doivent tenir (cinq avec « Mes ventes »)
+//   node outils/captures/debordements.mjs 390 client-caisse  # « Ma caisse » (ligne 26.6, étape C12a) : le compte rattaché au cabinet
+//                                                           # infirmier (d1) avec « Caisse » (et « Ventes » et « Banque » : la barre
+//                                                           # du bas à sept entrées), son accueil, sa caisse, sa correction, un refus
 //   Les visites `factures/*` ouvrent chacune une fenêtre superposée et la mesurent contre sa carte (`fenetre`), dont celles
 //   d'une facture de REDEVABLE jamais transmise (dossier d7) : son aperçu, qui imprime le numéro de TVA de l'émetteur, et sa
 //   fenêtre de transmission, la seule à offrir à la fois « Envoyer par Super PDP » et « Déposer sur… ».
@@ -1921,6 +1924,38 @@ const VISITES_MEMBRE = [
   },
 ]
 
+// « MA CAISSE » (ligne 26.6, étape C12a), pour la seule passe `client-caisse` : l'accueil et sa tuile ; la caisse du mois en cours
+// (sans mouvement : la phrase), puis celle de septembre 2026 — le report, les recettes du cabinet et celle du praticien, ses deux
+// gestes, le versement en banque ; la correction de sa recette, le formulaire repris ; un prélèvement qui viderait la caisse,
+// refusé avant le clic sous les mots de la base.
+const choisirSeptembre = async (page) => {
+  await page.locator('#caisse-mois').selectOption('9')
+  await page.getByRole('heading', { name: 'Septembre 2026' }).waitFor({ timeout: 10000 })
+}
+const VISITES_CAISSE_CLIENT = [
+  { chemin: '#/accueil', nom: 'client/caisse-accueil', apres: async (page) => { await page.getByRole('link', { name: /Ma caisse/ }).first().waitFor({ timeout: 10000 }) } },
+  { chemin: '#/ma-caisse', nom: 'client/ma-caisse', nav: true, apres: async (page) => { await page.getByText(/^Ta caisse n’a bougé aucun jour de|^Au \d/).first().waitFor({ timeout: 10000 }) } },
+  { chemin: '#/ma-caisse', nom: 'client/ma-caisse-septembre', nav: true, apres: choisirSeptembre },
+  {
+    chemin: '#/ma-caisse', nom: 'client/ma-caisse-correction', nav: true,
+    apres: async (page) => {
+      await choisirSeptembre(page)
+      await page.getByRole('button', { name: 'Corriger', exact: true }).first().click()
+      await page.getByRole('button', { name: 'Remplacer', exact: true }).waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    chemin: '#/ma-caisse', nom: 'client/ma-caisse-refus', nav: true,
+    apres: async (page) => {
+      await choisirSeptembre(page)
+      await page.locator('#caisse-genre').selectOption('prelevement')
+      await page.locator('#caisse-date').fill('2026-09-02')
+      await page.locator('#caisse-montant').fill('5000')
+      await page.getByText(/^Ce prélèvement de 5000,00 € rendrait la caisse négative/).waitFor({ timeout: 10000 })
+    },
+  },
+]
+
 const VISITES_BANQUE_CLIENT = [
   { chemin: '#/ma-banque', nom: 'client/ma-banque', nav: true },
   ...[
@@ -2161,8 +2196,9 @@ async function mesurerLesBoutons(page, fenetre) {
   }, fenetre)
 }
 const largeur = Number(process.argv[2] ?? 1440)
-// La passe du client : `client` (la case « Ventes » seule) ou `client-banque` (et « Banque »).
-const passeClient = process.argv.slice(3).find((a) => a === 'client' || a === 'client-banque') ?? null
+// La passe du client : `client` (la case « Ventes » seule), `client-banque` (et « Banque »), ou `client-caisse` (« Ma caisse »,
+// sur le cabinet infirmier).
+const passeClient = process.argv.slice(3).find((a) => a === 'client' || a === 'client-banque' || a === 'client-caisse') ?? null
 // La passe du membre de l'équipe qui est aussi client d'un dossier (23Q2Q2Q1-Q1) : `membre`.
 const passeMembre = passeClient === null && process.argv.slice(3).includes('membre')
 const avecPanneau = process.argv[3] !== 'sans' && passeClient === null
@@ -2191,7 +2227,12 @@ await contexte.addInitScript(({ barre, panneau, client, membre }) => {
   // Le compte du banc en « Comptable » du cabinet, assigné à d1 et d7, client de d3 (voir fauxSupabase.ts).
   if (membre) localStorage.setItem('banc-membre', '1')
   // Le compte du banc en client, rattaché à l'atelier avec « Ventes » (voir fauxSupabase.ts), qui est la société affichée.
-  if (client) {
+  if (client === 'client-caisse') {
+    // « Ma caisse » : le seul cabinet infirmier, avec « Caisse » (voir fauxSupabase.ts).
+    localStorage.setItem('banc-client', '1')
+    localStorage.setItem('banc-client-caisse', '1')
+    localStorage.setItem('jd-precompta-dossier-actif', 'd1')
+  } else if (client) {
     localStorage.setItem('banc-client', '1')
     localStorage.setItem('banc-client-ventes', client === 'client-banque' ? 'banque' : 'sans-banque')
     localStorage.setItem('jd-precompta-dossier-actif', 'd7')
@@ -2204,7 +2245,8 @@ let total = 0
 let fenetresSondees = 0
 let boutonsSondes = 0
 let boutonsRecouverts = 0
-const visitesDuClient = passeClient === 'client-banque' ? [...VISITES_CLIENT, ...VISITES_BANQUE_CLIENT] : VISITES_CLIENT
+const visitesDuClient = passeClient === 'client-caisse' ? VISITES_CAISSE_CLIENT
+  : passeClient === 'client-banque' ? [...VISITES_CLIENT, ...VISITES_BANQUE_CLIENT] : VISITES_CLIENT
 for (const { dossier, onglet, chemin, nom, apres, fenetre, nav, sansAssistant } of passeMembre ? VISITES_MEMBRE : passeClient ? visitesDuClient : VISITES) {
   await page.goto(`${BASE}${chemin ?? `#/dossiers/${dossier}/${onglet}`}`)
   await page.waitForTimeout(900)

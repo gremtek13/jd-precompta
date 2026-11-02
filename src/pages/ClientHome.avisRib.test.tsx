@@ -19,7 +19,7 @@ import { changementFictif, toutesLesCombinaisons, valeurRendue } from '../test/c
 const faux = vi.hoisted(() => ({
   drapeau: true,
   dossier: 'dossier-a',
-  droits: {} as Record<string, { ventes: boolean; banque: boolean }>,
+  droits: {} as Record<string, { ventes: boolean; banque: boolean; caisse?: boolean }>,
   rpcs: [] as { nom: string; args: unknown }[],
   // Par société : la réponse de la fonction, et une porte qui la retient tant qu'on ne l'ouvre pas.
   changements: {} as Record<string, { data: unknown; error: { message: string } | null }>,
@@ -308,5 +308,21 @@ describe('ClientHome — drapeau baissé : la fonction n’est pas en base', () 
     expect(appels()).toEqual([])
     expect(avis()).toBeNull()
     expect(texte()).not.toMatch(/RIB/)
+  })
+})
+
+// « Ma caisse » (ligne 26.6, étape C12a) : sa tuile, sous la même garde que son entrée — la case « Caisse » de la société
+// affichée. Elle ne lit rien de plus : « Caisse » seule n'appelle pas la fonction du RIB.
+describe('ClientHome — la tuile « Ma caisse »', () => {
+  it('avec la case, la tuile mène à « Ma caisse » ; sans elle, aucune tuile', async () => {
+    faux.droits = { 'dossier-a': { ...AUCUNE, caisse: true } }
+    const { unmount } = await monter()
+    const tuile = screen.getByRole('link', { name: /Ma caisse/ })
+    expect(tuile.getAttribute('href')).toBe('/ma-caisse')
+    expect(appels()).toEqual([])
+    unmount()
+    faux.droits = { 'dossier-a': { ...LES_DEUX, caisse: false } }
+    await monter()
+    expect(screen.queryByRole('link', { name: /Ma caisse/ })).toBeNull()
   })
 })

@@ -205,8 +205,8 @@ const CE_QUE_DONNE_LE_ROLE: Readonly<Record<RoleCabinetAdmin, string>> = {
  */
 export const CE_QUE_PERD_LE_CLIENT = "Dès qu'elle rouvrira l'application, ce compte n'ouvrira plus que l'espace du cabinet : "
   + "la personne perd son espace client — l'accueil, « Mes pièces » (le dépôt de ses pièces et de ses documents, ses "
-  + "réponses à tes précisions), « Mes informations », « Ma simulation » et, selon les cases de ses accès, « Mes ventes » et "
-  + '« Ma banque » —, pour chacune de ses sociétés.'
+  + "réponses à tes précisions), « Mes informations », « Ma simulation » et, selon les cases de ses accès, « Mes ventes », "
+  + '« Ma banque » et « Ma caisse » —, pour chacune de ses sociétés.'
 
 /** Ce qui reste : ses accès, en base, que l'application lui rouvre dès qu'il n'a plus de ligne d'équipe. */
 export const CE_QUI_RESTE_AU_CLIENT = "Ses accès restent dans l'onglet Accès de ses dossiers : la retirer de l'équipe "

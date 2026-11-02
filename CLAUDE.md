@@ -67,8 +67,12 @@ d'un accès et la saisie du praticien en base (`caisse_du_client`, C10-Q1 telle 
 02/11/2026, une lecture ouverte au client « Caisse » ; C11, l'onglet Accès, le 02/11/2026 : la case « Caisse » suit le
 statut de TVA lu, se coche sur une confirmation qui nomme la personne, ce qui s'ouvre et la condition, part à la forme à
 quatre ; la nature des recettes sous la liste ; `AuthContext` lit la case ; la Vue d'ensemble dit les saisies du client que
-ce navigateur n'a pas montrées → « LA CAISSE : LE DROIT « CAISSE » À L'ÉCRAN DU CABINET (C11, LIGNE 26.6) » ; reste C12,
-« Ma caisse » → « LA CAISSE ET
+ce navigateur n'a pas montrées → « LA CAISSE : LE DROIT « CAISSE » À L'ÉCRAN DU CABINET (C11, LIGNE 26.6) » ; C12a,
+« Ma caisse », le 02/11/2026 : l'écran du praticien (`maCaisseOuverte`, la case relue à la base) lit sa caisse jour par jour
+(`caisse_du_client`, l'année et les suivantes) et ses opérations, les CONFRONTE avant de rien offrir, et juge ses saisies,
+corrections et retraits par les règles de `lib/caisse.ts` sur la caisse ainsi rejouée (`lib/caisseClient.ts`) — ce qu'il ne
+lit pas (l'ouverture du dossier, une année sans jour lu) reste au jugement de la base → « LA CAISSE : « MA CAISSE », L'ÉCRAN
+DU PRATICIEN (C12A, LIGNE 26.6) » ; reste C12b, le paiement d'une pièce depuis « Mes pièces » → « LA CAISSE ET
 LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026 », « LA CAISSE : LE MODULE, LA LECTURE
 ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
 CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
@@ -360,6 +364,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     la banque → « « MES VENTES › FACTURES » ». « Tes plateformes » : ni réception ni secret → « LES CONNEXIONS DU CLIENT
     ET LES TUILES DE SON ACCUEIL ». « Par le client » côté cabinet (`lib/auteursVentes.ts`) → « « PAR LE CLIENT » CÔTÉ
     CABINET ».
+  - « Ma caisse » sous `maCaisseOuverte` : la caisse rejouée sur ce que le client lit, confrontée au total et au solde de
+    la base, sinon aucun geste ; aucune catégorie, aucun compte, aucun nom → « LA CAISSE : « MA CAISSE », L'ÉCRAN DU
+    PRATICIEN (C12A, LIGNE 26.6) ».
   - « Ma banque » sous `maBanqueOuverte` : l'état DÉDUIT, le solde LU au dernier relevé contrôlé, jamais calculé ; ni
     catégorie ni écriture → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » » ; avec « Ventes », le registre lu APRÈS la
     case dit le mouvement classé ou réservé par ses encaissements, lu en partie il tait les mouvements libres → « « MA

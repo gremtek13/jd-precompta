@@ -609,7 +609,8 @@ export const CE_QUE_LA_CASE_RETIENT = 'Tant qu’un accès la porte, le statut d
   + 'case d’abord.'
 
 // CE QUE LA CASE OUVRE À LA SESSION DU CLIENT, PAR LA BASE, DÈS QU'ELLE EST COCHÉE — qu'un écran le montre ou non (« Ma
-// caisse », étape C12, viendra ensuite) : la policy `operations_caisse_lecture_caisse` (toute la caisse de son dossier,
+// caisse », étape C12a, en montre la caisse, ses saisies, ses corrections et ses retraits ; le paiement d'une pièce, C12b, viendra
+// ensuite) : la policy `operations_caisse_lecture_caisse` (toute la caisse de son dossier,
 // chaque colonne), la fonction `caisse_du_client` (la caisse jour par jour, en totaux, et « le prix d'un solde juste » que son
 // commentaire veut voir dit ici : les versements et retraits du relevé sans « Banque », les espèces de ses factures sans
 // « Ventes ») et les cinq fonctions d'écriture que `qui_ecrit_la_caisse` lui ouvre (une opération, un mois, le retrait, le
@@ -621,6 +622,13 @@ export const CE_QUE_LA_CASE_CAISSE_OUVRE = 'il y lit toute la caisse de son doss
   + '« Banque » ni « Ventes »), et le solde. Il y saisit ses recettes en espèces, sous la nature que tu fixes, ses apports, '
   + 'ses prélèvements et le paiement en espèces d’une pièce, et ne retire ou ne remplace que ce qu’il a saisi ; ce qu’il '
   + 'saisit compte aussitôt, marqué « saisie par le client » dans l’onglet Caisse, où tu le retires ou le remplaces au besoin.'
+
+/**
+ * Ce que l'espace du client en montre (« Ma caisse », étape C12a) : sa caisse, et ce qu'il y saisit, corrige et retire ; le
+ * paiement d'une pièce en espèces, que la base lui ouvre aussi, n'a pas encore son écran (C12b).
+ */
+export const CE_QUE_MONTRE_MA_CAISSE = 'Son espace la lui montre dans « Ma caisse », où il saisit ses recettes, ses apports et '
+  + 'ses prélèvements, et corrige ou retire ce qu’il a saisi ; le paiement d’une pièce en espèces n’y a pas encore son écran.'
 
 /** Ce que la phrase de l'onglet dit de la case « Caisse » sur CE dossier, selon son statut de TVA. */
 export function phraseDuStatutDeLaCaisse(caisse: EtatCaisseDuDossier): string {
@@ -641,7 +649,7 @@ export function phraseDuStatutDeLaCaisse(caisse: EtatCaisseDuDossier): string {
 export function ceQueDitLaCaseCaisse(caisse: EtatCaisseDuDossier): string {
   const { libelle, ouvrira } = definitionDe('caisse')
   return `« ${libelle} » (${ouvrira}) : une case cochée ouvre au client, par la base, la caisse de son dossier — `
-    + `${CE_QUE_LA_CASE_CAISSE_OUVRE} Son espace ne la lui montre pas encore : l’écran « Ma caisse » viendra ensuite. `
+    + `${CE_QUE_LA_CASE_CAISSE_OUVRE} ${CE_QUE_MONTRE_MA_CAISSE} `
     + phraseDuStatutDeLaCaisse(caisse)
 }
 
@@ -691,7 +699,7 @@ export function confirmationDeLaCaseCaisse(
       condition,
       CE_QUE_LA_CASE_RETIENT,
       laNature,
-      'Son espace ne lui montre pas encore sa caisse : l’écran « Ma caisse » viendra ensuite.',
+      CE_QUE_MONTRE_MA_CAISSE,
     ],
     bouton: 'Cocher « Caisse »',
   }

@@ -9,7 +9,7 @@ import {
   LIBELLE_ADRESSE_IDENTITE, LIBELLE_DENOMINATION_IDENTITE, LIBELLE_RCS_VILLE_IDENTITE,
   LIBELLE_ADRESSE_CONTACT, LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOM_CONTACT, LIBELLE_NOTE_DECLARATION, LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDisentLesCasesDuDossier, ceQueDonneUnAcces, changementApplique, definitionDe,
   demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus, type ReglageDuDossier,
-  type EtatCaisseDuDossier, CE_QUE_LA_CASE_CAISSE_OUVRE, CE_QUE_LA_CASE_RETIENT, REFUS_CAISSE_DOSSIER_NON_EXCLU,
+  type EtatCaisseDuDossier, CE_QUE_LA_CASE_CAISSE_OUVRE, CE_QUE_LA_CASE_RETIENT, CE_QUE_MONTRE_MA_CAISSE, REFUS_CAISSE_DOSSIER_NON_EXCLU,
   REFUS_STATUT_SOUS_LA_CASE_CAISSE, TABLES_LUES_AVEC_CAISSE, ceQueDitLaCaseCaisse, confirmationDeLaCaseCaisse, enumeration,
   etatCaisseDuDossier, libellesDesCases, phraseDuStatutDeLaCaisse, raisonDuDossierNonExclu, raisonDuStatutIllisible,
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
@@ -225,11 +225,12 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     const routesClient = [...app.matchAll(/<Route path="(\/[^"]+)" element=\{<(Client\w+) \/>\} \/>/g)].map((m) => `${m[1]} ${m[2]}`)
     expect(routesClient).toEqual([
       '/accueil ClientHome', '/mes-pieces ClientUpload', '/mes-informations ClientInformations', '/ma-simulation ClientSimulation',
-      '/mes-ventes ClientVentes', '/ma-banque ClientBanque',
+      '/mes-ventes ClientVentes', '/ma-banque ClientBanque', '/ma-caisse ClientCaisse',
     ])
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual([
-      'ClientBanque.tsx', 'ClientHome.tsx', 'ClientInformations.tsx', 'ClientSimulation.tsx', 'ClientUpload.tsx', 'ClientVentes.tsx',
+      'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientHome.tsx', 'ClientInformations.tsx', 'ClientSimulation.tsx', 'ClientUpload.tsx',
+      'ClientVentes.tsx',
     ])
     // DEPUIS L'ÉTAPE P4b, l'accueil lit la case « Ventes » pour ses tuiles « À encaisser » et « À déclarer » : la même garde
     // que la route, sur la société affichée, et rien d'autre ; les tuiles relisent leurs cases à la base.
@@ -237,9 +238,12 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(accueil).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierId).ventes)')
     // Et, depuis l'étape P9, la tuile « Ma banque » : la case « Banque » sous la garde de sa route, et rien d'autre.
     expect(accueil).toContain('maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)')
-    expect(accueil).not.toMatch(/droit_ventes|droit_banque/)
+    // Et, depuis l'étape C12a, la tuile « Ma caisse » : la case « Caisse » sous la garde de sa route, et rien d'autre.
+    expect(accueil).toContain('maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).caisse)')
+    expect(accueil).not.toMatch(/droit_ventes|droit_banque|droit_caisse/)
     expect(accueil.match(/\.banque\b/g)).toHaveLength(1)
-    expect(accueil.match(/droitsSur\(/g)).toHaveLength(2)
+    expect(accueil.match(/\.caisse\b/g)).toHaveLength(1)
+    expect(accueil.match(/droitsSur\(/g)).toHaveLength(3)
     // DEPUIS L'ÉTAPE A6b2, les cases se relisent à la base dans UNE lecture des ventes (`useVentesDuClient`), partagée par les tuiles
     // et l'encart « Facture électronique » : les tuiles ne lisent plus rien, l'encart ne lit que l'état de sa facture électronique.
     const lectureDesVentes = readFileSync(resolve(process.cwd(), 'src/lib/ventesDuClientLecture.ts'), 'utf8')
@@ -275,6 +279,17 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     const ventes = readFileSync(resolve(process.cwd(), 'src/pages/ClientVentes.tsx'), 'utf8')
     expect(ventes).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
     expect(ventes).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b/)
+    // « Ma caisse » (étape C12a) : la route et l'entrée lisent la case « Caisse » de la société AFFICHÉE, derrière le drapeau,
+    // et rien d'autre ; l'écran relit sa case à la base, par sa lecture, et ne lit pas celles d'AuthContext.
+    const gardeCaisse = 'maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).caisse)'
+    expect(app).toContain(`{${gardeCaisse} && <Route path="/ma-caisse" element={<ClientCaisse />} />}`)
+    expect(layout).toContain(gardeCaisse)
+    expect(layout.match(/\.caisse\b/g)).toHaveLength(1)
+    expect(layout).not.toMatch(/droit_caisse/)
+    const caisse = readFileSync(resolve(process.cwd(), 'src/pages/ClientCaisse.tsx'), 'utf8')
+    expect(caisse).not.toMatch(/droit_ventes|droit_banque|droit_caisse|droitsParDossier|droitsSur\b/)
+    const lectureDeLaCaisse = readFileSync(resolve(process.cwd(), 'src/lib/caisseClientLecture.ts'), 'utf8')
+    expect(lectureDeLaCaisse).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
   })
 
   it('la phrase de l’onglet dit ce qu’un accès donne — dans les deux états du drapeau de la banque', () => {
@@ -1484,7 +1499,7 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     for (const [i, phrase] of phrases.entries()) {
       expect(phrase.startsWith(debut), String(i)).toBe(true)
       expect(phrase).toContain(CE_QUE_LA_CASE_CAISSE_OUVRE)
-      expect(phrase).toContain('Son espace ne la lui montre pas encore : l’écran « Ma caisse » viendra ensuite.')
+      expect(phrase).toContain(`${CE_QUE_LA_CASE_CAISSE_OUVRE} ${CE_QUE_MONTRE_MA_CAISSE} `)
       // Jamais une affirmation que la case ne change rien : la base l'ouvre dès qu'elle est cochée.
       expect(phrase).not.toMatch(/ne change (rien|pas)/)
     }
@@ -1542,10 +1557,17 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     expect(derniereDefinitionSql('enregistrer_operation_caisse')).toContain('categorie_recettes_client')
   })
 
-  it('« Ma caisse » n’existe pas encore : la phrase le dit à venir, et le jour où sa route arrive, ce test tombe', () => {
+  it('« Ma caisse » existe (étape C12a) : la phrase et la confirmation la nomment, et taisent le paiement d’une pièce, à venir', () => {
     const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
-    expect(app).not.toMatch(/ma-caisse|ClientCaisse/)
-    expect(readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^ClientCaisse/.test(f))).toEqual([])
+    expect(app).toMatch(/<Route path="\/ma-caisse" element={<ClientCaisse \/>} \/>/)
+    expect(readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^ClientCaisse\.tsx$/.test(f))).toEqual(['ClientCaisse.tsx'])
+    expect(CE_QUE_MONTRE_MA_CAISSE).toContain('« Ma caisse »')
+    expect(CE_QUE_MONTRE_MA_CAISSE).toContain('le paiement d’une pièce en espèces n’y a pas encore son écran')
+    expect(confirmationDeLaCaseCaisse('x', 'exonere', { etat: 'absente' }).paragraphes).toContain(CE_QUE_MONTRE_MA_CAISSE)
+    // Le jour où le paiement d'une pièce arrive dans « Mes pièces » (C12b), cette phrase change : la page des pièces ne le
+    // nomme pas encore.
+    const pieces = readFileSync(resolve(process.cwd(), 'src/pages/ClientUpload.tsx'), 'utf8')
+    expect(pieces).not.toMatch(/regler_piece_par_la_caisse/)
   })
 
   it('ce que la case ouvre ne porte aucun texte libre du cabinet : aucun libellé neuf à écrire', () => {
