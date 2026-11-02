@@ -16,7 +16,7 @@ import type { FactureEmise, OperationCaisse, Piece } from './types'
 
 // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, À L'ÉCRAN DU CABINET (ligne 26.6, étape C9b ; CAISSE-Q4, (B)). La conception :
 // HISTORIQUE.md, « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE », § 8 ; la base :
-// la migration `paiement_par_la_caisse`, PRÉPARÉE (supabase/preparees/), pas encore appliquée ; ses refus redits avant le clic :
+// la migration `paiement_par_la_caisse`, appliquée le 02/11/2026 (supabase/schema/) ; ses refus redits avant le clic :
 // lib/paiementParLaCaisse.ts (C8) ; les moteurs qui lisent ses paiements : C9a.
 //
 // CE QUE CE MODULE ASSEMBLE, sans une règle recopiée : la fiche d'une pièce (pages/dossier/ReglementParLaCaisse.tsx) — ses

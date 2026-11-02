@@ -815,6 +815,22 @@ comme la migration (HISTORIQUE.md, « LA CAISSE : LE DROIT « CAISSE », EN BASE
 APPLIQUÉE) »). Le jour de l'application : C8, FEC22b, le filet, puis elle, chacune par l'outil, puis les trois contrôles ;
 puis `caisse.sql`, `droitsAcces.sql` et `rls.sql` se jouent en production, entiers.
 
+**Appliquées le 02/11/2026**, sur l'accord du cabinet, dans cet ordre, chacune par l'outil et à l'empreinte de son
+fichier (la ligne d'historique relue, les retours chariot écartés) : `20261102075951_paiement_par_la_caisse`
+(`0accdea9…`), `20261102080337_champs_bnc_du_fec` (`844d59be…`), `20261102080758_validation_des_paiements_par_la_caisse`
+(`7c098f63…`), `20261102081129_caisse_du_client` (`fcc95402…`) ; leurs fichiers passent de `supabase/preparees/` (où ne
+restent que les retours arrière et leur dossier) à l'export, textes inchangés. Les trois contrôles : la dérive, 168
+fichiers et 168 migrations, `86d12ffbfdb9232f57b4989c7b161548` des deux côtés ; le socle, 81 instructions,
+`bfe9dce858d27e4520ef875e4f7f9515` des deux côtés — la seule instruction changée, le `create table` d'`ecritures_brouillon`,
+reçoit les cinq colonnes de FEC22b et sa contrainte sous le rendu de la production ; l'inventaire, 2 307 objets,
+`93edc60a9d6ed80c3dabb0e988ab9db8` des deux côtés. `signature.sql` en production rend les neuf familles de la réplique
+ci-dessus, au caractère près. Les essais en production : les blocs CP et CC de `rls.sql`, d'un seul appel (26 074
+caractères reçus, `7eeef8bb…`, le texte construit), 9 lignes de verdict, 0 en faute, 5 mutations sur 5 qui mordent ;
+`validationDesPaiementsParLaCaisse.sql` entier, plus une ligne TEXTE (17 183 caractères, `3981c03f…`), 13 verdicts sur
+13 ; rien n'est resté. Comme `caisse.sql` le 30/10/2026, `caisse.sql` et `droitsAcces.sql` ne sont PAS rejoués en
+production : la production rend les neuf familles de la réplique où ils sont passés entiers, le corps de chaque fonction
+compris (HISTORIQUE.md, « LA CAISSE ET LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026 »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

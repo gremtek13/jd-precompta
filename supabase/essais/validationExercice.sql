@@ -180,7 +180,7 @@
 -- forme `dossier` avec elle. Avant la migration, rien ne change.
 --
 -- ÉTENDU LE 31/10/2026 AUX QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE (ligne 26.6, étape e ; lot FEC22b ; migration
--- `champs_bnc_du_fec`, PRÉPARÉE dans `supabase/preparees/`, pas encore en base). Une étape de genre « …f » ne se joue
+-- `champs_bnc_du_fec`, préparée dans `supabase/preparees/`, en base depuis le 02/11/2026). Une étape de genre « …f » ne se joue
 -- qu'avec elle — ses colonnes sur `ecritures_brouillon` — : sans elle, une ligne dit qu'elles attendent (EN ATTENTE), et
 -- les 145 contrôles d'hier rendent ce qu'ils rendaient. Avec elle, ces 145 contrôles sont LE CAS NEUTRE : une
 -- numérotation qui ne porte pas les clés valide comme hier, refus et écritures compris, et 172 relit que les écritures de

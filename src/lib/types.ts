@@ -81,10 +81,10 @@ export interface Dossier {
   // fige à sa validation. FACULTATIVE tant que la migration n'est pas en base ; aucun écran ne l'écrit encore.
   mentions_identite?: string | null
   // LA NATURE DES RECETTES EN ESPÈCES DU CLIENT (ligne 26.6, étape C10 ; CAISSE2-Q2, (B) ; migration `caisse_du_client`,
-  // préparée) : la catégorie de produit (classe 7) du dossier, ou commune, que le cabinet fixe (la policy `dossiers_update`,
+  // en base et dans l'export depuis le 02/11/2026) : la catégorie de produit (classe 7) du dossier, ou commune, que le cabinet fixe (la policy `dossiers_update`,
   // sous la garde `garder_categorie_recettes_client`), et que la saisie du client prend pour ses recettes ; nulle tant qu'il
   // ne l'a pas fixée. Sans clé étrangère (la restauration écrit les dossiers avant leurs catégories). FACULTATIVE dans ce
-  // type tant que la migration n'est pas en base ; aucun écran ne l'écrit encore (C11).
+  // type jusqu'au premier écran qui l'écrit (C11).
   categorie_recettes_client?: string | null
   // LES FACTURES DU DOSSIER SONT-ELLES LA SOURCE DE LEURS VENTES ? (chantier EC-Q3, étape VF2 ; migration
   // `source_de_la_vente`, en base et dans l'export depuis le 18/10/2026 ; lib/sourceDeLaVente.ts.) Faux par défaut ; posé
@@ -533,25 +533,18 @@ export interface EcritureBrouillon {
   // devenue avec le premier écran qui la lisait (VF1b).
   operation_caisse_id?: string | null
   // LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, FIGÉS À LA VALIDATION (ligne 26.6, étape e ; lot FEC22b ; migration
-  // `champs_bnc_du_fec`, préparée hors de l'export — voir lib/champsBncFiges.ts) : la date et le mode du règlement, la
-  // nature de l'opération (une par écriture), le poste de la 2035 d'une ligne de charge ou de produit (NatOp se recompose
-  // « nature — poste », `natOpFigee`), l'identification du client (le numéro d'une facture validée du dossier, ou le SIREN
-  // de son client — jamais un nom). Posés par `valider_exercice` seule, dans leurs listes fermées, ou nuls ; nuls sur une
-  // écriture proposée (`ecritures_brouillon_champs_bnc_du_fec`). FACULTATIFS dans ce type, et c'est la vérité des deux
-  // côtés de la migration : avant elle, `select('*')` ne les rend pas ; après, il les rend, nuls sur toute écriture que la
-  // validation n'a pas figée avec eux. Le premier moteur qui les lit est arrivé (le FEC d'un exercice validé, lot FEC22c2,
-  // `numerotationValidee`), mais ILS RESTENT FACULTATIFS JUSQU'AU JOUR DE L'APPLICATION : obligatoires avant elle, le type
-  // mentirait sur toute ligne que la production rend (aucune ne les porte), et un jeu d'essai devrait les inventer.
-  // `numerotationValidee` lit donc une valeur ABSENTE comme nulle : une ligne validée sans eux.
-  // LA BASCULE, le jour de la migration (après elle, et après les trois contrôles de l'export) : les cinq clés perdent leur
-  // `?` (`date_reglement: string | null`, `mode_reglement: string | null`, …) ; `npx tsc -b` nomme alors chaque jeu d'essai
-  // et chaque fabrique qui construit une `EcritureBrouillon` sans eux (les fabriques de src/test/ d'abord) — on y ajoute les
-  // cinq à nul, comme `operation_caisse_id` l'a été avec C3 ; et `numerotationValidee` cesse de lire l'absence (`?? null`).
-  date_reglement?: string | null
-  mode_reglement?: string | null
-  nature_operation?: string | null
-  poste_rattache?: string | null
-  identification_client?: string | null
+  // `champs_bnc_du_fec`, en base et dans l'export depuis le 02/11/2026 — voir lib/champsBncFiges.ts) : la date et le mode
+  // du règlement, la nature de l'opération (une par écriture), le poste de la 2035 d'une ligne de charge ou de produit
+  // (NatOp se recompose « nature — poste », `natOpFigee`), l'identification du client (le numéro d'une facture validée du
+  // dossier, ou le SIREN de son client — jamais un nom). Posés par `valider_exercice` seule, dans leurs listes fermées, ou
+  // nuls ; nuls sur une écriture proposée (`ecritures_brouillon_champs_bnc_du_fec`). OBLIGATOIRES depuis la bascule du
+  // jour de l'application (02/11/2026) : `select('*')` les rend, nuls sur toute écriture que la validation n'a pas figée
+  // avec eux, et une fabrique qui construit une `EcritureBrouillon` les pose à nul.
+  date_reglement: string | null
+  mode_reglement: string | null
+  nature_operation: string | null
+  poste_rattache: string | null
+  identification_client: string | null
 }
 
 // Les journaux du FEC : achats, ventes, banque et opérations diverses. Les à-nouveaux ont le leur (AN), qui
@@ -1001,8 +994,8 @@ export interface Membership {
   email: string | null
   droit_ventes: boolean
   droit_banque: boolean
-  // LE DROIT « CAISSE » (ligne 26.6, étape C10 ; migration `caisse_du_client`, préparée hors de l'export — voir
-  // lib/caisse.ts) : la saisie des espèces par le praticien, sur un dossier exonéré de TVA ou en franchise en base
+  // LE DROIT « CAISSE » (ligne 26.6, étape C10 ; migration `caisse_du_client`, en base et dans l'export depuis le
+  // 02/11/2026 — voir lib/caisse.ts) : la saisie des espèces par le praticien, sur un dossier exonéré de TVA ou en franchise en base
   // (`garder_droit_caisse`), posée par `changer_droits_acces` à quatre paramètres seule ; faux par défaut. FACULTATIF dans
   // ce type, et c'est la vérité des deux côtés de la migration : avant elle, `select('*')` ne le rend pas ; après, il le
   // rend, faux sur tout accès d'aujourd'hui. Il devient obligatoire avec le premier écran qui le lit (l'onglet Accès, C11).

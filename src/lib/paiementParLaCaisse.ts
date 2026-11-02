@@ -9,8 +9,8 @@ import type { OperationCaisse, Piece } from './types'
 
 // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE, CE QUE LA BASE EN DIRA AVANT LE CLIC (ligne 26.6, étape C8 ; CAISSE-Q4, (B)). La
 // conception : HISTORIQUE.md, « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE
-// (CAISSE-Q1 ET Q4) », § 8 et § 9, n° 4 ; la base : la migration `paiement_par_la_caisse`, PRÉPARÉE le 31/10/2026
-// (supabase/preparees/), pas encore appliquée.
+// (CAISSE-Q1 ET Q4) », § 8 et § 9, n° 4 ; la base : la migration `paiement_par_la_caisse`, préparée le 31/10/2026,
+// appliquée le 02/11/2026 (supabase/schema/20261102075951_paiement_par_la_caisse.sql).
 //
 // PUR : aucun appel au réseau, aucun import du client Supabase. Ce module redit, dans leur ORDRE, sous leurs MOTS et leurs
 // CODES, les refus NEUFS de cette migration — ceux de `regler_piece_par_la_caisse`, de la contrepartie d'un paiement (la
@@ -39,7 +39,9 @@ import type { OperationCaisse, Piece } from './types'
 // écart. L'ordre du jour de l'application : l'assistant qui porte C13 déployé (il peut l'être avant C8, neutre), C8
 // appliquée, puis — ce jour-là — le drapeau levé. Le drapeau suit le fichier de la migration dans l'export
 // (`paiementParLaCaisse.test.ts`) : ne déplacer ce fichier dans l'export qu'une fois l'assistant de C13 en ligne.
-export const PAIEMENT_PAR_LA_CAISSE_EXPORTE = false
+// LEVÉ LE 02/11/2026 : l'assistant de C13 en ligne depuis le 01/11/2026 (v52), la migration appliquée par l'outil
+// (`20261102075951_paiement_par_la_caisse`), puis FEC22b, le filet et C10, chacune à l'empreinte de son fichier.
+export const PAIEMENT_PAR_LA_CAISSE_EXPORTE = true
 
 // ── Les mots de la base ───────────────────────────────────────────────────────────────────────────────────────────────
 

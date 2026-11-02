@@ -277,8 +277,10 @@ describe('les essais de la base, rejoués en production', () => {
     // Dix-neuf le 29/10/2026 : dix essais du jeu de départ, quatre autres semis ou rôles, deux par le super-utilisateur,
     // trois après des migrations préparées, un attendu impossible. Dix-huit le 01/11/2026 : `mentionsFigees` et
     // `ibanHorsDesParametres` sortis (leurs migrations sont en production depuis le 29/10/2026), le filet de la validation
-    // devant la caisse (`validationDesPaiementsParLaCaisse`) entré, après ses trois migrations préparées.
-    expect(cas.length).toBe(18)
+    // devant la caisse (`validationDesPaiementsParLaCaisse`) entré, après ses trois migrations préparées. Seize le
+    // 02/11/2026 : `caisse` et `validationDesPaiementsParLaCaisse` sortis (C8, FEC22b, le filet et C10 en production le
+    // même jour) ; aucun essai n'attend plus une migration préparée (la famille « apres » reste, vide).
+    expect(cas.length).toBe(16)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
