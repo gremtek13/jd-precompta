@@ -26,6 +26,7 @@ import {
 } from '../../lib/contactsFacture'
 import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceDeLaVente'
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
+import { avisDuStatutDeTva, refusDuStatutDeTva } from '../../lib/validationDeLaFacture'
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLArticle, provenanceDeLaLigneLue,
   provenanceQuiPart, refusSansPenalites, sansPhraseDeRetard,
@@ -304,6 +305,13 @@ export default function FactureFormModal(props: Props) {
   // (lib/mentionsFigeesVue.ts). Dit avant le clic ; le brouillon reste enregistrable.
   const refusConformite = refusDeLaMentionTva(mentionAbsente, franchiseHorsStatut)
     ?? refusSansPenalites(lectureDesParametres, dossierId, mentions.typeClient, mentionsLegales)
+  // CE QUE LA GARDE DES FACTURES REFUSE AU SEUL ACCÈS « VENTES » (FACTURE-Q1 et FACTURE-Q2, réponses du cabinet du 02/11/2026 ;
+  // lib/validationDeLaFacture.ts) : une facture d'un dossier au statut de TVA à préciser, ou exonéré sans article. Dans
+  // l'espace du client, la validation se retient avant le clic, sous les mots de la base ; au cabinet, qui la valide encore,
+  // l'avis le dit. Le brouillon reste enregistrable. Le statut et l'article sont ceux du dossier, que la facture figera.
+  const statutAJuger = { type: 'facture' as const, statutTva, articleExoneration, cabinet: espace === 'cabinet' }
+  const refusDuStatut = refusDuStatutDeTva(statutAJuger)
+  const avisDuStatut = avisDuStatutDeTva(statutAJuger)
 
   function ajouterMention(mention: string) {
     // Sur ce que le champ montre : la saisie, ou la mention proposée.
@@ -751,6 +759,11 @@ export default function FactureFormModal(props: Props) {
       setError(refusConformite)
       return
     }
+    // Seconde ceinture : le bouton de validation est déjà grisé sur ce refus, dit avant le clic dans l'espace du client.
+    if (statutCible === 'validee' && refusDuStatut) {
+      setError(refusDuStatut.message)
+      return
+    }
     // Les boutons sont déjà grisés : la base refuserait la saisie, et son message ne dirait pas quel champ corriger.
     if (refusMentions.length > 0) {
       setError(refusMentions[0])
@@ -1190,7 +1203,8 @@ export default function FactureFormModal(props: Props) {
               <span className="muted" style={{ fontSize: '0.78rem' }}>
                 Proposées par défaut selon le statut de TVA du dossier — à vérifier et ajuster, ce n'est pas une garantie de conformité complète.
               </span>
-              {manqueMention && <p className="alerte-tva" style={{ marginTop: 8 }}>{pourLEspace(espace, manqueMention)}</p>}
+              {/* Dans l'espace du client, le refus de la validation le dit déjà, plus bas : la même chose, une fois. */}
+              {manqueMention && !refusDuStatut && <p className="alerte-tva" style={{ marginTop: 8 }}>{pourLEspace(espace, manqueMention)}</p>}
               {mentionAbsente && (
                 <p className="alerte-tva" style={{ marginTop: 8 }}>
                   La mention « {mentionAbsente} » manque aux mentions légales.{' '}
@@ -1246,7 +1260,9 @@ export default function FactureFormModal(props: Props) {
             )}
             {jugementMentions?.refusDeLaValidation && <p className="error-text" role="alert">{jugementMentions.refusDeLaValidation}</p>}
             {refusConformite && <p className="error-text" role="alert">{pourLEspace(espace, refusConformite)}</p>}
+            {refusDuStatut && <p className="error-text" role="alert">{pourLEspace(espace, refusDuStatut.message)}</p>}
             {jugementMentions?.avis.map((a) => <p key={a} className="note-info" role="note">{a}</p>)}
+            {avisDuStatut && <p className="note-info" role="note">{avisDuStatut}</p>}
 
             {error && <p className="error-text">{pourLEspaceSiTexte(espace, error)}</p>}
 
@@ -1255,7 +1271,7 @@ export default function FactureFormModal(props: Props) {
               <button type="submit" className="btn btn-outline" disabled={!!saving || articleOccupe || contactOccupe || refusMentions.length > 0 || refusFigeBrouillon != null}>
                 {saving === 'brouillon' ? 'Enregistrement…' : 'Enregistrer le brouillon'}
               </button>
-              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
+              <button type="button" className="btn btn-primary" disabled={!!saving || articleOccupe || contactOccupe || refusTaxe != null || refusConformite != null || refusDuStatut != null || refusMentions.length > 0 || refusFigeValidation != null || jugementSource.refus != null} onClick={() => enregistrer('validee')} title="Attribue un numéro définitif — la facture ne sera plus modifiable ensuite">
                 {saving === 'validation' ? 'Validation…' : 'Valider la facture'}
               </button>
             </div>

@@ -103,6 +103,18 @@
 -- pas encore en base) : elle pose sur les encaissements trois déclencheurs de contrainte, la caisse jamais négative. Le
 -- contrôle 95 lit les déclencheurs d'hier, les siens écartés ; 95b, les siens : rien sans elle, les trois avec elle.
 -- Avant la migration, rien ne change ; le reste se joue dans supabase/essais/caisse.sql.
+--
+-- ADAPTÉ LE 31/10/2026 À LA CORRECTION DE LA FACTURE, REPRISE LE 02/11/2026 POUR FACTURE-Q1 (migration
+-- `facture_dates_centimes_mention_tva`, PRÉPARÉE dans `supabase/preparees/`, pas encore en base ; son témoin : le corps de
+-- `centimes_ligne_facture`, qui arrondit le produit exact). Une facture ou un avoir d'un dossier en franchise ou exonéré
+-- porte sa mention de TVA (pour tout auteur), et le statut à préciser ne se refuse plus qu'à un accès « Ventes » : le
+-- dossier de la facture d'essai, que l'essai ne choisit pas, passe en franchise le temps du bloc qui s'annule — non
+-- assujetti comme hier ; quel qu'ait été son statut, l'essai le pose —, et ses factures portent la mention de l'art. 293 B.
+-- Son avoir (`fa`) crédite une facture que l'essai trouve en base et ne choisit pas : il prend le statut qu'elle a figé, si
+-- elle en a figé un (`mentions_figees`), et celui du dossier sinon ; ses mentions portent donc chacune des cinq mentions que
+-- la garde peut exiger — joué en production, l'essai ne dépend pas du statut de cette facture. Le contrôle 100 attend le
+-- calcul de la base où elle se trouve : la virgule flottante d'hier (1,005 € fait 1,00 € ; 0,285 €, 0,28 €), ou, la
+-- migration appliquée, le décimal exact, le demi éloigné de zéro (1,01 € ; 0,29 €).
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -119,8 +131,12 @@ declare
   requete text; attendu boolean; vus int; vus_taux int; n_maj int; detail text; ligne record;
   code_e text; msg_e text; code_r text; msg_r text; code_i text; msg_i text; fixture text;
   avant jsonb; apres jsonb; ventes_du_client boolean;
+  -- La correction de la facture (31/10/2026) : son témoin, le calcul d'une ligne sur le produit exact.
+  correction boolean;
   verdicts jsonb := '[]'::jsonb;
 begin
+  select coalesce(strpos(p.prosrc, 'round(q * p * 100)') > 0, false) into correction
+    from pg_proc p where p.oid = to_regprocedure('public.centimes_ligne_facture(numeric, numeric, numeric, boolean)');
   -- La facture d'essai et l'autre dossier se prennent dans les dossiers d'essai (`test` et ceux du client d'essai) :
   -- « la première facture validée de la base » serait une facture réelle dès qu'une précéderait les leurs, et l'essai y
   -- écrirait (audit du 29/10/2026).
@@ -277,11 +293,15 @@ begin
 
   -- ══ Les factures, les mouvements et l'état d'essai : nés ici, annulés à la fin du bloc ══════════
   begin
+    -- Le dossier de la facture d'essai, en franchise le temps du bloc, quel que soit son statut : depuis la correction de
+    -- la facture (31/10/2026), une facture d'une franchise porte sa mention, et l'essai ne dépend plus du statut du dossier.
+    update dossiers set statut_tva = 'franchise', article_exoneration = null where id = dossier_f;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     -- Trois taux : 1 200,00 € à 20 %, 105,50 € à 5,5 %, 50,00 € à 0 % — 1 355,50 € TTC.
     select r.facture_id into fm from enregistrer_facture(dossier_f, null,
-      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'montant_ht', 1150, 'montant_tva', 205.5, 'montant_ttc', 1355.5),
+      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'mentions_legales', 'TVA non applicable, art. 293 B du CGI.',
+        'montant_ht', 1150, 'montant_tva', 205.5, 'montant_ttc', 1355.5),
       '[{"designation":"a","quantite":1,"prix_unitaire_ht":1000,"taux_tva":20},{"designation":"b","quantite":1,"prix_unitaire_ht":100,"taux_tva":5.5},{"designation":"c","quantite":1,"prix_unitaire_ht":50,"taux_tva":0}]'::jsonb,
       true) r;
     select r.facture_id into fb from enregistrer_facture(dossier_f, null,
@@ -289,15 +309,19 @@ begin
       '[{"designation":"a","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, false) r;
     select r.facture_id into fa from enregistrer_facture(dossier_f, null,
       jsonb_build_object('type', 'avoir', 'facture_origine_id', facture_v, 'date_emission', aujourd_hui,
-        'montant_ht', -1, 'montant_tva', 0, 'montant_ttc', -1),
+        'mentions_legales', 'TVA non applicable, art. 293 B du CGI. Exonération de TVA, art. 261, 4, 1° du CGI. '
+          || 'Exonération de TVA, art. 261, 4, 4° a du CGI. Exonération de TVA, art. 261, 4, 4° b du CGI. '
+          || 'Exonération de TVA, art. 261 C, 2° du CGI.', 'montant_ht', -1, 'montant_tva', 0, 'montant_ttc', -1),
       '[{"designation":"a","quantite":-1,"prix_unitaire_ht":1,"taux_tva":0}]'::jsonb, true) r;
     -- Un taux que la facturation électronique n'admet pas (19 %), et une facture dont l'en-tête dit une TVA de 21 €
     -- quand sa ligne en porte 20 : enregistrer_facture prend les montants de l'en-tête tels qu'ils lui viennent.
     select r.facture_id into f19 from enregistrer_facture(dossier_f, null,
-      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'montant_ht', 100, 'montant_tva', 19, 'montant_ttc', 119),
+      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'mentions_legales', 'TVA non applicable, art. 293 B du CGI.',
+        'montant_ht', 100, 'montant_tva', 19, 'montant_ttc', 119),
       '[{"designation":"a","quantite":1,"prix_unitaire_ht":100,"taux_tva":19}]'::jsonb, true) r;
     select r.facture_id into fx from enregistrer_facture(dossier_f, null,
-      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'montant_ht', 100, 'montant_tva', 21, 'montant_ttc', 121),
+      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'mentions_legales', 'TVA non applicable, art. 293 B du CGI.',
+        'montant_ht', 100, 'montant_tva', 21, 'montant_ttc', 121),
       '[{"designation":"a","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) r;
     reset role;
     insert into lignes_bancaires (dossier_id, date, libelle, montant) values (dossier_f, jour, 'essai', 1355.5) returning id into m_credit;
@@ -920,8 +944,12 @@ begin
                  (7, 7, 12.345678, 5.5, false), (8, 1, 0.285, 20, false), (9, 1, 0.094, 5.5, false), (10, 1, 0.046, 10, false),
                  (11, 1, 0.05, 10, false), (12, 1, 1, 5.5, false), (13, 1, 0.15, 10, false)) t(n, q, p, tx, av)
     cross join lateral centimes_ligne_facture(t.q, t.p, t.tx, t.av) c;
+  -- Depuis la correction de la facture (31/10/2026), sur le décimal exact : 1 × 1,005 fait 101 centimes, 1 × 0,285 en
+  -- fait 29 (le demi éloigné de zéro) ; hier, en virgule flottante, 100 et 28.
   verdicts := verdicts || jsonb_build_object('controle', '100. le HT et la TVA d''une ligne, en centimes, sont ceux que l''application calcule',
-    'observe', obs, 'ok', obs = '100/20 101/6 -13/0 223/45 -1004/-100 3337/667 8642/475 28/6 9/0 5/1 5/1 100/6 15/2');
+    'observe', obs, 'ok', obs = case when correction
+      then '101/20 101/6 -13/0 223/45 -1004/-100 3337/667 8642/475 29/6 9/0 5/1 5/1 100/6 15/2'
+      else '100/20 101/6 -13/0 223/45 -1004/-100 3337/667 8642/475 28/6 9/0 5/1 5/1 100/6 15/2' end);
 
   -- ══ 101. Rien n'est resté ══════════
   select jsonb_build_object('encaissements', (select count(*) from encaissements_factures),

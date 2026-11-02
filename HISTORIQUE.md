@@ -45971,3 +45971,169 @@ rend toujours un modèle (le sien, sinon le plus récent) avec `attendu` et `sub
 quel »). `remplir2035` ne lève plus et écrit `mentionDuPdf` en rouge en tête de chaque page remplie ; Clôture offre le bouton
 et affiche l'avertissement avant le clic. Tests : `modeles2035.test.ts`, `relecture2035Saisies.test.ts`, `ClotureTab.test.tsx`
 et `remplir2035.test.ts` (le vrai remplissage, mention présente sur le substitut, absente sur le bon millésime).
+
+### 02/11/2026 — LA FACTURE : LA DATE DANS L'ORDRE DE SA SÉRIE, LE DEMI-CENTIME ET LA MENTION DE TVA, REPRISE POUR FACTURE-Q1 (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par un agent architecte, sur `1cbf7ff` — la tête du jour, la migration REGLES-Q1 préparée —, qui y a rejoué
+`ab41edd`, la correction de la facture du 31/10/2026, sans la commiter. Aucun appel aux outils de Supabase, rien de lu ni
+d'écrit en production : la migration est PRÉPARÉE et éprouvée sur une réplique de la production du jour. Lus avant
+d'écrire : « VINGT ET UNE RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 02/11/2026) », « QUATRE RELECTURES AVANT LES
+DONNÉES RÉELLES : LA CAISSE, LA FACTURE, LA 2035, L'IMPORT DU RELEVÉ », le message et le texte d'`ab41edd`, dont le récit
+n'était pas entré ici — il est résumé ci-dessous.)
+
+**LA CORRECTION DU 31/10/2026, EN BREF** (`ab41edd`, branche de l'agent `a0acd4d9336cf2dcc`, jamais fusionnée). Trois
+défauts que la base laissait passer, confirmés par la relecture du même jour : la numérotation sortait de l'ordre des dates
+(un brouillon du 02/12 validé après une facture du 05/12 prenait le numéro suivant, une date à venir passait — CGI, ann.
+II, art. 242 nonies A, I, 7° : « une séquence chronologique et continue ») ; le demi-centime d'une ligne tombait parfois
+vers zéro (0,5 × 32,05 € faisait 16,02 € : `calculerLigne` en virgule flottante, que `centimes_ligne_facture` recopiait
+au bit près) ; une facture d'un dossier exonéré ou en franchise se validait sans sa mention de TVA (CGI, ann. II, art. 242
+nonies A, I ; art. 293 B). La migration `facture_dates_centimes_mention_tva` remplace deux fonctions, rien d'autre :
+`centimes_ligne_facture` sur les décimaux exacts, le demi éloigné de zéro ; `garder_factures_validees`, la garde d'hier
+au caractère près plus quatre variables et un bloc, après la légitimité de la validation (`enregistrer_facture` seule
+valide, sous le verrou de la série) : cinq refus en 22023, dans cet ordre — le statut de TVA à préciser, l'exonération
+sans article (un accès « Ventes »), la mention de TVA absente (facture ou avoir), une date à venir (le jour de Paris), une
+date antérieure à la plus récente de la série (même dossier, même lettre, même année). `calculerLigne` calcule de même en
+entiers ; son bloc est recopié dans `send-email`, `plateforme-agreee` et `superpdp-emit` ; `lib/validationDeLaFacture.ts`
+redit les cinq refus ; `factures.sql` étendu (107 à 116), onze essais adaptés, deux batteries (`batterieDesLignes.mjs`,
+neuf ; `batterieEncaissements.mjs`), le leurre du banc avec sa mention. Ce que la base RECOMPTE d'une facture validée avant
+elle (ses montants par taux) suit le calcul neuf ; rien de stocké ne change.
+
+**LA DÉCISION.** FACTURE-Q1, tranchée le 02/11/2026 CONTRE la recommandation (qui refusait la facture à tout auteur) :
+« Seulement depuis l'espace client ». Une facture d'un dossier au statut de TVA à préciser se refuse à un accès
+« Ventes » ; le cabinet la valide encore. FACTURE-Q2 (l'exonération sans article, depuis l'espace client seulement) et
+FACTURE-Q3 (la mention de TVA au caractère près), à la recommandation : vérifiées, c'est ce que le texte du 31/10/2026
+écrivait (`and not public.admin_du_dossier(…)` sur l'article ; `strpos` de la mention exacte, son point final compris).
+FACTURE-Q4 (la ligne à 0 % d'un dossier redevable) : plus tard, avec A7c, rien d'écrit. FACTURE-migration : « Oui,
+l'appliquer », sous FACTURE-Q1.
+
+**LE REJEU SUR LA TÊTE.** `git cherry-pick --no-commit ab41edd` : trois conflits, tous dans des en-têtes de commentaires
+(`caisse.sql`, `rls.sql`, `validationDesVentesFacturees.sql` : les paragraphes de C8, C10 et FEC22b d'un côté, celui de la
+correction de l'autre), résolus en gardant les deux ; le reste fusionné sans conflit (les Edge Functions et
+`montantsFacture.ts` n'avaient pas bougé depuis `892697f`). Puis, FACTURE-Q1 prise en compte, une règle pour les essais
+adaptés le 31/10 : une adaptation qui n'existait que pour le refus du statut à préciser AU CABINET, sur un dossier jetable
+que l'essai crée, est retirée — `caisse.sql`, `declarationsEreporting.sql`, `frontiereDesEncaissements.sql`,
+`validationDesVentesFacturees.sql` et `ventesFacturees.sql` redeviennent ceux de la tête, la mutation M20 de
+`mentionsFigees.sql` et le dossier J1 de `factures.sql` ceux d'hier : leurs factures, validées par le chef sur un dossier
+sans statut, éprouvent désormais en passant ce que FACTURE-Q1 laisse au cabinet : joués sur la production munie du texte
+du 31/10/2026, ces cinq essais tels que la tête les porte tombent (44, 25, 1, 76 et 274 fautes — dont les étapes 200, 200c
+et 240e de `caisse.sql`, écrites pour C8 et C10 après le 31/10, que l'adaptation d'alors ne couvrait pas) ; sous la
+reprise, aucune. Restent adaptées, parce que leur raison tient sous FACTURE-Q1 : la mention portée par
+une facture d'un dossier en franchise ou exonéré (`factures.sql` 17, `mentionsFigees.sql` 34 et 37, le leurre), la
+franchise posée le temps du bloc sur un dossier que l'essai ne choisit pas — `test` ou celui du client, dont le statut en
+production pourrait exiger une mention (`encaissementsFactures.sql`, `statutsFacturesRecus.sql`,
+`transmissionsEncaissements.sql`, `rls.sql`, `batterieEncaissements.mjs`), les cinq mentions de l'avoir d'une facture
+trouvée en base (`encaissementsFactures.sql`, `transmissionsFactures.sql`), l'année 1999 de `rls.sql` (M5ter, et le jeu
+des blocs du droit « Ventes ») ; leurs commentaires disent désormais cette raison, et non plus le refus du statut.
+
+**LA MIGRATION REPRISE** (`supabase/preparees/20261102130000_facture_dates_centimes_mention_tva.sql`, version provisoire
+renommée du 20261031150000 pour suivre les quatre migrations du jour ; 18 818 caractères, 19 253 octets, 259 lignes,
+`1be629b4cae0dbf4e9f01fef8c09067b`, ni barre oblique inverse ni retour chariot) :
+- le refus du statut à préciser prend la condition de l'article : `if new.type = 'facture' and new.statut_tva is null and
+  not public.admin_du_dossier(new.dossier_id)` — `admin_du_dossier`, la condition même d'`enregistrer_facture` pour
+  l'identité légale (A7Q-Q1) : le chef, l'équipe affectée, le super-administrateur valident ; un avoir n'est toujours pas
+  jugé ;
+- les deux refus qu'un accès « Ventes » reçoit seul parlent au client, sans onglet (`MOTS_DU_CABINET`) : « … Le cabinet le
+  précise avant qu'une facture se valide depuis l'espace client. » et « … Le cabinet choisit l'article avant qu'une
+  facture se valide depuis l'espace client. » (le texte du 31/10 renvoyait à « l'onglet TVA du dossier » dans les deux —
+  le second, déjà réservé au client, était une faute des mots) ;
+- la garde de tête exige les corps de la production du jour, relus sur la réplique : `e3dfa6dc…` et `9b5b63d7…`, un seul
+  nom de chaque — ceux du 31/10/2026, que ni les quatre migrations appliquées ce matin ni REGLES-Q1 ne touchent ;
+- corps neufs : la garde `d79a5f95f74afe0077049c4b2531ebe3`, le calcul `c693e499…` (inchangé depuis le 31/10) ; le
+  retour arrière (`…20261102130100_retour_…`, 7 986 caractères, `a4e13fd28c7f1ff6f13eda7ba0b4bce3`) exige ces deux-là.
+Elle passe PAR L'OUTIL : aucune instruction de suppression, le mot n'y paraît que dans `tg_op = 'DELETE'`, que le
+détecteur laisse passer (mesuré le 09/10/2026).
+
+**L'ÉCRAN, DANS LES DEUX ESPACES** (sans drapeau : un refus avant le clic plus strict que la base, du côté fermé, comme la
+mention de TVA le 31/10, et la règle est tranchée). `lib/validationDeLaFacture.ts` : `refusDuStatutDeTva` (rangs 14 et
+15, selon `cabinet`), que `refusDeLaValidation` appelle d'abord ; `avisDuStatutDeTva` et ses deux phrases.
+`FactureFormModal` : dans « Mes ventes », une facture d'un dossier au statut à préciser, ou exonéré sans article, retient
+sa validation avant le clic — « Valider la facture » grisé, le refus dit sous les mots de la base réécrits pour le client
+(deux `REECRITURES_CLIENT` : « Ton cabinet doit d'abord préciser ton statut de TVA : … et tu ne peux pas la valider
+avant. » ; « Ta société est exonérée de TVA sans article d'exonération : … »), l'alerte d'hier sous les mentions tue (la
+même chose une fois), le brouillon enregistrable ; au cabinet, l'alerte d'hier et un avis : « Le cabinet valide encore
+cette facture ; un accès « Ventes » ne la validerait pas tant que … ». L'avoir n'en dit rien. Les deux refus de la date
+(17 et 18) ne se disent toujours pas avant le clic : il y faudrait la série lue en entier — la base les dit au clic.
+
+**LES PREUVES SUR LA RÉPLIQUE** (la grappe de FEC22b, PostgreSQL 16, port 54341 ; des bases `facture_*` seulement) :
+- `facture_prod168` = `f_prod164` (la production d'avant ce matin) munie des quatre migrations du jour, par le
+  propriétaire, chacune avec sa ligne d'historique : 168 migrations, `86d12ffb…` des deux côtés ; `signature.sql` rend les
+  neuf familles de la production (colonnes 918 `ccc284d4…`, contraintes 711 `bb338173…`, déclencheurs 87 `0d648fb1…`,
+  droits des fonctions 226 `5e15c24f…`, droits des tables 82 `36d97923…`, fonctions 226 `f8f50bb4…`, index 244
+  `9704c175…`, policies 162 `c881b044…`, rls 82 `5fb5dc41…`) ; `facture_m168`, la même munie de la migration comme
+  l'outil ;
+- tous les essais, chacun sur une copie fraîche, en une transaction, quatre fois (ceux de la tête et ceux du worktree,
+  sans et avec la migration) : ceux du worktree, la même sortie sans et avec elle hors de `factures.sql` (la section 107 à
+  116), d'`encaissementsFactures.sql` 100 (le centime exact) et des débuts d'identifiants tirés de
+  `transmissionsFactures.sql` ; aucune faute, hors `ventesClient.sql` 0c (en faute dans les quatre, préexistant : la liste
+  des fonctions sous `gere_les_ventes` a grandi), `devis.sql` impossible, `sensDesReglesIgnorees.sql` en attente ; ceux de
+  la tête, munie de la migration, tombent là où le worktree les adapte (`factures.sql` 17 et 18, `mentionsFigees.sql` 0g et
+  34 à 39, `encaissementsFactures.sql` 100, `rls.sql` M5ter et le bloc du droit « Ventes », dont le jeu daté de 2099 ne se
+  construit plus) et nulle part ailleurs ;
+- `factures.sql` 145 verdicts sur 145 sans comme avec : le client « Ventes » refusé sur V, dossier basculé sans statut
+  (107), son brouillon (107b), le cabinet qui valide le même appel (M107), une facture de N, non basculé (107a), et le chef
+  du cabinet jetable dans J1 (58 à 60), l'avoir du client sur une facture restaurée de V (107c), le statut posé (M107b) ;
+- treize mutations de la migration, toutes tuées par l'essai : le texte du 31/10/2026 (7 fautes, dont 58, 107a, M107),
+  le cabinet aussi refusé (5), le statut plus jugé (107), un avoir jugé (107c), le refus inversé (6), et les huit d'hier
+  rejouées (la mention, la date égale, la série sans l'année, l'article au cabinet, la date à venir, le centime tronqué et
+  la TVA brute — `encaissementsFactures.sql` 100 et la batterie des lignes, 4 144 et 191 écarts sur 10 000 —, le jour
+  d'hier) ;
+- `rls.sql` ENTIER, par le super-utilisateur, le journal semé : 90 invariants, 0 en faute, 68 mutations sur 68, sans et
+  avec la migration, les deux sorties égales (et égales à celle de la tête hors de M5ter, 1999) ; `validationExercice.sql`
+  (`psql -1`) 246 sur 246 ; le banc du leurre SÛR sur les sept essais adaptés, sans et avec ;
+- `signature.sql` après la migration : seule la famille « fonctions » change, 226 `0cb2485a94079136bf8b079de323d1a5` ;
+  côté base, la dérive 169 migrations `e6ebaf63…` (l'export et le fichier sous sa version provisoire rendent la même), le
+  socle (81, `bfe9dce8…`) et l'inventaire (2 307, `93edc60a…`) inchangés, des deux côtés ;
+- le retour arrière après elle : les deux corps d'hier, la signature de la production ; une seconde application de la
+  migration, le retour sans elle et un second retour se refusent par leur garde, rien d'écrit ;
+- treize mutations du code, toutes tuées (`validationDeLaFacture.test.ts`, `espaceVentes.test.ts`,
+  `FactureFormModal.test.tsx`) : le client plus refusé, le cabinet refusé, un avoir jugé, l'avis au client, le statut hors
+  de `refusDeLaValidation`, l'onglet revenu dans le refus ; à l'écran, l'espace ignoré dans un sens ou dans l'autre, le
+  bouton plus grisé, l'alerte d'hier en double, le refus sans les mots du client, l'avis tu ; la réécriture perdue.
+
+**LE JOUR DE L'APPLICATION** (la session, sur l'accord déjà donné), dans la même heure — la fenêtre entre la base et le front
+est celle du centime : une facture au demi-centime validée par l'ancien front après la migration, ou par le nouveau avant,
+ne se retrouverait pas dans ses lignes (un encaissement s'y refuserait) :
+1. la lecture du jour, en production, par `execute_sql` — des booléens, aucun compte (tous vrais sur la réplique) ; celle de
+   l'agent du 31/10/2026, plus un booléen : la série du dossier du client d'essai, où les blocs VB, FE et SI de `rls.sql`
+   valident à des dates fixes (le 01/03/2025, le 15/06/2025, le 10/01/2026) — une facture validée de ce dossier datée
+   d'après le 01/03/2025 les ferait tomber par l'ordre de la série (éprouvé sur la réplique : une facture du 20/06/2025
+   plantée, le booléen faux, FE et VB en faute) :
+
+```sql
+select
+  (select md5(replace(p.prosrc, chr(13), '')) = 'e3dfa6dc1b3f127c66bab26d5637ef89' from pg_proc p
+    where p.oid = to_regprocedure('public.garder_factures_validees()')) as garde_d_hier,
+  (select md5(replace(p.prosrc, chr(13), '')) = '9b5b63d729df6c0d76f623a15d1e11d9' from pg_proc p
+    where p.oid = to_regprocedure('public.centimes_ligne_facture(numeric, numeric, numeric, boolean)')) as centimes_d_hier,
+  not exists (
+    select 1 from public.factures_emises f
+     where f.statut = 'validee' and f.type = 'facture'
+       and (select sum(m.base_centimes) from public.montants_par_taux_facture(f.id) m) = f.montant_ht * 100
+       and (select sum(m.tva_centimes) from public.montants_par_taux_facture(f.id) m) = f.montant_tva * 100
+       and ((select sum(round(l.quantite * l.prix_unitaire_ht * 100)) from public.facture_lignes l where l.facture_id = f.id)
+              <> f.montant_ht * 100
+            or (select sum(round(round(l.quantite * l.prix_unitaire_ht * 100) * l.taux_tva * 0.01))
+                  from public.facture_lignes l where l.facture_id = f.id) <> f.montant_tva * 100)) as aucune_facture_desaccordee,
+  not exists (select 1 from public.factures_emises f
+               where f.statut = 'validee' and f.date_emission > (now() at time zone 'Europe/Paris')::date) as aucune_date_a_venir,
+  not exists (select 1 from public.factures_emises f
+               where f.statut = 'validee' and f.type = 'facture'
+                 and f.dossier_id in ('001c7ed7-c23b-4590-901e-693489f8af24', 'ac538d93-7da3-4403-bca6-2d7836810a6f')
+                 and f.date_emission >= (now() at time zone 'Europe/Paris')::date) as essais_sans_obstacle,
+  not exists (select 1 from public.factures_emises f
+               where f.statut = 'validee' and f.type = 'facture'
+                 and f.dossier_id = 'ac538d93-7da3-4403-bca6-2d7836810a6f'
+                 and f.date_emission > date '2025-03-01') as dossier_du_client_sans_obstacle;
+```
+
+2. la migration par `apply_migration`, la ligne d'historique relue à l'empreinte du fichier, le fichier dans l'export sous
+   sa version, les trois contrôles (dérive 169 ; socle et inventaire inchangés) ;
+3. en production : `factures.sql` (la section 107 à 116, les deux auteurs) ; `rls.sql` en entier ou ses blocs touchés
+   (M5ter, droit « Ventes », FE, VB, SI) ; `encaissementsFactures.sql` (100 : le centime exact) ; `mentionsFigees.sql`
+   (0g : la garde neuve) ; `statutsFacturesRecus.sql`, `transmissionsEncaissements.sql`, `transmissionsFactures.sql`
+   (leurs factures d'essai sur `test`) ;
+4. `send-email`, `plateforme-agreee` et `superpdp-emit` redéployées (`verify_jwt` de `config.toml`, la copie déployée
+   comparée au dépôt avant d'écraser, `bordures.py`, `allerretour.py`) et la fusion du front.
+
+**CE QUI RESTE.** FACTURE-Q4 avec A7c ; les refus de la date dits avant le clic (la série lue en entier) ; `ventesClient.sql`
+0c, hors de l'étape.

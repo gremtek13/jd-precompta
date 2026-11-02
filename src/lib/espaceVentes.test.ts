@@ -24,6 +24,7 @@ import { bilanDuReleve, refusDuReleve, verificationAvantDeclaration } from './st
 import { libelleCanal, libelleCourtCanal } from './transmissionsFactures'
 import { REFUS_DECLARATION_ADRESSE } from './adressesReception'
 import { REFUS_VALIDATION_SOURCE } from './sourceDeLaVente'
+import { REFUS_DE_LA_VALIDATION } from './validationDeLaFacture'
 import type { ReleveStatuts } from './receptionPlateforme'
 import { donnees, ligne } from '../test/facturesCii'
 
@@ -80,6 +81,10 @@ const PRODUITES: Record<string, () => string> = {
   // Les refus de la validation d'une facture source que le formulaire dit au client avant le clic (étape VF8c) : deux nomment
   // « un dossier ».
   'REFUS_VALIDATION_SOURCE': () => REFUS_VALIDATION_SOURCE.map((r) => r.modele).join('\n'),
+  // Les deux refus de la garde des factures qu'un accès « Ventes » reçoit seul (la correction de la facture, reprise pour
+  // FACTURE-Q1 ; FACTURE-Q2), dits avant le clic par le formulaire et rendus par la base : ils nomment « le dossier » et
+  // « le cabinet ».
+  'REFUS_DE_LA_VALIDATION, rangs 14 et 15': () => REFUS_DE_LA_VALIDATION.filter((r) => r.rang <= 15).map((r) => r.modele).join('\n'),
   // Les messages d'un module qui appelle le client Supabase : lus dans sa source, que ce test n'importe pas.
 
   'receptionPlateforme (source)': () => readFileSync(resolve(process.cwd(), 'src/lib/receptionPlateforme.ts'), 'utf8'),

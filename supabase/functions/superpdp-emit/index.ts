@@ -179,8 +179,9 @@ type NatureOperation = 'biens' | 'services' | 'mixte'
 
 // ── DÉBUT COPIE montantsFacture ──────────────────────────────────────────────────────────────────────────────────────
 // Ce bloc est recopié AU CARACTÈRE PRÈS dans les Edge Functions qui transmettent une facture (superpdp-emit,
-// plateforme-agreee) : elles sont auto-portées, et le générateur de la facture électronique, qu'elles recopient aussi,
-// en dépend. `copiesFacturation.test.ts` compare chaque copie à celui-ci et l'exécute seule.
+// plateforme-agreee) et dans celle qui l'envoie par e-mail (send-email) : elles sont auto-portées, et le générateur de la
+// facture électronique, que les deux premières recopient aussi, en dépend. `copiesFacturation.test.ts` compare chaque
+// copie à celui-ci et l'exécute seule.
 
 export interface LigneCalculee {
   montant_ht: number
@@ -188,22 +189,45 @@ export interface LigneCalculee {
   montant_ttc: number
 }
 
-// Au centime, le demi ÉLOIGNÉ DE ZÉRO, dans les deux sens. `Math.round` arrondit le demi vers +∞ : une ligne d'avoir
-// à -0,125 € valait -0,12 € quand la même ligne d'une facture vaut 0,13 €. L'avoir, relu dans son sens par le
-// générateur de la facture électronique (un avoir de la norme porte des montants positifs), ne retrouvait plus les
-// montants qu'on avait enregistrés, et ne se transmettait pas. Un montant positif s'arrondit exactement comme avant.
-function auCentime(x: number): number {
-  const c = Math.round(Math.abs(x) * 100) / 100
-  return c === 0 ? 0 : x < 0 ? -c : c
+// LE CALCUL SE FAIT SUR LES DÉCIMAUX QUE LA BASE REÇOIT, EN ENTIERS. Une quantité, un prix et un taux partent en JSON,
+// qui écrit d'un nombre son écriture décimale la plus courte (celle de `String`), et la base la garde EXACTEMENT, dans une
+// colonne `numeric`. Le nombre binaire que tient le navigateur n'est pas ce décimal : 32,05 y vaut 32,04999999999999716…,
+// si bien que 0,5 × 32,05 × 100 y faisait 1 602,4999… et que l'arrondi rendait 16,02 € d'une ligne de 16,025 €, quand le
+// demi éloigné de zéro en fait 16,03 € (de même 0,5 × 2,01 et 1,5 × 0,15). La base refait ce calcul pour plafonner les
+// encaissements (`centimes_ligne_facture`), en `numeric` depuis la correction de la facture (31/10/2026) : les deux côtés
+// arrondissent le même décimal. Un nombre se lit donc comme un entier et une puissance de dix — « 32.05 », 3205 × 10⁻² ;
+// « 1.5e-7 », 15 × 10⁻⁸ —, et le calcul se fait en entiers (BigInt), sans perte.
+function enDecimal(x: number): [bigint, number] {
+  const [mantisse, exposant = '0'] = String(x).split('e')
+  const [entiere, fraction = ''] = mantisse.split('.')
+  return [BigInt(entiere + fraction), Number(exposant) - fraction.length]
 }
 
-// Arrondi à 2 décimales systématique — chaque ligne est arrondie avant d'être sommée (comme le ferait
-// n'importe quel logiciel de facturation), plutôt que de sommer des valeurs flottantes brutes puis
-// arrondir le total : les deux méthodes peuvent différer d'un centime sur certains taux de TVA.
+// `entier` × 10^`puissance`, à l'unité, le demi ÉLOIGNÉ DE ZÉRO dans les deux sens : la règle de `round` sur un `numeric`.
+// Une ligne d'avoir à −0,125 € vaut −0,13 €, comme la même ligne d'une facture vaut 0,13 € : l'avoir, relu dans son sens
+// par le générateur de la facture électronique (un avoir de la norme porte des montants positifs), retrouve les montants
+// qu'on a enregistrés.
+function aLUnite(entier: bigint, puissance: number): bigint {
+  if (puissance >= 0) return entier * 10n ** BigInt(puissance)
+  const diviseur = 10n ** BigInt(-puissance)
+  const quotient = entier / diviseur
+  const reste = entier % diviseur
+  return 2n * (reste < 0n ? -reste : reste) >= diviseur ? quotient + (entier < 0n ? -1n : 1n) : quotient
+}
+
+// Chaque ligne est arrondie avant d'être sommée (comme le ferait n'importe quel logiciel de facturation), plutôt que de
+// sommer des valeurs brutes puis d'arrondir le total : les deux méthodes peuvent différer d'un centime. Le HT au centime,
+// puis la TVA sur ce HT, au centime ; le TTC, leur somme. Une valeur qui n'est pas un nombre fini ne fait pas un montant.
 export function calculerLigne(quantite: number, prixUnitaireHt: number, tauxTva: number): LigneCalculee {
-  const ht = auCentime(quantite * prixUnitaireHt)
-  const tva = auCentime(ht * (tauxTva / 100))
-  return { montant_ht: ht, montant_tva: tva, montant_ttc: auCentime(ht + tva) }
+  if (!Number.isFinite(quantite) || !Number.isFinite(prixUnitaireHt) || !Number.isFinite(tauxTva)) {
+    return { montant_ht: Number.NaN, montant_tva: Number.NaN, montant_ttc: Number.NaN }
+  }
+  const [q, puissanceQ] = enDecimal(quantite)
+  const [p, puissanceP] = enDecimal(prixUnitaireHt)
+  const [t, puissanceT] = enDecimal(tauxTva)
+  const ht = aLUnite(q * p, puissanceQ + puissanceP + 2)
+  const tva = aLUnite(ht * t, puissanceT - 2)
+  return { montant_ht: Number(ht) / 100, montant_tva: Number(tva) / 100, montant_ttc: Number(ht + tva) / 100 }
 }
 // ── FIN COPIE montantsFacture ────────────────────────────────────────────────────────────────────────────────────────
 

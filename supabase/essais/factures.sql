@@ -70,6 +70,20 @@
 -- public. Le contrôle 28 attend l'état où la base se trouve — refusé avant la migration, accepté après ; le 27 ne change
 -- pas. Le reste de l'étape — la provenance des lignes, ce que la validation fige, la garde — se joue dans
 -- supabase/essais/mentionsFigees.sql.
+--
+-- ÉTENDU LE 31/10/2026 POUR LA CORRECTION DE LA FACTURE, REPRIS LE 02/11/2026 POUR FACTURE-Q1 (migration
+-- `facture_dates_centimes_mention_tva`, PRÉPARÉE dans supabase/preparees/, pas encore en base ; son témoin : la garde des
+-- factures porte « CE QUE LA VALIDATION EXIGE DE LA FACTURE ») : la section 107 à 116 éprouve les cinq refus neufs de la
+-- garde à la validation — le statut de TVA à préciser (une facture, un accès « Ventes » : FACTURE-Q1, la réponse du
+-- cabinet du 02/11/2026 ; le cabinet la valide encore, dans un dossier basculé comme dans un autre ; l'avoir du client
+-- n'en est pas jugé), l'exonération sans article (un accès « Ventes » : FACTURE-Q2), la mention de TVA absente (une
+-- facture comme un avoir, au caractère près : FACTURE-Q3), une date à venir, une date antérieure à la plus récente de la
+-- série (le brouillon du 02/12/2025 qui attend pendant que la facture du 05/12/2025 se valide) —, chacun suivi d'une
+-- mutation qui MORD (le même appel, la cause du refus ôtée — le statut posé, ou le cabinet pour auteur —, passe), et le
+-- cas neutre (une facture du jour, d'un redevable, passe). Chaque contrôle attend l'état où la base se trouve : sans la
+-- migration, la validation que la garde refusera passe — c'est le défaut qu'elle ferme. Une étape d'hier ADAPTÉE, sans
+-- rien changer de ce qu'elle juge : la facture du dossier B, en franchise, porte la mention de l'art. 293 B (17). Le
+-- dossier J1 du cabinet jetable reste sans statut : son chef y valide (58 à 60), ce que FACTURE-Q1 lui laisse.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -84,6 +98,10 @@ declare
   accepte boolean; code_recu text; message text; obs text;
   avant text; apres text;
   mentions_figees boolean;
+  -- La correction de la facture (31/10/2026) : son témoin, et les jours que ses contrôles nomment, lus à Paris.
+  correction boolean;
+  aujourdhui date := (now() at time zone 'Europe/Paris')::date;
+  demain date := (now() at time zone 'Europe/Paris')::date + 1;
   verdicts jsonb := '[]'::jsonb;
 begin
   select m.dossier_id into dossier_client from memberships m where m.user_id = client order by m.dossier_id limit 1;
@@ -102,6 +120,10 @@ begin
   -- numéro d'engagement s'ouvre à tout acheteur : le contrôle 28 attend l'état où la base se trouve.
   select exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'mentions_figees'
                  and not attisdropped) into mentions_figees;
+  -- Depuis la correction de la facture (son témoin : le bloc de la garde), la validation exige le statut de TVA du dossier,
+  -- sa mention de TVA et une date dans l'ordre de la série : la section 107 à 116 attend l'état où la base se trouve.
+  select coalesce(strpos(p.prosrc, 'CE QUE LA VALIDATION EXIGE DE LA FACTURE') > 0, false) into correction
+    from pg_proc p where p.oid = to_regprocedure('public.garder_factures_validees()');
 
   ids := jsonb_build_object('CAB', cabinet, 'DC', dossier_client, 'CLIENT', client,
     'A', 'e55a2000-0000-4000-8000-0000000000a1', 'B', 'e55a2000-0000-4000-8000-0000000000a2',
@@ -110,7 +132,15 @@ begin
     'Y', 'e55a2000-0000-4000-8000-0000000000a4', 'RF', 'e55a2000-0000-4000-8000-0000000000b1',
     'RA', 'e55a2000-0000-4000-8000-0000000000b2', 'JF', 'e55a2000-0000-4000-8000-0000000000b3',
     'JA', 'e55a2000-0000-4000-8000-0000000000b4', 'JB', 'e55a2000-0000-4000-8000-0000000000b5',
-    'RF2', 'e55a2000-0000-4000-8000-0000000000b6');
+    'RF2', 'e55a2000-0000-4000-8000-0000000000b6')
+    -- La correction de la facture : K, redevable (les dates) ; F, en franchise ; E, exonéré pour ses soins ; N, au statut
+    -- à préciser ; S, exonéré sans article, basculé, et l'accès « Ventes » du client à lui ; V, au statut à préciser,
+    -- basculé, et l'accès « Ventes » du client à lui (FACTURE-Q1) ; la facture restaurée de V.
+    || jsonb_build_object('CK', 'e55a2000-0000-4000-8000-0000000001a1', 'CF', 'e55a2000-0000-4000-8000-0000000001a2',
+    'CE', 'e55a2000-0000-4000-8000-0000000001a3', 'CN', 'e55a2000-0000-4000-8000-0000000001a4',
+    'CS', 'e55a2000-0000-4000-8000-0000000001a5', 'ACS', 'e55a2000-0000-4000-8000-0000000001b5',
+    'CV', 'e55a2000-0000-4000-8000-0000000001a6', 'ACV', 'e55a2000-0000-4000-8000-0000000001b6',
+    'CR', 'e55a2000-0000-4000-8000-0000000001c4', 'AUJ', aujourdhui::text, 'DEMAIN', demain::text);
 
   select string_agg(n::text, '/') into avant from (values
     ((select count(*) from dossiers)), ((select count(*) from cabinets)), ((select count(*) from cabinet_admins)),
@@ -130,6 +160,9 @@ begin
       ('{A}', 'ESSAI FACTURES A', '{CAB}', 'redevable', true, true), ('{B}', 'ESSAI FACTURES B', '{CAB}', 'franchise', false, true),
       ('{X}', 'ESSAI FACTURES X', '{CAB}', 'redevable', true, false), ('{Y}', 'ESSAI FACTURES Y', '{CAB}', 'redevable', true, false)$q$, '', ''],
     array['jeu', 'cabinet jetable', 'postgres', $q$insert into cabinets (id, nom) values ('{CJ}', 'ESSAI FACTURES CABINET')$q$, '', ''],
+    -- J1 n'a pas de statut de TVA : son chef, qui n'est pas super-administrateur, y valide une facture (58) — depuis la
+    -- correction de la facture, reprise pour FACTURE-Q1 (02/11/2026), seul un accès « Ventes » se voit refuser la facture
+    -- d'un dossier au statut à préciser (section 107 à 116).
     array['jeu', 'ses dossiers', 'postgres', $q$insert into dossiers (id, nom, cabinet_id) values ('{J1}', 'ESSAI FACTURES J1', '{CJ}'), ('{J2}', 'ESSAI FACTURES J2', '{CJ}')$q$, '', ''],
 
     -- ══ Qui enregistre ══════════
@@ -155,7 +188,9 @@ begin
     array['valeur', '15. le réglage qui annonce la validation est retiré aussitôt', 'postgres', $q$select coalesce(nullif(current_setting('jd.validation_facture', true), ''), '∅')$q$, '', '∅'],
     array['jeu', 'le dossier A renonce à l''option', 'postgres', $q$update dossiers set tva_sur_debits = false where id = '{A}'$q$, '', ''],
     array['valeur', '16. la facture validée garde l''option qu''elle a figée', 'postgres', $q$select option_debits::text from factures_emises where dossier_id = '{A}' and numero = 'F2026-0001'$q$, '', 'true'],
-    array['fait', '17. un dossier en franchise valide une facture sans les mentions', 'chef', $q$select enregistrer_facture('{B}', null, '{"tiers_nom":"ESSAI B","date_emission":"2026-03-02","montant_ht":50,"montant_tva":0,"montant_ttc":50}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":50,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
+    -- « Sans les mentions » : celles de la facture électronique ; la mention de TVA de la franchise, elle, y est (depuis le
+    -- 31/10/2026, la garde l'exige : section 107 à 116).
+    array['fait', '17. un dossier en franchise valide une facture sans les mentions', 'chef', $q$select enregistrer_facture('{B}', null, '{"tiers_nom":"ESSAI B","date_emission":"2026-03-02","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":50,"montant_tva":0,"montant_ttc":50}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":50,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
     array['valeur', '18. … l''option ne s''y fige pas, et les mentions restent à préciser', 'postgres', $q$select concat_ws('|', numero, option_debits, coalesce(type_client, '∅'), coalesce(nature_operation, '∅')) from factures_emises where dossier_id = '{B}'$q$, '', 'F2026-0001|f|∅|∅'],
     array['controle', '19. une option ne se pose pas sur un brouillon', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, option_debits) values ('{A}', 'ESSAI CONTRAINTE', true)$q$, '23514', '%"factures_emises_option_debits_validee"%'],
 
@@ -279,7 +314,79 @@ begin
     array['controle', '104. un numéro de sa série et de son année passe', 'chef', $q$insert into factures_emises (dossier_id, tiers_nom, statut, numero, validated_at, date_emission) values ('{Y}', 'ESSAI CONTRAINTE', 'validee', 'F2026-0001', now(), '2026-03-01')$q$, 'OK', ''],
 
     -- ══ Ce que la production ne peut que lire ══════════
-    array['valeur', '105. les déclencheurs couvrent l''insertion, la modification et la suppression', 'postgres', $q$select string_agg(tgname || '=' || tgtype || case when tgdeferrable then ' différable' else '' end || case when tginitdeferred then ' différée' else '' end || case when tgenabled = 'O' then '' else ' DÉSACTIVÉ' end, '|' order by tgname) from pg_trigger where tgrelid in ('public.factures_emises'::regclass, 'public.facture_lignes'::regclass) and not tgisinternal$q$, '', 'facture_lignes_figees=31|factures_emises_avoir_sans_brouillon=5 différable différée|factures_emises_figees=31|factures_emises_source_de_la_vente=23']
+    array['valeur', '105. les déclencheurs couvrent l''insertion, la modification et la suppression', 'postgres', $q$select string_agg(tgname || '=' || tgtype || case when tgdeferrable then ' différable' else '' end || case when tginitdeferred then ' différée' else '' end || case when tgenabled = 'O' then '' else ' DÉSACTIVÉ' end, '|' order by tgname) from pg_trigger where tgrelid in ('public.factures_emises'::regclass, 'public.facture_lignes'::regclass) and not tgisinternal$q$, '', 'facture_lignes_figees=31|factures_emises_avoir_sans_brouillon=5 différable différée|factures_emises_figees=31|factures_emises_source_de_la_vente=23'],
+
+    -- ══ La correction de la facture (31/10/2026, reprise le 02/11/2026 pour FACTURE-Q1) : ce que la validation exige ═════
+    -- Chaque contrôle attend l'état où la base se trouve (`correction`) : sans la migration, la validation passe — le
+    -- défaut. Chaque mutation (« M… ») rejoue le contrôle qui la précède, la cause du refus ôtée — le statut posé, ou le
+    -- cabinet pour auteur — : elle passe, dans les deux états, et prouve que le refus n'est pas vrai par construction. K est
+    -- redevable ; F en franchise ; E exonéré pour ses soins ; N au statut à préciser ; S exonéré sans article et V au
+    -- statut à préciser, basculés, deux sociétés dont le client a un accès « Ventes ».
+    array['jeu', 'la correction : six dossiers jetables, les accès « Ventes » du client à S et à V', 'postgres', $q$insert into dossiers (id, nom, cabinet_id, statut_tva, article_exoneration, siret, adresse, ventes_par_les_factures, forme_juridique, denomination_imprimee) values
+      ('{CK}', 'ESSAI FACTURES K', '{CAB}', 'redevable', null, null, null, false, null, null), ('{CF}', 'ESSAI FACTURES F', '{CAB}', 'franchise', null, null, null, false, null, null),
+      ('{CE}', 'ESSAI FACTURES E', '{CAB}', 'exonere', 'cgi_261_4_1', null, null, false, null, null), ('{CN}', 'ESSAI FACTURES N', '{CAB}', null, null, null, null, false, null, null),
+      ('{CS}', 'ESSAI FACTURES S', '{CAB}', 'exonere', null, '12345678200010', 'ESSAI FACTURES ADRESSE S', true, '5710', 'ESSAI FACTURES SOCIÉTÉ S'),
+      ('{CV}', 'ESSAI FACTURES V', '{CAB}', null, null, '12345678200010', 'ESSAI FACTURES ADRESSE V', true, '5710', 'ESSAI FACTURES SOCIÉTÉ V');
+      insert into memberships (id, user_id, dossier_id, role, email, droit_ventes) values ('{ACS}', '{CLIENT}', '{CS}', 'client', 'essai-factures-s@example.test', true),
+      ('{ACV}', '{CLIENT}', '{CV}', 'client', 'essai-factures-v@example.test', true)$q$, '', ''],
+    -- 1. Le statut de TVA à préciser (FACTURE-Q1, la réponse du cabinet du 02/11/2026 : « seulement depuis l'espace
+    -- client ») : le client « Ventes » ne valide pas une facture ; le cabinet la valide encore, dans un dossier basculé
+    -- comme dans un autre ; l'avoir du client n'en est pas jugé. La facture de V porte la mention de la franchise : sans
+    -- statut, aucune n'est exigée, et la mutation M107b, la franchise posée, rejoue le même appel.
+    array['controle', '107. une facture d''un dossier au statut de TVA à préciser : le client « Ventes » ne la valide pas', 'client', $q$select enregistrer_facture('{CV}', null, '{"tiers_nom":"ESSAI CLIENT V","type_client":"assujetti","nature_operation":"services","date_emission":"2026-03-10","emetteur_nom":"ESSAI FACTURES V","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI FACTURES ADRESSE V","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, true)$q$,
+      case when correction then '22023' else 'OK' end,
+      case when correction then 'Le statut de TVA du dossier est à préciser : la mention de TVA et le numéro de TVA qu''une facture imprime en dépendent. Le cabinet le précise avant qu''une facture se valide depuis l''espace client.' else '' end],
+    array['controle', '107b. … son brouillon s''enregistre', 'client', $q$select enregistrer_facture('{CV}', null, '{"tiers_nom":"ESSAI CLIENT V","type_client":"assujetti","nature_operation":"services","date_emission":"2026-03-10","emetteur_nom":"ESSAI FACTURES V","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI FACTURES ADRESSE V","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, false)$q$, 'OK', ''],
+    array['controle', 'M107. le contrôle 107 rejoué par le cabinet : il valide encore la facture (FACTURE-Q1)', 'chef', $q$select enregistrer_facture('{CV}', null, '{"tiers_nom":"ESSAI CLIENT V","type_client":"assujetti","nature_operation":"services","date_emission":"2026-03-10","emetteur_nom":"ESSAI FACTURES V","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI FACTURES ADRESSE V","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
+    array['controle', '107a. … et dans un dossier qui n''a pas basculé, le cabinet la valide aussi', 'chef', $q$select enregistrer_facture('{CN}', null, '{"tiers_nom":"ESSAI N","date_emission":"2026-03-02","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
+    array['fait', 'la restauration pose une facture validée dans V, qui n''a jamais validé', 'chef', $q$insert into factures_emises (id, dossier_id, tiers_nom, statut, numero, validated_at, date_emission, montant_ht, montant_tva, montant_ttc, nature_operation) values ('{CR}', '{CV}', 'ESSAI V RESTAURÉE', 'validee', 'F2026-0001', now(), '2026-02-01', 10, 0, 10, 'services')$q$, 'OK', ''],
+    array['controle', '107c. l''avoir du client « Ventes » n''est pas jugé sur le statut : la voie de la correction reste ouverte', 'client', $q$select enregistrer_facture('{CV}', null, jsonb_build_object('type', 'avoir', 'facture_origine_id', '{CR}', 'date_emission', '2026-02-05', 'montant_ht', -10, 'montant_tva', 0, 'montant_ttc', -10), '[{"designation":"x","quantite":-1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
+    array['jeu', 'le statut de TVA de V posé : la franchise', 'postgres', $q$update dossiers set statut_tva = 'franchise' where id = '{CV}'$q$, '', ''],
+    array['controle', 'M107b. le contrôle 107 rejoué, le statut posé : le client « Ventes » valide la facture', 'client', $q$select enregistrer_facture('{CV}', null, '{"tiers_nom":"ESSAI CLIENT V","type_client":"assujetti","nature_operation":"services","date_emission":"2026-03-10","emetteur_nom":"ESSAI FACTURES V","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI FACTURES ADRESSE V","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
+    -- 2. L'exonération sans article : le client « Ventes » ne valide pas, le cabinet si.
+    array['controle', '108. un dossier exonéré sans article : le client « Ventes » ne valide pas', 'client', $q$select enregistrer_facture('{CS}', null, '{"tiers_nom":"ESSAI CLIENT S","type_client":"assujetti","nature_operation":"services","date_emission":"2026-03-10","emetteur_nom":"ESSAI FACTURES S","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI FACTURES ADRESSE S","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, true)$q$,
+      case when correction then '22023' else 'OK' end,
+      case when correction then 'Le dossier est exonéré de TVA sans article d''exonération : la mention qu''une facture porte en dépend. Le cabinet choisit l''article avant qu''une facture se valide depuis l''espace client.' else '' end],
+    array['controle', 'M108. le contrôle 108 rejoué par le cabinet : il valide, la mention d''un article hors de la liste étant à sa main', 'chef', $q$select enregistrer_facture('{CS}', null, '{"tiers_nom":"ESSAI CLIENT S","type_client":"assujetti","nature_operation":"services","date_emission":"2026-03-10","emetteur_nom":"ESSAI FACTURES S","emetteur_siret":"12345678200010","emetteur_adresse":"ESSAI FACTURES ADRESSE S","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
+    -- 3. La mention de TVA, au caractère près, d'une facture comme d'un avoir ; un redevable n'en doit aucune.
+    array['controle', '109. un dossier en franchise : sans « TVA non applicable, art. 293 B du CGI. », la facture ne se valide pas', 'chef', $q$select enregistrer_facture('{CF}', null, '{"tiers_nom":"ESSAI F","date_emission":"2026-03-02","mentions_legales":"Paiement à réception.","montant_ht":50,"montant_tva":0,"montant_ttc":50}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":50,"taux_tva":0}]'::jsonb, true)$q$,
+      case when correction then '22023' else 'OK' end,
+      case when correction then 'Les mentions légales ne portent pas la mention de TVA du dossier, « TVA non applicable, art. 293 B du CGI. » : une facture ou un avoir qui ne facture pas de TVA la porte telle quelle (CGI, ann. II, art. 242 nonies A, I ; art. 293 B pour la franchise en base).' else '' end],
+    array['controle', 'M109. le contrôle 109 rejoué, la mention parmi les autres : la facture se valide', 'chef', $q$select enregistrer_facture('{CF}', null, '{"tiers_nom":"ESSAI F","date_emission":"2026-03-02","mentions_legales":"Paiement à réception. TVA non applicable, art. 293 B du CGI. Merci.","montant_ht":50,"montant_tva":0,"montant_ttc":50}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":50,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
+    array['controle', '110. un dossier exonéré pour ses soins : la mention d''une autre exonération ne vaut pas la sienne', 'chef', $q$select enregistrer_facture('{CE}', null, '{"tiers_nom":"ESSAI E","date_emission":"2026-03-02","mentions_legales":"Exonération de TVA, art. 261, 4, 4° a du CGI.","montant_ht":50,"montant_tva":0,"montant_ttc":50}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":50,"taux_tva":0}]'::jsonb, true)$q$,
+      case when correction then '22023' else 'OK' end,
+      case when correction then 'Les mentions légales ne portent pas la mention de TVA du dossier, « Exonération de TVA, art. 261, 4, 1° du CGI. » : une facture ou un avoir qui ne facture pas de TVA la porte telle quelle (CGI, ann. II, art. 242 nonies A, I ; art. 293 B pour la franchise en base).' else '' end],
+    array['controle', '110b. … ni la sienne sans son point final : la mention se porte telle quelle', 'chef', $q$select enregistrer_facture('{CE}', null, '{"tiers_nom":"ESSAI E","date_emission":"2026-03-02","mentions_legales":"Exonération de TVA, art. 261, 4, 1° du CGI","montant_ht":50,"montant_tva":0,"montant_ttc":50}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":50,"taux_tva":0}]'::jsonb, true)$q$,
+      case when correction then '22023' else 'OK' end,
+      case when correction then 'Les mentions légales ne portent pas la mention de TVA du dossier, « Exonération de TVA, art. 261, 4, 1° du CGI. »%' else '' end],
+    array['controle', 'M110. le contrôle 110 rejoué avec la mention de son article : la facture se valide', 'chef', $q$select enregistrer_facture('{CE}', null, '{"tiers_nom":"ESSAI E","date_emission":"2026-03-02","mentions_legales":"Exonération de TVA, art. 261, 4, 1° du CGI.","montant_ht":50,"montant_tva":0,"montant_ttc":50}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":50,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
+    array['fait', 'une facture de F, validée avec sa mention', 'chef', $q$select enregistrer_facture('{CF}', null, '{"tiers_nom":"ESSAI F","date_emission":"2026-03-02","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":50,"montant_tva":0,"montant_ttc":50}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":50,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
+    array['controle', '111. son avoir sans la mention ne se crée pas : un avoir est une facture qui en corrige une autre', 'chef', $q$select enregistrer_facture('{CF}', null, jsonb_build_object('type', 'avoir', 'facture_origine_id', (select id from factures_emises where dossier_id = '{CF}' and numero = 'F2026-0001'), 'date_emission', '2026-03-05', 'montant_ht', -10, 'montant_tva', 0, 'montant_ttc', -10), '[{"designation":"x","quantite":-1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, true)$q$,
+      case when correction then '22023' else 'OK' end,
+      case when correction then 'Les mentions légales ne portent pas la mention de TVA du dossier, « TVA non applicable, art. 293 B du CGI. »%' else '' end],
+    array['controle', 'M111. le contrôle 111 rejoué avec la mention : l''avoir se crée', 'chef', $q$select enregistrer_facture('{CF}', null, jsonb_build_object('type', 'avoir', 'facture_origine_id', (select id from factures_emises where dossier_id = '{CF}' and numero = 'F2026-0001'), 'date_emission', '2026-03-05', 'mentions_legales', 'TVA non applicable, art. 293 B du CGI.', 'montant_ht', -10, 'montant_tva', 0, 'montant_ttc', -10), '[{"designation":"x","quantite":-1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, true)$q$, 'OK', ''],
+    array['controle', '111b. un redevable ne doit aucune mention de TVA : sa facture sans mentions se valide', 'chef', $q$select enregistrer_facture('{CK}', null, '{"tiers_nom":"ESSAI K","date_emission":"2026-03-02","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)$q$, 'OK', ''],
+    -- 4. Une date à venir ; le cas neutre, une facture du jour.
+    array['controle', '112. une facture datée de demain ne se valide pas', 'chef', $q$select enregistrer_facture('{CK}', null, '{"tiers_nom":"ESSAI K","date_emission":"{DEMAIN}","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)$q$,
+      case when correction then '22023' else 'OK' end,
+      case when correction then 'La date d''émission, le ' || to_char(demain, 'DD/MM/YYYY') || ', est à venir : nous sommes le ' || to_char(aujourdhui, 'DD/MM/YYYY') || ' à Paris. Une facture ou un avoir se valide daté du jour au plus tard, sa numérotation suivant l''ordre des dates d''émission (CGI, ann. II, art. 242 nonies A, I, 7°).' else '' end],
+    array['controle', '112b. … son brouillon s''enregistre', 'chef', $q$select enregistrer_facture('{CK}', null, '{"tiers_nom":"ESSAI K","date_emission":"{DEMAIN}","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, false)$q$, 'OK', ''],
+    array['controle', 'M112. le contrôle 112 rejoué daté du jour (le cas neutre) : la facture se valide', 'chef', $q$select enregistrer_facture('{CK}', null, '{"tiers_nom":"ESSAI K","date_emission":"{AUJ}","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)$q$, 'OK', ''],
+    -- 5. L'ordre des dates dans la série : le brouillon du 02/12/2025 attend, la facture du 05/12/2025 se valide avant lui.
+    array['fait', 'un brouillon du 02/12/2025 attend', 'chef', $q$select enregistrer_facture('{CK}', null, '{"tiers_nom":"ESSAI K 02/12","date_emission":"2025-12-02","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, false)$q$, 'OK', ''],
+    array['fait', 'une facture du 05/12/2025 se valide avant lui', 'chef', $q$select enregistrer_facture('{CK}', null, '{"tiers_nom":"ESSAI K 05/12","date_emission":"2025-12-05","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)$q$, 'OK', ''],
+    array['controle', '113. le brouillon du 02/12/2025 ne se valide plus après elle : son numéro serait daté d''avant le précédent', 'chef', $q$select enregistrer_facture('{CK}', (select id from factures_emises where dossier_id = '{CK}' and tiers_nom = 'ESSAI K 02/12'), '{"tiers_nom":"ESSAI K 02/12","date_emission":"2025-12-02","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)$q$,
+      case when correction then '22023' else 'OK' end,
+      case when correction then 'La date d''émission, le 02/12/2025, précède celle de F2025-0001 (le 05/12/2025), la plus récente de la même série : les numéros suivent l''ordre des dates d''émission (CGI, ann. II, art. 242 nonies A, I, 7°). Une date du 05/12/2025 ou d''après se valide.' else '' end],
+    array['controle', 'M113. le contrôle 113 rejoué, le brouillon redaté du 05/12/2025 : il se valide, à la suite', 'chef', $q$select enregistrer_facture('{CK}', (select id from factures_emises where dossier_id = '{CK}' and tiers_nom = 'ESSAI K 02/12'), '{"tiers_nom":"ESSAI K 02/12","date_emission":"2025-12-05","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)$q$, 'OK', ''],
+    array['controle', '113b. une autre année n''est pas la même série : une facture du 02/12/2024 se valide', 'chef', $q$select enregistrer_facture('{CK}', null, '{"tiers_nom":"ESSAI K 2024","date_emission":"2024-12-02","montant_ht":10,"montant_tva":2,"montant_ttc":12}'::jsonb, '[{"designation":"x","quantite":1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true)$q$, 'OK', ''],
+    array['fait', 'un avoir de F2025-0001, du 06/12/2025', 'chef', $q$select enregistrer_facture('{CK}', null, jsonb_build_object('type', 'avoir', 'facture_origine_id', (select id from factures_emises where dossier_id = '{CK}' and numero = 'F2025-0001'), 'date_emission', '2025-12-06', 'montant_ht', -1, 'montant_tva', -0.2, 'montant_ttc', -1.2), '[{"designation":"x","quantite":-1,"prix_unitaire_ht":1,"taux_tva":20}]'::jsonb, true)$q$, 'OK', ''],
+    array['controle', '114. un avoir du 05/12/2025 ne se crée plus après celui du 06/12/2025 : les avoirs ont leur série', 'chef', $q$select enregistrer_facture('{CK}', null, jsonb_build_object('type', 'avoir', 'facture_origine_id', (select id from factures_emises where dossier_id = '{CK}' and numero = 'F2025-0001'), 'date_emission', '2025-12-05', 'montant_ht', -1, 'montant_tva', -0.2, 'montant_ttc', -1.2), '[{"designation":"x","quantite":-1,"prix_unitaire_ht":1,"taux_tva":20}]'::jsonb, true)$q$,
+      case when correction then '22023' else 'OK' end,
+      case when correction then 'La date d''émission, le 05/12/2025, précède celle de A2025-0001 (le 06/12/2025), la plus récente de la même série : les numéros suivent l''ordre des dates d''émission (CGI, ann. II, art. 242 nonies A, I, 7°). Une date du 06/12/2025 ou d''après se valide.' else '' end],
+    array['controle', 'M114. le contrôle 114 rejoué daté du 06/12/2025 : l''avoir se crée', 'chef', $q$select enregistrer_facture('{CK}', null, jsonb_build_object('type', 'avoir', 'facture_origine_id', (select id from factures_emises where dossier_id = '{CK}' and numero = 'F2025-0001'), 'date_emission', '2025-12-06', 'montant_ht', -1, 'montant_tva', -0.2, 'montant_ttc', -1.2), '[{"designation":"x","quantite":-1,"prix_unitaire_ht":1,"taux_tva":20}]'::jsonb, true)$q$, 'OK', ''],
+    array['valeur', '115. la série de K : la facture du 05/12/2025, son avoir, le brouillon qui attend toujours', 'postgres', $q$select string_agg(coalesce(numero, 'brouillon') || ' ' || date_emission, '|' order by date_emission, numero) from factures_emises where dossier_id = '{CK}'$q$, '', 'brouillon 2025-12-02|F2025-0001 2025-12-05|A2025-0001 2025-12-06'],
+    array['valeur', '116. la garde reste définisseuse, son chemin fixé, hors de portée en RPC', 'postgres', $q$select concat_ws('|', p.prosecdef, array_to_string(p.proconfig, ','), has_function_privilege('anon', p.oid, 'execute'), has_function_privilege('authenticated', p.oid, 'execute')) from pg_proc p where p.oid = to_regprocedure('public.garder_factures_validees()')$q$, '', 't|search_path=public|f|f']
   ];
 
   begin

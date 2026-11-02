@@ -90,6 +90,61 @@ interface LigneRow { designation: string; quantite: number; prix_unitaire_ht: nu
 function formaterMontant(n: number): string {
   return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €"
 }
+
+// ── DÉBUT COPIE montantsFacture ──────────────────────────────────────────────────────────────────────────────────────
+// Ce bloc est recopié AU CARACTÈRE PRÈS dans les Edge Functions qui transmettent une facture (superpdp-emit,
+// plateforme-agreee) et dans celle qui l'envoie par e-mail (send-email) : elles sont auto-portées, et le générateur de la
+// facture électronique, que les deux premières recopient aussi, en dépend. `copiesFacturation.test.ts` compare chaque
+// copie à celui-ci et l'exécute seule.
+
+export interface LigneCalculee {
+  montant_ht: number
+  montant_tva: number
+  montant_ttc: number
+}
+
+// LE CALCUL SE FAIT SUR LES DÉCIMAUX QUE LA BASE REÇOIT, EN ENTIERS. Une quantité, un prix et un taux partent en JSON,
+// qui écrit d'un nombre son écriture décimale la plus courte (celle de `String`), et la base la garde EXACTEMENT, dans une
+// colonne `numeric`. Le nombre binaire que tient le navigateur n'est pas ce décimal : 32,05 y vaut 32,04999999999999716…,
+// si bien que 0,5 × 32,05 × 100 y faisait 1 602,4999… et que l'arrondi rendait 16,02 € d'une ligne de 16,025 €, quand le
+// demi éloigné de zéro en fait 16,03 € (de même 0,5 × 2,01 et 1,5 × 0,15). La base refait ce calcul pour plafonner les
+// encaissements (`centimes_ligne_facture`), en `numeric` depuis la correction de la facture (31/10/2026) : les deux côtés
+// arrondissent le même décimal. Un nombre se lit donc comme un entier et une puissance de dix — « 32.05 », 3205 × 10⁻² ;
+// « 1.5e-7 », 15 × 10⁻⁸ —, et le calcul se fait en entiers (BigInt), sans perte.
+function enDecimal(x: number): [bigint, number] {
+  const [mantisse, exposant = '0'] = String(x).split('e')
+  const [entiere, fraction = ''] = mantisse.split('.')
+  return [BigInt(entiere + fraction), Number(exposant) - fraction.length]
+}
+
+// `entier` × 10^`puissance`, à l'unité, le demi ÉLOIGNÉ DE ZÉRO dans les deux sens : la règle de `round` sur un `numeric`.
+// Une ligne d'avoir à −0,125 € vaut −0,13 €, comme la même ligne d'une facture vaut 0,13 € : l'avoir, relu dans son sens
+// par le générateur de la facture électronique (un avoir de la norme porte des montants positifs), retrouve les montants
+// qu'on a enregistrés.
+function aLUnite(entier: bigint, puissance: number): bigint {
+  if (puissance >= 0) return entier * 10n ** BigInt(puissance)
+  const diviseur = 10n ** BigInt(-puissance)
+  const quotient = entier / diviseur
+  const reste = entier % diviseur
+  return 2n * (reste < 0n ? -reste : reste) >= diviseur ? quotient + (entier < 0n ? -1n : 1n) : quotient
+}
+
+// Chaque ligne est arrondie avant d'être sommée (comme le ferait n'importe quel logiciel de facturation), plutôt que de
+// sommer des valeurs brutes puis d'arrondir le total : les deux méthodes peuvent différer d'un centime. Le HT au centime,
+// puis la TVA sur ce HT, au centime ; le TTC, leur somme. Une valeur qui n'est pas un nombre fini ne fait pas un montant.
+export function calculerLigne(quantite: number, prixUnitaireHt: number, tauxTva: number): LigneCalculee {
+  if (!Number.isFinite(quantite) || !Number.isFinite(prixUnitaireHt) || !Number.isFinite(tauxTva)) {
+    return { montant_ht: Number.NaN, montant_tva: Number.NaN, montant_ttc: Number.NaN }
+  }
+  const [q, puissanceQ] = enDecimal(quantite)
+  const [p, puissanceP] = enDecimal(prixUnitaireHt)
+  const [t, puissanceT] = enDecimal(tauxTva)
+  const ht = aLUnite(q * p, puissanceQ + puissanceP + 2)
+  const tva = aLUnite(ht * t, puissanceT - 2)
+  return { montant_ht: Number(ht) / 100, montant_tva: Number(tva) / 100, montant_ttc: Number(ht + tva) / 100 }
+}
+// ── FIN COPIE montantsFacture ────────────────────────────────────────────────────────────────────────────────────────
+
 // `date_emission` et `date_echeance` sont des colonnes `date` de Postgres : une date CIVILE, qui n'a
 // pas d'heure, donc pas de fuseau — son libellé est ce qu'il faut lire. Passer par `new Date(d)`
 // l'interpréterait comme minuit UTC puis la replacerait dans le fuseau du runtime : juste tant que
@@ -112,7 +167,11 @@ function construireEmailFacture(facture: FactureRow, lignes: LigneRow[], message
   const emetteur = facture.emetteur_nom ?? "Le cabinet"
   const typeLabel = facture.type === "avoir" ? "Avoir" : "Facture"
   const lignesHtml = lignes.map((l) => {
-    const ht = Math.round(l.quantite * l.prix_unitaire_ht * 100) / 100
+    // Le HT de la ligne tel que la facture le porte (le bloc `montantsFacture`, le calcul de l'application et de la base) :
+    // calculé ici à part, en virgule flottante et le demi vers +∞, l'e-mail disait d'une ligne de 16,025 € qu'elle en
+    // valait 16,02, et d'une ligne d'avoir à −0,125 € qu'elle en valait −0,12 : un centime d'écart avec la facture qu'il
+    // détaille.
+    const ht = calculerLigne(l.quantite, l.prix_unitaire_ht, l.taux_tva).montant_ht
     return `<tr><td style="padding:4px 8px;border-bottom:1px solid #eee;">${echapper(l.designation)}</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;">${l.quantite}</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;">${formaterMontant(ht)}</td></tr>`
   }).join("")
   const html = `

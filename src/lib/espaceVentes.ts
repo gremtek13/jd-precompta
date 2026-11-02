@@ -52,6 +52,21 @@ export const REECRITURES_CLIENT: readonly { de: string; vers: string }[] = [
     de: 'Le statut de TVA du dossier est à préciser (onglet TVA du dossier) : la mention de TVA de la facture en dépend.',
     vers: 'Ton cabinet doit d’abord préciser ton statut de TVA : la mention de TVA de la facture en dépend.',
   },
+  // lib/validationDeLaFacture.ts, `REFUS_DE_LA_VALIDATION`, rangs 14 et 15 (la correction de la facture, reprise pour
+  // FACTURE-Q1 ; FACTURE-Q2) : les deux refus que la garde des factures n'oppose qu'à un accès « Ventes », dits avant le clic
+  // par le formulaire et rendus par la base.
+  {
+    de: "Le statut de TVA du dossier est à préciser : la mention de TVA et le numéro de TVA qu'une facture imprime en "
+      + "dépendent. Le cabinet le précise avant qu'une facture se valide depuis l'espace client.",
+    vers: 'Ton cabinet doit d’abord préciser ton statut de TVA : la mention de TVA et le numéro de TVA que ta facture '
+      + 'imprime en dépendent, et tu ne peux pas la valider avant.',
+  },
+  {
+    de: "Le dossier est exonéré de TVA sans article d'exonération : la mention qu'une facture porte en dépend. Le cabinet "
+      + "choisit l'article avant qu'une facture se valide depuis l'espace client.",
+    vers: 'Ta société est exonérée de TVA sans article d’exonération : la mention que ta facture porte en dépend. Ton '
+      + 'cabinet doit d’abord préciser l’article, et tu ne peux pas la valider avant.',
+  },
   {
     de: 'Le dossier est exonéré sans article d’exonération : saisis la mention de la facture, ou choisis l’article dans l’onglet TVA du dossier.',
     vers: 'Ta société est exonérée sans article d’exonération : saisis la mention de la facture, ou demande à ton cabinet de '

@@ -78,6 +78,14 @@
 -- justes. Après l'application, la session n'a rejoué en production que ventesFacturees.sql (187 justes), qui y éprouve
 -- `annuler_encaissement` pour une facture source comme pour une autre : les fonctions que cet essai éprouve d'autre
 -- n'ont pas changé.
+--
+-- ADAPTÉ LE 31/10/2026 À LA CORRECTION DE LA FACTURE (migration `facture_dates_centimes_mention_tva`, PRÉPARÉE, pas
+-- encore en base ; reprise le 02/11/2026 pour FACTURE-Q1) : une facture ou un avoir d'un dossier en franchise ou exonéré
+-- porte sa mention de TVA, et le statut à préciser ne se refuse plus qu'à un accès « Ventes ». Le dossier des factures
+-- d'essai, que l'essai ne choisit pas, passe en franchise le temps du bloc qui s'annule — non assujetti comme hier ; quel
+-- qu'ait été son statut, l'essai le pose —, le dossier jetable qui a basculé y naît comme lui, et les trois factures
+-- portent la mention de l'art. 293 B. Rien d'autre ne change : chaque verdict est celui d'hier, avant comme après la
+-- migration.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -188,26 +196,32 @@ begin
 
   -- ══ Les factures d'essai : nées ici, annulées à la fin du bloc ══════════
   begin
+    -- Le dossier en franchise le temps du bloc, quel que soit son statut : depuis la correction de la facture (31/10/2026),
+    -- une facture d'une franchise porte sa mention, et l'essai ne dépend plus du statut du dossier.
+    update dossiers set statut_tva = 'franchise', article_exoneration = null where id = dossier_f;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     -- Trois taux : 1 200,00 € à 20 %, 105,50 € à 5,5 %, 50,00 € à 0 % — 1 355,50 € TTC ; et 120,00 € à un seul taux.
     select r.facture_id into fm from enregistrer_facture(dossier_f, null,
-      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'montant_ht', 1150, 'montant_tva', 205.5, 'montant_ttc', 1355.5),
+      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'mentions_legales', 'TVA non applicable, art. 293 B du CGI.',
+        'montant_ht', 1150, 'montant_tva', 205.5, 'montant_ttc', 1355.5),
       '[{"designation":"a","quantite":1,"prix_unitaire_ht":1000,"taux_tva":20},{"designation":"b","quantite":1,"prix_unitaire_ht":100,"taux_tva":5.5},{"designation":"c","quantite":1,"prix_unitaire_ht":50,"taux_tva":0}]'::jsonb,
       true) r;
     select r.facture_id into f2 from enregistrer_facture(dossier_f, null,
-      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120),
+      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'mentions_legales', 'TVA non applicable, art. 293 B du CGI.',
+        'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120),
       '[{"designation":"a","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) r;
     reset role;
     -- La facture SOURCE de sa vente (migration `impaye_non_declare`, étape VF5d2) : un dossier jetable du cabinet du
     -- dossier d'essai, qui a basculé, et sa facture de services de 120,00 € à 20 %, validée par le chef.
-    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures)
-      select ds, 'ESSAI VF5D2', d.cabinet_id, 'tresorerie', '455000', true from dossiers d where d.id = dossier_f;
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures, statut_tva)
+      select ds, 'ESSAI VF5D2', d.cabinet_id, 'tresorerie', '455000', true, 'franchise' from dossiers d where d.id = dossier_f;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select r.facture_id into fs from enregistrer_facture(ds, null,
       jsonb_build_object('tiers_nom', 'Essai', 'tiers_siret', '12345678900012', 'emetteur_nom', 'Essai', 'date_emission', jour,
-        'nature_operation', 'services', 'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120),
+        'nature_operation', 'services', 'mentions_legales', 'TVA non applicable, art. 293 B du CGI.',
+        'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120),
       '[{"designation":"a","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) r;
     reset role;
 

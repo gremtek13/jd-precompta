@@ -12,7 +12,9 @@ import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from '
 // LES FONCTIONS QUI TRANSMETTENT UNE FACTURE (superpdp-emit, plateforme-agreee) RECOPIENT TROIS BLOCS DE
 // src/lib : le calcul des montants d'une ligne, le statut de TVA et le générateur de la facture électronique.
 // Elles sont auto-portées, et ce qu'elles transmettent doit être le fichier que factureCii.test.ts a fait juger
-// par le validateur officiel de la norme. Ce garde pose quatre questions, et aucune ne suffit seule :
+// par le validateur officiel de la norme. Celle qui envoie une facture par e-mail (send-email) recopie le premier
+// seulement, depuis la correction de la facture (31/10/2026) : le HT d'une ligne que l'e-mail détaille est celui de la
+// facture, au centime près. Ce garde pose quatre questions, et aucune ne suffit seule :
 //
 //   1. Chaque copie est-elle AU CARACTÈRE PRÈS le bloc de src/lib, et les trois types que les blocs nomment
 //      (StatutTva, ArticleExoneration, NatureOperation) sont-ils déclarés comme types.ts les déclare ?
@@ -134,10 +136,18 @@ const LIGNES: [number, number, number][] = [
   [1, 100, 20], [1, 100, 10], [1, 100, 5.5], [1, 100, 2.1], [1, 100, 0], [3, 33.33, 20], [7, 14.29, 5.5],
   [1, 0.005, 20], [1, 0.015, 20], [2, 0.005, 20], [1.5, 19.99, 20], [0.25, 80, 10], [12, 8.33, 2.1], [1, 1234.56, 20],
   [-1, 100, 20], [-3, 33.33, 20], [-1, 0.005, 20], [-1.5, 19.99, 5.5], [0, 100, 20], [-1, 0.125, 0], [-1, 0.004, 20],
+  // Les trois lignes de la correction de la facture (31/10/2026), que la virgule flottante arrondissait d'un centime
+  // vers zéro ; leurs avoirs ; des écritures exponentielles (`String` les donne ainsi) ; et des valeurs qui ne sont pas
+  // des nombres finis.
+  [0.5, 32.05, 20], [0.5, 2.01, 20], [1.5, 0.15, 20], [-0.5, 32.05, 20], [-1.5, 0.15, 10], [1, 1e-7, 20], [2e21, 1, 20],
+  [1e-7, 1e7, 20], [Number.NaN, 1, 20], [1, Number.POSITIVE_INFINITY, 20], [1, 1, Number.NaN],
 ]
 // L'arrondi du HT déplace la TVA d'un centime sur ces lignes seulement : sans elles, une copie qui calculerait la
-// TVA sur le produit brut passerait (cas trouvés par recherche exhaustive, voir le test qui le vérifie).
-const DEMI_CENTIME: [number, number, number][] = [[1, 0.175, 20], [3, 0.075, 20], [5, 0.045, 20], [9, 0.075, 20], [13, 1.325, 20]]
+// TVA sur le produit brut passerait (cas trouvés par recherche exhaustive, voir le test qui le vérifie). À 20 %, le demi
+// éloigné de zéro ne le fait jamais — un HT arrondi ne passe jamais une frontière que le produit brut ne passe pas — :
+// les lignes à 20 % d'hier ne le faisaient que par l'arrondi binaire, que la correction de la facture a ôté. À 10 %,
+// 5,5 % et 2,1 %, si.
+const DEMI_CENTIME: [number, number, number][] = [[1, 0.045, 10], [1, 0.091, 5.5], [1, 0.235, 2.1], [1, 1.191, 2.1], [-1, 0.045, 10]]
 const STATUTS: (StatutTva | null)[] = [null, 'redevable', 'franchise', 'exonere']
 const ARTICLES: (ArticleExoneration | null)[] = [null, ...statut.EXONERATIONS.map((e) => e.code)]
 const TAUX = [0, 2.1, 5.5, 8.5, 10, 20, -1]
@@ -189,8 +199,14 @@ function exportsDe(bloc: string): string[] {
   return [...bloc.matchAll(/^export (?:function|const) (\w+)/gm)].map((m) => m[1])
 }
 
-function comparer(executes: Execute, ou: string) {
-  for (const [nom, epreuve] of Object.entries(EPREUVES)) expect(epreuve(executes), `${ou} : ${nom}`).toEqual(epreuve(ORIGINAUX))
+// Les épreuves des exports que les blocs exécutés portent : une fonction qui ne recopie que les montants (send-email)
+// ne se juge que sur eux. Chaque bloc a au moins un export, si bien qu'aucune copie ne passe sans épreuve.
+function comparer(executes: Execute, ou: string, blocs: string[]) {
+  const portes = new Set(exportsDe(blocs.join('\n')))
+  expect(portes.size, `${ou} : aucun export dans les blocs exécutés`).toBeGreaterThan(0)
+  for (const [nom, epreuve] of Object.entries(EPREUVES)) {
+    if (portes.has(nom)) expect(epreuve(executes), `${ou} : ${nom}`).toEqual(epreuve(ORIGINAUX))
+  }
 }
 
 // ── Les Edge Functions ────────────────────────────────────────────────────────────────────────────────────────────
@@ -226,6 +242,13 @@ const LUES_PAR_LE_GENERATEUR: Record<keyof FactureEnBase, true> = {
 // De même les colonnes du DOSSIER que le générateur lit : sans `numero_tva_attribue`, un dossier en franchise qui a un
 // numéro de TVA verrait ses factures refusées par la fonction alors que l'écran les dit transmissibles.
 const LUES_DU_DOSSIER: Record<keyof DossierCii, true> = { statut_tva: true, article_exoneration: true, numero_tva_attribue: true }
+
+/** Les colonnes des lignes d'une facture que send-email lit : le taux en est, que `calculerLigne` reçoit. */
+function colonnesDeLaLigne(code: string): string[] {
+  const m = /\.from\("facture_lignes"\)\s*\.select\("([^"]*)"\)/.exec(code)
+  expect(m, 'send-email : la lecture des lignes introuvable').not.toBeNull()
+  return (m as RegExpExecArray)[1].split(',').map((c) => c.trim())
+}
 
 /** Les colonnes d'un `const NOM = "…" + "…"`, telles que la fonction les passe à `.select(`. */
 function colonnesDe(source: string, nom: string, ou: string): string[] {
@@ -264,10 +287,20 @@ describe('les blocs de facturation recopiés dans les Edge Functions', () => {
     expect(FONCTIONS.filter((f) => porte(sourceDe(f), GENERATEUR))).toEqual(expect.arrayContaining(['plateforme-agreee', 'superpdp-emit']))
   })
 
+  it('plancher : send-email porte le bloc des montants, lui seul, et le HT de chaque ligne de l’e-mail en vient', () => {
+    const source = sourceDe('send-email')
+    expect(BLOCS.filter((b) => porte(source, b)).map((b) => b.nom)).toEqual(['montantsFacture'])
+    const code = horsDesBlocs(source, controler(source, 'send-email'))
+    expect(code).toContain('const ht = calculerLigne(l.quantite, l.prix_unitaire_ht, l.taux_tva).montant_ht')
+    // Plus aucun HT calculé à part, en virgule flottante : c'était l'écart d'un centime avec la facture.
+    expect(code).not.toMatch(/Math\.round\(\s*l\.quantite\s*\*/)
+    expect(colonnesDeLaLigne(code)).toContain('taux_tva')
+  })
+
   it.each(PORTEUSES)('%s : les blocs au caractère près, exécutés seuls dans son ordre, et le générateur appelé', (fonction) => {
     const source = sourceDe(fonction)
     const blocs = controler(source, fonction)
-    comparer(executer(blocs), fonction)
+    comparer(executer(blocs), fonction, blocs)
     if (porte(source, GENERATEUR)) cablage(source, blocs, fonction)
   })
 
@@ -285,7 +318,8 @@ describe('les blocs de src/lib', () => {
   })
 
   it('exécutés seuls, rendent ce que rendent les modules', () => {
-    comparer(executer([ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.factureCii]), 'src/lib')
+    const blocs = [ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.factureCii]
+    comparer(executer(blocs), 'src/lib', blocs)
   })
 
   it('chaque export d’un bloc a son épreuve, et chaque épreuve son export', () => {
@@ -310,7 +344,7 @@ const SYNTHETIQUE = [DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, O
 
 function tout(source: string) {
   const blocs = controler(source, 'synthétique')
-  comparer(executer(blocs), 'synthétique')
+  comparer(executer(blocs), 'synthétique', blocs)
   cablage(source, blocs, 'synthétique')
 }
 
@@ -329,9 +363,15 @@ describe('le garde mord sur un défaut planté', () => {
     expect(echoue(() => tout(SYNTHETIQUE))).toBe(false)
   })
 
-  it('un bloc qui dérive d’un caractère (l’arrondi asymétrique d’avant)', () => {
-    expect(SYNTHETIQUE).toContain('Math.abs(x) * 100')
-    expect(echoue(() => tout(SYNTHETIQUE.replace('Math.abs(x) * 100', 'x * 100')))).toBe(true)
+  it('un bloc qui dérive d’un caractère (le demi d’un montant négatif arrondi vers +∞, comme Math.round)', () => {
+    expect(SYNTHETIQUE).toContain('2n * (reste < 0n ? -reste : reste) >= diviseur')
+    expect(echoue(() => tout(SYNTHETIQUE.replace('2n * (reste < 0n ? -reste : reste) >= diviseur', '2n * reste >= diviseur')))).toBe(true)
+  })
+
+  it('le même défaut, exécuté : les épreuves le voient aussi, pas seulement la comparaison des textes', () => {
+    const derive = ORIGINE.montantsFacture.replace('2n * (reste < 0n ? -reste : reste) >= diviseur', '2n * reste >= diviseur')
+    expect(derive).not.toBe(ORIGINE.montantsFacture)
+    expect(echoue(() => comparer(executer([derive]), 'dérive', [derive]))).toBe(true)
   })
 
   it('le générateur sans le bloc des montants', () => {

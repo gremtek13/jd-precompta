@@ -45,10 +45,22 @@ import {
 // rend la même empreinte des deux côtés (sans « Banque », il ne désigne aucun mouvement). Jusqu'à son application, la
 // production répond `EMPREINTE_SANS_LA_MIGRATION_C6`, et le module y est plus strict de ces seules saisies : le test qui
 // suit le vérifie, réponse par réponse.
+//
+// LA CORRECTION DE LA FACTURE (31/10/2026 ; migration `facture_dates_centimes_mention_tva`, PRÉPARÉE dans
+// supabase/preparees/). Le HT et la TVA d'une ligne se comptent sur les décimaux exacts, des deux côtés : la facture F2 du
+// monde (3 × 1,005 €) vaut 3,02 € HT, plus 3,01 €, et ses en-têtes, que `calculerTotaux` donne, avec elle. Le script
+// pose les deux dossiers en franchise et la mention de l'art. 293 B sur chaque facture (une facture d'un statut à
+// préciser ne se valide plus). Rejouée le 31/10/2026 sur trois copies de la réplique dont signature.sql égalait la
+// production à 164 migrations : avec la migration, aucun écart sur 4 000, ni sur les 3 691 saisies du client —
+// les empreintes figées ci-dessous ; sans elle, 428 écarts (et 174 au client), chacun une saisie que l'ancienne base
+// refuse parce que les en-têtes que le module calcule ne se retrouvent plus dans ses lignes recomptées en virgule
+// flottante (« Les montants enregistrés de la facture ne se retrouvent pas dans ses lignes ») : l'application et la base
+// changent de calcul ensemble ; avec elle et sans C6 (le retour d'`especes_sans_mouvement` joué), 9 écarts, chacun une
+// saisie en espèces sur un crédit — `EMPREINTE_SANS_LA_MIGRATION_C6`, de ce jour.
 
-const EMPREINTE_DE_LA_BASE = 'b62ec27a8c27b6628c03a79ad6c451e8'
-const EMPREINTE_SANS_BANQUE = '324ca64fe74ee428ad34d7a7ae6c976f'
-const EMPREINTE_SANS_LA_MIGRATION_C6 = '8b19bbf7f37750c30750327f3dd565dc'
+const EMPREINTE_DE_LA_BASE = 'cf806ae8980a7d1fdd5fb0445dded554'
+const EMPREINTE_SANS_BANQUE = 'd2c6f08a8bdfc0e5a3a562d80e2fa6ea'
+const EMPREINTE_SANS_LA_MIGRATION_C6 = '932f2fe5d35e4fe8eb424076efa487f3'
 const REPONSE_DES_ESPECES = `${REFUS_ESPECES_SUR_UN_CREDIT.code} ${REFUS_ESPECES_SUR_UN_CREDIT.modele}`
 
 describe('la batterie jouée par la base', () => {
@@ -76,14 +88,14 @@ describe('la batterie jouée par la base', () => {
 
   it('sans la migration especes_sans_mouvement, la base acceptait ce que le module refuse sous le refus neuf, et rien d’autre', () => {
     const sorties = reponsesDuModule(cas, AUJOURD_HUI_RELEVE)
-    expect(sorties.filter((s) => s === REPONSE_DES_ESPECES)).toHaveLength(11)
+    expect(sorties.filter((s) => s === REPONSE_DES_ESPECES)).toHaveLength(9)
     const sansLaMigration = sorties.map((s) => (s === REPONSE_DES_ESPECES ? 'ok' : s))
     expect(createHash('md5').update(sansLaMigration.join('\n')).digest('hex')).toBe(EMPREINTE_SANS_LA_MIGRATION_C6)
   })
 
   it('le client qui ne porte que « Ventes », sur son dossier : le module rend ce que la base a rendu', () => {
     const sorties = reponsesDuModuleSansBanque(cas, AUJOURD_HUI_RELEVE)
-    expect(sorties).toHaveLength(3693)
+    expect(sorties).toHaveLength(3691)
     expect(createHash('md5').update(sorties.join('\n')).digest('hex')).toBe(EMPREINTE_SANS_BANQUE)
   })
 
@@ -159,8 +171,8 @@ describe('la batterie jouée par la base', () => {
   // relevé, son lendemain et le 1er janvier qui suit glissent avec lui, les autres restent.
   it('se tire pour le jour où la base la juge, et ne change que de dates', () => {
     const dates = new Set(cas.map((c) => c.date))
-    for (const d of ['2026-10-30', '2026-10-31', '2027-01-01']) expect(dates.has(d), d).toBe(true)
-    const glissees: Record<string, string> = { '2026-10-30': '2027-03-15', '2026-10-31': '2027-03-16', '2027-01-01': '2028-01-01' }
+    for (const d of ['2026-10-31', '2026-11-01', '2027-01-01']) expect(dates.has(d), d).toBe(true)
+    const glissees: Record<string, string> = { '2026-10-31': '2027-03-15', '2026-11-01': '2027-03-16', '2027-01-01': '2028-01-01' }
     const autre = batterie(SAISIES_DE_LA_BATTERIE, GRAINE_DE_LA_BATTERIE, '2027-03-15')
     expect(autre).toEqual(cas.map((c) => ({ ...c, date: c.date == null ? null : (glissees[c.date] ?? c.date) })))
   })

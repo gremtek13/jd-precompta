@@ -56,6 +56,13 @@
 --
 -- L'AVOIR D'ESSAI se crée par `enregistrer_facture`, sous le chef du cabinet, dans la sous-transaction du contrôle :
 -- son numéro de la série « A » est consommé puis rendu par l'annulation, et rien ne reste.
+--
+-- ADAPTÉ LE 31/10/2026 À LA CORRECTION DE LA FACTURE (migration `facture_dates_centimes_mention_tva`, PRÉPARÉE dans
+-- `supabase/preparees/`, pas encore en base) : un avoir qui ne facture pas de TVA porte la mention du statut de TVA qu'il
+-- prend — celui que sa facture a figé, si elle en a figé un, sinon celui du dossier. L'avoir d'essai crédite une facture
+-- que l'essai trouve en base et ne choisit pas : ses mentions portent chacune des cinq mentions que la garde peut exiger,
+-- et l'essai ne dépend pas, joué en production, du statut de cette facture ni de celui de son dossier. Rien d'autre ne
+-- change ; avant la migration, la mention n'est pas jugée.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -372,6 +379,9 @@ begin
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
       select r.facture_id into avoir from enregistrer_facture(dossier_f, null,
         jsonb_build_object('type', 'avoir', 'facture_origine_id', facture_v, 'date_emission', current_date,
+          'mentions_legales', 'TVA non applicable, art. 293 B du CGI. Exonération de TVA, art. 261, 4, 1° du CGI. '
+            || 'Exonération de TVA, art. 261, 4, 4° a du CGI. Exonération de TVA, art. 261, 4, 4° b du CGI. '
+            || 'Exonération de TVA, art. 261 C, 2° du CGI.',
           'montant_ht', -1, 'montant_tva', 0, 'montant_ttc', -1, 'notes', 'essai'),
         '[{"designation": "essai", "quantite": -1, "prix_unitaire_ht": 1, "taux_tva": 0}]'::jsonb, true) r;
       reset role;

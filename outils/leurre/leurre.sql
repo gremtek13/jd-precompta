@@ -149,7 +149,10 @@ begin
       'tiers_email', 'client.facture.' || lower(r.m) || '@example.test', 'type_client', 'non_assujetti',
       'emetteur_nom', r.m || ' EI', 'emetteur_siret', r.siret, 'emetteur_adresse', r.m || ' 1 rue du Leurre, 99999 Leurreville',
       'montant_ht', r.montant, 'montant_tva', 0, 'montant_ttc', r.montant, 'nature_operation', 'services',
-      'date_emission', '2025-06-17', 'notes', r.m || ' notes de la facture'),
+      'date_emission', '2025-06-17', 'notes', r.m || ' notes de la facture',
+      -- La mention de l'exonération du dossier : sans elle, la validation se refuse depuis la correction de la facture
+      -- (31/10/2026, migration facture_dates_centimes_mention_tva) ; le marqueur du leurre la précède.
+      'mentions_legales', r.m || ' mentions légales. Exonération de TVA, art. 261, 4, 1° du CGI.'),
       jsonb_build_array(jsonb_build_object('designation', r.m || ' prestation de soins', 'quantite', 1,
         'prix_unitaire_ht', r.montant, 'taux_tva', 0)), true) f;
     insert into leurre_fait values (r.x, 'facture', v_facture::text);
