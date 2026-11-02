@@ -162,7 +162,9 @@ describe('le rattachement d’un compte que ce cabinet ne connaît pas, ou plus 
     expect(phrase).toContain('avec son propre mot de passe')
     // Ce que l'accès ouvre : la phrase de l'onglet, à l'état de son drapeau — jamais une règle recopiée.
     expect(c.paragraphes).toContain(CE_QUE_DONNE_UN_ACCES)
-    expect(c.paragraphes.join(' ')).toContain(`sans les cases ${DOMAINES.map((d) => `« ${d.libelle} »`).join(' et ')}`)
+    // Les trois cases (« Caisse » depuis l'étape C11), nommées chacune, dans l'ordre des colonnes.
+    expect(DOMAINES.map((d) => d.libelle)).toEqual(['Ventes', 'Banque', 'Caisse'])
+    expect(c.paragraphes.join(' ')).toContain('sans les cases « Ventes », « Banque » et « Caisse » : tu les coches ensuite')
     expect(c.paragraphes.join(' ')).toContain('Le mot de passe initial que tu as saisi ne sert pas : ce compte garde le sien')
     expect(c.paragraphes.join(' ')).toContain('« Envoyer un lien de réinitialisation »')
     expect(`${phrase} ${c.paragraphes.join(' ')}`).not.toContain('communique-lui')

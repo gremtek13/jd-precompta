@@ -838,3 +838,37 @@ describe('le paiement d’une pièce par la caisse, dans l’onglet', () => {
     expect(screen.queryByText('Avant l’ouverture du dossier')).toBeNull()
   })
 })
+
+// CE QUE L'ONGLET A MONTRÉ (ligne 26.6, étape C11 ; lib/caisseDuClientAuCabinet.ts) : sur la caisse lue EN ENTIER pour CE
+// dossier, ce navigateur retient les opérations saisies par le client — le point d'information de la Vue d'ensemble ne
+// compte plus que les suivantes. Rien n'est retenu d'une lecture partielle, ni d'une réponse pour un autre dossier.
+describe('les saisies du client vues dans l’onglet', () => {
+  const CLE = `jd-precompta-caisse-vue-${D}`
+  afterEach(() => { localStorage.clear() })
+
+  it('lue en entier : les opérations du client sont retenues, celles du cabinet non', async () => {
+    faux.donnees = mars({
+      operations: [
+        operation({ id: 'c2', genre: 'apport', date: '2026-03-02', montant: 10, origine: 'client' }),
+        operation({ id: 'k1', genre: 'apport', date: '2026-03-04', montant: 10 }),
+        operation({ id: 'c1', genre: 'apport', date: '2026-03-03', montant: 10, origine: 'client' }),
+      ],
+    })
+    rendre()
+    await attendreLaLecture()
+    expect(localStorage.getItem(CLE)).toBe('["c1","c2"]')
+  })
+
+  it('lue en partie, ou pour un autre dossier : rien n’est retenu', async () => {
+    faux.reponse = (dossierId) => ({ dossierId, etat: 'incomplete', motif: 'lecture interrompue' })
+    const { unmount } = rendre()
+    await screen.findByText(/La caisse du dossier n'a pas pu être lue en entier/)
+    expect(localStorage.getItem(CLE)).toBeNull()
+    unmount()
+    faux.reponse = () => ({ dossierId: 'autre', etat: 'lue', donnees: mars({ operations: [operation({ id: 'c1', genre: 'apport', date: '2026-03-02', montant: 10, origine: 'client' })] }) })
+    rendre()
+    await act(async () => {})
+    expect(localStorage.getItem(CLE)).toBeNull()
+    expect(localStorage.getItem('jd-precompta-caisse-vue-autre')).toBeNull()
+  })
+})

@@ -134,6 +134,9 @@ const dossiers: Ligne[] = [
   // Sa date (étape VF8a, lue par la carte « Source des ventes » de l'onglet Informations, étape VF8b) : nulle tant que le
   // réglage est faux, comme la garde la tient.
   ventes_par_les_factures_depuis: null,
+  // La nature des recettes en espèces du client (ligne 26.6, étape C10), nulle tant que le cabinet ne l'a pas fixée ; l'onglet
+  // Accès la lit (étape C11) et dit illisible une colonne absente.
+  categorie_recettes_client: null,
 }))
 
 // Le code e-mail d'un vrai dossier est son nom en tirets suivi de six caractères de son identifiant (`generate_code_email`) :
@@ -2039,28 +2042,28 @@ const TABLES: Record<string, Ligne[]> = {
   // l'une cochée, et une adresse longue, qui éprouve la fiche repliée sur téléphone. En client, le compte du banc y a le
   // sien, sans droit ; AuthContext le trouve par son identifiant, l'onglet par le dossier.
   memberships: [
-    { id: 'm1', user_id: 'u-claire', dossier_id: 'd1', role: 'client', email: 'claire.moreau@exemple.fr', droit_ventes: true, droit_banque: false, created_at: '2026-01-05T09:30:00Z' },
-    { id: 'm2', user_id: 'u-secretariat', dossier_id: 'd1', role: 'client', email: 'secretariat.cabinet-moreau@exemple.fr', droit_ventes: false, droit_banque: false, created_at: '2026-02-10T09:30:00Z' },
+    { id: 'm1', user_id: 'u-claire', dossier_id: 'd1', role: 'client', email: 'claire.moreau@exemple.fr', droit_ventes: true, droit_banque: false, droit_caisse: false, created_at: '2026-01-05T09:30:00Z' },
+    { id: 'm2', user_id: 'u-secretariat', dossier_id: 'd1', role: 'client', email: 'secretariat.cabinet-moreau@exemple.fr', droit_ventes: false, droit_banque: false, droit_caisse: false, created_at: '2026-02-10T09:30:00Z' },
     ...(CLIENT_DU_BANC && !CLIENT_DU_DOSSIER_BASCULE
-      ? [{ id: 'm-u1', user_id: 'u1', dossier_id: 'd1', role: 'client', email: 'client@exemple.fr', droit_ventes: false, droit_banque: false, created_at: '2026-01-05T09:00:00Z' }]
+      ? [{ id: 'm-u1', user_id: 'u1', dossier_id: 'd1', role: 'client', email: 'client@exemple.fr', droit_ventes: false, droit_banque: false, droit_caisse: false, created_at: '2026-01-05T09:00:00Z' }]
       : []),
     ...(CLIENT_DU_BANC && CLIENT_DU_DOSSIER_BASCULE
-      ? [{ id: 'm-u1-d12', user_id: 'u1', dossier_id: 'd12', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: true, created_at: '2026-01-05T09:00:00Z' }]
+      ? [{ id: 'm-u1-d12', user_id: 'u1', dossier_id: 'd12', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: true, droit_caisse: false, created_at: '2026-01-05T09:00:00Z' }]
       : []),
     // Le titulaire de l'atelier (d7) : l'accès que l'onglet Factures du cabinet reconnaît comme « le client » (étape P4c).
-    { id: 'm-bernard-d7', user_id: 'u-bernard', dossier_id: 'd7', role: 'client', email: 'bernard@atelier-exemple.fr', droit_ventes: true, droit_banque: false, created_at: '2026-01-06T09:00:00Z' },
+    { id: 'm-bernard-d7', user_id: 'u-bernard', dossier_id: 'd7', role: 'client', email: 'bernard@atelier-exemple.fr', droit_ventes: true, droit_banque: false, droit_caisse: false, created_at: '2026-01-06T09:00:00Z' },
     ...(CLIENT_DU_BANC && VENTES_DU_BANC && !CLIENT_DU_DOSSIER_BASCULE
       ? [{ id: 'm-u1-d7',
- user_id: 'u1', dossier_id: 'd7', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: VENTES_DU_BANC === 'banque', created_at: '2026-01-05T09:00:00Z' }]
+ user_id: 'u1', dossier_id: 'd7', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: VENTES_DU_BANC === 'banque', droit_caisse: false, created_at: '2026-01-05T09:00:00Z' }]
       : []),
     // La titulaire du dossier basculé (d12), « Ventes » et « Banque » : l'onglet Banque la reconnaît comme « le client ».
-    { id: 'm-clara-d12', user_id: 'u-clara', dossier_id: 'd12', role: 'client', email: 'clara.fontaine@exemple-fictif.fr', droit_ventes: true, droit_banque: true, created_at: '2026-01-07T09:00:00Z' },
+    { id: 'm-clara-d12', user_id: 'u-clara', dossier_id: 'd12', role: 'client', email: 'clara.fontaine@exemple-fictif.fr', droit_ventes: true, droit_banque: true, droit_caisse: false, created_at: '2026-01-07T09:00:00Z' },
     // Le client du dossier archivé (d11), qu'aucune autre visite ne montre : la page de l'équipe reçoit son adresse, longue, et la
     // fonction du banc le reconnaît à cet accès — elle refuse alors avec le marqueur de l'entrée à confirmer (23Q2Q2-Q1).
-    { id: 'm-equipe-d11', user_id: 'u-equipe', dossier_id: 'd11', role: 'client', email: 'secretariat.de-la-societe-civile-de-moyens@example.test', droit_ventes: false, droit_banque: false, created_at: '2026-01-08T09:00:00Z' },
+    { id: 'm-equipe-d11', user_id: 'u-equipe', dossier_id: 'd11', role: 'client', email: 'secretariat.de-la-societe-civile-de-moyens@example.test', droit_ventes: false, droit_banque: false, droit_caisse: false, created_at: '2026-01-08T09:00:00Z' },
     // Le membre de l'équipe, client d'un dossier qui ne lui est pas assigné (23Q2Q2Q1-Q1).
     ...(MEMBRE_DU_BANC
-      ? [{ id: 'm-u1-d3', user_id: 'u1', dossier_id: DOSSIER_DONT_LE_MEMBRE_EST_CLIENT, role: 'client', email: 'membre.client@example.test', droit_ventes: false, droit_banque: false, created_at: '2026-01-05T09:00:00Z' }]
+      ? [{ id: 'm-u1-d3', user_id: 'u1', dossier_id: DOSSIER_DONT_LE_MEMBRE_EST_CLIENT, role: 'client', email: 'membre.client@example.test', droit_ventes: false, droit_banque: false, droit_caisse: false, created_at: '2026-01-05T09:00:00Z' }]
       : []),
   ],
   notes_internes: NOTES_INTERNES,
@@ -2534,6 +2537,7 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
       membre: acces !== undefined,
       ventes: !CLIENT_DU_BANC || acces?.droit_ventes === true,
       banque: !CLIENT_DU_BANC || acces?.droit_banque === true,
+      caisse: !CLIENT_DU_BANC || acces?.droit_caisse === true,
     }
     return { data: droits, error: null }
   }

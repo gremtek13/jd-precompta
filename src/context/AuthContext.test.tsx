@@ -442,13 +442,14 @@ describe('AuthProvider — les droits de chaque accès du client', () => {
     const texte = loading
       ? 'chargement'
       : `${role ?? 'personne'} | ${dossierIds.join(',')} | ${Object.keys(droits).sort()
-        .map((d) => `${d}=${droits[d].ventes ? 'V' : ''}${droits[d].banque ? 'B' : ''}`).join(' ')}`
+        .map((d) => `${d}=${droits[d].ventes ? 'V' : ''}${droits[d].banque ? 'B' : ''}${droits[d].caisse ? 'C' : ''}`).join(' ')}`
     useEffect(() => { vus.push(texte) })
     return <p>Droits : {texte}</p>
   }
 
-  const acces = (user_id: string, dossier_id: string, droit_ventes: unknown, droit_banque: unknown) =>
-    ({ id: `${user_id}-${dossier_id}`, user_id, dossier_id, role: 'client', email: null, droit_ventes, droit_banque })
+  // « Caisse » (étape C11), fausse sauf quand un cas la nomme : la colonne est en base, fausse par défaut.
+  const acces = (user_id: string, dossier_id: string, droit_ventes: unknown, droit_banque: unknown, droit_caisse: unknown = false) =>
+    ({ id: `${user_id}-${dossier_id}`, user_id, dossier_id, role: 'client', email: null, droit_ventes, droit_banque, droit_caisse })
 
   beforeEach(() => {
     vus.length = 0
@@ -464,7 +465,7 @@ describe('AuthProvider — les droits de chaque accès du client', () => {
   it('lit les droits de chaque accès dans la même requête que les accès, filtrée sur le compte', async () => {
     render(<AuthProvider><SondeDroits /></AuthProvider>)
     expect(await screen.findByText('Droits : client | d1,d2 | d1=V d2=')).toBeTruthy()
-    expect(faux.lecturesAcces).toEqual([{ colonnes: 'dossier_id, droit_ventes, droit_banque', filtre: 'user_id=u3' }])
+    expect(faux.lecturesAcces).toEqual([{ colonnes: 'dossier_id, droit_ventes, droit_banque, droit_caisse', filtre: 'user_id=u3' }])
     // Jamais un rendu avec les accès et sans leurs droits, ni avec les droits d'un autre compte. Ces rendus viennent de
     // lectures finies HORS d'un `act` : `findByText` voit le dernier dès qu'il est commis, et l'effet qui le consigne
     // passe dans une tâche à part — sous la charge, la liste lue aussitôt ne l'avait pas encore (CI du 15/10/2026).
@@ -472,8 +473,15 @@ describe('AuthProvider — les droits de chaque accès du client', () => {
     await waitFor(() => expect(vus.filter((v) => v !== 'chargement')).toEqual(['client | d1,d2 | d1=V d2=']))
   })
 
+  // Étape C11 : « Caisse » se lit dans la même requête, pour « Ma caisse » (C12) — sur SON dossier, et sur lui seul.
+  it('la case « Caisse » d’un accès se lit avec les deux autres, sur son dossier', async () => {
+    faux.acces = [acces('u3', 'd1', false, false, true), acces('u3', 'd2', true, false, false), acces('u4', 'd2', false, false, true)]
+    render(<AuthProvider><SondeDroits /></AuthProvider>)
+    expect(await screen.findByText('Droits : client | d1,d2 | d1=C d2=V')).toBeTruthy()
+  })
+
   it('une valeur qui n’est pas strictement vraie n’accorde rien', async () => {
-    faux.acces = [acces('u3', 'd1', 'true', 1), acces('u3', 'd2', null, undefined)]
+    faux.acces = [acces('u3', 'd1', 'true', 1, 'true'), acces('u3', 'd2', null, undefined, 1)]
     render(<AuthProvider><SondeDroits /></AuthProvider>)
     expect(await screen.findByText('Droits : client | d1,d2 | d1= d2=')).toBeTruthy()
   })
@@ -489,7 +497,7 @@ describe('AuthProvider — les droits de chaque accès du client', () => {
     expect(await screen.findByText('Droits : client | d1,d2 | d1=V d2=')).toBeTruthy()
     // Le cabinet coche « Banque » sur d2 pendant que le client a l'application ouverte : la base change, l'écran du client
     // le verra à sa prochaine connexion — d'ici là, la base refuse ce qu'il tenterait sans le droit.
-    faux.acces = [acces('u3', 'd1', true, false), acces('u3', 'd2', false, true)]
+    faux.acces = [acces('u3', 'd1', true, false), acces('u3', 'd2', false, true, true)]
     await evenement('SIGNED_IN', session('u3', 'client@exemple.fr'))
     await evenement('TOKEN_REFRESHED', session('u3', 'client@exemple.fr'))
     expect(screen.getByText('Droits : client | d1,d2 | d1=V d2=')).toBeTruthy()
@@ -498,7 +506,7 @@ describe('AuthProvider — les droits de chaque accès du client', () => {
     await evenement('SIGNED_OUT', null)
     expect(await screen.findByText('Droits : personne | |')).toBeTruthy()
     await evenement('SIGNED_IN', session('u3', 'client@exemple.fr'))
-    expect(await screen.findByText('Droits : client | d1,d2 | d1=V d2=B')).toBeTruthy()
+    expect(await screen.findByText('Droits : client | d1,d2 | d1=V d2=BC')).toBeTruthy()
     expect(faux.lecturesAcces).toHaveLength(2)
   })
 

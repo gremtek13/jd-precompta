@@ -301,6 +301,17 @@ describe('la base applique ce qu’on lui demande', () => {
     expect(await sonde(lire, cases(false, true)).rendre('client')).toEqual(avecCaisse({ cabinet: false, membre: true, ventes: false, banque: true }, false))
     // Ses deux cases cochées sur un AUTRE dossier ne lui donnent rien sur celui-ci.
     expect(await sonde(lire, cases(true, true, ID.dossierVoisin)).rendre('client')).toEqual(rien)
+    // La case « Caisse » (étape C11, la migration dans l'export) : la clé `caisse` du client, et elle seule ; sur un autre
+    // dossier, rien.
+    if (CAISSE_DU_CLIENT_EXPORTEE) {
+      const caisse = (dossier: string = ID.dossier) => {
+        const monde = mondeDeReference()
+        Object.assign(monde.base.memberships[0], { droit_caisse: true, dossier_id: dossier })
+        return monde
+      }
+      expect(await sonde(lire, caisse()).rendre('client')).toEqual({ cabinet: false, membre: true, ventes: false, banque: false, caisse: true })
+      expect(await sonde(lire, caisse(ID.dossierVoisin)).rendre('client')).toEqual(rien)
+    }
     // Sous la clé de service, `auth.uid()` est nul : rien, pour personne.
     const service = `return (await client.rpc("droits_sur_le_dossier", { p_dossier_id: "${ID.dossier}" })).data`
     expect(await sonde(service).rendre('chef')).toEqual(rien)

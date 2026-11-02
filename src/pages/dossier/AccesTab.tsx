@@ -11,10 +11,17 @@ import {
   questionDuLienEnvoye, refusDeLaRegle,
 } from '../../lib/recuperationMotDePasse'
 import {
-  CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCasesDuDossier, changementApplique, demandeDeChangement, droitsDeLaLigne,
-  gesteDeLaCase, libelleDeLaCase, messageDuRefus, refusDeLaCase, type Domaine,
+  CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCasesDuDossier, ceQueDitLaCaseCaisse, changementApplique,
+  confirmationDeLaCaseCaisse, demandeDeChangement, droitsDeLaLigne, enumeration, gesteDeLaCase, libelleDeLaCase, messageDuRefus,
+  refusDeLaCase, type Domaine,
 } from '../../lib/droitsAcces'
 import { lireLeReglageDuDossier, type LectureDuReglage } from '../../lib/reglageDuDossierLecture'
+import {
+  CE_QUE_FAIT_LA_NATURE, NATURE_NON_ENREGISTREE, categoriesDeLaNature, natureDite, phraseDeLaNature, refusDeLaNature,
+} from '../../lib/natureDesRecettes'
+import {
+  fixerLaNatureDesRecettes, lireLesCategoriesDeLaNature, type LectureDesCategoriesDeLaNature,
+} from '../../lib/natureDesRecettesLecture'
 import {
   avisDeLAccesCree, compteDeLaReponse, confirmationDuRattachement, copieDuRefus, corpsDeLaCreation, refusARattacher,
 } from '../../lib/creationDesComptes'
@@ -23,8 +30,9 @@ import { adresseDeCollecte } from '../../lib/adresseCollecte'
 import { useCopieDuTexte } from '../../lib/copieDuTexte'
 import type { Membership } from '../../lib/types'
 
-// Un accès tel que l'onglet le lit : la personne, et ses deux droits (espace client, étape P1, voir lib/droitsAcces.ts).
-type AccesLu = Pick<Membership, 'id' | 'user_id' | 'email' | 'droit_ventes' | 'droit_banque'>
+// Un accès tel que l'onglet le lit : la personne, et ses trois droits (espace client, étape P1 ; « Caisse » depuis l'étape
+// C11 de la ligne 26.6 — voir lib/droitsAcces.ts).
+type AccesLu = Pick<Membership, 'id' | 'user_id' | 'email' | 'droit_ventes' | 'droit_banque' | 'droit_caisse'>
 
 export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossierId: string; dossierNom: string; codeEmail: string | null }) {
   const [rows, setRows] = useState<AccesLu[]>([])
@@ -63,7 +71,21 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // la case « Ventes » ne se coche que sur un dossier basculé, ne se change pas sur un réglage illisible
   // (lib/droitsAcces.ts, `gesteDeLaCase`). Gardé AVEC le dossier lu : une réponse pour un autre dossier ne juge pas celui-ci.
   // Rien ne s'offre avant son retour : ni case, ni phrase des cases.
+  // Depuis l'étape C11, la même ligne porte le statut de TVA, qui ouvre la case « Caisse » (exonéré ou en franchise en base),
+  // et la nature des recettes en espèces du client, que le cabinet fixe sous la liste.
   const [reglageLu, setReglageLu] = useState<LectureDuReglage | null>(null)
+  // Les catégories que la nature peut prendre (celles du dossier et les communes), lues EN ENTIER dans la même vague, gardées
+  // avec le dossier lu : lues en partie, la carte de la nature n'offre aucun geste, et le dit.
+  const [categoriesLues, setCategoriesLues] = useState<LectureDesCategoriesDeLaNature | null>(null)
+  // La case « Caisse » qu'un clic veut cocher : elle attend la confirmation, qui nomme la personne, ce que la case ouvre et la
+  // condition que le cabinet déclare (la conception reprise, § 3). Décocher ne se confirme pas, comme les deux autres cases.
+  const [caisseAConfirmer, setCaisseAConfirmer] = useState<AccesLu | null>(null)
+  // La nature choisie dans la liste, avant « Enregistrer » ; nulle tant que rien n'a été choisi (la liste montre la nature lue).
+  const [natureChoisie, setNatureChoisie] = useState<string | null>(null)
+  // Le verrou de l'écriture de la nature : un `useRef` posé avant l'appel, relâché dans un `finally` APRÈS la relecture.
+  const ecritureNatureEnCours = useRef(false)
+  const [natureEnCours, setNatureEnCours] = useState(false)
+  const [avisNature, setAvisNature] = useState<{ ok: boolean; texte: string } | null>(null)
 
   // Verrou d'exécution en `useRef`, pas en état React : `setInviting(true)` ne prend effet qu'au
   // rendu suivant, donc `disabled={inviting}` laisse passer deux soumissions rapprochées — sur un
@@ -103,19 +125,23 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     setRelecture(true)
     // Par `lireTout`, qui dit si la liste est COMPLÈTE : une poignée de personnes aujourd'hui, mais ses cases écrivent
     // depuis elle, et « Aucun accès » est une affirmation.
-    // Le réglage, dans la même vague : la lecture ne rejette jamais (un échec le rend illisible, avec son motif).
-    const [lecture, reglageRelu] = await Promise.all([
+    // Le réglage, dans la même vague : la lecture ne rejette jamais (un échec le rend illisible, avec son motif). Les catégories
+    // de la nature aussi (étape C11).
+    const [lecture, reglageRelu, categoriesRelues] = await Promise.all([
       lireTout<AccesLu>((debut, fin) => supabase
         .from('memberships')
-        .select('id, user_id, email, droit_ventes, droit_banque', { count: 'exact' })
+        .select('id, user_id, email, droit_ventes, droit_banque, droit_caisse', { count: 'exact' })
         .eq('dossier_id', dossierId)
         .order('created_at')
         .order('id')
         .range(debut, fin)),
       lireLeReglageDuDossier(dossierId),
+      lireLesCategoriesDeLaNature(dossierId),
     ])
     if (numero !== derniereLecture.current) return
     setReglageLu(reglageRelu)
+    setCategoriesLues(categoriesRelues)
+    setNatureChoisie(null)
     const rien = !lecture.complete && lecture.lignes.length === 0
     setErreurLecture(rien ? `La liste des accès n'a pas pu être lue (${lecture.motif ?? 'raison inconnue'}).` : null)
     setLecturePartielle(!lecture.complete && !rien ? lecture.motif : null)
@@ -222,16 +248,54 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   //
   // La case grisée ne s'offre pas (étape VF8d) ; si un geste arrivait quand même jusqu'ici, le refus du module se dit, avec la
   // personne et le droit, et rien ne part — un réglage pas encore lu, ou lu pour un autre dossier, ne juge rien.
-  async function changerDroit(acces: AccesLu, domaine: Domaine, valeur: boolean) {
+  //
+  // COCHER « CAISSE » SE CONFIRME (étape C11) : le clic ouvre la fenêtre, et rien ne part avant « Cocher « Caisse » » ; le refus
+  // du module se dit AVANT de l'ouvrir — sur un dossier ni exonéré ni en franchise, aux mots de `garder_droit_caisse`.
+  function changerDroit(acces: AccesLu, domaine: Domaine, valeur: boolean) {
     if (ecritureDroitsEnCours.current) return
     const personne = acces.email ?? acces.user_id
-    const refusAvant = reglage === null
-      ? 'la source des ventes du dossier n’est pas encore lue.'
-      : refusDeLaCase(domaine, valeur, reglage)
+    const refusAvant = refusAvantLeClic(domaine, valeur)
     if (refusAvant !== null) {
       setErreurDroits(messageDuRefus(domaine, personne, refusAvant))
       return
     }
+    if (domaine === 'caisse' && valeur) {
+      setErreurDroits(null)
+      setCaisseAConfirmer(acces)
+      return
+    }
+    void ecrireLeDroit(acces, domaine, valeur)
+  }
+
+  // Le refus d'une case, dit avant tout appel : la ligne du dossier pas encore lue, ou lue pour un autre, ne juge rien.
+  function refusAvantLeClic(domaine: Domaine, valeur: boolean): string | null {
+    return reglage === null || caisse === null
+      ? 'la ligne du dossier (sa source des ventes, son statut de TVA) n’est pas encore lue.'
+      : refusDeLaCase(domaine, valeur, reglage, caisse)
+  }
+
+  // « Cocher « Caisse » », dans la fenêtre : le refus se rejuge sur la ligne du dossier d'AUJOURD'HUI (une relecture a pu passer
+  // pendant que la fenêtre était ouverte), puis l'écriture, sous le verrou des cases ; la fenêtre se ferme après la relecture,
+  // et un refus de la base se dit sous la liste, avec la personne et le droit.
+  async function confirmerLaCaisse() {
+    const acces = caisseAConfirmer
+    if (acces === null || ecritureDroitsEnCours.current) return
+    const refusAvant = refusAvantLeClic('caisse', true)
+    if (refusAvant !== null) {
+      setErreurDroits(messageDuRefus('caisse', acces.email ?? acces.user_id, refusAvant))
+      setCaisseAConfirmer(null)
+      return
+    }
+    try {
+      await ecrireLeDroit(acces, 'caisse', true)
+    } finally {
+      setCaisseAConfirmer(null)
+    }
+  }
+
+  async function ecrireLeDroit(acces: AccesLu, domaine: Domaine, valeur: boolean) {
+    if (ecritureDroitsEnCours.current) return
+    const personne = acces.email ?? acces.user_id
     ecritureDroitsEnCours.current = true
     setDroitEnCours({ id: acces.id, domaine, valeur })
     setErreurDroits(null)
@@ -246,6 +310,32 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     } finally {
       ecritureDroitsEnCours.current = false
       setDroitEnCours(null)
+    }
+  }
+
+  // « Enregistrer la nature » (étape C11 ; CAISSE2-Q2, (B)) : `dossiers.categorie_recettes_client`, sous la garde de la base,
+  // dont le refus se dit AVANT le clic, à ses mots (`refusDeLaNature`) ; la base rend la ligne écrite, et une ligne qu'elle ne
+  // rend pas se dit. Sous son verrou, relâché après la relecture : la carte montre alors la nature que la base a gardée.
+  async function enregistrerLaNature(categorieId: string | null) {
+    if (ecritureNatureEnCours.current) return
+    if (categories === null || nature === null) return
+    const refus = refusDeLaNature(categorieId, dossierId, categories)
+    if (refus !== null) {
+      setAvisNature({ ok: false, texte: `La nature n’a pas été enregistrée : ${refus}` })
+      return
+    }
+    ecritureNatureEnCours.current = true
+    setNatureEnCours(true)
+    setAvisNature(null)
+    try {
+      const ecrite = await fixerLaNatureDesRecettes(dossierId, categorieId)
+      setAvisNature(ecrite.ecrite
+        ? { ok: true, texte: ecrite.categorieId === null ? 'La nature des recettes du client est retirée.' : 'La nature des recettes du client est enregistrée.' }
+        : { ok: false, texte: `La nature n’a pas été enregistrée : ${ecrite.refus ?? NATURE_NON_ENREGISTREE}` })
+      await load()
+    } finally {
+      ecritureNatureEnCours.current = false
+      setNatureEnCours(false)
     }
   }
 
@@ -287,7 +377,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       `Retirer l'accès de ${row.email ?? 'ce compte'} au dossier ? Le client ne pourra plus déposer `
       + 'de pièces tant qu\'un nouvel accès ne lui aura pas été créé.'
       + (droitsTenus.length > 0
-        ? ` Ses droits ${droitsTenus.join(' et ')} partent avec lui : un nouvel accès n'en a pas, il faudra les recocher.`
+        ? ` Ses droits ${enumeration(droitsTenus)} partent avec lui : un nouvel accès n'en a pas, il faudra les recocher.`
         : ''),
     )) return
     // Le `load()` qui suit montre normalement l'échec (la ligne réapparaît) — sauf quand il échoue
@@ -311,7 +401,22 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // revenue n'en est pas une que le cabinet a pu vérifier.
   // Et sur le réglage du dossier revenu, lu pour CE dossier : avant lui, la case « Ventes » ne se jugerait pas.
   const reglage = reglageLu !== null && reglageLu.dossierId === dossierId ? reglageLu.reglage : null
-  const casesOffertes = !chargement && erreurLecture === null && lecturePartielle === null && reglage !== null
+  // Le statut de TVA (étape C11), de la même ligne, lu pour CE dossier : avant lui, la case « Caisse » ne se jugerait pas.
+  const caisse = reglageLu !== null && reglageLu.dossierId === dossierId ? reglageLu.caisse : null
+  const casesOffertes = !chargement && erreurLecture === null && lecturePartielle === null && reglage !== null && caisse !== null
+
+  // La nature des recettes du client (étape C11) : la colonne lue avec la ligne du dossier, ses catégories lues en entier, l'une
+  // et l'autre pour CE dossier. Sinon rien ne s'offre, et la carte dit pourquoi.
+  const nature = reglageLu !== null && reglageLu.dossierId === dossierId ? reglageLu.nature : null
+  const categories = categoriesLues !== null && categoriesLues.dossierId === dossierId && categoriesLues.etat === 'lues'
+    ? categoriesLues.categories : null
+  const natureLue = nature === null ? null : natureDite(nature.etat === 'lue' ? nature.categorieId : undefined, dossierId, categories)
+  const natureAffichee = natureChoisie ?? (nature?.etat === 'lue' ? nature.categorieId ?? '' : '')
+  const refusDeLaNatureChoisie = categories === null ? null : refusDeLaNature(natureAffichee === '' ? null : natureAffichee, dossierId, categories)
+  const natureModifiee = nature?.etat === 'lue' && natureChoisie !== null && natureChoisie !== (nature.categorieId ?? '')
+  const motifDeLaNature = nature === null || categoriesLues === null || categoriesLues.dossierId !== dossierId
+    ? null
+    : nature.etat === 'illisible' ? nature.motif : categoriesLues.etat === 'incompletes' ? `les catégories : ${categoriesLues.motif}` : null
 
   return (
     <>
@@ -370,6 +475,10 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       {reglage !== null && (
         <p className="muted" id="ce-que-disent-les-cases" style={{ marginTop: -8 }}>{ceQueDisentLesCasesDuDossier(reglage)}</p>
       )}
+      {/* La troisième case (étape C11) : ce que la base ouvre au client qui la porte, et ce qu'elle devient sur CE dossier. */}
+      {caisse !== null && (
+        <p className="muted" id="ce-que-dit-la-case-caisse">{ceQueDitLaCaseCaisse(caisse)}</p>
+      )}
       {rows.length > 0 && (
         <BandeauLecturePartielle
           quoi="La liste des accès" accord="lue" motif={lecturePartielle}
@@ -406,8 +515,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
                     {DOMAINES.map((d) => {
                       // Le geste que le réglage laisse à CETTE case, dans son état lu : une case « Ventes » cochée d'un
                       // dossier non basculé se décoche, décochée elle est grisée ; illisible, grisée dans les deux états. Sa
-                      // raison est dans la phrase au-dessus de la liste, que la case désigne.
-                      const geste = reglage === null ? null : gesteDeLaCase(d.domaine, reglage)
+                      // raison est dans la phrase au-dessus de la liste, que la case désigne. « Caisse » (étape C11) suit le statut
+                      // de TVA de la même façon, et désigne sa propre phrase.
+                      const geste = reglage === null || caisse === null ? null : gesteDeLaCase(d.domaine, reglage, caisse)
                       const offert = geste !== null && (droits[d.domaine] ? geste.decocher : geste.cocher)
                       return (
                         <td key={d.domaine} data-libelle={d.libelle}>
@@ -415,10 +525,10 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
                             <input
                               type="checkbox"
                               aria-label={libelleDeLaCase(d.domaine, personne)}
-                              aria-describedby={offert ? undefined : 'ce-que-disent-les-cases'}
+                              aria-describedby={offert ? undefined : d.domaine === 'caisse' ? 'ce-que-dit-la-case-caisse' : 'ce-que-disent-les-cases'}
                               title={offert ? undefined : geste?.raison ?? undefined}
                               checked={droitEnCours?.id === r.id && droitEnCours.domaine === d.domaine ? droitEnCours.valeur : droits[d.domaine]}
-                              disabled={droitEnCours !== null || relecture || !offert}
+                              disabled={droitEnCours !== null || relecture || caisseAConfirmer !== null || !offert}
                               onChange={(e) => changerDroit(r, d.domaine, e.target.checked)}
                             />
                           ) : (
@@ -457,6 +567,87 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
           <div className="empty-state">Aucun accès client pour ce dossier.</div>
         )}
       </div>
+
+      {/* LA NATURE DES RECETTES EN ESPÈCES DU CLIENT (étape C11 ; CAISSE2-Q2, (B)) : le cabinet la fixe pour le dossier, sous la
+          liste, à côté de la case qu'elle sert. Rien ne s'offre avant le retour de la ligne du dossier et de ses catégories, ni
+          sur une lecture partielle, refusée ou rompue : la carte le dit. Le refus de la base se dit avant le clic. */}
+      <div className="card" style={{ marginTop: 20 }}>
+        <h3 style={{ marginTop: 0 }}>Recettes en espèces saisies par le client</h3>
+        <p className="muted" style={{ marginTop: -8 }}>{CE_QUE_FAIT_LA_NATURE}</p>
+        {nature === null || categoriesLues === null || categoriesLues.dossierId !== dossierId ? (
+          <p className="muted">Chargement de la nature des recettes…</p>
+        ) : motifDeLaNature !== null || natureLue === null || categories === null ? (
+          <BandeauLecturePartielle
+            quoi="La nature des recettes du client" accord="lue" motif={motifDeLaNature ?? 'lecture incomplète'}
+            consequence="Elle ne se change pas d’ici : recharge la page."
+          />
+        ) : (
+          <>
+            <p style={{ margin: '0 0 10px' }}>{phraseDeLaNature(natureLue)}</p>
+            <div className="field-row aligne-bas">
+              <div className="field">
+                <label htmlFor="nature-recettes-client">Nature (une catégorie de produit du dossier, ou commune)</label>
+                <select
+                  id="nature-recettes-client"
+                  value={natureAffichee}
+                  disabled={natureEnCours || relecture}
+                  onChange={(e) => { setNatureChoisie(e.target.value); setAvisNature(null) }}
+                >
+                  <option value="">Aucune — ses recettes se refusent</option>
+                  {categoriesDeLaNature(categories, dossierId).map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
+                  {/* Une nature fixée qui n'est plus une catégorie de produit reste montrée, pour qu'on la voie et la corrige. */}
+                  {natureLue.etat === 'hors_produit' && nature.etat === 'lue' && nature.categorieId !== null && (
+                    <option value={nature.categorieId} disabled>N’est plus une catégorie de produit</option>
+                  )}
+                </select>
+              </div>
+              <button
+                type="button" className="btn btn-primary btn-sm"
+                disabled={!natureModifiee || natureEnCours || relecture || refusDeLaNatureChoisie !== null}
+                onClick={() => { void enregistrerLaNature(natureAffichee === '' ? null : natureAffichee) }}
+              >
+                {natureEnCours ? 'Enregistrement…' : 'Enregistrer la nature'}
+              </button>
+            </div>
+            {natureModifiee && refusDeLaNatureChoisie !== null && <p className="error-text" role="alert">{refusDeLaNatureChoisie}</p>}
+          </>
+        )}
+        {avisNature && <p className={avisNature.ok ? 'muted' : 'error-text'} role={avisNature.ok ? 'status' : 'alert'}>{avisNature.texte}</p>}
+      </div>
+
+      {/* La confirmation de la case « Caisse » (étape C11) : une fenêtre de la page, qui nomme la personne, ce que la case ouvre,
+          la condition que le cabinet déclare selon le statut LU, ce qu'elle retient et la nature des recettes. « Annuler »
+          n'envoie rien ; le refus du module, rejugé sur la ligne du dossier d'aujourd'hui, grise le bouton. */}
+      {caisseAConfirmer && (() => {
+        const personne = caisseAConfirmer.email ?? caisseAConfirmer.user_id
+        // Le statut a changé depuis le clic (une relecture) : la fenêtre ne dit plus de condition, seulement le refus.
+        if (caisse === null || caisse.etat !== 'exclu') {
+          return (
+            <ConfirmationArticle
+              titre="Ouvrir sa caisse à ce client ?" boutonLabel="Cocher « Caisse »" occupe={droitEnCours !== null}
+              refus={refusAvantLeClic('caisse', true)} erreur={null}
+              onConfirmer={() => { void confirmerLaCaisse() }}
+              onAnnuler={() => setCaisseAConfirmer(null)}
+            >
+              <p>La case « Caisse » de <strong className="courriel">{personne}</strong> ne se coche plus sur ce dossier.</p>
+            </ConfirmationArticle>
+          )
+        }
+        const confirmation = confirmationDeLaCaseCaisse(personne, caisse.statut, natureLue ?? { etat: 'illisible' })
+        return (
+          <ConfirmationArticle
+            titre={confirmation.titre} boutonLabel={confirmation.bouton} occupe={droitEnCours !== null}
+            refus={refusAvantLeClic('caisse', true)} erreur={null}
+            onConfirmer={() => { void confirmerLaCaisse() }}
+            onAnnuler={() => setCaisseAConfirmer(null)}
+          >
+            <p>
+              {confirmation.personne.avant}<strong className="courriel">{confirmation.personne.personne}</strong>{confirmation.personne.apres}
+            </p>
+            {confirmation.paragraphes.map((p) => <p key={p}>{p}</p>)}
+          </ConfirmationArticle>
+        )
+      })()}
 
       {/* La confirmation du rattachement (23-Q2) : une fenêtre de la page, jamais `window.confirm` — elle nomme l'adresse
           telle qu'elle partira, le dossier et ce que l'accès ouvre. « Annuler » n'envoie rien. */}

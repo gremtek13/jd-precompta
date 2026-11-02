@@ -31,12 +31,19 @@ vi.mock('../../lib/encaissementsFactures', async (importOriginal) => ({
 // trois états ; la lecture elle-même a son test (reglageDuDossierLecture.test.ts).
 const BASCULE: ReglageDuDossier = { etat: 'bascule' }
 vi.mock('../../lib/reglageDuDossierLecture', () => ({
-  lireLeReglageDuDossier: async (dossierId: string) => ({ dossierId, reglage: { etat: 'bascule' } }),
+  lireLeReglageDuDossier: async (dossierId: string) => ({
+    dossierId, reglage: { etat: 'bascule' }, caisse: { etat: 'exclu', statut: 'exonere' }, nature: { etat: 'lue', categorieId: null },
+  }),
+}))
+// Les catégories de la nature des recettes du client (étape C11) : AccesTab.caisse.test.tsx les joue.
+vi.mock('../../lib/natureDesRecettesLecture', () => ({
+  lireLesCategoriesDeLaNature: async (dossierId: string) => ({ dossierId, etat: 'lues', categories: [] }),
+  fixerLaNatureDesRecettes: async () => { throw new Error('non jouée ici') },
 }))
 
 type LigneAcces = {
   id: string; user_id: string; email: string | null; dossier_id: string; created_at: string
-  droit_ventes: boolean; droit_banque: boolean
+  droit_ventes: boolean; droit_banque: boolean; droit_caisse: boolean
 }
 
 const faux = vi.hoisted(() => ({ lignes: [] as LigneAcces[] }))
@@ -72,7 +79,7 @@ vi.mock('../../lib/supabase', async () => {
 vi.mock('../../components/EnvoyerEmailModal', () => ({ default: () => null }))
 
 const acces = (o: Partial<LigneAcces> & { id: string; dossier_id: string }): LigneAcces => ({
-  user_id: `u-${o.id}`, email: null, created_at: '2026-10-01T08:00:00Z', droit_ventes: false, droit_banque: false, ...o,
+  user_id: `u-${o.id}`, email: null, created_at: '2026-10-01T08:00:00Z', droit_ventes: false, droit_banque: false, droit_caisse: false, ...o,
 })
 
 describe('AccesTab — la phrase des cases, les deux étapes en base', () => {

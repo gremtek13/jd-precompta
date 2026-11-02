@@ -46355,3 +46355,100 @@ pièce porte une écriture validée) — le crédit et sa reprise s'affectent al
 Checklist dit « écriture déséquilibrée » (en erreur, vers Écritures) d'une pièce rejetée pas encore reprise, là où le geste
 qui répare est la reprise, dans Banque. Les deux questions sont sur la page des arbitrages (REJETQ1-Q1, REJETQ1-Q2) ; la
 session y recommande pour la seconde un point qui reste en erreur et retient la validation, avec les mots de la reprise.
+
+### 02/11/2026 — LA CAISSE : LE DROIT « CAISSE » À L'ÉCRAN DU CABINET (C11, LIGNE 26.6)
+
+(Écrite par un agent architecte, sur `58b3d77`. Ni migration, ni déploiement, ni écriture en base : la migration 5,
+`caisse_du_client`, est en production depuis le 02/11/2026 (`20261102081129`) et l'export la porte ; ce lot ne lit que
+l'export. Lus avant d'écrire : « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION
+REPRISE (CAISSE-Q1 ET Q4) », § 3 à 7, § 9 n° 5 et § 10 ; « LA CAISSE : LE DROIT « CAISSE », EN BASE (C10, LIGNE 26.6) » ;
+« LA CAISSE ET LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026 » ; pour le patron, « LES DROITS D'UN
+ACCÈS CLIENT, TENUS EN BASE », « LA CASE « VENTES » SUIT LA SOURCE DES VENTES, À L'ÉCRAN », « « PAR LE CLIENT » CÔTÉ
+CABINET ».)
+
+**LE MODULE** (`lib/droitsAcces.ts`). `Domaine` gagne `caisse`, `DOMAINES` sa ligne (les mots du commentaire de
+`memberships.droit_caisse` : « recettes en espèces, apports, prélèvements, pièces payées en espèces »), `droitsDeLaLigne` et
+`droitsParDossier` la lisent sans jamais l'accorder (seul `true` ; deux lignes d'un dossier, la conjonction).
+`demandeDeChangement` part à la FORME À QUATRE : `p_caisse` toujours envoyé (PostgREST choisit la fonction par les noms), le
+droit cliqué seul non nul — jamais trois nuls, que la base refuse en 22023. `etatCaisseDuDossier` lit le statut de TVA :
+exonéré ou en franchise (CAISSE2-Q3, (B)), la case s'ouvre ; redevable ou à préciser, elle est tenue par le cabinet ; une
+ligne ou une colonne absente, ou une autre valeur, illisible — jamais « redevable ». `gesteDeLaCase` et `refusDeLaCase`
+prennent cet état en paramètre OBLIGATOIRE, et chaque case ne lit que le sien (la table de vérité, trois réglages × cinq
+statuts, est un test) : « Caisse » sur un dossier exclu, les deux gestes ; tenu par le cabinet, décocher seulement, et cocher
+se refuse aux mots de `garder_droit_caisse` (`REFUS_CAISSE_DOSSIER_NON_EXCLU`) ; illisible, aucun geste.
+`REFUS_STATUT_SOUS_LA_CASE_CAISSE` redit `garder_statut_tva_de_la_caisse`, et `CE_QUE_LA_CASE_RETIENT` le dit avant.
+`ceQueDitLaCaseCaisse(etat)` dit ce que la base ouvre à la SESSION du client « Caisse » — toute la caisse de son dossier
+(la policy `operations_caisse_lecture_caisse`), sa caisse jour par jour en totaux, sans libellé, même sans « Banque » ni
+« Ventes » (`caisse_du_client` : « le prix d'un solde juste » que son commentaire veut voir dit à l'onglet Accès), ses
+saisies par les cinq fonctions que `qui_ecrit_la_caisse` lui ouvre, le retrait et le remplacement de ce qu'il a saisi
+seulement, et que « Ma caisse » viendra ensuite —, puis ce que la case devient sur CE dossier. `confirmationDeLaCaseCaisse`
+compose la fenêtre. Chaque terme est confronté à l'export (`droitsAcces.test.ts`, dix cas neufs).
+
+**L'ONGLET ACCÈS.** La ligne du dossier se lit avec la liste, dans la même vague (`lib/reglageDuDossierLecture.ts` : le
+réglage des ventes, le statut de TVA, la nature des recettes du client ; illisible par colonne, jamais un rejet). La troisième
+colonne de cases ; sa phrase sous celle des deux autres, que la case grisée désigne. COCHER « CAISSE » SE CONFIRME : le clic
+ouvre une fenêtre de la page (`ConfirmationArticle`), qui nomme la personne, ce qui s'ouvre, la condition que le cabinet
+déclare selon le statut LU (exonéré : « toutes les opérations de ce dossier sont exonérées » ; franchise : « le jour où il la
+perd, décoche la case avant de changer son statut »), ce que la case retient et la nature des recettes ; rien ne part avant
+« Cocher « Caisse » », le refus se rejuge sur la ligne d'aujourd'hui (le bouton se grise), l'écriture passe le verrou des
+cases, la fenêtre se ferme après la relecture. Décocher ne se confirme pas, comme les deux autres. Un statut illisible n'offre
+aucun geste sur « Caisse » ; rien avant le retour de la ligne. La confirmation du retrait d'un accès et celle du rattachement
+nomment les trois cases (`enumeration`, `libellesDesCases`).
+
+**LA NATURE DES RECETTES DU PRATICIEN** (CAISSE2-Q2, (B)), sous la liste — où l'entrée de C10 la désigne, à côté de la case
+qu'elle sert : `lib/natureDesRecettes.ts` (pur : la liste ne propose que ce que la garde admet, une catégorie de produit du
+dossier ou commune ; le refus est celui de `garder_categorie_recettes_client`, par `refusDeLaNatureDesRecettesDuClient`, une
+seule copie ; « fixée », « absente », « hors des produits » ou « illisible », jamais « absente » sans l'avoir lue) et
+`lib/natureDesRecettesLecture.ts` (les catégories du dossier et les communes, en entier, gardées avec le dossier ;
+l'écriture par la policy `dossiers_update`, la ligne rendue lue, aucune ligne rendue dite). Sous son verrou, relâché après la
+relecture ; catégories lues en partie ou nature illisible : le bandeau, aucun geste. La carte dit qu'un changement vaut pour les
+recettes suivantes, celles déjà saisies gardant la leur.
+
+**AUTHCONTEXT.** La même requête lit `droit_caisse` : `droitsParDossier` porte « Caisse » pour « Ma caisse » (C12), relu au
+seul changement d'identifiant (le cas l'éprouve, la case cochée pendant la session). `types.ts` : `Membership.droit_caisse`
+et `Dossier.categorie_recettes_client` deviennent OBLIGATOIRES (deux fabriques de test).
+
+**LE FAUX DES EDGE FUNCTIONS** (`src/test/fonctionsEdge.ts`) suivait déjà l'export ; il gagne, dans le monde de référence, la
+colonne `droit_caisse` (fausse), et `fonctionsEdge.test.ts` un client « Caisse » (la clé `caisse`, elle seule ; sur un autre
+dossier, rien). `contratsFonctions.ts` : un accès rattaché ne porte pas non plus « Caisse ».
+
+**L'ONGLET CAISSE ET LA VUE D'ENSEMBLE.** « Saisie par le client » et « remplacée par le client » s'y disaient déjà (C4,
+`origineDite`) : l'origine est posée par la BASE (`qui_ecrit_la_caisse`), jamais reçue, et se dit sur la caisse lue en entier.
+Le point d'information (CAISSE2-Q1, sans état de revue en base) : `lib/caisseDuClientAuCabinet.ts` — l'onglet Caisse, sur une
+caisse lue en entier pour son dossier, retient dans CE navigateur les identifiants des opérations du client qu'il a montrées ;
+la Vue d'ensemble dit, en tête, comme l'avis du RIB, « N opérations de caisse saisies par le client depuis ta dernière visite
+de l'onglet Caisse sur ce navigateur », ou « que ce navigateur ne t'a pas encore montrées » quand la mémoire manque ou est
+illisible (alors tout se compte, jamais moins), avec « Ouvrir la caisse ». Muet sur une caisse absente ou lue en partie.
+
+**LES ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- La phrase de « Caisse » est une fonction à part (`ceQueDitLaCaseCaisse`), sous `ceQueDisentLesCasesDuDossier`, et non un
+  douzième paramètre de `ceQueDisentLesCases` : celle-ci dit les drapeaux des ventes et de la banque, celle-là le statut du
+  dossier ; cinquante-huit appels inchangés.
+- Le point d'information n'est pas un point de `pointsDeLaChecklist` : ses gravités sont « erreur » et « attention », la
+  Révision range chaque point dans un cycle, et « depuis ta dernière visite » est une mémoire du navigateur, que le module pur
+  n'a pas. Il vit à part dans la Vue d'ensemble, comme l'avis du RIB, sans CSS neuf (`.avis-rib`, pastille neutre).
+- « Par le client » ne lit pas les accès : l'origine est un fait de la base. Le RETRAIT d'une opération n'est attribué à
+  personne : la liste des accès d'aujourd'hui ne prouve pas qui a retiré (un compte peut porter un accès et être de l'équipe).
+- Aucun libellé `LIBELLE_*` neuf : ce que la case ouvre ne porte aucun texte libre du cabinet (deux colonnes de texte, des
+  listes fermées ; `caisse_du_client` ne rend aucun texte ; le libellé d'une catégorie, tout accès du dossier le lit déjà) —
+  `droitsAcces.test.ts` le garde contre l'export (`TABLES_LUES_AVEC_CAISSE`).
+- « Jamais deux nuls » (l'entrée de C10, écrite pour la forme à trois) se lit « jamais trois nuls » à la forme à quatre.
+- Le § 7 voulait que l'écran du statut de TVA dise qu'il retient la case : le statut se règle dans l'onglet TVA
+  (`StatutTvaCard`), qui ne lit pas les accès ; il rend après le clic les mots de la base. Non fait ici (§ 10 n'en dit rien) :
+  une question (C11-Q1).
+- Aucun drapeau : la migration est en base ; « Ma caisse » (C12) aura le sien si elle en veut un.
+
+**LES PREUVES.** Sous Node 22 : `tsc -b` 0 ; `oxlint` 0 erreur, 63 avertissements, ceux d'avant ; la suite entière sous Paris, une fois : 536 fichiers, 16 541 tests verts et l'« échec attendu » d'un autre lot, CINQ échecs hors de ce lot — le décodage windows-1252 de `importReleve`, `contactsImportFichier`, `relectureImportReleve` et `BanqueTab` (« € » rendu U+0080) : le Node de cet environnement n'a pas l'ICU complète (`new TextDecoder('windows-1252')` y rend U+0080), aucun de ces fichiers n'est touché. Puis deux tests de plus (la fenêtre d'un statut relu ; une catégorie d'un autre dossier), les fichiers touchés verts. Neufs : `AccesTab.caisse.test.tsx` (19 cas), `natureDesRecettes.test.ts` (4), `natureDesRecettesLecture.test.ts` (5), `caisseDuClientAuCabinet.test.ts` (4) ; `droitsAcces.test.ts` 156 cas (dix neufs, les premiers repris pour la troisième colonne et la forme à quatre, confrontée à l'export), `reglageDuDossierLecture.test.ts` 7, `AuthContext.test.tsx` (« Caisse » lue, relue au seul changement d'identifiant), `ChecklistTab.test.tsx` (3), `CaisseTab.test.tsx` (2), `fonctionsEdge.test.ts`, `creationDesComptes.test.ts`. MUTATIONS : 37 écrites, 34 tuées ; les trois qui survivent sont ÉQUIVALENTES — le refus que la fenêtre passe sur sa branche principale (un dossier exclu n'a jamais de refus de « Caisse »), les cases offertes sans attendre le statut (il revient dans la même réponse que le réglage), et le rejugement dans `confirmerLaCaisse` (la seconde barrière : le bouton grisé ne transmet aucun clic ; sa mutation sœur, le bouton qui ne se grise plus, est tuée). Quatre avaient d'abord survécu et ont fait écrire un test : la colonne `droit_caisse` non lue (le faux rend désormais les seules colonnes demandées), la fenêtre d'un statut relu, une catégorie d'un autre dossier rendue malgré le filtre.
+
+**CE QUI RESTE.** C12, « Ma caisse » (la route, l'entrée, la tuile lisent `droitsSur(…).caisse`, et l'écran relit sa case à
+la base) ; C11-Q1 et C11-Q2 au cabinet. Le banc de `outils/captures/` n'a pas été rejoué (ni `index.css` ni la coque) ; son
+faux porte désormais `droit_caisse` et `categorie_recettes_client`, mais ignore `.or(…)` : la carte de la nature y dira des
+catégories lues en partie, comme l'onglet Caisse y lit déjà ses catégories.
+
+**DEUX QUESTIONS AU CABINET.**
+- C11-Q1 — L'onglet TVA dit-il avant le clic que la case retient le statut ? Aujourd'hui, quitter l'exonération ou la
+  franchise sous une case cochée se refuse après le clic, aux mots de la base. Recommandation : oui, un petit lot avec C12 —
+  `StatutTvaCard` lit les accès du dossier (en entier, sinon rien d'affirmé) et redit `REFUS_STATUT_SOUS_LA_CASE_CAISSE`.
+- C11-Q2 — « Caisse » sur un dossier tenu en engagement ? La base l'accepte, mais la saisie du client y est refusée (« La
+  caisse ne se tient que dans un dossier en comptabilité de trésorerie »). Recommandation : l'écran la refuse aussi avant le
+  clic, plus strict que la base, sans migration.

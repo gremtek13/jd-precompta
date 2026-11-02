@@ -20,6 +20,9 @@ import EncartFactureElectronique from './EncartFactureElectronique'
 import AvisChangementDeRib from '../../components/AvisChangementDeRib'
 import { useDernierChangementDeRib } from '../../lib/changementDeRibLecture'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from '../../lib/paiementParLaCaisse'
+import {
+  LIBELLE_OUVRIR_LA_CAISSE, NOM_DU_POINT_DES_SAISIES, lireLesOperationsVues, phraseDesSaisiesDuClient, saisiesDuClientNonVues,
+} from '../../lib/caisseDuClientAuCabinet'
 
 const NB_MOIS_TRESORERIE = 12
 const NB_MOIS_COLONNES = 6
@@ -138,6 +141,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   const evolutionMensuelle = calculerEvolutionMensuelle(ecritures, NB_MOIS_COLONNES)
   const nbErreurs = pointsTravail.filter((p) => p.severite === 'erreur').length
 
+  // Les saisies du client dans sa caisse que ce navigateur n'a pas vues (étape C11) : sur la caisse en base, lue en entier,
+  // pour CE dossier ; la mémoire du navigateur relue au rendu (l'onglet Caisse l'écrit quand il montre la caisse).
+  const caisseLue = lecture.caisse
+  const vues = lireLesOperationsVues(dossierId)
+  const phraseDesSaisies = caisseLue.enBase && caisseLue.complete && caisseLue.dossierId === dossierId
+    ? phraseDesSaisiesDuClient(saisiesDuClientNonVues(caisseLue.lignes, vues).length, vues)
+    : null
+
   // Liste de points (Paramétrage / Travail à effectuer) : même présentation pour les deux, un compteur
   // séparé par groupe plutôt qu'un total unique mélangeant leurs natures (voir audit ergonomie). Les
   // lignes sont juste séparées par un filet, la couleur réservée à la pastille de chaque ligne plutôt
@@ -234,6 +245,17 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
             attend le cabinet tant qu'il n'est ni confirmé ni remplacé, le reste trente jours. Rien d'écrit, aucune fenêtre ; son
             bouton mène à l'onglet Factures. Muet tant que la lecture n'est pas revenue et sur « aucun changement ». */}
         <AvisChangementDeRib espace="cabinet" lecture={changementDuRib} className="span-12" onNavigate={onNavigate} />
+        {/* Le point d'information des saisies du client dans sa caisse (ligne 26.6, étape C11 ; CAISSE2-Q1) : sur la caisse lue
+            EN ENTIER seulement, celles que l'onglet Caisse n'a pas encore montrées dans ce navigateur. Une information, pas une
+            erreur : elles comptent déjà ; aucun geste ici, le bouton mène à l'onglet. Muet sur une caisse absente ou lue en
+            partie (son bandeau le dit) et quand il n'y a rien à dire. */}
+        {phraseDesSaisies !== null && (
+          <section className="avis-rib span-12" aria-label={NOM_DU_POINT_DES_SAISIES}>
+            <span className="check-dot check-neutre" aria-hidden="true" />
+            <p className="avis-rib-phrase">{phraseDesSaisies}</p>
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate('caisse')}>{LIBELLE_OUVRIR_LA_CAISSE}</button>
+          </section>
+        )}
         <div className="span-3">
           <KpiTile
             libelle="Pièces à valider"

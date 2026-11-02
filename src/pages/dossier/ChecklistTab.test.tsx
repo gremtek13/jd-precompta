@@ -3151,3 +3151,58 @@ describe('ChecklistTab — la caisse', () => {
     expect(screen.queryByText(/La caisse du dossier/)).toBeNull()
   })
 })
+
+// LES SAISIES DU CLIENT DANS SA CAISSE (ligne 26.6, étape C11 ; CAISSE2-Q1) : un point d'information, sur une caisse lue en
+// entier, de ce que l'onglet Caisse n'a pas encore montré dans ce navigateur — muet sur une caisse lue en partie, et quand il
+// n'y a rien. La mémoire du navigateur est celle de lib/caisseDuClientAuCabinet.ts. Des jeux FICTIFS.
+describe('ChecklistTab — les saisies du client dans sa caisse', () => {
+  const operation = (id: string, origine: 'cabinet' | 'client') => ({
+    id, dossier_id: 'dossier-de-test', genre: 'apport', date: '2026-02-01', montant: 50, categorie_id: null, taux_tva: null,
+    encaissements_du_jour: null, piece_id: null, origine, remplace_id: null, cree_le: '2026-02-01T18:00:00Z', cree_par: 'u',
+    retire_le: null, retire_par: null,
+  })
+  const POINT = /saisies? par le client/
+  const ANCRE = /non rapprochée\(s\)/
+  afterEach(() => { localStorage.clear() })
+
+  it('jamais vues dans ce navigateur : toutes celles du client se comptent, et le bouton mène à la caisse', async () => {
+    poser({ lignes: [ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null, cotisation_id: null })] })
+    caisseDuTest.lecture = (dossierId) => ({
+      dossierId, enBase: true, complete: true, motif: null,
+      lignes: [operation('oc1', 'client'), operation('oc2', 'client'), operation('ok', 'cabinet')],
+    })
+    const allerA = vi.fn()
+    monter(false, TRESORERIE, [], 'trimestrielle', 'exonere', allerA)
+    const point = (await screen.findByText(POINT)).closest('section') as HTMLElement
+    expect(point.getAttribute('aria-label')).toBe('Saisies du client dans sa caisse')
+    expect(within(point).getByText(POINT).textContent)
+      .toBe('2 opérations de caisse saisies par le client, que ce navigateur ne t’a pas encore montrées dans l’onglet Caisse : elles comptent déjà, marquées « par le client ».')
+    await act(async () => { fireEvent.click(within(point).getByRole('button', { name: 'Ouvrir la caisse' })) })
+    expect(allerA).toHaveBeenCalledWith('caisse')
+  })
+
+  it('vues en partie : seules les suivantes se comptent', async () => {
+    localStorage.setItem('jd-precompta-caisse-vue-dossier-de-test', JSON.stringify(['oc1']))
+    poser({ lignes: [ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null, cotisation_id: null })] })
+    caisseDuTest.lecture = (dossierId) => ({
+      dossierId, enBase: true, complete: true, motif: null, lignes: [operation('oc1', 'client'), operation('oc2', 'client')],
+    })
+    monter()
+    expect((await screen.findByText(POINT)).textContent).toMatch(/^1 opération de caisse saisie par le client depuis ta dernière visite/)
+  })
+
+  it('toutes vues, ou aucune du client : rien ; lue en partie : rien non plus', async () => {
+    localStorage.setItem('jd-precompta-caisse-vue-dossier-de-test', JSON.stringify(['oc1']))
+    poser({ lignes: [ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null, cotisation_id: null })] })
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, complete: true, motif: null, lignes: [operation('oc1', 'client'), operation('ok', 'cabinet')] })
+    const { unmount } = monter()
+    await screen.findByText(ANCRE)
+    expect(screen.queryByText(POINT)).toBeNull()
+    unmount()
+    localStorage.clear()
+    caisseDuTest.lecture = (dossierId) => ({ dossierId, enBase: true, complete: false, motif: 'lecture interrompue', lignes: [operation('oc1', 'client')] })
+    monter()
+    await screen.findByText(ANCRE)
+    expect(screen.queryByText(POINT)).toBeNull()
+  })
+})

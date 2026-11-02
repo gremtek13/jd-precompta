@@ -1557,11 +1557,12 @@ export function mondeDeReference(): Monde {
       { id: 'e1000000-0000-4000-8000-000000000001', dossier_id: ID.dossier, user_id: PERSONNES.comptableAssigne.id },
       { id: 'e3000000-0000-4000-8000-000000000003', dossier_id: ID.dossierVoisin, user_id: PERSONNES.comptableNonAssigne.id },
     ],
-    // Ses deux cases (étape P1) à leur valeur par défaut, fausses : un scénario qui veut un client « Ventes » les coche.
+    // Ses trois cases (étape P1 ; « Caisse » depuis la migration `caisse_du_client`, étape C10) à leur valeur par défaut,
+    // fausses : un scénario qui veut un client « Ventes » les coche.
     memberships: [
       {
         id: 'f1000000-0000-4000-8000-000000000001', user_id: PERSONNES.client.id, dossier_id: ID.dossier, role: 'client',
-        email: PERSONNES.client.email, droit_ventes: false, droit_banque: false,
+        email: PERSONNES.client.email, droit_ventes: false, droit_banque: false, droit_caisse: false,
       },
     ],
     super_admins: [{ user_id: PERSONNES.superAdmin.id }],

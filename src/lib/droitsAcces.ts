@@ -20,6 +20,17 @@
 // session du client, qu'un écran la montre ou non (étapes P2 et P7). Ce qu'une case change se dit donc de ce que la base
 // ouvre (`ceQueDisentLesCases`), et ce que le cabinet écrit dans une table que la case « Ventes » ouvre le dit au-dessus
 // de son champ (les libellés en fin de module).
+//
+// UNE TROISIÈME CASE, « CAISSE » (ligne 26.6, étape C11 ; MVP-D2 ; CAISSE-Q1, (B) ; CAISSE2-Q1 à Q4). La migration
+// `caisse_du_client` (C10, en base et dans l'export depuis le 02/11/2026) pose `memberships.droit_caisse`, fausse par
+// défaut, que `changer_droits_acces` à QUATRE paramètres écrit seule, et que `garder_droit_caisse` refuse (23514) quand elle
+// ARRIVE sur un accès d'un dossier ni exonéré de TVA ni en franchise en base — à préciser compris —, hors de l'insertion du
+// super-administrateur (la restauration). La conception : HISTORIQUE.md, « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE
+// RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE (CAISSE-Q1 ET Q4) », § 3 à 6 et § 10 ; l'écran : « LA CAISSE : LE DROIT
+// « CAISSE » À L'ÉCRAN DU CABINET (C11, LIGNE 26.6) ». Le module dit la case (`DOMAINES`), ses gestes selon le statut de TVA
+// du dossier (`gesteDeLaCase`, `etatCaisseDuDossier`), ses refus aux mots de la base, ce qu'elle ouvre à la SESSION du client
+// (`ceQueDitLaCaseCaisse`) et la confirmation qui la coche (`confirmationDeLaCaseCaisse`). Ce qu'elle ouvre ne porte aucun
+// texte libre du cabinet : aucun libellé neuf (en fin de module, la raison).
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { BASCULE_OFFERTE } from './basculeDesVentes'
@@ -31,19 +42,21 @@ import { VENTES_DU_CLIENT_EXPORTEES } from './encaissementsFactures'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { SIMULATION_VENTES_FACTUREES_EXPORTEE } from './simulationVentesFacturees'
+import { STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
 
-export type Domaine = 'ventes' | 'banque'
+export type Domaine = 'ventes' | 'banque' | 'caisse'
 
 export interface DroitsAcces {
   ventes: boolean
   banque: boolean
+  caisse: boolean
 }
 
-export const AUCUN_DROIT: Readonly<DroitsAcces> = Object.freeze({ ventes: false, banque: false })
+export const AUCUN_DROIT: Readonly<DroitsAcces> = Object.freeze({ ventes: false, banque: false, caisse: false })
 
 export interface DefinitionDomaine {
   domaine: Domaine
-  colonne: 'droit_ventes' | 'droit_banque'
+  colonne: 'droit_ventes' | 'droit_banque' | 'droit_caisse'
   libelle: string
   ouvrira: string
 }
@@ -53,7 +66,23 @@ export interface DefinitionDomaine {
 export const DOMAINES: readonly DefinitionDomaine[] = [
   { domaine: 'ventes', colonne: 'droit_ventes', libelle: 'Ventes', ouvrira: 'devis, factures, facture électronique' },
   { domaine: 'banque', colonne: 'droit_banque', libelle: 'Banque', ouvrira: 'comptes, mouvements, connexion bancaire' },
+  // Étape C11 : les mots du commentaire de la colonne que la migration `caisse_du_client` pose.
+  {
+    domaine: 'caisse', colonne: 'droit_caisse', libelle: 'Caisse',
+    ouvrira: 'recettes en espèces, apports, prélèvements, pièces payées en espèces',
+  },
 ]
+
+/** Une énumération française : « a », « a et b », « a, b et c ». */
+export function enumeration(termes: readonly string[]): string {
+  if (termes.length <= 1) return termes.join('')
+  return `${termes.slice(0, -1).join(', ')} et ${termes[termes.length - 1]}`
+}
+
+/** Les libellés des cases, chacun entre guillemets, dans l'ordre des colonnes : « « Ventes », « Banque » et « Caisse » ». */
+export function libellesDesCases(domaines: readonly DefinitionDomaine[] = DOMAINES): string {
+  return enumeration(domaines.map((d) => `« ${d.libelle} »`))
+}
 
 export function definitionDe(domaine: Domaine): DefinitionDomaine {
   const definition = DOMAINES.find((d) => d.domaine === domaine)
@@ -61,11 +90,12 @@ export function definitionDe(domaine: Domaine): DefinitionDomaine {
   return definition
 }
 
-/** Une ligne de `memberships` telle qu'un écran la lit : les deux colonnes peuvent manquer (une lecture qui ne les a pas
+/** Une ligne de `memberships` telle qu'un écran la lit : les colonnes peuvent manquer (une lecture qui ne les a pas
  *  demandées, une ligne d'une sauvegarde d'avant la migration). */
 export interface LigneDroits {
   droit_ventes?: unknown
   droit_banque?: unknown
+  droit_caisse?: unknown
 }
 
 /**
@@ -73,7 +103,7 @@ export interface LigneDroits {
  * RIEN — l'échec tombe du côté fermé, comme en base, où la colonne est non nulle et fausse par défaut.
  */
 export function droitsDeLaLigne(ligne: LigneDroits | null | undefined): DroitsAcces {
-  return { ventes: ligne?.droit_ventes === true, banque: ligne?.droit_banque === true }
+  return { ventes: ligne?.droit_ventes === true, banque: ligne?.droit_banque === true, caisse: ligne?.droit_caisse === true }
 }
 
 /**
@@ -89,7 +119,7 @@ export function droitsParDossier(
     const droits = droitsDeLaLigne(ligne)
     const deja = resultat[ligne.dossier_id]
     resultat[ligne.dossier_id] = deja
-      ? { ventes: deja.ventes && droits.ventes, banque: deja.banque && droits.banque }
+      ? { ventes: deja.ventes && droits.ventes, banque: deja.banque && droits.banque, caisse: deja.caisse && droits.caisse }
       : droits
   }
   return resultat
@@ -105,18 +135,24 @@ export interface DemandeDeChangement {
   p_membership_id: string
   p_ventes: boolean | null
   p_banque: boolean | null
+  p_caisse: boolean | null
 }
 
 /**
- * Les paramètres de `changer_droits_acces` pour UNE case cliquée. L'autre droit part NUL, donc inchangé en base : deux
- * personnes du cabinet qui cochent chacune une case du même accès, dans deux onglets, ne défont pas l'une l'autre — ce que
- * ferait l'envoi des deux valeurs lues à l'écran, dont l'une serait périmée.
+ * Les paramètres de `changer_droits_acces` pour UNE case cliquée. Les autres droits partent NULS, donc inchangés en base :
+ * deux personnes du cabinet qui cochent chacune une case du même accès, dans deux onglets, ne défont pas l'une l'autre — ce
+ * que ferait l'envoi des valeurs lues à l'écran, dont l'une serait périmée.
+ *
+ * LA FORME À QUATRE (étape C11) : `p_caisse` part TOUJOURS, nul ou non — PostgREST choisit la fonction par les noms des
+ * paramètres, et la forme à trois, que la migration `caisse_du_client` garde comme un appel de celle à quatre, n'écrirait pas
+ * « Caisse ». Le droit cliqué part seul non nul : jamais trois nuls, que la base refuse (22023, « Aucun droit à changer »).
  */
 export function demandeDeChangement(membershipId: string, domaine: Domaine, valeur: boolean): DemandeDeChangement {
   return {
     p_membership_id: membershipId,
     p_ventes: domaine === 'ventes' ? valeur : null,
     p_banque: domaine === 'banque' ? valeur : null,
+    p_caisse: domaine === 'caisse' ? valeur : null,
   }
 }
 
@@ -439,14 +475,27 @@ const LES_DEUX_GESTES: GesteDeLaCase = { cocher: true, decocher: true, raison: n
 
 /**
  * Les gestes d'une case : « Banque » les a toujours ; « Ventes » sur un dossier basculé aussi ; sur un dossier qui n'a pas
- * basculé, décocher seulement ; sur un réglage illisible, aucun.
+ * basculé, décocher seulement ; sur un réglage illisible, aucun. « Caisse » (étape C11) suit le statut de TVA du dossier
+ * de la même façon : exonéré ou en franchise, les deux gestes ; redevable ou à préciser, décocher seulement ; un statut
+ * illisible, aucun. Chaque case lit SON état, et lui seul : aucune n'a les deux gestes par défaut.
  */
-export function gesteDeLaCase(domaine: Domaine, reglage: ReglageDuDossier): GesteDeLaCase {
-  if (domaine !== 'ventes' || reglage.etat === 'bascule') return LES_DEUX_GESTES
-  if (reglage.etat === 'non_bascule') {
-    return { cocher: false, decocher: true, raison: raisonDuDossierNonBascule(BASCULE_OFFERTE) }
+export function gesteDeLaCase(domaine: Domaine, reglage: ReglageDuDossier, caisse: EtatCaisseDuDossier): GesteDeLaCase {
+  switch (domaine) {
+    case 'banque':
+      return LES_DEUX_GESTES
+    case 'ventes':
+      if (reglage.etat === 'bascule') return LES_DEUX_GESTES
+      if (reglage.etat === 'non_bascule') {
+        return { cocher: false, decocher: true, raison: raisonDuDossierNonBascule(BASCULE_OFFERTE) }
+      }
+      return { cocher: false, decocher: false, raison: raisonDuReglageIllisible(reglage.motif) }
+    case 'caisse':
+      if (caisse.etat === 'exclu') return LES_DEUX_GESTES
+      if (caisse.etat === 'tenue_par_le_cabinet') {
+        return { cocher: false, decocher: true, raison: raisonDuDossierNonExclu(caisse.statut) }
+      }
+      return { cocher: false, decocher: false, raison: raisonDuStatutIllisible(caisse.motif) }
   }
-  return { cocher: false, decocher: false, raison: raisonDuReglageIllisible(reglage.motif) }
 }
 
 /**
@@ -464,10 +513,188 @@ export const REFUS_VENTES_DOSSIER_NON_BASCULE = {
  * pas basculé, le seul geste qui manque — cocher « Ventes » — se refuse aux mots de la base (étape VF8f) : avant le clic ou
  * après, le cabinet lit la même phrase. Un réglage illisible dit sa raison : ce n'est pas un refus de la base.
  */
-export function refusDeLaCase(domaine: Domaine, valeur: boolean, reglage: ReglageDuDossier): string | null {
-  const geste = gesteDeLaCase(domaine, reglage)
+export function refusDeLaCase(
+  domaine: Domaine, valeur: boolean, reglage: ReglageDuDossier, caisse: EtatCaisseDuDossier,
+): string | null {
+  const geste = gesteDeLaCase(domaine, reglage, caisse)
   if (valeur ? geste.cocher : geste.decocher) return null
-  return reglage.etat === 'non_bascule' ? REFUS_VENTES_DOSSIER_NON_BASCULE.message : geste.raison
+  if (domaine === 'ventes' && reglage.etat === 'non_bascule') return REFUS_VENTES_DOSSIER_NON_BASCULE.message
+  // « Caisse » cochée sur un dossier ni exonéré ni en franchise : les mots de `garder_droit_caisse` (étape C11).
+  if (domaine === 'caisse' && caisse.etat === 'tenue_par_le_cabinet') return REFUS_CAISSE_DOSSIER_NON_EXCLU.message
+  return geste.raison
+}
+
+// ── La case « Caisse » et le statut de TVA du dossier (ligne 26.6, étape C11) ──────────────────────────────────────────
+// La conception reprise, § 2 (le système de caisse, vérifié au BOFiP) et § 3 (le droit) ; CAISSE2-Q3, (B) : la franchise en
+// base comme l'exonération. Une saisie des espèces au fil des jours, écrite avec son écriture et corrigeable jusqu'à la
+// validation, est une fonctionnalité de caisse (BOI-TVA-DECLA-30-10-30, § 30) ; l'obligation d'un logiciel de caisse
+// certifié ou attesté (CGI, art. 286, I, 3° bis) n'atteint ni l'assujetti en franchise en base ni celui qui n'effectue que
+// des opérations exonérées (art. 286, II, 2, cité au § 25). La base tient la règle : « Caisse » qui ARRIVE sur un accès d'un
+// autre dossier se refuse (`garder_droit_caisse`), et un dossier dont un accès porte la case ne quitte pas ces deux statuts
+// (`garder_statut_tva_de_la_caisse`). L'écran la redit avant le clic, aux mots de la base ; il juge sur le statut qu'il a
+// lu, la base sur celui qu'elle verrouille (`for share`) : une case cochée dans un onglet resté ouvert pendant qu'un autre
+// changeait le statut se refuse après le clic, sous les mêmes mots.
+
+/**
+ * Le statut de TVA du dossier, tel que l'onglet Accès l'a lu, jugé pour la case « Caisse » :
+ *   - `exclu` : exonéré ou en franchise en base — hors du système de caisse ; la case se coche ;
+ *   - `tenue_par_le_cabinet` : redevable, ou à préciser (nul) — la case ne se coche pas ;
+ *   - `illisible` : une ligne absente, une colonne absente ou d'une autre valeur — ni l'un ni l'autre, jamais « redevable ».
+ */
+export type EtatCaisseDuDossier =
+  | { etat: 'exclu'; statut: 'exonere' | 'franchise' }
+  | { etat: 'tenue_par_le_cabinet'; statut: 'redevable' | null }
+  | { etat: 'illisible'; motif: string }
+
+/**
+ * Le statut d'une ligne du dossier (`null` : aucune ligne rendue). Nul est un statut — « à préciser », que la base admet —,
+ * absent n'en est pas un : une colonne qu'on n'a pas lue n'est pas une colonne nulle. Les deux statuts exclus sont ceux que
+ * les trois corps de la base nomment (lib/caisse.ts, `STATUTS_DE_LA_SAISIE_DU_CLIENT`).
+ */
+export function etatCaisseDuDossier(ligne: { readonly statut_tva?: unknown } | null): EtatCaisseDuDossier {
+  if (ligne == null) return { etat: 'illisible', motif: 'le dossier n’a pas été trouvé' }
+  if (!('statut_tva' in ligne)) return { etat: 'illisible', motif: 'le statut de TVA n’a pas été lu' }
+  const statut = ligne.statut_tva
+  if ((statut === 'exonere' || statut === 'franchise') && STATUTS_DE_LA_SAISIE_DU_CLIENT.includes(statut)) {
+    return { etat: 'exclu', statut }
+  }
+  if (statut === 'redevable' || statut === null) return { etat: 'tenue_par_le_cabinet', statut }
+  return { etat: 'illisible', motif: 'le statut de TVA n’est pas lisible' }
+}
+
+/**
+ * Le refus de la base quand « Caisse » ARRIVE sur un accès d'un dossier ni exonéré ni en franchise en base (étape C10 :
+ * `garder_droit_caisse`, migration `caisse_du_client`), à la lettre, apostrophes droites comprises — droitsAcces.test.ts le
+ * confronte au texte exporté.
+ */
+export const REFUS_CAISSE_DOSSIER_NON_EXCLU = {
+  code: '23514',
+  message: 'Le droit « Caisse » suppose un dossier exonéré de TVA ou en franchise en base, ce que le statut de ce dossier ne dit pas : sa caisse reste tenue par le cabinet.',
+} as const
+
+/**
+ * Le refus de la base quand le statut de TVA d'un dossier dont un accès porte « Caisse » quitte l'exonération et la
+ * franchise (`garder_statut_tva_de_la_caisse`), à la lettre : l'onglet Accès dit avant que la case soit cochée ce qu'elle
+ * retient (`CE_QUE_LA_CASE_RETIENT`), et l'onglet TVA rend ces mots-là après le clic.
+ */
+export const REFUS_STATUT_SOUS_LA_CASE_CAISSE = {
+  code: '23514',
+  message: "Un accès de ce dossier porte la case « Caisse », qui suppose un dossier exonéré de TVA ou en franchise en base : décoche-la d'abord.",
+} as const
+
+const NOM_DU_STATUT: Readonly<Record<'exonere' | 'franchise' | 'redevable', string>> = {
+  exonere: 'exonéré de TVA',
+  franchise: 'en franchise en base de TVA',
+  redevable: 'redevable de la TVA',
+}
+
+/** Pourquoi la case « Caisse » ne se coche pas sur un dossier redevable ou dont le statut est à préciser. */
+export function raisonDuDossierNonExclu(statut: 'redevable' | null): string {
+  const lequel = statut === null ? 'dont le statut de TVA est à préciser' : NOM_DU_STATUT[statut]
+  return 'La case « Caisse » ne s’ouvre qu’à un dossier exonéré de TVA ou en franchise en base (son statut, dans l’onglet '
+    + `TVA) : sur ce dossier ${lequel}, la saisie des espèces par le praticien devrait passer par un logiciel de caisse `
+    + 'certifié ou attesté (CGI, art. 286, I, 3° bis), et sa caisse reste tenue par toi. D’ici là, elle ne se coche pas, '
+    + 'et un accès qui la porte se décoche.'
+}
+
+/** Pourquoi la case « Caisse » ne se change pas sur un statut de TVA illisible. */
+export function raisonDuStatutIllisible(motif: string): string {
+  return `Le statut de TVA de ce dossier ne se lit pas (${motif}) : la case « Caisse » ne se coche ni ne se décoche d’ici. `
+    + 'Recharge la page pour le relire.'
+}
+
+/** Ce que la case retient du statut de TVA tant qu'un accès la porte (`garder_statut_tva_de_la_caisse`), dit avant. */
+export const CE_QUE_LA_CASE_RETIENT = 'Tant qu’un accès la porte, le statut de TVA du dossier ne quitte pas l’exonération ni '
+  + 'la franchise en base (passer de l’une à l’autre reste possible) : l’onglet TVA le refuserait, et il faut décocher la '
+  + 'case d’abord.'
+
+// CE QUE LA CASE OUVRE À LA SESSION DU CLIENT, PAR LA BASE, DÈS QU'ELLE EST COCHÉE — qu'un écran le montre ou non (« Ma
+// caisse », étape C12, viendra ensuite) : la policy `operations_caisse_lecture_caisse` (toute la caisse de son dossier,
+// chaque colonne), la fonction `caisse_du_client` (la caisse jour par jour, en totaux, et « le prix d'un solde juste » que son
+// commentaire veut voir dit ici : les versements et retraits du relevé sans « Banque », les espèces de ses factures sans
+// « Ventes ») et les cinq fonctions d'écriture que `qui_ecrit_la_caisse` lui ouvre (une opération, un mois, le retrait, le
+// remplacement, le paiement d'une pièce). droitsAcces.test.ts confronte chacun de ces termes à l'export.
+export const CE_QUE_LA_CASE_CAISSE_OUVRE = 'il y lit toute la caisse de son dossier — chaque opération, celles que tu '
+  + 'saisis et les retirées comprises, avec son genre, son jour, son montant, sa nature, son origine, ses auteurs (sans '
+  + 'adresse) et ses heures —, et sa caisse jour par jour : le report des années d’avant, l’ouverture, ce que le relevé a '
+  + 'versé depuis la caisse ou retiré pour elle et les espèces de ses factures, en totaux du jour et sans libellé (même sans '
+  + '« Banque » ni « Ventes »), et le solde. Il y saisit ses recettes en espèces, sous la nature que tu fixes, ses apports, '
+  + 'ses prélèvements et le paiement en espèces d’une pièce, et ne retire ou ne remplace que ce qu’il a saisi ; ce qu’il '
+  + 'saisit compte aussitôt, marqué « saisie par le client » dans l’onglet Caisse, où tu le retires ou le remplaces au besoin.'
+
+/** Ce que la phrase de l'onglet dit de la case « Caisse » sur CE dossier, selon son statut de TVA. */
+export function phraseDuStatutDeLaCaisse(caisse: EtatCaisseDuDossier): string {
+  if (caisse.etat === 'exclu') {
+    return `Ce dossier est ${NOM_DU_STATUT[caisse.statut]} : la case se coche, sur ta déclaration que `
+      + (caisse.statut === 'exonere' ? 'toutes ses opérations le sont. ' : 'il relève bien de la franchise en base. ')
+      + CE_QUE_LA_CASE_RETIENT
+  }
+  if (caisse.etat === 'tenue_par_le_cabinet') return raisonDuDossierNonExclu(caisse.statut)
+  return raisonDuStatutIllisible(caisse.motif)
+}
+
+/**
+ * Ce que dit la case « Caisse », sous la phrase des deux autres (`ceQueDisentLesCasesDuDossier`) : ce que la base ouvre à
+ * la session du client qui la porte, puis ce qu'elle devient sur CE dossier. Elle se dit en entier sur tout statut : un accès
+ * d'un dossier redevable qui la porterait encore (une restauration) ouvre ce qu'elle dit.
+ */
+export function ceQueDitLaCaseCaisse(caisse: EtatCaisseDuDossier): string {
+  const { libelle, ouvrira } = definitionDe('caisse')
+  return `« ${libelle} » (${ouvrira}) : une case cochée ouvre au client, par la base, la caisse de son dossier — `
+    + `${CE_QUE_LA_CASE_CAISSE_OUVRE} Son espace ne la lui montre pas encore : l’écran « Ma caisse » viendra ensuite. `
+    + phraseDuStatutDeLaCaisse(caisse)
+}
+
+/** La nature des recettes du client, telle que l'onglet l'a lue et résolue parmi les catégories (lib/natureDesRecettes.ts). */
+export type NatureDesRecettesDite =
+  | { etat: 'fixee'; libelle: string }
+  | { etat: 'absente' }
+  | { etat: 'hors_produit' }
+  | { etat: 'illisible' }
+
+export interface ConfirmationDeLaCaseCaisse {
+  titre: string
+  /** La phrase qui nomme la personne, en trois morceaux : l'écran met une adresse dans `.courriel`, qui ne la coupe pas. */
+  personne: { avant: string; personne: string; apres: string }
+  paragraphes: readonly string[]
+  bouton: string
+}
+
+/**
+ * Ce que dit la fenêtre qui coche « Caisse » (la conception reprise, § 3) : la personne, ce que la case ouvre, la condition
+ * que le cabinet déclare — selon le statut lu —, ce que la case retient, et la nature des recettes. Elle ne s'ouvre que sur
+ * un dossier exclu : ailleurs la case ne se coche pas, et il n'y a pas de condition à déclarer.
+ */
+export function confirmationDeLaCaseCaisse(
+  personne: string, statut: 'exonere' | 'franchise', nature: NatureDesRecettesDite,
+): ConfirmationDeLaCaseCaisse {
+  const condition = statut === 'exonere'
+    ? 'Tu déclares que toutes les opérations de ce dossier sont exonérées de TVA : sinon, sa saisie des espèces devrait '
+      + 'passer par un logiciel de caisse certifié ou attesté (CGI, art. 286, I, 3° bis), ce que l’application n’est pas.'
+    : 'Tu déclares que ce dossier relève de la franchise en base de TVA (CGI, art. 293 B) : le jour où il la perd, décoche la '
+      + 'case avant de changer son statut — au-delà, sa saisie des espèces devrait passer par un logiciel de caisse certifié '
+      + 'ou attesté (CGI, art. 286, I, 3° bis), ce que l’application n’est pas.'
+  const laNature = nature.etat === 'fixee'
+    ? `Ses recettes en espèces se rangeront sous « ${nature.libelle} », la nature que tu as fixée pour ce dossier.`
+    : nature.etat === 'absente'
+      ? 'Tu n’as pas fixé la nature de ses recettes en espèces : tant qu’elle manque, la base refuse ses recettes (ses '
+        + 'apports, ses prélèvements et ses paiements passent). Tu la fixes sous la liste des accès.'
+      : nature.etat === 'hors_produit'
+        ? 'La nature fixée pour ses recettes en espèces n’est plus une catégorie de produit du dossier : la base refuse ses '
+          + 'recettes tant que tu ne l’as pas corrigée, sous la liste des accès.'
+        : 'La nature de ses recettes en espèces ne se lit pas : vérifie-la sous la liste des accès, une fois la page rechargée.'
+  return {
+    titre: 'Ouvrir sa caisse à ce client ?',
+    personne: { avant: 'Cocher « Caisse » pour ', personne, apres: ' lui ouvre aussitôt, par la base, la caisse du dossier.' },
+    paragraphes: [
+      `Avec la case, ${CE_QUE_LA_CASE_CAISSE_OUVRE}`,
+      condition,
+      CE_QUE_LA_CASE_RETIENT,
+      laNature,
+      'Son espace ne lui montre pas encore sa caisse : l’écran « Ma caisse » viendra ensuite.',
+    ],
+    bouton: 'Cocher « Caisse »',
+  }
 }
 
 /** Le nom accessible d'une case : le droit, et la personne dont c'est l'accès. */
@@ -589,3 +816,14 @@ export const LIBELLE_ADRESSE_IDENTITE = `Adresse (${LE_CLIENT_DU_DOSSIER} la lit
 export const LIBELLE_DENOMINATION_IDENTITE = `Dénomination imprimée (facultative ; ${LE_CLIENT_DU_DOSSIER} la lit)`
 
 export const LIBELLE_RCS_VILLE_IDENTITE = `Ville du greffe (RCS ; facultative ; ${LE_CLIENT_DU_DOSSIER} la lit)`
+
+// ── Ce que le client « Caisse » lit de la main du cabinet (ligne 26.6, étape C11) : AUCUN TEXTE LIBRE ───────────────────
+// La règle des libellés (CLAUDE.md : un texte libre que le cabinet saisit dans une table qu'un droit du client ouvre le dit
+// dans son libellé) n'a ici rien à nommer. La case ouvre une table, `operations_caisse` (la policy
+// `operations_caisse_lecture_caisse`), dont les colonnes de texte sont deux listes fermées que la base vérifie — le genre
+// et l'origine — et dont le reste est des dates, des montants, des taux et des identifiants ; et une fonction,
+// `caisse_du_client`, qui ne rend que des jours, des montants, des identifiants et un booléen, jamais un libellé. La nature
+// d'une recette est l'identifiant d'une catégorie : son libellé, le client du dossier le lit déjà, comme toute catégorie de
+// son dossier (`categories_select`, ouverte à tout accès du dossier), avec ou sans la case. droitsAcces.test.ts garde les
+// deux affirmations contre l'export : le jour où une colonne de texte libre y entre, le test tombe, et un libellé s'écrit.
+export const TABLES_LUES_AVEC_CAISSE = ['operations_caisse'] as const

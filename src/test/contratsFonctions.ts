@@ -3768,7 +3768,7 @@ const rattacheSurConfirmation = (email: string, userId: string) => (r: Resultat,
   const acces = accesDe(m, email)
   const fautes = acces.length === 1 && acces[0].user_id === userId && acces[0].role === 'client'
     ? [] : [`un accès de ${userId} attendu, et seul : ${JSON.stringify(acces)}`]
-  if (acces.some((a) => a.droit_ventes === true || a.droit_banque === true)) fautes.push('l’accès rattaché porte un droit')
+  if (acces.some((a) => a.droit_ventes === true || a.droit_banque === true || a.droit_caisse === true)) fautes.push('l’accès rattaché porte un droit')
   return [...fautes, ...reponseDeCreation('existant')(r), ...compteIntact(r, m)]
 }
 

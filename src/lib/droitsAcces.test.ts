@@ -9,6 +9,9 @@ import {
   LIBELLE_ADRESSE_IDENTITE, LIBELLE_DENOMINATION_IDENTITE, LIBELLE_RCS_VILLE_IDENTITE,
   LIBELLE_ADRESSE_CONTACT, LIBELLE_DESCRIPTION_ARTICLE, LIBELLE_DESIGNATION_ARTICLE, LIBELLE_NOM_CONTACT, LIBELLE_NOTE_DECLARATION, LIBELLE_OBSERVATIONS_CONTACT, LIBELLE_NOTES_FACTURE, LIBELLE_QUESTION_MOUVEMENT, ceQueDisentLesCases, ceQueDisentLesCasesDuDossier, ceQueDonneUnAcces, changementApplique, definitionDe,
   demandeDeChangement, droitsDeLaLigne, droitsParDossier, droitsSur, libelleDeLaCase, messageDuRefus, type ReglageDuDossier,
+  type EtatCaisseDuDossier, CE_QUE_LA_CASE_CAISSE_OUVRE, CE_QUE_LA_CASE_RETIENT, REFUS_CAISSE_DOSSIER_NON_EXCLU,
+  REFUS_STATUT_SOUS_LA_CASE_CAISSE, TABLES_LUES_AVEC_CAISSE, ceQueDitLaCaseCaisse, confirmationDeLaCaseCaisse, enumeration,
+  etatCaisseDuDossier, libellesDesCases, phraseDuStatutDeLaCaisse, raisonDuDossierNonExclu, raisonDuStatutIllisible,
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
   raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE,
 } from './droitsAcces'
@@ -28,12 +31,17 @@ import { contact } from '../test/contacts'
 import { versionParametres } from '../test/parametresFacturation'
 import { QUI_PEUT_QUOI_ATTENDU } from '../test/quiPeutQuoi'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { codesSql, messagesSql } from '../test/raiseSql'
+import { STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
 
 // LES DROITS D'UN ACCÈS CLIENT (espace client, étape P1). Ce qui se garde ici : qu'un droit ne s'accorde jamais par défaut,
 // qu'une case cliquée n'envoie que SON droit, et que le module, la migration et les écrans du client disent la même chose.
 // Les phrases des drapeaux se jouent sur un dossier basculé : son réglage ajoute la même phrase à chaque état (étape VF8d,
 // plus bas, joue les trois réglages).
 const BASCULE: ReglageDuDossier = { etat: 'bascule' }
+// Les cases « Ventes » et « Banque » se jouent sur un dossier exonéré : la case « Caisse » y a ses deux gestes (étape C11, plus
+// bas, joue les trois états du statut de TVA).
+const EXONERE: EtatCaisseDuDossier = { etat: 'exclu', statut: 'exonere' }
 
 // LE DRAPEAU DE LA BASCULE (étape VF8b, lib/basculeDesVentes.ts), joué dans ses deux états : la phrase de l'onglet Accès suit
 // le GESTE que la carte « Source des ventes » offre, pas son existence. Nul, le drapeau est celui du module.
@@ -50,36 +58,44 @@ vi.mock('./simulationVentesFacturees', async (original) => {
 })
 
 const MIGRATION = readFileSync(resolve(process.cwd(), 'supabase/schema/20261009224031_droits_des_acces_clients.sql'), 'utf8')
+// La migration de la case « Caisse » (ligne 26.6, étape C10, en base et dans l'export depuis le 02/11/2026) : la colonne, la
+// forme à quatre de `changer_droits_acces`, et les gardes que l'onglet Accès redit (étape C11).
+const CAISSE_DU_CLIENT = fichiersDuSchema().find((f) => /\/\d{14}_caisse_du_client\.sql$/.test(f.chemin))?.texte ?? ''
 
 describe('les droits d’une ligne : seul « vrai » accorde', () => {
-  it('lit les deux colonnes', () => {
-    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: false })).toEqual({ ventes: true, banque: false })
-    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: true })).toEqual({ ventes: false, banque: true })
+  it('lit les trois colonnes', () => {
+    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: false, droit_caisse: false })).toEqual({ ventes: true, banque: false, caisse: false })
+    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: true, droit_caisse: false })).toEqual({ ventes: false, banque: true, caisse: false })
+    expect(droitsDeLaLigne({ droit_ventes: false, droit_banque: false, droit_caisse: true })).toEqual({ ventes: false, banque: false, caisse: true })
   })
 
   it('une colonne absente, nulle ou d’un autre type ne donne rien — une ligne d’avant la migration non plus', () => {
+    const rien = { ventes: false, banque: false, caisse: false }
     for (const valeur of [undefined, null, 'true', 1, 'oui', {}]) {
-      expect(droitsDeLaLigne({ droit_ventes: valeur, droit_banque: valeur }), String(valeur)).toEqual({ ventes: false, banque: false })
+      expect(droitsDeLaLigne({ droit_ventes: valeur, droit_banque: valeur, droit_caisse: valeur }), String(valeur)).toEqual(rien)
     }
-    expect(droitsDeLaLigne({})).toEqual({ ventes: false, banque: false })
-    expect(droitsDeLaLigne(null)).toEqual({ ventes: false, banque: false })
-    expect(droitsDeLaLigne(undefined)).toEqual({ ventes: false, banque: false })
+    // Une ligne d'avant la migration `caisse_du_client` : ses deux droits, et pas de « Caisse ».
+    expect(droitsDeLaLigne({ droit_ventes: true, droit_banque: true })).toEqual({ ventes: true, banque: true, caisse: false })
+    expect(droitsDeLaLigne({})).toEqual(rien)
+    expect(droitsDeLaLigne(null)).toEqual(rien)
+    expect(droitsDeLaLigne(undefined)).toEqual(rien)
   })
 })
 
 describe('les droits par dossier', () => {
   it('chaque accès donne les droits de SON dossier, et rien aux autres', () => {
     const droits = droitsParDossier([
-      { dossier_id: 'd1', droit_ventes: true, droit_banque: false },
-      { dossier_id: 'd2', droit_ventes: false, droit_banque: true },
+      { dossier_id: 'd1', droit_ventes: true, droit_banque: false, droit_caisse: false },
+      { dossier_id: 'd2', droit_ventes: false, droit_banque: true, droit_caisse: true },
       { dossier_id: 'd3' },
     ])
     expect(droits).toEqual({
-      d1: { ventes: true, banque: false },
-      d2: { ventes: false, banque: true },
-      d3: { ventes: false, banque: false },
+      d1: { ventes: true, banque: false, caisse: false },
+      d2: { ventes: false, banque: true, caisse: true },
+      d3: { ventes: false, banque: false, caisse: false },
     })
-    expect(droitsSur(droits, 'd1')).toEqual({ ventes: true, banque: false })
+    expect(droitsSur(droits, 'd1')).toEqual({ ventes: true, banque: false, caisse: false })
+    expect(droitsSur(droits, 'd2').caisse).toBe(true)
     expect(droitsSur(droits, 'd9')).toEqual(AUCUN_DROIT)
     expect(droitsSur(droits, null)).toEqual(AUCUN_DROIT)
     expect(droitsSur(droits, undefined)).toEqual(AUCUN_DROIT)
@@ -88,13 +104,17 @@ describe('les droits par dossier', () => {
 
   it('deux lignes d’un même dossier (la base l’interdit) n’additionnent pas leurs droits : chacun doit être sur les deux', () => {
     expect(droitsParDossier([
-      { dossier_id: 'd1', droit_ventes: true, droit_banque: true },
-      { dossier_id: 'd1', droit_ventes: false, droit_banque: true },
-    ])).toEqual({ d1: { ventes: false, banque: true } })
+      { dossier_id: 'd1', droit_ventes: true, droit_banque: true, droit_caisse: true },
+      { dossier_id: 'd1', droit_ventes: false, droit_banque: true, droit_caisse: false },
+    ])).toEqual({ d1: { ventes: false, banque: true, caisse: false } })
     expect(droitsParDossier([
-      { dossier_id: 'd1', droit_ventes: false, droit_banque: false },
-      { dossier_id: 'd1', droit_ventes: true, droit_banque: true },
-    ])).toEqual({ d1: { ventes: false, banque: false } })
+      { dossier_id: 'd1', droit_ventes: false, droit_banque: false, droit_caisse: false },
+      { dossier_id: 'd1', droit_ventes: true, droit_banque: true, droit_caisse: true },
+    ])).toEqual({ d1: { ventes: false, banque: false, caisse: false } })
+    expect(droitsParDossier([
+      { dossier_id: 'd1', droit_caisse: true },
+      { dossier_id: 'd1', droit_caisse: true },
+    ])).toEqual({ d1: { ventes: false, banque: false, caisse: true } })
   })
 
   it('aucun accès, aucun droit', () => {
@@ -104,24 +124,45 @@ describe('les droits par dossier', () => {
   it('les droits rendus pour un dossier inconnu sont une copie : les modifier ne touche pas l’absence de droit commune', () => {
     const rendus = droitsSur({}, 'd1')
     rendus.ventes = true
-    expect(AUCUN_DROIT).toEqual({ ventes: false, banque: false })
-    expect(droitsSur({}, 'd1')).toEqual({ ventes: false, banque: false })
+    rendus.caisse = true
+    expect(AUCUN_DROIT).toEqual({ ventes: false, banque: false, caisse: false })
+    expect(droitsSur({}, 'd1')).toEqual({ ventes: false, banque: false, caisse: false })
   })
 })
 
 describe('une case cliquée n’envoie que son droit', () => {
-  it('l’autre droit part nul, donc inchangé en base', () => {
-    expect(demandeDeChangement('m1', 'ventes', true)).toEqual({ p_membership_id: 'm1', p_ventes: true, p_banque: null })
-    expect(demandeDeChangement('m1', 'ventes', false)).toEqual({ p_membership_id: 'm1', p_ventes: false, p_banque: null })
-    expect(demandeDeChangement('m2', 'banque', true)).toEqual({ p_membership_id: 'm2', p_ventes: null, p_banque: true })
-    expect(demandeDeChangement('m2', 'banque', false)).toEqual({ p_membership_id: 'm2', p_ventes: null, p_banque: false })
+  it('les autres droits partent nuls, donc inchangés en base ; le droit cliqué part seul — jamais trois nuls', () => {
+    expect(demandeDeChangement('m1', 'ventes', true)).toEqual({ p_membership_id: 'm1', p_ventes: true, p_banque: null, p_caisse: null })
+    expect(demandeDeChangement('m1', 'ventes', false)).toEqual({ p_membership_id: 'm1', p_ventes: false, p_banque: null, p_caisse: null })
+    expect(demandeDeChangement('m2', 'banque', true)).toEqual({ p_membership_id: 'm2', p_ventes: null, p_banque: true, p_caisse: null })
+    expect(demandeDeChangement('m2', 'banque', false)).toEqual({ p_membership_id: 'm2', p_ventes: null, p_banque: false, p_caisse: null })
+    expect(demandeDeChangement('m3', 'caisse', true)).toEqual({ p_membership_id: 'm3', p_ventes: null, p_banque: null, p_caisse: true })
+    expect(demandeDeChangement('m3', 'caisse', false)).toEqual({ p_membership_id: 'm3', p_ventes: null, p_banque: null, p_caisse: false })
+    for (const { domaine } of DOMAINES) {
+      for (const valeur of [true, false]) {
+        const { p_membership_id: _id, ...droits } = demandeDeChangement('m', domaine, valeur)
+        expect(Object.values(droits).filter((v) => v !== null), `${domaine} ${valeur}`).toEqual([valeur])
+      }
+    }
   })
 
-  it('les noms des paramètres sont ceux de la fonction en base, dans son ordre', () => {
-    const signature = /create function public\.changer_droits_acces\(([^)]*)\)/.exec(MIGRATION)
-    expect(signature, 'signature introuvable dans la migration').not.toBeNull()
+  it('la demande part à la forme à QUATRE : ses noms sont ceux de la dernière forme en base, dans son ordre, et elle seule écrit', () => {
+    // La forme à quatre de la migration `caisse_du_client` : `create function`, et non `create or replace` (elle est neuve).
+    const signature = /create function public\.changer_droits_acces\(([^)]*)\)/.exec(CAISSE_DU_CLIENT)
+    expect(signature, 'la forme à quatre introuvable dans l’export').not.toBeNull()
     const parametres = signature![1].split(',').map((p) => p.trim().split(/\s+/)[0])
     expect(parametres).toEqual(Object.keys(demandeDeChangement('m', 'ventes', true)))
+    expect(parametres).toEqual(['p_membership_id', 'p_ventes', 'p_banque', 'p_caisse'])
+    // La forme à quatre est la dernière définition du nom (celle que relit `derniereDefinitionSql`), et elle écrit les trois
+    // colonnes, un droit nul inchangé ; la forme à trois ne fait que l'appeler, « Caisse » nul.
+    const derniere = derniereDefinitionSql('changer_droits_acces')
+    expect(derniere).toContain('p_caisse boolean')
+    expect(derniere).toContain('droit_caisse = coalesce(p_caisse, m.droit_caisse)')
+    expect(derniere).toContain("if p_ventes is null and p_banque is null and p_caisse is null then")
+    const trois = /create or replace function public\.changer_droits_acces\(p_membership_id uuid, p_ventes boolean, p_banque boolean\)[\s\S]*?\$\$([\s\S]*?)\$\$;/
+      .exec(CAISSE_DU_CLIENT)?.[1] ?? ''
+    expect(trois.trim()).toBe('begin\n  return public.changer_droits_acces(p_membership_id, p_ventes, p_banque, null::boolean);\nend;')
+    expect(CAISSE_DU_CLIENT).toContain('grant execute on function public.changer_droits_acces(uuid, boolean, boolean, boolean) to authenticated;')
   })
 
   it('reconnaît l’accès rendu qui porte le droit demandé, et seulement lui', () => {
@@ -130,16 +171,21 @@ describe('une case cliquée n’envoie que son droit', () => {
     expect(changementApplique({ id: 'm1', droit_ventes: false, droit_banque: false }, 'ventes', true)).toBe(false)
     expect(changementApplique({ id: 'm1', droit_ventes: 'true' }, 'ventes', true)).toBe(false)
     expect(changementApplique({ id: 'm1' }, 'banque', false)).toBe(false)
+    expect(changementApplique({ id: 'm1', droit_caisse: true }, 'caisse', true)).toBe(true)
+    expect(changementApplique({ id: 'm1', droit_caisse: false, droit_ventes: true }, 'caisse', true)).toBe(false)
+    expect(changementApplique({ id: 'm1', droit_ventes: true }, 'caisse', false)).toBe(false)
     for (const rendu of [null, undefined, 'ok', true, 1]) expect(changementApplique(rendu, 'ventes', true), String(rendu)).toBe(false)
   })
 })
 
 describe('le module, la migration et les écrans disent la même chose', () => {
   it('chaque domaine a sa colonne en base : booléenne, non nulle, fausse par défaut', () => {
+    const export_ = fichiersDuSchema().map((f) => f.texte).join('\n')
     for (const { colonne } of DOMAINES) {
-      expect(MIGRATION, colonne).toContain(`add column ${colonne} boolean not null default false`)
+      // Les deux premières dans le même `alter table` (droits_des_acces_clients), la troisième seule (caisse_du_client).
+      expect(export_, colonne).toMatch(new RegExp(`alter table public\\.memberships\\s+(add column \\w+ boolean not null default false,\\s+)?add column ${colonne} boolean not null default false[,;]`))
     }
-    expect(DOMAINES.map((d) => d.domaine)).toEqual(['ventes', 'banque'])
+    expect(DOMAINES.map((d) => d.domaine)).toEqual(['ventes', 'banque', 'caisse'])
     expect(() => definitionDe('achats' as never)).toThrow('Domaine inconnu')
   })
 
@@ -154,11 +200,15 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     }
   })
 
-  it('les mots que client_du_dossier connaît sont les domaines du module, et « membre »', () => {
-    const corps = /create function public\.client_du_dossier[\s\S]*?\$\$([\s\S]*?)\$\$/.exec(MIGRATION)?.[1] ?? ''
+  it('les mots que client_du_dossier connaît sont les domaines du module, et « membre » — dans sa dernière définition', () => {
+    const corps = derniereDefinitionSql('client_du_dossier')
     const mots = [...corps.matchAll(/when '(\w+)' then/g)].map((m) => m[1])
-    expect(mots.sort()).toEqual(['banque', 'membre', 'ventes'])
+    expect(mots.sort()).toEqual([...DOMAINES.map((d) => d.domaine), 'membre'].sort())
+    for (const { domaine, colonne } of DOMAINES) expect(corps, domaine).toContain(`when '${domaine}' then m.${colonne}`)
     expect(corps).toMatch(/else false/)
+    // Et la première définition, d'hier, ne connaissait que les deux premiers.
+    const hier = /create function public\.client_du_dossier[\s\S]*?\$\$([\s\S]*?)\$\$/.exec(MIGRATION)?.[1] ?? ''
+    expect([...hier.matchAll(/when '(\w+)' then/g)].map((m) => m[1]).sort()).toEqual(['banque', 'membre', 'ventes'])
   })
 
   // « Le client ne voit aucun changement » est une AFFIRMATION de l'onglet Accès : elle tient tant qu'aucun écran du client
@@ -1244,28 +1294,28 @@ describe('la case « Ventes » et la source des ventes du dossier (étape VF8d)'
 
   it('« Banque » garde ses deux gestes quel que soit le réglage', () => {
     for (const reglage of LES_TROIS_REGLAGES) {
-      expect(gesteDeLaCase('banque', reglage)).toEqual({ cocher: true, decocher: true, raison: null })
-      expect(refusDeLaCase('banque', true, reglage)).toBeNull()
-      expect(refusDeLaCase('banque', false, reglage)).toBeNull()
+      expect(gesteDeLaCase('banque', reglage, EXONERE)).toEqual({ cocher: true, decocher: true, raison: null })
+      expect(refusDeLaCase('banque', true, reglage, EXONERE)).toBeNull()
+      expect(refusDeLaCase('banque', false, reglage, EXONERE)).toBeNull()
     }
   })
 
   it('« Ventes » : basculé, les deux gestes ; non basculé, décocher seulement, et pourquoi ; illisible, aucun, et pourquoi', () => {
-    expect(gesteDeLaCase('ventes', BASCULE)).toEqual({ cocher: true, decocher: true, raison: null })
-    expect(gesteDeLaCase('ventes', NON_BASCULE)).toEqual({
+    expect(gesteDeLaCase('ventes', BASCULE, EXONERE)).toEqual({ cocher: true, decocher: true, raison: null })
+    expect(gesteDeLaCase('ventes', NON_BASCULE, EXONERE)).toEqual({
       cocher: false, decocher: true, raison: raisonDuDossierNonBascule(BASCULE_OFFERTE),
     })
-    expect(gesteDeLaCase('ventes', ILLISIBLE)).toEqual({
+    expect(gesteDeLaCase('ventes', ILLISIBLE, EXONERE)).toEqual({
       cocher: false, decocher: false, raison: raisonDuReglageIllisible('lecture refusée'),
     })
-    expect(refusDeLaCase('ventes', true, BASCULE)).toBeNull()
-    expect(refusDeLaCase('ventes', false, BASCULE)).toBeNull()
+    expect(refusDeLaCase('ventes', true, BASCULE, EXONERE)).toBeNull()
+    expect(refusDeLaCase('ventes', false, BASCULE, EXONERE)).toBeNull()
     // Cocher « Ventes » sur un dossier qui n'a pas basculé : le refus de la base, à la lettre (étape VF8f) — pas la raison de
     // la case grisée, qui dit où le réglage se pose.
-    expect(refusDeLaCase('ventes', true, NON_BASCULE)).toBe(REFUS_VENTES_DOSSIER_NON_BASCULE.message)
-    expect(refusDeLaCase('ventes', false, NON_BASCULE)).toBeNull()
-    expect(refusDeLaCase('ventes', true, ILLISIBLE)).toBe(raisonDuReglageIllisible('lecture refusée'))
-    expect(refusDeLaCase('ventes', false, ILLISIBLE)).toBe(raisonDuReglageIllisible('lecture refusée'))
+    expect(refusDeLaCase('ventes', true, NON_BASCULE, EXONERE)).toBe(REFUS_VENTES_DOSSIER_NON_BASCULE.message)
+    expect(refusDeLaCase('ventes', false, NON_BASCULE, EXONERE)).toBeNull()
+    expect(refusDeLaCase('ventes', true, ILLISIBLE, EXONERE)).toBe(raisonDuReglageIllisible('lecture refusée'))
+    expect(refusDeLaCase('ventes', false, ILLISIBLE, EXONERE)).toBe(raisonDuReglageIllisible('lecture refusée'))
   })
 
   it('les raisons disent ce qui ouvre la case, où le réglage se pose, et le motif d’un réglage illisible', () => {
@@ -1329,17 +1379,225 @@ describe('la case « Ventes » et la source des ventes du dossier (étape VF8d)'
         drapeau.offerte = offerte
         const raison = raisonDuDossierNonBascule(offerte)
         expect(phraseDuReglage(NON_BASCULE), `offerte ${offerte}`).toBe(raison)
-        expect(gesteDeLaCase('ventes', NON_BASCULE), `offerte ${offerte}`).toEqual({ cocher: false, decocher: true, raison })
+        expect(gesteDeLaCase('ventes', NON_BASCULE, EXONERE), `offerte ${offerte}`).toEqual({ cocher: false, decocher: true, raison })
         // Le refus, lui, est celui de la base : il ne suit pas le drapeau (étape VF8f).
-        expect(refusDeLaCase('ventes', true, NON_BASCULE), `offerte ${offerte}`).toBe(REFUS_VENTES_DOSSIER_NON_BASCULE.message)
+        expect(refusDeLaCase('ventes', true, NON_BASCULE, EXONERE), `offerte ${offerte}`).toBe(REFUS_VENTES_DOSSIER_NON_BASCULE.message)
         expect(raison.includes('ne s’offre pas encore'), `offerte ${offerte}`).toBe(!offerte)
         expect(raison.includes('(onglet Informations)'), `offerte ${offerte}`).toBe(offerte)
         // Ni le dossier basculé, ni le réglage illisible ne regardent le drapeau.
         expect(phraseDuReglage(BASCULE)).toBe(CE_QUE_COMPTENT_SES_FACTURES)
-        expect(gesteDeLaCase('ventes', ILLISIBLE).raison).toBe(raisonDuReglageIllisible('lecture refusée'))
+        expect(gesteDeLaCase('ventes', ILLISIBLE, EXONERE).raison).toBe(raisonDuReglageIllisible('lecture refusée'))
       }
     } finally {
       drapeau.offerte = null
     }
+  })
+})
+
+// ── LA CASE « CAISSE » (ligne 26.6, étape C11) ───────────────────────────────────────────────────────────────────────────
+// La conception reprise, § 3 à 6 ; la base : la migration `caisse_du_client` (C10), en base et dans l'export depuis le
+// 02/11/2026. Ce qui se garde ici : la case lit le statut de TVA et lui seul ; ses refus sont les mots de la base ; ce que
+// sa phrase dit ouvert, l'export l'ouvre au client « Caisse » ; ce qu'elle ouvre ne porte aucun texte libre du cabinet.
+describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () => {
+  const REDEVABLE: EtatCaisseDuDossier = { etat: 'tenue_par_le_cabinet', statut: 'redevable' }
+  const A_PRECISER: EtatCaisseDuDossier = { etat: 'tenue_par_le_cabinet', statut: null }
+  const FRANCHISE: EtatCaisseDuDossier = { etat: 'exclu', statut: 'franchise' }
+  const STATUT_ILLISIBLE: EtatCaisseDuDossier = { etat: 'illisible', motif: 'lecture refusée' }
+  const NON_BASCULE_: ReglageDuDossier = { etat: 'non_bascule' }
+  const REGLAGE_ILLISIBLE: ReglageDuDossier = { etat: 'illisible', motif: 'lecture refusée' }
+  const LES_DEUX = { cocher: true, decocher: true, raison: null }
+
+  it('seuls « exonere » et « franchise » ouvrent la case ; nul est « à préciser » ; une ligne ou une colonne absente est illisible', () => {
+    expect(etatCaisseDuDossier({ statut_tva: 'exonere' })).toEqual(EXONERE)
+    expect(etatCaisseDuDossier({ statut_tva: 'franchise' })).toEqual(FRANCHISE)
+    expect(etatCaisseDuDossier({ statut_tva: 'redevable' })).toEqual(REDEVABLE)
+    expect(etatCaisseDuDossier({ statut_tva: null })).toEqual(A_PRECISER)
+    expect(etatCaisseDuDossier({})).toEqual({ etat: 'illisible', motif: 'le statut de TVA n’a pas été lu' })
+    expect(etatCaisseDuDossier(null)).toEqual({ etat: 'illisible', motif: 'le dossier n’a pas été trouvé' })
+    for (const valeur of [undefined, 'EXONERE', 'exonéré', 1, true, {}]) {
+      expect(etatCaisseDuDossier({ statut_tva: valeur }), String(valeur)).toEqual({ etat: 'illisible', motif: 'le statut de TVA n’est pas lisible' })
+    }
+    // Les statuts exclus sont ceux que la base nomme : le module de la caisse, `garder_droit_caisse` et la garde du statut.
+    expect(STATUTS_DE_LA_SAISIE_DU_CLIENT).toEqual(['exonere', 'franchise'])
+    expect(derniereDefinitionSql('garder_droit_caisse'))
+      .toContain("if v_statut is distinct from 'exonere' and v_statut is distinct from 'franchise' then")
+    expect(derniereDefinitionSql('garder_statut_tva_de_la_caisse'))
+      .toContain("if old.statut_tva is distinct from 'exonere' and old.statut_tva is distinct from 'franchise' then")
+  })
+
+  // LA TABLE DE VÉRITÉ : chaque case lit SON état, et lui seul. « Banque » a toujours ses deux gestes ; « Ventes » suit le
+  // réglage quel que soit le statut ; « Caisse » suit le statut quel que soit le réglage.
+  it('la table de vérité des trois cases : trois réglages × quatre statuts', () => {
+    const reglages = [BASCULE, NON_BASCULE_, REGLAGE_ILLISIBLE]
+    const statuts = [EXONERE, FRANCHISE, REDEVABLE, A_PRECISER, STATUT_ILLISIBLE]
+    for (const reglage of reglages) {
+      for (const caisse of statuts) {
+        const cas = `${reglage.etat} × ${caisse.etat}${'statut' in caisse ? ` ${caisse.statut}` : ''}`
+        expect(gesteDeLaCase('banque', reglage, caisse), `banque ${cas}`).toEqual(LES_DEUX)
+        expect(gesteDeLaCase('ventes', reglage, caisse), `ventes ${cas}`).toEqual(gesteDeLaCase('ventes', reglage, EXONERE))
+        expect(gesteDeLaCase('caisse', reglage, caisse), `caisse ${cas}`).toEqual(gesteDeLaCase('caisse', BASCULE, caisse))
+      }
+    }
+    expect(gesteDeLaCase('caisse', BASCULE, EXONERE)).toEqual(LES_DEUX)
+    expect(gesteDeLaCase('caisse', BASCULE, FRANCHISE)).toEqual(LES_DEUX)
+    expect(gesteDeLaCase('caisse', BASCULE, REDEVABLE)).toEqual({ cocher: false, decocher: true, raison: raisonDuDossierNonExclu('redevable') })
+    expect(gesteDeLaCase('caisse', BASCULE, A_PRECISER)).toEqual({ cocher: false, decocher: true, raison: raisonDuDossierNonExclu(null) })
+    expect(gesteDeLaCase('caisse', BASCULE, STATUT_ILLISIBLE))
+      .toEqual({ cocher: false, decocher: false, raison: raisonDuStatutIllisible('lecture refusée') })
+    // La case « Caisse » d'un dossier exclu se coche même sur un réglage des ventes illisible : elle ne le lit pas.
+    expect(gesteDeLaCase('caisse', REGLAGE_ILLISIBLE, EXONERE)).toEqual(LES_DEUX)
+    expect(gesteDeLaCase('ventes', BASCULE, STATUT_ILLISIBLE)).toEqual(LES_DEUX)
+  })
+
+  it('cocher « Caisse » sur un dossier redevable ou à préciser se refuse aux mots de la base ; décocher passe ; illisible, ni l’un ni l’autre', () => {
+    for (const caisse of [REDEVABLE, A_PRECISER]) {
+      expect(refusDeLaCase('caisse', true, BASCULE, caisse)).toBe(REFUS_CAISSE_DOSSIER_NON_EXCLU.message)
+      expect(refusDeLaCase('caisse', false, BASCULE, caisse)).toBeNull()
+    }
+    for (const caisse of [EXONERE, FRANCHISE]) {
+      expect(refusDeLaCase('caisse', true, NON_BASCULE_, caisse)).toBeNull()
+      expect(refusDeLaCase('caisse', false, REGLAGE_ILLISIBLE, caisse)).toBeNull()
+    }
+    expect(refusDeLaCase('caisse', true, BASCULE, STATUT_ILLISIBLE)).toBe(raisonDuStatutIllisible('lecture refusée'))
+    expect(refusDeLaCase('caisse', false, BASCULE, STATUT_ILLISIBLE)).toBe(raisonDuStatutIllisible('lecture refusée'))
+    // Et la case « Ventes » garde ses mots à elle, même sur un statut qui ferme « Caisse ».
+    expect(refusDeLaCase('ventes', true, NON_BASCULE_, REDEVABLE)).toBe(REFUS_VENTES_DOSSIER_NON_BASCULE.message)
+    expect(refusDeLaCase('banque', true, REGLAGE_ILLISIBLE, STATUT_ILLISIBLE)).toBeNull()
+  })
+
+  it('les deux refus que le module redit sont ceux des gardes de l’export, à la lettre et au code', () => {
+    expect(messagesSql(derniereDefinitionSql('garder_droit_caisse'))).toEqual([REFUS_CAISSE_DOSSIER_NON_EXCLU.message])
+    expect(codesSql(derniereDefinitionSql('garder_droit_caisse'))).toEqual([REFUS_CAISSE_DOSSIER_NON_EXCLU.code])
+    expect(messagesSql(derniereDefinitionSql('garder_statut_tva_de_la_caisse'))).toEqual([REFUS_STATUT_SOUS_LA_CASE_CAISSE.message])
+    expect(codesSql(derniereDefinitionSql('garder_statut_tva_de_la_caisse'))).toEqual([REFUS_STATUT_SOUS_LA_CASE_CAISSE.code])
+    // La garde de la case juge ce qui ARRIVE, pour tout auteur, la restauration exceptée : l'écran ne la recopie pas, il la dit.
+    const garde = derniereDefinitionSql('garder_droit_caisse')
+    expect(garde).toContain("if tg_op = 'INSERT' and public.is_super_admin() then")
+    expect(garde).toContain('from public.dossiers d where d.id = new.dossier_id for share;')
+  })
+
+  it('la phrase de la case dit ce que la base ouvre, puis ce qu’elle devient sur CE dossier — trois statuts, trois phrases', () => {
+    const debut = '« Caisse » (recettes en espèces, apports, prélèvements, pièces payées en espèces) : une case cochée ouvre au client, '
+      + 'par la base, la caisse de son dossier — '
+    const phrases = [EXONERE, FRANCHISE, REDEVABLE, A_PRECISER, STATUT_ILLISIBLE].map((c) => ceQueDitLaCaseCaisse(c))
+    expect(new Set(phrases).size).toBe(5)
+    for (const [i, phrase] of phrases.entries()) {
+      expect(phrase.startsWith(debut), String(i)).toBe(true)
+      expect(phrase).toContain(CE_QUE_LA_CASE_CAISSE_OUVRE)
+      expect(phrase).toContain('Son espace ne la lui montre pas encore : l’écran « Ma caisse » viendra ensuite.')
+      // Jamais une affirmation que la case ne change rien : la base l'ouvre dès qu'elle est cochée.
+      expect(phrase).not.toMatch(/ne change (rien|pas)/)
+    }
+    expect(phrases[0]).toContain('Ce dossier est exonéré de TVA : la case se coche, sur ta déclaration que toutes ses opérations le sont.')
+    expect(phrases[0]).toContain(CE_QUE_LA_CASE_RETIENT)
+    expect(phrases[1]).toContain('Ce dossier est en franchise en base de TVA : la case se coche')
+    expect(phrases[2]).toContain('sur ce dossier redevable de la TVA')
+    expect(phrases[2]).toContain('CGI, art. 286, I, 3° bis')
+    expect(phrases[3]).toContain('sur ce dossier dont le statut de TVA est à préciser')
+    expect(phrases[4]).toContain('Le statut de TVA de ce dossier ne se lit pas (lecture refusée)')
+    expect(phraseDuStatutDeLaCaisse(REDEVABLE)).toBe(raisonDuDossierNonExclu('redevable'))
+    // Ce que la case retient, aux faits de la garde du statut : passer de l'un à l'autre reste possible.
+    expect(CE_QUE_LA_CASE_RETIENT).toContain('passer de l’une à l’autre reste possible')
+    expect(derniereDefinitionSql('garder_statut_tva_de_la_caisse'))
+      .toContain("if new.statut_tva is not distinct from 'exonere' or new.statut_tva is not distinct from 'franchise' then")
+  })
+
+  it('ce que la phrase dit ouvert au client « Caisse », l’export l’ouvre à la case', () => {
+    const tout = fichiersDuSchema().map((f) => f.texte).join('\n')
+    // « il y lit toute la caisse de son dossier — chaque opération, celles que tu saisis et les retirées comprises » : la policy
+    // de lecture, sur le mot « caisse », sans condition sur l'origine ni le retrait.
+    expect(tout).toMatch(/create policy operations_caisse_lecture_caisse on public\.operations_caisse\s+for select to authenticated\s+using \(public\.client_du_dossier\(dossier_id, 'caisse'\)\);/)
+    // « et sa caisse jour par jour … en totaux du jour et sans libellé (même sans « Banque » ni « Ventes »), et le solde » :
+    // `caisse_du_client`, ouverte à `authenticated`, l'accès jugé par `gere_la_caisse` seul, avant toute lecture.
+    const lecture = derniereDefinitionSql('caisse_du_client')
+    expect(lecture).toMatch(/returns table \(jour date, report numeric, ouverture numeric, operations numeric, releve numeric,\s+especes_des_factures numeric, encaissements_du_jour uuid\[\], solde numeric, fige boolean\)/)
+    const corps = lecture.slice(lecture.indexOf('begin'))
+    expect(corps.indexOf('public.gere_la_caisse(p_dossier_id)')).toBeGreaterThan(0)
+    expect(corps.indexOf('public.gere_la_caisse(p_dossier_id)')).toBeLessThan(corps.indexOf('v_caisse := public.compte_du_role'))
+    expect(corps.indexOf('v_caisse := public.compte_du_role')).toBeLessThan(corps.indexOf('return query'))
+    expect(lecture).not.toMatch(/gere_la_banque|gere_les_ventes/)
+    expect(tout).toContain('grant execute on function public.caisse_du_client(uuid, integer) to authenticated;')
+    expect(derniereDefinitionSql('gere_la_caisse')).toContain("public.admin_du_dossier(p_dossier_id) or public.client_du_dossier(p_dossier_id, 'caisse')")
+    // « Il y saisit ses recettes …, ses apports, ses prélèvements et le paiement en espèces d'une pièce, et ne retire ou ne
+    // remplace que ce qu'il a saisi » : les cinq fonctions passent par `qui_ecrit_la_caisse`, qui dit « client » à la case,
+    // sur un dossier exclu ; chacune est ouverte à `authenticated`.
+    for (const [fonction, signature] of [
+      ['enregistrer_operation_caisse', 'uuid, text, date, numeric, uuid, numeric, uuid[], jsonb'],
+      ['enregistrer_operations_de_caisse', 'uuid, jsonb'],
+      ['retirer_operation_caisse', 'uuid, uuid'],
+      ['remplacer_operation_caisse', 'uuid, uuid, text, date, numeric, uuid, numeric, uuid[], jsonb'],
+      ['regler_piece_par_la_caisse', 'uuid, uuid, date, numeric'],
+    ] as const) {
+      expect(derniereDefinitionSql(fonction), fonction).toContain('public.qui_ecrit_la_caisse(p_dossier_id)')
+      expect(tout, fonction).toContain(`grant execute on function public.${fonction}(${signature}) to authenticated;`)
+    }
+    const qui = derniereDefinitionSql('qui_ecrit_la_caisse')
+    expect(qui).toContain("if p_dossier_id is not null and public.client_du_dossier(p_dossier_id, 'caisse') then")
+    expect(qui).toContain("if v_statut in ('exonere', 'franchise') then\n      return 'client';")
+    // « ne retire ou ne remplace que ce qu'il a saisi » : l'origine et l'auteur, dans le retrait et le remplacement.
+    for (const fonction of ['retirer_operation_caisse', 'remplacer_operation_caisse']) {
+      expect(derniereDefinitionSql(fonction), fonction).toContain("v_origine = 'client'")
+    }
+    // « sous la nature que tu fixes » : la recette du client prend celle du dossier.
+    expect(derniereDefinitionSql('enregistrer_operation_caisse')).toContain('categorie_recettes_client')
+  })
+
+  it('« Ma caisse » n’existe pas encore : la phrase le dit à venir, et le jour où sa route arrive, ce test tombe', () => {
+    const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+    expect(app).not.toMatch(/ma-caisse|ClientCaisse/)
+    expect(readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^ClientCaisse/.test(f))).toEqual([])
+  })
+
+  it('ce que la case ouvre ne porte aucun texte libre du cabinet : aucun libellé neuf à écrire', () => {
+    expect(TABLES_LUES_AVEC_CAISSE).toEqual(['operations_caisse'])
+    const tout = fichiersDuSchema().map((f) => f.texte).join('\n')
+    // La table : ses colonnes de texte sont deux listes fermées que la base vérifie ; aucune autre colonne ne s'y ajoute.
+    const table = /create table public\.operations_caisse \(([\s\S]*?)\n\);/.exec(tout)?.[1] ?? ''
+    const colonnes = table.split('\n').map((l) => l.trim()).filter((l) => /^[a-z_]+ /.test(l) && !l.startsWith('constraint'))
+    const texte = colonnes.filter((l) => / text\b/.test(l)).map((l) => l.split(' ')[0])
+    expect(texte).toEqual(['genre', 'origine'])
+    expect(table).toContain("constraint operations_caisse_genre check (genre in ('recette', 'apport', 'prelevement', 'paiement'))")
+    expect(table).toContain("constraint operations_caisse_origine check (origine in ('cabinet', 'client'))")
+    expect(tout).not.toMatch(/alter table public\.operations_caisse\s+add column/)
+    // La fonction : des jours, des montants, des identifiants et un booléen, jamais un texte.
+    const rendu = /returns table \(([^)]*)\)/.exec(derniereDefinitionSql('caisse_du_client'))?.[1] ?? ''
+    expect(rendu).not.toMatch(/\btext\b|varchar/)
+    // La nature est un identifiant ; son libellé est celui d'une catégorie, que tout accès du dossier lit déjà.
+    expect(derniereDefinitionSql('client_du_dossier')).toContain("when 'membre' then true")
+  })
+
+  it('les cases se nomment dans l’ordre des colonnes, en français', () => {
+    expect(enumeration([])).toBe('')
+    expect(enumeration(['a'])).toBe('a')
+    expect(enumeration(['a', 'b'])).toBe('a et b')
+    expect(enumeration(['a', 'b', 'c'])).toBe('a, b et c')
+    expect(libellesDesCases()).toBe('« Ventes », « Banque » et « Caisse »')
+    expect(libelleDeLaCase('caisse', 'client@exemple.fr')).toBe('Droit « Caisse » de client@exemple.fr')
+    expect(messageDuRefus('caisse', 'client@exemple.fr', REFUS_CAISSE_DOSSIER_NON_EXCLU.message))
+      .toBe(`Le droit « Caisse » de client@exemple.fr n’a pas été enregistré : ${REFUS_CAISSE_DOSSIER_NON_EXCLU.message}`)
+  })
+
+  it('la confirmation nomme la personne, ce que la case ouvre, la condition du statut lu, ce qu’elle retient et la nature', () => {
+    const fixee = confirmationDeLaCaseCaisse('client@exemple.fr', 'exonere', { etat: 'fixee', libelle: 'Honoraires' })
+    expect(fixee.titre).toBe('Ouvrir sa caisse à ce client ?')
+    expect(fixee.bouton).toBe('Cocher « Caisse »')
+    expect(`${fixee.personne.avant}${fixee.personne.personne}${fixee.personne.apres}`)
+      .toBe('Cocher « Caisse » pour client@exemple.fr lui ouvre aussitôt, par la base, la caisse du dossier.')
+    expect(fixee.paragraphes[0]).toBe(`Avec la case, ${CE_QUE_LA_CASE_CAISSE_OUVRE}`)
+    expect(fixee.paragraphes[1]).toContain('Tu déclares que toutes les opérations de ce dossier sont exonérées de TVA')
+    expect(fixee.paragraphes[1]).toContain('CGI, art. 286, I, 3° bis')
+    expect(fixee.paragraphes).toContain(CE_QUE_LA_CASE_RETIENT)
+    expect(fixee.paragraphes).toContain('Ses recettes en espèces se rangeront sous « Honoraires », la nature que tu as fixée pour ce dossier.')
+    const franchise = confirmationDeLaCaseCaisse('client@exemple.fr', 'franchise', { etat: 'absente' })
+    expect(franchise.paragraphes[1]).toContain('relève de la franchise en base de TVA (CGI, art. 293 B)')
+    expect(franchise.paragraphes[1]).toContain('le jour où il la perd, décoche la case avant de changer son statut')
+    expect(franchise.paragraphes.join(' ')).toContain('Tu n’as pas fixé la nature de ses recettes en espèces : tant qu’elle manque, la base refuse ses recettes')
+    expect(confirmationDeLaCaseCaisse('x', 'exonere', { etat: 'hors_produit' }).paragraphes.join(' '))
+      .toContain('n’est plus une catégorie de produit du dossier')
+    expect(confirmationDeLaCaseCaisse('x', 'exonere', { etat: 'illisible' }).paragraphes.join(' ')).toContain('ne se lit pas')
+    // Les refus de la nature que la confirmation annonce sont ceux de la saisie du client, en base.
+    const saisie = derniereDefinitionSql('enregistrer_operation_caisse')
+    expect(saisie).toContain('Ton cabinet n\'\'a pas fixé la nature de tes recettes en espèces')
+    expect(saisie).toContain('n\'\'est plus une catégorie de produit de ton dossier')
   })
 })

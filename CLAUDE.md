@@ -64,7 +64,11 @@ l'assistant (C13, en ligne le 01/11/2026, `agent-comptable` v52) lit ces paiemen
 « en attente de rapprochement », ni sa contrepartie « à régénérer », et un dossier sans paiement rend ce qu'il rendait, au
 caractère près ; le client : C10, le droit « Caisse »
 d'un accès et la saisie du praticien en base (`caisse_du_client`, C10-Q1 telle quelle), en production depuis le
-02/11/2026, une lecture ouverte au client « Caisse » ; puis C11, l'onglet Accès, et C12, « Ma caisse » → « LA CAISSE ET
+02/11/2026, une lecture ouverte au client « Caisse » ; C11, l'onglet Accès, le 02/11/2026 : la case « Caisse » suit le
+statut de TVA lu, se coche sur une confirmation qui nomme la personne, ce qui s'ouvre et la condition, part à la forme à
+quatre ; la nature des recettes sous la liste ; `AuthContext` lit la case ; la Vue d'ensemble dit les saisies du client que
+ce navigateur n'a pas montrées → « LA CAISSE : LE DROIT « CAISSE » À L'ÉCRAN DU CABINET (C11, LIGNE 26.6) » ; reste C12,
+« Ma caisse » → « LA CAISSE ET
 LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026 », « LA CAISSE : LE MODULE, LA LECTURE
 ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
 CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
@@ -317,8 +321,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   électronique, la vue de la banque — pour un accès qui en porte le DROIT, tenu en base, jamais par l'écran seul ; le
   client y écrit par les fonctions du cabinet, et une policy qui lui ouvre une lecture se présente au cabinet avant
   d'être appliquée.
-- **Les droits sont en base** : `memberships.droit_ventes` et `droit_banque`, faux par défaut, changés par
-  `changer_droits_acces` seule (un droit nul y est inchangé) — une insertion du cabinet les pose aussi, la policy ne
+- **Les droits sont en base** : `memberships.droit_ventes`, `droit_banque` et `droit_caisse`, faux par défaut, changés par
+  `changer_droits_acces` seule, à quatre paramètres (un droit nul y est inchangé ; « Caisse » sur un dossier exonéré ou en
+  franchise seulement, `garder_droit_caisse`) — une insertion du cabinet les pose aussi, la policy ne
   regardant que le dossier ; « Ventes » ne se porte que sur un dossier basculé (`garder_droit_ventes`, VF8f, en base
   depuis le 27/10/2026 : 23514 pour tout auteur, l'insertion du super-administrateur exceptée — la restauration)
   → « « VENTES » NE SE PORTE QUE SUR UN DOSSIER BASCULÉ » ; prédicats `client_du_dossier`, `gere_les_ventes`,

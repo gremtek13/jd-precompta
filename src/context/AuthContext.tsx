@@ -50,10 +50,11 @@ interface AuthState {
   dossierActifId: string | null
   setDossierActifId: (id: string) => void
   // Les droits de chaque accès du client, par dossier — « Ventes » et « Banque » (espace client, étape P1, voir
-  // lib/droitsAcces.ts) —, lus avec ses accès, dans la même requête et au même moment : au changement d'IDENTIFIANT
-  // seulement. Un dossier absent n'a aucun droit (`droitsSur`). Aucun écran ne s'en sert encore : ils sont là pour les
-  // étapes qui ouvriront « Mes ventes » et « Ma banque », et la base les tient de toute façon. Vide pour un compte du
-  // cabinet, dont les droits sont ceux du cabinet (`admin_du_dossier`), pas ceux d'un accès.
+  // lib/droitsAcces.ts), et « Caisse » depuis l'étape C11 (la colonne `droit_caisse`, en base depuis le 02/11/2026 :
+  // « Ma caisse », C12, la lira) —, lus avec ses accès, dans la même requête et au même moment : au changement
+  // d'IDENTIFIANT seulement. Un dossier absent n'a aucun droit (`droitsSur`). « Mes ventes » et « Ma banque » s'en servent
+  // pour leur route et leur entrée ; leurs écrans relisent leurs cases à la base, qui les tient de toute façon. Vide pour un
+  // compte du cabinet, dont les droits sont ceux du cabinet (`admin_du_dossier`), pas ceux d'un accès.
   droitsParDossier: Readonly<Record<string, DroitsAcces>>
   // Vrai si l'utilisateur supervise tous les cabinets (voir la page Comptes master) plutôt qu'un seul —
   // résolu via l'appel RPC is_super_admin() : la table super_admins elle-même est verrouillée (RLS sans
@@ -224,7 +225,7 @@ export function AuthProvider({ children, retourDuLien = AUCUN_RETOUR }: { childr
       // la base que la première. Lue en échec, la liste est vide, et avec elle les droits — l'échec tombe du côté fermé.
       const { data: memberships } = await supabase
         .from('memberships')
-        .select('dossier_id, droit_ventes, droit_banque')
+        .select('dossier_id, droit_ventes, droit_banque, droit_caisse')
         .eq('user_id', userId)
 
       if (cancelled) return
