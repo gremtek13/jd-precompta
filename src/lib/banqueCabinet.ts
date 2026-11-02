@@ -18,6 +18,7 @@
 //     rapprochement ne la retire pas, et elle reste datée au registre.
 //  4. Le filtre « Proposés par le client » ne change que la liste AFFICHÉE ; une case cochée sur une lecture qui cesse
 //     d'être entière ne filtre plus.
+import { paiementNet } from './alignementBanque'
 import { sensCoherent } from './appariementBanque'
 import { estLeClient, type AccesDuDossier, type EtatDuFiltre } from './auteursVentes'
 import { etatDuMouvement, LIBELLE_DE_L_ETAT, refusDeRetirer } from './banqueClient'
@@ -280,6 +281,10 @@ export type EtatDeLaProposition =
   | { etat: 'piece_rapprochee_ailleurs'; paiements: readonly Pick<PaiementDePiece, 'date' | 'montant'>[] }
   // Payée en partie ailleurs : ce mouvement peut en régler le reste, sauf refus (`refusSecondPaiement`).
   | { etat: 'piece_payee_en_partie'; reste: number; refus: string | null }
+  // Son paiement a été rejeté, et ses paiements se soldent à zéro : ce mouvement en serait la reprise, sauf refus (REJET-Q1).
+  | { etat: 'reprise_d_un_rejet'; reste: number; refus: string | null }
+  // Payée, et ce mouvement de l'autre sens défait l'un de ses paiements : il se rapproche d'elle comme son rejet (REJET-Q1).
+  | { etat: 'rejet_de_la_piece' }
   | { etat: 'a_associer' }
 
 export interface ContexteDeLaProposition {
@@ -298,6 +303,9 @@ export interface ContexteDeLaProposition {
   paiementsDeLaPiece: readonly Pick<PaiementDePiece, 'date' | 'montant'>[]
   // Le refus d'un second paiement de cette pièce par ce mouvement (`refusSecondPaiement`), calculé par l'appelant.
   refusSecondPaiement: string | null
+  // Ce mouvement est-il un rejet que la pièce accepte (`rejetAccepte`, lib/reglementGroupe.ts ; REJET-Q1) ? Calculé par
+  // l'appelant, sur des paiements lus en entier ; faux sinon.
+  rejetAccepte: boolean
   // Les exemplaires des factures sources parmi les pièces lues, chacun sous les mots de G4 (étape VF6d ;
   // lib/lotsDeLaJumelleInversee.ts, `exemplairesDesSourcesDe`) : pièce → raison. Sans valeur par défaut ; vide sur un
   // dossier qui n'a pas basculé.
@@ -318,14 +326,23 @@ export function etatDeLaProposition(p: Pick<JustificatifPropose, 'piece_id'>, c:
   if (exemplaire !== undefined) return { etat: 'exemplaire_d_une_source', raison: exemplaire }
   if (c.piecesFigees.has(p.piece_id)) return { etat: 'piece_figee' }
   const reste = c.restesARegler.get(p.piece_id)
-  if (reste !== undefined) return { etat: 'piece_payee_en_partie', reste, refus: c.refusSecondPaiement }
-  if (c.horsRapprochement.has(p.piece_id)) return { etat: 'piece_rapprochee_ailleurs', paiements: c.paiementsDeLaPiece }
+  if (reste !== undefined) {
+    // Ses paiements se soldent à zéro : elle n'est pas « payée en partie », son paiement a été rejeté (REJET-Q1).
+    return c.paiementsDeLaPiece.length > 0 && paiementNet(c.paiementsDeLaPiece).centimes === 0
+      ? { etat: 'reprise_d_un_rejet', reste, refus: c.refusSecondPaiement }
+      : { etat: 'piece_payee_en_partie', reste, refus: c.refusSecondPaiement }
+  }
+  if (c.horsRapprochement.has(p.piece_id)) {
+    if (c.rejetAccepte) return { etat: 'rejet_de_la_piece' }
+    return { etat: 'piece_rapprochee_ailleurs', paiements: c.paiementsDeLaPiece }
+  }
   return { etat: 'a_associer' }
 }
 
 /** La proposition s'associe-t-elle d'ici, par « Associer » ? */
 export function associable(e: EtatDeLaProposition): boolean {
-  return e.etat === 'a_associer' || (e.etat === 'piece_payee_en_partie' && e.refus === null)
+  return e.etat === 'a_associer' || e.etat === 'rejet_de_la_piece'
+    || ((e.etat === 'piece_payee_en_partie' || e.etat === 'reprise_d_un_rejet') && e.refus === null)
 }
 
 /** Ce que la fiche dit de l'état d'une proposition — rien pour une proposition qui s'associe sans réserve. */
@@ -354,6 +371,11 @@ export function phraseDeLEtat(e: EtatDeLaProposition): string | null {
           + `${formatMoney(x.montant)}`).join(' ; ')}) : elle ne s’associe pas à celui-ci.`
     case 'piece_payee_en_partie':
       return e.refus ?? `Cette pièce est déjà payée en partie : ce mouvement en règlerait le reste (${formatMoney(e.reste)}).`
+    case 'reprise_d_un_rejet':
+      return e.refus ?? `Le paiement de cette pièce a été rejeté : ce mouvement en serait la reprise (${formatMoney(e.reste)}).`
+    case 'rejet_de_la_piece':
+      return 'Cette pièce est déjà payée : ce mouvement, de l’autre sens, défait l’un de ses paiements — il se rapproche '
+        + 'd’elle comme son rejet, et la rend à régler.'
     case 'a_associer':
       return null
   }

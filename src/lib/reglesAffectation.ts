@@ -9,6 +9,8 @@ import { tauxApplicable, tauxRequis } from './tvaDuReleve'
 import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire, SensMouvementBancaire } from './types'
 import { justificatifDeLaVente, type CandidatsDeLaVente, type MouvementsHorsDesLots } from './mouvementsDesVentes'
 import { exemplaireDUneSource, type FacturesSources } from './facturesSources'
+import type { PaiementsDesPieces } from './rattachement'
+import { rejetPossible } from './rejetDuPaiement'
 
 // LES RÈGLES D'AFFECTATION APPRISES PAR LIBELLÉ (ligne 26.6 de la feuille de route, étape a).
 //
@@ -194,6 +196,10 @@ export interface JustificatifsDuDossier {
   // Ce qu'il reste à régler des pièces payées en partie (`restesAReglerDesPieces`, lib/controles.ts) : un mouvement
   // en est peut-être le solde. Vide sur une lecture partielle du relevé ou des parts.
   restesARegler: ReadonlyMap<string, number>
+  // Les paiements de chaque pièce (`paiementsDesPieces`), sur un relevé et des parts lus en entier : un mouvement qui
+  // défait peut-être l'un d'eux — le rejet d'un prélèvement (REJET-Q1, lib/rejetDuPaiement.ts) — ne s'affecte pas en lot.
+  // Sans valeur par défaut ; vide sur une lecture partielle, comme `restesARegler`.
+  paiements: PaiementsDesPieces
   cotisations: CotisationRapprochable[]
   cotisationsRapprochees: ReadonlySet<string>
   // LES CANDIDATS DE LA VENTE (ligne 28.65, chantier EC-Q3, étape VF5e ; lib/mouvementsDesVentes.ts, `candidatsDeLaVente`) :
@@ -254,6 +260,12 @@ export function justificatifPossible(ligne: LigneBancaire, justificatifs: Justif
       && (tiersConfirmeParBanque(p.tiers, libelle) || Math.round(Math.abs(ligne.montant) * 100) === Math.round(reste * 100))
   })) {
     return 'Une pièce payée en partie attend son solde : ce mouvement le règle peut-être.'
+  }
+  // LE REJET D'UN PAIEMENT (REJET-Q1) : un paiement du même montant, de l'autre sens, rapproché d'une pièce peu avant ce
+  // mouvement. Affecté en lot à une catégorie, le crédit d'un prélèvement rejeté compterait comme une recette pendant que la
+  // pièce resterait payée ; il se rapproche d'elle, comme son rejet, depuis sa fiche.
+  if (rejetPossible(ligne, justificatifs.pieces, justificatifs.paiements)) {
+    return 'Un paiement du même montant, de l’autre sens, est rapproché d’une pièce : ce mouvement en est peut-être le rejet.'
   }
   // UNE VENTE FACTURÉE ATTEND SON ENCAISSEMENT (étape VF5e) : affecté à une recette, ce crédit compterait à côté de
   // l'encaissement de la facture qu'il règle — la même vente deux fois. De même d'un débit qu'une contre-passation attend.

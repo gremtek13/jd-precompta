@@ -77,7 +77,8 @@ export function PropositionsDuClient({ ligne, envois, acces, contexte, aTraiter,
               </ul>
             )}
             {phrase && (
-              <p className={etat.etat === 'retenue' || (etat.etat === 'piece_payee_en_partie' && etat.refus === null) ? 'fiche-mouvement-note' : 'fiche-mouvement-alerte'}>
+              <p className={etat.etat === 'retenue' || etat.etat === 'rejet_de_la_piece'
+                || ((etat.etat === 'piece_payee_en_partie' || etat.etat === 'reprise_d_un_rejet') && etat.refus === null) ? 'fiche-mouvement-note' : 'fiche-mouvement-alerte'}>
                 {phrase}
               </p>
             )}

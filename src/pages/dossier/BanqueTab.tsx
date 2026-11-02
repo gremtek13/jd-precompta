@@ -19,7 +19,7 @@ import type {
 } from '../../lib/types'
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
 import { partsEncaissees } from '../../lib/encaissementsFactures'
-import { nomDeLaPiece, piecesPayeesEnTrop, refusReglementGroupe, refusSecondPaiement, type PartReglement } from '../../lib/reglementGroupe'
+import { nomDeLaPiece, piecesPayeesEnTrop, refusReglementGroupe, refusSecondPaiement, rejetAccepte, type PartReglement } from '../../lib/reglementGroupe'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee, estFigee } from '../../lib/validationExercice'
@@ -818,10 +818,17 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // Et elle se règle sur le TOTAL que la banque aura payé pour elle une fois ce paiement posé : ses autres paiements — un
   // mouvement déjà rapproché d'elle, la part d'un virement groupé — et celui-ci (lib/reglementBanque.ts). Un paiement
   // seul n'en est qu'une fraction.
+  //
+  // JAMAIS SUR UN REJET (REJET-Q1) : le mouvement de l'autre sens qui défait un paiement qu'elle a reçu (`rejetAccepte`) ne
+  // paie pas la pièce — un premier paiement de l'autre sens, le remboursement rangé sur un achat, se règle comme hier. Réglée sur le
+  // total, une pièce en devise dont le rejet ne défait qu'une partie de ce qu'elle a reçu passerait au montant de ce reste,
+  // et une pièce en euros pourrait s'aligner, sous le seuil, sur un rejet de quelques centimes. La reprise, elle, la règle :
+  // son total est ce que la banque a payé, net.
   function reglerSiLibre(piece: Piece, ligneId: string, montant: number): Promise<Piece> {
     if (piecesFigees.figees.has(piece.id)) return Promise.resolve(piece)
     // Un paiement par la caisse en est toujours un autre (étape C9a) : il n'a pas de mouvement.
     const autres = (paiements.get(piece.id) ?? []).filter((paiement) => paiement.origine === 'caisse' || paiement.id !== ligneId)
+    if (rejetAccepte(piece, autres, montant)) return Promise.resolve(piece)
     return reglerPieceSurBanque(piece, [...autres, { montant }])
   }
 
@@ -840,7 +847,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     const pieceAvant = pieces.find((p) => p.id === pieceId)
     // Le second paiement d'une pièce déjà payée en partie : ce que la fiche refuse avant le clic se refuse ici aussi —
     // le mauvais sens, ou plus que ce qu'il reste à régler (`refusSecondPaiement`). Une seconde ceinture : aucun clic ne
-    // l'atteint aujourd'hui, la fiche grisant « Associer » sur ce refus et rien d'autre n'offrant une pièce déjà payée.
+    // l'atteint aujourd'hui, la fiche grisant « Associer » sur ce refus et n'offrant une pièce déjà payée qu'au rejet qu'elle
+    // accepte (REJET-Q1), que ce refus laisse passer.
     // L'exemplaire d'une facture source ne se rapproche pas (G4, étape VF6d) : la fiche ne l'offre pas, ni au choix ni dans une
     // proposition du client — une seconde ceinture, que les mots de la garde disent.
     const exemplaire = exemplairesDesSources.raisons.get(pieceId)
@@ -1439,7 +1447,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   )
   const planRegles = useMemo(() => {
     const justificatifs = {
-      pieces, piecesRapprochees: piecesHorsRapprochement, restesARegler, cotisations, cotisationsRapprochees, ventes: candidats,
+      pieces, piecesRapprochees: piecesHorsRapprochement, restesARegler, paiements, cotisations, cotisationsRapprochees, ventes: candidats,
       facturesSources,
     }
     return planAffectationParRegles(lignes, reglesAffectation, categories, assujettiTva, (l) => {
@@ -1452,7 +1460,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       // Un prélèvement qui paie exactement une déclaration de TVA : une règle au nom du Trésor le rangerait en charge.
       return raisonPaiementTvaPlausible(l, suivisTva)
     }, horsDesLots)
-  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva, horsDesLots, candidats, facturesSources])
+  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, paiements, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva, horsDesLots, candidats, facturesSources])
   const ecartDuLotDesRegles = ecartDuLot(planRegles.ecartesParLesVentes, horsDesLots)
   const idsProposesParRegle = useMemo(() => new Set(planRegles.propositions.map((p) => p.ligne.id)), [planRegles])
   const idsEmpruntPlausible = useMemo(

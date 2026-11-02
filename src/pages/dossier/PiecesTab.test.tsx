@@ -777,6 +777,27 @@ describe('PiecesTab — une pièce réglée par un virement groupé', () => {
     expect(within(await ligneDe('BETA')).getByText('Non rapprochée')).toBeTruthy()
   })
 
+  // REJET-Q1 : un prélèvement et son rejet, rapprochés de la même pièce, se soldent à zéro — elle n'est plus payée, la
+  // reprise l'attend. « Rapprochée » la dirait réglée ; reprise, elle l'est de nouveau.
+  it('dit « Paiement rejeté » d’une pièce dont le prélèvement et son rejet se soldent, « Rapprochée » une fois reprise', async () => {
+    poser([piece({ id: 'p-prime', statut: 'validee', tiers: 'ALPHA', montant_ttc: 120 })])
+    faux.parTable.lignes_bancaires = [
+      { id: 'debit', piece_id: 'p-prime', date: '2026-03-10', montant: -120, statut: 'rapprochee', reglement_groupe: false },
+      { id: 'rejet', piece_id: 'p-prime', date: '2026-03-14', montant: 120, statut: 'rapprochee', reglement_groupe: false },
+    ]
+    const { unmount } = monter('toutes')
+    const ligne = await ligneDe('ALPHA')
+    expect(within(ligne).getByText('Paiement rejeté')).toBeTruthy()
+    expect(within(ligne).queryByText('Rapprochée')).toBeNull()
+    unmount()
+
+    faux.parTable.lignes_bancaires = [...faux.parTable.lignes_bancaires,
+      { id: 'reprise', piece_id: 'p-prime', date: '2026-03-20', montant: -120, statut: 'rapprochee', reglement_groupe: false }]
+    monter('toutes')
+    expect(within(await ligneDe('ALPHA')).getByText('Rapprochée')).toBeTruthy()
+    expect(screen.queryByText('Paiement rejeté')).toBeNull()
+  })
+
   it('des parts lues en partie : l’écran le dit, au lieu de laisser la pièce « non rapprochée » sans un mot', async () => {
     poser([piece({ id: 'p-groupe', statut: 'validee', tiers: 'ALPHA' })])
     faux.parTable.lignes_bancaires = [{ id: 'vir', piece_id: null, date: '2026-03-15', montant: -240, statut: 'rapprochee', reglement_groupe: true }]

@@ -150,7 +150,7 @@ describe('Relecture — le lot des règles et le justificatif peut-être au doss
   const p = piece({ id: 'facture-avril', date_piece: '2025-04-30', tiers: 'SFR Business', montant_ttc: 45, montant_ht: 45 })
   const l = ligne({ id: 'prlv-mai', date: '2025-05-07', montant: -45, libelle: 'PRLV SEPA TELECOM PRO 0425' })
   const justificatifs = {
-    pieces: [p], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), cotisations: [],
+    pieces: [p], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), paiements: new Map(), cotisations: [],
     cotisationsRapprochees: new Set<string>(), ventes: AUCUN_CANDIDAT, facturesSources: AUCUNE_FACTURE_SOURCE,
   }
   it('(constat) le lot « Valider et rapprocher » voit la paire (à arbitrer)', () => {

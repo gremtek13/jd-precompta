@@ -363,7 +363,7 @@ describe('candidatsDuMouvement : un DÉBIT libre — la contre-passation seule',
 
 describe('justificatifPossible apprend les candidats de la vente', () => {
   const aucun = {
-    pieces: [], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), cotisations: [],
+    pieces: [], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), paiements: new Map(), cotisations: [],
     cotisationsRapprochees: new Set<string>(), facturesSources: AUCUNE_FACTURE_SOURCE,
   }
 
@@ -429,7 +429,7 @@ describe('les lots sur un crédit qu’une facture source pourrait régler', () 
     }
     // « vir » ne passe pas `refusMotif`, mais le plan ne juge pas le motif : il désigne ici tout le relevé.
     const justificatifs = {
-      pieces: [], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), cotisations: [],
+      pieces: [], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), paiements: new Map(), cotisations: [],
       cotisationsRapprochees: new Set<string>(), ventes: CANDIDATS, facturesSources: AUCUNE_FACTURE_SOURCE,
     }
     const plan = planAffectationParRegles(RELEVE, [regle], [RECETTES], false, (l) => justificatifPossible(l, justificatifs), HORS)

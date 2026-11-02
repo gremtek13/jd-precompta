@@ -48,7 +48,7 @@ const lues = <T,>(lignes: T[]) => ({ lignes, complete: true, motif: null })
 function contexte(o: Partial<ContexteDeLaProposition> = {}): ContexteDeLaProposition {
   return {
     ligne: ligne(), figeePar: null, piecesDuReglement: [], pieces: [piece()], piecesLuesEnEntier: true, piecesFigees: new Set(),
-    horsRapprochement: new Set(), restesARegler: new Map(), paiementsDeLaPiece: [], refusSecondPaiement: null,
+    horsRapprochement: new Set(), restesARegler: new Map(), paiementsDeLaPiece: [], refusSecondPaiement: null, rejetAccepte: false,
     exemplairesDesSources: new Map(), ...o,
   }
 }

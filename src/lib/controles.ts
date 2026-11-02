@@ -1,6 +1,6 @@
 import { ajouterJours, aujourdHuiSql, cleFournisseur, dateLocaleDe, formatMoney } from './format'
 import type { Categorie, Immobilisation, LigneBancaire, ModeComptable, Piece } from './types'
-import { soldeDesPaiements } from './alignementBanque'
+import { paiementNet, soldeDesPaiements } from './alignementBanque'
 import type { PaiementsDesPieces } from './rattachement'
 import { estFigee } from './validationExercice'
 import { exemplaireDUneSource, type FacturesSources } from './facturesSources'
@@ -552,14 +552,24 @@ export function piecesPayeesEnPartie<P extends Pick<Piece, 'id' | 'devise' | 'mo
 // et une pièce en devise, dont le montant en euros n'est qu'un provisoire, ne se juge pas. Sur un relevé ou des parts
 // lus en partie, un paiement non lu ferait paraître une pièce réglée payée en partie : l'appelant passe alors une
 // carte vide.
+//
+// ET LA PIÈCE DONT LE PAIEMENT A ÉTÉ REJETÉ (REJET-Q1) : un prélèvement et son rejet, rapprochés d'elle tous deux, se
+// soldent à zéro — elle n'est plus payée, et la reprise l'attend pour son montant ENTIER. `soldeDesPaiements` ne la juge
+// pas (aucun paiement net : elle n'est pas « payée en partie », la 2035 la date à sa facture et le dit), et sans elle la
+// pièce, tenue pour rapprochée dès son premier paiement, ne s'offrirait à aucune reprise. En devise aussi : la reprise la
+// règle seule, et la réaligne sur son débit réel (`refusSecondPaiement`).
 export function restesAReglerDesPieces<P extends Pick<Piece, 'id' | 'devise' | 'montant_ttc'>>(
   pieces: readonly P[],
   paiements: PaiementsDesPieces,
 ): Map<string, number> {
   const restes = new Map<string, number>()
   for (const piece of pieces) {
-    const solde = soldeDesPaiements(piece, paiements.get(piece.id) ?? [])
+    const liste = paiements.get(piece.id) ?? []
+    const solde = soldeDesPaiements(piece, liste)
     if (solde && solde.reste > solde.seuil) restes.set(piece.id, solde.reste)
+    else if (piece.montant_ttc && liste.length > 0 && paiementNet(liste).centimes === 0) {
+      restes.set(piece.id, Math.round(Math.abs(piece.montant_ttc) * 100) / 100)
+    }
   }
   return restes
 }

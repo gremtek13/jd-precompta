@@ -13,6 +13,7 @@ import { lireTout } from '../../lib/lectureComplete'
 import {
   AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces, piecesPayees, type LignePayante, type PartEncaissee, type PartReglee,
 } from '../../lib/rattachement'
+import { piecesAuPaiementRejete } from '../../lib/rejetDuPaiement'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -116,6 +117,9 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // ergonomie comparatif) : validation, paiement/rapprochement et écriture générée sont trois états
   // distincts, une pièce validée n'a pas forcément encore été rapprochée d'un mouvement réel.
   const [piecesRapprochees, setPiecesRapprochees] = useState<Set<string>>(new Set())
+  // Les pièces dont les paiements par le relevé se soldent à zéro — un prélèvement et son rejet, pas encore repris
+  // (REJET-Q1) : « Paiement rejeté », plutôt que « Rapprochée », qui dirait la pièce réglée.
+  const [piecesRejetees, setPiecesRejetees] = useState<ReadonlySet<string>>(new Set())
   // LA CAISSE DU DOSSIER (ligne 26.6, étape C9b) : lue seulement la migration `paiement_par_la_caisse` en base et le dossier en
   // trésorerie (`caisseTenue`) — le drapeau baissé, aucune lecture de plus. Ses paiements disent « Payée en espèces », à part de
   // « Rapprochée » (un mouvement bancaire) ; la fiche d'une pièce y règle et y retire un paiement. Nulle avant sa lecture.
@@ -333,8 +337,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     setTiersCategoriesCabinet(lectureTiersCabinet.lignes)
     // « Rapprochée » dit un MOUVEMENT BANCAIRE (le badge, la fiche) : un paiement par la caisse (étape C9a) n'en est pas un,
     // et ne s'y compte pas — « Payée en espèces » le dit à part (étape C9b, `payeesEnEspeces`).
-    setPiecesRapprochees(new Set(piecesPayees(paiementsDesPieces(lectureRapprochees.lignes, lectureReglements.lignes,
-      lectureVentes?.etat === 'lue' ? lectureVentes.encaissees : [], AUCUN_PAIEMENT_PAR_LA_CAISSE))))
+    const paiementsParLeReleve = paiementsDesPieces(lectureRapprochees.lignes, lectureReglements.lignes,
+      lectureVentes?.etat === 'lue' ? lectureVentes.encaissees : [], AUCUN_PAIEMENT_PAR_LA_CAISSE)
+    setPiecesRapprochees(new Set(piecesPayees(paiementsParLeReleve)))
+    setPiecesRejetees(piecesAuPaiementRejete(paiementsParLeReleve))
     setEntreesDesPaiements({
       lignes: lectureRapprochees.lignes, reglements: lectureReglements.lignes,
       encaissees: lectureVentes?.etat === 'lue' ? lectureVentes.encaissees : [],
@@ -1205,7 +1211,9 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
                             dit rien de l'autre, jamais fusionnés dans un seul badge "tout est fait". */}
                         {p.statut === 'validee' && (
                           <div style={{ marginTop: 4 }}>
-                            {piecesRapprochees.has(p.id)
+                            {piecesRejetees.has(p.id)
+                              ? !payeesEnEspeces.has(p.id) && <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>Paiement rejeté</span>
+                              : piecesRapprochees.has(p.id)
                               ? <span className="badge badge-ok" style={{ fontSize: '0.7rem' }}>Rapprochée</span>
                               : !payeesEnEspeces.has(p.id) && <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>Non rapprochée</span>}
                           </div>

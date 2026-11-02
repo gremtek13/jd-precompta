@@ -924,6 +924,117 @@ describe('BanqueTab — le second paiement d’une pièce payée en partie', () 
   })
 })
 
+// REJET-Q1 (tranchée le 01/11/2026 : « l'ouvrir ») : la prime prélevée le 20/12/2025, rejetée le 28/12, reprise le 05/01/2026.
+// La fiche du rejet propose la pièce sur son signal et dit, avant le clic, ce que le geste change à la 2035 ; la fiche de la
+// reprise offre ensuite la même pièce pour son montant entier. Rien ne part avant le clic, et deux clics n'écrivent qu'une fois.
+describe('BanqueTab — le prélèvement rejeté puis repris, rapproché de sa pièce (REJET-Q1)', () => {
+  function poserLeRejet(montantRejet = 1200, piece: Partial<Piece> = {}) {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.pieces = [pieceDeTest({ montant_ttc: 1200, tiers: 'Assureur fictif', date_piece: '2025-12-01', ...piece })]
+    faux.lignes = [
+      ligneDeTest({ id: 'debit', date: '2025-12-20', libelle: 'PRLV ASSUREUR FICTIF', montant: -1200, statut: 'rapprochee', piece_id: 'piece-1' }),
+      ligneDeTest({ id: 'rejet', date: '2025-12-28', libelle: 'REJET PRLV ASSUREUR FICTIF', montant: montantRejet }),
+      ligneDeTest({ id: 'reprise', date: '2026-01-05', libelle: 'REPRISE PRLV ASSUREUR FICTIF', montant: -1200 }),
+    ]
+  }
+
+  it('propose la pièce sur son signal, dit l’effet sur la 2035, et n’écrit qu’une fois sur deux clics ; puis offre la reprise', async () => {
+    poserLeRejet()
+    rendre()
+    await ouvrir('REJET PRLV ASSUREUR FICTIF')
+    within(volet()).getByRole('heading', { name: 'Paiement rejeté proposé' })
+    within(volet()).getByText(/Paiement du 20\/12\/2025 de 1\s200,00\s€ rapproché de cette pièce : même montant, au centime près/)
+    within(volet()).getByText(/La banque ne relie pas deux mouvements/)
+    within(volet()).getByText(/^2035 de 2025 : inchangée — la pièce y compte pour 1\s200,00\s€\.$/)
+    within(volet()).getByText(/le 01\/12\/2025, date de sa facture, faute de paiement net connu/)
+    within(volet()).getByText(/La pièce passe de « payée » à « à régler »/)
+    // Rien n'est parti à l'ouverture.
+    expect(faux.updatesLignes).toHaveLength(0)
+    const bouton = within(volet()).getByRole('button', { name: 'Associer comme son rejet' })
+    await act(async () => { bouton.click(); bouton.click() })
+    await waitFor(() => expect(faux.updatesLignes).toEqual([expect.objectContaining({ statut: 'rapprochee', piece_id: 'piece-1' })]))
+    // Un rejet ne règle pas la pièce sur la banque : ses montants ne bougent pas.
+    expect(faux.updatesPieces).toEqual([])
+
+    // La reprise : la pièce, ses paiements soldés, s'offre pour son montant entier, et la fiche dit ce que la reprise change.
+    await ouvrir('REPRISE PRLV ASSUREUR FICTIF')
+    const options = [...(within(volet()).getByLabelText('Pièce') as HTMLSelectElement).options].map((o) => o.textContent ?? '')
+    expect(options.filter((t) => /Assureur fictif — reste 1\s200,00\s€ sur 1\s200,00\s€/.test(t))).toHaveLength(1)
+    await act(async () => { fireEvent.change(within(volet()).getByLabelText('Pièce'), { target: { value: 'piece-1' } }) })
+    within(volet()).getByText('Le paiement de cette pièce a été rejeté : ce mouvement en est la reprise.')
+    within(volet()).getByText(/^2035 de 2025 : la pièce y compte pour 0,00\s€ au lieu de 1\s200,00\s€/)
+    within(volet()).getByText(/^2035 de 2026 : la pièce y compte pour 1\s200,00\s€ au lieu de 0,00\s€/)
+    expect(within(volet()).queryByText('Cette pièce est déjà payée en partie : ce mouvement en règle le reste.')).toBeNull()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer' }).click() })
+    await waitFor(() => expect(faux.updatesLignes).toHaveLength(2))
+    expect(faux.updatesLignes[1]).toEqual(expect.objectContaining({ statut: 'rapprochee', piece_id: 'piece-1' }))
+  })
+
+  it('n’offre pas un rejet plus grand que ce que la pièce a reçu, et ne propose rien sans signal', async () => {
+    poserLeRejet(1300)
+    const { unmount } = rendre()
+    await ouvrir('REJET PRLV ASSUREUR FICTIF')
+    expect(within(volet()).queryByRole('heading', { name: /Paiement rejeté proposé|Le rejet d’un paiement/ })).toBeNull()
+    expect(within(volet()).queryByLabelText('Pièce dont ce mouvement défait un paiement')).toBeNull()
+    unmount()
+
+    // Un rejet partiel n'a le montant d'aucun paiement : il ne s'offre pas, il se classe à part.
+    poserLeRejet(200)
+    const { unmount: demonter } = rendre()
+    await ouvrir('REJET PRLV ASSUREUR FICTIF')
+    expect(within(volet()).queryByRole('heading', { name: /Paiement rejeté proposé|Le rejet d’un paiement/ })).toBeNull()
+    demonter()
+
+    // Le paiement hors des huit semaines : la pièce est au choix seulement, jamais en tête, et rien ne part avant « Associer ».
+    poserLeRejet()
+    faux.lignes = faux.lignes.map((l) => (l.id === 'debit' ? { ...l, date: '2025-09-01' } : l))
+    rendre()
+    await ouvrir('REJET PRLV ASSUREUR FICTIF')
+    within(volet()).getByRole('heading', { name: 'Le rejet d’un paiement' })
+    expect(within(volet()).queryByRole('button', { name: 'Associer comme son rejet' })).toBeNull()
+    await act(async () => {
+      fireEvent.change(within(volet()).getByLabelText('Pièce dont ce mouvement défait un paiement'), { target: { value: 'piece-1' } })
+    })
+    within(volet()).getByText(/La pièce passe de « payée » à « à régler »/)
+    expect(faux.updatesLignes).toHaveLength(0)
+  })
+
+  // Une pièce figée par un exercice validé ne se rapproche plus, en trésorerie — son rejet non plus. Et sur des parts de
+  // virements groupés lues en partie, un paiement non lu ferait accepter un rejet de trop : rien n'est offert.
+  it('n’offre le rejet ni d’une pièce figée, ni sur des paiements lus en partie', async () => {
+    poserLeRejet()
+    faux.lignes = faux.lignes.map((l) => (l.id === 'rejet' ? { ...l, date: '2026-01-03' } : l))
+    faux.ecrituresValidees = [{ id: 'ev-prime', statut: 'validee', date: '2025-12-20', piece_id: 'piece-1', immobilisation_id: null }]
+    const { unmount } = rendre(TRESORERIE, false, [2025])
+    await ouvrir('REJET PRLV ASSUREUR FICTIF')
+    expect(within(volet()).queryByRole('heading', { name: /Paiement rejeté proposé|Le rejet d’un paiement/ })).toBeNull()
+    unmount()
+
+    poserLeRejet()
+    faux.reglements = [{ id: 'g1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ailleurs', piece_id: 'piece-autre', montant: -10, created_at: '2025-06-02T10:00:00Z' }]
+    faux.muet = { reglements_groupes: 0 }
+    rendre()
+    await ouvrir('REJET PRLV ASSUREUR FICTIF')
+    expect(within(volet()).queryByRole('heading', { name: /Paiement rejeté proposé|Le rejet d’un paiement/ })).toBeNull()
+  })
+
+  // Une pièce en devise ne se réaligne jamais sur un rejet : payée par un acompte de 300 € et un solde de 900 €, le rejet du
+  // solde la laisserait, réglée sur le total, à 300 €.
+  it('une pièce en devise n’est pas réalignée sur le montant d’un rejet', async () => {
+    poserLeRejet(900, { devise: 'USD', montant_devise: 1300 })
+    faux.lignes = [
+      ligneDeTest({ id: 'acompte', date: '2025-12-05', libelle: 'PRLV ACOMPTE ASSUREUR', montant: -300, statut: 'rapprochee', piece_id: 'piece-1' }),
+      ...faux.lignes.map((l) => (l.id === 'debit' ? { ...l, montant: -900 } : l)),
+    ]
+    rendre()
+    await ouvrir('REJET PRLV ASSUREUR FICTIF')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer comme son rejet' }).click() })
+    await waitFor(() => expect(faux.updatesLignes).toEqual([expect.objectContaining({ statut: 'rapprochee', piece_id: 'piece-1' })]))
+    expect(faux.updatesPieces).toEqual([])
+  })
+})
+
 // LES RELEVÉS DÉJÀ CLASSÉS, LUS EN PARTIE, LE DISENT DANS L'IMPORT. Leur lecture s'écrivait
 // `lireTout(…).then((lecture) => …)` — une forme que le scanner ne voyait pas — et jetait son
 // drapeau : tronquée, la liste cache un relevé déjà classé, qu'on croit alors devoir redemander.
