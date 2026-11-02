@@ -51,21 +51,21 @@ Caisse ; le resserrement (C6) le même jour : l'écran n'offre plus d'espèces s
 le refuse en base (la migration 3, `especes_sans_mouvement`, appliquée par l'outil) ; un dossier basculé tient une
 caisse dès que les espèces d'une facture source y entrent (C6-Q1, le 31/10/2026), tout dossier dès que sa reprise ou son
 relevé la portent, et la fenêtre des encaissements juge la caisse avant le clic ; le paiement d'une pièce par la caisse
-et la caisse bornée par son ouverture (C8), une migration préparée le 31/10/2026, à accorder, la fiche d'un mouvement
+et la caisse bornée par son ouverture (C8), en production depuis le 02/11/2026, la fiche d'un mouvement
 refusant déjà de classer sur la caisse un mouvement d'avant l'ouverture ; ce paiement dans les moteurs (C9a, le
-01/11/2026, derrière `PAIEMENT_PAR_LA_CAISSE_EXPORTE` baissé) : `PaiementDePiece` une union, le relevé ou la caisse,
+01/11/2026 ; `PAIEMENT_PAR_LA_CAISSE_EXPORTE` levé le 02/11/2026) : `PaiementDePiece` une union, le relevé ou la caisse,
 quatrième paramètre obligatoire de `paiementsDesPieces`, la contrepartie au compte de la caisse du plan ; l'écran du cabinet
-(C9b, le 01/11/2026, derrière le même drapeau) : la fiche d'une pièce la règle par la caisse et en retire un paiement,
+(C9b, le 01/11/2026, sous le même drapeau) : la fiche d'une pièce la règle par la caisse et en retire un paiement,
 « Payée en espèces » à part de « Rapprochée », `caisse-a-reprendre` compte la contrepartie d'un paiement, une caisse lue en
 partie retient « Associer » ; relus et corrigés le 01/11/2026 : la pièce à valider qu'un paiement cite retient la validation
-(et un filet en base, `validation_des_paiements_par_la_caisse`, préparé, après C8 et FEC22b), un paiement qui laisserait la
+(et un filet en base, `validation_des_paiements_par_la_caisse`, en production depuis le 02/11/2026), un paiement qui laisserait la
 pièce à quelques centimes se refuse (C9-Q1, sur la recommandation), une pièce payée ne part plus d'une sélection ;
 l'assistant (C13, en ligne le 01/11/2026, `agent-comptable` v52) lit ces paiements sans drapeau — une pièce payée en espèces n'y est plus
 « en attente de rapprochement », ni sa contrepartie « à régénérer », et un dossier sans paiement rend ce qu'il rendait, au
-caractère près —, et le drapeau ne se lève qu'après son déploiement, le jour de C8 ; le client : C10, le droit « Caisse »
-d'un accès et la saisie du praticien en base, une migration préparée le 01/11/2026 (`caisse_du_client`, après C8, FEC22b
-et le filet), qui ouvre une lecture au client et attend C10-Q1 et l'accord du cabinet ; puis C11, l'onglet Accès, et
-C12, « Ma caisse » → « LA CAISSE : LE MODULE, LA LECTURE
+caractère près ; le client : C10, le droit « Caisse »
+d'un accès et la saisie du praticien en base (`caisse_du_client`, C10-Q1 telle quelle), en production depuis le
+02/11/2026, une lecture ouverte au client « Caisse » ; puis C11, l'onglet Accès, et C12, « Ma caisse » → « LA CAISSE ET
+LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026 », « LA CAISSE : LE MODULE, LA LECTURE
 ET LA SAUVEGARDE (C2, LIGNE 26.6) », « LA CAISSE : LES MOTEURS (C3A, LIGNE 26.6) », « LA CAISSE : LE FEC ET LES
 CONTRÔLES (C3B, LIGNE 26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « LA CAISSE : L'ASSISTANT (C5, LIGNE
 26.6) », « LA CAISSE : L'ASSISTANT EN LIGNE (C5, LIGNE 26.6) », « LA CAISSE : LE RESSERREMENT (C6, LIGNE 26.6) », « LA
@@ -431,13 +431,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   bilan 2033-A) ; restent ses chiffres, l'analyse des écarts, puis ses chiffres en cas de référence → « LES DOSSIERS DE
   RÉFÉRENCE ».
 - **La 2035 : les cases « dont » et les saisies du cabinet** (01/11/2026, MVP) : 2035S1, S2 et S6 faits sur la réponse (A)
-  de 2035S-Q2 à Q5, sans réponse du cabinet, chaque autre réponse à un changement local — BY, BW, BZ et BU d'un poste qui
+  de 2035S-Q2 à Q5, confirmée par le cabinet le 02/11/2026 pour Q2 à Q4 — BY, BW, BZ et BU d'un poste qui
   les nomme (une seconde case AJOUTÉE, jamais retirée de la porteuse), BT des seules échéances de l'onglet Cotisations, DB
   des indemnités journalières ; l'appel définitif du même mois remplace, au clic, la prévisionnelle qu'aucun paiement ne
   date, et une autre se dit en attention (`lib/previsionnelles.ts`) ; un modèle par millésime, le PDF retenu sans le sien
-  (`lib/modeles2035.ts`) ; les quatre postes neufs sont entrés le 01/11/2026 dans les listes fermées du FEC (ci-dessous).
-  Restent CC, CL, DE et le reste de DB (2035S3 à S5, dont une migration additive, `saisies_2035`), qui attendent
-  2035S-Q1 → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 :
+  (`lib/modeles2035.ts`) — 2035S-Q5, contre la recommandation : l'imprimer avec un avertissement, à écrire ; les quatre postes neufs sont entrés le 01/11/2026 dans les listes fermées du FEC (ci-dessous).
+  Restent CC, CL, DE et le reste de DB (2035S3 à S5, dont une migration additive, `saisies_2035`) : 2035S-Q1, regarder
+  d'abord la 2035 déposée, à la répétition générale → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 :
   ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION », « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF
   D'UN MILLÉSIME (2035S1, S2 ET S6) ».
 - **Déclarations TNS** (ligne 27) : restent hors de l'estimation — médecins et chirurgiens-dentistes, retraite, revenus
@@ -462,17 +462,17 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   rendez-vous ; FEC22a en module le 31/10/2026 (`lib/champsBncDuFec.ts`) ; FEC22c1, le fichier à vingt-deux colonnes, et
   FEC22c2 (01/11/2026 : la demande de validation porte les cinq clés, une ligne de charge et une de TVA par règlement
   d'une même date, le FEC d'un exercice validé relu des colonnes figées), derrière `CHAMPS_BNC_EXPORTES` baissé, qui ne
-  se lève qu'avec FEC22-E2, après FEC22b et la copie de l'assistant (FEC22c3) ; FEC22b, la migration (`champs_bnc_du_fec`,
-  `supabase/preparees/`), préparée et éprouvée sur une réplique le 31/10/2026, à appliquer sur l'accord du cabinet avant
-  la validation de 2025 ; le 01/11/2026, les quatre postes neufs de la 2035 (2035S1) entrent dans ses listes fermées et
+  se lève qu'avec FEC22-E2, avec `ECRITURE_PAR_REGLEMENT` de la copie de l'assistant (FEC22c3) ; FEC22b, la migration
+  (`champs_bnc_du_fec`), en production depuis le 02/11/2026, `types.ts` basculé ; le 01/11/2026, les quatre postes neufs de la 2035 (2035S1) entrent dans ses listes fermées et
   dans la copie du filet, leurs empreintes et leurs retours suivant en chaîne, éprouvés sur la réplique de FEC22b, et leur
-  NatOp porte la nature et le poste ; FEC22C2-Q1 (figer ce choix avec l'exercice validé), ouverte, suivie à la
-  recommandation : non → « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU
+  NatOp porte la nature et le poste ; FEC22C2-Q1 (figer ce choix avec l'exercice validé), tranchée le 02/11/2026 : non ;
+  FEC22-Q7 (les libellés : le nom d'une entreprise, sinon le numéro de la facture), à écrire → « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU
   CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E », « LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) »,
   « LE FEC D'UN BNC EN TRÉSORERIE À VINGT-DEUX CHAMPS, DERRIÈRE SON DRAPEAU (FEC22C1, LIGNE 26.6, ÉTAPE E) », « LES
   QUATRE CHAMPS DU FEC D'UN BNC, EN BASE (FEC22B) (PRÉPARÉE, PAS APPLIQUÉE) », « LE FEC D'UN BNC : LES QUATRE POSTES
   NEUFS DE LA 2035 DANS LES LISTES FERMÉES (FEC22B ET LE FILET) », « LE FEC D'UN BNC : LA DEMANDE DE VALIDATION PORTE
-  SES CLÉS (FEC22C2, DERRIÈRE SON DRAPEAU) ».
+  SES CLÉS (FEC22C2, DERRIÈRE SON DRAPEAU) », « LA CAISSE ET LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU
+  02/11/2026 », « VINGT ET UNE RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 02/11/2026) ».
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
   APRÈS COUP ».

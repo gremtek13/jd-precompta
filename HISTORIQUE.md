@@ -45740,3 +45740,81 @@ la copie est VERT. Puis tout rendu : les deux constantes baissées, `git status`
 - Le jour de l'application : C8, FEC22b, le filet, `types.ts` basculé ; puis LES DEUX CONSTANTES LEVÉES ENSEMBLE —
   `CHAMPS_BNC_EXPORTES` avec le choix de FEC22-E2, `ECRITURE_PAR_REGLEMENT` à `true` — dans le même commit, et
   l'assistant redéployé au commit qui les porte ; le garde de leur accord rougit si l'une part sans l'autre.
+
+### 02/11/2026 — LA CAISSE ET LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026
+
+**L'ACCORD.** Le cabinet a accordé, sur la page des arbitrages (relue le 02/11/2026), les quatre migrations préparées
+du jour de C8 : C8-migration, FEC22b-migration, C8-filet-migration et C10-migration, avec C10-Q1 « telle quelle ».
+
+**L'APPLICATION.** Dans l'ordre que leurs gardes de tête exigent, chacune par `apply_migration`, la ligne d'historique
+relue aussitôt et son empreinte (les instructions jointes, les retours chariot écartés) comparée au fichier :
+`20261102075951_paiement_par_la_caisse` (73 755 caractères, `0accdea9c4c444e318cf8ef74825f37f`),
+`20261102080337_champs_bnc_du_fec` (55 132, `844d59be0fa50951dab41e54bc318f77`),
+`20261102080758_validation_des_paiements_par_la_caisse` (42 854, `7c098f630a75b54fe66d305390b20155`),
+`20261102081129_caisse_du_client` (`fcc9540203b6f919b20024ef4b630ffa`) — chacune égale à son fichier. Avant le filet et
+avant C10, les corps qu'exigent leurs gardes ont été relus en production (quatre, puis vingt-deux fonctions, toutes à
+l'empreinte attendue) : une garde qui refuse ne coûte rien, mais un envoi de 64 000 caractères pour rien, si. Aucune
+n'a attendu de confirmation. La production porte 168 migrations ; neutre au relevé : trois accès, aucun « Caisse »,
+aucune nature des recettes fixée, aucune opération de caisse, aucun exercice validé, aucune écriture qui porte l'un des
+quatre champs du FEC d'un BNC.
+
+**LA PREUVE.** `signature.sql` en production : colonnes 918 `ccc284d4…`, contraintes 711 `bb338173…`, déclencheurs 87
+`0d648fb1…`, droits des fonctions 226 `5e15c24f…`, droits des tables 82 `36d97923…`, fonctions 226 `f8f50bb4…`, index
+244 `9704c175…`, policies 162 `c881b044…`, rls 82 `5fb5dc41…` — les neuf familles de la réplique où `caisse.sql`,
+`droitsAcces.sql`, `rls.sql` et les essais de la validation sont passés entiers (« LA CAISSE : LE DROIT « CAISSE », EN
+BASE (C10, LIGNE 26.6) (PRÉPARÉE, PAS APPLIQUÉE) »), le corps de chaque fonction compris. En production, par l'outil
+d'exécution :
+- les blocs CP et CC de `rls.sql`, d'un seul appel, les deux tables de résultats `on commit drop` et une ligne TEXTE
+  ajoutée : la base a reçu 26 074 caractères, `7eeef8bb47527ec4733b429ebed4350a`, le texte construit ; 9 lignes de
+  verdict (CP, CP1 à CP3 ; CC, CC1 sur 73 tables, CC2 à CC4), 0 en faute ; 5 mutations sur 5 qui mordent (M-CP1,
+  M-CP2, M-CC1 à M-CC3) ;
+- `validationDesPaiementsParLaCaisse.sql` entier, plus une ligne TEXTE : 17 183 caractères,
+  `3981c03f837267fc75237c566f5cd261`, le texte construit ; 13 verdicts sur 13, dont le refus du dossier Z sous ses
+  mots, sa date et son montant, et la caisse reportée de X à 60 € ;
+- rien n'est resté : aucune opération de caisse, aucune ligne du brouillon qui en cite une, aucune pièce ni aucun
+  dossier jetable, aucun exercice validé ni solde reporté, trois policies sur `operations_caisse` (la lecture du
+  cabinet, l'insertion de la restauration, la lecture du client « Caisse »), aucune policy de mutation.
+`caisse.sql` (311 000 caractères) et `droitsAcces.sql` ne sont pas rejoués en production, comme `caisse.sql` le
+30/10/2026 : leur coût, pour ce que la signature prouve déjà.
+
+**LES TROIS CONTRÔLES DE L'EXPORT.** Les quatre fichiers passent de `supabase/preparees/` à l'export sous leurs versions,
+textes inchangés. Dérive : 168 fichiers et 168 migrations, `86d12ffbfdb9232f57b4989c7b161548` des deux côtés. Socle :
+la production rendait 81 instructions, `bfe9dce8…`, les fichiers `5d636a96…` ; une seule instruction différait, le
+`create table` d'`ecritures_brouillon` (`b56a0fc3…` dans le fichier, `62c612c0…` en base) : il reçoit les cinq
+colonnes de FEC22b et la contrainte `ecritures_brouillon_champs_bnc_du_fec`, sous le rendu de la production — puis
+81 instructions, `bfe9dce858d27e4520ef875e4f7f9515` des deux côtés. Inventaire : 2 307 objets,
+`93edc60a9d6ed80c3dabb0e988ab9db8` des deux côtés.
+
+**CE QUI CHANGE DANS LE CODE.** `PAIEMENT_PAR_LA_CAISSE_EXPORTE` est levé (l'assistant de C13 en ligne depuis la veille,
+v52) : les moteurs lisent les paiements d'une pièce par la caisse, et la fiche d'une pièce offre le geste. `types.ts`
+bascule : les cinq clés des quatre champs du FEC d'un BNC deviennent obligatoires dans `EcritureBrouillon`, `NON_VALIDEE`
+(src/test/ecritures.ts) les porte à nul — 82 erreurs de `tsc -b` tombent par ce seul fichier, plus deux jeux d'essai
+qui recopiaient ses champs — et le FEC d'un exercice validé ne lit plus l'absence. `droit_caisse` et
+`categorie_recettes_client` restent facultatifs jusqu'à l'écran qui les écrit (C11). Le banc du leurre : `caisse` et
+`validationDesPaiementsParLaCaisse` sortent des cas particuliers (seize), `droitsAcces` et `rls` reprennent leur raison
+d'avant C8. RGPD.md : la caisse lue par un accès « Caisse ». `CHAMPS_BNC_EXPORTES` et `ECRITURE_PAR_REGLEMENT` restent
+baissés jusqu'à FEC22-E2 (la réponse de l'expert-comptable) : ils se lèveront ensemble, l'assistant redéployé au commit
+qui les porte. La suite de la caisse : C11 (le droit « Caisse » à l'écran du cabinet), puis C12 (« Ma caisse »).
+
+### 02/11/2026 — VINGT ET UNE RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 02/11/2026)
+
+Relue en entier le 02/11/2026. À la recommandation : les cinq accords de migration du jour de C8 (C8, FEC22b, le filet,
+C10 — appliquées le jour même, entrée précédente — et la migration de la facture, FACTURE-migration, qui attend d'être
+reprise pour FACTURE-Q1) ; C10-Q1 (l'accorder telle quelle) ; FACTURE-Q2 (un dossier exonéré sans article
+d'exonération : refusé seulement depuis l'espace client), FACTURE-Q3 (la mention de TVA au caractère près), FACTURE-Q4
+(la ligne à 0 % d'un dossier redevable : plus tard, avec A7c) ; C9-Q1 (le refus avant le clic, déjà écrit) ; 2035S-Q1
+(regarder d'abord la 2035 déposée : 2035S3 à S5 attendent qu'elle soit lue, à la répétition générale), 2035S-Q2 à Q4
+(déjà écrites sur la recommandation) ; FEC22-Q7 (le nom d'une entreprise dans les libellés du FEC, sinon le numéro de la
+facture ; une pièce de vente déposée s'écrit « Recette » et sa date) ; FEC22C2-Q1 (ne pas figer le choix « sans
+règlement » avec l'exercice validé, déjà suivie) ; REGLES-Q1 (une migration : la règle retient le sens du mouvement qui
+l'a créée) ; REJET-Q1 (l'ouvrir : le rejet d'un prélèvement se rapproche d'une pièce déjà payée, puis la reprise).
+
+Contre la recommandation, trois :
+- **FACTURE-Q1** — « Seulement depuis l'espace client » : une facture d'un dossier au statut de TVA « à préciser » ne se
+  refuse qu'à un accès « Ventes » ; le cabinet la valide encore. La migration de la facture se reprend dans ce sens
+  avant d'être appliquée, et l'écran le dit dans les deux espaces.
+- **2035S-Q5** — « L'imprimer avec un avertissement » : le PDF de la 2035 d'un exercice dont le formulaire n'est pas
+  publié s'imprime sur le modèle du millésime précédent, sous un avertissement qui le dit, au lieu d'être retenu
+  (`lib/modeles2035.ts`, 2035S6).
+- **28.5e-Q10** — « une plateforme d'essai à nommer » : les essais réels d'e-reporting se feront sur une plateforme que
+  le cabinet nommera ; après le MVP.

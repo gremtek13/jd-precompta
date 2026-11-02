@@ -920,14 +920,14 @@ const DATE_DE_LA_BASE = /^\d{4}-\d{2}-\d{2}$/
 
 // Les quatre champs qu'une ligne validée a figés (FEC22b), ou nul quand elle n'en porte aucun ; « illisible » quand une
 // valeur sort de sa liste fermée ou de sa forme — la contrainte de la base le refuse, et la ligne se voit plutôt que de
-// s'imprimer. Une colonne ABSENTE (la ligne lue avant la migration, ou un jeu d'essai d'avant) vaut nulle : les colonnes
-// restent facultatives dans `EcritureBrouillon` jusqu'au jour de l'application (lib/types.ts).
+// s'imprimer. Les colonnes sont obligatoires dans `EcritureBrouillon` depuis le jour de l'application (02/11/2026,
+// lib/types.ts) : une ligne validée sans eux les porte nuls.
 function champsFiges(e: EcritureBrouillon): ChampsBncDeLaLigne | null | 'illisible' {
-  const date = e.date_reglement ?? null
-  const mode = e.mode_reglement ?? null
-  const nature = e.nature_operation ?? null
-  const poste = e.poste_rattache ?? null
-  const client = e.identification_client ?? null
+  const date = e.date_reglement
+  const mode = e.mode_reglement
+  const nature = e.nature_operation
+  const poste = e.poste_rattache
+  const client = e.identification_client
   if (nature === null) return date === null && mode === null && poste === null && client === null ? null : 'illisible'
   const natureLue = NATURES_OPERATION.find((n) => n === nature)
   const modeLu = mode === null ? '' : MODES_REGLEMENT.find((m) => m === mode)

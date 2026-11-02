@@ -73,7 +73,8 @@ describe('pointsDeLaChecklist', () => {
       id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, date: '2026-03-10', compte: '411000', libelle: 'Vente facturée',
       montant: 120, sens: 'debit', statut: 'proposee', created_at: '2026-03-10T10:00:00Z', immobilisation_id: null, vehicule_id: null,
       declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, valide_le: null, journal_code: null,
-      numero_ecriture: null, piece_ref: null, piece_date: null, compte_lib: null, comp_aux_num: null, comp_aux_lib: null, ...o,
+      numero_ecriture: null, piece_ref: null, piece_date: null, compte_lib: null, comp_aux_num: null, comp_aux_lib: null,
+      date_reglement: null, mode_reglement: null, nature_operation: null, poste_rattache: null, identification_client: null, ...o,
     })
     const ecritures = [
       ecriture({ id: 'v1', facture_id: 'f1' }),
@@ -171,7 +172,8 @@ describe('pointsDeLaChecklist : l’exemplaire d’une facture source (VF6a)', (
     id: 'e', dossier_id: 'd1', piece_id: 'x', ligne_bancaire_id: null, date: '2026-03-10', compte: '706000', libelle: 'Client fictif',
     montant: 100, sens: 'credit', statut: 'proposee', created_at: '2026-03-10T10:00:00Z', immobilisation_id: null, vehicule_id: null,
     declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, valide_le: null, journal_code: null,
-    numero_ecriture: null, piece_ref: null, piece_date: null, compte_lib: null, comp_aux_num: null, comp_aux_lib: null, ...o,
+    numero_ecriture: null, piece_ref: null, piece_date: null, compte_lib: null, comp_aux_num: null, comp_aux_lib: null,
+    date_reglement: null, mode_reglement: null, nature_operation: null, poste_rattache: null, identification_client: null, ...o,
   })
   const HONORAIRES: Categorie = {
     id: 'c-vente', dossier_id: null, code: 'honoraires', libelle: 'Honoraires', ordre: 1, compte_comptable: '706000', poste_2035: 'Recettes',
