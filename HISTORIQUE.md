@@ -46137,3 +46137,29 @@ select
 
 **CE QUI RESTE.** FACTURE-Q4 avec A7c ; les refus de la date dits avant le clic (la série lue en entier) ; `ventesClient.sql`
 0c, hors de l'étape.
+
+### 02/11/2026 — LA FACTURE : LA MIGRATION EN PRODUCTION (FACTURE-Q1)
+
+(Ligne 51.5. Accordée par le cabinet — fiche FACTURE-migration, « Oui, l'appliquer », avec FACTURE-Q1 « Seulement depuis
+l'espace client » —, appliquée par la session.)
+
+**LA LECTURE DU JOUR, AVANT.** Les six booléens de l'entrée précédente, en production : les deux corps d'hier, aucune
+facture validée que le calcul neuf désaccorderait, aucune date à venir, aucun obstacle dans `test` — vrais. Le sixième,
+`dossier_du_client_sans_obstacle`, FAUX : le dossier du client d'essai porte six factures validées de la série F2026, du 09
+et du 10/09/2026 — des données fictives anciennes, indélébiles comme toute facture validée —, et ce sont les seules
+factures validées de la production. Lues par série, elles ne touchent que les validations de 2026 de ce dossier : le bloc
+SI de `rls.sql` (une facture du 10/01/2026) se refusera désormais par l'ordre de la série ; FE (15/06/2025) et VB
+(01/03/2025) restent dans la série F2025, vide. La migration n'en est pas fautive : c'est l'essai qui date sa facture d'une
+date fixe. Il se corrige à part (sa date se calcule de la série, son contrôle par l'écart), sur une réplique munie de ces
+six factures, avant d'être rejoué en production.
+
+**APPLIQUÉE PAR L'OUTIL.** `apply_migration`, version `20261102112003` : la ligne d'historique rend `1be629b4…` et 18 818
+caractères, ceux du fichier, qui entre dans l'export sous cette version, texte inchangé. `signature.sql` en production
+après elle : la famille « fonctions » seule a changé, 226 `0cb2485a94079136bf8b079de323d1a5`, la valeur que la réplique
+rendait ; les huit autres, celles d'avant. Les trois contrôles : la dérive, 169 fichiers et 169 migrations,
+`e5863aa7271b53077d6ac388619e1209` des deux côtés ; l'inventaire, 2 307 objets, `93edc60a…`, inchangé ; le socle, que
+les deux fonctions remplacées ne touchent pas, inchangé avec la signature — il se rejoue avec la migration des règles,
+qui le touche. Les commentaires qui la disaient préparée la disent en production.
+
+**CE QUI SUIT, DANS LA MÊME HEURE.** La fusion du front, puis `send-email`, `plateforme-agreee` et `superpdp-emit`, qui
+recopient `calculerLigne`, redéployées au commit de `main` qui les porte ; puis les essais en production.

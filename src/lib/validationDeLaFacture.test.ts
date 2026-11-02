@@ -14,7 +14,7 @@ import {
 } from './validationDeLaFacture'
 
 // CE QUE LA VALIDATION EXIGE D'UNE FACTURE (correction de la facture, 31/10/2026, reprise le 02/11/2026 pour FACTURE-Q1 ;
-// migration `facture_dates_centimes_mention_tva`, PRÉPARÉE dans supabase/preparees/, pas encore en base), CONFRONTÉ AU
+// migration `facture_dates_centimes_mention_tva`, en production depuis le 02/11/2026), CONFRONTÉ AU
 // TEXTE DE SA MIGRATION ET À SON ESSAI. La migration recopie la garde des factures (`garder_factures_validees`) au
 // caractère près et n'y insère que quatre variables et un bloc ; ce garde le vérifie contre l'export, relit dans le bloc
 // les mots, les codes, les valeurs, les conditions — le statut à préciser et l'article manquant refusés au seul accès

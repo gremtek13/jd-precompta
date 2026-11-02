@@ -873,9 +873,10 @@ en production ; puis `SENS_DES_REGLES_IGNOREES_EXPORTE` levé et `types.ts` basc
 « LE SENS DES RÈGLES « TOUJOURS IGNORER » ET LA COTISATION D'UN MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS
 APPLIQUÉE) »).
 
-**Préparé le 31/10/2026, repris le 02/11/2026 pour FACTURE-Q1, PAS ENCORE APPLIQUÉ : `facture_dates_centimes_mention_tva`**
-(la correction de la facture : la date dans l'ordre de sa série, le demi-centime d'une ligne, la mention de TVA). Son
-fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version PROVISOIRE, `20261102130000` (18 818 caractères,
+**Préparé le 31/10/2026, repris le 02/11/2026 pour FACTURE-Q1, APPLIQUÉ PAR L'OUTIL LE 02/11/2026 (version `20261102112003`) :
+`facture_dates_centimes_mention_tva`** (la correction de la facture : la date dans l'ordre de sa série, le demi-centime
+d'une ligne, la mention de TVA). Son fichier, préparé dans `supabase/preparees/` sous la version provisoire `20261102130000`,
+est entré dans l'export sous sa version, texte inchangé (18 818 caractères,
 19 253 octets, 259 lignes, `1be629b4cae0dbf4e9f01fef8c09067b`, ni barre oblique inverse ni retour chariot). Il passe PAR
 L'OUTIL : deux fonctions remplacées sous leur nom, aucune table, colonne, donnée, policy ni droit ; aucune instruction de
 suppression — le mot n'y paraît que dans `tg_op = 'DELETE'`, que le détecteur d'`apply_migration` laisse passer (mesuré le
@@ -888,9 +889,9 @@ date antérieure à la plus récente de la série. Sa garde de tête exige les d
 (`e3dfa6dc…`, `9b5b63d7…` — ceux du 31/10/2026 : les quatre migrations du 02/11/2026 n'y touchent pas), un seul nom de
 chaque, les colonnes de `mentions_figees`. Son RETOUR ARRIÈRE
 (`supabase/preparees/retour/20261102130100_retour_facture_dates_centimes_mention_tva.sql`, 7 986 caractères, 8 126 octets,
-158 lignes, `a4e13fd28c7f1ff6f13eda7ba0b4bce3`) exige les deux corps neufs et rend ceux d'hier ; il ne retire rien. Tant
-qu'il n'est pas appliqué, l'export ne le porte pas, et ses trois contrôles sont ceux de la production (168, `86d12ffb…` ;
-socle 81, `bfe9dce8…` ; inventaire 2 307, `93edc60a…`). Sur la réplique de l'étape (`f_prod164` munie des quatre migrations
+158 lignes, `a4e13fd28c7f1ff6f13eda7ba0b4bce3`) exige les deux corps neufs et rend ceux d'hier ; il ne retire rien. Avant
+lui, les trois contrôles étaient ceux de la production à 168 migrations (`86d12ffb…` ; socle 81, `bfe9dce8…` ; inventaire
+2 307, `93edc60a…`). Sur la réplique de l'étape (`f_prod164` munie des quatre migrations
 du 02/11/2026 par le propriétaire des tables, chacune avec sa ligne d'historique : 168 migrations, `86d12ffb…`, les neuf
 familles de `signature.sql` de la production), munie de lui comme l'outil : `factures.sql` 145 verdicts sur 145 avant et
 après lui — le client « Ventes » refusé (107), le cabinet qui valide encore (M107, 107a, et le chef du cabinet jetable,
@@ -910,6 +911,13 @@ jour (des booléens), la migration par l'outil, le fichier dans l'export sous sa
 en production, les trois Edge Functions qui recopient `calculerLigne` (`send-email`, `plateforme-agreee`,
 `superpdp-emit`) redéployées, et la fusion du front (HISTORIQUE.md, « LA FACTURE : LA DATE DANS L'ORDRE DE SA SÉRIE, LE
 DEMI-CENTIME ET LA MENTION DE TVA, REPRISE POUR FACTURE-Q1 (PRÉPARÉE, PAS APPLIQUÉE) »).
+**Appliqué le 02/11/2026** par `apply_migration` : la ligne d'historique `20261102112003`, `1be629b4…` et 18 818
+caractères, celles du fichier ; la lecture du jour d'avant, vraie hors du booléen du dossier du client (six factures F2026
+du 09 et du 10/09/2026, qui feraient tomber le bloc SI de `rls.sql`, daté du 10/01/2026 dans la même série : l'essai se
+corrige à part) ; `signature.sql` en production après lui, la famille « fonctions » seule changée, 226 `0cb2485a…`, la
+valeur de la réplique, les huit autres inchangées ; les trois contrôles : la dérive, 169 fichiers et 169 migrations,
+`e5863aa7271b53077d6ac388619e1209` des deux côtés ; l'inventaire inchangé (2 307, `93edc60a…`) ; le socle, qu'il ne touche
+pas, inchangé avec la signature (HISTORIQUE.md, « LA FACTURE : LA MIGRATION EN PRODUCTION (FACTURE-Q1) »).
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 

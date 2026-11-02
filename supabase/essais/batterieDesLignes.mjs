@@ -1,5 +1,5 @@
 // LA BATTERIE DES LIGNES DE FACTURE, JUGÉE PAR LA BASE (correction de la facture, 31/10/2026 ; migration
-// `facture_dates_centimes_mention_tva`, PRÉPARÉE dans supabase/preparees/).
+// `facture_dates_centimes_mention_tva`, en production depuis le 02/11/2026).
 //
 // src/lib/montantsFactureBatterie.test.ts fige l'empreinte des centimes que `centimes_ligne_facture` a rendus sur les
 // lignes que tire src/test/batterieDesLignes.ts, et exige que `calculerLigne` (src/lib/montantsFacture.ts) rende
