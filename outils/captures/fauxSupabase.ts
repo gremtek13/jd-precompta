@@ -68,6 +68,12 @@ const VENTES_DU_BANC = typeof localStorage === 'undefined' ? null : localStorage
 // chargement. Les autres visites du client ne la voient pas.
 const CLIENT_DU_DOSSIER_BASCULE = typeof localStorage === 'undefined' ? false : localStorage.getItem('banc-client-basculee') === '1'
 
+// « MA CAISSE » (ligne 26.6, étape C12a) : une clé, posée par la passe `client-caisse` de debordements.mjs, donne à l'accès du
+// compte du banc au cabinet infirmier (d1, exonéré, en trésorerie) la case « Caisse » — et « Ventes » et « Banque », pour que la
+// barre du bas du téléphone porte ses SEPT entrées, le cas le plus large (en base, « Ventes » suppose un dossier basculé : le banc
+// mesure la coque, il ne rejoue pas la garde) — et fixe la nature de ses recettes en espèces (c9, un produit).
+const CAISSE_DU_CLIENT_DU_BANC = typeof localStorage === 'undefined' ? false : localStorage.getItem('banc-client-caisse') === '1'
+
 // LE MEMBRE DE L'ÉQUIPE QUI EST AUSSI CLIENT D'UN DOSSIER (23Q2Q2Q1-Q1) : une clé, posée par la passe `membre` de debordements.mjs,
 // fait du compte du banc un « Comptable » du cabinet, assigné au cabinet infirmier (d1) et à l'atelier (d7), et client de Marc
 // Petit (d3), qui ne lui est pas assigné. La base lui rend alors ces trois dossiers (`dossiers_select` : `admin_du_dossier`, ou un
@@ -136,7 +142,7 @@ const dossiers: Ligne[] = [
   ventes_par_les_factures_depuis: null,
   // La nature des recettes en espèces du client (ligne 26.6, étape C10), nulle tant que le cabinet ne l'a pas fixée ; l'onglet
   // Accès la lit (étape C11) et dit illisible une colonne absente.
-  categorie_recettes_client: null,
+  categorie_recettes_client: CAISSE_DU_CLIENT_DU_BANC && id === 'd1' ? 'c9' : null,
 }))
 
 // Le code e-mail d'un vrai dossier est son nom en tirets suivi de six caractères de son identifiant (`generate_code_email`) :
@@ -2045,7 +2051,7 @@ const TABLES: Record<string, Ligne[]> = {
     { id: 'm1', user_id: 'u-claire', dossier_id: 'd1', role: 'client', email: 'claire.moreau@exemple.fr', droit_ventes: true, droit_banque: false, droit_caisse: false, created_at: '2026-01-05T09:30:00Z' },
     { id: 'm2', user_id: 'u-secretariat', dossier_id: 'd1', role: 'client', email: 'secretariat.cabinet-moreau@exemple.fr', droit_ventes: false, droit_banque: false, droit_caisse: false, created_at: '2026-02-10T09:30:00Z' },
     ...(CLIENT_DU_BANC && !CLIENT_DU_DOSSIER_BASCULE
-      ? [{ id: 'm-u1', user_id: 'u1', dossier_id: 'd1', role: 'client', email: 'client@exemple.fr', droit_ventes: false, droit_banque: false, droit_caisse: false, created_at: '2026-01-05T09:00:00Z' }]
+      ? [{ id: 'm-u1', user_id: 'u1', dossier_id: 'd1', role: 'client', email: 'client@exemple.fr', droit_ventes: CAISSE_DU_CLIENT_DU_BANC, droit_banque: CAISSE_DU_CLIENT_DU_BANC, droit_caisse: CAISSE_DU_CLIENT_DU_BANC, created_at: '2026-01-05T09:00:00Z' }]
       : []),
     ...(CLIENT_DU_BANC && CLIENT_DU_DOSSIER_BASCULE
       ? [{ id: 'm-u1-d12', user_id: 'u1', dossier_id: 'd12', role: 'client', email: 'client@exemple.fr', droit_ventes: true, droit_banque: true, droit_caisse: false, created_at: '2026-01-05T09:00:00Z' }]
@@ -2659,6 +2665,44 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
   return { data: nom === 'verifier_exercice_valide', error: null }
 }
 
+// `caisse_du_client` (ligne 26.6, étape C10), pour « Ma caisse » : la caisse d'un dossier jour par jour, comme la fonction en base
+// — le report des années d'avant au 1er janvier, les opérations non retirées (un prélèvement en moins), les mouvements classés sur
+// la caisse (un versement en banque en moins), le solde cumulé ; ni ouverture, ni espèces de factures, ni jour figé au banc. Une
+// requête qui se pagine (`order`, `range`) et annonce son compte, comme une fonction qui rend une table.
+function caisseDuClientDuBanc(args?: Ligne) {
+  const dossierId = args?.p_dossier_id
+  const annee = Number(args?.p_annee)
+  const flux = [
+    ...(TABLES.operations_caisse ?? []).filter((o) => o.dossier_id === dossierId && o.retire_le == null)
+      .map((o) => ({ jour: String(o.date), source: 'operations', centimes: Math.round((o.genre === 'prelevement' ? -1 : 1) * Number(o.montant) * 100) })),
+    ...(TABLES.lignes_bancaires ?? []).filter((l) => l.dossier_id === dossierId && l.compte_bilan === '530000')
+      .map((l) => ({ jour: String(l.date), source: 'releve', centimes: -Math.round(Number(l.montant) * 100) })),
+  ]
+  const debutAnnee = `${annee}-01-01`
+  const report = flux.filter((f) => f.jour < debutAnnee).reduce((t, f) => t + f.centimes, 0)
+  const jours = new Set(flux.filter((f) => f.jour.startsWith(`${annee}-`)).map((f) => f.jour))
+  if (report !== 0) jours.add(debutAnnee)
+  let solde = report
+  const lignes = [...jours].sort().map((jour) => {
+    const du = (source: string) => flux.filter((f) => f.jour === jour && f.source === source).reduce((t, f) => t + f.centimes, 0)
+    const r = jour === debutAnnee ? report : 0
+    solde += du('operations') + du('releve')
+    return {
+      jour, report: r / 100, ouverture: 0, operations: du('operations') / 100, releve: du('releve') / 100, especes_des_factures: 0,
+      encaissements_du_jour: [], solde: solde / 100, fige: false,
+    }
+  })
+  let debut = 0
+  let fin = Number.MAX_SAFE_INTEGER
+  const chaine: Record<string, unknown> = {
+    order: () => chaine,
+    range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+    then: (ok: (r: unknown) => unknown, ko?: (e: unknown) => unknown) =>
+      Promise.resolve({ data: lignes.slice(debut, fin + 1), error: null, count: lignes.length }).then(ok, ko),
+  }
+  return chaine
+}
+
 export const supabase = {
   auth: {
     getSession: () => Promise.resolve({ data: { session }, error: null }),
@@ -2670,7 +2714,9 @@ export const supabase = {
   },
   // « Vérifier l'empreinte » d'un exercice validé répond « intacte » ; la couverture du relevé et les droits de
   // l'appelant (espace client, étape P7), comme leurs fonctions en base ; tout autre appel, faux.
-  rpc: (nom: string, args?: { p_dossier_id?: string } & Ligne) => Promise.resolve(rpcDesParametres(nom, args) ?? rpcDuBanc(nom, args?.p_dossier_id)),
+  rpc: (nom: string, args?: { p_dossier_id?: string } & Ligne) => (nom === 'caisse_du_client'
+    ? caisseDuClientDuBanc(args)
+    : Promise.resolve(rpcDesParametres(nom, args) ?? rpcDuBanc(nom, args?.p_dossier_id))),
   from: (table: string) => requete(table),
   storage: {
     // Le seau `ventes` (étape A5c2a) rend et range les logos ; les autres seaux restent une maquette.

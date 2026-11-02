@@ -65,6 +65,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     raison: 'Les cases de l’appelant sur un dossier (fonction `stable`, `security definer`, sans écriture ; étape P1), '
       + 'au montage de « Ma simulation » (P7).',
   },
+  'rpc:caisse_du_client': {
+    nature: 'lecture',
+    raison: 'La caisse d’un dossier jour par jour, en totaux, jamais un libellé ni un nom (fonction `stable`, `security '
+      + 'definer`, sans écriture ; migration `caisse_du_client`, étape C10), lue par « Ma caisse » au montage et après chaque '
+      + 'geste (`lib/caisseClientLecture.ts`, étape C12a).',
+  },
   'rpc:ventes_facturees_de_la_simulation': {
     nature: 'lecture',
     raison: 'Le total hors taxe de chaque mois de l’année et les factures et avoirs sources d’un dossier basculé (fonction '

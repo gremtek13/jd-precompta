@@ -46452,3 +46452,96 @@ catégories lues en partie, comme l'onglet Caisse y lit déjà ses catégories.
 - C11-Q2 — « Caisse » sur un dossier tenu en engagement ? La base l'accepte, mais la saisie du client y est refusée (« La
   caisse ne se tient que dans un dossier en comptabilité de trésorerie »). Recommandation : l'écran la refuse aussi avant le
   clic, plus strict que la base, sans migration.
+
+### 02/11/2026 — LA CAISSE : « MA CAISSE », L'ÉCRAN DU PRATICIEN (C12A, LIGNE 26.6)
+
+(Écrite par un agent dev, sur `53bdbb8`. Ni migration, ni déploiement, ni lecture ni écriture en base : la migration 5,
+`caisse_du_client`, est en production depuis le 02/11/2026 et l'export la porte ; ce lot ne lit que l'export. Lus avant
+d'écrire : « LA CAISSE : LA SAISIE DU PRATICIEN ET LA PIÈCE RÉGLÉE PAR LA CAISSE — LA CONCEPTION REPRISE (CAISSE-Q1 ET Q4) »,
+§ 3 à 7 et § 10 ; « LA CAISSE : LE DROIT « CAISSE », EN BASE (C10, LIGNE 26.6) » ; « LA CAISSE : LE DROIT « CAISSE » À L'ÉCRAN
+DU CABINET (C11, LIGNE 26.6) » ; pour le patron, « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » » et « « MES VENTES ›
+FACTURES » ». Hors du lot : le paiement d'une pièce depuis « Mes pièces » (C12b), l'onglet TVA (C11-Q1).)
+
+**LA ROUTE, L'ENTRÉE, LA TUILE.** `maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(…).caisse)` (lib/caisseClient.ts), le
+patron de `maBanqueOuverte` : la route `/ma-caisse` (App.tsx), l'entrée « Ma caisse » après « Ma banque » (Layout.tsx, l'icône
+de l'onglet Caisse), la tuile de l'accueil (ClientHome.tsx). Le drapeau est levé : la migration est en base ; il ne dit que
+l'offre de l'écran. La confirmation qui fait entrer un client dans l'équipe nomme « Ma caisse » parmi ce qu'il perd
+(`CE_QUE_PERD_LE_CLIENT`), et la phrase et la confirmation de la case « Caisse » de l'onglet Accès disent l'écran
+(`CE_QUE_MONTRE_MA_CAISSE` : sa caisse, ses saisies, corrections et retraits ; le paiement d'une pièce pas encore).
+
+**LA LECTURE** (lib/caisseClientLecture.ts). La case relue à la base (`droits_sur_le_dossier`, `lireLeDroitCaisse` : seul
+`true` accorde, un refus ferme) dans la même vague que le dossier (statut de TVA, mode, nature des recettes) et les opérations
+(la policy `operations_caisse_lecture_caisse`, par `lireTout`, retirées comprises, gardées avec le dossier) ; puis la nature
+(son compte seulement, jamais son libellé) et `caisse_du_client` pour l'année affichée ET chacune des suivantes jusqu'à
+l'année en cours — une saisie d'une année passée se juge sur la caisse qui la suit —, chacune par `lireTout` (le RPC se pagine,
+compte annoncé, tri sur `jour`, clé déclarée dans `triTotal.test.ts`), chaque ligne jugée à sa forme (`jourLu`). Elle ne
+rejette jamais et se rend avec le dossier et l'année lus ; sans la case, rien n'est rendu.
+
+**LE MODULE** (lib/caisseClient.ts) NE RECOPIE AUCUNE RÈGLE : les refus d'`enregistrer_operation_caisse`, de
+`retirer_operation_caisse` et de `remplacer_operation_caisse`, branche « client » comprise, sont ceux de lib/caisse.ts
+(`jugerLaSaisie`, `jugerLeRetrait`, `jugerLeRemplacement`, `quiEcritLaCaisse`, `refus`). Il TRADUIT ce que le client lit en
+ce que ces règles lisent :
+- `caisseRejouee` : la caisse composée des totaux de `caisse_du_client` — chaque jour, ce qui n'est pas une opération (le
+  report de la première année lue, l'ouverture, le relevé, les espèces des factures) en un flux d'« ouverture » d'un compte
+  nommé, les identifiants de l'ensemble du jour en encaissements sans montant — et des opérations lues une à une ; puis
+  CONFRONTÉE à la lecture : les opérations de chaque jour au total que la base a compté, dans les deux sens, et chaque solde
+  au solde rendu. Un écart (une opération d'avant l'ouverture du compte de la caisse, que la base borne et que le client ne
+  voit pas ; une saisie entre les deux lectures) : la caisse ne se rejoue pas, l'écran le dit et n'offre aucun geste.
+- `dossierDuClient` : le dossier sous le profil du client — `quiEcrit` « client », le compte connecté, la nature fixée, le
+  modèle sans plan (`PLAN_QUE_LE_CLIENT_NE_LIT_PAS`, aucun compte ; la branche du client ne le lit jamais), aucune
+  ouverture ni aucun exercice validé connus.
+- `saisieDuClient` : la saisie fermée, dans l'ordre de la base et sous ses mots — l'accès « Caisse » d'un dossier ni exonéré
+  ni en franchise (`acces_hors_statut`), le dossier en engagement (`tresorerie`), la nature absente (`nature_absente`) ou qui
+  n'est plus un produit du dossier ou commun (`nature_sans_produit`), une nature illisible. Fermée : AUCUN geste, ni saisie
+  ni retrait (la demande du lot) ; la caisse se lit.
+- `anneeFigee` : la frontière étant un 31 décembre, un jour figé de l'année ou d'une suivante la fige entière, un jour non
+  figé la laisse ouverte ; rien de lu, nul — la base juge seule.
+- Le formulaire part tel quel : aucune catégorie, aucun taux, aucune écriture ; pour une recette, l'ensemble du jour rendu
+  par la lecture. `verdictDuFormulaire` rend le refus aux mots du client (`pourLEspace('client', …)`), ou le solde du jour
+  après la saisie ; une date hors de l'année affichée se refuse à l'écran (la lecture ne porte que celle-là). Les
+  confirmations nomment ce qui part et la caisse du jour d'après ; une opération se nomme par son genre, son jour et son
+  montant (`nomDeLOperation` sans catégorie), jamais par sa nature.
+
+**L'ÉCRAN** (pages/ClientCaisse.tsx). L'année (l'en-cours, la précédente et celles des opérations lues) et le mois ; « Ta
+caisse » au jour (ou au 31 décembre) et à la fin du mois, LUS ; le mois jour par jour dans un `.tableau-adaptable` — le
+report, l'ouverture, chaque opération avec son auteur (« saisie par toi », « par ton cabinet », « depuis un autre accès »),
+le relevé (« Versé à ta banque »), les espèces des factures, la caisse le soir ; les retirées et remplacées du mois, repliées ;
+le formulaire (recettes du jour, apport, prélèvement), « Corriger » et « Retirer » sur ses seules saisies non figées, le
+retrait qui viderait la caisse grisé avec la phrase de la base ; le rappel fixe du brouillard. Un seul verrou `useRef` (`agir`),
+posé avant le premier `await`, relâché après la relecture ; rien avant le retour, et « Chargement… » à chaque année changée ;
+une lecture partielle (`BandeauLecturePartielle`), refusée ou qui ne se recompose pas : ni caisse ni geste.
+
+**LES ÉCARTS À LA CONCEPTION, ET POURQUOI.**
+- La conception lisait les opérations PUIS `caisse_du_client` et rejouait la caisse sur les opérations ; le client ne lit ni la
+  reprise, ni le relevé, ni les encaissements : la caisse rejouée est faite des totaux, et la confrontation remplace ce qu'on
+  ne peut lire. Deux refus restent au seul jugement de la base, dits après le clic : l'ouverture du dossier (la date de sa
+  reprise, hors du compte de la caisse) et la frontière d'une année sans jour lu.
+- La saisie d'un MOIS (`enregistrer_operations_de_caisse`) n'est pas offerte : le lot demandait les recettes d'un jour, les
+  apports et les prélèvements ; elle viendra si le praticien la demande. La correction (`remplacer_operation_caisse`) l'est.
+- Nature absente ou dossier qui n'est plus exonéré ni en franchise : AUCUN geste, ni retrait — la base accepterait un apport
+  sans nature ; la demande du lot l'emporte.
+- Sur le banc, la passe `client-caisse` donne aussi « Ventes » et « Banque » à l'accès (la barre du bas à sept entrées) ; en
+  base, « Ventes » suppose un dossier basculé : le banc mesure la coque.
+
+**LES PREUVES.** Sous Node 22 : `tsc -b` 0 ; `oxlint` 0 erreur, 63 avertissements, ceux d'avant ; la suite entière sous Paris :
+541 fichiers, 16 622 tests verts et l'« échec attendu » d'un autre lot. Neufs : `caisseClient.test.ts` (15 cas, dont une BATTERIE
+tirée, graine 20261102 : 60 caisses entières — ouverture, opérations du client, du cabinet, d'un autre accès, retirées,
+paiements de pièces de vente et d'achat, versements et retraits, espèces de factures sources et d'avant —, rendues jamais
+négatives comme la base les garde, puis `caisse_du_client` SIMULÉE sur les flux de `fluxDeLaCaisse` ; pour 2025 et 2026,
+chaque saisie, chaque retrait, chaque correction rejoués par le module rendent le MÊME refus, sous les mêmes mots, et le
+même solde que les règles sur la caisse entière : plus de 1 000 comparaisons, plus de 100 refus, plus de 5 caisses négatives
+— le plan piégé, qu'aucun jugement n'ouvre), `caisseClientLecture.test.ts` (7), `ClientCaisse.test.tsx` (18 : avant le
+retour, la case relue, la caisse lue, les lectures partielles, la caisse qui ne se recompose pas, le dossier redevable, la
+nature absente, l'année figée, l'autre année relue, les refus avant le clic, la saisie, la correction et le retrait — deux
+clics dans le même `act`, un appel —, la confirmation refusée, le refus de la base après le clic, `motsDuCabinet`),
+`espaceClientCaisse.test.tsx` (4 : l'entrée et la route selon la case de la société affichée). Repris : `ClientHome.avisRib`
+(la tuile), `droitsAcces` (les routes et écrans du client, la phrase et la confirmation), `creationDesComptes`,
+`ecransAvantLecture` (l'écran monté, sa phrase fixe, `caisse_du_client` une lecture), `ecrituresVerifiees`
+(`lireLeDroitCaisse`), `verrousEcritures` (`rpc:caisse_du_client` déclarée lecture), `triTotal` (sa clé, `jour`). MUTATIONS :
+25 écrites, 23 tuées ; deux survivent, ÉQUIVALENTES — le verrou d'`agir` retiré (les deux gestes le relisent avant lui ; il
+reste la barrière de tout geste à venir), et un drapeau « ligne illisible » de la lecture, redondant avec le refus que
+`lireTout` rend déjà incomplet (retiré du code). Le BANC (`debordements.mjs <largeur> client-caisse`, neuf : le cabinet
+infirmier exonéré, la nature fixée, l'accueil, la caisse du mois, septembre, la correction, un refus) : 0 débordement à 390,
+720, 1 024, 1 280 et 1 440 px ; la passe `client` d'avant, 0 à 390 et 1 440. Le navigateur sans mandataire.
+
+**CE QUI RESTE.** C12b, le paiement d'une pièce par la caisse depuis « Mes pièces » ; C11-Q1 et C11-Q2 au cabinet.

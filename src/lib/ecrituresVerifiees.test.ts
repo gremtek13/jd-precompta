@@ -93,6 +93,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       'simulation » (P7). `lib/couvertureReleve.ts` attend la requête et lit son erreur : un refus ' +
       'FERME l’écran, avec son motif',
   },
+  lireLeDroitCaisse: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `droits_sur_le_dossier` LIT les cases de l’appelant (étape P1), pour « Ma caisse » ' +
+      '(ligne 26.6, étape C12a), qui relit la case « Caisse » à la base. `lib/caisseClientLecture.ts` attend la requête et ' +
+      'lit son erreur : un refus, une réponse illisible ou une requête qui lève ne rendent AUCUN droit, et l’écran ne montre ' +
+      'ni n’offre rien, avec son motif',
+  },
   lireLesVentesDeLaSimulation: {
     nombre: 1,
     raison:

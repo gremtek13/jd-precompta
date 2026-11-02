@@ -21,6 +21,7 @@ import ClientSimulation from './ClientSimulation'
 import ClientUpload from './ClientUpload'
 import ClientVentes from './ClientVentes'
 import ClientBanque from './ClientBanque'
+import ClientCaisse from './ClientCaisse'
 import AccueilVentesClient from './AccueilVentesClient'
 import DossierDetail from './DossierDetail'
 import DossiersList from './DossiersList'
@@ -236,6 +237,8 @@ const ECRANS: Ecran[] = [
   { nom: 'ClientVentes', fichier: 'pages/ClientVentes.tsx', rendre: () => <MemoryRouter><ClientVentes /></MemoryRouter> },
   // « Ma banque » (espace client, étape P9) : la case « Banque » relue à la base, le relevé, ses envois, son fil, les pièces.
   { nom: 'ClientBanque', fichier: 'pages/ClientBanque.tsx', rendre: () => <MemoryRouter><ClientBanque /></MemoryRouter> },
+  // « Ma caisse » (ligne 26.6, étape C12a) : la case « Caisse » relue à la base, le dossier, ses opérations, sa caisse jour par jour.
+  { nom: 'ClientCaisse', fichier: 'pages/ClientCaisse.tsx', rendre: () => <MemoryRouter><ClientCaisse /></MemoryRouter> },
   // Les tuiles « À encaisser » et « À déclarer » de l'accueil (étape P4b) et l'encart « Facture électronique » (étape A6b2), d'après
   // UNE lecture des ventes : montés seuls, l'accueil ne les monte qu'une fois ses propres lectures revenues.
   { nom: 'AccueilVentesClient', fichier: 'pages/AccueilVentesClient.tsx', rendre: () => (
@@ -566,6 +569,10 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
 const PHRASES_FIXES: { ecran: string; texte: string; fois: number; raison: string }[] = [
   { ecran: 'ClientHome', texte: 'Trois étapes, rien à trier de ton côté.', fois: 1, raison: 'le mode d’emploi de l’accueil' },
   {
+    ecran: 'ClientCaisse', fois: 1, raison: 'le rappel fixe de la conception (§ 7) : ce que le praticien garde chez lui, pas ce qui a été lu',
+    texte: 'Garde ton brouillard : le détail, recette par recette, reste chez toi. Aucun nom ici.',
+  },
+  {
     ecran: 'EncaissementsFactureModal', fois: 1, raison: 'ce que la fenêtre fait, pas ce qu’elle a lu',
     texte: 'TTC. Un encaissement s’enregistre ici, au registre du dossier ; rien ne part vers une plateforme ni vers l’administration.',
   },
@@ -883,10 +890,12 @@ const LECTURES_PAR_FONCTION = new Set([
 // fonction est en base (`SIMULATION_VENTES_FACTUREES_EXPORTEE`) : une lecture (`stable`), qui n'écrit rien.
 // Et l'ouverture d'un dossier au compte (`admin_du_dossier`, 23Q2Q2Q1-Q1), que la page d'un dossier lit avec lui, et la liste
 // des dossiers (la coque, le tableau de bord) pour un dossier où le compte a un accès client : un prédicat (`stable`).
+// Et la caisse d'un dossier jour par jour (`caisse_du_client`, ligne 26.6, étape C10), que « Ma caisse » lit (C12a) : une
+// lecture (`stable`), qui n'écrit rien.
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
   'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib', 'rpc:dossiers_au_rib_a_confirmer',
-  'rpc:ventes_facturees_de_la_simulation', 'rpc:admin_du_dossier',
+  'rpc:ventes_facturees_de_la_simulation', 'rpc:admin_du_dossier', 'rpc:caisse_du_client',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.

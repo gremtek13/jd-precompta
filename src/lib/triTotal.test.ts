@@ -135,6 +135,12 @@ export const CLES_DES_FONCTIONS: Record<string, { colonnes: string[]; raison: st
       + 'fait sur une clé unique (supabase/schema/20261026000623_validation_des_ventes_facturees.sql) — l’assistant la lit '
       + 'depuis l’étape VF9c.',
   },
+  caisse_du_client: {
+    colonnes: ['jour'],
+    raison: 'une ligne par jour de l’année : les jours sont l’UNION (sans doublon) des jours des flux et du 1er janvier, puis '
+      + '`par_jour` les groupe par jour (supabase/schema/20261102081129_caisse_du_client.sql) — « Ma caisse » la lit depuis '
+      + 'l’étape C12a.',
+  },
 }
 
 /**
