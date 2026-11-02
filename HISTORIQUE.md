@@ -46181,8 +46181,12 @@ rendait ; les huit autres, celles d'avant. Les trois contrôles : la dérive, 16
 les deux fonctions remplacées ne touchent pas, inchangé avec la signature — il se rejoue avec la migration des règles,
 qui le touche. Les commentaires qui la disaient préparée la disent en production.
 
-**LA FUSION ET LES TROIS FONCTIONS, DANS LA MÊME HEURE.** La demande de fusion n° 266, verte, fusionnée vers 12 h 50 (Paris ;
-`main` à `e3b9261`, sans commit de fusion). Puis `send-email` v8 (`verify_jwt` faux), `plateforme-agreee` v9 et
+**LA FUSION, PUIS LES TROIS FONCTIONS — DEUX HEURES APRÈS LA MIGRATION, ET NON DANS L'HEURE.** La demande de fusion
+n° 266, verte, fusionnée vers 12 h 50 (Paris ; `main` à `e3b9261`, sans commit de fusion), une demi-heure après la
+migration ; les trois fonctions à 14 h 21 seulement, le processus de la session ayant redémarré entre les deux. La
+fenêtre du centime est donc restée ouverte deux heures côté fonctions ; elle n'a rien touché : depuis la migration,
+aucune facture n'a été créée ni validée, les six factures validées de la production sont celles de septembre, et la
+production ne porte aucun encaissement (comptes lus à 14 h 30). `send-email` v8 (`verify_jwt` faux), `plateforme-agreee` v9 et
 `superpdp-emit` v15 (`verify_jwt` vrai), les valeurs de `config.toml`, redéployées comme l'assistant et `extract-piece` :
 une ligne qui importe leur fichier du dépôt public au commit `e3b9261e82c7498024594e2da2d76370c61b4800`. La recopie
 aurait coûté leurs 307 Ko à chaque déploiement (`plateforme-agreee` en fait 198) ; le chemin était ouvert depuis le
