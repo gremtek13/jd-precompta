@@ -18,7 +18,9 @@ select f.numero is not null as facture_zero from public.enregistrer_facture('000
   jsonb_build_object('tiers_nom', 'LEURRE-7Q3-A Patient facturé', 'tiers_adresse', 'LEURRE-7Q3-A 4 rue du Patient, 99999 Leurreville',
     'type_client', 'non_assujetti', 'emetteur_nom', 'LEURRE-7Q3-A EI', 'emetteur_siret', '99973573100013',
     'emetteur_adresse', 'LEURRE-7Q3-A 1 rue du Leurre, 99999 Leurreville', 'montant_ht', 7357.31, 'montant_tva', 0, 'montant_ttc', 7357.31,
-    'nature_operation', 'services', 'date_emission', '2025-07-01'),
+    'nature_operation', 'services', 'date_emission', '2025-07-01',
+    -- La mention de l'exonération du dossier (la correction de la facture, 31/10/2026), après le marqueur du leurre.
+    'mentions_legales', 'LEURRE-7Q3-A mentions légales. Exonération de TVA, art. 261, 4, 1° du CGI.'),
   jsonb_build_array(jsonb_build_object('designation', 'LEURRE-7Q3-A soins du patient', 'quantite', 1, 'prix_unitaire_ht', 7357.31, 'taux_tva', 0)),
   true) f;
 reset role;

@@ -1688,11 +1688,13 @@ describe('ttcParTaux et resteAEncaisser', () => {
     expect(ttcParTaux(facture(), LIGNES)).toEqual([{ taux: 20, ttcCentimes: 120000 }, { taux: 5.5, ttcCentimes: 10550 }, { taux: 0, ttcCentimes: 5000 }])
     const m = montantsDuDocument({ type: 'facture' }, LIGNES, null)
     expect(ttcParTaux(facture(), LIGNES).map((t) => t.ttcCentimes)).toEqual(m.groupes.map((g) => g.baseCentimes + g.tvaCentimes))
-    // Les lignes d'une autre facture n'y entrent pas ; une ligne à 1,005 € vaut 1,00 € HT, comme la facture transmise.
+    // Les lignes d'une autre facture n'y entrent pas ; une ligne à 1,005 € vaut 1,01 € HT, comme la facture transmise : le
+    // décimal exact, le demi éloigné de zéro, depuis la correction de la facture (31/10/2026) — la virgule flottante d'hier
+    // en faisait 1,00 €.
     const ailleurs = { facture_id: 'f2', ordre: 1, designation: 'z', quantite: 1, prix_unitaire_ht: 999, taux_tva: 20 }
     expect(ttcParTaux(facture(), [...LIGNES, ailleurs])).toEqual(ttcParTaux(facture(), LIGNES))
     expect(ttcParTaux(facture(), [{ facture_id: 'f1', ordre: 1, designation: 'a', quantite: 1, prix_unitaire_ht: 1.005, taux_tva: 20 }]))
-      .toEqual([{ taux: 20, ttcCentimes: 120 }])
+      .toEqual([{ taux: 20, ttcCentimes: 121 }])
   })
 
   it('le reste, sans encaissement : tout le TTC', () => {

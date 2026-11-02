@@ -8,11 +8,20 @@ import type { EncaissementFacture, EncaissementFactureTaux, MoyenEncaissement } 
 // CE QUE LA BASE DES ENCAISSEMENTS SUPPOSE DE L'APPLICATION (ligne 28.5, étape d1).
 //
 // `enregistrer_encaissement` plafonne chaque taux par le TTC que la facture électronique a TRANSMIS (BG-23) — celui
-// de `montantsDuDocument`, ligne par ligne par `calculerLigne`, en virgule flottante. La base ne le lit nulle part :
-// elle le REFAIT (`centimes_ligne_facture`, `montants_par_taux_facture`), en double précision. Le même calcul des deux
-// côtés, en entiers à la fin, confronté à une table RELEVÉE EN BASE — la règle du dépôt pour ce que la base doit
-// vérifier. Si l'application change son calcul, ce fichier tombe ; si la base change le sien, le contrôle 100 de
-// `supabase/essais/encaissementsFactures.sql` tombe.
+// de `montantsDuDocument`, ligne par ligne par `calculerLigne`. La base ne le lit nulle part : elle le REFAIT
+// (`centimes_ligne_facture`, `montants_par_taux_facture`). Le même calcul des deux côtés, en entiers, confronté à une
+// table RELEVÉE EN BASE — la règle du dépôt pour ce que la base doit vérifier. Si l'application change son calcul, ce
+// fichier tombe ; si la base change le sien, le contrôle 100 de `supabase/essais/encaissementsFactures.sql` tombe.
+//
+// LA CORRECTION DE LA FACTURE (31/10/2026 ; migration `facture_dates_centimes_mention_tva`, PRÉPARÉE dans
+// supabase/preparees/). Jusque-là, les deux côtés calculaient en virgule flottante — la base recopiait le navigateur au
+// bit près, en double précision —, et une ligne de 1,005 € valait 1,00 €, une de 0,285 € 0,28 € ; depuis, les deux
+// calculent sur les décimaux exacts de la ligne, le demi éloigné de zéro (1,01 € ; 0,29 €). Les valeurs et l'empreinte
+// ci-dessous sont celles de la base munie de la migration, relevées le 31/10/2026 sur la réplique (PostgreSQL 16) ; sans
+// elle, la même réplique rend exactement le relevé du 08/10/2026 (production 17.6 et réplique 16) : les treize cas
+// `100/20 101/6 -13/0 223/45 -1004/-100 3337/667 8642/475 28/6 9/0 5/1 5/1 100/6 15/2` et la grille
+// `3e0c4e81edf847fd6d46c0d74504e022`. La batterie tirée de src/lib/montantsFactureBatterie.test.ts confronte de même
+// des milliers de lignes.
 
 const MIGRATION = readFileSync(
   new URL('../../supabase/schema/20261008180607_encaissements_des_factures.sql', import.meta.url), 'utf8')
@@ -23,15 +32,15 @@ const ligneSeule = (quantite: number, prix: number, taux: number, avoir = false)
 
 describe('le HT et la TVA d’une ligne, en centimes : la base et l’application', () => {
   it('rendent les valeurs relevées en base, une à une', () => {
-    // Relevé le 08/10/2026 en production (PostgreSQL 17.6) et sur la réplique (16), par
-    // `centimes_ligne_facture` : une ligne à 1,005 € (1,00 € en virgule flottante, 1,01 € en `numeric`), des demis
-    // exacts, un avoir, une remise à prix négatif, des quantités à quatre décimales et des prix à six, et des TVA
+    // Relevé le 31/10/2026 sur la réplique (16), la migration de la correction de la facture appliquée, par
+    // `centimes_ligne_facture` : une ligne à 1,005 € (1,01 € en `numeric` ; 1,00 € en virgule flottante, avant), des
+    // demis exacts, un avoir, une remise à prix négatif, des quantités à quatre décimales et des prix à six, et des TVA
     // qui tombent sur un demi-centime (1 € à 5,5 %), où prendre la TVA sur le HT non arrondi, ou arrondir
-    // autrement que Math.round, différerait d'un centime.
+    // autrement que le demi éloigné de zéro, différerait d'un centime.
     const cas: [number, number, number, boolean, string][] = [
-      [1, 1.005, 20, false, '100/20'], [3, 0.335, 5.5, false, '101/6'], [1, 0.125, 0, true, '-13/0'],
+      [1, 1.005, 20, false, '101/20'], [3, 0.335, 5.5, false, '101/6'], [1, 0.125, 0, true, '-13/0'],
       [-2, 1.115, 20, true, '223/45'], [2.5, -4.015, 10, false, '-1004/-100'], [0.3333, 100.123456, 20, false, '3337/667'],
-      [7, 12.345678, 5.5, false, '8642/475'], [1, 0.285, 20, false, '28/6'], [1, 0.094, 5.5, false, '9/0'],
+      [7, 12.345678, 5.5, false, '8642/475'], [1, 0.285, 20, false, '29/6'], [1, 0.094, 5.5, false, '9/0'],
       [1, 0.046, 10, false, '5/1'], [1, 0.05, 10, false, '5/1'], [1, 1, 5.5, false, '100/6'], [1, 0.15, 10, false, '15/2'],
     ]
     for (const [q, p, t, avoir, attendu] of cas) {
@@ -42,7 +51,7 @@ describe('le HT et la TVA d’une ligne, en centimes : la base et l’applicatio
 
   it('rendent la même grille de 7 800 lignes que la base, à l’empreinte près', () => {
     // Tous les taux admis, deux sens, treize quantités, vingt prix, dans l'ordre des boucles ci-dessous ; la même
-    // grille relevée en base le 08/10/2026 (production 17.6 et réplique 16) donne cette empreinte.
+    // grille relevée en base le 31/10/2026 (la réplique 16, la migration appliquée) donne cette empreinte.
     const Q = [1, 2, 3, 0.5, 0.3333, 1.2345, 7, 12.5, -1, -2.5, 100, 0.0001, 9999.9999]
     const P = [1.005, 0.335, 0.125, 1.115, 4.015, 100.123456, 12.345678, 0.285, 0.094, 0.046, 0.05, 1, 0.15, 19.99, 0.01,
       999999.999999, -4.015, -0.125, 0.000001, 33.333333]
@@ -52,7 +61,7 @@ describe('le HT et la TVA d’une ligne, en centimes : la base et l’applicatio
       valeurs.push(`${l.htCentimes}/${l.tvaCentimes}`)
     }
     expect(valeurs).toHaveLength(7800)
-    expect(createHash('md5').update(valeurs.join(',')).digest('hex')).toBe('3e0c4e81edf847fd6d46c0d74504e022')
+    expect(createHash('md5').update(valeurs.join(',')).digest('hex')).toBe('ea6d059c882e6d8230e37c97b39dceff')
   })
 })
 

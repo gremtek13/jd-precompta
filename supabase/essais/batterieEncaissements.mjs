@@ -24,6 +24,16 @@
 // « Banque » s'y juge à son rang. Il rend alors une seconde empreinte à recopier, au même jour — EMPREINTE_SANS_BANQUE
 // dans src/lib/encaissementsBatterie.test.ts. Sans la migration, la passe est dite sans objet.
 //
+// LA CORRECTION DE LA FACTURE (31/10/2026, reprise le 02/11/2026 pour FACTURE-Q1 ; migration
+// `facture_dates_centimes_mention_tva`, PRÉPARÉE dans supabase/preparees/). Une facture d'un dossier en franchise ou exonéré
+// ne se valide plus sans sa mention de TVA, et le statut à préciser se refuse à un accès « Ventes » : les deux dossiers,
+// que la batterie ne choisit pas, passent en franchise le temps de la transaction — non assujettis comme hier, sans option
+// sur les débits, quel que soit leur statut —, et chaque facture du monde porte la mention de l'art. 293 B
+// (`MENTION_FRANCHISE`).
+// Ses dates (le 15/09/2026) suivent celles des factures que la réplique porte déjà dans ces dossiers : la numérotation suit
+// désormais l'ordre des dates d'émission. Sur une base sans la migration, ces deux gestes ne changent rien à ce qu'elle
+// répond.
+//
 //   node supabase/essais/batterieEncaissements.mjs --hote /var/run/postgresql --port 5432 --base replique
 //
 // Node 22 exécute le TypeScript du dépôt tel quel, types effacés ; un crochet de résolution ajoute l'extension `.ts` aux
@@ -65,6 +75,7 @@ const {
   CLIENT, DOSSIERS, DOSSIER_DU_CLIENT, GRAINE_DE_LA_BATTERIE, MONDE, SAISIES_DE_LA_BATTERIE, batterie, casDuClient, reponsesDuModule,
   reponsesDuModuleSansBanque,
 } = generateur
+const { MENTION_FRANCHISE } = await import(new URL('src/lib/statutTva.ts', DEPOT).href)
 
 function psql(texte, fichier = false) {
   const travail = fichier ? mkdtempSync(join(tmpdir(), 'batterie-')) : null
@@ -132,10 +143,15 @@ const sql = ['begin;', 'set local client_min_messages = warning;',
   'create temp table resultats (n int primary key, sortie text not null) on commit drop;',
   'create temp table cas_client (n int primary key, c jsonb not null) on commit drop;',
   'create temp table resultats_client (n int primary key, sortie text not null) on commit drop;',
-  `insert into ids values ('A', ${lit(DOSSIERS.A)}), ('B', ${lit(DOSSIERS.B)});`]
+  `insert into ids values ('A', ${lit(DOSSIERS.A)}), ('B', ${lit(DOSSIERS.B)});`,
+  // La correction de la facture : les deux dossiers en franchise le temps de la transaction (l'en-tête du script).
+  `update public.dossiers set statut_tva = 'franchise', article_exoneration = null where id in (${lit(DOSSIERS.A)}, ${lit(DOSSIERS.B)});`]
 const corps = ['do $$', 'declare v uuid; d uuid; o uuid; m uuid; e uuid; begin']
 for (const f of MONDE.factures) {
-  const entete = { tiers_nom: 'Essai', date_emission: f.date, montant_ht: f.entete.ht, montant_tva: f.entete.tva, montant_ttc: f.entete.ttc }
+  const entete = {
+    tiers_nom: 'Essai', date_emission: f.date, mentions_legales: MENTION_FRANCHISE, montant_ht: f.entete.ht, montant_tva: f.entete.tva,
+    montant_ttc: f.entete.ttc,
+  }
   const lignes = f.lignes.map((l) => ({ designation: 'x', quantite: l.quantite, prix_unitaire_ht: l.prix, taux_tva: l.taux }))
   corps.push(`  select id into d from ids where nom = ${lit(f.dossier)};`)
   let enteteSql = jsonb(entete)

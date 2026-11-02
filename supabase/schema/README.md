@@ -873,6 +873,44 @@ en production ; puis `SENS_DES_REGLES_IGNOREES_EXPORTE` levé et `types.ts` basc
 « LE SENS DES RÈGLES « TOUJOURS IGNORER » ET LA COTISATION D'UN MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS
 APPLIQUÉE) »).
 
+**Préparé le 31/10/2026, repris le 02/11/2026 pour FACTURE-Q1, PAS ENCORE APPLIQUÉ : `facture_dates_centimes_mention_tva`**
+(la correction de la facture : la date dans l'ordre de sa série, le demi-centime d'une ligne, la mention de TVA). Son
+fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version PROVISOIRE, `20261102130000` (18 818 caractères,
+19 253 octets, 259 lignes, `1be629b4cae0dbf4e9f01fef8c09067b`, ni barre oblique inverse ni retour chariot). Il passe PAR
+L'OUTIL : deux fonctions remplacées sous leur nom, aucune table, colonne, donnée, policy ni droit ; aucune instruction de
+suppression — le mot n'y paraît que dans `tg_op = 'DELETE'`, que le détecteur d'`apply_migration` laisse passer (mesuré le
+09/10/2026). `centimes_ligne_facture` calcule sur les décimaux exacts, le demi éloigné de zéro (corps `c693e499…`) ;
+`garder_factures_validees`, la garde d'hier au caractère près plus quatre variables et un bloc (corps
+`d79a5f95f74afe0077049c4b2531ebe3`), refuse à la validation, en 22023 : une facture d'un dossier au statut de TVA à préciser
+ou exonéré sans article, À UN ACCÈS « VENTES » SEULEMENT (FACTURE-Q1, tranchée le 02/11/2026 contre la recommandation qui
+la refusait à tout auteur ; FACTURE-Q2) ; pour tout auteur, la mention de TVA absente (FACTURE-Q3), une date à venir, une
+date antérieure à la plus récente de la série. Sa garde de tête exige les deux corps de la production du jour
+(`e3dfa6dc…`, `9b5b63d7…` — ceux du 31/10/2026 : les quatre migrations du 02/11/2026 n'y touchent pas), un seul nom de
+chaque, les colonnes de `mentions_figees`. Son RETOUR ARRIÈRE
+(`supabase/preparees/retour/20261102130100_retour_facture_dates_centimes_mention_tva.sql`, 7 986 caractères, 8 126 octets,
+158 lignes, `a4e13fd28c7f1ff6f13eda7ba0b4bce3`) exige les deux corps neufs et rend ceux d'hier ; il ne retire rien. Tant
+qu'il n'est pas appliqué, l'export ne le porte pas, et ses trois contrôles sont ceux de la production (168, `86d12ffb…` ;
+socle 81, `bfe9dce8…` ; inventaire 2 307, `93edc60a…`). Sur la réplique de l'étape (`f_prod164` munie des quatre migrations
+du 02/11/2026 par le propriétaire des tables, chacune avec sa ligne d'historique : 168 migrations, `86d12ffb…`, les neuf
+familles de `signature.sql` de la production), munie de lui comme l'outil : `factures.sql` 145 verdicts sur 145 avant et
+après lui — le client « Ventes » refusé (107), le cabinet qui valide encore (M107, 107a, et le chef du cabinet jetable,
+58), l'avoir du client non jugé (107c) —, ses treize mutations de la migration tuées, dont le texte du 31/10/2026 (le
+cabinet refusé) ; les 65 autres essais, la même sortie avant et après lui hors de `encaissementsFactures` 100 (le centime
+exact) et des débuts d'identifiants tirés de `transmissionsFactures` (`devis.sql` impossible sans ses migrations,
+`sensDesReglesIgnorees.sql` en attente de la sienne, `ventesClient.sql` 0c en faute avant comme après, et déjà sur la tête
+— la liste des fonctions sous `gere_les_ventes` a grandi) ; `rls.sql` entier, 90 invariants à 0 en faute, 68 mutations
+sur 68, la même sortie avant et après ;
+`validationExercice.sql` (`psql -1`) 246 sur 246 ; le banc du leurre SÛR sur les sept essais adaptés, avant et après.
+`signature.sql` après lui : seule la famille « fonctions » change, 226 `0cb2485a94079136bf8b079de323d1a5` ; les huit
+autres, celles de la production. Côté base, après lui : la dérive 169 migrations, `e6ebaf63b709ab922684eb5da62f7e9d` sous
+la version provisoire (l'export et ce fichier rendent la même) ; le socle et l'inventaire inchangés (81, `bfe9dce8…` ;
+2 307, `93edc60a…`). Le retour arrière ramène la signature à celle de la production ; une seconde application, et le retour
+sans la migration, se refusent par leur garde, rien d'écrit. Le jour de l'application, dans la même heure : la lecture du
+jour (des booléens), la migration par l'outil, le fichier dans l'export sous sa version, les trois contrôles, `factures.sql`
+en production, les trois Edge Functions qui recopient `calculerLigne` (`send-email`, `plateforme-agreee`,
+`superpdp-emit`) redéployées, et la fusion du front (HISTORIQUE.md, « LA FACTURE : LA DATE DANS L'ORDRE DE SA SÉRIE, LE
+DEMI-CENTIME ET LA MENTION DE TVA, REPRISE POUR FACTURE-Q1 (PRÉPARÉE, PAS APPLIQUÉE) »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

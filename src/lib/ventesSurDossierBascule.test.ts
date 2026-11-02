@@ -300,11 +300,12 @@ describe('les essais qui cochent « Ventes »', () => {
     const essais = readdirSync(resolve(RACINE, 'supabase/essais')).filter((n) => /\.(sql|mjs|py)$/.test(n)).sort()
     const ecrivent = essais.filter((n) => ECRIT_VENTES.some((m) => m.test(lire(`supabase/essais/${n}`))))
     // caisse.sql depuis l'étape C6 de la caisse : le client de l'essai porte « Ventes » et « Banque » sur S6, un dossier qu'il
-    // insère basculé.
+    // insère basculé. factures.sql depuis la correction de la facture (31/10/2026, reprise pour FACTURE-Q1) : le client porte
+    // « Ventes » sur S et sur V, deux dossiers qu'il insère basculés, l'un exonéré sans article, l'autre au statut à préciser.
     expect(ecrivent).toEqual([
       'articles.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'caisse.sql', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
       'dossiersAuRibAConfirmer.sql', 'droitsAcces.sql', 'ecrituresVentesFacturees.sql', 'etatFactureElectronique.sql',
-      'exemplairesDesFactures.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
+      'exemplairesDesFactures.sql', 'factures.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
       'mentionsFigees.sql', 'parametresFacturation.sql', 'piecesJointesEcartees.sql', 'rls.sql', 'simulationDesVentesFacturees.sql',
       'ventesClient.sql', 'ventesFacturees.sql',
     ])

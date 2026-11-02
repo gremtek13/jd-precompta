@@ -223,8 +223,11 @@ begin
         $q$select pg_get_constraintdef(k.oid) from pg_constraint k
             where k.conrelid = 'public.factures_emises'::regclass and k.conname = 'factures_emises_organisme_public'$q$,
         'OK', 'CHECK (((code_service IS NULL) OR COALESCE((type_client = ''organisme_public''::text), false)))', null),
-      ('0g', 'valeur', 'la garde des factures validées est celle d''hier : elle fige toute colonne hors de v_modifiables', 'proprietaire', null,
-        $q$select (md5(replace(p.prosrc, chr(13), '')) = 'e3dfa6dc1b3f127c66bab26d5637ef89')::text from pg_proc p
+      -- Celle d'hier, ou celle de la correction de la facture (31/10/2026, reprise le 02/11/2026 pour FACTURE-Q1 ; migration
+      -- `facture_dates_centimes_mention_tva`), qui la recopie au caractère près et n'y ajoute que ce que la validation exige
+      -- (supabase/essais/factures.sql, 107 à 116).
+      ('0g', 'valeur', 'la garde des factures validées est celle d''hier, ou celle de la correction de la facture : elle fige toute colonne hors de v_modifiables', 'proprietaire', null,
+        $q$select (md5(replace(p.prosrc, chr(13), '')) in ('e3dfa6dc1b3f127c66bab26d5637ef89', 'd79a5f95f74afe0077049c4b2531ebe3'))::text from pg_proc p
             where p.oid = 'public.garder_factures_validees()'::regprocedure$q$, 'OK', 'true', null),
       ('0h', 'valeur', 'les factures validées avant l''étape gardent leurs colonnes nulles, et leurs lignes aussi', 'proprietaire', null,
         $q$select (select count(*) from factures_emises f where f.validated_at < '2026-10-28' and f.dossier_id not in ('{DD}')
@@ -433,7 +436,7 @@ begin
         $q$select concat_ws('|', (mandataire_nom = (select c.nom from cabinets c where c.id = '{CAB}'))::text, (valide_par = '{CHEF}')::text)
              from factures_emises where id = '{F2}'$q$, 'OK', 'true|true', null),
       ('34', 'fait', 'le cabinet valide une facture de la société en franchise, sans paramètres ni contact', 'chef', null,
-        $q$select f.facture_id::text from enregistrer_facture('{DB}', null, '{"tiers_nom":"ESSAI A7 PARTICULIER","type_client":"non_assujetti","date_emission":"2026-10-16","emetteur_nom":"ESSAI A7 B","emetteur_siret":"12345678200010","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb,
+        $q$select f.facture_id::text from enregistrer_facture('{DB}', null, '{"tiers_nom":"ESSAI A7 PARTICULIER","type_client":"non_assujetti","date_emission":"2026-10-16","emetteur_nom":"ESSAI A7 B","emetteur_siret":"12345678200010","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb,
              '[{"designation":"ESSAI A7 PRODUIT","quantite":1,"prix_unitaire_ht":10,"taux_tva":0,"unite":"C62","reference":"A7-REF-2","article_id":"{AB}","nature":"biens"}]'::jsonb, true) f$q$,
         'OK', null, 'FB'),
       ('35', 'valeur', '… la franchise sans numéro de TVA, la forme, le capital et le greffe de la société', 'proprietaire', null,
@@ -446,7 +449,7 @@ begin
                || '|' || (mandataire_nom = (select c.nom from cabinets c where c.id = '{CAB}'))::text
              from factures_emises where id = '{FB}'$q$, 'OK', '0|true', null),
       ('37', 'fait', 'le cabinet valide une facture du dossier exonéré qui a son numéro de TVA, sous un autre SIRET que celui du dossier', 'chef', null,
-        $q$select f.facture_id::text from enregistrer_facture('{DE}', null, '{"tiers_nom":"ESSAI A7 ÉTABLISSEMENT","type_client":"assujetti","date_emission":"2026-10-16","emetteur_nom":"ESSAI A7 E","emetteur_siret":"10000020700015","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb,
+        $q$select f.facture_id::text from enregistrer_facture('{DE}', null, '{"tiers_nom":"ESSAI A7 ÉTABLISSEMENT","type_client":"assujetti","date_emission":"2026-10-16","emetteur_nom":"ESSAI A7 E","emetteur_siret":"10000020700015","mentions_legales":"Exonération de TVA, art. 261, 4, 1° du CGI.","montant_ht":10,"montant_tva":0,"montant_ttc":10}'::jsonb,
              '[{"designation":"ESSAI A7 SOIN","quantite":1,"prix_unitaire_ht":10,"taux_tva":0}]'::jsonb, true) f$q$,
         'OK', null, 'FE'),
       ('38', 'valeur', '… l''exonération, son article, la case et le numéro qu''elle donne, celui du SIRET que la facture fige ; aucune forme connue', 'proprietaire', null,

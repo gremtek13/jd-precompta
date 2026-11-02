@@ -627,6 +627,19 @@
 -- exonéré le temps d'une sous-transaction : la boucle de l'invariant 3 sous lui ; il lit toute la caisse de son dossier,
 -- rien du brouillon, rien d'un dossier où son accès ne porte pas la case ; il écrit par la fonction seule ; l'anonyme
 -- n'exécute pas `caisse_du_client` — ; CA4 compte alors trois policies ; EN ATTENTE sans la migration.
+--
+-- 02/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (la correction de la facture, reprise pour FACTURE-Q1 : migration
+-- `facture_dates_centimes_mention_tva`, PRÉPARÉE dans supabase/preparees/, pas appliquée), qui ne crée ni ne change
+-- aucune policy, mais refuse à la validation, pour tout auteur, une facture sans sa mention de TVA, datée à venir ou
+-- d'avant la plus récente de sa série — et, à un accès « Ventes » seulement, celle d'un dossier au statut de TVA à
+-- préciser ou exonéré sans article : M5ter numérote une facture de 1999 (une année passée qu'aucun dossier ne facture ;
+-- 2099 serait à venir), et les blocs du droit « Ventes », FE, VB et SI posent le dossier du client en franchise le temps
+-- du bloc, quel que soit son statut, leurs factures portant la mention de l'art. 293 B. Joué ENTIER par psql sur la
+-- réplique de l'étape (la production du jour, 168 migrations, ses neuf familles égales à celles de la production, le
+-- journal semé), sans puis avec la migration : 90 invariants, 0 en faute, 68 mutations sur 68 qui mordent, les devis EN
+-- ATTENTE — les deux sorties égales, et égales à celle du texte d'avant hors de la ligne M5ter. Le passage en production
+-- suivra l'application (HISTORIQUE.md, « LA FACTURE : LA DATE DANS L'ORDRE DE SA SÉRIE, LE DEMI-CENTIME ET LA MENTION DE
+-- TVA, REPRISE POUR FACTURE-Q1 (PRÉPARÉE, PAS APPLIQUÉE) »).
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -1175,25 +1188,29 @@ begin
 
   -- M5ter : le contrôle POSITIF. Sans lui, les refus de 5 et 5bis seraient satisfaits par une
   -- numérotation que plus personne n'atteint — la facturation à l'arrêt. Le chef numérote par le seul
-  -- chemin qui reste, `enregistrer_facture`, une facture de l'année fictive 2099, annulée aussitôt.
+  -- chemin qui reste, `enregistrer_facture`, une facture d'une année fictive, annulée aussitôt : 1999, une année
+  -- passée qu'aucun dossier ne facture — depuis la correction de la facture (31/10/2026), une date à venir ne se valide
+  -- plus, ni sans sa mention une facture d'un dossier en franchise ou exonéré, si bien que le dossier du client passe en
+  -- franchise le temps de la sous-transaction, quel que soit son statut, et que la facture porte sa mention.
   select coalesce(max(dernier_numero), -1) into numero_avant from facture_numerotation;
   set local role authenticated;
   perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
   accepte := false; motif := null; raison := null;
   begin
+    update dossiers set statut_tva = 'franchise', article_exoneration = null where id = dossier_du_client;
     select f.numero into raison from enregistrer_facture(dossier_du_client, null,
-      '{"tiers_nom":"ESSAI RLS","date_emission":"2099-01-15","montant_ht":1,"montant_tva":0,"montant_ttc":1}'::jsonb,
+      '{"tiers_nom":"ESSAI RLS","date_emission":"1999-01-15","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":1,"montant_tva":0,"montant_ttc":1}'::jsonb,
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":1,"taux_tva":0}]'::jsonb, true) as f;
-    accepte := raison like 'F2099-%';
+    accepte := raison like 'F1999-%';
     raise exception 'ANNULATION_ESSAI';
   exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate; end;
   reset role;
   select coalesce(max(dernier_numero), -1) into numero_apres from facture_numerotation;
-  select count(*) into restes from facture_numerotation where annee = 2099;
+  select count(*) into restes from facture_numerotation where annee = 1999;
   -- L'écart du compteur, non plus le plus grand numéro de la base, qui serait celui d'un dossier réel (audit du 29/10/2026).
   insert into rls_mutation values ('M5ter — le chef numérote par enregistrer_facture', 'ACCEPTÉ',
     case when accepte then 'ACCEPTÉ ' || raison else 'refusé par ' || coalesce(motif,'?') end
-    || ', ' || restes || ' ligne(s) 2099, compteur ' || to_char(numero_apres - numero_avant, 'FMSG9999999990'),
+    || ', ' || restes || ' ligne(s) 1999, compteur ' || to_char(numero_apres - numero_avant, 'FMSG9999999990'),
     accepte and restes = 0 and numero_avant = numero_apres);
 
   -- M5quater : l'exigence de RAISON de 5 et 5bis n'est pas décorative. On fait échouer l'essai pour un
@@ -1505,7 +1522,7 @@ end $$;
 --   4bis. Avec les droits, le client n'écrit DIRECTEMENT aucune de ces tables : chaque insertion est refusée par la RLS
 --         (42501), nommément — les lignes tentées sont valides, leurs gardes les laissent passer, et le chef les écrit
 --         (M4bis) — ; une mise à jour ne touche aucune ligne. Ses gestes passent par les fonctions (ventesClient.sql).
--- Le jeu d'essai naît dans le dossier du client, dans un bloc qui s'annule : une facture validée de l'année fictive 2099
+-- Le jeu d'essai naît dans le dossier du client, dans un bloc qui s'annule : une facture validée de l'année fictive 1999
 -- (par `enregistrer_facture`, en chef du cabinet) et un brouillon, une transmission acceptée, un événement de Super PDP,
 -- un statut lu, un encaissement (par sa fonction) et sa déclaration, un encaissement sans parts, deux e-mails (une
 -- facture, une relance de pièces) ; il s'ajoute à ce que la base porte déjà. Les verdicts voyagent dans des variables.
@@ -1648,13 +1665,17 @@ begin
 
   begin
     -- ── Le jeu d'essai, dans le dossier du client ──
+    -- Le dossier du client en franchise le temps du bloc, quel que soit son statut, et une facture de 1999 qui porte sa
+    -- mention : depuis la correction de la facture (31/10/2026), ni une date à venir (l'année fictive d'hier, 2099) ni,
+    -- sans sa mention, une facture d'un dossier en franchise ou exonéré ne se valident.
+    update dossiers set statut_tva = 'franchise', article_exoneration = null where id = dossier_du_client;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select e.facture_id into f_validee from enregistrer_facture(dossier_du_client, null,
-      '{"tiers_nom":"ESSAI RLS","date_emission":"2099-01-15","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '{"tiers_nom":"ESSAI RLS","date_emission":"1999-01-15","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
     select e.facture_id into f_brouillon from enregistrer_facture(dossier_du_client, null,
-      '{"tiers_nom":"ESSAI RLS","date_emission":"2099-01-16","montant_ht":100,"montant_tva":20,"montant_ttc":120}'::jsonb,
+      '{"tiers_nom":"ESSAI RLS","date_emission":"1999-01-16","montant_ht":100,"montant_tva":20,"montant_ttc":120}'::jsonb,
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, false) e;
     reset role;
     insert into transmissions_factures (dossier_id, facture_id, canal, hote, flux_id, sha256, etat)
@@ -2260,10 +2281,12 @@ begin
       values (dossier_du_client, '2025-12-31', 'ESSAI RLS FE', 10, 'non_rapprochee') returning id into m_fige;
     insert into lignes_bancaires (dossier_id, date, libelle, montant, statut)
       values (dossier_du_client, '2026-01-05', 'ESSAI RLS FE', 10, 'non_rapprochee') returning id into m_apres;
+    -- En franchise le temps du bloc, la facture portant sa mention (la correction de la facture, 31/10/2026).
+    update dossiers set statut_tva = 'franchise', article_exoneration = null where id = dossier_du_client;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
-      '{"tiers_nom":"ESSAI RLS FE","date_emission":"2025-06-15","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '{"tiers_nom":"ESSAI RLS FE","date_emission":"2025-06-15","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
     reset role;
 
@@ -2442,10 +2465,12 @@ begin
     update memberships set droit_ventes = true, droit_banque = true where user_id = client;
     insert into lignes_bancaires (dossier_id, date, libelle, montant, statut)
       values (dossier_du_client, '2025-03-10', 'ESSAI RLS VB', 120, 'non_rapprochee') returning id into m_reserve;
+    -- En franchise le temps du bloc, la facture portant sa mention (la correction de la facture, 31/10/2026).
+    update dossiers set statut_tva = 'franchise', article_exoneration = null where id = dossier_du_client;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
-      '{"tiers_nom":"ESSAI RLS VB","date_emission":"2025-03-01","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '{"tiers_nom":"ESSAI RLS VB","date_emission":"2025-03-01","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
     perform enregistrer_encaissement(dossier_du_client, f_source, '2025-03-10', 120, 'virement', m_reserve, '[{"taux":20,"montant":120}]'::jsonb);
     reset role;
@@ -2594,10 +2619,12 @@ begin
     -- étape VF8f).
     update dossiers set ventes_par_les_factures = true
      where id in (select m.dossier_id from memberships m where m.user_id = client) and not ventes_par_les_factures;
+    -- En franchise le temps du bloc, la facture portant sa mention (la correction de la facture, 31/10/2026).
+    update dossiers set statut_tva = 'franchise', article_exoneration = null where id = dossier_du_client;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     select e.facture_id into f_source from enregistrer_facture(dossier_du_client, null,
-      '{"tiers_nom":"ESSAI RLS SI","date_emission":"2026-01-10","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
+      '{"tiers_nom":"ESSAI RLS SI","date_emission":"2026-01-10","mentions_legales":"TVA non applicable, art. 293 B du CGI.","montant_ht":100,"montant_tva":20,"montant_ttc":120,"type_client":"assujetti","nature_operation":"services"}'::jsonb,
       '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) e;
     perform enregistrer_encaissement(dossier_du_client, f_source, '2026-01-15', 120, 'cheque', null, '[{"taux":20,"montant":120}]'::jsonb);
     reset role;

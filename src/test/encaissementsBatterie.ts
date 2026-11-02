@@ -28,8 +28,9 @@ import type { EtatTransmission } from '../lib/types'
 /** Le jour où la base a jugé la batterie dont encaissementsBatterie.test.ts fige l'empreinte : elle lit sa date à Paris,
  * le module la reçoit. Les saisies visent ce jour, le lendemain et le 1er janvier qui suit : elles en dépendent. Rejouée
  * le 30/10/2026 (la caisse, étape C6), sur une réplique de la production, sans puis avec la migration
- * especes_sans_mouvement. */
-export const AUJOURD_HUI_RELEVE = '2026-10-30'
+ * especes_sans_mouvement ; puis le 31/10/2026 (la correction de la facture), sans puis avec la migration
+ * facture_dates_centimes_mention_tva, et avec elle sans C6. */
+export const AUJOURD_HUI_RELEVE = '2026-10-31'
 
 /** Le nombre de saisies de la batterie, et la graine de son tirage. */
 export const SAISIES_DE_LA_BATTERIE = 4000
@@ -103,7 +104,9 @@ export const MONDE: Monde = {
   factures: [
     // La facture de l'essai de production : 1 200,00 € à 20 %, 105,50 € à 5,5 %, 50,00 € à 0 %.
     facture('F1', [{ quantite: 1, prix: 1000, taux: 20 }, { quantite: 1, prix: 100, taux: 5.5 }, { quantite: 1, prix: 50, taux: 0 }]),
-    // Des lignes que la virgule flottante arrondit autrement que les décimaux : 3 × 1,005 € vaut 3,01 € HT.
+    // Des lignes que la virgule flottante arrondissait autrement que les décimaux : 3 × 1,005 € fait 3,015 €, soit 3,02 € HT
+    // au demi éloigné de zéro, comme l'application et la base le comptent depuis la correction de la facture
+    // (31/10/2026) ; la virgule flottante d'hier en faisait 3,01 €.
     facture('F2', [{ quantite: 3, prix: 1.005, taux: 20 }, { quantite: 2, prix: 33.333333, taux: 10 }]),
     facture('F3', [{ quantite: 1, prix: 100, taux: 19 }, { quantite: 1, prix: 50, taux: 20 }]),
     facture('F4', [{ quantite: 1, prix: 100, taux: 20 }], { entete: { ht: 100, tva: 21, ttc: 121 } }),

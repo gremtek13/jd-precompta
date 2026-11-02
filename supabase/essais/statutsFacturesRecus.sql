@@ -49,6 +49,13 @@
 -- retirées et une ligne qui rend le texte reçu ajoutée au verdict (39 670 caractères, empreinte
 -- d717e96b8e8753161e59a45846320baf) ; sur une réplique égale à la production, la copie et ce fichier rendent les mêmes
 -- verdicts, à l'octet.
+--
+-- ADAPTÉ LE 31/10/2026 À LA CORRECTION DE LA FACTURE (migration `facture_dates_centimes_mention_tva`, PRÉPARÉE, pas
+-- encore en base ; reprise le 02/11/2026 pour FACTURE-Q1) : une facture ou un avoir d'un dossier en franchise ou exonéré
+-- porte sa mention de TVA, et le statut à préciser ne se refuse plus qu'à un accès « Ventes ». Le dossier des factures
+-- d'essai, que l'essai ne choisit pas, passe en franchise le temps du bloc qui s'annule — non assujetti comme hier ; quel
+-- qu'ait été son statut, l'essai le pose —, et la facture et son avoir portent la mention de l'art. 293 B. Rien d'autre ne
+-- change : chaque verdict est celui d'hier, avant comme après la migration.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
@@ -254,15 +261,19 @@ begin
 
   -- ══ Les factures d'essai : nées ici, annulées à la fin du bloc ══════════
   begin
+    -- Le dossier en franchise le temps du bloc, quel que soit son statut : depuis la correction de la facture (31/10/2026),
+    -- une facture d'une franchise porte sa mention, et l'essai ne dépend plus du statut du dossier.
+    update dossiers set statut_tva = 'franchise', article_exoneration = null where id = dossier_f;
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
     -- 120,00 € à 20 %, son avoir de 12,00 €, et un brouillon.
     select r.facture_id into fm from enregistrer_facture(dossier_f, null,
-      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120),
+      jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'mentions_legales', 'TVA non applicable, art. 293 B du CGI.',
+        'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120),
       '[{"designation":"a","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true) r;
     select r.facture_id into av from enregistrer_facture(dossier_f, null,
       jsonb_build_object('type', 'avoir', 'facture_origine_id', fm, 'tiers_nom', 'Essai', 'date_emission', jour,
-        'montant_ht', -10, 'montant_tva', -2, 'montant_ttc', -12),
+        'mentions_legales', 'TVA non applicable, art. 293 B du CGI.', 'montant_ht', -10, 'montant_tva', -2, 'montant_ttc', -12),
       '[{"designation":"a","quantite":-1,"prix_unitaire_ht":10,"taux_tva":20}]'::jsonb, true) r;
     select r.facture_id into brouillon from enregistrer_facture(dossier_f, null,
       jsonb_build_object('tiers_nom', 'Essai', 'date_emission', jour, 'montant_ht', 100, 'montant_tva', 20, 'montant_ttc', 120),

@@ -278,6 +278,83 @@ describe('FactureFormModal — la facture suit le statut de TVA du dossier', () 
   })
 })
 
+// LE STATUT DE TVA À PRÉCISER ET L'ARTICLE MANQUANT, SELON L'ESPACE (la correction de la facture, reprise pour FACTURE-Q1 —
+// la réponse du cabinet du 02/11/2026 : « seulement depuis l'espace client » — et FACTURE-Q2 ; lib/validationDeLaFacture.ts).
+// La garde des factures refuse ces deux validations au seul accès « Ventes » : dans « Mes ventes », la validation se retient
+// avant le clic, sous les mots de la base réécrits pour le client, et le brouillon reste enregistrable ; au cabinet, qui
+// valide encore, un avis dit ce qu'un accès « Ventes » ne validerait pas, et la facture part validée.
+describe('FactureFormModal — le statut de TVA à préciser et l’article manquant, selon l’espace (FACTURE-Q1)', () => {
+  function monterDans(espace: 'cabinet' | 'client', statutTva: StatutTva | null, articleExoneration: ArticleExoneration | null) {
+    faux.appels = []
+    faux.resoudre = null
+    const commun = {
+      dossierId: 'd1', dossierNom: 'Dossier fictif', dossierSiret: null, dossierAdresse: null, statutTva, articleExoneration,
+      numeroTvaAttribue: false, tvaSurDebits: false, facture: null, reglageDesVentes: NON_BASCULE,
+      onClose: () => {}, onSaved: () => {},
+    }
+    render(espace === 'client'
+      ? <FactureFormModal espace="client" {...commun} />
+      : <FactureFormModal espace="cabinet" onAdresseUpdated={() => {}} {...commun} />)
+    fireEvent.change(document.querySelector('#tiers-nom')!, { target: { value: 'Client SARL' } })
+    fireEvent.change(document.querySelectorAll('tbody input')[0]!, { target: { value: 'Prestation' } })
+  }
+  const brouillon = () => screen.getByRole('button', { name: 'Enregistrer le brouillon' }) as HTMLButtonElement
+  const alertes = () => screen.queryAllByRole('alert').map((a) => a.textContent ?? '')
+
+  it.each([
+    [null, null, /^Ton cabinet doit d’abord préciser ton statut de TVA : la mention de TVA et le numéro de TVA que ta facture imprime en dépendent, et tu ne peux pas la valider avant\.$/],
+    ['exonere', null, /^Ta société est exonérée de TVA sans article d’exonération : la mention que ta facture porte en dépend\. Ton cabinet doit d’abord préciser l’article, et tu ne peux pas la valider avant\.$/],
+  ] as const)('« Mes ventes », statut %s, article %s : la validation se retient avant le clic, le brouillon part', async (statut, article, phrase) => {
+    monterDans('client', statut, article)
+    expect(alertes().filter((t) => phrase.test(t))).toHaveLength(1)
+    expect((valider() as HTMLButtonElement).disabled).toBe(true)
+    // La même chose, une fois : l'alerte d'hier sous les mentions se tait devant le refus.
+    expect(screen.queryAllByText(/Ton cabinet doit d’abord préciser ton statut de TVA : la mention de TVA de la facture en dépend/)).toHaveLength(0)
+    expect(screen.queryAllByText(/saisis la mention de la facture/)).toHaveLength(0)
+    // Les mots du client : ni onglet, ni « le dossier » du cabinet, ni avis du cabinet.
+    expect(alertes().join(' ')).not.toMatch(/onglet|du dossier|accès « Ventes »/)
+    expect(screen.queryAllByRole('note').map((n) => n.textContent)).not.toContainEqual(expect.stringMatching(/Le cabinet valide encore/))
+    expect(brouillon().disabled).toBe(false)
+    await act(async () => { fireEvent.click(brouillon()) })
+    expect(faux.appels).toHaveLength(1)
+    expect(faux.appels[0].args.p_valider).toBe(false)
+  })
+
+  it('« Mes ventes », un dossier exonéré qui a son article, ou en franchise : rien ne retient la validation', () => {
+    monterDans('client', 'exonere', 'cgi_261_4_1')
+    expect(alertes()).toEqual([])
+    expect((valider() as HTMLButtonElement).disabled).toBe(false)
+    cleanup()
+    monterDans('client', 'franchise', null)
+    expect(alertes()).toEqual([])
+    expect((valider() as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it.each([
+    [null, null, 'Le cabinet valide encore cette facture ; un accès « Ventes » ne la validerait pas tant que le statut de TVA du dossier est à préciser.',
+      /Le statut de TVA du dossier est à préciser \(onglet TVA du dossier\)/],
+    ['exonere', null, 'Le cabinet valide encore cette facture ; un accès « Ventes » ne la validerait pas tant que l’article d’exonération du dossier n’est pas choisi.',
+      /Le dossier est exonéré sans article d’exonération : saisis la mention de la facture/],
+  ] as const)('le cabinet, statut %s, article %s : il valide encore, et l’avis le dit', async (statut, article, avis, alerte) => {
+    monterDans('cabinet', statut, article)
+    expect(screen.getAllByRole('note').map((n) => n.textContent)).toContain(avis)
+    expect(screen.getByText(alerte)).toBeTruthy()
+    expect(alertes()).toEqual([])
+    expect((valider() as HTMLButtonElement).disabled).toBe(false)
+    await act(async () => { fireEvent.click(valider()) })
+    expect(faux.appels).toHaveLength(1)
+    expect(faux.appels[0].args.p_valider).toBe(true)
+  })
+
+  it('le cabinet, un dossier dont le statut est posé : aucun avis', () => {
+    for (const [statut, article] of [['redevable', null], ['franchise', null], ['exonere', 'cgi_261_4_1']] as const) {
+      monterDans('cabinet', statut, article)
+      expect(screen.queryAllByRole('note').map((n) => n.textContent)).not.toContainEqual(expect.stringMatching(/Le cabinet valide encore/))
+      cleanup()
+    }
+  })
+})
+
 // LES MENTIONS DE LA FACTURE ÉLECTRONIQUE (ligne 28.5, étape c4 ; lib/mentionsFacture.ts). Elles vivaient en base depuis
 // le premier temps, et aucun écran ne les saisissait : une facture à une entreprise se validait sans son SIREN ni la
 // catégorie de l'opération, puis ne pouvait plus partir par une plateforme — une facture validée ne se corrige que par
