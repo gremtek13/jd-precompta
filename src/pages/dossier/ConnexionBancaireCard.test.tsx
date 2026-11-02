@@ -17,6 +17,15 @@ import type { LigneBancaire, RegleBancaireIgnoree } from '../../lib/types'
 
 type Reponse = { data: unknown; error: unknown }
 
+// LE DRAPEAU DU SENS DES RÈGLES « TOUJOURS IGNORER » (REGLES-Q1 ; la migration `sens_des_regles_ignorees`, préparée), ÉCRIT :
+// baissé par défaut (`beforeEach`) — l'import d'aujourd'hui, quelle que soit la valeur du module ; levé, une règle ne fait
+// ignorer que les mouvements de son sens.
+const drapeauDuSens = vi.hoisted(() => ({ leve: false }))
+vi.mock('../../lib/sensDesReglesIgnorees', async (original) => {
+  const module = await original<typeof import('../../lib/sensDesReglesIgnorees')>()
+  return { ...module, get SENS_DES_REGLES_IGNOREES_EXPORTE() { return drapeauDuSens.leve } }
+})
+
 const faux = vi.hoisted(() => ({
   invocations: [] as Record<string, unknown>[],
   reponses: {} as Record<string, (() => Reponse) | 'attente'>,
@@ -111,6 +120,7 @@ const confirmations: string[] = []
 const assign = vi.fn()
 
 beforeEach(() => {
+  drapeauDuSens.leve = false
   faux.invocations = []
   faux.enAttente = []
   faux.upserts = []
@@ -529,6 +539,21 @@ describe('récupérer, puis importer', () => {
     // L'aperçu s'en va : il décrivait un relevé qui n'est plus le même.
     expect(screen.queryByRole('button', { name: /^Importer les/ })).toBeNull()
   })
+
+  // LE SENS RETENU (REGLES-Q1) : la même règle, née d'un crédit — levé, elle laisse à traiter le prélèvement qu'elle
+  // reconnaît ; baissé, elle l'ignore, comme hier.
+  for (const leve of [true, false]) {
+    it(`${leve ? 'levé' : 'baissé'} : une règle née d’un crédit ${leve ? 'ne fait pas' : 'fait'} ignorer le prélèvement qu’elle reconnaît`, async () => {
+      drapeauDuSens.leve = leve
+      etat.connexion = connexion()
+      monter({ lignes: lignesDuReleve(), regles: [{ ...regle('assurance fictive'), sens: 'encaissement' }] })
+      await recupererAvec(quatreMouvements())
+      await act(async () => { bouton('Importer les 2 mouvement(s)').click() })
+      expect(faux.upserts[0].lot.map((l) => [l.id_externe, l.statut])).toEqual([
+        ['eb:r:assurance', leve ? 'non_rapprochee' : 'ignoree'], ['eb:r:client', 'non_rapprochee'],
+      ])
+    })
+  }
 
   // LIGNE 26.6 (d) : un mouvement daté d'un exercice validé ne s'importe plus — la base refuserait le lot entier
   // (`garder_mouvement_valide`). Il n'est pas envoyé, et l'aperçu le dit : la banque le connaît, le relevé de

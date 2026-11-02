@@ -5,6 +5,7 @@ import { euroCommeLaBase, remplirModele } from './encaissementsFactures'
 import { formatDate, formatMoney } from './format'
 import type { PlanComptable } from './planComptable'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
+import { REFUS_MOUVEMENT_IGNORE, SENS_DES_REGLES_IGNOREES_EXPORTE } from './sensDesReglesIgnorees'
 import type { CotisationDeclaree, EcritureBrouillon, ModeComptable } from './types'
 import { estFigee } from './validationExercice'
 
@@ -58,7 +59,13 @@ export const REFUS_COTISATION_CLASSEE =
 // UNE ÉCHÉANCE PAYÉE DEPUIS LE COMPTE PERSONNEL ne se paie pas aussi par un mouvement (lib/cotisationPersonnelle.ts) :
 // la base le refuse au moment où le mouvement la désignerait — le déclencheur `garder_mouvement_paiement_personnel`,
 // après tous les refus de la fonction —, d'où ce refus en dernier, sous ses mots.
-export function refusRapprochementCotisation(
+//
+// UN MOUVEMENT IGNORÉ ne paie pas une échéance (REGLES-Q1 ; la migration `sens_des_regles_ignorees`, préparée,
+// lib/sensDesReglesIgnorees.ts) : le refus neuf de la base, après celui d'un mouvement classé — un virement personnel,
+// « ignoré » lui aussi, garde ces mots-là — et avant celui du zéro. Le drapeau baissé, rien de plus : la base d'aujourd'hui
+// rapproche encore un mouvement ignoré, et l'écran ne dit pas un refus qu'elle ne fait pas.
+export function refusRapprochementCotisationSelon(
+  parSens: boolean,
   ligne: MouvementBancaire,
   cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds' | 'paiement_personnel_le'>,
   mode: ModeComptable,
@@ -71,6 +78,7 @@ export function refusRapprochementCotisation(
   if (ligne.piece_id || ligne.categorie_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) {
     return REFUS_COTISATION_CLASSEE
   }
+  if (parSens && ligne.statut === 'ignoree') return REFUS_MOUVEMENT_IGNORE.message
   if (ligne.montant === 0) return 'Un mouvement de zéro euro n’a rien à écrire.'
   const montant = montantDeLEcheance(cotisation)
   if (montant === 0) return 'Une échéance de zéro euro ne se rapproche pas.'
@@ -89,6 +97,15 @@ export function refusRapprochementCotisation(
     return `Cette échéance est payée depuis le compte personnel, le ${formatDate(cotisation.paiement_personnel_le)} : un mouvement ne la paie pas aussi.`
   }
   return null
+}
+
+/** Les refus de `rapprocher_cotisation`, dits avant d'écrire, selon le drapeau du module. */
+export function refusRapprochementCotisation(
+  ligne: MouvementBancaire,
+  cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds' | 'paiement_personnel_le'>,
+  mode: ModeComptable,
+): string | null {
+  return refusRapprochementCotisationSelon(SENS_DES_REGLES_IGNOREES_EXPORTE, ligne, cotisation, mode)
 }
 
 // CE QUI DÉCIDE QU'UN PAIEMENT DEPUIS LE COMPTE PERSONNEL PEUT S'ÉCRIRE, d'après les seuls montants de l'échéance et le

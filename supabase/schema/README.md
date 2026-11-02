@@ -831,6 +831,48 @@ caractères reçus, `7eeef8bb…`, le texte construit), 9 lignes de verdict, 0 e
 production : la production rend les neuf familles de la réplique où ils sont passés entiers, le corps de chaque fonction
 compris (HISTORIQUE.md, « LA CAISSE ET LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026 »).
 
+**Préparé le 02/11/2026, PAS ENCORE APPLIQUÉ : `sens_des_regles_ignorees`** (REGLES-Q1 : une règle « toujours ignorer »
+retient le sens du mouvement qui l'a créée, et `rapprocher_cotisation` refuse un mouvement ignoré). Son fichier vit HORS
+de l'export, dans `supabase/preparees/`, sous une version PROVISOIRE, `20261102120000` (17 772 caractères, 18 227 octets,
+270 lignes, `5dd503780f887d06379bffe81b847325`, ni barre oblique inverse ni retour chariot). Il SE COLLE dans l'éditeur SQL
+de Supabase, dans une transaction, avec sa ligne d'historique : son texte retire la clé unique d'hier (`drop constraint
+regles_bancaires_ignorees_dossier_id_motif_key`, remplacée dans la même transaction par une clé qui admet tout ce qu'elle
+admettait), et le corps de `rapprocher_cotisation` supprime des écritures, comme hier. Ce qu'il pose : la colonne
+`regles_bancaires_ignorees.sens` (texte nul, sans valeur par défaut ; nulle, les deux sens — toute règle d'avant) et sa
+contrainte `regles_bancaires_ignorees_sens` (« encaissement » ou « decaissement ») ; la clé
+`regles_bancaires_ignorees_unique`, UNIQUE NULLS NOT DISTINCT (dossier_id, motif, sens) ; `rapprocher_cotisation` par
+`create or replace`, le corps d'hier (`a2a5c675…`, que sa garde de tête exige) plus un refus (22023) entre celui d'un
+mouvement classé et celui du zéro — corps neuf `bf920662bc500bc4fcf23aba0ce829e3`, droits gardés. Ni policy, ni droit, ni
+déclencheur. Son RETOUR ARRIÈRE (`supabase/preparees/retour/20261102120100_retour_sens_des_regles_ignorees.sql`, 12 049
+caractères, 12 289 octets, 213 lignes, `1c7503e300945abf88665aff2e039502`) exige le corps neuf, se refuse tant qu'un motif
+d'un dossier porte plus d'une règle, rend le corps et la clé d'hier, puis retire les deux contraintes et la colonne —
+DESTRUCTIF (le sens des règles créées entre-temps), à accorder, et à coller avec sa ligne d'historique ; l'application, son
+drapeau baissé, le précède. Tant qu'il n'est pas appliqué, l'export ne le porte pas, et ses trois contrôles sont ceux de la
+production (168, `86d12ffb…` ; socle 81, `bfe9dce8…` ; inventaire 2 307, `93edc60a…`). Sur la réplique de l'étape (la
+production du jour : `f_prod164` munie des quatre migrations du 02/11/2026 par le PROPRIÉTAIRE des tables, chacune avec sa
+ligne d'historique — 168 migrations, `86d12ffb…`, et les neuf familles de `signature.sql` de la production), munie de lui
+comme l'outil, puis par le texte même à coller, en fins de ligne `\n` comme en `\r\n` (la ligne d'historique rend
+`5dd50378…` dans les trois cas) : son essai `sensDesReglesIgnorees.sql` 20 verdicts sur 20, EN ATTENTE sans lui, ses neuf
+mutations de la migration tuées ; `rls.sql` entier, 90 invariants à 0 en faute, 68 mutations sur 68, la même sortie
+qu'avant lui ; `cotisationRapprochee.sql` et `laBaseLitLePlan.sql` (sur le jeu de départ du banc), `cotisationPersonnelle.sql`,
+`ecrituresVentesFacturees.sql` et `retraitPaiementPersonnel.sql` : la même sortie avant et après, aucune faute.
+`signature.sql` après lui : « colonnes » 919 `2848a5f98f19cf994666807b3e6fa72c`, « contraintes » 712
+`e06f758dde80a1733fcbd79f77d9d982`, « déclencheurs » 87 `0d648fb1…`, « droits des fonctions » 226 `5e15c24f…`, « droits
+des tables » 82 `36d97923…`, « fonctions » 226 `b8f2981724702535ba4d39fc7d56ba92`, « index » 244
+`b4ac00a714c13f87220f1f6f238449c5`, « policies » 162 `c881b044…`, « rls » 82 `5fb5dc41…` — quatre familles changent
+(colonnes, contraintes, fonctions, index) ; elle revient à celle de la production après le retour arrière, qu'une seconde
+application refuse comme la migration. Côté base, après lui : la dérive 169 migrations (`bb040e67…` sous la version
+provisoire, qu'un collage changera) ; l'inventaire 2 309 objets, `ee3f607f83b57293ac1e6f5450e2eeba` (la colonne et la
+contrainte du sens) ; LE SOCLE, 81 instructions, `cea19cff4e8ac063dad556e140530a31` : `regles_bancaires_ignorees` est
+l'une des douze tables nées hors migration, et son `create table` (supabase/schema/socle/1_tables_sans_migration.sql)
+change — la colonne et ses deux contraintes, la clé d'hier partie. Le socle N'EST PAS touché aujourd'hui : le jour de
+l'application, cette instruction se RE-REND depuis la base de la production, et le socle doit rendre cette empreinte des
+deux côtés. Ce jour-là : le collage, la ligne d'historique relue à l'empreinte du fichier (les retours chariot écartés), le
+fichier dans l'export sous sa version, le socle re-rendu, les trois contrôles ; `sensDesReglesIgnorees.sql` et `rls.sql`
+en production ; puis `SENS_DES_REGLES_IGNOREES_EXPORTE` levé et `types.ts` basculé (`sens` obligatoire) (HISTORIQUE.md,
+« LE SENS DES RÈGLES « TOUJOURS IGNORER » ET LA COTISATION D'UN MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS
+APPLIQUÉE) »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
