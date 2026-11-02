@@ -46353,4 +46353,5 @@ Trois survivantes au premier passage (la part sans date, les figées, la lecture
 **Restent au cabinet** : un rejet rapproché APRÈS la validation de l'exercice du débit, en trésorerie, ne s'offre pas (la
 pièce porte une écriture validée) — le crédit et sa reprise s'affectent alors à la catégorie de la pièce ; et la
 Checklist dit « écriture déséquilibrée » (en erreur, vers Écritures) d'une pièce rejetée pas encore reprise, là où le geste
-qui répare est la reprise, dans Banque.
+qui répare est la reprise, dans Banque. Les deux questions sont sur la page des arbitrages (REJETQ1-Q1, REJETQ1-Q2) ; la
+session y recommande pour la seconde un point qui reste en erreur et retient la validation, avec les mots de la reprise.
