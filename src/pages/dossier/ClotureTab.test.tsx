@@ -370,6 +370,19 @@ describe('ClotureTab — une échéance de cotisation compte à son prélèvemen
     expect(screen.getByText('Cotisations comptées à leur échéance (1)')).toBeTruthy()
   })
 
+  // D6 (relecture du 03/11/2026) : la carte dit le plus souvent vrai — un relevé pas encore importé — et ce qui la lève, avant la
+  // validation de l'exercice, après laquelle l'échéance est figée.
+  it('dit pourquoi l’échéance y est, et comment la dater à son paiement avant la validation', async () => {
+    poserDecembre(false)
+    monter(2025)
+    const carte = (await screen.findByText('Cotisations comptées à leur échéance (1)')).closest('.card') as HTMLElement
+    const texte = carte.querySelector('p')!.textContent!.replace(/\s+/g, ' ')
+    expect(texte).toContain("Le plus souvent, c'est une échéance de décembre prélevée en janvier dont le relevé n'est pas encore importé")
+    expect(texte).toContain("importer le relevé suivant, puis rapprocher l'échéance de son prélèvement, la comptera à la date de son paiement")
+    expect(texte).toContain("Payée depuis le compte personnel, déclarer ce paiement dans l'onglet Cotisations")
+    expect(texte).toContain("avant la validation de l'exercice : une fois validé, l'échéance est figée")
+  })
+
   it('une échéance payée depuis le compte personnel compte à son paiement, et la carte se tait', async () => {
     // Décembre 2025, payée de la poche de l'exploitant le 10 janvier 2026, sans aucun mouvement
     // (lib/cotisationPersonnelle.ts) : elle compte en 2026, à la date de son paiement — une lecture, pas une supposition.
@@ -1959,6 +1972,48 @@ describe('ClotureTab — valider l’exercice', () => {
       fireEvent.click(within(c.getByText(/sans écriture : générer/).closest('li') as HTMLElement).getByRole('button', { name: 'Écritures' }))
     })
     expect(onNavigate).toHaveBeenCalledWith('ecritures')
+  })
+
+  // D4 (relecture du 03/11/2026) : la carte « Cases « dont » incohérentes » PEUT paraître — un remboursement de cotisations
+  // classé en charge fait baisser BK sans toucher BT — et se tait une fois l'exercice validé : la validation la refuse
+  // donc avant. Une échéance obligatoire de 600 € (BT), un contrat Madelin payé 400 € (BZ), un remboursement de 300 € classé
+  // dans la catégorie de charge : BK vaut 700 €, ses « dont » 1 000 €.
+  it('une case « dont » plus forte que sa porteuse retient la validation, et la carte de Clôture la dit aussi', async () => {
+    poserTenu()
+    faux.parTable.categories = [
+      CATEGORIE,
+      { ...CATEGORIE, id: 'cat-madelin', code: 'madelin', libelle: 'Contrat Madelin', ordre: 2, compte_comptable: '646100', poste_2035: 'Cotisations facultatives Madelin' },
+      { ...CATEGORIE, id: 'cat-csp', code: 'csp', libelle: 'Charges sociales', ordre: 3, compte_comptable: '646100', poste_2035: 'Charges sociales personnelles' },
+    ]
+    faux.parTable.cotisations_declarees = [cotisation('c1', { echeance: '2025-03-05', montant_appele: 600, montant_verse: 600 })]
+    faux.parTable.pieces = [
+      PIECE_EUR,
+      { ...PIECE_EUR, id: 'p-mad', categorie_id: 'cat-madelin', montant_ttc: 400, date_piece: '2025-03-20' },
+      { ...PIECE_EUR, id: 'p-remb', categorie_id: 'cat-csp', montant_ttc: -300, date_piece: '2025-04-10' },
+    ]
+    faux.parTable.lignes_bancaires = [
+      PAIEMENT,
+      { ...PAIEMENT, id: 'l-mad', piece_id: 'p-mad', montant: -400, date: '2025-03-22' },
+      { ...PAIEMENT, id: 'l-remb', piece_id: 'p-remb', montant: 300, date: '2025-04-12' },
+    ]
+    monterAvec()
+    const c = await carte()
+    const ligne = c.getByText(/case\(s\) « dont » supérieure\(s\) à leur case porteuse/).closest('li') as HTMLElement
+    expect(ligne.textContent).toContain('1 case(s) « dont » supérieure(s) à leur case porteuse — le plus souvent un remboursement de cotisations classé en charge')
+    expect(ligne.textContent).toContain("le saisir en échéance négative dans l'onglet Cotisations avant la validation")
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+    // La carte de Clôture, elle, dit les deux cases : le préalable renvoie à elle.
+    const incoherentes = within((await screen.findByText('Cases « dont » incohérentes (1)')).closest('.card') as HTMLElement)
+    const cellules = [...incoherentes.getByText('BK').closest('tr')!.querySelectorAll('td')].map((td) => td.textContent?.replace(/\s/g, ' '))
+    expect(cellules).toEqual(['BKCharges sociales personnelles', 'BT + BZ + BU', '1 000,00 €', '700,00 €'])
+  })
+
+  it('des cases « dont » cohérentes ne retiennent rien de tel — le garde symétrique', async () => {
+    poserTenu()
+    monterAvec()
+    const c = await carte()
+    expect(c.queryAllByText(/supérieure\(s\) à leur case porteuse/)).toHaveLength(0)
+    expect(screen.queryAllByText(/Cases « dont » incohérentes/)).toHaveLength(0)
   })
 
   // LA CAISSE (ligne 26.6, étape C3b), le drapeau levé : ses écritures partent avec la numérotation, au journal de leur

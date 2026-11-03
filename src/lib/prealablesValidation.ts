@@ -2,7 +2,7 @@ import type { ModeleComptable } from './engagement'
 import type { DossierTab } from './ongletsDossier'
 import type { Concordance2035 } from './concordance2035'
 import { partCsgNonDeductible, type Declaration2035 } from './declaration2035'
-import { casesNegatives, doublonFraisVehicules, valeursDesCases } from './cases2035'
+import { casesNegatives, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from './cases2035'
 import type { DoublonDeTexte } from './doublonsTexte'
 import type { Emprunt } from './emprunts'
 import {
@@ -765,6 +765,14 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       id: 'cases-negatives', nb: casesNegatives(d.declaration).length, cible: 'cloture',
       message: "case(s) négative(s) de la 2035 — des avoirs ou des remboursements y dépassent ce que la case compte, et le formulaire n'admet pas de montant négatif : arbitrer leur place avant la validation (carte « Case négative » ci-dessus).",
     })
+    // Une case « dont » ne dépasse pas sa porteuse : BT + BZ + BU ne passent pas BK. Le moteur remplit ces cases d'une part de
+    // leur porteuse, mais un remboursement de cotisations classé dans une catégorie de charge (au lieu d'une échéance négative
+    // de l'onglet Cotisations) fait baisser BK sans toucher BT : la 2035 figée porterait un « dont » plus fort que son total.
+    // Le MÊME calcul que la carte « Cases « dont » incohérentes » de Clôture (`incoherencesDesCases`), sur l'exercice validé.
+    bloque({
+      id: 'cases-dont-incoherentes', nb: incoherencesDesCases(valeursDesCases(d.declaration).valeurs).length, cible: 'cloture',
+      message: "case(s) « dont » supérieure(s) à leur case porteuse — le plus souvent un remboursement de cotisations classé en charge : le saisir en échéance négative dans l'onglet Cotisations avant la validation (carte « Cases « dont » incohérentes » ci-dessus).",
+    })
     // Le barème kilométrique et les frais au réel du véhicule dans la même case BJ : la même dépense deux fois.
     bloque({
       id: 'frais-vehicule-en-double', nb: doublonFraisVehicules(d.declaration)?.postes.length ?? 0, cible: 'cloture',
@@ -1172,9 +1180,9 @@ export const CARTES_DE_CLOTURE: Readonly<Record<string, { prealable: string } | 
   'Frais de véhicule comptés deux fois': { prealable: 'frais-vehicule-en-double' },
   'Amortissement d’un véhicule déduit avec le barème': { prealable: 'vehicule-amorti-sous-bareme' },
   'Véhicules absents de la case BJ': { prealable: 'forfaits-a-ecrire' },
-  'Cases « dont » incohérentes': {
-    ecartee: "le moteur ne remplit une case « dont » que d'une part de sa porteuse — le poste qui la nomme, BT les échéances (étape 2035S1) — et aucun écran ne les saisit : cette carte ne peut pas paraître",
-  },
+  // Elle PEUT paraître : un remboursement de cotisations classé en charge fait baisser BK sans toucher BT, et BT + BZ + BU
+  // dépassent alors BK (relecture du 03/11/2026, D4). Le préalable est calculé par la même fonction que la carte.
+  'Cases « dont » incohérentes': { prealable: 'cases-dont-incoherentes' },
   // Étape 2035S1, 2035S-Q2 (A) : la part de BK que rien ne qualifie se DIT, elle ne retient pas la validation — BK est juste,
   // seul son détail en BT, BZ, BU reste à dire sur le formulaire.
   'Charges sociales personnelles sans nature dite': {
