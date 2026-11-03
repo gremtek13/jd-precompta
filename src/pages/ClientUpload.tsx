@@ -28,6 +28,9 @@ import PaiementParMaCaisse from './PaiementParMaCaisse'
 import { droitsSur } from '../lib/droitsAcces'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
 import { lireLaCaisseDuClient, type LectureDeLaCaisseDuClient } from '../lib/caisseClientLecture'
+import { pourLEspace } from '../lib/espaceVentes'
+import { messageErreur } from '../lib/messageErreur'
+import type { SaisieDuReglement } from '../lib/paiementParLaCaisse'
 import {
   caisseDeMesPieces, libelleDuGeste, paiementDit, paiementsDeLaPiece, payableParLaCaisse, pieceVueParLeClient, premiereAnneeLue,
 } from '../lib/paiementDeMesPieces'
@@ -135,6 +138,42 @@ export default function ClientUpload() {
   async function relireLaCaisse() {
     if (!dossierId) return
     setCaisseLue(await lireLaCaisseDuClient(dossierId, premiereAnneeLue(anneeEnCours), anneeEnCours))
+  }
+  // UN verrou pour tout geste d'écriture sur la caisse (payer, retirer), de « Mes pièces » entière et non d'un formulaire :
+  // celui d'une pièce disparaît quand on en ouvre une autre, et deux paiements partiraient sur une caisse pas encore relue.
+  // Posé avant le premier `await`, relâché après la relecture ; l'état n'est que l'affichage (il ne prend effet qu'au rendu
+  // suivant), d'où le verrou aussi sur les boutons qui ouvrent ou ferment un formulaire.
+  const paiementCaisseEnCours = useRef(false)
+  const [paiementCaisseEnVol, setPaiementCaisseEnVol] = useState(false)
+  // `appel` rend le refus de la base aux mots du client, ou rien quand elle a écrit ; `surIssue` le dit à l'écran du formulaire
+  // AVANT la relecture (même sur un refus : la base a peut-être vu ce que l'écran n'avait pas lu).
+  async function agirSurLaCaisse(appel: () => Promise<string | null>, surIssue: (refus: string | null) => void) {
+    if (paiementCaisseEnCours.current) return
+    paiementCaisseEnCours.current = true
+    setPaiementCaisseEnVol(true)
+    try {
+      surIssue(await appel())
+      await relireLaCaisse()
+    } finally {
+      paiementCaisseEnCours.current = false
+      setPaiementCaisseEnVol(false)
+    }
+  }
+  async function payerParLaCaisse(saisie: SaisieDuReglement, surIssue: (refus: string | null) => void) {
+    if (!dossierId) return
+    await agirSurLaCaisse(async () => {
+      const { error } = await supabase.rpc('regler_piece_par_la_caisse', {
+        p_dossier_id: dossierId, p_piece_id: saisie.piece_id, p_date: saisie.date, p_montant: saisie.montant,
+      })
+      return error ? pourLEspace('client', messageErreur(error, 'raison inconnue')) : null
+    }, surIssue)
+  }
+  async function retirerDeLaCaisse(operationId: string, surIssue: (refus: string | null) => void) {
+    if (!dossierId) return
+    await agirSurLaCaisse(async () => {
+      const { error } = await supabase.rpc('retirer_operation_caisse', { p_dossier_id: dossierId, p_operation_id: operationId })
+      return error ? pourLEspace('client', messageErreur(error, 'raison inconnue')) : null
+    }, surIssue)
   }
 
   // L'adresse e-mail de collecte du dossier (ligne 22.93), lue À PART : sa lecture ratée ne rend aucune autre liste fausse, et
@@ -522,7 +561,12 @@ export default function ClientUpload() {
                               type="button"
                               className="btn btn-outline btn-sm"
                               aria-expanded={especesOuvertes}
-                              onClick={() => setPaiementOuvert(especesOuvertes ? null : especes.id)}
+                              disabled={paiementCaisseEnVol}
+                              onClick={() => {
+                                // Le clic peut précéder le rendu qui désactive le bouton : le verrou, lui, est déjà posé.
+                                if (paiementCaisseEnCours.current) return
+                                setPaiementOuvert(especesOuvertes ? null : especes.id)
+                              }}
                             >
                               {paiements.length > 0 || !payableParLaCaisse(especes) ? 'Espèces de ta caisse' : libelleDuGeste(pieceVueParLeClient(especes))}
                             </button>
@@ -533,7 +577,6 @@ export default function ClientUpload() {
                         <tr>
                           <td colSpan={4} style={{ background: 'var(--color-surface-2)' }}>
                             <PaiementParMaCaisse
-                              dossierId={dossierId}
                               piece={especes}
                               dossier={caisse.dossier}
                               operations={caisse.operations}
@@ -541,7 +584,10 @@ export default function ClientUpload() {
                               moi={moi}
                               anneeEnCours={anneeEnCours}
                               aujourdhui={aujourdhui}
-                              relire={relireLaCaisse}
+                              payer={payerParLaCaisse}
+                              retirer={retirerDeLaCaisse}
+                              verrou={paiementCaisseEnCours}
+                              enVol={paiementCaisseEnVol}
                             />
                           </td>
                         </tr>

@@ -46626,3 +46626,54 @@ Le navigateur sans mandataire.
 
 **CE QUI RESTE.** Rien de C12b. Hors du lot : un remplacement d'un seul geste d'un paiement (une migration) ; C11-Q1 et C11-Q2
 au cabinet.
+
+
+### 03/11/2026 — LA CAISSE : LA RELECTURE DE C11, C12A ET C12B, ET SES CORRECTIONS (LIGNE 26.6)
+
+(Écrite par un agent dev, sur `18df7a0`, après une relecture indépendante de C11, C12a et C12b, que la session principale a
+vérifiée dans le code. Ni migration, ni déploiement, ni accès à la base. Deux défauts de l'écran « Mes pièces » corrigés ; trois
+points relevés et NON corrigés, dits plus bas.)
+
+**DÉFAUT 1 — LE RETRAIT D'UN PAIEMENT DATÉ D'AVANT LA PREMIÈRE ANNÉE LUE.** « Mes pièces » affiche les paiements d'une pièce de
+TOUTES les années (`paiementsDeLaPiece`), mais la caisse rejouée ne porte que les opérations depuis le 1er janvier de
+`premiereAnneeLue(anneeEnCours)`. Un paiement du praticien daté de 2024, quand la caisse est lue depuis 2025, y était introuvable :
+« Retirer » s'affichait grisé sous le faux motif « Cette opération n'est pas dans la caisse de ce dossier : relis ta caisse. »
+(`refusDuRetraitDuClient`). CORRECTION : `retraitDuPaiement` reçoit un paramètre OBLIGATOIRE de plus, `premiere` ; pour un paiement
+à soi, non retiré, daté d'avant `${premiere}-01-01`, il rend `{ offert: true, refus: avantLaCaisseLue(premiere) }` — la phrase du
+formulaire, qui renvoie au cabinet. Ordre : pas à soi ou retiré → avant la caisse lue → année figée → le refus de la base. TESTS :
+`paiementDeMesPieces.test.ts` (le retrait d'un paiement de 2024 sous une première année 2025 ; le paiement du cabinet ou retiré
+reste sans retrait) et `ClientUpload.caisse.test.tsx` (« Retirer » grisé sous la phrase du cabinet, jamais « relis ta caisse »).
+Ôter la ligne de la correction fait échouer les deux.
+
+**DÉFAUT 2 — DEUX PAIEMENTS PEUVENT PARTIR EN MÊME TEMPS.** Le verrou `useRef` vivait dans chaque instance de
+`PaiementParMaCaisse`, et le bouton qui ouvre le formulaire d'une pièce n'était jamais désactivé. Un paiement en vol, puis
+l'ouverture d'une autre pièce : le premier formulaire — et son verrou — était démonté, le second jugeait sur la caisse pas encore
+relue, un second `regler_piece_par_la_caisse` partait, et le message du premier était perdu. CORRECTION : le verrou
+(`paiementCaisseEnCours`, un `useRef`) et son affichage (`paiementCaisseEnVol`) vivent dans `ClientUpload`, qui porte aussi les deux
+appels (`payerParLaCaisse`, `retirerDeLaCaisse`, sous l'enveloppe `agirSurLaCaisse` : verrou lu et posé avant le premier `await`,
+relâché dans le `finally` APRÈS la relecture). `PaiementParMaCaisse` ne fait plus d'appel : il reçoit les deux gestes, le verrou
+(qu'il ne fait que LIRE, pour ne pas confirmer ce qui ne partirait pas) et l'état, et l'issue lui revient par `surIssue`, avant la
+relecture comme avant. Les boutons « Payée en espèces… » / « Encaissée en espèces… » / « Espèces de ta caisse » sont désactivés
+tant qu'une écriture n'est pas relue, et leur `onClick` retourne si le verrou est posé (le clic peut précéder le rendu). FORME DU
+CODE : les appels vivent dans `ClientUpload`, et non dans l'enfant avec le verrou en propriété, parce que `verrousEcritures.test.ts`
+ne reconnaît un verrou que s'il est un `useRef` déclaré dans le fichier de la porte ; les deux gardes (`verrousEcritures`,
+`verrousExecution`) n'ont pas changé et restent vertes. TEST : `ClientUpload.caisse.test.tsx` — un paiement de la pièce A en vol
+(la promesse du `rpc` retenue), le clic sur B dans le MÊME `act` n'ouvre rien, B est ensuite désactivé, un seul
+`regler_piece_par_la_caisse` est parti ; la base a écrit, la relecture retenue : B reste désactivé ; la relecture revenue, il se
+réactive et ouvre son formulaire. Sans le `disabled`, ou sans le retour sur le verrou, le test échoue. `droitsAcces.test.ts` («
+Mes pièces » appelle les deux fonctions de la base, le formulaire n'appelle rien) suit le déplacement des appels.
+
+**CE QUE LA RELECTURE A TROUVÉ SAIN.** L'ordre et les mots des refus de la saisie, du retrait et du remplacement, confrontés aux
+fonctions de la base ; le jour de Paris, les centimes et les signes ; la confrontation de la caisse rejouée (au total et au solde
+de la base, sinon aucun geste) ; les lectures partielles et les lectures gardées par dossier ; les verrous de « Ma caisse » ; la
+case « Caisse » de l'onglet Accès.
+
+**TROIS POINTS NON CORRIGÉS.**
+- (a) Le montant d'un paiement saisi par le CABINET reste affiché au client : décision C10-Q1 (le praticien lit toutes les
+  opérations de sa caisse). Rien à faire.
+- (b) Après le clic, la phrase de la base pour l'exemplaire d'une facture source (`regler_piece_par_la_caisse`) renvoie le client
+  vers l'encaissement de la facture, un geste qu'il n'a qu'avec « Ventes ». Une phrase propre au client demanderait une migration :
+  à reprendre quand une migration touchera cette fonction.
+- (c) Sur un dossier repris dont la caisse n'a pas d'ouverture, une date d'avant la reprise est jugée « caisse négative » avant le
+  clic, là où la base dit « précède l'ouverture du dossier » : la limite déjà documentée de C12a (l'ouverture du dossier reste au
+  jugement de la base).

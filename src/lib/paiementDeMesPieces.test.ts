@@ -316,18 +316,28 @@ describe('les paiements d’une pièce, et qui les a saisis', () => {
 
   it('le retrait : les siens seulement, jamais sur une année figée, refusé avant le clic quand la caisse passerait sous zéro', () => {
     const d = dossierRejoue([miens, duCabinet])
-    expect(retraitDuPaiement(miens, d, [], MOI)).toEqual({ offert: true, refus: null })
-    expect(retraitDuPaiement(duCabinet, d, [], MOI)).toEqual({ offert: false })
-    expect(retraitDuPaiement(dUnAutre, d, [], MOI)).toEqual({ offert: false })
-    expect(retraitDuPaiement(retire, d, [], MOI)).toEqual({ offert: false })
-    expect(retraitDuPaiement(miens, d, [jour({ jour: '2026-01-01', fige: true })], MOI)).toEqual({ offert: false })
+    expect(retraitDuPaiement(miens, d, [], MOI, 2025)).toEqual({ offert: true, refus: null })
+    expect(retraitDuPaiement(duCabinet, d, [], MOI, 2025)).toEqual({ offert: false })
+    expect(retraitDuPaiement(dUnAutre, d, [], MOI, 2025)).toEqual({ offert: false })
+    expect(retraitDuPaiement(retire, d, [], MOI, 2025)).toEqual({ offert: false })
+    expect(retraitDuPaiement(miens, d, [jour({ jour: '2026-01-01', fige: true })], MOI, 2025)).toEqual({ offert: false })
     // L'encaissement en espèces d'une vente (60 €) dont une sortie (130 €) a dépendu : son retrait viderait la caisse.
     const encaissement = operation({ id: 'v', montant: 60, date: '2026-02-01', piece_id: 'p2' })
     const sortie = operation({ id: 's', montant: -130, date: '2026-02-02', origine: 'cabinet', cree_par: 'u-cabinet' })
     const d2 = dossierRejoue([encaissement, sortie])
-    expect(retraitDuPaiement(encaissement, d2, [], MOI)).toEqual({
+    expect(retraitDuPaiement(encaissement, d2, [], MOI, 2025)).toEqual({
       offert: true, refus: pourLEspace('client', texteCaisseNegative('retrait_paiement', 6000, '2026-02-02', -3000)),
     })
+  })
+
+  it('le retrait d’un paiement daté d’avant la première année lue : offert mais refusé, avec la phrase qui renvoie au cabinet', () => {
+    const ancien = operation({ id: 'z', date: '2024-11-20' })
+    const d = dossierRejoue([miens])
+    // « Mes pièces » le montre (toutes les années), la caisse rejouée ne le porte pas : jamais le faux motif « relis ta caisse ».
+    expect(retraitDuPaiement(ancien, d, [], MOI, 2025)).toEqual({ offert: true, refus: avantLaCaisseLue(2025) })
+    // Un paiement du cabinet ou retiré reste sans retrait, ancien ou non.
+    expect(retraitDuPaiement({ ...ancien, origine: 'cabinet', cree_par: 'u-cabinet' }, d, [], MOI, 2025)).toEqual({ offert: false })
+    expect(retraitDuPaiement({ ...ancien, retire_le: '2026-01-01T00:00:00Z' }, d, [], MOI, 2025)).toEqual({ offert: false })
   })
 
   it('les confirmations nomment ce qui part, la pièce par son dépôt, et la caisse du jour après', () => {

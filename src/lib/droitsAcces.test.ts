@@ -1573,12 +1573,14 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     expect(CE_QUE_MONTRE_MA_CAISSE).toContain('l’écran ne lui montre pas le montant de la pièce')
     expect(CE_QUE_MONTRE_MA_CAISSE).not.toContain('pas encore son écran')
     expect(confirmationDeLaCaseCaisse('x', 'exonere', { etat: 'absente' }).paragraphes).toContain(CE_QUE_MONTRE_MA_CAISSE)
-    // La phrase dit vrai : « Mes pièces » monte le paiement, qui appelle la fonction de la base et la retire.
+    // La phrase dit vrai : « Mes pièces » monte le paiement, et appelle — sous SON verrou (C12b, relecture du 03/11/2026) — la
+    // fonction de la base qui le règle et celle qui le retire ; le formulaire, lui, n'appelle rien.
     const pieces = readFileSync(resolve(process.cwd(), 'src/pages/ClientUpload.tsx'), 'utf8')
     expect(pieces).toMatch(/<PaiementParMaCaisse\b/)
+    expect(pieces).toContain("supabase.rpc('regler_piece_par_la_caisse'")
+    expect(pieces).toContain("supabase.rpc('retirer_operation_caisse'")
     const paiement = readFileSync(resolve(process.cwd(), 'src/pages/PaiementParMaCaisse.tsx'), 'utf8')
-    expect(paiement).toContain("supabase.rpc('regler_piece_par_la_caisse'")
-    expect(paiement).toContain("supabase.rpc('retirer_operation_caisse'")
+    expect(paiement).not.toContain('supabase')
   })
 
   it('ce que la case ouvre ne porte aucun texte libre du cabinet : aucun libellé neuf à écrire', () => {

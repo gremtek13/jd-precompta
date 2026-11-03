@@ -369,7 +369,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     la base, sinon aucun geste ; aucune catégorie, aucun compte, aucun nom → « LA CAISSE : « MA CAISSE », L'ÉCRAN DU
     PRATICIEN (C12A, LIGNE 26.6) ». Le paiement d'une pièce, dans « Mes pièces » : le sens tiré de la pièce, jamais son
     montant ; ce que le client ne lit pas jugé par la base seule → « LA CAISSE : LE PAIEMENT D'UNE PIÈCE DEPUIS « MES
-    PIÈCES » (C12B, LIGNE 26.6) ».
+    PIÈCES » (C12B, LIGNE 26.6) », « LA CAISSE : LA RELECTURE DE C11, C12A ET C12B, ET SES CORRECTIONS (LIGNE 26.6) ».
   - « Ma banque » sous `maBanqueOuverte` : l'état DÉDUIT, le solde LU au dernier relevé contrôlé, jamais calculé ; ni
     catégorie ni écriture → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » » ; avec « Ventes », le registre lu APRÈS la
     case dit le mouvement classé ou réservé par ses encaissements, lu en partie il tait les mouvements libres → « « MA
