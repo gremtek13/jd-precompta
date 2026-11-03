@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CotisationsTab from './CotisationsTab'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
+import { SECONDES_CASES } from '../../lib/cases2035'
 import type { CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable } from '../../lib/types'
 import { NON_VALIDEE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
@@ -1142,5 +1143,26 @@ describe('CotisationsTab — l’appel définitif à une autre date que sa prév
     await deposerLAvis()
     expect(screen.queryByText(/Remplace la prévisionnelle/)).toBeNull()
     expect(echeancesComptees('2026-02-05')).toBe(2)
+  })
+})
+
+// D3 (relecture du 03/11/2026) : un contrat facultatif saisi ici partirait en BT, la part OBLIGATOIRE de la ligne 25, au lieu
+// de BZ ou BU. L'écran le dit sous le titre du formulaire, et nomme où se classe un contrat facultatif : Banque, sous le poste
+// que `cases2035.ts` range en BZ ou en BU.
+describe('CotisationsTab — le formulaire ne reçoit que les régimes obligatoires', () => {
+  it('le dit sous le titre de « Ajouter une échéance », avec les postes des contrats facultatifs', async () => {
+    monter()
+    const titre = await screen.findByText('Ajouter une échéance')
+    const phrase = titre.parentElement!.querySelector('p.muted')!.textContent!.replace(/\s+/g, ' ')
+    expect(phrase).toBe(
+      'Les échéances de cet onglet sont celles des régimes obligatoires (Urssaf, caisse de retraite) : elles comptent en BT, '
+      + '« dont charges sociales personnelles obligatoires » de la ligne 25 de la 2035. Un contrat facultatif (Madelin, plan '
+      + 'd’épargne retraite) ne se saisit pas ici : il se classe depuis Banque, dans une catégorie dont le poste de la 2035 est '
+      + '« Cotisations facultatives Madelin » (case BZ) ou « Plan d’épargne retraite » (case BU).',
+    )
+    // La phrase est sous le titre, et ne promet que ce que la 2035 fait : ces deux postes alimentent BZ et BU, « dont » de BK.
+    expect(titre.nextElementSibling).toBe(titre.parentElement!.querySelector('p.muted'))
+    expect(SECONDES_CASES.get('Cotisations facultatives Madelin')).toEqual({ porteuse: 'BK', aussi: 'BZ' })
+    expect(SECONDES_CASES.get("Plan d'épargne retraite")).toEqual({ porteuse: 'BK', aussi: 'BU' })
   })
 })

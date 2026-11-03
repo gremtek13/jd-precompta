@@ -290,6 +290,7 @@ describe('le rangement des contrôles existants', () => {
       'sans-tva', 'tva-impossible', 'devise-non-convertie', 'confiance-basse', 'mois-en-double', 'doublon-texte',
       'doublons-inconnus', 'ecritures-a-generer', 'desynchronisees', 'ecritures-sans-objet', 'pieces-payees-en-partie',
       'pieces-payees-en-trop', 'frais-vehicule-en-double', 'forfaits-a-ecrire', 'postes-sans-case', 'cases-negatives',
+      'cases-dont-incoherentes',
       'tickets', 'vacances', 'factures',
       // La relecture du 01/11/2026 : la pièce à valider qu'un paiement par la caisse cite.
       'pieces-a-valider-payees-par-la-caisse',

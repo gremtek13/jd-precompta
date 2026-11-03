@@ -220,6 +220,7 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'forfaits-a-ecrire': 'depenses',
   'postes-sans-case': 'depenses',
   'cases-negatives': 'depenses',
+  'cases-dont-incoherentes': 'depenses',
   tickets: 'depenses',
   vacances: 'depenses',
   // Les pièces attendues de chaque exercice (« Factures / pièces AAAA »).

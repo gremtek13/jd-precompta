@@ -6,6 +6,7 @@ import {
   prochainExerciceAValider, REFUS_VENTES_FACTUREES_DE_LA_VALIDATION, type DonneesDeValidation,
 } from './prealablesValidation'
 import { calculerDeclaration2035 } from './declaration2035'
+import { incoherencesDesCases, valeursDesCases } from './cases2035'
 import { concordance2035 } from './concordance2035'
 import { ecritureDuPaiementPersonnel } from './cotisationPersonnelle'
 import { cotisationsComptees } from './cotisationRapprochee'
@@ -1130,6 +1131,57 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
     expect(ids(donnees({ vehicules: [vehicule('v1', 2025, 5000)] }))).not.toContain('frais-vehicule-en-double')
   })
 
+  // D4 (relecture du 03/11/2026) : la carte « Cases « dont » incohérentes » PEUT paraître — un remboursement de cotisations
+  // classé dans une catégorie de charge (au lieu d'une échéance négative de l'onglet Cotisations) fait baisser BK sans
+  // toucher BT —, et se tait une fois l'exercice validé : la validation la refuse donc avant, du même calcul qu'elle.
+  describe('une case « dont » plus forte que sa porteuse', () => {
+    const MADELIN: Categorie = { ...ACHATS, id: 'c-madelin', code: 'madelin', libelle: 'Contrat Madelin', poste_2035: 'Cotisations facultatives Madelin' }
+    const CHARGES: Categorie = { ...ACHATS, id: 'c-csp', code: 'csp', libelle: 'Charges sociales', poste_2035: 'Charges sociales personnelles' }
+    const MESSAGE = "case(s) « dont » supérieure(s) à leur case porteuse — le plus souvent un remboursement de cotisations classé en charge : "
+      + "le saisir en échéance négative dans l'onglet Cotisations avant la validation (carte « Cases « dont » incohérentes » ci-dessus)."
+
+    // La 2035 recalculée AVEC les échéances, comme Clôture la calcule : une échéance obligatoire de 600 € (BT), un contrat Madelin
+    // payé 400 € (BZ), et, selon le cas, un remboursement de 300 € classé dans la catégorie de charge.
+    function avecMadelin(remboursement: boolean): DonneesDeValidation {
+      const pieces = [
+        piece('p-mad', { categorie_id: 'c-madelin', montant_ttc: 400 }),
+        ...(remboursement ? [piece('p-remb', { categorie_id: 'c-csp', montant_ttc: -300, date_piece: '2025-04-10' })] : []),
+      ]
+      const lignes = [
+        ligne('l-mad', { piece_id: 'p-mad', montant: -400 }),
+        ...(remboursement ? [ligne('l-remb', { piece_id: 'p-remb', montant: 300, date: '2025-04-12' })] : []),
+      ]
+      const d = donnees({ piecesValidees: pieces, categories: [ACHATS, MADELIN, CHARGES], lignes, cotisations: [echeance('c1', '2025-03-05', 600)] })
+      const declaration = calculerDeclaration2035(
+        d.annee, [...d.piecesValidees], [...d.categories], [], cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), [],
+        d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements, [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
+        { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+      )
+      return { ...d, declaration }
+    }
+
+    it('retient la validation : un remboursement classé en charge fait passer BT + BZ au-dessus de BK', () => {
+      const d = avecMadelin(true)
+      const p = prealable(d, 'cases-dont-incoherentes')
+      expect(p).toMatchObject({ bloquant: true, nb: 1, cible: 'cloture', message: MESSAGE })
+      expect(prealablesDeValidation(d).validable).toBe(false)
+      // La carte de Clôture et le préalable disent la même chose : BK = 600 + 400 − 300, contre 600 + 400 de « dont ».
+      const incoherences = incoherencesDesCases(valeursDesCases(d.declaration!).valeurs)
+      expect(incoherences.map((i) => [i.porteuse.code, i.totalSousCases, i.montantPorteuse])).toEqual([['BK', 1000, 700]])
+    })
+
+    it('ne dit rien de cases cohérentes — le garde symétrique', () => {
+      // Sans le remboursement, BK = 600 + 400 = BT + BZ : la somme des « dont » ne dépasse pas la porteuse.
+      expect(ids(avecMadelin(false))).not.toContain('cases-dont-incoherentes')
+      expect(ids(donnees())).not.toContain('cases-dont-incoherentes')
+    })
+
+    it('se tait en engagement, qui ne produit pas de 2035', () => {
+      const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
+      expect(ids({ ...avecMadelin(true), modele: engagement, declaration: null, concordance: null })).not.toContain('cases-dont-incoherentes')
+    })
+  })
+
   it('avertit d’une CSG-CRDS non saisie, sans refuser — et seulement sur l’exercice où l’échéance compte', () => {
     const p = prealable(donnees({ cotisations: [echeance('ck', '2025-03-05', 900)] }), 'csg-non-saisie')
     expect(p?.bloquant).toBe(false)
@@ -1161,7 +1213,7 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
       categories: [{ ...ACHATS, poste_2035: 'Frais de véhicules' }], vehicules: [vehicule('v1', 2025, 5000)],
       cotisations: [echeance('ck', '2025-03-05', 900)],
     }))
-    for (const id of ['postes-sans-case', 'cases-negatives', 'frais-vehicule-en-double', 'csg-non-saisie', 'vehicule-amorti-sous-bareme']) {
+    for (const id of ['postes-sans-case', 'cases-negatives', 'cases-dont-incoherentes', 'frais-vehicule-en-double', 'csg-non-saisie', 'vehicule-amorti-sous-bareme']) {
       expect(presents).not.toContain(id)
     }
   })

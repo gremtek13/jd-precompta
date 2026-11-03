@@ -46911,3 +46911,31 @@ charge, les péages et le parking restant des charges ; aux frais réels, CC rel
 **VU EN PASSANT, SANS ENQUÊTE.** Le champ `vehicules.bareme` (BNC ou BIC) n'est lu par aucun calcul ; le PDF de la 2035
 ne remplit ni le tableau des immobilisations, ni le cadre 7, ni la case de la ligne 23 ; un bien de 1 000 € ou plus payé
 en espèces passe sans un mot (code monétaire et financier, art. L112-6 et D112-3).
+
+### 03/11/2026 — LES COTISATIONS : TROIS CORRECTIONS DE LA RELECTURE (D3, D4, D6)
+
+**CE QUI CHANGE.** Trois défauts de la relecture des cotisations sociales (MVP-D6), du code seul, aucune migration. D4 :
+la carte « Cases « dont » incohérentes » de Clôture PEUT paraître — un remboursement de cotisations classé dans une
+catégorie de charge, au lieu d'une échéance négative de l'onglet Cotisations, fait baisser BK sans toucher BT, et
+BT + BZ dépasse BK —, mais `CARTES_DE_CLOTURE` l'écartait en disant qu'elle ne peut pas paraître, et la validation
+aurait figé une 2035 incohérente. Elle devient le préalable bloquant `cases-dont-incoherentes`
+(`lib/prealablesValidation.ts`), calculé par la MÊME fonction que la carte (`incoherencesDesCases` sur
+`valeursDesCases`), sur l'exercice validé ; il rejoint le cycle « dépenses » de la révision (`revisionCycles.ts`, que
+son test lit) et la carte pointe vers lui. D3 : l'onglet Cotisations dit, sous le titre du formulaire, que ses échéances
+sont celles des régimes obligatoires, comptées en BT, et qu'un contrat facultatif se classe depuis Banque sous le poste
+que `cases2035.ts` range en BZ (« Cotisations facultatives Madelin ») ou en BU (« Plan d'épargne retraite ») ; la
+CSG-CRDS n'y est pas promise en BT, la part de l'échéance que BT porte la laissant à BV. D6 : la carte « Cotisations
+comptées à leur échéance » dit le cas le plus fréquent (une échéance de décembre prélevée en janvier, relevé pas encore
+importé) et ce qui la date à son paiement — importer le relevé suivant et rapprocher, ou déclarer le paiement depuis le
+compte personnel —, avant la validation, qui fige l'échéance.
+
+**LES TESTS.** `prealablesValidation.test.ts` : le préalable paraît sur une échéance obligatoire de 600 €, un contrat
+Madelin de 400 € et un remboursement de 300 € classé en charge (BK 700 €, « dont » 1 000 €), avec son message exact,
+ne paraît pas sans le remboursement ni en engagement ; `ClotureTab.test.tsx` : la validation est retenue et la carte
+de Clôture dit les deux cases, le garde symétrique se tait, la carte d'échéances dit sa nouvelle phrase ;
+`CotisationsTab.test.tsx` : la phrase des régimes obligatoires, lue en `textContent`, et ses deux postes confrontés à
+`SECONDES_CASES`. La couverture des cartes de Clôture, celle des points de la Checklist et le rangement par cycle
+restent verts sans être affaiblis.
+
+**LA MUTATION.** Le compte du préalable rendu nul (`0 × …`) : le test de `prealablesValidation.test.ts` et celui de
+`ClotureTab.test.tsx` tombent tous deux, le reste de leurs fichiers reste vert ; remis, tout repasse.

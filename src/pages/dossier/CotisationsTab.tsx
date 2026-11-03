@@ -615,6 +615,14 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Ajouter une échéance</h3>
+        {/* La 2035 range une échéance de cet onglet en BT ; un contrat facultatif saisi ici y passerait à tort au lieu de BZ ou BU,
+            que seul le poste de la catégorie d'un mouvement classé depuis Banque atteint (lib/cases2035.ts). */}
+        <p className="muted" style={{ marginTop: -8 }}>
+          Les échéances de cet onglet sont celles des régimes obligatoires (Urssaf, caisse de retraite) : elles comptent en BT,
+          « dont charges sociales personnelles obligatoires » de la ligne 25 de la 2035. Un contrat facultatif (Madelin, plan
+          d’épargne retraite) ne se saisit pas ici : il se classe depuis Banque, dans une catégorie dont le poste de la 2035 est
+          « Cotisations facultatives Madelin » (case BZ) ou « Plan d’épargne retraite » (case BU).
+        </p>
         <form onSubmit={handleSubmit}>
           <div className="field-row">
             <div className="field">

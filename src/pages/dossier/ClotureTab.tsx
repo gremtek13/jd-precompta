@@ -614,10 +614,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     }
   }
 
-  // Garde armé à l'avance : une case « dont » qui dépasse sa porteuse est une saisie contradictoire.
-  // Le moteur remplit les « dont » d'un poste qui les nomme, et BT des échéances (étape 2035S1) : chacun est une part de sa
-  // porteuse par construction. Le garde reste pour la saisie du cabinet à venir (2035S3 et S4), plutôt qu'à écrire après
-  // coup en ayant oublié la règle.
+  // Une case « dont » qui dépasse sa porteuse est une saisie contradictoire. Le moteur remplit les « dont » d'un poste qui
+  // les nomme, et BT des échéances (étape 2035S1) : chacun est une part de sa porteuse par construction — sauf qu'un
+  // remboursement de cotisations classé dans une catégorie de charge fait baisser BK sans toucher BT, et la carte paraît
+  // (relecture du 03/11/2026, D4). La validation la refuse (`cases-dont-incoherentes`, le même calcul), puisque la carte
+  // se tait une fois l'exercice validé.
   const incoherences: IncoherenceCase[] = formulairesOuverts.flatMap((f) => incoherencesDesCases(f.valeurs))
 
   // LA PART DE BK QUE RIEN NE QUALIFIE (étape 2035S1, 2035S-Q2 (A)) : le formulaire veut, ligne 25, la part obligatoire (BT),
@@ -1299,7 +1300,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             Aucun prélèvement rapproché ne paie ces échéances : elles comptent dans l'exercice de leur
             échéance, pour le versement saisi ou l'appel. Une cotisation se déduit l'année où elle est
             payée — rapprocher l'échéance de son prélèvement dans l'onglet Banque la compte à la date et
-            au montant du relevé, et l'écrit.
+            au montant du relevé, et l'écrit. Le plus souvent, c'est une échéance de décembre prélevée en
+            janvier dont le relevé n'est pas encore importé : importer le relevé suivant, puis rapprocher
+            l'échéance de son prélèvement, la comptera à la date de son paiement. Payée depuis le compte
+            personnel, déclarer ce paiement dans l'onglet Cotisations. Dans les deux cas avant la validation
+            de l'exercice : une fois validé, l'échéance est figée.
           </p>
           <details>
             <summary>Voir les échéances</summary>
