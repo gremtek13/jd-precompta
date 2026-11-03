@@ -483,8 +483,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   NatOp porte la nature et le poste ; FEC22C2-Q1 (figer ce choix avec l'exercice validé), tranchée le 02/11/2026 : non ;
   FEC22-Q7, écrite le 02/11/2026 : le libellé d'une vente porte le nom d'une entreprise (le prédicat d'IdClient), sinon le
   numéro de la facture, une pièce de vente « Recette » et sa date, son 411 au compte « Clients divers » ; la règle dans
-  `lib/libellesDesVentes.ts`, que garde un relevé de toute la source ; ce qui est déjà au brouillon garde son libellé
-  → « FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE », « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU
+  `lib/libellesDesVentes.ts`, que garde un relevé de toute la source ; ce qui est déjà au brouillon garde son libellé,
+  et rien ne le signale (FEC22Q7-Q1, le 03/11/2026) → « FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE »,
+  « UNE RÉPONSE DU CABINET : FEC22Q7-Q1 », « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU
   CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E », « LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) »,
   « LE FEC D'UN BNC EN TRÉSORERIE À VINGT-DEUX CHAMPS, DERRIÈRE SON DRAPEAU (FEC22C1, LIGNE 26.6, ÉTAPE E) », « LES
   QUATRE CHAMPS DU FEC D'UN BNC, EN BASE (FEC22B) (PRÉPARÉE, PAS APPLIQUÉE) », « LE FEC D'UN BNC : LES QUATRE POSTES
@@ -1064,10 +1065,12 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   dédoublonnage compte par multiplicité ; un solde se reconnaît à sa forme ; un recouvrement se confirme → « L'IMPORT
   D'UN RELEVÉ PAR FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN ». **Une règle « Toujours ignorer »** retient le sens
   du mouvement qui l'a créée (nulle : les deux sens, toute règle d'avant), et `rapprocher_cotisation` refuse un mouvement
-  ignoré (REGLES-Q1, en production depuis le 03/11/2026, `SENS_DES_REGLES_IGNOREES_EXPORTE` levé) → « LE SENS DES RÈGLES
-  « TOUJOURS IGNORER » ET LA COTISATION D'UN MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS APPLIQUÉE) », « LE SENS
-  DES RÈGLES « TOUJOURS IGNORER » EN PRODUCTION (REGLES-Q1) ». **Classification** : le bordereau d'abord, le sens
-  par `orientationDe` → « Le sens d'une pièce est décidé par la classification ».
+  ignoré (REGLES-Q1, en production depuis le 03/11/2026, `SENS_DES_REGLES_IGNOREES_EXPORTE` levé) ; « Ignorer » et
+  « Toujours ignorer » n'écrivent que sur un mouvement encore à traiter EN BASE, et disent ce qu'ils n'ont pas écrit
+  → « LE SENS DES RÈGLES « TOUJOURS IGNORER » ET LA COTISATION D'UN MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS
+  APPLIQUÉE) », « LE SENS DES RÈGLES « TOUJOURS IGNORER » EN PRODUCTION (REGLES-Q1) », « « IGNORER » ET « TOUJOURS
+  IGNORER » NE VISENT QU'UN MOUVEMENT ENCORE À TRAITER ». **Classification** : le bordereau d'abord, le sens par
+  `orientationDe` → « Le sens d'une pièce est décidé par la classification ».
 - **Un fournisseur se reconnaît à une clé d'identité** (`cleFournisseur`), mot à mot, jamais par sous-chaîne.
   **« Textract sait le lire » n'est pas « l'application accepte ce fichier »** (`textractPeutLire`) ; une relecture OCR
   ne relit que ce qui manque.
