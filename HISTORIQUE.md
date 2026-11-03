@@ -46814,3 +46814,48 @@ que l'application compte à la date du crédit hors des factures qu'elle émet.
 **APERÇU HORS PÉRIMÈTRE, SANS ENQUÊTE.** Le cumul des amortissements du registre n'est jamais confronté au 28 de la
 balance reprise ; le paiement en 2025 d'un bien acquis en décembre 2024 n'a pas été suivi ; `pieces-sans-date` et
 `date-impossible` comptent les pièces de toute année (une pièce de 2026 sans date retient 2025).
+
+### 03/11/2026 — RELECTURE : LES COTISATIONS SOCIALES D'UN BNC EN TRÉSORERIE, DE LA SAISIE À LA 2035 (MVP-D6)
+
+**POURQUOI.** La répétition générale compare la 2035 de 2025 que calcule l'application à celle que l'expert-comptable a
+déposée, et les cotisations sociales sont parmi ses plus gros postes. Une relecture (agent architecte, lecture seule) a
+suivi l'onglet Cotisations, `previsionnelles.ts`, `cotisationRapprochee.ts`, `cotisationPersonnelle.ts`, le moteur de la
+2035 et ses cases, `rapprocher_cotisation` (sa définition en vigueur, celle de `sens_des_regles_ignorees`, conforme au
+module) ; rien en production.
+
+**CE QUI A ÉTÉ REJOUÉ.** Sur une copie de la réplique : `cotisationRapprochee.sql` 51/51 (la réplique ne porte aucun
+mouvement : l'essai rendait « ESSAI_IMPOSSIBLE » tant qu'un jeu de départ fictif n'y était pas semé — son en-tête ne le
+dit pas), `cotisationPersonnelle.sql` 91/91, `retraitPaiementPersonnel.sql` 24/24, rien de resté. Les calculs de la 2035
+par Vitest hors du dépôt, sur une année type (douze mensualités dont celles de décembre prélevées en janvier, une
+régularisation, un remboursement, la retraite dont une échéance payée du compte personnel, un contrat facultatif rangé
+sous son poste) : BK, BT, BZ et BV égaux au calcul à la main. Justes aussi : la cotisation comptée à la date et au
+montant du prélèvement (CGI, art. 93 ; BOI-BNC-BASE-40-60-50-20 § 270), la part déductible de la CSG-CRDS en BV (6,8 /
+9,7 de ce qui est payé dans l'année ; notice de la 2035, ligne 14 ; CGI, art. 154 quinquies), BT + BZ + BU = BK, le
+remboursement rapproché d'une échéance négative, la prise en charge d'une partie des cotisations par l'assurance
+maladie, que l'application n'a pas à voir (seules les cotisations versées se déduisent ; BOI-BNC-BASE-40-60-50-10).
+
+**LES DÉFAUTS.** D1 (confirmé, fausse la 2035 puis retient la validation) : un prélèvement qui paie deux échéances (la
+mensualité et une régularisation) compte la seconde deux fois — un mouvement ne se rapproche que d'une échéance. D2
+(confirmé, fausse la 2035) : un prélèvement de l'Urssaf classé par une catégorie au poste « Cotisations sociales
+personnelles », que `POSTES_PROPOSABLES` propose, part tout entier en BK, BV à zéro, sans un mot :
+`partCsgNonDeductible` ne lit que les échéances. D3 (confirmé) : un contrat facultatif saisi dans l'onglet Cotisations
+passe en BT au lieu de BZ ; l'écran ne dit pas que seuls les régimes obligatoires y entrent. D4 (confirmé) : un
+remboursement classé dans la catégorie de charge rend BT + BZ supérieur à BK ; la carte « Cases « dont » incohérentes »
+paraît, alors que `CARTES_DE_CLOTURE` l'écarte de la validation en disant qu'elle ne peut pas paraître. D5 (gêne) : une
+échéance ne se modifie pas, et une échéance de retraite laissée vide déclenche à tort l'avertissement de la CSG-CRDS. D6
+(gêne) : une échéance que rien ne paie compte à sa date d'échéance. D7 et D8 (plausibles) : un remboursement plus fort
+que les cotisations de l'année rend BT et BV négatives ; des majorations de retard entrent en BK sans être déductibles
+(BOI-BNC-BASE-40-60-50-20, § 10), leur place étant CC (2035S3).
+
+**LES SUITES.** Au cabinet (page des arbitrages, version 77) : COT-Q1, réunir deux échéances payées par un même
+prélèvement (recommandé : un geste à l'écran pour le MVP, la migration plus tard) ; COT-Q2, un prélèvement de
+cotisations classé par une catégorie (recommandé : en erreur) ; COT-Q3, « Modifier » une échéance non figée
+(recommandé). À l'expert-comptable, dans la fiche 2035-E (questions 8 à 10) : l'excédent d'un remboursement, la case de
+la CURPS et de la contribution à la formation professionnelle, la CSG déductible calculée ou lue sur l'attestation. Sans
+question, avec le lot de MVPD7 : la phrase de l'onglet sur les régimes obligatoires (D3), la carte des cases « dont »
+qui retient la validation (D4), une carte de Clôture qui dit mieux l'échéance sans paiement (D6). Pour la répétition,
+sans code : l'Urssaf et la retraite par l'onglet Cotisations avec leur CSG-CRDS (0 pour la retraite), les contrats
+facultatifs par leur poste dans Banque, une seule échéance à la somme pour un prélèvement qui en paie deux, un
+remboursement en échéance négative, le relevé importé jusqu'au premier prélèvement de janvier 2026. Vu en passant : les
+policies de `cotisations_declarees` visent `public`, comme soixante-treize autres d'avant la règle `to authenticated` ;
+leurs prédicats sont faux sans session, ce que `rls.sql` rejoue.
