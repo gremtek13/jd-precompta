@@ -35,6 +35,8 @@ const faux = vi.hoisted(() => ({
   // Mises à jour de ligne appliquées tout de suite, pour les tests qui ne regardent pas la fenêtre
   // d'attente — ou refusées, pour ceux qui regardent ce que l'écran fait d'un échec.
   majImmediate: false,
+  // La base qui n'annonce pas le nombre de lignes écrites par une mise à jour en lot (le compte demandé reste sans réponse).
+  compteMuet: false,
   erreurMajLigne: null as string | null,
   // La RELECTURE du relevé retenue à la demande : c'est la fenêtre pendant laquelle le panneau montre
   // encore l'état d'avant, et que le verrou doit couvrir.
@@ -147,6 +149,10 @@ vi.mock('../../lib/supabase', async () => {
   function chaine(table: string) {
     let operation = 'select'
     let idFiltre: unknown = null
+    // Les identifiants d'une mise à jour EN LOT (`.in('id', …)`), et le compte que l'appelant demande (`update(valeurs,
+    // { count: 'exact' })`) : le faux serveur n'applique le lot qu'à ces lignes, filtres compris, et rend le nombre écrit.
+    let idsEnLot: unknown[] | null = null
+    let compteDemande = false
     let valeurMaj: Record<string, unknown> = {}
     let valeurUpsert: Record<string, unknown>[] = []
     const filtres: string[] = []
@@ -178,14 +184,15 @@ vi.mock('../../lib/supabase', async () => {
       order: () => c,
       in: (colonne: string, valeurs: unknown[]) => {
         if (colonne === 'compte') surDesComptes = true
-        if (table === 'lignes_bancaires' && operation === 'update' && colonne === 'id') faux.idsMisAJour.push(valeurs)
+        if (table === 'lignes_bancaires' && operation === 'update' && colonne === 'id') { faux.idsMisAJour.push(valeurs); idsEnLot = valeurs }
         predicats.push(predicatIn(colonne, valeurs))
         return c
       },
       delete: () => { operation = 'delete'; return c },
-      update: (valeur: Record<string, unknown>) => {
+      update: (valeur: Record<string, unknown>, options?: { count?: string }) => {
         operation = 'update'
         valeurMaj = valeur
+        compteDemande = options?.count === 'exact'
         if (table === 'lignes_bancaires') faux.updatesLignes.push(valeur)
         if (table === 'pieces') faux.updatesPieces.push(valeur)
         if (table === 'ecritures_brouillon') faux.updatesEcritures.push({ valeur, filtres })
@@ -226,12 +233,15 @@ vi.mock('../../lib/supabase', async () => {
         }
         // Le faux serveur n'applique la mise à jour qu'aux lignes que TOUS ses filtres désignent — `statut=non_rapprochee`
         // compris, la condition des rapprochements — et rend celles qu'il a écrites, comme `.select('id')`.
-        const visees = () => new Set(filtrer(faux.lignes.filter((l) => l.id === idFiltre), predicats).map((l) => l.id))
+        // Un lot (`.in('id', …)`) désigne ses lignes comme `.eq('id', …)` la sienne : sans ce second cas, le faux n'en écrivait aucune.
+        const visees = () => new Set(filtrer(faux.lignes.filter((l) => (idsEnLot ? idsEnLot.includes(l.id) : l.id === idFiltre)), predicats).map((l) => l.id))
+        // Le compte n'est rendu que s'il est demandé, et jamais quand `faux.compteMuet` le tait (la base qui ne le rend pas).
+        const compte = (ids: Set<string>) => (compteDemande && !faux.compteMuet ? { count: ids.size } : {})
         const ecrites = (ids: Set<string>) => (unique ? ([...ids].map((id) => ({ id }))[0] ?? null) : [...ids].map((id) => ({ id })))
         if (table === 'lignes_bancaires' && operation === 'update' && faux.majImmediate) {
           const ids = visees()
           faux.lignes = faux.lignes.map((l) => (ids.has(l.id) ? { ...l, ...valeurMaj } as LigneBancaire : l))
-          return Promise.resolve({ data: ecrites(ids), error: null }).then(suite)
+          return Promise.resolve({ data: ecrites(ids), error: null, ...compte(ids) }).then(suite)
         }
         if (table === 'lignes_bancaires' && operation === 'update') {
           // La mise à jour reste en attente jusqu'à `resoudreUpdateLigne` : c'est la fenêtre
@@ -244,7 +254,7 @@ vi.mock('../../lib/supabase', async () => {
               // elle, reste typée sans `as` — c'est là que le compilateur doit mordre.
               const ids = visees()
               faux.lignes = faux.lignes.map((l) => (ids.has(l.id) ? { ...l, ...valeurMaj } as LigneBancaire : l))
-              resoudre({ data: ecrites(ids), error: null })
+              resoudre({ data: ecrites(ids), error: null, ...compte(ids) })
             }
           }).then(suite)
         }
@@ -504,6 +514,7 @@ function reinitialiser() {
   faux.resoudreUpdateLigne = null
   faux.erreurReleves = null
   faux.majImmediate = false
+  faux.compteMuet = false
   faux.erreurMajLigne = null
   faux.retenirLectureLignes = false
   faux.resoudreLectureLignes = null
@@ -6203,6 +6214,117 @@ describe('BanqueTab — un rapprochement ne vise qu’un mouvement encore à tra
     await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette pièce' }).click() })
     expect(faux.lignes.map((l) => l.statut)).toEqual(['ignoree'])
     expect(alertes).toEqual(['Le rapprochement n’a pas été enregistré : ce mouvement n’est plus à traiter (ignoré ou classé entre-temps, depuis un autre écran).'])
+  })
+})
+
+// « IGNORER » ET « TOUJOURS IGNORER » (03/11/2026) : même famille que le describe d'au-dessus. La fiche et la règle jugent le
+// mouvement sur le relevé LU ; un autre onglet a pu, entre-temps, le rapprocher d'une pièce. La mise à jour, sans condition de
+// statut, le remettait « ignoré » et déliait sa pièce sans un mot. Elle ne vise plus qu'un mouvement encore « à traiter ».
+describe('BanqueTab — « Ignorer » et « Toujours ignorer » ne visent qu’un mouvement encore à traiter', () => {
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+  const rapprocheeAilleurs = (id: string) => {
+    faux.lignes = faux.lignes.map((l) => (l.id === id ? { ...l, statut: 'rapprochee' as const, piece_id: 'piece-1' } : l))
+  }
+  const regleInseree = () => faux.insertions.filter((i) => i.table === 'regles_bancaires_ignorees').map((i) => i.valeur)
+  // Deux paiements du même tiers, du même sens : la règle « cpam » les reconnaît tous deux, et la fiche ouvre le premier.
+  const deuxPrelevements = () => [
+    ligneDeTest({ id: 'ligne-1', libelle: 'PRLV CPAM PARTICIPATION', montant: -2 }),
+    ligneDeTest({ id: 'ligne-2', libelle: 'PRLV CPAM FRANCHISE', montant: -1, date: '2025-06-04' }),
+  ]
+  const etat = () => faux.lignes.map((l) => [l.id, l.statut, l.piece_id])
+
+  it('« Ignorer » : rapproché depuis un autre onglet, le mouvement garde son statut et sa pièce, et l’écran le dit', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    rendre()
+    await ouvrir()
+    rapprocheeAilleurs('ligne-1')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ignorer' }).click() })
+    expect(faux.updatesLignes).toEqual([{ statut: 'ignoree', piece_id: null }])
+    expect(etat()).toEqual([['ligne-1', 'rapprochee', 'piece-1']])
+    expect(alertes).toEqual(['Le mouvement n’a pas été ignoré : il n’est plus à traiter (ignoré ou classé entre-temps, depuis un autre écran). Rien n’y a été écrit.'])
+  })
+
+  it('« Ignorer » : encore à traiter, le mouvement devient ignoré, sans alerte — le garde symétrique', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    rendre()
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ignorer' }).click() })
+    expect(etat()).toEqual([['ligne-1', 'ignoree', null]])
+    expect(alertes).toEqual([])
+  })
+
+  it('« Toujours ignorer » : un mouvement rapproché ailleurs après la lecture garde sa pièce, et l’écran compte ce qui n’est pas parti', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.lignes = deuxPrelevements()
+    vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    rendre()
+    await ouvrir('PRLV CPAM PARTICIPATION')
+    rapprocheeAilleurs('ligne-2')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Toujours ignorer ce type…' }).click() })
+    // La règle d'abord : elle vaut pour les prochains imports même si un mouvement a changé.
+    expect(regleInseree()).toEqual([{ dossier_id: 'dossier-de-test', motif: 'cpam' }])
+    // La mise à jour vise les DEUX mouvements — celui de la fiche compris, tous deux « à traiter » sur le relevé lu.
+    expect(faux.idsMisAJour).toEqual([['ligne-1', 'ligne-2']])
+    expect(etat()).toEqual([['ligne-1', 'ignoree', null], ['ligne-2', 'rapprochee', 'piece-1']])
+    expect(alertes).toEqual(['La règle est enregistrée, mais 1 mouvement sur 2 n’a pas été ignoré : il n’est plus à traiter (ignoré ou classé entre-temps, depuis un autre écran). Rien n’y a été écrit.'])
+  })
+
+  it('« Toujours ignorer » : plusieurs mouvements partis ailleurs, l’alerte s’accorde au pluriel', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.lignes = [...deuxPrelevements(), ligneDeTest({ id: 'ligne-3', libelle: 'PRLV CPAM REGUL', montant: -3, date: '2025-06-05' })]
+    vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    rendre()
+    await ouvrir('PRLV CPAM PARTICIPATION')
+    rapprocheeAilleurs('ligne-2')
+    rapprocheeAilleurs('ligne-3')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Toujours ignorer ce type…' }).click() })
+    expect(etat()).toEqual([['ligne-1', 'ignoree', null], ['ligne-2', 'rapprochee', 'piece-1'], ['ligne-3', 'rapprochee', 'piece-1']])
+    expect(alertes).toEqual(['La règle est enregistrée, mais 2 mouvements sur 3 n’ont pas été ignorés : ils ne sont plus à traiter (ignorés ou classés entre-temps, depuis un autre écran). Rien n’y a été écrit.'])
+  })
+
+  it('« Toujours ignorer » : tous encore à traiter, tous ignorés, sans alerte de compte — le garde symétrique', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.lignes = deuxPrelevements()
+    vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    rendre()
+    await ouvrir('PRLV CPAM PARTICIPATION')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Toujours ignorer ce type…' }).click() })
+    expect(regleInseree()).toEqual([{ dossier_id: 'dossier-de-test', motif: 'cpam' }])
+    expect(etat()).toEqual([['ligne-1', 'ignoree', null], ['ligne-2', 'ignoree', null]])
+    expect(alertes).toEqual([])
+  })
+
+  it('« Toujours ignorer » : la base qui ne rend pas le nombre écrit le dit — un échec signale, il ne se tait pas', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.compteMuet = true
+    faux.lignes = deuxPrelevements()
+    vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    rendre()
+    await ouvrir('PRLV CPAM PARTICIPATION')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Toujours ignorer ce type…' }).click() })
+    expect(alertes).toEqual(['La règle est enregistrée, mais la base n’a pas rendu le nombre de mouvements ignorés : la relecture montre leur état.'])
+  })
+
+  it('« Toujours ignorer » : un refus de la mise à jour est dit avec sa raison, la règle restant enregistrée', async () => {
+    reinitialiser()
+    faux.erreurMajLigne = 'refus simulé'
+    faux.lignes = deuxPrelevements()
+    vi.spyOn(window, 'prompt').mockReturnValue('cpam')
+    rendre()
+    await ouvrir('PRLV CPAM PARTICIPATION')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Toujours ignorer ce type…' }).click() })
+    expect(regleInseree()).toEqual([{ dossier_id: 'dossier-de-test', motif: 'cpam' }])
+    expect(alertes).toEqual(['La règle est enregistrée, mais les mouvements déjà importés n\'ont pas pu être ignorés : refus simulé'])
   })
 })
 

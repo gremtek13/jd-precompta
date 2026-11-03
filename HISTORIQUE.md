@@ -46713,3 +46713,44 @@ sur 20, rien de resté (le dossier jetable, ses mouvements et ses règles relus 
 la migration ne touche ni policy ni droit, et les quatre familles de `signature.sql` qui les portent (droits des
 fonctions, droits des tables, policies, rls) sont égales à celles de la réplique, où `rls.sql` rendait la même sortie
 avant et après elle. Restent les deux défauts dits hors de la décision le 02/11/2026.
+
+### 03/11/2026 — « IGNORER » ET « TOUJOURS IGNORER » NE VISENT QU'UN MOUVEMENT ENCORE À TRAITER
+
+**LE DÉFAUT.** Dit, pas corrigé, dans l'entrée de REGLES-Q1 (« HORS DE LA DÉCISION ») : dans `BanqueTab.tsx`, deux
+écritures passaient un mouvement du relevé à `ignoree` par son seul identifiant, sans regarder son état EN BASE —
+`ignorer(ligneId)`, le bouton « Ignorer » de la fiche, et la mise à jour des mouvements déjà importés de
+`toujoursIgnorer`, après l'insertion de la règle. La fiche n'offre ces gestes que sur un mouvement « à traiter », et
+`ignoresParLaRegle` ne retient que des mouvements `non_rapprochee` — mais selon le relevé LU. Un autre onglet qui
+rapprochait le mouvement d'une pièce entre la lecture et le clic le voyait remis « ignoré », sa pièce déliée
+(`piece_id: null`) sans un mot ; sa contrepartie banque, écrite au rapprochement, restait au brouillon. C'est la famille
+du 31/10/2026 (« Tout rapprocher », « Associer cette pièce », « Valider et rapprocher »), dont ces deux écritures
+avaient échappé.
+
+**LA CORRECTION.** `ignorer` porte `.eq('statut', 'non_rapprochee').select('id').maybeSingle()`, comme `rapprocher` :
+l'erreur passe par `messageErreur` (`return false`), et rien d'écrit (`data == null`) se dit — « Le mouvement n’a pas
+été ignoré : il n’est plus à traiter (ignoré ou classé entre-temps, depuis un autre écran). Rien n’y a été écrit. » —
+avec `return true`, la relecture montrant ce qu'il est devenu. `toujoursIgnorer` écrit sa règle d'abord (elle vaut pour
+les prochains imports même si un mouvement a changé), puis met à jour par `update(valeurs, { count: 'exact' })
+.in('id', …).eq('statut', 'non_rapprochee')`, SANS `.select` (une collection ne se lit qu'avec son compte :
+`lecturesPaginees.test.ts`). Le nombre écrit se compare à ce que visait la mise à jour : « La règle est enregistrée,
+mais 1 mouvement sur 2 n’a pas été ignoré : il n’est plus à traiter… » (accords au pluriel), et sans nombre rendu, une
+alerte neutre — la base n'a pas rendu le nombre de mouvements ignorés, la relecture montre leur état : un échec tombe
+du côté qui SIGNALE, jamais du silence. Ni l'ordre ni l'alerte des mouvements écartés par les ventes (`ecartDuLot`) ne
+changent. Le mouvement de la fiche est compris dans ce que vise la règle : « 1 sur 2 » quand un seul autre mouvement a
+été rapproché ailleurs.
+
+**LES TESTS.** `BanqueTab.test.tsx`, le describe « Ignorer » et « Toujours ignorer » ne visent qu’un mouvement encore à
+traiter, sept cas : la fiche, rapprochée ailleurs (statut et pièce intacts, la phrase exacte) et son garde symétrique ;
+la règle, un mouvement rapproché ailleurs (le premier ignoré, le second garde sa pièce, « 1 mouvement sur 2 »), le
+pluriel (« 2 mouvements sur 3 »), le garde symétrique (tous ignorés, aucune alerte), le nombre non rendu, et le refus
+de la base. Le faux client de l'onglet applique désormais `.in('id', …)` à une mise à jour (il n'écrivait aucune ligne
+en lot), et rend `count` quand `{ count: 'exact' }` est demandé (`compteMuet` le tait) ; les faux de
+`BanqueTab.candidats.test.tsx` et `BanqueTab.lotsDesVentes.test.tsx`, qui notent les écritures sans les appliquer,
+rendent ce compte aussi. Mutations : sans `.eq('statut', …)` dans `ignorer`, le cas de la fiche rougit ; sans lui dans
+`toujoursIgnorer`, les deux cas de la règle rougissent ; la condition « moins d'écrits que visés » remplacée par
+`false`, les mêmes deux rougissent.
+
+**CE QUI RESTE.** L'autre défaut du même paragraphe, hors de cette correction : les fonctions SQL qui classent un
+mouvement (l'affectation, la ventilation, le virement personnel, le compte de bilan, l'échéance d'emprunt, la
+déclaration de TVA, le règlement groupé) ne regardent pas le statut « ignoré » — seule `rapprocher_cotisation` le
+refuse ; l'écran les en garde.
