@@ -46677,3 +46677,39 @@ case « Caisse » de l'onglet Accès.
 - (c) Sur un dossier repris dont la caisse n'a pas d'ouverture, une date d'avant la reprise est jugée « caisse négative » avant le
   clic, là où la base dit « précède l'ouverture du dossier » : la limite déjà documentée de C12a (l'ouverture du dossier reste au
   jugement de la base).
+
+### 03/11/2026 — LE SENS DES RÈGLES « TOUJOURS IGNORER » EN PRODUCTION (REGLES-Q1)
+
+(Écrite par un agent architecte, sur `6153d29`. En production, des lectures seules : le catalogue, l'historique des
+migrations, et un compte des règles portant un sens ; aucun essai joué, rien d'écrit. La session a joué
+`sensDesReglesIgnorees.sql` en production elle-même.)
+
+**LE COLLAGE.** La migration préparée le 02/11/2026 (« LE SENS DES RÈGLES « TOUJOURS IGNORER » ET LA COTISATION D'UN
+MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS APPLIQUÉE) ») a été collée par le cabinet dans l'éditeur SQL de
+Supabase, depuis un téléphone, avec sa ligne d'historique, après `facture_dates_centimes_mention_tva` (`20261102112003`).
+La production porte 170 migrations ; la dernière, `20261103114023_sens_des_regles_ignorees`, un seul texte de 18 042
+caractères — les 17 772 du fichier et 270 retours chariot —, `5dd50378…` sans eux : l'empreinte du fichier, qui passe de
+`supabase/preparees/` à l'export sous cette version, texte inchangé. Le corps de `rapprocher_cotisation` garde lui aussi les
+`\r\n` du collage ; sans eux, `bf920662…`, le corps neuf. La colonne, ses deux contraintes, la clé d'hier retirée ; aucune
+règle ne porte encore un sens.
+
+**LES CONTRÔLES.** Le `create table` de `regles_bancaires_ignorees` re-rendu au socle depuis la production (la seule
+instruction changée). La dérive 170 = 170, `ccbeaaba…` ; le socle 81, `cea19cff…` ; l'inventaire 2 309, `ee3f607f…` — égaux
+des deux côtés, et égaux à ce que la réplique de la préparation annonçait. `signature.sql` en production : huit familles
+celles qu'annonçait la préparation ; « fonctions » 226 `74ad9640…`, qui n'est ni celle de REGLES seule (`b8f29817…`) ni
+celle de la facture seule (`0cb2485a…`) : elle porte les deux. Sur une réplique (`regles_prod168`, la production à 168,
+copiée), munie de la facture comme l'outil, puis du collage tel que le cabinet l'a fait (en `\r\n`, la ligne d'historique
+sous `20261103114023`, par le propriétaire des tables) : la même ligne d'historique, le même corps, les trois contrôles et
+les neuf familles de la production, au caractère près. Les retours chariot de `prosrc` ne font pas d'écart : la signature
+les ramène à `\n`.
+
+**L'APPLICATION.** `SENS_DES_REGLES_IGNOREES_EXPORTE` levé (il suit le fichier) : une règle née d'un débit ne fait ignorer
+que les débits, l'écran dit son sens, et `rapprocher_cotisation` refuse un mouvement ignoré, dit avant le clic. `types.ts` :
+`sens` obligatoire, neuf fabriques de test à `sens: null`. L'état baissé reste éprouvé : les fonctions `…Selon(false, …)`
+et l'accesseur des tests de l'onglet Banque et de la carte de connexion bancaire, dont le drapeau vaut « baissé » par
+défaut ; aucun test retiré. Le banc du leurre : l'essai sort des cas particuliers (il ne cherche aucun semis), seize ; la
+famille « apres » reste, vide. La session a joué `sensDesReglesIgnorees.sql` en production le 03/11/2026 : 20 verdicts
+sur 20, rien de resté (le dossier jetable, ses mouvements et ses règles relus absents). `rls.sql` n'y a pas été rejoué :
+la migration ne touche ni policy ni droit, et les quatre familles de `signature.sql` qui les portent (droits des
+fonctions, droits des tables, policies, rls) sont égales à celles de la réplique, où `rls.sql` rendait la même sortie
+avant et après elle. Restent les deux défauts dits hors de la décision le 02/11/2026.

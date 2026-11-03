@@ -111,7 +111,7 @@ function recuperation(o: Partial<Recuperation> = {}): Recuperation {
   }
 }
 const regle = (motif: string): RegleBancaireIgnoree =>
-  ({ id: `regle-${motif}`, dossier_id: 'dossier-de-test', motif, created_at: '2026-09-01T09:00:00Z' })
+  ({ id: `regle-${motif}`, dossier_id: 'dossier-de-test', motif, sens: null, created_at: '2026-09-01T09:00:00Z' })
 
 // L'état que rend `statut` : une variable, pour que la RELECTURE après une action montre l'état d'après.
 let etat: { configuree: boolean; connexion: ConnexionVue | null }

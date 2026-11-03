@@ -1062,7 +1062,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   des opérations ». **L'import d'un relevé par fichier** (`lib/importReleve.ts`) : l'aperçu et l'import passent par la
   même interprétation, montrée signée avant le clic ; un montant illisible s'écarte et se compte, jamais zéro ; le
   dédoublonnage compte par multiplicité ; un solde se reconnaît à sa forme ; un recouvrement se confirme → « L'IMPORT
-  D'UN RELEVÉ PAR FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN ». **Classification** : le bordereau d'abord, le sens
+  D'UN RELEVÉ PAR FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN ». **Une règle « Toujours ignorer »** retient le sens
+  du mouvement qui l'a créée (nulle : les deux sens, toute règle d'avant), et `rapprocher_cotisation` refuse un mouvement
+  ignoré (REGLES-Q1, en production depuis le 03/11/2026, `SENS_DES_REGLES_IGNOREES_EXPORTE` levé) → « LE SENS DES RÈGLES
+  « TOUJOURS IGNORER » ET LA COTISATION D'UN MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS APPLIQUÉE) », « LE SENS
+  DES RÈGLES « TOUJOURS IGNORER » EN PRODUCTION (REGLES-Q1) ». **Classification** : le bordereau d'abord, le sens
   par `orientationDe` → « Le sens d'une pièce est décidé par la classification ».
 - **Un fournisseur se reconnaît à une clé d'identité** (`cleFournisseur`), mot à mot, jamais par sous-chaîne.
   **« Textract sait le lire » n'est pas « l'application accepte ce fichier »** (`textractPeutLire`) ; une relecture OCR

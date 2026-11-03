@@ -4193,7 +4193,7 @@ describe('BanqueTab — la connexion bancaire', () => {
       { id_externe: 'eb:r:assurance', date: '2025-06-10', libelle: 'PRLV SEPA ASSURANCE FICTIVE', montant: -50 },
     ],
   }
-  const regle = (motif: string): RegleBancaireIgnoree => ({ id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, created_at: '2025-06-01T09:00:00Z' })
+  const regle = (motif: string): RegleBancaireIgnoree => ({ id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, sens: null, created_at: '2025-06-01T09:00:00Z' })
 
   async function recuperer() {
     const bouton = await screen.findByRole('button', { name: 'Récupérer les mouvements' })
@@ -5562,7 +5562,7 @@ describe('BanqueTab — les écarts à vérifier attendent le relevé', () => {
 // bancaire. La suspension de la lecture tronquée ne couvrait que le relevé lu EN PARTIE. Chaque chemin d'import se tente
 // donc la lecture retenue (rien ne part, et l'écran dit pourquoi), puis la lecture revenue (seul le nouveau part, ignoré).
 describe('BanqueTab — l’import attend la fin de la lecture du relevé', () => {
-  const regle = (motif: string): RegleBancaireIgnoree => ({ id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, created_at: '2025-06-01T09:00:00Z' })
+  const regle = (motif: string): RegleBancaireIgnoree => ({ id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, sens: null, created_at: '2025-06-01T09:00:00Z' })
   const lot = () => faux.insertions.filter((i) => i.table === 'lignes_bancaires')
   const attente = /Le relevé du dossier est en cours de lecture : l'import attend la fin de la lecture/
 
@@ -5696,7 +5696,7 @@ describe('BanqueTab — l’import attend la fin de la lecture du relevé', () =
 // le plan d'avant, où la pièce paraît seule candidate alors qu'un jumeau du mouvement vient d'entrer au relevé. Ils
 // attendent la fin de la lecture, le disent, puis le plan relu tranche : deux mouvements, plus de certitude.
 describe('BanqueTab — les lots de rapprochement attendent la relecture', () => {
-  const regle: RegleBancaireIgnoree = { id: 'r-loyer', dossier_id: 'dossier-de-test', motif: 'loyer fictif', created_at: '2025-06-01T09:00:00Z' }
+  const regle: RegleBancaireIgnoree = { id: 'r-loyer', dossier_id: 'dossier-de-test', motif: 'loyer fictif', sens: null, created_at: '2025-06-01T09:00:00Z' }
   const jumeau = () => ligneDeTest({ id: 'ligne-2', libelle: 'PRLV SEPA FOURNISSEUR BIS' })
 
   async function relireAvecUnJumeau() {
@@ -5761,7 +5761,7 @@ describe('BanqueTab — les lots de rapprochement attendent la relecture', () =>
 // un mot, quand l'opérateur la croyait retirée. Rouge sur le code d'avant.
 describe('BanqueTab — le retrait d’une règle « toujours ignorer »', () => {
   const regleIgnoree = (motif: string): RegleBancaireIgnoree => ({
-    id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, created_at: '2025-06-01T09:00:00Z',
+    id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, sens: null, created_at: '2025-06-01T09:00:00Z',
   })
 
   it('refusé, il le dit avec la raison de la base, et la règle reste', async () => {
@@ -6265,8 +6265,8 @@ describe('BanqueTab — « Toujours ignorer ce type… »', () => {
   it('les règles inopérantes se disent dans la liste', async () => {
     reinitialiser()
     faux.reglesIgnorees = [
-      { id: 'r1', dossier_id: 'dossier-de-test', motif: 'prlv', created_at: '2025-06-01T09:00:00Z' },
-      { id: 'r2', dossier_id: 'dossier-de-test', motif: 'macsf', created_at: '2025-06-01T09:00:00Z' },
+      { id: 'r1', dossier_id: 'dossier-de-test', motif: 'prlv', sens: null, created_at: '2025-06-01T09:00:00Z' },
+      { id: 'r2', dossier_id: 'dossier-de-test', motif: 'macsf', sens: null, created_at: '2025-06-01T09:00:00Z' },
     ]
     rendre()
     expect(await screen.findByText('prlv (inopérante : motif trop commun)')).toBeTruthy()
@@ -6384,7 +6384,7 @@ describe('BanqueTab — « Toujours ignorer ce type… »', () => {
       { id: 'r1', dossier_id: 'dossier-de-test', motif: 'cpam', sens: 'decaissement', created_at: '2025-06-01T09:00:00Z' },
       { id: 'r2', dossier_id: 'dossier-de-test', motif: 'epargne alpha', sens: 'encaissement', created_at: '2025-06-01T09:00:00Z' },
       { id: 'r3', dossier_id: 'dossier-de-test', motif: 'macsf', sens: null, created_at: '2025-06-01T09:00:00Z' },
-      { id: 'r4', dossier_id: 'dossier-de-test', motif: 'prlv', created_at: '2025-06-01T09:00:00Z' },
+      { id: 'r4', dossier_id: 'dossier-de-test', motif: 'prlv', sens: null, created_at: '2025-06-01T09:00:00Z' },
     ]
     rendre()
     expect(await screen.findByText('cpam · paiements')).toBeTruthy()
@@ -6410,7 +6410,7 @@ describe('BanqueTab — l’import compte les mouvements ignorés par règle', (
     alertes.length = 0
     vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
   })
-  const regle = (motif: string): RegleBancaireIgnoree => ({ id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, created_at: '2025-06-01T09:00:00Z' })
+  const regle = (motif: string): RegleBancaireIgnoree => ({ id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, sens: null, created_at: '2025-06-01T09:00:00Z' })
   async function importer(csv: string, lignes: number) {
     const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
     await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], 'releve-juin.csv', { type: 'text/csv' })] } }) })

@@ -3,8 +3,8 @@ import type { SensMouvementBancaire } from './types'
 // LE SENS DES RÈGLES « TOUJOURS IGNORER », ET LA COTISATION D'UN MOUVEMENT IGNORÉ — CE QUE LA BASE EN DIRA AVANT LE CLIC
 // (REGLES-Q1, tranchée par le cabinet le 02/11/2026 : « La migration (le sens retenu par la règle) »). La conception :
 // HISTORIQUE.md, « 31/10/2026 — LES LOTS DU RELEVÉ : LE SENS, LA FENÊTRE DU JUSTIFICATIF, « TOUJOURS IGNORER » ET LE
-// MOUVEMENT TRAITÉ AILLEURS », défauts 9 et 11c ; la base : la migration `sens_des_regles_ignorees`, préparée le 02/11/2026
-// (supabase/preparees/20261102120000_sens_des_regles_ignorees.sql), pas appliquée.
+// MOUVEMENT TRAITÉ AILLEURS », défauts 9 et 11c ; la base : la migration `sens_des_regles_ignorees`, préparée le 02/11/2026,
+// collée en production par le cabinet le 03/11/2026 (supabase/schema/20261103114023_sens_des_regles_ignorees.sql).
 //
 // PUR, et SANS AUTRE IMPORT QU'UN TYPE : lib/reglesIgnorees.ts (le jugement de l'import), lib/cotisationRapprochee.ts (le
 // refus d'avant le clic) et l'onglet Banque le lisent ; un accesseur de test (`get SENS_DES_REGLES_IGNOREES_EXPORTE()`)
@@ -20,13 +20,13 @@ import type { SensMouvementBancaire } from './types'
 //   - le refus neuf de `rapprocher_cotisation` : un mouvement ignoré (22023), après celui d'un mouvement classé (un
 //     virement personnel, « ignoré » lui aussi, garde ces mots-là) et avant celui d'un mouvement de zéro euro.
 //
-// LE DRAPEAU. `SENS_DES_REGLES_IGNOREES_EXPORTE` reste BAISSÉ tant que la migration n'est pas dans l'export : l'onglet
+// LE DRAPEAU. `SENS_DES_REGLES_IGNOREES_EXPORTE`, LEVÉ le 03/11/2026 (la migration dans l'export). Baissé, l'onglet
 // Banque écrit une règle sans sens, l'import juge chaque règle sur le motif seul, les phrases et la liste sont celles
 // d'hier, et la fiche d'un mouvement ne refuse rien de plus — au caractère près. Levé, le jour de l'application (le fichier
 // dans l'export, sous la version de sa ligne d'historique), une règle née d'un débit ne fait ignorer que les débits, et
 // l'écran dit le sens. Levé AVANT la migration, la création d'une règle se refuserait (une colonne inconnue) : le drapeau
 // suit le fichier (`sensDesReglesIgnorees.test.ts`).
-export const SENS_DES_REGLES_IGNOREES_EXPORTE = false
+export const SENS_DES_REGLES_IGNOREES_EXPORTE = true
 
 // ── Les mots de la base ───────────────────────────────────────────────────────────────────────────────────────────────
 

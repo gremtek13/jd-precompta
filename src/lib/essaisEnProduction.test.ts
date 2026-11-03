@@ -282,8 +282,10 @@ describe('les essais de la base, rejoués en production', () => {
     // devant la caisse (`validationDesPaiementsParLaCaisse`) entré, après ses trois migrations préparées. Seize le
     // 02/11/2026 : `caisse` et `validationDesPaiementsParLaCaisse` sortis (C8, FEC22b, le filet et C10 en production le
     // même jour) ; aucun essai n'attend plus une migration préparée (la famille « apres » reste, vide). Dix-sept le même
-    // jour : `sensDesReglesIgnorees` entré, après sa migration préparée (REGLES-Q1, `sens_des_regles_ignorees`).
-    expect(cas.length).toBe(17)
+    // jour : `sensDesReglesIgnorees` entré, après sa migration préparée (REGLES-Q1, `sens_des_regles_ignorees`). Seize le
+    // 03/11/2026 : `sensDesReglesIgnorees` sorti (sa migration collée en production le même jour ; l'essai ne cherche aucun
+    // semis, il se joue comme un essai de la production) ; la famille « apres » reste, vide.
+    expect(cas.length).toBe(16)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
