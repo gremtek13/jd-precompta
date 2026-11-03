@@ -831,7 +831,7 @@ caractères reçus, `7eeef8bb…`, le texte construit), 9 lignes de verdict, 0 e
 production : la production rend les neuf familles de la réplique où ils sont passés entiers, le corps de chaque fonction
 compris (HISTORIQUE.md, « LA CAISSE ET LE FEC D'UN BNC EN PRODUCTION : LES QUATRE MIGRATIONS DU 02/11/2026 »).
 
-**Préparé le 02/11/2026, PAS ENCORE APPLIQUÉ : `sens_des_regles_ignorees`** (REGLES-Q1 : une règle « toujours ignorer »
+**Préparé le 02/11/2026, APPLIQUÉ, COLLÉ PAR LE CABINET LE 03/11/2026 (version `20261103114023`) : `sens_des_regles_ignorees`** (REGLES-Q1 : une règle « toujours ignorer »
 retient le sens du mouvement qui l'a créée, et `rapprocher_cotisation` refuse un mouvement ignoré). Son fichier vit HORS
 de l'export, dans `supabase/preparees/`, sous une version PROVISOIRE, `20261102120000` (17 772 caractères, 18 227 octets,
 270 lignes, `5dd503780f887d06379bffe81b847325`, ni barre oblique inverse ni retour chariot). Il SE COLLE dans l'éditeur SQL
@@ -872,6 +872,31 @@ fichier dans l'export sous sa version, le socle re-rendu, les trois contrôles ;
 en production ; puis `SENS_DES_REGLES_IGNOREES_EXPORTE` levé et `types.ts` basculé (`sens` obligatoire) (HISTORIQUE.md,
 « LE SENS DES RÈGLES « TOUJOURS IGNORER » ET LA COTISATION D'UN MOUVEMENT IGNORÉ, EN BASE (REGLES-Q1) (PRÉPARÉE, PAS
 APPLIQUÉE) »).
+**Collé le 03/11/2026** par le cabinet dans l'éditeur SQL de Supabase, depuis un téléphone, avec sa ligne d'historique —
+après `facture_dates_centimes_mention_tva` (`20261102112003`, par l'outil), qui ne touche ni `regles_bancaires_ignorees` ni
+`rapprocher_cotisation`. La ligne `20261103114023` : un seul texte, 18 042 caractères bruts — les 17 772 du fichier et 270
+retours chariot, un par ligne —, `5dd50378…` une fois les retours chariot écartés, l'empreinte du fichier, qui entre dans
+l'export sous cette version, texte inchangé (`\n`). Le corps de `rapprocher_cotisation` porte aussi les `\r\n` du collage :
+`md5(replace(prosrc, chr(13), ''))` rend `bf920662…`, le corps neuf, et `signature.sql`, qui ramène les `\r\n` à `\n`, le
+compte comme tel. Le socle re-rendu depuis la production : la seule instruction changée, le `create table` de
+`regles_bancaires_ignorees` (la colonne `sens`, `regles_bancaires_ignorees_unique` et `regles_bancaires_ignorees_sens` ; la
+clé d'hier partie). Les trois contrôles, en production (des lectures du catalogue et de l'historique) et dans l'export : la
+dérive, 170 fichiers et 170 migrations, `ccbeaaba1a6ffb577e33d7dd9fec89ef` des deux côtés ; le socle, 81 instructions,
+`cea19cff4e8ac063dad556e140530a31` des deux côtés ; l'inventaire, 2 309 objets, `ee3f607f83b57293ac1e6f5450e2eeba` des deux
+côtés — les valeurs de la réplique de la préparation. `signature.sql` en production : « colonnes » 919 `2848a5f9…`,
+« contraintes » 712 `e06f758d…`, « déclencheurs » 87 `0d648fb1…`, « droits des fonctions » 226 `5e15c24f…`, « droits des
+tables » 82 `36d97923…`, « fonctions » 226 `74ad96403aca12fb879bae86e3558685`, « index » 244 `b4ac00a7…`, « policies » 162
+`c881b044…`, « rls » 82 `5fb5dc41…`. Les huit premières sont celles que la préparation annonçait ; « fonctions » n'est ni
+`b8f29817…` (REGLES seule sur la production à 168) ni `0cb2485a…` (la facture seule) : elle porte les deux. Une réplique de
+la production du jour le prouve, famille par famille : `regles_prod168` (la production à 168, ses neuf familles relues)
+copiée, munie de la facture comme l'outil (sous sa version réelle, par le propriétaire des tables : « fonctions »
+`0cb2485a…`, les huit autres inchangées), puis du COLLAGE tel que le cabinet l'a fait — la transaction, le texte, la ligne
+d'historique sous `20261103114023`, le tout en `\r\n`, par le propriétaire des tables : la même ligne d'historique (un
+texte, 18 042 caractères, `5dd50378…`), le même corps (`bf920662…`, ses retours chariot compris), la dérive 170 `ccbeaaba…`,
+le socle 81 `cea19cff…`, l'inventaire 2 309 `ee3f607f…`, et les neuf familles de la production au caractère près
+(HISTORIQUE.md, « LE SENS DES RÈGLES « TOUJOURS IGNORER » EN PRODUCTION (REGLES-Q1) »). `SENS_DES_REGLES_IGNOREES_EXPORTE`
+est levé et `types.ts` basculé (`sens` obligatoire) dans le même commit ; le retour arrière reste dans
+`supabase/preparees/retour/`, inchangé (il exige `bf920662…`).
 
 **Préparé le 31/10/2026, repris le 02/11/2026 pour FACTURE-Q1, APPLIQUÉ PAR L'OUTIL LE 02/11/2026 (version `20261102112003`) :
 `facture_dates_centimes_mention_tva`** (la correction de la facture : la date dans l'ordre de sa série, le demi-centime

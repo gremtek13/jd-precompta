@@ -119,12 +119,10 @@ export interface RegleBancaireIgnoree {
   dossier_id: string
   motif: string
   created_at: string
-  // LE SENS DES MOUVEMENTS QU'ELLE FAIT IGNORER (REGLES-Q1 ; migration `sens_des_regles_ignorees`, PRÉPARÉE, pas appliquée —
-  // lib/sensDesReglesIgnorees.ts) : celui du mouvement qui l'a créée ; nul, les deux sens — toute règle d'avant. FACULTATIF
-  // dans ce type jusqu'au jour de l'application : avant elle, `select('*')` ne le rend pas, et une sauvegarde d'avant ne le
-  // porte pas (restaurée, la règle est nulle) ; après, il le rend, nul sur toute règle d'aujourd'hui. Il devient obligatoire
-  // ce jour-là, avec le drapeau.
-  sens?: SensMouvementBancaire | null
+  // LE SENS DES MOUVEMENTS QU'ELLE FAIT IGNORER (REGLES-Q1 ; migration `sens_des_regles_ignorees`, en production depuis le
+  // 03/11/2026 — lib/sensDesReglesIgnorees.ts) : celui du mouvement qui l'a créée ; nul, les deux sens — toute règle d'avant.
+  // La colonne est nulle et sans valeur par défaut : une sauvegarde d'avant, qui ne la porte pas, se restaure nulle.
+  sens: SensMouvementBancaire | null
 }
 
 // Une règle d'affectation apprise par libellé (ligne 26.6) : les mouvements de ce sens dont le

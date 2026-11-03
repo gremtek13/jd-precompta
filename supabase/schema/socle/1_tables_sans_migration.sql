@@ -90,9 +90,11 @@ create table public.regles_bancaires_ignorees (
   dossier_id uuid not null,
   motif text not null,
   created_at timestamp with time zone default now() not null,
-  constraint regles_bancaires_ignorees_dossier_id_motif_key UNIQUE (dossier_id, motif),
+  sens text,
+  constraint regles_bancaires_ignorees_unique UNIQUE NULLS NOT DISTINCT (dossier_id, motif, sens),
   constraint regles_bancaires_ignorees_pkey PRIMARY KEY (id),
-  constraint regles_bancaires_ignorees_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE
+  constraint regles_bancaires_ignorees_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
+  constraint regles_bancaires_ignorees_sens CHECK (((sens IS NULL) OR (sens = ANY (ARRAY['encaissement'::text, 'decaissement'::text]))))
 );
 
 create table public.references_annuelles (
