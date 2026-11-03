@@ -46859,3 +46859,55 @@ facultatifs par leur poste dans Banque, une seule échéance à la somme pour un
 remboursement en échéance négative, le relevé importé jusqu'au premier prélèvement de janvier 2026. Vu en passant : les
 policies de `cotisations_declarees` visent `public`, comme soixante-treize autres d'avant la règle `to authenticated` ;
 leurs prédicats sont faux sans session, ce que `rls.sql` rejoue.
+
+
+### 03/11/2026 — RELECTURE : LES IMMOBILISATIONS, LEURS AMORTISSEMENTS ET LE VÉHICULE, JUSQU'À LA 2035 (MVP-D6)
+
+**POURQUOI.** Le premier praticien, installé avant 2025, a du matériel au registre et un véhicule ; sa répétition
+générale compare la 2035 de 2025 à celle que son expert-comptable a déposée, dans un dossier ouvert par une balance
+reprise au 01/01/2025. Une relecture (agent architecte, lecture seule) a suivi l'onglet Immobilisations, la carte
+Véhicules, `amortissements.ts`, `forfaitKilometrique.ts`, `baremeKilometrique.ts` et les définitions en vigueur des
+fonctions qui écrivent l'acquisition, la dotation et le forfait ; rien en production.
+
+**CE QUI A ÉTÉ REJOUÉ.** La grappe locale s'étant arrêtée pendant la relecture, la session a rejoué les deux essais
+après coup, chacun sur une copie de la réplique égale à la production : `forfaitKilometrique.sql` 35 verdicts sur 35 ;
+`dotations.sql` 33 sur 33, sur une copie où le jeu de départ fictif semé par la relecture des cotisations a d'abord été
+posé (sans lui, l'essai rend « ESSAI_IMPOSSIBLE » : la réplique ne porte aucun mouvement) ; rien de resté, copies
+supprimées. Les cinq fichiers de tests qui confrontent le calcul de l'application au texte SQL exporté : 248 sur 248.
+Les calculs de la 2035 par Vitest hors du dépôt. Justes : l'amortissement linéaire au prorata depuis la mise en service,
+en 30/360, le cumul arrondi au centime et le reliquat l'année suivante, égal à celui de la base ; la dotation en CH,
+écrite 681100 / 28 au 31 décembre ; avant l'ouverture, aucune dotation ni acquisition écrite ; un bien de 2025 payé par
+la banque ou par la caisse, écrit au compte du bien à la date du paiement, la 2035 n'en comptant que la dotation ; le
+barème kilométrique de 2025 égal à la publication (électriques et deux-roues compris), le forfait écrit au 31 décembre
+face au compte de l'exploitant ; le doublon du barème et des frais de véhicule attrapé sous le poste « Frais de
+véhicules ».
+
+**LES DÉFAUTS.** D1 (confirmé, gêne) : le paiement en 2025 d'un bien acquis avant la reprise ne s'écrit nulle part — sa
+pièce est « reprise », sans écriture, et les comptes du bien et du fournisseur sont refusés comme compte de bilan d'un
+mouvement : le 512 de 2025 est faux, sans un mot ; la 2035 reste juste. D2 (confirmé, fausse la 2035) : l'année du
+barème, le carburant classé sous la catégorie commune « Carburant / déplacements », au poste « Frais de déplacement »,
+que le contrôle du doublon laisse passer à dessein, se compte une seconde fois en BJ. D3 (confirmé, connu) : au barème,
+l'amortissement d'un véhicule inscrit au registre reste en CH, avec un simple avertissement. D4 (plausible) : aux frais
+réels, ni le plafond de l'amortissement d'une voiture selon son taux d'émission (CGI, art. 39-4) ni la part d'usage
+personnel. D5 (confirmé) : le cumul des amortissements du registre n'est jamais confronté au 28 de la balance reprise
+(seule une preuve de la Révision voit l'écart) ; une durée différente de l'ancien tableau fausse CH sans un mot. D6
+(confirmé) : un bien ne s'inscrit que depuis une pièce validée de 500 € ou plus, une pièce ne porte qu'un bien, et le
+seuil se juge TTC pour un exonéré. D7 (confirmé) : les candidates à l'immobilisation sont toutes les pièces validées de
+500 € ou plus, ventes et loyers compris, sans geste pour en écarter une. D8 (plausible) : la sortie d'un bien (cession,
+mise au rebut) n'est pas modélisée.
+
+**LES SUITES.** Au cabinet (page des arbitrages, version 78) : VEH-Q1, signaler le carburant de la catégorie commune
+l'année du barème (recommandé), VEH-Q2, le véhicule du premier praticien en 2025, IMMO-Q1, comparer les amortissements
+du registre à la reprise (recommandé : un point « attention »), IMMO-Q2, un bien repris sans pièce et une liste des
+candidates limitée aux achats (recommandé ; la levée de « une pièce, un seul bien » est une migration qui retire une
+contrainte, à présenter à part). À l'expert-comptable, dans la fiche 2035-E (questions 11 à 13) : la forme d'un bien de
+décembre 2024 payé en 2025 dans la balance de 2024, la place de l'amortissement d'un véhicule au barème, le seuil de 500
+€ d'un exonéré. Pour la répétition, sans code : chaque bien encore amorti déposé, validé et inscrit aussitôt, aligné sur
+l'ancien tableau, son cumul au 31/12/2024 et sa dotation de 2025 comparés bien par bien ; la balance préparée sous les
+comptes de l'application ; un bien qui ne s'inscrit pas retranché de la comparaison de CH ; au barème, une ligne de
+kilomètres, et les dépenses du véhicule (carburant, entretien, assurance) classées en virement personnel, jamais en
+charge, les péages et le parking restant des charges ; aux frais réels, CC relevée sur la 2035 déposée.
+
+**VU EN PASSANT, SANS ENQUÊTE.** Le champ `vehicules.bareme` (BNC ou BIC) n'est lu par aucun calcul ; le PDF de la 2035
+ne remplit ni le tableau des immobilisations, ni le cadre 7, ni la case de la ligne 23 ; un bien de 1 000 € ou plus payé
+en espèces passe sans un mot (code monétaire et financier, art. L112-6 et D112-3).
