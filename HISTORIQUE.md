@@ -46754,3 +46754,17 @@ rendent ce compte aussi. Mutations : sans `.eq('statut', …)` dans `ignorer`, l
 mouvement (l'affectation, la ventilation, le virement personnel, le compte de bilan, l'échéance d'emprunt, la
 déclaration de TVA, le règlement groupé) ne regardent pas le statut « ignoré » — seule `rapprocher_cotisation` le
 refuse ; l'écran les en garde.
+Relevé au catalogue de la production par la session, le même jour : chacune de ces fonctions pose elle-même `statut =
+'rapprochee'` (le virement personnel, `ignoree` avec son drapeau) ; un classement parti d'un écran en retard laisse donc
+un mouvement cohérent, classé — le dernier geste l'emporte —, et rien ne se délie. Reste le cas d'un lot calculé sur un
+relevé lu avant qu'un autre onglet ignore le mouvement : un refus en base, comme celui de `rapprocher_cotisation`, ira
+avec la prochaine migration qui touchera ces fonctions, sur une question au cabinet.
+
+### 03/11/2026 — UNE RÉPONSE DU CABINET : FEC22Q7-Q1
+
+FEC22Q7-Q1 — une écriture passée au brouillon avant la règle de FEC22-Q7, qui porte encore le nom d'un client, doit-elle
+se dire « à réécrire » ? — tranchée par le cabinet le 03/11/2026 sur la page des arbitrages, à la recommandation : ne
+rien changer. L'application continue de comparer les montants, les comptes et les dates d'une écriture, jamais son
+libellé : une écriture d'avant la règle reste « à jour ». Seuls des dossiers d'essai, aux données fictives, portent de
+telles écritures ; aucun exercice n'est validé, et le premier dossier réel s'écrira tout entier sous la règle. Rien
+n'est écrit pour cette réponse ; la règle elle-même → « FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE ».
