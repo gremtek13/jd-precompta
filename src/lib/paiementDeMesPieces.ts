@@ -245,12 +245,15 @@ export function paiementEnregistre(saisie: SaisieDuReglement, deposeeLe: string)
 
 /**
  * Le retrait s'offre-t-il sur CE paiement ? Les siens seulement (la base refuse les autres), sur une année que la lecture ne
- * dit pas figée ; nul quand il ne s'offre pas, sinon le refus de la base avant le clic (la caisse qui passerait sous zéro), ou
- * rien.
+ * dit pas figée ; nul quand il ne s'offre pas, sinon le refus avant le clic : un paiement d'avant la première année lue
+ * (`premiere`, la même que celle du formulaire) — « Mes pièces » montre les paiements de TOUTES les années, la caisse rejouée
+ * n'en porte que depuis le 1er janvier de `premiere`, et l'opération y serait introuvable —, puis celui de la base (la caisse
+ * qui passerait sous zéro), ou rien.
  */
-export function retraitDuPaiement(o: OperationDuClient, dossier: DossierDeLaCaisse, jours: readonly JourDeLaCaisseDuClient[], moi: string):
-  { offert: false } | { offert: true; refus: string | null } {
+export function retraitDuPaiement(o: OperationDuClient, dossier: DossierDeLaCaisse, jours: readonly JourDeLaCaisseDuClient[], moi: string,
+  premiere: number): { offert: false } | { offert: true; refus: string | null } {
   if (!paiementDuClientLuiMeme(o, moi) || o.retire_le != null) return { offert: false }
+  if (o.date < `${premiere}-01-01`) return { offert: true, refus: avantLaCaisseLue(premiere) }
   if (anneeFigee(jours, Number(o.date.slice(0, 4))) === true) return { offert: false }
   return { offert: true, refus: refusDuRetraitDuClient(o.id, dossier) }
 }

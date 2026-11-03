@@ -15,6 +15,9 @@ import type { Piece } from '../lib/types'
 //  4. le paiement par sa fonction seule, après une confirmation qui nomme ce qui part, sous UN verrou relâché après la
 //     relecture : deux clics dans le même `act`, un seul appel ; le refus de la base, aux mots du client, après le clic ;
 //  5. « par toi » sur ses seules saisies, « Retirer » sur elles seules ;
+//  5b. UN verrou pour « Mes pièces » entière : tant qu'un paiement n'est pas relu, le geste d'une autre pièce est retenu (bouton
+//     désactivé, clic sans effet même avant le rendu), et un seul appel part ; un paiement plus ancien que la caisse lue dit
+//     au praticien de s'adresser au cabinet au lieu d'un faux motif ;
 //  6. aucune forme du cabinet dans ce qui s'affiche (`motsDuCabinet`).
 // Le faux client APPLIQUE les filtres (src/test/filtresPostgrest.ts). Données FICTIVES.
 
@@ -322,5 +325,52 @@ describe('avec la case « Caisse »', () => {
     await act(async () => { for (const r of faux.rpcEnAttente.splice(0)) r() })
     await screen.findByText(/^Retiré : le paiement en espèces du 12\/03\/2026, 80,00\s€\.$/)
     expect(motsDuCabinet(document.body.textContent ?? '')).toEqual([])
+  })
+
+  it('un paiement en vol retient le geste des autres pièces, même avant le rendu, jusqu’à la relecture', async () => {
+    await monter()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await ouvrirEtRemplir('Payée en espèces de ta caisse', '2026-03-12', '80')
+    const geste = 'Encaissée en espèces dans ta caisse'
+    faux.retenirRpc = true
+    // Le clic sur la pièce B suit celui du paiement dans le MÊME `act` : le rendu qui la désactive n'a pas eu lieu.
+    await act(async () => {
+      fireEvent.click(bouton('Enregistrer'))
+      fireEvent.click(within(ligneDe('note-honoraires.pdf')).getByRole('button', { name: geste }))
+    })
+    expect(screen.queryByLabelText('Jour où tu as reçu les espèces')).toBeNull()
+    expect(screen.getByLabelText('Jour où tu as payé')).toBeTruthy()
+    // Une fois rendu : B est désactivé, le clic n'ouvre rien, et un seul appel est parti.
+    const boutonB = within(ligneDe('note-honoraires.pdf')).getByRole('button', { name: geste }) as HTMLButtonElement
+    expect(boutonB.disabled).toBe(true)
+    fireEvent.click(boutonB)
+    expect(screen.queryByLabelText('Jour où tu as reçu les espèces')).toBeNull()
+    expect((within(ligneDe('facture-fournisseur.pdf')).getByRole('button', { name: 'Payée en espèces de ta caisse' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(faux.ecritures.map((e) => e.nom)).toEqual(['regler_piece_par_la_caisse'])
+    // La base a écrit, la relecture est retenue : le verrou tient encore.
+    faux.operations = [operation({})]
+    faux.jours = { 2025: [jour({ report: 100, solde: 100 })], 2026: [jour({ jour: '2026-03-12', operations: -80, solde: 20 })] }
+    faux.retenirCaisse = true
+    await act(async () => { for (const r of faux.rpcEnAttente.splice(0)) r() })
+    await screen.findByText(/^Enregistré : la pièce déposée le 05\/03\/2026/)
+    expect((within(ligneDe('note-honoraires.pdf')).getByRole('button', { name: geste }) as HTMLButtonElement).disabled).toBe(true)
+    // La relecture revenue, le bouton se réactive et ouvre son formulaire.
+    faux.retenirCaisse = false
+    await act(async () => { for (const r of faux.caisseEnAttente.splice(0)) r() })
+    await act(async () => { for (const r of faux.caisseEnAttente.splice(0)) r() })
+    await waitFor(() => expect((within(ligneDe('note-honoraires.pdf')).getByRole('button', { name: geste }) as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(within(ligneDe('note-honoraires.pdf')).getByRole('button', { name: geste }))
+    expect(screen.getByLabelText('Jour où tu as reçu les espèces')).toBeTruthy()
+    expect(faux.ecritures).toHaveLength(1)
+  })
+
+  it('le paiement d’avant la première année lue : « Retirer » grisé sous la phrase qui renvoie au cabinet, jamais « relis ta caisse »', async () => {
+    faux.operations = [operation({ date: '2024-11-20', cree_le: '2024-11-20T10:00:00Z' })]
+    await monter()
+    fireEvent.click(await within(ligneDe('facture-fournisseur.pdf')).findByRole('button', { name: 'Espèces de ta caisse' }))
+    expect((bouton('Retirer') as HTMLButtonElement).disabled).toBe(true)
+    const phrase = 'Ta caisse est lue ici depuis le 01/01/2025 : pour un paiement plus ancien, demande à ton cabinet.'
+    expect(screen.getAllByText(phrase).length).toBeGreaterThan(0)
+    expect(document.body.textContent).not.toMatch(/relis ta caisse/)
   })
 })
