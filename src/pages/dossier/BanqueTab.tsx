@@ -1202,9 +1202,17 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
 
   // L'erreur est lue, et plus seulement suivie d'une relecture : le panneau reste sur le mouvement
   // après l'action, donc un échec muet laisserait l'opérateur croire le mouvement classé.
+  // Sur un mouvement encore « à traiter » seulement, comme « Tout rapprocher » et « Associer » : la fiche l'a jugé sur le relevé
+  // LU, et un autre onglet a pu, entre-temps, le rapprocher d'une pièce — la mise à jour sans condition l'aurait remis
+  // « ignoré » et aurait délié sa pièce sans un mot. Rien d'écrit : on le dit, et la relecture montre ce qu'il est devenu.
   async function ignorer(ligneId: string): Promise<boolean> {
-    const { error } = await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).eq('id', ligneId)
-    if (error) { window.alert(`Le mouvement n'a pas pu être ignoré : ${error.message}`); return false }
+    const { data: ecrite, error } = await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null })
+      .eq('id', ligneId).eq('statut', 'non_rapprochee').select('id').maybeSingle()
+    if (error) { window.alert(`Le mouvement n'a pas pu être ignoré : ${messageErreur(error, 'raison inconnue')}`); return false }
+    if (ecrite == null) {
+      window.alert('Le mouvement n’a pas été ignoré : il n’est plus à traiter (ignoré ou classé entre-temps, depuis un autre écran). Rien n’y a été écrit.')
+      return true
+    }
     return true
   }
 
@@ -1293,8 +1301,23 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
 
     const { aIgnorer: aMettreAJour, ecartesParLesVentes } = ignoresParLaRegle(lignes, { motif: motifNormalise, sens }, horsDesLotsEtCandidats)
     if (aMettreAJour.length > 0) {
-      const { error: errMaj } = await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).in('id', aMettreAJour.map((l) => l.id))
-      if (errMaj) window.alert(`La règle est enregistrée, mais les mouvements déjà importés n'ont pas pu être ignorés : ${errMaj.message}`)
+      // Sur les mouvements encore « à traiter » seulement, comme « Tout rapprocher » : `aMettreAJour` a été jugé sur le relevé
+      // LU, et un mouvement rapproché d'une pièce depuis un autre onglet redeviendrait « ignoré », sa pièce déliée sans un mot.
+      // Le nombre écrit se lit (`count`, sans `.select` : une collection ne se lit qu'avec son compte) et se compare à ce que
+      // visait la mise à jour — la règle, elle, est déjà écrite et vaut pour les prochains imports.
+      const visees = aMettreAJour.length
+      const { error: errMaj, count: ignores } = await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }, { count: 'exact' })
+        .in('id', aMettreAJour.map((l) => l.id)).eq('statut', 'non_rapprochee')
+      if (errMaj) window.alert(`La règle est enregistrée, mais les mouvements déjà importés n'ont pas pu être ignorés : ${messageErreur(errMaj, 'raison inconnue')}`)
+      else if (ignores == null) {
+        // Un échec tombe du côté qui SIGNALE : sans nombre rendu, on ne sait pas combien de mouvements ont été écrits.
+        window.alert('La règle est enregistrée, mais la base n’a pas rendu le nombre de mouvements ignorés : la relecture montre leur état.')
+      } else if (ignores < visees) {
+        const reste = visees - ignores
+        const pluriel = reste > 1
+        window.alert(`La règle est enregistrée, mais ${reste} mouvement${pluriel ? 's' : ''} sur ${visees} n’${pluriel ? 'ont' : 'a'} pas été ignoré${pluriel ? 's' : ''} : `
+          + `${pluriel ? 'ils ne sont' : 'il n’est'} plus à traiter (ignoré${pluriel ? 's' : ''} ou classé${pluriel ? 's' : ''} entre-temps, depuis un autre écran). Rien n’y a été écrit.`)
+      }
     }
     const ecart = ecartDuLot(ecartesParLesVentes, horsDesLotsEtCandidats)
     if (ecart) {

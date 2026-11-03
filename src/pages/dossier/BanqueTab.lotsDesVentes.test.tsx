@@ -48,6 +48,9 @@ vi.mock('../../lib/supabase', async () => {
     let unique = false
     let colonnes = '*'
     let valeur: unknown = null
+    // Le compte que l'appelant demande à une mise à jour (`update(valeurs, { count: 'exact' })`) : ce faux note les écritures sans
+    // les appliquer, et rend alors pour compte les lignes que les filtres désignent — la mise à jour qui a réussi en entier.
+    let compteDemande = false
     const ids: unknown[] = []
     const predicats: ((l: Record<string, unknown>) => boolean)[] = []
     let debut = 0
@@ -73,14 +76,14 @@ vi.mock('../../lib/supabase', async () => {
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => { unique = true; return c },
       single: () => { unique = true; return c },
-      update: (v: unknown) => { operation = 'update'; valeur = v; return c },
+      update: (v: unknown, options?: { count?: string }) => { operation = 'update'; valeur = v; compteDemande = options?.count === 'exact'; return c },
       insert: (v: unknown) => { operation = 'insert'; valeur = v; return c },
       upsert: (v: unknown) => { operation = 'upsert'; valeur = v; return c },
       delete: () => { operation = 'delete'; return c },
       then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
         if (operation !== 'select') {
           faux.ecritures.push({ table, operation, valeur, ids: [...ids] })
-          return Promise.resolve({ data: null, error: null }).then(suite, echec)
+          return Promise.resolve({ data: null, error: null, ...(compteDemande ? { count: ids.length } : {}) }).then(suite, echec)
         }
         if (unique) return Promise.resolve({ data: null, error: null }).then(suite, echec)
         const cle = `${table}|${colonnes}`
