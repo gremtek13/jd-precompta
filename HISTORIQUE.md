@@ -46768,3 +46768,49 @@ rien changer. L'application continue de comparer les montants, les comptes et le
 libellé : une écriture d'avant la règle reste « à jour ». Seuls des dossiers d'essai, aux données fictives, portent de
 telles écritures ; aucun exercice n'est validé, et le premier dossier réel s'écrira tout entier sous la règle. Rien
 n'est écrit pour cette réponse ; la règle elle-même → « FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE ».
+
+### 03/11/2026 — RELECTURE : LA VALIDATION D'UN EXERCICE BNC EN TRÉSORERIE ET LE REPORT DES SOLDES (MVP-D7)
+
+**POURQUOI.** MVP-D7 valide 2025 dans le dossier du premier praticien, puis ouvre 2026 par le report des soldes ; aucun
+exercice n'a jamais été validé en production. Une relecture (agent architecte, lecture seule) a suivi le chemin de
+l'écran (`ValidationExerciceCard`, `prealablesValidation.ts`, `reportDesSoldes.ts`, `ouvertureConfrontee.ts`, `fec.ts`,
+drapeau `CHAMPS_BNC_EXPORTES` baissé) à la base (la définition en vigueur de `valider_exercice`, `soldes_a_reporter`, du
+filet de la caisse et des gardes qui figent un exercice, relue au catalogue), sur des copies de la réplique égale à la
+production (170 migrations), toutes supprimées ; rien en production.
+
+**LES ESSAIS REJOUÉS** (un `psql -1` par copie) : `validationExercice.sql` 245 verdicts, aucun en faute ;
+`validationDesPaiementsParLaCaisse.sql` 13/13 ; `validationDesVentesFacturees.sql` 77/77 ; `reportDesSoldes.sql` 52/52 ;
+et, pour le chèque de décembre, `frontiereDesEncaissements.sql` 13/13 et `ventesFacturees.sql` 339 verdicts justes.
+
+**LE SCÉNARIO** (un dossier jetable en trésorerie, exonéré, ouvert par une balance reprise au 01/01/2025 : banque,
+caisse, un bien et son amortissement, un emprunt, le capital ; puis un apport en caisse, une pièce payée par la caisse,
+des honoraires, un virement personnel, une échéance d'emprunt, une cotisation payée du compte personnel, un bien
+acheté, sa dotation, le forfait kilométrique). La validation passe ; les six soldes reportés au 01/01/2026 sont ceux du
+calcul à la main, et ceux de `soldesAReporter` au centime ; le 108, le capital et le résultat rejoignent le 101000 ; la
+confrontation de l'ouverture de 2026 à la clôture de 2025 rend « concordante » (avec une reprise d'avant ou d'après la
+clôture de 2024) ; la caisse ouvre 2026 à son solde sans heurter ses gardes (un centime de trop refusé aux mots de la
+base) ; une pièce de 2025 payée en 2026, par la banque ou par la caisse, s'écrit en 2026 ; ce qui touche 2025 se refuse
+aux bons mots ; les deux FEC sortent, à dix-huit colonnes. Chaque refus de la base atteignable dans ce dossier est dit
+avant le clic.
+
+**LES DÉFAUTS.** D1 (confirmé, bloque MVP-D7) : sans balance reprise, un bien du registre mis en service avant 2025, ou
+une pièce à valider de 2024, fait réclamer la validation de son année (`anneesActives`) — la procédure, pas le code.
+D2 (confirmé, fausse un chiffre) : sans reprise, ou avec une reprise fausse, le 512 reporté vaut la somme des flux de
+2025, et aucun préalable ne compare la banque du grand livre au relevé du 31/12. D3 (confirmé) : drapeau baissé, le FEC
+de 2025 se fige à dix-huit colonnes sans que rien le dise avant le clic. D4 (gêne) : une pièce ou une échéance de 2025
+payée en 2026 retient 2025 tant que son paiement n'est pas rapproché, et la 2035 calculée de 2025 la compte d'ici là ;
+une échéance de 2025 payée du compte personnel en 2026 se déclare avant la validation, figée après. D5 (gêne, juste) :
+une pièce à valider de 2025 retient 2025 — la valider suffit. D6 (plausible, gêne) : « mois d'abonnement en double »
+bloque sans dérogation, et une facture datée du dernier jour du mois d'avant le déclenche à tort.
+
+**LES QUESTIONS AU CABINET** (page des arbitrages, version 75) : MVPD7-Q1, ouvrir le dossier par la balance de
+l'expert-comptable au 31/12/2024 (recommandé : oui, indispensable) ; MVPD7-Q2, comparer le 512 au relevé du 31/12
+(recommandé : un refus sans reprise, un avertissement pour un écart) ; MVPD7-Q3, valider 2025 sans attendre FEC22-E2,
+avec un avertissement (recommandé) ; MVPD7-Q4, importer et rapprocher janvier 2026 avant de valider 2025 (recommandé) ;
+MVPD7-Q5, « mois d'abonnement en double » en avertissement (recommandé). Aucune ne demande de migration. La fiche 2035-E
+reçoit une septième question pour l'expert-comptable : le chèque d'un patient reçu en décembre et crédité en janvier,
+que l'application compte à la date du crédit hors des factures qu'elle émet.
+
+**APERÇU HORS PÉRIMÈTRE, SANS ENQUÊTE.** Le cumul des amortissements du registre n'est jamais confronté au 28 de la
+balance reprise ; le paiement en 2025 d'un bien acquis en décembre 2024 n'a pas été suivi ; `pieces-sans-date` et
+`date-impossible` comptent les pièces de toute année (une pièce de 2026 sans date retient 2025).
