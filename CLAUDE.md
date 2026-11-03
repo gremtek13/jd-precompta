@@ -447,8 +447,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   RÉFÉRENCE ».
 - **La 2035 : les cases « dont » et les saisies du cabinet** (01/11/2026, MVP) : 2035S1, S2 et S6 faits sur la réponse (A)
   de 2035S-Q2 à Q5, confirmée par le cabinet le 02/11/2026 pour Q2 à Q4 — BY, BW, BZ et BU d'un poste qui
-  les nomme (une seconde case AJOUTÉE, jamais retirée de la porteuse), BT des seules échéances de l'onglet Cotisations, DB
-  des indemnités journalières ; l'appel définitif du même mois remplace, au clic, la prévisionnelle qu'aucun paiement ne
+  les nomme (une seconde case AJOUTÉE, jamais retirée de la porteuse), BT des seules échéances de l'onglet Cotisations (les
+  régimes obligatoires, l'écran le dit), DB des indemnités journalières ; une case « dont » plus forte que sa porteuse
+  retient la validation (`cases-dont-incoherentes`, 03/11/2026) ; l'appel définitif du même mois remplace, au clic, la
+  prévisionnelle qu'aucun paiement ne
   date, et une autre se dit en attention (`lib/previsionnelles.ts`) ; un modèle par millésime, le dernier livré sans le sien
   (`lib/modeles2035.ts`) — 2035S-Q5, contre la recommandation : imprimé sur le dernier millésime, l'avertissement dit à l'écran et sur le PDF ; les quatre postes neufs sont entrés le 01/11/2026 dans les listes fermées du FEC (ci-dessous).
   Restent CC, CL, DE et le reste de DB (2035S3 à S5, dont une migration additive, `saisies_2035`) : 2035S-Q1, regarder
