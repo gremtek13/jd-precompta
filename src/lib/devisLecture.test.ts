@@ -22,16 +22,20 @@ vi.mock('./supabase', async () => {
         const predicats: ReturnType<typeof predicatEq>[] = []
         let debut = 0
         let fin = Number.MAX_SAFE_INTEGER
+        let unique = false
         const c: Record<string, unknown> = {}
         Object.assign(c, {
           select: (liste: string, options?: { count?: string }) => { faux.demandes.push(`${table} ${liste} ${options?.count ?? ''}`); return c },
           eq: (colonne: string, valeur: unknown) => { if (!faux.sansFiltre) predicats.push(predicatEq(colonne, valeur)); return c },
           order: () => c,
           range: (d: number, f: number) => { debut = d; fin = f; return c },
+          // Une ligne par sa clé (l'identité du dossier) : la première, ou nulle.
+          maybeSingle: () => { unique = true; return c },
           then: (suite: (r: unknown) => unknown, rejet?: (e: unknown) => unknown) => {
             if (faux.leve) return Promise.reject(faux.leve).then(suite, rejet)
             if (faux.erreur) return Promise.resolve({ data: null, error: faux.erreur, count: null }).then(suite)
             const lignes = filtrer(faux.tables[table] ?? [], predicats)
+            if (unique) return Promise.resolve({ data: lignes[0] ?? null, error: null, count: null }).then(suite, rejet)
             return Promise.resolve({
               data: lignes.slice(debut, fin + 1), error: null, count: lignes.length + (faux.manquantes[table] ?? 0),
             }).then(suite, rejet)
