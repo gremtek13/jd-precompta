@@ -81,14 +81,17 @@ function cheminAttendu(c: CheminDossier): { acces: string; parent: string | null
     : { acces: c.acces, parent: null, colonne: null }
 }
 
-// LES DEVIS (espace client, étape P5) : un bloc à part du script les met au plan quand leurs tables existent, juste avant
-// `exercices_valides`, leurs rangs calculés. Ce qu'il dit : les tables, dans l'ordre où elles entrent ; leurs chemins ; le
-// décalage d'`exercices_valides` et le rang de la première, qui doivent tomber juste pour ce nombre de tables.
+// LES DEVIS (espace client, étape P5) : un bloc à part du script les met au plan quand leurs tables existent, juste après
+// la table qu'il nomme (`documents_divers` : avant le journal des e-mails, qui cite un devis envoyé, étape P6c1), les rangs
+// qui suivent reculant d'autant. Ce qu'il dit : la table d'ancrage, les tables dans l'ordre où elles entrent, leurs
+// chemins, le recul des rangs qui suivent — qui doit tomber juste pour ce nombre de tables —, et s'il ne joue qu'avec les
+// tables présentes.
 interface BlocDesDevis {
+  ancre: string | null
   tables: string[]
   chemins: PlanDeLEssai['chemins']
   decalage: number | null
-  retrait: number | null
+  recule: boolean
   conditionne: boolean
 }
 
@@ -102,22 +105,24 @@ function blocDesDevis(texte: string): BlocDesDevis {
   for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
     chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
   }
-  const decalage = /set rang = rang \+ (\d+) where table_nom = 'exercices_valides'/.exec(corps)
-  const retrait = /table_nom = 'exercices_valides'\) - (\d+) \+ v\.i/.exec(corps)
+  const decalage = /set rang = -\(rang \+ (\d+)\) where rang > v_rang;/.exec(corps)
   return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
     tables,
     chemins,
     decalage: decalage ? Number(decalage[1]) : null,
-    retrait: retrait ? Number(retrait[1]) : null,
+    recule: decalage != null && corps.includes('set rang = -rang where rang < 0;')
+      && corps.includes('select v_rang + v.i, v.t from (values '),
     conditionne: corps.includes("if to_regclass('public.devis') is not null then"),
   }
 }
 
-/** Le plan que le script joue quand les tables des devis existent : les siennes, insérées avant `exercices_valides`. */
+/** Le plan que le script joue quand les tables des devis existent : les siennes, insérées après leur table d'ancrage. */
 function avecLesDevis(plan: PlanDeLEssai, bloc: BlocDesDevis): PlanDeLEssai {
   const tables = plan.ordre.map((o) => o.table)
-  const place = tables.indexOf('exercices_valides')
-  const ordre = [...tables.slice(0, place), ...bloc.tables, ...tables.slice(place)].map((table, i) => ({ rang: i + 1, table }))
+  const place = bloc.ancre == null ? -1 : tables.indexOf(bloc.ancre)
+  if (place < 0 || !bloc.recule) return { ...plan, chemins: { ...plan.chemins, ...bloc.chemins } }
+  const ordre = [...tables.slice(0, place + 1), ...bloc.tables, ...tables.slice(place + 1)].map((table, i) => ({ rang: i + 1, table }))
   return { ...plan, ordre, chemins: { ...plan.chemins, ...bloc.chemins } }
 }
 
@@ -417,9 +422,12 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   it('le bloc des devis a été lu : leurs trois tables, leurs chemins, des rangs qui tombent juste', () => {
     expect([...devis.tables].sort()).toEqual([...TABLES_DES_DEVIS].sort())
     expect(Object.keys(devis.chemins).sort()).toEqual([...TABLES_DES_DEVIS].sort())
-    // `exercices_valides` recule d'autant de rangs qu'il entre de tables, et la première prend son ancien rang.
+    // L'ancrage est la table qui précède la première des leurs dans l'ordre PRÉVU du code — avant le journal des e-mails,
+    // qui cite un devis envoyé (étape P6c1) ; les tables qui suivent reculent d'autant de rangs qu'il en entre.
+    expect(devis.ancre).toBe(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(devis.tables[0]) - 1])
+    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(devis.tables[devis.tables.length - 1]) + 1]).toBe('emails_envoyes')
     expect(devis.decalage).toBe(devis.tables.length)
-    expect(devis.retrait).toBe(devis.tables.length + 1)
+    expect(devis.recule).toBe(true)
     expect(devis.conditionne).toBe(true)
   })
 
@@ -612,10 +620,13 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     })
 
     it('un décalage ou un rang de départ qui ne tombent pas juste', () => {
-      const decale = blocDesDevis(texteDeLEssai.replace('set rang = rang + 3 where', 'set rang = rang + 2 where'))
+      const decale = blocDesDevis(texteDeLEssai.replace('set rang = -(rang + 3) where rang > v_rang;', 'set rang = -(rang + 2) where rang > v_rang;'))
       expect(decale.decalage).not.toBe(decale.tables.length)
-      const retire = blocDesDevis(texteDeLEssai.replace("'exercices_valides') - 4 + v.i", "'exercices_valides') - 3 + v.i"))
-      expect(retire.retrait).not.toBe(retire.tables.length + 1)
+      // Ancrés ailleurs — après le journal des désignations, comme avant l'étape P6c1 —, le journal des e-mails les précède.
+      const ancre = texteDeLEssai.replace("where o.table_nom = 'documents_divers';", "where o.table_nom = 'designations_des_pieces';")
+      expect(blocDesDevis(ancre).ancre).not.toBe(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('devis_numerotation') - 1])
+      expect(ecartsAuCode(avecLesBlocs(ancre), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS, TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES)
+        .join('\n')).toContain('premier écart')
       expect(blocDesDevis(texteDeLEssai.replace("if to_regclass('public.devis') is not null then", 'if true then')).conditionne).toBe(false)
     })
 

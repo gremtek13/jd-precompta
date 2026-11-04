@@ -3,11 +3,12 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
 import { CONTACTS_EXPORTES } from './contacts'
-import { DEVIS_EXPORTES } from './devis'
+import { DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import {
   auGrapheDeLaCaisse,
+  auGrapheDeLEnvoiDesDevis,
   auGrapheDesExemplaires,
   auPlan,
   auPlanAujourdHui,
@@ -58,7 +59,8 @@ describe('le filtre du plan', () => {
     // facture tant que sa migration n'est pas exportée (sauvegardeExemplaires.test.ts) ; depuis l'étape VF6b, celui du journal
     // des désignations (sauvegardeDesignations.test.ts) ; depuis l'étape C2, celui de la caisse, et le graphe retire ses
     // relations — dont celle du brouillon vers une opération — tant que ses migrations ne sont pas exportées
-    // (sauvegardeCaisse.test.ts).
+    // (sauvegardeCaisse.test.ts) ; depuis l'étape P6c1, le graphe retire le devis envoyé tant que la migration de l'envoi
+    // n'est pas exportée (sauvegardeEnvoiDesDevis.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -67,7 +69,7 @@ describe('le filtre du plan', () => {
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
-        && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE)))
+        && auGrapheDeLaCaisse(r, CAISSE_EXPORTEE) && auGrapheDeLEnvoiDesDevis(r, ENVOI_DES_DEVIS_PREVU)))
     expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CHEMINS_DOSSIER)).toEqual(Object.keys(CHEMINS_DOSSIER_PREVUS).filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CLES_PRIMAIRES)).toEqual(Object.keys(CLES_PRIMAIRES_PREVUES).filter((t) => auPlanAujourdHui(t)))
@@ -111,9 +113,10 @@ describe('le plan prévu, tables des devis comprises', () => {
     for (const table of TABLES_DES_DEVIS) expect(plan, table).toContain(table)
   })
 
-  it('juste avant `exercices_valides`, qui ferme la marche : la série, les devis, puis leurs liens', () => {
-    const fin = ORDRE_RESTAURATION_PREVU.slice(-4)
-    expect(fin).toEqual(['devis_numerotation', 'devis', 'devis_factures', 'exercices_valides'])
+  it('juste avant le journal des e-mails, qui cite un devis envoyé (étape P6c1) : la série, les devis, puis leurs liens', () => {
+    const debut = ORDRE_RESTAURATION_PREVU.indexOf('devis_numerotation')
+    expect(ORDRE_RESTAURATION_PREVU.slice(debut, debut + 4)).toEqual(['devis_numerotation', 'devis', 'devis_factures', 'emails_envoyes'])
+    expect(ORDRE_RESTAURATION_PREVU.at(-1)).toBe('exercices_valides')
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(rang('devis_factures')).toBeGreaterThan(rang('factures_emises'))
     expect(rang('devis')).toBeGreaterThan(rang('dossiers'))

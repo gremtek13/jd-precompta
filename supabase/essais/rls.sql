@@ -651,6 +651,17 @@
 -- super-utilisateur : sans la migration, 91 lignes de verdict (la ligne CQ « EN ATTENTE » de plus), 0 en faute, 68
 -- mutations sur 68 qui mordent ; avec elle, 94 lignes, 0 en faute, 70 mutations sur 70 — seules les lignes CQ diffèrent
 -- (HISTORIQUE.md, « LA CAISSE : CORRIGER UN PAIEMENT EN ESPÈCES D'UN SEUL GESTE (C12B-Q1) (PRÉPARÉE, PAS APPLIQUÉE) »).
+--
+-- 04/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (P6c1 : migration `envoi_des_devis`, PRÉPARÉE, pas appliquée), qui ne
+-- crée ni ne change aucune policy, mais admet le type « devis » au journal des envois, et sa colonne `devis_id` — la
+-- lecture du client « Ventes » (`emails_envoyes_lecture_ventes`) attendait déjà ces lignes. Le bloc 3bis y pose, la
+-- migration en base, l'envoi du devis de son jeu (la ligne que `send-email` écrira, sous la clé de service), et dit ce que
+-- le client en lit — rien sans droit ni avec « Banque » seul, la ligne avec « Ventes », le contrôle positif —, avec sa
+-- mutation (M3bis-devis : le droit retiré au profil) ; EN ATTENTE sans la migration. Joué ENTIER par psql, par le
+-- super-utilisateur, sur la réplique des devis (la production à 171 migrations, plus les deux des devis) : sans la
+-- migration, 94 lignes de verdict (la ligne « EN ATTENTE » de plus), 0 en faute, 72 mutations sur 72 qui mordent ; avec
+-- elle, 94 lignes, 0 en faute, 73 sur 73 ; la lecture du client resserrée aux factures y met deux lignes en faute
+-- (HISTORIQUE.md, « LES DEVIS : L'ENVOI PAR E-MAIL, EN BASE (P6C1) (PRÉPARÉE, PAS APPLIQUÉE) »).
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -1613,6 +1624,9 @@ declare
   -- Les devis (étape P5) : celui du jeu, son jour (à Paris, comme la base date une émission), et ce que 4bis tentera.
   dv uuid; jour date := (now() at time zone 'Europe/Paris')::date;
   ecritures_devis jsonb := '[]'::jsonb; mises_a_jour_devis jsonb := '[]'::jsonb;
+  -- L'envoi d'un devis (étape P6c1) : sa migration en base, les lignes « devis » que le client lit sous chaque réglage, et
+  -- combien ses dossiers en portent.
+  envoi_en_base boolean; devis_lus jsonb := '{}'::jsonb; envois_de_devis bigint;
   -- Les articles (étape A1) : celui du jeu, ce que 4bis tentera, et ce que la mutation à part voit de la table.
   art uuid; ecritures_articles jsonb := '[]'::jsonb; mises_a_jour_articles jsonb := '[]'::jsonb; articles_membre bigint;
   -- Les adresses de réception (étape A6a) : la courante du jeu, le SIREN du dossier, ce que 4bis tentera, et ce que la
@@ -1638,6 +1652,13 @@ begin
   else
     insert into rls_verdict values ('3bis et 4bis. les devis : EN ATTENTE de la migration devis_du_client',
       'public.devis', 'absente : les devis se jugent avec les ventes dès que la migration y est', true);
+  end if;
+  -- L'envoi d'un devis (étape P6c1), dès que sa migration est en base ; avant, une ligne le dit.
+  envoi_en_base := exists (select 1 from pg_attribute where attrelid = 'public.emails_envoyes'::regclass
+                            and attname = 'devis_id' and not attisdropped);
+  if not envoi_en_base then
+    insert into rls_verdict values ('3bis. l''envoi d''un devis : EN ATTENTE de la migration envoi_des_devis',
+      'emails_envoyes.devis_id', 'absente : la lecture d''une ligne « devis » se juge dès que la migration y est', true);
   end if;
   -- Les articles (étape A1), dès que leur migration est en base ; avant, une ligne le dit.
   if to_regclass('public.articles') is not null then
@@ -1717,6 +1738,12 @@ begin
       perform decider_devis(dossier_du_client, dv, 'acceptee', jour, false);
       perform facturer_devis(dossier_du_client, dv);
       reset role;
+      -- L'envoi de ce devis (étape P6c1), dès que sa migration est en base : la ligne que `send-email` écrit après
+      -- l'envoi, sous la clé de service.
+      if envoi_en_base then
+        execute format('insert into emails_envoyes (dossier_id, type, destinataire, objet, devis_id) values (%L, %L, %L, %L, %L)',
+          dossier_du_client, 'devis', 'essai-rls@exemple.invalid', 'essai rls', dv);
+      end if;
       -- Ce que 4bis tentera : un brouillon de devis valide, et un second lien de ce devis accepté, vers le brouillon de
       -- facture du jeu — que ses gardes laissent passer.
       ecritures_devis := jsonb_build_array(
@@ -1827,6 +1854,14 @@ begin
         reset role;
         lus := jsonb_set(lus, array[t], coalesce(lus -> t, '{}'::jsonb) || jsonb_build_object(reglage, vus));
       end loop;
+      -- L'envoi d'un devis (étape P6c1) : les lignes « devis » que le client lit sous ce réglage.
+      if envoi_en_base then
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        select count(*) into vus from emails_envoyes where type = 'devis';
+        reset role;
+        devis_lus := devis_lus || jsonb_build_object(reglage, vus);
+      end if;
     end loop;
     -- Ce qu'il doit lire avec le droit : les lignes de SES dossiers — par la facture pour les lignes, qui n'ont pas de
     -- dossier ; pour les e-mails, ceux d'une facture ou d'un devis seulement.
@@ -1848,6 +1883,8 @@ begin
     reset role;
     select count(*) into relances from emails_envoyes
      where type = 'relance_pieces' and dossier_id in (select m.dossier_id from memberships m where m.user_id = client);
+    select count(*) into envois_de_devis from emails_envoyes
+     where type = 'devis' and dossier_id in (select m.dossier_id from memberships m where m.user_id = client);
 
     -- ── 4bis. Avec les droits, aucune écriture directe ──
     update memberships set droit_ventes = true, droit_banque = true where user_id = client;
@@ -2014,6 +2051,14 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '3bis. avec le droit « Ventes », jamais une relance de pièces',
     'cible', 'emails_envoyes (relance_pieces)', 'observe', coalesce(relances_vues::text, '?') || ' vue(s) sur ' || coalesce(relances::text, '?') || ' en base',
     'ok', coalesce(relances_vues = 0 and relances > 0, false));
+  if envoi_en_base then
+    verdicts := verdicts || jsonb_build_object('controle', '3bis. l''envoi d''un devis : lu avec le droit « Ventes », jamais sans (étape P6c1)',
+      'cible', 'emails_envoyes (devis)', 'observe', 'aucun droit : ' || coalesce(devis_lus ->> 'aucun', '?') || ', « Banque » seul : '
+        || coalesce(devis_lus ->> 'banque', '?') || ', « Ventes » : ' || coalesce(devis_lus ->> 'ventes', '?') || ' vue(s) sur '
+        || coalesce(envois_de_devis::text, '?') || ' en base',
+      'ok', coalesce((devis_lus ->> 'aucun')::bigint = 0 and (devis_lus ->> 'banque')::bigint = 0
+        and (devis_lus ->> 'ventes')::bigint = envois_de_devis and envois_de_devis > 0, false));
+  end if;
 
   -- M3bis : le contrôle positif, le droit retiré au profil — ce que le client voit sans droit ne fait pas le compte.
   mauvais := null;
@@ -2024,6 +2069,13 @@ begin
   end loop;
   mutations := mutations || jsonb_build_object('mutation', 'M3bis — le contrôle positif de 3bis, le droit retiré au profil',
     'attendu', 'aucune table où le compte tombe juste', 'observe', coalesce('juste sur : ' || mauvais, 'aucune'), 'mord', mauvais is null);
+  -- M3bis-devis : le contrôle de l'envoi d'un devis, le droit retiré au profil — sans « Ventes », le compte ne tombe pas
+  -- juste (étape P6c1).
+  if envoi_en_base then
+    mutations := mutations || jsonb_build_object('mutation', 'M3bis-devis — le contrôle de l''envoi d''un devis, le droit retiré au profil',
+      'attendu', 'la ligne « devis » non vue', 'observe', coalesce(devis_lus ->> 'aucun', '?') || ' vue(s) sur ' || coalesce(envois_de_devis::text, '?'),
+      'mord', not coalesce((devis_lus ->> 'aucun')::bigint = envois_de_devis and envois_de_devis > 0, false));
+  end if;
 
   insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
     from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);

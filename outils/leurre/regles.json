@@ -34,6 +34,7 @@
     "rls": {"famille": "journal", "role": "super", "raison": "lit le journal des désignations que la production porte (semis/journal.sql) ; joué par le super-utilisateur, comme son en-tête le veut"},
     "validationExercice": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
     "reportDesSoldes": {"role": "super", "raison": "joué par le super-utilisateur, comme son en-tête le veut (`session_replication_role`)"},
-    "devis": {"famille": "apres", "raison": "les migrations des devis (étape P5 : `devis_du_client`, puis `devis_du_client_suppression`, supabase/preparees/) sont préparées, pas appliquées : la réplique qui les porte, dans cet ordre, appliquées par le propriétaire avec leur ligne d'historique — sans elles, l'essai dit ESSAI_IMPOSSIBLE et n'écrit rien ; son compagnon devisSuppression.sql est de réplique seulement"}
+    "devis": {"famille": "apres", "raison": "les migrations des devis (étape P5 : `devis_du_client`, puis `devis_du_client_suppression`, supabase/preparees/) sont préparées, pas appliquées : la réplique qui les porte, dans cet ordre, appliquées par le propriétaire avec leur ligne d'historique — sans elles, l'essai dit ESSAI_IMPOSSIBLE et n'écrit rien ; son compagnon devisSuppression.sql est de réplique seulement"},
+    "envoiDesDevis": {"famille": "apres", "raison": "la migration de l'envoi d'un devis (étape P6c1 : `envoi_des_devis`, supabase/preparees/) est préparée, pas appliquée, et suppose les deux des devis : la réplique qui les porte, dans cet ordre, appliquées par le propriétaire avec leur ligne d'historique — sans elle, l'essai se joue et dit sa ligne 0 « EN ATTENTE », ses contrôles en faute ; sans les devis, ESSAI_IMPOSSIBLE"}
   }
 }

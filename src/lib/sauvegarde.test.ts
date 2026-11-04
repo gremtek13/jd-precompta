@@ -280,15 +280,16 @@ describe('ordre de restauration', () => {
     expect(clePrimaire('dossier_permanent')).toEqual(['id'])
   })
 
-  it('écrit les pièces jointes écartées après leur dossier, avant les devis et `exercices_valides` (ligne 22.7)', () => {
+  it('écrit les pièces jointes écartées après leur dossier, avant `exercices_valides` (ligne 22.7)', () => {
     // Leur seul parent est le dossier ; aucune garde ne les lit à l'insertion, aucune validation ne les fige. Après le
     // dossier permanent et avant la série des devis : elles ne déplacent le rang d'aucune autre table d'hier.
     const rang = (t: string) => ORDRE_RESTAURATION.indexOf(t)
     expect(ORDRE_RESTAURATION[rang('pieces_jointes_ecartees') - 1]).toBe('dossier_permanent')
     expect(rang('pieces_jointes_ecartees')).toBeLessThan(rang('exercices_valides'))
-    // Depuis l'étape A6a, les adresses de réception les suivent (sauvegardeAdressesReception.test.ts), puis les devis.
+    // Depuis l'étape A6a, les adresses de réception les suivent (sauvegardeAdressesReception.test.ts). Les devis les
+    // suivaient aussi jusqu'à l'étape P6c1, qui les met avant le journal des e-mails (sauvegardeEnvoiDesDevis.test.ts).
     expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('pieces_jointes_ecartees') + 1]).toBe('adresses_reception')
-    expect(ORDRE_RESTAURATION_PREVU.indexOf('pieces_jointes_ecartees')).toBeLessThan(ORDRE_RESTAURATION_PREVU.indexOf('devis_numerotation'))
+    expect(ORDRE_RESTAURATION_PREVU.indexOf('pieces_jointes_ecartees')).toBeLessThan(ORDRE_RESTAURATION_PREVU.indexOf('exercices_valides'))
     expect(violationsOrdre(ORDRE_RESTAURATION, TOUS_LES_LIENS)).toEqual([])
     expect(RELATIONS.filter((r) => r.enfant === 'pieces_jointes_ecartees')
       .map((r) => `${r.enfant}.${r.colonne}>${r.parent}:${r.aLaSuppression}`))
