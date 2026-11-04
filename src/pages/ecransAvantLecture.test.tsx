@@ -45,6 +45,7 @@ import EncaissementsFactureModal from './dossier/EncaissementsFactureModal'
 import ReglementsSection from './dossier/ReglementsSection'
 import ArticlesVue from './dossier/ArticlesVue'
 import ContactsVue from './dossier/ContactsVue'
+import DevisVue from './dossier/DevisVue'
 import AdresseReceptionModal from './dossier/AdresseReceptionModal'
 import ParametresVue from './dossier/ParametresVue'
 import LogoDesFactures from './dossier/LogoDesFactures'
@@ -505,6 +506,18 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'ContactsVue (client)', fichier: 'pages/dossier/ContactsVue.tsx', rendre: () => (
     <Dossier1><ContactsVue espace="client" dossierId="d1" articleExoneration={null} /></Dossier1>
+  ) },
+  // « Devis » (étape P6a1) : la vue des devis, montée seule — au cabinet, et au client « Ventes ». Ni « aucun devis », ni un
+  // geste, avant la lecture des devis et de leurs liens.
+  { nom: 'DevisVue', fichier: 'pages/dossier/DevisVue.tsx', rendre: () => (
+    <Dossier1>
+      <DevisVue espace="cabinet" dossierId="d1" dossierNom="Atelier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable" articleExoneration={null} />
+    </Dossier1>
+  ) },
+  { nom: 'DevisVue (client)', fichier: 'pages/dossier/DevisVue.tsx', rendre: () => (
+    <Dossier1>
+      <DevisVue espace="client" dossierId="d1" dossierNom="Atelier fictif" dossierSiret={null} dossierAdresse={null} statutTva={null} articleExoneration={null} />
+    </Dossier1>
   ) },
   // « Adresse de réception » (étape A6b1) : la fenêtre, montée seule — au cabinet, et chez le client « Ventes ». Rien ne se dit ni
   // ne s'offre avant la lecture des adresses et du SIRET du dossier.

@@ -829,6 +829,9 @@ const LE_CLIENT_VENTES = `le client qui porte la case « ${definitionDe('ventes'
 
 export const LIBELLE_NOTES_FACTURE = `Notes (elles ne figurent pas sur la facture, mais ${LE_CLIENT_VENTES} les lit)`
 
+// Les notes d'un DEVIS (espace client, étape P6a1) : partagées et non imprimées, comme celles d'une facture.
+export const LIBELLE_NOTES_DEVIS = `Notes (elles ne figurent pas sur le devis, mais ${LE_CLIENT_VENTES} les lit)`
+
 export const LIBELLE_MOTIF_AVOIR = `Motif (il ne figure pas sur l’avoir, mais ${LE_CLIENT_VENTES} le lit)`
 
 export const LIBELLE_MOTIF_CONTRE_PASSATION = `Motif d’annulation, que la plateforme portera et que lit ${LE_CLIENT_VENTES}`
@@ -848,6 +851,8 @@ export const LIBELLE_DESCRIPTION_ARTICLE = `Description (facultative ; ${LE_CLIE
 const TON_CABINET = 'ton cabinet'
 
 export const LIBELLE_NOTES_FACTURE_CLIENT = `Notes (elles ne figurent pas sur la facture, mais ${TON_CABINET} les lit aussi)`
+
+export const LIBELLE_NOTES_DEVIS_CLIENT = `Notes (elles ne figurent pas sur le devis, mais ${TON_CABINET} les lit aussi)`
 
 export const LIBELLE_MOTIF_AVOIR_CLIENT = `Motif (il ne figure pas sur l’avoir, mais ${TON_CABINET} le lit aussi)`
 

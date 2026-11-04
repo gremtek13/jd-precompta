@@ -1,10 +1,15 @@
 import { centimesExacts, euroCommeLaBase, remplirModele, tauxCommeLaBase } from './encaissementsFactures'
 import { numeroTvaImprime, TAUX_ADMIS, type DossierCii } from './factureCii'
-import { ajouterMois, formatDate } from './format'
-import { mentionsAEnregistrer, siretAEnregistrer, type SaisieMentions } from './mentionsFacture'
+import { nomDansUnRefus } from './articles'
+import { ajouterMois, formatDate, formatMoney } from './format'
+import {
+  mentionsAEnregistrer, refusDesMentions, saisieDesMentions, siretAEnregistrer, type SaisieMentions,
+} from './mentionsFacture'
 import { calculerLigne, calculerTotaux, type LigneCalculee } from './montantsFacture'
 import { mentionTva } from './statutTva'
-import type { ArticleExoneration, Devis, LigneDevis, NatureOperation, ReponseDevis, StatutTva } from './types'
+import type {
+  ArticleExoneration, Devis, DevisFacture, LigneDevis, NatureOperation, ReponseDevis, StatutTva,
+} from './types'
 
 // LES DEVIS (espace client, étape P5 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU
 // CLIENT : LA CONCEPTION », §2.3 et §4.3). Un module PUR — il ne lit rien en base, n'appelle personne, ne lit pas
@@ -474,4 +479,139 @@ export function refusSuppressionDevis(
   if (!devis || devis.dossier_id !== dossierId) return refus('introuvable')
   if (devis.statut === 'emis') return refus('emis', devis.numero ?? '')
   return null
+}
+
+// ── Ce que les écrans de l'étape P6a1 saisissent et disent ─────────────────────────────────────────────────────────────
+// La vue « Devis » (pages/dossier/DevisVue.tsx) et son formulaire (DevisSaisieModal.tsx) ne recopient aucune règle : la saisie
+// se compose ici, ses refus se disent par `refusEnregistrementDevis` puis `refusDesMentions`, et chaque confirmation nomme ce
+// qui part.
+
+/** Un devis a-t-il une facture tirée de lui (`devis_factures`), brouillon compris : ce qu'`etatDuDevis` demande. */
+export function factureTireeDe(devisId: string, liens: readonly Pick<DevisFacture, 'devis_id'>[]): boolean {
+  return liens.some((l) => l.devis_id === devisId)
+}
+
+/** Une ligne telle que le formulaire la tient : des TEXTES, lus en nombres au moment de partir (`lignesDeLaSaisie`). */
+export interface LigneDevisSaisie {
+  // Une clé d'affichage, propre à l'écran : elle ne part pas.
+  cle: string
+  designation: string
+  quantite: string
+  prix: string
+  taux: string
+}
+
+/**
+ * Une ligne neuve : une quantité de 1, et le taux du statut de TVA du dossier — 20 % pour un redevable, qui facture la TVA,
+ * 0 % pour les autres (le choix du formulaire d'une facture).
+ */
+export function ligneDevisVide(statut: StatutTva | null, cle: string): LigneDevisSaisie {
+  return { cle, designation: '', quantite: '1', prix: '', taux: statut === 'redevable' ? '20' : '0' }
+}
+
+// Un nombre saisi, la virgule admise ; tout autre texte — vide compris — n'est PAS un nombre : il part en `null` dans le JSON,
+// et `refusEnregistrementDevis` le dit « pas une ligne de devis », comme la base. Jamais zéro par défaut : un prix oublié
+// partirait gratuit.
+const FORME_NOMBRE_SAISI = /^-?[0-9]+(\.[0-9]+)?$/
+
+function nombreSaisi(texte: string): number {
+  const t = texte.trim().replace(',', '.')
+  return FORME_NOMBRE_SAISI.test(t) ? Number(t) : Number.NaN
+}
+
+/** Les lignes qui partent, dans leur ordre, telles que le formulaire les tient. */
+export function lignesDeLaSaisie(lignes: readonly LigneDevisSaisie[]): LigneDevis[] {
+  return lignes.map((l) => ({
+    designation: l.designation, quantite: nombreSaisi(l.quantite), prix_unitaire_ht: nombreSaisi(l.prix), taux_tva: nombreSaisi(l.taux),
+  }))
+}
+
+/** Les totaux que le formulaire affiche : ceux des lignes lisibles (une ligne illisible compte pour rien, et son refus se dit). */
+export function totauxDeLaSaisie(lignes: readonly LigneDevisSaisie[]): LigneCalculee {
+  return totauxDuDevis(lignesDeLaSaisie(lignes).filter((l) =>
+    Number.isFinite(l.quantite) && Number.isFinite(l.prix_unitaire_ht) && Number.isFinite(l.taux_tva)))
+}
+
+/** Les lignes d'un brouillon lu, en textes ; une ligne vide pour un devis neuf. */
+export function lignesSaisiesDuDevis(d: Pick<Devis, 'lignes'> | null, statut: StatutTva | null): LigneDevisSaisie[] {
+  if (d == null || d.lignes.length === 0) return [ligneDevisVide(statut, 'l0')]
+  return d.lignes.map((l, i) => ({
+    cle: `l${i}`, designation: l.designation, quantite: String(l.quantite), prix: String(l.prix_unitaire_ht), taux: String(l.taux_tva),
+  }))
+}
+
+/** Ce que l'écran sait du dossier pour ouvrir un devis : le jour à Paris, le statut de TVA et l'émetteur. */
+export interface DefautsDuDevis {
+  aujourdHui: string
+  statutTva: StatutTva | null
+  articleExoneration: ArticleExoneration | null
+  emetteurNom: string | null
+  emetteurSiret: string | null
+  emetteurAdresse: string | null
+}
+
+/**
+ * La saisie d'un devis, hors ses lignes : un devis neuf daté du jour, valable un mois (`validiteParDefaut`), sa mention de TVA
+ * proposée ; un brouillon lu tel que la base le garde. L'émetteur est toujours le dossier tel que l'écran le lit : l'émission
+ * le fige.
+ */
+export function saisieDuDevis(d: Devis | null, defauts: DefautsDuDevis): Omit<SaisieDevis, 'lignes'> {
+  const emetteur = { emetteurNom: defauts.emetteurNom, emetteurSiret: defauts.emetteurSiret, emetteurAdresse: defauts.emetteurAdresse }
+  if (d == null) {
+    return {
+      dateEmission: defauts.aujourdHui,
+      dateValidite: validiteParDefaut(defauts.aujourdHui),
+      objet: '', tiersNom: '', tiersAdresse: '', tiersSiret: '', tiersEmail: '',
+      mentions: saisieDesMentions(null),
+      conditions: '',
+      mentionsLegales: mentionsLegalesParDefautDuDevis(defauts.statutTva, defauts.articleExoneration),
+      notes: '',
+      ...emetteur,
+    }
+  }
+  return {
+    dateEmission: d.date_emission,
+    dateValidite: d.date_validite,
+    objet: d.objet ?? '',
+    tiersNom: d.tiers_nom,
+    tiersAdresse: d.tiers_adresse ?? '',
+    tiersSiret: d.tiers_siret ?? '',
+    tiersEmail: d.tiers_email ?? '',
+    mentions: saisieDesMentions(d),
+    conditions: d.conditions ?? '',
+    mentionsLegales: d.mentions_legales ?? '',
+    notes: d.notes ?? '',
+    ...emetteur,
+  }
+}
+
+/**
+ * Le premier refus de la saisie TELLE QU'ELLE PART : celui d'`enregistrer_devis`, dans son ordre et sous ses mots, puis
+ * celui des mentions du client (les contraintes de la table, que la base juge après) ; null quand la base l'accepterait.
+ */
+export function refusDeLaSaisieDevis(
+  dossierId: string,
+  cible: CibleDevis,
+  saisie: SaisieDevis,
+  emettre: boolean,
+  aujourdHui: string,
+): string | null {
+  const refus = refusEnregistrementDevis(dossierId, cible, ecritureDuDevis(saisie, emettre), aujourdHui)
+  if (refus) return refus.message
+  return refusDesMentions(saisie.mentions, saisie.tiersSiret)[0] ?? null
+}
+
+/** La confirmation de l'émission : elle nomme le client, le total, la validité, la série — et ce qui ne se défera plus. */
+export function confirmationDeLEmission(saisie: SaisieDevis): string {
+  const { montant_ttc: ttc } = totauxDuDevis(saisie.lignes)
+  const serie = `${PREFIXE_DEVIS}${saisie.dateEmission.slice(0, 4)}`
+  return `Émettre le devis pour « ${nomDansUnRefus(saisie.tiersNom.trim())} », ${formatMoney(ttc)} TTC, valable jusqu’au `
+    + `${formatDate(saisie.dateValidite)} ? Il prendra le prochain numéro de la série ${serie} et ne se modifiera plus : `
+    + 'une erreur se corrigera par un nouveau devis.'
+}
+
+/** La confirmation de la suppression d'un brouillon : elle le nomme par son client, sa date et son total. */
+export function confirmationDeLaSuppressionDevis(d: Pick<Devis, 'tiers_nom' | 'date_emission' | 'montant_ttc'>): string {
+  return `Supprimer le brouillon de devis pour « ${nomDansUnRefus(d.tiers_nom)} » du ${formatDate(d.date_emission)} `
+    + `(${formatMoney(d.montant_ttc)} TTC) ? Ses lignes et ses notes partent avec lui ; cette action est irréversible.`
 }
