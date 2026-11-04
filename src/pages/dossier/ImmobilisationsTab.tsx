@@ -3,13 +3,14 @@ import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, aujourdHuiSql, dateLocaleDe, formatDate, formatMoney } from '../../lib/format'
 import {
-  compteAmortissement, dateDeLaDotation, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut, montantDeFactureDifferent,
-  planAmortissement, refusBien, refusNature, valeurSaisie,
+  bienReprisSansPiece, compteAmortissement, dateDeLaDotation, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut,
+  montantDeFactureDifferent, planAmortissement, refusBien, refusBienRepris, refusNature, valeurSaisie,
   type DotationDuRegistre, type EtatDotation,
 } from '../../lib/amortissements'
+import { achatsAImmobiliser, SEUIL_IMMOBILISATION } from '../../lib/candidatesImmobilisation'
 import { immobilisationSansJustificatif } from '../../lib/controles'
 import type { PlanComptable } from '../../lib/planComptable'
-import type { ANouveau, EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
+import type { ANouveau, Categorie, EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -20,10 +21,6 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { biensFiges, dateFigee } from '../../lib/validationExercice'
 
-// Seuil au-delà duquel une dépense est candidate à l'immobilisation plutôt qu'à la charge courante.
-// Valeur usuelle citée dans le document d'architecture — pas encore configurable par dossier, cette
-// version couvre le cas standard.
-const SEUIL_IMMOBILISATION = 500
 const DUREE_DEFAUT_ANNEES = 5
 const COMPTE_IMMOBILISATION_DEFAUT = '218000'
 
@@ -61,9 +58,14 @@ interface BienEnEdition {
   duree: string
 }
 
-// Palier 5, brique 2 — registre des immobilisations. Une pièce validée dépassant le seuil est
-// proposée comme candidate ; c'est toujours le cabinet qui décide de l'enregistrer comme telle
-// (jamais automatique). La nature du bien (téléphone, véhicule...) suggère une durée d'amortissement
+const BIEN_REPRIS_VIDE: BienEnEdition = {
+  libelle: '', natureId: '', valeur: '', dateAcquisition: '', dateMiseEnService: '', duree: String(DUREE_DEFAUT_ANNEES),
+}
+
+// Palier 5, brique 2 — registre des immobilisations. Un achat validé dépassant le seuil est
+// proposé comme candidat (lib/candidatesImmobilisation.ts) ; c'est toujours le cabinet qui décide de
+// l'enregistrer comme tel (jamais automatique). Un bien d'avant la reprise s'inscrit sans pièce
+// (IMMO-Q2, « Ajouter un bien repris »). La nature du bien (téléphone, véhicule...) suggère une durée d'amortissement
 // usuelle et donne son COMPTE — d'où vient le compte 28 que la dotation crédite.
 //
 // LES DOTATIONS S'ÉCRIVENT DEPUIS CET ÉCRAN (ligne 26.6, étape b — lib/amortissements.ts) : chaque bien,
@@ -75,6 +77,8 @@ interface BienEnEdition {
 // `plan` : le plan comptable du dossier (lib/planComptable.ts) — chaque dotation se compose sur son compte des dotations.
 export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { dossierId: string; assujettiTva: boolean; plan: PlanComptable }) {
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
+  // Les catégories du dossier et les communes : le poste d'une pièce dit si elle peut être un bien (lib/candidatesImmobilisation.ts).
+  const [categories, setCategories] = useState<Categorie[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [natures, setNatures] = useState<NatureImmobilisation[]>([])
@@ -111,6 +115,11 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
   const ecritureEnCours = useRef(false)
   const [enCours, setEnCours] = useState(false)
   const natureEnCours = useRef(false)
+  // LE BIEN REPRIS, INSCRIT SANS PIÈCE (IMMO-Q2) : son formulaire, et son verrou à lui — posé avant le premier `await`,
+  // relâché dans un `finally` après la relecture.
+  const [bienRepris, setBienRepris] = useState<BienEnEdition | null>(null)
+  const bienReprisEnCours = useRef(false)
+  const [bienReprisEnregistrement, setBienReprisEnregistrement] = useState(false)
   // CE QU'UN EXERCICE VALIDÉ A FIGÉ (lib/validationExercice.ts) : la frontière décide des dotations qui ne s'écrivent
   // plus et des dates d'acquisition qui ne s'inscrivent plus au registre ; les exercices validés, de la phrase qui le dit.
   const { frontiere, anneesValidees } = useExercicesValides()
@@ -119,7 +128,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
   // bouton grisé sous le verrou — jusqu'à ce que la relecture revienne, au lieu de vider la carte qu'on
   // vient d'utiliser. Un autre dossier remonte l'onglet (`AnneeProvider key`), donc repart à vrai.
   async function load() {
-    const [lecturePieces, lectureImmobilisations, lectureNatures, lectureDotations, lectureOuverture, lectureValidees] = await Promise.all([
+    const [lecturePieces, lectureImmobilisations, lectureNatures, lectureDotations, lectureOuverture, lectureValidees, lectureCategories] = await Promise.all([
       // Lue par tranches (voir lib/lectureComplete.ts) : c'est parmi ces pièces qu'on choisit celle
       // à immobiliser, et une liste tronquée ne paraît pas tronquée.
       // `piecesValidees` et non `pieces` : la lecture ne rend QUE les validées, et le filtre est
@@ -153,13 +162,19 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
         supabase.from('ecritures_brouillon').select('id, statut, date, piece_id, immobilisation_id', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'validee').order('date').order('id').range(debut, fin),
       ),
+      // Les catégories : une pièce rangée sous un loyer, une assurance ou des cotisations n'est pas proposée comme un bien.
+      lireTout<Categorie>((debut, fin) =>
+        supabase.from('categories').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
+      ),
     ])
     setPiecesValidees(lecturePieces.lignes)
+    setCategories(lectureCategories.lignes)
     setImmobilisations(lectureImmobilisations.lignes)
     setNatures(lectureNatures.lignes)
     setEcrituresDotations(lectureDotations.lignes)
     setOuverture(lectureOuverture.lignes[0]?.date ?? null)
-    setLectureIncomplete([lecturePieces, lectureImmobilisations].find((l) => !l.complete)?.motif ?? null)
+    setLectureIncomplete([lecturePieces, lectureImmobilisations, lectureCategories].find((l) => !l.complete)?.motif ?? null)
     setDotationsIncompletes(
       [lectureImmobilisations, lectureNatures, lectureDotations, lectureOuverture].find((l) => !l.complete)?.motif ?? null,
     )
@@ -175,7 +190,6 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
   const anneeCourante = anneeDe(aujourdHuiSql())
   const natureParId = new Map(natures.map((n) => [n.id, n]))
 
-  const dejaEnregistrees = new Set(immobilisations.map((i) => i.piece_id).filter(Boolean))
   // Les biens qu'un exercice validé a figés, et l'exercice de leur première écriture validée (`biensFiges`) ; les pièces
   // qui portent elles-mêmes une écriture validée — la base refuse d'en faire une immobilisation.
   const figes = biensFiges(ecrituresValidees, immobilisations)
@@ -188,10 +202,12 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
   // UNE PIÈCE QUI PORTE UNE ÉCRITURE VALIDÉE N'EST PLUS CANDIDATE : elle a été comptée — en charge — dans un exercice
   // validé, et la base refuse d'en faire une immobilisation. La proposer encore la laisserait dans cette liste de
   // tâches pour toujours, sur un geste refusé : une erreur trouvée après la validation se corrige sur l'exercice suivant.
-  const candidates = piecesValidees.filter((p) => {
-    const valeur = montantRetenu(p, assujettiTva)
-    return valeur != null && valeur >= SEUIL_IMMOBILISATION && !dejaEnregistrees.has(p.id) && !piecesAvecEcritureValidee.has(p.id)
-  })
+  //
+  // DES ACHATS SEULEMENT (IMMO-Q2, D7) : ni une vente, ni une note de frais, ni une pièce rangée sous un loyer, une assurance,
+  // des cotisations… (lib/candidatesImmobilisation.ts) — mêlées au matériel, elles y noyaient le vrai bien.
+  const candidates = achatsAImmobiliser(piecesValidees, categories, assujettiTva, new Set([
+    ...immobilisations.flatMap((i) => (i.piece_id ? [i.piece_id] : [])), ...piecesAvecEcritureValidee,
+  ]))
   // UNE CANDIDATE DATÉE D'UN EXERCICE FIGÉ reste montrée, et dit pourquoi elle ne s'inscrit plus : sa charge s'écrit
   // encore dans un exercice ouvert (une facture de décembre payée en janvier), donc la décision paraît encore à prendre —
   // mais la base refuse d'inscrire au registre un bien acquis dans un exercice validé. Les mots de la base.
@@ -241,6 +257,8 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
   // carte la propose sans s'alarmer, sans quoi elle serait en alerte toute l'année.
   const enDefaut = dotationsEnDefaut(dotations, anneeCourante)
   const ecritureSuspendue = dotationsIncompletes !== null
+  // Le bien repris se juge sur l'ouverture et s'ajoute au registre : lus en partie l'un ou l'autre, aucun geste.
+  const gesteBienReprisSuspendu = dotationsIncompletes !== null || lectureIncomplete !== null
   const dotationsDuBien = (id: string) => dotations.filter((d) => d.immobilisation.id === id)
 
   // La valeur d'un bien qui ne suit plus sa FACTURE : l'acquisition s'écrit au montant de la facture, les
@@ -363,10 +381,16 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
     // `immobilisationSansJustificatif`, et dont l'action recommandée EST ce bouton — elle est
     // fausse, et elle rassure à l'envers : rien ne redevient une charge, et le retrait efface la
     // dernière trace comptable de la dépense (plus de pièce, donc plus d'amortissement non plus).
-    const confirmation = immobilisationSansJustificatif(i)
-      ? 'Retirer cette immobilisation ? Son justificatif a déjà été supprimé : l’amortissement '
-        + 'disparaît de la 2035 et rien ne le remplace — cette dépense ne sera plus comptée nulle part.'
-      : 'Retirer cette immobilisation ? La pièce redevient une charge courante ordinaire.'
+    //
+    // Un bien repris, inscrit sans pièce (IMMO-Q2), n'a ni pièce qui redevienne une charge, ni justificatif supprimé : la
+    // balance reprise garde sa valeur et son amortissement antérieur, et seules ses dotations quittent la 2035.
+    const confirmation = bienReprisSansPiece(i, ouverture)
+      ? 'Retirer ce bien repris ? La balance reprise garde sa valeur et son amortissement antérieur, mais ses dotations ne '
+        + 'seront plus comptées en case CH.'
+      : immobilisationSansJustificatif(i, ouverture)
+        ? 'Retirer cette immobilisation ? Son justificatif a déjà été supprimé : l’amortissement '
+          + 'disparaît de la 2035 et rien ne le remplace — cette dépense ne sera plus comptée nulle part.'
+        : 'Retirer cette immobilisation ? La pièce redevient une charge courante ordinaire.'
     // Sur une lecture partielle des dotations, la liste des exercices pourrait en oublier : on ne la cite
     // pas, et on dit pourquoi. La base, elle, les retire toutes.
     const exercices = [...new Set(sesDotations.map((e) => anneeDe(e.date)))].sort((a, b) => a - b)
@@ -397,7 +421,58 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
     const origine = immobilisations.find((x) => x.id === id)
     if (!origine || dateAcquisition === origine.date_acquisition) return null
     const fige = dateFigee(dateAcquisition, anneesValidees)
-    return fige ? `${fige} : la date d’acquisition d’un bien ne s’y porte plus.` : null
+    if (fige) return `${fige} : la date d’acquisition d’un bien ne s’y porte plus.`
+    // Un bien repris sans pièce (IMMO-Q2) le reste : porté après l'ouverture, il deviendrait un bien sans justificatif.
+    if (ouverture && bienReprisSansPiece(origine, ouverture) && dateAcquisition >= ouverture) {
+      return `Ce bien repris n’a pas de pièce : sa date d’acquisition reste avant l’ouverture du dossier, le ${formatDate(ouverture)}.`
+    }
+    return null
+  }
+
+  // CE QUE LA BASE REFUSERAIT D'UN BIEN REPRIS, au-delà de `refusBienRepris` : un bien acquis dans un exercice validé ne
+  // s'inscrit plus au registre (`garder_bien_valide`) — les mots de la base.
+  function refusDuBienRepris(b: BienEnEdition): string | null {
+    const refus = refusBienRepris(b, ouverture)
+    if (refus) return refus
+    const fige = dateFigee(b.dateAcquisition, anneesValidees)
+    return fige ? `${fige} : un bien acquis dans cet exercice ne s’inscrit plus au registre.` : null
+  }
+
+  // INSCRIRE UN BIEN REPRIS, SANS PIÈCE (IMMO-Q2) : un bien acquis avant l'ouverture, que la balance reprise porte. Rien
+  // d'autre ne s'écrit : son acquisition est dans les à-nouveaux, et ses dotations s'écriront par « Écrire les N », comme
+  // celles de tout bien. Aucun geste sur une lecture partielle : l'ouverture qui le juge en fait partie.
+  async function inscrireBienRepris(e: FormEvent) {
+    e.preventDefault()
+    if (!bienRepris || bienReprisEnCours.current || gesteBienReprisSuspendu) return
+    const refus = refusDuBienRepris(bienRepris)
+    if (refus) {
+      setError(refus)
+      return
+    }
+    bienReprisEnCours.current = true
+    setBienReprisEnregistrement(true)
+    try {
+      const { error: erreurInscription } = await supabase.from('immobilisations').insert({
+        dossier_id: dossierId,
+        piece_id: null,
+        nature_id: bienRepris.natureId,
+        libelle: bienRepris.libelle.trim(),
+        valeur: Math.round(valeurSaisie(bienRepris.valeur) * 100) / 100,
+        date_acquisition: bienRepris.dateAcquisition,
+        date_mise_en_service: bienRepris.dateMiseEnService || null,
+        duree_annees: Number(bienRepris.duree),
+      })
+      if (erreurInscription) {
+        setError(`Le bien repris n’a pas pu être inscrit : ${messageErreur(erreurInscription, 'raison inconnue')}`)
+        return
+      }
+      setError(null)
+      setBienRepris(null)
+      await load()
+    } finally {
+      bienReprisEnCours.current = false
+      setBienReprisEnregistrement(false)
+    }
   }
 
   function ouvrirEdition(i: Immobilisation) {
@@ -529,11 +604,11 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
   return (
     <>
       <BandeauLecturePartielle
-        quoi="Les immobilisations et les pièces validées"
+        quoi="Les immobilisations, les pièces validées ou les catégories"
         motif={lectureIncomplete}
         consequence={
           'Le tableau d’amortissement et le total des dotations ci-dessous portent donc sur une partie ' +
-          'du dossier, et une pièce déjà immobilisée peut réapparaître dans les candidates.'
+          'du dossier, une pièce déjà immobilisée peut réapparaître dans les candidates, et un bien repris ne s’inscrit pas.'
         }
       />
       <BandeauLecturePartielle
@@ -564,7 +639,8 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
           </div>
           {natureOuverte === 'candidates' && formulaireNature}
           <p className="muted">
-            Pièces validées de {formatMoney(SEUIL_IMMOBILISATION)} ou plus — à toi de décider si c'est un
+            Achats validés de {formatMoney(SEUIL_IMMOBILISATION)} ou plus — ni ventes, ni notes de frais, ni pièces rangées sous un
+            loyer, une assurance, des honoraires, des impôts, des cotisations ou des frais financiers. À toi de décider si c'est un
             investissement (matériel, véhicule…) ou une simple charge importante. La nature suggère une
             durée usuelle, toujours modifiable, et donne le compte du bien. {assujettiTva
               ? 'Montants hors taxes : le dossier est redevable et récupère la TVA.'
@@ -630,6 +706,84 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* LE BIEN REPRIS, SANS PIÈCE (IMMO-Q2) : seulement dans un dossier ouvert par une balance reprise — ailleurs, tout bien
+          a sa facture, et s'inscrit depuis elle. */}
+      {!loading && ouverture !== null && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+            <h3 style={{ marginTop: 0 }}>Biens d’avant la reprise</h3>
+            {bienRepris === null && (
+              <button
+                className="btn btn-outline btn-sm"
+                disabled={gesteBienReprisSuspendu}
+                onClick={() => { setError(null); setBienRepris(BIEN_REPRIS_VIDE) }}
+              >
+                Ajouter un bien repris
+              </button>
+            )}
+          </div>
+          <p className="muted">
+            Un bien acquis avant l’ouverture du dossier, le {formatDate(ouverture)}, est déjà dans la balance reprise : sa valeur
+            et son amortissement antérieur y sont. Il s’inscrit ici sans pièce — sa facture a pu être perdue, ou l’ancien logiciel
+            l’a immobilisé sous {formatMoney(SEUIL_IMMOBILISATION)} — et son acquisition ne s’écrit pas : seules ses dotations à
+            partir de l’ouverture s’écrivent, et comptent en case CH. Saisis la valeur, les dates et la durée de l’ancien tableau
+            d’amortissement. Un bien acquis depuis l’ouverture s’inscrit depuis sa facture, parmi les candidates.
+          </p>
+          {gesteBienReprisSuspendu && (
+            <p className="error-text">Inscription suspendue : une lecture est partielle (voir plus haut). Recharge la page.</p>
+          )}
+          {bienRepris !== null && (
+            <form onSubmit={inscrireBienRepris} aria-label="Ajouter un bien repris">
+              <div className="field-row">
+                <label className="field">
+                  Libellé
+                  <input value={bienRepris.libelle} onChange={(e) => setBienRepris({ ...bienRepris, libelle: e.target.value })} />
+                </label>
+                <label className="field">
+                  Nature
+                  <select value={bienRepris.natureId} onChange={(e) => {
+                    const nature = natureParId.get(e.target.value)
+                    // La durée usuelle de la nature, sans écraser une durée déjà changée.
+                    const duree = nature && bienRepris.duree === BIEN_REPRIS_VIDE.duree ? String(nature.duree_annees_defaut) : bienRepris.duree
+                    setBienRepris({ ...bienRepris, natureId: e.target.value, duree })
+                  }}>
+                    <option value="">— Choisir —</option>
+                    {natures.map((n) => <option key={n.id} value={n.id}>{n.libelle} ({n.compte_immobilisation})</option>)}
+                  </select>
+                </label>
+                <label className="field">
+                  Valeur brute
+                  <input type="number" min={0.01} step="0.01" value={bienRepris.valeur} onChange={(e) => setBienRepris({ ...bienRepris, valeur: e.target.value })} />
+                </label>
+              </div>
+              <div className="field-row">
+                <label className="field">
+                  Acquisition
+                  <input type="date" value={bienRepris.dateAcquisition} onChange={(e) => setBienRepris({ ...bienRepris, dateAcquisition: e.target.value })} />
+                </label>
+                <label className="field">
+                  Mise en service
+                  <input type="date" value={bienRepris.dateMiseEnService} onChange={(e) => setBienRepris({ ...bienRepris, dateMiseEnService: e.target.value })} />
+                </label>
+                <label className="field">
+                  Durée (années)
+                  <input type="number" min={1} value={bienRepris.duree} onChange={(e) => setBienRepris({ ...bienRepris, duree: e.target.value })} />
+                </label>
+              </div>
+              {refusDuBienRepris(bienRepris) && (
+                <p className="muted">{refusDuBienRepris(bienRepris)}</p>
+              )}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="submit" className="btn btn-primary btn-sm" disabled={bienReprisEnregistrement || gesteBienReprisSuspendu || refusDuBienRepris(bienRepris) !== null}>
+                  {bienReprisEnregistrement ? 'Inscription…' : 'Inscrire le bien repris'}
+                </button>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setBienRepris(null)}>Annuler</button>
+              </div>
+            </form>
+          )}
         </div>
       )}
 
@@ -755,11 +909,14 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
                       <td data-libelle="Libellé">
                         <div>
                           {i.libelle}
-                          {/* `piece_id` nul ne peut venir que d'une pièce supprimée : le seul chemin de
-                              création de cet écran pose toujours le lien. La dotation, elle, continue de
-                              partir en case CH — voir `immobilisationSansJustificatif`. */}
-                          {immobilisationSansJustificatif(i) && (
+                          {/* `piece_id` nul vient d'une pièce supprimée — la dotation, elle, continue de partir en case CH, voir
+                              `immobilisationSansJustificatif` —, ou d'un bien repris inscrit sans pièce (IMMO-Q2), acquis avant
+                              l'ouverture : la balance reprise porte sa valeur, et rien ne lui manque. */}
+                          {immobilisationSansJustificatif(i, ouverture) && (
                             <span className="badge badge-danger" style={{ marginLeft: 8 }}>Justificatif supprimé</span>
+                          )}
+                          {bienReprisSansPiece(i, ouverture) && (
+                            <span className="badge badge-neutral" style={{ marginLeft: 8 }} title="Acquis avant l’ouverture du dossier : la balance reprise porte sa valeur.">Bien repris, sans pièce</span>
                           )}
                         </div>
                       </td>

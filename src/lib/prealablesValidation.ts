@@ -2,7 +2,7 @@ import type { ModeleComptable } from './engagement'
 import type { DossierTab } from './ongletsDossier'
 import type { Concordance2035 } from './concordance2035'
 import { partCsgNonDeductible, type Declaration2035 } from './declaration2035'
-import { casesNegatives, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from './cases2035'
+import { carburantSousLeBareme, casesNegatives, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from './cases2035'
 import type { DoublonDeTexte } from './doublonsTexte'
 import type { Emprunt } from './emprunts'
 import {
@@ -1050,10 +1050,11 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     nb: piecesPayeesEnPartie(validesQuiComptent, paiements, d.modele.mode).filter((x) => pieceDeLExercice(x.piece)).length,
     message: "pièce(s) payée(s) en partie — leur écriture reste déséquilibrée : rapprocher le paiement qui manque, ou vérifier le montant de la pièce.",
   })
-  // Un bien dont le justificatif a disparu, s'il s'amortit dans l'exercice : sa dotation partirait sans pièce.
+  // Un bien dont le justificatif a disparu, s'il s'amortit dans l'exercice : sa dotation partirait sans pièce. Pas un bien repris
+  // (IMMO-Q2) : acquis avant l'ouverture, il s'inscrit sans pièce, la balance reprise portant sa valeur.
   bloque({
     id: 'immos-sans-justificatif', cible: 'immobilisations',
-    nb: immobilisationsSansJustificatif([...d.immobilisations])
+    nb: immobilisationsSansJustificatif(d.immobilisations, ouvertureDate)
       .filter((i) => dotationDeLExercice(i, d.annee) > 0 || d.ecritures.some((e) => e.immobilisation_id === i.id && dansLExercice(e.date))).length,
     message: "immobilisation(s) dont le justificatif a été supprimé : retrouver le justificatif ou retirer le bien.",
   })
@@ -1143,6 +1144,17 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
         message: "bien(s) du matériel de transport amorti(s) l'année où le barème kilométrique est retenu : la 2035 validée comptera leur dotation en case CH. La réintégrer sur la déclaration déposée (cadre B du tableau des immobilisations), ou retirer le bien du registre s'il n'est pas le véhicule du cadre 7.",
       })
     }
+    // LE CARBURANT SOUS LE BARÈME (VEH-Q1, sur la recommandation) : une dépense de la catégorie commune « Carburant /
+    // déplacements » l'année où le barème est retenu. Un avertissement et non un refus : la catégorie mêle le carburant, que le
+    // barème couvre, et les péages, le stationnement ou le train, qui restent déductibles — seul le cabinet sait lequel est
+    // lequel. Le MÊME calcul que la carte « Carburant sous le barème kilométrique » de Clôture.
+    const carburant = carburantSousLeBareme(d.declaration, [...d.categories], [...d.ventilations], d.assujettiTva)
+    if (carburant) {
+      prealables.push({
+        id: 'carburant-sous-bareme', nb: carburant.depenses.length, cible: 'cloture', bloquant: false,
+        message: "dépense(s) de la catégorie « Carburant / déplacements » l'année où le barème kilométrique est retenu : le barème couvre déjà le carburant, l'entretien, les pneus, l'assurance et les réparations du véhicule. Reclasser en prélèvement de l'exploitant ce qu'il couvre ; les péages, le stationnement et les autres déplacements restent (carte « Carburant sous le barème kilométrique » ci-dessus).",
+      })
+    }
   }
 
   return { prealables, numerotation, report, validable: !prealables.some((p) => p.bloquant) }
@@ -1193,6 +1205,9 @@ export const CARTES_DE_CLOTURE: Readonly<Record<string, { prealable: string } | 
   'Amortissement(s) sans justificatif': { prealable: 'immos-sans-justificatif' },
   'Frais de véhicule comptés deux fois': { prealable: 'frais-vehicule-en-double' },
   'Amortissement d’un véhicule déduit avec le barème': { prealable: 'vehicule-amorti-sous-bareme' },
+  // VEH-Q1 : en attention, comme le véhicule amorti sous le barème — la catégorie mêle ce que le barème couvre et ce qu'il ne
+  // couvre pas.
+  'Carburant sous le barème kilométrique': { prealable: 'carburant-sous-bareme' },
   'Véhicules absents de la case BJ': { prealable: 'forfaits-a-ecrire' },
   // Elle PEUT paraître : un remboursement de cotisations classé en charge fait baisser BK sans toucher BT, et BT + BZ + BU
   // dépassent alors BK (relecture du 03/11/2026, D4). Le préalable est calculé par la même fonction que la carte.

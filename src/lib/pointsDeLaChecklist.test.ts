@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
 import { pointsDeLaChecklist, type ContexteDeLaChecklist, type DonneesDeLaChecklist } from './pointsDeLaChecklist'
-import type { ANouveau, Categorie, DeclarationTva, EcritureBrouillon, InformationsDossier, LigneBancaire, OperationCaisse, Piece, SoldeReporte } from './types'
+import type {
+  ANouveau, Categorie, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, OperationCaisse,
+  Piece, SoldeReporte,
+} from './types'
 import { ecritureDeLOperation } from './caisse'
 import type { CaisseLue } from './recettesDeCaisse'
 import type { LectureDesVentesDuReleve } from './mouvementsDesVentes'
@@ -32,7 +35,8 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,
     anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, aNouveaux: [], soldesReportes: [], entreesDeLOuvertureIncompletes: null,
-    ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, caisse: CAISSE_PAS_EN_BASE, entreesDeLaCaisseIncompletes: null, ...o,
+    ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, caisse: CAISSE_PAS_EN_BASE, entreesDeLaCaisseIncompletes: null,
+    entreesDeLaRepriseDesBiensIncompletes: null, ...o,
   }
 }
 
@@ -845,5 +849,58 @@ describe('pointsDeLaChecklist : le paiement d’une pièce par la caisse (C9b)',
     expect(nb({ ...vente, entreesDeLaCaisseIncompletes: 'la reprise : coupée' }, 'caisse-paiements-a-retirer')).toBe(0)
     drapeau.leve = false
     expect(tous(vente).some((x) => x.id === 'caisse-paiements-a-retirer')).toBe(false)
+  })
+})
+
+// LA REPRISE CONFRONTÉE AU REGISTRE (IMMO-Q1) ET LE BIEN REPRIS SANS PIÈCE (IMMO-Q2), relecture des immobilisations du
+// 03/11/2026, D5 et D6 : deux points « attention » — un écart de cumul, un compte repris sous un autre numéro —, muets sur une
+// lecture partielle de leurs entrées et dès qu'un exercice de la reprise est validé ; et un bien acquis avant l'ouverture,
+// inscrit sans pièce, n'est pas un justificatif supprimé.
+describe('pointsDeLaChecklist : la reprise des immobilisations (IMMO-Q1, IMMO-Q2)', () => {
+  const MEDICAL: NatureImmobilisation = {
+    id: 'n-med', dossier_id: null, libelle: 'Matériel médical', duree_annees_defaut: 5, ordre: 1, compte_immobilisation: '215400',
+  }
+  const FAUTEUIL: Immobilisation = {
+    id: 'fauteuil', dossier_id: 'd1', piece_id: null, nature_id: 'n-med', libelle: 'Fauteuil fictif', valeur: 4800,
+    date_acquisition: '2022-03-15', date_mise_en_service: null, duree_annees: 5, created_at: '2025-01-10T09:00:00Z',
+  }
+  const amortissement = (compte: string, montant: number): ANouveau => ({
+    id: `an-${compte}`, dossier_id: 'd1', date: '2025-01-01', compte, compte_origine: compte, libelle: 'Amortissements', sens: 'credit',
+    montant, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2025-01-05T00:00:00Z',
+  })
+  const OUVERTURE = { date: '2025-01-01', solde: 0 }
+  const tous = (d: Partial<DonneesDeLaChecklist>, c: ContexteDeLaChecklist = CONTEXTE) => pointsDeLaChecklist(donnees(d), c).tousLesPointsATraiter
+  const point = (d: Partial<DonneesDeLaChecklist>, id: string, c: ContexteDeLaChecklist = CONTEXTE) => tous(d, c).find((p) => p.id === id)
+  const repris = { immobilisations: [FAUTEUIL], natures: [MEDICAL], ouverture: OUVERTURE }
+
+  it('nomme l’écart du cumul repris, en attention, et renvoie au registre', () => {
+    const p = point({ ...repris, aNouveaux: [amortissement('281540', 2690.63)] }, 'amortissements-repris-en-ecart')
+    expect(p).toMatchObject({ nb: 1, severite: 'attention', cible: 'immobilisations' })
+    expect(p?.detail).toContain(`281540 : registre ${formatMoney(2682.67)}, balance reprise ${formatMoney(2690.63)}, écart ${formatMoney(7.96)}`)
+    // Le cumul égal : rien à dire — le garde symétrique.
+    expect(point({ ...repris, aNouveaux: [amortissement('281540', 2682.67)] }, 'amortissements-repris-en-ecart')?.nb).toBe(0)
+  })
+
+  it('dit à part un compte repris sous un autre numéro, sans l’écart qu’il ferait', () => {
+    const d = { ...repris, aNouveaux: [amortissement('28154', 2690.63)] }
+    expect(point(d, 'amortissements-repris-en-ecart')?.nb).toBe(0)
+    expect(point(d, 'amortissements-repris-sous-un-autre-numero')).toMatchObject({ nb: 1, severite: 'attention' })
+  })
+
+  it('se tait sur une lecture partielle de ses entrées, sans balance reprise, et une fois la reprise validée', () => {
+    const d = { ...repris, aNouveaux: [amortissement('281540', 1000)] }
+    expect(point(d, 'amortissements-repris-en-ecart')?.nb).toBe(1)
+    expect(point({ ...d, entreesDeLaRepriseDesBiensIncompletes: 'le registre : 1 lu sur 2' }, 'amortissements-repris-en-ecart')?.nb).toBe(0)
+    expect(point({ ...repris, aNouveaux: [], ouverture: null }, 'amortissements-repris-en-ecart')?.nb).toBe(0)
+    expect(point(d, 'amortissements-repris-en-ecart', { ...CONTEXTE, anneesValidees: [2025], frontiere: '2025-12-31' })?.nb).toBe(0)
+  })
+
+  it('ne dit pas « justificatif supprimé » d’un bien repris inscrit sans pièce ; d’un bien acquis depuis, si', () => {
+    const depuis: Immobilisation = { ...FAUTEUIL, id: 'depuis', date_acquisition: '2025-02-01' }
+    const d = { ...repris, immobilisations: [FAUTEUIL, depuis], aNouveaux: [amortissement('281540', 2682.67)] }
+    expect(point(d, 'immos-sans-justificatif')?.nb).toBe(1)
+    // Sans reprise, les deux ont perdu leur justificatif ; l'ouverture lue en partie, le point se tait.
+    expect(point({ ...d, aNouveaux: [], ouverture: null }, 'immos-sans-justificatif')?.nb).toBe(2)
+    expect(point({ ...d, ouverture: null, ouvertureIncomplete: '1 lue sur 2' }, 'immos-sans-justificatif')?.nb).toBe(0)
   })
 })

@@ -3,6 +3,7 @@ import type { Categorie, Immobilisation, LigneBancaire, ModeComptable, Piece } f
 import { paiementNet, soldeDesPaiements } from './alignementBanque'
 import type { PaiementsDesPieces } from './rattachement'
 import { estFigee } from './validationExercice'
+import { bienRepris } from './amortissements'
 import { exemplaireDUneSource, type FacturesSources } from './facturesSources'
 
 // Contrôles transverses partagés entre plusieurs onglets — extraits pour n'avoir qu'un seul endroit
@@ -618,10 +619,10 @@ export function pastillesDePaiement(
 // qu'il invoquait : chercher toutes les copies. Les trois sont `ecritures_brouillon.piece_id` (déjà
 // gardée par `rupturesPisteAudit`), `lignes_bancaires.piece_id` (ci-dessus) et celle-ci.
 //
-// `piece_id` nul N'EST PAS UN ÉTAT LÉGITIME ICI, et c'est ce qui rend le contrôle sans ambiguïté :
-// `ImmobilisationsTab` n'a qu'UN chemin de création, et il pose toujours `piece_id: piece.id` — une
-// immobilisation naît d'une pièce validée, jamais d'une saisie libre. Un `piece_id` nul ne peut donc
-// venir que de la suppression de cette pièce.
+// `piece_id` nul N'ÉTAIT PAS UN ÉTAT LÉGITIME ICI, et c'est ce qui rendait le contrôle sans ambiguïté :
+// `ImmobilisationsTab` n'avait qu'UN chemin de création, qui pose toujours `piece_id: piece.id`. Il en a
+// un second depuis le 04/11/2026, le bien repris (IMMO-Q2, plus bas) : hors de lui, un `piece_id` nul ne
+// peut venir que de la suppression de la pièce.
 //
 // CE QUE ÇA COÛTE : `calculerDeclaration2035` totalise la dotation (`dotationDeLExercice`) sur TOUTES
 // les immobilisations sans regarder ce lien, donc elle part en case CH d'une 2035 **signée** alors que
@@ -634,12 +635,20 @@ export function pastillesDePaiement(
 // Clôture de cadrer sur son exercice, comme la Balance des comptes cadre ses propres chiffres.
 //
 // LATENT, et mesuré le 23/09/2026 : 2 immobilisations en base, toutes deux rattachées à leur pièce.
-export function immobilisationSansJustificatif(immo: Immobilisation): boolean {
-  return immo.piece_id == null
+//
+// SAUF UN BIEN REPRIS (IMMO-Q2, 04/11/2026) : depuis « Ajouter un bien repris », un bien acquis AVANT l'ouverture du dossier
+// s'inscrit sans pièce — la balance reprise porte sa valeur, son acquisition ne s'écrit pas, et sa facture a pu être perdue
+// (lib/amortissements.ts, `bienReprisSansPiece`). Un `piece_id` nul n'est donc plus un justificatif supprimé que pour un bien
+// acquis à partir de l'ouverture, ou de tout bien d'un dossier qui n'a pas été repris. `ouverture` : la date des à-nouveaux,
+// nulle sans reprise — sans valeur par défaut, l'oublier ferait dire « justificatif supprimé » de chaque bien repris.
+export function immobilisationSansJustificatif(immo: Pick<Immobilisation, 'piece_id' | 'date_acquisition'>, ouverture: string | null): boolean {
+  return immo.piece_id == null && !bienRepris(immo, ouverture)
 }
 
-export function immobilisationsSansJustificatif(immobilisations: Immobilisation[]): Immobilisation[] {
-  return immobilisations.filter(immobilisationSansJustificatif)
+export function immobilisationsSansJustificatif<T extends Pick<Immobilisation, 'piece_id' | 'date_acquisition'>>(
+  immobilisations: readonly T[], ouverture: string | null,
+): T[] {
+  return immobilisations.filter((i) => immobilisationSansJustificatif(i, ouverture))
 }
 
 function indexMois(dateSql: string): number {

@@ -11,10 +11,12 @@ import { fraisDesMouvements } from '../../lib/ecrituresVentesFacturees'
 import { acquisitionsDesBiens, dotationDeLExercice } from '../../lib/amortissements'
 import { amortissementsSousLeBareme } from '../../lib/forfaitKilometrique'
 import {
-  CASES_2035, PREMIER_EXERCICE_REVENU_BRUT_SOCIAL, arrondirPourFormulaire, casesNegatives, doublonFraisVehicules, incoherencesDesCases,
-  partDeBKSansNature, valeursDesCases,
+  CASES_2035, PREMIER_EXERCICE_REVENU_BRUT_SOCIAL, arrondirPourFormulaire, carburantSousLeBareme, casesNegatives, doublonFraisVehicules,
+  incoherencesDesCases, partDeBKSansNature, valeursDesCases,
 } from '../../lib/cases2035'
-import { POSTES_PROPOSABLES, type DoublonFraisVehicule, type IncoherenceCase, type PosteNonRattache } from '../../lib/cases2035'
+import {
+  POSTES_PROPOSABLES, type CarburantSousLeBareme, type DoublonFraisVehicule, type IncoherenceCase, type PosteNonRattache,
+} from '../../lib/cases2035'
 import { comptesPartagesEntreCases, concordance2035 } from '../../lib/concordance2035'
 import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
@@ -634,6 +636,11 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   const doublonsVehicules: { annee: number; doublon: DoublonFraisVehicule }[] = declarationsOuvertes
     .map((d) => ({ annee: d.annee, doublon: doublonFraisVehicules(d) }))
     .filter((x): x is { annee: number; doublon: DoublonFraisVehicule } => x.doublon !== null)
+  // Le carburant sous le barème (VEH-Q1) : la catégorie commune « Carburant / déplacements » porte le poste « Frais de
+  // déplacement », que la carte du dessus laisse passer à dessein ; chaque dépense se nomme, sa date, son montant, sa catégorie.
+  const carburantsSousBareme: { annee: number; carburant: CarburantSousLeBareme }[] = declarationsOuvertes
+    .map((d) => ({ annee: d.annee, carburant: carburantSousLeBareme(d, categories, ventilations, assujettiTva) }))
+    .filter((x): x is { annee: number; carburant: CarburantSousLeBareme } => x.carburant !== null)
 
   // La CSG-CRDS est portée EN ENTIER au poste « Cotisations sociales personnelles » (case BK), alors
   // que 2,9 de ses 9,7 points ne sont pas déductibles du résultat BNC. Le moteur ne retranche rien
@@ -656,7 +663,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // Justificatif`) : ce qui compte ici est la dotation qui part RÉELLEMENT en case CH cette
   // année-là, pas un bien amorti depuis longtemps.
   const amortissementsSansJustificatif = declarationsOuvertes.flatMap((d) =>
-    immobilisationsSansJustificatif(immobilisations)
+    immobilisationsSansJustificatif(immobilisations, ouverture)
       .filter((i) => dotationDeLExercice(i, d.annee) > 0)
       .map((i) => ({ annee: d.annee, immo: i, dotation: dotationDeLExercice(i, d.annee) })),
   )
@@ -1547,6 +1554,41 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {carburantsSousBareme.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Carburant sous le barème kilométrique ({carburantsSousBareme.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Le barème kilométrique couvre le carburant, l’entretien, les pneus, l’assurance et les réparations du véhicule
+            (BOI-BNC-BASE-40-60-40-20, § 120) : sous le barème, ces dépenses ne figurent à aucun poste de charges (notice de la
+            2035, renvoi 12). La catégorie commune « Carburant / déplacements » compte pourtant ces dépenses en case BJ, à côté du
+            barème. Reclassez en prélèvement de l’exploitant ce que le barème couvre ; les péages, le stationnement et les
+            autres déplacements restent déductibles. L’application ne tranche pas : la catégorie mêle les deux.
+          </p>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite table-empilable-sans-jeu" aria-label="Carburant sous le barème kilométrique">
+              <thead>
+                <tr>
+                  <th>Exercice</th>
+                  <th>Date</th>
+                  <th>Catégorie</th>
+                  <th style={{ textAlign: 'right' }}>Montant compté</th>
+                </tr>
+              </thead>
+              <tbody>
+                {carburantsSousBareme.flatMap(({ annee, carburant }) => carburant.depenses.map((d, i) => (
+                  <tr key={`${annee}-${i}`}>
+                    <td data-libelle="Exercice">{annee}</td>
+                    <td data-libelle="Date">{formatDate(d.date)}</td>
+                    <td data-libelle="Catégorie">{d.categorie}</td>
+                    <td data-libelle="Montant compté" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(d.montant)}</td>
+                  </tr>
+                )))}
               </tbody>
             </table>
           </div>

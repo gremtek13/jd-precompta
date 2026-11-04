@@ -4,7 +4,7 @@ import {
   COMPTE_REMBOURSEMENT_TVA_DEMANDE, COMPTE_TVA_A_DECAISSER, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
   COMPTE_TVA_IMMOBILISATIONS, COMPTE_VIREMENTS_INTERNES,
 } from './comptes'
-import { montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec } from './controles'
+import { immobilisationsSansJustificatif, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec } from './controles'
 import { creditReporte, libellePeriode } from './declarationTva'
 import { echeancesNonRapprochees } from './echeanceEmprunt'
 import { capitalRestantDu, type Emprunt } from './emprunts'
@@ -577,7 +577,8 @@ function preuveDuRegistreValeurs(compte: string, soldeCentimes: number, d: Donne
         `${pluriel(horsRegistre.length, 'écriture', 'écritures')} de l’exercice sur ce compte sans bien du registre rangé à ce compte, ${soldeEnMots(sommeEcritures(horsRegistre))}.`,
         sommeEcritures(horsRegistre), horsRegistre.length))
     }
-    const sansPiece = biens.filter((b) => b.piece_id === null)
+    // Pas un bien repris, inscrit sans pièce (IMMO-Q2) : acquis avant la reprise, sa facture n'a jamais été attendue.
+    const sansPiece = immobilisationsSansJustificatif(biens, reprise)
     if (sansPiece.length > 0) {
       faits.push(fait('biens-sans-justificatif',
         `${pluriel(sansPiece.length, 'bien', 'biens')} du compte sans facture : ${accord(sansPiece.length, 'son justificatif a été supprimé', 'leurs justificatifs ont été supprimés')}.`, null, sansPiece.length))

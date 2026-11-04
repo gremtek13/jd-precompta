@@ -192,6 +192,14 @@ describe('VehiculesCard', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /Ajouter un véhicule/ })).toBeDefined())
   })
 
+  // VEH-Q1 (04/11/2026) : la carte dit ce que le barème couvre, là où l'option se prend — le carburant rangé sous la catégorie
+  // commune « Carburant / déplacements » s'ajoutait au forfait en case BJ sans un mot.
+  it('dit ce que le barème couvre, et ce qu’il ne couvre pas', async () => {
+    monter(2025)
+    const phrase = await screen.findByText(/^Le barème couvre le carburant, l'entretien, les pneus, l'assurance et les réparations du véhicule/)
+    expect(phrase.textContent).toMatch(/se classent en prélèvement de\s+l'exploitant\. Il ne couvre ni les péages ni le stationnement, qui restent déductibles\.$/)
+  })
+
   it("ne propose aucun ajout tant qu'aucun exercice n'est choisi", async () => {
     monter('toutes')
 

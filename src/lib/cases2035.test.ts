@@ -11,6 +11,8 @@ import {
   posteRattache,
   SECONDES_CASES,
   SECONDES_CASES_ADMISES_HORS_DONT,
+  CODE_CARBURANT_DEPLACEMENTS,
+  carburantSousLeBareme,
   caseDuPoste,
   casesNegatives,
   doublonFraisVehicules,
@@ -27,7 +29,7 @@ import {
   POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
 } from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
-import type { Categorie, CotisationDeclaree, Piece, VehiculeDossier } from './types'
+import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire } from './types'
 import { cotisationsComptees } from './cotisationRapprochee'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { ventesFactureesVides } from '../test/ventesFacturees'
@@ -878,5 +880,98 @@ describe('les secondes cases qu’un poste alimente aussi', () => {
     // Une incohérence au centime (une saisie contradictoire) n'est pas touchée : `incoherencesDesCases` la dit.
     const contradictoire = arrondirPourFormulaire(new Map([['BK', 100], ['BT', 150.6]]), 2025)
     expect(contradictoire.get('BT')).toBe(151)
+  })
+})
+
+// VEH-Q1 (relecture du 03/11/2026, D2 ; écrite sur la recommandation le 04/11/2026) : la catégorie COMMUNE « Carburant /
+// déplacements » porte le poste « Frais de déplacement », que `doublonFraisVehicules` laisse passer à dessein. L'année où le
+// barème est retenu, chacune de ses dépenses que la 2035 compte se nomme — sa date, son montant, sa catégorie —, qu'elle
+// vienne d'une pièce, d'un mouvement affecté ou de la part d'un mouvement ventilé. Typés sans `as` : le compilateur confronte
+// chaque champ à la table.
+describe('carburantSousLeBareme — le carburant sous le barème kilométrique', () => {
+  const CARBURANT: Categorie = {
+    id: 'c-carb', dossier_id: null, code: CODE_CARBURANT_DEPLACEMENTS, libelle: 'Carburant / déplacements', ordre: 40,
+    compte_comptable: '625100', poste_2035: 'Frais de déplacement',
+  }
+  // Une catégorie du dossier au même compte et au même poste : un billet de train n'est pas le carburant.
+  const TRAIN: Categorie = { ...CARBURANT, id: 'c-train', dossier_id: 'd1', code: 'train', libelle: 'Train' }
+  const pieceCarb = (id: string, o: Partial<Piece> = {}): Piece => ({
+    id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`,
+    storage_hash: null, date_piece: '2025-03-10', tiers: 'STATION FICTIVE', montant_ht: null, montant_tva: null, montant_ttc: 110,
+    devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: 'c-carb',
+    sous_dossier_id: null, type_piece: 'achat', statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null,
+    flux_id: null, lisible_path: null, identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null,
+    facture_id: null, vente_hors_des_factures: false, created_at: '2025-03-10T09:00:00Z', updated_at: '2025-03-10T09:00:00Z', ...o,
+  })
+  const mouvement = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
+    id, dossier_id: 'd1', date: '2025-05-12', libelle: 'CB STATION FICTIVE', montant: -80, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
+    compte_bilan: null, declaration_tva_id: null, id_externe: null, source_fichier: 'releve-2025.pdf', libelle_brut: null,
+    created_at: '2025-06-01T09:00:00Z', encaissements_de_factures: false, ...o,
+  })
+  const ventilation = (id: string, o: Partial<VentilationBancaire>): VentilationBancaire => ({
+    id, dossier_id: 'd1', ligne_bancaire_id: 'l-vent', categorie_id: 'c-carb', part_personnelle: false, montant: -30, taux_tva: null,
+    created_at: '2025-06-01T09:00:00Z', ...o,
+  })
+  const VOITURE: VehiculeDossier = {
+    id: 'v1', dossier_id: 'd1', annee: 2025, type: 'voiture', puissance_fiscale: 5, motorisation: 'thermique', km_professionnel: 12000,
+    modele: null, bareme: 'bnc', carburant: null, inscrit_immobilisations: false, amortissements_a_reintegrer: null,
+    created_at: '2025-01-02T09:00:00Z', updated_at: '2025-01-02T09:00:00Z',
+  }
+
+  function calculer(o: { pieces?: Piece[]; lignes?: LigneBancaire[]; ventilations?: VentilationBancaire[]; vehicules?: VehiculeDossier[] }) {
+    const categories = [CARBURANT, TRAIN]
+    const lignes = o.lignes ?? []
+    const ventilations = o.ventilations ?? []
+    const declaration = calculerDeclaration2035(
+      2025, o.pieces ?? [], categories, [], [], o.vehicules ?? [VOITURE], false, paiementsDesPieces(lignes, [], [], []),
+      partsDuReleve(lignes, categories, ventilations, false), [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' },
+      CAISSE_ABSENTE,
+    )
+    return carburantSousLeBareme(declaration, categories, ventilations, false)
+  }
+
+  it('nomme la pièce, le mouvement affecté et la part ventilée de la catégorie, sous le barème', () => {
+    const r = calculer({
+      pieces: [pieceCarb('p1')],
+      lignes: [
+        mouvement('l-p1', { piece_id: 'p1', date: '2025-03-11', montant: -110 }),
+        mouvement('l-aff', { categorie_id: 'c-carb', date: '2025-05-12', montant: -80 }),
+        mouvement('l-vent', { ventilee: true, date: '2025-07-01', montant: -50 }),
+      ],
+      ventilations: [ventilation('v-carb', { montant: -30 }), ventilation('v-train', { categorie_id: 'c-train', montant: -20 })],
+    })
+    expect(r?.montantIndemnites).toBe(5679)
+    expect(r?.depenses).toEqual([
+      { date: '2025-03-10', montant: 110, categorie: 'Carburant / déplacements', origine: 'piece' },
+      { date: '2025-05-12', montant: 80, categorie: 'Carburant / déplacements', origine: 'mouvement' },
+      { date: '2025-07-01', montant: 30, categorie: 'Carburant / déplacements', origine: 'mouvement' },
+    ])
+    expect(r?.total).toBe(220)
+  })
+
+  it('jamais un libellé bancaire ni un tiers : la date, le montant, la catégorie', () => {
+    const r = calculer({ pieces: [pieceCarb('p1')], lignes: [mouvement('l-aff', { categorie_id: 'c-carb' })] })
+    expect(r?.depenses).toHaveLength(2)
+    expect(JSON.stringify(r)).not.toMatch(/STATION FICTIVE/)
+  })
+
+  it('se tait sans barème : le carburant est alors une charge', () => {
+    expect(calculer({ pieces: [pieceCarb('p1')], vehicules: [] })).toBeNull()
+  })
+
+  it('se tait sur une autre catégorie du même poste — le garde symétrique', () => {
+    expect(calculer({ pieces: [pieceCarb('p1', { categorie_id: 'c-train' })] })).toBeNull()
+  })
+
+  it('reste invisible à `doublonFraisVehicules`, qui ne regarde que les frais de véhicule', () => {
+    const categories = [CARBURANT]
+    const declaration = calculerDeclaration2035(
+      2025, [pieceCarb('p1')], categories, [], [], [VOITURE], false, paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT,
+      ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+    )
+    expect(doublonFraisVehicules(declaration)).toBeNull()
+    expect(carburantSousLeBareme(declaration, categories, [], false)?.depenses).toHaveLength(1)
   })
 })

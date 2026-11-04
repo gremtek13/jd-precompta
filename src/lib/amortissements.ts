@@ -362,6 +362,39 @@ export function refusBien(saisie: {
   return null
 }
 
+// UN BIEN REPRIS, INSCRIT SANS PIÈCE (IMMO-Q2, relecture des immobilisations du 03/11/2026, D6 ; écrite sur la recommandation le
+// 04/11/2026). Un bien ne s'inscrivait au registre que depuis une pièce validée de 500 € ou plus : un bien d'avant la reprise
+// dont la facture est perdue, ou que l'ancien logiciel immobilisait sous 500 €, ne s'inscrivait pas, et sa dotation manquait en
+// case CH. Il s'inscrit désormais SANS PIÈCE, à une condition : être acquis AVANT l'ouverture du dossier. La balance reprise
+// porte sa valeur et son amortissement antérieur — son acquisition ne s'écrit pas (`acquisitionsDesBiens` n'en voit aucune,
+// faute de pièce, comme pour un bien `repris`), ses dotations à partir de l'ouverture, si. Acquis depuis, un bien se justifie
+// par sa facture, qui s'écrit : il s'inscrit depuis elle, parmi les candidates. La base admet un `piece_id` nul (la clé
+// `immobilisations_piece_id_unique` tient les NULL pour distincts) ; ce refus est celui de l'application, dit avant le clic, et
+// la base refuse d'elle-même un bien acquis dans un exercice validé (`garder_bien_valide`), que l'écran dit aussi.
+export function refusBienRepris(
+  saisie: { libelle: string; natureId: string; valeur: string; dateAcquisition: string; dateMiseEnService: string; duree: string },
+  ouverture: string | null,
+): string | null {
+  if (ouverture === null) {
+    return 'Un bien repris s’inscrit dans un dossier ouvert par une balance reprise (onglet Informations) : ce dossier n’en a pas. '
+      + 'Un bien acquis depuis s’inscrit depuis sa facture, parmi les candidates.'
+  }
+  const refus = refusBien(saisie)
+  if (refus) return refus
+  if (saisie.dateAcquisition >= ouverture) {
+    const [a, m, j] = ouverture.split('-')
+    return `Un bien repris est acquis avant l’ouverture du dossier, le ${j}/${m}/${a} : un bien acquis depuis s’inscrit depuis `
+      + 'sa facture, parmi les candidates.'
+  }
+  if (!saisie.natureId) return 'Choisissez la nature du bien : c’est elle qui donne son compte d’amortissement.'
+  return null
+}
+
+/** Le bien est-il un bien repris inscrit sans pièce : acquis avant l'ouverture, et sans facture au registre ? */
+export function bienReprisSansPiece(bien: Pick<Immobilisation, 'piece_id' | 'date_acquisition'>, ouverture: string | null): boolean {
+  return bien.piece_id == null && bienRepris(bien, ouverture)
+}
+
 // Ce que la base refuserait d'une nature créée pour le dossier : son compte est un compte d'immobilisation
 // de six chiffres, incorporelle (20…) ou corporelle (21…) — c'est de lui que la dotation tire son compte 28.
 export const FORMAT_COMPTE_IMMOBILISATION = /^2[01]\d{4}$/

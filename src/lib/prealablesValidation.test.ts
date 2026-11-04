@@ -971,13 +971,24 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
     expect(ids(donnees({ immobilisations: [ancien], natures: [MATERIEL], anneesValidees: [2024] }))).not.toContain('immos-sans-justificatif')
   })
 
+  // IMMO-Q2 (04/11/2026) : un bien acquis avant l'ouverture s'inscrit sans pièce — la balance reprise porte sa valeur. Sa
+  // dotation de l'exercice n'est pas celle d'un justificatif supprimé ; celle d'un bien sans pièce acquis depuis, si.
+  it('ne compte pas un bien repris, inscrit sans pièce avant l’ouverture, et compte encore un bien acquis depuis', () => {
+    const repris = bien('i1', { piece_id: null, date_acquisition: '2024-06-01' })
+    const depuis = bien('i2', { piece_id: null, date_acquisition: '2025-02-01' })
+    const d = donnees({ immobilisations: [repris, depuis], natures: [MATERIEL], aNouveaux: ouvertureReprise('2025-01-01') })
+    expect(prealable(d, 'immos-sans-justificatif')?.nb).toBe(1)
+    // Sans reprise, les deux ont perdu leur justificatif.
+    expect(prealable(donnees({ immobilisations: [repris, depuis], natures: [MATERIEL] }), 'immos-sans-justificatif')?.nb).toBe(2)
+  })
+
   it('a un cas pour chaque contrôle repris de la Checklist', () => {
     const module = readFileSync(new URL('./prealablesValidation.ts', import.meta.url), 'utf8')
     const repris = [...module.split("// ── Les anomalies du brouillon")[1].matchAll(/id: '([a-z0-9-]+)'/g)].map((m) => m[1])
       .filter((id) => ![
         'doublons-inconnus', 'releves-inconnus', 'releve-incoherent', 'echeances-emprunt-non-rapprochees', 'ecritures-a-generer',
-        // Deux avertissements de la 2035, qui ne refusent rien : leurs cas sont plus bas.
-        'csg-non-saisie', 'vehicule-amorti-sous-bareme',
+        // Trois avertissements de la 2035, qui ne refusent rien : leurs cas sont plus bas.
+        'csg-non-saisie', 'vehicule-amorti-sous-bareme', 'carburant-sous-bareme',
         // Un avertissement aussi : un doublon ignoré est le bon geste. Son cas est plus haut.
         'mouvements-ignores',
         // Un avertissement encore : une CA12 ou une déclaration faite ailleurs. Son cas est plus bas.
@@ -1272,6 +1283,32 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
     // Ni en engagement, où il n'y a pas de 2035 à figer.
     const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT }
     expect(ids(donnees({ ...registre, modele: engagement, vehicules: [vehicule('v1', 2025, 5000)] }))).not.toContain('vehicule-amorti-sous-bareme')
+  })
+
+  // VEH-Q1 (04/11/2026) : la catégorie commune « Carburant / déplacements » porte le poste « Frais de déplacement », que
+  // `frais-vehicule-en-double` laisse passer à dessein. L'année où le barème est retenu, chacune de ses dépenses se dit — en
+  // attention : la catégorie mêle le carburant, que le barème couvre, et les péages, qui restent.
+  it('avertit d’une dépense de « Carburant / déplacements » l’année où le barème est retenu, sans refuser', () => {
+    const CARBURANT: Categorie = {
+      id: 'c-carb', dossier_id: null, code: 'carburant_deplacements', libelle: 'Carburant / déplacements', ordre: 4,
+      compte_comptable: '625100', poste_2035: 'Frais de déplacement',
+    }
+    const plein = {
+      categories: [ACHATS, CARBURANT],
+      piecesValidees: [P1, piece('p-plein', { categorie_id: 'c-carb', montant_ttc: 110 })],
+      lignes: [L1, ligne('l-plein', { piece_id: 'p-plein', montant: -110 })],
+    }
+    const p = prealable(donnees({ ...plein, vehicules: [vehicule('v1', 2025, 5000)] }), 'carburant-sous-bareme')
+    expect(p).toMatchObject({ bloquant: false, nb: 1, cible: 'cloture' })
+    // Sans barème, le carburant est une charge : rien à dire. Et `frais-vehicule-en-double` ne le voit toujours pas.
+    expect(ids(donnees(plein))).not.toContain('carburant-sous-bareme')
+    expect(ids(donnees({ ...plein, vehicules: [vehicule('v1', 2025, 5000)] }))).not.toContain('frais-vehicule-en-double')
+    // Une autre catégorie au même poste (un billet de train) n'est pas la catégorie commune : le garde symétrique.
+    const train: Categorie = { ...CARBURANT, id: 'c-train', code: 'train', libelle: 'Train' }
+    expect(ids(donnees({
+      categories: [ACHATS, train], piecesValidees: [P1, piece('p-train', { categorie_id: 'c-train', montant_ttc: 110 })],
+      lignes: [L1, ligne('l-train', { piece_id: 'p-train', montant: -110 })], vehicules: [vehicule('v1', 2025, 5000)],
+    }))).not.toContain('carburant-sous-bareme')
   })
 
   it('ne juge rien de la 2035 en engagement, qui n’en produit pas', () => {

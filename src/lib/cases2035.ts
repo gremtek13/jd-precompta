@@ -1,5 +1,8 @@
 import { POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES } from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
+import type { MouvementBancaire } from './affectationBanque'
+import type { Categorie, VentilationBancaire } from './types'
+import { partsDesVentilations } from './ventilationBanque'
 
 // Rattachement des postes du moteur (voir declaration2035.ts) aux cases du formulaire officiel.
 //
@@ -155,6 +158,9 @@ function cle(poste: string): string {
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
 }
+
+/** La clé de rapprochement d'un poste, pour qui doit reconnaître un poste comme le rattachement le reconnaît. */
+export const clePoste = cle
 
 // Rattachement pré-rempli poste → case. Il est fait pour être faux quelquefois : l'expert-comptable
 // corrige à l'écran, c'est le contrat posé avec lui (« je préremplis, tu corriges »). Il vaut donc
@@ -619,6 +625,82 @@ export function doublonFraisVehicules(declaration: Declaration2035): DoublonFrai
     montantIndemnites: indemnites.montant,
     postes,
     totalPostes: Number(postes.reduce((s, l) => s + l.montant, 0).toFixed(2)),
+  }
+}
+
+// LE CARBURANT SOUS LE BARÈME (VEH-Q1, relecture des immobilisations et du véhicule du 03/11/2026, D2 ; écrite sur la
+// recommandation le 04/11/2026). `doublonFraisVehicules` ne regarde que les postes « Frais de véhicules » et « Carburant », et
+// laisse passer à dessein « Frais de déplacement » : le train, l'hôtel, le péage y coexistent légitimement avec le forfait.
+// Or la catégorie COMMUNE « Carburant / déplacements » porte justement ce poste (lib/ecritures.ts, au 625100), et la
+// suggestion d'un tiers y range d'elle-même les stations-service (lib/suggestionTiers.ts) : douze pleins de 110 € s'ajoutaient
+// au forfait en case BJ, sans un mot. La notice (2035-NOT-SD, renvoi 12) et le BOFiP (BOI-BNC-BASE-40-60-40-20, § 120 et 160) :
+// sous le barème, le carburant, l'entretien, les pneus, l'assurance et les réparations du véhicule ne figurent à aucun poste de
+// charges ; les péages et le stationnement restent déductibles en sus.
+//
+// L'année où le barème est retenu (une indemnité kilométrique comptée), chaque dépense de cette catégorie que la 2035 compte se
+// dit : sa date, son montant compté, sa catégorie — jamais un libellé bancaire, ni le nom d'un tiers. Un signal, jamais une
+// correction : la catégorie mêle le carburant et les déplacements, et seul le cabinet sait lequel est lequel. Plus tard, une
+// migration séparera la catégorie commune en « Carburant » et « Déplacements » (VEH-Q1).
+//
+// La contribution d'une part de mouvement VENTILÉ ne nomme pas sa catégorie, et deux catégories peuvent partager compte et
+// poste (un billet de train au 625100, à côté du carburant) : les parts d'un mouvement ventilé que la 2035 compte se relisent
+// donc par `partsDesVentilations`, le calcul même du moteur (lib/partsDuReleve.ts), chacune avec sa catégorie.
+export const CODE_CARBURANT_DEPLACEMENTS = 'carburant_deplacements'
+
+export interface DepenseDeCarburant {
+  /** La date de la pièce, ou celle du mouvement du relevé. */
+  date: string | null
+  /** Ce que la 2035 en compte cette année, au centime. */
+  montant: number
+  categorie: string
+  origine: 'piece' | 'mouvement'
+}
+
+export interface CarburantSousLeBareme {
+  montantIndemnites: number
+  depenses: DepenseDeCarburant[]
+  total: number
+}
+
+export function carburantSousLeBareme(
+  declaration: Declaration2035,
+  categories: readonly Categorie[],
+  ventilations: readonly VentilationBancaire[],
+  // Ce que la 2035 compte d'une part ventilée : le hors taxe d'un dossier assujetti. Sans valeur par défaut, comme le moteur.
+  assujettiTva: boolean,
+): CarburantSousLeBareme | null {
+  const indemnites = declaration.depenses.find((l) => l.poste === POSTE_INDEMNITES_KM)
+  if (!indemnites || indemnites.montant === 0) return null
+  const carburant = new Map(categories.filter((c) => c.code === CODE_CARBURANT_DEPLACEMENTS).map((c) => [c.id, c]))
+  if (carburant.size === 0) return null
+
+  const depenses: DepenseDeCarburant[] = []
+  const lignesVentilees = new Map<string, MouvementBancaire>()
+  for (const c of declaration.contributions) {
+    if (c.nature !== 'depense' || c.centimes === 0) continue
+    const s = c.source
+    if (s.type === 'piece') {
+      const categorie = s.piece.categorie_id ? carburant.get(s.piece.categorie_id) : undefined
+      if (categorie) depenses.push({ date: s.piece.date_piece, montant: c.centimes / 100, categorie: categorie.libelle, origine: 'piece' })
+    } else if (s.type === 'mouvement' && s.ligne.ventilee) {
+      lignesVentilees.set(s.ligne.id, s.ligne)
+    } else if (s.type === 'mouvement') {
+      const categorie = s.ligne.categorie_id ? carburant.get(s.ligne.categorie_id) : undefined
+      if (categorie) depenses.push({ date: s.ligne.date, montant: c.centimes / 100, categorie: categorie.libelle, origine: 'mouvement' })
+    }
+  }
+  // Les parts des mouvements ventilés que la 2035 compte cette année, au centime où elle les compte (`enCentimes(montantPoste)`).
+  for (const p of partsDesVentilations([...lignesVentilees.values()], ventilations, categories, assujettiTva)) {
+    const centimes = Math.round(p.montantPoste * 100)
+    if (!carburant.has(p.categorie.id) || p.nature !== 'depense' || !p.categorie.poste_2035 || centimes === 0) continue
+    depenses.push({ date: p.ligne.date, montant: centimes / 100, categorie: p.categorie.libelle, origine: 'mouvement' })
+  }
+  if (depenses.length === 0) return null
+  depenses.sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.montant - b.montant)
+  return {
+    montantIndemnites: indemnites.montant,
+    depenses,
+    total: Math.round(depenses.reduce((t, d) => t + Math.round(d.montant * 100), 0)) / 100,
   }
 }
 

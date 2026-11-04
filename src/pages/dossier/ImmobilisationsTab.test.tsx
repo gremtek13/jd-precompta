@@ -1,7 +1,7 @@
 import { act, render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ImmobilisationsTab from './ImmobilisationsTab'
-import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
+import type { Categorie, EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { NON_VALIDEE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
@@ -17,6 +17,8 @@ import { AvecExercicesValides } from '../../test/exercicesValides'
 // quel verrou, et ce qu'il dit — avant le clic comme après un refus.
 const faux = vi.hoisted(() => ({
   pieces: [] as Piece[],
+  // Les catégories que l'écran lit (IMMO-Q2) : le poste d'une pièce dit si elle peut être un bien.
+  categories: [] as Categorie[],
   immobilisations: [] as Immobilisation[],
   natures: [] as NatureImmobilisation[],
   ecritures: [] as EcritureBrouillon[],
@@ -119,7 +121,8 @@ vi.mock('../../lib/supabase', async () => {
                   : table === 'natures_immobilisation' ? faux.natures
                     : table === 'ecritures_brouillon' ? faux.ecritures
                       : table === 'a_nouveaux' ? faux.aNouveaux
-                        : []
+                        : table === 'categories' ? faux.categories
+                          : []
             const toutes = filtrer(source, predicats)
             const plafond = table === 'ecritures_brouillon' && statutDemande === 'validee' && faux.muetValidees !== undefined
               ? faux.muetValidees
@@ -169,8 +172,9 @@ function dotation(annee: number, montant: number, o: Partial<EcritureBrouillon> 
   ]
 }
 
-function poser(immos: Immobilisation[], o: { pieces?: Piece[]; ecritures?: EcritureBrouillon[]; ouverture?: string } = {}) {
+function poser(immos: Immobilisation[], o: { pieces?: Piece[]; ecritures?: EcritureBrouillon[]; ouverture?: string; categories?: Categorie[] } = {}) {
   faux.pieces = o.pieces ?? []
+  faux.categories = o.categories ?? []
   faux.immobilisations = immos
   faux.natures = [NATURE_INFO, NATURE_PROPRE]
   faux.ecritures = o.ecritures ?? []
@@ -1018,5 +1022,169 @@ describe('ImmobilisationsTab — sous le plan du dossier', () => {
       { compte: '681110', sens: 'debit', montant: 1200, libelle: 'Dotation 2025 — Ordinateur' },
       { compte: '281830', sens: 'credit', montant: 1200, libelle: 'Dotation 2025 — Ordinateur' },
     ])
+  })
+})
+
+// LE BIEN REPRIS, INSCRIT SANS PIÈCE (IMMO-Q2, relecture des immobilisations du 03/11/2026, D6). Un bien d'avant la reprise
+// dont la facture est perdue, ou que l'ancien logiciel immobilisait sous 500 €, ne s'inscrivait pas : sa dotation manquait en
+// case CH. Il s'inscrit désormais sans pièce, acquis avant l'ouverture — rien d'autre ne s'écrit que le bien. Ce que l'écran
+// garde : le refus dit avant le clic, l'écriture d'un seul bien sous verrou, l'erreur de la base dite, aucun geste sur une
+// lecture partielle, et la ligne qui ne se dit pas « justificatif supprimé ».
+describe('ImmobilisationsTab — ajouter un bien repris, sans pièce', () => {
+  const OUVERTURE = '2025-01-01'
+
+  async function ouvrirLeFormulaire() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Ajouter un bien repris' }))
+    return within(screen.getByRole('form', { name: 'Ajouter un bien repris' }))
+  }
+  function remplir(f: ReturnType<typeof within>, o: { acquisition?: string } = {}) {
+    fireEvent.change(f.getByLabelText('Libellé'), { target: { value: 'Fauteuil repris' } })
+    fireEvent.change(f.getByLabelText('Nature'), { target: { value: 'n-propre' } })
+    fireEvent.change(f.getByLabelText('Valeur brute'), { target: { value: '4800' } })
+    fireEvent.change(f.getByLabelText('Acquisition'), { target: { value: o.acquisition ?? '2022-03-15' } })
+  }
+
+  it('dit pourquoi il n’y a pas de pièce, et inscrit le bien seul : sans pièce, à sa nature, sa valeur et ses dates', async () => {
+    poser([], { ouverture: OUVERTURE })
+    monter()
+    const f = await ouvrirLeFormulaire()
+    screen.getByText(/s’inscrit ici sans pièce — sa facture a pu être perdue, ou l’ancien logiciel l’a immobilisé sous/)
+    screen.getByText(/son acquisition ne s’écrit pas : seules ses dotations à\s+partir de l’ouverture s’écrivent/)
+    remplir(f)
+    // La durée usuelle de la nature, proposée.
+    expect((f.getByLabelText('Durée (années)') as HTMLInputElement).value).toBe('10')
+
+    fireEvent.click(f.getByRole('button', { name: 'Inscrire le bien repris' }))
+    await waitFor(() => expect(faux.inserees).toHaveLength(1))
+    expect(faux.inserees[0]).toEqual({
+      table: 'immobilisations',
+      valeur: {
+        dossier_id: 'dossier-de-test', piece_id: null, nature_id: 'n-propre', libelle: 'Fauteuil repris', valeur: 4800,
+        date_acquisition: '2022-03-15', date_mise_en_service: null, duree_annees: 10,
+      },
+    })
+    // Rien d'autre ne s'écrit : ni acquisition, ni dotation sans le clic qui les écrit.
+    expect(faux.rpcs).toHaveLength(0)
+    const ligne = (await registre().findByText('Fauteuil repris')).closest('tr')!
+    within(ligne).getByText('Bien repris, sans pièce')
+    expect(within(ligne).queryByText('Justificatif supprimé')).toBeNull()
+  })
+
+  it('refuse avant le clic une acquisition qui n’est pas antérieure à l’ouverture', async () => {
+    poser([], { ouverture: OUVERTURE })
+    monter()
+    const f = await ouvrirLeFormulaire()
+    remplir(f, { acquisition: OUVERTURE })
+
+    screen.getByText('Un bien repris est acquis avant l’ouverture du dossier, le 01/01/2025 : un bien acquis depuis s’inscrit depuis sa facture, parmi les candidates.')
+    const bouton = f.getByRole('button', { name: 'Inscrire le bien repris' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    fireEvent.submit(screen.getByRole('form', { name: 'Ajouter un bien repris' }))
+    expect(faux.inserees).toHaveLength(0)
+  })
+
+  it('refuse un bien acquis dans un exercice validé, dans les mots de la base', async () => {
+    poser([], { ouverture: '2024-01-01' })
+    monter(false, [2024])
+    const f = await ouvrirLeFormulaire()
+    remplir(f, { acquisition: '2023-06-01' })
+    screen.getByText(/: un bien acquis dans cet exercice ne s’inscrit plus au registre\./)
+    expect(f.getByRole('button', { name: 'Inscrire le bien repris' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('deux envois dans le même instant n’inscrivent qu’un bien, et le verrou tient pendant la relecture', async () => {
+    poser([], { ouverture: OUVERTURE })
+    monter()
+    remplir(await ouvrirLeFormulaire())
+    const formulaire = screen.getByRole('form', { name: 'Ajouter un bien repris' })
+
+    faux.retenirLectures = true
+    // Les lectures retenues après l'insertion : le premier envoi attend sa relecture, le second se heurte au verrou.
+    faux.retenue = new Promise<void>((r) => { faux.relacher = r })
+    await act(async () => { fireEvent.submit(formulaire); fireEvent.submit(formulaire) })
+    expect(faux.inserees).toHaveLength(1)
+    // La relecture n'est pas revenue : un nouvel envoi, formulaire rouvert, se heurte encore au verrou.
+    remplir(await ouvrirLeFormulaire())
+    await act(async () => { fireEvent.submit(screen.getByRole('form', { name: 'Ajouter un bien repris' })) })
+    expect(faux.inserees).toHaveLength(1)
+
+    faux.retenirLectures = false
+    await act(async () => { faux.relacher?.(); faux.retenue = null })
+    await registre().findByText('Fauteuil repris')
+    expect(faux.inserees).toHaveLength(1)
+  })
+
+  it('dit le refus de la base, et garde la saisie', async () => {
+    poser([], { ouverture: OUVERTURE })
+    faux.refusInsertion = { code: '23514', message: 'Exercice 2024 validé : un bien acquis dans cet exercice ne s’inscrit plus au registre.', details: null, hint: null }
+    monter()
+    const f = await ouvrirLeFormulaire()
+    remplir(f)
+    fireEvent.click(f.getByRole('button', { name: 'Inscrire le bien repris' }))
+    await screen.findByText('Le bien repris n’a pas pu être inscrit : Exercice 2024 validé : un bien acquis dans cet exercice ne s’inscrit plus au registre.')
+    expect((f.getByLabelText('Libellé') as HTMLInputElement).value).toBe('Fauteuil repris')
+  })
+
+  it('n’offre aucun geste sur une lecture partielle', async () => {
+    poser([], { ouverture: OUVERTURE, categories: [{ id: 'c-1', dossier_id: null, code: 'achats', libelle: 'Achats', ordre: 1, compte_comptable: '606100', poste_2035: 'Achats' }] })
+    faux.muetApres = { categories: 0 }
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Ajouter un bien repris' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    screen.getByText(/Inscription suspendue : une lecture est partielle/)
+  })
+
+  it('ne se propose pas dans un dossier qui n’a pas été repris', async () => {
+    poser([])
+    monter()
+    await screen.findByText("Aucune immobilisation enregistrée pour l'instant.")
+    expect(screen.queryByRole('button', { name: 'Ajouter un bien repris' })).toBeNull()
+  })
+
+  it('un bien repris garde sa date avant l’ouverture, et son retrait ne parle ni de charge ni de justificatif', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    poser([immobilisation({ piece_id: null, date_acquisition: '2023-04-01' })], { ouverture: OUVERTURE })
+    monter()
+    await screen.findByText('Bien repris, sans pièce')
+    expect(screen.queryByText('Justificatif supprimé')).toBeNull()
+
+    fireEvent.click(registre().getByRole('button', { name: 'Retirer' }))
+    const message = String(confirm.mock.calls[0][0])
+    expect(message).toMatch(/^Retirer ce bien repris \? La balance reprise garde sa valeur/)
+    expect(message).not.toMatch(/redevient une charge|justificatif a déjà été supprimé/)
+
+    fireEvent.click(registre().getByRole('button', { name: 'Modifier' }))
+    const f = within(screen.getByRole('form', { name: 'Modifier Ordinateur' }))
+    fireEvent.change(f.getByLabelText('Acquisition'), { target: { value: '2025-03-01' } })
+    fireEvent.click(f.getByRole('button', { name: 'Enregistrer' }))
+    await screen.findByText('Ce bien repris n’a pas de pièce : sa date d’acquisition reste avant l’ouverture du dossier, le 01/01/2025.')
+    expect(faux.modifiees).toHaveLength(0)
+  })
+})
+
+// DES ACHATS SEULEMENT (IMMO-Q2, D7) : les candidates mêlaient au matériel les ventes, les loyers et les prélèvements de 500 € ou
+// plus, sans geste pour en écarter un.
+describe('ImmobilisationsTab — les candidates ne sont que des achats', () => {
+  const pieceDe = (id: string, tiers: string, o: Partial<Piece> = {}): Piece => ({
+    id, dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload', storage_path: `dossier-de-test/${id}.pdf`, nom_fichier: `${id}.pdf`,
+    storage_hash: null, date_piece: '2025-04-02', tiers, montant_ht: 1500, montant_tva: 300, montant_ttc: 1800, devise: 'EUR',
+    montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
+    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
+    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null,
+    vente_hors_des_factures: false, created_at: '2025-04-02T09:00:00Z', updated_at: '2025-04-02T09:00:00Z', ...o,
+  })
+  const LOYER: Categorie = { id: 'c-loyer', dossier_id: null, code: 'loyer', libelle: 'Loyer', ordre: 20, compte_comptable: '613200', poste_2035: 'Loyers et charges locatives' }
+
+  it('propose l’achat ; ni la vente, ni la note de frais, ni le loyer', async () => {
+    poser([], {
+      categories: [LOYER],
+      pieces: [
+        pieceDe('p-achat', 'MATÉRIEL FICTIF'), pieceDe('p-vente', 'RELEVÉ DE RECETTES FICTIF', { type_piece: 'vente' }),
+        pieceDe('p-note', 'NOTE FICTIVE', { type_piece: 'note_frais' }), pieceDe('p-loyer', 'BAILLEUR FICTIF', { categorie_id: 'c-loyer' }),
+      ],
+    })
+    monter()
+    await screen.findByText('MATÉRIEL FICTIF')
+    for (const tiers of ['RELEVÉ DE RECETTES FICTIF', 'NOTE FICTIVE', 'BAILLEUR FICTIF']) expect(screen.queryByText(tiers)).toBeNull()
   })
 })

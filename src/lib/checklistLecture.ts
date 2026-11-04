@@ -238,6 +238,12 @@ export async function lireLaChecklist(dossierId: string, ventesParLesFactures: b
       ].find((l) => !l.complete)
       return partielle === undefined ? null : partielle.motif ?? 'lecture incomplète'
     })(),
+    // Les trois lectures dont la confrontation de la reprise au registre dépend (IMMO-Q1) : le registre, les natures (le compte
+    // de chaque bien) et la reprise. Une seule tronquée et ses deux points se taisent.
+    entreesDeLaRepriseDesBiensIncompletes: (() => {
+      const partielle = [lectureImmobilisations, lectureNatures, lectureANouveaux].find((l) => !l.complete)
+      return partielle === undefined ? null : partielle.motif ?? 'lecture incomplète'
+    })(),
     ventesFacturees,
     ventesIncompletes: ventesFacturees?.etat === 'incomplete' ? ventesFacturees.motif : null,
     caisse: lectureCaisse,
