@@ -71,6 +71,12 @@
 -- en base) : un accès « Ventes » ne valide plus une facture d'un dossier sans dénomination, quelle que soit sa
 -- forme. Le dossier A, une société, naît donc avec la sienne ; rien d'autre ne change, et avant la migration la base ne
 -- la lit pas.
+--
+-- CORRIGÉ LE 04/11/2026 (le contrôle 0c) : sa liste ignorait les onze fonctions de l'espace client (étapes A1 à A6) qui
+-- contrôlent l'accès par `gere_les_ventes`, et il était en faute depuis leurs migrations. Chacune relue dans sa dernière
+-- définition de l'export, égale au catalogue de la réplique : le contrôle d'accès est sa première instruction. Sur une
+-- réplique de la production à 171 migrations, 90 verdicts, 0 en faute, sans les deux migrations des devis comme avec
+-- elles ; la liste d'avant y rend 0c en faute, des deux côtés.
 do $essai$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -151,15 +157,20 @@ begin
                || ' public ' || exists (select 1 from aclexplode(p.proacl) x where x.grantee = 0 and x.privilege_type = 'EXECUTE')
              from pg_proc p where p.oid = 'public.supprimer_brouillon_facture(uuid,uuid)'::regprocedure$q$,
         'OK', 'true search_path=public anon false authenticated true public false', null),
-      -- Les quatre fonctions des devis (étape P5) s'y ajoutent dès que leur migration est en base : le contrôle part du
-      -- catalogue, et une fonction de plus sous ce droit doit avoir été présentée au cabinet.
-      ('0c', 'valeur', 'les fonctions de la vente contrôlent l''accès par gere_les_ventes : les huit des factures, et les quatre des devis dès leur migration', 'proprietaire', null,
+      -- Les onze fonctions de l'espace client (étapes A1 à A6 : les articles, l'adresse de réception et l'état de la
+      -- facture électronique, les contacts et leur import, les paramètres de facturation) y sont depuis leurs migrations,
+      -- chacune relue le 04/11/2026 dans sa dernière définition de l'export : sa première instruction refuse en 42501
+      -- (« Accès refusé à ce dossier. ») qui ne gère pas les ventes du dossier annoncé, security definer, search_path
+      -- fixé, ni anon ni PUBLIC ne l'exécutent. Les quatre fonctions des devis (étape P5) s'y ajoutent dès que leur
+      -- migration est en base : le contrôle part du catalogue, et une fonction de plus sous ce droit doit avoir été
+      -- présentée au cabinet.
+      ('0c', 'valeur', 'les fonctions de la vente contrôlent l''accès par gere_les_ventes : les huit des factures, les onze de l''espace client (A1 à A6), et les quatre des devis dès leur migration', 'proprietaire', null,
         $q$select string_agg(p.proname, ',' order by p.proname) from pg_proc p
             where p.pronamespace = 'public'::regnamespace and p.prosrc ~ 'if not public\.gere_les_ventes\('
               and p.prosrc !~ 'if not admin_du_dossier\('$q$,
         'OK', case when to_regclass('public.devis') is null
-          then 'abandonner_transmission,annuler_encaissement,declarer_encaissement_hors_application,enregistrer_encaissement,enregistrer_facture,prochain_numero_facture,retirer_encaissement,supprimer_brouillon_facture'
-          else 'abandonner_transmission,annuler_encaissement,decider_devis,declarer_encaissement_hors_application,enregistrer_devis,enregistrer_encaissement,enregistrer_facture,facturer_devis,prochain_numero_facture,retirer_encaissement,supprimer_brouillon_devis,supprimer_brouillon_facture' end, null),
+          then 'abandonner_transmission,annuler_encaissement,declarer_adresse_reception,declarer_encaissement_hors_application,effacer_contact,enregistrer_article,enregistrer_contact,enregistrer_encaissement,enregistrer_facture,enregistrer_parametres_facturation,etat_facture_electronique,importer_contacts,prochain_numero_facture,reprendre_article,reprendre_contact,retirer_article,retirer_contact,retirer_encaissement,supprimer_brouillon_facture'
+          else 'abandonner_transmission,annuler_encaissement,decider_devis,declarer_adresse_reception,declarer_encaissement_hors_application,effacer_contact,enregistrer_article,enregistrer_contact,enregistrer_devis,enregistrer_encaissement,enregistrer_facture,enregistrer_parametres_facturation,etat_facture_electronique,facturer_devis,importer_contacts,prochain_numero_facture,reprendre_article,reprendre_contact,retirer_article,retirer_contact,retirer_encaissement,supprimer_brouillon_devis,supprimer_brouillon_facture' end, null),
 
       -- ══ 1 à 6. Qui enregistre une facture ══════════
       ('1', 'controle', 'l''anonyme n''exécute pas enregistrer_facture', 'anon', null,

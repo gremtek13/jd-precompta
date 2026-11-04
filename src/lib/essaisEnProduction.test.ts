@@ -286,7 +286,9 @@ describe('les essais de la base, rejoués en production', () => {
     // même jour) ; aucun essai n'attend plus une migration préparée (la famille « apres » reste, vide). Dix-sept le même
     // jour : `sensDesReglesIgnorees` entré, après sa migration préparée (REGLES-Q1, `sens_des_regles_ignorees`). Seize le
     // 03/11/2026 : `sensDesReglesIgnorees` sorti (sa migration collée en production le même jour ; l'essai ne cherche aucun
-    // semis, il se joue comme un essai de la production) ; la famille « apres » reste, vide.
+    // semis, il se joue comme un essai de la production) ; la famille « apres » reste, vide. Seize encore le 04/11/2026 :
+    // `devis` quitte l'attendu impossible pour la famille « apres », la réplique munie de ses deux migrations préparées
+    // (étape P5, `devis_du_client` puis `devis_du_client_suppression`) ; plus aucun essai n'est attendu impossible.
     expect(cas.length).toBe(16)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
