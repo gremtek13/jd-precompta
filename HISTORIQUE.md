@@ -47767,3 +47767,24 @@ gain réel se mesure après trois jours.
   société AFFICHÉE ; `useCabinetBranding` garde la charte AVEC l'identifiant lu (rien d'un cabinet avant SA lecture, la
   réponse d'une société quittée ignorée) et une lecture en échec reste sur la charte de l'application. La lecture des
   sociétés et celle de la charte lisent leur erreur : deux exceptions de `lecturesVerifiees.test.ts` tombent.
+
+### 04/11/2026 — LES DEVIS, EN BASE : LES DEUX MIGRATIONS RÉÉCRITES CONTRE LA BASE D'AUJOURD'HUI ET ÉPROUVÉES (P5)
+
+Les textes du 10/10 (accordés le 18/10, fiche P5-migrations : « oui, après les avoir rejouées sur une réplique
+d'aujourd'hui ») n'avaient jamais été commités : le disque de la session les a emportés le 19/10 ; seul le retour a été
+retrouvé dans les journaux, à son empreinte. Réécrits d'après ce qui les spécifiait — `devis.sql` (la référence des
+refus), `devis.ts`, `types.ts`, `sauvegarde.ts`, le récit « LES DEVIS, EN BASE » — et désormais commités dans
+`supabase/preparees/` (le retour dans `retour/`). Écarts à la conception, aucun de fond : `centimes_ligne_facture` à
+quatre paramètres ; `facturer_devis` par l'`enregistrer_facture` d'aujourd'hui, daté du jour à Paris, ses refus passant
+tels quels ; des contraintes de forme et deux index ajoutés ; la garde des liens refuse une suppression directe ; les
+décimales comptées par `scale()`. Le mot « delete » reste (cascades, déclencheurs) : le détecteur l'accepte (« LE
+DÉTECTEUR D'`apply_migration`, MESURÉ ») ; la seconde, qui supprime un brouillon, se colle. Éprouvé sur une réplique à
+171 migrations, sous `proprietaire` : `devis.sql` 174 verdicts (sept étapes ajoutées tuent six mutations qui passaient),
+0 en faute ; `devisSuppression.sql`, neuf, réplique seulement, 22 verdicts ; `rls.sql` entier, 0 en faute, 72 mutations
+sur 72 ; `factures.sql` et `encaissementsFactures.sql` identiques avec et sans ; 33 mutations de la migration tuées, une
+équivalente (le droit d'exécuter rendu par les privilèges par défaut) ; les deux verrous jugés à deux sessions ; le
+retour rend `signature.sql` égale sur les neuf familles ; le banc du leurre dit `devis.sql` et `ventesClient.sql` SÛRS.
+Trouvé en route : le contrôle 0c de `ventesClient.sql` était en faute à 171 migrations, sans les devis (onze fonctions
+d'A1 à A6 absentes de sa liste, toutes vérifiées) — corrigé. Le jour de l'application simulé (la suite entière) : le
+drapeau seul ne suffira pas, la phrase de la case « Ventes » devra nommer les devis. Gardé : aucune unicité sur le devis
+d'un lien (le verrou de `facturer_devis` seul), pour l'acompte puis le solde d'EC-D3.
