@@ -71,7 +71,9 @@
 -- refuse à chaque enregistrement, pas dans les notes (29u à 29z) ; à l'émission, la forme, la mention « EI », la
 -- dénomination, le SIRET, l'adresse et l'IBAN de l'émetteur, chacun avec son ordre (29za à 29zn, 32b, 68). Sur une
 -- réplique à 171 migrations, sous `proprietaire` : 204 verdicts, 0 en faute, 16 mutations sur 16 qui mordent, rien resté ;
--- seize mutations de la migration, toutes tuées ; le banc du leurre le dit SÛR.
+-- seize mutations de la migration, toutes tuées ; le banc du leurre le dit SÛR. Puis la facture tirée d'un devis prend
+-- l'émetteur DU JOUR (`emetteur_du_dossier`, la règle de l'émission) : le dossier changé entre l'émission et la
+-- transformation (j13, j14), le brouillon porte le nouveau, et le client « Ventes » le valide (71b, 71c, M17).
 do $essai$
 declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
@@ -152,12 +154,12 @@ begin
              from pg_proc p where p.pronamespace = 'public'::regnamespace
               and p.proname in ('enregistrer_devis', 'decider_devis', 'facturer_devis', 'supprimer_brouillon_devis')$q$,
         'OK', 'decider_devis true search_path=public anon false authenticated true public false | enregistrer_devis true search_path=public anon false authenticated true public false | facturer_devis true search_path=public anon false authenticated true public false | supprimer_brouillon_devis true search_path=public anon false authenticated true public false', null),
-      ('0c', 'valeur', 'la porte de la restauration et les deux gardes : à personne', 'proprietaire', null,
+      ('0c', 'valeur', 'la porte de la restauration, les deux gardes et la règle de l''émetteur : à personne', 'proprietaire', null,
         $q$select string_agg(p.proname || ' ' || p.prosecdef || ' anon ' || has_function_privilege('anon', p.oid, 'execute')
                || ' authenticated ' || has_function_privilege('authenticated', p.oid, 'execute'), ' | ' order by p.proname)
              from pg_proc p where p.pronamespace = 'public'::regnamespace
-              and p.proname in ('restauration_des_devis', 'garder_devis', 'garder_devis_facture')$q$,
-        'OK', 'garder_devis true anon false authenticated false | garder_devis_facture false anon false authenticated false | restauration_des_devis true anon false authenticated false', null),
+              and p.proname in ('restauration_des_devis', 'garder_devis', 'garder_devis_facture', 'emetteur_du_dossier')$q$,
+        'OK', 'emetteur_du_dossier false anon false authenticated false | garder_devis true anon false authenticated false | garder_devis_facture false anon false authenticated false | restauration_des_devis true anon false authenticated false', null),
       ('0d', 'valeur', 'chacune des quatre vérifie l''accès au dossier annoncé AVANT toute autre chose', 'proprietaire', null,
         $q$select string_agg(p.proname || '=' || (regexp_replace(split_part(split_part(replace(p.prosrc, E'\r\n', E'\n'), E'\nbegin\n', 2), ';', 1), '\s+', ' ', 'g')
                = ' if not public.gere_les_ventes(p_dossier_id) then raise exception ''Accès refusé à ce dossier.'' using errcode = ''42501''')::text, ',' order by p.proname)
@@ -696,6 +698,22 @@ begin
         $q$select supprimer_brouillon_facture('{DA}', '{FV}')::text$q$, 'OK', '{FV}', null),
       ('71', 'valeur', 'le lien est parti avec lui', 'proprietaire', null,
         $q$select count(*)::text from devis_factures where devis_id = '{DV2}'$q$, 'OK', '0', null),
+      -- L'émetteur de la facture tirée d'un devis : celui DU JOUR, lu sur le dossier, jamais celui que le devis a figé.
+      ('j13', 'jeu', 'le dossier A change de SIRET et d''adresse après l''émission de DV2', 'proprietaire', null,
+        $q$with u as (update dossiers set siret = '12345678200028', adresse = '2 avenue du Jour, 69001 Lyon' where id = '{DA}' returning 1) select count(*)::text from u$q$,
+        'OK', '1', null),
+      ('71b', 'controle', 'la facture tirée du devis porte l''émetteur du jour ; le devis garde le sien', 'client', 'ventes',
+        $q$select facturer_devis('{DA}', '{DV2}')::text§§select (select concat_ws('|', emetteur_nom, emetteur_siret, emetteur_adresse) from factures_emises where id = '{RENDU}') || ' / devis ' || (select concat_ws('|', emetteur_nom, emetteur_siret, emetteur_adresse) from devis where id = '{DV2}')$q$,
+        'OK', 'ESSAI DEVIS A SAS|12345678200028|2 avenue du Jour, 69001 Lyon / devis ESSAI DEVIS A SAS|12345678200010|1 rue de l''Essai, 75001 Paris', null),
+      ('71c', 'controle', 'et le client portant « Ventes » la valide telle qu''elle est tirée, sans buter sur l''émetteur', 'client', 'ventes',
+        $q$select facturer_devis('{DA}', '{DV2}')::text§§select numero from enregistrer_facture('{DA}', '{RENDU}', (select jsonb_build_object('tiers_nom', f.tiers_nom, 'type_client', f.type_client, 'tiers_siren', f.tiers_siren, 'nature_operation', f.nature_operation, 'date_emission', f.date_emission, 'montant_ht', f.montant_ht, 'montant_tva', f.montant_tva, 'montant_ttc', f.montant_ttc, 'emetteur_nom', f.emetteur_nom, 'emetteur_siret', f.emetteur_siret, 'emetteur_adresse', f.emetteur_adresse) from factures_emises f where f.id = '{RENDU}'), '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true)$q$,
+        'OK', 'F____-____', null),
+      ('M17', 'mutation', 'le contrôle 71c rejoué avec l''émetteur que le devis a figé : la validation du client le refuse', 'client', 'ventes',
+        $q$select facturer_devis('{DA}', '{DV2}')::text§§select numero from enregistrer_facture('{DA}', '{RENDU}', (select jsonb_build_object('tiers_nom', f.tiers_nom, 'type_client', f.type_client, 'tiers_siren', f.tiers_siren, 'nature_operation', f.nature_operation, 'date_emission', f.date_emission, 'montant_ht', f.montant_ht, 'montant_tva', f.montant_tva, 'montant_ttc', f.montant_ttc, 'emetteur_nom', f.emetteur_nom, 'emetteur_siret', d.emetteur_siret, 'emetteur_adresse', d.emetteur_adresse) from factures_emises f, devis d where f.id = '{RENDU}' and d.id = '{DV2}'), '[{"designation":"essai","quantite":1,"prix_unitaire_ht":100,"taux_tva":20}]'::jsonb, true)$q$,
+        '22023', 'Le SIRET de l''émetteur n''est pas celui du dossier : une facture validée depuis l''espace client porte le SIRET que le cabinet a renseigné.', null),
+      ('j14', 'jeu', 'le dossier A retrouve son SIRET et son adresse', 'proprietaire', null,
+        $q$with u as (update dossiers set siret = '12345678200010', adresse = '1 rue de l''Essai, 75001 Paris' where id = '{DA}' returning 1) select count(*)::text from u$q$,
+        'OK', '1', null),
       ('72', 'fait', 'le devis se transforme de nouveau, par le chef', 'chef', null,
         $q$select facturer_devis('{DA}', '{DV2}')::text$q$, 'OK', null, 'FV2'),
       ('73', 'fait', 'le chef valide la facture tirée du devis', 'chef', null,

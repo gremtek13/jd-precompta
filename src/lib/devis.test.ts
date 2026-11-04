@@ -105,15 +105,15 @@ const controle = (num: string) => {
 }
 
 describe('l’essai, lu', () => {
-  it('ses étapes, toutes : douze de jeu, 203 jugées — le deux-cent-quatrième verdict est le bilan « rien n’est resté »', () => {
+  it('ses étapes, toutes : quatorze de jeu, 206 jugées — le deux-cent-septième verdict est le bilan « rien n’est resté »', () => {
     // Le plancher qui distingue « aucun écart » d'« aveugle » : un motif qui ne reconnaîtrait plus les étapes rendrait
     // une liste vide, et toutes les confrontations ci-dessous passeraient sans rien confronter. Le compte des étapes que
     // le fichier OUVRE (une parenthèse, un numéro, un genre) est celui des étapes que le motif reconnaît en entier.
     const ouvertes = [...ESSAI.matchAll(/^\s*\('\w+', '(?:jeu|controle|fait|valeur|mutation)'/gm)].length
     expect(CONTROLES).toHaveLength(ouvertes)
-    expect(CONTROLES.filter((c) => c.genre === 'jeu')).toHaveLength(12)
-    expect(CONTROLES.filter((c) => c.genre !== 'jeu')).toHaveLength(203)
-    expect(CONTROLES.filter((c) => c.genre === 'mutation')).toHaveLength(16)
+    expect(CONTROLES.filter((c) => c.genre === 'jeu')).toHaveLength(14)
+    expect(CONTROLES.filter((c) => c.genre !== 'jeu')).toHaveLength(206)
+    expect(CONTROLES.filter((c) => c.genre === 'mutation')).toHaveLength(17)
     expect(new Set(CONTROLES.map((c) => c.num)).size).toBe(CONTROLES.length)
   })
 
@@ -179,14 +179,14 @@ describe('les créations de l’essai, rejouées dans le module', () => {
   it('le jeu j1 pose l’identité que le module suppose, et chaque jeu qui la change se lit', () => {
     expect(controle('j1').ordre).toContain("'5710', 'ESSAI DEVIS A SAS', '12345678200010', '1 rue de l''Essai, 75001 Paris'")
     const jeux = CONTROLES.filter((c) => c.genre === 'jeu' && c.ordre.includes('update dossiers'))
-    expect(jeux.map((j) => j.num)).toEqual(['j3', 'j4', 'j5', 'j6', 'j7', 'j8', 'j9', 'j10', 'j11', 'j12'])
+    expect(jeux.map((j) => j.num)).toEqual(['j3', 'j4', 'j5', 'j6', 'j7', 'j8', 'j9', 'j10', 'j11', 'j12', 'j13', 'j14'])
     let suite = EMISSION.dossier
     for (const j of jeux.slice(0, -1)) {
       const apres = identiteApres(suite, j.ordre)
       expect(apres, j.num).not.toEqual(suite)
       suite = apres
     }
-    // j12 lui rend son identité : les étapes qui suivent émettent sous celle de j1.
+    // j12, puis j14, lui rendent son identité : les étapes qui suivent émettent sous celle de j1.
     expect(identiteApres(suite, jeux[jeux.length - 1].ordre)).toEqual(EMISSION.dossier)
   })
 

@@ -43,7 +43,8 @@
 -- sur tous ses documents professionnels) et aucun IBAN dans l'émetteur (A7-Q3). Les clés `emetteur_*` qu'un appelant
 -- envoie sont IGNORÉES, comme toute clé que la fonction ne lit pas : la facture ne compare l'émetteur reçu que parce qu'elle
 -- l'écrit, le devis n'écrit que celui du dossier. À chaque enregistrement, pour tout auteur, un texte que le devis imprime
--- et qui porte un IBAN valide (`porte_un_iban`) se refuse ; les notes ne s'impriment pas. Les taux de TVA : ceux de la liste
+-- et qui porte un IBAN valide (`porte_un_iban`) se refuse ; les notes ne s'impriment pas. La facture tirée d'un devis
+-- accepté prend l'émetteur DU JOUR, par la même règle (`emetteur_du_dossier`), jamais celui que le devis a figé. Les taux de TVA : ceux de la liste
 -- G1.24, que la facture accepte tous — `enregistrer_facture` ne juge aucun taux, ni selon le statut de TVA du dossier.
 --
 -- CE QU'ELLE SUPPOSE, que son premier bloc vérifie : l'étape P2 (`factures_emises.valide_par`, `supprimer_brouillon_facture`),
@@ -334,6 +335,25 @@ create policy devis_factures_restauration on public.devis_factures
 
 alter table public.devis_numerotation enable row level security;
 
+-- ══ 7 bis. L'émetteur que le dossier porte ══════════
+-- Une seule règle pour l'émission d'un devis et pour la facture qu'on en tire, appliquée aux valeurs que l'appelant a
+-- lues dans le dossier, dans SA transaction : le nom, la dénomination — celle que la facture figée imprime — ou, faute
+-- d'elle, le nom du dossier, celui qu'elle imprime alors ; le SIRET et l'adresse, nuls s'ils ne sont que des blancs (les
+-- vingt-cinq d'`enregistrer_facture`). Immuable : elle ne lit rien. Aucun rôle de l'API ne l'exécute.
+create function public.emetteur_du_dossier(p_nom text, p_denomination text, p_siret text, p_adresse text)
+returns table (nom text, siret text, adresse text)
+language sql
+immutable
+set search_path = public
+as $$
+  select case when btrim(coalesce(p_denomination, ''), b.blancs) <> '' then p_denomination else p_nom end,
+         case when translate(coalesce(p_siret, ''), b.blancs, '') <> '' then p_siret end,
+         case when btrim(coalesce(p_adresse, ''), b.blancs) <> '' then p_adresse end
+    from (select chr(9) || chr(10) || chr(11) || chr(12) || chr(13) || chr(32) || chr(160) || chr(5760)
+    || chr(8192) || chr(8193) || chr(8194) || chr(8195) || chr(8196) || chr(8197) || chr(8198) || chr(8199) || chr(8200)
+    || chr(8201) || chr(8202) || chr(8232) || chr(8233) || chr(8239) || chr(8287) || chr(12288) || chr(65279) as blancs) as b
+$$;
+
 -- ══ 8. Enregistrer un devis ══════════
 -- Le créer (`p_devis_id` nul) ou réécrire un brouillon EN ENTIER (une clé absente vaut nul), et l'émettre (`p_emettre`).
 -- Rend le devis et son numéro (nul tant qu'il n'est pas émis).
@@ -583,10 +603,8 @@ begin
       raise exception 'L''adresse du dossier n''est pas renseignée : le cabinet la renseigne avant qu''un devis s''émette depuis l''espace client.'
         using errcode = '22023';
     end if;
-    v_emetteur_nom := case when btrim(coalesce(v_dossier.denomination_imprimee, ''), v_blancs) <> ''
-                           then v_dossier.denomination_imprimee else v_dossier.nom end;
-    v_emetteur_siret := case when translate(coalesce(v_dossier.siret, ''), v_blancs, '') <> '' then v_dossier.siret end;
-    v_emetteur_adresse := case when btrim(coalesce(v_dossier.adresse, ''), v_blancs) <> '' then v_dossier.adresse end;
+    select e.nom, e.siret, e.adresse into v_emetteur_nom, v_emetteur_siret, v_emetteur_adresse
+      from public.emetteur_du_dossier(v_dossier.nom, v_dossier.denomination_imprimee, v_dossier.siret, v_dossier.adresse) e;
     select x.libelle into v_libelle
       from (values (1, 'le nom de l''émetteur', v_emetteur_nom), (2, 'l''adresse de l''émetteur', v_emetteur_adresse),
                    (3, 'le SIRET de l''émetteur', v_emetteur_siret)) as x(rang, libelle, valeur)
@@ -752,7 +770,9 @@ $$;
 
 -- ══ 10. La facture tirée d'un devis accepté ══════════
 -- Une facture BROUILLON, par `enregistrer_facture` sous l'identité de l'appelant — ses refus et ses jugements d'aujourd'hui
--- s'appliquent tels quels —, datée du jour à Paris : le client et ses mentions, les lignes, les totaux, l'émetteur ; ni la
+-- s'appliquent tels quels —, datée du jour à Paris : le client et ses mentions, les lignes, les totaux ; l'émetteur DU JOUR,
+-- lu sur le dossier par la règle de l'émission (`emetteur_du_dossier`), jamais celui que le devis a figé — une facture porte
+-- l'identité du vendeur à sa date, et un accès « Ventes » la valide sous le SIRET et l'adresse du dossier (A7-Q2) ; ni la
 -- date ou la période d'exécution PRÉVUES (celles d'une facture se constatent), ni les mentions légales, ni les notes du
 -- devis. Une fois : sous le verrou du devis, la première facture du lien (par date du lien, puis identifiant) se nomme dans
 -- le refus. Le lien part avec le brouillon supprimé, et le devis se transforme de nouveau. Rend la facture.
@@ -766,6 +786,8 @@ declare
   v_devis public.devis;
   v_premiere text;
   v_facture uuid;
+  v_dossier public.dossiers;
+  v_emetteur record;
 begin
   if not public.gere_les_ventes(p_dossier_id) then
     raise exception 'Accès refusé à ce dossier.' using errcode = '42501';
@@ -795,6 +817,9 @@ begin
       using errcode = '22023';
   end if;
 
+  select d.* into v_dossier from public.dossiers d where d.id = p_dossier_id;
+  select e.* into v_emetteur
+    from public.emetteur_du_dossier(v_dossier.nom, v_dossier.denomination_imprimee, v_dossier.siret, v_dossier.adresse) e;
   select e.facture_id into v_facture
     from public.enregistrer_facture(p_dossier_id, null, jsonb_build_object(
       'tiers_nom', v_devis.tiers_nom,
@@ -815,9 +840,9 @@ begin
       'montant_ht', v_devis.montant_ht,
       'montant_tva', v_devis.montant_tva,
       'montant_ttc', v_devis.montant_ttc,
-      'emetteur_nom', v_devis.emetteur_nom,
-      'emetteur_siret', v_devis.emetteur_siret,
-      'emetteur_adresse', v_devis.emetteur_adresse
+      'emetteur_nom', v_emetteur.nom,
+      'emetteur_siret', v_emetteur.siret,
+      'emetteur_adresse', v_emetteur.adresse
     ), v_devis.lignes, false) e;
 
   insert into public.devis_factures (dossier_id, devis_id, facture_id, cree_par)
@@ -838,7 +863,10 @@ grant execute on function public.facturer_devis(uuid, uuid) to authenticated;
 revoke execute on function public.restauration_des_devis(uuid) from public, anon, authenticated;
 revoke execute on function public.garder_devis() from public, anon, authenticated;
 revoke execute on function public.garder_devis_facture() from public, anon, authenticated;
+revoke execute on function public.emetteur_du_dossier(text, text, text, text) from public, anon, authenticated;
 
+comment on function public.emetteur_du_dossier(text, text, text, text) is
+  'L''émetteur d''un devis émis et de la facture qu''on en tire, des valeurs lues dans le dossier : la dénomination, sinon le nom du dossier ; le SIRET et l''adresse, nuls s''ils ne sont que des blancs. Immuable ; aucun rôle de l''API ne l''exécute.';
 comment on function public.restauration_des_devis(uuid) is
   'Vrai pour le super-administrateur dans un dossier sans série de devis : la porte de la restauration d''une sauvegarde.';
 comment on function public.garder_devis() is
@@ -850,4 +878,4 @@ comment on function public.enregistrer_devis(uuid, uuid, jsonb, jsonb, boolean) 
 comment on function public.decider_devis(uuid, uuid, text, date, boolean) is
   'Enregistre la réponse à un devis émis, une fois : acceptée ou refusée, datée ni avant le devis ni dans l''avenir à Paris ; une acceptation après la validité se confirme. Pour le cabinet du dossier ou un accès « Ventes » (42501).';
 comment on function public.facturer_devis(uuid, uuid) is
-  'Tire d''un devis accepté une facture brouillon, par enregistrer_facture sous l''identité de l''appelant, et pose le lien (devis_factures) : une fois. Pour le cabinet du dossier ou un accès « Ventes » (42501). Rend la facture.';
+  'Tire d''un devis accepté une facture brouillon, par enregistrer_facture sous l''identité de l''appelant, l''émetteur du jour lu sur le dossier (emetteur_du_dossier), et pose le lien (devis_factures) : une fois. Pour le cabinet du dossier ou un accès « Ventes » (42501). Rend la facture.';
