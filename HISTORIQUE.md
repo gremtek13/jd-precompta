@@ -47450,3 +47450,27 @@ Contre la recommandation, trois :
 - **C12B-Q1** — « Un seul geste « Corriger » (une migration) » : un paiement en espèces se remplace en une fois ; la
   migration se prépare et se rejoue sur une réplique, puis se présente au cabinet avant d'être appliquée (le lot de la
   caisse).
+
+### 04/11/2026 — EXTRACT-PIECE ET RECEIVE-EMAIL REDÉPLOYÉES (V52, V25), CELLE-CI PAR UNE LIGNE QUI IMPORTE LE DÉPÔT
+
+Après la fusion de la demande n° 281 (`d30775c`), les deux fonctions que le lot P2 touche, chacune par la ligne qui
+importe son fichier du dépôt public à ce commit, écrit en entier ; `verify_jwt` faux, la valeur de `supabase/config.toml`,
+relue à `list_edge_functions` avant et après.
+
+**AVANT D'ÉCRASER.** `extract-piece` v51 était la ligne qui importe le commit `b3b332a`. `receive-email` v24
+(`ezbr_sha256` `53ed46bb…`) est la version que la session avait déployée puis relue au caractère près → « RECEIVE-EMAIL
+NE JOURNALISE PLUS QUE DES COMPTES » : aucun déploiement n'a eu lieu par ailleurs depuis, et seuls les commits du lot P2
+ont touché les deux fichiers depuis leur dernier déploiement (`git log` depuis `3603a85` et `b3b332a`). La copie de
+`receive-email` n'a donc pas été relue en entier : son numéro de version dit qu'elle est celle qui avait été vérifiée.
+
+**`RECEIVE-EMAIL` PASSE À L'IMPORT.** 536 lignes et 33 Ko à recopier à chaque déploiement, des bordures à répéter
+(`bordures.py`) : comme les cinq autres, trois lignes, et rien n'est transcrit. Ses deux imports `npm:` se résolvent au
+déploiement.
+
+**EN LIGNE.** `extract-piece` v52 (`a3d077dc…`) et `receive-email` v25 (`245c4d8b…`) ; `allerretour.py` : « la copie
+déployée importe … au commit d30775c, identique au dépôt » (1 496 et 536 lignes), « rien n'a été recopié ». Sans
+session, `extract-piece` rend 401 « La lecture d'un document demande d'être connecté à l'application. » à un GET comme à
+un POST, comme la v51 ; `receive-email` rend 405 à un GET : les deux modules importés démarrent.
+
+**RETOUR ARRIÈRE.** La même ligne au commit d'avant : `b3b332a` pour `extract-piece`, `265e28b` pour `receive-email`
+(son fichier y est celui de la v24, aucun commit ne l'ayant touché depuis `3603a85`).
