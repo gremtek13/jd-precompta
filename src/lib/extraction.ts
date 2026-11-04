@@ -111,6 +111,34 @@ export interface ExtractionResult {
   // plusieurs fois, sous-total contredit par le total, HT et TVA permutés. La pièce est alors juste
   // mais n'a plus été simplement lue — d'où le plafonnement de `confiance` à « moyenne ».
   _montants_redresses?: 'doublon_tva' | 'arbitrage_soustraction' | 'permutation_ht_tva'
+  // Présent quand l'étage 2 (le modèle qui cite le tiers, la date et les montants) n'a rien rendu : Bedrock en panne, sa
+  // réponse illisible, son délai dépassé (relecture du 04/11/2026, D6), ou le temps manquant après l'OCR. Le texte et la
+  // classification reviennent quand même ; le tiers et les montants, presque jamais. C'est ce qui permet de dire « montant
+  // non lu » plutôt que « Classé « Facture » » (D5). Jamais une valeur du document : le message de l'erreur seul.
+  _citation_erreur?: string
+}
+
+// CE QUE LA LECTURE ACCEPTE : 10 Mio (`TAILLE_MAX_LECTURE` d'extract-piece, que extractPieceBudget.test.ts confronte à
+// celle-ci). Le seau des pièces en admet 20 (`TAILLE_MAX_PIECE`) : un PDF entre les deux se dépose, mais la lecture le
+// refuse — et ce refus était avalé, la pièce arrivant sans date ni montant comme une lecture réussie (relecture du
+// 04/11/2026, D5). Il se dit désormais AVANT l'envoi, en conseillant de scinder le fichier, et le dépôt ne l'envoie pas à la
+// lecture pour rien. Une photo passe toujours : `normalizeForExtraction` la réencode en JPEG de 2 400 pixels au plus.
+// Aligner le seau sur 10 Mio pour les PDF a été écarté : un PDF lourd est un justificatif comme un autre, que le cabinet
+// complète à la main ; le refuser le ferait garder hors de l'application.
+export const TAILLE_MAX_LECTURE = 10 * 1024 * 1024
+
+/** Un PDF que la lecture refusera, faute de place : déposé quand même, il arrive sans rien de lu. */
+export function pdfTropLourdPourEtreLu(fichier: { name: string; size: number; type?: string }): boolean {
+  const estPdf = fichier.type === 'application/pdf' || fichier.name.toLowerCase().endsWith('.pdf')
+  return estPdf && fichier.size > TAILLE_MAX_LECTURE
+}
+
+/** La phrase qui le dit, avant l'envoi : le nom, le poids, et le remède. */
+export function conseilPdfTropLourd(fichier: { name: string; size: number }): string {
+  // À la main, et non par `toLocaleString` : un dixième, la virgule française, quel que soit l'ICU du navigateur.
+  const mo = String(Math.round((fichier.size / (1024 * 1024)) * 10) / 10).replace('.', ',')
+  return `${fichier.name} (${mo} Mo) dépasse les 10 Mo que la lecture automatique accepte : il sera déposé sans être lu, `
+    + 'sans date ni montant. Le mieux est de le scinder en plusieurs fichiers de moins de 10 Mo (une facture par fichier).'
 }
 
 // Textract n'accepte que JPEG/PNG/PDF(1 page)/TIFF. Une photo de téléphone peut être en HEIC en

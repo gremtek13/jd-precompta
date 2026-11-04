@@ -1,5 +1,7 @@
 import { supabase } from './supabase'
-import { extractPiece, textractPeutLire } from './extraction'
+import { extractPiece, textractPeutLire, type ExtractionResult } from './extraction'
+import { pieceNonLue } from './lectureDesPieces'
+import { montantsPourPiece } from './tauxChange'
 import { enregistrerTexteOcr, texteOcrExploitable } from './texteOcr'
 import type { DocumentDivers, Piece } from './types'
 import { messageErreur } from './messageErreur'
@@ -25,11 +27,19 @@ import { messageErreur } from './messageErreur'
 // un appel au modèle de citation : les séparer en deux actions paierait deux fois la même lecture.
 // Ce qui est demandé au service est identique, seul diffère ce qu'on en garde.
 //
-// **Rien d'autre n'est jamais écrit.** Jamais le tiers, jamais les montants, jamais le statut : ces
-// pièces sont pour la plupart déjà validées, donc relues et corrigées à la main par le comptable.
-// Réécrire un montant corrigé avec ce que l'OCR croit lire détruirait ce travail sans que personne
-// ne s'en aperçoive. Et la date n'est écrite que si elle était VIDE. C'est cette règle qui rend
-// l'action sûre à lancer sur un dossier entier.
+// **Rien d'autre n'est jamais écrit, sauf sur une pièce que rien n'a lue.** Jamais le statut ; jamais le tiers ni les
+// montants d'une pièce validée ou dont un montant a été saisi : ces pièces sont relues et corrigées à la main par le
+// comptable, et réécrire un montant corrigé avec ce que l'OCR croit lire détruirait ce travail sans que personne ne s'en
+// aperçoive. La date n'est écrite que si elle était VIDE. C'est cette règle qui rend l'action sûre à lancer sur un dossier
+// entier.
+//
+// **LA PIÈCE QUE RIEN N'A LUE** (relecture du 04/11/2026, D5 ; PIECES-Q5, sur la recommandation) : « à valider », sans
+// AUCUN montant — ni en euros, ni dans sa devise (`pieceNonLue`) —, elle n'a jamais été touchée : sa lecture a raté au
+// dépôt (Textract, le modèle, un délai), et la relecture ne lui rendait que sa date, la laissant à ressaisir en entier, ou à
+// relire pièce par pièce dans sa fiche (facturé à nouveau). Pour elle seule, la relecture écrit aussi les montants lus
+// (convertis comme au dépôt, `montantsPourPiece`) et le tiers s'il est vide — et l'écriture le RE-VÉRIFIE en base : elle ne
+// part que si la pièce est encore à valider et sans montant (et sans tiers, pour l'écrire), sinon elle ne touche rien et
+// le dit. Ni la confiance, ni la catégorie, ni le statut : la pièce reste à valider, sous les yeux du cabinet.
 
 export interface ResultatRelecture {
   // Pièces effectivement datées et enregistrées. `deduite` distingue une date lue sur un libellé
@@ -44,6 +54,11 @@ export interface ResultatRelecture {
   textesArchives: string[]
   // Extraction ou enregistrement en échec, avec la cause.
   echecs: { nomFichier: string; message: string }[]
+  // Les pièces que rien n'avait lues (PIECES-Q5) dont les montants lus ont été écrits — le tiers avec, s'il manquait.
+  montantsEcrits: { nomFichier: string; tiers: boolean }[]
+  // Celles dont la relecture a lu un montant sans l'écrire : la base a vu la pièce validée, ou un montant (ou un tiers)
+  // saisi entre la lecture de la liste et l'écriture.
+  montantsNonEcrits: string[]
 }
 
 export function piecesADater(pieces: Piece[]): Piece[] {
@@ -58,9 +73,13 @@ export function piecesADater(pieces: Piece[]): Piece[] {
 // texte brut n'obtiendra jamais de texte, donc il resterait éligible à chaque lancement — un résidu
 // qui ne se résorbe pas et qui se présente à l'écran comme un échec, c'est-à-dire comme quelque
 // chose à réessayer.
+//
+// Et la pièce que rien n'a lue (PIECES-Q5), même datée et pourvue de son texte : la citation des montants a pu rater seule,
+// et c'est elle que la relecture complète désormais.
 export function piecesARelire(pieces: Piece[], avecTexteOcr: Set<string>): Piece[] {
   return pieces.filter(
-    (p) => !!p.storage_path && textractPeutLire(p.nom_fichier) && (!p.date_piece || !avecTexteOcr.has(p.id)),
+    (p) => !!p.storage_path && textractPeutLire(p.nom_fichier)
+      && (!p.date_piece || !avecTexteOcr.has(p.id) || pieceNonLue(p)),
   )
 }
 
@@ -70,7 +89,9 @@ export async function relireDocuments(
   onProgression?: (fait: number, total: number, nomFichier: string) => void,
 ): Promise<ResultatRelecture> {
   const aTraiter = piecesARelire(pieces, avecTexteOcr)
-  const resultat: ResultatRelecture = { datees: [], sansDate: [], textesArchives: [], echecs: [] }
+  const resultat: ResultatRelecture = {
+    datees: [], sansDate: [], textesArchives: [], echecs: [], montantsEcrits: [], montantsNonEcrits: [],
+  }
 
   // Séquentiel, jamais en parallèle : chaque PDF passe par le chemin asynchrone de Textract, qui
   // dépose le fichier sur S3 et sonde le job. Lancer vingt analyses d'un coup multiplie le coût au
@@ -104,6 +125,9 @@ export async function relireDocuments(
         await enregistrerTexteOcr(piece.dossier_id, { type: 'piece', id: piece.id }, extraction.texte_ocr)
         resultat.textesArchives.push(piece.nom_fichier)
       }
+
+      // Les montants, et le tiers vide, d'une pièce que rien n'a lue — elle seule (PIECES-Q5).
+      if (pieceNonLue(piece)) await ecrireLesMontantsLus(piece, extraction, resultat)
 
       // La date n'est écrite que si elle manquait : une pièce relue pour son seul texte ne doit pas
       // voir sa date, corrigée à la main, remplacée par ce que l'OCR croit lire.
@@ -139,6 +163,25 @@ export async function relireDocuments(
 
   onProgression?.(fait, aTraiter.length, '')
   return resultat
+}
+
+// L'écriture des montants lus sur une pièce que rien n'avait lue (PIECES-Q5). Rien quand la relecture n'a lu aucun montant.
+// L'écriture porte ses propres conditions, que la base juge au moment d'écrire — encore à valider, encore sans aucun
+// montant, encore sans tiers si elle l'écrit — et rend la ligne touchée : sans elle, rien n'a été écrit, et c'est dit.
+async function ecrireLesMontantsLus(piece: Piece, extraction: ExtractionResult, resultat: ResultatRelecture): Promise<void> {
+  if (extraction.montant_ttc == null && extraction.montant_ht == null && extraction.montant_tva == null) return
+  const montants = await montantsPourPiece(extraction, extraction.date_piece ?? piece.date_piece)
+  const tiers = !piece.tiers && extraction.tiers ? extraction.tiers : null
+  let requete = supabase.from('pieces')
+    .update(tiers ? { ...montants, tiers } : montants)
+    .eq('id', piece.id)
+    .eq('statut', 'a_valider')
+    .is('montant_ht', null).is('montant_tva', null).is('montant_ttc', null).is('montant_devise', null)
+  if (tiers) requete = requete.is('tiers', null)
+  const { data, error } = await requete.select('id')
+  if (error) throw error
+  if (!data || data.length === 0) resultat.montantsNonEcrits.push(piece.nom_fichier)
+  else resultat.montantsEcrits.push({ nomFichier: piece.nom_fichier, tiers: tiers !== null })
 }
 
 // ═══ Le pendant côté DOCUMENTS ══════════════════════════════════════════════════════════════════

@@ -78,6 +78,32 @@ describe('budget mural d’extract-piece', () => {
     expect(SOURCE).toMatch(/resteApresOcr >= BUDGET_CITATION_MS/)
   })
 
+  it('borne l’APPEL au modèle par son budget, sous le mur (relecture du 04/11/2026, D6)', () => {
+    // Le budget n'était vérifié qu'avant l'appel : un modèle lent menait la requête jusqu'au mur, qui la coupe sans
+    // réponse. L'appel porte désormais un signal, que la minuterie du budget abandonne.
+    const corps = SOURCE.slice(SOURCE.indexOf('async function citerChamps('), SOURCE.indexOf('function parseAmount('))
+    expect(corps).toMatch(/async function citerChamps\(texte: string, region: string, delaiMs: number\)/)
+    expect(corps).toMatch(/const minuterie = setTimeout\(\(\) => abandon\.abort\(\), delaiMs\)/)
+    expect(corps).toMatch(/\}, \{ signal: abandon\.signal \}\)/)
+    expect(corps).toMatch(/clearTimeout\(minuterie\)/)
+    expect(SOURCE).toMatch(/citerChamps\(lignes\.join\("\\n"\), region, BUDGET_CITATION_MS\)/)
+    // Ce que le gestionnaire réserve à la citation tient sous le mur, marge de réponse comprise.
+    expect(constante('BUDGET_CITATION_MS') + constante('MARGE_REPONSE_MS')).toBeLessThan(constante('MUR_PLATEFORME_MS'))
+  })
+
+  it('la taille que la lecture accepte est celle que l’application dit avant l’envoi (D5)', () => {
+    // Lue dans le TEXTE de src/lib/extraction.ts : le module importe le client Supabase, qui lève sans variables d'environnement.
+    const application = readFileSync(new URL('./extraction.ts', import.meta.url), 'utf8')
+    const octets = (source: string, ou: string) => {
+      const trouve = source.match(/const TAILLE_MAX_LECTURE = (\d+) \* (\d+) \* (\d+)/)
+      expect(trouve, `TAILLE_MAX_LECTURE introuvable dans ${ou}`).not.toBeNull()
+      return Number(trouve![1]) * Number(trouve![2]) * Number(trouve![3])
+    }
+    expect(octets(SOURCE, 'extract-piece')).toBe(octets(application, 'src/lib/extraction.ts'))
+    expect(octets(SOURCE, 'extract-piece')).toBe(10 * 1024 * 1024)
+    expect(SOURCE).toMatch(/if \(fileBytes\.byteLength > TAILLE_MAX_LECTURE\)/)
+  })
+
   it('journalise le COMPTE des rejets de citation, jamais leurs valeurs', () => {
     // Une citation rejetée est une chaîne tirée du document, donc possiblement un nom de patient.
     // Le compte répond à la seule question utile — le contrat de citation tient-il ? — sans faire

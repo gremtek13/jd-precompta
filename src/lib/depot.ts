@@ -1,5 +1,9 @@
 import { supabase } from './supabase'
-import { ACHAT_PAR_DEFAUT, extractPiece, fichierDejaPresent, hashFichier, orientationDe, textractPeutLire, type ExtractionResult } from './extraction'
+import {
+  ACHAT_PAR_DEFAUT, extractPiece, fichierDejaPresent, hashFichier, orientationDe, pdfTropLourdPourEtreLu, textractPeutLire,
+  type ExtractionResult,
+} from './extraction'
+import { issueDeLaLecture } from './lectureDesPieces'
 import { slugify } from './format'
 import type { CibleCommentaire } from './commentaires'
 import { enregistrerTexteOcr } from './texteOcr'
@@ -14,8 +18,13 @@ import { confianceDeLExtraction } from './dateDeduite'
 // d'y ajouter une précision tout de suite, au seul moment où il sait encore pourquoi la dépense a été
 // faite (voir lib/commentaires.ts). Sans elle, il faudrait deviner laquelle des lignes rechargées est
 // la sienne — et sur deux photos de la même enseigne prises à une minute d'intervalle, c'est faux.
+//
+// `lectureNonAboutie` (relecture du 04/11/2026, D5) : la pièce est déposée, mais la lecture n'a pas rendu sa date ou son
+// montant — ratée, incomplète, ou pas tentée sur un PDF de plus de 10 Mo. Le dépôt reste réussi (le fichier est au
+// dossier, le cabinet le complétera), et l'écran le dit au lieu de le taire (`LECTURE_NON_ABOUTIE_CLIENT`). Absent d'un
+// document rangé dans Documents : il n'a ni date ni montant à lire.
 export type ResultatDepot =
-  | { statut: 'ok'; cible: CibleCommentaire }
+  | { statut: 'ok'; cible: CibleCommentaire; lectureNonAboutie?: true }
   | { statut: 'doublon' }
   | { statut: 'erreur'; message: string }
 
@@ -38,7 +47,7 @@ export type ResultatDepot =
 //
 // `hashsEnVol` est l'équivalent du `hashsConnus` du cabinet, mais il n'a pas le même rôle et ne peut
 // pas avoir la même mécanique : le cabinet traite ses fichiers en série et n'y note un fichier
-// qu'une fois écrit, alors que le client les dépose en parallèle (Promise.all dans ClientUpload, et
+// qu'une fois écrit, alors que le client les dépose en parallèle (trois à la fois dans ClientUpload, et
 // des lots lancés coup sur coup). Deux fichiers de contenu identique — le cas courant étant la même
 // facture téléchargée deux fois depuis un portail fournisseur, « facture.pdf » et « facture (1).pdf »
 // — passent donc tous deux la vérification en base avant que l'un ait écrit sa ligne, et repartent en
@@ -105,8 +114,10 @@ export async function deposerFichier(dossierId: string, file: File, hashsEnVol: 
     // toute façon sur `ACHAT_PAR_DEFAUT` ci-dessous. Même issue, un aller-retour en moins — et
     // surtout la règle est désormais NOMMÉE (voir `textractPeutLire`) au lieu d'être un `.csv` écrit
     // en dur ici et dans `importFichiers.ts`, que la relecture n'avait pas hérité.
+    // Un PDF de plus de 10 Mo non plus (relecture du 04/11/2026, D5) : la lecture le refuse, et l'envoyer coûtait dix
+    // mégaoctets de plus pour un 400. L'écran l'a dit avant l'envoi (`conseilPdfTropLourd`) ; la pièce arrive sans rien de lu.
     let extraction: ExtractionResult | null = null
-    if (textractPeutLire(file.name)) {
+    if (textractPeutLire(file.name) && !pdfTropLourdPourEtreLu(file)) {
       try {
         extraction = await extractPiece(file, file.name)
       } catch {
@@ -145,7 +156,10 @@ export async function deposerFichier(dossierId: string, file: File, hashsEnVol: 
       // le dépôt — ce texte est un confort de relecture, et perdre le document du client pour ça
       // serait sans commune mesure (voir lib/texteOcr.ts).
       await enregistrerTexteOcr(dossierId, { type: 'piece', id }, extraction?.texte_ocr)
-      return { statut: 'ok', cible: { type: 'piece', id } }
+      // Déposée, mais sans date ou sans montant : le praticien le lit, au lieu d'un « ok » muet (D5).
+      return issueDeLaLecture(extraction) === 'lue'
+        ? { statut: 'ok', cible: { type: 'piece', id } }
+        : { statut: 'ok', cible: { type: 'piece', id }, lectureNonAboutie: true }
     }
   } catch (err) {
     return { statut: 'erreur', message: messageErreur(err, "l'envoi a échoué")}

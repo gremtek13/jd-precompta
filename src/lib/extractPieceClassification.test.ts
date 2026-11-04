@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { executerModule } from '../test/compilationSeparee'
 
 // `supabase/functions/extract-piece/index.ts` est auto-porté (déployé à part, il ne peut rien
 // importer de src/lib). `classifieDocument` y décide si un document reste en PIÈCES ou part dans
@@ -17,10 +18,10 @@ import { describe, expect, it } from 'vitest'
 function extraireClassifieDocument() {
   const source = readFileSync(new URL('../../supabase/functions/extract-piece/index.ts', import.meta.url), 'utf8')
 
-  const morceaux: string[] = []
+  const morceaux: string[] = ['type ClassificationDocument = string']
   // Les listes de marqueurs se recopient telles quelles : ce sont elles qui décident, la fonction ne
   // fait que les essayer dans l'ordre.
-  for (const nom of ['const MARQUEURS_RELEVE_BANCAIRE', 'const MARQUEURS_RELEVE_ACTIVITE',
+  for (const nom of ['const MARQUEURS_RELEVE_BANCAIRE', 'const MARQUEURS_SOLDE', 'const MARQUEURS_RELEVE_ACTIVITE',
                      'const MARQUEURS_SITUATION_EPARGNE', 'const MARQUEURS_RECETTE']) {
     const debut = source.indexOf(nom)
     expect(debut, `\`${nom}\` introuvable dans l'Edge Function — le garde-fou doit être remis à jour`).toBeGreaterThan(-1)
@@ -28,15 +29,29 @@ function extraireClassifieDocument() {
     expect(fin, `fin de \`${nom}\` introuvable`).toBeGreaterThan(debut)
     morceaux.push(source.slice(debut, fin + 2))
   }
+  // Les marqueurs d'une ligne (l'appel de cotisation sociale, relecture du 04/11/2026), jusqu'à leur fin de ligne.
+  for (const nom of ['const ORGANISMES_SOCIAUX', 'const APPEL_OU_ECHEANCIER', 'const COTISATIONS_SOCIALES']) {
+    const debut = source.indexOf(nom)
+    expect(debut, `\`${nom}\` introuvable dans l'Edge Function — le garde-fou doit être remis à jour`).toBeGreaterThan(-1)
+    morceaux.push(source.slice(debut, source.indexOf('\n', debut) + 1))
+  }
+  // Le titre d'une facture : le bloc copié de src/lib/titreDeFacture.ts, entre ses bornes (titreDeFactureCopie.test.ts
+  // garde qu'il est au caractère près celui de src/lib).
+  const debutTitre = source.indexOf('// ── DÉBUT COPIE titreDeFacture ')
+  const finTitre = source.indexOf('// ── FIN COPIE titreDeFacture ')
+  expect(debutTitre, 'le bloc `titreDeFacture` est introuvable dans l\'Edge Function').toBeGreaterThan(-1)
+  expect(finTitre).toBeGreaterThan(debutTitre)
+  morceaux.push(source.slice(debutTitre, finTitre))
 
   const entete = 'function classifieDocument(lignes: string[]): ClassificationDocument {'
   const debut = source.indexOf(entete)
   expect(debut, '`classifieDocument` introuvable dans l\'Edge Function').toBeGreaterThan(-1)
   const fin = source.indexOf('\n}\n', debut)
   expect(fin, 'fin de `classifieDocument` introuvable').toBeGreaterThan(debut)
-  morceaux.push(source.slice(debut, fin + 2).replace(entete, 'function classifieDocument(lignes) {'))
+  morceaux.push(`export ${source.slice(debut, fin + 2)}`)
 
-  return new Function(`${morceaux.join('\n')}; return classifieDocument`)() as (lignes: string[]) => string
+  // Transpilée, et non plus évaluée telle quelle : le bloc copié porte ses annotations de type.
+  return executerModule<{ classifieDocument: (lignes: string[]) => string }>(morceaux.join('\n')).classifieDocument
 }
 
 const classifieDocument = extraireClassifieDocument()
@@ -108,5 +123,78 @@ describe('classifieDocument — les autres familles ne bougent pas', () => {
 
   it('une attestation reste une attestation', () => {
     expect(classifieDocument(['ATTESTATION DE DROITS', 'Caisse primaire d\'assurance maladie'])).toBe('attestation')
+  })
+})
+
+// LA RELECTURE DU 04/11/2026 (D4 ; PIECES-Q3, sur la recommandation) : un mot croisé dans le texte envoyait une vraie
+// facture dans Documents, hors de la 2035 et sans justificatif pour le débit qui la paie. Les cinq scénarios de la relecture
+// (`outils/relecture-pieces/lecture.scenarios.test.ts`), changés en gardes du comportement corrigé. Textes reconstruits,
+// fictifs.
+describe('classifieDocument — le nom que se donne une facture l’emporte (D4)', () => {
+  const cas: [string, string[]][] = [
+    ['la prime d’une RC professionnelle, « attestation » jointe', [
+      'ASSURANCES FICTIVES SA', 'FACTURE N° 2025-0412', 'Date : 12/01/2025', 'Responsabilité civile professionnelle',
+      'Prime annuelle TTC 412,50 €', 'Votre attestation d’assurance est jointe à ce courrier',
+    ]],
+    ['une formation continue, avec son attestation de présence', [
+      'ORGANISME DE FORMATION FICTIF', 'Facture n° F-778', 'Date de facture : 03/04/2025', 'Formation plaies et cicatrisation',
+      'Total TTC 380,00 €', 'Une attestation de formation vous sera remise',
+    ]],
+    ['les honoraires d’un expert-comptable qui citent l’URSSAF', [
+      'CABINET COMPTABLE FICTIF', 'Facture n° 25-118', 'Date : 28/02/2025', 'Tenue et déclarations sociales (URSSAF, CARPIMKO)',
+      'Total TTC 540,00 €',
+    ]],
+    ['la cotisation annuelle à l’Ordre, un « appel de cotisation » sans organisme social', [
+      'ORDRE NATIONAL FICTIF', 'Appel de cotisation 2025', 'Date : 15/01/2025', 'Montant à régler 75,00 €',
+    ]],
+    ['une facture de téléphone qui rappelle le « solde précédent »', [
+      'OPERATEUR FICTIF', 'Facture du 05/03/2025', 'Solde précédent 0,00 €', 'Abonnement mobile 19,99 €', 'Total TTC 19,99 €',
+    ]],
+    ['« Votre facture », sous un en-tête de six lignes', [
+      'OPERATEUR FICTIF', '12 rue Fictive', '13000 MARSEILLE', 'SIRET 000 000 000 00000', 'Mme PRATICIENNE FICTIVE',
+      '1 avenue Fictive', 'Votre facture du mois de mars', 'Montant total 32,90 €', 'Attestation de conformité jointe',
+    ]],
+    ['une note d’honoraires, apostrophe typographique', [
+      'CABINET FICTIF', 'Note d’honoraires n° 7', 'Total 1 200,00 €', 'Échéancier de paiement en trois fois',
+    ]],
+  ]
+  for (const [nom, lignes] of cas) {
+    it(`${nom} → « facture », donc Justificatifs`, () => {
+      expect(classifieDocument(lignes)).toBe('facture')
+    })
+  }
+
+  it('un bordereau reste une recette, même titré « Facture » en colonne', () => {
+    expect(classifieDocument(['Bordereau de Télétransmission', 'Facture', 'Total 364,75'])).toBe('facture_vente')
+  })
+
+  it('un vrai relevé reste un relevé : le nom du compte, ses « FACTURE CARTE », ou le solde sans titre de facture', () => {
+    expect(classifieDocument(['BANQUE FICTIVE', 'RELEVE DE COMPTE', 'FACTURE N° 12 PAYEE', 'Solde 1 234,56'])).toBe('releve_bancaire')
+    expect(classifieDocument(['BANQUE FICTIVE', 'FACTURE CARTE DU 12/03 PHARMACIE', 'SOLDE PRECEDENT 1 234,56'])).toBe('releve_bancaire')
+    expect(classifieDocument(['BANQUE FICTIVE', 'FACTURE CB 14/03 CARREFOUR 12,30', 'SOLDE CREDITEUR 1 000,00'])).toBe('releve_bancaire')
+    expect(classifieDocument(['BANQUE FICTIVE', 'Solde précédent 1 234,56', 'Nouveau solde 1 000,00'])).toBe('releve_bancaire')
+  })
+
+  it('un vrai appel de cotisation reste une cotisation : l’organisme et l’appel, ou l’échéancier', () => {
+    expect(classifieDocument(['CARPIMKO', 'Échéancier 2025', 'Mensualité 312,00'])).toBe('cotisation')
+    expect(classifieDocument(['CAISSE FICTIVE', 'Vos cotisations provisionnelles 2025', '1 200,00'])).toBe('cotisation')
+  })
+
+  it('une vraie attestation reste une attestation, même au-delà des premières lignes', () => {
+    const entete = ['CAISSE PRIMAIRE', '1 rue Fictive', '13000 MARSEILLE', 'Mme PRATICIENNE FICTIVE', '2 rue Fictive',
+      '13000 MARSEILLE', 'Dossier suivi par', 'Référence 0000', 'Le 02/01/2025', 'Objet : votre demande', 'Madame,']
+    expect(classifieDocument([...entete, 'ATTESTATION DE DROITS', 'valable jusqu’au 31/12/2025'])).toBe('attestation')
+    // URSSAF sans appel ni échéancier : l'attestation de vigilance n'est plus prise pour un appel de cotisation.
+    expect(classifieDocument(['URSSAF PROVENCE', 'ATTESTATION DE VIGILANCE', 'à jour au 31/12/2024'])).toBe('attestation')
+  })
+
+  it('le titre ne vaut qu’en tête de ligne, dans les dix premières, et avec un montant imprimé', () => {
+    // « Facture » au milieu d'une phrase ne fait pas une facture : l'attestation reste.
+    expect(classifieDocument(['ASSUREUR FICTIF', 'ATTESTATION D’ASSURANCE', 'Le paiement de la facture 2025 vaut 412,50 €'])).toBe('attestation')
+    // Un titre sans aucun montant : le mot seul ne suffit pas, le reste du texte décide comme hier.
+    expect(classifieDocument(['FACTURE PROFORMA', 'Attestation de présence'])).toBe('attestation')
+    // Au-delà des dix premières lignes, ce n'est plus le titre.
+    const longue = Array.from({ length: 10 }, (_, i) => `ligne ${i}`)
+    expect(classifieDocument([...longue, 'Facture n° 1', 'Total 10,00 €', 'attestation jointe'])).toBe('attestation')
   })
 })

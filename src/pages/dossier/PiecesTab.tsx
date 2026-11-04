@@ -6,6 +6,7 @@ import { AVERTISSEMENT_PAIEMENT_DEFAIT, LIBELLE_MOTIF_TVA, moisEnDoubleSurAbonne
 import { messageErreur } from '../../lib/messageErreur'
 import { DEVISE_PIVOT } from '../../lib/devises'
 import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
+import { badgeDeLaPieceNonLue, pieceNonLue, rangSousAValider } from '../../lib/lectureDesPieces'
 import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { grouperParTiers } from '../../lib/suggestionTiers'
@@ -483,14 +484,17 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // Une TVA impossible passe AVANT la confiance basse, et pas au même rang : la confiance est un
   // pronostic de l'extraction sur elle-même — souvent « haute » sur les pièces fausses, c'est tout le
   // problème — là où l'impossibilité est démontrée. Un doute ne prime pas sur une certitude.
-  const PRIORITE_CONFIANCE: Record<string, number> = { basse: 0, moyenne: 1, haute: 2 }
+  //
+  // ET LA PIÈCE QUE RIEN N'A LUE PASSE EN TÊTE (relecture du 04/11/2026, D5) : sans aucun montant, elle est entièrement à
+  // saisir — et sa confiance nulle, qui n'avait pas de rang, la rangeait APRÈS les « haute ». Une confiance nulle prend le
+  // rang de « basse » : rien n'a confirmé la pièce (`rangSousAValider`, lib/lectureDesPieces.ts).
   const prioriteDe = (p: Piece) =>
     // Même rang que la TVA impossible, et pour la même raison : ce n'est pas un pronostic mais une
     // impossibilité démontrée — un abonnement mensuel ne facture pas deux fois le même mois en
     // laissant le mois d'à côté vide.
     // Une vente comptée deux fois aussi : c'est démontré, par les preuves du pont.
-    motifTvaParPiece.has(p.id) || moisSuspectParPiece.has(p.id) || doublonParPiece.has(p.id)
-      || marqueParPiece.get(p.id)?.genre === 'double' ? -1 : (PRIORITE_CONFIANCE[p.confiance ?? ''] ?? 3)
+    rangSousAValider(p, motifTvaParPiece.has(p.id) || moisSuspectParPiece.has(p.id) || doublonParPiece.has(p.id)
+      || marqueParPiece.get(p.id)?.genre === 'double')
   const trie = statutFilter === 'a_valider'
     ? [...filteredBase].sort((a, b) => prioriteDe(a) - prioriteDe(b))
     : filteredBase
@@ -799,7 +803,8 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     if (!window.confirm(
       `Relancer la lecture automatique sur ${piecesIncompletes.length} pièce(s) ?\n\n` +
       `Cela renseigne la date quand elle manque, et archive le texte lu sur le document pour l'afficher ici.\n` +
-      `Le tiers, les montants et le statut ne sont jamais modifiés, et une date déjà saisie n'est jamais remplacée.\n` +
+      `Une pièce à valider dont aucun montant n'a été lu ni saisi reçoit aussi les montants lus, et son fournisseur s'il manque.\n` +
+      `Sur toute autre pièce, le fournisseur, les montants et le statut ne sont jamais modifiés, et une date déjà saisie n'est jamais remplacée.\n` +
       `Chaque pièce repasse par l'analyse, compte quelques secondes par document.`,
     )) return
 
@@ -822,6 +827,21 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
       `${resultat.datees.length} pièce(s) datée(s).`,
       `${resultat.textesArchives.length} texte(s) lu(s) archivé(s) — visibles sous « texte lu » sur chaque ligne.`,
     ]
+    // Les pièces que rien n'avait lues (PIECES-Q5) : ce qui a été écrit, et ce que la base a refusé d'écrire.
+    if (resultat.montantsEcrits.length > 0) {
+      lignes.push(
+        `${resultat.montantsEcrits.length} pièce(s) non lue(s) complétée(s) — montants lus`
+        + `${resultat.montantsEcrits.some((m) => m.tiers) ? ', et fournisseur quand il manquait' : ''}, à vérifier avant validation :\n`
+        + resultat.montantsEcrits.slice(0, 10).map((m) => `• ${m.nomFichier}`).join('\n')
+        + (resultat.montantsEcrits.length > 10 ? `\n… et ${resultat.montantsEcrits.length - 10} autre(s)` : ''),
+      )
+    }
+    if (resultat.montantsNonEcrits.length > 0) {
+      lignes.push(
+        `\n${resultat.montantsNonEcrits.length} pièce(s) laissée(s) telle(s) quelle(s) : validée(s), ou complétée(s) entre-temps — `
+        + resultat.montantsNonEcrits.slice(0, 5).join(', '),
+      )
+    }
     if (deduites.length > 0) {
       // Dites à part, avec leur date : elles viennent de la règle de dernier recours (première date
       // en ordre de lecture) et non d'un libellé reconnu. Juste dans la très grande majorité des
@@ -1254,6 +1274,17 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
                         {p.statut === 'validee'
                           ? <span className="badge badge-ok">Validée</span>
                           : <span className="badge badge-warning">À valider</span>}
+                        {/* Sur la ligne et non dans la colonne de la confiance, que le téléphone masque : la pièce est
+                            entièrement à saisir (D5). */}
+                        {pieceNonLue(p) && (
+                          <span
+                            className="badge badge-danger"
+                            style={{ marginLeft: 4, fontSize: '0.7rem' }}
+                            title="Aucun montant n'a été lu sur ce document : à saisir dans la fiche, ou à relire par « Relire les documents »."
+                          >
+                            {badgeDeLaPieceNonLue(p)}
+                          </span>
+                        )}
                         {/* Distinct de la validation (voir audit ergonomie comparatif) : une pièce validée
                             n'est pas forcément encore rapprochée d'un mouvement bancaire réel — l'un ne
                             dit rien de l'autre, jamais fusionnés dans un seul badge "tout est fait". */}

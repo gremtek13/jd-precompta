@@ -16,6 +16,7 @@ import { retirerFichiers } from '../../lib/stockage'
 import { AUCUNE_LIGNE_SUPPRIMEE, confirmationSuppression, messageBilanSuppression } from '../../lib/bilanSuppression'
 import { ouvrirApercu } from '../../lib/apercu'
 import { citantDe, lireCitationsDeLaRevision, quiCite, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
+import { lireLesFacturesProbables, PHRASE_FACTURE_PROBABLE, type LectureDesFacturesProbables } from '../../lib/facturesProbablesLecture'
 
 // « C'est une facture » sur une lecture des citations partielle, ou pas encore revenue : la révision d'un solde parle
 // d'abord, sous les mots d'hier ; le dossier permanent, seul en défaut, se nomme.
@@ -104,6 +105,10 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // ne se supprime plus, sauf avec son dossier (`garder_source_citee`, hypothèse Q8) — ni donc ne se transforme en
   // pièce, qui le supprime. Dit AVANT le clic, sous les mots de la base. Nulle avant sa première lecture.
   const [citations, setCitations] = useState<LectureDesCitations | null>(null)
+  // LES FACTURES PROBABLES (relecture du 04/11/2026, D4, lib/facturesProbablesLecture.ts) : un document que la lecture a
+  // rangé ici, mais dont le texte lu se donne pour une facture, le dit à sa ligne, à côté de « C'est une facture ». Nulle
+  // avant sa lecture : aucune marque ne se pose.
+  const [facturesProbables, setFacturesProbables] = useState<LectureDesFacturesProbables | null>(null)
 
   async function load() {
     setLoading(true)
@@ -143,6 +148,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     }
     setDoublonParDocument(parDocument)
     setCitations(await lireCitationsDeLaRevision(dossierId))
+    setFacturesProbables(await lireLesFacturesProbables(dossierId))
     setLoading(false)
   }
 
@@ -540,6 +546,11 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       )}
 
       {error && <p className="error-text">{error}</p>}
+      {facturesProbables?.motif && (
+        <p className="muted" style={{ fontSize: '0.82rem' }} title={facturesProbables.motif}>
+          Les factures rangées ici par la lecture n’ont pas pu être relevées : aucune n’est marquée « Facture probable ».
+        </p>
+      )}
 
       {/* Repliée en fiches sous 860 pixels de carte (08/10/2026) : la catégorie et les deux boutons de chaque document —
           « C'est une facture », « Supprimer » — passaient derrière un défilement latéral, que le nom d'un fichier sans espace (rien
@@ -577,6 +588,11 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                       <div>
                         <a href="#" className="nom-fichier" onClick={(e) => { e.preventDefault(); voir(d.storage_path) }}>{d.nom_fichier}</a>
                         {d.attached_to_cotisation_id && <span className="badge badge-ok" style={{ marginLeft: 8 }}>Rattaché à une échéance</span>}
+                        {!d.attached_to_cotisation_id && facturesProbables?.documents.has(d.id) && (
+                          <span className="badge badge-warning" style={{ marginLeft: 8, fontSize: '0.7rem' }} title={PHRASE_FACTURE_PROBABLE}>
+                            Facture probable
+                          </span>
+                        )}
                         {doublonParDocument.has(d.id) && (
                           <span
                             className="badge badge-danger"
