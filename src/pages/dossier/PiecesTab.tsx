@@ -239,109 +239,141 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     }
   }, [dossierId])
 
+  // LES RECHARGEMENTS (relecture du 04/11/2026, D8). `load` enchaînait une vingtaine de lectures entières, l'une après
+  // l'autre, remettait « Chargement… » à chaque appel, et repartait en entier après chaque fiche enregistrée — quatre cents
+  // rechargements complets de `pieces` pour une année validée à la chaîne. Et rien ne les numérotait : un chargement plus
+  // lent écrivait après le suivant, et la liste montrait un instant une pièce validée « à valider ». Désormais :
+  //   - les lectures partent ENSEMBLE (`Promise.all`), et rien ne s'écrit avant qu'elles soient toutes revenues ;
+  //   - seul le DERNIER chargement lancé écrit : son numéro se compare avant la première écriture ;
+  //   - « Chargement… » ne vaut que pour un dossier qui change (l'effet), jamais pour une relecture ;
+  //   - une fiche enregistrée ne relit que ce qu'elle a pu changer (`relireLesPieces`) : les pièces, les règles apprises,
+  //     les textes lus et les doublons de contenu. Ce groupe a son propre numéro, que partagent `load` et elle : le plus
+  //     récent des deux l'écrit.
+  const chargementNo = useRef(0)
+  const piecesNo = useRef(0)
+
+  // Les trois lectures du groupe que la fiche relit (les pièces, les règles du dossier et du cabinet) s'écrivent DEUX fois,
+  // dans `load` et dans `relireLesPieces`, à l'identique : un `lireTout` se lit dans l'entrée de son `Promise.all`, où le
+  // scanner des lectures signalées (lecturesSignalees.test.ts) voit le drapeau qu'on en tire.
+  //
+  // Best-effort, comme les relevés incohérents de la Checklist : l'échec est journalisé, jamais lu
+  // comme « aucun doublon » — un écran qui affiche « rien à signaler » sur une lecture refusée dit
+  // le contraire de ce qu'il sait.
+  const lireLesDoublonsDeTexte = () => chargerDoublonsDeTexte(dossierId).catch((err) => {
+    console.error(err)
+    return [] as DoublonDeTexte[]
+  })
+
   async function load() {
-    setLoading(true)
-    // Lues par tranches, triées sur un ordre TOTAL : le plafond de PostgREST ne se signale pas
-    // (voir lib/lectureComplete.ts). Tronquée, la liste ne paraît pas vide — elle paraît complète,
-    // et les contrôles posés dessus (doublon de contenu, mois en double) se taisent sur le reste.
-    const lecturePieces = await lireTout<Piece>((debut, fin) =>
-      supabase.from('pieces').select('*', { count: 'exact' })
-        .eq('dossier_id', dossierId)
-        .order('date_piece', { ascending: false, nullsFirst: false }).order('id').range(debut, fin),
-    )
-    const piecesData = lecturePieces.lignes
-    setLectureIncomplete(lecturePieces.complete ? null : lecturePieces.motif)
+    const no = ++chargementNo.current
+    const noPieces = ++piecesNo.current
+    const [
+      lecturePieces, lectureRapprochees, lectureReglements, lectureVentes, lectureCategories, lectureSousDossiers,
+      lectureTiersCategories, lectureTiersCabinet, lectureDeLaCaisse, lectureCommentaires, presence, doublons, lectureFigees,
+      lectureVentesEmises, lectureFacturesProposees, lectureCitations, lectureFichesHorsDeFrance, lectureEcarts,
+      lectureDeclarations,
+    ] = await Promise.all([
+      // Lues par tranches, triées sur un ordre TOTAL : le plafond de PostgREST ne se signale pas
+      // (voir lib/lectureComplete.ts). Tronquée, la liste ne paraît pas vide — elle paraît complète,
+      // et les contrôles posés dessus (doublon de contenu, mois en double) se taisent sur le reste.
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId)
+          .order('date_piece', { ascending: false, nullsFirst: false }).order('id').range(debut, fin),
+      ),
+      // Les mouvements RAPPROCHÉS, et pas seulement ceux qui portent une pièce : un virement qui règle
+      // plusieurs pièces n'en porte aucune — elles sont dans ses parts (lib/reglementGroupe.ts), lues juste
+      // après. Une pièce payée avec d'autres est rapprochée comme une autre, et le badge doit le dire.
+      lireTout<LignePayante>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('id, piece_id, date, montant, statut, reglement_groupe, encaissements_de_factures', { count: 'exact' })
+          .eq('dossier_id', dossierId)
+          .eq('statut', 'rapprochee')
+          .order('id').range(debut, fin),
+      ),
+      lireTout<PartReglee>((debut, fin) =>
+        supabase.from('reglements_groupes').select('ligne_bancaire_id, piece_id, montant', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+      // Et, pour un dossier basculé, ce que ses virements mixtes paient des exemplaires (étape VF5h), lu avec ses ventes
+      // facturées (lib/ventesFactureesLecture.ts) : l'exemplaire qu'un tel virement paie est rapproché comme une autre
+      // pièce. Aucun ailleurs — sans facture source, aucun mouvement n'est classé par ses encaissements. Ne rejette jamais :
+      // lue en partie, elle revient « incomplète », et le bandeau des listes de référence le dit.
+      ventesParLesFactures ? lireLesVentesFacturees(dossierId) : Promise.resolve(null),
+      lireTout<Categorie>((debut, fin) =>
+        supabase.from('categories').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
+      ),
+      lireTout<SousDossier>((debut, fin) =>
+        supabase.from('sous_dossiers').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('ordre').order('nom').order('id').range(debut, fin),
+      ),
+      // LES RÈGLES APPRISES. Une ligne par arbitrage posé, donc une liste qui ne fait que grandir —
+      // et tronquée, elle ne se signale pas : les règles absentes cessent simplement de s'appliquer,
+      // et l'opérateur recatégorise à la main un fournisseur qu'il a déjà arbitré dix fois.
+      lireTout<TiersCategorie>((debut, fin) =>
+        supabase.from('tiers_categories').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+      // Même raisonnement, à l'échelle du cabinet : c'est la table qui porte le travail partagé
+      // entre dossiers, donc la première des deux à grandir.
+      lireTout<TiersCategorieCabinet>((debut, fin) =>
+        supabase.from('tiers_categories_cabinet').select('*', { count: 'exact' })
+          .order('id').range(debut, fin),
+      ),
+      // Et la caisse (étape C9b), quand elle se tient : lue en partie, une pièce payée en espèces paraît « non rapprochée ».
+      caisseTenue ? lireLaCaisseDuDossier(dossierId, ventesParLesFactures) : Promise.resolve(null),
+      // Les précisions portées par le client sur ses dépôts. Chargées ici, en une requête pour tout le
+      // dossier, et passées à la ligne : c'est le seul endroit où elles servent vraiment, au moment où
+      // l'opérateur choisit une catégorie sans savoir ce qu'est « BOULANGER MARSEILLE ».
+      chargerCommentaires(dossierId),
+      piecesAvecTexteOcr(dossierId),
+      lireLesDoublonsDeTexte(),
+      lirePiecesFigees(dossierId),
+      lireVentesEmises(dossierId),
+      lireLesFacturesProposees(dossierId),
+      lireCitationsDeLaRevision(dossierId),
+      lireFichesHorsDeFrance(dossierId),
+      lireEcarts(dossierId),
+      lireDeclarationsEreporting(dossierId),
+    ])
+    // Avant la première écriture : un chargement lancé depuis a la main.
+    if (no !== chargementNo.current) return
 
-    // Les mouvements RAPPROCHÉS, et pas seulement ceux qui portent une pièce : un virement qui règle
-    // plusieurs pièces n'en porte aucune — elles sont dans ses parts (lib/reglementGroupe.ts), lues juste
-    // après. Une pièce payée avec d'autres est rapprochée comme une autre, et le badge doit le dire.
-    const lectureRapprochees = await lireTout<LignePayante>((debut, fin) =>
-      supabase.from('lignes_bancaires').select('id, piece_id, date, montant, statut, reglement_groupe, encaissements_de_factures', { count: 'exact' })
-        .eq('dossier_id', dossierId)
-        .eq('statut', 'rapprochee')
-        .order('id').range(debut, fin),
-    )
-    const lectureReglements = await lireTout<PartReglee>((debut, fin) =>
-      supabase.from('reglements_groupes').select('ligne_bancaire_id, piece_id, montant', { count: 'exact' })
-        .eq('dossier_id', dossierId).order('id').range(debut, fin),
-    )
-    // Et, pour un dossier basculé, ce que ses virements mixtes paient des exemplaires (étape VF5h), lu avec ses ventes
-    // facturées (lib/ventesFactureesLecture.ts) : l'exemplaire qu'un tel virement paie est rapproché comme une autre
-    // pièce. Aucun ailleurs — sans facture source, aucun mouvement n'est classé par ses encaissements. Ne rejette jamais :
-    // lue en partie, elle revient « incomplète », et le bandeau des listes de référence le dit.
-    const lectureVentes = ventesParLesFactures ? await lireLesVentesFacturees(dossierId) : null
-
-    const lectureCategories = await lireTout<Categorie>((debut, fin) =>
-      supabase.from('categories').select('*', { count: 'exact' })
-        .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
-    )
-
-    const lectureSousDossiers = await lireTout<SousDossier>((debut, fin) =>
-      supabase.from('sous_dossiers').select('*', { count: 'exact' })
-        .eq('dossier_id', dossierId).order('ordre').order('nom').order('id').range(debut, fin),
-    )
-
-    // LES RÈGLES APPRISES. Une ligne par arbitrage posé, donc une liste qui ne fait que grandir —
-    // et tronquée, elle ne se signale pas : les règles absentes cessent simplement de s'appliquer,
-    // et l'opérateur recatégorise à la main un fournisseur qu'il a déjà arbitré dix fois.
-    const lectureTiersCategories = await lireTout<TiersCategorie>((debut, fin) =>
-      supabase.from('tiers_categories').select('*', { count: 'exact' })
-        .eq('dossier_id', dossierId).order('id').range(debut, fin),
-    )
-
-    // Même raisonnement, à l'échelle du cabinet : c'est la table qui porte le travail partagé
-    // entre dossiers, donc la première des deux à grandir.
-    const lectureTiersCabinet = await lireTout<TiersCategorieCabinet>((debut, fin) =>
-      supabase.from('tiers_categories_cabinet').select('*', { count: 'exact' })
-        .order('id').range(debut, fin),
-    )
-    // Le commentaire ci-dessus NOMMAIT le dégât — « les règles absentes cessent simplement de
+    setLectureCaisse(lectureDeLaCaisse)
+    // Le commentaire des règles NOMMAIT le dégât — « les règles absentes cessent simplement de
     // s'appliquer » — au-dessus d'un code qui jetait le drapeau permettant de le voir. Les cinq
     // listes de référence partagent une même conséquence, distincte de celle des pièces : elles ne
     // raccourcissent pas la liste, elles font paraître une pièce MOINS TRAITÉE qu'elle ne l'est
     // (`sousDossierLabel` rend « — » pour un sous-dossier absent, le badge de rapprochement retombe
     // sur « non rapprochée »), ou taisent une catégorie déjà arbitrée.
-    // Et la caisse (étape C9b), quand elle se tient : lue en partie, une pièce payée en espèces paraît « non rapprochée ».
-    const lectureDeLaCaisse = caisseTenue ? await lireLaCaisseDuDossier(dossierId, ventesParLesFactures) : null
-    setLectureCaisse(lectureDeLaCaisse)
     setReferencesIncompletes(
       [lectureRapprochees, lectureReglements, lectureCategories, lectureSousDossiers, lectureTiersCategories, lectureTiersCabinet]
         .find((l) => !l.complete)?.motif
         ?? (lectureVentes?.etat === 'incomplete' ? `les ventes facturées du dossier : ${lectureVentes.motif}` : null)
         ?? (lectureDeLaCaisse?.etat === 'incomplete' ? `la caisse du dossier : ${lectureDeLaCaisse.motif}` : null),
     )
-
-    // Les précisions portées par le client sur ses dépôts. Chargées ici, en une requête pour tout le
-    // dossier, et passées à la ligne : c'est le seul endroit où elles servent vraiment, au moment où
-    // l'opérateur choisit une catégorie sans savoir ce qu'est « BOULANGER MARSEILLE ».
-    const lectureCommentaires = await chargerCommentaires(dossierId)
     setCommentaires(lectureCommentaires.commentaires)
     setCommentairesIncomplets(lectureCommentaires.motif)
-    const presence = await piecesAvecTexteOcr(dossierId)
-    setAvecTexteOcr(presence.avecTexte)
-    setPresenceTexteIncertaine(presence.erreur)
-    // Best-effort, comme les relevés incohérents de la Checklist : l'échec est journalisé, jamais lu
-    // comme « aucun doublon » — un écran qui affiche « rien à signaler » sur une lecture refusée dit
-    // le contraire de ce qu'il sait.
-    setDoublonsTexte(await chargerDoublonsDeTexte(dossierId).catch((err) => {
-      console.error(err)
-      return [] as DoublonDeTexte[]
-    }))
-    const lectureFigees = await lirePiecesFigees(dossierId)
     setFigees(lectureFigees.figees)
     setFigeesIncompletes(lectureFigees.motif)
-    setVentesEmises(await lireVentesEmises(dossierId))
-    setFacturesProposees(await lireLesFacturesProposees(dossierId))
-    setCitations(await lireCitationsDeLaRevision(dossierId))
-    setFichesHorsDeFrance(await lireFichesHorsDeFrance(dossierId))
-    setEcartsEreporting(await lireEcarts(dossierId))
-    setDeclarationsEreporting(await lireDeclarationsEreporting(dossierId))
-
-    setPieces(piecesData ?? [])
+    setVentesEmises(lectureVentesEmises)
+    setFacturesProposees(lectureFacturesProposees)
+    setCitations(lectureCitations)
+    setFichesHorsDeFrance(lectureFichesHorsDeFrance)
+    setEcartsEreporting(lectureEcarts)
+    setDeclarationsEreporting(lectureDeclarations)
     setCategories(lectureCategories.lignes)
     setSousDossiers(lectureSousDossiers.lignes)
-    setTiersCategories(lectureTiersCategories.lignes)
-    setTiersCategoriesCabinet(lectureTiersCabinet.lignes)
+    // Le groupe que la fiche relit : écrit seulement si aucune relecture de la fiche n'est partie depuis.
+    if (noPieces === piecesNo.current) {
+      setPieces(lecturePieces.lignes)
+      setLectureIncomplete(lecturePieces.complete ? null : lecturePieces.motif)
+      setTiersCategories(lectureTiersCategories.lignes)
+      setTiersCategoriesCabinet(lectureTiersCabinet.lignes)
+      setAvecTexteOcr(presence.avecTexte)
+      setPresenceTexteIncertaine(presence.erreur)
+      setDoublonsTexte(doublons)
+    }
     // « Rapprochée » dit un MOUVEMENT BANCAIRE (le badge, la fiche) : un paiement par la caisse (étape C9a) n'en est pas un,
     // et ne s'y compte pas — « Payée en espèces » le dit à part (étape C9b, `payeesEnEspeces`).
     const paiementsParLeReleve = paiementsDesPieces(lectureRapprochees.lignes, lectureReglements.lignes,
@@ -356,7 +388,45 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     setLoading(false)
   }
 
+  // CE QU'UNE FICHE ENREGISTRÉE A PU CHANGER, ET RIEN D'AUTRE (D8) : la pièce (enregistrée, ajoutée, supprimée), les règles
+  // apprises sous son fournisseur, sa présence de texte lu et les doublons de contenu qu'elle fait ou défait. Le reste — les
+  // paiements, les citations, ce qu'un exercice validé fige — ne bouge pas par une fiche, ou se relit par son propre geste
+  // (la caisse, les factures, les fiches hors de France). Lu ensemble, écrit seulement si rien de plus récent n'est parti.
+  async function relireLesPieces() {
+    const no = ++piecesNo.current
+    const [lecturePieces, lectureTiersCategories, lectureTiersCabinet, presence, doublons] = await Promise.all([
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId)
+          .order('date_piece', { ascending: false, nullsFirst: false }).order('id').range(debut, fin),
+      ),
+      lireTout<TiersCategorie>((debut, fin) =>
+        supabase.from('tiers_categories').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+      lireTout<TiersCategorieCabinet>((debut, fin) =>
+        supabase.from('tiers_categories_cabinet').select('*', { count: 'exact' })
+          .order('id').range(debut, fin),
+      ),
+      piecesAvecTexteOcr(dossierId),
+      lireLesDoublonsDeTexte(),
+    ])
+    if (no !== piecesNo.current) return
+    setPieces(lecturePieces.lignes)
+    setLectureIncomplete(lecturePieces.complete ? null : lecturePieces.motif)
+    setTiersCategories(lectureTiersCategories.lignes)
+    setTiersCategoriesCabinet(lectureTiersCabinet.lignes)
+    // Une règle lue en partie se dit comme au chargement ; lue en entier, elle ne fait taire aucun autre manque.
+    const reglesIncompletes = [lectureTiersCategories, lectureTiersCabinet].find((l) => !l.complete)?.motif
+    if (reglesIncompletes) setReferencesIncompletes(reglesIncompletes)
+    setAvecTexteOcr(presence.avecTexte)
+    setPresenceTexteIncertaine(presence.erreur)
+    setDoublonsTexte(doublons)
+  }
+
+  // « Chargement… » pour un dossier (ou un réglage) qui change, jamais pour une relecture : la liste reste sous les yeux.
   useEffect(() => {
+    setLoading(true)
     load()
   }, [dossierId, ventesParLesFactures, caisseTenue])
 
@@ -1352,7 +1422,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
             caisse={caisseDeLaFiche}
             doublonProbable={phraseDesDoublons(editing.id)}
             onClose={fermerFiche}
-            onSaved={load}
+            onSaved={relireLesPieces}
             onValidee={apresValidation}
             onModifiee={noterModification}
             sansTexteLu={!presenceTexteIncertaine && !avecTexteOcr.has(editing.id)}
