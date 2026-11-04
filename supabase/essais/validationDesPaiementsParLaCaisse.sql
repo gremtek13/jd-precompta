@@ -36,6 +36,13 @@
 -- dans un réglage) — il était fait d'un `\set` de psql, d'une table et de deux fonctions temporaires, et d'un `rollback`
 -- final, que l'outil d'exécution ne joue pas ou valide : les mêmes étapes, dans le même ordre, sous les mêmes profils, chacune
 -- jugée au même code et au même motif ; ses 13 verdicts rendus à l'identique (le banc du leurre, même entrée d'HISTORIQUE.md).
+--
+-- ÉTENDU LE 04/11/2026 (C12B-Q1 : la migration `correction_du_paiement_par_la_caisse`, PRÉPARÉE, pas appliquée — corriger
+-- un paiement en espèces d'un seul geste). Un sixième dossier jetable, C : sa pièce validée payée 40 € le 12/03/2025, le
+-- paiement corrigé au 14/03/2025 ; la validation de 2025 se refuse au jour du NOUVEAU paiement, jamais de l'ancien ; la
+-- contrepartie de l'ancien, remplacé, ne s'écrit pas ; celle du nouveau écrite, la validation passe, et la caisse reportée
+-- ne compte le paiement corrigé qu'une fois. Ses étapes (14 à 20) ne se jouent qu'avec la migration : sans elle, une ligne
+-- dit qu'elles attendent (EN ATTENTE), et les treize d'hier se rendent à l'identique.
 do $essai$
 declare
   -- La numérotation de l'application, celle que la validation reçoit : par pièce au journal AC, les opérations de caisse en OD.
@@ -59,6 +66,8 @@ declare
   v_obs text;
   v_code text;
   v_msg text;
+  -- La migration de C12B-Q1 : sans elle, les étapes 14 à 20 attendent.
+  c12 boolean := to_regprocedure('public.remplacer_paiement_par_la_caisse(uuid, uuid, date, numeric)') is not null;
 begin
   if not (exists (select 1 from pg_proc where proname = 'regler_piece_par_la_caisse' and pronamespace = 'public'::regnamespace)
           and coalesce((select prosrc like '%sans sa contrepartie entière au compte de la caisse%' from pg_proc
@@ -80,7 +89,8 @@ begin
       ('ca155e00-0000-4000-800c-000000000002', 'ESSAI FILET N', cabinet, 'tresorerie', '455000', 'exonere', false),
       ('ca155e00-0000-4000-800c-000000000003', 'ESSAI FILET P', cabinet, 'tresorerie', '455000', 'exonere', false),
       ('ca155e00-0000-4000-800c-000000000005', 'ESSAI FILET D', cabinet, 'tresorerie', '455000', 'exonere', false),
-      ('ca155e00-0000-4000-800c-000000000006', 'ESSAI FILET X', cabinet, 'tresorerie', '455000', 'exonere', false);
+      ('ca155e00-0000-4000-800c-000000000006', 'ESSAI FILET X', cabinet, 'tresorerie', '455000', 'exonere', false),
+      ('ca155e00-0000-4000-800c-000000000007', 'ESSAI FILET C', cabinet, 'tresorerie', '455000', 'exonere', false);
     insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, montant_ttc, date_piece) values
       ('ca155e00-0000-4000-800c-000000000011', 'ca155e00-0000-4000-800c-000000000001', 'ca155e00-0000-4000-800c-000000000001/z.pdf', 'z.pdf', 'achat', 'a_valider', 80, '2024-12-20'),
       ('ca155e00-0000-4000-800c-000000000012', 'ca155e00-0000-4000-800c-000000000002', 'ca155e00-0000-4000-800c-000000000002/n.pdf', 'n.pdf', 'achat', 'validee', 40, '2025-03-10'),
@@ -88,7 +98,8 @@ begin
       ('ca155e00-0000-4000-800c-000000000015', 'ca155e00-0000-4000-800c-000000000005', 'ca155e00-0000-4000-800c-000000000005/d.pdf', 'd.pdf', 'achat', 'a_valider', 80, '2024-12-20'),
       ('ca155e00-0000-4000-800c-000000000016', 'ca155e00-0000-4000-800c-000000000006', 'ca155e00-0000-4000-800c-000000000006/x.pdf', 'x.pdf', 'achat', 'validee', 40, '2025-03-10'),
       ('ca155e00-0000-4000-800c-000000000017', 'ca155e00-0000-4000-800c-000000000006', 'ca155e00-0000-4000-800c-000000000006/r.pdf', 'r.pdf', 'achat', 'validee', 15, '2025-03-10'),
-      ('ca155e00-0000-4000-800c-000000000018', 'ca155e00-0000-4000-800c-000000000006', 'ca155e00-0000-4000-800c-000000000006/f.pdf', 'f.pdf', 'achat', 'a_valider', 5, '2026-01-10');
+      ('ca155e00-0000-4000-800c-000000000018', 'ca155e00-0000-4000-800c-000000000006', 'ca155e00-0000-4000-800c-000000000006/f.pdf', 'f.pdf', 'achat', 'a_valider', 5, '2026-01-10'),
+      ('ca155e00-0000-4000-800c-00000000001a', 'ca155e00-0000-4000-800c-000000000007', 'ca155e00-0000-4000-800c-000000000007/c.pdf', 'c.pdf', 'achat', 'validee', 40, '2025-03-10');
 
     -- Une étape : {rang, sous le chef du cabinet du dossier `test` (sinon le propriétaire), étape, requête (ou le dossier dont
     -- la validation de 2025 se joue, par la numérotation ci-dessus), code attendu (`OK` : acceptée, et sa valeur rendue si l'on
@@ -142,8 +153,38 @@ begin
       (12, false, '6. le catalogue : la validation, aux droits du propriétaire, chemin fixé, exécutable par un compte connecté, ni par l''anonyme', $q$select prosecdef || ':' || coalesce(array_to_string(proconfig, ','), '-') || ':' || has_function_privilege('anon', oid, 'execute') || ':' || has_function_privilege('authenticated', oid, 'execute')
   from pg_proc where oid = to_regprocedure('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)')$q$, null, 'OK', 'true:search_path=public:false:true'),
       (13, false, '6b. … son corps dit le refus une fois, et ne l''écrit pour aucune autre fonction', $q$select string_agg(proname, ',' order by proname) from pg_proc
-  where pronamespace = 'public'::regnamespace and prosrc like '%sans sa contrepartie entière au compte de la caisse%'$q$, null, 'OK', 'valider_exercice')
+  where pronamespace = 'public'::regnamespace and prosrc like '%sans sa contrepartie entière au compte de la caisse%'$q$, null, 'OK', 'valider_exercice'),
+      -- C12B-Q1 : un paiement corrigé d'un seul geste (`remplacer_paiement_par_la_caisse`), devant la validation.
+      (14, true, '7. C — l''apport de 100 € et le paiement de sa pièce validée, 40 € le 12/03/2025', $q$select enregistrer_operation_caisse('ca155e00-0000-4000-800c-000000000007', 'apport', '2025-01-02', 100, null, null, null,
+  '[{"compte":"530000","sens":"debit","montant":100},{"compte":"108000","sens":"credit","montant":100}]');
+  select (regler_piece_par_la_caisse('ca155e00-0000-4000-800c-000000000007', 'ca155e00-0000-4000-800c-00000000001a', '2025-03-12', -40)).date::text$q$, null, 'OK', '2025-03-12'),
+      (15, true, '7b. … le paiement corrigé au 14/03/2025, au même montant, d''un seul geste : l''ancien retiré, le nouveau le désigne', $q$select (remplacer_paiement_par_la_caisse('ca155e00-0000-4000-800c-000000000007',
+    (select o.id from operations_caisse o where o.piece_id = 'ca155e00-0000-4000-800c-00000000001a'), '2025-03-14', -40)).date::text;
+  select string_agg(o.date || ' ' || case when o.retire_le is null then 'vivant' else 'retiré' end
+      || case when o.remplace_id is not null then ', désigne l''autre' else '' end, ' ; ' order by o.date)
+    from operations_caisse o where o.piece_id = 'ca155e00-0000-4000-800c-00000000001a'$q$, null, 'OK', '2025-03-12 retiré ; 2025-03-14 vivant, désigne l''autre'),
+      (16, true, '7c. C — le paiement corrigé sans contrepartie : la validation de 2025 se refuse au jour du NOUVEAU paiement', null, 'ca155e00-0000-4000-800c-000000000007',
+        '23514', 'L''exercice 2025 porte le paiement en espèces du 14/03/2025 d''une pièce (40,00 €) sans sa contrepartie entière au compte de la caisse : valider sa pièce et générer ses écritures, ou les régénérer, avant la validation — ou retirer ce paiement.'),
+      (17, true, '7d. … la contrepartie de l''ancien, remplacé, ne s''écrit pas', $q$insert into ecritures_brouillon (dossier_id, piece_id, date, compte, libelle, montant, sens, statut, operation_caisse_id)
+  select o.dossier_id, o.piece_id, o.date, '530000', 'essai', 40, 'credit', 'proposee', o.id from operations_caisse o
+   where o.piece_id = 'ca155e00-0000-4000-800c-00000000001a' and o.retire_le is not null
+  returning 'écrite'$q$, null, '23514', 'Cette écriture ne suit pas son opération de caisse : son dossier, sa date, ou sa pièce.'),
+      (18, true, '7e. … les écritures de la pièce au nouveau paiement, sous la RLS du cabinet', $q$
+  with o as (select id, dossier_id, piece_id, date from operations_caisse where piece_id = 'ca155e00-0000-4000-800c-00000000001a' and retire_le is null),
+  i as (insert into ecritures_brouillon (dossier_id, piece_id, date, compte, libelle, montant, sens, statut, operation_caisse_id)
+    select o.dossier_id, o.piece_id, o.date, x.compte, 'essai', 40, x.sens, 'proposee', case when x.caisse then o.id end
+      from o, (values ('606100', 'debit', false), ('530000', 'credit', true)) as x(compte, sens, caisse)
+    returning 1)
+  select count(*)::text from i$q$, null, 'OK', '2'),
+      (19, true, '7f. C — la contrepartie du nouveau entière : la validation de 2025 passe (quatre lignes)', null, 'ca155e00-0000-4000-800c-000000000007',
+        'OK', '4'),
+      (20, false, '7g. … et la caisse reportée au 01/01/2026 ne compte le paiement corrigé qu''une fois : 60 €', $q$select string_agg(sens || ' ' || montant, ' ; ') from soldes_reportes
+  where dossier_id = 'ca155e00-0000-4000-800c-000000000007' and compte = '530000'$q$, null, 'OK', 'debit 60.00')
     ) as t(rang, sous_le_chef, etape, requete, dossier, code, attendu) order by rang loop
+      -- Sans la migration de C12B-Q1, ses étapes attendent ; une ligne le dit, après la boucle.
+      if e.rang >= 14 and not c12 then
+        continue;
+      end if;
       requete := coalesce(e.requete, format(valider, e.dossier, e.dossier));
       v_obs := null;
       v_code := 'OK';
@@ -168,6 +209,11 @@ begin
       verdicts := verdicts || jsonb_build_object('rang', e.rang, 'etape', e.etape,
         'ok', v_code = e.code and (e.attendu = '' or v_msg like e.attendu), 'observe', v_code || ' ' || v_msg);
     end loop;
+    if not c12 then
+      verdicts := verdicts || jsonb_build_object('rang', 14,
+        'etape', '7. EN ATTENTE de la migration correction_du_paiement_par_la_caisse (C12B-Q1) : 7 étapes — un paiement corrigé devant la validation',
+        'ok', true, 'observe', 'absente : elles se jouent dès qu''elle y est');
+    end if;
     raise exception 'ANNULATION_ESSAI_GLOBALE';
   exception when others then
     if sqlerrm <> 'ANNULATION_ESSAI_GLOBALE' then

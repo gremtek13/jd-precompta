@@ -213,9 +213,11 @@ export interface PieceDuPaiementDuClient {
  * cabinet lit ce que la base lit (`PieceDuPaiement`) ; le client, ce que `PieceDuPaiementDuClient` porte. L'ordre des refus
  * s'écrit UNE fois, ci-dessous : la branche du client saute ce qu'elle ne lit pas, sans rien deviner.
  */
-type PieceLue = { lecteur: 'cabinet'; piece: PieceDuPaiement } | { lecteur: 'client'; piece: PieceDuPaiementDuClient }
+export type PieceLue = { lecteur: 'cabinet'; piece: PieceDuPaiement } | { lecteur: 'client'; piece: PieceDuPaiementDuClient }
 
-function jugerSelonLeLecteur(saisie: SaisieDuReglement, dossier: DossierDeLaCaisse,
+// Exportée pour la correction d'un paiement (C12B-Q1, lib/correctionDuPaiement.ts) : la base juge le paiement corrigé par
+// `regler_piece_par_la_caisse` elle-même, l'ancien retiré — le module, par ce même jugement, l'ordre écrit une fois.
+export function jugerSelonLeLecteur(saisie: SaisieDuReglement, dossier: DossierDeLaCaisse,
   trouver: (id: string) => PieceLue | null, id: string): JugementDuReglement {
   const non = (x: RefusCaisse): JugementDuReglement => ({ etat: 'refuse', refus: x })
   // 1. L'accès, avant toute lecture.
