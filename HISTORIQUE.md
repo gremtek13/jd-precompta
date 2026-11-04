@@ -47788,3 +47788,20 @@ Trouvé en route : le contrôle 0c de `ventesClient.sql` était en faute à 171 
 d'A1 à A6 absentes de sa liste, toutes vérifiées) — corrigé. Le jour de l'application simulé (la suite entière) : le
 drapeau seul ne suffira pas, la phrase de la case « Ventes » devra nommer les devis. Gardé : aucune unicité sur le devis
 d'un lien (le verrou de `facturer_devis` seul), pour l'acompte puis le solde d'EC-D3.
+
+### 04/11/2026 — LES DEVIS : L'ÉMETTEUR DU DOSSIER ET AUCUN IBAN IMPRIMÉ, COMME LA FACTURE (P5) ; LE PREMIER LOT DES ÉCRANS (P6A1)
+
+Relu avec le premier lot des écrans : la migration préparée prenait l'émetteur (nom, SIRET, adresse) dans le JSON de
+l'appelant — un client « Ventes » aurait émis, dans la série du dossier, un devis au nom d'un autre. Corrigée AVANT toute
+application, sur les règles qu'A7 a fixées pour la facture (A7-Q1 à Q3, A7Q-Q1) : une seule fonction,
+`emetteur_du_dossier` (immuable, exécutée par aucun rôle de l'API), pose l'émetteur à l'émission — la dénomination, à
+défaut le nom du dossier ; les clés venues de l'écran sont ignorées ; `facturer_devis` tire le brouillon avec l'émetteur
+DU JOUR, jamais celui figé du devis (une facture porte l'identité du vendeur à sa date). Six refus neufs (25 au lieu de
+19) : un IBAN valide dans un texte que le devis imprime (`porte_un_iban`, tout auteur) ; à l'émission, la forme
+juridique, la dénomination, le SIRET et l'adresse du dossier pour un accès « Ventes », la mention « EI » d'un
+entrepreneur individuel pour tout auteur (C. com., art. R526-27). Les taux : `enregistrer_facture` n'en juge aucun selon
+le statut de TVA, le devis garde la liste G1.24. Rejoué sur la réplique : `devis.sql` 207 verdicts, 0 en faute, 17
+mutations sur 17 ; `devisSuppression.sql` 22 ; `rls.sql` 0 en faute, 72 sur 72 ; vingt mutations des parties neuves
+tuées ; le banc du leurre SÛR. Les écrans (P6a1, derrière `DEVIS_EXPORTES`) : la vue « Devis » de `FacturesTab`, dans les
+deux espaces — liste lue en entier, formulaire d'un brouillon, émission et suppression confirmées en nommant ce qui part,
+les refus dits avant le clic dans l'ordre de la base ; restent la réponse, la transformation, l'aperçu, l'e-mail (P6a2).
