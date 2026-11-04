@@ -4,12 +4,13 @@ import { etatCaisseDuDossier, reglageDuDossier, type EtatCaisseDuDossier, type R
 
 // CE QUE L'ONGLET ACCÈS LIT DU DOSSIER POUR JUGER SES CASES (chantier EC-Q3, étape VF8d ; ligne 26.6, étape C11 ; le module
 // pur est lib/droitsAcces.ts, `reglageDuDossier`, `etatCaisseDuDossier` et `gesteDeLaCase`) : une ligne lue par sa clé —
-// donc en entier —, trois colonnes de `dossiers` :
+// donc en entier —, quatre colonnes de `dossiers` :
 //   - `ventes_par_les_factures`, le réglage qui ouvre la case « Ventes » ;
 //   - `statut_tva`, qui ouvre la case « Caisse » (exonéré ou en franchise en base : `garder_droit_caisse`) ;
+//   - `mode_comptable`, lu avec le statut (C11-Q2) : sur un dossier tenu en engagement, la case « Caisse » ne se coche pas ;
 //   - `categorie_recettes_client`, la nature des recettes en espèces que le cabinet fixe pour le client (CAISSE2-Q2, (B) ;
 //     `garder_categorie_recettes_client`) : l'onglet la montre et la change.
-// Ce module ne rejette jamais : un refus, une ligne absente ou une requête qui lève rendent les trois ILLISIBLES, avec leur
+// Ce module ne rejette jamais : un refus, une ligne absente ou une requête qui lève rendent les trois états ILLISIBLES, avec leur
 // motif, et aucune case qui en dépend ne s'offre. Une colonne absente de la réponse rend illisible ce qu'elle porte, et elle
 // seule. La réponse porte le dossier lu : un écran qui en a changé entre-temps ne la prend pas pour la sienne.
 
@@ -45,7 +46,7 @@ function illisible(dossierId: string, motif: string): LectureDuReglage {
 export async function lireLeReglageDuDossier(dossierId: string): Promise<LectureDuReglage> {
   try {
     const { data, error } = await supabase.from('dossiers')
-      .select('ventes_par_les_factures, statut_tva, categorie_recettes_client').eq('id', dossierId).maybeSingle()
+      .select('ventes_par_les_factures, statut_tva, mode_comptable, categorie_recettes_client').eq('id', dossierId).maybeSingle()
     if (error) return illisible(dossierId, messageErreur(error, 'lecture refusée'))
     return { dossierId, reglage: reglageDuDossier(data), caisse: etatCaisseDuDossier(data), nature: natureDeLaLigne(data) }
   } catch (erreur) {

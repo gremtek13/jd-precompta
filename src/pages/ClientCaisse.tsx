@@ -6,9 +6,10 @@ import { aujourdHuiAParis } from '../lib/format'
 import { jourDit, type SaisieDeCaisse } from '../lib/caisse'
 import { euros } from '../lib/caisseEcran'
 import {
-  anneeFigee, auteurPourLeClient, caisseRejouee, confirmationDeLaCorrection, confirmationDeLaSaisie, confirmationDuRetrait,
-  corrigeableParLeClient, devenirDeLaRetiree, dossierDuClient, GENRES_DU_CLIENT, joursDuMois, libelleDeLaLigne, MOIS_DE_L_ANNEE,
-  nomPourLeClient, RAPPEL_DU_BROUILLARD, refusDuRetraitDuClient, retireesDuMois, saisieDuClient, soldeLuAu, verdictDuFormulaire,
+  anneeFigee, auteurPourLeClient, caisseRejouee, confirmationDeLaCorrection, confirmationDeLaSaisie, confirmationDuMois,
+  confirmationDuRetrait, corrigeableParLeClient, devenirDeLaRetiree, dossierDuClient, GENRES_DU_CLIENT, joursDuMois,
+  libelleDeLaLigne, ligneVideDuClient, MOIS_DE_L_ANNEE, nomPourLeClient, RAPPEL_DU_BROUILLARD, refusDuRetraitDuClient,
+  retireesDuMois, saisieDuClient, soldeLuAu, verdictDuFormulaire, verdictDuMoisDuClient,
   type FormulaireDuClient, type GenreDuClient, type OperationDuClient,
 } from '../lib/caisseClient'
 import { lireLaCaisseDuClient, lireLesDepotsDesPieces, type DepotsDesPieces, type LectureDeLaCaisseDuClient } from '../lib/caisseClientLecture'
@@ -30,10 +31,18 @@ import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 // que le module ne recompose pas sur ce qui a été lu (lib/caisseClient.ts, `caisseRejouee`) non plus. Les refus de la base se
 // disent AVANT le clic, aux mots du module, sur la saisie TELLE QU'ELLE PART ; chaque geste se confirme, la confirmation nommant
 // ce qui part ; un seul verrou `useRef` pour tous, relâché après la relecture.
+//
+// LA SAISIE D'UN MOIS (C12A-Q1, le 04/11/2026) : plusieurs lignes, tout ou rien, par `enregistrer_operations_de_caisse` — comme
+// l'onglet Caisse du cabinet. Le tableau part tel que le module l'a jugé (lib/caisseClient.ts, `verdictDuMoisDuClient`) :
+// ni catégorie, ni taux, ni écriture ; la confirmation nomme le nombre d'opérations, ce qui entre et sort, et la caisse du
+// dernier jour saisi après elles. Sous le même verrou que les autres gestes.
 
 type Message = { genre: 'ok' | 'erreur'; texte: string }
 
 const FORMULAIRE_VIDE: FormulaireDuClient = { genre: 'recette', date: '', montant: '' }
+// Le nombre de lignes de la saisie d'un mois à son ouverture, comme l'onglet Caisse du cabinet.
+const LIGNES_DU_MOIS = 3
+const MOIS_VIDE = (): FormulaireDuClient[] => Array.from({ length: LIGNES_DU_MOIS }, () => FORMULAIRE_VIDE)
 
 // Le nom d'une ligne d'opération dans le jour : son genre seulement (le jour et le montant sont dans leurs colonnes) ; le
 // paiement d'une pièce, par le jour de dépôt de sa pièce (étape C12b), jamais par un fournisseur, un fichier ni un libellé —
@@ -59,6 +68,9 @@ export default function ClientCaisse() {
   // L'opération que la saisie corrige : la version qu'elle remplace, retenue avec elle.
   const [remplace, setRemplace] = useState<string | null>(null)
   const [message, setMessage] = useState<Message | null>(null)
+  // La saisie d'un mois : repliée tant qu'on ne l'ouvre pas, ses lignes telles que tapées.
+  const [moisOuvert, setMoisOuvert] = useState(false)
+  const [lignesDuMois, setLignesDuMois] = useState<FormulaireDuClient[]>(MOIS_VIDE)
   // UN verrou pour tous les gestes : ils relisent tous la même caisse, et un geste parti pendant la relecture d'un autre
   // s'appuierait sur une caisse pas encore revenue. Relâché après la relecture.
   const ecritureEnCours = useRef(false)
@@ -109,6 +121,8 @@ export default function ClientCaisse() {
   // Les gestes : sur une caisse lue en entier et recomposée, une saisie ouverte, une année que la lecture ne dit pas figée.
   const gestes = dossier !== null && ouverture?.ouverte === true && figee !== true
   const verdict = gestes && entiere ? verdictDuFormulaire(formulaire, annee, entiere.jours.lignes, dossier, remplace) : null
+  const operationsDuMois = lignesDuMois.filter((l) => !ligneVideDuClient(l)).length
+  const verdictMois = gestes && entiere ? verdictDuMoisDuClient(lignesDuMois, annee, entiere.jours.lignes, dossier) : null
 
   // ── Les gestes ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -153,6 +167,11 @@ export default function ClientCaisse() {
     return error ? pourLEspace('client', messageErreur(error, 'raison inconnue')) : null
   }
 
+  async function appelerEnregistrerLeMois(operations: Record<string, unknown>[]): Promise<string | null> {
+    const { error } = await supabase.rpc('enregistrer_operations_de_caisse', { p_dossier_id: dossierId, p_operations: operations })
+    return error ? pourLEspace('client', messageErreur(error, 'raison inconnue')) : null
+  }
+
   async function appelerRetirer(operationId: string): Promise<string | null> {
     const { error } = await supabase.rpc('retirer_operation_caisse', { p_dossier_id: dossierId, p_operation_id: operationId })
     return error ? pourLEspace('client', messageErreur(error, 'raison inconnue')) : null
@@ -177,6 +196,25 @@ export default function ClientCaisse() {
       cible == null ? 'Ta saisie n’a pas été enregistrée' : 'Ta correction n’a pas été enregistrée',
       remettreLeFormulaire,
     )
+  }
+
+  // Le mois, rejugé au clic sur les lignes telles qu'elles sont : rien ne part sans un verdict permis, ni sans la confirmation.
+  async function enregistrerLeMois() {
+    if (ecritureEnCours.current || !entiere || !gestes || dossier === null) return
+    const v = verdictDuMoisDuClient(lignesDuMois, annee, entiere.jours.lignes, dossier)
+    if (v.etat !== 'permis') return
+    if (!window.confirm(confirmationDuMois(v.resume))) return
+    const n = v.operations.length
+    await agir(
+      () => appelerEnregistrerLeMois(v.operations),
+      `Enregistré${n > 1 ? 'es' : 'e'} : ${n} opération${n > 1 ? 's' : ''}.`,
+      'Ton mois n’a pas été enregistré (rien n’est écrit : tout part ensemble, ou rien)',
+      () => setLignesDuMois(MOIS_VIDE()),
+    )
+  }
+
+  function champDuMois(i: number, cle: keyof FormulaireDuClient, valeur: string) {
+    setLignesDuMois((lignes) => lignes.map((l, j) => (j === i ? { ...l, [cle]: valeur } : l)))
   }
 
   async function retirer(o: OperationDuClient) {
@@ -226,7 +264,10 @@ export default function ClientCaisse() {
             id="caisse-annee"
             value={String(annee)}
             disabled={enCours}
-            onChange={(e) => { setAnnee(Number(e.target.value)); setMois(null); setRemplace(null); setFormulaire(FORMULAIRE_VIDE); setMessage(null) }}
+            onChange={(e) => {
+              setAnnee(Number(e.target.value)); setMois(null); setRemplace(null); setFormulaire(FORMULAIRE_VIDE); setLignesDuMois(MOIS_VIDE())
+              setMessage(null)
+            }}
           >
             {anneesOffertes.map((a) => <option key={a} value={String(a)}>{a}</option>)}
           </select>
@@ -354,6 +395,82 @@ export default function ClientCaisse() {
               )}
               {(verdict?.etat === 'refuse' || verdict?.etat === 'illisible') && (
                 <p className="error-text" role="alert">{verdict.message}</p>
+              )}
+            </div>
+          )}
+          {gestes && entiere && (
+            <div className="card" style={{ marginTop: 16 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+                <h3 style={{ margin: 0 }}>Saisir un mois</h3>
+                <button type="button" className="btn btn-outline btn-sm" aria-expanded={moisOuvert} onClick={() => setMoisOuvert((o) => !o)}>
+                  {moisOuvert ? 'Replier' : 'Saisir un mois…'}
+                </button>
+              </div>
+              {moisOuvert && (
+                <>
+                  <p className="muted" style={{ margin: '8px 0' }}>
+                    Plusieurs jours d’un coup, depuis ton brouillard : tout part ensemble, ou rien. Si une ligne est refusée, aucune
+                    n’est enregistrée, et le refus dit son numéro et son jour.
+                  </p>
+                  <div className="tableau-adaptable">
+                    <table className="table-formulaire table-empilable">
+                      <thead><tr><th>Quoi</th><th>Jour</th><th>Montant (€)</th><th></th></tr></thead>
+                      <tbody>
+                        {lignesDuMois.map((l, i) => (
+                          <tr key={i}>
+                            <td data-libelle="Quoi">
+                              <select
+                                aria-label={`Quoi, ligne ${i + 1}`} value={l.genre} disabled={enCours}
+                                onChange={(e) => champDuMois(i, 'genre', e.target.value)}
+                              >
+                                {GENRES_DU_CLIENT.map((g) => <option key={g.genre} value={g.genre}>{g.libelle}</option>)}
+                              </select>
+                            </td>
+                            <td data-libelle="Jour">
+                              <input
+                                aria-label={`Jour, ligne ${i + 1}`} type="date" value={l.date} disabled={enCours}
+                                min={`${annee}-01-01`} max={annee === anneeEnCours ? aujourdhui : `${annee}-12-31`}
+                                onChange={(e) => champDuMois(i, 'date', e.target.value)}
+                              />
+                            </td>
+                            <td data-libelle="Montant (€)">
+                              <input
+                                aria-label={`Montant, ligne ${i + 1}`} type="text" inputMode="decimal" autoComplete="off" placeholder="125,50"
+                                value={l.montant} disabled={enCours} onChange={(e) => champDuMois(i, 'montant', e.target.value)}
+                              />
+                            </td>
+                            <td className="td-boutons">
+                              <button
+                                type="button" className="btn btn-outline btn-sm" disabled={enCours || lignesDuMois.length === 1}
+                                onClick={() => setLignesDuMois((lignes) => lignes.filter((_, j) => j !== i))}
+                              >
+                                Retirer la ligne
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {(verdictMois?.etat === 'refuse' || verdictMois?.etat === 'illisible') && (
+                    <p className="error-text" role="alert">{verdictMois.message}</p>
+                  )}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                    <button
+                      type="button" className="btn btn-outline btn-sm" disabled={enCours}
+                      onClick={() => setLignesDuMois((lignes) => [...lignes, { ...FORMULAIRE_VIDE, genre: lignes.at(-1)?.genre ?? 'recette', date: lignes.at(-1)?.date ?? '' }])}
+                    >
+                      Ajouter une ligne
+                    </button>
+                    <button
+                      type="button" className="btn btn-primary btn-sm"
+                      disabled={enCours || verdictMois?.etat !== 'permis'}
+                      onClick={() => { void enregistrerLeMois() }}
+                    >
+                      {`Enregistrer le mois (${operationsDuMois} opération${operationsDuMois > 1 ? 's' : ''})`}
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           )}

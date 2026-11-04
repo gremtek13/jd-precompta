@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { lireLeReglageDuDossier, natureDeLaLigne } from './reglageDuDossierLecture'
 
 // CE QUE L'ONGLET ACCÈS LIT DU DOSSIER (chantier EC-Q3, étape VF8d ; ligne 26.6, étape C11) : une ligne du dossier, par sa
-// clé — le réglage des ventes, le statut de TVA, la nature des recettes du client —, et jamais un rejet : un refus, une ligne
+// clé — le réglage des ventes, le statut de TVA et le mode comptable, la nature des recettes du client —, et jamais un rejet : un refus, une ligne
 // absente ou une requête qui lève rendent les trois illisibles avec leur motif. Le faux client APPLIQUE le filtre sur
 // l'identifiant, et ne rend que les colonnes DEMANDÉES : une colonne que la lecture oublierait se verrait illisible.
 const faux = vi.hoisted(() => ({
@@ -38,14 +38,15 @@ vi.mock('./supabase', async () => {
   }
 })
 
-const COLONNES = 'dossiers ventes_par_les_factures, statut_tva, categorie_recettes_client'
+const COLONNES = 'dossiers ventes_par_les_factures, statut_tva, mode_comptable, categorie_recettes_client'
 
 beforeEach(() => {
   faux.lignes = [
-    { id: 'd1', ventes_par_les_factures: true, statut_tva: 'exonere', categorie_recettes_client: 'cat-7' },
-    { id: 'd2', ventes_par_les_factures: false, statut_tva: 'redevable', categorie_recettes_client: null },
-    { id: 'd4', ventes_par_les_factures: false, statut_tva: 'franchise', categorie_recettes_client: null },
-    { id: 'd5', ventes_par_les_factures: false, statut_tva: null, categorie_recettes_client: null },
+    { id: 'd1', ventes_par_les_factures: true, statut_tva: 'exonere', mode_comptable: 'tresorerie', categorie_recettes_client: 'cat-7' },
+    { id: 'd2', ventes_par_les_factures: false, statut_tva: 'redevable', mode_comptable: 'tresorerie', categorie_recettes_client: null },
+    { id: 'd4', ventes_par_les_factures: false, statut_tva: 'franchise', mode_comptable: 'tresorerie', categorie_recettes_client: null },
+    { id: 'd5', ventes_par_les_factures: false, statut_tva: null, mode_comptable: 'tresorerie', categorie_recettes_client: null },
+    { id: 'd6', ventes_par_les_factures: false, statut_tva: 'exonere', mode_comptable: 'engagement', categorie_recettes_client: null },
   ]
   faux.erreur = null
   faux.leve = null
@@ -70,6 +71,15 @@ describe('lireLeReglageDuDossier', () => {
     expect((await lireLeReglageDuDossier('d5')).caisse).toEqual({ etat: 'tenue_par_le_cabinet', statut: null })
   })
 
+  it('le mode comptable se lit avec le statut (C11-Q2) : un dossier exonéré tenu en engagement ne s’ouvre pas', async () => {
+    expect((await lireLeReglageDuDossier('d6')).caisse).toEqual({ etat: 'en_engagement', statut: 'exonere' })
+    expect(faux.demandes).toEqual([COLONNES])
+    faux.lignes = [{ id: 'd1', ventes_par_les_factures: true, statut_tva: 'exonere', mode_comptable: 'autre', categorie_recettes_client: null }]
+    expect((await lireLeReglageDuDossier('d1')).caisse).toEqual({ etat: 'mode_illisible', motif: 'le mode comptable n’est pas lisible' })
+    faux.lignes = [{ id: 'd1', ventes_par_les_factures: true, statut_tva: 'exonere', categorie_recettes_client: null }]
+    expect((await lireLeReglageDuDossier('d1')).caisse).toEqual({ etat: 'mode_illisible', motif: 'le mode comptable n’a pas été lu' })
+  })
+
   it('un dossier qu’on ne lit pas est illisible, jamais « pas basculé », jamais « redevable »', async () => {
     const motif = 'le dossier n’a pas été trouvé'
     expect(await lireLeReglageDuDossier('d3')).toEqual({
@@ -79,12 +89,12 @@ describe('lireLeReglageDuDossier', () => {
   })
 
   it('une valeur d’un autre type est illisible, et elle seule', async () => {
-    faux.lignes = [{ id: 'd1', ventes_par_les_factures: null, statut_tva: 'exonere', categorie_recettes_client: 7 }]
+    faux.lignes = [{ id: 'd1', ventes_par_les_factures: null, statut_tva: 'exonere', mode_comptable: 'tresorerie', categorie_recettes_client: 7 }]
     const lu = await lireLeReglageDuDossier('d1')
     expect(lu.reglage).toEqual({ etat: 'illisible', motif: 'le réglage n’est pas lisible' })
     expect(lu.caisse).toEqual({ etat: 'exclu', statut: 'exonere' })
     expect(lu.nature).toEqual({ etat: 'illisible', motif: 'la nature des recettes du client n’est pas lisible' })
-    faux.lignes = [{ id: 'd1', ventes_par_les_factures: true, statut_tva: 'autre', categorie_recettes_client: null }]
+    faux.lignes = [{ id: 'd1', ventes_par_les_factures: true, statut_tva: 'autre', mode_comptable: 'tresorerie', categorie_recettes_client: null }]
     expect((await lireLeReglageDuDossier('d1')).caisse).toEqual({ etat: 'illisible', motif: 'le statut de TVA n’est pas lisible' })
   })
 

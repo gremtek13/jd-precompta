@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import StatutTvaCard, { FacturationElectroniqueCard, type ModificationStatutTva } from './StatutTvaCard'
 import type { ArticleExoneration, StatutTva } from '../../lib/types'
+import { REFUS_STATUT_SOUS_LA_CASE_CAISSE, avisDuStatutSousLaCase } from '../../lib/droitsAcces'
 import { SIRET_VENDEUR, TVA_VENDEUR } from '../../test/facturesCii'
 
 // LE STATUT DE TVA DU DOSSIER SE RÈGLE ICI (ligne 28.5, étape a) : trois statuts, l'article d'une exonération,
@@ -40,6 +41,22 @@ vi.mock('../../lib/supabase', () => ({
   },
 }))
 
+// Les accès du dossier, tels que la carte les lit (C11-Q1) : la réponse que le cas règle, ce qu'on a lu, une porte pour la
+// retenir. Par défaut, lus en entier, aucun ne porte la case : la carte d'hier.
+const accesFaux = vi.hoisted(() => ({
+  reponse: { etat: 'lus', avecLaCase: 0 } as { etat: 'lus'; avecLaCase: number } | { etat: 'illisibles'; motif: string },
+  lectures: [] as string[],
+  porte: null as Promise<void> | null,
+}))
+vi.mock('../../lib/accesCaisseDuDossierLecture', () => ({
+  lireLesAccesCaisseDuDossier: async (dossierId: string) => {
+    accesFaux.lectures.push(dossierId)
+    const reponse = accesFaux.reponse
+    if (accesFaux.porte) await accesFaux.porte
+    return { dossierId, ...reponse }
+  },
+}))
+
 function retenue(): { promesse: Promise<void>; relacher: () => void } {
   let relacher: () => void = () => {}
   const promesse = new Promise<void>((resolve) => { relacher = resolve })
@@ -70,6 +87,9 @@ function monter(statut: StatutTva | null, article: ArticleExoneration | null = n
   faux.ecritures = []
   faux.refus = null
   faux.retenue = null
+  accesFaux.reponse = { etat: 'lus', avecLaCase: 0 }
+  accesFaux.lectures = []
+  accesFaux.porte = null
   const rendus: ModificationStatutTva[] = []
   render(<Hote depart={{ statut, article, numero: false, siret: SIRET_VENDEUR, ...o }} rendus={rendus} />)
   return rendus
@@ -240,6 +260,101 @@ describe('StatutTvaCard — choisir le statut de TVA du dossier', () => {
     await act(async () => { b.click(); b.click(); b.click() })
     expect(faux.ecritures).toHaveLength(1)
     await act(async () => { reponse.relacher() })
+  })
+})
+
+// C11-Q1 (le 04/11/2026, « Oui, avec C12 ») : tant qu'un accès porte la case « Caisse », la base refuse que le statut quitte
+// l'exonération et la franchise (`garder_statut_tva_de_la_caisse`). La carte lit les accès EN ENTIER à chaque ouverture et le
+// dit avant le clic, aux mots de la base ; lus en partie, refusés ou pas encore revenus, elle ne promet rien, et la base juge.
+describe('StatutTvaCard — la case « Caisse » d’un accès retient le statut (C11-Q1)', () => {
+  it('un accès porte la case : passer à « redevable » se refuse avant le clic, aux mots de la base, et rien ne part', async () => {
+    monter('exonere', 'cgi_261_4_1')
+    // En lecture, rien n'est lu : la carte ne lit les accès qu'à l'ouverture du formulaire.
+    expect(accesFaux.lectures).toEqual([])
+    accesFaux.reponse = { etat: 'lus', avecLaCase: 1 }
+    await act(async () => { fireEvent.click(bouton('Changer le statut')) })
+    expect(accesFaux.lectures).toEqual(['d1'])
+    // Rester exonéré, ou passer en franchise : rien à dire.
+    expect(screen.queryByText(REFUS_STATUT_SOUS_LA_CASE_CAISSE.message)).toBeNull()
+    fireEvent.click(bouton('Franchise en base (art. 293 B du CGI)'))
+    expect(screen.queryByText(REFUS_STATUT_SOUS_LA_CASE_CAISSE.message)).toBeNull()
+    expect(enregistrer()).toHaveProperty('disabled', false)
+    fireEvent.click(bouton('Redevable de la TVA'))
+    expect(screen.getByRole('alert').textContent).toBe(REFUS_STATUT_SOUS_LA_CASE_CAISSE.message)
+    expect(enregistrer()).toHaveProperty('disabled', true)
+    await act(async () => { fireEvent.click(enregistrer()); fireEvent.click(enregistrer()) })
+    expect(faux.ecritures).toEqual([])
+  })
+
+  it('aucun accès ne porte la case : passer à « redevable » part, sans un mot de la case', async () => {
+    const rendus = monter('franchise')
+    await act(async () => { fireEvent.click(bouton('Changer le statut')) })
+    fireEvent.click(bouton('Redevable de la TVA'))
+    expect(screen.queryByText(REFUS_STATUT_SOUS_LA_CASE_CAISSE.message)).toBeNull()
+    expect(screen.queryByText(/Les accès du dossier/)).toBeNull()
+    await act(async () => { enregistrer().click() })
+    expect(rendus.map((r) => r.statut_tva)).toEqual(['redevable'])
+  })
+
+  it('les accès lus en partie : la carte le dit sans rien promettre, « Enregistrer » reste offert, et la base juge — deux clics, une écriture', async () => {
+    const rendus = monter('exonere')
+    accesFaux.reponse = { etat: 'illisibles', motif: 'délai dépassé' }
+    await act(async () => { fireEvent.click(bouton('Changer le statut')) })
+    fireEvent.click(bouton('Redevable de la TVA'))
+    expect(screen.getByText(avisDuStatutSousLaCase('exonere', 'redevable', { etat: 'illisibles', motif: 'délai dépassé' })!.message)).toBeTruthy()
+    expect(screen.queryByText(/passera/)).toBeNull()
+    expect(enregistrer()).toHaveProperty('disabled', false)
+    // La base refuse : ses mots, après le clic, comme avant C11-Q1.
+    faux.refus = REFUS_STATUT_SOUS_LA_CASE_CAISSE.message
+    const reponse = retenue()
+    faux.retenue = reponse.promesse
+    await act(async () => { fireEvent.click(enregistrer()); fireEvent.click(enregistrer()) })
+    expect(faux.ecritures).toHaveLength(1)
+    await act(async () => { reponse.relacher() })
+    expect(screen.getAllByText(REFUS_STATUT_SOUS_LA_CASE_CAISSE.message).length).toBeGreaterThan(0)
+    expect(rendus).toEqual([])
+  })
+
+  it('les accès pas encore revenus : la carte le dit, sans rien promettre ; revenus, l’avis devient le refus', async () => {
+    monter('exonere')
+    let ouvrir = () => {}
+    accesFaux.porte = new Promise<void>((resolve) => { ouvrir = resolve })
+    accesFaux.reponse = { etat: 'lus', avecLaCase: 2 }
+    await act(async () => { fireEvent.click(bouton('Changer le statut')) })
+    fireEvent.click(bouton('Redevable de la TVA'))
+    expect(screen.getByText(/^Les accès du dossier ne sont pas encore lus : si l’un d’eux porte la case « Caisse »/)).toBeTruthy()
+    expect(enregistrer()).toHaveProperty('disabled', false)
+    await act(async () => { ouvrir() })
+    expect(screen.getByRole('alert').textContent).toBe(REFUS_STATUT_SOUS_LA_CASE_CAISSE.message)
+    expect(enregistrer()).toHaveProperty('disabled', true)
+  })
+
+  it('chaque ouverture relit les accès : une case décochée entre-temps ne retient plus le statut', async () => {
+    const rendus = monter('exonere')
+    accesFaux.reponse = { etat: 'lus', avecLaCase: 1 }
+    await act(async () => { fireEvent.click(bouton('Changer le statut')) })
+    fireEvent.click(bouton('Redevable de la TVA'))
+    expect(enregistrer()).toHaveProperty('disabled', true)
+    fireEvent.click(bouton('Annuler'))
+    // Décochée dans l'onglet Accès.
+    accesFaux.reponse = { etat: 'lus', avecLaCase: 0 }
+    await act(async () => { fireEvent.click(bouton('Changer le statut')) })
+    expect(accesFaux.lectures).toEqual(['d1', 'd1'])
+    fireEvent.click(bouton('Redevable de la TVA'))
+    expect(screen.queryByText(REFUS_STATUT_SOUS_LA_CASE_CAISSE.message)).toBeNull()
+    await act(async () => { enregistrer().click() })
+    expect(rendus.map((r) => r.statut_tva)).toEqual(['redevable'])
+  })
+
+  it('un dossier redevable ou à préciser ne lit pas les accès : la garde n’a rien à retenir', async () => {
+    monter('redevable')
+    await act(async () => { fireEvent.click(bouton('Changer le statut')) })
+    fireEvent.click(bouton('Franchise en base (art. 293 B du CGI)'))
+    expect(accesFaux.lectures).toEqual([])
+    cleanup()
+    monter(null)
+    fireEvent.click(bouton('Exonéré (art. 261 à 261 E du CGI)'))
+    expect(accesFaux.lectures).toEqual([])
   })
 })
 
