@@ -511,12 +511,12 @@ const ECRANS: Ecran[] = [
   // geste, avant la lecture des devis et de leurs liens.
   { nom: 'DevisVue', fichier: 'pages/dossier/DevisVue.tsx', rendre: () => (
     <Dossier1>
-      <DevisVue espace="cabinet" dossierId="d1" dossierNom="Atelier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable" articleExoneration={null} />
+      <DevisVue espace="cabinet" dossierId="d1" dossierNom="Atelier fictif" dossierSiret={null} dossierAdresse={null} statutTva="redevable" articleExoneration={null} onOuvrirFacture={() => {}} />
     </Dossier1>
   ) },
   { nom: 'DevisVue (client)', fichier: 'pages/dossier/DevisVue.tsx', rendre: () => (
     <Dossier1>
-      <DevisVue espace="client" dossierId="d1" dossierNom="Atelier fictif" dossierSiret={null} dossierAdresse={null} statutTva={null} articleExoneration={null} />
+      <DevisVue espace="client" dossierId="d1" dossierNom="Atelier fictif" dossierSiret={null} dossierAdresse={null} statutTva={null} articleExoneration={null} onOuvrirFacture={() => {}} />
     </Dossier1>
   ) },
   // « Adresse de réception » (étape A6b1) : la fenêtre, montée seule — au cabinet, et chez le client « Ventes ». Rien ne se dit ni

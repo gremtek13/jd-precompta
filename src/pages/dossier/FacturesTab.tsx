@@ -141,7 +141,8 @@ export default function FacturesTab(props: Props) {
   // clients (étape A4b1).
   const [vue, setVue] = useState<VueDeLOnglet>('factures')
 
-  async function load() {
+  // Rend les factures lues : la facture tirée d'un devis s'ouvre sur la liste relue (`ouvrirLaFactureTiree`).
+  async function load(): Promise<FactureEmise[]> {
     setLoading(true)
     // Les lectures de l'onglet, que l'accueil du client compte aussi (lib/ventesLecture.ts) : la suite LÉGALE des
     // factures, leurs transmissions, leurs encaissements, leurs déclarations, l'historique de Super PDP et les statuts lus.
@@ -160,6 +161,7 @@ export default function FacturesTab(props: Props) {
     setStatutsLus(lu.statutsLus)
     setStatutsIncomplets(lu.statutsIncomplets)
     setLoading(false)
+    return lu.factures
   }
   useEffect(() => { load() }, [dossierId])
 
@@ -275,6 +277,17 @@ export default function FacturesTab(props: Props) {
     else setEditing(f)
   }
 
+  // LE BROUILLON TIRÉ D'UN DEVIS (étape P6a2) : la vue « Devis » l'a fait tirer par la base ; on revient aux factures, RELUES,
+  // et il s'ouvre par le même chemin qu'une facture de la liste. Absent de la liste relue, on le dit, sans rien ouvrir.
+  async function ouvrirLaFactureTiree(factureId: string) {
+    setVue('factures')
+    setErreur(null)
+    const relues = await load()
+    const tiree = relues.find((f) => f.id === factureId)
+    if (tiree) ouvrir(tiree)
+    else setErreur('Le brouillon de facture tiré du devis n’a pas été relu : il est dans la liste des factures, à ouvrir d’ici.')
+  }
+
   return (
     <>
       {/* « Factures », « Règlements » (étape A3), « Articles » (étape A2a), « Clients » (étape A4b1) et « Paramètres » (étape
@@ -327,6 +340,7 @@ export default function FacturesTab(props: Props) {
           dossierAdresse={dossierAdresse}
           statutTva={statutTva}
           articleExoneration={articleExoneration}
+          onOuvrirFacture={ouvrirLaFactureTiree}
         />
       ) : vue === 'reglements' ? (
         <ReglementsSection

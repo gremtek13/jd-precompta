@@ -54,6 +54,8 @@ beforeEach(() => {
     devis: [devis({ id: 'dv1' }), devis({ id: 'dv2', statut: 'emis', numero: 'D2026-0001' }), devis({ id: 'dv9', dossier_id: 'd2' })]
       .map((d) => ({ ...d })),
     devis_factures: [lienDevisFacture({ devis_id: 'dv2' }), lienDevisFacture({ id: 'df9', dossier_id: 'd2' })].map((l) => ({ ...l })),
+    // Les factures du dossier, leurs numéros seuls : celle que le devis dv2 a tirée (étape P6a2).
+    factures_emises: [{ id: 'f1', dossier_id: 'd1', numero: 'F2026-0001', statut: 'validee' }, { id: 'f9', dossier_id: 'd2', numero: null, statut: 'brouillon' }],
   }
   faux.manquantes = {}
   faux.erreur = null
@@ -72,10 +74,20 @@ describe('lireLesDevis', () => {
     expect(lu.motif).toBeNull()
     expect(lu.devis.map((d) => d.id)).toEqual(['dv1', 'dv2'])
     expect(lu.liens.map((l) => l.devis_id)).toEqual(['dv2'])
-    expect(faux.demandes).toEqual(['devis * exact', 'devis_factures * exact', 'dossiers nom, siret, adresse, forme_juridique, denomination_imprimee '])
+    expect(lu.factures).toEqual([{ id: 'f1', dossier_id: 'd1', numero: 'F2026-0001', statut: 'validee' }])
+    expect(faux.demandes).toEqual([
+      'devis * exact', 'devis_factures * exact', 'factures_emises id, dossier_id, numero, statut exact',
+      'dossiers nom, siret, adresse, forme_juridique, denomination_imprimee ',
+    ])
   })
 
-  it.each(['devis', 'devis_factures'])('un compte annoncé plus grand que ce que rend « %s » : partielle', async (table) => {
+  it('un lien dont la facture n’est pas revenue rend la lecture partielle : le devis ne dirait pas sa facture', async () => {
+    faux.tables.factures_emises = []
+    const lu = await lireLesDevis('d1')
+    expect(lu.etat === 'lue' && !lu.complete && lu.motif).toBe('la facture tirée d’un devis n’a pas été lue')
+  })
+
+  it.each(['devis', 'devis_factures', 'factures_emises'])('un compte annoncé plus grand que ce que rend « %s » : partielle', async (table) => {
     faux.manquantes[table] = 1
     const lu = await lireLesDevis('d1')
     expect(lu.etat).toBe('lue')

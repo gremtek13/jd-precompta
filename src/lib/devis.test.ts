@@ -1,7 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  acceptationHorsValidite,
+  avisHorsValidite,
   BON_POUR_ACCORD,
+  champsDeRechercheDuDevis,
+  confirmationDeLaFacturation,
+  confirmationDeLaReponse,
+  decisionDeLaSaisie,
+  factureDuDevis,
+  libelleDeLaFactureTiree,
+  refusDeLaReponse,
   DATE_PLANCHER_DEVIS,
   dateDeLaBase,
   DEVIS_EXPORTES,
@@ -32,6 +41,7 @@ import { MENTION_FRANCHISE, EXONERATIONS } from './statutTva'
 import type { Devis, LigneDevis } from './types'
 import type { EmetteurDuDossier, EmissionAJuger } from './devis'
 import { facture, ligne } from '../test/facturesCii'
+import { devis as devisDeTest } from '../test/devis'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
 // LE MODULE DES DEVIS, CONFRONTÉ À LA BASE (espace client, étape P5). Les migrations attendent l'accord du cabinet : elles
@@ -595,3 +605,94 @@ describe('les mentions du devis', () => {
 // Un jeu de lignes pour vérifier que le type de la colonne est celui que le module manipule.
 const _lignes: LigneDevis[] = SAISIE.lignes
 void _lignes
+
+// ── L'étape P6a2 : la réponse jugée avant le clic, les confirmations, la facture tirée et la recherche ─────────────────
+describe('la réponse à un devis, telle qu’elle part (P6a2)', () => {
+  // Émis le 20/10/2026, valable jusqu'au 20/11/2026 ; le jour : le 04/12/2026.
+  const emis = devisDeTest({
+    id: 'dv2', numero: 'D2026-0001', statut: 'emis', tiers_nom: 'Émis Fictif SAS', date_emission: '2026-10-20',
+    date_validite: '2026-11-20', montant_ttc: 600,
+  })
+  const JOUR = '2026-12-04'
+
+  it('« p_hors_validite » ne part à vrai que pour une acceptation datée après la validité', () => {
+    expect(acceptationHorsValidite(emis, { reponse: 'acceptee', dateReponse: '2026-11-21' })).toBe(true)
+    expect(acceptationHorsValidite(emis, { reponse: 'acceptee', dateReponse: '2026-11-20' })).toBe(false)
+    expect(acceptationHorsValidite(emis, { reponse: 'refusee', dateReponse: '2026-11-21' })).toBe(false)
+    expect(acceptationHorsValidite(emis, { reponse: '', dateReponse: '2026-11-21' })).toBe(false)
+    expect(acceptationHorsValidite(emis, { reponse: 'acceptee', dateReponse: '2026-02-30' })).toBe(false)
+    expect(decisionDeLaSaisie(emis, { reponse: 'acceptee', dateReponse: '2026-11-21' }))
+      .toEqual({ reponse: 'acceptee', dateReponse: '2026-11-21', horsValidite: true })
+    expect(decisionDeLaSaisie(emis, { reponse: '', dateReponse: '' })).toEqual({ reponse: null, dateReponse: null, horsValidite: false })
+  })
+
+  it('les refus de `decider_devis`, dans son ordre ; une acceptation hors validité part confirmée, jamais refusée', () => {
+    const refus = (s: { reponse: 'acceptee' | 'refusee' | ''; dateReponse: string }) => refusDeLaReponse('d1', emis, s, JOUR)
+    expect(refus({ reponse: '', dateReponse: JOUR })).toBe('La réponse au devis est « acceptée » ou « refusée ».')
+    expect(refus({ reponse: 'refusee', dateReponse: '' })).toBe('La date de la réponse est à renseigner.')
+    expect(refus({ reponse: 'refusee', dateReponse: '2026-10-19' })).toBe('Une réponse ne précède pas le devis, daté du 20/10/2026.')
+    expect(refus({ reponse: 'refusee', dateReponse: '2026-12-05' })).toBe("Une réponse ne se date pas dans l'avenir : nous sommes le 04/12/2026.")
+    expect(refus({ reponse: 'acceptee', dateReponse: '2026-11-21' })).toBeNull()
+    expect(refus({ reponse: 'refusee', dateReponse: '2026-10-20' })).toBeNull()
+    expect(refusDeLaReponse('d1', { ...emis, reponse: 'refusee', date_reponse: '2026-10-25' }, { reponse: 'acceptee', dateReponse: JOUR }, JOUR))
+      .toBe('La réponse au devis D2026-0001 est déjà enregistrée (refusé le 25/10/2026) : elle ne change plus.')
+    expect(refusDeLaReponse('d2', emis, { reponse: 'acceptee', dateReponse: JOUR }, JOUR)).toBe('Devis introuvable dans ce dossier.')
+  })
+
+  it('l’avis d’avant le clic et la confirmation disent le renouvellement de l’offre, là seulement', () => {
+    expect(avisHorsValidite(emis, { reponse: 'acceptee', dateReponse: '2026-11-20' })).toBeNull()
+    expect(avisHorsValidite(emis, { reponse: 'refusee', dateReponse: '2026-11-21' })).toBeNull()
+    expect(avisHorsValidite(emis, { reponse: 'acceptee', dateReponse: '2026-11-21' }))
+      .toBe('Le devis n’était plus valable le 21/11/2026 : il l’était jusqu’au 20/11/2026. L’accepter à cette date, c’est renouveler l’offre : la confirmation le redira.')
+    const dans = confirmationDeLaReponse(emis, { reponse: 'acceptee', dateReponse: '2026-11-20' })
+    expect(dans.replace(/\s/g, ' ')).toBe('Enregistrer l’acceptation du devis D2026-0001 pour « Émis Fictif SAS » (600,00 € TTC), datée du '
+      + '20/11/2026 ? La réponse ne changera plus ; le devis accepté pourra ensuite se transformer en facture.')
+    const hors = confirmationDeLaReponse(emis, { reponse: 'acceptee', dateReponse: '2026-11-21' })
+    expect(hors.startsWith('Le devis D2026-0001 n’était plus valable le 21/11/2026 : il l’était jusqu’au 20/11/2026. L’accepter à cette '
+      + 'date, c’est RENOUVELER L’OFFRE')).toBe(true)
+    const refuse = confirmationDeLaReponse(emis, { reponse: 'refusee', dateReponse: '2026-11-21' })
+    expect(refuse).toContain('le refus du devis D2026-0001 pour « Émis Fictif SAS »')
+    expect(refuse).toContain('daté du 21/11/2026')
+    expect(refuse).not.toContain('RENOUVELER')
+  })
+})
+
+describe('la facture tirée d’un devis (P6a2)', () => {
+  const lien = (o: Partial<{ id: string; devis_id: string; facture_id: string; cree_le: string }>) =>
+    ({ id: 'df1', devis_id: 'dv1', facture_id: 'f1', cree_le: '2026-10-20T08:00:00Z', ...o })
+
+  it('la première par date du lien puis identifiant, comme la base la nomme ; son numéro, ou « Brouillon de facture »', () => {
+    const liens = [
+      lien({ id: 'df3', facture_id: 'f3', cree_le: '2026-10-21T08:00:00Z' }),
+      lien({ id: 'df2', facture_id: 'f2' }),
+      lien({ id: 'df1', facture_id: 'f1' }),
+      lien({ id: 'df0', devis_id: 'dv9', facture_id: 'f0', cree_le: '2026-01-01T08:00:00Z' }),
+    ]
+    const factures = [{ id: 'f1', numero: null }, { id: 'f2', numero: 'F2026-0002' }]
+    expect(factureDuDevis('dv1', liens, factures)).toEqual({ factureId: 'f1', numero: null, lue: true })
+    expect(factureDuDevis('dv1', liens.slice(0, 2), factures)).toEqual({ factureId: 'f2', numero: 'F2026-0002', lue: true })
+    expect(factureDuDevis('dv1', [lien({ facture_id: 'fx' })], factures)).toEqual({ factureId: 'fx', numero: null, lue: false })
+    expect(factureDuDevis('dv8', liens, factures)).toBeNull()
+    expect(libelleDeLaFactureTiree({ numero: null })).toBe('Brouillon de facture')
+    expect(libelleDeLaFactureTiree({ numero: 'F2026-0002' })).toBe('F2026-0002')
+  })
+
+  it('la confirmation dit ce qui part — un brouillon du jour, le client, les lignes, les totaux, l’émetteur du jour — et le devis facturé', () => {
+    const accepte = devisDeTest({ numero: 'D2026-0004', statut: 'emis', reponse: 'acceptee', tiers_nom: 'Accepté Fictif' })
+    const texte = confirmationDeLaFacturation({ ...accepte, lignes: [...accepte.lignes, ...accepte.lignes] }, '2026-11-04').replace(/\s/g, ' ')
+    expect(texte).toContain('Transformer le devis D2026-0004 pour « Accepté Fictif » (1 200,00 € TTC) en facture ?')
+    expect(texte).toContain('daté du 04/11/2026')
+    expect(texte).toContain('le client et ses mentions, les 2 lignes et les totaux du devis, à l’émetteur du jour')
+    expect(texte).toContain('ni l’exécution prévue, ni les mentions légales, ni les notes du devis')
+    expect(texte).toContain('Le devis sera marqué facturé')
+  })
+
+  it('la recherche lit ce que la ligne montre, la facture tirée comprise', () => {
+    const d = devisDeTest({ numero: 'D2026-0003', objet: 'Rénovation fictive', tiers_nom: 'Facturé Fictif', montant_ttc: 1200 })
+    expect(champsDeRechercheDuDevis(d, 'facture', { numero: 'F2026-0001' })).toEqual([
+      'D2026-0003', '2026-10-01', '01/10/2026', 'Facturé Fictif', 'Rénovation fictive', 1200, 'Facturé', 'F2026-0001',
+    ])
+    expect(champsDeRechercheDuDevis({ ...d, numero: null }, 'brouillon', null)[0]).toBe('Brouillon')
+    expect(champsDeRechercheDuDevis(d, 'accepte', null).at(-1)).toBeNull()
+  })
+})
