@@ -47751,3 +47751,19 @@ aux tests des fichiers changés (`npm test -- --changed origin/main --passWithNo
 le build ne tournant qu'en ligne, dans `verifier`, toujours exigé avant la fusion. La cinquième, une troisième réduction
 de CLAUDE.md, est refusée. Attendu : un lot en environ 1 h 05 au lieu de 1 h 50, et environ 40 % de jetons en moins ; le
 gain réel se mesure après trois jours.
+
+### 04/11/2026 — DELETE-CABINET RETIRE LE LOGO DU CABINET, ET LA CHARTE DE L'ESPACE CLIENT SUIT LA SOCIÉTÉ AFFICHÉE (LIGNES 22.61 ET 23.21)
+
+- **22.61.** `delete-cabinet` ne supprimait que la ligne `cabinets` : le logo restait lisible dans le seau PUBLIC
+  `cabinet-logos`, sous `<cabinetId>/logo-<instant>.<ext>` (CabinetBrandingPage). Désormais la ligne d'abord, les
+  fichiers ensuite — une suppression refusée (23503 ou autre, ce dernier dit en français) ne touche à aucun fichier ; la
+  ligne partie, le seul préfixe `<cabinetId>/` se liste en entier (pages de 100, triées par nom) puis se retire par lots,
+  chaque chemin rejugé sur le préfixe, un sous-dossier compté en échec ; la réponse reste 200 et porte
+  `logos: { liste, retires, echecs }`. L'identifiant est un UUID jugé avant toute écriture (400 sinon). Le faux stockage
+  du harnais apprend `list()` (et sa panne) ; sept scénarios au contrat, dont 150 fichiers sur deux pages et des voisins
+  hors du préfixe intacts. L'écran des comptes master ne montre pas encore le bilan.
+- **23.21.** Un client chez deux cabinets prenait la charte du premier dossier lu, sans ordre. `SocieteClient` porte
+  son `cabinetId` ; `monCabinetId` vaut toujours null pour un client ; `cabinetDeLaCharte` choisit le cabinet de la
+  société AFFICHÉE ; `useCabinetBranding` garde la charte AVEC l'identifiant lu (rien d'un cabinet avant SA lecture, la
+  réponse d'une société quittée ignorée) et une lecture en échec reste sur la charte de l'application. La lecture des
+  sociétés et celle de la charte lisent leur erreur : deux exceptions de `lecturesVerifiees.test.ts` tombent.
