@@ -47645,3 +47645,88 @@ migrations, lui, n'ajoute rien : la ligne d'historique est celle du fichier.
 dans « Mes pièces » (le praticien, ses propres paiements) ; l'état baissé reste éprouvé par les jugements `…Selon`. Les
 tests de la caisse, le drapeau levé : 406 sur 406. Le retour arrière (`supabase/preparees/retour/`, un `drop function`)
 reste à accorder et à coller s'il le fallait ; les corrections déjà faites resteraient valables.
+
+### 04/11/2026 — LA CAISSE : LA CASE « CAISSE » DITE DANS L'ONGLET TVA, REFUSÉE EN ENGAGEMENT, ET LE MOIS DU PRATICIEN (C11-Q1, C11-Q2, C12A-Q1)
+(Écrite par un agent dev, sur `3c17b1b`. À l'écran seulement : aucune migration, aucun accès à la production. Lus avant
+d'écrire : « LA CAISSE : LE DROIT « CAISSE » À L'ÉCRAN DU CABINET (C11, LIGNE 26.6) », « LA CAISSE : « MA CAISSE »,
+L'ÉCRAN DU PRATICIEN (C12A, LIGNE 26.6) », « LA CAISSE : LA RELECTURE DE C11, C12A ET C12B, ET SES CORRECTIONS (LIGNE
+26.6) », « LA CAISSE : LES ÉCRANS (C4, LIGNE 26.6) », « VINGT-QUATRE RÉPONSES DU CABINET ». La correction d'un paiement
+(C12B-Q1), derrière `CORRECTION_DU_PAIEMENT_EXPORTEE` baissé, n'est pas touchée.)
+
+**C11-Q1, « OUI, AVEC C12 » : L'ONGLET TVA DIT CE QUE LA CASE RETIENT.** La carte du statut (`StatutTvaCard`) lit les
+accès du dossier EN ENTIER (`lib/accesCaisseDuDossierLecture.ts` : `lireTout` sur `memberships`, `id, dossier_id,
+droit_caisse`, compte annoncé, tri sur la clé ; un accès d'un autre dossier ou une case qui n'est pas un booléen rend la
+lecture illisible, jamais « aucun accès ne la porte » ; jamais un rejet ; rendue avec le dossier lu). Elle les lit à
+CHAQUE ouverture du formulaire d'un dossier exonéré ou en franchise — le seul que la garde retient ; une case décochée
+entre-temps dans l'onglet Accès ne retient plus rien —, chaque ouverture sous son numéro (une lecture d'avant ne se
+montre pas). Le jugement est pur (`avisDuStatutSousLaCase`, `lib/droitsAcces.ts`) : seul ce qui QUITTE l'exonération et
+la franchise — vers « redevable », ou « à préciser » — se juge, comme `garder_statut_tva_de_la_caisse` ; un accès lu en
+entier qui porte la case : le refus, aux mots exacts de la garde (`REFUS_STATUT_SOUS_LA_CASE_CAISSE`, déjà confronté à
+l'export), et « Enregistrer » se grise ; aucun : rien n'est dit ; des accès lus en partie, refusés ou pas encore revenus
+: « si l'un d'eux porte la case « Caisse », la base refusera ce changement de statut, et il faudra la décocher d'abord,
+dans l'onglet Accès », « Enregistrer » reste offert, et la base juge après le clic, comme avant. Un dossier redevable ou
+à préciser ne lit pas les accès.
+
+**C11-Q2, « LA REFUSER À L'ÉCRAN » : LA CASE NE SE COCHE PAS EN ENGAGEMENT.** `etatCaisseDuDossier` lit le mode avec le
+statut (`lib/reglageDuDossierLecture.ts` le demande dans la même ligne) ; `EtatCaisseDuDossier` gagne `en_engagement`
+(exonéré ou en franchise, tenu en engagement) et `mode_illisible` (la colonne absente, ou une autre valeur que les deux
+de la contrainte — jamais « trésorerie »). Le statut se juge d'abord : redevable ou à préciser, le refus de la base,
+quel que soit le mode ; un mode illisible n'offre aucun geste, même là. `gesteDeLaCase` : en engagement, décocher
+seulement, la raison en une phrase (`RAISON_DU_DOSSIER_EN_ENGAGEMENT`), qui cite le refus que
+`enregistrer_operation_caisse` oppose à toute opération hors de la trésorerie, sous ses mots (`refus('tresorerie')` de
+`lib/caisse.ts`, jamais recopié) ; un mode illisible, aucun geste (`raisonDuModeIllisible`). L'écran est ici PLUS STRICT
+que la base — `garder_droit_caisse` ne lit que le statut —, sans migration, et le commentaire du type le dit. La phrase
+de la case le dit aussi. Le refus de cocher n'est pas un refus de la base : il se dit comme une règle de l'écran.
+
+**C12A-Q1, « L'AJOUTER MAINTENANT » : LE MOIS DU PRATICIEN.** Dans « Ma caisse », une carte « Saisir un mois » repliée,
+comme l'onglet Caisse du cabinet : des lignes (quoi, jour, montant), « Ajouter une ligne », « Retirer la ligne », et «
+Enregistrer le mois (N opérations) ». Le module (`lib/caisseClient.ts`) : `operationDuMois` compose l'opération TELLE
+QU'ELLE PART — le genre, le jour, le montant, et pour une recette seulement l'ensemble du jour que la lecture a rendu ;
+aucune catégorie, aucun taux, aucune écriture (les clés n'y sont pas) ; `verdictDuMoisDuClient` écarte les lignes vides
+en fin, garde la règle du formulaire d'un jour (une date hors de l'année affichée, nommée par son rang et son jour ; un
+montant illisible), puis juge le tableau par `jugerLaSaisieDUnMois` de `lib/caisse.ts` sur le dossier du client et sa
+caisse REJOUÉE — tout ou rien, le rang et le jour du premier refus, la caisse jugée à la fin —, aux mots du client
+(`pourLEspace('client', …)`). Ce que le client ne lit pas (l'ouverture du dossier, une année sans jour lu) reste au
+jugement de la base, comme pour un jour. `confirmationDuMois` nomme le nombre d'opérations, ce qui entre et ce qui sort,
+et la caisse du dernier jour saisi après elles (« Tout part ensemble, ou rien. »). L'appel :
+`enregistrer_operations_de_caisse(p_dossier_id, p_operations)`, sous le verrou de tous les gestes de l'écran (`agir`),
+relâché après la relecture ; un refus de la base se dit après le clic, les lignes gardées. Rien sur une lecture
+partielle, une caisse qui ne se recompose pas, une année figée ou une saisie fermée.
+
+UN ÉCART À LA DEMANDE, ET POURQUOI : la demande voulait chaque opération « sans encaissements du jour ». La base EXIGE
+d'une recette du client la liste qu'elle a lue (« une liste d'identifiants, vide s'il n'y en a aucun » ; l'essai 244d) :
+une recette porte donc l'ensemble de son jour que `caisse_du_client` a rendu, comme la saisie d'un jour ; un apport ou
+un prélèvement n'en porte pas.
+
+**LA BASE, ÉPROUVÉE AVANT L'ÉCRAN.** `supabase/essais/caisse.sql` gagne les contrôles 268 à 268l (genre « …5 ») et deux
+dossiers jetables (préfixe `ca155e00-0000-4000-800e`) : le mois du client sur M10, exonéré, FAIT — un prélèvement placé
+avant l'apport qui le couvre, trois recettes, ni catégorie, ni taux, ni écriture — ; ses cinq opérations (origine «
+client », son auteur, la nature fixée, l'écriture que la base compose) ; sa caisse lue jour par jour
+(`caisse_du_client`) ; refusé quand il viderait la caisse à sa fin, ou qu'une opération envoie une écriture ; refusé au
+client sans la case (Z10), avant même d'en lire la forme, et bien formé ; à un compte rattaché à rien ; sur EM10, en
+engagement, la case portée, à sa première opération (la raison de C11-Q2). Joué sur une copie de `regles_prod170` (la
+production du jour, 170 migrations), par le propriétaire, en une transaction : 614 verdicts justes, 0 en faute, la ligne
+EN ATTENTE de C12B-Q1 (90 étapes), rien n'est resté ; le texte d'avant, 605 justes. Le banc du leurre (`caisse`) : SÛR,
+0 écart, 0 motif, 0 écriture du leurre. Le banc du module (`src/test/essaiCaisse.ts`) rejoue les huit étapes jugeables,
+toutes au verdict de la base. Les copies sont jetées.
+
+**LES PREUVES.** `tsc -b` 0 ; `oxlint` 0 erreur, 62 avertissements, aucun dans les fichiers touchés ; la suite entière :
+560 fichiers, 16 963 tests verts et l'« échec attendu », les cinq de windows-1252 que cet environnement ne lit pas (ICU
+réduit). Neufs : `accesCaisseDuDossierLecture.test.ts` (4) ; dans `droitsAcces.test.ts`, le mode lu (l'engagement, un
+mode illisible, la contrainte de l'export, le refus cité à la lettre, une seule phrase), la table de vérité à sept
+états, les refus, les phrases, l'avis de l'onglet TVA (quatre statuts × quatre statuts × quatre lectures, la garde relue
+dans l'export), et « Ma caisse » qui appelle la fonction du mois ; `reglageDuDossierLecture.test.ts` (le mode demandé,
+lu, illisible) ; `AccesTab.caisse.test.tsx` (en engagement : grisée sous sa raison, aucune fenêtre ; cochée, décochée
+sans confirmation — deux clics du même `act`, une écriture ; un mode illisible, aucun geste) ; `StatutTvaCard.test.tsx`
+(le refus avant le clic, « Enregistrer » grisé, rien ne part ; aucun accès, le changement part ; lus en partie, rien
+promis, la base refuse après le clic — deux clics, une écriture ; pas encore revenus, puis le refus ; chaque ouverture
+relit ; un redevable ne lit rien) ; `caisseClient.test.ts` (le tableau tel qu'il part, le permis et sa confirmation, les
+refus nommés, le plan piégé, une batterie tirée, graine 20261104 : 720 mois sur 60 caisses aux identifiants uuid, chaque
+verdict et chaque caisse égaux à ceux de `jugerLaSaisieDUnMois` sur la caisse entière, plus de 100 permis, plus de 20
+caisses négatives à la fin) ; `ClientCaisse.test.tsx` (repliée d'abord ; le mois enregistré — la confirmation, deux
+clics du même `act` et un seul appel, le tableau exact, le verrou tenu pendant la relecture, les lignes vidées — ; les
+refus avant le clic ; la confirmation refusée ; le refus de la base après le clic ; rien sur une lecture partielle ni
+sur une saisie fermée).
+
+**CE QUI RESTE.** Le banc de `outils/captures/` n'a pas été rejoué : ni `index.css` ni la coque ne changent, et la carte
+du mois reprend les classes de celle du cabinet (`.tableau-adaptable`, `table-formulaire table-empilable`).
