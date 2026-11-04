@@ -288,10 +288,22 @@ export const CODES_RATTACHABLES = new Set(RATTACHEMENTS.map(([, code]) => code))
 // libellés que le rattachement connaît, sauf ceux que le moteur calcule lui-même — la dotation aux amortissements vient du
 // registre, la CSG déductible des échéances, les indemnités kilométriques du cadre 7. Une catégorie qui y porterait des
 // pièces les ajouterait à ce calcul, et la même charge compterait deux fois.
+//
+// NI LE POSTE DES ÉCHÉANCES DE L'ONGLET COTISATIONS (COT-Q2, relecture du 03/11/2026, D2 ; écrite sur la recommandation le
+// 04/11/2026) : un prélèvement de l'Urssaf classé dans une catégorie à ce poste compte en BK pour son montant ENTIER — sa
+// CSG-CRDS comprise, dont la part non déductible serait déduite ([N] ligne 14 et renvoi (13), CGI art. 154 quinquies) —, et
+// la 2035 n'en sait rien. Il passe par l'onglet Cotisations, où sa CSG-CRDS se saisit, et la validation le refuse sinon
+// (`cotisations-classees-par-categorie`, lib/cotisationsClasseesParCategorie.ts). Une catégorie qui le porte déjà se lit et
+// se compte comme hier : le poste reste dans le rattachement, il n'est plus proposé.
 const CASES_CALCULEES_PAR_LE_MOTEUR = new Set(['CH', 'BV'])
 export const POSTES_PROPOSABLES: readonly string[] = [...new Set(RATTACHEMENTS
-  .filter(([poste, code]) => !CASES_CALCULEES_PAR_LE_MOTEUR.has(code) && poste !== POSTE_INDEMNITES_KM)
+  .filter(([poste, code]) => !CASES_CALCULEES_PAR_LE_MOTEUR.has(code) && poste !== POSTE_INDEMNITES_KM && poste !== POSTE_COTISATIONS)
   .map(([poste]) => poste))]
+
+/** Le poste est-il celui des échéances de l'onglet Cotisations, à la casse et aux accents près (la clé du rattachement) ? */
+export function estLePosteDesCotisations(poste: string | null): boolean {
+  return poste !== null && cle(poste) === cle(POSTE_COTISATIONS)
+}
 
 // La case pré-remplie pour un poste, ou null si le rattachement ne le connaît pas.
 export function caseDuPoste(poste: string): Case2035 | null {

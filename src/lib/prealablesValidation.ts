@@ -23,6 +23,7 @@ import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentile
 import { virementsPersonnelsAEcrire } from './virementPersonnel'
 import { cotisationsAEcrire, cotisationsComptees, rapprochementsCotisationRefuses } from './cotisationRapprochee'
 import { paiementsPersonnelsAReprendre } from './cotisationPersonnelle'
+import { cotisationsClasseesParCategorie, detailDesCotisationsClassees } from './cotisationsClasseesParCategorie'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from './echeanceEmprunt'
 import { acquisitionsDesBiens, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut } from './amortissements'
 import { amortissementsSousLeBareme, forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
@@ -938,6 +939,19 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     cible: 'cotisations',
     message: "échéance(s) de cotisation payée(s) dont l'écriture manque ou n'est plus à jour : les écrire.",
   })
+  // UN PRÉLÈVEMENT DE COTISATIONS CLASSÉ PAR UNE CATÉGORIE AU POSTE DES ÉCHÉANCES (COT-Q2, en erreur ;
+  // lib/cotisationsClasseesParCategorie.ts) : la 2035 le compte en BK pour son montant entier, sa CSG-CRDS comprise, et la
+  // part non déductible serait déduite sur la 2035 validée. En trésorerie seulement, où la 2035 se produit — en engagement,
+  // toute la cotisation va au 646000 et la liasse réintègre. Le même calcul que le point de la Checklist, à l'exercice.
+  if (d.modele.mode === 'tresorerie') {
+    const classees = cotisationsClasseesParCategorie(d.lignes, d.categories, d.ventilations, d.assujettiTva, frontiere)
+      .filter((c) => mouvementDeLExercice(c.ligne))
+    bloque({
+      id: 'cotisations-classees-par-categorie', nb: classees.length, cible: 'banque',
+      message: "mouvement(s) de cotisations classé(s) par une catégorie au poste « Cotisations sociales personnelles » — la 2035 les compte en BK CSG-CRDS comprise, sa part non déductible déduite : annuler ce classement dans Banque, puis les rapprocher d'une échéance de l'onglet Cotisations, où leur CSG-CRDS se saisit.",
+      detail: classees.length > 0 ? detailDesCotisationsClassees(classees) : undefined,
+    })
+  }
   bloque({
     id: 'cotisations-rapprochement-refuse', cible: 'banque',
     nb: rapprochementsCotisationRefuses(d.lignes, d.cotisations, d.modele.mode, frontiere).filter((c) => mouvementDeLExercice(c.ligne)).length,

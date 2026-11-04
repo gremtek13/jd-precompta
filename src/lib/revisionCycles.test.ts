@@ -298,7 +298,7 @@ describe('le rangement des contrôles existants', () => {
     immobilisations: ['immos-sans-justificatif', 'dotations-a-ecrire', 'vehicule-amorti-sous-bareme', 'vehicule'],
     emprunts: ['echeances-emprunt-perimees', 'echeances-emprunt-non-rapprochees'],
     social: [
-      'cotisations-sans-ecriture', 'cotisations-rapprochement-refuse', 'csg-non-saisie', 'paiements-personnels-a-reprendre',
+      'cotisations-sans-ecriture', 'cotisations-rapprochement-refuse', 'cotisations-classees-par-categorie', 'csg-non-saisie', 'paiements-personnels-a-reprendre',
       'cotisations',
       // Étape 2035S2 : la prévisionnelle qu'aucun prélèvement ne paie.
       'previsionnelles-sans-paiement',

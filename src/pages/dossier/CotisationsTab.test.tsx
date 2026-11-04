@@ -699,7 +699,7 @@ describe('CotisationsTab — ce qu’un exercice validé a figé', () => {
     monter('tresorerie', [2025])
 
     await screen.findByText('Prélevée le 05/01/2026')
-    expect(ligneDe('28/12/2025').querySelector('button')?.textContent).toBe('Retirer')
+    expect(ligneDe('28/12/2025').querySelector('button.btn-danger')?.textContent).toBe('Retirer')
     expect(ligneDe('20/12/2025').querySelector('button')).toBeNull()
     expect(ligneDe('20/12/2025').textContent).toContain('Figée')
   })

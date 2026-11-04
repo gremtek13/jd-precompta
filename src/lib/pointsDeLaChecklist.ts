@@ -9,6 +9,7 @@ import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffect
 import { virementsPersonnelsAEcrire } from './virementPersonnel'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from './echeanceEmprunt'
 import { cotisationsAEcrire, rapprochementsCotisationRefuses } from './cotisationRapprochee'
+import { cotisationsClasseesParCategorie, detailDesCotisationsClassees } from './cotisationsClasseesParCategorie'
 import { previsionnellesSansPaiement } from './previsionnelles'
 import { acquisitionsDesBiens, dotationsDuRegistre, dotationsEnDefaut } from './amortissements'
 import { forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
@@ -314,6 +315,12 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // quand l'écran ne regardait pas le sens : il ne date rien et n'a pas d'écriture. Pas d'un exercice validé : ni le
   // mouvement ni l'échéance n'y changent plus.
   const cotisationsRefusees = rapprochementsCotisationRefuses(lignes, cotisations, modele.mode, frontiere)
+  // Les prélèvements de cotisations classés par une catégorie au poste des échéances (COT-Q2, lib/cotisationsClasseesParCategorie.ts) :
+  // leur CSG-CRDS reste en BK. En trésorerie, où la 2035 se produit ; tus sur des ventilations lues en partie — une part non
+  // lue en cacherait un, et un compte ne se dit que de listes lues en entier.
+  const cotisationsClassees = modele.mode !== 'tresorerie' || ventilationsPartielles
+    ? []
+    : cotisationsClasseesParCategorie(lignes, categories, ventilations, assujettiTva, frontiere)
   // Les échéances d'emprunt que le relevé COUVRE — du premier mouvement au dernier, moins la marge laissée
   // au prélèvement — et qu'aucun mouvement ne paie : leurs intérêts manquent aux comptes, et le
   // prélèvement attend quelque part dans le relevé. Hors de cette fenêtre, on ne réclame rien : avant le
@@ -637,6 +644,15 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     { id: 'cotisations-sans-ecriture', label: 'échéance(s) de cotisation payée(s) dont l’écriture manque ou n’est plus à jour — absentes du FEC', action: 'Écrire ces échéances', nb: cotisationsSansEcriture.length, cible: 'cotisations', severite: 'erreur' },
     // « Erreur » : un encaissement rapproché d'un appel compterait un remboursement comme une charge ; il
     // ne s'écrit pas, et l'échéance reste comptée à sa date. Le geste est d'annuler le rapprochement.
+    // « Erreur » (COT-Q2) : la 2035 déduirait la part non déductible de leur CSG-CRDS, et la validation les refuse. Le geste
+    // commence dans Banque (annuler le classement) et finit dans Cotisations (rapprocher d'une échéance, CSG-CRDS saisie).
+    {
+      id: 'cotisations-classees-par-categorie', label: 'mouvement(s) de cotisations classé(s) par une catégorie au poste « Cotisations sociales personnelles » — leur CSG-CRDS reste dans BK',
+      action: 'Les passer par l’onglet Cotisations', nb: cotisationsClassees.length, cible: 'banque', severite: 'erreur',
+      detail: cotisationsClassees.length > 0
+        ? `${detailDesCotisationsClassees(cotisationsClassees)} Dans Banque, annule leur classement, puis rapproche chacun d’une échéance de l’onglet Cotisations, où sa CSG-CRDS se saisit.`
+        : undefined,
+    },
     { id: 'cotisations-rapprochement-refuse', label: 'rapprochement(s) d’une échéance de cotisation qui ne peuvent pas s’écrire', action: 'Annuler ces rapprochements', nb: cotisationsRefusees.length, cible: 'banque', severite: 'erreur', detail: 'Dans Banque, filtre « Rapprochés » : ils portent la pastille « Ne s’écrit pas ».' },
     // Avant les autres points d'Écritures : ceux-là disent qu'il MANQUE quelque chose, celui-ci que
     // le brouillon compte quelque chose de faux — une charge immobilisée y est comptée deux fois.

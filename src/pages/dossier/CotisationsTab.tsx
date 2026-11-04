@@ -30,6 +30,12 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee } from '../../lib/validationExercice'
 import { preparerPiece } from '../../lib/bornesStockage'
 import { remplacementsDesPrevisionnelles, texteDeLAmbiguite, texteDuRemplacement } from '../../lib/previsionnelles'
+import {
+  candidatesALaReunion, jugerLaModification, raisonDeNePasReunir, refusDeLaReunion, reunionInacheveeDite, valeursReunies,
+  type ContexteDesGestes, type ReunionInachevee, type SaisieDeLEcheance, type ValeursDeLEcheance,
+} from '../../lib/gestesDesEcheances'
+import ModifierEcheanceModal from './ModifierEcheanceModal'
+import ReunirEcheancesModal from './ReunirEcheancesModal'
 
 // Palier 5, brique 4 — suivi des cotisations sociales. Saisie manuelle des appels et versements
 // URSSAF (montants connus tardivement, jamais déductibles d'un relevé bancaire seul) et calcul
@@ -53,6 +59,12 @@ import { remplacementsDesPrevisionnelles, texteDeLAmbiguite, texteDuRemplacement
 // l'écriture se passe face au compte choisi pour le dirigeant (455, 108 ou 467). Elle se retire tant que son exercice
 // n'est pas validé (« Retirer ce paiement », `retirer_paiement_personnel_cotisation`, en base depuis le 10/10/2026 :
 // `RETRAIT_EXPORTE`).
+//
+// « MODIFIER » ET « RÉUNIR » (COT-Q3 et COT-Q1, 04/11/2026 ; lib/gestesDesEcheances.ts) : une échéance que la validation n'a
+// pas figée se corrige en place — sa CSG-CRDS connue après coup, un 0 sur une caisse de retraite, un versé de 0 € —, et
+// deux échéances qu'un même prélèvement paie deviennent une seule, à leur somme, avant le rapprochement. Les deux gestes
+// passent par une mise à jour qui RETIENT la version lue (rien n'est écrit sur une échéance changée depuis), sous le verrou
+// des écritures du brouillon, et ne sont offerts que sur ce que l'onglet a lu en entier.
 export default function CotisationsTab({ dossierId, modele }: { dossierId: string; modele: ModeleComptable }) {
   const modeComptable = modele.mode
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
@@ -106,6 +118,15 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   // chaque rendu — une relecture qui la change ou la retire change ce que la fenêtre dit.
   const [paiementPersonnelDe, setPaiementPersonnelDe] = useState<string | null>(null)
   const [erreurPaiementPersonnel, setErreurPaiementPersonnel] = useState<string | null>(null)
+  // Les fenêtres « Modifier » et « Réunir » : l'IDENTIFIANT de l'échéance, relu dans la liste à chaque rendu.
+  const [modificationDe, setModificationDe] = useState<string | null>(null)
+  const [erreurModification, setErreurModification] = useState<string | null>(null)
+  const [reunionAvec, setReunionAvec] = useState<string | null>(null)
+  const [erreurReunion, setErreurReunion] = useState<string | null>(null)
+  // Ce qu'un geste n'a fait qu'à moitié, dit au-dessus du tableau après la relecture : une réécriture d'écriture qui a
+  // échoué après la modification, ou une réunion arrêtée entre ses deux écritures (voir lib/gestesDesEcheances.ts).
+  const [erreurGeste, setErreurGeste] = useState<string | null>(null)
+  const [reunionInachevee, setReunionInachevee] = useState<ReunionInachevee | null>(null)
 
   async function load() {
     setLoading(true)
@@ -303,6 +324,102 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
         p_dossier_id: dossierId, p_cotisation_id: c.id,
       })
       if (erreurRetrait) setError(`Le paiement n’a pas pu être retiré : ${messageErreur(erreurRetrait, 'raison inconnue')}`)
+      await load()
+    } finally {
+      ecritureEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
+  // UNE MISE À JOUR QUI RETIENT LA VERSION LUE : l'échéance n'est écrite que si elle est encore telle que l'onglet l'a lue
+  // — ses montants, sa date, son marqueur, sans paiement personnel. Une ligne rendue dit qu'elle l'a été ; aucune, qu'elle a
+  // changé depuis, ou que la base ne l'a pas laissée écrire (une mise à jour que la policy écarte ne lève rien).
+  async function mettreAJourLEcheance(c: CotisationDeclaree, valeurs: ValeursDeLEcheance): Promise<string | null> {
+    let requete = supabase.from('cotisations_declarees').update(valeurs)
+      .eq('id', c.id).eq('echeance', c.echeance).eq('montant_appele', c.montant_appele).eq('previsionnel', c.previsionnel)
+      .is('paiement_personnel_le', null)
+    requete = c.montant_verse == null ? requete.is('montant_verse', null) : requete.eq('montant_verse', c.montant_verse)
+    requete = c.montant_csg_crds == null ? requete.is('montant_csg_crds', null) : requete.eq('montant_csg_crds', c.montant_csg_crds)
+    const { data, error: erreurMaj } = await requete.select('id').maybeSingle()
+    if (erreurMaj) return messageErreur(erreurMaj, 'raison inconnue')
+    if (!data) return 'elle a changé depuis sa lecture, ou la base ne l’a pas laissée écrire ; relis la liste et recommence'
+    return null
+  }
+
+  // « MODIFIER » (COT-Q3). Rejugée ici sur la liste telle qu'elle est au clic : la fenêtre a pu rester ouverte pendant une
+  // relecture. Sur une échéance rapprochée dont l'écriture change (sa CSG-CRDS, en trésorerie), la base la réécrit APRÈS la
+  // mise à jour, par la fonction de « Écrire les N » : un échec laisse l'échéance modifiée et son écriture « À réécrire »,
+  // ce que l'onglet montre, et le message nomme le bouton qui la réécrit.
+  async function modifier(c: CotisationDeclaree, saisie: SaisieDeLEcheance) {
+    if (ecritureEnCours.current) return
+    if (gestesSuspendus || loading) return
+    const jugement = jugerLaModification(c, saisie, contexteDesGestes)
+    if ('refus' in jugement) {
+      setErreurModification(jugement.refus.message)
+      return
+    }
+    ecritureEnCours.current = true
+    setEnCours(true)
+    setErreurModification(null)
+    setErreurGeste(null)
+    try {
+      const refusMaj = await mettreAJourLEcheance(c, jugement.valeurs)
+      if (refusMaj) {
+        setErreurModification(`L’échéance n’a pas été modifiée : ${refusMaj}.`)
+        await load()
+        return
+      }
+      setModificationDe(null)
+      if (jugement.reecriture) {
+        const { ligne, ecritures: lignesEcriture } = jugement.reecriture
+        const { error: erreurEcriture } = await supabase.rpc('rapprocher_cotisation', {
+          p_ligne_bancaire_id: ligne.id, p_cotisation_id: c.id, p_ecritures: lignesEcriture,
+        })
+        if (erreurEcriture) {
+          setErreurGeste(
+            `L’échéance du ${formatDate(jugement.valeurs.echeance)} est modifiée, mais l’écriture de son prélèvement du `
+            + `${formatDate(ligne.date)} n’a pas pu être réécrite : ${messageErreur(erreurEcriture, 'raison inconnue')}. `
+            + '« Écrire cette échéance », ci-dessus, la réécrit.',
+          )
+        }
+      }
+      await load()
+    } finally {
+      ecritureEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
+  // « RÉUNIR » (COT-Q1). Deux écritures, dans l'ordre que lib/gestesDesEcheances.ts justifie : la gardée portée à la somme
+  // d'abord, l'autre retirée ensuite, par la fonction de « Retirer ». La première refusée, rien n'est écrit ; la seconde
+  // refusée, la réunion est INACHEVÉE — dite au-dessus du tableau après la relecture, avec le geste qui la finit. Jamais
+  // « réunies » sur un échec.
+  async function reunir(gardee: CotisationDeclaree, retiree: CotisationDeclaree) {
+    if (ecritureEnCours.current) return
+    if (gestesSuspendus || loading) return
+    const refus = refusDeLaReunion(gardee, retiree, contexteDesGestes)
+    if (refus) {
+      setErreurReunion(refus)
+      return
+    }
+    ecritureEnCours.current = true
+    setEnCours(true)
+    setErreurReunion(null)
+    setErreurGeste(null)
+    try {
+      const valeurs = valeursReunies(gardee, retiree)
+      const refusMaj = await mettreAJourLEcheance(gardee, valeurs)
+      if (refusMaj) {
+        setErreurReunion(`Rien n’a été réuni : l’échéance du ${formatDate(gardee.echeance)} n’a pas été modifiée — ${refusMaj}.`)
+        await load()
+        return
+      }
+      setReunionAvec(null)
+      const { error: erreurRetrait } = await supabase.rpc('supprimer_echeance_cotisation', { p_cotisation_id: retiree.id })
+      setReunionInachevee(erreurRetrait
+        // La gardée telle qu'elle était lue : l'avis recalcule la somme qu'elle porte désormais (`reunionInacheveeDite`).
+        ? { gardee, retiree, raison: messageErreur(erreurRetrait, 'raison inconnue') }
+        : null)
       await load()
     } finally {
       ecritureEnCours.current = false
@@ -553,6 +670,27 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   const cotisationsEcrites = new Set(ecritures.flatMap((e) => (e.cotisation_id ? [e.cotisation_id] : [])))
   const echeanceDeLaFenetre = paiementPersonnelDe === null ? null : cotisations.find((c) => c.id === paiementPersonnelDe) ?? null
 
+  // « MODIFIER » ET « RÉUNIR » : sur ce que l'onglet a lu en entier — les échéances, leurs avis, leurs paiements, le
+  // brouillon. Lu en partie, un paiement non lu ferait paraître une échéance libre, ou un avis non lu la confirmation fausse.
+  const gestesSuspendus = lectureIncomplete ?? ecritureSuspendue
+  const contexteDesGestes: ContexteDesGestes = {
+    mode: modeComptable, plan: modele.plan, mouvementDe: (c) => paiementDe.get(c.id) ?? null, figee: figeeDe,
+    dateFigee: (date) => dateFigee(date, anneesValidees), ecritures,
+  }
+  const echeanceAModifier = modificationDe === null ? null : cotisations.find((c) => c.id === modificationDe) ?? null
+  const echeanceGardee = reunionAvec === null ? null : cotisations.find((c) => c.id === reunionAvec) ?? null
+  const candidatesDe = (c: CotisationDeclaree) => candidatesALaReunion(c, cotisations, contexteDesGestes)
+  const avisDe = (c: CotisationDeclaree) => documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)?.nom_fichier ?? null
+  // La réunion inachevée tient tant que l'échéance à retirer est encore là ; retirée (par le bouton qui la finit ou par
+  // « Retirer »), l'avis se tait.
+  const inachevee = reunionInachevee && cotisations.some((c) => c.id === reunionInachevee.retiree.id) ? reunionInachevee : null
+  const retireeInachevee = inachevee ? cotisations.find((c) => c.id === inachevee.retiree.id) ?? null : null
+  const attenteDesGestes = loading
+    ? 'Les échéances du dossier sont en cours de lecture : le geste attend leur retour.'
+    : gestesSuspendus
+      ? `Suspendu : la lecture est partielle (${gestesSuspendus}). Recharge la page.`
+      : null
+
   // Le versé d'une échéance : le montant saisi, sinon celui du mouvement rapproché qui la paie, quand ce
   // rapprochement s'écrit. Une échéance prélevée sans versement saisi n'est plus « à verser » — le relevé
   // fait foi, comme dans la 2035 et l'échéancier des dettes de Financement.
@@ -644,7 +782,8 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
           </div>
           <p className="muted" style={{ marginTop: -8 }}>
             "dont CSG-CRDS" : uniquement la part CSG-CRDS visible sur le décompte Urssaf, pas le montant
-            appelé total — c'est la seule part sur laquelle la déductibilité peut être calculée.
+            appelé total — c'est la seule part sur laquelle la déductibilité peut être calculée. Zéro pour un organisme
+            qui n'en prélève pas (une caisse de retraite) : laissée vide, elle reste « non saisie », et la Clôture le dit.
           </p>
           <div className="field">
             <label>
@@ -822,6 +961,22 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
         </div>
       )}
 
+      {(erreurGeste || inachevee) && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          {erreurGeste && <p className="error-text" style={{ marginTop: 0 }}>{erreurGeste}</p>}
+          {inachevee && (
+            <>
+              <p className="error-text" style={{ marginTop: 0 }}>{reunionInacheveeDite(inachevee)}</p>
+              {retireeInachevee && (
+                <button type="button" className="btn btn-danger btn-sm" disabled={enCours} onClick={() => supprimer(retireeInachevee)}>
+                  Retirer l’échéance du {formatDate(retireeInachevee.echeance)}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
       {cotisationsFiltrees.length > 0 && (
@@ -899,6 +1054,11 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
                         <div>
                           {formatDate(c.echeance)}
                           {c.previsionnel && <span className="badge badge-warning" style={{ marginLeft: 8 }}>Prévisionnel</span>}
+                          {inachevee?.retiree.id === c.id && (
+                            <span className="badge badge-danger" style={{ marginLeft: 8 }}>
+                              À retirer : réunie à l’échéance du {formatDate(inachevee.gardee.echeance)}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td data-libelle="Appelé">{formatMoney(c.montant_appele)}</td>
@@ -1015,7 +1175,28 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
                       <td className="td-boutons" onClick={(e) => e.stopPropagation()}>
                         {figee
                           ? <span className="muted" title={`${figee} : cette échéance ne se supprime plus.`}>Figée</span>
-                          : <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => supprimer(c)}>Retirer</button>}
+                          : (
+                            <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {/* Offerts sur ce que l'onglet a lu en entier seulement, comme le paiement personnel. */}
+                              {!gestesSuspendus && (
+                                <button
+                                  type="button" className="btn btn-outline btn-sm" disabled={enCours || loading}
+                                  onClick={() => { setErreurModification(null); setModificationDe(c.id) }}
+                                >
+                                  Modifier
+                                </button>
+                              )}
+                              {!gestesSuspendus && raisonDeNePasReunir(c, contexteDesGestes) === null && candidatesDe(c).length > 0 && (
+                                <button
+                                  type="button" className="btn btn-outline btn-sm" disabled={enCours || loading}
+                                  onClick={() => { setErreurReunion(null); setReunionAvec(c.id) }}
+                                >
+                                  Réunir…
+                                </button>
+                              )}
+                              <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => supprimer(c)}>Retirer</button>
+                            </span>
+                          )}
                       </td>
                     </tr>
                   )
@@ -1045,6 +1226,32 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
           erreur={erreurPaiementPersonnel}
           onDeclarer={(date) => declarerPaiementPersonnel(echeanceDeLaFenetre, date)}
           onFermer={() => setPaiementPersonnelDe(null)}
+        />
+      )}
+      {echeanceAModifier && (
+        <ModifierEcheanceModal
+          key={echeanceAModifier.id}
+          cotisation={echeanceAModifier}
+          contexte={contexteDesGestes}
+          enCours={enCours}
+          attente={attenteDesGestes}
+          erreur={erreurModification}
+          onEnregistrer={(saisie) => modifier(echeanceAModifier, saisie)}
+          onFermer={() => setModificationDe(null)}
+        />
+      )}
+      {echeanceGardee && (
+        <ReunirEcheancesModal
+          key={echeanceGardee.id}
+          gardee={echeanceGardee}
+          candidates={candidatesDe(echeanceGardee)}
+          avisDe={avisDe}
+          contexte={contexteDesGestes}
+          enCours={enCours}
+          attente={attenteDesGestes}
+          erreur={erreurReunion}
+          onReunir={(retiree) => reunir(echeanceGardee, retiree)}
+          onFermer={() => setReunionAvec(null)}
         />
       )}
     </>

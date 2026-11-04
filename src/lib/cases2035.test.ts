@@ -14,6 +14,7 @@ import {
   caseDuPoste,
   casesNegatives,
   doublonFraisVehicules,
+  estLePosteDesCotisations,
   incoherencesDesCases,
   partDeBKSansNature,
   repartirEnCases,
@@ -107,6 +108,20 @@ describe('postes proposés pour corriger une catégorie', () => {
     expect(POSTES_PROPOSABLES).not.toContain(POSTE_AMORTISSEMENTS)
     expect(POSTES_PROPOSABLES).not.toContain(POSTE_CSG_DEDUCTIBLE)
     expect(new Set(POSTES_PROPOSABLES).size).toBe(POSTES_PROPOSABLES.length)
+  })
+
+  // COT-Q2 : le poste des échéances de l'onglet Cotisations n'est plus proposé — un prélèvement classé ainsi garderait sa
+  // CSG-CRDS en BK. Une catégorie qui le porte déjà se compte comme hier : le poste reste dans le rattachement, en BK.
+  it('ne proposent plus le poste des échéances de l’onglet Cotisations, qui garde sa case', () => {
+    expect(POSTES_PROPOSABLES).not.toContain(POSTE_COTISATIONS)
+    expect(caseDuPoste(POSTE_COTISATIONS)?.code).toBe('BK')
+    // Le poste générique et les deux contrats facultatifs restent proposés.
+    for (const poste of ['Charges sociales personnelles', 'Cotisations facultatives Madelin', "Plan d'épargne retraite"]) {
+      expect(POSTES_PROPOSABLES, poste).toContain(poste)
+    }
+    expect(estLePosteDesCotisations('cotisations sociales PERSONNELLES')).toBe(true)
+    expect(estLePosteDesCotisations('Charges sociales personnelles')).toBe(false)
+    expect(estLePosteDesCotisations(null)).toBe(false)
   })
 })
 
