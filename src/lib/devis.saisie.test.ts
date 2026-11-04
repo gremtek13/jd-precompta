@@ -6,14 +6,20 @@ import {
 } from './devis'
 import { MENTION_FRANCHISE } from './statutTva'
 import { devis, lienDevisFacture } from '../test/devis'
+import type { EmissionAJuger } from './devis'
 
 // CE QUE LES ÉCRANS DE L'ÉTAPE P6a1 TIRENT DU MODULE DES DEVIS : la saisie d'un devis neuf ou d'un brouillon lu, ses lignes
 // en textes lues en nombres (jamais zéro pour un champ vide), ses refus dans l'ordre de la base puis des mentions, et les deux
 // confirmations, qui nomment ce qui part. Données FICTIVES.
 
+// L'émetteur que la base lirait dans le dossier A de l'essai (son jeu j1), pour un accès « Ventes ».
+const EMISSION: EmissionAJuger = {
+  dossier: { nom: 'ESSAI DEVIS A', siret: '12345678200010', adresse: "1 rue de l'Essai, 75001 Paris", forme_juridique: '5710', denomination_imprimee: 'ESSAI DEVIS A SAS' },
+  cabinet: false,
+}
+
 const DEFAUTS: DefautsDuDevis = {
   aujourdHui: '2026-01-31', statutTva: 'franchise', articleExoneration: null,
-  emetteurNom: 'Atelier fictif', emetteurSiret: '12345678200010', emetteurAdresse: '1 rue Fictive',
 }
 
 const saisieComplete = (p: Partial<SaisieDevis> = {}): SaisieDevis => ({
@@ -30,11 +36,12 @@ describe('la saisie d’un devis', () => {
     expect(s.dateValidite).toBe('2026-02-28')
     expect(s.mentionsLegales).toBe(MENTION_FRANCHISE)
     expect(s.tiersNom).toBe('')
-    expect(s.emetteurNom).toBe('Atelier fictif')
+    // Aucun émetteur : la base le pose à l'émission, depuis le dossier.
+    expect(Object.keys(s).filter((k) => k.startsWith('emetteur'))).toEqual([])
     expect(s.mentions.prestation).toBe('facture')
   })
 
-  it('un brouillon lu : ses valeurs, ses mentions ; l’émetteur reste le dossier tel que l’écran le lit', () => {
+  it('un brouillon lu : ses valeurs, ses mentions ; l’émetteur qu’il garderait n’entre pas dans la saisie', () => {
     const d = devis({
       objet: 'Étude', notes: 'à relancer', mentions_legales: null, type_client: 'assujetti', tiers_siren: '123456782',
       periode_debut: '2026-03-01', periode_fin: '2026-03-31', emetteur_nom: 'Ancien nom',
@@ -42,7 +49,7 @@ describe('la saisie d’un devis', () => {
     const s = saisieDuDevis(d, DEFAUTS)
     expect(s).toMatchObject({
       dateEmission: '2026-10-01', dateValidite: '2026-11-01', objet: 'Étude', notes: 'à relancer', mentionsLegales: '',
-      tiersNom: 'ALPHA FICTIVE SAS', emetteurNom: 'Atelier fictif',
+      tiersNom: 'ALPHA FICTIVE SAS',
     })
     expect(s.mentions).toMatchObject({ typeClient: 'assujetti', siren: '123456782', prestation: 'periode', periodeDebut: '2026-03-01' })
   })
@@ -82,37 +89,37 @@ describe('la saisie d’un devis', () => {
 describe('les refus de la saisie, avant le clic', () => {
   it('ceux de la base d’abord, sous ses mots ; une ligne au prix vide n’est pas une ligne de devis', () => {
     const vide = saisieComplete({ tiersNom: ' ' })
-    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, vide, false, '2026-01-31')).toBe('Le nom du client est à renseigner.')
+    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, vide, false, '2026-01-31', EMISSION)).toBe('Le nom du client est à renseigner.')
     const sansPrix = saisieComplete({ lignes: lignesDeLaSaisie([{ cle: 'a', designation: 'x', quantite: '1', prix: '', taux: '0' }]) })
-    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, sansPrix, false, '2026-01-31')).toMatch(/^La ligne 1 n'est pas une ligne de devis/)
+    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, sansPrix, false, '2026-01-31', EMISSION)).toMatch(/^La ligne 1 n'est pas une ligne de devis/)
   })
 
   it('le même refus que `refusEnregistrementDevis` sur l’écriture qui part', () => {
     const s = saisieComplete({ dateValidite: '2026-01-01' })
-    const attendu = refusEnregistrementDevis('d1', { nouveau: true }, ecritureDuDevis(s, false), '2026-01-31')
-    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, s, false, '2026-01-31')).toBe(attendu?.message)
+    const attendu = refusEnregistrementDevis('d1', { nouveau: true }, ecritureDuDevis(s, false), '2026-01-31', EMISSION)
+    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, s, false, '2026-01-31', EMISSION)).toBe(attendu?.message)
   })
 
   it('l’émission en ajoute : un devis daté de l’avenir s’enregistre en brouillon, mais ne s’émet pas', () => {
     const s = saisieComplete({ dateEmission: '2026-02-01', dateValidite: '2026-03-01' })
-    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, s, false, '2026-01-31')).toBeNull()
-    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, s, true, '2026-01-31')).toBe('Un devis ne s\'émet pas daté de l\'avenir : nous sommes le 31/01/2026.')
+    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, s, false, '2026-01-31', EMISSION)).toBeNull()
+    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, s, true, '2026-01-31', EMISSION)).toBe('Un devis ne s\'émet pas daté de l\'avenir : nous sommes le 31/01/2026.')
   })
 
   it('puis ceux des mentions du client, que la base juge après', () => {
     const s = saisieComplete({ mentions: { ...saisieComplete().mentions, typeClient: 'assujetti', siren: '12345' } })
-    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, s, false, '2026-01-31')).toBe('Le SIREN du client s’écrit en neuf chiffres.')
+    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, s, false, '2026-01-31', EMISSION)).toBe('Le SIREN du client s’écrit en neuf chiffres.')
   })
 
   it('un brouillon devenu émis ne se réécrit plus', () => {
     const cible = { nouveau: false as const, devis: devis({ statut: 'emis', numero: 'D2026-0001' }) }
-    expect(refusDeLaSaisieDevis('d1', cible, saisieComplete(), false, '2026-01-31'))
+    expect(refusDeLaSaisieDevis('d1', cible, saisieComplete(), false, '2026-01-31', EMISSION))
       .toBe('Le devis D2026-0001 est émis : il ne se modifie plus — il se duplique.')
   })
 
   it('une saisie juste : aucun refus, ni pour le brouillon ni pour l’émission', () => {
-    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, saisieComplete(), false, '2026-01-31')).toBeNull()
-    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, saisieComplete(), true, '2026-01-31')).toBeNull()
+    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, saisieComplete(), false, '2026-01-31', EMISSION)).toBeNull()
+    expect(refusDeLaSaisieDevis('d1', { nouveau: true }, saisieComplete(), true, '2026-01-31', EMISSION)).toBeNull()
   })
 })
 

@@ -33,9 +33,23 @@
 --      énumérées, les refus dans l'ordre que src/lib/devis.ts redit avant le clic : `enregistrer_devis`, `decider_devis`,
 --      `facturer_devis` (une facture BROUILLON par `enregistrer_facture`, sous l'identité de l'appelant).
 --
+-- L'ÉMETTEUR ET LES TEXTES IMPRIMÉS, COMME LA FACTURE (reprise du 04/11/2026, avant toute application ; HISTORIQUE.md, « LA
+-- FACTURE FIGE SES MENTIONS, EN BASE », « … L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES », « A7Q-Q1 … ») : ce qu'un
+-- devis imprime de son émetteur, ce sont des VALEURS lues en base, jamais un texte de l'appelant. À l'émission,
+-- `enregistrer_devis` pose le nom, le SIRET et l'adresse de l'émetteur depuis le dossier (le nom : sa dénomination, celle que
+-- la facture figée imprime, ou, faute de dénomination, le nom du dossier, celui qu'elle imprime alors), sous les règles de la
+-- validation d'une facture : pour un accès « Ventes », la forme juridique, la dénomination, le SIRET et l'adresse du dossier
+-- renseignés (A7-Q1, A7Q-Q1, A7-Q2) ; pour tout auteur, la mention « EI » d'un entrepreneur individuel (C. com., art. R526-27,
+-- sur tous ses documents professionnels) et aucun IBAN dans l'émetteur (A7-Q3). Les clés `emetteur_*` qu'un appelant
+-- envoie sont IGNORÉES, comme toute clé que la fonction ne lit pas : la facture ne compare l'émetteur reçu que parce qu'elle
+-- l'écrit, le devis n'écrit que celui du dossier. À chaque enregistrement, pour tout auteur, un texte que le devis imprime
+-- et qui porte un IBAN valide (`porte_un_iban`) se refuse ; les notes ne s'impriment pas. Les taux de TVA : ceux de la liste
+-- G1.24, que la facture accepte tous — `enregistrer_facture` ne juge aucun taux, ni selon le statut de TVA du dossier.
+--
 -- CE QU'ELLE SUPPOSE, que son premier bloc vérifie : l'étape P2 (`factures_emises.valide_par`, `supprimer_brouillon_facture`),
 -- les prédicats des droits, `enregistrer_facture` à cinq paramètres et `centimes_ligne_facture` à quatre (la correction de la
--- facture du 02/11/2026) ; et que les devis ne sont pas déjà en base.
+-- facture du 02/11/2026), l'identité légale du dossier et les deux fonctions de la migration `mentions_figees`
+-- (`porte_un_iban`, `porte_la_mention_ei`) ; et que les devis ne sont pas déjà en base.
 -- CE QU'ELLE NE FAIT PAS : aucune table, policy ni fonction d'hier n'est modifiée ; aucune donnée d'hier n'est lue ni
 -- écrite ; aucun écran (étape P6), aucune Edge Function. Tant que le cabinet ne coche pas « Ventes », rien ne s'ouvre à un
 -- client (règlement (UE) 2016/679, art. 25 § 2).
@@ -57,8 +71,15 @@ begin
      or to_regprocedure('public.admin_du_dossier(uuid)') is null
      or to_regprocedure('public.is_super_admin()') is null
      or to_regprocedure('public.enregistrer_facture(uuid, uuid, jsonb, jsonb, boolean)') is null
-     or to_regprocedure('public.centimes_ligne_facture(numeric, numeric, numeric, boolean)') is null then
-    raise exception 'Une fonction que les devis appellent manque (gere_les_ventes, client_du_dossier, admin_du_dossier, is_super_admin, enregistrer_facture à cinq paramètres, centimes_ligne_facture à quatre) : relire la base avant d''appliquer cette migration.';
+     or to_regprocedure('public.centimes_ligne_facture(numeric, numeric, numeric, boolean)') is null
+     or to_regprocedure('public.porte_un_iban(text)') is null
+     or to_regprocedure('public.porte_la_mention_ei(text)') is null then
+    raise exception 'Une fonction que les devis appellent manque (gere_les_ventes, client_du_dossier, admin_du_dossier, is_super_admin, enregistrer_facture à cinq paramètres, centimes_ligne_facture à quatre, porte_un_iban, porte_la_mention_ei) : relire la base avant d''appliquer cette migration.';
+  end if;
+  if (select count(*) from information_schema.columns c
+       where c.table_schema = 'public' and c.table_name = 'dossiers'
+         and c.column_name in ('nom', 'siret', 'adresse', 'forme_juridique', 'denomination_imprimee')) <> 5 then
+    raise exception 'L''identité légale du dossier (forme_juridique, denomination_imprimee) n''est pas en base : l''émetteur d''un devis s''en lit.';
   end if;
   if to_regclass('public.devis') is not null or to_regclass('public.devis_numerotation') is not null
      or to_regclass('public.devis_factures') is not null then
@@ -327,7 +348,16 @@ alter table public.devis_numerotation enable row level security;
 --      décimales au plus), son prix (six décimales au plus), son montant (sous dix milliards d'euros), son taux (la liste
 --      G1.24 des taux admis) ;
 --   16. les montants de l'en-tête, des nombres, ceux des lignes au centime (`centimes_ligne_facture`, comme `calculerLigne`) ;
---   17 à 19. pour émettre : pas daté de l'avenir à Paris, un total positif, l'émetteur nommé.
+--   17. un IBAN valide (`porte_un_iban`) dans un texte que le devis imprime, à chaque enregistrement et pour tout auteur, le
+--       premier dans l'ordre de l'impression : le nom, l'adresse et le SIRET du client, l'objet, l'adresse, le code postal et
+--       la ville de livraison, le code service, le numéro d'engagement, la désignation de chaque ligne, les conditions, les
+--       mentions légales — jamais les notes, qui ne s'impriment pas, ni l'adresse électronique du client (A7-Q3) ;
+--   18 et 19. pour émettre : pas daté de l'avenir à Paris, un total positif ;
+--   20 à 25. pour émettre, l'émetteur lu dans le dossier, comme la validation d'une facture le juge : pour un accès
+--       « Ventes » (l'appelant n'est pas `admin_du_dossier`), la forme juridique renseignée (A7-Q1) ; pour tout auteur, la
+--       mention « EI » d'un entrepreneur individuel ; pour un accès « Ventes », la dénomination (A7Q-Q1), le SIRET et
+--       l'adresse (A7-Q2) renseignés — de blancs seuls, ils ne le sont pas ; pour tout auteur, aucun IBAN dans le nom,
+--       l'adresse ou le SIRET de l'émetteur (A7-Q3).
 -- Tous en 22023, sauf l'accès et « introuvable » ; les contraintes des mentions du client viennent après (23514). Deux
 -- bornes TECHNIQUES, pas des règles de droit : 500 lignes, une ligne sous dix milliards d'euros — de quoi compter tout
 -- total exactement au centime dans le navigateur.
@@ -364,6 +394,17 @@ declare
   v_emis integer;
   v_sequence integer;
   v_numero text;
+  -- L'émetteur, lu dans le dossier à l'émission ; ce qu'un refus nomme ; les vingt-cinq blancs d'`enregistrer_facture`, au
+  -- caractère près (ceux que `numero_tva_du_vendeur` retire aussi).
+  v_dossier public.dossiers;
+  v_cabinet boolean;
+  v_emetteur_nom text;
+  v_emetteur_siret text;
+  v_emetteur_adresse text;
+  v_libelle text;
+  v_blancs constant text := chr(9) || chr(10) || chr(11) || chr(12) || chr(13) || chr(32) || chr(160) || chr(5760)
+    || chr(8192) || chr(8193) || chr(8194) || chr(8195) || chr(8196) || chr(8197) || chr(8198) || chr(8199) || chr(8200)
+    || chr(8201) || chr(8202) || chr(8232) || chr(8233) || chr(8239) || chr(8287) || chr(12288) || chr(65279);
 begin
   if not public.gere_les_ventes(p_dossier_id) then
     raise exception 'Accès refusé à ce dossier.' using errcode = '42501';
@@ -479,6 +520,31 @@ begin
       replace(to_char((v_ht + v_tva) / 100.0, 'FM999999999990.00'), '.', ',') using errcode = '22023';
   end if;
 
+  -- 17. Un IBAN dans un texte que le devis imprime (A7-Q3, comme `enregistrer_facture`), les valeurs telles qu'elles
+  -- s'écrivent, dans l'ordre de l'impression ; le premier se nomme.
+  select t.libelle into v_libelle
+    from (select x.rang, 0 as ligne, x.libelle, x.valeur
+            from (values
+              (1, 'le nom du client', p_devis->>'tiers_nom'), (2, 'l''adresse du client', p_devis->>'tiers_adresse'),
+              (3, 'le SIRET du client', p_devis->>'tiers_siret'), (4, 'l''objet du devis', p_devis->>'objet'),
+              (5, 'l''adresse de livraison', p_devis->>'livraison_adresse'),
+              (6, 'le code postal de livraison', p_devis->>'livraison_code_postal'),
+              (7, 'la ville de livraison', p_devis->>'livraison_ville'), (8, 'le code service', p_devis->>'code_service'),
+              (9, 'le numéro d''engagement', p_devis->>'numero_engagement'),
+              (11, 'les conditions du devis', p_devis->>'conditions'),
+              (12, 'les mentions légales du devis', p_devis->>'mentions_legales')
+            ) as x(rang, libelle, valeur)
+          union all
+          select 10, l.ord::integer, 'la désignation de la ligne ' || l.ord, l.valeur->>'designation'
+            from jsonb_array_elements(v_lignes) with ordinality as l(valeur, ord)) as t
+   where public.porte_un_iban(t.valeur)
+   order by t.rang, t.ligne
+   limit 1;
+  if v_libelle is not null then
+    raise exception 'Un IBAN figure dans % : un devis n''imprime aucun IBAN ; celui du dossier figure sur ses factures, dans le RIB des paramètres de facturation, confirmé par le cabinet.',
+      v_libelle using errcode = '22023';
+  end if;
+
   if p_emettre then
     v_aujourdhui := (now() at time zone 'Europe/Paris')::date;
     if v_date > v_aujourdhui then
@@ -488,12 +554,53 @@ begin
     if v_ht + v_tva <= 0 then
       raise exception 'Un devis émis porte un montant : son total TTC est positif.' using errcode = '22023';
     end if;
-    if btrim(coalesce(p_devis->>'emetteur_nom', '')) = '' then
-      raise exception 'Le nom de l''émetteur du devis est à renseigner.' using errcode = '22023';
+    -- 20 à 25. L'ÉMETTEUR, lu ici dans la transaction qui émet, jamais reçu de l'appelant — les règles de la validation
+    -- d'une facture (A7a, A7-Q2, A7Q-Q1, A7-Q3), dans son ordre. Le cabinet (`admin_du_dossier`, le super-administrateur
+    -- compris) n'est pas jugé sur ce qui manque : faute de dénomination, son devis prend le nom du dossier, celui que la
+    -- facture figée imprime alors.
+    select d.* into v_dossier from public.dossiers d where d.id = p_dossier_id;
+    v_cabinet := public.admin_du_dossier(p_dossier_id);
+    if v_dossier.forme_juridique is null and not v_cabinet then
+      raise exception 'La forme juridique du dossier n''est pas renseignée : l''identité légale qu''un devis imprime est à régler par le cabinet avant qu''un devis s''émette depuis l''espace client.'
+        using errcode = '22023';
+    end if;
+    -- L'entrepreneur individuel (la catégorie 1000 de l'INSEE) utilise sa dénomination, son nom précédé ou suivi des
+    -- mots « entrepreneur individuel » ou des initiales « EI », sur tous ses documents professionnels (C. com., art.
+    -- R526-27) : un devis comme une facture, quel qu'en soit l'auteur.
+    if v_dossier.forme_juridique = '1000' and not public.porte_la_mention_ei(v_dossier.denomination_imprimee) then
+      raise exception 'La forme juridique du dossier est celle d''un entrepreneur individuel : sa dénomination imprimée, son nom précédé ou suivi des initiales « EI » ou des mots « entrepreneur individuel » (C. com., art. R526-27), est à renseigner par le cabinet avant d''émettre un devis.'
+        using errcode = '22023';
+    end if;
+    if btrim(coalesce(v_dossier.denomination_imprimee, ''), v_blancs) = '' and not v_cabinet then
+      raise exception 'La dénomination du dossier n''est pas renseignée : le cabinet la renseigne avant qu''un devis s''émette depuis l''espace client.'
+        using errcode = '22023';
+    end if;
+    if translate(coalesce(v_dossier.siret, ''), v_blancs, '') = '' and not v_cabinet then
+      raise exception 'Le SIRET du dossier n''est pas renseigné : le cabinet le renseigne avant qu''un devis s''émette depuis l''espace client.'
+        using errcode = '22023';
+    end if;
+    if btrim(coalesce(v_dossier.adresse, ''), v_blancs) = '' and not v_cabinet then
+      raise exception 'L''adresse du dossier n''est pas renseignée : le cabinet la renseigne avant qu''un devis s''émette depuis l''espace client.'
+        using errcode = '22023';
+    end if;
+    v_emetteur_nom := case when btrim(coalesce(v_dossier.denomination_imprimee, ''), v_blancs) <> ''
+                           then v_dossier.denomination_imprimee else v_dossier.nom end;
+    v_emetteur_siret := case when translate(coalesce(v_dossier.siret, ''), v_blancs, '') <> '' then v_dossier.siret end;
+    v_emetteur_adresse := case when btrim(coalesce(v_dossier.adresse, ''), v_blancs) <> '' then v_dossier.adresse end;
+    select x.libelle into v_libelle
+      from (values (1, 'le nom de l''émetteur', v_emetteur_nom), (2, 'l''adresse de l''émetteur', v_emetteur_adresse),
+                   (3, 'le SIRET de l''émetteur', v_emetteur_siret)) as x(rang, libelle, valeur)
+     where public.porte_un_iban(x.valeur)
+     order by x.rang
+     limit 1;
+    if v_libelle is not null then
+      raise exception 'Un IBAN figure dans % : un devis n''imprime aucun IBAN ; celui du dossier figure sur ses factures, dans le RIB des paramètres de facturation, confirmé par le cabinet.',
+        v_libelle using errcode = '22023';
     end if;
   end if;
 
-  -- Le brouillon, écrit en entier : les contraintes des mentions du client jugent ici (23514).
+  -- Le brouillon, écrit en entier : les contraintes des mentions du client jugent ici (23514). Sans émetteur : seule
+  -- l'émission le pose, du dossier.
   if p_devis_id is null then
     insert into public.devis (
       dossier_id, date_emission, date_validite, objet,
@@ -503,7 +610,6 @@ begin
       livraison_adresse, livraison_code_postal, livraison_ville, livraison_pays,
       lignes, montant_ht, montant_tva, montant_ttc,
       conditions, mentions_legales, notes,
-      emetteur_nom, emetteur_siret, emetteur_adresse,
       cree_par
     ) values (
       p_dossier_id, v_date, v_validite, p_devis->>'objet',
@@ -517,7 +623,6 @@ begin
       nullif(p_devis->>'livraison_ville', ''), nullif(p_devis->>'livraison_pays', ''),
       v_lignes, round(v_ht::numeric / 100, 2), round(v_tva::numeric / 100, 2), round((v_ht + v_tva)::numeric / 100, 2),
       p_devis->>'conditions', p_devis->>'mentions_legales', p_devis->>'notes',
-      p_devis->>'emetteur_nom', p_devis->>'emetteur_siret', p_devis->>'emetteur_adresse',
       auth.uid()
     )
     returning id into v_id;
@@ -550,9 +655,9 @@ begin
       conditions = p_devis->>'conditions',
       mentions_legales = p_devis->>'mentions_legales',
       notes = p_devis->>'notes',
-      emetteur_nom = p_devis->>'emetteur_nom',
-      emetteur_siret = p_devis->>'emetteur_siret',
-      emetteur_adresse = p_devis->>'emetteur_adresse'
+      emetteur_nom = null,
+      emetteur_siret = null,
+      emetteur_adresse = null
     where d.id = p_devis_id;
     v_id := p_devis_id;
   end if;
@@ -577,7 +682,8 @@ begin
      where n.dossier_id = p_dossier_id and n.annee = v_an;
     v_numero := v_prefixe || lpad(v_sequence::text, greatest(4, length(v_sequence::text)), '0');
     perform set_config('jd.emission_devis', v_id::text, true);
-    update public.devis d set statut = 'emis', numero = v_numero, emis_par = auth.uid(), emis_le = now()
+    update public.devis d set statut = 'emis', numero = v_numero, emis_par = auth.uid(), emis_le = now(),
+           emetteur_nom = v_emetteur_nom, emetteur_siret = v_emetteur_siret, emetteur_adresse = v_emetteur_adresse
      where d.id = v_id;
     perform set_config('jd.emission_devis', '', true);
   end if;
@@ -740,7 +846,7 @@ comment on function public.garder_devis() is
 comment on function public.garder_devis_facture() is
   'Le lien d''un devis accepté de son dossier à une facture de ce dossier, jamais un avoir ; il ne change pas, et part avec la facture, le devis ou le dossier (déclencheur devis_factures_gardes).';
 comment on function public.enregistrer_devis(uuid, uuid, jsonb, jsonb, boolean) is
-  'Crée ou réécrit un brouillon de devis, et l''émet (numéro D<année>-<0001>, sous le verrou de la série de l''année de sa date) : pour le cabinet du dossier ou un accès « Ventes » (42501). Dix-neuf refus dans l''ordre que src/lib/devis.ts redit ; les totaux confrontés au centime aux lignes (centimes_ligne_facture).';
+  'Crée ou réécrit un brouillon de devis, et l''émet (numéro D<année>-<0001>, sous le verrou de la série de l''année de sa date) : pour le cabinet du dossier ou un accès « Ventes » (42501). Vingt-cinq refus dans l''ordre que src/lib/devis.ts redit ; les totaux confrontés au centime aux lignes (centimes_ligne_facture) ; aucun IBAN dans un texte imprimé (porte_un_iban) ; l''émetteur posé à l''émission depuis le dossier, sous les règles de la validation d''une facture, jamais reçu de l''appelant.';
 comment on function public.decider_devis(uuid, uuid, text, date, boolean) is
   'Enregistre la réponse à un devis émis, une fois : acceptée ou refusée, datée ni avant le devis ni dans l''avenir à Paris ; une acceptation après la validité se confirme. Pour le cabinet du dossier ou un accès « Ventes » (42501).';
 comment on function public.facturer_devis(uuid, uuid) is

@@ -30,6 +30,7 @@ import {
 import { mentionsImprimees, TAUX_ADMIS } from './factureCii'
 import { MENTION_FRANCHISE, EXONERATIONS } from './statutTva'
 import type { Devis, LigneDevis } from './types'
+import type { EmetteurDuDossier, EmissionAJuger } from './devis'
 import { facture, ligne } from '../test/facturesCii'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 
@@ -44,6 +45,11 @@ import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 const ESSAI = readFileSync(new URL('../../supabase/essais/devis.sql', import.meta.url), 'utf8')
 const AUJOURD_HUI = '2026-10-10'
 const DA = 'e55d0000-0000-4000-8000-0000000000a1'
+// L'émetteur que la base lirait dans le dossier A de l'essai (son jeu j1), pour un accès « Ventes ».
+const EMISSION: EmissionAJuger = {
+  dossier: { nom: 'ESSAI DEVIS A', siret: '12345678200010', adresse: "1 rue de l'Essai, 75001 Paris", forme_juridique: '5710', denomination_imprimee: 'ESSAI DEVIS A SAS' },
+  cabinet: false,
+}
 const DB = 'e55d0000-0000-4000-8000-0000000000b1'
 
 interface ControleDeLEssai {
@@ -99,15 +105,15 @@ const controle = (num: string) => {
 }
 
 describe('l’essai, lu', () => {
-  it('ses étapes, toutes : deux de jeu, 173 jugées — le cent-soixante-quatorzième verdict est le bilan « rien n’est resté »', () => {
+  it('ses étapes, toutes : douze de jeu, 203 jugées — le deux-cent-quatrième verdict est le bilan « rien n’est resté »', () => {
     // Le plancher qui distingue « aucun écart » d'« aveugle » : un motif qui ne reconnaîtrait plus les étapes rendrait
     // une liste vide, et toutes les confrontations ci-dessous passeraient sans rien confronter. Le compte des étapes que
     // le fichier OUVRE (une parenthèse, un numéro, un genre) est celui des étapes que le motif reconnaît en entier.
     const ouvertes = [...ESSAI.matchAll(/^\s*\('\w+', '(?:jeu|controle|fait|valeur|mutation)'/gm)].length
     expect(CONTROLES).toHaveLength(ouvertes)
-    expect(CONTROLES.filter((c) => c.genre === 'jeu')).toHaveLength(2)
-    expect(CONTROLES.filter((c) => c.genre !== 'jeu')).toHaveLength(173)
-    expect(CONTROLES.filter((c) => c.genre === 'mutation')).toHaveLength(10)
+    expect(CONTROLES.filter((c) => c.genre === 'jeu')).toHaveLength(12)
+    expect(CONTROLES.filter((c) => c.genre !== 'jeu')).toHaveLength(203)
+    expect(CONTROLES.filter((c) => c.genre === 'mutation')).toHaveLength(16)
     expect(new Set(CONTROLES.map((c) => c.num)).size).toBe(CONTROLES.length)
   })
 
@@ -160,8 +166,29 @@ describe('les refus du module sont ceux que la base rend', () => {
 
 describe('les créations de l’essai, rejouées dans le module', () => {
   const motif = /enregistrer_devis\('\{DA\}',\s*null,\s*'((?:[^']|'')*)'::jsonb,\s*'((?:[^']|'')*)'::jsonb,\s*(true|false)\)/
+  // L'identité du dossier A au moment de chaque contrôle : celle de son jeu j1, puis ce que chaque jeu y change.
+  const identites = new Map<string, EmetteurDuDossier>()
+  let identite: EmetteurDuDossier = EMISSION.dossier
+  for (const c of CONTROLES) {
+    if (c.genre === 'jeu') identite = identiteApres(identite, c.ordre)
+    else identites.set(c.num, identite)
+  }
   const rejouables = CONTROLES.filter((c) => (c.genre === 'controle' || c.genre === 'fait')
     && (c.droits === 'ventes' || c.qui === 'chef') && motif.test(c.ordre))
+
+  it('le jeu j1 pose l’identité que le module suppose, et chaque jeu qui la change se lit', () => {
+    expect(controle('j1').ordre).toContain("'5710', 'ESSAI DEVIS A SAS', '12345678200010', '1 rue de l''Essai, 75001 Paris'")
+    const jeux = CONTROLES.filter((c) => c.genre === 'jeu' && c.ordre.includes('update dossiers'))
+    expect(jeux.map((j) => j.num)).toEqual(['j3', 'j4', 'j5', 'j6', 'j7', 'j8', 'j9', 'j10', 'j11', 'j12'])
+    let suite = EMISSION.dossier
+    for (const j of jeux.slice(0, -1)) {
+      const apres = identiteApres(suite, j.ordre)
+      expect(apres, j.num).not.toEqual(suite)
+      suite = apres
+    }
+    // j12 lui rend son identité : les étapes qui suivent émettent sous celle de j1.
+    expect(identiteApres(suite, jeux[jeux.length - 1].ordre)).toEqual(EMISSION.dossier)
+  })
 
   it('assez d’écritures pour juger : au moins cinquante-cinq, refus et acceptations', () => {
     expect(rejouables.length).toBeGreaterThanOrEqual(55)
@@ -173,7 +200,8 @@ describe('les créations de l’essai, rejouées dans le module', () => {
     it(`contrôle ${c.num} : ${c.code === 'OK' ? 'accepté' : c.code}`, () => {
       const m = motif.exec(c.ordre) as RegExpExecArray
       const e: EcritureDevis = { devis: JSON.parse(sansDoubles(m[1])), lignes: JSON.parse(sansDoubles(m[2])), emettre: m[3] === 'true' }
-      const refus = refusEnregistrementDevis(DA, { nouveau: true }, e, AUJOURD_HUI)
+      const emission = { dossier: identites.get(c.num) as EmetteurDuDossier, cabinet: c.qui === 'chef' }
+      const refus = refusEnregistrementDevis(DA, { nouveau: true }, e, AUJOURD_HUI, emission)
       if (c.code === '22023') {
         expect(refus?.message ?? 'accepté').toMatch(likeEnRegex(c.attendu as string))
       } else {
@@ -183,6 +211,32 @@ describe('les créations de l’essai, rejouées dans le module', () => {
     })
   }
 })
+
+// Une valeur SQL des jeux : null, un texte entre apostrophes, chr(n), et leurs concaténations par ||.
+function valeurSql(v: string): string | null {
+  if (v.trim() === 'null') return null
+  return v.split(' || ').map((x) => {
+    const t = x.trim()
+    const chr = /^chr\((\d+)\)$/.exec(t)
+    if (chr) return String.fromCodePoint(Number(chr[1]))
+    if (/^'(?:[^']|'')*'$/.test(t)) return t.slice(1, -1).replaceAll("''", "'")
+    throw new Error(`valeur SQL inattendue : ${t}`)
+  }).join('')
+}
+
+// Ce qu'un jeu `update dossiers set … where id = '{DA}'` change à l'identité du dossier A.
+function identiteApres(identite: EmetteurDuDossier, ordre: string): EmetteurDuDossier {
+  const m = /update dossiers set (.*) where id = '\{DA\}'/s.exec(ordre)
+  if (!m) return identite
+  const suite = { ...identite } as Record<string, string | null>
+  const colonnes = [...m[1].matchAll(/(?:^|, )(nom|siret|adresse|forme_juridique|denomination_imprimee) = /g)]
+  colonnes.forEach((c, i) => {
+    const debut = (c.index as number) + c[0].length
+    const fin = i + 1 < colonnes.length ? (colonnes[i + 1].index as number) : m[1].length
+    suite[c[1]] = valeurSql(m[1].slice(debut, fin))
+  })
+  return suite as unknown as EmetteurDuDossier
+}
 
 // ── 3. Les refus qui dépendent de ce que la base porte : sous les mots de l'essai ────────────────────────────────────
 
@@ -225,11 +279,11 @@ describe('les refus qui lisent la base, sous les mots de l’essai', () => {
   }
 
   it('enregistrer_devis : introuvable, d’un autre dossier, émis — avant le nom du client', () => {
-    exige('10', refusEnregistrementDevis(DA, { nouveau: false, devis: null }, ecriture, AUJOURD_HUI))
-    exige('11', refusEnregistrementDevis(DA, { nouveau: false, devis: DVB }, ecriture, AUJOURD_HUI))
-    exige('33', refusEnregistrementDevis(DA, { nouveau: false, devis: DV2 }, ecriture, AUJOURD_HUI))
-    exige('33b', refusEnregistrementDevis(DA, { nouveau: false, devis: DV2 }, { ...ecriture, devis: { tiers_nom: '' }, lignes: [] }, AUJOURD_HUI))
-    expect(refusEnregistrementDevis(DA, { nouveau: false, devis: DV4 }, ecriture, AUJOURD_HUI)).toBeNull()
+    exige('10', refusEnregistrementDevis(DA, { nouveau: false, devis: null }, ecriture, AUJOURD_HUI, EMISSION))
+    exige('11', refusEnregistrementDevis(DA, { nouveau: false, devis: DVB }, ecriture, AUJOURD_HUI, EMISSION))
+    exige('33', refusEnregistrementDevis(DA, { nouveau: false, devis: DV2 }, ecriture, AUJOURD_HUI, EMISSION))
+    exige('33b', refusEnregistrementDevis(DA, { nouveau: false, devis: DV2 }, { ...ecriture, devis: { tiers_nom: '' }, lignes: [] }, AUJOURD_HUI, EMISSION))
+    expect(refusEnregistrementDevis(DA, { nouveau: false, devis: DV4 }, ecriture, AUJOURD_HUI, EMISSION)).toBeNull()
   })
 
   it('decider_devis : chaque refus, dans son ordre', () => {
@@ -327,7 +381,6 @@ const SAISIE: SaisieDevis = {
     { designation: 'Option', quantite: 2, prix_unitaire_ht: 25.25, taux_tva: 5.5 },
   ],
   conditions: '  ', mentionsLegales: 'Mentions', notes: '',
-  emetteurNom: 'Dossier', emetteurSiret: '12345678200010', emetteurAdresse: null,
 }
 
 describe('les calculs du module', () => {
@@ -392,12 +445,11 @@ describe('les calculs du module', () => {
       type_client: 'assujetti', tiers_siren: '123456789', code_service: null, numero_engagement: null,
       nature_operation: 'services', date_prestation: '2026-10-01', periode_debut: null, periode_fin: null,
       livraison_adresse: null, conditions: null, mentions_legales: 'Mentions', notes: null,
-      emetteur_nom: 'Dossier', emetteur_siret: '12345678200010', emetteur_adresse: null,
     })
     const t = totauxDuDevis(SAISIE.lignes)
     expect(e.devis).toMatchObject({ montant_ht: t.montant_ht, montant_tva: t.montant_tva, montant_ttc: t.montant_ttc })
     // Ce qu'elle écrit, la base l'accepte : aucun refus de la fonction.
-    expect(refusEnregistrementDevis(DA, { nouveau: true }, e, AUJOURD_HUI)).toBeNull()
+    expect(refusEnregistrementDevis(DA, { nouveau: true }, e, AUJOURD_HUI, EMISSION)).toBeNull()
   })
 })
 
@@ -408,7 +460,7 @@ describe('refusEnregistrementDevis, cas que l’essai ne joue pas', () => {
     refusEnregistrementDevis(DA, { nouveau: true }, {
       devis: { tiers_nom: 'ESSAI', date_emission: '2026-09-15', date_validite: '2026-10-15', montant_ht: 100, montant_tva: 20, montant_ttc: 120, emetteur_nom: 'E', ...devis },
       lignes, emettre,
-    }, AUJOURD_HUI)
+    }, AUJOURD_HUI, EMISSION)
 
   it('btrim ne retire que les espaces : une tabulation ou une espace insécable font un nom', () => {
     expect(base({ tiers_nom: '\t' })).toBeNull()
@@ -419,8 +471,8 @@ describe('refusEnregistrementDevis, cas que l’essai ne joue pas', () => {
   })
 
   it('un en-tête qui n’est pas un objet n’a ni nom ni date', () => {
-    expect(refusEnregistrementDevis(DA, { nouveau: true }, { devis: ['ESSAI'], lignes: [], emettre: false }, AUJOURD_HUI)?.cle).toBe('client_absent')
-    expect(refusEnregistrementDevis(DA, { nouveau: true }, { devis: null, lignes: [], emettre: false }, AUJOURD_HUI)?.cle).toBe('client_absent')
+    expect(refusEnregistrementDevis(DA, { nouveau: true }, { devis: ['ESSAI'], lignes: [], emettre: false }, AUJOURD_HUI, EMISSION)?.cle).toBe('client_absent')
+    expect(refusEnregistrementDevis(DA, { nouveau: true }, { devis: null, lignes: [], emettre: false }, AUJOURD_HUI, EMISSION)?.cle).toBe('client_absent')
   })
 
   it('une validité le jour même est juste ; la veille, non', () => {
@@ -480,12 +532,12 @@ describe('refusEnregistrementDevis, cas que l’essai ne joue pas', () => {
       .toBe('Les montants du devis ne sont pas ceux de ses lignes : 100,00 € HT, 20,00 € de TVA, 120,00 € TTC.')
   })
 
-  it('émettre : pas daté de l’avenir à Paris — aujourd’hui oui —, un total positif, l’émetteur nommé', () => {
+  it('émettre : pas daté de l’avenir à Paris — aujourd’hui oui —, un total positif', () => {
     expect(base({ date_emission: AUJOURD_HUI, date_validite: '2026-11-10' }, undefined, true)).toBeNull()
     expect(base({ date_emission: '2026-10-11', date_validite: '2026-11-10' }, undefined, true)?.message)
       .toBe("Un devis ne s'émet pas daté de l'avenir : nous sommes le 10/10/2026.")
-    expect(base({ emetteur_nom: '  ' }, undefined, true)?.cle).toBe('emission_emetteur')
-    expect(base({ emetteur_nom: '  ' }, undefined, false)).toBeNull()
+    // L'émetteur envoyé est ignoré : seul le dossier compte.
+    expect(base({ emetteur_nom: '  ' }, undefined, true)).toBeNull()
     const remise = [{ designation: 'x', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }, { designation: 'r', quantite: 1, prix_unitaire_ht: -150, taux_tva: 20 }]
     expect(base({ montant_ht: -50, montant_tva: -10, montant_ttc: -60 }, remise, true)?.cle).toBe('emission_total')
     expect(base({ montant_ht: -50, montant_tva: -10, montant_ttc: -60 }, remise, false)).toBeNull()

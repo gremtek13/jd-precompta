@@ -5,7 +5,7 @@ import { messageErreur } from '../../lib/messageErreur'
 import { pourLEspace, type EspaceVentes } from '../../lib/espaceVentes'
 import {
   LIBELLES_ETAT_DEVIS, confirmationDeLEmission, confirmationDeLaSuppressionDevis, ecritureDuDevis, etatDuDevis, factureTireeDe,
-  lignesSaisiesDuDevis, refusDeLaSaisieDevis, refusSuppressionDevis, saisieDuDevis, type CibleDevis, type EtatDevis,
+  lignesSaisiesDuDevis, refusDeLaSaisieDevis, refusSuppressionDevis, saisieDuDevis, type CibleDevis, type EmissionAJuger, type EtatDevis,
   type SaisieDevis,
 } from '../../lib/devis'
 import { lireLesDevis, type LectureDesDevis } from '../../lib/devisLecture'
@@ -31,7 +31,7 @@ import DevisSaisieModal from './DevisSaisieModal'
 type Props = {
   espace: EspaceVentes
   dossierId: string
-  // L'émetteur, tel que l'onglet le lit : figé à l'émission.
+  // Le dossier, tel que l'onglet le lit ; l'émetteur d'un devis, la base le pose à l'émission (lu avec les devis).
   dossierNom: string
   dossierSiret: string | null
   dossierAdresse: string | null
@@ -96,6 +96,10 @@ export default function DevisVue(props: Props) {
   const { devis, liens, complete, motif } = courante
   // Aucun geste ne part d'une liste lue en partie.
   const peutEcrire = complete
+  // L'émetteur que la base lira, lu avec les devis (une lecture complète le porte), et qui émet : le cabinet du dossier
+  // (`admin_du_dossier`), ou un accès « Ventes ».
+  const emission: EmissionAJuger | null = lecture?.etat === 'lue' && lecture.complete && lecture.emetteur
+    ? { dossier: lecture.emetteur, cabinet: espace === 'cabinet' } : null
   // Le plus récent d'abord : la date du devis, puis sa création.
   const affiches = [...devis].sort((a, b) =>
     b.date_emission.localeCompare(a.date_emission) || b.cree_le.localeCompare(a.cree_le) || b.id.localeCompare(a.id))
@@ -127,7 +131,8 @@ export default function DevisVue(props: Props) {
     if (gesteEnCours.current) return
     const cible: CibleDevis = vise ? { nouveau: false, devis: vise } : { nouveau: true }
     // Seconde ceinture : le bouton est déjà grisé sous ce refus.
-    const refus = refusDeLaSaisieDevis(dossierId, cible, saisie, emettre, aujourdHui)
+    if (!emission) return
+    const refus = refusDeLaSaisieDevis(dossierId, cible, saisie, emettre, aujourdHui, emission)
     if (refus) {
       setErreurFenetre(dire(refus))
       return
@@ -165,10 +170,7 @@ export default function DevisVue(props: Props) {
     setFenetre({ devis: d })
   }
 
-  const defauts = {
-    aujourdHui, statutTva, articleExoneration,
-    emetteurNom: props.dossierNom, emetteurSiret: props.dossierSiret, emetteurAdresse: props.dossierAdresse,
-  }
+  const defauts = { aujourdHui, statutTva, articleExoneration }
 
   return (
     <>
@@ -243,7 +245,7 @@ export default function DevisVue(props: Props) {
         )}
       </div>
 
-      {fenetre && peutEcrire && (
+      {fenetre && peutEcrire && emission && (
         <DevisSaisieModal
           key={fenetre.devis?.id ?? 'nouveau'}
           espace={espace}
@@ -253,6 +255,7 @@ export default function DevisVue(props: Props) {
           depart={saisieDuDevis(fenetre.devis, defauts)}
           lignesDeDepart={lignesSaisiesDuDevis(fenetre.devis, statutTva)}
           aujourdHui={aujourdHui}
+          emission={emission}
           occupe={occupe}
           erreur={erreurFenetre}
           onClose={() => setFenetre(null)}

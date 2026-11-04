@@ -1,6 +1,7 @@
 import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { supabase } from './supabase'
+import { COLONNES_DE_L_EMETTEUR, type EmetteurDuDossier } from './devis'
 import type { Devis, DevisFacture } from './types'
 
 // LES DEVIS D'UN DOSSIER ET LEURS LIENS, LUS EN ENTIER (espace client, étape P6a1 ; modèle : lib/contactsLecture.ts et
@@ -14,12 +15,16 @@ import type { Devis, DevisFacture } from './types'
 // rompue, elle le dit avec son motif. Une ligne d'un autre dossier la rend partielle. La réponse se rend avec le dossier
 // lu : la page d'un dossier reste montée quand on passe à un autre.
 export type LectureDesDevis =
-  | { dossierId: string; etat: 'lue'; devis: Devis[]; liens: DevisFacture[]; complete: boolean; motif: string | null }
+  | {
+      dossierId: string; etat: 'lue'; devis: Devis[]; liens: DevisFacture[]; complete: boolean; motif: string | null
+      // Le dossier tel que `enregistrer_devis` le lira pour poser l'émetteur (A7) ; nul s'il n'a pas pu être lu : partielle.
+      emetteur: EmetteurDuDossier | null
+    }
   | { dossierId: string; etat: 'echec'; motif: string }
 
 export async function lireLesDevis(dossierId: string): Promise<LectureDesDevis> {
   try {
-    const [devis, liens] = await Promise.all([
+    const [devis, liens, dossier] = await Promise.all([
       lireTout<Devis>((debut, fin) =>
         supabase.from('devis').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
@@ -28,13 +33,17 @@ export async function lireLesDevis(dossierId: string): Promise<LectureDesDevis> 
         supabase.from('devis_factures').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin),
       ),
+      supabase.from('dossiers').select(COLONNES_DE_L_EMETTEUR).eq('id', dossierId),
     ])
+    const lignesDossier = dossier.error ? null : (dossier.data as unknown as EmetteurDuDossier[] | null)
+    const emetteur = lignesDossier?.length === 1 ? lignesDossier[0] : null
     const etrangere = [...devis.lignes, ...liens.lignes].some((l) => l.dossier_id !== dossierId)
-    const complete = devis.complete && liens.complete && !etrangere
+    const complete = devis.complete && liens.complete && !etrangere && emetteur !== null
     const motif = complete ? null
       : etrangere ? 'une ligne rendue n’est pas de ce dossier'
-        : devis.motif ?? liens.motif ?? 'lecture incomplète'
-    return { dossierId, etat: 'lue', devis: devis.lignes, liens: liens.lignes, complete, motif }
+        : emetteur === null ? 'l’identité du dossier n’a pas pu être lue'
+          : devis.motif ?? liens.motif ?? 'lecture incomplète'
+    return { dossierId, etat: 'lue', devis: devis.lignes, liens: liens.lignes, complete, motif, emetteur }
   } catch (e) {
     return { dossierId, etat: 'echec', motif: messageErreur(e, 'les devis n’ont pas pu être lus') }
   }

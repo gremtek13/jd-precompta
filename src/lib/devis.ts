@@ -7,6 +7,9 @@ import {
 } from './mentionsFacture'
 import { calculerLigne, calculerTotaux, type LigneCalculee } from './montantsFacture'
 import { mentionTva } from './statutTva'
+import { CATEGORIE_ENTREPRENEUR_INDIVIDUEL } from './categoriesJuridiques'
+import { adresseNette, denominationAbsente, porteLaMentionEI, siretSansBlancs } from './mentionsFigees'
+import { porteUnIban } from './parametresFacturation'
 import type {
   ArticleExoneration, Devis, DevisFacture, LigneDevis, NatureOperation, ReponseDevis, StatutTva,
 } from './types'
@@ -179,10 +182,7 @@ export interface SaisieDevis {
   conditions: string
   mentionsLegales: string
   notes: string
-  // L'émetteur : le dossier, tel que l'écran le lit — figé à l'émission.
-  emetteurNom: string | null
-  emetteurSiret: string | null
-  emetteurAdresse: string | null
+  // Aucun émetteur : `enregistrer_devis` le pose à l'émission depuis le dossier (A7), et ignore celui qu'on lui enverrait.
 }
 
 export interface EcritureDevis {
@@ -213,9 +213,6 @@ export function ecritureDuDevis(s: SaisieDevis, emettre: boolean): EcritureDevis
       conditions: texte(s.conditions),
       mentions_legales: texte(s.mentionsLegales),
       notes: texte(s.notes),
-      emetteur_nom: texte(s.emetteurNom),
-      emetteur_siret: texte(s.emetteurSiret),
-      emetteur_adresse: texte(s.emetteurAdresse),
     },
     lignes: s.lignes.map((l) => ({
       designation: l.designation, quantite: l.quantite, prix_unitaire_ht: l.prix_unitaire_ht, taux_tva: l.taux_tva,
@@ -223,6 +220,51 @@ export function ecritureDuDevis(s: SaisieDevis, emettre: boolean): EcritureDevis
     emettre,
   }
 }
+
+// ── L'émetteur, lu dans le dossier (A7) ─────────────────────────────────────────────────────────────────────────────
+// À l'émission, `enregistrer_devis` pose le nom, le SIRET et l'adresse de l'émetteur depuis le dossier, jamais depuis ce
+// que l'écran envoie, sous les règles de la validation d'une facture (mentionsFigees.ts) : le nom, la dénomination — celle
+// que la facture figée imprime — ou, faute d'elle, le nom du dossier ; le SIRET et l'adresse, nuls s'ils sont blancs.
+export const COLONNES_DE_L_EMETTEUR = 'nom, siret, adresse, forme_juridique, denomination_imprimee'
+
+export interface EmetteurDuDossier {
+  nom: string
+  siret: string | null
+  adresse: string | null
+  forme_juridique: string | null
+  denomination_imprimee: string | null
+}
+
+/** Qui émet — le cabinet du dossier (`admin_du_dossier`) ou un accès « Ventes » — et le dossier tel que la base le lira. */
+export interface EmissionAJuger {
+  dossier: EmetteurDuDossier
+  cabinet: boolean
+}
+
+/** L'émetteur que la base posera sur ce devis à son émission. */
+export function emetteurDuDevisEmis(d: EmetteurDuDossier): { nom: string; siret: string | null; adresse: string | null } {
+  return {
+    nom: denominationAbsente(d.denomination_imprimee) ? d.nom : (d.denomination_imprimee as string),
+    siret: siretSansBlancs(d.siret) === '' ? null : d.siret,
+    adresse: adresseNette(d.adresse) === '' ? null : d.adresse,
+  }
+}
+
+// Les textes que le devis imprime, dans l'ordre de l'impression, jugés par `porte_un_iban` à chaque enregistrement ; les
+// désignations des lignes au rang 10. Ni les notes, qui ne s'impriment pas, ni l'adresse électronique du client.
+export const TEXTES_IMPRIMES_DU_DEVIS = [
+  { rang: 1, cle: 'tiers_nom', libelle: 'le nom du client' },
+  { rang: 2, cle: 'tiers_adresse', libelle: "l'adresse du client" },
+  { rang: 3, cle: 'tiers_siret', libelle: 'le SIRET du client' },
+  { rang: 4, cle: 'objet', libelle: "l'objet du devis" },
+  { rang: 5, cle: 'livraison_adresse', libelle: "l'adresse de livraison" },
+  { rang: 6, cle: 'livraison_code_postal', libelle: 'le code postal de livraison' },
+  { rang: 7, cle: 'livraison_ville', libelle: 'la ville de livraison' },
+  { rang: 8, cle: 'code_service', libelle: 'le code service' },
+  { rang: 9, cle: 'numero_engagement', libelle: "le numéro d'engagement" },
+  { rang: 11, cle: 'conditions', libelle: 'les conditions du devis' },
+  { rang: 12, cle: 'mentions_legales', libelle: 'les mentions légales du devis' },
+] as const
 
 // ── Les refus de la base, dans son ordre et sous ses mots ───────────────────────────────────────────────────────────
 // Chaque liste est celle des `raise exception` d'une fonction, dans l'ordre de son texte (devis.test.ts la confronte au
@@ -249,9 +291,28 @@ export const REFUS_ENREGISTREMENT_DEVIS = [
   { cle: 'ligne_hors_borne', modele: "Ligne % : son montant hors taxes atteint dix milliards d'euros." },
   { cle: 'taux_non_admis', modele: "Ligne % : le taux de % %% n'est pas un taux de TVA admis." },
   { cle: 'montants_incoherents', modele: 'Les montants du devis ne sont pas ceux de ses lignes : % € HT, % € de TVA, % € TTC.' },
+  { cle: 'iban_dans_un_texte', modele: "Un IBAN figure dans % : un devis n'imprime aucun IBAN ; celui du dossier figure sur ses factures, dans le RIB des paramètres de facturation, confirmé par le cabinet." },
   { cle: 'emission_future', modele: "Un devis ne s'émet pas daté de l'avenir : nous sommes le %." },
   { cle: 'emission_total', modele: 'Un devis émis porte un montant : son total TTC est positif.' },
-  { cle: 'emission_emetteur', modele: "Le nom de l'émetteur du devis est à renseigner." },
+  {
+    cle: 'forme_a_regler',
+    modele: "La forme juridique du dossier n'est pas renseignée : l'identité légale qu'un devis imprime est à régler par le "
+      + "cabinet avant qu'un devis s'émette depuis l'espace client.",
+  },
+  {
+    cle: 'entrepreneur_individuel',
+    modele: "La forme juridique du dossier est celle d'un entrepreneur individuel : sa dénomination imprimée, son nom précédé "
+      + 'ou suivi des initiales « EI » ou des mots « entrepreneur individuel » (C. com., art. R526-27), est à renseigner par '
+      + "le cabinet avant d'émettre un devis.",
+  },
+  {
+    cle: 'denomination_a_poser',
+    modele: "La dénomination du dossier n'est pas renseignée : le cabinet la renseigne avant qu'un devis s'émette depuis "
+      + "l'espace client.",
+  },
+  { cle: 'siret_a_poser', modele: "Le SIRET du dossier n'est pas renseigné : le cabinet le renseigne avant qu'un devis s'émette depuis l'espace client." },
+  { cle: 'adresse_a_poser', modele: "L'adresse du dossier n'est pas renseignée : le cabinet la renseigne avant qu'un devis s'émette depuis l'espace client." },
+  { cle: 'iban_de_l_emetteur', modele: "Un IBAN figure dans % : un devis n'imprime aucun IBAN ; celui du dossier figure sur ses factures, dans le RIB des paramètres de facturation, confirmé par le cabinet." },
 ] as const
 
 export const REFUS_DECISION_DEVIS = [
@@ -369,6 +430,7 @@ export function refusEnregistrementDevis(
   cible: CibleDevis,
   e: EcritureDevis,
   aujourdHui: string,
+  emission: EmissionAJuger,
 ): RefusDevis<CleRefusEnregistrementDevis> | null {
   const refus = (cle: CleRefusEnregistrementDevis, ...valeurs: string[]) => refusDe(REFUS_ENREGISTREMENT_DEVIS, cle, valeurs)
   // 2 et 3. Le devis, dans ce dossier ; un brouillon seul se réécrit.
@@ -410,12 +472,35 @@ export function refusEnregistrementDevis(
   if (!juste('montant_ht', ht) || !juste('montant_tva', tva) || !juste('montant_ttc', ht + tva)) {
     return refus('montants_incoherents', euroCommeLaBase(ht), euroCommeLaBase(tva), euroCommeLaBase(ht + tva))
   }
-  // 17 à 19. Émettre : pas daté de l'avenir à Paris, un total positif, l'émetteur nommé.
-  if (e.emettre) {
-    if (date > aujourdHui) return refus('emission_future', formatDate(aujourdHui))
-    if (ht + tva <= 0) return refus('emission_total')
-    if (blancCommeLaBase(champ(e.devis, 'emetteur_nom'))) return refus('emission_emetteur')
-  }
+  // 17. Un IBAN dans un texte que le devis imprime, à chaque enregistrement, le premier dans l'ordre de l'impression.
+  const texteDe = (v: unknown): string | null => (v == null ? null : typeof v === 'string' ? v : JSON.stringify(v))
+  const textes = [
+    ...TEXTES_IMPRIMES_DU_DEVIS.filter((t) => t.rang < 10).map((t) => ({ libelle: t.libelle, valeur: texteDe(champ(e.devis, t.cle)) })),
+    ...lignes.map((l, i) => ({ libelle: `la désignation de la ligne ${i + 1}`, valeur: l.designation })),
+    ...TEXTES_IMPRIMES_DU_DEVIS.filter((t) => t.rang > 10).map((t) => ({ libelle: t.libelle, valeur: texteDe(champ(e.devis, t.cle)) })),
+  ]
+  const avecIban = textes.find((t) => porteUnIban(t.valeur))
+  if (avecIban) return refus('iban_dans_un_texte', avecIban.libelle)
+  // 18 et 19. Émettre : pas daté de l'avenir à Paris, un total positif.
+  if (!e.emettre) return null
+  if (date > aujourdHui) return refus('emission_future', formatDate(aujourdHui))
+  if (ht + tva <= 0) return refus('emission_total')
+  // 20 à 25. L'émetteur que la base lira dans le dossier, sous les règles de la validation d'une facture (A7).
+  const d = emission.dossier
+  const client = !emission.cabinet
+  if (d.forme_juridique == null && client) return refus('forme_a_regler')
+  if (d.forme_juridique === CATEGORIE_ENTREPRENEUR_INDIVIDUEL && !porteLaMentionEI(d.denomination_imprimee)) return refus('entrepreneur_individuel')
+  if (denominationAbsente(d.denomination_imprimee) && client) return refus('denomination_a_poser')
+  if (siretSansBlancs(d.siret) === '' && client) return refus('siret_a_poser')
+  if (adresseNette(d.adresse) === '' && client) return refus('adresse_a_poser')
+  const pose = emetteurDuDevisEmis(d)
+  const emetteur = [
+    { libelle: "le nom de l'émetteur", valeur: pose.nom },
+    { libelle: "l'adresse de l'émetteur", valeur: pose.adresse },
+    { libelle: "le SIRET de l'émetteur", valeur: pose.siret },
+  ]
+  const ibanEmetteur = emetteur.find((t) => porteUnIban(t.valeur))
+  if (ibanEmetteur) return refus('iban_de_l_emetteur', ibanEmetteur.libelle)
   return null
 }
 
@@ -540,23 +625,18 @@ export function lignesSaisiesDuDevis(d: Pick<Devis, 'lignes'> | null, statut: St
   }))
 }
 
-/** Ce que l'écran sait du dossier pour ouvrir un devis : le jour à Paris, le statut de TVA et l'émetteur. */
+/** Ce que l'écran sait du dossier pour ouvrir un devis : le jour à Paris et le statut de TVA. */
 export interface DefautsDuDevis {
   aujourdHui: string
   statutTva: StatutTva | null
   articleExoneration: ArticleExoneration | null
-  emetteurNom: string | null
-  emetteurSiret: string | null
-  emetteurAdresse: string | null
 }
 
 /**
  * La saisie d'un devis, hors ses lignes : un devis neuf daté du jour, valable un mois (`validiteParDefaut`), sa mention de TVA
- * proposée ; un brouillon lu tel que la base le garde. L'émetteur est toujours le dossier tel que l'écran le lit : l'émission
- * le fige.
+ * proposée ; un brouillon lu tel que la base le garde. Aucun émetteur : la base le pose à l'émission, depuis le dossier.
  */
 export function saisieDuDevis(d: Devis | null, defauts: DefautsDuDevis): Omit<SaisieDevis, 'lignes'> {
-  const emetteur = { emetteurNom: defauts.emetteurNom, emetteurSiret: defauts.emetteurSiret, emetteurAdresse: defauts.emetteurAdresse }
   if (d == null) {
     return {
       dateEmission: defauts.aujourdHui,
@@ -566,7 +646,6 @@ export function saisieDuDevis(d: Devis | null, defauts: DefautsDuDevis): Omit<Sa
       conditions: '',
       mentionsLegales: mentionsLegalesParDefautDuDevis(defauts.statutTva, defauts.articleExoneration),
       notes: '',
-      ...emetteur,
     }
   }
   return {
@@ -581,7 +660,6 @@ export function saisieDuDevis(d: Devis | null, defauts: DefautsDuDevis): Omit<Sa
     conditions: d.conditions ?? '',
     mentionsLegales: d.mentions_legales ?? '',
     notes: d.notes ?? '',
-    ...emetteur,
   }
 }
 
@@ -595,8 +673,9 @@ export function refusDeLaSaisieDevis(
   saisie: SaisieDevis,
   emettre: boolean,
   aujourdHui: string,
+  emission: EmissionAJuger,
 ): string | null {
-  const refus = refusEnregistrementDevis(dossierId, cible, ecritureDuDevis(saisie, emettre), aujourdHui)
+  const refus = refusEnregistrementDevis(dossierId, cible, ecritureDuDevis(saisie, emettre), aujourdHui, emission)
   if (refus) return refus.message
   return refusDesMentions(saisie.mentions, saisie.tiersSiret)[0] ?? null
 }
