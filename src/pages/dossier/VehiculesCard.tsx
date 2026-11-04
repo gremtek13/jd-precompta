@@ -302,6 +302,14 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
         brouillon au 31 décembre : les indemnités au compte {modele.plan.indemnites_kilometriques}, face au compte du dirigeant
         ({compteDuDirigeant(modele)}) — c'est lui qui a supporté les frais du véhicule.
       </p>
+      {/* VEH-Q1 (04/11/2026, sur la recommandation) : ce que le barème couvre, dit là où l'option se prend — le carburant rangé
+          sous la catégorie commune « Carburant / déplacements » s'ajoutait au forfait en case BJ sans un mot
+          (BOI-BNC-BASE-40-60-40-20, § 120 ; notice 2035, renvoi 12). Clôture et la validation le signalent aussi. */}
+      <p className="muted">
+        Le barème couvre le carburant, l'entretien, les pneus, l'assurance et les réparations du véhicule : l'année où il est
+        retenu, ces dépenses ne sont pas des charges — leurs paiements par le compte professionnel se classent en prélèvement de
+        l'exploitant. Il ne couvre ni les péages ni le stationnement, qui restent déductibles.
+      </p>
 
       <BandeauLecturePartielle
         quoi="Les véhicules du dossier"

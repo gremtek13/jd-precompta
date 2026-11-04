@@ -18,6 +18,7 @@ import type { Emprunt } from './emprunts'
 import type { DoublonDeTexte } from './doublonsTexte'
 import { anneeDe } from './format'
 import { confronterLOuverture, exerciceAConfronter, ouvertureEnEcart } from './ouvertureConfrontee'
+import { confronterLesAmortissementsRepris, detailDesAmortissementsSousUnAutreNumero, detailDesEcartsDeLaReprise } from './repriseDesAmortissements'
 import type { OuvertureBanque } from './planTresorerie'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier,
@@ -148,6 +149,10 @@ export interface DonneesDeLaChecklist {
   // Sans valeur par défaut : lue en partie, une entrée les tait — jamais « rien à reprendre » sur ce qu'on n'a pas lu en
   // entier.
   entreesDeLaCaisseIncompletes: string | null
+  // Le motif de la première des lectures dont la confrontation de la reprise au registre dépend — le registre, les natures, la
+  // reprise — qui n'est pas entière, ou rien (IMMO-Q1, lib/repriseDesAmortissements.ts). Sans valeur par défaut : lue en
+  // partie, une entrée tait ses deux points — jamais « aucun écart » sur ce qu'on n'a pas lu en entier.
+  entreesDeLaRepriseDesBiensIncompletes: string | null
 }
 
 /** Ce que l'écran sait du dossier et du moment, lu au rendu. */
@@ -188,7 +193,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     categories, ecritures, emprunts, ventilations, ventilationsPartielles, reglements, reglementsPartiels, paiementsPartiels,
     lettragesManuels, vehicules, declarationsTva, declarationsPartielles, facturesEmises, transmissions, jumellesPartielles,
     info, infoInconnue, anneesCloturees, ouverture, ouvertureIncomplete, ventesFacturees, facturesSources, aNouveaux, soldesReportes,
-    entreesDeLOuvertureIncompletes, caisse, entreesDeLaCaisseIncompletes,
+    entreesDeLOuvertureIncompletes, caisse, entreesDeLaCaisseIncompletes, entreesDeLaRepriseDesBiensIncompletes,
   } = d
   const { assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees, aujourdHui, anneeCourante, moisEcoules, premierJourDuMois } = c
 
@@ -433,7 +438,9 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     : piecesPayeesEnPartie(validesQuiComptent, paiements, modele.mode)
   // La TROISIÈME clé en `ON DELETE SET NULL` de `pieces` : supprimer une pièce immobilisée détache
   // son immobilisation sans un mot, et la dotation continue de partir en case CH d'une 2035 signée.
-  const immosSansJustificatif = immobilisationsSansJustificatif(immobilisations)
+  // Sauf un bien repris, inscrit sans pièce (IMMO-Q2) : c'est l'OUVERTURE qui le dit, et lue à moitié, le point se tait — il
+  // dirait sinon « justificatif supprimé » d'un bien que la balance reprise porte.
+  const immosSansJustificatif = ouvertureIncomplete !== null ? [] : immobilisationsSansJustificatif(immobilisations, ouverture?.date ?? null)
   // Les dotations aux amortissements qui manquent au brouillon : celle d'un exercice FINI qui n'est pas
   // écrite, et celle qui ne suit plus le registre (lib/amortissements.ts). La 2035 compte la dotation depuis
   // le registre, le FEC depuis le brouillon : sans elle, les deux livrables diffèrent de la case CH. La
@@ -444,6 +451,11 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     ? []
     : dotationsEnDefaut(dotationsDuRegistre(immobilisations, natures, ecritures, ouverture?.date ?? null, anneeCourante, frontiere, modele.plan), anneeCourante)
   const exercicesDesDotations = [...new Set(dotationsManquantes.map((d) => d.annee))].sort((a, b) => a - b)
+  // LA REPRISE CONFRONTÉE AU REGISTRE (IMMO-Q1, lib/repriseDesAmortissements.ts) : le cumul des amortissements que le registre
+  // calcule au 31 décembre qui précède l'ouverture, compte par compte, face au compte 28 de la balance reprise. Muette sans
+  // balance reprise, dès qu'un exercice de la reprise est validé (les biens ne se modifient plus), et sur une lecture partielle.
+  const repriseDesBiens = entreesDeLaRepriseDesBiensIncompletes !== null ? null
+    : confronterLesAmortissementsRepris(immobilisations, natures, aNouveaux, anneesValidees, modele.plan)
   // Les forfaits kilométriques qui manquent au brouillon, sur la même règle (lib/forfaitKilometrique.ts) : celui
   // d'un exercice FINI qui n'est pas écrit, et celui qui ne suit plus le cadre 7. La 2035 compte le forfait en
   // case BJ depuis le cadre 7, le FEC depuis le brouillon. Il dépend lui aussi de l'ouverture du dossier, avant
@@ -851,6 +863,21 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       id: 'previsionnelles-sans-paiement', label: 'échéance(s) prévisionnelle(s) de cotisation qu’aucun prélèvement ne paie alors que le relevé couvre leur date — l’appel définitif l’a peut-être remplacée',
       action: 'Retirer ou rapprocher ces échéances', nb: previsionnellesImpayees.length, cible: 'cotisations', severite: 'attention',
       detail: 'Comptées à leur échéance, elles s’ajoutent dans la 2035 à l’appel qui les a remplacées. Dans Cotisations, elles portent le badge « Prévisionnel ».',
+    },
+    // IMMO-Q1 (04/11/2026, sur la recommandation) : « attention » et non « erreur » — l'écart vient souvent d'un autre calcul
+    // (jours réels, arrondis) que le cabinet peut accepter ; mais une valeur, une mise en service ou une durée qui ne sont pas
+    // celles de l'ancien tableau faussent la case CH, chaque année. Le détail nomme chaque compte, ses deux cumuls, l'écart.
+    {
+      id: 'amortissements-repris-en-ecart', label: 'compte(s) d’amortissement dont la balance reprise ne porte pas le cumul que le registre calcule à l’ouverture',
+      action: 'Vérifier ces biens', nb: repriseDesBiens?.ecarts.length ?? 0, cible: 'immobilisations', severite: 'attention',
+      detail: repriseDesBiens !== null && repriseDesBiens.ecarts.length > 0 ? detailDesEcartsDeLaReprise(repriseDesBiens) : undefined,
+    },
+    // À part, et sans être pris pour un écart : un compte 28 de la reprise sous un autre numéro que celui que l'application écrit
+    // (un 28183 pour le 281830) — le comparer au registre n'aurait pas de sens, et le compte repris ne se soldera jamais.
+    {
+      id: 'amortissements-repris-sous-un-autre-numero', label: 'compte(s) d’amortissement de la balance reprise sous un autre numéro que celui de l’application — non confronté(s) au registre',
+      action: 'Voir le registre', nb: repriseDesBiens?.sousUnAutreNumero.length ?? 0, cible: 'immobilisations', severite: 'attention',
+      detail: repriseDesBiens !== null && repriseDesBiens.sousUnAutreNumero.length > 0 ? detailDesAmortissementsSousUnAutreNumero(repriseDesBiens) : undefined,
     },
   ]
   const pointsATraiter = tousLesPointsATraiter.filter((p) => p.nb > 0)

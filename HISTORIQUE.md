@@ -47028,3 +47028,97 @@ cherchent désormais par sa classe.
 l'écriture à la somme des CSG-CRDS) : une migration, après le MVP. La colonne `nature` de l'échéance (D3), qui dirait
 l'organisme et permettrait à « Réunir » de le vérifier. La pièce rangée sous le poste des cotisations. D7, D8, COT-Q4 et
 les questions à l'expert-comptable (COT-E1 à E3), inchangés.
+
+### 04/11/2026 — LES IMMOBILISATIONS ET LE VÉHICULE : LE BIEN REPRIS, LA REPRISE CONFRONTÉE AU REGISTRE, LE CARBURANT SOUS LE BARÈME (IMMO-Q1, IMMO-Q2, VEH-Q1)
+
+**CE QUI CHANGE.** Trois décisions du lot « avant la répétition générale » (MVP), tirées de la relecture des
+immobilisations et du véhicule du 03/11/2026 (D2, D5, D6, D7), sur les recommandations de la page des arbitrages (le
+cabinet a dit de continuer et d'arbitrer plus tard : écrites « sur la recommandation »). Du code seul : aucune
+migration, aucune fonction SQL, aucune Edge Function. Deux modules purs neufs, `lib/repriseDesAmortissements.ts` et
+`lib/candidatesImmobilisation.ts` ; le reste dans `lib/amortissements.ts`, `lib/controles.ts`, `lib/cases2035.ts`, la
+Checklist, les préalables de la validation, Clôture, l'onglet Immobilisations et la carte des véhicules.
+
+**IMMO-Q2, LE BIEN REPRIS SANS PIÈCE (D6).** Un bien ne s'inscrivait au registre que depuis une pièce validée de 500 €
+ou plus : un bien d'avant la reprise dont la facture est perdue, ou que l'ancien logiciel immobilisait sous 500 €, ne
+s'inscrivait pas, et sa dotation manquait en case CH. L'onglet Immobilisations d'un dossier ouvert par une balance
+reprise porte désormais une carte « Biens d'avant la reprise » et son geste « Ajouter un bien repris » : libellé, nature
+(qui donne le compte), valeur brute, acquisition, mise en service, durée (la durée usuelle de la nature proposée). Le
+formulaire dit pourquoi il n'y a pas de pièce, et que seules les dotations à partir de l'ouverture s'écrivent. Le bien
+s'insère avec `piece_id` nul et RIEN d'autre ne s'écrit : son acquisition est dans les à-nouveaux
+(`acquisitionsDesBiens` ne voit aucune pièce), ses dotations passent par « Écrire les N » comme celles de tout bien. La
+base l'admet tel quel — la colonne est nullable, `immobilisations_piece_id_unique` tient les NULL pour distincts,
+`garder_bien_valide` ne juge la pièce que si elle existe et refuse d'elle-même un bien acquis dans un exercice validé ;
+`ecrire_dotation_amortissement` et `retirer_immobilisation` ne lisent pas la pièce. Les refus dits avant le clic
+(`refusBienRepris`, puis les mots de la base pour un exercice validé) : pas de balance reprise, une acquisition qui
+n'est pas antérieure à l'ouverture, une nature manquante, et ceux de tout bien (`refusBien`). Le geste suit les règles :
+verrou `useRef` à lui, relâché après la relecture ; erreur de la base lue et dite ; aucun geste sur une lecture
+partielle (le registre, les pièces, les catégories ou l'ouverture). Un bien repris garde sa date avant l'ouverture à la
+modification : porté après, il deviendrait un bien sans justificatif.
+
+Le bien repris se reconnaît sans colonne neuve : `piece_id` nul ET acquis avant l'ouverture (`bienReprisSansPiece`).
+`immobilisationSansJustificatif` prend donc l'ouverture, sans valeur par défaut, et ne vise plus que les autres biens
+sans pièce : le préalable et le point `immos-sans-justificatif`, la carte « Amortissement(s) sans justificatif » de
+Clôture, le fait `biens-sans-justificatif` de la preuve du registre (Révision). Le point de la Checklist se tait sur une
+ouverture lue en partie, comme celui des dotations. Sa ligne du registre porte « Bien repris, sans pièce », jamais «
+Justificatif supprimé », et son retrait dit que la balance reprise garde sa valeur et que seules ses dotations quittent
+la case CH. Option écartée : une colonne « bien repris » au registre — une migration, quand la date et l'ouverture le
+disent déjà. Toutes les lectures de `immobilisations.piece_id` ont été relues : chacune filtre le nul (2035, TVA,
+Estimation, Financement, situation intermédiaire, sauvegarde, biens figés, copie de l'assistant), aucune ne plante.
+
+**IMMO-Q2, DES ACHATS SEULEMENT (D7).** Les candidates étaient toute pièce validée de 500 € ou plus : relevés de
+recettes, loyers, assurances et prélèvements s'y mêlaient au matériel, sans geste pour en écarter un. Elles ne sont plus
+que des pièces d'ACHAT (`type_piece = 'achat'`), hors de celles que leur catégorie range sous un poste qui n'est jamais
+un bien : les cases AA à AF, BB, BC, BD, JY, BS, BV, BF, BG, BK, BN, BP et CH, et dans BH les assurances, les
+honoraires, l'intérim et l'énergie (`achatsAImmobiliser`). Une pièce sans catégorie, d'une catégorie non lue ou d'un
+poste inconnu reste proposée : mieux vaut une candidate de trop qu'un bien perdu. L'écran lit donc les catégories ; lues
+en partie, le bandeau le dit. Écarté : le point « N achats de 500 € ou plus ni inscrits ni rangés en petit matériel »
+que proposait D7 — sans geste pour écarter une candidate, il resterait allumé sur toute charge importante légitime.
+
+**IMMO-Q1, LA REPRISE CONFRONTÉE AU REGISTRE (D5).** L'application calcule chaque dotation depuis le registre seul
+(30/360 depuis la mise en service) ; le 28 de la balance reprise n'entrait dans aucun calcul, et seule la preuve de la
+Révision voyait un écart. `confronterLesAmortissementsRepris` compare, compte par compte, le cumul que le registre
+calcule au 31 décembre qui précède l'ouverture (`amortissementCumuleCentimes`, le calcul de la base) au solde créditeur
+du compte 28 de la reprise ; le registre se range par compte d'amortissement (le 28 + le compte de la nature,
+`compteAmortissement`). Deux points « attention » de la Checklist, cible Immobilisations, rangés au cycle «
+immobilisations » de la révision : `amortissements-repris-en-ecart` (chaque compte, ses deux cumuls, l'écart, dans le
+détail ; un compte de la reprise sans bien au registre en est un) et, à part, sans être pris pour un écart,
+`amortissements-repris-sous-un-autre-numero` (un 28183 pour le 281830, reconnu par `compteQueLApplicationEcrit`, la
+règle de l'import). Le seuil est celui de la relecture : un euro, l'arrondi d'un autre logiciel en dessous. Les deux se
+taisent sans balance reprise, sur une lecture partielle du registre, des natures ou de la reprise (un drapeau neuf,
+`entreesDeLaRepriseDesBiensIncompletes`), et dès qu'un exercice de l'année de l'ouverture ou d'après est validé : les
+biens sont alors figés, et un point que rien ne lève resterait pour toujours. Écarté : en faire un préalable — l'écart
+d'un calcul en jours réels est acceptable, et le cabinet doit pouvoir valider.
+
+**VEH-Q1, LE CARBURANT SOUS LE BARÈME (D2).** La catégorie commune « Carburant / déplacements » porte le poste « Frais
+de déplacement », que `doublonFraisVehicules` laisse passer à dessein (le train et l'hôtel coexistent avec le forfait),
+et la suggestion d'un tiers y range les stations-service : sous le barème, le carburant comptait deux fois en case BJ.
+L'année où le barème est retenu, `carburantSousLeBareme` (`lib/cases2035.ts`) nomme chaque dépense de cette catégorie
+que la 2035 compte — sa date, son montant compté, sa catégorie ; jamais un libellé bancaire ni un tiers —, qu'elle
+vienne d'une pièce, d'un mouvement affecté ou de la part d'un mouvement ventilé (relue par `partsDesVentilations`, le
+calcul du moteur : la contribution d'une part ne nomme pas sa catégorie, et deux catégories peuvent partager compte et
+poste). Comme le véhicule amorti sous le barème : une carte de Clôture, « Carburant sous le barème kilométrique », et un
+préalable non bloquant, `carburant-sous-bareme` (rangé au cycle « dépenses ») — un signal, jamais une correction, la
+catégorie mêlant ce que le barème couvre et ce qu'il ne couvre pas. Pas de point de la Checklist, qui ne calcule pas la
+2035 (pas plus que pour `frais-vehicule-en-double`). La carte « Véhicules et barème kilométrique » dit ce que le barème
+couvre : le carburant, l'entretien, les pneus, l'assurance et les réparations, ni les péages ni le stationnement
+(BOI-BNC-BASE-40- 60-40-20, § 120 ; notice 2035-NOT-SD, renvoi 12).
+
+**LES TESTS.** `repriseDesAmortissements.test.ts` (les trois biens de la relecture, leurs cumuls au centime, l'écart du
+mobilier absent du registre, le seuil, le compte sous un autre numéro, le bien sans nature, les silences) ;
+`candidatesImmobilisation.test.ts` ; `amortissements.test.ts` (`refusBienRepris`, `bienReprisSansPiece`) ;
+`controles.test.ts` ; `cases2035.test.ts` (la pièce, le mouvement affecté, la part ventilée, le billet de train au même
+compte et au même poste, aucun tiers) ; `prealablesValidation.test.ts` (le préalable non bloquant et son garde
+symétrique, le bien repris hors de `immos-sans-justificatif`, la carte reprise par son préalable) ;
+`pointsDeLaChecklist.test.ts` ; `revisionCycles.test.ts` ; `ImmobilisationsTab.test.tsx` (le bien inscrit sans pièce et
+rien d'autre, le refus avant le clic, l'exercice validé, deux envois dans le même `act` puis un troisième pendant la
+relecture, l'erreur de la base, la lecture partielle, le dossier sans reprise, la date gardée et la confirmation du
+retrait, les candidates qui ne sont que des achats) ; `ClotureTab.test.tsx` ; `VehiculesCard.test.tsx`.
+
+**CE QUI RESTE.** La colonne « amortissement antérieur » du registre (IMMO-Q1), une migration, si la répétition générale
+montre des écarts de plus de quelques euros. La levée de « une pièce, un seul bien »
+(`immobilisations_piece_id_unique`), une migration qui RETIRE une contrainte, à présenter au cabinet à part (D6) ;
+l'inscription depuis une pièce de moins de 500 €. La séparation de la catégorie commune en « Carburant » et «
+Déplacements » (VEH-Q1), une migration additive. La piste d'audit dit encore « facture d'acquisition » manquante sur la
+dotation d'un bien repris : elle ne connaît que l'ouverture de l'exercice exporté (les soldes reportés après la
+reprise), et la lui apprendre change cinquante-huit appels — une suite. D1, D3, D4 et D8, et les questions IMMO-Q3,
+VEH-Q2, VEH-Q3, inchangés.

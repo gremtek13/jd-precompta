@@ -569,20 +569,30 @@ describe('immobilisationsSansJustificatif', () => {
     // exactement cet état, et la dotation continue de partir en case CH.
     expect(immobilisationsSansJustificatif([
       immobilisation({ id: 'detachee', piece_id: null }),
-    ]).map((i) => i.id)).toEqual(['detachee'])
+    ], null).map((i) => i.id)).toEqual(['detachee'])
   })
 
   // GARDE SYMÉTRIQUE : sans elle, « le registre signale les détachées » serait satisfait par un
   // contrôle qui signale TOUTES les immobilisations — et une alerte permanente cesse d'être lue.
   it('se tait sur une immobilisation qui désigne bien sa pièce', () => {
-    expect(immobilisationsSansJustificatif([immobilisation({ piece_id: 'p1' })])).toEqual([])
+    expect(immobilisationsSansJustificatif([immobilisation({ piece_id: 'p1' })], null)).toEqual([])
   })
 
   it("ne regarde PAS l'année : un bien détaché l'est quel que soit l'exercice", () => {
     // La conséquence, elle, est datée — c'est à Clôture de cadrer sur son exercice. Un contrôle
     // année-libre permet à la Checklist de compter sur le dossier entier sans second calcul.
     const vieux = immobilisation({ id: 'vieux', piece_id: null, date_acquisition: '2015-01-01', duree_annees: 3 })
-    expect(immobilisationsSansJustificatif([vieux]).map((i) => i.id)).toEqual(['vieux'])
+    expect(immobilisationsSansJustificatif([vieux], null).map((i) => i.id)).toEqual(['vieux'])
+  })
+
+  // IMMO-Q2 (04/11/2026) : un bien repris s'inscrit sans pièce, acquis avant l'ouverture du dossier — la balance reprise
+  // porte sa valeur. Ce n'est pas un justificatif supprimé ; un bien sans pièce acquis à partir de l'ouverture, si.
+  it('se tait sur un bien repris, acquis avant l’ouverture, et le dit encore d’un bien acquis depuis', () => {
+    const repris = immobilisation({ id: 'repris', piece_id: null, date_acquisition: '2024-12-31' })
+    const depuis = immobilisation({ id: 'depuis', piece_id: null, date_acquisition: '2025-01-01' })
+    expect(immobilisationsSansJustificatif([repris, depuis], '2025-01-01').map((i) => i.id)).toEqual(['depuis'])
+    // Sans reprise, tout bien sans pièce a perdu son justificatif.
+    expect(immobilisationsSansJustificatif([repris, depuis], null).map((i) => i.id)).toEqual(['repris', 'depuis'])
   })
 
   it('le prédicat unitaire et la version tableau disent la même chose', () => {
@@ -590,6 +600,6 @@ describe('immobilisationsSansJustificatif', () => {
       immobilisation({ id: 'a', piece_id: null }),
       immobilisation({ id: 'b', piece_id: 'p2' }),
     ]
-    expect(immobilisationsSansJustificatif(liste)).toEqual(liste.filter(immobilisationSansJustificatif))
+    expect(immobilisationsSansJustificatif(liste, null)).toEqual(liste.filter((i) => immobilisationSansJustificatif(i, null)))
   })
 })

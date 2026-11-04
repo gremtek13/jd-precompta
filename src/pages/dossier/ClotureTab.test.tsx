@@ -1649,6 +1649,47 @@ describe('ClotureTab — l’amortissement d’un véhicule déduit avec le bar�
   })
 })
 
+// LE CARBURANT SOUS LE BARÈME (VEH-Q1, relecture du 03/11/2026, D2) : la catégorie commune « Carburant / déplacements » porte
+// le poste « Frais de déplacement », que la carte « Frais de véhicule comptés deux fois » laisse passer à dessein. L'année où
+// le barème est retenu, Clôture nomme chacune de ses dépenses : sa date, son montant, sa catégorie — jamais un tiers.
+describe('ClotureTab — le carburant sous le barème kilométrique', () => {
+  const TITRE = /^Carburant sous le barème kilométrique/
+  const CARBURANT = {
+    id: 'cat-carb', dossier_id: null, code: 'carburant_deplacements', libelle: 'Carburant / déplacements', ordre: 4,
+    compte_comptable: '625100', poste_2035: 'Frais de déplacement',
+  }
+  const PLEIN = { ...PIECE, id: 'p-plein', categorie_id: 'cat-carb', date_piece: '2025-05-06', montant_ttc: 110, tiers: 'STATION FICTIVE' }
+  const VEHICULE = {
+    id: 'v1', dossier_id: 'dossier-de-test', annee: 2025, modele: 'Clio', type: 'voiture', puissance_fiscale: 4, bareme: 'bnc',
+    motorisation: 'thermique', carburant: 'diesel', km_professionnel: 8000, inscrit_immobilisations: false,
+    amortissements_a_reintegrer: null, created_at: '2025-01-05T10:00:00Z', updated_at: '2025-01-05T10:00:00Z',
+  }
+
+  it('nomme la dépense de la catégorie l’année où le barème est retenu, sans son tiers', async () => {
+    poser()
+    faux.parTable.categories = [CATEGORIE, CARBURANT]
+    faux.parTable.pieces = [PIECE, PLEIN]
+    faux.parTable.vehicules = [VEHICULE]
+    monter()
+
+    const carte = (await screen.findByText(TITRE)).closest('.card') as HTMLElement
+    const ligne = within(carte).getByText('06/05/2025').closest('tr')!
+    within(ligne).getByText('Carburant / déplacements')
+    expect(ligne.textContent).toMatch(/110,00\s€/)
+    expect(carte.textContent).not.toMatch(/STATION FICTIVE/)
+  })
+
+  it('se tait sans barème — le garde symétrique', async () => {
+    poser()
+    faux.parTable.categories = [CATEGORIE, CARBURANT]
+    faux.parTable.pieces = [PIECE, PLEIN]
+    monter()
+
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
+  })
+})
+
 // LA 2035 SE RETROUVE-T-ELLE DANS LES ÉCRITURES ? (ligne 26.6, étape c — lib/concordance2035.ts). Le calcul est
 // éprouvé à part, sur des écritures produites par les vrais générateurs ; ce qui se joue ici est le CÂBLAGE :
 // que l'écran lise TOUT le brouillon et l'ouverture, qu'il ne conclue pas sur une lecture partielle, et que la

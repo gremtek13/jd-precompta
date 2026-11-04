@@ -217,6 +217,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'pieces-payees-en-partie': 'depenses',
   'pieces-payees-en-trop': 'depenses',
   'frais-vehicule-en-double': 'depenses',
+  // Le carburant sous le barème kilométrique (VEH-Q1).
+  'carburant-sous-bareme': 'depenses',
   'forfaits-a-ecrire': 'depenses',
   'postes-sans-case': 'depenses',
   'cases-negatives': 'depenses',
@@ -229,6 +231,9 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'immos-sans-justificatif': 'immobilisations',
   'dotations-a-ecrire': 'immobilisations',
   'vehicule-amorti-sous-bareme': 'immobilisations',
+  // La balance reprise confrontée au registre (IMMO-Q1).
+  'amortissements-repris-en-ecart': 'immobilisations',
+  'amortissements-repris-sous-un-autre-numero': 'immobilisations',
   vehicule: 'immobilisations',
   // Les emprunts.
   'echeances-emprunt-perimees': 'emprunts',

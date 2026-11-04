@@ -3,6 +3,7 @@ import {
   acquisitionsDesBiens, amortissementCumuleCentimes, bienRepris, compteAmortissement, dotationAEcrire, dotationConforme, dotationDeLExercice, montantDeFactureDifferent,
   dotationsDuRegistre, dotationsEnDefaut, dotationSurPeriode, ecritureDeLaDotation, FORMAT_COMPTE_IMMOBILISATION, miseEnService,
   planAmortissement, rang360, refusBien, REFUS_DOTATION_SANS_NATURE, refusDotation, refusNature, valeurSaisie,
+  bienReprisSansPiece, refusBienRepris,
 } from './amortissements'
 import { COMPTE_DOTATIONS_AMORTISSEMENTS, libelleCompteTenu } from './comptes'
 import { PLAN_PAR_DEFAUT } from './planComptable'
@@ -569,5 +570,42 @@ describe('montantDeFactureDifferent — la valeur d’un bien qui ne suit plus s
     const ancien = bien({ valeur: 1200, date_acquisition: '2024-05-02' })
     expect(montantDeFactureDifferent(ancien, facture, true, '2026-01-01')).toBeNull()
     expect(montantDeFactureDifferent(ancien, facture, true, '2024-01-01')).toBe(1000)
+  })
+})
+
+// UN BIEN REPRIS, INSCRIT SANS PIÈCE (IMMO-Q2, relecture des immobilisations du 03/11/2026, D6) : acquis avant l'ouverture du
+// dossier, que la balance reprise porte — sa facture perdue, ou immobilisé sous 500 € par l'ancien logiciel. Ce que l'écran
+// refuse avant le clic, et ce qui distingue ce bien d'un bien dont le justificatif a été supprimé.
+describe('refusBienRepris — un bien acquis avant l’ouverture, sans pièce', () => {
+  const saisie = {
+    libelle: 'Fauteuil fictif', natureId: 'n-med', valeur: '4800', dateAcquisition: '2022-03-15', dateMiseEnService: '', duree: '5',
+  }
+
+  it('accepte un bien acquis la veille de l’ouverture', () => {
+    expect(refusBienRepris({ ...saisie, dateAcquisition: '2024-12-31' }, '2025-01-01')).toBeNull()
+  })
+
+  it('refuse un bien acquis le jour de l’ouverture ou après : il s’inscrit depuis sa facture', () => {
+    expect(refusBienRepris({ ...saisie, dateAcquisition: '2025-01-01' }, '2025-01-01')).toBe(
+      'Un bien repris est acquis avant l’ouverture du dossier, le 01/01/2025 : un bien acquis depuis s’inscrit depuis sa facture, parmi les candidates.')
+  })
+
+  it('refuse sans balance reprise : rien n’est repris', () => {
+    expect(refusBienRepris(saisie, null)).toMatch(/^Un bien repris s’inscrit dans un dossier ouvert par une balance reprise/)
+  })
+
+  it('demande la nature, qui donne le compte, et redit les refus d’un bien', () => {
+    expect(refusBienRepris({ ...saisie, natureId: '' }, '2025-01-01')).toBe('Choisissez la nature du bien : c’est elle qui donne son compte d’amortissement.')
+    expect(refusBienRepris({ ...saisie, valeur: '0' }, '2025-01-01')).toBe(refusBien({ ...saisie, valeur: '0' }))
+    expect(refusBienRepris({ ...saisie, dateAcquisition: '' }, '2025-01-01')).toBe('Donnez la date d’acquisition du bien.')
+  })
+})
+
+describe('bienReprisSansPiece', () => {
+  it('un bien sans pièce acquis avant l’ouverture, pas un bien qui a sa facture ni un bien acquis depuis', () => {
+    expect(bienReprisSansPiece({ piece_id: null, date_acquisition: '2024-06-01' }, '2025-01-01')).toBe(true)
+    expect(bienReprisSansPiece({ piece_id: 'p1', date_acquisition: '2024-06-01' }, '2025-01-01')).toBe(false)
+    expect(bienReprisSansPiece({ piece_id: null, date_acquisition: '2025-01-01' }, '2025-01-01')).toBe(false)
+    expect(bienReprisSansPiece({ piece_id: null, date_acquisition: '2024-06-01' }, null)).toBe(false)
   })
 })

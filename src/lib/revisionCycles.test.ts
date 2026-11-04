@@ -290,12 +290,15 @@ describe('le rangement des contrôles existants', () => {
       'sans-tva', 'tva-impossible', 'devise-non-convertie', 'confiance-basse', 'mois-en-double', 'doublon-texte',
       'doublons-inconnus', 'ecritures-a-generer', 'desynchronisees', 'ecritures-sans-objet', 'pieces-payees-en-partie',
       'pieces-payees-en-trop', 'frais-vehicule-en-double', 'forfaits-a-ecrire', 'postes-sans-case', 'cases-negatives',
-      'cases-dont-incoherentes',
+      'cases-dont-incoherentes', 'carburant-sous-bareme',
       'tickets', 'vacances', 'factures',
       // La relecture du 01/11/2026 : la pièce à valider qu'un paiement par la caisse cite.
       'pieces-a-valider-payees-par-la-caisse',
     ],
-    immobilisations: ['immos-sans-justificatif', 'dotations-a-ecrire', 'vehicule-amorti-sous-bareme', 'vehicule'],
+    immobilisations: [
+      'immos-sans-justificatif', 'dotations-a-ecrire', 'vehicule-amorti-sous-bareme', 'amortissements-repris-en-ecart',
+      'amortissements-repris-sous-un-autre-numero', 'vehicule',
+    ],
     emprunts: ['echeances-emprunt-perimees', 'echeances-emprunt-non-rapprochees'],
     social: [
       'cotisations-sans-ecriture', 'cotisations-rapprochement-refuse', 'cotisations-classees-par-categorie', 'csg-non-saisie', 'paiements-personnels-a-reprendre',
