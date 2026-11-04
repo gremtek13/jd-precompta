@@ -845,7 +845,11 @@ describe('le paiement d’une pièce par la caisse, dans l’onglet', () => {
 // compte plus que les suivantes. Rien n'est retenu d'une lecture partielle, ni d'une réponse pour un autre dossier.
 describe('les saisies du client vues dans l’onglet', () => {
   const CLE = `jd-precompta-caisse-vue-${D}`
-  afterEach(() => { localStorage.clear() })
+  // La clé se vide AVANT chaque cas, et après le démontage : un onglet d'un cas précédent (d'un autre bloc, qui ne vide
+  // rien) ou encore monté au moment d'un nettoyage pouvait l'écrire tard — sous la charge de la suite entière, la
+  // vérification en ligne lisait alors la valeur d'un autre cas (le 04/11/2026, sous le fuseau de New York).
+  beforeEach(() => { localStorage.clear() })
+  afterEach(() => { cleanup(); localStorage.clear() })
 
   it('lue en entier : les opérations du client sont retenues, celles du cabinet non', async () => {
     faux.donnees = mars({
@@ -857,7 +861,8 @@ describe('les saisies du client vues dans l’onglet', () => {
     })
     rendre()
     await attendreLaLecture()
-    expect(localStorage.getItem(CLE)).toBe('["c1","c2"]')
+    // L'effet qui consigne la clé suit le rendu : il se lit sous `waitFor` (CLAUDE.md, « Tests »).
+    await waitFor(() => expect(localStorage.getItem(CLE)).toBe('["c1","c2"]'))
   })
 
   it('lue en partie, ou pour un autre dossier : rien n’est retenu', async () => {
