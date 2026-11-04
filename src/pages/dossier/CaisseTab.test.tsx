@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CaisseTab from './CaisseTab'
 import type { ValeurAnnee } from '../../components/AnneeTabs'
 import { ecritureDeLOperation } from '../../lib/caisse'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon } from '../../lib/correctionDuPaiement'
 import type { DonneesDeLaCaisse } from '../../lib/caisseEcran'
 import type { LectureDeLaCaisseDuDossier } from '../../lib/caisseDuDossierLecture'
 import type { ModeleComptable } from '../../lib/engagement'
@@ -805,7 +806,7 @@ describe('le paiement d’une pièce par la caisse, dans l’onglet', () => {
     rendre()
     await attendreLaLecture()
     const ligne = ligneDeLaCaisse(/Paiement en espèces d’une pièce d’achat du 04\/03\/2026/)
-    expect(within(ligne).getByText('Se retire depuis la fiche de la pièce')).toBeTruthy()
+    expect(within(ligne).getByText(motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).pastille)).toBeTruthy()
     expect(within(ligne).queryAllByRole('button')).toHaveLength(0)
     expect(document.body.textContent).not.toContain('PAPETERIE')
   })

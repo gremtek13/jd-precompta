@@ -150,6 +150,43 @@ export function correctionOfferte(o: Pick<OperationDeLaCaisse, 'genre' | 'piece_
 /** Une correction qui ne change rien — le même jour, le même montant — n'a rien à écrire : la règle du formulaire seul. */
 export const RIEN_A_CORRIGER = 'Rien à corriger : ce sont le jour et le montant de ce paiement.'
 
+// ── Ce que les écrans disent du remède, selon le drapeau ──────────────────────────────────────────────────────────────
+
+// LES MOTS QUI DISENT COMMENT REPRENDRE UN PAIEMENT. Le drapeau baissé, ceux d'hier, au caractère près — retirer, puis
+// payer de nouveau ; levé, le geste neuf. Une seule table, que chaque écran lit par `motsDuRemedeSelon`, le drapeau qu'IL a
+// importé en paramètre (les tests le jouent dans ses deux états, par l'import) : la pastille d'un
+// paiement dans l'onglet Caisse, l'aide et la confirmation d'un retrait dans « Mes pièces » (le client, tutoyé), et le
+// remède d'un paiement que sa pièce contredit depuis (`caisse-paiements-a-retirer` : le détail, le préalable de la
+// validation, le libellé du point de la Vue d'ensemble). Hier, ce détail disait de retirer le paiement « dans l'onglet
+// Caisse », qui n'offre pas ce geste sur un paiement : levé, il dit la fiche de la pièce, où les deux gestes vivent.
+const MOTS_DU_REMEDE = {
+  hier: {
+    pastille: 'Se retire depuis la fiche de la pièce',
+    aideDuClient: 'Pour corriger un paiement, retire-le puis enregistre le bon.',
+    finDuRetraitDuClient: 'Pour le corriger, retire-le puis enregistre le bon.',
+    detail: 'Dans l’onglet Caisse, retirer le paiement, puis le saisir de nouveau depuis la fiche de la pièce, au montant exact — '
+      + 'ou corriger la pièce.',
+    prealable: 'Retirer le paiement, puis le saisir de nouveau au montant exact — ou corriger la pièce — avant la validation.',
+    point: 'à retirer, puis à saisir de nouveau',
+  },
+  correction: {
+    pastille: 'Se corrige ou se retire depuis la fiche de la pièce',
+    aideDuClient: 'Pour corriger le jour ou le montant d’un paiement, « Corriger » le remplace d’un seul geste.',
+    finDuRetraitDuClient: 'Pour corriger son jour ou son montant, « Corriger » le remplace d’un seul geste.',
+    detail: 'Depuis la fiche de la pièce, corriger le paiement au montant exact, dans le sens de la pièce — ou corriger la pièce.',
+    prealable: 'Corriger le paiement au montant exact depuis la fiche de la pièce — ou corriger la pièce — avant la validation.',
+    point: 'à corriger depuis la fiche de la pièce',
+  },
+} as const
+
+export type MotsDuRemede = (typeof MOTS_DU_REMEDE)[keyof typeof MOTS_DU_REMEDE]
+
+/** Les mots du remède, la migration en base ou non. */
+export function motsDuRemedeSelon(enBase: boolean): MotsDuRemede {
+  return enBase ? MOTS_DU_REMEDE.correction : MOTS_DU_REMEDE.hier
+}
+
+
 /**
  * La règle du formulaire : le jour et le montant du nouveau sont-ils ceux de l'ancien, au centime près — un montant qui n'est
  * pas au centime n'est celui de personne (la base le refuse sous ses mots) ?

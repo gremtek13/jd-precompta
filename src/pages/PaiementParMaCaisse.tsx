@@ -1,10 +1,12 @@
 import { useState, type KeyboardEvent, type RefObject } from 'react'
 import type { DossierDeLaCaisse } from '../lib/caisse'
 import type { JourDeLaCaisseDuClient, OperationDuClient } from '../lib/caisseClient'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon } from '../lib/correctionDuPaiement'
 import {
-  confirmationDuPaiement, confirmationDuRetraitDuPaiement, paiementDit, paiementEnregistre, paiementRetire,
-  paiementsDeLaPiece, payableParLaCaisse, pieceVueParLeClient, premiereAnneeLue, retraitDuPaiement, verdictDuPaiement,
-  type FormulaireDuPaiement,
+  confirmationDeLaCorrectionDuClient, confirmationDuPaiement, confirmationDuRetraitDuPaiement, correctionDuPaiementSelon,
+  formulaireDeLaCorrectionDuClient, paiementCorrige, paiementDit, paiementEnregistre, paiementRetire, paiementsDeLaPiece,
+  payableParLaCaisse, pieceVueParLeClient, premiereAnneeLue, retraitDuPaiement, verdictDeLaCorrectionDuClientSelon,
+  verdictDuPaiement, type FormulaireDuPaiement,
 } from '../lib/paiementDeMesPieces'
 import type { SaisieDuReglement } from '../lib/paiementParLaCaisse'
 import type { Piece } from '../lib/types'
@@ -19,7 +21,13 @@ import type { Piece } from '../lib/types'
 // nomme ce qui part ; le refus de la base se dit aux mots du client (`pourLEspace`). Le montant de la pièce ne s'affiche
 // JAMAIS : le praticien tape les espèces qu'il a sorties ou reçues, sans signe ; le sens vient de la pièce.
 //
-// LE VERROU N'EST PAS ICI. Il est celui de « Mes pièces » (`ClientUpload`), qui porte aussi les deux appels (`payer`, `retirer`) :
+// CORRIGER SON PAIEMENT D'UN SEUL GESTE (C12B-Q1 ; la migration `correction_du_paiement_par_la_caisse`, PRÉPARÉE, pas
+// appliquée) : « Corriger » ouvre, sous le paiement, son jour et ses espèces sans signe ; la base écrit le nouveau et retire
+// l'ancien. Le drapeau `CORRECTION_DU_PAIEMENT_EXPORTEE` baissé (lu ici, à chaque rendu), le bouton ne se rend pas et l'aide est
+// celle d'hier : « Mes pièces » est celle d'hier, au caractère près.
+//
+// LE VERROU N'EST PAS ICI. Il est celui de « Mes pièces » (`ClientUpload`), qui porte aussi les trois appels (`payer`, `retirer`,
+// `corriger`) :
 // un verrou propre à ce formulaire disparaîtrait avec lui quand le praticien en ouvre un autre sur une autre pièce, et deux
 // paiements partiraient sur une caisse pas encore relue. Ici, `verrou` ne se LIT que pour ne pas confirmer ce qui ne partirait
 // pas, et `enVol` retient les boutons ; l'issue de l'appel (le refus de la base, ou rien) revient par `surIssue`, avant la relecture.
@@ -31,7 +39,7 @@ function sansEnvoi(e: KeyboardEvent<HTMLInputElement>) {
 
 const FORMULAIRE_VIDE: FormulaireDuPaiement = { date: '', montant: '' }
 
-export default function PaiementParMaCaisse({ piece, dossier, operations, jours, moi, anneeEnCours, aujourdhui, payer: payerLaPiece, retirer: retirerOperation, verrou, enVol }: {
+export default function PaiementParMaCaisse({ piece, dossier, operations, jours, moi, anneeEnCours, aujourdhui, payer: payerLaPiece, retirer: retirerOperation, corriger: corrigerOperation, verrou, enVol }: {
   piece: Pick<Piece, 'id' | 'type_piece' | 'montant_ttc' | 'created_at'>
   /** Le dossier tel que les règles le lisent, sur la caisse rejouée (`caisseDeMesPieces`). */
   dossier: DossierDeLaCaisse
@@ -47,13 +55,17 @@ export default function PaiementParMaCaisse({ piece, dossier, operations, jours,
   payer: (saisie: SaisieDuReglement, surIssue: (refus: string | null) => void) => Promise<void>
   /** Retire un paiement, mêmes termes que `payer`. */
   retirer: (operationId: string, surIssue: (refus: string | null) => void) => Promise<void>
-  /** Le verrou de l'écran : posé par `payer` et `retirer`, jamais ici ; lu ici avant toute confirmation. */
+  /** Corrige un paiement — le remplace par un autre jour ou un autre montant —, mêmes termes que `payer`. */
+  corriger: (saisie: { operation_id: string; date: string; montant: number }, surIssue: (refus: string | null) => void) => Promise<void>
+  /** Le verrou de l'écran : posé par `payer`, `retirer` et `corriger`, jamais ici ; lu ici avant toute confirmation. */
   verrou: RefObject<boolean>
   /** Un geste est en vol (pour l'affichage : le verrou, lui, se lit sur le `verrou`). */
   enVol: boolean
 }) {
   const [formulaire, setFormulaire] = useState<FormulaireDuPaiement>(FORMULAIRE_VIDE)
   const [message, setMessage] = useState<{ genre: 'ok' | 'erreur'; texte: string } | null>(null)
+  // La correction ouverte : le paiement qu'elle reprend, et ce que le praticien a tapé ; nulle quand aucune ne l'est.
+  const [correction, setCorrection] = useState<{ id: string; formulaire: FormulaireDuPaiement } | null>(null)
   const vue = pieceVueParLeClient(piece)
   const premiere = premiereAnneeLue(anneeEnCours)
   const paiements = paiementsDeLaPiece(piece.id, operations)
@@ -87,6 +99,27 @@ export default function PaiementParMaCaisse({ piece, dossier, operations, jours,
     await retirerOperation(o.id, (refus) => dire(refus, paiementRetire(o), 'Ton paiement n’a pas été retiré'))
   }
 
+  // La correction ouverte, son paiement relu dans la caisse lue (une relecture qui l'a retiré ou remplacé la ferme), et son
+  // verdict sur la saisie telle qu'elle part.
+  const enCorrection = correction === null ? null : paiements.find((o) => o.id === correction.id) ?? null
+  const verdictCorrection = correction !== null && enCorrection !== null
+    ? verdictDeLaCorrectionDuClientSelon(CORRECTION_DU_PAIEMENT_EXPORTEE, correction.formulaire, enCorrection, vue, dossier, jours, premiere)
+    : null
+
+  async function corriger() {
+    if (verrou.current || enCorrection === null || verdictCorrection === null || verdictCorrection.etat !== 'permis') return
+    const ancien = enCorrection
+    const v = verdictCorrection
+    if (!window.confirm(confirmationDeLaCorrectionDuClient(ancien, v, piece.created_at))) return
+    setMessage(null)
+    await corrigerOperation(v.saisie, (refus) => dire(refus, paiementCorrige(ancien, v, piece.created_at), 'Ton paiement n’a pas été corrigé',
+      () => setCorrection(null)))
+  }
+
+  function changerLaCorrection(champ: keyof FormulaireDuPaiement, valeur: string) {
+    setCorrection((c) => (c === null ? c : { ...c, formulaire: { ...c.formulaire, [champ]: valeur } }))
+  }
+
   const idDate = `paiement-caisse-date-${piece.id}`
   const idMontant = `paiement-caisse-montant-${piece.id}`
 
@@ -96,6 +129,10 @@ export default function PaiementParMaCaisse({ piece, dossier, operations, jours,
         <ul style={{ margin: '0 0 8px', paddingLeft: 18 }}>
           {paiements.map((o) => {
             const retrait = retraitDuPaiement(o, dossier, jours, moi, premiere)
+            const corrigible = correctionDuPaiementSelon(CORRECTION_DU_PAIEMENT_EXPORTEE, o, dossier, jours, moi, premiere)
+            const ouverte = correction !== null && enCorrection !== null && enCorrection.id === o.id
+            const idDateCorrigee = `correction-caisse-date-${o.id}`
+            const idMontantCorrige = `correction-caisse-montant-${o.id}`
             return (
               <li key={o.id}>
                 <span>{paiementDit(o, moi)}</span>
@@ -111,13 +148,60 @@ export default function PaiementParMaCaisse({ piece, dossier, operations, jours,
                     {retrait.refus !== null && <span className="error-text" style={{ display: 'block' }}>{retrait.refus}</span>}
                   </>
                 )}
+                {corrigible.offert && (
+                  <>
+                    {' '}
+                    <button
+                      type="button" className="btn btn-outline btn-sm" disabled={enVol || corrigible.refus !== null}
+                      title={corrigible.refus ?? undefined} aria-expanded={ouverte}
+                      onClick={() => {
+                        // Le clic peut précéder le rendu qui désactive le bouton : le verrou, lui, est déjà posé.
+                        if (verrou.current) return
+                        setCorrection(ouverte ? null : { id: o.id, formulaire: formulaireDeLaCorrectionDuClient(o) })
+                      }}
+                    >
+                      Corriger
+                    </button>
+                    {/* Le même refus que celui du retrait (un paiement d'avant les années lues) ne se dit qu'une fois. */}
+                    {corrigible.refus !== null && !(retrait.offert && retrait.refus === corrigible.refus)
+                      && <span className="error-text" style={{ display: 'block' }}>{corrigible.refus}</span>}
+                  </>
+                )}
+                {ouverte && correction !== null && (
+                  <div className="field-row aligne-bas" style={{ marginTop: 6 }}>
+                    <div className="field">
+                      <label htmlFor={idDateCorrigee}>{vue.especesEntrent ? 'Jour où tu as vraiment reçu les espèces' : 'Jour où tu as vraiment payé'}</label>
+                      <input
+                        id={idDateCorrigee} type="date" value={correction.formulaire.date} disabled={enVol} onKeyDown={sansEnvoi}
+                        min={`${premiere}-01-01`} max={aujourdhui} onChange={(e) => changerLaCorrection('date', e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={idMontantCorrige}>Montant exact de tes espèces (€)</label>
+                      <input
+                        id={idMontantCorrige} type="text" inputMode="decimal" autoComplete="off" value={correction.formulaire.montant}
+                        disabled={enVol} onKeyDown={sansEnvoi} onChange={(e) => changerLaCorrection('montant', e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="button" className="btn btn-primary btn-sm" disabled={enVol || verdictCorrection?.etat !== 'permis'}
+                      onClick={() => { void corriger() }}
+                    >
+                      {enVol ? 'Écriture…' : 'Enregistrer la correction'}
+                    </button>
+                    <button type="button" className="btn btn-outline btn-sm" disabled={enVol} onClick={() => setCorrection(null)}>
+                      Annuler
+                    </button>
+                  </div>
+                )}
+                {ouverte && verdictCorrection?.etat === 'refuse' && <p className="error-text" role="alert">{verdictCorrection.message}</p>}
               </li>
             )
           })}
         </ul>
       )}
       {paiements.some((o) => retraitDuPaiement(o, dossier, jours, moi, premiere).offert) && (
-        <p className="muted" style={{ margin: '0 0 8px' }}>Pour corriger un paiement, retire-le puis enregistre le bon.</p>
+        <p className="muted" style={{ margin: '0 0 8px' }}>{motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).aideDuClient}</p>
       )}
 
       {payable && (

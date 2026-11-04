@@ -13,8 +13,9 @@ import {
   REFUS_STATUT_SOUS_LA_CASE_CAISSE, TABLES_LUES_AVEC_CAISSE, ceQueDitLaCaseCaisse, confirmationDeLaCaseCaisse, enumeration,
   etatCaisseDuDossier, libellesDesCases, phraseDuStatutDeLaCaisse, raisonDuDossierNonExclu, raisonDuStatutIllisible,
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
-  raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE,
+  raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE, ceQueMontreMaCaisseSelon,
 } from './droitsAcces'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
 import { BASCULE_OFFERTE } from './basculeDesVentes'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
@@ -1506,7 +1507,7 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     for (const [i, phrase] of phrases.entries()) {
       expect(phrase.startsWith(debut), String(i)).toBe(true)
       expect(phrase).toContain(CE_QUE_LA_CASE_CAISSE_OUVRE)
-      expect(phrase).toContain(`${CE_QUE_LA_CASE_CAISSE_OUVRE} ${CE_QUE_MONTRE_MA_CAISSE} `)
+      expect(phrase).toContain(`${CE_QUE_LA_CASE_CAISSE_OUVRE} ${ceQueMontreMaCaisseSelon(CORRECTION_DU_PAIEMENT_EXPORTEE)} `)
       // Jamais une affirmation que la case ne change rien : la base l'ouvre dès qu'elle est cochée.
       expect(phrase).not.toMatch(/ne change (rien|pas)/)
     }
@@ -1560,6 +1561,15 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     for (const fonction of ['retirer_operation_caisse', 'remplacer_operation_caisse']) {
       expect(derniereDefinitionSql(fonction), fonction).toContain("v_origine = 'client'")
     }
+    // Et, le jour où la migration de C12B-Q1 est dans l'export, la correction d'un paiement : la sixième fonction, son accès,
+    // son droit, et ses propres paiements seulement (« corrige ou retire ce paiement »).
+    if (CORRECTION_DU_PAIEMENT_EXPORTEE) {
+      const correction = derniereDefinitionSql('remplacer_paiement_par_la_caisse')
+      expect(correction).toContain('public.qui_ecrit_la_caisse(p_dossier_id)')
+      expect(correction).toContain("v_origine = 'client' and v_ancien.origine = 'cabinet'")
+      expect(correction).toContain("v_origine = 'client' and v_ancien.cree_par is distinct from auth.uid()")
+      expect(tout).toContain('grant execute on function public.remplacer_paiement_par_la_caisse(uuid, uuid, date, numeric) to authenticated;')
+    }
     // « sous la nature que tu fixes » : la recette du client prend celle du dossier.
     expect(derniereDefinitionSql('enregistrer_operation_caisse')).toContain('categorie_recettes_client')
   })
@@ -1572,13 +1582,20 @@ describe('la case « Caisse » et le statut de TVA du dossier (étape C11)', () 
     expect(CE_QUE_MONTRE_MA_CAISSE).toContain('dans « Mes pièces », il dit qu’une pièce est payée en espèces de sa caisse')
     expect(CE_QUE_MONTRE_MA_CAISSE).toContain('l’écran ne lui montre pas le montant de la pièce')
     expect(CE_QUE_MONTRE_MA_CAISSE).not.toContain('pas encore son écran')
-    expect(confirmationDeLaCaseCaisse('x', 'exonere', { etat: 'absente' }).paragraphes).toContain(CE_QUE_MONTRE_MA_CAISSE)
+    expect(confirmationDeLaCaseCaisse('x', 'exonere', { etat: 'absente' }).paragraphes)
+      .toContain(ceQueMontreMaCaisseSelon(CORRECTION_DU_PAIEMENT_EXPORTEE))
+    // C12B-Q1 : la correction d'un paiement, dite le jour où sa migration est en base — et seulement ce jour-là.
+    expect(ceQueMontreMaCaisseSelon(false)).toBe(CE_QUE_MONTRE_MA_CAISSE)
+    expect(ceQueMontreMaCaisseSelon(true)).toContain('et corrige ou retire ce paiement — l’écran ne lui montre pas le montant de la pièce.')
+    expect(ceQueMontreMaCaisseSelon(true).replace('corrige ou retire ce paiement', 'retire ce paiement')).toBe(CE_QUE_MONTRE_MA_CAISSE)
     // La phrase dit vrai : « Mes pièces » monte le paiement, et appelle — sous SON verrou (C12b, relecture du 03/11/2026) — la
     // fonction de la base qui le règle et celle qui le retire ; le formulaire, lui, n'appelle rien.
     const pieces = readFileSync(resolve(process.cwd(), 'src/pages/ClientUpload.tsx'), 'utf8')
     expect(pieces).toMatch(/<PaiementParMaCaisse\b/)
     expect(pieces).toContain("supabase.rpc('regler_piece_par_la_caisse'")
     expect(pieces).toContain("supabase.rpc('retirer_operation_caisse'")
+    // … et, la migration de C12B-Q1 en base, celle qui le corrige : « Mes pièces » l'appelle sous le même verrou.
+    expect(pieces).toContain("supabase.rpc('remplacer_paiement_par_la_caisse'")
     const paiement = readFileSync(resolve(process.cwd(), 'src/pages/PaiementParMaCaisse.tsx'), 'utf8')
     expect(paiement).not.toContain('supabase')
   })

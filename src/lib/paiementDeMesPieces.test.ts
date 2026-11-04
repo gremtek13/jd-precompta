@@ -4,7 +4,9 @@ import { caisseRejouee, dossierDuClient, type DossierDuClient, type JourDeLaCais
 import type { LectureDeLaCaisseDuClient } from './caisseClientLecture'
 import { motsDuCabinet, pourLEspace } from './espaceVentes'
 import {
-  anneeValidee, auteurDuPaiement, avantLaCaisseLue, caisseDeMesPieces, confirmationDuPaiement, confirmationDuRetraitDuPaiement,
+  anneeValidee, auteurDuPaiement, avantLaCaisseLue, caisseDeMesPieces, confirmationDeLaCorrectionDuClient, confirmationDuPaiement,
+  confirmationDuRetraitDuPaiement, correctionDuPaiement, correctionDuPaiementSelon, formulaireDeLaCorrectionDuClient, paiementCorrige,
+  verdictDeLaCorrectionDuClient, verdictDeLaCorrectionDuClientSelon,
   libelleDuGeste, MONTANT_DU_PAIEMENT_ILLISIBLE, MONTANT_SANS_SIGNE, paiementDansMaCaisse, paiementDit, paiementDuClientOuvert,
   paiementEnregistre, paiementRetire, paiementsDeLaPiece, payableParLaCaisse, pieceVueParLeClient, premiereAnneeLue,
   retraitDuPaiement, saisieDuPaiement, verdictDuPaiement, verdictDuPaiementSelon,
@@ -12,6 +14,7 @@ import {
 import {
   jugerLeReglementDuClientSelon, jugerLeReglementSelon, MOTS, ORDRE_DU_PAIEMENT, type PieceDuPaiement, type PieceDuPaiementDuClient,
 } from './paiementParLaCaisse'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon, RIEN_A_CORRIGER } from './correctionDuPaiement'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
@@ -344,8 +347,8 @@ describe('les paiements d’une pièce, et qui les a saisis', () => {
     const d = dossierRejoue([miens])
     expect(confirmationDuRetraitDuPaiement(miens, '2026-03-05T09:00:00Z', d)).toBe(
       'Retirer le paiement en espèces du 12/03/2026, 80,00 €, de la pièce déposée le 05/03/2026 ? Il reste dans '
-      + 'l’historique de ta caisse, retiré, et ta caisse du 12/03/2026 passera à 100,00 €. Pour le corriger, retire-le '
-      + 'puis enregistre le bon.',
+      + 'l’historique de ta caisse, retiré, et ta caisse du 12/03/2026 passera à 100,00 €. '
+      + motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).finDuRetraitDuClient,
     )
     expect(confirmationDuPaiement({ piece_id: 'p1', date: '2026-03-12', montant: -80 }, '2026-03-05T09:00:00Z', 2000)).toBe(
       'Payer en espèces de ta caisse la pièce déposée le 05/03/2026 : 80,00 € sortis le 12/03/2026 ? Ta caisse du '
@@ -379,5 +382,86 @@ describe('les mots', () => {
       paiementDansMaCaisse({ montant: -1 }, '2026-03-05'),
     ]
     for (const t of textes) expect(motsDuCabinet(t), t).toEqual([])
+  })
+})
+
+describe('la correction d’un paiement depuis « Mes pièces » (C12B-Q1)', () => {
+  // La caisse : 100 € reportés au 1er janvier 2025 ; le paiement du praticien, 80 € le 12/03/2026 ; celui de son cabinet, 10 €
+  // le 01/03/2026.
+  const sien = operation({})
+  const duCabinet = operation({ id: 'o2', piece_id: 'p4', date: '2026-03-01', montant: -10, origine: 'cabinet', cree_par: 'u-cabinet' })
+  const d = () => dossierRejoue([sien, duCabinet])
+  const jours = () => joursDe([sien, duCabinet])
+
+  it('le drapeau baissé : rien ne s’offre, et le verdict le dit sans juger', () => {
+    expect(correctionDuPaiementSelon(false, sien, d(), jours(), MOI, 2025)).toEqual({ offert: false })
+    expect(correctionDuPaiement(sien, d(), jours(), MOI, 2025).offert).toBe(CORRECTION_DU_PAIEMENT_EXPORTEE)
+    expect(verdictDeLaCorrectionDuClientSelon(false, { date: '2026-03-10', montant: '80' }, sien, ACHAT, d(), jours(), 2025))
+      .toEqual({ etat: 'refuse', message: 'La correction d’un paiement par ta caisse ne s’offre pas encore.' })
+    expect(verdictDeLaCorrectionDuClient({ date: '2026-03-10', montant: '80' }, sien, ACHAT, d(), jours(), 2025).etat)
+      .toBe(CORRECTION_DU_PAIEMENT_EXPORTEE ? 'permis' : 'refuse')
+  })
+
+  it('levé : ses propres paiements seuls, non retirés, sur une année ouverte ; d’avant les années lues, la phrase du formulaire', () => {
+    expect(correctionDuPaiementSelon(true, sien, d(), jours(), MOI, 2025)).toEqual({ offert: true, refus: null })
+    expect(correctionDuPaiementSelon(true, duCabinet, d(), jours(), MOI, 2025)).toEqual({ offert: false })
+    expect(correctionDuPaiementSelon(true, { ...sien, cree_par: 'un-autre' }, d(), jours(), MOI, 2025)).toEqual({ offert: false })
+    expect(correctionDuPaiementSelon(true, { ...sien, retire_le: '2026-03-13T00:00:00Z' }, d(), jours(), MOI, 2025)).toEqual({ offert: false })
+    expect(correctionDuPaiementSelon(true, { ...sien, genre: 'apport', piece_id: null }, d(), jours(), MOI, 2025)).toEqual({ offert: false })
+    const ancien = operation({ date: '2024-11-20' })
+    // « Mes pièces » le montre (toutes les années), la caisse rejouée ne le porte pas : la phrase du formulaire, jamais « relis ta
+    // caisse ».
+    expect(correctionDuPaiementSelon(true, ancien, d(), jours(), MOI, 2025)).toEqual({ offert: true, refus: avantLaCaisseLue(2025) })
+    // Une année que la lecture dit figée : rien ne s'offre, comme le retrait.
+    const figes = jours().map((j) => ({ ...j, fige: j.jour.startsWith('2026') }))
+    expect(correctionDuPaiementSelon(true, sien, d(), figes, MOI, 2025)).toEqual({ offert: false })
+  })
+
+  it('le formulaire s’ouvre sur son jour et ses espèces, sans signe', () => {
+    expect(formulaireDeLaCorrectionDuClient(sien)).toEqual({ date: '2026-03-12', montant: '80,00' })
+    expect(formulaireDeLaCorrectionDuClient(operation({ montant: 45.5 }))).toEqual({ date: '2026-03-12', montant: '45,50' })
+    expect(formulaireDeLaCorrectionDuClient(operation({ montant: -0.07 }))).toEqual({ date: '2026-03-12', montant: '0,07' })
+  })
+
+  it('les refus avant le clic, dans l’ordre : les règles du formulaire, rien à corriger, puis la base aux mots du client', () => {
+    const juger = (date: string, montant: string) => verdictDeLaCorrectionDuClientSelon(true, { date, montant }, sien, ACHAT, d(), jours(), 2025)
+    expect(juger('', '80')).toEqual({ etat: 'vide' })
+    expect(juger('2026-03-10', 'quatre-vingts')).toEqual({ etat: 'refuse', message: MONTANT_DU_PAIEMENT_ILLISIBLE })
+    expect(juger('2026-03-10', '-80')).toEqual({ etat: 'refuse', message: MONTANT_SANS_SIGNE })
+    expect(juger('2024-12-31', '80')).toEqual({ etat: 'refuse', message: avantLaCaisseLue(2025) })
+    expect(juger('2026-03-12', '80,00')).toEqual({ etat: 'refuse', message: RIEN_A_CORRIGER })
+    expect(juger('2026-03-12', '0')).toEqual({ etat: 'refuse', message: pourLEspace('client', MOTS.montant_nul.gabarit) })
+    // La caisse négative : 100 € reportés, 10 € payés par le cabinet le 01/03 ; 95 € le 12/03, sans l'ancien, la vident de 5 €.
+    expect(juger('2026-03-12', '95')).toEqual({ etat: 'refuse', message: pourLEspace('client', texteCaisseNegative('paiement', -9500, '2026-03-12', -500)) })
+    const figes = jours().map((j) => ({ ...j, fige: j.jour.startsWith('2025') }))
+    expect(verdictDeLaCorrectionDuClientSelon(true, { date: '2025-06-01', montant: '80' }, sien, ACHAT, d(), figes, 2025))
+      .toEqual({ etat: 'refuse', message: anneeValidee(2025) })
+  })
+
+  it('permis : ce qui part, signé par le sens de la pièce ; la caisse de ses deux jours', () => {
+    const v = verdictDeLaCorrectionDuClientSelon(true, { date: '2026-03-10', montant: '75,50' }, sien, ACHAT, d(), jours(), 2025)
+    expect(v).toEqual({ etat: 'permis', saisie: { operation_id: 'o1', date: '2026-03-10', montant: -75.5 }, soldeApres: 1450, soldeDuJourAncien: 1450 })
+    const memeJour = verdictDeLaCorrectionDuClientSelon(true, { date: '2026-03-12', montant: '70' }, sien, ACHAT, d(), jours(), 2025)
+    expect(memeJour).toEqual({ etat: 'permis', saisie: { operation_id: 'o1', date: '2026-03-12', montant: -70 }, soldeApres: 2000, soldeDuJourAncien: null })
+    // Une pièce de vente : les espèces entrent, le montant part positif.
+    const encaisse = operation({ piece_id: 'p2', montant: 45 })
+    const v2 = verdictDeLaCorrectionDuClientSelon(true, { date: '2026-03-11', montant: '45' }, encaisse, VENTE, dossierRejoue([encaisse]),
+      joursDe([encaisse]), 2025)
+    expect(v2.etat === 'permis' && v2.saisie.montant).toBe(45)
+  })
+
+  it('la confirmation nomme l’ancien et le nouveau, jamais le montant de la pièce ; aucune forme du cabinet', () => {
+    const v = verdictDeLaCorrectionDuClientSelon(true, { date: '2026-03-10', montant: '75,50' }, sien, ACHAT, d(), jours(), 2025)
+    if (v.etat !== 'permis') throw new Error('permis attendu')
+    const confirmation = confirmationDeLaCorrectionDuClient(sien, v, '2026-03-05T09:00:00Z').replace(/\u202f|\u00a0/g, ' ')
+    expect(confirmation).toBe('Corriger ton paiement en espèces du 12/03/2026, 80,00 €, de la pièce déposée le 05/03/2026 : 75,50 € '
+      + 'sortis le 10/03/2026 à sa place ? L’ancien reste dans l’historique de ta caisse, retiré. Ta caisse du 10/03/2026 passera à '
+      + '14,50 €, celle du 12/03/2026 à 14,50 €. Ton cabinet le voit aussitôt.')
+    const fait = paiementCorrige(sien, v, '2026-03-05T09:00:00Z').replace(/\u202f|\u00a0/g, ' ')
+    expect(fait).toBe('Corrigé : la pièce déposée le 05/03/2026, 75,50 € sortis le 10/03/2026, à la place de 80,00 € sortis le 12/03/2026.')
+    for (const t of [confirmation, fait, motsDuRemedeSelon(true).aideDuClient, motsDuRemedeSelon(true).finDuRetraitDuClient,
+      RIEN_A_CORRIGER, 'La correction d’un paiement par ta caisse ne s’offre pas encore.']) {
+      expect(motsDuCabinet(t), t).toEqual([])
+    }
   })
 })

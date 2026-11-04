@@ -1,9 +1,12 @@
 import { paiementNet, seuilAlignement } from './alignementBanque'
-import { jourDit, sansLOperation, type OperationDeLaCaisse } from './caisse'
+import { jourDit, refusDeLAncienne, sansLOperation, type OperationDeLaCaisse } from './caisse'
 import {
   dossierDeLEcran, euros, lireLeMontantSaisi, MONTANT_ILLISIBLE, refusDuRetraitDeLOperation, soldeAuJour,
   type ContexteDeLaCaisse, type DonneesDeLaCaisse,
 } from './caisseEcran'
+import {
+  CORRECTION_DU_PAIEMENT_EXPORTEE, correctionOfferteSelon, correctionSansChangement, jugerLaCorrectionSelon, RIEN_A_CORRIGER,
+} from './correctionDuPaiement'
 import { DEVISE_PIVOT } from './devises'
 import { formatMoney } from './format'
 import type { LectureComplete } from './lectureComplete'
@@ -253,6 +256,116 @@ export function confirmationDuRetraitDuPaiement(o: OperationCaisse, ctx: Context
   return `Retirer ${paiementNomme(o)} ? La pièce n’est plus payée par la caisse ce jour-là ; la contrepartie de ses écritures `
     + `est retirée avec lui (rien ne se supprime : le paiement reste dans l’historique), et la caisse du ${jourDit(o.date)} `
     + `passera à ${euros(apres)}.`
+}
+
+// ── La correction d'un paiement (C12B-Q1) ─────────────────────────────────────────────────────────────────────────────
+
+// CORRIGER UN PAIEMENT D'UN SEUL GESTE, DANS LA FICHE D'UNE PIÈCE (C12B-Q1 ; la migration `correction_du_paiement_par_la_caisse`,
+// PRÉPARÉE, pas appliquée). Le jour et le montant d'un paiement se corrigent : la base écrit le nouveau, de la même pièce, et
+// retire l'ancien, dans la même transaction (`remplacer_paiement_par_la_caisse`). Ses refus redits avant le clic :
+// lib/correctionDuPaiement.ts. Le drapeau `CORRECTION_DU_PAIEMENT_EXPORTEE` baissé, rien ne s'offre (`correctionOfferte`) et le
+// verdict est `absent` : la fiche est celle d'hier, au caractère près. Le drapeau se lit ICI, à chaque appel (l'import, que les
+// tests jouent dans ses deux états), et les jugements de lib/correctionDuPaiement.ts le reçoivent (`…Selon`).
+
+/** Ce que le cabinet a tapé pour corriger un paiement, tel quel : le jour et le montant du nouveau, signé comme le relevé. */
+export interface FormulaireDeLaCorrection { date: string; montant: string }
+
+/** Un montant signé, écrit comme le cabinet l'écrirait (« -80,00 ») : celui du paiement que le formulaire reprend. */
+function montantEcrit(montant: number): string {
+  const centimes = Math.round(Math.abs(montant) * 100)
+  return `${montant < 0 ? '-' : ''}${Math.floor(centimes / 100)},${String(centimes % 100).padStart(2, '0')}`
+}
+
+/** Le formulaire tel qu'il s'ouvre sur un paiement : son jour et son montant, que le cabinet corrige. */
+export function formulaireDeLaCorrection(o: Pick<OperationCaisse, 'date' | 'montant'>): FormulaireDeLaCorrection {
+  return { date: o.date, montant: montantEcrit(o.montant) }
+}
+
+/**
+ * La correction s'offre-t-elle sur CE paiement, et sinon pourquoi avant toute saisie : le drapeau, un paiement d'une pièce non
+ * retiré (`correctionOfferte`) ; puis, pour la fiche du cabinet, les refus de l'ancien que la base opposerait à TOUTE
+ * correction (`refusDeLAncienne` : l'exercice validé de son jour, surtout), sous ses mots.
+ */
+export function correctionDeLaFiche(o: OperationCaisse, ctx: ContexteDeLaCaisse, d: DonneesDeLaCaisse):
+  { offerte: false } | { offerte: true; refus: string | null } {
+  if (!correctionOfferteSelon(CORRECTION_DU_PAIEMENT_EXPORTEE, o)) return { offerte: false }
+  return { offerte: true, refus: refusDeLAncienne(o.id, dossierDeLEcran(ctx, d)).refus?.message ?? null }
+}
+
+export type VerdictDeLaCorrection =
+  /** La migration n'est pas en base : rien ne se corrige. */
+  | { etat: 'absent' }
+  /** Rien de tapé qui permette de juger : le bouton attend, sans reproche. */
+  | { etat: 'vide' }
+  /** Ce qui ne part pas : un montant illisible, une correction qui ne change rien, ou ce que la base refuserait. */
+  | { etat: 'refuse'; message: string }
+  /** Le paiement que la base écrirait à la place de l'ancien, et la caisse de leurs deux jours. */
+  | {
+    etat: 'permis'
+    saisie: { operation_id: string; date: string; montant: number }
+    ancien: OperationDeLaCaisse
+    operation: OperationDeLaCaisse
+    soldeDuJour: number
+    /** La caisse du jour de l'ancien, quand le nouveau change de jour ; nulle sinon. */
+    soldeDuJourAncien: number | null
+  }
+
+/**
+ * Le verdict de « Corriger » : la règle du formulaire (un montant lisible, une correction qui change quelque chose), puis le
+ * refus de `remplacer_paiement_par_la_caisse` sur la saisie TELLE QU'ELLE PART (`jugerLaCorrectionSelon`), sous le profil du
+ * cabinet, dans le dossier lu en entier ; ou le paiement qu'elle écrirait, et la caisse de son jour.
+ */
+export function verdictDeLaCorrection(
+  f: FormulaireDeLaCorrection, ancien: OperationCaisse, ctx: ContexteDeLaCaisse, d: DonneesDeLaCaisse, piece: PieceDuPaiement,
+): VerdictDeLaCorrection {
+  if (!CORRECTION_DU_PAIEMENT_EXPORTEE) return { etat: 'absent' }
+  if (f.date === '' || f.montant.trim() === '') return { etat: 'vide' }
+  const lu = lireLeMontantSaisi(f.montant)
+  if (lu === 'illisible') return { etat: 'refuse', message: MONTANT_ILLISIBLE }
+  const saisie = { date: f.date, montant: lu }
+  if (correctionSansChangement(ancien, saisie)) return { etat: 'refuse', message: RIEN_A_CORRIGER }
+  const j = jugerLaCorrectionSelon(true, ancien.id, saisie, dossierDeLEcran(ctx, d), [piece], 'maintenant', 'paiement-corrige')
+  if (j.etat === 'absent') return { etat: 'absent' }
+  if (j.etat === 'refuse') return { etat: 'refuse', message: j.refus.message }
+  return {
+    etat: 'permis', saisie: { operation_id: j.ancien.id, date: j.operation.date, montant: j.operation.montant },
+    ancien: j.ancien, operation: j.operation, soldeDuJour: soldeAuJour(j.caisse, j.operation.date),
+    soldeDuJourAncien: j.ancien.date === j.operation.date ? null : soldeAuJour(j.caisse, j.ancien.date),
+  }
+}
+
+/**
+ * L'avertissement avant le clic, comme pour un paiement (`avertissementDuReglement`) : la pièce déjà payée par la banque, ou
+ * payée en trop — l'ancien paiement ne compte plus, puisque le nouveau le remplace.
+ */
+export function avertissementDeLaCorrection(
+  piece: Pick<PieceDuPaiement, 'id' | 'montant_ttc' | 'devise' | 'paiementsDuReleve'>, d: Pick<DonneesDeLaCaisse, 'operations'>,
+  ancienId: string, centimes: number,
+): string | null {
+  return avertissementDuReglement(piece, { operations: d.operations.filter((o) => o.id !== ancienId) }, centimes)
+}
+
+/**
+ * La confirmation qui NOMME ce qui part : l'ancien paiement (son jour, ses espèces) et le nouveau qui le remplace, la pièce (son
+ * fichier), la caisse de leurs jours, et l'écriture : la contrepartie de l'ancien part avec lui, celle du nouveau s'écrit avec
+ * les écritures de la pièce, à régénérer.
+ */
+export function confirmationDeLaCorrection(
+  nomDeLaPiece: string, v: Extract<VerdictDeLaCorrection, { etat: 'permis' }>, compteCaisse: string, avertissement: string | null,
+): string {
+  const caisses = `La caisse du ${jourDit(v.operation.date)} passera à ${euros(v.soldeDuJour)}`
+    + `${v.soldeDuJourAncien === null ? '' : `, celle du ${jourDit(v.ancien.date)} à ${euros(v.soldeDuJourAncien)}`}.`
+  return `Corriger un paiement de la pièce « ${nomDeLaPiece} » par la caisse : ${paiementNomme(v.operation)} remplacera `
+    + `${paiementNomme(v.ancien)} ? `
+    + `${avertissement === null ? '' : `${avertissement} `}`
+    + 'L’ancien reste dans l’historique de la caisse, retiré, et sa contrepartie part avec lui. '
+    + `${caisses} La contrepartie du nouveau au compte de la caisse (${compteCaisse}) s’écrit avec les écritures de la pièce : `
+    + 'déjà générées, elles seront à régénérer (Écritures).'
+}
+
+/** Ce que la fiche dit une fois la correction écrite. */
+export function correctionEnregistree(v: Extract<VerdictDeLaCorrection, { etat: 'permis' }>): string {
+  return `Corrigé : ${paiementNomme(v.operation)} remplace ${paiementNomme(v.ancien)}.`
 }
 
 // ── La pièce qu'un paiement cite (`garder_piece_payee_par_la_caisse`) ─────────────────────────────────────────────────

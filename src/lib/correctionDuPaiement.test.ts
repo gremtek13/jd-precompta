@@ -6,8 +6,12 @@ import {
 } from './caisse'
 import {
   CORRECTION_DU_PAIEMENT_EXPORTEE, correctionOfferte, correctionOfferteSelon, correctionSansChangement, jugerLaCorrection,
-  jugerLaCorrectionDuClientSelon, jugerLaCorrectionSelon, MOTS_DE_LA_CORRECTION, ORDRE_DE_LA_CORRECTION,
+  jugerLaCorrectionDuClientSelon, jugerLaCorrectionSelon, MOTS_DE_LA_CORRECTION, motsDuRemedeSelon, ORDRE_DE_LA_CORRECTION,
 } from './correctionDuPaiement'
+import type { DonneesDeLaCaisse } from './caisseEcran'
+import { motsDuCabinet } from './espaceVentes'
+import { correctionDeLaFiche, formulaireDeLaCorrection, verdictDeLaCorrection } from './paiementParLaCaisseEcran'
+import type { OperationCaisse } from './types'
 import {
   MOTS, MOTS_DU_PAIEMENT, ORDRE_DU_PAIEMENT, paiementsParLaCaisseSelon, type PieceDuPaiement, type PieceDuPaiementDuClient,
 } from './paiementParLaCaisse'
@@ -502,5 +506,77 @@ describe('les essais jouent la migration, et attendent sans elle', () => {
     expect(rls).toContain("'CQ. corriger un paiement par la caisse : EN ATTENTE de la migration correction_du_paiement_par_la_caisse'")
     const filet = lire('supabase/essais/validationDesPaiementsParLaCaisse.sql')
     expect(filet).toContain('remplacer_paiement_par_la_caisse(')
+  })
+})
+
+describe('les mots du remède, selon le drapeau', () => {
+  it('baissé : ceux d’hier, au caractère près ; levé : la correction, depuis la fiche de la pièce', () => {
+    expect(motsDuRemedeSelon(false)).toEqual({
+      pastille: 'Se retire depuis la fiche de la pièce',
+      aideDuClient: 'Pour corriger un paiement, retire-le puis enregistre le bon.',
+      finDuRetraitDuClient: 'Pour le corriger, retire-le puis enregistre le bon.',
+      detail: 'Dans l’onglet Caisse, retirer le paiement, puis le saisir de nouveau depuis la fiche de la pièce, au montant exact — '
+        + 'ou corriger la pièce.',
+      prealable: 'Retirer le paiement, puis le saisir de nouveau au montant exact — ou corriger la pièce — avant la validation.',
+      point: 'à retirer, puis à saisir de nouveau',
+    })
+    const hier = motsDuRemedeSelon(false) as Record<string, string>
+    const leve = motsDuRemedeSelon(true) as Record<string, string>
+    expect(Object.keys(leve)).toEqual(Object.keys(hier))
+    for (const cle of Object.keys(leve)) expect(leve[cle], cle).not.toBe(hier[cle])
+    // Ce que le client lit : tutoyé, aucune forme du cabinet ; ce que le cabinet lit ne renvoie plus à l'onglet Caisse, qui
+    // n'offre aucun geste sur un paiement.
+    expect(motsDuCabinet(leve.aideDuClient)).toEqual([])
+    expect(motsDuCabinet(leve.finDuRetraitDuClient)).toEqual([])
+    expect(leve.detail).not.toMatch(/onglet Caisse/)
+    expect(leve.detail).toContain('fiche de la pièce')
+  })
+
+  it('aucun écran n’écrit plus les mots d’hier en dur : ils ne vivent que dans la table, que chaque écran lit', () => {
+    const racine = new URL('../', import.meta.url).pathname
+    const sources = readdirSync(racine, { recursive: true }).map(String)
+      .filter((f) => /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$/.test(f) && !f.startsWith('test/'))
+    expect(sources.length).toBeGreaterThan(300)
+    const hier = Object.values(motsDuRemedeSelon(false) as Record<string, string>)
+    const fautifs = sources.filter((f) => !f.endsWith('lib/correctionDuPaiement.ts'))
+      .filter((f) => { const t = readFileSync(racine + f, 'utf8'); return hier.some((m) => t.includes(m)) })
+    expect(fautifs).toEqual([])
+    // Et la table est lue là où ces mots se disent.
+    for (const [fichier, cle] of [
+      ['pages/dossier/CaisseTab.tsx', 'pastille'], ['pages/PaiementParMaCaisse.tsx', 'aideDuClient'],
+      ['lib/paiementDeMesPieces.ts', 'finDuRetraitDuClient'], ['lib/controlesDeLaCaisse.ts', 'detail'],
+      ['lib/prealablesValidation.ts', 'prealable'], ['lib/pointsDeLaChecklist.ts', 'point'],
+    ] as const) {
+      expect(readFileSync(racine + fichier, 'utf8'), fichier).toContain(`motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).${cle}`)
+    }
+  })
+})
+
+describe('la fiche d’une pièce, côté cabinet (lib/paiementParLaCaisseEcran.ts)', () => {
+  const ops = (): OperationCaisse[] => OPERATIONS.map((o) => ({
+    ...o, dossier_id: 'd', cree_le: '2026-03-01T08:00:00Z', retire_par: null,
+  } as OperationCaisse))
+  const donnees = (): DonneesDeLaCaisse => ({
+    operations: ops(), ouvertures: [], mouvements: [], especes: { etat: 'sans_objet' }, categories: [], piecesPayees: [],
+  })
+  const ctx = { modele: MODELE, assujettiTva: false, aujourdhui: AUJOURDHUI, anneesValidees: [] as number[] }
+  const pa = () => ops().find((o) => o.id === 'pa')!
+
+  it('selon le drapeau : baissé, rien ne s’offre et le verdict est absent ; levé, la correction s’offre et se juge', () => {
+    const offerte = correctionDeLaFiche(pa(), ctx, donnees())
+    const verdict = verdictDeLaCorrection({ date: '2026-03-04', montant: '-100' }, pa(), ctx, donnees(), PIECES[0])
+    if (CORRECTION_DU_PAIEMENT_EXPORTEE) {
+      expect(offerte).toEqual({ offerte: true, refus: null })
+      expect(verdict.etat).toBe('permis')
+    } else {
+      expect(offerte).toEqual({ offerte: false })
+      expect(verdict).toEqual({ etat: 'absent' })
+    }
+  })
+
+  it('le formulaire s’ouvre sur le jour et le montant signé du paiement', () => {
+    expect(formulaireDeLaCorrection(pa())).toEqual({ date: '2026-03-05', montant: '-100,00' })
+    expect(formulaireDeLaCorrection({ date: '2026-03-07', montant: 80 })).toEqual({ date: '2026-03-07', montant: '80,00' })
+    expect(formulaireDeLaCorrection({ date: '2026-03-07', montant: -0.5 })).toEqual({ date: '2026-03-07', montant: '-0,50' })
   })
 })

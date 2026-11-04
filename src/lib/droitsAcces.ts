@@ -43,6 +43,7 @@ import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { SIMULATION_VENTES_FACTUREES_EXPORTEE } from './simulationVentesFacturees'
 import { STATUTS_DE_LA_SAISIE_DU_CLIENT } from './caisse'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE } from './correctionDuPaiement'
 
 export type Domaine = 'ventes' | 'banque' | 'caisse'
 
@@ -632,6 +633,18 @@ export const CE_QUE_MONTRE_MA_CAISSE = 'Son espace la lui montre dans « Ma cais
   + 'ses prélèvements, et corrige ou retire ce qu’il a saisi ; dans « Mes pièces », il dit qu’une pièce est payée en espèces '
   + 'de sa caisse, à son jour et à son montant, et retire ce paiement — l’écran ne lui montre pas le montant de la pièce.'
 
+/**
+ * La même, la migration `correction_du_paiement_par_la_caisse` en base (C12B-Q1) : dans « Mes pièces », il corrige aussi ce
+ * paiement, d'un seul geste (`remplacer_paiement_par_la_caisse`, ses propres paiements seulement).
+ */
+export const CE_QUE_MONTRE_MA_CAISSE_AVEC_LA_CORRECTION = CE_QUE_MONTRE_MA_CAISSE
+  .replace('et retire ce paiement —', 'et corrige ou retire ce paiement —')
+
+/** Ce que l'onglet dit de l'espace du client, selon que la correction d'un paiement est en base. */
+export function ceQueMontreMaCaisseSelon(enBase: boolean): string {
+  return enBase ? CE_QUE_MONTRE_MA_CAISSE_AVEC_LA_CORRECTION : CE_QUE_MONTRE_MA_CAISSE
+}
+
 /** Ce que la phrase de l'onglet dit de la case « Caisse » sur CE dossier, selon son statut de TVA. */
 export function phraseDuStatutDeLaCaisse(caisse: EtatCaisseDuDossier): string {
   if (caisse.etat === 'exclu') {
@@ -651,7 +664,7 @@ export function phraseDuStatutDeLaCaisse(caisse: EtatCaisseDuDossier): string {
 export function ceQueDitLaCaseCaisse(caisse: EtatCaisseDuDossier): string {
   const { libelle, ouvrira } = definitionDe('caisse')
   return `« ${libelle} » (${ouvrira}) : une case cochée ouvre au client, par la base, la caisse de son dossier — `
-    + `${CE_QUE_LA_CASE_CAISSE_OUVRE} ${CE_QUE_MONTRE_MA_CAISSE} `
+    + `${CE_QUE_LA_CASE_CAISSE_OUVRE} ${ceQueMontreMaCaisseSelon(CORRECTION_DU_PAIEMENT_EXPORTEE)} `
     + phraseDuStatutDeLaCaisse(caisse)
 }
 
@@ -701,7 +714,7 @@ export function confirmationDeLaCaseCaisse(
       condition,
       CE_QUE_LA_CASE_RETIENT,
       laNature,
-      CE_QUE_MONTRE_MA_CAISSE,
+      ceQueMontreMaCaisseSelon(CORRECTION_DU_PAIEMENT_EXPORTEE),
     ],
     bouton: 'Cocher « Caisse »',
   }

@@ -31,6 +31,7 @@ import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentile
 import { paiementsDesPieces, piecesPayees } from './rattachement'
 import { partsEncaissees } from './encaissementsFactures'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisseDuDossierSelon } from './paiementParLaCaisse'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon } from './correctionDuPaiement'
 import { estContrepartieCaisse } from './ecritures'
 import {
   detailJumellesIncoherentes, detailPiecesADesigner, detailVentesEnDouble, detailVentesHorsFacturesAVerifier,
@@ -758,7 +759,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       // reprend sous le même identifiant. Avec la migration seulement : sans elle, aucun paiement par la caisse.
       ...(!PAIEMENT_PAR_LA_CAISSE_EXPORTE ? [] : [{
         id: 'caisse-paiements-a-retirer',
-        label: 'paiement(s) en espèces que leur pièce contredit depuis — un type ou un montant changé : à retirer, puis à saisir de nouveau',
+        label: `paiement(s) en espèces que leur pièce contredit depuis — un type ou un montant changé : ${motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).point}`,
         action: 'Voir la caisse', nb: paiementsARetirer.length, cible: 'caisse' as const, severite: 'erreur' as const,
         detail: paiementsARetirer.length > 0 ? detailDesPaiementsARetirer(paiementsARetirer) : undefined,
       }]),

@@ -5,6 +5,7 @@ import {
 } from './caisse'
 import type { ModeleComptable } from './engagement'
 import { ecartAvecBanque, paiementNet } from './alignementBanque'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon } from './correctionDuPaiement'
 import { formatMoney } from './format'
 import { especesEntrentPour, PAIEMENT_PAR_LA_CAISSE_EXPORTE, paiementsParLaCaisseSelon } from './paiementParLaCaisse'
 import type { PaiementsDesPieces, PartPayeeParLaCaisse } from './rattachement'
@@ -421,7 +422,10 @@ export function paiementsParLaCaisseARetirer<P extends Pick<Piece, 'id' | 'type_
     || a.paiement.operation_caisse_id.localeCompare(b.paiement.operation_caisse_id))
 }
 
-/** Le détail des paiements à retirer : chacun par son jour et son montant, et ce que sa pièce a changé. */
+/**
+ * Le détail des paiements à retirer : chacun par son jour et son montant, et ce que sa pièce a changé ; puis le remède — la
+ * correction d'un seul geste depuis la fiche de la pièce, la migration de C12B-Q1 en base (`motsDuRemedeSelon`).
+ */
 export function detailDesPaiementsARetirer(liste: readonly PaiementARetirer[]): string {
   return `${enumerer(liste.map((x) => {
     const nom = `le paiement en espèces du ${jourDit(x.paiement.date)} (${formatMoney(Math.abs(x.paiement.montant))})`
@@ -431,8 +435,7 @@ export function detailDesPaiementsARetirer(liste: readonly PaiementARetirer[]): 
     }
     const reste = x.resteCentimes ?? 0
     return `${nom}, qui laisse sa pièce à ${formatMoney(Math.abs(reste) / 100)} ${reste > 0 ? 'de son montant' : 'au-delà de son montant'}`
-  }))}. Dans l’onglet Caisse, retirer le paiement, puis le saisir de nouveau depuis la fiche de la pièce, au montant exact — ou `
-    + 'corriger la pièce.'
+  }))}. ${motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).detail}`
 }
 
 // ── caisse-negative ───────────────────────────────────────────────────────────────────────────────────────────────────

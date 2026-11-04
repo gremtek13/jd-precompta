@@ -10,6 +10,7 @@ import type { ModeleComptable } from './engagement'
 import { CHAMPS_BNC_NON_EXPORTES, numeroterFec } from './fec'
 import { verdictDuReglement } from './paiementParLaCaisseEcran'
 import { paiementsParLaCaisseSelon } from './paiementParLaCaisse'
+import { CORRECTION_DU_PAIEMENT_EXPORTEE, motsDuRemedeSelon } from './correctionDuPaiement'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { prealablesDeValidation, type DonneesDeValidation } from './prealablesValidation'
 import { paiementsDesPieces } from './rattachement'
@@ -252,6 +253,7 @@ describe('défaut 2 — un paiement par la caisse d’un centime de moins que la
     expect(bloquants(d)).toContain('caisse-paiements-a-retirer')
     const prealable = prealablesDeValidation(d).prealables.find((x) => x.id === 'caisse-paiements-a-retirer')!
     expect(prealable.nb).toBe(1)
-    expect(prealable.detail?.replace(/\u202f|\u00a0/g, ' ')).toBe('le paiement en espèces du 12/03/2025 (40,00 €), qui laisse sa pièce à 0,01 € de son montant. Dans l’onglet Caisse, retirer le paiement, puis le saisir de nouveau depuis la fiche de la pièce, au montant exact — ou corriger la pièce.')
+    expect(prealable.detail?.replace(/\u202f|\u00a0/g, ' ')).toBe('le paiement en espèces du 12/03/2025 (40,00 €), qui laisse sa pièce à 0,01 € de son montant. '
+      + motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).detail)
   })
 })
