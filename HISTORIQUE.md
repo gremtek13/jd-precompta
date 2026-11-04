@@ -47474,3 +47474,140 @@ un POST, comme la v51 ; `receive-email` rend 405 à un GET : les deux modules im
 
 **RETOUR ARRIÈRE.** La même ligne au commit d'avant : `b3b332a` pour `extract-piece`, `265e28b` pour `receive-email`
 (son fichier y est celui de la v24, aucun commit ne l'ayant touché depuis `3603a85`).
+
+### 04/11/2026 — LA CAISSE : CORRIGER UN PAIEMENT EN ESPÈCES D'UN SEUL GESTE (C12B-Q1) (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Écrite par un agent architecte, sur `25e5409`. Aucun appel aux outils de Supabase, rien d'écrit ni lu en production :
+la migration est PRÉPARÉE et éprouvée sur une réplique de la production du jour, jamais appliquée. Lus avant d'écrire :
+« LA CAISSE, EN BASE : LE RETRAIT, LE REMPLACEMENT ET LE VERSEMENT D'ESPÈCES (C1B, LIGNE 26.6) », « LA CAISSE : LE
+PAIEMENT D'UNE PIÈCE PAR LA CAISSE, EN BASE (C8, LIGNE 26.6) », « LA CAISSE : LE PAIEMENT D'UNE PIÈCE DEPUIS « MES
+PIÈCES » (C12B, LIGNE 26.6) », « LA CAISSE : LA RELECTURE DE C11, C12A ET C12B, ET SES CORRECTIONS (LIGNE 26.6) »,
+« VINGT-QUATRE RÉPONSES DU CABINET » (C12B-Q1), et pour la forme « LE SENS DES RÈGLES « TOUJOURS IGNORER » … (REGLES-Q1)
+(PRÉPARÉE, PAS APPLIQUÉE) ». Créés : la migration et son retour arrière (`supabase/preparees/`),
+`src/lib/correctionDuPaiement.ts` et son test, `src/pages/ClientUpload.correction.test.tsx`. Modifiés : les essais
+`caisse.sql`, `caisseSuppression.sql`, `validationDesPaiementsParLaCaisse.sql` et `rls.sql` ; le banc de l'essai de la
+caisse (`src/test/essaiCaisse.ts`) ; `lib/caisse.ts` et `lib/paiementParLaCaisse.ts` (deux jugements exportés, rien de
+changé) ; la fiche d'une pièce (`ReglementParLaCaisse.tsx`), « Mes pièces » (`ClientUpload.tsx`,
+`PaiementParMaCaisse.tsx`) et leurs modules (`lib/paiementParLaCaisseEcran.ts`, `lib/paiementDeMesPieces.ts`) ; les mots
+du remède (onglet Caisse, Checklist, préalables, onglet Accès) ; leurs tests ; le README de l'export.)
+
+**LA DÉCISION.** C12B-Q1, tranchée le 04/11/2026 CONTRE la recommandation (« retirer, puis payer de nouveau », sans
+migration) : « Un seul geste « Corriger » (une migration) ». Un paiement en espèces d'une pièce dont le jour ou le
+montant est faux se remplace en une fois, tout ou rien — le praticien depuis « Mes pièces », ses propres paiements
+seulement, le cabinet depuis la fiche de la pièce.
+
+**LA FORME RETENUE : UNE FONCTION NEUVE**, `remplacer_paiement_par_la_caisse(dossier, opération, date, montant)`, aux
+droits du propriétaire, exécutable par un compte connecté, la même pour le cabinet et le client (la migration
+`correction_du_paiement_par_la_caisse`, `supabase/preparees/20261104120000_…`, version PROVISOIRE ; 17 939 caractères,
+18 293 octets, 230 lignes, `fd9978cc8e1a9d44a7feb90d947f72c7`, sha-256 `397aaf18…` ; le corps `ff72f955…`). Elle :
+1. juge l'ancien par les CINQ premiers refus du retrait, recopiés au caractère près (le test les confronte à ceux de
+   `retirer_operation_caisse`, la variable exceptée), sous les mêmes verrous pris dans le même ordre, puis son genre ;
+2. verrouille sa pièce en partage jusqu'à la fin, puis, dans une sous-transaction défaite aussitôt (le code « JDC12 »,
+   qu'elle seule lève et rattrape — le patron « JDC1B » de `remplacer_operation_caisse`), retire l'ancien et appelle
+   `regler_piece_par_la_caisse` ELLE-MÊME pour le nouveau, de la même pièce : aucun refus du paiement n'est recopié, son
+   plafond et son reste au centime ne comptent plus l'ancien, et tout refus remonte tel quel, sous ses mots et son
+   code ;
+3. écrit le nouveau tel que la fonction du paiement l'a écrit, `remplace_id` en plus, sous son propre réglage ;
+4. retire l'ancien par `retirer_operation_caisse` ELLE-MÊME : ses lignes du brouillon partent avec lui (la
+   contrepartie), et la caisse se juge sous les mots de SON retrait quand il apportait des espèces que le nouveau ne
+   rend pas — sur ce que la correction laisse : un instant sous zéro, entre le retrait et l'écriture, passe (la garde
+   différée juge à la fin).
+
+Écartés : étendre `remplacer_operation_caisse` (elle juge par `enregistrer_operation_caisse`, qui ne connaît pas le
+paiement ; changer un corps en production que « Ma caisse » et l'onglet Caisse appellent) ; recopier les refus du
+paiement (une copie qui dériverait : les treize corps qu'elle suppose sont épinglés à leur empreinte par sa garde de
+tête) ; une colonne neuve (le lien existe, `remplace_id`, unique) ; changer de pièce (hors de la décision : retirer,
+puis payer l'autre) ; supprimer dans le corps (le retrait passe par sa fonction : le texte ne contient ni `delete`, ni
+`drop`, ni `truncate` — le détecteur d'`apply_migration` ne devrait pas le retenir). Aucun déclencheur, aucune garde,
+aucune policy ne change, aucune exception neuve : `garder_operation_caisse` admet l'écriture sous le réglage de
+l'opération, comme pour C1b ; le filet de la validation et la garde de la pièce payée tiennent tels quels (le nouveau
+est un paiement vivant, sa contrepartie à régénérer ; la pièce reste citée, par l'ancien retiré et par le nouveau).
+
+**SES REFUS, DANS L'ORDRE** (`ORDRE_DE_LA_CORRECTION`, écrit une fois dans `lib/correctionDuPaiement.ts`) : 1. l'accès,
+avant toute lecture (`qui_ecrit_la_caisse` : 42501 « Accès refusé à ce dossier. » ; 23514 pour un accès « Caisse » d'un
+dossier redevable) ; 2. l'opération de ce dossier (P0002) ; 3. pour le client, ses propres paiements (42501, « saisie
+par ton cabinet : demande-lui de la corriger », « saisie depuis un autre accès … ») ; 4. déjà retirée ou remplacée
+(P0002) ; 5. la frontière à la date de l'ancien (23514) ; 6. « Seul le paiement d'une pièce par la caisse se corrige
+ainsi : une autre opération de la caisse se remplace. » (22023, le SEUL mot neuf) ; 7. ceux de
+`regler_piece_par_la_caisse` sur le nouveau, dans son ordre (la trésorerie, la pièce, son type, l'exemplaire d'une
+facture source, la date — 2000, l'avenir, l'ouverture, la frontière à la date du nouveau —, le montant, le sens, le
+plafond sans l'ancien, le reste au centime — au client sans montant —, la caisse négative sous le geste `paiement`) ;
+8. la caisse négative sous les mots du retrait de l'ancien (`retrait_paiement`).
+
+**LA RÉPÉTITION SUR LA RÉPLIQUE** (la grappe de FEC22b, PostgreSQL 16, port 54341 ; `regles_prod170`, égale à la
+production — 170 migrations, ses neuf familles —, lue seulement ; des copies `c12bq1_*`, jetées ensuite) :
+- appliquée comme l'outil, puis collée en `\n` et en `\r\n` : la ligne d'historique `fd9978cc…` les trois fois, celle du
+  fichier ; 171 migrations, `a0d1c1bc1c724609200f7cbc65c54641` ; `signature.sql` : « fonctions » 227 `1a3df823…` et
+  « droits des fonctions » 227 `fb74b916…` changent seules (226 `74ad9640…` et `5e15c24f…` avant) ;
+- les gardes : une seconde application, refusée ; une fonction supposée changée (`exercice_fige`), refusée ; le retour
+  sans la migration, refusé ; le retour après elle : la signature redevient celle de `regles_prod170`, une seconde fois
+  refusé ; sur une fonction changée, refusé ; après une correction faite et validée, il passe, et la correction reste
+  (l'ancien retiré, le nouveau qui le désigne) ;
+- `caisse.sql` (le propriétaire, une transaction) : sans elle 605 justes, 0 en faute, une ligne EN ATTENTE (90 étapes),
+  égal à hier hors du titre de 162 ; avec elle 678 justes, 0 en faute ; le texte d'hier sur la base munie : 162 seul en
+  faute (la liste des fonctions qui posent le réglage d'une opération s'allonge : d'où « valeur46h »). Le banc
+  (`src/test/essaiCaisse.ts`) rejoue 459 étapes par le module, toutes au verdict de la base, dont les 65 jugeables de
+  270 à 289 ;
+- `caisseSuppression.sql` : sans 32 (31 et EN ATTENTE), avec 37 — la correction emporte la contrepartie de l'ancien,
+  celle du remplacé ne s'écrit plus, celle du nouveau si ; la pièce citée ne se supprime plus, sous la clé puis sous les
+  mots de la caisse ; le dossier part avec la chaîne ;
+- `validationDesPaiementsParLaCaisse.sql` : sans 14 (13 et EN ATTENTE), avec 20 — la validation se refuse au jour du
+  NOUVEAU paiement, jamais de l'ancien ; la contrepartie écrite, elle passe, et la caisse reportée ne le compte qu'une
+  fois ;
+- `rls.sql` ENTIER (le super-utilisateur, le journal semé) : sans elle 91 lignes, 0 en faute, 68 mutations sur 68, les
+  devis et CQ EN ATTENTE ; avec elle 94, 0 en faute, 70 sur 70 (le bloc CQ : le client sans la case, puis portant la
+  case, ne corrige pas le paiement du chef, corrige le sien ; l'anonyme ; le catalogue ; M-CQ1, M-CQ2) ; le texte
+  d'hier, 90 et 68 sur 68 des deux côtés ;
+- le banc du leurre (`caisse`, `rls`, `validationDesPaiementsParLaCaisse`), sur `regles_prod170` puis sur sa copie munie
+  de la migration : SÛRS, 0 écart, 0 motif, 0 écriture du leurre ;
+- 25 mutations de la migration, chacune sur une copie fraîche, `caisse.sql` puis les trois autres essais : 22 mordent.
+  Deux n'ont mordu qu'après deux contrôles neufs, que seul l'ORDRE distingue (273d : l'autre accès avant les refus du
+  paiement ; 275c : le jour même de la frontière, pour une opération qui n'est pas un paiement — pour un paiement, la
+  garde de la table le tient sous les mêmes mots). Survivent : les deux verrous (une course ne se joue pas dans une
+  transaction ; leurs lignes sont épinglées par le test du texte) et le `grant` à `authenticated`, ÉQUIVALENT ici (les
+  privilèges par défaut du propriétaire le donnent déjà, en production comme sur la réplique ; gardé pour le dire,
+  épinglé de même) ;
+- les trois contrôles de l'export : aujourd'hui, 170 fichiers et 170 migrations, `ccbeaaba…` ; le socle 81,
+  `cea19cff…` ; l'inventaire 2 309, `ee3f607f…` — égaux des deux côtés ; la migration DÉPLACÉE dans l'export, en
+  simulation, contre la copie munie : 171 et 171, `a0d1c1bc…` (un agrégat que la version réelle changera) ; le socle
+  inchangé ; l'inventaire 2 310, `c4002f20…` (la fonction de plus) — égaux des deux côtés.
+
+**L'APPLICATION, DERRIÈRE `CORRECTION_DU_PAIEMENT_EXPORTEE`, BAISSÉ** (il suit le fichier,
+`correctionDuPaiement.test.ts`) :
+- `lib/correctionDuPaiement.ts` : les refus avant le clic, l'ordre écrit une fois, sans rien recopier —
+  `refusDeLAncienne` (exporté de `lib/caisse.ts`), le genre, puis `jugerSelonLeLecteur` (exporté de
+  `lib/paiementParLaCaisse.ts`), l'ancien retiré, enfin `retraitJuge` ; la branche du client ne lit ni le montant ni la
+  désignation de la pièce. Son test confronte les mots et l'ordre au texte de la migration, où qu'elle soit, la
+  sous-transaction, les treize empreintes de la garde relues en chaîne, le retour arrière ; une batterie tirée
+  (`tirage`, 3 000 caisses) : toute correction acceptée laisse une caisse jamais négative, un seul paiement vivant de la
+  pièce ;
+- la fiche d'une pièce (cabinet) : « Corriger » sur un paiement vivant ; son jour et son montant signé ; les refus avant
+  le clic (rien à corriger, le sens, le plafond sans l'ancien, la caisse) ; la confirmation NOMME l'ancien et le
+  nouveau, la caisse de leurs deux jours, la contrepartie à régénérer ; la fonction seule ; le verrou des deux autres
+  gestes ; la relecture ; un exercice validé ou des paiements lus en partie le grisent, la raison dite ;
+- « Mes pièces » (client) : « Corriger » sur ses propres paiements ; ses espèces sans signe, jamais le montant de la
+  pièce ; les règles du formulaire (sans signe, les années lues, l'année figée) puis la base, aux mots du client ; la
+  confirmation tutoyée nomme l'ancien et le nouveau ; le verrou de « Mes pièces » entière ; un paiement d'avant les
+  années lues grisé sous la phrase qui renvoie au cabinet, dite une fois ;
+- les MOTS DU REMÈDE (`motsDuRemedeSelon`), une table : la pastille de l'onglet Caisse, l'aide et la fin de la
+  confirmation d'un retrait dans « Mes pièces », le détail, le préalable et le libellé de `caisse-paiements-a-retirer`,
+  et l'onglet Accès (« et corrige ou retire ce paiement ») — baissé, ceux d'hier au caractère près ; levé, la
+  correction. Hier, le détail disait de retirer le paiement « dans l'onglet Caisse », qui n'offre aucun geste sur un
+  paiement : gardé tel quel baissé, corrigé levé (la fiche de la pièce). Un scanner refuse ces mots écrits en dur
+  ailleurs ;
+- les moteurs ne changent pas : `paiementsParLaCaisseSelon` ne compte ni un retiré ni un remplacé — la 2035, le FEC, la
+  Checklist, par `paiementsDesPieces` ; la copie de l'assistant (C13) filtre de même (`agentComptableCaisse.test.ts`) ;
+  un cas du test le garde : un paiement corrigé ne compte qu'une fois. L'assistant n'est pas touché ;
+- la suite : baissé, 16 941 cas, 16 935 justes, un échec attendu, et les cinq de windows-1252 que cet environnement ne
+  lit pas (ICU réduit) ; levé, en simulation (la migration dans l'export), les mêmes cinq, et deux du scanner des clés
+  (`clesSupabase.test.ts`), qui lit les fichiers SUIVIS par git : le fichier déplacé sans `git mv` y manquait ; rejoué
+  par `git mv` (l'index seul, rendu ensuite), il passe, avec `correctionDuPaiement.test.ts` levé.
+
+**LE JOUR DE L'APPLICATION** : l'accord du cabinet ; la migration par l'outil (si le détecteur la retenait, le collage
+avec sa ligne d'historique, éprouvé en `\n` et `\r\n`) ; le fichier dans l'export sous la version de sa ligne, texte
+inchangé (`fd9978cc…`) ; le drapeau levé ; `types.ts` n'a rien à suivre (aucune colonne, aucune fonction typée) ; les
+trois contrôles en production ; `caisse.sql`, `caisseSuppression.sql` — sur une réplique seulement —,
+`validationDesPaiementsParLaCaisse.sql` et le bloc CQ de `rls.sql` rejoués ; la phrase de l'onglet Accès suit le
+drapeau. Le retour arrière (`…_retour_correction_du_paiement_par_la_caisse.sql`, 3 236 caractères, 3 350 octets,
+`48593f82392085dbafd68cbb57d80ad0`, sha-256 `ce9e9d2b…`) : sa garde exige la fonction à son empreinte, puis la retire —
+le drapeau baissé d'abord ; les corrections déjà faites restent valables (l'ancien retiré, le nouveau qui le désigne).

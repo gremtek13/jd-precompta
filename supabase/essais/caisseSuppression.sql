@@ -54,7 +54,9 @@
 -- paiement (sa pièce est à régénérer), et seule celle du nouveau s'écrit ensuite ; la pièce que le paiement corrigé cite
 -- ne se supprime plus — l'ancien, retiré, et le nouveau la citent —, sous la clé, puis, la contrepartie du nouveau écrite,
 -- sous les mots de la caisse ; le dossier entier part avec la chaîne des deux paiements et leurs contreparties. Une étape
--- de genre « …6 » ne se joue qu'avec la migration : sans elle, une ligne dit qu'elles attendent (EN ATTENTE).
+-- de genre « …6 » ne se joue qu'avec la migration : sans elle, une ligne dit qu'elles attendent (EN ATTENTE). Joué sur la
+-- réplique de l'étape (la production du jour, 170 migrations) : sans elle, 32 verdicts justes (la ligne EN ATTENTE de
+-- plus), 0 en faute ; avec elle, 37, 0 en faute ; rien n'est resté.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';

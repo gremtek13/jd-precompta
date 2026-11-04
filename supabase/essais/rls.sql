@@ -640,6 +640,17 @@
 -- ATTENTE — les deux sorties égales, et égales à celle du texte d'avant hors de la ligne M5ter. Le passage en production
 -- suivra l'application (HISTORIQUE.md, « LA FACTURE : LA DATE DANS L'ORDRE DE SA SÉRIE, LE DEMI-CENTIME ET LA MENTION DE
 -- TVA, REPRISE POUR FACTURE-Q1 (PRÉPARÉE, PAS APPLIQUÉE) »).
+--
+-- 04/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (C12B-Q1 : migration `correction_du_paiement_par_la_caisse`,
+-- PRÉPARÉE, pas appliquée), qui ne crée ni ne change aucune policy, mais une fonction aux droits du propriétaire qui écrit
+-- la caisse (`remplacer_paiement_par_la_caisse`, la correction d'un paiement d'un seul geste) : le bloc CQ (CQ1 à CQ3,
+-- M-CQ1 et M-CQ2) — le client ne corrige pas le paiement du chef, sans la case « Caisse » comme en la portant, et corrige
+-- le sien en la portant (le contrôle positif : l'ancien retiré, le nouveau le désigne, à lui) ; l'anonyme n'exécute pas la
+-- fonction ; le catalogue — ; EN ATTENTE sans la migration. Joué ENTIER par psql sur la réplique de l'étape (la
+-- production du jour, 170 migrations, ses neuf familles égales à celles de la production, le journal semé), par le
+-- super-utilisateur : sans la migration, 91 lignes de verdict (la ligne CQ « EN ATTENTE » de plus), 0 en faute, 68
+-- mutations sur 68 qui mordent ; avec elle, 94 lignes, 0 en faute, 70 mutations sur 70 — seules les lignes CQ diffèrent
+-- (HISTORIQUE.md, « LA CAISSE : CORRIGER UN PAIEMENT EN ESPÈCES D'UN SEUL GESTE (C12B-Q1) (PRÉPARÉE, PAS APPLIQUÉE) »).
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 

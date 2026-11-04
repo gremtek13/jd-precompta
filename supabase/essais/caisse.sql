@@ -145,7 +145,11 @@
 -- « …6 » ne se joue qu'avec cette migration : sans elle, une ligne dit qu'elles attendent (EN ATTENTE) ; une de genre « …6h »
 -- ne se joue que SANS elle (162 : la liste des fonctions qui posent le réglage d'une opération, que la correction allonge —
 -- « valeur46h »). La lecture par profil se joue dans le bloc CQ de `rls.sql`, le filet de la validation dans
--- `validationDesPaiementsParLaCaisse.sql`.
+-- `validationDesPaiementsParLaCaisse.sql`. Joué sur la réplique de l'étape (la production du jour, 170 migrations), par le
+-- propriétaire, en une transaction : sans la migration, 605 verdicts justes, 0 en faute, la ligne EN ATTENTE (90 étapes) ;
+-- avec elle, 678 justes, 0 en faute ; le texte d'avant sur la base munie : 162 seul en faute. Vingt-cinq mutations de la
+-- migration : vingt-deux mordent ici ou dans les trois autres essais, 273d et 275c ajoutés pour deux d'entre elles (seul
+-- l'ordre les distingue) ; les deux verrous et le droit d'exécution, que les privilèges par défaut donnent déjà, survivent.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';

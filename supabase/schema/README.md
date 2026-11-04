@@ -944,6 +944,32 @@ valeur de la réplique, les huit autres inchangées ; les trois contrôles : la 
 `e5863aa7271b53077d6ac388619e1209` des deux côtés ; l'inventaire inchangé (2 307, `93edc60a…`) ; le socle, qu'il ne touche
 pas, inchangé avec la signature (HISTORIQUE.md, « LA FACTURE : LA MIGRATION EN PRODUCTION (FACTURE-Q1) »).
 
+**Préparé le 04/11/2026, PAS ENCORE APPLIQUÉ : `correction_du_paiement_par_la_caisse`** (C12B-Q1, ligne 26.6 : corriger
+un paiement en espèces d'un seul geste). Son fichier vit HORS de l'export, dans `supabase/preparees/`, sous une version
+PROVISOIRE, `20261104120000` (17 939 caractères, 18 293 octets, 230 lignes, `fd9978cc8e1a9d44a7feb90d947f72c7`, ni barre
+oblique inverse ni retour chariot), après les migrations de la caisse en base, qu'il suppose (sa garde de tête épingle
+treize corps à leur empreinte, dont `regler_piece_par_la_caisse` `c8b8e39e…` et `retirer_operation_caisse` `459ca429…`).
+Il s'applique PAR L'OUTIL : ni `drop`, ni `delete`, ni `truncate` ; ses `revoke` ne retirent que les droits que Postgres
+donne d'office à la fonction qu'il crée. Ce qu'il pose : une fonction, `remplacer_paiement_par_la_caisse(uuid, uuid,
+date, numeric)`, aux droits du propriétaire, exécutable par un compte connecté, ni par l'anonyme ni par PUBLIC — et rien
+d'autre : aucune table, colonne, contrainte, policy ni déclencheur, aucun corps d'hier. Le fichier entre ici sous la
+version que portera sa ligne d'historique, texte inchangé, et cette ligne doit rendre `fd9978cc…`. Son RETOUR ARRIÈRE
+(`supabase/preparees/retour/20261104120100_retour_correction_du_paiement_par_la_caisse.sql`, 3 236 caractères, 3 350
+octets, 43 lignes, `48593f82392085dbafd68cbb57d80ad0`) : sa garde exige la fonction à l'empreinte de son corps
+(`ff72f955…`), puis la retire (`drop function`) — à accorder, et à coller avec sa ligne d'historique ; les corrections
+déjà faites restent valables. Tant qu'elle n'est pas appliquée, l'export ne la porte pas, et ses trois contrôles sont
+ceux de la production, égaux des deux côtés sur `regles_prod170` (170 fichiers, `ccbeaaba…` ; socle 81, `cea19cff…` ;
+inventaire 2 309, `ee3f607f…`). Sur la réplique de l'étape (`regles_prod170` munie d'elle par le PROPRIÉTAIRE des
+tables, comme l'outil, avec sa ligne d'historique) et sur l'export qui la porte — son fichier DÉPLACÉ, en simulation — :
+la dérive, 171 fichiers et 171 migrations, `a0d1c1bc1c724609200f7cbc65c54641` des deux côtés (un agrégat que la version
+réelle changera) ; le socle inchangé (81, `cea19cff…`) ; l'inventaire 2 310 objets, `c4002f200f425581d1847c63ac9eba2f`
+des deux côtés — la fonction de plus. `signature.sql` : « fonctions » 227 `1a3df82347f4f8afab121594818bfed8` et « droits
+des fonctions » 227 `fb74b916b5c6030d3b42df8eaea93252` changent seules, et reviennent à celles de la production après le
+retour arrière (HISTORIQUE.md, « LA CAISSE : CORRIGER UN PAIEMENT EN ESPÈCES D'UN SEUL GESTE (C12B-Q1) (PRÉPARÉE, PAS
+APPLIQUÉE) »). Le jour de l'application : elle, par l'outil, puis les trois contrôles ; puis `caisse.sql`,
+`validationDesPaiementsParLaCaisse.sql` et le bloc CQ de `rls.sql` se jouent en production, `caisseSuppression.sql` sur
+une réplique.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
