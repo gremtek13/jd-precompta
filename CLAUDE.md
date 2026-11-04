@@ -1092,6 +1092,14 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   APPLIQUÉE) », « LE SENS DES RÈGLES « TOUJOURS IGNORER » EN PRODUCTION (REGLES-Q1) », « « IGNORER » ET « TOUJOURS
   IGNORER » NE VISENT QU'UN MOUVEMENT ENCORE À TRAITER ». **Classification** : le bordereau d'abord, le sens par
   `orientationDe` → « Le sens d'une pièce est décidé par la classification ».
+- **Une même dépense entrée deux fois se dit** (`lib/doublonsProbables.ts`, PIECES-Q2, sur la recommandation) : deux
+  dépenses de même montant retenu, à sept jours au plus, d'une même `cleFournisseur` (un fournisseur non lu se rapproche
+  de tout), l'une au moins non réglée — en attention dans Justificatifs, les fiches, la Vue d'ensemble, Clôture et
+  avant la validation, jamais bloquant. Une date déduite plafonne la confiance à « moyenne » aux trois chemins du dépôt
+  (`lib/dateDeduite.ts`, PIECES-Q1 (A), sans trace gardée) ; « Valider la sélection » compte ce qui part et nomme avant
+  le clic ce qu'elle écarte ou ce qui mérite un regard (`lib/validationDeLaSelection.ts`) → « RELECTURE : UNE ANNÉE DE
+  PIÈCES, DU DÉPÔT À LA 2035 (MVP-D6) », « LES PIÈCES : LE DOUBLON PROBABLE, LA DATE DÉDUITE, LA VALIDATION EN LOT QUI
+  DIT TOUT (PIECES-Q1, PIECES-Q2, D7) ».
 - **Un fournisseur se reconnaît à une clé d'identité** (`cleFournisseur`), mot à mot, jamais par sous-chaîne.
   **« Textract sait le lire » n'est pas « l'application accepte ce fichier »** (`textractPeutLire`) ; une relecture OCR
   ne relit que ce qui manque.
